@@ -230,34 +230,35 @@ CP9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
   if((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS))
     use_sums = TRUE;
     
-  if(cm->align_opts & CM_ALIGN_TIME) 
-    {
-      watch = esl_stopwatch_Create();
-      esl_stopwatch_Start(watch);
-    }
-
   /* Step 1: Get HMM posteriors.
    * Step 2: posteriors -> HMM bands.
    * Step 3: HMM bands  ->  CM bands.
    */
 
   /* Step 1: Get HMM posteriors.*/
-  CP9_seq2posteriors(cm, dsq, i0, j0, &cp9_post, debug_level);
+  CP9_seq2posteriors(cm, dsq, i0, j0, &cp9_post, debug_level, cp9b);
 
+  ///if(cm->align_opts & CM_ALIGN_TIME) {
+  ///watch = esl_stopwatch_Create();
+  ///      esl_stopwatch_Start(watch);
+  ///}
   /* Step 2: posteriors -> HMM bands.*/
-  if(use_sums) CP9_ifill_post_sums(cp9_post, cp9b, i0, j0);
+  ///if(use_sums) CP9_ifill_post_sums(cp9_post, cp9b, i0, j0);
   /* match states */
-  CP9_hmm_band_bounds(cp9_post->mmx, i0, j0, cp9b->hmm_M, 
-		      cp9b->isum_pn_m, cp9b->pn_min_m, cp9b->pn_max_m,
-		      (1.-cm->tau), HMMMATCH, use_sums, debug_level);
+  //CP9_hmm_band_bounds(cp9_post->mmx, i0, j0, cp9b->hmm_M, 
+  ///cp9_EXPTL_S_hmm_band_bounds(cp9_post->mmx, i0, j0, cp9b->hmm_M, 
+  ///cp9b->isum_pn_m, cp9b->pn_min_m, cp9b->pn_max_m,
+  ///		      (1.-cm->tau), HMMMATCH, use_sums, debug_level);
   /* insert states */
-  CP9_hmm_band_bounds(cp9_post->imx, i0, j0, cp9b->hmm_M,
-		      cp9b->isum_pn_i, cp9b->pn_min_i, cp9b->pn_max_i,
-		      (1.-cm->tau), HMMINSERT, use_sums, debug_level);
+  //  CP9_hmm_band_bounds(cp9_post->imx, i0, j0, cp9b->hmm_M,
+  ///cp9_EXPTL_S_hmm_band_bounds(cp9_post->imx, i0, j0, cp9b->hmm_M, 
+  ///cp9b->isum_pn_i, cp9b->pn_min_i, cp9b->pn_max_i,
+  ///(1.-cm->tau), HMMINSERT, use_sums, debug_level);
   /* delete states */
-  CP9_hmm_band_bounds(cp9_post->dmx, i0, j0, cp9b->hmm_M,
-		      cp9b->isum_pn_d, cp9b->pn_min_d, cp9b->pn_max_d,
-		      (1.-cm->tau), HMMDELETE, use_sums, debug_level);
+  //CP9_hmm_band_bounds(cp9_post->dmx, i0, j0, cp9b->hmm_M,
+  ///cp9_EXPTL_S_hmm_band_bounds(cp9_post->dmx, i0, j0, cp9b->hmm_M, 
+  ///cp9b->isum_pn_d, cp9b->pn_min_d, cp9b->pn_max_d,
+  ///		      (1.-cm->tau), HMMDELETE, use_sums, debug_level);
   
   if(debug_level > 0) debug_print_hmm_bands(stdout, j0, cp9b, cm->tau, 1);
 
@@ -269,7 +270,7 @@ CP9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
   if(cm->align_opts & CM_ALIGN_TIME) 
     {
       esl_stopwatch_Stop(watch);
-      esl_stopwatch_Display(stdout, watch, "CP9 Band calculation CPU time: ");
+      esl_stopwatch_Display(stdout, watch, "CP9 band bounds calculation CPU time: ");
       esl_stopwatch_Destroy(watch);
     }
   /* Use the CM bands on i and j to get bands on d, specific to j. */
@@ -316,7 +317,7 @@ CP9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
 #define NEWHMMALGS 1 /* use CP9Forward() and CP9Backward() */
 void 
 CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
-		   int debug_level)
+		   int debug_level, CP9Bands_t *cp9b)
 {
   /*CP9_dpmatrix_t *cp9_mx;*/    /* growable DP matrix for viterbi                       */
   CP9_dpmatrix_t *cp9_fwd;       /* growable DP matrix for forward                       */
@@ -325,6 +326,8 @@ CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_
   float sc;
   int do_scan2bands;             /* TRUE to use scanning Forward/Backward to get posteriors
 				  * that we'll use for a CM scan */
+  ESL_STOPWATCH  *watch;         /* for timings if cm->align_opts & CM_ALIGN_TIME             */
+
   /* Contract checks */
   if(dsq == NULL)
     cm_Fail("in CP9_seq2posteriors(), dsq is NULL.");
@@ -344,43 +347,74 @@ CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_
 
   /* Step 1: Get HMM posteriors.*/
   /*sc = CP9ViterbiAlign(dsq, i0, j0, cm->cp9, cp9_mx);*/
+  if(cm->align_opts & CM_ALIGN_TIME) {
+      watch = esl_stopwatch_Create();
+      esl_stopwatch_Start(watch);
+  }
+  //int be_safe = FALSE; /* TEMPORARY, pass this in after calcing it once in actually_align_targets() */
+  int be_safe = TRUE;
   if(OLDHMMALGS)
     sc = CP9ForwardAlign(dsq, i0, j0, cm->cp9, &cp9_fwd);
   else if(NEWHMMALGS)
-    sc = CP9Forward(cm, dsq, i0, j0, (j0-i0+1), 
-		    0,    /* cp9_cutoff score, irrelevant */
-		    NULL,  /* don't care about score of each posn */
-		    NULL,  /* don't care about best scoring start point */
-		    NULL,  /* don't report hits to results data structure */
-		    do_scan2bands, /* are we using scanning Forward/Backward */
-		    TRUE,  /* we are going to use posteriors to align */
-		    FALSE, /* we're not rescanning */
-		    FALSE, /* don't be memory efficient */
-		    &cp9_fwd); /* give the DP matrix back */
+    sc = cp9_EXPTLFastForward(cm, dsq, i0, j0, j0-i0+1, 0., NULL, NULL, NULL,
+			      do_scan2bands, /* are we using scanning Forward/Backward */
+			      TRUE,      /* we are going to use posteriors to align */
+			      FALSE,     /* we're not rescanning */
+			      FALSE,     /* don't be memory efficient */
+			      be_safe,   /* can we accelerate w/ no -INFTY logsum funcs? */
+			      &cp9_fwd); /* give the DP matrix back */
+  //sc = CP9Forward(cm, dsq, i0, j0, (j0-i0+1), 
+    //0,    /* cp9_cutoff score, irrelevant */
+    //NULL,  /* don't care about score of each posn */
+    //NULL,  /* don't care about best scoring start point */
+    //NULL,  /* don't report hits to results data structure */
+    //do_scan2bands, /* are we using scanning Forward/Backward */
+    //TRUE,  /* we are going to use posteriors to align */
+    //FALSE, /* we're not rescanning */
+    //FALSE, /* don't be memory efficient */
+    //&cp9_fwd); /* give the DP matrix back */
 
-  if(debug_level > 0) printf("CP9 Forward  score : %.4f\n", sc);
+  if(debug_level >= 0) printf("CP9 Forward  score : %.4f\n", sc);
+  if(cm->align_opts & CM_ALIGN_TIME) {
+      esl_stopwatch_Stop(watch);
+      esl_stopwatch_Display(stdout, watch, "CP9 bands Forward CPU time: ");
+      esl_stopwatch_Start(watch);
+  }
+
   if(OLDHMMALGS)
     sc = CP9BackwardAlign(dsq, i0, j0, cm->cp9, &cp9_bck);
   else if(NEWHMMALGS)
-    sc = CP9Backward(cm, dsq, i0, j0, (j0-i0+1), 
-		     0,    /* cp9_cutoff score, irrelevant */
-		     NULL,  /* don't care about score of each posn */
-		     NULL,  /* don't care about best scoring start point */
-		     NULL,  /* don't report hits to results data structure */
-		     do_scan2bands, /* are we using scanning Forward/Backward */
-		     TRUE,  /* we are going to use posteriors to align */
-		     FALSE, /* we're not rescanning */
-		     FALSE, /* don't be memory efficient */
-		     &cp9_bck); /* give the DP matrix back */
+    /* sc = CP9Backward(cm, dsq, i0, j0, (j0-i0+1), */
+    sc = cp9_EXPTLFastBackward(cm, dsq, i0, j0, (j0-i0+1), 
+			       0,    /* cp9_cutoff score, irrelevant */
+			       NULL,  /* don't care about score of each posn */
+			       NULL,  /* don't care about best scoring start point */
+			       NULL,  /* don't report hits to results data structure */
+			       do_scan2bands, /* are we using scanning Forward/Backward */
+			       TRUE,  /* we are going to use posteriors to align */
+			       FALSE, /* we're not rescanning */
+			       FALSE, /* don't be memory efficient */
+			       &cp9_bck); /* give the DP matrix back */
 
-  if(debug_level > 0) printf("CP9 Backward score : %.4f\n", sc);
+  if(debug_level >= 0) printf("CP9 Backward score : %.4f\n", sc);
+  if(cm->align_opts & CM_ALIGN_TIME) {
+      esl_stopwatch_Stop(watch);
+      esl_stopwatch_Display(stdout, watch, "CP9 bands Backward CPU time: ");
+      esl_stopwatch_Start(watch);
+  }
   
   /*debug_check_CP9_FB(cp9_fwd, cp9_bck, cm->cp9, sc, i0, j0, dsq);*/
   cp9_post = cp9_bck;
   if(do_scan2bands)
     CP9ScanPosterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
   else /* !doing_search */
-    CP9Posterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
+    //CP9Posterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
+    CP9EXPTL_S_Posterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post, (1.-cm->tau), cp9b);
+  if(cm->align_opts & CM_ALIGN_TIME) {
+      esl_stopwatch_Stop(watch);
+      esl_stopwatch_Display(stdout, watch, "CP9 bands Posterior CPU time: ");
+      esl_stopwatch_Start(watch);
+  }
 
   FreeCPlan9Matrix(cp9_fwd);
   if(ret_cp9_post != NULL)

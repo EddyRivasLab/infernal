@@ -1246,8 +1246,6 @@ EXPTLFastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, i
   return 0.; /* NEVERREACHED */
 }
 
-
-
 /*****************************************************************
  * Benchmark driver
  *****************************************************************/
@@ -1287,6 +1285,7 @@ static ESL_OPTIONS options[] = {
   { "-w",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute slow, reference CYK scan implementation", 0 },
   { "-x",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute experimental CYK scan implementation", 0 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute non-banded optimized CYK scan implementation", 0 },
+  /* { "--rsearch", eslARG_NONE,   FALSE, NULL, NULL,  NULL,"--noqdb", NULL, "also execute ported RSEARCH's CYK scan implementation", 0 },*/
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -1307,6 +1306,8 @@ main(int argc, char **argv)
   float           sc;
   char            *cmfile = esl_opt_GetArg(go, 1);
   CMFILE          *cmfp;	/* open input CM file stream */
+  int            *dmin;
+  int            *dmax;
 
   if (esl_opt_GetBoolean(go, "-r"))  r = esl_randomness_CreateTimeseeded();
   else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
@@ -1318,28 +1319,25 @@ main(int argc, char **argv)
   cm->config_opts |= CM_CONFIG_QDB;
   ConfigCM(cm, NULL, NULL);
 
+  if (esl_opt_GetBoolean(go, "--noqdb")) { 
+    dmin = NULL; dmax = NULL;
+  }
+  else { dmin = cm->dmin; dmax = cm->dmax; }
+
   for (i = 0; i < N; i++)
     {
       esl_rnd_xfIID(r, cm->null, abc->K, L, dsq);
 
       esl_stopwatch_Start(w);
-      sc = FastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
+      sc = FastCYKScan(cm, dsq, dmin, dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 
-      if (esl_opt_GetBoolean(go, "--noqdb")) {
-	esl_stopwatch_Start(w);
-	sc = FastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);
-	printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan() non-banded: ", sc);
-	esl_stopwatch_Stop(w);
-	esl_stopwatch_Display(stdout, w, " CPU time: ");
-      }
-
       if (esl_opt_GetBoolean(go, "-x")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  sc = EXPTLFastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
+	  sc = EXPTLFastCYKScan(cm, dsq, dmin, dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "EXPTLFastCYKScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -1348,11 +1346,21 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "-w")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL); 
+	  sc = CYKBandedScan (cm, dsq, dmin, dmax, 1, L, cm->W, 0., NULL); 
 	  printf("%4d %-30s %10.4f bits ", (i+1), "CYKBandedScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}
+
+      /*if (esl_opt_GetBoolean(go, "--rsearch")) 
+	{ 
+	  esl_stopwatch_Start(w);
+	  sc = rsearch_CYKScan (cm, dsq, dmin, dmax, 1, L, cm->W, 0., NULL); 
+	  printf("%4d %-30s %10.4f bits ", (i+1), "rsearch_CYKScan(): ", sc);
+	  esl_stopwatch_Stop(w);
+	  esl_stopwatch_Display(stdout, w, " CPU time: ");
+	}
+      */
     }
 
   FreeCM(cm);
@@ -1364,3 +1372,416 @@ main(int argc, char **argv)
   return 0;
 }
 #endif /*IMPL_FASTSEARCH_BENCHMARK*/
+
+#if 0 /* not yet compilable */
+
+
+
+/* Function: CYKScan()
+ * Date:     RJK, Sun Mar 24, 2002 [STL->DCA]
+ *           SRE, Mon Aug  7 13:15:37 2000 [St. Louis] 
+ *                   (from inside() in smallcyk.c)
+ *
+ * Purpose:  Run the inside phase of a CYK alignment algorithm, on 
+ *           a complete sequence of length L.
+ *
+ * The following changes were made from inside() in smallyck.c:
+ * 1.  Removed jp, i0, j0, W, vroot, and vend because full sequence
+ * 2.  Added d<=D constraint on d for loops
+ * 3.  Removed shadow matrices; we don't do traceback
+ * 4.  Replace alpha with gamma[j][d][v] -- makes more efficient use of cache
+ * 5.  Explicitiy define End state rather than just assigning the pre-computed
+ *     "end deck" 
+ * 6.  Use gamma_begl_s and gamma_begr_s [v][j][d] for optimizing bifurcation
+ *     states
+ * 7.  Local alignment now.
+ * 8.  If passed a histogram, fills in with best j for every D+1 place
+ * 9.  Only reports best hit at each j to reduce reporting complexity
+ * 10. Modified so minimize dereferencing for improved speed.
+ * 11. Inner loops rewritten to allow vectorization.
+ *
+ * Args:     cm        - the model    [0..M-1]
+ *           dsq       - the sequence [1..L]   
+ *           L         - length of the dsq
+ *           cutoff    - cutoff score to report
+ *           D         - maximum size of hit
+ *           results   - scan_results_t to fill in; if NULL, nothing
+ *                       filled in
+ *
+ * Returns: Score of best hit overall
+ *
+ */
+float CYKScan (CM_t *cm, char *dsq, int L, float cutoff, int D,
+	       scan_results_t *results) {
+
+  int     *bestr;               /* Best root state for d at current j */
+  int      v,y,z;		/* indices for states  */
+  int      j,d,i,k;		/* indices in sequence dimensions */
+  int      jmod2, jmin1mod2;    /* For indices into the actual j dimension */
+  int      dmax;                /* D of best hit at j */
+  float    sc;  	       	/* a temporary variable holding a score */
+  int      yoffset;		/* y=base+offset -- counter in child 
+                                   states that v can transit to */
+  int      M;                   /* Stores cm->M for loop limits */
+  int      cnum;                /* Stores cm->cnum[v] for loop limits */
+  int      minDj;               /* Minimum cutoff for d between j and D */
+  float ***gamma;               /* The main DP matrix [j][d][v] */
+  float ***gamma_begl_s;        /* For BEGL_S states -- [v][i][d] */
+  float ***gamma_begr_s;        /* For BEGR_S states -- [v][j][d] */ 
+  float  **gamma_jmod2;         /* gamma[jmod2] */
+  float  **gamma_jmin1mod2;     /* gamma[jmin1mod2] */
+  float   *gammap;              /* Pointer to last dimension of gamma to use */
+  float   *gamma_begl_s_p;     
+  float   *gamma_begr_s_p;
+  int       sc_v_size;
+  float    *sc_v;               /* Vector of possible scores to maximize over */
+  float    *tsc;                /* Points to cm->tsc[v] to make pointer operation simpler in loop I want to vectorize */
+  float     endsc;              /* endsc for current state [v] -- set at
+				   beginning of each v loop */
+  float     beginsc;            /* beginsc for current state[y] */
+  char      sttype;             /* Holds cm->sttype[v] */
+  float     best_score = IMPOSSIBLE;     /* Best overall score to return */
+
+  /* Set M */
+  M = cm->M;
+
+  if (M>D+1) {
+    sc_v_size = M;
+  } else {
+    sc_v_size = D+1;
+  }
+  /* Initialize sc_v to size of M */
+  sc_v = MallocOrDie (sizeof(float) * sc_v_size);
+
+  gamma = MallocOrDie(sizeof(float **) * 2);
+  gamma[0] = MallocOrDie(sizeof(float *)*2*M);
+  gamma[1] = gamma[0] + M;
+  gamma[0][0] = MallocOrDie(sizeof(float)*2*(D+1)*M);
+  gamma[1][0] = gamma[0][0] + ((D+1)*M);
+  for (v=1; v<M; v++) {
+    gamma[0][v] = gamma[0][v-1] + (D+1);
+    gamma[1][v] = gamma[1][v-1] + (D+1);
+  }
+
+  gamma_begl_s = MallocOrDie(sizeof(float **)*M);
+  for (v=0; v<M; v++) {
+    if (cm->stid[v] == BEGL_S) {
+      /* For Bifurcatoins, we may need up to D+1 */
+      gamma_begl_s[v] = MallocOrDie(sizeof(float *) * (D+1));
+      for (j=0; j<D+1; j++) 
+	gamma_begl_s[v][j] = MallocOrDie(sizeof(float)*(D+1));
+    } else {
+      gamma_begl_s[v] = NULL;
+    }
+  }
+  gamma_begr_s = MallocOrDie(sizeof(float **)*M);
+  for (v=0; v<M; v++) {
+    if (cm->stid[v] == BEGR_S) {
+      gamma_begr_s[v] = MallocOrDie(sizeof(float *)*2);
+      for (j=0; j<2; j++)
+	gamma_begr_s[v][j] = MallocOrDie(sizeof(float)*(D+1));
+    } else {
+      gamma_begr_s[v] = NULL;
+    }
+  }
+
+  bestr = MallocOrDie(sizeof(int)*(D+1));
+
+  /* Main recursion */
+  for (j=0; j<=L; j++) {
+    jmod2 = j % 2;
+    if (j == 0)	
+      jmin1mod2 = 1;
+    else 
+      jmin1mod2 = (j-1)%2;
+    gamma_jmod2 = gamma[jmod2];
+    gamma_jmin1mod2 = gamma[jmin1mod2];
+    if (j < D) {
+      minDj = j;
+    } else {
+      minDj = D;
+    }
+    for (v = M-1; v > 0; v--) {          /* Handle ROOT specially */ 
+      endsc = cm->endsc[v];              /* It shouldn't change in this loop */
+      sttype = cm->sttype[v];            /* This also shouldn't change */
+      if (sttype == E_st) {
+	gammap = gamma_jmod2[v];
+	*gammap = 0.;
+	for (d=1; d<=minDj; d++) {
+	  gammap++;
+	  *gammap = IMPOSSIBLE;  /* gamma[jmod2][v][d] */
+	}
+      } 
+      else if (sttype == D_st || sttype == S_st) {
+	y = cm->cfirst[v];
+	cnum = cm->cnum[v];
+	tsc = cm->tsc[v];
+	for (d = 0; d <= minDj; d++)
+	  sc_v[d] = endsc;
+	for (yoffset= 0; yoffset < cnum; yoffset++) {
+	  gammap = gamma_jmod2[y+yoffset];
+#ifdef INTEL_COMPILER
+#pragma ivdep
+#endif
+	  for (d = 0; d <= minDj; d++) {
+	    sc = gammap[d] + tsc[yoffset];
+	    if (sc > sc_v[d])
+	      sc_v[d] = sc;
+	  }
+	}
+	gammap = gamma_jmod2[v];
+	for (d = 0; d<= minDj; d++) {
+	  sc = sc_v[d];
+	  if (sc<IMPOSSIBLE) sc = IMPOSSIBLE;
+	  gammap[d] = sc;
+	  if (cm->stid[v] == BEGL_S) gamma_begl_s[v][(j-d+1)%(D+1)][d] = sc;
+	  if (cm->stid[v] == BEGR_S) gamma_begr_s[v][jmod2][d] = sc;
+	}
+      }
+      else if (sttype == B_st) {
+	y = cm->cfirst[v];
+	z = cm->cnum[v];
+	for (d = 0; d <= minDj; d++) {
+	  sc = endsc;
+	  gamma_begl_s_p = gamma_begl_s[y][(j-d+1)%(D+1)];
+	  gamma_begr_s_p = gamma_begr_s[z][jmod2];
+	  for (k=0; k<=d; k++)
+	    sc_v[k] = gamma_begl_s_p[d-k];
+#ifdef INTEL_COMPILER
+#pragma ivdep
+#endif
+	  for (k = 0; k <= d; k++) {
+	    sc_v[k] += gamma_begr_s_p[k];
+	    if (sc_v[k] > sc) sc = sc_v[k];
+	  }
+	  if (sc<IMPOSSIBLE) sc = IMPOSSIBLE;
+	  gamma_jmod2[v][d] = sc;
+	}
+      }
+      else if (sttype == MP_st) {
+	gamma_jmod2[v][0] = IMPOSSIBLE;
+	if (j>0) gamma_jmod2[v][1] = IMPOSSIBLE;
+	y = cm->cfirst[v];
+	cnum = cm->cnum[v];
+	tsc = cm->tsc[v];
+	for (d = 2; d <= minDj; d++) 
+	  sc_v[d] = endsc;
+	for (yoffset = 0; yoffset < cnum; yoffset++) {
+	  gammap = gamma_jmin1mod2[y+yoffset];
+#ifdef INTEL_COMPILER
+#pragma ivdep
+#endif
+	  for (d = 2; d <= minDj; d++) {
+	    sc = gammap[d-2] + tsc[yoffset];
+	    if (sc > sc_v[d]) {
+	      sc_v[d] = sc;
+	    }
+	  }
+	}
+	for (d = 2; d <= minDj; d++) {
+	  i = j-d+1;
+	  sc = sc_v[d];
+	  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
+	    sc += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+	  else
+	    sc += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
+	  if (sc < IMPOSSIBLE) sc = IMPOSSIBLE;
+	  gamma_jmod2[v][d] = sc;
+	}
+      }
+      else if (sttype == ML_st) {                /* IL_st done below
+						    because it points to
+						    itself so gamma[j][v][d]
+						    depends on gamma[j][v][d-1]
+						 */
+	gamma_jmod2[v][0] = IMPOSSIBLE;
+	y = cm->cfirst[v];
+	cnum = cm->cnum[v];
+	tsc = cm->tsc[v];
+	for (d = 1; d <= minDj; d++) 
+	  sc_v[d] = endsc;
+	for (yoffset=0; yoffset<cnum; yoffset++) {
+	  gammap = gamma_jmod2[y+yoffset];
+#ifdef INTEL_COMPILER
+#pragma ivdep
+#endif
+	  for (d = 1; d <= minDj; d++) {
+	    sc = gammap[d-1] + tsc[yoffset];
+	    if (sc > sc_v[d]) {
+	      sc_v[d] = sc;
+	    }
+	  }
+	}
+	for (d = 1; d <= minDj; d++) {
+	  i = j-d+1;
+	  sc = sc_v[d];
+	  if (dsq[i] < Alphabet_size)
+	    sc += cm->esc[v][(int) dsq[i]];
+	  else
+	    sc += DegenerateSingletScore(cm->esc[v], dsq[i]);
+	  if (sc<IMPOSSIBLE) sc = IMPOSSIBLE;
+	  gamma_jmod2[v][d] = sc;
+	}
+      }
+      else if (sttype == IL_st) {         /* ML dealt with above, iterating
+					     yoffset before d.  Can't do that
+					     here because gamma[j][v][d] 
+					     depends on gamma[j][v][d-1] */
+	gamma_jmod2[v][0] = IMPOSSIBLE;
+	y = cm->cfirst[v];
+	cnum = cm->cnum[v];
+	tsc = cm->tsc[v];
+	for (d = 1; d <= minDj; d++) {
+	  sc = endsc;
+	  for (yoffset=0; yoffset<cnum; yoffset++) {
+	    sc_v[yoffset] = gamma_jmod2[y+yoffset][d-1] + tsc[yoffset];
+	    if (sc_v[yoffset] > sc) {
+	      sc = sc_v[yoffset];
+	    }
+	  }
+	  i = j-d+1;
+	  if (dsq[i] < Alphabet_size)
+	    sc += cm->esc[v][(int) dsq[i]];
+	  else
+	    sc += DegenerateSingletScore(cm->esc[v], dsq[i]);
+	  if (sc<IMPOSSIBLE) sc = IMPOSSIBLE;
+	  gamma_jmod2[v][d] = sc;
+	}
+      }
+      else if (sttype == IR_st || sttype == MR_st) {
+	gamma_jmod2[v][0] = IMPOSSIBLE;
+	y = cm->cfirst[v];
+	cnum = cm->cnum[v];
+	tsc = cm->tsc[v];
+	for (d = 1; d <= minDj; d++) 
+	  sc_v[d] = endsc;
+	for (yoffset = 0; yoffset < cnum; yoffset++) {
+	  gammap = gamma_jmin1mod2[y+yoffset];
+#ifdef INTEL_COMPILER
+#pragma ivdep
+#endif
+	  for (d = 1; d <= minDj; d++) {
+	    sc = gammap[d-1] + tsc[yoffset];
+	    if (sc > sc_v[d]) {
+	      sc_v[d] = sc;
+	    }
+	  }
+	}
+	for (d = 1; d <= minDj; d++) {
+	  sc = sc_v[d];
+	  if (dsq[j] < Alphabet_size)
+	    sc += cm->esc[v][(int) dsq[j]];
+	  else
+	    sc += DegenerateSingletScore(cm->esc[v], dsq[j]);
+	  if (sc < IMPOSSIBLE) sc = IMPOSSIBLE;
+	  gamma_jmod2[v][d] = sc;
+	}
+      }
+    }
+
+    /* Now do ROOT_S (v=0) -- local begins */
+    /* First do standard states to transition to */
+    y = cm->cfirst[0];
+    cnum=cm->cnum[0];
+    tsc = cm->tsc[0];
+    for (d = 0; d <= minDj; d++)
+      sc_v[d] = IMPOSSIBLE;
+    for (yoffset = 0; yoffset < cnum; yoffset++) {
+      gammap = gamma_jmod2[y+yoffset];
+#ifdef INTEL_COMPILER
+#pragma ivdep
+#endif
+      for (d = 0; d <= minDj; d++) {
+	sc = gammap[d] + tsc[yoffset];
+	if (sc > sc_v[d]) {
+	  sc_v[d] = sc;
+	  bestr[d] = y+yoffset;
+	}
+      }
+    }
+    /* Now, if doing local BEGINS, try that */
+    if (cm->flags & CM_LOCAL_BEGIN) {
+      tsc = cm->beginsc;         /* Really cm->beginsc, not tsc */
+      for (y = 1; y < M; y++) {
+	beginsc = tsc[y];
+	gammap = gamma_jmod2[y];
+#ifdef INTEL_COMPILER
+#pragma ivdep
+#endif
+	for (d = 0; d <= minDj; d++) {
+	  sc = gammap[d] + beginsc;
+	  if (sc > sc_v[d]) {
+	    sc_v[d] = sc;
+	    bestr[d] = y;
+	  }
+	}
+      }
+    }
+    gammap = gamma_jmod2[0];
+#ifdef INTEL_COMPILER
+#pragma ivdep
+#endif
+    for (d = 0; d <= minDj; d++) {
+      sc = sc_v[d];
+      if (sc<IMPOSSIBLE) sc = IMPOSSIBLE;
+      gammap[d] = sc;
+    }
+  
+    if (results != NULL) {
+      /* Now, report the hit.  At least one hit is sent back for each j here.
+	 However, some hits can already be removed for the greedy overlap
+	 resolution algorithm.  Specifically, at the given j, any hit with a
+	 d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
+      /* First, report hit with d of 1 if > cutoff */
+      if (j > 0 && gamma_jmod2[0][1] >= cutoff) 
+	report_hit (j, j, bestr[1], gamma_jmod2[0][1], results);
+
+      dmax = 1;
+      /* Now, if current score is greater than maximum seen previous, report
+	 it if >= cutoff and set new max */
+      for (d=2; d<=minDj; d++) {
+	if (gamma_jmod2[0][d] > gamma_jmod2[0][dmax]) {
+	  if (j > 0 && gamma_jmod2[0][d] >= cutoff)
+	    report_hit (j-d+1, j, bestr[d], gamma_jmod2[0][d], results);
+	  dmax = d;
+	}
+      }
+    }
+    for (d=1; d<=minDj; d++) {
+      if (j > 0 && gamma_jmod2[0][d] > best_score) {
+	best_score = gamma_jmod2[0][d];
+      }
+    }
+
+  }
+  free(gamma[0][0]);
+  free(gamma[0]);
+  free(gamma);
+
+  for (v=0; v<M; v++) {
+    if (gamma_begl_s[v] != NULL) {
+      for (d=0; d<=D; d++) {
+	free(gamma_begl_s[v][d]);
+      }
+      free(gamma_begl_s[v]);
+    }
+  }
+  free (gamma_begl_s);
+
+  for (v=0; v<M; v++) {
+    if (gamma_begr_s[v] != NULL) {
+      free(gamma_begr_s[v][0]);
+      free(gamma_begr_s[v][1]);
+      free(gamma_begr_s[v]);
+    }
+  }
+  free(gamma_begr_s);
+
+  free(bestr);
+
+  free(sc_v);
+
+  return (best_score);
+}
+#endif /* #if 0 not yet compilable */
+

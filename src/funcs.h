@@ -362,6 +362,9 @@ extern float CYKBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int 
 			      int j0, int W, float cutoff, search_results_t *results);
 extern float iInsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
 				  int j0, int W, float cutoff, search_results_t *results);
+extern int   ** alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
+extern char  ** alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
+
 
 
 /* from fastsearch.c */
@@ -580,7 +583,7 @@ extern double dbl_Score2Prob(int sc, float null);
 extern void CP9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, 
 			  CP9_dpmatrix_t **ret_cp9_post, int debug_level);
 extern void CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
-			       int debug_level);
+			       int debug_level, CP9Bands_t *cp9b);
 extern float CP9ForwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, 
 			struct cp9_dpmatrix_s **ret_mx);
 extern float CP9ViterbiAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *mx, struct cp9trace_s **ret_tr);
@@ -774,12 +777,34 @@ extern float LogSum2(float p1, float p2);
 extern float cp9_FastViterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 			     int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
 			     int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr);
+extern float cp9_FastViterbiBackward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
+				     int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
+				     int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr);
 extern float cp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 			     int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, int doing_rescan,
 			     int be_efficient, CP9_dpmatrix_t **ret_mx);
 extern float cp9_EXPTLFastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 				  int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, int doing_rescan,
 				  int be_efficient, int be_safe, CP9_dpmatrix_t **ret_mx);
+extern float cp9_EXPTLFastBackward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
+				   int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
+				   int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
 extern float cp9_WorstForward(CM_t *cm, int thresh, int doing_scan, int doing_align);
 extern int   cp9_CheckTransitionGuarantees(CP9_t *cp9);
 extern int   cp9_GetLocalityMode(CP9_t *cp9);
+
+/* from cm_fastalign.c */
+void
+cp9_EXPTL_S_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min, int *pn_max, 
+			    double p_thresh, int state_type, int use_sums, int debug_level);
+void
+CP9EXPTL_S_Posterior(ESL_DSQ *dsq, int i0, int j0,
+		     struct cplan9_s *hmm,
+		     struct cp9_dpmatrix_s *fmx,
+		     struct cp9_dpmatrix_s *bmx,
+		     struct cp9_dpmatrix_s *mx,
+		     double p_thresh,
+		     CP9Bands_t *cp9b);
+
+
+

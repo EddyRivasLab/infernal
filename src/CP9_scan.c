@@ -510,7 +510,7 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
   int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
   int        **elmx;        /* DP matrix for EL state scores [0..1][0..cm->cp9->M]          */
   int         *erow;        /* end score for each position [0..1]                           */
-  int         *sc;          /* prob (seq from j0..jp | HMM) [0..jp..cm->cp9->M]             */
+  int         *sc;          /* prob (seq from j0..jp | HMM) [0..jp..L]                      */
   float        fsc;         /* float log odds score                                         */
   float        curr_sc;     /* temporary score used for filling in gamma                    */
   float       *gamma;       /* SHMM DP matrix for optimum nonoverlap resolution [0..j0-i0+1]*/

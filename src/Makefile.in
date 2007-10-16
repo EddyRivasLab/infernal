@@ -47,6 +47,7 @@ OBJS  = alphabet.o\
 	cm_dispatch.o\
 	cm_eweight.o\
 	cm_errors.o\
+	cm_fastalign.o\
 	cm_masks.o\
 	cm_postprob.o\
 	cplan9.o\

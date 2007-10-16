@@ -1,4 +1,5 @@
-/* hbandcyk.c (created using smallcyk.c as a template)
+/* 
+ * hbandcyk.c (created using smallcyk.c as a template)
  * EPN 11.04.05
  * 
  * Alignment of a CM to a target sequence using HMM imposed bands
@@ -92,10 +93,6 @@ static float insideT_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 			     int *jmin, int *jax,
 			     int **hdmin, int **hdmax,
 			     int *safe_hdmin, int *safe_hdmax);
-
-/* Allocation functions. Derived from analogous functions in smallcyk.c */
-static int   ** alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
-static char  ** alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
 
 #define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
 #define BE_PARANOID   1		/* setting for do_full: keep whole matrix, perhaps for debugging */
@@ -209,11 +206,9 @@ CYKInside_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t
       sc =  cm->beginsc[r];
     }
 
-  /* Solve the whole thing with one call to insideT_b_jd.
-     This calls a memory efficient (in the d-dimension only, not in the j dimension)
-     insideT function, which only allocates cells in alpha within the bands.
-     To use the non-memory efficient implementation call insideT_b()
-     with the same arguments
+  /* Solve the whole thing with one call to insideT_b_jd.  This calls
+     a memory efficient insideT function, which only allocates cells
+     in alpha within the bands. 
    */
   sc += insideT_b_jd_me(cm, dsq, L, tr, r, z, i0, j0, (r==0), jmin, jmax, hdmin, hdmax, 
 			dmin, dmax);
@@ -1059,7 +1054,7 @@ alloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int
   return NULL; /* never reached */
 }
 
-static char  **
+char  **
 alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax)
 {
   int    status;
@@ -1096,7 +1091,7 @@ alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hd
   esl_fatal("Memory allocation error.");
   return NULL; /* never reached */
 }
-static int** 
+int** 
 alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax)
 {
   int   status;
