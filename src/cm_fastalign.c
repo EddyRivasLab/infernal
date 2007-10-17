@@ -584,10 +584,10 @@ Xcp9_FB2HMMBandsWithSums(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpma
 
   /* all states should have their min/max set because we've normalized the probability
    * of entering each state to 1.0, so we assert this to be true */
-  assert(nset_m[k]);
-  assert(nset_i[k]);
-  assert(xset_m[k]);
-  assert(xset_i[k]);
+  assert(nset_m[0]);
+  assert(nset_i[0]);
+  assert(xset_m[0]);
+  assert(xset_i[0]);
   /* D_0 state does not exist */
   for(k = 1; k <= M; k++)
     {
