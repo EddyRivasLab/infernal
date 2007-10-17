@@ -390,8 +390,6 @@ extern float RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, search_results_t *hmm
 				   int j0, int W, int padmode, int ipad, int jpad, int do_collapse,
 				   float cm_cutoff, float cp9_cutoff, search_results_t *results, 
 				   int *ret_flen);
-extern void CP9ScanPosterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_dpmatrix_t *fmx, 
-			     CP9_dpmatrix_t *bmx, CP9_dpmatrix_t *mx);
 extern float CP9ForwardScanDemands(CP9_t *cp9, int L);
 extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
 				    float Fmin, float Smin, float Starget, float Spad, int N, 
@@ -576,40 +574,6 @@ extern FILE *MatFileOpen (char *matfile);
 extern fullmat_t *ReadMatrix(const ESL_ALPHABET *abc, FILE *matfp);
 extern int ribosum_calc_targets(fullmat_t *fullmat);
 
-/* from hmmband.c */
-extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
-extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
-extern double dbl_Score2Prob(int sc, float null);
-extern void CP9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, 
-			  CP9_dpmatrix_t **ret_cp9_post, int debug_level);
-extern void CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
-			       int debug_level);
-extern float CP9ForwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, 
-			struct cp9_dpmatrix_s **ret_mx);
-extern float CP9ViterbiAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *mx, struct cp9trace_s **ret_tr);
-extern float CP9BackwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s **ret_mx);
-extern void  CP9Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx,
-			  struct cp9_dpmatrix_s *mx, int did_scan);
-extern void CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, CP9Bands_t *cp9, int i0, int j0);
-
-extern void CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min, int *pn_max, double p_thresh, 
-				int state_type, int use_sums, int debug_level);
-extern void hmm2ij_bands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m, 
-			 int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, 
-			 int *pn_max_d, int *imin, int *imax, int *jmin, int *jmax, 
-			 int debug_level);
-extern void relax_root_bands(int *imin, int *imax, int *jmin, int *jmax);
-extern void debug_print_hmm_bands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level);
-extern void ij_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
-				      int *jmin, int *jmax, int debug_level);
-extern void ijd_banded_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
-				      int *jmin, int *jmax, int **hdmin, int **hdmax, 
-				      int debug_level);
-extern void debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx, 
-			       struct cp9_dpmatrix_s *bmx, 
-			       CP9_t *hmm, float sc, int i0, int j0,
-			       ESL_DSQ *dsq);
-extern void cp9_compare_bands(CP9Bands_t *cp9b1, CP9Bands_t *cp9b2);
 /* from cm_dispatch.c */
 extern void  serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons);
 extern void  parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons,
@@ -793,13 +757,44 @@ extern int   cp9_GetLocalityMode(CP9_t *cp9);
 
 /* from cm_fastalign.c */
 
-extern void  Xcp9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, 
-			    CP9_dpmatrix_t **ret_cp9_post, int debug_level);
-extern void  Xcp9_FB2HMMBands(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, CP9Bands_t *cp9b, 
-			       int i0, int j0, int M, double p_thresh, int did_scan, int debug_level);
-extern void  Xcp9_FB2HMMBandsWithSums(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, CP9Bands_t *cp9b, 
-				      int i0, int j0, int M, double p_thresh, int did_scan, int debug_level);
 
+
+/* from hmmband.c */
+extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
+extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
+extern double       DScore2Prob(int sc, float null);
+extern void         cp9_Seq2Bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, 
+				  int debug_level);
+extern void         cp9_Seq2Posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
+				       int debug_level);
+extern void         cp9_FB2HMMBands(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, CP9Bands_t *cp9b, 
+				     int i0, int j0, int M, double p_thresh, int did_scan, int debug_level);
+extern void         cp9_FB2HMMBandsWithSums(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, CP9Bands_t *cp9b, 
+					    int i0, int j0, int M, double p_thresh, int did_scan, int debug_level);
+extern void         cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx,
+				  struct cp9_dpmatrix_s *mx, int did_scan);
+extern void         cp9_IFillPostSums(struct cp9_dpmatrix_s *post, CP9Bands_t *cp9, int i0, int j0);
+extern void         cp9_HMM2ijBands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m, 
+				    int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, 
+				    int *pn_max_d, int *imin, int *imax, int *jmin, int *jmax, 
+				    int debug_level);
+extern void         cp9_RelaxRootBands(int *imin, int *imax, int *jmin, int *jmax);
+extern void         cp9_DebugPrintHMMBands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level);
+extern void         cp9_DebugCheckFB(struct cp9_dpmatrix_s *fmx, 
+				     struct cp9_dpmatrix_s *bmx, 
+				     CP9_t *hmm, float sc, int i0, int j0,
+				     ESL_DSQ *dsq);
+extern void         cp9_CompareBands(CP9Bands_t *cp9b1, CP9Bands_t *cp9b2);
+extern void         ijBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
+					  int *jmin, int *jmax, int debug_level);
+extern void         ijdBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
+					   int *jmin, int *jmax, int **hdmin, int **hdmax, 
+					   int debug_level);
+/* old functions (get rid of them ?) */
+extern float CP9ForwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, 
+			     struct cp9_dpmatrix_s **ret_mx);
+extern float CP9ViterbiAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *mx, struct cp9trace_s **ret_tr);
+extern float CP9BackwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s **ret_mx);
 
 
 

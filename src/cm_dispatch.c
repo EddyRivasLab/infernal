@@ -568,9 +568,7 @@ float actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cu
       if(cm->search_opts & CM_SEARCH_HBANDED)
 	{
 	  cp9b = AllocCP9Bands(cm, cm->cp9);
-	  CP9_seq2bands(cm, dsq, i0, j0, cp9b, 
-			NULL, /* we don't want the posterior matrix back */
-			0);   /* debug level */
+	  cp9_Seq2Bands(cm, dsq, i0, j0, cp9b, 0);   /* debug level */
 
 	  /*debug_print_hmm_bands(stdout, (j0-i0+1), cp9b, cm->tau, 3);*/
 	  if(cm->search_opts & CM_SEARCH_INSIDE)
@@ -1086,11 +1084,10 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 	CP9Logoddsify(hmm);
       }
 
-  if(do_hbanded)
-    {
+  if(do_hbanded && (!do_sub)) {
       cp9b = AllocCP9Bands(cm, cm->cp9);
       orig_cp9b = cp9b; 
-    }
+  }
   orig_cm = cm;
 
   /*****************************************************************
@@ -1137,33 +1134,24 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 	}
 
       /* Potentially, do HMM calculations. */
-      if(do_hbanded)
+      if((!do_sub) && do_hbanded) {
+	cp9_Seq2Bands(orig_cm, cur_dsq, 1, L, orig_cp9b, debug_level);
+      }
+      else if(do_sub) 
 	{
-	  if(do_sub)
-	    CP9_seq2bands(orig_cm, cur_dsq, 1, L, orig_cp9b, 
-			  &cp9_post, /* we DO want the posterior matrix back */
-			  debug_level);
-	  else
-	    CP9_seq2bands(orig_cm, cur_dsq, 1, L, orig_cp9b, 
-			  NULL, /* we don't want the posterior matrix back */
-			  debug_level);
-	}
-      /* If we're in sub mode:
-       * (1) Get HMM posteriors (if do_hbanded, we already have them) 
-       * (2) Infer the start (spos) and end (epos) HMM states by 
-       *     looking at the posterior matrix.
-       * (3) Build the sub_cm from the original CM.
-       *
-       * If we're also doing HMM banded alignment:
-       * (4) Build a new CP9 HMM from the sub CM.
-       * (5) Do Forward/Backward again, and get a new posterior matrix.
-       */
-      if(do_sub)
-	{
-	  /* (1) Get HMM posteriors (if do_hbanded, we already have them) */
-	  if(!do_hbanded) 
-	    CP9_seq2posteriors(orig_cm, cur_dsq, 1, L, &cp9_post, 
-			       debug_level); 
+	  /* If we're in sub mode:
+	   * (1) Get HMM posteriors 
+	   * (2) Infer the start (spos) and end (epos) HMM states by 
+	   *     looking at the posterior matrix.
+	   * (3) Build the sub_cm from the original CM.
+	   *
+	   * If we're also doing HMM banded alignment to sub CM:
+	   * (4) Build a new CP9 HMM from the sub CM.
+	   * (5) Do Forward/Backward again, and get HMM bands 
+	   */
+
+	  /* (1) Get HMM posteriors */
+	  cp9_Seq2Posteriors(orig_cm, cur_dsq, 1, L, &cp9_post, debug_level); 
 	  
 	  /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
 	   * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
@@ -1190,6 +1178,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 			    debug_level)))      /* print or don't print debugging info                 */
 	    esl_fatal("ERROR actually_align_targets(), building sub CM.");
 	  /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded) */
+	  /* (4) Build a new CP9 HMM from the sub CM. */
 	  ConfigCM(sub_cm, NULL, NULL);
 	  
 	  cm    = sub_cm; /* orig_cm still points to the original CM */
@@ -1199,14 +1188,14 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 	      sub_hmm    = sub_cm->cp9;
 	      sub_cp9map = sub_cm->cp9map;
 	      sub_cp9b   = AllocCP9Bands(sub_cm, sub_cm->cp9);
-	      CP9_seq2bands(sub_cm, cur_dsq, 1, L, sub_cp9b, 
-			    NULL, /* we don't want posterior matrix back */
-			    debug_level);
+	      /* (5) Do Forward/Backward again, and get HMM bands */
+	      cp9_Seq2Bands(sub_cm, cur_dsq, 1, L, sub_cp9b, debug_level);
 	      hmm           = sub_hmm;    
 	      cp9map        = sub_cp9map;
 	      cp9b          = sub_cp9b;
 	    }
 	}
+
       /* Determine which CYK alignment algorithm to use, based
        * on command-line options AND memory requirements.
        */
@@ -1528,8 +1517,8 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
       /* Dump the trace with info on i, j and d bands
        * if bdump_level is high enough */
       if(bdump_level > 0 && do_hbanded)
-	ijd_banded_trace_info_dump(cm, tr[i], cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, 
-				   cp9b->hdmin, cp9b->hdmax, 1);
+	ijdBandedTraceInfoDump(cm, tr[i], cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, 
+			       cp9b->hdmin, cp9b->hdmax, 1);
       
       /* Clean up the structures we use calculating HMM bands, that are allocated
        * differently for each sequence. 
@@ -1542,16 +1531,6 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 	      free(cp9b->hdmax[v]);
 	      cp9b->hdmin[v] = NULL;
 	      cp9b->hdmax[v] = NULL;
-	    }
-	  if(do_sub)
-	    {
-	      for(v = 0; v < orig_cm->M; v++)
-		{ 
-		  free(orig_cp9b->hdmin[v]); 
-		  free(orig_cp9b->hdmax[v]);
-		  orig_cp9b->hdmin[v] = NULL;
-		  orig_cp9b->hdmax[v] = NULL;
-		}
 	    }
 	}
       if(do_sub)
@@ -1590,7 +1569,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
 	}
     }
   /* Clean up. */
-  if(do_hbanded)
+  if(do_hbanded && (!do_sub))
     FreeCP9Bands(orig_cp9b);
   if (do_qdb)
     {

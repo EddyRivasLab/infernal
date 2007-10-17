@@ -288,6 +288,7 @@ main(int argc, char **argv)
   if (cfg.tau       != NULL) free(cfg.tau);
   if (cfg.s1_w      != NULL) esl_stopwatch_Destroy(cfg.s1_w);
   if (cfg.w         != NULL) esl_stopwatch_Destroy(cfg.w);
+  if (cfg.r         != NULL) esl_randomness_Destroy(cfg.r);
   esl_getopts_Destroy(go);
   return 0;
 }

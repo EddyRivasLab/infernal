@@ -1433,7 +1433,7 @@ Xcp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, in
 			       * for each of the 4 modes                                    */
   /*debug_print_cp9_params(stdout, cm->cp9, TRUE);*/
 
-  printf("in Xcp9_FastForward() i0: %d j0: %d\n", i0, j0);  
+
   /* Contract checks */
   if(cm->cp9 == NULL)
     cm_Fail("in cp9_FastForward, cm->cp9 is NULL.\n");
@@ -2273,7 +2273,7 @@ Xcp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, in
   else free(scA);
   if (ret_mx != NULL) *ret_mx = mx;
   else                FreeCPlan9Matrix(mx);
-  printf("Xcp9_FastForward return_sc: %f\n", return_sc);
+  /* printf("Xcp9_FastForward return_sc: %f\n", return_sc); */
 
   /* printf("ctr: %d\n", ctr); */
   return return_sc;
@@ -2433,7 +2433,7 @@ Xcp9_FastBackward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, i
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
   int          c;           /* counter for EL states */
 
-  printf("in cp9_EXPTLFastBackward() i0: %d j0: %d do_scan: %d \n", i0, j0, do_scan);  
+  /* printf("in Xcp9_FastBackward() i0: %d j0: %d do_scan: %d \n", i0, j0, do_scan); */
   /* Contract checks */
   if(cm->cp9 == NULL)
     esl_fatal("ERROR in cp9_EXPTLFastBackward, cm->cp9 is NULL.\n");
