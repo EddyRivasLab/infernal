@@ -872,23 +872,23 @@ typedef struct cp9bands_s {
 			       * node k delete state */
   int     *pn_max_d;          /* HMM band: maximum position that was emitted prior to entering
 			       * node k delete state */
-  int     *isum_pn_m;         /* [1..k..M] sum over i of log post probs from post->mmx[i][k]*/
-  int     *isum_pn_i;         /* [1..k..M] sum over i of log post probs from post->imx[i][k]*/
-  int     *isum_pn_d;         /* [1..k..M] sum over i of log post probs from post->dmx[i][k]*/
+  int     *isum_pn_m;         /* [0..k..hmm_M] sum over i of log post probs from post->mmx[i][k]*/
+  int     *isum_pn_i;         /* [0..k..hmm_M] sum over i of log post probs from post->imx[i][k]*/
+  int     *isum_pn_d;         /* [0..k..hmm_M] sum over i of log post probs from post->dmx[i][k]*/
 
   /* arrays for CM state bands, derived from HMM bands */
-  int *imin;                  /* [1..M] imin[v] = first position in band on i for state v*/
-  int *imax;                  /* [1..M] imax[v] = last position in band on i for state v*/
-  int *jmin;                  /* [1..M] jmin[v] = first position in band on j for state v*/
-  int *jmax;                  /* [1..M] jmax[v] = last position in band on j for state v*/
-  int **hdmin;                /* [v=1..M][0..(jmax[v]-jmin[v])] 
+  int *imin;                  /* [0..cm_M-1] imin[v] = first position in band on i for state v*/
+  int *imax;                  /* [0..cm_M-1] imax[v] = last position in band on i for state v*/
+  int *jmin;                  /* [0..cm_M-1] jmin[v] = first position in band on j for state v*/
+  int *jmax;                  /* [0..cm_M-1] jmax[v] = last position in band on j for state v*/
+  int **hdmin;                /* [0..cm_M-1][0..(jmax[v]-jmin[v])] 
 			       * hdmin[v][j0] = first position in band on d for state v, and position
 			       * j = jmin[v] + j0.*/
-  int **hdmax;                /* [v=1..M][0..(jmax[v]-jmin[v])] 
+  int **hdmax;                /* [0..cm_M-1][0..(jmax[v]-jmin[v])] 
 			       * hdmin[v][j0] = last position in band on d for state v, and position
 			       * j = jmin[v] + j0.*/
-  int *safe_hdmin;            /* [1..M] safe_hdmin[v] = min_d (hdmin[v][j0]) (over all valid j0) */
-  int *safe_hdmax;            /* [1..M] safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0) */
+  int *safe_hdmin;            /* [0..cm_M-1] safe_hdmin[v] = min_d (hdmin[v][j0]) (over all valid j0) */
+  int *safe_hdmax;            /* [0..cm_M-1] safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0) */
 } CP9Bands_t;
 
 

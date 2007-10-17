@@ -583,16 +583,13 @@ extern double dbl_Score2Prob(int sc, float null);
 extern void CP9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, 
 			  CP9_dpmatrix_t **ret_cp9_post, int debug_level);
 extern void CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
-			       int debug_level, CP9Bands_t *cp9b);
+			       int debug_level);
 extern float CP9ForwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, 
 			struct cp9_dpmatrix_s **ret_mx);
 extern float CP9ViterbiAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *mx, struct cp9trace_s **ret_tr);
 extern float CP9BackwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s **ret_mx);
-extern void  CP9Posterior(ESL_DSQ *dsq, int i0, int j0,
-			  CP9_t *hmm,
-			  struct cp9_dpmatrix_s *fmx,
-			  struct cp9_dpmatrix_s *bmx,
-			  struct cp9_dpmatrix_s *mx);
+extern void  CP9Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx,
+			  struct cp9_dpmatrix_s *mx, int did_scan);
 extern void CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, CP9Bands_t *cp9, int i0, int j0);
 
 extern void CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min, int *pn_max, double p_thresh, 
@@ -612,6 +609,7 @@ extern void debug_check_CP9_FB(struct cp9_dpmatrix_s *fmx,
 			       struct cp9_dpmatrix_s *bmx, 
 			       CP9_t *hmm, float sc, int i0, int j0,
 			       ESL_DSQ *dsq);
+extern void cp9_compare_bands(CP9Bands_t *cp9b1, CP9Bands_t *cp9b2);
 /* from cm_dispatch.c */
 extern void  serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons);
 extern void  parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons,
@@ -783,28 +781,25 @@ extern float cp9_FastViterbiBackward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int
 extern float cp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 			     int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, int doing_rescan,
 			     int be_efficient, CP9_dpmatrix_t **ret_mx);
-extern float cp9_EXPTLFastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-				  int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, int doing_rescan,
-				  int be_efficient, int be_safe, CP9_dpmatrix_t **ret_mx);
-extern float cp9_EXPTLFastBackward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
-				   int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
-				   int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
+extern float Xcp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
+			      int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, int doing_rescan,
+			      int be_efficient, int be_safe, CP9_dpmatrix_t **ret_mx);
+extern float Xcp9_FastBackward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
+			       int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
+			       int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
 extern float cp9_WorstForward(CM_t *cm, int thresh, int doing_scan, int doing_align);
 extern int   cp9_CheckTransitionGuarantees(CP9_t *cp9);
 extern int   cp9_GetLocalityMode(CP9_t *cp9);
 
 /* from cm_fastalign.c */
-void
-cp9_EXPTL_S_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min, int *pn_max, 
-			    double p_thresh, int state_type, int use_sums, int debug_level);
-void
-CP9EXPTL_S_Posterior(ESL_DSQ *dsq, int i0, int j0,
-		     struct cplan9_s *hmm,
-		     struct cp9_dpmatrix_s *fmx,
-		     struct cp9_dpmatrix_s *bmx,
-		     struct cp9_dpmatrix_s *mx,
-		     double p_thresh,
-		     CP9Bands_t *cp9b);
+
+extern void  Xcp9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, 
+			    CP9_dpmatrix_t **ret_cp9_post, int debug_level);
+extern void  Xcp9_FB2HMMBands(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, CP9Bands_t *cp9b, 
+			       int i0, int j0, int M, double p_thresh, int did_scan, int debug_level);
+extern void  Xcp9_FB2HMMBandsWithSums(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, CP9Bands_t *cp9b, 
+				      int i0, int j0, int M, double p_thresh, int did_scan, int debug_level);
+
 
 
 

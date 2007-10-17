@@ -51,7 +51,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   /* Contract checks */
   if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && 
      (!(cm->search_opts & CM_SEARCH_HMMFILTER)))
-    esl_fatal("ERROR in ConfigCM() trying to search with HMM derived bands, but w/o using a  HMM filter.");
+    ;/*esl_fatal("ERROR in ConfigCM() trying to search with HMM derived bands, but w/o using a HMM filter.");*/
 
   /* Check if we need to calculate QDBs and/or build a CP9 HMM. */
   if(cm->config_opts & CM_CONFIG_QDB)

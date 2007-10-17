@@ -236,43 +236,49 @@ CP9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
    */
 
   /* Step 1: Get HMM posteriors.*/
-  CP9_seq2posteriors(cm, dsq, i0, j0, &cp9_post, debug_level, cp9b);
+  CP9_seq2posteriors(cm, dsq, i0, j0, &cp9_post, debug_level);
 
-  ///if(cm->align_opts & CM_ALIGN_TIME) {
-  ///watch = esl_stopwatch_Create();
-  ///      esl_stopwatch_Start(watch);
-  ///}
+  if(cm->align_opts & CM_ALIGN_TIME) {
+  watch = esl_stopwatch_Create();
+        esl_stopwatch_Start(watch);
+  }
   /* Step 2: posteriors -> HMM bands.*/
-  ///if(use_sums) CP9_ifill_post_sums(cp9_post, cp9b, i0, j0);
+  if(use_sums) CP9_ifill_post_sums(cp9_post, cp9b, i0, j0);
   /* match states */
-  //CP9_hmm_band_bounds(cp9_post->mmx, i0, j0, cp9b->hmm_M, 
-  ///cp9_EXPTL_S_hmm_band_bounds(cp9_post->mmx, i0, j0, cp9b->hmm_M, 
-  ///cp9b->isum_pn_m, cp9b->pn_min_m, cp9b->pn_max_m,
-  ///		      (1.-cm->tau), HMMMATCH, use_sums, debug_level);
+  CP9_hmm_band_bounds(cp9_post->mmx, i0, j0, cp9b->hmm_M, 
+		      cp9b->isum_pn_m, cp9b->pn_min_m, cp9b->pn_max_m,
+		      (1.-cm->tau), HMMMATCH, use_sums, debug_level);
   /* insert states */
-  //  CP9_hmm_band_bounds(cp9_post->imx, i0, j0, cp9b->hmm_M,
-  ///cp9_EXPTL_S_hmm_band_bounds(cp9_post->imx, i0, j0, cp9b->hmm_M, 
-  ///cp9b->isum_pn_i, cp9b->pn_min_i, cp9b->pn_max_i,
-  ///(1.-cm->tau), HMMINSERT, use_sums, debug_level);
+  CP9_hmm_band_bounds(cp9_post->imx, i0, j0, cp9b->hmm_M,
+		      cp9b->isum_pn_i, cp9b->pn_min_i, cp9b->pn_max_i,
+		      (1.-cm->tau), HMMINSERT, use_sums, debug_level);
   /* delete states */
-  //CP9_hmm_band_bounds(cp9_post->dmx, i0, j0, cp9b->hmm_M,
-  ///cp9_EXPTL_S_hmm_band_bounds(cp9_post->dmx, i0, j0, cp9b->hmm_M, 
-  ///cp9b->isum_pn_d, cp9b->pn_min_d, cp9b->pn_max_d,
-  ///		      (1.-cm->tau), HMMDELETE, use_sums, debug_level);
+  CP9_hmm_band_bounds(cp9_post->dmx, i0, j0, cp9b->hmm_M,
+		      cp9b->isum_pn_d, cp9b->pn_min_d, cp9b->pn_max_d,
+  		      (1.-cm->tau), HMMDELETE, use_sums, debug_level);
   
+  if(cm->align_opts & CM_ALIGN_TIME) {
+      esl_stopwatch_Stop(watch);
+      esl_stopwatch_Display(stdout, watch, "CP9 band bounds calculation CPU time: ");
+      esl_stopwatch_Destroy(watch);
+  }
+
   if(debug_level > 0) debug_print_hmm_bands(stdout, j0, cp9b, cm->tau, 1);
 
+  if(cm->align_opts & CM_ALIGN_TIME) {
+  watch = esl_stopwatch_Create();
+        esl_stopwatch_Start(watch);
+  }
   /* Step 3: HMM bands  ->  CM bands. */
   hmm2ij_bands(cm, cm->cp9map, i0, j0, cp9b->pn_min_m, cp9b->pn_max_m, 
 	       cp9b->pn_min_i, cp9b->pn_max_i, cp9b->pn_min_d, cp9b->pn_max_d, 
 	       cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, debug_level);
   
-  if(cm->align_opts & CM_ALIGN_TIME) 
-    {
+  if(cm->align_opts & CM_ALIGN_TIME) {
       esl_stopwatch_Stop(watch);
-      esl_stopwatch_Display(stdout, watch, "CP9 band bounds calculation CPU time: ");
+      esl_stopwatch_Display(stdout, watch, "hmm2ij bands calculation CPU time: ");
       esl_stopwatch_Destroy(watch);
-    }
+  }
   /* Use the CM bands on i and j to get bands on d, specific to j. */
   for(v = 0; v < cm->M; v++)
     {
@@ -317,7 +323,7 @@ CP9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
 #define NEWHMMALGS 1 /* use CP9Forward() and CP9Backward() */
 void 
 CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
-		   int debug_level, CP9Bands_t *cp9b)
+		   int debug_level)
 {
   /*CP9_dpmatrix_t *cp9_mx;*/    /* growable DP matrix for viterbi                       */
   CP9_dpmatrix_t *cp9_fwd;       /* growable DP matrix for forward                       */
@@ -351,28 +357,19 @@ CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_
       watch = esl_stopwatch_Create();
       esl_stopwatch_Start(watch);
   }
-  //int be_safe = FALSE; /* TEMPORARY, pass this in after calcing it once in actually_align_targets() */
-  int be_safe = TRUE;
   if(OLDHMMALGS)
     sc = CP9ForwardAlign(dsq, i0, j0, cm->cp9, &cp9_fwd);
   else if(NEWHMMALGS)
-    sc = cp9_EXPTLFastForward(cm, dsq, i0, j0, j0-i0+1, 0., NULL, NULL, NULL,
-			      do_scan2bands, /* are we using scanning Forward/Backward */
-			      TRUE,      /* we are going to use posteriors to align */
-			      FALSE,     /* we're not rescanning */
-			      FALSE,     /* don't be memory efficient */
-			      be_safe,   /* can we accelerate w/ no -INFTY logsum funcs? */
-			      &cp9_fwd); /* give the DP matrix back */
-  //sc = CP9Forward(cm, dsq, i0, j0, (j0-i0+1), 
-    //0,    /* cp9_cutoff score, irrelevant */
-    //NULL,  /* don't care about score of each posn */
-    //NULL,  /* don't care about best scoring start point */
-    //NULL,  /* don't report hits to results data structure */
-    //do_scan2bands, /* are we using scanning Forward/Backward */
-    //TRUE,  /* we are going to use posteriors to align */
-    //FALSE, /* we're not rescanning */
-    //FALSE, /* don't be memory efficient */
-    //&cp9_fwd); /* give the DP matrix back */
+    sc = CP9Forward(cm, dsq, i0, j0, (j0-i0+1), 
+		    0,    /* cp9_cutoff score, irrelevant */
+		    NULL,  /* don't care about score of each posn */
+		    NULL,  /* don't care about best scoring start point */
+		    NULL,  /* don't report hits to results data structure */
+		    do_scan2bands, /* are we using scanning Forward/Backward */
+		    TRUE,  /* we are going to use posteriors to align */
+		    FALSE, /* we're not rescanning */
+		    FALSE, /* don't be memory efficient */
+		    &cp9_fwd); /* give the DP matrix back */
 
   if(debug_level >= 0) printf("CP9 Forward  score : %.4f\n", sc);
   if(cm->align_opts & CM_ALIGN_TIME) {
@@ -384,17 +381,16 @@ CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_
   if(OLDHMMALGS)
     sc = CP9BackwardAlign(dsq, i0, j0, cm->cp9, &cp9_bck);
   else if(NEWHMMALGS)
-    /* sc = CP9Backward(cm, dsq, i0, j0, (j0-i0+1), */
-    sc = cp9_EXPTLFastBackward(cm, dsq, i0, j0, (j0-i0+1), 
-			       0,    /* cp9_cutoff score, irrelevant */
-			       NULL,  /* don't care about score of each posn */
-			       NULL,  /* don't care about best scoring start point */
-			       NULL,  /* don't report hits to results data structure */
-			       do_scan2bands, /* are we using scanning Forward/Backward */
-			       TRUE,  /* we are going to use posteriors to align */
-			       FALSE, /* we're not rescanning */
-			       FALSE, /* don't be memory efficient */
-			       &cp9_bck); /* give the DP matrix back */
+    sc = CP9Backward(cm, dsq, i0, j0, (j0-i0+1), 
+		     0,    /* cp9_cutoff score, irrelevant */
+		     NULL,  /* don't care about score of each posn */
+		     NULL,  /* don't care about best scoring start point */
+		     NULL,  /* don't report hits to results data structure */
+		     do_scan2bands, /* are we using scanning Forward/Backward */
+		     TRUE,  /* we are going to use posteriors to align */
+		     FALSE, /* we're not rescanning */
+		     FALSE, /* don't be memory efficient */
+		     &cp9_bck); /* give the DP matrix back */
 
   if(debug_level >= 0) printf("CP9 Backward score : %.4f\n", sc);
   if(cm->align_opts & CM_ALIGN_TIME) {
@@ -408,8 +404,7 @@ CP9_seq2posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_
   if(do_scan2bands)
     CP9ScanPosterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
   else /* !doing_search */
-    //CP9Posterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post);
-    CP9EXPTL_S_Posterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post, (1.-cm->tau), cp9b);
+    CP9Posterior(dsq, i0, j0, cm->cp9, cp9_fwd, cp9_bck, cp9_post, FALSE);
   if(cm->align_opts & CM_ALIGN_TIME) {
       esl_stopwatch_Stop(watch);
       esl_stopwatch_Display(stdout, watch, "CP9 bands Posterior CPU time: ");
@@ -883,6 +878,10 @@ CP9BackwardAlign(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_
  *           The caller must allocate space for the matrix, although the
  *           backward matrix can be used instead (overwriting it will not
  *           compromise the algorithm).
+ *
+ *           if(did_scan == TRUE) forward/backward run in scan mode, which allow
+ *           parses to start/stop at any position of sequence, this changes how
+ *           we calculate summed prob of all parses (calculation of 'sc', see code).
  *           
  * Args:     dsq      - sequence in digitized form
  *           i0       - start of target subsequence (often 1, beginning of dsq)
@@ -891,6 +890,8 @@ CP9BackwardAlign(ESL_DSQ *dsq, int i0, int j0, struct cplan9_s *hmm, struct cp9_
  *           forward  - pre-calculated forward matrix
  *           backward - pre-calculated backward matrix
  *           mx       - pre-allocated dynamic programming matrix
+ *           did_scan - TRUE if Forward/Backward were run in 'scan' mode, which means
+ *                      parses can start and end at any position of the sequence
  *           
  * Return:   void
  */
@@ -899,7 +900,8 @@ CP9Posterior(ESL_DSQ *dsq, int i0, int j0,
 	     struct cplan9_s *hmm,
 	     struct cp9_dpmatrix_s *fmx,
 	     struct cp9_dpmatrix_s *bmx,
-	     struct cp9_dpmatrix_s *mx)
+	     struct cp9_dpmatrix_s *mx,
+	     int did_scan)
 {
   if(dsq == NULL)
     cm_Fail("in CP9Posterior(), dsq is NULL.");
@@ -907,26 +909,32 @@ CP9Posterior(ESL_DSQ *dsq, int i0, int j0,
   int i;
   int k;
   int sc;
-  int W;		/* subsequence length */
+  int L;		/* subsequence length */
   int ip;		/* i': relative position in the subsequence  */
   /*float temp_sc;*/
 
-  W  = j0-i0+1;		/* the length of the subsequence */
+  L  = j0-i0+1;		/* the length of the subsequence */
 
-  sc = bmx->mmx[0][0];
+  if(did_scan) { /* parses could start/stop anywhere */
+    sc = -INFTY;
+    for (ip = 0; i <= L; i++) {
+      /*printf("bmx->mmx[i:%d][0]: %d\n", i, bmx->mmx[ip][0]); */
+      sc = ILogsum(sc, (bmx->mmx[ip][0])); 
+    }
+  } /* parses must start/stop at (i = i0)/(j = j0) */
+  else sc = bmx->mmx[0][0];
 
   /* note boundary conditions, case by case by case... */
   mx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - sc; /* fmx->mmx[0][0] is 0, bmx->mmx[1][0] is overall score */
   mx->imx[0][0] = -INFTY; /*need seq to get here*/
   mx->dmx[0][0] = -INFTY; /*D_0 does not exist*/
-  for (k = 1; k <= hmm->M; k++) 
-    {
+  for (k = 1; k <= hmm->M; k++) {
       mx->mmx[0][k] = -INFTY; /*need seq to get here*/
       mx->imx[0][k] = -INFTY; /*need seq to get here*/
       mx->dmx[0][k] = fmx->dmx[0][k] + bmx->dmx[0][k] - sc;
-    }
+  }
       
-  for (ip = 1; ip <= W; ip++) /* ip is the relative position in the seq */
+  for (ip = 1; ip <= L; ip++) /* ip is the relative position in the seq */
     {
       i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
       mx->mmx[ip][0] = -INFTY; /*M_0 does not emit*/
@@ -939,11 +947,11 @@ CP9Posterior(ESL_DSQ *dsq, int i0, int j0,
 	printf("fmx->dmx[ip:%d][0]: %d\n bmx->dmx[ip:%d][0]: %d\n", ip, fmx->dmx[ip][0], ip, bmx->dmx[ip][0]);*/
       for (k = 1; k <= hmm->M; k++) 
 	{
-	  mx->mmx[ip][k] = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[dsq[i]][k] - sc;
+	  mx->mmx[ip][k] = ESL_MAX(fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[dsq[i]][k] - sc, -INFTY);
 	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  mx->imx[ip][k] = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[dsq[i]][k] - sc;
+	  mx->imx[ip][k] = ESL_MAX(fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[dsq[i]][k] - sc, -INFTY);
 	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
-	  mx->dmx[ip][k] = fmx->dmx[ip][k] + bmx->dmx[ip][k] - sc;
+	  mx->dmx[ip][k] = ESL_MAX(fmx->dmx[ip][k] + bmx->dmx[ip][k] - sc, -INFTY);
 	  /*printf("fmx->mmx[ip:%d][%d]: %d\n bmx->mmx[ip:%d][%d]: %d\n", ip, k, fmx->mmx[ip][k], ip, k, bmx->mmx[ip][k]);
 	  printf("fmx->imx[ip:%d][%d]: %d\n bmx->imx[ip:%d][%d]: %d\n", ip, k, fmx->imx[ip][k], ip, k, bmx->imx[ip][k]);
 	  printf("fmx->dmx[ip:%d][%d]: %d\n bmx->dmx[ip:%d][%d]: %d\n\n", ip, k, fmx->dmx[ip][k], ip, k, bmx->dmx[ip][k]);*/
@@ -951,7 +959,7 @@ CP9Posterior(ESL_DSQ *dsq, int i0, int j0,
     }
 
   /*  float temp_sc;
-  for(i = 0; i <= W; i++)
+  for(i = 0; i <= L; i++)
     {
       for(k = 0; k <= hmm->M; k++)
 	{
@@ -994,10 +1002,10 @@ CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, CP9Bands_t *cp9b, int i0, int j
 {
   int i;            /* counter over positions of the sequence */
   int k;            /* counter over nodes of the model */
-  int   W;	    /* subsequence length */
+  int L;	    /* subsequence length */
   int M;            /* consensus length of cp9 */
   M = cp9b->hmm_M;
-  W  = j0-i0+1;		/* the length of the subsequence */
+  L  = j0-i0+1;		/* the length of the subsequence */
 
   /* step through each node, fill the post sum structures */
 
@@ -1009,21 +1017,21 @@ CP9_ifill_post_sums(struct cp9_dpmatrix_s *post, CP9Bands_t *cp9b, int i0, int j
   for(k = 0; k <= M; k++)
     {
       cp9b->isum_pn_m[k] = post->mmx[0][k];
-      for(i = 1; i <= W; i++)
+      for(i = 1; i <= L; i++)
 	  cp9b->isum_pn_m[k] = ILogsum(cp9b->isum_pn_m[k], post->mmx[i][k]);
     }
   /* inserts */
   for(k = 0; k <= M; k++)
     {
       cp9b->isum_pn_i[k] = post->imx[0][k];
-      for(i = 1; i <= W; i++)
+      for(i = 1; i <= L; i++)
 	cp9b->isum_pn_i[k] = ILogsum(cp9b->isum_pn_i[k], post->imx[i][k]);
     }
   /* deletes */
   for(k = 1; k <= M; k++)
     {
       cp9b->isum_pn_d[k] = post->dmx[0][k];
-      for(i = 1; i <= W; i++)
+      for(i = 1; i <= L; i++)
 	cp9b->isum_pn_d[k] = ILogsum(cp9b->isum_pn_d[k], post->dmx[i][k]);
     }
 }
@@ -1146,6 +1154,10 @@ CP9_hmm_band_bounds(int **post, int i0, int j0, int M, int *isum_pn, int *pn_min
 	  pn_max[k]++;
 	}
     }
+  if(state_type == HMMDELETE) { 
+    pn_min[0] = -1; /* D_0 doesn't exist */
+    pn_max[0] = -1; /* D_0 doesn't exist */
+  }
 }
 
 /*****************************************************************************
@@ -2409,7 +2421,7 @@ debug_print_hmm_bands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int 
   for(k = 0; k <= cp9b->hmm_M; k++)
     {
       if(debug_level > 0 || debug_level == -1)
-	fprintf(ofp, "M node: %3d | min %3d | max %3d\n", k, cp9b->pn_min_m[k], cp9b->pn_max_m[k]);
+	fprintf(ofp, "M node: %3d | min %3d | max %3d | w %3d \n", k, cp9b->pn_min_m[k], cp9b->pn_max_m[k], (cp9b->pn_max_m[k] - cp9b->pn_min_m[k]+1));
       cells_in_bands_m += cp9b->pn_max_m[k] - cp9b->pn_min_m[k] + 1;
     }
   if(debug_level > 0)
@@ -2419,7 +2431,7 @@ debug_print_hmm_bands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int 
   for(k = 0; k <= cp9b->hmm_M; k++)
     {
       if(debug_level > 0 || debug_level == -1)
-	fprintf(ofp, "I node: %3d | min %3d | max %3d\n", k, cp9b->pn_min_i[k], cp9b->pn_max_i[k]);
+	fprintf(ofp, "I node: %3d | min %3d | max %3d | w %3d\n", k, cp9b->pn_min_i[k], cp9b->pn_max_i[k], (cp9b->pn_max_i[k] - cp9b->pn_min_i[k]+1));
       cells_in_bands_i += cp9b->pn_max_i[k] - cp9b->pn_min_i[k] + 1;
     }
   if(debug_level > 0)
@@ -2429,7 +2441,7 @@ debug_print_hmm_bands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int 
   for(k = 1; k <= cp9b->hmm_M; k++)
     {
       if(debug_level > 0 || debug_level == -1)
-	fprintf(ofp, "D node: %3d | min %3d | max %3d\n", k, cp9b->pn_min_d[k], cp9b->pn_max_d[k]);
+	fprintf(ofp, "D node: %3d | min %3d | max %3d | w %3d\n", k, cp9b->pn_min_d[k], cp9b->pn_max_d[k], (cp9b->pn_max_d[k] - cp9b->pn_min_d[k]+1));
       cells_in_bands_d += cp9b->pn_max_d[k] - cp9b->pn_min_d[k] + 1;
     }
   if(debug_level > 0)
@@ -2448,6 +2460,51 @@ debug_print_hmm_bands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int 
   fprintf(ofp, "***********************************************************\n");
 	 
 }
+
+/**************************************************************
+ * cp9_compare_bands()
+ * based loosely on: cmbuild.c's
+ * Function: model_trace_info_dump
+ *
+ * Purpose:  Compare 2 CP9Bands_t objects, die if they're at all different.
+ * 
+ * Returns: (void) 
+ */
+void
+cp9_compare_bands(CP9Bands_t *cp9b1, CP9Bands_t *cp9b2)
+{
+  int k, v, d;
+
+  if(cp9b1->hmm_M != cp9b2->hmm_M) cm_Fail("cp9_compare_bands(): cp9b1->hmm_M: %d != cp9b2->hmm_M: %d\n", cp9b1->hmm_M, cp9b2->hmm_M);
+  if(cp9b1->cm_M  != cp9b2->cm_M)  cm_Fail("cp9_compare_bands(): cp9b1->cm_M: %d != cp9b2->cm_M: %d\n", cp9b1->cm_M, cp9b2->cm_M);
+  for(k = 0; k <= cp9b1->hmm_M; k++)
+    {
+      if(cp9b1->pn_min_m[k] != cp9b2->pn_min_m[k]) cm_Fail("cp9_compare_bands(): cp9b1->pn_min_m[%d]: %d != cp9b2->pn_min_m[%d]: %d\n", k, cp9b1->pn_min_m[k], k, cp9b2->pn_min_m[k]);
+      if(cp9b1->pn_min_i[k] != cp9b2->pn_min_i[k]) cm_Fail("cp9_compare_bands(): cp9b1->pn_min_i[%d]: %d != cp9b2->pn_min_i[%d]: %d\n", k, cp9b1->pn_min_i[k], k, cp9b2->pn_min_i[k]);
+      if(cp9b1->pn_min_d[k] != cp9b2->pn_min_d[k]) cm_Fail("cp9_compare_bands(): cp9b1->pn_min_d[%d]: %d != cp9b2->pn_min_d[%d]: %d\n", k, cp9b1->pn_min_d[k], k, cp9b2->pn_min_d[k]);
+
+      if(cp9b1->pn_max_m[k] != cp9b2->pn_max_m[k]) cm_Fail("cp9_compare_bands(): cp9b1->pn_max_m[%d]: %d != cp9b2->pn_max_m[%d]: %d\n", k, cp9b1->pn_max_m[k], k, cp9b2->pn_max_m[k]);
+      if(cp9b1->pn_max_i[k] != cp9b2->pn_max_i[k]) cm_Fail("cp9_compare_bands(): cp9b1->pn_max_i[%d]: %d != cp9b2->pn_max_i[%d]: %d\n", k, cp9b1->pn_max_i[k], k, cp9b2->pn_max_i[k]);
+      if(cp9b1->pn_max_d[k] != cp9b2->pn_max_d[k]) cm_Fail("cp9_compare_bands(): cp9b1->pn_max_d[%d]: %d != cp9b2->pn_max_d[%d]: %d\n", k, cp9b1->pn_max_d[k], k, cp9b2->pn_max_d[k]);
+    }
+  for(v = 0; v < cp9b1->cm_M; v++)
+    {
+      if(cp9b1->imin[v] != cp9b2->imin[v]) cm_Fail("cp9_compare_bands(): cp9b1->imin[%d]: %d != cp9b2->imin[%d]: %d\n", v, cp9b1->imin[v], v, cp9b2->imin[v]);
+      if(cp9b1->imax[v] != cp9b2->imax[v]) cm_Fail("cp9_compare_bands(): cp9b1->imax[%d]: %d != cp9b2->imax[%d]: %d\n", v, cp9b1->imax[v], v, cp9b2->imax[v]);
+
+      if(cp9b1->jmin[v] != cp9b2->jmin[v]) cm_Fail("cp9_compare_bands(): cp9b1->jmin[%d]: %d != cp9b2->jmin[%d]: %d\n", v, cp9b1->jmin[v], v, cp9b2->jmin[v]);
+      if(cp9b1->jmax[v] != cp9b2->jmax[v]) cm_Fail("cp9_compare_bands(): cp9b1->jmax[%d]: %d != cp9b2->jmax[%d]: %d\n", v, cp9b1->jmax[v], v, cp9b2->jmax[v]);
+
+      for(d = 0; d <= (cp9b1->jmax[v] - cp9b1->jmin[v]); d++) {
+	if(cp9b1->hdmin[v][d] != cp9b2->hdmin[v][d]) cm_Fail("cp9_compare_bands(): cp9b1->hdmin[%d][%d]: %d != cp9b2->hdmin[%d][%d]: %d\n", v, d, cp9b1->hdmin[v][d], v, d, cp9b2->hdmin[v][d]);
+	if(cp9b1->hdmax[v][d] != cp9b2->hdmax[v][d]) cm_Fail("cp9_compare_bands(): cp9b1->hdmax[%d][%d]: %d != cp9b2->hdmax[%d][%d]: %d\n", v, d, cp9b1->hdmax[v][d], v, d, cp9b2->hdmax[v][d]);
+      }
+      /* don't compare safe_hdmin, safe_hdmax, b/c we want to be able to compare cp9bands objects
+       * before safe_hdmin, safe_hdmax are calced
+       */
+    }
+}      
+
 /* EPN 11.03.05
  * ij_banded_trace_info_dump()
  * Function: ij_banded_trace_info_dump

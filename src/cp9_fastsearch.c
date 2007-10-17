@@ -1319,7 +1319,7 @@ cp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int
 
 
 /***********************************************************************
- * Function: cp9_EXTPLFastForward()
+ * Function: Xcp9_FastForward()
  * 
  * Purpose:  Runs the Forward dynamic programming algorithm on an
  *           input subsequence (i0-j0). Complements cp9_FastBackward().  
@@ -1394,9 +1394,9 @@ cp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int
  *           else         max log P(S|M)/P(S|R), for argmax subseq S of input seq i0..j0,
  */
 float
-cp9_EXPTLFastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-		     int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, int doing_rescan,
-		     int be_efficient, int be_safe, CP9_dpmatrix_t **ret_mx)
+Xcp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
+		 int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, int doing_rescan,
+		 int be_efficient, int be_safe, CP9_dpmatrix_t **ret_mx)
 {
   int          status;
   int          j;           /*     actual   position in the subsequence                     */
@@ -1433,7 +1433,7 @@ cp9_EXPTLFastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff
 			       * for each of the 4 modes                                    */
   /*debug_print_cp9_params(stdout, cm->cp9, TRUE);*/
 
-  printf("in cp9_EXPTLFastForward() i0: %d j0: %d\n", i0, j0);  
+  printf("in Xcp9_FastForward() i0: %d j0: %d\n", i0, j0);  
   /* Contract checks */
   if(cm->cp9 == NULL)
     cm_Fail("in cp9_FastForward, cm->cp9 is NULL.\n");
@@ -2273,7 +2273,7 @@ cp9_EXPTLFastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff
   else free(scA);
   if (ret_mx != NULL) *ret_mx = mx;
   else                FreeCPlan9Matrix(mx);
-  /*printf("Viterbi return_sc: %f\n", return_sc);*/
+  printf("Xcp9_FastForward return_sc: %f\n", return_sc);
 
   /* printf("ctr: %d\n", ctr); */
   return return_sc;
@@ -2284,7 +2284,7 @@ cp9_EXPTLFastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff
 }
 
 /***********************************************************************
- * Function: cp9_EXPTLFastBackward()
+ * Function: Xcp9_FastBackward()
  * 
  * Purpose:  Runs the Backward dynamic programming algorithm on an
  *           input subsequence (i0-j0). Complements CP9Forward().  
@@ -2398,9 +2398,9 @@ cp9_EXPTLFastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff
  *                            this is max_jp B->M[jp][0]
  */
 float
-cp9_EXPTLFastBackward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-	    int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
-	    int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx)
+Xcp9_FastBackward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
+		  int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
+		  int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx)
 {
   int          status;
   int          j;           /*     actual   position in the subsequence                     */
@@ -2565,8 +2565,6 @@ cp9_EXPTLFastBackward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutof
    * The main loop: scan the sequence from position j0-1 to i0.
    *****************************************************************/
   /* Recursion */
-  ESL_STOPWATCH  *w       = esl_stopwatch_Create();
-  esl_stopwatch_Start(w);
   for (i = j0-1; i >= i0; i--) 
     {
       ip = i-i0+1;		/* ip is relative index in dsq (0 to L-1) */
@@ -2762,10 +2760,6 @@ cp9_EXPTLFastBackward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutof
 	best_hmm_pos= i;
       }
     }
-  esl_stopwatch_Stop(w);
-  printf("\n\n");
-  esl_stopwatch_Display(stdout, w, "backward bulk CPU time: ");
-  printf("\n\n");
   /*******************************************************************/
   /* Special case: ip == 0, i = i0-1; */
   ip = i-i0+1;		/* ip is relative index in dsq (0 to L-1) */
@@ -2898,16 +2892,16 @@ cp9_EXPTLFastBackward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutof
 		  if(do_scan && cm->search_opts & CM_SEARCH_HMMRESCAN && doing_rescan == FALSE)
 		    {
 		      /*printf("rechecking hit from %d to %d\n", i, gback[ip]);*/
-		      temp_sc = cp9_EXPTLFastBackward(cm, dsq, i, gback[ip], cm->W, cutoff,  /* *off-by-one* i+1 */
-					    NULL,  /* don't care about scores of each pos */
-					    NULL,  /* don't care about best scoring position */
-					    NULL,  /* don't report hits to results data structure */
-					    TRUE,  /* we're scanning */
-					    FALSE, /* we're not ultimately aligning */
-					    TRUE,  /* set the doing_rescan arg to TRUE, 
-						      so we don't potentially infinitely recurse */
-					    TRUE,  /* be memory efficient */
-					    NULL); /* don't want the DP matrix back */
+		      temp_sc = Xcp9_FastBackward(cm, dsq, i, gback[ip], cm->W, cutoff,  /* *off-by-one* i+1 */
+						  NULL,  /* don't care about scores of each pos */
+						  NULL,  /* don't care about best scoring position */
+						  NULL,  /* don't report hits to results data structure */
+						  TRUE,  /* we're scanning */
+						  FALSE, /* we're not ultimately aligning */
+						  TRUE,  /* set the doing_rescan arg to TRUE, 
+							    so we don't potentially infinitely recurse */
+						  TRUE,  /* be memory efficient */
+						  NULL); /* don't want the DP matrix back */
 		      /*printf("new score: %f old score %f\n", temp_sc, savesc[ip]);*/
 		      if(temp_sc >= cutoff) 
 			{ 
@@ -2935,7 +2929,7 @@ cp9_EXPTLFastBackward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutof
   free(gback);
   free(gamma);
   free(savesc);
-  /*printf("returning from cp9_EXPTLFastBackward()\n");*/
+  /*printf("returning from Xcp9_FastBackward()\n");*/
   if(ret_sc != NULL) *ret_sc = sc;
   else free(sc);
   /* determine score to return: (I know, too complex) */
@@ -3435,14 +3429,14 @@ main(int argc, char **argv)
 	  ESL_DPRINTF1(("minL: %d L: %d\n", minL, L));
 	  if(minL != -1 && minL <= L) be_safe = TRUE;
 	  esl_stopwatch_Start(w);
-	  sc = cp9_EXPTLFastForward(cm, dsq, 1, L, cm->W, 0., NULL, NULL, NULL,
-				    do_scan,   /* are we scanning? */
-				    do_align,  /* are we aligning? */
-				    FALSE,  /* we're not rescanning */
-				    (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
-				    be_safe,
-				    NULL);  /* don't want the DP matrix back */
-	  printf("%4d %-30s %10.4f bits ", (i+1), "cp9_EXPTLFastForward(): ", sc);
+	  sc = Xcp9_FastForward(cm, dsq, 1, L, cm->W, 0., NULL, NULL, NULL,
+				do_scan,   /* are we scanning? */
+				do_align,  /* are we aligning? */
+				FALSE,  /* we're not rescanning */
+				(! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
+				be_safe,
+				NULL);  /* don't want the DP matrix back */
+	  printf("%4d %-30s %10.4f bits ", (i+1), "Xcp9_FastForward(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}

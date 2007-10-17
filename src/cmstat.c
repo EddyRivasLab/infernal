@@ -204,7 +204,7 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   dpc_v /= 1000000;
 
   /* cyk */
-  /*EXPTLFastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);*/
+  /*XFastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);*/
   esl_stopwatch_Start(w);
   FastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);
   //CYKScan (cm, dsq, 1, L, cm->W, 0., NULL);
@@ -212,7 +212,7 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   t_c = w->user;
 
   /* qdb cyk */
-  /*EXPTLFastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);*/
+  /*XFastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);*/
   esl_stopwatch_Start(w);
   /*CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL); */
   FastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
@@ -252,13 +252,13 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   ESL_DPRINTF1(("minL: %d L: %d\n", minL, L));
   if(minL != -1 && minL <= L) be_safe = TRUE;
   esl_stopwatch_Start(w);
-  cp9_EXPTLFastForward(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
-		       TRUE,   /* we are scanning */
-		       FALSE,  /* we are not ultimately aligning */
-		       FALSE,  /* we're not rescanning */
-		       TRUE,   /* be memory efficient */
-		       be_safe,
-		       NULL);  /* don't want the DP matrix back */
+  Xcp9_FastForward(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
+		   TRUE,   /* we are scanning */
+		   FALSE,  /* we are not ultimately aligning */
+		   FALSE,  /* we're not rescanning */
+		   TRUE,   /* be memory efficient */
+		   be_safe,
+		   NULL);  /* don't want the DP matrix back */
   esl_stopwatch_Stop(w);
   t_f = w->user;
 

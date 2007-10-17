@@ -18,6 +18,7 @@
 #include "easel.h"
 #include "esl_sqio.h"
 #include "esl_stack.h"
+#include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
 #include "funcs.h"
@@ -27,343 +28,603 @@
 #define AMX(j,v,d) (alphap[(j * cm->M * (W+1)) + ((v) * (W+1) + d)])
 
 
-/*****************************************************************************/
-/* Functions to determine HMM bands 
- * CP9_hmm_band_bounds()
+
+/*
+ * Function: Xcp9_seq2bands
+ * Date    : EPN, Mon Jan  8 07:23:34 2007
+ *           EPN, Wed Oct 17 04:53:58 2007  [updated/optimized]
+ *
+ * Purpose:  Given a CM with precalc'ed CP9 HMM and CP9Map, a sequence and 
+ *           a CP9Bands_t structure, calculate the HMM bands and store them
+ *           in the CP9Bands_t structure.
+ *           
+ * Args:     cm          - the covariance model
+ *           dsq         - sequence in digitized form
+ *           i0          - start of target subsequence (often 1, beginning of sq)
+ *           j0          - end of target subsequence (often L, end of sq)
+ *           cp9b        - PRE-ALLOCATED, the HMM bands for this sequence, filled here.
+ *           ret_cp9_post - RETURN: the HMM posterior matrix (NULL if not wanted)
+ *           debug_level - verbosity level for debugging printf()s
+ * Return:  void
  */
+void 
+Xcp9_seq2bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, 
+	       CP9_dpmatrix_t **ret_cp9_post, int debug_level)
+{
+  int             status;
+  ESL_STOPWATCH  *watch;    /* for timings if cm->align_opts & CM_ALIGN_TIME             */
+  int             use_sums; /* TRUE to fill and use posterior sums during HMM band calc  *
+			     * leads to wider bands                                      */
+  int             v;        /* state index                                               */
+  int             sc;
+
+  /* Contract checks */
+  if(cm->cp9 == NULL)
+    cm_Fail("in Xcp9_seq2bands, but cm->cp9 is NULL.\n");
+  if(cm->cp9map == NULL)
+    cm_Fail("in Xcp9_seq2bands, but cm->cp9map is NULL.\n");
+  if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
+    cm_Fail("in Xcp9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
+  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) 
+    cm_Fail("in Xcp9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
+  if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) 
+    cm_Fail("in Xcp9_seq2bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
+  if(dsq == NULL) 
+    cm_Fail("in Xcp9_seq2bands, dsq is NULL.");
+  
+  use_sums = FALSE;
+  if((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS))
+    use_sums = TRUE;
+    
+  /* Step 1: Get HMM Forward/Backward DP matrices.
+   * Step 2: F/B       -> HMM bands.
+   * Step 3: HMM bands -> CM bands.
+   */
+
+  /* Step 1: Get HMM Forward/Backward DP matrices. */
+  CP9_dpmatrix_t *cp9_fwd;       /* growable DP matrix for forward                       */
+  CP9_dpmatrix_t *cp9_bck;       /* growable DP matrix for backward                      */
+  int do_scan2bands;             /* TRUE to use scanning Forward/Backward to get posteriors */
+  if(cm->align_opts & CM_ALIGN_TIME) {
+  watch = esl_stopwatch_Create();
+        esl_stopwatch_Start(watch);
+  }
+  do_scan2bands = (cm->search_opts & CM_SEARCH_HMMSCANBANDS) ? TRUE : FALSE;
+  int be_safe = FALSE; /* TEMPORARY, pass this in after calcing it once in actually_align_targets() */
+  //int be_safe = TRUE;
+  sc = Xcp9_FastForward(cm, dsq, i0, j0, j0-i0+1, 0., NULL, NULL, NULL,
+			do_scan2bands, /* are we using scanning Forward/Backward */
+			TRUE,      /* we are going to use posteriors to align */
+			FALSE,     /* we're not rescanning */
+			FALSE,     /* don't be memory efficient */
+			be_safe,   /* can we accelerate w/ no -INFTY logsum funcs? */
+			&cp9_fwd); /* give the DP matrix back */
+  
+  if(debug_level >= 0) printf("CP9 Forward  score : %.4f\n", sc);
+  if(cm->align_opts & CM_ALIGN_TIME) {
+      esl_stopwatch_Stop(watch);
+      esl_stopwatch_Display(stdout, watch, "CP9 bands Forward CPU time: ");
+      esl_stopwatch_Start(watch);
+  }
+  sc = Xcp9_FastBackward(cm, dsq, i0, j0, (j0-i0+1), 
+			 0,    /* cp9_cutoff score, irrelevant */
+			 NULL,  /* don't care about score of each posn */
+			 NULL,  /* don't care about best scoring start point */
+			 NULL,  /* don't report hits to results data structure */
+			 do_scan2bands, /* are we using scanning Forward/Backward */
+			 TRUE,  /* we are going to use posteriors to align */
+			 FALSE, /* we're not rescanning */
+			 FALSE, /* don't be memory efficient */
+			 &cp9_bck); /* give the DP matrix back */
+  if(debug_level >= 0) printf("CP9 Backward score : %.4f\n", sc);
+  if(cm->align_opts & CM_ALIGN_TIME) {
+      esl_stopwatch_Stop(watch);
+      esl_stopwatch_Display(stdout, watch, "CP9 bands Backward CPU time: ");
+      esl_stopwatch_Start(watch);
+  }
+
+  /* Step 2: F/B -> HMM bands. */
+  if(use_sums)
+    Xcp9_FB2HMMBandsWithSums(cm->cp9, dsq, cp9_fwd, cp9_bck, cp9b, i0, j0, cp9b->hmm_M,
+			     (1.-cm->tau), (cm->search_opts & CM_SEARCH_HMMSCANBANDS), debug_level);
+  else
+    Xcp9_FB2HMMBands(cm->cp9, dsq, cp9_fwd, cp9_bck, cp9b, i0, j0, cp9b->hmm_M,
+		     (1.-cm->tau), (cm->search_opts & CM_SEARCH_HMMSCANBANDS), debug_level);
+  
+  if(cm->align_opts & CM_ALIGN_TIME) {
+      esl_stopwatch_Stop(watch);
+      esl_stopwatch_Display(stdout, watch, "CP9 band bounds calculation CPU time: ");
+      esl_stopwatch_Destroy(watch);
+  }
+
+  if(debug_level > 0) debug_print_hmm_bands(stdout, j0, cp9b, cm->tau, 1);
+
+  if(cm->align_opts & CM_ALIGN_TIME) {
+  watch = esl_stopwatch_Create();
+        esl_stopwatch_Start(watch);
+  }
+  /* Step 3: HMM bands  ->  CM bands. */
+  hmm2ij_bands(cm, cm->cp9map, i0, j0, cp9b->pn_min_m, cp9b->pn_max_m, 
+	       cp9b->pn_min_i, cp9b->pn_max_i, cp9b->pn_min_d, cp9b->pn_max_d, 
+	       cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, debug_level);
+  
+  if(cm->align_opts & CM_ALIGN_TIME) {
+      esl_stopwatch_Stop(watch);
+      esl_stopwatch_Display(stdout, watch, "hmm2ij bands calculation CPU time: ");
+      esl_stopwatch_Destroy(watch);
+  }
+  /* Use the CM bands on i and j to get bands on d, specific to j. */
+  for(v = 0; v < cm->M; v++) {
+    ESL_ALLOC(cp9b->hdmin[v], sizeof(int) * (cp9b->jmax[v] - cp9b->jmin[v] + 1));
+    ESL_ALLOC(cp9b->hdmax[v], sizeof(int) * (cp9b->jmax[v] - cp9b->jmin[v] + 1));
+  }
+  ij2d_bands(cm, (j0-i0+1), cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax,
+	     cp9b->hdmin, cp9b->hdmax, debug_level);
+  
+  if(debug_level > 0)
+    PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+			 (j0-i0+1));
+
+  return;
+
+ ERROR:
+  cm_Fail("Memory allocation error.\n");
+}
+
 /*****************************************************************************
- * EPN, Mon Oct 15 18:20:42 2007
- * originally started: EPN 04.03.06
- * Function: cp9_EXPTL_hmm_band_bounds()
+ * Function: Xcp9_FB2HMMBands()
+ * Date:     EPN, 04.03.06
+ *           EPN, Mon Oct 15 18:20:42 2007 [updated/optimized]
  *
- * Purpose:  Determine the band on all HMM states given the posterior
- *           matrices. Do this by summing log probabilities, starting
- *           at the sequence ends, and creeping in, until the half the
- *           maximum allowable probability excluded is reached on each
- *           side respectively.
- * 
- * below * = 'i', 'm' or 'd', for either (i)nsert, (m)atch or (d)elete states
- * arguments:
+ * Purpose: Determine the band on all HMM states given a Forward and
+ *          Backward matrix. Do this by calculating and summing log posterior
+ *          probabilities that each state emitted/was visited at each posn,
+ *          starting at the sequence ends, and creeping in, until the half the
+ *          maximum allowable probability excluded is reached on each side.
  *
- * int post         posterior matrix for *mx (matches, inserts or deletes)
- *                  2D int array [0.1..N][0.1..M] M = num nodes in HMM
+ * CP9_t hmm        the HMM
+ * dsq              the digitized sequence
+ * CP9_dpmatrix_t fmx: forward DP matrix, already calc'ed
+ * CP9_dpmatrix_t bmx: backward DP matrix, already calc'ed
+ * CP9Bands_t cp9b  CP9 bands data structure
  * int i0           start of target subsequence (often 1, beginning of dsq)
  * int j0           end of target subsequence (often L, end of dsq)
  * int   M          number of nodes in HMM (num columns of post matrix)
- * CP9Bands_t cp9b  CP9 bands data structure
  * double p_thresh  the probability mass we're requiring is within each band
- * int use_sums     TRUE to use posterior sums instead of raw posteriors 
+ * int did_scan     TRUE if Forward/Backward were run in 'scan mode'
  * int debug_level  [0..3] tells the function what level of debugging print
  *                  statements to print.
  *****************************************************************************/
 void
-cp9_EXPTL_S_hmm_band_bounds(int **post, int i0, int j0, int M, CP9Bands_t *cp9b, 
-			    double p_thresh, int use_sums, int debug_level)
+Xcp9_FB2HMMBands(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, CP9Bands_t *cp9b, 
+		 int i0, int j0, int M, double p_thresh, int did_scan, int debug_level)
 {
-  int k;         /* counter over nodes of the model */
-  int lmass_exc; /* the log of the probability mass currently excluded on the left*/
-  int rmass_exc; /* the log of the probability mass currently excluded on the right*/
-  int log_p_side; /* the log probability we're allowed to exclude on each side */
-  int curr_log_p_side; /* the log probability we're allowed to exclude on each side for the current state */
-  int argmax_pn; /* for curr state, the state with the highest log p, 
-	          * IFF we determine the entire sequence is outside the
-		  * band for a state, we set the band to a single position,
-		  * the most likely one. Therefore its value is only 
-		  * relevant (and valid!) if pmin[k] == L. 
-		  * (otherwise we'd have some positions within the band).*/
-  int max_post;  /* post[argmax_pn][k] for current k */
-  /* NOTE: all *log_p* structures, and other structures that hold log probs
-   * don't actually hold log probs. but scores, which are scaled up 1000X (INTSCALE)
-   */
-
-  printf("in cp9_EXPTL_hmm_band_bounds()\n");
-
-  log_p_side = Prob2Score(((1. - p_thresh)/2.), 1.); /* allowable prob mass excluded on each side */
-
-  /* step through each node */
-  for(k = 0; k <= M; k++)
-    {
-      curr_log_p_side_m = curr_log_p_side_i = curr_log_p_side_d = log_p_side; 
-      if(use_sums) {
-	curr_log_p_side_m += cp9b->isum_pn_m[k]; /* if we use sums strategy, normalize
-						  * so total prob of entering k = 1. */
-	curr_log_p_side_i += cp9b->isum_pn_i[k];
-	curr_log_p_side_d += cp9b->isum_pn_d[k];
-
-      argmax_pn_m = i0;
-      argmax_pn_i = i0;
-      argmax_pn_d = i0;
-      max_post_m = post->mmx[1][k]; /* post[1][k] corresponds to i0 for node k */
-      max_post_i = post->imx[1][k]; /* post[1][k] corresponds to i0 for node k */
-      max_post_d = post->dmx[1][k]; /* post[1][k] corresponds to i0 for node k */
-      cp9b->pn_min_m[k] = cp9b->pn_min_i[k] = cp9b->pn_min_d[k] = i0; 
-      cp9b->pn_max_m[k] = cp9b->pn_max_i[k] = cp9b->pn_max_d[k] = j0-1;
-      /* i' = i - i0 + 1; i' is offset index for first dimension of post[][] */
-      lmass_exc_m = post->mmx[(cp9b->pn_min_m[k]-1)-i0+1][k];
-      rmass_exc_m = post->mmx[(cp9b->pn_max_m[k]+1)-i0+1][k];
-      /*creep in on the left, until we exceed our allowable prob mass to exclude.*/ 
-      while(pn_min[k] <= j0 && lmass_exc <= (curr_log_p_side))
-	{
-	  //if(post[(pn_min[k])-i0+1][k] > max_post) /* save info on most likely posn 
-	  //* in case whole seq is outside band */
-	  //{
-	  //max_post = post[(pn_min[k])-i0+1][k];
-	  //argmax_pn = pn_min[k];
-	  //}
-	  lmass_exc = ILogsum(lmass_exc, post[(pn_min[k])-i0+1][k]);
-	  pn_min[k]++;
-	}
-      /* we went one posn too far, back up*/
-      pn_min[k]--;
-      
-      /*creep in on the right, until we exceed our allowable prob mass to exclude.*/
-      while(pn_max[k] >= (i0-1) && rmass_exc <= (curr_log_p_side))
-	{
-	  rmass_exc = ILogsum(rmass_exc, post[(pn_max[k]-i0+1)][k]);
-	  pn_max[k]--;
-	}
-      /* we went one posn too far, back up*/
-      pn_max[k]++;
-      
-      if(pn_min[k] > pn_max[k])
-	{
-	  /* The sum of the posteriors for all posns for this state
-	   * is less than tau. Current strategy, set band to a single
-	   * cell, the most likely posn found when creeping in from left.
-	   */
-	  pn_min[k] = argmax_pn;
-	  pn_max[k] = argmax_pn;
-	}
-      if(state_type == HMMDELETE || (k == 0 && state_type == HMMMATCH))
-	{
-	  /* We have to deal with off by ones in the delete states (which includes
-	   * the HMM state M_0 which is silent - mapping to ROOT_S of the CM)
-	   * e.g. pn_min_d[k] = i, means posn i was last residue emitted
-	   * prior to entering node k's delete state. However, for a CM,
-	   * if a delete states sub-parsetree is bounded by i' and j', then
-	   * positions i' and j' HAVE YET TO BE EMITTED.
-	   */
-	  pn_min[k]++;
-	  pn_max[k]++;
-	}
-    }
-}
-
-
-/* Function: CP9EXPTLPosterior()
- * based on Ian Holmes' hmmer/src/postprob.c::P7EmitterPosterior()
- *
- * Purpose:  Combines Forward and Backward matrices into a posterior
- *           probability matrix. For emitters (match and inserts) the 
- *           entries in row i of this matrix are the logs of the posterior 
- *           probabilities of each state emitting symbol i of the sequence. 
- *           For non-emitters the entries in row i of this matrix are the 
- *           logs of the posterior probabilities of each state being 'visited' 
- *           when the last emitted residue in the parse was symbol i of the
- *           sequence.
- *           The last point distinguishes this function from P7EmitterPosterior() 
- *           which set all posterior values for for non-emitting states to -INFTY.
- *           The caller must allocate space for the matrix, although the
- *           backward matrix can be used instead (overwriting it will not
- *           compromise the algorithm).
- *           
- * Args:     dsq      - sequence in digitized form
- *           i0       - start of target subsequence (often 1, beginning of dsq)
- *           j0       - end of target subsequence (often L, end of dsq)
- *           hmm      - the model
- *           forward  - pre-calculated forward matrix
- *           backward - pre-calculated backward matrix
- *           mx       - pre-allocated dynamic programming matrix
- *           
- * Return:   void
- */
-void
-CP9EXPTL_S_Posterior(ESL_DSQ *dsq, int i0, int j0,
-		     struct cplan9_s *hmm,
-		     struct cp9_dpmatrix_s *fmx,
-		     struct cp9_dpmatrix_s *bmx,
-		     struct cp9_dpmatrix_s *mx,
-		     double p_thresh,
-		     CP9Bands_t *cp9b)
-{
-  int i;
   int status;
-  int k;
-  int sc;
-  int W;		/* subsequence length */
-  int ip;		/* i': relative position in the subsequence  */
-  /*float temp_sc;*/
-  int tmin; /* the log probability we're allowed to exclude on each side */
-  int tmax;
-  int *mxset, *ixset, *dxset, *mnset, *inset, *dnset;
+  int k;                                  /* counter over nodes of the model */
+  int L = j0-i0+1;                        /* length of sequence */
+  int thresh = Prob2Score(((1. - p_thresh)/2.), 1.); /* allowable prob mass excluded on each side */
+  int max;                                /* temporary max value */
+  int pnmax;                              /* position that gives max */
 
-  if(dsq == NULL)
-    cm_Fail("in CP9EXPTLPosterior(), dsq is NULL.");
-  printf("in CP9EXPTLPosterior()\n");
+  /* *_m = match, *_i = insert, *_d = delete */
+  int *nset_m, *nset_i, *nset_d;          /* [0..k..hmm->M], has minimum been set for this state? */
+  int *xset_m, *xset_i, *xset_d;          /* [0..k..hmm->M], has maximum been set for this state? */
+  int *mass_m, *mass_i, *mass_d;          /* [0..k..hmm->M], summed log prob of post->mx[i][k] from 0..k or k..L */
+  int i, ip;                              /* actual position and relative position in sequence, ip = i-i0+1 */
+  CP9_dpmatrix_t *post;                   /* posterior dp matrix for CP9 HMM, alloc'ed, filled and free'd here */
+  int sc;                                 /* summed score of all parses (derived from backward matrix) 
+					   * if(cm->search_opts & CM_SEARCH_HMMSCANBANDS) Forward and Backward
+					   * were run in 'scan mode' where each residue can be begin/end of a parse,
+					   * so we have to sum up parses that end at each posn, 
+					   * if ! (cm->search_opts & CM_SEARCH_HMMSCANBANDS) we know we have 
+					   * to start at residue i0 and end at residue j0, so sc is simply bmx->mmx[0][0]
+					   */
 
-  W  = j0-i0+1;		/* the length of the subsequence */
+  printf("in Xcp9_FB2HMMBands()\n");
+  post = AllocCPlan9Matrix(L+1, M, NULL, NULL, NULL, NULL, NULL);
+  ESL_ALLOC(nset_m, sizeof(int) * (M+1) * 9);
+  ESL_ALLOC(nset_i, sizeof(int) * (M+1));
+  ESL_ALLOC(nset_d, sizeof(int) * (M+1));
+  ESL_ALLOC(xset_m, sizeof(int) * (M+1));
+  ESL_ALLOC(xset_i, sizeof(int) * (M+1));
+  ESL_ALLOC(xset_d, sizeof(int) * (M+1));
+  ESL_ALLOC(mass_m, sizeof(int) * (M+1));
+  ESL_ALLOC(mass_i, sizeof(int) * (M+1));
+  ESL_ALLOC(mass_d, sizeof(int) * (M+1));  
 
-  sc = bmx->mmx[0][0];
+  esl_vec_ISet(mass_m, M+1, -INFTY);
+  esl_vec_ISet(mass_i, M+1, -INFTY);
+  esl_vec_ISet(mass_d, M+1, -INFTY);
+  esl_vec_ISet(nset_m, M+1, FALSE);
+  esl_vec_ISet(nset_i, M+1, FALSE);
+  esl_vec_ISet(nset_d, M+1, FALSE);
+  esl_vec_ISet(xset_m, M+1, FALSE);
+  esl_vec_ISet(xset_i, M+1, FALSE);
+  esl_vec_ISet(xset_d, M+1, FALSE);
 
-  tmin = Prob2Score((1. - p_thresh)/2., 1.); /*      allowable prob mass excluded on each side, for mins  */
-  tmax = Prob2Score(      p_thresh /2., 1.); /* 1. - allowable prob mass excluded on each side, for maxes */
-  printf("tmin: %d\ntmax: %d\n", tmin, tmax);
-  printf("p_thresh: %f\n", p_thresh);
-  ESL_ALLOC(mxset, sizeof(int) * (hmm->M+1));
-  ESL_ALLOC(ixset, sizeof(int) * (hmm->M+1));
-  ESL_ALLOC(dxset, sizeof(int) * (hmm->M+1));
-  ESL_ALLOC(mnset, sizeof(int) * (hmm->M+1));
-  ESL_ALLOC(inset, sizeof(int) * (hmm->M+1));
-  ESL_ALLOC(dnset, sizeof(int) * (hmm->M+1));
-  esl_vec_ISet(mxset, hmm->M+1, FALSE);
-  esl_vec_ISet(ixset, hmm->M+1, FALSE);
-  esl_vec_ISet(dxset, hmm->M+1, FALSE);
-  esl_vec_ISet(mnset, hmm->M+1, FALSE);
-  esl_vec_ISet(inset, hmm->M+1, FALSE);
-  esl_vec_ISet(dnset, hmm->M+1, FALSE);
-  
-  /* note boundary conditions, case by case by case... */
-  mx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - sc; /* fmx->mmx[0][0] is 0, bmx->mmx[1][0] is overall score */
-  mx->imx[0][0] = -INFTY; /*need seq to get here*/
-  mx->dmx[0][0] = -INFTY; /*D_0 does not exist*/
-  for (k = 1; k <= hmm->M; k++) 
-    {
-      mx->mmx[0][k] = -INFTY; /*need seq to get here*/
-      mx->imx[0][k] = -INFTY; /*need seq to get here*/
-      mx->dmx[0][k] = mx->dmx[0][k-1], fmx->dmx[0][k] + bmx->dmx[0][k] - sc;
-      if(! mnset[k] && mx->mmx[0][k] > tmin) { cp9b->pn_min_m[k] = 0; mnset[k] = TRUE; }
-      if(! inset[k] && mx->imx[0][k] > tmin) { cp9b->pn_min_i[k] = 0; inset[k] = TRUE; }
-      if(! dnset[k] && mx->dmx[0][k] > tmin) { cp9b->pn_min_d[k] = 0; dnset[k] = TRUE; }
-      if(! mxset[k] && mx->mmx[0][k] > tmax) { cp9b->pn_max_m[k] = 0; mxset[k] = TRUE; }
-      if(! ixset[k] && mx->imx[0][k] > tmax) { cp9b->pn_max_i[k] = 0; ixset[k] = TRUE; }
-      if(! dxset[k] && mx->dmx[0][k] > tmax) { cp9b->pn_max_d[k] = 0; dxset[k] = TRUE; }
-    }
-      
-  for (ip = 1; ip <= W; ip++) /* ip is the relative position in the seq */
-    {
-      int temp_sc;
-      i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
-      mx->mmx[ip][0] = -INFTY; /*M_0 does not emit*/
-      mx->imx[ip][0] = ILogsum(mx->imx[ip-1][0], fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[dsq[i]][0] - sc);
-      /*hmm->isc[dsq[i]][0] will have been counted in both fmx->imx and bmx->imx*/
-      mx->dmx[ip][0] = -INFTY; /*D_0 does not exist*/
-
-      /*printf("fmx->mmx[ip:%d][0]: %d\n bmx->mmx[ip:%d][0]: %d\n", ip, fmx->mmx[ip][0], ip, bmx->mmx[ip][0]);
-	printf("fmx->imx[ip:%d][0]: %d\n bmx->imx[ip:%d][0]: %d\n", ip, fmx->imx[ip][0], ip, bmx->imx[ip][0]);
-	printf("fmx->dmx[ip:%d][0]: %d\n bmx->dmx[ip:%d][0]: %d\n", ip, fmx->dmx[ip][0], ip, bmx->dmx[ip][0]);*/
-      for (k = 1; k <= hmm->M; k++) 
-	{
-	  temp_sc         = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[dsq[i]][k] - sc;
-	  mx->mmx[ip][k]  = ILogsum(mx->mmx[ip-1][k], temp_sc);
-	  fmx->mmx[ip][k] = temp_sc;
-	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  temp_sc         = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[dsq[i]][k] - sc;
-	  mx->imx[ip][k]  = ILogsum(mx->imx[ip-1][k], temp_sc);
-	  fmx->imx[ip][k] = temp_sc;
-	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
-	  temp_sc         = fmx->dmx[ip][k] + bmx->dmx[ip][k] - sc;
-	  mx->dmx[ip][k]  = ILogsum(mx->dmx[ip-1][k], temp_sc);
-	  fmx->dmx[ip][k] = temp_sc;
-
-	  if(! mnset[k] && mx->mmx[ip][k] > tmin) { cp9b->pn_min_m[k] = ip; mnset[k] = TRUE; }
-	  if(! inset[k] && mx->imx[ip][k] > tmin) { cp9b->pn_min_i[k] = ip; inset[k] = TRUE; }
-	  if(! dnset[k] && mx->dmx[ip][k] > tmin) { cp9b->pn_min_d[k] = ip-1; dnset[k] = TRUE; }
-	  if(! mxset[k] && mx->mmx[ip][k] > tmax) { cp9b->pn_max_m[k] = ip; mxset[k] = TRUE; }
-	  if(! ixset[k] && mx->imx[ip][k] > tmax) { cp9b->pn_max_i[k] = ip; ixset[k] = TRUE; }
-	  if(! dxset[k] && mx->dmx[ip][k] > tmax) { cp9b->pn_max_d[k] = ip-1; dxset[k] = TRUE; }
-	  /*printf("fmx->mmx[ip:%d][%d]: %d\n bmx->mmx[ip:%d][%d]: %d\n", ip, k, fmx->mmx[ip][k], ip, k, bmx->mmx[ip][k]);
-	  printf("fmx->imx[ip:%d][%d]: %d\n bmx->imx[ip:%d][%d]: %d\n", ip, k, fmx->imx[ip][k], ip, k, bmx->imx[ip][k]);
-	  printf("fmx->dmx[ip:%d][%d]: %d\n bmx->dmx[ip:%d][%d]: %d\n\n", ip, k, fmx->dmx[ip][k], ip, k, bmx->dmx[ip][k]);*/
-	}	  
-    }
-  /* Some states may still have min/max unfilled, this is true if whole sequence is outside band for
-   * that state (meaning that state is very unlikely to be in optimal parse). Current strategy is
-   * to set such states to band of width 1, the most likely position that state accounts for.
-   */
-  for(k = 0; k <= hmm->M; k++) {
-    int best_pos;
-    int best_sc;
-    if(mnset[k]) assert(mxset[k]);
-    if(mxset[k]) assert(mnset[k]);
-    if(inset[k]) assert(ixset[k]);
-    if(ixset[k]) assert(inset[k]);
-    if(dnset[k]) assert(dxset[k]);
-    if(dxset[k]) assert(dnset[k]);
-
-    if(! mnset[k]) { 
-      assert(! mxset[k]); 
-      best_pos = 0;
-      best_sc = fmx->mmx[0][k];
-      for(ip = 1; ip <= W; ip++) {
-	if(fmx->mmx[ip][k] > best_sc) {
-	  best_pos = ip;
-	  best_sc  = fmx->mmx[ip][k];
-	}
-      }
-      cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = best_pos;
-    }
-
-    if(! inset[k]) { 
-      assert(! ixset[k]); 
-      best_pos = 0;
-      best_sc = fmx->imx[0][k];
-      for(ip = 1; ip <= W; ip++) {
-	if(fmx->imx[ip][k] > best_sc) {
-	  best_pos = ip;
-	  best_sc  = fmx->imx[ip][k];
-	}
-      }
-      cp9b->pn_min_i[k] = cp9b->pn_max_i[k] = best_pos;
-    }
-
-    if(! dnset[k]) { 
-      assert(! dxset[k]); 
-      best_pos = 0;
-      best_sc = fmx->dmx[1][k];
-      for(ip = 2; ip <= W; ip++) { /* note we start at 2, b/c we have to subtract 1 for deletes */
-	if(fmx->dmx[ip][k] > best_sc) {
-	  best_pos = ip - 1;
-	  best_sc  = fmx->dmx[ip-1][k];
-	}
-      }
-      cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = best_pos;
+  if(did_scan) { /* Forward/Backward run in 'scan mode' which allow parses to start/stop anywhere */
+    sc = -INFTY;
+    for (ip = 0; i <= L; i++) {
+      /*printf("bmx->mmx[i:%d][0]: %d\n", i, bmx->mmx[ip][0]); */
+      sc = ILogsum(sc, (bmx->mmx[ip][0])); 
     }
   }
-  /* We have to deal with off by ones in the delete states (which includes
-   * the HMM state M_0 which is silent - mapping to ROOT_S of the CM)
-   * e.g. pn_min_d[k] = i, means posn i was last residue emitted
+  else sc = bmx->mmx[0][0]; /* Forward/Backward run in 'align mode' parses must start at i0, end at j0 */
+  /* sc is summed log prob of all possible parses of seq i0..j0 */
+
+  /* comment *: off-by-one issue with non-emitters (includes all D states and M_0): 
+   * pn_min_d[k] = i, means posn i was last residue emitted
    * prior to entering node k's delete state. However, for a CM,
    * if a delete states sub-parsetree is bounded by i' and j', then
    * positions i' and j' HAVE YET TO BE EMITTED.
+   * For M_0, so we don't have to check each node to see if k == 0, we
+   * do the off-by-one correction at the end of the function.
    */
-  //cp9b->pn_min_m[0] = 1;
-  //cp9b->pn_max_m[0] = 1;
-  /*  float temp_sc;
-      for(i = 0; i <= W; i++)
-      {
-      for(k = 0; k <= hmm->M; k++)
-      {
-      temp_sc = Score2Prob(mx->mmx[i][k], 1.);
-      if(temp_sc > .0001)
-      printf("mx->mmx[%3d][%3d]: %9d | %8f\n", i, k, mx->mmx[i][k], temp_sc);
-      temp_sc = Score2Prob(mx->imx[i][k], 1.);
-      if(temp_sc > .0001)
-      printf("mx->imx[%3d][%3d]: %9d | %8f\n", i, k, mx->imx[i][k], temp_sc);
-      temp_sc = Score2Prob(mx->dmx[i][k], 1.);
-      if(temp_sc > .0001)
-      printf("mx->dmx[%3d][%3d]: %9d | %8f\n", i, k, mx->dmx[i][k], temp_sc);
+  
+  /* note boundary conditions, ip = 0, i = i0-1 */
+  post->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - sc; /* fmx->mmx[0][0] is 0, bmx->mmx[1][0] is overall score */
+  post->imx[0][0] = -INFTY; /*need seq to get here*/
+  post->dmx[0][0] = -INFTY; /*D_0 does not exist*/
+  if((mass_m[0] = post->mmx[0][0]) > thresh) { 
+    cp9b->pn_min_m[0] = 0; /* "off-by-one" (from comment * above) is dealt with special at end of function for M_0 */
+    nset_m[0] = TRUE; 
+  }
+  mass_i[0] = -INFTY; /* b/c post->imx[0][0] is -INFTY, set above */
+  mass_d[0] = -INFTY; /* b/c post->dmx[0][0] is -INFTY, set above */
+
+  for (k = 1; k <= M; k++) {
+      post->mmx[0][k] = -INFTY; /*need seq to get here*/
+      post->imx[0][k] = -INFTY; /*need seq to get here*/
+      post->dmx[0][k] = fmx->dmx[0][k] + bmx->dmx[0][k] - sc;
+      /* mass_m[k] doesn't change b/c post->mmx[0][k] is -INFTY */
+      /* mass_i[k] doesn't change b/c post->mmx[0][k] is -INFTY */
+      if((mass_d[k] = post->dmx[0][k]) > thresh) { 
+	cp9b->pn_min_d[k] = 0+1; /* see "off-by-one" comment * above */
+	nset_d[k] = TRUE; 
       }
-      }*/
-  free(mnset);
-  free(inset);
-  free(dnset);
-  free(mxset);
-  free(ixset);
-  free(dxset);
+  }
+
+  /* Find minimum position in band for each state (M,I,D) of each node (0..M) */
+  for (ip = 1; ip <= L; ip++) /* ip is the relative position in the seq */
+    {
+      i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
+      for(k = 0; k <= M; k++)
+	{
+	  post->mmx[ip][k] = ESL_MAX(fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[dsq[i]][k] - sc, -INFTY);
+	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
+	  post->imx[ip][k] = ESL_MAX(fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[dsq[i]][k] - sc, -INFTY);
+	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
+	  post->dmx[ip][k] = ESL_MAX(fmx->dmx[ip][k] + bmx->dmx[ip][k] - sc, -INFTY);
+
+	  if(! nset_m[k]) { 
+	    if((mass_m[k] = ILogsum(mass_m[k], post->mmx[ip][k])) > thresh) { 
+	      cp9b->pn_min_m[k] = i;
+	      nset_m[k] = TRUE; 
+	    }
+	  }
+	  if(! nset_i[k]) { 
+	    if((mass_i[k] = ILogsum(mass_i[k], post->imx[ip][k])) > thresh) { 
+	      cp9b->pn_min_i[k] = i;
+	      nset_i[k] = TRUE; 
+	    }
+	  }
+	  if(! nset_d[k]) { 
+	    if((mass_d[k] = ILogsum(mass_d[k], post->dmx[ip][k])) > thresh) { 
+	      cp9b->pn_min_d[k] = i+1; /* see "off-by-one" comment * above */
+	      nset_d[k] = TRUE; 
+	    }
+	  }
+	     
+	  /*mass_m[k] = ILogsum(mass_m[k], post->mmx[ip][k]);
+	    mass_i[k] = ILogsum(mass_i[k], post->imx[ip][k]);
+	    mass_d[k] = ILogsum(mass_d[k], post->dmx[ip][k]);
+
+	    if((! nset_m[k]) && (mass_m[k] > thresh)) { cp9b->pn_min_m[k] = i;   nset_m[k] = TRUE; }
+	    if((! nset_i[k]) && (mass_i[k] > thresh)) { cp9b->pn_min_i[k] = i;   nset_i[k] = TRUE; }
+	    if((! nset_d[k]) && (mass_d[k] > thresh)) { cp9b->pn_min_d[k] = i-1; nset_d[k] = TRUE; } */
+	}
+    }	  
+
+  esl_vec_ISet(mass_m, M+1, -INFTY);
+  esl_vec_ISet(mass_i, M+1, -INFTY);
+  esl_vec_ISet(mass_d, M+1, -INFTY);
+  /* Find maximum position in band for each state (M,I,D) of each node (0..M)
+   * by moving from L down to 1 */
+  for (ip = L; ip >= 1; ip--) /* ip is the relative position in the seq */
+    {
+      i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
+      for(k = 0; k <= M; k++)
+	{
+	  if(! xset_m[k]) { 
+	    if((mass_m[k] = ILogsum(mass_m[k], post->mmx[ip][k])) > thresh) { 
+	      cp9b->pn_max_m[k] = i;
+	      xset_m[k] = TRUE; 
+	    }
+	  }
+	  if(! xset_i[k]) { 
+	    if((mass_i[k] = ILogsum(mass_i[k], post->imx[ip][k])) > thresh) { 
+	      cp9b->pn_max_i[k] = i;
+	      xset_i[k] = TRUE; 
+	    }
+	  }
+	  if(! xset_d[k]) { 
+	    if((mass_d[k] = ILogsum(mass_d[k], post->dmx[ip][k])) > thresh) { 
+	      cp9b->pn_max_d[k] = i+1; /* see "off-by-one" comment * above */
+	      xset_d[k] = TRUE; 
+	    }
+	  }
+	  ///mass_m[k] = ILogsum(mass_m[k], post->mmx[ip][k]);
+	  ///mass_i[k] = ILogsum(mass_i[k], post->imx[ip][k]);
+	  ///mass_d[k] = ILogsum(mass_d[k], post->dmx[ip][k]);
+
+	  ///if((! xset_m[k]) && (mass_m[k] > thresh)) { cp9b->pn_min_m[k] = i;   xset_m[k] = TRUE; }
+	  ///if((! xset_i[k]) && (mass_i[k] > thresh)) { cp9b->pn_min_i[k] = i;   xset_i[k] = TRUE; }
+	  ///if((! xset_d[k]) && (mass_d[k] > thresh)) { cp9b->pn_min_d[k] = i-1; xset_d[k] = TRUE; }
+	}
+    }	  
+  /* note boundary conditions, ip = 0, i = i0-1 */
+  if(! xset_m[0]) { 
+    if((mass_m[0] = ILogsum(mass_m[0], post->mmx[0][0])) > thresh) { 
+      cp9b->pn_max_m[0] = 0; /* "off-by-one" (from comment * above) is dealt with special at end of function for M_0 */
+      xset_m[0] = TRUE; 
+    }
+  }
+  /* mass_i[0] is unchaged because b/c post->imx[0][0] is -INFTY, set above */
+  /* mass_d[0] is unchaged because b/c post->dmx[0][0] is -INFTY, set above */
+  for (k = 1; k <= M; k++) {
+    /* mass_m[k] doesn't change b/c post->mmx[0][k] is -INFTY */
+    /* mass_i[k] doesn't change b/c post->mmx[0][k] is -INFTY */
+    if(!xset_d[k]) { 
+      if((mass_d[k] = ILogsum(mass_d[k], post->dmx[0][k])) > thresh) { 
+	cp9b->pn_max_d[k] = 0+1; /* see "off-by-one" comment * above */
+	xset_d[k] = TRUE; 
+      }
+    }
+  }	 
+  /* Some states may not have had their min/max set. This occurs if the entire
+   * state is outside the band (i.e. the summed probablity the state is entered for ANY i
+   * is less than our threshold. Current strategy in this situation is to set the
+   * band to width 1 of the most likely position for that state, but to do that we
+   * need to find what the most likely posn is, we could do this in the loop above,
+   * but this is a rare situation, and so that turns out to be wasteful.
+   */
+  for(k = 0; k <= M; k++)
+    {
+      /* TEMPORARY this is how I used to do it with hmm_band_bounds() is this right?
+       * maybe it should set max = min if min was set but not max and vice versa? 
+       */
+      if((! nset_m[k]) || (! xset_m[k])) { 
+	max = post->mmx[0][k];
+	for(ip = 1; ip <= L; ip++)
+	  if(post->mmx[ip][k] > max) { pnmax = i; max = post->mmx[ip][k]; }
+	cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = pnmax;
+      }
+      if((! nset_i[k]) || (! xset_i[k])) { 
+	max = post->imx[0][k];
+	for(ip = 1; ip <= L; ip++)
+	  if(post->imx[ip][k] > max) { pnmax = i; max = post->imx[ip][k]; }
+	cp9b->pn_min_i[k] = cp9b->pn_max_i[k] = pnmax;
+      }
+      if((! nset_d[k]) || (! xset_d[k])) { 
+	max = post->dmx[0][k];
+	for(ip = 1; ip <= L; ip++)
+	  if(post->dmx[ip][k] > max) { pnmax = i; max = post->dmx[ip][k]; }
+	cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = pnmax + 1; /* see "off-by-one" comment * above */
+      }
+    }
+  /* correct for M_0 off-by-one explained in comment * above */
+  cp9b->pn_min_m[0]++;
+  cp9b->pn_max_m[0]++;
+  cp9b->pn_min_d[0] = -1; /* D_0 doesn't exist */
+  cp9b->pn_max_d[0] = -1; /* D_0 doesn't exist */
+
+  if(debug_level > 0) debug_print_hmm_bands(stdout, j0, cp9b, (1.-p_thresh), 1);
+  free(mass_m);
+  free(mass_i);
+  free(mass_d);
+  free(nset_m);
+  free(nset_i);
+  free(nset_d);
+  free(xset_m);
+  free(xset_i);
+  free(xset_d);
+  FreeCPlan9Matrix(post);
   return;
 
  ERROR:
-  cm_Fail("Memory allocation error.");
+  cm_Fail("memory allocation error.");
+}
+
+
+/*****************************************************************************
+ * Function: Xcp9_FB2HMMBandsWithSums()
+ * Date:     EPN, Wed Oct 17 10:22:44 2007
+ *
+ * Purpose: Determine the band on all HMM states given a Forward and
+ *          Backward matrix. Do this by calculating and summing log posterior
+ *          probabilities that each state emitted/was visited at each posn,
+ *          starting at the sequence ends, and creeping in, until the half the
+ *          maximum allowable probability excluded is reached on each side.
+ *
+ * CP9_t hmm        the HMM
+ * dsq              the digitized sequence
+ * CP9_dpmatrix_t fmx: forward DP matrix, already calc'ed
+ * CP9_dpmatrix_t bmx: backward DP matrix, already calc'ed
+ * CP9Bands_t cp9b  CP9 bands data structure
+ * int i0           start of target subsequence (often 1, beginning of dsq)
+ * int j0           end of target subsequence (often L, end of dsq)
+ * int   M          number of nodes in HMM (num columns of post matrix)
+ * double p_thresh  the probability mass we're requiring is within each band
+ * int did_scan     TRUE if Forward/Backward were run in 'scan mode'
+ * int debug_level  [0..3] tells the function what level of debugging print
+ *                  statements to print.
+ *****************************************************************************/
+void
+Xcp9_FB2HMMBandsWithSums(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, CP9Bands_t *cp9b, 
+			 int i0, int j0, int M, double p_thresh, int did_scan, int debug_level)
+{
+  int status;
+  int k;                                  /* counter over nodes of the model */
+  int L = j0-i0+1;                        /* length of sequence */
+  int thresh = Prob2Score(((1. - p_thresh)/2.), 1.); /* allowable prob mass excluded on each side */
+
+  /* *_m = match, *_i = insert, *_d = delete */
+  int *kthresh_m, *kthresh_i, *kthresh_d; /* [0..k..hmm->M], individual thresholds for each state */
+  int *nset_m, *nset_i, *nset_d;          /* [0..k..hmm->M], has minimum been set for this state? */
+  int *xset_m, *xset_i, *xset_d;          /* [0..k..hmm->M], has maximum been set for this state? */
+  int *mass_m, *mass_i, *mass_d;          /* [0..k..hmm->M], summed log prob of post->mx[i][k] from 0..k or k..L */
+  int i, ip;                              /* actual position and relative position in sequence, ip = i-i0+1 */
+  CP9_dpmatrix_t *post;                   /* posterior dp matrix for CP9 HMM */
+  
+  printf("in Xcp9_FB2HMMBandsWithSums()\n");
+  /* allocations and initializations */
+  ESL_ALLOC(nset_m, sizeof(int) * (M+1));
+  ESL_ALLOC(nset_i, sizeof(int) * (M+1));
+  ESL_ALLOC(nset_d, sizeof(int) * (M+1));
+  ESL_ALLOC(xset_m, sizeof(int) * (M+1));
+  ESL_ALLOC(xset_i, sizeof(int) * (M+1));
+  ESL_ALLOC(xset_d, sizeof(int) * (M+1));
+  ESL_ALLOC(mass_m, sizeof(int) * (M+1));
+  ESL_ALLOC(mass_i, sizeof(int) * (M+1));
+  ESL_ALLOC(mass_d, sizeof(int) * (M+1));  
+  ESL_ALLOC(kthresh_m, sizeof(int) * (M+1));
+  ESL_ALLOC(kthresh_i, sizeof(int) * (M+1));
+  ESL_ALLOC(kthresh_d, sizeof(int) * (M+1));  
+
+  esl_vec_ISet(mass_m, M+1, -INFTY);
+  esl_vec_ISet(mass_i, M+1, -INFTY);
+  esl_vec_ISet(mass_d, M+1, -INFTY);
+  esl_vec_ISet(nset_m, M+1, FALSE);
+  esl_vec_ISet(nset_i, M+1, FALSE);
+  esl_vec_ISet(nset_d, M+1, FALSE);
+  esl_vec_ISet(xset_m, M+1, FALSE);
+  esl_vec_ISet(xset_i, M+1, FALSE);
+  esl_vec_ISet(xset_d, M+1, FALSE);
+
+  /* get the posterior matrix first, we need it b/c each state will have a different log prob threshold */
+  post = bmx;
+  CP9Posterior(dsq, i0, j0, hmm, fmx, bmx, post, did_scan);
+
+  /* fill ipost_sums in cp9bands data structure */
+  CP9_ifill_post_sums(post, cp9b, i0, j0);
+
+  /* set state dependent cutoff thresholds for log prob mass we need on each side (this is unique to 
+   * WithSums() function */
+  for(k = 0; k <= M; k++) {
+    kthresh_m[k] = thresh + cp9b->isum_pn_m[k];
+    kthresh_i[k] = thresh + cp9b->isum_pn_i[k];
+    kthresh_d[k] = thresh + cp9b->isum_pn_d[k];
+  }
+  /* comment *: off-by-one issue with non-emitters (includes all D states and M_0): 
+   * pn_min_d[k] = i, means posn i was last residue emitted
+   * prior to entering node k's delete state. However, for a CM,
+   * if a delete states sub-parsetree is bounded by i' and j', then
+   * positions i' and j' HAVE NOT YET BEEN EMITTED.
+   * For M_0, so we don't have to check each node to see if k == 0, we
+   * do the off-by-one correction at the end of the function.
+   */
+
+  /* Find minimum position in band for each state (M,I,D) of each node (0..M) */
+  for (ip = 0; ip <= L; ip++) /* ip is the relative position in the seq */
+    {
+      i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
+      for(k = 0; k <= M; k++)
+	{
+	  if(! nset_m[k]) { 
+	    if((mass_m[k] = ILogsum(mass_m[k], post->mmx[ip][k])) > kthresh_m[k]) { 
+	      cp9b->pn_min_m[k] = i;
+	      nset_m[k] = TRUE; 
+	    }
+	  }
+	  if(! nset_i[k]) { 
+	    if((mass_i[k] = ILogsum(mass_i[k], post->imx[ip][k])) > kthresh_i[k]) { 
+	      cp9b->pn_min_i[k] = i;
+	      nset_i[k] = TRUE; 
+	    }
+	  }
+	  if(! nset_d[k]) { 
+	    if((mass_d[k] = ILogsum(mass_d[k], post->dmx[ip][k])) > kthresh_d[k]) { 
+	      cp9b->pn_min_d[k] = i+1; /* see "off-by-one" comment * above */
+	      nset_d[k] = TRUE; 
+	    }
+	  }
+	}
+    }	  
+  /* Find maximum position in band for each state (M,I,D) of each node (0..M)
+   * by moving from L down to 0 */
+  /* reset mass_* arrays */
+  esl_vec_ISet(mass_m, M+1, -INFTY);
+  esl_vec_ISet(mass_i, M+1, -INFTY);
+  esl_vec_ISet(mass_d, M+1, -INFTY);
+  for (ip = L; ip >= 0; ip--) /* ip is the relative position in the seq */
+    {
+      i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
+      for(k = 0; k <= M; k++)
+	{
+	  if(! xset_m[k]) { 
+	    if((mass_m[k] = ILogsum(mass_m[k], post->mmx[ip][k])) > kthresh_m[k]) { 
+	      cp9b->pn_max_m[k] = i;
+	      xset_m[k] = TRUE; 
+	    }
+	  }
+	  if(! xset_i[k]) { 
+	    if((mass_i[k] = ILogsum(mass_i[k], post->imx[ip][k])) > kthresh_i[k]) { 
+	      cp9b->pn_max_i[k] = i;
+	      xset_i[k] = TRUE; 
+	    }
+	  }
+	  if(! xset_d[k]) { 
+	    if((mass_d[k] = ILogsum(mass_d[k], post->dmx[ip][k])) > kthresh_d[k]) { 
+	      cp9b->pn_max_d[k] = i+1; /* see "off-by-one" comment * above */
+	      xset_d[k] = TRUE; 
+	    }
+	  }
+	}
+    }	  
+
+  /* all states should have their min/max set because we've normalized the probability
+   * of entering each state to 1.0, so we assert this to be true */
+  assert(nset_m[k]);
+  assert(nset_i[k]);
+  assert(xset_m[k]);
+  assert(xset_i[k]);
+  /* D_0 state does not exist */
+  for(k = 1; k <= M; k++)
+    {
+      assert(nset_m[k]);
+      assert(nset_i[k]);
+      assert(nset_d[k]);
+      assert(xset_m[k]);
+      assert(xset_i[k]);
+      assert(xset_d[k]);
+      ESL_DASSERT1((nset_m[k]));
+      ESL_DASSERT1((nset_i[k]));
+      ESL_DASSERT1((nset_d[k]));
+      ESL_DASSERT1((xset_m[k]));
+      ESL_DASSERT1((xset_i[k]));
+      ESL_DASSERT1((xset_d[k]));
+    }
+  /* correct for M_0 off-by-one explained in comment * above */
+  cp9b->pn_min_m[0]++;
+  cp9b->pn_max_m[0]++;
+  cp9b->pn_min_d[0] = -1; /* D_0 doesn't exist */
+  cp9b->pn_max_d[0] = -1; /* D_0 doesn't exist */
+
+  if(debug_level > 0) debug_print_hmm_bands(stdout, j0, cp9b, (1.-p_thresh), 1);
+  free(mass_m);
+  free(mass_i);
+  free(mass_d);
+  free(nset_m);
+  free(nset_i);
+  free(nset_d);
+  free(xset_m);
+  free(xset_i);
+  free(xset_d);
+  FreeCPlan9Matrix(post);
+  return;
+
+ ERROR:
+  cm_Fail("memory allocation error.");
 }
 
 /*****************************************************************
@@ -398,89 +659,146 @@ CP9EXPTL_S_Posterior(ESL_DSQ *dsq, int i0, int j0,
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
   { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
-  { "-o",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute original, non-hybrid jd banded CYK alignment implementation", 0 },
+  { "-r",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "set random number seed randomly",                0 },
+  { "-s",        eslARG_INT,     "33", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                  0 },
+  { "-e",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "emit sequences from CM, don't randomly create them", 0 },
+  { "-l",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "configure CM/HMM for local alignment", 0 },
+  { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of target seqs",                          0 },
+  { "-L",        eslARG_INT,     NULL, NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs, default: consensus length", 0 },
+  { "-o",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute original CYK HMM banded alignment implementation", 0 },
+  { "--scan",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "run in scan mode, not alignment mode", 0 },
+  { "--compare", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "compare HMM bands calc'ed with new optimized imp vs 0.8 imp", 0 },
+  { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "use posterior sums during HMM band calculation (widens bands)", 0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile> <seqfile>";
-static char banner[] = "benchmark driver for fast HMM banded CYK alignment algorithm";
+static char banner[] = "benchmark driver for fast HMM banded CYK alignment and scanning algorithm";
 
 int 
 main(int argc, char **argv)
 {
   int status;
-  ESL_GETOPTS    *go      = esl_getopts_CreateDefaultApp(options, 2, argc, argv, banner, usage);
-  CM_t            *cm;
+  ESL_GETOPTS    *go      = esl_getopts_CreateDefaultApp(options, 1, argc, argv, banner, usage);
+  CM_t           *cm;
   ESL_STOPWATCH  *w       = esl_stopwatch_Create();
+  ESL_RANDOMNESS *r       = NULL;
   ESL_ALPHABET   *abc     = NULL;
   int             i;
   float           sc, bsc;
   int             b;
-  char            *cmfile = esl_opt_GetArg(go, 1);
-  char            *sqfile = esl_opt_GetArg(go, 2);
-  ESL_SQFILE      *sqfp;     /* open sequence input file stream */
-  CMFILE          *cmfp;     /* open input CM file stream */
-  seqs_to_aln_t   *seqs_to_aln;  /* sequences to align, holds seqs, parsetrees, CP9 traces, postcodes */
-  int              L;        /* length of sequence */
+  char           *cmfile = esl_opt_GetArg(go, 1);
+  CMFILE         *cmfp;	    /* open input CM file stream */
+  ESL_DSQ        *dsq;
+  int             L;        /* length of sequence */
+  int             do_random;
+  int             N = esl_opt_GetInteger(go, "-N");
+  seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
+  int             do_align;
+  
+  if (esl_opt_GetBoolean(go, "-r"))  r = esl_randomness_CreateTimeseeded();
+  else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
+
+  do_random = TRUE;
+  if(esl_opt_GetBoolean(go, "-e")) do_random = FALSE; 
+
+  do_align = TRUE;
+  if(esl_opt_GetBoolean(go, "--scan")) do_align = FALSE; 
 
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
   if (!(CMFileRead(cmfp, &abc, &cm)))            cm_Fail("Failed to read CM");
   CMFileClose(cmfp);
 
-  /* open input sequence file */
-  status = esl_sqfile_Open(sqfile, eslSQFILE_UNKNOWN, NULL, &(sqfp));
-  if (status == eslENOTFOUND)    cm_Fail("File %s doesn't exist or is not readable\n", sqfile);
-  else if (status == eslEFORMAT) cm_Fail("Couldn't determine format of sequence file %s\n", sqfile);
-  else if (status == eslEINVAL)  cm_Fail("Can’t autodetect stdin or .gz."); 
-  else if (status != eslOK)      cm_Fail("Sequence file open failed with error %d\n", status);
+  /* determine sequence length */
+  if(esl_opt_IsDefault(go, "-L")) L = cm->clen;      
+  else                            L = esl_opt_GetInteger(go, "-L");
 
   /* configure CM for HMM banded alignment */
   //cm->config_opts |= CM_CONFIG_QDB;
-  cm->align_opts  |= CM_ALIGN_NOSMALL;
-  cm->align_opts  |= CM_ALIGN_HBANDED;
-  cm->align_opts  |= CM_ALIGN_TIME;
-  //cm->config_opts  |= CM_CONFIG_LOCAL;
-  //cm->config_opts  |= CM_CONFIG_HMMLOCAL;
-  ConfigCM(cm, NULL, NULL);
-
-  /* read in all sequences, this is wasteful, but Parsetrees2Alignment() requires all seqs in memory */
-  seqs_to_aln = CreateSeqsToAln(100, FALSE);
-  if((status = ReadSeqsToAln(cm->abc, sqfp, 0, TRUE, seqs_to_aln, FALSE)) != eslEOF) cm_Fail("Error reading sqfile: %s\n", sqfile);
+  ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
   
+  cm->align_opts  |= CM_ALIGN_TIME;
+  if(do_align) { 
+    cm->align_opts  |= CM_ALIGN_NOSMALL;
+    cm->align_opts  |= CM_ALIGN_HBANDED;
+    if(esl_opt_GetBoolean(go, "--sums")) cm->align_opts |= CM_ALIGN_SUMS;
+  }
+  else /* don't align, scan */ {
+    cm->search_opts  |= CM_SEARCH_HBANDED;
+    cm->search_opts  |= CM_SEARCH_HMMSCANBANDS;
+    if(esl_opt_GetBoolean(go, "--sums")) cm->search_opts |= CM_SEARCH_SUMS;
+  }
+  if(esl_opt_GetBoolean(go, "-l")) { 
+    cm->config_opts  |= CM_CONFIG_LOCAL;
+    cm->config_opts  |= CM_CONFIG_HMMLOCAL;
+    cm->config_opts  |= CM_CONFIG_HMMEL;
+  }
+
+  ConfigCM(cm, NULL, NULL);
   CP9Bands_t *cp9b;
   cp9b = AllocCP9Bands(cm, cm->cp9);
-  for (i = 0; i < seqs_to_aln->nseq; i++)
+
+  /* get sequences */
+  if(do_random) {
+    double *dnull;
+    ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
+    for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
+    esl_vec_DNorm(dnull, cm->abc->K);
+    seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, L, FALSE);
+    free(dnull);
+  }
+  else /* don't randomly generate seqs, emit them from the CM */
+    seqs_to_aln = CMEmitSeqsToAln(r, cm, 1, N, FALSE);
+
+  for (i = 0; i < N; i++)
     {
       esl_stopwatch_Start(w);
-      L = seqs_to_aln->sq[i]->n;
-      CP9_seq2bands(cm, seqs_to_aln->sq[i]->dsq, 1, L, cp9b,  
-		    NULL, /* we don't want posterior matrix back */
-		    0);
+      Xcp9_seq2bands(cm, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, cp9b,  
+		     NULL, /* we don't want posterior matrix back */
+		     0);
       esl_stopwatch_Stop(w);
-      printf("%4d %-30s %17s", i+1, "Band calc", "");
+      printf("%4d %-30s %17s", i+1, "Exptl Band calc", "");
       esl_stopwatch_Display(stdout, w, "CPU time: ");
-
+      
+      if(esl_opt_GetBoolean(go, "--compare")) {
+	printf("\n\n");
+	CP9Bands_t *cp9b_old;
+	cp9b_old = AllocCP9Bands(cm, cm->cp9);
+	CP9_seq2bands(cm, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, cp9b_old,  
+		      NULL, /* we don't want posterior matrix back */
+		      0);
+	esl_stopwatch_Stop(w);
+	printf("%4d %-30s %17s", i+1, "Old Band calc", "");
+	esl_stopwatch_Display(stdout, w, "CPU time: ");
+	printf("\n\n");
+	printf("Comparing bands...");
+	cp9_compare_bands(cp9b, cp9b_old);
+	printf("done. [passed]\n");
+	FreeCP9Bands(cp9b_old);
+      }
+      esl_stopwatch_Start(w);
       /*esl_stopwatch_Start(w);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastInside_b_jd_me(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");*/
-      
-      //if(esl_opt_GetBoolean(go, "-o")) {
-      esl_stopwatch_Start(w);
-
-	sc = CYKInside_b_jd(cm, seqs_to_aln->sq[i]->dsq, L, 0, 1, L, NULL, cp9b->jmin, 
+      /*sc = CYKInside_b_jd(cm, seqs_to_aln->sq[i]->dsq, seqs_to_aln->sq[i]->n, 0, 1, L, NULL, cp9b->jmin, 
 			    cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
-
-	printf("%4d %-30s %10.4f bits ", (i+1), "CYKInside_b_jd(): ", sc);
-	esl_stopwatch_Stop(w);
-	esl_stopwatch_Display(stdout, w, " CPU time: ");
-	//      }      
-	printf("\n");
+      
+      printf("%4d %-30s %10.4f bits ", (i+1), "CYKInside_b_jd(): ", sc);
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_Display(stdout, w, " CPU time: ");*/
+      //      }      
+      printf("\n");
     }
 
   FreeCM(cm);
   esl_alphabet_Destroy(abc);
   esl_stopwatch_Destroy(w);
   esl_getopts_Destroy(go);
+
+  printf("success\n");
   return 0;
+
+ ERROR:
+  cm_Fail("memory allocation error");
 }
 #endif /*IMPL_FASTALIGN_BENCHMARK*/
