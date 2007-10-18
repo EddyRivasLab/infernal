@@ -1,4 +1,4 @@
-/* fastsearch.c
+/* cm_fastsearch.c
  * EPN, Wed Sep 12 16:53:32 2007
  * 
  * Fast versions of CYK and Inside search functions.
@@ -70,11 +70,9 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   int       v, w, y;            /* state indices */
   int       jp_v;  	        /* offset j for state v */
   int       jp_y;  	        /* offset j for state y */
-  int       jp_w;  	        /* offset j for state w */
   int       jp_g;               /* offset j for gamma (j-i0+1) */
   int       ip_g;               /* offset i for gamma (i-i0+1) */
   int       dp_y;               /* offset d for state y */
-  int       jmax;               /* when imposing bands, maximum j value in alpha matrix */
   int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
   int       L;                  /* length of the subsequence (j0-i0+1) */
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
@@ -91,7 +89,6 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   int *jp_wA;
   float **init_scAA;
   int  ctr = 0;
-  int y1;
   /*int yidx;*/
   /*float const *tsc = cm->tsc[0]; */
 
@@ -122,7 +119,8 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W,
    *    v ranges from 0..M-1 over states in the model.
    *    d ranges from 0..W over subsequence lengths.
    * Note if v is a BEGL_S alpha[j][v] == NULL
-   * Note that E memory is shared: all E decks point at M-1 deck.
+   * Note that old convention of sharing E memory is no longer,
+   * each E state has it's own deck.
    *
    * alpha_begl matrix holds data for ONLY BEGL_S states
    *    j takes value of 0..W
@@ -180,7 +178,11 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W,
       if(cm->stid[v] != BEGL_S) 
 	{
 	  alpha[0][v][0] = IMPOSSIBLE;
-	  if      (cm->sttype[v] == E_st)  alpha[0][v][0] = 0;
+	  if      (cm->sttype[v] == E_st)  { 
+	    alpha[0][v][0] = alpha[1][v][0] = 0.;
+	    /* rest of E deck is IMPOSSIBLE, this rewritten if QDB is on, (slightly wasteful). */
+	    for (d = 1; d <= W; d++) alpha[0][v][d] = alpha[1][v][d] = IMPOSSIBLE;
+	  }
 	  else if (cm->sttype[v] == MP_st) alpha[0][v][1] = alpha[1][v][1] = IMPOSSIBLE;
 	  else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) 
 	    {
@@ -210,7 +212,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	    alpha_begl[j][v][0] = alpha_begl[0][v][0];
 	}
     }
-  bestr[0] = -1;
+      bestr[0] = -1;
 
   /*
    * gamma allocation and initialization.
@@ -346,6 +348,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 
       for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
 	{
+	  /* printf("dnA[v:%d]: %d\ndxA[v:%d]: %d\n", v, dnA[v], v, dxA[v]); */
 	  if(cm->sttype[v] == E_st) continue;
 	  /* float const *esc_v = cm->esc[v]; */
 	  float const *esc_v = esc_vAA[v]; 
@@ -406,7 +409,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	    float const *arow5;
 
 	    switch (cnum) {
-	    case 3: /* 1 or 2 inserts, 1 insert much more likely */
+	    case 3: 
 	      arow0 = (float * const) alpha[jp_y][y];
 	      arow1 = (float * const) alpha[jp_y][y+1];
 	      arow2 = (float * const) alpha[jp_y][y+2];
@@ -468,7 +471,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	      } /* end of for(d = dn; d <= dx; d++) */
 	      break;
 
-	    case 4: /* necessarily 2 inserts */
+	    case 4: 
 	      arow0 = (float * const) alpha[jp_y][y];
 	      arow1 = (float * const) alpha[jp_y][y+1];
 	      arow2 = (float * const) alpha[jp_y][y+2];
@@ -548,7 +551,9 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W,
 	      } /* end of for(d = dn; d <= dx; d++) */
 	      break;
 	    } /* end of switch(cnum) */
-	  } /* end of else (v != B_st) */
+	    /* for (d = dn; d <= dx; d++) 
+	       printf("alpha[j:%d][v:%d][d:%d]: %10.4f\n", j, v, d, alpha[jp_v][v][d]); */
+	  } /* end of else (v != B_st && v != BEGL_st) */
 	  if(vsc != NULL) for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha[jp_v][v][d]);
 	} /*loop over decks v>0 */
       
@@ -736,16 +741,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W,
   return 0.; /* NEVERREACHED */
 }
 
-
-
-
-
-/* BREAKPOINT  HERE */
-
-
-
-
-/* Function: EXTPLFastCYKScan()
+/* Function: OLDFastCYKScan()
  * Date:     EPN, Wed Sep 12 16:55:28 2007
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using the
@@ -769,8 +765,8 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W,
  *           Dies immediately if some error occurs.
  */
 float 
-EXPTLFastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, 
-		 search_results_t *results, float **ret_vsc, float *ret_best_hit_sc)
+OLDFastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, 
+	       search_results_t *results, float **ret_vsc, float *ret_best_hit_sc)
 {
   int       status;
   float  ***alpha;              /* CYK DP score matrix, [j][v][d] (for non-BEGL states) */
@@ -793,7 +789,6 @@ EXPTLFastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, i
   int       jp_w;  	        /* offset j for state w */
   int       jp_g;               /* offset j for gamma (j-i0+1) */
   int       ip_g;               /* offset i for gamma (i-i0+1) */
-  int       jmax;               /* when imposing bands, maximum j value in alpha matrix */
   int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
   int       L;                  /* length of the subsequence (j0-i0+1) */
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
@@ -1003,6 +998,8 @@ EXPTLFastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, i
 
       for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
 	{
+	  /* printf("dnA[v:%d]: %d\ndxA[v:%d]: %d\n", v, dnA[v], v, dxA[v]); */
+
 	  jp_v = (cm->stid[v] == BEGL_S) ? (j % (W+1)) : cur;
 	  jp_y = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
 	  sd   = StateDelta(cm->sttype[v]);
@@ -1064,6 +1061,8 @@ EXPTLFastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, i
 		break;
 	      } /* end of switch */
 	    } /* end of d = dnA[v]; d <= dxA[v]; d++ for B_st */
+	    /* for (d = dnA[v]; d <= dxA[v]; d++) 
+	       printf("alpha[j:%d][v:%d][d:%d]: %10.4f\n", j, v, d, alpha[cur][v][d]); */
 	  } /* end of else (v != B_st && v != BEGL_S */
 	  if(vsc != NULL) { 
 	    if(cm->stid[v] == BEGL_S) for (d = dnA[v]; d <= dxA[v]; d++) vsc[v] = ESL_MAX(vsc[v], alpha_begl[v][jp_v][d]); 
@@ -1238,7 +1237,7 @@ EXPTLFastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, i
   if (ret_best_hit_sc != NULL) *ret_best_hit_sc = best_hit_sc;
   if (ret_vsc         != NULL) *ret_vsc         = vsc;
   
-  /* printf("EXPTLFastCYKScan() return score: %10.4f\n", vsc_root); */
+  /* printf("OLDFastCYKScan() return score: %10.4f\n", vsc_root); */
   return vsc_root;
   
  ERROR:
@@ -1246,139 +1245,10 @@ EXPTLFastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, i
   return 0.; /* NEVERREACHED */
 }
 
-/*****************************************************************
- * Benchmark driver
- *****************************************************************/
-#ifdef IMPL_FASTSEARCH_BENCHMARK
-/* gcc -o benchmark-fastsearch -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTSEARCH_BENCHMARK fastsearch.c -linfernal -leasel -lm
- * ./benchmark-fastsearch <cmfile>
- */
 
-#include "esl_config.h"
-#include "config.h"
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-
-#include "easel.h"
-#include <esl_getopts.h>
-#include <esl_histogram.h>
-#include <esl_random.h>
-#include <esl_sqio.h>
-#include <esl_stats.h>
-#include <esl_stopwatch.h>
-#include <esl_vectorops.h>
-#include <esl_wuss.h>
-
-#include "funcs.h"		/* function declarations                */
-#include "structs.h"		/* data structures, macros, #define's   */
-
-static ESL_OPTIONS options[] = {
-  /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
-  { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
-  { "-r",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "set random number seed randomly",                0 },
-  { "-s",        eslARG_INT,     "33", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                  0 },
-  { "-L",        eslARG_INT,  "10000", NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs",                   0 },
-  { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of random target seqs",                   0 },
-  { "-w",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute slow, reference CYK scan implementation", 0 },
-  { "-x",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute experimental CYK scan implementation", 0 },
-  { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute non-banded optimized CYK scan implementation", 0 },
-  /* { "--rsearch", eslARG_NONE,   FALSE, NULL, NULL,  NULL,"--noqdb", NULL, "also execute ported RSEARCH's CYK scan implementation", 0 },*/
-  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-};
-static char usage[]  = "[-options] <cmfile>";
-static char banner[] = "benchmark driver for an optimized scanning CYK implementation";
-
-int 
-main(int argc, char **argv)
-{
-  ESL_GETOPTS    *go      = esl_getopts_CreateDefaultApp(options, 1, argc, argv, banner, usage);
-  CM_t            *cm;
-  ESL_STOPWATCH  *w       = esl_stopwatch_Create();
-  ESL_RANDOMNESS *r       = NULL;
-  ESL_ALPHABET   *abc     = NULL;
-  int             L       = esl_opt_GetInteger(go, "-L");
-  int             N       = esl_opt_GetInteger(go, "-N");
-  ESL_DSQ        *dsq     = malloc(sizeof(ESL_DSQ) * (L+2));
-  int             i;
-  float           sc;
-  char            *cmfile = esl_opt_GetArg(go, 1);
-  CMFILE          *cmfp;	/* open input CM file stream */
-  int            *dmin;
-  int            *dmax;
-
-  if (esl_opt_GetBoolean(go, "-r"))  r = esl_randomness_CreateTimeseeded();
-  else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
-
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
-  if (!(CMFileRead(cmfp, &abc, &cm)))            cm_Fail("Failed to read CM");
-  CMFileClose(cmfp);
-
-  cm->config_opts |= CM_CONFIG_QDB;
-  ConfigCM(cm, NULL, NULL);
-
-  if (esl_opt_GetBoolean(go, "--noqdb")) { 
-    dmin = NULL; dmax = NULL;
-  }
-  else { dmin = cm->dmin; dmax = cm->dmax; }
-
-  for (i = 0; i < N; i++)
-    {
-      esl_rnd_xfIID(r, cm->null, abc->K, L, dsq);
-
-      esl_stopwatch_Start(w);
-      sc = FastCYKScan(cm, dsq, dmin, dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
-      printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan(): ", sc);
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_Display(stdout, w, " CPU time: ");
-
-      if (esl_opt_GetBoolean(go, "-x")) 
-	{ 
-	  esl_stopwatch_Start(w);
-	  sc = EXPTLFastCYKScan(cm, dsq, dmin, dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
-	  printf("%4d %-30s %10.4f bits ", (i+1), "EXPTLFastCYKScan(): ", sc);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-	}
-
-      if (esl_opt_GetBoolean(go, "-w")) 
-	{ 
-	  esl_stopwatch_Start(w);
-	  sc = CYKBandedScan (cm, dsq, dmin, dmax, 1, L, cm->W, 0., NULL); 
-	  printf("%4d %-30s %10.4f bits ", (i+1), "CYKBandedScan(): ", sc);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-	}
-
-      /*if (esl_opt_GetBoolean(go, "--rsearch")) 
-	{ 
-	  esl_stopwatch_Start(w);
-	  sc = rsearch_CYKScan (cm, dsq, dmin, dmax, 1, L, cm->W, 0., NULL); 
-	  printf("%4d %-30s %10.4f bits ", (i+1), "rsearch_CYKScan(): ", sc);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-	}
-      */
-    }
-
-  FreeCM(cm);
-  free(dsq);
-  esl_alphabet_Destroy(abc);
-  esl_stopwatch_Destroy(w);
-  esl_randomness_Destroy(r);
-  esl_getopts_Destroy(go);
-  return 0;
-}
-#endif /*IMPL_FASTSEARCH_BENCHMARK*/
-
-#if 0 /* not yet compilable */
-
-
-
-/* Function: CYKScan()
- * Date:     RJK, Sun Mar 24, 2002 [STL->DCA]
+/* Function: rsearch_CYKScan()
+ * Date:     EPN, Thu Oct 18 05:09:13 2007 [updated to Easel, Infernal]
+ *           RJK, Sun Mar 24, 2002 [STL->DCA]
  *           SRE, Mon Aug  7 13:15:37 2000 [St. Louis] 
  *                   (from inside() in smallcyk.c)
  *
@@ -1405,14 +1275,14 @@ main(int argc, char **argv)
  *           L         - length of the dsq
  *           cutoff    - cutoff score to report
  *           D         - maximum size of hit
- *           results   - scan_results_t to fill in; if NULL, nothing
+ *           results   - search_results_t to fill in; if NULL, nothing
  *                       filled in
  *
  * Returns: Score of best hit overall
  *
  */
-float CYKScan (CM_t *cm, char *dsq, int L, float cutoff, int D,
-	       scan_results_t *results) {
+float rsearch_CYKScan (CM_t *cm, ESL_DSQ *dsq, int L, float cutoff, int D,
+		       search_results_t *results) {
 
   int     *bestr;               /* Best root state for d at current j */
   int      v,y,z;		/* indices for states  */
@@ -1441,6 +1311,7 @@ float CYKScan (CM_t *cm, char *dsq, int L, float cutoff, int D,
   float     beginsc;            /* beginsc for current state[y] */
   char      sttype;             /* Holds cm->sttype[v] */
   float     best_score = IMPOSSIBLE;     /* Best overall score to return */
+  int       status;
 
   /* Set M */
   M = cm->M;
@@ -1451,41 +1322,41 @@ float CYKScan (CM_t *cm, char *dsq, int L, float cutoff, int D,
     sc_v_size = D+1;
   }
   /* Initialize sc_v to size of M */
-  sc_v = MallocOrDie (sizeof(float) * sc_v_size);
+  ESL_ALLOC(sc_v, (sizeof(float) * sc_v_size));
 
-  gamma = MallocOrDie(sizeof(float **) * 2);
-  gamma[0] = MallocOrDie(sizeof(float *)*2*M);
+  ESL_ALLOC(gamma, (sizeof(float **) * 2));
+  ESL_ALLOC(gamma[0], (sizeof(float *)*2*M));
   gamma[1] = gamma[0] + M;
-  gamma[0][0] = MallocOrDie(sizeof(float)*2*(D+1)*M);
+  ESL_ALLOC(gamma[0][0], (sizeof(float)*2*(D+1)*M));
   gamma[1][0] = gamma[0][0] + ((D+1)*M);
   for (v=1; v<M; v++) {
     gamma[0][v] = gamma[0][v-1] + (D+1);
     gamma[1][v] = gamma[1][v-1] + (D+1);
   }
 
-  gamma_begl_s = MallocOrDie(sizeof(float **)*M);
+  ESL_ALLOC(gamma_begl_s, sizeof(float **)*M);
   for (v=0; v<M; v++) {
     if (cm->stid[v] == BEGL_S) {
       /* For Bifurcatoins, we may need up to D+1 */
-      gamma_begl_s[v] = MallocOrDie(sizeof(float *) * (D+1));
+      ESL_ALLOC(gamma_begl_s[v], sizeof(float *) * (D+1));
       for (j=0; j<D+1; j++) 
-	gamma_begl_s[v][j] = MallocOrDie(sizeof(float)*(D+1));
+	ESL_ALLOC(gamma_begl_s[v][j], sizeof(float)*(D+1));
     } else {
       gamma_begl_s[v] = NULL;
     }
   }
-  gamma_begr_s = MallocOrDie(sizeof(float **)*M);
+  ESL_ALLOC(gamma_begr_s, sizeof(float **)*M);
   for (v=0; v<M; v++) {
     if (cm->stid[v] == BEGR_S) {
-      gamma_begr_s[v] = MallocOrDie(sizeof(float *)*2);
+      ESL_ALLOC(gamma_begr_s[v], sizeof(float *)*2);
       for (j=0; j<2; j++)
-	gamma_begr_s[v][j] = MallocOrDie(sizeof(float)*(D+1));
+	ESL_ALLOC(gamma_begr_s[v][j], sizeof(float)*(D+1));
     } else {
       gamma_begr_s[v] = NULL;
     }
   }
 
-  bestr = MallocOrDie(sizeof(int)*(D+1));
+  ESL_ALLOC(bestr, sizeof(int)*(D+1));
 
   /* Main recursion */
   for (j=0; j<=L; j++) {
@@ -1581,10 +1452,10 @@ float CYKScan (CM_t *cm, char *dsq, int L, float cutoff, int D,
 	for (d = 2; d <= minDj; d++) {
 	  i = j-d+1;
 	  sc = sc_v[d];
-	  if (dsq[i] < Alphabet_size && dsq[j] < Alphabet_size)
-	    sc += cm->esc[v][(int) (dsq[i]*Alphabet_size+dsq[j])];
+	  if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+	    sc += cm->esc[v][(int) (dsq[i]*cm->abc->K+dsq[j])];
 	  else
-	    sc += DegeneratePairScore(cm->esc[v], dsq[i], dsq[j]);
+	    sc += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
 	  if (sc < IMPOSSIBLE) sc = IMPOSSIBLE;
 	  gamma_jmod2[v][d] = sc;
 	}
@@ -1615,10 +1486,10 @@ float CYKScan (CM_t *cm, char *dsq, int L, float cutoff, int D,
 	for (d = 1; d <= minDj; d++) {
 	  i = j-d+1;
 	  sc = sc_v[d];
-	  if (dsq[i] < Alphabet_size)
+	  if (dsq[i] < cm->abc->K)
 	    sc += cm->esc[v][(int) dsq[i]];
 	  else
-	    sc += DegenerateSingletScore(cm->esc[v], dsq[i]);
+	    sc += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 	  if (sc<IMPOSSIBLE) sc = IMPOSSIBLE;
 	  gamma_jmod2[v][d] = sc;
 	}
@@ -1640,10 +1511,10 @@ float CYKScan (CM_t *cm, char *dsq, int L, float cutoff, int D,
 	    }
 	  }
 	  i = j-d+1;
-	  if (dsq[i] < Alphabet_size)
+	  if (dsq[i] < cm->abc->K)
 	    sc += cm->esc[v][(int) dsq[i]];
 	  else
-	    sc += DegenerateSingletScore(cm->esc[v], dsq[i]);
+	    sc += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
 	  if (sc<IMPOSSIBLE) sc = IMPOSSIBLE;
 	  gamma_jmod2[v][d] = sc;
 	}
@@ -1669,10 +1540,10 @@ float CYKScan (CM_t *cm, char *dsq, int L, float cutoff, int D,
 	}
 	for (d = 1; d <= minDj; d++) {
 	  sc = sc_v[d];
-	  if (dsq[j] < Alphabet_size)
+	  if (dsq[j] < cm->abc->K)
 	    sc += cm->esc[v][(int) dsq[j]];
 	  else
-	    sc += DegenerateSingletScore(cm->esc[v], dsq[j]);
+	    sc += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
 	  if (sc < IMPOSSIBLE) sc = IMPOSSIBLE;
 	  gamma_jmod2[v][d] = sc;
 	}
@@ -1782,6 +1653,135 @@ float CYKScan (CM_t *cm, char *dsq, int L, float cutoff, int D,
   free(sc_v);
 
   return (best_score);
-}
-#endif /* #if 0 not yet compilable */
 
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return IMPOSSIBLE; /* never reached */
+}
+
+/*****************************************************************
+ * Benchmark driver
+ *****************************************************************/
+#ifdef IMPL_FASTSEARCH_BENCHMARK
+/* gcc -o benchmark-fastsearch -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTSEARCH_BENCHMARK cm_fastsearch.c -linfernal -leasel -lm
+ * ./benchmark-fastsearch <cmfile>
+ */
+
+#include "esl_config.h"
+#include "config.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#include "easel.h"
+#include <esl_getopts.h>
+#include <esl_histogram.h>
+#include <esl_random.h>
+#include <esl_sqio.h>
+#include <esl_stats.h>
+#include <esl_stopwatch.h>
+#include <esl_vectorops.h>
+#include <esl_wuss.h>
+
+#include "funcs.h"		/* function declarations                */
+#include "structs.h"		/* data structures, macros, #define's   */
+
+static ESL_OPTIONS options[] = {
+  /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
+  { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
+  { "-r",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "set random number seed randomly",                0 },
+  { "-s",        eslARG_INT,     "33", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                  0 },
+  { "-L",        eslARG_INT,  "10000", NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs",                   0 },
+  { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of random target seqs",                   0 },
+  { "-w",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute slow, reference CYK scan implementation", 0 },
+  { "-x",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute experimental CYK scan implementation", 0 },
+  { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute non-banded optimized CYK scan implementation", 0 },
+  { "--rsearch", eslARG_NONE,   FALSE, NULL, NULL,  NULL,"--noqdb", NULL, "also execute ported RSEARCH's CYK scan implementation", 0 },
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+};
+static char usage[]  = "[-options] <cmfile>";
+static char banner[] = "benchmark driver for an optimized scanning CYK implementation";
+
+int 
+main(int argc, char **argv)
+{
+  ESL_GETOPTS    *go      = esl_getopts_CreateDefaultApp(options, 1, argc, argv, banner, usage);
+  CM_t            *cm;
+  ESL_STOPWATCH  *w       = esl_stopwatch_Create();
+  ESL_RANDOMNESS *r       = NULL;
+  ESL_ALPHABET   *abc     = NULL;
+  int             L       = esl_opt_GetInteger(go, "-L");
+  int             N       = esl_opt_GetInteger(go, "-N");
+  ESL_DSQ        *dsq     = malloc(sizeof(ESL_DSQ) * (L+2));
+  int             i;
+  float           sc;
+  char            *cmfile = esl_opt_GetArg(go, 1);
+  CMFILE          *cmfp;	/* open input CM file stream */
+  int            *dmin;
+  int            *dmax;
+
+  if (esl_opt_GetBoolean(go, "-r"))  r = esl_randomness_CreateTimeseeded();
+  else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
+
+  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
+  if (!(CMFileRead(cmfp, &abc, &cm)))            cm_Fail("Failed to read CM");
+  CMFileClose(cmfp);
+
+  cm->config_opts |= CM_CONFIG_QDB;
+  ConfigCM(cm, NULL, NULL);
+
+  if (esl_opt_GetBoolean(go, "--noqdb")) { 
+    dmin = NULL; dmax = NULL;
+  }
+  else { dmin = cm->dmin; dmax = cm->dmax; }
+
+  for (i = 0; i < N; i++)
+    {
+      esl_rnd_xfIID(r, cm->null, abc->K, L, dsq);
+
+      esl_stopwatch_Start(w);
+      sc = FastCYKScan(cm, dsq, dmin, dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
+      printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan(): ", sc);
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+      if (esl_opt_GetBoolean(go, "-x")) 
+	{ 
+	  esl_stopwatch_Start(w);
+	  sc = OLDFastCYKScan(cm, dsq, dmin, dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
+	  printf("%4d %-30s %10.4f bits ", (i+1), "OLDFastCYKScan(): ", sc);
+	  esl_stopwatch_Stop(w);
+	  esl_stopwatch_Display(stdout, w, " CPU time: ");
+	}
+
+      if (esl_opt_GetBoolean(go, "-w")) 
+	{ 
+	  esl_stopwatch_Start(w);
+	  if (esl_opt_GetBoolean(go, "--noqdb")) sc = CYKScan (cm, dsq, 1, L, cm->W, 0., NULL); 
+	  else                                   sc = CYKBandedScan (cm, dsq, dmin, dmax, 1, L, cm->W, 0., NULL); 
+	  printf("%4d %-30s %10.4f bits ", (i+1), "CYKBandedScan(): ", sc);
+	  esl_stopwatch_Stop(w);
+	  esl_stopwatch_Display(stdout, w, " CPU time: ");
+	}
+
+      if (esl_opt_GetBoolean(go, "--rsearch")) 
+	{ 
+	  esl_stopwatch_Start(w);
+	  sc = rsearch_CYKScan (cm, dsq, L, 0., cm->W, NULL); 
+	  printf("%4d %-30s %10.4f bits ", (i+1), "rsearch_CYKScan(): ", sc);
+	  esl_stopwatch_Stop(w);
+	  esl_stopwatch_Display(stdout, w, " CPU time: ");
+	}
+    }
+
+  FreeCM(cm);
+  free(dsq);
+  esl_alphabet_Destroy(abc);
+  esl_stopwatch_Destroy(w);
+  esl_randomness_Destroy(r);
+  esl_getopts_Destroy(go);
+  return 0;
+}
+#endif /*IMPL_FASTSEARCH_BENCHMARK*/

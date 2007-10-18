@@ -204,7 +204,7 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   dpc_v /= 1000000;
 
   /* cyk */
-  /*XFastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);*/
+  /*OLDFastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);*/
   esl_stopwatch_Start(w);
   FastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);
   //CYKScan (cm, dsq, 1, L, cm->W, 0., NULL);

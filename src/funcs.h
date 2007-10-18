@@ -367,11 +367,14 @@ extern char  ** alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, i
 
 
 
-/* from fastsearch.c */
+/* from cm_fastsearch.c */
 extern float FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, 
 			 search_results_t *results, float **ret_vsc, float *ret_best_hit_sc);
-extern float EXPTLFastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, 
-			      search_results_t *results, float **ret_vsc, float *ret_best_hit_sc);
+extern float OLDFastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, 
+			    search_results_t *results, float **ret_vsc, float *ret_best_hit_sc);
+extern float rsearch_CYKScan (CM_t *cm, ESL_DSQ *dsq, int L, float cutoff, int D,
+			      search_results_t *results);
+
 
 
 /* from CP9_scan.c */

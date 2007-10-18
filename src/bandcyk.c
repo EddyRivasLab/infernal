@@ -738,6 +738,8 @@ CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int 
     esl_fatal("ERROR in CYKBandedScan, QDBs invalid\n");
   if(dsq == NULL)
     esl_fatal("ERROR in CYKBandedScan, dsq is NULL.\n");
+  if(dmin == NULL || dmax == NULL)
+    esl_fatal("ERROR in CYKBandedScan, dmin and/or dmax are NULL.\n");
 
   int       status;
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
