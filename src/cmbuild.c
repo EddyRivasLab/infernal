@@ -682,7 +682,7 @@ check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf
     ESL_FAIL(eslFAIL, errbuf, "Alignment has no reference coord annotation.\n");
   if (msa->ss_cons == NULL) 
     ESL_FAIL(eslFAIL, errbuf, "Alignment did not contain consensus structure annotation.\n");
-  if (! clean_cs(msa->ss_cons, msa->alen))
+  if (! clean_cs(msa->ss_cons, msa->alen, FALSE))
     ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation\n");
   if (esl_opt_GetBoolean(go, "--ignorant")) strip_wuss(msa->ss_cons);
   

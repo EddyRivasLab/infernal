@@ -1558,7 +1558,7 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
  * Purpose:   Verify and (if needed) clean the consensus structure annotation.
  */
 int
-clean_cs(char *cs, int alen)
+clean_cs(char *cs, int alen, int be_quiet)
 {
   int   status;
   int   i;
@@ -1582,7 +1582,7 @@ clean_cs(char *cs, int alen)
    *    if necessary. */
   if (check_for_pknots(cs, alen)) {
     has_pseudoknots = TRUE; 
-    printf("    [Consensus structure has annotated pseudoknots that will be ignored.]\n");
+    if(!be_quiet) printf("    [Consensus structure has annotated pseudoknots that will be ignored.]\n");
     fflush(stdout);
   }
   else return TRUE; /* we're good, no need to clean it, there's no 
@@ -1603,7 +1603,7 @@ clean_cs(char *cs, int alen)
       }
     }
   if (nbad > 0) {
-    printf("    [Removed %d bad chars from consensus line. Example: a %c at position %d.]\n",
+    if(!be_quiet) printf("    [Removed %d bad chars from consensus line. Example: a %c at position %d.]\n",
 	   nbad, example, first);
     fflush(stdout);
   }

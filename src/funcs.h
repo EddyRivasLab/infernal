@@ -169,7 +169,7 @@ extern void cm_from_guide(CM_t *cm, Parsetree_t *gtr);
 extern int  cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach);
 extern int  cm_check_before_detaching(CM_t *cm, int insert1, int insert2);
 extern int  cm_detach_state(CM_t *cm, int insert1, int insert2);
-extern int  clean_cs(char *cs, int alen);
+extern int  clean_cs(char *cs, int alen, int be_quiet);
 				 
 /* from parsetree.c
  */

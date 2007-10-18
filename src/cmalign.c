@@ -28,6 +28,8 @@
 #include "esl_msa.h"
 #include "esl_sqio.h"		
 #include "esl_stopwatch.h"
+#include "esl_vectorops.h"
+#include "esl_wuss.h"
 
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
@@ -76,6 +78,7 @@ static ESL_OPTIONS options[] = {
   { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 5 },
   /* Including a preset alignment */
   { "--withali", eslARG_STRING, NULL,  NULL, NULL,      NULL,    "--cyk",       NULL, "incl. alignment in <f> (must be aln <cm file> was built from)", 6 },
+  { "--withpknots",eslARG_NONE, NULL,  NULL, NULL,      NULL,"--withali",       NULL, "incl. structure (w/pknots) from <f> from --withali <f>", 6 },
   { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--withali",       NULL, "--rf was originally used with cmbuild", 6 },
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,"--withali",       NULL, "--gapthresh <x> was originally used with cmbuild", 6 },
   /* Enforcing a subsequence */
@@ -119,7 +122,9 @@ struct cfg_s {
   FILE         *regressfp;	/* optional output for regression test  */
   ESL_MSAFILE  *withalifp;	/* optional input alignment to include */
   ESL_MSA      *withmsa;	/* MSA from withalifp to include */
+  char         *withss_cons;	/* ss_cons string from withmsa (before knot stripping) */
   Parsetree_t  *withali_mtr;	/* guide tree for MSA from withalifp */
+  ESL_ALPHABET *withali_abc;	/* digital alphabet for reading withali MSA */
   ESL_ALPHABET *abc_out; 	/* digital alphabet for writing */
 };
 
@@ -139,12 +144,13 @@ static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
 static int output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
 
 static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int check_withali(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr);
+static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr);
 static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, int *ret_nseq, char *errbuf);
 static int compare_cm_guide_trees(CM_t *cm1, CM_t *cm2);
 static int make_aligned_string(char *aseq, char *gapstring, int alen, char *ss, char **ret_s);
 static int determine_nseq_per_worker(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int *ret_nseq_worker);
 static int add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs, int offset);
+static int add_withali_pknots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_MSA *newmsa);
 
 int
 main(int argc, char **argv)
@@ -221,7 +227,9 @@ main(int argc, char **argv)
   cfg.regressfp  = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.withalifp  = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.withmsa    = NULL;	           /* filled in init_master_cfg() in masters, stays NULL for workers */
+  cfg.withss_cons= NULL;	           /* filled in check_withali() in masters, stays NULL for workers */
   cfg.withali_mtr= NULL;	           /* filled in init_master_cfg() in masters, stays NULL for workers */
+  cfg.withali_abc= NULL;	           /* created in init_master_cfg() in masters, stays NULL for workres */
   cfg.ncm        = 0;
 
   cfg.do_mpi     = FALSE;	           /* this gets reset below, if we init MPI */
@@ -279,9 +287,11 @@ main(int argc, char **argv)
     if (cfg.withalifp != NULL) esl_msafile_Close(cfg.withalifp);
     if (cfg.withmsa   != NULL) esl_msa_Destroy(cfg.withmsa);
     if (cfg.withali_mtr != NULL) FreeParsetree(cfg.withali_mtr);
+    if (cfg.withss_cons != NULL) free(cfg.withss_cons);
   }
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
   if (cfg.abc_out   != NULL) esl_alphabet_Destroy(cfg.abc_out);
+  if (cfg.withali_abc != NULL) esl_alphabet_Destroy(cfg.withali_abc);
   esl_getopts_Destroy(go);
   esl_stopwatch_Destroy(w);
   return 0;
@@ -303,6 +313,7 @@ main(int argc, char **argv)
  *    cfg->withalifp   - optional input alignment file to include
  *    cfg->withmsa     - MSA from --withali file 
  *    cfg->withali_mtr - guide tree for MSA from --withali file 
+ *    cfg->withali_abc - digital input alphabet for --withali file
  *                   
  * Errors in the MPI master here are considered to be "recoverable",
  * in the sense that we'll try to delay output of the error message
@@ -347,12 +358,24 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   /* optionally, open withali file for reading */
   if(esl_opt_GetString(go, "--withali") != NULL)
     {
-      status = esl_msafile_OpenDigital(cfg->abc, esl_opt_GetString(go, "--withali"), eslMSAFILE_UNKNOWN, NULL, &(cfg->withalifp));
+      status = esl_msafile_Open(esl_opt_GetString(go, "--withali"), eslMSAFILE_UNKNOWN, NULL, &(cfg->withalifp));
       if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't exist or is not readable\n", 
 					      esl_opt_GetString(go, "--withali"));
       else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of --withali alignment %s\n", 
 					      esl_opt_GetString(go, "--withali"));
       else if (status != eslOK)      ESL_FAIL(status, errbuf, "Alignment file open failed with error %d\n", status);
+      /* guess it's alphabet, then make sure it's RNA or DNA */
+      int type;
+      status = esl_msafile_GuessAlphabet(cfg->withalifp, &type);
+      if (status == eslEAMBIGUOUS)    ESL_FAIL(status, errbuf, "Failed to guess the bio alphabet used in %s.\nUse --rna option to specify it.", esl_opt_GetString(go, "--withali"));
+      else if (status == eslEFORMAT)  ESL_FAIL(status, errbuf, "Alignment file parse failed: %s\n", cfg->withalifp->errbuf);
+      else if (status == eslENODATA)  ESL_FAIL(status, errbuf, "Alignment file %s is empty\n", esl_opt_GetString(go, "--withali"));
+      else if (status != eslOK)       ESL_FAIL(status, errbuf, "Failed to read alignment file %s\n", esl_opt_GetString(go, "--withali"));
+      /* we can read DNA/RNA but internally we treat it as RNA */
+      if(! (type == eslRNA || type == eslDNA))
+	ESL_FAIL(status, errbuf, "Alphabet is not DNA/RNA in %s\n", esl_opt_GetString(go, "--withali"));
+      cfg->withali_abc = esl_alphabet_Create(eslRNA);
+      esl_msafile_SetDigital(cfg->withalifp, cfg->withali_abc);
     }
 
   return eslOK;
@@ -730,6 +753,10 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	      free(apostcode);                                                         
 	    }                                                                          
 	}                                                                              
+      /* if nec, replace msa->ss_cons with ss_cons from withmsa alignment */
+      if(esl_opt_GetBoolean(go, "--withpknots")) {
+	if((status = add_withali_pknots(go, cfg, errbuf, cm, msa)) != eslOK) ESL_FAIL(status, errbuf, "error included consensus structure from --withali alignment."); 
+      }
       status = esl_msa_Write(cfg->ofp, msa, eslMSAFILE_STOCKHOLM);
       if      (status == eslEMEM) ESL_FAIL(status, errbuf, "Memory error when outputting alignment\n");
       else if (status != eslOK)   ESL_FAIL(status, errbuf, "Writing alignment file failed with error %d\n", status);
@@ -890,7 +917,7 @@ static int compare_cm_guide_trees(CM_t *cm1, CM_t *cm2)
  * Returns:  <eslOK> on success.
  *           <eslEINCOMPAT> if alignment doesn't match the CM 
  */
-static int check_withali(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr)
+static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr)
 {
   int           status;
   ESL_MSA      *msa      = NULL; /* alignment we're including  */
@@ -909,7 +936,9 @@ static int check_withali(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *c
     ESL_FAIL(eslFAIL, errbuf, "--rf invoked but --withali alignment has no reference coord annotation.\n");
   if (msa->ss_cons == NULL) 
     ESL_FAIL(eslFAIL, errbuf, "--withali alignment did not contain consensus structure annotation.\n");
-  if (! clean_cs(msa->ss_cons, msa->alen))
+  if (esl_opt_GetBoolean(go, "--withpknots")) /* copy the original secondary structure */
+    esl_strdup(msa->ss_cons, -1, &(cfg->withss_cons));
+ if (! clean_cs(msa->ss_cons, msa->alen, TRUE))
     ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation for --withali alignment\n");
 
   /* Build a CM from a master guide tree built from the msa, 
@@ -1182,4 +1211,175 @@ add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs
   }
 
   return eslOK;
+}
+
+
+/* Function: add_withali_pknots()
+ * EPN, Wed Oct 17 18:24:33 2007
+ *
+ * Purpose:  Determine the pseudoknots that were in consensus columns of
+ *           the --withali alignment and add them to newmsa->ss_cons.
+ *
+ * Args:     go           - command line options
+ *           cfg          - cmalign configuration, includes msa to add
+ *           errbuf       - easel error message
+ *           cm           - the CM, only used to get cm->clen 
+ *           newmsa       - MSA from Parsetrees2Alignment(), we want to add to it's ss_cons
+ * 
+ * Returns:  eslOK on success, eslEMEM on memory error
+ *           eslEINVAL on unpredicted situation
+*/
+static int add_withali_pknots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_MSA *newmsa)
+{
+  int           status;
+  int           apos;     /*   aligned position index */
+  int           cpos;     /* consensus column index */
+  int           ngaps;
+  float         gapthresh;
+  int           withmsa_clen = 0;
+  int           idx;     /* sequence index */
+  int           i, j, i_cpos, j_cpos; /* residue position indices */
+  /* Contract check */
+  if(cfg->withmsa == NULL) esl_fatal("ERROR in add_withali_pknots() cfg->withmsa is NULL.\n");
+  if(cfg->withss_cons  == NULL) esl_fatal("ERROR in add_withali_pknots() cfg->withss_cons is NULL.\n");
+  if(! (cfg->withmsa->flags & eslMSA_DIGITAL)) esl_fatal("ERROR in add_withali_pknots() cfg->withmsa is not digitized.\n");
+
+  /* 10 easy, convoluted steps. One reason for so many steps is 
+   * we can't build ss_cons strings from pseudoknotted ct arrays,
+   * so we have to work around that. 
+   */
+
+  /* 1. determine consensus columns of withmsa.  
+   * If we've gotten this far, there should be same number as
+   * cm->clen. code block stolen from modelmaker.c matassign is
+   * 1..alen. Values are 1 if a match (consensus) column, 0 if insert
+   * column.
+   */
+  gapthresh = esl_opt_GetReal(go, "--gapthresh");
+  int *matassign;
+  ESL_ALLOC(matassign, sizeof(int) * (cfg->withmsa->alen+1));
+  /* Watch for off-by-one. rf is [0..alen-1]; matassign is [1..alen] */
+  if (esl_opt_GetBoolean(go, "--rf")) {
+    for (apos = 1; apos <= cfg->withmsa->alen; apos++) 
+      matassign[apos] = (esl_abc_CIsGap(cfg->withmsa->abc, cfg->withmsa->rf[apos-1])? FALSE : TRUE);
+  }
+  else { /* --rf not enabled */
+    for (apos = 1; apos <= cfg->withmsa->alen; apos++) {
+      for (ngaps = 0, idx = 0; idx < cfg->withmsa->nseq; idx++)
+	if (esl_abc_XIsGap(cfg->withmsa->abc, cfg->withmsa->ax[idx][apos])) ngaps++;
+      matassign[apos] = ((double) ngaps / (double) cfg->withmsa->nseq > gapthresh) ? 0 : 1;
+    }
+  }
+  for (apos = 1; apos <= cfg->withmsa->alen; apos++) withmsa_clen += matassign[apos];
+  if(withmsa_clen != cm->clen) ESL_FAIL(eslFAIL, errbuf, "withmsa consensus length != cm consensus length. A previous check for this passed, this is a coding error.");
+
+  /* 2. get ct array for consensus structure of withmsa BEFORE we stripped away it's pknots,
+   * this was saved in check_withali().
+   */
+  int *ct;
+  ESL_ALLOC(ct, (cfg->withmsa->alen+1) * sizeof(int));
+  if (esl_wuss2ct(cfg->withss_cons, cfg->withmsa->alen, ct) != eslOK)  
+    ESL_FAIL(eslFAIL, errbuf, "withmsa original ss_cons inconsistent. A previous check for this passed, this is a coding error.");
+
+  /* 3. also get a ct with no pknots, we'll need this to figure out where the pknots go */
+  int *ct_noknots;
+  ESL_ALLOC(ct_noknots, (cfg->withmsa->alen+1) * sizeof(int));
+  if (esl_wuss2ct(cfg->withmsa->ss_cons, cfg->withmsa->alen, ct_noknots) != eslOK)  
+    ESL_FAIL(eslFAIL, errbuf, "withmsa original ss_cons inconsistent. A previous check for this passed, this is a coding error.");
+
+  /* 4. remove any base pairs (i,j) from ct and ct_noknots for which i or j are non-consensus columns */
+  for (apos = 1; apos <= cfg->withmsa->alen; apos++) {
+    if(! matassign[apos]) { /* apos is not a consensus column */
+      if(ct[apos] != 0) ct[ct[apos]] = 0;
+      ct[apos] = 0;
+      if(ct_noknots[apos] != 0) ct_noknots[ct_noknots[apos]] = 0;
+      ct_noknots[apos] = 0;
+    }
+  }
+
+  /* 5. get a map from alignment coords to consensus coords */
+  int *a2c_map;
+  ESL_ALLOC(a2c_map, sizeof(int) * (cfg->withmsa->alen + 1));
+  a2c_map[0] = -1;
+  cpos = 1;
+  for(apos = 1; apos <= cfg->withmsa->alen; apos++) {
+    if(matassign[apos]) a2c_map[apos] = cpos++;
+    else a2c_map[apos] = 0;
+  }
+
+  /* 6. use a2c_map to create c_ct_noknots, which is just ct_noknots
+   * changed from aligned coordinates to consensus column
+   * coordinates. remember no non-consensus column cpos should have
+   * ct_noknots[cpos] != 0, because we stripped those bps.
+   */
+  int *c_ct_noknots;
+  ESL_ALLOC(c_ct_noknots, sizeof(int) * (cm->clen+1));
+  esl_vec_ISet(c_ct_noknots, (cm->clen+1), 0);
+  for(apos = 1; apos <= cfg->withmsa->alen; apos++) {
+    i = apos; j = ct_noknots[i];
+    if(j != 0 && i < j) { /* if i > j, we've already covered it */
+      if(a2c_map[i] == 0) ESL_FAIL(eslFAIL, errbuf, "withmsa apos: %d has structure, but is not consensus, this should never happen.", i);
+      if(a2c_map[j] == 0) ESL_FAIL(eslFAIL, errbuf, "withmsa apos: %d has structure, but is not consensus, this should never happen.", j);
+      c_ct_noknots[a2c_map[i]] = a2c_map[j];
+      c_ct_noknots[a2c_map[j]] = a2c_map[i];
+    }      
+  }
+  for(cpos = 1; cpos <= cm->clen; cpos++)
+    printf("ct[%d]: %d\n", cpos, c_ct_noknots[cpos]);
+  
+  /* 7. build new consensus structure, with no knots and only consensus columns */
+  char *c_sscons;
+  ESL_ALLOC(c_sscons, sizeof(char) * (cm->clen + 1));
+  if((status = esl_ct2wuss(c_ct_noknots, cm->clen, c_sscons)) != eslOK) cm_Fail("ct2wuss failed with (supposedly) no knots");
+  
+  /* 8. add back in consensus knots, using a2c_map */
+  for(apos = 1; apos <= cfg->withmsa->alen; apos++) {
+    if(matassign[apos]) {
+      i = apos; j = ct[i];
+      if(ct[i] != 0 && i < j) { /* if i > j, we've already updated it */
+	i_cpos = a2c_map[i];
+	j_cpos = a2c_map[j];
+	/* printf("\t\tct bp i: %3d i_cpos: %3d j_cpos: %d j_cpos: %3d\n", i, i_cpos, j, j_cpos);
+	   printf("\t\tc_sscons[i_cpos-1]: %c\n", c_sscons[(i_cpos-1)]);
+	   printf("\t\tc_sscons[j_cpos-1]: %c\n", c_sscons[(j_cpos-1)]);
+	   printf("\t\tcfg->withss_cons[(i-1)]: %c\n", cfg->withss_cons[(i-1)]);
+	   printf("\t\tcfg->withss_cons[(j-1)]: %c\n", cfg->withss_cons[(j-1)]);
+	*/
+	c_sscons[(i_cpos-1)] = cfg->withss_cons[(i-1)]; /* add pknot annotation for left bp */
+	c_sscons[(j_cpos-1)] = cfg->withss_cons[(j-1)]; /* add pknot annotation for right bp */
+      }
+    }
+  }
+
+  /* 9. c_sscons is the pknotted structure, but limited to the consensus columns,
+   * final step is to overwrite newmsa->ss_cons characters for consensus columns 
+   * only, by simply replacing them with characters from c_sscons.
+   * we need a new map from consensus columns to newmsa align coords first,
+   * we use the fact that newmsa->rf columns that are non-gapped are consensus
+   * columns.
+   */
+  int *new_c2a_map;
+  ESL_ALLOC(new_c2a_map, sizeof(int) * (cm->clen + 1));
+  new_c2a_map[0] = -1;
+  new_c2a_map[0] = -1;
+  cpos = 0;
+  for(apos = 1; apos <= newmsa->alen; apos++) 
+    if(! esl_abc_CIsGap(newmsa->abc, newmsa->rf[(apos-1)])) new_c2a_map[++cpos] = apos;
+
+  /* 10. overwrite newmsa->ss_cons */
+  for(cpos = 1; cpos <= cm->clen; cpos++) 
+    newmsa->ss_cons[(new_c2a_map[cpos]-1)] = c_sscons[(cpos-1)];
+  
+  /* free memory and return */
+  free(new_c2a_map);
+  free(c_sscons);
+  free(a2c_map);
+  free(ct_noknots);
+  free(c_ct_noknots);
+  free(ct);
+  free(matassign);
+  return eslOK;
+
+ ERROR:
+  return status;
 }
