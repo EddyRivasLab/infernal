@@ -48,6 +48,7 @@ OBJS  = alphabet.o\
 	cm_eweight.o\
 	cm_errors.o\
 	cm_fastalign.o\
+	cm_fastsearch.o\
 	cm_masks.o\
 	cm_postprob.o\
 	cplan9.o\
@@ -57,7 +58,6 @@ OBJS  = alphabet.o\
 	display.o\
 	emit.o\
 	emitmap.o\
-	fastsearch.o\
 	hbandcyk.o\
 	hmmband.o\
 	logsum.o\
