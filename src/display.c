@@ -114,6 +114,15 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
 	else if (cm->ndtype[nd] == MATP_nd)                              
 	  ali->len += 2;
       }	
+      if ((tr->nxtl[ti] == -1) && (cm->sttype[v] != E_st)) {
+	nd = cm->ndidx[tr->state[ti]];
+	qinset     = cons->rpos[nd] - cons->lpos[nd] + 1;
+	tinset     = tr->emitr[ti]  - tr->emitl[ti]  + 1;
+        if (tinset > 0) tinset--;
+	ninset     = ESL_MAX(qinset,tinset);
+	ali->len += 4;
+	do { ali->len++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
+      }
     }
 
   /* Allocate and initialize.
@@ -319,6 +328,20 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
       if (tr->nxtl[ti] != -1) {
 	esl_stack_IPush(pda, tr->nxtl[ti]);
 	esl_stack_IPush(pda, PDA_STATE);
+      }
+      else if (cm->sttype[v] != E_st) {
+	int numwidth;		/* number of chars to leave for displaying width numbers */
+
+	nd = 1 + cm->ndidx[tr->state[ti]]; /* calculate node that EL replaced */
+	qinset     = cons->rpos[nd] - cons->lpos[nd] + 1;
+	tinset     = tr->emitr[ti]  - tr->emitl[ti]  + 1;
+        if (tinset > 0) tinset--;
+	ninset     = ESL_MAX(qinset,tinset);
+	numwidth = 0; do { numwidth++; ninset/=10; } while (ninset); /* poor man's (int)log_10(ninset)+1 */
+	memset(ali->cstr+pos,  '~', numwidth+4);
+	sprintf(ali->cseq+pos, "*[%*d]*", numwidth, qinset);
+	sprintf(ali->aseq+pos, "*[%*d]*", numwidth, tinset);
+	pos += 4 + numwidth;
       }
     } /* end loop over the PDA; PDA now empty */
 	 
