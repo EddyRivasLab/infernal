@@ -1129,6 +1129,14 @@ enum cp9_locality_e {
 };
 #define nCP9_LOCALITIES 4
 
+enum emitmode_e {
+  EMITLEFT  = 0,
+  EMITRIGHT = 1,
+  EMITPAIR  = 2,
+  EMITNONE  = 3
+};
+#define nEMITMODES 4 
+
 
 #endif /*STRUCTSH_INCLUDED*/
 
