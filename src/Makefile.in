@@ -50,6 +50,7 @@ OBJS  = alphabet.o\
 	cm_fastalign.o\
 	cm_fastsearch.o\
 	cm_masks.o\
+	cm_mx.o\
 	cm_postprob.o\
 	cplan9.o\
 	CP9_cm2wrhmm.o\

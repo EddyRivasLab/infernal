@@ -418,7 +418,7 @@ inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j
        * different deck sizes, so we ALWAYS allocate a deck here.
        */
       alpha[v] = alloc_jdbanded_vjd_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
-
+      //printf("allocated 
       if (cm->sttype[v] != E_st) {
 	if (ret_shadow != NULL) {
 	  if (cm->sttype[v] == B_st) {
@@ -711,11 +711,22 @@ inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j
 		if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	      }
 	    }
-	}				/* finished calculating deck v. */
-      
+	}
+      /*if((cm->sttype[v] != IL_st) && (cm->sttype[v] != IR_st) && (cm->sttype[v] != B_st)) {
+	for (j = jmin[v]; j <= jmax[v]; j++) { 
+	  jp_v  = j - jmin[v];
+	  i     = j - hdmin[v][jp_v] + 1;
+	  for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++, i--) {
+	    printf("alpha[v: %4d][jp_v: %4d][dp_v: %4d]: %.4f\n", v, jp_v, dp_v, alpha[v][jp_v][dp_v]);
+	    
+	  }
+	  printf("\n");
+	}
+	printf("\n\n");
+	}*/
+  
       /* The following loops originally access alpha[v][j0][W] but the index W will be
 	 in different positions due to the bands */
-
       if(j0 >= jmin[v] && j0 <= jmax[v])
 	{
 	  jp_v = j0 - jmin[v];

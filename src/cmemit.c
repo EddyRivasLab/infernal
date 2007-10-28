@@ -51,7 +51,7 @@ static ESL_OPTIONS options[] = {
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 2 },
   /* Miscellaneous expert options */
   { "--zeroinserts",eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "zero insert emission scores (A,C,G,U equiprobable)", 3 },
-  { "--exp",     eslARG_REAL,   NULL,  NULL, "0<x",     NULL,      NULL,        NULL, "exponentiate CM probabilities by <x> before emitting",  3 },
+  { "--exp",     eslARG_REAL,   NULL,  NULL, "x>0",     NULL,      NULL,        NULL, "exponentiate CM probabilities by <x> before emitting",  3 },
   { "--begin",   eslARG_INT,    NULL,  NULL, "n>=1",    NULL,"-a,--end",        NULL, "truncate alignment, begin at match column <n>", 3 },
   { "--end",     eslARG_INT,    NULL,  NULL, "n>=1",    NULL,"-a,--begin",      NULL, "truncate alignment,   end at match column <n>", 3 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },

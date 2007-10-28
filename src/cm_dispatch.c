@@ -1519,20 +1519,7 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
       if(bdump_level > 0 && do_hbanded)
 	ijdBandedTraceInfoDump(cm, tr[i], cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, 
 			       cp9b->hdmin, cp9b->hdmax, 1);
-      
-      /* Clean up the structures we use calculating HMM bands, that are allocated
-       * differently for each sequence. 
-       */
-      if(do_hbanded)
-	{
-	  for(v = 0; v < cm->M; v++)
-	    { 
-	      free(cp9b->hdmin[v]); 
-	      free(cp9b->hdmax[v]);
-	      cp9b->hdmin[v] = NULL;
-	      cp9b->hdmax[v] = NULL;
-	    }
-	}
+
       if(do_sub)
 	FreeCPlan9Matrix(cp9_post);
       if(do_sub && !(do_inside || do_outside))

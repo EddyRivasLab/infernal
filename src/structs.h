@@ -890,6 +890,11 @@ typedef struct cp9bands_s {
 			       * j = jmin[v] + j0.*/
   int *safe_hdmin;            /* [0..cm_M-1] safe_hdmin[v] = min_d (hdmin[v][j0]) (over all valid j0) */
   int *safe_hdmax;            /* [0..cm_M-1] safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0) */
+
+  /* info on size of bands */
+  int hd_needed;              /* Sum_v cp9b->jmax[v] - cp9b->jmin[v] + 1, number of hd arrays needed */
+  int hd_alloced;             /* number of hd arrays currently alloc'ed */
+
 } CP9Bands_t;
 
 
@@ -937,6 +942,13 @@ typedef struct _seqs_to_aln_t {
 				  * score for the sub parsetree (in case of sub CM alignment)
 				  */
 } seqs_to_aln_t;
+
+struct deckpool_s {
+  float ***pool;
+  int      n;
+  int      nalloc;
+  int      block;
+};
 
 /* The integer log odds score deckpool for integer versions of 
  * Inside and Outside, see cm_postprob.c */
@@ -1136,6 +1148,26 @@ enum emitmode_e {
   EMITNONE  = 3
 };
 #define nEMITMODES 4 
+
+/* Declaration of CM dynamic programming matrix structure for 
+ * alignment with float scores in vjd (state idx, aln posn,
+ * subseq len) coordinates. May be banded in j and/or d dimensions.
+ */
+typedef struct cm_fhb_mx_s {
+  int  M;		/* number of states (1st dim ptrs) in current mx */
+  
+  size_t ncells;	/* current cell allocation limit */
+  int   *nrowsA;        /* [0..v..M] current number allocated rows for deck v */
+
+  float ***dp;          /*  [0.1..M][0..j..?][0..d..?]  ?s indicate
+			 *  mx could be banded in j and/or d dim */
+  float   *dp_mem;      /* the actual mem, points to dp[0][0][0] */
+
+  CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
+			 * matrix, which defines j, d, bands for each
+			 * state, only a reference, so don't free
+			 * it when mx is freed. */
+} CM_FHB_MX;
 
 
 #endif /*STRUCTSH_INCLUDED*/

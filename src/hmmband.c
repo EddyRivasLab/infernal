@@ -124,6 +124,9 @@ AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm)
    * they are freed after bands are used for each seq (this is done
    * in cm_dispatch::actually_align_targets()).
    */
+
+  cp9bands->hd_needed  = 0;
+  cp9bands->hd_alloced = 0;
   return cp9bands;
 
  ERROR:
@@ -148,16 +151,8 @@ FreeCP9Bands(CP9Bands_t *cp9bands)
    * example if one CP9Bands_t structure was used for multiple seqs,
    * the hdmin bands are the only part that is seq and CM dependent,
    * instead of just CM dependent. */
-  if(cp9bands->hdmin != NULL)
-    {
-      for(v = 0; v < cp9bands->cm_M; v++)
-	free(cp9bands->hdmin[v]);
-    }
-  if(cp9bands->hdmax != NULL)
-    {
-      for(v = 0; v < cp9bands->cm_M; v++)
-	free(cp9bands->hdmax[v]);
-    }  
+  free(cp9bands->hdmin[0]); /* all v were malloc'ed as a block */
+  free(cp9bands->hdmax[0]); /* all v were malloc'ed as a block */
   free(cp9bands->hdmin);
   free(cp9bands->hdmax);
 
@@ -277,10 +272,12 @@ cp9_Seq2Bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int debu
 		  cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, debug_level);
   
   /* Use the CM bands on i and j to get bands on d, specific to j. */
-  for(v = 0; v < cm->M; v++) {
+  cp9_GrowHDBands(cp9b);
+
+  /*for(v = 0; v < cm->M; v++) {
     ESL_ALLOC(cp9b->hdmin[v], sizeof(int) * (cp9b->jmax[v] - cp9b->jmin[v] + 1));
     ESL_ALLOC(cp9b->hdmax[v], sizeof(int) * (cp9b->jmax[v] - cp9b->jmin[v] + 1));
-  }
+    }*/
   ij2d_bands(cm, (j0-i0+1), cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, debug_level);
   
   if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, (j0-i0+1));
@@ -3179,6 +3176,52 @@ relax_root_bands(int *imin, int *imax, int *jmin, int *jmax)
   imax[0] = imax[1]; /* state 1 = ROOT_IL */
   jmin[0] = jmin[2]; /* state 2 = ROOT_IR */
   jmax[0] = jmax[3]; /*HACK!!!!!!! FIX THIS */
+}
+
+
+/*********************************************************************
+ * Function: cp9_GrowHDBands()
+ * 
+ * Incept:   EPN, Thu Oct 25 13:24:29 2007
+ * Purpose:  Rearrange CP9 hdmin and hdmax pointers for a new sequence
+ *           based on j bands (jmin and jmax). If the currently allocated
+ *           size for hdmin, hdmax is not big enough, reallocate them.
+ *
+ * Args:
+ * CP9Bands_t cp9b    the CP9 Bands object.
+ *           
+ */
+void
+cp9_GrowHDBands(CP9Bands_t *cp9b)
+{
+  int status;
+  int v;
+  int cur_size = 0;
+
+  /* count size we need for hdmin/hdmax given current jmin, jmax */
+  cp9b->hd_needed = 0; /* we'll rewrite this */
+  for(v = 0; v < cp9b->cm_M; v++) 
+    cp9b->hd_needed += cp9b->jmax[v] - cp9b->jmin[v] + 1;
+
+  if(cp9b->hd_alloced < cp9b->hd_needed) {
+    ESL_ALLOC(cp9b->hdmin[0], sizeof(int) * cp9b->hd_needed);
+    ESL_ALLOC(cp9b->hdmax[0], sizeof(int) * cp9b->hd_needed);
+  }
+ 
+  /* set pointers */
+  cur_size = 0;
+  for(v = 0; v < cp9b->cm_M; v++) { 
+    cp9b->hdmin[v] = cp9b->hdmin[0] + cur_size;
+    cp9b->hdmax[v] = cp9b->hdmax[0] + cur_size;
+    cur_size += cp9b->jmax[v] - cp9b->jmin[v] + 1;
+  }
+  cp9b->hd_alloced = cur_size;
+  assert(cp9b->hd_alloced == cp9b->hd_needed);
+  return;
+  
+ ERROR:
+  cm_Fail("memory allocation error.");
+  return; /* NEVERREACHED */
 }
 
 #if 0

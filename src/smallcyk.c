@@ -51,13 +51,6 @@
 #include "funcs.h"
 #include "structs.h"
 
-struct deckpool_s {
-  float ***pool;
-  int      n;
-  int      nalloc;
-  int      block;
-};
-
 /* The dividers and conquerors.
  */
 static float generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 

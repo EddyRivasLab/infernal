@@ -3,6 +3,7 @@
 
 #include "easel.h"
 #include "esl_alphabet.h"
+#include "esl_sqio.h"
 #include "esl_msa.h"
 
 #include "structs.h"
@@ -759,7 +760,13 @@ extern int   cp9_CheckTransitionGuarantees(CP9_t *cp9);
 extern int   cp9_GetLocalityMode(CP9_t *cp9);
 
 /* from cm_fastalign.c */
-
+extern float Fast_inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
+				 CM_FHB_MX *mx, void ****ret_shadow, int allow_begin, int *ret_b, float *ret_bsc,
+				 CP9Bands_t *cp9b);
+extern float Fast_insideT_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
+				  int r, int z, int i0, int j0, int allow_begin, CP9Bands_t *cp9b, CM_FHB_MX *mx);
+extern float Fast_CYKInside_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, 
+				 CP9Bands_t *cp9b, CM_FHB_MX *mx);
 
 
 /* from hmmband.c */
@@ -788,6 +795,7 @@ extern void         cp9_DebugCheckFB(struct cp9_dpmatrix_s *fmx,
 				     CP9_t *hmm, float sc, int i0, int j0,
 				     ESL_DSQ *dsq);
 extern void         cp9_CompareBands(CP9Bands_t *cp9b1, CP9Bands_t *cp9b2);
+extern void         cp9_GrowHDBands(CP9Bands_t *cp9b);
 extern void         ijBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
 					  int *jmin, int *jmax, int debug_level);
 extern void         ijdBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
@@ -798,6 +806,12 @@ extern float CP9ForwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm,
 			     struct cp9_dpmatrix_s **ret_mx);
 extern float CP9ViterbiAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *mx, struct cp9trace_s **ret_tr);
 extern float CP9BackwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s **ret_mx);
+
+/* from cm_mx.c */
+extern CM_FHB_MX * cm_fhb_mx_Create(int M);
+extern int         cm_fhb_mx_GrowTo(CM_FHB_MX *mx, CP9Bands_t *cp9b);
+extern int         cm_fhb_mx_Dump(FILE *ofp, CM_FHB_MX *mx);
+extern void        cm_fhb_mx_Destroy(CM_FHB_MX *mx);
 
 
 
