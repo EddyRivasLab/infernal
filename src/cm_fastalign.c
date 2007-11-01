@@ -146,8 +146,9 @@ Fast_inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
   int      kp_z;           /* k (in the d dim) index for state z in alpha w/mem eff bands */
   int      Wp;             /* W also changes depending on state */
   int      jp_v, jp_y, jp_z;
-  int      kmin, kmax;
-  int      tmp_jmin, tmp_jmax;
+  int      kn, kx;
+  int      dp_y_k;
+  int      tmp_jmin, tmp_jmax, kmin, kmax;
 
   int       *jmin = cp9b->jmin;
   int       *jmax = cp9b->jmax;
@@ -250,74 +251,11 @@ Fast_inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
       if(cm->sttype[v] == E_st) { 
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v = j-jmin[v];
-	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-	    ESL_DASSERT1((hdmin[v][jp_v] == 0));
-	    ESL_DASSERT1((hdmax[v][jp_v] == 0));
-	    alpha[v][jp_v][0] = 0.; /* for End states, d must be 0 */
-	  }
-	}
-	continue;
-      }
-      //else if(cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
-      else if(cm->sttype[v] == 100) { 
-	for (j = jmin[v]; j <= jmax[v]; j++) {
-	  jp_v = j - jmin[v];
-	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
-	    alpha[v][jp_v][dp_v]  = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
-	    /* treat EL as emitting only on self transition */
-	    if (ret_shadow != NULL) yshad[jp_v][dp_v]  = USED_EL; 
-	    for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
-		yoffset = y - cm->cfirst[v];
-
-		if((j-sdr) >= jmin[y] && ((j-sdr) <= jmax[y])) /* Enforces j-sdr is valid for state y */
-		  {
-		    jp_y = j - sdr - jmin[y];
-
-		    ESL_DASSERT1((jp_v >= 0 && jp_v <= (jmax[v]-jmin[v])));
-		    ESL_DASSERT1((jp_y >= 0 && jp_y <= (jmax[y]-jmin[y])));
-		    /* if(cm->sttype[v] == MP_st) printf("v: %5d j: %5d jp_y_sdr: %5d\n", v, j, jp_y); */
-		
-		    if((d-sd) >= hdmin[y][jp_y] && (d-sd) <= hdmax[y][jp_y])
-		      {
-			dp_y = d - sd - hdmin[y][jp_y];  /* d index for state y 
-							    in alpha w/mem eff bands */
-			/* if we get here alpha[y][jp_y][dp_y] is a valid alpha cell
-			 * corresponding to alpha[y][j][d] in the platonic matrix.
-			 */
-			ESL_DASSERT1((dp_v >= 0 && dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v])));
-			ESL_DASSERT1((dp_y >= 0 && dp_y <= (hdmax[y][jp_y] - hdmin[y][jp_y])));
-			if ((sc = alpha[y][jp_y][dp_y] + cm->tsc[v][yoffset]) > alpha[v][jp_v][dp_v])
-			  {
-			    alpha[v][jp_v][dp_v] = sc; 
-			    if (ret_shadow != NULL) yshad[jp_v][dp_v] = yoffset;
-			  }
-		      }
-		  }
-	    }
-	    switch(cm->sttype[v]) { 
-	    case ML_st:
-	    case IL_st:
-	      i = j-d+1;
-	      if (dsq[i] < cm->abc->K) alpha[v][jp_v][dp_v] += cm->esc[v][(int) dsq[i]];
-	      else                     alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
-	      break;
-	    case MR_st:
-	    case IR_st:
-	      if (dsq[j] < cm->abc->K) alpha[v][jp_v][dp_v] += cm->esc[v][(int) dsq[j]];
-	      else             	       alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
-	      break;
-	    case MP_st:
-	      i = j-d+1;
-	      if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K) alpha[v][jp_v][dp_v] += cm->esc[v][(dsq[i]*cm->abc->K+dsq[j])];
-	      else  		                              alpha[v][jp_v][dp_v] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
-	      break;
-	    }
-	    if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	  }
+	  ESL_DASSERT1((hdmin[v][jp_v] == 0));
+	  ESL_DASSERT1((hdmax[v][jp_v] == 0));
+	  alpha[v][jp_v][0] = 0.; /* for End states, d must be 0 */
 	}
       }
-      //else if(cm->sttype[v] == 100) { /* IL_st || cm->sttype[v] == IR_st) {*/ 
       else if(cm->sttype[v] == IL_st) {
 	/* initialize all cells within v's j band */
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
@@ -455,7 +393,6 @@ Fast_inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
 	/* add in emission score, if any */
 	switch(cm->sttype[v]) { 
 	case ML_st:
-	case IL_st:
 	  for (j = jmin[v]; j <= jmax[v]; j++) { 
 	    jp_v  = j - jmin[v];
 	    i     = j - hdmin[v][jp_v] + 1;
@@ -466,7 +403,6 @@ Fast_inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
 	  }
 	  break;
 	case MR_st:
-	case IR_st:
 	  for (j = jmin[v]; j <= jmax[v]; j++) { 
 	    jp_v  = j - jmin[v];
 	    for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
@@ -496,50 +432,36 @@ Fast_inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
 	}
 	printf("\n\n");*/
       }
-      else { /* B_st */
+      else { /* B_st */ 
 	y = cm->cfirst[v];
 	z = cm->cnum[v];
+
 	/* Any valid j must be within both state v and state z's j band 
 	 * I think jmin[v] <= jmin[z] is guaranteed by the way bands are 
 	 * constructed, but we'll check anyway. 
 	 */
-	tmp_jmin = (jmin[v] > jmin[z]) ? jmin[v] : jmin[z];
-	tmp_jmax = (jmax[v] < jmax[z]) ? jmax[v] : jmax[z];
-
-	/* For any values of j within v's j band but outside of z's j band,
-	 * we have to set the corresponding alpha cells to IMPOSSIBLE.
-	 * This is done be the following two ugly for loops, 
-	 * which will only be looked at once for each B state, and
-	 * even then only *very* rarely entered. This
-	 * is why they're here, seemingly out of place before the 
-	 * main j loop below, where similar performing code would be 
-	 * looked at on the order of j times, instead of just once.
-	 */
-	for(j = jmin[v]; j < tmp_jmin; j++)
-	  {
-	    jp_v = j-jmin[v];
-	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
-	      {
-		dp_v = d-hdmin[v][jp_v];
-		alpha[v][jp_v][dp_v] = IMPOSSIBLE; /* this won't be changed */
-	      }
+	jn = (jmin[v] > jmin[z]) ? jmin[v] : jmin[z];
+	jx = (jmax[v] < jmax[z]) ? jmax[v] : jmax[z];
+	/* initialize all cells within v's j band to IMPOSSIBLE (local ends for B_st's are not allowed) */
+	for (j = jmin[v]; j <= jmax[v]; j++) { 
+	  jp_v  = j - jmin[v];
+	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+	    dp_v = d - hdmin[v][jp_v];
+	    alpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	    kshad[jp_v][dp_v] = USED_EL;
+	    /* kshad[jp_v][dp_v] = -1; */
 	  }
-	if(tmp_jmax < jmax[v])
-	  for(j = (tmp_jmax+1); j <= jmax[v]; j++)
-	    {
-	      jp_v = j-jmin[v];
-	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
-		{
-		  dp_v = d-hdmin[v][jp_v];
-		  alpha[v][jp_v][dp_v] = IMPOSSIBLE; /* this won't be changed */
-		}
-	    }
+	}
 	/* the main j loop */
-	for (j = tmp_jmin; j <= tmp_jmax; j++)
+	for (j = jn; j <= jx; j++)
 	  {
 	    jp_v = j - jmin[v];
 	    jp_y = j - jmin[y];
 	    jp_z = j - jmin[z];
+	    kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+	    /* kn satisfies inequalities (1) and (3) (listed below)*/	
+	    kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+	    /* kn satisfies inequalities (2) and (4) (listed below)*/	
 	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
 	      {
 		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
@@ -557,16 +479,13 @@ Fast_inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
 		 * (5) k >= d-hdmax[y][j-jmin[y]-k];
 		 * (6) k <= d-hdmin[y][j-jmin[y]-k]; 
 		 *     5 and 6 guarantee (d-k) is within state y's j=(j-k) d band
-		 */
-		kmin = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
-		/* kmin satisfies inequalities (1) and (3) */
-		kmax = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
-		/* kmax satisfies inequalities (2) and (4) */
-		/* RHS of inequalities 5 and 6 are dependent on k, so we check
+		 *
+		 * kn and kx were set above (outside (for (dp_v...) loop) that
+		 * satisfy 1-4 (b/c 1-4 are d-independent and k-independent)
+		 * RHS of inequalities 5 and 6 are dependent on k, so we check
 		 * for these within the next for loop.
 		 */
-		alpha[v][jp_v][dp_v] = IMPOSSIBLE; /* initialize */
-		for(k = kmin; k <= kmax; k++)
+		for(k = kn; k <= kx; k++)
 		  {
 		    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k])
 		      {
@@ -585,11 +504,10 @@ Fast_inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
 			    > alpha[v][jp_v][dp_v])
 			  {
 			    alpha[v][jp_v][dp_v] = sc;
-			    if (ret_shadow != NULL) kshad[jp_v][dp_v] = kp_z;
+			    kshad[jp_v][dp_v] = kp_z;
 			  }
 		      }
 		  }
-		if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	      }
 	  }
       }				/* finished calculating deck v. */
@@ -887,7 +805,7 @@ Fast_insideT_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *****************************************************************/
 #ifdef IMPL_FASTALIGN_BENCHMARK
 /* gcc -o benchmark-fastalign -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_fastalign.c -linfernal -leasel -lm
- * ./benchmark-fastalign <cmfile> <seqfile>
+ * ./benchmark-fastalign <cmfile>
  */
 
 #include "esl_config.h"

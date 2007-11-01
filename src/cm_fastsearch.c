@@ -2611,6 +2611,127 @@ M = cm->M;
   return IMPOSSIBLE; /* never reached */
 }
 
+/* Function: cm_CountSearchDPCalcs()
+ * Date:     EPN, Tue Oct 30 14:48:00 2007
+ *
+ * Purpose:  Determine the number of millions of DP calcs needed to scan a seq of length <L>
+ *           for the subtree rooted at each state, either using bands <dmin> and <dmax>, 
+ *           or not (if <dmin> == <dmax> == NULL). 
+ *           <ret_vcalcs[0]> = number of dp calcs for entire model.
+ *
+ * Args:     cm        - the covariance model
+ *           L         - length of the sequence to search 
+ *           dmin      - minimum bound on d for state v; 0..M
+ *           dmax      - maximum bound on d for state v; 0..M          
+ *           W         - max d: max size of a hit
+ *           ret_vcalcs- RETURN: [0..v..M-1] number of DP calcs for scanning with sub-CM at v
+ *
+ * Returns:  number of calcs to search L residues with full model (ret_vcalcs[0]).
+ *           dies immediately if some error occurs.
+ */
+float 
+cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_vcalcs)
+{
+  int       status;
+  float     *vcalcs;            /* [0..v..cm->M-1] # of calcs for subtree rooted at v */
+  int       d;			/* a subsequence length, 0..W */
+  int       j;                  /* seq index */
+  int       v, w, y;            /* state indices */
+  int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
+  int       dn;                 /* temporary value for min d in for loops */
+  int       dx;                 /* temporary value for max d in for loops */
+  int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
+
+  if(dmin != NULL && dmax != NULL) do_banded = TRUE;
+  if (W > L) W = L; 
+
+  ESL_ALLOC(vcalcs, sizeof(float) * cm->M);
+  esl_vec_FSet(vcalcs, cm->M, 0.);
+
+  /* we ignore initialization and band imposition, a little imprecise */
+  /* Recursion. */
+  for (j = 1; j <= L; j++) {
+    for (v = cm->M-1; v > 0; v--) { /* ...almost to ROOT; we handle ROOT specially... */
+      if(do_banded) { 
+	dn = (cm->sttype[v] == MP_st) ? ESL_MAX(dmin[v], 2) : ESL_MAX(dmin[v], 1); 
+	dx = ESL_MIN(j, dmax[v]); 
+	dx = ESL_MIN(dx, W);
+      }
+      else { 
+	dn = (cm->sttype[v] == MP_st) ? 2 : 1;
+	dx = ESL_MIN(j, W); 
+      }
+      if(cm->sttype[v] == E_st) continue;
+      
+      if(cm->sttype[v] == B_st) {
+	w = cm->cfirst[v]; /* BEGL_S */
+	y = cm->cnum[v];   /* BEGR_S */
+	for (d = dn; d <= dx; d++) {
+	  if(do_banded) {
+	    kmin = ESL_MAX(dmin[y], (d-dmax[w]));
+	    kmin = ESL_MAX(kmin, 0);
+	    kmax = ESL_MIN(dmax[y], (d-dmin[w]));
+	  }
+	  else { kmin = 0; kmax = d; }
+	  vcalcs[v] += 1 + (kmax - kmin + 1); /* initial '1 +' is for initialization calc */
+	} /* ! B_st */
+      }
+      else  { /* if cm->sttype[v] != B_st */
+	vcalcs[v] += 1 + (cm->cnum[v] + 1) * (dx - dn + 1); /* 1 is for initialization calc */
+	if(StateDelta(cm->sttype[v]) > 0) vcalcs[v] += (dx-dn+1);
+      } /* end of else (v != B_st) */
+    } /*loop over decks v>0 */
+    
+    /* determine min/max d we're allowing for the root state and this position j */
+    if(do_banded) { 
+      dn = ESL_MAX(dmin[0], 1); 
+      dx = ESL_MIN(j, dmax[0]); 
+      dx = ESL_MIN(dx, W);
+    }
+    else { 
+      dn = 1; 
+      dx = ESL_MIN(j, W); 
+    }
+    vcalcs[0] += (cm->cnum[v] + 1) * (dx - dn + 1);
+    
+    if (cm->flags & CM_LOCAL_BEGIN) {
+      for (y = 1; y < cm->M; y++) {
+	if(do_banded) {
+	  dn = (cm->sttype[y] == MP_st) ? ESL_MAX(dmin[y], 2) : ESL_MAX(dmin[y], 1); 
+	  dn = ESL_MAX(dn, dmin[0]);
+	  dx = ESL_MIN(j, dmax[y]); 
+	  dx = ESL_MIN(dx, W);
+	}
+	else { 
+	  dn = 1; 
+	  dx = ESL_MIN(j, W); 
+	}
+	vcalcs[0] += (dx - dn + 1);
+      }
+    }
+  } /* end loop over end positions j */
+  
+  /* sum up the cells for all states under each v */
+  for (v = cm->M-1; v >= 0; v--) {
+    if     (cm->sttype[v] == B_st) vcalcs[v] += vcalcs[cm->cnum[v]] + vcalcs[cm->cfirst[v]];
+    else if(cm->sttype[v] != E_st) vcalcs[v] += vcalcs[v+1];
+  }
+  
+  /* convert to millions of calcs */
+  for (v = cm->M-1; v >= 0; v--) vcalcs[v] /= 1000000.;
+  /* convert to per residue */
+  for (v = cm->M-1; v >= 0; v--) vcalcs[v] /= L;
+
+  for (v = cm->M-1; v >= 0; v--) printf("vcalcs[%4d]: %.3f\n", v, vcalcs[v]);
+  
+  *ret_vcalcs = vcalcs;
+  return vcalcs[0];
+
+ ERROR:
+  cm_Fail("count_search_target_calcs(): memory error.");
+  return 0.;
+}
+
 /*****************************************************************
  * Benchmark driver
  *****************************************************************/

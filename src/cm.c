@@ -1858,77 +1858,125 @@ cm_banner(FILE *fp, char *progname, char *banner)
  *            emitted parse subtree rooted at v.
  *              
  * Args:
- *           CM_t *cm        - the covariance model
- *          float *ret_expsc - expected score at each state, alloc'ed here
+ *           cm             - the covariance model
+ *           ret_expsc      - expected score at each state, alloc'ed here
+ *           ret_expsc_noss - expected score at each state if we ignored structure
+ *                            same as ret_expsc, but marginal emission probs used
+ *                            for MP states, alloc'ed here
  *
  * Returns:  
  */
 void
-cm_CalcExpSc(CM_t *cm, float **ret_expsc)
+cm_CalcExpSc(CM_t *cm, float **ret_expsc, float **ret_expsc_noss)
 {
   int status;
   float *expsc;
+  float *expsc_noss;
   int v,x,y,yoffset;
+  float *left_e,  *left_esc;
+  float *right_e, *right_esc;
+  int i,j;
 
   /* contract check */
-  if(cm->flags & CM_LOCAL_BEGIN) esl_fatal("ERROR in cm_CalcExpSc() CM_LOCAL_BEGIN flag up.\n");
-  if(cm->flags & CM_LOCAL_END)   esl_fatal("ERROR in cm_CalcExpSc() CM_LOCAL_END flag up.\n");
+  if(cm->flags & CM_LOCAL_BEGIN) cm_Fail("cm_CalcExpSc() CM_LOCAL_BEGIN flag up.\n");
+  if(cm->flags & CM_LOCAL_END)   cm_Fail("cm_CalcExpSc() CM_LOCAL_END flag up.\n");
+  if(ret_expsc == NULL)          cm_Fail("cm_CalcExpSc() ret_expsc is NULL.\n");
 
-  ESL_ALLOC(expsc, sizeof(float) * cm->M);
-  esl_vec_FSet(expsc, cm->M, 0.);
+  ESL_ALLOC(left_e,    sizeof(float) * cm->abc->K);
+  ESL_ALLOC(right_e,   sizeof(float) * cm->abc->K);
+  ESL_ALLOC(left_esc,  sizeof(float) * cm->abc->K);
+  ESL_ALLOC(right_esc, sizeof(float) * cm->abc->K);
+
+  ESL_ALLOC(expsc,      sizeof(float) * cm->M);
+  ESL_ALLOC(expsc_noss, sizeof(float) * cm->M);
+  esl_vec_FSet(expsc,      cm->M, 0.);
+  esl_vec_FSet(expsc_noss, cm->M, 0.);
 
   for(v = cm->M-1; v >= 0; v--)
     {
-      switch (cm->sttype[v])
-	{
-	case E_st:
-	  break;
+      switch (cm->sttype[v]) {
+      case E_st:
+	break;
+	
+      case B_st:
+	expsc[v]      = expsc[cm->cfirst[v]]      + expsc[cm->cnum[v]];
+	expsc_noss[v] = expsc_noss[cm->cfirst[v]] + expsc_noss[cm->cnum[v]];
+	break;
+	
+      case MP_st:
+	/* calculate marginals for expsc_noss calculation */
+	/* left half */
+	esl_vec_FSet(left_e, cm->abc->K, 0.);
+	for(i = 0; i < cm->abc->K; i++)
+	  for(j = (i*cm->abc->K); j < ((i+1)*cm->abc->K); j++)
+	    left_e[i] += cm->e[v][j];
+	/* printf("sum should be 1.0: %f\n", esl_vec_FSum(left_e, cm->abc->K)); */
+	esl_vec_FNorm(left_e, cm->abc->K);
+	for(i = 0; i < cm->abc->K; i++) left_esc[i] = sreLOG2(left_e[i] / cm->null[i]);
 
-	case B_st:
-	  expsc[v] = expsc[cm->cfirst[v]] + expsc[cm->cnum[v]];
-	  break;
+	/* right half */
+	esl_vec_FSet(right_e, cm->abc->K, 0.);
+	for(i = 0; i < cm->abc->K; i++)
+	  for(j = i; j < cm->abc->K * cm->abc->K; j += cm->abc->K)
+	    right_e[i] += cm->e[v][j];
+	/* printf("sum should be 1.0: %f\n", esl_vec_FSum(right_e, cm->abc->K)); */
+	esl_vec_FNorm(right_e, cm->abc->K);
+	for(i = 0; i < cm->abc->K; i++) right_esc[i] = sreLOG2(right_e[i] / cm->null[i]);
 
-	case MP_st:
-	  for(x = 0; x < MAXABET * MAXABET; x++)
-	    expsc[v] += cm->e[v][x] * cm->esc[v][x];
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	    {
-	      y = cm->cfirst[v] + yoffset;
-	      expsc[v] += cm->t[v][yoffset] * expsc[y];
-	    }
-	  break;
+	/* expsc uses joint emission probs */
+	for(x = 0; x < cm->abc->K * cm->abc->K; x++) 
+	  expsc[v]      += cm->e[v][x] * cm->esc[v][x];
 
-	case ML_st:
-	case MR_st:
-	case IL_st:
-	case IR_st:
-	  for(x = 0; x < MAXABET; x++)
-	    expsc[v] += cm->e[v][x] * cm->esc[v][x];
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	    {
-	      y = cm->cfirst[v] + yoffset;
-	      expsc[v] += cm->t[v][yoffset] * expsc[y];
-	    }
-	  break;
+	/* expsc_noss uses marginalized emission probs */
+	for(x = 0; x < cm->abc->K; x++) 
+	  expsc_noss[v] += left_e[x] * left_esc[x];
+	for(x = 0; x < cm->abc->K; x++) 
+	  expsc_noss[v] += right_e[x] * right_esc[x];
 
-	case S_st:
-	case D_st:
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	    {
-	      y = cm->cfirst[v] + yoffset;
-	      expsc[v] += cm->t[v][yoffset] * expsc[y];
-	    }
-	  break;
+	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	  y = cm->cfirst[v] + yoffset;
+	  expsc[v]      += cm->t[v][yoffset] * expsc[y];
+	  expsc_noss[v] += cm->t[v][yoffset] * expsc_noss[y];
 	}
+	break;
+	
+      case ML_st:
+      case MR_st:
+      case IL_st:
+      case IR_st:
+	for(x = 0; x < cm->abc->K; x++) {
+	  expsc[v]      += cm->e[v][x] * cm->esc[v][x];
+	  expsc_noss[v] += cm->e[v][x] * cm->esc[v][x];
+	}
+	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	  y = cm->cfirst[v] + yoffset;
+	  expsc[v]      += cm->t[v][yoffset] * expsc[y];
+	  expsc_noss[v] += cm->t[v][yoffset] * expsc_noss[y];
+	}
+	break;
+	
+      case S_st:
+      case D_st:
+	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	  y = cm->cfirst[v] + yoffset;
+	  expsc[v]      += cm->t[v][yoffset] * expsc[y];
+	  expsc_noss[v] += cm->t[v][yoffset] * expsc_noss[y];
+	}
+	break;
+      }
     }
-  *ret_expsc = expsc;
+  /* must return ret_expsc */
+  *ret_expsc      = expsc;
+  /* optionally return ret_expsc_noss */
+  if(ret_expsc_noss != NULL) *ret_expsc_noss = expsc_noss;
+  else free(expsc_noss);
 
   for(v = 0; v < cm->M; v++)
-    printf("EXPSC[%4d]: %10.6f\n", v, expsc[v]);
+    printf("EXPSC[%4d]: %10.6f NOSS: %10.6f (%10.6f)\n", v, expsc[v], expsc_noss[v], (expsc[v] - expsc_noss[v]));
 
   return;
  ERROR:
-  esl_fatal("ERROR in cm_CalcExpSc().\n");
+  cm_Fail("ERROR in cm_CalcExpSc().\n");
 }
 
 /* Function:  cm_Validate()

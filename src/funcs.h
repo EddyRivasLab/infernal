@@ -89,7 +89,7 @@ extern float rsearch_calculate_gap_penalty (char from_state, char to_state,
 extern int   ExponentiateCM(CM_t *cm, double z);
 extern CM_t *DuplicateCM(CM_t *cm);
 extern void  cm_banner(FILE *fp, char *progname, char *banner);
-extern void  cm_CalcExpSc(CM_t *cm, float **ret_expsc);
+extern void  cm_CalcExpSc(CM_t *cm, float **ret_expsc, float **ret_expsc_noss);
 extern int   cm_Validate(CM_t *cm, float tol, char *errbuf);
 extern char *CMStatetype(char st);
 extern char *CMNodetype(char nd);
@@ -375,7 +375,7 @@ extern float OLDFastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0
 			    search_results_t *results, float **ret_vsc, float *ret_best_hit_sc);
 extern float rsearch_CYKScan (CM_t *cm, ESL_DSQ *dsq, int L, float cutoff, int D,
 			      search_results_t *results);
-
+extern float cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_vcalcs);
 
 
 /* from CP9_scan.c */
@@ -813,5 +813,11 @@ extern int         cm_fhb_mx_GrowTo(CM_FHB_MX *mx, CP9Bands_t *cp9b);
 extern int         cm_fhb_mx_Dump(FILE *ofp, CM_FHB_MX *mx);
 extern void        cm_fhb_mx_Destroy(CM_FHB_MX *mx);
 
-
-
+/* from cm_cp9_hybridsearch.c */
+extern float cm_cp9_HybridScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, int **ret_sc, 
+			       int *ret_bestpos, search_results_t *results, HybridScanInfo_t *hsi);
+extern int predict_xsub(CM_t *cm, float *cm_vcalcs, float *cm_expsc, float *cp9_expsc);
+extern int cm_CalcAvgHitLength(CM_t *cm, double beta, float **ret_hitlen);
+extern HybridScanInfo_t * cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs);
+extern int cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int vroot_to_add);
+extern int cm_ValidateHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi);

@@ -152,13 +152,11 @@ static int initialize_sub_filter_info(const ESL_GETOPTS *go, struct cfg_s *cfg, 
 static int update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int fthr_mode);
 static int update_qdbs(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int doing_filter);
 static int set_partition_gc_freq(struct cfg_s *cfg, int p);
-static int calc_avg_hit_length(CM_t *cm, float **ret_hitlen, double beta);
 static int fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, double *ret_mu, double *ret_lambda);
 static int cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **vscA, int nscores, int p);
 static ESL_DSQ * get_random_dsq(const struct cfg_s *cfg, CM_t *cm, double *dnull, int L);
 static ESL_DSQ * get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p, Parsetree_t **ret_tr);
 static float search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float **ret_vsc);
-static float count_search_target_calcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_vcalcs);
 static int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, ESL_DSQ *dsq, 
 				    Parsetree_t *tr, int L, int *dmin_default_beta, int *dmax_default_beta, float cutoff);
 static int calc_sub_filter_sets(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float **fil_vscAA);
@@ -688,7 +686,7 @@ update_qdbs(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int doing_filter
     /* determine millions of DP calcs for each state, only if we don't already know this,
      * these will be free'd and set to NULL every time we read a new CM */
     if(cfg->fil_vcalcs == NULL) 
-      count_search_target_calcs(cm, 1000, cm->dmin, cm->dmax, cm->W, &(cfg->fil_vcalcs));
+      cm_CountSearchDPCalcs(cm, 1000, cm->dmin, cm->dmax, cm->W, &(cfg->fil_vcalcs));
   }
   else { /* doing Gumbels */
     cm->beta = esl_opt_GetReal(go, "--beta"); /* this will be 1e-7 unless changed at command line */
@@ -708,7 +706,7 @@ update_qdbs(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int doing_filter
       /* determine #millions of DP calcs for each state, only if we don't already know this,
        * these will be free'd and set to NULL every time we read a new CM */
       if(cfg->vcalcs == NULL) 
-	count_search_target_calcs(cm, 1000, cm->dmin, cm->dmax, cm->W, &(cfg->vcalcs));
+	cm_CountSearchDPCalcs(cm, 1000, cm->dmin, cm->dmax, cm->W, &(cfg->vcalcs));
 
       /* we keep track of the QDBs for doing Gumbels (so we can ensure our emitted 
        * seqs used to calc filter thresholds are better than our cutoff), so 
@@ -725,7 +723,7 @@ update_qdbs(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int doing_filter
     }
     else { /* --noqdb */
       if(cfg->vcalcs == NULL) 
-	count_search_target_calcs(cm, 1000, NULL, NULL, cm->W, &(cfg->vcalcs));
+	cm_CountSearchDPCalcs(cm, 1000, NULL, NULL, cm->W, &(cfg->vcalcs));
       cm->search_opts |= CM_SEARCH_NOQDB; /* don't use QDB to search */
 
       /* make sure we don't have dmin_gumbel, dmax_gumbel (if we do, it's due to a coding error) */
@@ -820,7 +818,7 @@ update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
  * Date:     EPN, Tue Sep 11 10:44:52 2007
  *
  * Purpose:  Given a CM, determine which states could be used as sub-CM filter
- *           roots and also which 'end' (kind of like a stem) they belong to. 
+ *           roots and also which 'end' group they belong to. 
  *           
  *           Determining which states are possible sub-CM filter roots:
  *           Fill an array of length cm->M with TRUE, FALSE for each
@@ -859,7 +857,7 @@ initialize_sub_filter_info(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
   
   /* determine average length for each subtree (state) */
   cfg->subinfo->beta = 1e-15;
-  if((status = calc_avg_hit_length(cm, &(cfg->subinfo->avglenA), cfg->subinfo->beta)) != eslOK) return status;
+  if((status = cm_CalcAvgHitLength(cm, cfg->subinfo->beta, &(cfg->subinfo->avglenA)) != eslOK)) return status;
 
   /* determine which states are candidate sub-CM filter root states */
   ESL_ALLOC(cfg->subinfo->iscandA, sizeof(int) * cm->M);
@@ -1005,33 +1003,6 @@ initialize_sub_filter_info(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
 
  ERROR:
   return status;
-}
-
-/* Function: calc_avg_hit_length()
- * Date:     EPN, Mon Sep 10 10:04:52 2007
- *
- * Purpose:  Calculate the average hit length for each state of a CM using the 
- *           QDB calculation engine, using beta = 1e-15.
- *
- * Returns:  eslOK on success;
- */
-int
-calc_avg_hit_length(CM_t *cm, float **ret_avglen, double beta)
-{
-  float *avglen = NULL;
-  int safe_windowlen;
-
-  safe_windowlen = cm->W * 2;
-  while(!(BandCalculationEngine(cm, safe_windowlen, beta, TRUE, NULL, NULL, NULL, &avglen))) {
-    safe_windowlen *= 2;
-    if(safe_windowlen > (cm->clen * 1000)) cm_Fail("ERROR safe_windowlen big: %d\n", safe_windowlen);
-  }
-
-  int v;
-  for(v = 0; v < cm->M; v++) printf("AVG LEN v: %4d d: %10.4f\n", v, avglen[v]);
-
-  *ret_avglen = avglen;
-  return eslOK;
 }
 
 /* Function: set_partition_gc_freq()
@@ -1960,145 +1931,6 @@ search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i
     return 0.; /* NEVERREACHED */
 }
 
-
-/* Function: count_search_target_calcs() 
- * Date:     EPN, Tue Sep 11 20:35:49 2007
- *
- * Purpose:  Determine the number of millions of DP calcs needed to scan a seq of length L
- *           for each state using dmin and dmax. 
- *           <ret_vcalcs[0]> = number of dp calcs for entire model.
- *           If bands are NULL, reverts to non-banded.
- *
- *           NOTE: should stay sync'ed with search_target_cm_calibration()
- *
- * Args:     cm        - the covariance model
- *           L         - length of the sequence to search 
- *           dmin      - minimum bound on d for state v; 0..M
- *           dmax      - maximum bound on d for state v; 0..M          
- *           W         - max d: max size of a hit
- *           ret_vcalcs- RETURN: [0..v..M-1] number of DP calcs for scanning with sub-CM at v
- *
- * Returns:  number of calcs to search L residues with full model (ret_vcalcs[0]).
- *           dies immediately if some error occurs.
- */
-float 
-count_search_target_calcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_vcalcs)
-{
-  int       status;
-  float     *vcalcs;            /* [0..v..cm->M-1] # of calcs for subtree rooted at v */
-  int       d;			/* a subsequence length, 0..W */
-  int       j;                  /* seq index */
-  int       v, w, y;            /* state indices */
-  int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
-  int       dn;                 /* temporary value for min d in for loops */
-  int       dx;                 /* temporary value for max d in for loops */
-  int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
-
-  if(dmin != NULL && dmax != NULL)           do_banded = TRUE;
-  if (W > L) W = L; 
-
-  ESL_ALLOC(vcalcs, sizeof(float) * cm->M);
-  esl_vec_FSet(vcalcs, cm->M, 0.);
-
-  /* we ignore initialization and band imposition, a little imprecise */
-  for (j = 1; j <= L; j++) 
-    {
-      for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
-	{
-	  /* determine min/max d we're allowing for this state v and this position j */
-	  if(do_banded) { 
-	    dn = (cm->sttype[v] == MP_st) ? ESL_MAX(dmin[v], 2) : ESL_MAX(dmin[v], 1); 
-	    dx = ESL_MIN(j, dmax[v]); 
-	    dx = ESL_MIN(dx, W);
-	    vcalcs[3] += 2;
-	  }
-	  else { 
-	    dn = (cm->sttype[v] == MP_st) ? 2 : 1;
-	    dx = ESL_MIN(j, W); 
-	    vcalcs[v] += 2;
-	  }
-	  if(cm->sttype[v] == B_st) {
-	    w = cm->cfirst[v];
-	    y = cm->cnum[v];
-	    for (d = dn; d <= dx; d++) {
-	      /* k is the length of the right fragment */
-	      /* Careful, make sure k is consistent with bands in state w and state y. */
-	      if(do_banded) {
-		kmin = ESL_MAX(dmin[y], (d-dmax[w]));
-		kmin = ESL_MAX(kmin, 0);
-		kmax = ESL_MIN(dmax[y], (d-dmin[w]));
-		vcalcs[v] += 3;
-	      }
-	      else { kmin = 0; kmax = d; }
-	      vcalcs[v] += 1 + (kmax - kmin + 1); /* initial '1 +' is for initialization calc */
-	    }
-	  }
-	  else { /* if cm->sttype[v] != B_st */
-	    vcalcs[v] += 1 + (cm->cnum[v] + 1) * (dx - dn + 1);
-	    /* initial '1 +' is for initialization calc, ' + 1' in cnum[v] is for (i=j-d+1) calc */
-
-	    switch (cm->sttype[v]) {
-	    case MP_st: 
-	      vcalcs[v] += 3 * (dx-dn+1); /* not sure what this should be */
-	    case ML_st:
-	    case IL_st:
-	    case MR_st:
-	    case IR_st:
-	      vcalcs[v] += 1 * (dx-dn+1); 
-	      break;
-	    } /* end of switch */
-	  } /* end of else (v != B_st) */
-	} /*loop over decks v>0 */
-
-      /* determine min/max d we're allowing for the root state and this position j */
-      if(do_banded) { 
-	dn = ESL_MAX(dmin[0], 1); 
-	dx = ESL_MIN(j, dmax[0]); 
-	dx = ESL_MIN(dx, W);
-	vcalcs[0] += 3;
-      }
-      else { 
-	dn = 1; 
-	dx = ESL_MIN(j, W); 
-	vcalcs[0] += 1;
-      }
-      vcalcs[0] += 4 + 1 + (cm->cnum[v] + 1) * (dx - dn + 1); /* 4 is for the ESL_MAX calls */
-	
-      if (cm->flags & CM_LOCAL_BEGIN) {
-	for (y = 1; y < cm->M; y++) {
-	  if(do_banded) {
-	    dn = (cm->sttype[y] == MP_st) ? ESL_MAX(dmin[y], 2) : ESL_MAX(dmin[y], 1); 
-	    dn = ESL_MAX(dn, dmin[0]);
-	    dx = ESL_MIN(j, dmax[y]); 
-	    dx = ESL_MIN(dx, W);
-	    vcalcs[0] += 4;
-	  }
-	  else { 
-	    dn = 1; 
-	    dx = ESL_MIN(j, W); 
-	    vcalcs[0] += 1;
-	  }
-	  vcalcs[0] += 5 + (dx - dn + 1); /* 5 is for the ESL_MAX calls */
-	}
-      }
-    } /* end loop over end positions j */
-
-  /* sum up the cells for all states under each v */
-  for (v = cm->M-1; v >= 0; v--) {
-    if     (cm->sttype[v] == B_st) vcalcs[v] += vcalcs[cm->cnum[v]] + vcalcs[cm->cfirst[v]];
-    else if(cm->sttype[v] != E_st) vcalcs[v] += vcalcs[v+1];
-  }
-
-  /* convert to millions of calcs */
-  for (v = cm->M-1; v >= 0; v--) vcalcs[v] /= 1000000.;
-
-  *ret_vcalcs = vcalcs;
-  return vcalcs[0];
-
- ERROR:
-  cm_Fail("count_search_target_calcs(): memory error.");
-  return 0.;
-}
 
 /*
  * Function: cm_find_hit_above_cutoff()

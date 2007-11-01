@@ -52,6 +52,7 @@ OBJS  = alphabet.o\
 	cm_masks.o\
 	cm_mx.o\
 	cm_postprob.o\
+	cm_cp9_hybridsearch.o\
 	cplan9.o\
 	CP9_cm2wrhmm.o\
 	CP9_scan.o\
