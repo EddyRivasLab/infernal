@@ -71,10 +71,9 @@ main(int argc, char **argv)
   CM_t            *cm;          /* CM most recently read     */
   int              ncm;         /* CM index                  */
 
-#if USE_NEWLOGSUM
+  /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
   FLogsumInit();
-#endif
 
   /* Process command line options.
    */

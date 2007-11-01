@@ -169,6 +169,10 @@ main(int argc, char **argv)
   ESL_GETOPTS     *go	   = NULL;     /* command line processing                     */
   struct cfg_s     cfg;
 
+  /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
+  init_ilogsum();
+  FLogsumInit();
+
   /* Process command line options.
    */
   go = esl_getopts_Create(options);

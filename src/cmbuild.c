@@ -163,6 +163,10 @@ main(int argc, char **argv)
   ESL_STOPWATCH   *w  = esl_stopwatch_Create();
   struct cfg_s     cfg;
 
+  /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
+  init_ilogsum();
+  FLogsumInit();
+
   /*********************************************** 
    * Parse command line
    ***********************************************/

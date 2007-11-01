@@ -670,7 +670,7 @@ IInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   }
 
   free(touch);
-  /*printf("\tIInside() sc  : %f\n", return_sc);*/
+  ESL_DPRINTF1(("\tIInside() sc  : %f\n", return_sc));
   return return_sc;
 
  ERROR:
@@ -1119,9 +1119,9 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   free(touch);
 
   if(!(cm->flags & CM_LOCAL_END))
-    ;/*printf("\tFOutside() sc : %f\n", return_sc);*/
+    ESL_DPRINTF1(("\tFOutside() sc : %f\n", return_sc));
   else
-    ;/*printf("\tFOutside() sc : %f (LOCAL mode; sc is from Inside)\n", return_sc);*/
+    ESL_DPRINTF1(("\tFOutside() sc : %f (LOCAL mode; sc is from Inside)\n", return_sc));
 
   return return_sc;
 
@@ -1540,9 +1540,9 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   free(touch);
 
   if(!(cm->flags & CM_LOCAL_END))
-    ;/*printf("\tIOutside() sc : %f\n", freturn_sc);*/
+    ESL_DPRINTF1(("\tIOutside() sc : %f\n", freturn_sc));
   else
-    ;/*printf("\tIOutside() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc);*/
+    ESL_DPRINTF1(("\tIOutside() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc));
 
   return freturn_sc;
 
@@ -1678,6 +1678,7 @@ ICMPosterior(int L, CM_t *cm, int   ***alpha, int   ****ret_alpha, int   ***beta
     for (j = 0; j <= L; j++) 
       for (d = 0; d <= j; d++)
 	{
+	  /* printf("v: %2d | j: %2d | d: %2d | alpha[%d][%d][%d]: %d | beta[%d][%d][%d]: %d\n",  v, j, d, v, j, d, alpha[v][j][d], v,j,d, beta[v][j][d]);  */
 	  post[v][j][d] = alpha[v][j][d] + beta[v][j][d] - sc;
 	  if(v == vmax)
 	    {
@@ -1824,7 +1825,7 @@ ICMPostalCode(CM_t *cm, int L, int ***post, Parsetree_t *tr)
       i = tr->emitl[x];
       j = tr->emitr[x];
       d = j-i+1;
-      /*printf("x: %2d | v: %2d | i: %2d | j: %2d | d: %2d | post[%d][%d][%d]: %f\n", x, v, i, j, d, v, j, d, post[v][j][d]);*/
+      /* printf("x: %2d | v: %2d | i: %2d | j: %2d | d: %2d | post[%d][%d][%d]: %d\n", x, v, i, j, d, v, j, d, post[v][j][d]);*/
       /*
        * Only P, L, R states have emissions.
        */
@@ -1840,7 +1841,7 @@ ICMPostalCode(CM_t *cm, int L, int ***post, Parsetree_t *tr)
 	  {
 	    d = j - (r+1) + 1;
 	    postcode[r] = Iscore2postcode(post[v][j][d]);
-	    /*printf("r: %d | post[%d][%d][%d]: %d (%f)| sc: %c\n", r, v, j, d, post[v][j][d], (Scorify(post[v][j][d])), postcode[r]);*/
+	    printf("r: %d | post[%d][%d][%d]: %d (%f)| sc: %c\n", r, v, j, d, post[v][j][d], (Scorify(post[v][j][d])), postcode[r]);
 	  }
       }
     }
@@ -3005,7 +3006,7 @@ IInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   }
 
   free(touch);
-  /*printf("\tIInside_b_jd_me() sc  : %f\n", return_sc);*/
+  ESL_DPRINTF1(("\tIInside_b_jd_me() sc  : %f\n", return_sc));
   return return_sc;
 
  ERROR:

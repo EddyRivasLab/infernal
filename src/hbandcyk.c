@@ -214,7 +214,7 @@ CYKInside_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t
 			dmin, dmax);
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
-  /*printf("returning from CYKInside_b_jd() sc : %f\n", sc); */
+  ESL_DPRINTF1(("returning from CYKInside_b_jd() sc : %f\n", sc));
 
   return sc;
 }

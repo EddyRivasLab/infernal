@@ -159,6 +159,10 @@ main(int argc, char **argv)
   ESL_STOPWATCH   *w  = esl_stopwatch_Create();
   struct cfg_s     cfg;
 
+  /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
+  init_ilogsum();
+  FLogsumInit();
+
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -876,6 +880,9 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
    */
   ConfigCM(cm, NULL, NULL); 
   if(cm->config_opts & CM_CONFIG_ENFORCE) ConfigCMEnforce(cm);
+  /* TEMPORARY */
+  /* debug_print_cm_params(stdout, cm);
+     exit(1); */
 
   if(cfg->my_rank == 0) printf("CM %d: %s\n", (cfg->ncm), cm->name);
 
