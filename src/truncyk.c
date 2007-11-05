@@ -34,12 +34,14 @@
 #define USED_LOCAL_BEGIN 101
 #define USED_EL          102
 
+/*
 struct deckpool_s {
    float ***pool;
    int      n;
    int      nalloc;
    int      block;
 };
+*/
 
 /* Structure: AlphaMats_t */
 typedef struct alphamats_s {
@@ -492,9 +494,9 @@ tr_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    {
       if ( w_mode == 0 && y_mode == 0 ) /* local hit in parent (marginal) */
       {
-if (b3_v == -1)
+if (!useEL && b3_v == -1)
 cm_Die("1Superbad: passing z = -1!\n");
-         tr_v_splitter(cm, dsq, L, tr, r, b3_v, i0, best_j, best_j, j0, 
+         tr_v_splitter(cm, dsq, L, tr, r, (useEL ? v : b3_v), i0, best_j, best_j, j0, 
                        useEL, r_allow_J, r_allow_L, r_allow_R, (v_mode == 3), (v_mode == 2), (v_mode == 1));
          return best_sc;
       }
@@ -2445,8 +2447,10 @@ tr_vinside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1, 
             if (ret_shadow != NULL) ((char **)shadow->J[z])[jp+1][ip] = USED_EL;
             if (alpha->J[z][jp+1][ip] < IMPOSSIBLE) alpha->J[z][jp+1][ip] = IMPOSSIBLE;
             break;
+/*
          default:
             cm_Die("Bad input combination in tr_vinside: useEL TRUE, but cm->sttype[z] = %d\n",cm->sttype[z]);
+*/
       }
 
       alpha->L[z][jp][ip] = IMPOSSIBLE;
