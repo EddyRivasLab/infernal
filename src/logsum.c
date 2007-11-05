@@ -151,6 +151,15 @@ LogSum2(float s1, float s2)
   const float min = ESL_MIN(s1, s2);
   return  (min == -eslINFINITY || (max-min) >= 23.f) ? max : max + flogsum_lookup[(int)((max-min)*INTSCALE)];
 } 
+
+/* yes LogSum2 and LogSum2 are identical, this is for backwards compatibility */
+float
+FLogsum(float s1, float s2)
+{
+  const float max = ESL_MAX(s1, s2);
+  const float min = ESL_MIN(s1, s2);
+  return  (min == -eslINFINITY || (max-min) >= 23.f) ? max : max + flogsum_lookup[(int)((max-min)*INTSCALE)];
+} 
 #endif /* USE_NEWLOGSUM*/
 
 #if 0

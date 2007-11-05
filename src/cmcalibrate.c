@@ -23,6 +23,7 @@
 #include <signal.h>
 #include <math.h>
 #include <time.h>
+#include <assert.h>
 
 #ifdef HAVE_MPI
 #include "mpi.h"
@@ -62,6 +63,7 @@ static ESL_OPTIONS options[] = {
   { "--gumqqfile",eslARG_STRING, NULL, NULL, NULL,      NULL,      NULL, "--filonly", "save Q-Q plot for Gumbel histogram(s) to file <s>", 2 },
   { "--beta",    eslARG_REAL,  "1e-7",NULL, "x>0",     NULL,      NULL,    "--noqdb", "set tail loss prob for Gumbel calculation to <x>", 5 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "DO NOT use query dependent banding (QDB) Gumbel searches", 5 },
+  { "--gcmutest",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--dbfile", "test impact of GC content on mu", 5 },
   /* options for filter threshold calculation */
   { "--filonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "only calculate filter thresholds, don't estimate Gumbels", 3},
   { "--filN",    eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--gumonly", "number of emitted sequences for HMM filter threshold calc",    3 },
@@ -97,8 +99,9 @@ struct cfg_s {
   double          *pgc_freq;
   int              be_verbose;	
   ESL_STOPWATCH   *w;
-  CMStats_t      **cmstatsA;           /* the CM stats data structures, 1 for each CM */
-  SubFilterInfo_t *subinfo;           /* sub-CM filter information */
+  CMStats_t      **cmstatsA;          /* the CM stats data structures, 1 for each CM */
+  HybridScanInfo_t *hsi;              /* information for a hybrid scan */ 
+  //SubFilterInfo_t *subinfo;           /* sub-CM filter information */
   int              ncm;                /* what number CM we're on */
   int              cmalloc;            /* number of cmstats we have allocated */
   char            *tmpfile;            /* tmp file we're writing to */
@@ -110,12 +113,11 @@ struct cfg_s {
    */
   float           *cutoffA;            /* bit score cutoff for each partition, changes to reflect
 				        * current mode CM is in, on masters and workers */
-  float           *vcalcs;             /* [0..v..cm->M-1] millions of calcs for each subtree to scan 1 KB with --beta  */
-  float           *fil_vcalcs;         /* [0..v..cm->M-1] millions of calcs for each subtree to scan 1 KB with --fbeta */
-  int             *dmin_gumbel;        /* [0..v..cm->M-1] dmin for current CM and CM configuration, updated in update_qdbs() */
-  int             *dmax_gumbel;        /* [0..v..cm->M-1] dmax for current CM and CM configuration, updated in update_qdbs() */
+  float           *full_vcalcs;        /* [0..v..cm->M-1] millions of calcs for each subtree to scan 1 residue with --beta  */
+  //int             *dmin_gumbel;        /* [0..v..cm->M-1] dmin for current CM and CM configuration, updated in update_qdbs() */
+  //int             *dmax_gumbel;        /* [0..v..cm->M-1] dmax for current CM and CM configuration, updated in update_qdbs() */
   double         **vmuAA;              /* [0..np-1][0..cm->M-1], mu for each partition, each state, 
-				        * if vmuAAA[][v] == -1 : we're not fitting state v to a gumbel */
+				        * if vmuAA[][v] == -1 : we're not fitting state v to a gumbel */
   double         **vlambdaAA;          /* same as vmuAA, but lambda */
 
   /* mpi */
@@ -130,6 +132,10 @@ struct cfg_s {
   FILE         *gumqfp;        /* optional output for gumbel QQ file */
   FILE         *filhfp;        /* optional output for filter histograms */
   FILE         *filrfp;        /* optional output for filter info for R */
+
+  /* TEMPORARY? */
+  double      **gum_null;      /* [0..numpartitions-1] null distribution for random seqs for gumbel fitting */
+  double       *cur_gum_null;  /* current null distribution for random seqs for gumbel fitting */
 };
 
 static char usage[]  = "[-options] <cmfile>";
@@ -147,20 +153,20 @@ static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
 			    int emit_from_cm, float ***ret_vscAA, float **ret_cp9scA);
 static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
-static int initialize_sub_filter_info(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm);
+//static int initialize_sub_filter_info(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm);
 
 static int update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int fthr_mode);
-static int update_qdbs(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int doing_filter);
+//static int update_qdbs(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int doing_filter);
 static int set_partition_gc_freq(struct cfg_s *cfg, int p);
 static int fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, double *ret_mu, double *ret_lambda);
 static int cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **vscA, int nscores, int p);
 static ESL_DSQ * get_random_dsq(const struct cfg_s *cfg, CM_t *cm, double *dnull, int L);
 static ESL_DSQ * get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p, Parsetree_t **ret_tr);
-static float search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float **ret_vsc);
+//static float search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float **ret_vsc);
 static int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, ESL_DSQ *dsq, 
 				    Parsetree_t *tr, int L, int *dmin_default_beta, int *dmax_default_beta, float cutoff);
-static int calc_sub_filter_sets(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float **fil_vscAA);
-static void find_pair_of_thresholds(const ESL_GETOPTS *go, const struct cfg_s *cfg, int cmN, float threshold, float *uiA, float *ujA, float *siA, float *sjA, float *ret_icalcs, float *ret_jcalcs, int print_flag);
+static int calc_best_filter(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float **fil_vscAA, float *fil_cp9scA);
+static void estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq, int L, int gum_mode);
 
 int
 main(int argc, char **argv)
@@ -224,15 +230,15 @@ main(int argc, char **argv)
   cfg.w        = NULL; 
   cfg.ncm      = 0;
   cfg.cmstatsA = NULL;
-  cfg.subinfo  = NULL;
+  cfg.hsi      = NULL;
+  //cfg.subinfo  = NULL;
   cfg.tmpfile  = NULL;
   cfg.mode     = NULL;
   cfg.dbsize   = 1000000; /* default DB size = 1MB, changed ONLY if --dbfile enabled */
   cfg.cutoffA  = NULL; 
-  cfg.vcalcs   = NULL;
-  cfg.fil_vcalcs = NULL;
-  cfg.dmin_gumbel = NULL;
-  cfg.dmax_gumbel = NULL;
+  cfg.full_vcalcs = NULL;
+  //cfg.dmin_gumbel = NULL;
+  //cfg.dmax_gumbel = NULL;
   cfg.vmuAA     = NULL;
   cfg.vlambdaAA = NULL;
 
@@ -241,6 +247,9 @@ main(int argc, char **argv)
   cfg.filhfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.filrfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.abc      = NULL; 
+
+  cfg.gum_null = NULL;
+  cfg.cur_gum_null = NULL;
 
   cfg.do_mpi   = FALSE;
   cfg.my_rank  = 0;
@@ -309,6 +318,7 @@ static int
 init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
   int status;
+  int p;
 
   /* open CM file */
   if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
@@ -397,6 +407,23 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (cfg->cmfp->is_binary) cfg->mode = "wb";
   else                      cfg->mode = "w"; 
 
+  /* for GC MU testing (temporary?) */
+  if(esl_opt_GetBoolean(go, "--gcmutest")) { 
+    ESL_ALLOC(cfg->gum_null, sizeof(double *) * 3);
+    for(p = 0; p < 3; p++) ESL_ALLOC(cfg->gum_null[p], sizeof(double) * 4);
+    cfg->gum_null[0][0] = cfg->gum_null[0][3] = 0.3;
+    cfg->gum_null[0][1] = cfg->gum_null[0][2] = 0.2;
+    cfg->gum_null[1][0] = cfg->gum_null[1][3] = 0.25;
+    cfg->gum_null[1][1] = cfg->gum_null[1][2] = 0.25;
+    cfg->gum_null[2][0] = cfg->gum_null[2][3] = 0.2;
+    cfg->gum_null[2][1] = cfg->gum_null[2][2] = 0.3;
+  }
+  else {
+    ESL_ALLOC(cfg->gum_null, sizeof(double *) * 1);
+    ESL_ALLOC(cfg->gum_null[0], sizeof(double) * 4);
+    cfg->gum_null[0][0] = cfg->gum_null[0][3] = 0.25;
+    cfg->gum_null[0][1] = cfg->gum_null[0][2] = 0.25;
+  }
   if(cfg->w == NULL) cm_Fail("Failed to create stopwatch.");
   if(cfg->r == NULL) cm_Fail("Failed to create master RNG.");
 
@@ -420,6 +447,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   CM_t          *cm = NULL;
   int            cmN  = esl_opt_GetInteger(go, "--cmN");
   int            hmmN = esl_opt_GetInteger(go, "--hmmN");
+  int            filN = esl_opt_GetInteger(go, "--filN");
   /*int           *vwin = NULL;
     int            nwin = 0;*/
   int        gum_mode = 0;
@@ -428,6 +456,9 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   float  **fil_vscAA  = NULL; /* [0..v..cm->M-1][0..nseq-1] best cm score for each state, each emitted seq */
   float   *gum_cp9scA = NULL; /*                [0..nseq-1] best cp9 score for each random seq */
   float   *fil_cp9scA = NULL; /*                [0..nseq-1] best cp9 score for each emitted seq */
+  int            cmi;
+  int      do_time_estimates = TRUE;
+  /* int      do_time_estimates = esl_opt_GetBoolean(go, "--etime"); */
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   /*if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);*/
@@ -436,56 +467,72 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;
+      cmi = cfg->ncm-1;
 
       if((status = initialize_cm(go, cfg, errbuf, cm))          != eslOK) cm_Fail(errbuf);
       if((status = initialize_cmstats(go, cfg, errbuf))         != eslOK) cm_Fail(errbuf);
-      if((status = initialize_sub_filter_info(go, cfg, cm))     != eslOK) cm_Fail("initialize_sub_info failed unexpectedly (status: %d)", status);
+      //if((status = initialize_sub_filter_info(go, cfg, cm))     != eslOK) cm_Fail("initialize_sub_info failed unexpectedly (status: %d)", status);
 
       //for(gum_mode = 0; gum_mode < NGUMBELMODES; gum_mode++) {
-      for(gum_mode = 0; gum_mode < 1; gum_mode++) 
+      for(gum_mode = 0; gum_mode < 5; gum_mode += 4)  /* will fit CM_LC and CP9_L only */
       //for(gum_mode = 1; gum_mode < 2; gum_mode++) 
 	{
 	  ConfigForGumbelMode(cm, gum_mode);
 	  /* recalc QDBs for fitting Gumbels */
-	  update_qdbs(go, cfg, cm, FALSE);
-	  for (p = 0; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) 
+	  //update_qdbs(go, cfg, cm, FALSE);
+	  for (p = 0; p < cfg->cmstatsA[cmi]->np; p++) 
 	    {
+	      cfg->cur_gum_null = cfg->gum_null[p];
 	      if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
 	      if(gum_mode < NCMMODES) 
 		{ /* CM mode */
-		  /* search random sequences to get gumbels */
+		  /* search random sequences to get gumbels for each candidate sub CM root state (including 0, the root of the full model) */
+		  if(do_time_estimates) estimate_workunit_time(go, cfg, cmN, cm->W*2, gum_mode);
 		  if((status = process_workunit (go, cfg, errbuf, cm, cmN,   FALSE, &gum_vscAA, NULL)) != eslOK) cm_Fail(errbuf);
 		  if((status = cm_fit_histograms(go, cfg, errbuf, cm, gum_vscAA, cmN, p))              != eslOK) cm_Fail(errbuf);
-		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->mu     = cfg->vmuAA[p][0];
-		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->lambda = cfg->vlambdaAA[p][0];
-		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->L      = cm->W*2;
-		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->N      = cmN;
+		  cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->mu     = cfg->vmuAA[p][0];
+		  cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->lambda = cfg->vlambdaAA[p][0];
+		  cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->L      = cm->W*2;
+		  cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->N      = cmN;
+		  cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->isvalid = TRUE;
 		}
 	      else 
-		{ /* CP9 mode, only fit gumbels */
+		{ /* CP9 mode, fit gumbel for full HMM */
+		  if(do_time_estimates) estimate_workunit_time(go, cfg, cmN, cm->W*2, gum_mode);
 		  if((status = process_workunit (go, cfg, errbuf, cm, hmmN, FALSE, NULL, &gum_cp9scA))                 != eslOK) cm_Fail(errbuf);
-		  if((status = fit_histogram(go, cfg, errbuf, gum_cp9scA, hmmN, &(cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->mu), 
-					     &(cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->lambda)))     != eslOK) cm_Fail(errbuf);
-		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->L      = cm->W*2;
-		  cfg->cmstatsA[cfg->ncm-1]->gumAA[gum_mode][p]->N      = hmmN;
+		  if((status = fit_histogram(go, cfg, errbuf, gum_cp9scA, hmmN, &(cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->mu), 
+					     &(cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->lambda)))     != eslOK) cm_Fail(errbuf);
+		  cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->L      = cm->W*2;
+		  cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->N      = hmmN;
+		  cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->isvalid = TRUE;
 		}
 	    }
-	  if(gum_mode < NCMMODES) {
+	  /* filter threshold calculation section */
+	  if((! esl_opt_GetBoolean(go, "--gumonly")) && gum_mode < NCMMODES) {
 	    if((status = update_cutoffs(go, cfg, errbuf, cm, gum_mode)) != eslOK) cm_Fail(errbuf);
-	    update_qdbs(go, cfg, cm, TRUE); /* recalc QDBs for filtering sub CMs */
+	    //update_qdbs(go, cfg, cm, TRUE); /* recalc QDBs for filtering sub CMs */
 	    printf("\n\ncutoffsA[0]: %10.4f\n\n", cfg->cutoffA[0]);
 
-	    /* search emitted sequences to get filter thresholds */
-	    if((status = process_workunit (go, cfg, errbuf, cm, cmN, TRUE, &fil_vscAA, &fil_cp9scA)) != eslOK) cm_Fail(errbuf);
+	    /* search emitted sequences to get filter thresholds for HMM and each candidate sub CM root state */
+	    if((status = process_workunit (go, cfg, errbuf, cm, filN, TRUE, &fil_vscAA, &fil_cp9scA)) != eslOK) cm_Fail(errbuf);
+
+	    /* determine the 'best' way to filter using a heuristic:
+	     * 1. predict speedup for HMM-only filter
+	     * 2. add 'best' sub CM root independent of those already chosen, and predict speedup for a hybrid scan
+	     * 3. repeat 2 until predicted speedup drops
+	     * best filter is either HMM only or fastest combo of sub CM roots
+	     */
+	    if((status = calc_best_filter(go, cfg, cm, fil_vscAA, fil_cp9scA)) != eslOK) cm_Fail("unexpected error code: %d in calc_best_filter.");
 
 	    /* determine best n-state sets of sub-CM filter states */
-	    if((status = calc_sub_filter_sets(go, cfg, cm, fil_vscAA)) != eslOK) cm_Fail("unexpected error code: %d in calc_sub_filter_sets.");
+	    //if((status = calc_sub_filter_sets(go, cfg, cm, fil_vscAA)) != eslOK) cm_Fail("unexpected error code: %d in calc_sub_filter_sets.");
 	       
 	    /* determine HMM filter threshold */
 	    /* if((status = calc_cp9_filter_thr(go, cfg, errbuf, cm, fil_vscAA)) != eslOK) cm_Fail("unexpected error code: %d in calc_cp9_filter_thr.");*/
 	  }
 	  /* free muA and lambdaA */
-	}
+	} /* end of for(gum_mode = 0; gum_mode < NGUMBELMODES1; gum_mode++) */
+      debug_print_cmstats(cfg->cmstatsA[cmi], (! esl_opt_GetBoolean(go, "--gumonly")));
     }
   return;
 }
@@ -502,17 +549,17 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
  *           status of the input variables:
  *         
  *           Mode 1. Gumbel calculation for CM. 
- *           <emit_from_cm> is FALSE, ret_vscAA != NULL, ret_cp9scA == NULL
+ *           <emit_from_cm> is FALSE, <ret_vscAA> != NULL, <ret_cp9scA> == NULL
  *           Emit randomly and search only with the CM. <ret_vscAA> is filled
  *           with the best CM score at each state for each sequence.
  *
  *           Mode 2. Gumbel calculation for CP9.
- *           <emit_from_cm> is FALSE, ret_vscAA == NULL, ret_cp9scA != NULL
+ *           <emit_from_cm> is FALSE, <ret_vscAA> == NULL, <ret_cp9scA> != NULL
  *           Emit randomly and search only with the CP9. <ret_cp9scA> is filled
  *           with the best CP9 score for each sequence.
  *
  *           Mode 3. Scores will eventually be used to determine filter thresholds.
- *           <emit_from_cm> is TRUE, ret_vscAA != NULL, ret_cp9scA != NULL
+ *           <emit_from_cm> is TRUE, <ret_vscAA> != NULL, <ret_cp9scA> != NULL
  *           Emit from the CM (which is already configured how we want it). Search
  *           with the CM and CP9. <ret_vscAA> and <ret_cp9scA> filled as explained
  *           in modes 1 and 2. Importantly, in this mode, each sequence must have
@@ -558,8 +605,8 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   Parsetree_t   *tr;
   ESL_DSQ       *dsq;
   float          sc1;
-  /*float          sc2;
-    float          sc3;*/
+  /* float          sc2; */
+  /*  float          sc3;*/
 
   /* contract check */
   if(ret_vscAA  == NULL && ret_cp9scA == NULL) { sprintf(errbuf, "process_workunit, ret_vscAA and ret_cp9scA both NULL."); return eslEINVAL; } 
@@ -568,6 +615,8 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   /* determine mode, are we calc'ing CM stats, CP9 stats, or both */
   if(ret_vscAA   != NULL) use_cm  = TRUE;
   if(ret_cp9scA  != NULL) use_cp9 = TRUE;
+
+  printf("in process_workunit use_cm: %d use_cp9: %d emit_from_cm: %d nseq: %d\n", use_cm, use_cp9, emit_from_cm, nseq);
 
   /* allocate the score arrays we'll pass back */
   if(use_cm) { 
@@ -580,8 +629,10 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   /* fill dnull, a double version of cm->null, but only if we're going to need it to generate random seqs */
   if(!emit_from_cm && cfg->pgc_freq == NULL) {
     ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
-    for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
-    esl_vec_DNorm(dnull, cm->abc->K);
+    /*for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
+      }*/
+    for(i = 0; i < cm->abc->K; i++) dnull[i] = cfg->cur_gum_null[i];
+    esl_vec_DNorm(dnull, cm->abc->K);    
   }
 
   /* generate dsqs one at a time and collect best CM scores at each state and/or best overall CP9 score */
@@ -590,7 +641,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
       if(emit_from_cm) { /* if emit_from_cm == TRUE, use_cm == TRUE */
 	if(nfailed > 1000 * nseq) { cm_Fail("Max number of failures (%d) reached while trying to emit %d seqs.\n", nfailed, nseq); }
 	dsq = get_cmemit_dsq(cfg, cm, &L, &p, &tr);
-	while(!(cm_find_hit_above_cutoff(go, cfg, cm, dsq, tr, L, cfg->dmin_gumbel, cfg->dmax_gumbel, cfg->cutoffA[p]))) { 
+	while(!(cm_find_hit_above_cutoff(go, cfg, cm, dsq, tr, L, cfg->hsi->dmin, cfg->hsi->dmax, cfg->cutoffA[p]))) { 
 	  free(dsq); 	
 	  /* parsetree tr is freed in cm_find_hit_above_cutoff() */
 	  dsq = get_cmemit_dsq(cfg, cm, &L, &p, &tr);
@@ -604,14 +655,15 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
       /* if nec, search with CM */
       if (use_cm)
 	{ 
-	  sc1 = search_target_cm_calibration(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, &(cur_vscA)); 
+	  sc1 = FastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, &(cur_vscA), NULL);
+	  /* sc1 = search_target_cm_calibration(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, &(cur_vscA)); */
 	  /*sc2 = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE);
-	    sc3 = FastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
-	    printf("i: %4d sc1: %10.4f sc2: %10.4f sc3: %10.4f \n", i, sc1, sc2, sc3);
+	    sc3 = FastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);*/
+	  /*printf("i: %4d sc1: %10.4f sc2: %10.4f\n", i, sc1, sc2);
 	  fflush(stdout);
 	  if(fabs(sc1 - sc2) > 0.01) 
-	    cm_Fail("i: %4d sc1: %10.4f sc2: %10.4f\n", i, sc1, sc2);
-	  if(fabs(sc1 - sc3) > 0.01) 
+	  cm_Fail("i: %4d sc1: %10.4f sc2: %10.4f\n", i, sc1, sc2);*/
+	  /*if(fabs(sc1 - sc3) > 0.01) 
 	    cm_Fail("i: %4d sc1: %10.4f sc3: %10.4f\n", i, sc1, sc3);
 	  */
 	  for(v = 0; v < cm->M; v++) vscAA[v][i] = cur_vscA[v];
@@ -638,6 +690,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   return status;
 }
 
+
 /* initialize_cm()
  * Setup the CM based on the command-line options/defaults;
  * only set flags and a few parameters. ConfigCM() configures
@@ -657,90 +710,18 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     cm->search_opts |= CM_SEARCH_NOQDB; /* don't use QDB to search */
 
   ConfigCM(cm, NULL, NULL);
-
-  if(cfg->vcalcs != NULL)     { free(cfg->vcalcs);     cfg->vcalcs = NULL; }
-  if(cfg->fil_vcalcs != NULL) { free(cfg->fil_vcalcs); cfg->fil_vcalcs = NULL; }
-  return eslOK;
-}
-
-
-/* update_qdbs()
- * Update a CM's QDB related parameters based on whether
- * we are about to calculate filter stats (if doing_filter)
- * or about to calculate Gumbel stats (if !doing_filter).
- */
-static int
-update_qdbs(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int doing_filter)
-{
-  int status;
-  int v;
   
-  if(doing_filter) {
-    cm->beta   = esl_opt_GetReal(go, "--fbeta"); /* this will be 1e-3 unless changed at command line */
-    cm->search_opts &= ~CM_SEARCH_NOQDB; /* use QDB to search */
-    if(cm->flags & CM_QDB)
-      {
-	free(cm->dmin);
-	free(cm->dmax);
-	cm->dmin = NULL;
-	cm->dmax = NULL;
-	cm->flags &= ~CM_QDB;
-      }
-    ConfigQDB(cm);
-    /* determine millions of DP calcs for each state, only if we don't already know this,
-     * these will be free'd and set to NULL every time we read a new CM */
-    if(cfg->fil_vcalcs == NULL) 
-      cm_CountSearchDPCalcs(cm, 1000, cm->dmin, cm->dmax, cm->W, &(cfg->fil_vcalcs));
-  }
-  else { /* doing Gumbels */
-    cm->beta = esl_opt_GetReal(go, "--beta"); /* this will be 1e-7 unless changed at command line */
-    if(! (esl_opt_GetBoolean(go, "--noqdb"))) {
-      cm->search_opts &= ~CM_SEARCH_NOQDB; 
-      if(cm->flags & CM_QDB)
-	{
-	  free(cm->dmin);
-	  free(cm->dmax);
-	  cm->dmin = NULL;
-	  cm->dmax = NULL;
-	  cm->flags &= ~CM_QDB;
-	}
-      ConfigQDB(cm);
-      CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
+  /* count number of DP calcs */
+  if(cfg->full_vcalcs != NULL) free(cfg->full_vcalcs);
+  cm_CountSearchDPCalcs(cm, 1000, cm->dmin, cm->dmax, cm->W, &(cfg->full_vcalcs));
 
-      /* determine #millions of DP calcs for each state, only if we don't already know this,
-       * these will be free'd and set to NULL every time we read a new CM */
-      if(cfg->vcalcs == NULL) 
-	cm_CountSearchDPCalcs(cm, 1000, cm->dmin, cm->dmax, cm->W, &(cfg->vcalcs));
+  /* create and initialize hybrid scan info */
+  if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi);
+  cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--fbeta"), cfg->full_vcalcs[0]);
 
-      /* we keep track of the QDBs for doing Gumbels (so we can ensure our emitted 
-       * seqs used to calc filter thresholds are better than our cutoff), so 
-       * we update them here 
-       */
-      if(cfg->dmin_gumbel != NULL) { free(cfg->dmin_gumbel); cfg->dmin_gumbel = NULL; }
-      if(cfg->dmax_gumbel != NULL) { free(cfg->dmax_gumbel); cfg->dmax_gumbel = NULL; }
-      ESL_ALLOC(cfg->dmin_gumbel, sizeof(int) * cm->M);
-      ESL_ALLOC(cfg->dmax_gumbel, sizeof(int) * cm->M);
-      for(v = 0; v < cm->M; v++) {
-	cfg->dmin_gumbel[v] = cm->dmin[v];
-	cfg->dmax_gumbel[v] = cm->dmax[v];
-      }
-    }
-    else { /* --noqdb */
-      if(cfg->vcalcs == NULL) 
-	cm_CountSearchDPCalcs(cm, 1000, NULL, NULL, cm->W, &(cfg->vcalcs));
-      cm->search_opts |= CM_SEARCH_NOQDB; /* don't use QDB to search */
-
-      /* make sure we don't have dmin_gumbel, dmax_gumbel (if we do, it's due to a coding error) */
-      assert(cfg->dmin_gumbel == NULL);
-      assert(cfg->dmax_gumbel == NULL);
-    }
-  }
   return eslOK;
-
- ERROR: 
-  cm_Fail("update_qdbs(): memory allocation error.");
-  return status; /* NEVERREACHED */
 }
+
 
 /* initialize_cmstats()
  * Allocate and initialize a cmstats object in the cfg->cmstatsA array. 
@@ -752,34 +733,57 @@ initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int i;
   int p;
 
-  cfg->cmstatsA[cfg->ncm-1] = AllocCMStats(1); /* Always 1 partition (TEMPORARY) */
-  cfg->cmstatsA[cfg->ncm-1]->ps[0] = 0;
-  cfg->cmstatsA[cfg->ncm-1]->pe[0] = 100;
-  for(i = 0; i < GC_SEGMENTS; i++)
-    cfg->cmstatsA[cfg->ncm-1]->gc2p[i] = 0; 
-
-  if(cfg->cutoffA != NULL) free(cfg->cutoffA);
-  ESL_ALLOC(cfg->cutoffA, sizeof(float) * 1); /* number of partitions */
+  if(! esl_opt_GetBoolean(go, "--gcmutest")) { 
+    cfg->cmstatsA[cfg->ncm-1] = AllocCMStats(1); /* Always 1 partition (TEMPORARY) */
+    cfg->cmstatsA[cfg->ncm-1]->ps[0] = 0;
+    cfg->cmstatsA[cfg->ncm-1]->pe[0] = 100;
+    for(i = 0; i < GC_SEGMENTS; i++)
+      cfg->cmstatsA[cfg->ncm-1]->gc2p[i] = 0; 
+    
+    if(cfg->cutoffA != NULL) free(cfg->cutoffA);
+    ESL_ALLOC(cfg->cutoffA, sizeof(float) * 1); /* number of partitions */
+  }  
+  else { /* we're doing the GC mu test */
+    cfg->cmstatsA[cfg->ncm-1] = AllocCMStats(3); 
+    cfg->cmstatsA[cfg->ncm-1]->ps[0] = 0;
+    cfg->cmstatsA[cfg->ncm-1]->pe[0] = 39;
+    cfg->cmstatsA[cfg->ncm-1]->ps[1] = 40;
+    cfg->cmstatsA[cfg->ncm-1]->pe[1] = 59;
+    cfg->cmstatsA[cfg->ncm-1]->ps[2] = 60;
+    cfg->cmstatsA[cfg->ncm-1]->pe[2] = 100;
+    for(i = 0;  i < 40;  i++) cfg->cmstatsA[cfg->ncm-1]->gc2p[i] = 0; 
+    for(i = 40; i < 60;  i++) cfg->cmstatsA[cfg->ncm-1]->gc2p[i] = 1; 
+    for(i = 60; i < 101; i++) cfg->cmstatsA[cfg->ncm-1]->gc2p[i] = 2; 
+    
+    if(cfg->cutoffA != NULL) free(cfg->cutoffA);
+    ESL_ALLOC(cfg->cutoffA, sizeof(float) * 3); /* number of partitions */
+  }
 
   /* free, and then reallocate cfg->vmuAA, and cfg->vlambdaAA 
    * this is unnec, unless number of partitions has changed (which currently
    * is impossible) */
-  if(cfg->vmuAA != NULL) 
+  if(cfg->vmuAA != NULL) {
+    assert(cfg->ncm-2 >= 0);
     for(p = 0; p < cfg->cmstatsA[cfg->ncm-2]->np; p++) 
       { free(cfg->vmuAA[p]); cfg->vmuAA[p] = NULL; }
+  }
 
-  if(cfg->vlambdaAA != NULL) 
+  if(cfg->vlambdaAA != NULL) {
+    assert(cfg->ncm-2 >= 0);
     for(p = 0; p < cfg->cmstatsA[cfg->ncm-2]->np; p++) 
       { free(cfg->vlambdaAA[p]); cfg->vlambdaAA[p] = NULL; }
-
+  }
+  
   ESL_ALLOC(cfg->vmuAA,     sizeof(double *) * cfg->cmstatsA[cfg->ncm-1]->np);
   ESL_ALLOC(cfg->vlambdaAA, sizeof(double *) * cfg->cmstatsA[cfg->ncm-1]->np);
-  cfg->vmuAA[0]     = NULL;
-  cfg->vlambdaAA[0] = NULL;
-
+  for(p = 0; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) {
+    cfg->vmuAA[p]     = NULL;
+    cfg->vlambdaAA[p] = NULL;
+  }
+  
   return eslOK;
-
-
+  
+  
  ERROR:
   sprintf(errbuf, "initialize_cmstats(), memory allocation error (status: %d).", status);
   return status;
@@ -817,197 +821,6 @@ update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
     }
   return eslOK;
 }  
-
-/* Function: initialize_sub_filter_info
- * Date:     EPN, Tue Sep 11 10:44:52 2007
- *
- * Purpose:  Given a CM, determine which states could be used as sub-CM filter
- *           roots and also which 'end' group they belong to. 
- *           
- *           Determining which states are possible sub-CM filter roots:
- *           Fill an array of length cm->M with TRUE, FALSE for each
- *           state. TRUE if we should fit a Gumbel to the state b/c it may be
- *           a good sub-CM filter root state, or FALSE if not. Criteria is that
- *           a state must be a possible local entry state AND must have an average
- *           subseq length of cfg->minlen.
- * 
- *           Finding which 'end group' each state v belongs to:
- *           Each end group is defined by a start/end state pair. 
- *           Each state v belongs to the group defined by start'/end'
- *           where start' is the maximum start state index that is 
- *           less than v. The assignments of states to groups is most
- *           efficiently done using a push down stack. 
- *            
- * Returns:  eslOK on success;
- */
-int
-initialize_sub_filter_info(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm)
-{
-  int    status;
-  int nd;
-  int v;
-  ESL_STACK   *pda;
-  int j_popped;
-  int i,j;
-  int on_right;
-
-  if(cfg->subinfo != NULL) ;/* FreeSubFilterInfo() */
-  cfg->subinfo = NULL;
-
-  ESL_ALLOC(cfg->subinfo, sizeof(SubFilterInfo_t));
-
-  cfg->subinfo->M      = cm->M;
-  cfg->subinfo->minlen = 7.;      /* not user changeable, should it be? is 7 not good? */
-  
-  /* determine average length for each subtree (state) */
-  cfg->subinfo->beta = 1e-15;
-  if((status = cm_CalcAvgHitLength(cm, cfg->subinfo->beta, &(cfg->subinfo->avglenA)) != eslOK)) return status;
-
-  /* determine which states are candidate sub-CM filter root states */
-  ESL_ALLOC(cfg->subinfo->iscandA, sizeof(int) * cm->M);
-  esl_vec_ISet(cfg->subinfo->iscandA, cm->M, FALSE);
-  cfg->subinfo->ncands = 1;
-  cfg->subinfo->iscandA[0] = TRUE; /* ROOT_S: has to be TRUE */
-  for (nd = 1; nd < cm->nodes; nd++) { /* note: nd 1 must be MATP, MATL, MATR, or BIF */
-    if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
-	cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd) {
-      v = cm->nodemap[nd];
-      if(cfg->subinfo->avglenA[v] > cfg->subinfo->minlen) {
-	cfg->subinfo->iscandA[v] = TRUE;
-	cfg->subinfo->ncands++;
-      }
-    }
-  }
-
-  /* determine each end state's 'start group' 
-   * first, allocate data structures for this info 
-   */
-  cfg->subinfo->nstarts = CMCountStatetype(cm, S_st);
-  ESL_ALLOC(cfg->subinfo->startA,   sizeof(int) *   cfg->subinfo->M);
-  esl_vec_ISet(cfg->subinfo->startA, cfg->subinfo->M, -1);
-
-  ESL_ALLOC(cfg->subinfo->firstA,    sizeof(int) *  cfg->subinfo->nstarts);
-  ESL_ALLOC(cfg->subinfo->lastA,     sizeof(int) *  cfg->subinfo->nstarts);
-
-  ESL_ALLOC(cfg->subinfo->withinAA, sizeof(int *) * cfg->subinfo->nstarts);
-  for(i = 0; i < cfg->subinfo->nstarts; i++) 
-    {
-      ESL_ALLOC(cfg->subinfo->withinAA[i], sizeof(int) * cfg->subinfo->nstarts);
-      esl_vec_ISet(cfg->subinfo->withinAA[i], cfg->subinfo->nstarts, FALSE);
-    }
-  
-  /* traverse the CM using a pda, code stolen and modified from Sean's
-   *  cmemit.c:CreateEmitMap() 
-   */
-  nd   = 0;
-  pda  = esl_stack_ICreate();
-  j    = 0;
-  cfg->subinfo->firstA[0] = 0;
-
-  esl_stack_IPush(pda, 0);		/* 0 = left side. 1 would = right side. */
-  esl_stack_IPush(pda, j);		/* 0 = left side. 1 would = right side. */
-  esl_stack_IPush(pda, nd);
-  while (esl_stack_IPop(pda, &nd) != eslEOD)
-    {
-      esl_stack_IPop(pda, &j_popped);
-      esl_stack_IPop(pda, &on_right);
-      printf("nd: %3d j_popped: %3d on_right: %d\n", nd, j_popped, on_right);
-      
-      if (on_right) 
-	{
-	  if(cm->ndtype[nd] == BEGL_nd ||  cm->ndtype[nd] == BEGR_nd) 
-	    { 
-	      /* we're done with start group j_popped, it is within
-	       * all start groups currently in the stack.
-	       */
-	      for(i = 1; i < pda->n; i += 3) /* += 3 b/c only every third element is a state group index */
-		cfg->subinfo->withinAA[pda->idata[i]][j_popped] = TRUE;
-	    }
-	}
-      else
-	{
-	  if (cm->ndtype[nd] == BEGL_nd || cm->ndtype[nd] == BEGR_nd) 
-	    {
-	      j++;
-	      cfg->subinfo->firstA[j] = cm->nodemap[nd];
-	    }
-	  if (cm->ndtype[nd] == END_nd) 
-	    {
-	      cfg->subinfo->lastA[j] = cm->nodemap[nd];
-	      for(v = cfg->subinfo->firstA[j]; v <= cfg->subinfo->lastA[j]; v++) cfg->subinfo->startA[v] = j;
-	    }
-	  if (cm->ndtype[nd] == BIF_nd) 
-	    {
-	      cfg->subinfo->lastA[j] = cm->nodemap[nd];
-	      for(v = cfg->subinfo->firstA[j]; v <= cfg->subinfo->lastA[j]; v++) cfg->subinfo->startA[v] = j;
-
-				/* push the BIF back on for its right side  */
-	      esl_stack_IPush(pda, 1);
-	      esl_stack_IPush(pda, j);
-	      esl_stack_IPush(pda, nd);
-                            /* push node index for right child */
-	      esl_stack_IPush(pda, 0);
-	      esl_stack_IPush(pda, j);
-	      esl_stack_IPush(pda, cm->ndidx[cm->cnum[cm->nodemap[nd]]]);   
-                            /* push node index for left child */
-	      esl_stack_IPush(pda, 0);
-	      esl_stack_IPush(pda, j);
-	      esl_stack_IPush(pda, cm->ndidx[cm->cfirst[cm->nodemap[nd]]]); 
-	    }
-	  else
-	    {
-	      /* push the node back on for right side */
-	      esl_stack_IPush(pda, 1);
-	      esl_stack_IPush(pda, j);
-	      esl_stack_IPush(pda, nd);
-	      /* push next BIF, END node on */
-	      if (cm->ndtype[nd] != END_nd) {
-		while(cm->ndtype[nd] != BIF_nd && cm->ndtype[nd] != END_nd) nd++;
-		esl_stack_IPush(pda, 0);
-		esl_stack_IPush(pda, j);
-		esl_stack_IPush(pda, nd);
-	      }
-	    }
-	}
-    }
-  printf("\n");
-  for(v = 0; v < cm->M; v++) { /*printf("startA[%4d]: %d\n", v, cfg->subinfo->startA[v]);*/ assert(cfg->subinfo->startA[v] >= 0); }
-  for(i = 0; i < cfg->subinfo->nstarts; i++) {
-    printf("firstA[%2d]: %4d\nlastA [%2d]: %4d\n", i, cfg->subinfo->firstA[i], i, cfg->subinfo->lastA[i]);
-    for(j = 0; j < cfg->subinfo->nstarts; j++) 
-      printf("\twithinAA[%2d][%2d] %d\n", i, j, cfg->subinfo->withinAA[i][j]);
-    printf("\n");
-  }
-
-  /* temporary check of withinAA */
-  CMEmitMap_t *emap;
-  int ileft, iright, jleft, jright;
-  emap = CreateEmitMap(cm);
-  for(i = 0; i < cfg->subinfo->nstarts; i++)
-    {
-      ileft  = emap->lpos[cm->ndidx[cfg->subinfo->firstA[i]]];
-      iright = emap->rpos[cm->ndidx[cfg->subinfo->firstA[i]]];
-      for(j = 0; j < cfg->subinfo->nstarts; j++)
-	{
-	  if(i == j) continue;
-	  jleft  = emap->lpos[cm->ndidx[cfg->subinfo->firstA[j]]];
-	  jright = emap->rpos[cm->ndidx[cfg->subinfo->firstA[j]]];
-
-	  if(cfg->subinfo->withinAA[i][j]) {
-	    if(! ((ileft <= jleft) && (iright >= jright)))
-	      { printf("Crap."); }
-	  }
-	  else {
-	    if((ileft <= jleft) && (iright >= jright))
-	      printf("Crapola.");
-	  }
-	}
-    }
-  return eslOK;
-
- ERROR:
-  return status;
-}
 
 /* Function: set_partition_gc_freq()
  * Date:     EPN, Mon Sep 10 08:00:27 2007
@@ -1094,8 +907,8 @@ cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
   ESL_ALLOC(cfg->vlambdaAA[p], sizeof(double) * cm->M);
 
   for(v = 0; v < cm->M; v++) {
-    if(cfg->subinfo->iscandA[v]) {
-      printf("FITTING v: %d sttype: %d\n", v, cm->sttype[v]);
+    if(cfg->hsi->iscandA[v]) {
+      /* printf("FITTING v: %d sttype: %d\n", v, cm->sttype[v]); */
       fit_histogram(go, cfg, errbuf, vscA[v], nscores, &(cfg->vmuAA[p][v]), &(cfg->vlambdaAA[p][v]));
     }
     else cfg->vmuAA[p][v] = cfg->vlambdaAA[p][v] = -1.;
@@ -1205,24 +1018,25 @@ get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p, Parset
   return dsq;
 }
 
-/* Function: calc_sub_filter_sets()
- * Date:     EPN, Wed Sep 12 11:57:25 2007
+/* Function: calc_best_filter()
+ * Date:     EPN, Thu Nov  1 15:05:03 2007
  *
- * Purpose:  Given a CM and information on possible sub CM root filter states,
- *           exhaustively search for the most effective sets of states for
- *           filtering.
+ * Purpose:  Given a CM and scores for a CP9 and CM scan of target seqs
+ *           determine the best filter we could use, either an HMM only
+ *           or a hybrid scan with >= 1 sub CM roots.
  *            
  * Returns:  eslOK on success;
  *           Dies immediately on an error.
  */
 int
-calc_sub_filter_sets(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float **fil_vscAA)
+calc_best_filter(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float **fil_vscAA, float *fil_cp9scA)
 {
   int    status;
   int    v;
+  float  *sorted_fil_cp9scA;
   float **sorted_fil_vscAA;
   float **sorted_fil_EAA;
-  int    cmN  = esl_opt_GetInteger(go, "--cmN");
+  int    filN  = esl_opt_GetInteger(go, "--filN");
   int    Fidx;
   float  sc;
   float  E;
@@ -1232,38 +1046,63 @@ calc_sub_filter_sets(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float *
   float  spdup;
   int    i;
   int n, j, v_i, v_j;
+  int    cmi = cfg->ncm-1;
 
   float F = esl_opt_GetReal(go, "--F");
-  Fidx = (int) (1. - F) * cmN;
+  Fidx  = (int) (1. - F) * filN;
 
   if(cfg->cmstatsA[cfg->ncm-1]->np != 1) cm_Fail("calc_sub_filter_sets(), not yet implemented for multiple partitions.\nYou'll need to keep track of partition of each sequence OR\nstore E-values not scores inside process_workunit.");
 
+  /* Determine the predicted CP9 filter speedup */
+  
+  ESL_ALLOC(sorted_fil_cp9scA, sizeof(float) * filN);
+  esl_vec_FCopy(fil_cp9scA, filN, sorted_fil_cp9scA); 
+  esl_vec_FSortIncreasing(sorted_fil_cp9scA, filN);
+  sc = sorted_fil_cp9scA[Fidx];
+
+  printf("\n\n***********************************\nvscAA[0] scores:\n");
+  for(i = 0; i < filN; i++)
+    printf("HMM i: %4d sc: %10.4f\n", i, sorted_fil_cp9scA[i]);
+  printf("***********************************\n\n");
+
+  /* E is expected number of hits for db of length 2 * cm->W */
+  /* SHOULD THIS BE CP9_L???? */
+  E  = RJK_ExtremeValueE(sc, cfg->cmstatsA[cmi]->gumAA[CP9_L][0]->mu, cfg->cmstatsA[cmi]->gumAA[CP9_L][0]->lambda);
+  fil_calcs  = cfg->hsi->full_cp9_ncalcs;
+  surv_calcs = E * (cm->W * 2) * cfg->hsi->full_cm_ncalcs;
+  printf("HMM(L)        sc: %10.4f E: %10.4f filt: %10.4f ", sc, E, fil_calcs);
+  fil_calcs += surv_calcs;
+  nonfil_calcs = cfg->hsi->full_cm_ncalcs;
+  spdup = nonfil_calcs / fil_calcs;
+  printf("surv: %10.4f sum : %10.4f full: %10.4f spdup %10.4f\n", surv_calcs, fil_calcs, nonfil_calcs, spdup);
+
+  exit(1);
   /*****************TEMPORARY PRINTF BEGIN***************************/
   ESL_ALLOC(sorted_fil_vscAA, sizeof(float *) * cm->M);
   ESL_ALLOC(sorted_fil_EAA, sizeof(float *) * cm->M);
 
-  printf("\n\n***********************************\nvscAA[0] scores:\n");
-  for(i = 0; i < cmN; i++)
+  /*printf("\n\n***********************************\nvscAA[0] scores:\n");
+  for(i = 0; i < filN; i++)
     printf("i: %4d sc: %10.4f\n", i, fil_vscAA[0][i]);
-  printf("***********************************\n\n");
+    printf("***********************************\n\n");*/
 
   for(v = 0; v < cm->M; v++)
     {
-      ESL_ALLOC(sorted_fil_vscAA[v], sizeof(float) * cmN);
-      esl_vec_FCopy(fil_vscAA[v], cmN, sorted_fil_vscAA[v]); 
-      esl_vec_FSortIncreasing(sorted_fil_vscAA[v], cmN);
+      ESL_ALLOC(sorted_fil_vscAA[v], sizeof(float) * filN);
+      esl_vec_FCopy(fil_vscAA[v], filN, sorted_fil_vscAA[v]); 
+      esl_vec_FSortIncreasing(sorted_fil_vscAA[v], filN);
     }
   for(v = 0; v < cm->M; v++) {
-    if(cfg->subinfo->iscandA[v]) {
+    if(cfg->hsi->iscandA[v]) {
       sc = sorted_fil_vscAA[v][Fidx];
       /* E is expected number of hits for db of length 2 * cm->W */
       E  = RJK_ExtremeValueE(sc, cfg->vmuAA[0][v], cfg->vlambdaAA[0][v]);
       /* note partition = 0, this is bogus if more than 1 partition, that's why we die if there are more (see above). */
-      fil_calcs  = cfg->fil_vcalcs[v];
-      surv_calcs = E * (1000. / (cm->W * 2)) * cfg->vcalcs[0];
-      printf("SUB %3d sg: %2d sc: %10.4f E: %10.4f filt: %10.4f ", v, cfg->subinfo->startA[v], sc, E, fil_calcs);
+      fil_calcs  = cfg->hsi->cm_vcalcs[v];
+      surv_calcs = E * (cm->W * 2) * cfg->hsi->full_cm_ncalcs;
+      printf("SUB %3d sg: %2d sc: %10.4f E: %10.4f filt: %10.4f ", v, cfg->hsi->startA[v], sc, E, fil_calcs);
       fil_calcs += surv_calcs;
-      nonfil_calcs = cfg->vcalcs[0];
+      nonfil_calcs = cfg->hsi->full_cm_ncalcs;
       spdup = nonfil_calcs / fil_calcs;
       printf("surv: %10.4f sum : %10.4f full: %10.4f spdup %10.4f\n", surv_calcs, fil_calcs, nonfil_calcs, spdup);
     }  
@@ -1271,104 +1110,13 @@ calc_sub_filter_sets(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float *
   
   for(v = 0; v < cm->M; v++) 
     {
-      ESL_ALLOC(sorted_fil_EAA[v], sizeof(float *) * cmN);
+      ESL_ALLOC(sorted_fil_EAA[v], sizeof(float *) * filN);
       /* E is expected number of hits for db of length 2 * cm->W */
       /* assumes only 1 partition */
       /*sorted_fil_EAA[v] = RJK_ExtremeValueE(sorted_fil_vscAA[v], cfg->vmuAA[0][v], cfg->vlambdaAA[0][v]);*/
     }      
 
   /*****************TEMPORARY PRINTF END***************************/
-  
-  float **calcsAA;
-  ESL_ALLOC(calcsAA, sizeof(float *) * cm->M);
-  for(v = 0; v < cm->M; v++) 
-    {
-      if(cfg->subinfo->iscandA[v]) 
-	{
-	  ESL_ALLOC(calcsAA[v], sizeof(float *) * cmN);
-	  for(n = 0; n < cmN; n++) 
-	    {
-	      /* E is expected number of hits for db of length 2 * cm->W */
-	      E  = RJK_ExtremeValueE(fil_vscAA[v][n], cfg->vmuAA[0][v], cfg->vlambdaAA[0][v]);
-	      /* note partition = 0, this is bogus if more than 1 partition, that's why we die if there are more (see above). */
-	      calcsAA[v][n]  = cfg->fil_vcalcs[v] + E * (1000. / (cm->W * 2)) * cfg->vcalcs[0];
-	    }
-	}
-      else calcsAA[v] = NULL;
-    }      
-  float **pair_calcs;
-  float **pair_calcs_i;
-  float **pair_calcs_j;
-  float **pair_thresh_i;
-  float **pair_thresh_j;
-  float *sorted_calcs_i;
-  float *sorted_calcs_j;
-  ESL_ALLOC(sorted_calcs_i, sizeof(float) * cmN);
-  ESL_ALLOC(sorted_calcs_j, sizeof(float) * cmN);
-
-  float E_i, E_j, ithresh, jthresh, icalcs, jcalcs;
-  ESL_ALLOC(pair_calcs, sizeof(float *) * cfg->subinfo->nstarts);
-  ESL_ALLOC(pair_calcs_i, sizeof(float *) * cfg->subinfo->nstarts);
-  ESL_ALLOC(pair_calcs_j, sizeof(float *) * cfg->subinfo->nstarts);
-  ESL_ALLOC(pair_thresh_i, sizeof(float *) * cfg->subinfo->nstarts);
-  ESL_ALLOC(pair_thresh_j, sizeof(float *) * cfg->subinfo->nstarts);
-
-  int print_flag = FALSE;
-  for (i = 0; i < cfg->subinfo->nstarts; i++) 
-    {
-      ESL_ALLOC(pair_calcs[i], sizeof(float) * cfg->subinfo->nstarts);
-      ESL_ALLOC(pair_calcs_i[i], sizeof(float) * cfg->subinfo->nstarts);
-      ESL_ALLOC(pair_calcs_j[i], sizeof(float) * cfg->subinfo->nstarts);
-      ESL_ALLOC(pair_thresh_i[i], sizeof(float) * cfg->subinfo->nstarts);
-      ESL_ALLOC(pair_thresh_j[i], sizeof(float) * cfg->subinfo->nstarts);
-      esl_vec_FSet(pair_calcs[i], cfg->subinfo->nstarts, eslINFINITY);
-      esl_vec_FSet(pair_calcs_i[i], cfg->subinfo->nstarts, eslINFINITY);
-      esl_vec_FSet(pair_calcs_j[i], cfg->subinfo->nstarts, eslINFINITY);
-      esl_vec_FSet(pair_thresh_i[i], cfg->subinfo->nstarts, eslINFINITY);
-      esl_vec_FSet(pair_thresh_j[i], cfg->subinfo->nstarts, eslINFINITY);
-      for (j = (i+1); j < cfg->subinfo->nstarts; j++) 
-	{
-	  if(!(cfg->subinfo->withinAA[i][j])) 
-	    {
-	      printf("\n\ni:j (%d:%d)\n", i, j);
-	      for(v_i = cfg->subinfo->firstA[i]; v_i <= cfg->subinfo->lastA[i]; v_i++)
-		{
-		  if(cfg->subinfo->iscandA[v_i])
-		    {
-		      esl_vec_FCopy(calcsAA[v_i], cmN, sorted_calcs_i); 
-		      esl_vec_FSortIncreasing(sorted_calcs_i, cmN);
-		      for(v_j = cfg->subinfo->firstA[j]; v_j <= cfg->subinfo->lastA[j]; v_j++)
-			{
-			  if(cfg->subinfo->iscandA[v_j])
-			    {
-			      /*maxE_i = sorted_fil_EAA[v_i][Fidx];*/
-			      esl_vec_FCopy(calcsAA[v_j], cmN, sorted_calcs_j); 
-			      esl_vec_FSortIncreasing(sorted_calcs_j, cmN);
-			      
-			      find_pair_of_thresholds(go, cfg, cmN, pair_calcs[i][j], calcsAA[v_i], calcsAA[v_j], sorted_calcs_i, sorted_calcs_j, &icalcs, &jcalcs, print_flag);
-			      
-			      E_i     = (icalcs - cfg->fil_vcalcs[v_i]) / ((1000. / (cm->W * 2)) * cfg->vcalcs[0]);
-			      E_j     = (jcalcs - cfg->fil_vcalcs[v_j]) / ((1000. / (cm->W * 2)) * cfg->vcalcs[0]);
-			      ithresh = cfg->vmuAA[0][v_i] - (log(E_i) / cfg->vmuAA[0][v_i]);
-			      jthresh = cfg->vmuAA[0][v_j] - (log(E_j) / cfg->vmuAA[0][v_j]);
-			      
-			      if((icalcs + jcalcs) < pair_calcs[i][j]) 
-				{
-				  printf("\ti: %4d v_i: %4d ithresh: %10.4f icalcs: %10.4f\tj: %4d v_j: %4d jthresh: %10.4f jcalcs: %10.4f TOTAL: %10.4f SPDUP %10.4f\n", 
-					 i, v_i, ithresh, icalcs, j, v_j, jthresh, jcalcs, (icalcs+jcalcs), (cfg->vcalcs[0] / (icalcs+jcalcs)));
-				  pair_calcs[i][j]   = (icalcs + jcalcs);
-				  pair_calcs_i[i][j] = icalcs;
-				  pair_calcs_j[i][j] = jcalcs;
-				  pair_thresh_i[i][j] = ithresh;
-				  pair_thresh_j[i][j] = jthresh;
-				}
-			    }
-			}
-		    }
-		}
-	    }
-	}
-    }
 
   return eslOK;
 
@@ -1377,47 +1125,256 @@ calc_sub_filter_sets(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float *
   return status; /* NEVERREACHED */
 }
 
-/* Function: find_pair_of_thresholds()
- * Date:     EPN, Mon Sep 17 15:54:51 2007
+
+/*
+ * Function: cm_find_hit_above_cutoff()
+ * Date:     EPN, Wed Sep 12 04:59:08 2007
+ *
+ * Purpose:  Given a CM, a sequence, and a cutoff, try to 
+ *           *quickly* answer the question: Does this sequence 
+ *           contain a hit to the CM above the cutoff?
+ *           To do this we first check the parsetree score, and
+ *           then do do up to 3 iterations of search.
+ *           The first 2 are performend with j and d bands 
+ *           (of decreasing tightness), then default 
+ *           search (with QDB unless --noqdb enabled) is done.
+ *           We return TRUE if any search finds a hit above
+ *           cutoff, and FALSE otherwise.
+ *
+ * Args:     go              - getopts
+ *           cfg             - cmcalibrate's configuration
+ *           cm              - CM to emit from
+ *           dsq             - the digitized sequence to search
+ *           tr              - parsetree for dsq
+ *           L               - length of sequence
+ *           dmin_default_beta - dmin for --beta (will be null if --noqdb)
+ *           dmax_default_beta - dmax for --beta (will be null if --noqdb)
+ *           cutoff          - bit score cutoff 
+ *
+ * Returns:  TRUE if a hit above cutoff is found.
+ *           FALSE otherwise.
+ *           Dies immediately on failure with informative error message.
+ */
+int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, ESL_DSQ *dsq,
+			     Parsetree_t *tr, int L, int *dmin_default_beta, int *dmax_default_beta, float cutoff)
+{
+  int init_flags       = cm->flags;
+  int init_search_opts = cm->search_opts;
+  int turn_qdb_back_on = FALSE;
+  int turn_hbanded_back_off = FALSE;
+  int turn_hmmscanbands_back_off = FALSE;
+  double orig_tau = cm->tau;
+  float sc;
+
+  /* contract check */
+  if(dmin_default_beta == NULL && dmax_default_beta == NULL && (! esl_opt_GetBoolean(go, "--noqdb")))
+    cm_Fail("cm_find_hit_above_cutoff(), dmin_default_beta and dmax_default_beta are null, but --noqdb is not enabled.");
+
+  /* Determine if this sequence has a hit in it above the cutoff as quickly as possible. 
+   * Stage 0: Check parsetree score
+   * Stage 1: HMM banded search tau = 1e-2
+   * Stage 2: HMM banded search with scanning bands, tau = 1e-10
+   * Stage 3: QDB search (CYK or inside), beta = --beta, (THIS IS MOST LENIENT SEARCH WE'LL DO)
+   *
+   * The earliest stage at which we find a hit > cutoff at any stage, we return cm->flags, cm->search_opts
+   * to how they were when we entered, and return TRUE.
+   *
+   * NOTE: We don't do a full non-banded parse to be 100% sure we don't exceed the cutoff, 
+   * unless dmin_default_beta == dmax_default_beta == NULL, (which should only be the case 
+   * if --noqdb enable) to ensure that we don't exceed the cutoff, because we assume the
+   * --beta value used in *this* cmcalibrate run will also be used for any cmsearch runs.
+   */
+
+  sc = ParsetreeScore(cm, tr, dsq, FALSE); 
+  FreeParsetree(tr);
+  if(sc > cutoff) { /* parse score exceeds cutoff */
+    assert(cm->flags       == init_flags);
+    assert(cm->search_opts == init_search_opts);
+    /* printf("0 sc: %10.4f\n", sc); */
+    return TRUE;
+  } 
+
+  if(!(cm->search_opts & CM_SEARCH_NOQDB))        turn_qdb_back_on = TRUE;
+  if(!(cm->search_opts & CM_SEARCH_HBANDED))      turn_hbanded_back_off = TRUE;
+  if(!(cm->search_opts & CM_SEARCH_HMMSCANBANDS)) turn_hmmscanbands_back_off = TRUE;
+
+  cm->search_opts |= CM_SEARCH_NOQDB;
+
+  /* stage 1 */
+  /*cm->search_opts |= CM_SEARCH_HBANDED;
+  cm->tau = 0.01;
+  if((sc = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cutoff) { 
+    if(turn_qdb_back_on)        cm->search_opts &= ~CM_SEARCH_NOQDB; 
+    if(turn_hbanded_back_off) { cm->search_opts &= ~CM_SEARCH_HBANDED; cm->tau = orig_tau; }
+    assert(cm->flags       == init_flags);
+    assert(cm->search_opts == init_search_opts);
+    printf("1 sc: %10.4f ", sc);
+    return TRUE;
+    } */
+
+  /* stage 2 */
+  /*cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
+  cm->tau = 1e-10;
+  if((sc = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cutoff) {
+    if(turn_qdb_back_on)             cm->search_opts &= ~CM_SEARCH_NOQDB; 
+    if(turn_hbanded_back_off)      { cm->search_opts &= ~CM_SEARCH_HBANDED;      cm->tau = orig_tau; }
+    if(turn_hmmscanbands_back_off) { cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS; cm->tau = orig_tau; }
+    assert(cm->flags       == init_flags);
+    assert(cm->search_opts == init_search_opts);
+    printf("2 sc: %10.4f ", sc);
+    return TRUE;
+    } */
+
+  /* stage 3, use 'default' dmin, dmax (which could be NULL) */
+  cm->search_opts &= ~CM_SEARCH_HBANDED;
+  cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
+  if(turn_qdb_back_on) cm->search_opts &= ~CM_SEARCH_NOQDB; 
+
+  sc = FastCYKScan(cm, dsq, dmin_default_beta, dmax_default_beta, 1, L, cm->W, 0., NULL, NULL, NULL);
+  /* sc = search_target_cm_calibration(cm, dsq, dmin_default_beta, dmax_default_beta, 1, L, cm->W, NULL); */
+  if(!turn_hbanded_back_off)      { cm->search_opts |= CM_SEARCH_HBANDED;      cm->tau = orig_tau; }
+  if(!turn_hmmscanbands_back_off) { cm->search_opts |= CM_SEARCH_HMMSCANBANDS; cm->tau = orig_tau; }
+  assert(cm->flags       == init_flags);
+  assert(cm->search_opts == init_search_opts);
+
+  if(sc > cutoff) { printf("3 sc: %10.4f\n", sc);  return TRUE; }
+  else return FALSE;
+}
+
+/* Function: estimate_workunit_time()
+ * Date:     EPN, Thu Nov  1 17:57:20 2007
  * 
- * Purpose:  Given arrays of sorted and unsorted numbers of DP calculations, find
- *           the optimal pair. Complexity: O(cmN). Is this greedy strategy
- *           guaranteed to find the optimal pair? (I *think* so).
+ * Purpose:  Estimate time req'd for a cmcalibrate workunit
  *
  * Returns:  eslOK on success;
  */
 void
-find_pair_of_thresholds(const ESL_GETOPTS *go, const struct cfg_s *cfg, int cmN, float threshold, float *uiA, float *ujA, float *siA, float *sjA, float *ret_icalcs, float *ret_jcalcs, int print_flag)
+estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq, int L, int gum_mode)
 {
-  float icalcs = 0.;
-  float jcalcs = 0.;
-  int n;
-  int in = -1;
-  int jn = -1;
+  /* these are ballparks for a 3 GHz machine with optimized code */
+  float cyk_megacalcs_per_sec = 250.;
+  float ins_megacalcs_per_sec =  40.;
+  float fwd_megacalcs_per_sec = 175.;
+  
+  float seconds = 0.;
 
-  /* temporary */
-  FILE *out;
-  if(print_flag)
-    out = fopen("cmc.R", "w");
+  switch(gum_mode) { 
+  case CM_LC: 
+  case CM_GC: 
+    seconds = cfg->full_vcalcs[0] * (float) L * (float) nseq / cyk_megacalcs_per_sec;
+    break;
+  case CM_LI:
+  case CM_GI:
+    seconds = cfg->full_vcalcs[0] * (float) L * (float) nseq / ins_megacalcs_per_sec;
+    break;
+  case CP9_L: 
+  case CP9_G: 
+    seconds = cfg->hsi->full_cp9_ncalcs * (float) L * (float) nseq / fwd_megacalcs_per_sec;
+    break;
+  }
+  printf("Estimated time for this workunit: %10.2f seconds\n", seconds);
 
-  for(n = 0; n < cmN; n++)
-    {
-      if(print_flag) fprintf(out, "%f %f\n", uiA[n], ujA[n]);
-      if(icalcs + jcalcs > threshold) break;
-      if(uiA[n] > icalcs && ujA[n] > jcalcs) 
-	{
-	  if((uiA[n] - icalcs) > (ujA[n] - jcalcs)) 
-	    { jcalcs = ujA[n]; jn = n; }
-	  else
-	    { icalcs = uiA[n]; in = n; }
-	}
-    }
-  *ret_icalcs = icalcs;
-  *ret_jcalcs = jcalcs;
-
-  if(print_flag) fclose(out);
   return;
 }
+
+
+#if 0
+/*
+ * Function: cm_emit_seqs_to_aln_above_cutoff()
+ * Date:     EPN, Mon Sep 10 17:31:36 2007
+ *
+ * Purpose:  Create a seqs_to_aln object by generating sequences
+ *           from a CM. Only accept sequences that have a CM hit
+ *           within them above a bit score cutoff.
+ *
+ * Args:     go              - getopts
+ *           cfg             - cmcalibrate's configuration
+ *           cm              - CM to emit from
+ *           nseq            - number of seqs to emit
+ *           cutoff          - bit score cutoff 
+ *
+ * Returns:  Ptr to a newly allocated seqs_to_aln object with nseq sequences to align.
+ *           Dies immediately on failure with informative error message.
+ */
+seqs_to_aln_t *cm_emit_seqs_to_aln_above_cutoff(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int nseq)
+{
+  int status;
+  seqs_to_aln_t *seqs_to_aln = NULL;
+  char *name = NULL;
+  int namelen;
+  int L;
+  int i;
+  int do_cyk = TRUE;
+  Parsetree_t *tr = NULL;
+
+  if(cm->dmin == NULL || cm->dmax == NULL) cm_Fail("cm_emit_seqs_to_aln_above_cutoff(), dmin, dmax are NULL.");
+  if(cm->search_opts & CM_SEARCH_NOQDB) cm_Fail("cm_emit_seqs_to_aln_above_cutoff(), search opt NOQDB enabled.");
+
+  seqs_to_aln = CreateSeqsToAln(nseq, FALSE);
+
+  if(cm->name != NULL) namelen = strlen(cm->name) + 50; /* 50 digit int is considered max, sloppy. */
+  else                 namelen = 100;                   /* 50 digit int is considered max, sloppy. */
+  ESL_ALLOC(name, sizeof(char) * namelen);
+
+  while(i < nseq)
+    {
+      if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+1);
+      else                 sprintf(name, "%d-%d", cfg->ncm-1, i+1);
+      L = 0; 
+      EmitParsetree(cm, cfg->r, name, TRUE, &tr, &(seqs_to_aln->sq[i]), &L);
+      while(L == 0) { FreeParsetree(tr); esl_sq_Destroy(seqs_to_aln->sq[i]); EmitParsetree(cm, cfg->r, name, TRUE, &tr, &(seqs_to_aln->sq[i]), &L); }
+      p = cfg->cmstatsA[(ncm-1)]->gc2p[(get_gc_comp(seqs_to_aln->sq[i], 1, L))]; /* in get_gc_comp() should be i and j of best hit */
+
+      sc = ParsetreeScore(cm, tr, seqs_to_aln->sq[i]->dsq, FALSE); 
+      FreeParsetree(tr);
+      if(sc > cfg->cutoffA[p]) { i++; continue; }
+
+      /* If we get here, parse score is not above cfg->cutoffA[p], we want to determine if 
+       * this sequence has a hit in it above the cfg->cutoffA[p] as quickly as possible. 
+       *
+       * Stage 1: HMM banded search tau = 1e-2
+       * Stage 2: HMM banded search with scanning bands, tau = 1e-10
+       * Stage 3: QDB search (CYK or inside), beta = cm->beta (should be default beta)
+       *
+       * If we find a hit > cfg->cutoffA[p] at any stage, we accept the seq, increment i and move on.
+       * We don't do a full non-banded parse to ensure that we don't exceed the cfg->cutoffA[p], 
+       * because QDB is on in cmsearch by default.
+       */
+
+      /* stage 1 */
+      cm->search_opts |= CM_SEARCH_HBANDED;
+      cm->tau = 0.01;
+      if((sc = actually_search_target(cm, seqs_to_aln->sq[i]->dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cfg->cutoffA[p]) 
+	{ i++; break; }
+      s1_np++;
+      /* stage 2 */
+      cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
+      cm->tau = 1e-10;
+      if((sc = actually_search_target(cm, seqs_to_aln->sq[i]->dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cfg->cutoffA[p]) 
+	{ i++; break; }
+      s2_np++;
+      /* stage 3 */
+      cm->search_opts &= ~CM_SEARCH_HBANDED;
+      cm->search_opts &= ~CM_SEARCH_HBANDED;
+      if((sc = search_target_cm_calibration(cm, seqs_to_aln->sq[i]->dsq, cm->dmin, cm->dmax, 1, seqs_to_aln->sq[i]->n, cm->W, NULL)) > cfg->cutoffA[p])
+	{ i++; break; }
+      s3_np++;
+      if(s3_np > (1000 * nseq)) cm_Fail("cm_emit_seqs_to_aln_above_cutoff(), wanted %d seqs above cutoff: %d bits, reached limit of %d seqs\n", nseq, cfg->cutoffA[p], (1000 * nseq));
+
+      /* didn't pass */
+      esl_sq_Destroy(seqs_to_aln->sq[i]);
+    }
+
+  seqs_to_aln->nseq = nseq;
+
+  free(name);
+  return seqs_to_aln;
+
+ ERROR:
+  cm_Fail("memory allocation error");
+  return NULL;
+}
+
 
 /* Function: search_target_cm_calibration() based on bandcyk.c:CYKBandedScan()
  * Date:     EPN, Sun Sep  9 19:05:07 2007
@@ -1934,217 +1891,5 @@ search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i
     cm_Fail("Memory allocation error.\n");
     return 0.; /* NEVERREACHED */
 }
-
-
-/*
- * Function: cm_find_hit_above_cutoff()
- * Date:     EPN, Wed Sep 12 04:59:08 2007
- *
- * Purpose:  Given a CM, a sequence, and a cutoff, try to 
- *           *quickly* answer the question: Does this sequence 
- *           contain a hit to the CM above the cutoff?
- *           To do this we first check the parsetree score, and
- *           then do do up to 3 iterations of search.
- *           The first 2 are performend with j and d bands 
- *           (of decreasing tightness), then default 
- *           search (with QDB unless --noqdb enabled) is done.
- *           We return TRUE if any search finds a hit above
- *           cutoff, and FALSE otherwise.
- *
- * Args:     go              - getopts
- *           cfg             - cmcalibrate's configuration
- *           cm              - CM to emit from
- *           dsq             - the digitized sequence to search
- *           tr              - parsetree for dsq
- *           L               - length of sequence
- *           dmin_default_beta - dmin for --beta (will be null if --noqdb)
- *           dmax_default_beta - dmax for --beta (will be null if --noqdb)
- *           cutoff          - bit score cutoff 
- *
- * Returns:  TRUE if a hit above cutoff is found.
- *           FALSE otherwise.
- *           Dies immediately on failure with informative error message.
- */
-int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, ESL_DSQ *dsq,
-			     Parsetree_t *tr, int L, int *dmin_default_beta, int *dmax_default_beta, float cutoff)
-{
-  int init_flags       = cm->flags;
-  int init_search_opts = cm->search_opts;
-  int turn_qdb_back_on = FALSE;
-  int turn_hbanded_back_off = FALSE;
-  int turn_hmmscanbands_back_off = FALSE;
-  double orig_tau = cm->tau;
-  float sc;
-
-  /* contract check */
-  if(dmin_default_beta == NULL && dmax_default_beta == NULL && (! esl_opt_GetBoolean(go, "--noqdb")))
-    cm_Fail("cm_find_hit_above_cutoff(), dmin_default_beta and dmax_default_beta are null, but --noqdb is not enabled.");
-
-  /* Determine if this sequence has a hit in it above the cutoff as quickly as possible. 
-   * Stage 0: Check parsetree score
-   * Stage 1: HMM banded search tau = 1e-2
-   * Stage 2: HMM banded search with scanning bands, tau = 1e-10
-   * Stage 3: QDB search (CYK or inside), beta = --beta, (THIS IS MOST LENIENT SEARCH WE'LL DO)
-   *
-   * The earliest stage at which we find a hit > cutoff at any stage, we return cm->flags, cm->search_opts
-   * to how they were when we entered, and return TRUE.
-   *
-   * NOTE: We don't do a full non-banded parse to be 100% sure we don't exceed the cutoff, 
-   * unless dmin_default_beta == dmax_default_beta == NULL, (which should only be the case 
-   * if --noqdb enable) to ensure that we don't exceed the cutoff, because we assume the
-   * --beta value used in *this* cmcalibrate run will also be used for any cmsearch runs.
-   */
-
-  sc = ParsetreeScore(cm, tr, dsq, FALSE); 
-  FreeParsetree(tr);
-  if(sc > cutoff) { /* parse score exceeds cutoff */
-    assert(cm->flags       == init_flags);
-    assert(cm->search_opts == init_search_opts);
-    printf("0 sc: %10.4f\n", sc);
-    return TRUE;
-  } 
-
-  if(!(cm->search_opts & CM_SEARCH_NOQDB))        turn_qdb_back_on = TRUE;
-  if(!(cm->search_opts & CM_SEARCH_HBANDED))      turn_hbanded_back_off = TRUE;
-  if(!(cm->search_opts & CM_SEARCH_HMMSCANBANDS)) turn_hmmscanbands_back_off = TRUE;
-
-  cm->search_opts |= CM_SEARCH_NOQDB;
-
-  /* stage 1 */
-  /*cm->search_opts |= CM_SEARCH_HBANDED;
-  cm->tau = 0.01;
-  if((sc = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cutoff) { 
-    if(turn_qdb_back_on)        cm->search_opts &= ~CM_SEARCH_NOQDB; 
-    if(turn_hbanded_back_off) { cm->search_opts &= ~CM_SEARCH_HBANDED; cm->tau = orig_tau; }
-    assert(cm->flags       == init_flags);
-    assert(cm->search_opts == init_search_opts);
-    printf("1 sc: %10.4f ", sc);
-    return TRUE;
-    } */
-
-  /* stage 2 */
-  /*cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
-  cm->tau = 1e-10;
-  if((sc = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cutoff) {
-    if(turn_qdb_back_on)             cm->search_opts &= ~CM_SEARCH_NOQDB; 
-    if(turn_hbanded_back_off)      { cm->search_opts &= ~CM_SEARCH_HBANDED;      cm->tau = orig_tau; }
-    if(turn_hmmscanbands_back_off) { cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS; cm->tau = orig_tau; }
-    assert(cm->flags       == init_flags);
-    assert(cm->search_opts == init_search_opts);
-    printf("2 sc: %10.4f ", sc);
-    return TRUE;
-    } */
-
-  /* stage 3, use 'default' dmin, dmax (which could be NULL) */
-  cm->search_opts &= ~CM_SEARCH_HBANDED;
-  cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
-  if(turn_qdb_back_on) cm->search_opts &= ~CM_SEARCH_NOQDB; 
-
-  sc = search_target_cm_calibration(cm, dsq, dmin_default_beta, dmax_default_beta, 1, L, cm->W, NULL);
-  if(!turn_hbanded_back_off)      { cm->search_opts |= CM_SEARCH_HBANDED;      cm->tau = orig_tau; }
-  if(!turn_hmmscanbands_back_off) { cm->search_opts |= CM_SEARCH_HMMSCANBANDS; cm->tau = orig_tau; }
-  assert(cm->flags       == init_flags);
-  assert(cm->search_opts == init_search_opts);
-
-  if(sc > cutoff) { printf("3 sc: %10.4f\n", sc);  return TRUE; }
-  else return FALSE;
-}
-
-#if 0
-/*
- * Function: cm_emit_seqs_to_aln_above_cutoff()
- * Date:     EPN, Mon Sep 10 17:31:36 2007
- *
- * Purpose:  Create a seqs_to_aln object by generating sequences
- *           from a CM. Only accept sequences that have a CM hit
- *           within them above a bit score cutoff.
- *
- * Args:     go              - getopts
- *           cfg             - cmcalibrate's configuration
- *           cm              - CM to emit from
- *           nseq            - number of seqs to emit
- *           cutoff          - bit score cutoff 
- *
- * Returns:  Ptr to a newly allocated seqs_to_aln object with nseq sequences to align.
- *           Dies immediately on failure with informative error message.
- */
-seqs_to_aln_t *cm_emit_seqs_to_aln_above_cutoff(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int nseq)
-{
-  int status;
-  seqs_to_aln_t *seqs_to_aln = NULL;
-  char *name = NULL;
-  int namelen;
-  int L;
-  int i;
-  int do_cyk = TRUE;
-  Parsetree_t *tr = NULL;
-
-  if(cm->dmin == NULL || cm->dmax == NULL) cm_Fail("cm_emit_seqs_to_aln_above_cutoff(), dmin, dmax are NULL.");
-  if(cm->search_opts & CM_SEARCH_NOQDB) cm_Fail("cm_emit_seqs_to_aln_above_cutoff(), search opt NOQDB enabled.");
-
-  seqs_to_aln = CreateSeqsToAln(nseq, FALSE);
-
-  if(cm->name != NULL) namelen = strlen(cm->name) + 50; /* 50 digit int is considered max, sloppy. */
-  else                 namelen = 100;                   /* 50 digit int is considered max, sloppy. */
-  ESL_ALLOC(name, sizeof(char) * namelen);
-
-  while(i < nseq)
-    {
-      if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+1);
-      else                 sprintf(name, "%d-%d", cfg->ncm-1, i+1);
-      L = 0; 
-      EmitParsetree(cm, cfg->r, name, TRUE, &tr, &(seqs_to_aln->sq[i]), &L);
-      while(L == 0) { FreeParsetree(tr); esl_sq_Destroy(seqs_to_aln->sq[i]); EmitParsetree(cm, cfg->r, name, TRUE, &tr, &(seqs_to_aln->sq[i]), &L); }
-      p = cfg->cmstatsA[(ncm-1)]->gc2p[(get_gc_comp(seqs_to_aln->sq[i], 1, L))]; /* in get_gc_comp() should be i and j of best hit */
-
-      sc = ParsetreeScore(cm, tr, seqs_to_aln->sq[i]->dsq, FALSE); 
-      FreeParsetree(tr);
-      if(sc > cfg->cutoffA[p]) { i++; continue; }
-
-      /* If we get here, parse score is not above cfg->cutoffA[p], we want to determine if 
-       * this sequence has a hit in it above the cfg->cutoffA[p] as quickly as possible. 
-       *
-       * Stage 1: HMM banded search tau = 1e-2
-       * Stage 2: HMM banded search with scanning bands, tau = 1e-10
-       * Stage 3: QDB search (CYK or inside), beta = cm->beta (should be default beta)
-       *
-       * If we find a hit > cfg->cutoffA[p] at any stage, we accept the seq, increment i and move on.
-       * We don't do a full non-banded parse to ensure that we don't exceed the cfg->cutoffA[p], 
-       * because QDB is on in cmsearch by default.
-       */
-
-      /* stage 1 */
-      cm->search_opts |= CM_SEARCH_HBANDED;
-      cm->tau = 0.01;
-      if((sc = actually_search_target(cm, seqs_to_aln->sq[i]->dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cfg->cutoffA[p]) 
-	{ i++; break; }
-      s1_np++;
-      /* stage 2 */
-      cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
-      cm->tau = 1e-10;
-      if((sc = actually_search_target(cm, seqs_to_aln->sq[i]->dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cfg->cutoffA[p]) 
-	{ i++; break; }
-      s2_np++;
-      /* stage 3 */
-      cm->search_opts &= ~CM_SEARCH_HBANDED;
-      cm->search_opts &= ~CM_SEARCH_HBANDED;
-      if((sc = search_target_cm_calibration(cm, seqs_to_aln->sq[i]->dsq, cm->dmin, cm->dmax, 1, seqs_to_aln->sq[i]->n, cm->W, NULL)) > cfg->cutoffA[p])
-	{ i++; break; }
-      s3_np++;
-      if(s3_np > (1000 * nseq)) cm_Fail("cm_emit_seqs_to_aln_above_cutoff(), wanted %d seqs above cutoff: %d bits, reached limit of %d seqs\n", nseq, cfg->cutoffA[p], (1000 * nseq));
-
-      /* didn't pass */
-      esl_sq_Destroy(seqs_to_aln->sq[i]);
-    }
-
-  seqs_to_aln->nseq = nseq;
-
-  free(name);
-  return seqs_to_aln;
-
- ERROR:
-  cm_Fail("memory allocation error");
-  return NULL;
-}
-
 #endif
+

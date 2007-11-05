@@ -745,13 +745,14 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	{                                                                              
 	  char *apostcode;   /* aligned posterior decode array */
 	  if(seqs_to_aln->postcode == NULL) 
-	    cm_Fail("ERROR --post enabled, but {serial,parallel}_align_targets() did not return post codes.\n");
+	    cm_Fail("ERROR --post enabled, but actually_align_targets() did not return post codes.\n");
 
 	  imax = seqs_to_aln->nseq - 1;
 	  if(cfg->withmsa != NULL) imax -= cfg->withmsa->nseq;
 	  for (i = 0; i <= imax; i++)                                                   
 	    {                                                                          
-	      if((status =make_aligned_string(msa->aseq[i], "-_.", msa->alen, seqs_to_aln->postcode[i], &apostcode)) != eslOK)
+	      printf("Creating postal code for: %s\n", seqs_to_aln->sq[i]->name);
+	      if((status = make_aligned_string(msa->aseq[i], "-_.", msa->alen, seqs_to_aln->postcode[i], &apostcode)) != eslOK)
 		ESL_FAIL(status, errbuf, "error creating posterior string\n");
 	      esl_msa_AppendGR(msa, "POST", i, apostcode);
 	      free(apostcode);                                                         

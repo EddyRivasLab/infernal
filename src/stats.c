@@ -53,11 +53,15 @@ AllocCMStats(int np)
   for(i = 0; i < NGUMBELMODES; i++)
     {
       ESL_ALLOC(cmstats->gumAA[i], sizeof(struct gumbelinfo_s *));
-      for(p = 0; p < cmstats->np; p++)
+      for(p = 0; p < cmstats->np; p++) { 
 	ESL_ALLOC(cmstats->gumAA[i][p], sizeof(struct gumbelinfo_s));
+	cmstats->gumAA[i][p]->isvalid = FALSE;
+      }
     }
-  for(i = 0; i < NFTHRMODES; i++)
+  for(i = 0; i < NFTHRMODES; i++) {
     ESL_ALLOC(cmstats->fthrA[i], sizeof(struct cp9filterthr_s));
+    cmstats->fthrA[i]->isvalid = FALSE;
+  }
   return cmstats;
 
  ERROR:
@@ -265,7 +269,8 @@ int debug_print_cmstats(CMStats_t *cmstats, int has_fthr)
  */
 int debug_print_gumbelinfo(GumbelInfo_t *gum)
 {
-  printf("N: %d L: %d lambda: %.5f mu: %.5f\n", gum->N, gum->L, gum->lambda, gum->mu);
+  if(gum->isvalid) printf("N: %d L: %d lambda: %.5f mu: %.5f\n", gum->N, gum->L, gum->lambda, gum->mu);
+  else             printf("invalid (not yet set)\n");
   return eslOK;
 }
 
@@ -273,6 +278,8 @@ int debug_print_gumbelinfo(GumbelInfo_t *gum)
  */
 int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr)
 {
+  if(! fthr->isvalid) { printf("invalid (not yet set)\n"); return eslOK; }
+
   double l_x;
   double g_x;
   double tmp_K, tmp_mu;

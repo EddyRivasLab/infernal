@@ -3635,9 +3635,9 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 
   
   if(!(cm->flags & CM_LOCAL_END))
-    printf("\tFOutside_b_jd_me() sc : %f\n", return_sc);
+    ESL_DPRINTF1(("\tFOutside_b_jd_me() sc : %f\n", return_sc));
   else
-    printf("\tFOutside_b_jd_me() sc : %f (LOCAL mode; sc is from Inside)\n", return_sc);
+    ESL_DPRINTF1(("\tFOutside_b_jd_me() sc : %f (LOCAL mode; sc is from Inside)\n", return_sc));
 
   return return_sc;
 
@@ -4216,9 +4216,9 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   free(touch);
 
   if(!(cm->flags & CM_LOCAL_END))
-    printf("\tIOutside_b_jd_me() sc : %f\n", freturn_sc);
+    ESL_DPRINTF1(("\tIOutside_b_jd_me() sc : %f\n", freturn_sc));
   else
-    printf("\tIOutside_b_jd_me() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc);
+    ESL_DPRINTF1(("\tIOutside_b_jd_me() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc));
 
   return freturn_sc;
 

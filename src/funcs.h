@@ -367,16 +367,25 @@ extern int   ** alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, i
 extern char  ** alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
 
 
-
 /* from cm_fastsearch.c */
-extern float FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, 
-			 search_results_t *results, float **ret_vsc, float *ret_best_hit_sc);
+extern float FastCYKScan(CM_t *cm, ESL_DSQ *dsq, ScanInfo_t *si, int i0, int j0, int W, float cutoff, 
+			 search_results_t *results, float **ret_vsc);
+extern float FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, 
+			     search_results_t *results, float **ret_vsc, float *ret_best_hit_sc);
+extern float RefFInsideScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, 
+			    search_results_t *results, float **ret_vsc, float *ret_best_hit_sc);
 extern float OLDFastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, 
 			    search_results_t *results, float **ret_vsc, float *ret_best_hit_sc);
 extern float rsearch_CYKScan (CM_t *cm, ESL_DSQ *dsq, int L, float cutoff, int D,
 			      search_results_t *results);
 extern float cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_vcalcs);
-
+extern ScanInfo_t *cm_CreateScanInfo(CM_t *cm, int *dmin, int *dmax);
+extern int         cm_FreeScanInfo(CM_t *cm, ScanInfo_t *si);
+extern cm_GammaHitMx_t *cm_CreateGammaHitMx(int L, int i0, int be_greedy, float cutoff);
+extern void cm_FreeGammaHitMx(cm_GammaHitMx_t *gamma);
+extern void cm_UpdateGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int *bestr, float sc_boost, 
+				search_results_t *results);
+extern void cm_TBackGammaHitMx(cm_GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
 
 /* from CP9_scan.c */
 extern float CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
@@ -733,10 +742,9 @@ extern int   ILogsum(int s1, int s2);
 extern int   ILogsumNI(int s1, int s2);
 extern int   ILogsumNI_diff(int s1a, int s1b, int s2a, int s2b, int db);
 
-#if USE_NEWLOGSUM
 extern void  FLogsumInit(void);
-#endif
 extern float LogSum2(float p1, float p2);
+extern float FLogsum(float p1, float p2);
 
 /* from cp9_fastsearch.c */
 
@@ -821,3 +829,9 @@ extern int cm_CalcAvgHitLength(CM_t *cm, double beta, float **ret_hitlen);
 extern HybridScanInfo_t * cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs);
 extern int cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int vroot_to_add);
 extern int cm_ValidateHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi);
+extern void cm_FreeHybridScanInfo(HybridScanInfo_t *hsi);
+
+
+/* from cm_theta.c */
+extern int cm_CalcMaxSc(CM_t *cm, double **ret_maxsc, double **ret_maxsc_noss);
+extern Theta_t *cm_CalcTheta(CM_t *cm, Theta_t **ret_theta, float stepsize);

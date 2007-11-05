@@ -1899,8 +1899,8 @@ cm_CalcExpSc(CM_t *cm, float **ret_expsc, float **ret_expsc_noss)
 	break;
 	
       case B_st:
-	expsc[v]      = expsc[cm->cfirst[v]]      + expsc[cm->cnum[v]];
-	expsc_noss[v] = expsc_noss[cm->cfirst[v]] + expsc_noss[cm->cnum[v]];
+	expsc[v]      = expsc[cm->cfirst[v]]      + expsc[cm->cnum[v]];      /* prob of this transition is 1.0 */
+	expsc_noss[v] = expsc_noss[cm->cfirst[v]] + expsc_noss[cm->cnum[v]]; /* prob of this transition is 1.0 */
 	break;
 	
       case MP_st:
@@ -1935,8 +1935,8 @@ cm_CalcExpSc(CM_t *cm, float **ret_expsc, float **ret_expsc_noss)
 
 	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 	  y = cm->cfirst[v] + yoffset;
-	  expsc[v]      += cm->t[v][yoffset] * expsc[y];
-	  expsc_noss[v] += cm->t[v][yoffset] * expsc_noss[y];
+	  expsc[v]      += cm->t[v][yoffset] * (expsc[y]      + cm->tsc[v][yoffset]);
+	  expsc_noss[v] += cm->t[v][yoffset] * (expsc_noss[y] + cm->tsc[v][yoffset]);
 	}
 	break;
 	
@@ -1950,8 +1950,8 @@ cm_CalcExpSc(CM_t *cm, float **ret_expsc, float **ret_expsc_noss)
 	}
 	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 	  y = cm->cfirst[v] + yoffset;
-	  expsc[v]      += cm->t[v][yoffset] * expsc[y];
-	  expsc_noss[v] += cm->t[v][yoffset] * expsc_noss[y];
+	  expsc[v]      += cm->t[v][yoffset] * (expsc[y]       + cm->tsc[v][yoffset]);
+	  expsc_noss[v] += cm->t[v][yoffset] * (expsc_noss[y]  + cm->tsc[v][yoffset]);
 	}
 	break;
 	
@@ -1959,8 +1959,8 @@ cm_CalcExpSc(CM_t *cm, float **ret_expsc, float **ret_expsc_noss)
       case D_st:
 	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
 	  y = cm->cfirst[v] + yoffset;
-	  expsc[v]      += cm->t[v][yoffset] * expsc[y];
-	  expsc_noss[v] += cm->t[v][yoffset] * expsc_noss[y];
+	  expsc[v]      += cm->t[v][yoffset] * (expsc[y]      + cm->tsc[v][yoffset]);
+	  expsc_noss[v] += cm->t[v][yoffset] * (expsc_noss[y] + cm->tsc[v][yoffset]);
 	}
 	break;
       }

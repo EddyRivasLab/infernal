@@ -508,7 +508,6 @@ cm_cp9_HybridScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, 
 	{
 	  assert(hsi->v_mb[v] == MB_CM); /* TEMPORARY */
 	  if(cm->sttype[v] == E_st) continue;
-
 	  /* int const *esc_v = cm->esc[v]; */
 	  int const *esc_v = esc_vAA[v]; 
 	  int const *tsc_v = cm->itsc[v];
@@ -556,14 +555,31 @@ cm_cp9_HybridScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, 
 	  }
 	  else { 
 	    y = cm->cfirst[v]; 
+	    i = j - dnA[v] + 1;
 	    for (d = dnA[v]; d <= dxA[v]; d++) {
 	      sc = init_scAA[v][d]; /* state delta is 0 for BEGL_S st */
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		sc = ESL_MAX (sc, alpha[jp_y][y+yoffset][d - sd] + cm->tsc[v][yoffset]);
 	      alpha[jp_v][v][d] = sc;
+
+	      switch (emitmodeA[v]) {
+	      case EMITLEFT:
+		alpha[jp_v][v][d] = sc + esc_v[dsq[i--]];
+		break;
+	      case EMITNONE:
+		alpha[jp_v][v][d] = sc;
+		break;
+	      case EMITRIGHT:
+		alpha[jp_v][v][d] = sc + esc_j;
+		break;		
+	      case EMITPAIR:
+		alpha[jp_v][v][d] = sc + esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
+		break;
+	      }
 	    }
 	  }
 	}
+
       /*********************************************************************/
       /*********************************************************************/
       /*********************************************************************/
@@ -867,10 +883,44 @@ cm_CalcAvgHitLength(CM_t *cm, double beta, float **ret_avglen)
   }
 
   int v;
-  for(v = 0; v < cm->M; v++) printf("AVG LEN v: %4d d: %10.4f\n", v, avglen[v]);
+  /* for(v = 0; v < cm->M; v++) printf("AVG LEN v: %4d d: %10.4f\n", v, avglen[v]); */
 
   *ret_avglen = avglen;
   return eslOK;
+}
+
+
+/* Function: cm_FreeHybridScanInfo()
+ * Date:     EPN, Thu Nov  1 14:16:18 2007
+ *
+ * Purpose:  Free a HybridScanInfo_t object.
+ */
+void
+cm_FreeHybridScanInfo(HybridScanInfo_t *hsi)
+{
+  int i;
+  if(hsi->dmin != NULL)      free(hsi->dmin);
+  if(hsi->dmax != NULL)      free(hsi->dmax);
+  if(hsi->cm_vcalcs != NULL) free(hsi->cm_vcalcs);
+  if(hsi->cp9_vcalcs != NULL)free(hsi->cp9_vcalcs);
+  if(hsi->k_mb != NULL)      free(hsi->k_mb);
+  if(hsi->k_nxt != NULL)     free(hsi->k_nxt);
+  if(hsi->k_prv != NULL)     free(hsi->k_prv);
+  if(hsi->k_nxtr != NULL)    free(hsi->k_nxtr);
+  if(hsi->k_prvr != NULL)    free(hsi->k_prvr);
+  if(hsi->v_mb != NULL)      free(hsi->v_mb);
+  if(hsi->v_nxt != NULL)     free(hsi->v_nxt);
+  if(hsi->v_prv != NULL)     free(hsi->v_prv);
+  if(hsi->v_isroot != NULL)  free(hsi->v_isroot);
+  if(hsi->iscandA != NULL)   free(hsi->iscandA);
+  if(hsi->avglenA != NULL)   free(hsi->avglenA);
+  if(hsi->startA != NULL)    free(hsi->startA);
+  if(hsi->firstA != NULL)    free(hsi->firstA);
+  if(hsi->lastA != NULL)     free(hsi->lastA);
+  for(i = 0; i < hsi->nstarts; i++) 
+    if(hsi->withinAA[i] != NULL) free(hsi->withinAA[i]);
+  free(hsi->withinAA);
+  free(hsi);
 }
 
 /* Function: cm_CreateHybridScanInfo()
@@ -1054,7 +1104,7 @@ cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs)
     {
       esl_stack_IPop(pda, &j_popped);
       esl_stack_IPop(pda, &on_right);
-      printf("nd: %3d j_popped: %3d on_right: %d\n", nd, j_popped, on_right);
+      /* printf("nd: %3d j_popped: %3d on_right: %d\n", nd, j_popped, on_right); */
       
       if (on_right) 
 	{
@@ -1113,14 +1163,14 @@ cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs)
 	    }
 	}
     }
-  printf("\n");
+  /* printf("\n"); */
   for(v = 0; v < cm->M; v++) { /*printf("startA[%4d]: %d\n", v, hsi->startA[v]);*/ assert(hsi->startA[v] >= 0); }
-  for(i = 0; i < hsi->nstarts; i++) {
+  /*  for(i = 0; i < hsi->nstarts; i++) {
     printf("firstA[%2d]: %4d\nlastA [%2d]: %4d\n", i, hsi->firstA[i], i, hsi->lastA[i]);
     for(j = 0; j < hsi->nstarts; j++) 
       printf("\twithinAA[%2d][%2d] %d\n", i, j, hsi->withinAA[i][j]);
-    printf("\n");
-  }
+      printf("\n");
+      } */
   
   /* temporary check of withinAA */
   int ileft, iright, jleft, jright;
