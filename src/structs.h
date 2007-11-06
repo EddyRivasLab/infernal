@@ -1267,7 +1267,7 @@ typedef struct scaninfo_s {
    * integer implementations of CYK/Inside */
   int   ***ialpha;      /* non-BEGL_S states for int   versions of CYK/Inside */
   int   ***ialpha_begl; /*     BEGL_S states for int   versions of CYK/Inside */
-  int   ***iesc_vAA;    /* optimized precalc'ed emission scores for each state */
+  int    **iesc_vAA;    /* optimized precalc'ed emission scores for each state */
   int    **iinit_scAA;  /* [0..v..cm->M-1][0..d..W] initial score for alpha[j][v][d] for all j,
 		         * either IMPOSSIBLE or score for EL (if allowed) emitting d residues */
   int     *iel_scA;     /* [0..d..W] precomputed EL emission score of d residues */

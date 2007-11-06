@@ -187,6 +187,7 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   float t_iq;      /* number of seconds (w->user) for QDB Inside search */
   float t_v;       /* number of seconds (w->user) for CP9 Viterbi search */
   float t_f;       /* number of seconds (w->user) for CP9 Forward search */
+  ScanInfo_t *si;  /* scan info for CYK/Inside scanners */
 
   if(L < cm->W) { L = cm->W; printf("\tL increased to minimum size of cm->W (%d)\n", L); }
   ESL_ALLOC(dsq,     sizeof(ESL_DSQ) * L    +2);
@@ -202,31 +203,53 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   dpc_v  = (float) (cm->clen+1) * L_cp9 * 11; /* 11 transition's queried per HMM node: 9 main model, begin,end */ 
   dpc_v /= 1000000;
 
+  /* First create scan info for non-QDB runs */
+  int *tmp_dmin = cm->dmin;
+  int *tmp_dmax = cm->dmax;
+  cm->dmin = NULL;
+  cm->dmax = NULL;
+  cm->search_opts |= CM_SEARCH_NOQDB;
+  si = cm_CreateScanInfo(cm);
+  if(si == NULL) cm_Fail("summarize_search(), CreateScanInfo() call failed.");
+  
   /* cyk */
   /*OLDFastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);*/
   esl_stopwatch_Start(w);
-  FastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);
+  FastCYKScan(cm, si, dsq, 1, L, cm->W, 0., NULL, NULL);
   //CYKScan (cm, dsq, 1, L, cm->W, 0., NULL);
   esl_stopwatch_Stop(w);
   t_c = w->user;
+
+  /* inside */
+  cm->search_opts |= CM_SEARCH_INSIDE;
+  esl_stopwatch_Start(w);
+  FastIInsideScan(cm, si, dsq, 1, L, cm->W, 0., NULL, NULL);
+  /* iInsideScan (cm, dsq, 1, L, cm->W, 0., NULL); */
+  esl_stopwatch_Stop(w);
+  t_i = w->user;
+
+  /* reset cm->dmin, cm->dmax, recalc scaninfo */
+  cm->dmin = tmp_dmin;
+  cm->dmax = tmp_dmax;
+  cm_FreeScanInfo(cm, si);
+  cm->search_opts &= ~CM_SEARCH_NOQDB;
+  cm->search_opts &= ~CM_SEARCH_INSIDE;
+  si = cm_CreateScanInfo(cm);
+  if(si == NULL) cm_Fail("summarize_search(), CreateScanInfo() call failed.");
 
   /* qdb cyk */
   /*XFastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);*/
   esl_stopwatch_Start(w);
   /*CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL); */
-  FastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
+  FastCYKScan(cm, si, dsq, 1, L, cm->W, 0., NULL, NULL);
   esl_stopwatch_Stop(w);
   t_cq = w->user;
 
-  /* inside */
-  esl_stopwatch_Start(w);
-  iInsideScan (cm, dsq, 1, L, cm->W, 0., NULL);
-  esl_stopwatch_Stop(w);
-  t_i = w->user;
-
   /* qdb inside */
+  cm->search_opts |= CM_SEARCH_INSIDE;
   esl_stopwatch_Start(w);
-  iInsideBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL);
+  FastIInsideScan(cm, si, dsq, 1, L, cm->W, 0., NULL, NULL);
+  /*iInsideBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL);*/
   esl_stopwatch_Stop(w);
   t_iq = w->user;
   

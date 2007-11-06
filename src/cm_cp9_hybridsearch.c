@@ -1507,6 +1507,7 @@ main(int argc, char **argv)
   float *vcalcs;
   double         hsi_beta;
 
+
   if (esl_opt_GetBoolean(go, "-r"))  r = esl_randomness_CreateTimeseeded();
   else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
 
@@ -1520,6 +1521,9 @@ main(int argc, char **argv)
   ConfigCM(cm, NULL, NULL);
 
   cm_CountSearchDPCalcs(cm, 1000, cm->dmin, cm->dmax, cm->W, &vcalcs);
+
+  ScanInfo_t *si;
+  si = cm_CreateScanInfo(cm);
 
   HybridScanInfo_t *hsi;
   hsi_beta = esl_opt_GetReal(go, "--beta");
@@ -1566,7 +1570,7 @@ main(int argc, char **argv)
 
       if(esl_opt_GetBoolean(go, "-v")) { 
 	esl_stopwatch_Start(w);
-	sc = FastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
+	sc = FastCYKScan(cm, si, dsq, 1, L, cm->W, 0., NULL, NULL);
 	printf("%4d %-30s %10.4f bits ", (i+1), "cm_FastCYKScan(): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");

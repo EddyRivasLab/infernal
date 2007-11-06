@@ -368,24 +368,30 @@ extern char  ** alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, i
 
 
 /* from cm_fastsearch.c */
-extern float FastCYKScan(CM_t *cm, ESL_DSQ *dsq, ScanInfo_t *si, int i0, int j0, int W, float cutoff, 
-			 search_results_t *results, float **ret_vsc);
-extern float FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, 
-			     search_results_t *results, float **ret_vsc, float *ret_best_hit_sc);
-extern float RefFInsideScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, 
-			    search_results_t *results, float **ret_vsc, float *ret_best_hit_sc);
-extern float OLDFastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, 
-			    search_results_t *results, float **ret_vsc, float *ret_best_hit_sc);
-extern float rsearch_CYKScan (CM_t *cm, ESL_DSQ *dsq, int L, float cutoff, int D,
-			      search_results_t *results);
-extern float cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_vcalcs);
-extern ScanInfo_t *cm_CreateScanInfo(CM_t *cm, int *dmin, int *dmax);
-extern int         cm_FreeScanInfo(CM_t *cm, ScanInfo_t *si);
-extern cm_GammaHitMx_t *cm_CreateGammaHitMx(int L, int i0, int be_greedy, float cutoff);
-extern void cm_FreeGammaHitMx(cm_GammaHitMx_t *gamma);
-extern void cm_UpdateGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int *bestr, float sc_boost, 
-				search_results_t *results);
-extern void cm_TBackGammaHitMx(cm_GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
+extern float FastCYKScan    (CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+			     search_results_t *results, float **ret_vsc);
+extern float FastIInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+			     search_results_t *results, float **ret_vsc);
+extern float FastFInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+			     search_results_t *results, float **ret_vsc);
+extern float RefCYKScan     (CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+			     search_results_t *results, float **ret_vsc);
+extern float RefIInsideScan (CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+			     search_results_t *results, float **ret_vsc);
+extern float RefFInsideScan (CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+			     search_results_t *results, float **ret_vsc);
+extern float rsearch_CYKScan (CM_t *cm, ESL_DSQ *dsq, int L, float cutoff, int D, search_results_t *results);
+extern float       cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_vcalcs);
+extern ScanInfo_t *cm_CreateScanInfo    (CM_t *cm);
+extern int         cm_FreeScanInfo      (CM_t *cm, ScanInfo_t *si);
+extern void        cm_DumpScanInfoAlpha (CM_t *cm, ScanInfo_t *si, int j, int i0, int doing_float);
+extern cm_GammaHitMx_t *cm_CreateGammaHitMx     (int L, int i0, int be_greedy, float cutoff);
+extern void             cm_FreeGammaHitMx       (cm_GammaHitMx_t *gamma);
+extern void             cm_UpdateFloatGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int *bestr, float sc_boost, 
+				                 int doing_inside, search_results_t *results);
+extern void             cm_UpdateIntGammaHitMx  (cm_GammaHitMx_t *gamma, int j, int *alpha_row, int dn, int dx, int *bestr, float sc_boost, 
+				                 int doing_inside, search_results_t *results);
+extern void             cm_TBackGammaHitMx      (cm_GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
 
 /* from CP9_scan.c */
 extern float CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
@@ -397,9 +403,9 @@ extern float CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cut
 extern float CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
 			 int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
 			 int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
-extern float CP9Scan_dispatch(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff, 
+extern float CP9Scan_dispatch(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff, 
 			      float cp9_cutoff, search_results_t *results, int doing_cp9_stats, int *ret_flen);
-extern float RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, search_results_t *hmm_results, int i0, 
+extern float RescanFilterSurvivors(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, search_results_t *hmm_results, int i0, 
 				   int j0, int W, int padmode, int ipad, int jpad, int do_collapse,
 				   float cm_cutoff, float cp9_cutoff, search_results_t *results, 
 				   int *ret_flen);
@@ -591,7 +597,7 @@ extern int ribosum_calc_targets(fullmat_t *fullmat);
 extern void  serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons);
 extern void  parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons,
 				       int mpi_my_rank, int mpi_master_rank, int mpi_num_procs) ;
-extern float  actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
+extern float  actually_search_target(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
 				     float cp9_cutoff, search_results_t *results, int do_filter, 
 				     int doing_cm_stats, int doing_cp9_stats, int *ret_flen, int do_align_hits);
 extern void serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, 

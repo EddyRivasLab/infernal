@@ -100,6 +100,7 @@ struct cfg_s {
   int              be_verbose;	
   ESL_STOPWATCH   *w;
   CMStats_t      **cmstatsA;          /* the CM stats data structures, 1 for each CM */
+  ScanInfo_t       *si;               /* information for a CYK/Inside scan */ 
   HybridScanInfo_t *hsi;              /* information for a hybrid scan */ 
   //SubFilterInfo_t *subinfo;           /* sub-CM filter information */
   int              ncm;                /* what number CM we're on */
@@ -164,7 +165,7 @@ static ESL_DSQ * get_random_dsq(const struct cfg_s *cfg, CM_t *cm, double *dnull
 static ESL_DSQ * get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p, Parsetree_t **ret_tr);
 //static float search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float **ret_vsc);
 static int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, ESL_DSQ *dsq, 
-				    Parsetree_t *tr, int L, int *dmin_default_beta, int *dmax_default_beta, float cutoff);
+				    Parsetree_t *tr, int L, float cutoff);
 static int calc_best_filter(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float **fil_vscAA, float *fil_cp9scA);
 static void estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq, int L, int gum_mode);
 
@@ -230,6 +231,7 @@ main(int argc, char **argv)
   cfg.w        = NULL; 
   cfg.ncm      = 0;
   cfg.cmstatsA = NULL;
+  cfg.si       = NULL;
   cfg.hsi      = NULL;
   //cfg.subinfo  = NULL;
   cfg.tmpfile  = NULL;
@@ -578,6 +580,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
  *           cfg          - cmcalibrate's configuration
  *           errbuf       - for writing out error messages
  *           cm           - the CM (already configured as we want it)
+ *           si           - ScanInfo_t for the CM for CYK/Inside scanning functions
  *           nseq         - number of seqs to generate
  *           emit_from_cm - TRUE to emit from CM; FALSE emit random 
  *           ret_vscAA    - RETURN: [0..v..cm->M-1][0..nseq-1] best 
@@ -641,7 +644,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
       if(emit_from_cm) { /* if emit_from_cm == TRUE, use_cm == TRUE */
 	if(nfailed > 1000 * nseq) { cm_Fail("Max number of failures (%d) reached while trying to emit %d seqs.\n", nfailed, nseq); }
 	dsq = get_cmemit_dsq(cfg, cm, &L, &p, &tr);
-	while(!(cm_find_hit_above_cutoff(go, cfg, cm, dsq, tr, L, cfg->hsi->dmin, cfg->hsi->dmax, cfg->cutoffA[p]))) { 
+	while(!(cm_find_hit_above_cutoff(go, cfg, cm, dsq, tr, L, cfg->cutoffA[p]))) { 
 	  free(dsq); 	
 	  /* parsetree tr is freed in cm_find_hit_above_cutoff() */
 	  dsq = get_cmemit_dsq(cfg, cm, &L, &p, &tr);
@@ -655,10 +658,9 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
       /* if nec, search with CM */
       if (use_cm)
 	{ 
-	  sc1 = FastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, &(cur_vscA), NULL);
+	  sc1 = FastCYKScan(cm, cfg->si, dsq, 1, L, cm->W, 0., NULL, &(cur_vscA));
 	  /* sc1 = search_target_cm_calibration(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, &(cur_vscA)); */
-	  /*sc2 = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE);
-	    sc3 = FastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);*/
+	  /*sc2 = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE); */
 	  /*printf("i: %4d sc1: %10.4f sc2: %10.4f\n", i, sc1, sc2);
 	  fflush(stdout);
 	  if(fabs(sc1 - sc2) > 0.01) 
@@ -715,9 +717,15 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(cfg->full_vcalcs != NULL) free(cfg->full_vcalcs);
   cm_CountSearchDPCalcs(cm, 1000, cm->dmin, cm->dmax, cm->W, &(cfg->full_vcalcs));
 
+  /* create and initialize scan info for CYK/Inside scanning functions */
+  if(cfg->si != NULL) cm_FreeScanInfo(cm, cfg->si);
+  cfg->si = cm_CreateScanInfo(cm);
+  if(cfg->si == NULL) cm_Fail("initialize_cm(), CreateScanInfo() call failed.");
+  
   /* create and initialize hybrid scan info */
   if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi);
   cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--fbeta"), cfg->full_vcalcs[0]);
+  if(cfg->hsi == NULL) cm_Fail("initialize_cm(), CreateHybridScanInfo() call failed.");
 
   return eslOK;
 }
@@ -1045,9 +1053,8 @@ calc_best_filter(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float **fil
   float  nonfil_calcs;
   float  spdup;
   int    i;
-  int n, j, v_i, v_j;
   int    cmi = cfg->ncm-1;
-
+  
   float F = esl_opt_GetReal(go, "--F");
   Fidx  = (int) (1. - F) * filN;
 
@@ -1147,8 +1154,6 @@ calc_best_filter(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float **fil
  *           dsq             - the digitized sequence to search
  *           tr              - parsetree for dsq
  *           L               - length of sequence
- *           dmin_default_beta - dmin for --beta (will be null if --noqdb)
- *           dmax_default_beta - dmax for --beta (will be null if --noqdb)
  *           cutoff          - bit score cutoff 
  *
  * Returns:  TRUE if a hit above cutoff is found.
@@ -1156,7 +1161,7 @@ calc_best_filter(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float **fil
  *           Dies immediately on failure with informative error message.
  */
 int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, ESL_DSQ *dsq,
-			     Parsetree_t *tr, int L, int *dmin_default_beta, int *dmax_default_beta, float cutoff)
+			     Parsetree_t *tr, int L, float cutoff)
 {
   int init_flags       = cm->flags;
   int init_search_opts = cm->search_opts;
@@ -1165,10 +1170,6 @@ int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_
   int turn_hmmscanbands_back_off = FALSE;
   double orig_tau = cm->tau;
   float sc;
-
-  /* contract check */
-  if(dmin_default_beta == NULL && dmax_default_beta == NULL && (! esl_opt_GetBoolean(go, "--noqdb")))
-    cm_Fail("cm_find_hit_above_cutoff(), dmin_default_beta and dmax_default_beta are null, but --noqdb is not enabled.");
 
   /* Determine if this sequence has a hit in it above the cutoff as quickly as possible. 
    * Stage 0: Check parsetree score
@@ -1180,9 +1181,9 @@ int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_
    * to how they were when we entered, and return TRUE.
    *
    * NOTE: We don't do a full non-banded parse to be 100% sure we don't exceed the cutoff, 
-   * unless dmin_default_beta == dmax_default_beta == NULL, (which should only be the case 
-   * if --noqdb enable) to ensure that we don't exceed the cutoff, because we assume the
-   * --beta value used in *this* cmcalibrate run will also be used for any cmsearch runs.
+   * unless --noqdb was enabled (ScanInfo_t *si stores dn/dx (min/max d) for each state), 
+   * because we assume the --beta value used in *this* cmcalibrate 
+   * run will also be used for any cmsearch runs.
    */
 
   sc = ParsetreeScore(cm, tr, dsq, FALSE); 
@@ -1230,7 +1231,7 @@ int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_
   cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
   if(turn_qdb_back_on) cm->search_opts &= ~CM_SEARCH_NOQDB; 
 
-  sc = FastCYKScan(cm, dsq, dmin_default_beta, dmax_default_beta, 1, L, cm->W, 0., NULL, NULL, NULL);
+  sc = FastCYKScan(cm, cfg->si, dsq, 1, L, cm->W, 0., NULL, NULL);
   /* sc = search_target_cm_calibration(cm, dsq, dmin_default_beta, dmax_default_beta, 1, L, cm->W, NULL); */
   if(!turn_hbanded_back_off)      { cm->search_opts |= CM_SEARCH_HBANDED;      cm->tau = orig_tau; }
   if(!turn_hmmscanbands_back_off) { cm->search_opts |= CM_SEARCH_HMMSCANBANDS; cm->tau = orig_tau; }

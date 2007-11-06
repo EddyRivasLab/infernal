@@ -272,7 +272,6 @@ void FreeSeqsToAln(seqs_to_aln_t *s)
       if(s->postcode[i] != NULL) free(s->postcode[i]);
     free(s->postcode);
   }
-
   if(s->sc != NULL) free(s->sc);
   
   free(s);
@@ -495,6 +494,7 @@ seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, d
  *           based on cm->search_opts.
  * 
  * Args:     cm              - the covariance model
+ *           si              - ScanInfo_t for this CM, alpha matrix, precalc'ed scores etc.
  *           dsq             - the target sequence (digitized)
  *           i0              - start of target subsequence (often 1, beginning of dsq)
  *           j0              - end of target subsequence (often L, end of dsq)
@@ -512,7 +512,7 @@ seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, d
  *
  * Returns: Highest scoring hit from search (even if below cutoff).
  */
-float actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
+float actually_search_target(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
 			     float cp9_cutoff, search_results_t *results, int do_filter, 
 			     int doing_cm_stats, int doing_cp9_stats, int *ret_flen,
 			     int do_align_hits)
@@ -562,7 +562,7 @@ float actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cu
     }      
 
   if(use_cp9)
-    sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);
+    sc = CP9Scan_dispatch(cm, si, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);
   else
     {
       if(cm->search_opts & CM_SEARCH_HBANDED)
@@ -583,12 +583,15 @@ float actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cu
 	if(cm->search_opts & CM_SEARCH_INSIDE)
 	  sc = iInsideScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results);
 	else /* don't do inside */
-	  sc = CYKScan (cm, dsq, i0, j0, cm->W, cm_cutoff, results);
+	  sc = FastCYKScan(cm, si, dsq, i0, j0, cm->W, cm_cutoff, results, NULL);
+      /* sc = CYKScan (cm, dsq, i0, j0, cm->W, cm_cutoff, results); */
+
       else /* use QDB */
 	if(cm->search_opts & CM_SEARCH_INSIDE)
 	  sc = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
 	else /* don't do inside */
-	  sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
+	  sc = FastCYKScan(cm, si, dsq, i0, j0, cm->W, cm_cutoff, results, NULL);
+      /* sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results); */
     }    
   if((results != NULL && results->num_results > 0) && do_align_hits)
     actually_align_targets(cm, NULL, 
@@ -1571,7 +1574,10 @@ actually_align_targets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, searc
     seqs_to_aln->postcode = postcode; /* could be NULL */
     seqs_to_aln->sc       = parsesc;  /* shouldn't be NULL */
   }
- 
+  else { /* dsq mode */
+    free(parsesc);
+  }
+
   return eslOK;
  ERROR:
   esl_fatal("Memory allocation error.");

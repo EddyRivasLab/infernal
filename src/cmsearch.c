@@ -160,9 +160,9 @@ static void  serial_master (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
-static int process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_DSQ *dsq, 
+static int process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, 
 				   int L, float min_cm_cutoff, float min_cp9_cutoff, search_results_t **ret_results);
-static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
+static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ScanInfo_t **ret_si);
 static int set_gumbels(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_cm_mode, int *ret_cp9_mode,
 		       float *ret_min_cm_cutoff, float *ret_min_cp9_cutoff, int *ret_using_e_cutoff);
@@ -410,6 +410,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int            using_e_cutoff;
   int            rci;
   dbseq_t       *dbseq = NULL;
+  ScanInfo_t    *si = NULL;
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   /*if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);*/
@@ -420,7 +421,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       cfg->ncm++;
 
       /* initialize the flags/options/params and configuration of the CM */
-      if((  status = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
+      if((  status = initialize_cm(go, cfg, errbuf, cm, &si))               != eslOK) cm_Fail(errbuf);
       if((  status = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
       if(cm->flags & CM_GUMBEL_STATS) 
 	if((status = set_gumbels(go, cfg, errbuf, cm))                      != eslOK) cm_Fail(errbuf);
@@ -435,7 +436,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	{
 	  for(rci = 0; rci <= cfg->do_rc; rci++) {
 	    /*printf("SEARCHING >%s %d\n", dbseq->sq[reversed]->name, reversed);*/
-	    if ((status = process_search_workunit(go, cfg, errbuf, cm, dbseq->sq[rci]->dsq, dbseq->sq[rci]->n, 
+	    if ((status = process_search_workunit(go, cfg, errbuf, cm, si, dbseq->sq[rci]->dsq, dbseq->sq[rci]->n, 
 						  min_cm_cutoff, min_cp9_cutoff, &dbseq->results[rci])) != eslOK) cm_Fail(errbuf);
 	    remove_overlapping_hits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
 	    if(using_e_cutoff) remove_hits_over_e_cutoff(cm, dbseq->results[rci], dbseq->sq[rci], (cm->search_opts & CM_SEARCH_HMMONLY)); /* HMM hits? */
@@ -450,6 +451,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
       if (status != eslEOF) cm_Fail("Parse failed, line %d, file %s:\n%s", 
 					  cfg->sqfp->linenumber, cfg->sqfp->filename, cfg->sqfp->errbuf);
+      cm_FreeScanInfo(cm, si);
       FreeCM(cm);
       FreeCMConsensus(cons);
       esl_sqio_Rewind(cfg->sqfp); /* we may be searching this file again with another CM */
@@ -786,6 +788,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   float         min_cm_cutoff;
   float         min_cp9_cutoff;
   int           using_e_cutoff;
+  ScanInfo_t   *si = NULL;
 
   /* After master initialization: master broadcasts its status.
    */
@@ -814,7 +817,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       ESL_DPRINTF1(("Worker %d succesfully received CM, num states: %d num nodes: %d\n", cfg->my_rank, cm->M, cm->nodes));
       
       /* initialize the flags/options/params of the CM */
-      if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) goto ERROR;
+      if((status   = initialize_cm(go, cfg, errbuf, cm, &si))               != eslOK) goto ERROR;
       if(cm->flags & CM_GUMBEL_STATS) 
 	if((status = set_gumbels(go, cfg, errbuf, cm))                      != eslOK) goto ERROR;
       if((  status = set_cutoffs(go, cfg, errbuf, cm, &cm_mode, &cp9_mode, &min_cm_cutoff, 
@@ -826,7 +829,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       while((status = cm_dsq_MPIRecv(0, 0, MPI_COMM_WORLD, &wbuf, &wn, &dsq, &L)) == eslOK)
 	{
 	  ESL_DPRINTF1(("worker %d: has received search job, length: %d\n", cfg->my_rank, L));
-	  if ((status = process_search_workunit(go, cfg, errbuf, cm, dsq, L, min_cm_cutoff, min_cp9_cutoff,
+	  if ((status = process_search_workunit(go, cfg, errbuf, cm, si, dsq, L, min_cm_cutoff, min_cp9_cutoff,
 						&results)) != eslOK) goto ERROR;
 	  ESL_DPRINTF1(("worker %d: has gathered search results\n", cfg->my_rank));
 	  
@@ -873,15 +876,15 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
  * The job is to search dsq from i..j and return search results in <*ret_results>.
  */
 static int
-process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_DSQ *dsq, 
-			int L, float min_cm_cutoff, float min_cp9_cutoff, search_results_t **ret_results)
+process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ScanInfo_t *si, 
+			ESL_DSQ *dsq, int L, float min_cm_cutoff, float min_cp9_cutoff, search_results_t **ret_results)
 {
   search_results_t *results;
 
   results        = CreateResults(INIT_RESULTS);
   /* TO DO: have actually_search_target return an easel status code, for now it returns highest score
    * in dsq, which other parts of Infernal rely on. */
-  actually_search_target(cm, dsq, 1, L, min_cm_cutoff, min_cp9_cutoff, results,
+  actually_search_target(cm, si, dsq, 1, L, min_cm_cutoff, min_cp9_cutoff, results,
 			 TRUE,  /* filter with a CP9 HMM if appropriate */
 			 FALSE, /* we're not building a histogram for CM stats  */
 			 FALSE, /* we're not building a histogram for CP9 stats */
@@ -918,12 +921,13 @@ process_cp9filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char 
 /* initialize_cm()
  * Setup the CM based on the command-line options/defaults;
  * only set flags and a few parameters. ConfigCM() configures
- * the CM.
+ * the CM. Also create the ScanInfo_t for this CM and return it.
  */
 static int
-initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
+initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ScanInfo_t **ret_si)
 {
   int status;
+  ScanInfo_t *si;
 
   /* set up CM parameters that are option-changeable */
   cm->beta   = esl_opt_GetReal(go, "--beta"); /* this will be DEFAULT_BETA unless changed at command line */
@@ -1005,6 +1009,11 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     debug_print_bands(cfg->bfp, cm, cm->dmin, cm->dmax);
     fprintf(cfg->bfp, "beta:%f\n", cm->beta);
   }
+
+  /* setup ScanInfo for CYK/Inside scanning functions */
+  si = cm_CreateScanInfo(cm);
+  if(si == NULL) cm_Fail("initialize_cm(), CreateScanInfo() call failed.");
+  *ret_si = si;
 
   if(cfg->my_rank == 0) printf("CM %d: %s\n", (cfg->ncm), cm->name);
   return eslOK;

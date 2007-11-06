@@ -722,6 +722,7 @@ InsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, i
 	    {
 	      if (cm->stid[y] == BEGL_S) sc = alpha[y][j%(W+1)][d] + cm->beginsc[y];
 	      else                       sc = alpha[y][cur][d]     + cm->beginsc[y];
+	      /*alpha[0][cur][d] = LogSum2(alpha[0][cur][d], sc);*/ /* EPN, Tue Nov  6 05:39:01 2007 to make it match cm_fastsearch.c */
 	      if (sc > alpha[0][cur][d]) {
 		alpha[0][cur][d] = sc;
 		bestr[d]         = y;
