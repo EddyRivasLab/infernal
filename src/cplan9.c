@@ -87,7 +87,7 @@ AllocCPlan9Shell(void)
   return hmm;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
   return NULL; /* never reached */
 }  
 
@@ -161,7 +161,7 @@ AllocCPlan9Body(struct cplan9_s *hmm, int M, const ESL_ALPHABET *abc)
 
   return;
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }  
 
 
@@ -586,7 +586,7 @@ CreateCPlan9Matrix(int N, int M, int padN, int padM)
   return mx;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -675,7 +675,7 @@ ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M,
   return;
 
  ERROR:
-  esl_fatal("Memory reallocation error.");
+  cm_Fail("Memory reallocation error.");
 }
 
 /* Function: CPlan9SWConfig()
@@ -770,23 +770,23 @@ CPlan9CMLocalBeginConfig(CM_t *cm)
 {
   /* Contract checks */
   if(cm->cp9 == NULL)
-    esl_fatal("ERROR in CPlan9CMLocalBeginConfig, cm->cp9 is NULL.\n");
+    cm_Fail("ERROR in CPlan9CMLocalBeginConfig, cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL)
-    esl_fatal("ERROR in CPlan9CMLocalBeginConfig, cm->cp9map is NULL.\n");
+    cm_Fail("ERROR in CPlan9CMLocalBeginConfig, cm->cp9map is NULL.\n");
   if(!(cm->flags & CMH_CP9))
-     esl_fatal("ERROR in CPlan9CMLocalBeginConfig, CMH_CP9 flag is down.");
+     cm_Fail("ERROR in CPlan9CMLocalBeginConfig, CMH_CP9 flag is down.");
   if(!(cm->flags & CMH_LOCAL_BEGIN))
-     esl_fatal("ERROR in CPlan9CMLocalBeginConfig, CMH_LOCAL_BEGIN flag is down.");
+     cm_Fail("ERROR in CPlan9CMLocalBeginConfig, CMH_LOCAL_BEGIN flag is down.");
   if(!(cm->flags & CMH_LOCAL_END))
-     esl_fatal("ERROR in CPlan9CMLocalBeginConfig, CP9_LOCAL_BEGIN flag is already up.");
+     cm_Fail("ERROR in CPlan9CMLocalBeginConfig, CP9_LOCAL_BEGIN flag is already up.");
   if(cm->cp9->flags & CPLAN9_LOCAL_END)
-     esl_fatal("ERROR in CPlan9CMLocalBeginConfig, CP9_LOCAL_END flag is already up.");
+     cm_Fail("ERROR in CPlan9CMLocalBeginConfig, CP9_LOCAL_END flag is already up.");
 
   /* Configure entry.
    * To match CM, we enforce the only way out of the B state (M_0)
    * is through a local begin into a match state 
    */
-  esl_fatal("In CPlan9CMLocalBeginConfig(), function not yet finished.\n");
+  cm_Fail("In CPlan9CMLocalBeginConfig(), function not yet finished.\n");
 
   /* To do: determine which nodes we can begin into (for example can't begin
    * into a node modeled by right half of a MATP). And those nodes we can
@@ -842,15 +842,13 @@ CPlan9ELConfig(CM_t *cm)
   /*printf("IN CPlan9ELConfig\n");*/
   /* Contract checks */
   if(cm->cp9 == NULL)
-    esl_fatal("ERROR in CPlan9ELConfig, cm->cp9 is NULL.\n");
+    cm_Fail("ERROR in CPlan9ELConfig, cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL)
-    esl_fatal("ERROR in CPlan9ELConfig, cm->cp9map is NULL.\n");
+    cm_Fail("ERROR in CPlan9ELConfig, cm->cp9map is NULL.\n");
   if(!(cm->flags & CMH_CP9))
-     esl_fatal("ERROR in CPlan9ELConfig, CMH_CP9 flag is down.");
-  if(!(cm->flags & CMH_LOCAL_END))
-     esl_fatal("ERROR in CPlan9ELConfig, CMH_LOCAL_END flag is down.");
+     cm_Fail("ERROR in CPlan9ELConfig, CMH_CP9 flag is down.");
   if(cm->cp9->flags & CPLAN9_EL)
-     esl_fatal("ERROR in CPlan9ELConfig, CP9_EL flag is already up.");
+     cm_Fail("ERROR in CPlan9ELConfig, CP9_EL flag is already up.");
   
   int v;
   int k;                     /* counter over HMM nodes */
@@ -858,33 +856,52 @@ CPlan9ELConfig(CM_t *cm)
   int seen_exit;
   float to_el_prob;
   float norm_factor;
+  int   nexits;
 
-  /* Check to make sure all non-zero local end probabilities 
-   * in the CM are identical (within reasonable precision), 
-   * use that probability to set all HMM transitions to EL states.
+  /* If the CM has local ends on, check to make sure all non-zero 
+   * local end probabilities in the CM are identical (within reasonable 
+   * precision), use that probability to set all HMM transitions to 
+   * EL states.
    */
-  seen_exit  = FALSE;
-  to_el_prob = 0.;
-  for(v = 0; v < cm->M; v++)
-    {
+  if(cm->flags & CMH_LOCAL_END) { 
+    seen_exit  = FALSE;
+    to_el_prob = 0.;
+    for(v = 0; v < cm->M; v++) {
       nd = cm->ndidx[v];
       if (((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
-	    cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
-	    cm->ndtype[nd] == BEGR_nd) && 
-	   cm->ndtype[nd+1] != END_nd) && cm->nodemap[nd] == v)
-	{
-	  /* this should have a non-zero local end probability */
-	  if(fabs(cm->end[v] - 0.) < 0.00001) /* non-zero */
-	    esl_fatal("In CPlan9ELConfig(), CM state %d should have non-zero local end prob, but it doesn't.\n", v);
-	  if(!seen_exit)	  
-	    {
-	      to_el_prob = cm->end[v];
-	      seen_exit  = TRUE;
-	    }
-	  else if(fabs(to_el_prob - cm->end[v]) > 0.00001)
-	    esl_fatal("In CPlan9ELConfig(), not all CM states EL probs are identical.\n");
-	}
+	  cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	  cm->ndtype[nd] == BEGR_nd) && 
+	 cm->ndtype[nd+1] != END_nd) && cm->nodemap[nd] == v) {
+      /* this should have a non-zero local end probability */
+      if(fabs(cm->end[v] - 0.) < 0.00001) /* non-zero */
+	cm_Fail("In CPlan9ELConfig(), CM state %d should have non-zero local end prob, but it doesn't.\n", v);
+      if(!seen_exit) {
+	to_el_prob = cm->end[v];
+	seen_exit  = TRUE;
+      }
+      else if(fabs(to_el_prob - cm->end[v]) > 0.00001)
+	cm_Fail("In CPlan9ELConfig(), not all CM states EL probs are identical.\n");
+      }
+    }
+    if(! seen_exit) cm_Fail("In CPlan9ELConfig(), CM_LOCAL_END flag up, but all CM local end probs are zero."); 
+  }
+  else {
+    /* CM_LOCAL_END flag is down, local ends are off in the CM 
+     * We figure out what the local end prob would be given cm->pend
+     * and set the HMM local end probs based on that. 
+     * First, count internal nodes MATP, MATL, MATR, BEGL, BEGR that aren't
+     * adjacent to END nodes.
+     */
+    nexits = 0;
+    for (nd = 1; nd < cm->nodes; nd++) {
+      if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	   cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	   cm->ndtype[nd] == BEGR_nd) && 
+	  cm->ndtype[nd+1] != END_nd)
+	nexits++;
     } 
+    to_el_prob = cm->pend / (float) nexits;
+  }
 
   /* transitions from HMM node 0 to EL is impossible */
   cm->cp9->t[0][CTMEL] = 0.;
@@ -924,13 +941,13 @@ CPlan9NoEL(CM_t *cm)
 {
   /* Contract checks */
   if(cm->cp9 == NULL)
-    esl_fatal("ERROR in CPlan9ELConfig, cm->cp9 is NULL.\n");
+    cm_Fail("ERROR in CPlan9ELConfig, cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL)
-    esl_fatal("ERROR in CPlan9ELConfig, cm->cp9map is NULL.\n");
+    cm_Fail("ERROR in CPlan9ELConfig, cm->cp9map is NULL.\n");
   if(!(cm->flags & CMH_CP9))
-     esl_fatal("ERROR in CPlan9ELConfig, CMH_CP9 flag is down.");
+     cm_Fail("ERROR in CPlan9ELConfig, CMH_CP9 flag is down.");
   if(!(cm->cp9->flags & CPLAN9_EL))
-     esl_fatal("ERROR in CPlan9ELConfig, CP9_EL flag is already down.");
+     cm_Fail("ERROR in CPlan9ELConfig, CP9_EL flag is already down.");
   
   int k;                     /* counter over HMM nodes */
 
@@ -1006,7 +1023,7 @@ CPlan9InitEL(CM_t *cm, CP9_t *cp9)
   for(k = 0; k <= (cp9->M+1); k++) 
     {
       if(cp9->el_from_idx[k] != NULL) /* if !NULL we already filled it, shouldn't happen */
-	esl_fatal("ERROR in CPlan9InitEL() el_from_idx has already been initialized\n");
+	cm_Fail("ERROR in CPlan9InitEL() el_from_idx has already been initialized\n");
       if(cp9->el_from_ct[k] > 0)
 	{
 	  ESL_ALLOC(cp9->el_from_idx[k], sizeof(int) * cp9->el_from_ct[k]);
@@ -1048,7 +1065,7 @@ CPlan9InitEL(CM_t *cm, CP9_t *cp9)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 /* Function: CPlan9GlobalConfig()
@@ -1225,7 +1242,7 @@ CP9AllocTrace(int tlen, CP9trace_t **ret_tr)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 void
 CP9ReallocTrace(CP9trace_t *tr, int tlen)
@@ -1239,7 +1256,7 @@ CP9ReallocTrace(CP9trace_t *tr, int tlen)
   return;
 
  ERROR:
-  esl_fatal("Memory reallocation error.");
+  cm_Fail("Memory reallocation error.");
 }
 void 
 CP9FreeTrace(CP9trace_t *tr)
@@ -1319,7 +1336,7 @@ CP9_2sub_cp9(struct cplan9_s *orig_hmm, struct cplan9_s **ret_sub_hmm, int spos,
 	  if((i > 1) && ((0. - sub_hmm->begin[i] > 0.00000001) ||
 			 (sub_hmm->begin[i] - 0. > 0.00000001)))
 	    {
-	      esl_fatal("ERROR in cp9_2sub_cp9() is original CP9 HMM not in global (NW) mode? i: %d\n", i);
+	      cm_Fail("ERROR in cp9_2sub_cp9() is original CP9 HMM not in global (NW) mode? i: %d\n", i);
 	    }
 	}
       for(x = 0; x < MAXABET; x++)
@@ -1535,7 +1552,7 @@ void
 CP9_fake_tracebacks(ESL_MSA *msa, int *matassign, CP9trace_t ***ret_tr)
 {
   if(! (msa->flags & eslMSA_DIGITAL))
-    esl_fatal("ERROR in CP9_fake_tracebacks(), msa should be digitized.\n");
+    cm_Fail("ERROR in CP9_fake_tracebacks(), msa should be digitized.\n");
 
   int  status;
   CP9trace_t **tr;
@@ -1632,7 +1649,7 @@ CP9_fake_tracebacks(ESL_MSA *msa, int *matassign, CP9trace_t ***ret_tr)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 /* Function: CP9TraceCount() 
@@ -1653,7 +1670,7 @@ CP9TraceCount(CP9_t *hmm, ESL_DSQ *dsq, float wt, CP9trace_t *tr)
 {
   /* contract check */
   if(dsq == NULL)
-    esl_fatal("ERROR in CP9TraceCount(), dsq is NULL.");
+    cm_Fail("ERROR in CP9TraceCount(), dsq is NULL.");
   
   int tpos;                     /* position in tr */
   int i;			/* symbol position in seq */
@@ -1678,7 +1695,7 @@ CP9TraceCount(CP9_t *hmm, ESL_DSQ *dsq, float wt, CP9trace_t *tr)
 	case CSTI: hmm->t[0][CTMI]                 += wt; break;
 	case CSTD: hmm->t[0][CTMD]                 += wt; break;
 	default:      
-	  esl_fatal("illegal state transition %s->%s in traceback", 
+	  cm_Fail("illegal state transition %s->%s in traceback", 
 	      CP9Statetype(tr->statetype[tpos]), 
 	      CP9Statetype(tr->statetype[tpos+1]));
 	}
@@ -1690,7 +1707,7 @@ CP9TraceCount(CP9_t *hmm, ESL_DSQ *dsq, float wt, CP9trace_t *tr)
 	case CSTD: hmm->t[tr->nodeidx[tpos]][CTMD] += wt; break;
 	case CSTE: hmm->end[tr->nodeidx[tpos]]     += wt; break;
 	default:    
-	  esl_fatal("illegal state transition %s->%s in traceback", 
+	  cm_Fail("illegal state transition %s->%s in traceback", 
 	      CP9Statetype(tr->statetype[tpos]), 
 	      CP9Statetype(tr->statetype[tpos+1]));
 	}
@@ -1703,13 +1720,13 @@ CP9TraceCount(CP9_t *hmm, ESL_DSQ *dsq, float wt, CP9trace_t *tr)
 	case CSTE: 
 	  /* This should only happen from the final insert (I_M) state */
 	  if((tpos+1) != (tr->tlen-1))
-	    esl_fatal("illegal state transition %s->%s (I is not final insert) in traceback", 
+	    cm_Fail("illegal state transition %s->%s (I is not final insert) in traceback", 
 		CP9Statetype(tr->statetype[tpos]), 
 		CP9Statetype(tr->statetype[tpos+1]));
 	  hmm->t[tr->nodeidx[tpos]][CTIM] += wt; break;
 	  break;
 	default:    
-	  esl_fatal("illegal state transition %s->%s in traceback", 
+	  cm_Fail("illegal state transition %s->%s in traceback", 
 	      CP9Statetype(tr->statetype[tpos]), 
 	      CP9Statetype(tr->statetype[tpos+1]));
 	}
@@ -1722,13 +1739,13 @@ CP9TraceCount(CP9_t *hmm, ESL_DSQ *dsq, float wt, CP9trace_t *tr)
 	case CSTE: 
 	  /* This should only happen from the final delete (D_M) state */
 	  if((tpos+1) != (tr->tlen-1))
-	    esl_fatal("illegal state transition %s->%s (D is not final delete) in traceback", 
+	    cm_Fail("illegal state transition %s->%s (D is not final delete) in traceback", 
 		CP9Statetype(tr->statetype[tpos]), 
 		CP9Statetype(tr->statetype[tpos+1]));
 	  hmm->t[tr->nodeidx[tpos]][CTDM] += wt; break;
 	  break;
 	default:    
-	  esl_fatal("illegal state transition %s->%s in traceback", 
+	  cm_Fail("illegal state transition %s->%s in traceback", 
 	      CP9Statetype(tr->statetype[tpos]), 
 	      CP9Statetype(tr->statetype[tpos+1]));
 	}
@@ -1737,7 +1754,7 @@ CP9TraceCount(CP9_t *hmm, ESL_DSQ *dsq, float wt, CP9trace_t *tr)
 	break; /* E is the last. It makes no transitions. */
 
       default:
-	esl_fatal("illegal state %s in traceback", 
+	cm_Fail("illegal state %s in traceback", 
 	    CP9Statetype(tr->statetype[tpos]));
       }
     }
@@ -1784,7 +1801,7 @@ CP9TraceScore(CP9_t *hmm, ESL_DSQ *dsq, CP9trace_t *tr)
   
   /* Contract check */
   if(dsq == NULL)
-    esl_fatal("ERROR in CP9TraceScore, dsq is NULL.");
+    cm_Fail("ERROR in CP9TraceScore, dsq is NULL.");
 
   /*CP9PrintTrace(stdout, tr, hmm, sq); */
   score = 0;
@@ -1825,7 +1842,7 @@ CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, ESL_DSQ *dsq)
 {
   /* Contract check */
   if((dsq != NULL) && (hmm == NULL))
-    esl_fatal("ERROR in CP9PrintTrace, dsq is non-NULL but HMM is NULL.\n");
+    cm_Fail("ERROR in CP9PrintTrace, dsq is non-NULL but HMM is NULL.\n");
 
   int          tpos;		/* counter for trace position */
   unsigned int sym;
@@ -1847,7 +1864,7 @@ CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, ESL_DSQ *dsq)
     } 
   } else {
     if (!(hmm->flags & CPLAN9_HASBITS))
-      esl_fatal("oi, you can't print scores from that hmm, it's not ready.");
+      cm_Fail("oi, you can't print scores from that hmm, it's not ready.");
 
     sc = 0;
     fprintf(fp, "st  node   rpos  transit emission - traceback len %d\n", tr->tlen);
@@ -1922,7 +1939,7 @@ CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
     case CSTM: return hmm->bsc[k2]; 
     case CSTI: return hmm->tsc[CTMI][0];
     case CSTD: return hmm->tsc[CTMD][0];
-    default:      esl_fatal("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    default:      cm_Fail("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
     }
     break;
   case CSTM:
@@ -1932,7 +1949,7 @@ CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
     case CSTD: return hmm->tsc[CTMD][k1];
     case CSTE: return hmm->esc[k1];
     case CSTEL: return hmm->tsc[CTMEL][k1];
-    default:      esl_fatal("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    default:      cm_Fail("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
     }
     break;
   case CSTI:
@@ -1941,7 +1958,7 @@ CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
     case CSTI: return hmm->tsc[CTII][k1];
     case CSTD: return hmm->tsc[CTID][k1];
     case CSTE: return hmm->tsc[CTIM][k1]; /* This should only happen from the final insert (I_M) state */
-    default:      esl_fatal("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    default:      cm_Fail("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
     }
     break;
   case CSTD:
@@ -1950,7 +1967,7 @@ CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
     case CSTI: return hmm->tsc[CTDI][k1];
     case CSTD: return hmm->tsc[CTDD][k1];
     case CSTE: return hmm->tsc[CTDM][k1]; /* This should only happen from the final delete (D_M) state */
-    default:      esl_fatal("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    default:      cm_Fail("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
     }
     break;
   case CSTEL:
@@ -1958,14 +1975,14 @@ CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
     case CSTM: return 0; /* transition to EL penalty incurred when M->EL transition takes place */
     case CSTE: return 0; /* transition to EL penalty incurred when M->EL transition takes place */
     case CSTEL: return hmm->el_selfsc; /* penalty for EL->EL self transition loop */
-    default:      esl_fatal("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    default:      cm_Fail("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
     }
     break;
   case CSTE: /* this should never happen, it means we transitioned from E, which is not
 	      * allowed. */
-    esl_fatal("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
+    cm_Fail("illegal %s->%s transition", CP9Statetype(st1), CP9Statetype(st2));
     break;
-  default:        esl_fatal("illegal state %s in traceback", CP9Statetype(st1));
+  default:        cm_Fail("illegal state %s in traceback", CP9Statetype(st1));
   }
   /*NOTREACHED*/
   return 0;
@@ -1995,7 +2012,7 @@ CP9ViterbiTrace(struct cplan9_s *hmm, ESL_DSQ *dsq, int i0, int j0,
 {
   /* contract check */
   if(dsq == NULL)
-    esl_fatal("ERROR in CP9ViterbiTrace(), dsq is NULL.");
+    cm_Fail("ERROR in CP9ViterbiTrace(), dsq is NULL.");
 
   CP9trace_t *tr;
   int curralloc;		/* current allocated length of trace */
@@ -2087,12 +2104,12 @@ CP9ViterbiTrace(struct cplan9_s *hmm, ESL_DSQ *dsq, int i0, int j0,
 	      tr->nodeidx[tpos]   = 0;
 	      tr->pos[tpos]       = 0;
 	      if(tr->pos[tpos-1] != 1)
-		esl_fatal("traceback failed: premature begin");
+		cm_Fail("traceback failed: premature begin");
 	      error_flag = FALSE;
 	    }
 	}
       if(error_flag)
-	esl_fatal("traceback failed");
+	cm_Fail("traceback failed");
       break;
 
     case CSTD:			/* D connects from M,D,I, (D_1 also connects from B (M_0) */
@@ -2131,7 +2148,7 @@ CP9ViterbiTrace(struct cplan9_s *hmm, ESL_DSQ *dsq, int i0, int j0,
 	  tr->nodeidx[tpos]   = k--;
 	  tr->pos[tpos]       = 0;
 	}
-      else esl_fatal("traceback failed");
+      else cm_Fail("traceback failed");
       break;
 
     case CSTI:			/* I connects from M,I,D, (I_0 connects from B also(*/
@@ -2173,7 +2190,7 @@ CP9ViterbiTrace(struct cplan9_s *hmm, ESL_DSQ *dsq, int i0, int j0,
 	  tr->nodeidx[tpos]   = k--;
 	  tr->pos[tpos]       = 0;
 	}
-      else esl_fatal("traceback failed");
+      else cm_Fail("traceback failed");
       break;
 
     case CSTE:			/* E connects from any M state. k set here 
@@ -2225,7 +2242,7 @@ CP9ViterbiTrace(struct cplan9_s *hmm, ESL_DSQ *dsq, int i0, int j0,
 		}
 	    }
 	}
-      if (k < 0 || error_flag) esl_fatal("traceback failed");
+      if (k < 0 || error_flag) cm_Fail("traceback failed");
       break;
 
     case CSTEL:			/* EL connects from certain M states and itself */
@@ -2248,11 +2265,11 @@ CP9ViterbiTrace(struct cplan9_s *hmm, ESL_DSQ *dsq, int i0, int j0,
 				      * the first visit to EL). 
 				      */
 	}
-      else esl_fatal("traceback failed");
+      else cm_Fail("traceback failed");
       break;
 
     default:
-      esl_fatal("traceback failed");
+      cm_Fail("traceback failed");
 
     } /* end switch over statetype[tpos-1] */
     
@@ -2325,7 +2342,7 @@ CP9ReverseTrace(CP9trace_t *tr)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 
@@ -2399,20 +2416,20 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
 
   /* Contract checks */
   if(cm->cp9 == NULL)
-    esl_fatal("ERROR in CP9Traces2Alignment, cm->cp9 is NULL.\n");
+    cm_Fail("ERROR in CP9Traces2Alignment, cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL)
-    esl_fatal("ERROR in CP9Traces2Alignment, cm->cp9map is NULL.\n");
+    cm_Fail("ERROR in CP9Traces2Alignment, cm->cp9map is NULL.\n");
   if(!(cm->flags & CMH_CP9))
-     esl_fatal("ERROR in CP9Traces2Alignment, CMH_CP9 flag is down.");
+     cm_Fail("ERROR in CP9Traces2Alignment, CMH_CP9 flag is down.");
   /* We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
   if(cm->abc->type == eslRNA)
     { 
       if(abc->type != eslRNA && abc->type != eslDNA)
-	esl_fatal("ERROR in Parsetrees2Alignment(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+	cm_Fail("ERROR in Parsetrees2Alignment(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
     }
   else if(cm->abc->K != abc->K)
-    esl_fatal("ERROR in Parsetrees2Alignment(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+    cm_Fail("ERROR in Parsetrees2Alignment(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
 
   /* create the emit map */
   emap = CreateEmitMap(cm);
@@ -2521,7 +2538,7 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
 		      break;
 		    }
 		  if(c == (cm->cp9->el_from_ct[eposmap[idx][cpos]] - 1))
-		    esl_fatal("Couldn't determine epos for cpos: %d\n", cpos);
+		    cm_Fail("Couldn't determine epos for cpos: %d\n", cpos);
 		}
 	    }
 	}
@@ -2540,7 +2557,7 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
 	  case CSTB:
 	    break;
 	  default:
-	    esl_fatal("CP9Traces2Alignment reports unrecognized statetype %c", 
+	    cm_Fail("CP9Traces2Alignment reports unrecognized statetype %c", 
 		CP9Statetype(tr[idx]->statetype[tpos]));
 	  }
 	} /* end looking at trace i */
@@ -2591,7 +2608,7 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   for (idx = 0; idx < nseq; idx++) 
     {
       if(! (sq[idx]->flags & eslSQ_DIGITAL))
-	esl_fatal("ERROR in CP9Traces2Alignment(), sq's should be digitized.\n");
+	cm_Fail("ERROR in CP9Traces2Alignment(), sq's should be digitized.\n");
 
       for (cpos = 0; cpos <= emap->clen; cpos++)
 	iuse[cpos] = eluse[cpos] = 0;
@@ -2823,7 +2840,7 @@ DuplicateCP9(CM_t *src_cm, CM_t *dest_cm)
 
   /* Contract checks */
   if(!(src_cm->flags & CMH_CP9))
-    esl_fatal("ERROR in DuplicateCP9() src_cm CMH_CP9 flag down.\n");
+    cm_Fail("ERROR in DuplicateCP9() src_cm CMH_CP9 flag down.\n");
 
   CPlan9Renormalize(src_cm->cp9);
   CP9Logoddsify(src_cm->cp9);

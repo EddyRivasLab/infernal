@@ -83,8 +83,8 @@ static ESL_OPTIONS options[] = {
   { "--scan2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "derive HMM bands from scanning Forward/Backward", 6 },
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 6 },
   /* HMM configuration options */
-  { "--hmmlocal",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--cmonly", "configure HMM for local alignment [default: glocal]", 7 },
-  { "--hmmnoel", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--cmonly", "DO NOT enable HMM EL local ends that mirror CM", 7 },
+  { "--hmmglocal",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,  "--cmonly", "configure HMM for glocal alignment [default: local]", 7 },
+  { "--hmmnoel",  eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,"-g,--cmonly,--hmmglocal", "DO NOT enable HMM EL local ends that mirror CM", 7 },
   { "--hmmgreedy",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,  "--cmonly", "resolve HMM overlapping hits with a greedy algorithm a la RSEARCH", 7 },
   { "--hmmrescan",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,  "--cmonly", "rescan subseq hits w/Forward (auto ON if --enfseq)", 7 },
   /* filter threshold calculation options */
@@ -160,9 +160,9 @@ static void  serial_master (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
-static int process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, 
+static int process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_DSQ *dsq, 
 				   int L, float min_cm_cutoff, float min_cp9_cutoff, search_results_t **ret_results);
-static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ScanInfo_t **ret_si);
+static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int set_gumbels(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_cm_mode, int *ret_cp9_mode,
 		       float *ret_min_cm_cutoff, float *ret_min_cp9_cutoff, int *ret_using_e_cutoff);
@@ -360,7 +360,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
   /* open CM file */
   if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
-    ESL_FAIL(eslFAIL, NULL, "Failed to open covariance model save file %s\n", cfg->cmfile);
+    ESL_FAIL(eslFAIL, errbuf, "Failed to open covariance model save file %s\n", cfg->cmfile);
 
   /* optionally, open trace file */
   if (esl_opt_GetString(go, "--tfile") != NULL) {
@@ -410,7 +410,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int            using_e_cutoff;
   int            rci;
   dbseq_t       *dbseq = NULL;
-  ScanInfo_t    *si = NULL;
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   /*if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);*/
@@ -421,7 +420,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       cfg->ncm++;
 
       /* initialize the flags/options/params and configuration of the CM */
-      if((  status = initialize_cm(go, cfg, errbuf, cm, &si))               != eslOK) cm_Fail(errbuf);
+      if((  status = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
       if((  status = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
       if(cm->flags & CMH_GUMBEL_STATS) 
 	if((status = set_gumbels(go, cfg, errbuf, cm))                      != eslOK) cm_Fail(errbuf);
@@ -436,7 +435,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	{
 	  for(rci = 0; rci <= cfg->do_rc; rci++) {
 	    /*printf("SEARCHING >%s %d\n", dbseq->sq[reversed]->name, reversed);*/
-	    if ((status = process_search_workunit(go, cfg, errbuf, cm, si, dbseq->sq[rci]->dsq, dbseq->sq[rci]->n, 
+	    if ((status = process_search_workunit(go, cfg, errbuf, cm, dbseq->sq[rci]->dsq, dbseq->sq[rci]->n, 
 						  min_cm_cutoff, min_cp9_cutoff, &dbseq->results[rci])) != eslOK) cm_Fail(errbuf);
 	    remove_overlapping_hits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
 	    if(using_e_cutoff) remove_hits_over_e_cutoff(cm, dbseq->results[rci], dbseq->sq[rci], (cm->search_opts & CM_SEARCH_HMMONLY)); /* HMM hits? */
@@ -787,7 +786,6 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   float         min_cm_cutoff;
   float         min_cp9_cutoff;
   int           using_e_cutoff;
-  ScanInfo_t   *si = NULL;
 
   /* After master initialization: master broadcasts its status.
    */
@@ -828,7 +826,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       while((status = cm_dsq_MPIRecv(0, 0, MPI_COMM_WORLD, &wbuf, &wn, &dsq, &L)) == eslOK)
 	{
 	  ESL_DPRINTF1(("worker %d: has received search job, length: %d\n", cfg->my_rank, L));
-	  if ((status = process_search_workunit(go, cfg, errbuf, cm, si, dsq, L, min_cm_cutoff, min_cp9_cutoff,
+	  if ((status = process_search_workunit(go, cfg, errbuf, cm, dsq, L, min_cm_cutoff, min_cp9_cutoff,
 						&results)) != eslOK) goto ERROR;
 	  ESL_DPRINTF1(("worker %d: has gathered search results\n", cfg->my_rank));
 	  
@@ -875,7 +873,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
  * The job is to search dsq from i..j and return search results in <*ret_results>.
  */
 static int
-process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ScanInfo_t *si, 
+process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 			ESL_DSQ *dsq, int L, float min_cm_cutoff, float min_cp9_cutoff, search_results_t **ret_results)
 {
   search_results_t *results;
@@ -883,7 +881,7 @@ process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   results        = CreateResults(INIT_RESULTS);
   /* TO DO: have actually_search_target return an easel status code, for now it returns highest score
    * in dsq, which other parts of Infernal rely on. */
-  actually_search_target(cm, si, dsq, 1, L, min_cm_cutoff, min_cp9_cutoff, results,
+  actually_search_target(cm, dsq, 1, L, min_cm_cutoff, min_cp9_cutoff, results,
 			 TRUE,  /* filter with a CP9 HMM if appropriate */
 			 FALSE, /* we're not building a histogram for CM stats  */
 			 FALSE, /* we're not building a histogram for CP9 stats */
@@ -920,13 +918,12 @@ process_cp9filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char 
 /* initialize_cm()
  * Setup the CM based on the command-line options/defaults;
  * only set flags and a few parameters. ConfigCM() configures
- * the CM. Also create the ScanInfo_t for this CM and return it.
+ * the CM. 
  */
 static int
-initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ScanInfo_t **ret_si)
+initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   int status;
-  ScanInfo_t *si;
 
   /* set up CM parameters that are option-changeable */
   cm->beta   = esl_opt_GetReal(go, "--beta"); /* this will be DEFAULT_BETA unless changed at command line */
@@ -939,7 +936,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 
   /* config_opts */
   if(! esl_opt_GetBoolean(go, "-g"))            cm->config_opts |= CM_CONFIG_LOCAL;
-  if(  esl_opt_GetBoolean(go, "--hmmlocal"))    cm->config_opts |= CM_CONFIG_HMMLOCAL;
+  if(! esl_opt_GetBoolean(go, "--hmmglocal"))   cm->config_opts |= CM_CONFIG_HMMLOCAL;
   if(! esl_opt_GetBoolean(go, "--hmmnoel"))     cm->config_opts |= CM_CONFIG_HMMEL;
   if(! esl_opt_GetBoolean(go, "--iins"))        cm->config_opts |= CM_CONFIG_ZEROINSERTS;
   /* config QDB? Yes, unless --noqdb or --hmmonly enabled */
@@ -1010,16 +1007,15 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
   }
 
   /* setup ScanInfo for CYK/Inside scanning functions */
-  int do_int = FALSE;
   int do_float = TRUE;
-  if(cm->search_opts & CM_SEARCH_INSIDE) { do_int = TRUE; do_float = FALSE; }
-  cm_CreateScanInfo(cm, do_int, do_float);
-  if(si == NULL) cm_Fail("initialize_cm(), CreateScanInfo() call failed.");
-  *ret_si = si;
-
+  int do_int   = FALSE;
+  if(cm->search_opts & CM_SEARCH_INSIDE) { do_float = FALSE; do_int = TRUE; }
+  cm_CreateScanInfo(cm, do_float, do_int);
+  if(cm->si == NULL) cm_Fail("initialize_cm(), CreateScanInfo() call failed.");
+  
   if(cfg->my_rank == 0) printf("CM %d: %s\n", (cfg->ncm), cm->name);
   return eslOK;
-
+  
  ERROR:
   return status;
 }
@@ -1220,11 +1216,14 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
 static int
 set_window(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
-  if(! esl_opt_IsDefault(go, "--window"))
+  if(! esl_opt_IsDefault(go, "--window")) {
+    if((! esl_opt_GetBoolean(go, "--noqdb")) && (! esl_opt_GetBoolean(go, "--hmmonly")))
+      ESL_FAIL(eslEINCOMPAT, errbuf, "--window only makes sense with --noqdb or --hmmonly enabled. Use smaller --beta values to decrease window size.\n");
     cm->W = esl_opt_GetInteger(go, "--window");
+  }
   else if(esl_opt_GetBoolean(go, "--noqdb") || esl_opt_GetBoolean(go, "--hmmonly")) {
     if(cm->dmin != NULL || cm->dmax != NULL) 
-      ESL_FAIL(eslEINCONCEIVABLE, errbuf, "-hmmonly or --noqdb enabled, but cm->dmin and cm->dmax non-null. This shouldn't happen.");
+      ESL_FAIL(eslEINCONCEIVABLE, errbuf, "--hmmonly or --noqdb enabled, but cm->dmin and cm->dmax non-null. This shouldn't happen.");
     int *dmin;
     int *dmax;
     int safe_windowlen = cm->clen * 2;

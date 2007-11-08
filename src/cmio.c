@@ -206,7 +206,7 @@ or may be a different kind of binary altogether.\n", cmfile);
   return NULL;
 
  ERROR:
-  return NULL; /* not reached */
+  return NULL; 
 }
 
 /* Function:  CMFileRead()
@@ -593,7 +593,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	{
 	  if(cm->abc == NULL) 
 	    {
-	      printf("ERROR, cm->abc is not yet set but we're trying to allocate the null model.");
+	      printf("ERROR, cm->abc is not yet set but we're trying to allocate the null model.\n");
 	      goto FAILURE;
 	    }
 	  /* cm-> null already allocated in CreateCMBody() */
@@ -861,7 +861,6 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   return 1;
 
  FAILURE:
-  if (cm != NULL)  FreeCM(cm);
   if (buf != NULL) free(buf);
   *ret_cm = NULL;
   return 1;

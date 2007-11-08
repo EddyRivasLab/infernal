@@ -335,11 +335,12 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of sequence file %s\n", cfg->sqfile);
   else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Can’t autodetect stdin or .gz."); 
   else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
+  if(cfg->sqfp->format == eslMSAFILE_STOCKHOLM) ESL_FAIL(eslEFORMAT, errbuf, "cmalign doesn't support Stockholm alignment format. Please reformat to FASTA.\n");
   cfg->fmt = cfg->sqfp->format;
 
   /* open CM file */
-  if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
-    ESL_FAIL(eslFAIL, NULL, "Failed to open covariance model save file %s\n", cfg->cmfile);
+  if((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
+   ESL_FAIL(eslFAIL, errbuf, "Failed to open covariance model save file %s\n", cfg->cmfile);
 
   /* open output file */
   if (esl_opt_GetString(go, "-o") != NULL) {

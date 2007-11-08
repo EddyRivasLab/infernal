@@ -404,9 +404,9 @@ extern float CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cut
 extern float CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
 			 int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
 			 int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
-extern float CP9Scan_dispatch(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff, 
+extern float CP9Scan_dispatch(CM_t *cm,ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff, 
 			      float cp9_cutoff, search_results_t *results, int doing_cp9_stats, int *ret_flen);
-extern float RescanFilterSurvivors(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, search_results_t *hmm_results, int i0, 
+extern float RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, search_results_t *hmm_results, int i0, 
 				   int j0, int W, int padmode, int ipad, int jpad, int do_collapse,
 				   float cm_cutoff, float cp9_cutoff, search_results_t *results, 
 				   int *ret_flen);
@@ -598,7 +598,7 @@ extern int ribosum_calc_targets(fullmat_t *fullmat);
 extern void  serial_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons);
 extern void  parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons,
 				       int mpi_my_rank, int mpi_master_rank, int mpi_num_procs) ;
-extern float  actually_search_target(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
+extern float  actually_search_target(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
 				     float cp9_cutoff, search_results_t *results, int do_filter, 
 				     int doing_cm_stats, int doing_cp9_stats, int *ret_flen, int do_align_hits);
 extern void serial_align_targets(ESL_SQFILE *seqfp, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, 

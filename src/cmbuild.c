@@ -290,7 +290,7 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   } else cfg->ofp = stdout;
 
   status = esl_msafile_Open(cfg->alifile, cfg->fmt, NULL, &(cfg->afp));
-  if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "Alignment file %s doesn't exist or is not readable\n", cfg->alifile);
+  if      (status == eslENOTFOUND) ESL_FAIL(status, errbuf, "Alignment file %s doesn't exist or is not readable\n", cfg->alifile);
   else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of alignment %s\n", cfg->alifile);
   else if (status != eslOK)      ESL_FAIL(status, errbuf, "Alignment file open failed with error %d\n", status);
   cfg->fmt = cfg->afp->format;

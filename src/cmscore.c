@@ -323,7 +323,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
   /* open CM file */
   if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
-    ESL_FAIL(eslFAIL, NULL, "Failed to open covariance model save file %s\n", cfg->cmfile);
+    ESL_FAIL(eslFAIL, errbuf, "Failed to open covariance model save file %s\n", cfg->cmfile);
 
   /* optionally, open the input sequence file */
   if(! esl_opt_IsDefault(go, "--infile")) { 
@@ -953,21 +953,11 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 static int
 initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
+  /* Some stuff we do no matter what stage we're on */
+
   /* set up params/flags/options of the CM */
   if(cfg->beta != NULL) cm->beta = cfg->beta[cfg->s];
   if(cfg->tau  != NULL) cm->tau  = cfg->tau[cfg->s];
-
-  cm->align_opts = 0;  /* clear alignment options from previous stage */
-  cm->config_opts = 0; /* clear configure options from previous stage */
-  /* Clear QDBs if they exist */
-  if(cm->flags & CMH_QDB)
-    {
-      free(cm->dmin);
-      free(cm->dmax);
-      cm->dmin = NULL;
-      cm->dmax = NULL;
-      cm->flags &= ~CMH_QDB;
-    }
 
   /* enable option to check parsetree score against the alignment score */
   cm->align_opts  |= CM_ALIGN_CHECKPARSESC;
@@ -986,25 +976,42 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
     }
   /*if(  esl_opt_GetBoolean(go, "-i"))         cm->align_opts  |= CM_ALIGN_TIME;*/
   if(! esl_opt_GetBoolean(go, "--iins"))     cm->config_opts |= CM_CONFIG_ZEROINSERTS;
+    
+  /* do stage 1 specific stuff */
+  if(cfg->s == 0) { /* set up stage 1 alignment we'll compare all other stages to */
+    /* only one option allows cmscore NOT to do standard CYK as first stage aln */
+    if(esl_opt_GetBoolean(go, "--qdbboth")) { 
+      cm->align_opts  |= CM_ALIGN_QDB;
+      cm->config_opts |= CM_CONFIG_QDB;
+    }
+    /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
+     * set local mode, make cp9 HMM, calculate QD bands etc. 
+     */
+    ConfigCM(cm, NULL, NULL);
+  }
+  else { /* cfg->s > 0, we're at least on stage 2, 
+	    don't call ConfigCM() again, only info that may change is QDBs, and align_opts */
+    /* Clear QDBs if they exist */
+    if(cm->flags & CMH_QDB) {
+      free(cm->dmin);
+      free(cm->dmax);
+      cm->dmin = NULL;
+      cm->dmax = NULL;
+      cm->flags &= ~CMH_QDB;
+    }
+    cm->align_opts  = 0;  /* clear alignment options from previous stage */
+    cm->config_opts = 0; /* clear configure options from previous stage */
 
-  if(cfg->s == 0) /* set up stage 1 alignment we'll compare all other stages to */
-    {
-      /* only one option allows cmscore NOT to do standard CYK as first stage aln */
-      if(esl_opt_GetBoolean(go, "--qdbboth")) { 
-	cm->align_opts  |= CM_ALIGN_QDB;
-	cm->config_opts |= CM_CONFIG_QDB;
-      }
-    }      
-  else { /* cfg->s > 0, we're at least on stage 2 */
     if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;
     if(esl_opt_GetBoolean(go, "--hmmonly"))     cm->align_opts  |= CM_ALIGN_HMMONLY;
     if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
     if(esl_opt_GetBoolean(go, "--scoreonly"))   cm->align_opts  |= CM_ALIGN_SCOREONLY;
-    if(esl_opt_GetBoolean(go, "--qdb") || esl_opt_GetBoolean(go, "--qdbsmall"))                    
-      { 
-	cm->align_opts  |= CM_ALIGN_QDB;
-	cm->config_opts |= CM_CONFIG_QDB;
-      }
+    if(esl_opt_GetBoolean(go, "--qdb") || esl_opt_GetBoolean(go, "--qdbsmall")) {                    
+      cm->align_opts  |= CM_ALIGN_QDB;
+      cm->config_opts |= CM_CONFIG_QDB;
+      /* calc QDBs for this stage */
+      ConfigQDB(cm);
+    }
     /* only 1 way stage 2+ alignment will be D&C, if --qdbsmall was enabled */
     if(! esl_opt_GetBoolean(go, "--qdbsmall"))
       cm->align_opts  |= CM_ALIGN_NOSMALL;
@@ -1026,11 +1033,6 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
       printf("Stage %2d alignment:\n", (cfg->s+1));
       summarize_align_options(cfg, cm);
     }
-  /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
-   * set local mode, make cp9 HMM, calculate QD bands etc. 
-   */
-  ConfigCM(cm, NULL, NULL);
-
   return eslOK;
 }
 

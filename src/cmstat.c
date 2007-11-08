@@ -115,7 +115,7 @@ main(int argc, char **argv)
   /* Initializations: open the CM file
    */
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
-    esl_fatal("Failed to open covariance model save file %s\n", cmfile);
+    cm_Fail("Failed to open covariance model save file %s\n", cmfile);
 
   /* Main body: read CMs one at a time, print one line of stats.
    */

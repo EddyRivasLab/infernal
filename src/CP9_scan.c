@@ -1497,7 +1497,6 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
  * 
  * Args:     
  *           cm         - the covariance model, includes cm->cp9: a CP9 HMM
- *           si         - ScanInfo_t for an eventual CYK/Inside scan with this CM
  *           dsq        - sequence in digitized form
  *           i0         - start of target subsequence (1 for beginning of dsq)
  *           j0         - end of target subsequence (L for end of dsq)
@@ -1512,7 +1511,7 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
  * Returns:  best_sc, score of maximally scoring end position j 
  */
 float
-CP9Scan_dispatch(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff, 
+CP9Scan_dispatch(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff, 
 		 float cp9_cutoff, search_results_t *results, int doing_cp9_stats,
 		 int *ret_flen)
 {
@@ -1618,7 +1617,7 @@ CP9Scan_dispatch(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, 
 	  assert(i0 == 1); 
 	  remove_overlapping_hits (bwd_results, i0, j0);
 	}
-      best_cm_sc = RescanFilterSurvivors(cm, si, dsq, bwd_results, i0, j0, W, 
+      best_cm_sc = RescanFilterSurvivors(cm, dsq, bwd_results, i0, j0, W, 
 					 padmode, ipad, jpad, 
 					 do_collapse, cm_cutoff, cp9_cutoff, 
 					 results, &flen);
@@ -1661,7 +1660,6 @@ CP9Scan_dispatch(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, 
  *
  * Args:     
  *           cm         - the covariance model, includes cm->cp9: a CP9 HMM
- *           si         - ScanInfo_t for CYK/Inside scan with this CM
  *           dsq        - sequence in digitized form
  *           hmm_results- info on HMM hits that survived filter
  *           i0         - start of target subsequence (1 for beginning of dsq)
@@ -1679,7 +1677,7 @@ CP9Scan_dispatch(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, 
  * Returns:  best_sc found when rescanning with CM 
  */
 float
-RescanFilterSurvivors(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, search_results_t *hmm_results, int i0, int j0,
+RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, search_results_t *hmm_results, int i0, int j0,
 		      int W, int padmode, int ipad, int jpad, int do_collapse,
 		      float cm_cutoff, float cp9_cutoff, search_results_t *results, int *ret_flen)
 {
@@ -1766,7 +1764,7 @@ RescanFilterSurvivors(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, search_results_t *
 	}
       /*printf("in RescanFilterSurvivors(): calling actually_search_target: %d %d h: %d nhits: %d\n", i, j, h, nhits);*/
       cm_sc =
-	actually_search_target(cm, si, dsq, i, j, cm_cutoff, cp9_cutoff,
+	actually_search_target(cm, dsq, i, j, cm_cutoff, cp9_cutoff,
 			       results, /* keep results                                 */
 			       FALSE,   /* don't filter, we already have                */
 			       FALSE,   /* we're not building a histogram for CM stats  */
@@ -2093,8 +2091,6 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   float          S_sc = 0.;
   float          Starget_sc = 0.;
 
-  ScanInfo_t *si;
-
 #if defined(USE_MPI)  && defined(NOTDEFINED)
   int            have_work;      /* MPI: do we still have work to send out?*/
   int            nproc_working;  /* MPI: number procs currently doing work */
@@ -2146,7 +2142,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   /*if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))*/
   ConfigForGumbelMode(cm_for_scoring, fthr_mode);
 
-  si = cm_CreateScanInfo(cm_for_scoring, TRUE, TRUE);
+  cm_CreateScanInfo(cm_for_scoring, TRUE, TRUE);
 
   /* Configure the HMM based on the hmm_gum_mode */
   if(hmm_gum_mode == CP9_L)
@@ -2248,7 +2244,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	      cm_for_scoring->tau = 0.01;
 	      //cm_for_scoring->tau = 0.001;
 	      
-	      hb_sc = actually_search_target(cm_for_scoring, si, sq->dsq, 1, L,
+	      hb_sc = actually_search_target(cm_for_scoring, sq->dsq, 1, L,
 					     0.,    /* cutoff is 0 bits (actually we'll find highest
 						     * negative score if it's < 0.0) */
 					     0.,    /* CP9 cutoff is 0 bits */
@@ -2271,7 +2267,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 		  s2_na++;
 		  cm_for_scoring->search_opts |= CM_SEARCH_HMMSCANBANDS;
 		  cm_for_scoring->tau = 1e-15;
-		  cm_sc = actually_search_target(cm_for_scoring, si, sq->dsq, 1, L,
+		  cm_sc = actually_search_target(cm_for_scoring, sq->dsq, 1, L,
 						 0.,    /* cutoff is 0 bits (actually we'll find highest
 							 * negative score if it's < 0.0) */
 						 0.,    /* CP9 cutoff is 0 bits */
@@ -2294,7 +2290,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 		      /* Stage 3 do QDB CYK */
 		      cm_for_scoring->search_opts &= ~CM_SEARCH_HBANDED;
 		      cm_for_scoring->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
-		      cm_sc = actually_search_target(cm_for_scoring, si, sq->dsq, 1, L,
+		      cm_sc = actually_search_target(cm_for_scoring, sq->dsq, 1, L,
 						     0.,    /* cutoff is 0 bits (actually we'll find highest
 							     * negative score if it's < 0.0) */
 						     0.,    /* CP9 cutoff is 0 bits */

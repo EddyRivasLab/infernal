@@ -82,7 +82,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   if(j0 < i0)     cm_Fail("ERROR in FastCYKScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL) cm_Fail("ERROR in FastCYKScan, dsq is NULL\n");
   if(cm->search_opts & CM_SEARCH_INSIDE) cm_Fail("ERROR in FastCYKScan, CM_SEARCH_INSIDE flag raised");
-  if(! cm->si->flags & cmSI_HAS_FLOAT) cm_Fail("ERROR in FastCYKScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
+  if(! (cm->si->flags & cmSI_HAS_FLOAT)) cm_Fail("ERROR in FastCYKScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
 
   /* determine if we're doing banded/non-banded */
   if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
@@ -610,7 +610,7 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   if(j0 < i0)     cm_Fail("ERROR in FastIInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL) cm_Fail("ERROR in FastIInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) cm_Fail("ERROR in FastIInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! si->flags & cmSI_HAS_INT) cm_Fail("ERROR in FastIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
+  if(! (si->flags & cmSI_HAS_INT)) cm_Fail("ERROR in FastIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
 
   /* determine if we're doing banded/non-banded */
   if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
@@ -1121,7 +1121,7 @@ RefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   if(j0 < i0)     cm_Fail("ERROR in RefIInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL) cm_Fail("ERROR in RefIInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) cm_Fail("ERROR in RefIInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! si->flags & cmSI_HAS_INT) cm_Fail("ERROR in RefIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
+  if(! (si->flags & cmSI_HAS_INT)) cm_Fail("ERROR in RefIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
 
   /* determine if we're doing banded/non-banded */
   if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
@@ -1377,7 +1377,7 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   if(j0 < i0)     cm_Fail("ERROR in FastFInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL) cm_Fail("ERROR in FastFInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) cm_Fail("ERROR in FastFInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! si->flags & cmSI_HAS_FLOAT) cm_Fail("ERROR in FastFInsideScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
+  if(! (cm->si->flags & cmSI_HAS_FLOAT)) cm_Fail("ERROR in FastFInsideScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
 
   /* determine if we're doing banded/non-banded */
   if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
@@ -1888,7 +1888,7 @@ RefCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   if(j0 < i0)     cm_Fail("ERROR in RefCYKScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL) cm_Fail("ERROR in RefCYKScan, dsq is NULL\n");
   if(cm->search_opts & CM_SEARCH_INSIDE) cm_Fail("ERROR in RefCYKScan, CM_SEARCH_INSIDE flag raised");
-  if(! si->flags & cmSI_HAS_FLOAT) cm_Fail("ERROR in RefCYKScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
+  if(! (cm->si->flags & cmSI_HAS_FLOAT)) cm_Fail("ERROR in RefCYKScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
 
   /* determine if we're doing banded/non-banded */
   if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
@@ -2167,7 +2167,7 @@ RefFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   if(j0 < i0)     cm_Fail("ERROR in RefFInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL) cm_Fail("ERROR in RefFInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) cm_Fail("ERROR in RefFInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! si->flags & cmSI_HAS_FLOAT) cm_Fail("ERROR in RefFInsideScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
+  if(! (cm->si->flags & cmSI_HAS_FLOAT)) cm_Fail("ERROR in RefFInsideScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
 
   /* determine if we're doing banded/non-banded */
   if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
