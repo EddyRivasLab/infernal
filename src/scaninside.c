@@ -284,7 +284,7 @@ InsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
 	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++)
 	    alpha[0][cur][d] = LogSum2(alpha[0][cur][d], (alpha[y+yoffset][cur][d] 
 							 + cm->tsc[0][yoffset]));
-	  if (cm->flags & CM_LOCAL_BEGIN) {
+	  if (cm->flags & CMH_LOCAL_BEGIN) {
 	    /* EPN 05.08.06 Left local the same as it was in CYKScan(), I think this 
 	     * is okay, we're saying that the best root of the alignment is the state that
 	     * gives the highest Inside score. 
@@ -445,7 +445,7 @@ InsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, i
     esl_fatal("in InsideBandedScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)
     esl_fatal("ERROR in InsideBandedScan, dsq is NULL.");
-  if(!(cm->flags & CM_QDB))
+  if(!(cm->flags & CMH_QDB))
     esl_fatal("in InsideBandedScan, QDBs invalid\n");
 
   /*printf("in InsideBandedScan i0: %d j0: %d\n", i0, j0);*/
@@ -713,7 +713,7 @@ InsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, i
        * gives the highest Inside score. 
        */
 
-      if (cm->flags & CM_LOCAL_BEGIN) {
+      if (cm->flags & CMH_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  d = (dmin[y] > dmin[0]) ? dmin[y]:dmin[0];
 	  /*if (dmin[y] > dmin[0]) d = dmin[y];
@@ -1243,7 +1243,7 @@ InsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, i
 	  if (alpha[0][cur][d] < IMPROBABLE) alpha[0][cur][d] = IMPOSSIBLE;
 	}
 
-      if (cm->flags & CM_LOCAL_BEGIN) {
+      if (cm->flags & CMH_LOCAL_BEGIN) {
 	/* (comment from scaninside.c::CYKScan()) 
 	 * EPN 05.08.06 Left local the same as it was in CYKScan(), I think this 
 	 * is okay, we're saying that the best root of the alignment is the state that
@@ -1626,7 +1626,7 @@ iInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
 	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++)
 	    alpha[0][cur][d] = ILogsum(alpha[0][cur][d], (alpha[y+yoffset][cur][d] 
 							  + cm->itsc[0][yoffset]));
-	  if (cm->flags & CM_LOCAL_BEGIN) {
+	  if (cm->flags & CMH_LOCAL_BEGIN) {
 	    /* EPN 05.08.06 Left local the same as it was in CYKScan(), I think this 
 	     * is okay, we're saying that the best root of the alignment is the state that
 	     * gives the highest Inside score. 
@@ -1787,7 +1787,7 @@ iInsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, 
   /* Contract check */
   if(j0 < i0)
     esl_fatal("in iInsideBandedScan, i0: %d j0: %d\n", i0, j0);
-  if(!(cm->flags & CM_QDB))
+  if(!(cm->flags & CMH_QDB))
     esl_fatal("in iInsideBandedScan, QDBs invalid\n");
   if(dsq == NULL)
     esl_fatal("ERROR in iInsideBandedScan, dsq is NULL.");
@@ -2058,7 +2058,7 @@ iInsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, 
        */
 
 
-      if (cm->flags & CM_LOCAL_BEGIN) {
+      if (cm->flags & CMH_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  d = (dmin[y] > dmin[0]) ? dmin[y]:dmin[0];
 	  /*if (dmin[y] > dmin[0]) d = dmin[y];

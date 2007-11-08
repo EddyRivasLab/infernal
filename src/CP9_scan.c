@@ -2007,7 +2007,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 {
 
   /* Contract checks */
-  if (!(cm->flags & CM_CP9) || cm->cp9 == NULL) 
+  if (!(cm->flags & CMH_CP9) || cm->cp9 == NULL) 
     esl_fatal("ERROR in FindCP9FilterThreshold() CP9 does not exist\n");
   if (Fmin < 0. || Fmin > 1.)  
     esl_fatal("ERROR in FindCP9FilterThreshold() Fmin is %f, should be [0.0..1.0]\n", Fmin);
@@ -2146,16 +2146,16 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   /*if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))*/
   ConfigForGumbelMode(cm_for_scoring, fthr_mode);
 
-  si = cm_CreateScanInfo(cm_for_scoring);
+  si = cm_CreateScanInfo(cm_for_scoring, TRUE, TRUE);
 
   /* Configure the HMM based on the hmm_gum_mode */
   if(hmm_gum_mode == CP9_L)
     {
       CPlan9SWConfig(cm_for_scoring->cp9, cm_for_scoring->pbegin, cm_for_scoring->pbegin);
-      if(! (cm_for_scoring->flags & CM_LOCAL_END))
+      if(! (cm_for_scoring->flags & CMH_LOCAL_END))
 	ConfigLocal(cm_for_scoring, cm_for_scoring->pbegin, cm_for_scoring->pend); 	/* need CM in local mode to calculate HMM EL probs, sloppy */
       CPlan9ELConfig(cm_for_scoring);
-      if(! (cm_for_scoring->flags & CM_LOCAL_END))
+      if(! (cm_for_scoring->flags & CMH_LOCAL_END))
 	ConfigGlobal(cm_for_scoring); 	/* return CM back to global mode, sloppy */
     }
   else /* hmm_gum_mode == CP9_G (it's in the contract) */

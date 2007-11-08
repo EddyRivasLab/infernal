@@ -112,7 +112,7 @@ int SetCMCutoff(CM_t *cm, int cm_cutoff_type, float cm_sc_cutoff, float cm_e_cut
       else 
 	{
 	  cm->cutoff = cm_e_cutoff;
-	  if(!(cm->flags & CM_GUMBEL_STATS) && (!(cm->search_opts & CM_SEARCH_HMMONLY)))
+	  if(!(cm->flags & CMH_GUMBEL_STATS) && (!(cm->search_opts & CM_SEARCH_HMMONLY)))
 	    esl_fatal("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T.\n");
 	}
     }
@@ -136,7 +136,7 @@ int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e
       else 
 	{
 
-	  if(!(cm->flags & CM_GUMBEL_STATS))
+	  if(!(cm->flags & CMH_GUMBEL_STATS))
 	    esl_fatal("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try --hmmT.\n");
 	  /*if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;
 	    if(cm->cutoff_type == E_CUTOFF && cp9_e_cutoff < cm_e_cutoff) cp9_e_cutoff = cm_e_cutoff;*/
@@ -185,7 +185,7 @@ int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N)
       if(cm->search_opts & CM_SEARCH_INSIDE) fprintf(fp, "Inside\n");
       else fprintf(fp, "CYK\n");
       printf ("CM configuration:     ");
-      if(cm->flags & CM_LOCAL_BEGIN) fprintf(fp, "Local\n");
+      if(cm->flags & CMH_LOCAL_BEGIN) fprintf(fp, "Local\n");
       else fprintf(fp, "Glocal\n");
     }
   else 
@@ -198,7 +198,7 @@ int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N)
     {
       if(cm->cp9_cutoff_type == E_CUTOFF)
 	{
-	  if(!(cm->flags & CM_GUMBEL_STATS))
+	  if(!(cm->flags & CMH_GUMBEL_STATS))
 	    esl_fatal("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
 
 	  /* Predict survival fraction from filter based on E-value, consensus length, W and N */
@@ -561,7 +561,7 @@ float MinCMScCutoff (CM_t *cm)
     return cm->cutoff;
   
   /* we better have stats */
-  if(!(cm->flags & CM_GUMBEL_STATS))
+  if(!(cm->flags & CMH_GUMBEL_STATS))
     esl_fatal("ERROR in MinCMScCutoff, cutoff type E value, but no stats.\n");
 
   /* Determine appropriate Gumbel mode */
@@ -601,7 +601,7 @@ float MinCP9ScCutoff (CM_t *cm)
     return cm->cp9_cutoff;
   
   /* we better have stats */
-  if(!(cm->flags & CM_GUMBEL_STATS))
+  if(!(cm->flags & CMH_GUMBEL_STATS))
     esl_fatal("ERROR in MinCP9ScCutoff, cutoff type E value, but no stats.\n");
 
   /* Determine appropriate Gumbel mode */
@@ -636,10 +636,10 @@ int CM2Gumbel_mode(CM_t *cm, int *ret_cm_gum_mode,
   int cp9_gum_mode;
 
   /* check contract */
-  if(!(cm->flags & CM_CP9) || cm->cp9 == NULL)
+  if(!(cm->flags & CMH_CP9) || cm->cp9 == NULL)
     esl_fatal("ERROR no CP9 in CM2Gumbel_mode()\n");
 
-  if(cm->flags & CM_LOCAL_BEGIN)
+  if(cm->flags & CMH_LOCAL_BEGIN)
     {
       if(cm->search_opts & CM_SEARCH_INSIDE)
 	cm_gum_mode = CM_LI;

@@ -30,10 +30,9 @@
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
  *           an optimized CYK scanning algorithm. Query-dependent 
- *           bands are used or not used as specified in ScanInfo_t <si>.
+ *           bands are used or not used as specified in ScanInfo_t <cm->si>.
  *
- * Args:     cm              - the covariance model
- *           si              - ScanInfo_t for this model (includes alpha DP matrix, qdbands etc.) 
+ * Args:     cm              - the covariance model, must have valid scaninfo (si)
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -50,7 +49,7 @@
  *           Dies immediately if some error occurs.
  */
 float 
-FastCYKScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 	    search_results_t *results, float **ret_vsc)
 {
   int       status;
@@ -75,11 +74,15 @@ FastCYKScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
+  ScanInfo_t *si = cm->si;      /* for convenience */
 
   /* Contract check */
+  if(! cm->flags & CMH_BITS)     cm_Fail("ERROR in FastCYKScan, CMH_BITS flag is not raised.\n");
+  if(! cm->flags & CMH_SCANINFO) cm_Fail("ERROR in FastCYKScan, cm->si is not valid.\n");
   if(j0 < i0)     cm_Fail("ERROR in FastCYKScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL) cm_Fail("ERROR in FastCYKScan, dsq is NULL\n");
   if(cm->search_opts & CM_SEARCH_INSIDE) cm_Fail("ERROR in FastCYKScan, CM_SEARCH_INSIDE flag raised");
+  if(! cm->si->flags & cmSI_HAS_FLOAT) cm_Fail("ERROR in FastCYKScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
 
   /* determine if we're doing banded/non-banded */
   if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
@@ -111,13 +114,13 @@ FastCYKScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float
   esl_vec_FSet(sc_v, (W+1), IMPOSSIBLE);
 
   /* make pointers to the ScanInfo data for convenience */
-  float ***alpha      = si->alpha;
-  float ***alpha_begl = si->alpha_begl;
+  float ***alpha      = si->falpha;
+  float ***alpha_begl = si->falpha_begl;
   int   **dnAA        = si->dnAA;
   int   **dxAA        = si->dxAA;
   int    *emitmodeA   = si->emitmodeA;
-  float  **esc_vAA    = si->esc_vAA;
-  float **init_scAA   = si->init_scAA;
+  float  **esc_vAA    = si->fesc_vAA;
+  float **init_scAA   = si->finit_scAA;
   int    *bestr       = si->bestr;
   int    *dmin        = si->dmin;
   int    *dmax        = si->dmax;
@@ -456,9 +459,10 @@ FastCYKScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float
 	      break;
 	    } /* end of switch (emitmodeA[v]) */
 	  } /* end of else (cm->sttype[v] != B_st && cm->stid[v] !=  BEGL_S st && cm->sttype[v] != IL_st && cm->sttype[v] != IR_st) */
-	  if(vsc != NULL) 
+	  if(vsc != NULL) {
 	    if(cm->stid[v] != BEGL_S) for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha[jp_v][v][d]);
 	    else                      for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha_begl[jp_v][v][d]);
+	  }
 	  /* if(cm->stid[v] != BEGL_S)
 	     for (d = dn; d <= dx; d++) { printf("alpha[j:%4d][v:%4d][d:%4d]: %.5f\n", j, v, d, alpha[jp_v][v][d]); }*/
 	} /*loop over decks v>0 */
@@ -484,7 +488,7 @@ FastCYKScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float
 	  alpha[jp_v][0][d] = ESL_MAX (alpha[jp_v][0][d], (alpha[cur][y+yoffset][d] + tsc_v[yoffset]));
       }
 	
-      if (cm->flags & CM_LOCAL_BEGIN) {
+      if (cm->flags & CMH_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  if(NOT_IMPOSSIBLE(cm->beginsc[y])) {
 	    if(cm->stid[y] == BEGL_S)
@@ -572,7 +576,7 @@ FastCYKScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float
  *           Dies immediately if some error occurs.
  */
 float 
-FastIInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 		search_results_t *results, float **ret_vsc)
 {
   int       status;
@@ -598,11 +602,15 @@ FastIInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, f
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
+  ScanInfo_t *si = cm->si;      /* for convenience */
 
   /* Contract check */
+  if(! cm->flags & CMH_BITS)     cm_Fail("ERROR in FastIInsideScan, CMH_BITS flag is not raised.\n");
+  if(! cm->flags & CMH_SCANINFO) cm_Fail("ERROR in FastIInsideScan, cm->si is not valid.\n");
   if(j0 < i0)     cm_Fail("ERROR in FastIInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL) cm_Fail("ERROR in FastIInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) cm_Fail("ERROR in FastIInsideScan, CM_SEARCH_INSIDE flag not raised");
+  if(! si->flags & cmSI_HAS_INT) cm_Fail("ERROR in FastIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
 
   /* determine if we're doing banded/non-banded */
   if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
@@ -978,9 +986,10 @@ FastIInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, f
 	      break;
 	    } /* end of switch (emitmodeA[v]) */
 	  } /* end of else (cm->sttype[v] != B_st && cm->stid[v] !=  BEGL_S st && cm->sttype[v] != IL_st && cm->sttype[v] != IR_st) */
-	  if(vsc != NULL) 
+	  if(vsc != NULL) {
 	    if(cm->stid[v] != BEGL_S) for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], Scorify(alpha[jp_v][v][d]));
 	    else                      for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], Scorify(alpha_begl[jp_v][v][d]));
+	  }
 	  /* if(cm->stid[v] != BEGL_S)
 	     for (d = dn; d <= dx; d++) { printf("alpha[j:%4d][v:%4d][d:%4d]: %.5f\n", j, v, d, alpha[jp_v][v][d]); }*/
 	} /*loop over decks v>0 */
@@ -1005,7 +1014,7 @@ FastIInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, f
 	  alpha[jp_v][0][d] = ILogsum (alpha[jp_v][0][d], (alpha[cur][y+yoffset][d] + tsc_v[yoffset]));
       }
 	
-      if (cm->flags & CM_LOCAL_BEGIN) {
+      if (cm->flags & CMH_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  if(cm->ibeginsc[y] != -INFTY) {
 	    if(cm->stid[y] == BEGL_S) {
@@ -1078,7 +1087,7 @@ FastIInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, f
  *           Dies immediately if some error occurs.
  */
 float 
-RefIInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+RefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 	       search_results_t *results, float **ret_vsc)
 {
   int       status;
@@ -1104,11 +1113,15 @@ RefIInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, fl
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
+  ScanInfo_t *si = cm->si;      /* for convenience */
 
   /* Contract check */
-  if(j0 < i0)     cm_Fail("ERROR in FastIInsideScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL) cm_Fail("ERROR in FastIInsideScan, dsq is NULL\n");
-  if(! (cm->search_opts & CM_SEARCH_INSIDE)) cm_Fail("ERROR in FastIInsideScan, CM_SEARCH_INSIDE flag not raised");
+  if(! cm->flags & CMH_BITS)     cm_Fail("ERROR in RefIInsideScan, CMH_BITS flag is not raised.\n");
+  if(! cm->flags & CMH_SCANINFO) cm_Fail("ERROR in RefIInsideScan, cm->si is not valid.\n");
+  if(j0 < i0)     cm_Fail("ERROR in RefIInsideScan, i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL) cm_Fail("ERROR in RefIInsideScan, dsq is NULL\n");
+  if(! (cm->search_opts & CM_SEARCH_INSIDE)) cm_Fail("ERROR in RefIInsideScan, CM_SEARCH_INSIDE flag not raised");
+  if(! si->flags & cmSI_HAS_INT) cm_Fail("ERROR in RefIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
 
   /* determine if we're doing banded/non-banded */
   if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
@@ -1235,9 +1248,10 @@ RefIInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, fl
 	      } /* end of switch emitmodeA[v] */
 	    } /* end of for d loop */
 	  } /* end of else (which was entered if ! B_st && ! BEGL_S st) */
-	  if(vsc != NULL) 
+	  if(vsc != NULL) {
 	    if(cm->stid[v] != BEGL_S) for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], Scorify(alpha[jp_v][v][d]));
 	    else                      for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], Scorify(alpha_begl[jp_v][v][d]));
+	  }
 	} /*loop over decks v>0 */
 
       /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
@@ -1260,7 +1274,7 @@ RefIInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, fl
 	  alpha[jp_v][0][d] = ILogsum (alpha[jp_v][0][d], (alpha[cur][y+yoffset][d] + tsc_v[yoffset]));
       }
 	
-      if (cm->flags & CM_LOCAL_BEGIN) {
+      if (cm->flags & CMH_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  if(cm->ibeginsc[y] != -INFTY) {
 	    if(cm->stid[y] == BEGL_S) {
@@ -1313,7 +1327,6 @@ RefIInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, fl
  *           ScanInfo_t <si>.
  *
  * Args:     cm              - the covariance model
- *           si              - ScanInfo_t for this model (includes alpha DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -1330,7 +1343,7 @@ RefIInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, fl
  *           Dies immediately if some error occurs.
  */
 float 
-FastFInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 		search_results_t *results, float **ret_vsc)
 {
   int       status;
@@ -1356,11 +1369,15 @@ FastFInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, f
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
+  ScanInfo_t *si = cm->si;      /* for convenience */
 
   /* Contract check */
+  if(! cm->flags & CMH_BITS)     cm_Fail("ERROR in FastFInsideScan, CMH_BITS flag is not raised.\n");
+  if(! cm->flags & CMH_SCANINFO) cm_Fail("ERROR in FastFInsideScan, cm->si is not valid.\n");
   if(j0 < i0)     cm_Fail("ERROR in FastFInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL) cm_Fail("ERROR in FastFInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) cm_Fail("ERROR in FastFInsideScan, CM_SEARCH_INSIDE flag not raised");
+  if(! si->flags & cmSI_HAS_FLOAT) cm_Fail("ERROR in FastFInsideScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
 
   /* determine if we're doing banded/non-banded */
   if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
@@ -1392,13 +1409,13 @@ FastFInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, f
   esl_vec_FSet(sc_v, (W+1), IMPOSSIBLE);
 
   /* make pointers to the ScanInfo data for convenience */
-  float ***alpha      = si->alpha;
-  float ***alpha_begl = si->alpha_begl;
+  float ***alpha      = si->falpha;
+  float ***alpha_begl = si->falpha_begl;
   int   **dnAA        = si->dnAA;
   int   **dxAA        = si->dxAA;
   int    *emitmodeA   = si->emitmodeA;
-  float  **esc_vAA    = si->esc_vAA;
-  float **init_scAA   = si->init_scAA;
+  float  **esc_vAA    = si->fesc_vAA;
+  float **init_scAA   = si->finit_scAA;
   int    *dmin        = si->dmin;
   int    *dmax        = si->dmax;
 
@@ -1736,9 +1753,10 @@ FastFInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, f
 	      break;
 	    } /* end of switch (emitmodeA[v]) */
 	  } /* end of else (cm->sttype[v] != B_st && cm->stid[v] !=  BEGL_S st && cm->sttype[v] != IL_st && cm->sttype[v] != IR_st) */
-	  if(vsc != NULL) 
+	  if(vsc != NULL) {
 	    if(cm->stid[v] != BEGL_S) for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha[jp_v][v][d]);
 	    else                      for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha_begl[jp_v][v][d]);
+	  }
 	  /* if(cm->stid[v] != BEGL_S)
 	     for (d = dn; d <= dx; d++) { printf("alpha[j:%4d][v:%4d][d:%4d]: %.5f\n", j, v, d, alpha[jp_v][v][d]); }*/
 	} /*loop over decks v>0 */
@@ -1763,7 +1781,7 @@ FastFInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, f
 	  alpha[jp_v][0][d] = FLogsum (alpha[jp_v][0][d], (alpha[cur][y+yoffset][d] + tsc_v[yoffset]));
       }
 	
-      if (cm->flags & CM_LOCAL_BEGIN) {
+      if (cm->flags & CMH_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  if(NOT_IMPOSSIBLE(cm->beginsc[y])) {
 	    if(cm->stid[y] == BEGL_S) {
@@ -1836,7 +1854,7 @@ FastFInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, f
  *           Dies immediately if some error occurs.
  */
 float 
-RefCYKScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+RefCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 	   search_results_t *results, float **ret_vsc)
 {
   int       status;
@@ -1862,11 +1880,15 @@ RefCYKScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float 
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
+  ScanInfo_t *si = cm->si;      /* for convenience */
 
   /* Contract check */
+  if(! cm->flags & CMH_BITS)     cm_Fail("ERROR in RefCYKScan, CMH_BITS flag is not raised.\n");
+  if(! cm->flags & CMH_SCANINFO) cm_Fail("ERROR in RefCYKScan, cm->si is not valid.\n");
   if(j0 < i0)     cm_Fail("ERROR in RefCYKScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL) cm_Fail("ERROR in RefCYKScan, dsq is NULL\n");
   if(cm->search_opts & CM_SEARCH_INSIDE) cm_Fail("ERROR in RefCYKScan, CM_SEARCH_INSIDE flag raised");
+  if(! si->flags & cmSI_HAS_FLOAT) cm_Fail("ERROR in RefCYKScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
 
   /* determine if we're doing banded/non-banded */
   if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
@@ -1898,13 +1920,13 @@ RefCYKScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float 
   esl_vec_FSet(sc_v, (W+1), IMPOSSIBLE);
 
   /* make pointers to the ScanInfo data for convenience */
-  float ***alpha      = si->alpha;
-  float ***alpha_begl = si->alpha_begl;
+  float ***alpha      = si->falpha;
+  float ***alpha_begl = si->falpha_begl;
   int   **dnAA        = si->dnAA;
   int   **dxAA        = si->dxAA;
   int    *emitmodeA   = si->emitmodeA;
-  float  **esc_vAA    = si->esc_vAA;
-  float **init_scAA   = si->init_scAA;
+  float  **esc_vAA    = si->fesc_vAA;
+  float **init_scAA   = si->finit_scAA;
   int    *bestr       = si->bestr;
   int    *dmin        = si->dmin;
   int    *dmax        = si->dmax;
@@ -1994,9 +2016,10 @@ RefCYKScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float 
 	      } /* end of switch emitmodeA[v] */
 	    } /* end of for d loop */
 	  } /* end of else (which was entered if ! B_st && ! BEGL_S st) */
-	  if(vsc != NULL) 
+	  if(vsc != NULL) {
 	    if(cm->stid[v] != BEGL_S) for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha[jp_v][v][d]);
 	    else                      for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha_begl[jp_v][v][d]);
+	  }
 	} /*loop over decks v>0 */
       
       /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
@@ -2020,7 +2043,7 @@ RefCYKScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float 
 	  alpha[jp_v][0][d] = ESL_MAX (alpha[jp_v][0][d], (alpha[cur][y+yoffset][d] + tsc_v[yoffset]));
       }
 	
-      if (cm->flags & CM_LOCAL_BEGIN) {
+      if (cm->flags & CMH_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  if(NOT_IMPOSSIBLE(cm->beginsc[y])) {
 	    if(cm->stid[y] == BEGL_S)
@@ -2109,7 +2132,7 @@ RefCYKScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float 
  *           Dies immediately if some error occurs.
  */
 float 
-RefFInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+RefFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 	       search_results_t *results, float **ret_vsc)
 {
   int       status;
@@ -2136,11 +2159,15 @@ RefFInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, fl
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
+  ScanInfo_t *si = cm->si;      /* for convenience */
 
   /* Contract check */
+  if(! cm->flags & CMH_BITS)     cm_Fail("ERROR in RefFInsideScan, CMH_BITS flag is not raised.\n");
+  if(! cm->flags & CMH_SCANINFO) cm_Fail("ERROR in RefFInsideScan, cm->si is not valid.\n");
   if(j0 < i0)     cm_Fail("ERROR in RefFInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL) cm_Fail("ERROR in RefFInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) cm_Fail("ERROR in RefFInsideScan, CM_SEARCH_INSIDE flag not raised");
+  if(! si->flags & cmSI_HAS_FLOAT) cm_Fail("ERROR in RefFInsideScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
 
   /* determine if we're doing banded/non-banded */
   if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
@@ -2172,14 +2199,13 @@ RefFInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, fl
   esl_vec_FSet(sc_v, (W+1), IMPOSSIBLE);
 
   /* make pointers to the ScanInfo data for convenience */
-  float ***alpha      = si->alpha;
-  float ***alpha_begl = si->alpha_begl;
+  float ***alpha      = si->falpha;
+  float ***alpha_begl = si->falpha_begl;
   int   **dnAA        = si->dnAA;
   int   **dxAA        = si->dxAA;
   int    *emitmodeA   = si->emitmodeA;
-  float  **esc_vAA    = si->esc_vAA;
-  float **init_scAA   = si->init_scAA;
-  float  *el_scA      = si->el_scA;
+  float  **esc_vAA    = si->fesc_vAA;
+  float **init_scAA   = si->finit_scAA;
   int    *dmin        = si->dmin;
   int    *dmax        = si->dmax;
 
@@ -2268,9 +2294,10 @@ RefFInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, fl
 	      } /* end of switch emitmodeA[v] */
 	    } /* end of for d loop */
 	  } /* end of else (which was entered if ! B_st && ! BEGL_S st) */
-	  if(vsc != NULL) 
+	  if(vsc != NULL) {
 	    if(cm->stid[v] != BEGL_S) for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha[jp_v][v][d]);
 	    else                      for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha_begl[jp_v][v][d]);
+	  }
 	} /*loop over decks v>0 */
       
       /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
@@ -2293,7 +2320,7 @@ RefFInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, fl
 	  alpha[jp_v][0][d] = FLogsum (alpha[jp_v][0][d], (alpha[cur][y+yoffset][d] + tsc_v[yoffset]));
       }
 	
-      if (cm->flags & CM_LOCAL_BEGIN) {
+      if (cm->flags & CMH_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  if(NOT_IMPOSSIBLE(cm->beginsc[y])) {
 	    if(cm->stid[y] == BEGL_S) {
@@ -2330,800 +2357,6 @@ RefFInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, fl
   if (ret_vsc != NULL) *ret_vsc         = vsc;
   
   ESL_DPRINTF1(("RefFInsideScan() return score: %10.4f\n", vsc_root)); 
-  return vsc_root;
-  
- ERROR:
-  cm_Fail("Memory allocation error.\n");
-  return 0.; /* NEVERREACHED */
-}
-
-
-/* Function: XFastCYKScan()
- * Date:     EPN, Sat Oct 20 07:48:05 2007
- *
- * Purpose:  Scan a sequence for matches to a covariance model, using the
- *           banded algorithm. If bands are NULL, reverts to non-banded
- *           (scancyk.c:CYKScan()). 
- *
- * Args:     cm              - the covariance model
- *           dsq             - the digitized sequence
- *           dmin            - minimum bound on d for state v; 0..M
- *           dmax            - maximum bound on d for state v; 0..M          
- *           i0              - start of target subsequence (1 for full seq)
- *           j0              - end of target subsequence (L for full seq)
- *           W               - max d: max size of a hit
- *           cutoff          - minimum score to report
- *           results         - search_results_t to add to; if NULL, don't add to it
- *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
- *           ret_best_hit_sc - RETURN score of best hit (reported to results) NULL if not-wanted
- *
- * Returns:  Score of best overall hit (vsc[0]). Information on hits added to <results>.
- *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
- *           Dies immediately if some error occurs.
- */
-float 
-XFastCYKScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, 
-	    search_results_t *results, float **ret_vsc, float *ret_best_hit_sc)
-{
-  int       status;
-  float  ***alpha;              /* CYK DP score matrix, [j][v][d] */
-  float  ***alpha_begl; 
-  float    *vsc;                /* best score for each state (float) */
-  float     vsc_root;           /* best overall score (score at ROOT_S) */
-  int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
-  float    *gamma;              /* SHMM DP matrix for optimum nonoverlap resolution */
-  int      *gback;              /* traceback pointers for SHMM */ 
-  float    *savesc;             /* saves score of hit added to best parse at j */
-  int      *saver;		/* saves initial non-ROOT state of best parse ended at j */
-  int       yoffset;		/* offset to a child state */
-  int       i,j;		/* index of start/end positions in sequence, 0..L */
-  int       d;			/* a subsequence length, 0..W */
-  int       k;			/* used in bifurc calculations: length of right subseq */
-  int       prv, cur;		/* previous, current j row (0 or 1) */
-  int       v, w, y;            /* state indices */
-  int       jp_v;  	        /* offset j for state v */
-  int       jp_y;  	        /* offset j for state y */
-  int       jp_g;               /* offset j for gamma (j-i0+1) */
-  int       ip_g;               /* offset i for gamma (i-i0+1) */
-  int       dp_y;               /* offset d for state y */
-  int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
-  int       L;                  /* length of the subsequence (j0-i0+1) */
-  int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
-  int       bestd;              /* d value of best hit thus far seen for j (used if greedy strategy) */
-  float     best_hit_sc;        /* best hit score found */
-  int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
-  int     **dnAA, **dxAA;       /* [1..j..W][0..v..M-1] min,max d value allowed for posn j, state v */
-  int      *dnA,   *dxA;        /* tmp ptr to 1 row of dnAA, dxAA */
-
-  int cnum;
-  int dn;
-  int dx;
-  float *el_scA;
-  int *jp_wA;
-  float **init_scAA;
-  int  ctr = 0;
-  /*int yidx;*/
-  /*float const *tsc = cm->tsc[0]; */
-
-  /* Contract check */
-  if(j0 < i0)     cm_Fail("ERROR in XFastCYKScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL) cm_Fail("ERROR in XFastCYKScan, dsq is NULL\n");
-  if(cm->search_opts & CM_SEARCH_INSIDE) cm_Fail("ERROR in XFastCYKScan, CM_SEARCH_INSIDE flag raised");
-
-  /* determine if we're doing banded/non-banded */
-  if(dmin != NULL && dmax != NULL) do_banded = TRUE;
-
-  L = j0-i0+1;
-  if (W > L) W = L; 
-
-  vsc = NULL;
-  if(ret_vsc != NULL) { 
-    ESL_ALLOC(vsc, sizeof(float) * cm->M);
-    esl_vec_FSet(vsc, cm->M, IMPOSSIBLE);
-  }
-  best_hit_sc = IMPOSSIBLE;
-  vsc_root    = IMPOSSIBLE;
-
-  /*
-   * alpha and alpha_begl allocations.
-   * The alpha matrix holds data for all states EXCEPT BEGL_S states
-   * The alpha scanning matrix is indexed [j][v][d]. 
-   *    j takes values 0 or 1: only the previous (prv) or current (cur) row
-   *    v ranges from 0..M-1 over states in the model.
-   *    d ranges from 0..W over subsequence lengths.
-   * Note if v is a BEGL_S alpha[j][v] == NULL
-   * Note that old convention of sharing E memory is no longer,
-   * each E state has it's own deck.
-   *
-   * alpha_begl matrix holds data for ONLY BEGL_S states
-   *    j takes value of 0..W
-   *    v ranges from 0..M-1 over states in the model
-   *    d ranges from 0..W over subsequence lengths.
-   * Note if v is NOT a BEGL_S alpha[j][v] == NULL
-   */
-
-  /* allocate alpha */
-  ESL_ALLOC(alpha, (sizeof(float **) * 2));
-  ESL_ALLOC(alpha[0], sizeof(float *) * cm->M);
-  ESL_ALLOC(alpha[1], sizeof(float *) * cm->M);
-  ESL_ALLOC(alpha[0][0], (sizeof(float) * 2 * (cm->M) * (W+1)));
-  for (v = cm->M-1; v >= 0; v--) {	
-    if (cm->stid[v] != BEGL_S) {
-      alpha[0][v] = alpha[0][0] + (v           * (W+1));
-      alpha[1][v] = alpha[0][0] + ((v + cm->M) * (W+1));
-    }
-    else { /* BEGL_S, this is wasteful */
-      alpha[0][v] = NULL;
-      alpha[1][v] = NULL;
-    }
-  }
-  /* float const *alphap = alpha[0][0]; */
-
-  /* allocate alpha_begl */
-  ESL_ALLOC(alpha_begl, (sizeof(float **) * (W+1)));
-  for (j = 0; j <= W; j++) {
-    ESL_ALLOC(alpha_begl[j], (sizeof(float *) * (cm->M)));
-    for (v = cm->M-1; v >= 0; v--) {	
-      if (cm->stid[v] == BEGL_S) {
-	ESL_ALLOC(alpha_begl[j][v], (sizeof(float) * (W+1)));
-      }
-      else /* non-BEGL */
-	alpha_begl[j][v] = NULL;
-    }
-  }
-  ESL_ALLOC(bestr, (sizeof(int) * (W+1)));
-
-  /*
-   * alpha initializations.
-   * We initialize on d=0, subsequences of length 0; these are
-   * j-independent. Any generating state (P,L,R) is impossible on d=0.
-   * E=0 for d=0. B,S,D must be calculated. 
-   * Also, for MP, d=1 is impossible.
-   * Also, for E, all d>0 are impossible.
-   *
-   * and, for banding: any cell outside our bands is impossible.
-   * These inits are never changed in the recursion, so even with the
-   * rolling, matrix face reuse strategy, this works.
-   */
-  /* initialize alpha and alpha_begl */
-  for(v = cm->M-1; v >= 0; v--) 
-    {
-      if(cm->stid[v] != BEGL_S) 
-	{
-	  alpha[0][v][0] = IMPOSSIBLE;
-	  if      (cm->sttype[v] == E_st)  { 
-	    alpha[0][v][0] = alpha[1][v][0] = 0.;
-	    /* rest of E deck is IMPOSSIBLE, this rewritten if QDB is on, (slightly wasteful). */
-	    for (d = 1; d <= W; d++) alpha[0][v][d] = alpha[1][v][d] = IMPOSSIBLE;
-	  }
-	  else if (cm->sttype[v] == MP_st) alpha[0][v][1] = alpha[1][v][1] = IMPOSSIBLE;
-	  else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) 
-	    {
-	      y = cm->cfirst[v];
-	      alpha[0][v][0] = cm->endsc[v];
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		alpha[0][v][0] = ESL_MAX(alpha[0][v][0], (alpha[0][y+yoffset][0] + cm->tsc[v][yoffset]));
-	      alpha[0][v][0] = ESL_MAX(alpha[0][v][0], IMPOSSIBLE);
-	    }
-	  else if (cm->sttype[v] == B_st) 
-	    {
-	      w = cm->cfirst[v]; /* BEGL_S, left child state */
-	      y = cm->cnum[v];
-	      alpha[0][v][0] = alpha_begl[0][w][0] + alpha[0][y][0]; 
-	    }
-
-	  alpha[1][v][0] = alpha[0][v][0];
-	}
-      else /* v == BEGL_S */
-	{
-	  y = cm->cfirst[v];
-	  alpha_begl[0][v][0] = cm->endsc[v];
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	    alpha_begl[0][v][0] = ESL_MAX(alpha_begl[0][v][0], (alpha[0][y+yoffset][0] + cm->tsc[v][yoffset])); /* careful: y is in alpha */
-	  alpha_begl[0][v][0] = ESL_MAX(alpha_begl[0][v][0], IMPOSSIBLE);
-	  for (j = 1; j <= W; j++) 
-	    alpha_begl[j][v][0] = alpha_begl[0][v][0];
-	}
-    }
-      bestr[0] = -1;
-
-  /*
-   * gamma allocation and initialization.
-   * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits.
-   */
-  if(results != NULL) { 
-    ESL_ALLOC(gamma,  sizeof(float) * (L+1));
-    gamma[0] = 0;
-    ESL_ALLOC(gback,  sizeof(int)   * (L+1));
-    gback[0] = -1;
-    ESL_ALLOC(savesc, sizeof(float) * (L+1));
-    ESL_ALLOC(saver,  sizeof(int)   * (L+1));
-  }
-  /*
-   * query-dependent band imposition.
-   *   (note: E states have all their probability on d=0, so dmin[E] = dmax[E] = 0;
-   *    the first loop will be skipped, the second initializes the E states.)
-   */
-  if(do_banded) { 
-    for (v = 0; v < cm->M; v++) {
-      if(cm->stid[v] != BEGL_S) {
-	for (d = 0; d < dmin[v] && d <=W; d++) 
-	  for(j = 0; j < 2; j++)
-	    alpha[j][v][d] = IMPOSSIBLE;
-	for (d = dmax[v]+1; d <= W;      d++) 
-	  for(j = 0; j < 2; j++)
-	    alpha[j][v][d] = IMPOSSIBLE;
-      }
-      else
-	{
-	  for (d = 0; d < dmin[v] && d <=W; d++) 
-	    for(j = 0; j <= W; j++)
-	      alpha_begl[j][v][d] = IMPOSSIBLE;
-	  for (d = dmax[v]+1; d <= W;      d++) 
-	    for(j = 0; j <= W; j++)
-	      alpha_begl[j][v][d] = IMPOSSIBLE;
-	}
-    }
-  }
-
-  /* precalculate minimum and maximum d for each state and each sequence index (1..j..W). 
-   * this is not always just dmin, dmax, (for ex. if j < W).
-   */
-  ESL_ALLOC(dnAA, sizeof(int *) * (W+1));
-  ESL_ALLOC(dxAA, sizeof(int *) * (W+1));
-  
-  dnAA[0] = dxAA[0] = NULL; /* corresponds to j == 0, which is out of bounds */
-  for(j = 1; j <= W; j++) {
-    ESL_ALLOC(dnAA[j], sizeof(int) * cm->M);
-    ESL_ALLOC(dxAA[j], sizeof(int) * cm->M);
-
-    for(v = 0; v < cm->M; v++) {
-      if(do_banded) { 
-	dnAA[j][v] = (cm->sttype[v] == MP_st) ? ESL_MAX(dmin[v], 2) : ESL_MAX(dmin[v], 1); 
-	dxAA[j][v] = ESL_MIN(j, dmax[v]); 
-	dxAA[j][v] = ESL_MIN(dxAA[j][v], W);
-      }
-      else { 
-	dnAA[j][v] = (cm->sttype[v] == MP_st) ? 2 : 1;
-	dxAA[j][v] = ESL_MIN(j, W); 
-      }
-    }
-  }
-
-  /* precalculate possible emission scores for each state */
-  float **esc_vAA;
-  int a,b;
-  ESL_ALLOC(esc_vAA, sizeof(float *) * (cm->M));
-  for(v = 0; v < cm->M; v++) {
-    switch(cm->sttype[v]) {
-    case IL_st:
-    case ML_st:
-    case IR_st:
-    case MR_st:
-      ESL_ALLOC(esc_vAA[v], sizeof(float) * cm->abc->Kp);
-      /* ALLOCATE SIZE = POWER OF 2? */
-      esl_vec_FSet(esc_vAA[v], cm->abc->Kp, IMPOSSIBLE);
-      for(a = 0; a < cm->abc->K; a++)
-	esc_vAA[v][a] = cm->esc[v][a];
-      for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++)
-	esc_vAA[v][a] = esl_abc_FAvgScore(cm->abc, a, cm->esc[v]);
-      break;
-    case MP_st:
-      ESL_ALLOC(esc_vAA[v], sizeof(float) * (cm->abc->Kp * cm->abc->Kp));
-      /* ALLOCATE SIZE = POWER OF 2? */
-      esl_vec_FSet(esc_vAA[v], (cm->abc->Kp * cm->abc->Kp), IMPOSSIBLE);
-      for(a = 0; a < (cm->abc->Kp-1); a++)
-	for(b = 0; b < (cm->abc->Kp-1); b++)
-	  if(a < cm->abc->K && b < cm->abc->K)
-	    esc_vAA[v][a * cm->abc->Kp + b] = cm->esc[v][(a * cm->abc->K) + b];
-	  else
-	    esc_vAA[v][a * cm->abc->Kp + b] = DegeneratePairScore(cm->abc, cm->esc[v], a, b);
-      break;
-    default:
-      esc_vAA[v] = NULL;
-      break;
-    }
-  }
-
-  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
-  ESL_ALLOC(el_scA, sizeof(float) * (W+1));
-  for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
-
-  /* precalculate the initial score for all alpha[v][j][d] cells, it's independent
-   * of j, so we do it here, outside the for(j...) loop */
-  ESL_ALLOC(init_scAA, sizeof(float *) * (cm->M));
-  for (v = 0; v < cm->M; v++) 
-    {
-      ESL_ALLOC(init_scAA[v], sizeof(float) * (W+1));
-      if(NOT_IMPOSSIBLE(cm->endsc[v]))
-	for(d = 0; d <= W; d++)
-	  init_scAA[v][d] = el_scA[d] + cm->endsc[v];
-      else
-	for(d = 0; d <= W; d++)
-	  init_scAA[v][d] = IMPOSSIBLE;
-    }
-
-  /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
-  ESL_ALLOC(jp_wA, sizeof(float) * (W+1));
-
-  /* Precalculate the 'emit mode' of each state to speed up the addition of emission 
-   * scores, all states are either EMITLEFT, EMITRIGHT, EMITPAIR, or EMITNONE, this
-   * collapses ILs and MLs into 1 value (for example) for the switch() statement inside the for(d...) loop
-   * in the heart of the recursion which saves us time.
-   */
-  int *emitmodeA;
-  ESL_ALLOC(emitmodeA, sizeof(int) * cm->M);
-  for(v = 0; v < cm->M; v++) {
-    switch (cm->sttype[v]) {
-    case IL_st:
-    case ML_st:
-      emitmodeA[v] = EMITLEFT;
-      break;
-    case IR_st:
-    case MR_st:
-      emitmodeA[v] = EMITRIGHT;
-      break;		
-    case MP_st:
-      emitmodeA[v] = EMITPAIR;
-      break;		
-    default:
-      emitmodeA[v] = EMITNONE;
-      break;
-    }
-  }
-  /* Initialize sc_v to size of M */
-  float *sc_v;
-  ESL_ALLOC(sc_v, (sizeof(float) * (W+1)));
-  esl_vec_FSet(sc_v, (W+1), IMPOSSIBLE);
-  /* The main loop: scan the sequence from position i0 to j0.
-   */
-  for (j = i0; j <= j0; j++) 
-    {
-      float sc;
-      float tsc;
-      jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
-      cur  = j%2;
-      prv  = (j-1)%2;
-      if(jp_g >= W) { dnA = dnAA[W];     dxA = dxAA[W];    }
-      else {          dnA = dnAA[jp_g];  dxA = dxAA[jp_g]; }
-      /* precalcuate all possible rolling ptrs into the BEGL deck, so we don't wastefully recalc them inside inner DP loop */
-      for(d = 0; d <= W; d++) jp_wA[d] = (j-d)%(W+1);
-
-      for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
-	{
-	  /* printf("dnA[v:%d]: %d\ndxA[v:%d]: %d\n", v, dnA[v], v, dxA[v]); */
-	  if(cm->sttype[v] == E_st) continue;
-	  /* float const *esc_v = cm->esc[v]; */
-	  float const *esc_v = esc_vAA[v]; 
-	  float const *tsc_v = cm->tsc[v];
-	  //float sc;
-	  jp_v = (cm->stid[v] == BEGL_S) ? (j % (W+1)) : cur;
-	  jp_y = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
-	  sd   = StateDelta(cm->sttype[v]);
-	  cnum = cm->cnum[v];
-	  dn   = dnA[v];
-	  dx   = dxA[v];
-	  /* if we emit right, precalc score of emitting res j from state v */
-	  float esc_j = IMPOSSIBLE;
-	  if(cm->sttype[v] == IR_st || cm->sttype[v] == MR_st)
-	    esc_j = esc_v[dsq[j]];
-
-	  if(cm->sttype[v] == B_st) { 
-	    w = cm->cfirst[v]; /* BEGL_S */
-	    y = cm->cnum[v];   /* BEGR_S */
-	    for (d = dnA[v]; d <= dxA[v]; d++) {
-	      /* k is the length of the right fragment */
-	      /* Careful, make sure k is consistent with bands in state w and state y. */
-	      if(do_banded) {
-		kmin = ESL_MAX(dmin[y], (d-dmax[w]));
-		kmin = ESL_MAX(kmin, 0);
-		kmax = ESL_MIN(dmax[y], (d-dmin[w]));
-	      }
-	      else { kmin = 0; kmax = d; }
-
-	      sc = init_scAA[v][d]; /* state delta is 0 for B_st */
-	      for (k = kmin; k <= kmax; k++) 
-		sc = ESL_MAX(sc, (alpha_begl[jp_wA[k]][w][d-k] + alpha[jp_y][y][k]));
-	      alpha[jp_v][v][d] = sc;
-	      /* careful: scores for w, the BEGL_S child of v, are in alpha_begl, not alpha */
-	    }
-	  }
-	  else if (cm->stid[v] == BEGL_S) {
-	    y = cm->cfirst[v]; 
-	    for (d = dnA[v]; d <= dxA[v]; d++) {
-	      sc = init_scAA[v][d]; /* state delta is 0 for BEGL_S st */
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		sc = ESL_MAX (sc, alpha[jp_y][y+yoffset][d - sd] + cm->tsc[v][yoffset]);
-	      alpha_begl[jp_v][v][d] = sc;
-	      /* careful: y is in alpha (all children of a BEGL_S must be non BEGL_S) */
-	    }
-	  }
-	  else if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) { 
-	    /******************************************************************************/
-	    y    = cm->cfirst[v];
-	    dp_y = dn - sd; /* initial dp_y, we increment it at end of 'for(d = ...' loop */
-	    i    = j-dn+1;  /* initial i,    we decrement it when we access it, inside each possible case of the switch (cnum) below */
-
-	    float const *arow0;
-	    float const *arow1;
-	    float const *arow2;
-	    float const *arow3;
-	    float const *arow4;
-	    float const *arow5;
-
-	    /* Note: order of cnum cases in switch and cases in each
-	     * nested emitmodeA[v] switch is based on empirical
-	     * frequency in large test set, more frequent guys come
-	     * earlier, so average num calcs in each switch is
-	     * minimized.
-	     */
-
-	    switch (cnum) {
-	    case 3: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      for (d = dn; d <= dx; d++, dp_y++) {
-		/* ctr++; */
-		sc = ESL_MAX(arow2[dp_y] + tsc_v[2],
-			     arow1[dp_y] + tsc_v[1]);		
-		sc = ESL_MAX(sc, init_scAA[v][dp_y]);
-		sc = ESL_MAX(sc, arow0[dp_y] + tsc_v[0]);		
-		
-		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
-		case EMITLEFT:
-		  sc += esc_v[dsq[i--]];
-		  break;
-		case EMITNONE:
-		  break;
-		case EMITRIGHT:
-		  sc += esc_j;
-		  break;		
-		case EMITPAIR:
- 		  sc += esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
-		  break;
-		} /* end of switch (cm->sttype[v]) */
-		alpha[jp_v][v][d] = sc;
-	      } /* end of for(d = dn; d <= dx; d++) */
-	      break;
-
-	    case 6: /* necessarily 2 inserts */
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-	      arow4 = (float * const) alpha[jp_y][y+4];
-	      arow5 = (float * const) alpha[jp_y][y+5];
-	      for (d = dn; d <= dx; d++, dp_y++) {
-		sc = ESL_MAX(arow5[dp_y] + tsc_v[5],
-			      init_scAA[v][dp_y]);
-		sc = ESL_MAX(sc, arow4[dp_y] + tsc_v[4]);		
-		sc = ESL_MAX(sc, arow3[dp_y] + tsc_v[3]);		
-		sc = ESL_MAX(sc, arow2[dp_y] + tsc_v[2]);		
-		sc = ESL_MAX(sc, arow1[dp_y] + tsc_v[1]);		
-		sc = ESL_MAX(sc, arow0[dp_y] + tsc_v[0]);		
-		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
-		case EMITLEFT:
-		  sc += esc_v[dsq[i--]];
-		  break;
-		case EMITNONE:
-		  break;
-		case EMITRIGHT:
-		  sc += esc_j;
-		  break;		
-		case EMITPAIR: 
-		  sc += esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
-		  break;
-		} /* end of switch (cm->sttype[v]) */
-		alpha[jp_v][v][d] = sc;
-	      } /* end of for(d = dn; d <= dx; d++) */
-	      break;
-
-	    case 4: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-	      for (d = dn; d <= dx; d++, dp_y++) {
-		sc = ESL_MAX(arow3[dp_y] + tsc_v[3],
-			     arow2[dp_y] + tsc_v[2]);		
-		sc = ESL_MAX(sc, init_scAA[v][dp_y]);
-		sc = ESL_MAX(sc, arow1[dp_y] + tsc_v[1]);		
-		sc = ESL_MAX(sc, arow0[dp_y] + tsc_v[0]);		
-		
-		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
-		case EMITLEFT:
-		  sc += esc_v[dsq[i--]];
-		  break;
-		case EMITNONE:
-		  break;
-		case EMITRIGHT:
-		  sc += esc_j;
-		  break;		
-		case EMITPAIR: /* OPTIMIZE? */
-		  sc += esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
-		  break;
-		} /* end of switch (cm->sttype[v]) */
-		alpha[jp_v][v][d] = sc;
-	      } /* end of for(d = dn; d <= dx; d++) */
-	      break;
-
-	    case 5: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-	      arow4 = (float * const) alpha[jp_y][y+4];
-	      for (d = dn; d <= dx; d++, dp_y++) {
-		sc = ESL_MAX(arow4[dp_y] + tsc_v[4],
-			     arow3[dp_y] + tsc_v[3]);		
-		sc = ESL_MAX(sc, init_scAA[v][dp_y]);
-		sc = ESL_MAX(sc, arow1[dp_y] + tsc_v[1]);		
-		sc = ESL_MAX(sc, arow2[dp_y] + tsc_v[2]);		
-		sc = ESL_MAX(sc, arow0[dp_y] + tsc_v[0]);		
-
-		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
-		case EMITRIGHT:
-		  sc += esc_j;
-		  break;		
-		case EMITNONE:
-		  break;
-		case EMITLEFT:
-		  sc += esc_v[dsq[i--]];
-		  break;
-		  /* MP states can't have 5 children */
-		} /* end of switch (cm->sttype[v]) */
-		alpha[jp_v][v][d] = sc;
-	      } /* end of for(d = dn; d <= dx; d++) */
-	      break;
-
-	    case 2: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      for (d = dn; d <= dx; d++, dp_y++) {
-		sc = ESL_MAX(arow1[dp_y] + tsc_v[1],
-			     init_scAA[v][dp_y]);
-		sc = ESL_MAX(sc, arow0[dp_y] + tsc_v[0]);		
-		switch (emitmodeA[v]) {
-		case EMITLEFT:
-		  sc += esc_v[dsq[i--]];
-		  break;
-		case EMITNONE:
-		  break;
-		case EMITRIGHT:
-		  sc += esc_j;
-		  break;		
-		} /* end of switch (cm->sttype[v]) */
-		alpha[jp_v][v][d] = sc;
-	      } /* end of for(d = dn; d <= dx; d++) */
-	      break;
-	    }
-	  }
-      else { /* enter else if cm->sttype[v] != B_st && cm->stid[v] !=  BEGL_S st && cm->sttype[v] != IL_st && cm->sttype[v] != IR_st */
-	    y    = cm->cfirst[v];
-	    dp_y = dn - sd; /* initial dp_y, we increment it at end of 'for(d = ...' loop */
-	    i    = j-dn+1;  /* initial i,    we decrement it when we access it, inside each possible case of the switch (cnum) below */
-	    for (d = dn; d <= dx; d++, dp_y++) 
-	      sc_v[d] = init_scAA[v][dp_y];
-	    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++, y++) {
-	      tsc  = cm->tsc[v][yoffset];
-	      for (d = dn, dp_y = dn-sd; d <= dx; d++, dp_y++) {
-		sc_v[d] = ESL_MAX (sc_v[d], alpha[jp_y][y][dp_y] + tsc);
-	      }
-	    }
-	    /* add in emission score (if any), and set alpha[jp_v][v][d] cell */
-	    switch (emitmodeA[v]) {
-	    case EMITLEFT:
-	      for (d = dn; d <= dx; d++) {
-		alpha[jp_v][v][d] = sc_v[d] + esc_v[dsq[i--]];
-	      }
-	      break;
-	    case EMITNONE:
-	      for (d = dn; d <= dx; d++)
-		alpha[jp_v][v][d] = sc_v[d];
-	      break;
-	    case EMITRIGHT:
-	      for (d = dn; d <= dx; d++) {
-		alpha[jp_v][v][d] = sc_v[d] + esc_j;
-	      }
-	      break;		
-	    case EMITPAIR:
-	      for (d = dn; d <= dx; d++) {
-		alpha[jp_v][v][d] = sc_v[d] + esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
-	      }
-	      break;
-	    } /* end of switch (emitmodeA[v]) */
-	  } /* end of else (cm->sttype[v] != B_st && cm->stid[v] !=  BEGL_S st && cm->sttype[v] != IL_st && cm->sttype[v] != IR_st) */
-	  if(vsc != NULL) for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha[jp_v][v][d]);
-	  /*if(cm->stid[v] != BEGL_S)
-	    for (d = dn; d <= dx; d++) { printf("alpha[j:%4d][v:%4d][d:%4d]: %.5f\n", j, v, d, alpha[jp_v][v][d]); }*/
-	} /*loop over decks v>0 */
-      
-      /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
-       * 
-       * If local begins are off, the hit must be rooted at v=0.
-       * With local begins on, the hit is rooted at the second state in
-       * the traceback (e.g. after 0), the internal entry point. Divide & conquer
-       * can only handle this if it's a non-insert state; this is guaranteed
-       * by the way local alignment is parameterized (other transitions are
-       * -INFTY), which is probably a little too fragile of a method. 
-       */
-
-      float const *tsc_v = cm->tsc[0];
-      /* determine min/max d we're allowing for the root state and this position j */
-      jp_v = cur;
-      for (d = dnA[0]; d <= dxA[0]; d++) {
-	bestr[d] = 0;	/* root of the traceback = root state 0 */
-	y = cm->cfirst[0];
-	alpha[jp_v][0][d] = ESL_MAX(IMPOSSIBLE, alpha[cur][y][d] + tsc_v[0]);
-	for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++) 
-	  alpha[jp_v][0][d] = ESL_MAX (alpha[jp_v][0][d], (alpha[cur][y+yoffset][d] + tsc_v[yoffset]));
-      }
-	
-      if (cm->flags & CM_LOCAL_BEGIN) {
-	for (y = 1; y < cm->M; y++) {
-	  if(NOT_IMPOSSIBLE(cm->beginsc[y])) {
-	    if(cm->stid[y] == BEGL_S)
-	      {
-		jp_y = j % (W+1);
-		for (d = dnA[y]; d <= dxA[y]; d++) {
-		  /* Is this more efficient:? 
-		     bestr[d]          = (alpha[jp_v][0][d] > (alpha_begl[jp_y][y][d] + cm->beginsc[y])) ? bestr[d] : y;
-		     alpha[jp_v][0][d] = ESL_MAX(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->beginsc[y]); */
-		  if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->beginsc[y])) {
-		    alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->beginsc[y];
-		    bestr[d] = y;
-		  }
-		}
-	      }
-	    else { /* y != BEGL_S */
-	      jp_y = cur;
-	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		{
-		  /* Is this more efficient:? 
-		     bestr[d]          = (alpha[jp_v][0][d] > (alpha[jp_y][y][d] + cm->beginsc[y])) ? bestr[d] : y;
-		     alpha[jp_v][0][d] = ESL_MAX(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->beginsc[y]); */
-		  if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->beginsc[y])) {
-		    alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->beginsc[y];
-		    bestr[d] = y;
-		  }
-		}
-	      }
-	    }
-	  }
-	}
-      }
-      
-      /* find the best score */
-      for (d = dnA[0]; d <= dxA[0]; d++) 
-	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
-      if(results != NULL) 
-	{
-	  float sc;
-	  /* get information on hits */
-	  if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
-	    {
-	      /* The little semi-Markov model that deals with multihit parsing:
-	       */
-	      gamma[jp_g]  = gamma[jp_g-1] + 0; 
-	      gback[jp_g]  = -1;
-	      savesc[jp_g] = IMPOSSIBLE;
-	      saver[jp_g]  = -1;
-	      for (d = dnA[0]; d <= dxA[0]; d++) {
-		i    = j-d+1;
-		ip_g = i-i0+1;
-		sc = gamma[ip_g-1] + alpha[jp_v][0][d] + cm->sc_boost; 
-		/* sc_boost is experimental technique for finding hits < 0 bits. value is 0.0 if technique not used. */
-		if (sc > gamma[jp_g]) {
-		  gamma[jp_g]  = sc;
-		  gback[jp_g]  = i;
-		  savesc[jp_g] = alpha[jp_v][0][d]; 
-		  saver[jp_g]  = bestr[d];
-		}
-	      }
-	    }
-	  else {
-	    /* Resolving overlaps greedily (RSEARCH style),  
-	     * At least one hit is sent back for each j here.
-	     * However, some hits can already be removed for the greedy overlap
-	     * resolution algorithm.  Specifically, at the given j, any hit with a
-	     * d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
-	    /* First, report hit with d of 1 if > cutoff */
-	    if (alpha[jp_v][0][1] >= cutoff) 
-	      if(results != NULL) 
-		report_hit (j, j, bestr[1], alpha[jp_v][0][1], results);
-	    bestd = 1;
-	    if (alpha[jp_v][0][1] > best_hit_sc)
-	      best_hit_sc = alpha[jp_v][0][1];
-	    
-	    /* Now, if current score is greater than maximum seen previous, report
-	       it if >= cutoff and set new max */
-	    for (d = 2; d <= W && d <= jp_g; d++) 
-	      {
-		if (alpha[jp_v][0][d] > best_hit_sc) best_hit_sc = alpha[jp_v][0][d];
-		if (alpha[jp_v][0][d] > alpha[jp_v][0][bestd]) {
-		  if (alpha[jp_v][0][d] >= cutoff)
-		    if(results != NULL) 
-		      report_hit (j-d+1, j, bestr[d], alpha[jp_v][0][d], results);
-		  bestd = d;
-		}
-	      }
-	  }
-	}
-    } /* end loop over end positions j */
-  if(vsc != NULL) vsc[0] = vsc_root;
-  
-  /* free alpha and alpha_begl, everything we need is in gamma.
-   */
-
-  free(alpha[0][0]);
-  free(alpha[1]);
-  free(alpha[0]);
-  free(alpha);
-  for (j = 0; j <= W; j++) {
-    for (v = 0; v < cm->M; v++) 
-      if (cm->stid[v] == BEGL_S)
-	free(alpha_begl[j][v]);
-    free(alpha_begl[j]);
-  }
-  free(alpha_begl);
-  free(bestr);
-
-  if(results != NULL) 
-    {
-      /*
-       * Traceback stage.
-       * Recover all hits: an (i,j,sc) triple for each one.
-       */
-      if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
-	{
-	  j     = j0;
-	  while (j >= i0) 
-	    {
-	      jp_g = j-i0+1;
-	      if (gback[jp_g] == -1) /* no hit */
-		j--; 
-	      else                /* a hit, a palpable hit */
-		{
-		  if(savesc[jp_g] > best_hit_sc) best_hit_sc = savesc[jp_g];
-		  if(savesc[jp_g] >= cutoff && results != NULL) /* report the hit */
-		    report_hit(gback[jp_g], j, saver[jp_g], savesc[jp_g], results);
-		  j = gback[jp_g]-1;
-		}
-	    }
-	}
-      free(gback);
-      free(gamma);
-      free(savesc);
-      free(saver);
-    }
-
-  for(v = 0; v < cm->M; v++) {
-    free(init_scAA[v]);
-    if(esc_vAA[v] != NULL) free(esc_vAA[v]);
-  }
-  free(init_scAA);
-  free(esc_vAA);
-
-  for(j = 1; j <= W; j++) {
-    free(dnAA[j]);
-    free(dxAA[j]);
-  }
-  free(dnAA);
-  free(dxAA);
-  free(jp_wA);
-  free(el_scA);
-  free(emitmodeA);
-  if (ret_best_hit_sc != NULL) *ret_best_hit_sc = best_hit_sc;
-  if (ret_vsc         != NULL) *ret_vsc         = vsc;
-  
-  /* printf("XFastCYKScan() return score: %10.4f\n", vsc_root); 
-     printf("ctr: %d\n", ctr);*/
   return vsc_root;
   
  ERROR:
@@ -3468,7 +2701,7 @@ M = cm->M;
       }
     }
     /* Now, if doing local BEGINS, try that */
-    if (cm->flags & CM_LOCAL_BEGIN) {
+    if (cm->flags & CMH_LOCAL_BEGIN) {
       tsc = cm->beginsc;         /* Really cm->beginsc, not tsc */
       for (y = 1; y < M; y++) {
 	beginsc = tsc[y];
@@ -3641,7 +2874,7 @@ cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_
     }
     vcalcs[0] += (cm->cnum[v] + 1) * (dx - dn + 1);
     
-    if (cm->flags & CM_LOCAL_BEGIN) {
+    if (cm->flags & CMH_LOCAL_BEGIN) {
       for (y = 1; y < cm->M; y++) {
 	if(do_banded) {
 	  dn = (cm->sttype[y] == MP_st) ? ESL_MAX(dmin[y], 2) : ESL_MAX(dmin[y], 1); 
@@ -3679,481 +2912,6 @@ cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_
   return 0.;
 }
 
-
-/* Function: cm_CreateScanInfo()
- * Date:     EPN, Sun Nov  4 19:56:58 2007
- *
- * Purpose:  Given a CM, allocate and initialize ScanInfo_t object for that CM. 
- *            
- * Returns:  Newly allocated HybridScanInfo_t object:
- */
-ScanInfo_t *
-cm_CreateScanInfo(CM_t *cm)
-{
-  int status;
-  int d, y, yoffset, w, j;
-  int v;
-  int do_banded;
-
-  if(cm->dmin == NULL && cm->dmax != NULL) cm_Fail("cm_CreateScanInfo(), cm->dmin == NULL, cm->dmax != NULL\n"); 
-  if(cm->dmin != NULL && cm->dmax == NULL) cm_Fail("cm_CreateScanInfo(), cm->dmin == NULL, cm->dmax != NULL\n"); 
-  if(cm->dmax != NULL && cm->W != cm->dmax[0]) cm_Fail("cm_CreateScanInfo(), cm->W: %d != cm->dmax[0]: %d\n", cm->W, cm->dmax[0]); 
-  if((! cm->search_opts & CM_SEARCH_NOQDB) && (cm->dmin == NULL || cm->dmax == NULL))
-    cm_Fail("cm_CreateScanInfo(), cm->dmin == NULL || cm->dmax == NULL, but !(cm->search_opts & CM_SEARCH_NOQDB)\n");
-
-  ScanInfo_t *si;
-  ESL_ALLOC(si, sizeof(ScanInfo_t));
-
-  si->cm_M  = cm->M;
-  si->W     = cm->W;
-  si->dmin  = cm->dmin; /* could be NULL */
-  si->dmax  = cm->dmax; /* could be NULL */
-  do_banded = (cm->search_opts & CM_SEARCH_NOQDB) ? FALSE : TRUE;
-
-  /* fill emitmodeA */
-  ESL_ALLOC(si->emitmodeA, sizeof(int) * cm->M);
-  for(v = 0; v < cm->M; v++) {
-    switch (cm->sttype[v]) {
-    case IL_st:
-    case ML_st:
-      si->emitmodeA[v] = EMITLEFT;
-      break;
-    case IR_st:
-    case MR_st:
-      si->emitmodeA[v] = EMITRIGHT;
-      break;		
-    case MP_st:
-      si->emitmodeA[v] = EMITPAIR;
-      break;		
-    default:
-      si->emitmodeA[v] = EMITNONE;
-      break;
-    }
-  }
-
-  /* precalculate minimum and maximum d for each state and each sequence index (1..j..W). 
-   * this is not always just dmin, dmax, (for ex. if j < W). */
-  int W = si->W;
-  ESL_ALLOC(si->dnAA, sizeof(int *) * (W+1));
-  ESL_ALLOC(si->dxAA, sizeof(int *) * (W+1));
-  si->dnAA[0] = si->dxAA[0] = NULL; /* corresponds to j == 0, which is out of bounds */
-  for(j = 1; j <= W; j++) {
-    ESL_ALLOC(si->dnAA[j], sizeof(int) * cm->M);
-    ESL_ALLOC(si->dxAA[j], sizeof(int) * cm->M);
-    for(v = 0; v < cm->M; v++) {
-      if(do_banded) { 
-	si->dnAA[j][v] = (cm->sttype[v] == MP_st) ? ESL_MAX(si->dmin[v], 2) : ESL_MAX(si->dmin[v], 1); 
-	si->dxAA[j][v] = ESL_MIN(j, si->dmax[v]); 
-	si->dxAA[j][v] = ESL_MIN(si->dxAA[j][v], W);
-      }
-      else { 
-	si->dnAA[j][v] = (cm->sttype[v] == MP_st) ? 2 : 1;
-	si->dxAA[j][v] = ESL_MIN(j, W); 
-      }
-    }
-  }
-
-  /* precalculate possible emission scores for each state */
-  int a,b;
-  ESL_ALLOC(si->esc_vAA,  sizeof(float *) * (cm->M));
-  ESL_ALLOC(si->iesc_vAA, sizeof(int *)   * (cm->M));
-  for(v = 0; v < cm->M; v++) {
-    switch(cm->sttype[v]) {
-    case IL_st:
-    case ML_st:
-    case IR_st:
-    case MR_st:
-      ESL_ALLOC(si->esc_vAA[v],  sizeof(float) * (cm->abc->Kp));
-      ESL_ALLOC(si->iesc_vAA[v], sizeof(int)   * (cm->abc->Kp));
-      /* ALLOCATE SIZE = POWER OF 2? */
-      esl_vec_FSet(si->esc_vAA[v],  cm->abc->Kp, IMPOSSIBLE);
-      esl_vec_ISet(si->iesc_vAA[v], cm->abc->Kp, -INFTY);
-      for(a = 0; a < cm->abc->K; a++) {
-	si->esc_vAA[v][a]  = cm->esc[v][a];
-	si->iesc_vAA[v][a] = cm->iesc[v][a];
-      }
-      for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) { /* note boundary conditions, gap, missing data symbols stay IMPOSSIBLE */
-	si->esc_vAA[v][a]  = esl_abc_FAvgScore(cm->abc, a, cm->esc[v]);
-	si->iesc_vAA[v][a] = esl_abc_IAvgScore(cm->abc, a, cm->iesc[v]);
-      }
-      break;
-    case MP_st:
-      ESL_ALLOC(si->esc_vAA[v], sizeof(float) * (cm->abc->Kp * cm->abc->Kp));
-      ESL_ALLOC(si->iesc_vAA[v], sizeof(int) * (cm->abc->Kp * cm->abc->Kp));
-      /* ALLOCATE SIZE = POWER OF 2? */
-      esl_vec_FSet(si->esc_vAA[v],  (cm->abc->Kp * cm->abc->Kp), IMPOSSIBLE);
-      esl_vec_ISet(si->iesc_vAA[v], (cm->abc->Kp * cm->abc->Kp), -INFTY);
-      for(a = 0; a < (cm->abc->Kp-1); a++)
-	for(b = 0; b < (cm->abc->Kp-1); b++)
-	  if(a < cm->abc->K && b < cm->abc->K) {
-	    si->esc_vAA[v][a * cm->abc->Kp + b]  = cm->esc[v][(a * cm->abc->K) + b];
-	    si->iesc_vAA[v][a * cm->abc->Kp + b] = cm->iesc[v][(a * cm->abc->K) + b];
-	  }
-	  else {
-	    si->esc_vAA[v][a  * cm->abc->Kp + b]  = DegeneratePairScore(cm->abc, cm->esc[v], a, b);
-	    si->iesc_vAA[v][a * cm->abc->Kp + b] = iDegeneratePairScore(cm->abc, cm->iesc[v], a, b);
-	  }
-      break;
-    default:
-      si->esc_vAA[v] = NULL;
-      si->iesc_vAA[v] = NULL;
-      break;
-    }
-  }
-
-  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
-  ESL_ALLOC(si->el_scA, sizeof(float) * (W+1));
-  for(d = 0; d <= W; d++) si->el_scA[d] = cm->el_selfsc * d;
-  ESL_ALLOC(si->iel_scA, sizeof(int) * (W+1));
-  for(d = 0; d <= W; d++) si->iel_scA[d] = cm->iel_selfsc * d;
-
-  /* precalculate the initial score for all alpha[v][j][d] cells, it's independent of j */
-  ESL_ALLOC(si->init_scAA, sizeof(float *) * (cm->M));
-  for (v = 0; v < cm->M; v++) {
-    ESL_ALLOC(si->init_scAA[v], sizeof(float) * (W+1));
-    if(NOT_IMPOSSIBLE(cm->endsc[v]))
-      for(d = 0; d <= W; d++)
-	si->init_scAA[v][d] = si->el_scA[d] + cm->endsc[v];
-    else
-      for(d = 0; d <= W; d++)
-	si->init_scAA[v][d] = IMPOSSIBLE;
-  }
-  ESL_ALLOC(si->iinit_scAA, sizeof(int *) * (cm->M));
-  for (v = 0; v < cm->M; v++) {
-    ESL_ALLOC(si->iinit_scAA[v], sizeof(int) * (W+1));
-    if(NOT_IMPOSSIBLE(cm->endsc[v])) /* we use endsc[v], not iendsc[v] */
-      for(d = 0; d <= W; d++)
-	si->iinit_scAA[v][d] = si->iel_scA[d] + cm->iendsc[v];
-    else
-      for(d = 0; d <= W; d++)
-	si->iinit_scAA[v][d] = -INFTY;
-  }
-  /* allocate bestr, which holds best root state at alpha[0][cur][d] */
-  ESL_ALLOC(si->bestr, (sizeof(int) * (W+1)));
-
-  /* alpha, alpha_begl, ialpha, and ialpha_begl allocations, only difference is:
-   *  alpha,  alpha_begl are floats
-   * ialpha, ialpha_begl are ints  
-   *
-   * The alpha matrix holds data for all states EXCEPT BEGL_S states
-   * The alpha scanning matrix is indexed [j][v][d]. 
-   *    j takes values 0 or 1: only the previous (prv) or current (cur) row
-   *    v ranges from 0..M-1 over states in the model.
-   *    d ranges from 0..W over subsequence lengths.
-   * Note if v is a BEGL_S alpha[j][v] == NULL
-   * Note that old convention of sharing E memory is no longer,
-   * each E state has it's own deck.
-   *
-   * alpha_begl matrix holds data for ONLY BEGL_S states
-   *    j takes value of 0..W
-   *    v ranges from 0..M-1 over states in the model
-   *    d ranges from 0..W over subsequence lengths.
-   * Note if v is NOT a BEGL_S alpha_begl[j][v] == NULL
-   */
-
-  /* allocate alpha */
-  ESL_ALLOC(si->alpha,        sizeof(float **) * 2);
-  ESL_ALLOC(si->alpha[0],     sizeof(float *) * cm->M);
-  ESL_ALLOC(si->alpha[1],     sizeof(float *) * cm->M);
-  ESL_ALLOC(si->alpha[0][0],  sizeof(float) * 2 * (cm->M) * (W+1));
-  for (v = cm->M-1; v >= 0; v--) {	
-    if (cm->stid[v] != BEGL_S) {
-      si->alpha[0][v] = si->alpha[0][0] + (v           * (W+1));
-      si->alpha[1][v] = si->alpha[0][0] + ((v + cm->M) * (W+1));
-    }
-    else si->alpha[0][v] = si->alpha[1][v] = NULL; /* BEGL_S */
-  }
-  /* allocate ialpha */
-  ESL_ALLOC(si->ialpha,        sizeof(int **) * 2);
-  ESL_ALLOC(si->ialpha[0],     sizeof(int *) * cm->M);
-  ESL_ALLOC(si->ialpha[1],     sizeof(int *) * cm->M);
-  ESL_ALLOC(si->ialpha[0][0],  sizeof(int) * 2 * (cm->M) * (W+1));
-  for (v = cm->M-1; v >= 0; v--) {	
-    if (cm->stid[v] != BEGL_S) {
-      si->ialpha[0][v] = si->ialpha[0][0] + (v           * (W+1));
-      si->ialpha[1][v] = si->ialpha[0][0] + ((v + cm->M) * (W+1));
-    }
-    else si->ialpha[0][v] = si->ialpha[1][v] = NULL; /* BEGL_S */
-  }
-  /* allocate alpha_begl */
-  ESL_ALLOC(si->alpha_begl, (sizeof(float **) * (W+1)));
-  for (j = 0; j <= W; j++) {
-    ESL_ALLOC(si->alpha_begl[j], (sizeof(float *) * (cm->M)));
-    for (v = cm->M-1; v >= 0; v--) {	
-      if (cm->stid[v] == BEGL_S) ESL_ALLOC(si->alpha_begl[j][v], (sizeof(float) * (W+1)));
-      else si->alpha_begl[j][v] = NULL; /* non-BEGL */
-    }
-  }
-  /* allocate ialpha_begl */
-  ESL_ALLOC(si->ialpha_begl, (sizeof(int **) * (W+1)));
-  for (j = 0; j <= W; j++) {
-    ESL_ALLOC(si->ialpha_begl[j], (sizeof(int *) * (cm->M)));
-    for (v = cm->M-1; v >= 0; v--) {	
-      if (cm->stid[v] == BEGL_S) ESL_ALLOC(si->ialpha_begl[j][v], (sizeof(int) * (W+1)));
-      else si->ialpha_begl[j][v] = NULL; /* non-BEGL */
-    }
-  }
-
-  /* alpha initializations.
-   * First initialize alpha and  alpha_begl (float matrices)
-   * then initialize ialpha and ialpha_begl (int matrices)
-   *
-   * We initialize on d=0, subsequences of length 0; these are
-   * j-independent. Any generating state (P,L,R) is impossible on d=0.
-   * E=0 for d=0. B,S,D must be calculated. 
-   * Also, for MP, d=1 is impossible.
-   * Also, for E, all d>0 are impossible.
-   *
-   * and, for banding: any cell outside our bands is impossible.
-   * These inits are never changed in the recursion, so even with the
-   * rolling, matrix face reuse strategy, this works.
-   */
-
-  float ***alpha      = si->alpha;
-  float ***alpha_begl = si->alpha_begl;
-  int  ***ialpha      = si->ialpha;
-  int  ***ialpha_begl = si->ialpha_begl;
-
-  /* initialize alpha and alpha_begl */
-  for(v = cm->M-1; v >= 0; v--) {
-    if(cm->stid[v] != BEGL_S) {
-      alpha[0][v][0] = IMPOSSIBLE;
-      if (cm->sttype[v] == E_st) { 
-	alpha[0][v][0] = alpha[1][v][0] = 0.;
-	/* rest of E deck is IMPOSSIBLE, this is rewritten if QDB is on, (slightly wasteful). */
-	for (d = 1; d <= W; d++) alpha[0][v][d] = alpha[1][v][d] = IMPOSSIBLE;
-      }
-      else if (cm->sttype[v] == MP_st) alpha[0][v][1] = alpha[1][v][1] = IMPOSSIBLE;
-      else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) {
-	y = cm->cfirst[v];
-	alpha[0][v][0] = cm->endsc[v];
-	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	  alpha[0][v][0] = ESL_MAX(alpha[0][v][0], (alpha[0][y+yoffset][0] + cm->tsc[v][yoffset]));
-	alpha[0][v][0] = ESL_MAX(alpha[0][v][0], IMPOSSIBLE);
-      }
-      else if (cm->sttype[v] == B_st) {
-	w = cm->cfirst[v]; /* BEGL_S, left child state */
-	y = cm->cnum[v];
-	alpha[0][v][0] = alpha_begl[0][w][0] + alpha[0][y][0]; 
-      }
-      alpha[1][v][0] = alpha[0][v][0];
-    }
-    else { /* v == BEGL_S */
-      y = cm->cfirst[v];
-      alpha_begl[0][v][0] = cm->endsc[v];
-      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	alpha_begl[0][v][0] = ESL_MAX(alpha_begl[0][v][0], (alpha[0][y+yoffset][0] + cm->tsc[v][yoffset])); /* careful: y is in alpha */
-      alpha_begl[0][v][0] = ESL_MAX(alpha_begl[0][v][0], IMPOSSIBLE);
-      for (j = 1; j <= W; j++) 
-	alpha_begl[j][v][0] = alpha_begl[0][v][0];
-    }
-  }
-
-  /* initialize ialpha and ialpha_begl */
-  for(v = cm->M-1; v >= 0; v--) {
-    if(cm->stid[v] != BEGL_S) {
-      ialpha[0][v][0] = -INFTY;
-      if (cm->sttype[v] == E_st) { 
-	ialpha[0][v][0] = ialpha[1][v][0] = 0.;
-	/* rest of E deck is -INFTY, this is rewritten if QDB is on, (slightly wasteful). */
-	for (d = 1; d <= W; d++) ialpha[0][v][d] = ialpha[1][v][d] = -INFTY;
-      }
-      else if (cm->sttype[v] == MP_st) ialpha[0][v][1] = ialpha[1][v][1] = -INFTY;
-      else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) {
-	y = cm->cfirst[v];
-	ialpha[0][v][0] = cm->iendsc[v];
-	for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	  ialpha[0][v][0] = ESL_MAX(ialpha[0][v][0], (ialpha[0][y+yoffset][0] + cm->itsc[v][yoffset]));
-	ialpha[0][v][0] = ESL_MAX(ialpha[0][v][0], -INFTY);
-      }
-      else if (cm->sttype[v] == B_st) {
-	w = cm->cfirst[v]; /* BEGL_S, left child state */
-	y = cm->cnum[v];
-	ialpha[0][v][0] = ialpha_begl[0][w][0] + ialpha[0][y][0]; 
-      }
-      ialpha[1][v][0] = ialpha[0][v][0];
-    }
-    else { /* v == BEGL_S */
-      y = cm->cfirst[v];
-      ialpha_begl[0][v][0] = cm->iendsc[v];
-      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	ialpha_begl[0][v][0] = ESL_MAX(ialpha_begl[0][v][0], (ialpha[0][y+yoffset][0] + cm->itsc[v][yoffset])); /* careful: y is in alpha */
-      ialpha_begl[0][v][0] = ESL_MAX(ialpha_begl[0][v][0], -INFTY);
-      for (j = 1; j <= W; j++) 
-	ialpha_begl[j][v][0] = ialpha_begl[0][v][0];
-    }
-  }
-
-  /* query-dependent band imposition.
-   *   (note: E states have all their probability on d=0, so dmin[E] = dmax[E] = 0;
-   *    the first loop will be skipped, the second initializes the E states.)
-   */
-  if(do_banded) { 
-    for (v = 0; v < cm->M; v++) {
-      if(cm->stid[v] != BEGL_S) {
-	for (d = 0; d < cm->dmin[v] && d <=W; d++) {
-	  for(j = 0; j < 2; j++) {
-	    alpha[j][v][d]  = IMPOSSIBLE;
-	    ialpha[j][v][d] = -INFTY;
-	  }
-	}
-	for (d = cm->dmax[v]+1; d <= W;      d++) { 
-	  for(j = 0; j < 2; j++) {
-	    alpha[j][v][d] = IMPOSSIBLE;
-	    ialpha[j][v][d] = -INFTY;
-	  }
-	}
-      }
-      else {
-	for (d = 0; d < cm->dmin[v] && d <=W; d++) {
-	  for(j = 0; j <= W; j++) {
-	       alpha_begl[j][v][d] = IMPOSSIBLE;
-	      ialpha_begl[j][v][d] = -INFTY;
-	  }
-	}
-	for (d = cm->dmax[v]+1; d <= W;      d++) {
-	  for(j = 0; j <= W; j++) {
-	    alpha_begl[j][v][d] = IMPOSSIBLE;
-	    ialpha_begl[j][v][d] = -INFTY;
-	  }
-	}
-      }
-    }
-  }
-  return si;
-
- ERROR:
-  cm_Fail("memory allocation error in cm_CreateScanInfo().\n");
-  return NULL;
-}
-
-
-/* Function: cm_FreeScanInfo()
- * Date:     EPN, Sun Nov  4 20:57:32 2007
- *
- * Purpose:  Free a ScanInfo_t object for <cm>.
- *            
- * Returns:  eslOK on success, dies immediately on an error.
- */
-int
-cm_FreeScanInfo(CM_t *cm, ScanInfo_t *si)
-{
-  int j, v;
-  for(v = 0; v < cm->M; v++) {
-    free(si->init_scAA[v]);
-    free(si->iinit_scAA[v]);
-    if(si->esc_vAA[v] != NULL)  free(si->esc_vAA[v]);
-    if(si->iesc_vAA[v] != NULL) free(si->iesc_vAA[v]);
-  }
-  free(si->init_scAA);
-  free(si->esc_vAA);
-  free(si->iinit_scAA);
-  free(si->iesc_vAA);
-
-  for(j = 1; j <= si->W; j++) {
-    free(si->dnAA[j]);
-    free(si->dxAA[j]);
-  }
-  free(si->dnAA);
-  free(si->dxAA);
-  free(si->el_scA);
-  free(si->iel_scA);
-  free(si->emitmodeA);
-
-  free(si->bestr);
-
-  /* free alpha and alpha_begl */
-  free(si->alpha[0][0]);
-  free(si->alpha[1]);
-  free(si->alpha[0]);
-  free(si->alpha);
-  for (j = 0; j <= si->W; j++) {
-    for (v = 0; v < cm->M; v++) 
-      if (cm->stid[v] == BEGL_S)
-	free(si->alpha_begl[j][v]);
-    free(si->alpha_begl[j]);
-  }
-  free(si->alpha_begl);
-
-  free(si->ialpha[0][0]);
-  free(si->ialpha[1]);
-  free(si->ialpha[0]);
-  free(si->ialpha);
-  for (j = 0; j <= si->W; j++) {
-    for (v = 0; v < cm->M; v++) 
-      if (cm->stid[v] == BEGL_S)
-	free(si->ialpha_begl[j][v]);
-    free(si->ialpha_begl[j]);
-  }
-  free(si->ialpha_begl);
-  free(si);
-
-  return eslOK;
-}
-
-
-/* Function: cm_DumpScanInfoAlpha()
- * Date:     EPN, Tue Nov  6 05:11:26 2007
- *
- * Purpose:  Dump current alpha matrix (either float or int).
- *            
- * Returns:  void.
- */
-void
-cm_DumpScanInfoAlpha(CM_t *cm, ScanInfo_t *si, int j, int i0, int doing_float)
-{
-  int d, v;
-  int jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
-  int cur = j%2;
-  int prv = (j-1)%2;
-  int *dnA, *dxA;
-  int begl_prv = j-1 % (si->W+1);
-  int begl_cur = j   % (si->W+1);
-  printf("Dumping Alpha: j: %d\n", j);
-  if(jp_g >= si->W) { dnA = si->dnAA[si->W]; dxA = si->dxAA[si->W]; }
-  else              { dnA = si->dnAA[jp_g];  dxA = si->dxAA[jp_g]; }
-  if(doing_float) { 
-    for (v = si->cm_M-1; v >= 0; v--) {	
-      if (cm->stid[v] == BEGL_S) { 
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, si->alpha_begl[begl_prv][v][d]); 
-      }
-      else {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j-1:%4d][%4d][%4d]: %10.4f\n", (j-1), v, d, si->alpha[prv][v][d]); 
-      }
-      printf("\n");
-    }
-    for (v = si->cm_M-1; v >= 0; v--) {	
-      if (cm->stid[v] == BEGL_S) {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, si->alpha_begl[begl_cur][v][d]); 
-      }
-      else {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j  :%4d][%4d][%4d]: %10.4f\n", j,     v, d, si->alpha[cur][v][d]); 
-      }
-      printf("\n");
-    }
-  }
-  else { /* doing int */
-    for (v = si->cm_M-1; v >= 0; v--) {	
-      if (cm->stid[v] == BEGL_S) {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, si->ialpha_begl[begl_prv][v][d]); 
-      }
-      else {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j-1:%4d][%4d][%4d]: %10d\n", (j-1), v, d, si->ialpha[prv][v][d]); 
-      }
-      printf("\n\n");
-    }
-    for (v = si->cm_M-1; v >= 0; v--) {	
-      if (cm->stid[v] == BEGL_S) {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, si->ialpha_begl[begl_cur][v][d]); 
-      }
-      else {
-	for(d = dnA[v]; d <= dxA[v]; d++) printf("A[j  :%4d][%4d][%4d]: %10d\n", j,     v, d, si->ialpha[cur][v][d]); 
-      }
-      printf("\n\n");
-    }
-  }
-  return;
-}
   
 /* Function: cm_CreateGammaHitMx()
  * Date:     EPN, Mon Nov  5 05:22:56 2007
@@ -4367,6 +3125,442 @@ cm_TBackGammaHitMx(cm_GammaHitMx_t *gamma, search_results_t *results, int i0, in
   return;
 }
 
+/* EPN 03.29.06
+ * Function: FastCYKScan_b_jd_me()
+ *
+ * Args:     cm        - the model    [0..M-1]
+ *           sq        - the sequence [1..L]   
+ *                     - length of the dsq
+ *           vroot     - first start state of subtree (0, for whole model)
+ *           vend      - last end state of subtree (cm->M-1, for whole model)
+ *           i0        - first position in subseq to align (1, for whole seq)
+ *           j0        - last position in subseq to align (L, for whole seq)
+ *           mx        - the dp matrix, only cells within bands in cp9b will 
+ *                       be valid. 
+ *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
+ *                       he intends to do a traceback.
+ *           allow_begin- TRUE to allow 0->b local alignment begin transitions. 
+ *           ret_b     - best local begin state, or NULL if unwanted
+ *           ret_bsc   - score for using ret_b, or NULL if unwanted                        
+ *           cp9b      - HMM bands for <dsq> and <cm>
+ *                       
+ * Returns: Score of the optimal alignment.  
+ */
+float 
+FastCYKScan_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
+		    CM_FHB_MX *mx, int allow_begin, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b)
+{
+  int      status;
+  int      v,y,z;	/* indices for states  */
+  int      j,d,i,k;	/* indices in sequence dimensions */
+  float    sc;		/* a temporary variable holding a score */
+  int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
+  int      W;		/* subsequence length */
+  int      b;		/* best local begin state */
+  float    bsc;		/* score for using the best local begin state */
+
+  /* variables used for memory efficient bands */
+  int      dp_v;           /* d index for state v in alpha w/mem eff bands */
+  int      dp_y;           /* d index for state y in alpha w/mem eff bands */
+  int      kp_z;           /* k (in the d dim) index for state z in alpha w/mem eff bands */
+  int      Wp;             /* W also changes depending on state */
+  int      jp_v, jp_y, jp_z;
+  int      kn, kx;
+  int      dp_y_k;
+  int      tmp_jmin, tmp_jmax, kmin, kmax;
+
+  int       *jmin = cp9b->jmin;
+  int       *jmax = cp9b->jmax;
+  int     **hdmin = cp9b->hdmin;
+  int     **hdmax = cp9b->hdmax;
+
+  /* Contract check */
+  if(dsq == NULL) cm_Fail("FastCYKScan_b_jd_me(), dsq is NULL.\n");
+  if (mx == NULL) cm_Fail("FASTCYKScan_b_jd_me(), mx is NULL.\n");
+
+  /* Allocations and initializations
+   */
+  b   = -1;
+  bsc = IMPOSSIBLE;
+  W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
+				/* if caller didn't give us a deck pool, make one */
+
+  /* grow the matrix based on the current sequence and bands */
+  cm_fhb_mx_GrowTo(mx, cp9b);
+  float    ***alpha = mx->dp;
+
+  float *el_scA;
+  float **init_scAA;
+  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
+  ESL_ALLOC(el_scA, sizeof(float) * (W+1));
+  for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
+
+  /* precalculate the initial score for all alpha[v][j][d] cells, it's independent
+   * of j, so we do it here, outside the for(j...) loop */
+  ESL_ALLOC(init_scAA, sizeof(float *) * (cm->M));
+  for (v = 0; v < cm->M; v++) {
+      ESL_ALLOC(init_scAA[v], sizeof(float) * (W+1));
+
+      if(NOT_IMPOSSIBLE(cm->endsc[v]))
+	for(d = 0; d <= W; d++)
+	  init_scAA[v][d] = el_scA[d] + cm->endsc[v];
+      else
+	for(d = 0; d <= W; d++)
+	  init_scAA[v][d] = IMPOSSIBLE;
+  }
+
+  int *yvalidA; 
+  ESL_ALLOC(yvalidA, sizeof(int) * MAXCONNECT);
+  esl_vec_ISet(yvalidA, MAXCONNECT, 0);
+
+  /* Main recursion
+   */
+  for (v = vend; v >= vroot; v--) 
+    {
+      /* We've only allocated alpha cells that are within the bands
+       * on the j and d dimensions. This means we have to deal
+       * with all sorts of offset issues, but we don't have to 
+       * waste time setting cells outside the bands to IMPOSSIBLE.
+       */
+      int sd   = StateDelta(cm->sttype[v]);
+      int sdr  = StateRightDelta(cm->sttype[v]);
+      int jn   = jmin[v];
+      int jx   = jmax[v];
+      int dn;
+      int dx;
+      float tsc;
+      int cnum = cm->cnum[v];
+      int jp_y_sdr;
+      int dp_y_sd;
+      int dpn;
+      int dpx;
+      int jpn;
+      int jpx;
+      int yvalid_idx;
+      int yvalid_ct;
+      int j_sdr;
+      if(cm->sttype[v] == E_st) { 
+	for (j = jmin[v]; j <= jmax[v]; j++) { 
+	  jp_v = j-jmin[v];
+	  ESL_DASSERT1((hdmin[v][jp_v] == 0));
+	  ESL_DASSERT1((hdmax[v][jp_v] == 0));
+	  alpha[v][jp_v][0] = 0.; /* for End states, d must be 0 */
+	}
+      }
+      else if(cm->sttype[v] == IL_st) {
+	/* initialize all cells within v's j band */
+	for (j = jmin[v]; j <= jmax[v]; j++) { 
+	  jp_v  = j - jmin[v];
+	  for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	    alpha[v][jp_v][dp_v] = init_scAA[v][d-sd];
+	  }
+	}
+	/* update alpha[v][jp_v][dp_v] cells, for IL states, loop nesting order is:
+	 * for j { for d { for y { } } } because they can self transit, and a 
+	 * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
+	 * before can start calc'ing for alpha[v][j][d+1] */
+	for (j = jmin[v]; j <= jmax[v]; j++) {
+	  jp_v = j - jmin[v];
+	  yvalid_ct = 0;
+	  j_sdr = j - sdr;
+
+	  /* determine which children y we can legally transit to for v, j */
+	  for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
+	    if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr is valid for state y? */
+
+	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	    i = j - d + 1;
+	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+	      yoffset = yvalidA[yvalid_idx];
+	      y = cm->cfirst[v] + yoffset;
+	      jp_y_sdr = j - jmin[y] - sdr;
+
+	      if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
+		  dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+		  ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+		  if ((sc = alpha[y][jp_y_sdr][dp_y_sd] + cm->tsc[v][yoffset]) > alpha[v][jp_v][dp_v])
+		    {
+		      alpha[v][jp_v][dp_v] = sc; 
+		    }
+	      }
+	    }
+	    if (dsq[i] < cm->abc->K) alpha[v][jp_v][dp_v] += cm->esc[v][(int) dsq[i]];
+	    else                     alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
+	    i--;
+	  }
+	}
+      }
+      else if(cm->sttype[v] == IR_st) { 
+	/* initialize all cells within v's j band */
+	for (j = jmin[v]; j <= jmax[v]; j++) { 
+	  jp_v  = j - jmin[v];
+	  for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	    alpha[v][jp_v][dp_v] = init_scAA[v][d-sd];
+	  }
+	}
+	/* update alpha[v][jp_v][dp_v] cells, for IR states, loop nesting order is:
+	 * for j { for d { for y { } } } because they can self transit, and a 
+	 * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
+	 * before can start calc'ing for alpha[v][j][d+1] */
+	for (j = jmin[v]; j <= jmax[v]; j++) {
+	  jp_v = j - jmin[v];
+	  yvalid_ct = 0;
+	  j_sdr = j - sdr;
+
+	  /* determine which children y we can legally transit to for v, j */
+	  for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
+	    if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr is valid for state y? */
+
+	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	    for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+	      yoffset = yvalidA[yvalid_idx];
+	      y = cm->cfirst[v] + yoffset;
+	      jp_y_sdr = j - jmin[y] - sdr;
+
+	      if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
+		  dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+		  ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+		  ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+		  if ((sc = alpha[y][jp_y_sdr][dp_y_sd] + cm->tsc[v][yoffset]) > alpha[v][jp_v][dp_v])
+		    {
+		      alpha[v][jp_v][dp_v] = sc; 
+		    }
+	      }
+	    }
+	    if (dsq[j] < cm->abc->K) alpha[v][jp_v][dp_v] += cm->esc[v][(int) dsq[j]];
+	    else          	       alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
+	  }
+	}
+      }
+      else if(cm->sttype[v] != B_st) {
+	/* initialize all cells within v's j band */
+	for (j = jmin[v]; j <= jmax[v]; j++) { 
+	  jp_v  = j - jmin[v];
+	  for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	    alpha[v][jp_v][dp_v] = init_scAA[v][d-sd];
+	  }
+	}
+	/* for each child state y of v, update alpha[v][jp_v][dp_v] cells */
+	for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
+	  yoffset = y - cm->cfirst[v];
+	  tsc = cm->tsc[v][yoffset];
+
+	  jn = ESL_MAX(jmin[v], ESL_MIN(jmin[y] + sdr, jmax[y]));
+	  jx = ESL_MIN(jmax[v], ESL_MAX(jmax[y] + sdr, jmin[y]));
+	  jx = ESL_MIN(jx, jmax[y] + sdr);
+	  jpn = jn - jmin[v];
+	  jpx = jx - jmin[v];
+	  jp_y_sdr = jn - jmin[y] - sdr;
+
+	  for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
+	    ESL_DASSERT1((jp_v >= 0 && jp_v <= (jmax[v]-jmin[v])));
+	    ESL_DASSERT1((jp_y_sdr >= 0 && jp_y_sdr <= (jmax[y]-jmin[y])));
+
+	    dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
+	    dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
+	    dx = ESL_MIN(dx, hdmax[y][jp_y_sdr] + sd);
+	    dpn     = dn - hdmin[v][jp_v];
+	    dpx     = dx - hdmin[v][jp_v];
+	    dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+
+	    for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) { 
+	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	      if((sc = alpha[y][jp_y_sdr][dp_y_sd] + tsc) > alpha[v][jp_v][dp_v]) {
+		alpha[v][jp_v][dp_v] = sc;
+	      }
+	    }
+	  }
+	}
+	/* add in emission score, if any */
+	switch(cm->sttype[v]) { 
+	case ML_st:
+	  for (j = jmin[v]; j <= jmax[v]; j++) { 
+	    jp_v  = j - jmin[v];
+	    i     = j - hdmin[v][jp_v] + 1;
+	    for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++, i--) {
+	      if (dsq[i] < cm->abc->K) alpha[v][jp_v][dp_v] += cm->esc[v][(int) dsq[i]];
+	      else                     alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
+	    }
+	  }
+	  break;
+	case MR_st:
+	  for (j = jmin[v]; j <= jmax[v]; j++) { 
+	    jp_v  = j - jmin[v];
+	    for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	      if (dsq[j] < cm->abc->K) alpha[v][jp_v][dp_v] += cm->esc[v][(int) dsq[j]];
+	      else          	     alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
+	    }
+	  }
+	  break;
+	case MP_st:
+	  for (j = jmin[v]; j <= jmax[v]; j++) { 
+	    jp_v  = j - jmin[v];
+	    i     = j - hdmin[v][jp_v] + 1;
+	    for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++, i--) {
+	      if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K) alpha[v][jp_v][dp_v] += cm->esc[v][(dsq[i]*cm->abc->K+dsq[j])];
+	      else  		                              alpha[v][jp_v][dp_v] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
+	    }
+	  }
+	}
+	/*for (j = jmin[v]; j <= jmax[v]; j++) { 
+	  jp_v  = j - jmin[v];
+	  i     = j - hdmin[v][jp_v] + 1;
+	  for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++, i--) {
+	    printf("alpha[v: %4d][jp_v: %4d][dp_v: %4d]: %.4f\n", v, jp_v, dp_v, alpha[v][jp_v][dp_v]);
+
+	  }
+	  printf("\n");
+	}
+	printf("\n\n");*/
+      }
+      else { /* B_st */ 
+	y = cm->cfirst[v];
+	z = cm->cnum[v];
+
+	/* Any valid j must be within both state v and state z's j band 
+	 * I think jmin[v] <= jmin[z] is guaranteed by the way bands are 
+	 * constructed, but we'll check anyway. 
+	 */
+	jn = (jmin[v] > jmin[z]) ? jmin[v] : jmin[z];
+	jx = (jmax[v] < jmax[z]) ? jmax[v] : jmax[z];
+	/* initialize all cells within v's j band to IMPOSSIBLE (local ends for B_st's are not allowed) */
+	for (j = jmin[v]; j <= jmax[v]; j++) { 
+	  jp_v  = j - jmin[v];
+	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+	    dp_v = d - hdmin[v][jp_v];
+	    alpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	  }
+	}
+	/* the main j loop */
+	for (j = jn; j <= jx; j++)
+	  {
+	    jp_v = j - jmin[v];
+	    jp_y = j - jmin[y];
+	    jp_z = j - jmin[z];
+	    kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+	    /* kn satisfies inequalities (1) and (3) (listed below)*/	
+	    kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+	    /* kn satisfies inequalities (2) and (4) (listed below)*/	
+	    for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
+	      {
+		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+
+		/* Find the first k value that implies a valid cell in the y and z decks.
+		 * This k must satisfy the following 6 inequalities (some may be redundant):
+		 * (1) k >= j-jmax[y];
+		 * (2) k <= j-jmin[y]; 
+		 *     1 and 2 guarantee (j-k) is within state y's j band
+		 *
+		 * (3) k >= hdmin[z][j-jmin[z]];
+		 * (4) k <= hdmax[z][j-jmin[z]]; 
+		 *     3 and 4 guarantee k is within z's j=(j), d band
+		 *
+		 * (5) k >= d-hdmax[y][j-jmin[y]-k];
+		 * (6) k <= d-hdmin[y][j-jmin[y]-k]; 
+		 *     5 and 6 guarantee (d-k) is within state y's j=(j-k) d band
+		 *
+		 * kn and kx were set above (outside (for (dp_v...) loop) that
+		 * satisfy 1-4 (b/c 1-4 are d-independent and k-independent)
+		 * RHS of inequalities 5 and 6 are dependent on k, so we check
+		 * for these within the next for loop.
+		 */
+		for(k = kn; k <= kx; k++)
+		  {
+		    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k])
+		      {
+			/* for current k, all 6 inequalities have been satisified 
+			 * so we know the cells corresponding to the platonic 
+			 * matrix cells alpha[v][j][d], alpha[y][j-k][d-k], and
+			 * alpha[z][j][k] are all within the bands. These
+			 * cells correspond to alpha[v][jp_v][dp_v], 
+			 * alpha[y][jp_y-k][d-hdmin[jp_y-k]-k],
+			 * and alpha[z][jp_z][k-hdmin[jp_z]];
+			 */
+			kp_z = k-hdmin[z][jp_z];
+			dp_y = d-hdmin[y][jp_y-k];
+
+			if ((sc = alpha[y][jp_y-k][dp_y - k] + alpha[z][jp_z][kp_z]) 
+			    > alpha[v][jp_v][dp_v])
+			  {
+			    alpha[v][jp_v][dp_v] = sc;
+			  }
+		      }
+		  }
+	      }
+	  }
+      }				/* finished calculating deck v. */
+      
+      /* The following loops originally access alpha[v][j0][W] but the index W will be
+	 in different positions due to the bands */
+
+      if(j0 >= jmin[v] && j0 <= jmax[v])
+	{
+	  jp_v = j0 - jmin[v];
+	  if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v])
+	    {
+	      Wp = W - hdmin[v][jp_v];
+	      /* If we get here alpha[v][jp_v][Wp] is a valid cell
+	       * in the banded alpha matrix, corresponding to 
+	       * alpha[v][j0][W] in the platonic matrix.
+	       */
+	      /* Check for local begin getting us to the root.
+	       * This is "off-shadow": if/when we trace back, we'll handle this
+	       * case separately (and we'll know to do it because we'll immediately
+	       * see a USED_LOCAL_BEGIN flag in the shadow matrix, telling us
+	       * to jump right to state b; see below)
+	       */
+	      if (allow_begin && alpha[v][jp_v][Wp] + cm->beginsc[v] > bsc) 
+		{
+		  b   = v;
+		  bsc = alpha[v][jp_v][Wp] + cm->beginsc[v];
+		}
+	    }
+	}
+      /* Check for whether we need to store an optimal local begin score
+       * as the optimal overall score, and if we need to put a flag
+       * in the shadow matrix telling insideT() to use the b we return.
+       */
+      if (v == 0)
+	{
+	  if(j0 >= jmin[0] && j0 <= jmax[0])
+	    {
+	      jp_v = j0 - jmin[v];
+	      if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v])
+		{
+		  if (allow_begin && v == 0 && bsc > alpha[0][jp_v][Wp]) {
+		    alpha[0][jp_v][Wp] = bsc;
+		  }
+		}
+	    }
+	}
+    } /* end loop over all v */
+  /* cm_fhb_mx_Dump(stdout, mx); */
+  /*debug_print_alpha_banded_jd(alpha, cm, L, jmin, jmax, hdmin, hdmax);*/
+
+  Wp = W - hdmin[vroot][j0-jmin[vroot]];
+  sc =     alpha[vroot][j0-jmin[vroot]][Wp];
+
+  if (ret_b != NULL)   *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
+  if (ret_bsc != NULL) *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */
+
+  /*printf("inside jd me returning sc: %f\n", sc);*/
+
+  for (v = 0; v < cm->M; v++) free(init_scAA[v]);
+  free(init_scAA);
+  free(el_scA);
+  free(yvalidA);
+
+  return sc;
+
+ ERROR: 
+  cm_Fail("Memory allocation error.\n");
+  return 0.; /* never reached */
+}
+
 /*****************************************************************
  * Benchmark driver
  *****************************************************************/
@@ -4402,9 +3596,10 @@ static ESL_OPTIONS options[] = {
   { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
   { "-r",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "set random number seed randomly",                0 },
   { "-s",        eslARG_INT,     "33", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                  0 },
+  { "-e",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "emit sequences from CM, don't randomly create them", 0 },
+  { "-g",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "search in glocal mode [default: local]", 0 },
   { "-L",        eslARG_INT,  "10000", NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs",                   0 },
   { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of random target seqs",                   0 },
-  { "-g",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "search in glocal mode [default: local]", 0 },
   { "-o",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute old reference CYK scan implementation", 0 },
   { "-w",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute new reference CYK scan implementation", 0 },
   { "-x",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute experimental CYK scan implementation", 0 },
@@ -4416,6 +3611,10 @@ static ESL_OPTIONS options[] = {
   { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute optimized float inside scan implementation", 0 },
   { "--rfins",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute reference float inside scan implementation", 0 },
   { "--ofins",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute old float inside scan implementation", 0 },
+  { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,  NULL,"-e",   NULL, "calculate and use HMM bands in CM search", 6 },
+  { "--tau",     eslARG_REAL,   "1e-7",NULL, "0<x<1",NULL,"--hbanded",  NULL, "set tail loss prob for --hbanded to <x>", 6 },
+  { "--scan2bands",eslARG_NONE, FALSE, NULL, NULL,  NULL,"--hbanded",   NULL, "derive HMM bands from scanning Forward/Backward", 6 },
+  { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,"--hbanded",   NULL, "use posterior sums during HMM band calculation (widens bands)", 6 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -4424,6 +3623,7 @@ static char banner[] = "benchmark driver for an optimized scanning CYK implement
 int 
 main(int argc, char **argv)
 {
+  int             status;
   ESL_GETOPTS    *go      = esl_getopts_CreateDefaultApp(options, 1, argc, argv, banner, usage);
   CM_t            *cm;
   ESL_STOPWATCH  *w       = esl_stopwatch_Create();
@@ -4439,6 +3639,8 @@ main(int argc, char **argv)
   int            *dmin;
   int            *dmax;
   ScanInfo_t     *si;
+  int             do_random;
+  seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
@@ -4451,7 +3653,14 @@ main(int argc, char **argv)
   if (!(CMFileRead(cmfp, &abc, &cm)))            cm_Fail("Failed to read CM");
   CMFileClose(cmfp);
 
+  do_random = TRUE;
+  if(esl_opt_GetBoolean(go, "-e")) do_random = FALSE; 
+
   if(! esl_opt_GetBoolean(go, "-g")) cm->config_opts  |= CM_CONFIG_LOCAL;
+  if(  esl_opt_GetBoolean(go, "--sums"))        cm->search_opts |= CM_SEARCH_SUMS;
+  if(  esl_opt_GetBoolean(go, "--scan2bands"))  cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
+  if(  esl_opt_GetBoolean(go, "--hbanded"))     cm->search_opts |= CM_SEARCH_HBANDED;
+  cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
   cm->config_opts |= CM_CONFIG_QDB;
   ConfigCM(cm, NULL, NULL);
 
@@ -4460,31 +3669,53 @@ main(int argc, char **argv)
   }
   else { dmin = cm->dmin; dmax = cm->dmax; }
 
-  si = cm_CreateScanInfo(cm); /* impt to do this after QDBs set up in ConfigCM() */
+  cm_CreateScanInfo(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
+
+  CM_FHB_MX  *hbmx = NULL;
+  CP9Bands_t *cp9b = NULL;
+  if (esl_opt_GetBoolean(go, "--hbanded")) { 
+    cp9b = AllocCP9Bands(cm, cm->cp9);
+    /* create the matrix, it'll be empty initially */
+    hbmx = cm_fhb_mx_Create(cm->M);
+  }
+
+  /* get sequences */
+  if(do_random) {
+    double *dnull;
+    ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
+    for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
+    esl_vec_DNorm(dnull, cm->abc->K);
+    seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, L, FALSE);
+    free(dnull);
+  }
+  else /* don't randomly generate seqs, emit them from the CM */
+    seqs_to_aln = CMEmitSeqsToAln(r, cm, 1, N, FALSE);
 
   for (i = 0; i < N; i++)
     {
-      esl_rnd_xfIID(r, cm->null, abc->K, L, dsq);
+      L = seqs_to_aln->sq[i]->n;
+      dsq = seqs_to_aln->sq[i]->dsq;
+      cm->search_opts  &= ~CM_SEARCH_INSIDE;
 
       esl_stopwatch_Start(w);
-      sc = FastCYKScan(cm, si, dsq, 1, L, cm->W, 0., NULL, NULL);
+      sc = FastCYKScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 
-      if (esl_opt_GetBoolean(go, "-x")) 
+      /*if (esl_opt_GetBoolean(go, "-x")) 
 	{ 
 	  esl_stopwatch_Start(w);
 	  sc = XFastCYKScan(cm, dsq, dmin, dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "XFastCYKScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-	}
+	  }*/
 
       if (esl_opt_GetBoolean(go, "-w")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  sc = RefCYKScan(cm, si, dsq, 1, L, cm->W, 0., NULL, NULL);
+	  sc = RefCYKScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefCYKScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -4514,7 +3745,7 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  sc = FastIInsideScan(cm, si, dsq, 1, L, cm->W, 0., NULL, NULL);
+	  sc = FastIInsideScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -4524,7 +3755,7 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  sc = RefIInsideScan(cm, si, dsq, 1, L, cm->W, 0., NULL, NULL);
+	  sc = RefIInsideScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -4554,7 +3785,7 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  sc = FastFInsideScan(cm, si, dsq, 1, L, cm->W, 0., NULL, NULL);
+	  sc = FastFInsideScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastFInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -4564,7 +3795,7 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  sc = RefFInsideScan(cm, si, dsq, 1, L, cm->W, 0., NULL, NULL);
+	  sc = RefFInsideScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefFInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -4588,1495 +3819,38 @@ main(int argc, char **argv)
 	    esl_stopwatch_Display(stdout, w, " CPU time: ");
 	  }
 	}
+      if (esl_opt_GetBoolean(go, "--hbanded")) 
+	{ 
+	  esl_stopwatch_Start(w);
+	  cp9_Seq2Bands(cm, dsq, 1, L, cp9b, 0);   /* debug level */
+	  sc = CYKBandedScan_jd(cm, dsq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+				1, L, cm->W, 0., NULL);
+	  printf("%4d %-30s %10.4f bits ", (i+1), "CYKBandedScan_jd() : ", sc);
+	  esl_stopwatch_Stop(w);
+	  esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+	  esl_stopwatch_Start(w);
+	  cp9_Seq2Bands(cm, dsq, 1, L, cp9b, 0);   /* debug level */
+	  sc = FastCYKScan_b_jd_me(cm, dsq, L, 0, cm->M-1, 1, L, hbmx, (cm->flags & CMH_LOCAL_BEGIN), NULL, NULL, cp9b);
+	  printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan_b_jd_me() : ", sc);
+	  esl_stopwatch_Stop(w);
+	  esl_stopwatch_Display(stdout, w, " CPU time: ");
+	}
+
+      printf("\n");
     }
-  cm_FreeScanInfo(cm, si);
+  if(cp9b != NULL) FreeCP9Bands(cp9b);
+  if(hbmx != NULL) cm_fhb_mx_Destroy(hbmx);
   FreeCM(cm);
-  free(dsq);
+  FreeSeqsToAln(seqs_to_aln);
   esl_alphabet_Destroy(abc);
   esl_stopwatch_Destroy(w);
   esl_randomness_Destroy(r);
   esl_getopts_Destroy(go);
   return 0;
+
+ ERROR:
+  cm_Fail("memory allocation error");
 }
 #endif /*IMPL_FASTSEARCH_BENCHMARK*/
 
-
-#if 0
-/* Function: FastFInsideScan()
- * Date:     EPN, Thu Nov  1 18:48:00 2007
- *
- * Purpose:  Scan a sequence for matches to a covariance model, using the
- *           banded Inside algorithm. If bands are NULL, reverts to non-banded.
- *
- * Args:     cm              - the covariance model
- *           dsq             - the digitized sequence
- *           dmin            - minimum bound on d for state v; 0..M
- *           dmax            - maximum bound on d for state v; 0..M          
- *           i0              - start of target subsequence (1 for full seq)
- *           j0              - end of target subsequence (L for full seq)
- *           W               - max d: max size of a hit
- *           cutoff          - minimum score to report
- *           results         - search_results_t to add to; if NULL, don't add to it
- *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
- *           ret_best_hit_sc - RETURN score of best hit (reported to results) NULL if not-wanted
- *
- * Returns:  Score of best overall hit (vsc[0]). Information on hits added to <results>.
- *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
- *           Dies immediately if some error occurs.
- */
-float 
-FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, 
-		search_results_t *results, float **ret_vsc, float *ret_best_hit_sc)
-{
-  int       status;
-  float  ***alpha;              /* CYK DP score matrix, [j][v][d] */
-  float  ***alpha_begl; 
-  float    *vsc;                /* best score for each state (float) */
-  float     vsc_root;           /* best overall score (score at ROOT_S) */
-  int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
-  float    *gamma;              /* SHMM DP matrix for optimum nonoverlap resolution */
-  int      *gback;              /* traceback pointers for SHMM */ 
-  float    *savesc;             /* saves score of hit added to best parse at j */
-  int      *saver;		/* saves initial non-ROOT state of best parse ended at j */
-  int       yoffset;		/* offset to a child state */
-  int       i,j;		/* index of start/end positions in sequence, 0..L */
-  int       d;			/* a subsequence length, 0..W */
-  int       k;			/* used in bifurc calculations: length of right subseq */
-  int       prv, cur;		/* previous, current j row (0 or 1) */
-  int       v, w, y;            /* state indices */
-  int       jp_v;  	        /* offset j for state v */
-  int       jp_y;  	        /* offset j for state y */
-  int       jp_g;               /* offset j for gamma (j-i0+1) */
-  int       ip_g;               /* offset i for gamma (i-i0+1) */
-  int       dp_y;               /* offset d for state y */
-  int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
-  int       L;                  /* length of the subsequence (j0-i0+1) */
-  int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
-  int       bestd;              /* d value of best hit thus far seen for j (used if greedy strategy) */
-  float     best_hit_sc;        /* best hit score found */
-  int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
-  int     **dnAA, **dxAA;       /* [1..j..W][0..v..M-1] min,max d value allowed for posn j, state v */
-  int      *dnA,   *dxA;        /* tmp ptr to 1 row of dnAA, dxAA */
-
-  int cnum;
-  int dn;
-  int dx;
-  float *el_scA;
-  int *jp_wA;
-  float **init_scAA;
-  int  ctr = 0;
-  /*int yidx;*/
-  /*float const *tsc = cm->tsc[0]; */
-
-  /* Contract check */
-  if(j0 < i0)     cm_Fail("ERROR in FastCYKScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL) cm_Fail("ERROR in FastCYKScan, dsq is NULL\n");
-  if(cm->search_opts & CM_SEARCH_INSIDE) cm_Fail("ERROR in FastCYKScan, CM_SEARCH_INSIDE flag raised");
-
-  /* determine if we're doing banded/non-banded */
-  if(dmin != NULL && dmax != NULL) do_banded = TRUE;
-
-  L = j0-i0+1;
-  if (W > L) W = L; 
-
-  vsc = NULL;
-  if(ret_vsc != NULL) { 
-    ESL_ALLOC(vsc, sizeof(float) * cm->M);
-    esl_vec_FSet(vsc, cm->M, IMPOSSIBLE);
-  }
-  best_hit_sc = IMPOSSIBLE;
-  vsc_root    = IMPOSSIBLE;
-
-  /*
-   * alpha and alpha_begl allocations.
-   * The alpha matrix holds data for all states EXCEPT BEGL_S states
-   * The alpha scanning matrix is indexed [j][v][d]. 
-   *    j takes values 0 or 1: only the previous (prv) or current (cur) row
-   *    v ranges from 0..M-1 over states in the model.
-   *    d ranges from 0..W over subsequence lengths.
-   * Note if v is a BEGL_S alpha[j][v] == NULL
-   * Note that old convention of sharing E memory is no longer,
-   * each E state has it's own deck.
-   *
-   * alpha_begl matrix holds data for ONLY BEGL_S states
-   *    j takes value of 0..W
-   *    v ranges from 0..M-1 over states in the model
-   *    d ranges from 0..W over subsequence lengths.
-   * Note if v is NOT a BEGL_S alpha[j][v] == NULL
-   */
-
-  /* allocate alpha */
-  ESL_ALLOC(alpha, (sizeof(float **) * 2));
-  ESL_ALLOC(alpha[0], sizeof(float *) * cm->M);
-  ESL_ALLOC(alpha[1], sizeof(float *) * cm->M);
-  ESL_ALLOC(alpha[0][0], (sizeof(float) * 2 * (cm->M) * (W+1)));
-  for (v = cm->M-1; v >= 0; v--) {	
-    if (cm->stid[v] != BEGL_S) {
-      alpha[0][v] = alpha[0][0] + (v           * (W+1));
-      alpha[1][v] = alpha[0][0] + ((v + cm->M) * (W+1));
-    }
-    else { /* BEGL_S, this is wasteful */
-      alpha[0][v] = NULL;
-      alpha[1][v] = NULL;
-    }
-  }
-  /* float const *alphap = alpha[0][0]; */
-
-  /* allocate alpha_begl */
-  ESL_ALLOC(alpha_begl, (sizeof(float **) * (W+1)));
-  for (j = 0; j <= W; j++) {
-    ESL_ALLOC(alpha_begl[j], (sizeof(float *) * (cm->M)));
-    for (v = cm->M-1; v >= 0; v--) {	
-      if (cm->stid[v] == BEGL_S) {
-	ESL_ALLOC(alpha_begl[j][v], (sizeof(float) * (W+1)));
-      }
-      else /* non-BEGL */
-	alpha_begl[j][v] = NULL;
-    }
-  }
-  ESL_ALLOC(bestr, (sizeof(int) * (W+1)));
-
-  /*
-   * alpha initializations.
-   * We initialize on d=0, subsequences of length 0; these are
-   * j-independent. Any generating state (P,L,R) is impossible on d=0.
-   * E=0 for d=0. B,S,D must be calculated. 
-   * Also, for MP, d=1 is impossible.
-   * Also, for E, all d>0 are impossible.
-   *
-   * and, for banding: any cell outside our bands is impossible.
-   * These inits are never changed in the recursion, so even with the
-   * rolling, matrix face reuse strategy, this works.
-   */
-  /* initialize alpha and alpha_begl */
-  for(v = cm->M-1; v >= 0; v--) 
-    {
-      if(cm->stid[v] != BEGL_S) 
-	{
-	  alpha[0][v][0] = IMPOSSIBLE;
-	  if      (cm->sttype[v] == E_st)  { 
-	    alpha[0][v][0] = alpha[1][v][0] = 0.;
-	    /* rest of E deck is IMPOSSIBLE, this rewritten if QDB is on, (slightly wasteful). */
-	    for (d = 1; d <= W; d++) alpha[0][v][d] = alpha[1][v][d] = IMPOSSIBLE;
-	  }
-	  else if (cm->sttype[v] == MP_st) alpha[0][v][1] = alpha[1][v][1] = IMPOSSIBLE;
-	  else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) 
-	    {
-	      y = cm->cfirst[v];
-	      alpha[0][v][0] = cm->endsc[v];
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		alpha[0][v][0] = FLogsum(alpha[0][v][0], (alpha[0][y+yoffset][0] + cm->tsc[v][yoffset]));
-	      alpha[0][v][0] = ESL_MAX(alpha[0][v][0], IMPOSSIBLE);
-	    }
-	  else if (cm->sttype[v] == B_st) 
-	    {
-	      w = cm->cfirst[v]; /* BEGL_S, left child state */
-	      y = cm->cnum[v];
-	      alpha[0][v][0] = alpha_begl[0][w][0] + alpha[0][y][0]; 
-	    }
-
-	  alpha[1][v][0] = alpha[0][v][0];
-	}
-      else /* v == BEGL_S */
-	{
-	  y = cm->cfirst[v];
-	  alpha_begl[0][v][0] = cm->endsc[v];
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	    alpha_begl[0][v][0] = FLogsum(alpha_begl[0][v][0], (alpha[0][y+yoffset][0] + cm->tsc[v][yoffset])); /* careful: y is in alpha */
-	  alpha_begl[0][v][0] = ESL_MAX(alpha_begl[0][v][0], IMPOSSIBLE);
-	  for (j = 1; j <= W; j++) 
-	    alpha_begl[j][v][0] = alpha_begl[0][v][0];
-	}
-    }
-  bestr[0] = -1;
-
-  /*
-   * gamma allocation and initialization.
-   * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits.
-   */
-  if(results != NULL) { 
-    ESL_ALLOC(gamma,  sizeof(float) * (L+1));
-    gamma[0] = 0;
-    ESL_ALLOC(gback,  sizeof(int)   * (L+1));
-    gback[0] = -1;
-    ESL_ALLOC(savesc, sizeof(float) * (L+1));
-    ESL_ALLOC(saver,  sizeof(int)   * (L+1));
-  }
-  /*
-   * query-dependent band imposition.
-   *   (note: E states have all their probability on d=0, so dmin[E] = dmax[E] = 0;
-   *    the first loop will be skipped, the second initializes the E states.)
-   */
-  if(do_banded) { 
-    for (v = 0; v < cm->M; v++) {
-      if(cm->stid[v] != BEGL_S) {
-	for (d = 0; d < dmin[v] && d <=W; d++) 
-	  for(j = 0; j < 2; j++)
-	    alpha[j][v][d] = IMPOSSIBLE;
-	for (d = dmax[v]+1; d <= W;      d++) 
-	  for(j = 0; j < 2; j++)
-	    alpha[j][v][d] = IMPOSSIBLE;
-      }
-      else
-	{
-	  for (d = 0; d < dmin[v] && d <=W; d++) 
-	    for(j = 0; j <= W; j++)
-	      alpha_begl[j][v][d] = IMPOSSIBLE;
-	  for (d = dmax[v]+1; d <= W;      d++) 
-	    for(j = 0; j <= W; j++)
-	      alpha_begl[j][v][d] = IMPOSSIBLE;
-	}
-    }
-  }
-
-  /* precalculate minimum and maximum d for each state and each sequence index (1..j..W). 
-   * this is not always just dmin, dmax, (for ex. if j < W).
-   */
-  ESL_ALLOC(dnAA, sizeof(int *) * (W+1));
-  ESL_ALLOC(dxAA, sizeof(int *) * (W+1));
-  
-  dnAA[0] = dxAA[0] = NULL; /* corresponds to j == 0, which is out of bounds */
-  for(j = 1; j <= W; j++) {
-    ESL_ALLOC(dnAA[j], sizeof(int) * cm->M);
-    ESL_ALLOC(dxAA[j], sizeof(int) * cm->M);
-
-    for(v = 0; v < cm->M; v++) {
-      if(do_banded) { 
-	dnAA[j][v] = (cm->sttype[v] == MP_st) ? ESL_MAX(dmin[v], 2) : ESL_MAX(dmin[v], 1); 
-	dxAA[j][v] = ESL_MIN(j, dmax[v]); 
-	dxAA[j][v] = ESL_MIN(dxAA[j][v], W);
-      }
-      else { 
-	dnAA[j][v] = (cm->sttype[v] == MP_st) ? 2 : 1;
-	dxAA[j][v] = ESL_MIN(j, W); 
-      }
-    }
-  }
-
-  /* precalculate possible emission scores for each state */
-  float **esc_vAA;
-  int a,b;
-  ESL_ALLOC(esc_vAA, sizeof(float *) * (cm->M));
-  for(v = 0; v < cm->M; v++) {
-    switch(cm->sttype[v]) {
-    case IL_st:
-    case ML_st:
-    case IR_st:
-    case MR_st:
-      ESL_ALLOC(esc_vAA[v], sizeof(float) * cm->abc->Kp);
-      /* ALLOCATE SIZE = POWER OF 2? */
-      esl_vec_FSet(esc_vAA[v], cm->abc->Kp, IMPOSSIBLE);
-      for(a = 0; a < cm->abc->K; a++)
-	esc_vAA[v][a] = cm->esc[v][a];
-      for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++)
-	esc_vAA[v][a] = esl_abc_FAvgScore(cm->abc, a, cm->esc[v]);
-      break;
-    case MP_st:
-      ESL_ALLOC(esc_vAA[v], sizeof(float) * (cm->abc->Kp * cm->abc->Kp));
-      /* ALLOCATE SIZE = POWER OF 2? */
-      esl_vec_FSet(esc_vAA[v], (cm->abc->Kp * cm->abc->Kp), IMPOSSIBLE);
-      for(a = 0; a < (cm->abc->Kp-1); a++)
-	for(b = 0; b < (cm->abc->Kp-1); b++)
-	  if(a < cm->abc->K && b < cm->abc->K)
-	    esc_vAA[v][a * cm->abc->Kp + b] = cm->esc[v][(a * cm->abc->K) + b];
-	  else
-	    esc_vAA[v][a * cm->abc->Kp + b] = DegeneratePairScore(cm->abc, cm->esc[v], a, b);
-      break;
-    default:
-      esc_vAA[v] = NULL;
-      break;
-    }
-  }
-
-  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
-  ESL_ALLOC(el_scA, sizeof(float) * (W+1));
-  for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
-
-  /* precalculate the initial score for all alpha[v][j][d] cells, it's independent
-   * of j, so we do it here, outside the for(j...) loop */
-  ESL_ALLOC(init_scAA, sizeof(float *) * (cm->M));
-  for (v = 0; v < cm->M; v++) 
-    {
-      ESL_ALLOC(init_scAA[v], sizeof(float) * (W+1));
-
-      if(NOT_IMPOSSIBLE(cm->endsc[v]))
-	for(d = 0; d <= W; d++)
-	  init_scAA[v][d] = el_scA[d] + cm->endsc[v];
-      else
-	for(d = 0; d <= W; d++)
-	  init_scAA[v][d] = IMPOSSIBLE;
-    }
-
-  /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
-  ESL_ALLOC(jp_wA, sizeof(float) * (W+1));
-
-  /* Precalculate the 'emit mode' of each state to speed up the addition of emission 
-   * scores, all states are either EMITLEFT, EMITRIGHT, EMITPAIR, or EMITNONE, this
-   * collapses ILs and MLs into 1 value (for example) for the switch() statement inside the for(d...) loop
-   * in the heart of the recursion which saves us time.
-   */
-  int *emitmodeA;
-  ESL_ALLOC(emitmodeA, sizeof(int) * cm->M);
-  for(v = 0; v < cm->M; v++) {
-    switch (cm->sttype[v]) {
-    case IL_st:
-    case ML_st:
-      emitmodeA[v] = EMITLEFT;
-      break;
-    case IR_st:
-    case MR_st:
-      emitmodeA[v] = EMITRIGHT;
-      break;		
-    case MP_st:
-      emitmodeA[v] = EMITPAIR;
-      break;		
-    default:
-      emitmodeA[v] = EMITNONE;
-      break;
-    }
-  }
-
-  /* Initialize sc_v to size of M */
-  float *sc_v;
-  ESL_ALLOC(sc_v, (sizeof(float) * (W+1)));
-  esl_vec_FSet(sc_v, (W+1), IMPOSSIBLE);
-
-  /* The main loop: scan the sequence from position i0 to j0.
-   */
-  for (j = i0; j <= j0; j++) 
-    {
-      float sc;
-      jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
-      cur  = j%2;
-      prv  = (j-1)%2;
-      if(jp_g >= W) { dnA = dnAA[W];     dxA = dxAA[W];    }
-      else {          dnA = dnAA[jp_g];  dxA = dxAA[jp_g]; }
-      /* precalcuate all possible rolling ptrs into the BEGL deck, so we don't wastefully recalc them inside inner DP loop */
-      for(d = 0; d <= W; d++) jp_wA[d] = (j-d)%(W+1);
-
-      for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
-	{
-	  /* printf("dnA[v:%d]: %d\ndxA[v:%d]: %d\n", v, dnA[v], v, dxA[v]); */
-	  if(cm->sttype[v] == E_st) continue;
-	  /* float const *esc_v = cm->esc[v]; */
-	  float const *esc_v = esc_vAA[v]; 
-	  float const *tsc_v = cm->tsc[v];
-	  //float sc;
-	  jp_v = (cm->stid[v] == BEGL_S) ? (j % (W+1)) : cur;
-	  jp_y = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
-	  sd   = StateDelta(cm->sttype[v]);
-	  cnum = cm->cnum[v];
-	  dn   = dnA[v];
-	  dx   = dxA[v];
-	  /* if we emit right, precalc score of emitting res j from state v */
-	  float esc_j = IMPOSSIBLE;
-	  if(cm->sttype[v] == IR_st || cm->sttype[v] == MR_st)
-	    esc_j = esc_v[dsq[j]];
-
-	  if(cm->sttype[v] == B_st) {
-	    w = cm->cfirst[v]; /* BEGL_S */
-	    y = cm->cnum[v];   /* BEGR_S */
-#pragma ivdep
-	    for (d = dnA[v]; d <= dxA[v]; d++) {
-	      /* k is the length of the right fragment */
-	      /* Careful, make sure k is consistent with bands in state w and state y. */
-	      if(do_banded) {
-		kmin = ESL_MAX(dmin[y], (d-dmax[w]));
-		kmin = ESL_MAX(kmin, 0);
-		kmax = ESL_MIN(dmax[y], (d-dmin[w]));
-	      }
-	      else { kmin = 0; kmax = d; }
-
-	      sc = init_scAA[v][d]; /* state delta is 0 for B_st */
-	      for (k = kmin; k <= kmax; k++) 
-		sc = FLogsum(sc, (alpha_begl[jp_wA[k]][w][d-k] + alpha[jp_y][y][k]));
-	      alpha[jp_v][v][d] = sc;
-	      /* careful: scores for w, the BEGL_S child of v, are in alpha_begl, not alpha */
-	    }
-	  }
-	  else if (cm->stid[v] == BEGL_S) {
-	    y = cm->cfirst[v]; 
-#pragma ivdep
-	    for (d = dnA[v]; d <= dxA[v]; d++) {
-	      sc = init_scAA[v][d]; /* state delta is 0 for BEGL_S st */
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		sc = FLogsum(sc, alpha[jp_y][y+yoffset][d - sd] + cm->tsc[v][yoffset]);
-	      alpha_begl[jp_v][v][d] = sc;
-	      /* careful: y is in alpha (all children of a BEGL_S must be non BEGL_S) */
-	    }
-	  }
-	  else if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) { 
-	    y    = cm->cfirst[v];
-	    dp_y = dn - sd; /* initial dp_y, we increment it at end of 'for(d = ...' loop */
-	    i    = j-dn+1;  /* initial i,    we decrement it when we access it, inside each possible case of the switch (cnum) below */
-
-	    float const *arow0;
-	    float const *arow1;
-	    float const *arow2;
-	    float const *arow3;
-	    float const *arow4;
-	    float const *arow5;
-
-	    /* Note: order of cnum cases in switch and cases in each
-	     * nested emitmodeA[v] switch is based on empirical
-	     * frequency in large test set, more frequent guys come
-	     * earlier, so average num calcs in each switch is
-	     * minimized.
-	     */
-
-	    switch (cnum) {
-	    case 3: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-#pragma ivdep
-	      for (d = dn; d <= dx; d++, dp_y++) {
-		/* ctr++; */
-		sc = FLogsum(arow2[dp_y] + tsc_v[2],
-			     arow1[dp_y] + tsc_v[1]);		
-		sc = FLogsum(sc, init_scAA[v][dp_y]);
-		sc = FLogsum(sc, arow0[dp_y] + tsc_v[0]);		
-		
-		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
-		case EMITLEFT:
-		  sc += esc_v[dsq[i--]];
-		  break;
-		case EMITRIGHT:
-		  sc += esc_j;
-		  break;		
-		} /* end of switch (cm->sttype[v]) */
-		alpha[jp_v][v][d] = sc;
-	      } /* end of for(d = dn; d <= dx; d++) */
-	      break;
-
-	    case 6: /* necessarily 2 inserts */
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-	      arow4 = (float * const) alpha[jp_y][y+4];
-	      arow5 = (float * const) alpha[jp_y][y+5];
-#pragma ivdep
-	      for (d = dn; d <= dx; d++, dp_y++) {
-		sc = FLogsum(arow5[dp_y] + tsc_v[5],
-			      init_scAA[v][dp_y]);
-		sc = FLogsum(sc, arow4[dp_y] + tsc_v[4]);		
-		sc = FLogsum(sc, arow3[dp_y] + tsc_v[3]);		
-		sc = FLogsum(sc, arow2[dp_y] + tsc_v[2]);		
-		sc = FLogsum(sc, arow1[dp_y] + tsc_v[1]);		
-		sc = FLogsum(sc, arow0[dp_y] + tsc_v[0]);		
-		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
-		case EMITLEFT:
-		  sc += esc_v[dsq[i--]];
-		  break;
-		case EMITRIGHT:
-		  sc += esc_j;
-		  break;		
-		} /* end of switch (cm->sttype[v]) */
-		alpha[jp_v][v][d] = sc;
-	      } /* end of for(d = dn; d <= dx; d++) */
-	      break;
-
-	    case 4: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-#pragma ivdep
-	      for (d = dn; d <= dx; d++, dp_y++) {
-		sc = FLogsum(arow3[dp_y] + tsc_v[3],
-			     arow2[dp_y] + tsc_v[2]);		
-		sc = FLogsum(sc, init_scAA[v][dp_y]);
-		sc = FLogsum(sc, arow1[dp_y] + tsc_v[1]);		
-		sc = FLogsum(sc, arow0[dp_y] + tsc_v[0]);		
-		
-		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
-		case EMITLEFT:
-		  sc += esc_v[dsq[i--]];
-		  break;
-		case EMITRIGHT:
-		  sc += esc_j;
-		  break;		
-		} /* end of switch (cm->sttype[v]) */
-		alpha[jp_v][v][d] = sc;
-	      } /* end of for(d = dn; d <= dx; d++) */
-	      break;
-
-	    case 5: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-	      arow4 = (float * const) alpha[jp_y][y+4];
-#pragma ivdep
-	      for (d = dn; d <= dx; d++, dp_y++) {
-		sc = FLogsum(arow4[dp_y] + tsc_v[4],
-			     arow3[dp_y] + tsc_v[3]);		
-		sc = FLogsum(sc, init_scAA[v][dp_y]);
-		sc = FLogsum(sc, arow1[dp_y] + tsc_v[1]);		
-		sc = FLogsum(sc, arow2[dp_y] + tsc_v[2]);		
-		sc = FLogsum(sc, arow0[dp_y] + tsc_v[0]);		
-
-		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
-		case EMITRIGHT:
-		  sc += esc_j;
-		  break;		
-		case EMITLEFT:
-		  sc += esc_v[dsq[i--]];
-		  break;
-		  /* MP states can't have 5 children */
-		} /* end of switch (cm->sttype[v]) */
-		alpha[jp_v][v][d] = sc;
-	      } /* end of for(d = dn; d <= dx; d++) */
-	      break;
-
-	    case 2: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-#pragma ivdep
-	      for (d = dn; d <= dx; d++, dp_y++) {
-		sc = FLogsum(arow1[dp_y] + tsc_v[1],
-			     init_scAA[v][dp_y]);
-		sc = FLogsum(sc, arow0[dp_y] + tsc_v[0]);		
-		switch (emitmodeA[v]) {
-		case EMITLEFT:
-		  sc += esc_v[dsq[i--]];
-		  break;
-		case EMITRIGHT:
-		  sc += esc_j;
-		  break;		
-		} /* end of switch (cm->sttype[v]) */
-		alpha[jp_v][v][d] = sc;
-	      } /* end of for(d = dn; d <= dx; d++) */
-	      break;
-	    } /* end of switch(cnum) */
-	    /* for (d = dn; d <= dx; d++) 
-	       printf("alpha[j:%d][v:%d][d:%d]: %10.4f\n", j, v, d, alpha[jp_v][v][d]); */
-	  } /* end of else if (v == IL_st || v == IR_st) */
-	  else { /* this else is entered if cm->sttype[v] != B_st && cm->stid[v] !=  BEGL_S st && cm->sttype[v] != IL_st && cm->sttype[v] != IR_st */
-	    y    = cm->cfirst[v];
-	    dp_y = dn - sd; /* initial dp_y, we increment it at end of 'for(d = ...' loop */
-	    i    = j-dn+1;  /* initial i,    we decrement it when we access it, inside each possible case of the switch (cnum) below */
-
-	    float const *arow0;
-	    float const *arow1;
-	    float const *arow2;
-	    float const *arow3;
-	    float const *arow4;
-	    float const *arow5;
-
-	    /* Note: order of cnum cases in switch and cases in each
-	     * nested emitmodeA[v] switch is based on empirical
-	     * frequency in large test set, more frequent guys come
-	     * earlier, so average num calcs in each switch is
-	     * minimized.
-	     */
-
-	    switch (cnum) {
-	    case 3: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-#pragma ivdep
-	      for (d = dn; d <= dx; d++, dp_y++) {
-		/* ctr++; */
-		sc_v[d] = FLogsum(arow2[dp_y] + tsc_v[2],
-			     arow1[dp_y] + tsc_v[1]);		
-		sc_v[d] = FLogsum(sc_v[d], init_scAA[v][dp_y]);
-		sc_v[d] = FLogsum(sc_v[d], arow0[dp_y] + tsc_v[0]);		
-	      } /* end of for(d = dn; d <= dx; d++) */
-	      break;
-
-	    case 6: /* necessarily 2 inserts */
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-	      arow4 = (float * const) alpha[jp_y][y+4];
-	      arow5 = (float * const) alpha[jp_y][y+5];
-#pragma ivdep
-	      for (d = dn; d <= dx; d++, dp_y++) {
-		sc_v[d] = FLogsum(arow5[dp_y] + tsc_v[5],
-			      init_scAA[v][dp_y]);
-		sc_v[d] = FLogsum(sc_v[d], arow4[dp_y] + tsc_v[4]);		
-		sc_v[d] = FLogsum(sc_v[d], arow3[dp_y] + tsc_v[3]);		
-		sc_v[d] = FLogsum(sc_v[d], arow2[dp_y] + tsc_v[2]);		
-		sc_v[d] = FLogsum(sc_v[d], arow1[dp_y] + tsc_v[1]);		
-		sc_v[d] = FLogsum(sc_v[d], arow0[dp_y] + tsc_v[0]);		
-	      } /* end of for(d = dn; d <= dx; d++) */
-	      break;
-
-	    case 4: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-#pragma ivdep
-	      for (d = dn; d <= dx; d++, dp_y++) {
-		sc_v[d] = FLogsum(arow3[dp_y] + tsc_v[3],
-			     arow2[dp_y] + tsc_v[2]);		
-		sc_v[d] = FLogsum(sc_v[d], init_scAA[v][dp_y]);
-		sc_v[d] = FLogsum(sc_v[d], arow1[dp_y] + tsc_v[1]);		
-		sc_v[d] = FLogsum(sc_v[d], arow0[dp_y] + tsc_v[0]);		
-	      } /* end of for(d = dn; d <= dx; d++) */
-	      break;
-
-	    case 5: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-	      arow4 = (float * const) alpha[jp_y][y+4];
-#pragma ivdep
-	      for (d = dn; d <= dx; d++, dp_y++) {
-		sc_v[d] = FLogsum(arow4[dp_y] + tsc_v[4],
-			     arow3[dp_y] + tsc_v[3]);		
-		sc_v[d] = FLogsum(sc_v[d], init_scAA[v][dp_y]);
-		sc_v[d] = FLogsum(sc_v[d], arow1[dp_y] + tsc_v[1]);		
-		sc_v[d] = FLogsum(sc_v[d], arow2[dp_y] + tsc_v[2]);		
-		sc_v[d] = FLogsum(sc_v[d], arow0[dp_y] + tsc_v[0]);		
-	      } /* end of for (d = dn; d <= dx; d++, dp_y++) */
-	      break;
-
-	    case 2: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-#pragma ivdep
-	      for (d = dn; d <= dx; d++, dp_y++) {
-		sc_v[d] = FLogsum(arow1[dp_y] + tsc_v[1],
-			     init_scAA[v][dp_y]);
-		sc_v[d] = FLogsum(sc_v[d], arow0[dp_y] + tsc_v[0]);		
-	      }
-	      break; 
-	    } /* end of switch(cnum) */
-	    /* add in emission score (if any), and set alpha[jp_v][v][d] cell */
-	    switch (emitmodeA[v]) {
-	    case EMITLEFT:
-	      for (d = dn; d <= dx; d++) {
-		alpha[jp_v][v][d] = sc_v[d] + esc_v[dsq[i--]];
-	      }
-	      break;
-	    case EMITNONE:
-	      for (d = dn; d <= dx; d++)
-		alpha[jp_v][v][d] = sc_v[d];
-	      break;
-	    case EMITRIGHT:
-	      for (d = dn; d <= dx; d++) {
-		alpha[jp_v][v][d] = sc_v[d] + esc_j;
-	      }
-	      break;		
-	    case EMITPAIR:
-	      for (d = dn; d <= dx; d++) {
-		alpha[jp_v][v][d] = sc_v[d] + esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
-	      }
-	      break;
-	    } /* end of switch (emitmodeA[v]) */
-	  } /* end of else (cm->sttype[v] != B_st && cm->stid[v] !=  BEGL_S st && cm->sttype[v] != IL_st && cm->sttype[v] != IR_st) */
-	  if(vsc != NULL) 
-	    if(cm->stid[v] != BEGL_S) for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha[jp_v][v][d]);
-	    else                      for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha_begl[jp_v][v][d]);
-	  /* if(cm->stid[v] != BEGL_S)
-	     for (d = dn; d <= dx; d++) { printf("alpha[j:%4d][v:%4d][d:%4d]: %.5f\n", j, v, d, alpha[jp_v][v][d]); }*/
-	} /*loop over decks v>0 */
-      
-      /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
-       * 
-       * If local begins are off, the hit must be rooted at v=0.
-       * With local begins on, the hit is rooted at the second state in
-       * the traceback (e.g. after 0), the internal entry point. Divide & conquer
-       * can only handle this if it's a non-insert state; this is guaranteed
-       * by the way local alignment is parameterized (other transitions are
-       * -INFTY), which is probably a little too fragile of a method. 
-       */
-
-      /* determine min/max d we're allowing for the root state and this position j */
-      jp_v = cur;
-      for (d = dnA[0]; d <= dxA[0]; d++) {
-	bestr[d] = 0;	/* root of the traceback = root state 0 */
-	y = cm->cfirst[0];
-	alpha[jp_v][0][d] = ESL_MAX(IMPOSSIBLE, alpha[cur][y][d] + cm->tsc[0][0]);
-	for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++) 
-	  alpha[jp_v][0][d] = FLogsum (alpha[jp_v][0][d], (alpha[cur][y+yoffset][d] + cm->tsc[0][yoffset]));
-      }
-	
-      if (cm->flags & CM_LOCAL_BEGIN) {
-	for (y = 1; y < cm->M; y++) {
-	  if(cm->stid[y] == BEGL_S)
-	    {
-	      jp_y = j % (W+1);
-	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		/* Is this more efficient:? 
-		   bestr[d]          = (alpha[jp_v][0][d] > (alpha_begl[jp_y][y][d] + cm->beginsc[y])) ? bestr[d] : y;
-		   alpha[jp_v][0][d] = ESL_MAX(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->beginsc[y]); */
-		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->beginsc[y])) {
-		  alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->beginsc[y];
-		  bestr[d] = y;
-		}
-	      }
-	    }
-	  else { /* y != BEGL_S */
-	    jp_y = cur;
-	    for (d = dnA[y]; d <= dxA[y]; d++) {
-	      {
-		/* Is this more efficient:? 
-		   bestr[d]          = (alpha[jp_v][0][d] > (alpha[jp_y][y][d] + cm->beginsc[y])) ? bestr[d] : y;
-		   alpha[jp_v][0][d] = ESL_MAX(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->beginsc[y]); */
-		if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->beginsc[y])) {
-		  alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->beginsc[y];
-		  bestr[d] = y;
-		}
-	      }
-	    }
-	  }
-	}
-      }
-      /* find the best score */
-      for (d = dnA[0]; d <= dxA[0]; d++) 
-	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
-      if(results != NULL) 
-	{
-	  float sc;
-	  /* get information on hits */
-	  if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
-	    {
-	      /* The little semi-Markov model that deals with multihit parsing:
-	       */
-	      gamma[jp_g]  = gamma[jp_g-1] + 0; 
-	      gback[jp_g]  = -1;
-	      savesc[jp_g] = IMPOSSIBLE;
-	      saver[jp_g]  = -1;
-	      for (d = dnA[0]; d <= dxA[0]; d++) {
-		i    = j-d+1;
-		ip_g = i-i0+1;
-		sc = gamma[ip_g-1] + alpha[jp_v][0][d] + cm->sc_boost; 
-		/* sc_boost is experimental technique for finding hits < 0 bits. value is 0.0 if technique not used. */
-		if (sc > gamma[jp_g]) {
-		  gamma[jp_g]  = sc;
-		  gback[jp_g]  = i;
-		  savesc[jp_g] = alpha[jp_v][0][d]; 
-		  saver[jp_g]  = bestr[d];
-		}
-	      }
-	    }
-	  else {
-	    /* Resolving overlaps greedily (RSEARCH style),  
-	     * At least one hit is sent back for each j here.
-	     * However, some hits can already be removed for the greedy overlap
-	     * resolution algorithm.  Specifically, at the given j, any hit with a
-	     * d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
-	    /* First, report hit with d of 1 if > cutoff */
-	    if (alpha[jp_v][0][1] >= cutoff) 
-	      if(results != NULL) 
-		report_hit (j, j, bestr[1], alpha[jp_v][0][1], results);
-	    bestd = 1;
-	    if (alpha[jp_v][0][1] > best_hit_sc)
-	      best_hit_sc = alpha[jp_v][0][1];
-	    
-	    /* Now, if current score is greater than maximum seen previous, report
-	       it if >= cutoff and set new max */
-	    for (d = 2; d <= W && d <= jp_g; d++) 
-	      {
-		if (alpha[jp_v][0][d] > best_hit_sc) best_hit_sc = alpha[jp_v][0][d];
-		if (alpha[jp_v][0][d] > alpha[jp_v][0][bestd]) {
-		  if (alpha[jp_v][0][d] >= cutoff)
-		    if(results != NULL) 
-		      report_hit (j-d+1, j, bestr[d], alpha[jp_v][0][d], results);
-		  bestd = d;
-		}
-	      }
-	  }
-	}
-    } /* end loop over end positions j */
-  if(vsc != NULL) vsc[0] = vsc_root;
-  
-  /* free alpha and alpha_begl, everything we need is in gamma.
-   */
-
-  free(alpha[0][0]);
-  free(alpha[1]);
-  free(alpha[0]);
-  free(alpha);
-  for (j = 0; j <= W; j++) {
-    for (v = 0; v < cm->M; v++) 
-      if (cm->stid[v] == BEGL_S)
-	free(alpha_begl[j][v]);
-    free(alpha_begl[j]);
-  }
-  free(alpha_begl);
-  free(bestr);
-
-  if(results != NULL) 
-    {
-      /*
-       * Traceback stage.
-       * Recover all hits: an (i,j,sc) triple for each one.
-       */
-      if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
-	{
-	  j     = j0;
-	  while (j >= i0) 
-	    {
-	      jp_g = j-i0+1;
-	      if (gback[jp_g] == -1) /* no hit */
-		j--; 
-	      else                /* a hit, a palpable hit */
-		{
-		  if(savesc[jp_g] > best_hit_sc) best_hit_sc = savesc[jp_g];
-		  if(savesc[jp_g] >= cutoff && results != NULL) /* report the hit */
-		    report_hit(gback[jp_g], j, saver[jp_g], savesc[jp_g], results);
-		  j = gback[jp_g]-1;
-		}
-	    }
-	}
-      free(gback);
-      free(gamma);
-      free(savesc);
-      free(saver);
-    }
-
-  for(v = 0; v < cm->M; v++) {
-    free(init_scAA[v]);
-    if(esc_vAA[v] != NULL) free(esc_vAA[v]);
-  }
-  free(init_scAA);
-  free(esc_vAA);
-
-  for(j = 1; j <= W; j++) {
-    free(dnAA[j]);
-    free(dxAA[j]);
-  }
-  free(dnAA);
-  free(dxAA);
-  free(jp_wA);
-  free(el_scA);
-  free(emitmodeA);
-  if (ret_best_hit_sc != NULL) *ret_best_hit_sc = best_hit_sc;
-  if (ret_vsc         != NULL) *ret_vsc         = vsc;
-  
-  ESL_DPRINTF1(("FastFInsideScan() return score: %10.4f\n", vsc_root)); 
-  return vsc_root;
-  
- ERROR:
-  cm_Fail("Memory allocation error.\n");
-  return 0.; /* NEVERREACHED */
-}
-
-/* Function: RefFInsideScan()
- * Date:     EPN, Sun Nov  4 16:02:17 2007
- *
- * Purpose:  Scan a sequence for matches to a covariance model, using the
- *           banded Inside algorithm. If bands are NULL, reverts to non-banded.
- *
- * Args:     cm              - the covariance model
- *           dsq             - the digitized sequence
- *           dmin            - minimum bound on d for state v; 0..M
- *           dmax            - maximum bound on d for state v; 0..M          
- *           i0              - start of target subsequence (1 for full seq)
- *           j0              - end of target subsequence (L for full seq)
- *           W               - max d: max size of a hit
- *           cutoff          - minimum score to report
- *           results         - search_results_t to add to; if NULL, don't add to it
- *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
- *           ret_best_hit_sc - RETURN score of best hit (reported to results) NULL if not-wanted
- *
- * Returns:  Score of best overall hit (vsc[0]). Information on hits added to <results>.
- *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
- *           Dies immediately if some error occurs.
- */
-float 
-RefFInsideScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, 
-	       search_results_t *results, float **ret_vsc, float *ret_best_hit_sc)
-{
-  int       status;
-  float  ***alpha;              /* CYK DP score matrix, [j][v][d] */
-  float  ***alpha_begl; 
-  float    *vsc;                /* best score for each state (float) */
-  float     vsc_root;           /* best overall score (score at ROOT_S) */
-  int      *bestr;              /* auxil info: best root state at alpha[0][cur][d] */
-  float    *gamma;              /* SHMM DP matrix for optimum nonoverlap resolution */
-  int      *gback;              /* traceback pointers for SHMM */ 
-  float    *savesc;             /* saves score of hit added to best parse at j */
-  int      *saver;		/* saves initial non-ROOT state of best parse ended at j */
-  int       yoffset;		/* offset to a child state */
-  int       i,j;		/* index of start/end positions in sequence, 0..L */
-  int       d;			/* a subsequence length, 0..W */
-  int       k;			/* used in bifurc calculations: length of right subseq */
-  int       prv, cur;		/* previous, current j row (0 or 1) */
-  int       v, w, y;            /* state indices */
-  int       jp_v;  	        /* offset j for state v */
-  int       jp_y;  	        /* offset j for state y */
-  int       jp_g;               /* offset j for gamma (j-i0+1) */
-  int       ip_g;               /* offset i for gamma (i-i0+1) */
-  int       dp_y;               /* offset d for state y */
-  int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
-  int       L;                  /* length of the subsequence (j0-i0+1) */
-  int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
-  int       bestd;              /* d value of best hit thus far seen for j (used if greedy strategy) */
-  float     best_hit_sc;        /* best hit score found */
-  int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
-  int     **dnAA, **dxAA;       /* [1..j..W][0..v..M-1] min,max d value allowed for posn j, state v */
-  int      *dnA,   *dxA;        /* tmp ptr to 1 row of dnAA, dxAA */
-
-  int cnum;
-  int dn;
-  int dx;
-  float *el_scA;
-  int *jp_wA;
-  float **init_scAA;
-  int  ctr = 0;
-  /*int yidx;*/
-  /*float const *tsc = cm->tsc[0]; */
-
-  /* Contract check */
-  if(j0 < i0)     cm_Fail("ERROR in FastCYKScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL) cm_Fail("ERROR in FastCYKScan, dsq is NULL\n");
-  if(cm->search_opts & CM_SEARCH_INSIDE) cm_Fail("ERROR in FastCYKScan, CM_SEARCH_INSIDE flag raised");
-
-  /* determine if we're doing banded/non-banded */
-  if(dmin != NULL && dmax != NULL) do_banded = TRUE;
-
-  L = j0-i0+1;
-  if (W > L) W = L; 
-
-  vsc = NULL;
-  if(ret_vsc != NULL) { 
-    ESL_ALLOC(vsc, sizeof(float) * cm->M);
-    esl_vec_FSet(vsc, cm->M, IMPOSSIBLE);
-  }
-  best_hit_sc = IMPOSSIBLE;
-  vsc_root    = IMPOSSIBLE;
-
-  /*
-   * alpha and alpha_begl allocations.
-   * The alpha matrix holds data for all states EXCEPT BEGL_S states
-   * The alpha scanning matrix is indexed [j][v][d]. 
-   *    j takes values 0 or 1: only the previous (prv) or current (cur) row
-   *    v ranges from 0..M-1 over states in the model.
-   *    d ranges from 0..W over subsequence lengths.
-   * Note if v is a BEGL_S alpha[j][v] == NULL
-   * Note that old convention of sharing E memory is no longer,
-   * each E state has it's own deck.
-   *
-   * alpha_begl matrix holds data for ONLY BEGL_S states
-   *    j takes value of 0..W
-   *    v ranges from 0..M-1 over states in the model
-   *    d ranges from 0..W over subsequence lengths.
-   * Note if v is NOT a BEGL_S alpha[j][v] == NULL
-   */
-
-  /* allocate alpha */
-  ESL_ALLOC(alpha, (sizeof(float **) * 2));
-  ESL_ALLOC(alpha[0], sizeof(float *) * cm->M);
-  ESL_ALLOC(alpha[1], sizeof(float *) * cm->M);
-  ESL_ALLOC(alpha[0][0], (sizeof(float) * 2 * (cm->M) * (W+1)));
-  for (v = cm->M-1; v >= 0; v--) {	
-    if (cm->stid[v] != BEGL_S) {
-      alpha[0][v] = alpha[0][0] + (v           * (W+1));
-      alpha[1][v] = alpha[0][0] + ((v + cm->M) * (W+1));
-    }
-    else { /* BEGL_S, this is wasteful */
-      alpha[0][v] = NULL;
-      alpha[1][v] = NULL;
-    }
-  }
-  /* float const *alphap = alpha[0][0]; */
-
-  /* allocate alpha_begl */
-  ESL_ALLOC(alpha_begl, (sizeof(float **) * (W+1)));
-  for (j = 0; j <= W; j++) {
-    ESL_ALLOC(alpha_begl[j], (sizeof(float *) * (cm->M)));
-    for (v = cm->M-1; v >= 0; v--) {	
-      if (cm->stid[v] == BEGL_S) {
-	ESL_ALLOC(alpha_begl[j][v], (sizeof(float) * (W+1)));
-      }
-      else /* non-BEGL */
-	alpha_begl[j][v] = NULL;
-    }
-  }
-  ESL_ALLOC(bestr, (sizeof(int) * (W+1)));
-
-  /*
-   * alpha initializations.
-   * We initialize on d=0, subsequences of length 0; these are
-   * j-independent. Any generating state (P,L,R) is impossible on d=0.
-   * E=0 for d=0. B,S,D must be calculated. 
-   * Also, for MP, d=1 is impossible.
-   * Also, for E, all d>0 are impossible.
-   *
-   * and, for banding: any cell outside our bands is impossible.
-   * These inits are never changed in the recursion, so even with the
-   * rolling, matrix face reuse strategy, this works.
-   */
-  /* initialize alpha and alpha_begl */
-  for(v = cm->M-1; v >= 0; v--) 
-    {
-      if(cm->stid[v] != BEGL_S) 
-	{
-	  alpha[0][v][0] = IMPOSSIBLE;
-	  if      (cm->sttype[v] == E_st)  { 
-	    alpha[0][v][0] = alpha[1][v][0] = 0.;
-	    /* rest of E deck is IMPOSSIBLE, this rewritten if QDB is on, (slightly wasteful). */
-	    for (d = 1; d <= W; d++) alpha[0][v][d] = alpha[1][v][d] = IMPOSSIBLE;
-	  }
-	  else if (cm->sttype[v] == MP_st) alpha[0][v][1] = alpha[1][v][1] = IMPOSSIBLE;
-	  else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) 
-	    {
-	      y = cm->cfirst[v];
-	      alpha[0][v][0] = cm->endsc[v];
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		alpha[0][v][0] = FLogsum(alpha[0][v][0], (alpha[0][y+yoffset][0] + cm->tsc[v][yoffset]));
-	      alpha[0][v][0] = FLogsum(alpha[0][v][0], IMPOSSIBLE);
-	    }
-	  else if (cm->sttype[v] == B_st) 
-	    {
-	      w = cm->cfirst[v]; /* BEGL_S, left child state */
-	      y = cm->cnum[v];
-	      alpha[0][v][0] = alpha_begl[0][w][0] + alpha[0][y][0]; 
-	    }
-
-	  alpha[1][v][0] = alpha[0][v][0];
-	}
-      else /* v == BEGL_S */
-	{
-	  y = cm->cfirst[v];
-	  alpha_begl[0][v][0] = cm->endsc[v];
-	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	    alpha_begl[0][v][0] = FLogsum(alpha_begl[0][v][0], (alpha[0][y+yoffset][0] + cm->tsc[v][yoffset])); /* careful: y is in alpha */
-	  alpha_begl[0][v][0] = FLogsum(alpha_begl[0][v][0], IMPOSSIBLE);
-	  for (j = 1; j <= W; j++) 
-	    alpha_begl[j][v][0] = alpha_begl[0][v][0];
-	}
-    }
-      bestr[0] = -1;
-
-  /*
-   * gamma allocation and initialization.
-   * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits.
-   */
-  if(results != NULL) { 
-    ESL_ALLOC(gamma,  sizeof(float) * (L+1));
-    gamma[0] = 0;
-    ESL_ALLOC(gback,  sizeof(int)   * (L+1));
-    gback[0] = -1;
-    ESL_ALLOC(savesc, sizeof(float) * (L+1));
-    ESL_ALLOC(saver,  sizeof(int)   * (L+1));
-  }
-  /*
-   * query-dependent band imposition.
-   *   (note: E states have all their probability on d=0, so dmin[E] = dmax[E] = 0;
-   *    the first loop will be skipped, the second initializes the E states.)
-   */
-  if(do_banded) { 
-    for (v = 0; v < cm->M; v++) {
-      if(cm->stid[v] != BEGL_S) {
-	for (d = 0; d < dmin[v] && d <=W; d++) 
-	  for(j = 0; j < 2; j++)
-	    alpha[j][v][d] = IMPOSSIBLE;
-	for (d = dmax[v]+1; d <= W;      d++) 
-	  for(j = 0; j < 2; j++)
-	    alpha[j][v][d] = IMPOSSIBLE;
-      }
-      else
-	{
-	  for (d = 0; d < dmin[v] && d <=W; d++) 
-	    for(j = 0; j <= W; j++)
-	      alpha_begl[j][v][d] = IMPOSSIBLE;
-	  for (d = dmax[v]+1; d <= W;      d++) 
-	    for(j = 0; j <= W; j++)
-	      alpha_begl[j][v][d] = IMPOSSIBLE;
-	}
-    }
-  }
-
-  /* precalculate minimum and maximum d for each state and each sequence index (1..j..W). 
-   * this is not always just dmin, dmax, (for ex. if j < W).
-   */
-  ESL_ALLOC(dnAA, sizeof(int *) * (W+1));
-  ESL_ALLOC(dxAA, sizeof(int *) * (W+1));
-  
-  dnAA[0] = dxAA[0] = NULL; /* corresponds to j == 0, which is out of bounds */
-  for(j = 1; j <= W; j++) {
-    ESL_ALLOC(dnAA[j], sizeof(int) * cm->M);
-    ESL_ALLOC(dxAA[j], sizeof(int) * cm->M);
-
-    for(v = 0; v < cm->M; v++) {
-      if(do_banded) { 
-	dnAA[j][v] = (cm->sttype[v] == MP_st) ? ESL_MAX(dmin[v], 2) : ESL_MAX(dmin[v], 1); 
-	dxAA[j][v] = ESL_MIN(j, dmax[v]); 
-	dxAA[j][v] = ESL_MIN(dxAA[j][v], W);
-      }
-      else { 
-	dnAA[j][v] = (cm->sttype[v] == MP_st) ? 2 : 1;
-	dxAA[j][v] = ESL_MIN(j, W); 
-      }
-    }
-  }
-
-  /* precalculate possible emission scores for each state */
-  float **esc_vAA;
-  int a,b;
-  ESL_ALLOC(esc_vAA, sizeof(float *) * (cm->M));
-  for(v = 0; v < cm->M; v++) {
-    switch(cm->sttype[v]) {
-    case IL_st:
-    case ML_st:
-    case IR_st:
-    case MR_st:
-      ESL_ALLOC(esc_vAA[v], sizeof(float) * cm->abc->Kp);
-      /* ALLOCATE SIZE = POWER OF 2? */
-      esl_vec_FSet(esc_vAA[v], cm->abc->Kp, IMPOSSIBLE);
-      for(a = 0; a < cm->abc->K; a++)
-	esc_vAA[v][a] = cm->esc[v][a];
-      for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++)
-	esc_vAA[v][a] = esl_abc_FAvgScore(cm->abc, a, cm->esc[v]);
-      break;
-    case MP_st:
-      ESL_ALLOC(esc_vAA[v], sizeof(float) * (cm->abc->Kp * cm->abc->Kp));
-      /* ALLOCATE SIZE = POWER OF 2? */
-      esl_vec_FSet(esc_vAA[v], (cm->abc->Kp * cm->abc->Kp), IMPOSSIBLE);
-      for(a = 0; a < (cm->abc->Kp-1); a++)
-	for(b = 0; b < (cm->abc->Kp-1); b++)
-	  if(a < cm->abc->K && b < cm->abc->K)
-	    esc_vAA[v][a * cm->abc->Kp + b] = cm->esc[v][(a * cm->abc->K) + b];
-	  else
-	    esc_vAA[v][a * cm->abc->Kp + b] = DegeneratePairScore(cm->abc, cm->esc[v], a, b);
-      break;
-    default:
-      esc_vAA[v] = NULL;
-      break;
-    }
-  }
-
-  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
-  ESL_ALLOC(el_scA, sizeof(float) * (W+1));
-  for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
-
-  /* precalculate the initial score for all alpha[v][j][d] cells, it's independent
-   * of j, so we do it here, outside the for(j...) loop */
-  ESL_ALLOC(init_scAA, sizeof(float *) * (cm->M));
-  for (v = 0; v < cm->M; v++) 
-    {
-      ESL_ALLOC(init_scAA[v], sizeof(float) * (W+1));
-
-      if(NOT_IMPOSSIBLE(cm->endsc[v]))
-	for(d = 0; d <= W; d++)
-	  init_scAA[v][d] = el_scA[d] + cm->endsc[v];
-      else
-	for(d = 0; d <= W; d++)
-	  init_scAA[v][d] = IMPOSSIBLE;
-    }
-
-  /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
-  ESL_ALLOC(jp_wA, sizeof(float) * (W+1));
-
-  /* Precalculate the 'emit mode' of each state to speed up the addition of emission 
-   * scores, all states are either EMITLEFT, EMITRIGHT, EMITPAIR, or EMITNONE, this
-   * collapses ILs and MLs into 1 value (for example) for the switch() statement inside the for(d...) loop
-   * in the heart of the recursion which saves us time.
-   */
-  int *emitmodeA;
-  ESL_ALLOC(emitmodeA, sizeof(int) * cm->M);
-  for(v = 0; v < cm->M; v++) {
-    switch (cm->sttype[v]) {
-    case IL_st:
-    case ML_st:
-      emitmodeA[v] = EMITLEFT;
-      break;
-    case IR_st:
-    case MR_st:
-      emitmodeA[v] = EMITRIGHT;
-      break;		
-    case MP_st:
-      emitmodeA[v] = EMITPAIR;
-      break;		
-    default:
-      emitmodeA[v] = EMITNONE;
-      break;
-    }
-  }
-
-  /* Initialize sc_v to size of M */
-  float *sc_v;
-  ESL_ALLOC(sc_v, (sizeof(float) * (W+1)));
-  esl_vec_FSet(sc_v, (W+1), IMPOSSIBLE);
-
-  /* The main loop: scan the sequence from position i0 to j0.
-   */
-  for (j = i0; j <= j0; j++) 
-    {
-      float sc;
-      jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
-      cur  = j%2;
-      prv  = (j-1)%2;
-      if(jp_g >= W) { dnA = dnAA[W];     dxA = dxAA[W];    }
-      else {          dnA = dnAA[jp_g];  dxA = dxAA[jp_g]; }
-      /* precalcuate all possible rolling ptrs into the BEGL deck, so we don't wastefully recalc them inside inner DP loop */
-      for(d = 0; d <= W; d++) jp_wA[d] = (j-d)%(W+1);
-
-      for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
-	{
-	  /* printf("dnA[v:%d]: %d\ndxA[v:%d]: %d\n", v, dnA[v], v, dxA[v]); */
-	  if(cm->sttype[v] == E_st) continue;
-
-	  /* float const *esc_v = cm->esc[v]; */
-	  float const *esc_v = esc_vAA[v]; 
-	  float const *tsc_v = cm->tsc[v];
-	  jp_v = (cm->stid[v] == BEGL_S) ? (j % (W+1)) : cur;
-	  jp_y = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
-	  sd   = StateDelta(cm->sttype[v]);
-	  cnum = cm->cnum[v];
-	  dn   = dnA[v];
-	  dx   = dxA[v];
-	  /* if we emit right, precalc score of emitting res j from state v */
-	  float esc_j = IMPOSSIBLE;
-	  if(cm->sttype[v] == IR_st || cm->sttype[v] == MR_st)
-	    esc_j = esc_v[dsq[j]];
-
-	  if(cm->sttype[v] == B_st) {
-	    w = cm->cfirst[v]; /* BEGL_S */
-	    y = cm->cnum[v];   /* BEGR_S */
-	    for (d = dnA[v]; d <= dxA[v]; d++) {
-	      /* k is the length of the right fragment */
-	      /* Careful, make sure k is consistent with bands in state w and state y. */
-	      if(do_banded) {
-		kmin = ESL_MAX(dmin[y], (d-dmax[w]));
-		kmin = ESL_MAX(kmin, 0);
-		kmax = ESL_MIN(dmax[y], (d-dmin[w]));
-	      }
-	      else { kmin = 0; kmax = d; }
-
-	      sc = init_scAA[v][d]; /* state delta is 0 for B_st */
-	      for (k = kmin; k <= kmax; k++) 
-		sc = FLogsum(sc, (alpha_begl[jp_wA[k]][w][d-k] + alpha[jp_y][y][k]));
-	      alpha[jp_v][v][d] = sc;
-	      /* careful: scores for w, the BEGL_S child of v, are in alpha_begl, not alpha */
-	    }
-	  }
-	  else if (cm->stid[v] == BEGL_S) {
-	    y = cm->cfirst[v]; 
-	    for (d = dnA[v]; d <= dxA[v]; d++) {
-	      sc = init_scAA[v][d]; /* state delta is 0 for BEGL_S st */
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		sc = FLogsum(sc, alpha[jp_y][y+yoffset][d - sd] + cm->tsc[v][yoffset]);
-	      alpha_begl[jp_v][v][d] = sc;
-	      /* careful: y is in alpha (all children of a BEGL_S must be non BEGL_S) */
-	    }
-	  }
-	  else { /* ! B_st, ! BEGL_S st */
-	    y = cm->cfirst[v]; 
-	    i = j - dnA[v] + 1;
-	    for (d = dnA[v]; d <= dxA[v]; d++) {
-	      sc = init_scAA[v][d]; /* state delta is 0 for BEGL_S st */
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		sc = FLogsum(sc, alpha[jp_y][y+yoffset][d - sd] + cm->tsc[v][yoffset]);
-
-	      switch (emitmodeA[v]) {
-	      case EMITLEFT:
-		alpha[jp_v][v][d] = sc + esc_v[dsq[i--]];
-		break;
-	      case EMITNONE:
-		alpha[jp_v][v][d] = sc;
-		break;
-	      case EMITRIGHT:
-		alpha[jp_v][v][d] = sc + esc_j;
-		break;		
-	      case EMITPAIR:
-		alpha[jp_v][v][d] = sc + esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
-		break;
-	      }
-	    }
-	  }
-	} /*loop over decks v>0 */
-      
-      /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
-       * 
-       * If local begins are off, the hit must be rooted at v=0.
-       * With local begins on, the hit is rooted at the second state in
-       * the traceback (e.g. after 0), the internal entry point. Divide & conquer
-       * can only handle this if it's a non-insert state; this is guaranteed
-       * by the way local alignment is parameterized (other transitions are
-       * -INFTY), which is probably a little too fragile of a method. 
-       */
-
-      /* determine min/max d we're allowing for the root state and this position j */
-      jp_v = cur;
-      for (d = dnA[0]; d <= dxA[0]; d++) {
-	bestr[d] = 0;	/* root of the traceback = root state 0 */
-	y = cm->cfirst[0];
-	alpha[jp_v][0][d] = ESL_MAX(IMPOSSIBLE, alpha[cur][y][d] + cm->tsc[0][0]);
-	for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++) 
-	  alpha[jp_v][0][d] = FLogsum (alpha[jp_v][0][d], (alpha[cur][y+yoffset][d] + cm->tsc[0][yoffset]));
-      }
-	
-      if (cm->flags & CM_LOCAL_BEGIN) {
-	for (y = 1; y < cm->M; y++) {
-	  if(cm->stid[y] == BEGL_S)
-	    {
-	      jp_y = j % (W+1);
-	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		/* Is this more efficient:? 
-		   bestr[d]          = (alpha[jp_v][0][d] > (alpha_begl[jp_y][y][d] + cm->beginsc[y])) ? bestr[d] : y;
-		   alpha[jp_v][0][d] = ESL_MAX(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->beginsc[y]); */
-		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->beginsc[y])) {
-		  alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->beginsc[y];
-		  bestr[d] = y;
-		}
-	      }
-	    }
-	  else { /* y != BEGL_S */
-	    jp_y = cur;
-	    for (d = dnA[y]; d <= dxA[y]; d++) {
-	      {
-		/* Is this more efficient:? 
-		   bestr[d]          = (alpha[jp_v][0][d] > (alpha[jp_y][y][d] + cm->beginsc[y])) ? bestr[d] : y;
-		   alpha[jp_v][0][d] = ESL_MAX(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->beginsc[y]); */
-		if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->beginsc[y])) {
-		  alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->beginsc[y];
-		  bestr[d] = y;
-		}
-	      }
-	    }
-	  }
-	}
-      }
-      /* find the best score */
-      for (d = dnA[0]; d <= dxA[0]; d++) 
-	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
-      if(results != NULL) 
-	{
-	  float sc;
-	  /* get information on hits */
-	  if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
-	    {
-	      /* The little semi-Markov model that deals with multihit parsing:
-	       */
-	      gamma[jp_g]  = gamma[jp_g-1] + 0; 
-	      gback[jp_g]  = -1;
-	      savesc[jp_g] = IMPOSSIBLE;
-	      saver[jp_g]  = -1;
-	      for (d = dnA[0]; d <= dxA[0]; d++) {
-		i    = j-d+1;
-		ip_g = i-i0+1;
-		sc = gamma[ip_g-1] + alpha[jp_v][0][d] + cm->sc_boost; 
-		/* sc_boost is experimental technique for finding hits < 0 bits. value is 0.0 if technique not used. */
-		if (sc > gamma[jp_g]) {
-		  gamma[jp_g]  = sc;
-		  gback[jp_g]  = i;
-		  savesc[jp_g] = alpha[jp_v][0][d]; 
-		  saver[jp_g]  = bestr[d];
-		}
-	      }
-	    }
-	  else {
-	    /* Resolving overlaps greedily (RSEARCH style),  
-	     * At least one hit is sent back for each j here.
-	     * However, some hits can already be removed for the greedy overlap
-	     * resolution algorithm.  Specifically, at the given j, any hit with a
-	     * d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
-	    /* First, report hit with d of 1 if > cutoff */
-	    if (alpha[jp_v][0][1] >= cutoff) 
-	      if(results != NULL) 
-		report_hit (j, j, bestr[1], alpha[jp_v][0][1], results);
-	    bestd = 1;
-	    if (alpha[jp_v][0][1] > best_hit_sc)
-	      best_hit_sc = alpha[jp_v][0][1];
-	    
-	    /* Now, if current score is greater than maximum seen previous, report
-	       it if >= cutoff and set new max */
-	    for (d = 2; d <= W && d <= jp_g; d++) 
-	      {
-		if (alpha[jp_v][0][d] > best_hit_sc) best_hit_sc = alpha[jp_v][0][d];
-		if (alpha[jp_v][0][d] > alpha[jp_v][0][bestd]) {
-		  if (alpha[jp_v][0][d] >= cutoff)
-		    if(results != NULL) 
-		      report_hit (j-d+1, j, bestr[d], alpha[jp_v][0][d], results);
-		  bestd = d;
-		}
-	      }
-	  }
-	}
-      if(vsc != NULL) 
-	if(cm->stid[v] != BEGL_S) for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha[jp_v][v][d]);
-	else                      for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha_begl[jp_v][v][d]);
-    } /* end loop over end positions j */
-  if(vsc != NULL) vsc[0] = vsc_root;
-  
-  /* free alpha and alpha_begl, everything we need is in gamma.
-   */
-
-  free(alpha[0][0]);
-  free(alpha[1]);
-  free(alpha[0]);
-  free(alpha);
-  for (j = 0; j <= W; j++) {
-    for (v = 0; v < cm->M; v++) 
-      if (cm->stid[v] == BEGL_S)
-	free(alpha_begl[j][v]);
-    free(alpha_begl[j]);
-  }
-  free(alpha_begl);
-  free(bestr);
-
-  if(results != NULL) 
-    {
-      /*
-       * Traceback stage.
-       * Recover all hits: an (i,j,sc) triple for each one.
-       */
-      if(!(cm->search_opts & CM_SEARCH_CMGREEDY)) /* resolve overlaps optimally */
-	{
-	  j     = j0;
-	  while (j >= i0) 
-	    {
-	      jp_g = j-i0+1;
-	      if (gback[jp_g] == -1) /* no hit */
-		j--; 
-	      else                /* a hit, a palpable hit */
-		{
-		  if(savesc[jp_g] > best_hit_sc) best_hit_sc = savesc[jp_g];
-		  if(savesc[jp_g] >= cutoff && results != NULL) /* report the hit */
-		    report_hit(gback[jp_g], j, saver[jp_g], savesc[jp_g], results);
-		  j = gback[jp_g]-1;
-		}
-	    }
-	}
-      free(gback);
-      free(gamma);
-      free(savesc);
-      free(saver);
-    }
-
-  for(v = 0; v < cm->M; v++) {
-    free(init_scAA[v]);
-    if(esc_vAA[v] != NULL) free(esc_vAA[v]);
-  }
-  free(init_scAA);
-  free(esc_vAA);
-
-  for(j = 1; j <= W; j++) {
-    free(dnAA[j]);
-    free(dxAA[j]);
-  }
-  free(dnAA);
-  free(dxAA);
-  free(jp_wA);
-  free(el_scA);
-  free(emitmodeA);
-  if (ret_best_hit_sc != NULL) *ret_best_hit_sc = best_hit_sc;
-  if (ret_vsc         != NULL) *ret_vsc         = vsc;
-  
-  ESL_DPRINTF1(("FastFInsideScan() return score: %10.4f\n", vsc_root)); 
-  return vsc_root;
-  
- ERROR:
-  cm_Fail("Memory allocation error.\n");
-  return 0.; /* NEVERREACHED */
-}
-
-#endif

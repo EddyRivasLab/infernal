@@ -3155,7 +3155,7 @@ cp9_WorstForward(CM_t *cm, int thresh, int doing_scan, int doing_align)
 	  minsc = ESL_MIN(minsc, dmx[cur][k]);
 	  if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[k])) 
 	    minsc = ESL_MIN(minsc, elmx[cur][k]); 
-	  if(cm->cp9->flags & CM_LOCAL_BEGIN)
+	  if(cm->cp9->flags & CMH_LOCAL_BEGIN)
 	    minsc = ESL_MIN(minsc, endsc);
 
 	  /*printf("mmx [jp:%d][%d]: %d\n", jp, k, mmx[cur][k]);
@@ -3167,7 +3167,7 @@ cp9_WorstForward(CM_t *cm, int thresh, int doing_scan, int doing_align)
 		      imx[cur][M] + TSC(cp9O_IM,M)); /* transition from I_M -> end */
       for(c = 0; c < cm->cp9->el_from_ct[M+1]; c++) /* el_from_ct[k] is >= 0 */
 	endsc = ILogsum(endsc, elmx[cur][cm->cp9->el_from_idx[M+1][c]]);
-      if(cm->cp9->flags & CM_LOCAL_BEGIN)
+      if(cm->cp9->flags & CMH_LOCAL_BEGIN)
 	minsc = ESL_MIN(minsc, endsc);
       
       /* check if we should break the loop now */

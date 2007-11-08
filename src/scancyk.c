@@ -536,7 +536,7 @@ CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
 	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++) 
 	    if ((sc = alpha[y+yoffset][cur][d] + cm->tsc[0][yoffset]) > alpha[0][cur][d]) 
 	      alpha[0][cur][d] = sc;
-	  if (cm->flags & CM_LOCAL_BEGIN) {
+	  if (cm->flags & CMH_LOCAL_BEGIN) {
 	    for (y = 1; y < cm->M; y++) {
 	      if (cm->stid[y] == BEGL_S) sc = alpha[y][j%(W+1)][d] + cm->beginsc[y];
 	      else                       sc = alpha[y][cur][d]     + cm->beginsc[y];

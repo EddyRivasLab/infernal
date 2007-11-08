@@ -100,9 +100,8 @@ struct cfg_s {
   int              be_verbose;	
   ESL_STOPWATCH   *w;
   CMStats_t      **cmstatsA;          /* the CM stats data structures, 1 for each CM */
-  ScanInfo_t       *si;               /* information for a CYK/Inside scan */ 
   HybridScanInfo_t *hsi;              /* information for a hybrid scan */ 
-  //SubFilterInfo_t *subinfo;           /* sub-CM filter information */
+  //SubFilterInfo_t *subinfo;          /* sub-CM filter information */
   int              ncm;                /* what number CM we're on */
   int              cmalloc;            /* number of cmstats we have allocated */
   char            *tmpfile;            /* tmp file we're writing to */
@@ -231,7 +230,6 @@ main(int argc, char **argv)
   cfg.w        = NULL; 
   cfg.ncm      = 0;
   cfg.cmstatsA = NULL;
-  cfg.si       = NULL;
   cfg.hsi      = NULL;
   //cfg.subinfo  = NULL;
   cfg.tmpfile  = NULL;
@@ -580,7 +578,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
  *           cfg          - cmcalibrate's configuration
  *           errbuf       - for writing out error messages
  *           cm           - the CM (already configured as we want it)
- *           si           - ScanInfo_t for the CM for CYK/Inside scanning functions
  *           nseq         - number of seqs to generate
  *           emit_from_cm - TRUE to emit from CM; FALSE emit random 
  *           ret_vscAA    - RETURN: [0..v..cm->M-1][0..nseq-1] best 
@@ -658,7 +655,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
       /* if nec, search with CM */
       if (use_cm)
 	{ 
-	  sc1 = FastCYKScan(cm, cfg->si, dsq, 1, L, cm->W, 0., NULL, &(cur_vscA));
+	  sc1 = FastCYKScan(cm, dsq, 1, L, cm->W, 0., NULL, &(cur_vscA));
 	  /* sc1 = search_target_cm_calibration(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, &(cur_vscA)); */
 	  /*sc2 = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE); */
 	  /*printf("i: %4d sc1: %10.4f sc2: %10.4f\n", i, sc1, sc2);
@@ -718,9 +715,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   cm_CountSearchDPCalcs(cm, 1000, cm->dmin, cm->dmax, cm->W, &(cfg->full_vcalcs));
 
   /* create and initialize scan info for CYK/Inside scanning functions */
-  if(cfg->si != NULL) cm_FreeScanInfo(cm, cfg->si);
-  cfg->si = cm_CreateScanInfo(cm);
-  if(cfg->si == NULL) cm_Fail("initialize_cm(), CreateScanInfo() call failed.");
+  cm_CreateScanInfo(cm, TRUE, TRUE);
+  if(cm->si == NULL) cm_Fail("initialize_cm(), CreateScanInfo() call failed.");
   
   /* create and initialize hybrid scan info */
   if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi);
@@ -1231,7 +1227,7 @@ int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_
   cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
   if(turn_qdb_back_on) cm->search_opts &= ~CM_SEARCH_NOQDB; 
 
-  sc = FastCYKScan(cm, cfg->si, dsq, 1, L, cm->W, 0., NULL, NULL);
+  sc = FastCYKScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
   /* sc = search_target_cm_calibration(cm, dsq, dmin_default_beta, dmax_default_beta, 1, L, cm->W, NULL); */
   if(!turn_hbanded_back_off)      { cm->search_opts |= CM_SEARCH_HBANDED;      cm->tau = orig_tau; }
   if(!turn_hmmscanbands_back_off) { cm->search_opts |= CM_SEARCH_HMMSCANBANDS; cm->tau = orig_tau; }

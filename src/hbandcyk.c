@@ -184,7 +184,7 @@ CYKInside_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t
    * Check out input parameters.
    */
   if (cm->stid[r] != ROOT_S) {
-    if (! (cm->flags & CM_LOCAL_BEGIN)) esl_fatal("internal error: we're not in local mode, but r is not root");
+    if (! (cm->flags & CMH_LOCAL_BEGIN)) esl_fatal("internal error: we're not in local mode, but r is not root");
     if (cm->stid[r] != MATP_MP && cm->stid[r] != MATL_ML &&
 	cm->stid[r] != MATR_MR && cm->stid[r] != BIF_B)
       esl_fatal("internal error: trying to do a local begin at a non-mainline start");
@@ -341,10 +341,6 @@ inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j
 	       int *jmin, int *jmax, int **hdmin, int **hdmax,
 	       int *safe_hdmin, int *safe_hdmax)
 {
-  /* Contract check */
-  if(dsq == NULL)
-    esl_fatal("ERROR in inside_b_jd_me(), dsq is NULL.\n");
-
   int      status;
   int     *touch;       /* keeps track of how many higher decks still need this deck */
   int      v,y,z;	/* indices for states  */
@@ -367,6 +363,10 @@ inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j
   int      kmin, kmax;
   int      tmp_jmin, tmp_jmax;
   float  **tmp_deck;       /* temp variable, used only to free deckpool at end */
+
+  /* Contract check */
+  if(dsq == NULL)
+    esl_fatal("ERROR in inside_b_jd_me(), dsq is NULL.\n");
 
   /* Allocations and initializations
    */
@@ -1254,7 +1254,7 @@ combine_qdb_hmm_d_bands(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax
   int jp;           /* counter over valid j's, but offset. jp+jmin[v] = actual j */
 
   /* Contract check */
-  if(!(cm->flags & CM_QDB))
+  if(!(cm->flags & CMH_QDB))
     esl_fatal("ERROR, in combine_qdb_hmm_d_bands(), CM QDBs invalid.\n");
   if(cm->dmin == NULL || cm->dmax == NULL)
     esl_fatal("ERROR, in combine_qdb_hmm_d_bands() but cm->dmin and/or cm->dmax is NULL.\n");
@@ -1857,7 +1857,7 @@ CYKBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int 
 	  if (alpha[0][cur][d] > best_neg_score) best_neg_score = alpha[0][cur][d];
 	}
 
-      if (cm->flags & CM_LOCAL_BEGIN) {
+      if (cm->flags & CMH_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  if(j >= jmin[y] && j <= jmax[y]) 
 	    {
@@ -2429,7 +2429,7 @@ iInsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, 
 	  if (Scorify(alpha[0][cur][d]) > best_neg_score) best_neg_score = Scorify(alpha[0][cur][d]);
 	}
 
-      if (cm->flags & CM_LOCAL_BEGIN) {
+      if (cm->flags & CMH_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  if(j >= jmin[y] && j <= jmax[y]) 
 	    {
@@ -2566,7 +2566,7 @@ debug_print_alpha_banded_jd(float ***alpha, CM_t *cm, int L, int *jmin, int *jma
   printf("\nPrinting banded alpha matrix :\n");
   printf("************************************\n");
   max_v = cm->M-1;
-  if(cm->flags & CM_LOCAL_BEGIN)
+  if(cm->flags & CMH_LOCAL_BEGIN)
     {
       max_v = cm->M;
     }

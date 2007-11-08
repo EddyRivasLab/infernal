@@ -91,7 +91,7 @@ EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree
   float *tmp_tvec = NULL;       /* tmp transition vector to choose from, 
 				 * for dealing with local end transitions */
   /* Contract check */
-  if(cm->flags & CM_LOCAL_END && (fabs(sreEXP2(cm->el_selfsc) - 1.0) < 0.01))
+  if(cm->flags & CMH_LOCAL_END && (fabs(sreEXP2(cm->el_selfsc) - 1.0) < 0.01))
     ESL_XEXCEPTION(eslEINVAL, "EL self transition probability %f is too high, would emit long (too long) EL insertions.", sreEXP2(cm->el_selfsc));
   if(cm->abc == NULL)
     ESL_XEXCEPTION(eslEINVAL, "CM does not have a valid alphabet.");
@@ -188,9 +188,9 @@ EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree
 	    }
 	  else
 	    {
-	      if(v == 0 && cm->flags & CM_LOCAL_BEGIN)		/* ROOT_S with local begins, special */
+	      if(v == 0 && cm->flags & CMH_LOCAL_BEGIN)		/* ROOT_S with local begins, special */
 		y = esl_rnd_FChoose(r, cm->begin, cm->M); /* choose next state, y */
-	      else if(cm->flags & CM_LOCAL_END) /* special case, we could transit to EL */
+	      else if(cm->flags & CMH_LOCAL_END) /* special case, we could transit to EL */
 		{
 		  esl_vec_FSet(tmp_tvec, (MAXCONNECT+1), 0.);
 		  esl_vec_FCopy(cm->t[v], cm->cnum[v], tmp_tvec);

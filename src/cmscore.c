@@ -960,13 +960,13 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   cm->align_opts = 0;  /* clear alignment options from previous stage */
   cm->config_opts = 0; /* clear configure options from previous stage */
   /* Clear QDBs if they exist */
-  if(cm->flags & CM_QDB)
+  if(cm->flags & CMH_QDB)
     {
       free(cm->dmin);
       free(cm->dmax);
       cm->dmin = NULL;
       cm->dmax = NULL;
-      cm->flags &= ~CM_QDB;
+      cm->flags &= ~CMH_QDB;
     }
 
   /* enable option to check parsetree score against the alignment score */

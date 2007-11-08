@@ -151,10 +151,10 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
    * possible again before exiting this function.
    */
   reset_local_ends = reset_cp9_local_ends = FALSE;
-  if(cm->flags & CM_LOCAL_END)
+  if(cm->flags & CMH_LOCAL_END)
     {
       reset_local_ends = TRUE;
-      if((cm->flags & CM_CP9) && cm->cp9->flags & CPLAN9_EL)
+      if((cm->flags & CMH_CP9) && cm->cp9->flags & CPLAN9_EL)
 	reset_cp9_local_ends = TRUE;
       ConfigNoLocalEnds(cm);
     }
@@ -225,7 +225,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 	    }
 	}
       /*EPN 11.11.05 adding following else if () to handle local begins*/
-      else if ((cm->flags & CM_LOCAL_BEGIN) && v == 0) /*state 0 is the one and only ROOT_S state*/
+      else if ((cm->flags & CMH_LOCAL_BEGIN) && v == 0) /*state 0 is the one and only ROOT_S state*/
 	{
 	  pdf = 0.;
 	  for (n = 0; n <= W; n++)
@@ -323,7 +323,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
        * to enforce this, we (hackishly) just don't reuse beams. Although
        * we could just save the match state beams...
        */
-      if ((! save_densities) && (! (cm->flags & CM_LOCAL_BEGIN))) {
+      if ((! save_densities) && (! (cm->flags & CMH_LOCAL_BEGIN))) {
 	if (cm->sttype[v] == B_st)
 	  {  /* connected children of a B st are handled specially, remember */
 	    y = cm->cfirst[v]; esl_stack_PPush(beamstack, gamma[y]); gamma[y] = NULL;
@@ -734,7 +734,7 @@ CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int 
   /* Contract check */
   if(j0 < i0)
     esl_fatal("ERROR in CYKBandedScan, i0: %d j0: %d\n", i0, j0);
-  if(!(cm->flags & CM_QDB))
+  if(!(cm->flags & CMH_QDB))
     esl_fatal("ERROR in CYKBandedScan, QDBs invalid\n");
   if(dsq == NULL)
     esl_fatal("ERROR in CYKBandedScan, dsq is NULL.\n");
@@ -1022,7 +1022,7 @@ CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int 
        * ref: ~nawrocki/notebook/5_1109_inf_local_banded_spd/00LOG
        */
 
-      if (cm->flags & CM_LOCAL_BEGIN) {
+      if (cm->flags & CMH_LOCAL_BEGIN) {
 	for (y = 1; y < cm->M; y++) {
 	  d = (dmin[y] > dmin[0]) ? dmin[y]:dmin[0];
 	  for (; (d <= dmax[y] && d <= gamma_j) && d <= W; d++)

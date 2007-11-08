@@ -121,6 +121,7 @@ CreateCMShell(void)
   cm->root_trans   = NULL;
   cm->hmmpad       = DEFAULT_HMMPAD; /* 0 residues */
   cm->stats        = NULL;
+  cm->si           = NULL;
   cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
 
@@ -274,8 +275,8 @@ CMRenormalize(CM_t *cm)
       if (cm->sttype[v] == MP_st)
 	esl_vec_FNorm(cm->e[v], cm->abc->K * cm->abc->K);
     }
-  if (cm->flags & CM_LOCAL_BEGIN) esl_vec_FNorm(cm->begin, cm->M);
-  if (cm->flags & CM_LOCAL_END)   esl_fatal("Renormalization of models in local end mode not supported yet");
+  if (cm->flags & CMH_LOCAL_BEGIN) esl_vec_FNorm(cm->begin, cm->M);
+  if (cm->flags & CMH_LOCAL_END)   esl_fatal("Renormalization of models in local end mode not supported yet");
 }
 
 
@@ -294,6 +295,7 @@ CMRenormalize(CM_t *cm)
 void
 FreeCM(CM_t *cm)
 {
+  if (cm->si     != NULL) cm_FreeScanInfo(cm); /* free this first, it needs some info from cm->stid */
   if (cm->name   != NULL) free(cm->name);
   if (cm->acc    != NULL) free(cm->acc);
   if (cm->desc   != NULL) free(cm->desc);
@@ -727,50 +729,11 @@ CMLogoddsify(CM_t *cm)
 	  }
       }
       
-      cm->flags |= CM_LOCAL_BEGIN;
-      cm->flags |= CM_LOCAL_END;
+      cm->flags |= CMH_LOCAL_BEGIN;
+      cm->flags |= CMH_LOCAL_END;
     }
   /* raise flag saying we have valid log odds scores */
   cm->flags |= CMH_BITS;
-}
-
-/* Function:  CMHackInsertScores()
- * Incept:    SRE, Wed Jul 24 09:48:22 2002 [St. Louis]
- *
- * Purpose:   Temporary (I hope): make all insert scores 0.
- *            If you let inserts train on the data, you can get
- *            positive insert emission scores. Local alignments,
- *            in particular, can then consist of just a couple of
- *            consensus states and a long string of insert 
- *            states, hitting base-composition-biased sequence
- *            with very high score. This is a Bad Thing.
- *            
- *            The long term solution for this problem will
- *            go in with mixture Dirichlet priors, but for now
- *            (with only Laplace coded), this'll appease the
- *            pitchfork and torches mob at Cambridge.
- *
- * Args:      cm - the model 
- *
- * Returns:   (void)
- *
- * Xref:      STL6 p.93.
- */
-void
-CMHackInsertScores(CM_t *cm)
-{
-  int v, x;
-  for (v = 0; v < cm->M; v++)
-    {
-      if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
-	for (x = 0; x < cm->abc->K; x++)
-	  {
-	    cm->esc[v][x]  = 0.;
-	    cm->iesc[v][x] = 0.;
-	  }
-    }
-  if(cm->cp9 != NULL)
-    CP9HackInsertScores(cm->cp9);
 }
 
 
@@ -1643,7 +1606,7 @@ ExponentiateCM(CM_t *cm, double z)
   int local_flag = FALSE;
 
   /* If in local mode, configure to global first. */
-  if(cm->flags & CM_LOCAL_BEGIN || cm->flags & CM_LOCAL_END) 
+  if(cm->flags & CMH_LOCAL_BEGIN || cm->flags & CMH_LOCAL_END) 
     {
       ConfigGlobal(cm);
       local_flag = TRUE;
@@ -1697,7 +1660,7 @@ DuplicateCM(CM_t *cm)
   ESL_ALPHABET *abc;
   abc = esl_alphabet_Create(cm->abc->type);
 
-  /* Create the new model and copy everything over except the cp9 and stats */
+  /* Create the new model and copy everything over except the cp9, stats and ScanInfo */
   new = CreateCM(cm->nodes, cm->M, cm->abc);
   esl_strdup(cm->name, -1, &(new->name));
   esl_strdup(cm->acc,  -1, &(new->acc));
@@ -1759,7 +1722,7 @@ DuplicateCM(CM_t *cm)
   else 
     {
       new->dmin = new->dmax = NULL;
-      new->flags &= ~CM_QDB;
+      new->flags &= ~CMH_QDB;
     }
   new->W      = cm->W;
   new->el_selfsc  = cm->el_selfsc;
@@ -1790,18 +1753,23 @@ DuplicateCM(CM_t *cm)
 
   new->cp9  = NULL;
 
+  /* calculate the ScanInfo, if it exists and is valid */
+  if(cm->flags & CMH_SCANINFO) {
+    cm_CreateScanInfo(new, (cm->si->flags & cmSI_HAS_FLOAT), (cm->si->flags & cmSI_HAS_INT));
+  }
+
   /* Copy the CM stats if they exist */
-  if(cm->flags & CM_GUMBEL_STATS)
+  if(cm->flags & CMH_GUMBEL_STATS)
     {
       new->stats = AllocCMStats(cm->stats->np);
       CopyCMStats(cm->stats, new->stats);
     }
 
   /* Copy the CP9 if it exists */
-  if(cm->flags & CM_CP9)
+  if(cm->flags & CMH_CP9)
     {
       DuplicateCP9(cm, new);
-      new->flags |= CM_CP9; /* raise the CP9 flag */
+      new->flags |= CMH_CP9; /* raise the CP9 flag */
     }
 
   return new;
@@ -1878,8 +1846,8 @@ cm_CalcExpSc(CM_t *cm, float **ret_expsc, float **ret_expsc_noss)
   int i,j;
 
   /* contract check */
-  if(cm->flags & CM_LOCAL_BEGIN) cm_Fail("cm_CalcExpSc() CM_LOCAL_BEGIN flag up.\n");
-  if(cm->flags & CM_LOCAL_END)   cm_Fail("cm_CalcExpSc() CM_LOCAL_END flag up.\n");
+  if(cm->flags & CMH_LOCAL_BEGIN) cm_Fail("cm_CalcExpSc() CMH_LOCAL_BEGIN flag up.\n");
+  if(cm->flags & CMH_LOCAL_END)   cm_Fail("cm_CalcExpSc() CMH_LOCAL_END flag up.\n");
   if(ret_expsc == NULL)          cm_Fail("cm_CalcExpSc() ret_expsc is NULL.\n");
 
   ESL_ALLOC(left_e,    sizeof(float) * cm->abc->K);
@@ -2022,12 +1990,12 @@ cm_Validate(CM_t *cm, float tol, char *errbuf)
 	}
       if (cm->sttype[v] != B_st && cm->sttype[v] != E_st) 
 	{
-	  if ((! (cm->flags & CM_LOCAL_BEGIN)) && (! (cm->flags & CM_LOCAL_END)))
+	  if ((! (cm->flags & CMH_LOCAL_BEGIN)) && (! (cm->flags & CMH_LOCAL_END)))
 	    {
 	      if(esl_vec_FValidate(cm->t[v], cm->cnum[v], tol, NULL) != eslOK) 
 		ESL_XFAIL(eslFAIL, errbuf, "t[%d] fails pvector validation", v);
 	    }
-	  else if (v > 0 && (cm->flags & CM_LOCAL_END))
+	  else if (v > 0 && (cm->flags & CMH_LOCAL_END))
 	    {
 	      esl_vec_FSet(pvec, MAXCONNECT+1, 0.); /* not really nec */
 	      for(y = 0; y < cm->cnum[v]; y++) pvec[y] = cm->t[v][y];
@@ -2040,7 +2008,7 @@ cm_Validate(CM_t *cm, float tol, char *errbuf)
       if(cm->stid[v] == MATR_MR) clen++;
       if(cm->stid[v] == MATP_MP) clen+=2;
     }
-  if(cm->flags & CM_LOCAL_BEGIN) 
+  if(cm->flags & CMH_LOCAL_BEGIN) 
     if(esl_vec_FValidate(cm->begin, cm->M, tol, NULL) != eslOK) 
   if(cm->clen != clen) ESL_XFAIL(eslFAIL, errbuf, "consensus length %d not correctly stored in CM, should be %d", cm->clen, clen);
 

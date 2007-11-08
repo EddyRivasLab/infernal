@@ -63,7 +63,7 @@ static ESL_OPTIONS options[] = {
   { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Inside algorithm", 3 },
   { "--outside", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Outside algorithm", 3 },
   { "--post",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "align with CYK and append posterior probabilities", 3 },
-  { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,  "--post",        NULL, "check that posteriors are correctly calc'ed", 3 },
+  { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,  "--post",        "-l", "check that posteriors are correctly calc'ed", 3 },
   { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "build sub CM for columns b/t HMM predicted start/end points", 3 },
   /* Memory options */
   { "--small",   eslARG_NONE,"default",  NULL, NULL,  MEMOPTS,      NULL, "--nosmall", "use divide and conquer (d&c) alignment algorithm", 4 },
@@ -752,6 +752,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  for (i = 0; i <= imax; i++)                                                   
 	    {                                                                          
 	      printf("Creating postal code for: %s\n", seqs_to_aln->sq[i]->name);
+
 	      if((status = make_aligned_string(msa->aseq[i], "-_.", msa->alen, seqs_to_aln->postcode[i], &apostcode)) != eslOK)
 		ESL_FAIL(status, errbuf, "error creating posterior string\n");
 	      esl_msa_AppendGR(msa, "POST", i, apostcode);
@@ -1135,6 +1136,7 @@ make_aligned_string(char *aseq, char *gapstring, int alen, char *ss, char **ret_
   int status;
   char *new; 
   int   apos, rpos;
+  int   rlen;
 
   ESL_ALLOC(new, (sizeof(char) * (alen+1)));
   for (apos = rpos = 0; apos < alen; apos++)
@@ -1145,8 +1147,9 @@ make_aligned_string(char *aseq, char *gapstring, int alen, char *ss, char **ret_
 	new[apos] = ss[rpos++];
     }
   new[apos] = '\0';
-
-  if (rpos != strlen(ss))
+  
+  rlen = strlen(ss);
+  if (rpos != rlen)
     {
       if(new != NULL) free(new);
       return eslEINCONCEIVABLE;

@@ -268,9 +268,9 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2)
 
         if (tr->nxtl[tidx] == -1)
           ;
-	else if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
+	else if (v == 0 && (cm->flags & CMH_LOCAL_BEGIN))
 	  sc += cm->beginsc[y];
-	else if (y == cm->M) /* CM_LOCAL_END is presumably set, else this wouldn't happen */
+	else if (y == cm->M) /* CMH_LOCAL_END is presumably set, else this wouldn't happen */
 	  sc += cm->endsc[v] + (cm->el_selfsc * (tr->emitr[tidx] - tr->emitl[tidx] + 1 - StateDelta(cm->sttype[v])));
 	else 		/* y - cm->first[v] gives us the offset in the transition vector */
 	  sc += cm->tsc[v][y - cm->cfirst[v]];
@@ -447,9 +447,9 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int 
 
         if (tr->nxtl[x] == -1)
           ;
-	else if (v == 0 && (cm->flags & CM_LOCAL_BEGIN))
+	else if (v == 0 && (cm->flags & CMH_LOCAL_BEGIN))
 	  tsc = cm->beginsc[y];
-	else if (y == cm->M) /* CM_LOCAL_END is presumably set, else this wouldn't happen */
+	else if (y == cm->M) /* CMH_LOCAL_END is presumably set, else this wouldn't happen */
 	  tsc = cm->endsc[v] + (cm->el_selfsc * (tr->emitr[x] - tr->emitl[x] + 1 - StateDelta(cm->sttype[v])));
 	else 		/* y - cm->first[v] gives us the offset in the transition vector */
 	  tsc = cm->tsc[v][y - cm->cfirst[v]];
@@ -1067,7 +1067,7 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_f
   /* Contract check, CM must be LOCALLY configured, (could demand global, but
    * we assume we'll be calling this function serially for many parses and don't
    * want to need to switch CM back and forth from local/global */
-  if((!(cm->flags & CM_LOCAL_BEGIN)) || (!(cm->flags & CM_LOCAL_END)))
+  if((!(cm->flags & CMH_LOCAL_BEGIN)) || (!(cm->flags & CMH_LOCAL_END)))
     esl_fatal("ERROR in ParsetreeScore_Global2Local() CM is not in local mode.\n");
   if(dsq == NULL)
     esl_fatal("ERROR in ParsetreeScore_Global2Local(), dsq is NULL.\n");
@@ -1231,7 +1231,7 @@ int
 Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr)
 {
   /* Check the contract */
-  if(cm->cp9 == NULL || (!(cm->flags & CM_CP9)))
+  if(cm->cp9 == NULL || (!(cm->flags & CMH_CP9)))
     esl_fatal("In Parsetree2CP9trace, cm->cp9 is not valid.\n");
   if(cm->cp9map == NULL)
     esl_fatal("In Parsetree2CP9trace, cm->cp9map is NULL.\n");

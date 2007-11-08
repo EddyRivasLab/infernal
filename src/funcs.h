@@ -58,7 +58,6 @@ extern void  FreeCM(CM_t *cm);
 extern void  CMSimpleProbify(CM_t *cm);
 extern int   rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat);
 extern void  CMLogoddsify(CM_t *cm);
-extern void  CMHackInsertScores(CM_t *cm);
 extern int   CMCountStatetype(CM_t *cm, char type);
 extern int   CMSegmentCountStatetype(CM_t *cm, int r, int z, char type);
 extern int   CMSubtreeCountStatetype(CM_t *cm, int v, char type);
@@ -157,6 +156,8 @@ extern float EnforceScore(CM_t *cm);
 extern int   EnforceFindEnfStart(CM_t *cm, int enf_cc_start);
 extern int   ConfigForGumbelMode(CM_t *cm, int statmode);
 extern int   ConfigQDB(CM_t *cm);
+extern void  CMHackInsertScores(CM_t *cm);
+extern void  CP9HackInsertScores(CP9_t *cp9);
 
 /* from modelmaker.c
  */
@@ -327,7 +328,6 @@ extern void CP9FreeTrace(CP9trace_t *tr);
 
 extern void CP9_2sub_cp9(CP9_t *orig_hmm, CP9_t **ret_sub_hmm, int spos, int epos, double **orig_phi);
 extern void CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
-extern void CP9HackInsertScores(CP9_t *cp9);
 extern void CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos);
 extern void CP9_fake_tracebacks(ESL_MSA *msa, int *matassign, CP9trace_t ***ret_tr);
 extern void  CP9TraceCount(CP9_t *hmm, ESL_DSQ *dsq, float wt, CP9trace_t *tr);
@@ -368,23 +368,24 @@ extern char  ** alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, i
 
 
 /* from cm_fastsearch.c */
-extern float FastCYKScan    (CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+extern float FastCYKScan    (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 			     search_results_t *results, float **ret_vsc);
-extern float FastIInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+extern float FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 			     search_results_t *results, float **ret_vsc);
-extern float FastFInsideScan(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+extern float FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 			     search_results_t *results, float **ret_vsc);
-extern float RefCYKScan     (CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+extern float RefCYKScan     (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 			     search_results_t *results, float **ret_vsc);
-extern float RefIInsideScan (CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+extern float RefIInsideScan (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 			     search_results_t *results, float **ret_vsc);
-extern float RefFInsideScan (CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+extern float RefFInsideScan (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 			     search_results_t *results, float **ret_vsc);
 extern float rsearch_CYKScan (CM_t *cm, ESL_DSQ *dsq, int L, float cutoff, int D, search_results_t *results);
+extern float  FastCYKScan_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
+				  CM_FHB_MX *mx, int allow_begin, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b);
+
 extern float       cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_vcalcs);
-extern ScanInfo_t *cm_CreateScanInfo    (CM_t *cm);
-extern int         cm_FreeScanInfo      (CM_t *cm, ScanInfo_t *si);
-extern void        cm_DumpScanInfoAlpha (CM_t *cm, ScanInfo_t *si, int j, int i0, int doing_float);
+
 extern cm_GammaHitMx_t *cm_CreateGammaHitMx     (int L, int i0, int be_greedy, float cutoff);
 extern void             cm_FreeGammaHitMx       (cm_GammaHitMx_t *gamma);
 extern void             cm_UpdateFloatGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int *bestr, float sc_boost, 
@@ -774,14 +775,16 @@ extern int   cp9_CheckTransitionGuarantees(CP9_t *cp9);
 extern int   cp9_GetLocalityMode(CP9_t *cp9);
 
 /* from cm_fastalign.c */
-extern float Fast_inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
-				 CM_FHB_MX *mx, void ****ret_shadow, int allow_begin, int *ret_b, float *ret_bsc,
-				 CP9Bands_t *cp9b);
-extern float Fast_insideT_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
-				  int r, int z, int i0, int j0, int allow_begin, CP9Bands_t *cp9b, CM_FHB_MX *mx);
-extern float Fast_CYKInside_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, 
-				 CP9Bands_t *cp9b, CM_FHB_MX *mx);
-
+extern float fast_cyk_inside_align_hb (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
+				       void ****ret_shadow, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b, CM_FHB_MX *mx, 
+				       float **esc_vAA);
+extern float fast_cyk_inside_align_hbT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
+				       int r, int z, int i0, int j0, int allow_begin, 
+				       CP9Bands_t *cp9b, CM_FHB_MX *mx, float **esc_vAA);
+extern float FastCYKInsideAlignHB     (CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, 
+				       CP9Bands_t *cp9b, CM_FHB_MX *mx, float **esc_vAA);
+extern float FastIInsideAlignHB       (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_IHB_MX *mx, int **esc_vAA);
+extern float FastIOutsideAlignHB      (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_IHB_MX *mx, int **esc_vAA, CM_IHB_MX *ins_mx, int do_check);
 
 /* from hmmband.c */
 extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
@@ -826,6 +829,10 @@ extern CM_FHB_MX * cm_fhb_mx_Create(int M);
 extern int         cm_fhb_mx_GrowTo(CM_FHB_MX *mx, CP9Bands_t *cp9b);
 extern int         cm_fhb_mx_Dump(FILE *ofp, CM_FHB_MX *mx);
 extern void        cm_fhb_mx_Destroy(CM_FHB_MX *mx);
+extern CM_IHB_MX * cm_ihb_mx_Create(int M);
+extern int         cm_ihb_mx_GrowTo(CM_IHB_MX *mx, CP9Bands_t *cp9b);
+extern int         cm_ihb_mx_Dump(FILE *ofp, CM_IHB_MX *mx);
+extern void        cm_ihb_mx_Destroy(CM_IHB_MX *mx);
 
 /* from cm_cp9_hybridsearch.c */
 extern float cm_cp9_HybridScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, int **ret_sc, 
@@ -841,3 +848,15 @@ extern void cm_FreeHybridScanInfo(HybridScanInfo_t *hsi);
 /* from cm_theta.c */
 extern int cm_CalcMaxSc(CM_t *cm, double **ret_maxsc, double **ret_maxsc_noss);
 extern Theta_t *cm_CalcTheta(CM_t *cm, Theta_t **ret_theta, float stepsize);
+
+/* from cm_scaninfo.c */
+extern int         cm_CreateScanInfo        (CM_t *cm, int do_float, int do_int);           
+extern int         cm_FloatizeScanInfo      (CM_t *cm);
+extern int         cm_IntizeScanInfo        (CM_t *cm);
+extern int         cm_UpdateScanInfo        (CM_t *cm);
+extern int         cm_FreeFloatsFromScanInfo(CM_t *cm);
+extern int         cm_FreeIntsFromScanInfo  (CM_t *cm);
+extern void        cm_FreeScanInfo          (CM_t *cm);
+extern void        cm_DumpScanInfoAlpha     (CM_t *cm, int j, int i0, int doing_float);
+extern float **    FCalcOptimizedEmitScores (CM_t *cm);
+extern int **      ICalcOptimizedEmitScores (CM_t *cm);

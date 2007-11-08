@@ -599,8 +599,8 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
   CMSubMap_t *submap;
 
   /* check to make sure that we can actually build a sub CM of this model */
-  if((orig_cm->flags & CM_LOCAL_BEGIN) ||
-     (orig_cm->flags & CM_LOCAL_END))
+  if((orig_cm->flags & CMH_LOCAL_BEGIN) ||
+     (orig_cm->flags & CMH_LOCAL_END))
     esl_fatal("ERROR trying to build a sub CM of a CM already in local mode, not yet supported.\n");
   if(orig_cm->flags & CM_IS_SUB)  
     esl_fatal("ERROR trying to build a sub CM of a CM that is itself a sub CM.\n");

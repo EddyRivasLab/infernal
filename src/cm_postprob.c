@@ -162,7 +162,7 @@ FInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   /* EPN: now that the EL self loop has a transition score, its
    *      necessary to keep track of the alpha EL deck (alpha[cm->M])
    */
-  if(cm->flags & CM_LOCAL_BEGIN)
+  if(cm->flags & CMH_LOCAL_BEGIN)
     {
       if (! deckpool_pop(dpool, &(alpha[cm->M]))) 
 	alpha[cm->M] = alloc_vjd_deck(L, i0, j0);
@@ -448,7 +448,7 @@ IInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   /* EPN: now that the EL self loop has a transition score, its
    *      necessary to keep track of the alpha EL deck (alpha[cm->M])
    */
-  if(cm->flags & CM_LOCAL_BEGIN)
+  if(cm->flags & CMH_LOCAL_BEGIN)
     {
       if (! Ideckpool_pop(dpool, &(alpha[cm->M]))) 
 	alpha[cm->M] = Ialloc_vjd_deck(L, i0, j0);
@@ -745,12 +745,13 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   int      num_split_states; /* temp variable used only if do_check = TRUE */
   float    diff;        /* temp variable used only if do_check = TRUE */
   float  **end;         /* we re-use the end deck. */
+  int      fail_flag = FALSE; /* set to TRUE if do_check and we see a problem */
 
   /* Contract check */
   if(dsq == NULL)
     esl_fatal("ERROR in FOutside(), dsq is NULL.\n");
 
-  if (cm->flags & CM_LOCAL_END) { do_check = FALSE; } 
+  if (cm->flags & CMH_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
 
   /* Allocations and initializations
@@ -782,7 +783,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 
   /* Initialize the EL deck at M, if we're doing local alignment w.r.t. ends.
    */
-  if (cm->flags & CM_LOCAL_END) {
+  if (cm->flags & CMH_LOCAL_END) {
     if (! deckpool_pop(dpool, &(beta[cm->M])))
       beta[cm->M] = alloc_vjd_deck(L, i0, j0);
     for (jp = 0; jp <= L; jp++) {
@@ -825,7 +826,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
       /* If we can do a local begin into v, also init with that. 
        * By definition, beta[0][j0][L] == 0.
        */ 
-      if (i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+      if (i0 == 1 && j0 == L && (cm->flags & CMH_LOCAL_BEGIN))
 	beta[v][j0][L] = cm->beginsc[v];
 
       /* main recursion:
@@ -987,7 +988,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
    * w.r.t. ends: left-emitting, zero-scoring EL->EL transitions.
    * (EL = deck at M.)
    */
-  if (cm->flags & CM_LOCAL_END) {
+  if (cm->flags & CMH_LOCAL_END) {
     for (jp = L; jp > 0; jp--) { /* careful w/ boundary here */
       j = i0-1+jp;
       for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
@@ -1003,7 +1004,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
     printf("OUTSIDE, done printing beta\n");
   */
 
-  if(do_check && (!(cm->flags & CM_LOCAL_END))) 
+  if(do_check && (!(cm->flags & CMH_LOCAL_END))) 
     /* Local ends make the following test invalid because it is not true that
      * exactly 1 state in each node's split set must be visited in each parse. 
      */
@@ -1036,8 +1037,9 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 	  diff = alpha[0][j0][L] - sc;
 	  if(diff > 0.001 || diff < -0.001)
 	    {
-	      esl_fatal("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
-		  n, sc, alpha[0][j0][L], diff);
+	      fail_flag = TRUE;
+	      printf("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
+		     n, sc, alpha[0][j0][L], diff);
 	    }
 	}
 
@@ -1063,7 +1065,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
    * in local mode).
    */
 
-  if(!(cm->flags & CM_LOCAL_END))
+  if(!(cm->flags & CMH_LOCAL_END))
     {
       return_sc = IMPOSSIBLE;
       for (jp = 0; jp <= L; jp++) 
@@ -1084,7 +1086,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   if (ret_beta == NULL) {
     for (v = 0; v <= (cm->M-1); v++) 
       if (beta[v] != NULL) { deckpool_push(dpool, beta[v]); beta[v] = NULL; }
-    if (cm->flags & CM_LOCAL_END) {
+    if (cm->flags & CMH_LOCAL_END) {
       deckpool_push(dpool, beta[cm->M]);
       beta[cm->M] = NULL; 
     }
@@ -1118,7 +1120,9 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   }
   free(touch);
 
-  if(!(cm->flags & CM_LOCAL_END))
+  if(fail_flag) cm_Fail("Not all nodes passed posterior check.");
+
+  if(!(cm->flags & CMH_LOCAL_END))
     ESL_DPRINTF1(("\tFOutside() sc : %f\n", return_sc));
   else
     ESL_DPRINTF1(("\tFOutside() sc : %f (LOCAL mode; sc is from Inside)\n", return_sc));
@@ -1157,12 +1161,13 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   int      num_split_states; /* temp variable used only if do_check = TRUE */
   float    diff;        /* temp variable used only if do_check = TRUE */
   int    **end;         /* we re-use the end deck. */
+  int      fail_flag = FALSE; /* set to TRUE if do_check and we see a problem */
 
   /* Contract check */
   if(dsq == NULL)
     esl_fatal("ERROR in IOutside(), dsq is NULL.\n");
 
-  if (cm->flags & CM_LOCAL_END) { do_check = FALSE; } 
+  if (cm->flags & CMH_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
 
   /* Allocations and initializations
@@ -1194,7 +1199,7 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 
   /* Initialize the EL deck at M, if we're doing local alignment w.r.t. ends.
    */
-  if (cm->flags & CM_LOCAL_END) {
+  if (cm->flags & CMH_LOCAL_END) {
     if (! Ideckpool_pop(dpool, &(beta[cm->M])))
       beta[cm->M] = Ialloc_vjd_deck(L, i0, j0);
     for (jp = 0; jp <= L; jp++) {
@@ -1237,7 +1242,7 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
       /* If we can do a local begin into v, also init with that. 
        * By definition, beta[0][j0][L] == 0.
        */ 
-      if (i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+      if (i0 == 1 && j0 == L && (cm->flags & CMH_LOCAL_BEGIN))
 	beta[v][j0][L] = cm->ibeginsc[v];
 
       /* main recursion:
@@ -1399,7 +1404,7 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
    * w.r.t. ends: left-emitting, zero-scoring EL->EL transitions.
    * (EL = deck at M.)
    */
-  if (cm->flags & CM_LOCAL_END) {
+  if (cm->flags & CMH_LOCAL_END) {
     for (jp = L; jp > 0; jp--) { /* careful w/ boundary here */
       j = i0-1+jp;
       for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
@@ -1424,7 +1429,7 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
    * test is valid, it's the precision issue with int log odds scores,
    * though I can't be sure right now.
    */
-  if(FALSE && (do_check && (!(cm->flags & CM_LOCAL_END)))) 
+  if(do_check && (!(cm->flags & CMH_LOCAL_END))) 
     /* Local ends make the following test invalid because it is not true that
      * exactly 1 state in each node's split set must be visited in each parse. 
      */
@@ -1456,8 +1461,9 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 	  diff = fsc - (Scorify(alpha[0][j0][L]));
 	  if(diff > 0.01 || diff < -0.01)
 	    {
-	      esl_fatal("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
-		  n, fsc, Scorify(alpha[0][j0][L]), diff);
+	      fail_flag = TRUE;
+	      printf("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
+		     n, fsc, Scorify(alpha[0][j0][L]), diff);
 	    }
 	}
 
@@ -1483,7 +1489,7 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
    * in local mode).
    */
 
-  if(!(cm->flags & CM_LOCAL_END))
+  if(!(cm->flags & CMH_LOCAL_END))
     {
       ireturn_sc = -INFTY;
       for (jp = 0; jp <= L; jp++) 
@@ -1505,7 +1511,7 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   if (ret_beta == NULL) {
     for (v = 0; v <= (cm->M-1); v++) 
       if (beta[v] != NULL) { Ideckpool_push(dpool, beta[v]); beta[v] = NULL; }
-    if (cm->flags & CM_LOCAL_END) {
+    if (cm->flags & CMH_LOCAL_END) {
       Ideckpool_push(dpool, beta[cm->M]);
       beta[cm->M] = NULL; 
     }
@@ -1539,7 +1545,9 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   }
   free(touch);
 
-  if(!(cm->flags & CM_LOCAL_END))
+  if(fail_flag) cm_Fail("Not all nodes passed posterior check.");
+
+  if(!(cm->flags & CMH_LOCAL_END))
     ESL_DPRINTF1(("\tIOutside() sc : %f\n", freturn_sc));
   else
     ESL_DPRINTF1(("\tIOutside() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc));
@@ -1607,7 +1615,7 @@ CMPosterior(int L, CM_t *cm, float ***alpha, float ****ret_alpha, float ***beta,
    * its not a valid deck.
    */
   vmax = cm->M-1;
-  if (cm->flags & CM_LOCAL_END) vmax = cm->M;
+  if (cm->flags & CMH_LOCAL_END) vmax = cm->M;
 
   for (v = vmax; v >= 0; v--) 
     for (j = 0; j <= L; j++) 
@@ -1672,7 +1680,7 @@ ICMPosterior(int L, CM_t *cm, int   ***alpha, int   ****ret_alpha, int   ***beta
    * its not a valid deck.
    */
   vmax = cm->M-1;
-  if (cm->flags & CM_LOCAL_END) vmax = cm->M;
+  if (cm->flags & CMH_LOCAL_END) vmax = cm->M;
 
   for (v = vmax; v >= 0; v--) 
     for (j = 0; j <= L; j++) 
@@ -1680,6 +1688,7 @@ ICMPosterior(int L, CM_t *cm, int   ***alpha, int   ****ret_alpha, int   ***beta
 	{
 	  /* printf("v: %2d | j: %2d | d: %2d | alpha[%d][%d][%d]: %d | beta[%d][%d][%d]: %d\n",  v, j, d, v, j, d, alpha[v][j][d], v,j,d, beta[v][j][d]);  */
 	  post[v][j][d] = alpha[v][j][d] + beta[v][j][d] - sc;
+	  /*printf("v: %3d | j: %3d | d: %3d | alpha: %10d | beta: %10d | post: %10d\n", v, j, d, alpha[v][j][d], beta[v][j][d], post[v][j][d]);*/
 	  if(v == vmax)
 	    {
 	      /*printf("v: %3d | j: %3d | d: %3d | alpha: %5.2f | beta: %5.2f\n", v, j, d, alpha[v][j][d], beta[v][j][d]);*/
@@ -1752,6 +1761,8 @@ Fscore2postcode(float sc)
   char i;
   /*printf("sc: %10.2f prob: %10.5f\n", sc, FScore2Prob(sc, 1.));*/
   i = (char) (FScore2Prob(sc, 1.) * 10.);
+  /* if(i < 0 || i > 10) { printf("i: %d sc: %d Score2Prob(sc,1.): %f\n", i, sc, Score2Prob(sc, 1.)); } */
+  assert(i >= 0 && i <= 10); 
   return ((i > 9) ? '*' : '0'+i);
 }
 
@@ -1761,6 +1772,8 @@ Iscore2postcode(int sc)
   char i;
   /*printf("sc: %d prob: %10.5f\n", sc, Score2Prob(sc, 1.));*/
   i = (char) (Score2Prob(sc, 1.) * 10.);
+  /* if(i < 0 || i > 10) { printf("i: %d sc: %d Score2Prob(sc,1.): %f\n", i, sc, Score2Prob(sc, 1.)); } */
+  assert(i >= 0 && i <= 10); 
   return ((i > 9) ? '*' : '0'+i);
 }
 
@@ -1841,7 +1854,7 @@ ICMPostalCode(CM_t *cm, int L, int ***post, Parsetree_t *tr)
 	  {
 	    d = j - (r+1) + 1;
 	    postcode[r] = Iscore2postcode(post[v][j][d]);
-	    printf("r: %d | post[%d][%d][%d]: %d (%f)| sc: %c\n", r, v, j, d, post[v][j][d], (Scorify(post[v][j][d])), postcode[r]);
+	    /* printf("r: %d | post[%d][%d][%d]: %d (%f)| sc: %c\n", r, v, j, d, post[v][j][d], (Scorify(post[v][j][d])), postcode[r]); */
 	  }
       }
     }
@@ -1907,7 +1920,7 @@ CMCheckPosterior(int L, CM_t *cm, float ***post)
       /* Finally factor in possibility of a local end, i.e. that the EL state
        * may have "emitted" this residue.
        */
-      if (cm->flags & CM_LOCAL_END) {
+      if (cm->flags & CMH_LOCAL_END) {
 	for (j = k; j <= L; j++)
 	  {
 	    d = j-k+1;
@@ -1918,7 +1931,7 @@ CMCheckPosterior(int L, CM_t *cm, float ***post)
       
       if(((sc - 0.) > 0.0001) || ((sc - 0.) < -0.0001))
 	{
-	  esl_fatal("residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
+	  cm_Fail("residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
 	}
       /*printf("k: %d | total: %10.2f\n", k, (sreEXP2(sc)));*/
     }  
@@ -1932,7 +1945,7 @@ ICMCheckPosterior(int L, CM_t *cm, int ***post)
 {
   int   v, j, d, k;
   int   sc;
-
+  float fsc;
   for (k = 1; k <= L; k++) 
     {
       sc = -INFTY;
@@ -1944,9 +1957,9 @@ ICMCheckPosterior(int L, CM_t *cm, int ***post)
 	    {
 	      for (j = k; j <= L; j++)
 		{
-		  /*printf("adding L v: %d | i: %d | j: %d | d: %d\n", v, (j-d+1), j, d);*/
 		  d = j-k+1;
 		  sc = ILogsum(sc, (post[v][j][d]));
+		  /* printf("adding L v: %d | i: %d | j: %d | d: %d | sc: %10d\n", v, (j-d+1), j, d, sc); */
 		}
 	    }
 	  if((cm->sttype[v] == MP_st) ||
@@ -1955,15 +1968,15 @@ ICMCheckPosterior(int L, CM_t *cm, int ***post)
 	    {
 	      for (d = 1; d <= k; d++)
 		{
-		  /*printf("adding R v: %d | i: %d | j: %d | d: %d\n", v, (k-d+1), k, d);*/
 		  sc = ILogsum(sc, (post[v][k][d]));
+		  /* printf("adding R v: %d | i: %d | j: %d | d: %d | sc: %10d\n", v, (k-d+1), k, d, sc); */
 		}
 	    }
 	}
       /* Finally factor in possibility of a local end, i.e. that the EL state
        * may have "emitted" this residue.
        */
-      if (cm->flags & CM_LOCAL_END) {
+      if (cm->flags & CMH_LOCAL_END) {
 	for (j = k; j <= L; j++)
 	  {
 	    d = j-k+1;
@@ -1972,10 +1985,11 @@ ICMCheckPosterior(int L, CM_t *cm, int ***post)
 	  }
       }
 
-      sc = Scorify(sc);
-      if(((sc - 0.) > 0.0001) || ((sc - 0.) < -0.0001))
+      fsc = Scorify(sc);
+      /* printf("k: %4d sc: %10.7f\n", k, fsc); */
+      if(((fsc - 0.) > 0.0001) || ((fsc - 0.) < -0.0001))
 	{
-	  esl_fatal("residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
+	  cm_Fail("residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(fsc)), fsc);
 	}
       /*printf("k: %d | total: %10.2f\n", k, (sreEXP2(sc)));*/
     }  
@@ -2127,7 +2141,7 @@ FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
    *      necessary to keep track of the alpha EL deck (alpha[cm->M]).
    *      There's no bands on the EL state. 
    */
-  if(cm->flags & CM_LOCAL_BEGIN)
+  if(cm->flags & CMH_LOCAL_BEGIN)
     {
       if (! deckpool_pop(dpool, &(alpha[cm->M]))) 
 	alpha[cm->M] = alloc_vjd_deck(L, i0, j0);
@@ -2530,7 +2544,7 @@ FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   }
 
   free(touch);
-  printf("\n\tFInside_b_jd_me() sc  : %f\n", sc);
+  ESL_DPRINTF1(("\n\tFInside_b_jd_me() sc  : %f\n", sc));
   return sc;
 
  ERROR:
@@ -2603,7 +2617,7 @@ IInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
    *      necessary to keep track of the alpha EL deck (alpha[cm->M]).
    *      There's no bands on the EL state. 
    */
-  if(cm->flags & CM_LOCAL_BEGIN)
+  if(cm->flags & CMH_LOCAL_BEGIN)
     {
       if (! Ideckpool_pop(dpool, &(alpha[cm->M]))) 
 	alpha[cm->M] = Ialloc_vjd_deck(L, i0, j0);
@@ -2957,7 +2971,7 @@ IInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		      /* original code (deck reuse) Ideckpool_push(dpool, alpha[y]);*/
 		      /* new ME code : */
 		      {
-			//printf("calling free vjd deck for alpha[y=%d]\n", y);
+			/* printf("calling free vjd deck for alpha[y=%d]\n", y); */
 			Ifree_vjd_deck(alpha[y], i0, j0);
 		      }
 		      alpha[y] = NULL;
@@ -3098,6 +3112,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   int      jp_v, jp_y, jp_z;
   int      kmin, kmax;
   int      tmp_jmin, tmp_jmax;
+  int      fail_flag = FALSE; /* set to TRUE if do_check and we see a problem */
 
   /* Contract check */
   if(dsq == NULL)
@@ -3105,7 +3120,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   if(i0 != 1) 
     esl_fatal("ERROR: FOutside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
 
-  if (cm->flags & CM_LOCAL_END) { do_check = FALSE; } 
+  if (cm->flags & CMH_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
 
   /* Allocations and initializations
@@ -3147,7 +3162,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   /* Initialize the EL deck at M, if we're doing local alignment w.r.t. ends.
    * EL deck has no bands as currently implemented.
    */
-  if (cm->flags & CM_LOCAL_END) {
+  if (cm->flags & CMH_LOCAL_END) {
     if (! deckpool_pop(dpool, &(beta[cm->M])))
       beta[cm->M] = alloc_vjd_deck(L, i0, j0);
     for (jp = 0; jp <= L; jp++) {
@@ -3194,7 +3209,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
       /* If we can do a local begin into v, also init with that. 
        * By definition, beta[0][j0][L] == 0.
        */ 
-      if (cm->flags & CM_LOCAL_BEGIN)
+      if (cm->flags & CMH_LOCAL_BEGIN)
 	{
 	  if((j0 >= jmin[v]) && (j0 <= jmax[v]))
 	    {
@@ -3496,7 +3511,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
    * w.r.t. ends: left-emitting, zero-scoring EL->EL transitions.
    * (EL = deck at M.)
    */
-  if (cm->flags & CM_LOCAL_END) {
+  if (cm->flags & CMH_LOCAL_END) {
     for (jp = L; jp > 0; jp--) { /* careful w/ boundary here */
       j = i0-1+jp;
       for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
@@ -3513,7 +3528,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   */
 
   Lp = L - hdmin[0][j0-jmin[0]];
-  if(do_check && (!(cm->flags & CM_LOCAL_END))) 
+  if(do_check && (!(cm->flags & CMH_LOCAL_END))) 
     /* Local ends make the following test invalid because it is not true that
      * exactly 1 state in each node's split set must be visited in each parse. 
      */
@@ -3550,8 +3565,9 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 	  diff = alpha[0][j0-jmin[0]][Lp] - sc;
 	  if(diff > 0.001 || diff < -0.001)
 	    {
-	      esl_fatal("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
-		  n, sc, alpha[0][(j0-jmin[0])][Lp], diff);
+	      fail_flag = TRUE;
+	      printf("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
+		     n, sc, alpha[0][(j0-jmin[0])][Lp], diff);
 	    }
 	}
 
@@ -3575,7 +3591,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
    * to get a similar test working, but I'm convinced you need alpha to get P(S|M)
    * in local mode).
    */
-  if(!(cm->flags & CM_LOCAL_END))
+  if(!(cm->flags & CMH_LOCAL_END))
     {
       return_sc = IMPOSSIBLE;
       v = cm->M-1;
@@ -3599,7 +3615,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   if (ret_beta == NULL) {
     for (v = 0; v <= (cm->M-1); v++) 
       if (beta[v] != NULL) { deckpool_push(dpool, beta[v]); beta[v] = NULL; }
-    if (cm->flags & CM_LOCAL_END) {
+    if (cm->flags & CMH_LOCAL_END) {
       deckpool_push(dpool, beta[cm->M]);
       beta[cm->M] = NULL; 
     }
@@ -3633,8 +3649,9 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   }
   free(touch);
 
+  if(fail_flag) cm_Fail("Not all nodes passed posterior check.");
   
-  if(!(cm->flags & CM_LOCAL_END))
+  if(!(cm->flags & CMH_LOCAL_END))
     ESL_DPRINTF1(("\tFOutside_b_jd_me() sc : %f\n", return_sc));
   else
     ESL_DPRINTF1(("\tFOutside_b_jd_me() sc : %f (LOCAL mode; sc is from Inside)\n", return_sc));
@@ -3678,6 +3695,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   int      jp_v, jp_y, jp_z;
   int      kmin, kmax;
   int      tmp_jmin, tmp_jmax;
+  int      fail_flag = FALSE; /* set to TRUE if do_check and we see a problem */
 
   /* Contract check */
   if(dsq == NULL)
@@ -3685,7 +3703,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   if(i0 != 1) 
     esl_fatal("ERROR: IOutside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
 
-  if (cm->flags & CM_LOCAL_END) { do_check = FALSE; } 
+  if (cm->flags & CMH_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
 
   /* Allocations and initializations
@@ -3727,7 +3745,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   /* Initialize the EL deck at M, if we're doing local alignment w.r.t. ends.
    * EL deck has no bands as currently implemented.
    */
-  if (cm->flags & CM_LOCAL_END) {
+  if (cm->flags & CMH_LOCAL_END) {
     if (! Ideckpool_pop(dpool, &(beta[cm->M])))
       beta[cm->M] = Ialloc_vjd_deck(L, i0, j0);
     for (jp = 0; jp <= L; jp++) {
@@ -3774,7 +3792,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
       /* If we can do a local begin into v, also init with that. 
        * By definition, beta[0][j0][L] == 0.
        */ 
-      if (cm->flags & CM_LOCAL_BEGIN)
+      if (cm->flags & CMH_LOCAL_BEGIN)
 	{
 	  if((j0 >= jmin[v]) && (j0 <= jmax[v]))
 	    {
@@ -4076,7 +4094,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
    * w.r.t. ends: left-emitting, zero-scoring EL->EL transitions.
    * (EL = deck at M.)
    */
-  if (cm->flags & CM_LOCAL_END) {
+  if (cm->flags & CMH_LOCAL_END) {
     for (jp = L; jp > 0; jp--) { /* careful w/ boundary here */
       j = i0-1+jp;
       for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
@@ -4093,7 +4111,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   */
 
   Lp = L - hdmin[0][j0-jmin[0]];
-  if(do_check && (!(cm->flags & CM_LOCAL_END))) 
+  if(do_check && (!(cm->flags & CMH_LOCAL_END))) 
     /* Local ends make the following test invalid because it is not true that
      * exactly 1 state in each node's split set must be visited in each parse. 
      */
@@ -4131,8 +4149,9 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 	  diff = fsc - (Scorify(alpha[0][j0-jmin[0]][Lp]));
 	  if(diff > 0.01 || diff < -0.01)
 	    {
-	      esl_fatal("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
-		  n, fsc, Scorify(alpha[0][(j0-jmin[0])][Lp]), diff);
+	      fail_flag = TRUE;
+	      printf("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
+		     n, fsc, Scorify(alpha[0][(j0-jmin[0])][Lp]), diff);
 	    }
 	}
 
@@ -4156,7 +4175,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
    * to get a similar test working, but I'm convinced you need alpha to get P(S|M)
    * in local mode).
    */
-  if(!(cm->flags & CM_LOCAL_END))
+  if(!(cm->flags & CMH_LOCAL_END))
     {
       ireturn_sc = -INFTY;
       v = cm->M-1;
@@ -4181,7 +4200,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   if (ret_beta == NULL) {
     for (v = 0; v <= (cm->M-1); v++) 
       if (beta[v] != NULL) { Ideckpool_push(dpool, beta[v]); beta[v] = NULL; }
-    if (cm->flags & CM_LOCAL_END) {
+    if (cm->flags & CMH_LOCAL_END) {
       Ideckpool_push(dpool, beta[cm->M]);
       beta[cm->M] = NULL; 
     }
@@ -4215,7 +4234,9 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   }
   free(touch);
 
-  if(!(cm->flags & CM_LOCAL_END))
+  if(fail_flag) cm_Fail("Not all nodes passed posterior check.");
+
+  if(!(cm->flags & CMH_LOCAL_END))
     ESL_DPRINTF1(("\tIOutside_b_jd_me() sc : %f\n", freturn_sc));
   else
     ESL_DPRINTF1(("\tIOutside_b_jd_me() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc));
@@ -4277,7 +4298,7 @@ CMPosterior_b_jd_me(int L, CM_t *cm, float ***alpha, float ****ret_alpha,
   /* If local ends are on, start with the EL state (cm->M), otherwise
    * its not a valid deck.
    */
-  if (cm->flags & CM_LOCAL_END)
+  if (cm->flags & CMH_LOCAL_END)
     {
       for(j = 0; j <= L; j++) 
 	for (d = 0; d <= j; d++)
@@ -4348,16 +4369,16 @@ ICMPosterior_b_jd_me(int L, CM_t *cm, int   ***alpha, int   ****ret_alpha,
   sc = alpha[0][L-jmin[0]][Lp];
   
   /* If local ends are on, start with the EL state (cm->M), otherwise
-   * its not a valid deck.
+   * it's not a valid deck.
    */
-  if (cm->flags & CM_LOCAL_END)
+  if (cm->flags & CMH_LOCAL_END)
     {
       for(j = 0; j <= L; j++) 
 	for (d = 0; d <= j; d++)
 	  {
 	    post[cm->M][j][d] = alpha[cm->M][j][d] + beta[cm->M][j][d] - sc;
-	    /*printf("v: %3d | j: %3d | d: %3d | alpha : %5.2f | beta : %5.2f\n", cm->M, j, d, alpha[cm->M][j][d], beta[cm->M][j][d]);*/
-	    /*printf("post[%d][%d][%d]: %f\n", cm->M, j, d, post[cm->M][j][d]);*/
+	    /*printf("v: %3d | j: %3d | d: %3d | alpha : %5.2f | beta : %d\n", cm->M, j, d, alpha[cm->M][j][d], beta[cm->M][j][d]);
+	      printf("post[%d][%d][%d]: %d\n", cm->M, j, d, post[cm->M][j][d]);*/
 	  }  
     }
 
@@ -4368,8 +4389,10 @@ ICMPosterior_b_jd_me(int L, CM_t *cm, int   ***alpha, int   ****ret_alpha,
 	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
 	{
 	  dp_v = d - hdmin[v][jp_v];
-	  /*printf("v: %3d | jp_v: %3d | dp_v: %3d | alpha: %5.2f | beta: %5.2f\n", v, jp_v, dp_v, alpha[v][jp_v][dp_v], beta[v][jp_v][dp_v]);*/
 	  post[v][jp_v][dp_v] = alpha[v][jp_v][dp_v] + beta[v][jp_v][dp_v] - sc;
+	  /*printf("v: %3d | jp_v: %3d | dp_v: %3d | alpha: %10d | beta: %10d | post: %10d\n", v, jp_v, dp_v, alpha[v][jp_v][dp_v], beta[v][jp_v][dp_v], post[v][jp_v][dp_v]);*/
+	  /* if(Score2Prob(post[v][jp_v][dp_v], 1.) > 1.03) printf("%f v: %d jp_v: %d dp_v: %d isc: %d\n", Score2Prob(post[v][jp_v][dp_v], 1.), v, jp_v, dp_v, post[v][jp_v][dp_v]); */
+	  /* assert(Score2Prob(post[v][jp_v][dp_v], 1.) <= 1.001); */
 	}  
       }
 
@@ -4467,7 +4490,6 @@ ICMPostalCode_b_jd_me(CM_t *cm, int L, int ***post, Parsetree_t *tr,
   char *postcode;
   int jp_v, dp_v;
   ESL_ALLOC(postcode, (L+1) * sizeof(char)); 
-
   for (x = 0; x < tr->n; x++)
     {
       v = tr->state[x];
@@ -4495,16 +4517,15 @@ ICMPostalCode_b_jd_me(CM_t *cm, int L, int ***post, Parsetree_t *tr,
       } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
 	postcode[j-1] = Iscore2postcode(post[v][jp_v][dp_v]);
       } else if (cm->sttype[v] == EL_st) /*special case*/ {
-	for(r = (i-1); r <= (j-1); r++)
-	  {
-	    d = j - (r+1) + 1;
-	    postcode[r] = Iscore2postcode(post[v][j][d]);
-	    /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
-	  }
+	for(r = (i-1); r <= (j-1); r++) {
+	  d = j - (r+1) + 1;
+	  postcode[r] = Iscore2postcode(post[v][j][d]);
+	}
       }
     }
   postcode[L] = '\0';
   return(postcode);
+
 
  ERROR:
   esl_fatal("Memory allocation error.");
@@ -4812,7 +4833,7 @@ ParsetreeSampleFromIInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int
 
       v = y;
     } else {
-      if((v > 0) || (! (cm->flags & CM_LOCAL_BEGIN))) /* ROOT_S with local begins on is a special case that we handle below */
+      if((v > 0) || (! (cm->flags & CMH_LOCAL_BEGIN))) /* ROOT_S with local begins on is a special case that we handle below */
 	{ 
 	  /* choose which transition we take */
 	  esl_vec_FSet(pvec, (MAXCONNECT+1), IMPOSSIBLE); /* not really necessary */
@@ -4822,7 +4843,7 @@ ParsetreeSampleFromIInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int
 	   * plus a local end (if possible) */
 	  ntrans = cm->cnum[v];
 	  el_is_possible = FALSE;
-	  if((cm->flags & CM_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
+	  if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
 	    el_is_possible = TRUE; 
 	    ntrans++; 
 	  }
@@ -4851,7 +4872,7 @@ ParsetreeSampleFromIInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int
 	    yoffset = USED_EL; /* we chose EL */
 	  }
 	}
-      else /* v == 0 && (cm->flags && CM_LOCAL_BEGIN) ( local begins are on )*/
+      else /* v == 0 && (cm->flags && CMH_LOCAL_BEGIN) ( local begins are on )*/
 	{
 	  ntrans = cm->M; /* pretend all states are possible to begin into, but they're not as some will remain IMPOSSIBLE */
 	  ESL_ALLOC(rootvec, sizeof(float) * (ntrans));
@@ -5098,7 +5119,7 @@ ParsetreeSampleFromIInside_b_jd_me(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, in
       jp_v = j - jmin[v];
       dp_v = d - hdmin[v][jp_v];
     } else {
-      if((v > 0) || (! (cm->flags & CM_LOCAL_BEGIN))) /* ROOT_S with local begins on is a special case that we handle below */
+      if((v > 0) || (! (cm->flags & CMH_LOCAL_BEGIN))) /* ROOT_S with local begins on is a special case that we handle below */
 	{ 
 	  /* Choose which transition we take.
 	   * Set pvec[] as (float-ized) log odds scores for each child we can transit to, 
@@ -5133,7 +5154,7 @@ ParsetreeSampleFromIInside_b_jd_me(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, in
 	  if(!seen_valid) {
 	    cm_Fail("ParsetreeSampleFromIInside_b_jd_me() number of valid transitions is 0. You thought this was impossible.");
 	  }
-	  if((cm->flags & CM_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) 
+	  if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) 
 	    el_is_possible = TRUE; 
 	  else 
 	    el_is_possible = FALSE;
@@ -5152,7 +5173,7 @@ ParsetreeSampleFromIInside_b_jd_me(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, in
 	    yoffset = USED_EL; /* we chose EL */
 	  }
 	}
-      else /* v == 0 && (cm->flags && CM_LOCAL_BEGIN) ( local begins are on )*/
+      else /* v == 0 && (cm->flags && CMH_LOCAL_BEGIN) ( local begins are on )*/
 	{
 	  seen_valid = FALSE;
 	  ntrans = cm->M; /* pretend all states are possible to begin into, but they're not as some will remain IMPOSSIBLE */

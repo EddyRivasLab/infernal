@@ -195,10 +195,10 @@ build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int do
   struct cplan9_s  *hmm;       /* CM plan 9 HMM we're going to construct from the sub_cm */
 
   /* Contract check, we can't be in local mode in the CM */
-  if(cm->flags & CM_LOCAL_BEGIN)
-    esl_fatal("ERROR in build_cp9_hmm(), CM_LOCAL_BEGIN flag is up.\n");
-  if(cm->flags & CM_LOCAL_END)
-    esl_fatal("ERROR in build_cp9_hmm(), CM_LOCAL_END flag is up.\n");
+  if(cm->flags & CMH_LOCAL_BEGIN)
+    esl_fatal("ERROR in build_cp9_hmm(), CMH_LOCAL_BEGIN flag is up.\n");
+  if(cm->flags & CMH_LOCAL_END)
+    esl_fatal("ERROR in build_cp9_hmm(), CMH_LOCAL_END flag is up.\n");
 
   /* Allocate and initialize the cp9map */
   cp9map = AllocCP9Map(cm);
@@ -2293,7 +2293,7 @@ check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, doub
   int ret_val; /* return value */
   int adj_bp_flag; /* a special case in which we always return TRUE after printing a warning */
 
-  if (cm->flags & CM_LOCAL_BEGIN) esl_fatal("internal error: we're in CM local mode while trying to build a CP9 HMM");
+  if (cm->flags & CMH_LOCAL_BEGIN) esl_fatal("internal error: we're in CM local mode while trying to build a CP9 HMM");
 
   adj_bp_flag = FALSE;
   if(check_cm_adj_bp(cm, cp9map))

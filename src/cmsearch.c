@@ -423,7 +423,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       /* initialize the flags/options/params and configuration of the CM */
       if((  status = initialize_cm(go, cfg, errbuf, cm, &si))               != eslOK) cm_Fail(errbuf);
       if((  status = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
-      if(cm->flags & CM_GUMBEL_STATS) 
+      if(cm->flags & CMH_GUMBEL_STATS) 
 	if((status = set_gumbels(go, cfg, errbuf, cm))                      != eslOK) cm_Fail(errbuf);
       if((  status = set_cutoffs(go, cfg, errbuf, cm, &cm_mode, &cp9_mode, &min_cm_cutoff,
 				 &min_cp9_cutoff, &using_e_cutoff))         != eslOK) cm_Fail(errbuf);
@@ -451,7 +451,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
       if (status != eslEOF) cm_Fail("Parse failed, line %d, file %s:\n%s", 
 					  cfg->sqfp->linenumber, cfg->sqfp->filename, cfg->sqfp->errbuf);
-      cm_FreeScanInfo(cm, si);
       FreeCM(cm);
       FreeCMConsensus(cons);
       esl_sqio_Rewind(cfg->sqfp); /* we may be searching this file again with another CM */
@@ -595,7 +594,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       /* initialize the flags/options/params of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
       if((status   = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
-      if(cm->flags & CM_GUMBEL_STATS) 
+      if(cm->flags & CMH_GUMBEL_STATS) 
 	if((status = set_gumbels(go, cfg, errbuf, cm))                     != eslOK)  cm_Fail(errbuf);
       if((  status = set_cutoffs(go, cfg, errbuf, cm, &cm_mode, &cp9_mode, &min_cm_cutoff,
 				 &min_cp9_cutoff, &using_e_cutoff))         != eslOK) cm_Fail(errbuf);
@@ -818,7 +817,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       
       /* initialize the flags/options/params of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm, &si))               != eslOK) goto ERROR;
-      if(cm->flags & CM_GUMBEL_STATS) 
+      if(cm->flags & CMH_GUMBEL_STATS) 
 	if((status = set_gumbels(go, cfg, errbuf, cm))                      != eslOK) goto ERROR;
       if((  status = set_cutoffs(go, cfg, errbuf, cm, &cm_mode, &cp9_mode, &min_cm_cutoff, 
 				 &min_cp9_cutoff, &using_e_cutoff))         != eslOK) goto ERROR;
@@ -1011,7 +1010,10 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
   }
 
   /* setup ScanInfo for CYK/Inside scanning functions */
-  si = cm_CreateScanInfo(cm);
+  int do_int = FALSE;
+  int do_float = TRUE;
+  if(cm->search_opts & CM_SEARCH_INSIDE) { do_int = TRUE; do_float = FALSE; }
+  cm_CreateScanInfo(cm, do_int, do_float);
   if(si == NULL) cm_Fail("initialize_cm(), CreateScanInfo() call failed.");
   *ret_si = si;
 
@@ -1081,7 +1083,7 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
        * 1. default CM E value if CM file has Gumbel stats
        * 3. default CM bit score
        */
-      if(cm->flags & CM_GUMBEL_STATS) /* use default CM E-value cutoff */
+      if(cm->flags & CMH_GUMBEL_STATS) /* use default CM E-value cutoff */
 	{
 	  cm->cutoff_type = E_CUTOFF;
 	  cm->cutoff      = esl_opt_GetReal(go, "-E");
@@ -1093,7 +1095,7 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
 	}
     }
   else if(! esl_opt_IsDefault(go, "-E")) {
-    if(! (cm->flags & CM_GUMBEL_STATS))
+    if(! (cm->flags & CMH_GUMBEL_STATS))
       ESL_FAIL(eslEINVAL, errbuf, "-E requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
     cm->cutoff_type = E_CUTOFF;
     cm->cutoff      = esl_opt_GetReal(go, "-E");
@@ -1141,7 +1143,7 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
        * 3. default CP9 bit score
        */
       if((! esl_opt_GetBoolean(go, "--hmmonly")) && 
-	 cm->flags & CM_FTHR_STATS)  /* if !hmm_only use CP9 filter threshold from CM file */
+	 cm->flags & CMH_FTHR_STATS)  /* if !hmm_only use CP9 filter threshold from CM file */
 	{
 	  cm->cp9_cutoff_type = E_CUTOFF;
 	  if     (cp9_mode == CP9_L) cm->cp9_cutoff = cm->stats->fthrA[cm_mode]->l_eval;
@@ -1149,7 +1151,7 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
 	  /* correct for new db size */
 	  cm->cp9_cutoff *= (double) cfg->N / (double) cm->stats->fthrA[cm_mode]->db_size; 
 	}
-      else if(cm->flags & CM_GUMBEL_STATS) /* use default CP9 E-value cutoff */
+      else if(cm->flags & CMH_GUMBEL_STATS) /* use default CP9 E-value cutoff */
 	{
 	  cm->cp9_cutoff_type = E_CUTOFF;
 	  cm->cp9_cutoff      = esl_opt_GetReal(go, "--hmmE"); 
@@ -1161,7 +1163,7 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
 	}
     }
   else if(! esl_opt_IsDefault(go, "--hmmthr")) {
-    if(! (cm->flags & CM_FTHR_STATS))
+    if(! (cm->flags & CMH_FTHR_STATS))
       ESL_FAIL(eslEINVAL, errbuf, "--hmmthr requires filter threshold statistics in <cm file>. Use cmcalibrate to get CP9 filter threshold stats.");
     cm->cp9_cutoff_type = E_CUTOFF;
     if     (cp9_mode == CP9_L) cm->cp9_cutoff = cm->stats->fthrA[cm_mode]->l_eval;
@@ -1170,14 +1172,14 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
     cm->cp9_cutoff *= (double) cfg->N / (double) cm->stats->fthrA[cm_mode]->db_size; 
   }
   else if(! esl_opt_IsDefault(go, "--hmmcalcthr")) {
-    if(! (cm->flags & CM_GUMBEL_STATS))
+    if(! (cm->flags & CMH_GUMBEL_STATS))
       ESL_FAIL(eslEINVAL, errbuf, "--hmmcalcthr requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
     cm->cp9_cutoff_type = E_CUTOFF;
     /* this gets overwritten later after threshold is calculated */
     cm->cp9_cutoff_type = esl_opt_GetReal(go, "--hmmE");
   }
   else if(! esl_opt_IsDefault(go, "--hmmE")) {
-    if(! (cm->flags & CM_GUMBEL_STATS))
+    if(! (cm->flags & CMH_GUMBEL_STATS))
       ESL_FAIL(eslEINVAL, errbuf, "--hmmE requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
     cm->cp9_cutoff_type = E_CUTOFF;
     cm->cp9_cutoff_type = esl_opt_GetReal(go, "--hmmE");
@@ -1392,7 +1394,7 @@ int print_search_info(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N, cha
       if(cm->search_opts & CM_SEARCH_INSIDE) fprintf(fp, "Inside\n");
       else fprintf(fp, "CYK\n");
       printf ("CM configuration:     ");
-      if(cm->flags & CM_LOCAL_BEGIN) fprintf(fp, "Local\n");
+      if(cm->flags & CMH_LOCAL_BEGIN) fprintf(fp, "Local\n");
       else fprintf(fp, "Glocal\n");
     }
   else 
@@ -1405,7 +1407,7 @@ int print_search_info(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N, cha
     {
       if(cm->cp9_cutoff_type == E_CUTOFF)
 	{
-	  if(!(cm->flags & CM_GUMBEL_STATS))
+	  if(!(cm->flags & CMH_GUMBEL_STATS))
 	    ESL_FAIL(eslEINCONCEIVABLE, errbuf, "trying to use E-value for CM cutoff, but CM has no Gumbel stats.");
 
 	  /* Predict survival fraction from filter based on E-value, consensus length, W and N */

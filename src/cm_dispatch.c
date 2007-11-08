@@ -583,14 +583,14 @@ float actually_search_target(CM_t *cm, ScanInfo_t *si, ESL_DSQ *dsq, int i0, int
 	if(cm->search_opts & CM_SEARCH_INSIDE)
 	  sc = iInsideScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results);
 	else /* don't do inside */
-	  sc = FastCYKScan(cm, si, dsq, i0, j0, cm->W, cm_cutoff, results, NULL);
+	  sc = FastCYKScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results, NULL);
       /* sc = CYKScan (cm, dsq, i0, j0, cm->W, cm_cutoff, results); */
 
       else /* use QDB */
 	if(cm->search_opts & CM_SEARCH_INSIDE)
 	  sc = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
 	else /* don't do inside */
-	  sc = FastCYKScan(cm, si, dsq, i0, j0, cm->W, cm_cutoff, results, NULL);
+	  sc = FastCYKScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results, NULL);
       /* sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results); */
     }    
   if((results != NULL && results->num_results > 0) && do_align_hits)
@@ -658,7 +658,7 @@ void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbse
     if(cm->cutoff_type == E_CUTOFF) do_stats = TRUE;
     else do_stats = FALSE;
   }
-  if(do_stats  && !(cm->flags & CM_GUMBEL_STATS))
+  if(do_stats  && !(cm->flags & CMH_GUMBEL_STATS))
     esl_fatal("ERROR in print_results, stats wanted but CM has no Gumbel stats\n");
 
   if(do_stats)
@@ -776,7 +776,7 @@ void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
   float cutoff;         /* the max E-value we want to keep */
 
   /* Check contract */
-  if(!(cm->flags & CM_GUMBEL_STATS))
+  if(!(cm->flags & CMH_GUMBEL_STATS))
     esl_fatal("ERROR in remove_hits_over_e_cutoff, but CM has no GUM stats\n");
   if(!(sq->flags & eslSQ_DIGITAL))
     esl_fatal("ERROR in remove_hits_over_e_cutoff, sequences is not digitized.\n");

@@ -478,120 +478,6 @@ typedef struct cmstats_s {
 #define NCMMODES     4
 #define NCP9MODES    2
 
-/* Structure: CM_t
- * Incept:    SRE, 9 Mar 2000 [San Carlos CA]
- * 
- * A covariance model. M states, arranged logically as a directed graph
- * (on a binary tree backbone); arranged physically as a set of arrays 0..M-1.
- *
- * State 0 is always the root state. State M-1 is always an end state.
- * 
- * EPN 12.19.06: added arrays to hold integer log-odds scores for faster 
- * inside/outside
- * 
- */
-typedef struct cm_s {			
-			/* General information about the model:            */
-  char *name;		/*   name of the model                             */
-  char *acc;		/*   optional accession number for model, or NULL  */
-  char *desc;		/*   optional description of the model, or NULL    */
-  char *annote;         /*   consensus column annotation line, or NULL     */ /* ONLY PARTIALLY IMPLEMENTED, BEWARE */
-
-  /* new for 1.0 */
-  char  *comlog;	/*   command line(s) that built model      (mandatory) */ /* String, \0-terminated */
-  int    nseq;		/*   number of training sequences          (mandatory) */
-  float  eff_nseq;	/*   effective number of seqs (<= nseq)    (mandatory) */
-  char  *ctime;		/*   creation date                         (mandatory) */
-  float  ga;	        /*   per-seq/per-domain gathering thresholds (bits) (CMH_GA) */
-  float  tc;            /*   per-seq/per-domain trusted cutoff (bits)       (CMH_TC) */
-  float  nc;	        /*   per-seq/per-domain noise cutoff (bits)         (CMH_NC) */
-
-
-			/* Information about the null model:               */
-  float *null;          /*   residue probabilities [0..3]                  */
-
-			/* Information about the state type:               */
-  int   M;		/*   number of states in the model                 */
-  int   clen;		/*   consensus length (2*MATP+MATL+MATR)           */
-  char *sttype;		/*   type of state this is; e.g. MP_st             */
-  int  *ndidx;		/*   index of node this state belongs to           */
-  char *stid;		/*   unique state identifier; e.g. MATP_MP         */
-
-			/* Information about its connectivity in CM:       */
-  int  *cfirst;		/*   index of left child state                     */
-  int  *cnum;		/*   overloaded: for non-BIF: # connections;       */
-			/*               for BIF: right child S_st         */
-  int  *plast;          /*   index to first parent state                   */
-  int  *pnum;           /*   number of parent connections                  */
-
-			/* Information mapping nodes->states               */
-  int   nodes;		/*   number of nodes in the model                  */
-  int  *nodemap;        /*   nodemap[5] = idx first state, node 5          */
-  char *ndtype;		/*   type of node, e.g. MATP_nd                    */
-
-                        /* Parameters of the probabilistic model:          */
-  float **t;		/*   Transition prob's [0..M-1][0..MAXCONNECT-1]   */
-  float **e;		/*   Emission probabilities.  [0..M-1][0..15]      */
-  float  *begin;	/*   Local alignment start probabilities [0..M-1]  */
-  float  *end;		/*   Local alignment ending probabilities [0..M-1] */
-
-			/* Parameters of the log odds model:               */
-  float **tsc;		/*   Transition score vector, log odds             */
-  float **esc;		/*   Emission score vector, log odds               */
-  float *beginsc;	/*   Score for ROOT_S -> state v (local alignment) */
-  float *endsc;   	/*   Score for state_v -> EL (local alignment)     */
-
-			/* Scaled int parameters of the log odds model:    */
-  int  **itsc;		/*   Transition score vector, scaled log odds int  */
-  int  **iesc;		/*   Emission score vector, scaled log odds int    */
-  int   *ibeginsc;      /*   Score for ROOT_S -> state v (local alignment) */
-  int   *iendsc;  	/*   Score for state_v -> EL (local alignment)     */
-
-  int    flags;		/* status flags                                    */
-
-  /* query dependent bands (QDB) on subsequence lengths at each state                         */
-  int   *dmin;          /* minimum d bound for each state v; [0..v..M-1] (NULL if non-banded) */
-  int   *dmax;          /* maximum d bound for each state v; [0..v..M-1] (NULL if non-banded) */
-  double beta;          /* tail loss probability for QDB                                      */
-  double tau;           /* tail loss probability for HMM target dependent banding             */
-
-  /* added by EPN, Tue Jan  2 14:24:08 2007 */
-  int       config_opts;/* model configuration options                                        */
-  int       align_opts; /* alignment options                                                  */
-  int       search_opts;/* search options                                                     */
-  CP9_t    *cp9;        /* a CM Plan 9 HMM, always built when the model is read from a file   */
-  CP9Map_t *cp9map;     /* the map from the Plan 9 HMM to the CM and vice versa               */
-  int       enf_start;  /* if(cm->config_opts & CM_CONFIG_ENFORCE) the first posn to enforce, else 0 */
-  char     *enf_seq;    /* if(cm->config_opts & CM_CONFIG_ENFORCE) the subseq to enforce, else NULL  */
-  float     enf_scdiff; /* if(cm->config_opts & CM_CONFIG_ENFORCE) the difference in scoring  *
-			 * cm->enfseq b/t the non-enforced & enforced CMs, this is subtracted *
-			 * from bit scores in cmsearch before assigned E-value stats which    *
-			 * are always calc'ed (histograms built) using non-enforced CMs/CP9s  */
-  float     sc_boost;   /* value added to CYK bit scores during search (usually 0.)           */
-  float cp9_sc_boost;   /* value added to Forward bit scores during CP9 search (usually 0.)   */
-  float     ffract;     /* desired filter fraction (0.99 -> filter out 99% of db), default: 0.*/
-  float    *root_trans; /* transition probs from state 0, saved IFF zeroed in ConfigLocal()   */
-  int       hmmpad;     /* if(cm->search_opts & CM_SEARCH_HMMPAD) # of res to -/+ from i/j    */
-  float     pbegin;     /* local begin prob to spread across internal nodes for local mode    */
-  float     pend;       /* local end prob to spread across internal nodes for local mode      */
-  
-  /* search cutoffs */
-  int       cutoff_type;/* either SC_CUTOFF or E_CUTOFF                                       */
-  float     cutoff;     /* min bit score or max E val to keep in a scan (depending on cutoff_type) */
-  int   cp9_cutoff_type;/* either SC_CUTOFF or E_CUTOFF                                       */
-  float cp9_cutoff;     /* min bit score or max E val to keep from a CP9 scan                 */
-  
-  int    W;             /* max d: max size of a hit (EPN 08.18.05) */
-  float  el_selfsc;     /* score of a self transition in the EL state
-			 * the EL state emits only on self transition (EPN 11.15.05)*/
-  int   iel_selfsc;     /* scaled int version of el_selfsc         */
-
-  CMStats_t *stats;     /* holds Gumbel stats and HMM filtering thresholds */
-
-  /* From 1.0-ification, based on HMMER3 */
-  const  ESL_ALPHABET *abc;     /* ptr to alphabet info (cm->abc->K is alphabet size)*/
-} CM_t;
-
 /* status flags, cm->flags */
 #define CMH_BITS               (1<<0)  /* CM has valid log odds scores             */
 #define CMH_ACC                (1<<1)  /* accession number is available            */
@@ -599,19 +485,20 @@ typedef struct cm_s {
 #define CMH_GA                 (1<<3)  /* gathering threshold exists               */
 #define CMH_TC                 (1<<4)  /* trusted cutoff exists                    */
 #define CMH_NC                 (1<<5)  /* noise cutoff exists                      */
+#define CMH_LOCAL_BEGIN        (1<<6)  /* Begin distribution is active (local ali) */
+#define CMH_LOCAL_END          (1<<7)  /* End distribution is active (local ali)   */
+#define CMH_GUMBEL_STATS       (1<<8)  /* Gumbel stats for local/glocal CYK/Ins set*/
+#define CMH_FTHR_STATS         (1<<9)  /* CP9 HMM filter threshold stats are set   */
+#define CMH_QDB                (1<<10) /* query-dependent bands, QDB valid         */
+#define CMH_CP9                (1<<11) /* CP9 HMM is valid in cm->cp9              */
+#define CMH_CP9STATS           (1<<12) /* CP9 HMM has Gumbel stats                 */
+#define CMH_SCANINFO           (1<<13) /* ScanInfo si is valid                     */
 
-#define CM_LOCAL_BEGIN         (1<<6)  /* Begin distribution is active (local ali) */
-#define CM_LOCAL_END           (1<<7)  /* End distribution is active (local ali)   */
-#define CM_GUMBEL_STATS        (1<<8)  /* Gumbel stats for local/glocal CYK/Ins set*/
-#define CM_FTHR_STATS          (1<<9)  /* CP9 HMM filter threshold stats are set   */
-#define CM_QDB                 (1<<10) /* query-dependent bands, QDB valid         */
-#define CM_CP9                 (1<<11) /* CP9 HMM is valid in cm->cp9              */
-#define CM_CP9STATS            (1<<12) /* CP9 HMM has Gumbel stats                 */
-#define CM_IS_SUB              (1<<13) /* the CM is a sub CM                       */
-#define CM_ENFORCED            (1<<14) /* CM is reparam'ized to enforce a subseq   */
-#define CM_IS_RSEARCH          (1<<15) /* the CM was parameterized a la RSEARCH    */
-#define CM_RSEARCHTRANS        (1<<16) /* CM has/will have RSEARCH transitions     */
-#define CM_RSEARCHEMIT         (1<<17) /* CM has/will have RSEARCH emissions       */
+#define CM_IS_SUB              (1<<14) /* the CM is a sub CM                       */
+#define CM_ENFORCED            (1<<15) /* CM is reparam'ized to enforce a subseq   */
+#define CM_IS_RSEARCH          (1<<16) /* the CM was parameterized a la RSEARCH    */
+#define CM_RSEARCHTRANS        (1<<17) /* CM has/will have RSEARCH transitions     */
+#define CM_RSEARCHEMIT         (1<<18) /* CM has/will have RSEARCH emissions       */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */
@@ -1169,7 +1056,8 @@ enum emitmode_e {
 typedef struct cm_fhb_mx_s {
   int  M;		/* number of states (1st dim ptrs) in current mx */
   
-  size_t ncells;	/* current cell allocation limit */
+  int    ncells_alloc;	/* current cell allocation limit */
+  int    ncells_valid;	/* current number of valid cells */
   int   *nrowsA;        /* [0..v..M] current number allocated rows for deck v */
 
   float ***dp;          /*  [0.1..M][0..j..?][0..d..?]  ?s indicate
@@ -1181,6 +1069,27 @@ typedef struct cm_fhb_mx_s {
 			 * state, only a reference, so don't free
 			 * it when mx is freed. */
 } CM_FHB_MX;
+
+/* Declaration of CM dynamic programming matrix structure for 
+ * alignment with int scores in vjd (state idx, aln posn,
+ * subseq len) coordinates. May be banded in j and/or d dimensions.
+ */
+typedef struct cm_ihb_mx_s {
+  int  M;		/* number of states (1st dim ptrs) in current mx */
+  
+  int    ncells_alloc;	/* current cell allocation limit */
+  int    ncells_valid;	/* current number of valid cells */
+  int   *nrowsA;        /* [0..v..M] current number allocated rows for deck v */
+
+  int   ***dp;          /*  [0.1..M][0..j..?][0..d..?]  ?s indicate
+			 *  mx could be banded in j and/or d dim */
+  int     *dp_mem;      /* the actual mem, points to dp[0][0][0] */
+
+  CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
+			 * matrix, which defines j, d, bands for each
+			 * state, only a reference, so don't free
+			 * it when mx is freed. */
+} CM_IHB_MX;
 
 #define MB_CM 0
 #define MB_CP9 1
@@ -1241,39 +1150,41 @@ typedef struct hybridscaninfo_s {
 } HybridScanInfo_t;
 
 /* Structure ScanInfo_t: Information used by all CYK/Inside scanning functions,
- * compiled together into one data structure for convenience.
+ * compiled together into one data structure for convenience. 
  */
+#define cmSI_HAS_FLOAT (1 << 0)  /* if float versions of alpha and precalc'ed scores are valid */
+#define cmSI_HAS_INT   (1 << 1)  /* if int versions of alpha and precalc'ed scores are valid */
 typedef struct scaninfo_s {
   /* general info about the model/search */
-  int    cm_M;         /* # states in the CM */
-  int   *dmin;         /* [0..v..cm->M-1] min subtree length for v using beta, just a ref, NULL for non-banded */
-  int   *dmax;         /* [0..v..cm->M-1] max subtree length for v using beta, just a ref, NULL for non-banded */
-  int    W;            /* max hit size */
-  int   *emitmodeA;    /* [0..v..M-1] EMITLEFT, EMITRIGHT, EMITPAIR, or EMITNONE */
+  int     cm_M;        /* # states in the CM */
+  int    *dmin;        /* [0..v..cm->M-1] min subtree length for v using beta, just a ref, NULL for non-banded */
+  int    *dmax;        /* [0..v..cm->M-1] max subtree length for v using beta, just a ref, NULL for non-banded */
+  int     W;           /* max hit size */
+  int    *emitmodeA;   /* [0..v..M-1] EMITLEFT, EMITRIGHT, EMITPAIR, or EMITNONE */
   int   **dnAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int   **dxAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int    *bestr;       /* auxil info: best root state at alpha[0][cur][d] */
+  int     flags;       /* flags for what info has been set (can be float and/or int versions of alpha and precalc'ed scores) */
 
-  /* alpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] and score related variables for
+  /* falpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] and precalc'ed scores for
    * float implementations of CYK/Inside */
-  float  ***alpha;      /* non-BEGL_S states for float versions of CYK/Inside */
-  float  ***alpha_begl; /*     BEGL_S states for float versions of CYK/Inside */
-  float   **esc_vAA;    /* optimized precalc'ed emission scores for each state */
-  float   **init_scAA;  /* [0..v..cm->M-1][0..d..W] initial score for alpha[j][v][d] for all j,
-		         * either IMPOSSIBLE or score for EL (if allowed) emitting d residues */
-  float    *el_scA;     /* [0..d..W] precomputed EL emission score of d residues */
+  float ***falpha;      /* non-BEGL_S states for float versions of CYK/Inside */
+  float ***falpha_begl; /*     BEGL_S states for float versions of CYK/Inside */
+  float  **fesc_vAA;    /* optimized precalc'ed emission scores for each state */
+  float  **finit_scAA;  /* [0..v..cm->M-1][0..d..W] initial score for alpha[j][v][d] for all j,
+	                 * either IMPOSSIBLE or score for EL (if allowed) emitting d residues */
+  float   *fel_scA;     /* [0..d..W] precomputed EL emission score of d residues */
 
-  /* ialpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] and score related variables for
+  /* ialpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] and precalc'ed scores for
    * integer implementations of CYK/Inside */
   int   ***ialpha;      /* non-BEGL_S states for int   versions of CYK/Inside */
   int   ***ialpha_begl; /*     BEGL_S states for int   versions of CYK/Inside */
   int    **iesc_vAA;    /* optimized precalc'ed emission scores for each state */
   int    **iinit_scAA;  /* [0..v..cm->M-1][0..d..W] initial score for alpha[j][v][d] for all j,
-		         * either IMPOSSIBLE or score for EL (if allowed) emitting d residues */
+		         * either -INFTY or score for EL (if allowed) emitting d residues */
   int     *iel_scA;     /* [0..d..W] precomputed EL emission score of d residues */
 
 } ScanInfo_t;
-
 
 /* Structure cm_GammaHitMx_t: gamma semi-HMM used for optimal hit resolution
  * of a CM scan. All arrays are 0..L.
@@ -1303,6 +1214,123 @@ typedef struct theta_s {
   int       i0;                 /* position of first residue in sequence (gamma->mx[0] corresponds to this residue) */
 } Theta_t;
 
+
+/* Structure: CM_t
+ * Incept:    SRE, 9 Mar 2000 [San Carlos CA]
+ * 
+ * A covariance model. M states, arranged logically as a directed graph
+ * (on a binary tree backbone); arranged physically as a set of arrays 0..M-1.
+ *
+ * State 0 is always the root state. State M-1 is always an end state.
+ * 
+ * EPN 12.19.06: added arrays to hold integer log-odds scores for faster 
+ * inside/outside
+ * 
+ */
+typedef struct cm_s {			
+			/* General information about the model:            */
+  char *name;		/*   name of the model                             */
+  char *acc;		/*   optional accession number for model, or NULL  */
+  char *desc;		/*   optional description of the model, or NULL    */
+  char *annote;         /*   consensus column annotation line, or NULL     */ /* ONLY PARTIALLY IMPLEMENTED, BEWARE */
+
+  /* new for 1.0 */
+  char  *comlog;	/*   command line(s) that built model      (mandatory) */ /* String, \0-terminated */
+  int    nseq;		/*   number of training sequences          (mandatory) */
+  float  eff_nseq;	/*   effective number of seqs (<= nseq)    (mandatory) */
+  char  *ctime;		/*   creation date                         (mandatory) */
+  float  ga;	        /*   per-seq/per-domain gathering thresholds (bits) (CMH_GA) */
+  float  tc;            /*   per-seq/per-domain trusted cutoff (bits)       (CMH_TC) */
+  float  nc;	        /*   per-seq/per-domain noise cutoff (bits)         (CMH_NC) */
+
+
+			/* Information about the null model:               */
+  float *null;          /*   residue probabilities [0..3]                  */
+
+			/* Information about the state type:               */
+  int   M;		/*   number of states in the model                 */
+  int   clen;		/*   consensus length (2*MATP+MATL+MATR)           */
+  char *sttype;		/*   type of state this is; e.g. MP_st             */
+  int  *ndidx;		/*   index of node this state belongs to           */
+  char *stid;		/*   unique state identifier; e.g. MATP_MP         */
+
+			/* Information about its connectivity in CM:       */
+  int  *cfirst;		/*   index of left child state                     */
+  int  *cnum;		/*   overloaded: for non-BIF: # connections;       */
+			/*               for BIF: right child S_st         */
+  int  *plast;          /*   index to first parent state                   */
+  int  *pnum;           /*   number of parent connections                  */
+
+			/* Information mapping nodes->states               */
+  int   nodes;		/*   number of nodes in the model                  */
+  int  *nodemap;        /*   nodemap[5] = idx first state, node 5          */
+  char *ndtype;		/*   type of node, e.g. MATP_nd                    */
+
+                        /* Parameters of the probabilistic model:          */
+  float **t;		/*   Transition prob's [0..M-1][0..MAXCONNECT-1]   */
+  float **e;		/*   Emission probabilities.  [0..M-1][0..15]      */
+  float  *begin;	/*   Local alignment start probabilities [0..M-1]  */
+  float  *end;		/*   Local alignment ending probabilities [0..M-1] */
+
+			/* Parameters of the log odds model:               */
+  float **tsc;		/*   Transition score vector, log odds             */
+  float **esc;		/*   Emission score vector, log odds               */
+  float *beginsc;	/*   Score for ROOT_S -> state v (local alignment) */
+  float *endsc;   	/*   Score for state_v -> EL (local alignment)     */
+
+			/* Scaled int parameters of the log odds model:    */
+  int  **itsc;		/*   Transition score vector, scaled log odds int  */
+  int  **iesc;		/*   Emission score vector, scaled log odds int    */
+  int   *ibeginsc;      /*   Score for ROOT_S -> state v (local alignment) */
+  int   *iendsc;  	/*   Score for state_v -> EL (local alignment)     */
+
+  int    flags;		/* status flags                                    */
+
+  /* query dependent bands (QDB) on subsequence lengths at each state                         */
+  int   *dmin;          /* minimum d bound for each state v; [0..v..M-1] (NULL if non-banded) */
+  int   *dmax;          /* maximum d bound for each state v; [0..v..M-1] (NULL if non-banded) */
+  double beta;          /* tail loss probability for QDB                                      */
+  double tau;           /* tail loss probability for HMM target dependent banding             */
+
+  /* added by EPN, Tue Jan  2 14:24:08 2007 */
+  int       config_opts;/* model configuration options                                        */
+  int       align_opts; /* alignment options                                                  */
+  int       search_opts;/* search options                                                     */
+  CP9_t    *cp9;        /* a CM Plan 9 HMM, always built when the model is read from a file   */
+  CP9Map_t *cp9map;     /* the map from the Plan 9 HMM to the CM and vice versa               */
+  int       enf_start;  /* if(cm->config_opts & CM_CONFIG_ENFORCE) the first posn to enforce, else 0 */
+  char     *enf_seq;    /* if(cm->config_opts & CM_CONFIG_ENFORCE) the subseq to enforce, else NULL  */
+  float     enf_scdiff; /* if(cm->config_opts & CM_CONFIG_ENFORCE) the difference in scoring  *
+			 * cm->enfseq b/t the non-enforced & enforced CMs, this is subtracted *
+			 * from bit scores in cmsearch before assigned E-value stats which    *
+			 * are always calc'ed (histograms built) using non-enforced CMs/CP9s  */
+  float     sc_boost;   /* value added to CYK bit scores during search (usually 0.)           */
+  float cp9_sc_boost;   /* value added to Forward bit scores during CP9 search (usually 0.)   */
+  float     ffract;     /* desired filter fraction (0.99 -> filter out 99% of db), default: 0.*/
+  float    *root_trans; /* transition probs from state 0, saved IFF zeroed in ConfigLocal()   */
+  int       hmmpad;     /* if(cm->search_opts & CM_SEARCH_HMMPAD) # of res to -/+ from i/j    */
+  float     pbegin;     /* local begin prob to spread across internal nodes for local mode    */
+  float     pend;       /* local end prob to spread across internal nodes for local mode      */
+  
+  /* search cutoffs */
+  int       cutoff_type;/* either SC_CUTOFF or E_CUTOFF                                       */
+  float     cutoff;     /* min bit score or max E val to keep in a scan (depending on cutoff_type) */
+  int   cp9_cutoff_type;/* either SC_CUTOFF or E_CUTOFF                                       */
+  float cp9_cutoff;     /* min bit score or max E val to keep from a CP9 scan                 */
+  
+  int    W;             /* max d: max size of a hit (EPN 08.18.05) */
+  float  el_selfsc;     /* score of a self transition in the EL state
+			 * the EL state emits only on self transition (EPN 11.15.05)*/
+  int   iel_selfsc;     /* scaled int version of el_selfsc         */
+
+  CMStats_t *stats;     /* holds Gumbel stats and HMM filtering thresholds */
+
+  /* DP matrices and precalc'ed scores for DP algorithms */
+  ScanInfo_t *si;       /* matrices, info for CYK/Inside scans with this CM */
+
+  /* From 1.0-ification, based on HMMER3 */
+  const  ESL_ALPHABET *abc;     /* ptr to alphabet info (cm->abc->K is alphabet size)*/
+} CM_t;
 
 #endif /*STRUCTSH_INCLUDED*/
 

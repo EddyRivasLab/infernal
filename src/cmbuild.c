@@ -606,7 +606,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   esl_msa_Write(cfg->trfp, msa, cfg->fmt); 
 
   /* if CM was in local mode for aligning input MSA seqs, make it global so we can write it out */
-  if((cm->flags & CM_LOCAL_BEGIN) || (cm->flags & CM_LOCAL_END))
+  if((cm->flags & CMH_LOCAL_BEGIN) || (cm->flags & CMH_LOCAL_END))
     ConfigGlobal(cm);
 
   /* clean up */

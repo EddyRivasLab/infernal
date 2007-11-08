@@ -329,7 +329,7 @@ CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parset
    * Check out input parameters.
    */
   if (cm->stid[r] != ROOT_S) {
-    if (! (cm->flags & CM_LOCAL_BEGIN)) esl_fatal("internal error: we're not in local mode, but r is not root");
+    if (! (cm->flags & CMH_LOCAL_BEGIN)) esl_fatal("internal error: we're not in local mode, but r is not root");
     if (cm->stid[r] != MATP_MP && cm->stid[r] != MATL_ML &&
 	cm->stid[r] != MATR_MR && cm->stid[r] != BIF_B)
       esl_fatal("internal error: trying to do a local begin at a non-mainline start");
@@ -403,7 +403,7 @@ CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **re
    * Check out input parameters.
    */
   if (cm->stid[r] != ROOT_S) {
-    if (! (cm->flags & CM_LOCAL_BEGIN)) esl_fatal("internal error: we're not in local mode, but r is not root");
+    if (! (cm->flags & CMH_LOCAL_BEGIN)) esl_fatal("internal error: we're not in local mode, but r is not root");
     if (cm->stid[r] != MATP_MP && cm->stid[r] != MATL_ML &&
 	cm->stid[r] != MATR_MR && cm->stid[r] != BIF_B)
       esl_fatal("internal error: trying to do a local begin at a non-mainline start");
@@ -768,7 +768,7 @@ generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
   /* Local alignment only: maybe we're better off in EL?
    */
-  if (cm->flags & CM_LOCAL_END) {
+  if (cm->flags & CMH_LOCAL_END) {
     for (jp = 0; jp <= W; jp++) 
       {
 	j = i0-1+jp;
@@ -784,7 +784,7 @@ generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
   /* Local alignment only: maybe we're better off in ROOT?
    */
-  if (r == 0 && cm->flags & CM_LOCAL_BEGIN) {
+  if (r == 0 && cm->flags & CMH_LOCAL_BEGIN) {
     if (b1_sc > best_sc) {
       best_sc = b1_sc;
       best_k  = -2;		/* flag for using local begin into left wedge w..wend */
@@ -977,7 +977,7 @@ wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int
   /* Local alignment ends only: maybe we're better off in EL, 
    * not in the split set?
    */
-  if (cm->flags & CM_LOCAL_END) {
+  if (cm->flags & CMH_LOCAL_END) {
     for (jp = 0; jp <= W; jp++) 
       {
 	j = i0-1+jp;
@@ -993,7 +993,7 @@ wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int
 
   /* Local alignment begins only: maybe we're better off in the root.
    */
-  if (r==0 && (cm->flags & CM_LOCAL_BEGIN)) {
+  if (r==0 && (cm->flags & CMH_LOCAL_BEGIN)) {
     if (bsc > best_sc) {
       best_sc = bsc;
       best_v  = -2;		/* flag for local alignment */
@@ -1144,7 +1144,7 @@ v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   /* Local alignment ends: maybe we're better off in EL, not
    * the split set?
    */
-  if (useEL && (cm->flags & CM_LOCAL_END)) {
+  if (useEL && (cm->flags & CMH_LOCAL_END)) {
     for (ip = 0; ip <= i1-i0; ip++)
       for (jp = 0; jp <= j0-j1; jp++)
 	if ((sc = beta[cm->M][jp][ip]) > best_sc) {
@@ -1157,7 +1157,7 @@ v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	
   /* Local alignment begins: maybe we're better off in root...
    */
-  if (r==0 && (cm->flags & CM_LOCAL_BEGIN)) {
+  if (r==0 && (cm->flags & CMH_LOCAL_BEGIN)) {
     if (bsc > best_sc) {
       best_sc = bsc;
       best_v  = -2;
@@ -1718,7 +1718,7 @@ outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 
   /* Initialize the EL deck at M, if we're doing local alignment w.r.t. ends.
    */
-  if (cm->flags & CM_LOCAL_END) {
+  if (cm->flags & CMH_LOCAL_END) {
     if (! deckpool_pop(dpool, &(beta[cm->M])))
       beta[cm->M] = alloc_vjd_deck(L, i0, j0);
     for (jp = 0; jp <= W; jp++) {
@@ -1815,7 +1815,7 @@ outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
       /* If we can do a local begin into v, also init with that. 
        * By definition, beta[0][j0][W] == 0.
        */ 
-      if (vroot == 0 && i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+      if (vroot == 0 && i0 == 1 && j0 == L && (cm->flags & CMH_LOCAL_BEGIN))
 	beta[v][j0][W] = cm->beginsc[v];
 
       /* main recursion:
@@ -1969,7 +1969,7 @@ outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
    * w.r.t. ends: left-emitting, zero-scoring EL->EL transitions.
    * (EL = deck at M.)
    */
-  if (cm->flags & CM_LOCAL_END) {
+  if (cm->flags & CMH_LOCAL_END) {
     for (jp = W; jp > 0; jp--) { /* careful w/ boundary here */
       j = i0-1+jp;
       for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
@@ -1986,7 +1986,7 @@ outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
   if (ret_beta == NULL) {
     for (v = w1; v <= vend; v++) /* start at w1 - top of split set - not vroot */
       if (beta[v] != NULL) { deckpool_push(dpool, beta[v]); beta[v] = NULL; }
-    if (cm->flags & CM_LOCAL_END) {
+    if (cm->flags & CMH_LOCAL_END) {
       deckpool_push(dpool, beta[cm->M]);
       beta[cm->M] = NULL; 
     }
@@ -2496,7 +2496,7 @@ voutside(CM_t *cm, ESL_DSQ *dsq, int L,
    * Deal with the special initialization case of the root state r
    * immediately transitioning to EL, if we're supposed to use EL.
    */
-  if (useEL && cm->flags & CM_LOCAL_END) {
+  if (useEL && cm->flags & CMH_LOCAL_END) {
     if (! deckpool_pop(dpool, &(beta[cm->M])))
       beta[cm->M] = alloc_vji_deck(i0,i1,j1,j0);
     for (jp = 0; jp <= j0-j1; jp++) {
@@ -2576,7 +2576,7 @@ voutside(CM_t *cm, ESL_DSQ *dsq, int L,
       /* If we can get into deck v by a local begin transition, do an init
        * with that.
        */
-      if (r == 0 && i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+      if (r == 0 && i0 == 1 && j0 == L && (cm->flags & CMH_LOCAL_BEGIN))
 	{
 	  if (cm->beginsc[v] > beta[v][j0-j1][0]) 
 	    beta[v][j0-j1][0] = cm->beginsc[v];
@@ -2725,7 +2725,7 @@ voutside(CM_t *cm, ESL_DSQ *dsq, int L,
   /* Deal with the last step needed for local alignment
    * w.r.t. ends: left-emitting, zero-scoring EL->EL transitions.
    */
-  if (useEL && cm->flags & CM_LOCAL_END) {
+  if (useEL && cm->flags & CMH_LOCAL_END) {
     for (jp = j0-j1; jp >= 0; jp--) 
       for (ip = 1; ip <= i1-i0; ip++) /* careful w/ boundary here */
 	if ((sc = beta[cm->M][jp][ip-1]) > beta[cm->M][jp][ip]) 
@@ -2740,7 +2740,7 @@ voutside(CM_t *cm, ESL_DSQ *dsq, int L,
   if (ret_beta == NULL) {
     for (v = r; v <= z; v++)
       if (beta[v] != NULL) { deckpool_push(dpool, beta[v]); beta[v] = NULL; }
-    if (cm->flags & CM_LOCAL_END) {
+    if (cm->flags & CMH_LOCAL_END) {
       deckpool_push(dpool, beta[cm->M]);
       beta[cm->M] = NULL; 
     }
@@ -3785,7 +3785,7 @@ generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
   /* Local alignment only: maybe we're better off in EL?
    */
-  if (cm->flags & CM_LOCAL_END) {
+  if (cm->flags & CMH_LOCAL_END) {
     for (jp = 0; jp <= W; jp++) 
       {
 	j = i0-1+jp;
@@ -3802,7 +3802,7 @@ generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   
   /* Local alignment only: maybe we're better off in ROOT?
    */
-  if (r == 0 && cm->flags & CM_LOCAL_BEGIN) {
+  if (r == 0 && cm->flags & CMH_LOCAL_BEGIN) {
     if (b1_sc > best_sc) {
       best_sc = b1_sc;
       best_k  = -2;		/* flag for using local begin into left wedge w..wend */
@@ -4000,7 +4000,7 @@ wedge_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, i
   /* Local alignment ends only: maybe we're better off in EL, 
    * not in the split set?
    */
-  if (cm->flags & CM_LOCAL_END) {
+  if (cm->flags & CMH_LOCAL_END) {
     for (jp = 0; jp <= W; jp++) 
       {
 	j = i0-1+jp;
@@ -4017,7 +4017,7 @@ wedge_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, i
 
   /* Local alignment begins only: maybe we're better off in the root.
    */
-  if (r==0 && (cm->flags & CM_LOCAL_BEGIN)) {
+  if (r==0 && (cm->flags & CMH_LOCAL_BEGIN)) {
     if (bsc > best_sc) {
       best_sc = bsc;
       best_v  = -2;		/* flag for local alignment */
@@ -4208,7 +4208,7 @@ v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   /* Local alignment ends: maybe we're better off in EL, not
    * the split set?
    */
-  if (useEL && (cm->flags & CM_LOCAL_END)) {
+  if (useEL && (cm->flags & CMH_LOCAL_END)) {
     /* There is no band on the EL state */
     for (ip = 0; ip <= i1-i0; ip++)
       for (jp = 0; jp <= j0-j1; jp++)
@@ -4222,7 +4222,7 @@ v_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	
   /* Local alignment begins: maybe we're better off in root...
    */
-  if (r==0 && (cm->flags & CM_LOCAL_BEGIN)) {
+  if (r==0 && (cm->flags & CMH_LOCAL_BEGIN)) {
     if (bsc > best_sc) {
       best_sc = bsc;
       best_v  = -2;
@@ -4764,7 +4764,7 @@ outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 
   /* Initialize the EL deck at M, if we're doing local alignment w.r.t. ends.
    */
-  if (cm->flags & CM_LOCAL_END) {
+  if (cm->flags & CMH_LOCAL_END) {
     if (! deckpool_pop(dpool, &(beta[cm->M])))
       beta[cm->M] = alloc_vjd_deck(L, i0, j0);
     for (jp = 0; jp <= W; jp++) {
@@ -4855,7 +4855,7 @@ outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
       /* If we can do a local begin into v, also init with that. 
        * By definition, beta[0][j0][W] == 0.
        */ 
-      if ((vroot == 0 && i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+      if ((vroot == 0 && i0 == 1 && j0 == L && (cm->flags & CMH_LOCAL_BEGIN))
 	  && (dmin[v] <= W && dmax[v] >= W))
 	  beta[v][j0][W] = cm->beginsc[v];
 
@@ -5014,7 +5014,7 @@ outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
    * w.r.t. ends: left-emitting, zero-scoring EL->EL transitions.
    * (EL = deck at M.)
    */
-  if (cm->flags & CM_LOCAL_END) {
+  if (cm->flags & CMH_LOCAL_END) {
     for (jp = W; jp > 0; jp--) { /* careful w/ boundary here */
       j = i0-1+jp;
       /* There is no band on the EL state */
@@ -5032,7 +5032,7 @@ outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
   if (ret_beta == NULL) {
     for (v = w1; v <= vend; v++) /* start at w1 - top of split set - not vroot */
       if (beta[v] != NULL) { deckpool_push(dpool, beta[v]); beta[v] = NULL; }
-    if (cm->flags & CM_LOCAL_END) {
+    if (cm->flags & CMH_LOCAL_END) {
       deckpool_push(dpool, beta[cm->M]);
       beta[cm->M] = NULL; 
     }
@@ -5687,7 +5687,7 @@ voutside_b(CM_t *cm, ESL_DSQ *dsq, int L,
    * immediately transitioning to EL, if we're supposed to use EL.
    */
   
-  if (useEL && cm->flags & CM_LOCAL_END) {
+  if (useEL && cm->flags & CMH_LOCAL_END) {
     if (! deckpool_pop(dpool, &(beta[cm->M])))
       beta[cm->M] = alloc_vji_deck(i0,i1,j1,j0);
     for (jp = 0; jp <= j0-j1; jp++) {
@@ -5796,7 +5796,7 @@ voutside_b(CM_t *cm, ESL_DSQ *dsq, int L,
       /* If we can get into deck v by a local begin transition, do an init
        * with that.
        */
-      if (r == 0 && i0 == 1 && j0 == L && (cm->flags & CM_LOCAL_BEGIN))
+      if (r == 0 && i0 == 1 && j0 == L && (cm->flags & CMH_LOCAL_BEGIN))
 	{
 	  if (cm->beginsc[v] > beta[v][j0-j1][0]) 
 	    beta[v][j0-j1][0] = cm->beginsc[v];
@@ -5965,7 +5965,7 @@ voutside_b(CM_t *cm, ESL_DSQ *dsq, int L,
   /* Deal with the last step needed for local alignment
    * w.r.t. ends: left-emitting, zero-scoring EL->EL transitions.
    */
-  if (useEL && cm->flags & CM_LOCAL_END) {
+  if (useEL && cm->flags & CMH_LOCAL_END) {
     for (jp = j0-j1; jp >= 0; jp--) 
       {
 	/* Bands used ip 19 */
@@ -5986,7 +5986,7 @@ voutside_b(CM_t *cm, ESL_DSQ *dsq, int L,
   if (ret_beta == NULL) {
     for (v = r; v <= z; v++)
       if (beta[v] != NULL) { deckpool_push(dpool, beta[v]); beta[v] = NULL; }
-    if (cm->flags & CM_LOCAL_END) {
+    if (cm->flags & CMH_LOCAL_END) {
       deckpool_push(dpool, beta[cm->M]);
       beta[cm->M] = NULL; 
     }
@@ -6310,7 +6310,7 @@ debug_print_alpha_banded(float ***alpha, CM_t *cm, int L, int *dmin, int *dmax)
   printf("\nPrinting banded alpha matrix :\n");
   printf("************************************\n");
   max_v = cm->M-1;
-  if(cm->flags & CM_LOCAL_BEGIN)
+  if(cm->flags & CMH_LOCAL_BEGIN)
     {
       max_v = cm->M;
     }
@@ -6396,7 +6396,7 @@ debug_print_alpha(float ***alpha, CM_t *cm, int L)
   printf("\nPrinting alpha matrix :\n");
   printf("************************************\n");
   max_v = cm->M-1;
-  if(cm->flags & CM_LOCAL_BEGIN)
+  if(cm->flags & CMH_LOCAL_BEGIN)
     {
       max_v = cm->M;
     }

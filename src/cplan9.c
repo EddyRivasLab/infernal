@@ -773,11 +773,11 @@ CPlan9CMLocalBeginConfig(CM_t *cm)
     esl_fatal("ERROR in CPlan9CMLocalBeginConfig, cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL)
     esl_fatal("ERROR in CPlan9CMLocalBeginConfig, cm->cp9map is NULL.\n");
-  if(!(cm->flags & CM_CP9))
-     esl_fatal("ERROR in CPlan9CMLocalBeginConfig, CM_CP9 flag is down.");
-  if(!(cm->flags & CM_LOCAL_BEGIN))
-     esl_fatal("ERROR in CPlan9CMLocalBeginConfig, CM_LOCAL_BEGIN flag is down.");
-  if(!(cm->flags & CM_LOCAL_END))
+  if(!(cm->flags & CMH_CP9))
+     esl_fatal("ERROR in CPlan9CMLocalBeginConfig, CMH_CP9 flag is down.");
+  if(!(cm->flags & CMH_LOCAL_BEGIN))
+     esl_fatal("ERROR in CPlan9CMLocalBeginConfig, CMH_LOCAL_BEGIN flag is down.");
+  if(!(cm->flags & CMH_LOCAL_END))
      esl_fatal("ERROR in CPlan9CMLocalBeginConfig, CP9_LOCAL_BEGIN flag is already up.");
   if(cm->cp9->flags & CPLAN9_LOCAL_END)
      esl_fatal("ERROR in CPlan9CMLocalBeginConfig, CP9_LOCAL_END flag is already up.");
@@ -845,10 +845,10 @@ CPlan9ELConfig(CM_t *cm)
     esl_fatal("ERROR in CPlan9ELConfig, cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL)
     esl_fatal("ERROR in CPlan9ELConfig, cm->cp9map is NULL.\n");
-  if(!(cm->flags & CM_CP9))
-     esl_fatal("ERROR in CPlan9ELConfig, CM_CP9 flag is down.");
-  if(!(cm->flags & CM_LOCAL_END))
-     esl_fatal("ERROR in CPlan9ELConfig, CM_LOCAL_END flag is down.");
+  if(!(cm->flags & CMH_CP9))
+     esl_fatal("ERROR in CPlan9ELConfig, CMH_CP9 flag is down.");
+  if(!(cm->flags & CMH_LOCAL_END))
+     esl_fatal("ERROR in CPlan9ELConfig, CMH_LOCAL_END flag is down.");
   if(cm->cp9->flags & CPLAN9_EL)
      esl_fatal("ERROR in CPlan9ELConfig, CP9_EL flag is already up.");
   
@@ -927,8 +927,8 @@ CPlan9NoEL(CM_t *cm)
     esl_fatal("ERROR in CPlan9ELConfig, cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL)
     esl_fatal("ERROR in CPlan9ELConfig, cm->cp9map is NULL.\n");
-  if(!(cm->flags & CM_CP9))
-     esl_fatal("ERROR in CPlan9ELConfig, CM_CP9 flag is down.");
+  if(!(cm->flags & CMH_CP9))
+     esl_fatal("ERROR in CPlan9ELConfig, CMH_CP9 flag is down.");
   if(!(cm->cp9->flags & CPLAN9_EL))
      esl_fatal("ERROR in CPlan9ELConfig, CP9_EL flag is already down.");
   
@@ -1494,25 +1494,6 @@ Scorify(int sc)
   return ((float) sc / INTSCALE);
 }
 
-/* Function:  CP9HackInsertScores()
- * Incept:    EPN, Fri Feb  9 10:59:12 2007
- *
- * Purpose:   Make all inserts 0. Usually called from CMHackInsertScores()
- *            to make the HMM inserts match the CM inserts.
- *
- * Args:      cp9 - the CP9 HMM 
- *
- * Returns:   (void)
- */
-void
-CP9HackInsertScores(CP9_t *cp9)
-{
-  int k, x;
-  for (k = 0; k <= cp9->M; k++)
-    /* CP9 HMMs have insert states in nodes 0 and M */
-    for (x = 0; x < MAXDEGEN; x++)
-      cp9->isc[x][k] = 0.;
-}
 /* Function:  CP9EnforceHackMatchScores()
  * Incept:    EPN, Fri Feb  9 11:06:31 2007
  *
@@ -2421,8 +2402,8 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
     esl_fatal("ERROR in CP9Traces2Alignment, cm->cp9 is NULL.\n");
   if(cm->cp9map == NULL)
     esl_fatal("ERROR in CP9Traces2Alignment, cm->cp9map is NULL.\n");
-  if(!(cm->flags & CM_CP9))
-     esl_fatal("ERROR in CP9Traces2Alignment, CM_CP9 flag is down.");
+  if(!(cm->flags & CMH_CP9))
+     esl_fatal("ERROR in CP9Traces2Alignment, CMH_CP9 flag is down.");
   /* We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
   if(cm->abc->type == eslRNA)
@@ -2841,8 +2822,8 @@ DuplicateCP9(CM_t *src_cm, CM_t *dest_cm)
   int       k,x;	          /* counter over nodes */
 
   /* Contract checks */
-  if(!(src_cm->flags & CM_CP9))
-    esl_fatal("ERROR in DuplicateCP9() src_cm CM_CP9 flag down.\n");
+  if(!(src_cm->flags & CMH_CP9))
+    esl_fatal("ERROR in DuplicateCP9() src_cm CMH_CP9 flag down.\n");
 
   CPlan9Renormalize(src_cm->cp9);
   CP9Logoddsify(src_cm->cp9);
