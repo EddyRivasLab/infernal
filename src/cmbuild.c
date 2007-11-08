@@ -238,6 +238,10 @@ main(int argc, char **argv)
   else                              cfg.be_verbose = FALSE;        
   cfg.nali       = 0;		           
 
+  /* check if cmfile already exists, if it does and -F was not enabled then die */
+  if (((! esl_opt_GetBoolean(go, "-F")) && (! esl_opt_GetBoolean(go, "-A"))) && esl_FileExists(cfg.cmfile))
+    cm_Fail("CM file %s already exists. Either use -F to overwrite it, rename it, or delete it.", cfg.cmfile); 
+
   /* Start timing; do work; stop timing.*/
   esl_stopwatch_Start(w);
   master(go, &cfg);
@@ -309,8 +313,12 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   esl_msafile_SetDigital(cfg->afp, cfg->abc);
 
   /* open CM file for writing */
-  if ((cfg->cmfp = fopen(cfg->cmfile, "w")) == NULL) ESL_FAIL(status, errbuf, "Failed to open CM file %s for writing", cfg->cmfile);
-
+  if (esl_opt_GetBoolean(go, "-A")) { /* we're appending to a CM file */
+    if ((cfg->cmfp = fopen(cfg->cmfile, "a")) == NULL) ESL_FAIL(status, errbuf, "Failed to open CM file %s to append to", cfg->cmfile);
+  }
+  else { /* we're starting a new CM file */
+    if ((cfg->cmfp = fopen(cfg->cmfile, "w")) == NULL) ESL_FAIL(status, errbuf, "Failed to open CM file %s for writing", cfg->cmfile);
+  }
   /* Set up the prior */
   if (esl_opt_GetString(go, "--prior") != NULL)
     {
