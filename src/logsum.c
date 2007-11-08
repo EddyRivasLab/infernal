@@ -76,7 +76,7 @@ init_ilogsum(void)
     
   int i;
   for (i = 0; i < LOGSUM_TBL; i++) 
-    ilogsum_lookup[i] = rint(INTSCALE * (log(1.+sreEXP2((double) -i/INTSCALE))));
+    ilogsum_lookup[i] = rint(INTSCALE * (sreLOG2(1.+sreEXP2((double) -i/INTSCALE))));
 }
 
 
@@ -140,7 +140,7 @@ FLogsumInit(void)
 
   int i;
   for (i = 0; i < LOGSUM_TBL; i++) 
-    flogsum_lookup[i] = log(1. + sreEXP2((double) -i / INTSCALE));
+    flogsum_lookup[i] = sreLOG2(1. + sreEXP2((double) -i / INTSCALE));
   return;
 }
 
