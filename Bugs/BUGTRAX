@@ -232,3 +232,39 @@ NOTE: A cp9-test run in testsuites/ will likely still fail for
       cp9-test now checks for zero length hairpins and prints a 
       warning to the screen.
 //
+
+ID              i12
+TITLE		Mishandling basepair emit scores in *outside* funcs
+STATUS          CLOSED
+XREF            NONE
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Thu Nov  8 15:43:50 2007
+DESCRIPTION     
+
+The i12 perl script in Infernal's Bugs/ subdirectory has a simple
+example of this bug.
+
+In all *outside* functions when adding the basepair emit probability 
+to a DP cell, the code attempts to check if the residues are both
+non-ambiguous (A|C|G|U) and calls DegeneratePairScore() if they are 
+not. However that check was flawed, here's an example:
+
+ if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+   escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
+ else
+   escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
+
+Note the 'dsq[j+1] > cm->abc->K'. It should be 'dsq[j+1] <
+cm->abc->K'.  This bug has been in the Infernal code since the 0.1
+April 2002 release, in which it was only found in outside() and
+voutside(). Version 0.81 included more outside functions in which this
+bug was propogated, for example IOutside() in cm_postprob.c which is
+the instance of the bug that causes the i12 script to fail. I won't
+list them here, do a svn diff -r 2199:2200 for the details. To be
+explicit, this bug exists in svn revision 2199, and is fixed in svn
+revision 2200.
+
+See ~nawrockie/notebook/7_1108_inf_bug_outside_ambig_bps/00LOG
+for a bit more detail.
+//
+

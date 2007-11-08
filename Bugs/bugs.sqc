@@ -38,4 +38,6 @@
 # i11 - Incorrect insert state detachment in zero length hairpin loops
 2 exercise   i11/cmbuild-detach ./i11 @cmbuild@ @cmalign@
 
+# i12 - Mishandling basepair emit scores in *outside* funcs
+2 exercise   i12/cmalign-outside ./i12 @cmbuild@ @cmalign@
 
