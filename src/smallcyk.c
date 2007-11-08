@@ -1737,7 +1737,7 @@ outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
       switch (cm->sttype[vroot]) {
       case MP_st:
 	if (W < 2) break;
-	if (dsq[i0] < cm->abc->K && dsq[j0] > cm->abc->K)
+	if (dsq[i0] < cm->abc->K && dsq[j0] < cm->abc->K)
 	  escore = cm->esc[vroot][(int) (dsq[i0]*cm->abc->K+dsq[j0])];
 	else
 	  escore = DegeneratePairScore(cm->abc, cm->esc[vroot], dsq[i0], dsq[j0]);
@@ -1833,7 +1833,7 @@ outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	      case MP_st: 
 		if (j == j0 || d == jp) continue; /* boundary condition */
 
-		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		  escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
 		  escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
@@ -1897,7 +1897,7 @@ outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	      switch (cm->sttype[v]) {
 	      case MP_st: 
 		if (j == j0 || d == jp) continue; /* boundary condition */
-		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		  escore = cm->esc[v][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
 		  escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
@@ -2508,7 +2508,7 @@ voutside(CM_t *cm, ESL_DSQ *dsq, int L,
     switch(cm->sttype[r]) {
     case MP_st:
       if (i0 == i1 || j1 == j0) break;
-      if (dsq[i0] < cm->abc->K && dsq[j0] > cm->abc->K)
+      if (dsq[i0] < cm->abc->K && dsq[j0] < cm->abc->K)
 	escore = cm->esc[r][(int) (dsq[i0]*cm->abc->K+dsq[j0])];
       else
 	escore = DegeneratePairScore(cm->abc, cm->esc[r], dsq[i0], dsq[j0]);
@@ -2597,7 +2597,7 @@ voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 	      switch(cm->sttype[y]) {
 	      case MP_st: 
 		if (j == j0 || i == i0) continue; /* boundary condition */
-		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		  escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
 		  escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
@@ -2661,7 +2661,7 @@ voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 	      switch (cm->sttype[v]) {
 	      case MP_st:
 		if (j == j0 || i == i0) continue; /* boundary condition */
-		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		  escore = cm->esc[v][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
 		  escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
@@ -3583,7 +3583,7 @@ CYKOutside(CM_t *cm, ESL_DSQ *dsq, int L, float ***alpha)
 		  case MP_st: 
 		    if (d == j || d == j-1) continue; /* boundary condition */
 
-		    if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		    if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		      escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		    else
 		      escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
@@ -4783,7 +4783,7 @@ outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
       switch (cm->sttype[vroot]) {
       case MP_st:
 	if (W < 2) break;
-	if (dsq[i0] < cm->abc->K && dsq[j0] > cm->abc->K)
+	if (dsq[i0] < cm->abc->K && dsq[j0] < cm->abc->K)
 	  escore = cm->esc[vroot][(int) (dsq[i0]*cm->abc->K+dsq[j0])];
 	else
 	  escore = DegeneratePairScore(cm->abc, cm->esc[vroot], dsq[i0], dsq[j0]);
@@ -4876,7 +4876,7 @@ outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	      case MP_st: 
 		if (j == j0 || d == jp) continue; /* boundary condition */
 
-		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		  escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
 		  escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
@@ -4944,7 +4944,7 @@ outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	      switch (cm->sttype[v]) {
 	      case MP_st: 
 		if (j == j0 || d == jp) continue; /* boundary condition */
-		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		  escore = cm->esc[v][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
 		  escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
@@ -5699,7 +5699,7 @@ voutside_b(CM_t *cm, ESL_DSQ *dsq, int L,
     switch(cm->sttype[r]) {
     case MP_st:
       if (i0 == i1 || j1 == j0) break;
-      if (dsq[i0] < cm->abc->K && dsq[j0] > cm->abc->K)
+      if (dsq[i0] < cm->abc->K && dsq[j0] < cm->abc->K)
 	escore = cm->esc[r][(int) (dsq[i0]*cm->abc->K+dsq[j0])];
       else
 	escore = DegeneratePairScore(cm->abc, cm->esc[r], dsq[i0], dsq[j0]);
@@ -5826,7 +5826,7 @@ voutside_b(CM_t *cm, ESL_DSQ *dsq, int L,
 	      case MP_st: 
 		if (j == j0 || i == i0) continue; /* boundary condition */
 
-		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		  escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
 		  escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
@@ -5897,7 +5897,7 @@ voutside_b(CM_t *cm, ESL_DSQ *dsq, int L,
 	      switch (cm->sttype[v]) {
 	      case MP_st:
 		if (j == j0 || i == i0) continue; /* boundary condition */
-		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		  escore = cm->esc[v][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
 		  escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);

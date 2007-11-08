@@ -1459,7 +1459,7 @@ FastIOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
 		   */
 		  dp_y = d - hdmin[y][jp_y+1];  /* d index for state y */
 		  
-		  if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		  if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		    iescore = cm->iesc[y][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 		  else
 		    iescore = iDegeneratePairScore(cm->abc, cm->iesc[y], dsq[i-1], dsq[j+1]);
@@ -1537,7 +1537,7 @@ FastIOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
 	  case MP_st: 
 	    if (j == j0 || d == j) continue; /* boundary condition */
 	    if (((j+1) > jmax[v]) || ((d+2) > hdmax[v][jp_v])) continue; /*boundary condition*/
-	    if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+	    if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 	      iescore = cm->iesc[v][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 	    else
 	      iescore = iDegeneratePairScore(cm->abc, cm->iesc[v], dsq[i-1], dsq[j+1]);

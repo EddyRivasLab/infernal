@@ -862,7 +862,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		  case MP_st: 
 		    if (j == j0 || d == jp) continue; /* boundary condition */
 		    
-		    if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		    if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		      escore = cm->esc[y][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 		    else
 		      escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
@@ -920,7 +920,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 	      switch (cm->sttype[v]) {
 	      case MP_st: 
 		if (j == j0 || d == jp) continue; /* boundary condition */
-		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		  escore = cm->esc[v][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
 		  escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
@@ -1278,7 +1278,7 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		  case MP_st: 
 		    if (j == j0 || d == jp) continue; /* boundary condition */
 		    
-		    if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		    if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		      iescore = cm->iesc[y][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 		    else
 		      iescore = iDegeneratePairScore(cm->abc, cm->iesc[y], dsq[i-1], dsq[j+1]);
@@ -1336,7 +1336,7 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 	      switch (cm->sttype[v]) {
 	      case MP_st: 
 		if (j == j0 || d == jp) continue; /* boundary condition */
-		if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		  iescore = cm->iesc[v][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
 		  iescore = iDegeneratePairScore(cm->abc, cm->iesc[v], dsq[i-1], dsq[j+1]);
@@ -3362,7 +3362,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			 */
 			dp_y = d - hdmin[y][jp_y+1];  /* d index for state y */
 			
-			if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+			if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 			  escore = cm->esc[y][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 			else
 			  escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
@@ -3442,7 +3442,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		case MP_st: 
 		  if (j == j0 || d == j) continue; /* boundary condition */
 		  if (((j+1) > jmax[v]) || ((d+2) > hdmax[v][jp_v])) continue; /*boundary condition*/
-		  if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		  if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		    escore = cm->esc[v][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 		  else
 		    escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
@@ -3945,7 +3945,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			 */
 			dp_y = d - hdmin[y][jp_y+1];  /* d index for state y */
 			
-			if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+			if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 			  iescore = cm->iesc[y][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 			else
 			  iescore = iDegeneratePairScore(cm->abc, cm->iesc[y], dsq[i-1], dsq[j+1]);
@@ -4025,7 +4025,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		case MP_st: 
 		  if (j == j0 || d == j) continue; /* boundary condition */
 		  if (((j+1) > jmax[v]) || ((d+2) > hdmax[v][jp_v])) continue; /*boundary condition*/
-		  if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+		  if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
 		    iescore = cm->iesc[v][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 		  else
 		    iescore = iDegeneratePairScore(cm->abc, cm->iesc[v], dsq[i-1], dsq[j+1]);
