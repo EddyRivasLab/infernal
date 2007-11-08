@@ -36,7 +36,7 @@ if ($ok) {
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {
-    system("$cmscore --local --qdb i9.cm i9.1 > /dev/null 2> /dev/null");
+    system("$cmscore --infile i9.1 -l --qdb i9.cm > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 

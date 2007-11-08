@@ -21,7 +21,7 @@
 # i2 - cmalign memory leak. 5 Jan 03, xref STL7 p.15
 #
 2 prep       i2/cmalign-leak   @cmbuild@ %CM% i2.sto
-2 exercise   i2/cmalign-leak   @cmalign@ %CM% i2.sto
+2 exercise   i2/cmalign-leak   @cmalign@ %CM% i2.fa
 
 # i3 - local begins rooted at inserts. 4 Mar 03, xref STL7 p.43
 2 exercise   i3/insert-roots   ./i3 @cmbuild@ @cmsearch@
@@ -37,4 +37,5 @@
 
 # i11 - Incorrect insert state detachment in zero length hairpin loops
 2 exercise   i11/cmbuild-detach ./i11 @cmbuild@ @cmalign@
+
 

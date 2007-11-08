@@ -42,17 +42,17 @@ END
 close OUT;
 
 if ($ok) { 
-    system("$cmbuild -F --rf i11.cm i11.1 > /dev/null 2> /dev/null");
+    system("$cmbuild --rna -F --rf i11.cm i11.1 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {
-    system("$cmalign --hbanded i11.cm i11.2 > /dev/null 2> /dev/null");
+    system("$cmalign --nosmall --hbanded i11.cm i11.2 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 
-#foreach $tmpfile ("i11.1", "i11.2", "i11.cm") {
-#    unlink $tmpfile if -e $tmpfile;
-#}
+foreach $tmpfile ("i11.1", "i11.2", "i11.cm") {
+    unlink $tmpfile if -e $tmpfile;
+}
 
 if ($ok) { print "ok\n";     exit 0; }
 else     { print "FAILED\n"; exit 1; }

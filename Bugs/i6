@@ -47,7 +47,7 @@ if ($ok) {
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {
-    system("$cmscore --local i6.cm i6.2 > /dev/null 2> /dev/null");
+    system("$cmscore --infile i6.2 -l i6.cm > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 

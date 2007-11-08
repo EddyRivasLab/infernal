@@ -42,12 +42,39 @@ seq10        aGGGAACCC
 END
 close OUT;
 
+# Make our test sequence file, i3.2
+#
+open (OUT, ">i3.2") || die;
+print OUT <<END;
+>seq1
+aGGGAACCC
+>seq2
+aGGGAACCC
+>seq3
+aGGGAACCC
+>seq4
+aGGGAACCC
+>seq5
+aGGGAACCC
+>seq6
+aGGGAACCC
+>seq7
+aGGGAACCC
+>seq8
+aGGGAACCC
+>seq9
+aGGGAACCC
+>seq10
+aGGGAACCC
+END
+close OUT;
+
 if ($ok) { 
-    system("$cmbuild --rf i3.cm i3.1 > /dev/null 2> /dev/null");
+    system("$cmbuild --rna --rf i3.cm i3.1 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {
-    system("$cmsearch --local i3.cm i3.1 > /dev/null 2> /dev/null");
+    system("$cmsearch i3.cm i3.2 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 
