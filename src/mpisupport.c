@@ -281,6 +281,8 @@ cm_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm comm, CM_t
 int
 cm_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm)
 {
+  cm_Fail("EPN, Fri Nov  9 08:55:23 2007, cm_MPIPack() shouldn't be used until oesc's are handled. Why not use cm_justread_MPIPack?()\n");
+
   int   status;
   int   K      = cm->abc->K;
   int   M      = cm->M;
@@ -566,7 +568,7 @@ cm_justread_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
 
   if (MPI_Pack_size(M,         MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += 5*sz; 
-  /* ndidx, cfirst, cnum, plast, pnum, */
+  /* ndidx, cfirst, cnum, plast, pnum */
 
   if (MPI_Pack_size(nnodes,    MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += sz; 

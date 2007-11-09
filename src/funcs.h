@@ -69,6 +69,7 @@ extern int   InsertStatesInNode(int ndtype);
 extern int   StateDelta(int sttype);
 extern int   StateLeftDelta(int sttype);
 extern int   StateRightDelta(int sttype);
+extern int   Emitmode(int sttype);
 extern void  PrintCM(FILE *fp, CM_t *cm);
 extern void  SummarizeCM(FILE *fp, CM_t *cm);
 extern char *Statetype(int type);
@@ -775,16 +776,16 @@ extern int   cp9_CheckTransitionGuarantees(CP9_t *cp9);
 extern int   cp9_GetLocalityMode(CP9_t *cp9);
 
 /* from cm_fastalign.c */
-extern float fast_cyk_inside_align_hb (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
-				       void ****ret_shadow, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b, CM_FHB_MX *mx, 
-				       float **esc_vAA);
-extern float fast_cyk_inside_align_hbT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
-				       int r, int z, int i0, int j0, int allow_begin, 
-				       CP9Bands_t *cp9b, CM_FHB_MX *mx, float **esc_vAA);
+extern float fast_cyk_inside_align_hb (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow, 
+				       int allow_begin, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b, CM_FHB_MX *mx);
+extern float fast_cyk_insideT_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
+				       int r, int z, int i0, int j0, int allow_begin, CP9Bands_t *cp9b, CM_FHB_MX *mx);
 extern float FastCYKInsideAlignHB     (CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, 
-				       CP9Bands_t *cp9b, CM_FHB_MX *mx, float **esc_vAA);
-extern float FastIInsideAlignHB       (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_IHB_MX *mx, int **esc_vAA);
-extern float FastIOutsideAlignHB      (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_IHB_MX *mx, int **esc_vAA, CM_IHB_MX *ins_mx, int do_check);
+				       CP9Bands_t *cp9b, CM_FHB_MX *mx);
+extern float FastIInsideAlignHB       (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_IHB_MX *mx);
+extern float FastIOutsideAlignHB      (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_IHB_MX *mx, CM_IHB_MX *ins_mx, int do_check);
+extern float FastFInsideAlignHB       (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_FHB_MX *mx);
+extern float FastFOutsideAlignHB      (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_FHB_MX *mx, CM_FHB_MX *ins_mx, int do_check);
 
 /* from hmmband.c */
 extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
@@ -860,3 +861,6 @@ extern void        cm_FreeScanInfo          (CM_t *cm);
 extern void        cm_DumpScanInfoAlpha     (CM_t *cm, int j, int i0, int doing_float);
 extern float **    FCalcOptimizedEmitScores (CM_t *cm);
 extern int **      ICalcOptimizedEmitScores (CM_t *cm);
+extern void        FreeOptimizedEmitScores  (float **fesc_vAA, int **iesc_vAA, int M);
+extern float **    FCalcInitDPScores        (CM_t *cm);
+extern int **      ICalcInitDPScores        (CM_t *cm);

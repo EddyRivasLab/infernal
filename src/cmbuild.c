@@ -301,7 +301,7 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   else if (esl_opt_GetBoolean(go, "--dna")) type = eslDNA;
   else { 
     status = esl_msafile_GuessAlphabet(cfg->afp, &type);
-    if (status == eslEAMBIGUOUS)    ESL_FAIL(status, errbuf, "Failed to guess the bio alphabet used in %s.\nUse --rna option to specify it.", cfg->alifile);
+    if (status == eslEAMBIGUOUS)    ESL_FAIL(status, errbuf, "Failed to guess the bio alphabet used in %s.\nUse --rna option to specify it as RNA.", cfg->alifile);
     else if (status == eslEFORMAT)  ESL_FAIL(status, errbuf, "Alignment file parse failed: %s\n", cfg->afp->errbuf);
     else if (status == eslENODATA)  ESL_FAIL(status, errbuf, "Alignment file %s is empty\n", cfg->alifile);
     else if (status != eslOK)       ESL_FAIL(status, errbuf, "Failed to read alignment file %s\n", cfg->alifile);

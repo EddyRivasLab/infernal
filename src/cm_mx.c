@@ -57,8 +57,6 @@ cm_fhb_mx_Create(int M)
   int allocL = 1;
   int allocW = 1;
   ESL_ALLOC(mx->dp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
-  
-  ESL_ALLOC(mx->dp,     sizeof(float **) * (M+1));
   ESL_ALLOC(mx->nrowsA, sizeof(int)      * (M+1));
   for (v = 0; v <= M; v++) {
     ESL_ALLOC(mx->dp[v], sizeof(float *) * (allocL));
@@ -177,8 +175,14 @@ void
 cm_fhb_mx_Destroy(CM_FHB_MX *mx)
 {
   if (mx == NULL) return;
+  int v;
 
-  if (mx->dp      != NULL)  free(mx->dp);
+  if (mx->dp      != NULL) { 
+    for (v = 0; v <= mx->M; v++) 
+      if(mx->dp[v] != NULL) free(mx->dp[v]);  
+    free(mx->dp);
+  }
+  if (mx->nrowsA  != NULL)  free(mx->nrowsA);
   if (mx->dp_mem  != NULL)  free(mx->dp_mem);
   free(mx);
   return;
@@ -250,8 +254,6 @@ cm_ihb_mx_Create(int M)
   int allocL = 1;
   int allocW = 1;
   ESL_ALLOC(mx->dp_mem,  sizeof(int) * (M+1) * (allocL) * (allocW));
-  
-  ESL_ALLOC(mx->dp,     sizeof(int **) * (M+1));
   ESL_ALLOC(mx->nrowsA, sizeof(int)      * (M+1));
   for (v = 0; v <= M; v++) {
     ESL_ALLOC(mx->dp[v], sizeof(int *) * (allocL));
@@ -369,8 +371,14 @@ void
 cm_ihb_mx_Destroy(CM_IHB_MX *mx)
 {
   if (mx == NULL) return;
+  int v;
 
-  if (mx->dp      != NULL)  free(mx->dp);
+  if (mx->dp      != NULL) { 
+    for (v = 0; v <= mx->M; v++) 
+      if(mx->dp[v] != NULL) free(mx->dp[v]);  
+    free(mx->dp);
+  }
+  if (mx->nrowsA  != NULL)  free(mx->nrowsA);
   if (mx->dp_mem  != NULL)  free(mx->dp_mem);
   free(mx);
   return;

@@ -94,8 +94,14 @@ CreateCMShell(void)
   cm->end    = NULL;
   cm->tsc    = NULL;
   cm->esc    = NULL;
+  cm->oesc   = NULL;
   cm->beginsc= NULL;
   cm->endsc  = NULL;
+  cm->itsc    = NULL;
+  cm->iesc    = NULL;
+  cm->ioesc   = NULL;
+  cm->ibeginsc= NULL;
+  cm->iendsc  = NULL;
 
   cm->flags         = 0;
 
@@ -182,6 +188,10 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   ESL_ALLOC(cm->endsc,   (nstates) * sizeof(float));
   ESL_ALLOC(cm->ibeginsc,(nstates) * sizeof(int));
   ESL_ALLOC(cm->iendsc,  (nstates) * sizeof(int));
+  /* don't allocate for cm->oesc and cm->ioesc yet, they're
+   * alloc'ed and filled by CalcOptimizedEmitScores() called 
+   * in CMLogoddsify().
+   */
   
   /* level 2 */
   ESL_ALLOC(cm->t[0],    MAXCONNECT * nstates * sizeof(float));
@@ -340,6 +350,7 @@ FreeCM(CM_t *cm)
   if(cm->cp9        != NULL) FreeCPlan9(cm->cp9);
   if(cm->root_trans != NULL) free(cm->root_trans);
   if(cm->stats      != NULL) FreeCMStats(cm->stats);
+  if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
   free(cm);
 }
 
@@ -671,6 +682,13 @@ CMLogoddsify(CM_t *cm)
 	 (sreEXP2(cm->el_selfsc)), cm->iel_selfsc, (Score2Prob(cm->iel_selfsc, 1.0)));
 	 printf("-INFTY: %d prob: %f 2^: %f\n", -INFTY, (Score2Prob(-INFTY, 1.0)), sreEXP2(-INFTY));*/
 
+  /* Allocate and fill optimized emission scores for this CM.
+   * If they already exist, free them and recalculate them, slightly wasteful, oh well.
+   */
+  if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
+  cm->oesc  = FCalcOptimizedEmitScores(cm);
+  cm->ioesc = ICalcOptimizedEmitScores(cm);
+
   /* Potentially, overwrite transitions with non-probabilistic 
    * RSEARCH transitions. Currently only default transition
    * parameters are allowed, these are defined as DEFAULT_R*
@@ -979,6 +997,36 @@ StateRightDelta(int sttype)
   /*NOTREACHED*/
   return 0;
 }
+/* Function:  Emitmode()
+ * Incept:    EPN, Fri Nov  9 09:03:10 2007
+ *
+ * Purpose:   Convenience function, return emitmode of a sttype
+ *            EMITLEFT, EMITRIGHT, EMITNONE, or EMITPAIR
+ *
+ * Args:      sttype   - state type code, e.g. MP_st
+ *
+ * Returns:   (see above)
+ */
+int
+Emitmode(int sttype)
+{
+  switch (sttype) {
+  case IL_st: return EMITLEFT;
+  case IR_st: return EMITRIGHT;
+  case D_st:  return EMITNONE;
+  case ML_st: return EMITLEFT;
+  case MR_st: return EMITRIGHT;
+  case MP_st: return EMITPAIR;
+  case S_st:  return EMITNONE;
+  case E_st:  return EMITNONE;
+  case B_st:  return EMITNONE;
+  case EL_st: return EMITNONE;
+  default: esl_fatal("bogus state type %d\n", sttype);
+  }
+  /*NOTREACHED*/
+  return 0;
+}
+
 
 /* Function: PrintCM()
  * Date:     SRE, Sat Jul 29 10:55:16 2000 [St. Louis]

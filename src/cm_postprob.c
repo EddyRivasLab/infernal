@@ -1929,7 +1929,7 @@ CMCheckPosterior(int L, CM_t *cm, float ***post)
 	  }
       }
       
-      if(((sc - 0.) > 0.0001) || ((sc - 0.) < -0.0001))
+      if(((sc - 0.) > 0.01) || ((sc - 0.) < -0.01))
 	{
 	  cm_Fail("residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
 	}
@@ -1987,7 +1987,7 @@ ICMCheckPosterior(int L, CM_t *cm, int ***post)
 
       fsc = Scorify(sc);
       /* printf("k: %4d sc: %10.7f\n", k, fsc); */
-      if(((fsc - 0.) > 0.0001) || ((fsc - 0.) < -0.0001))
+      if(((fsc - 0.) > 0.01) || ((fsc - 0.) < -0.01))
 	{
 	  cm_Fail("residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(fsc)), fsc);
 	}

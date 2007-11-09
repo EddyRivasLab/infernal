@@ -1160,7 +1160,6 @@ typedef struct scaninfo_s {
   int    *dmin;        /* [0..v..cm->M-1] min subtree length for v using beta, just a ref, NULL for non-banded */
   int    *dmax;        /* [0..v..cm->M-1] max subtree length for v using beta, just a ref, NULL for non-banded */
   int     W;           /* max hit size */
-  int    *emitmodeA;   /* [0..v..M-1] EMITLEFT, EMITRIGHT, EMITPAIR, or EMITNONE */
   int   **dnAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int   **dxAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int    *bestr;       /* auxil info: best root state at alpha[0][cur][d] */
@@ -1170,19 +1169,11 @@ typedef struct scaninfo_s {
    * float implementations of CYK/Inside */
   float ***falpha;      /* non-BEGL_S states for float versions of CYK/Inside */
   float ***falpha_begl; /*     BEGL_S states for float versions of CYK/Inside */
-  float  **fesc_vAA;    /* optimized precalc'ed emission scores for each state */
-  float  **finit_scAA;  /* [0..v..cm->M-1][0..d..W] initial score for alpha[j][v][d] for all j,
-	                 * either IMPOSSIBLE or score for EL (if allowed) emitting d residues */
-  float   *fel_scA;     /* [0..d..W] precomputed EL emission score of d residues */
 
   /* ialpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] and precalc'ed scores for
    * integer implementations of CYK/Inside */
   int   ***ialpha;      /* non-BEGL_S states for int   versions of CYK/Inside */
   int   ***ialpha_begl; /*     BEGL_S states for int   versions of CYK/Inside */
-  int    **iesc_vAA;    /* optimized precalc'ed emission scores for each state */
-  int    **iinit_scAA;  /* [0..v..cm->M-1][0..d..W] initial score for alpha[j][v][d] for all j,
-		         * either -INFTY or score for EL (if allowed) emitting d residues */
-  int     *iel_scA;     /* [0..d..W] precomputed EL emission score of d residues */
 
 } ScanInfo_t;
 
@@ -1275,12 +1266,14 @@ typedef struct cm_s {
 			/* Parameters of the log odds model:               */
   float **tsc;		/*   Transition score vector, log odds             */
   float **esc;		/*   Emission score vector, log odds               */
+  float **oesc;         /*   Optimized emission score log odds float vec   */
   float *beginsc;	/*   Score for ROOT_S -> state v (local alignment) */
   float *endsc;   	/*   Score for state_v -> EL (local alignment)     */
 
 			/* Scaled int parameters of the log odds model:    */
   int  **itsc;		/*   Transition score vector, scaled log odds int  */
   int  **iesc;		/*   Emission score vector, scaled log odds int    */
+  int  **ioesc;         /*   Optimized emission score log odds int vector  */
   int   *ibeginsc;      /*   Score for ROOT_S -> state v (local alignment) */
   int   *iendsc;  	/*   Score for state_v -> EL (local alignment)     */
 

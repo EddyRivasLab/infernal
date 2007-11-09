@@ -113,17 +113,19 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   ESL_ALLOC(sc_v, (sizeof(float) * (W+1)));
   esl_vec_FSet(sc_v, (W+1), IMPOSSIBLE);
 
-  /* make pointers to the ScanInfo data for convenience */
+  /* precalculate the initial scores for all cells */
+  float **init_scAA;
+  init_scAA = FCalcInitDPScores(cm);
+
+  /* make pointers to the ScanInfo/CM data for convenience */
   float ***alpha      = si->falpha;
   float ***alpha_begl = si->falpha_begl;
   int   **dnAA        = si->dnAA;
   int   **dxAA        = si->dxAA;
-  int    *emitmodeA   = si->emitmodeA;
-  float  **esc_vAA    = si->fesc_vAA;
-  float **init_scAA   = si->finit_scAA;
   int    *bestr       = si->bestr;
   int    *dmin        = si->dmin;
   int    *dmax        = si->dmax;
+  float **esc_vAA     = cm->oesc;
 
   /* The main loop: scan the sequence from position i0 to j0.
    */
@@ -144,6 +146,8 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	  if(cm->sttype[v] == E_st) continue;
 	  float const *esc_v = esc_vAA[v]; 
 	  float const *tsc_v = cm->tsc[v];
+	  int emitmode = Emitmode(cm->sttype[v]);
+
 	  /* float sc; */
 	  jp_v = (cm->stid[v] == BEGL_S) ? (j % (W+1)) : cur;
 	  jp_y = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
@@ -201,7 +205,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	    float const *arow5;
 
 	    /* Note: order of cnum cases in switch and cases in each
-	     * nested emitmodeA[v] switch is based on empirical
+	     * nested emitmode switch is based on empirical
 	     * frequency in large test set, more frequent guys come
 	     * earlier, so average num calcs in each switch is
 	     * minimized.
@@ -221,7 +225,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		sc = ESL_MAX(sc, arow0[dp_y] + tsc_v[0]);		
 		
 		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
+		switch (emitmode) {
 		case EMITLEFT:
 		  sc += esc_v[dsq[i--]];
 		  break;
@@ -250,7 +254,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		sc = ESL_MAX(sc, arow1[dp_y] + tsc_v[1]);		
 		sc = ESL_MAX(sc, arow0[dp_y] + tsc_v[0]);		
 		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
+		switch (emitmode) {
 		case EMITLEFT:
 		  sc += esc_v[dsq[i--]];
 		  break;
@@ -276,7 +280,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		sc = ESL_MAX(sc, arow0[dp_y] + tsc_v[0]);		
 		
 		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
+		switch (emitmode) {
 		case EMITLEFT:
 		  sc += esc_v[dsq[i--]];
 		  break;
@@ -304,7 +308,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		sc = ESL_MAX(sc, arow0[dp_y] + tsc_v[0]);		
 
 		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
+		switch (emitmode) {
 		case EMITRIGHT:
 		  sc += esc_j;
 		  break;		
@@ -325,7 +329,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		sc = ESL_MAX(arow1[dp_y] + tsc_v[1],
 			     init_scAA[v][dp_y]);
 		sc = ESL_MAX(sc, arow0[dp_y] + tsc_v[0]);		
-		switch (emitmodeA[v]) {
+		switch (emitmode) {
 		case EMITLEFT:
 		  sc += esc_v[dsq[i--]];
 		  break;
@@ -353,7 +357,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	    float const *arow5;
 
 	    /* Note: order of cnum cases in switch and cases in each
-	     * nested emitmodeA[v] switch is based on empirical
+	     * nested emitmode switch is based on empirical
 	     * frequency in large test set, more frequent guys come
 	     * earlier, so average num calcs in each switch is
 	     * minimized.
@@ -437,7 +441,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	      break; 
 	    } /* end of switch(cnum) */
 	    /* add in emission score (if any), and set alpha[jp_v][v][d] cell */
-	    switch (emitmodeA[v]) {
+	    switch (emitmode) {
 	    case EMITLEFT:
 	      for (d = dn; d <= dx; d++) {
 		alpha[jp_v][v][d] = sc_v[d] + esc_v[dsq[i--]];
@@ -457,7 +461,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		alpha[jp_v][v][d] = sc_v[d] + esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
 	      }
 	      break;
-	    } /* end of switch (emitmodeA[v]) */
+	    } /* end of switch (emitmode) */
 	  } /* end of else (cm->sttype[v] != B_st && cm->stid[v] !=  BEGL_S st && cm->sttype[v] != IL_st && cm->sttype[v] != IR_st) */
 	  if(vsc != NULL) {
 	    if(cm->stid[v] != BEGL_S) for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha[jp_v][v][d]);
@@ -539,6 +543,8 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   if(gamma != NULL) cm_FreeGammaHitMx(gamma);
   free(jp_wA);
   free(sc_v);
+  free(init_scAA[0]);
+  free(init_scAA);
   if (ret_vsc != NULL) *ret_vsc         = vsc;
   
   ESL_DPRINTF1(("FastCYKScan() return score: %10.4f\n", vsc_root)); 
@@ -641,16 +647,18 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   ESL_ALLOC(sc_v, (sizeof(float) * (W+1)));
   esl_vec_ISet(sc_v, (W+1), -INFTY);
 
+  /* precalculate the initial scores for all cells */
+  int **init_scAA;
+  init_scAA = ICalcInitDPScores(cm);
+
   /* make pointers to the ScanInfo data for convenience */
   int  ***alpha      = si->ialpha;
   int  ***alpha_begl = si->ialpha_begl;
   int   **dnAA       = si->dnAA;
   int   **dxAA       = si->dxAA;
-  int    *emitmodeA  = si->emitmodeA;
-  int   **esc_vAA    = si->iesc_vAA;
-  int   **init_scAA  = si->iinit_scAA;
   int    *dmin       = si->dmin;
   int    *dmax       = si->dmax;
+  int   **esc_vAA    = cm->ioesc;
 
   /* The main loop: scan the sequence from position i0 to j0.
    */
@@ -671,6 +679,8 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	  if(cm->sttype[v] == E_st) continue;
 	  int const *esc_v = esc_vAA[v]; 
 	  int const *tsc_v = cm->itsc[v];
+	  int emitmode = Emitmode(cm->sttype[v]);
+
 	  /* float sc; */
 	  jp_v = (cm->stid[v] == BEGL_S) ? (j % (W+1)) : cur;
 	  jp_y = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
@@ -728,7 +738,7 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	    int const *arow5;
 
 	    /* Note: order of cnum cases in switch and cases in each
-	     * nested emitmodeA[v] switch is based on empirical
+	     * nested emitmode switch is based on empirical
 	     * frequency in large test set, more frequent guys come
 	     * earlier, so average num calcs in each switch is
 	     * minimized.
@@ -748,7 +758,7 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		sc = ILogsum(sc, arow0[dp_y] + tsc_v[0]);		
 		
 		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
+		switch (emitmode) {
 		case EMITLEFT:
 		  sc += esc_v[dsq[i--]];
 		  break;
@@ -777,7 +787,7 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		sc = ILogsum(sc, arow1[dp_y] + tsc_v[1]);		
 		sc = ILogsum(sc, arow0[dp_y] + tsc_v[0]);		
 		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
+		switch (emitmode) {
 		case EMITLEFT:
 		  sc += esc_v[dsq[i--]];
 		  break;
@@ -803,7 +813,7 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		sc = ILogsum(sc, arow0[dp_y] + tsc_v[0]);		
 		
 		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
+		switch (emitmode) {
 		case EMITLEFT:
 		  sc += esc_v[dsq[i--]];
 		  break;
@@ -831,7 +841,7 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		sc = ILogsum(sc, arow0[dp_y] + tsc_v[0]);		
 
 		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
+		switch (emitmode) {
 		case EMITRIGHT:
 		  sc += esc_j;
 		  break;		
@@ -852,7 +862,7 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		sc = ILogsum(arow1[dp_y] + tsc_v[1],
 			     init_scAA[v][dp_y]);
 		sc = ILogsum(sc, arow0[dp_y] + tsc_v[0]);		
-		switch (emitmodeA[v]) {
+		switch (emitmode) {
 		case EMITLEFT:
 		  sc += esc_v[dsq[i--]];
 		  break;
@@ -880,7 +890,7 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	    int const *arow5;
 
 	    /* Note: order of cnum cases in switch and cases in each
-	     * nested emitmodeA[v] switch is based on empirical
+	     * nested emitmode switch is based on empirical
 	     * frequency in large test set, more frequent guys come
 	     * earlier, so average num calcs in each switch is
 	     * minimized.
@@ -964,7 +974,7 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	      break; 
 	    } /* end of switch(cnum) */
 	    /* add in emission score (if any), and set alpha[jp_v][v][d] cell */
-	    switch (emitmodeA[v]) {
+	    switch (emitmode) {
 	    case EMITLEFT:
 	      for (d = dn; d <= dx; d++) {
 		alpha[jp_v][v][d] = sc_v[d] + esc_v[dsq[i--]];
@@ -984,7 +994,7 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		alpha[jp_v][v][d] = sc_v[d] + esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
 	      }
 	      break;
-	    } /* end of switch (emitmodeA[v]) */
+	    } /* end of switch (emitmode) */
 	  } /* end of else (cm->sttype[v] != B_st && cm->stid[v] !=  BEGL_S st && cm->sttype[v] != IL_st && cm->sttype[v] != IR_st) */
 	  if(vsc != NULL) {
 	    if(cm->stid[v] != BEGL_S) for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], Scorify(alpha[jp_v][v][d]));
@@ -1048,6 +1058,8 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   if(gamma != NULL) cm_FreeGammaHitMx(gamma);
   free(jp_wA);
   free(sc_v);
+  free(init_scAA[0]);
+  free(init_scAA);
   if (ret_vsc != NULL) *ret_vsc = vsc;
   
   ESL_DPRINTF1(("FastIInsideScan() return score: %10.4f\n", vsc_root)); 
@@ -1152,16 +1164,18 @@ RefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   ESL_ALLOC(sc_v, (sizeof(float) * (W+1)));
   esl_vec_ISet(sc_v, (W+1), -INFTY);
 
+  /* precalculate the initial scores for all cells */
+  int **init_scAA;
+  init_scAA = ICalcInitDPScores(cm);
+
   /* make pointers to the ScanInfo data for convenience */
   int  ***alpha      = si->ialpha;
   int  ***alpha_begl = si->ialpha_begl;
   int   **dnAA       = si->dnAA;
   int   **dxAA       = si->dxAA;
-  int    *emitmodeA  = si->emitmodeA;
-  int   **esc_vAA    = si->iesc_vAA;
-  int   **init_scAA  = si->iinit_scAA;
   int    *dmin       = si->dmin;
   int    *dmax       = si->dmax;
+  int   **esc_vAA    = cm->ioesc;
 
   /* The main loop: scan the sequence from position i0 to j0.
    */
@@ -1182,6 +1196,8 @@ RefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	  if(cm->sttype[v] == E_st) continue;
 	  int const *esc_v = esc_vAA[v]; 
 	  int const *tsc_v = cm->itsc[v];
+	  int emitmode = Emitmode(cm->sttype[v]);
+
 	  /* float sc; */
 	  jp_v = (cm->stid[v] == BEGL_S) ? (j % (W+1)) : cur;
 	  jp_y = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
@@ -1232,7 +1248,7 @@ RefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		sc = ILogsum(sc, alpha[jp_y][y+yoffset][d - sd] + tsc_v[yoffset]);
 
-	      switch (emitmodeA[v]) {
+	      switch (emitmode) {
 	      case EMITLEFT:
 		alpha[jp_v][v][d] = sc + esc_v[dsq[i--]];
 		break;
@@ -1245,7 +1261,7 @@ RefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	      case EMITPAIR:
 		alpha[jp_v][v][d] = sc + esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
 		break;
-	      } /* end of switch emitmodeA[v] */
+	      } /* end of switch emitmode */
 	    } /* end of for d loop */
 	  } /* end of else (which was entered if ! B_st && ! BEGL_S st) */
 	  if(vsc != NULL) {
@@ -1308,6 +1324,8 @@ RefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   if(gamma != NULL) cm_FreeGammaHitMx(gamma);
   free(jp_wA);
   free(sc_v);
+  free(init_scAA[0]);
+  free(init_scAA);
   if (ret_vsc != NULL) *ret_vsc = vsc;
   
   ESL_DPRINTF1(("FastCYKScan() return score: %10.4f\n", vsc_root)); 
@@ -1408,16 +1426,18 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   ESL_ALLOC(sc_v, (sizeof(float) * (W+1)));
   esl_vec_FSet(sc_v, (W+1), IMPOSSIBLE);
 
+  /* precalculate the initial scores for all cells */
+  float **init_scAA;
+  init_scAA = FCalcInitDPScores(cm);
+
   /* make pointers to the ScanInfo data for convenience */
   float ***alpha      = si->falpha;
   float ***alpha_begl = si->falpha_begl;
   int   **dnAA        = si->dnAA;
   int   **dxAA        = si->dxAA;
-  int    *emitmodeA   = si->emitmodeA;
-  float  **esc_vAA    = si->fesc_vAA;
-  float **init_scAA   = si->finit_scAA;
   int    *dmin        = si->dmin;
   int    *dmax        = si->dmax;
+  float **esc_vAA     = cm->oesc;
 
   /* The main loop: scan the sequence from position i0 to j0.
    */
@@ -1438,6 +1458,8 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	  if(cm->sttype[v] == E_st) continue;
 	  float const *esc_v = esc_vAA[v]; 
 	  float const *tsc_v = cm->tsc[v];
+	  int emitmode = Emitmode(cm->sttype[v]);
+
 	  /* float sc; */
 	  jp_v = (cm->stid[v] == BEGL_S) ? (j % (W+1)) : cur;
 	  jp_y = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
@@ -1495,7 +1517,7 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	    float const *arow5;
 
 	    /* Note: order of cnum cases in switch and cases in each
-	     * nested emitmodeA[v] switch is based on empirical
+	     * nested emitmode switch is based on empirical
 	     * frequency in large test set, more frequent guys come
 	     * earlier, so average num calcs in each switch is
 	     * minimized.
@@ -1515,7 +1537,7 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		sc = FLogsum(sc, arow0[dp_y] + tsc_v[0]);		
 		
 		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
+		switch (emitmode) {
 		case EMITLEFT:
 		  sc += esc_v[dsq[i--]];
 		  break;
@@ -1544,7 +1566,7 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		sc = FLogsum(sc, arow1[dp_y] + tsc_v[1]);		
 		sc = FLogsum(sc, arow0[dp_y] + tsc_v[0]);		
 		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
+		switch (emitmode) {
 		case EMITLEFT:
 		  sc += esc_v[dsq[i--]];
 		  break;
@@ -1570,7 +1592,7 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		sc = FLogsum(sc, arow0[dp_y] + tsc_v[0]);		
 		
 		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
+		switch (emitmode) {
 		case EMITLEFT:
 		  sc += esc_v[dsq[i--]];
 		  break;
@@ -1598,7 +1620,7 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		sc = FLogsum(sc, arow0[dp_y] + tsc_v[0]);		
 
 		/* add in emission score, if any */
-		switch (emitmodeA[v]) {
+		switch (emitmode) {
 		case EMITRIGHT:
 		  sc += esc_j;
 		  break;		
@@ -1619,7 +1641,7 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		sc = FLogsum(arow1[dp_y] + tsc_v[1],
 			     init_scAA[v][dp_y]);
 		sc = FLogsum(sc, arow0[dp_y] + tsc_v[0]);		
-		switch (emitmodeA[v]) {
+		switch (emitmode) {
 		case EMITLEFT:
 		  sc += esc_v[dsq[i--]];
 		  break;
@@ -1647,7 +1669,7 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	    float const *arow5;
 
 	    /* Note: order of cnum cases in switch and cases in each
-	     * nested emitmodeA[v] switch is based on empirical
+	     * nested emitmode switch is based on empirical
 	     * frequency in large test set, more frequent guys come
 	     * earlier, so average num calcs in each switch is
 	     * minimized.
@@ -1731,7 +1753,7 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	      break; 
 	    } /* end of switch(cnum) */
 	    /* add in emission score (if any), and set alpha[jp_v][v][d] cell */
-	    switch (emitmodeA[v]) {
+	    switch (emitmode) {
 	    case EMITLEFT:
 	      for (d = dn; d <= dx; d++) {
 		alpha[jp_v][v][d] = sc_v[d] + esc_v[dsq[i--]];
@@ -1751,7 +1773,7 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 		alpha[jp_v][v][d] = sc_v[d] + esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
 	      }
 	      break;
-	    } /* end of switch (emitmodeA[v]) */
+	    } /* end of switch (emitmode) */
 	  } /* end of else (cm->sttype[v] != B_st && cm->stid[v] !=  BEGL_S st && cm->sttype[v] != IL_st && cm->sttype[v] != IR_st) */
 	  if(vsc != NULL) {
 	    if(cm->stid[v] != BEGL_S) for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha[jp_v][v][d]);
@@ -1815,6 +1837,8 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   if(gamma != NULL) cm_FreeGammaHitMx(gamma);
   free(jp_wA);
   free(sc_v);
+  free(init_scAA[0]);
+  free(init_scAA);
   if (ret_vsc != NULL) *ret_vsc = vsc;
   
   ESL_DPRINTF1(("FastCYKScan() return score: %10.4f\n", vsc_root)); 
@@ -1919,17 +1943,19 @@ RefCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   ESL_ALLOC(sc_v, (sizeof(float) * (W+1)));
   esl_vec_FSet(sc_v, (W+1), IMPOSSIBLE);
 
+  /* precalculate the initial scores for all cells */
+  float **init_scAA;
+  init_scAA = FCalcInitDPScores(cm);
+
   /* make pointers to the ScanInfo data for convenience */
   float ***alpha      = si->falpha;
   float ***alpha_begl = si->falpha_begl;
   int   **dnAA        = si->dnAA;
   int   **dxAA        = si->dxAA;
-  int    *emitmodeA   = si->emitmodeA;
-  float  **esc_vAA    = si->fesc_vAA;
-  float **init_scAA   = si->finit_scAA;
   int    *bestr       = si->bestr;
   int    *dmin        = si->dmin;
   int    *dmax        = si->dmax;
+  float  **esc_vAA    = cm->oesc;
 
   /* The main loop: scan the sequence from position i0 to j0.
    */
@@ -1950,6 +1976,8 @@ RefCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	  if(cm->sttype[v] == E_st) continue;
 	  float const *esc_v = esc_vAA[v]; 
 	  float const *tsc_v = cm->tsc[v];
+	  int emitmode = Emitmode(cm->sttype[v]);
+
 	  /* float sc; */
 	  jp_v = (cm->stid[v] == BEGL_S) ? (j % (W+1)) : cur;
 	  jp_y = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
@@ -2000,7 +2028,7 @@ RefCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		sc = ESL_MAX(sc, alpha[jp_y][y+yoffset][d - sd] + cm->tsc[v][yoffset]);
 
-	      switch (emitmodeA[v]) {
+	      switch (emitmode) {
 	      case EMITLEFT:
 		alpha[jp_v][v][d] = sc + esc_v[dsq[i--]];
 		break;
@@ -2013,7 +2041,7 @@ RefCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	      case EMITPAIR:
 		alpha[jp_v][v][d] = sc + esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
 		break;
-	      } /* end of switch emitmodeA[v] */
+	      } /* end of switch emitmode */
 	    } /* end of for d loop */
 	  } /* end of else (which was entered if ! B_st && ! BEGL_S st) */
 	  if(vsc != NULL) {
@@ -2094,6 +2122,8 @@ RefCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   if(gamma != NULL) cm_FreeGammaHitMx(gamma);
   free(jp_wA);
   free(sc_v);
+  free(init_scAA[0]);
+  free(init_scAA);
   if (ret_vsc != NULL) *ret_vsc         = vsc;
   
   ESL_DPRINTF1(("RefCYKScan() return score: %10.4f\n", vsc_root)); 
@@ -2198,16 +2228,18 @@ RefFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   ESL_ALLOC(sc_v, (sizeof(float) * (W+1)));
   esl_vec_FSet(sc_v, (W+1), IMPOSSIBLE);
 
+  /* precalculate the initial scores for all cells */
+  float **init_scAA;  
+  init_scAA = FCalcInitDPScores(cm);
+
   /* make pointers to the ScanInfo data for convenience */
   float ***alpha      = si->falpha;
   float ***alpha_begl = si->falpha_begl;
   int   **dnAA        = si->dnAA;
   int   **dxAA        = si->dxAA;
-  int    *emitmodeA   = si->emitmodeA;
-  float  **esc_vAA    = si->fesc_vAA;
-  float **init_scAA   = si->finit_scAA;
   int    *dmin        = si->dmin;
   int    *dmax        = si->dmax;
+  float  **esc_vAA    = cm->oesc;
 
   /* The main loop: scan the sequence from position i0 to j0.
    */
@@ -2228,6 +2260,8 @@ RefFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	  if(cm->sttype[v] == E_st) continue;
 	  float const *esc_v = esc_vAA[v]; 
 	  float const *tsc_v = cm->tsc[v];
+	  int emitmode = Emitmode(cm->sttype[v]);
+
 	  /* float sc; */
 	  jp_v = (cm->stid[v] == BEGL_S) ? (j % (W+1)) : cur;
 	  jp_y = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
@@ -2278,7 +2312,7 @@ RefFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		sc = FLogsum(sc, alpha[jp_y][y+yoffset][d - sd] + cm->tsc[v][yoffset]);
 
-	      switch (emitmodeA[v]) {
+	      switch (emitmode) {
 	      case EMITLEFT:
 		alpha[jp_v][v][d] = sc + esc_v[dsq[i--]];
 		break;
@@ -2291,7 +2325,7 @@ RefFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 	      case EMITPAIR:
 		alpha[jp_v][v][d] = sc + esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
 		break;
-	      } /* end of switch emitmodeA[v] */
+	      } /* end of switch emitmode */
 	    } /* end of for d loop */
 	  } /* end of else (which was entered if ! B_st && ! BEGL_S st) */
 	  if(vsc != NULL) {
@@ -2354,6 +2388,8 @@ RefFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   if(gamma != NULL) cm_FreeGammaHitMx(gamma);
   free(jp_wA);
   free(sc_v);
+  free(init_scAA[0]);
+  free(init_scAA);
   if (ret_vsc != NULL) *ret_vsc         = vsc;
   
   ESL_DPRINTF1(("RefFInsideScan() return score: %10.4f\n", vsc_root)); 
@@ -3851,6 +3887,7 @@ main(int argc, char **argv)
 
  ERROR:
   cm_Fail("memory allocation error");
+  return 0; /* never reached */
 }
 #endif /*IMPL_FASTSEARCH_BENCHMARK*/
 

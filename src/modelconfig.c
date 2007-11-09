@@ -1217,27 +1217,27 @@ CMHackInsertScores(CM_t *cm)
 	    cm->iesc[v][x] = 0;
 	  }
     }
-  if(cm->flags & CMH_SCANINFO) { 
-    if(cm->si->flags & cmSI_HAS_INT) { 
-      for (v = 0; v < cm->M; v++)
-	{
-	  if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
-	    for (x = 0; x < cm->abc->K; x++)
-	      cm->si->iesc_vAA[v][x]  = 0;
+  if(cm->ioesc != NULL) { 
+    for (v = 0; v < cm->M; v++)
+      {
+	if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) { 
+	  for (x = 0; x < cm->abc->K; x++)
+	    cm->ioesc[v][x]  = 0;
 	  for(x = cm->abc->K+1; x < cm->abc->Kp-1; x++) /* note boundary conditions, gap, missing data symbols stay IMPOSSIBLE */
-	      cm->si->iesc_vAA[v][x]  = 0;
+	    cm->ioesc[v][x]  = 0;
 	}
-    }
-    if(cm->si->flags & cmSI_HAS_FLOAT) { 
-      for (v = 0; v < cm->M; v++)
-	{
-	  if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
-	    for (x = 0; x < cm->abc->K; x++)
-	      cm->si->fesc_vAA[v][x]  = 0.;
+      }
+  }
+  if(cm->oesc != NULL) { 
+    for (v = 0; v < cm->M; v++)
+      {
+	if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
+	  for (x = 0; x < cm->abc->K; x++)
+	    cm->oesc[v][x]  = 0.;
 	  for(x = cm->abc->K+1; x < cm->abc->Kp-1; x++) /* note boundary conditions, gap, missing data symbols stay IMPOSSIBLE */
-	      cm->si->fesc_vAA[v][x]  = 0.;
+	    cm->oesc[v][x]  = 0.;
 	}
-    }
+      }
   }
 
   if(cm->cp9 != NULL)

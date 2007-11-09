@@ -48,27 +48,6 @@ cm_CreateScanInfo(CM_t *cm, int do_float, int do_int)
   si->dmax  = cm->dmax; /* could be NULL */
   do_banded = (cm->search_opts & CM_SEARCH_NOQDB) ? FALSE : TRUE;
 
-  /* fill emitmodeA */
-  ESL_ALLOC(si->emitmodeA, sizeof(int) * cm->M);
-  for(v = 0; v < cm->M; v++) {
-    switch (cm->sttype[v]) {
-    case IL_st:
-    case ML_st:
-      si->emitmodeA[v] = EMITLEFT;
-      break;
-    case IR_st:
-    case MR_st:
-      si->emitmodeA[v] = EMITRIGHT;
-      break;		
-    case MP_st:
-      si->emitmodeA[v] = EMITPAIR;
-      break;		
-    default:
-      si->emitmodeA[v] = EMITNONE;
-      break;
-    }
-  }
-
   /* precalculate minimum and maximum d for each state and each sequence index (1..j..W). 
    * this is not always just dmin, dmax, (for ex. if j < W). */
   ESL_ALLOC(si->dnAA, sizeof(int *) * (si->W+1));
@@ -123,15 +102,9 @@ cm_CreateScanInfo(CM_t *cm, int do_float, int do_int)
 
   si->falpha       = NULL;
   si->falpha_begl  = NULL;
-  si->fesc_vAA     = NULL;
-  si->finit_scAA   = NULL;
-  si->fel_scA      = NULL;
 
   si->ialpha      = NULL;
   si->ialpha_begl = NULL;
-  si->iesc_vAA    = NULL;
-  si->iinit_scAA  = NULL;
-  si->iel_scA     = NULL;
 
   cm->si = si;
   if(do_float) /* allocate float mx and scores */
@@ -193,9 +166,6 @@ cm_FloatizeScanInfo(CM_t *cm)
   if(cm->si == NULL) cm_Fail("cm_FloatizeScanInfo(), cm->si is NULL.\n");
   ScanInfo_t *si = cm->si;
   if(si->flags & cmSI_HAS_FLOAT) cm_Fail("cm_FloatizeScanInfo(), si's cmSI_HAS_FLOAT flag is already up.");
-  if(si->fesc_vAA != NULL)     cm_Fail("cm_FloatizeScanInfo(), si->fesc_vAA is not NULL.");
-  if(si->fel_scA != NULL)      cm_Fail("cm_FloatizeScanInfo(), si->fel_scA is not NULL.");
-  if(si->finit_scAA != NULL)   cm_Fail("cm_FloatizeScanInfo(), si->finit_scAA is not NULL.");
   if(si->falpha != NULL)       cm_Fail("cm_FloatizeScanInfo(), si->falpha is not NULL.");
   if(si->falpha_begl != NULL)  cm_Fail("cm_FloatizeScanInfo(), si->falpha_begl is not NULL.");
   
@@ -278,26 +248,6 @@ cm_FloatizeScanInfo(CM_t *cm)
       }
     }
   }
-  /* done with falpha, now precalculate all other scores that we can */
-
-  /* precalculate possible emission scores for each state */
-  si->fesc_vAA  = FCalcOptimizedEmitScores(cm);
-  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
-  ESL_ALLOC(si->fel_scA, sizeof(float) * (si->W+1));
-  for(d = 0; d <= si->W; d++) si->fel_scA[d] = cm->el_selfsc * d;
-  /* precalculate the initial score for all falpha[v][j][d] cells, it's independent of j 
-   * these scores ignore bands, (that is cells outside bands still have initsc's calc'ed)
-   * it's up to the DP function to skip these cells. */
-  ESL_ALLOC(si->finit_scAA, sizeof(float *) * (cm->M));
-  for (v = 0; v < cm->M; v++) {
-    ESL_ALLOC(si->finit_scAA[v], sizeof(float) * (si->W+1));
-    if(NOT_IMPOSSIBLE(cm->endsc[v]))
-      for(d = 0; d <= si->W; d++)
-	si->finit_scAA[v][d] = si->fel_scA[d] + cm->endsc[v];
-    else
-      for(d = 0; d <= si->W; d++)
-	si->finit_scAA[v][d] = IMPOSSIBLE;
-  }
   /* set the flag that tells us we've got valid floats */
   si->flags |= cmSI_HAS_FLOAT;
   return eslOK;
@@ -329,9 +279,6 @@ cm_IntizeScanInfo(CM_t *cm)
   if(cm->si == NULL) cm_Fail("cm_IntizeScanInfo(), cm->si is NULL.\n");
   ScanInfo_t *si = cm->si;
   if(si->flags & cmSI_HAS_INT) cm_Fail("cm_IntizeScanInfo(), si's cmSI_HAS_INT flag is already up.");
-  if(si->iesc_vAA != NULL)     cm_Fail("cm_IntizeScanInfo(), si->iesc_vAA is not NULL.");
-  if(si->iel_scA != NULL)      cm_Fail("cm_IntizeScanInfo(), si->iel_scA is not NULL.");
-  if(si->iinit_scAA != NULL)   cm_Fail("cm_IntizeScanInfo(), si->iinit_scAA is not NULL.");
   if(si->ialpha != NULL)       cm_Fail("cm_IntizeScanInfo(), si->ialpha is not NULL.");
   if(si->ialpha_begl != NULL)  cm_Fail("cm_IntizeScanInfo(), si->ialpha_begl is not NULL.");
 
@@ -413,25 +360,6 @@ cm_IntizeScanInfo(CM_t *cm)
 	    si->ialpha_begl[j][v][d] = -INFTY;
       }
     }
-  } /* done with ialpha, now precalculate all other scores that we can */
-
-    /* precalculate possible emission scores for each state */
-  si->iesc_vAA = ICalcOptimizedEmitScores(cm);
-  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
-  ESL_ALLOC(si->iel_scA, sizeof(int) * (si->W+1));
-  for(d = 0; d <= si->W; d++) si->iel_scA[d] = cm->iel_selfsc * d;
-  /* precalculate the initial score for all alpha[v][j][d] cells, it's independent of j 
-   * these scores ignore bands, (that is cells outside bands still have initsc's calc'ed)
-   * it's up to the DP function to skip these cells. */
-  ESL_ALLOC(si->iinit_scAA, sizeof(int *) * (cm->M));
-  for (v = 0; v < cm->M; v++) {
-    ESL_ALLOC(si->iinit_scAA[v], sizeof(int) * (si->W+1));
-    if(cm->iendsc[v] != -INFTY)
-      for(d = 0; d <= si->W; d++)
-	si->iinit_scAA[v][d] = si->iel_scA[d] + cm->iendsc[v];
-    else
-      for(d = 0; d <= si->W; d++)
-	si->iinit_scAA[v][d] = -INFTY;
   }
   /* set the flag that tells us we've got valid ints */
   si->flags |= cmSI_HAS_INT;
@@ -459,23 +387,9 @@ cm_FreeFloatsFromScanInfo(CM_t *cm)
   if(cm->si == NULL) cm_Fail("cm_FreeFloatsFromScanInfo(), cm->si is NULL.\n");
   ScanInfo_t *si = cm->si;
   if(! si->flags & cmSI_HAS_FLOAT)    cm_Fail("cm_FreeFloatsFromScanInfo(), si's cmSI_HAS_FLOAT flag is down.");
-  if(si->fesc_vAA == NULL)     cm_Fail("cm_FreeFloatsFromScanInfo(), si->fesc_vAA is already NULL.");
-  if(si->fel_scA == NULL)      cm_Fail("cm_FreeFloatsFromScanInfo(), si->fel_scA is already NULL.");
-  if(si->finit_scAA == NULL)   cm_Fail("cm_FreeFloatsFromScanInfo(), si->finit_scAA is already NULL.");
   if(si->falpha == NULL)       cm_Fail("cm_FreeFloatsFromScanInfo(), si->falpha is already NULL.");
   if(si->falpha_begl == NULL)  cm_Fail("cm_FreeFloatsFromScanInfo(), si->falpha_begl is already NULL.");
 
-  for(v = 0; v < cm->M; v++) {
-    free(si->finit_scAA[v]);
-    free(si->fesc_vAA[v]);
-  }
-  free(si->finit_scAA);
-  free(si->fesc_vAA);
-  free(si->fel_scA);
-  si->finit_scAA = NULL;
-  si->fesc_vAA = NULL;
-  si->fel_scA = NULL;
-  /* free falpha and falpha_begl */
   free(si->falpha[0][0]);
   free(si->falpha[1]);
   free(si->falpha[0]);
@@ -510,23 +424,9 @@ cm_FreeIntsFromScanInfo(CM_t *cm)
   if(cm->si == NULL) cm_Fail("cm_FreeIntsFromScanInfo(), cm->si is NULL.\n");
   ScanInfo_t *si = cm->si;
   if(! si->flags & cmSI_HAS_INT)    cm_Fail("cm_FreeIntsFromScanInfo(), si's cmSI_HAS_INT flag is down.");
-  if(si->iesc_vAA == NULL)     cm_Fail("cm_FreeIntsFromScanInfo(), si->iesc_vAA is already NULL.");
-  if(si->iel_scA == NULL)      cm_Fail("cm_FreeIntsFromScanInfo(), si->iel_scA is already NULL.");
-  if(si->iinit_scAA == NULL)   cm_Fail("cm_FreeIntsFromScanInfo(), si->iinit_scAA is already NULL.");
   if(si->ialpha == NULL)       cm_Fail("cm_FreeIntsFromScanInfo(), si->ialpha is already NULL.");
   if(si->ialpha_begl == NULL)  cm_Fail("cm_FreeIntsFromScanInfo(), si->ialpha_begl is already NULL.");
 
-  for(v = 0; v < cm->M; v++) {
-    free(si->iinit_scAA[v]);
-    free(si->iesc_vAA[v]);
-  }
-  free(si->iinit_scAA);
-  free(si->iesc_vAA);
-  free(si->iel_scA);
-  si->iinit_scAA = NULL;
-  si->iesc_vAA = NULL;
-  si->iel_scA = NULL;
-  /* free ialpha and ialpha_begl */
   free(si->ialpha[0][0]);
   free(si->ialpha[1]);
   free(si->ialpha[0]);
@@ -565,7 +465,6 @@ cm_FreeScanInfo(CM_t *cm)
   }
   free(si->dnAA);
   free(si->dxAA);
-  free(si->emitmodeA);
   free(si->bestr);
   
   if(si->flags & cmSI_HAS_FLOAT) cm_FreeFloatsFromScanInfo(cm);
@@ -760,4 +659,121 @@ ICalcOptimizedEmitScores(CM_t *cm)
   return NULL; /* NEVERREACHED */
 }
 
+/* Function: FreeOptimizedEmitScores()
+ * Date:     EPN, Fri Nov  9 08:44:06 2007
+ *
+ * Purpose:  Free 2D vectors of optimized emissions scores.
+ *           Either fesc_vAA or iesc_vAA (or both) must be non-NULL.
+ *            
+ * Returns:  void
+ */
+void
+FreeOptimizedEmitScores(float **fesc_vAA, int **iesc_vAA, int M)
+{
+  int v;
+  if(fesc_vAA == NULL && iesc_vAA == NULL) cm_Fail("FreeOptimizedEmitScores() but fesc and iesc are NULL.\n");
+
+  if(fesc_vAA != NULL) { 
+    for(v = 0; v < M; v++) 
+      if(fesc_vAA[v] != NULL) free(fesc_vAA[v]);
+    free(fesc_vAA);
+    fesc_vAA = NULL;
+  }
+
+  if(iesc_vAA != NULL) { 
+    for(v = 0; v < M; v++) 
+      if(iesc_vAA[v] != NULL) free(iesc_vAA[v]);
+    free(iesc_vAA);
+    iesc_vAA = NULL;
+  }
+  return;
+}
+
+
+/* Function: FCalcInitDPScores()
+ * Date:     EPN, Fri Nov  9 09:18:07 2007
+ *
+ * Purpose:  Allocate, fill and return the initial float scores
+ *           for a scanning DP matrix for CM <cm> as it's
+ *           currently configured. All [0..v..M-1][0..d..W]
+ *           cells are allocated and filled, it's up to 
+ *           the DP function to ignore cells outside bands.
+ *            
+ * Returns:  the 2D float init sc vector on success,
+ *           dies immediately on memory error.
+ */    
+float **
+FCalcInitDPScores(CM_t *cm)
+{
+  int status;
+  float *el_scA;
+  float **init_scAA;
+  int v, d;
+
+  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
+  ESL_ALLOC(el_scA, sizeof(float) * (cm->W+1));
+  for(d = 0; d <= cm->W; d++) el_scA[d] = cm->el_selfsc * d;
+  /* precalculate the initial score for all ialpha[v][j][d] cells, it's independent of j 
+   * these scores ignore bands, (that is cells outside bands still have initsc's calc'ed)
+   * it's up to the DP function to skip these cells. */
+  ESL_ALLOC(init_scAA,    sizeof(float *) * (cm->M));
+  ESL_ALLOC(init_scAA[0], sizeof(float)   * (cm->M) * (cm->W+1));
+  esl_vec_FSet(init_scAA[0], (cm->M * cm->W+1), IMPOSSIBLE); /* init the whole thing to IMPOSSIBLE */
+  for (v = 0; v < cm->M; v++) {
+    init_scAA[v] = init_scAA[0] + (v * (cm->W+1));
+    if(NOT_IMPOSSIBLE(cm->endsc[v]))
+      for(d = 0; d <= cm->W; d++)
+	init_scAA[v][d] = el_scA[d] + cm->endsc[v];
+  }
+  free(el_scA);
+  return init_scAA;
+
+ ERROR:
+  cm_Fail("memory allocation error.");
+  return NULL; /* NEVERREACHED */
+}
+
+
+/* Function: ICalcInitDPScores()
+ * Date:     EPN, Fri Nov  9 09:10:33 2007
+ *
+ * Purpose:  Allocate, fill and return the initial int scores
+ *           for a scanning DP matrix for CM <cm> as it's
+ *           currently configured. All [0..v..M-1][0..d..W]
+ *           cells are allocated and filled, it's up to 
+ *           the DP function to ignore cells outside bands.
+ *            
+ * Returns:  the 2D integer init sc vector on success,
+ *           dies immediately on memory error.
+ */    
+int **
+ICalcInitDPScores(CM_t *cm)
+{
+  int status;
+  int *el_scA;
+  int **init_scAA;
+  int v, d;
+
+  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
+  ESL_ALLOC(el_scA, sizeof(int) * (cm->W+1));
+  for(d = 0; d <= cm->W; d++) el_scA[d] = cm->iel_selfsc * d;
+  /* precalculate the initial score for all ialpha[v][j][d] cells, it's independent of j 
+   * these scores ignore bands, (that is cells outside bands still have initsc's calc'ed)
+   * it's up to the DP function to skip these cells. */
+  ESL_ALLOC(init_scAA,    sizeof(int *) * (cm->M));
+  ESL_ALLOC(init_scAA[0], sizeof(int)   * (cm->M) * (cm->W+1)); 
+  esl_vec_ISet(init_scAA[0], (cm->M * cm->W+1), -INFTY); /* init the whole thing to -INFTY */
+  for (v = 0; v < cm->M; v++) {
+    init_scAA[v] = init_scAA[0] + (v * (cm->W+1));
+    if(cm->iendsc[v] != -INFTY)
+      for(d = 0; d <= cm->W; d++)
+	init_scAA[v][d] = el_scA[d] + cm->iendsc[v];
+  }
+  free(el_scA);
+  return init_scAA;
+
+ ERROR:
+  cm_Fail("memory allocation error.");
+  return NULL; /* NEVERREACHED */
+}
 
