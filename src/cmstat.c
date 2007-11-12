@@ -232,7 +232,8 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   cm->dmax = tmp_dmax;
   cm->search_opts &= ~CM_SEARCH_NOQDB;
   cm->search_opts &= ~CM_SEARCH_INSIDE;
-  cm_UpdateScanInfo(cm);
+  cm_FreeScanInfo(cm);
+  cm_CreateScanInfo(cm, TRUE, TRUE);
   if(cm->si == NULL) cm_Fail("summarize_search(), CreateScanInfo() call failed.");
 
   /* qdb cyk */

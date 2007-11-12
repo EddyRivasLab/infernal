@@ -2,15 +2,23 @@
  * Optimized DP functions for HMM banded CM alignment.
  * 
  * Functions, and their non-optimized analogs: 
- * optimized version                slow, old, reference version
- * ----------------------------     ---------------------------------
- * fast_cyk_inside_align_hb()   --> hbandcyk.c:inside_b_jd_me()
- * fast_cyk_insideT_align_hb()  --> hbandcyk.c:insideT_b_jd_me()
- * FastCYKInsideAlignHB()       --> hbandcyk.c:CYKInside_b_jd()
- * FastFInsideAlignHB()         --> cm_postprob.c:FInside_b_jd_me()
- * FastFOutsideAlignHB()        --> cm_postprob.c:FOutside_b_jd_me()
- * FastIInsideAlignHB()         --> cm_postprob.c:IInside_b_jd_me()
- * FastIOutsideAlignHB()        --> cm_postprob.c:IOutside_b_jd_me()
+ * optimized version                slow, old, reference version      ~speedup
+ * ----------------------------     --------------------------------- --------
+ * fast_cyk_inside_align_hb()   --> hbandcyk.c:inside_b_jd_me()           1.5 
+ * fast_cyk_insideT_align_hb()  --> hbandcyk.c:insideT_b_jd_me()          N/A
+ * FastCYKInsideAlignHB()       --> hbandcyk.c:CYKInside_b_jd()           N/A
+ * FastFInsideAlignHB()         --> cm_postprob.c:FInside_b_jd_me()       1.4
+ * FastFOutsideAlignHB()        --> cm_postprob.c:FOutside_b_jd_me()      1.4
+ * FastIInsideAlignHB()         --> cm_postprob.c:IInside_b_jd_me()       1.25
+ * FastIOutsideAlignHB()        --> cm_postprob.c:IOutside_b_jd_me()      1.35
+ *
+ * In general the float versions of inside and outside are about 1.3 -
+ * 1.4X slower than the integer versions (for optimized and non-optimized).
+ * 
+ * Speedups are approximate, and based on tests with 2 models, an SSU
+ * model and a RNaseP model. Tests were performed with
+ * benchmark-fastalign, a standalone executable included at the end of
+ * this file that must be separately compiled
  * 
  * All functions use a specialized DP matrix, a CM_FHB_MX or 
  * CM_IHB_MX data structure which only allocates cells within
@@ -1466,7 +1474,7 @@ FastIOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
 								  + cm->itsc[y][voffset] + iescore));
 	    }
 	    break;
-	  case EMITRIGHT:  /* ML_st, IL_st */
+	  case EMITRIGHT:  /* MR_st, IR_st */
 	    iescore = esc_vAA[y][dsq[j+1]]; /* not dependent on i */
 	    for (d = dx; d >= dn; d--, dp_v--, dp_y--) { 
 	      ESL_DASSERT1((  d       >= hdmin[v][jp_v]        &&   d       <= hdmax[v][jp_v]));
@@ -1491,12 +1499,6 @@ FastIOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
 
     /* deal with local alignment end transitions v->EL (EL = deck at M.) */
     if (cm->iendsc[v] != -INFTY) {
-      assert(cm->sttype[v] != IL_st);  /* local ends from IL should be impossible */
-      assert(cm->sttype[v] != IR_st);  /* local ends from IR should be impossible */
-      assert(cm->sttype[v] != B_st);   /* local ends from B should be impossible */
-      assert(cm->stid[v]   != BEGL_S); /* local ends from BEGL_S should be impossible */
-      assert(cm->stid[v]   != BEGR_S); /* local ends from BEGR_S should be impossible */
-
       sdr = StateRightDelta(cm->sttype[v]); /* note sdr is for state v */
       sd  = StateDelta(cm->sttype[v]);      /* note sd  is for state v */
       emitmode = Emitmode(cm->sttype[v]);   /* note emitmode is for state v */
@@ -1534,7 +1536,7 @@ FastIOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
 	  }
 	  break;
 
-	case EMITRIGHT:  /* ML_st, IL_st */
+	case EMITRIGHT:  /* MR_st, IR_st */
 	  iescore = esc_vAA[v][dsq[j+1]]; /* not dependent on i */
 	  for (d = dx; d >= dn; d--, dp_v--) { 
 	    ESL_DASSERT1((((d + sd) >= hdmin[v][jp_v + sdr]) && ((d + sd) <= hdmax[v][jp_v + sdr])));
@@ -2367,7 +2369,7 @@ FastFOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
 								  + cm->tsc[y][voffset] + escore));
 	    }
 	    break;
-	  case EMITRIGHT:  /* ML_st, IL_st */
+	  case EMITRIGHT:  /* MR_st, IR_st */
 	    escore = esc_vAA[y][dsq[j+1]]; /* not dependent on i */
 	    for (d = dx; d >= dn; d--, dp_v--, dp_y--) { 
 	      ESL_DASSERT1((  d       >= hdmin[v][jp_v]        &&   d       <= hdmax[v][jp_v]));
@@ -2392,12 +2394,6 @@ FastFOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
 
     /* deal with local alignment end transitions v->EL (EL = deck at M.) */
     if (NOT_IMPOSSIBLE(cm->endsc[v])) {
-      assert(cm->sttype[v] != IL_st);  /* local ends from IL should be impossible */
-      assert(cm->sttype[v] != IR_st);  /* local ends from IR should be impossible */
-      assert(cm->sttype[v] != B_st);   /* local ends from B should be impossible */
-      assert(cm->stid[v]   != BEGL_S); /* local ends from BEGL_S should be impossible */
-      assert(cm->stid[v]   != BEGR_S); /* local ends from BEGR_S should be impossible */
-
       sdr = StateRightDelta(cm->sttype[v]); /* note sdr is for state v */
       sd  = StateDelta(cm->sttype[v]);      /* note sd  is for state v */
       emitmode = Emitmode(cm->sttype[v]);   /* note emitmode is for state v */
@@ -2435,7 +2431,7 @@ FastFOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
 	  }
 	  break;
 
-	case EMITRIGHT:  /* ML_st, IL_st */
+	case EMITRIGHT:  /* MR_st, IR_st */
 	  escore = esc_vAA[v][dsq[j+1]]; /* not dependent on i */
 	  for (d = dx; d >= dn; d--, dp_v--) { 
 	    ESL_DASSERT1((((d + sd) >= hdmin[v][jp_v + sdr]) && ((d + sd) <= hdmax[v][jp_v + sdr])));
@@ -2590,12 +2586,15 @@ static ESL_OPTIONS options[] = {
   { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of target seqs",                          0 },
   { "-L",        eslARG_INT,     NULL, NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs, default: consensus length", 0 },
   { "-o",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute original CYK HMM banded alignment implementation", 0 },
-  { "--scan",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "run in scan mode, not alignment mode", 0 },
+  //{ "--scan",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "run in scan mode, not alignment mode", 0 },
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "use posterior sums during HMM band calculation (widens bands)", 0 },
   { "--dlev",    eslARG_INT,    "0",   NULL, "0<=n<=3",NULL,NULL,NULL, "set verbosity of debugging print statements to <n>", 0 },
   { "--hmmcheck",eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "check that HMM posteriors are correctly calc'ed", 0 },
-  { "--fpost",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute float HMM banded Inside/Outside alignment algs", 0 },
-  { "--ipost",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute int   HMM banded Inside/Outside alignment algs", 0 },
+  { "--cmcheck", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "check that HMM posteriors are correctly calc'ed", 0 },
+  { "--fpost",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute fast float HMM banded Inside/Outside alignment algs", 0 },
+  { "--ipost",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute fast int   HMM banded Inside/Outside alignment algs", 0 },
+  { "--ofpost",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute slow float HMM banded Inside/Outside alignment algs", 0 },
+  { "--oipost",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute slow int   HMM banded Inside/Outside alignment algs", 0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -2629,6 +2628,11 @@ main(int argc, char **argv)
      FILE *fpslow; */
   /* Parsetree_t    *slowtr, *fasttr; */
 
+  int             ***oialpha;    
+  int             ***oibeta;     
+  float           ***ofalpha;    
+  float           ***ofbeta;     
+
   if (esl_opt_GetBoolean(go, "-r"))  r = esl_randomness_CreateTimeseeded();
   else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
 
@@ -2636,7 +2640,7 @@ main(int argc, char **argv)
   if(esl_opt_GetBoolean(go, "-e")) do_random = FALSE; 
 
   do_align = TRUE;
-  if(esl_opt_GetBoolean(go, "--scan")) do_align = FALSE; 
+  /* if(esl_opt_GetBoolean(go, "--scan")) do_align = FALSE; */
 
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
   if (!(CMFileRead(cmfp, &abc, &cm)))            cm_Fail("Failed to read CM");
@@ -2656,11 +2660,11 @@ main(int argc, char **argv)
     cm->align_opts  |= CM_ALIGN_HBANDED;
     if(esl_opt_GetBoolean(go, "--sums")) cm->align_opts |= CM_ALIGN_SUMS;
   }
-  else /* don't align, scan */ {
+  /*  else {
     cm->search_opts  |= CM_SEARCH_HBANDED;
     cm->search_opts  |= CM_SEARCH_HMMSCANBANDS;
     if(esl_opt_GetBoolean(go, "--sums")) cm->search_opts |= CM_SEARCH_SUMS;
-  }
+    }*/
   if(esl_opt_GetBoolean(go, "-l")) { 
     cm->config_opts  |= CM_CONFIG_LOCAL;
     cm->config_opts  |= CM_CONFIG_HMMLOCAL;
@@ -2698,7 +2702,7 @@ main(int argc, char **argv)
     fins_mx = cm_fhb_mx_Create(cm->M);
     fout_mx = cm_fhb_mx_Create(cm->M);
   }
-  int do_check = TRUE;
+  int do_check = esl_opt_GetBoolean(go, "--cmcheck");
   for (i = 0; i < N; i++)
     {
       L = seqs_to_aln->sq[i]->n;
@@ -2730,35 +2734,91 @@ main(int argc, char **argv)
       }
 
       if(esl_opt_GetBoolean(go, "--ipost")) {
-	do_check = FALSE;
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
 	sc = FastIInsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, cp9b, iins_mx);
-	printf("%4d %-30s %10.4f bits ", (i+1), "IInside_b_jd_me (): ", sc);
+	printf("%4d %-30s %10.4f bits ", (i+1), "FastIInsideAlignHB (): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
 	sc = FastIOutsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, cp9b, iout_mx, iins_mx, do_check);
-	printf("%4d %-30s %10.4f bits ", (i+1), "IOutside_b_jd_me (): ", sc);
+	printf("%4d %-30s %10.4f bits ", (i+1), "FastIOutsideAlignHB (): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
       }
 
       if(esl_opt_GetBoolean(go, "--fpost")) {
-	do_check = TRUE;
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
 	sc = FastFInsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, cp9b, fins_mx);
-	printf("%4d %-30s %10.4f bits ", (i+1), "FInside_b_jd_me (): ", sc);
+	printf("%4d %-30s %10.4f bits ", (i+1), "FastFInsideAlignHB (): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
 	sc = FastFOutsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, cp9b, fout_mx, fins_mx, do_check);
-	printf("%4d %-30s %10.4f bits ", (i+1), "FOutside_b_jd_me (): ", sc);
+	printf("%4d %-30s %10.4f bits ", (i+1), "FastFOutsideAlignHB (): ", sc);
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+      }
+
+      /* do old Inside/Outside if requested */
+      if(esl_opt_GetBoolean(go, "--oipost")) {
+	esl_stopwatch_Start(w);
+	/* need alpha matrix from Inside to do Outside */
+	sc = IInside_b_jd_me(cm, seqs_to_aln->sq[i]->dsq, 1, L,
+			     TRUE,	    /* save full alpha so we can run outside */
+			     NULL, &oialpha, /* fill alpha, and return it, needed for IOutside() */
+			     NULL, NULL,    /* manage your own deckpool, I don't want it */
+			     esl_opt_GetBoolean(go, "-l"), /* TRUE to allow local begins */
+			     cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+	printf("%4d %-30s %10.4f bits ", (i+1), "IInside_b_jd_me(): ", sc);
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+	esl_stopwatch_Start(w);
+	/* need alpha matrix from Inside to do Outside */
+	sc = IOutside_b_jd_me(cm, seqs_to_aln->sq[i]->dsq, 1, L,
+			      TRUE,	        /* save full beta */
+			      NULL, &oibeta,	/* fill beta, and return it, needed for ICMPosterior() */
+			      NULL, NULL,	/* manage your own deckpool, I don't want it */
+			      esl_opt_GetBoolean(go, "-l"), /* TRUE to allow local begins */
+			      oialpha, &oialpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
+			      do_check,      /* TRUE to check Outside probs agree with Inside */
+			      cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+	printf("%4d %-30s %10.4f bits ", (i+1), "IOutside_b_jd_me(): ", sc);
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+      }
+
+      /* do old Inside/Outside if requested */
+      if(esl_opt_GetBoolean(go, "--oipost")) {
+	esl_stopwatch_Start(w);
+	/* need alpha matrix from Inside to do Outside */
+	sc = FInside_b_jd_me(cm, seqs_to_aln->sq[i]->dsq, 1, L,
+			     TRUE,	    /* save full alpha so we can run outside */
+			     NULL, &ofalpha, /* fill alpha, and return it, needed for IOutside() */
+			     NULL, NULL,    /* manage your own deckpool, I don't want it */
+			     esl_opt_GetBoolean(go, "-l"), /* TRUE to allow local begins */
+			     cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+	printf("%4d %-30s %10.4f bits ", (i+1), "FInside_b_jd_me(): ", sc);
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+	esl_stopwatch_Start(w);
+	/* need alpha matrix from Inside to do Outside */
+	sc = FOutside_b_jd_me(cm, seqs_to_aln->sq[i]->dsq, 1, L,
+			      TRUE,	        /* save full beta */
+			      NULL, &ofbeta,	/* fill beta, and return it, needed for ICMPosterior() */
+			      NULL, NULL,	/* manage your own deckpool, I don't want it */
+			      esl_opt_GetBoolean(go, "-l"), /* TRUE to allow local begins */
+			      ofalpha, &ofalpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
+			      do_check,      /* TRUE to check Outside probs agree with Inside */
+			      cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+	printf("%4d %-30s %10.4f bits ", (i+1), "FOutside_b_jd_me(): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
       }
