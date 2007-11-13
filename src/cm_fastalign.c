@@ -18,7 +18,9 @@
  * Speedups are approximate, and based on tests with 2 models, an SSU
  * model and a RNaseP model. Tests were performed with
  * benchmark-fastalign, a standalone executable included at the end of
- * this file that must be separately compiled
+ * this file that must be separately compiled (version tested was
+ * subversion revision 2204, gcc -O2 compiled
+ *  EPN, Mon Nov 12 13:41:57 2007).
  * 
  * All functions use a specialized DP matrix, a CM_FHB_MX or 
  * CM_IHB_MX data structure which only allocates cells within

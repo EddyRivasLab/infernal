@@ -367,7 +367,6 @@ extern float iInsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, 
 extern int   ** alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
 extern char  ** alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
 
-
 /* from cm_fastsearch.c */
 extern float FastCYKScan    (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 			     search_results_t *results, float **ret_vsc);
@@ -375,6 +374,8 @@ extern float FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, floa
 			     search_results_t *results, float **ret_vsc);
 extern float  XFastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 			       search_results_t *results, float **ret_vsc);
+extern float  X2FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+				search_results_t *results, float **ret_vsc);
 extern float FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 			     search_results_t *results, float **ret_vsc);
 extern float RefCYKScan     (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
@@ -386,18 +387,9 @@ extern float XRefIInsideScan (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, flo
 extern float RefFInsideScan (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 			     search_results_t *results, float **ret_vsc);
 extern float rsearch_CYKScan (CM_t *cm, ESL_DSQ *dsq, int L, float cutoff, int D, search_results_t *results);
-extern float  FastCYKScan_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
-				  CM_FHB_MX *mx, int allow_begin, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b);
-
+extern float  FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
+			    CM_FHB_MX *mx, int allow_begin, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b);
 extern float       cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_vcalcs);
-
-extern cm_GammaHitMx_t *cm_CreateGammaHitMx     (int L, int i0, int be_greedy, float cutoff);
-extern void             cm_FreeGammaHitMx       (cm_GammaHitMx_t *gamma);
-extern void             cm_UpdateFloatGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int *bestr, float sc_boost, 
-				                 int doing_inside, search_results_t *results);
-extern void             cm_UpdateIntGammaHitMx  (cm_GammaHitMx_t *gamma, int j, int *alpha_row, int dn, int dx, int *bestr, float sc_boost, 
-				                 int doing_inside, search_results_t *results);
-extern void             cm_TBackGammaHitMx      (cm_GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
 
 /* from CP9_scan.c */
 extern float CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
@@ -855,16 +847,21 @@ extern int cm_CalcMaxSc(CM_t *cm, double **ret_maxsc, double **ret_maxsc_noss);
 extern Theta_t *cm_CalcTheta(CM_t *cm, Theta_t **ret_theta, float stepsize);
 
 /* from cm_scaninfo.c */
-extern int         cm_CreateScanInfo        (CM_t *cm, int do_float, int do_int);           
-extern int         cm_FloatizeScanInfo      (CM_t *cm);
-extern int         cm_IntizeScanInfo        (CM_t *cm);
-extern int         cm_UpdateScanInfo        (CM_t *cm);
-extern int         cm_FreeFloatsFromScanInfo(CM_t *cm);
-extern int         cm_FreeIntsFromScanInfo  (CM_t *cm);
-extern void        cm_FreeScanInfo          (CM_t *cm);
-extern void        cm_DumpScanInfoAlpha     (CM_t *cm, int j, int i0, int doing_float);
-extern float **    FCalcOptimizedEmitScores (CM_t *cm);
-extern int **      ICalcOptimizedEmitScores (CM_t *cm);
-extern void        FreeOptimizedEmitScores  (float **fesc_vAA, int **iesc_vAA, int M);
-extern float **    FCalcInitDPScores        (CM_t *cm);
-extern int **      ICalcInitDPScores        (CM_t *cm);
+extern int              cm_CreateScanInfo        (CM_t *cm, int do_float, int do_int);           
+extern int              cm_FloatizeScanInfo      (CM_t *cm);
+extern int              cm_IntizeScanInfo        (CM_t *cm);
+extern int              cm_UpdateScanInfo        (CM_t *cm);
+extern int              cm_FreeFloatsFromScanInfo(CM_t *cm);
+extern int              cm_FreeIntsFromScanInfo  (CM_t *cm);
+extern void             cm_FreeScanInfo          (CM_t *cm);
+extern void             cm_DumpScanInfoAlpha     (CM_t *cm, int j, int i0, int doing_float);
+extern float **         FCalcOptimizedEmitScores (CM_t *cm);
+extern int **           ICalcOptimizedEmitScores (CM_t *cm);
+extern void             FreeOptimizedEmitScores  (float **fesc_vAA, int **iesc_vAA, int M);
+extern float **         FCalcInitDPScores        (CM_t *cm);
+extern int **           ICalcInitDPScores        (CM_t *cm);
+extern cm_GammaHitMx_t *cm_CreateGammaHitMx      (int L, int i0, int be_greedy, float cutoff);
+extern void             cm_FreeGammaHitMx        (cm_GammaHitMx_t *gamma);
+extern void             cm_UpdateFloatGammaHitMx (cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int *bestr, float sc_boost, int doing_inside, search_results_t *results);
+extern void             cm_UpdateIntGammaHitMx   (cm_GammaHitMx_t *gamma, int j, int *alpha_row, int dn, int dx, int *bestr, float sc_boost, int doing_inside, search_results_t *results);
+extern void             cm_TBackGammaHitMx       (cm_GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
