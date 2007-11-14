@@ -114,6 +114,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
 	else if (cm->ndtype[nd] == MATP_nd)                              
 	  ali->len += 2;
       }	
+      /* Catch marginal-type local ends and treat them like EL for output */
       if ((tr->nxtl[ti] == -1) && (cm->sttype[v] != E_st)) {
 	nd = cm->ndidx[tr->state[ti]];
 	qinset     = cons->rpos[nd] - cons->lpos[nd] + 1;
@@ -330,6 +331,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
 	esl_stack_IPush(pda, PDA_STATE);
       }
       else if (cm->sttype[v] != E_st) {
+        /* Catch marginal-type local ends, treat like EL for output */
 	int numwidth;		/* number of chars to leave for displaying width numbers */
 
 	nd = 1 + cm->ndidx[tr->state[ti]]; /* calculate node that EL replaced */
@@ -612,7 +614,7 @@ CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthres
     else if (type == PDA_MARKER) 
       {
 	esl_stack_IPop(pda, &nd);
-	rpos[nd]   = cpos;
+	rpos[nd]   = cpos-1;
       }
     else if (type == PDA_STATE) 
       {
