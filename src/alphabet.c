@@ -117,9 +117,28 @@ iDegeneratePairScore(const ESL_ALPHABET *abc, int *iesc, char syml, char symr)
 float
 LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, int dres)
 {
+   float left[MAXABET];
+   int i;
    float sc;
-   sc = esl_vec_FLogSum(&(esc[dres*abc->K]),abc->K);
-   sc -= sreLOG2(abc->K);
+
+   if (dres < abc->K) 
+   {
+      sc = esl_vec_FLogSum(&(esc[dres*abc->K]),abc->K);
+      sc -= sreLOG2(abc->K);
+   }
+   else /* degenerate */
+   {
+      esl_vec_FSet(left, MAXABET, 0.);
+      esl_abc_FCount(abc, left, dres, 1.);
+
+      sc = 0.;
+      for (i = 0; i < MAXABET; i++)
+      {
+         sc += esl_vec_FLogSum(&(esc[i*abc->K]),abc->K)*left[i];
+         sc -= sreLOG2(abc->K)*left[i];
+      }
+   }
+
    return sc;
 }
 
@@ -133,13 +152,33 @@ LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, int dres)
 float
 RightMarginalScore(const ESL_ALPHABET *abc, float *esc, int dres)
 {
-   int i;
+   float right[MAXABET];
+   int i,j;
    float sc;
    float row[abc->K];
-   for (i=0; i<abc->K; i++)
-      row[i] = esc[i*abc->K+dres];
-   sc = esl_vec_FLogSum(row,abc->K);
-   sc -= sreLOG2(abc->K);
+
+   if (dres < abc->K)
+   {
+      for (i=0; i<abc->K; i++)
+         row[i] = esc[i*abc->K+dres];
+      sc = esl_vec_FLogSum(row,abc->K);
+      sc -= sreLOG2(abc->K);
+   }
+   else /* degenerate */
+   {
+      esl_vec_FSet(right, MAXABET, 0.);
+      esl_abc_FCount(abc, right, dres, 1.);
+
+      sc = 0.;
+      for (i=0; i < MAXABET; i++)
+      {
+         for (j=0; j<abc->K; j++)
+            row[j] = esc[j*abc->K+dres];
+         sc += esl_vec_FLogSum(row,abc->K)*right[i];
+         sc -= sreLOG2(abc->K)*right[i];
+      }
+   }
+
    return sc;
 }
 
