@@ -4128,38 +4128,33 @@ cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_
  * Purpose:  An HMM banded version of a scanning CYK algorithm. Takes
  *           a CM_FHB_MX data structure which is indexed [v][j][d] with
  *           only cells within the bands allocated.
- *           (different than other scanning functions convention of [j][v][d]).
+ *           (different than other scanning function's convention of [j][v][d]).
  *
  * Args:     cm        - the model    [0..M-1]
  *           sq        - the sequence [1..L]   
  *                     - length of the dsq
- *           vroot     - first start state of subtree (0, for whole model)
- *           vend      - last end state of subtree (cm->M-1, for whole model)
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
+ *           W               - max d: max size of a hit
+ *           cutoff          - minimum score to report
+ *           results         - search_results_t to add to; if NULL, don't add to it
  *           mx        - the dp matrix, only cells within bands in cp9b will 
  *                       be valid. 
- *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
- *                       he intends to do a traceback.
- *           allow_begin- TRUE to allow 0->b local alignment begin transitions. 
- *           ret_b     - best local begin state, or NULL if unwanted
- *           ret_bsc   - score for using ret_b, or NULL if unwanted                        
  *           cp9b      - HMM bands for <dsq> and <cm>
  *                       
  * Returns: Score of the best hit.
  */
 float 
-FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
-	      CM_FHB_MX *mx, int allow_begin, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b)
+FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+	      search_results_t *results, CM_FHB_MX *mx, CP9Bands_t *cp9b)
 {
   int      status;
+  cm_GammaHitMx_t *gamma; /* semi-HMM for hit resoultion */
+  int     *bestr;       /* best root state for d at current j */
   int      v,y,z;	/* indices for states  */
   int      j,d,i,k;	/* indices in sequence dimensions */
   float    sc;		/* a temporary variable holding a score */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
-  int      W;		/* subsequence length */
-  int      b;		/* best local begin state */
-  float    bsc;		/* score for using the best local begin state */
   int     *yvalidA;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
   float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
   /* variables used for memory efficient bands */
@@ -4184,20 +4179,18 @@ FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
   int      dpn, dpx;           /* minimum/maximum dp_v */
   int      kp_z;               /* k (in the d dim) index for state z in alpha w/mem eff bands */
   int      kn, kx;             /* current minimum/maximum k value */
-  int      Wp;                 /* W oalso changes depending on state */
   float    tsc;                /* a transition score */
   int      yvalid_idx;         /* for keeping track of which children are valid */
   int      yvalid_ct;          /* for keeping track of which children are valid */
+  int      ip_g;               /* i offset in gamma */
+  int      jp_g;               /* j offset in gamma */
+  float    vsc_root;           /* score of best hit */
 
   /* Contract check */
   if(dsq == NULL) cm_Fail("fast_cyk_inside_align_hb(), dsq is NULL.\n");
   if (mx == NULL) cm_Fail("fast_cyk_inside_align_hb(), mx is NULL.\n");
 
   /* Allocations and initializations  */
-  b   = -1;
-  bsc = IMPOSSIBLE;
-  W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
-				/* if caller didn't give us a deck pool, make one */
   /* grow the matrix based on the current sequence and bands */
   cm_fhb_mx_GrowTo(mx, cp9b);
 
@@ -4211,47 +4204,25 @@ FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
   esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
 
   /* initialize all cells of the matrix to IMPOSSIBLE */
-  //esl_vec_FSet(alpha[0][0], mx->ncells_valid, IMPOSSIBLE);
+  esl_vec_FSet(alpha[0][0], mx->ncells_valid, IMPOSSIBLE);
 
   /* Main recursion */
-  for (v = vend; v >= vroot; v--) {
+  for (v = cm->M-1; v >= 0; v--) { /* all the way down to root, different from other scanners */
     float const *esc_v = cm->oesc[v]; /* emission scores for state v */
     float const *tsc_v = cm->tsc[v];  /* transition scores for state v */
     sd   = StateDelta(cm->sttype[v]);
     sdr  = StateRightDelta(cm->sttype[v]);
     jn   = jmin[v];
     jx   = jmax[v];
-    /* Get a shadow deck to fill in and initialize all valid cells for state v */
-    if (cm->sttype[v] != E_st) {
-      if (cm->sttype[v] == B_st) {
-	/* initialize all valid cells for state v to IMPOSSIBLE (local ends are impossible for B states) */
-	assert(! (NOT_IMPOSSIBLE(cm->endsc[v])));
-	for (j = jmin[v]; j <= jmax[v]; j++) { 
-	  jp_v  = j - jmin[v];
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
-	    alpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	  }
-	}
-      } else { /* ! B_st && ! E_st */
-	/* initialize all valid cells for state v */
-	if(NOT_IMPOSSIBLE(cm->endsc[v])) {
-	  for (j = jmin[v]; j <= jmax[v]; j++) { 
-	    jp_v  = j - jmin[v];
-	    for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
-	      alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
-	    }
-	  }
-	}
-	else { /* cm->endsc[v] == IMPOSSIBLE */
-	  for (j = jmin[v]; j <= jmax[v]; j++) { 
-	    jp_v  = j - jmin[v];
-	    for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
-	      alpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	    }
-	  }
+    if(NOT_IMPOSSIBLE(cm->endsc[v])) {
+      for (j = jmin[v]; j <= jmax[v]; j++) { 
+	jp_v  = j - jmin[v];
+	for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	  alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
 	}
       }
     }
+    /* otherwise this state's deck has already been initialized to IMPOSSIBLE */
 
     if(cm->sttype[v] == E_st) { 
       for (j = jmin[v]; j <= jmax[v]; j++) { 
@@ -4464,53 +4435,116 @@ FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0
 	  }
 	}
       }
-    }				/* finished calculating deck v. */
-         
-    /* The following loops originally access alpha[v][j0][W] but the index W will be
-       in different positions due to the bands */
+    } /* finished calculating deck v. */
+  } /* end of for (v = cm->M-1; v > 0; v--) */
+        
+  /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
+   * 
+   * If local begins are off, all hits must be rooted at v=0.
+   * With local begins on, the hit is rooted at the second state in
+   * the traceback (e.g. after 0), the internal entry point. 
+   * 
+   * Hits rooted at 0 that not involved with local begins are 
+   * already calc'ed from the v loop with v == 0 
+   */
+
+  /* Report all possible hits, but only after looking at possible local begins */
+  v = 0;
+  sd = sdr = 0;
+  jpn = 0;
+  jpx = jmax[v] - jmin[v];
+  j   = jmin[v];
+  
+  ESL_ALLOC(bestr, sizeof(int) * (W+1));
+  /* first report all hits with j > jmax[0] are impossible, only if we're reporting hits to results */
+  if(results != NULL) { 
+    for(j = j0; j >= jmax[v] + 1; j--) {
+      /* usually we'd call cm_UpdateFloatGammaHitMx() but this is a special situation */
+      jp_g = j-i0+1;
+      gamma->mx[jp_g]     = gamma->mx[jp_g-1] + 0;
+      gamma->gback[jp_g]  = -1;
+      gamma->savesc[jp_g] = IMPOSSIBLE;
+      gamma->saver[jp_g]  = -1;
+    }
+  }
     
-    if(allow_begin) { 
-      if(j0 >= jmin[v] && j0 <= jmax[v]) { 
-	jp_v = j0 - jmin[v];
-	Wp = W - hdmin[v][jp_v];
-	if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v]) { 
-	/* If we get here alpha[v][jp_v][Wp] is a valid cell
-	 * in the banded alpha matrix, corresponding to 
-	 * alpha[v][j0][W] in the platonic matrix.
-	 * Check for local begin getting us to the root. */
-	  if (alpha[v][jp_v][Wp] + cm->beginsc[v] > bsc) { 
-	    b   = v;
-	    bsc = alpha[v][jp_v][Wp] + cm->beginsc[v];
-	  }
-	}
-      }
-      /* Check for whether we need to store an optimal local begin score
-       * as the optimal overall score, and if we need to put a flag
-       * in the shadow matrix telling insideT() to use the b we return.
-       */
-      if (v == 0) { 
-	if(j0 >= jmin[0] && j0 <= jmax[0]) {
-	  jp_v = j0 - jmin[v];
-	  Wp   = W - hdmin[v][jp_v];
-	  if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v]) { 
-	    if (bsc > alpha[0][jp_v][Wp]) {
-	      alpha[0][jp_v][Wp] = bsc;
+  for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y++, j++) {
+    esl_vec_ISet(bestr, (W+1), 0); /* init bestr to 0, all hits are rooted at 0 unless we find a better local begin below */
+    if (cm->flags & CMH_LOCAL_BEGIN) {
+      for (y = 1; y < cm->M; y++) {
+	if(NOT_IMPOSSIBLE(cm->beginsc[y]) && (j >= jmin[y] && j <= jmax[y])) {
+	  assert(cm->sttype[v] != BEGL_S); /* local begins into BEGL_S are impossible */
+	    jp_y = j - jmin[y];
+	    
+	    dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y]);
+	    dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y]);
+	    dpn     = dn - hdmin[v][jp_v];
+	    dpx     = dx - hdmin[v][jp_v];
+	    dp_y    = dn - hdmin[y][jp_y];
+	    for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y++) { 
+	      sc = alpha[y][jp_y][dp_y] + cm->beginsc[y];
+	      if(sc > alpha[0][jp_v][dp_v]) {
+		alpha[0][jp_v][dp_v] = sc;
+		bestr[d] = y;
+	      }
 	    }
-	  }
+	}
+      } /* end of for(y = 1; y < cm->M; y++) */
+    } /* end of if(cm->flags & CMH_LOCAL_BEGIN */
+    
+    /* report all hits with valid d for this j, only if results != NULL */
+    if(results != NULL) { 
+      jp_g = j-i0+1;
+      gamma->mx[jp_g]  = gamma->mx[jp_g-1] + 0; /* extend without adding a new hit */
+      gamma->gback[jp_g]  = -1;
+      gamma->savesc[jp_g] = IMPOSSIBLE;
+      gamma->saver[jp_g]  = -1;
+      for (d = hdmin[0][jp_v]; (d <= hdmax[0][jp_v] && d <= jp_g) && d <= W; d++) {
+	i       = j-d+1;
+	ip_g = j-d+1-i0+1;
+	assert(i > 0);
+	/*printf("v: %d ip_g: %d d: %d\n", v, ip_g, d);*/
+	/*printf("alpha[0][j:%3d][d:%3d]: %f\n", j, d, alpha[0][cur][d]);*/
+	sc = gamma->mx[ip_g-1] + alpha[0][jp_v][dp_v] + cm->sc_boost;
+	/* sc_boost is experimental technique for finding hits < 0 bits. 
+	 * value is 0.0 if technique not used. */
+	if (sc > gamma->mx[jp_g]) {
+	  gamma->mx[jp_g]     = sc;
+	  gamma->gback[jp_g]  = i;
+	  gamma->savesc[jp_g] = alpha[0][jp_v][dp_v]; 
+	  gamma->saver[jp_g]  = bestr[d];
 	}
       }
     }
-  } /* end loop over all v */
-  /*FILE *fp; fp = fopen("cyk.mx", "w"); cm_fhb_mx_Dump(fp, mx); fclose(fp);*/
-  
-  Wp = W - hdmin[vroot][j0-jmin[vroot]];
-  sc =     alpha[vroot][j0-jmin[vroot]][Wp];
+  }
+  /* finally report all hits with j < jmin[0] are impossible, only if we're reporting hits to results */
+  if(results != NULL) { 
+    for(j = jmin[v]-1; j >= i0; j--) {
+      /* usually we'd call cm_UpdateFloatGammaHitMx() but this is a special situation */
+      jp_g = j-i0+1;
+      gamma->mx[jp_g]     = gamma->mx[jp_g-1] + 0;
+      gamma->gback[jp_g]  = -1;
+      gamma->savesc[jp_g] = IMPOSSIBLE;
+      gamma->saver[jp_g]  = -1;
+    }
+  }
+  /* find the best scoring hit */
+  vsc_root = IMPOSSIBLE;
+  v = 0;
+  jpn = 0;
+  jpx = jmax[v] - jmin[v];
+  for(jp_v = jpn; jp_v <= jpx; jp_v++) {
+    dpn     = 0;
+    dpx     = hdmax[v][jp_v] - hdmin[v][jp_v];
+    for(dp_v = dpn; dp_v <= dpx; dp_v++) {
+      vsc_root = ESL_MAX(vsc_root, alpha[0][jp_v][dp_v]);
+    }
+  }
 
-  if (ret_b != NULL)      *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
-  if (ret_bsc != NULL)    *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */
   free(el_scA);
   free(yvalidA);
 
+  sc = vsc_root;
   ESL_DPRINTF1(("FastCYKScanHB() return sc: %f\n", sc));
   return sc;
 
@@ -4802,14 +4836,14 @@ main(int argc, char **argv)
 	  cp9_Seq2Bands(cm, dsq, 1, L, cp9b, 0);   /* debug level */
 	  sc = CYKBandedScan_jd(cm, dsq, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
 				1, L, cm->W, 0., NULL);
-	  printf("%4d %-30s %10.4f bits ", (i+1), "CYKBandedScan_jd() : ", sc);
+	  printf("%4d %-30s %10.4f bits ", (i+1), "CYKBandedScan_jd(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
 	  cp9_Seq2Bands(cm, dsq, 1, L, cp9b, 0);   /* debug level */
-	  sc = FastCYKScanHB(cm, dsq, L, 0, cm->M-1, 1, L, hbmx, (cm->flags & CMH_LOCAL_BEGIN), NULL, NULL, cp9b);
-	  printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScanHB() : ", sc);
+	  sc = FastCYKScanHB(cm, dsq, L, 1, cm->W, 0., NULL, hbmx, cp9b);
+	  printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScanHB(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}

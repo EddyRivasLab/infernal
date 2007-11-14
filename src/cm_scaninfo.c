@@ -963,7 +963,6 @@ cm_UpdateIntGammaHitMx(cm_GammaHitMx_t *gamma, int j, int *alpha_row, int dn, in
   return;
 }
 
-
 /* Function: cm_TBackGammaHitMx()
  * Date:     EPN, Mon Nov  5 10:14:30 2007
  *

@@ -387,8 +387,8 @@ extern float XRefIInsideScan (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, flo
 extern float RefFInsideScan (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 			     search_results_t *results, float **ret_vsc);
 extern float rsearch_CYKScan (CM_t *cm, ESL_DSQ *dsq, int L, float cutoff, int D, search_results_t *results);
-extern float  FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
-			    CM_FHB_MX *mx, int allow_begin, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b);
+extern float FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+			   search_results_t *results, CM_FHB_MX *mx, CP9Bands_t *cp9b);
 extern float       cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_vcalcs);
 
 /* from CP9_scan.c */

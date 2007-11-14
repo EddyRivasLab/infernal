@@ -50,21 +50,27 @@ cm_fhb_mx_Create(int M)
   mx->dp_mem = NULL;
   mx->cp9b   = NULL;
 
-  /* level 2: deck (state) pointers, 0.1..M, go all the way to M, cyk, inside don't use it, but outside does */
+  /* level 2: deck (state) pointers, 0.1..M, go all the way to M
+   *          for deck M: only allocate the pointer, leave it pointing to NULL,
+   *          deck M is special for 2 reasons: 
+   *            1) only outside uses it, but it allocates it itself (cyk, inside don't use it)
+   *            2) there are no bands on state M, the EL state
+   */
   ESL_ALLOC(mx->dp,  sizeof(float **) * (M+1));
+  mx->dp[M] = NULL;
  
   /* level 3: dp cell memory, when creating only allocate 1 cells per state, for j = 0, d = 0 */
   int allocL = 1;
   int allocW = 1;
-  ESL_ALLOC(mx->dp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
-  ESL_ALLOC(mx->nrowsA, sizeof(int)      * (M+1));
-  for (v = 0; v <= M; v++) {
+  ESL_ALLOC(mx->dp_mem,  sizeof(float) * (M) * (allocL) * (allocW));
+  ESL_ALLOC(mx->nrowsA, sizeof(int)      * (M));
+  for (v = 0; v < M; v++) {
     ESL_ALLOC(mx->dp[v], sizeof(float *) * (allocL));
     mx->nrowsA[v] = allocL;
     mx->dp[v][0]  = mx->dp_mem + v * (allocL) * (allocW);
   }
   mx->M            = M;
-  mx->ncells_alloc = (M+1)*(allocL)*(allocW);
+  mx->ncells_alloc = M*(allocL)*(allocW);
   mx->ncells_valid = 0;
   return mx;
 
@@ -148,11 +154,6 @@ cm_fhb_mx_GrowTo(CM_FHB_MX *mx, CP9Bands_t *cp9b)
   /* printf("ncells:   %d\n", ncells);
      printf("cur_size: %d\n", cur_size);*/
 
-  /* TO DO: add mx->dp[M], the EL deck, somehow,
-   * maybe do this separately, in a different data structure
-   * b/c M doesn't have bands? or you could pass in a flag
-   * to allocate this mem or not.
-   */
   mx->dp[mx->M] = NULL;
   mx->cp9b = cp9b; /* just a reference */
 
@@ -247,19 +248,26 @@ cm_ihb_mx_Create(int M)
   mx->dp_mem = NULL;
   mx->cp9b   = NULL;
 
-  /* level 2: deck (state) pointers, 0.1..M, go all the way to M, cyk, inside don't use it, but outside does */
-  ESL_ALLOC(mx->dp,  sizeof(int **) * (M+1));
+  /* level 2: deck (state) pointers, 0.1..M, go all the way to M
+   *          for deck M: only allocate the pointer, leave it pointing to NULL,
+   *          deck M is special for 2 reasons: 
+   *            1) only outside uses it, but it allocates it itself (cyk, inside don't use it)
+   *            2) there are no bands on state M, the EL state
+   */
+  ESL_ALLOC(mx->dp,  sizeof(float **) * (M+1));
+  mx->dp[M] = NULL;
  
   /* level 3: dp cell memory, when creating only allocate 1 cells per state, for j = 0, d = 0 */
   int allocL = 1;
   int allocW = 1;
-  ESL_ALLOC(mx->dp_mem,  sizeof(int) * (M+1) * (allocL) * (allocW));
-  ESL_ALLOC(mx->nrowsA, sizeof(int)      * (M+1));
-  for (v = 0; v <= M; v++) {
+  ESL_ALLOC(mx->dp_mem,  sizeof(int) * (M) * (allocL) * (allocW));
+  ESL_ALLOC(mx->nrowsA, sizeof(int)      * (M));
+  for (v = 0; v < M; v++) {
     ESL_ALLOC(mx->dp[v], sizeof(int *) * (allocL));
     mx->nrowsA[v] = allocL;
     mx->dp[v][0]  = mx->dp_mem + v * (allocL) * (allocW);
   }
+
   mx->M      = M;
   mx->ncells_alloc = (M+1)*(allocL)*(allocW);
   mx->ncells_valid = 0;
@@ -345,11 +353,6 @@ cm_ihb_mx_GrowTo(CM_IHB_MX *mx, CP9Bands_t *cp9b)
   /* printf("ncells:   %d\n", ncells);
      printf("cur_size: %d\n", cur_size);*/
 
-  /* TO DO: add mx->dp[M], the EL deck, somehow,
-   * maybe do this separately, in a different data structure
-   * b/c M doesn't have bands? or you could pass in a flag
-   * to allocate this mem or not.
-   */
   mx->dp[mx->M] = NULL;
   mx->cp9b = cp9b; /* just a reference */
 
