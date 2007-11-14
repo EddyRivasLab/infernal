@@ -1353,10 +1353,8 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
             R_alpha[v][j][0] = IMPOSSIBLE;
             if ( jp > 0 ) {
                alpha[v][j][1] = IMPOSSIBLE;
-               if ( dsq[j] < cm->abc->K ) { L_alpha[v][j][1] =  LeftMarginalScore(cm->abc, cm->esc[v],dsq[j]); }
-               else { cm_Die("Still can't deal with marginalizing degenerate residues! x %d dsq[x] %d",j,dsq[j]); }
-               if ( dsq[j] < cm->abc->K ) { R_alpha[v][j][1] = RightMarginalScore(cm->abc, cm->esc[v],dsq[j]); }
-               else { cm_Die("Still can't deal with marginalizing degenerate residues! x %d dsq[x] %d",j,dsq[j]); }
+               L_alpha[v][j][1] =  LeftMarginalScore(cm->abc, cm->esc[v],dsq[j]);
+               R_alpha[v][j][1] = RightMarginalScore(cm->abc, cm->esc[v],dsq[j]);
                if ( ret_shadow != NULL ) { ((char **)L_shadow[v])[j][1] = USED_EL; }
                if ( ret_shadow != NULL ) { ((char **)R_shadow[v])[j][1] = USED_EL; }
             }
@@ -1407,14 +1405,8 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
                {  alpha[v][j][d] += cm->esc[v][(int) (dsq[i]*cm->abc->K+dsq[j])]; }
                else
                {  alpha[v][j][d] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]); }
-               if ( dsq[i] < cm->abc->K )
                { L_alpha[v][j][d] +=  LeftMarginalScore(cm->abc, cm->esc[v],dsq[i]); }
-               else
-               { cm_Die("Still can't deal with marginalizing degenerate residues! x %d dsq[x] %d",i,dsq[i]); }
-               if ( dsq[j] < cm->abc->K )
                { R_alpha[v][j][d] += RightMarginalScore(cm->abc, cm->esc[v],dsq[j]); }
-               else
-               { cm_Die("Still can't deal with marginalizing degenerate residues! x %d dsq[x] %d",j,dsq[j]); }
 
                if (   alpha[v][j][d] < IMPOSSIBLE ) {   alpha[v][j][d] = IMPOSSIBLE; }
                if ( L_alpha[v][j][d] < IMPOSSIBLE ) { L_alpha[v][j][d] = IMPOSSIBLE; }
@@ -1961,10 +1953,7 @@ tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
                case MP_st:
                   if (j > i0)
                   {
-                     if (dsq[j-1] < cm->abc->K)
-                        esc = LeftMarginalScore(cm->abc, cm->esc[y], dsq[j-1]);
-                     else
-                        cm_Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j-1,dsq[j-1]);
+                     esc = LeftMarginalScore(cm->abc, cm->esc[y], dsq[j-1]);
                      if ( (sc = beta->L[y][j-1] + cm->tsc[y][voffset] + esc) > beta->L[v][j] )
                         beta->L[v][j] = sc;
                   }
@@ -1998,8 +1987,7 @@ tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
          {
             if (cm->sttype[v] == MP_st)
             {
-               if (dsq[j] < cm->abc->K) esc = LeftMarginalScore(cm->abc, cm->esc[v], dsq[j]);
-               else cm_Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j-1,dsq[j-1]);
+               esc = LeftMarginalScore(cm->abc, cm->esc[v], dsq[j]);
             }
             if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)
             {
@@ -2030,10 +2018,7 @@ tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
                case MP_st:
                   if (j < j0)
                   {
-                     if (dsq[j+1] < cm->abc->K)
-                        esc = RightMarginalScore(cm->abc, cm->esc[y], dsq[j+1]);
-                     else
-                        cm_Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j+1,dsq[j+1]);
+                     esc = RightMarginalScore(cm->abc, cm->esc[y], dsq[j+1]);
                      if ( (sc = beta->R[y][j+1] + cm->tsc[y][voffset] + esc) > beta->R[v][j] )
                         beta->R[v][j] = sc;
                   }
@@ -2067,8 +2052,7 @@ tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
          {
             if (cm->sttype[v] == MP_st)
             {
-               if (dsq[j] < cm->abc->K) esc = RightMarginalScore(cm->abc, cm->esc[v], dsq[j]);
-               else cm_Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j-1,dsq[j-1]);
+               esc = RightMarginalScore(cm->abc, cm->esc[v], dsq[j]);
             }
             if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)
             {
@@ -2640,17 +2624,11 @@ tr_vinside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1, 
                }
                if (ip < i1-i0)
                {
-                  if (dsq[i] < cm->abc->K)
-                     alpha->L[v][jp][ip] += LeftMarginalScore(cm->abc, cm->esc[v], dsq[i]);
-                  else
-                     cm_Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",i,dsq[i]);
+                  alpha->L[v][jp][ip] += LeftMarginalScore(cm->abc, cm->esc[v], dsq[i]);
                }
                if (jp > 0)
                {
-                  if (dsq[j] < cm->abc->K)
-                     alpha->R[v][jp][ip] += RightMarginalScore(cm->abc, cm->esc[v], dsq[j]);
-                  else
-                     cm_Die("Still can't deal with marginalizing degenerate residues! dsq[%d] = %d\n",j,dsq[j]);
+                  alpha->R[v][jp][ip] += RightMarginalScore(cm->abc, cm->esc[v], dsq[j]);
                }
 
                if ( alpha->J[v][jp][ip] < IMPOSSIBLE) alpha->J[v][jp][ip] = IMPOSSIBLE;
@@ -3130,10 +3108,7 @@ tr_voutside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1,
                case MP_st:
                   if (ip > 0)
                   {
-                     if (dsq[i-1] < cm->abc->K)
-                        esc = LeftMarginalScore(cm->abc, cm->esc[y], dsq[i-1]);
-                     else
-                        cm_Die("Still can't deal with marginalizing degenerate residues: dsq[%d] = %d\n",i-1,dsq[i-1]);
+                     esc = LeftMarginalScore(cm->abc, cm->esc[y], dsq[i-1]);
                      if ( (sc = beta->L[y][ip-1] + cm->tsc[y][voffset] + esc) > beta->L[v][ip] )
                         beta->L[v][ip] = sc;
                   }
@@ -3181,10 +3156,7 @@ tr_voutside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1,
                case MP_st:
                   if (jp < j0-j1)
                   {
-                     if (dsq[j+1] < cm->abc->K)
-                        esc = RightMarginalScore(cm->abc, cm->esc[y], dsq[j+1]);
-                     else
-                        cm_Die("Still can't deal with marginalizing degenerate residues: dsq[%d] = %d\n",j+1,dsq[j+1]);
+                     esc = RightMarginalScore(cm->abc, cm->esc[y], dsq[j+1]);
                      if ( (sc = beta->R[y][jp+1] + cm->tsc[y][voffset] + esc) > beta->R[v][jp] )
                         beta->R[v][jp] = sc;
                   }
