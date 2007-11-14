@@ -98,16 +98,16 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
   /*printf("in CP9Viterbi() i0: %d j0: %d\n", i0, j0);  */
   /* Contract checks */
   if(cm->cp9 == NULL)
-    esl_fatal("ERROR in CP9Viterbi, cm->cp9 is NULL.\n");
+    cm_Fail("ERROR in CP9Viterbi, cm->cp9 is NULL.\n");
   if(be_efficient && (ret_mx != NULL))
-    esl_fatal("ERROR in CP9Viterbi, be_efficient is TRUE, but ret_mx is non-NULL\n");
+    cm_Fail("ERROR in CP9Viterbi, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)
-    esl_fatal("ERROR in CP9Viterbi, passing in results data structure, but not in scanning mode.\n");
+    cm_Fail("ERROR in CP9Viterbi, passing in results data structure, but not in scanning mode.\n");
   if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
      (cm->search_opts & CM_SEARCH_HMMRESCAN))
-    esl_fatal("ERROR in CP9Viterbi, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
+    cm_Fail("ERROR in CP9Viterbi, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
   if(dsq == NULL)
-    esl_fatal("ERROR in CP9Viterbi, dsq is NULL.");
+    cm_Fail("ERROR in CP9Viterbi, dsq is NULL.");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
@@ -414,7 +414,7 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
   return return_sc;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -531,18 +531,18 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
   /*printf("in CP9Forward() i0: %d j0: %d\n", i0, j0);  */
   /* Contract checks */
   if(cm->cp9 == NULL)
-    esl_fatal("ERROR in CP9Forward, cm->cp9 is NULL.\n");
+    cm_Fail("ERROR in CP9Forward, cm->cp9 is NULL.\n");
   if(doing_rescan && !do_scan) 
-    esl_fatal("ERROR in CP9Forward, doing_rescan but not do_scan");
+    cm_Fail("ERROR in CP9Forward, doing_rescan but not do_scan");
   if(be_efficient && (ret_mx != NULL))
-    esl_fatal("ERROR in CP9Forward, be_efficient is TRUE, but ret_mx is non-NULL\n");
+    cm_Fail("ERROR in CP9Forward, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)
-    esl_fatal("ERROR in CP9Forward, passing in results data structure, but not in scanning mode.\n");
+    cm_Fail("ERROR in CP9Forward, passing in results data structure, but not in scanning mode.\n");
   if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
      (cm->search_opts & CM_SEARCH_HMMRESCAN))
-    esl_fatal("ERROR in CP9Forward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
+    cm_Fail("ERROR in CP9Forward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
   if(dsq == NULL)
-    esl_fatal("ERROR in CP9Forward, dsq is NULL.");
+    cm_Fail("ERROR in CP9Forward, dsq is NULL.");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
@@ -834,7 +834,7 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
   return return_sc;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -991,18 +991,18 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
   /*printf("in CP9Backward() i0: %d j0: %d do_scan: %d \n", i0, j0, do_scan);  */
   /* Contract checks */
   if(cm->cp9 == NULL)
-    esl_fatal("ERROR in CP9Backward, cm->cp9 is NULL.\n");
+    cm_Fail("ERROR in CP9Backward, cm->cp9 is NULL.\n");
   if(doing_rescan && !do_scan) 
-    esl_fatal("ERROR in CP9Backward, doing_rescan but not do_scan");
+    cm_Fail("ERROR in CP9Backward, doing_rescan but not do_scan");
   if(be_efficient && (ret_mx != NULL))
-    esl_fatal("ERROR in CP9Backward, be_efficient is TRUE, but ret_mx is non-NULL\n");
+    cm_Fail("ERROR in CP9Backward, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)
-    esl_fatal("ERROR in CP9Backward, passing in results data structure, but not in scanning mode.a\n");
+    cm_Fail("ERROR in CP9Backward, passing in results data structure, but not in scanning mode.a\n");
   if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
      (cm->search_opts & CM_SEARCH_HMMRESCAN))
-    esl_fatal("ERROR in CP9Backward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
+    cm_Fail("ERROR in CP9Backward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
   if(dsq == NULL)
-    esl_fatal("ERROR in CP9Backward, dsq is NULL.");
+    cm_Fail("ERROR in CP9Backward, dsq is NULL.");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
@@ -1460,7 +1460,7 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
   return return_sc;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -1504,7 +1504,7 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
  *           cm_cutoff  - minimum CM  score to report 
  *           cp9_cutoff - minimum CP9 score to report (or keep if filtering)
  *           results    - search_results_t to add to, only passed to 
- *                        actually_search_target()
+ *                        OldActuallySearchTarget()
  *           doing_cp9_stats- TRUE if we're calc'ing stats for the CP9, in this 
  *                            case we never rescan with CM
  *           ret_flen   - RETURN: subseq len that survived filter
@@ -1533,15 +1533,15 @@ CP9Scan_dispatch(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff,
 
   /* check contract */
   if(cm->cp9 == NULL)
-    esl_fatal("ERROR in CP9Scan_dispatch(), cm->cp9 is NULL\n");
+    cm_Fail("ERROR in CP9Scan_dispatch(), cm->cp9 is NULL\n");
   if((cm->search_opts & CM_SEARCH_HMMPAD) &&
      (!(cm->search_opts & CM_SEARCH_HMMFILTER)))
-     esl_fatal("ERROR in CP9Scan_dispatch(), CM_SEARCH_HMMPAD flag up, but CM_SEARCH_HMMFILTER flag down.\n");
+     cm_Fail("ERROR in CP9Scan_dispatch(), CM_SEARCH_HMMPAD flag up, but CM_SEARCH_HMMFILTER flag down.\n");
   if(!doing_cp9_stats && (!((cm->search_opts & CM_SEARCH_HMMFILTER) || 
 			    (cm->search_opts & CM_SEARCH_HMMONLY))))
-    esl_fatal("ERROR in CP9Scan_dispatch(), not doing CP9 stats and neither CM_SEARCH_HMMFILTER nor CM_SEARCH_HMMONLY flag is up.\n");
+    cm_Fail("ERROR in CP9Scan_dispatch(), not doing CP9 stats and neither CM_SEARCH_HMMFILTER nor CM_SEARCH_HMMONLY flag is up.\n");
   if(dsq == NULL)
-    esl_fatal("ERROR in CP9Scan_dispatch, dsq is NULL.");
+    cm_Fail("ERROR in CP9Scan_dispatch, dsq is NULL.");
 
   /*printf("in CP9Scan_dispatch(), i0: %d j0: %d\n", i0, j0);
     printf("cp9_cutoff: %f\n", cp9_cutoff);*/
@@ -1672,7 +1672,7 @@ CP9Scan_dispatch(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff,
  *           cm_cutoff  - minimum CM  score to report 
  *           cp9_cutoff - minimum CP9 score to report 
  *           results    - search_results_t to add to, only passed to 
- *                        actually_search_target()
+ *                        OldActuallySearchTarget()
  *           ret_flen   - RETURN: subseq len that survived filter
  * Returns:  best_sc found when rescanning with CM 
  */
@@ -1694,7 +1694,7 @@ RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, search_results_t *hmm_results, int
   if(padmode != PAD_SUBI_ADDJ && padmode != PAD_ADDI_SUBJ)
     ESL_EXCEPTION(eslEINCOMPAT, "can't determine mode.");
   if(dsq == NULL)
-    esl_fatal("ERROR in RescanFilterSurvivors(), dsq is NULL.\n");
+    cm_Fail("ERROR in RescanFilterSurvivors(), dsq is NULL.\n");
 
   best_cm_sc = IMPOSSIBLE;
   flen = 0;
@@ -1705,7 +1705,7 @@ RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, search_results_t *hmm_results, int
     printf("in RescanFilterSurvivors(), mode: PAD_ADDI_SUBJ\n");
     printf("\tipad: %d, jpad: %d collapse: %d\n", ipad, jpad, do_collapse);*/
 
-  /* For each hit, add pad according to mode and rescan by calling actually_search_target(). 
+  /* For each hit, add pad according to mode and rescan by calling OldActuallySearchTarget(). 
    * If do_collapse, collapse multiple overlapping hits into 1 before rescanning */
   /* hits should always be sorted by decreasing j, if this is violated - die. */
   nhits = hmm_results->num_results;
@@ -1762,15 +1762,15 @@ RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, search_results_t *hmm_results, int
 	      /*printf("\tsucked in subseq: hit %d new_i: %d j (still): %d\n", h, i, j);*/
 	    }
 	}
-      /*printf("in RescanFilterSurvivors(): calling actually_search_target: %d %d h: %d nhits: %d\n", i, j, h, nhits);*/
+      /*printf("in RescanFilterSurvivors(): calling OldActuallySearchTarget: %d %d h: %d nhits: %d\n", i, j, h, nhits);*/
       cm_sc =
-	actually_search_target(cm, dsq, i, j, cm_cutoff, cp9_cutoff,
-			       results, /* keep results                                 */
-			       FALSE,   /* don't filter, we already have                */
-			       FALSE,   /* we're not building a histogram for CM stats  */
-			       FALSE,   /* we're not building a histogram for CP9 stats */
-			       NULL,    /* filter fraction N/A                          */
-			       FALSE);  /* DO NOT align the hits in this recursive call */
+	OldActuallySearchTarget(cm, dsq, i, j, cm_cutoff, cp9_cutoff,
+				results, /* keep results                                 */
+				FALSE,   /* don't filter, we already have                */
+				FALSE,   /* we're not building a histogram for CM stats  */
+				FALSE,   /* we're not building a histogram for CP9 stats */
+				NULL,    /* filter fraction N/A                          */
+				FALSE);  /* DO NOT align the hits in this recursive call */
       flen += (j - i + 1);
       if(cm_sc > best_cm_sc) best_cm_sc = cm_sc;
     }
@@ -1834,7 +1834,7 @@ CP9ScanPosterior(ESL_DSQ *dsq, int i0, int j0,
 	       * visited in any parse */
   /* contract check */
   if(dsq == NULL)
-    esl_fatal("ERROR in CP9ScanPosterior(), dsq is NULL.");
+    cm_Fail("ERROR in CP9ScanPosterior(), dsq is NULL.");
 
   /*printf("\n\nin CP9ScanPosterior() i0: %d, j0: %d\n", i0, j0);*/
   fb_sum = -INFTY;
@@ -2006,27 +2006,27 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 
   /* Contract checks */
   if (!(cm->flags & CMH_CP9) || cm->cp9 == NULL) 
-    esl_fatal("ERROR in FindCP9FilterThreshold() CP9 does not exist\n");
+    cm_Fail("ERROR in FindCP9FilterThreshold() CP9 does not exist\n");
   if (Fmin < 0. || Fmin > 1.)  
-    esl_fatal("ERROR in FindCP9FilterThreshold() Fmin is %f, should be [0.0..1.0]\n", Fmin);
+    cm_Fail("ERROR in FindCP9FilterThreshold() Fmin is %f, should be [0.0..1.0]\n", Fmin);
   if (Smin < 0. || Smin > 1.)  
-    esl_fatal("ERROR in FindCP9FilterThreshold() Smin is %f, should be [0.0..1.0]\n", Smin);
+    cm_Fail("ERROR in FindCP9FilterThreshold() Smin is %f, should be [0.0..1.0]\n", Smin);
   if (Starget < 0. || Starget > 1.)  
-    esl_fatal("ERROR in FindCP9FilterThreshold() Starget is %f, should be [0.0..1.0]\n", Starget);
+    cm_Fail("ERROR in FindCP9FilterThreshold() Starget is %f, should be [0.0..1.0]\n", Starget);
   if((fthr_mode != CM_LI) && (fthr_mode != CM_GI) && (fthr_mode != CM_LC) && (fthr_mode != CM_GC))
-    esl_fatal("ERROR in FindCP9FilterThreshold() fthr_mode not CM_LI, CM_GI, CM_LC, or CM_GC\n");
+    cm_Fail("ERROR in FindCP9FilterThreshold() fthr_mode not CM_LI, CM_GI, CM_LC, or CM_GC\n");
   if(hmm_gum_mode != CP9_L && hmm_gum_mode != CP9_G)
-    esl_fatal("ERROR in FindCP9FilterThreshold() hmm_gum_mode not CP9_L or CP9_G\n");
+    cm_Fail("ERROR in FindCP9FilterThreshold() hmm_gum_mode not CP9_L or CP9_G\n");
   if(do_fastfil && (fthr_mode == CM_LI || fthr_mode == CM_GI))
-    esl_fatal("ERROR in FindCP9FilterThreshold() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
+    cm_Fail("ERROR in FindCP9FilterThreshold() do_fastfil TRUE, but fthr_mode CM_GI or CM_LI\n");
   if(my_rank > 0 && !do_mpi)
-    esl_fatal("ERROR in FindCP9FilterThreshold() my_rank is not 0, but do_mpi is FALSE\n");
+    cm_Fail("ERROR in FindCP9FilterThreshold() my_rank is not 0, but do_mpi is FALSE\n");
   if(emit_mode != CM_GC && emit_mode != CM_LC)
-    esl_fatal("ERROR in FindCP9FilterThreshold() emit_mode not CM_LC or CM_GC\n");
+    cm_Fail("ERROR in FindCP9FilterThreshold() emit_mode not CM_LC or CM_GC\n");
   if(emit_mode == CM_LC && (fthr_mode == CM_GC || fthr_mode == CM_GI))
-    esl_fatal("ERROR in FindCP9FilterThreshold() emit_mode CM_LC but score mode CM_GC or CM_GI.\n");
+    cm_Fail("ERROR in FindCP9FilterThreshold() emit_mode CM_LC but score mode CM_GC or CM_GI.\n");
   if(Spad < 0 || Spad > 1.0)
-    esl_fatal("ERROR in FindCP9FilterThreshold() Spad %f not between 0.0 and 1.0\n");
+    cm_Fail("ERROR in FindCP9FilterThreshold() Spad %f not between 0.0 and 1.0\n");
 
 #if defined(USE_MPI)  && defined(NOTDEFINED)
   /* If a worker in MPI mode, we go to worker function mpi_worker_cm_and_cp9_search */
@@ -2244,16 +2244,16 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	      cm_for_scoring->tau = 0.01;
 	      //cm_for_scoring->tau = 0.001;
 	      
-	      hb_sc = actually_search_target(cm_for_scoring, sq->dsq, 1, L,
-					     0.,    /* cutoff is 0 bits (actually we'll find highest
+	      hb_sc = OldActuallySearchTarget(cm_for_scoring, sq->dsq, 1, L,
+					      0.,    /* cutoff is 0 bits (actually we'll find highest
 						     * negative score if it's < 0.0) */
-					     0.,    /* CP9 cutoff is 0 bits */
-					     NULL,  /* don't keep results */
-					     FALSE, /* don't filter with a CP9 HMM */
-					     FALSE, /* we're not calcing CM  stats */
-					     FALSE, /* we're not calcing CP9 stats */
-					     NULL,  /* filter fraction N/A */
-					     FALSE);/* do NOT align the hits */
+					      0.,    /* CP9 cutoff is 0 bits */
+					      NULL,  /* don't keep results */
+					      FALSE, /* don't filter with a CP9 HMM */
+					      FALSE, /* we're not calcing CM  stats */
+					      FALSE, /* we're not calcing CP9 stats */
+					      NULL,  /* filter fraction N/A */
+					      FALSE);/* do NOT align the hits */
 	      //if(!do_fastfil) printf("%4d %5d %d T: %10.4f BC: %10.4f ", ip, i, passed_flag, tr_sc[i], hb_sc);
 	      if(hb_sc > cm_minbitsc[p] && !do_slow)
 		{
@@ -2267,7 +2267,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 		  s2_na++;
 		  cm_for_scoring->search_opts |= CM_SEARCH_HMMSCANBANDS;
 		  cm_for_scoring->tau = 1e-15;
-		  cm_sc = actually_search_target(cm_for_scoring, sq->dsq, 1, L,
+		  cm_sc = OldActuallySearchTarget(cm_for_scoring, sq->dsq, 1, L,
 						 0.,    /* cutoff is 0 bits (actually we'll find highest
 							 * negative score if it's < 0.0) */
 						 0.,    /* CP9 cutoff is 0 bits */
@@ -2290,7 +2290,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 		      /* Stage 3 do QDB CYK */
 		      cm_for_scoring->search_opts &= ~CM_SEARCH_HBANDED;
 		      cm_for_scoring->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
-		      cm_sc = actually_search_target(cm_for_scoring, sq->dsq, 1, L,
+		      cm_sc = OldActuallySearchTarget(cm_for_scoring, sq->dsq, 1, L,
 						     0.,    /* cutoff is 0 bits (actually we'll find highest
 							     * negative score if it's < 0.0) */
 						     0.,    /* CP9 cutoff is 0 bits */
@@ -2318,7 +2318,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	  else if(passed_flag)
 	    {
 	      /* Scan seq with HMM */
-	      /* DO NOT CALL actually_search_target b/c that will run Forward then 
+	      /* DO NOT CALL OldActuallySearchTarget b/c that will run Forward then 
 	       * Backward to get score of best hit, but we'll be detecting by a
 	       * Forward scan (then running Backward only on hits above our threshold).
 	       */
@@ -2340,7 +2340,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	  
 	  /* Check if we need to reallocate */
 	  i++;
-	  if(i > imax) esl_fatal("ERROR number of attempts exceeded 500 times number of seqs.\n");
+	  if(i > imax) cm_Fail("ERROR number of attempts exceeded 500 times number of seqs.\n");
 	  if (i == nalloc) 
 	    {
 	      nalloc += chunksize;
@@ -2451,7 +2451,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 	      
 	      /* Check if we need to reallocate */
 	      i++;
-	      if(i > imax) esl_fatal("ERROR number of attempts exceeded 500 times number of seqs.\n");
+	      if(i > imax) cm_Fail("ERROR number of attempts exceeded 500 times number of seqs.\n");
 	      if (i == nalloc) 
 		{
 		  nalloc += chunksize;
@@ -2613,7 +2613,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   return E;
 
  ERROR:
-  esl_fatal("Reached ERROR in FindCP9FilterThreshold()\n");
+  cm_Fail("Reached ERROR in FindCP9FilterThreshold()\n");
   return 0.;
 }
 

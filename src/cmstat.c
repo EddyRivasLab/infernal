@@ -374,7 +374,7 @@ summarize_alignment(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH 
   cm->align_opts |= CM_ALIGN_NOSMALL;
   esl_stopwatch_Start(w);
   seqs_to_aln = CreateSeqsToAlnFromSq(sq, N, FALSE);
-  actually_align_targets(cm, seqs_to_aln, NULL, NULL, 0, 0, TRUE, NULL);
+  OldActuallyAlignTargets(cm, seqs_to_aln, NULL, NULL, 0, 0, TRUE, NULL);
   esl_stopwatch_Stop(w);
   t_hb = w->user / (float) N;
   FreeSeqsToAln(seqs_to_aln);

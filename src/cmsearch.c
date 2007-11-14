@@ -78,7 +78,8 @@ static ESL_OPTIONS options[] = {
   { "--qdbfile", eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,"--hmmonly,--noqdb","read QDBs from file <s> (outputted from cmbuild)", 5 },
   /* HMM filtering options */
   { "--hmmpad",  eslARG_INT,    NULL,  NULL, NULL,      NULL,"--hmmfilter",     NULL, "subseqs \'i-<n>..j+<n>\' survive", 6 },
-  { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hmmfilter",     NULL, "calculate and use HMM bands in CM search", 6 },
+  //  { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hmmfilter",     NULL, "calculate and use HMM bands in CM search", 6 },
+  { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "calculate and use HMM bands in CM search", 6 },
   { "--tau",     eslARG_REAL,   "1e-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 6 },
   { "--scan2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "derive HMM bands from scanning Forward/Backward", 6 },
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 6 },
@@ -111,6 +112,7 @@ static ESL_OPTIONS options[] = {
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 11 },
 /* Other options */
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "arrest after start: for debugging MPI under gdb",   12 },  
+  { "--olddp",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "use older, slower (version 0.81) DP search functions",12 },  
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--qdbfile","run as an MPI parallel program", 12 },  
 #endif
@@ -814,7 +816,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       ESL_DPRINTF1(("Worker %d succesfully received CM, num states: %d num nodes: %d\n", cfg->my_rank, cm->M, cm->nodes));
       
       /* initialize the flags/options/params of the CM */
-      if((status   = initialize_cm(go, cfg, errbuf, cm, &si))               != eslOK) goto ERROR;
+      if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) goto ERROR;
       if(cm->flags & CMH_GUMBEL_STATS) 
 	if((status = set_gumbels(go, cfg, errbuf, cm))                      != eslOK) goto ERROR;
       if((  status = set_cutoffs(go, cfg, errbuf, cm, &cm_mode, &cp9_mode, &min_cm_cutoff, 
@@ -881,13 +883,22 @@ process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   results        = CreateResults(INIT_RESULTS);
   /* TO DO: have actually_search_target return an easel status code, for now it returns highest score
    * in dsq, which other parts of Infernal rely on. */
-  actually_search_target(cm, dsq, 1, L, min_cm_cutoff, min_cp9_cutoff, results,
+  if(cm->search_opts & CM_SEARCH_OLDDP) { 
+    OldActuallySearchTarget(cm, dsq, 1, L, min_cm_cutoff, min_cp9_cutoff, results,
+			    TRUE,  /* filter with a CP9 HMM if appropriate */
+			    FALSE, /* we're not building a histogram for CM stats  */
+			    FALSE, /* we're not building a histogram for CP9 stats */
+			    NULL,  /* filter fraction, TEMPORARILY NULL            */
+			    (! esl_opt_GetBoolean(go, "--noalign"))); /* get alignments of hits? */
+  }
+  else {
+    ActuallySearchTarget(cm, dsq, 1, L, min_cm_cutoff, min_cp9_cutoff, results,
 			 TRUE,  /* filter with a CP9 HMM if appropriate */
 			 FALSE, /* we're not building a histogram for CM stats  */
 			 FALSE, /* we're not building a histogram for CP9 stats */
 			 NULL,  /* filter fraction, TEMPORARILY NULL            */
 			 (! esl_opt_GetBoolean(go, "--noalign"))); /* get alignments of hits? */
-  
+  }
   *ret_results = results;
   return eslOK;
   
@@ -965,7 +976,9 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(  esl_opt_GetBoolean(go, "--hmmonly"))     cm->search_opts |= CM_SEARCH_HMMONLY;
   if(! esl_opt_IsDefault (go, "--hmmpad"))      cm->search_opts |= CM_SEARCH_HMMPAD;
   if(  esl_opt_GetBoolean(go, "--hbanded"))     cm->search_opts |= CM_SEARCH_HBANDED;
+  if(  esl_opt_GetBoolean(go, "--scan2bands"))  cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
   if(  esl_opt_GetBoolean(go, "--sums"))        cm->search_opts |= CM_SEARCH_SUMS;
+  if(  esl_opt_GetBoolean(go, "--olddp"))       cm->search_opts |= CM_SEARCH_OLDDP;
 
   /* If do_enforce set do_hmm_rescan to TRUE if we're filtering or scanning with an HMM,
    * this way only subseqs that include the enf_subseq should pass the filter */

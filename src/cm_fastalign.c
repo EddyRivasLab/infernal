@@ -25,8 +25,8 @@
  * All functions use a specialized DP matrix, a CM_FHB_MX or 
  * CM_IHB_MX data structure which only allocates cells within
  * bands derived from a HMM Forward/Backward alignment of the
- * target sequence. The bands are stored in a CP9Bands_t object
- * which must be passed into each function. 
+ * target sequence. The bands are stored in a CP9Bands_t object,
+ * a pointer to which must exits in the cm (CM_t object).
  * 
  * All but 2 functions use the float log odds scores of the
  * CM and a CM_FHB_MX matrix. The other two (FastIInsideAlignHB() 
@@ -73,7 +73,7 @@
  *           of the target sequence. Uses float log odds scores.
  *
  *           A CM_FHB_MX DP matrix must be passed in. Only
- *           cells valid within the bands given in the CP9Bands_t <cp9b>
+ *           cells valid within the bands given in the CP9Bands_t <cm->cp9b>
  *           will be valid. 
  *
  *           We deal with local begins  by keeping track of the optimal
@@ -108,15 +108,14 @@
  *                       he intends to do a traceback.
  *           ret_b     - best local begin state, or NULL if unwanted
  *           ret_bsc   - score for using ret_b, or NULL if unwanted                        
- *           cp9b      - HMM bands for <dsq> and <cm>
- *           mx        - the dp matrix, only cells within bands in cp9b will 
+ *           mx        - the dp matrix, only cells within bands in cm->cp9b will 
  *                       be valid. 
  *                       
  * Returns: Score of the optimal alignment.  
  */
 float 
 fast_cyk_inside_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow,  
-			 int allow_begin, int *ret_b, float *ret_bsc, CP9Bands_t *cp9b, CM_FHB_MX *mx)
+			 int allow_begin, int *ret_b, float *ret_bsc, CM_FHB_MX *mx)
 {
   int      status;
   int      v,y,z;	/* indices for states  */
@@ -133,6 +132,7 @@ fast_cyk_inside_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int
   float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
+  CP9Bands_t *cp9b = cm->cp9b;
   int     *jmin  = cp9b->jmin;  
   int     *jmax  = cp9b->jmax;
   int    **hdmin = cp9b->hdmin;
@@ -161,6 +161,7 @@ fast_cyk_inside_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int
   /* Contract check */
   if(dsq == NULL) cm_Fail("fast_cyk_inside_align_hb(), dsq is NULL.\n");
   if (mx == NULL) cm_Fail("fast_cyk_inside_align_hb(), mx is NULL.\n");
+  if (cm->cp9b == NULL) cm_Fail("fast_cyk_inside_align_hb(), cm->cp9b is NULL.\n");
 
   /* Allocations and initializations  */
   b   = -1;
@@ -532,7 +533,7 @@ fast_cyk_inside_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int
  * 
  * Note:     based on insideT() [SRE, Fri Aug 11 12:08:18 2000 [Pittsburgh]]
  *           only difference is memory efficient bands on the j and d 
- *           dimensions from CP9Bands_t <cp9b> are used. 
+ *           dimensions from CP9Bands_t <cm->cp9b> are used. 
  *
  * Purpose:  Call fast_cyk_inside_align_hb(), get vjd shadow matrix;
  *           then trace back. Append the trace to a given
@@ -541,11 +542,8 @@ fast_cyk_inside_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int
 float
 fast_cyk_insideT_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 			  int r, int z, int i0, int j0, 
-			  int allow_begin, CP9Bands_t *cp9b, CM_FHB_MX *mx)
+			  int allow_begin, CM_FHB_MX *mx)
 {
-  /* Contract check */
-  if(dsq == NULL) cm_Fail("fast_cyk_inside_align_hbT(), dsq is NULL.");
-
   void   ***shadow;             /* the traceback shadow matrix */
   float     sc;			/* the score of the CYK alignment */
   ESL_STACK *pda;               /* stack that tracks bifurc parent of a right start */
@@ -562,14 +560,20 @@ fast_cyk_insideT_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 				 * giving the len of right fragment offset in deck z,
 				 * k = kp_z + hdmin[z][jp_z]*/
   /* pointers to cp9b data for convenience */
+  CP9Bands_t *cp9b= cm->cp9b;
   int       *jmin = cp9b->jmin;
   int     **hdmin = cp9b->hdmin;
+  int     **hdmax = cp9b->hdmax;
+
+  /* Contract check */
+  if(dsq == NULL) cm_Fail("fast_cyk_inside_align_hbT(), dsq is NULL.");
+
 
   sc = fast_cyk_inside_align_hb(cm, dsq, L, r, z, i0, j0, 
 				&shadow,	     /* return a shadow matrix to me. */
 				allow_begin,         /* TRUE to allow local begins */
 				&b, &bsc,	     /* if allow_begin is TRUE, gives info on optimal b */
-				cp9b, mx);           /* the bands and the banded mx */
+				mx);                 /* the HMM banded mx */
   
   pda = esl_stack_ICreate();
   v = r;
@@ -687,15 +691,13 @@ fast_cyk_insideT_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           i0     - start of target subsequence (often 1, beginning of dsq)
  *           j0     - end of target subsequence (often L, end of dsq)
  *           ret_tr - RETURN: traceback (pass NULL if trace isn't wanted)
- *           cp9b      - HMM bands for <dsq> and <cm>
- *           mx        - the dp matrix, only cells within bands in cp9b will 
- *                       be valid. 
+ *           mx     - the dp matrix, only cells within bands in cm->cp9b will 
+ *                    be valid. 
  *
  * Returns:  score of the alignment in bits.
  */
 float
-FastCYKInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, 
-		     CP9Bands_t *cp9b, CM_FHB_MX *mx)
+FastCYKInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, CM_FHB_MX *mx)
 {
   /* Contract check */
   if(dsq == NULL) cm_Fail("ERROR in Fast_CYKInside_b_jd(), dsq is NULL.\n");
@@ -735,7 +737,7 @@ FastCYKInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parse
 
   /* Solve the whole thing with one call to fast_cyk_insideT_align_hb.  
    */
-  sc += fast_cyk_insideT_align_hb(cm, dsq, L, tr, r, z, i0, j0, (r==0), cp9b, mx);
+  sc += fast_cyk_insideT_align_hb(cm, dsq, L, tr, r, z, i0, j0, (r==0), mx);
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
   ESL_DPRINTF1(("returning from FastCYKInsideAlignHB() sc : %f\n", sc)); 
@@ -764,13 +766,12 @@ FastCYKInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parse
  *           dsq       - the digitized sequence
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align  (L, for whole seq)
- *           mx        - the dp matrix, only cells within bands in cp9b will be valid
- *           cp9b      - HMM bands for <dsq> and <cm>
+ *           mx        - the dp matrix, only cells within bands in cm->cp9b will be valid
  *                       
  * Returns:  log P(S|M)/P(S|R), as a bit score
  */
 float 
-FastIInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_IHB_MX *mx)
+FastIInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_IHB_MX *mx)
 {
   int      status;
   int      v,y,z;	/* indices for states  */
@@ -784,6 +785,7 @@ FastIInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_
   int     *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
+  CP9Bands_t *cp9b= cm->cp9b;
   int     *jmin  = cp9b->jmin;  
   int     *jmax  = cp9b->jmax;
   int    **hdmin = cp9b->hdmin;
@@ -809,8 +811,9 @@ FastIInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_
   int      yvalid_ct;          /* for keeping track of which children are valid */
 
   /* Contract check */
-  if(dsq == NULL) cm_Fail("fast_cyk_inside_align_hb(), dsq is NULL.\n");
-  if (mx == NULL) cm_Fail("fast_cyk_inside_align_hb(), mx is NULL.\n");
+  if(dsq == NULL) cm_Fail("FastIInsideAlignHB(), dsq is NULL.\n");
+  if (mx == NULL) cm_Fail("FastIInsideAlignHB(), mx is NULL.\n");
+  if(cm->cp9b == NULL) cm_Fail("FastIInsideAlignHB(), mx is NULL.\n");
 
   /* Allocations and initializations */
   bsc = -INFTY;
@@ -1105,7 +1108,7 @@ FastIInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_
  *           of the target sequence. Uses integer log odds scores.
  *
  *           A CM_IHB_MX DP matrix must be passed in. Only
- *           cells valid within the bands given in the CP9Bands_t <cp9b>
+ *           cells valid within the bands given in the CP9Bands_t <cm->cp9b>
  *           will be valid. 
  *
  *           The DP recursion has been 'optimized' for all state types
@@ -1139,8 +1142,8 @@ FastIInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_
  *           ends are on (see *** comment towards end of function).
  */
 float 
-FastIOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
-		    CM_IHB_MX *mx, CM_IHB_MX *ins_mx, int do_check)
+FastIOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_IHB_MX *mx, 
+		    CM_IHB_MX *ins_mx, int do_check)
 {
   int      v,y,z;	       /* indices for states */
   int      j,d,i,k;	       /* indices in sequence dimensions */
@@ -1177,6 +1180,7 @@ FastIOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
   int   ***alpha = ins_mx->dp; /* pointer to the Inside DP mx (already calc'ed and passed in) */
   int    **beta_el = NULL;     /* the cm->M EL deck, it's special b/c it has no bands */
   /* ptrs to cp9b info, for convenience */
+  CP9Bands_t *cp9b= cm->cp9b;
   int     *jmin  = cp9b->jmin;  
   int     *jmax  = cp9b->jmax;
   int    **hdmin = cp9b->hdmin;
@@ -1186,6 +1190,7 @@ FastIOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
   if (dsq == NULL)                                     cm_Fail("FastIOutsideAlignHB(), dsq is NULL.\n");
   if (mx == NULL)                                      cm_Fail("FastIOutsideAlignHB(), mx is NULL.\n");
   if (ins_mx == NULL)                                  cm_Fail("FastIOutsideAlignHB(), ins_mx is NULL.\n");
+  if (cm->cp9b == NULL)                                cm_Fail("FastIOutsideAlignHB(), cm->cp9b is NULL.\n");
   if ((cm->flags & CMH_LOCAL_END) && do_check == TRUE) cm_Fail("FastIOutsideAlignHB(), do_check = TRUE, but CMH_LOCAL_END flag raised, we can't check with local ends.n");
 
   /* Allocations and initializations
@@ -1679,12 +1684,11 @@ FastIOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align  (L, for whole seq)
  *           mx        - the dp matrix, only cells within bands in cp9b will be valid
- *           cp9b      - HMM bands for <dsq> and <cm>
  *                       
  * Returns:  log P(S|M)/P(S|R), as a bit score
  */
 float 
-FastFInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_FHB_MX *mx)
+FastFInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx)
 {
   int      status;
   int      v,y,z;	/* indices for states  */
@@ -1698,6 +1702,7 @@ FastFInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_
   float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
+  CP9Bands_t *cp9b = cm->cp9b;
   int     *jmin  = cp9b->jmin;  
   int     *jmax  = cp9b->jmax;
   int    **hdmin = cp9b->hdmin;
@@ -1723,8 +1728,9 @@ FastFInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_
   int      yvalid_ct;          /* for keeping track of which children are valid */
 
   /* Contract check */
-  if(dsq == NULL) cm_Fail("fast_cyk_inside_align_hb(), dsq is NULL.\n");
-  if (mx == NULL) cm_Fail("fast_cyk_inside_align_hb(), mx is NULL.\n");
+  if(dsq == NULL) cm_Fail("FastFInsideAlignHB(), dsq is NULL.\n");
+  if (mx == NULL) cm_Fail("FastFInsideAlignHB(), mx is NULL.\n");
+  if (cm->cp9b == NULL) cm_Fail("FastFInsideAlignHB(), cm->cp9b is NULL.\n");
 
   /* Allocations and initializations */
   bsc = IMPOSSIBLE;
@@ -2036,8 +2042,8 @@ FastFInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, CM_
  *           ends are on (see *** comment towards end of function).
  */
 float 
-FastFOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
-		    CM_FHB_MX *mx, CM_FHB_MX *ins_mx, int do_check)
+FastFOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx, 
+		    CM_FHB_MX *ins_mx, int do_check)
 {
   int      v,y,z;	       /* indices for states */
   int      j,d,i,k;	       /* indices in sequence dimensions */
@@ -2072,6 +2078,7 @@ FastFOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
   float ***alpha = ins_mx->dp; /* pointer to the Inside DP mx (already calc'ed and passed in) */
   float  **beta_el = NULL;     /* the cm->M EL deck, it's special b/c it has no bands */
   /* ptrs to cp9b info, for convenience */
+  CP9Bands_t *cp9b = cm->cp9b;
   int     *jmin  = cp9b->jmin;  
   int     *jmax  = cp9b->jmax;
   int    **hdmin = cp9b->hdmin;
@@ -2080,6 +2087,7 @@ FastFOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b,
   /* Contract check */
   if (dsq == NULL)                                     cm_Fail("FastIOutsideAlignHB(), dsq is NULL.\n");
   if (mx == NULL)                                      cm_Fail("FastIOutsideAlignHB(), mx is NULL.\n");
+  if (cm->cp9b == NULL)                                cm_Fail("FastIOutsideAlignHB(), cm->cp9b is NULL.\n");
   if (ins_mx == NULL)                                  cm_Fail("FastIOutsideAlignHB(), ins_mx is NULL.\n");
   if ((cm->flags & CMH_LOCAL_END) && do_check == TRUE) cm_Fail("FastIOutsideAlignHB(), do_check = TRUE, but CMH_LOCAL_END flag raised, we can't check with local ends.n");
 
@@ -2623,9 +2631,8 @@ main(int argc, char **argv)
   int             N = esl_opt_GetInteger(go, "-N");
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
   int             do_align;
-  CM_FHB_MX      *mx;
-  CM_IHB_MX      *iout_mx, *iins_mx;
-  CM_FHB_MX      *fout_mx, *fins_mx;
+  CM_IHB_MX      *iout_mx;
+  CM_FHB_MX      *fout_mx;
   /* FILE *fpfast;
      FILE *fpslow; */
   /* Parsetree_t    *slowtr, *fasttr; */
@@ -2675,8 +2682,6 @@ main(int argc, char **argv)
   if(esl_opt_GetBoolean(go, "--hmmcheck")) cm->align_opts |= CM_ALIGN_CHECKFB;
 
   ConfigCM(cm, NULL, NULL);
-  CP9Bands_t *cp9b;
-  cp9b = AllocCP9Bands(cm, cm->cp9);
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
@@ -2695,13 +2700,10 @@ main(int argc, char **argv)
     seqs_to_aln = CMEmitSeqsToAln(r, cm, 1, N, FALSE);
 
   /* create the matrix, it'll be empty initially */
-  mx = cm_fhb_mx_Create(cm->M);
   if(esl_opt_GetBoolean(go, "--ipost")) { 
-    iins_mx = cm_ihb_mx_Create(cm->M);
     iout_mx = cm_ihb_mx_Create(cm->M);
   }
   if(esl_opt_GetBoolean(go, "--fpost")) { 
-    fins_mx = cm_fhb_mx_Create(cm->M);
     fout_mx = cm_fhb_mx_Create(cm->M);
   }
   int do_check = esl_opt_GetBoolean(go, "--cmcheck");
@@ -2710,13 +2712,13 @@ main(int argc, char **argv)
       L = seqs_to_aln->sq[i]->n;
 
       esl_stopwatch_Start(w);
-      cp9_Seq2Bands(cm, seqs_to_aln->sq[i]->dsq, 1, L, cp9b, 0);
+      cp9_Seq2Bands(cm, seqs_to_aln->sq[i]->dsq, 1, L, cm->cp9b, FALSE, 0);
       esl_stopwatch_Stop(w);
       printf("%4d %-30s %17s", i+1, "Exptl Band calc", "");
       esl_stopwatch_Display(stdout, w, "CPU time: ");
       
       esl_stopwatch_Start(w);
-      sc = FastCYKInsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, L, 0, 1, L, NULL, cp9b, mx);
+      sc = FastCYKInsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, L, 0, 1, L, NULL, cm->fhbmx);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKInsideAlignHB (): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -2726,8 +2728,8 @@ main(int argc, char **argv)
       if(esl_opt_GetBoolean(go, "-o")) {
 	esl_stopwatch_Start(w);
 	/* sc = CYKInside_b_jd(cm, seqs_to_aln->sq[i]->dsq, L, 0, 1, L, &slowtr, cp9b->jmin, */
-	sc = CYKInside_b_jd(cm, seqs_to_aln->sq[i]->dsq, L, 0, 1, L, NULL, cp9b->jmin, 
-			    cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
+	sc = CYKInside_b_jd(cm, seqs_to_aln->sq[i]->dsq, L, 0, 1, L, NULL, cm->cp9b->jmin, 
+			    cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, cm->cp9b->safe_hdmin, cm->cp9b->safe_hdmax);
 	printf("%4d %-30s %10.4f bits ", (i+1), "CYKInside_b_jd SLOW (): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -2738,14 +2740,14 @@ main(int argc, char **argv)
       if(esl_opt_GetBoolean(go, "--ipost")) {
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
-	sc = FastIInsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, cp9b, iins_mx);
+	sc = FastIInsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, cm->ihbmx);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastIInsideAlignHB (): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
-	sc = FastIOutsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, cp9b, iout_mx, iins_mx, do_check);
+	sc = FastIOutsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, iout_mx, cm->ihbmx, do_check);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastIOutsideAlignHB (): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -2754,14 +2756,14 @@ main(int argc, char **argv)
       if(esl_opt_GetBoolean(go, "--fpost")) {
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
-	sc = FastFInsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, cp9b, fins_mx);
+	sc = FastFInsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, cm->fhbmx);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastFInsideAlignHB (): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
-	sc = FastFOutsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, cp9b, fout_mx, fins_mx, do_check);
+	sc = FastFOutsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, fout_mx, cm->fhbmx, do_check);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastFOutsideAlignHB (): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -2776,7 +2778,7 @@ main(int argc, char **argv)
 			     NULL, &oialpha, /* fill alpha, and return it, needed for IOutside() */
 			     NULL, NULL,    /* manage your own deckpool, I don't want it */
 			     esl_opt_GetBoolean(go, "-l"), /* TRUE to allow local begins */
-			     cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+			     cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax); /* j and d bands */
 	printf("%4d %-30s %10.4f bits ", (i+1), "IInside_b_jd_me(): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -2790,7 +2792,7 @@ main(int argc, char **argv)
 			      esl_opt_GetBoolean(go, "-l"), /* TRUE to allow local begins */
 			      oialpha, NULL,  /* alpha matrix from IInside(), and don't save it for CMPosterior*/
 			      do_check,      /* TRUE to check Outside probs agree with Inside */
-			      cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+			      cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax); /* j and d bands */
 	printf("%4d %-30s %10.4f bits ", (i+1), "IOutside_b_jd_me(): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -2805,7 +2807,7 @@ main(int argc, char **argv)
 			     NULL, &ofalpha, /* fill alpha, and return it, needed for IOutside() */
 			     NULL, NULL,    /* manage your own deckpool, I don't want it */
 			     esl_opt_GetBoolean(go, "-l"), /* TRUE to allow local begins */
-			     cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+			     cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax); /* j and d bands */
 	printf("%4d %-30s %10.4f bits ", (i+1), "FInside_b_jd_me(): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -2819,7 +2821,7 @@ main(int argc, char **argv)
 			      esl_opt_GetBoolean(go, "-l"), /* TRUE to allow local begins */
 			      ofalpha, NULL,  /* alpha matrix from FInside(), and don't save it */
 			      do_check,      /* TRUE to check Outside probs agree with Inside */
-			      cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+			      cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax); /* j and d bands */
 	printf("%4d %-30s %10.4f bits ", (i+1), "FOutside_b_jd_me(): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -2827,13 +2829,10 @@ main(int argc, char **argv)
       printf("\n");
     }
 
-  cm_fhb_mx_Destroy(mx);
   if(esl_opt_GetBoolean(go, "--fpost")) { 
-    cm_fhb_mx_Destroy(fins_mx);
     cm_fhb_mx_Destroy(fout_mx);
   }
   if(esl_opt_GetBoolean(go, "--ipost")) { 
-    cm_ihb_mx_Destroy(iins_mx);
     cm_ihb_mx_Destroy(iout_mx);
   }
   FreeCM(cm);
@@ -2842,7 +2841,6 @@ main(int argc, char **argv)
   esl_getopts_Destroy(go);
   esl_randomness_Destroy(r);
   FreeSeqsToAln(seqs_to_aln);
-  FreeCP9Bands(cp9b);
 
   return 0;
 

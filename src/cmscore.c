@@ -933,9 +933,9 @@ static int
 process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 		 seqs_to_aln_t *seqs_to_aln)
 {
-  actually_align_targets(cm, seqs_to_aln,
-			 NULL, NULL,   /* we're not aligning search hits */
-			 0, 0, TRUE, NULL);
+  OldActuallyAlignTargets(cm, seqs_to_aln,
+			  NULL, NULL,   /* we're not aligning search hits */
+			  0, 0, TRUE, NULL);
   return eslOK;
   
   /* ERROR:

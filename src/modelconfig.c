@@ -27,7 +27,7 @@
  * Date:     EPN, Thu Jan  4 06:36:09 2007
  * Purpose:  Configure a CM for alignment or search based on cm->config_opts,
  *           cm->align_opts and cm->search_opts. 
- *           ALWAYS build CP9 HMM (it's fast).
+ *           Always builds CP9 HMM (it's fast).
  *           Calculates query dependent bands (QDBs) if nec.
  *           QDBs can also be passed in. 
  * 
@@ -51,7 +51,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   /* Contract checks */
   if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && 
      (!(cm->search_opts & CM_SEARCH_HMMFILTER)))
-    ;/*esl_fatal("ERROR in ConfigCM() trying to search with HMM derived bands, but w/o using a HMM filter.");*/
+    ;/*cm_Fail("ERROR in ConfigCM() trying to search with HMM derived bands, but w/o using a HMM filter.");*/
 
   /* Check if we need to calculate QDBs and/or build a CP9 HMM. */
   if(cm->config_opts & CM_CONFIG_QDB)
@@ -64,13 +64,13 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 
   /* Build the CP9 HMM */
   /* IMPORTANT: do this before setting up CM for local mode
-   *            eventually, we'll do it after, but we can't build local CP9s yet. */
-  /* if we already have one, free it (wasteful but safer) */
+     if we already have one, free it (wasteful but safe) */
   if(cm->cp9map     != NULL) FreeCP9Map(cm->cp9map);
+  if(cm->cp9b       != NULL) FreeCP9Bands(cm->cp9b);
   if(cm->cp9        != NULL) FreeCPlan9(cm->cp9);
 
-  if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0)))
-    esl_fatal("Couldn't build a CP9 HMM from the CM\n");
+  if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) cm_Fail("Couldn't build a CP9 HMM from the CM\n");
+  cm->cp9b = AllocCP9Bands(cm, cm->cp9);
   cm->flags |= CMH_CP9; /* raise the CP9 flag */
   
   /* Possibly configure the CM for local alignment. */
@@ -125,12 +125,12 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
    * back on. This should be fixed. */
   if (do_calc_qdb)
     {
-      if(cm->flags & CMH_QDB) esl_fatal("ERROR in ConfigCM() CM already has QDBs\n");
+      if(cm->flags & CMH_QDB) cm_Fail("ERROR in ConfigCM() CM already has QDBs\n");
       ConfigQDB(cm);
     }
   else if(do_preset_qdb)
     {
-      if(cm->flags & CMH_QDB) esl_fatal("ERROR in ConfigCM() CM already has QDBs\n");
+      if(cm->flags & CMH_QDB) cm_Fail("ERROR in ConfigCM() CM already has QDBs\n");
       ESL_ALLOC(cm->dmin, sizeof(int) * cm->M);
       ESL_ALLOC(cm->dmax, sizeof(int) * cm->M);
       for(v = 0; v < cm->M; v++)
@@ -154,7 +154,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   fclose(fp);
   */
 
-  /*esl_fatal("done.\n");*/
+  /*cm_Fail("done.\n");*/
   /* We need to ensure that cm->el_selfsc * W >= IMPOSSIBLE
    * (cm->el_selfsc is the score for an EL self transition) This is
    * done because we potentially multiply cm->el_selfsc * W, and add
@@ -180,7 +180,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   return eslOK;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return status; /* NOTREACHED */
 }
 
@@ -207,15 +207,15 @@ ConfigCMEnforce(CM_t *cm)
 
   /* Contract checks */
   if(!(cm->config_opts & CM_CONFIG_ENFORCE))
-    esl_fatal("ERROR in ConfigCMEnforce() trying to enforce a subsequence but CM_CONFIG_ENFORCE flag is down.");
+    cm_Fail("ERROR in ConfigCMEnforce() trying to enforce a subsequence but CM_CONFIG_ENFORCE flag is down.");
   if(cm->flags & CM_ENFORCED)
-    esl_fatal("ERROR in ConfigCMEnforce() trying to enforce a subsequence but CM_IS_ENFORCED flag is up.");
+    cm_Fail("ERROR in ConfigCMEnforce() trying to enforce a subsequence but CM_IS_ENFORCED flag is up.");
   /* Can't enforce in RSEARCH mode yet */  
   if(cm->flags & CM_IS_RSEARCH)
-    esl_fatal("ERROR in ConfigCMEnforce() trying to enforce a subsequence in RSEARCH mode, not yet implemented.");
+    cm_Fail("ERROR in ConfigCMEnforce() trying to enforce a subsequence in RSEARCH mode, not yet implemented.");
   /* Can't enforce in sub mode */  
   if(cm->align_opts & CM_ALIGN_SUB)
-    esl_fatal("ERROR in ConfigCMEnforce() can't enforce a subsequence in sub alignment mode.");
+    cm_Fail("ERROR in ConfigCMEnforce() can't enforce a subsequence in sub alignment mode.");
 
   /* First, get the score of the enforced subseq for the non-enforced model */
   nonenf_sc = EnforceScore(cm);
@@ -247,7 +247,7 @@ ConfigCMEnforce(CM_t *cm)
       if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), 
 			TRUE, /* b/c we're enforcing, check CP9 mirrors CM */
 			0.0001, 0)))
-	esl_fatal("Couldn't build a CP9 HMM from the CM\n");
+	cm_Fail("Couldn't build a CP9 HMM from the CM\n");
       cm->flags |= CMH_CP9; /* raise the CP9 flag */
     }
 
@@ -283,7 +283,7 @@ ConfigCMEnforce(CM_t *cm)
   if(cm->config_opts & CM_CONFIG_ENFORCEHMM)
     {
       if(!(cm->flags & CMH_CP9))
-	esl_fatal("ERROR trying to configure the HMM for naive enforcement, but the cm's CMH_CP9 flag is down.\n");
+	cm_Fail("ERROR trying to configure the HMM for naive enforcement, but the cm's CMH_CP9 flag is down.\n");
       /* We make the HMM ignorant of any sequence conservation besides
        * the enforced subseq. This way ALL subseqs with the enforced
        * subseq will be recognized as high scoring by the HMM and 
@@ -334,9 +334,9 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
 
   /* contract check */
   if(cm->flags & CMH_LOCAL_BEGIN)
-    esl_fatal("ERROR in ConfigLocal(), CMH_LOCAL_BEGIN flag already up.\n");
+    cm_Fail("ERROR in ConfigLocal(), CMH_LOCAL_BEGIN flag already up.\n");
   if(cm->flags & CMH_LOCAL_END)
-    esl_fatal("ERROR in ConfigLocal(), CMH_LOCAL_END flag already up.\n");
+    cm_Fail("ERROR in ConfigLocal(), CMH_LOCAL_END flag already up.\n");
 
   /*****************************************************************
    * Internal entry.
@@ -416,7 +416,7 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 /*
@@ -437,11 +437,11 @@ ConfigGlobal(CM_t *cm)
    * transition probs from state 0 before local configuration) will be NULL, 
    * so we can't copy them back into cm->t[0], which is a problem. This is fragile. */
   if(!(cm->flags & CMH_LOCAL_BEGIN))
-    esl_fatal("ERROR in ConfigGlobal() trying to globally configure a CM that has no local begins.");
+    cm_Fail("ERROR in ConfigGlobal() trying to globally configure a CM that has no local begins.");
   if(!(cm->flags & CMH_LOCAL_END))
-    esl_fatal("ERROR in ConfigGlobal() trying to globally configure a CM that has no local ends.");
+    cm_Fail("ERROR in ConfigGlobal() trying to globally configure a CM that has no local ends.");
   if(cm->root_trans == NULL)
-    esl_fatal("ERROR in ConfigGlobal() cm->root_trans NULL. CM must have been configured with local begins before we can configure it back to global");
+    cm_Fail("ERROR in ConfigGlobal() cm->root_trans NULL. CM must have been configured with local begins before we can configure it back to global");
   
   /*****************************************************************
    * Make local begins impossible
@@ -507,7 +507,7 @@ ConfigNoLocalEnds(CM_t *cm)
 
   /* Contract check */
   if(!(cm->flags & CMH_LOCAL_END))
-    esl_fatal("ERROR in ConfigNoLocalEnds() CMH_LOCAL_END flag already down.\n");
+    cm_Fail("ERROR in ConfigNoLocalEnds() CMH_LOCAL_END flag already down.\n");
 
   for (v = 0; v < cm->M; v++) cm->end[v] = 0.;
   /* Now, renormalize transitions */
@@ -554,7 +554,7 @@ ConfigLocalEnds(CM_t *cm, float p_internal_exit)
 
   /* Contract check */
   if(cm->flags & CMH_LOCAL_END)
-    esl_fatal("ERROR in ConfigLocalEnds() CMH_LOCAL_END flag already up.\n");
+    cm_Fail("ERROR in ConfigLocalEnds() CMH_LOCAL_END flag already up.\n");
 
   /* Count internal nodes MATP, MATL, MATR, BEGL, BEGR that aren't
    * adjacent to END nodes.
@@ -652,11 +652,11 @@ ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit)
 
   /* Contract checks */
   if(cm->enf_seq == NULL || cm->enf_start == 0)
-    esl_fatal("ERROR, in ConfigLocalEnforce, but no subseq to enforce.\n");
+    cm_Fail("ERROR, in ConfigLocalEnforce, but no subseq to enforce.\n");
   if(cm->flags & CMH_LOCAL_BEGIN)
-    esl_fatal("ERROR in ConfigLocalEnforce() CMH_LOCAL_BEGIN flag already up.\n");
+    cm_Fail("ERROR in ConfigLocalEnforce() CMH_LOCAL_BEGIN flag already up.\n");
   if(cm->flags & CMH_LOCAL_END)
-    esl_fatal("ERROR in ConfigLocalEnforce() CMH_LOCAL_END flag already up.\n");
+    cm_Fail("ERROR in ConfigLocalEnforce() CMH_LOCAL_END flag already up.\n");
 
   enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
   /* We want every parse to go through the MATL stretch from enf_start
@@ -665,7 +665,7 @@ ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit)
   for(nd = cm->enf_start; nd <= enf_end; nd++)
     {
       if(cm->ndtype[nd] != MATL_nd)
-	esl_fatal("ERROR, trying to enforce a non-MATL stretch (node: %d not MATL).\n", nd);
+	cm_Fail("ERROR, trying to enforce a non-MATL stretch (node: %d not MATL).\n", nd);
     }
   emap = CreateEmitMap(cm); /* diff from ConfigLocalEnds() */
   enf_start_pos = emap->lpos[cm->enf_start];
@@ -811,7 +811,7 @@ EnforceSubsequence(CM_t *cm)
   for(nd = (cm->enf_start-1); nd <= enf_end; nd++)
     {
       if(cm->ndtype[nd] != MATL_nd)
-	esl_fatal("ERROR, trying to enforce a non-MATL stretch (node: %d not MATL).\n", nd);
+	cm_Fail("ERROR, trying to enforce a non-MATL stretch (node: %d not MATL).\n", nd);
     }
 
   /* Go through each node and enforce the template by changing the
@@ -892,7 +892,7 @@ EnforceSubsequence(CM_t *cm)
   return eslOK;
 
  ERROR: 
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
   return status; /* never reached */
 }
 
@@ -920,14 +920,14 @@ EnforceScore(CM_t *cm)
 
   /* Contract check. */
   if(!(cm->config_opts & CM_CONFIG_ENFORCE))
-    esl_fatal("ERROR in EnforceScore(), cm->config_opt CM_CONFIG_ENFORCE not raised.\n");
+    cm_Fail("ERROR in EnforceScore(), cm->config_opt CM_CONFIG_ENFORCE not raised.\n");
 
   enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
   /*printf("in EnforceScore(), start posn: %d cm->enf_seq: %s\n", cm->enf_start, cm->enf_seq);*/
   for(nd = (cm->enf_start-1); nd <= enf_end; nd++)
     {
       if(cm->ndtype[nd] != MATL_nd)
-	esl_fatal("ERROR, trying to enforce a non-MATL stretch (node: %d not MATL).\n", nd);
+	cm_Fail("ERROR, trying to enforce a non-MATL stretch (node: %d not MATL).\n", nd);
     }
 
   /* Go through each node and determine the score of the subparse that
@@ -992,7 +992,7 @@ EnforceFindEnfStart(CM_t *cm, int enf_cc_start)
   emap      = CreateEmitMap(cm); 
   enf_start = -1;
   if(enf_cc_start > emap->clen)
-    esl_fatal("ERROR --enfstart <n>, there's only %d columns, you chose column %d\n", 
+    cm_Fail("ERROR --enfstart <n>, there's only %d columns, you chose column %d\n", 
 	enf_cc_start, emap->clen);
   for(nd = 0; nd < cm->nodes; nd++)
     {
@@ -1004,18 +1004,18 @@ EnforceFindEnfStart(CM_t *cm, int enf_cc_start)
 	      break;
 	    }
 	  else if(cm->ndtype[nd] == MATP_nd)	      
-	    esl_fatal("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by a MATP node.\n", enf_cc_start);
+	    cm_Fail("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by a MATP node.\n", enf_cc_start);
 	}
       else if(emap->rpos[nd] == enf_cc_start)
 	{
 	  if(cm->ndtype[nd] == MATR_nd)	      
-	    esl_fatal("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by a MATR node.\n", enf_cc_start);
+	    cm_Fail("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by a MATR node.\n", enf_cc_start);
 	  if(cm->ndtype[nd] == MATP_nd)	      
-	    esl_fatal("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by the right half of a MATP node.\n", enf_cc_start);
+	    cm_Fail("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by the right half of a MATP node.\n", enf_cc_start);
 	}	      
     }
   if(enf_start == -1)
-    esl_fatal("ERROR trying to determine the start node for the enforced subsequence.\n");
+    cm_Fail("ERROR trying to determine the start node for the enforced subsequence.\n");
   FreeEmitMap(emap);
   return(enf_start);
 }
@@ -1084,7 +1084,7 @@ ConfigForGumbelMode(CM_t *cm, int gum_mode)
     do_cp9_local  = FALSE;
     break;
   default: 
-    esl_fatal("ERROR unrecognized gum_mode: %d in ConfigForGumbelMode");
+    cm_Fail("ERROR unrecognized gum_mode: %d in ConfigForGumbelMode");
   }
   /* configure CM and, if needed, CP9 */
   if(do_cm_local || do_cp9_local) 
@@ -1107,7 +1107,7 @@ ConfigForGumbelMode(CM_t *cm, int gum_mode)
   if(cm->search_opts & CM_SEARCH_HMMONLY)
     {
       if(!(cm->flags & CMH_CP9) || cm->cp9 == NULL) /* error, we should have one */
-	esl_fatal("CP9 must already be built in ConfigForGumbelMode()\n");
+	cm_Fail("CP9 must already be built in ConfigForGumbelMode()\n");
       if(do_cp9_local)
 	{
 	  /* To do: Make the CP9 local to match the CM, as close as we can */
@@ -1142,7 +1142,7 @@ ConfigQDB(CM_t *cm)
 
   /* Contract check */
   if(cm->flags & CMH_QDB)
-    esl_fatal("ERROR in ConfigQDB() CMH_QDB flag already up.\n");
+    cm_Fail("ERROR in ConfigQDB() CMH_QDB flag already up.\n");
 
   safe_windowlen = cm->W * 2;
   if(cm->dmin != NULL) 
@@ -1164,7 +1164,7 @@ ConfigQDB(CM_t *cm)
       cm->dmax = NULL;
       safe_windowlen *= 2;
       if(safe_windowlen > (cm->clen * 1000))
-	esl_fatal("ERROR safe_windowlen big: %d\n", safe_windowlen);
+	cm_Fail("ERROR safe_windowlen big: %d\n", safe_windowlen);
     }
   /* Set W as dmax[0], we're wasting time otherwise, looking at
    * hits that are bigger than we're allowing with QDB. */

@@ -838,37 +838,60 @@ cm_FreeGammaHitMx(cm_GammaHitMx_t *gamma)
   return;
 }
 
-/* Function: cm_UpdateFloatGammaHitMx()
+/* Function: cm_UpdateGammaHitMx()
  * Date:     EPN, Mon Nov  5 05:41:14 2007
  *
  * Purpose:  Update a gamma semi-HMM for CM hits that end at gamma-relative position <j>.
- *            
+ * Note:     Only difference with cm_UpdateIntGammaHitMx() is alpha_row is floats, not ints.
+ *
+ * Args:     gamma     - the gamma data structure
+ *           j         - offset j for gamma must be between 0 and gamma->L
+ *           alpha_row - row of DP matrix to examine, we look at [dn..dx], NULL if we want to report
+ *                       this j is IMPOSSIBLE end point of a hit (only possible if using_hmm_bands == TRUE)
+ *           dn        - minimum d to look at 
+ *           dx        - maximum d to look at
+ *           using_hmm_bands - if TRUE, alpha_row is offset by dn, so we look at [0..dx-dn]
+ *           bestr     - [dn..dx] root state (0 or local entry) corresponding to hit stored in alpha_row
+ *           sc_boost  - what to add to scores, usually 0.
+ *           doing_inside - if TRUE, we don't store bestr, we've summed over all possible starts
+ *           results   - results to add to, only used in this function if gamma->iamgreedy 
+ *
  * Returns:  void;
+
  */
 void
-cm_UpdateFloatGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int *bestr, float sc_boost, 
-			 int doing_inside, search_results_t *results)
+cm_UpdateGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, 
+		    int *bestr, float sc_boost, int doing_inside, search_results_t *results)
 {
   int i, d;
   float sc;
   int bestd;
   int r;
+  int dmin, dmax;
+  int ip, jp;
+
+  if(alpha_row == NULL && (!using_hmm_bands)) cm_Fail("cm_UpdateGammaHitMx(), alpha_row is NULL, but using_hmm_bands is FALSE.\n");
 
   /* mode 1: non-greedy  */
-  if(! gamma->iamgreedy) { 
+  if(! gamma->iamgreedy || alpha_row == NULL) { 
     gamma->mx[j]     = gamma->mx[j-1] + 0; 
     gamma->gback[j]  = -1;
     gamma->savesc[j] = IMPOSSIBLE;
     gamma->saver[j]  = -1;
-    for (d = dn; d <= dx; d++) {
-      i  = j-d+1;
-      sc = gamma->mx[i-1] + alpha_row[d] + sc_boost; 
-      /* sc_boost is experimental technique for finding hits < 0 bits. value is 0.0 if technique not used. */
-      if (sc > gamma->mx[j]) {
-	gamma->mx[j]     = sc;
-	gamma->gback[j]  = i;
-	gamma->savesc[j] = alpha_row[d]; 
-	gamma->saver[j]  = doing_inside ? -1 : bestr[d]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
+    dmin = (using_hmm_bands) ? 0     : dn;
+    dmax = (using_hmm_bands) ? dx-dn : dx;
+
+    if(alpha_row != NULL) { 
+      for (d = dmin; d <= dmax; d++) {
+	i = using_hmm_bands ? j-d+1-dn  : j-d+1;
+	sc = gamma->mx[i-1] + alpha_row[d] + sc_boost; 
+	/* sc_boost is experimental technique for finding hits < 0 bits. value is 0.0 if technique not used. */
+	if (sc > gamma->mx[j]) {
+	  gamma->mx[j]     = sc;
+	  gamma->gback[j]  = i;
+	  gamma->savesc[j] = alpha_row[d]; 
+	  gamma->saver[j]  = doing_inside ? -1 : bestr[d]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
+	}
       }
     }
   }
@@ -879,84 +902,33 @@ cm_UpdateFloatGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn
      * However, some hits can already be removed for the greedy overlap
      * resolution algorithm.  Specifically, at the given j, any hit with a
      * d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
-    /* First, report hit with d of dn (min valid d) if >= cutoff */
-    if (alpha_row[dn] >= gamma->cutoff) {
-      r = doing_inside ? -1 : bestr[dn]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
-      report_hit (j-dn+gamma->i0, j-dn+gamma->i0, r, alpha_row[dn], results);
+    /* First, report hit with d of dmin (min valid d) if >= cutoff */
+    if (alpha_row[dmin] >= gamma->cutoff) {
+      r = doing_inside ? -1 : bestr[dmin]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
+      ip = j-dmin+gamma->i0;
+      jp = j-1   +gamma->i0;
+      if(using_hmm_bands) { 
+	ip -= dn;
+	jp -= dn;
+      }
+      report_hit (ip, jp, r, alpha_row[dmin], results);
     }
-    bestd = dn;
+    bestd = dmin;
     /* Now, if current score is greater than maximum seen previous, report
        it if >= cutoff and set new max */
-    for (d = dn+1; dn <= dx; d++) {
+    for (d = dmin+1; dmin <= dmax; d++) {
       if (alpha_row[d] > alpha_row[bestd]) {
 	if (alpha_row[d] >= gamma->cutoff) { 
 	  r = doing_inside ? -1 : bestr[d]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
-	  report_hit (j-d+gamma->i0, j-d+gamma->i0, r, alpha_row[d], results);
+	  ip = j-d+gamma->i0;
+	  jp = j-1+gamma->i0;
+	  if(using_hmm_bands) { 
+	    ip -= dn;
+	    jp -= dn;
+	  }
+	  report_hit (ip, jp, r, alpha_row[d], results);
 	}
 	bestd = d;
-      }
-    }
-  }
-  return;
-}
-
-/* Function: cm_UpdateIntGammaHitMx()
- * Date:     EPN, Tue Nov  6 05:54:51 2007
- *
- * Purpose:  Update a gamma semi-HMM for CM hits that end at gamma-relative position <j>.
- *            
- * Returns:  void;
- */
-void
-cm_UpdateIntGammaHitMx(cm_GammaHitMx_t *gamma, int j, int *alpha_row, int dn, int dx, int *bestr, float sc_boost, 
-		       int doing_inside, search_results_t *results)
-{
-  int i, d;
-  float sc;
-  float bestsc;
-  int r;
-
-  /* mode 1: non-greedy  */
-  if(! gamma->iamgreedy) { 
-    gamma->mx[j]     = gamma->mx[j-1] + 0; 
-    gamma->gback[j]  = -1;
-    gamma->savesc[j] = IMPOSSIBLE;
-    gamma->saver[j]  = -1;
-    for (d = dn; d <= dx; d++) {
-      i  = j-d+1;
-      sc = gamma->mx[i-1] + Scorify(alpha_row[d]) + sc_boost; 
-      /* sc_boost is experimental technique for finding hits < 0 bits. value is 0.0 if technique not used. */
-      if (sc > gamma->mx[j]) {
-	gamma->mx[j]     = sc;
-	gamma->gback[j]  = i;
-	gamma->savesc[j] = Scorify(alpha_row[d]); 
-	gamma->saver[j]  = doing_inside ? -1 : bestr[d]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
-      }
-    }
-  }
-  /* mode 2: greedy */
-  if(gamma->iamgreedy) { 
-    /* Resolving overlaps greedily (RSEARCH style),  
-     * At least one hit is sent back for each j here.
-     * However, some hits can already be removed for the greedy overlap
-     * resolution algorithm.  Specifically, at the given j, any hit with a
-     * d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
-    /* First, report hit with d of dn (min valid d) if >= cutoff */
-    if (Scorify(alpha_row[dn]) >= gamma->cutoff) { 
-      r = doing_inside ? -1 : bestr[dn]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
-      report_hit (j-dn+gamma->i0, j-dn+gamma->i0, r, Scorify(alpha_row[dn]), results);
-    }
-    bestsc = Scorify(alpha_row[dn]);
-    /* Now, if current score is greater than maximum seen previous, report
-       it if >= cutoff and set new max */
-    for (d = dn+1; dn <= dx; d++) {
-      sc = Scorify(alpha_row[d]);
-      if (sc > bestsc) {
-	if (sc >= gamma->cutoff) { 
-	  r = doing_inside ? -1 : bestr[dn]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
-	  report_hit (j-d+gamma->i0, j-d+gamma->i0, r, sc, results);
-	}
-	bestsc = sc;
       }
     }
   }

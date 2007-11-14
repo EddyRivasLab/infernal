@@ -1174,55 +1174,27 @@ ij2d_bands(CM_t *cm, int W, int *imin, int *imax, int *jmin, int *jmax,
 {
   int v;            /* counter over states of the CM */
   int j0;           /* counter over valid j's, but offset. j0+jmin[v] = actual j */
-  int state_min_d;  /* minimum d allowed for a state, ex: MP_st = 2, ML_st = 1. etc. */
-  for(v = 0; v < cm->M; v++)
-    {
-      if(cm->sttype[v] == E_st)
-	{
-	  for(j0 = 0; j0 <= (jmax[v]-jmin[v]); j0++)
-	    {
-	      hdmin[v][j0] = 0;
-	      hdmax[v][j0] = 0;
-	    }
-	}
-      else
-	{
-	  if((cm->sttype[v] == ML_st) ||
-	     (cm->sttype[v] == MR_st) ||
-	     (cm->sttype[v] == IL_st) ||
-	     (cm->sttype[v] == IR_st))
-	    state_min_d = 1;
-	  else if(cm->sttype[v] == MP_st)
-	    state_min_d = 2;
-	  else
-	    state_min_d = 0;
-
-	  for(j0 = 0; j0 <= (jmax[v]-jmin[v]); j0++)
-	    {
-	      hdmin[v][j0] = (j0+jmin[v]) - imax[v] + 1;
-	      hdmax[v][j0] = (j0+jmin[v]) - imin[v] + 1;
-	      if(hdmin[v][j0] < state_min_d)
-		{
-		  hdmin[v][j0] = state_min_d;
-		  /*printf("ERROR ij2dbands: v: %d | hdmin[act j: %d] : %d\n", v, (j0+jmin[v]), hdmin[v][j0]);*/
-		}
-	      if(hdmax[v][j0] < state_min_d)
-		{
-		  hdmax[v][j0] = state_min_d;
-		  /*printf("ERROR ij2dbands: v: %d | hdmin[act j: %d] : %d\n", v, (j0+jmin[v]), hdmin[v][j0]);*/
-		}
-	      if(hdmax[v][j0] > W)
-		{
-		  hdmax[v][j0] = W;
-		  /*printf("ERROR ij2dbands: v: %d | hdmax[act j: %d] : %d | W : %d\n", v, (j0+jmin[v]), hdmax[v][j0], W);*/
-		}
-	      if(debug_level == 2)
-		{
-		  printf("hd[%d][j=%d]: min: %d | max: %d\n", v, (j0+jmin[v]), hdmin[v][j0], hdmax[v][j0]);
-		}
-	    }
-	}
+  int j;            /* actual j */
+  int sd;           /* minimum d allowed for a state, ex: MP_st = 2, ML_st = 1. etc. */
+  for(v = 0; v < cm->M; v++) {
+    if(cm->sttype[v] == E_st) {
+      for(j0 = 0; j0 <= (jmax[v]-jmin[v]); j0++) {
+	hdmin[v][j0] = 0;
+	hdmax[v][j0] = 0;
+      }
     }
+    else {
+      sd = StateDelta(cm->sttype[v]);
+      for(j0 = 0; j0 <= (jmax[v]-jmin[v]); j0++) {
+	j = j0+jmin[v];
+	hdmin[v][j0] = ESL_MAX((j - imax[v] + 1), sd);
+	hdmax[v][j0] = ESL_MAX((j - imin[v] + 1), sd);
+	/*if(debug_level == 2)
+	  printf("hd[%d][j=%d]: min: %d | max: %d\n", v, (j0+jmin[v]), hdmin[v][j0], hdmax[v][j0]);
+	  }*/
+      }
+    }
+  }
 }
 
 /*****************************************************************************

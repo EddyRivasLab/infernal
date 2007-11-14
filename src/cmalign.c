@@ -746,14 +746,12 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	{                                                                              
 	  char *apostcode;   /* aligned posterior decode array */
 	  if(seqs_to_aln->postcode == NULL) 
-	    cm_Fail("ERROR --post enabled, but actually_align_targets() did not return post codes.\n");
+	    cm_Fail("ERROR --post enabled, but ActuallyAlignTargets() did not return post codes.\n");
 
 	  imax = seqs_to_aln->nseq - 1;
 	  if(cfg->withmsa != NULL) imax -= cfg->withmsa->nseq;
 	  for (i = 0; i <= imax; i++)                                                   
 	    {                                                                          
-	      printf("Creating postal code for: %s\n", seqs_to_aln->sq[i]->name);
-
 	      if((status = make_aligned_string(msa->aseq[i], "-_.", msa->alen, seqs_to_aln->postcode[i], &apostcode)) != eslOK)
 		ESL_FAIL(status, errbuf, "error creating posterior string\n");
 	      esl_msa_AppendGR(msa, "POST", i, apostcode);
@@ -816,10 +814,10 @@ static int
 process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 		 seqs_to_aln_t *seqs_to_aln)
 {
-  actually_align_targets(cm, seqs_to_aln,
-			 NULL, NULL,   /* we're not aligning search hits */
-			 esl_opt_GetInteger(go, "--banddump"),
-			 esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL);
+  OldActuallyAlignTargets(cm, seqs_to_aln,
+			  NULL, NULL,   /* we're not aligning search hits */
+			  esl_opt_GetInteger(go, "--banddump"),
+			  esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL);
   return eslOK;
   
   /* ERROR:

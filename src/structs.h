@@ -196,6 +196,7 @@ typedef struct cplan9_s {
    */
   float  null[CP9MAXABET];         /* "random sequence" emission prob's     +*/
   float  p1;                       /* null model loop probability           +*/
+  /* local end, EL state parameters */
   float  el_self;                  /* EL transition self loop probability    */
   int    el_selfsc;                /* EL transition self loop score          */
   int   *has_el;                   /* has_el[k] is TRUE if node k has an EL state */
@@ -529,6 +530,7 @@ typedef struct cmstats_s {
 #define CM_ALIGN_SAMPLE        (1<<16) /* sample parsetrees from the inside matrix */
 #define CM_ALIGN_FLUSHINSERTS  (1<<17) /* flush inserts L/R like pre 1.0 infernal  */
 #define CM_ALIGN_CHECKFB       (1<<18) /* check forward/backward CP9 HMM calcs     */
+#define CM_ALIGN_OLDDP         (1<<19) /* use old (v0.81) DP align functions       */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_NOQDB        (1<<0)  /* DO NOT use QDB to search (QDB is default)*/
@@ -549,6 +551,7 @@ typedef struct cmstats_s {
 #define CM_SEARCH_RSEARCH      (1<<15) /* use RSEARCH parameterized CM             */
 #define CM_SEARCH_CMGREEDY     (1<<16) /* use greedy alg to resolve CM overlaps    */
 #define CM_SEARCH_HMMGREEDY    (1<<17) /* use greedy alg to resolve HMM overlaps   */
+#define CM_SEARCH_OLDDP        (1<<18) /* use old (v0.81) DP search functions      */
 
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]
@@ -912,6 +915,13 @@ typedef struct {
 
 /* RSEARCH macros/#defines etc. (from rnamat.h) */
 
+/* coordinate -- macro that checks if it's reverse complement and if so 
+   returns coordinate in original strand
+   a = true if revcomp, false if not
+   b = the position in current seq
+   c = length of the seq
+*/
+#define COORDINATE(a,b,c) ( a ? -1*b+c+1 : b)
 #define RNAPAIR_ALPHABET "AAAACCCCGGGGUUUU"
 #define RNAPAIR_ALPHABET2 "ACGUACGUACGUACGU"
 /* Returns true if pos. C of seq B of msa A is a gap */
@@ -1181,11 +1191,11 @@ typedef struct scaninfo_s {
  * of a CM scan. All arrays are 0..L.
  */
 typedef struct cm_gammahitmx_s {
-  int       L;                  /* length of sequence, arrays are size L+1 (or L+2 if iambackward = TRUE) */
-  float    *mx;                 /* SHMM DP matrix for optimum nonoverlap resolution */
-  int      *gback;              /* traceback pointers for SHMM */ 
-  float    *savesc;             /* saves score of hit added to best parse at j */
-  int      *saver;		/* saves initial non-ROOT state of best parse ended at j */
+  int       L;                  /* length of sequence, arrays are size L+1 */
+  float    *mx;                 /* [0..L] SHMM DP matrix for optimum nonoverlap resolution */
+  int      *gback;              /* [0..L] traceback pointers for SHMM */ 
+  float    *savesc;             /* [0..L] saves score of hit added to best parse at j */
+  int      *saver;		/* [0..L] saves initial non-ROOT state of best parse ended at j */
   float     cutoff;             /* minimum score to report */
   int       i0;                 /* position of first residue in sequence (gamma->mx[0] corresponds to this residue) */
   int       iamgreedy;          /* TRUE to use RSEARCH's greedy overlap resolution alg, FALSE to use optimal alg */
@@ -1291,6 +1301,7 @@ typedef struct cm_s {
   int       search_opts;/* search options                                                     */
   CP9_t    *cp9;        /* a CM Plan 9 HMM, always built when the model is read from a file   */
   CP9Map_t *cp9map;     /* the map from the Plan 9 HMM to the CM and vice versa               */
+  CP9Bands_t *cp9b;     /* the CP9 bands                                                      */
   int       enf_start;  /* if(cm->config_opts & CM_CONFIG_ENFORCE) the first posn to enforce, else 0 */
   char     *enf_seq;    /* if(cm->config_opts & CM_CONFIG_ENFORCE) the subseq to enforce, else NULL  */
   float     enf_scdiff; /* if(cm->config_opts & CM_CONFIG_ENFORCE) the difference in scoring  *
@@ -1320,6 +1331,8 @@ typedef struct cm_s {
 
   /* DP matrices and precalc'ed scores for DP algorithms */
   ScanInfo_t *si;       /* matrices, info for CYK/Inside scans with this CM */
+  CM_FHB_MX  *fhbmx;    /* HMM banded float matrix */
+  CM_IHB_MX  *ihbmx;    /* HMM banded float matrix */
 
   /* From 1.0-ification, based on HMMER3 */
   const  ESL_ALPHABET *abc;     /* ptr to alphabet info (cm->abc->K is alphabet size)*/

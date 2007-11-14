@@ -113,6 +113,7 @@ CreateCMShell(void)
   cm->beta   = DEFAULT_BETA;     /* 1E-7 the default beta (tail loss for QDB) */
   cm->tau    = DEFAULT_TAU;      /* 1E-7 the default tau  (tail loss for HMM banding) */
   cm->cp9    = NULL;          
+  cm->cp9b   = NULL;
   cm->cp9map = NULL;
   cm->enf_start   = 0;
   cm->enf_seq     = NULL;
@@ -128,6 +129,8 @@ CreateCMShell(void)
   cm->hmmpad       = DEFAULT_HMMPAD; /* 0 residues */
   cm->stats        = NULL;
   cm->si           = NULL;
+  cm->fhbmx        = NULL;
+  cm->ihbmx        = NULL;
   cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
 
@@ -224,8 +227,15 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   cm->dmin          = NULL;
   cm->dmax          = NULL;
   cm->cp9           = NULL;
+  cm->cp9b          = NULL;
   cm->cp9map        = NULL;
-  /* we'll allocate the cp9 and cp9map only if nec inside ConfigCM() */
+
+  /* create HMM banded matrices, these only depend (at first) on num states, M
+   * they are initially empty, but expanded to fit target sequences as needed */
+  cm->fhbmx = cm_fhb_mx_Create(cm->M);
+  cm->ihbmx = cm_ihb_mx_Create(cm->M);
+
+  /* we'll allocate the cp9, cp9b and cp9map only if nec inside ConfigCM() */
   return;
 
  ERROR:
@@ -347,9 +357,12 @@ FreeCM(CM_t *cm)
   free(cm->dmin);
   free(cm->dmax);
   if(cm->cp9map     != NULL) FreeCP9Map(cm->cp9map);
+  if(cm->cp9b       != NULL) FreeCP9Bands(cm->cp9b);
   if(cm->cp9        != NULL) FreeCPlan9(cm->cp9);
   if(cm->root_trans != NULL) free(cm->root_trans);
   if(cm->stats      != NULL) FreeCMStats(cm->stats);
+  if(cm->fhbmx      != NULL) cm_fhb_mx_Destroy(cm->fhbmx);
+  if(cm->ihbmx      != NULL) cm_ihb_mx_Destroy(cm->ihbmx);
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
   free(cm);
 }
@@ -1805,6 +1818,10 @@ DuplicateCM(CM_t *cm)
   if(cm->flags & CMH_SCANINFO) {
     cm_CreateScanInfo(new, (cm->si->flags & cmSI_HAS_FLOAT), (cm->si->flags & cmSI_HAS_INT));
   }
+
+  /* create HMM banded matrices */
+  new->fhbmx = cm_fhb_mx_Create(cm->M);
+  new->ihbmx = cm_ihb_mx_Create(cm->M);
 
   /* Copy the CM stats if they exist */
   if(cm->flags & CMH_GUMBEL_STATS)

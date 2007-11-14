@@ -117,14 +117,14 @@ AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm)
   ESL_ALLOC(cp9bands->safe_hdmax, sizeof(int)   * cp9bands->cm_M);
   ESL_ALLOC(cp9bands->hdmin,      sizeof(int *) * cp9bands->cm_M);
   ESL_ALLOC(cp9bands->hdmax,      sizeof(int *) * cp9bands->cm_M);
-  /* NOTE: cp9bands->hdmin and hdmax are 2D arrays, that are alloc'ed
-   * inside hmmband.c::CP9_seq2bands() dependent on size of j bands
-   * for each state. They are the only part of the CP9Bands_t data
-   * structure that is allocated in seq-dependent fashion, so it
-   * they are freed after bands are used for each seq (this is done
-   * in cm_dispatch::actually_align_targets()).
+  cp9bands->hdmin[0] = NULL;
+  cp9bands->hdmax[0] = NULL;
+  /* NOTE: cp9bands->hdmin and hdmax are 2D arrays, the ptrs are 
+   * alloc'ed here, but the actually memory is alloc'ed by
+   * hmmband.c:cp9_Seq2Bands() with a call to hmmband.c:cp9_GrowHDBands(). 
+   * We set hdmin[0] = hdmax[0] = NULL so we know not to free them 
+   * if they were never alloc'ed.
    */
-
   cp9bands->hd_needed  = 0;
   cp9bands->hd_alloced = 0;
   return cp9bands;
@@ -140,19 +140,16 @@ AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm)
 void 
 FreeCP9Bands(CP9Bands_t *cp9bands)
 {
-  int v;
   free(cp9bands->imin);
   free(cp9bands->imax);
   free(cp9bands->jmin);
   free(cp9bands->jmax);
   free(cp9bands->safe_hdmin);
   free(cp9bands->safe_hdmax);
-  /* the v&j dependent d bands might have already been freed, for
-   * example if one CP9Bands_t structure was used for multiple seqs,
-   * the hdmin bands are the only part that is seq and CM dependent,
-   * instead of just CM dependent. */
-  free(cp9bands->hdmin[0]); /* all v were malloc'ed as a block */
-  free(cp9bands->hdmax[0]); /* all v were malloc'ed as a block */
+  if(cp9bands->hdmin[0] != NULL)
+    free(cp9bands->hdmin[0]); /* all v were malloc'ed as a block */
+  if(cp9bands->hdmax[0] != NULL) 
+    free(cp9bands->hdmax[0]); /* all v were malloc'ed as a block */
   free(cp9bands->hdmin);
   free(cp9bands->hdmax);
 
@@ -194,16 +191,15 @@ DScore2Prob(int sc, float null)
  *           i0          - start of target subsequence (often 1, beginning of sq)
  *           j0          - end of target subsequence (often L, end of sq)
  *           cp9b        - PRE-ALLOCATED, the HMM bands for this sequence, filled here.
+ *           doing_search- TRUE if we're going to use these HMM bands for search, not alignment
  *           debug_level - verbosity level for debugging printf()s
  * Return:  void
  */
 void 
-cp9_Seq2Bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int debug_level)
+cp9_Seq2Bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int debug_level)
 {
-  int             status;
   int             use_sums; /* TRUE to fill and use posterior sums during HMM band calc  *
 			     * leads to wider bands                                      */
-  int             v;        /* state index                                               */
   int             sc;
   float           fsc;
   CP9_dpmatrix_t *cp9_fwd;   /* growable DP matrix for forward                       */
@@ -272,14 +268,13 @@ cp9_Seq2Bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int debu
 		  cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, debug_level);
   
   /* Use the CM bands on i and j to get bands on d, specific to j. */
-  cp9_GrowHDBands(cp9b);
+  if(doing_search) cp9_RelaxRootBandsForSearch(cm, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax);
 
-  /*for(v = 0; v < cm->M; v++) {
-    ESL_ALLOC(cp9b->hdmin[v], sizeof(int) * (cp9b->jmax[v] - cp9b->jmin[v] + 1));
-    ESL_ALLOC(cp9b->hdmax[v], sizeof(int) * (cp9b->jmax[v] - cp9b->jmin[v] + 1));
-    }*/
+  cp9_GrowHDBands(cp9b); /* this must be called before ij2d_bands() so hdmin, hdmax are adjusted for new seq */
   ij2d_bands(cm, (j0-i0+1), cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, debug_level);
   
+  if(eslDEBUGLEVEL >= 1) cp9_ValidateBands(cm, cp9b);
+
   if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, (j0-i0+1));
 
   /* free matrices, currently no option of returning them */
@@ -287,9 +282,6 @@ cp9_Seq2Bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int debu
   FreeCPlan9Matrix(cp9_bck);
 
   return;
-
- ERROR:
-  cm_Fail("Memory allocation error.\n");
 }
 
 
@@ -3151,33 +3143,102 @@ cp9_DebugCheckFB(struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx,
 
 
 /*********************************************************************
- * Function: relax_root_bands()
+ * Function: cp9_RelaxRootBandsForSearch()
  * 
  * Purpose:  In cp9_HMM2ijBands(), ROOT_S (state 0) sets imin[0]=imax[0]=i0,
  *           and jmin[0]=jmax[0]=j0, which is important for alignment,
  *           but during search enforces that the optimal alignment start
  *           at i0 and end at j0, but when searching we want to relax this
  *           requirement in case a higher scoring parse has different endpoints.
- *           This function simply sets imax[0] = imax[1] (ROOT_IL) and
+ *           This function sets imax[0] as maximum i = imax[1] (ROOT_IL) and
  *           jmin[0] = jmin[2] (ROOT_IR).
  *           
  * Args:
+ * cm               the cm
  * int *imin        imin[v] = first position in band on i for state v
  * int *imax        imax[v] = last position in band on i for state v
  * int *jmin        jmin[v] = first position in band on j for state v
  * int *jmax        jmax[v] = last position in band on j for state v
- *           
  */
 void
-relax_root_bands(int *imin, int *imax, int *jmin, int *jmax)
+cp9_RelaxRootBandsForSearch(CM_t *cm, int *imin, int *imax, int *jmin, int *jmax)
 {
-  /* Function 'knows' CM architecture */
-  imin[0] = (imin[3]-1 >= 0) ? imin[3]-1 : 0;  /* HACK!!!!!!!FIX THIS */
-  imax[0] = imax[1]; /* state 1 = ROOT_IL */
-  jmin[0] = jmin[2]; /* state 2 = ROOT_IR */
-  jmax[0] = jmax[3]; /*HACK!!!!!!! FIX THIS */
+  int y, yoffset;
+  /* look at all children y of ROOT_S (v == 0) and set:
+   * imin[0] = min_y imin[y];
+   * imax[0] = max_y imax[y];
+   * jmin[0] = min_y jmin[y];
+   * jmax[0] = max_y jmax[y];
+   */
+  /* First look at children of 0 (these probs will be 0. if local begins on, but it doesn't matter for our purposes here) */
+  for (yoffset = 0; yoffset < cm->cnum[0]; yoffset++) {
+    y = cm->cnum[0] + yoffset;
+    imin[0] = ESL_MIN(imin[0], imin[y]);
+    imax[0] = ESL_MAX(imax[0], imax[y]);
+    jmin[0] = ESL_MIN(jmin[0], jmin[y]);
+    jmax[0] = ESL_MAX(jmax[0], jmax[y]);
+  }
+  /* now for possible local begins */
+  if(cm->flags & CMH_LOCAL_BEGIN) {
+    for (y = 1; y < cm->M; y++) {
+      if(NOT_IMPOSSIBLE(cm->beginsc[y])) { 
+	imin[0] = ESL_MIN(imin[0], imin[y]);
+	imax[0] = ESL_MAX(imax[0], imax[y]);
+	jmin[0] = ESL_MIN(jmin[0], jmin[y]);
+	jmax[0] = ESL_MAX(jmax[0], jmax[y]);
+      }
+    }
+  }
 }
 
+
+/*
+ * Function: cp9_ValidateBands()
+ * Incept:   EPN, Wed Nov 14 15:49:08 2007
+ * Purpose:  Validate the info in CP9Bands_t data structure is internally
+ *           consistent.
+ *           
+ * Args:
+ * cm               the cm
+ * cp9b             the CP9 bands object 
+ */
+void
+cp9_ValidateBands(CM_t *cm, CP9Bands_t *cp9b)
+{
+  int v;            /* counter over states of the CM */
+  int j0;           /* counter over valid j's, but offset. j0+jmin[v] = actual j */
+  int sd;           /* minimum d allowed for a state, ex: MP_st = 2, ML_st = 1. etc. */
+  int hd_needed;
+  int j;
+
+  if(cm->M    != cp9b->cm_M)  cm_Fail("cp9_ValidateBands(), cm->M != cp9b->cm_M\n");
+  if(cm->clen != cp9b->hmm_M) cm_Fail("cp9_ValidateBands(), cm->clen != cp9b->hmm_M\n");
+  
+  hd_needed = 0; 
+  for(v = 0; v < cp9b->cm_M; v++) 
+    hd_needed += cp9b->jmax[v] - cp9b->jmin[v] + 1;
+  if(hd_needed != cp9b->hd_needed) cm_Fail("cp9_ValidateBands(), cp9b->hd_needed inconsistent.");
+
+  for(v = 0; v < cm->M; v++) {
+    if(cm->sttype[v] == E_st) {
+      for(j0 = 0; j0 <= (cp9b->jmax[v]-cp9b->jmin[v]); j0++) {
+	if(cp9b->hdmin[v][j0] != 0) cm_Fail("cp9_ValidateBands(), cp9b->hdmin for E state is inconsistent.");
+	if(cp9b->hdmax[v][j0] != 0) cm_Fail("cp9_ValidateBands(), cp9b->hdmin for E state is inconsistent.");
+      }
+    }
+    else {
+      sd = StateDelta(cm->sttype[v]);
+      for(j0 = 0; j0 <= (cp9b->jmax[v]-cp9b->jmin[v]); j0++) {
+	j = j0+cp9b->jmin[v];
+	if(cp9b->hdmin[v][j0] != ESL_MAX((j - cp9b->imax[v] + 1), sd)) cm_Fail("cp9_ValidateBands(), cp9b->hdmin for state %d is inconsistent.", v);
+	if(cp9b->hdmax[v][j0] != ESL_MAX((j - cp9b->imin[v] + 1), sd)) cm_Fail("cp9_ValidateBands(), cp9b->hdmax for state %d is inconsistent.", v);
+      }
+    }
+
+    if(cp9b->imin[v] < cp9b->imin[0]) cm_Fail("cp9_ValidateBands(), cp9b->imin[v:%d]: %d less than cp9b->imin[0]: %d.", v, cp9b->imin[v], cp9b->imin[0]);
+    if(cp9b->jmax[v] > cp9b->jmax[0]) cm_Fail("cp9_ValidateBands(), cp9b->jmax[v:%d]: %d greater than cp9b->jmax[0]: %d.", v, cp9b->jmax[v], cp9b->jmax[0]);
+  }
+}
 
 /*********************************************************************
  * Function: cp9_GrowHDBands()
@@ -3204,8 +3265,11 @@ cp9_GrowHDBands(CP9Bands_t *cp9b)
     cp9b->hd_needed += cp9b->jmax[v] - cp9b->jmin[v] + 1;
 
   if(cp9b->hd_alloced < cp9b->hd_needed) {
-    ESL_ALLOC(cp9b->hdmin[0], sizeof(int) * cp9b->hd_needed);
-    ESL_ALLOC(cp9b->hdmax[0], sizeof(int) * cp9b->hd_needed);
+    void *tmp;
+    if(cp9b->hdmin[0] == NULL) ESL_ALLOC(cp9b->hdmin[0], sizeof(int) * cp9b->hd_needed);
+    else                       ESL_RALLOC(cp9b->hdmin[0], tmp, sizeof(int) * cp9b->hd_needed);
+    if(cp9b->hdmax[0] == NULL) ESL_ALLOC(cp9b->hdmax[0], sizeof(int) * cp9b->hd_needed);
+    else                       ESL_RALLOC(cp9b->hdmax[0], tmp, sizeof(int) * cp9b->hd_needed);
   }
  
   /* set pointers */

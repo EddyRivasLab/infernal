@@ -1747,19 +1747,19 @@ Xcp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, in
 				   * special b/c it's the only node we can END from */
 	    {
 	      /*match state*/
-	      sc = ILogsumNI(ILogsumNI(mmx[prv][k-1] + TSC(cp9O_MM,k-1),
+	      sc = ILogsum(ILogsum(mmx[prv][k-1] + TSC(cp9O_MM,k-1),
 				       imx[prv][k-1] + TSC(cp9O_IM,k-1)),
 			     dmx[prv][k-1] + TSC(cp9O_DM,k-1));
 	      mmx[cur][k] = sc + msc[k];
 	      
 	      /*insert state*/
-	      sc = ILogsumNI(ILogsumNI(mmx[prv][k] + TSC(cp9O_MI,k),
+	      sc = ILogsum(ILogsum(mmx[prv][k] + TSC(cp9O_MI,k),
 				       imx[prv][k] + TSC(cp9O_II,k)),
 			     dmx[prv][k] + TSC(cp9O_DI,k));
 	      imx[cur][k] = sc + isc[k];
 	      
 	      /*delete state*/
-	      sc = ILogsumNI(ILogsumNI(mmx[cur][k-1] + TSC(cp9O_MD,k-1),
+	      sc = ILogsum(ILogsum(mmx[cur][k-1] + TSC(cp9O_MD,k-1),
 				       imx[cur][k-1] + TSC(cp9O_ID,k-1)),
 			     dmx[cur][k-1] + TSC(cp9O_DD,k-1));
 	      dmx[cur][k] = sc;
@@ -1777,22 +1777,22 @@ Xcp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, in
 	  for (k = 2; k < M; k++)
 	    {
 	      /*match state*/
-	      sc = ILogsumNI(ILogsumNI(mmx[prv][k-1] + TSC(cp9O_MM,k-1),
+	      sc = ILogsum(ILogsum(mmx[prv][k-1] + TSC(cp9O_MM,k-1),
 				       imx[prv][k-1] + TSC(cp9O_IM,k-1)),
 			     dmx[prv][k-1] + TSC(cp9O_DM,k-1));
 	      for(c = 0; c < cm->cp9->el_from_ct[k]; c++) /* el_from_ct[k] is >= 0 */
-		sc = ILogsumNI(sc, elmx[prv][cm->cp9->el_from_idx[k][c]]);
+		sc = ILogsum(sc, elmx[prv][cm->cp9->el_from_idx[k][c]]);
 	      mmx[cur][k] = sc + msc[k];
 	    
 	    
 	      /*insert state*/
-	      sc = ILogsumNI(ILogsumNI(mmx[prv][k] + TSC(cp9O_MI,k),
+	      sc = ILogsum(ILogsum(mmx[prv][k] + TSC(cp9O_MI,k),
 				       imx[prv][k] + TSC(cp9O_II,k)),
 			     dmx[prv][k] + TSC(cp9O_DI,k));
 	      imx[cur][k] = sc + isc[k];
 
 	      /*delete state*/
-	      sc = ILogsumNI(ILogsumNI(mmx[cur][k-1] + TSC(cp9O_MD,k-1),
+	      sc = ILogsum(ILogsum(mmx[cur][k-1] + TSC(cp9O_MD,k-1),
 				       imx[cur][k-1] + TSC(cp9O_ID,k-1)),
 			     dmx[cur][k-1] + TSC(cp9O_DD,k-1));
 	      dmx[cur][k] = sc;
@@ -1801,7 +1801,7 @@ Xcp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, in
 	      sc = -INFTY;
 	      if(cm->cp9->has_el[k]) { /* not all HMM nodes have an EL state (for ex: 
 					  HMM nodes that map to right half of a MATP_MP) */
-		sc = ILogsumNI(mmx[cur][k]  + TSC(cp9O_MEL,k), /* transitioned from cur node's match state */
+		sc = ILogsum(mmx[cur][k]  + TSC(cp9O_MEL,k), /* transitioned from cur node's match state */
 			       elmx[prv][k] + el_selfsc);      /* transitioned from cur node's EL state emitted ip on transition */
 	      }
 	      elmx[cur][k] = sc;
@@ -1815,23 +1815,23 @@ Xcp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, in
 	  for (k = 2; k < M; k++)
 	    {
 	      /*match state*/
-	      sc = ILogsumNI(ILogsumNI(mmx[prv][k-1] + TSC(cp9O_MM,k-1),
+	      sc = ILogsum(ILogsum(mmx[prv][k-1] + TSC(cp9O_MM,k-1),
 				       imx[prv][k-1] + TSC(cp9O_IM,k-1)),
-			     ILogsumNI(dmx[prv][k-1] + TSC(cp9O_DM,k-1),
+			     ILogsum(dmx[prv][k-1] + TSC(cp9O_DM,k-1),
 				       mmx[prv][0]   + TSC(cp9O_BM,k  )));
 	      mmx[cur][k] = sc + msc[k];
 	    
 	      /* E state update */
-	      endsc = ILogsumNI(endsc, mmx[cur][k] + TSC(cp9O_ME,k));
+	      endsc = ILogsum(endsc, mmx[cur][k] + TSC(cp9O_ME,k));
 	    
 	      /*insert state*/
-	      sc = ILogsumNI(ILogsumNI(mmx[prv][k] + TSC(cp9O_MI,k),
+	      sc = ILogsum(ILogsum(mmx[prv][k] + TSC(cp9O_MI,k),
 				       imx[prv][k] + TSC(cp9O_II,k)),
 			     dmx[prv][k] + TSC(cp9O_DI,k));
 	      imx[cur][k] = sc + isc[k];
 
 	      /*delete state*/
-	      sc = ILogsumNI(ILogsumNI(mmx[cur][k-1] + TSC(cp9O_MD,k-1),
+	      sc = ILogsum(ILogsum(mmx[cur][k-1] + TSC(cp9O_MD,k-1),
 				       imx[cur][k-1] + TSC(cp9O_ID,k-1)),
 			     dmx[cur][k-1] + TSC(cp9O_DD,k-1));
 	      dmx[cur][k] = sc;
@@ -1845,25 +1845,25 @@ Xcp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, in
 	  for (k = 2; k < M; k++)
 	    {
 	      /*match state*/
-	      sc = ILogsumNI(ILogsumNI(mmx[prv][k-1] + TSC(cp9O_MM,k-1),
+	      sc = ILogsum(ILogsum(mmx[prv][k-1] + TSC(cp9O_MM,k-1),
 				       imx[prv][k-1] + TSC(cp9O_IM,k-1)),
-			     ILogsumNI(dmx[prv][k-1] + TSC(cp9O_DM,k-1),
+			     ILogsum(dmx[prv][k-1] + TSC(cp9O_DM,k-1),
 				       mmx[prv][0]   + TSC(cp9O_BM,k  )));
 	      for(c = 0; c < cm->cp9->el_from_ct[k]; c++) /* el_from_ct[k] is >= 0 */
-		sc = ILogsumNI(sc, elmx[prv][cm->cp9->el_from_idx[k][c]]);
+		sc = ILogsum(sc, elmx[prv][cm->cp9->el_from_idx[k][c]]);
 	      mmx[cur][k] = sc + msc[k];
 	    
 	      /* E state update */
-	      endsc = ILogsumNI(endsc, mmx[cur][k] + TSC(cp9O_ME,k));
+	      endsc = ILogsum(endsc, mmx[cur][k] + TSC(cp9O_ME,k));
 	    
 	      /*insert state*/
-	      sc = ILogsumNI(ILogsumNI(mmx[prv][k] + TSC(cp9O_MI,k),
+	      sc = ILogsum(ILogsum(mmx[prv][k] + TSC(cp9O_MI,k),
 				       imx[prv][k] + TSC(cp9O_II,k)),
 			     dmx[prv][k] + TSC(cp9O_DI,k));
 	      imx[cur][k] = sc + isc[k];
 
 	      /*delete state*/
-	      sc = ILogsumNI(ILogsumNI(mmx[cur][k-1] + TSC(cp9O_MD,k-1),
+	      sc = ILogsum(ILogsum(mmx[cur][k-1] + TSC(cp9O_MD,k-1),
 				       imx[cur][k-1] + TSC(cp9O_ID,k-1)),
 			     dmx[cur][k-1] + TSC(cp9O_DD,k-1));
 	      dmx[cur][k] = sc;
@@ -1872,7 +1872,7 @@ Xcp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, in
 	      sc = -INFTY;
 	      if(cm->cp9->has_el[k]) { /* not all HMM nodes have an EL state (for ex: 
 					  HMM nodes that map to right half of a MATP_MP) */
-		sc = ILogsumNI(mmx[cur][k]  + TSC(cp9O_MEL,k), /* transitioned from cur node's match state */
+		sc = ILogsum(mmx[cur][k]  + TSC(cp9O_MEL,k), /* transitioned from cur node's match state */
 			       elmx[prv][k] + el_selfsc);      /* transitioned from cur node's EL state emitted ip on transition */
 	      }
 	      elmx[cur][k] = sc;
