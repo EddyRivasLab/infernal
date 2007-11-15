@@ -37,9 +37,9 @@
 #define STRATOPTS  "--cmonly,--hmmfilter,--hmmonly"                 /* exclusive choice for search strategy */
 #define ALPHOPTS   "--rna,--dna"                                    /* exclusive choice for output alphabet */
 
-#define I_CMCUTOPTS   "-E,-T,--ga,--tc,--nc,--negsc,--hmmonly"         /* exclusive choice for CM cutoff */
-#define I_HMMCUTOPTS1 "--hmmthr,--hmmcalcthr,--hmmE,--hmmT,--hmmnegsc" /* exclusive choice for HMM cutoff set 1 */
-#define I_HMMCUTOPTS2 "--hmmthr,--hmmcalcthr,--hmmE,--hmmT,--hmmnegsc,--cmonly" /* exclusive choice for HMM cutoff set 2 */
+#define I_CMCUTOPTS   "-E,-T,--ga,--tc,--nc,--hmmonly"                 /* exclusive choice for CM cutoff */
+#define I_HMMCUTOPTS1 "--hmmthr,--hmmcalcthr,--hmmE,--hmmT"            /* exclusive choice for HMM cutoff set 1 */
+#define I_HMMCUTOPTS2 "--hmmthr,--hmmcalcthr,--hmmE,--hmmT,--hmmonly"  /* exclusive choice for HMM cutoff set 2 */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -61,17 +61,15 @@ static ESL_OPTIONS options[] = {
   { "--hmmonly",  eslARG_NONE,  FALSE, NULL, NULL,      STRATOPTS, NULL,        NULL, "do not use CM at all, just scan with HMM (Forward +  Backward)", 2 },
   /* CM cutoff options */
   { "-E",        eslARG_REAL,   "0.1", NULL, "x>0.",    NULL,      NULL,  I_CMCUTOPTS, "use cutoff E-value of <x> for CM search", 3 },
-  { "-T",        eslARG_REAL,   "0.0", NULL, "x>=0.",   NULL,      NULL,  I_CMCUTOPTS, "use cutoff bit score of <x> for CM search", 3 },
+  { "-T",        eslARG_REAL,   "0.0", NULL, NULL,      NULL,      NULL,  I_CMCUTOPTS, "use cutoff bit score of <x> for CM search", 3 },
   { "--ga",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  I_CMCUTOPTS, "use CM Rfam GA gathering threshold as cutoff bit score", 3 },
   { "--tc",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  I_CMCUTOPTS, "use CM Rfam TC trusted cutoff as cutoff bit score", 3 },
   { "--nc",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  I_CMCUTOPTS, "use CM Rfam NC noise cutoff as cutoff bit score", 3 },
-  { "--negsc",   eslARG_REAL,   FALSE, NULL, NULL,      NULL,      NULL,  I_CMCUTOPTS, "set minimum CM bit score to report as <x> < 0 (experimental!)", 3 },
   /* HMM cutoff options */
   { "--hmmthr",  eslARG_NONE,   FALSE, NULL, NULL,    NULL,"--hmmfilter",I_HMMCUTOPTS1,"use HMM filter from cmcalibrate (in <cm file>)", 4 },
   { "--hmmcalcthr",eslARG_NONE, FALSE, NULL, NULL,    NULL,"--hmmfilter",I_HMMCUTOPTS1,"calculate HMM filter threshold by sampling from CM", 4 },
   { "--hmmE",    eslARG_REAL,   "50.", NULL, "x>0.",    NULL,      NULL, I_HMMCUTOPTS2,"use cutoff E-value of <x> for CP9 HMM filter/search", 4 },
-  { "--hmmT",    eslARG_REAL,   "0.0", NULL, "x>=0.",   NULL,      NULL, I_HMMCUTOPTS2,"use cutoff bit score of <x> for CP9 HMM filter/search", 4 },
-  { "--hmmnegsc",eslARG_REAL,   FALSE, NULL, NULL,      NULL,      NULL, I_HMMCUTOPTS2,"set minimum HMM bit score to report as <x> < 0 (experimental!)", 4 },
+  { "--hmmT",    eslARG_REAL,   "0.0", NULL, NULL,      NULL,      NULL, I_HMMCUTOPTS2,"use cutoff bit score of <x> for CP9 HMM filter/search", 4 },
    /* QDB related options */
   { "--beta",    eslARG_REAL,   "1e-7",NULL, "x>0",     NULL,      NULL, "--hmmonly", "set tail loss prob for QDB and window size calculation to <x>", 5 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmonly", "DO NOT use query dependent banding (QDB) for acceleration", 5 },
@@ -939,8 +937,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* set up CM parameters that are option-changeable */
   cm->beta   = esl_opt_GetReal(go, "--beta"); /* this will be DEFAULT_BETA unless changed at command line */
   cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
-  if(! esl_opt_IsDefault(go, "--negsc"))    cm->sc_boost     = -1. * esl_opt_GetReal(go, "--negsc");
-  if(! esl_opt_IsDefault(go, "--hmmnegsc")) cm->cp9_sc_boost = -1. * esl_opt_GetReal(go, "--hmmnegsc");
   if(! esl_opt_IsDefault(go, "--hmmpad"))   cm->hmmpad       =       esl_opt_GetInteger(go, "--hmmpad");
 
   /* Update cm->config_opts and cm->align_opts based on command line options */
@@ -1085,24 +1081,20 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
      esl_opt_IsDefault(go, "-T") && 
      esl_opt_IsDefault(go, "--ga") && 
      esl_opt_IsDefault(go, "--tc") && 
-     esl_opt_IsDefault(go, "--nc") && 
-     esl_opt_IsDefault(go, "--negsc")) /* none enabled, default CM cutoff */
-    {
-      /* Choose from, in order of priority:
-       * 1. default CM E value if CM file has Gumbel stats
-       * 3. default CM bit score
-       */
-      if(cm->flags & CMH_GUMBEL_STATS) /* use default CM E-value cutoff */
-	{
-	  cm->cutoff_type = E_CUTOFF;
-	  cm->cutoff      = esl_opt_GetReal(go, "-E");
-	}
-      else /* no Gumbel stats in CM file, use default bit score cutoff */
-	{
-	  cm->cutoff_type = SCORE_CUTOFF;
-	  cm->cutoff      = esl_opt_GetReal(go, "-T");
-	}
+     esl_opt_IsDefault(go, "--nc")) { 
+    /* Choose from, in order of priority:
+     * 1. default CM E value if CM file has Gumbel stats
+     * 3. default CM bit score
+     */
+    if(cm->flags & CMH_GUMBEL_STATS) { /* use default CM E-value cutoff */
+      cm->cutoff_type = E_CUTOFF;
+      cm->cutoff      = esl_opt_GetReal(go, "-E");
     }
+    else { /* no Gumbel stats in CM file, use default bit score cutoff */
+      cm->cutoff_type = SCORE_CUTOFF;
+      cm->cutoff      = esl_opt_GetReal(go, "-T");
+    }
+  }
   else if(! esl_opt_IsDefault(go, "-E")) {
     if(! (cm->flags & CMH_GUMBEL_STATS))
       ESL_FAIL(eslEINVAL, errbuf, "-E requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
@@ -1112,6 +1104,7 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
   else if(! esl_opt_IsDefault(go, "-T")) {
     cm->cutoff_type = SCORE_CUTOFF;
     cm->cutoff      = esl_opt_GetReal(go, "-T");
+    if((cm->cutoff < 0.) && (! esl_opt_GetBoolean(go, "--greedy"))) ESL_FAIL(eslEINVAL, errbuf, "with -T <x> option, <x> can only be less than 0. if --greedy also enabled.");
   }
   else if(! esl_opt_IsDefault(go, "--ga")) {
     if(! (cm->flags & CMH_GA))
@@ -1131,10 +1124,6 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
     cm->cutoff_type = SCORE_CUTOFF;
     cm->cutoff      = esl_opt_GetReal(go, "--nc");
   }
-  else if(! esl_opt_IsDefault(go, "--negsc")) {
-    cm->cutoff_type = SCORE_CUTOFF;
-    cm->cutoff = -1. * esl_opt_GetReal(go, "--negsc"); /* not sure about this, should it be 0.? test it */
-  }
   else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No CM cutoff selected. This shouldn't happen.");
 
   /* Set up CP9 HMM cutoff, either 0 or 1 of 5 options is enabled 
@@ -1143,8 +1132,7 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
   if(esl_opt_IsDefault(go, "--hmmthr") && 
      esl_opt_IsDefault(go, "--hmmcalcthr") && 
      esl_opt_IsDefault(go, "--hmmE") && 
-     esl_opt_IsDefault(go, "--hmmT") && 
-     esl_opt_IsDefault(go, "--hmmnegsc")) /* none enabled, default CP9 cutoff */
+     esl_opt_IsDefault(go, "--hmmT"))
     {
       /* Choose from, in order of priority:
        * 1. filter threshold in CM file (if ! --hmmonly)
@@ -1185,21 +1173,18 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
       ESL_FAIL(eslEINVAL, errbuf, "--hmmcalcthr requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
     cm->cp9_cutoff_type = E_CUTOFF;
     /* this gets overwritten later after threshold is calculated */
-    cm->cp9_cutoff_type = esl_opt_GetReal(go, "--hmmE");
+    cm->cp9_cutoff = esl_opt_GetReal(go, "--hmmE");
   }
   else if(! esl_opt_IsDefault(go, "--hmmE")) {
     if(! (cm->flags & CMH_GUMBEL_STATS))
       ESL_FAIL(eslEINVAL, errbuf, "--hmmE requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
     cm->cp9_cutoff_type = E_CUTOFF;
-    cm->cp9_cutoff_type = esl_opt_GetReal(go, "--hmmE");
+    cm->cp9_cutoff      = esl_opt_GetReal(go, "--hmmE");
   }
   else if(! esl_opt_IsDefault(go, "--hmmT")) {
     cm->cp9_cutoff_type = SCORE_CUTOFF;
-    cm->cp9_cutoff_type = esl_opt_GetReal(go, "--hmmT");
-  }
-  else if(! esl_opt_IsDefault(go, "--hmmnegsc")) {
-    cm->cp9_cutoff_type = SCORE_CUTOFF;
-    cm->cp9_cutoff = -1. * esl_opt_GetReal(go, "--hmmnegsc"); /* not sure about this, should it be 0.? test it */
+    cm->cp9_cutoff      = esl_opt_GetReal(go, "--hmmT");
+    if((cm->cp9_cutoff < 0.) && (! esl_opt_GetBoolean(go, "--hmmgreedy"))) ESL_FAIL(eslEINVAL, errbuf, "with -hmmT <x> option, <x> can only be less than 0. if --hmmgreedy also enabled.");
   }
   else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No CP9 cutoff selected. This shouldn't happen.");
      

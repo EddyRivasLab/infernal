@@ -826,9 +826,7 @@ cm_cp9_HybridScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, 
 	savesc[jp] = -INFTY;
 	i = ESL_MAX((j-W+1), i0);
 	ip = i-i0+1;
-	curr_sc = gamma[ip-1] + fsc + cm->cp9_sc_boost;
-	/* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
-	 * value is 0.0 if technique not used. */
+	curr_sc = gamma[ip-1] + fsc;
 	if (curr_sc > gamma[jp])
 	  {
 	    gamma[jp]  = curr_sc;

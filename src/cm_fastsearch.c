@@ -535,7 +535,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, si->bestr, cm->sc_boost, FALSE, results);
+      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, si->bestr, FALSE, results);
       /* cm_DumpScanInfoAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -1044,7 +1044,7 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, si->bestr, cm->sc_boost, TRUE, results);
+	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, si->bestr, TRUE, results);
       }
       /* cm_DumpScanInfoAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
@@ -1476,7 +1476,7 @@ XFastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, si->bestr, cm->sc_boost, TRUE, results);
+	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, si->bestr, TRUE, results);
       }
       /* cm_DumpScanInfoAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
@@ -1990,7 +1990,7 @@ X2FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, si->bestr, cm->sc_boost, TRUE, results);
+	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, si->bestr, TRUE, results);
       }
       /* cm_DumpScanInfoAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
@@ -2491,7 +2491,7 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, si->bestr, cm->sc_boost, TRUE, results);
+      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, si->bestr, TRUE, results);
       /* cm_DumpScanInfoAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -2770,7 +2770,7 @@ RefCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, si->bestr, cm->sc_boost, FALSE, results);
+      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, si->bestr, FALSE, results);
       /* cm_DumpScanInfoAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -3037,7 +3037,7 @@ RefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, si->bestr, cm->sc_boost, TRUE, results);
+	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, si->bestr, TRUE, results);
       }
       /* cm_DumpScanInfoAlpha(cm, si, j, i0, FALSE);*/
     } /* end loop over end positions j */
@@ -3325,7 +3325,7 @@ XRefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, si->bestr, cm->sc_boost, TRUE, results);
+	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, si->bestr, TRUE, results);
       }
       /* cm_DumpScanInfoAlpha(cm, si, j, i0, FALSE);*/
     } /* end loop over end positions j */
@@ -3600,7 +3600,7 @@ RefFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, si->bestr, cm->sc_boost, TRUE, results);
+      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, si->bestr, TRUE, results);
       /* cm_DumpScanInfoAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -4516,7 +4516,7 @@ FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_resul
     for(j = i0; j < jmin[v]; j++) {
       cm_UpdateGammaHitMx(gamma, j-i0+1, 
 			  NULL, 0, 0,   /* alpha_row is NULL, we're telling cm_UpdateGammaHitMx, this j is can't be a hit end pt */
-			  TRUE, bestr, cm->sc_boost, FALSE, results);
+			  TRUE, bestr, FALSE, results);
     }
   }
     
@@ -4547,7 +4547,7 @@ FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_resul
     
     /* report all hits with valid d for this j, only if results != NULL */
     if(results != NULL) { 
-      cm_UpdateGammaHitMx(gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, bestr, cm->sc_boost, FALSE, results);
+      cm_UpdateGammaHitMx(gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, bestr, FALSE, results);
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to results */
@@ -4555,7 +4555,7 @@ FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_resul
     for(j = jmax[v]+1; j <= j0; j++) {
       cm_UpdateGammaHitMx(gamma, j-i0+1, 
 			  NULL, 0, 0,   /* alpha_row is NULL, we're telling cm_UpdateGammaHitMx, this j is can't be a hit end pt */
-			  TRUE, bestr, cm->sc_boost, FALSE, results);
+			  TRUE, bestr, FALSE, results);
     }
   }
   /* find the best scoring hit */
@@ -4928,7 +4928,7 @@ FastFInsideScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_r
     for(j = i0; j < jmin[v]; j++) {
       cm_UpdateGammaHitMx(gamma, j-i0+1, 
 			  NULL, 0, 0,   /* alpha_row is NULL, we're telling cm_UpdateGammaHitMx, this j is can't be a hit end pt */
-			  TRUE, NULL, cm->sc_boost, TRUE, results);
+			  TRUE, NULL, TRUE, results);
     }
   }
     
@@ -4952,7 +4952,7 @@ FastFInsideScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_r
     
     /* report all hits with valid d for this j, only if results != NULL */
     if(results != NULL) { 
-      cm_UpdateGammaHitMx(gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, NULL, cm->sc_boost, TRUE, results);
+      cm_UpdateGammaHitMx(gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, NULL, TRUE, results);
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to results */
@@ -4960,7 +4960,7 @@ FastFInsideScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_r
     for(j = jmax[v]+1; j <= j0; j++) {
       cm_UpdateGammaHitMx(gamma, j-i0+1, 
 			  NULL, 0, 0,   /* alpha_row is NULL, we're telling cm_UpdateGammaHitMx, this j is can't be a hit end pt */
-			  TRUE, NULL, cm->sc_boost, TRUE, results);
+			  TRUE, NULL, TRUE, results);
     }
   }
   /* find the best scoring hit */

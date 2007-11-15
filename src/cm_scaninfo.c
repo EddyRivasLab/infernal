@@ -852,7 +852,6 @@ cm_FreeGammaHitMx(cm_GammaHitMx_t *gamma)
  *           dx        - maximum d to look at
  *           using_hmm_bands - if TRUE, alpha_row is offset by dn, so we look at [0..dx-dn]
  *           bestr     - [dn..dx] root state (0 or local entry) corresponding to hit stored in alpha_row
- *           sc_boost  - what to add to scores, usually 0.
  *           doing_inside - if TRUE, we don't store bestr, we've summed over all possible starts
  *           results   - results to add to, only used in this function if gamma->iamgreedy 
  *
@@ -861,7 +860,7 @@ cm_FreeGammaHitMx(cm_GammaHitMx_t *gamma)
  */
 void
 cm_UpdateGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, 
-		    int *bestr, float sc_boost, int doing_inside, search_results_t *results)
+		    int *bestr, int doing_inside, search_results_t *results)
 {
   int i, d;
   float sc;
@@ -871,6 +870,8 @@ cm_UpdateGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int
   int ip, jp;
 
   if(alpha_row == NULL && (!using_hmm_bands)) cm_Fail("cm_UpdateGammaHitMx(), alpha_row is NULL, but using_hmm_bands is FALSE.\n");
+  dmin = (using_hmm_bands) ? 0     : dn;
+  dmax = (using_hmm_bands) ? dx-dn : dx;
 
   /* mode 1: non-greedy  */
   if(! gamma->iamgreedy || alpha_row == NULL) { 
@@ -878,14 +879,11 @@ cm_UpdateGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int
     gamma->gback[j]  = -1;
     gamma->savesc[j] = IMPOSSIBLE;
     gamma->saver[j]  = -1;
-    dmin = (using_hmm_bands) ? 0     : dn;
-    dmax = (using_hmm_bands) ? dx-dn : dx;
 
     if(alpha_row != NULL) { 
       for (d = dmin; d <= dmax; d++) {
 	i = using_hmm_bands ? j-d+1-dn  : j-d+1;
-	sc = gamma->mx[i-1] + alpha_row[d] + sc_boost; 
-	/* sc_boost is experimental technique for finding hits < 0 bits. value is 0.0 if technique not used. */
+	sc = gamma->mx[i-1] + alpha_row[d];
 	if (sc > gamma->mx[j]) {
 	  gamma->mx[j]     = sc;
 	  gamma->gback[j]  = i;
@@ -905,27 +903,19 @@ cm_UpdateGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int
     /* First, report hit with d of dmin (min valid d) if >= cutoff */
     if (alpha_row[dmin] >= gamma->cutoff) {
       r = doing_inside ? -1 : bestr[dmin]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
-      ip = j-dmin+gamma->i0;
-      jp = j-1   +gamma->i0;
-      if(using_hmm_bands) { 
-	ip -= dn;
-	jp -= dn;
-      }
+      ip = using_hmm_bands ? j-(dmin+dn)+gamma->i0 : j-dmin+gamma->i0;
+      jp = j-1+gamma->i0;
       report_hit (ip, jp, r, alpha_row[dmin], results);
     }
     bestd = dmin;
     /* Now, if current score is greater than maximum seen previous, report
        it if >= cutoff and set new max */
-    for (d = dmin+1; dmin <= dmax; d++) {
+    for (d = dmin+1; d <= dmax; d++) {
       if (alpha_row[d] > alpha_row[bestd]) {
 	if (alpha_row[d] >= gamma->cutoff) { 
 	  r = doing_inside ? -1 : bestr[d]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
-	  ip = j-d+gamma->i0;
+	  ip = using_hmm_bands ? j-(d+dn)+gamma->i0 : j-d+gamma->i0;
 	  jp = j-1+gamma->i0;
-	  if(using_hmm_bands) { 
-	    ip -= dn;
-	    jp -= dn;
-	  }
 	  report_hit (ip, jp, r, alpha_row[d], results);
 	}
 	bestd = d;

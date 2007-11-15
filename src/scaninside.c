@@ -312,9 +312,7 @@ InsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
 	{
 	  i = j-d+1;
 	  gamma_i = j-d+1-i0+1;
-	  sc = gamma[gamma_i-1] + alpha[0][cur][d] + cm->sc_boost;
-	  /* sc_boost is experimental technique for finding hits < 0 bits. 
-	   * value is 0.0 if technique not used. */
+	  sc = gamma[gamma_i-1] + alpha[0][cur][d];
 	  if (sc > gamma[gamma_j])
 	    {
 	      gamma[gamma_j]  = sc;
@@ -743,9 +741,7 @@ InsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, i
 	{
 	  i = j-d+1;
 	  gamma_i = j-d+1-i0+1;
-	  sc = gamma[gamma_i-1] + alpha[0][cur][d]  + cm->sc_boost;
-	  /* sc_boost is experimental technique for finding hits < 0 bits. 
-	   * value is 0.0 if technique not used. */
+	  sc = gamma[gamma_i-1] + alpha[0][cur][d];
 	  if (sc > gamma[gamma_j])
 	    {
 	      gamma[gamma_j]  = sc;
@@ -1654,9 +1650,7 @@ iInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
 	{
 	  i = j-d+1;
 	  gamma_i = j-d+1-i0+1;
-	  sc = gamma[gamma_i-1] + Scorify(alpha[0][cur][d]) + cm->sc_boost;
-	  /* sc_boost is experimental technique for finding hits < 0 bits. 
-	   * value is 0.0 if technique not used. */
+	  sc = gamma[gamma_i-1] + Scorify(alpha[0][cur][d]);
 	  if (sc > gamma[gamma_j])
 	    {
 	      gamma[gamma_j]  = sc;
@@ -2087,9 +2081,7 @@ iInsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, 
 	{
 	  i = j-d+1;
 	  gamma_i = j-d+1-i0+1;
-	  sc = gamma[gamma_i-1] + Scorify(alpha[0][cur][d])  + cm->sc_boost;
-	  /* sc_boost is experimental technique for finding hits < 0 bits. 
-	   * value is 0.0 if technique not used. */
+	  sc = gamma[gamma_i-1] + Scorify(alpha[0][cur][d]);
 	  if (sc > gamma[gamma_j])
 	    {
 	      gamma[gamma_j]  = sc;

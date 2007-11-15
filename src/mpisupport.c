@@ -195,8 +195,6 @@ cm_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm comm, CM_t
 
   if (MPI_Unpack(buf, n, pos, &(cm->el_selfsc),          1, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &(cm->enf_scdiff),         1, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
-  if (MPI_Unpack(buf, n, pos, &(cm->sc_boost),           1, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
-  if (MPI_Unpack(buf, n, pos, &(cm->cp9_sc_boost),       1, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &(cm->cutoff),             1, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &(cm->cp9_cutoff),         1, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &(cm->pbegin),             1, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
@@ -306,8 +304,6 @@ cm_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm)
 
   if (MPI_Pack(&(cm->el_selfsc),          1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->enf_scdiff),         1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
-  if (MPI_Pack(&(cm->sc_boost),           1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
-  if (MPI_Pack(&(cm->cp9_sc_boost),       1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->cutoff),             1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->cp9_cutoff),         1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->pbegin),             1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
@@ -464,8 +460,8 @@ cm_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
    */
 
   if (MPI_Pack_size(1,       MPI_FLOAT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  n += (12+K)*sz; 
-  /* el_selfsc, enf_scdiff, sc_boost, cp9_sc_boost, cutoff, cp9_cutoff, pbegin, pend, eff_nseq (9) 
+  n += (10+K)*sz; 
+  /* el_selfsc, enf_scdiff, cutoff, cp9_cutoff, pbegin, pend, eff_nseq (9) 
    * ga, tc, nc, null (3+K) */
 
   if (MPI_Pack_size(1,      MPI_DOUBLE, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
@@ -2264,8 +2260,6 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
       MPI_Pack (&((*cm)->W),               1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->enf_start),       1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->enf_scdiff),      1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->sc_boost),        1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
-      MPI_Pack (&((*cm)->cp9_sc_boost),    1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->cutoff_type),     1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->cutoff),          1, MPI_FLOAT,  buf, BUFSIZE, &position, MPI_COMM_WORLD);
       MPI_Pack (&((*cm)->cp9_cutoff_type), 1, MPI_INT,    buf, BUFSIZE, &position, MPI_COMM_WORLD);
@@ -2306,8 +2300,6 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->W),               1, MPI_INT,   MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_start),       1, MPI_INT,   MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->enf_scdiff),      1, MPI_FLOAT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->sc_boost),        1, MPI_FLOAT, MPI_COMM_WORLD);
-      MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cp9_sc_boost),    1, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->ffract),          1, MPI_FLOAT, MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cutoff_type),     1, MPI_INT,   MPI_COMM_WORLD);
       MPI_Unpack (buf, BUFSIZE, &position, &((*cm)->cutoff),          1, MPI_FLOAT, MPI_COMM_WORLD);

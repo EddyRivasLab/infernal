@@ -1865,9 +1865,7 @@ CYKBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int 
 	  assert(i > 0);
 	  /*printf("v: %d gamma_i: %d d: %d\n", v, gamma_i, d);*/
 	  /*printf("alpha[0][j:%3d][d:%3d]: %f\n", j, d, alpha[0][cur][d]);*/
-	  sc = gamma[gamma_i-1] + alpha[0][cur][d] + cm->sc_boost;
-	  /* sc_boost is experimental technique for finding hits < 0 bits. 
-	   * value is 0.0 if technique not used. */
+	  sc = gamma[gamma_i-1] + alpha[0][cur][d];
 	  if (sc > gamma[gamma_j])
 	    {
 	      gamma[gamma_j]  = sc;
@@ -2437,9 +2435,7 @@ iInsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, 
 	  assert(i > 0);
 	  /*printf("v: %d gamma_i: %d d: %d\n", v, gamma_i, d);*/
 	  /*printf("alpha[0][j:%3d][d:%3d]: %f\n", j, d, Scorify(alpha[0][cur][d]));*/
-	  sc = gamma[gamma_i-1] + Scorify(alpha[0][cur][d]) + cm->sc_boost;
-	  /* sc_boost is experimental technique for finding hits < 0 bits. 
-	   * value is 0.0 if technique not used. */
+	  sc = gamma[gamma_i-1] + Scorify(alpha[0][cur][d]);
 	  if (sc > gamma[gamma_j])
 	    {
 	      gamma[gamma_j]  = sc;
