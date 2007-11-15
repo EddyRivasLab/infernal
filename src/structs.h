@@ -1080,27 +1080,6 @@ typedef struct cm_fhb_mx_s {
 			 * it when mx is freed. */
 } CM_FHB_MX;
 
-/* Declaration of CM dynamic programming matrix structure for 
- * alignment with int scores in vjd (state idx, aln posn,
- * subseq len) coordinates. May be banded in j and/or d dimensions.
- */
-typedef struct cm_ihb_mx_s {
-  int  M;		/* number of states (1st dim ptrs) in current mx */
-  
-  int    ncells_alloc;	/* current cell allocation limit */
-  int    ncells_valid;	/* current number of valid cells */
-  int   *nrowsA;        /* [0..v..M] current number allocated rows for deck v */
-
-  int   ***dp;          /*  [0.1..M][0..j..?][0..d..?]  ?s indicate
-			 *  mx could be banded in j and/or d dim */
-  int     *dp_mem;      /* the actual mem, points to dp[0][0][0] */
-
-  CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
-			 * matrix, which defines j, d, bands for each
-			 * state, only a reference, so don't free
-			 * it when mx is freed. */
-} CM_IHB_MX;
-
 #define MB_CM 0
 #define MB_CP9 1
 
@@ -1332,7 +1311,6 @@ typedef struct cm_s {
   /* DP matrices and precalc'ed scores for DP algorithms */
   ScanInfo_t *si;       /* matrices, info for CYK/Inside scans with this CM */
   CM_FHB_MX  *fhbmx;    /* HMM banded float matrix */
-  CM_IHB_MX  *ihbmx;    /* HMM banded float matrix */
 
   /* From 1.0-ification, based on HMMER3 */
   const  ESL_ALPHABET *abc;     /* ptr to alphabet info (cm->abc->K is alphabet size)*/

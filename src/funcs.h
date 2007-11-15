@@ -388,7 +388,7 @@ extern float RefFInsideScan (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, floa
 			     search_results_t *results, float **ret_vsc);
 extern float rsearch_CYKScan (CM_t *cm, ESL_DSQ *dsq, int L, float cutoff, int D, search_results_t *results);
 extern float FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_FHB_MX *mx);
-extern float FastFInsideScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_FHB_MX *mx);
+extern float FastInsideScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_FHB_MX *mx);
 extern float cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_vcalcs);
 
 /* from CP9_scan.c */
@@ -772,10 +772,8 @@ extern float fast_cyk_inside_align_hb (CM_t *cm, ESL_DSQ *dsq, int L, int vroot,
 extern float fast_cyk_insideT_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 				       int r, int z, int i0, int j0, int allow_begin, CM_FHB_MX *mx);
 extern float FastCYKInsideAlignHB     (CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, CM_FHB_MX *mx);
-extern float FastIInsideAlignHB       (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_IHB_MX *mx);
-extern float FastIOutsideAlignHB      (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_IHB_MX *mx, CM_IHB_MX *ins_mx, int do_check);
-extern float FastFInsideAlignHB       (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx);
-extern float FastFOutsideAlignHB      (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx, CM_FHB_MX *ins_mx, int do_check);
+extern float FastInsideAlignHB        (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx);
+extern float FastOutsideAlignHB       (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx, CM_FHB_MX *ins_mx, int do_check);
 
 /* from hmmband.c */
 extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
@@ -820,10 +818,6 @@ extern CM_FHB_MX * cm_fhb_mx_Create(int M);
 extern int         cm_fhb_mx_GrowTo(CM_FHB_MX *mx, CP9Bands_t *cp9b);
 extern int         cm_fhb_mx_Dump(FILE *ofp, CM_FHB_MX *mx);
 extern void        cm_fhb_mx_Destroy(CM_FHB_MX *mx);
-extern CM_IHB_MX * cm_ihb_mx_Create(int M);
-extern int         cm_ihb_mx_GrowTo(CM_IHB_MX *mx, CP9Bands_t *cp9b);
-extern int         cm_ihb_mx_Dump(FILE *ofp, CM_IHB_MX *mx);
-extern void        cm_ihb_mx_Destroy(CM_IHB_MX *mx);
 
 /* from cm_cp9_hybridsearch.c */
 extern float cm_cp9_HybridScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, int **ret_sc, 
