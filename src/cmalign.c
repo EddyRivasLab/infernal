@@ -34,7 +34,7 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define ALGOPTS  "--cyk,--inside,--outside,--hmmonly"        /* Exclusive choice for scoring algorithms */
+#define ALGOPTS  "--cyk,--optacc,--inside,--outside,--hmmonly" /* Exclusive choice for scoring algorithms */
 #define MEMOPTS  "--small,--nosmall"                         /* Exclusive choice for memory choice */
 #define ACCOPTS  "--nonbanded,--hbanded,--qdb"               /* Exclusive choice for acceleration strategies */
 #define ALPHOPTS "--rna,--dna"                               /* Exclusive choice for output alphabet */
@@ -59,10 +59,11 @@ static ESL_OPTIONS options[] = {
   { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "flush inserts left/right in output alignment", 1 },
   /* Algorithm options */
   { "--cyk",     eslARG_NONE,"default",NULL, NULL,   ALGOPTS,      NULL,        NULL, "align with the CYK algorithm", 3 },
+  { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,"--nosmall,--hbanded",NULL, "align with the Holmes/Durbin optimal accuracy algorithm", 3 },
   { "--hmmonly", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm",3 },
   { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Inside algorithm", 3 },
   { "--outside", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Outside algorithm", 3 },
-  { "--post",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "align with CYK and append posterior probabilities", 3 },
+  { "--post",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--nosmall",       NULL, "align with CYK and append posterior probabilities", 3 },
   { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,  "--post",        "-l", "check that posteriors are correctly calc'ed", 3 },
   { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "build sub CM for columns b/t HMM predicted start/end points", 3 },
   /* Memory options */
@@ -72,7 +73,7 @@ static ESL_OPTIONS options[] = {
   { "--nonbanded",eslARG_NONE,"default",NULL, NULL,  ACCOPTS,      NULL,        NULL, "do not use bands to accelerate aln algorithm", 5 },
   { "--hbanded", eslARG_NONE,   FALSE,  NULL, NULL,  ACCOPTS,"--nosmall",       NULL, "accelerate using CM plan 9 HMM banded CYK aln algorithm", 5 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 5 },
-  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "realign (non-banded) seqs with HMM banded CYK score < 0 bits", 5 },
+  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,"--post,--optacc","--hbanded",NULL, "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 5 },
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 5 },
   { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,   ACCOPTS,      NULL,        NULL, "use query dependent banded CYK alignment algorithm", 5 },
   { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 5 },
@@ -719,7 +720,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
   int i, imax;
 
   /* create a new MSA, if we didn't do either --inside or --outside */
-  if(esl_opt_GetBoolean(go, "--cyk") || esl_opt_GetBoolean(go, "--hmmonly"))
+  if(esl_opt_GetBoolean(go, "--cyk") || (esl_opt_GetBoolean(go, "--hmmonly") || (esl_opt_GetBoolean(go, "--optacc"))))
     {
       /* optionally include a fixed alignment provided with --withali,
        * this has already been checked to see it matches the CM structure */
@@ -873,6 +874,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
   if(esl_opt_GetBoolean(go, "--fins"))        cm->align_opts  |= CM_ALIGN_FLUSHINSERTS;
   if(esl_opt_GetBoolean(go, "--olddp"))       cm->align_opts  |= CM_ALIGN_OLDDP;
+  if(esl_opt_GetBoolean(go, "--optacc"))      cm->align_opts  |= CM_ALIGN_OPTACC;
   if(esl_opt_GetString (go, "--enfseq") != NULL)
     {
       cm->config_opts |= CM_CONFIG_ENFORCE;

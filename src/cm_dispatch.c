@@ -354,6 +354,7 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
   int do_timings   = FALSE;   /* TRUE to report timings */
   int do_check     = FALSE;   /* TRUE to check posteriors from Inside/Outside */
   int do_sample    = FALSE;   /* TRUE to sample from an Inside matrix */
+  int do_optacc    = FALSE;   /* TRUE to find optimally accurate alignment instead of CYK */
 
   /* Contract check */
   if(!(cm->flags & CMH_BITS))                            cm_Fail("ActuallyAlignTargets(), CMH_BITS flag down.\n");
@@ -395,27 +396,32 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
   if(cm->align_opts  & CM_ALIGN_CHECKINOUT) do_check     = TRUE;
   if(cm->align_opts  & CM_ALIGN_SCOREONLY)  do_scoreonly = TRUE;
   if(cm->align_opts  & CM_ALIGN_SAMPLE)     do_sample    = TRUE;
+  if(cm->align_opts  & CM_ALIGN_OPTACC)     do_optacc    = TRUE;
 
   /* another contract check */
   if((do_sample + do_inside + do_outside + do_post) > 1) cm_Fail("ActuallyAlignTargets(), exactly 0 or 1 of the following must be TRUE (== 1):\n\tdo_sample = %d\n\tdo_inside = %d\n\tdo_outside = %d\n\t do_post%d\n\tdo_hmmonly: %d\n\tdo_scoreonly: %d\n", do_sample, do_inside, do_outside, do_post, do_hmmonly, do_scoreonly);
 
   if(debug_level > 0) {
-    printf("do_local  : %d\n", do_local);
-    printf("do_qdb    : %d\n", do_qdb);
-    printf("do_hbanded: %d\n", do_hbanded);
-    printf("use_sums  : %d\n", use_sums);
-    printf("do_sub    : %d\n", do_sub);
-    printf("do_hmmonly: %d\n", do_hmmonly);
-    printf("do_inside : %d\n", do_inside);
-    printf("do_outside: %d\n", do_outside);
-    printf("do_small  : %d\n", do_small);
-    printf("do_post   : %d\n", do_post);
-    printf("do_timings: %d\n", do_timings);
+    printf("do_local    : %d\n", do_local);
+    printf("do_qdb      : %d\n", do_qdb);
+    printf("do_hbanded  : %d\n", do_hbanded);
+    printf("use_sums    : %d\n", use_sums);
+    printf("do_sub      : %d\n", do_sub);
+    printf("do_hmmonly  : %d\n", do_hmmonly);
+    printf("do_inside   : %d\n", do_inside);
+    printf("do_outside  : %d\n", do_outside);
+    printf("do_small    : %d\n", do_small);
+    printf("do_post     : %d\n", do_post);
+    printf("do_timings  : %d\n", do_timings);
+    printf("do_check    : %d\n", do_check);
+    printf("do_scoreonly: %d\n", do_scoreonly);
+    printf("do_sample   : %d\n", do_sample);
+    printf("do_optacc   : %d\n", do_optacc);
   }
 
   /* allocate out_mx, if needed, only if !do_sub, if do_sub each sub CM will need to allocate a new out_mx */
   out_mx = NULL;
-  if((!do_sub) && (do_hbanded && (do_post || do_outside))) out_mx = cm_hb_mx_Create(cm->M);
+  if((!do_sub) && (do_hbanded && (do_optacc || (do_post || do_outside)))) out_mx = cm_hb_mx_Create(cm->M);
 
   if      (sq_mode)   nalign = seqs_to_aln->nseq;
   else if(dsq_mode) { nalign = search_results->num_results; silent_mode = TRUE; }
@@ -574,7 +580,7 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
 	cp9map        = sub_cp9map;
 
 	/* Create the out_mx if needed, cm == sub_cm */
-	if(do_post || do_outside) out_mx = cm_hb_mx_Create(cm->M);
+	if(do_optacc || (do_post || do_outside)) out_mx = cm_hb_mx_Create(cm->M);
       }
     }
 
@@ -696,10 +702,15 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
       sc = CYKInside(cm, cur_dsq, L, 0, 1, L, cur_tr, cm->dmin, cm->dmax);
       if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
     }
-    else if(do_hbanded) { /* non-small, HMM banded CYK alignment */
-      sc = FastCYKInsideAlignHB(cm, cur_dsq, L, 0, 1, L, cur_tr, cm->hbmx);
-      /* if CM_ALIGN_HMMSAFE option is enabled, realign seqs w/HMM banded parses < 0 bits */
+    else if(do_hbanded) { /* non-small, HMM banded alignment, either CYK or optimally accurate */
+      if(do_post) sc = FastAlignHB(cm, cur_dsq, L, 1, L, cm->hbmx, do_optacc, out_mx, cur_tr, &(postcode[i]));
+      else        sc = FastAlignHB(cm, cur_dsq, L, 1, L, cm->hbmx, do_optacc, out_mx, cur_tr, NULL);
+      /* if CM_ALIGN_HMMSAFE option is enabled, realign seqs w/HMM banded parses < 0 bits,
+       * this should never happen in we're doing optimal accuracy or appending posteriors, due to option checking in cmalign, cmscore,
+       * but we check here to be safe */
       if(cm->align_opts & CM_ALIGN_HMMSAFE && sc < 0.) { 
+	if(do_post)   cm_Fail("ActuallyAlignTargets() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_POST.\n");
+	if(do_optacc) cm_Fail("ActuallyAlignTargets() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_OPTACC.\n");
 	tmpsc = sc;
 	if(!silent_mode) printf("\n%s HMM banded parse had a negative score, realigning with non-banded CYK.\n", seqs_to_aln->sq[i]->name);
 	FreeParsetree(*cur_tr);
@@ -719,12 +730,7 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
     /* end of large if() else if() else if() else statement */
     
     if(do_post) { /* do Inside() and Outside() runs and use alpha and beta to get posteriors */
-      if(do_hbanded) { /* HMM banded Inside/Outside --> posteriors */
-	FastInsideAlignHB (cm, cur_dsq, 1, L, cm->hbmx);
-	FastOutsideAlignHB(cm, cur_dsq, 1, L, out_mx, cm->hbmx, do_check);
-	FastPosteriorHB   (cm,          1, L, cm->hbmx, out_mx, out_mx);   
-	postcode[i] = CMPostalCodeHB(cm, L, out_mx, tr[i]);
-      }
+      if(do_hbanded) {;} /* we've already determined posteriors in FastAlignHB() call in block above, do nothing. */
       else { /* non-HMM banded Inside/Outside --> posteriors */
 	ESL_ALLOC(post, sizeof(float **) * (cm->M+1));
 	for (v = 0; v < cm->M+1; v++) post[v] = alloc_vjd_deck(L, 1, L);

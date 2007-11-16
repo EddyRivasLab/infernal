@@ -531,6 +531,7 @@ typedef struct cmstats_s {
 #define CM_ALIGN_FLUSHINSERTS  (1<<17) /* flush inserts L/R like pre 1.0 infernal  */
 #define CM_ALIGN_CHECKFB       (1<<18) /* check forward/backward CP9 HMM calcs     */
 #define CM_ALIGN_OLDDP         (1<<19) /* use old (v0.81) DP align functions       */
+#define CM_ALIGN_OPTACC        (1<<10) /* no CYK, aln w/Holmes/Durbin opt accuracy */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_NOQDB        (1<<0)  /* DO NOT use QDB to search (QDB is default)*/

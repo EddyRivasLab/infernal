@@ -4,7 +4,7 @@
  * Functions, and their non-optimized analogs: 
  * optimized version                slow, old, reference version      ~speedup
  * ----------------------------     --------------------------------- --------
- * fast_cyk_inside_align_hb()   --> hbandcyk.c:inside_b_jd_me()           1.5 
+ * fast_cyk_align_hb()          --> hbandcyk.c:inside_b_jd_me()           1.5 
  * fast_cyk_insideT_align_hb()  --> hbandcyk.c:insideT_b_jd_me()          N/A
  * FastCYKInsideAlignHB()       --> hbandcyk.c:CYKInside_b_jd()           N/A
  * FastInsideAlignHB()          --> cm_postprob.c:FInside_b_jd_me()       1.4
@@ -49,9 +49,8 @@
 #define TSC(s,k) (tsc[(v) * MAXCONNECT + (s)])
 #define AMX(j,v,d) (alphap[(j * cm->M * (W+1)) + ((v) * (W+1) + d)])
 
-
 /* 
- * Function: fast_cyk_inside_align_hb()
+ * Function: fast_cyk_align_hb()
  * based on inside_b_me() which was ...
  * based on inside()
  * Date:     EPN 03.29.06 [EPN started] 
@@ -104,8 +103,8 @@
  * Returns: Score of the optimal alignment.  
  */
 float 
-fast_cyk_inside_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow,  
-			 int allow_begin, int *ret_b, float *ret_bsc, CM_HB_MX *mx)
+fast_cyk_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow,  
+		  int allow_begin, int *ret_b, float *ret_bsc, CM_HB_MX *mx)
 {
   int      status;
   int      v,y,z;	/* indices for states  */
@@ -523,21 +522,25 @@ fast_cyk_inside_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int
   return 0.; /* never reached */
 }
 
-/* Function: fast_cyk_insideT_align_hb()
+/* Function: fast_alignT_hb()
  * Date:     EPN 03.29.06
  * 
  * Note:     based on insideT() [SRE, Fri Aug 11 12:08:18 2000 [Pittsburgh]]
- *           only difference is memory efficient bands on the j and d 
- *           dimensions from CP9Bands_t <cm->cp9b> are used. 
  *
- * Purpose:  Call fast_cyk_inside_align_hb(), get vjd shadow matrix;
- *           then trace back. Append the trace to a given
+ * Purpose:  Call either fast_cyk_align_hb() (if !<do_optacc>), 
+ *           or optimal_accuracy_align_hb()  (if  <do_optacc>),
+ *           get vjd shadow matrix; then trace back. Append the trace to a given
  *           traceback, which already has state r at tr->n-1.
+ *        
+ *           If (<do_optacc>) then post_mx must != NULL.
+ *
+ * Returns:  score of appended parsetree
+ *
  */
 float
-fast_cyk_insideT_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
-			  int r, int z, int i0, int j0, 
-			  int allow_begin, CM_HB_MX *mx)
+fast_alignT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
+	       int r, int z, int i0, int j0, 
+	       int allow_begin, CM_HB_MX *mx, int do_optacc, CM_HB_MX *post_mx)
 {
   void   ***shadow;             /* the traceback shadow matrix */
   float     sc;			/* the score of the CYK alignment */
@@ -554,22 +557,32 @@ fast_cyk_insideT_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   int       kp_z;               /* the k value (d dim) from the shadow matrix
 				 * giving the len of right fragment offset in deck z,
 				 * k = kp_z + hdmin[z][jp_z]*/
+  /* contract check */
+  if(dsq == NULL)      cm_Fail("fast_alignT_hb(), dsq == NULL.\n");
+  if(cm->cp9b == NULL) cm_Fail("fast_alignT_hb(), cm->cp9b == NULL.\n");
+  if(do_optacc && post_mx == NULL) cm_Fail("fast_alignT_hb(), do_optacc == TRUE but post_mx == NULL.\n");
+			 
   /* pointers to cp9b data for convenience */
   CP9Bands_t *cp9b= cm->cp9b;
   int       *jmin = cp9b->jmin;
   int     **hdmin = cp9b->hdmin;
   int     **hdmax = cp9b->hdmax;
 
-  /* Contract check */
-  if(dsq == NULL) cm_Fail("fast_cyk_inside_align_hbT(), dsq is NULL.");
-
-
-  sc = fast_cyk_inside_align_hb(cm, dsq, L, r, z, i0, j0, 
-				&shadow,	     /* return a shadow matrix to me. */
-				allow_begin,         /* TRUE to allow local begins */
-				&b, &bsc,	     /* if allow_begin is TRUE, gives info on optimal b */
-				mx);                 /* the HMM banded mx */
-  
+  if(do_optacc) {
+    sc = optimal_accuracy_align_hb(cm, dsq, L, r, z, i0, j0, 
+				   &shadow,	     /* return a shadow matrix to me. */
+				   allow_begin,      /* TRUE to allow local begins */
+				   &b, &bsc,	     /* if allow_begin is TRUE, gives info on optimal b */
+				   mx,               /* the HMM banded mx to fill-in */
+				   post_mx);         /* pre-calc'ed posterior matrix */
+  }
+  else {
+    sc = fast_cyk_align_hb(cm, dsq, L, r, z, i0, j0, 
+			   &shadow,	     /* return a shadow matrix to me. */
+			   allow_begin,      /* TRUE to allow local begins */
+			   &b, &bsc,	     /* if allow_begin is TRUE, gives info on optimal b */
+			   mx);              /* the HMM banded mx */
+  }
   pda = esl_stack_ICreate();
   v = r;
   j = j0;
@@ -664,78 +677,90 @@ fast_cyk_insideT_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   return sc;
 }
 
-/* Function: FastCYKInsideAlignHB()
+/* Function: FastAlignHB()
  * Incept:   EPN, Fri Oct 26 09:31:43 2007
  * 
  * Note:     based on CYKInside_b_jd() [11.04.05] which was based on CYKInside_b() 
  *           which was based on CYKInside() [SRE, Sun Jun  3 19:48:33 2001 [St. Louis]]
  *
- * Purpose:  Wrapper for the fast_cyk_insideT_hb() routine - solve
+ * Purpose:  Wrapper for the fast_alignT_hb() routine - solve
  *           a full alignment problem, return the traceback
  *           and the score, without dividing & conquering, but by
  *           using bands on the j and d dimensions of the DP matrix.
- *           Bands derived by HMM Forward/Backward runs.
+ *           Bands derived by HMM Forward/Backward runs. Optionally
+ *           return CYK or optimally accurate parsetree, and possibly
+ *           possibly return a postal code.
  *           
- *           Analogous to CYKDivideAndConquer() in many respects;
- *           see the more extensive comments in that function for
- *           more details (at least on those aspects that are shared).
- *           
- * Args:     cm     - the covariance model
- *           dsq    - the digitized sequence, 1..L
- *           r      - root of subgraph to align to target subseq (usually 0, the model's root)
- *           i0     - start of target subsequence (often 1, beginning of dsq)
- *           j0     - end of target subsequence (often L, end of dsq)
- *           ret_tr - RETURN: traceback (pass NULL if trace isn't wanted)
- *           mx     - the dp matrix, only cells within bands in cm->cp9b will 
- *                    be valid. 
+ *           Input arguments allow this function to be run in 4 'modes':
+ *
+ *           mode      returns                 arguments
+ *           ----  ---------------  ------------------------------
+ *                 tr        pcode  do_optacc  post_mx   ret_pcode
+ *                 ---------------  ------------------------------
+ *              1. CYK       no     FALSE       NULL      NULL
+ *              2. CYK       yes    FALSE      !NULL     !NULL
+ *              3. Opt acc   no     TRUE       !NULL      NULL
+ *              4. Opt acc   yes    TRUE       !NULL     !NULL
+ *
+ *           CYK parsetrees are most likely parsetree, 'Opt acc' parsetrees
+ *           are Holmes/Durbin optimally accurate parsetrees, the parse the 
+ *           maximizes the expected accuracy of all aligned residues.
+ *
+ *           Note: if ret_tr is NULL, only the score of 'tr' is returned.
+ *
+ * Args:     cm        - the covariance model
+ *           dsq       - the digitized sequence, 1..L
+ *           i0        - start of target subsequence (often 1, beginning of dsq)
+ *           j0        - end of target subsequence (often L, end of dsq)
+ *           mx        - the main dp matrix, only cells within bands in cm->cp9b will be valid. 
+ *           do_optacc - TRUE to not do CYK alignment, determine the Holmes/Durbin optimally 
+ *                       accurate parsetree in ret_tr, requires post_mx != NULL
+ *           post_mx   - dp matrix for posterior calculation, can be NULL only if !do_optacc
+ *           ret_tr    - RETURN: traceback (pass NULL if trace isn't wanted)
+ *           ret_pcode - RETURN: postal code, (pass NULL if not wanted, must be NULL if post_mx == NULL)
  *
  * Returns:  score of the alignment in bits.
  */
 float
-FastCYKInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, CM_HB_MX *mx)
+FastAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_MX *mx, int do_optacc,
+	    CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode)
 {
-  /* Contract check */
-  if(dsq == NULL) cm_Fail("ERROR in Fast_CYKInside_b_jd(), dsq is NULL.\n");
-
   Parsetree_t *tr;
   int          z;
   float        sc;
+  int          do_post;
+  char        *pcode;
 
-  /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (j0-i0+1));
-   *printf("alignment strategy:CYKInside_b_jd:b:nosmall\n"); 
-  */
+  /* Contract check */
+  if(dsq == NULL) cm_Fail("FastAlignHB(), dsq is NULL.\n");
+  if(post_mx == NULL && ret_pcode != NULL) cm_Fail("FastAlignHB(), post_mx == NULL but ret_pcode != NULL.\n");
+  if(do_optacc && post_mx == NULL) cm_Fail("FastAlignHB(), do_optacc is TRUE, but post_mx == NULL.\n");
 
-  /* Trust, but verify.
-   * Check out input parameters.
-   */
-  if (cm->stid[r] != ROOT_S) {
-    if (! (cm->flags & CMH_LOCAL_BEGIN)) cm_Fail("internal error: we're not in local mode, but r is not root");
-    if (cm->stid[r] != MATP_MP && cm->stid[r] != MATL_ML &&
-	cm->stid[r] != MATR_MR && cm->stid[r] != BIF_B)
-      cm_Fail("internal error: trying to do a local begin at a non-mainline start");
+  /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (j0-i0+1));*/
+  do_post = (do_optacc || ret_pcode != NULL) ? TRUE : FALSE;
+
+  /* if doing post, fill Inside,Outside,Posterior matrices */
+  if(do_post) { 
+    FastInsideAlignHB (cm, dsq, i0, j0, mx);
+    FastOutsideAlignHB(cm, dsq, i0, j0, post_mx, mx, (cm->align_opts & CM_ALIGN_CHECKINOUT));
+    FastPosteriorHB   (cm,      i0, j0, mx, post_mx, post_mx);   
   }
 
-  /* Create the parse tree, and initialize.
-   */
+  /* Create the parse tree, and initialize. */
   tr = CreateParsetree(100);
   InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
-  z  = cm->M-1;
-  sc = 0.;
-
-  /* Deal with case where we already know a local entry transition 0->r
+  /* Fill in the parsetree (either CYK or optimally accurate (if do_optacc)), 
+   * this will overwrite mx if (do_post) caused it to be filled in FastInsideAlignHB 
    */
-  if (r != 0) {
-    InsertTraceNode(tr, 0,  TRACE_LEFT_CHILD, i0, j0, r);
-    z  =  CMSubtreeFindEnd(cm, r);
-    sc =  cm->beginsc[r];
+  sc = fast_alignT_hb(cm, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, mx, do_optacc, post_mx);
+
+  if(ret_pcode != NULL) {
+    pcode = CMPostalCodeHB(cm, L, post_mx, tr);
+    *ret_pcode = pcode;
   }
 
-  /* Solve the whole thing with one call to fast_cyk_insideT_align_hb.  
-   */
-  sc += fast_cyk_insideT_align_hb(cm, dsq, L, tr, r, z, i0, j0, (r==0), mx);
-
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
-  ESL_DPRINTF1(("returning from FastCYKInsideAlignHB() sc : %f\n", sc)); 
+  ESL_DPRINTF1(("returning from FastAlignHB() sc : %f\n", sc)); 
   return sc;
 }
 
@@ -1766,6 +1791,478 @@ FastPosteriorHB(CM_t *cm, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM
   return; /* neverreached */
 }
 
+/* 
+ * Function: optimal_accuracy_align_hb()
+ * Date:     EPN, Thu Nov 15 10:48:37 2007
+ *
+ * Purpose:  Run the Holmes/Durbin optimal accuracy algorithm 
+ *           using bands in the j and d dimensions of the DP matrix. 
+ *           Bands were obtained from an HMM Forward-Backward parse
+ *           of the target sequence. Uses float log odds scores.
+ *
+ *           Two CM_HB_MX DP matrices must be passed in. The first
+ *           <post> must be pre-filled, containing posterior values
+ *           from a HERE HERE Inside/Outside runs on the target sequence. 
+ *           cells valid within the bands given in the CP9Bands_t 
+ *           <cm->cp9b> will be valid for both matrices. 
+ *
+ *           We deal with local begins  by keeping track of the optimal
+ *           state that we could enter and account for the whole target 
+ *           sequence: b = argmax_v  alpha_v(i0,j0) + log t_0(v),
+ *           and bsc is the score for that. 
+ *
+ *           If vroot==0, i0==1, and j0==L (e.g. a complete alignment),
+ *           the optimal alignment might use a local begin transition, 0->b,
+ *           and we'd have to be able to trace that back. For any
+ *           problem where the caller sets allow_begin, we return a valid b 
+ *           (the optimal 0->b choice) and bsc (the score if 0->b is used).
+ *           If a local begin is part of the optimal parse tree, the optimal
+ *           alignment score returned by inside() will be bsc and yshad[0][L][L] 
+ *           will be USE_LOCAL_BEGIN, telling insideT() to check b and
+ *           start with a local 0->b entry transition. When inside()
+ *           is called on smaller subproblems (v != 0 || i0 > 1 || j0
+ *           < L), we're using inside() as an engine in divide &
+ *           conquer, and we don't use the overall return score nor
+ *           shadow matrices, but we do need allow_begin, b, and bsc for
+ *           divide&conquer to sort out where a local begin might be used.
+ *
+ * Args:     cm        - the model    [0..M-1]
+ *           dsq       - the digitaized sequence [i0..j0]   
+ *           L         - length of the dsq
+ *           vroot     - first start state of subtree (0, for whole model)
+ *           vend      - last end state of subtree (cm->M-1, for whole model)
+ *           i0        - first position in subseq to align (1, for whole seq)
+ *           j0        - last position in subseq to align (L, for whole seq)
+ *           allow_begin-TRUE to allow 0->b local alignment begin transitions. 
+ *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
+ *                       he intends to do a traceback.
+ *           ret_b     - best local begin state, or NULL if unwanted
+ *           ret_bsc   - score for using ret_b, or NULL if unwanted                        
+ *           mx        - the dp matrix to fill in, only cells within bands in cm->cp9b will 
+ *                       be valid. 
+ *           post_mx   - the pre-filled posterior matrix 
+ *                       
+ * Returns: Score of the optimal alignment.  
+ */
+float 
+optimal_accuracy_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow,  
+			  int allow_begin, int *ret_b, float *ret_bsc, CM_HB_MX *mx, CM_HB_MX *post_mx)
+{
+  int      status;
+  int      v,y,z;	/* indices for states  */
+  int      j,d,i,k;	/* indices in sequence dimensions */
+  float    sc;		/* a temporary variable holding a score */
+  int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
+  int      W;		/* subsequence length */
+  void  ***shadow;      /* shadow matrix for tracebacks */
+  int    **kshad;       /* a shadow deck for bifurcations */
+  char   **yshad;       /* a shadow deck for every other kind of state */
+  int      b;		/* best local begin state */
+  float    bsc;		/* score for using the best local begin state */
+  int     *yvalidA;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
+  float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
+  /* variables used for memory efficient bands */
+  /* ptrs to cp9b info, for convenience */
+  CP9Bands_t *cp9b = cm->cp9b;
+  int     *jmin  = cp9b->jmin;  
+  int     *jmax  = cp9b->jmax;
+  int    **hdmin = cp9b->hdmin;
+  int    **hdmax = cp9b->hdmax;
+  /* the DP matrices */
+  float ***alpha = mx->dp; /* pointer to the alpha DP matrix, we'll store optimal parse in  */
+  float ***post  = post_mx->dp; /* pointer to the alpha DP matrix, prefilled posterior values */
+  /* indices used for handling band-offset issues, and in the depths of the DP recursion */
+  int      sd;                 /* StateDelta(cm->sttype[v]) */
+  int      sdr;                /* StateRightDelta(cm->sttype[v] */
+  int      jp_v, jp_y, jp_z;   /* offset j index for states v, y, z */
+  int      jp_y_sdr;           /* jp_y - sdr */
+  int      j_sdr;              /* j - sdr */
+  int      jn, jx;             /* current minimum/maximum j allowed */
+  int      jpn, jpx;           /* minimum/maximum jp_v */
+  int      dp_v, dp_y;         /* d index for state v/y in alpha w/mem eff bands */
+  int      dn, dx;             /* current minimum/maximum d allowed */
+  int      dp_y_sd;            /* dp_y - sd */
+  int      dpn, dpx;           /* minimum/maximum dp_v */
+  int      kp_z;               /* k (in the d dim) index for state z in alpha w/mem eff bands */
+  int      kn, kx;             /* current minimum/maximum k value */
+  int      Wp;                 /* W oalso changes depending on state */
+  float    tsc;                /* a transition score */
+  int      yvalid_idx;         /* for keeping track of which children are valid */
+  int      yvalid_ct;          /* for keeping track of which children are valid */
+
+  /* Contract check */
+  if(dsq == NULL) cm_Fail("optimal_accuracy_align_hb(), dsq is NULL.\n");
+  if (mx == NULL) cm_Fail("optimal_accuracy_align_hb(), mx is NULL.\n");
+  if (cm->cp9b == NULL) cm_Fail("optimal_accuracy_align_hb(), cm->cp9b is NULL.\n");
+  if (post_mx == NULL) cm_Fail("optimal_accuracy_align_hb(), cm->cp9b is NULL.\n");
+
+  /* Allocations and initializations  */
+  b   = -1;
+  bsc = IMPOSSIBLE;
+  W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
+				/* if caller didn't give us a deck pool, make one */
+  /* grow the matrix based on the current sequence and bands */
+  cm_hb_mx_GrowTo(mx, cp9b, W);
+
+  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
+  ESL_ALLOC(el_scA, sizeof(float) * (W+1));
+  for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
+
+  /* The shadow matrix, we always allocate it, so we don't have to 
+   * check if it's null in the depths of the DP recursion.
+   * We do some pointer tricks here to save memory. The shadow matrix
+   * is a void ***. Decks may either be char ** (usually) or
+   * int ** (for bifurcation decks). Watch out for the casts.
+   * For most states we only need
+   * to keep y as traceback info, and y <= 6. For bifurcations,
+   * we need to keep k, and k <= L, and L might be fairly big.
+   * (We could probably limit k to an unsigned short ... anyone
+   * aligning an RNA > 65536 would need a big computer... but
+   * we'll hold off on that for now. We could also pack more
+   * traceback pointers into a smaller space since we only really
+   * need 3 bits, not 8.)
+   */
+  ESL_ALLOC(shadow, sizeof(void **) * cm->M);
+  for (v = 0; v < cm->M; v++) shadow[v] = NULL;
+
+  /* yvalidA[0..cnum[v]] will hold TRUE for states y for which a transition is legal 
+   * (some transitions are impossible due to the bands) */
+  ESL_ALLOC(yvalidA, sizeof(int) * MAXCONNECT);
+  esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
+
+  /* initialize all cells of the matrix to IMPOSSIBLE */
+  //esl_vec_FSet(alpha[0][0], mx->ncells_valid, IMPOSSIBLE);
+
+  /* Main recursion */
+  for (v = vend; v >= vroot; v--) {
+    float const *esc_v = cm->oesc[v]; /* emission scores for state v */
+    float const *tsc_v = cm->tsc[v];  /* transition scores for state v */
+    sd   = StateDelta(cm->sttype[v]);
+    sdr  = StateRightDelta(cm->sttype[v]);
+    jn   = jmin[v];
+    jx   = jmax[v];
+    /* Get a shadow deck to fill in and initialize all valid cells for state v */
+    if (cm->sttype[v] != E_st) {
+      if (cm->sttype[v] == B_st) {
+	kshad     = alloc_jdbanded_vjd_kshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	shadow[v] = (void **) kshad;
+	/* initialize all valid cells for state v to IMPOSSIBLE (local ends are impossible for B states) */
+	/* HERE SHOULDN'T NEED TO INIT LIKE THIS! */
+	assert(! (NOT_IMPOSSIBLE(cm->endsc[v])));
+	for (j = jmin[v]; j <= jmax[v]; j++) { 
+	  jp_v  = j - jmin[v];
+	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
+	    alpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	    kshad[jp_v][dp_v] = USED_EL; 
+	  }
+	}
+      } else { /* ! B_st && ! E_st */
+	yshad     = alloc_jdbanded_vjd_yshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	shadow[v] = (void **) yshad;
+	/* initialize all valid cells for state v */
+	if(NOT_IMPOSSIBLE(cm->endsc[v])) {
+	  for (j = jmin[v]; j <= jmax[v]; j++) { 
+	    jp_v  = j - jmin[v];
+	    for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
+	      alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
+	      yshad[jp_v][dp_v] = USED_EL; 
+	    }
+	  }
+	}
+	else { /* cm->endsc[v] == IMPOSSIBLE */
+	  for (j = jmin[v]; j <= jmax[v]; j++) { 
+	    jp_v  = j - jmin[v];
+	    for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
+	      alpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	      yshad[jp_v][dp_v] = USED_EL; 
+	    }
+	  }
+	}
+      }
+    }
+
+    if(cm->sttype[v] == E_st) { 
+      for (j = jmin[v]; j <= jmax[v]; j++) { 
+	jp_v = j-jmin[v];
+	ESL_DASSERT1((hdmin[v][jp_v] == 0));
+	ESL_DASSERT1((hdmax[v][jp_v] == 0));
+	//alpha[v][jp_v][0] = 0.; /* for End states, d must be 0 */
+	alpha[v][jp_v][0] = IMPOSSIBLE; 
+      }
+    }
+    else if(cm->sttype[v] == IL_st) {
+      /* update alpha[v][jp_v][dp_v] cells, for IL states, loop nesting order is:
+       * for j { for d { for y { } } } because they can self transit, and a 
+       * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
+       * before can start calc'ing for alpha[v][j][d+1] */
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+	jp_v = j - jmin[v];
+	yvalid_ct = 0;
+	j_sdr = j - sdr;
+	
+	/* determine which children y we can legally transit to for v, j */
+	for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
+	  if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr valid for state y? */
+	
+	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	  i = j - d + 1;
+	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	  for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+	    yoffset = yvalidA[yvalid_idx];
+	    y = cm->cfirst[v] + yoffset;
+	    jp_y_sdr = j - jmin[y] - sdr;
+	    
+	    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
+	      dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	      if ((sc = alpha[y][jp_y_sdr][dp_y_sd]) > alpha[v][jp_v][dp_v])
+		{
+		  alpha[v][jp_v][dp_v] = sc; 
+		  yshad[jp_v][dp_v]    = yoffset;
+		}
+	    }
+	  }
+	  alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], post[v][jp_v][dp_v]);
+	  alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
+	}
+      }
+    }
+    else if(cm->sttype[v] == IR_st) { 
+      /* update alpha[v][jp_v][dp_v] cells, for IR states, loop nesting order is:
+       * for j { for d { for y { } } } because they can self transit, and a 
+       * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
+       * before can start calc'ing for alpha[v][j][d+1] */
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+	jp_v = j - jmin[v];
+	yvalid_ct = 0;
+	j_sdr = j - sdr;
+	
+	/* determine which children y we can legally transit to for v, j */
+	for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
+	  if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr is valid for state y? */
+	
+	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
+	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
+	  for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
+	    yoffset = yvalidA[yvalid_idx];
+	    y = cm->cfirst[v] + yoffset;
+	    jp_y_sdr = j - jmin[y] - sdr;
+	    
+	    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
+	      dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
+	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	      if ((sc = alpha[y][jp_y_sdr][dp_y_sd]) > alpha[v][jp_v][dp_v])
+		{
+		  alpha[v][jp_v][dp_v] = sc; 
+		  yshad[jp_v][dp_v]    = yoffset;
+		}
+	    }
+	  }
+	  alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], post[v][jp_v][dp_v]);
+	  alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
+	}
+      }
+    }
+    else if(cm->sttype[v] != B_st) { /* entered if state v is (! IL && ! IR && ! B) */
+      /* ML, MP, MR, D, S, E states cannot self transit, this means that all cells
+       * in beta[v] are independent of each other, only depending on beta[y] for previously calc'ed y.
+       * We can do the for loops in any nesting order, this implementation does what I think is most efficient:
+       * for y { for j { for d { } } } 
+       */
+      for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
+	yoffset = y - cm->cfirst[v];
+	tsc = tsc_v[yoffset];
+	
+	jn = ESL_MAX(jmin[v], ESL_MIN(jmin[y] + sdr, jmax[y]));
+	jx = ESL_MIN(jmax[v], ESL_MAX(jmax[y] + sdr, jmin[y]));
+	jx = ESL_MIN(jx, jmax[y] + sdr);
+	jpn = jn - jmin[v];
+	jpx = jx - jmin[v];
+	jp_y_sdr = jn - jmin[y] - sdr;
+	
+	for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
+	  ESL_DASSERT1((jp_v >= 0 && jp_v <= (jmax[v]-jmin[v])));
+	  ESL_DASSERT1((jp_y_sdr >= 0 && jp_y_sdr <= (jmax[y]-jmin[y])));
+	  
+	  dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
+	  dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
+	  dpn     = dn - hdmin[v][jp_v];
+	  dpx     = dx - hdmin[v][jp_v];
+	  dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
+	  	  
+	  for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) { 
+	    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
+	    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
+	    if((sc = alpha[y][jp_y_sdr][dp_y_sd]) > alpha[v][jp_v][dp_v]) {
+	      alpha[v][jp_v][dp_v] = sc;
+	      yshad[jp_v][dp_v]    = yoffset;
+	    }
+	  }
+	}
+      }
+      /* add in emission score, if any */
+      switch(cm->sttype[v]) { 
+      case ML_st:
+	for (j = jmin[v]; j <= jmax[v]; j++) { 
+	  jp_v  = j - jmin[v];
+	  i     = j - hdmin[v][jp_v] + 1;
+	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	    alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], post[v][jp_v][dp_v]);
+	}
+	break;
+      case MR_st:
+	for (j = jmin[v]; j <= jmax[v]; j++) { 
+	  jp_v  = j - jmin[v];
+	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	    alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], post[v][jp_v][dp_v]);
+	}
+	break;
+      case MP_st:
+	for (j = jmin[v]; j <= jmax[v]; j++) { 
+	  jp_v  = j - jmin[v];
+	  i     = j - hdmin[v][jp_v] + 1;
+	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	    alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], post[v][jp_v][dp_v]);
+	}
+      default:
+	break;
+      }
+      /* ensure all cells are >= IMPOSSIBLE */
+      for (j = jmin[v]; j <= jmax[v]; j++) { 
+	jp_v  = j - jmin[v];
+	for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
+	  alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
+      }
+    }
+    else { /* B_st */ 
+      y = cm->cfirst[v]; /* left  subtree */
+      z = cm->cnum[v];   /* right subtree */
+      
+      /* Any valid j must be within both state v and state z's j band 
+       * I think jmin[v] <= jmin[z] is guaranteed by the way bands are 
+       * constructed, but we'll check anyway. 
+       */
+      jn = (jmin[v] > jmin[z]) ? jmin[v] : jmin[z];
+      jx = (jmax[v] < jmax[z]) ? jmax[v] : jmax[z];
+      /* the main j loop */
+      for (j = jn; j <= jx; j++) { 
+	jp_v = j - jmin[v];
+	jp_y = j - jmin[y];
+	jp_z = j - jmin[z];
+	kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+	/* kn satisfies inequalities (1) and (3) (listed below)*/	
+	kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+	/* kn satisfies inequalities (2) and (4) (listed below)*/	
+	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+	      
+	  /* Find the first k value that implies a valid cell in the y and z decks.
+	   * This k must satisfy the following 6 inequalities (some may be redundant):
+	   * (1) k >= j-jmax[y];
+	   * (2) k <= j-jmin[y]; 
+	   *     1 and 2 guarantee (j-k) is within state y's j band
+	   *
+	   * (3) k >= hdmin[z][j-jmin[z]];
+	   * (4) k <= hdmax[z][j-jmin[z]]; 
+	   *     3 and 4 guarantee k is within z's j=(j), d band
+	   *
+	   * (5) k >= d-hdmax[y][j-jmin[y]-k];
+	   * (6) k <= d-hdmin[y][j-jmin[y]-k]; 
+	   *     5 and 6 guarantee (d-k) is within state y's j=(j-k) d band
+	   *
+	   * kn and kx were set above (outside (for (dp_v...) loop) that
+	   * satisfy 1-4 (b/c 1-4 are d-independent and k-independent)
+	   * RHS of inequalities 5 and 6 are dependent on k, so we check
+	   * for these within the next for loop.
+	   */
+	  for(k = kn; k <= kx; k++) { 
+	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
+	      /* for current k, all 6 inequalities have been satisified 
+	       * so we know the cells corresponding to the platonic 
+	       * matrix cells alpha[v][j][d], alpha[y][j-k][d-k], and
+	       * alpha[z][j][k] are all within the bands. These
+	       * cells correspond to alpha[v][jp_v][dp_v], 
+	       * alpha[y][jp_y-k][d-hdmin[jp_y-k]-k],
+	       * and alpha[z][jp_z][k-hdmin[jp_z]];
+	       */
+	      kp_z = k-hdmin[z][jp_z];
+	      dp_y = d-hdmin[y][jp_y-k];
+
+	      if ((sc = alpha[y][jp_y-k][dp_y - k] + alpha[z][jp_z][kp_z]) 
+		  > alpha[v][jp_v][dp_v]) { 
+		alpha[v][jp_v][dp_v] = sc;
+		kshad[jp_v][dp_v] = kp_z;
+	      }
+	    }
+	  }
+	}
+      }
+    }				/* finished calculating deck v. */
+
+    /* The following loops originally access alpha[v][j0][W] but the index W will be
+       in different positions due to the bands */
+
+    if(allow_begin) { 
+      if(j0 >= jmin[v] && j0 <= jmax[v]) { 
+	jp_v = j0 - jmin[v];
+	Wp = W - hdmin[v][jp_v];
+	if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v]) { 
+	/* If we get here alpha[v][jp_v][Wp] is a valid cell
+	 * in the banded alpha matrix, corresponding to 
+	 * alpha[v][j0][W] in the platonic matrix.
+	 */
+	/* Check for local begin getting us to the root.
+	 * This is "off-shadow": if/when we trace back, we'll handle this
+	 * case separately (and we'll know to do it because we'll immediately
+	 * see a USED_LOCAL_BEGIN flag in the shadow matrix, telling us
+	 * to jump right to state b; see below)
+	 */
+	  if (alpha[v][jp_v][Wp] > bsc) { 
+	    b   = v;
+	    bsc = alpha[v][jp_v][Wp];
+	  }
+	}
+      }
+      /* Check for whether we need to store an optimal local begin score
+       * as the optimal overall score, and if we need to put a flag
+       * in the shadow matrix telling insideT() to use the b we return.
+       */
+      if (v == 0) { 
+	if(j0 >= jmin[0] && j0 <= jmax[0]) {
+	  jp_v = j0 - jmin[v];
+	  Wp   = W - hdmin[v][jp_v];
+	  if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v]) { 
+	    if (bsc > alpha[0][jp_v][Wp]) {
+	      alpha[0][jp_v][Wp] = bsc;
+	      if (ret_shadow != NULL) yshad[jp_v][Wp] = USED_LOCAL_BEGIN;
+	    }
+	  }
+	}
+      }
+    }
+  } /* end loop over all v */
+  /*FILE *fp; fp = fopen("cyk.mx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);*/
+  
+  Wp = W - hdmin[vroot][j0-jmin[vroot]];
+  sc =     alpha[vroot][j0-jmin[vroot]][Wp];
+
+  if (ret_b != NULL)      *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
+  if (ret_bsc != NULL)    *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */
+  if (ret_shadow != NULL) *ret_shadow = shadow;
+  else free_vjd_shadow_matrix(shadow, cm, i0, j0);
+  free(el_scA);
+  free(yvalidA);
+
+  ESL_DPRINTF1(("optimal_accuracy_align_hb return sc: %f\n", sc));
+  return sc;
+
+ ERROR: 
+  cm_Fail("Memory allocation error.\n");
+  return 0.; /* never reached */
+}
+
 /*****************************************************************
  * Benchmark driver
  *****************************************************************/
@@ -1810,7 +2307,8 @@ static ESL_OPTIONS options[] = {
   { "--dlev",    eslARG_INT,    "0",   NULL, "0<=n<=3",NULL,NULL,NULL, "set verbosity of debugging print statements to <n>", 0 },
   { "--hmmcheck",eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "check that HMM posteriors are correctly calc'ed", 0 },
   { "--cmcheck", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "check that HMM posteriors are correctly calc'ed", 0 },
-  { "--fpost",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute fast float HMM banded Inside/Outside alignment algs", 0 },
+  { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute optimal accuracy HMM banded alignment alg", 0 },
+  { "--post",   eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute fast float HMM banded Inside/Outside alignment algs", 0 },
   { "--ofpost",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute slow float HMM banded Inside/Outside alignment algs", 0 },
   { "--oipost",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute slow int   HMM banded Inside/Outside alignment algs", 0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -1907,7 +2405,7 @@ main(int argc, char **argv)
     seqs_to_aln = CMEmitSeqsToAln(r, cm, 1, N, FALSE);
 
   /* create the matrix, it'll be empty initially */
-  if(esl_opt_GetBoolean(go, "--fpost")) { 
+  if(esl_opt_GetBoolean(go, "--post") || esl_opt_GetBoolean(go, "--optacc")) { 
     fout_mx = cm_hb_mx_Create(cm->M);
   }
   int do_check = esl_opt_GetBoolean(go, "--cmcheck");
@@ -1922,8 +2420,8 @@ main(int argc, char **argv)
       esl_stopwatch_Display(stdout, w, "CPU time: ");
       
       esl_stopwatch_Start(w);
-      sc = FastCYKInsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, L, 0, 1, L, NULL, cm->hbmx);
-      printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKInsideAlignHB (): ", sc);
+      sc = FastAlignHB(cm, seqs_to_aln->sq[i]->dsq, L, 1, L, cm->hbmx, FALSE, NULL, NULL, NULL);
+      printf("%4d %-30s %10.4f bits ", (i+1), "FastAlignHB CYK (): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       /* fpfast = fopen("tempfast", "w");
@@ -1941,7 +2439,7 @@ main(int argc, char **argv)
 	  ParsetreeDump(fpslow, slowtr, cm, seqs_to_aln->sq[i]->dsq, NULL, NULL);*/
       }
 
-      if(esl_opt_GetBoolean(go, "--fpost")) {
+      if(esl_opt_GetBoolean(go, "--post")) {
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
 	sc = FastInsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, cm->hbmx);
@@ -1957,7 +2455,16 @@ main(int argc, char **argv)
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
       }
 
-      /* do old Inside/Outside if requested */
+      if(esl_opt_GetBoolean(go, "--optacc")) {
+	esl_stopwatch_Start(w);
+	/* need alpha matrix from Inside to do Outside */
+	sc = FastAlignHB(cm, seqs_to_aln->sq[i]->dsq, L, 1, L, cm->hbmx, TRUE, fout_mx, NULL, NULL);
+	printf("%4d %-30s %10.4f bits ", (i+1), "FastAlignHB OA  (): ", sc);
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_Display(stdout, w, " CPU time: ");
+      }
+
+      /* do old int Inside/Outside if requested */
       if(esl_opt_GetBoolean(go, "--oipost")) {
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
@@ -1986,8 +2493,8 @@ main(int argc, char **argv)
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
       }
 
-      /* do old Inside/Outside if requested */
-      if(esl_opt_GetBoolean(go, "--oipost")) {
+      /* do old float Inside/Outside if requested */
+      if(esl_opt_GetBoolean(go, "--ofpost")) {
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
 	sc = FInside_b_jd_me(cm, seqs_to_aln->sq[i]->dsq, 1, L,

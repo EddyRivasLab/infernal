@@ -774,14 +774,16 @@ extern int   cp9_CheckTransitionGuarantees(CP9_t *cp9);
 extern int   cp9_GetLocalityMode(CP9_t *cp9);
 
 /* from cm_fastalign.c */
-extern float fast_cyk_inside_align_hb (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow, 
-				       int allow_begin, int *ret_b, float *ret_bsc, CM_HB_MX *mx);
-extern float fast_cyk_insideT_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
-				       int r, int z, int i0, int j0, int allow_begin, CM_HB_MX *mx);
-extern float FastCYKInsideAlignHB     (CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, CM_HB_MX *mx);
-extern float FastInsideAlignHB        (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx);
-extern float FastOutsideAlignHB       (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx, CM_HB_MX *ins_mx, int do_check);
-extern void  FastPosteriorHB          (CM_t *cm, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx);
+extern float fast_cyk_align_hb (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow, 
+				int allow_begin, int *ret_b, float *ret_bsc, CM_HB_MX *mx);
+extern float optimal_accuracy_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow,  
+				       int allow_begin, int *ret_b, float *ret_bsc, CM_HB_MX *mx, CM_HB_MX *post_mx);
+extern float fast_alignT_hb    (CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, 
+			        int allow_begin, CM_HB_MX *mx, int do_optacc, CM_HB_MX *post_mx);
+extern float FastAlignHB        (CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_MX *mx, int do_optacc, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode);
+extern float FastInsideAlignHB  (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx);
+extern float FastOutsideAlignHB (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx, CM_HB_MX *ins_mx, int do_check);
+extern void  FastPosteriorHB    (CM_t *cm, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx);
 
 /* from hmmband.c */
 extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
