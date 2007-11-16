@@ -102,7 +102,7 @@ float ActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cuto
 	cp9_Seq2Bands(cm, dsq, i0, j0, cm->cp9b, TRUE, 0);   /* debug level */
 	/*debug_print_hmm_bands(stdout, (j0-i0+1), cp9b, cm->tau, 3);*/
 	if(cm->search_opts & CM_SEARCH_INSIDE) cm_Fail("FastFInsideScanHB() not yet implemented.\n");
-	else                                   sc = FastCYKScanHB(cm, dsq, i0, j0, cm_cutoff, results, cm->fhbmx);
+	else                                   sc = FastCYKScanHB(cm, dsq, i0, j0, cm_cutoff, results, cm->hbmx);
       }
       else { /* don't do HMM banded search */
 	if(cm->search_opts & CM_SEARCH_INSIDE) sc = FastIInsideScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results, NULL);
@@ -116,9 +116,9 @@ float ActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cuto
 			      0, 0, 0, NULL);
     }
     else {
-      OldActuallyAlignTargets(cm, NULL, 
-			      dsq, results,      /* put function into dsq_mode, designed for aligning search hits */
-			      0, 0, 0, NULL);
+      ActuallyAlignTargets(cm, NULL, 
+			   dsq, results,      /* put function into dsq_mode, designed for aligning search hits */
+			   0, 0, 0, NULL);
     }
   }
   return sc;
@@ -225,14 +225,611 @@ float OldActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_c
 			      0, 0, 0, NULL);
     }
     else {
-      OldActuallyAlignTargets(cm, NULL, 
-			      dsq, results,      /* put function into dsq_mode, designed for aligning search hits */
-			      0, 0, 0, NULL);
+      ActuallyAlignTargets(cm, NULL, 
+			   dsq, results,      /* put function into dsq_mode, designed for aligning search hits */
+			   0, 0, 0, NULL);
     }
    }
   return sc;
 }
 
+
+/* 
+ * Function: ActuallyAlignTargets
+ * Incept:   EPN, Thu Nov 15 11:35:23 2007
+ *
+ * Purpose:  Given a CM and sequences, do preliminaries, call the correct 
+ *           alignment function and return parsetrees and optionally postal codes 
+ *           (if cm->align_opts & CM_ALIGN_POST).
+ *           Uses version 1.0's fast DP functions, as opposed to the old, slower 
+ *           version 0.81 DP functions called by OldActuallyAlignTargets().
+ *
+ *           Two different modes are possible dependent on input args. Mode
+ *           is checked for during contract enforcement.
+ *
+ *           sq_mode: seqs_to_aln != NULL; dsq == NULL; results == NULL.
+ *                    align the seqs_to_aln->nseq ESL_SQ sq sequences store
+ *                    parsetrees or CP9 traces and/or postal codes in
+ *                    seqs_to_aln.
+ *
+ *          dsq_mode: seqs_to_aln == NULL; dsq != NULL, results != NULL.
+ *                    align the search results (hits) in results, which
+ *                    are all subsequences of a single sequence (dsq).
+ *                    parstrees are stored in seacrh_results.
+ *
+ * Args:     CM             - the covariance model
+ *           seqs_to_aln    - the sequences (if sq_mode)
+ *           dsq            - a single digitized sequence (if dsq_mode)
+ *           search_results - search results with subsequence indices of dsq to align (if dsq_mode)
+ *           bdump_level    - verbosity level for band related print statements
+ *           debug_level    - verbosity level for debugging print statements
+ *           silent_mode    - TRUE to not print anything, FALSE to print scores 
+ *           r              - source of randomness (NULL unless CM_ALIGN_SAMPLE)
+ * 
+ * Returns:  eslOK on success;
+ *           Dies if there's an error (not good for MPI).
+ */
+int
+ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
+		       int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r)
+{
+  int status;
+  ESL_STOPWATCH *watch;         /* for timings */
+  int sq_mode  = FALSE;         /* we're aligning nseq seqs in sq */
+  int dsq_mode = FALSE;         /* we're aligning search_results->num_results seqs, all subseqs of dsq */
+  int nalign   = 0;             /* number of sequences we're aligning */
+  ESL_DSQ *cur_dsq;             /* ptr to digitized sequence we're currently aligning */
+  Parsetree_t **cur_tr;         /* pointer to the pointer to the parsetree we're currently creating */
+  int L;                        /* length of sequence/subseq we're currently aligning */
+  int i;                        /* counter over sequences */
+  int v;                        /* state counter */
+  char        **postcode = NULL;/* posterior decode array of strings        */
+  Parsetree_t **tr       = NULL;/* parse trees for the sequences */
+  CP9trace_t  **cp9_tr   = NULL;/* CP9 traces for the sequences */
+  float         sc;		/* score for one sequence alignment */
+  float         maxsc;	        /* max score in all seqs */
+  float         minsc;	        /* min score in all seqs */
+  float         avgsc;      	/* avg score over all seqs */
+  float         tmpsc;          /* temporary score */
+
+  /* variables related to CM Plan 9 HMMs */
+  CP9_t       *hmm;             /* constructed CP9 HMM */
+  CP9Bands_t  *cp9b;            /* data structure for hmm bands (bands on the hmm states) 
+				 * and arrays for CM state bands, derived from HMM bands */
+  CP9Map_t       *cp9map;       /* maps the hmm to the cm and vice versa */
+  CP9_dpmatrix_t *cp9_post;     /* growable DP matrix for posterior decode              */
+  CP9_dpmatrix_t *cp9_mx;       /* growable DP matrix for viterbi                       */
+  float           swentry;	/* S/W aggregate entry probability       */
+  float           swexit;       /* S/W aggregate exit probability        */
+
+  /* variables related to the do_sub option */
+  int                spos;         /* HMM node most likely to have emitted posn 1 of target seq */
+  int                spos_state;   /* HMM state type for curr spos 0=match or 1=insert */
+  int                epos;         /* HMM node most likely to have emitted posn L of target seq */
+  int                epos_state;   /* HMM state type for curr epos 0=match or  1=insert */
+
+  CMSubMap_t        *submap;
+  CM_t              *sub_cm;       /* sub covariance model                      */
+  CP9_t             *sub_hmm;      /* constructed CP9 HMM */
+  CP9Map_t          *sub_cp9map;   /* maps the sub_hmm to the sub_cm and vice versa */
+  CP9Bands_t        *sub_cp9b;     /* data structure for hmm bands (bands on the hmm states) 
+				    * and arrays for CM state bands, derived from HMM bands */
+
+  CM_t              *orig_cm;      /* the original, template covariance model the sub CM was built from */
+  CP9_t             *orig_hmm;     /* original CP9 HMM built from orig_cm */
+  CP9Map_t          *orig_cp9map;  /* original CP9 map */
+  CP9Bands_t        *orig_cp9b;    /* original CP9Bands */
+  Parsetree_t       *orig_tr;      /* parsetree for the orig_cm; created from the sub_cm parsetree */
+
+  /* variables related to query dependent banding (qdb) */
+  int    expand_flag;           /* TRUE if the dmin and dmax vectors have just been 
+				 * expanded (in which case we want to recalculate them 
+				 * before we align a new sequence), and FALSE if not*/
+  int *orig_dmin;               /* original dmin values passed in */
+  int *orig_dmax;               /* original dmax values passed in */
+
+  /* variables related to inside/outside */
+  float           ***alpha;    /* alpha DP matrix for Inside() */
+  float           ***beta;     /* beta DP matrix for Inside() */
+  float           ***post;     /* post DP matrix for Inside() */
+  /*int             ***alpha;  */ /* alpha DP matrix for Inside() */
+  /*int             ***beta;   */  /* beta DP matrix for Inside() */
+  /*int             ***post;   */  /* post DP matrix for Inside() */
+  CM_HB_MX           *out_mx; /* outside matrix for Outside() */
+
+  float             *parsesc; /* parsetree scores of each sequence */
+
+  /* declare and initialize options */
+  int do_small     = TRUE;    /* TRUE to use D&C small alignment algs */
+  int do_local     = FALSE;   /* TRUE to do local alignment */
+  int do_qdb       = FALSE;   /* TRUE to do QDB alignment */
+  int do_hbanded   = FALSE;   /* TRUE to do HMM banded alignment */
+  int use_sums     = FALSE;   /* TRUE to use posterior sums for HMM banded alignment */
+  int do_sub       = FALSE;   /* TRUE to align to a sub CM */
+  int do_hmmonly   = FALSE;   /* TRUE to align with an HMM only */
+  int do_scoreonly = FALSE;   /* TRUE to only calculate the score */
+  int do_inside    = FALSE;   /* TRUE to do Inside also */
+  int do_outside   = FALSE;   /* TRUE to do Outside also */
+  int do_post      = FALSE;   /* TRUE to calculate posterior probabilities */
+  int do_timings   = FALSE;   /* TRUE to report timings */
+  int do_check     = FALSE;   /* TRUE to check posteriors from Inside/Outside */
+  int do_sample    = FALSE;   /* TRUE to sample from an Inside matrix */
+
+  /* Contract check */
+  if(!(cm->flags & CMH_BITS))                            cm_Fail("ActuallyAlignTargets(), CMH_BITS flag down.\n");
+  if(r == NULL && (cm->align_opts & CM_ALIGN_SAMPLE))    cm_Fail("ActuallyAlignTargets(), no source of randomness, but CM_ALIGN_SAMPLE alignment option on.\n");
+  if(r != NULL && (!(cm->align_opts & CM_ALIGN_SAMPLE))) cm_Fail("ActuallyAlignTargets(), we have a source of randomness, but CM_ALIGN_SAMPLE alignment option off.\n");
+  if((cm->align_opts & CM_ALIGN_POST)      && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("ActuallyAlignTargets(), CM_ALIGN_POST and CM_ALIGN_HMMONLY options are incompatible.\n");
+  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("ActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_HMMONLY options are incompatible.\n");
+  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_POST))    cm_Fail("ActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_POST options are incompatible.\n");
+
+  /* determine mode */
+  if     (seqs_to_aln != NULL && (dsq == NULL && search_results == NULL))  sq_mode = TRUE;
+  else if(seqs_to_aln == NULL && (dsq != NULL && search_results != NULL)) dsq_mode = TRUE;
+  else   cm_Fail("ActuallyAlignTargets(), can't determine mode (sq_mode or dsq_mode).\n");
+
+  if( sq_mode && (seqs_to_aln->sq       == NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->sq is NULL.\n");
+  if( sq_mode && (seqs_to_aln->tr       != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->tr is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->cp9_tr   != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->cp9_tr is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->postcode != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->sc       != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->sc is non-NULL.\n");
+  
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_HMMONLY option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_POST))    cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_POST option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_INSIDE))  cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_INSIDE option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_OUTSIDE)) cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_OUTSIDE option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_SAMPLE))  cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_SAMPLE option on.\n");
+
+  /* set the options based on cm->align_opts */
+  if(cm->align_opts  & CM_ALIGN_NOSMALL)    do_small     = FALSE;
+  if(cm->config_opts & CM_CONFIG_LOCAL)     do_local     = TRUE;
+  if(cm->align_opts  & CM_ALIGN_QDB)        do_qdb       = TRUE;
+  if(cm->align_opts  & CM_ALIGN_HBANDED)    do_hbanded   = TRUE;
+  if(cm->align_opts  & CM_ALIGN_SUMS)       use_sums     = TRUE;
+  if(cm->align_opts  & CM_ALIGN_SUB)        do_sub       = TRUE;
+  if(cm->align_opts  & CM_ALIGN_HMMONLY)    do_hmmonly   = TRUE;
+  if(cm->align_opts  & CM_ALIGN_INSIDE)     do_inside    = TRUE;
+  if(cm->align_opts  & CM_ALIGN_OUTSIDE)    do_outside   = TRUE;
+  if(cm->align_opts  & CM_ALIGN_POST)       do_post      = TRUE;
+  if(cm->align_opts  & CM_ALIGN_TIME)       do_timings   = TRUE;
+  if(cm->align_opts  & CM_ALIGN_CHECKINOUT) do_check     = TRUE;
+  if(cm->align_opts  & CM_ALIGN_SCOREONLY)  do_scoreonly = TRUE;
+  if(cm->align_opts  & CM_ALIGN_SAMPLE)     do_sample    = TRUE;
+
+  /* another contract check */
+  if((do_sample + do_inside + do_outside + do_post) > 1) cm_Fail("ActuallyAlignTargets(), exactly 0 or 1 of the following must be TRUE (== 1):\n\tdo_sample = %d\n\tdo_inside = %d\n\tdo_outside = %d\n\t do_post%d\n\tdo_hmmonly: %d\n\tdo_scoreonly: %d\n", do_sample, do_inside, do_outside, do_post, do_hmmonly, do_scoreonly);
+
+  if(debug_level > 0) {
+    printf("do_local  : %d\n", do_local);
+    printf("do_qdb    : %d\n", do_qdb);
+    printf("do_hbanded: %d\n", do_hbanded);
+    printf("use_sums  : %d\n", use_sums);
+    printf("do_sub    : %d\n", do_sub);
+    printf("do_hmmonly: %d\n", do_hmmonly);
+    printf("do_inside : %d\n", do_inside);
+    printf("do_outside: %d\n", do_outside);
+    printf("do_small  : %d\n", do_small);
+    printf("do_post   : %d\n", do_post);
+    printf("do_timings: %d\n", do_timings);
+  }
+
+  /* allocate out_mx, if needed, only if !do_sub, if do_sub each sub CM will need to allocate a new out_mx */
+  out_mx = NULL;
+  if((!do_sub) && (do_hbanded && (do_post || do_outside))) out_mx = cm_hb_mx_Create(cm->M);
+
+  if      (sq_mode)   nalign = seqs_to_aln->nseq;
+  else if(dsq_mode) { nalign = search_results->num_results; silent_mode = TRUE; }
+
+  /* If sqmode: potentially allocate tr, cp9_tr, and postcode. We'll set
+   * seqs_to_aln->tr, seqs_to_aln->cp9_tr, and seqs_to_aln->postcode to 
+   * these guys at end of function.
+   * 
+   * If dsqmode: do not allocate parsetree pointers, they already exist 
+   * in search_results.
+   */
+  tr       = NULL;
+  cp9_tr   = NULL;
+  postcode = NULL;
+  if(sq_mode) {
+    if(!do_hmmonly && !do_scoreonly && !do_inside && !do_outside)
+      ESL_ALLOC(tr, sizeof(Parsetree_t *) * nalign);
+    else if(do_hmmonly) /* do_hmmonly */
+      ESL_ALLOC(cp9_tr, sizeof(CP9trace_t *) * nalign);
+    if(do_post) 
+      ESL_ALLOC(postcode, sizeof(char *) * nalign);
+  }   
+  ESL_ALLOC(parsesc, sizeof(float) * nalign);
+
+  minsc = FLT_MAX;
+  maxsc = -FLT_MAX;
+  avgsc = 0;
+  watch = esl_stopwatch_Create();
+
+  if(do_hbanded || do_sub) { /* We need a CP9 HMM to build sub_cms */
+    if(cm->cp9 == NULL)                    cm_Fail("ActuallyAlignTargets, trying to use CP9 HMM that is NULL\n");
+    if(cm->cp9b == NULL)                   cm_Fail("ActuallyAlignTargets, cm->cp9b is NULL\n");
+    if(!(cm->cp9->flags & CPLAN9_HASBITS)) cm_Fail("ActuallyAlignTargets, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
+    
+    /* Keep data for the original CM safe; we'll be doing
+     * pointer swapping to ease the sub_cm alignment implementation. */
+    hmm         = cm->cp9;
+    cp9b        = cm->cp9b;
+    cp9map      = cm->cp9map;
+    orig_hmm    = hmm;
+    orig_cp9b   = cp9b;
+    orig_cp9map = cp9map;
+  }
+  /* Copy the QD bands in case we expand them. */
+  if(do_qdb) {
+    if(bdump_level > 1) debug_print_bands(stdout, cm, cm->dmin, cm->dmax);
+    expand_flag = FALSE;
+    /* Copy dmin and dmax, so we can replace them after expansion */
+    ESL_ALLOC(orig_dmin, sizeof(int) * cm->M);
+    ESL_ALLOC(orig_dmax, sizeof(int) * cm->M);
+    for(v = 0; v < cm->M; v++) {
+      orig_dmin[v] = cm->dmin[v];
+      orig_dmax[v] = cm->dmax[v];
+    }	  
+  }
+  if(do_sub) { /* to get spos and epos for the sub_cm, 
+	        * we config the HMM to local mode with equiprobable start/end points.*/
+    swentry = ((hmm->M)-1.)/hmm->M; /* all start pts equiprobable, including 1 */
+    swexit  = ((hmm->M)-1.)/hmm->M; /* all end   pts equiprobable, including M */
+    CPlan9SWConfig(hmm, swentry, swexit);
+    CP9Logoddsify(hmm);
+  }
+  orig_cm = cm;
+  
+  /*****************************************************************
+   *  Collect parse trees for each sequence
+   *****************************************************************/
+  for (i = 0; i < nalign; i++) {
+    if(do_timings) esl_stopwatch_Start(watch);
+    if (sq_mode) { 
+      cur_dsq = seqs_to_aln->sq[i]->dsq;
+      cur_tr  = &(tr[i]);
+      L       = seqs_to_aln->sq[i]->n;
+    }
+    else if (dsq_mode) {
+      cur_dsq = dsq + search_results->data[i].start - 1;
+      cur_tr  = &(search_results->data[i].tr);
+      L       = search_results->data[i].stop - search_results->data[i].start + 1;
+    }
+    if (L == 0) continue; /* silently skip zero length seqs */
+
+    /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
+    if(sq_mode && do_hmmonly) {
+      cp9_mx  = CreateCPlan9Matrix(1, cm->cp9->M, 25, 0);
+      if(sq_mode && !silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", seqs_to_aln->sq[i]->name);
+      sc = CP9ViterbiAlign(cur_dsq, 1, L, cm->cp9, cp9_mx, &(cp9_tr[i]));
+      if(sq_mode && !silent_mode) printf(" score: %10.2f bits\n", sc);
+      parsesc[i] = sc;
+      FreeCPlan9Matrix(cp9_mx);
+      continue;
+    }
+    /* Special case, if do_scoreonly, align seq with full CYK inside, just to 
+     * get the score. For testing, probably in cmscore. */
+    if(sq_mode && do_scoreonly) {
+      if(sq_mode && !silent_mode) printf("Aligning (w/full CYK score only) %-30s", seqs_to_aln->sq[i]->name);
+      sc = CYKInsideScore(cm, cur_dsq, L, 0, 1, L, NULL, NULL); /* don't do QDB mode */
+      if(sq_mode && !silent_mode) printf("    score: %10.2f bits\n", sc);
+      parsesc[i] = sc;
+      continue;
+    }
+
+    /* Potentially, do HMM calculations. */
+    if((!do_sub) && do_hbanded) {
+      cp9_Seq2Bands(orig_cm, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level);
+    }
+    else if(do_sub) { 
+      /* If we're in sub mode:
+       * (1) Get HMM posteriors 
+       * (2) Infer the start (spos) and end (epos) HMM states by 
+       *     looking at the posterior matrix.
+       * (3) Build the sub_cm from the original CM.
+       *
+       * If we're also doing HMM banded alignment to sub CM:
+       * (4) Build a new CP9 HMM from the sub CM.
+       * (5) Do Forward/Backward again, and get HMM bands 
+       */
+      
+      /* (1) Get HMM posteriors */
+      cp9_Seq2Posteriors(orig_cm, cur_dsq, 1, L, &cp9_post, debug_level); 
+      
+      /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
+       * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
+       */
+      CP9NodeForPosn(orig_hmm, 1, L, 1, cp9_post, &spos, &spos_state, FALSE, 0., TRUE, debug_level);
+      CP9NodeForPosn(orig_hmm, 1, L, L, cp9_post, &epos, &epos_state, FALSE, 0., FALSE, debug_level);
+      /* Deal with special cases for sub-CM alignment:
+       * If the most likely state to have emitted the first or last residue
+       * is the insert state in node 0, it only makes sense to start modelling
+       * at consensus column 1. */
+      if(spos == 0 && spos_state == 1) spos = 1;
+      if(epos == 0 && epos_state == 1) epos = 1;
+      /* If most-likely HMM node to emit final position comes BEFORE most-likely HMM node to emit first position,
+       * our HMM alignment is crap, default to using the full CM. */
+      if(epos < spos) { spos = 1; epos = cm->cp9->M; } 
+	  
+      /* (3) Build the sub_cm from the original CM. */
+      if(!(build_sub_cm(orig_cm, &sub_cm, 
+			spos, epos,         /* first and last col of structure kept in the sub_cm  */
+			&submap,            /* maps from the sub_cm to cm and vice versa           */
+			FALSE,              /* DON'T build a fullsub model (deprecated)            */
+			debug_level)))      /* print or don't print debugging info                 */
+	cm_Fail("ERROR ActuallyAlignTargets(), building sub CM.");
+      /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded), this will also:  */
+      /* (4) Build a new CP9 HMM from the sub CM. */
+      ConfigCM(sub_cm, NULL, NULL);
+      cm    = sub_cm; /* orig_cm still points to the original CM */
+      if(do_hbanded) { /* we're doing HMM banded alignment to the sub_cm */
+	/* Get the HMM bands for the sub_cm */
+	sub_hmm    = sub_cm->cp9;
+	sub_cp9b   = sub_cm->cp9b;
+	sub_cp9map = sub_cm->cp9map;
+	/* (5) Do Forward/Backward again, and get HMM bands */
+	cp9_Seq2Bands(sub_cm, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level);
+	hmm           = sub_hmm;    
+	cp9b          = sub_cp9b;
+	cp9map        = sub_cp9map;
+
+	/* Create the out_mx if needed, cm == sub_cm */
+	if(do_post || do_outside) out_mx = cm_hb_mx_Create(cm->M);
+      }
+    }
+
+    /* Determine which CYK alignment algorithm to use, based
+     * on command-line options AND memory requirements.
+     */
+    if(do_hbanded) {
+      /* write a function to determine size of jd banded memory
+       * req'd, and set do_small to true if its > thresh.
+       if(do_small) * We're only going to band on d in memory, but 
+       * we need to calculate safe_hd bands on the d dimension. 
+       {
+      */
+    }
+    if(do_qdb) {
+      /*Check if we need to reset the query dependent bands b/c they're currently expanded. */
+      if(expand_flag) {
+	for(v = 0; v < cm->M; v++) {
+	  cm->dmin[v] = orig_dmin[v];
+	  cm->dmax[v] = orig_dmax[v];
+	}
+	expand_flag = FALSE;
+      }
+      if((L < cm->dmin[0]) || (L > cm->dmax[0])) { 
+	/* the seq we're aligning is outside the root band, so we expand.*/
+	ExpandBands(cm, L, cm->dmin, cm->dmax);
+	if(sq_mode && debug_level > 0) printf("Expanded bands for seq : %s\n", seqs_to_aln->sq[i]->name);
+	if(bdump_level > 2) { printf("printing expanded bands :\n"); debug_print_bands(stdout, cm, cm->dmin, cm->dmax); }
+	expand_flag = TRUE;
+      }
+    }
+
+    if(sq_mode && !silent_mode) { 
+      if(do_sub) printf("Aligning (to a sub CM) %-20s", seqs_to_aln->sq[i]->name);
+      else       printf("Aligning %-30s", seqs_to_aln->sq[i]->name);
+    }
+
+    /* beginning of large if() else if() else if() ... statement */
+    if(do_sample) { 
+      if(do_hbanded) { /* sampling from inside HMM banded matrix */
+	FInside_b_jd_me(cm, cur_dsq, 1, L,
+			TRUE,	   /* non memory-saving mode, we sample from alpha mx */
+			NULL, &alpha,/* fill alpha, and return it, we'll sample a parsetree from it */
+			NULL, NULL,  /* manage your own deckpool, I don't want it */
+			do_local,    /* TRUE to allow local begins */
+			cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+	sc = ParsetreeSampleFromFInside_b_jd_me(r, cm, cur_dsq, L, alpha, cp9b, cur_tr, NULL);
+      }
+      else { /* sampling from inside matrix, but not HMM banded */
+	FInside(cm, cur_dsq, 1, L,
+		TRUE,            /* save full alpha, so we can sample from it,  */
+		NULL, &alpha,    /* fill alpha, and return it, we'll sample a parsetree from it */
+		NULL, NULL,      /* manage your own deckpool, I don't want it */
+		do_local);       /* TRUE to allow local begins */
+	sc = ParsetreeSampleFromFInside(r, cm, cur_dsq, L, alpha, cur_tr, NULL);
+      }
+    }
+    else if(do_inside) { 
+      if(do_hbanded) { /* HMM banded inside only */
+	sc = FastInsideAlignHB(cm, cur_dsq, 1, L, cm->hbmx);
+      }
+      else { /* non-banded inside only */
+	sc = FInside(cm, cur_dsq, 1, L,
+		     FALSE,       /* memory-saving mode */
+		     NULL, NULL,	/* manage your own matrix, I don't want it */
+		     NULL, NULL,	/* manage your own deckpool, I don't want it */
+		     do_local);       /* TRUE to allow local begins */
+      }
+    }
+    else if(do_outside) { 
+      if(do_hbanded) { /* HMM banded inside and outside */
+	/* need dp matrix from Inside to do Outside */
+	sc = FastInsideAlignHB(cm,  cur_dsq, 1, L, cm->hbmx);
+	sc = FastOutsideAlignHB(cm, cur_dsq, 1, L, out_mx, cm->hbmx, do_check);
+      }
+      else { /* non-banded inside/outside */
+	/* need alpha matrix from Inside to do Outside */
+	sc = FInside(cm, cur_dsq, 1, L,
+		     TRUE,	        /* save full alpha so we can run outside */
+		     NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
+		     NULL, NULL,	        /* manage your own deckpool, I don't want it */
+		     do_local);           /* TRUE to allow local begins */
+	sc = FOutside(cm, cur_dsq, 1, L,
+		      TRUE,	        /* save full beta */
+		      NULL, NULL,	        /* manage your own matrix, I don't want it */
+		      NULL, NULL,	        /* manage your own deckpool, I don't want it */
+		      do_local,           /* TRUE to allow local begins */
+		      alpha,              /* alpha matrix from IInside() */
+		      NULL,               /* don't save alpha */
+		      do_check);          /* TRUE to check Outside probs agree with Inside */
+      }
+    }
+    else if (do_small) { /* small D&C CYK alignment */
+      if(do_qdb) { /* use QDBs when doing D&C CYK */
+	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, 
+				 cur_tr, cm->dmin, cm->dmax);
+	if(bdump_level > 0) qdb_trace_info_dump(cm, *cur_tr, cm->dmin, cm->dmax, bdump_level);
+      }
+      else if(do_hbanded) { /* use QDBs (safe d bands) derived from HMM bands when doing D&C CYK, HMM bands were not tight enough to allow HMM banded full CYK*/
+	/* Calc the safe d bands */
+	hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+			 cp9b->safe_hdmin, cp9b->safe_hdmax);
+	if(debug_level > 3) { printf("\nprinting hd bands\n\n"); debug_print_hd_bands(cm, cp9b->hdmin, cp9b->hdmax, cp9b->jmin, cp9b->jmax); printf("\ndone printing hd bands\n\n"); }
+	/* Note the following CYK call will not enforce j bands, even though user specified --hbanded. */
+	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, cp9b->safe_hdmin, cp9b->safe_hdmax);
+	if(bdump_level > 0) qdb_trace_info_dump(cm, *cur_tr, cm->dmin, cm->dmax, bdump_level);
+      }
+      else { /* small D&C CYK non-banded alignment */
+	/*printf("DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n"); debug_print_cm_params(cm); printf("DONE DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");*/
+	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
+	if(bdump_level > 0) { 
+	  /* We want QDB info but QDBs weren't used.  Useful if you're curious why a QDB banded parse is crappy 
+	   * relative to non-banded parse, e.g. allows you to see where the non-banded parse went outside the bands. */
+	  qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
+	}
+      }
+    }
+    else if(do_qdb) { /* non-small, QDB banded CYK alignment */
+      sc = CYKInside(cm, cur_dsq, L, 0, 1, L, cur_tr, cm->dmin, cm->dmax);
+      if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
+    }
+    else if(do_hbanded) { /* non-small, HMM banded CYK alignment */
+      sc = FastCYKInsideAlignHB(cm, cur_dsq, L, 0, 1, L, cur_tr, cm->hbmx);
+      /* if CM_ALIGN_HMMSAFE option is enabled, realign seqs w/HMM banded parses < 0 bits */
+      if(cm->align_opts & CM_ALIGN_HMMSAFE && sc < 0.) { 
+	tmpsc = sc;
+	if(!silent_mode) printf("\n%s HMM banded parse had a negative score, realigning with non-banded CYK.\n", seqs_to_aln->sq[i]->name);
+	FreeParsetree(*cur_tr);
+	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
+	if(!silent_mode && fabs(sc-tmpsc) < 0.01) printf("HMM banded parse was the optimal parse.\n\n");
+	else if (!silent_mode) printf("HMM banded parse was non-optimal, it was %.2f bits below the optimal.\n\n", (fabs(sc-tmpsc)));
+      }	      
+    }
+    else { /* non-small, non-banded CYK alignment */
+      sc = CYKInside(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL);
+      if(bdump_level > 0) { 
+	/* We want band info but --hbanded wasn't used.  Useful if you're curious why a banded parse is crappy 
+	 * relative to non-banded parse, e.g. allows you to see where the non-banded parse went outside the bands. */
+	qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
+      }
+    }
+    /* end of large if() else if() else if() else statement */
+    
+    if(do_post) { /* do Inside() and Outside() runs and use alpha and beta to get posteriors */
+      if(do_hbanded) { /* HMM banded Inside/Outside --> posteriors */
+	FastInsideAlignHB (cm, cur_dsq, 1, L, cm->hbmx);
+	FastOutsideAlignHB(cm, cur_dsq, 1, L, out_mx, cm->hbmx, do_check);
+	FastPosteriorHB   (cm,          1, L, cm->hbmx, out_mx, out_mx);   
+	postcode[i] = CMPostalCodeHB(cm, L, out_mx, tr[i]);
+      }
+      else { /* non-HMM banded Inside/Outside --> posteriors */
+	ESL_ALLOC(post, sizeof(float **) * (cm->M+1));
+	for (v = 0; v < cm->M+1; v++) post[v] = alloc_vjd_deck(L, 1, L);
+	sc = FInside(cm, cur_dsq, 1, L,
+		     TRUE,	/* save full alpha so we can run outside */
+		     NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
+		     NULL, NULL,	/* manage your own deckpool, I don't want it */
+		     do_local);       /* TRUE to allow local begins */
+	sc = FOutside(cm, cur_dsq, 1, L,
+		      TRUE,	/* save full beta */
+		      NULL, &beta,	/* fill beta, and return it, needed for CMPosterior() */
+		      NULL, NULL,	/* manage your own deckpool, I don't want it */
+		      do_local,       /* TRUE to allow local begins */
+		      alpha, &alpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
+		      do_check);      /* TRUE to check Outside probs agree with Inside */
+	CMPosterior(L, cm, alpha, NULL, beta, NULL, post, &post); /* this frees alpha, beta */
+	if(do_check) { 
+	  CMCheckPosterior(L, cm, post);
+	  printf("\nPosteriors checked (I).\n\n");
+	}
+	postcode[i] = CMPostalCode(cm, L, post, tr[i]);
+	/* free post  */
+	if(post != NULL) free_vjd_matrix(post, cm->M, 1, L);
+      }
+    }
+    /* done alignment for this seq */
+
+    avgsc += sc;
+    if (sc > maxsc) maxsc = sc;
+    if (sc < minsc) minsc = sc;
+      
+    if(!silent_mode) printf("    score: %10.2f bits\n", sc);
+    parsesc[i] = sc;
+      
+    /* check parsetree score if cm->align_opts & CM_ALIGN_CHECKPARSESC */
+    if((cm->align_opts & CM_ALIGN_CHECKPARSESC) &&
+       (!(cm->flags & CM_IS_SUB))) { 
+      if (fabs(sc - ParsetreeScore(cm, tr[i], cur_dsq, FALSE)) >= 0.01)
+	cm_Fail("ERROR in actually_align_target(), alignment score differs from its parse tree's score");
+    }
+
+    /* If requested, or if debug level high enough, print out the parse tree */
+    if((cm->align_opts & CM_ALIGN_PRINTTREES) || (debug_level > 2)) { 
+      fprintf(stdout, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], cur_dsq, FALSE));;
+      ParsetreeDump(stdout, tr[i], cm, cur_dsq, NULL, NULL);
+      fprintf(stdout, "//\n");
+    }
+    /* Dump the trace with info on i, j and d bands
+     * if bdump_level is high enough */
+    if(bdump_level > 0 && do_hbanded)
+      ijdBandedTraceInfoDump(cm, tr[i], cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 1);
+
+    if(do_sub) {
+      if(!(do_inside || do_outside)) { 
+	/* Convert the sub_cm parsetree to a full CM parsetree */
+	if(debug_level > 0) ParsetreeDump(stdout, *cur_tr, cm, cur_dsq, NULL, NULL);
+	if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, *cur_tr, submap, FALSE, debug_level))) { 
+	  printf("\n\nIncorrectly converted original trace:\n");
+	  ParsetreeDump(stdout, orig_tr, orig_cm, cur_dsq, NULL, NULL);
+	  cm_Fail("this shouldn't happen.");
+	}
+	if(debug_level > 0) { 
+	  printf("\n\nConverted original trace:\n");
+	  ParsetreeDump(stdout, orig_tr, orig_cm, cur_dsq, NULL, NULL);
+	}
+	/* Replace the sub_cm trace with the converted orig_cm trace. */
+	FreeParsetree(*cur_tr);
+	*cur_tr = orig_tr;
+      }
+      /* free sub_cm variables, we build a new sub CM for each seq */
+      FreeCPlan9Matrix(cp9_post);
+      if(out_mx != NULL) { cm_hb_mx_Destroy(out_mx); out_mx = NULL; }
+      FreeSubMap(submap);
+      FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
+    }
+    if(do_timings) { 
+      esl_stopwatch_Stop(watch); 
+      esl_stopwatch_Display(stdout, watch, "seq alignment CPU time: ");
+      printf("\n");
+    }
+  }
+  /* done aligning all nalign seqs. */
+  /* Clean up. */
+  if(out_mx != NULL) cm_hb_mx_Destroy(out_mx);
+  if (do_qdb) {
+    free(orig_dmin);
+    free(orig_dmax);
+  }
+  esl_stopwatch_Destroy(watch);
+  
+  if(sq_mode) {
+    seqs_to_aln->tr       = tr;       /* could be NULL */
+    seqs_to_aln->cp9_tr   = cp9_tr;   /* could be NULL */
+    seqs_to_aln->postcode = postcode; /* could be NULL */
+    seqs_to_aln->sc       = parsesc;  /* shouldn't be NULL */
+  }
+  else { /* dsq mode */
+    free(parsesc);
+  }
+  
+  return eslOK;
+  ERROR:
+  cm_Fail("Memory allocation error.");
+  return status; /* NEVERREACHED */
+}
 
 /* 
  * Function: OldActuallyAlignTargets
@@ -271,7 +868,7 @@ float OldActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_c
  */
 int
 OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
-		       int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r)
+			int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r)
 {
   int status;
   ESL_STOPWATCH *watch;         /* for timings */
@@ -336,7 +933,6 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   int             ***post;     /* post DP matrix for Inside() */
 
   float             *parsesc; /* parsetree scores of each sequence */
-  int              **end;     /* so we re-use the end deck in Inside/Outside matrices */
 
   /* declare and initialize options */
   int do_small     = TRUE;    /* TRUE to use D&C small alignment algs */
@@ -416,7 +1012,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   if      (sq_mode)   nalign = seqs_to_aln->nseq;
   else if(dsq_mode) { nalign = search_results->num_results; silent_mode = TRUE; }
 
-  /* If sqmode: potentially allocate tr, cp9_tr, and postcode. Well set
+  /* If sqmode: potentially allocate tr, cp9_tr, and postcode. We'll set
    * seqs_to_aln->tr, seqs_to_aln->cp9_tr, and seqs_to_aln->postcode to 
    * these guys at end of function.
    * 
@@ -445,6 +1041,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   if(do_hbanded || do_sub) /* We need a CP9 HMM to build sub_cms */
     {
       if(cm->cp9 == NULL)                    cm_Fail("OldActuallyAlignTargets, trying to use CP9 HMM that is NULL\n");
+      if(cm->cp9b == NULL)                   cm_Fail("OldActuallyAlignTargets, cm->cp9b is NULL\n");
       if(!(cm->cp9->flags & CPLAN9_HASBITS)) cm_Fail("OldActuallyAlignTargets, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
 
       /* Keep data for the original CM safe; we'll be doing
@@ -457,510 +1054,392 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
       orig_cp9map = cp9map;
     }
   /* Copy the QD bands in case we expand them. */
-  if(do_qdb)
-    {
-      if(bdump_level > 1) 
-	  /*printf("cm->beta:%f\n", cm->beta);*/
-	  debug_print_bands(stdout, cm, cm->dmin, cm->dmax);
-      expand_flag = FALSE;
-      /* Copy dmin and dmax, so we can replace them after expansion */
-      ESL_ALLOC(orig_dmin, sizeof(int) * cm->M);
-      ESL_ALLOC(orig_dmax, sizeof(int) * cm->M);
-      for(v = 0; v < cm->M; v++)
-	{
-	  orig_dmin[v] = cm->dmin[v];
-	  orig_dmax[v] = cm->dmax[v];
-	}
+  if(do_qdb) {
+    if(bdump_level > 1) debug_print_bands(stdout, cm, cm->dmin, cm->dmax);
+    expand_flag = FALSE;
+    /* Copy dmin and dmax, so we can replace them after expansion */
+    ESL_ALLOC(orig_dmin, sizeof(int) * cm->M);
+    ESL_ALLOC(orig_dmax, sizeof(int) * cm->M);
+    for(v = 0; v < cm->M; v++) {
+      orig_dmin[v] = cm->dmin[v];
+      orig_dmax[v] = cm->dmax[v];
     }	  
-  if(do_sub) /* to get spos and epos for the sub_cm, 
-	      * we config the HMM to local mode with equiprobable start/end points.*/
-      {
-	/*printf("configuring the CM plan 9 HMM for local alignment.\n");*/
-	swentry= ((hmm->M)-1.)/hmm->M; /* all start pts equiprobable, including 1 */
-	swexit = ((hmm->M)-1.)/hmm->M; /* all end   pts equiprobable, including M */
-	CPlan9SWConfig(hmm, swentry, swexit);
-	CP9Logoddsify(hmm);
-      }
-
-  if(do_hbanded && (!do_sub)) {
-      cp9b = AllocCP9Bands(cm, cm->cp9);
-      orig_cp9b = cp9b; 
+  }
+  if(do_sub) { /* to get spos and epos for the sub_cm, 
+	        * we config the HMM to local mode with equiprobable start/end points.*/
+    swentry = ((hmm->M)-1.)/hmm->M; /* all start pts equiprobable, including 1 */
+    swexit  = ((hmm->M)-1.)/hmm->M; /* all end   pts equiprobable, including M */
+    CPlan9SWConfig(hmm, swentry, swexit);
+    CP9Logoddsify(hmm);
   }
   orig_cm = cm;
 
   /*****************************************************************
    *  Collect parse trees for each sequence
    *****************************************************************/
-  for (i = 0; i < nalign; i++)
-    {
-      esl_stopwatch_Start(watch);
+  for (i = 0; i < nalign; i++) {
+    if(do_timings) esl_stopwatch_Start(watch);
+    if (sq_mode) { 
+      cur_dsq = seqs_to_aln->sq[i]->dsq;
+      cur_tr  = &(tr[i]);
+      L       = seqs_to_aln->sq[i]->n;
+    }
+    else if (dsq_mode) {
+      cur_dsq = dsq + search_results->data[i].start - 1;
+      cur_tr  = &(search_results->data[i].tr);
+      L       = search_results->data[i].stop - search_results->data[i].start + 1;
+    }
+    if (L == 0) continue; /* silently skip zero length seqs */
 
-      if (sq_mode) { 
-	cur_dsq = seqs_to_aln->sq[i]->dsq;
-	cur_tr  = &(tr[i]);
-	L       = seqs_to_aln->sq[i]->n;
-      }
-      else if (dsq_mode) {
-	cur_dsq = dsq + search_results->data[i].start - 1;
-	cur_tr  = &(search_results->data[i].tr);
-	L       = search_results->data[i].stop - search_results->data[i].start + 1;
-      }
-
-      if (L == 0) continue; /* silently skip zero length seqs */
-
-      /* Special case, if do_hmmonly, align seq with Viterbi, print score and move 
-       * on to next seq */
-      if(sq_mode && do_hmmonly)
-	{
-	  cp9_mx  = CreateCPlan9Matrix(1, cm->cp9->M, 25, 0);
-	  if(sq_mode && !silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", seqs_to_aln->sq[i]->name);
-	  sc = CP9ViterbiAlign(cur_dsq, 1, L, cm->cp9, cp9_mx, &(cp9_tr[i]));
-	  if(sq_mode && !silent_mode) printf(" score: %10.2f bits\n", sc);
-	  parsesc[i] = sc;
-	  FreeCPlan9Matrix(cp9_mx);
-	  continue;
-	}
-      /* Special case, if do_scoreonly, align seq with full CYK inside, just to 
-       * get the score. For testing, probably in cmscore. */
-      if(sq_mode && do_scoreonly)
-	{
-	  if(sq_mode && !silent_mode) printf("Aligning (w/full CYK score only) %-30s", seqs_to_aln->sq[i]->name);
-	  sc = CYKInsideScore(cm, cur_dsq, L, 0, 1, L, NULL, NULL); /* don't do QDB mode */
-	  if(sq_mode && !silent_mode) printf("    score: %10.2f bits\n", sc);
-	  parsesc[i] = sc;
-	  continue;
-	}
-
-      /* Potentially, do HMM calculations. */
-      if((!do_sub) && do_hbanded) {
-	cp9_Seq2Bands(orig_cm, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level);
-      }
-      else if(do_sub) 
-	{
-	  /* If we're in sub mode:
-	   * (1) Get HMM posteriors 
-	   * (2) Infer the start (spos) and end (epos) HMM states by 
-	   *     looking at the posterior matrix.
-	   * (3) Build the sub_cm from the original CM.
-	   *
-	   * If we're also doing HMM banded alignment to sub CM:
-	   * (4) Build a new CP9 HMM from the sub CM.
-	   * (5) Do Forward/Backward again, and get HMM bands 
-	   */
-
-	  /* (1) Get HMM posteriors */
-	  cp9_Seq2Posteriors(orig_cm, cur_dsq, 1, L, &cp9_post, debug_level); 
-	  
-	  /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
-	   * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
-	   */
-	  CP9NodeForPosn(orig_hmm, 1, L, 1, cp9_post, &spos, &spos_state, 
-			 FALSE, 0., TRUE, debug_level);
-	  CP9NodeForPosn(orig_hmm, 1, L, L, cp9_post, &epos, &epos_state, 
-			 FALSE, 0., FALSE, debug_level);
-	  /* If the most likely state to have emitted the first or last residue
-	   * is the insert state in node 0, it only makes sense to start modelling
-	   * at consensus column 1. */
-	  if(spos == 0 && spos_state == 1) 
-	      spos = 1;
-	  if(epos == 0 && epos_state == 1) 
-	      epos = 1;
-	  if(epos < spos) /* This is a possible but hopefully rarely encountered situation. */
-	    epos = spos;
-	  
-	  /* (3) Build the sub_cm from the original CM. */
-	  if(!(build_sub_cm(orig_cm, &sub_cm, 
-			    spos, epos,         /* first and last col of structure kept in the sub_cm  */
-			    &submap,            /* maps from the sub_cm to cm and vice versa           */
-			    FALSE,              /* DON'T build a fullsub model (deprecated)            */
-			    debug_level)))      /* print or don't print debugging info                 */
-	    cm_Fail("ERROR OldActuallyAlignTargets(), building sub CM.");
-	  /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded) */
-	  /* (4) Build a new CP9 HMM from the sub CM. */
-	  ConfigCM(sub_cm, NULL, NULL);
-	  
-	  cm    = sub_cm; /* orig_cm still points to the original CM */
-	  if(do_hbanded) /* we're doing HMM banded alignment to the sub_cm */
-	    {
-	      /* Get the HMM bands for the sub_cm */
-	      sub_hmm    = sub_cm->cp9;
-	      sub_cp9b   = sub_cm->cp9b;
-	      sub_cp9map = sub_cm->cp9map;
-	      /* (5) Do Forward/Backward again, and get HMM bands */
-	      cp9_Seq2Bands(sub_cm, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level);
-	      hmm           = sub_hmm;    
-	      cp9b          = sub_cp9b;
-	      cp9map        = sub_cp9map;
-	    }
-	}
-
-      /* Determine which CYK alignment algorithm to use, based
-       * on command-line options AND memory requirements.
-       */
-      if(do_hbanded)
-	{
-	  /* write a function to determine size of jd banded memory
-	   * req'd, and set do_small to true if its > thresh.
-	   if(do_small) * We're only going to band on d in memory, but 
-	   * we need to calculate safe_hd bands on the d dimension. 
-	   {
-	  */
-	}
-      if(do_qdb)
-	{
-	  /*Check if we need to reset the query dependent bands b/c they're currently expanded. */
-	  if(expand_flag)
-	    {
-	      for(v = 0; v < cm->M; v++)
-		{
-		  cm->dmin[v] = orig_dmin[v];
-		  cm->dmax[v] = orig_dmax[v];
-		}
-	      expand_flag = FALSE;
-	    }
-	  if((L < cm->dmin[0]) || (L > cm->dmax[0]))
-	    {
-	      /* the seq we're aligning is outside the root band, so we expand.*/
-	      ExpandBands(cm, L, cm->dmin, cm->dmax);
-	      if(sq_mode && debug_level > 0) printf("Expanded bands for seq : %s\n", seqs_to_aln->sq[i]->name);
-	      if(bdump_level > 2) 
-		{
-		  printf("printing expanded bands :\n");
-		  debug_print_bands(stdout, cm, cm->dmin, cm->dmax);
-		}
-	      expand_flag = TRUE;
-	    }
-	}
-
-      if(sq_mode && !silent_mode) 
-	{
-	  if(do_sub) 
-	    printf("Aligning (to a sub CM) %-20s", seqs_to_aln->sq[i]->name);
-	  else
-	    printf("Aligning %-30s", seqs_to_aln->sq[i]->name);
-	}
-
-      /* beginning of large if() else if() else if() ... statement 
-       */
-      if(do_sample) 
-	{ 
-	  if(do_hbanded)
-	    {
-	      IInside_b_jd_me(cm, cur_dsq, 1, L,
-			      TRUE,	   /* non memory-saving mode, we sample from alpha mx */
-			      NULL, &alpha,/* fill alpha, and return it, we'll sample a parsetree from it */
-			      NULL, NULL,  /* manage your own deckpool, I don't want it */
-			      do_local,    /* TRUE to allow local begins */
-			      cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
-	      sc = ParsetreeSampleFromIInside_b_jd_me(r, cm, cur_dsq, L, alpha, cp9b, cur_tr, NULL);
-	    }
-	  else
-	    {
-	      IInside(cm, cur_dsq, 1, L,
-		      TRUE,            /* save full alpha, so we can sample from it,  */
-		      NULL, &alpha,    /* fill alpha, and return it, we'll sample a parsetree from it */
-		      NULL, NULL,      /* manage your own deckpool, I don't want it */
-		      do_local);       /* TRUE to allow local begins */
-	      sc = ParsetreeSampleFromIInside(r, cm, cur_dsq, L, alpha, cur_tr, NULL);
-	    }
-	}
-      else if(do_inside) 
-	{ 
-	  if(do_hbanded)
-	    {
-	      sc = IInside_b_jd_me(cm, cur_dsq, 1, L,
-				   TRUE,	/* non memory-saving mode */
-				   NULL, NULL,	/* manage your own matrix, I don't want it */
-				   NULL, NULL,	/* manage your own deckpool, I don't want it */
-				   do_local,    /* TRUE to allow local begins */
-				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
-	    }
-	  else
-	    {
-	      sc = IInside(cm, cur_dsq, 1, L,
-			   FALSE,       /* memory-saving mode */
-			   NULL, NULL,	/* manage your own matrix, I don't want it */
-			   NULL, NULL,	/* manage your own deckpool, I don't want it */
-			   do_local);       /* TRUE to allow local begins */
-	    }
-	}
-      else if(do_outside)
-	{	
-	  if(do_hbanded)
-	    {
-	      /* need alpha matrix from Inside to do Outside */
-	      sc = IInside_b_jd_me(cm, cur_dsq, 1, L,
-				   TRUE,	 /* save full alpha so we can run outside */
-				   NULL, &alpha, /* fill alpha, and return it, needed for IOutside() */
-				   NULL, NULL,	 /* manage your own deckpool, I don't want it */
-				   do_local,     /* TRUE to allow local begins */
-				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
-	      /*do_check = TRUE;*/
-	      sc = IOutside_b_jd_me(cm, cur_dsq, 1, L,
-				    TRUE,	 /* save full beta */
-				    NULL, NULL,	 /* manage your own matrix, I don't want it */
-				    NULL, NULL,	 /* manage your own deckpool, I don't want it */
-				    do_local,    /* TRUE to allow local begins */
-				    alpha,       /* alpha matrix from FInside_b_jd_me() */
-				    NULL,        /* don't save alpha */
-				    do_check,    /* TRUE to check Outside probs agree with Inside */
-				    cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
-	      /* free alpha */
-	      if(alpha != NULL) {
-		for (v = 0; v <= cm->M; v++) /* be careful of our reuse of the end deck -- free it only once */
-		  if (alpha[v] != NULL) { 
-		    if (cm->sttype[v] != E_st) { Ifree_vjd_deck(alpha[v], 1, L); alpha[v] = NULL; }
-		    else end = alpha[v]; 
-		  }
-		if (end != NULL) { Ifree_vjd_deck(end, 1, L); end = NULL; }
-		free(alpha);
-	      }
-	    }
-	  else
-	    {
-	      /* need alpha matrix from Inside to do Outside */
-	      sc = IInside(cm, cur_dsq, 1, L,
-			   TRUE,	        /* save full alpha so we can run outside */
-			   NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
-			   NULL, NULL,	        /* manage your own deckpool, I don't want it */
-			   do_local);           /* TRUE to allow local begins */
-	      sc = IOutside(cm, cur_dsq, 1, L,
-			    TRUE,	        /* save full beta */
-			    NULL, NULL,	        /* manage your own matrix, I don't want it */
-			    NULL, NULL,	        /* manage your own deckpool, I don't want it */
-			    do_local,           /* TRUE to allow local begins */
-			    alpha,              /* alpha matrix from IInside() */
-			    NULL,               /* don't save alpha */
-			    do_check);          /* TRUE to check Outside probs agree with Inside */
-	    }
-	}
-      else if (do_small) 
-	{
-	  if(do_qdb)
-	    {
-	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, 
-				       cur_tr, cm->dmin, cm->dmax);
-	      if(bdump_level > 0)
- 		qdb_trace_info_dump(cm, *cur_tr, cm->dmin, cm->dmax, bdump_level);
-	    }
-	  else if(do_hbanded) /*j and d bands not tight enough to allow HMM banded full CYK*/
-	    {
-	      /* Calc the safe d bands */
-	      hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
-			       cp9b->safe_hdmin, cp9b->safe_hdmax);
-	      if(debug_level > 3)
-		{
-		  printf("\nprinting hd bands\n\n");
-		  debug_print_hd_bands(cm, cp9b->hdmin, cp9b->hdmax, cp9b->jmin, cp9b->jmax);
-		  printf("\ndone printing hd bands\n\n");
-		}
-	      /* Note the following CYK call will not enforce j bands, even
-	       * though user specified --hbanded. */
-	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, 
-				       cur_tr, cp9b->safe_hdmin, cp9b->safe_hdmax);
-	      if(bdump_level > 0)
-		qdb_trace_info_dump(cm, *cur_tr, cm->dmin, cm->dmax, bdump_level);
-	    }
-	  else
-	    {
-	      /*printf("DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");
-		debug_print_cm_params(cm);
-		printf("DONE DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");*/
-
-	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr,
-				       NULL, NULL); /* we're not in QDB mode */
-	      if(bdump_level > 0)
-		{
-		  /* We want band info but --banded wasn't used.  Useful if you're curious
-		   * why a banded parse is crappy relative to non-banded parse, e.g. allows you 
-		   * to see where the non-banded parse went outside the bands.
-		   */
-		  qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
-		}
-	    }
-        }
-      else if(do_qdb)
-	{
-	  sc = CYKInside(cm, cur_dsq, L, 0, 1, L, cur_tr, cm->dmin, cm->dmax);
-	  if(bdump_level > 0)
-	    qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
-	}
-      else if(do_hbanded)
-	{
-	  sc = CYKInside_b_jd(cm, cur_dsq, L, 0, 1, L, cur_tr, cp9b->jmin, 
-			      cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
-	  if(bdump_level > 0)
-	    qdb_trace_info_dump(cm, tr[i], cp9b->safe_hdmin, cp9b->safe_hdmax, bdump_level);
-	  /* if CM_ALIGN_HMMSAFE option is enabled, realign seqs w/HMM banded parses < 0 bits */
-	  if(cm->align_opts & CM_ALIGN_HMMSAFE && sc < 0.)
-	    {
-	      tmpsc = sc;
-	      if(!silent_mode) printf("\n%s HMM banded parse had a negative score, realigning with non-banded CYK.\n", seqs_to_aln->sq[i]->name);
-	      FreeParsetree(*cur_tr);
-	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr,
-				       NULL, NULL); /* we're not in QDB mode */
-	      if(!silent_mode && fabs(sc-tmpsc) < 0.01)
-		printf("HMM banded parse was the optimal parse.\n\n");
-	      else if (!silent_mode)
-		printf("HMM banded parse was non-optimal, it was %.2f bits below the optimal.\n\n", (fabs(sc-tmpsc)));
-	    }	      
-	}
-      else
-	{
-	  sc = CYKInside(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL);
-	  if(bdump_level > 0)
-	    {
-	      /* We want band info but --hbanded wasn't used.  Useful if you're curious
-	       * why a banded parse is crappy relative to non-banded parse, e.g. allows you 
-	       * to see where the non-banded parse went outside the bands.
-	       */
-	      qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
-	    }
-	}
-      /* end of large if() else if() else if() else statement: */
-
-      if(do_post) /* do Inside() and Outside() runs and use alpha and beta to get posteriors */
-	{	
-	  ESL_ALLOC(post, sizeof(int **) * (cm->M+1));
-	  if(do_hbanded)
-	    {
-	      for (v = 0; v < cm->M; v++)
-		{
-		  post[v] = NULL;
-		  post[v] = Ialloc_jdbanded_vjd_deck(L, 1, L, cp9b->jmin[v], 
-						      cp9b->jmax[v], cp9b->hdmin[v], cp9b->hdmax[v]);
-		}
-	      post[cm->M] = NULL;
-	      post[cm->M] = Ialloc_vjd_deck(L, 1, L);
-	      sc = IInside_b_jd_me(cm, cur_dsq, 1, L,
-				   TRUE,	/* save full alpha so we can run outside */
-				   NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
-				   NULL, NULL,	/* manage your own deckpool, I don't want it */
-				   do_local,       /* TRUE to allow local begins */
-				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
-	      sc = IOutside_b_jd_me(cm, cur_dsq, 1, L,
-				    TRUE,	/* save full beta */
-				    NULL, &beta,	/* fill beta, and return it, needed for ICMPosterior() */
-				    NULL, NULL,	/* manage your own deckpool, I don't want it */
-				    do_local,       /* TRUE to allow local begins */
-				    alpha, &alpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
-				    do_check,      /* TRUE to check Outside probs agree with Inside */
-				    cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
-	      ICMPosterior_b_jd_me(L, cm, alpha, NULL, beta, NULL, post, &post,
-				   cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);
-	      postcode[i] = ICMPostalCode_b_jd_me(cm, L, post, tr[i],
-						  cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);
-	      /*postcode[i] = CMPostalCode_b_jd_me(cm, L, post, tr[i],
-		cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);*/
-	    }
-	  else
-	    {
-	      for (v = 0; v < cm->M+1; v++)
-		{
-		  post[v] = NULL;
-		  post[v] = Ialloc_vjd_deck(L, 1, L);
-		}
-	      sc = IInside(cm, cur_dsq, 1, L,
-			   TRUE,	/* save full alpha so we can run outside */
-			   NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
-			   NULL, NULL,	/* manage your own deckpool, I don't want it */
-			   do_local);       /* TRUE to allow local begins */
-	      sc = IOutside(cm, cur_dsq, 1, L,
-			    TRUE,	/* save full beta */
-			    NULL, &beta,	/* fill beta, and return it, needed for CMPosterior() */
-			    NULL, NULL,	/* manage your own deckpool, I don't want it */
-			    do_local,       /* TRUE to allow local begins */
-			    alpha, &alpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
-			    do_check);      /* TRUE to check Outside probs agree with Inside */
-	      ICMPosterior(L, cm, alpha, NULL, beta, NULL, post, &post); /* this frees alpha, beta */
-	      if(do_check)
-		{
-		  ICMCheckPosterior(L, cm, post);
-		  printf("\nPosteriors checked (I).\n\n");
-		}
-	      postcode[i] = ICMPostalCode(cm, L, post, tr[i]);
-	      /*postcode[i] = CMPostalCode(cm, L, post, tr[i]);*/
-	    }
-
-	  /* free post  */
-	  if(post != NULL)
-	    {
-	      for (v = 0; v <= (cm->M); v++)
-		if (post[v] != NULL) { Ifree_vjd_deck(post[v], 1, L); post[v] = NULL;}
-	      free(post);
-	    }
-	}
-      avgsc += sc;
-      if (sc > maxsc) maxsc = sc;
-      if (sc < minsc) minsc = sc;
-      
-      if(!silent_mode) printf("    score: %10.2f bits\n", sc);
+    /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
+    if(sq_mode && do_hmmonly) {
+      cp9_mx  = CreateCPlan9Matrix(1, cm->cp9->M, 25, 0);
+      if(sq_mode && !silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", seqs_to_aln->sq[i]->name);
+      sc = CP9ViterbiAlign(cur_dsq, 1, L, cm->cp9, cp9_mx, &(cp9_tr[i]));
+      if(sq_mode && !silent_mode) printf(" score: %10.2f bits\n", sc);
       parsesc[i] = sc;
+      FreeCPlan9Matrix(cp9_mx);
+      continue;
+    }
+    /* Special case, if do_scoreonly, align seq with full CYK inside, just to 
+     * get the score. For testing, probably in cmscore. */
+    if(sq_mode && do_scoreonly) {
+      if(sq_mode && !silent_mode) printf("Aligning (w/full CYK score only) %-30s", seqs_to_aln->sq[i]->name);
+      sc = CYKInsideScore(cm, cur_dsq, L, 0, 1, L, NULL, NULL); /* don't do QDB mode */
+      if(sq_mode && !silent_mode) printf("    score: %10.2f bits\n", sc);
+      parsesc[i] = sc;
+      continue;
+    }
+  
+    /* Potentially, do HMM calculations. */
+    if((!do_sub) && do_hbanded) {
+      cp9_Seq2Bands(orig_cm, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level);
+    }
+    else if(do_sub) { 
+      /* If we're in sub mode:
+       * (1) Get HMM posteriors 
+       * (2) Infer the start (spos) and end (epos) HMM states by 
+       *     looking at the posterior matrix.
+       * (3) Build the sub_cm from the original CM.
+       *
+       * If we're also doing HMM banded alignment to sub CM:
+       * (4) Build a new CP9 HMM from the sub CM.
+       * (5) Do Forward/Backward again, and get HMM bands 
+       */
       
-      /* check parsetree score if cm->align_opts & CM_ALIGN_CHECKPARSESC */
-      if((cm->align_opts & CM_ALIGN_CHECKPARSESC) &&
-	 (!(cm->flags & CM_IS_SUB)))
-	{
-	  if (fabs(sc - ParsetreeScore(cm, tr[i], cur_dsq, FALSE)) >= 0.01)
-	    cm_Fail("ERROR in actually_align_target(), alignment score differs from its parse tree's score");
-	}
-
-      /* If debug level high enough, print out the parse tree */
-      if((cm->align_opts & CM_ALIGN_PRINTTREES) || (debug_level > 2))
-	{
-	  fprintf(stdout, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], cur_dsq, FALSE));;
-	  ParsetreeDump(stdout, tr[i], cm, cur_dsq, NULL, NULL);
-	  fprintf(stdout, "//\n");
-	}
-      /* Dump the trace with info on i, j and d bands
-       * if bdump_level is high enough */
-      if(bdump_level > 0 && do_hbanded)
-	ijdBandedTraceInfoDump(cm, tr[i], cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, 
-			       cp9b->hdmin, cp9b->hdmax, 1);
-
-      if(do_sub)
-	FreeCPlan9Matrix(cp9_post);
-      if(do_sub && !(do_inside || do_outside))
-	{
-	  /* Convert the sub_cm parsetree to a full CM parsetree */
-	  if(debug_level > 0)
-	    ParsetreeDump(stdout, *cur_tr, cm, cur_dsq, NULL, NULL);
-	  if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, *cur_tr, submap, FALSE, debug_level)))
-	    {
-	      printf("\n\nIncorrectly converted original trace:\n");
-	      ParsetreeDump(stdout, orig_tr, orig_cm, cur_dsq, NULL, NULL);
-	      exit(1);
-	    }
-	  if(debug_level > 0)
-	    {
-	      printf("\n\nConverted original trace:\n");
-	      ParsetreeDump(stdout, orig_tr, orig_cm, cur_dsq, NULL, NULL);
-	    }
-	  /* Replace the sub_cm trace with the converted orig_cm trace. */
-	  FreeParsetree(*cur_tr);
-	  *cur_tr = orig_tr;
+      /* (1) Get HMM posteriors */
+      cp9_Seq2Posteriors(orig_cm, cur_dsq, 1, L, &cp9_post, debug_level); 
+      
+      /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
+       * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
+       */
+      CP9NodeForPosn(orig_hmm, 1, L, 1, cp9_post, &spos, &spos_state, FALSE, 0., TRUE, debug_level);
+      CP9NodeForPosn(orig_hmm, 1, L, L, cp9_post, &epos, &epos_state, FALSE, 0., FALSE, debug_level);
+      /* Deal with special cases for sub-CM alignment:
+       * If the most likely state to have emitted the first or last residue
+       * is the insert state in node 0, it only makes sense to start modelling
+       * at consensus column 1. */
+      if(spos == 0 && spos_state == 1) spos = 1;
+      if(epos == 0 && epos_state == 1) epos = 1;
+      /* If most-likely HMM node to emit final position comes BEFORE most-likely HMM node to emit first position,
+       * our HMM alignment is crap, default to using the full CM. */
+      if(epos < spos) { spos = 1; epos = cm->cp9->M; } 
 	  
-	  FreeSubMap(submap);
-	  FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
-	  if(do_hbanded)
-	    FreeCP9Bands(sub_cp9b);
+      /* (3) Build the sub_cm from the original CM. */
+      if(!(build_sub_cm(orig_cm, &sub_cm, 
+			spos, epos,         /* first and last col of structure kept in the sub_cm  */
+			&submap,            /* maps from the sub_cm to cm and vice versa           */
+			FALSE,              /* DON'T build a fullsub model (deprecated)            */
+			debug_level)))      /* print or don't print debugging info                 */
+	cm_Fail("ERROR OldActuallyAlignTargets(), building sub CM.");
+      /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded), this will also:  */
+      /* (4) Build a new CP9 HMM from the sub CM. */
+      ConfigCM(sub_cm, NULL, NULL);
+      cm    = sub_cm; /* orig_cm still points to the original CM */
+      if(do_hbanded) { /* we're doing HMM banded alignment to the sub_cm */
+	/* Get the HMM bands for the sub_cm */
+	sub_hmm    = sub_cm->cp9;
+	sub_cp9b   = sub_cm->cp9b;
+	sub_cp9map = sub_cm->cp9map;
+	/* (5) Do Forward/Backward again, and get HMM bands */
+	cp9_Seq2Bands(sub_cm, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level);
+	hmm           = sub_hmm;    
+	cp9b          = sub_cp9b;
+	cp9map        = sub_cp9map;
+      }
+    }
+  
+    /* Determine which CYK alignment algorithm to use, based
+     * on command-line options AND memory requirements.
+     */
+    if(do_hbanded) {
+      /* write a function to determine size of jd banded memory
+       * req'd, and set do_small to true if its > thresh.
+       if(do_small) * We're only going to band on d in memory, but 
+       * we need to calculate safe_hd bands on the d dimension. 
+       {
+      */
+    }
+    if(do_qdb) {
+      /*Check if we need to reset the query dependent bands b/c they're currently expanded. */
+      if(expand_flag) {
+	for(v = 0; v < cm->M; v++) {
+	  cm->dmin[v] = orig_dmin[v];
+	  cm->dmax[v] = orig_dmax[v];
 	}
+	expand_flag = FALSE;
+      }
+      if((L < cm->dmin[0]) || (L > cm->dmax[0])) { 
+	/* the seq we're aligning is outside the root band, so we expand.*/
+	ExpandBands(cm, L, cm->dmin, cm->dmax);
+	if(sq_mode && debug_level > 0) printf("Expanded bands for seq : %s\n", seqs_to_aln->sq[i]->name);
+	if(bdump_level > 2) { printf("printing expanded bands :\n"); debug_print_bands(stdout, cm, cm->dmin, cm->dmax); }
+	expand_flag = TRUE;
+      }
+    }
 
-      esl_stopwatch_Stop(watch);
-      if(do_timings) 
-	{ 
-	  esl_stopwatch_Display(stdout, watch, "seq alignment CPU time: ");
-	  printf("\n");
+    if(sq_mode && !silent_mode) { 
+      if(do_sub) printf("Aligning (to a sub CM) %-20s", seqs_to_aln->sq[i]->name);
+      else       printf("Aligning %-30s", seqs_to_aln->sq[i]->name);
+    }
+
+    /* beginning of large if() else if() else if() ... statement */
+    if(do_sample) { 
+      if(do_hbanded) { /* sampling from inside HMM banded matrix */
+	IInside_b_jd_me(cm, cur_dsq, 1, L,
+			TRUE,	   /* non memory-saving mode, we sample from alpha mx */
+			NULL, &alpha,/* fill alpha, and return it, we'll sample a parsetree from it */
+			NULL, NULL,  /* manage your own deckpool, I don't want it */
+			do_local,    /* TRUE to allow local begins */
+			cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+	sc = ParsetreeSampleFromIInside_b_jd_me(r, cm, cur_dsq, L, alpha, cp9b, cur_tr, NULL);
+      }
+      else { /* sampling from inside matrix, but not HMM banded */
+	IInside(cm, cur_dsq, 1, L,
+		TRUE,            /* save full alpha, so we can sample from it,  */
+		NULL, &alpha,    /* fill alpha, and return it, we'll sample a parsetree from it */
+		NULL, NULL,      /* manage your own deckpool, I don't want it */
+		do_local);       /* TRUE to allow local begins */
+	sc = ParsetreeSampleFromIInside(r, cm, cur_dsq, L, alpha, cur_tr, NULL);
+      }
+    }
+    else if(do_inside) { 
+      if(do_hbanded) { /* HMM banded inside only */
+	sc = IInside_b_jd_me(cm, cur_dsq, 1, L,
+			     TRUE,	/* non memory-saving mode */
+			     NULL, NULL,	/* manage your own matrix, I don't want it */
+			     NULL, NULL,	/* manage your own deckpool, I don't want it */
+			     do_local,    /* TRUE to allow local begins */
+			     cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+      }
+      else { /* non-banded inside only */
+	sc = IInside(cm, cur_dsq, 1, L,
+		     FALSE,       /* memory-saving mode */
+		     NULL, NULL,	/* manage your own matrix, I don't want it */
+		     NULL, NULL,	/* manage your own deckpool, I don't want it */
+		     do_local);       /* TRUE to allow local begins */
+      }
+    }
+    else if(do_outside) { 
+      if(do_hbanded) { /* HMM banded inside and outside */
+	/* need alpha matrix from Inside to do Outside */
+	sc = IInside_b_jd_me(cm, cur_dsq, 1, L,
+			     TRUE,	 /* save full alpha so we can run outside */
+			     NULL, &alpha, /* fill alpha, and return it, needed for IOutside() */
+			     NULL, NULL,	 /* manage your own deckpool, I don't want it */
+			     do_local,     /* TRUE to allow local begins */
+			     cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+	sc = IOutside_b_jd_me(cm, cur_dsq, 1, L,
+			      TRUE,	 /* save full beta */
+			      NULL, NULL,	 /* manage your own matrix, I don't want it */
+			      NULL, NULL,	 /* manage your own deckpool, I don't want it */
+			      do_local,    /* TRUE to allow local begins */
+			      alpha,       /* alpha matrix from FInside_b_jd_me() */
+			      NULL,        /* don't save alpha */
+			      do_check,    /* TRUE to check Outside probs agree with Inside */
+			      cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+      }
+      else { /* non-banded inside/outside */
+	/* need alpha matrix from Inside to do Outside */
+	sc = IInside(cm, cur_dsq, 1, L,
+		     TRUE,	        /* save full alpha so we can run outside */
+		     NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
+		     NULL, NULL,	        /* manage your own deckpool, I don't want it */
+		     do_local);           /* TRUE to allow local begins */
+	sc = IOutside(cm, cur_dsq, 1, L,
+		      TRUE,	        /* save full beta */
+		      NULL, NULL,	        /* manage your own matrix, I don't want it */
+		      NULL, NULL,	        /* manage your own deckpool, I don't want it */
+		      do_local,           /* TRUE to allow local begins */
+		      alpha,              /* alpha matrix from IInside() */
+		      NULL,               /* don't save alpha */
+		      do_check);          /* TRUE to check Outside probs agree with Inside */
+      }
+    }
+    else if (do_small) { /* small D&C CYK alignment */
+      if(do_qdb) { /* use QDBs when doing D&C CYK */
+	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, 
+				 cur_tr, cm->dmin, cm->dmax);
+	if(bdump_level > 0) qdb_trace_info_dump(cm, *cur_tr, cm->dmin, cm->dmax, bdump_level);
+      }
+      else if(do_hbanded) { /* use QDBs (safe d bands) derived from HMM bands when doing D&C CYK, HMM bands were not tight enough to allow HMM banded full CYK*/
+	/* Calc the safe d bands */
+	hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+			 cp9b->safe_hdmin, cp9b->safe_hdmax);
+	if(debug_level > 3) { printf("\nprinting hd bands\n\n"); debug_print_hd_bands(cm, cp9b->hdmin, cp9b->hdmax, cp9b->jmin, cp9b->jmax); printf("\ndone printing hd bands\n\n"); }
+	/* Note the following CYK call will not enforce j bands, even though user specified --hbanded. */
+	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, cp9b->safe_hdmin, cp9b->safe_hdmax);
+	if(bdump_level > 0) qdb_trace_info_dump(cm, *cur_tr, cm->dmin, cm->dmax, bdump_level);
+      }
+      else { /* small D&C CYK non-banded alignment */
+	/*printf("DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n"); debug_print_cm_params(cm); printf("DONE DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");*/
+	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
+	if(bdump_level > 0) { 
+	  /* We want QDB info but QDBs weren't used.  Useful if you're curious why a QDB banded parse is crappy 
+	   * relative to non-banded parse, e.g. allows you to see where the non-banded parse went outside the bands. */
+	  qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
 	}
+      }
     }
+    else if(do_qdb) { /* non-small, QDB banded CYK alignment */
+      sc = CYKInside(cm, cur_dsq, L, 0, 1, L, cur_tr, cm->dmin, cm->dmax);
+      if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
+    }
+    else if(do_hbanded) { /* non-small, HMM banded CYK alignment */
+      sc = CYKInside_b_jd(cm, cur_dsq, L, 0, 1, L, cur_tr, cp9b->jmin, 
+			  cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
+      /* if CM_ALIGN_HMMSAFE option is enabled, realign seqs w/HMM banded parses < 0 bits */
+      if(cm->align_opts & CM_ALIGN_HMMSAFE && sc < 0.) { 
+	tmpsc = sc;
+	if(!silent_mode) printf("\n%s HMM banded parse had a negative score, realigning with non-banded CYK.\n", seqs_to_aln->sq[i]->name);
+	FreeParsetree(*cur_tr);
+	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
+	if(!silent_mode && fabs(sc-tmpsc) < 0.01) printf("HMM banded parse was the optimal parse.\n\n");
+	else if (!silent_mode) printf("HMM banded parse was non-optimal, it was %.2f bits below the optimal.\n\n", (fabs(sc-tmpsc)));
+      }	      
+    }
+    else { /* non-small, non-banded CYK alignment */
+      sc = CYKInside(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL);
+      if(bdump_level > 0) { 
+	/* We want band info but --hbanded wasn't used.  Useful if you're curious why a banded parse is crappy 
+	 * relative to non-banded parse, e.g. allows you to see where the non-banded parse went outside the bands. */
+	qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
+      }
+    }
+    /* end of large if() else if() else if() else statement */
+  
+    if(do_post) { /* do Inside() and Outside() runs and use alpha and beta to get posteriors */
+      ESL_ALLOC(post, sizeof(int **) * (cm->M+1));
+      if(do_hbanded) { /* HMM banded Inside/Outside --> posteriors */
+	for (v = 0; v < cm->M; v++) post[v] = Ialloc_jdbanded_vjd_deck(L, 1, L, cp9b->jmin[v], cp9b->jmax[v], cp9b->hdmin[v], cp9b->hdmax[v]);
+	post[cm->M] = NULL;
+	post[cm->M] = Ialloc_vjd_deck(L, 1, L);
+	sc = IInside_b_jd_me(cm, cur_dsq, 1, L,
+			     TRUE,	/* save full alpha so we can run outside */
+			     NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
+			     NULL, NULL,	/* manage your own deckpool, I don't want it */
+			     do_local,       /* TRUE to allow local begins */
+			     cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+	sc = IOutside_b_jd_me(cm, cur_dsq, 1, L,
+			      TRUE,	/* save full beta */
+			      NULL, &beta,	/* fill beta, and return it, needed for ICMPosterior() */
+			      NULL, NULL,	/* manage your own deckpool, I don't want it */
+			      do_local,       /* TRUE to allow local begins */
+			      alpha, &alpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
+			      do_check,      /* TRUE to check Outside probs agree with Inside */
+			      cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+	ICMPosterior_b_jd_me(L, cm, alpha, NULL, beta, NULL, post, &post,
+			     cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);
+	postcode[i] = ICMPostalCode_b_jd_me(cm, L, post, tr[i],
+					    cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);
+      }
+      else { /* non-HMM banded Inside/Outside --> posteriors */
+	for (v = 0; v < cm->M+1; v++) post[v] = Ialloc_vjd_deck(L, 1, L);
+	sc = IInside(cm, cur_dsq, 1, L,
+		     TRUE,	/* save full alpha so we can run outside */
+		     NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
+		     NULL, NULL,	/* manage your own deckpool, I don't want it */
+		     do_local);       /* TRUE to allow local begins */
+	sc = IOutside(cm, cur_dsq, 1, L,
+		      TRUE,	/* save full beta */
+		      NULL, &beta,	/* fill beta, and return it, needed for CMPosterior() */
+		      NULL, NULL,	/* manage your own deckpool, I don't want it */
+		      do_local,       /* TRUE to allow local begins */
+		      alpha, &alpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
+		      do_check);      /* TRUE to check Outside probs agree with Inside */
+	ICMPosterior(L, cm, alpha, NULL, beta, NULL, post, &post); /* this frees alpha, beta */
+	if(do_check) { 
+	  ICMCheckPosterior(L, cm, post);
+	  printf("\nPosteriors checked (I).\n\n");
+	}
+	postcode[i] = ICMPostalCode(cm, L, post, tr[i]);
+	/*postcode[i] = CMPostalCode(cm, L, post, tr[i]);*/
+      }
+      /* free post  */
+      if(post != NULL) Ifree_vjd_matrix(post, cm->M, 1, L);
+    }
+    /* done alignment for this seq */
+
+    avgsc += sc;
+    if (sc > maxsc) maxsc = sc;
+    if (sc < minsc) minsc = sc;
+      
+    if(!silent_mode) printf("    score: %10.2f bits\n", sc);
+    parsesc[i] = sc;
+      
+    /* check parsetree score if cm->align_opts & CM_ALIGN_CHECKPARSESC */
+    if((cm->align_opts & CM_ALIGN_CHECKPARSESC) &&
+       (!(cm->flags & CM_IS_SUB))) { 
+      if (fabs(sc - ParsetreeScore(cm, tr[i], cur_dsq, FALSE)) >= 0.01)
+	cm_Fail("ERROR in actually_align_target(), alignment score differs from its parse tree's score");
+    }
+
+    /* If requested, or if debug level high enough, print out the parse tree */
+    if((cm->align_opts & CM_ALIGN_PRINTTREES) || (debug_level > 2)) { 
+      fprintf(stdout, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], cur_dsq, FALSE));;
+      ParsetreeDump(stdout, tr[i], cm, cur_dsq, NULL, NULL);
+      fprintf(stdout, "//\n");
+    }
+    /* Dump the trace with info on i, j and d bands
+     * if bdump_level is high enough */
+    if(bdump_level > 0 && do_hbanded)
+      ijdBandedTraceInfoDump(cm, tr[i], cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 1);
+
+
+    if(do_sub) { 
+      if(!(do_inside || do_outside)) { 
+	/* Convert the sub_cm parsetree to a full CM parsetree */
+	if(debug_level > 0) ParsetreeDump(stdout, *cur_tr, cm, cur_dsq, NULL, NULL);
+	if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, *cur_tr, submap, FALSE, debug_level))) { 
+	  printf("\n\nIncorrectly converted original trace:\n");
+	  ParsetreeDump(stdout, orig_tr, orig_cm, cur_dsq, NULL, NULL);
+	  cm_Fail("this shouldn't happen.");
+	}
+	if(debug_level > 0) { 
+	  printf("\n\nConverted original trace:\n");
+	  ParsetreeDump(stdout, orig_tr, orig_cm, cur_dsq, NULL, NULL);
+	}
+	/* Replace the sub_cm trace with the converted orig_cm trace. */
+	FreeParsetree(*cur_tr);
+	*cur_tr = orig_tr;
+      }  
+      /* free sub_cm variables, we build a new sub CM for each seq */
+      FreeCPlan9Matrix(cp9_post);
+      FreeSubMap(submap);
+      FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
+    }
+    if(do_timings) { 
+      esl_stopwatch_Stop(watch); 
+      esl_stopwatch_Display(stdout, watch, "seq alignment CPU time: ");
+      printf("\n");
+    }
+  }
+  /* done aligning all nalign seqs. */
   /* Clean up. */
-  if(do_hbanded && (!do_sub))
-    FreeCP9Bands(orig_cp9b);
-  if (do_qdb)
-    {
-      free(orig_dmin);
-      free(orig_dmax);
-    }
+  if (do_qdb) {
+    free(orig_dmin);
+    free(orig_dmax);
+  }
   esl_stopwatch_Destroy(watch);
   
   if(sq_mode) {

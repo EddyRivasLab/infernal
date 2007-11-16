@@ -269,11 +269,12 @@ cp9_Seq2Bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doin
   
   /* Use the CM bands on i and j to get bands on d, specific to j. */
   if(doing_search) cp9_RelaxRootBandsForSearch(cm, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax);
-
   cp9_GrowHDBands(cp9b); /* this must be called before ij2d_bands() so hdmin, hdmax are adjusted for new seq */
   ij2d_bands(cm, (j0-i0+1), cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, debug_level);
   
-  if(eslDEBUGLEVEL >= 1) cp9_ValidateBands(cm, cp9b);
+#if eslDEBUGLEVEL >= 1
+  cp9_ValidateBands(cm, cp9b, i0, j0);
+#endif
 
   if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, (j0-i0+1));
 
@@ -1498,15 +1499,12 @@ cp9_IFillPostSums(struct cp9_dpmatrix_s *post, CP9Bands_t *cp9b, int i0, int j0)
  *****************************************************************************/
 void
 cp9_HMM2ijBands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m, 
-	     int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, 
-	     int *pn_max_d, int *imin, int *imax, int *jmin, int *jmax, 
-	     int debug_level)
+		int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, 
+		int *pn_max_d, int *imin, int *imax, int *jmin, int *jmax, 
+		int debug_level)
 {
   int status;
   int v;            /* counter over states of the CM */
-  int die_flag;
-  char **sttypes;
-  char **nodetypes;
 
   int *nss_imin;      /* nss_imin[n] = imin of each split set state in node n*/
   int *nss_imax;      /* nss_imax[n] = imax of each split set state in node n*/
@@ -1537,10 +1535,7 @@ cp9_HMM2ijBands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
   if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) 
     cm_Fail("in cp9_HMM2ijBands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
 
-  if(cm->search_opts & CM_SEARCH_HBANDED)
-    doing_search = TRUE;
-  else
-    doing_search = FALSE;
+  doing_search = (cm->search_opts & CM_SEARCH_HBANDED) ? TRUE : FALSE;
 
   ESL_ALLOC(nss_imin, sizeof(int) * cm->nodes);
   ESL_ALLOC(nss_imax, sizeof(int) * cm->nodes);
@@ -1555,36 +1550,11 @@ cp9_HMM2ijBands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
   ESL_ALLOC(nss_max_imin, sizeof(int) * cm->nodes);
   ESL_ALLOC(nss_min_jmax, sizeof(int) * cm->nodes);
 
-  ESL_ALLOC(sttypes, sizeof(char *) * 10);
-  sttypes[0] = "D";
-  sttypes[1] = "MP";
-  sttypes[2] = "ML";
-  sttypes[3] = "MR";
-  sttypes[4] = "IL";
-  sttypes[5] = "IR";
-  sttypes[6] = "S";
-  sttypes[7] = "E";
-  sttypes[8] = "B";
-  sttypes[9] = "EL";
-
-  ESL_ALLOC(nodetypes, sizeof(char *) * 8);
-  nodetypes[0] = "BIF";
-  nodetypes[1] = "MATP";
-  nodetypes[2] = "MATL";
-  nodetypes[3] = "MATR";
-  nodetypes[4] = "BEGL";
-  nodetypes[5] = "BEGR";
-  nodetypes[6] = "ROOT";
-  nodetypes[7] = "END";
-
   /* Initialize all bands to -1. */
-  for(v = 0; v < cm->M; v++)
-    {
-      imin[v] = -1;
-      imax[v] = -1;
-      jmin[v] = -1;
-      jmax[v] = -1;
-    }
+  esl_vec_ISet(imin, cm->M, -1);
+  esl_vec_ISet(imax, cm->M, -1);
+  esl_vec_ISet(jmin, cm->M, -1);
+  esl_vec_ISet(jmax, cm->M, -1);
 
   /* We go node by node, bottom up, and fill in the bands on each
    * state for each node. Keeping track of the node split set min and max i's 
@@ -1607,142 +1577,136 @@ cp9_HMM2ijBands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
    * issue.
    */
 
-   for(n = (cm->nodes-1); n >= 0; n--)
-    {
-      switch (cm->ndtype[n]) 
-	{
-	case END_nd:
-	  /* Special case, we need to know the bands on the states
-	   * in the node ABOVE this one. Node above MUST be MATP, MATL
-	   * or MATR. For END states, the band on i = the band on j,
-	   * this is because d must be 0, so i must be (j+1), so its pointless
-	   * to allow an i value that (j+1) is not allowed to be or vice versa.
-	   * If the node above is MATL, we use the HMM band that maps
-	   * to the ML state - these correspond to bands on i. If its a MATR, 
-	   * we use the HMM band that maps to the MR state - these correspond
-	   * to bands on j. If its a MATP, we get fancy (see below).
-	   */
-	  v = cm->nodemap[n];
-	  if(cm->ndtype[n-1] == MATL_nd)
-	    {
-	      /* tricky. we keep the n_*m** structures ignorant of the fact that we're in
-	       * an end state, i.e. we don't force a d=0 (j-i+1=0). This way when
-	       * the node immediately above the end (the MATL) looks at it when its determining
-	       * the correct bands on i, it doesn't get screwed up (as it would if j < i).
-	       */
+   for(n = (cm->nodes-1); n >= 0; n--) {
+     switch (cm->ndtype[n]) { 
+     case END_nd:
+       /* Special case, we need to know the bands on the states
+	* in the node ABOVE this one. Node above MUST be MATP, MATL
+	* or MATR. For END states, the band on i = the band on j,
+	* this is because d must be 0, so i must be (j+1), so its pointless
+	* to allow an i value that (j+1) is not allowed to be or vice versa.
+	* If the node above is MATL, we use the HMM band that maps
+	* to the ML state - these correspond to bands on i. If its a MATR, 
+	* we use the HMM band that maps to the MR state - these correspond
+	* to bands on j. If its a MATP, we get fancy (see below).
+	*/
+       v = cm->nodemap[n];
+       if(cm->ndtype[n-1] == MATL_nd) {
+	 /* tricky. we keep the n_*m** structures ignorant of the fact that we're in
+	  * an end state, i.e. we don't force a d=0 (j-i+1=0). This way when
+	  * the node immediately above the end (the MATL) looks at it when its determining
+	  * the correct bands on i, it doesn't get screwed up (as it would if j < i).
+	  */
+	 
+	 /*minimum of delete and match states of node above*/
+	 nss_imin[n] = (pn_min_m[cp9map->nd2lpos[n-1]] <= (pn_min_d[cp9map->nd2lpos[n-1]])) ? 
+	   pn_min_m[cp9map->nd2lpos[n-1]] : (pn_min_d[cp9map->nd2lpos[n-1]]);
+	 /*for the max, we must allow possibility of inserts and deletes.*/
+	 nss_imax[n] = (pn_max_m[cp9map->nd2lpos[n-1]] >= pn_max_i[cp9map->nd2lpos[n-1]]) ? 
+	   pn_max_m[cp9map->nd2lpos[n-1]] : pn_max_i[cp9map->nd2lpos[n-1]];
+	 /* deletes max bands may always be less than match max bands...(not sure)*/
+	 if(nss_imax[n] < (pn_max_d[cp9map->nd2lpos[n-1]]))
+	   nss_imax[n] = (pn_max_d[cp9map->nd2lpos[n-1]]);
+	 
+	 nss_jmin[n] = nss_imin[n];
+	 nss_jmax[n] = nss_imax[n];
+	 
+	 imin[v] = nss_imin[n];
+	 imax[v] = nss_imax[n] + 1; /* we add 1 because we have to figure in the emission
+				     * of the MATL_ML (or final MATL_IL), which would increase
+				     * i by 1 potentially relative to the imax of that state.
+				     */
+	 jmin[v] = imin[v] - 1; /* d must be 0 for end states. */
+	 jmax[v] = imax[v] - 1; /* d must be 0 for end states. */
+	 
+	 nss_max_imin[n] = imin[v];
+	 nss_min_jmax[n] = jmax[v];
+       }
+       else if(cm->ndtype[n-1] == MATR_nd) {
+	 /* tricky. we keep the nss_*m** structures ignorant of the fact that we're in
+	  * an end state, i.e. we don't force a d=0 (j-i+1=0). This way when
+	  * the node immediately above the end (the MATR) looks at it when its determining
+	  * the correct bands on i, it doesn't get screwed up (as it would if j < i).
+	  */
+	 
+	 /*minimum of delete and match states of node above */
+	 nss_jmin[n] = (pn_min_m[cp9map->nd2rpos[n-1]] <= pn_min_d[cp9map->nd2rpos[n-1]]) ? 
+	   pn_min_m[cp9map->nd2rpos[n-1]] : pn_min_d[cp9map->nd2rpos[n-1]];
+	 /*for the max, we must allow possibility of inserts.*/
+	 nss_jmax[n] = (pn_max_m[cp9map->nd2rpos[n-1]] >= pn_max_i[cp9map->nd2rpos[n-1]]) ? 
+	   pn_max_m[cp9map->nd2rpos[n-1]] : pn_max_i[cp9map->nd2rpos[n-1]];
+	 /* deletes max bands may always be less than match max bands...(not sure)*/
+	 if(nss_jmax[n] < pn_max_d[cp9map->nd2rpos[n-1]])
+	   nss_jmax[n] = pn_max_d[cp9map->nd2rpos[n-1]];
+	 nss_imin[n] = nss_jmin[n];
+	 nss_imax[n] = nss_jmax[n];
+	 
+	 jmin[v] = nss_jmin[v] - 1; /* we subtract 1 because of we have to figure 
+				     * in the emission of the MATR_MR (or final MATR_IR), which would 
+				     * decrease j by 1 potentially relative to jmin of that state.
+				     */
+	 jmax[v] = nss_jmax[n];
+	 imin[v] = jmin[v] + 1; /*d (j-i+1) must be 0 for end states*/
+	 imax[v] = jmax[v] + 1; /*d (j-i+1) must be 0 for end states*/
+	 
+	 nss_max_imin[n] = imin[v];
+	 nss_min_jmax[n] = jmax[v];
+       }
+       else if(cm->ndtype[n-1] == MATP_nd) { 
+	 /* Very rare case, only if the last bp in a stem is the last left consensus
+	  * column (respecting gap_thresh) in that alignment. Does happen though, 
+	  * (at least in RFAM 6.1) because the training counts for transition priors
+	  * had counts for MATP_* state -> END_nd transition sets.
+	  */
+	 
+	 /* tricky. we keep the nss_*m** structures ignorant of the fact that we're in
+	  * an end state, i.e. we don't force a d=0 (j-i+1=0). This way when
+	  * the node immediately above the end (the MATP) looks at it when its determining
+	  * the correct bands on j, it doesn't get screwed up (as it would if j < i).
+	  */
+	 /*minimum of delete and match states of node above*/
+	 nss_imin[n] = (pn_min_m[cp9map->nd2lpos[n-1]] <= (pn_min_d[cp9map->nd2lpos[n-1]])) ? 
+	   pn_min_m[cp9map->nd2lpos[n-1]] : (pn_min_d[cp9map->nd2lpos[n-1]]);
+	 /*for the max, we must allow possibility of inserts and deletes.*/
+	 nss_imax[n] = (pn_max_m[cp9map->nd2lpos[n-1]] >= pn_max_i[cp9map->nd2lpos[n-1]]) ? 
+	   pn_max_m[cp9map->nd2lpos[n-1]] : pn_max_i[cp9map->nd2lpos[n-1]];
+	 /* deletes max bands may always be less than match max bands...(not sure)*/
+	 if(nss_imax[n] < (pn_max_d[cp9map->nd2lpos[n-1]]))
+	   nss_imax[n] = (pn_max_d[cp9map->nd2lpos[n-1]]);
+	 
+	 /*minimum of delete and match states of node above*/
+	 nss_jmin[n] = (pn_min_m[cp9map->nd2rpos[n-1]] <= pn_min_d[cp9map->nd2rpos[n-1]]) ? 
+	   pn_min_m[cp9map->nd2rpos[n-1]] : pn_min_d[cp9map->nd2rpos[n-1]];
+	 /*for the max, we must allow possibility of inserts.*/
+	 nss_jmax[n] = (pn_max_m[cp9map->nd2rpos[n-1]] >= pn_max_i[cp9map->nd2rpos[n-1]]) ? 
+	   pn_max_m[cp9map->nd2rpos[n-1]] : pn_max_i[cp9map->nd2rpos[n-1]];
+	 /* deletes max bands may always be less than match max bands...(not sure)*/
+	 if(nss_jmax[n] < pn_max_d[cp9map->nd2rpos[n-1]])
+	   nss_jmax[n] = pn_max_d[cp9map->nd2rpos[n-1]];
+	 
+	 /* unique situation. end's d must be 0, so we are constrained on what 
+	  * i can be relative to j, and j can be relative to i, but what we want
+	  * are the constraints on what i can be, and j can be. 
+	  * because d=0 => j-i+1 = 0. then imin should equal = jmin + 1 and imax = jmax + 1.
+	  * so we really just want to know a min over i and j, and a max over i and j.
+	  * below we take min of imin and jmin (should always be imin i think) as the min, 
+	  * and max of imax and jmax (should always be jmax i think) after accounting for 
+	  * the possibility that a single base was just emitted left and/or right.
+	  */
+	 imax[v] = ((nss_imax[n] + 1) > nss_jmax[n]) ? 
+	   (nss_imax[n] + 1) : nss_jmax[n];
+	 imin[v] = ((nss_imin[n]) < (nss_jmin[n] - 1)) ? 
+	   (nss_imin[n]) : (nss_jmin[n] - 1);
+	 /* we can't have an i < i0 */
+	 imin[v] = ESL_MAX(imin[v], i0);
+	 imax[v] = ESL_MAX(imax[v], i0);
+	 jmin[v] = imin[v] - 1; /* d must be 0 for end states. */
+	 jmax[v] = imax[v] - 1; /* d must be 0 for end states. */
 
-	      /*minimum of delete and match states of node above*/
-	      nss_imin[n] = (pn_min_m[cp9map->nd2lpos[n-1]] <= (pn_min_d[cp9map->nd2lpos[n-1]])) ? 
-		pn_min_m[cp9map->nd2lpos[n-1]] : (pn_min_d[cp9map->nd2lpos[n-1]]);
-	      /*for the max, we must allow possibility of inserts and deletes.*/
-	      nss_imax[n] = (pn_max_m[cp9map->nd2lpos[n-1]] >= pn_max_i[cp9map->nd2lpos[n-1]]) ? 
-		pn_max_m[cp9map->nd2lpos[n-1]] : pn_max_i[cp9map->nd2lpos[n-1]];
-	      /* deletes max bands may always be less than match max bands...(not sure)*/
-	      if(nss_imax[n] < (pn_max_d[cp9map->nd2lpos[n-1]]))
-		nss_imax[n] = (pn_max_d[cp9map->nd2lpos[n-1]]);
-
-	      nss_jmin[n] = nss_imin[n];
-	      nss_jmax[n] = nss_imax[n];
-
-	      imin[v] = nss_imin[n];
-	      imax[v] = nss_imax[n] + 1; /* we add 1 because we have to figure in the emission
-					  * of the MATL_ML (or final MATL_IL), which would increase
-					  * i by 1 potentially relative to the imax of that state.
-					  */
-	      jmin[v] = imin[v] - 1; /* d must be 0 for end states. */
-	      jmax[v] = imax[v] - 1; /* d must be 0 for end states. */
-
-	      nss_max_imin[n] = imin[v];
-	      nss_min_jmax[n] = jmax[v];
-	    }
-	  else if(cm->ndtype[n-1] == MATR_nd)
-	    {
-	      /* tricky. we keep the nss_*m** structures ignorant of the fact that we're in
-	       * an end state, i.e. we don't force a d=0 (j-i+1=0). This way when
-	       * the node immediately above the end (the MATR) looks at it when its determining
-	       * the correct bands on i, it doesn't get screwed up (as it would if j < i).
-	       */
-
-	      /*minimum of delete and match states of node above */
-	      nss_jmin[n] = (pn_min_m[cp9map->nd2rpos[n-1]] <= pn_min_d[cp9map->nd2rpos[n-1]]) ? 
-		pn_min_m[cp9map->nd2rpos[n-1]] : pn_min_d[cp9map->nd2rpos[n-1]];
-	      /*for the max, we must allow possibility of inserts.*/
-	      nss_jmax[n] = (pn_max_m[cp9map->nd2rpos[n-1]] >= pn_max_i[cp9map->nd2rpos[n-1]]) ? 
-		pn_max_m[cp9map->nd2rpos[n-1]] : pn_max_i[cp9map->nd2rpos[n-1]];
-	      /* deletes max bands may always be less than match max bands...(not sure)*/
-	      if(nss_jmax[n] < pn_max_d[cp9map->nd2rpos[n-1]])
-		nss_jmax[n] = pn_max_d[cp9map->nd2rpos[n-1]];
-	      nss_imin[n] = nss_jmin[n];
-	      nss_imax[n] = nss_jmax[n];
-
-	      jmin[v] = nss_jmin[v] - 1; /* we subtract 1 because of we have to figure 
-					* in the emission of the MATR_MR (or final MATR_IR), which would 
-					* decrease j by 1 potentially relative to jmin of that state.
-					*/
-	      jmax[v] = nss_jmax[n];
-	      imin[v] = jmin[v] + 1; /*d (j-i+1) must be 0 for end states*/
-	      imax[v] = jmax[v] + 1; /*d (j-i+1) must be 0 for end states*/
-
-	      nss_max_imin[n] = imin[v];
-	      nss_min_jmax[n] = jmax[v];
-	    }
-	  else if(cm->ndtype[n-1] == MATP_nd)
-	    {
-	      /* Very rare case, only if the last bp in a stem is the last left consensus
-	       * column (respecting gap_thresh) in that alignment. Does happen though, 
-	       * (at least in RFAM 6.1) because the training counts for transition priors
-	       * had counts for MATP_* state -> END_nd transition sets.
-	       */
-
-	      /* tricky. we keep the nss_*m** structures ignorant of the fact that we're in
-	       * an end state, i.e. we don't force a d=0 (j-i+1=0). This way when
-	       * the node immediately above the end (the MATP) looks at it when its determining
-	       * the correct bands on j, it doesn't get screwed up (as it would if j < i).
-	       */
-	      /*minimum of delete and match states of node above*/
-	      nss_imin[n] = (pn_min_m[cp9map->nd2lpos[n-1]] <= (pn_min_d[cp9map->nd2lpos[n-1]])) ? 
-		pn_min_m[cp9map->nd2lpos[n-1]] : (pn_min_d[cp9map->nd2lpos[n-1]]);
-	      /*for the max, we must allow possibility of inserts and deletes.*/
-	      nss_imax[n] = (pn_max_m[cp9map->nd2lpos[n-1]] >= pn_max_i[cp9map->nd2lpos[n-1]]) ? 
-		pn_max_m[cp9map->nd2lpos[n-1]] : pn_max_i[cp9map->nd2lpos[n-1]];
-	      /* deletes max bands may always be less than match max bands...(not sure)*/
-	      if(nss_imax[n] < (pn_max_d[cp9map->nd2lpos[n-1]]))
-		nss_imax[n] = (pn_max_d[cp9map->nd2lpos[n-1]]);
-
-	      /*minimum of delete and match states of node above*/
-	      nss_jmin[n] = (pn_min_m[cp9map->nd2rpos[n-1]] <= pn_min_d[cp9map->nd2rpos[n-1]]) ? 
-		pn_min_m[cp9map->nd2rpos[n-1]] : pn_min_d[cp9map->nd2rpos[n-1]];
-	      /*for the max, we must allow possibility of inserts.*/
-	      nss_jmax[n] = (pn_max_m[cp9map->nd2rpos[n-1]] >= pn_max_i[cp9map->nd2rpos[n-1]]) ? 
-		pn_max_m[cp9map->nd2rpos[n-1]] : pn_max_i[cp9map->nd2rpos[n-1]];
-	      /* deletes max bands may always be less than match max bands...(not sure)*/
-	      if(nss_jmax[n] < pn_max_d[cp9map->nd2rpos[n-1]])
-		nss_jmax[n] = pn_max_d[cp9map->nd2rpos[n-1]];
-
-	      /* unique situation. end's d must be 0, so we are constrained on what 
-	       * i can be relative to j, and j can be relative to i, but what we want
-	       * are the constraints on what i can be, and j can be. 
-	       * because d=0 => j-i+1 = 0. then imin should equal = jmin + 1 and imax = jmax + 1.
-	       * so we really just want to know a min over i and j, and a max over i and j.
-	       * below we take min of imin and jmin (should always be imin i think) as the min, 
-	       * and max of imax and jmax (should always be jmax i think) after accounting for 
-	       * the possibility that a single base was just emitted left and/or right.
-	       */
-	      imax[v] = ((nss_imax[n] + 1) > nss_jmax[n]) ? 
-		(nss_imax[n] + 1) : nss_jmax[n];
-	      imin[v] = ((nss_imin[n]) < (nss_jmin[n] - 1)) ? 
-		(nss_imin[n]) : (nss_jmin[n] - 1);
-	      /* we can't have an i < 1 */
-	      if(imin[v] == 0) imin[v] = 1;
-	      if(imax[v] == 0) imax[v] = 1;
-
-	      jmin[v] = imin[v] - 1; /* d must be 0 for end states. */
-	      jmax[v] = imax[v] - 1; /* d must be 0 for end states. */
-
-	      nss_max_imin[n] = imin[v];
-	      nss_min_jmax[n] = jmax[v];
-	    }
-	  break;
+	 nss_max_imin[n] = imin[v];
+	 nss_min_jmax[n] = jmax[v];
+       }
+       break;
 
 	case MATP_nd:
 	  hmm2ij_prestate_step0_initialize(n, nss_max_imin, nss_min_jmax, i0, j0);
@@ -2033,20 +1997,18 @@ cp9_HMM2ijBands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 						   cp9map);
 	  /* 3 states, ROOT_S, ROOT_IL, and ROOT_IR*/
 	  v = cm->nodemap[n]; /* ROOT_S SPECIAL CASE */
-	  if(doing_search) /* we're doing search, ROOT_S doesn't necessarily emit full sequence */
-	    {
-	      tmp_imin = nss_imin[n+1];
-	      tmp_imax = nss_imax[n+1];
-	      tmp_jmin = nss_jmin[n+1];
-	      tmp_jmax = nss_jmax[n+1];
-	    }
-	    else /* we're doing alignment, enforce ROOT_S emits full sequence */
-	    {
-	      tmp_imin = i0;
-	      tmp_imax = i0;
-	      tmp_jmin = j0;
-	      tmp_jmax = j0;
-	    }
+	  if(doing_search) { /* we're doing search, ROOT_S doesn't necessarily emit full sequence */
+	    tmp_imin = nss_imin[n+1];
+	    tmp_imax = nss_imax[n+1];
+	    tmp_jmin = nss_jmin[n+1];
+	    tmp_jmax = nss_jmax[n+1];
+	  }
+	  else { /* we're doing alignment, enforce ROOT_S emits full sequence */
+	    tmp_imin = i0;
+	    tmp_imax = i0;
+	    tmp_jmin = j0;
+	    tmp_jmax = j0;
+	  }
 	  hmm2ij_split_state_step1_set_state_bands(v, n, tmp_imin, tmp_imax, tmp_jmin,
 						   tmp_jmax, imin, imax, jmin, jmax,
 						   nss_imin, nss_imax, nss_jmin, nss_jmax);
@@ -2062,16 +2024,14 @@ cp9_HMM2ijBands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 	  else
 	    tmp_imin =  i0; /* Have to be able to transit here from ROOT_S */
 	  tmp_imax = nss_imax[n+1];
-	  if(doing_search)
-	    {
-	      tmp_jmin = nss_jmin[n+1];
-	      tmp_jmax = nss_jmax[n+1];
-	    }
-	  else
-	    {
-	      tmp_jmin = j0; /* we never emit to the right in this state */
-	      tmp_jmax = j0; /* we never emit to the right in this state */
-	    }
+	  if(doing_search) {
+	    tmp_jmin = nss_jmin[n+1];
+	    tmp_jmax = nss_jmax[n+1];
+	  }
+	  else {
+	    tmp_jmin = j0; /* we never emit to the right in this state */
+	    tmp_jmax = j0; /* we never emit to the right in this state */
+	  }
 	  hmm2ij_insert_state_step1_set_state_bands(v, tmp_imin, tmp_imax, tmp_jmin,
 						    tmp_jmax, imin, imax, jmin, jmax);
 	  /* Enforce safe transitions, this makes sure that at least one state
@@ -2240,95 +2200,49 @@ cp9_HMM2ijBands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
 	}
     }
 
-   /* Set detached inserts states to imin=imax=jmin=jmax=1 to avoid 
-    * problems in downstream functions. These states WILL NEVER BE ENTERED */
-   /* Also, do a quick check to make sure we've assigned the bands
-    * on i and j for all states to positive values (none were
-    * left as -1 EXCEPT for end states which should have i bands left as -1.
+   /* Tie up some loose ends: 
+    * 1. Set detached inserts states to imin=imax=jmin=jmax=i0 to avoid 
+    *    problems in downstream functions. These states WILL NEVER BE ENTERED 
+    * 2. Do a quick check to make sure we've assigned the bands
+    *    on i and j for all states to positive values (none were
+    *    left as -1 EXCEPT for end states which should have i bands left as -1).
+    * 3. Ensure that all *max[v] and *min[v] values are <= L, values greater
+    *    than this don't make sense.
     */
-   /* 11.14.05
-    * Also ensure that all *max[v] and *min[v] values are <= L, values greater
-    * than this don't make sense.
-    */
 
-  die_flag = 0;
-  for(v = 0; v < cm->M; v++)
-    {
-      /* set bands for detached inserts */
-      if(cm->sttype[v+1] == E_st)
-	imin[v] = imax[v] = jmin[v] = jmax[v] = 1;
+  for(v = 0; v < cm->M; v++) {
+    /* set bands for detached inserts */
+    if(cm->sttype[v+1] == E_st) imin[v] = imax[v] = jmin[v] = jmax[v] = i0;
 
-      if(imin[v] > (j0+1))
-	imin[v] = (j0+1);
-      if(imax[v] > (j0+1))
-	imax[v] = (j0+1);
+    /* Ensure: for all i imin[v]..i..imax[v]
+     *             i0 <= i <= j0+1
+     *         for all j jmin[v]..j..jmax[v]
+     *             i0 <= j <= j0
+     * Note: i can be j0+1 to allow delete states to be entered with 
+     * d = 0, after the entire seq has been emitted.
+     */
+    imin[v] = ESL_MAX(imin[v], i0);
+    imin[v] = ESL_MIN(imin[v], j0+1);
+    imax[v] = ESL_MAX(imax[v], i0);
+    imax[v] = ESL_MIN(imax[v], j0+1);
+    jmin[v] = ESL_MAX(jmin[v], i0);
+    jmin[v] = ESL_MIN(jmin[v], j0);
+    jmax[v] = ESL_MAX(jmax[v], i0);
+    jmax[v] = ESL_MIN(jmax[v], j0);
 
-      if(imin[v] == 0 || imax[v] == 0)
-	{
-	  printf("ERROR imin[%d]: %d imax[%d]: %d %-4s %-2s\n", v, 
-		 imin[v], v, imax[v], nodetypes[(int) cm->ndtype[(int) cm->ndidx[v]]], 
-		 sttypes[(int) cm->sttype[v]]);
-	  printf("previous node type is: %-4s\n", nodetypes[(int) cm->ndtype[(int) (cm->ndidx[v]-1)]]);
-	  die_flag = 1;
-	}
-      /* i can be L+1 to allow delete states to be entered with 
-       * d = 0, after the entire seq has been emitted.
-       */
-      if(jmin[v] > j0)
-	jmin[v] = j0;
-      if(jmax[v] > j0)
-	jmax[v] = j0;
+    ESL_DASSERT1((! ((cm->sttype[v] != E_st) && (imin[v] == -1))));
+    ESL_DASSERT1((! ((cm->sttype[v] != E_st) && (imax[v] == -1))));
+    ESL_DASSERT1((! ((cm->sttype[v] != E_st) && (jmin[v] == -1))));
+    ESL_DASSERT1((! ((cm->sttype[v] != E_st) && (jmax[v] == -1))));
+  }
 
-      if(imin[v] == -1 && cm->sttype[v] != E_st)
-	{
-	  printf("ERROR imin[%d] %-4s %-2s is %d\n", v, 
-		 nodetypes[(int) cm->ndtype[(int) cm->ndidx[v]]], 
-		 sttypes[(int) cm->sttype[v]], imin[v]);
-	  die_flag = 1;
-	}
-      if(imax[v] == -1 && cm->sttype[v] != E_st)
-	{
-	  printf("ERROR imax[%d] %-4s %-2s is %d\n", v, 
-		 nodetypes[(int) cm->ndtype[(int) cm->ndidx[v]]], 
-		 sttypes[(int) cm->sttype[v]], imax[v]);
-	  die_flag = 1;
-	}
-      if(jmin[v] == -1)
-	{
-	  printf("imin[v:%d]: %d imin[v-1:%d]: %d imin[v-2:%d]: %d\n", v, imin[v], (v-1), imin[(v-1)], v-2, imin[(v-2)]);
-	  printf("ERROR jmin[%d] %-4s %-2s is %d\n", v, 
-		 nodetypes[(int) cm->ndtype[(int) cm->ndidx[v]]], 
-		 sttypes[(int) cm->sttype[v]], jmin[v]);
-	  die_flag = 1;
-	}
-      if(jmax[v] == -1)
-	{
-	  printf("ERROR jmax[%d] %-4s %-2s is %d\n", v, 
-		 nodetypes[(int) cm->ndtype[(int) cm->ndidx[v]]], 
-		 sttypes[(int) cm->sttype[v]], jmax[v]);
-	  die_flag = 1;
-	}
-    }
-
-  if(!(die_flag))
-    {
-      if(debug_level > 0)
-	printf("All non-end states have non-negative bands for i and j\n");
-    }
-  else
-    {
-      printf("ERROR: All non-end states do not have non-negative bands for i and j\n");
-      exit(1);
-    }
-  if(debug_level > 0)
-    {
-      printf("bands on i\n");
-      debug_print_bands(stdout, cm, imin, imax);
-
-      printf("bands on j\n");
-      debug_print_bands(stdout, cm, jmin, jmax);
-    }
-
+  if(debug_level > 0) { 
+    printf("bands on i\n");
+    debug_print_bands(stdout, cm, imin, imax);
+    
+    printf("bands on j\n");
+    debug_print_bands(stdout, cm, jmin, jmax);
+  }
   free(nss_imin);
   free(nss_imax);
   free(nss_jmin);
@@ -2339,9 +2253,6 @@ cp9_HMM2ijBands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
   free(nis_jmax); 
   free(nss_max_imin);
   free(nss_min_jmax);
-
-  free(sttypes);
-  free(nodetypes);
   return;
 
  ERROR:
@@ -3198,15 +3109,18 @@ cp9_RelaxRootBandsForSearch(CM_t *cm, int *imin, int *imax, int *jmin, int *jmax
  * Purpose:  Validate the info in CP9Bands_t data structure is internally
  *           consistent.
  *           
- * Args:
- * cm               the cm
- * cp9b             the CP9 bands object 
+ * Args:     cm     the cm
+ *           cp9b   the CP9 bands object 
+ *           i0     first residue we can possibly allow as valid j
+ *           j0     final residue we can possibly allow as valid j
+ *
+ * Returns: void, dies immediately with error message if invalid data is found
  */
 void
-cp9_ValidateBands(CM_t *cm, CP9Bands_t *cp9b)
+cp9_ValidateBands(CM_t *cm, CP9Bands_t *cp9b, int i0, int j0)
 {
   int v;            /* counter over states of the CM */
-  int j0;           /* counter over valid j's, but offset. j0+jmin[v] = actual j */
+  int jp;           /* counter over valid j's, but offset. jp+jmin[v] = actual j */
   int sd;           /* minimum d allowed for a state, ex: MP_st = 2, ML_st = 1. etc. */
   int hd_needed;
   int j;
@@ -3221,18 +3135,23 @@ cp9_ValidateBands(CM_t *cm, CP9Bands_t *cp9b)
 
   for(v = 0; v < cm->M; v++) {
     if(cm->sttype[v] == E_st) {
-      for(j0 = 0; j0 <= (cp9b->jmax[v]-cp9b->jmin[v]); j0++) {
-	if(cp9b->hdmin[v][j0] != 0) cm_Fail("cp9_ValidateBands(), cp9b->hdmin for E state is inconsistent.");
-	if(cp9b->hdmax[v][j0] != 0) cm_Fail("cp9_ValidateBands(), cp9b->hdmin for E state is inconsistent.");
+      for(jp = 0; jp <= (cp9b->jmax[v]-cp9b->jmin[v]); jp++) {
+	if(cp9b->hdmin[v][jp] != 0) cm_Fail("cp9_ValidateBands(), cp9b->hdmin for E state is inconsistent.");
+	if(cp9b->hdmax[v][jp] != 0) cm_Fail("cp9_ValidateBands(), cp9b->hdmin for E state is inconsistent.");
       }
     }
     else {
       sd = StateDelta(cm->sttype[v]);
-      for(j0 = 0; j0 <= (cp9b->jmax[v]-cp9b->jmin[v]); j0++) {
-	j = j0+cp9b->jmin[v];
-	if(cp9b->hdmin[v][j0] != ESL_MAX((j - cp9b->imax[v] + 1), sd)) cm_Fail("cp9_ValidateBands(), cp9b->hdmin for state %d is inconsistent.", v);
-	if(cp9b->hdmax[v][j0] != ESL_MAX((j - cp9b->imin[v] + 1), sd)) cm_Fail("cp9_ValidateBands(), cp9b->hdmax for state %d is inconsistent.", v);
+      for(jp = 0; jp <= (cp9b->jmax[v]-cp9b->jmin[v]); jp++) {
+	j = jp+cp9b->jmin[v];
+	if(cp9b->hdmin[v][jp] != ESL_MAX((j - cp9b->imax[v] + 1), sd)) cm_Fail("cp9_ValidateBands(), cp9b->hdmin for state %d is inconsistent.", v);
+	if(cp9b->hdmax[v][jp] != ESL_MAX((j - cp9b->imin[v] + 1), sd)) cm_Fail("cp9_ValidateBands(), cp9b->hdmax for state %d is inconsistent.", v);
       }
+    }
+
+    for(j = cp9b->jmin[v]; j <= cp9b->jmax[v]; j++) {
+      if(j < i0) cm_Fail("cp9_ValidateBands(), j: %d outside i0:%d..j0:%d is within v's j band: jmin[%d]: %d jmax[%d]: %d\n", j, i0, j0, v, cp9b->jmin[v], v, cp9b->jmax[v]);
+      if(j > j0) cm_Fail("cp9_ValidateBands(), j: %d outside i0:%d..j0:%d is within v's j band: jmin[%d]: %d jmax[%d]: %d\n", j, i0, j0, v, cp9b->jmin[v], v, cp9b->jmax[v]);
     }
 
     if(cp9b->imin[v] < cp9b->imin[0]) cm_Fail("cp9_ValidateBands(), cp9b->imin[v:%d]: %d less than cp9b->imin[0]: %d.", v, cp9b->imin[v], cp9b->imin[0]);

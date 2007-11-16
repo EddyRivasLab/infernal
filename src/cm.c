@@ -129,7 +129,7 @@ CreateCMShell(void)
   cm->hmmpad       = DEFAULT_HMMPAD; /* 0 residues */
   cm->stats        = NULL;
   cm->si           = NULL;
-  cm->fhbmx        = NULL;
+  cm->hbmx         = NULL;
   cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
 
@@ -231,7 +231,7 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
 
   /* create HMM banded matrix, it only depends (at first) on num states, M.
    * it is initially empty, but expanded to fit target sequences as needed */
-  cm->fhbmx = cm_fhb_mx_Create(cm->M);
+  cm->hbmx = cm_hb_mx_Create(cm->M);
 
   /* we'll allocate the cp9, cp9b and cp9map only if nec inside ConfigCM() */
   return;
@@ -359,7 +359,7 @@ FreeCM(CM_t *cm)
   if(cm->cp9        != NULL) FreeCPlan9(cm->cp9);
   if(cm->root_trans != NULL) free(cm->root_trans);
   if(cm->stats      != NULL) FreeCMStats(cm->stats);
-  if(cm->fhbmx      != NULL) cm_fhb_mx_Destroy(cm->fhbmx);
+  if(cm->hbmx       != NULL) cm_hb_mx_Destroy(cm->hbmx);
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
   free(cm);
 }
@@ -1817,7 +1817,7 @@ DuplicateCM(CM_t *cm)
   }
 
   /* create HMM banded matrix */
-  new->fhbmx = cm_fhb_mx_Create(cm->M);
+  new->hbmx = cm_hb_mx_Create(cm->M);
 
   /* Copy the CM stats if they exist */
   if(cm->flags & CMH_GUMBEL_STATS)

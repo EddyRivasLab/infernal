@@ -17,7 +17,7 @@
  * subversion revision 2204, gcc -O2 compiled
  *  EPN, Mon Nov 12 13:41:57 2007).
  * 
- * All functions use a specialized DP matrix, a CM_FHB_MX 
+ * All functions use a specialized DP matrix, a CM_HB_MX 
  * data structure which only allocates cells within bands 
  * derived from a HMM Forward/Backward alignment of the
  * target sequence. The bands are stored in a CP9Bands_t object,
@@ -62,7 +62,7 @@
  *           were obtained from an HMM Forward-Backward parse
  *           of the target sequence. Uses float log odds scores.
  *
- *           A CM_FHB_MX DP matrix must be passed in. Only
+ *           A CM_HB_MX DP matrix must be passed in. Only
  *           cells valid within the bands given in the CP9Bands_t <cm->cp9b>
  *           will be valid. 
  *
@@ -105,7 +105,7 @@
  */
 float 
 fast_cyk_inside_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow,  
-			 int allow_begin, int *ret_b, float *ret_bsc, CM_FHB_MX *mx)
+			 int allow_begin, int *ret_b, float *ret_bsc, CM_HB_MX *mx)
 {
   int      status;
   int      v,y,z;	/* indices for states  */
@@ -159,7 +159,7 @@ fast_cyk_inside_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
 				/* if caller didn't give us a deck pool, make one */
   /* grow the matrix based on the current sequence and bands */
-  cm_fhb_mx_GrowTo(mx, cp9b);
+  cm_hb_mx_GrowTo(mx, cp9b, W);
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
   ESL_ALLOC(el_scA, sizeof(float) * (W+1));
@@ -206,6 +206,7 @@ fast_cyk_inside_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int
 	/* initialize all valid cells for state v to IMPOSSIBLE (local ends are impossible for B states) */
 	assert(! (NOT_IMPOSSIBLE(cm->endsc[v])));
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
+	  ESL_DASSERT1((j >= i0 && j <= j0));
 	  jp_v  = j - jmin[v];
 	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
 	    alpha[v][jp_v][dp_v] = IMPOSSIBLE;
@@ -218,6 +219,7 @@ fast_cyk_inside_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int
 	/* initialize all valid cells for state v */
 	if(NOT_IMPOSSIBLE(cm->endsc[v])) {
 	  for (j = jmin[v]; j <= jmax[v]; j++) { 
+	    ESL_DASSERT1((j >= i0 && j <= j0));
 	    jp_v  = j - jmin[v];
 	    for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
 	      alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
@@ -227,6 +229,7 @@ fast_cyk_inside_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int
 	}
 	else { /* cm->endsc[v] == IMPOSSIBLE */
 	  for (j = jmin[v]; j <= jmax[v]; j++) { 
+	    ESL_DASSERT1((j >= i0 && j <= j0));
 	    jp_v  = j - jmin[v];
 	    for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
 	      alpha[v][jp_v][dp_v] = IMPOSSIBLE;
@@ -251,6 +254,7 @@ fast_cyk_inside_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int
        * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
        * before can start calc'ing for alpha[v][j][d+1] */
       for (j = jmin[v]; j <= jmax[v]; j++) {
+	ESL_DASSERT1((j >= i0 && j <= j0));
 	jp_v = j - jmin[v];
 	yvalid_ct = 0;
 	j_sdr = j - sdr;
@@ -289,6 +293,7 @@ fast_cyk_inside_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int
        * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
        * before can start calc'ing for alpha[v][j][d+1] */
       for (j = jmin[v]; j <= jmax[v]; j++) {
+	ESL_DASSERT1((j >= i0 && j <= j0));
 	jp_v = j - jmin[v];
 	yvalid_ct = 0;
 	j_sdr = j - sdr;
@@ -498,7 +503,7 @@ fast_cyk_inside_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int
       }
     }
   } /* end loop over all v */
-  /*FILE *fp; fp = fopen("cyk.mx", "w"); cm_fhb_mx_Dump(fp, mx); fclose(fp);*/
+  /*FILE *fp; fp = fopen("cyk.mx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);*/
   
   Wp = W - hdmin[vroot][j0-jmin[vroot]];
   sc =     alpha[vroot][j0-jmin[vroot]][Wp];
@@ -532,7 +537,7 @@ fast_cyk_inside_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int
 float
 fast_cyk_insideT_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 			  int r, int z, int i0, int j0, 
-			  int allow_begin, CM_FHB_MX *mx)
+			  int allow_begin, CM_HB_MX *mx)
 {
   void   ***shadow;             /* the traceback shadow matrix */
   float     sc;			/* the score of the CYK alignment */
@@ -687,7 +692,7 @@ fast_cyk_insideT_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  * Returns:  score of the alignment in bits.
  */
 float
-FastCYKInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, CM_FHB_MX *mx)
+FastCYKInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, CM_HB_MX *mx)
 {
   /* Contract check */
   if(dsq == NULL) cm_Fail("ERROR in Fast_CYKInside_b_jd(), dsq is NULL.\n");
@@ -760,7 +765,7 @@ FastCYKInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parse
  * Returns:  log P(S|M)/P(S|R), as a bit score
  */
 float 
-FastInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx)
+FastInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx)
 {
   int      status;
   int      v,y,z;	/* indices for states  */
@@ -809,7 +814,7 @@ FastInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx)
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
 				/* if caller didn't give us a deck pool, make one */
   /* grow the matrix based on the current sequence and bands */
-  cm_fhb_mx_GrowTo(mx, cp9b);
+  cm_hb_mx_GrowTo(mx, cp9b, W);
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
   ESL_ALLOC(el_scA, sizeof(int) * (W+1));
@@ -835,6 +840,7 @@ FastInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx)
     /* initialize all valid cells for state v to the local end prob, if they're allowed  */
     if(NOT_IMPOSSIBLE(cm->endsc[v])) {
       for (j = jmin[v]; j <= jmax[v]; j++) { 
+	ESL_DASSERT1((j >= i0 && j <= j0));
 	jp_v  = j - jmin[v];
 	for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) 
 	  alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
@@ -856,6 +862,7 @@ FastInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx)
        * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
        * before can start calc'ing for alpha[v][j][d+1] */
       for (j = jmin[v]; j <= jmax[v]; j++) {
+	ESL_DASSERT1((j >= i0 && j <= j0));
 	jp_v = j - jmin[v];
 	yvalid_ct = 0;
 	j_sdr = j - sdr;
@@ -890,6 +897,7 @@ FastInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx)
        * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
        * before can start calc'ing for alpha[v][j][d+1] */
       for (j = jmin[v]; j <= jmax[v]; j++) {
+	ESL_DASSERT1((j >= i0 && j <= j0));
 	jp_v = j - jmin[v];
 	yvalid_ct = 0;
 	j_sdr = j - sdr;
@@ -980,6 +988,7 @@ FastInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx)
       }
       /* ensure all cells are >= IMPOSSIBLE */
       for (j = jmin[v]; j <= jmax[v]; j++) { 
+	ESL_DASSERT1((j >= i0 && j <= j0));
 	jp_v  = j - jmin[v];
 	for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
 	  alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
@@ -997,6 +1006,7 @@ FastInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx)
       jx = (jmax[v] < jmax[z]) ? jmax[v] : jmax[z];
       /* the main j loop */
       for (j = jn; j <= jx; j++) { 
+	ESL_DASSERT1((j >= i0 && j <= j0));
 	jp_v = j - jmin[v];
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
@@ -1100,7 +1110,7 @@ FastInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx)
  *           Identical to FastIOutsideAlignHB() with except that
  *           float scores are used instead of ints. See the
  *           'Purpose' section of that function for more details.
- *           A CM_FHB_MX DP matrix must be passed in. Only
+ *           A CM_HB_MX DP matrix must be passed in. Only
  *
  * Args:     cm        - the model    [0..M-1]
  *           dsq       - the digitized sequence
@@ -1114,9 +1124,10 @@ FastInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx)
  *           ends are on (see *** comment towards end of function).
  */
 float 
-FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx, 
-		    CM_FHB_MX *ins_mx, int do_check)
+FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx, 
+		    CM_HB_MX *ins_mx, int do_check)
 {
+  int      status;
   int      v,y,z;	       /* indices for states */
   int      j,d,i,k;	       /* indices in sequence dimensions */
   float    fsc;     	       /* a temporary variable holding a float score */
@@ -1133,6 +1144,7 @@ FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx,
   int      kp_z;               /* k (in the d dim) index for state z in alpha w/mem eff bands */
   int      Wp;                 /* W also changes depending on state */
   int      jp_v, jp_y, jp_z;   /* offset j index for states v, y, z */
+  int      jp_el;              /* offset j in EL deck, jp_el = j - i0 */
   int      kmin, kmax;         /* temporary minimum/maximum allowed k */
   int      fail_flag = FALSE;  /* set to TRUE if do_check and we see a problem */
   /* variables used only if do_check */
@@ -1165,11 +1177,12 @@ FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx,
 
   /* Allocations and initializations
    */
-  bsc = IMPOSSIBLE;                 /* the summed prob of all local begins */
-  W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
-				/* if caller didn't give us a deck pool, make one */
-  esc_vAA = cm->oesc;          /* a ptr to the optimized emission scores */
-  cm_fhb_mx_GrowTo(mx, cp9b);   /* grow the matrix based on the current sequence and bands */
+  bsc = IMPOSSIBLE;              /* the summed prob of all local begins */
+  W   = j0-i0+1;		 /* the length of the subsequence -- used in many loops  */
+				 /* if caller didn't give us a deck pool, make one */
+  esc_vAA = cm->oesc;            /* a ptr to the optimized emission scores */
+
+  cm_hb_mx_GrowTo(mx, cp9b, W); /* grow the matrix based on the current sequence and bands */
 
   /* initialize all cells of the matrix to IMPOSSIBLE */
   esl_vec_FSet(beta[0][0], mx->ncells_valid, IMPOSSIBLE);
@@ -1185,18 +1198,19 @@ FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx,
    */
   beta_el = NULL;
   if (cm->flags & CMH_LOCAL_END) {
-    beta_el = alloc_vjd_deck(W, i0, j0);
-    for (jp = 0; jp <= W; jp++) {
-      j = i0-1+jp;
-      for (d = 0; d <= jp; d++) beta_el[j][d] = IMPOSSIBLE;
+    ESL_ALLOC(beta_el, sizeof(float *) * (W+1));
+    for(jp = 0; jp <= W; jp++) { 
+      ESL_ALLOC(beta_el[jp], sizeof(float) * (jp+1));
+      for (d = 0; d <= jp; d++) beta_el[jp][d] = IMPOSSIBLE;
     }
     /* We don't have to worry about vroot -> EL transitions the way 
      * smallcyk.c::outside() does, because vroot = 0.
      */
   }
-  /* assign the ptr for EL in our DP matrix to the EL deck, it should be NULL */
+  /* assign the ptr for EL in our DP matrix to the EL deck, it will be NULL
+   * because cm_hb_mx_GrowTo() (called above) frees the EL deck if it exists */
   assert(beta[cm->M] == NULL);
-  beta[cm->M] = beta_el;
+  beta[cm->M] = beta_el; /* beta_el is NULL if local ends are off */
   /* If we can do a local begin into v, overwrite -INFY with the local begin score. 
    * By definition, beta[0][j0][W] == 0.
    */ 
@@ -1221,6 +1235,7 @@ FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx,
       y = cm->plast[v];	/* the parent bifurcation    */
       z = cm->cnum[y];	/* the other (right) S state */
       for (j = jmax[v]; j >= jmin[v]; j--) {
+	ESL_DASSERT1((j >= i0 && j <= j0));
 	jp_v = j - jmin[v];
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
@@ -1280,6 +1295,7 @@ FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx,
       jn = ESL_MAX(jmin[v], jmin[y]);
       jx = ESL_MIN(jmax[v], jmax[y]);
       for (j = jx; j >= jn; j--) {
+	ESL_DASSERT1((j >= i0 && j <= j0));
 	jp_v = j - jmin[v];
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
@@ -1331,6 +1347,7 @@ FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx,
        * for non-self-transitioners, we can do a more efficient nesting order (see below)  
        */
       for (j = jmax[v]; j >= jmin[v]; j--) {
+	ESL_DASSERT1((j >= i0 && j <= j0));
 	jp_v = j - jmin[v];
 	for (d = hdmax[v][jp_v]; d >= hdmin[v][jp_v]; d--) {
 	  i = j-d+1;
@@ -1420,6 +1437,7 @@ FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx,
 	jx = ESL_MIN(jmax[v], ESL_MAX(jmax[y] - sdr, jmin[y]));
 	jx = ESL_MIN(jx, jmax[y] - sdr);
 	for (j = jx; j >= jn; j--) {
+	  ESL_DASSERT1((j >= i0 && j <= j0));
 	  jp_v = j - jmin[v];
 	  jp_y = j - jmin[y];
 	  ESL_DASSERT1((j+sdr >= jmin[y] && j+sdr <= jmax[y]));
@@ -1475,7 +1493,7 @@ FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx,
     /* we're done calculating deck v for everything but local begins */
 
     /* deal with local alignment end transitions v->EL (EL = deck at M.) */
-    if (NOT_IMPOSSIBLE(cm->endsc[v])) {
+    if ((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) {
       sdr = StateRightDelta(cm->sttype[v]); /* note sdr is for state v */
       sd  = StateDelta(cm->sttype[v]);      /* note sd  is for state v */
       emitmode = Emitmode(cm->sttype[v]);   /* note emitmode is for state v */
@@ -1485,6 +1503,7 @@ FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx,
       jx = ESL_MAX(jmax[v] - sdr, jmin[v]);
       for (j = jx; j >= jn; j--) {
 	jp_v = j - jmin[v];
+	jp_el = j - (i0+1); /* offset j in cm->M deck */
 	ESL_DASSERT1((j+sdr >= jmin[y] && j+sdr <= jmax[v]));
 	  
 	/* determine min d (dn) and max d (dx) that are valid for v and j */
@@ -1499,33 +1518,33 @@ FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx,
 	  for (d = dx; d >= dn; d--, dp_v--, i++) { 
 	    ESL_DASSERT1((((d + sd) >= hdmin[v][jp_v + sdr]) && ((d + sd) <= hdmax[v][jp_v + sdr])));
 	    escore = esc_vAA[v][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
-	    beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][jp_v+sdr][dp_v+sd] + cm->endsc[v] 
-							    + escore));
+	    beta[cm->M][jp_el][d] = FLogsum(beta[cm->M][jp_el][d], (beta[v][jp_v+sdr][dp_v+sd] + cm->endsc[v] 
+								    + escore));
 	  }
 	  break;
-
+	  
 	case EMITLEFT:  /* ML_st, IL_st */
 	  for (d = dx; d >= dn; d--, dp_v--, i++) { 
 	    ESL_DASSERT1((((d + sd) >= hdmin[v][jp_v + sdr]) && ((d + sd) <= hdmax[v][jp_v + sdr])));
 	    escore = esc_vAA[v][dsq[i-1]];
-	    beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][jp_v + sdr][dp_y + sd] + cm->endsc[v] 
-							    + escore));
+	    beta[cm->M][jp_el][d] = FLogsum(beta[cm->M][jp_el][d], (beta[v][jp_v + sdr][dp_y + sd] + cm->endsc[v] 
+								    + escore));
 	  }
 	  break;
-
+	  
 	case EMITRIGHT:  /* MR_st, IR_st */
 	  escore = esc_vAA[v][dsq[j+1]]; /* not dependent on i */
 	  for (d = dx; d >= dn; d--, dp_v--) { 
 	    ESL_DASSERT1((((d + sd) >= hdmin[v][jp_v + sdr]) && ((d + sd) <= hdmax[v][jp_v + sdr])));
-	    beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][jp_v + sdr][dp_y + sd] + cm->endsc[v] 
-							    + escore));
+	    beta[cm->M][jp_el][d] = FLogsum(beta[cm->M][jp_el][d], (beta[v][jp_v + sdr][dp_y + sd] + cm->endsc[v] 
+								    + escore));
 	  }
 	  break;
-
+	  
 	case EMITNONE:  /* D_st, S_st, E_st*/
 	  for (d = dx; d >= dn; d--, dp_v--) { 
 	    ESL_DASSERT1((((d + sd) >= hdmin[v][jp_v + sdr]) && ((d + sd) <= hdmax[v][jp_v + sdr])));
-	    beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][jp_v + sdr][dp_y + sd] + cm->endsc[v]));
+	    beta[cm->M][jp_el][d] = FLogsum(beta[cm->M][jp_el][d], (beta[v][jp_v + sdr][dp_y + sd] + cm->endsc[v]));
 	    break;
 	  }
 	} /* end of switch over emitmodes */
@@ -1627,6 +1646,124 @@ FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx,
     ESL_DPRINTF1(("\tFastOutsideAlignHB() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc));
 
   return freturn_sc;
+
+  ERROR:
+  cm_Fail("memory allocation error.");
+  return 0.; /* NEVERREACHED */
+  }  
+
+/*
+ * Function: FastPosteriorHB()
+ * Date:     EPN 05.27.06 
+ * Note:     based on Ian Holmes' P7EmitterPosterior() from HMMER's 2.x postprob.c
+ *
+ * Purpose:  Combines HMM banded Inside and Outside matrices into a 
+ *           posterior probability matrix. Any cells outside of
+ *           HMM bands do not exist in memory. The value in post[v][jp_v][dp_v] 
+ *           is the log of the posterior probability of a parse subtree rooted at v 
+ *           emitting the subsequence i..j (i=j-d+1). Where j = jp_v + jmin[v],
+ *           and d = dp_v + hdmin[v][jp_v]. The caller must provide a <post> CM_HB_MX
+ *           matrix, but this matrix may be the same matrix as that provided as
+ *           Outside beta, (overwriting it will not compromise the algorithm).
+ *           
+ * Args:     cm       - the model
+ *           i0       - first position of target seq we're aligning, usually 1 
+ *           j0       - final position of target seq we're aligning, usually L (length of seq) 
+ *           ins_mx   - pre-calculated Inside matrix 
+ *           out_mx   - pre-calculated Outside matrix
+ *           post_mx  - pre-allocated matrix for Posteriors 
+ *
+ * Return:   void, dies immediately upon a memory allocation error.
+ */
+void
+FastPosteriorHB(CM_t *cm, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx)
+{
+  int      status;
+  int      v, j, d, jp;
+  float    sc;   /* total score, the log probability of the current seq  */
+  int      jp_v; /* j index for state v in alpha/beta with HMM bands */
+  int      dp_v; /* d index for state v in alpha/beta with HMM bands */
+  int      L;    /* length of sequence */
+  int      Lp;   /* offset length */
+  L = j0-i0+1;
+  
+  /* Contract check */
+  if (ins_mx == NULL)     cm_Fail("FastFPosteriorHB(), ins_mx is NULL.\n");
+  if (out_mx == NULL)     cm_Fail("FastFPosteriorHB(), out_mx is NULL.\n");
+  if (post_mx == NULL)    cm_Fail("FastFPosteriorHB(), post_mx is NULL.\n");
+  if (cm->cp9b == NULL)   cm_Fail("FastFPosteriorHB(), cm->cp9b is NULL.\n");
+  if (ins_mx->L != L)     cm_Fail("FastFPosteriorHB(), ins_mx->L != L passed in.\n");
+  if (out_mx->L != L)     cm_Fail("FastFPosteriorHB(), out_mx->L != L passed in.\n");
+  if (ins_mx->M != cm->M) cm_Fail("FastFPosteriorHB(), ins_mx->M != cm->M.\n");
+  if (out_mx->M != cm->M) cm_Fail("FastFPosteriorHB(), out_mx->M != cm->M.\n");
+
+  /* variables used for memory efficient bands */
+  /* ptrs to cp9b info, for convenience */
+  CP9Bands_t *cp9b = cm->cp9b;
+  int     *jmin  = cp9b->jmin;  
+  int     *jmax  = cp9b->jmax;
+  int    **hdmin = cp9b->hdmin;
+  int    **hdmax = cp9b->hdmax;
+  /* the DP matrices */
+  float ***alpha = ins_mx->dp; /* pointer to the alpha DP matrix */
+  float ***beta  = out_mx->dp; /* pointer to the beta DP matrix */
+  float ***post  = post_mx->dp; /* pointer to the post DP matrix */
+  float  **post_el = NULL;      /* the cm->M EL deck for post, only used if EL is on and post[cm->M] currently NULL */
+  float   *el_scA;              /* [0..d..W-1] probability of local end emissions of length d */
+  el_scA = NULL;
+
+  /* grow our post matrix, unless it's just the outside matrix, which is the correct size already */
+  if(out_mx != post_mx) cm_hb_mx_GrowTo(post_mx, cp9b, L); 
+
+  if(cm->flags & CMH_LOCAL_BEGIN) { 
+    if(beta[cm->M] == NULL) cm_Fail("FastPosteriorHB(), local ends are on, but out_mx->dp[cm->M] is NULL.\n");
+    if(post[cm->M] == NULL) { /* allocate it */
+      ESL_ALLOC(post_el, sizeof(float *) * (L+1));
+      for(jp = 0; jp <= L; jp++) { 
+	ESL_ALLOC(post_el, sizeof(float) * (jp+1));
+	for (jp = 0; jp <= L; jp++) {
+	  for (d = 0; d <= jp; d++) post_el[jp][d] = IMPOSSIBLE;
+	}
+      }
+    }
+  }
+  Lp = L - hdmin[0][L-jmin[0]];
+  sc = alpha[0][L-jmin[0]][Lp];
+  
+  /* If local ends are on, start with the EL state (cm->M), otherwise
+   * M deck is not valid. Note: there are no bands on the EL state */
+  if (cm->flags & CMH_LOCAL_END) {
+    /* first, precalcuate all possible local end scores, for local end emits of 1..W residues */
+    ESL_ALLOC(el_scA, sizeof(float) * (L+1));
+    for(d = 0; d <= L; d++) el_scA[d] = cm->el_selfsc * d;
+    /* fill in the cm->M deck */
+    for(j = 0; j <= L; j++) {
+      for (d = 0; d <= j; d++) { 
+	post[cm->M][j][d] = el_scA[d] + beta[cm->M][j][d] - sc;
+	/* convention is that alpha[cm->M] is always invalid, 
+	 * because we can just as easily calculate it on the fly and save memory:
+	 * alpha[cm->M][j][d] = cm->el_selfsc * d; for all j, d. */
+      }
+    }
+  }
+  
+  for (v = (cm->M-1); v >= 0; v--) {
+    for (j = jmin[v]; j <= jmax[v]; j++) {
+      ESL_DASSERT1((j >= i0 && j <= j0));
+      jp_v = j - jmin[v];
+      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+	dp_v = d - hdmin[v][jp_v];
+	/*printf("v: %3d | jp_v: %3d | dp_v: %3d | alpha: %5.2f | beta: %5.2f\n", v, jp_v, dp_v, alpha[v][jp_v][dp_v], beta[v][jp_v][dp_v]);*/
+	post[v][jp_v][dp_v] = alpha[v][jp_v][dp_v] + beta[v][jp_v][dp_v] - sc;
+      }  
+    }
+  }
+  if(el_scA != NULL) free(el_scA);
+  return;
+
+ ERROR:
+  cm_Fail("memory allocation error.");
+  return; /* neverreached */
 }
 
 /*****************************************************************
@@ -1702,7 +1839,7 @@ main(int argc, char **argv)
   int             N = esl_opt_GetInteger(go, "-N");
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
   int             do_align;
-  CM_FHB_MX      *fout_mx;
+  CM_HB_MX      *fout_mx;
   /* FILE *fpfast;
      FILE *fpslow; */
   /* Parsetree_t    *slowtr, *fasttr; */
@@ -1771,7 +1908,7 @@ main(int argc, char **argv)
 
   /* create the matrix, it'll be empty initially */
   if(esl_opt_GetBoolean(go, "--fpost")) { 
-    fout_mx = cm_fhb_mx_Create(cm->M);
+    fout_mx = cm_hb_mx_Create(cm->M);
   }
   int do_check = esl_opt_GetBoolean(go, "--cmcheck");
   for (i = 0; i < N; i++)
@@ -1785,7 +1922,7 @@ main(int argc, char **argv)
       esl_stopwatch_Display(stdout, w, "CPU time: ");
       
       esl_stopwatch_Start(w);
-      sc = FastCYKInsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, L, 0, 1, L, NULL, cm->fhbmx);
+      sc = FastCYKInsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, L, 0, 1, L, NULL, cm->hbmx);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKInsideAlignHB (): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -1807,14 +1944,14 @@ main(int argc, char **argv)
       if(esl_opt_GetBoolean(go, "--fpost")) {
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
-	sc = FastInsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, cm->fhbmx);
+	sc = FastInsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, cm->hbmx);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastInsideAlignHB (): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
-	sc = FastOutsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, fout_mx, cm->fhbmx, do_check);
+	sc = FastOutsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, fout_mx, cm->hbmx, do_check);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastOutsideAlignHB (): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -1881,7 +2018,7 @@ main(int argc, char **argv)
     }
 
   if(esl_opt_GetBoolean(go, "--fpost")) { 
-    cm_fhb_mx_Destroy(fout_mx);
+    cm_hb_mx_Destroy(fout_mx);
   }
   if(esl_opt_GetBoolean(go, "--ipost")) { 
     cm_ihb_mx_Destroy(iout_mx);
@@ -1988,7 +2125,7 @@ FastIInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_IHB_MX *mx)
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
 				/* if caller didn't give us a deck pool, make one */
   /* grow the matrix based on the current sequence and bands */
-  cm_ihb_mx_GrowTo(mx, cp9b);
+  cm_ihb_mx_GrowTo(mx, cp9b, W);
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
   ESL_ALLOC(el_scA, sizeof(int) * (W+1));
   for(d = 0; d <= W; d++) el_scA[d] = cm->iel_selfsc * d;
@@ -2367,7 +2504,7 @@ FastIOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_IHB_MX *mx,
   W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
 				/* if caller didn't give us a deck pool, make one */
   esc_vAA = cm->ioesc;          /* a ptr to the optimized emission scores */
-  cm_ihb_mx_GrowTo(mx, cp9b);   /* grow the matrix based on the current sequence and bands */
+  cm_ihb_mx_GrowTo(mx, cp9b, W);   /* grow the matrix based on the current sequence and bands */
 
   /* initialize all cells of the matrix to -INFTY */
   esl_vec_ISet(beta[0][0], mx->ncells_valid, -INFTY);

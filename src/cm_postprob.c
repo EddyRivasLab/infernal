@@ -35,7 +35,8 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-static int get_iemission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
+static int   get_iemission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
+static float get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
 
 /*****************************************************************
  * CM {F,I}Inside() & {F,I}Outside() functions.
@@ -128,7 +129,7 @@ FInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 
   /* Contract check */
   if(dsq == NULL)
-    esl_fatal("ERROR in FInside(), dsq is NULL.\n");
+    cm_Fail("ERROR in FInside(), dsq is NULL.\n");
 
   /* Allocations and initializations
    */
@@ -387,7 +388,7 @@ FInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   return sc;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -414,7 +415,7 @@ IInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   
   /* Contract check */
   if(dsq == NULL)
-    esl_fatal("ERROR in IInside(), dsq is NULL.\n");
+    cm_Fail("ERROR in IInside(), dsq is NULL.\n");
 
   /* Allocations and initializations
    */
@@ -674,7 +675,7 @@ IInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   return return_sc;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -749,7 +750,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 
   /* Contract check */
   if(dsq == NULL)
-    esl_fatal("ERROR in FOutside(), dsq is NULL.\n");
+    cm_Fail("ERROR in FOutside(), dsq is NULL.\n");
 
   if (cm->flags & CMH_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
@@ -900,7 +901,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		    beta[v][j][d] = LogSum2(beta[v][j][d], (beta[y][j][d] + cm->tsc[y][voffset])); 
 		      break;
 		    
-		  default: esl_fatal("bogus child state %d\n", cm->sttype[y]);
+		  default: cm_Fail("bogus child state %d\n", cm->sttype[y]);
 		  }/* end switch over states*/
 		} /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 		if (beta[v][j][d] < IMPOSSIBLE) beta[v][j][d] = IMPOSSIBLE;
@@ -954,7 +955,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		break;
 
 	      case B_st:  
-	      default: esl_fatal("bogus parent state %d\n", cm->sttype[v]);
+	      default: cm_Fail("bogus parent state %d\n", cm->sttype[v]);
 		/* note that although B is a valid vend for a segment we'd do
                    outside on, B->EL is set to be impossible, by the local alignment
                    config. There's no point in having a B->EL because B is a nonemitter
@@ -1130,7 +1131,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   return return_sc;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -1165,7 +1166,7 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 
   /* Contract check */
   if(dsq == NULL)
-    esl_fatal("ERROR in IOutside(), dsq is NULL.\n");
+    cm_Fail("ERROR in IOutside(), dsq is NULL.\n");
 
   if (cm->flags & CMH_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
@@ -1316,7 +1317,7 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		    beta[v][j][d] = ILogsum(beta[v][j][d], (beta[y][j][d] + cm->itsc[y][voffset])); 
 		      break;
 		    
-		  default: esl_fatal("bogus child state %d\n", cm->sttype[y]);
+		  default: cm_Fail("bogus child state %d\n", cm->sttype[y]);
 		  }/* end switch over states*/
 		} /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 		if (beta[v][j][d] < -INFTY) beta[v][j][d] = -INFTY;
@@ -1370,7 +1371,7 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		break;
 
 	      case B_st:  
-	      default: esl_fatal("bogus parent state %d\n", cm->sttype[v]);
+	      default: cm_Fail("bogus parent state %d\n", cm->sttype[v]);
 		/* note that although B is a valid vend for a segment we'd do
                    outside on, B->EL is set to be impossible, by the local alignment
                    config. There's no point in having a B->EL because B is a nonemitter
@@ -1555,7 +1556,7 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   return freturn_sc;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -1816,7 +1817,7 @@ CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr)
   return(postcode);
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -1862,7 +1863,7 @@ ICMPostalCode(CM_t *cm, int L, int ***post, Parsetree_t *tr)
   return(postcode);
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -2104,9 +2105,9 @@ FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 
   /* Contract check */
   if(dsq == NULL)
-    esl_fatal("ERROR in FInside_b_jd_me(), dsq is NULL.\n");
+    cm_Fail("ERROR in FInside_b_jd_me(), dsq is NULL.\n");
   if(i0 != 1) 
-    esl_fatal("ERROR: FInside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
+    cm_Fail("ERROR: FInside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
 
   /* Allocations and initializations
    */
@@ -2548,7 +2549,7 @@ FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   return sc;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -2580,9 +2581,9 @@ IInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 
   /* Contract check */
   if(dsq == NULL)
-    esl_fatal("ERROR in IInside_b_jd_me(), dsq is NULL.\n");
+    cm_Fail("ERROR in IInside_b_jd_me(), dsq is NULL.\n");
   if(i0 != 1) 
-    esl_fatal("ERROR: IInside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
+    cm_Fail("ERROR: IInside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
 
   /* Allocations and initializations
    */
@@ -3024,7 +3025,7 @@ IInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   return return_sc;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -3116,9 +3117,9 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 
   /* Contract check */
   if(dsq == NULL)
-    esl_fatal("ERROR in FOutside_b_jd_me(), dsq is NULL.\n");
+    cm_Fail("ERROR in FOutside_b_jd_me(), dsq is NULL.\n");
   if(i0 != 1) 
-    esl_fatal("ERROR: FOutside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
+    cm_Fail("ERROR: FOutside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
 
   if (cm->flags & CMH_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
@@ -3420,7 +3421,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			beta[v][jp_v][dp_v] = LogSum2(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y] + cm->tsc[y][voffset])); 
 			break;
 
-		      default: esl_fatal("bogus child state %d\n", cm->sttype[y]);
+		      default: cm_Fail("bogus child state %d\n", cm->sttype[y]);
 		      }/* end switch over states*/
 		  } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 		if (beta[v][jp_v][dp_v] < IMPOSSIBLE) beta[v][jp_v][dp_v] = IMPOSSIBLE;
@@ -3478,7 +3479,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 								+ escore));
 		break;
 	      case B_st:  
-	      default: esl_fatal("bogus parent state %d\n", cm->sttype[v]);
+	      default: cm_Fail("bogus parent state %d\n", cm->sttype[v]);
 		/* note that although B is a valid vend for a segment we'd do
                    outside on, B->EL is set to be impossible, by the local alignment
                    config. There's no point in having a B->EL because B is a nonemitter
@@ -3659,7 +3660,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   return return_sc;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -3699,9 +3700,9 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 
   /* Contract check */
   if(dsq == NULL)
-    esl_fatal("ERROR in IOutside_b_jd_me(), dsq is NULL.\n");
+    cm_Fail("ERROR in IOutside_b_jd_me(), dsq is NULL.\n");
   if(i0 != 1) 
-    esl_fatal("ERROR: IOutside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
+    cm_Fail("ERROR: IOutside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
 
   if (cm->flags & CMH_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
@@ -4003,7 +4004,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y] + cm->itsc[y][voffset])); 
 			break;
 
-		      default: esl_fatal("bogus child state %d\n", cm->sttype[y]);
+		      default: cm_Fail("bogus child state %d\n", cm->sttype[y]);
 		      }/* end switch over states*/
 		  } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 		if (beta[v][jp_v][dp_v] < -INFTY) beta[v][jp_v][dp_v] = -INFTY;
@@ -4061,7 +4062,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 								+ iescore));
 		break;
 	      case B_st:  
-	      default: esl_fatal("bogus parent state %d\n", cm->sttype[v]);
+	      default: cm_Fail("bogus parent state %d\n", cm->sttype[v]);
 		/* note that although B is a valid vend for a segment we'd do
                    outside on, B->EL is set to be impossible, by the local alignment
                    config. There's no point in having a B->EL because B is a nonemitter
@@ -4244,7 +4245,7 @@ IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   return freturn_sc;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -4477,7 +4478,63 @@ CMPostalCode_b_jd_me(CM_t *cm, int L, float ***post, Parsetree_t *tr,
   return(postcode);
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
+  return NULL; /* never reached */
+}
+
+
+char *
+CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr)
+{
+  int status;
+  int x, v, i, j, d, r;
+  char *postcode;
+  int jp_v, dp_v;
+
+  /* variables used for memory efficient bands */
+  /* ptrs to cp9b info, for convenience */
+  CP9Bands_t *cp9b = cm->cp9b;
+  int     *jmin  = cp9b->jmin;  
+  int    **hdmin = cp9b->hdmin;
+  /* the DP matrix */
+  float ***post  = post_mx->dp; /* pointer to the post DP matrix */
+
+  ESL_ALLOC(postcode, (L+1) * sizeof(char)); 
+
+  for (x = 0; x < tr->n; x++) {
+    v = tr->state[x];
+    i = tr->emitl[x];
+    j = tr->emitr[x];
+    d = j-i+1;
+    /* Only P, L, R states have emissions. */
+    if(cm->sttype[v] != EL_st) {
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+    }
+    else {
+      jp_v = j;
+      dp_v = d;
+    }
+    if (cm->sttype[v] == MP_st) {
+      postcode[i-1] = Fscore2postcode(post[v][jp_v][dp_v]);
+      postcode[j-1] = Fscore2postcode(post[v][jp_v][dp_v]);
+    } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
+      postcode[i-1] = Fscore2postcode(post[v][jp_v][dp_v]);
+    } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
+      postcode[j-1] = Fscore2postcode(post[v][jp_v][dp_v]);
+    } else if (cm->sttype[v] == EL_st) /*special case*/ {
+      for(r = (i-1); r <= (j-1); r++) {
+	d = j - (r+1) + 1;
+	postcode[r] = Fscore2postcode(post[v][j][d]);
+	/*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
+      }
+    }
+  }
+  postcode[L] = '\0';
+  return(postcode);
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -4528,7 +4585,7 @@ ICMPostalCode_b_jd_me(CM_t *cm, int L, int ***post, Parsetree_t *tr,
 
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -4571,7 +4628,7 @@ Ideckpool_create(void)
   return dpool;
   
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 void 
@@ -4589,7 +4646,7 @@ Ideckpool_push(Ideckpool_t *dpool, int **deck)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 int
 Ideckpool_pop(Ideckpool_t *d, int ***ret_deck)
@@ -4641,7 +4698,7 @@ Ialloc_vjd_deck(int L, int i, int j)
   return a;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 int
@@ -4690,7 +4747,7 @@ Ialloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, in
   /*printf("in alloc JD banded vjd deck, L : %d, i : %d, j : %d, jmin : %d, jmax : %d\n", L, i, j, jmin, jmax);*/
 
   if(j < jmin || i > jmax)
-    esl_fatal("ERROR called alloc_jdbanded_vjd_deck for i: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i, j, jmin, jmax);
+    cm_Fail("ERROR called alloc_jdbanded_vjd_deck for i: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i, j, jmin, jmax);
 
   ESL_ALLOC(a, sizeof(int *) * (L+1));  /* always alloc 0..L rows, some of which are NULL */
   for (jp = 0; jp <= L;     jp++) a[jp]     = NULL;
@@ -4710,7 +4767,7 @@ Ialloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, in
 	   * in the hd band that is invalid because its > j. I check, or ensure, that this
 	   * doesn't happen when I'm constructing the d bands.
 	   */
-	  esl_fatal("jd banded error 0.\n");
+	  cm_Fail("jd banded error 0.\n");
 	}
       bw = hdmax[jp-jmin] - hdmin[jp-jmin] +1;
 
@@ -4721,7 +4778,7 @@ Ialloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, in
   return a;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -4910,7 +4967,7 @@ ParsetreeSampleFromIInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int
       case IL_st: i++;      break;
       case IR_st:      j--; break;
       case S_st:            break;
-      default:    esl_fatal("'Inconceivable!'\n'You keep using that word...'");
+      default:    cm_Fail("'Inconceivable!'\n'You keep using that word...'");
       }
       d = j-i+1;
 
@@ -5227,7 +5284,7 @@ ParsetreeSampleFromIInside_b_jd_me(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, in
       case IL_st: i++;      break;
       case IR_st:      j--; break;
       case S_st:            break;
-      default:    esl_fatal("'Inconceivable!'\n'You keep using that word...'");
+      default:    cm_Fail("'Inconceivable!'\n'You keep using that word...'");
       }
       d = j-i+1;
 
@@ -5296,11 +5353,566 @@ ParsetreeSampleFromIInside_b_jd_me(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, in
 int
 get_iemission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j)
 {
-  if     (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) return esl_abc_IAvgScore(cm->abc, dsq[i], cm->iesc[v]);
-  else if(cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) return esl_abc_IAvgScore(cm->abc, dsq[j], cm->iesc[v]);
-  else if(cm->sttype[v] == MP_st) {
-    if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K) return cm->iesc[v][(dsq[i]*cm->abc->K+dsq[j])];
-    else return iDegeneratePairScore(cm->abc, cm->iesc[v], dsq[i], dsq[j]);
-  }
+  if     (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) return cm->ioesc[v][dsq[i]];
+  else if(cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) return cm->ioesc[v][dsq[j]];
+  else if(cm->sttype[v] == MP_st)                           return cm->ioesc[v][dsq[i]*cm->abc->Kp+dsq[j]];
   else return 0;
+}
+
+
+/*
+ * Function: ParsetreeSampleFromFInside()
+ * Incept:   EPN, Thu Nov 15 16:45:32 2007
+ *          
+ * Purpose:  Sample a parsetree from an non-banded float Inside matrix.
+ *           
+ * Args:     r        - source of randomness
+ *           cm       - the model
+ *           dsq      - digitized sequence
+ *           L        - length of dsq, alpha *must* go from 1..L
+ *           alpha    - pre-calculated Inside matrix (floats)
+ *           ret_tr   - ptr to parsetree we'll return (*must* be non-NULL)
+ *           ret_alpha- pass NULL to free input alpha, otherwise it's passed back here
+ *
+ * Return:   score of sampled parsetree; dies immediately with cm_Fail if an error occurs.
+ */
+float
+ParsetreeSampleFromFInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, float ***alpha, Parsetree_t **ret_tr, float ****ret_alpha)
+{
+  int          status;             /* easel status code */
+  int          v, y, z, b;         /* state indices */
+  int          yoffset;            /* transition offset in a states transition vector */
+  int          i, j;               /* sequence position indices */
+  int          d;                  /* j - i + 1; the current subseq length */
+  int          k;                  /* right subseq fragment length for bifurcs */
+  int          nd;                 /* node index */
+  int          bifparent;          /* for connecting bifurcs */
+  Parsetree_t *tr;                 /* trace we're building */
+  ESL_STACK   *pda;                /* the stack */
+  float        pvec[MAXCONNECT+1]; /* prob vector of possible paths to take, (max num children + 1 for possibility of EL) */
+  float       *bifvec;             /* pvec for choosing transition out of BIF_B states */
+  float       *rootvec;            /* pvec for choosing transition out of ROOT_S if local begins are on */
+  float        maxsc;              /* max score in our vector of scores of possible subparses */
+  int          el_is_possible;     /* TRUE if we can jump to EL from current state (and we're in local mode) FALSE if not */
+  int          ntrans;             /* number of transitions for current state */
+  int          fsc = 0.;           /* score of the parsetree we're sampling */
+
+  /* contract check */
+  if(ret_tr == NULL) cm_Fail("ParsetreeSampleFromFInside(), ret_tr is NULL.");
+  if(r      == NULL) cm_Fail("ParsetreeSampleFromFInside(), source of randomness r is NULL.");
+  
+  /* initialize pvec */
+  esl_vec_FSet(pvec, (MAXCONNECT+1), 0.);
+
+  /* Create a parse tree structure and initialize it by adding the root state.
+   */
+  tr = CreateParsetree(100);
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
+
+  /* Stochastically traceback through the Inside matrix 
+   * this section of code is stolen and adapted from smallcyk.c:insideT() 
+   */
+  pda = esl_stack_ICreate();
+  v = 0;
+
+  j = d = L;
+  i = 1;
+  fsc = 0.;
+  while (1) {
+    if (cm->sttype[v] == B_st) {
+      y = cm->cfirst[v];
+      z = cm->cnum[v];
+
+      ESL_ALLOC(bifvec, sizeof(float) * (d+1));
+      /* set bifvec[] as (float-ized) log odds scores for each valid left fragment length */
+      for(k = 0; k <= d; k++) 
+	bifvec[k] = alpha[y][j-k][d-k] + alpha[z][j][k];
+      maxsc = esl_vec_FMax(bifvec, (d+1));
+      esl_vec_FIncrement(bifvec, (d+1), (-1. * maxsc));
+      esl_vec_FScale(bifvec, (d+1), log(2));
+      esl_vec_FLogNorm(bifvec, (d+1));
+      k = esl_rnd_FChoose(r, bifvec, (d+1));
+      free(bifvec);
+
+      /* Store info about the right fragment that we'll retrieve later:
+       */
+      esl_stack_IPush(pda, j);	/* remember the end j    */
+      esl_stack_IPush(pda, k);	/* remember the subseq length k */
+      esl_stack_IPush(pda, tr->n-1);	/* remember the trace index of the parent B state */
+
+      /* Deal with attaching left start state.
+       */
+      j = j-k;
+      d = d-k;
+      i = j-d+1;
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+      v = y;
+    } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+      /* We don't trace back from an E or EL. Instead, we're done with the
+       * left branch of the tree, and we try to swing over to the right
+       * branch by popping a right start off the stack and attaching
+       * it. If the stack is empty, then we're done with the
+       * traceback altogether. This is the only way to break the
+       * while (1) loop.
+       */
+      if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;
+      esl_stack_IPop(pda, &d);
+      esl_stack_IPop(pda, &j);
+      v = tr->state[bifparent];	/* recover state index of B */
+      y = cm->cnum[v];		/* find state index of right S */
+      i = j-d+1;
+				/* attach the S to the right */
+      InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
+
+      v = y;
+    } else {
+      if((v > 0) || (! (cm->flags & CMH_LOCAL_BEGIN))) /* ROOT_S with local begins on is a special case that we handle below */
+	{ 
+	  /* choose which transition we take */
+	  esl_vec_FSet(pvec, (MAXCONNECT+1), IMPOSSIBLE); /* not really necessary */
+	  fsc += get_femission_score(cm, dsq, v, i, j); 
+	  
+	  /* set pvec[] as (float-ized) log odds scores for each child we can transit to, 
+	   * plus a local end (if possible) */
+	  ntrans = cm->cnum[v];
+	  el_is_possible = FALSE;
+	  if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
+	    el_is_possible = TRUE; 
+	    ntrans++; 
+	  }
+	  for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	    y = yoffset + cm->cfirst[v];
+	    pvec[yoffset] = cm->tsc[v][yoffset] + 
+	      alpha[y][j - StateRightDelta(cm->sttype[v])][d - StateDelta(cm->sttype[v])];
+	  }
+	  if(el_is_possible) pvec[cm->cnum[v]] = cm->endsc[v] + 
+			       alpha[cm->M][j][d]; /* EL is silent when we transition into it from non-EL */
+	  /* note: we can treat the log odds scores as log probs, because
+	   * the log probability of the null model is the same for each,
+	   * so essentially we've divided each score by the same constant, so 
+	   * the *relative* proportion of the log odds scores is the
+	   * same as the relative proportion of the log probabilities (seq | model) */
+	  
+	  maxsc = esl_vec_FMax(pvec, ntrans);
+	  esl_vec_FIncrement(pvec, ntrans, (-1. * maxsc));
+	  /* get from log_2 to log_e, so we can use easel's log vec ops */
+	  esl_vec_FScale  (pvec, ntrans, log(2));
+	  esl_vec_FLogNorm(pvec, ntrans);
+	  yoffset = esl_rnd_FChoose(r, pvec, ntrans);
+	  if(yoffset < cm->cnum[v]) fsc += cm->tsc[v][yoffset]; 
+	  else {
+	    fsc += cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
+	    yoffset = USED_EL; /* we chose EL */
+	  }
+	}
+      else /* v == 0 && (cm->flags && CMH_LOCAL_BEGIN) ( local begins are on )*/
+	{
+	  ntrans = cm->M; /* pretend all states are possible to begin into, but they're not as some will remain IMPOSSIBLE */
+	  ESL_ALLOC(rootvec, sizeof(float) * (ntrans));
+	  esl_vec_FSet(rootvec, ntrans, IMPOSSIBLE);
+	  rootvec[cm->nodemap[1]] = cm->beginsc[cm->nodemap[1]] + alpha[cm->nodemap[1]][j][d]; /* ROOT_S is silent */
+	  for (nd = 2; nd < cm->nodes; nd++) {
+	    if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+		cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd)  
+	      {
+		rootvec[cm->nodemap[nd]] = cm->beginsc[cm->nodemap[nd]] + alpha[cm->nodemap[nd]][j][d]; /* ROOT_S is silent */
+	      }
+	  }
+	  /* this block is shared with v > 0 block, but we repeat it here so we don't need another if statement */
+	  maxsc = esl_vec_FMax(rootvec, ntrans);
+	  esl_vec_FIncrement(rootvec, ntrans, (-1. * maxsc));
+	  /* get from log_2 to log_e, so we can use easel's log vec ops */
+	  esl_vec_FScale  (rootvec, ntrans, log(2));
+	  esl_vec_FLogNorm(rootvec, ntrans);
+	  b = esl_rnd_FChoose(r, rootvec, ntrans);
+	  /* end of similar block with v > 0 */
+	  fsc += cm->beginsc[b];
+	  yoffset = USED_LOCAL_BEGIN; 
+	  free(rootvec); /* we will not need this again */
+	}
+
+      /*printf("v : %d | r : %d | z : %d | 1 : %d | \n", v, r, z, 1);*/
+      /*printf("\tyoffset : %d\n", yoffset);*/
+      switch (cm->sttype[v]) {
+      case D_st:            break;
+      case MP_st: i++; j--; break;
+      case ML_st: i++;      break;
+      case MR_st:      j--; break;
+      case IL_st: i++;      break;
+      case IR_st:      j--; break;
+      case S_st:            break;
+      default:    cm_Fail("'Inconceivable!'\n'You keep using that word...'");
+      }
+      d = j-i+1;
+
+      if (yoffset == USED_EL) 
+	{	/* a local alignment end */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+	  v = cm->M;		/* now we're in EL. */
+	}
+      else if (yoffset == USED_LOCAL_BEGIN) 
+	{ /* local begin; can only happen once, from root */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
+	  v = b;
+	}
+      else 
+	{
+	  y = cm->cfirst[v] + yoffset;
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+	  v = y;
+	}
+    }
+  }
+  esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+
+  /* If the caller doesn't want the alpha matrix, free it
+   */
+  if (ret_alpha == NULL) free_vjd_matrix(alpha, cm->M, 1, L);
+  else *ret_alpha = alpha;
+
+  *ret_tr = tr; /* contract checked ret_tr was non-NULL */
+  return fsc;
+
+ ERROR:
+  cm_Fail("memory error.");
+  return 0.; /* NEVERREACHED */
+}
+
+/*
+ * Function: ParsetreeSampleFromFInside_b_jd_me()
+ * Incept:   EPN, Fri Sep  7 11:02:15 2007
+ *          
+ * Purpose:  Sample a parsetree from a integer Inside matrix banded in the j and d dimensions.
+ *           
+ * Args:     r        - source of randomness
+ *           cm       - the model
+ *           dsq      - digitized sequence
+ *           L        - length of dsq, alpha *must* go from 1..L
+ *           alpha    - pre-calculated Inside matrix (ints)
+ *           cp9b     - CP9Bands data structure giving bands on j and d dimensions
+ *           ret_tr   - ptr to parsetree we'll return (*must* be non-NULL)
+ *           ret_alpha- pass NULL to free input alpha, otherwise it's passed back here
+ *
+ * Return:   score of sampled parsetree; dies immediately with cm_Fail if an error occurs.
+ */
+float
+ParsetreeSampleFromFInside_b_jd_me(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, float ***alpha, CP9Bands_t *cp9b, Parsetree_t **ret_tr, float ****ret_alpha)
+{
+  int          status;             /* easel status code */
+  int          v, y, z, b;         /* state indices */
+  int          yoffset;            /* transition offset in a states transition vector */
+  int          i, j;               /* sequence position indices */
+  int          jp_v, jp_y, jp_z;   /* positions, offset inside j band */
+  int          kmin, kmax;         /* min/max k in current d band */
+  int          d;                  /* j - i + 1; the current subseq length */
+  int          dp_v, dp_y;         /* length, offset inside a d band */
+  int          k;                  /* right subseq fragment length for bifurcs */
+  int          kp_z;               /* right fragment length, offset inside a d band */
+  int          nd;                 /* node index */
+  int          bifparent;          /* for connecting bifurcs */
+  Parsetree_t *tr;                 /* trace we're building */
+  ESL_STACK   *pda;                /* the stack */
+  float        pvec[MAXCONNECT+1]; /* prob vector of possible paths to take, (max num children + 1 for possibility of EL) */
+  float       *bifvec;             /* pvec for choosing transition out of BIF_B states */
+  float       *rootvec;            /* pvec for choosing transition out of ROOT_S if local begins are on */
+  float        maxsc;              /* max score in our vector of scores of possible subparses */
+  int          el_is_possible;     /* TRUE if we can jump to EL from current state (and we're in local mode) FALSE if not */
+  int          ntrans;             /* number of transitions for current state */
+  int          fsc = 0.;           /* score of the parsetree we're sampling */
+  int        **end;                /* used for freeing alpha b/c we re-use the end deck. */
+  int          seen_valid;         /* for checking we have at least one valid path to take  */
+  int          sd;                 /* state delta for current state, residues emitted left + residues emitted right */
+  int          sdr;                /* state right delta for current state, residues emitted right */
+  int         *jmin;               /* ptr to CP9Bands cp9b's j min band, for convenience */
+  int         *jmax;               /* ptr to CP9Bands cp9b's j max band, for convenience */
+  int        **hdmin;              /* ptr to CP9Bands cp9b's d min band, for convenience */
+  int        **hdmax;              /* ptr to CP9Bands cp9b's d max band, for convenience */
+
+  /* for convenience */
+  jmin  = cp9b->jmin;
+  jmax  = cp9b->jmax;
+  hdmin = cp9b->hdmin;
+  hdmax = cp9b->hdmax;
+
+  /* contract check */
+  if(ret_tr == NULL) cm_Fail("ParsetreeSampleFromFInside_b_jd_me(), ret_tr is NULL.");
+  if(r      == NULL) cm_Fail("ParsetreeSampleFromFInside_b_jd_me(), source of randomness r is NULL.");
+  
+  /* initialize pvec */
+  esl_vec_FSet(pvec, (MAXCONNECT+1), 0.);
+
+  /* Create a parse tree structure and initialize it by adding the root state.
+   */
+  tr = CreateParsetree(100);
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
+
+  /* Stochastically traceback through the Inside matrix 
+   * this section of code is stolen and adapted from hbandcyk.c:insideT_b_jd_me() 
+   */
+  pda = esl_stack_ICreate();
+  v = 0;
+
+  j = d = L;
+  i = 1;
+
+  jp_v = j - jmin[v];
+  dp_v = d - hdmin[v][jp_v];
+  fsc  = 0.;
+  while (1) {
+    if(cm->sttype[v] != EL_st && d > hdmax[v][jp_v])
+      cm_Fail("ERROR in ParsetreeSampleFromFInside_b_jd_me(). d : %d > hdmax[%d] (%d)\n", d, v, hdmax[v][jp_v]);
+    if(cm->sttype[v] != EL_st && d < hdmin[v][jp_v])
+      cm_Fail("ERROR in ParsetreeSampleFromFInside_b_jd_me(). d : %d < hdmin[%d] (%d)\n", d, v, hdmin[v][jp_v]);
+
+    if (cm->sttype[v] == B_st) {
+      y = cm->cfirst[v];
+      z = cm->cnum[v];
+      jp_z = j-jmin[z];
+      k = kp_z + hdmin[z][jp_z];  /* k = offset len of right fragment */
+
+      ESL_ALLOC(bifvec, sizeof(float) * (d+1));
+      /* set bifvec[] as (float-ized) log odds scores for each valid left fragment length,
+       * we have to be careful to check that the corresponding alpha cell for each length is valid
+       */
+      esl_vec_FSet(bifvec, (d+1), IMPOSSIBLE); /* only valid d's will be reset to a non-IMPOSSIBLE score */
+
+      /* This search for valid k's is complex, and uncommented. It was taken from
+       * hbandcyk.c:inside_b_jd_me(), the B_st case. The code there is commented somewhat
+       * extensively. I'm pretty sure this is the most efficient (or at least close to it) 
+       * way to find the valid cells in the DP matrix we're looking for. 
+       */
+      jp_v = j - jmin[v];
+      jp_y = j - jmin[y];
+      jp_z = j - jmin[z];
+      if(j < jmin[v] || j > jmax[v]) cm_Fail("ParsetreeSampleFromFInside_b_jd_me() B_st v: %d j: %d outside band jmin: %d jmax: %d\n", v, j, jmin[v], jmax[v]);
+      if(d < hdmin[v][jp_v] || d > hdmax[v][jp_v]) cm_Fail("ParsetreeSampleFromFInside_b_jd_me() B_st v: %d j: %d d: %d outside band dmin: %d dmax: %d\n", v, j, d, hdmin[v][jp_v], hdmax[v][jp_v]);
+      seen_valid = FALSE;
+      kmin = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+      kmax = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+      for(k = kmin; k <= kmax; k++)
+	{
+	  if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k])
+	    {
+	      kp_z = k-hdmin[z][jp_z];
+	      dp_y = d-hdmin[y][jp_y-k];
+	      bifvec[k] = alpha[y][jp_y-k][dp_y-k] + alpha[z][jp_z][kp_z]; 
+	      seen_valid = TRUE;
+	    }
+	}
+      if(!seen_valid) cm_Fail("ParsetreeSampleFromFInside_b_jd_me() number of valid transitions (for a B_st) is 0. You thought this was impossible.");
+      maxsc = esl_vec_FMax(bifvec, (d+1));
+      esl_vec_FIncrement(bifvec, (d+1), (-1. * maxsc));
+      esl_vec_FScale(bifvec, (d+1), log(2));
+      esl_vec_FLogNorm(bifvec, (d+1));
+      k = esl_rnd_FChoose(r, bifvec, (d+1));
+      free(bifvec);
+
+      /* Store info about the right fragment that we'll retrieve later:
+       */
+      esl_stack_IPush(pda, j);	/* remember the end j    */
+      esl_stack_IPush(pda, k);	/* remember the subseq length k */
+      esl_stack_IPush(pda, tr->n-1);	/* remember the trace index of the parent B state */
+
+      /* Deal with attaching left start state.
+       */
+      j = j-k;
+      d = d-k;
+      i = j-d+1;
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+      v = y;
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+    } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+      /* We don't trace back from an E or EL. Instead, we're done with the
+       * left branch of the tree, and we try to swing over to the right
+       * branch by popping a right start off the stack and attaching
+       * it. If the stack is empty, then we're done with the
+       * traceback altogether. This is the only way to break the
+       * while (1) loop.
+       */
+      if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;
+      esl_stack_IPop(pda, &d);
+      esl_stack_IPop(pda, &j);
+      v = tr->state[bifparent];	/* recover state index of B */
+      y = cm->cnum[v];		/* find state index of right S */
+      i = j-d+1;
+				/* attach the S to the right */
+      InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
+
+      v = y;
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+    } else {
+      if((v > 0) || (! (cm->flags & CMH_LOCAL_BEGIN))) /* ROOT_S with local begins on is a special case that we handle below */
+	{ 
+	  /* Choose which transition we take.
+	   * Set pvec[] as (float-ized) log odds scores for each child we can transit to, 
+	   * plus a local end (if possible). We only want to look at valid transitions, that
+	   * is, those that do not violate the bands (correspond to accessing cells that actually
+	   * exist in the DP matrix). 
+	   */
+	  seen_valid = FALSE;
+	  esl_vec_FSet(pvec, (MAXCONNECT+1), IMPOSSIBLE); /* only transitions that correspond to valid cells will be reset to a non-IMPOSSIBLE score */
+	  fsc += get_femission_score(cm, dsq, v, i, j); 
+	  sdr = StateRightDelta(cm->sttype[v]);
+	  sd  = StateDelta(cm->sttype[v]);
+	  for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
+	    {
+	      y = yoffset + cm->cfirst[v];
+	      if((j - sdr) >= jmin[y] && (j - sdr) <= jmax[y]) 
+		{ /* enforces j is valid for state y */
+		  jp_y = j - jmin[y];
+		  if((d - sd) >= hdmin[y][jp_y-sdr] && (d - sd) <= hdmax[y][jp_y-sdr])
+		    {
+		      dp_y = d - hdmin[y][(jp_y - sdr)];  /* d index for state y 
+							     in alpha w/mem eff bands */
+		      /* if we get here alpha[y][jp_y-sdr][dp_y-sd] is a valid alpha cell
+		       * corresponding to alpha[y][j-sdr][d-sd] in the platonic matrix.
+		       */
+		      pvec[yoffset] = cm->tsc[v][yoffset] + alpha[y][jp_y - sdr][dp_y - sd];
+		      seen_valid = TRUE;
+		    }
+		}		
+	    }
+	  if(!seen_valid) {
+	    cm_Fail("ParsetreeSampleFromFInside_b_jd_me() number of valid transitions is 0. You thought this was impossible.");
+	  }
+	  if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) 
+	    el_is_possible = TRUE; 
+	  else 
+	    el_is_possible = FALSE;
+	  if(el_is_possible) pvec[cm->cnum[v]] = cm->endsc[v] + alpha[cm->M][j][d]; /* EL is silent when we transition into it from non-EL */
+	  ntrans = cm->cnum[v] + el_is_possible;
+	  maxsc = esl_vec_FMax(pvec, ntrans);
+	  esl_vec_FIncrement(pvec, ntrans, (-1. * maxsc));
+	  /* get from log_2 to log_e, so we can use easel's log vec ops */
+	  esl_vec_FScale  (pvec, ntrans, log(2));
+	  esl_vec_FLogNorm(pvec, ntrans);
+	  yoffset = esl_rnd_FChoose(r, pvec, ntrans);
+	  if(yoffset < cm->cnum[v]) fsc += cm->tsc[v][yoffset]; 
+	  else {
+	    fsc += cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
+	    yoffset = USED_EL; /* we chose EL */
+	  }
+	}
+      else /* v == 0 && (cm->flags && CMH_LOCAL_BEGIN) ( local begins are on )*/
+	{
+	  seen_valid = FALSE;
+	  ntrans = cm->M; /* pretend all states are possible to begin into, but they're not as some will remain IMPOSSIBLE */
+	  ESL_ALLOC(rootvec, sizeof(float) * (ntrans));
+	  esl_vec_FSet(rootvec, ntrans, IMPOSSIBLE);
+
+	  /* Set all the legal states that we can local begin into to appropriate scores.
+	   * Only states y that have a non-zero cm->beginsc[y] AND have alpha[y][j][d]
+	   * within their bands are legal.
+	   */
+	  for (nd = 1; nd < cm->nodes; nd++) {
+	    if ((nd == 1) || /* we can transit into node 1 no matter what */
+		(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+		 cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd))
+	      {
+		y = cm->nodemap[nd];
+		if(j >= jmin[y] && j <= jmax[y]) 
+		  { /* enforces j is valid for state y */
+		    jp_y = j - jmin[y];
+		    if(d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y])
+		      {
+			dp_y = d - hdmin[y][jp_y];
+			rootvec[y] = cm->beginsc[y] + alpha[y][jp_y][dp_y]; /* ROOT_S is silent */
+			seen_valid = TRUE;
+		      }
+		  }
+	      }
+	  }
+	  if(!seen_valid) cm_Fail("ParsetreeSampleFromFInside_b_jd_me() number of valid transitions (from ROOT_S!) is 0. You thought this was impossible.");
+	  /* this block is shared with v > 0 block, but we repeat it here so we don't need another if statement */
+	  maxsc = esl_vec_FMax(rootvec, ntrans);
+	  esl_vec_FIncrement(rootvec, ntrans, (-1. * maxsc));
+	  /* get from log_2 to log_e, so we can use easel's log vec ops */
+	  esl_vec_FScale  (rootvec, ntrans, log(2));
+	  esl_vec_FLogNorm(rootvec, ntrans);
+	  b = esl_rnd_FChoose(r, rootvec, ntrans);
+	  /* end of similar block with v > 0 */
+	  fsc += cm->beginsc[b];
+	  yoffset = USED_LOCAL_BEGIN; 
+	  free(rootvec); /* we will not need this again */
+	}
+
+      /*printf("v : %d | r : %d | z : %d | 1 : %d | \n", v, r, z, 1);*/
+      /*printf("\tyoffset : %d\n", yoffset);*/
+      switch (cm->sttype[v]) {
+      case D_st:            break;
+      case MP_st: i++; j--; break;
+      case ML_st: i++;      break;
+      case MR_st:      j--; break;
+      case IL_st: i++;      break;
+      case IR_st:      j--; break;
+      case S_st:            break;
+      default:    cm_Fail("'Inconceivable!'\n'You keep using that word...'");
+      }
+      d = j-i+1;
+
+      if (yoffset == USED_EL) 
+	{	/* a local alignment end */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+	  v = cm->M;		/* now we're in EL. */
+	  jp_v = j;
+	  dp_v = d;
+	}
+      else if (yoffset == USED_LOCAL_BEGIN) 
+	{ /* local begin; can only happen once, from root */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
+	  v = b;
+	  jp_v = j - jmin[v];
+	  dp_v = d - hdmin[v][jp_v];
+	}
+      else 
+	{
+	  y = cm->cfirst[v] + yoffset;
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+	  v = y;
+	  jp_v = j - jmin[v];
+	  dp_v = d - hdmin[v][jp_v];
+	}
+    }
+  }
+  esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+
+  /* If the caller doesn't want the alpha matrix, free it
+   */
+  if (ret_alpha == NULL) free_vjd_matrix(alpha, cm->M, 1, L);
+  else *ret_alpha = alpha;
+
+  *ret_tr = tr; /* contract checked ret_tr was non-NULL */
+  return fsc;
+
+ ERROR:
+  cm_Fail("memory error.");
+  return 0.; /* NEVERREACHED */
+}
+
+
+
+/*
+ * Function: get_femission_score()
+ * Incept:   EPN, Thu Nov 15 16:48:56 2007
+ *          
+ * Purpose:  Given a CM, dsq, state index and coordinates return the float emission
+ *           score.
+ *           
+ * Args:     cm       - the model
+ *           dsq      - digitized sequence
+ *           v        - state index
+ *           i        - dsq index for first position of subseq for subtree at v
+ *           j        - dsq index for last position of subseq for subtree at v
+ *
+ * Return:   float emission score, 0 if state is non-emitter.
+ */
+float
+get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j)
+{
+  if     (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) return cm->oesc[v][dsq[i]];
+  else if(cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) return cm->oesc[v][dsq[j]];
+  else if(cm->sttype[v] == MP_st)                           return cm->oesc[v][dsq[i]*cm->abc->Kp+dsq[j]];
+  else return 0.;
 }

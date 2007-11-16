@@ -387,8 +387,8 @@ extern float XRefIInsideScan (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, flo
 extern float RefFInsideScan (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 			     search_results_t *results, float **ret_vsc);
 extern float rsearch_CYKScan (CM_t *cm, ESL_DSQ *dsq, int L, float cutoff, int D, search_results_t *results);
-extern float FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_FHB_MX *mx);
-extern float FastInsideScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_FHB_MX *mx);
+extern float FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx);
+extern float FastInsideScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx);
 extern float cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_vcalcs);
 
 /* from CP9_scan.c */
@@ -534,6 +534,7 @@ extern void  ICMPosterior(int L, CM_t *cm, int ***alpha, int ****ret_alpha, int 
 			 int ****ret_beta, int ***post, int ****ret_post);
 extern char  *CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr);
 extern char *ICMPostalCode(CM_t *cm, int L, int ***post, Parsetree_t *tr);
+extern char * CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr);
 extern char Fscore2postcode(float sc);
 extern char Iscore2postcode(int sc);
 extern float FScore2Prob(float sc, float null);
@@ -571,6 +572,10 @@ extern float ParsetreeSampleFromIInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *ds
 					int ****ret_alpha);
 extern float ParsetreeSampleFromIInside_b_jd_me(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int ***alpha, CP9Bands_t *cp9b, 
 						Parsetree_t **ret_tr, int ****ret_alpha);
+extern float ParsetreeSampleFromFInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, float ***alpha, Parsetree_t **ret_tr,
+					float ****ret_alpha);
+extern float ParsetreeSampleFromFInside_b_jd_me(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, float ***alpha, CP9Bands_t *cp9b, 
+						Parsetree_t **ret_tr, float ****ret_alpha);
      
 /* cm_postprob.c: memory management routines analogous to those in smallcyk.c for
  * handling scaled int log odds scores instead of floats. */
@@ -600,6 +605,8 @@ extern float OldActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, flo
 				     float cp9_cutoff, search_results_t *results, int do_filter, 
 				     int doing_cm_stats, int doing_cp9_stats, int *ret_flen,
 				     int do_align_hits);
+extern int ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
+				int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r);
 extern int OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
 				   int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r);
 extern int  revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
@@ -768,12 +775,13 @@ extern int   cp9_GetLocalityMode(CP9_t *cp9);
 
 /* from cm_fastalign.c */
 extern float fast_cyk_inside_align_hb (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow, 
-				       int allow_begin, int *ret_b, float *ret_bsc, CM_FHB_MX *mx);
+				       int allow_begin, int *ret_b, float *ret_bsc, CM_HB_MX *mx);
 extern float fast_cyk_insideT_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
-				       int r, int z, int i0, int j0, int allow_begin, CM_FHB_MX *mx);
-extern float FastCYKInsideAlignHB     (CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, CM_FHB_MX *mx);
-extern float FastInsideAlignHB        (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx);
-extern float FastOutsideAlignHB       (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_FHB_MX *mx, CM_FHB_MX *ins_mx, int do_check);
+				       int r, int z, int i0, int j0, int allow_begin, CM_HB_MX *mx);
+extern float FastCYKInsideAlignHB     (CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, CM_HB_MX *mx);
+extern float FastInsideAlignHB        (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx);
+extern float FastOutsideAlignHB       (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx, CM_HB_MX *ins_mx, int do_check);
+extern void  FastPosteriorHB          (CM_t *cm, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx);
 
 /* from hmmband.c */
 extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
@@ -806,7 +814,7 @@ extern void         ijBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, 
 extern void         ijdBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
 					   int *jmin, int *jmax, int **hdmin, int **hdmax, 
 					   int debug_level);
-extern void         cp9_ValidateBands(CM_t *cm, CP9Bands_t *cp9b);
+extern void         cp9_ValidateBands(CM_t *cm, CP9Bands_t *cp9b, int i0, int j0);
 /* old functions (get rid of them ?) */
 				     extern float CP9ForwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, 
 			     struct cp9_dpmatrix_s **ret_mx);
@@ -814,10 +822,10 @@ extern float CP9ViterbiAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp
 extern float CP9BackwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s **ret_mx);
 
 /* from cm_mx.c */
-extern CM_FHB_MX * cm_fhb_mx_Create(int M);
-extern int         cm_fhb_mx_GrowTo(CM_FHB_MX *mx, CP9Bands_t *cp9b);
-extern int         cm_fhb_mx_Dump(FILE *ofp, CM_FHB_MX *mx);
-extern void        cm_fhb_mx_Destroy(CM_FHB_MX *mx);
+extern CM_HB_MX * cm_hb_mx_Create(int M);
+extern int         cm_hb_mx_GrowTo(CM_HB_MX *mx, CP9Bands_t *cp9b, int L);
+extern int         cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx);
+extern void        cm_hb_mx_Destroy(CM_HB_MX *mx);
 
 /* from cm_cp9_hybridsearch.c */
 extern float cm_cp9_HybridScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, int **ret_sc, 

@@ -3,7 +3,7 @@
  * This is based heavily on HMMER 3's p7_gmx.c module.
  *
  * Table of contents:
- *   1. CM_FHB_MX data structure functions,
+ *   1. CM_HB_MX data structure functions,
  *      matrix of float scores for HMM banded CM alignment/search
  * EPN, Fri Oct 26 05:04:34 2007
  * SVN $Id$
@@ -18,32 +18,32 @@
 #include "structs.h"
 
 /*****************************************************************
- *   1. CM_FHB_MX data structure functions,
+ *   1. CM_HB_MX data structure functions,
  *      matrix of float scores for HMM banded CM alignment/search
  *****************************************************************/
 
-/* Function:  cm_fhb_mx_Create()
+/* Function:  cm_hb_mx_Create()
  * Incept:    EPN, Fri Oct 26 05:05:07 2007
  *
- * Purpose:   Allocate a reusable, resizeable <CM_FHB_MX> for a CM
+ * Purpose:   Allocate a reusable, resizeable <CM_HB_MX> for a CM
  *            given a CP9Bands_t object that defines the bands. 
  *            
  *            We've set this up so it should be easy to allocate
  *            aligned memory, though we're not doing this yet.
  *
- * Returns:   a pointer to the new <CM_FHB_MX>.
+ * Returns:   a pointer to the new <CM_HB_MX>.
  *
  * Throws:    <NULL> on allocation error.
  */
-CM_FHB_MX *
-cm_fhb_mx_Create(int M)
+CM_HB_MX *
+cm_hb_mx_Create(int M)
 {
   int     status;
-  CM_FHB_MX *mx = NULL;
+  CM_HB_MX *mx = NULL;
   int     v;
 
   /* level 1: the structure itself */
-  ESL_ALLOC(mx, sizeof(CM_FHB_MX));
+  ESL_ALLOC(mx, sizeof(CM_HB_MX));
   mx->dp     = NULL;
   mx->dp_mem = NULL;
   mx->cp9b   = NULL;
@@ -70,14 +70,15 @@ cm_fhb_mx_Create(int M)
   mx->M            = M;
   mx->ncells_alloc = M*(allocL)*(allocW);
   mx->ncells_valid = 0;
+  mx->L            = allocL; /* allocL = 1 */
   return mx;
 
  ERROR:
-  if (mx != NULL) cm_fhb_mx_Destroy(mx);
+  if (mx != NULL) cm_hb_mx_Destroy(mx);
   return NULL;
 }
 
-/* Function:  cm_fhb_mx_GrowTo()
+/* Function:  cm_hb_mx_GrowTo()
  * Incept:    EPN, Fri Oct 26 05:19:49 2007
  *
  * Purpose:   Assures that a DP matrix <mx> is allocated
@@ -90,6 +91,10 @@ cm_fhb_mx_Create(int M)
  *            <RAMLIMIT>; it will allocate what it's told to
  *            allocate. 
  *
+ * Args:      mx   - the matrix to grow
+ *            cp9b - the bands for the current target sequence
+ *            L    - the length of the current target sequence we're aligning
+ *
  * Returns:   <eslOK> on success, and <mx> may be reallocated upon
  *            return; any data that may have been in <mx> must be 
  *            assumed to be invalidated.
@@ -98,11 +103,11 @@ cm_fhb_mx_Create(int M)
  *            have been in <mx> must be assumed to be invalidated.
  */
 int
-cm_fhb_mx_GrowTo(CM_FHB_MX *mx, CP9Bands_t *cp9b)
+cm_hb_mx_GrowTo(CM_HB_MX *mx, CP9Bands_t *cp9b, int L)
 {
   int     status;
   void   *p;
-  int      v, jp;
+  int      v, jp, j;
   int     cur_size = 0;
   size_t  ncells;
   int     jbw;
@@ -110,8 +115,8 @@ cm_fhb_mx_GrowTo(CM_FHB_MX *mx, CP9Bands_t *cp9b)
   /* contract check, number of states (M) is something we don't change
    * so check this matrix has same number of 1st dim state ptrs that
    * cp9b has */
-  if(cp9b == NULL)     cm_Fail("cm_fhb_mx_Growto() entered with cp9b == NULL.\n");
-  if(cp9b->cm_M != mx->M) cm_Fail("cm_fhb_mx_Growto() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
+  if(cp9b == NULL)     cm_Fail("cm_hb_mx_Growto() entered with cp9b == NULL.\n");
+  if(cp9b->cm_M != mx->M) cm_Fail("cm_hb_mx_Growto() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
 
   ncells = 0;
   for(v = 0; v < mx->M; v++)
@@ -154,6 +159,19 @@ cm_fhb_mx_GrowTo(CM_FHB_MX *mx, CP9Bands_t *cp9b)
 
   mx->dp[mx->M] = NULL;
   mx->cp9b = cp9b; /* just a reference */
+  
+  /* finally, free the EL deck if it exists, this is the only reason
+   * we keep track of mx->L, so we can free this if nec, 
+   * the cm->M EL deck will be alloc'ed only if needed in FastOutsideAlignHB(): */
+  if (mx->dp[mx->M] != NULL) { 
+    for(j = 0; j <= mx->L; j++) { 
+      if(mx->dp[mx->M][j] != NULL) free(mx->dp[mx->M][j]);
+    }
+    free(mx->dp[mx->M]);
+    mx->dp[mx->M] = NULL;
+  }	 
+  /* now update mx->L */
+  mx->L    = L;    /* length of current seq we're valid for */
 
   return eslOK;
 
@@ -162,43 +180,51 @@ cm_fhb_mx_GrowTo(CM_FHB_MX *mx, CP9Bands_t *cp9b)
 }
 
 
-/* Function:  cm_fhb_mx_Destroy()
+/* Function:  cm_hb_mx_Destroy()
  * Synopsis:  Frees a DP matrix.
  * Incept:    EPN, Fri Oct 26 09:04:04 2007
  *
- * Purpose:   Frees a <CM_FHB_MX>.
+ * Purpose:   Frees a <CM_HB_MX>.
  *
  * Returns:   (void)
  */
 void
-cm_fhb_mx_Destroy(CM_FHB_MX *mx)
+cm_hb_mx_Destroy(CM_HB_MX *mx)
 {
   if (mx == NULL) return;
-  int v;
+  int v, j;
 
   if (mx->dp      != NULL) { 
     for (v = 0; v <= mx->M; v++) 
       if(mx->dp[v] != NULL) free(mx->dp[v]);  
-    free(mx->dp);
   }
+  /* free the mx->M deck if it exists */
+  if (mx->dp[mx->M] != NULL) { 
+    for(j = 0; j <= mx->L; j++) { 
+      if(mx->dp[mx->M][j] != NULL) free(mx->dp[mx->M][j]);
+    }
+    free(mx->dp[mx->M]);
+  }	 
+  free(mx->dp);
+
   if (mx->nrowsA  != NULL)  free(mx->nrowsA);
   if (mx->dp_mem  != NULL)  free(mx->dp_mem);
   free(mx);
   return;
 }
 
-/* Function:  cm_fhb_mx_Dump()
+/* Function:  cm_hb_mx_Dump()
  * Synopsis:  Dump a DP matrix to a stream, for diagnostics.
  * Incept:    EPN, Fri Oct 26 09:04:46 2007
  *
  * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
  */
 int
-cm_fhb_mx_Dump(FILE *ofp, CM_FHB_MX *mx)
+cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx)
 {
   int v, jp, j, dp, d;
 
-  fprintf(ofp, "M: %d\nncells_alloc: %d\nncells_valid: %d\n", mx->M, mx->ncells_alloc, mx->ncells_valid);
+  fprintf(ofp, "M: %d\nL: %d\ncells_alloc: %d\nncells_valid: %d\n", mx->M, mx->L, mx->ncells_alloc, mx->ncells_valid);
   
   /* DP matrix data */
   for (v = 0; v < mx->M; v++) {

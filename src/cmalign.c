@@ -93,6 +93,7 @@ static ESL_OPTIONS options[] = {
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 9},
 /* Other options */
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "arrest after start: for debugging MPI under gdb",   10 },  
+  { "--olddp",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "use older, slower (version 0.81) DP alignment functions",12 },  
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -814,11 +815,20 @@ static int
 process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 		 seqs_to_aln_t *seqs_to_aln)
 {
-  OldActuallyAlignTargets(cm, seqs_to_aln,
-			  NULL, NULL,   /* we're not aligning search hits */
-			  esl_opt_GetInteger(go, "--banddump"),
-			  esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL);
-  return eslOK;
+
+  if(cm->align_opts & CM_ALIGN_OLDDP) { 
+    OldActuallyAlignTargets(cm, seqs_to_aln,
+			    NULL, NULL,   /* we're not aligning search hits */
+			    esl_opt_GetInteger(go, "--banddump"),
+			    esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL);
+  }
+  else {
+    ActuallyAlignTargets(cm, seqs_to_aln,
+			 NULL, NULL,   /* we're not aligning search hits */
+			 esl_opt_GetInteger(go, "--banddump"),
+			 esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL);
+  }
+    return eslOK;
   
   /* ERROR:
   ESL_DPRINTF1(("worker %d: has caught an error in process_search_workunit\n", cfg->my_rank));
@@ -862,6 +872,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--checkpost"))   cm->align_opts  |= CM_ALIGN_CHECKINOUT;
   if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
   if(esl_opt_GetBoolean(go, "--fins"))        cm->align_opts  |= CM_ALIGN_FLUSHINSERTS;
+  if(esl_opt_GetBoolean(go, "--olddp"))       cm->align_opts  |= CM_ALIGN_OLDDP;
   if(esl_opt_GetString (go, "--enfseq") != NULL)
     {
       cm->config_opts |= CM_CONFIG_ENFORCE;

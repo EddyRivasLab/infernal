@@ -1063,9 +1063,10 @@ enum emitmode_e {
  * alignment with float scores in vjd (state idx, aln posn,
  * subseq len) coordinates. May be banded in j and/or d dimensions.
  */
-typedef struct cm_fhb_mx_s {
+typedef struct cm_hb_mx_s {
   int  M;		/* number of states (1st dim ptrs) in current mx */
-  
+  int  L;               /* length of sequence the matrix currently corresponds to */
+
   int    ncells_alloc;	/* current cell allocation limit */
   int    ncells_valid;	/* current number of valid cells */
   int   *nrowsA;        /* [0..v..M] current number allocated rows for deck v */
@@ -1078,7 +1079,7 @@ typedef struct cm_fhb_mx_s {
 			 * matrix, which defines j, d, bands for each
 			 * state, only a reference, so don't free
 			 * it when mx is freed. */
-} CM_FHB_MX;
+} CM_HB_MX;
 
 #define MB_CM 0
 #define MB_CP9 1
@@ -1310,7 +1311,7 @@ typedef struct cm_s {
 
   /* DP matrices and precalc'ed scores for DP algorithms */
   ScanInfo_t *si;       /* matrices, info for CYK/Inside scans with this CM */
-  CM_FHB_MX  *fhbmx;    /* HMM banded float matrix */
+  CM_HB_MX  *hbmx;     /* HMM banded float matrix */
 
   /* From 1.0-ification, based on HMMER3 */
   const  ESL_ALPHABET *abc;     /* ptr to alphabet info (cm->abc->K is alphabet size)*/

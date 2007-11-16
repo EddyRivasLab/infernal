@@ -4179,7 +4179,7 @@ cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_
  * Incept:   EPN, Mon Nov 12 17:45:57 2007
  *
  * Purpose:  An HMM banded version of a scanning CYK algorithm. Takes
- *           a CM_FHB_MX data structure which is indexed [v][j][d] with
+ *           a CM_HB_MX data structure which is indexed [v][j][d] with
  *           only cells within the bands allocated.
  *           (different than other (non-HB) scanning function's convention 
  *            of [j][v][d]).
@@ -4192,12 +4192,12 @@ cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_
  *           cutoff    - minimum score to report
  *           results   - search_results_t to add to; if NULL, don't add to it
  *           mx        - the dp matrix, only cells within bands in cm->cp9b will 
- *                       be valid. This is usually cm->fhbmx.
+ *                       be valid. This is usually cm->hbmx.
  *                       
  * Returns: Score of the best hit.
  */
 float 
-FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_FHB_MX *mx)
+FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx)
 {
 
   int      status;
@@ -4245,7 +4245,7 @@ FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_resul
 
   /* Allocations and initializations  */
   /* grow the matrix based on the current sequence and bands */
-  cm_fhb_mx_GrowTo(mx, cp9b);
+  cm_hb_mx_GrowTo(mx, cp9b, (j0-i0+1));
 
   /* determine W, the max size of hit that our bands will allow */
   W = 0;
@@ -4593,7 +4593,7 @@ FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_resul
  * Incept:   EPN, Wed Nov 14 18:17:28 2007
  *
  * Purpose:  An HMM banded version of a scanning Inside algorithm. Takes
- *           a CM_FHB_MX data structure which is indexed [v][j][d] with
+ *           a CM_HB_MX data structure which is indexed [v][j][d] with
  *           only cells within the bands allocated.
  *           (different than non-HB scanning function's convention of [j][v][d]).
  *
@@ -4605,12 +4605,12 @@ FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_resul
  *           cutoff    - minimum score to report
  *           results   - search_results_t to add to; if NULL, don't add to it
  *           mx        - the dp matrix, only cells within bands in cm->cp9b will 
- *                       be valid. This is usually cm->fhbmx.
+ *                       be valid. This is usually cm->hbmx.
  *                       
  * Returns: Score of the best hit.
  */
 float 
-FastFInsideScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_FHB_MX *mx)
+FastFInsideScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx)
 {
 
   int      status;
@@ -4657,7 +4657,7 @@ FastFInsideScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_r
 
   /* Allocations and initializations  */
   /* grow the matrix based on the current sequence and bands */
-  cm_fhb_mx_GrowTo(mx, cp9b);
+  cm_hb_mx_GrowTo(mx, cp9b, (j0-i0+1));
 
   /* determine W, the max size of hit that our bands will allow */
   W = 0;
@@ -5277,7 +5277,7 @@ main(int argc, char **argv)
 
 	  esl_stopwatch_Start(w);
 	  cp9_Seq2Bands(cm, dsq, 1, L, cm->cp9b, TRUE, 0);   /* debug level */
-	  sc = FastCYKScanHB(cm, dsq, 1, L, 0., NULL, cm->fhbmx);
+	  sc = FastCYKScanHB(cm, dsq, 1, L, 0., NULL, cm->hbmx);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScanHB(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5294,7 +5294,7 @@ main(int argc, char **argv)
 
 	  esl_stopwatch_Start(w);
 	  cp9_Seq2Bands(cm, dsq, 1, L, cm->cp9b, TRUE, 0);   /* debug level */
-	  sc = FastFInsideScanHB(cm, dsq, 1, L, 0., NULL, cm->fhbmx);
+	  sc = FastFInsideScanHB(cm, dsq, 1, L, 0., NULL, cm->hbmx);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastFInsideScanHB(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
