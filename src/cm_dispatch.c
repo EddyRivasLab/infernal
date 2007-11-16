@@ -654,7 +654,8 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
       if(do_hbanded) { /* HMM banded inside and outside */
 	/* need dp matrix from Inside to do Outside */
 	sc = FastInsideAlignHB(cm,  cur_dsq, 1, L, cm->hbmx);
-	sc = FastOutsideAlignHB(cm, cur_dsq, 1, L, out_mx, cm->hbmx, do_check);
+	sc = FastOutsideAlignHB(cm, cur_dsq, 1, L, out_mx, cm->hbmx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)));
+	/* Note: we can only check the posteriors in FastOutsideAlignHB() if local begin/ends are off */
       }
       else { /* non-banded inside/outside */
 	/* need alpha matrix from Inside to do Outside */
@@ -705,6 +706,7 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
     else if(do_hbanded) { /* non-small, HMM banded alignment, either CYK or optimally accurate */
       if(do_post) sc = FastAlignHB(cm, cur_dsq, L, 1, L, cm->hbmx, do_optacc, out_mx, cur_tr, &(postcode[i]));
       else        sc = FastAlignHB(cm, cur_dsq, L, 1, L, cm->hbmx, do_optacc, out_mx, cur_tr, NULL);
+
       /* if CM_ALIGN_HMMSAFE option is enabled, realign seqs w/HMM banded parses < 0 bits,
        * this should never happen in we're doing optimal accuracy or appending posteriors, due to option checking in cmalign, cmscore,
        * but we check here to be safe */

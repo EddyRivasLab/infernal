@@ -59,12 +59,12 @@ static ESL_OPTIONS options[] = {
   { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "flush inserts left/right in output alignment", 1 },
   /* Algorithm options */
   { "--cyk",     eslARG_NONE,"default",NULL, NULL,   ALGOPTS,      NULL,        NULL, "align with the CYK algorithm", 3 },
-  { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,"--nosmall,--hbanded",NULL, "align with the Holmes/Durbin optimal accuracy algorithm", 3 },
+  { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,"--nosmall,--hbanded","-l", "align with the Holmes/Durbin optimal accuracy algorithm", 3 },
   { "--hmmonly", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm",3 },
   { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Inside algorithm", 3 },
   { "--outside", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Outside algorithm", 3 },
   { "--post",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--nosmall",       NULL, "align with CYK and append posterior probabilities", 3 },
-  { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,  "--post",        "-l", "check that posteriors are correctly calc'ed", 3 },
+  { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,  "--post",        NULL, "check that posteriors are correctly calc'ed", 3 },
   { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "build sub CM for columns b/t HMM predicted start/end points", 3 },
   /* Memory options */
   { "--small",   eslARG_NONE,"default",  NULL, NULL,  MEMOPTS,      NULL, "--nosmall", "use divide and conquer (d&c) alignment algorithm", 4 },

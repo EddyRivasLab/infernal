@@ -538,6 +538,7 @@ extern char * CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr
 extern char Fscore2postcode(float sc);
 extern char Iscore2postcode(int sc);
 extern float FScore2Prob(float sc, float null);
+extern void  CMCheckPosteriorHB(CM_t *cm, int i0, int j0, CM_HB_MX *post);
 extern void  CMCheckPosterior(int L, CM_t *cm, float ***post);
 extern void ICMCheckPosterior(int L, CM_t *cm, int ***post);
 extern float FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,

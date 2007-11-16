@@ -12,7 +12,7 @@
  * FInside() and IInside(), the former uses float log odds scores, the
  * latter uses scaled int log odds scores. Floats are more precise but
  * about 10X slower than ints, the difference is b/c it's necessary to go
- * into and out of log space to add floats in LogSum2, while ILogsum
+ * into and out of log space to add floats in FLogsum, while ILogsum
  * uses a precomputed lookup table with ints.
  */
 
@@ -205,7 +205,7 @@ FInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) 
 		  {
 		    yoffset = y - cm->cfirst[v];
-		    alpha[v][j][d] = LogSum2(alpha[v][j][d], (alpha[y][j][d] 
+		    alpha[v][j][d] = FLogsum(alpha[v][j][d], (alpha[y][j][d] 
 							      + cm->tsc[v][yoffset]));
 		  }
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
@@ -223,7 +223,7 @@ FInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		  
 		alpha[v][j][d] = alpha[y][j][d] + alpha[z][j][0];
 		for (k = 1; k <= d; k++)
-		  alpha[v][j][d] = LogSum2(alpha[v][j][d], (alpha[y][j-k][d-k] 
+		  alpha[v][j][d] = FLogsum(alpha[v][j][d], (alpha[y][j-k][d-k] 
 							   + alpha[z][j][k]));
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
@@ -243,7 +243,7 @@ FInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) 
 		  {
 		    yoffset = y - cm->cfirst[v];
-		    alpha[v][j][d] = LogSum2(alpha[v][j][d], (alpha[y][j-1][d-2] 
+		    alpha[v][j][d] = FLogsum(alpha[v][j][d], (alpha[y][j-1][d-2] 
 							      + cm->tsc[v][yoffset]));
 		  }
 		i = j-d+1;
@@ -268,7 +268,7 @@ FInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) 
 		  {
 		    yoffset = y - cm->cfirst[v];
-		    alpha[v][j][d] = LogSum2(alpha[v][j][d], (alpha[y][j][d-1] 
+		    alpha[v][j][d] = FLogsum(alpha[v][j][d], (alpha[y][j][d-1] 
 							    + cm->tsc[v][yoffset]));
 		  }
 		i = j-d+1;
@@ -292,7 +292,7 @@ FInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) 
 		  {
 		    yoffset = y - cm->cfirst[v];
-		    alpha[v][j][d] = LogSum2(alpha[v][j][d], (alpha[y][j-1][d-1] 
+		    alpha[v][j][d] = FLogsum(alpha[v][j][d], (alpha[y][j-1][d-1] 
 							      + cm->tsc[v][yoffset]));
 		  }
 		if (dsq[j] < cm->abc->K)
@@ -308,13 +308,13 @@ FInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
       /* Keep track of contributions of local begins */
       if (allow_begin)
 	{
-	  bsc = LogSum2(bsc, (alpha[v][j0][L] + cm->beginsc[v]));
+	  bsc = FLogsum(bsc, (alpha[v][j0][L] + cm->beginsc[v]));
 	}
 
       /* If we're at the root state, record contribution of local begins */
       if (allow_begin && v == 0)
 	{
-	  alpha[0][j0][L] = LogSum2(alpha[0][j0][L], bsc);
+	  alpha[0][j0][L] = FLogsum(alpha[0][j0][L], bsc);
 	}	  
 
       /* Now, if we're trying to reuse memory in our normal mode (e.g. ! do_full):
@@ -749,9 +749,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   int      fail_flag = FALSE; /* set to TRUE if do_check and we see a problem */
 
   /* Contract check */
-  if(dsq == NULL)
-    cm_Fail("ERROR in FOutside(), dsq is NULL.\n");
-
+  if(dsq == NULL) cm_Fail("ERROR in FOutside(), dsq is NULL.\n");
   if (cm->flags & CMH_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
 
@@ -843,7 +841,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 
 		beta[v][j][d] = beta[y][j][d] + alpha[z][j][0]; /* init on k=0 */
 		for (k = 1; k <= L-j; k++)
-		  beta[v][j][d] = LogSum2(beta[v][j][d], (beta[y][j+k][d+k] + alpha[z][j+k][k]));
+		  beta[v][j][d] = FLogsum(beta[v][j][d], (beta[y][j+k][d+k] + alpha[z][j+k][k]));
 	      }
 	    else if (cm->stid[v] == BEGR_S) 
 	      {
@@ -852,7 +850,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 
 		beta[v][j][d] = beta[y][j][d] + alpha[z][j-d][0];	/* init on k=0 */
 		for (k = 1; k <= j-d; k++) 
-		  beta[v][j][d] = LogSum2(beta[v][j][d], (beta[y][j][d+k] + alpha[z][j-d][k]));
+		  beta[v][j][d] = FLogsum(beta[v][j][d], (beta[y][j][d+k] + alpha[z][j-d][k]));
 	      }
 	    else
 	      {
@@ -867,7 +865,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		      escore = cm->esc[y][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 		    else
 		      escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
-		    beta[v][j][d] = LogSum2(beta[v][j][d], (beta[y][j+1][d+2] + cm->tsc[y][voffset]
+		    beta[v][j][d] = FLogsum(beta[v][j][d], (beta[y][j+1][d+2] + cm->tsc[y][voffset]
 							   + escore));
 		    break;
 		    
@@ -879,7 +877,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		      escore = cm->esc[y][dsq[i-1]];
 		    else
 		      escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
-		    beta[v][j][d] = LogSum2(beta[v][j][d], (beta[y][j][d+1] + cm->tsc[y][voffset] 
+		    beta[v][j][d] = FLogsum(beta[v][j][d], (beta[y][j][d+1] + cm->tsc[y][voffset] 
 							   + escore));
 		    break;
 		    
@@ -891,14 +889,14 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		      escore = cm->esc[y][dsq[j+1]];
 		    else
 		      escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
-		    beta[v][j][d] = LogSum2(beta[v][j][d], (beta[y][j+1][d+1] + cm->tsc[y][voffset] 
+		    beta[v][j][d] = FLogsum(beta[v][j][d], (beta[y][j+1][d+1] + cm->tsc[y][voffset] 
 							   + escore));
 		    break;
 		    
 		  case S_st:
 		  case E_st:
 		  case D_st:
-		    beta[v][j][d] = LogSum2(beta[v][j][d], (beta[y][j][d] + cm->tsc[y][voffset])); 
+		    beta[v][j][d] = FLogsum(beta[v][j][d], (beta[y][j][d] + cm->tsc[y][voffset])); 
 		      break;
 		    
 		  default: cm_Fail("bogus child state %d\n", cm->sttype[y]);
@@ -925,7 +923,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		  escore = cm->esc[v][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 		else
 		  escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
-		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j+1][d+2] + cm->endsc[v] 
+		beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][j+1][d+2] + cm->endsc[v] 
 								+ escore));
 		break;
 	      case ML_st:
@@ -935,7 +933,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		  escore = cm->esc[v][dsq[i-1]];
 		else
 		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[v]);
-		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j][d+1] + cm->endsc[v] 
+		beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][j][d+1] + cm->endsc[v] 
 								+ escore));
 		break;
 	      case MR_st:
@@ -945,13 +943,13 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		  escore = cm->esc[v][dsq[j+1]];
 		else
 		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[v]);
-		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j+1][d+1] + cm->endsc[v]
+		beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][j+1][d+1] + cm->endsc[v]
 								+ escore));
 		break;
 	      case S_st:
 	      case D_st:
 	      case E_st:
-		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][j][d] + cm->endsc[v]));
+		beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][j][d] + cm->endsc[v]));
 		break;
 
 	      case B_st:  
@@ -993,7 +991,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
     for (jp = L; jp > 0; jp--) { /* careful w/ boundary here */
       j = i0-1+jp;
       for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
-	beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[cm->M][j][d+1]
+	beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1]
 							+ cm->el_selfsc));
     }
   }
@@ -1031,7 +1029,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		  j = i0-1+jp;
 		  for (d = 0; d <= jp; d++) 
 		    {
-		      sc = LogSum2(sc, (alpha[v][j][d] + beta[v][j][d]));
+		      sc = FLogsum(sc, (alpha[v][j][d] + beta[v][j][d]));
 		    }
 		}
 	      }
@@ -1073,7 +1071,7 @@ FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 	{ 
 	  j = i0-1+jp;
 	  /* printf("\talpha[%3d][%3d][%3d]: %5.2f | beta[%3d][%3d][%3d]: %5.2f\n", (cm->M-1), (j), 0, alpha[(cm->M-1)][j][0], (cm->M-1), (j), 0, beta[(cm->M-1)][j][0]);*/
-	  return_sc = LogSum2(return_sc, (beta[cm->M-1][j][0]));
+	  return_sc = FLogsum(return_sc, (beta[cm->M-1][j][0]));
 	}
     }
   else /* return_sc = P(S|M) / P(S|R) from Inside() */
@@ -1167,7 +1165,6 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   /* Contract check */
   if(dsq == NULL)
     cm_Fail("ERROR in IOutside(), dsq is NULL.\n");
-
   if (cm->flags & CMH_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
 
@@ -1569,8 +1566,8 @@ float
 FScore2Prob(float sc, float null)
 {
   /*printf("in FScore2Prob: %10.2f sreEXP2: %10.2f\n", sc, (sreEXP2(sc)));*/
-  if (sc == IMPOSSIBLE) return 0.;
-  else                  return (null * sreEXP2(sc));
+  if (!(NOT_IMPOSSIBLE(sc))) return 0.;
+  else                       return (null * sreEXP2(sc));
 }
 
 
@@ -1867,6 +1864,93 @@ ICMPostalCode(CM_t *cm, int L, int ***post, Parsetree_t *tr)
   return NULL; /* never reached */
 }
 
+
+/*
+ * Function: CMCheckPosteriorHB()
+ * Date:     EPN, Fri Nov 16 14:35:43 2007      
+ *
+ * Purpose:  Given a HMM banded posterior probability cube, 
+ *           check to make sure that for each residue k of the 
+ *           sequence: \sum_v p(v | k emitted from v) = 1.0
+ *           To check this, we have to allow possibility that 
+ *           the res at posn k was emitted from a left 
+ *           emitter or a right emitter.
+ *           
+ * Args:     L        - length of sequence
+ *           cm       - the model
+ *           post     - pre-allocated dynamic programming cube
+ *           
+ * Return:   void
+ */
+void
+CMCheckPosteriorHB(CM_t *cm, int i0, int j0, CM_HB_MX *post)
+{
+  int   v, j, d, k;
+  int   jp_v, dp_v, kp_v;
+  float sc;
+  /* Contract check */
+  if (post == NULL)     cm_Fail("CMCheckPosteriorHB(), post is NULL.\n");
+  if (cm->cp9b == NULL) cm_Fail("CMCheckPosteriorHB(), cm->cp9b is NULL.\n");
+  /* ptrs to cp9b info, for convenience */
+  CP9Bands_t *cp9b = cm->cp9b;
+  int     *jmin  = cp9b->jmin;  
+  int     *jmax  = cp9b->jmax;
+  int    **hdmin = cp9b->hdmin;
+  int    **hdmax = cp9b->hdmax;
+
+
+  for (k = i0; k <= j0; k++) {
+    sc = IMPOSSIBLE;
+    for (v = (cm->M - 1); v >= 0; v--) {
+      if((cm->sttype[v] == MP_st) ||
+	 (cm->sttype[v] == ML_st) ||
+	 (cm->sttype[v] == IL_st)) {
+	for (j = k; j <= j0; j++) {
+	  if(j >= jmin[v] && j <= jmax[v]) { 
+	    /*printf("adding L v: %d | i: %d | j: %d | d: %d\n", v, (j-d+1), j, d);*/
+	    jp_v = j - jmin[v]; 
+	    d    = j-k+1;
+	    if(d >= hdmin[v][jp_v] && d <= hdmax[v][jp_v]) {
+	      dp_v = d - hdmin[v][jp_v];
+	      sc = FLogsum(sc, (post->dp[v][jp_v][dp_v]));
+	    }
+	  }
+	}
+      }
+      if(k >= jmin[v] && k <= jmax[v]) {
+	kp_v = k - jmin[v];
+	if((cm->sttype[v] == MP_st) ||
+	   (cm->sttype[v] == MR_st) ||
+	   (cm->sttype[v] == IR_st)) {
+	  for (d = 1; d <= k; d++) { 
+	    if(d >= hdmin[v][kp_v] && d <= hdmax[v][kp_v]) {
+	      dp_v = d - hdmin[v][kp_v];
+	      /*printf("adding R v: %d | i: %d | j: %d | d: %d\n", v, (k-d+1), k, d);*/
+	      sc = FLogsum(sc, (post->dp[v][kp_v][dp_v]));
+	    }
+	  }
+	}
+      }
+    }
+    /* Finally factor in possibility of a local end, i.e. that the EL state
+     * may have "emitted" this residue.
+     */
+      if (cm->flags & CMH_LOCAL_END) {
+	for (j = k; j <= j0; j++) {
+	  d = j-k+1;
+	  /*printf("EL adding L v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", cm->M, (j-d+1), j, d, post[cm->M][j][d]);*/
+	  sc = FLogsum(sc, (post->dp[cm->M][j][d]));
+	}
+      }
+
+      if(((sc - 0.) > 0.01) || ((sc - 0.) < -0.01))
+	cm_Fail("residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
+      /*printf("k: %d | total: %10.2f\n", k, (sreEXP2(sc)));*/
+  }  
+  ESL_DPRINTF1(("CMCheckPosteriorHB() passed, all residues have summed probability of emission of 1.0.\n"));
+  return;
+}
+
 /***************************************************************
  * Function: CMCheckPosterior()
  *           
@@ -1904,7 +1988,7 @@ CMCheckPosterior(int L, CM_t *cm, float ***post)
 		{
 		  /*printf("adding L v: %d | i: %d | j: %d | d: %d\n", v, (j-d+1), j, d);*/
 		  d = j-k+1;
-		  sc = LogSum2(sc, (post[v][j][d]));
+		  sc = FLogsum(sc, (post[v][j][d]));
 		}
 	    }
 	  if((cm->sttype[v] == MP_st) ||
@@ -1914,7 +1998,7 @@ CMCheckPosterior(int L, CM_t *cm, float ***post)
 	      for (d = 1; d <= k; d++)
 		{
 		  /*printf("adding R v: %d | i: %d | j: %d | d: %d\n", v, (k-d+1), k, d);*/
-		  sc = LogSum2(sc, (post[v][k][d]));
+		  sc = FLogsum(sc, (post[v][k][d]));
 		}
 	    }
 	}
@@ -1926,7 +2010,7 @@ CMCheckPosterior(int L, CM_t *cm, float ***post)
 	  {
 	    d = j-k+1;
 	    /*printf("EL adding L v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", cm->M, (j-d+1), j, d, post[cm->M][j][d]);*/
-	    sc = LogSum2(sc, (post[cm->M][j][d]));
+	    sc = FLogsum(sc, (post[cm->M][j][d]));
 	  }
       }
       
@@ -1936,6 +2020,7 @@ CMCheckPosterior(int L, CM_t *cm, float ***post)
 	}
       /*printf("k: %d | total: %10.2f\n", k, (sreEXP2(sc)));*/
     }  
+  ESL_DPRINTF1(("CMCheckPosterior() passed, all residues have summed probability of emission of 1.0.\n"));
 }
 
 /* ICMCheckPosterior() is the same as CMCheckPosterior(), but uses scaled int log odds scores
@@ -1994,6 +2079,7 @@ ICMCheckPosterior(int L, CM_t *cm, int ***post)
 	}
       /*printf("k: %d | total: %10.2f\n", k, (sreEXP2(sc)));*/
     }  
+  ESL_DPRINTF1(("ICMCheckPosterior() passed, all residues have summed probability of emission of 1.0.\n"));
 }
 
 
@@ -2202,7 +2288,7 @@ FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			      /* if we get here alpha[y][jp_y][dp_y] is a valid alpha cell
 			       * corresponding to alpha[y][j][d] in the platonic matrix.
 			       */
-			      alpha[v][jp_v][dp_v] = LogSum2(alpha[v][jp_v][dp_v], (alpha[y][jp_y][dp_y] 
+			      alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], (alpha[y][jp_y][dp_y] 
 										    + cm->tsc[v][yoffset]));
 			    }
 			}
@@ -2297,7 +2383,7 @@ FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			  kp_z = k-hdmin[z][jp_z];
 			  dp_y = d-hdmin[y][jp_y-k];
 
-			  alpha[v][jp_v][dp_v] = LogSum2(alpha[v][jp_v][dp_v], (alpha[y][jp_y-k][dp_y-k] 
+			  alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], (alpha[y][jp_y-k][dp_y-k] 
 										+ alpha[z][jp_z][kp_z]));
 			}
 		    }
@@ -2329,7 +2415,7 @@ FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			    /* if we get here alpha[y][jp_y-1][dp_y-2] is a valid alpha cell
 			     * corresponding to alpha[y][j-1][d-2] in the platonic matrix.
 			     */
-			    alpha[v][jp_v][dp_v] = LogSum2(alpha[v][jp_v][dp_v], (alpha[y][jp_y-1][dp_y-2] 
+			    alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], (alpha[y][jp_y-1][dp_y-2] 
 										  + cm->tsc[v][yoffset]));
 			  }
 		      }
@@ -2367,7 +2453,7 @@ FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			    /* if we get here alpha[y][jp_y][dp_y-1] is a valid alpha cell
 			     * corresponding to alpha[y][j][d-1] in the platonic matrix.
 			     */
-			    alpha[v][jp_v][dp_v] = LogSum2(alpha[v][jp_v][dp_v], (alpha[y][jp_y][dp_y-1] 
+			    alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], (alpha[y][jp_y][dp_y-1] 
 										  + cm->tsc[v][yoffset]));
 			  }
 		      }
@@ -2405,7 +2491,7 @@ FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			    /* if we get here alpha[y][jp_y-1][dp_y-1] is a valid alpha cell
 			     * corresponding to alpha[y][j-1][d-1] in the platonic matrix.
 			     */
-			    alpha[v][jp_v][dp_v] = LogSum2(alpha[v][jp_v][dp_v], (alpha[y][jp_y-1][dp_y-1] 
+			    alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], (alpha[y][jp_y-1][dp_y-1] 
 										  + cm->tsc[v][yoffset]));
 			  }
 		      }
@@ -2441,7 +2527,7 @@ FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 	       */
 	      if (allow_begin)
 		{
-		  bsc = LogSum2(bsc, (alpha[v][jp_v][Lp] + cm->beginsc[v]));
+		  bsc = FLogsum(bsc, (alpha[v][jp_v][Lp] + cm->beginsc[v]));
 		}
 	    }
 	}
@@ -2455,7 +2541,7 @@ FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 	      if(L >= hdmin[v][jp_v] && L <= hdmax[v][jp_v])
 		{
 		  if (allow_begin && v == 0)
-		    alpha[0][jp_v][Lp] = LogSum2(alpha[0][jp_v][Lp], bsc);
+		    alpha[0][jp_v][Lp] = FLogsum(alpha[0][jp_v][Lp], bsc);
 		}
 	    }
 	}	  
@@ -3120,7 +3206,6 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
     cm_Fail("ERROR in FOutside_b_jd_me(), dsq is NULL.\n");
   if(i0 != 1) 
     cm_Fail("ERROR: FOutside_b_jd requires that i0 be 1. This function is not set up for subsequence alignment\n");
-
   if (cm->flags & CMH_LOCAL_END) { do_check = FALSE; } 
   /* Code for checking doesn't apply in local mode. See below. */
 
@@ -3290,7 +3375,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		       */
 		      kp_z = k-hdmin[z][jp_z+k];
 		      dp_y = d-hdmin[y][jp_y+k];
-		      beta[v][jp_v][dp_v] = LogSum2(beta[v][jp_v][dp_v], (beta[y][jp_y+k][dp_y+k] 
+		      beta[v][jp_v][dp_v] = FLogsum(beta[v][jp_v][dp_v], (beta[y][jp_y+k][dp_y+k] 
 									  + alpha[z][jp_z+k][kp_z]));
 		    }
 		}
@@ -3342,7 +3427,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		       */
 		      kp_z = k-hdmin[z][jp_z-d];
 		      dp_y = d-hdmin[y][jp_y];
-		      beta[v][jp_v][dp_v] = LogSum2(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y+k] 
+		      beta[v][jp_v][dp_v] = FLogsum(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y+k] 
 									  + alpha[z][jp_z-d][kp_z]));
 		    }
 		}
@@ -3367,7 +3452,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			  escore = cm->esc[y][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 			else
 			  escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
-			beta[v][jp_v][dp_v] = LogSum2(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+2] 
+			beta[v][jp_v][dp_v] = FLogsum(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+2] 
 									    + cm->tsc[y][voffset] + escore));
 			break;
 
@@ -3385,7 +3470,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			  escore = cm->esc[y][dsq[i-1]];
 			else
 			  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
-			beta[v][jp_v][dp_v] = LogSum2(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y+1] 
+			beta[v][jp_v][dp_v] = FLogsum(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y+1] 
 									    + cm->tsc[y][voffset] + escore));
 			break;
 		    
@@ -3404,7 +3489,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			else
 			  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
 			/*printf("j: %d | jmin[y]: %d | jmax[y]: %d | jp_v: %d | dp_v: %d | jp_y: %d | dp_y: %d\n", j, jmin[y], jmax[y], jp_v, dp_v, jp_y, dp_y);*/
-			beta[v][jp_v][dp_v] = LogSum2(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+1] 
+			beta[v][jp_v][dp_v] = FLogsum(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+1] 
 									    + cm->tsc[y][voffset] + escore));
 			break;
 
@@ -3418,7 +3503,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			 * corresponding to alpha[y][j][d] in the platonic matrix.
 			 */
 			dp_y = d - hdmin[y][jp_y];  /* d index for state y */
-			beta[v][jp_v][dp_v] = LogSum2(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y] + cm->tsc[y][voffset])); 
+			beta[v][jp_v][dp_v] = FLogsum(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y] + cm->tsc[y][voffset])); 
 			break;
 
 		      default: cm_Fail("bogus child state %d\n", cm->sttype[y]);
@@ -3447,7 +3532,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		    escore = cm->esc[v][(dsq[i-1]*cm->abc->K+dsq[j+1])];
 		  else
 		    escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
-		  beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][jp_v+1][dp_v+2] + cm->endsc[v] 
+		  beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][jp_v+1][dp_v+2] + cm->endsc[v] 
 								  + escore));
 		break;
 	      case ML_st:
@@ -3458,7 +3543,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		  escore = cm->esc[v][dsq[i-1]];
 		else
 		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[v]);
-		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][jp_v][dp_v+1] + cm->endsc[v] 
+		beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][jp_v][dp_v+1] + cm->endsc[v] 
 								+ escore));
 		break;
 	      case MR_st:
@@ -3469,13 +3554,13 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		  escore = cm->esc[v][dsq[j+1]];
 		else
 		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[v]);
-		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][jp_v+1][dp_v+1] + cm->endsc[v] 
+		beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][jp_v+1][dp_v+1] + cm->endsc[v] 
 								+ escore));
 		break;
 	      case S_st:
 	      case D_st:
 	      case E_st:
-		beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[v][jp_v][dp_v] + cm->endsc[v] 
+		beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][jp_v][dp_v] + cm->endsc[v] 
 								+ escore));
 		break;
 	      case B_st:  
@@ -3516,7 +3601,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
     for (jp = L; jp > 0; jp--) { /* careful w/ boundary here */
       j = i0-1+jp;
       for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
-	beta[cm->M][j][d] = LogSum2(beta[cm->M][j][d], (beta[cm->M][j][d+1]
+	beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1]
 							+ cm->el_selfsc));
     }
   }
@@ -3558,7 +3643,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		      dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
 		      /*printf("node %d | adding alpha beta: v: %d | jp_v: %d | dp_v: %d| j: %d | d: %d\n", n, v, jp_v, dp_v, j, d);
 			printf("\talpha: %f | beta: %f\n", alpha[v][jp_v][dp_v], beta[v][jp_v][dp_v]);*/
-		      sc = LogSum2(sc, (alpha[v][jp_v][dp_v] + beta[v][jp_v][dp_v]));
+		      sc = FLogsum(sc, (alpha[v][jp_v][dp_v] + beta[v][jp_v][dp_v]));
 		    }
 		}
 	      }
@@ -3601,7 +3686,7 @@ FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 	  jp_v = j - jmin[v];
 	  assert(hdmin[v][jp_v] == 0);
 	  /* printf("\talpha[%3d][%3d][%3d]: %5.2f | beta[%3d][%3d][%3d]: %5.2f\n", (cm->M-1), (j), 0, alpha[(cm->M-1)][j][0], (cm->M-1), (j), 0, beta[(cm->M-1)][j][0]);*/
-	  return_sc = LogSum2(return_sc, (beta[v][jp_v][0]));
+	  return_sc = FLogsum(return_sc, (beta[v][jp_v][0]));
 	}
     }
   else /* return_sc = P(S|M) / P(S|R) from Inside() */
@@ -5619,7 +5704,6 @@ ParsetreeSampleFromFInside_b_jd_me(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, in
   int          el_is_possible;     /* TRUE if we can jump to EL from current state (and we're in local mode) FALSE if not */
   int          ntrans;             /* number of transitions for current state */
   int          fsc = 0.;           /* score of the parsetree we're sampling */
-  int        **end;                /* used for freeing alpha b/c we re-use the end deck. */
   int          seen_valid;         /* for checking we have at least one valid path to take  */
   int          sd;                 /* state delta for current state, residues emitted left + residues emitted right */
   int          sdr;                /* state right delta for current state, residues emitted right */
