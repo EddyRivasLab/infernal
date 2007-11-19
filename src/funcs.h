@@ -528,7 +528,7 @@ extern float IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 		      int ***beta, int ****ret_beta, 
 		      struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
 		      int allow_begin, int ***alpha, int ****ret_alpha, int do_check);
-extern void   CMPosterior(int L, CM_t *cm, float ***alpha, float ****ret_alpha, float ***beta, 
+extern void  FCMPosterior(int L, CM_t *cm, float ***alpha, float ****ret_alpha, float ***beta, 
 			  float ****ret_beta, float ***post, float ****ret_post);
 extern void  ICMPosterior(int L, CM_t *cm, int ***alpha, int ****ret_alpha, int ***beta, 
 			 int ****ret_beta, int ***post, int ****ret_post);
@@ -573,10 +573,6 @@ extern float ParsetreeSampleFromIInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *ds
 					int ****ret_alpha);
 extern float ParsetreeSampleFromIInside_b_jd_me(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int ***alpha, CP9Bands_t *cp9b, 
 						Parsetree_t **ret_tr, int ****ret_alpha);
-extern float ParsetreeSampleFromFInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, float ***alpha, Parsetree_t **ret_tr,
-					float ****ret_alpha);
-extern float ParsetreeSampleFromFInside_b_jd_me(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, float ***alpha, CP9Bands_t *cp9b, 
-						Parsetree_t **ret_tr, float ****ret_alpha);
      
 /* cm_postprob.c: memory management routines analogous to those in smallcyk.c for
  * handling scaled int log odds scores instead of floats. */
@@ -777,14 +773,27 @@ extern int   cp9_GetLocalityMode(CP9_t *cp9);
 /* from cm_fastalign.c */
 extern float fast_cyk_align_hb (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow, 
 				int allow_begin, int *ret_b, float *ret_bsc, CM_HB_MX *mx);
-extern float optimal_accuracy_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow,  
-				       int allow_begin, int *ret_b, float *ret_bsc, CM_HB_MX *mx, CM_HB_MX *post_mx);
+extern float fast_cyk_align    (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow,  
+			        int allow_begin, int *ret_b, float *ret_bsc, float ***mx);
+extern float optimal_accuracy_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, void ****ret_shadow,  
+				       int *ret_b, float *ret_bsc, CM_HB_MX *mx, CM_HB_MX *post_mx);
+extern float optimal_accuracy_align   (CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, void ****ret_shadow,  
+				       int *ret_b, float *ret_bsc, float ***mx, float ***post_mx);
 extern float fast_alignT_hb    (CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, 
 			        int allow_begin, CM_HB_MX *mx, int do_optacc, CM_HB_MX *post_mx);
+extern float fast_alignT       (CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, 
+			        int allow_begin, float ***mx, int do_optacc, float ***post_mx);
 extern float FastAlignHB        (CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_MX *mx, int do_optacc, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode);
+extern float FastAlign          (CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, float ***mx, int do_optacc, float ***post_mx, Parsetree_t **ret_tr, char **ret_pcode);
 extern float FastInsideAlignHB  (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx);
+extern float FastInsideAlign    (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float ***mx);
 extern float FastOutsideAlignHB (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx, CM_HB_MX *ins_mx, int do_check);
-extern void  FastPosteriorHB    (CM_t *cm, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx);
+extern float FastOutsideAlign   (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float ***mx, float ***ins_mx, int do_check);
+extern void  CMPosteriorHB      (CM_t *cm, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx);
+extern void  CMPosterior        (CM_t *cm, int i0, int j0, float ***ins_mx, float ***out_mx, float ***post_mx);
+extern float SampleFromInsideHB(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, CM_HB_MX *mx, Parsetree_t **ret_tr);
+extern float SampleFromInside  (ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, float ***mx,  Parsetree_t **ret_tr);
+
 
 /* from hmmband.c */
 extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);

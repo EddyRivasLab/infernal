@@ -1,15 +1,21 @@
 /* cm_fastalign.c
- * Optimized DP functions for HMM banded CM alignment.
+ * Optimized DP functions for HMM banded and non-banded, non-D&C CM alignment.
  * 
- * Functions, and their non-optimized analogs: 
+ * HMM banded functions, and their non-optimized analogs: 
  * optimized version                slow, old, reference version      ~speedup
  * ----------------------------     --------------------------------- --------
  * fast_cyk_align_hb()          --> hbandcyk.c:inside_b_jd_me()           1.5 
- * fast_cyk_insideT_align_hb()  --> hbandcyk.c:insideT_b_jd_me()          N/A
- * FastCYKInsideAlignHB()       --> hbandcyk.c:CYKInside_b_jd()           N/A
+ * optimal_accuracy_align_hb()  --> NONE
+ * fast_alignT_hb()             --> hbandcyk.c:insideT_b_jd_me()          N/A
+ * FastAlignHB()                --> hbandcyk.c:CYKInside_b_jd()           N/A
  * FastInsideAlignHB()          --> cm_postprob.c:FInside_b_jd_me()       1.4
  * FastOutsideAlignHB()         --> cm_postprob.c:FOutside_b_jd_me()      1.4
  *
+ * FastAlignHB() and fast_alignT_hb() have extra functionality missing
+ * from their 0.81 analogs. Specifically they can do either CYK or
+ * Holmes/Durbin optimally accurate alignment, the latter of which 
+ * was not possible in 0.81.
+ * 
  * Speedups are approximate, and based on tests with 2 models, an SSU
  * model and a RNaseP model. Tests were performed with
  * benchmark-fastalign, a standalone executable included at the end of
@@ -22,6 +28,28 @@
  * derived from a HMM Forward/Backward alignment of the
  * target sequence. The bands are stored in a CP9Bands_t object,
  * a pointer to which must exits in the cm (CM_t object).
+ * 
+ * Non-banded, non-D&C alignment functions were rewritten for completeness.
+ * These are consistent with their HB counterparts, but require non-banded
+ * float matrices. 
+ *
+ * new version                      old v0.81 version      
+ * ----------------------------     ---------------------------------
+ * fast_cyk_align()             --> smallcyk.c:inside()    
+ * optimal_accuracy_align()     --> NONE
+ * fast_alignT()                --> smallcyk.c:insideT()
+ * FastAlign()                  --> smallcyk.c:CYKInside()
+ * FastInsideAlign()            --> cm_postprob.c:FInside()
+ * FastOutsideAlign()           --> cm_postprob.c:FOutside()
+ *  
+ * Note: the smallcyk.c v0.81 functions are still used for D&C 
+ * (divide and conquer) small-memory alignment. 
+ *
+ * Four additional functions exist in this file:
+ * CMPosteriorHB()      : combine Inside/Outside matrices --> posterior matrix 
+ * CMPosterior()        : non-banded version of CMPosteriorHB()
+ * SampleFromInsideHB() : sample a parsetree from HMM banded inside matrix
+ * SampleFromInside()   : sample a parsetree from a full inside matrix
  * 
  * EPN, Wed Oct 10 07:20:48 2007
  * 
@@ -36,6 +64,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <math.h>
 
 #include "easel.h"
 #include "esl_sqio.h"
@@ -48,6 +77,8 @@
 
 #define TSC(s,k) (tsc[(v) * MAXCONNECT + (s)])
 #define AMX(j,v,d) (alphap[(j * cm->M * (W+1)) + ((v) * (W+1) + d)])
+
+static float get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
 
 /* 
  * Function: fast_cyk_align_hb()
@@ -77,7 +108,7 @@
  *           (the optimal 0->b choice) and bsc (the score if 0->b is used).
  *           If a local begin is part of the optimal parse tree, the optimal
  *           alignment score returned by inside() will be bsc and yshad[0][L][L] 
- *           will be USE_LOCAL_BEGIN, telling insideT() to check b and
+ *           will be USE_LOCAL_BEGIN, telling fast_alignT() to check b and
  *           start with a local 0->b entry transition. When inside()
  *           is called on smaller subproblems (v != 0 || i0 > 1 || j0
  *           < L), we're using inside() as an engine in divide &
@@ -188,7 +219,7 @@ fast_cyk_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, in
   esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
 
   /* initialize all cells of the matrix to IMPOSSIBLE */
-  //esl_vec_FSet(alpha[0][0], mx->ncells_valid, IMPOSSIBLE);
+  /* esl_vec_FSet(alpha[0][0], mx->ncells_valid, IMPOSSIBLE); */
 
   /* Main recursion */
   for (v = vend; v >= vroot; v--) {
@@ -327,7 +358,7 @@ fast_cyk_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, in
     }
     else if(cm->sttype[v] != B_st) { /* entered if state v is (! IL && ! IR && ! B) */
       /* ML, MP, MR, D, S, E states cannot self transit, this means that all cells
-       * in beta[v] are independent of each other, only depending on beta[y] for previously calc'ed y.
+       * in alpha[v] are independent of each other, only depending on alpha[y] for previously calc'ed y.
        * We can do the for loops in any nesting order, this implementation does what I think is most efficient:
        * for y { for j { for d { } } } 
        */
@@ -487,7 +518,7 @@ fast_cyk_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, in
       }
       /* Check for whether we need to store an optimal local begin score
        * as the optimal overall score, and if we need to put a flag
-       * in the shadow matrix telling insideT() to use the b we return.
+       * in the shadow matrix telling fast_alignT() to use the b we return.
        */
       if (v == 0) { 
 	if(j0 >= jmin[0] && j0 <= jmax[0]) {
@@ -496,7 +527,7 @@ fast_cyk_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, in
 	  if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v]) { 
 	    if (bsc > alpha[0][jp_v][Wp]) {
 	      alpha[0][jp_v][Wp] = bsc;
-	      if (ret_shadow != NULL) yshad[jp_v][Wp] = USED_LOCAL_BEGIN;
+	      yshad[jp_v][Wp] = USED_LOCAL_BEGIN;
 	    }
 	  }
 	}
@@ -516,6 +547,318 @@ fast_cyk_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, in
   free(yvalidA);
 
   ESL_DPRINTF1(("fast_cyk_align_hb return sc: %f\n", sc));
+  return sc;
+
+ ERROR: 
+  cm_Fail("Memory allocation error.\n");
+  return 0.; /* never reached */
+}
+
+/* 
+ * Function: fast_cyk_align()
+ * Date:     EPN, Sun Nov 18 19:37:39 2007
+ *           
+ * Note:     Very similar to inside(), but slightly more efficient.
+ *           Identical to fast_cyk_align_hb() but HMM bands are NOT
+ *           used.a
+ * 
+ * Purpose:  Run the inside phase of a CYK alignment algorithm, on a 
+ *           subsequence from i0..j0, using a subtree of a model
+ *           anchored at a start state vroot, and ending at an end
+ *           state vend. (It is a feature of the model layout in
+ *           a CM structure that all subtrees are contiguous in the
+ *           model.)
+ *
+ *           We deal with local begins by keeping track of the optimal
+ *           state that we could enter and account for the whole target 
+ *           sequence: b = argmax_v  alpha_v(i0,j0) + log t_0(v),
+ *           and bsc is the score for that. 
+ *
+ *           If vroot==0, i0==1, and j0==L (e.g. a complete alignment),
+ *           the optimal alignment might use a local begin transition, 0->b,
+ *           and we'd have to be able to trace that back. For any
+ *           problem where the caller sets allow_begin, we return a valid b 
+ *           (the optimal 0->b choice) and bsc (the score if 0->b is used).
+ *           If a local begin is part of the optimal parse tree, the optimal
+ *           alignment score returned by inside() will be bsc and yshad[0][L][L] 
+ *           will be USE_LOCAL_BEGIN, telling fast_alignT() to check b and
+ *           start with a local 0->b entry transition. When inside()
+ *           is called on smaller subproblems (v != 0 || i0 > 1 || j0
+ *           < L), we're using inside() as an engine in divide &
+ *           conquer, and we don't use the overall return score nor
+ *           shadow matrices, but we do need allow_begin, b, and bsc for
+ *           divide&conquer to sort out where a local begin might be used.
+ *
+ * Args:     cm        - the model    [0..M-1]
+ *           dsq       - the digitaized sequence [i0..j0]   
+ *           L         - length of the dsq
+ *           vroot     - first start state of subtree (0, for whole model)
+ *           vend      - last end state of subtree (cm->M-1, for whole model)
+ *           i0        - first position in subseq to align (1, for whole seq)
+ *           j0        - last position in subseq to align (L, for whole seq)
+ *           allow_begin-TRUE to allow 0->b local alignment begin transitions. 
+ *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
+ *                       he intends to do a traceback.
+ *           ret_b     - best local begin state, or NULL if unwanted
+ *           ret_bsc   - score for using ret_b, or NULL if unwanted                        
+ *           mx        - the dp matrix, must be fully allocated (no deck reuse).
+ *                       
+ * Returns: Score of the optimal alignment.  
+ */
+float 
+fast_cyk_align(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow,  
+	       int allow_begin, int *ret_b, float *ret_bsc, float ***mx)
+{
+  int      status;
+  int      v,y,z;	/* indices for states  */
+  int      j,d,i,k;	/* indices in sequence dimensions */
+  float    sc;		/* a temporary variable holding a score */
+  int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
+  int      W;		/* subsequence length */
+  void  ***shadow;      /* shadow matrix for tracebacks */
+  int    **kshad;       /* a shadow deck for bifurcations */
+  char   **yshad;       /* a shadow deck for every other kind of state */
+  int      b;		/* best local begin state */
+  float    bsc;		/* score for using the best local begin state */
+  float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
+  int      sd;          /* StateDelta(cm->sttype[v]) */
+  int      sdr;         /* StateRightDelta(cm->sttype[v] */
+  int      jp;          /* offset j, j = i0-1+jp */
+  int      j_sdr;       /* j - sdr */
+  int      d_sd;        /* d - sd */
+  float    tsc;         /* a transition score */
+
+  /* Contract check */
+  if(dsq == NULL) cm_Fail("fast_cyk_inside_align(), dsq is NULL.\n");
+  if (mx == NULL) cm_Fail("fast_cyk_inside_align(), mx is NULL.\n");
+
+  float ***alpha = mx; 
+
+  /* Allocations and initializations  */
+  b   = -1;
+  bsc = IMPOSSIBLE;
+  W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
+				/* if caller didn't give us a deck pool, make one */
+
+  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
+  ESL_ALLOC(el_scA, sizeof(float) * (W+1));
+  for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
+
+  /* The shadow matrix, we always allocate it, so we don't have to 
+   * check if it's null in the depths of the DP recursion.
+   * We do some pointer tricks here to save memory. The shadow matrix
+   * is a void ***. Decks may either be char ** (usually) or
+   * int ** (for bifurcation decks). Watch out for the casts.
+   * For most states we only need
+   * to keep y as traceback info, and y <= 6. For bifurcations,
+   * we need to keep k, and k <= L, and L might be fairly big.
+   * (We could probably limit k to an unsigned short ... anyone
+   * aligning an RNA > 65536 would need a big computer... but
+   * we'll hold off on that for now. We could also pack more
+   * traceback pointers into a smaller space since we only really
+   * need 3 bits, not 8.)
+   */
+  ESL_ALLOC(shadow, sizeof(void **) * cm->M);
+  for (v = 0; v < cm->M; v++) shadow[v] = NULL;
+
+  /* Main recursion */
+  for (v = vend; v >= vroot; v--) {
+    float const *esc_v = cm->oesc[v]; /* emission scores for state v */
+    float const *tsc_v = cm->tsc[v];  /* transition scores for state v */
+    sd   = StateDelta(cm->sttype[v]);
+    sdr  = StateRightDelta(cm->sttype[v]);
+    /* Get a shadow deck to fill in and initialize all valid cells for state v */
+    if (cm->sttype[v] != E_st) {
+      if (cm->sttype[v] == B_st) {
+	kshad     = alloc_vjd_kshadow_deck(L, i0, j0); 
+	shadow[v] = (void **) kshad;
+	/* initialize all valid cells for state v to IMPOSSIBLE (local ends are impossible for B states) */
+	assert(! (NOT_IMPOSSIBLE(cm->endsc[v])));
+	for (jp = 0; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  for (d = 0; d <= jp; d++) {
+	    alpha[v][j][d] = IMPOSSIBLE;
+	    kshad[j][d] = USED_EL; 
+	  }
+	}
+      } else { /* ! B_st && ! E_st */
+	yshad     = alloc_vjd_yshadow_deck(L, i0, j0);
+	shadow[v] = (void **) yshad;
+	/* initialize all valid cells for state v */
+	if(NOT_IMPOSSIBLE(cm->endsc[v])) {
+	  for (jp = 0; jp <= W; jp++) {
+	    j = i0-1+jp;
+	    for (d = 0; d < sd; d++) { 
+	      alpha[v][j][d] = IMPOSSIBLE;
+	      yshad[j][d] = USED_EL; 
+	    }
+	    for (d = sd; d <= jp; d++) {
+	      alpha[v][j][d] = el_scA[d-sd] + cm->endsc[v];
+	      yshad[j][d] = USED_EL; 
+	    }
+	  }
+	}
+	else { /* cm->endsc[v] == IMPOSSIBLE */
+	  for (jp = 0; jp <= W; jp++) {
+	    j = i0-1+jp;
+	    for (d = 0; d <= jp; d++) {
+	      alpha[v][j][d] = IMPOSSIBLE;
+	      yshad[j][d] = USED_EL; 
+	    }
+	  }
+	}
+      }
+    }
+    
+    if(cm->sttype[v] == E_st) { 
+      for (jp = 0; jp <= W; jp++) {
+	j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
+	alpha[v][j][0] = 0.;
+	for (d = 1; d <= jp; d++) alpha[v][j][d] = IMPOSSIBLE;
+      }
+    }
+    else if(cm->sttype[v] == IL_st) {
+      /* update alpha[v][j][d] cells, for IL states, loop nesting order is:
+       * for j { for d { for y { } } } because they can self transit, and a 
+       * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
+       * before can start calc'ing for alpha[v][j][d+1] */
+      for (jp = sdr; jp <= W; jp++) {
+	j = i0-1+jp;
+	j_sdr = j - sdr;
+	for (d = sd; d <= jp; d++) {
+	  d_sd = d - sd;
+	  i    = j - d + 1;
+	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	    y = cm->cfirst[v] + yoffset; 
+	    if ((sc = alpha[y][j_sdr][d_sd] + tsc_v[yoffset]) > alpha[v][j][d]) {
+	      alpha[v][j][d] = sc; 
+	      yshad[j][d]    = yoffset;
+	    }
+	  }
+	  alpha[v][j][d] += esc_v[dsq[i--]];
+	  alpha[v][j][d]  = ESL_MAX(alpha[v][j][d], IMPOSSIBLE);
+	}
+      }
+    }
+    else if(cm->sttype[v] == IR_st) { 
+      /* update alpha[v][j][d] cells, for IR states, loop nesting order is:
+       * for j { for d { for y { } } } because they can self transit, and a 
+       * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
+       * before can start calc'ing for alpha[v][j][d+1] */
+      for (jp = sdr; jp <= W; jp++) {
+	j = i0-1+jp;
+	j_sdr = j - sdr;
+	for (d = sd; d <= jp; d++) {
+	  d_sd = d - sd;
+	  i = j - d + 1;
+	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	    y = cm->cfirst[v] + yoffset; 
+	    if ((sc = alpha[y][j_sdr][d_sd] + tsc_v[yoffset]) > alpha[v][j][d]) {
+	      alpha[v][j][d] = sc; 
+	      yshad[j][d]    = yoffset;
+	    }
+	  }
+	  alpha[v][j][d] += esc_v[dsq[j]];
+	  alpha[v][j][d]  = ESL_MAX(alpha[v][j][d], IMPOSSIBLE);
+	}
+      }
+    }
+    else if(cm->sttype[v] != B_st) { /* entered if state v is (! IL && ! IR && ! B) */
+      /* ML, MP, MR, D, S, E states cannot self transit, this means that all cells
+       * in alpha[v] are independent of each other, only depending on alpha[y] for previously calc'ed y.
+       * We can do the for loops in any nesting order, this implementation does what I think is most efficient:
+       * for y { for j { for d { } } } 
+       */
+      for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
+	yoffset = y - cm->cfirst[v];
+	tsc = tsc_v[yoffset];
+
+	for (jp = sdr; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  j_sdr = j - sdr;
+
+	  for (d = sd; d <= jp; d++) {
+	    if((sc = alpha[y][j_sdr][d - sd] + tsc) > alpha[v][j][d]) {
+	      alpha[v][j][d] = sc;
+	      yshad[j][d]    = yoffset;
+	    }
+	  }
+	}
+      }
+      /* add in emission score, if any */
+      switch(cm->sttype[v]) { 
+      case ML_st:
+	for (jp = 0; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  i = j - 1;
+	  for (d = sd; d <= jp; d++) 
+	    alpha[v][j][d] += esc_v[dsq[j-d+1]];
+	}
+	break;
+      case MR_st:
+	for (jp = 0; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  for (d = sd; d <= jp; d++)
+	    alpha[v][j][d] += esc_v[dsq[j]];
+	}
+	break;
+      case MP_st:
+	for (jp = 0; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  i = j - 1;
+	  for (d = sd; d <= jp; d++)
+	    alpha[v][j][d] += esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
+	}
+      default:
+	break;
+      }
+      /* ensure all cells are >= IMPOSSIBLE */
+      for (jp = 0; jp <= W; jp++) {
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++)
+	  alpha[v][j][d] = ESL_MAX(alpha[v][j][d], IMPOSSIBLE);
+      }
+    }
+    else { /* B_st */ 
+      y = cm->cfirst[v]; /* left  subtree */
+      z = cm->cnum[v];   /* right subtree */
+      
+      for (jp = 0; jp <= W; jp++) { 
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++) {
+	  for (k = 0; k <= d; k++) {
+	    if ((sc = alpha[y][j-k][d-k] + alpha[z][j][k]) > alpha[v][j][d]) { 
+	      alpha[v][j][d] = sc;
+	      kshad[j][d]    = k;
+	    }
+	  }
+	}
+      }
+    }
+				/* finished calculating deck v. */
+      
+    if (allow_begin && alpha[v][j0][W] + cm->beginsc[v] > bsc) {
+      b   = v;
+      bsc = alpha[v][j0][W] + cm->beginsc[v];
+    }
+    /* Check for whether we need to store an optimal local begin score
+     * as the optimal overall score, and if we need to put a flag
+     * in the shadow matrix telling fast_alignT() to use the b we return.
+     */
+    if (allow_begin && v == 0 && bsc > alpha[0][j0][W]) {
+      alpha[0][j0][W] = bsc;
+      yshad[j0][W] = USED_LOCAL_BEGIN;
+    }
+  } /* end loop over all v */
+  
+  sc =     alpha[vroot][j0][W];
+  if (ret_b != NULL)      *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
+  if (ret_bsc != NULL)    *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */
+  if (ret_shadow != NULL) *ret_shadow = shadow;
+  else free_vjd_shadow_matrix(shadow, cm, i0, j0);
+  free(el_scA);
+
+  ESL_DPRINTF1(("fast_cyk_align return sc: %f\n", sc));
   return sc;
 
  ERROR: 
@@ -570,9 +913,8 @@ fast_alignT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   int     **hdmax = cp9b->hdmax;
 
   if(do_optacc) {
-    sc = optimal_accuracy_align_hb(cm, dsq, L, r, z, i0, j0, 
+    sc = optimal_accuracy_align_hb(cm, dsq, L, i0, j0, 
 				   &shadow,	     /* return a shadow matrix to me. */
-				   allow_begin,      /* TRUE to allow local begins */
 				   &b, &bsc,	     /* if allow_begin is TRUE, gives info on optimal b */
 				   mx,               /* the HMM banded mx to fill-in */
 				   post_mx);         /* pre-calc'ed posterior matrix */
@@ -680,20 +1022,157 @@ fast_alignT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   return sc;
 }
 
+
+/* Function: fast_alignT()
+ * Date:     EPN, Sun Nov 18 19:21:30 2007
+ * 
+ * Note:     based on insideT() [SRE, Fri Aug 11 12:08:18 2000 [Pittsburgh]]
+ *
+ * Purpose:  Call either fast_cyk_align() (if !<do_optacc>), 
+ *           or optimal_accuracy_align()  (if  <do_optacc>),
+ *           get vjd shadow matrix; then trace back. Append the trace to a given
+ *           traceback, which already has state r at tr->n-1.
+ *        
+ *           If (<do_optacc>) then post_mx must != NULL.
+ *
+ *           Very similar to smallcyk.c:insideT() in case of 
+ *           CYK alignment, but uses more efficient implementation
+ *           of CYK alignment (fast_cyk_align()) as opposed to
+ *           inside(). 
+ *
+ * Returns:  score of appended parsetree
+ *
+ */
+float
+fast_alignT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
+	       int r, int z, int i0, int j0, 
+	       int allow_begin, float ***mx, int do_optacc, float ***post_mx)
+{
+  void   ***shadow;             /* the traceback shadow matrix */
+  float     sc;			/* the score of the CYK alignment */
+  ESL_STACK *pda;               /* stack that tracks bifurc parent of a right start */
+  int       v,j,d,i;		/* indices for state, j, subseq len */
+  int       k;			/* subseq len for bifurcs */
+  int       y, yoffset;         /* child state y, it's offset */
+  int       bifparent;          /* B_st parent */
+  int       b;                  /* local begin state */
+  float     bsc;                /* local begin score */
+
+  /* contract check */
+  if(dsq == NULL)      cm_Fail("fast_alignT(), dsq == NULL.\n");
+  if(cm->cp9b == NULL) cm_Fail("fast_alignT(), cm->cp9b == NULL.\n");
+  if(do_optacc && post_mx == NULL) cm_Fail("fast_alignT(), do_optacc == TRUE but post_mx == NULL.\n");
+			 
+  if(do_optacc) {
+    sc = optimal_accuracy_align(cm, dsq, L, i0, j0, 
+				&shadow,	     /* return a shadow matrix to me. */
+				&b, &bsc,	     /* if allow_begin is TRUE, gives info on optimal b */
+				mx,                  /* the HMM banded mx to fill-in */
+				post_mx);            /* pre-calc'ed posterior matrix */
+  }
+  else {
+    sc = fast_cyk_align(cm, dsq, L, r, z, i0, j0, 
+			&shadow,	  /* return a shadow matrix to me. */
+			allow_begin,      /* TRUE to allow local begins */
+			&b, &bsc,	  /* if allow_begin is TRUE, gives info on optimal b */
+			mx);              /* the DP mx */
+  }
+  pda = esl_stack_ICreate();
+  v = r;
+  j = j0;
+  i = i0;
+  d = j0-i0+1;
+
+  while (1) {
+    if (cm->sttype[v] == B_st) {
+      k = ((int **) shadow[v])[j][d];   /* k = len of right fragment */
+
+      /* Store info about the right fragment that we'll retrieve later:
+       */
+      esl_stack_IPush(pda, j);	/* remember the end j    */
+      esl_stack_IPush(pda, k);	/* remember the subseq length k */
+      esl_stack_IPush(pda, tr->n-1);	/* remember the trace index of the parent B state */
+
+      /* Deal with attaching left start state.
+       */
+      j = j-k;
+      d = d-k;
+      i = j-d+1;
+      y = cm->cfirst[v];
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+      v = y;
+    } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+      /* We don't trace back from an E or EL. Instead, we're done with the
+       * left branch of the tree, and we try to swing over to the right
+       * branch by popping a right start off the stack and attaching
+       * it. If the stack is empty, then we're done with the
+       * traceback altogether. This is the only way to break the
+       * while (1) loop.
+       */
+      if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;
+      esl_stack_IPop(pda, &d);
+      esl_stack_IPop(pda, &j);
+      v = tr->state[bifparent];	/* recover state index of B */
+      y = cm->cnum[v];		/* find state index of right S */
+      i = j-d+1;
+				/* attach the S to the right */
+      InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
+      v = y;
+    } else {
+      yoffset = ((char **) shadow[v])[j][d];
+
+      /*printf("v : %d | r : %d | z : %d | i0 : %d | \n", v, r, z, i0);*/
+      /*printf("\tyoffset : %d\n", yoffset);*/
+      switch (cm->sttype[v]) {
+      case D_st:            break;
+      case MP_st: i++; j--; break;
+      case ML_st: i++;      break;
+      case MR_st:      j--; break;
+      case IL_st: i++;      break;
+      case IR_st:      j--; break;
+      case S_st:            break;
+      default:    esl_fatal("'Inconceivable!'\n'You keep using that word...'");
+      }
+      d = j-i+1;
+
+      if (yoffset == USED_EL) 
+	{	/* a local alignment end */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+	  v = cm->M;		/* now we're in EL. */
+	}
+      else if (yoffset == USED_LOCAL_BEGIN) 
+	{ /* local begin; can only happen once, from root */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
+	  v = b;
+	}
+      else 
+	{
+	  y = cm->cfirst[v] + yoffset;
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+	  v = y;
+	}
+    }
+  }
+  esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+  free_vjd_shadow_matrix(shadow, cm, i0, j0);
+  return sc;
+}
+
 /* Function: FastAlignHB()
  * Incept:   EPN, Fri Oct 26 09:31:43 2007
  * 
  * Note:     based on CYKInside_b_jd() [11.04.05] which was based on CYKInside_b() 
  *           which was based on CYKInside() [SRE, Sun Jun  3 19:48:33 2001 [St. Louis]]
  *
- * Purpose:  Wrapper for the fast_alignT_hb() routine - solve
- *           a full alignment problem, return the traceback
- *           and the score, without dividing & conquering, but by
- *           using bands on the j and d dimensions of the DP matrix.
- *           Bands derived by HMM Forward/Backward runs. Optionally
- *           return CYK or optimally accurate parsetree, and possibly
- *           possibly return a postal code.
+ * Purpose:  Wrapper for the fast_alignT_hb() routine - solve a full
+ *           alignment problem using CYK or optimal accuracy and
+ *           return the traceback and the score, without dividing &
+ *           conquering, but by using bands on the j and d dimensions
+ *           of the DP matrix.  Bands derived by HMM Forward/Backward
+ *           runs. Optionally return a postal code.
  *           
+ *           Identical to FastAlign() but HMM bands are used here.
+ * 
  *           Input arguments allow this function to be run in 4 'modes':
  *
  *           mode      returns                 arguments
@@ -709,10 +1188,11 @@ fast_alignT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           are Holmes/Durbin optimally accurate parsetrees, the parse the 
  *           maximizes the expected accuracy of all aligned residues.
  *
- *           Note: if ret_tr is NULL, only the score of 'tr' is returned.
+ *           Note: if ret_tr is NULL, parsetree is not returned.
  *
  * Args:     cm        - the covariance model
  *           dsq       - the digitized sequence, 1..L
+ *           L         - length of sequence 
  *           i0        - start of target subsequence (often 1, beginning of dsq)
  *           j0        - end of target subsequence (often L, end of dsq)
  *           mx        - the main dp matrix, only cells within bands in cm->cp9b will be valid. 
@@ -722,7 +1202,9 @@ fast_alignT_hb(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           ret_tr    - RETURN: traceback (pass NULL if trace isn't wanted)
  *           ret_pcode - RETURN: postal code, (pass NULL if not wanted, must be NULL if post_mx == NULL)
  *
- * Returns:  score of the alignment in bits.
+ * Returns:  if(!do_optacc): score of the alignment in bits.
+ *           if( do_optacc): average posterior probability of all L aligned residues 
+ *                           in optimally accurate alignment
  */
 float
 FastAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_MX *mx, int do_optacc,
@@ -735,29 +1217,22 @@ FastAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_MX *mx, int do_
 
   /* Contract check */
   if(dsq == NULL) cm_Fail("FastAlignHB(), dsq is NULL.\n");
+  if(mx == NULL) cm_Fail("FastAlignHB(), mx is NULL.\n");
   if(post_mx == NULL && ret_pcode != NULL) cm_Fail("FastAlignHB(), post_mx == NULL but ret_pcode != NULL.\n");
   if(do_optacc && post_mx == NULL) cm_Fail("FastAlignHB(), do_optacc is TRUE, but post_mx == NULL.\n");
 
   /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (j0-i0+1));*/
   do_post = (do_optacc || ret_pcode != NULL) ? TRUE : FALSE;
 
-  /* if doing post, fill Inside,Outside,Posterior matrices */
+  /* if doing post, fill Inside, Outside, Posterior matrices, in that order */
   if(do_post) { 
     FastInsideAlignHB (cm, dsq, i0, j0, mx);
     FastOutsideAlignHB(cm, dsq, i0, j0, post_mx, mx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)));
     /* Note: we can only check the posteriors in FastOutsideAlignHB() if local begin/ends are off */
-    FastPosteriorHB   (cm,      i0, j0, mx, post_mx, post_mx);   
-    if(cm->align_opts & CM_ALIGN_CHECKINOUT) CMCheckPosteriorHB(cm, 1, L, post_mx);
-    FILE *fp;
-    if(do_optacc) { 
-      fp = fopen("o.mx", "w");
-      cm_hb_mx_Dump(fp, post_mx);
-      fclose(fp);
-    }
-    else {
-      fp = fopen("c.mx", "w");
-      cm_hb_mx_Dump(fp, post_mx);
-      fclose(fp);
+    CMPosteriorHB   (cm,      i0, j0, mx, post_mx, post_mx);   
+    if(cm->align_opts & CM_ALIGN_CHECKINOUT) { 
+      CMCheckPosteriorHB(cm, 1, L, post_mx);
+      printf("\nHMM banded posteriors checked.\n\n");
     }
   }
 
@@ -776,6 +1251,102 @@ FastAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_MX *mx, int do_
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
   ESL_DPRINTF1(("returning from FastAlignHB() sc : %f\n", sc)); 
+  return sc;
+}
+
+
+/* Function: FastAlign()
+ * Date:     EPN, Sun Nov 18 19:26:45 2007
+ *
+ * Note:     Very similar to smallcyk.c:CYKInside() for case
+ *           of CYK alignment, but uses slightly more efficient
+ *           implementation (fast_cyk_align() instead of inside()).
+ *
+ * Purpose:  Wrapper for the fast_alignT() routine - solve a full
+ *           alignment problem either by CYK or using optimal
+ *           accuracy, return the traceback and the score, without
+ *           dividing & conquering. Optionally return a postal code.
+ *           
+ *           Identical to FastAlignHB() but HMM bands are NOT used here.
+ * 
+ *           Input arguments allow this function to be run in 4 'modes':
+ *
+ *           mode      returns                 arguments
+ *           ----  ---------------  ------------------------------
+ *                 tr        pcode  do_optacc  post_mx   ret_pcode
+ *                 ---------------  ------------------------------
+ *              1. CYK       no     FALSE       NULL      NULL
+ *              2. CYK       yes    FALSE      !NULL     !NULL
+ *              3. Opt acc   no     TRUE       !NULL      NULL
+ *              4. Opt acc   yes    TRUE       !NULL     !NULL
+ *
+ *           CYK parsetrees are most likely parsetree, 'Opt acc' parsetrees
+ *           are Holmes/Durbin optimally accurate parsetrees, the parse the 
+ *           maximizes the expected accuracy of all aligned residues.
+ *
+ *           QDB: if dmin and dmax are non-NULL, the CYK alignment conditional
+ *           on the bands in dmin dmax can be calculated, but only mode 1
+ *           can be run with QDB. The reason is that there is no implementation
+ *           of FInside() and FOutside() that use QDBs yet. This is not a big
+ *           deal b/c it's better to use HMM bands than query-dependent bands 
+ *           (QDB) for alignment anyway.
+ *
+ * Args:     cm        - the covariance model
+ *           dsq       - the digitized sequence, 1..L
+ *           L         - length of sequence 
+ *           i0        - start of target subsequence (often 1, beginning of dsq)
+ *           j0        - end of target subsequence (often L, end of dsq)
+ *           mx        - the main dp matrix, only cells within bands in cm->cp9b will be valid. 
+ *           do_optacc - TRUE to not do CYK alignment, determine the Holmes/Durbin optimally 
+ *                       accurate parsetree in ret_tr, requires post_mx != NULL
+ *           post_mx   - dp matrix for posterior calculation, can be NULL only if !do_optacc
+ *           ret_tr    - RETURN: traceback (pass NULL if trace isn't wanted)
+ *           ret_pcode - RETURN: postal code, (pass NULL if not wanted, must be NULL if post_mx == NULL)
+ *
+ * Returns:  if(!do_optacc): score of the alignment in bits.
+ *           if( do_optacc): average posterior probability of all L aligned residues 
+ *                           in optimally accurate alignment
+ */
+float
+FastAlign(CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, float ***mx, int do_optacc,
+	  float ***post_mx, Parsetree_t **ret_tr, char **ret_pcode)
+{
+  Parsetree_t *tr;
+  float        sc;
+  int          do_post;
+  char        *pcode;
+
+  /* Contract check */
+  if(dsq == NULL) cm_Fail("FastAlign(), dsq is NULL.\n");
+  if(post_mx == NULL && ret_pcode != NULL) cm_Fail("FastAlign(), post_mx == NULL but ret_pcode != NULL.\n");
+  if(do_optacc && post_mx == NULL) cm_Fail("FastAlign(), do_optacc is TRUE, but post_mx == NULL.\n");
+  if(mx == NULL) cm_Fail("FastAlign(), mx is NULL.\n");
+
+  do_post = (do_optacc || ret_pcode != NULL) ? TRUE : FALSE;
+
+  /* if doing post, fill Inside, Outside, Posterior matrices, in that order */
+  if(do_post) { 
+    sc = FastInsideAlign(cm,  dsq, i0, j0, mx);
+    sc = FastOutsideAlign(cm, dsq, i0, j0, post_mx, mx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)));
+    /* Note: we can only check the posteriors in FastOutsideAlign() if local begin/ends are off */
+    CMPosterior     (cm,      i0, j0, mx, post_mx, post_mx);   
+    if(cm->align_opts & CM_ALIGN_CHECKINOUT) { 
+      CMCheckPosterior(L, cm, post_mx);
+      printf("\nPosteriors checked.\n\n");
+    }
+  }
+  /* Create the parse tree, and initialize. */
+  tr = CreateParsetree(100);
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
+  /* Fill in the parsetree (either CYK or optimally accurate (if do_optacc)) */
+  sc = fast_alignT(cm, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, mx, do_optacc, post_mx);
+
+  if(ret_pcode != NULL) {
+    pcode = CMPostalCode(cm, L, post_mx, tr);
+    *ret_pcode = pcode;
+  }
+
+  if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
   return sc;
 }
 
@@ -967,7 +1538,7 @@ FastInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx)
     }
     else if(cm->sttype[v] != B_st) { /* entered if state v is (! IL && ! IR && ! B) */
       /* ML, MP, MR, D, S, E states cannot self transit, this means that all cells
-       * in beta[v] are independent of each other, only depending on beta[y] for previously calc'ed y.
+       * in alpha[v] are independent of each other, only depending on alpha[y] for previously calc'ed y.
        * We can do the for loops in any nesting order, this implementation does what I think is most efficient:
        * for y { for j { for d { } } } 
        */
@@ -1096,7 +1667,7 @@ FastInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx)
       }
     }				/* finished calculating deck v. */
       
-    if(cm->flags & CMH_LOCAL_BEGIN) { /* if local begins are on */
+    if(cm->flags & CMH_LOCAL_BEGIN && NOT_IMPOSSIBLE(cm->beginsc[v])) { /* if local begins are on */
       if(j0 >= jmin[v] && j0 <= jmax[v]) { 
 	jp_v = j0 - jmin[v];
 	Wp = W - hdmin[v][jp_v];
@@ -1138,6 +1709,229 @@ FastInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx)
   return 0.; /* never reached */
 }
 
+
+/*
+ * Function: FastInsideAlign()
+ * Date:     EPN, Mon Nov 19 06:21:51 2007
+ *
+ * Purpose:  Run the inside algorithm on a target sequence 
+ *           without using bands. 
+ *
+ *           Identical to FastInsideAlignHB() but no bands
+ *           are used.
+ * 
+ *           Very similar with fast_cyk_inside_align(), see 'Purpose'
+ *           of that function for more details. Only differences with
+ *           that function is:
+ *           - can't return a shadow matrix (we're not aligning)
+ *           - doesn't return bsc, b info about local begins 
+ *
+ *           This function complements FastOutsideAlign().
+ *
+ * Args:     cm        - the model    [0..M-1]
+ *           dsq       - the digitized sequence
+ *           i0        - first position in subseq to align (1, for whole seq)
+ *           j0        - last position in subseq to align  (L, for whole seq)
+ *           mx        - the dp matrix, only cells within bands in cp9b will be valid
+ *                       
+ * Returns:  log P(S|M)/P(S|R), as a bit score
+ */
+float 
+FastInsideAlign(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float ***mx)
+{
+  int      status;
+  int      v,y,z;	/* indices for states  */
+  int      j,d,i,k;	/* indices in sequence dimensions */
+  float    sc;		/* the final score */
+  float    tsc;         /* a temporary variable holding a transition score */
+  int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
+  int      W;		/* subsequence length */
+  float    bsc;		/* summed score for using all local begins */
+  float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
+  /* indices used for handling band-offset issues, and in the depths of the DP recursion */
+  int      sd;                 /* StateDelta(cm->sttype[v]) */
+  int      sdr;                /* StateRightDelta(cm->sttype[v] */
+  int      jp;          /* offset j, j = i0-1+jp */
+  int      j_sdr;       /* j - sdr */
+  int      d_sd;        /* d - sd */
+
+  /* Contract check */
+  if(dsq == NULL) cm_Fail("FastInsideAlign(), dsq is NULL.\n");
+  if (mx == NULL) cm_Fail("FastInsideAlign(), mx is NULL.\n");
+
+  /* the DP matrix */
+  float ***alpha = mx;     /* pointer to the alpha DP matrix */
+
+  /* Allocations and initializations */
+  bsc = IMPOSSIBLE;
+  W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
+				/* if caller didn't give us a deck pool, make one */
+  
+  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
+  ESL_ALLOC(el_scA, sizeof(int) * (W+1));
+  for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
+
+  /* Main recursion  */
+  for (v = cm->M-1; v >= 0; v--) {
+    float const *esc_v = cm->oesc[v]; 
+    float const *tsc_v = cm->tsc[v];
+    sd   = StateDelta(cm->sttype[v]);
+    sdr  = StateRightDelta(cm->sttype[v]);
+    
+    /* initialize all valid cells for state v to the local end prob, if they're allowed,
+     * and IMPOSSIBLE if not  */
+    if(NOT_IMPOSSIBLE(cm->endsc[v])) {
+      for (jp = 0; jp <= W; jp++) {
+	j = i0-1+jp;
+	for (d = 0; d < sd; d++) 
+	  alpha[v][j][d] = IMPOSSIBLE;
+	for (d = sd; d <= jp; d++) 
+	  alpha[v][j][d] = el_scA[d-sd] + cm->endsc[v];
+      }
+    }
+    else {
+      for (jp = 0; jp <= W; jp++) {
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++) 
+	  alpha[v][j][d] = IMPOSSIBLE;
+      }
+    }
+    /* E_st: easy, no children, and d must be 0 for all valid j */
+    if(cm->sttype[v] == E_st) { 
+      for (jp = 0; jp <= W; jp++) {
+	j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
+	alpha[v][j][0] = 0.;
+	for (d = 1; d <= jp; d++) alpha[v][j][d] = IMPOSSIBLE;
+      }
+    }
+    else if(cm->sttype[v] == IL_st) {
+      /* update alpha[v][jp_v][dp_v] cells, for IL states, loop nesting order is:
+       * for j { for d { for y { } } } because they can self transit, and a 
+       * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
+       * before can start calc'ing for alpha[v][j][d+1] */
+      for (jp = sdr; jp <= W; jp++) {
+	j = i0-1+jp;
+	j_sdr = j - sdr;
+	for (d = sd; d <= jp; d++) {
+	  d_sd = d - sd;
+	  i    = j - d + 1;
+	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	    y = cm->cfirst[v] + yoffset; 
+	    alpha[v][j][d] = FLogsum(alpha[v][j][d], alpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
+	  }
+	  alpha[v][j][d] += esc_v[dsq[i--]];
+	  alpha[v][j][d]  = ESL_MAX(alpha[v][j][d], IMPOSSIBLE);
+	}
+      }
+    }
+    else if(cm->sttype[v] == IR_st) { 
+      /* update alpha[v][jp_v][dp_v] cells, for IR states, loop nesting order is:
+       * for j { for d { for y { } } } because they can self transit, and a 
+       * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
+       * before can start calc'ing for alpha[v][j][d+1] */
+      for (jp = sdr; jp <= W; jp++) {
+	j = i0-1+jp;
+	j_sdr = j - sdr;
+	for (d = sd; d <= jp; d++) {
+	  d_sd = d - sd;
+	  i    = j - d + 1;
+	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	    y = cm->cfirst[v] + yoffset; 
+	    alpha[v][j][d] = FLogsum(alpha[v][j][d], alpha[y][j_sdr][d_sd] + tsc_v[yoffset]);
+	  }
+	  alpha[v][j][d] += esc_v[dsq[j]];
+	  alpha[v][j][d] = ESL_MAX(alpha[v][j][d], IMPOSSIBLE);
+	}
+      }
+    }
+    else if(cm->sttype[v] != B_st) { /* entered if state v is (! IL && ! IR && ! B) */
+      /* ML, MP, MR, D, S, E states cannot self transit, this means that all cells
+       * in alpha[v] are independent of each other, only depending on alpha[y] for previously calc'ed y.
+       * We can do the for loops in any nesting order, this implementation does what I think is most efficient:
+       * for y { for j { for d { } } } 
+       */
+      for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
+	yoffset = y - cm->cfirst[v];
+	tsc = tsc_v[yoffset];
+
+	for (jp = sdr; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  j_sdr = j - sdr;
+
+	  for (d = sd; d <= jp; d++) {
+	    alpha[v][j][d] = FLogsum(alpha[v][j][d], (alpha[y][j_sdr][d-sd] + tsc));;
+	  }
+	}
+      }
+      /* add in emission score, if any */
+      switch(cm->sttype[v]) { 
+      case ML_st:
+	for (jp = 0; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  i = j - 1;
+	  for (d = sd; d <= jp; d++) 
+	    alpha[v][j][d] += esc_v[dsq[j-d+1]];
+	}
+	break;
+      case MR_st:
+	for (jp = 0; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  for (d = sd; d <= jp; d++)
+	    alpha[v][j][d] += esc_v[dsq[j]];
+	}
+	break;
+      case MP_st:
+	for (jp = 0; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  i = j - 1;
+	  for (d = sd; d <= jp; d++)
+	    alpha[v][j][d] += esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
+	}
+      default:
+	break;
+      }
+      /* ensure all cells are >= IMPOSSIBLE */
+      for (jp = 0; jp <= W; jp++) {
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++)
+	  alpha[v][j][d] = ESL_MAX(alpha[v][j][d], IMPOSSIBLE);
+      }
+    }
+    else { /* B_st */ 
+      y = cm->cfirst[v]; /* left  subtree */
+      z = cm->cnum[v];   /* right subtree */
+      
+      for (jp = 0; jp <= W; jp++) { 
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++) {
+	  for (k = 0; k <= d; k++) {
+	    alpha[v][j][d] = FLogsum(alpha[v][j][d], alpha[y][j-k][d-k] + alpha[z][j][k]); 
+	  }
+	}
+      }
+    }				/* finished calculating deck v. */
+      
+    if (cm->flags & CMH_LOCAL_BEGIN && NOT_IMPOSSIBLE(cm->beginsc[v])) { 
+      /* add in score for local begin getting us to the root. */
+      bsc = FLogsum(bsc, alpha[v][j0][W] + cm->beginsc[v]);
+    }
+    /* include the bsc as part of alpha[0][jp_v][Wp] */
+    if(v == 0)  
+      alpha[0][j0][W] = FLogsum(alpha[v][j0][W], bsc);
+  } /* end loop over all v */
+
+  sc =     alpha[0][j0][W];
+  free(el_scA);
+
+  ESL_DPRINTF1(("FastInsideAlign() return sc: %f\n", sc));
+  return sc;
+
+ ERROR: 
+  cm_Fail("Memory allocation error.\n");
+  return 0.; /* never reached */
+}
+
+
 /*
  * Function: FastOutsideAlignHB()
  * Date:     EPN, Thu Nov  8 18:40:05 2007
@@ -1147,10 +1941,28 @@ FastInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx)
  *           were obtained from an HMM Forward-Backward parse
  *           of the target sequence. Uses float log odds scores.
  *
- *           Identical to FastIOutsideAlignHB() with except that
- *           float scores are used instead of ints. See the
- *           'Purpose' section of that function for more details.
- *           A CM_HB_MX DP matrix must be passed in. Only
+ *           A CM_FHB_MX DP matrix must be passed in. Only
+ *           cells valid within the bands given in the CP9Bands_t <cm->cp9b>
+ *           will be valid. 
+ *
+ *           The DP recursion has been 'optimized' for all state types
+ *           except IL, IR, BEGL_S, BEGR_S. The main optimization
+ *           is a change in nesting order of the for loops:
+ *           optimized order:     for v { for y { for j { for d {}}}}
+ *           non-optimized order: for v { for j { for d { for y {}}}}
+ * 
+ *           ILs and IRs are not optmized because they can self transit
+ *           so mx[v][j][d] must be fully calc'ed before mx[v][j][d+1] can 
+ *           be calced. BEGL_S and BEGR_S are not optimized b/c 
+ *           they require searching for optimal d and k, which complicates
+ *           the enforcement of the bands and makes this optimization strategy
+ *           impossible.
+ *
+ *           If <do_check> is TRUE (and the CM is not in local mode) 
+ *           we check that the outside calculations are consistent 
+ *           with the inside calculations (in ins_mx). 
+ *           This check is described in comments towards the end of 
+ *           the function. 
  *
  * Args:     cm        - the model    [0..M-1]
  *           dsq       - the digitized sequence
@@ -1252,7 +2064,7 @@ FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx,
    * because cm_hb_mx_GrowTo() (called above) frees the EL deck if it exists */
   assert(beta[cm->M] == NULL);
   beta[cm->M] = beta_el; /* beta_el is NULL if local ends are off */
-  /* If we can do a local begin into v, overwrite -INFY with the local begin score. 
+  /* If we can do a local begin into v, overwrite IMPOSSIBLE with the local begin score. 
    * By definition, beta[0][j0][W] == 0.
    */ 
   if (cm->flags & CMH_LOCAL_BEGIN) {
@@ -1691,10 +2503,309 @@ FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx,
   ERROR:
   cm_Fail("memory allocation error.");
   return 0.; /* NEVERREACHED */
-  }  
+}  
+
 
 /*
- * Function: FastPosteriorHB()
+ * Function: FastOutsideAlign()
+ * Date:     EPN, Mon Nov 19 07:00:37 2007
+ *
+ * Purpose:  Run the outside algorithm on a target sequence
+ *           without using bands.
+ *
+ *           Very similar to FastInsideAlignHB() but no bands
+ *           are used and recursion nesting order for all non - BEGL_S 
+ *           and non BEGR_S is: for v { for j { for d { for y {}}}}.
+ *           This is slower, but corrects some precision issues I was
+ *           having during testing, if you want fast alignment, you should
+ *           be using HMM banded alignment anyway.
+ *
+ *           A float, non-banded DP matrix must be passed in. Only
+ *           cells valid within the bands given in the CP9Bands_t <cm->cp9b>
+ *           will be valid. 
+ *
+ *           If <do_check> is TRUE (and the CM is not in local mode) 
+ *           we check that the outside calculations are consistent 
+ *           with the inside calculations (in ins_mx). 
+ *           This check is described in comments towards the end of 
+ *           the function. 
+ *
+ * Args:     cm        - the model    [0..M-1]
+ *           dsq       - the digitized sequence
+ *           i0        - first position in subseq to align (1, for whole seq)
+ *           j0        - last position in subseq to align  (L, for whole seq)
+ *           mx        - the dp matrix, only cells within bands in cp9b will be valid
+ *           ins_mx    - the dp matrix from the Inside run calculation (required)
+ *           do_check  - TRUE to attempt to check 
+ *                       
+ * Returns:  log P(S|M)/P(S|R), as a bit score, this is from ins_mx IF local
+ *           ends are on (see *** comment towards end of function).
+ */
+float 
+FastOutsideAlign(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float ***mx, 
+		 float ***ins_mx, int do_check)
+{
+  int      v,y,z;	       /* indices for states */
+  int      j,d,i,k;	       /* indices in sequence dimensions */
+  float    fsc;     	       /* a temporary variable holding a float score */
+  float  **esc_vAA;            /* ptr to cm->oesc, optimized emission scores */
+  float    escore;	       /* an emission score, tmp variable */
+  int      W;		       /* subsequence length */
+  int      voffset;	       /* index of v in t_v(y) transition scores */
+  int      jp;		       /* j': relative position in the subsequence  */
+  float    bsc;		       /* total score for using local begin states */
+  float    freturn_sc;         /* P(S|M)/P(S|R) */
+  /* variables used only if do_check */
+  int      n;                  /* counter over nodes, used only if do_check = TRUE */
+  int      num_split_states;   /* temp variable used only if do_check = TRUE */
+  float    diff;               /* temp variable used only if do_check = TRUE */
+  int      fail_flag = FALSE;  /* set to TRUE if do_check and we see a problem */
+  /* indices used in the depths of the DP recursion */
+  int      emitmode;           /* EMITLEFT, EMITRIGHT, EMITPAIR, EMITNONE, for state y */
+  int      sd;                 /* StateDelta(cm->sttype[y]) */
+  int      sdr;                /* StateRightDelta(cm->sttype[y] */
+
+  /* Contract check */
+  if (dsq == NULL)                                     cm_Fail("FastOutsideAlign(), dsq is NULL.\n");
+  if (mx == NULL)                                      cm_Fail("FastOutsideAlign(), mx is NULL.\n");
+  if (ins_mx == NULL)                                  cm_Fail("FastOutsideAlign(), ins_mx is NULL.\n");
+  if (cm->flags & CMH_LOCAL_END) do_check = FALSE; /* Code for checking doesn't apply in local mode. See below. */
+
+  /* DP matrix variables */
+  float ***beta  = mx;     /* pointer to the Oustide DP mx */
+  float ***alpha = ins_mx; /* pointer to the Inside DP mx (already calc'ed and passed in) */
+
+  /* Allocations and initializations */
+  bsc = IMPOSSIBLE;              /* the summed prob of all local begins */
+  W   = j0-i0+1;		 /* the length of the subsequence -- used in many loops  */
+				 /* if caller didn't give us a deck pool, make one */
+  esc_vAA = cm->oesc;            /* a ptr to the optimized emission scores */
+
+
+  /* Init whole matrix to IMPOSSIBLE. */
+  for (v = 0; v < cm->M; v++) {
+    for(jp = 0; jp <= W; jp++) { 
+      j = i0-1+jp;
+      for (d = 0; d <= jp; d++) 
+	beta[v][j][d] = IMPOSSIBLE;
+    }
+  }
+  /* set beta[0][j0][W] to 0., all parses must end there */
+  beta[0][j0][W] = 0.;
+
+  /* init local begin cells for emitting full seq (j==j0 && d == W) */
+  if (cm->flags & CMH_LOCAL_BEGIN) { 
+    for (v = 1; v < cm->M; v++) 
+      beta[v][j0][W] = cm->beginsc[v];
+  }
+  /* done allocation/initialization */
+
+  /* Recursion: main loop down through the decks */
+  for (v = 1; v < cm->M; v++) {
+    sd  = StateDelta(cm->sttype[v]);
+    sdr = StateRightDelta(cm->sttype[v]);
+
+    if (cm->stid[v] == BEGL_S) { /* BEGL_S */
+      y = cm->plast[v];	/* the parent bifurcation    */
+      z = cm->cnum[y];	/* the other (right) S state */
+      for(jp = 0; jp <= W; jp++) { 
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++) {
+	  for (k = 0; k <= (W-j); k++) {
+	    beta[v][j][d] = FLogsum(beta[v][j][d], (beta[y][j+k][d+k] + alpha[z][j+k][k]));
+	  }
+	}
+      }
+    } /* end of 'if (cm->stid[v] == BEGL_S */
+    else if (cm->stid[v] == BEGR_S) {
+      y = cm->plast[v];	  /* the parent bifurcation    */
+      z = cm->cfirst[y];  /* the other (left) S state  */
+      for(jp = 0; jp <= W; jp++) { 
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++) {
+	  for (k = 0; k <= (j-d); k++) {
+	    beta[v][j][d] = FLogsum(beta[v][j][d], (beta[y][j][d+k] + alpha[z][j-d][k]));
+	  }
+	}
+      }
+    } /* end of 'else if (cm->stid[v] == BEGR_S */
+    else { /* (cm->sttype[v] != BEGL_S && cm->sttype[v] != BEGR_S */ 
+      for (jp = W; jp >= 0; jp--) {
+	j = i0-1+jp;
+	i = j-jp+1;
+	for (d = jp; d >= 0; d--, i++) {
+	  for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	    voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
+	    sd  = StateDelta(cm->sttype[y]);
+	    sdr = StateRightDelta(cm->sttype[y]);
+	    switch(cm->sttype[y]) {
+	      case MP_st: 
+		if (j == j0 || d == jp) continue; /* boundary condition */
+		escore = esc_vAA[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+		beta[v][j][d] = FLogsum(beta[v][j][d], (beta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore));
+		break;
+
+	      case ML_st:
+	      case IL_st: 
+		if (d == jp) continue;	/* boundary condition (note when j=0, d=0*/
+		escore = esc_vAA[y][dsq[i-1]];
+		beta[v][j][d] = FLogsum(beta[v][j][d], (beta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore));
+		break;
+		  
+	      case MR_st:
+	      case IR_st:
+		if (j == j0) continue;
+		escore = esc_vAA[y][dsq[j+1]];
+		beta[v][j][d] = FLogsum(beta[v][j][d], (beta[y][j+sdr][d+sd] + cm->tsc[y][voffset] + escore));
+		break;
+		  
+	      case S_st:
+	      case E_st:
+	      case D_st:
+		beta[v][j][d] = FLogsum(beta[v][j][d], (beta[y][j+sdr][d+sd] + cm->tsc[y][voffset]));
+		break;
+	    } /* end of switch(cm->sttype[y] */  
+	  } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
+	  if (beta[v][j][d] < IMPOSSIBLE) beta[v][j][d] = IMPOSSIBLE;
+	} /* ends loop over d. We know all beta[v][j][d] in this row j and state v */
+      } /* end loop over jp. We know beta for this whole state */
+    } /* end of 'else if cm->sttype[v] != BEGL_S, BEGR_S */
+    /* we're done calculating deck v for everything but local begins */
+
+    /* deal with local alignment end transitions v->EL (EL = deck at M.) */
+    if ((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) {
+      sdr = StateRightDelta(cm->sttype[v]); /* note sdr is for state v */
+      sd  = StateDelta(cm->sttype[v]);      /* note sd  is for state v */
+      emitmode = Emitmode(cm->sttype[v]);   /* note emitmode is for state v */
+      
+      for (jp = 0; jp <= W-sdr; jp++) { 
+	j = i0-1+jp;
+	
+	/* for each emit mode, update beta[v][jp_v][dp_v] for all valid d = dp_v */
+	switch(emitmode) { 
+	case EMITPAIR:  /* MP_st */
+	  i = j-jp+1;
+	  for (d = 0; d <= jp-sd; d++, i--) { 
+	    escore = esc_vAA[v][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+	    beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][j+sdr][d+sd] + cm->endsc[v] + escore));
+	  }
+	  break;
+	  
+	case EMITLEFT:  /* ML_st, IL_st */
+	  for (d = 0; d <= jp-sd; d++, i--) {
+	    escore = esc_vAA[v][dsq[i-1]];
+	    beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][j+sdr][d+sd] + cm->endsc[v] + escore));
+	  }
+	  break;
+	  
+	case EMITRIGHT:  /* MR_st, IR_st */
+	  escore = esc_vAA[v][dsq[j+1]]; /* not dependent on i */
+	  for (d = 0; d <= jp-sd; d++) {
+	    beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][j+sdr][d+sd] + cm->endsc[v] + escore));
+	  }
+	  break;
+	  
+	case EMITNONE:  /* D_st, S_st, E_st*/
+	  for (d = 0; d <= jp-sd; d++) {
+	    beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][j+sdr][d+sd] + cm->endsc[v] + escore));
+	  }
+	  break;
+	} /* end of switch over emitmodes */
+      } /* end of loop over j */
+    } /* end conditional section for dealing w/ v->EL local end transitions */
+  } /* end loop over decks v. */
+
+  /* Deal with last step needed for local alignment 
+   * w.r.t. ends: left-emitting, EL->EL transitions. (EL = deck at M.)
+   */
+  if (cm->flags & CMH_LOCAL_END) {
+    for (jp = W; jp > 0; jp--) { /* careful w/ boundary here */
+      j = i0-1+jp;
+      for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
+	beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1] + cm->el_selfsc));
+    }
+  }
+
+  if(do_check && (!(cm->flags & CMH_LOCAL_END))) {
+    /* Local ends make the following test invalid because it is not true that
+     * exactly 1 state in each node's split set must be visited in each parse. 
+     */
+    
+    /* Determine P(S|M) / P(S|R) (probability of the sequence given the model) 
+     * using both the Outside (beta) and Inside (alpha) matrices,
+     * and ensure they're consistent with P(S|M) / P(S|R) from the Inside calculation.
+     * For all v in each split set: Sum_v [ Sum_i,j ( alpha[v][i][j] * beta[v][i][j] ) ] 
+     *                                                = P(S|M) / P(S|R)  
+     * in v,j,d coordinates this is:
+     * For all v in each split set: Sum_v [ Sum_j,(d<=j) ( alpha[v][j][d] * beta[v][j][d] ) ]
+     *                                                = P(S|M) / P(S|R)
+     */
+    
+    for(n = 0; n < cm->nodes; n++) {
+      fsc = IMPOSSIBLE;
+      num_split_states = SplitStatesInNode(cm->ndtype[n]);
+      for(v = cm->nodemap[n]; v < cm->nodemap[n] + num_split_states; v++) { 
+	for (jp = 0; jp <= W-sdr; jp++) {
+	  j = i0-1+jp;
+	  for (d = 0; d <= jp-sd; d++) {
+	    fsc = FLogsum(fsc, (alpha[v][j][d] + beta[v][j][d]));
+	  }
+	}
+      }
+      /*printf("checking node: %d | sc: %.6f\n", n, fsc);*/
+      diff = fsc - alpha[0][j0][W];
+      if(diff > 0.01 || diff < -0.01) { /* we're using floats, this should be pretty precise */
+	fail_flag = TRUE;
+	printf("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
+	       n, fsc, alpha[0][j0][W], diff);
+      }
+    }
+  }
+
+  /* If not in local mode, we can calculate P(S|M) / P(S|R) given only the 
+   * beta matrix as follows:
+   * 
+   * IF local ends are off, we know each parse MUST visit each END_E state,
+   * we pick final END_E state state cm->M-1 (though any END_E could be used here):
+   *
+   * Sum_j=0 to W (alpha[M-1][j][0] * beta[M-1][j][0]) = P(S|M) / P(S|R)
+   *
+   * Note: alpha[M-1][j][0] = 0.0 for all j 
+   *       because all parse subtrees rooted at an END_E must have d=0, (2^0 = 1.0)
+   * therefore: 
+   * Sum_j=0 to W (beta[M-1][j][0]) = P(S|M) / P(S|R)
+   * 
+   * *** If local ends are on, each parse MUST visit either each END_E state with d=0
+   * or the EL state but d can vary, so we can't use this test (believe me I tried
+   * to get a similar test working, but I'm convinced you need alpha to get P(S|M)
+   * in local mode).
+   */
+  if(!(cm->flags & CMH_LOCAL_END)) { 
+    freturn_sc = IMPOSSIBLE;
+    v = cm->M-1;
+    for (jp = 0; jp <= W; jp++) {
+      j = i0-1+jp;
+      /* printf("\talpha[%3d][%3d][%3d]: %5.2f | beta[%3d][%3d][%3d]: %5.2f\n", (cm->M-1), (j), 0, alpha[(cm->M-1)][j][0], (cm->M-1), (j), 0, beta[(cm->M-1)][j][0]);*/
+      freturn_sc = FLogsum(freturn_sc, (beta[v][j][0]));
+    }
+  }
+  else { /* return_sc = P(S|M) / P(S|R) from Inside() */
+    freturn_sc = alpha[0][j0][W];
+  }
+
+  if(fail_flag) cm_Fail("Not all nodes passed posterior check.");
+
+  if(!(cm->flags & CMH_LOCAL_END))
+    ESL_DPRINTF1(("\tFastOutsideAlign() sc : %f\n", freturn_sc));
+  else
+    ESL_DPRINTF1(("\tFastOutsideAlign() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc));
+
+  return freturn_sc;
+}  
+
+
+/*
+ * Function: CMPosteriorHB()
  * Date:     EPN 05.27.06 
  * Note:     based on Ian Holmes' P7EmitterPosterior() from HMMER's 2.x postprob.c
  *
@@ -1705,7 +2816,7 @@ FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx,
  *           emitting the subsequence i..j (i=j-d+1). Where j = jp_v + jmin[v],
  *           and d = dp_v + hdmin[v][jp_v]. The caller must provide a <post> CM_HB_MX
  *           matrix, but this matrix may be the same matrix as that provided as
- *           Outside beta, (overwriting it will not compromise the algorithm).
+ *           Outside <out_mx>, (overwriting it will not compromise the algorithm).
  *           
  * Args:     cm       - the model
  *           i0       - first position of target seq we're aligning, usually 1 
@@ -1717,7 +2828,7 @@ FastOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx,
  * Return:   void, dies immediately upon a memory allocation error.
  */
 void
-FastPosteriorHB(CM_t *cm, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx)
+CMPosteriorHB(CM_t *cm, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx)
 {
   int      status;
   int      v, j, d, jp;
@@ -1729,14 +2840,14 @@ FastPosteriorHB(CM_t *cm, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM
   L = j0-i0+1;
   
   /* Contract check */
-  if (ins_mx == NULL)     cm_Fail("FastFPosteriorHB(), ins_mx is NULL.\n");
-  if (out_mx == NULL)     cm_Fail("FastFPosteriorHB(), out_mx is NULL.\n");
-  if (post_mx == NULL)    cm_Fail("FastFPosteriorHB(), post_mx is NULL.\n");
-  if (cm->cp9b == NULL)   cm_Fail("FastFPosteriorHB(), cm->cp9b is NULL.\n");
-  if (ins_mx->L != L)     cm_Fail("FastFPosteriorHB(), ins_mx->L != L passed in.\n");
-  if (out_mx->L != L)     cm_Fail("FastFPosteriorHB(), out_mx->L != L passed in.\n");
-  if (ins_mx->M != cm->M) cm_Fail("FastFPosteriorHB(), ins_mx->M != cm->M.\n");
-  if (out_mx->M != cm->M) cm_Fail("FastFPosteriorHB(), out_mx->M != cm->M.\n");
+  if (ins_mx == NULL)     cm_Fail("CMPosteriorHB(), ins_mx is NULL.\n");
+  if (out_mx == NULL)     cm_Fail("CMPosteriorHB(), out_mx is NULL.\n");
+  if (post_mx == NULL)    cm_Fail("CMPosteriorHB(), post_mx is NULL.\n");
+  if (cm->cp9b == NULL)   cm_Fail("CMPosteriorHB(), cm->cp9b is NULL.\n");
+  if (ins_mx->L != L)     cm_Fail("CMPosteriorHB(), ins_mx->L != L passed in.\n");
+  if (out_mx->L != L)     cm_Fail("CMPosteriorHB(), out_mx->L != L passed in.\n");
+  if (ins_mx->M != cm->M) cm_Fail("CMPosteriorHB(), ins_mx->M != cm->M.\n");
+  if (out_mx->M != cm->M) cm_Fail("CMPosteriorHB(), out_mx->M != cm->M.\n");
 
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
@@ -1757,7 +2868,7 @@ FastPosteriorHB(CM_t *cm, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM
   if(out_mx != post_mx) cm_hb_mx_GrowTo(post_mx, cp9b, L); 
 
   if(cm->flags & CMH_LOCAL_BEGIN) { 
-    if(beta[cm->M] == NULL) cm_Fail("FastPosteriorHB(), local ends are on, but out_mx->dp[cm->M] is NULL.\n");
+    if(beta[cm->M] == NULL) cm_Fail("CMPosteriorHB(), local ends are on, but out_mx->dp[cm->M] is NULL.\n");
     if(post[cm->M] == NULL) { /* allocate it */
       ESL_ALLOC(post_el, sizeof(float *) * (L+1));
       for(jp = 0; jp <= L; jp++) { 
@@ -1807,6 +2918,58 @@ FastPosteriorHB(CM_t *cm, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM
   return; /* neverreached */
 }
 
+
+/*
+ * Function: CMPosterior() 
+ * Date:     EPN, Mon Nov 19 09:02:12 2007
+ * Note:     based on Ian Holmes' P7EmitterPosterior() from HMMER's 2.x postprob.c
+ *
+ * Purpose:  Combines non-banded Inside and Outside matrices into a 
+ *           posterior probability matrix. The value in post[v][j][d] 
+ *           is the log of the posterior probability of a parse subtree rooted at v 
+ *           emitting the subsequence i..j (i=j-d+1). 
+ *           The caller must provide a <post> float matrix, but this matrix may 
+ *           be the same matrix as that provided as Outside <out_mx>, 
+ *           (overwriting it will not compromise the algorithm).
+ *           
+ * Args:     cm       - the model
+ *           i0       - first position of target seq we're aligning, must be 1 
+ *           j0       - final position of target seq we're aligning, L (length of seq) 
+ *           ins_mx   - pre-calculated Inside matrix 
+ *           out_mx   - pre-calculated Outside matrix
+ *           post_mx  - pre-allocated matrix for Posteriors 
+ *
+ * Return:   void, dies immediately upon a memory allocation error.
+ */
+void
+CMPosterior(CM_t *cm, int i0, int j0, float ***ins_mx, float ***out_mx, float ***post_mx)
+{
+  int   v, j, d;
+  float sc;
+  int   vmax;
+  int      L;    /* length of sequence */
+  
+  /* Contract check */
+  if (ins_mx == NULL)     cm_Fail("CMPosterior(), ins_mx is NULL.\n");
+  if (out_mx == NULL)     cm_Fail("CMPosterior(), out_mx is NULL.\n");
+  if (post_mx == NULL)    cm_Fail("CMPosterior(), post_mx is NULL.\n");
+  if (i0 != 1)            cm_Fail("CMPosterior(), i0 != 1.\n");
+
+  L = j0-i0+1;
+  sc = ins_mx[0][L][L];
+
+  /* If local ends are on, start with the EL state (cm->M), otherwise
+   * its not a valid deck. */
+  vmax = (cm->flags & CMH_LOCAL_END) ? cm->M : cm->M-1;
+  for (v = vmax; v >= 0; v--) 
+    for (j = 0; j <= L; j++) 
+      for (d = 0; d <= j; d++)
+	post_mx[v][j][d] = ins_mx[v][j][d] + out_mx[v][j][d] - sc;
+
+  return;
+}
+
+
 /* 
  * Function: optimal_accuracy_align_hb()
  * Date:     EPN, Thu Nov 15 10:48:37 2007
@@ -1817,39 +2980,30 @@ FastPosteriorHB(CM_t *cm, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM
  *           of the target sequence. Uses float log odds scores.
  *
  *           Two CM_HB_MX DP matrices must be passed in. The first
- *           <post> must be pre-filled, containing posterior values
- *           from a HERE HERE Inside/Outside runs on the target sequence. 
- *           cells valid within the bands given in the CP9Bands_t 
- *           <cm->cp9b> will be valid for both matrices. 
+ *           <post_mx> must be pre-filled, containing posterior values
+ *           from Inside/Outside runs on the target sequence. The
+ *           second <mx> will be filled with the optimal accuracy
+ *           scores, where:
  *
- *           We deal with local begins  by keeping track of the optimal
- *           state that we could enter and account for the whole target 
- *           sequence: b = argmax_v  alpha_v(i0,j0) + log t_0(v),
- *           and bsc is the score for that. 
+ *           mx[v][j][d] is the log of the sum of the posterior
+ *                       probabilities of the residues i=j-d+1..j
+ *                       in the subtree rooted at v (in the platonic,
+ *                       non-banded matrix).
  *
- *           If vroot==0, i0==1, and j0==L (e.g. a complete alignment),
- *           the optimal alignment might use a local begin transition, 0->b,
- *           and we'd have to be able to trace that back. For any
- *           problem where the caller sets allow_begin, we return a valid b 
- *           (the optimal 0->b choice) and bsc (the score if 0->b is used).
- *           If a local begin is part of the optimal parse tree, the optimal
- *           alignment score returned by inside() will be bsc and yshad[0][L][L] 
- *           will be USE_LOCAL_BEGIN, telling insideT() to check b and
- *           start with a local 0->b entry transition. When inside()
- *           is called on smaller subproblems (v != 0 || i0 > 1 || j0
- *           < L), we're using inside() as an engine in divide &
- *           conquer, and we don't use the overall return score nor
- *           shadow matrices, but we do need allow_begin, b, and bsc for
- *           divide&conquer to sort out where a local begin might be used.
+ *           Currently this function does not work if local ends are
+ *           on, post->[cm->M][j][d] is the summed probability that
+ *           the EL state emitted residue i=j-d+1, but the EL state
+ *           can be reached from MANY states, so we have an ambiguity.
+ *           To resolve it, we'd need a different EL state (and deck
+ *           in post matrix) for each possible state you can do a
+ *           local end from.  Current solution is never to do local
+ *           optimal accuracy alignments.
  *
  * Args:     cm        - the model    [0..M-1]
  *           dsq       - the digitaized sequence [i0..j0]   
  *           L         - length of the dsq
- *           vroot     - first start state of subtree (0, for whole model)
- *           vend      - last end state of subtree (cm->M-1, for whole model)
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
- *           allow_begin-TRUE to allow 0->b local alignment begin transitions. 
  *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
  *                       he intends to do a traceback.
  *           ret_b     - best local begin state, or NULL if unwanted
@@ -1861,8 +3015,8 @@ FastPosteriorHB(CM_t *cm, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM
  * Returns: Score of the optimal alignment.  
  */
 float 
-optimal_accuracy_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow,  
-			  int allow_begin, int *ret_b, float *ret_bsc, CM_HB_MX *mx, CM_HB_MX *post_mx)
+optimal_accuracy_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, void ****ret_shadow,  
+			  int *ret_b, float *ret_bsc, CM_HB_MX *mx, CM_HB_MX *post_mx)
 {
   int      status;
   int      v,y,z;	/* indices for states  */
@@ -1952,7 +3106,7 @@ optimal_accuracy_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, in
   //esl_vec_FSet(alpha[0][0], mx->ncells_valid, IMPOSSIBLE);
 
   /* Main recursion */
-  for (v = vend; v >= vroot; v--) {
+  for (v = cm->M-1; v >= 0; v--) {
     float const *tsc_v = cm->tsc[v];  /* transition scores for state v */
     sd   = StateDelta(cm->sttype[v]);
     sdr  = StateRightDelta(cm->sttype[v]);
@@ -1964,7 +3118,7 @@ optimal_accuracy_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, in
       if (cm->sttype[v] == B_st) {
 	kshad     = alloc_jdbanded_vjd_kshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 	shadow[v] = (void **) kshad;
-	/* initialize all valid cells for state v to IMPOSSIBLE (local ends are impossible for B states) */
+	/* initialize all valid cells for state v to IMPOSSIBLE */
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
 	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
@@ -2033,7 +3187,7 @@ optimal_accuracy_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, in
     }
     else if(cm->sttype[v] != B_st) { /* entered if state v is (! IL && ! IR && ! B) */
       /* ML, MP, MR, D, S, E states cannot self transit, this means that all cells
-       * in beta[v] are independent of each other, only depending on beta[y] for previously calc'ed y.
+       * in alpha[v] are independent of each other, only depending on alpha[y] for previously calc'ed y.
        * We can do the for loops in any nesting order, this implementation does what I think is most efficient:
        * for y { for j { for d { } } } 
        */
@@ -2158,7 +3312,8 @@ optimal_accuracy_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, in
 		kshad[jp_v][dp_v] = kp_z;
 		/* note: we take the logsum here, because we're keeping track of the
 		 * log of the summed probability of emitting all residues up to this
-		 * point, from left subtree and from the right subtree.
+		 * point, (from i..j) from left subtree (i=j-d+1..j-k) and from the 
+		 * right subtree. (j-k+1..j)
 		 */
 	      }
 	    }
@@ -2170,8 +3325,11 @@ optimal_accuracy_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, in
     /* Deal with possible local begins, these will most likely be off because local
      * ends are off (b/c we can't deal with local end emissions), but we can deal
      * with local begins.
+     * We do this even though we can't deal with local ends, chances are that
+     * local begins will be off also (since local ends must be), but this code
+     * will work with local begins, so it's left here.
      */
-    if((cm->flags & CMH_LOCAL_BEGIN) && allow_begin) { 
+    if(cm->flags & CMH_LOCAL_BEGIN) {
       if(j0 >= jmin[v] && j0 <= jmax[v]) { 
 	jp_v = j0 - jmin[v];
 	Wp = W - hdmin[v][jp_v];
@@ -2194,7 +3352,7 @@ optimal_accuracy_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, in
       }
       /* Check for whether we need to store an optimal local begin score
        * as the optimal overall score, and if we need to put a flag
-       * in the shadow matrix telling insideT() to use the b we return.
+       * in the shadow matrix telling fast_alignT_hb() to use the b we return.
        */
       if (v == 0) { 
 	if(j0 >= jmin[0] && j0 <= jmax[0]) {
@@ -2203,7 +3361,7 @@ optimal_accuracy_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, in
 	  if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v]) { 
 	    if (bsc > alpha[0][jp_v][Wp]) {
 	      alpha[0][jp_v][Wp] = bsc;
-	      if (ret_shadow != NULL) yshad[jp_v][Wp] = USED_LOCAL_BEGIN;
+	      yshad[jp_v][Wp] = USED_LOCAL_BEGIN;
 	    }
 	  }
 	}
@@ -2212,8 +3370,8 @@ optimal_accuracy_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, in
   } /* end loop over all v */
   /*FILE *fp; fp = fopen("cyk.mx", "w"); cm_hb_mx_Dump(fp, mx); fclose(fp);*/
   
-  Wp = W - hdmin[vroot][j0-jmin[vroot]];
-  sc =     alpha[vroot][j0-jmin[vroot]][Wp];
+  Wp = W - hdmin[0][j0-jmin[0]];
+  sc =     alpha[0][j0-jmin[0]][Wp];
 
   if (ret_b != NULL)      *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
   if (ret_bsc != NULL)    *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */
@@ -2221,12 +3379,842 @@ optimal_accuracy_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, in
   else free_vjd_shadow_matrix(shadow, cm, i0, j0);
   free(yvalidA);
 
+  /* convert score, a log probability, into the average posterior probability of all W aligned residues */
+  sc = sreEXP2(sc) / (float) W;
+  
   ESL_DPRINTF1(("optimal_accuracy_align_hb return sc: %f\n", sc));
   return sc;
 
  ERROR: 
   cm_Fail("Memory allocation error.\n");
   return 0.; /* never reached */
+}
+
+
+/* 
+ * Function: optimal_accuracy_align()
+ * Date:     EPN, Sun Nov 18 20:45:22 2007
+ *           
+ * Purpose:  Run the Holmes/Durbin optimal accuracy algorithm 
+ *           using bands in the j and d dimensions of the DP matrix. 
+ *           Bands were obtained from an HMM Forward-Backward parse
+ *           of the target sequence. Uses float log odds scores.
+ * 
+ *           Two float DP matrices must be passed in. The first
+ *           <post_mx> must be pre-filled, containing posterior values
+ *           from Inside/Outside runs on the target sequence. The
+ *           second <mx> will be filled with the optimal accuracy
+ *           scores, where:
+ *
+ *           mx[v][j][d] is the log of the sum of the posterior
+ *                       probabilities of the residues i=j-d+1..j
+ *                       in the subtree rooted at v. 
+ *
+ *           Currently this function does not work if local ends are
+ *           on, post->[cm->M][j][d] is the summed probability that
+ *           the EL state emitted residue i=j-d+1, but the EL state
+ *           can be reached from MANY states, so we have an ambiguity.
+ *           To resolve it, we'd need a different EL state (and deck
+ *           in post matrix) for each possible state you can do a
+ *           local end from.  Current solution is never to do local
+ *           optimal accuracy alignments.
+ *
+ * Args:     cm        - the model    [0..M-1]
+ *           dsq       - the digitaized sequence [i0..j0]   
+ *           L         - length of the dsq
+ *           i0        - first position in subseq to align (1, for whole seq)
+ *           j0        - last position in subseq to align (L, for whole seq)
+ *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
+ *                       he intends to do a traceback.
+ *           ret_b     - best local begin state, or NULL if unwanted
+ *           ret_bsc   - score for using ret_b, or NULL if unwanted                        
+ *           mx        - the dp matrix, must be fully allocated (no deck reuse).
+ *           post_mx   - the pre-filled posterior matrix
+ *                       
+ * Returns: Score of the optimal alignment.  
+ */
+float 
+optimal_accuracy_align(CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, void ****ret_shadow,  
+		       int *ret_b, float *ret_bsc, float ***mx, float ***post_mx)
+{
+  int      status;
+  int      v,y,z;	/* indices for states  */
+  int      j,d,i,k;	/* indices in sequence dimensions */
+  float    sc;		/* a temporary variable holding a score */
+  int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
+  int      W;		/* subsequence length */
+  void  ***shadow;      /* shadow matrix for tracebacks */
+  int    **kshad;       /* a shadow deck for bifurcations */
+  char   **yshad;       /* a shadow deck for every other kind of state */
+  int      b;		/* best local begin state */
+  float    bsc;		/* score for using the best local begin state */
+  float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
+  int      sd;          /* StateDelta(cm->sttype[v]) */
+  int      sdr;         /* StateRightDelta(cm->sttype[v] */
+  int      jp;          /* offset j, j = i0-1+jp */
+  int      j_sdr;       /* j - sdr */
+  int      d_sd;        /* d - sd */
+  float    tsc;         /* a transition score */
+
+  /* Contract check */
+  if(dsq == NULL) cm_Fail("optimal_accuracy_align(), dsq is NULL.\n");
+  if (mx == NULL) cm_Fail("optimal_accuracy_align(), mx is NULL.\n");
+  if (cm->cp9b == NULL) cm_Fail("optimal_accuracy_align(), cm->cp9b is NULL.\n");
+  if (post_mx == NULL) cm_Fail("optimal_accuracy_align(), cm->cp9b is NULL.\n");
+  if (cm->flags & CMH_LOCAL_END) cm_Fail("optimal_accuracy_align(), local ends are on, can't deal with this EL emissions are ambiguous (summed across all states with local ends).");
+  /* Currently not sure how to deal with EL emissions: post->[cm->M][j][d] is the summed probability that the EL state
+   * emitted residue i=j-d+1, but the EL state can be reached from MANY states, so we have an ambiguity here, to resolve
+   * it, we'd need a different EL state (and deck in post matrix) for each possible state you can do a local end from.
+   * Current solution is never to do local optimal accuracy alignments.
+   */
+
+  float ***alpha = mx; 
+  float ***post  = post_mx;
+
+  /* Allocations and initializations  */
+  b   = -1;
+  bsc = IMPOSSIBLE;
+  W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
+				/* if caller didn't give us a deck pool, make one */
+
+  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
+  ESL_ALLOC(el_scA, sizeof(float) * (W+1));
+  for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
+
+  /* The shadow matrix, we always allocate it, so we don't have to 
+   * check if it's null in the depths of the DP recursion.
+   * We do some pointer tricks here to save memory. The shadow matrix
+   * is a void ***. Decks may either be char ** (usually) or
+   * int ** (for bifurcation decks). Watch out for the casts.
+   * For most states we only need
+   * to keep y as traceback info, and y <= 6. For bifurcations,
+   * we need to keep k, and k <= L, and L might be fairly big.
+   * (We could probably limit k to an unsigned short ... anyone
+   * aligning an RNA > 65536 would need a big computer... but
+   * we'll hold off on that for now. We could also pack more
+   * traceback pointers into a smaller space since we only really
+   * need 3 bits, not 8.)
+   */
+  ESL_ALLOC(shadow, sizeof(void **) * cm->M);
+  for (v = 0; v < cm->M; v++) shadow[v] = NULL;
+
+  /* Main recursion */
+  for (v = cm->M-1; v >= 0; v--) {
+    float const *tsc_v = cm->tsc[v];  /* transition scores for state v */
+    sd   = StateDelta(cm->sttype[v]);
+    sdr  = StateRightDelta(cm->sttype[v]);
+    assert(! (NOT_IMPOSSIBLE(cm->endsc[v]))); /* we checked that CMH_LOCAL_END flag was down in contract */
+    /* Get a shadow deck to fill in and initialize all valid cells for state v */
+    if (cm->sttype[v] != E_st) {
+      if (cm->sttype[v] == B_st) {
+	kshad     = alloc_vjd_kshadow_deck(L, i0, j0); 
+	shadow[v] = (void **) kshad;
+	/* initialize all valid cells for state v to IMPOSSIBLE (local ends are impossible for B states) */
+	assert(! (NOT_IMPOSSIBLE(cm->endsc[v])));
+	for (jp = 0; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  for (d = 0; d <= jp; d++) {
+	    alpha[v][j][d] = IMPOSSIBLE;
+	    kshad[j][d] = USED_EL; 
+	  }
+	}
+      } else { /* ! B_st && ! E_st */
+	yshad     = alloc_vjd_yshadow_deck(L, i0, j0);
+	shadow[v] = (void **) yshad;
+	/* initialize all valid cells for state v to IMPOSSIBLE */
+	for (jp = 0; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  for (d = 0; d <= jp; d++) {
+	    alpha[v][j][d] = IMPOSSIBLE;
+	    yshad[j][d] = USED_EL; 
+	  }
+	}
+      }
+    }
+    
+    if(cm->sttype[v] == E_st) { 
+      for (jp = 0; jp <= W; jp++) {
+	j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
+	alpha[v][j][0] = IMPOSSIBLE; /* we haven't seen any residues yet, score is IMPOSSIBLE */
+	for (d = 1; d <= jp; d++) alpha[v][j][d] = IMPOSSIBLE;
+      }
+    }
+    else if(cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
+      /* update alpha[v][j][d] cells, for IL states, loop nesting order is:
+       * for j { for d { for y { } } } because they can self transit, and a 
+       * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
+       * before can start calc'ing for alpha[v][j][d+1] */
+      for (jp = sdr; jp <= W; jp++) {
+	j = i0-1+jp;
+	j_sdr = j - sdr;
+	for (d = sd; d <= jp; d++) {
+	  d_sd = d - sd;
+	  i    = j - d + 1;
+	  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	    y = cm->cfirst[v] + yoffset; 
+	    if ((sc = alpha[y][j_sdr][d_sd]) > alpha[v][j][d]) {
+	      alpha[v][j][d] = sc; 
+	      yshad[j][d]    = yoffset;
+	    }
+	  }
+	  alpha[v][j][d] = FLogsum(alpha[v][j][d], post[v][j][d]);
+	  alpha[v][j][d] = ESL_MAX(alpha[v][j][d], IMPOSSIBLE);
+	}
+      }
+    }
+    else if(cm->sttype[v] != B_st) { /* entered if state v is (! IL && ! IR && ! B) */
+      /* ML, MP, MR, D, S, E states cannot self transit, this means that all cells
+       * in alpha[v] are independent of each other, only depending on alpha[y] for previously calc'ed y.
+       * We can do the for loops in any nesting order, this implementation does what I think is most efficient:
+       * for y { for j { for d { } } } 
+       */
+      for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
+	yoffset = y - cm->cfirst[v];
+	tsc = tsc_v[yoffset];
+
+	for (jp = sdr; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  j_sdr = j - sdr;
+
+	  for (d = sd; d <= jp; d++) {
+	    if((sc = alpha[y][j_sdr][d - sd]) > alpha[v][j][d]) {
+	      alpha[v][j][d] = sc;
+	      yshad[j][d]    = yoffset;
+	    }
+	  }
+	}
+      }
+      /* add in emission score, if any */
+      switch(cm->sttype[v]) { 
+      case ML_st:
+      case MR_st:
+	for (jp = 0; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  i = j - 1;
+	  for (d = sd; d <= jp; d++) 
+	    alpha[v][j][d] = FLogsum(alpha[v][j][d], post[v][j][d]);
+	}
+	break;
+      case MP_st:
+	for (jp = 0; jp <= W; jp++) {
+	  j = i0-1+jp;
+	  i = j - 1;
+	  for (d = sd; d <= jp; d++)
+	    alpha[v][j][d] = FLogsum(alpha[v][j][d], FLogsum(post[v][j][d], post[v][j][d]));
+	  /* note: for MP states, we're emitting 2 residues, include 2 * the posterior probability */
+	}
+      default:
+	break;
+      }
+      /* ensure all cells are >= IMPOSSIBLE */
+      for (jp = 0; jp <= W; jp++) {
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++)
+	  alpha[v][j][d] = ESL_MAX(alpha[v][j][d], IMPOSSIBLE);
+      }
+    }
+    else { /* B_st */ 
+      y = cm->cfirst[v]; /* left  subtree */
+      z = cm->cnum[v];   /* right subtree */
+      
+      for (jp = 0; jp <= W; jp++) { 
+	j = i0-1+jp;
+	for (d = 0; d <= jp; d++) {
+	  for (k = 0; k <= d; k++) {
+	    if ((sc = FLogsum(alpha[y][j-k][d-k], alpha[z][j][k])) > alpha[v][j][d]) { 
+	      alpha[v][j][d] = sc;
+	      kshad[j][d]    = k;
+	      /* note: we take the logsum here, because we're keeping track of the
+	       * log of the summed probability of emitting all residues up to this
+	       * point, (from i..j) from left subtree (i=j-d+1..j-k) and from the 
+	       * right subtree. (j-k+1..j)
+	       */
+	    }
+	  }
+	}
+      }
+    }
+				/* finished calculating deck v. */
+      
+    if(cm->flags & CMH_LOCAL_BEGIN) {
+      if (alpha[v][j0][W] + cm->beginsc[v] > bsc) {
+	b   = v;
+	bsc = alpha[v][j0][W] + cm->beginsc[v];
+      }
+    }
+    /* Check for whether we need to store an optimal local begin score
+     * as the optimal overall score, and if we need to put a flag
+     * in the shadow matrix telling fast_alignT() to use the b we return.
+     * We do this even though we can't deal with local ends, chances are that
+     * local begins will be off also (since local ends must be), but this code
+     * will work with local begins, so it's left here.
+     */
+    if(v == 0 && bsc > alpha[0][j0][W]) {
+      alpha[0][j0][W] = bsc;
+      yshad[j0][W] = USED_LOCAL_BEGIN;
+    }
+  } /* end loop over all v */
+  
+  sc =     alpha[0][j0][W];
+  if (ret_b != NULL)      *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
+  if (ret_bsc != NULL)    *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */
+  if (ret_shadow != NULL) *ret_shadow = shadow;
+  else free_vjd_shadow_matrix(shadow, cm, i0, j0);
+  free(el_scA);
+
+  /* convert score, a log probability, into the average posterior probability of all W aligned residues */
+  sc = sreEXP2(sc) / (float) W;
+
+  ESL_DPRINTF1(("optimal_accuracy_align return sc: %f\n", sc));
+  return sc;
+
+ ERROR: 
+  cm_Fail("Memory allocation error.\n");
+  return 0.; /* never reached */
+}
+
+
+/*
+ * Function: SampleFromInside()
+ * Incept:   EPN, Thu Nov 15 16:45:32 2007
+ *          
+ * Purpose:  Sample a parsetree from a non-banded float Inside matrix.
+ *           
+ * Args:     r        - source of randomness
+ *           cm       - the model
+ *           dsq      - digitized sequence
+ *           L        - length of dsq, alpha *must* go from 1..L
+ *           mx       - pre-calculated Inside matrix (floats)
+ *           ret_tr   - ptr to parsetree we'll return (*must* be non-NULL)
+ *
+ * Return:   score of sampled parsetree; dies immediately with cm_Fail() if an error occurs.
+ */
+float 
+SampleFromInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, float ***mx, Parsetree_t **ret_tr)
+{
+  int          status;             /* easel status code */
+  int          v, y, z, b;         /* state indices */
+  int          yoffset;            /* transition offset in a states transition vector */
+  int          i, j;               /* sequence position indices */
+  int          d;                  /* j - i + 1; the current subseq length */
+  int          k;                  /* right subseq fragment length for bifurcs */
+  int          nd;                 /* node index */
+  int          bifparent;          /* for connecting bifurcs */
+  Parsetree_t *tr;                 /* trace we're building */
+  ESL_STACK   *pda;                /* the stack */
+  float        pvec[MAXCONNECT+1]; /* prob vector of possible paths to take, (max num children + 1 for possibility of EL) */
+  float       *bifvec;             /* pvec for choosing transition out of BIF_B states */
+  float       *rootvec;            /* pvec for choosing transition out of ROOT_S if local begins are on */
+  float        maxsc;              /* max score in our vector of scores of possible subparses */
+  int          el_is_possible;     /* TRUE if we can jump to EL from current state (and we're in local mode) FALSE if not */
+  int          ntrans;             /* number of transitions for current state */
+  float        fsc = 0.;           /* score of the parsetree we're sampling */
+
+  /* contract check */
+  if(ret_tr == NULL) cm_Fail("SampleFromInside(), ret_tr is NULL.");
+  if(r      == NULL) cm_Fail("SampleFromInside(), source of randomness r is NULL.");
+  if(mx     == NULL) cm_Fail("SampleFromInside(), source of randomness r is NULL.");
+  
+  float ***alpha = mx;
+
+  /* initialize pvec */
+  esl_vec_FSet(pvec, (MAXCONNECT+1), 0.);
+
+  /* Create a parse tree structure and initialize it by adding the root state.
+   */
+  tr = CreateParsetree(100);
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
+
+  /* Stochastically traceback through the Inside matrix 
+   * this section of code is stolen and adapted from smallcyk.c:insideT() 
+   */
+  pda = esl_stack_ICreate();
+  v = 0;
+
+  j = d = L;
+  i = 1;
+  fsc = 0.;
+  while (1) {
+    if (cm->sttype[v] == B_st) {
+      y = cm->cfirst[v];
+      z = cm->cnum[v];
+
+      ESL_ALLOC(bifvec, sizeof(float) * (d+1));
+      /* set bifvec[] as (float-ized) log odds scores for each valid left fragment length */
+      for(k = 0; k <= d; k++) 
+	bifvec[k] = alpha[y][j-k][d-k] + alpha[z][j][k];
+      maxsc = esl_vec_FMax(bifvec, (d+1));
+      esl_vec_FIncrement(bifvec, (d+1), (-1. * maxsc));
+      esl_vec_FScale(bifvec, (d+1), log(2));
+      esl_vec_FLogNorm(bifvec, (d+1));
+      k = esl_rnd_FChoose(r, bifvec, (d+1));
+      free(bifvec);
+
+      /* Store info about the right fragment that we'll retrieve later:
+       */
+      esl_stack_IPush(pda, j);	/* remember the end j    */
+      esl_stack_IPush(pda, k);	/* remember the subseq length k */
+      esl_stack_IPush(pda, tr->n-1);	/* remember the trace index of the parent B state */
+
+      /* Deal with attaching left start state.
+       */
+      j = j-k;
+      d = d-k;
+      i = j-d+1;
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+      v = y;
+    } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+      /* We don't trace back from an E or EL. Instead, we're done with the
+       * left branch of the tree, and we try to swing over to the right
+       * branch by popping a right start off the stack and attaching
+       * it. If the stack is empty, then we're done with the
+       * traceback altogether. This is the only way to break the
+       * while (1) loop.
+       */
+      if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;
+      esl_stack_IPop(pda, &d);
+      esl_stack_IPop(pda, &j);
+      v = tr->state[bifparent];	/* recover state index of B */
+      y = cm->cnum[v];		/* find state index of right S */
+      i = j-d+1;
+				/* attach the S to the right */
+      InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
+
+      v = y;
+    } else {
+      if((v > 0) || (! (cm->flags & CMH_LOCAL_BEGIN))) /* ROOT_S with local begins on is a special case that we handle below */
+	{ 
+	  /* choose which transition we take */
+	  esl_vec_FSet(pvec, (MAXCONNECT+1), IMPOSSIBLE); /* not really necessary */
+	  fsc += get_femission_score(cm, dsq, v, i, j); 
+	  
+	  /* set pvec[] as (float-ized) log odds scores for each child we can transit to, 
+	   * plus a local end (if possible) */
+	  ntrans = cm->cnum[v];
+	  el_is_possible = FALSE;
+	  if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) { 
+	    el_is_possible = TRUE; 
+	    ntrans++; 
+	  }
+	  for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+	    y = yoffset + cm->cfirst[v];
+	    pvec[yoffset] = cm->tsc[v][yoffset] + 
+	      alpha[y][j - StateRightDelta(cm->sttype[v])][d - StateDelta(cm->sttype[v])];
+	  }
+	  if(el_is_possible) pvec[cm->cnum[v]] = cm->endsc[v] + 
+			       alpha[cm->M][j][d]; /* EL is silent when we transition into it from non-EL */
+	  /* note: we can treat the log odds scores as log probs, because
+	   * the log probability of the null model is the same for each,
+	   * so essentially we've divided each score by the same constant, so 
+	   * the *relative* proportion of the log odds scores is the
+	   * same as the relative proportion of the log probabilities (seq | model) */
+	  
+	  maxsc = esl_vec_FMax(pvec, ntrans);
+	  esl_vec_FIncrement(pvec, ntrans, (-1. * maxsc));
+	  /* get from log_2 to log_e, so we can use easel's log vec ops */
+	  esl_vec_FScale  (pvec, ntrans, log(2));
+	  esl_vec_FLogNorm(pvec, ntrans);
+	  yoffset = esl_rnd_FChoose(r, pvec, ntrans);
+	  if(yoffset < cm->cnum[v]) fsc += cm->tsc[v][yoffset]; 
+	  else {
+	    fsc += cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
+	    yoffset = USED_EL; /* we chose EL */
+	  }
+	}
+      else /* v == 0 && (cm->flags && CMH_LOCAL_BEGIN) ( local begins are on )*/
+	{
+	  ntrans = cm->M; /* pretend all states are possible to begin into, but they're not as some will remain IMPOSSIBLE */
+	  ESL_ALLOC(rootvec, sizeof(float) * (ntrans));
+	  esl_vec_FSet(rootvec, ntrans, IMPOSSIBLE);
+	  rootvec[cm->nodemap[1]] = cm->beginsc[cm->nodemap[1]] + alpha[cm->nodemap[1]][j][d]; /* ROOT_S is silent */
+	  for (nd = 2; nd < cm->nodes; nd++) {
+	    if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+		cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd)  
+	      {
+		rootvec[cm->nodemap[nd]] = cm->beginsc[cm->nodemap[nd]] + alpha[cm->nodemap[nd]][j][d]; /* ROOT_S is silent */
+	      }
+	  }
+	  /* this block is shared with v > 0 block, but we repeat it here so we don't need another if statement */
+	  maxsc = esl_vec_FMax(rootvec, ntrans);
+	  esl_vec_FIncrement(rootvec, ntrans, (-1. * maxsc));
+	  /* get from log_2 to log_e, so we can use easel's log vec ops */
+	  esl_vec_FScale  (rootvec, ntrans, log(2));
+	  esl_vec_FLogNorm(rootvec, ntrans);
+	  b = esl_rnd_FChoose(r, rootvec, ntrans);
+	  /* end of similar block with v > 0 */
+	  fsc += cm->beginsc[b];
+	  yoffset = USED_LOCAL_BEGIN; 
+	  free(rootvec); /* we will not need this again */
+	}
+
+      /*printf("v : %d | r : %d | z : %d | 1 : %d | \n", v, r, z, 1);*/
+      /*printf("\tyoffset : %d\n", yoffset);*/
+      switch (cm->sttype[v]) {
+      case D_st:            break;
+      case MP_st: i++; j--; break;
+      case ML_st: i++;      break;
+      case MR_st:      j--; break;
+      case IL_st: i++;      break;
+      case IR_st:      j--; break;
+      case S_st:            break;
+      default:    cm_Fail("'Inconceivable!'\n'You keep using that word...'");
+      }
+      d = j-i+1;
+
+      if (yoffset == USED_EL) 
+	{	/* a local alignment end */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+	  v = cm->M;		/* now we're in EL. */
+	}
+      else if (yoffset == USED_LOCAL_BEGIN) 
+	{ /* local begin; can only happen once, from root */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
+	  v = b;
+	}
+      else 
+	{
+	  y = cm->cfirst[v] + yoffset;
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+	  v = y;
+	}
+    }
+  }
+  esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+
+  *ret_tr = tr; /* contract checked ret_tr was non-NULL */
+  return fsc;
+
+ ERROR:
+  cm_Fail("memory error.");
+  return 0.; /* NEVERREACHED */
+}
+
+/*
+ * Function: SampleFromInsideHB()
+ * Incept:   EPN, Fri Sep  7 11:02:15 2007
+ *          
+ * Purpose:  Sample a parsetree from a HMM banded Inside matrix.
+ *           
+ * Args:     r        - source of randomness
+ *           cm       - the model
+ *           dsq      - digitized sequence
+ *           L        - length of dsq, alpha *must* go from 1..L
+ *           mx       - pre-calculated Inside matrix
+ *           ret_tr   - ptr to parsetree we'll return (*must* be non-NULL)
+ *
+ * Return:   score of sampled parsetree; dies immediately with cm_Fail if an error occurs.
+ */
+float 
+SampleFromInsideHB(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, CM_HB_MX *mx, Parsetree_t **ret_tr)
+{
+  int          status;             /* easel status code */
+  int          v, y, z, b;         /* state indices */
+  int          yoffset;            /* transition offset in a states transition vector */
+  int          i, j;               /* sequence position indices */
+  int          jp_v, jp_y, jp_z;   /* positions, offset inside j band */
+  int          kmin, kmax;         /* min/max k in current d band */
+  int          d;                  /* j - i + 1; the current subseq length */
+  int          dp_v, dp_y;         /* length, offset inside a d band */
+  int          k;                  /* right subseq fragment length for bifurcs */
+  int          kp_z;               /* right fragment length, offset inside a d band */
+  int          nd;                 /* node index */
+  int          bifparent;          /* for connecting bifurcs */
+  Parsetree_t *tr;                 /* trace we're building */
+  ESL_STACK   *pda;                /* the stack */
+  float        pvec[MAXCONNECT+1]; /* prob vector of possible paths to take, (max num children + 1 for possibility of EL) */
+  float       *bifvec;             /* pvec for choosing transition out of BIF_B states */
+  float       *rootvec;            /* pvec for choosing transition out of ROOT_S if local begins are on */
+  float        maxsc;              /* max score in our vector of scores of possible subparses */
+  int          el_is_possible;     /* TRUE if we can jump to EL from current state (and we're in local mode) FALSE if not */
+  int          ntrans;             /* number of transitions for current state */
+  float        fsc = 0.;           /* score of the parsetree we're sampling */
+  int          seen_valid;         /* for checking we have at least one valid path to take  */
+  int          sd;                 /* state delta for current state, residues emitted left + residues emitted right */
+  int          sdr;                /* state right delta for current state, residues emitted right */
+
+  /* contract check */
+  if(ret_tr == NULL) cm_Fail("SampleFromInsideHB(), ret_tr is NULL.");
+  if(r      == NULL) cm_Fail("SampleFromInsideHB(), source of randomness r is NULL.");
+  if (cm->cp9b == NULL) cm_Fail("SampleFromInsideHB(), cm->cp9b is NULL.\n");
+  if (mx == NULL) cm_Fail("SampleFromInsideHB(), mx is NULL.\n");
+
+  /* variables used for memory efficient bands */
+  /* ptrs to cp9b info, for convenience */
+  CP9Bands_t *cp9b = cm->cp9b;
+  int     *jmin  = cp9b->jmin;  
+  int     *jmax  = cp9b->jmax;
+  int    **hdmin = cp9b->hdmin;
+  int    **hdmax = cp9b->hdmax;
+  /* the DP matrix */
+  float ***alpha = mx->dp; /* pointer to the alpha DP matrix */
+  
+  /* initialize pvec */
+  esl_vec_FSet(pvec, (MAXCONNECT+1), 0.);
+
+  /* Create a parse tree structure and initialize it by adding the root state.
+   */
+  tr = CreateParsetree(100);
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
+
+  /* Stochastically traceback through the Inside matrix 
+   * this section of code is stolen and adapted from hbandcyk.c:insideTHB() 
+   */
+  pda = esl_stack_ICreate();
+  v = 0;
+
+  j = d = L;
+  i = 1;
+  jp_v = j - jmin[v];
+  dp_v = d - hdmin[v][jp_v];
+  fsc  = 0.;
+  while (1) {
+    if(cm->sttype[v] != EL_st && d > hdmax[v][jp_v]) cm_Fail("ERROR in SampleFromInsideHB(). d : %d > hdmax[%d] (%d)\n", d, v, hdmax[v][jp_v]);
+    if(cm->sttype[v] != EL_st && d < hdmin[v][jp_v]) cm_Fail("ERROR in SampleFromInsideHB(). d : %d < hdmin[%d] (%d)\n", d, v, hdmin[v][jp_v]);
+
+    if (cm->sttype[v] == B_st) {
+      y = cm->cfirst[v];
+      z = cm->cnum[v];
+      jp_z = j-jmin[z];
+      k = kp_z + hdmin[z][jp_z];  /* k = offset len of right fragment */
+
+      ESL_ALLOC(bifvec, sizeof(float) * (d+1));
+      /* set bifvec[] as (float-ized) log odds scores for each valid left fragment length,
+       * we have to be careful to check that the corresponding alpha cell for each length is valid  */
+      esl_vec_FSet(bifvec, (d+1), IMPOSSIBLE); /* only valid d's will be reset to a non-IMPOSSIBLE score */
+
+      /* This search for valid k's is complex, and uncommented. It was taken from
+       * cm_fastalign.c:fast_cyk_align_hb(), the B_st case. The code there is commented somewhat
+       * extensively. I'm pretty sure this is the most efficient (or at least close to it) 
+       * way to find the valid cells in the DP matrix we're looking for. 
+       */
+      jp_v = j - jmin[v];
+      jp_y = j - jmin[y];
+      jp_z = j - jmin[z];
+      if(j < jmin[v] || j > jmax[v])               cm_Fail("SampleFromInsideHB() B_st v: %d j: %d outside band jmin: %d jmax: %d\n", v, j, jmin[v], jmax[v]);
+      if(d < hdmin[v][jp_v] || d > hdmax[v][jp_v]) cm_Fail("SampleFromInsideHB() B_st v: %d j: %d d: %d outside band dmin: %d dmax: %d\n", v, j, d, hdmin[v][jp_v], hdmax[v][jp_v]);
+      seen_valid = FALSE;
+      kmin = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+      kmax = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+      for(k = kmin; k <= kmax; k++)
+	{
+	  if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k])
+	    {
+	      kp_z = k-hdmin[z][jp_z];
+	      dp_y = d-hdmin[y][jp_y-k];
+	      bifvec[k] = alpha[y][jp_y-k][dp_y-k] + alpha[z][jp_z][kp_z]; 
+	      seen_valid = TRUE;
+	    }
+	}
+      if(!seen_valid) cm_Fail("SampleFromInsideHB() number of valid transitions (for a B_st) is 0. You thought this was impossible.");
+      maxsc = esl_vec_FMax(bifvec, (d+1));
+      esl_vec_FIncrement(bifvec, (d+1), (-1. * maxsc));
+      esl_vec_FScale(bifvec, (d+1), log(2));
+      esl_vec_FLogNorm(bifvec, (d+1));
+      k = esl_rnd_FChoose(r, bifvec, (d+1));
+      free(bifvec);
+
+      /* Store info about the right fragment that we'll retrieve later:
+       */
+      esl_stack_IPush(pda, j);	/* remember the end j    */
+      esl_stack_IPush(pda, k);	/* remember the subseq length k */
+      esl_stack_IPush(pda, tr->n-1);	/* remember the trace index of the parent B state */
+
+      /* Deal with attaching left start state.
+       */
+      j = j-k;
+      d = d-k;
+      i = j-d+1;
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+      v = y;
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+    } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+      /* We don't trace back from an E or EL. Instead, we're done with the
+       * left branch of the tree, and we try to swing over to the right
+       * branch by popping a right start off the stack and attaching
+       * it. If the stack is empty, then we're done with the
+       * traceback altogether. This is the only way to break the
+       * while (1) loop.
+       */
+      if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;
+      esl_stack_IPop(pda, &d);
+      esl_stack_IPop(pda, &j);
+      v = tr->state[bifparent];	/* recover state index of B */
+      y = cm->cnum[v];		/* find state index of right S */
+      i = j-d+1;
+				/* attach the S to the right */
+      InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
+
+      v = y;
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+    } else {
+      if((v > 0) || (! (cm->flags & CMH_LOCAL_BEGIN))) /* ROOT_S with local begins on is a special case that we handle below */
+	{ 
+	  /* Choose which transition we take.
+	   * Set pvec[] as (float-ized) log odds scores for each child we can transit to, 
+	   * plus a local end (if possible). We only want to look at valid transitions, that
+	   * is, those that do not violate the bands (correspond to accessing cells that actually
+	   * exist in the DP matrix). 
+	   */
+	  seen_valid = FALSE;
+	  esl_vec_FSet(pvec, (MAXCONNECT+1), IMPOSSIBLE); /* only transitions that correspond to valid cells will be reset to a non-IMPOSSIBLE score */
+	  fsc += get_femission_score(cm, dsq, v, i, j); 
+	  sdr = StateRightDelta(cm->sttype[v]);
+	  sd  = StateDelta(cm->sttype[v]);
+	  for(yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
+	    {
+	      y = yoffset + cm->cfirst[v];
+	      if((j - sdr) >= jmin[y] && (j - sdr) <= jmax[y]) 
+		{ /* enforces j is valid for state y */
+		  jp_y = j - jmin[y];
+		  if((d - sd) >= hdmin[y][jp_y-sdr] && (d - sd) <= hdmax[y][jp_y-sdr])
+		    {
+		      dp_y = d - hdmin[y][(jp_y - sdr)];  /* d index for state y 
+							     in alpha w/mem eff bands */
+		      /* if we get here alpha[y][jp_y-sdr][dp_y-sd] is a valid alpha cell
+		       * corresponding to alpha[y][j-sdr][d-sd] in the platonic matrix.
+		       */
+		      pvec[yoffset] = cm->tsc[v][yoffset] + alpha[y][jp_y - sdr][dp_y - sd];
+		      seen_valid = TRUE;
+		    }
+		}		
+	    }
+	  if(!seen_valid) {
+	    cm_Fail("SampleFromInsideHB() number of valid transitions is 0. You thought this was impossible.");
+	  }
+	  if((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) 
+	    el_is_possible = TRUE; 
+	  else 
+	    el_is_possible = FALSE;
+	  if(el_is_possible) pvec[cm->cnum[v]] = cm->endsc[v] + alpha[cm->M][j][d]; /* EL is silent when we transition into it from non-EL */
+	  ntrans = cm->cnum[v] + el_is_possible;
+	  maxsc = esl_vec_FMax(pvec, ntrans);
+	  esl_vec_FIncrement(pvec, ntrans, (-1. * maxsc));
+	  /* get from log_2 to log_e, so we can use easel's log vec ops */
+	  esl_vec_FScale  (pvec, ntrans, log(2));
+	  esl_vec_FLogNorm(pvec, ntrans);
+	  yoffset = esl_rnd_FChoose(r, pvec, ntrans);
+	  if(yoffset < cm->cnum[v]) fsc += cm->tsc[v][yoffset]; 
+	  else {
+	    fsc += cm->endsc[v] + (cm->el_selfsc * (d - StateDelta(cm->sttype[v])));
+	    yoffset = USED_EL; /* we chose EL */
+	  }
+	}
+      else /* v == 0 && (cm->flags && CMH_LOCAL_BEGIN) ( local begins are on )*/
+	{
+	  seen_valid = FALSE;
+	  ntrans = cm->M; /* pretend all states are possible to begin into, but they're not as some will remain IMPOSSIBLE */
+	  ESL_ALLOC(rootvec, sizeof(float) * (ntrans));
+	  esl_vec_FSet(rootvec, ntrans, IMPOSSIBLE);
+
+	  /* Set all the legal states that we can local begin into to appropriate scores.
+	   * Only states y that have a non-zero cm->beginsc[y] AND have alpha[y][j][d]
+	   * within their bands are legal.
+	   */
+	  for (nd = 1; nd < cm->nodes; nd++) {
+	    if ((nd == 1) || /* we can transit into node 1 no matter what */
+		(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+		 cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd))
+	      {
+		y = cm->nodemap[nd];
+		if(j >= jmin[y] && j <= jmax[y]) 
+		  { /* enforces j is valid for state y */
+		    jp_y = j - jmin[y];
+		    if(d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y])
+		      {
+			dp_y = d - hdmin[y][jp_y];
+			rootvec[y] = cm->beginsc[y] + alpha[y][jp_y][dp_y]; /* ROOT_S is silent */
+			seen_valid = TRUE;
+		      }
+		  }
+	      }
+	  }
+	  if(!seen_valid) cm_Fail("SampleFromInsideHB() number of valid transitions (from ROOT_S!) is 0. You thought this was impossible.");
+	  /* this block is shared with v > 0 block, but we repeat it here so we don't need another if statement */
+	  maxsc = esl_vec_FMax(rootvec, ntrans);
+	  esl_vec_FIncrement(rootvec, ntrans, (-1. * maxsc));
+	  /* get from log_2 to log_e, so we can use easel's log vec ops */
+	  esl_vec_FScale  (rootvec, ntrans, log(2));
+	  esl_vec_FLogNorm(rootvec, ntrans);
+	  b = esl_rnd_FChoose(r, rootvec, ntrans);
+	  /* end of similar block with v > 0 */
+	  fsc += cm->beginsc[b];
+	  yoffset = USED_LOCAL_BEGIN; 
+	  free(rootvec); /* we will not need this again */
+	}
+
+      /*printf("v : %d | r : %d | z : %d | 1 : %d | \n", v, r, z, 1);*/
+      /*printf("\tyoffset : %d\n", yoffset);*/
+      switch (cm->sttype[v]) {
+      case D_st:            break;
+      case MP_st: i++; j--; break;
+      case ML_st: i++;      break;
+      case MR_st:      j--; break;
+      case IL_st: i++;      break;
+      case IR_st:      j--; break;
+      case S_st:            break;
+      default:    cm_Fail("'Inconceivable!'\n'You keep using that word...'");
+      }
+      d = j-i+1;
+
+      if (yoffset == USED_EL) 
+	{	/* a local alignment end */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+	  v = cm->M;		/* now we're in EL. */
+	  jp_v = j;
+	  dp_v = d;
+	}
+      else if (yoffset == USED_LOCAL_BEGIN) 
+	{ /* local begin; can only happen once, from root */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
+	  v = b;
+	  jp_v = j - jmin[v];
+	  dp_v = d - hdmin[v][jp_v];
+	}
+      else 
+	{
+	  y = cm->cfirst[v] + yoffset;
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+	  v = y;
+	  jp_v = j - jmin[v];
+	  dp_v = d - hdmin[v][jp_v];
+	}
+    }
+  }
+  esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+  *ret_tr = tr; /* contract checked ret_tr was non-NULL */
+  return fsc;
+
+ ERROR:
+  cm_Fail("memory error.");
+  return 0.; /* NEVERREACHED */
+}
+
+
+
+/*
+ * Function: get_femission_score()
+ * Incept:   EPN, Thu Nov 15 16:48:56 2007
+ *          
+ * Purpose:  Given a CM, dsq, state index and coordinates return the float emission
+ *           score.
+ *           
+ * Args:     cm       - the model
+ *           dsq      - digitized sequence
+ *           v        - state index
+ *           i        - dsq index for first position of subseq for subtree at v
+ *           j        - dsq index for last position of subseq for subtree at v
+ *
+ * Return:   float emission score, 0 if state is non-emitter.
+ */
+float
+get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j)
+{
+  if     (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) return cm->oesc[v][dsq[i]];
+  else if(cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) return cm->oesc[v][dsq[j]];
+  else if(cm->sttype[v] == MP_st)                           return cm->oesc[v][dsq[i]*cm->abc->Kp+dsq[j]];
+  else return 0.;
 }
 
 /*****************************************************************
@@ -2708,7 +4696,7 @@ FastIInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_IHB_MX *mx)
     }
     else if(cm->sttype[v] != B_st) { /* entered if state v is (! IL && ! IR && ! B) */
       /* ML, MP, MR, D, S, E states cannot self transit, this means that all cells
-       * in beta[v] are independent of each other, only depending on beta[y] for previously calc'ed y.
+       * in alpha[v] are independent of each other, only depending on alpha[y] for previously calc'ed y.
        * We can do the for loops in any nesting order, this implementation does what I think is most efficient:
        * for y { for j { for d { } } } 
        */

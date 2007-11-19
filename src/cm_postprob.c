@@ -1572,7 +1572,7 @@ FScore2Prob(float sc, float null)
 
 
 /***************************************************************/
-/* Function: CMPosterior() 
+/* Function: FCMPosterior() 
  *           
  * EPN 05.25.06 based on IHH's P7EmitterPosterior() from HMMER's postprob.c
  *
@@ -1600,8 +1600,8 @@ FScore2Prob(float sc, float null)
  * Return:   void
  */
 void
-CMPosterior(int L, CM_t *cm, float ***alpha, float ****ret_alpha, float ***beta, float ****ret_beta, 
-	    float ***post, float ****ret_post)
+FCMPosterior(int L, CM_t *cm, float ***alpha, float ****ret_alpha, float ***beta, float ****ret_beta, 
+	     float ***post, float ****ret_post)
 {
   int   v, j, d;
   float sc;

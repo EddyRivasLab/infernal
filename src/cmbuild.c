@@ -579,7 +579,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
                                                   /* sq,    tr, cp9_tr, post, sc */ 
       /* initialize/configure CM, we may be doing HMM banded alignment for ex. */
       initialize_cm(go, cfg, errbuf, cm);
-      OldActuallyAlignTargets(cm, seqs_to_aln, NULL, NULL, 0, 0, (!cfg->be_verbose), cfg->r);
+      ActuallyAlignTargets(cm, seqs_to_aln, NULL, NULL, 0, 0, (!cfg->be_verbose), cfg->r);
       
       /* sum parse scores and check for convergence */
       if(cfg->be_verbose) fprintf(cfg->ofp, "iteration: %4d\n", iter);

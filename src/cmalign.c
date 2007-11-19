@@ -59,7 +59,7 @@ static ESL_OPTIONS options[] = {
   { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "flush inserts left/right in output alignment", 1 },
   /* Algorithm options */
   { "--cyk",     eslARG_NONE,"default",NULL, NULL,   ALGOPTS,      NULL,        NULL, "align with the CYK algorithm", 3 },
-  { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,"--nosmall,--hbanded","-l", "align with the Holmes/Durbin optimal accuracy algorithm", 3 },
+  { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,"--nosmall",       "-l", "align with the Holmes/Durbin optimal accuracy algorithm", 3 },
   { "--hmmonly", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm",3 },
   { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Inside algorithm", 3 },
   { "--outside", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Outside algorithm", 3 },
@@ -94,7 +94,7 @@ static ESL_OPTIONS options[] = {
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 9},
 /* Other options */
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "arrest after start: for debugging MPI under gdb",   10 },  
-  { "--olddp",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "use older, slower (version 0.81) DP alignment functions",12 },  
+  { "--olddp",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    "--optacc", "use older, slower (version 0.81) DP alignment functions",12 },  
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 

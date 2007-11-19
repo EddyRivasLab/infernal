@@ -329,13 +329,9 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
   int *orig_dmax;               /* original dmax values passed in */
 
   /* variables related to inside/outside */
-  float           ***alpha;    /* alpha DP matrix for Inside() */
-  float           ***beta;     /* beta DP matrix for Inside() */
-  float           ***post;     /* post DP matrix for Inside() */
-  /*int             ***alpha;  */ /* alpha DP matrix for Inside() */
-  /*int             ***beta;   */  /* beta DP matrix for Inside() */
-  /*int             ***post;   */  /* post DP matrix for Inside() */
-  CM_HB_MX           *out_mx; /* outside matrix for Outside() */
+  float           ***alpha = NULL;    /* alpha DP matrix for non-banded Inside() */
+  float           ***beta  = NULL;    /* beta DP matrix for non-baned Outside() */
+  CM_HB_MX           *out_mx;         /* outside matrix for HMM banded Outside() */
 
   float             *parsesc; /* parsetree scores of each sequence */
 
@@ -446,7 +442,7 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
   }   
   ESL_ALLOC(parsesc, sizeof(float) * nalign);
 
-  minsc = FLT_MAX;
+  minsc =  FLT_MAX;
   maxsc = -FLT_MAX;
   avgsc = 0;
   watch = esl_stopwatch_Create();
@@ -502,6 +498,20 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
       L       = search_results->data[i].stop - search_results->data[i].start + 1;
     }
     if (L == 0) continue; /* silently skip zero length seqs */
+
+    /* if we'll need alpha, beta matrices, allocate them */
+    ESL_DASSERT1((alpha == NULL));
+    ESL_DASSERT1((beta  == NULL));
+    if(!do_sub && ((!do_small && !do_hbanded) || do_sample)) { 
+      /* allocate full size (non-banded) alpha matrix */
+      ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
+      for (v = 0; v <= cm->M; v++) alpha[v] = alloc_vjd_deck(L, 1, L);
+      if(do_post || do_outside || do_optacc) { 
+	/* allocate full size (non-banded) beta matrix */
+	ESL_ALLOC(beta, sizeof(float **) * (cm->M+1));
+	for (v = 0; v <= cm->M; v++) beta[v] = alloc_vjd_deck(L, 1, L);
+      }
+    }
 
     /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
     if(sq_mode && do_hmmonly) {
@@ -581,6 +591,20 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
 
 	/* Create the out_mx if needed, cm == sub_cm */
 	if(do_optacc || (do_post || do_outside)) out_mx = cm_hb_mx_Create(cm->M);
+
+	/* Create the alpha, beta matrices if needed */
+	/* allocate full size (non-banded) alpha matrix */
+	ESL_DASSERT1((alpha == NULL));
+	ESL_DASSERT1((beta  == NULL));
+	if((!do_small && !do_hbanded) || (do_sample)) { 
+	  ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
+	  for (v = 0; v <= cm->M; v++) alpha[v] = alloc_vjd_deck(L, 1, L);
+	  if(do_post || do_outside || do_optacc) { 
+	    /* allocate full size (non-banded) beta matrix */
+	    ESL_ALLOC(beta, sizeof(float **) * (cm->M+1));
+	    for (v = 0; v <= cm->M; v++) beta[v] = alloc_vjd_deck(L, 1, L);
+	  }
+	}
       }
     }
 
@@ -621,21 +645,12 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
     /* beginning of large if() else if() else if() ... statement */
     if(do_sample) { 
       if(do_hbanded) { /* sampling from inside HMM banded matrix */
-	FInside_b_jd_me(cm, cur_dsq, 1, L,
-			TRUE,	   /* non memory-saving mode, we sample from alpha mx */
-			NULL, &alpha,/* fill alpha, and return it, we'll sample a parsetree from it */
-			NULL, NULL,  /* manage your own deckpool, I don't want it */
-			do_local,    /* TRUE to allow local begins */
-			cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
-	sc = ParsetreeSampleFromFInside_b_jd_me(r, cm, cur_dsq, L, alpha, cp9b, cur_tr, NULL);
+	FastInsideAlignHB(cm,  cur_dsq, 1, L, cm->hbmx);
+	sc = SampleFromInsideHB(r, cm, cur_dsq, L, cm->hbmx, cur_tr);
       }
       else { /* sampling from inside matrix, but not HMM banded */
-	FInside(cm, cur_dsq, 1, L,
-		TRUE,            /* save full alpha, so we can sample from it,  */
-		NULL, &alpha,    /* fill alpha, and return it, we'll sample a parsetree from it */
-		NULL, NULL,      /* manage your own deckpool, I don't want it */
-		do_local);       /* TRUE to allow local begins */
-	sc = ParsetreeSampleFromFInside(r, cm, cur_dsq, L, alpha, cur_tr, NULL);
+	FastInsideAlign(cm,  cur_dsq, 1, L, alpha);
+	sc = SampleFromInside(r, cm, cur_dsq, L, alpha, cur_tr);
       }
     }
     else if(do_inside) { 
@@ -643,11 +658,7 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
 	sc = FastInsideAlignHB(cm, cur_dsq, 1, L, cm->hbmx);
       }
       else { /* non-banded inside only */
-	sc = FInside(cm, cur_dsq, 1, L,
-		     FALSE,       /* memory-saving mode */
-		     NULL, NULL,	/* manage your own matrix, I don't want it */
-		     NULL, NULL,	/* manage your own deckpool, I don't want it */
-		     do_local);       /* TRUE to allow local begins */
+	sc = FastInsideAlign(cm, cur_dsq, 1, L, alpha);
       }
     }
     else if(do_outside) { 
@@ -659,19 +670,8 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
       }
       else { /* non-banded inside/outside */
 	/* need alpha matrix from Inside to do Outside */
-	sc = FInside(cm, cur_dsq, 1, L,
-		     TRUE,	        /* save full alpha so we can run outside */
-		     NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
-		     NULL, NULL,	        /* manage your own deckpool, I don't want it */
-		     do_local);           /* TRUE to allow local begins */
-	sc = FOutside(cm, cur_dsq, 1, L,
-		      TRUE,	        /* save full beta */
-		      NULL, NULL,	        /* manage your own matrix, I don't want it */
-		      NULL, NULL,	        /* manage your own deckpool, I don't want it */
-		      do_local,           /* TRUE to allow local begins */
-		      alpha,              /* alpha matrix from IInside() */
-		      NULL,               /* don't save alpha */
-		      do_check);          /* TRUE to check Outside probs agree with Inside */
+	sc = FastInsideAlign(cm,  cur_dsq, 1, L, alpha);
+	sc = FastOutsideAlign(cm, cur_dsq, 1, L, beta, alpha, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)));
       }
     }
     else if (do_small) { /* small D&C CYK alignment */
@@ -721,57 +721,31 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
 	else if (!silent_mode) printf("HMM banded parse was non-optimal, it was %.2f bits below the optimal.\n\n", (fabs(sc-tmpsc)));
       }	      
     }
-    else { /* non-small, non-banded CYK alignment */
-      sc = CYKInside(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL);
-      if(bdump_level > 0) { 
-	/* We want band info but --hbanded wasn't used.  Useful if you're curious why a banded parse is crappy 
-	 * relative to non-banded parse, e.g. allows you to see where the non-banded parse went outside the bands. */
-	qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
+    else { /* non-small, non-banded CYK or optimal accuracy alignment */
+      if(do_post) sc = FastAlign(cm, cur_dsq, L, 1, L, alpha, do_optacc, beta, cur_tr, &(postcode[i]));
+      else        sc = FastAlign(cm, cur_dsq, L, 1, L, alpha, do_optacc, beta, cur_tr, NULL);
+      if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
+      /* allows you to see where the non-banded parse went outside the bands. */
       }
     }
     /* end of large if() else if() else if() else statement */
-    
-    if(do_post) { /* do Inside() and Outside() runs and use alpha and beta to get posteriors */
-      if(do_hbanded) {;} /* we've already determined posteriors in FastAlignHB() call in block above, do nothing. */
-      else { /* non-HMM banded Inside/Outside --> posteriors */
-	ESL_ALLOC(post, sizeof(float **) * (cm->M+1));
-	for (v = 0; v < cm->M+1; v++) post[v] = alloc_vjd_deck(L, 1, L);
-	sc = FInside(cm, cur_dsq, 1, L,
-		     TRUE,	/* save full alpha so we can run outside */
-		     NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
-		     NULL, NULL,	/* manage your own deckpool, I don't want it */
-		     do_local);       /* TRUE to allow local begins */
-	sc = FOutside(cm, cur_dsq, 1, L,
-		      TRUE,	/* save full beta */
-		      NULL, &beta,	/* fill beta, and return it, needed for CMPosterior() */
-		      NULL, NULL,	/* manage your own deckpool, I don't want it */
-		      do_local,       /* TRUE to allow local begins */
-		      alpha, &alpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
-		      do_check);      /* TRUE to check Outside probs agree with Inside */
-	CMPosterior(L, cm, alpha, NULL, beta, NULL, post, &post); /* this frees alpha, beta */
-	if(do_check) { 
-	  CMCheckPosterior(L, cm, post);
-	  printf("\nPosteriors checked (I).\n\n");
-	}
-	postcode[i] = CMPostalCode(cm, L, post, tr[i]);
-	/* free post  */
-	if(post != NULL) free_vjd_matrix(post, cm->M, 1, L);
-      }
-    }
     /* done alignment for this seq */
 
     avgsc += sc;
     if (sc > maxsc) maxsc = sc;
     if (sc < minsc) minsc = sc;
       
-    if(!silent_mode) printf("    score: %10.2f bits\n", sc);
+    if(!silent_mode) { 
+      if(!do_optacc) printf("    score: %10.2f bits\n", sc);
+      else           printf("    score: %14.6f average posterior probability\n", sc);
+    }
     parsesc[i] = sc;
-      
+
     /* check parsetree score if cm->align_opts & CM_ALIGN_CHECKPARSESC */
-    if((cm->align_opts & CM_ALIGN_CHECKPARSESC) &&
-       (!(cm->flags & CM_IS_SUB))) { 
+    if((cm->align_opts & CM_ALIGN_CHECKPARSESC) && (!(cm->flags & CM_IS_SUB))) { 
+      if(do_optacc) cm_Fail("ActuallyAlignTargets(), cm->align_opts CM_ALIGN_CHECKPARSESC, is on, but incompatible with another enabled option: CM_ALIGN_OPTACC.\n");
       if (fabs(sc - ParsetreeScore(cm, tr[i], cur_dsq, FALSE)) >= 0.01)
-	cm_Fail("ERROR in actually_align_target(), alignment score differs from its parse tree's score");
+	cm_Fail("ActuallyAlignTargets(), alignment score differs from its parse tree's score");
     }
 
     /* If requested, or if debug level high enough, print out the parse tree */
@@ -805,9 +779,13 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
       /* free sub_cm variables, we build a new sub CM for each seq */
       FreeCPlan9Matrix(cp9_post);
       if(out_mx != NULL) { cm_hb_mx_Destroy(out_mx); out_mx = NULL; }
+
       FreeSubMap(submap);
       FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
     }
+    /* free alpha and beta, we need to allocate new ones for each seq */
+    if(alpha != NULL)  { free_vjd_matrix(alpha, cm->M, 1, L); alpha = NULL; }
+    if(beta  != NULL)  { free_vjd_matrix(beta,  cm->M, 1, L); beta = NULL; }
     if(do_timings) { 
       esl_stopwatch_Stop(watch); 
       esl_stopwatch_Display(stdout, watch, "seq alignment CPU time: ");
@@ -817,6 +795,8 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
   /* done aligning all nalign seqs. */
   /* Clean up. */
   if(out_mx != NULL) cm_hb_mx_Destroy(out_mx);
+  if(alpha != NULL)  { free_vjd_matrix(alpha, cm->M, 1, L); alpha = NULL; }
+  if(beta  != NULL)  { free_vjd_matrix(beta,  cm->M, 1, L); beta = NULL; }
   if (do_qdb) {
     free(orig_dmin);
     free(orig_dmax);
