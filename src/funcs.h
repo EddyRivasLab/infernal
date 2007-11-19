@@ -532,11 +532,11 @@ extern void  FCMPosterior(int L, CM_t *cm, float ***alpha, float ****ret_alpha, 
 			  float ****ret_beta, float ***post, float ****ret_post);
 extern void  ICMPosterior(int L, CM_t *cm, int ***alpha, int ****ret_alpha, int ***beta, 
 			 int ****ret_beta, int ***post, int ****ret_post);
-extern char  *CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr);
-extern char *ICMPostalCode(CM_t *cm, int L, int ***post, Parsetree_t *tr);
-extern char * CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr);
-extern char Fscore2postcode(float sc);
-extern char Iscore2postcode(int sc);
+extern void CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2);
+extern void ICMPostalCode(CM_t *cm, int L, int ***post, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2);
+extern void CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2);
+extern int  Fscore2postcode(float sc);
+extern int  Iscore2postcode(int sc);
 extern float FScore2Prob(float sc, float null);
 extern void  CMCheckPosteriorHB(CM_t *cm, int i0, int j0, CM_HB_MX *post);
 extern void  CMCheckPosterior(int L, CM_t *cm, float ***post);
@@ -565,10 +565,10 @@ extern void  CMPosterior_b_jd_me(int L, CM_t *cm, float ***alpha, float ****ret_
 extern void ICMPosterior_b_jd_me(int L, CM_t *cm, int ***alpha, int ****ret_alpha, 
 				 int ***beta, int ****ret_beta, int ***post, int ****ret_post,
 				 int *jmin, int *jmax, int **hdmin, int **hdmax);
-extern char  *CMPostalCode_b_jd_me(CM_t *cm, int L, float ***post, Parsetree_t *tr,
-				   int *jmin, int *jmax, int **hdmin, int **hdmax);
-extern char *ICMPostalCode_b_jd_me(CM_t *cm, int L, int ***post, Parsetree_t *tr,
-				   int *jmin, int *jmax, int **hdmin, int **hdmax);
+extern void CMPostalCode_b_jd_me(CM_t *cm, int L, float ***post, Parsetree_t *tr,
+				   int *jmin, int *jmax, int **hdmin, int **hdmax, char **ret_pcode1, char **ret_pcode2);
+extern void ICMPostalCode_b_jd_me(CM_t *cm, int L, int ***post, Parsetree_t *tr,
+				  int *jmin, int *jmax, int **hdmin, int **hdmax, char **ret_pcode1, char **ret_pcode2);
 extern float ParsetreeSampleFromIInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int ***alpha, Parsetree_t **ret_tr,
 					int ****ret_alpha);
 extern float ParsetreeSampleFromIInside_b_jd_me(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int ***alpha, CP9Bands_t *cp9b, 
@@ -783,8 +783,8 @@ extern float fast_alignT_hb    (CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 			        int allow_begin, CM_HB_MX *mx, int do_optacc, CM_HB_MX *post_mx);
 extern float fast_alignT       (CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, 
 			        int allow_begin, float ***mx, int do_optacc, float ***post_mx);
-extern float FastAlignHB        (CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_MX *mx, int do_optacc, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode);
-extern float FastAlign          (CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, float ***mx, int do_optacc, float ***post_mx, Parsetree_t **ret_tr, char **ret_pcode);
+extern float FastAlignHB        (CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_MX *mx, int do_optacc, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2);
+extern float FastAlign          (CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, float ***mx, int do_optacc, float ***post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2);
 extern float FastInsideAlignHB  (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx);
 extern float FastInsideAlign    (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float ***mx);
 extern float FastOutsideAlignHB (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx, CM_HB_MX *ins_mx, int do_check);

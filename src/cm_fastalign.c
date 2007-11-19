@@ -1176,13 +1176,13 @@ fast_alignT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           Input arguments allow this function to be run in 4 'modes':
  *
  *           mode      returns                 arguments
- *           ----  ---------------  ------------------------------
- *                 tr        pcode  do_optacc  post_mx   ret_pcode
- *                 ---------------  ------------------------------
- *              1. CYK       no     FALSE       NULL      NULL
- *              2. CYK       yes    FALSE      !NULL     !NULL
- *              3. Opt acc   no     TRUE       !NULL      NULL
- *              4. Opt acc   yes    TRUE       !NULL     !NULL
+ *           ----  ----------------  -----------------------------------
+ *                 tr        pcodes  do_optacc  post_mx   ret_pcode{1,2}
+ *                 ----------------  -----------------------------------
+ *              1. CYK       no      FALSE       NULL      NULL
+ *              2. CYK       yes     FALSE      !NULL     !NULL
+ *              3. Opt acc   no      TRUE       !NULL      NULL
+ *              4. Opt acc   yes     TRUE       !NULL     !NULL
  *
  *           CYK parsetrees are most likely parsetree, 'Opt acc' parsetrees
  *           are Holmes/Durbin optimally accurate parsetrees, the parse the 
@@ -1200,7 +1200,8 @@ fast_alignT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *                       accurate parsetree in ret_tr, requires post_mx != NULL
  *           post_mx   - dp matrix for posterior calculation, can be NULL only if !do_optacc
  *           ret_tr    - RETURN: traceback (pass NULL if trace isn't wanted)
- *           ret_pcode - RETURN: postal code, (pass NULL if not wanted, must be NULL if post_mx == NULL)
+ *           ret_pcode1- RETURN: postal code 1, (pass NULL if not wanted, must be NULL if post_mx == NULL)
+ *           ret_pcode2- RETURN: postal code 2, (pass NULL if not wanted, must be NULL if post_mx == NULL)
  *
  * Returns:  if(!do_optacc): score of the alignment in bits.
  *           if( do_optacc): average posterior probability of all L aligned residues 
@@ -1208,21 +1209,24 @@ fast_alignT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  */
 float
 FastAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_MX *mx, int do_optacc,
-	    CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode)
+	    CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2)
 {
   Parsetree_t *tr;
   float        sc;
   int          do_post;
-  char        *pcode;
+  char        *pcode1;
+  char        *pcode2;
+  int          have_pcodes;
+  have_pcodes = (ret_pcode1 != NULL && ret_pcode2 != NULL) ? TRUE : FALSE;
 
   /* Contract check */
   if(dsq == NULL) cm_Fail("FastAlignHB(), dsq is NULL.\n");
   if(mx == NULL) cm_Fail("FastAlignHB(), mx is NULL.\n");
-  if(post_mx == NULL && ret_pcode != NULL) cm_Fail("FastAlignHB(), post_mx == NULL but ret_pcode != NULL.\n");
+  if(post_mx == NULL && have_pcodes) cm_Fail("FastAlignHB(), post_mx == NULL but ret_pcode{1|2} != NULL.\n");
   if(do_optacc && post_mx == NULL) cm_Fail("FastAlignHB(), do_optacc is TRUE, but post_mx == NULL.\n");
 
   /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (j0-i0+1));*/
-  do_post = (do_optacc || ret_pcode != NULL) ? TRUE : FALSE;
+  do_post = (do_optacc || have_pcodes) ? TRUE : FALSE;
 
   /* if doing post, fill Inside, Outside, Posterior matrices, in that order */
   if(do_post) { 
@@ -1244,9 +1248,10 @@ FastAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_MX *mx, int do_
    */
   sc = fast_alignT_hb(cm, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, mx, do_optacc, post_mx);
 
-  if(ret_pcode != NULL) {
-    pcode = CMPostalCodeHB(cm, L, post_mx, tr);
-    *ret_pcode = pcode;
+  if(have_pcodes) {
+    CMPostalCodeHB(cm, L, post_mx, tr, &pcode1, &pcode2);
+    *ret_pcode1 = pcode1;
+    *ret_pcode2 = pcode2;
   }
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
@@ -1272,13 +1277,13 @@ FastAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_MX *mx, int do_
  *           Input arguments allow this function to be run in 4 'modes':
  *
  *           mode      returns                 arguments
- *           ----  ---------------  ------------------------------
- *                 tr        pcode  do_optacc  post_mx   ret_pcode
- *                 ---------------  ------------------------------
- *              1. CYK       no     FALSE       NULL      NULL
- *              2. CYK       yes    FALSE      !NULL     !NULL
- *              3. Opt acc   no     TRUE       !NULL      NULL
- *              4. Opt acc   yes    TRUE       !NULL     !NULL
+ *           ----  ----------------  -----------------------------------
+ *                 tr        pcodes   do_optacc  post_mx   ret_pcode{1,2}
+ *                 ----------------  -----------------------------------
+ *              1. CYK       no      FALSE       NULL      NULL
+ *              2. CYK       yes     FALSE      !NULL     !NULL
+ *              3. Opt acc   no      TRUE       !NULL      NULL
+ *              4. Opt acc   yes     TRUE       !NULL     !NULL
  *
  *           CYK parsetrees are most likely parsetree, 'Opt acc' parsetrees
  *           are Holmes/Durbin optimally accurate parsetrees, the parse the 
@@ -1301,7 +1306,8 @@ FastAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_MX *mx, int do_
  *                       accurate parsetree in ret_tr, requires post_mx != NULL
  *           post_mx   - dp matrix for posterior calculation, can be NULL only if !do_optacc
  *           ret_tr    - RETURN: traceback (pass NULL if trace isn't wanted)
- *           ret_pcode - RETURN: postal code, (pass NULL if not wanted, must be NULL if post_mx == NULL)
+ *           ret_pcode1- RETURN: postal code 1, (pass NULL if not wanted, must be NULL if post_mx == NULL)
+ *           ret_pcode2- RETURN: postal code 2, (pass NULL if not wanted, must be NULL if post_mx == NULL)
  *
  * Returns:  if(!do_optacc): score of the alignment in bits.
  *           if( do_optacc): average posterior probability of all L aligned residues 
@@ -1309,20 +1315,23 @@ FastAlignHB(CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_MX *mx, int do_
  */
 float
 FastAlign(CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, float ***mx, int do_optacc,
-	  float ***post_mx, Parsetree_t **ret_tr, char **ret_pcode)
+	  float ***post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2)
 {
   Parsetree_t *tr;
   float        sc;
   int          do_post;
-  char        *pcode;
+  char        *pcode1;
+  char        *pcode2;
+  int          have_pcodes;
+  have_pcodes = (ret_pcode1 != NULL && ret_pcode2 != NULL) ? TRUE : FALSE;
 
   /* Contract check */
   if(dsq == NULL) cm_Fail("FastAlign(), dsq is NULL.\n");
-  if(post_mx == NULL && ret_pcode != NULL) cm_Fail("FastAlign(), post_mx == NULL but ret_pcode != NULL.\n");
+  if(post_mx == NULL && have_pcodes) cm_Fail("FastAlign(), post_mx == NULL but ret_pcode{1|2} != NULL.\n");
   if(do_optacc && post_mx == NULL) cm_Fail("FastAlign(), do_optacc is TRUE, but post_mx == NULL.\n");
   if(mx == NULL) cm_Fail("FastAlign(), mx is NULL.\n");
 
-  do_post = (do_optacc || ret_pcode != NULL) ? TRUE : FALSE;
+  do_post = (do_optacc || have_pcodes) ? TRUE : FALSE;
 
   /* if doing post, fill Inside, Outside, Posterior matrices, in that order */
   if(do_post) { 
@@ -1341,12 +1350,14 @@ FastAlign(CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, float ***mx, int do_opt
   /* Fill in the parsetree (either CYK or optimally accurate (if do_optacc)) */
   sc = fast_alignT(cm, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, mx, do_optacc, post_mx);
 
-  if(ret_pcode != NULL) {
-    pcode = CMPostalCode(cm, L, post_mx, tr);
-    *ret_pcode = pcode;
+  if(have_pcodes) {
+    CMPostalCode(cm, L, post_mx, tr, &pcode1, &pcode2);
+    *ret_pcode1 = pcode1;
+    *ret_pcode2 = pcode2;
   }
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
+  ESL_DPRINTF1(("returning from FastAlign() sc : %f\n", sc)); 
   return sc;
 }
 

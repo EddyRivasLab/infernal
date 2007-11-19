@@ -64,6 +64,7 @@ static ESL_OPTIONS options[] = {
   { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Inside algorithm", 3 },
   { "--outside", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Outside algorithm", 3 },
   { "--post",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--nosmall",       NULL, "align with CYK and append posterior probabilities", 3 },
+  { "--onepost", eslARG_NONE,   FALSE, NULL, NULL,      NULL,  "--post",        NULL, "only append single 0-9,* character as posterior probability", 3 },
   { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,  "--post",        NULL, "check that posteriors are correctly calc'ed", 3 },
   { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "build sub CM for columns b/t HMM predicted start/end points", 3 },
   /* Memory options */
@@ -576,7 +577,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  if(worker_seqs_to_aln->sq       != NULL) free(worker_seqs_to_aln->sq);
 		  if(worker_seqs_to_aln->tr       != NULL) free(worker_seqs_to_aln->tr);
 		  if(worker_seqs_to_aln->cp9_tr   != NULL) free(worker_seqs_to_aln->cp9_tr);
-		  if(worker_seqs_to_aln->postcode != NULL) free(worker_seqs_to_aln->postcode);
+		  if(worker_seqs_to_aln->postcode1!= NULL) free(worker_seqs_to_aln->postcode1);
+		  if(worker_seqs_to_aln->postcode2!= NULL) free(worker_seqs_to_aln->postcode2);
 		  if(worker_seqs_to_aln->sc       != NULL) free(worker_seqs_to_aln->sc);
 		  free(worker_seqs_to_aln);
 								
@@ -746,18 +748,23 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	}
       if(esl_opt_GetBoolean(go, "--post")) 
 	{                                                                              
-	  char *apostcode;   /* aligned posterior decode array */
-	  if(seqs_to_aln->postcode == NULL) 
+	  char *apostcode1;   /* aligned posterior decode array */
+	  char *apostcode2;   /* aligned posterior decode array */
+	  if(seqs_to_aln->postcode1 == NULL || seqs_to_aln->postcode2 == NULL) 
 	    cm_Fail("ERROR --post enabled, but ActuallyAlignTargets() did not return post codes.\n");
 
 	  imax = seqs_to_aln->nseq - 1;
 	  if(cfg->withmsa != NULL) imax -= cfg->withmsa->nseq;
 	  for (i = 0; i <= imax; i++)                                                   
 	    {                                                                          
-	      if((status = make_aligned_string(msa->aseq[i], "-_.", msa->alen, seqs_to_aln->postcode[i], &apostcode)) != eslOK)
-		ESL_FAIL(status, errbuf, "error creating posterior string\n");
-	      esl_msa_AppendGR(msa, "POST", i, apostcode);
-	      free(apostcode);                                                         
+	      if((status = make_aligned_string(msa->aseq[i], "-_.", msa->alen, seqs_to_aln->postcode1[i], &apostcode1)) != eslOK)
+		ESL_FAIL(status, errbuf, "error creating posterior string (1)\n");
+	      if((status = make_aligned_string(msa->aseq[i], "-_.", msa->alen, seqs_to_aln->postcode2[i], &apostcode2)) != eslOK)
+		ESL_FAIL(status, errbuf, "error creating posterior string (2)\n");
+	      esl_msa_AppendGR(msa, "POSTX.", i, apostcode1);
+	      if(! esl_opt_GetBoolean(go, "--onepost")) esl_msa_AppendGR(msa, "POST.X", i, apostcode2);
+	      free(apostcode1);                                                         
+	      free(apostcode2);                                                         
 	    }                                                                          
 	}                                                                              
       /* if nec, replace msa->ss_cons with ss_cons from withmsa alignment */
@@ -1217,11 +1224,19 @@ add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs
     }
   }
 
-  if(worker_seqs->postcode != NULL) {
-    if(master_seqs->postcode == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned postcodes, master->postcode is NULL.");
+  if(worker_seqs->postcode1 != NULL) {
+    if(master_seqs->postcode1 == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned postcodes, master->postcode1 is NULL.");
     for(x = offset; x < (offset + worker_seqs->nseq); x++) {
-      assert(master_seqs->postcode[x] == NULL); 
-      master_seqs->postcode[x] = worker_seqs->postcode[(x-offset)];
+      assert(master_seqs->postcode1[x] == NULL); 
+      master_seqs->postcode1[x] = worker_seqs->postcode1[(x-offset)];
+    }
+  }
+
+  if(worker_seqs->postcode2 != NULL) {
+    if(master_seqs->postcode2 == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned postcodes, master->postcode2 is NULL.");
+    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
+      assert(master_seqs->postcode2[x] == NULL); 
+      master_seqs->postcode2[x] = worker_seqs->postcode2[(x-offset)];
     }
   }
 

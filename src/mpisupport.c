@@ -1305,10 +1305,15 @@ cm_seqs_to_aln_MPIPackSize(const seqs_to_aln_t *seqs_to_aln, int offset, int nse
     for (i = offset; i < offset + nseq_to_pack; i++) 
       if(seqs_to_aln->cp9_tr[i] == NULL) { has_cp9_tr = FALSE; break; }
 
-  if(seqs_to_aln->postcode == NULL) has_post = FALSE;
+  if(seqs_to_aln->postcode1 == NULL) has_post = FALSE;
   else
     for (i = offset; i < offset + nseq_to_pack; i++) 
-      if(seqs_to_aln->postcode[i] == NULL) { has_post = FALSE; break; }
+      if(seqs_to_aln->postcode1[i] == NULL) { has_post = FALSE; break; }
+
+  if(seqs_to_aln->postcode2 == NULL) has_post = FALSE;
+  else
+    for (i = offset; i < offset + nseq_to_pack; i++) 
+      if(seqs_to_aln->postcode2[i] == NULL) { has_post = FALSE; break; }
 
   if(seqs_to_aln->sc == NULL) has_sc = FALSE;
   else
@@ -1336,7 +1341,8 @@ cm_seqs_to_aln_MPIPackSize(const seqs_to_aln_t *seqs_to_aln, int offset, int nse
    
   if(has_post) {
     for(i = offset; i < offset + nseq_to_pack; i++) {
-      if ((status = esl_mpi_PackOptSize(seqs_to_aln->postcode[i], -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; n += sz;
+      if ((status = esl_mpi_PackOptSize(seqs_to_aln->postcode1[i], -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; n += sz;
+      if ((status = esl_mpi_PackOptSize(seqs_to_aln->postcode2[i], -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; n += sz;
     }
   }
 
@@ -1406,10 +1412,15 @@ cm_seqs_to_aln_MPIPack(const seqs_to_aln_t *seqs_to_aln, int offset, int nseq_to
     for (i = offset; i < offset + nseq_to_pack; i++) 
       if(seqs_to_aln->cp9_tr[i] == NULL) { has_cp9_tr = FALSE; break; }
 
-  if(seqs_to_aln->postcode == NULL) has_post = FALSE;
+  if(seqs_to_aln->postcode1 == NULL) has_post = FALSE;
   else
     for (i = offset; i < offset + nseq_to_pack; i++) 
-      if(seqs_to_aln->postcode[i] == NULL) { has_post = FALSE; break; }
+      if(seqs_to_aln->postcode1[i] == NULL) { has_post = FALSE; break; }
+
+  if(seqs_to_aln->postcode2 == NULL) has_post = FALSE;
+  else
+    for (i = offset; i < offset + nseq_to_pack; i++) 
+      if(seqs_to_aln->postcode2[i] == NULL) { has_post = FALSE; break; }
 
   if(seqs_to_aln->sc == NULL) has_sc = FALSE;
   else
@@ -1440,8 +1451,9 @@ cm_seqs_to_aln_MPIPack(const seqs_to_aln_t *seqs_to_aln, int offset, int nseq_to
 
   if(has_post)
     for (i = offset; i < offset + nseq_to_pack; i++) {
-      /* we call PackOpt, even though we know we should have a valid postal code */
-      status = esl_mpi_PackOpt(seqs_to_aln->postcode[i], -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) return status;
+      /* we call PackOpt, even though we know we should have valid postal codes */
+      status = esl_mpi_PackOpt(seqs_to_aln->postcode1[i], -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) return status;
+      status = esl_mpi_PackOpt(seqs_to_aln->postcode2[i], -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) return status;
     }
 
   if(has_sc)
@@ -1515,9 +1527,11 @@ cm_seqs_to_aln_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, int *pos, MP
   }
 
   if(has_post) {
-    ESL_ALLOC(seqs_to_aln->postcode, sizeof(char *) * num_seqs_to_aln);
+    ESL_ALLOC(seqs_to_aln->postcode1, sizeof(char *) * num_seqs_to_aln);
+    ESL_ALLOC(seqs_to_aln->postcode2, sizeof(char *) * num_seqs_to_aln);
     for (i = 0; i < num_seqs_to_aln; i++) {
-      status = esl_mpi_UnpackOpt(buf, n, pos, (void **) &(seqs_to_aln->postcode[i]), NULL, MPI_CHAR, comm); if (status != eslOK) goto ERROR;;
+      status = esl_mpi_UnpackOpt(buf, n, pos, (void **) &(seqs_to_aln->postcode1[i]), NULL, MPI_CHAR, comm); if (status != eslOK) goto ERROR;;
+      status = esl_mpi_UnpackOpt(buf, n, pos, (void **) &(seqs_to_aln->postcode2[i]), NULL, MPI_CHAR, comm); if (status != eslOK) goto ERROR;;
     }
   }
 

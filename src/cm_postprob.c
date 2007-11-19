@@ -1732,57 +1732,63 @@ ICMPosterior(int L, CM_t *cm, int   ***alpha, int   ****ret_alpha, int   ***beta
  *           from HMMER's postprob.c
  *
  * Purpose:  Given a parse tree and a posterior
- *           probability cube, calculate a string that
+ *           probability cube, calculate two strings that
  *           represents the confidence values on each 
- *           residue in the sequence.
+ *           residue in the sequence. 
  *           
- *           The code string is 0..L-1  (L = len of target seq),
+ *           The code strings is 0..L-1  (L = len of target seq),
  *           so it's in the coordinate system of the sequence string;
  *           off by one from dsq; and convertible to the coordinate
  *           system of aseq using MakeAlignedString().
  *           
- *           Values are 0-9,*  
- *           for example, 9 means with >=90% posterior probabiility,
+ *           Values are 00-99,**  
+ *           for example, 93 means with >=93% posterior probabiility,
  *           residue i is aligned to the state k that it
  *           is assigned to in the given trace.
+ *
+ *           Because we have 2 digit precision, we need two
+ *           strings, the first will be the 'tens' place of
+ *           the posterior probability, '9' for the 93% example,
+ *           and the second string will hold the 'ones' place,
+ *           the '3' in the 93% example.
  *
  * Args:     L    - length of seq
  *           post - posterior prob cube: see CMPosterior()
  *           *tr  - parsetree to get a Postal code string for.   
+ *           ret_pcode1 - 'tens' place postal code string ('9' for 93)
+ *           ret_pcode2 - 'ones' place postal code string ('3' for 93)
+ * Returns:  void
  *
- * Returns:  char * array of codes, 0..L-1
- *           Caller is responsible for free'ing it.
  */
-char
+int
 Fscore2postcode(float sc)
 {
-  char i;
-  /*printf("sc: %10.2f prob: %10.5f\n", sc, FScore2Prob(sc, 1.));*/
-  i = (char) (FScore2Prob(sc, 1.) * 10.);
-  /* if(i < 0 || i > 10) { printf("i: %d sc: %d Score2Prob(sc,1.): %f\n", i, sc, Score2Prob(sc, 1.)); } */
-  assert(i >= 0 && i <= 10); 
-  return ((i > 9) ? '*' : '0'+i);
+  int i;
+  i = (int) (FScore2Prob(sc, 1.) * 100.);
+  ESL_DASSERT1((i >= 0 && i <= 100)); 
+  return i;
 }
 
-char
+int 
 Iscore2postcode(int sc)
 {
-  char i;
-  /*printf("sc: %d prob: %10.5f\n", sc, Score2Prob(sc, 1.));*/
-  i = (char) (Score2Prob(sc, 1.) * 10.);
-  /* if(i < 0 || i > 10) { printf("i: %d sc: %d Score2Prob(sc,1.): %f\n", i, sc, Score2Prob(sc, 1.)); } */
-  assert(i >= 0 && i <= 10); 
-  return ((i > 9) ? '*' : '0'+i);
+  int i;
+  i = (int) (Score2Prob(sc, 1.) * 100.);
+  ESL_DASSERT1((i >= 0 && i <= 100)); 
+  return i;
 }
 
-char *
-CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr)
+void
+CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2)
 {
   int status;
   int x, v, i, j, d, r;
-  char *postcode;
+  char *pcode1;
+  char *pcode2;
+  int p;
 
-  ESL_ALLOC(postcode, (L+1) * sizeof(char)); 
+  ESL_ALLOC(pcode1, (L+1) * sizeof(char)); 
+  ESL_ALLOC(pcode2, (L+1) * sizeof(char)); 
 
   for (x = 0; x < tr->n; x++)
     {
@@ -1795,40 +1801,77 @@ CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr)
        * Only P, L, R states have emissions.
        */
       if (cm->sttype[v] == MP_st) {
-	postcode[i-1] = Fscore2postcode(post[v][j][d]);
-	postcode[j-1] = Fscore2postcode(post[v][j][d]);
+	p = Fscore2postcode(post[v][j][d]);
+	if(p == 100) { 
+	  pcode1[i-1] = pcode1[j-1] = '*';
+	  pcode2[i-1] = pcode2[j-1] = '*';
+	}
+	else {
+	  pcode1[i-1] = pcode1[j-1] = '0' + (char) (p / 10);
+	  pcode2[i-1] = pcode2[j-1] = '0' + (char) (p % 10);
+	}
       } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
-	postcode[i-1] = Fscore2postcode(post[v][j][d]);
+	p = Fscore2postcode(post[v][j][d]);
+	if(p == 100) { 
+	  pcode1[i-1] = '*';
+	  pcode2[i-1] = '*';
+	}
+	else {
+	  pcode1[i-1] = '0' + (char) (p / 10);
+	  pcode2[i-1] = '0' + (char) (p % 10);
+	}
       } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
-	postcode[j-1] = Fscore2postcode(post[v][j][d]);
+	p = Fscore2postcode(post[v][j][d]);
+	if(p == 100) { 
+	  pcode1[j-1] = '*';
+	  pcode2[j-1] = '*';
+	}
+	else {
+	  pcode1[j-1] = '0' + (char) (p / 10);
+	  pcode2[j-1] = '0' + (char) (p % 10);
+	}
       } else if (cm->sttype[v] == EL_st) /*special case*/ {
 	for(r = (i-1); r <= (j-1); r++)
 	  {
 	    d = j - (r+1) + 1;
-	    postcode[r] = Fscore2postcode(post[v][j][d]);
+	    p = Fscore2postcode(post[v][j][d]);
+	    if(p == 100) { 
+	      pcode1[r] = '*';
+	      pcode2[r] = '*';
+	    }
+	    else {
+	      pcode1[r] = '0' + (char) (p / 10);
+	      pcode2[r] = '0' + (char) (p % 10);
+	    }
 	    /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
 	  }
       }
     }
-  postcode[L] = '\0';
-  return(postcode);
+  pcode1[L] = '\0';
+  pcode2[L] = '\0';
+
+  *ret_pcode1 = pcode1;
+  *ret_pcode2 = pcode2;
+  return;
 
  ERROR:
   cm_Fail("Memory allocation error.");
-  return NULL; /* never reached */
+  return; /* never reached */
 }
 
 /* ICMPostalCode() is the same as CMPostalCode, but uses scaled int log odds scores
  * instead of float log odds scores.
  */
-char *
-ICMPostalCode(CM_t *cm, int L, int ***post, Parsetree_t *tr)
+void
+ICMPostalCode(CM_t *cm, int L, int ***post, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2)
 {
   int status;
-  int x, v, i, j, d, r;
-  char *postcode;
+  int x, v, i, j, d, r, p;
+  char *pcode1;
+  char *pcode2;
 
-  ESL_ALLOC(postcode, (L+1) * sizeof(char)); 
+  ESL_ALLOC(pcode1, (L+1) * sizeof(char)); 
+  ESL_ALLOC(pcode2, (L+1) * sizeof(char)); 
 
   for (x = 0; x < tr->n; x++)
     {
@@ -1841,29 +1884,313 @@ ICMPostalCode(CM_t *cm, int L, int ***post, Parsetree_t *tr)
        * Only P, L, R states have emissions.
        */
       if (cm->sttype[v] == MP_st) {
-	postcode[i-1] = Iscore2postcode(post[v][j][d]);
-	postcode[j-1] = Iscore2postcode(post[v][j][d]);
+	p = Iscore2postcode(post[v][j][d]);
+	if(p == 100) { 
+	  pcode1[i-1] = pcode1[j-1] = '*';
+	  pcode2[i-1] = pcode2[j-1] = '*';
+	}
+	else {
+	  pcode1[i-1] = pcode1[j-1] = '0' + (char) (p / 10);
+	  pcode2[i-1] = pcode2[j-1] = '0' + (char) (p % 10);
+	}
       } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
-	postcode[i-1] = Iscore2postcode(post[v][j][d]);
+	p = Iscore2postcode(post[v][j][d]);
+	if(p == 100) { 
+	  pcode1[i-1] = '*';
+	  pcode2[i-1] = '*';
+	}
+	else {
+	  pcode1[i-1] = '0' + (char) (p / 10);
+	  pcode2[i-1] = '0' + (char) (p % 10);
+	}
       } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
-	postcode[j-1] = Iscore2postcode(post[v][j][d]);
+	p = Iscore2postcode(post[v][j][d]);
+	if(p == 100) { 
+	  pcode1[j-1] = '*';
+	  pcode2[j-1] = '*';
+	}
+	else {
+	  pcode1[j-1] = '0' + (char) (p / 10);
+	  pcode2[j-1] = '0' + (char) (p % 10);
+	}
       } else if (cm->sttype[v] == EL_st) /*special case*/ {
 	for(r = (i-1); r <= (j-1); r++)
 	  {
 	    d = j - (r+1) + 1;
-	    postcode[r] = Iscore2postcode(post[v][j][d]);
-	    /* printf("r: %d | post[%d][%d][%d]: %d (%f)| sc: %c\n", r, v, j, d, post[v][j][d], (Scorify(post[v][j][d])), postcode[r]); */
+	    p = Iscore2postcode(post[v][j][d]);
+	    if(p == 100) { 
+	      pcode1[r] = '*';
+	      pcode2[r] = '*';
+	    }
+	    else {
+	      pcode1[r] = '0' + (char) (p / 10);
+	      pcode2[r] = '0' + (char) (p % 10);
+	    }
+	    /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
 	  }
       }
     }
-  postcode[L] = '\0';
-  return(postcode);
+  pcode1[L] = '\0';
+  pcode2[L] = '\0';
+  *ret_pcode1 = pcode1;
+  *ret_pcode2 = pcode2;
+  return;
 
  ERROR:
   cm_Fail("Memory allocation error.");
-  return NULL; /* never reached */
+  return; /* never reached */
 }
 
+
+void
+CMPostalCode_b_jd_me(CM_t *cm, int L, float ***post, Parsetree_t *tr,
+		    int *jmin, int *jmax, int **hdmin, int **hdmax, char **ret_pcode1, char **ret_pcode2)
+{
+  int status;
+  int x, v, i, j, d, r, p;
+  char *pcode1;
+  char *pcode2;
+  int jp_v, dp_v;
+  ESL_ALLOC(pcode1, (L+1) * sizeof(char)); 
+  ESL_ALLOC(pcode2, (L+1) * sizeof(char)); 
+
+  for (x = 0; x < tr->n; x++)
+    {
+      v = tr->state[x];
+      i = tr->emitl[x];
+      j = tr->emitr[x];
+      d = j-i+1;
+      /*
+       * Only P, L, R states have emissions.
+       */
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+
+      dp_v = d - hdmin[v][jp_v];
+      if (cm->sttype[v] == MP_st) {
+	p = Fscore2postcode(post[v][jp_v][dp_v]);
+	if(p == 100) { 
+	  pcode1[i-1] = pcode1[j-1] = '*';
+	  pcode2[i-1] = pcode2[j-1] = '*';
+	}
+	else {
+	  pcode1[i-1] = pcode1[j-1] = '0' + (char) (p / 10);
+	  pcode2[i-1] = pcode2[j-1] = '0' + (char) (p % 10);
+	}
+      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
+	p = Fscore2postcode(post[v][jp_v][dp_v]);
+	if(p == 100) { 
+	  pcode1[i-1] = '*';
+	  pcode2[i-1] = '*';
+	}
+	else {
+	  pcode1[i-1] = '0' + (char) (p / 10);
+	  pcode2[i-1] = '0' + (char) (p % 10);
+	}
+      } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
+	p = Fscore2postcode(post[v][jp_v][dp_v]);
+	if(p == 100) { 
+	  pcode1[j-1] = '*';
+	  pcode2[j-1] = '*';
+	}
+	else {
+	  pcode1[j-1] = '0' + (char) (p / 10);
+	  pcode2[j-1] = '0' + (char) (p % 10);
+	}
+      } else if (cm->sttype[v] == EL_st) /*special case*/ {
+	for(r = (i-1); r <= (j-1); r++) {
+	  d = j - (r+1) + 1;
+	  p = Fscore2postcode(post[v][j][d]);
+	    if(p == 100) { 
+	      pcode1[r] = '*';
+	      pcode2[r] = '*';
+	    }
+	    else {
+	      pcode1[r] = '0' + (char) (p / 10);
+	      pcode2[r] = '0' + (char) (p % 10);
+	    }
+	    /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
+	  }
+      }
+    }
+  pcode1[L] = '\0';
+  pcode2[L] = '\0';
+  *ret_pcode1 = pcode1;
+  *ret_pcode2 = pcode2;
+  return;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return; /* never reached */
+}
+
+
+void
+CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2)
+{
+  int status;
+  int x, v, i, j, d, r, p;
+  char *pcode1;
+  char *pcode2;
+  int jp_v, dp_v;
+
+  /* variables used for memory efficient bands */
+  /* ptrs to cp9b info, for convenience */
+  CP9Bands_t *cp9b = cm->cp9b;
+  int     *jmin  = cp9b->jmin;  
+  int    **hdmin = cp9b->hdmin;
+  /* the DP matrix */
+  float ***post  = post_mx->dp; /* pointer to the post DP matrix */
+
+  ESL_ALLOC(pcode1, (L+1) * sizeof(char)); 
+  ESL_ALLOC(pcode2, (L+1) * sizeof(char)); 
+
+  for (x = 0; x < tr->n; x++) {
+    v = tr->state[x];
+    i = tr->emitl[x];
+    j = tr->emitr[x];
+    d = j-i+1;
+    /* Only P, L, R states have emissions. */
+    jp_v = j - jmin[v];
+    dp_v = d - hdmin[v][jp_v];
+
+    if (cm->sttype[v] == MP_st) {
+	p = Fscore2postcode(post[v][jp_v][dp_v]);
+	if(p == 100) { 
+	  pcode1[i-1] = pcode1[j-1] = '*';
+	  pcode2[i-1] = pcode2[j-1] = '*';
+	}
+	else {
+	  pcode1[i-1] = pcode1[j-1] = '0' + (char) (p / 10);
+	  pcode2[i-1] = pcode2[j-1] = '0' + (char) (p % 10);
+	}
+      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
+	p = Fscore2postcode(post[v][jp_v][dp_v]);
+	if(p == 100) { 
+	  pcode1[i-1] = '*';
+	  pcode2[i-1] = '*';
+	}
+	else {
+	  pcode1[i-1] = '0' + (char) (p / 10);
+	  pcode2[i-1] = '0' + (char) (p % 10);
+	}
+      } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
+	p = Fscore2postcode(post[v][jp_v][dp_v]);
+	if(p == 100) { 
+	  pcode1[j-1] = '*';
+	  pcode2[j-1] = '*';
+	}
+	else {
+	  pcode1[j-1] = '0' + (char) (p / 10);
+	  pcode2[j-1] = '0' + (char) (p % 10);
+	}
+      } else if (cm->sttype[v] == EL_st) /*special case*/ {
+	for(r = (i-1); r <= (j-1); r++) {
+	  d = j - (r+1) + 1;
+	  p = Fscore2postcode(post[v][j][d]);
+	    if(p == 100) { 
+	      pcode1[r] = '*';
+	      pcode2[r] = '*';
+	    }
+	    else {
+	      pcode1[r] = '0' + (char) (p / 10);
+	      pcode2[r] = '0' + (char) (p % 10);
+	    }
+	    /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
+	  }
+      }
+    }
+  pcode1[L] = '\0';
+  pcode2[L] = '\0';
+  *ret_pcode1 = pcode1;
+  *ret_pcode2 = pcode2;
+  return;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return; /* never reached */
+}
+
+void
+ICMPostalCode_b_jd_me(CM_t *cm, int L, int ***post, Parsetree_t *tr,
+		      int *jmin, int *jmax, int **hdmin, int **hdmax, char **ret_pcode1, char **ret_pcode2)
+{
+  int status;
+  int x, v, i, j, d, r, p;
+  char *pcode1;
+  char *pcode2;
+  int jp_v, dp_v;
+
+  ESL_ALLOC(pcode1, (L+1) * sizeof(char)); 
+  ESL_ALLOC(pcode2, (L+1) * sizeof(char)); 
+
+  for (x = 0; x < tr->n; x++)
+    {
+      v = tr->state[x];
+      i = tr->emitl[x];
+      j = tr->emitr[x];
+      d = j-i+1;
+      /*
+       * Only P, L, R states have emissions.
+       */
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+      if (cm->sttype[v] == MP_st) {
+	p = Iscore2postcode(post[v][jp_v][dp_v]);
+	if(p == 100) { 
+	  pcode1[i-1] = pcode1[j-1] = '*';
+	  pcode2[i-1] = pcode2[j-1] = '*';
+	}
+	else {
+	  pcode1[i-1] = pcode1[j-1] = '0' + (char) (p / 10);
+	  pcode2[i-1] = pcode2[j-1] = '0' + (char) (p % 10);
+	}
+      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
+	p = Iscore2postcode(post[v][jp_v][dp_v]);
+	if(p == 100) { 
+	  pcode1[i-1] = '*';
+	  pcode2[i-1] = '*';
+	}
+	else {
+	  pcode1[i-1] = '0' + (char) (p / 10);
+	  pcode2[i-1] = '0' + (char) (p % 10);
+	}
+      } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
+	p = Iscore2postcode(post[v][jp_v][dp_v]);
+	if(p == 100) { 
+	  pcode1[j-1] = '*';
+	  pcode2[j-1] = '*';
+	}
+	else {
+	  pcode1[j-1] = '0' + (char) (p / 10);
+	  pcode2[j-1] = '0' + (char) (p % 10);
+	}
+      } else if (cm->sttype[v] == EL_st) /*special case*/ {
+	for(r = (i-1); r <= (j-1); r++) {
+	  d = j - (r+1) + 1;
+	  p = Iscore2postcode(post[v][j][d]);
+	    if(p == 100) { 
+	      pcode1[r] = '*';
+	      pcode2[r] = '*';
+	    }
+	    else {
+	      pcode1[r] = '0' + (char) (p / 10);
+	      pcode2[r] = '0' + (char) (p % 10);
+	    }
+	    /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
+	  }
+      }
+    }
+  pcode1[L] = '\0';
+  pcode2[L] = '\0';
+  *ret_pcode1 = pcode1;
+  *ret_pcode2 = pcode2;
+  return;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return; /* never reached */
+}
 
 /*
  * Function: CMCheckPosteriorHB()
@@ -4512,166 +4839,6 @@ ICMPosterior_b_jd_me(int L, CM_t *cm, int   ***alpha, int   ****ret_alpha,
       if (post[v] != NULL) { Ifree_vjd_deck(post[v], 1, L); post[v] = NULL; }
     free(post);
   } else *ret_post = post;
-}
-
-char *
-CMPostalCode_b_jd_me(CM_t *cm, int L, float ***post, Parsetree_t *tr,
-		    int *jmin, int *jmax, int **hdmin, int **hdmax)
-{
-  int status;
-  int x, v, i, j, d, r;
-  char *postcode;
-  int jp_v, dp_v;
-  ESL_ALLOC(postcode, (L+1) * sizeof(char)); 
-
-  for (x = 0; x < tr->n; x++)
-    {
-      v = tr->state[x];
-      i = tr->emitl[x];
-      j = tr->emitr[x];
-      d = j-i+1;
-      /*
-       * Only P, L, R states have emissions.
-       */
-      if(cm->sttype[v] != EL_st)
-	{
-	  jp_v = j - jmin[v];
-	  dp_v = d - hdmin[v][jp_v];
-	}
-      else
-	{
-	  jp_v = j;
-	  dp_v = d;
-	}
-      if (cm->sttype[v] == MP_st) {
-	postcode[i-1] = Fscore2postcode(post[v][jp_v][dp_v]);
-	postcode[j-1] = Fscore2postcode(post[v][jp_v][dp_v]);
-      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
-	postcode[i-1] = Fscore2postcode(post[v][jp_v][dp_v]);
-      } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
-	postcode[j-1] = Fscore2postcode(post[v][jp_v][dp_v]);
-      } else if (cm->sttype[v] == EL_st) /*special case*/ {
-	for(r = (i-1); r <= (j-1); r++)
-	  {
-	    d = j - (r+1) + 1;
-	    postcode[r] = Fscore2postcode(post[v][j][d]);
-	    /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
-	  }
-      }
-    }
-  postcode[L] = '\0';
-  return(postcode);
-
- ERROR:
-  cm_Fail("Memory allocation error.");
-  return NULL; /* never reached */
-}
-
-
-char *
-CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr)
-{
-  int status;
-  int x, v, i, j, d, r;
-  char *postcode;
-  int jp_v, dp_v;
-
-  /* variables used for memory efficient bands */
-  /* ptrs to cp9b info, for convenience */
-  CP9Bands_t *cp9b = cm->cp9b;
-  int     *jmin  = cp9b->jmin;  
-  int    **hdmin = cp9b->hdmin;
-  /* the DP matrix */
-  float ***post  = post_mx->dp; /* pointer to the post DP matrix */
-
-  ESL_ALLOC(postcode, (L+1) * sizeof(char)); 
-
-  for (x = 0; x < tr->n; x++) {
-    v = tr->state[x];
-    i = tr->emitl[x];
-    j = tr->emitr[x];
-    d = j-i+1;
-    /* Only P, L, R states have emissions. */
-    if(cm->sttype[v] != EL_st) {
-      jp_v = j - jmin[v];
-      dp_v = d - hdmin[v][jp_v];
-    }
-    else {
-      jp_v = j;
-      dp_v = d;
-    }
-    if (cm->sttype[v] == MP_st) {
-      postcode[i-1] = Fscore2postcode(post[v][jp_v][dp_v]);
-      postcode[j-1] = Fscore2postcode(post[v][jp_v][dp_v]);
-    } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
-      postcode[i-1] = Fscore2postcode(post[v][jp_v][dp_v]);
-    } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
-      postcode[j-1] = Fscore2postcode(post[v][jp_v][dp_v]);
-    } else if (cm->sttype[v] == EL_st) /*special case*/ {
-      for(r = (i-1); r <= (j-1); r++) {
-	d = j - (r+1) + 1;
-	postcode[r] = Fscore2postcode(post[v][j][d]);
-	/*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
-      }
-    }
-  }
-  postcode[L] = '\0';
-  return(postcode);
-
- ERROR:
-  cm_Fail("Memory allocation error.");
-  return NULL; /* never reached */
-}
-
-char *
-ICMPostalCode_b_jd_me(CM_t *cm, int L, int ***post, Parsetree_t *tr,
-		      int *jmin, int *jmax, int **hdmin, int **hdmax)
-{
-  int status;
-  int x, v, i, j, d, r;
-  char *postcode;
-  int jp_v, dp_v;
-  ESL_ALLOC(postcode, (L+1) * sizeof(char)); 
-  for (x = 0; x < tr->n; x++)
-    {
-      v = tr->state[x];
-      i = tr->emitl[x];
-      j = tr->emitr[x];
-      d = j-i+1;
-      /*
-       * Only P, L, R states have emissions.
-       */
-      if(cm->sttype[v] != EL_st)
-	{
-	  jp_v = j - jmin[v];
-	  dp_v = d - hdmin[v][jp_v];
-	}
-      else
-	{
-	  jp_v = j;
-	  dp_v = d;
-	}
-      if (cm->sttype[v] == MP_st) {
-	postcode[i-1] = Iscore2postcode(post[v][jp_v][dp_v]);
-	postcode[j-1] = Iscore2postcode(post[v][jp_v][dp_v]);
-      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
-	postcode[i-1] = Iscore2postcode(post[v][jp_v][dp_v]);
-      } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
-	postcode[j-1] = Iscore2postcode(post[v][jp_v][dp_v]);
-      } else if (cm->sttype[v] == EL_st) /*special case*/ {
-	for(r = (i-1); r <= (j-1); r++) {
-	  d = j - (r+1) + 1;
-	  postcode[r] = Iscore2postcode(post[v][j][d]);
-	}
-      }
-    }
-  postcode[L] = '\0';
-  return(postcode);
-
-
- ERROR:
-  cm_Fail("Memory allocation error.");
-  return NULL; /* never reached */
 }
 
 /*################################################################*/

@@ -283,7 +283,8 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
   int L;                        /* length of sequence/subseq we're currently aligning */
   int i;                        /* counter over sequences */
   int v;                        /* state counter */
-  char        **postcode = NULL;/* posterior decode array of strings        */
+  char        **postcode1 = NULL;/* posterior decode array of strings, tens place ('9' for 93) */
+  char        **postcode2 = NULL;/* posterior decode array of strings, ones place ('3' for 93) */
   Parsetree_t **tr       = NULL;/* parse trees for the sequences */
   CP9trace_t  **cp9_tr   = NULL;/* CP9 traces for the sequences */
   float         sc;		/* score for one sequence alignment */
@@ -368,7 +369,8 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
   if( sq_mode && (seqs_to_aln->sq       == NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->sq is NULL.\n");
   if( sq_mode && (seqs_to_aln->tr       != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->tr is non-NULL.\n");
   if( sq_mode && (seqs_to_aln->cp9_tr   != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->cp9_tr is non-NULL.\n");
-  if( sq_mode && (seqs_to_aln->postcode != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->postcode1 != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode1 is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->postcode2 != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode2 is non-NULL.\n");
   if( sq_mode && (seqs_to_aln->sc       != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->sc is non-NULL.\n");
   
   if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_HMMONLY option on.\n");
@@ -422,23 +424,26 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
   if      (sq_mode)   nalign = seqs_to_aln->nseq;
   else if(dsq_mode) { nalign = search_results->num_results; silent_mode = TRUE; }
 
-  /* If sqmode: potentially allocate tr, cp9_tr, and postcode. We'll set
-   * seqs_to_aln->tr, seqs_to_aln->cp9_tr, and seqs_to_aln->postcode to 
-   * these guys at end of function.
+  /* If sqmode: potentially allocate tr, cp9_tr, and postcodes. We'll set
+   * seqs_to_aln->tr, seqs_to_aln->cp9_tr, seqs_to_aln->postcode1, 
+   * and seqs_to_aln->postcode2 to these guys at end of function.
    * 
    * If dsqmode: do not allocate parsetree pointers, they already exist 
    * in search_results.
    */
   tr       = NULL;
   cp9_tr   = NULL;
-  postcode = NULL;
+  postcode1= NULL;
+  postcode2= NULL;
   if(sq_mode) {
     if(!do_hmmonly && !do_scoreonly && !do_inside && !do_outside)
       ESL_ALLOC(tr, sizeof(Parsetree_t *) * nalign);
     else if(do_hmmonly) /* do_hmmonly */
       ESL_ALLOC(cp9_tr, sizeof(CP9trace_t *) * nalign);
-    if(do_post) 
-      ESL_ALLOC(postcode, sizeof(char *) * nalign);
+    if(do_post) {
+      ESL_ALLOC(postcode1, sizeof(char **) * nalign);
+      ESL_ALLOC(postcode2, sizeof(char **) * nalign);
+    }
   }   
   ESL_ALLOC(parsesc, sizeof(float) * nalign);
 
@@ -704,8 +709,8 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
       if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
     }
     else if(do_hbanded) { /* non-small, HMM banded alignment, either CYK or optimally accurate */
-      if(do_post) sc = FastAlignHB(cm, cur_dsq, L, 1, L, cm->hbmx, do_optacc, out_mx, cur_tr, &(postcode[i]));
-      else        sc = FastAlignHB(cm, cur_dsq, L, 1, L, cm->hbmx, do_optacc, out_mx, cur_tr, NULL);
+      if(do_post) sc = FastAlignHB(cm, cur_dsq, L, 1, L, cm->hbmx, do_optacc, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]));
+      else        sc = FastAlignHB(cm, cur_dsq, L, 1, L, cm->hbmx, do_optacc, out_mx, cur_tr, NULL, NULL);
 
       /* if CM_ALIGN_HMMSAFE option is enabled, realign seqs w/HMM banded parses < 0 bits,
        * this should never happen in we're doing optimal accuracy or appending posteriors, due to option checking in cmalign, cmscore,
@@ -722,11 +727,10 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
       }	      
     }
     else { /* non-small, non-banded CYK or optimal accuracy alignment */
-      if(do_post) sc = FastAlign(cm, cur_dsq, L, 1, L, alpha, do_optacc, beta, cur_tr, &(postcode[i]));
-      else        sc = FastAlign(cm, cur_dsq, L, 1, L, alpha, do_optacc, beta, cur_tr, NULL);
+      if(do_post) sc = FastAlign(cm, cur_dsq, L, 1, L, alpha, do_optacc, beta, cur_tr, &(postcode1[i]), &(postcode2[i]));
+      else        sc = FastAlign(cm, cur_dsq, L, 1, L, alpha, do_optacc, beta, cur_tr, NULL, NULL);
       if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
       /* allows you to see where the non-banded parse went outside the bands. */
-      }
     }
     /* end of large if() else if() else if() else statement */
     /* done alignment for this seq */
@@ -806,7 +810,8 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
   if(sq_mode) {
     seqs_to_aln->tr       = tr;       /* could be NULL */
     seqs_to_aln->cp9_tr   = cp9_tr;   /* could be NULL */
-    seqs_to_aln->postcode = postcode; /* could be NULL */
+    seqs_to_aln->postcode1= postcode1;/* could be NULL */
+    seqs_to_aln->postcode2= postcode2;/* could be NULL */
     seqs_to_aln->sc       = parsesc;  /* shouldn't be NULL */
   }
   else { /* dsq mode */
@@ -868,7 +873,8 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   int L;                        /* length of sequence/subseq we're currently aligning */
   int i;                        /* counter over sequences */
   int v;                        /* state counter */
-  char        **postcode = NULL;/* posterior decode array of strings        */
+  char        **postcode1 = NULL;/* posterior decode array of strings, tens place ('9' for 93) */
+  char        **postcode2 = NULL;/* posterior decode array of strings, ones place ('3' for 93) */
   Parsetree_t **tr       = NULL;/* parse trees for the sequences */
   CP9trace_t  **cp9_tr   = NULL;/* CP9 traces for the sequences */
   float         sc;		/* score for one sequence alignment */
@@ -955,7 +961,8 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   if( sq_mode && (seqs_to_aln->sq       == NULL)) cm_Fail("OldActuallyAlignTargets(), in sq_mode, seqs_to_aln->sq is NULL.\n");
   if( sq_mode && (seqs_to_aln->tr       != NULL)) cm_Fail("OldActuallyAlignTargets(), in sq_mode, seqs_to_aln->tr is non-NULL.\n");
   if( sq_mode && (seqs_to_aln->cp9_tr   != NULL)) cm_Fail("OldActuallyAlignTargets(), in sq_mode, seqs_to_aln->cp9_tr is non-NULL.\n");
-  if( sq_mode && (seqs_to_aln->postcode != NULL)) cm_Fail("OldActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->postcode1!= NULL)) cm_Fail("OldActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode1 is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->postcode2!= NULL)) cm_Fail("OldActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode2 is non-NULL.\n");
   if( sq_mode && (seqs_to_aln->sc       != NULL)) cm_Fail("OldActuallyAlignTargets(), in sq_mode, seqs_to_aln->sc is non-NULL.\n");
   
   if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_HMMONLY option on.\n");
@@ -1000,9 +1007,9 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   if      (sq_mode)   nalign = seqs_to_aln->nseq;
   else if(dsq_mode) { nalign = search_results->num_results; silent_mode = TRUE; }
 
-  /* If sqmode: potentially allocate tr, cp9_tr, and postcode. We'll set
-   * seqs_to_aln->tr, seqs_to_aln->cp9_tr, and seqs_to_aln->postcode to 
-   * these guys at end of function.
+  /* If sqmode: potentially allocate tr, cp9_tr, and postcodes. We'll set
+   * seqs_to_aln->tr, seqs_to_aln->cp9_tr, seqs_to_aln->postcode1, and 
+   * seqs_to_aln->postcode2 to these guys at end of function.
    * 
    * If dsqmode: do not allocate parsetree pointers, they already exist 
    * in search_results.
@@ -1010,14 +1017,17 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
 
   tr       = NULL;
   cp9_tr   = NULL;
-  postcode = NULL;
+  postcode1= NULL;
+  postcode2= NULL;
   if(sq_mode) {
     if(!do_hmmonly && !do_scoreonly && !do_inside && !do_outside)
       ESL_ALLOC(tr, sizeof(Parsetree_t *) * nalign);
     else if(do_hmmonly) /* do_hmmonly */
       ESL_ALLOC(cp9_tr, sizeof(CP9trace_t *) * nalign);
-    if(do_post) 
-      ESL_ALLOC(postcode, sizeof(char *) * nalign);
+    if(do_post) {
+      ESL_ALLOC(postcode1, sizeof(char **) * nalign);
+      ESL_ALLOC(postcode2, sizeof(char **) * nalign);
+    }
   }   
   ESL_ALLOC(parsesc, sizeof(float) * nalign);
 
@@ -1338,8 +1348,8 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
 			      cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
 	ICMPosterior_b_jd_me(L, cm, alpha, NULL, beta, NULL, post, &post,
 			     cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);
-	postcode[i] = ICMPostalCode_b_jd_me(cm, L, post, tr[i],
-					    cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);
+	ICMPostalCode_b_jd_me(cm, L, post, tr[i], cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+			      &(postcode1[i]), &(postcode2[i]));
       }
       else { /* non-HMM banded Inside/Outside --> posteriors */
 	for (v = 0; v < cm->M+1; v++) post[v] = Ialloc_vjd_deck(L, 1, L);
@@ -1360,8 +1370,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
 	  ICMCheckPosterior(L, cm, post);
 	  printf("\nPosteriors checked (I).\n\n");
 	}
-	postcode[i] = ICMPostalCode(cm, L, post, tr[i]);
-	/*postcode[i] = CMPostalCode(cm, L, post, tr[i]);*/
+	ICMPostalCode(cm, L, post, tr[i], &(postcode1[i]), &(postcode2[i]));
       }
       /* free post  */
       if(post != NULL) Ifree_vjd_matrix(post, cm->M, 1, L);
@@ -1433,7 +1442,8 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   if(sq_mode) {
     seqs_to_aln->tr       = tr;       /* could be NULL */
     seqs_to_aln->cp9_tr   = cp9_tr;   /* could be NULL */
-    seqs_to_aln->postcode = postcode; /* could be NULL */
+    seqs_to_aln->postcode1= postcode1;/* could be NULL */
+    seqs_to_aln->postcode2= postcode2;/* could be NULL */
     seqs_to_aln->sc       = parsesc;  /* shouldn't be NULL */
   }
   else { /* dsq mode */
@@ -1521,7 +1531,8 @@ seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master)
   ESL_ALLOC(seqs_to_aln->sq,      sizeof(ESL_SQ *)      * size);
   seqs_to_aln->tr       = NULL;
   seqs_to_aln->cp9_tr   = NULL;
-  seqs_to_aln->postcode = NULL;
+  seqs_to_aln->postcode1= NULL;
+  seqs_to_aln->postcode2= NULL;
   seqs_to_aln->sc       = NULL;
   seqs_to_aln->nalloc   = size;
   seqs_to_aln->nseq     = 0;
@@ -1529,12 +1540,14 @@ seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master)
   if(i_am_mpi_master) {
     ESL_ALLOC(seqs_to_aln->tr,       sizeof(Parsetree_t *) * size);
     ESL_ALLOC(seqs_to_aln->cp9_tr,   sizeof(CP9trace_t)    * size);
-    ESL_ALLOC(seqs_to_aln->postcode, sizeof(char *)        * size);
+    ESL_ALLOC(seqs_to_aln->postcode1,sizeof(char **)       * size);
+    ESL_ALLOC(seqs_to_aln->postcode2,sizeof(char **)       * size);
     ESL_ALLOC(seqs_to_aln->sc,       sizeof(float)         * size);
     for(i = 0; i < size; i++) {
       seqs_to_aln->tr[i]       = NULL;
       seqs_to_aln->cp9_tr[i]   = NULL;
-      seqs_to_aln->postcode[i] = NULL;
+      seqs_to_aln->postcode1[i]= NULL;
+      seqs_to_aln->postcode2[i]= NULL;
       seqs_to_aln->sc[i]       = IMPOSSIBLE;
     }
   }
@@ -1571,7 +1584,8 @@ seqs_to_aln_t *CreateSeqsToAlnFromSq(ESL_SQ **sq, int size, int i_am_mpi_master)
   seqs_to_aln->sq       = sq;
   seqs_to_aln->tr       = NULL;
   seqs_to_aln->cp9_tr   = NULL;
-  seqs_to_aln->postcode = NULL;
+  seqs_to_aln->postcode1= NULL;
+  seqs_to_aln->postcode2= NULL;
   seqs_to_aln->sc       = NULL;
   seqs_to_aln->nalloc   = size;
   seqs_to_aln->nseq     = size;
@@ -1579,12 +1593,14 @@ seqs_to_aln_t *CreateSeqsToAlnFromSq(ESL_SQ **sq, int size, int i_am_mpi_master)
   if(i_am_mpi_master) {
     ESL_ALLOC(seqs_to_aln->tr,       sizeof(Parsetree_t *) * size);
     ESL_ALLOC(seqs_to_aln->cp9_tr,   sizeof(CP9trace_t)    * size);
-    ESL_ALLOC(seqs_to_aln->postcode, sizeof(char *)        * size);
+    ESL_ALLOC(seqs_to_aln->postcode1,sizeof(char **)       * size);
+    ESL_ALLOC(seqs_to_aln->postcode2,sizeof(char **)       * size);
     ESL_ALLOC(seqs_to_aln->sc,       sizeof(float)         * size);
     for(i = 0; i < size; i++) {
       seqs_to_aln->tr[i]       = NULL;
       seqs_to_aln->cp9_tr[i]   = NULL;
-      seqs_to_aln->postcode[i] = NULL;
+      seqs_to_aln->postcode1[i]= NULL;
+      seqs_to_aln->postcode2[i]= NULL;
       seqs_to_aln->sc[i]       = IMPOSSIBLE;
     }
   }
@@ -1619,12 +1635,14 @@ int GrowSeqsToAln(seqs_to_aln_t *seqs_to_aln, int new_alloc, int i_am_mpi_master
   if(i_am_mpi_master) {
     ESL_RALLOC(seqs_to_aln->tr,       tmp, sizeof(Parsetree_t *) * (seqs_to_aln->nalloc + new_alloc));
     ESL_RALLOC(seqs_to_aln->cp9_tr,   tmp, sizeof(CP9trace_t)    * (seqs_to_aln->nalloc + new_alloc));
-    ESL_RALLOC(seqs_to_aln->postcode, tmp, sizeof(char *)        * (seqs_to_aln->nalloc + new_alloc));
+    ESL_RALLOC(seqs_to_aln->postcode1,tmp, sizeof(char **)       * (seqs_to_aln->nalloc + new_alloc));
+    ESL_RALLOC(seqs_to_aln->postcode2,tmp, sizeof(char **)       * (seqs_to_aln->nalloc + new_alloc));
     ESL_RALLOC(seqs_to_aln->sc,       tmp, sizeof(float)         * (seqs_to_aln->nalloc + new_alloc));
     for(i = seqs_to_aln->nalloc; i < (seqs_to_aln->nalloc + new_alloc); i++) {
       seqs_to_aln->tr[i]       = NULL;
       seqs_to_aln->cp9_tr[i]   = NULL;
-      seqs_to_aln->postcode[i] = NULL;
+      seqs_to_aln->postcode1[i]= NULL;
+      seqs_to_aln->postcode2[i]= NULL;
       seqs_to_aln->sc[i]       = IMPOSSIBLE;
     }
   }
@@ -1671,11 +1689,18 @@ void FreeSeqsToAln(seqs_to_aln_t *s)
     free(s->cp9_tr);
   }
  
-  if(s->postcode != NULL) {
+  if(s->postcode1 != NULL) {
     for (i=0; i < s->nseq; i++)
-      if(s->postcode[i] != NULL) free(s->postcode[i]);
-    free(s->postcode);
+      if(s->postcode1[i] != NULL) free(s->postcode1[i]);
+    free(s->postcode1);
   }
+
+  if(s->postcode2 != NULL) {
+    for (i=0; i < s->nseq; i++)
+      if(s->postcode2[i] != NULL) free(s->postcode2[i]);
+    free(s->postcode2);
+  }
+
   if(s->sc != NULL) free(s->sc);
   
   free(s);
@@ -1716,11 +1741,18 @@ void FreePartialSeqsToAln(seqs_to_aln_t *s, int do_free_sq, int do_free_tr, int 
     s->cp9_tr = NULL;
   }
  
-  if(do_free_post && s->postcode != NULL) {
+  if(do_free_post && s->postcode1 != NULL) {
     for (i=0; i < s->nseq; i++)
-      if(s->postcode[i] != NULL) free(s->postcode[i]);
-    free(s->postcode);
-    s->postcode = NULL;
+      if(s->postcode1[i] != NULL) free(s->postcode1[i]);
+    free(s->postcode1);
+    s->postcode1 = NULL;
+  }
+
+  if(do_free_post && s->postcode2 != NULL) {
+    for (i=0; i < s->nseq; i++)
+      if(s->postcode2[i] != NULL) free(s->postcode2[i]);
+    free(s->postcode2);
+    s->postcode2 = NULL;
   }
 
   if(do_free_sc && s->sc != NULL) {
@@ -2276,7 +2308,8 @@ seqs_to_aln_t * read_next_aln_seqs(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, i
 
   ret_seqs_to_aln->nseq = i; /* however many seqs we read, up to nseq */
   ret_seqs_to_aln->tr   = NULL;
-  ret_seqs_to_aln->postcode = NULL;
+  ret_seqs_to_aln->postcode1 = NULL;
+  ret_seqs_to_aln->postcode2 = NULL;
   ret_seqs_to_aln->index = index;
   return(ret_seqs_to_aln);
 
