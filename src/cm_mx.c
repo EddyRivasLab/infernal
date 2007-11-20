@@ -142,6 +142,7 @@ cm_hb_mx_GrowTo(CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L)
   }
   Mb_needed += ESL_MAX((float) (sizeof(float) * mx->ncells_alloc), (float) (sizeof(float) * ncells)); /* mx->dp_mem */
   Mb_needed *= 0.000001;  /* convert to Mb */
+  ESL_DPRINTF1(("HMM banded requested mx->size_Mb: %.2f\n", Mb_needed));
   if(Mb_needed > CM_HB_MX_MB_LIMIT) ESL_FAIL(eslERANGE, errbuf, "cm_hb_mx_GrowTo(), requested size of HMM banded DP matrix %.2f Mb > %.2f Mb limit (CM_HB_MX_MB_LIMIT from structs.h).", Mb_needed, (float) CM_HB_MX_MB_LIMIT);
 
   /* must we realloc the full matrix? or can we get away with just
@@ -194,7 +195,6 @@ cm_hb_mx_GrowTo(CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L)
   mx->L       = L;    /* length of current seq we're valid for */
   mx->size_Mb = Mb_needed;
   
-  ESL_DPRINTF1(("HMM banded mx->size_Mb: %.2f\n", mx->size_Mb));
   return eslOK;
 
  ERROR:
