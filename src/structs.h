@@ -23,6 +23,8 @@
 #define USE_NEWLOGSUM 1
 #define USE_OLDLOGSUM 0
 
+#define cmERRBUFSIZE 1024
+
 /* various default parameters for CMs and CP9 HMMs */ 
 #define DEFAULT_CM_CUTOFF 0.1
 #define DEFAULT_CM_CUTOFF_TYPE E_CUTOFF
@@ -1071,10 +1073,11 @@ typedef struct cm_hb_mx_s {
 
   int    ncells_alloc;	/* current cell allocation limit */
   int    ncells_valid;	/* current number of valid cells */
+  float  size_Mb;       /* current size of matrix in Megabytes */
+
   int   *nrowsA;        /* [0..v..M] current number allocated rows for deck v */
 
-  float ***dp;          /*  [0.1..M][0..j..?][0..d..?]  ?s indicate
-			 *  mx could be banded in j and/or d dim */
+  float ***dp;          /*  [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
   float   *dp_mem;      /* the actual mem, points to dp[0][0][0] */
 
   CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
@@ -1082,6 +1085,9 @@ typedef struct cm_hb_mx_s {
 			 * state, only a reference, so don't free
 			 * it when mx is freed. */
 } CM_HB_MX;
+
+#define CM_HB_MX_MB_LIMIT 128 /* Megabyte limit for HMM banded CM DP matrices */
+#define CM_NB_MX_MB_LIMIT 128 /* Megabyte limit for non-banded CM DP matrices */
 
 #define MB_CM 0
 #define MB_CP9 1

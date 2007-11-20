@@ -116,7 +116,7 @@ float ActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cuto
 			      0, 0, 0, NULL);
     }
     else {
-      ActuallyAlignTargets(cm, NULL, 
+      ActuallyAlignTargets(cm, NULL, NULL, 
 			   dsq, results,      /* put function into dsq_mode, designed for aligning search hits */
 			   0, 0, 0, NULL);
     }
@@ -225,7 +225,7 @@ float OldActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_c
 			      0, 0, 0, NULL);
     }
     else {
-      ActuallyAlignTargets(cm, NULL, 
+      ActuallyAlignTargets(cm, NULL, NULL, 
 			   dsq, results,      /* put function into dsq_mode, designed for aligning search hits */
 			   0, 0, 0, NULL);
     }
@@ -258,6 +258,7 @@ float OldActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_c
  *                    parstrees are stored in seacrh_results.
  *
  * Args:     CM             - the covariance model
+ *           errbuf         - char buffer for reporting errors
  *           seqs_to_aln    - the sequences (if sq_mode)
  *           dsq            - a single digitized sequence (if dsq_mode)
  *           search_results - search results with subsequence indices of dsq to align (if dsq_mode)
@@ -267,10 +268,14 @@ float OldActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_c
  *           r              - source of randomness (NULL unless CM_ALIGN_SAMPLE)
  * 
  * Returns:  eslOK on success;
- *           Dies if there's an error (not good for MPI).
+ *           eslERANGE if required memory for a DP matrix is too big;
+ *           eslEINCOMPAT if input parameters violate contract;
+ *           eslEMEM on memory allocation error;
+ *           eslFAIL if some other error;
+ *           if(!eslOK) errbuf is filled with informative error message
  */
 int
-ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
+ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
 		       int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r)
 {
   int status;
@@ -352,26 +357,27 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
   int do_check     = FALSE;   /* TRUE to check posteriors from Inside/Outside */
   int do_sample    = FALSE;   /* TRUE to sample from an Inside matrix */
   int do_optacc    = FALSE;   /* TRUE to find optimally accurate alignment instead of CYK */
+  int do_hmmsafe   = FALSE;   /* TRUE to realign seqs with HMM banded parses < 0. bits (only works if !do_optacc && !do_post && do_hbanded)*/
 
   /* Contract check */
-  if(!(cm->flags & CMH_BITS))                            cm_Fail("ActuallyAlignTargets(), CMH_BITS flag down.\n");
-  if(r == NULL && (cm->align_opts & CM_ALIGN_SAMPLE))    cm_Fail("ActuallyAlignTargets(), no source of randomness, but CM_ALIGN_SAMPLE alignment option on.\n");
-  if(r != NULL && (!(cm->align_opts & CM_ALIGN_SAMPLE))) cm_Fail("ActuallyAlignTargets(), we have a source of randomness, but CM_ALIGN_SAMPLE alignment option off.\n");
-  if((cm->align_opts & CM_ALIGN_POST)      && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("ActuallyAlignTargets(), CM_ALIGN_POST and CM_ALIGN_HMMONLY options are incompatible.\n");
-  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("ActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_HMMONLY options are incompatible.\n");
-  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_POST))    cm_Fail("ActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_POST options are incompatible.\n");
+  if(!(cm->flags & CMH_BITS))                            ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), CMH_BITS flag down.\n");
+  if(r == NULL && (cm->align_opts & CM_ALIGN_SAMPLE))    ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), no source of randomness, but CM_ALIGN_SAMPLE alignment option on.\n");
+  if(r != NULL && (!(cm->align_opts & CM_ALIGN_SAMPLE))) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), we have a source of randomness, but CM_ALIGN_SAMPLE alignment option off.\n");
+  if((cm->align_opts & CM_ALIGN_POST)      && (cm->align_opts & CM_ALIGN_HMMONLY)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), CM_ALIGN_POST and CM_ALIGN_HMMONLY options are incompatible.\n");
+  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_HMMONLY)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_HMMONLY options are incompatible.\n");
+  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_POST))    ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_POST options are incompatible.\n");
 
   /* determine mode */
   if     (seqs_to_aln != NULL && (dsq == NULL && search_results == NULL))  sq_mode = TRUE;
   else if(seqs_to_aln == NULL && (dsq != NULL && search_results != NULL)) dsq_mode = TRUE;
-  else   cm_Fail("ActuallyAlignTargets(), can't determine mode (sq_mode or dsq_mode).\n");
+  else   ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), can't determine mode (sq_mode or dsq_mode).\n");
 
-  if( sq_mode && (seqs_to_aln->sq       == NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->sq is NULL.\n");
-  if( sq_mode && (seqs_to_aln->tr       != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->tr is non-NULL.\n");
-  if( sq_mode && (seqs_to_aln->cp9_tr   != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->cp9_tr is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->sq       == NULL))  cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->sq is NULL.\n");
+  if( sq_mode && (seqs_to_aln->tr       != NULL))  cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->tr is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->cp9_tr   != NULL))  cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->cp9_tr is non-NULL.\n");
   if( sq_mode && (seqs_to_aln->postcode1 != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode1 is non-NULL.\n");
   if( sq_mode && (seqs_to_aln->postcode2 != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode2 is non-NULL.\n");
-  if( sq_mode && (seqs_to_aln->sc       != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->sc is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->sc       != NULL))  cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->sc is non-NULL.\n");
   
   if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_HMMONLY option on.\n");
   if(dsq_mode && (cm->align_opts & CM_ALIGN_POST))    cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_POST option on.\n");
@@ -379,7 +385,9 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
   if(dsq_mode && (cm->align_opts & CM_ALIGN_OUTSIDE)) cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_OUTSIDE option on.\n");
   if(dsq_mode && (cm->align_opts & CM_ALIGN_SAMPLE))  cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_SAMPLE option on.\n");
 
-  /* set the options based on cm->align_opts */
+  /* save a copy of the align_opts we entered function with, we may change some of these for
+   * individual target sequences, and we want to be able to change them back
+   */
   if(cm->align_opts  & CM_ALIGN_NOSMALL)    do_small     = FALSE;
   if(cm->config_opts & CM_CONFIG_LOCAL)     do_local     = TRUE;
   if(cm->align_opts  & CM_ALIGN_QDB)        do_qdb       = TRUE;
@@ -395,9 +403,10 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
   if(cm->align_opts  & CM_ALIGN_SCOREONLY)  do_scoreonly = TRUE;
   if(cm->align_opts  & CM_ALIGN_SAMPLE)     do_sample    = TRUE;
   if(cm->align_opts  & CM_ALIGN_OPTACC)     do_optacc    = TRUE;
+  if(cm->align_opts  & CM_ALIGN_HMMSAFE)    do_hmmsafe   = TRUE;
 
   /* another contract check */
-  if((do_sample + do_inside + do_outside + do_post) > 1) cm_Fail("ActuallyAlignTargets(), exactly 0 or 1 of the following must be TRUE (== 1):\n\tdo_sample = %d\n\tdo_inside = %d\n\tdo_outside = %d\n\t do_post%d\n\tdo_hmmonly: %d\n\tdo_scoreonly: %d\n", do_sample, do_inside, do_outside, do_post, do_hmmonly, do_scoreonly);
+  if((do_sample + do_inside + do_outside + do_post + do_hmmonly + do_scoreonly) > 1) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), exactly 0 or 1 of the following must be TRUE (== 1):\n\tdo_sample = %d\n\tdo_inside = %d\n\tdo_outside = %d\n\t do_post = %d\n\tdo_hmmonly = %d\n\tdo_scoreonly = %d\n", do_sample, do_inside, do_outside, do_post, do_hmmonly, do_scoreonly);
 
   if(debug_level > 0) {
     printf("do_local    : %d\n", do_local);
@@ -415,6 +424,7 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
     printf("do_scoreonly: %d\n", do_scoreonly);
     printf("do_sample   : %d\n", do_sample);
     printf("do_optacc   : %d\n", do_optacc);
+    printf("do_hmmsafe  : %d\n", do_hmmsafe);
   }
 
   /* allocate out_mx, if needed, only if !do_sub, if do_sub each sub CM will need to allocate a new out_mx */
@@ -453,9 +463,9 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
   watch = esl_stopwatch_Create();
 
   if(do_hbanded || do_sub) { /* We need a CP9 HMM to build sub_cms */
-    if(cm->cp9 == NULL)                    cm_Fail("ActuallyAlignTargets, trying to use CP9 HMM that is NULL\n");
-    if(cm->cp9b == NULL)                   cm_Fail("ActuallyAlignTargets, cm->cp9b is NULL\n");
-    if(!(cm->cp9->flags & CPLAN9_HASBITS)) cm_Fail("ActuallyAlignTargets, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
+    if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets, trying to use CP9 HMM that is NULL\n");
+    if(cm->cp9b == NULL)                   ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets, cm->cp9b is NULL\n");
+    if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
     
     /* Keep data for the original CM safe; we'll be doing
      * pointer swapping to ease the sub_cm alignment implementation. */
@@ -503,20 +513,6 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
       L       = search_results->data[i].stop - search_results->data[i].start + 1;
     }
     if (L == 0) continue; /* silently skip zero length seqs */
-
-    /* if we'll need alpha, beta matrices, allocate them */
-    ESL_DASSERT1((alpha == NULL));
-    ESL_DASSERT1((beta  == NULL));
-    if(!do_sub && ((!do_small && !do_hbanded) || do_sample)) { 
-      /* allocate full size (non-banded) alpha matrix */
-      ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
-      for (v = 0; v <= cm->M; v++) alpha[v] = alloc_vjd_deck(L, 1, L);
-      if(do_post || do_outside || do_optacc) { 
-	/* allocate full size (non-banded) beta matrix */
-	ESL_ALLOC(beta, sizeof(float **) * (cm->M+1));
-	for (v = 0; v <= cm->M; v++) beta[v] = alloc_vjd_deck(L, 1, L);
-      }
-    }
 
     /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
     if(sq_mode && do_hmmonly) {
@@ -578,7 +574,7 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
 			&submap,            /* maps from the sub_cm to cm and vice versa           */
 			FALSE,              /* DON'T build a fullsub model (deprecated)            */
 			debug_level)))      /* print or don't print debugging info                 */
-	cm_Fail("ERROR ActuallyAlignTargets(), building sub CM.");
+	ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), unexpected error building a sub CM for seq %d.", i);
       /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded), this will also:  */
       /* (4) Build a new CP9 HMM from the sub CM. */
       ConfigCM(sub_cm, NULL, NULL);
@@ -596,41 +592,13 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
 
 	/* Create the out_mx if needed, cm == sub_cm */
 	if(do_optacc || (do_post || do_outside)) out_mx = cm_hb_mx_Create(cm->M);
-
-	/* Create the alpha, beta matrices if needed */
-	/* allocate full size (non-banded) alpha matrix */
-	ESL_DASSERT1((alpha == NULL));
-	ESL_DASSERT1((beta  == NULL));
-	if((!do_small && !do_hbanded) || (do_sample)) { 
-	  ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
-	  for (v = 0; v <= cm->M; v++) alpha[v] = alloc_vjd_deck(L, 1, L);
-	  if(do_post || do_outside || do_optacc) { 
-	    /* allocate full size (non-banded) beta matrix */
-	    ESL_ALLOC(beta, sizeof(float **) * (cm->M+1));
-	    for (v = 0; v <= cm->M; v++) beta[v] = alloc_vjd_deck(L, 1, L);
-	  }
-	}
       }
     }
 
-    /* Determine which CYK alignment algorithm to use, based
-     * on command-line options AND memory requirements.
-     */
-    if(do_hbanded) {
-      /* write a function to determine size of jd banded memory
-       * req'd, and set do_small to true if its > thresh.
-       if(do_small) * We're only going to band on d in memory, but 
-       * we need to calculate safe_hd bands on the d dimension. 
-       {
-      */
-    }
     if(do_qdb) {
       /*Check if we need to reset the query dependent bands b/c they're currently expanded. */
       if(expand_flag) {
-	for(v = 0; v < cm->M; v++) {
-	  cm->dmin[v] = orig_dmin[v];
-	  cm->dmax[v] = orig_dmax[v];
-	}
+	for(v = 0; v < cm->M; v++) { cm->dmin[v] = orig_dmin[v]; cm->dmax[v] = orig_dmax[v]; }
 	expand_flag = FALSE;
       }
       if((L < cm->dmin[0]) || (L > cm->dmax[0])) { 
@@ -650,87 +618,89 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
     /* beginning of large if() else if() else if() ... statement */
     if(do_sample) { 
       if(do_hbanded) { /* sampling from inside HMM banded matrix */
-	FastInsideAlignHB(cm,  cur_dsq, 1, L, cm->hbmx);
-	sc = SampleFromInsideHB(r, cm, cur_dsq, L, cm->hbmx, cur_tr);
+	if((status = FastInsideAlignHB(cm, errbuf, cur_dsq, 1, L, cm->hbmx, NULL)) != eslOK) return status; /* errbuf will have been filled by FastInsideAlignHB() */
+	if((status = SampleFromInsideHB(r, cm, errbuf, cur_dsq, L, cm->hbmx, cur_tr, &sc)) != eslOK) return status; /* errbuf will have been filled by SampleFromInsideHB() */
       }
       else { /* sampling from inside matrix, but not HMM banded */
-	FastInsideAlign(cm,  cur_dsq, 1, L, alpha);
-	sc = SampleFromInside(r, cm, cur_dsq, L, alpha, cur_tr);
+	if((status = FastInsideAlign(cm, errbuf, cur_dsq, 1, L, &alpha, NULL)) != eslOK) return status; /* errbuf will have been filled by FastInsideAlign() */
+	if((status = SampleFromInside(r, cm, errbuf, cur_dsq, L,  alpha, cur_tr, &sc)) != eslOK) return status; /* errbuf will have been filled by SampleFromInside() */
       }
     }
     else if(do_inside) { 
       if(do_hbanded) { /* HMM banded inside only */
-	sc = FastInsideAlignHB(cm, cur_dsq, 1, L, cm->hbmx);
+	if((status = FastInsideAlignHB(cm, errbuf, cur_dsq, 1, L, cm->hbmx, &sc)) != eslOK) return status; /* errbuf will have been filled by FastInsideAlignHB() */
       }
       else { /* non-banded inside only */
-	sc = FastInsideAlign(cm, cur_dsq, 1, L, alpha);
+	if((status = FastInsideAlign(cm, errbuf, cur_dsq, 1, L, NULL, &sc)) != eslOK) return status; 
       }
     }
     else if(do_outside) { 
       if(do_hbanded) { /* HMM banded inside and outside */
 	/* need dp matrix from Inside to do Outside */
-	sc = FastInsideAlignHB(cm,  cur_dsq, 1, L, cm->hbmx);
-	sc = FastOutsideAlignHB(cm, cur_dsq, 1, L, out_mx, cm->hbmx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)));
+	if((status = FastInsideAlignHB(cm, errbuf, cur_dsq, 1, L, cm->hbmx, &sc)) != eslOK) return status; 
+	if((status = FastOutsideAlignHB(cm, errbuf, cur_dsq, 1, L, out_mx, cm->hbmx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), &sc)) != eslOK) return status; 
 	/* Note: we can only check the posteriors in FastOutsideAlignHB() if local begin/ends are off */
       }
       else { /* non-banded inside/outside */
 	/* need alpha matrix from Inside to do Outside */
-	sc = FastInsideAlign(cm,  cur_dsq, 1, L, alpha);
-	sc = FastOutsideAlign(cm, cur_dsq, 1, L, beta, alpha, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)));
+	if((status = FastInsideAlign(cm, errbuf, cur_dsq, 1, L, &alpha, &sc)) != eslOK) return status; /* errbuf will have been filled by FastInsideAlign() */
+	if((status = FastOutsideAlign(cm, errbuf, cur_dsq, 1, L, NULL, alpha, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), &sc)) != eslOK) return status; /* errbuf will have been filled by FastOutsideAlign() */
       }
     }
     else if (do_small) { /* small D&C CYK alignment */
       if(do_qdb) { /* use QDBs when doing D&C CYK */
-	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, 
-				 cur_tr, cm->dmin, cm->dmax);
-	if(bdump_level > 0) qdb_trace_info_dump(cm, *cur_tr, cm->dmin, cm->dmax, bdump_level);
-      }
-      else if(do_hbanded) { /* use QDBs (safe d bands) derived from HMM bands when doing D&C CYK, HMM bands were not tight enough to allow HMM banded full CYK*/
-	/* Calc the safe d bands */
-	hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
-			 cp9b->safe_hdmin, cp9b->safe_hdmax);
-	if(debug_level > 3) { printf("\nprinting hd bands\n\n"); debug_print_hd_bands(cm, cp9b->hdmin, cp9b->hdmax, cp9b->jmin, cp9b->jmax); printf("\ndone printing hd bands\n\n"); }
-	/* Note the following CYK call will not enforce j bands, even though user specified --hbanded. */
-	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, cp9b->safe_hdmin, cp9b->safe_hdmax);
+	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, cm->dmin, cm->dmax);
 	if(bdump_level > 0) qdb_trace_info_dump(cm, *cur_tr, cm->dmin, cm->dmax, bdump_level);
       }
       else { /* small D&C CYK non-banded alignment */
-	/*printf("DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n"); debug_print_cm_params(cm); printf("DONE DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");*/
 	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
-	if(bdump_level > 0) { 
-	  /* We want QDB info but QDBs weren't used.  Useful if you're curious why a QDB banded parse is crappy 
-	   * relative to non-banded parse, e.g. allows you to see where the non-banded parse went outside the bands. */
-	  qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
-	}
+	if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level); /* informative as to where optimal parse goes outside bands */
       }
     }
     else if(do_qdb) { /* non-small, QDB banded CYK alignment */
       sc = CYKInside(cm, cur_dsq, L, 0, 1, L, cur_tr, cm->dmin, cm->dmax);
       if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
     }
-    else if(do_hbanded) { /* non-small, HMM banded alignment, either CYK or optimally accurate */
-      if(do_post) sc = FastAlignHB(cm, cur_dsq, L, 1, L, cm->hbmx, do_optacc, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]));
-      else        sc = FastAlignHB(cm, cur_dsq, L, 1, L, cm->hbmx, do_optacc, out_mx, cur_tr, NULL, NULL);
-
-      /* if CM_ALIGN_HMMSAFE option is enabled, realign seqs w/HMM banded parses < 0 bits,
-       * this should never happen in we're doing optimal accuracy or appending posteriors, due to option checking in cmalign, cmscore,
-       * but we check here to be safe */
-      if(cm->align_opts & CM_ALIGN_HMMSAFE && sc < 0.) { 
-	if(do_post)   cm_Fail("ActuallyAlignTargets() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_POST.\n");
-	if(do_optacc) cm_Fail("ActuallyAlignTargets() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_OPTACC.\n");
-	tmpsc = sc;
-	if(!silent_mode) printf("\n%s HMM banded parse had a negative score, realigning with non-banded CYK.\n", seqs_to_aln->sq[i]->name);
-	FreeParsetree(*cur_tr);
-	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
-	if(!silent_mode && fabs(sc-tmpsc) < 0.01) printf("HMM banded parse was the optimal parse.\n\n");
-	else if (!silent_mode) printf("HMM banded parse was non-optimal, it was %.2f bits below the optimal.\n\n", (fabs(sc-tmpsc)));
-      }	      
-    }
-    else { /* non-small, non-banded CYK or optimal accuracy alignment */
-      if(do_post) sc = FastAlign(cm, cur_dsq, L, 1, L, alpha, do_optacc, beta, cur_tr, &(postcode1[i]), &(postcode2[i]));
-      else        sc = FastAlign(cm, cur_dsq, L, 1, L, alpha, do_optacc, beta, cur_tr, NULL, NULL);
-      if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
-      /* allows you to see where the non-banded parse went outside the bands. */
+    else { /* non-small, non-QDB CYK or optimal accuracy alignment */
+      if(do_hbanded) { 
+	if(do_post) { /* HMM banded CYK or optimal accuracy, posterior annotated */
+	  if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, cm->hbmx, do_optacc, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc)) != eslOK) return status;
+	}
+	else { /* HMM banded CYK or optimal accuracy, no posteriors */
+	  if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, cm->hbmx, do_optacc, out_mx, cur_tr, NULL, NULL, &sc)) != eslOK) {
+	    if(do_optacc) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
+	    else if (status == eslERANGE) { /* we can still do CYK D&C alignment with QDBs derived from the HMM bands */
+	      hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
+	      printf("Doing QDB D&C b/c HMM banded parse of seq %d was too memory intensive.\n", i);
+	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, cp9b->safe_hdmin, cp9b->safe_hdmax);
+	    }
+	    else return status; /* get here (!do_optacc) && FastAlignHB() returned status other than eslOK and eslERANGE */
+	  }
+	  if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level); /* allows you to see where the non-banded parse went outside the bands. */
+	} 
+	/* if CM_ALIGN_HMMSAFE option is enabled, realign seqs w/HMM banded parses < 0 bits,
+	 * this should never happen in we're doing optimal accuracy or appending posteriors, due to option checking in cmalign, cmscore,
+	 * but we check here to be safe */
+	if(cm->align_opts & CM_ALIGN_HMMSAFE && sc < 0.) { 
+	  if(do_post)   ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_POST.\n");
+	  if(do_optacc) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_OPTACC.\n");
+	  tmpsc = sc;
+	  if(!silent_mode) printf("\n%s HMM banded parse had a negative score, realigning with non-banded CYK.\n", seqs_to_aln->sq[i]->name);
+	  FreeParsetree(*cur_tr);
+	  sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
+	  if(!silent_mode && fabs(sc-tmpsc) < 0.01) printf("HMM banded parse was the optimal parse.\n\n");
+	  else if (!silent_mode) printf("HMM banded parse was non-optimal, it was %.2f bits below the optimal.\n\n", (fabs(sc-tmpsc)));
+	}
+      }
+      else { 
+	if(do_post) { /* non-banded CYK or optimal accuracy, posterior annotated */
+	  if((status = FastAlign(cm, errbuf, cur_dsq, L, 1, L, &alpha, do_optacc, &beta, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc)) != eslOK) return status;
+	}
+	else { /* non-banded CYK or optimal accuracy, no posteriors */
+	  if((status = FastAlign(cm, errbuf, cur_dsq, L, 1, L, &alpha, do_optacc, &beta, cur_tr, NULL, NULL, &sc)) != eslOK) return status;
+	}
+	if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level); /* allows you to see where the non-banded parse went outside the bands. */
+      } 
     }
     /* end of large if() else if() else if() else statement */
     /* done alignment for this seq */
@@ -747,9 +717,10 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
 
     /* check parsetree score if cm->align_opts & CM_ALIGN_CHECKPARSESC */
     if((cm->align_opts & CM_ALIGN_CHECKPARSESC) && (!(cm->flags & CM_IS_SUB))) { 
-      if(do_optacc) cm_Fail("ActuallyAlignTargets(), cm->align_opts CM_ALIGN_CHECKPARSESC, is on, but incompatible with another enabled option: CM_ALIGN_OPTACC.\n");
+      if(do_optacc) 
+	ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), cm->align_opts CM_ALIGN_CHECKPARSESC, is on, but incompatible with another enabled option: CM_ALIGN_OPTACC.\n");
       if (fabs(sc - ParsetreeScore(cm, tr[i], cur_dsq, FALSE)) >= 0.01)
-	cm_Fail("ActuallyAlignTargets(), alignment score differs from its parse tree's score");
+	ESL_FAIL(eslFAIL, errbuf, "ActuallyAlignTargets(), seq: %d alignment score %.3f differs from its parse tree's score: %.3f", i, sc, ParsetreeScore(cm, tr[i], cur_dsq, FALSE));
     }
 
     /* If requested, or if debug level high enough, print out the parse tree */
@@ -768,9 +739,8 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
 	/* Convert the sub_cm parsetree to a full CM parsetree */
 	if(debug_level > 0) ParsetreeDump(stdout, *cur_tr, cm, cur_dsq, NULL, NULL);
 	if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, *cur_tr, submap, FALSE, debug_level))) { 
-	  printf("\n\nIncorrectly converted original trace:\n");
-	  ParsetreeDump(stdout, orig_tr, orig_cm, cur_dsq, NULL, NULL);
-	  cm_Fail("this shouldn't happen.");
+	  /* ParsetreeDump(stdout, orig_tr, orig_cm, cur_dsq, NULL, NULL); */
+	  ESL_FAIL(eslFAIL, errbuf, "ActuallyAlignTargets(), Unable to convert sub CM parsetree to original CM parsetree. This shouldn't happen.");
 	}
 	if(debug_level > 0) { 
 	  printf("\n\nConverted original trace:\n");
@@ -820,7 +790,7 @@ ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_
   
   return eslOK;
   ERROR:
-  cm_Fail("Memory allocation error.");
+  ESL_FAIL(eslEMEM, errbuf, "ActuallyAlignTargets(), Memory allocation error.");
   return status; /* NEVERREACHED */
 }
 

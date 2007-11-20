@@ -399,7 +399,7 @@ static void
 serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   int            status;
-  char           errbuf[eslERRBUFSIZE];
+  char           errbuf[cmERRBUFSIZE];
   CM_t          *cm = NULL;
   CMConsensus_t *cons = NULL;     /* precalculated consensus info for display purposes */
   int            cm_mode  = -1;   /* CM algorithm mode                        */
@@ -524,7 +524,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   dbseq_t **dbseqlist    = NULL;
   dbseq_t *dbseq = NULL;
   
-  char     errbuf[eslERRBUFSIZE];
+  char     errbuf[cmERRBUFSIZE];
   MPI_Status mpistatus; 
   int      n;
 
@@ -707,7 +707,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		}
 	      else	/* worker reported an error. Get the errbuf. */
 		{
-		  if (MPI_Unpack(buf, bn, &pos, errbuf, eslERRBUFSIZE, MPI_CHAR, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack of errbuf failed");
+		  if (MPI_Unpack(buf, bn, &pos, errbuf, cmERRBUFSIZE, MPI_CHAR, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack of errbuf failed");
 		  ESL_DPRINTF1(("MPI master sees that the result buffer contains an error message\n"));
 		}
 	      nproc_working--;
@@ -775,7 +775,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int           wn   = 0;	/* allocation size for wbuf */
   int           sz, n;		/* size of a packed message */
   int           pos;
-  char          errbuf[eslERRBUFSIZE];
+  char          errbuf[cmERRBUFSIZE];
   int           cm_mode  = -1;   /* CM algorithm mode                        */
   int           cp9_mode = -1;   /* CP9 algorithm mode                       */
   /*float         Smin;*/
@@ -863,7 +863,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_DPRINTF1(("worker %d: fails, is sending an error message, as follows:\n%s\n", cfg->my_rank, errbuf));
   pos = 0;
   MPI_Pack(&status, 1,                MPI_INT,  wbuf, wn, &pos, MPI_COMM_WORLD);
-  MPI_Pack(errbuf,  eslERRBUFSIZE,    MPI_CHAR, wbuf, wn, &pos, MPI_COMM_WORLD);
+  MPI_Pack(errbuf,  cmERRBUFSIZE,    MPI_CHAR, wbuf, wn, &pos, MPI_COMM_WORLD);
   MPI_Send(wbuf, pos, MPI_PACKED, 0, 0, MPI_COMM_WORLD);
   return;
 }

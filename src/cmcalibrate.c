@@ -443,7 +443,7 @@ static void
 serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   int            status;
-  char           errbuf[eslERRBUFSIZE];
+  char           errbuf[cmERRBUFSIZE];
   CM_t          *cm = NULL;
   int            cmN  = esl_opt_GetInteger(go, "--cmN");
   int            hmmN = esl_opt_GetInteger(go, "--hmmN");

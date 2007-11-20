@@ -538,8 +538,6 @@ extern void CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr, 
 extern int  Fscore2postcode(float sc);
 extern int  Iscore2postcode(int sc);
 extern float FScore2Prob(float sc, float null);
-extern void  CMCheckPosteriorHB(CM_t *cm, int i0, int j0, CM_HB_MX *post);
-extern void  CMCheckPosterior(int L, CM_t *cm, float ***post);
 extern void ICMCheckPosterior(int L, CM_t *cm, int ***post);
 extern float FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
 			     float ***alpha, float ****ret_alpha, 
@@ -602,7 +600,7 @@ extern float OldActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, flo
 				     float cp9_cutoff, search_results_t *results, int do_filter, 
 				     int doing_cm_stats, int doing_cp9_stats, int *ret_flen,
 				     int do_align_hits);
-extern int ActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
+extern int ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
 				int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r);
 extern int OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
 				   int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r);
@@ -771,28 +769,30 @@ extern int   cp9_CheckTransitionGuarantees(CP9_t *cp9);
 extern int   cp9_GetLocalityMode(CP9_t *cp9);
 
 /* from cm_fastalign.c */
-extern float fast_cyk_align_hb (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow, 
-				int allow_begin, int *ret_b, float *ret_bsc, CM_HB_MX *mx);
-extern float fast_cyk_align    (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow,  
-			        int allow_begin, int *ret_b, float *ret_bsc, float ***mx);
-extern float optimal_accuracy_align_hb(CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, void ****ret_shadow,  
-				       int *ret_b, float *ret_bsc, CM_HB_MX *mx, CM_HB_MX *post_mx);
-extern float optimal_accuracy_align   (CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, void ****ret_shadow,  
-				       int *ret_b, float *ret_bsc, float ***mx, float ***post_mx);
-extern float fast_alignT_hb    (CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, 
-			        int allow_begin, CM_HB_MX *mx, int do_optacc, CM_HB_MX *post_mx);
-extern float fast_alignT       (CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, 
-			        int allow_begin, float ***mx, int do_optacc, float ***post_mx);
-extern float FastAlignHB        (CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_MX *mx, int do_optacc, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2);
-extern float FastAlign          (CM_t *cm, ESL_DSQ *dsq, int L, int i0, int j0, float ***mx, int do_optacc, float ***post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2);
-extern float FastInsideAlignHB  (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx);
-extern float FastInsideAlign    (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float ***mx);
-extern float FastOutsideAlignHB (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx, CM_HB_MX *ins_mx, int do_check);
-extern float FastOutsideAlign   (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float ***mx, float ***ins_mx, int do_check);
-extern void  CMPosteriorHB      (CM_t *cm, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx);
-extern void  CMPosterior        (CM_t *cm, int i0, int j0, float ***ins_mx, float ***out_mx, float ***post_mx);
-extern float SampleFromInsideHB(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, CM_HB_MX *mx, Parsetree_t **ret_tr);
-extern float SampleFromInside  (ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, float ***mx,  Parsetree_t **ret_tr);
+extern int fast_cyk_align_hb (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow, 
+				int allow_begin, int *ret_b, float *ret_bsc, CM_HB_MX *mx, float *ret_sc);
+extern int fast_cyk_align    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow,  
+			        int allow_begin, int *ret_b, float *ret_bsc, float ****ret_mx, float *ret_sc);
+extern int optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, void ****ret_shadow,  
+				     int *ret_b, float *ret_bsc, CM_HB_MX *mx, CM_HB_MX *post_mx, float *ret_pp);
+extern int optimal_accuracy_align   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, void ****ret_shadow,  
+				     int *ret_b, float *ret_bsc, float ****ret_mx, float ***post_mx, float *ret_pp);
+extern int fast_alignT_hb    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, 
+			        int allow_begin, CM_HB_MX *mx, int do_optacc, CM_HB_MX *post_mx, float *ret_sc);
+extern int fast_alignT       (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, 
+			        int allow_begin, float ****ret_mx, int do_optacc, float ***post_mx, float *ret_sc);
+extern int FastAlignHB        (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_MX *mx,     int do_optacc, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc);
+extern int FastAlign          (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float ****ret_mx, int do_optacc, float ****ret_post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc);
+extern int FastInsideAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx,     float *ret_sc);
+extern int FastInsideAlign    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ****ret_mx, float *ret_sc);
+extern int FastOutsideAlignHB (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx,    CM_HB_MX *ins_mx, int do_check, float *ret_sc);
+extern int FastOutsideAlign   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ****ret_mx, float ***ins_mx, int do_check, float *ret_sc);
+extern int CMPosteriorHB      (CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx);
+extern int CMPosterior        (CM_t *cm, char *errbuf, int i0, int j0, float ***ins_mx, float ***out_mx, float ***post_mx);
+extern int CMCheckPosteriorHB (CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post);
+extern int CMCheckPosterior   (CM_t *cm, char *errbuf, int i0, int j0, float ***post);
+extern int SampleFromInsideHB (ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *mx, Parsetree_t **ret_tr, float *ret_sc);
+extern int SampleFromInside   (ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float ***mx,  Parsetree_t **ret_tr, float *ret_sc);
 
 
 /* from hmmband.c */
@@ -834,8 +834,8 @@ extern float CP9ViterbiAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp
 extern float CP9BackwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s **ret_mx);
 
 /* from cm_mx.c */
-extern CM_HB_MX * cm_hb_mx_Create(int M);
-extern int         cm_hb_mx_GrowTo(CM_HB_MX *mx, CP9Bands_t *cp9b, int L);
+extern CM_HB_MX *  cm_hb_mx_Create(int M);
+extern int         cm_hb_mx_GrowTo(CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L);
 extern int         cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx);
 extern void        cm_hb_mx_Destroy(CM_HB_MX *mx);
 

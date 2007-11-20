@@ -399,7 +399,7 @@ static void
 serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   int      status;
-  char     errbuf[eslERRBUFSIZE];
+  char     errbuf[cmERRBUFSIZE];
   CM_t     *cm;
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, holds seqs, parsetrees, CP9 traces, postcodes */
 
@@ -475,7 +475,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   seqs_to_aln_t  *worker_seqs_to_aln = NULL;
   int            *seqidx         = NULL;
   
-  char     errbuf[eslERRBUFSIZE];
+  char     errbuf[cmERRBUFSIZE];
   MPI_Status mpistatus; 
   int      n;
 
@@ -585,7 +585,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		}
 	      else	/* worker reported an error. Get the errbuf. */
 		{
-		  if (MPI_Unpack(buf, bn, &pos, errbuf, eslERRBUFSIZE, MPI_CHAR, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack of errbuf failed");
+		  if (MPI_Unpack(buf, bn, &pos, errbuf, cmERRBUFSIZE, MPI_CHAR, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack of errbuf failed");
 		  ESL_DPRINTF1(("MPI master sees that the result buffer contains an error message\n"));
 		}
 	      nproc_working--;
@@ -635,7 +635,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int           wn   = 0;	/* allocation size for wbuf */
   int           sz, n;		/* size of a packed message */
   int           pos;
-  char          errbuf[eslERRBUFSIZE];
+  char          errbuf[cmERRBUFSIZE];
   seqs_to_aln_t *seqs_to_aln = NULL;
   int           i;
   /* After master initialization: master broadcasts its status.
@@ -708,7 +708,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_DPRINTF1(("worker %d: fails, is sending an error message, as follows:\n%s\n", cfg->my_rank, errbuf));
   pos = 0;
   MPI_Pack(&status, 1,                MPI_INT,  wbuf, wn, &pos, MPI_COMM_WORLD);
-  MPI_Pack(errbuf,  eslERRBUFSIZE,    MPI_CHAR, wbuf, wn, &pos, MPI_COMM_WORLD);
+  MPI_Pack(errbuf,  cmERRBUFSIZE,    MPI_CHAR, wbuf, wn, &pos, MPI_COMM_WORLD);
   MPI_Send(wbuf, pos, MPI_PACKED, 0, 0, MPI_COMM_WORLD);
   return;
 }
@@ -823,6 +823,7 @@ static int
 process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 		 seqs_to_aln_t *seqs_to_aln)
 {
+  int status;
 
   if(cm->align_opts & CM_ALIGN_OLDDP) { 
     OldActuallyAlignTargets(cm, seqs_to_aln,
@@ -831,12 +832,12 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 			    esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL);
   }
   else {
-    ActuallyAlignTargets(cm, seqs_to_aln,
-			 NULL, NULL,   /* we're not aligning search hits */
-			 esl_opt_GetInteger(go, "--banddump"),
-			 esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL);
+    if((status = ActuallyAlignTargets(cm, errbuf, seqs_to_aln,
+				       NULL, NULL,   /* we're not aligning search hits */
+				       esl_opt_GetInteger(go, "--banddump"),
+				       esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL)) != eslOK) return status;
   }
-    return eslOK;
+  return eslOK;
   
   /* ERROR:
   ESL_DPRINTF1(("worker %d: has caught an error in process_search_workunit\n", cfg->my_rank));
@@ -952,7 +953,7 @@ static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL
   CM_t         *new_cm   = NULL; /* CM built from MSA, we check it has same guide tree as 'cm' */
   CM_t         *newer_cm = NULL; /* used briefly if we rebalance new_cm */
   Parsetree_t  *mtr      = NULL; /* master structure tree from the alignment*/
-  char          errbuf[eslERRBUFSIZE];
+  char          errbuf[cmERRBUFSIZE];
 
   /* cfg->withalifp is open */
   status = esl_msa_Read(cfg->withalifp, &msa);
