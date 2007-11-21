@@ -55,6 +55,7 @@
  *           bands are used or not used as specified in ScanInfo_t <cm->si>.
  *
  * Args:     cm              - the covariance model, must have valid scaninfo (si)
+ *           errbuf          - char buffer for reporting errors
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -62,17 +63,18 @@
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
+ *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  * 
  * Note:     This function is heavily synchronized with FastFInsideScan() and FastIInsideScan(),
  *           any change to this function should be mirrored in those functions. 
  *
- * Returns:  Score of best overall hit (vsc[0]). Information on hits added to <results>.
+ * Returns:  eslOK on succes;
+ *           <ret_sc> is score of best overall hit (vsc[0]). Information on hits added to <results>.
  *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
- *           Dies immediately if some error occurs.
  */
-float 
-FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-	    search_results_t *results, float **ret_vsc)
+int
+FastCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+	    search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
   cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -101,12 +103,12 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)             cm_Fail("ERROR in FastCYKScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)         cm_Fail("ERROR in FastCYKScan, cm->si is not valid.\n");
-  if(j0 < i0)                            cm_Fail("ERROR in FastCYKScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)                        cm_Fail("ERROR in FastCYKScan, dsq is NULL\n");
-  if(cm->search_opts & CM_SEARCH_INSIDE) cm_Fail("ERROR in FastCYKScan, CM_SEARCH_INSIDE flag raised");
-  if(! (cm->si->flags & cmSI_HAS_FLOAT)) cm_Fail("ERROR in FastCYKScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
+  if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CMH_BITS flag is not raised.\n");
+  if(! cm->flags & CMH_SCANINFO)         ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, cm->si is not valid.\n");
+  if(j0 < i0)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, dsq is NULL\n");
+  if(cm->search_opts & CM_SEARCH_INSIDE) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CM_SEARCH_INSIDE flag raised");
+  if(! (cm->si->flags & cmSI_HAS_FLOAT)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
 
   /* make pointers to the ScanInfo/CM data for convenience */
   ScanInfo_t *si = cm->si;      /* for convenience */
@@ -124,7 +126,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) cm_Fail("ERROR in FastCYKScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, W: %d greater than si->W: %d\n", W, si->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -551,13 +553,15 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   free(sc_v);
   free(init_scAA[0]);
   free(init_scAA);
-  if (ret_vsc != NULL) *ret_vsc         = vsc;
+  if (ret_vsc != NULL) *ret_vsc = vsc;
+  else free(vsc);
+  if (ret_sc != NULL) *ret_sc = vsc_root;
   
   ESL_DPRINTF1(("FastCYKScan() return score: %10.4f\n", vsc_root)); 
-  return vsc_root;
+  return eslOK;
   
  ERROR:
-  cm_Fail("Memory allocation error.\n");
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
   return 0.; /* NEVERREACHED */
 }
 
@@ -571,6 +575,7 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  *           ScanInfo_t <si>.
  *
  * Args:     cm              - the covariance model
+ *           errbuf          - char buffer for reporting errors
  *           si              - ScanInfo_t for this model (includes alpha DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
@@ -579,17 +584,19 @@ FastCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
+ *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  * 
  * Note:     This function is heavily synchronized with FastCYKScan() and FastFInsideScan(),
  *           any change to this function should be mirrored in those functions. 
  *
- * Returns:  Score of best Inside hit (vsc[0]). Information on hits added to <results>.
+ * Returns:  eslOK on succes;
+ *           <ret_sc> is score of best Inside hit (vsc[0]). Information on hits added to <results>.
  *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
  *           Dies immediately if some error occurs.
  */
-float 
-FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-		search_results_t *results, float **ret_vsc)
+int
+FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+		search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
   cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -619,12 +626,12 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)                 cm_Fail("ERROR in FastIInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)             cm_Fail("ERROR in FastIInsideScan, cm->si is not valid.\n");
-  if(j0 < i0)                                cm_Fail("ERROR in FastIInsideScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)                            cm_Fail("ERROR in FastIInsideScan, dsq is NULL\n");
-  if(! (cm->search_opts & CM_SEARCH_INSIDE)) cm_Fail("ERROR in FastIInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (si->flags & cmSI_HAS_INT))           cm_Fail("ERROR in FastIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
+  if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CMH_BITS flag is not raised.\n");
+  if(! cm->flags & CMH_SCANINFO)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, cm->si is not valid.\n");
+  if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, dsq is NULL\n");
+  if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CM_SEARCH_INSIDE flag not raised");
+  if(! (si->flags & cmSI_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
 
   /* make pointers to the ScanInfo/CM data for convenience */
   int   ***alpha      = si->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -640,7 +647,7 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) cm_Fail("ERROR in FastIInsideScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, W: %d greater than si->W: %d\n", W, si->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -1063,12 +1070,14 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   free(init_scAA[0]);
   free(init_scAA);
   if (ret_vsc != NULL) *ret_vsc = vsc;
+  else free(vsc);
+  if (ret_sc != NULL) *ret_sc = vsc_root;
   
   ESL_DPRINTF1(("FastIInsideScan() return score: %10.4f\n", vsc_root)); 
-  return vsc_root;
+  return eslOK;
   
  ERROR:
-  cm_Fail("Memory allocation error.\n");
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
   return 0.; /* NEVERREACHED */
 }
 
@@ -1082,6 +1091,7 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  *           ScanInfo_t <si>.
  *
  * Args:     cm              - the covariance model
+ *           errbuf          - char buffer for reporting errors
  *           si              - ScanInfo_t for this model (includes alpha DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
@@ -1090,17 +1100,19 @@ FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
+ *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  * 
  * Note:     This function is heavily synchronized with FastCYKScan() and FastFInsideScan(),
  *           any change to this function should be mirrored in those functions. 
  *
- * Returns:  Score of best Inside hit (vsc[0]). Information on hits added to <results>.
+ * Returns:  eslOK on succes;
+ *           <ret_sc> is score of best Inside hit (vsc[0]). Information on hits added to <results>.
  *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
  *           Dies immediately if some error occurs.
  */
-float 
-XFastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-		search_results_t *results, float **ret_vsc)
+int
+XFastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+		search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
   cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -1130,12 +1142,12 @@ XFastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)                 cm_Fail("ERROR in XFastIInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)             cm_Fail("ERROR in XFastIInsideScan, cm->si is not valid.\n");
-  if(j0 < i0)                                cm_Fail("ERROR in XFastIInsideScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)                            cm_Fail("ERROR in XFastIInsideScan, dsq is NULL\n");
-  if(! (cm->search_opts & CM_SEARCH_INSIDE)) cm_Fail("ERROR in XFastIInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (si->flags & cmSI_HAS_INT))           cm_Fail("ERROR in XFastIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
+  if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, CMH_BITS flag is not raised.\n");
+  if(! cm->flags & CMH_SCANINFO)             ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, cm->si is not valid.\n");
+  if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, dsq is NULL\n");
+  if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, CM_SEARCH_INSIDE flag not raised");
+  if(! (si->flags & cmSI_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
 
   /* make pointers to the ScanInfo/CM data for convenience */
   int   ***alpha      = si->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -1151,7 +1163,7 @@ XFastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) cm_Fail("ERROR in XFastIInsideScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, W: %d greater than si->W: %d\n", W, si->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -1495,12 +1507,14 @@ XFastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   free(init_scAA);
   free(gamma_row);
   if (ret_vsc != NULL) *ret_vsc = vsc;
+  else free(vsc);
+  if (ret_sc != NULL) *ret_sc = vsc_root;
   
   ESL_DPRINTF1(("XFastIInsideScan() return score: %10.4f\n", vsc_root)); 
-  return vsc_root;
+  return eslOK;
   
  ERROR:
-  cm_Fail("Memory allocation error.\n");
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
   return 0.; /* NEVERREACHED */
 }
 
@@ -1514,6 +1528,7 @@ XFastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  *           ScanInfo_t <si>.
  *
  * Args:     cm              - the covariance model
+ *           errbuf          - char buffer for reporting errors
  *           si              - ScanInfo_t for this model (includes alpha DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
@@ -1522,17 +1537,19 @@ XFastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
+ *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  * 
  * Note:     This function is heavily synchronized with FastCYKScan() and FastFInsideScan(),
  *           any change to this function should be mirrored in those functions. 
  *
- * Returns:  Score of best Inside hit (vsc[0]). Information on hits added to <results>.
+ * Returns:  eslOK on succes;
+ *           <ret_sc> is score of best Inside hit (vsc[0]). Information on hits added to <results>.
  *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
  *           Dies immediately if some error occurs.
  */
-float 
-X2FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-		search_results_t *results, float **ret_vsc)
+int
+X2FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+		search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
   cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -1562,12 +1579,12 @@ X2FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)                 cm_Fail("ERROR in FastIInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)             cm_Fail("ERROR in FastIInsideScan, cm->si is not valid.\n");
-  if(j0 < i0)                                cm_Fail("ERROR in FastIInsideScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)                            cm_Fail("ERROR in FastIInsideScan, dsq is NULL\n");
-  if(! (cm->search_opts & CM_SEARCH_INSIDE)) cm_Fail("ERROR in FastIInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (si->flags & cmSI_HAS_INT))           cm_Fail("ERROR in FastIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
+  if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CMH_BITS flag is not raised.\n");
+  if(! cm->flags & CMH_SCANINFO)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, cm->si is not valid.\n");
+  if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, dsq is NULL\n");
+  if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CM_SEARCH_INSIDE flag not raised");
+  if(! (si->flags & cmSI_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
 
   /* make pointers to the ScanInfo/CM data for convenience */
   int   ***alpha      = si->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -1584,7 +1601,7 @@ X2FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) cm_Fail("ERROR in FastIInsideScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, W: %d greater than si->W: %d\n", W, si->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -2009,12 +2026,14 @@ X2FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   free(init_scAA);
   free(gamma_row);
   if (ret_vsc != NULL) *ret_vsc = vsc;
+  else free(vsc);
+  if (ret_sc != NULL) *ret_sc = vsc_root;
   
   ESL_DPRINTF1(("XFastIInsideScan() return score: %10.4f\n", vsc_root)); 
-  return vsc_root;
+  return eslOK;
   
  ERROR:
-  cm_Fail("Memory allocation error.\n");
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
   return 0.; /* NEVERREACHED */
 }
 
@@ -2028,6 +2047,7 @@ X2FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  *           ScanInfo_t <si>.
  *
  * Args:     cm              - the covariance model
+ *           errbuf          - char buffer for reporting errors
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -2035,17 +2055,19 @@ X2FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
+ *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  * 
  * Note:     This function is heavily synchronized with FastCYKScan() and FastIInsideScan(),
  *           any change to this function should be mirrored in those functions. 
  *
- * Returns:  Score of best Inside hit (vsc[0]). Information on hits added to <results>.
+ * Returns:  eslOK on succes;
+ *           <ret_sc> is score of best Inside hit (vsc[0]). Information on hits added to <results>.
  *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
  *           Dies immediately if some error occurs.
  */
-float 
-FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-		search_results_t *results, float **ret_vsc)
+int
+FastFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+		search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
   cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -2074,12 +2096,12 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)                cm_Fail("ERROR in FastFInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)            cm_Fail("ERROR in FastFInsideScan, cm->si is not valid.\n");
-  if(j0 < i0)                               cm_Fail("ERROR in FastFInsideScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)                           cm_Fail("ERROR in FastFInsideScan, dsq is NULL\n");
-  if(!(cm->search_opts & CM_SEARCH_INSIDE)) cm_Fail("ERROR in FastFInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (cm->si->flags & cmSI_HAS_FLOAT))    cm_Fail("ERROR in FastFInsideScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
+  if(! cm->flags & CMH_BITS)                ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, CMH_BITS flag is not raised.\n");
+  if(! cm->flags & CMH_SCANINFO)            ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, cm->si is not valid.\n");
+  if(j0 < i0)                               ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL)                           ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, dsq is NULL\n");
+  if(!(cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, CM_SEARCH_INSIDE flag not raised");
+  if(! (cm->si->flags & cmSI_HAS_FLOAT))    ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
 
   /* make pointers to the ScanInfo/CM data for convenience */
   float ***alpha      = si->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -2095,7 +2117,7 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) cm_Fail("ERROR in FastFInsideScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, W: %d greater than si->W: %d\n", W, si->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -2508,12 +2530,14 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   free(init_scAA[0]);
   free(init_scAA);
   if (ret_vsc != NULL) *ret_vsc = vsc;
+  else free(vsc);
+  if (ret_sc != NULL) *ret_sc = vsc_root;
   
   ESL_DPRINTF1(("FastFInsideScan() return score: %10.4f\n", vsc_root)); 
-  return vsc_root;
+  return eslOK;
   
  ERROR:
-  cm_Fail("Memory allocation error.\n");
+  ESL_FAIL(eslEINCOMPAT, errbuf, "Memory allocation error.\n");
   return 0.; /* NEVERREACHED */
 }
 
@@ -2529,6 +2553,7 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  *           FastCYKScan() version.
  *
  * Args:     cm              - the covariance model
+ *           errbuf          - char buffer for reporting errors
  *           si              - ScanInfo_t for this model (includes alpha DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
@@ -2537,17 +2562,19 @@ FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
+ *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
  * Note:     This function is heavily synchronized with RefIInsideScan() and RefCYKScan()
  *           any change to this function should be mirrored in those functions. 
  *
- * Returns:  Score of best overall hit (vsc[0]). Information on hits added to <results>.
+ * Returns:  eslOK on succes;
+ *           <ret_sc> is score of best overall hit (vsc[0]). Information on hits added to <results>.
  *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
  *           Dies immediately if some error occurs.
  */
-float 
-RefCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-	   search_results_t *results, float **ret_vsc)
+int
+RefCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+	   search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
   cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -2574,12 +2601,12 @@ RefCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)             cm_Fail("ERROR in RefCYKScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)         cm_Fail("ERROR in RefCYKScan, cm->si is not valid.\n");
-  if(j0 < i0)                            cm_Fail("ERROR in RefCYKScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)                        cm_Fail("ERROR in RefCYKScan, dsq is NULL\n");
-  if(cm->search_opts & CM_SEARCH_INSIDE) cm_Fail("ERROR in RefCYKScan, CM_SEARCH_INSIDE flag raised");
-  if(! (cm->si->flags & cmSI_HAS_FLOAT)) cm_Fail("ERROR in RefCYKScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
+  if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, CMH_BITS flag is not raised.\n");
+  if(! cm->flags & CMH_SCANINFO)         ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, cm->si is not valid.\n");
+  if(j0 < i0)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, dsq is NULL\n");
+  if(cm->search_opts & CM_SEARCH_INSIDE) ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, CM_SEARCH_INSIDE flag raised");
+  if(! (cm->si->flags & cmSI_HAS_FLOAT)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
 
   /* make pointers to the ScanInfo/CM data for convenience */
   float ***alpha      = si->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -2597,7 +2624,7 @@ RefCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) cm_Fail("ERROR in RefCYKScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, W: %d greater than si->W: %d\n", W, si->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -2786,12 +2813,14 @@ RefCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   free(init_scAA[0]);
   free(init_scAA);
   if (ret_vsc != NULL) *ret_vsc         = vsc;
+  else free(vsc);
+  if (ret_sc != NULL) *ret_sc = vsc_root;
   
   ESL_DPRINTF1(("RefCYKScan() return score: %10.4f\n", vsc_root)); 
-  return vsc_root;
+  return eslOK;
   
  ERROR:
-  cm_Fail("Memory allocation error.\n");
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
   return 0.; /* NEVERREACHED */
 }
 
@@ -2806,6 +2835,7 @@ RefCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  *           FastCYKScan() version.
  *
  * Args:     cm              - the covariance model
+ *           errbuf          - char buffer for reporting errors
  *           si              - ScanInfo_t for this model (includes alpha DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
@@ -2814,17 +2844,19 @@ RefCYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
+ *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
  * Note:     This function is heavily synchronized with RefCYKScan() and RefFInsideScan(), 
  *           any change to this function should be mirrored in those functions. 
  *
- * Returns:  Score of best overall hit (vsc[0]). Information on hits added to <results>.
+ * Returns:  eslOK on success
+ *           <ret_sc> is score of best overall hit (vsc[0]). Information on hits added to <results>.
  *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
  *           Dies immediately if some error occurs.
  */
-float 
-RefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-	       search_results_t *results, float **ret_vsc)
+int
+RefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+	       search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
   cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -2852,12 +2884,12 @@ RefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)                 cm_Fail("ERROR in RefIInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)             cm_Fail("ERROR in RefIInsideScan, cm->si is not valid.\n");
-  if(j0 < i0)                                cm_Fail("ERROR in RefIInsideScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)                            cm_Fail("ERROR in RefIInsideScan, dsq is NULL\n");
-  if(! (cm->search_opts & CM_SEARCH_INSIDE)) cm_Fail("ERROR in RefIInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (si->flags & cmSI_HAS_INT))           cm_Fail("ERROR in RefIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
+  if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, CMH_BITS flag is not raised.\n");
+  if(! cm->flags & CMH_SCANINFO)             ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, cm->si is not valid.\n");
+  if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, dsq is NULL\n");
+  if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, CM_SEARCH_INSIDE flag not raised");
+  if(! (si->flags & cmSI_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
 
   /* make pointers to the ScanInfo/CM data for convenience */
   int   ***alpha      = si->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -2874,7 +2906,7 @@ RefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) cm_Fail("ERROR in RefIInsideScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, W: %d greater than si->W: %d\n", W, si->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -3055,12 +3087,14 @@ RefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   free(init_scAA);
   free(gamma_row);
   if (ret_vsc != NULL) *ret_vsc = vsc;
+  else free(vsc);
+  if (ret_sc != NULL) *ret_sc = vsc_root;
   
   ESL_DPRINTF1(("RefIInsideScan() return score: %10.4f\n", vsc_root)); 
-  return vsc_root;
+  return eslOK;
   
  ERROR:
-  cm_Fail("Memory allocation error.\n");
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
   return 0.; /* NEVERREACHED */
 }
 
@@ -3075,6 +3109,7 @@ RefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  *           FastCYKScan() version.
  *
  * Args:     cm              - the covariance model
+ *           errbuf          - char buffer for reporting errors
  *           si              - ScanInfo_t for this model (includes alpha DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
@@ -3083,17 +3118,19 @@ RefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
+ *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
  * Note:     This function is heavily synchronized with RefCYKScan() and RefFInsideScan(), 
  *           any change to this function should be mirrored in those functions. 
  *
- * Returns:  Score of best overall hit (vsc[0]). Information on hits added to <results>.
+ * Returns:  eslOK on success.
+ *           <ret_sc> is score of best overall hit (vsc[0]). Information on hits added to <results>.
  *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
  *           Dies immediately if some error occurs.
  */
-float 
-XRefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-	       search_results_t *results, float **ret_vsc)
+int
+XRefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+	       search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
   cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -3122,12 +3159,12 @@ XRefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)                 cm_Fail("ERROR in XRefIInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)             cm_Fail("ERROR in XRefIInsideScan, cm->si is not valid.\n");
-  if(j0 < i0)                                cm_Fail("ERROR in XRefIInsideScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)                            cm_Fail("ERROR in XRefIInsideScan, dsq is NULL\n");
-  if(! (cm->search_opts & CM_SEARCH_INSIDE)) cm_Fail("ERROR in XRefIInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (si->flags & cmSI_HAS_INT))           cm_Fail("ERROR in XRefIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
+  if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, CMH_BITS flag is not raised.\n");
+  if(! cm->flags & CMH_SCANINFO)             ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, cm->si is not valid.\n");
+  if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, dsq is NULL\n");
+  if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, CM_SEARCH_INSIDE flag not raised");
+  if(! (si->flags & cmSI_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
 
   /* make pointers to the ScanInfo/CM data for convenience */
   int   ***alpha      = si->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -3144,7 +3181,7 @@ XRefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) cm_Fail("ERROR in XRefIInsideScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, W: %d greater than si->W: %d\n", W, si->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -3344,12 +3381,14 @@ XRefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   free(init_scAA);
   free(gamma_row);
   if (ret_vsc != NULL) *ret_vsc = vsc;
+  else free(vsc);
+  if (ret_sc != NULL) *ret_sc = vsc_root;
   
   ESL_DPRINTF1(("XRefIInsideScan() return score: %10.4f\n", vsc_root)); 
-  return vsc_root;
+  return eslOK;
   
  ERROR:
-  cm_Fail("Memory allocation error.\n");
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
   return 0.; /* NEVERREACHED */
 }
 
@@ -3364,6 +3403,7 @@ XRefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  *           FastCYKScan() version.
  *
  * Args:     cm              - the covariance model
+ *           errbuf          - char buffer for reporting errors
  *           si              - ScanInfo_t for this model (includes alpha DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
@@ -3372,17 +3412,19 @@ XRefIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
+ *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
  * Note:     This function is heavily synchronized with RefCYKScan() and RefIInsideScan()
  *           any change to this function should be mirrored in those functions. 
  *
- * Returns:  Score of best overall hit (vsc[0]). Information on hits added to <results>.
+ * Returns:  eslOK on success
+ *           <ret_sc> is score of best overall hit (vsc[0]). Information on hits added to <results>.
  *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
  *           Dies immediately if some error occurs.
  */
-float 
-RefFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-	       search_results_t *results, float **ret_vsc)
+int
+RefFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+	       search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
   cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -3410,12 +3452,12 @@ RefFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   
   /* Contract check */
-  if(! cm->flags & CMH_BITS)                cm_Fail("ERROR in RefFInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)            cm_Fail("ERROR in RefFInsideScan, cm->si is not valid.\n");
-  if(j0 < i0)                               cm_Fail("ERROR in RefFInsideScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)                           cm_Fail("ERROR in RefFInsideScan, dsq is NULL\n");
-  if(!(cm->search_opts & CM_SEARCH_INSIDE)) cm_Fail("ERROR in RefFInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (cm->si->flags & cmSI_HAS_FLOAT))    cm_Fail("ERROR in RefFInsideScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
+  if(! cm->flags & CMH_BITS)                ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CMH_BITS flag is not raised.\n");
+  if(! cm->flags & CMH_SCANINFO)            ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, cm->si is not valid.\n");
+  if(j0 < i0)                               ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL)                           ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, dsq is NULL\n");
+  if(!(cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CM_SEARCH_INSIDE flag not raised");
+  if(! (cm->si->flags & cmSI_HAS_FLOAT))    ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
 
   /* make pointers to the ScanInfo/CM data for convenience */
   float ***alpha      = si->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -3432,7 +3474,7 @@ RefFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) cm_Fail("ERROR in RefFInsideScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, W: %d greater than si->W: %d\n", W, si->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -3617,12 +3659,14 @@ RefFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
   free(init_scAA);
   free(sc_v);
   if (ret_vsc != NULL) *ret_vsc         = vsc;
+  else free(vsc);
+  if (ret_sc != NULL) *ret_sc = vsc_root;
   
   ESL_DPRINTF1(("RefFInsideScan() return score: %10.4f\n", vsc_root)); 
-  return vsc_root;
+  return eslOK;
   
  ERROR:
-  cm_Fail("Memory allocation error.\n");
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
   return 0.; /* NEVERREACHED */
 }
 
@@ -3651,18 +3695,22 @@ RefFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff,
  * 11. Inner loops rewritten to allow vectorization.
  *
  * Args:     cm        - the model    [0..M-1]
+ *           errbuf    - char buffer for reporting errors
  *           dsq       - the sequence [1..L]   
  *           L         - length of the dsq
  *           cutoff    - cutoff score to report
  *           D         - maximum size of hit
  *           results   - search_results_t to fill in; if NULL, nothing
  *                       filled in
+ *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
- * Returns: Score of best hit overall
+ * Returns: eslOK on success
+ *          <ret_sc> is score of best hit overall
  *
  */
-float rsearch_CYKScan (CM_t *cm, ESL_DSQ *dsq, int L, float cutoff, int D,
-		       search_results_t *results) {
+int rsearch_CYKScan (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, int D,
+		     search_results_t *results, float *ret_sc) 
+{
 
   int     *bestr;               /* Best root state for d at current j */
   int      v,y,z;		/* indices for states  */
@@ -3694,7 +3742,7 @@ float rsearch_CYKScan (CM_t *cm, ESL_DSQ *dsq, int L, float cutoff, int D,
   int       status;
 
   /* Set M */
-M = cm->M;
+  M = cm->M;
 
   if (M>D+1) {
     sc_v_size = M;
@@ -4046,11 +4094,11 @@ M = cm->M;
 
   free(sc_v);
 
-  return (best_score);
+  if(ret_sc != NULL) *ret_sc = best_score;
+  return eslOK;
 
  ERROR:
-  cm_Fail("Memory allocation error.");
-  return IMPOSSIBLE; /* never reached */
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.");
 }
 
 /* Function: cm_CountSearchDPCalcs()
@@ -4062,17 +4110,18 @@ M = cm->M;
  *           <ret_vcalcs[0]> = number of dp calcs for entire model.
  *
  * Args:     cm        - the covariance model
+ *           errbuf    - char buffer for error messages
  *           L         - length of the sequence to search 
  *           dmin      - minimum bound on d for state v; 0..M
  *           dmax      - maximum bound on d for state v; 0..M          
  *           W         - max d: max size of a hit
  *           ret_vcalcs- RETURN: [0..v..M-1] number of DP calcs for scanning with sub-CM at v
+ *           ret_calcs - RETURN: number of calcs to search L residues with full model (ret_vcalcs[0]).
  *
- * Returns:  number of calcs to search L residues with full model (ret_vcalcs[0]).
- *           dies immediately if some error occurs.
+ * Returns:  eslOK on success
  */
-float 
-cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_vcalcs)
+int
+cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W, float **ret_vcalcs, float *ret_calcs)
 {
   int       status;
   float     *vcalcs;            /* [0..v..cm->M-1] # of calcs for subtree rooted at v */
@@ -4166,12 +4215,13 @@ cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_
 
   /* for (v = cm->M-1; v >= 0; v--) printf("vcalcs[%4d]: %.3f\n", v, vcalcs[v]); */
   
-  *ret_vcalcs = vcalcs;
-  return vcalcs[0];
+  if(ret_calcs != NULL)  *ret_calcs  = vcalcs[0];
+  if(ret_vcalcs != NULL) *ret_vcalcs = vcalcs;
+  else free(vcalcs);
+  return eslOK;
 
  ERROR:
-  cm_Fail("count_search_target_calcs(): memory error.");
-  return 0.;
+  ESL_FAIL(eslEMEM, errbuf, "count_search_target_calcs(): memory error.");
 }
 
 /* 
@@ -4193,11 +4243,13 @@ cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_
  *           results   - search_results_t to add to; if NULL, don't add to it
  *           mx        - the dp matrix, only cells within bands in cm->cp9b will 
  *                       be valid. This is usually cm->hbmx.
+ *           ret_sc    - RETURN: score of best overall hit (vsc[0])
  *                       
- * Returns: Score of the best hit.
+ * Returns: eslOK on success
+ *          <ret_sc>: score of the best hit.
  */
-float 
-FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx)
+int
+FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx, float *ret_sc)
 {
 
   int      status;
@@ -4229,9 +4281,9 @@ FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_resul
   float    vsc_root;           /* score of best hit */
   int      W;                  /* max d over all hdmax[v][j] for all valid v, j */
   /* Contract check */
-  if(dsq == NULL)       cm_Fail("FastCYKScanHB(), dsq is NULL.\n");
-  if (mx == NULL)       cm_Fail("FastCYKScanHB(), mx is NULL.\n");
-  if (cm->cp9b == NULL) cm_Fail("FastCYKScanHB(), mx is NULL.\n");
+  if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB(), dsq is NULL.\n");
+  if (mx == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB(), mx is NULL.\n");
+  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB(), mx is NULL.\n");
 
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
@@ -4579,12 +4631,12 @@ FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_resul
 
   if(gamma != NULL) cm_FreeGammaHitMx(gamma);
 
-  sc = vsc_root;
-  ESL_DPRINTF1(("FastCYKScanHB() return sc: %f\n", sc));
-  return sc;
+  if (ret_sc != NULL) *ret_sc = vsc_root;
+  ESL_DPRINTF1(("FastCYKScanHB() return sc: %f\n", vsc_root));
+  return eslOK;
 
  ERROR: 
-  cm_Fail("Memory allocation error.\n");
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
   return 0.; /* never reached */
 }
 
@@ -4606,11 +4658,13 @@ FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_resul
  *           results   - search_results_t to add to; if NULL, don't add to it
  *           mx        - the dp matrix, only cells within bands in cm->cp9b will 
  *                       be valid. This is usually cm->hbmx.
+ *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *                       
- * Returns: Score of the best hit.
+ * Returns: eslOK on success
+ *          <ret_sc>: score of the best hit.
  */
-float 
-FastFInsideScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx)
+int
+FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx, float *ret_sc)
 {
 
   int      status;
@@ -4641,9 +4695,9 @@ FastFInsideScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_r
   float    vsc_root;           /* score of best hit */
   int      W;                  /* max d over all hdmax[v][j] for all valid v, j */
   /* Contract check */
-  if(dsq == NULL)       cm_Fail("FastFInsideScanHB(), dsq is NULL.\n");
-  if (mx == NULL)       cm_Fail("FastFInsideScanHB(), mx is NULL.\n");
-  if (cm->cp9b == NULL) cm_Fail("FastFInsideScanHB(), mx is NULL.\n");
+  if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScanHB(), dsq is NULL.\n");
+  if (mx == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScanHB(), mx is NULL.\n");
+  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScanHB(), mx is NULL.\n");
 
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
@@ -4983,12 +5037,12 @@ FastFInsideScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_r
 
   if(gamma != NULL) cm_FreeGammaHitMx(gamma);
 
-  sc = vsc_root;
-  ESL_DPRINTF1(("FastFInsideScanHB() return sc: %f\n", sc));
-  return sc;
+  ESL_DPRINTF1(("FastFInsideScanHB() return sc: %f\n", vsc_root));
+  if (ret_sc != NULL) *ret_sc = vsc_root;
+  return eslOK;
 
  ERROR: 
-  cm_Fail("Memory allocation error.\n");
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
   return 0.; /* never reached */
 }
 

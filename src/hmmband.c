@@ -187,17 +187,20 @@ DScore2Prob(int sc, float null)
  *           in the CP9Bands_t structure.
  *           
  * Args:     cm          - the covariance model
+ *           errbuf      - char buffer for reporting errors
  *           dsq         - sequence in digitized form
  *           i0          - start of target subsequence (often 1, beginning of sq)
  *           j0          - end of target subsequence (often L, end of sq)
  *           cp9b        - PRE-ALLOCATED, the HMM bands for this sequence, filled here.
  *           doing_search- TRUE if we're going to use these HMM bands for search, not alignment
  *           debug_level - verbosity level for debugging printf()s
- * Return:  void
+ * Return:  eslOK on success;
+ * 
  */
-void 
-cp9_Seq2Bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int debug_level)
+int
+cp9_Seq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int debug_level)
 {
+  int             status;
   int             use_sums; /* TRUE to fill and use posterior sums during HMM band calc  *
 			     * leads to wider bands                                      */
   int             sc;
@@ -208,22 +211,14 @@ cp9_Seq2Bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doin
   int be_safe = TRUE;        /* TEMPORARY, pass this in after calcing it once in actually_align_targets() */
 
   /* Contract checks */
-  if(cm->cp9 == NULL)
-    cm_Fail("in cp9_seq2bands, but cm->cp9 is NULL.\n");
-  if(cm->cp9map == NULL)
-    cm_Fail("in cp9_seq2bands, but cm->cp9map is NULL.\n");
-  if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
-    cm_Fail("in cp9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
-  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) 
-    cm_Fail("in cp9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
-  if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) 
-    cm_Fail("in cp9_seq2bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
-  if(dsq == NULL) 
-    cm_Fail("in cp9_seq2bands, dsq is NULL.");
+  if(cm->cp9 == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_seq2bands, but cm->cp9 is NULL.\n");
+  if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_seq2bands, but cm->cp9map is NULL.\n");
+  if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_seq2bands, dsq is NULL.");
+  if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED))           ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
+  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED)))        ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
+  if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_seq2bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
   
-  use_sums = FALSE;
-  if((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS))
-    use_sums = TRUE;
+  use_sums = ((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS)) ? TRUE : FALSE;
     
   /* Step 1: Get HMM Forward/Backward DP matrices.
    * Step 2: F/B       -> HMM bands.
@@ -233,6 +228,7 @@ cp9_Seq2Bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doin
   /* Step 1: Get HMM Forward/Backward DP matrices. */
 
   do_scan2bands = (cm->search_opts & CM_SEARCH_HMMSCANBANDS) ? TRUE : FALSE;
+  /* TO DO have these guys return status codes */
   fsc = Xcp9_FastForward(cm, dsq, i0, j0, j0-i0+1, 0., NULL, NULL, NULL,
 			 do_scan2bands, /* are we using scanning Forward/Backward */
 			 TRUE,      /* we are going to use posteriors to align */
@@ -240,7 +236,6 @@ cp9_Seq2Bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doin
 			 FALSE,     /* don't be memory efficient */
 			 be_safe,   /* can we accelerate w/ no -INFTY logsum funcs? */
 			 &cp9_fwd); /* give the DP matrix back */
-  if(debug_level > 0) printf("CP9 Forward  score : %.4f\n", fsc);
 
   fsc = Xcp9_FastBackward(cm, dsq, i0, j0, (j0-i0+1), 0, NULL, NULL, NULL,
 			  do_scan2bands, /* are we using scanning Forward/Backward */
@@ -248,32 +243,33 @@ cp9_Seq2Bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doin
 			  FALSE, /* we're not rescanning */
 			  FALSE, /* don't be memory efficient */
 			  &cp9_bck); /* give the DP matrix back */
-  if(debug_level > 0) printf("CP9 Backward score : %.4f\n", fsc);
 
-  if(cm->align_opts & CM_ALIGN_CHECKFB) 
-    cp9_DebugCheckFB(cp9_fwd, cp9_bck, cm->cp9, sc, i0, j0, dsq);
+  if(cm->align_opts & CM_ALIGN_CHECKFB) cp9_DebugCheckFB(cp9_fwd, cp9_bck, cm->cp9, sc, i0, j0, dsq);
 
   /* Step 2: F/B -> HMM bands. */
-  if(use_sums)
-    cp9_FB2HMMBandsWithSums(cm->cp9, dsq, cp9_fwd, cp9_bck, cp9b, i0, j0, cp9b->hmm_M,
-			    (1.-cm->tau), (cm->search_opts & CM_SEARCH_HMMSCANBANDS), debug_level);
-  else
-    cp9_FB2HMMBands(cm->cp9, dsq, cp9_fwd, cp9_bck, cp9b, i0, j0, cp9b->hmm_M,
-		    (1.-cm->tau), (cm->search_opts & CM_SEARCH_HMMSCANBANDS), debug_level);
+  if(use_sums){
+    if((status = cp9_FB2HMMBandsWithSums(cm->cp9, errbuf, dsq, cp9_fwd, cp9_bck, cp9b, i0, j0, cp9b->hmm_M,
+					 (1.-cm->tau), (cm->search_opts & CM_SEARCH_HMMSCANBANDS), debug_level)) != eslOK) return status;
+  }
+  else {
+    if((status = cp9_FB2HMMBands(cm->cp9, errbuf, dsq, cp9_fwd, cp9_bck, cp9b, i0, j0, cp9b->hmm_M,
+				 (1.-cm->tau), (cm->search_opts & CM_SEARCH_HMMSCANBANDS), debug_level)) != eslOK) return status;
+  }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
 
   /* Step 3: HMM bands  ->  CM bands. */
-  cp9_HMM2ijBands(cm, cm->cp9map, i0, j0, cp9b->pn_min_m, cp9b->pn_max_m, 
+  cp9_HMM2ijBands(cm, errbuf, cm->cp9map, i0, j0, cp9b->pn_min_m, cp9b->pn_max_m, 
 		  cp9b->pn_min_i, cp9b->pn_max_i, cp9b->pn_min_d, cp9b->pn_max_d, 
 		  cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, debug_level);
   
   /* Use the CM bands on i and j to get bands on d, specific to j. */
   if(doing_search) cp9_RelaxRootBandsForSearch(cm, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax);
-  cp9_GrowHDBands(cp9b); /* this must be called before ij2d_bands() so hdmin, hdmax are adjusted for new seq */
+  /* cp9_GrowHDBands() must be called before ij2d_bands() so hdmin, hdmax are adjusted for new seq */
+  if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status; 
   ij2d_bands(cm, (j0-i0+1), cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, debug_level);
   
 #if eslDEBUGLEVEL >= 1
-  cp9_ValidateBands(cm, cp9b, i0, j0);
+  if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0)) != eslOK) return status;
 #endif
 
   if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, (j0-i0+1));
@@ -282,7 +278,7 @@ cp9_Seq2Bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doin
   FreeCPlan9Matrix(cp9_fwd);
   FreeCPlan9Matrix(cp9_bck);
 
-  return;
+  return eslOK;
 }
 
 
@@ -295,16 +291,17 @@ cp9_Seq2Bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doin
  *           matrix.
  *           
  * Args:     cm           - the covariance model
+ *           errbuf       - char buffer for error messages
  *           dsq          - sequence in digitized form
  *           i0           - start of target subsequence (often 1, beginning of dsq)
  *           j0           - end of target subsequence (often L, end of dsq)
  *           ret_cp9_post - RETURN: the HMM posterior matrix for this sequence
  *           debug_level  - verbosity level for debugging printf()s
  *           
- * Return:  void
+ * Return:  eslOK on success
  */
-void 
-cp9_Seq2Posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
+int
+cp9_Seq2Posteriors(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
 		   int debug_level)
 {
   /*CP9_dpmatrix_t *cp9_mx;*/    /* growable DP matrix for viterbi                       */
@@ -317,16 +314,13 @@ cp9_Seq2Posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_
   int be_safe = TRUE;        /* TEMPORARY, pass this in after calcing it once in actually_align_targets() */
 
   /* Contract checks */
-  if(dsq == NULL)
-    cm_Fail("in cp9_Seq2Posteriors(), dsq is NULL.");
-  if(cm->cp9 == NULL)
-    cm_Fail("in cp9_Seq2Posteriors, but cm->cp9 is NULL.\n");
-  if(cm->cp9map == NULL)
-    cm_Fail("in cp9_Seq2Posteriors, but cm->cp9map is NULL.\n");
+  if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors(), dsq is NULL.");
+  if(cm->cp9 == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, but cm->cp9 is NULL.\n");
+  if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, but cm->cp9map is NULL.\n");
   if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
-    cm_Fail("in cp9_Seq2Posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
+    ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
   if((cm->align_opts & CM_SEARCH_HMMSCANBANDS) && (! (cm->search_opts & CM_SEARCH_HBANDED))) 
-    cm_Fail("in cp9_Seq2Posteriors, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
+    ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
 
   do_scan2bands = (cm->search_opts & CM_SEARCH_HMMSCANBANDS) ? TRUE : FALSE;
 
@@ -340,7 +334,6 @@ cp9_Seq2Posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_
 			&cp9_fwd); /* give the DP matrix back */
 
   if(debug_level > 0) printf("CP9 Forward  score : %.4f\n", sc);
-
   sc = Xcp9_FastBackward(cm, dsq, i0, j0, (j0-i0+1), 0, NULL, NULL, NULL,
 			 do_scan2bands, /* are we using scanning Forward/Backward */
 			 TRUE,  /* we are going to use posteriors to align */
@@ -361,11 +354,11 @@ cp9_Seq2Posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_
     *ret_cp9_post = cp9_post;
   else
     FreeCPlan9Matrix(cp9_post);
-  return;
+  return eslOK;
 }
 
 
-/*****************************************************************************
+/*
  * Function: cp9_FB2HMMBands()
  * Date:     EPN, 04.03.06
  *           EPN, Mon Oct 15 18:20:42 2007 [updated/optimized]
@@ -376,7 +369,10 @@ cp9_Seq2Posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_
  *          starting at the sequence ends, and creeping in, until the half the
  *          maximum allowable probability excluded is reached on each side.
  *
+ * Args:
+ *
  * CP9_t hmm        the HMM
+ * errbuf           char buffer for error messages
  * dsq              the digitized sequence
  * CP9_dpmatrix_t fmx: forward DP matrix, already calc'ed
  * CP9_dpmatrix_t bmx: backward DP matrix, already calc'ed
@@ -388,9 +384,11 @@ cp9_Seq2Posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_
  * int did_scan     TRUE if Forward/Backward were run in 'scan mode'
  * int debug_level  [0..3] tells the function what level of debugging print
  *                  statements to print.
- *****************************************************************************/
-void
-cp9_FB2HMMBands(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, CP9Bands_t *cp9b, 
+ * 
+ * Returns: eslOK on success;
+ */
+int
+cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, CP9Bands_t *cp9b, 
 		 int i0, int j0, int M, double p_thresh, int did_scan, int debug_level)
 {
   int status;
@@ -611,10 +609,10 @@ cp9_FB2HMMBands(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *b
   free(xset_i);
   free(xset_d);
   FreeCPlan9Matrix(post);
-  return;
+  return eslOK;
 
  ERROR:
-  cm_Fail("memory allocation error.");
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
 
@@ -629,6 +627,7 @@ cp9_FB2HMMBands(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *b
  *          maximum allowable probability excluded is reached on each side.
  *
  * CP9_t hmm        the HMM
+ * errbuf           char buffer for error messages
  * dsq              the digitized sequence
  * CP9_dpmatrix_t fmx: forward DP matrix, already calc'ed
  * CP9_dpmatrix_t bmx: backward DP matrix, already calc'ed
@@ -640,9 +639,12 @@ cp9_FB2HMMBands(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *b
  * int did_scan     TRUE if Forward/Backward were run in 'scan mode'
  * int debug_level  [0..3] tells the function what level of debugging print
  *                  statements to print.
+ *
+ * Returns: eslOK on success;
+ *
  *****************************************************************************/
-void
-cp9_FB2HMMBandsWithSums(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, CP9Bands_t *cp9b, 
+int
+cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, CP9Bands_t *cp9b, 
 			int i0, int j0, int M, double p_thresh, int did_scan, int debug_level)
 {
   int status;
@@ -811,10 +813,10 @@ cp9_FB2HMMBandsWithSums(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmat
   free(kthresh_d);
   /* careful not to free post, it is bmx, but overwritten, and the caller
    * is responsible for free'ing it. */
-  return;
+  return eslOK;
 
  ERROR:
-  cm_Fail("memory allocation error.");
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
 /* Functions for getting posterior probabilities from the HMMs 
@@ -1422,7 +1424,7 @@ cp9_IFillPostSums(struct cp9_dpmatrix_s *post, CP9Bands_t *cp9b, int i0, int j0)
  * Functions to go from HMM bands to i and j bands on a CM 
  * cp9_HMM2ijBands()
  */
-/*****************************************************************************
+/*
  * Function: cp9_HMM2ijBands()
  *           EPN 12.21.05
  * 
@@ -1477,6 +1479,7 @@ cp9_IFillPostSums(struct cp9_dpmatrix_s *post, CP9Bands_t *cp9b, int i0, int j0)
  * arguments:
  *
  * CM_t *cm         the CM 
+ * errbuf           char buffer for error messages
  * CP9Map_t *cp9map map from CM to CP9 HMM and vice versa
  * int i0           start of target subsequence (often 1, beginning of dsq)
  * int j0           end of target subsequence (often L, end of dsq)
@@ -1496,9 +1499,11 @@ cp9_IFillPostSums(struct cp9_dpmatrix_s *post, CP9Bands_t *cp9b, int i0, int j0)
  *                  to be filled in this function. [1..M]
  * int debug_level  [0..3] tells the function what level of debugging print
  *                  statements to print.
- *****************************************************************************/
-void
-cp9_HMM2ijBands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m, 
+ *
+ * Returns: eslOK on success;
+ */
+int
+cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m, 
 		int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, 
 		int *pn_max_d, int *imin, int *imax, int *jmin, int *jmax, 
 		int debug_level)
@@ -1530,10 +1535,8 @@ cp9_HMM2ijBands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
   int n;            /* counter over CM nodes. */
   int doing_search; /* TRUE if bands will be used to accelerate search, FALSE for alignment */
   /* Contract checks */
-  if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
-    cm_Fail("in cp9_HMM2ijBands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
-  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) 
-    cm_Fail("in cp9_HMM2ijBands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
+  if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED))    ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_HMM2ijBands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
+  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_HMM2ijBands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
 
   doing_search = (cm->search_opts & CM_SEARCH_HBANDED) ? TRUE : FALSE;
 
@@ -2253,10 +2256,10 @@ cp9_HMM2ijBands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m,
   free(nis_jmax); 
   free(nss_max_imin);
   free(nss_min_jmax);
-  return;
+  return eslOK;
 
  ERROR:
-  cm_Fail("Memory allocation error.\n");
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
 /**************************************************************************
@@ -3110,14 +3113,15 @@ cp9_RelaxRootBandsForSearch(CM_t *cm, int *imin, int *imax, int *jmin, int *jmax
  *           consistent.
  *           
  * Args:     cm     the cm
+ *           errbuf char buffer for error message
  *           cp9b   the CP9 bands object 
  *           i0     first residue we can possibly allow as valid j
  *           j0     final residue we can possibly allow as valid j
  *
- * Returns: void, dies immediately with error message if invalid data is found
+ * Returns: eslOK, or, if error, other status code and filled errbuf
  */
-void
-cp9_ValidateBands(CM_t *cm, CP9Bands_t *cp9b, int i0, int j0)
+int
+cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0)
 {
   int v;            /* counter over states of the CM */
   int jp;           /* counter over valid j's, but offset. jp+jmin[v] = actual j */
@@ -3125,41 +3129,42 @@ cp9_ValidateBands(CM_t *cm, CP9Bands_t *cp9b, int i0, int j0)
   int hd_needed;
   int j;
 
-  if(cm->M    != cp9b->cm_M)  cm_Fail("cp9_ValidateBands(), cm->M != cp9b->cm_M\n");
-  if(cm->clen != cp9b->hmm_M) cm_Fail("cp9_ValidateBands(), cm->clen != cp9b->hmm_M\n");
+  if(cm->M    != cp9b->cm_M)  ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cm->M != cp9b->cm_M\n");
+  if(cm->clen != cp9b->hmm_M) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cm->clen != cp9b->hmm_M\n");
   
   hd_needed = 0; 
   for(v = 0; v < cp9b->cm_M; v++) 
     hd_needed += cp9b->jmax[v] - cp9b->jmin[v] + 1;
-  if(hd_needed != cp9b->hd_needed) cm_Fail("cp9_ValidateBands(), cp9b->hd_needed inconsistent.");
+  if(hd_needed != cp9b->hd_needed) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hd_needed inconsistent.");
 
   for(v = 0; v < cm->M; v++) {
     if(cm->sttype[v] == E_st) {
       for(jp = 0; jp <= (cp9b->jmax[v]-cp9b->jmin[v]); jp++) {
-	if(cp9b->hdmin[v][jp] != 0) cm_Fail("cp9_ValidateBands(), cp9b->hdmin for E state is inconsistent.");
-	if(cp9b->hdmax[v][jp] != 0) cm_Fail("cp9_ValidateBands(), cp9b->hdmin for E state is inconsistent.");
+	if(cp9b->hdmin[v][jp] != 0) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin for E state is inconsistent.");
+	if(cp9b->hdmax[v][jp] != 0) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin for E state is inconsistent.");
       }
     }
     else {
       sd = StateDelta(cm->sttype[v]);
       for(jp = 0; jp <= (cp9b->jmax[v]-cp9b->jmin[v]); jp++) {
 	j = jp+cp9b->jmin[v];
-	if(cp9b->hdmin[v][jp] != ESL_MAX((j - cp9b->imax[v] + 1), sd)) cm_Fail("cp9_ValidateBands(), cp9b->hdmin for state %d is inconsistent.", v);
-	if(cp9b->hdmax[v][jp] != ESL_MAX((j - cp9b->imin[v] + 1), sd)) cm_Fail("cp9_ValidateBands(), cp9b->hdmax for state %d is inconsistent.", v);
+	if(cp9b->hdmin[v][jp] != ESL_MAX((j - cp9b->imax[v] + 1), sd)) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin for state %d is inconsistent.", v);
+	if(cp9b->hdmax[v][jp] != ESL_MAX((j - cp9b->imin[v] + 1), sd)) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmax for state %d is inconsistent.", v);
       }
     }
 
     for(j = cp9b->jmin[v]; j <= cp9b->jmax[v]; j++) {
-      if(j < i0) cm_Fail("cp9_ValidateBands(), j: %d outside i0:%d..j0:%d is within v's j band: jmin[%d]: %d jmax[%d]: %d\n", j, i0, j0, v, cp9b->jmin[v], v, cp9b->jmax[v]);
-      if(j > j0) cm_Fail("cp9_ValidateBands(), j: %d outside i0:%d..j0:%d is within v's j band: jmin[%d]: %d jmax[%d]: %d\n", j, i0, j0, v, cp9b->jmin[v], v, cp9b->jmax[v]);
+      if(j < i0) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), j: %d outside i0:%d..j0:%d is within v's j band: jmin[%d]: %d jmax[%d]: %d\n", j, i0, j0, v, cp9b->jmin[v], v, cp9b->jmax[v]);
+      if(j > j0) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), j: %d outside i0:%d..j0:%d is within v's j band: jmin[%d]: %d jmax[%d]: %d\n", j, i0, j0, v, cp9b->jmin[v], v, cp9b->jmax[v]);
     }
 
-    if(cp9b->imin[v] < cp9b->imin[0]) cm_Fail("cp9_ValidateBands(), cp9b->imin[v:%d]: %d less than cp9b->imin[0]: %d.", v, cp9b->imin[v], cp9b->imin[0]);
-    if(cp9b->jmax[v] > cp9b->jmax[0]) cm_Fail("cp9_ValidateBands(), cp9b->jmax[v:%d]: %d greater than cp9b->jmax[0]: %d.", v, cp9b->jmax[v], cp9b->jmax[0]);
+    if(cp9b->imin[v] < cp9b->imin[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->imin[v:%d]: %d less than cp9b->imin[0]: %d.", v, cp9b->imin[v], cp9b->imin[0]);
+    if(cp9b->jmax[v] > cp9b->jmax[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->jmax[v:%d]: %d greater than cp9b->jmax[0]: %d.", v, cp9b->jmax[v], cp9b->jmax[0]);
   }
+  return eslOK;
 }
 
-/*********************************************************************
+/*
  * Function: cp9_GrowHDBands()
  * 
  * Incept:   EPN, Thu Oct 25 13:24:29 2007
@@ -3169,10 +3174,12 @@ cp9_ValidateBands(CM_t *cm, CP9Bands_t *cp9b, int i0, int j0)
  *
  * Args:
  * CP9Bands_t cp9b    the CP9 Bands object.
+ * errbuf   char buffer for error messages
  *           
+ * Returns: eslOK on success, eslEMEM if memory allocation error
  */
-void
-cp9_GrowHDBands(CP9Bands_t *cp9b)
+int 
+cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
 {
   int status;
   int v;
@@ -3199,12 +3206,11 @@ cp9_GrowHDBands(CP9Bands_t *cp9b)
     cur_size += cp9b->jmax[v] - cp9b->jmin[v] + 1;
   }
   cp9b->hd_alloced = cur_size;
-  assert(cp9b->hd_alloced == cp9b->hd_needed);
-  return;
+  ESL_DASSERT1((cp9b->hd_alloced == cp9b->hd_needed));
+  return eslOK;
   
  ERROR:
-  cm_Fail("memory allocation error.");
-  return; /* NEVERREACHED */
+  ESL_FAIL(status, errbuf, "Memory allocation error.");
 }
 
 #if 0

@@ -368,28 +368,19 @@ extern int   ** alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, i
 extern char  ** alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
 
 /* from cm_fastsearch.c */
-extern float FastCYKScan    (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-			     search_results_t *results, float **ret_vsc);
-extern float FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-			     search_results_t *results, float **ret_vsc);
-extern float  XFastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-			       search_results_t *results, float **ret_vsc);
-extern float  X2FastIInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-				search_results_t *results, float **ret_vsc);
-extern float FastFInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-			     search_results_t *results, float **ret_vsc);
-extern float RefCYKScan     (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-			     search_results_t *results, float **ret_vsc);
-extern float RefIInsideScan (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-			     search_results_t *results, float **ret_vsc);
-extern float XRefIInsideScan (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-			      search_results_t *results, float **ret_vsc);
-extern float RefFInsideScan (CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-			     search_results_t *results, float **ret_vsc);
-extern float rsearch_CYKScan (CM_t *cm, ESL_DSQ *dsq, int L, float cutoff, int D, search_results_t *results);
-extern float FastCYKScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx);
-extern float FastInsideScanHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx);
-extern float cm_CountSearchDPCalcs(CM_t *cm, int L, int *dmin, int *dmax, int W, float **ret_vcalcs);
+extern int  FastCYKScan      (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, float **ret_vsc, float *ret_sc);
+extern int  FastIInsideScan  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, float **ret_vsc, float *ret_sc);
+extern int  XFastIInsideScan (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, float **ret_vsc, float *ret_sc);
+extern int  X2FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, float **ret_vsc, float *ret_sc);
+extern int  FastFInsideScan  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, float **ret_vsc, float *ret_sc);
+extern int  RefCYKScan       (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, float **ret_vsc, float *ret_sc);
+extern int  RefIInsideScan   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, float **ret_vsc, float *ret_sc);
+extern int  XRefIInsideScan  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, float **ret_vsc, float *ret_sc);
+extern int  RefFInsideScan   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, float **ret_vsc, float *ret_sc);
+extern int  rsearch_CYKScan  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, int D, search_results_t *results, float *ret_sc);
+extern int  FastCYKScanHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx, float *ret_sc);
+extern int  FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx, float *ret_sc);
+extern int  cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W, float **ret_vcalcs, float *ret_calcs);
 
 /* from CP9_scan.c */
 extern float CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
@@ -592,10 +583,10 @@ extern fullmat_t *ReadMatrix(const ESL_ALPHABET *abc, FILE *matfp);
 extern int ribosum_calc_targets(fullmat_t *fullmat);
 
 /* from cm_dispatch.c */
-extern float ActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
-				  float cp9_cutoff, search_results_t *results, int do_filter, 
-				  int doing_cm_stats, int doing_cp9_stats, int *ret_flen,
-				  int do_align_hits);
+extern int ActuallySearchTarget(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
+				float cp9_cutoff, search_results_t *results, int do_filter, 
+				int doing_cm_stats, int doing_cp9_stats, int *ret_flen,
+				int do_align_hits, float *ret_sc);
 extern float OldActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
 				     float cp9_cutoff, search_results_t *results, int do_filter, 
 				     int doing_cm_stats, int doing_cp9_stats, int *ret_flen,
@@ -799,17 +790,17 @@ extern int SampleFromInside   (ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DS
 extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
 extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
 extern double       DScore2Prob(int sc, float null);
-extern void         cp9_Seq2Bands(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int debug_level);
-extern void         cp9_Seq2Posteriors(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
+extern int          cp9_Seq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int debug_level);
+extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CP9_dpmatrix_t **ret_cp9_post,
 				       int debug_level);
-extern void         cp9_FB2HMMBands(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, CP9Bands_t *cp9b, 
+extern int          cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, CP9Bands_t *cp9b, 
 				     int i0, int j0, int M, double p_thresh, int did_scan, int debug_level);
-extern void         cp9_FB2HMMBandsWithSums(CP9_t *hmm, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, CP9Bands_t *cp9b, 
+extern int          cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_dpmatrix_t *fmx, CP9_dpmatrix_t *bmx, CP9Bands_t *cp9b, 
 					    int i0, int j0, int M, double p_thresh, int did_scan, int debug_level);
 extern void         cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, struct cp9_dpmatrix_s *fmx, struct cp9_dpmatrix_s *bmx,
 				  struct cp9_dpmatrix_s *mx, int did_scan);
 extern void         cp9_IFillPostSums(struct cp9_dpmatrix_s *post, CP9Bands_t *cp9, int i0, int j0);
-extern void         cp9_HMM2ijBands(CM_t *cm, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m, 
+extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Map_t *cp9map, int i0, int j0, int *pn_min_m, 
 				    int *pn_max_m, int *pn_min_i, int *pn_max_i, int *pn_min_d, 
 				    int *pn_max_d, int *imin, int *imax, int *jmin, int *jmax, 
 				    int debug_level);
@@ -820,13 +811,13 @@ extern void         cp9_DebugCheckFB(struct cp9_dpmatrix_s *fmx,
 				     CP9_t *hmm, float sc, int i0, int j0,
 				     ESL_DSQ *dsq);
 extern void         cp9_CompareBands(CP9Bands_t *cp9b1, CP9Bands_t *cp9b2);
-extern void         cp9_GrowHDBands(CP9Bands_t *cp9b);
+extern int          cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf);
 extern void         ijBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
 					  int *jmin, int *jmax, int debug_level);
 extern void         ijdBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
 					   int *jmin, int *jmax, int **hdmin, int **hdmax, 
 					   int debug_level);
-extern void         cp9_ValidateBands(CM_t *cm, CP9Bands_t *cp9b, int i0, int j0);
+extern int          cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0);
 /* old functions (get rid of them ?) */
 				     extern float CP9ForwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, 
 			     struct cp9_dpmatrix_s **ret_mx);

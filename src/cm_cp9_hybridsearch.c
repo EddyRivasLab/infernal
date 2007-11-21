@@ -995,7 +995,7 @@ cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs)
    */
   hsi->full_cm_ncalcs = full_cm_ncalcs; /* this is passed in */
   /* get counts of dp calcs for each subtree in the cm, using hsi->dmin, hsi->dmax */
-  cm_CountSearchDPCalcs(cm, 1000, hsi->dmin, hsi->dmax, cm->W, &(hsi->cm_vcalcs));
+  if((status = cm_CountSearchDPCalcs(cm, NULL, 1000, hsi->dmin, hsi->dmax, cm->W, &(hsi->cm_vcalcs), NULL)) != eslOK) cm_Fail("cm_CreateHybridScanInfo(), error counting DP cells.");
 
   /* we can calc the number of CP9 DP calcs */
   cp9_ntrans = NHMMSTATETYPES * NHMMSTATETYPES; /* 3*3 = 9 transitions in global mode */
@@ -1518,7 +1518,7 @@ main(int argc, char **argv)
   cm->config_opts |= CM_CONFIG_QDB;
   ConfigCM(cm, NULL, NULL);
 
-  cm_CountSearchDPCalcs(cm, 1000, cm->dmin, cm->dmax, cm->W, &vcalcs);
+  if((status = cm_CountSearchDPCalcs(cm, NULL, 1000, cm->dmin, cm->dmax, cm->W, &vcalcs, NULL)) != eslOK) cm_Fail("Error counting search dp calcs.");
 
   ScanInfo_t *si;
   si = cm_CreateScanInfo(cm);

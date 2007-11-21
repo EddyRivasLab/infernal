@@ -835,15 +835,14 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
     if((status = ActuallyAlignTargets(cm, errbuf, seqs_to_aln,
 				       NULL, NULL,   /* we're not aligning search hits */
 				       esl_opt_GetInteger(go, "--banddump"),
-				       esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL)) != eslOK) return status;
+				       esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL)) != eslOK) goto ERROR;
   }
   return eslOK;
   
-  /* ERROR:
+ ERROR:
   ESL_DPRINTF1(("worker %d: has caught an error in process_search_workunit\n", cfg->my_rank));
   FreeCM(cm);
-  FreeResults(results);
-  return status;*/
+  return status;
 }
 
 /* initialize_cm()

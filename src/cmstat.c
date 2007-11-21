@@ -52,8 +52,8 @@ static ESL_OPTIONS options[] = {
 static char usage[]  = "[-options] <cmfile>";
 static char banner[] = "display summary statistics for CMs";
 
-static int    summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w); 
-static int    summarize_alignment(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w); 
+static int    summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w); 
+static int    summarize_alignment(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w); 
 static float  count_align_dp_calcs(CM_t *cm, int L);
 static double cm_MeanMatchRelativeEntropy(const CM_t *cm);
 static double cm_MeanMatchEntropy(const CM_t *cm);
@@ -70,6 +70,8 @@ main(int argc, char **argv)
   CMFILE          *cmfp;	/* open input CM file stream */
   CM_t            *cm;          /* CM most recently read     */
   int              ncm;         /* CM index                  */
+  char             errbuf[cmERRBUFSIZE];
+  int              status;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
@@ -148,8 +150,8 @@ main(int argc, char **argv)
 	   cm_MeanMatchRelativeEntropy(cm));
 	   /*cm_MeanMatchInfo(cm));*/
 
-    if(esl_opt_GetBoolean(go, "-s")) summarize_search(go, cm, r, w);
-    if(esl_opt_GetBoolean(go, "-a")) summarize_alignment(go, cm, r, w);
+    if(esl_opt_GetBoolean(go, "-s")) { if((status = summarize_search(go, errbuf, cm, r, w))    != eslOK) cm_Fail(errbuf); }
+    if(esl_opt_GetBoolean(go, "-a")) { if((status = summarize_alignment(go, errbuf, cm, r, w)) != eslOK) cm_Fail(errbuf); }
     FreeCM(cm);
   }    
 
@@ -166,7 +168,7 @@ main(int argc, char **argv)
  *            based on command-line options.
  */
 int
-summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w) 
+summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w) 
 {
   int status;     
   int L     = esl_opt_GetInteger(go, "-L");     /* length sequence to search */
@@ -214,7 +216,7 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   /* cyk */
   /*OLDFastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);*/
   esl_stopwatch_Start(w);
-  FastCYKScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
+  if((status = FastCYKScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, NULL)) != eslOK) goto ERROR;
   //CYKScan (cm, dsq, 1, L, cm->W, 0., NULL);
   esl_stopwatch_Stop(w);
   t_c = w->user;
@@ -222,7 +224,7 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   /* inside */
   cm->search_opts |= CM_SEARCH_INSIDE;
   esl_stopwatch_Start(w);
-  FastIInsideScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
+  if((status = FastIInsideScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, NULL)) != eslOK) goto ERROR;
   /* iInsideScan (cm, dsq, 1, L, cm->W, 0., NULL); */
   esl_stopwatch_Stop(w);
   t_i = w->user;
@@ -240,14 +242,14 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   /*XFastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);*/
   esl_stopwatch_Start(w);
   /*CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL); */
-  FastCYKScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
+  if((status = FastCYKScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, NULL)) != eslOK) goto ERROR;
   esl_stopwatch_Stop(w);
   t_cq = w->user;
 
   /* qdb inside */
   cm->search_opts |= CM_SEARCH_INSIDE;
   esl_stopwatch_Start(w);
-  FastIInsideScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
+  if((status = FastIInsideScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, NULL)) != eslOK) goto ERROR;
   /*iInsideBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL);*/
   esl_stopwatch_Stop(w);
   t_iq = w->user;
@@ -313,8 +315,7 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
   return eslOK;
 
  ERROR:
-  esl_fatal("ERROR code %d in summarize_stats().", status);
-  return status; /* NOTREACHED */
+  return status; 
 }
 
 /* Function:  summarize_alignment()
@@ -324,7 +325,7 @@ summarize_search(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w)
  *            based on command-line options.
  */
 int
-summarize_alignment(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w) 
+summarize_alignment(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w) 
 {
   /* HERE: do HMM banded alignment stats
    * sample N=100 seqs, and calculate posteriors, determine new
@@ -374,7 +375,7 @@ summarize_alignment(ESL_GETOPTS *go, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH 
   cm->align_opts |= CM_ALIGN_NOSMALL;
   esl_stopwatch_Start(w);
   seqs_to_aln = CreateSeqsToAlnFromSq(sq, N, FALSE);
-  OldActuallyAlignTargets(cm, seqs_to_aln, NULL, NULL, 0, 0, TRUE, NULL);
+  if((status = ActuallyAlignTargets(cm, errbuf, seqs_to_aln, NULL, NULL, 0, 0, TRUE, NULL)) != eslOK) goto ERROR;
   esl_stopwatch_Stop(w);
   t_hb = w->user / (float) N;
   FreeSeqsToAln(seqs_to_aln);

@@ -75,6 +75,7 @@ static ESL_OPTIONS options[] = {
   { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  6 },
   /* Other options */
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "arrest after start: for debugging MPI under gdb",   7 },  
+  { "--olddp",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "use older, slower (version 0.81) DP alignment functions",12 },  
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -933,16 +934,25 @@ static int
 process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 		 seqs_to_aln_t *seqs_to_aln)
 {
-  OldActuallyAlignTargets(cm, seqs_to_aln,
-			  NULL, NULL,   /* we're not aligning search hits */
-			  0, 0, TRUE, NULL);
+  int status;
+
+  if(cm->align_opts & CM_ALIGN_OLDDP) { 
+    OldActuallyAlignTargets(cm, seqs_to_aln,
+			    NULL, NULL,   /* we're not aligning search hits */
+			    0, 0, TRUE, NULL);
+  }
+  else {
+    if((status = ActuallyAlignTargets(cm, errbuf, seqs_to_aln,
+				       NULL, NULL,   /* we're not aligning search hits */
+				       esl_opt_GetInteger(go, "--banddump"),
+				       esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL)) != eslOK) goto ERROR;
+  }
   return eslOK;
   
-  /* ERROR:
+  ERROR:
   ESL_DPRINTF1(("worker %d: has caught an error in process_search_workunit\n", cfg->my_rank));
   FreeCM(cm);
-  FreeResults(results);
-  return status;*/
+  return status;
 }
 
 /* initialize_cm()
@@ -961,6 +971,9 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
 
   /* enable option to check parsetree score against the alignment score */
   cm->align_opts  |= CM_ALIGN_CHECKPARSESC;
+
+  /* use old (version 0.81) DP functions? */
+  if(esl_opt_GetBoolean(go, "--olddp")) cm->align_opts  |= CM_ALIGN_OLDDP;
 
   /* Update cm->config_opts and cm->align_opts based on command line options */
   if(esl_opt_GetBoolean(go, "-l"))

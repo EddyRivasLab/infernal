@@ -39,6 +39,7 @@
  *           OldActuallySearchTarget().
  * 
  * Args:     cm              - the covariance model
+ *           errbuf          - char buffer for reporting errors
  *           dsq             - the target sequence (digitized)
  *           i0              - start of target subsequence (often 1, beginning of dsq)
  *           j0              - end of target subsequence (often L, end of dsq)
@@ -53,15 +54,16 @@
  *                             case we always run CP9Forward()
  *           ret_flen        - RETURN: subseq len that survived filter (NULL if not filtering)
  *           do_align_hits   - TRUE to do alignments and return  parsetrees in results
+ *           ret_sc          - RETURN: Highest scoring hit from search (even if below cutoff).
  *
- * Returns: Highest scoring hit from search (even if below cutoff).
+ * Returns: eslOK on success.
  */
-float ActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
-			   float cp9_cutoff, search_results_t *results, int do_filter, 
-			   int doing_cm_stats, int doing_cp9_stats, int *ret_flen,
-			   int do_align_hits)
+int ActuallySearchTarget(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
+			 float cp9_cutoff, search_results_t *results, int do_filter, 
+			 int doing_cm_stats, int doing_cp9_stats, int *ret_flen,
+			 int do_align_hits, float *ret_sc)
 {
-
+  int status;
   float sc;
   int flen;
   int use_cp9;    
@@ -70,10 +72,11 @@ float ActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cuto
   /*printf("\ti0: %d j0: %d filter: %d\n", i0, j0, do_filter);*/
 
   /* Contract checks */
-  if(dsq == NULL)                                 cm_Fail("ActuallySearchTarget(): dsq is NULL.");
-  if(!(cm->flags & CMH_BITS))                     cm_Fail("ActuallySearchTarget(): CMH_BITS flag down.\n");
-  if(doing_cm_stats && doing_cp9_stats)           cm_Fail("ActuallySearchTarget(): doing_cm_stats and doing_cp9_stats both TRUE.\n");
-  if(results != NULL && results->num_results > 0) cm_Fail("ActuallySearchTarget(): there's already hits in results.\n");
+  if(!(cm->flags & CMH_BITS))                     ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), CMH_BITS flag down.\n");
+  if(dsq == NULL)                                 ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): dsq is NULL.");
+  if(!(cm->flags & CMH_BITS))                     ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): CMH_BITS flag down.\n");
+  if(doing_cm_stats && doing_cp9_stats)           ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): doing_cm_stats and doing_cp9_stats both TRUE.\n");
+  if(results != NULL && results->num_results > 0) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): there's already hits in results.\n");
 
   flen = (j0-i0+1);
 
@@ -90,23 +93,23 @@ float ActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cuto
 
   /* Check if we have a valid CP9 (if we need it) */
   if(use_cp9) {
-    if(cm->cp9 == NULL)                    cm_Fail("ActuallySearchTarget(), trying to use CP9 HMM that is NULL\n");
-    if(!(cm->cp9->flags & CPLAN9_HASBITS)) cm_Fail("ActuallySearchTarget(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
-    if((cm->search_opts & CM_SEARCH_HBANDED) && cm->cp9b == NULL) cm_Fail("ActuallySearchTarget(), trying to use CP9 HMM for HMM banded search, but cm->cp9b is NULL.\n");
+    if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), trying to use CP9 HMM that is NULL\n");
+    if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
+    if((cm->search_opts & CM_SEARCH_HBANDED) && cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), trying to use CP9 HMM for HMM banded search, but cm->cp9b is NULL.\n");
   }      
 
   if(use_cp9)
-    sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);
+    sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen); /* TO DO: rewrite, with status */
   else {
       if(cm->search_opts & CM_SEARCH_HBANDED) {
-	cp9_Seq2Bands(cm, dsq, i0, j0, cm->cp9b, TRUE, 0);   /* debug level */
+	if((status == cp9_Seq2Bands(cm, errbuf, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status;
 	/*debug_print_hmm_bands(stdout, (j0-i0+1), cp9b, cm->tau, 3);*/
-	if(cm->search_opts & CM_SEARCH_INSIDE) cm_Fail("FastFInsideScanHB() not yet implemented.\n");
-	else                                   sc = FastCYKScanHB(cm, dsq, i0, j0, cm_cutoff, results, cm->hbmx);
+	if(cm->search_opts & CM_SEARCH_INSIDE) { if((status == FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cm_cutoff, results, cm->hbmx, &sc)) != eslOK) return status; }
+	else                                   { if((status == FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cm_cutoff, results, cm->hbmx, &sc)) != eslOK) return status; }
       }
       else { /* don't do HMM banded search */
-	if(cm->search_opts & CM_SEARCH_INSIDE) sc = FastIInsideScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results, NULL);
-	else                                   sc = FastCYKScan    (cm, dsq, i0, j0, cm->W, cm_cutoff, results, NULL);
+	if(cm->search_opts & CM_SEARCH_INSIDE) { if((status == FastIInsideScan(cm, errbuf, dsq, i0, j0, cm->W, cm_cutoff, results, NULL, &sc)) != eslOK) return status; }
+	else                                   { if((status == FastCYKScan    (cm, errbuf, dsq, i0, j0, cm->W, cm_cutoff, results, NULL, &sc)) != eslOK) return status; }
       }    
   }
   if((results != NULL && results->num_results > 0) && do_align_hits) {
@@ -116,12 +119,13 @@ float ActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cuto
 			      0, 0, 0, NULL);
     }
     else {
-      ActuallyAlignTargets(cm, NULL, NULL, 
-			   dsq, results,      /* put function into dsq_mode, designed for aligning search hits */
-			   0, 0, 0, NULL);
+      if((status = ActuallyAlignTargets(cm, errbuf, NULL, 
+					dsq, results,      /* put function into dsq_mode, designed for aligning search hits */
+					0, 0, 0, NULL)) != eslOK) return status;
     }
   }
-  return sc;
+  if(ret_sc != NULL) *ret_sc = sc;
+  return eslOK;
 }  
 
 /* 
@@ -156,6 +160,7 @@ float OldActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_c
 			     int doing_cm_stats, int doing_cp9_stats, int *ret_flen,
 			     int do_align_hits)
 {
+  int status;
   float sc;
   int flen;
   int use_cp9;    
@@ -193,7 +198,7 @@ float OldActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_c
     sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);
   else {
       if(cm->search_opts & CM_SEARCH_HBANDED) {
-	cp9_Seq2Bands(cm, dsq, i0, j0, cm->cp9b, TRUE, 0);   /* debug level */
+	if((status = cp9_Seq2Bands(cm, NULL, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail("OldActuallySearchTarget(): unrecoverable error in cp9_Seq2Bands().");
 
 	/*debug_print_hmm_bands(stdout, (j0-i0+1), cm->cp9b, cm->tau, 3);*/
 	if(cm->search_opts & CM_SEARCH_INSIDE)
@@ -536,7 +541,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
 
     /* Potentially, do HMM calculations. */
     if((!do_sub) && do_hbanded) {
-      cp9_Seq2Bands(orig_cm, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level);
+      if((status = cp9_Seq2Bands(orig_cm, NULL, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) return status;
     }
     else if(do_sub) { 
       /* If we're in sub mode:
@@ -551,7 +556,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
        */
       
       /* (1) Get HMM posteriors */
-      cp9_Seq2Posteriors(orig_cm, cur_dsq, 1, L, &cp9_post, debug_level); 
+      if((status = cp9_Seq2Posteriors(orig_cm, errbuf, cur_dsq, 1, L, &cp9_post, debug_level)) != eslOK) return status; 
       
       /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
        * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
@@ -585,7 +590,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
 	sub_cp9b   = sub_cm->cp9b;
 	sub_cp9map = sub_cm->cp9map;
 	/* (5) Do Forward/Backward again, and get HMM bands */
-	cp9_Seq2Bands(sub_cm, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level);
+	if((status = cp9_Seq2Bands(sub_cm, errbuf, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level)) != eslOK) return status;
 	hmm           = sub_hmm;    
 	cp9b          = sub_cp9b;
 	cp9map        = sub_cp9map;
@@ -1081,7 +1086,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   
     /* Potentially, do HMM calculations. */
     if((!do_sub) && do_hbanded) {
-      cp9_Seq2Bands(orig_cm, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level);
+      if((status = cp9_Seq2Bands(orig_cm, NULL, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Bands().");
     }
     else if(do_sub) { 
       /* If we're in sub mode:
@@ -1096,7 +1101,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
        */
       
       /* (1) Get HMM posteriors */
-      cp9_Seq2Posteriors(orig_cm, cur_dsq, 1, L, &cp9_post, debug_level); 
+      if((status = cp9_Seq2Posteriors(orig_cm, NULL, cur_dsq, 1, L, &cp9_post, debug_level)) != eslOK) cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Posteriors().");
       
       /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
        * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
@@ -1130,7 +1135,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
 	sub_cp9b   = sub_cm->cp9b;
 	sub_cp9map = sub_cm->cp9map;
 	/* (5) Do Forward/Backward again, and get HMM bands */
-	cp9_Seq2Bands(sub_cm, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level);
+	if((status = cp9_Seq2Bands(sub_cm, NULL, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level)) != eslOK)  cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Bands().");
 	hmm           = sub_hmm;    
 	cp9b          = sub_cp9b;
 	cp9map        = sub_cp9map;

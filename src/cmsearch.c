@@ -876,11 +876,10 @@ static int
 process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 			ESL_DSQ *dsq, int L, float min_cm_cutoff, float min_cp9_cutoff, search_results_t **ret_results)
 {
+  int status;
   search_results_t *results;
 
   results        = CreateResults(INIT_RESULTS);
-  /* TO DO: have actually_search_target return an easel status code, for now it returns highest score
-   * in dsq, which other parts of Infernal rely on. */
   if(cm->search_opts & CM_SEARCH_OLDDP) { 
     OldActuallySearchTarget(cm, dsq, 1, L, min_cm_cutoff, min_cp9_cutoff, results,
 			    TRUE,  /* filter with a CP9 HMM if appropriate */
@@ -890,21 +889,22 @@ process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
 			    (! esl_opt_GetBoolean(go, "--noalign"))); /* get alignments of hits? */
   }
   else {
-    ActuallySearchTarget(cm, dsq, 1, L, min_cm_cutoff, min_cp9_cutoff, results,
-			 TRUE,  /* filter with a CP9 HMM if appropriate */
-			 FALSE, /* we're not building a histogram for CM stats  */
-			 FALSE, /* we're not building a histogram for CP9 stats */
-			 NULL,  /* filter fraction, TEMPORARILY NULL            */
-			 (! esl_opt_GetBoolean(go, "--noalign"))); /* get alignments of hits? */
+    if((status = ActuallySearchTarget(cm, errbuf, dsq, 1, L, min_cm_cutoff, min_cp9_cutoff, results,
+				      TRUE,  /* filter with a CP9 HMM if appropriate */
+				      FALSE, /* we're not building a histogram for CM stats  */
+				      FALSE, /* we're not building a histogram for CP9 stats */
+				      NULL,  /* filter fraction, TEMPORARILY NULL            */
+				      (! esl_opt_GetBoolean(go, "--noalign")), /* get alignments of hits? */
+				      NULL)) != eslOK) goto ERROR;
   }
   *ret_results = results;
   return eslOK;
   
-  /* ERROR:
+ ERROR:
   ESL_DPRINTF1(("worker %d: has caught an error in process_search_workunit\n", cfg->my_rank));
   FreeCM(cm);
   FreeResults(results);
-  return status;*/
+  return status;
 }
 
 /* A CP9 filter work unit consists of a CM and an int (nseq).
