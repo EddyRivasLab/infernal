@@ -2050,9 +2050,16 @@ CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr, char **ret_p
     i = tr->emitl[x];
     j = tr->emitr[x];
     d = j-i+1;
-    /* Only P, L, R states have emissions. */
-    jp_v = j - jmin[v];
-    dp_v = d - hdmin[v][jp_v];
+
+    /* Only P, L, R, and EL states have emissions. */
+    if(v != cm->M) { 
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+    }
+    else {
+      jp_v = j;
+      dp_v = d;
+    }      
 
     if (cm->sttype[v] == MP_st) {
 	p = Fscore2postcode(post[v][jp_v][dp_v]);

@@ -196,7 +196,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
 				/* if caller didn't give us a deck pool, make one */
   /* grow the matrix based on the current sequence and bands */
-  if((status = cm_hb_mx_GrowTo(mx, errbuf, cp9b, W)) != eslOK) return status;
+  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W)) != eslOK) return status;
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
   ESL_ALLOC(el_scA, sizeof(float) * (W+1));
@@ -659,7 +659,7 @@ fast_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend,
   ESL_DPRINTF1(("Size of alpha matrix: %.2f\n", Mb_for_alpha));
 
   ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
-  for (v = 0; v <= cm->M; v++) alpha[v] = alloc_vjd_deck(L, 1, L);
+  for (v = 0; v <= cm->M; v++) alpha[v] = alloc_vjd_deck(L, i0, j0);
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
   ESL_ALLOC(el_scA, sizeof(float) * (W+1));
@@ -709,7 +709,7 @@ fast_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend,
 	if(NOT_IMPOSSIBLE(cm->endsc[v])) {
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
-	    for (d = 0; d < sd; d++) { 
+	    for (d = 0; d < sd && d <= jp; d++) { 
 	      alpha[v][j][d] = IMPOSSIBLE;
 	      yshad[j][d] = USED_EL; 
 	    }
@@ -1471,7 +1471,7 @@ FastInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX
 {
   int      status;
   int      v,y,z;	/* indices for states  */
-  int      j,d,i,k;	/* indices in sequence dimensions */
+  int      j,jp,d,i,k;	/* indices in sequence dimensions */
   float    fsc;		/* the final score */
   float    tsc;         /* a temporary variable holding a transition score */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
@@ -1496,6 +1496,7 @@ FastInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX
   int      Wp;                 /* W oalso changes depending on state */
   int      yvalid_idx;         /* for keeping track of which children are valid */
   int      yvalid_ct;          /* for keeping track of which children are valid */
+  int      have_el;            /* TRUE if local ends are on */
 
   /* Contract check */
   if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastInsideAlignHB(), dsq is NULL.\n");
@@ -1516,10 +1517,10 @@ FastInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
 				/* if caller didn't give us a deck pool, make one */
   /* grow the matrix based on the current sequence and bands */
-  if((status = cm_hb_mx_GrowTo(mx, errbuf, cp9b, W)) != eslOK) return status;
+  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W)) != eslOK) return status;
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
-  ESL_ALLOC(el_scA, sizeof(int) * (W+1));
+  ESL_ALLOC(el_scA, sizeof(float) * (W+1));
   for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
   /* yvalidA[0..cnum[v]] will hold TRUE for states y for which a transition is legal 
    * (some transitions are impossible due to the bands)
@@ -1529,6 +1530,15 @@ FastInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX
 
   /* initialize all cells of the matrix to IMPOSSIBLE */
   esl_vec_FSet(alpha[0][0], mx->ncells_valid, IMPOSSIBLE);
+
+  /* if local ends are on, replace the EL deck IMPOSSIBLEs with EL scores */
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  if(have_el) { 
+    for (jp = 0; jp <= W; jp++) {
+      j = i0-1+jp;
+      for (d = 0;  d <= jp; d++) alpha[cm->M][j][d] = el_scA[d];
+    }
+  }
 
   /* Main recursion  */
   for (v = cm->M-1; v >= 0; v--) {
@@ -1772,14 +1782,14 @@ FastInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX
 	  bsc = FLogsum(bsc, (alpha[v][jp_v][Wp] + cm->beginsc[v]));
 	}
       }
-      /* include the bsc as part of alpha[0][jp_v][Wp] */
-      if (v == 0) { 
-	if(j0 >= jmin[0] && j0 <= jmax[0]) {
-	  jp_v = j0 - jmin[v];
-	  Wp = W - hdmin[0][jp_v];
-	  if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v]) { 
-	    alpha[0][jp_v][Wp] = FLogsum(alpha[0][jp_v][Wp], bsc);
-	  }
+    }
+    /* include the bsc as part of alpha[0][jp_v][Wp] */
+    if ((cm->flags & CMH_LOCAL_BEGIN) && v == 0) { 
+      if(j0 >= jmin[0] && j0 <= jmax[0]) {
+	jp_v = j0 - jmin[v];
+	Wp = W - hdmin[0][jp_v];
+	if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v]) { 
+	  alpha[0][jp_v][Wp] = FLogsum(alpha[0][jp_v][Wp], bsc);
 	}
       }
     }
@@ -1853,6 +1863,7 @@ FastInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ****
   int      d_sd;        /* d - sd */
   float ***alpha;       /* the DP matrix, we allocate here */
   float    Mb_for_alpha;/* megabytes needed for alpha matrix */
+  int      have_el;     /* TRUE if local ends are on */
 
   /* Contract check */
   if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastInsideAlign(), dsq is NULL.\n");
@@ -1863,7 +1874,7 @@ FastInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ****
 				/* if caller didn't give us a deck pool, make one */
   
   /* allocate alpha (if it's small enough), allocate all decks, no deck reuse */
-  Mb_for_alpha = ((float) size_vjd_deck(W, 1, W) * ((float) (cm->M-1)));
+  Mb_for_alpha = ((float) size_vjd_deck(W, 1, W) * ((float) (cm->M+1)));
   if(Mb_for_alpha > CM_NB_MX_MB_LIMIT) 
     ESL_FAIL(eslERANGE, errbuf, "FastInsideAlign(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit (CM_NB_MX_MB_LIMIT from structs.h).", Mb_for_alpha, (float) CM_NB_MX_MB_LIMIT);
   ESL_DPRINTF1(("Size of alpha matrix: %.2f\n", Mb_for_alpha));
@@ -1872,9 +1883,24 @@ FastInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ****
   for (v = 0; v <= cm->M; v++) alpha[v] = alloc_vjd_deck(W, 1, W);
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
-  ESL_ALLOC(el_scA, sizeof(int) * (W+1));
+  ESL_ALLOC(el_scA, sizeof(float) * (W+1));
   for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
 
+  /* Fill the EL cm->M deck, with EL scores if local ends are on, IMPOSSIBLE if not (they'll never be used anyway) */
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
+  if(have_el) { 
+    for (jp = 0; jp <= W; jp++) {
+      j = i0-1+jp;
+      for (d = 0;  d <= jp; d++) alpha[cm->M][j][d] = el_scA[d];
+    }
+  }
+  else { /* local ends are off */
+    for (jp = 0; jp <= W; jp++) {
+      j = i0-1+jp;
+      for (d = 0;  d <= jp; d++) alpha[cm->M][j][d] = IMPOSSIBLE;
+    }
+  }
+  
   /* Main recursion  */
   for (v = cm->M-1; v >= 0; v--) {
     float const *esc_v = cm->oesc[v]; 
@@ -1887,10 +1913,8 @@ FastInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ****
     if(NOT_IMPOSSIBLE(cm->endsc[v])) {
       for (jp = 0; jp <= W; jp++) {
 	j = i0-1+jp;
-	for (d = 0; d < sd; d++) 
-	  alpha[v][j][d] = IMPOSSIBLE;
-	for (d = sd; d <= jp; d++) 
-	  alpha[v][j][d] = el_scA[d-sd] + cm->endsc[v];
+	for (d = 0;  d < sd && d <= jp; d++) alpha[v][j][d] = IMPOSSIBLE;
+	for (d = sd;           d <= jp; d++) alpha[v][j][d]   = el_scA[d-sd] + cm->endsc[v];
       }
     }
     else {
@@ -2132,7 +2156,7 @@ FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_M
   /* DP matrix variables */
   float ***beta  = mx->dp;     /* pointer to the Oustide DP mx */
   float ***alpha = ins_mx->dp; /* pointer to the Inside DP mx (already calc'ed and passed in) */
-  float  **beta_el = NULL;     /* the cm->M EL deck, it's special b/c it has no bands */
+
   /* ptrs to cp9b info, for convenience */
   CP9Bands_t *cp9b = cm->cp9b;
   int     *jmin  = cp9b->jmin;  
@@ -2148,7 +2172,7 @@ FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_M
   esc_vAA = cm->oesc;            /* a ptr to the optimized emission scores */
 
   /* grow the matrix based on the current sequence and bands */
-  if((status = cm_hb_mx_GrowTo(mx, errbuf, cp9b, W)) != eslOK) return status;
+  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W)) != eslOK) return status;
 
   /* initialize all cells of the matrix to IMPOSSIBLE */
   esl_vec_FSet(beta[0][0], mx->ncells_valid, IMPOSSIBLE);
@@ -2162,21 +2186,14 @@ FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_M
   /* Initialize the EL deck at M, if we're doing local alignment w.r.t. ends.
    * EL deck has no bands as currently implemented. Set all cells to IMPOSSIBLE;
    */
-  beta_el = NULL;
   if (cm->flags & CMH_LOCAL_END) {
-    ESL_ALLOC(beta_el, sizeof(float *) * (W+1));
     for(jp = 0; jp <= W; jp++) { 
-      ESL_ALLOC(beta_el[jp], sizeof(float) * (jp+1));
-      for (d = 0; d <= jp; d++) beta_el[jp][d] = IMPOSSIBLE;
+      for (d = 0; d <= jp; d++) beta[cm->M][jp][d] = IMPOSSIBLE;
     }
     /* We don't have to worry about vroot -> EL transitions the way 
      * smallcyk.c::outside() does, because vroot = 0.
      */
   }
-  /* assign the ptr for EL in our DP matrix to the EL deck, it will be NULL
-   * because cm_hb_mx_GrowTo() (called above) frees the EL deck if it exists */
-  assert(beta[cm->M] == NULL);
-  beta[cm->M] = beta_el; /* beta_el is NULL if local ends are off */
   /* If we can do a local begin into v, overwrite IMPOSSIBLE with the local begin score. 
    * By definition, beta[0][j0][W] == 0.
    */ 
@@ -2458,66 +2475,58 @@ FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_M
     } /* ends else entered for non-BEGL_S/BEGR_S/IL/IR states*/	
     /* we're done calculating deck v for everything but local begins */
 
+    /* deal with local alignment end transitions v->EL, 
+     * these values get their own matrix.
+     */
     /* deal with local alignment end transitions v->EL (EL = deck at M.) */
     if ((cm->flags & CMH_LOCAL_END) && NOT_IMPOSSIBLE(cm->endsc[v])) {
       sdr = StateRightDelta(cm->sttype[v]); /* note sdr is for state v */
       sd  = StateDelta(cm->sttype[v]);      /* note sd  is for state v */
       emitmode = Emitmode(cm->sttype[v]);   /* note emitmode is for state v */
-
-      /* determine min j (jn) and max j (jx) that are valid for v and y */
-      jn = ESL_MIN(jmin[v] - sdr, jmax[v]);
-      jx = ESL_MAX(jmax[v] - sdr, jmin[v]);
-      for (j = jx; j >= jn; j--) {
-	jp_v = j - jmin[v];
-	jp_el = j - (i0+1); /* offset j in cm->M deck */
-	ESL_DASSERT1((j+sdr >= jmin[y] && j+sdr <= jmax[v]));
-	  
-	/* determine min d (dn) and max d (dx) that are valid for v and j */
+      
+      jn = jmin[v] - sdr;
+      jx = jmax[v] - sdr;
+      for (j = jn; j <= jx; j++) {
+	jp_v =  j - jmin[v];
+	jp_el = j-i0+1;     /* offset j in cm->M deck */
 	dn   = hdmin[v][jp_v + sdr] - sd;
 	dx   = hdmax[v][jp_v + sdr] - sd;
-	dp_v = dx - hdmin[v][jp_v];
-	i    = j-dx+1;
+	i    = j-dn+1;                     /* we'll decrement this in for (d... loops inside switch below */
+	dp_v = dn - hdmin[v][jp_v + sdr];  /* we'll increment this in for (d... loops inside switch below */
 
-	  /* for each emit mode, update beta[v][jp_v][dp_v] for all valid d = dp_v */
-	switch(emitmode) { 
-	case EMITPAIR:  /* MP_st */
-	  for (d = dx; d >= dn; d--, dp_v--, i++) { 
-	    ESL_DASSERT1((((d + sd) >= hdmin[v][jp_v + sdr]) && ((d + sd) <= hdmax[v][jp_v + sdr])));
+	switch (emitmode) {
+	case EMITPAIR:
+	  for (d = dn; d <= dx; d++, dp_v++, i--) {
 	    escore = esc_vAA[v][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
 	    beta[cm->M][jp_el][d] = FLogsum(beta[cm->M][jp_el][d], (beta[v][jp_v+sdr][dp_v+sd] + cm->endsc[v] 
 								    + escore));
 	  }
 	  break;
-	  
-	case EMITLEFT:  /* ML_st, IL_st */
-	  for (d = dx; d >= dn; d--, dp_v--, i++) { 
-	    ESL_DASSERT1((((d + sd) >= hdmin[v][jp_v + sdr]) && ((d + sd) <= hdmax[v][jp_v + sdr])));
+	case EMITLEFT:
+	  for (d = dn; d <= dx; d++, dp_v++, i--) {
 	    escore = esc_vAA[v][dsq[i-1]];
-	    beta[cm->M][jp_el][d] = FLogsum(beta[cm->M][jp_el][d], (beta[v][jp_v + sdr][dp_y + sd] + cm->endsc[v] 
+	    beta[cm->M][jp_el][d] = FLogsum(beta[cm->M][jp_el][d], (beta[v][jp_v+sdr][dp_v+sd] + cm->endsc[v] 
 								    + escore));
 	  }
 	  break;
 	  
-	case EMITRIGHT:  /* MR_st, IR_st */
-	  escore = esc_vAA[v][dsq[j+1]]; /* not dependent on i */
-	  for (d = dx; d >= dn; d--, dp_v--) { 
-	    ESL_DASSERT1((((d + sd) >= hdmin[v][jp_v + sdr]) && ((d + sd) <= hdmax[v][jp_v + sdr])));
-	    beta[cm->M][jp_el][d] = FLogsum(beta[cm->M][jp_el][d], (beta[v][jp_v + sdr][dp_y + sd] + cm->endsc[v] 
+	case EMITRIGHT:
+	  escore = esc_vAA[v][dsq[j+1]];
+	  for (d = dn; d <= dx; d++, dp_v++) {
+	    beta[cm->M][jp_el][d] = FLogsum(beta[cm->M][jp_el][d], (beta[v][jp_v+sdr][dp_v+sd] + cm->endsc[v]
 								    + escore));
 	  }
 	  break;
 	  
-	case EMITNONE:  /* D_st, S_st, E_st*/
-	  for (d = dx; d >= dn; d--, dp_v--) { 
-	    ESL_DASSERT1((((d + sd) >= hdmin[v][jp_v + sdr]) && ((d + sd) <= hdmax[v][jp_v + sdr])));
-	    beta[cm->M][jp_el][d] = FLogsum(beta[cm->M][jp_el][d], (beta[v][jp_v + sdr][dp_y + sd] + cm->endsc[v]));
-	    break;
+	case EMITNONE:
+	  for (d = dn; d <= dx; d++, dp_v++) {
+	    beta[cm->M][jp_el][d] = FLogsum(beta[cm->M][jp_el][d], (beta[v][jp_v+sdr][dp_v+sd] + cm->endsc[v]));
 	  }
-	} /* end of switch over emitmodes */
-      } /* end of loop over j */
-    } /* end conditional section for dealing w/ v->EL local end transitions */
+	  break;
+	}
+      }
+    }
   } /* end loop over decks v. */
-
   /*FILE *fp; fp = fopen("out.mx", "w"); cm_ihb_mx_Dump(fp, mx); fclose(fp);*/
 
   /* Deal with last step needed for local alignment 
@@ -2527,8 +2536,7 @@ FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_M
     for (jp = W; jp > 0; jp--) { /* careful w/ boundary here */
       j = i0-1+jp;
       for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
-	beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1]
-							+ cm->el_selfsc));
+	beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1] + cm->el_selfsc));
     }
   }
 
@@ -2611,9 +2619,6 @@ FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_M
 
   if (ret_sc != NULL) *ret_sc = freturn_sc;
   return eslOK;
-
-  ERROR:
-  ESL_FAIL(status, errbuf, "memory allocation error.");
 }  
 
 
@@ -2710,7 +2715,7 @@ FastOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ***
   for (v = 0; v <= cm->M; v++) beta[v] = alloc_vjd_deck(W, 1, W);
 
   /* Init whole matrix to IMPOSSIBLE. */
-  for (v = 0; v < cm->M; v++) {
+  for (v = 0; v <= cm->M; v++) {
     for(jp = 0; jp <= W; jp++) { 
       j = i0-1+jp;
       for (d = 0; d <= jp; d++) 
@@ -2805,43 +2810,41 @@ FastOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ***
       sd  = StateDelta(cm->sttype[v]);      /* note sd  is for state v */
       emitmode = Emitmode(cm->sttype[v]);   /* note emitmode is for state v */
       
-      for (jp = 0; jp <= W-sdr; jp++) { 
+      for (jp = 0; jp <= W; jp++) { 
 	j = i0-1+jp;
-	
-	/* for each emit mode, update beta[v][jp_v][dp_v] for all valid d = dp_v */
-	switch(emitmode) { 
-	case EMITPAIR:  /* MP_st */
-	  i = j-jp+1;
-	  for (d = 0; d <= jp-sd; d++, i--) { 
+	for (d = 0; d <= jp; d++) {
+	  i = j-d+1;
+	  switch (cm->sttype[v]) {
+	  case MP_st: 
+	    if (j == j0 || d == jp) continue; /* boundary condition */
 	    escore = esc_vAA[v][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
-	    beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][j+sdr][d+sd] + cm->endsc[v] + escore));
-	  }
-	  break;
-	  
-	case EMITLEFT:  /* ML_st, IL_st */
-	  for (d = 0; d <= jp-sd; d++, i--) {
+	    beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][j+sdr][d+sd] + cm->endsc[v] 
+							    + escore));
+	    break;
+	  case ML_st:
+	  case IL_st:
+	    if (d == jp) continue;	
 	    escore = esc_vAA[v][dsq[i-1]];
-	    beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][j+sdr][d+sd] + cm->endsc[v] + escore));
+	    beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][j+sdr][d+sd] + cm->endsc[v] 
+							    + escore));
+	    break;
+	  case MR_st:
+	  case IR_st:
+	    if (j == j0) continue;
+	    escore = esc_vAA[v][dsq[j+1]];
+	    beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][j+sdr][d+sd] + cm->endsc[v]
+							    + escore));
+	    break;
+	  case S_st:
+	  case D_st:
+	  case E_st:
+	    beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][j+sdr][d+sd] + cm->endsc[v]));
+	    break;
 	  }
-	  break;
-	  
-	case EMITRIGHT:  /* MR_st, IR_st */
-	  escore = esc_vAA[v][dsq[j+1]]; /* not dependent on i */
-	  for (d = 0; d <= jp-sd; d++) {
-	    beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][j+sdr][d+sd] + cm->endsc[v] + escore));
-	  }
-	  break;
-	  
-	case EMITNONE:  /* D_st, S_st, E_st*/
-	  for (d = 0; d <= jp-sd; d++) {
-	    beta[cm->M][j][d] = FLogsum(beta[cm->M][j][d], (beta[v][j+sdr][d+sd] + cm->endsc[v] + escore));
-	  }
-	  break;
-	} /* end of switch over emitmodes */
-      } /* end of loop over j */
-    } /* end conditional section for dealing w/ v->EL local end transitions */
-  } /* end loop over decks v. */
-
+	}
+      }
+    }
+  }
   /* Deal with last step needed for local alignment 
    * w.r.t. ends: left-emitting, EL->EL transitions. (EL = deck at M.)
    */
@@ -2963,13 +2966,14 @@ int
 CMPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx)
 {
   int      status;
-  int      v, j, d, jp;
+  int      v, j, d;
   float    sc;   /* total score, the log probability of the current seq  */
   int      jp_v; /* j index for state v in alpha/beta with HMM bands */
   int      dp_v; /* d index for state v in alpha/beta with HMM bands */
   int      L;    /* length of sequence */
   int      Lp;   /* offset length */
-  L = j0-i0+1;
+  int      have_el; /* TRUE if we have local ends */
+  L  = j0-i0+1;
   
   /* Contract check */
   if (ins_mx == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "CMPosteriorHB(), ins_mx is NULL.\n");
@@ -2992,38 +2996,23 @@ CMPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX
   float ***alpha = ins_mx->dp; /* pointer to the alpha DP matrix */
   float ***beta  = out_mx->dp; /* pointer to the beta DP matrix */
   float ***post  = post_mx->dp; /* pointer to the post DP matrix */
-  float  **post_el = NULL;      /* the cm->M EL deck for post, only used if EL is on and post[cm->M] currently NULL */
-  float   *el_scA;              /* [0..d..W-1] probability of local end emissions of length d */
-  el_scA = NULL;
 
   /* grow our post matrix, unless it's just the outside matrix, which is the correct size already */
-  if(out_mx != post_mx) if((status = cm_hb_mx_GrowTo(post_mx, errbuf, cp9b, L)) != eslOK) return status; 
+  if(out_mx != post_mx) if((status = cm_hb_mx_GrowTo(cm, post_mx, errbuf, cp9b, L)) != eslOK) return status; 
 
-  if(cm->flags & CMH_LOCAL_BEGIN) { 
-    if(beta[cm->M] == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "CMPosteriorHB(), local ends are on, but out_mx->dp[cm->M] is NULL.\n");
-    if(post[cm->M] == NULL) { /* allocate it */
-      ESL_ALLOC(post_el, sizeof(float *) * (L+1));
-      for(jp = 0; jp <= L; jp++) { 
-	ESL_ALLOC(post_el, sizeof(float) * (jp+1));
-	for (jp = 0; jp <= L; jp++) {
-	  for (d = 0; d <= jp; d++) post_el[jp][d] = IMPOSSIBLE;
-	}
-      }
-    }
-  }
   Lp = L - hdmin[0][L-jmin[0]];
   sc = alpha[0][L-jmin[0]][Lp];
-  
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;  
+
   /* If local ends are on, start with the EL state (cm->M), otherwise
    * M deck is not valid. Note: there are no bands on the EL state */
-  if (cm->flags & CMH_LOCAL_END) {
-    /* first, precalcuate all possible local end scores, for local end emits of 1..W residues */
-    ESL_ALLOC(el_scA, sizeof(float) * (L+1));
-    for(d = 0; d <= L; d++) el_scA[d] = cm->el_selfsc * d;
+  if (have_el) { 
     /* fill in the cm->M deck */
     for(j = 0; j <= L; j++) {
       for (d = 0; d <= j; d++) { 
-	post[cm->M][j][d] = el_scA[d] + beta[cm->M][j][d] - sc;
+	/*printf("M: j: %4d d: %4d ins: %10.6f out: %10.6f ", j, d, alpha[cm->M][j][d], beta[cm->M][j][d]);*/
+	post[cm->M][j][d] = alpha[cm->M][j][d] + beta[cm->M][j][d] - sc;
+	/*printf("post: %10.6f\n", post[cm->M][j][d]);*/
 	/* convention is that alpha[cm->M] from Inside is always invalid, 
 	 * because we can just as easily calculate it on the fly and save memory:
 	 * alpha[cm->M][j][d] = cm->el_selfsc * d; for all j, d. */
@@ -3042,11 +3031,7 @@ CMPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX
       }  
     }
   }
-  if(el_scA != NULL) free(el_scA);
   return eslOK;
-
- ERROR:
-  ESL_FAIL(status, errbuf, "memory allocation error.");
 }
 
 
@@ -3071,7 +3056,7 @@ CMPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX
  *           out_mx   - pre-calculated Outside matrix
  *           post_mx  - pre-allocated matrix for Posteriors 
  *
- * Return:   eslOK on succes, eslEINCOMPAT on contract violation, eslEMEM on memory allocation error
+ * Return:   eslOK on succes, eslEINCOMPAT on contract violation
  */
 int
 CMPosterior(CM_t *cm, char *errbuf, int i0, int j0, float ***ins_mx, float ***out_mx, float ***post_mx)
@@ -3096,8 +3081,11 @@ CMPosterior(CM_t *cm, char *errbuf, int i0, int j0, float ***ins_mx, float ***ou
   for (v = vmax; v >= 0; v--) 
     for (j = 0; j <= L; j++) 
       for (d = 0; d <= j; d++)
-	post_mx[v][j][d] = ins_mx[v][j][d] + out_mx[v][j][d] - sc;
-  
+	{ 
+	  /*if(v == cm->M) printf("M: j: %4d d: %4d ins: %10.6f out: %10.6f ", j, d, ins_mx[v][j][d], out_mx[v][j][d]);*/
+	  post_mx[v][j][d] = ins_mx[v][j][d] + out_mx[v][j][d] - sc;
+	  /*if(v == cm->M) printf("post: %10.6f\n", post_mx[v][j][d]);*/
+	}
   return eslOK;
 }
 
@@ -3120,15 +3108,6 @@ CMPosterior(CM_t *cm, char *errbuf, int i0, int j0, float ***ins_mx, float ***ou
  *                       probabilities of the residues i=j-d+1..j
  *                       in the subtree rooted at v (in the platonic,
  *                       non-banded matrix).
- *
- *           Currently this function does not work if local ends are
- *           on, post->[cm->M][j][d] is the summed probability that
- *           the EL state emitted residue i=j-d+1, but the EL state
- *           can be reached from MANY states, so we have an ambiguity.
- *           To resolve it, we'd need a different EL state (and deck
- *           in post matrix) for each possible state you can do a
- *           local end from.  Current solution is never to do local
- *           optimal accuracy alignments.
  *
  * Args:     cm        - the model    [0..M-1]
  *           errbuf    - char buffer for reporting errors
@@ -3168,9 +3147,11 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
   int      b;		/* best local begin state */
   float    bsc;		/* score for using the best local begin state */
   int     *yvalidA;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
+  int      have_el;     /* TRUE if we have local ends */
   /* indices used for handling band-offset issues, and in the depths of the DP recursion */
   int      sd;                 /* StateDelta(cm->sttype[v]) */
   int      sdr;                /* StateRightDelta(cm->sttype[v] */
+  int      jp_el;              /* offset j for non-banded EL state */
   int      jp_v, jp_y, jp_z;   /* offset j index for states v, y, z */
   int      jp_y_sdr;           /* jp_y - sdr */
   int      j_sdr;              /* j - sdr */
@@ -3189,16 +3170,10 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
   float    pp;                 /* avg posterior probability of aligned res i0..j0 in optimally accurate parse */
 
   /* Contract check */
-  if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "optimal_accuracy_align_hb(), dsq is NULL.\n");
-  if (mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "optimal_accuracy_align_hb(), mx is NULL.\n");
-  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "optimal_accuracy_align_hb(), cm->cp9b is NULL.\n");
-  if (post_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "optimal_accuracy_align_hb(), cm->cp9b is NULL.\n");
-  if (cm->flags & CMH_LOCAL_END) ESL_FAIL(eslEINCOMPAT, errbuf, "optimal_accuracy_align_hb(), local ends are on, can't deal with this EL emissions are ambiguous (summed across all states with local ends).");
-  /* Currently not sure how to deal with EL emissions: post->[cm->M][j][d] is the summed probability that the EL state
-   * emitted residue i=j-d+1, but the EL state can be reached from MANY states, so we have an ambiguity here, to resolve
-   * it, we'd need a different EL state (and deck in post matrix) for each possible state you can do a local end from.
-   * Current solution is never to do local optimal accuracy alignments.
-   */
+  if(dsq == NULL)                ESL_FAIL(eslEINCOMPAT, errbuf, "optimal_accuracy_align_hb(), dsq is NULL.\n");
+  if (mx == NULL)                ESL_FAIL(eslEINCOMPAT, errbuf, "optimal_accuracy_align_hb(), mx is NULL.\n");
+  if (cm->cp9b == NULL)          ESL_FAIL(eslEINCOMPAT, errbuf, "optimal_accuracy_align_hb(), cm->cp9b is NULL.\n");
+  if (post_mx == NULL)           ESL_FAIL(eslEINCOMPAT, errbuf, "optimal_accuracy_align_hb(), cm->cp9b is NULL.\n");
 
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
@@ -3217,7 +3192,19 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
 				/* if caller didn't give us a deck pool, make one */
   /* grow the matrix based on the current sequence and bands */
-  if((status = cm_hb_mx_GrowTo(mx, errbuf, cp9b, W)) != eslOK) return status;
+  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W)) != eslOK) return status;
+
+  /* initialize the EL deck, if it's valid */
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;  
+  if(have_el) { 
+    for (jp_el = 0; jp_el <= W; jp_el++) {
+      j = i0-1+jp_el;
+      alpha[cm->M][j][0] = IMPOSSIBLE;
+      for (d = 1; d <= jp_el; d++) {
+	alpha[cm->M][j][d] = FLogsum(alpha[cm->M][j][d-1], post[cm->M][j][d]); /* optimal (and only) parse for EL is to emit all d residues */
+      }
+    }
+  }
 
   /* The shadow matrix, we always allocate it, so we don't have to 
    * check if it's null in the depths of the DP recursion.
@@ -3241,9 +3228,6 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
   ESL_ALLOC(yvalidA, sizeof(int) * MAXCONNECT);
   esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
 
-  /* initialize all cells of the matrix to IMPOSSIBLE */
-  //esl_vec_FSet(alpha[0][0], mx->ncells_valid, IMPOSSIBLE);
-
   /* Main recursion */
   for (v = cm->M-1; v >= 0; v--) {
     float const *tsc_v = cm->tsc[v];  /* transition scores for state v */
@@ -3251,13 +3235,14 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
     sdr  = StateRightDelta(cm->sttype[v]);
     jn   = jmin[v];
     jx   = jmax[v];
-    assert(! (NOT_IMPOSSIBLE(cm->endsc[v]))); /* we checked that CMH_LOCAL_END flag was down in contract */
+
     /* Get a shadow deck to fill in and initialize all valid cells for state v */
     if (cm->sttype[v] != E_st) {
       if (cm->sttype[v] == B_st) {
 	kshad     = alloc_jdbanded_vjd_kshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 	shadow[v] = (void **) kshad;
 	/* initialize all valid cells for state v to IMPOSSIBLE */
+	ESL_DASSERT1((! (NOT_IMPOSSIBLE(cm->endsc[v]))));
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
 	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
@@ -3269,11 +3254,33 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	yshad     = alloc_jdbanded_vjd_yshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 	shadow[v] = (void **) yshad;
 	/* initialize all valid cells for state v */
-	for (j = jmin[v]; j <= jmax[v]; j++) { 
-	  jp_v  = j - jmin[v];
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
-	    alpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	    yshad[jp_v][dp_v] = USED_EL; 
+	if(have_el && NOT_IMPOSSIBLE(cm->endsc[v])) { 
+	  for (j = jmin[v]; j <= jmax[v]; j++) { 
+	    jp_v  = j - jmin[v];
+	    /* special case: if hdmin[v][jp_v] > 0, we have to sum up posterior prob of emitting 
+	     * hdmin[v][jp_v] residues from the EL state, this is then stored in alpha[v][jp_v][dp_v==0]
+	     * note: when d = hdmin[v][jp_v], dp_v is 0
+	     */
+	    alpha[v][jp_v][0] = IMPOSSIBLE;
+	    yshad[jp_v][0] = USED_EL; 
+	    for(d = sd+1; d <= hdmin[v][jp_v]; d++) {
+	      alpha[v][jp_v][0] = FLogsum(alpha[v][jp_v][0], post[cm->M][j-sdr][d-sd]);
+	    }
+	    /* now finish initializing the remaining valid d values */
+	    for(d = hdmin[v][jp_v]+1; d <= hdmax[v][jp_v]; d++) {
+	      dp_v = d - hdmin[v][jp_v];
+	      alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v-1], post[cm->M][j-sdr][d-sd]); /* careful, we'll emit sd residues from v and d-sd from EL (i=((j-sdr)-d+1)..(j-sdr)) */
+	      yshad[jp_v][dp_v] = USED_EL; 
+	    }
+	  }
+	}
+	else { /* cm->endsc[v] == IMPOSSIBLE, init all cells to IMPOSSIBLE */
+	  for (j = jmin[v]; j <= jmax[v]; j++) { 
+	    jp_v  = j - jmin[v];
+	    for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
+	      alpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	      yshad[jp_v][dp_v] = USED_EL; 
+	    }
 	  }
 	}
       }
@@ -3549,15 +3556,6 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
  *                       probabilities of the residues i=j-d+1..j
  *                       in the subtree rooted at v. 
  *
- *           Currently this function does not work if local ends are
- *           on, post->[cm->M][j][d] is the summed probability that
- *           the EL state emitted residue i=j-d+1, but the EL state
- *           can be reached from MANY states, so we have an ambiguity.
- *           To resolve it, we'd need a different EL state (and deck
- *           in post matrix) for each possible state you can do a
- *           local end from.  Current solution is never to do local
- *           optimal accuracy alignments.
- *
  * Args:     cm        - the model    [0..M-1]
  *           errbuf    - char buffer for reporting errors
  *           dsq       - the digitaized sequence [i0..j0]   
@@ -3596,7 +3594,6 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
   char   **yshad;       /* a shadow deck for every other kind of state */
   int      b;		/* best local begin state */
   float    bsc;		/* score for using the best local begin state */
-  float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
   int      sd;          /* StateDelta(cm->sttype[v]) */
   int      sdr;         /* StateRightDelta(cm->sttype[v] */
   int      jp;          /* offset j, j = i0-1+jp */
@@ -3606,17 +3603,12 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
   float    pp;          /* avg posterior probability of aligned res i0..j0 in optimally accurate parse */
   float ***alpha;       /* the DP matrix, we allocate here */
   float    Mb_for_alpha;/* megabytes needed for alpha matrix */
+  int      have_el;     /* TRUE if we have local ends */
 
   /* Contract check */
-  if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "optimal_accuracy_align(), dsq is NULL.\n");
-  if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "optimal_accuracy_align(), cm->cp9b is NULL.\n");
-  if (post_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "optimal_accuracy_align(), cm->cp9b is NULL.\n");
-  if (cm->flags & CMH_LOCAL_END) ESL_FAIL(eslEINCOMPAT, errbuf, "optimal_accuracy_align(), local ends are on, can't deal with this EL emissions are ambiguous (summed across all states with local ends).");
-  /* Currently not sure how to deal with EL emissions: post->[cm->M][j][d] is the summed probability that the EL state
-   * emitted residue i=j-d+1, but the EL state can be reached from MANY states, so we have an ambiguity here, to resolve
-   * it, we'd need a different EL state (and deck in post matrix) for each possible state you can do a local end from.
-   * Current solution is never to do local optimal accuracy alignments.
-   */
+  if (dsq == NULL)         ESL_FAIL(eslEINCOMPAT, errbuf, "optimal_accuracy_align(), dsq is NULL.\n");
+  if (cm->cp9b == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "optimal_accuracy_align(), cm->cp9b is NULL.\n");
+  if (post_mx == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "optimal_accuracy_align(), post_mx is NULL.\n");
 
   /* the pre-filled post matrix */
   float ***post  = post_mx;
@@ -3634,11 +3626,19 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
   ESL_DPRINTF1(("Size of alpha matrix: %.2f\n", Mb_for_alpha));
 
   ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
-  for (v = 0; v <= cm->M; v++) alpha[v] = alloc_vjd_deck(L, 1, L);
+  for (v = 0; v <= cm->M; v++) alpha[v] = alloc_vjd_deck(L, i0, j0);
 
-  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
-  ESL_ALLOC(el_scA, sizeof(float) * (W+1));
-  for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
+  /* initialize the EL deck, if it's valid */
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;  
+  if(have_el) { 
+    for (jp = 0; jp <= W; jp++) {
+      j = i0-1+jp;
+      alpha[cm->M][j][0] = IMPOSSIBLE;
+      for (d = 1; d <= jp; d++) {
+	alpha[cm->M][j][d] = FLogsum(alpha[cm->M][j][d-1], post[cm->M][j][d]); /* optimal (and only) parse for EL is to emit all d residues */
+      }
+    }
+  }
 
   /* The shadow matrix, we always allocate it, so we don't have to 
    * check if it's null in the depths of the DP recursion.
@@ -3662,14 +3662,14 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
     float const *tsc_v = cm->tsc[v];  /* transition scores for state v */
     sd   = StateDelta(cm->sttype[v]);
     sdr  = StateRightDelta(cm->sttype[v]);
-    assert(! (NOT_IMPOSSIBLE(cm->endsc[v]))); /* we checked that CMH_LOCAL_END flag was down in contract */
+
     /* Get a shadow deck to fill in and initialize all valid cells for state v */
     if (cm->sttype[v] != E_st) {
       if (cm->sttype[v] == B_st) {
 	kshad     = alloc_vjd_kshadow_deck(L, i0, j0); 
 	shadow[v] = (void **) kshad;
 	/* initialize all valid cells for state v to IMPOSSIBLE (local ends are impossible for B states) */
-	assert(! (NOT_IMPOSSIBLE(cm->endsc[v])));
+	ESL_DASSERT1((! (NOT_IMPOSSIBLE(cm->endsc[v]))));
 	for (jp = 0; jp <= W; jp++) {
 	  j = i0-1+jp;
 	  for (d = 0; d <= jp; d++) {
@@ -3680,12 +3680,28 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
       } else { /* ! B_st && ! E_st */
 	yshad     = alloc_vjd_yshadow_deck(L, i0, j0);
 	shadow[v] = (void **) yshad;
-	/* initialize all valid cells for state v to IMPOSSIBLE */
-	for (jp = 0; jp <= W; jp++) {
-	  j = i0-1+jp;
-	  for (d = 0; d <= jp; d++) {
-	    alpha[v][j][d] = IMPOSSIBLE;
-	    yshad[j][d] = USED_EL; 
+	/* initialize all valid cells for state v */
+	if(have_el && NOT_IMPOSSIBLE(cm->endsc[v])) {
+	  for (jp = 0; jp <= W; jp++) {
+	    j = i0-1+jp;
+	    for (d = 0; d <= sd && d <= jp; d++) { 
+	      alpha[v][j][d] = IMPOSSIBLE;
+	      yshad[j][d] = USED_EL; 
+	    }
+	    for (d = sd+1; d <= jp; d++) {
+	      alpha[v][j][d] = FLogsum(alpha[v][j][d-1], post[cm->M][j-sdr][d-sd]); /* careful, we'll emit sd residues from v and d-sd from EL (i=((j-sdr)-d+1)..(j-sdr)) */
+	      yshad[j][d] = USED_EL; 
+	      /* printf("I alpha[v: %d][j: %d][k: %d]: %.4f\n", v, j, d, alpha[v][j][d]); */
+	    }
+	  }
+	}
+	else { /* cm->endsc[v] == IMPOSSIBLE */
+	  for (jp = 0; jp <= W; jp++) {
+	    j = i0-1+jp;
+	    for (d = 0; d <= jp; d++) {
+	      alpha[v][j][d] = IMPOSSIBLE;
+	      yshad[j][d] = USED_EL; 
+	    }
 	  }
 	}
       }
@@ -3796,9 +3812,9 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
 				/* finished calculating deck v. */
       
     if(cm->flags & CMH_LOCAL_BEGIN) {
-      if (alpha[v][j0][W] + cm->beginsc[v] > bsc) {
+      if (alpha[v][j0][W] > bsc) {
 	b   = v;
-	bsc = alpha[v][j0][W] + cm->beginsc[v];
+	bsc = alpha[v][j0][W];
       }
     }
     /* Check for whether we need to store an optimal local begin score
@@ -3821,8 +3837,6 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
   else free_vjd_shadow_matrix(shadow, cm, i0, j0);
   if (ret_mx     != NULL) *ret_mx = alpha;
   else free_vjd_matrix(alpha, cm->M, 1, L);
-
-  free(el_scA);
 
   /* convert score, a log probability, into the average posterior probability of all W aligned residues */
   pp = sreEXP2(sc) / (float) W;
@@ -4417,9 +4431,11 @@ CMCheckPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post)
   int   v, j, d, k;
   int   jp_v, dp_v, kp_v;
   float sc;
+
   /* Contract check */
   if (post == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "CMCheckPosteriorHB(), post is NULL.\n");
   if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "CMCheckPosteriorHB(), cm->cp9b is NULL.\n");
+
   /* ptrs to cp9b info, for convenience */
   CP9Bands_t *cp9b = cm->cp9b;
   int     *jmin  = cp9b->jmin;  
@@ -4435,12 +4451,12 @@ CMCheckPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post)
 	 (cm->sttype[v] == IL_st)) {
 	for (j = k; j <= j0; j++) {
 	  if(j >= jmin[v] && j <= jmax[v]) { 
-	    /*printf("adding L v: %d | i: %d | j: %d | d: %d\n", v, (j-d+1), j, d);*/
 	    jp_v = j - jmin[v]; 
 	    d    = j-k+1;
 	    if(d >= hdmin[v][jp_v] && d <= hdmax[v][jp_v]) {
 	      dp_v = d - hdmin[v][jp_v];
 	      sc = FLogsum(sc, (post->dp[v][jp_v][dp_v]));
+	      /*printf("sc: %.4f added L v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", sc, v, (j-d+1), j, d, post->dp[v][jp_v][dp_v]); */
 	    }
 	  }
 	}
@@ -4453,8 +4469,8 @@ CMCheckPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post)
 	  for (d = 1; d <= k; d++) { 
 	    if(d >= hdmin[v][kp_v] && d <= hdmax[v][kp_v]) {
 	      dp_v = d - hdmin[v][kp_v];
-	      /*printf("adding R v: %d | i: %d | j: %d | d: %d\n", v, (k-d+1), k, d);*/
 	      sc = FLogsum(sc, (post->dp[v][kp_v][dp_v]));
+	      /*printf("sc: %.4f added R v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", sc, v, (k-d+1), k, d, post->dp[v][kp_v][dp_v]); */
 	    }
 	  }
 	}
@@ -4463,17 +4479,16 @@ CMCheckPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post)
     /* Finally factor in possibility of a local end, i.e. that the EL state
      * may have "emitted" this residue.
      */
-      if (cm->flags & CMH_LOCAL_END) {
-	for (j = k; j <= j0; j++) {
-	  d = j-k+1;
-	  /*printf("EL adding L v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", cm->M, (j-d+1), j, d, post[cm->M][j][d]);*/
-	  sc = FLogsum(sc, (post->dp[cm->M][j][d]));
-	}
+    if (cm->flags & CMH_LOCAL_END) {
+      for (j = k; j <= j0; j++) {
+	d = j-k+1;
+	sc = FLogsum(sc, (post->dp[cm->M][j][d]));
+	/*printf("sc: %.4f added EL v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", sc, cm->M, (j-d+1), j, d, post->dp[cm->M][j][d]); */
       }
-
-      if(((sc - 0.) > 0.01) || ((sc - 0.) < -0.01))
-	ESL_FAIL(eslFAIL, errbuf, "residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
-      /*printf("k: %d | total: %10.2f\n", k, (sreEXP2(sc)));*/
+    }
+    if(((sc - 0.) > 0.01) || ((sc - 0.) < -0.01))
+      ESL_FAIL(eslFAIL, errbuf, "residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
+    /*printf("k: %d | total: %10.2f\n", k, (sreEXP2(sc)));*/
   }  
   ESL_DPRINTF1(("CMCheckPosteriorHB() passed, all residues have summed probability of emission of 1.0.\n"));
   return eslOK;
@@ -4505,7 +4520,7 @@ CMCheckPosterior(CM_t *cm, char *errbuf, int i0, int j0, float ***post)
   int   k, v, j, d;
 
   /* contract check */
-  if (post == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "CMCheckPosteriorHB(), post is NULL.\n");
+  if (post == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "CMCheckPosterior(), post is NULL.\n");
 
   for (k = i0; k <= j0; k++) {
     sc = IMPOSSIBLE;
@@ -4515,34 +4530,34 @@ CMCheckPosterior(CM_t *cm, char *errbuf, int i0, int j0, float ***post)
 	   (cm->sttype[v] == ML_st) ||
 	   (cm->sttype[v] == IL_st)) {
 	  for (j = k; j <= j0; j++) {
-	    /*printf("adding L v: %d | i: %d | j: %d | d: %d\n", v, (j-d+1), j, d);*/
 	    d = j-k+1;
 	    sc = FLogsum(sc, (post[v][j][d]));
+	    /* printf("sc: %.4f added L v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", sc, v, (j-d+1), j, d, post[v][j][d]); */
 	  }
 	}
 	if((cm->sttype[v] == MP_st) ||
 	   (cm->sttype[v] == MR_st) ||
 	   (cm->sttype[v] == IR_st)) {
 	  for (d = i0; d <= k; d++) {
-	    /*printf("adding R v: %d | i: %d | j: %d | d: %d\n", v, (k-d+1), k, d);*/
 	    sc = FLogsum(sc, (post[v][k][d]));
+	    /* printf("sc: %.4f added R v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", sc, v, (k-d+1), k, d, post[v][k][d]); */
 	  }
 	}
       }
-      /* Finally factor in possibility of a local end, i.e. that the EL state
-       * may have "emitted" this residue.
-       */
-      if (cm->flags & CMH_LOCAL_END) {
-	for (j = k; j <= j0; j++) {
-	  d = j-k+1;
-	  /*printf("EL adding L v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", cm->M, (j-d+1), j, d, post[cm->M][j][d]);*/
-	  sc = FLogsum(sc, (post[cm->M][j][d]));
-	}
-      }
-      if(((sc - 0.) > 0.01) || ((sc - 0.) < -0.01))
-	ESL_FAIL(eslFAIL, errbuf, "residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
-      /*printf("k: %d | total: %10.2f\n", k, (sreEXP2(sc)));*/
     }
+    /* Finally factor in possibility of a local end, i.e. that the EL state
+     * may have "emitted" this residue.
+     */
+    if (cm->flags & CMH_LOCAL_END) {
+      for (j = k; j <= j0; j++) {
+	d = j-k+1;
+	sc = FLogsum(sc, (post[cm->M][j][d]));
+	/* printf("sc: %.4f added EL v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", sc, cm->M, (j-d+1), j, d, post[cm->M][j][d]); */
+      }
+    }
+    if(((sc - 0.) > 0.01) || ((sc - 0.) < -0.01))
+	ESL_FAIL(eslFAIL, errbuf, "residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
+    /*printf("k: %d | total: %10.2f\n", k, (sreEXP2(sc)));*/
   }  
   ESL_DPRINTF1(("CMCheckPosterior() passed, all residues have summed probability of emission of 1.0.\n"));
   return eslOK;
@@ -4829,935 +4844,3 @@ main(int argc, char **argv)
   return 0; /* NEVERREACHED */
 }
 #endif /*IMPL_FASTALIGN_BENCHMARK*/
-
-#if 0
-/* EPN, Thu Nov 15 13:24:18 2007
- * Made the tough decision to get rid of HMM banded Integer functions and matrices,
- * mainly for convenience (making parallel changes for both floats and ints was
- * driving me crazy)  but also to save memory during alignment, otherwise we
- * have to allocate both Int and Float matrices in some cases, which is wasteful.
- * We take 30% speed hit using floats relative to ints, but HMM banded alignment
- * is fast enough that I'm willing to live with it.
- * The old int functions are below, in a #if 0 block to prevent them from
- * being compiled.
- */
-/*
- * Function: FastIInsideAlignHB()
- * Date:     EPN, Wed Nov  7 15:17:47 2007 [updated]
- *
- * Purpose:  Run the inside algorithm on a target sequence using bands 
- *           in the j and d dimensions of the DP matrix. Bands
- *           were obtained from an HMM Forward-Backward parse
- *           of the target sequence. Uses int log odds scores.
- * 
- *           Very similar with fast_cyk_inside_align_hb(), see 'Purpose'
- *           of that function for more details. Only differences with
- *           that function is:
- *           - can't return a shadow matrix (we're not aligning)
- *           - doesn't return bsc, b info about local begins 
- *           - uses ints, not floats (FastFInsideAlignHB() uses floats).
- *
- *           This function complements FastIOutsideAlignHB().
- *
- * Args:     cm        - the model    [0..M-1]
- *           dsq       - the digitized sequence
- *           i0        - first position in subseq to align (1, for whole seq)
- *           j0        - last position in subseq to align  (L, for whole seq)
- *           mx        - the dp matrix, only cells within bands in cm->cp9b will be valid
- *                       
- * Returns:  log P(S|M)/P(S|R), as a bit score
- */
-float 
-FastIInsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_IHB_MX *mx)
-{
-  int      status;
-  int      v,y,z;	/* indices for states  */
-  int      j,d,i,k;	/* indices in sequence dimensions */
-  float    fsc;		/* the final score, floatized */
-  int      tsc;         /* a temporary variable holding a transition score */
-  int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
-  int      W;		/* subsequence length */
-  int      bsc;		/* summed score for using all local begin states */
-  int     *yvalidA;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
-  int     *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
-  /* indices used for handling band-offset issues, and in the depths of the DP recursion */
-  int      sd;                 /* StateDelta(cm->sttype[v]) */
-  int      sdr;                /* StateRightDelta(cm->sttype[v] */
-  int      jp_v, jp_y, jp_z;   /* offset j index for states v, y, z */
-  int      jp_y_sdr;           /* jp_y - sdr */
-  int      j_sdr;              /* j - sdr */
-  int      jn, jx;             /* current minimum/maximum j allowed */
-  int      jpn, jpx;           /* minimum/maximum jp_v */
-  int      dp_v, dp_y;         /* d index for state v/y in alpha w/mem eff bands */
-  int      dn, dx;             /* current minimum/maximum d allowed */
-  int      dp_y_sd;            /* dp_y - sd */
-  int      dpn, dpx;           /* minimum/maximum dp_v */
-  int      kp_z;               /* k (in the d dim) index for state z in alpha w/mem eff bands */
-  int      kn, kx;             /* current minimum/maximum k value */
-  int      Wp;                 /* W oalso changes depending on state */
-  int      yvalid_idx;         /* for keeping track of which children are valid */
-  int      yvalid_ct;          /* for keeping track of which children are valid */
-  /* Contract check */
-  if(dsq == NULL) cm_Fail("FastIInsideAlignHB(), dsq is NULL.\n");
-  if (mx == NULL) cm_Fail("FastIInsideAlignHB(), mx is NULL.\n");
-  if(cm->cp9b == NULL) cm_Fail("FastIInsideAlignHB(), mx is NULL.\n");
-
-
-  /* variables used for memory efficient bands */
-  /* ptrs to cp9b info, for convenience */
-  CP9Bands_t *cp9b= cm->cp9b;
-  int     *jmin  = cp9b->jmin;  
-  int     *jmax  = cp9b->jmax;
-  int    **hdmin = cp9b->hdmin;
-  int    **hdmax = cp9b->hdmax;
-  /* the DP matrix */
-  int   ***alpha = mx->dp; /* pointer to the alpha DP matrix */
-
-  /* Allocations and initializations */
-  bsc = -INFTY;
-  W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
-				/* if caller didn't give us a deck pool, make one */
-  /* grow the matrix based on the current sequence and bands */
-  cm_ihb_mx_GrowTo(mx, errbuf, cp9b, W);
-  /* precalcuate all possible local end scores, for local end emits of 1..W residues */
-  ESL_ALLOC(el_scA, sizeof(int) * (W+1));
-  for(d = 0; d <= W; d++) el_scA[d] = cm->iel_selfsc * d;
-  /* yvalidA[0..cnum[v]] will hold TRUE for states y for which a transition is legal 
-   * (some transitions are impossible due to the bands)
-   */
-  ESL_ALLOC(yvalidA, sizeof(int) * MAXCONNECT);
-  esl_vec_ISet(yvalidA, MAXCONNECT, FALSE);
-
-  /* initialize all cells of the matrix to -INFTY */
-  esl_vec_ISet(alpha[0][0], mx->ncells_valid, -INFTY);
-
-  /* Main recursion  */
-  for (v = cm->M-1; v >= 0; v--) {
-    int const *esc_v = cm->ioesc[v]; 
-    int const *tsc_v = cm->itsc[v];
-    sd   = StateDelta(cm->sttype[v]);
-    sdr  = StateRightDelta(cm->sttype[v]);
-    jn   = jmin[v];
-    jx   = jmax[v];
-    
-    /* initialize all valid cells for state v to the local end prob, if they're allowed  */
-    if(cm->endsc[v] != -INFTY) {
-      for (j = jmin[v]; j <= jmax[v]; j++) { 
-	jp_v  = j - jmin[v];
-	for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) 
-	  alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->iendsc[v];
-      }
-    }
-
-    /* E_st: easy, no children, and d must be 0 for all valid j */
-    if(cm->sttype[v] == E_st) { 
-      for (j = jmin[v]; j <= jmax[v]; j++) { 
-	jp_v = j-jmin[v];
-	ESL_DASSERT1((hdmin[v][jp_v] == 0));
-	ESL_DASSERT1((hdmax[v][jp_v] == 0));
-	alpha[v][jp_v][0] = 0.; /* for End states, d must be 0 */
-      }
-    }
-    else if(cm->sttype[v] == IL_st) {
-      /* update alpha[v][jp_v][dp_v] cells, for IL states, loop nesting order is:
-       * for j { for d { for y { } } } because they can self transit, and a 
-       * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
-       * before can start calc'ing for alpha[v][j][d+1] */
-      for (j = jmin[v]; j <= jmax[v]; j++) {
-	jp_v = j - jmin[v];
-	yvalid_ct = 0;
-	j_sdr = j - sdr;
-	
-	/* determine which children y we can legally transit to for v, j */
-	for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
-	  if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr is valid for state y? */
-	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
-	  i = j - d + 1;
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
-	  for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
-	    yoffset = yvalidA[yvalid_idx];
-	    y = cm->cfirst[v] + yoffset;
-	    jp_y_sdr = j - jmin[y] - sdr;
-	    
-	    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-	      dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
-	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
-	      alpha[v][jp_v][dp_v] = ILogsum(alpha[v][jp_v][dp_v], alpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
-	    }
-	  }
-	  alpha[v][jp_v][dp_v] += esc_v[dsq[i--]];
-	  alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], -INFTY);
-	}
-      }
-    }
-    else if(cm->sttype[v] == IR_st) { 
-      /* update alpha[v][jp_v][dp_v] cells, for IR states, loop nesting order is:
-       * for j { for d { for y { } } } because they can self transit, and a 
-       * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
-       * before can start calc'ing for alpha[v][j][d+1] */
-      for (j = jmin[v]; j <= jmax[v]; j++) {
-	jp_v = j - jmin[v];
-	yvalid_ct = 0;
-	j_sdr = j - sdr;
-	
-	/* determine which children y we can legally transit to for v, j */
-	for (y = cm->cfirst[v], yoffset = 0; y < (cm->cfirst[v] + cm->cnum[v]); y++, yoffset++) 
-	  if((j_sdr) >= jmin[y] && ((j_sdr) <= jmax[y])) yvalidA[yvalid_ct++] = yoffset; /* is j-sdr is valid for state y? */
-	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { /* for each valid d for v, j */
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha */
-	  for (yvalid_idx = 0; yvalid_idx < yvalid_ct; yvalid_idx++) { /* for each valid child y, for v, j */
-	    yoffset = yvalidA[yvalid_idx];
-	    y = cm->cfirst[v] + yoffset;
-	    jp_y_sdr = j - jmin[y] - sdr;
-	    
-	    if((d-sd) >= hdmin[y][jp_y_sdr] && (d-sd) <= hdmax[y][jp_y_sdr]) { /* make sure d is valid for this v, j and y */
-	      dp_y_sd = d - sd - hdmin[y][jp_y_sdr];
-	      ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	      ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
-	      alpha[v][jp_v][dp_v] = ILogsum(alpha[v][jp_v][dp_v], alpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]);
-	    }
-	  }
-	  alpha[v][jp_v][dp_v] += esc_v[dsq[j]];
-	  alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], -INFTY);
-	}
-      }
-    }
-    else if(cm->sttype[v] != B_st) { /* entered if state v is (! IL && ! IR && ! B) */
-      /* ML, MP, MR, D, S, E states cannot self transit, this means that all cells
-       * in alpha[v] are independent of each other, only depending on alpha[y] for previously calc'ed y.
-       * We can do the for loops in any nesting order, this implementation does what I think is most efficient:
-       * for y { for j { for d { } } } 
-       */
-      for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) {
-	yoffset = y - cm->cfirst[v];
-	tsc = tsc_v[yoffset];
-	
-	jn = ESL_MAX(jmin[v], ESL_MIN(jmin[y] + sdr, jmax[y]));
-	jx = ESL_MIN(jmax[v], ESL_MAX(jmax[y] + sdr, jmin[y]));
-	jx = ESL_MIN(jx, jmax[y] + sdr);
-	jpn = jn - jmin[v];
-	jpx = jx - jmin[v];
-	jp_y_sdr = jn - jmin[y] - sdr;
-	
-	for (jp_v = jpn; jp_v <= jpx; jp_v++, jp_y_sdr++) {
-	  ESL_DASSERT1((jp_v >= 0 && jp_v <= (jmax[v]-jmin[v])));
-	  ESL_DASSERT1((jp_y_sdr >= 0 && jp_y_sdr <= (jmax[y]-jmin[y])));
-	  
-	  dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
-	  dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
-	  dpn     = dn - hdmin[v][jp_v];
-	  dpx     = dx - hdmin[v][jp_v];
-	  dp_y_sd = dn - hdmin[y][jp_y_sdr] - sd;
-	  
-	  for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y_sd++) { 
-	    ESL_DASSERT1((dp_v    >= 0 && dp_v     <= (hdmax[v][jp_v]     - hdmin[v][jp_v])));
-	    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
-	    alpha[v][jp_v][dp_v] = ILogsum(alpha[v][jp_v][dp_v], (alpha[y][jp_y_sdr][dp_y_sd] + tsc));;
-	  }
-	}
-      }
-      /* add in emission score, if any */
-      switch(cm->sttype[v]) { 
-      case ML_st:
-	for (j = jmin[v]; j <= jmax[v]; j++) { 
-	  jp_v  = j - jmin[v];
-	  i     = j - hdmin[v][jp_v] + 1;
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
-	    alpha[v][jp_v][dp_v] += esc_v[dsq[i--]];
-	}
-	break;
-      case MR_st:
-	for (j = jmin[v]; j <= jmax[v]; j++) { 
-	  jp_v  = j - jmin[v];
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
-	    alpha[v][jp_v][dp_v] += esc_v[dsq[j]];
-	}
-	break;
-      case MP_st:
-	for (j = jmin[v]; j <= jmax[v]; j++) { 
-	  jp_v  = j - jmin[v];
-	  i     = j - hdmin[v][jp_v] + 1;
-	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
-	    alpha[v][jp_v][dp_v] += esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
-	  }
-      default: /* no emission */
-	break;
-      }
-      /* ensure all cells are >= -INFTY */
-      for (j = jmin[v]; j <= jmax[v]; j++) { 
-	jp_v  = j - jmin[v];
-	for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
-	  alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], -INFTY);
-      }
-    }
-    else { /* B_st */ 
-      y = cm->cfirst[v]; /* left  subtree */
-      z = cm->cnum[v];   /* right subtree */
-      
-      /* Any valid j must be within both state v and state z's j band 
-       * I think jmin[v] <= jmin[z] is guaranteed by the way bands are 
-       * constructed, but we'll check anyway. 
-       */
-      jn = (jmin[v] > jmin[z]) ? jmin[v] : jmin[z];
-      jx = (jmax[v] < jmax[z]) ? jmax[v] : jmax[z];
-      /* the main j loop */
-      for (j = jn; j <= jx; j++) { 
-	jp_v = j - jmin[v];
-	jp_y = j - jmin[y];
-	jp_z = j - jmin[z];
-	kn = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
-	/* kn satisfies inequalities (1) and (3) (listed below)*/	
-	kx = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
-	/* kn satisfies inequalities (2) and (4) (listed below)*/	
-	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
-	      
-	  /* Find the first k value that implies a valid cell in the y and z decks.
-	   * This k must satisfy the following 6 inequalities (some may be redundant):
-	   * (1) k >= j-jmax[y];
-	   * (2) k <= j-jmin[y]; 
-	   *     1 and 2 guarantee (j-k) is within state y's j band
-	   *
-	   * (3) k >= hdmin[z][j-jmin[z]];
-	   * (4) k <= hdmax[z][j-jmin[z]]; 
-	   *     3 and 4 guarantee k is within z's j=(j), d band
-	   *
-	   * (5) k >= d-hdmax[y][j-jmin[y]-k];
-	   * (6) k <= d-hdmin[y][j-jmin[y]-k]; 
-	   *     5 and 6 guarantee (d-k) is within state y's j=(j-k) d band
-	   *
-	   * kn and kx were set above (outside (for (dp_v...) loop) that
-	   * satisfy 1-4 (b/c 1-4 are d-independent and k-independent)
-	   * RHS of inequalities 5 and 6 are dependent on k, so we check
-	   * for these within the next for loop.
-	   */
-	  for(k = kn; k <= kx; k++) { 
-	    if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k]) {
-	      /* for current k, all 6 inequalities have been satisified 
-	       * so we know the cells corresponding to the platonic 
-	       * matrix cells alpha[v][j][d], alpha[y][j-k][d-k], and
-	       * alpha[z][j][k] are all within the bands. These
-	       * cells correspond to alpha[v][jp_v][dp_v], 
-	       * alpha[y][jp_y-k][d-hdmin[jp_y-k]-k],
-	       * and alpha[z][jp_z][k-hdmin[jp_z]];
-	       */
-	      kp_z = k-hdmin[z][jp_z];
-	      dp_y = d-hdmin[y][jp_y-k];
-
-	      alpha[v][jp_v][dp_v] = ILogsum(alpha[v][jp_v][dp_v], alpha[y][jp_y-k][dp_y - k] + alpha[z][jp_z][kp_z]); 
-	    }
-	  }
-	}
-      }
-    }				/* finished calculating deck v. */
-      
-    if(cm->flags & CMH_LOCAL_BEGIN) { /* if local begins are on */
-      if(j0 >= jmin[v] && j0 <= jmax[v]) { 
-	jp_v = j0 - jmin[v];
-	Wp = W - hdmin[v][jp_v];
-	if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v]) { 
-	  /* If we get here alpha[v][jp_v][Wp] is a valid cell
-	   * in the banded alpha matrix, corresponding to 
-	   * alpha[v][j0][W] in the platonic matrix.
-	   */
-	  /* Check for local begin getting us to the root.
-	   */
-	  bsc = ILogsum(bsc, (alpha[v][jp_v][Wp] + cm->ibeginsc[v]));
-	}
-      }
-      /* include the bsc as part of alpha[0][jp_v][Wp] */
-      if (v == 0) { 
-	if(j0 >= jmin[0] && j0 <= jmax[0]) {
-	  jp_v = j0 - jmin[v];
-	  Wp = W - hdmin[0][jp_v];
-	  if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v]) { 
-	    alpha[0][jp_v][Wp] = ILogsum(alpha[0][jp_v][Wp], bsc);
-	  }
-	}
-      }
-    }
-  } /* end loop over all v */
-  /*FILE *fp; fp = fopen("ins.mx", "w"); cm_ihb_mx_Dump(fp, mx); fclose(fp);*/
-
-  Wp  = W - hdmin[0][j0-jmin[0]];
-  fsc = Scorify(alpha[0][j0-jmin[0]][Wp]);
-
-  free(el_scA);
-  free(yvalidA);
-
-  ESL_DPRINTF1(("FastIInsideAlignHB() return sc: %f\n", fsc));
-  return fsc;
-
- ERROR: 
-  cm_Fail("Memory allocation error.\n");
-  return 0.; /* never reached */
-}
-
-/*
- * Function: FastIOutsideAlignHB()
- * Date:     EPN, Wed Nov  7 15:24:02 2007
- *
- * Purpose:  Run the outside algorithm using bands
- *           in the j and d dimensions of the DP matrix. Bands
- *           were obtained from an HMM Forward-Backward parse
- *           of the target sequence. Uses integer log odds scores.
- *
- *           A CM_IHB_MX DP matrix must be passed in. Only
- *           cells valid within the bands given in the CP9Bands_t <cm->cp9b>
- *           will be valid. 
- *
- *           The DP recursion has been 'optimized' for all state types
- *           except IL, IR, BEGL_S, BEGR_S. The main optimization
- *           is a change in nesting order of the for loops:
- *           optimized order:     for v { for y { for j { for d {}}}}
- *           non-optimized order: for v { for j { for d { for y {}}}}
- * 
- *           ILs and IRs are not optmized because they can self transit
- *           so mx[v][j][d] must be fully calc'ed before mx[v][j][d+1] can 
- *           be calced. BEGL_S and BEGR_S are not optimized b/c 
- *           they require searching for optimal d and k, which complicates
- *           the enforcement of the bands and makes this optimization strategy
- *           impossible.
- *
- *           If <do_check> is TRUE (the CM must not be in local mode) 
- *           we check that the outside calculations are consistent 
- *           with the inside calculations (in ins_mx). 
- *           This check is described in comments towards the end of 
- *           the function. 
- *
- * Args:     cm        - the model    [0..M-1]
- *           dsq       - the digitized sequence
- *           i0        - first position in subseq to align (1, for whole seq)
- *           j0        - last position in subseq to align  (L, for whole seq)
- *           mx        - the dp matrix, only cells within bands in cp9b will be valid
- *           ins_mx    - the dp matrix from the Inside run calculation (required)
- *           do_check  - TRUE to attempt to check 
- *                       
- * Returns:  log P(S|M)/P(S|R), as a bit score, this is from ins_mx IF local
- *           ends are on (see *** comment towards end of function).
- */
-float 
-FastIOutsideAlignHB(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, CM_IHB_MX *mx, 
-		    CM_IHB_MX *ins_mx, int do_check)
-{
-  int      v,y,z;	       /* indices for states */
-  int      j,d,i,k;	       /* indices in sequence dimensions */
-  int      isc;     	       /* a temporary variable holding an int score */
-  float    fsc;     	       /* a temporary variable holding a float score */
-  int    **esc_vAA;            /* ptr to cm->ioesc, optimized emission scores */
-  int      iescore;	       /* an emission score, tmp variable */
-  int      W;		       /* subsequence length */
-  int      voffset;	       /* index of v in t_v(y) transition scores */
-  int      jp;		       /* j': relative position in the subsequence  */
-  int      bsc;		       /* total score for using local begin states */
-  int      ireturn_sc;         /* P(S|M)/P(S|R), a scaled int*/
-  float    freturn_sc;         /* P(S|M)/P(S|R), a float (Scorified ireturn_sc) */
-  /* band related variables */
-  int      dp_v;               /* d index for state v in alpha w/mem eff bands */
-  int      dp_y;               /* d index for state y in alpha w/mem eff bands */
-  int      kp_z;               /* k (in the d dim) index for state z in alpha w/mem eff bands */
-  int      Wp;                 /* W also changes depending on state */
-  int      jp_v, jp_y, jp_z;   /* offset j index for states v, y, z */
-  int      kmin, kmax;         /* temporary minimum/maximum allowed k */
-  int      fail_flag = FALSE;  /* set to TRUE if do_check and we see a problem */
-  /* variables used only if do_check */
-  int      n;                  /* counter over nodes, used only if do_check = TRUE */
-  int      num_split_states;   /* temp variable used only if do_check = TRUE */
-  float    diff;               /* temp variable used only if do_check = TRUE */
-  /* indices used in the depths of the DP recursion */
-  int      emitmode;           /* EMITLEFT, EMITRIGHT, EMITPAIR, EMITNONE, for state y */
-  int      sd;                 /* StateDelta(cm->sttype[y]) */
-  int      sdr;                /* StateRightDelta(cm->sttype[y] */
-  int      jn, jx;             /* current minimum/maximum j allowed */
-  int      dn, dx;             /* current minimum/maximum d allowed */
-
-  /* Contract check */
-  if (dsq == NULL)                                     cm_Fail("FastIOutsideAlignHB(), dsq is NULL.\n");
-  if (mx == NULL)                                      cm_Fail("FastIOutsideAlignHB(), mx is NULL.\n");
-  if (ins_mx == NULL)                                  cm_Fail("FastIOutsideAlignHB(), ins_mx is NULL.\n");
-  if (cm->cp9b == NULL)                                cm_Fail("FastIOutsideAlignHB(), cm->cp9b is NULL.\n");
-  if ((cm->flags & CMH_LOCAL_END) && do_check == TRUE) cm_Fail("FastIOutsideAlignHB(), do_check = TRUE, but CMH_LOCAL_END flag raised, we can't check with local ends.n");
-
-  /* DP matrix variables */
-  int   ***beta  = mx->dp;     /* pointer to the Oustide DP mx */
-  int   ***alpha = ins_mx->dp; /* pointer to the Inside DP mx (already calc'ed and passed in) */
-  int    **beta_el = NULL;     /* the cm->M EL deck, it's special b/c it has no bands */
-  /* ptrs to cp9b info, for convenience */
-  CP9Bands_t *cp9b= cm->cp9b;
-  int     *jmin  = cp9b->jmin;  
-  int     *jmax  = cp9b->jmax;
-  int    **hdmin = cp9b->hdmin;
-  int    **hdmax = cp9b->hdmax;
-
-  /* Allocations and initializations
-   */
-  bsc = -INFTY;                 /* the summed prob of all local begins */
-  W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
-				/* if caller didn't give us a deck pool, make one */
-  esc_vAA = cm->ioesc;          /* a ptr to the optimized emission scores */
-  cm_ihb_mx_GrowTo(mx, errbuf, cp9b, W);   /* grow the matrix based on the current sequence and bands */
-
-  /* initialize all cells of the matrix to -INFTY */
-  esl_vec_ISet(beta[0][0], mx->ncells_valid, -INFTY);
-  /* now set beta[0][j0][W] to 0., all parses must end there */
-  jp_v = j0 - jmin[0];
-  Wp = W - hdmin[0][jp_v];
-  assert(W >= hdmin[0][jp_v]);
-  assert(W <= hdmax[0][jp_v]);
-  beta[0][jp_v][Wp] = 0.;
-
-  /* Initialize the EL deck at M, if we're doing local alignment w.r.t. ends.
-   * EL deck has no bands as currently implemented. Set all cells to -INFTY;
-   */
-  beta_el = NULL;
-  if (cm->flags & CMH_LOCAL_END) {
-    beta_el = Ialloc_vjd_deck(W, i0, j0);
-    for (jp = 0; jp <= W; jp++) {
-      j = i0-1+jp;
-      for (d = 0; d <= jp; d++) beta_el[j][d] = -INFTY;
-    }
-    /* We don't have to worry about vroot -> EL transitions the way 
-     * smallcyk.c::outside() does, because vroot = 0.
-     */
-  }
-  /* assign the ptr for EL in our DP matrix to the EL deck, it should be NULL */
-  assert(beta[cm->M] == NULL);
-  beta[cm->M] = beta_el;
-  /* If we can do a local begin into v, overwrite -INFY with the local begin score. 
-   * By definition, beta[0][j0][W] == 0.
-   */ 
-  if (cm->flags & CMH_LOCAL_BEGIN) {
-    for (v = 1; v < cm->M; v++) {
-      if(cm->ibeginsc[v] != -INFTY) { 
-	if((j0 >= jmin[v]) && (j0 <= jmax[v])) {
-	  jp_v = j0 - jmin[v];
-	  if((W >= hdmin[v][jp_v]) && W <= hdmax[v][jp_v]) {
-	    Wp = W - hdmin[v][jp_v];
-	    beta[v][jp_v][Wp] = cm->ibeginsc[v];
-	  }
-	}
-      }
-    }
-  }
-  /* done allocation/initialization */
-
-  /* Recursion: main loop down through the decks */
-  for (v = 1; v < cm->M; v++) {
-    if (cm->stid[v] == BEGL_S) { /* BEGL_S */
-      y = cm->plast[v];	/* the parent bifurcation    */
-      z = cm->cnum[y];	/* the other (right) S state */
-      for (j = jmax[v]; j >= jmin[v]; j--) {
-	jp_v = j - jmin[v];
-	jp_y = j - jmin[y];
-	jp_z = j - jmin[z];
-	i = j-d+1;
-	for (d = hdmax[v][jp_v]; d >= hdmin[v][jp_v]; d--) {
-	  dp_v = d - hdmin[v][jp_v];
-	  /* Find the first k value that implies a valid cell in the y and z decks.
-	   * This k must satisfy the following 8 inequalities (some may be redundant):
-	   * NOTE: these are different from those in Inside() (for one thing, v and y
-	   *       (BEGL_S and BIF_B here respectively) are switched relative to Inside.
-	   *
-	   * (1) k <= jmax[y] - j;
-	   * (2) k >= jmin[y] - j;
-	   * (3) k <= jmax[z] - j;
-	   * (4) k >= jmin[z] - j;
-	   *     1 and 2 guarantee (j+k) is within state y's j band
-	   *     3 and 4 guarantee (j+k) is within state z's j band
-	   *
-	   * (5) k >= hdmin[y][j-jmin[y]+k] - d;
-	   * (6) k <= hdmax[y][j-jmin[y]+k] - d; 
-	   *     5 and 6 guarantee k+d is within y's j=(j+k), d band
-	   *
-	   * (7) k >= hdmin[z][j-jmin[z]+k];
-	   * (8) k <= hdmax[z][j-jmin[z]+k]; 
-	   *     5 and 6 guarantee k is within state z's j=(j+k) d band
-	   */
-	  kmin = ESL_MAX(jmin[y], jmin[z]) - j;
-	  kmax = ESL_MIN(jmax[y], jmax[z]) - j;
-	  /* kmin and kmax satisfy inequalities (1-4) */
-	  /* RHS of inequalities 5-8 are dependent on k, so we check
-	   * for these within the next for loop. */
-	  for(k = kmin; k <= kmax; k++) {
-	    if(k < (hdmin[y][jp_y+k] - d) || k > (hdmax[y][jp_y+k] - d)) continue; 
-	    /* above line continues if inequality 5 or 6 is violated */
-	    if(k < (hdmin[z][jp_z+k])     || k > (hdmax[z][jp_z+k]))     continue; 
-	    /* above line continues if inequality 7 or 8 is violated */
-		  
-	    /* if we get here for current k, all 8 inequalities have been satisified 
-	     * so we know the cells corresponding to the platonic 
-	     * matrix cells alpha[v][j][d], alpha[y][j+k][d+k], and
-	     * alpha[z][j+k][k] are all within the bands. These
-	     * cells correspond to beta[v][jp_v][dp_v], 
-	     * beta[y][jp_y+k][d-hdmin[y][jp_y+k]+k],
-	     * and alpha[z][jp_z][k-hdmin[z][jp_z+k]];
-	     */
-	    kp_z = k-hdmin[z][jp_z+k];
-	    dp_y = d-hdmin[y][jp_y+k];
-	    beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y+k][dp_y+k] 
-								+ alpha[z][jp_z+k][kp_z]));
-	  }
-	}
-      }
-    } /* end of 'if (cm->stid[v] == BEGL_S */
-    else if (cm->stid[v] == BEGR_S) {
-      y = cm->plast[v];	  /* the parent bifurcation    */
-      z = cm->cfirst[y];  /* the other (left) S state  */
-      jn = ESL_MAX(jmin[v], jmin[y]);
-      jx = ESL_MIN(jmax[v], jmax[y]);
-      for (j = jx; j >= jn; j--) {
-	jp_v = j - jmin[v];
-	jp_y = j - jmin[y];
-	jp_z = j - jmin[z];
-	i = j-d+1;
-
-	dn = ESL_MAX(hdmin[v][jp_v], j-jmax[z]);
-	dx = ESL_MIN(hdmax[v][jp_v], jp_z);
-	/* above makes sure that j,d are valid for state z: (jmin[z] + d) >= j >= (jmax[z] + d) */
-	for (d = dx; d >= dn; d--) {
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
-	  /* Find the first k value that implies a valid cell in the y and z decks.
-	   * This k must satisfy the following 4 inequalities (some may be redundant):
-	   * NOTE: these are different from those in Inside() (for one thing, v and y
-	   *       (BEGR_S and BIF_B here respectively) are switched relative to Inside.
-	   *
-	   * (1) k >= hdmin[y][j-jmin[y]] - d;
-	   * (2) k <= hdmax[y][j-jmin[y]] - d;
-	   *     1 and 2 guarantee (d+k) is within state y's j=(j) d band
-	   *
-	   * (3) k >= hdmin[z][j-jmin[z]-d];
-	   * (4) k <= hdmax[z][j-jmin[z]-d];
-	   *     3 and 4 guarantee k is within z's j=(j-d) d band
-	   *
-	   */
-	  kmin = ESL_MAX((hdmin[y][jp_y]-d), (hdmin[z][jp_z-d]));
-	  kmax = ESL_MIN((hdmax[y][jp_y]-d), (hdmax[z][jp_z-d]));
-	  /* kmin and kmax satisfy inequalities (1-4) */
-	  for(k = kmin; k <= kmax; k++) { 
-	    /* for current k, all 4 inequalities have been satisified 
-	     * so we know the cells corresponding to the platonic 
-	     * matrix cells beta[v][j][d], beta[y][j][d+k], and
-	     * alpha[z][j-d][k] are all within the bands. These
-	     * cells correspond to beta[v][jp_v][dp_v], 
-	     * beta[y][jp_y+k][d-hdmin[y][jp_y]+k],
-	     * and alpha[z][jp_z-d][k-hdmin[z][jp_z-d]];
-	     */
-	    kp_z = k-hdmin[z][jp_z-d];
-	    dp_y = d-hdmin[y][jp_y];
-	    beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y+k] 
-								+ alpha[z][jp_z-d][kp_z]));
-	  }
-	}
-      }
-    } /* end of 'else if (cm->stid[v] == BEGR_S */
-    else if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) { 
-      /* ILs and IRs can self transit, this means that beta[v][j][d] must be fully calculated
-       * before beta[v][j][d+1] can be started to be calculated, forcing the following nesting order:
-       * for j { for d { for y { } } } 
-       * for non-self-transitioners, we can do a more efficient nesting order (see below)  
-       */
-      for (j = jmax[v]; j >= jmin[v]; j--) {
-	jp_v = j - jmin[v];
-	for (d = hdmax[v][jp_v]; d >= hdmin[v][jp_v]; d--) {
-	  i = j-d+1;
-	  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
-	  
-	  for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
-	    voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
-	    
-	    /* Note: this looks like it can be optimized, I tried but my 'optimization' slowed the code, so I reverted [EPN] */
-	    switch(cm->sttype[y]) {
-	    case MP_st: 
-	      if (j == j0 || d == j) continue; /* boundary condition */
-	      if ((j+1) < jmin[y] || (j+1) > jmax[y]) continue; /* enforces j is valid for state y */
-	      jp_y = j - jmin[y];
-	      if ((d+2) < hdmin[y][(jp_y+1)] || (d+2) > hdmax[y][(jp_y+1)]) continue; /* enforces d is valid for state y */
-	      /* if we get here alpha[y][jp_y+1][dp_y+2] is a valid alpha cell
-	       * corresponding to alpha[y][j+1][d+2] in the platonic matrix.
-		   */
-	      dp_y = d - hdmin[y][jp_y+1];  /* d index for state y */
-	      iescore = esc_vAA[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
-	      beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+2] 
-								  + cm->itsc[y][voffset] + iescore));
-	      break;
-	      
-	    case ML_st:
-	    case IL_st: 
-	      if (d == j) continue;	/* boundary condition (note when j=0, d=0)*/
-	      if (j < jmin[y] || j > jmax[y]) continue; /* enforces j is valid for state y */
-	      jp_y = j - jmin[y];
-	      if ((d+1) < hdmin[y][jp_y] || (d+1) > hdmax[y][jp_y]) continue; /* enforces d is valid for state y */
-	      /* if we get here alpha[y][jp_y][dp_y+1] is a valid alpha cell
-	       * corresponding to alpha[y][j][d+1] in the platonic matrix.
-	       */
-	      dp_y = d - hdmin[y][jp_y];  /* d index for state y */
-	      iescore = esc_vAA[y][dsq[i-1]];
-	      beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y+1] 
-								  + cm->itsc[y][voffset] + iescore));
-	      break;
-	      
-	    case MR_st:
-	    case IR_st:
-	      if (j == j0) continue;
-	      if ((j+1) < jmin[y] || (j+1) > jmax[y]) continue; /* enforces j is valid for state y */
-	      jp_y = j - jmin[y];
-	      if ((d+1) < hdmin[y][(jp_y+1)] || (d+1) > hdmax[y][(jp_y+1)]) continue; /* enforces d is valid for state y */
-	      /* if we get here alpha[y][jp_y+1][dp_y+1] is a valid alpha cell
-	       * corresponding to alpha[y][j+1][d+1] in the platonic matrix.
-	       */
-	      dp_y = d - hdmin[y][(jp_y+1)];  /* d index for state y */
-	      iescore = esc_vAA[y][dsq[j+1]];
-	      /*printf("j: %d | jmin[y]: %d | jmax[y]: %d | jp_v: %d | dp_v: %d | jp_y: %d | dp_y: %d\n", j, jmin[y], jmax[y], jp_v, dp_v, jp_y, dp_y);*/
-	      beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y+1][dp_y+1] 
-								  + cm->itsc[y][voffset] + iescore));
-	      break;
-	      
-	    case S_st:
-	    case E_st:
-	    case D_st:
-	      if (j < jmin[y] || j > jmax[y]) continue; /* enforces j is valid for state y */
-	      jp_y = j - jmin[y];
-	      if (d < hdmin[y][jp_y] || d > hdmax[y][jp_y]) continue; /* enforces d is valid for state y */
-	      /* if we get here alpha[y][jp_y][dp_y] is a valid alpha cell
-	       * corresponding to alpha[y][j][d] in the platonic matrix.
-	       */
-	      dp_y = d - hdmin[y][jp_y];  /* d index for state y */
-	      beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y][dp_y] + cm->itsc[y][voffset])); 
-	      break;
-	    } /* end of switch(cm->sttype[y] */  
-	  } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
-	  if (beta[v][jp_v][dp_v] < -INFTY) beta[v][jp_v][dp_v] = -INFTY;
-	} /* ends loop over d. We know all beta[v][j][d] in this row j and state v */
-      } /* end loop over jp. We know beta for this whole state */
-    } /* end of 'else if cm->sttype[v] == IL_st || cm->sttype[v] == IR_st' */
-    else { /* state v is not BEGL_S, BEGL_R IL nor IR (must be ML, MP, MR, D, S or E */
-      /* ML, MP, MR, D, S, E states cannot self transit, this means that all cells
-       * in beta[v] are independent of each other, only depending on beta[y] for previously calc'ed y.
-       * We can do the for loops in any nesting order, this implementation does what I think is most efficient:
-       * for y { for j { for d { } } } 
-       */
-      for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
-	voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
-	sdr = StateRightDelta(cm->sttype[y]);
-	sd  = StateDelta(cm->sttype[y]);
-	emitmode = Emitmode(cm->sttype[y]);
-	/* determine min j (jn) and max j (jx) that are valid for v and y */
-	jn = ESL_MAX(jmin[v], ESL_MIN(jmin[y] - sdr, jmax[y]));
-	jx = ESL_MIN(jmax[v], ESL_MAX(jmax[y] - sdr, jmin[y]));
-	jx = ESL_MIN(jx, jmax[y] - sdr);
-	for (j = jx; j >= jn; j--) {
-	  jp_v = j - jmin[v];
-	  jp_y = j - jmin[y];
-	  ESL_DASSERT1((j+sdr >= jmin[y] && j+sdr <= jmax[y]));
-	  
-	  /* determine min d (dn) and max d (dx) that are valid for v and y and j */
-	  dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y + sdr] - sd);
-	  dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y + sdr] - sd);
-	  dp_v = dx - hdmin[v][jp_v];
-	  dp_y = dx - hdmin[y][jp_y + sdr];
-	  i    = j-dx+1;
-	  
-	  /* for each emit mode, update beta[v][jp_v][dp_v] for all valid d = dp_v */
-	  switch(emitmode) { 
-	  case EMITPAIR:  /* MP_st */
-	    for (d = dx; d >= dn; d--, dp_v--, dp_y--, i++) { 
-	      ESL_DASSERT1((  d       >= hdmin[v][jp_v]        &&   d       <= hdmax[v][jp_v]));
-	      ESL_DASSERT1((((d + sd) >= hdmin[y][jp_y + sdr]) && ((d + sd) <= hdmax[y][jp_y + sdr])));
-	      iescore = esc_vAA[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
-	      beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y + sdr][dp_y + sd] 
-								  + cm->itsc[y][voffset] + iescore));
-	    }
-	    break;
-	  case EMITLEFT:  /* ML_st, IL_st */
-	    for (d = dx; d >= dn; d--, dp_v--, dp_y--, i++) { 
-	      ESL_DASSERT1((  d       >= hdmin[v][jp_v]        &&   d       <= hdmax[v][jp_v]));
-	      ESL_DASSERT1((((d + sd) >= hdmin[y][jp_y + sdr]) && ((d + sd) <= hdmax[y][jp_y + sdr])));
-	      iescore = esc_vAA[y][dsq[i-1]];
-	      beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y + sdr][dp_y + sd] 
-								  + cm->itsc[y][voffset] + iescore));
-	    }
-	    break;
-	  case EMITRIGHT:  /* MR_st, IR_st */
-	    iescore = esc_vAA[y][dsq[j+1]]; /* not dependent on i */
-	    for (d = dx; d >= dn; d--, dp_v--, dp_y--) { 
-	      ESL_DASSERT1((  d       >= hdmin[v][jp_v]        &&   d       <= hdmax[v][jp_v]));
-	      ESL_DASSERT1((((d + sd) >= hdmin[y][jp_y + sdr]) && ((d + sd) <= hdmax[y][jp_y + sdr])));
-	      beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y + sdr][dp_y + sd] 
-								  + cm->itsc[y][voffset] + iescore));
-	    }
-	    break;
-	  case EMITNONE:  /* D_st, S_st, E_st*/
-	    for (d = dx; d >= dn; d--, dp_v--, dp_y--) { 
-	      ESL_DASSERT1((  d       >= hdmin[v][jp_v]        &&   d       <= hdmax[v][jp_v]));
-	      ESL_DASSERT1((((d + sd) >= hdmin[y][jp_y + sdr]) && ((d + sd) <= hdmax[y][jp_y + sdr])));
-	      beta[v][jp_v][dp_v] = ILogsum(beta[v][jp_v][dp_v], (beta[y][jp_y + sdr][dp_y + sd] 
-								  + cm->itsc[y][voffset]));
-	    }
-	    break;
-	  } /* end of switch(emitmode) */
-	} /* end of for j = jx; j >= jn; j-- */
-      } /* end of for y = plast[v]... */
-    } /* ends else entered for non-BEGL_S/BEGR_S/IL/IR states*/	
-    /* we're done calculating deck v for everything but local begins */
-
-    /* deal with local alignment end transitions v->EL (EL = deck at M.) */
-    if (cm->iendsc[v] != -INFTY) {
-      sdr = StateRightDelta(cm->sttype[v]); /* note sdr is for state v */
-      sd  = StateDelta(cm->sttype[v]);      /* note sd  is for state v */
-      emitmode = Emitmode(cm->sttype[v]);   /* note emitmode is for state v */
-
-      /* determine min j (jn) and max j (jx) that are valid for v and y */
-      jn = ESL_MIN(jmin[v] - sdr, jmax[v]);
-      jx = ESL_MAX(jmax[v] - sdr, jmin[v]);
-      for (j = jx; j >= jn; j--) {
-	jp_v = j - jmin[v];
-	ESL_DASSERT1((j+sdr >= jmin[y] && j+sdr <= jmax[v]));
-	  
-	/* determine min d (dn) and max d (dx) that are valid for v and j */
-	dn   = hdmin[v][jp_v + sdr] - sd;
-	dx   = hdmax[v][jp_v + sdr] - sd;
-	dp_v = dx - hdmin[v][jp_v];
-	i    = j-dx+1;
-
-	  /* for each emit mode, update beta[v][jp_v][dp_v] for all valid d = dp_v */
-	switch(emitmode) { 
-	case EMITPAIR:  /* MP_st */
-	  for (d = dx; d >= dn; d--, dp_v--, i++) { 
-	    ESL_DASSERT1((((d + sd) >= hdmin[v][jp_v + sdr]) && ((d + sd) <= hdmax[v][jp_v + sdr])));
-	    iescore = esc_vAA[v][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
-	    beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[v][jp_v+sdr][dp_v+sd] + cm->iendsc[v] 
-							    + iescore));
-	  }
-	  break;
-
-	case EMITLEFT:  /* ML_st, IL_st */
-	  for (d = dx; d >= dn; d--, dp_v--, i++) { 
-	    ESL_DASSERT1((((d + sd) >= hdmin[v][jp_v + sdr]) && ((d + sd) <= hdmax[v][jp_v + sdr])));
-	    iescore = esc_vAA[v][dsq[i-1]];
-	    beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[v][jp_v + sdr][dp_y + sd] + cm->iendsc[v] 
-							    + iescore));
-	  }
-	  break;
-
-	case EMITRIGHT:  /* MR_st, IR_st */
-	  iescore = esc_vAA[v][dsq[j+1]]; /* not dependent on i */
-	  for (d = dx; d >= dn; d--, dp_v--) { 
-	    ESL_DASSERT1((((d + sd) >= hdmin[v][jp_v + sdr]) && ((d + sd) <= hdmax[v][jp_v + sdr])));
-	    beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[v][jp_v + sdr][dp_y + sd] + cm->iendsc[v] 
-							    + iescore));
-	  }
-	  break;
-
-	case EMITNONE:  /* D_st, S_st, E_st*/
-	  for (d = dx; d >= dn; d--, dp_v--) { 
-	    ESL_DASSERT1((((d + sd) >= hdmin[v][jp_v + sdr]) && ((d + sd) <= hdmax[v][jp_v + sdr])));
-	    beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[v][jp_v + sdr][dp_y + sd] + cm->iendsc[v]));
-	    break;
-	  }
-	} /* end of switch over emitmodes */
-      } /* end of loop over j */
-    } /* end conditional section for dealing w/ v->EL local end transitions */
-  } /* end loop over decks v. */
-
-  /*FILE *fp; fp = fopen("out.mx", "w"); cm_ihb_mx_Dump(fp, mx); fclose(fp);*/
-
-  /* Deal with last step needed for local alignment 
-   * w.r.t. ends: left-emitting, EL->EL transitions. (EL = deck at M.)
-   */
-  if (cm->flags & CMH_LOCAL_END) {
-    for (jp = W; jp > 0; jp--) { /* careful w/ boundary here */
-      j = i0-1+jp;
-      for (d = jp-1; d >= 0; d--) /* careful w/ boundary here */
-	beta[cm->M][j][d] = ILogsum(beta[cm->M][j][d], (beta[cm->M][j][d+1]
-							+ cm->iel_selfsc));
-    }
-  }
-
-  Wp = W - hdmin[0][j0-jmin[0]];
-  if(do_check && (!(cm->flags & CMH_LOCAL_END))) {
-    /* Local ends make the following test invalid because it is not true that
-     * exactly 1 state in each node's split set must be visited in each parse. 
-     */
-    
-    /* Determine P(S|M) / P(S|R) (probability of the sequence given the model) 
-     * using both the Outside (beta) and Inside (alpha) matrices,
-     * and ensure they're consistent with P(S|M) / P(S|R) from the Inside calculation.
-     * For all v in each split set: Sum_v [ Sum_i,j ( alpha[v][i][j] * beta[v][i][j] ) ] 
-     *                                                = P(S|M) / P(S|R)  
-     * in v,j,d coordinates this is:
-     * For all v in each split set: Sum_v [ Sum_j,(d<=j) ( alpha[v][j][d] * beta[v][j][d] ) ]
-     *                                                = P(S|M) / P(S|R)
-     */
-    
-    for(n = 0; n < cm->nodes; n++) {
-      isc = -INFTY;
-      num_split_states = SplitStatesInNode(cm->ndtype[n]);
-      for(v = cm->nodemap[n]; v < cm->nodemap[n] + num_split_states; v++) { 
-	for (j = jmin[v]; j <= jmax[v]; j++) {
-	  jp_v = j - jmin[v];
-	  for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
-	    dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
-	    /*printf("node %d | adding alpha beta: v: %d | jp_v: %d | dp_v: %d| j: %d | d: %d\n", n, v, jp_v, dp_v, j, d);
-	      printf("\talpha: %f | beta: %f\n", alpha[v][jp_v][dp_v], beta[v][jp_v][dp_v]);*/
-	    isc = ILogsum(isc, (alpha[v][jp_v][dp_v] + beta[v][jp_v][dp_v]));
-	  }
-	}
-      }
-      fsc = Scorify(isc);
-      /*printf("checking node: %d | sc: %.6f\n", n, fsc);*/
-      diff = fsc - (Scorify(alpha[0][j0-jmin[0]][Wp]));
-      if(diff > 0.1 || diff < -0.1) { /* we need to allow .1 bit difference slack b/c of precision
-				       * with int log odds scores, the float version of this function is more stringent */
-	fail_flag = TRUE;
-	printf("ERROR: node %d P(S|M): %.5f inconsistent with Inside P(S|M): %.5f (diff: %.5f)\n", 
-	       n, fsc, Scorify(alpha[0][(j0-jmin[0])][Wp]), diff);
-      }
-    }
-  }
-
-  /* If not in local mode, we can calculate P(S|M) / P(S|R) given only the 
-   * beta matrix as follows:
-   * 
-   * IF local ends are off, we know each parse MUST visit each END_E state,
-   * we pick final END_E state state cm->M-1 (though any END_E could be used here):
-   *
-   * Sum_j=0 to W (alpha[M-1][j][0] * beta[M-1][j][0]) = P(S|M) / P(S|R)
-   *
-   * Note: alpha[M-1][j][0] = 0.0 for all j 
-   *       because all parse subtrees rooted at an END_E must have d=0, (2^0 = 1.0)
-   * therefore: 
-   * Sum_j=0 to W (beta[M-1][j][0]) = P(S|M) / P(S|R)
-   * 
-   * *** If local ends are on, each parse MUST visit either each END_E state with d=0
-   * or the EL state but d can vary, so we can't use this test (believe me I tried
-   * to get a similar test working, but I'm convinced you need alpha to get P(S|M)
-   * in local mode).
-   */
-  if(!(cm->flags & CMH_LOCAL_END)) { 
-    ireturn_sc = -INFTY;
-    v = cm->M-1;
-    for (j = jmin[v]; j <= jmax[v]; j++) {
-      jp_v = j - jmin[v];
-      assert(hdmin[v][jp_v] == 0);
-      /* printf("\talpha[%3d][%3d][%3d]: %5.2f | beta[%3d][%3d][%3d]: %5.2f\n", (cm->M-1), (j), 0, alpha[(cm->M-1)][j][0], (cm->M-1), (j), 0, beta[(cm->M-1)][j][0]);*/
-      ireturn_sc = ILogsum(ireturn_sc, (beta[v][jp_v][0]));
-    }
-    freturn_sc = Scorify(ireturn_sc);
-  }
-  else { /* return_sc = P(S|M) / P(S|R) from Inside() */
-    freturn_sc = Scorify(alpha[0][(j0-jmin[0])][Wp]);
-  }
-
-  if(fail_flag) cm_Fail("Not all nodes passed posterior check.");
-
-  if(!(cm->flags & CMH_LOCAL_END))
-    ESL_DPRINTF1(("\tFast_IOutside_b_jd_me() sc : %f\n", freturn_sc));
-  else
-    ESL_DPRINTF1(("\tFast_IOutside_b_jd_me() sc : %f (LOCAL mode; sc is from Inside)\n", freturn_sc));
-
-  return freturn_sc;
-}
-#endif 

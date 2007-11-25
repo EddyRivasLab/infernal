@@ -4297,7 +4297,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
 
   /* Allocations and initializations  */
   /* grow the matrix based on the current sequence and bands */
-  cm_hb_mx_GrowTo(mx, NULL, cp9b, (j0-i0+1));
+  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, (j0-i0+1))) != eslOK) return status;
 
   /* determine W, the max size of hit that our bands will allow */
   W = 0;
@@ -4711,7 +4711,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
 
   /* Allocations and initializations  */
   /* grow the matrix based on the current sequence and bands */
-  cm_hb_mx_GrowTo(mx, NULL, cp9b, (j0-i0+1));
+  if((status =  cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, (j0-i0+1))) != eslOK) return status;
 
   /* determine W, the max size of hit that our bands will allow */
   W = 0;

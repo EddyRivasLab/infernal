@@ -49,33 +49,30 @@ cm_hb_mx_Create(int M)
   mx->cp9b   = NULL;
 
   /* level 2: deck (state) pointers, 0.1..M, go all the way to M
-   *          for deck M: only allocate the pointer, leave it pointing to NULL,
-   *          deck M is special for 2 reasons: 
-   *            1) only outside uses it, but it allocates it itself (cyk, inside don't use it)
-   *            2) there are no bands on state M, the EL state
+   *          remember deck M is special, as it has no bands, we allocate
+   *          it only if nec (if local ends are on) in cm_hb_mx_GrowTo()
    */
   ESL_ALLOC(mx->dp,  sizeof(float **) * (M+1));
-  mx->dp[M] = NULL;
  
   /* level 3: dp cell memory, when creating only allocate 1 cells per state, for j = 0, d = 0 */
   int allocL = 1;
   int allocW = 1;
-  ESL_ALLOC(mx->dp_mem,  sizeof(float) * (M) * (allocL) * (allocW));
-  ESL_ALLOC(mx->nrowsA, sizeof(int)      * (M));
-  for (v = 0; v < M; v++) {
+  ESL_ALLOC(mx->dp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
+  ESL_ALLOC(mx->nrowsA, sizeof(int)      * (M+1));
+  for (v = 0; v <= M; v++) {
     ESL_ALLOC(mx->dp[v], sizeof(float *) * (allocL));
     mx->nrowsA[v] = allocL;
     mx->dp[v][0]  = mx->dp_mem + v * (allocL) * (allocW);
   }
   mx->M            = M;
-  mx->ncells_alloc = M*(allocL)*(allocW);
+  mx->ncells_alloc = (M+1)*(allocL)*(allocW);
   mx->ncells_valid = 0;
   mx->L            = allocL; /* allocL = 1 */
 
   mx->size_Mb = 
-    (float) mx->M * (float) sizeof(int *) +    /* nrowsA ptrs */
-    (float) mx->M * (float) sizeof(float **) + /* mx->dp[] ptrs */
-    (float) mx->M * (float) sizeof(float *) +  /* mx->dp[v][] ptrs */
+    (float) (mx->M+1) * (float) sizeof(int *) +    /* nrowsA ptrs */
+    (float) (mx->M+1) * (float) sizeof(float **) + /* mx->dp[] ptrs */
+    (float) (mx->M+1) * (float) sizeof(float *) +  /* mx->dp[v][] ptrs */
     (float) mx->ncells_alloc * (float) sizeof(float); /* mx->dp_mem */
   mx->size_Mb *= 0.000001; /* convert to Mb */
 
@@ -95,11 +92,13 @@ cm_hb_mx_Create(int M)
  *            the CP9Bands_t object passed in, and reallocates if 
  *            necessary.
  *            
- *            This function does not respect the configured
- *            <RAMLIMIT>; it will allocate what it's told to
- *            allocate. 
+ *            If local ends are on (cm->flags & CMH_LOCAL_END), allocates
+ *            a full non-banded EL deck.
  *
- * Args:      mx     - the matrix to grow
+ *            Checks to make sure desired matrix isn't too big (see throws).
+ *
+ * Args:      cm     - the CM the matrix is for
+ *            mx     - the matrix to grow
  *            errbuf - char buffer for reporting errors
  *            cp9b   - the bands for the current target sequence
  *            L      - the length of the current target sequence we're aligning
@@ -115,15 +114,17 @@ cm_hb_mx_Create(int M)
  *            <eslEMEM> on memory allocation error.
  */
 int
-cm_hb_mx_GrowTo(CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L)
+cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L)
 {
   int     status;
   void   *p;
-  int     v, jp, j;
+  int     v, jp;
   int     cur_size = 0;
   size_t  ncells;
   int     jbw;
   float   Mb_needed;
+  int     have_el;
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
 
   /* contract check, number of states (M) is something we don't change
    * so check this matrix has same number of 1st dim state ptrs that
@@ -132,7 +133,7 @@ cm_hb_mx_GrowTo(CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L)
   if(cp9b->cm_M != mx->M) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_mx_GrowTo() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
   
   ncells = 0;
-  Mb_needed = ((float) (sizeof(int *)) * ((float) mx->M)) + /* nrowsA ptrs */
+  Mb_needed = ((float) (sizeof(int *)) * ((float) mx->M + 1)) + /* nrowsA ptrs */
     (float) (sizeof(float **)) * (float) (mx->M); /* mx->dp[] ptrs */
   for(v = 0; v < mx->M; v++) { 
     jbw = (cp9b->jmax[v] - cp9b->jmin[v]); 
@@ -140,6 +141,8 @@ cm_hb_mx_GrowTo(CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L)
     for(jp = 0; jp <= jbw; jp++) 
       ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
   }
+  if(have_el) ncells += (int) ((L+2) * (L+1) * 0.5); /* space for EL deck */
+
   Mb_needed += ESL_MAX((float) (sizeof(float) * mx->ncells_alloc), (float) (sizeof(float) * ncells)); /* mx->dp_mem */
   Mb_needed *= 0.000001;  /* convert to Mb */
   ESL_DPRINTF1(("HMM banded requested mx->size_Mb: %.2f\n", Mb_needed));
@@ -162,6 +165,14 @@ cm_hb_mx_GrowTo(CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L)
       mx->nrowsA[v] = jbw;
     }
   }
+  if(have_el) {
+    jbw = L+1;
+    if(jbw > mx->nrowsA[mx->M]) {
+      ESL_RALLOC(mx->dp[mx->M], p, sizeof(float *) * jbw);
+      mx->nrowsA[mx->M] = jbw;
+    }
+  }
+
   /* reset the pointers, we keep a tally of cur_size as we go,
    * we could precalc it and store it for each v,j, but that 
    * would be wasteful, as we'll only use the matrix configured
@@ -172,25 +183,19 @@ cm_hb_mx_GrowTo(CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L)
     /* mx->dp[v][0] = mx->dp_mem + cur_size; unnec, right? */
     for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
       mx->dp[v][jp] = mx->dp_mem + cur_size;
-      cur_size    += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+      cur_size     += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
     }
   }
-  /* printf("ncells:   %d\n", ncells);
-     printf("cur_size: %d\n", cur_size);*/
+  if(have_el) {
+    for(jp = 0; jp <= L; jp++) { 
+      mx->dp[mx->M][jp] = mx->dp_mem + cur_size;
+      cur_size     += jp + 1;
+    }      
+  }
+  ESL_DASSERT1((cur_size == mx->ncells_valid));
 
-  mx->dp[mx->M] = NULL;
   mx->cp9b = cp9b; /* just a reference */
   
-  /* finally, free the EL deck if it exists, this is the only reason
-   * we keep track of mx->L, so we can free this if nec, 
-   * the cm->M EL deck will be alloc'ed only if needed in FastOutsideAlignHB(): */
-  if (mx->dp[mx->M] != NULL) { 
-    for(j = 0; j <= mx->L; j++) { 
-      if(mx->dp[mx->M][j] != NULL) free(mx->dp[mx->M][j]);
-    }
-    free(mx->dp[mx->M]);
-    mx->dp[mx->M] = NULL;
-  }	 
   /* now update L and size_Mb */
   mx->L       = L;    /* length of current seq we're valid for */
   mx->size_Mb = Mb_needed;
@@ -213,19 +218,12 @@ void
 cm_hb_mx_Destroy(CM_HB_MX *mx)
 {
   if (mx == NULL) return;
-  int v, j;
+  int v;
 
   if (mx->dp      != NULL) { 
     for (v = 0; v <= mx->M; v++) 
       if(mx->dp[v] != NULL) free(mx->dp[v]);  
   }
-  /* free the mx->M deck if it exists */
-  if (mx->dp[mx->M] != NULL) { 
-    for(j = 0; j <= mx->L; j++) { 
-      if(mx->dp[mx->M][j] != NULL) free(mx->dp[mx->M][j]);
-    }
-    free(mx->dp[mx->M]);
-  }	 
   free(mx->dp);
 
   if (mx->nrowsA  != NULL)  free(mx->nrowsA);
@@ -253,6 +251,16 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx)
       j = jp + mx->cp9b->jmin[v];
       for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
 	d = dp + mx->cp9b->hdmin[v][jp];
+	fprintf(ofp, "dp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->dp[v][jp][dp]);
+      }
+      fprintf(ofp, "\n");
+    }
+    fprintf(ofp, "\n\n");
+  }
+  /* print EL deck, if it's valid */
+  if(mx->nrowsA[mx->M] == (mx->L+1)) {
+    for(j = 0; j <= mx->L; j++) {
+      for(d = 0; d <= jp; d++) {
 	fprintf(ofp, "dp[v:%5d][j:%5d][d:%5d] %8.4f\n", v, j, d, mx->dp[v][jp][dp]);
       }
       fprintf(ofp, "\n");
