@@ -1189,11 +1189,9 @@ ij2d_bands(CM_t *cm, int W, int *imin, int *imax, int *jmin, int *jmax,
 	j = j0+jmin[v];
 	hdmin[v][j0] = ESL_MAX((j - imax[v] + 1), sd);
 	hdmax[v][j0] = ESL_MAX((j - imin[v] + 1), sd);
-	if(v == 864)
-	  printf("hd[%d][j=%d]: min: %d | max: %d\n", v, (j0+jmin[v]), hdmin[v][j0], hdmax[v][j0]);
+	/*printf("hd[%d][j=%d]: min: %d | max: %d\n", v, (j0+jmin[v]), hdmin[v][j0], hdmax[v][j0]);*/
       }
     }
-    if(v >= 864) printf("v: %d hdmax[864][15]: %d\n", v, hdmax[864][15]);
   }
 }
 

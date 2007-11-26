@@ -372,9 +372,15 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 	yoffset = y - cm->cfirst[v];
 	tsc = tsc_v[yoffset];
 	
-	jn = ESL_MAX(jmin[v], ESL_MIN(jmin[y] + sdr, jmax[y]));
-	jx = ESL_MIN(jmax[v], ESL_MAX(jmax[y] + sdr, jmin[y]));
-	jx = ESL_MIN(jx, jmax[y] + sdr);
+	/* EPN, Mon Nov 26 14:48:07 2007
+	 * jn = ESL_MAX(jmin[v], ESL_MIN(jmin[y] + sdr, jmax[y]));
+	 * jn = ESL_MAX(jn, jmin[y] + sdr);
+	 * jx = ESL_MIN(jmax[v], ESL_MAX(jmax[y] + sdr, jmin[y]));
+	 * jx = ESL_MIN(jx, jmax[y] + sdr);
+	 */
+	jn = ESL_MAX(jmin[v], jmin[y]+sdr);
+	jx = ESL_MIN(jmax[v], jmax[y]+sdr);
+
 	jpn = jn - jmin[v];
 	jpx = jx - jmin[v];
 	jp_y_sdr = jn - jmin[y] - sdr;
@@ -1647,9 +1653,8 @@ FastInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX
 	yoffset = y - cm->cfirst[v];
 	tsc = tsc_v[yoffset];
 	
-	jn = ESL_MAX(jmin[v], ESL_MIN(jmin[y] + sdr, jmax[y]));
-	jx = ESL_MIN(jmax[v], ESL_MAX(jmax[y] + sdr, jmin[y]));
-	jx = ESL_MIN(jx, jmax[y] + sdr);
+	jn = ESL_MAX(jmin[v], jmin[y]+sdr);
+	jx = ESL_MIN(jmax[v], jmax[y]+sdr);
 	jpn = jn - jmin[v];
 	jpx = jx - jmin[v];
 	jp_y_sdr = jn - jmin[y] - sdr;
@@ -2416,9 +2421,8 @@ FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_M
 	sd  = StateDelta(cm->sttype[y]);
 	emitmode = Emitmode(cm->sttype[y]);
 	/* determine min j (jn) and max j (jx) that are valid for v and y */
-	jn = ESL_MAX(jmin[v], ESL_MIN(jmin[y] - sdr, jmax[y]));
-	jx = ESL_MIN(jmax[v], ESL_MAX(jmax[y] - sdr, jmin[y]));
-	jx = ESL_MIN(jx, jmax[y] - sdr);
+	jn = ESL_MAX(jmin[v], jmin[y]-sdr);
+	jx = ESL_MIN(jmax[v], jmax[y]-sdr);
 	for (j = jx; j >= jn; j--) {
 	  ESL_DASSERT1((j >= i0 && j <= j0));
 	  jp_v = j - jmin[v];
@@ -3360,9 +3364,8 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	yoffset = y - cm->cfirst[v];
 	tsc = tsc_v[yoffset];
 	
-	jn = ESL_MAX(jmin[v], ESL_MIN(jmin[y] + sdr, jmax[y]));
-	jx = ESL_MIN(jmax[v], ESL_MAX(jmax[y] + sdr, jmin[y]));
-	jx = ESL_MIN(jx, jmax[y] + sdr);
+	jn = ESL_MAX(jmin[v], jmin[y]+sdr);
+	jx = ESL_MIN(jmax[v], jmax[y]+sdr);
 	jpn = jn - jmin[v];
 	jpx = jx - jmin[v];
 	jp_y_sdr = jn - jmin[y] - sdr;

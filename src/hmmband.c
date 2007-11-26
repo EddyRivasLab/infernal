@@ -117,8 +117,8 @@ AllocCP9Bands(CM_t *cm, struct cplan9_s *hmm)
   ESL_ALLOC(cp9bands->safe_hdmax, sizeof(int)   * cp9bands->cm_M);
   ESL_ALLOC(cp9bands->hdmin,      sizeof(int *) * cp9bands->cm_M);
   ESL_ALLOC(cp9bands->hdmax,      sizeof(int *) * cp9bands->cm_M);
-  cp9bands->hdmin[0] = NULL;
-  cp9bands->hdmax[0] = NULL;
+  cp9bands->hdmin_mem = NULL;
+  cp9bands->hdmax_mem = NULL;
   /* NOTE: cp9bands->hdmin and hdmax are 2D arrays, the ptrs are 
    * alloc'ed here, but the actually memory is alloc'ed by
    * hmmband.c:cp9_Seq2Bands() with a call to hmmband.c:cp9_GrowHDBands(). 
@@ -146,10 +146,10 @@ FreeCP9Bands(CP9Bands_t *cp9bands)
   free(cp9bands->jmax);
   free(cp9bands->safe_hdmin);
   free(cp9bands->safe_hdmax);
-  if(cp9bands->hdmin[0] != NULL)
-    free(cp9bands->hdmin[0]); /* all v were malloc'ed as a block */
-  if(cp9bands->hdmax[0] != NULL) 
-    free(cp9bands->hdmax[0]); /* all v were malloc'ed as a block */
+  if(cp9bands->hdmin_mem != NULL)
+    free(cp9bands->hdmin_mem); /* all v were malloc'ed as a block */
+  if(cp9bands->hdmax_mem != NULL) 
+    free(cp9bands->hdmax_mem); /* all v were malloc'ed as a block */
   free(cp9bands->hdmin);
   free(cp9bands->hdmax);
 
@@ -2233,6 +2233,14 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Map_t *cp9map, int i0, int j0, int *p
     jmax[v] = ESL_MAX(jmax[v], i0);
     jmax[v] = ESL_MIN(jmax[v], j0);
 
+    /* Ensure: jmax[v] - jmin[v] + 1 >= 0 
+     *         imax[v] - imin[v] + 1 >= 0 
+     * jmax[v] - jmin[v] + 1 == 0 means there are no valid j's for state v,
+     * so state v is not allowed to be in the parse, we allow this (maybe we shouldn't)
+     */
+    imin[v] = ESL_MIN(imin[v], imax[v]+1);
+    jmin[v] = ESL_MIN(jmin[v], jmax[v]+1);
+
     ESL_DASSERT1((! ((cm->sttype[v] != E_st) && (imin[v] == -1))));
     ESL_DASSERT1((! ((cm->sttype[v] != E_st) && (imax[v] == -1))));
     ESL_DASSERT1((! ((cm->sttype[v] != E_st) && (jmin[v] == -1))));
@@ -3186,6 +3194,7 @@ cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
   int status;
   int v;
   int cur_size = 0;
+  int jbw;
 
   /* count size we need for hdmin/hdmax given current jmin, jmax */
   cp9b->hd_needed = 0; /* we'll rewrite this */
@@ -3194,18 +3203,20 @@ cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
 
   if(cp9b->hd_alloced < cp9b->hd_needed) {
     void *tmp;
-    if(cp9b->hdmin[0] == NULL) ESL_ALLOC(cp9b->hdmin[0], sizeof(int) * cp9b->hd_needed);
-    else                       ESL_RALLOC(cp9b->hdmin[0], tmp, sizeof(int) * cp9b->hd_needed);
-    if(cp9b->hdmax[0] == NULL) ESL_ALLOC(cp9b->hdmax[0], sizeof(int) * cp9b->hd_needed);
-    else                       ESL_RALLOC(cp9b->hdmax[0], tmp, sizeof(int) * cp9b->hd_needed);
+    if(cp9b->hdmin_mem == NULL) ESL_ALLOC(cp9b->hdmin_mem, sizeof(int) * cp9b->hd_needed);
+    else                        ESL_RALLOC(cp9b->hdmin_mem, tmp, sizeof(int) * cp9b->hd_needed);
+    if(cp9b->hdmax_mem == NULL) ESL_ALLOC(cp9b->hdmax_mem, sizeof(int) * cp9b->hd_needed);
+    else                        ESL_RALLOC(cp9b->hdmax_mem, tmp, sizeof(int) * cp9b->hd_needed);
   }
  
   /* set pointers */
   cur_size = 0;
   for(v = 0; v < cp9b->cm_M; v++) { 
-    cp9b->hdmin[v] = cp9b->hdmin[0] + cur_size;
-    cp9b->hdmax[v] = cp9b->hdmax[0] + cur_size;
-    cur_size += cp9b->jmax[v] - cp9b->jmin[v] + 1;
+    cp9b->hdmin[v] = cp9b->hdmin_mem + cur_size;
+    cp9b->hdmax[v] = cp9b->hdmax_mem + cur_size;
+    jbw = cp9b->jmax[v] - cp9b->jmin[v] + 1;
+    ESL_DASSERT1((jbw >= 0));
+    cur_size += jbw;
   }
   cp9b->hd_alloced = cur_size;
   ESL_DASSERT1((cp9b->hd_alloced == cp9b->hd_needed));

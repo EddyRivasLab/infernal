@@ -787,6 +787,8 @@ typedef struct cp9bands_s {
   int **hdmax;                /* [0..cm_M-1][0..(jmax[v]-jmin[v])] 
 			       * hdmin[v][j0] = last position in band on d for state v, and position
 			       * j = jmin[v] + j0.*/
+  int *hdmin_mem;             /* actual memory for hdmin */
+  int *hdmax_mem;             /* actual memory for hdmax */
   int *safe_hdmin;            /* [0..cm_M-1] safe_hdmin[v] = min_d (hdmin[v][j0]) (over all valid j0) */
   int *safe_hdmax;            /* [0..cm_M-1] safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0) */
 

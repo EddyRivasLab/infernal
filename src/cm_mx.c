@@ -122,7 +122,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L)
   int     cur_size = 0;
   size_t  ncells;
   int     jbw;
-  float   Mb_needed;
+  double  Mb_needed;
   int     have_el;
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;
 
@@ -134,18 +134,18 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L)
   
   ncells = 0;
   Mb_needed = ((float) (sizeof(int *)) * ((float) mx->M + 1)) + /* nrowsA ptrs */
-    (float) (sizeof(float **)) * (float) (mx->M); /* mx->dp[] ptrs */
+    (float) (sizeof(float **)) * (float) (mx->M);               /* mx->dp[] ptrs */
   for(v = 0; v < mx->M; v++) { 
-    jbw = (cp9b->jmax[v] - cp9b->jmin[v]); 
-    Mb_needed += (float) (sizeof(float *) * jbw); /* mx->dp[v][] ptrs */
+    jbw = cp9b->jmax[v] - cp9b->jmin[v]; 
+    Mb_needed += (float) (sizeof(float *) * (jbw+1)); /* mx->dp[v][] ptrs */
     for(jp = 0; jp <= jbw; jp++) 
       ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
   }
   if(have_el) ncells += (int) ((L+2) * (L+1) * 0.5); /* space for EL deck */
 
-  Mb_needed += ESL_MAX((float) (sizeof(float) * mx->ncells_alloc), (float) (sizeof(float) * ncells)); /* mx->dp_mem */
-  Mb_needed *= 0.000001;  /* convert to Mb */
-  ESL_DPRINTF1(("HMM banded requested mx->size_Mb: %.2f\n", Mb_needed));
+  Mb_needed += ESL_MAX(((float) (sizeof(float) * mx->ncells_alloc)), ((float) (sizeof(float) * ncells))); /* mx->dp_mem */
+  Mb_needed *= 0.000001; /* convert to megabytes */
+  ESL_DPRINTF1(("HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > CM_HB_MX_MB_LIMIT) ESL_FAIL(eslERANGE, errbuf, "cm_hb_mx_GrowTo(), requested size of HMM banded DP matrix %.2f Mb > %.2f Mb limit (CM_HB_MX_MB_LIMIT from structs.h).", Mb_needed, (float) CM_HB_MX_MB_LIMIT);
 
   /* must we realloc the full matrix? or can we get away with just
