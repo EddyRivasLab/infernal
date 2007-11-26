@@ -347,7 +347,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   float             *parsesc; /* parsetree scores of each sequence */
 
   /* declare and initialize options */
-  int do_small     = TRUE;    /* TRUE to use D&C small alignment algs */
+  int do_small     = FALSE;   /* TRUE to use D&C small alignment algs */
   int do_local     = FALSE;   /* TRUE to do local alignment */
   int do_qdb       = FALSE;   /* TRUE to do QDB alignment */
   int do_hbanded   = FALSE;   /* TRUE to do HMM banded alignment */
@@ -356,7 +356,6 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   int do_hmmonly   = FALSE;   /* TRUE to align with an HMM only */
   int do_scoreonly = FALSE;   /* TRUE to only calculate the score */
   int do_inside    = FALSE;   /* TRUE to do Inside also */
-  int do_outside   = FALSE;   /* TRUE to do Outside also */
   int do_post      = FALSE;   /* TRUE to calculate posterior probabilities */
   int do_timings   = FALSE;   /* TRUE to report timings */
   int do_check     = FALSE;   /* TRUE to check posteriors from Inside/Outside */
@@ -387,13 +386,12 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_HMMONLY option on.\n");
   if(dsq_mode && (cm->align_opts & CM_ALIGN_POST))    cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_POST option on.\n");
   if(dsq_mode && (cm->align_opts & CM_ALIGN_INSIDE))  cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_INSIDE option on.\n");
-  if(dsq_mode && (cm->align_opts & CM_ALIGN_OUTSIDE)) cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_OUTSIDE option on.\n");
   if(dsq_mode && (cm->align_opts & CM_ALIGN_SAMPLE))  cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_SAMPLE option on.\n");
 
   /* save a copy of the align_opts we entered function with, we may change some of these for
    * individual target sequences, and we want to be able to change them back
    */
-  if(cm->align_opts  & CM_ALIGN_NOSMALL)    do_small     = FALSE;
+  if(cm->align_opts  & CM_ALIGN_SMALL)      do_small     = TRUE;
   if(cm->config_opts & CM_CONFIG_LOCAL)     do_local     = TRUE;
   if(cm->align_opts  & CM_ALIGN_QDB)        do_qdb       = TRUE;
   if(cm->align_opts  & CM_ALIGN_HBANDED)    do_hbanded   = TRUE;
@@ -401,7 +399,6 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   if(cm->align_opts  & CM_ALIGN_SUB)        do_sub       = TRUE;
   if(cm->align_opts  & CM_ALIGN_HMMONLY)    do_hmmonly   = TRUE;
   if(cm->align_opts  & CM_ALIGN_INSIDE)     do_inside    = TRUE;
-  if(cm->align_opts  & CM_ALIGN_OUTSIDE)    do_outside   = TRUE;
   if(cm->align_opts  & CM_ALIGN_POST)       do_post      = TRUE;
   if(cm->align_opts  & CM_ALIGN_TIME)       do_timings   = TRUE;
   if(cm->align_opts  & CM_ALIGN_CHECKINOUT) do_check     = TRUE;
@@ -411,7 +408,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   if(cm->align_opts  & CM_ALIGN_HMMSAFE)    do_hmmsafe   = TRUE;
 
   /* another contract check */
-  if((do_sample + do_inside + do_outside + do_post + do_hmmonly + do_scoreonly) > 1) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), exactly 0 or 1 of the following must be TRUE (== 1):\n\tdo_sample = %d\n\tdo_inside = %d\n\tdo_outside = %d\n\t do_post = %d\n\tdo_hmmonly = %d\n\tdo_scoreonly = %d\n", do_sample, do_inside, do_outside, do_post, do_hmmonly, do_scoreonly);
+  if((do_sample + do_inside + do_post + do_hmmonly + do_scoreonly) > 1) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), exactly 0 or 1 of the following must be TRUE (== 1):\n\tdo_sample = %d\n\tdo_inside = %d\n\t do_post = %d\n\tdo_hmmonly = %d\n\tdo_scoreonly = %d\n", do_sample, do_inside, do_post, do_hmmonly, do_scoreonly);
 
   if(debug_level > 0) {
     printf("do_local    : %d\n", do_local);
@@ -421,7 +418,6 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
     printf("do_sub      : %d\n", do_sub);
     printf("do_hmmonly  : %d\n", do_hmmonly);
     printf("do_inside   : %d\n", do_inside);
-    printf("do_outside  : %d\n", do_outside);
     printf("do_small    : %d\n", do_small);
     printf("do_post     : %d\n", do_post);
     printf("do_timings  : %d\n", do_timings);
@@ -434,7 +430,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
 
   /* allocate out_mx, if needed, only if !do_sub, if do_sub each sub CM will need to allocate a new out_mx */
   out_mx = NULL;
-  if((!do_sub) && (do_hbanded && (do_optacc || (do_post || do_outside)))) out_mx = cm_hb_mx_Create(cm->M);
+  if((!do_sub) && (do_hbanded && (do_optacc || (do_post)))) out_mx = cm_hb_mx_Create(cm->M);
 
   if      (sq_mode)   nalign = seqs_to_aln->nseq;
   else if(dsq_mode) { nalign = search_results->num_results; silent_mode = TRUE; }
@@ -451,7 +447,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   postcode1= NULL;
   postcode2= NULL;
   if(sq_mode) {
-    if(!do_hmmonly && !do_scoreonly && !do_inside && !do_outside)
+    if(!do_hmmonly && !do_scoreonly && !do_inside)
       ESL_ALLOC(tr, sizeof(Parsetree_t *) * nalign);
     else if(do_hmmonly) /* do_hmmonly */
       ESL_ALLOC(cp9_tr, sizeof(CP9trace_t *) * nalign);
@@ -596,7 +592,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
 	cp9map        = sub_cp9map;
 
 	/* Create the out_mx if needed, cm == sub_cm */
-	if(do_optacc || (do_post || do_outside)) out_mx = cm_hb_mx_Create(cm->M);
+	if(do_optacc || do_post) out_mx = cm_hb_mx_Create(cm->M);
       }
     }
 
@@ -637,19 +633,6 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
       }
       else { /* non-banded inside only */
 	if((status = FastInsideAlign(cm, errbuf, cur_dsq, 1, L, NULL, &sc)) != eslOK) return status; 
-      }
-    }
-    else if(do_outside) { 
-      if(do_hbanded) { /* HMM banded inside and outside */
-	/* need dp matrix from Inside to do Outside */
-	if((status = FastInsideAlignHB(cm, errbuf, cur_dsq, 1, L, cm->hbmx, &sc)) != eslOK) return status; 
-	if((status = FastOutsideAlignHB(cm, errbuf, cur_dsq, 1, L, out_mx, cm->hbmx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), &sc)) != eslOK) return status; 
-	/* Note: we can only check the posteriors in FastOutsideAlignHB() if local begin/ends are off */
-      }
-      else { /* non-banded inside/outside */
-	/* need alpha matrix from Inside to do Outside */
-	if((status = FastInsideAlign(cm, errbuf, cur_dsq, 1, L, &alpha, &sc)) != eslOK) return status; /* errbuf will have been filled by FastInsideAlign() */
-	if((status = FastOutsideAlign(cm, errbuf, cur_dsq, 1, L, NULL, alpha, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), &sc)) != eslOK) return status; /* errbuf will have been filled by FastOutsideAlign() */
       }
     }
     else if (do_small) { /* small D&C CYK alignment */
@@ -740,7 +723,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
       ijdBandedTraceInfoDump(cm, tr[i], cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 1);
 
     if(do_sub) {
-      if(!(do_inside || do_outside)) { 
+      if(! do_inside) { 
 	/* Convert the sub_cm parsetree to a full CM parsetree */
 	if(debug_level > 0) ParsetreeDump(stdout, *cur_tr, cm, cur_dsq, NULL, NULL);
 	if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, *cur_tr, submap, FALSE, debug_level))) { 
@@ -904,7 +887,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   float             *parsesc; /* parsetree scores of each sequence */
 
   /* declare and initialize options */
-  int do_small     = TRUE;    /* TRUE to use D&C small alignment algs */
+  int do_small     = FALSE;   /* TRUE to use D&C small alignment algs */
   int do_local     = FALSE;   /* TRUE to do local alignment */
   int do_qdb       = FALSE;   /* TRUE to do QDB alignment */
   int do_hbanded   = FALSE;   /* TRUE to do HMM banded alignment */
@@ -913,7 +896,6 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   int do_hmmonly   = FALSE;   /* TRUE to align with an HMM only */
   int do_scoreonly = FALSE;   /* TRUE to only calculate the score */
   int do_inside    = FALSE;   /* TRUE to do Inside also */
-  int do_outside   = FALSE;   /* TRUE to do Outside also */
   int do_post      = FALSE;   /* TRUE to calculate posterior probabilities */
   int do_timings   = FALSE;   /* TRUE to report timings */
   int do_check     = FALSE;   /* TRUE to check posteriors from Inside/Outside */
@@ -943,11 +925,10 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_HMMONLY option on.\n");
   if(dsq_mode && (cm->align_opts & CM_ALIGN_POST))    cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_POST option on.\n");
   if(dsq_mode && (cm->align_opts & CM_ALIGN_INSIDE))  cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_INSIDE option on.\n");
-  if(dsq_mode && (cm->align_opts & CM_ALIGN_OUTSIDE)) cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_OUTSIDE option on.\n");
   if(dsq_mode && (cm->align_opts & CM_ALIGN_SAMPLE))  cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_SAMPLE option on.\n");
 
   /* set the options based on cm->align_opts */
-  if(cm->align_opts  & CM_ALIGN_NOSMALL)    do_small     = FALSE;
+  if(cm->align_opts  & CM_ALIGN_SMALL)      do_small     = TRUE;
   if(cm->config_opts & CM_CONFIG_LOCAL)     do_local     = TRUE;
   if(cm->align_opts  & CM_ALIGN_QDB)        do_qdb       = TRUE;
   if(cm->align_opts  & CM_ALIGN_HBANDED)    do_hbanded   = TRUE;
@@ -955,7 +936,6 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   if(cm->align_opts  & CM_ALIGN_SUB)        do_sub       = TRUE;
   if(cm->align_opts  & CM_ALIGN_HMMONLY)    do_hmmonly   = TRUE;
   if(cm->align_opts  & CM_ALIGN_INSIDE)     do_inside    = TRUE;
-  if(cm->align_opts  & CM_ALIGN_OUTSIDE)    do_outside   = TRUE;
   if(cm->align_opts  & CM_ALIGN_POST)       do_post      = TRUE;
   if(cm->align_opts  & CM_ALIGN_TIME)       do_timings   = TRUE;
   if(cm->align_opts  & CM_ALIGN_CHECKINOUT) do_check     = TRUE;
@@ -963,7 +943,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   if(cm->align_opts  & CM_ALIGN_SAMPLE)     do_sample    = TRUE;
 
   /* another contract check */
-  if((do_sample + do_inside + do_outside + do_post) > 1) cm_Fail("OldActuallyAlignTargets(), exactly 0 or 1 of the following must be TRUE (== 1):\n\tdo_sample = %d\n\tdo_inside = %d\n\tdo_outside = %d\n\t do_post%d\n\tdo_hmmonly: %d\n\tdo_scoreonly: %d\n", do_sample, do_inside, do_outside, do_post, do_hmmonly, do_scoreonly);
+  if((do_sample + do_inside + do_post) > 1) cm_Fail("OldActuallyAlignTargets(), exactly 0 or 1 of the following must be TRUE (== 1):\n\tdo_sample = %d\n\tdo_inside = %d\n\tdo_post%d\n\tdo_hmmonly: %d\n\tdo_scoreonly: %d\n", do_sample, do_inside, do_post, do_hmmonly, do_scoreonly);
 
   if(debug_level > 0) {
     printf("do_local  : %d\n", do_local);
@@ -973,7 +953,6 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
     printf("do_sub    : %d\n", do_sub);
     printf("do_hmmonly: %d\n", do_hmmonly);
     printf("do_inside : %d\n", do_inside);
-    printf("do_outside: %d\n", do_outside);
     printf("do_small  : %d\n", do_small);
     printf("do_post   : %d\n", do_post);
     printf("do_timings: %d\n", do_timings);
@@ -995,7 +974,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   postcode1= NULL;
   postcode2= NULL;
   if(sq_mode) {
-    if(!do_hmmonly && !do_scoreonly && !do_inside && !do_outside)
+    if(!do_hmmonly && !do_scoreonly && !do_inside)
       ESL_ALLOC(tr, sizeof(Parsetree_t *) * nalign);
     else if(do_hmmonly) /* do_hmmonly */
       ESL_ALLOC(cp9_tr, sizeof(CP9trace_t *) * nalign);
@@ -1213,42 +1192,6 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
 		     do_local);       /* TRUE to allow local begins */
       }
     }
-    else if(do_outside) { 
-      if(do_hbanded) { /* HMM banded inside and outside */
-	/* need alpha matrix from Inside to do Outside */
-	sc = IInside_b_jd_me(cm, cur_dsq, 1, L,
-			     TRUE,	 /* save full alpha so we can run outside */
-			     NULL, &alpha, /* fill alpha, and return it, needed for IOutside() */
-			     NULL, NULL,	 /* manage your own deckpool, I don't want it */
-			     do_local,     /* TRUE to allow local begins */
-			     cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
-	sc = IOutside_b_jd_me(cm, cur_dsq, 1, L,
-			      TRUE,	 /* save full beta */
-			      NULL, NULL,	 /* manage your own matrix, I don't want it */
-			      NULL, NULL,	 /* manage your own deckpool, I don't want it */
-			      do_local,    /* TRUE to allow local begins */
-			      alpha,       /* alpha matrix from FInside_b_jd_me() */
-			      NULL,        /* don't save alpha */
-			      do_check,    /* TRUE to check Outside probs agree with Inside */
-			      cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
-      }
-      else { /* non-banded inside/outside */
-	/* need alpha matrix from Inside to do Outside */
-	sc = IInside(cm, cur_dsq, 1, L,
-		     TRUE,	        /* save full alpha so we can run outside */
-		     NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
-		     NULL, NULL,	        /* manage your own deckpool, I don't want it */
-		     do_local);           /* TRUE to allow local begins */
-	sc = IOutside(cm, cur_dsq, 1, L,
-		      TRUE,	        /* save full beta */
-		      NULL, NULL,	        /* manage your own matrix, I don't want it */
-		      NULL, NULL,	        /* manage your own deckpool, I don't want it */
-		      do_local,           /* TRUE to allow local begins */
-		      alpha,              /* alpha matrix from IInside() */
-		      NULL,               /* don't save alpha */
-		      do_check);          /* TRUE to check Outside probs agree with Inside */
-      }
-    }
     else if (do_small) { /* small D&C CYK alignment */
       if(do_qdb) { /* use QDBs when doing D&C CYK */
 	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, 
@@ -1379,7 +1322,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
 
 
     if(do_sub) { 
-      if(!(do_inside || do_outside)) { 
+      if(! do_inside) { 
 	/* Convert the sub_cm parsetree to a full CM parsetree */
 	if(debug_level > 0) ParsetreeDump(stdout, *cur_tr, cm, cur_dsq, NULL, NULL);
 	if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, *cur_tr, submap, FALSE, debug_level))) { 

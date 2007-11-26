@@ -711,7 +711,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
   sub_cm->beta      = orig_cm->beta;
   sub_cm->tau       = orig_cm->tau;
    
-  /* copy the options from the template CM, but turn off the CM_ALIGN_SUB and CM_ALIGN_FSUB options
+  /* copy the options from the template CM, but turn off the CM_ALIGN_SUB options 
    * and turn on the CM_IS_SUB flag */
   sub_cm->config_opts      = orig_cm->config_opts;
   sub_cm->align_opts       = orig_cm->align_opts;

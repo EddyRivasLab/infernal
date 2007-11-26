@@ -89,10 +89,10 @@ static ESL_OPTIONS options[] = {
   { "--refine",  eslARG_OUTFILE, NULL,  NULL, NULL,       NULL,  NULL,       NULL, "refine input aln w/Expectation-Maximization, save to <s>", 9 },
   { "--gibbs",   eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, use Gibbs sampling instead of EM", 9 },
   { "--seed",    eslARG_INT,     NULL,  NULL, "n>0",      NULL,"--gibbs",    NULL, "w/--gibbs, set random number generator seed to <n>",  9 },
-  { "--hbanded", eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "accelerate --refine using HMM banded CYK aln algorithm", 9 },
-  { "--tau",     eslARG_REAL,   "1E-7", NULL, "0<x<1",    NULL,"--hbanded",  NULL, "set tail loss prob for --hbanded to <x>", 9 },
+  { "--tau",     eslARG_REAL,   "1E-7", NULL, "0<x<1",    NULL,"--refine","--nonbanded", "set tail loss prob for --hbanded to <x>", 9 },
   { "--sub",     eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, use sub CM for columns b/t HMM start/end points", 9 },
   { "--local",   eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, align locally w.r.t the model", 9 },
+  { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,        NULL,"--refine",   NULL, "do not use bands to accelerate alignment with --refine", 5 },
 /* Selecting the input MSA alphabet rather than autoguessing it */
   { "--rna",     eslARG_NONE,   FALSE, NULL, NULL,   ALPHOPTS,    NULL,     NULL, "input alignment is RNA sequence data", 10},
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,   ALPHOPTS,    NULL,     NULL, "input alignment is DNA sequence data", 10},
@@ -1233,10 +1233,9 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
 
   /* update cm->align->opts */
   if(esl_opt_GetBoolean(go, "--gibbs"))       cm->align_opts  |= CM_ALIGN_SAMPLE;
-  if(esl_opt_GetBoolean(go, "--hbanded")) {
-    cm->align_opts  |= CM_ALIGN_HBANDED;
-    cm->align_opts  |= CM_ALIGN_NOSMALL; 
-  }
+  if(esl_opt_GetBoolean(go, "--nonbanded"))   cm->align_opts  |= CM_ALIGN_SMALL; 
+  else                                        cm->align_opts  |= CM_ALIGN_HBANDED;
+
   if(esl_opt_GetBoolean(go, "--sub"))         cm->align_opts  |= CM_ALIGN_SUB;
 
   /* update cm->config_opts */

@@ -372,7 +372,6 @@ summarize_alignment(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, 
     }
   L_avg /= (float) N;
   cm->align_opts |= CM_ALIGN_HBANDED;
-  cm->align_opts |= CM_ALIGN_NOSMALL;
   esl_stopwatch_Start(w);
   seqs_to_aln = CreateSeqsToAlnFromSq(sq, N, FALSE);
   if((status = ActuallyAlignTargets(cm, errbuf, seqs_to_aln, NULL, NULL, 0, 0, TRUE, NULL)) != eslOK) goto ERROR;

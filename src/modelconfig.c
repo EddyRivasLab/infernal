@@ -84,10 +84,9 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
    * Note: CP9 local/glocal config does not necessarily match CM config 
    *       in fact cmsearch default is local CM, glocal CP9 */
   if((cm->config_opts & CM_CONFIG_HMMLOCAL) ||
-     (cm->align_opts  & CM_ALIGN_SUB)    ||
-     (cm->align_opts  & CM_ALIGN_FSUB))
+     (cm->align_opts  & CM_ALIGN_SUB))
     {
-      if((cm->align_opts & CM_ALIGN_SUB) || (cm->align_opts & CM_ALIGN_FSUB))
+      if(cm->align_opts & CM_ALIGN_SUB)
 	{
 	  /* To get spos and epos for the sub_cm, 
 	   * we config the HMM to local mode with equiprobable start/end points.*/

@@ -992,6 +992,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
     
   /* do stage 1 specific stuff */
   if(cfg->s == 0) { /* set up stage 1 alignment we'll compare all other stages to */
+    cm->align_opts |= CM_ALIGN_SMALL;
     /* only one option allows cmscore NOT to do standard CYK as first stage aln */
     if(esl_opt_GetBoolean(go, "--qdbboth")) { 
       cm->align_opts  |= CM_ALIGN_QDB;
@@ -1025,9 +1026,8 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
       /* calc QDBs for this stage */
       ConfigQDB(cm);
     }
-    /* only 1 way stage 2+ alignment will be D&C, if --qdbsmall was enabled */
-    if(! esl_opt_GetBoolean(go, "--qdbsmall"))
-      cm->align_opts  |= CM_ALIGN_NOSMALL;
+    /* only one way stage 2+ alignment will be D&C, if --qdbsmall was enabled */
+    if(esl_opt_GetBoolean(go, "--qdbsmall"))  cm->align_opts  |= CM_ALIGN_SMALL;
   }
   if(cfg->my_rank == 0) 
     {
@@ -1063,10 +1063,10 @@ int summarize_align_options(const struct cfg_s *cfg, CM_t *cm)
     printf("Algorithm:               CP9 HMM Viterbi\n");
   else if(cm->align_opts & CM_ALIGN_SCOREONLY)
     printf("Algorithm:               CYK Standard (score only)\n");
-  else if(cm->align_opts & CM_ALIGN_NOSMALL)
-    printf("Algorithm:               CYK Standard\n");
-  else 
+  else if(cm->align_opts & CM_ALIGN_SMALL)
     printf("Algorithm:               CYK D&C\n");
+  else 
+    printf("Algorithm:               CYK Standard\n");
 
   /* Bands */
   if(cm->align_opts & CM_ALIGN_HBANDED)
