@@ -102,14 +102,14 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, f
     sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen); /* TO DO: rewrite, with status */
   else {
       if(cm->search_opts & CM_SEARCH_HBANDED) {
-	if((status == cp9_Seq2Bands(cm, errbuf, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status;
+	if((status = cp9_Seq2Bands(cm, errbuf, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status;
 	/*debug_print_hmm_bands(stdout, (j0-i0+1), cp9b, cm->tau, 3);*/
-	if(cm->search_opts & CM_SEARCH_INSIDE) { if((status == FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cm_cutoff, results, cm->hbmx, &sc)) != eslOK) return status; }
-	else                                   { if((status == FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cm_cutoff, results, cm->hbmx, &sc)) != eslOK) return status; }
+	if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cm_cutoff, results, cm->hbmx, &sc)) != eslOK) return status; }
+	else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cm_cutoff, results, cm->hbmx, &sc)) != eslOK) return status; }
       }
       else { /* don't do HMM banded search */
-	if(cm->search_opts & CM_SEARCH_INSIDE) { if((status == FastIInsideScan(cm, errbuf, dsq, i0, j0, cm->W, cm_cutoff, results, NULL, &sc)) != eslOK) return status; }
-	else                                   { if((status == FastCYKScan    (cm, errbuf, dsq, i0, j0, cm->W, cm_cutoff, results, NULL, &sc)) != eslOK) return status; }
+	if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, dsq, i0, j0, cm->W, cm_cutoff, results, NULL, &sc)) != eslOK) return status; }
+	else                                   { if((status = FastCYKScan    (cm, errbuf, dsq, i0, j0, cm->W, cm_cutoff, results, NULL, &sc)) != eslOK) return status; }
       }    
   }
   if((results != NULL && results->num_results > 0) && do_align_hits) {
@@ -384,7 +384,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   if( sq_mode && (seqs_to_aln->sc       != NULL))  cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->sc is non-NULL.\n");
   
   if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_HMMONLY option on.\n");
-  if(dsq_mode && (cm->align_opts & CM_ALIGN_POST))    cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_POST option on.\n");
+  //if(dsq_mode && (cm->align_opts & CM_ALIGN_POST))    cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_POST option on.\n");
   if(dsq_mode && (cm->align_opts & CM_ALIGN_INSIDE))  cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_INSIDE option on.\n");
   if(dsq_mode && (cm->align_opts & CM_ALIGN_SAMPLE))  cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_SAMPLE option on.\n");
 
@@ -451,13 +451,12 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
       ESL_ALLOC(tr, sizeof(Parsetree_t *) * nalign);
     else if(do_hmmonly) /* do_hmmonly */
       ESL_ALLOC(cp9_tr, sizeof(CP9trace_t *) * nalign);
-    if(do_post) {
-      ESL_ALLOC(postcode1, sizeof(char **) * nalign);
-      ESL_ALLOC(postcode2, sizeof(char **) * nalign);
-    }
   }   
   ESL_ALLOC(parsesc, sizeof(float) * nalign);
-
+  if(do_post) {
+    ESL_ALLOC(postcode1, sizeof(char **) * nalign);
+    ESL_ALLOC(postcode2, sizeof(char **) * nalign);
+  }
   minsc =  FLT_MAX;
   maxsc = -FLT_MAX;
   avgsc = 0;
@@ -537,7 +536,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
 
     /* Potentially, do HMM calculations. */
     if((!do_sub) && do_hbanded) {
-      if((status = cp9_Seq2Bands(orig_cm, NULL, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) return status;
+      if((status = cp9_Seq2Bands(orig_cm, errbuf, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) return status;
     }
     else if(do_sub) { 
       /* If we're in sub mode:
@@ -773,6 +772,15 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
     seqs_to_aln->sc       = parsesc;  /* shouldn't be NULL */
   }
   else { /* dsq mode */
+    if(do_post) { 
+      for (i = 0; i < nalign; i++) {
+	search_results->data[i].pcode1 = postcode1[i];
+	search_results->data[i].pcode2 = postcode2[i];
+      }
+      /* we've copied the 1D postcode ptrs, free the 2D, ptr to the ptrs */
+      free(postcode1);
+      free(postcode2);
+    }
     free(parsesc);
   }
   
@@ -1858,16 +1866,6 @@ seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, d
 void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq,
 		    int do_complement, int used_HMM)
 {
-  /* We allow the caller to specify the alphabet they want the 
-   * resulting MSA in, but it has to make sense (see next few lines). */
-  if(cm->abc->type == eslRNA)
-    { 
-      if(abc->type != eslRNA && abc->type != eslDNA)
-	cm_Fail("ERROR in print_results(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
-    }
-  else if(cm->abc->K != abc->K)
-    cm_Fail("ERROR in print_results(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
-
   int i;
   char *name;
   int len;
@@ -1888,100 +1886,98 @@ void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbse
   int p;                /* relevant partition */
   int offset;         
 
-  if(used_HMM)
-    {
+  /* Contract check: we allow the caller to specify the alphabet they want the 
+   * resulting MSA in, but it has to make sense (see next few lines). */
+  if(cm->abc->type == eslRNA) { 
+      if(abc->type != eslRNA && abc->type != eslDNA)
+	cm_Fail("ERROR in print_results(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+  }
+  else if(cm->abc->K != abc->K)
+    cm_Fail("ERROR in print_results(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+
+  if(used_HMM) {
       if(cm->cp9_cutoff_type == E_CUTOFF) do_stats = TRUE;
       else do_stats = FALSE;
-    }
-  else
-  {
+  }
+  else {
     if(cm->cutoff_type == E_CUTOFF) do_stats = TRUE;
     else do_stats = FALSE;
   }
-  if(do_stats  && !(cm->flags & CMH_GUMBEL_STATS))
-    cm_Fail("ERROR in print_results, stats wanted but CM has no Gumbel stats\n");
+  if(do_stats  && !(cm->flags & CMH_GUMBEL_STATS)) cm_Fail("ERROR in print_results, stats wanted but CM has no Gumbel stats\n");
 
-  if(do_stats)
-    {
-      /* Determine Gumbel mode to use */
-      CM2Gumbel_mode(cm, &cm_gum_mode, &cp9_gum_mode);
-      if(used_HMM) gum = cm->stats->gumAA[cp9_gum_mode];
-      else gum = cm->stats->gumAA[cm_gum_mode];
-    }
+  if(do_stats) { /* Determine Gumbel mode to use */
+    CM2Gumbel_mode(cm, &cm_gum_mode, &cp9_gum_mode);
+    if(used_HMM) gum = cm->stats->gumAA[cp9_gum_mode];
+    else gum = cm->stats->gumAA[cm_gum_mode];
+  }
   emap = CreateEmitMap(cm);
   name = dbseq->sq[0]->name;
   len  = dbseq->sq[0]->n;
 
-  for (in_revcomp = 0; in_revcomp <= do_complement; in_revcomp++) 
-    {
-      results = dbseq->results[in_revcomp];
-      if (results == NULL || results->num_results == 0) continue;
+  for (in_revcomp = 0; in_revcomp <= do_complement; in_revcomp++) {
+    results = dbseq->results[in_revcomp];
+    if (results == NULL || results->num_results == 0) continue;
       
-      if (!header_printed) 
-	{
-	  header_printed = 1;
-	  printf (">%s\n\n", name);
-	}
-      printf ("  %s strand results:\n\n", in_revcomp ? "Minus" : "Plus");
-
-      /*for (i=0; i<results->num_results; i++) 
-	printf("hit: %5d start: %5d stop: %5d len: %5d emitl[0]: %5d emitr[0]: %5d score: %9.3f\n", i, results->data[i].start, results->data[i].stop, len, results->data[i].tr->emitl[0], results->data[i].tr->emitr[0], results->data[i].score);*/
-      for (i=0; i<results->num_results; i++) 
-	{
-	  gc_comp = get_gc_comp (dbseq->sq[in_revcomp], 
-				 results->data[i].start, results->data[i].stop);
-	  printf (" Query = %d - %d, Target = %d - %d\n", 
-		  (emap->lpos[cm->ndidx[results->data[i].bestr]] + 1 
-		   - StateLeftDelta(cm->sttype[results->data[i].bestr])),
-		  (emap->rpos[cm->ndidx[results->data[i].bestr]] - 1 
-		   + StateRightDelta(cm->sttype[results->data[i].bestr])),
-		  COORDINATE(in_revcomp, results->data[i].start, len), 
-		  COORDINATE(in_revcomp, results->data[i].stop, len));
-	  if (do_stats) 
-	    {
-	      p = cm->stats->gc2p[gc_comp];
-	      score_for_Eval = results->data[i].score;
-	      if(cm->flags & CM_ENFORCED)
-		{
-		  printf("\n\torig sc: %.3f", score_for_Eval);
-		  score_for_Eval -= cm->enf_scdiff;
-		  printf(" new sc: %.3f (diff: %.3f\n\n", score_for_Eval, cm->enf_scdiff);
-		}
-	      printf (" Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score,
-		      RJK_ExtremeValueE(score_for_Eval, gum[p]->mu, 
-					gum[p]->lambda),
-		      esl_gumbel_surv((double) score_for_Eval, gum[p]->mu, 
-				      gum[p]->lambda), gc_comp);
-	      /*printf("  Mu[gc=%d]: %f, Lambda[gc=%d]: %f\n", gc_comp, mu[gc_comp], gc_comp,
-		lambda[gc_comp]);
-		ExtremeValueP(results->data[i].score, mu[gc_comp], 
-		lambda[gc_comp]));*/
-	    } 
-	  else 
-	    {
-	      printf (" Score = %.2f, GC = %3d\n", results->data[i].score, gc_comp);
-	    }
-	  printf ("\n");
-	  if (results->data[i].tr != NULL) 
-	    {
-	      /* careful here, all parsetrees have emitl/emitr sequence indices
-	       * relative to the hit subsequence of the dsq (i.e. emitl[0] always = 1),
-	       * so we pass dsq + start-1.
-	       */
-	      ali = CreateFancyAli (results->data[i].tr, cm, cons, 
-				    dbseq->sq[in_revcomp]->dsq + 
-				    (results->data[i].start-1), abc);
-				    
-	      if(in_revcomp) offset = len - 1;
-	      else           offset = 0;
-	      PrintFancyAli(stdout, ali,
-			    (COORDINATE(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
-			    in_revcomp);
-	      FreeFancyAli(ali);
-	      printf ("\n");
-	    }
-	}
+    if (!header_printed) {
+      header_printed = 1;
+      printf (">%s\n\n", name);
     }
+    printf ("  %s strand results:\n\n", in_revcomp ? "Minus" : "Plus");
+    
+    /*for (i=0; i<results->num_results; i++) 
+      printf("hit: %5d start: %5d stop: %5d len: %5d emitl[0]: %5d emitr[0]: %5d score: %9.3f\n", i, results->data[i].start, results->data[i].stop, len, results->data[i].tr->emitl[0], results->data[i].tr->emitr[0], results->data[i].score);*/
+    for (i=0; i<results->num_results; i++) {
+      gc_comp = get_gc_comp (dbseq->sq[in_revcomp], 
+			     results->data[i].start, results->data[i].stop);
+      printf (" Query = %d - %d, Target = %d - %d\n", 
+	      (emap->lpos[cm->ndidx[results->data[i].bestr]] + 1 
+	       - StateLeftDelta(cm->sttype[results->data[i].bestr])),
+	      (emap->rpos[cm->ndidx[results->data[i].bestr]] - 1 
+	       + StateRightDelta(cm->sttype[results->data[i].bestr])),
+	      COORDINATE(in_revcomp, results->data[i].start, len), 
+	      COORDINATE(in_revcomp, results->data[i].stop, len));
+      if (do_stats) {
+	p = cm->stats->gc2p[gc_comp];
+	score_for_Eval = results->data[i].score;
+	if(cm->flags & CM_ENFORCED) {
+	  printf("\n\torig sc: %.3f", score_for_Eval);
+	  score_for_Eval -= cm->enf_scdiff;
+	  printf(" new sc: %.3f (diff: %.3f\n\n", score_for_Eval, cm->enf_scdiff);
+	}
+	printf (" Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score,
+		RJK_ExtremeValueE(score_for_Eval, gum[p]->mu, 
+				  gum[p]->lambda),
+		esl_gumbel_surv((double) score_for_Eval, gum[p]->mu, 
+				gum[p]->lambda), gc_comp);
+	/*printf("  Mu[gc=%d]: %f, Lambda[gc=%d]: %f\n", gc_comp, mu[gc_comp], gc_comp,
+	  lambda[gc_comp]);
+	  ExtremeValueP(results->data[i].score, mu[gc_comp], 
+	  lambda[gc_comp]));*/
+      } 
+      else { /* don't print E-value stats */
+	printf (" Score = %.2f, GC = %3d\n", results->data[i].score, gc_comp);
+      }
+      printf ("\n");
+      if (results->data[i].tr != NULL) {
+	/* careful here, all parsetrees have emitl/emitr sequence indices
+	 * relative to the hit subsequence of the dsq (i.e. emitl[0] always = 1),
+	 * so we pass dsq + start-1.
+	 */
+	ali = CreateFancyAli (abc, results->data[i].tr, cm, cons, 
+			      dbseq->sq[in_revcomp]->dsq + 
+			      (results->data[i].start-1), 
+			      results->data[i].pcode1, results->data[i].pcode2);
+	
+	if(in_revcomp) offset = len - 1;
+	else           offset = 0;
+	PrintFancyAli(stdout, ali,
+		      (COORDINATE(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
+		      in_revcomp);
+	FreeFancyAli(ali);
+	printf ("\n");
+      }
+    }
+  }
   fflush(stdout);
   FreeEmitMap(emap);
 }

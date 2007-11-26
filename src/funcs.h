@@ -119,7 +119,7 @@ extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary);
 
 /* from display.c
  */
-extern Fancyali_t    *CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, const ESL_ALPHABET *abc);
+extern Fancyali_t    *CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, char *pcode1, char *pcode2);
 extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp);
 extern void           FreeFancyAli(Fancyali_t *ali);
 extern int            CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthresh, CMConsensus_t **ret_cons);

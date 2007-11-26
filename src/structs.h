@@ -534,30 +534,6 @@ typedef struct cmstats_s {
 #define CM_ALIGN_OLDDP         (1<<17) /* use old (v0.81) DP align functions       */
 #define CM_ALIGN_OPTACC        (1<<18) /* no CYK, aln w/Holmes/Durbin opt accuracy */
 
-#if 0
-#define CM_ALIGN_NOSMALL       (1<<0)  /* DO NOT use small CYK D&C                 */
-#define CM_ALIGN_QDB           (1<<1)  /* use QD bands                             */
-#define CM_ALIGN_HBANDED       (1<<2)  /* use HMM bands                            */
-#define CM_ALIGN_SUMS          (1<<3)  /* if using HMM bands, use posterior sums   */
-#define CM_ALIGN_SUB           (1<<4)  /* build a sub CM for each seq to align     */
-#define CM_ALIGN_FSUB          (1<<5)  /* build a 'full sub' CM for each seq       */
-#define CM_ALIGN_HMMONLY       (1<<6)  /* use a CP9 HMM only to align              */
-#define CM_ALIGN_INSIDE        (1<<7)  /* use Inside, not CYK                      */
-#define CM_ALIGN_OUTSIDE       (1<<8)  /* use Outside, not CYK (for testing)       */
-#define CM_ALIGN_POST          (1<<9)  /* do inside/outside and append posteriors  */
-#define CM_ALIGN_TIME          (1<<10) /* print out alignment timings              */
-#define CM_ALIGN_CHECKINOUT    (1<<11) /* check inside/outside calculations        */
-#define CM_ALIGN_CHECKPARSESC  (1<<12) /* check parsetree score against aln alg sc */
-#define CM_ALIGN_PRINTTREES    (1<<13) /* print parsetrees to stdout               */
-#define CM_ALIGN_HMMSAFE       (1<<14) /* realign seqs w/HMM banded CYK bit sc < 0 */
-#define CM_ALIGN_SCOREONLY     (1<<15) /* do full CYK/inside to get score only     */
-#define CM_ALIGN_SAMPLE        (1<<16) /* sample parsetrees from the inside matrix */
-#define CM_ALIGN_FLUSHINSERTS  (1<<17) /* flush inserts L/R like pre 1.0 infernal  */
-#define CM_ALIGN_CHECKFB       (1<<18) /* check forward/backward CP9 HMM calcs     */
-#define CM_ALIGN_OLDDP         (1<<19) /* use old (v0.81) DP align functions       */
-#define CM_ALIGN_OPTACC        (1<<10) /* no CYK, aln w/Holmes/Durbin opt accuracy */
-#endif
-
 /* search options, cm->search_opts */
 #define CM_SEARCH_NOQDB        (1<<0)  /* DO NOT use QDB to search (QDB is default)*/
 #define CM_SEARCH_HMMONLY      (1<<1)  /* use a CP9 HMM only to search             */
@@ -685,6 +661,8 @@ typedef struct fancyali_s {
   char *cseq;		/* CM consensus sequence line                  */
   char *mid;		/* alignment identity middle line              */
   char *aseq;		/* aligned target sequence                     */
+  char *pcode1;         /* aligned posteriors 'ones' place (9 in 93)   */
+  char *pcode2;         /* aligned posteriors 'tens' place (3 in 93)   */
   int  *scoord;		/* coords 1..L for aligned dsq chars           */
   int  *ccoord;		/* coords 1..clen for aligned consensus chars  */
   int   len;		/* len of the strings above                    */
@@ -834,6 +812,8 @@ typedef struct _search_result_node_t {
   int bestr;   /* Best root state */
   float score;
   Parsetree_t *tr;
+  char *pcode1;           /* postal code, tens place, ('9' for 93) left NULL unless cm->search_opts & CM_SEARCH_POST */
+  char *pcode2;           /* postal code, ones place, ('3' for 93) left NULL unless cm->search_opts & CM_SEARCH_POST */
 } search_result_node_t;
 
 typedef struct _search_results_t {

@@ -36,12 +36,13 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  *            to), create a pairwise alignment for display; return in a Fancyali_t
  *            structure.
  *
- * Args:      tr    - parsetree for cm aligned to dsq
+ * Args:      abc   - alphabet to create alignment with (often cm->abc)
+ *            tr    - parsetree for cm aligned to dsq
  *            cm    - model
  *            cons  - consensus information for cm; see CreateCMConsensus()
  *            dsq   - digitized sequence
- *            abc   - alphabet to create alignment with (often cm->abc)
- *            i0    - position of first residue in sq to align (1 for first residue)
+ *            pcode1- posteriors, 'ones' place, '9' in '93', NULL if none
+ *            pcode2- posteriors, 'tens' place, '3' in '93', NULL if none
  *
  * Returns:   fancy alignment structure.
  *            Caller frees, with FreeFancyAli(ali).
@@ -49,7 +50,7 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  * Xref:      STL6 p.58
  */
 Fancyali_t *
-CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, const ESL_ALPHABET *abc)
+CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, char *pcode1, char *pcode2)
 {
   int         status;
   Fancyali_t *ali;              /* alignment structure we're building        */
@@ -70,21 +71,25 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
   int         lcons, rcons;	/* chars in consensus line; left, right      */
   int         lmid, rmid;	/* chars in ali quality line; left, right    */
   int         lseq, rseq;	/* chars in aligned target line; left, right */
+  int         lpost1, rpost1;	/* chars in aligned posteriors, left, right  */
+  int         lpost2, rpost2;	/* chars in aligned posteriors, left, right  */
   int         do_left, do_right;/* flags to generate left, right             */
   int cpos_l, cpos_r;   	/* positions in consensus (1..clen)          */
   int spos_l, spos_r;		/* positions in dsq (1..L)                   */
+  int have_pcodes;
 
   /* Contract check. We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
   if(cm->abc->type == eslRNA)
     { 
       if(abc->type != eslRNA && abc->type != eslDNA)
-	esl_fatal("ERROR in CreateFancyAli(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+	cm_Fail("ERROR in CreateFancyAli(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
     }
   else if(cm->abc->K != abc->K)
-    esl_fatal("ERROR in CreateFancyAli(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+    cm_Fail("ERROR in CreateFancyAli(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
 
   ESL_ALLOC(ali, sizeof(Fancyali_t));
+  have_pcodes = (pcode1 != NULL && pcode2 != NULL) ? TRUE : FALSE;
   
   /* Calculate length of the alignment display.
    *   MATP node        : +2
@@ -138,6 +143,14 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
   ESL_ALLOC(ali->cseq, sizeof(char) * (ali->len+1));
   ESL_ALLOC(ali->mid,  sizeof(char) * (ali->len+1));
   ESL_ALLOC(ali->aseq, sizeof(char) * (ali->len+1));
+  if(have_pcodes) { 
+    ESL_ALLOC(ali->pcode1, sizeof(char) * (ali->len+1));
+    ESL_ALLOC(ali->pcode2, sizeof(char) * (ali->len+1));
+  }
+  else {
+    ali->pcode1 = NULL;
+    ali->pcode2 = NULL;
+  }
   ESL_ALLOC(ali->scoord, sizeof(int)  * ali->len);
   ESL_ALLOC(ali->ccoord, sizeof(int)  * ali->len);
 
@@ -146,6 +159,10 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
   memset(ali->cseq, ' ', ali->len);
   memset(ali->mid,  ' ', ali->len);
   memset(ali->aseq, ' ', ali->len);
+  if(have_pcodes) { 
+    memset(ali->pcode1, ' ', ali->len);
+    memset(ali->pcode2, ' ', ali->len);
+  }
   for (pos = 0; pos < ali->len; pos++) 
     ali->ccoord[pos] = ali->scoord[pos] = 0;
 
@@ -166,6 +183,10 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
 	esl_stack_IPop(pda, &rcons);	  ali->cseq[pos]   = rcons;
 	esl_stack_IPop(pda, &rmid);	  ali->mid[pos]    = rmid;
 	esl_stack_IPop(pda, &rseq);       ali->aseq[pos]   = rseq;
+	if(have_pcodes) {
+	  esl_stack_IPop(pda, &rpost1);    ali->pcode1[pos] = rpost1;
+	  esl_stack_IPop(pda, &rpost2);    ali->pcode2[pos] = rpost2;
+	}
 	esl_stack_IPop(pda, &cpos_r);     ali->ccoord[pos] = cpos_r;
 	esl_stack_IPop(pda, &spos_r);     ali->scoord[pos] = spos_r;
 	pos++;
@@ -192,6 +213,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
 	memset(ali->cstr+pos,  '~', numwidth+4);
 	sprintf(ali->cseq+pos, "*[%*d]*", numwidth, qinset);
 	sprintf(ali->aseq+pos, "*[%*d]*", numwidth, tinset);
+	/* do nothing for posteriors here, they'll stay as they were init'ed, as ' ' */
 	pos += 4 + numwidth;
 	continue;
       }
@@ -203,6 +225,12 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
       rc   = cons->rpos[nd];
       symi = dsq[tr->emitl[ti]];  /* residue indices that node is aligned to */
       symj = dsq[tr->emitr[ti]];
+      if(have_pcodes) { /* postal codes are indexed 0..alen-1, off-by-one w.r.t dsq */
+	lpost1 = pcode1[tr->emitl[ti]-1];
+	lpost2 = pcode2[tr->emitl[ti]-1];
+	rpost1 = pcode1[tr->emitr[ti]-1];
+	rpost2 = pcode2[tr->emitr[ti]-1];
+      }
       d = tr->emitr[ti] - tr->emitl[ti] + 1;
       mode = tr->mode[ti];
 
@@ -304,6 +332,10 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
 	ali->cseq[pos]   = lcons;
 	ali->mid[pos]    = lmid;
 	ali->aseq[pos]   = lseq;
+	if(have_pcodes) {
+	  ali->pcode1[pos] = lpost1;
+	  ali->pcode2[pos] = lpost2;
+	}
 	ali->ccoord[pos] = cpos_l;
 	ali->scoord[pos] = spos_l;
 	pos++;
@@ -311,6 +343,10 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
       if (do_right) {
 	esl_stack_IPush(pda, spos_r);
 	esl_stack_IPush(pda, cpos_r);
+	if(have_pcodes) {
+	  esl_stack_IPush(pda, (int) rpost2);
+	  esl_stack_IPush(pda, (int) rpost1);
+	}
 	esl_stack_IPush(pda, (int) rseq);
 	esl_stack_IPush(pda, (int) rmid);
 	esl_stack_IPush(pda, (int) rcons);
@@ -343,6 +379,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
 	memset(ali->cstr+pos,  '~', numwidth+4);
 	sprintf(ali->cseq+pos, "*[%*d]*", numwidth, qinset);
 	sprintf(ali->aseq+pos, "*[%*d]*", numwidth, tinset);
+	/* do nothing for posteriors here, they'll stay as they were init'ed, as ' ' */
 	pos += 4 + numwidth;
       }
     } /* end loop over the PDA; PDA now empty */
@@ -352,7 +389,10 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
   ali->cseq[ali->len] = '\0';
   ali->mid[ali->len]  = '\0';
   ali->aseq[ali->len] = '\0';
-
+  if(have_pcodes) { 
+    ali->pcode1[ali->len] = '\0';
+    ali->pcode2[ali->len] = '\0';
+  }    
   /* Laboriously determine the maximum bounds.
    */
   ali->sqfrom = 0;
@@ -378,7 +418,7 @@ CreateFancyAli(Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, con
   return ali;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
   return NULL; /* not reached */
 }
 
@@ -408,8 +448,10 @@ PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp)
   int   ci,  cj;		/* positions in CM consensus 1..clen */
   int   sqi, sqj;		/* positions in target seq 1..L      */
   int   i;
-  int   i2print, j2print; /* i,j indices we'll print, used to deal
-				 * with case of reverse complement */
+  int   i2print, j2print; /* i,j indices we'll print, used to deal with case of reverse complement */
+  int   have_pcodes;      /* TRUE if postal codes are valid */
+
+  have_pcodes = (ali->pcode1 != NULL && ali->pcode2 != NULL) ? TRUE : FALSE;
   linelength = 60;
   ESL_ALLOC(buf, sizeof(char) * (linelength + 1));
   buf[linelength] = '\0';
@@ -464,22 +506,28 @@ PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp)
       }
       if (ali->aseq != NULL) {
 	strncpy(buf, ali->aseq+pos, linelength);  
-	if (sqj && sqi) 
-	  {
-	    if(in_revcomp) 
-	      {
-		i2print = offset - (sqi-1)    + 1;
-		j2print = i2print - (sqj-sqi);
-	      }
-	    else
-	      {
-		i2print = sqi + offset;
-		j2print = sqj + offset;
-	      }
-	    fprintf(fp, "  %8d %s %-8d\n", i2print, buf, j2print);
+	if (sqj && sqi) {
+	  if(in_revcomp) {
+	    i2print = offset - (sqi-1)    + 1;
+	    j2print = i2print - (sqj-sqi);
 	  }
-	else
+	  else {
+	    i2print = sqi + offset;
+	    j2print = sqj + offset;
+	  }
+	  fprintf(fp, "  %8d %s %-8d\n", i2print, buf, j2print);
+	}
+	else {
 	  fprintf(fp, "  %8s %s %-8s\n", "-", buf, "-");
+	}
+      }
+      if (have_pcodes && ali->pcode1 != NULL) {
+	strncpy(buf, ali->pcode1+pos, linelength);  
+	fprintf(fp, "  %8s %s\n", "POSTX.", buf);
+      }
+      if (have_pcodes && ali->pcode2 != NULL) {
+	strncpy(buf, ali->pcode2+pos, linelength);  
+	fprintf(fp, "  %8s %s\n", "POST.X", buf);
       }
       fprintf(fp, "\n");
     }
@@ -488,7 +536,7 @@ PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
 }
 
 
@@ -503,6 +551,8 @@ FreeFancyAli(Fancyali_t *ali)
   if (ali->cseq   != NULL) free(ali->cseq);
   if (ali->mid    != NULL) free(ali->mid);
   if (ali->aseq   != NULL) free(ali->aseq);
+  if (ali->pcode1 != NULL) free(ali->pcode1);
+  if (ali->pcode2 != NULL) free(ali->pcode2);
   if (ali->ccoord != NULL) free(ali->ccoord);
   if (ali->scoord != NULL) free(ali->scoord);
   free(ali);
@@ -555,10 +605,10 @@ CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthres
   if(cm->abc->type == eslRNA)
     { 
       if(abc->type != eslRNA && abc->type != eslDNA)
-	esl_fatal("ERROR in CreateCMConsensus(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+	cm_Fail("ERROR in CreateCMConsensus(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
     }
   else if(cm->abc->K != abc->K)
-    esl_fatal("ERROR in CreateCMConsensus(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+    cm_Fail("ERROR in CreateCMConsensus(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
 
   int       status;
   CMConsensus_t *con;           /* growing consensus info */
@@ -801,7 +851,7 @@ createMultifurcationOrderChart(CM_t *cm)
   return height;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
   return 0; /* never reached */
 }	
 	
@@ -905,7 +955,7 @@ createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
 }
 	
 

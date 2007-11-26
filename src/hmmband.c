@@ -3148,8 +3148,8 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0)
       sd = StateDelta(cm->sttype[v]);
       for(jp = 0; jp <= (cp9b->jmax[v]-cp9b->jmin[v]); jp++) {
 	j = jp+cp9b->jmin[v];
-	if(cp9b->hdmin[v][jp] != ESL_MAX((j - cp9b->imax[v] + 1), sd)) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin for state %d is inconsistent.", v);
-	if(cp9b->hdmax[v][jp] != ESL_MAX((j - cp9b->imin[v] + 1), sd)) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmax for state %d is inconsistent.", v);
+	if(cp9b->hdmin[v][jp] != ESL_MAX((j - cp9b->imax[v] + 1), sd)) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmin %d (sd: %d) for state %d, j: %d imax[v]: %d is inconsistent.", cp9b->hdmin[v][jp], sd, v, j, cp9b->imax[v]);
+	if(cp9b->hdmax[v][jp] != ESL_MAX((j - cp9b->imin[v] + 1), sd)) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hdmax %d (sd: %d) for state %d, j: %d imin[v]: %d is inconsistent.", cp9b->hdmax[v][jp], sd, v, j, cp9b->imin[v]);
       }
     }
 

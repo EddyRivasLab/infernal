@@ -995,6 +995,12 @@ cm_search_result_node_MPIPackSize(const search_result_node_t *rnode, MPI_Comm co
   if(rnode->tr != NULL) {
     if ((status = cm_parsetree_MPIPackSize(rnode->tr, comm, &sz))  != eslOK) goto ERROR; n += sz;
   }
+  if(rnode->pcode1 != NULL) { 
+    if ((status = esl_mpi_PackOptSize(rnode->pcode1, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; n += sz;
+  }
+  if(rnode->pcode2 != NULL) { 
+    if ((status = esl_mpi_PackOptSize(rnode->pcode2, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; n += sz;
+  }
 
   *ret_n = n;
   return eslOK;
@@ -1030,6 +1036,7 @@ cm_search_result_node_MPIPack(const search_result_node_t *rnode, char *buf, int 
 {
   int status;
   int has_tr;
+  int has_pcodes;
 
   ESL_DPRINTF1(("cm_search_result_node_MPIPack(): ready.\n"));
   
@@ -1037,14 +1044,19 @@ cm_search_result_node_MPIPack(const search_result_node_t *rnode, char *buf, int 
   status = MPI_Pack((int *) &(rnode->stop),    1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack((int *) &(rnode->bestr),   1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack((int *) &(rnode->score),   1, MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
-  if(rnode->tr != NULL) {
-    has_tr = TRUE;
-    status = MPI_Pack(&has_tr,                 1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+
+  has_tr     = (rnode->tr != NULL) ? TRUE : FALSE;
+  has_pcodes = (rnode->pcode1 != NULL && rnode->pcode2 != NULL) TRUE : FALSE;
+  status = MPI_Pack(&has_tr,                 1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(&has_pcodes,             1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+
+  if(has_tr) { 
     status = cm_parsetree_MPIPack((Parsetree_t *) rnode->tr, buf, n, position, comm);  if (status != eslOK) return status;
   }
-  else {
-    has_tr = FALSE;
-    status = MPI_Pack(&has_tr,                 1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  if(has_pcodes) {
+    /* we call PackOpt, even though we know we should have valid postal codes */
+    status = esl_mpi_PackOpt(rnode->pcode1, -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) return status;
+    status = esl_mpi_PackOpt(rnode->pcode2, -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) return status;
   }
 
   ESL_DPRINTF1(("cm_search_result_node_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
@@ -1078,23 +1090,36 @@ cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, searc
   int start, stop, bestr;
   float score;
   int has_tr = FALSE;
+  int has_pcodes = FALSE;
   Parsetree_t *tr = NULL;
+  char *pcode1 = NULL;
+  char *pcode2 = NULL;
 
   status = MPI_Unpack (buf, n, pos, &start, 1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, &stop,  1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, &bestr, 1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, &score, 1, MPI_FLOAT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &has_tr, 1, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &has_pcodes, 1, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+
   rnode.start = start;
   rnode.stop  = stop;
   rnode.bestr = bestr;
   rnode.score = score;
   rnode.tr    = NULL;
+  rnode.pcode1= NULL;
+  rnode.pcode2= NULL;
 
   /* optionally, unpack a parsetree */
-  status = MPI_Unpack (buf, n, pos, &has_tr, 1, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  if(has_tr == TRUE) {
+  if(has_tr) {
     status   = cm_parsetree_MPIUnpack(buf, n, pos, comm, &tr);  if (status != eslOK) return status;
     rnode.tr = tr;
+  }
+  if(has_pcodes) {
+    status = esl_mpi_UnpackOpt(buf, n, pos, (void **) &(pcode1), NULL, MPI_CHAR, comm); if (status != eslOK) goto ERROR;;
+    status = esl_mpi_UnpackOpt(buf, n, pos, (void **) &(pcode2), NULL, MPI_CHAR, comm); if (status != eslOK) goto ERROR;;
+    rnode.pcode1 = pcode1;
+    rnode.pcode2 = pcode2;
   }
   
   *ret_rnode = rnode;
@@ -1102,6 +1127,8 @@ cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, searc
   
  ERROR:
   if(tr != NULL) FreeParsetree(tr);
+  if(pcode1 != NULL) free(pcode1);
+  if(pcode2 != NULL) free(pcode2);
   ret_rnode = NULL;
   return status;
 }

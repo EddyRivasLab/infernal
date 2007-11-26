@@ -45,6 +45,8 @@ search_results_t *CreateResults (int size) {
     results->data[i].bestr  = -1;    
     results->data[i].score  = IMPOSSIBLE;    
     results->data[i].tr     = NULL;
+    results->data[i].pcode1 = NULL;
+    results->data[i].pcode2 = NULL;
   }
   return (results);
  ERROR:
@@ -68,6 +70,8 @@ void ExpandResults (search_results_t *results, int additional) {
     results->data[i].bestr  = -1;    
     results->data[i].score  = IMPOSSIBLE;    
     results->data[i].tr     = NULL;
+    results->data[i].pcode1 = NULL;
+    results->data[i].pcode2 = NULL;
   }
 
   results->num_allocated+=additional;
@@ -114,6 +118,10 @@ void AppendResults (search_results_t *src_results, search_results_t *dest_result
 		  dest_results);
       if(src_results->data[i].tr != NULL)
 	(*dest_results).data[ip].tr = (*src_results).data[i].tr;
+      if(src_results->data[i].pcode1 != NULL)
+	(*dest_results).data[ip].pcode1 = (*src_results).data[i].pcode1;
+      if(src_results->data[i].pcode2 != NULL)
+	(*dest_results).data[ip].pcode2 = (*src_results).data[i].pcode2;
     }
   return;
 }
@@ -127,9 +135,9 @@ void FreeResults (search_results_t *r) {
   int i;
   if (r != NULL) {
     for (i=0; i < r->num_allocated; i++) {
-      if (r->data[i].tr != NULL) {
-	FreeParsetree(r->data[i].tr);
-      }
+      if (r->data[i].tr != NULL)     FreeParsetree(r->data[i].tr);
+      if (r->data[i].pcode1 != NULL) free(r->data[i].pcode1);
+      if (r->data[i].pcode2 != NULL) free(r->data[i].pcode2);
     }
     free (r->data);
     free(r);
@@ -282,6 +290,8 @@ void report_hit (int i, int j, int bestr, float score, search_results_t *results
   results->data[results->num_results].stop = j;
   results->data[results->num_results].bestr = bestr;
   results->data[results->num_results].tr = NULL;
+  results->data[results->num_results].pcode1 = NULL;
+  results->data[results->num_results].pcode2 = NULL;
   results->num_results++;
 }
 

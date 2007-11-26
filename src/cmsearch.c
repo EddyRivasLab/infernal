@@ -49,7 +49,6 @@ static ESL_OPTIONS options[] = {
   { "-i",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmonly", "use scanning Inside algorithm instead of CYK", 1 },
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--toponly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the top strand", 1 },
-  { "--noalign", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "find start/stop/score only; don't do alignments", 1 },
   { "--window",  eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,        NULL, "set scanning window size to <n> [default: calculated]", 1 },
   { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmonly", "turn on the post hoc second null model", 1 },
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
@@ -76,7 +75,6 @@ static ESL_OPTIONS options[] = {
   { "--qdbfile", eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,"--hmmonly,--noqdb","read QDBs from file <s> (outputted from cmbuild)", 5 },
   /* HMM filtering options */
   { "--hmmpad",  eslARG_INT,    NULL,  NULL, NULL,      NULL,"--hmmfilter",     NULL, "subseqs \'i-<n>..j+<n>\' survive", 6 },
-  //  { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hmmfilter",     NULL, "calculate and use HMM bands in CM search", 6 },
   { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "calculate and use HMM bands in CM search", 6 },
   { "--tau",     eslARG_REAL,   "1e-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 6 },
   { "--scan2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "derive HMM bands from scanning Forward/Backward", 6 },
@@ -95,24 +93,28 @@ static ESL_OPTIONS options[] = {
   { "--spad",    eslARG_REAL,  "1.0",  NULL, "0<=x<=1", NULL,"--hmmcalcthr",    NULL, "fraction of (sc(S) - sc(Starg)) to add to sc(S)", 8 },
   { "--fastfil", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hmmcalcthr",    NULL, "calculate filter thr quickly, assume parsetree sc is optimal", 8 },
   { "--gemit",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hmmcalcthr",    NULL, "when calc'ing filter thresholds, always emit globally from CM", 8 },
+  /* alignment options */
+  { "--noalign", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,       NULL, "find start/stop/score only; don't do alignments", 9 },
+  { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "align hits with the Holmes/Durbin optimal accuracy algorithm", 9 },
+  { "--post",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "append posterior probabilities to hit alignments", 9 },
   /* Enforcing a subsequence */
-  { "--enfstart",eslARG_INT,    FALSE, NULL, "n>0",     NULL,"--enfseq",        NULL, "enforce MATL stretch starting at consensus position <n>", 9 },
-  { "--enfseq",  eslARG_STRING, NULL,  NULL, NULL,      NULL,"--enfstart",      NULL, "enforce MATL stretch starting at --enfstart <n> emits seq <s>", 9 },
-  { "--enfnohmm",eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--enfstart",      NULL, "DO NOT filter first w/an HMM that only enforces --enfseq <s>", 9 },
+  { "--enfstart",eslARG_INT,    FALSE, NULL, "n>0",     NULL,"--enfseq",        NULL, "enforce MATL stretch starting at consensus position <n>", 10 },
+  { "--enfseq",  eslARG_STRING, NULL,  NULL, NULL,      NULL,"--enfstart",      NULL, "enforce MATL stretch starting at --enfstart <n> emits seq <s>", 10 },
+  { "--enfnohmm",eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--enfstart",      NULL, "DO NOT filter first w/an HMM that only enforces --enfseq <s>", 10 },
   /* verbose output files */
-  { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees for each hit to file <f>", 10 },
-  { "--gcfile",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save GC content stats of target sequence file to <f>", 10 },
-  { "--bfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save bands for each state to file <f>", 10 },
-  { "--filhfile",eslARG_OUTFILE, NULL, NULL, NULL,      NULL,"--hmmcalcthr",    NULL, "save CP9 filter threshold histogram(s) to file <s>", 10 },
-  { "--filrfile",eslARG_OUTFILE, NULL, NULL, NULL,      NULL,"--hmmcalcthr",    NULL, "save CP9 filter threshold information file <s>", 10 },
+  { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees for each hit to file <f>", 11 },
+  { "--gcfile",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save GC content stats of target sequence file to <f>", 11 },
+  { "--bfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save bands for each state to file <f>", 11 },
+  { "--filhfile",eslARG_OUTFILE, NULL, NULL, NULL,      NULL,"--hmmcalcthr",    NULL, "save CP9 filter threshold histogram(s) to file <s>", 11 },
+  { "--filrfile",eslARG_OUTFILE, NULL, NULL, NULL,      NULL,"--hmmcalcthr",    NULL, "save CP9 filter threshold information file <s>", 11 },
 /* Setting output alphabet */
-  { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 11 },
-  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 11 },
+  { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 12 },
+  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 12 },
 /* Other options */
-  { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "arrest after start: for debugging MPI under gdb",   12 },  
-  { "--olddp",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "use older, slower (version 0.81) DP search functions",12 },  
+  { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "arrest after start: for debugging MPI under gdb",   13 },  
+  { "--olddp",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "use older, slower (version 0.81) DP search functions",13 },  
 #ifdef HAVE_MPI
-  { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--qdbfile","run as an MPI parallel program", 12 },  
+  { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--qdbfile","run as an MPI parallel program", 13 },  
 #endif
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -223,14 +225,16 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       puts("\nfilter threshold calculation options: (require --hmmcalcthr)");
       esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
-      puts("\noptions for enforcing a single-stranded subsequence:");
+      puts("\noptions for returning alignments of search hits:");
       esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
-      puts("\nverbose output files:");
+      puts("\noptions for enforcing a single-stranded subsequence:");
       esl_opt_DisplayHelp(stdout, go, 10, 2, 80);
-      puts("\noptions for selecting output alphabet:");
+      puts("\nverbose output files:");
       esl_opt_DisplayHelp(stdout, go, 11, 2, 80);
-      puts("\nother options:");
+      puts("\noptions for selecting output alphabet:");
       esl_opt_DisplayHelp(stdout, go, 12, 2, 80);
+      puts("\nother options:");
+      esl_opt_DisplayHelp(stdout, go, 13, 2, 80);
       exit(0);
     }
   if (esl_opt_ArgNumber(go) != 2) 
@@ -975,6 +979,11 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(  esl_opt_GetBoolean(go, "--scan2bands"))  cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
   if(  esl_opt_GetBoolean(go, "--sums"))        cm->search_opts |= CM_SEARCH_SUMS;
   if(  esl_opt_GetBoolean(go, "--olddp"))       cm->search_opts |= CM_SEARCH_OLDDP;
+
+  /* align_opts */
+  cm->align_opts |= CM_ALIGN_HBANDED;
+  if(esl_opt_GetBoolean(go, "--optacc"))        cm->align_opts |= CM_ALIGN_OPTACC;
+  if(esl_opt_GetBoolean(go, "--post"))          cm->align_opts |= CM_ALIGN_POST;
 
   /* If do_enforce set do_hmm_rescan to TRUE if we're filtering or scanning with an HMM,
    * this way only subseqs that include the enf_subseq should pass the filter */

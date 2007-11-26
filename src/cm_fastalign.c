@@ -3277,7 +3277,26 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	else { /* cm->endsc[v] == IMPOSSIBLE, init all cells to IMPOSSIBLE */
 	  for (j = jmin[v]; j <= jmax[v]; j++) { 
 	    jp_v  = j - jmin[v];
-	    for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
+
+	    /* Check for special initialization case, specific to
+	     * optimal_accuracy alignment, normally (with CYK for
+	     * example) we init shadow matrix to USED_EL for all cells
+	     * b/c we know that will be overwritten for the most
+	     * likely transition, but with optimal accuracy, only
+	     * emissions add to the score, so when d == sd, we know
+	     * we'll emit sd residues from v, so the initialization
+	     * will NOT be overwritten. We get around this by
+	     * specially initializing cells for d == sd and v is a
+	     * state with an END_E as a child, as the v->end
+	     * transition. (v->end is always the yoffset == cnum[v]-1
+	     * transition)
+	     */
+	    dp_v = 0;
+	    for (d = hdmin[v][jp_v]; d <= sd; d++, dp_v++) { 
+	      alpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	      yshad[jp_v][dp_v] = (cm->ndtype[cm->ndidx[v]+1] == END_nd) ? cm->cnum[v] - 1 : USED_EL;
+	    }
+	    for (d = ESL_MAX(hdmin[v][jp_v], sd+1); d <= hdmax[v][jp_v]; d++, dp_v++) {
 	      alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	      yshad[jp_v][dp_v] = USED_EL; 
 	    }
@@ -3670,6 +3689,7 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
 	shadow[v] = (void **) kshad;
 	/* initialize all valid cells for state v to IMPOSSIBLE (local ends are impossible for B states) */
 	ESL_DASSERT1((! (NOT_IMPOSSIBLE(cm->endsc[v]))));
+	ESL_DASSERT1((cm->ndtype[cm->ndidx[v]+1] != END_nd));
 	for (jp = 0; jp <= W; jp++) {
 	  j = i0-1+jp;
 	  for (d = 0; d <= jp; d++) {
@@ -3698,7 +3718,25 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
 	else { /* cm->endsc[v] == IMPOSSIBLE */
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
-	    for (d = 0; d <= jp; d++) {
+
+	    /* Handle a special initialization case, specific to
+	     * optimal_accuracy alignment. Normally (with CYK for
+	     * example) we init shadow matrix to USED_EL for all cells
+	     * b/c we know that USED_EL will be overwritten for the most
+	     * likely transition, but with optimal accuracy, only
+	     * emissions add to the score, so when d <= sd, we know
+	     * we'll emit sd residues from v, so the initialization
+	     * will NOT be overwritten. We get around this by
+	     * specially initializing cells for d == sd and v is a
+	     * state with an END_E as a child, as the v->end
+	     * transition. (v->end is always the yoffset == cnum[v]-1
+	     * transition)
+	     */
+	    for (d = 0; d <= sd; d++) { 
+	      alpha[v][j][d] = IMPOSSIBLE;
+	      yshad[j][d] = (cm->ndtype[cm->ndidx[v]+1] == END_nd) ? cm->cnum[v] - 1 : USED_EL;
+	    }
+	    for (d = sd+1; d <= jp; d++) {
 	      alpha[v][j][d] = IMPOSSIBLE;
 	      yshad[j][d] = USED_EL; 
 	    }
