@@ -256,32 +256,34 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   
   /* CP9 viterbi */
   esl_stopwatch_Start(w);
-  /*CP9Viterbi(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL, */
-  cp9_FastViterbi(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
-		  TRUE,   /* we're scanning */
-		  FALSE,  /* we're not ultimately aligning */
-		  TRUE,   /* be memory efficient */
-		  NULL,   /* don't want the DP matrix back */
-		  NULL);  /* don't want traces back */
+  if((status = cp9_FastViterbi(cm, errbuf, dsq_cp9, 1, L_cp9, cm->W, 0., NULL,
+			       TRUE,   /* we're scanning */
+			       FALSE,  /* we're not ultimately aligning */
+			       TRUE,   /* be memory efficient */
+			       NULL, NULL,
+			       NULL,   /* don't want the DP matrix back */
+			       NULL,   /* don't want traces back */
+			       NULL)) != eslOK) goto ERROR;
+
   esl_stopwatch_Stop(w);
   t_v = w->user;
 
   /* CP9 forward */
   esl_stopwatch_Start(w);
   /* determine the minimum length we can search safely with the optimized forward implementation. */
-  minL = cp9_WorstForward(cm, -INFTY, TRUE, FALSE);
+  if((status = cp9_WorstForward(cm, errbuf, -INFTY, TRUE, FALSE, &minL)) != eslOK) goto ERROR;
   /*CP9Forward(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,*/
   be_safe = FALSE;
   ESL_DPRINTF1(("minL: %d L: %d\n", minL, L));
   if(minL != -1 && minL <= L) be_safe = TRUE;
   esl_stopwatch_Start(w);
-  Xcp9_FastForward(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,
-		   TRUE,   /* we are scanning */
-		   FALSE,  /* we are not ultimately aligning */
-		   FALSE,  /* we're not rescanning */
-		   TRUE,   /* be memory efficient */
-		   be_safe,
-		   NULL);  /* don't want the DP matrix back */
+  if((status = Xcp9_FastForward(cm, errbuf, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, 
+				TRUE,   /* we are scanning */
+				FALSE,  /* we are not ultimately aligning */
+				FALSE,  /* we're not rescanning */
+				TRUE,   /* be memory efficient */
+				be_safe,
+				NULL, NULL, NULL, NULL)) != eslOK) goto ERROR;
   esl_stopwatch_Stop(w);
   t_f = w->user;
 

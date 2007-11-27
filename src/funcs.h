@@ -740,24 +740,24 @@ extern float FLogsum(float p1, float p2);
 
 /* from cp9_fastsearch.c */
 
-extern float cp9_FastViterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-			     int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
-			     int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr);
-extern float cp9_FastViterbiBackward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-				     int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
-				     int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr);
-extern float cp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-			     int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, int doing_rescan,
-			     int be_efficient, CP9_dpmatrix_t **ret_mx);
-extern float Xcp9_FastForward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-			      int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, int doing_rescan,
-			      int be_efficient, int be_safe, CP9_dpmatrix_t **ret_mx);
-extern float Xcp9_FastBackward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
-			       int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
-			       int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
-extern float cp9_WorstForward(CM_t *cm, int thresh, int doing_scan, int doing_align);
-extern int   cp9_CheckTransitionGuarantees(CP9_t *cp9);
-extern int   cp9_GetLocalityMode(CP9_t *cp9);
+extern int cp9_FastViterbi(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+			   int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, 
+			   CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr, float *ret_sc);
+extern int cp9_FastViterbiBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+				   int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, 
+				   CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr, float *ret_sc);
+extern int cp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+			   int do_scan, int doing_align, int doing_rescan, int be_efficient, int **ret_psc, int *ret_maxres,
+			   CP9_dpmatrix_t **ret_mx, float *ret_sc);
+extern int Xcp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+			    int do_scan, int doing_align, int doing_rescan, int be_efficient, int be_safe, int **ret_psc, int *ret_maxres,
+			    CP9_dpmatrix_t **ret_mx, float *ret_sc);
+extern int Xcp9_FastBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+			     int do_scan, int doing_align, int doing_rescan, int be_efficient, int **ret_psc, int *ret_maxres, 
+			     CP9_dpmatrix_t **ret_mx, float *ret_sc);
+extern int cp9_WorstForward(CM_t *cm, char *errbuf, int thresh, int doing_scan, int doing_align, int *ret_L);
+extern int cp9_CheckTransitionGuarantees(CP9_t *cp9, char *errbuf);
+extern int cp9_GetLocalityMode(CP9_t *cp9, char *errbuf, int *ret_mode);
 
 /* from cm_fastalign.c */
 extern int fast_cyk_align_hb (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow, 

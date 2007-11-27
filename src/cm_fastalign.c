@@ -4643,7 +4643,6 @@ static ESL_OPTIONS options[] = {
   { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of target seqs",                          0 },
   { "-L",        eslARG_INT,     NULL, NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs, default: consensus length", 0 },
   { "-o",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute original CYK HMM banded alignment implementation", 0 },
-  //{ "--scan",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "run in scan mode, not alignment mode", 0 },
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "use posterior sums during HMM band calculation (widens bands)", 0 },
   { "--dlev",    eslARG_INT,    "0",   NULL, "0<=n<=3",NULL,NULL,NULL, "set verbosity of debugging print statements to <n>", 0 },
   { "--hmmcheck",eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "check that HMM posteriors are correctly calc'ed", 0 },
@@ -4677,11 +4676,8 @@ main(int argc, char **argv)
   int             do_random;
   int             N = esl_opt_GetInteger(go, "-N");
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
-  int             do_align;
   CM_HB_MX      *fout_mx;
-  /* FILE *fpfast;
-     FILE *fpslow; */
-  /* Parsetree_t    *slowtr, *fasttr; */
+  char           errbuf[cmERRBUFSIZE];
 
   int             ***oialpha;    
   int             ***oibeta;     
@@ -4694,9 +4690,6 @@ main(int argc, char **argv)
   do_random = TRUE;
   if(esl_opt_GetBoolean(go, "-e")) do_random = FALSE; 
 
-  do_align = TRUE;
-  /* if(esl_opt_GetBoolean(go, "--scan")) do_align = FALSE; */
-
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
   if (!(CMFileRead(cmfp, &abc, &cm)))            cm_Fail("Failed to read CM");
   CMFileClose(cmfp);
@@ -4706,20 +4699,11 @@ main(int argc, char **argv)
   else                            L = esl_opt_GetInteger(go, "-L");
 
   /* configure CM for HMM banded alignment */
-  //cm->config_opts |= CM_CONFIG_QDB;
-  
   cm->config_opts |= CM_CONFIG_ZEROINSERTS;
   cm->align_opts  |= CM_ALIGN_TIME;
-  if(do_align) { 
-    cm->align_opts  |= CM_ALIGN_NOSMALL;
-    cm->align_opts  |= CM_ALIGN_HBANDED;
-    if(esl_opt_GetBoolean(go, "--sums")) cm->align_opts |= CM_ALIGN_SUMS;
-  }
-  /*  else {
-    cm->search_opts  |= CM_SEARCH_HBANDED;
-    cm->search_opts  |= CM_SEARCH_HMMSCANBANDS;
-    if(esl_opt_GetBoolean(go, "--sums")) cm->search_opts |= CM_SEARCH_SUMS;
-    }*/
+  cm->align_opts  |= CM_ALIGN_HBANDED;
+  if(esl_opt_GetBoolean(go, "--sums")) cm->align_opts |= CM_ALIGN_SUMS;
+
   if(esl_opt_GetBoolean(go, "-l")) { 
     cm->config_opts  |= CM_CONFIG_LOCAL;
     cm->config_opts  |= CM_CONFIG_HMMLOCAL;
@@ -4755,13 +4739,13 @@ main(int argc, char **argv)
       L = seqs_to_aln->sq[i]->n;
 
       esl_stopwatch_Start(w);
-      cp9_Seq2Bands(cm, seqs_to_aln->sq[i]->dsq, 1, L, cm->cp9b, FALSE, 0);
+      if((status = cp9_Seq2Bands(cm, errbuf, seqs_to_aln->sq[i]->dsq, 1, L, cm->cp9b, FALSE, 0)) != eslOK) cm_Fail(errbuf);
       esl_stopwatch_Stop(w);
       printf("%4d %-30s %17s", i+1, "Exptl Band calc", "");
       esl_stopwatch_Display(stdout, w, "CPU time: ");
       
       esl_stopwatch_Start(w);
-      sc = FastAlignHB(cm, seqs_to_aln->sq[i]->dsq, L, 1, L, cm->hbmx, FALSE, NULL, NULL, NULL);
+      if((status = FastAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, 1, L, cm->hbmx, FALSE, NULL, NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastAlignHB CYK (): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -4783,14 +4767,14 @@ main(int argc, char **argv)
       if(esl_opt_GetBoolean(go, "--post")) {
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
-	sc = FastInsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, cm->hbmx);
+	if((status = FastInsideAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, 1, L, cm->hbmx, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastInsideAlignHB (): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
-	sc = FastOutsideAlignHB(cm, seqs_to_aln->sq[i]->dsq, 1, L, fout_mx, cm->hbmx, do_check);
+	if((status = FastOutsideAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, 1, L, fout_mx, cm->hbmx, do_check, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastOutsideAlignHB (): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -4799,7 +4783,7 @@ main(int argc, char **argv)
       if(esl_opt_GetBoolean(go, "--optacc")) {
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
-	sc = FastAlignHB(cm, seqs_to_aln->sq[i]->dsq, L, 1, L, cm->hbmx, TRUE, fout_mx, NULL, NULL);
+	if((status = FastAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, 1, L, cm->hbmx, TRUE,     fout_mx, NULL,   NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastAlignHB OA  (): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -4867,9 +4851,6 @@ main(int argc, char **argv)
 
   if(esl_opt_GetBoolean(go, "--fpost")) { 
     cm_hb_mx_Destroy(fout_mx);
-  }
-  if(esl_opt_GetBoolean(go, "--ipost")) { 
-    cm_ihb_mx_Destroy(iout_mx);
   }
   FreeCM(cm);
   esl_alphabet_Destroy(abc);

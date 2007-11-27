@@ -554,6 +554,8 @@ typedef struct cmstats_s {
 #define CM_SEARCH_CMGREEDY     (1<<16) /* use greedy alg to resolve CM overlaps    */
 #define CM_SEARCH_HMMGREEDY    (1<<17) /* use greedy alg to resolve HMM overlaps   */
 #define CM_SEARCH_OLDDP        (1<<18) /* use old (v0.81) DP search functions      */
+#define CM_SEARCH_HMMVITERBI   (1<<19) /* search with CP9 HMM Viterbi              */
+#define CM_SEARCH_HMMFORWARD   (1<<20) /* search with CP9 HMM Forward              */
 
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]

@@ -5130,6 +5130,7 @@ main(int argc, char **argv)
   int            *dmax;
   int             do_random;
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
+  char           errbuf[cmERRBUFSIZE];
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
@@ -5180,24 +5181,15 @@ main(int argc, char **argv)
       cm->search_opts  &= ~CM_SEARCH_INSIDE;
 
       esl_stopwatch_Start(w);
-      sc = FastCYKScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
+      if((status = FastCYKScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 
-      /*if (esl_opt_GetBoolean(go, "-x")) 
-	{ 
-	  esl_stopwatch_Start(w);
-	  sc = XFastCYKScan(cm, dsq, dmin, dmax, 1, L, cm->W, 0., NULL, NULL, NULL);
-	  printf("%4d %-30s %10.4f bits ", (i+1), "XFastCYKScan(): ", sc);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-	  }*/
-
       if (esl_opt_GetBoolean(go, "-w")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  sc = RefCYKScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
+	  if((status = RefCYKScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefCYKScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5216,7 +5208,7 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "--rsearch")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  sc = rsearch_CYKScan (cm, dsq, L, 0., cm->W, NULL); 
+	  if((status = rsearch_CYKScan (cm, errbuf, dsq, L, 0., cm->W, NULL, &sc)) != eslOK) cm_Fail(errbuf); 
 	  printf("%4d %-30s %10.4f bits ", (i+1), "rsearch_CYKScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5227,19 +5219,19 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  sc = FastIInsideScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
+	  if((status = FastIInsideScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
-	  sc = XFastIInsideScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
+	  if((status = XFastIInsideScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "XFastIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
-	  sc = X2FastIInsideScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
+	  if((status = X2FastIInsideScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);;
 	  printf("%4d %-30s %10.4f bits ", (i+1), "X2FastIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5249,13 +5241,13 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  sc = RefIInsideScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
+	  if((status = RefIInsideScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
-	  sc = XRefIInsideScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
+	  if((status = XRefIInsideScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "XRefIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5285,7 +5277,7 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  sc = FastFInsideScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
+	  if((status = FastFInsideScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastFInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5295,7 +5287,7 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  sc = RefFInsideScan(cm, dsq, 1, L, cm->W, 0., NULL, NULL);
+	  if((status = RefFInsideScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefFInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5322,7 +5314,7 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "--hbanded")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  cp9_Seq2Bands(cm, dsq, 1, L, cm->cp9b, TRUE, 0);   /* debug level */
+	  if((status = cp9_Seq2Bands(cm, errbuf, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail(errbuf);
 	  sc = CYKBandedScan_jd(cm, dsq, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, 
 				1, L, cm->W, 0., NULL);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "CYKBandedScan_jd(): ", sc);
@@ -5330,8 +5322,8 @@ main(int argc, char **argv)
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
-	  cp9_Seq2Bands(cm, dsq, 1, L, cm->cp9b, TRUE, 0);   /* debug level */
-	  sc = FastCYKScanHB(cm, dsq, 1, L, 0., NULL, cm->hbmx);
+	  if((status = cp9_Seq2Bands(cm, errbuf, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail(errbuf);
+	  FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, &sc);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScanHB(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5339,7 +5331,7 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "--ihbanded")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  cp9_Seq2Bands(cm, dsq, 1, L, cm->cp9b, TRUE, 0);   /* debug level */
+	  if((status = cp9_Seq2Bands(cm, errbuf, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail(errbuf);
 	  sc = iInsideBandedScan_jd(cm, dsq, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, 
 				1, L, cm->W, 0., NULL);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "iInsideBandedScan_jd(): ", sc);
@@ -5347,8 +5339,8 @@ main(int argc, char **argv)
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
-	  cp9_Seq2Bands(cm, dsq, 1, L, cm->cp9b, TRUE, 0);   /* debug level */
-	  sc = FastFInsideScanHB(cm, dsq, 1, L, 0., NULL, cm->hbmx);
+	  if((status = cp9_Seq2Bands(cm, errbuf, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail(errbuf); 
+ 	  if((status = FastFInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastFInsideScanHB(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");

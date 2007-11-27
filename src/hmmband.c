@@ -229,20 +229,23 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *
 
   do_scan2bands = (cm->search_opts & CM_SEARCH_HMMSCANBANDS) ? TRUE : FALSE;
   /* TO DO have these guys return status codes */
-  fsc = Xcp9_FastForward(cm, dsq, i0, j0, j0-i0+1, 0., NULL, NULL, NULL,
-			 do_scan2bands, /* are we using scanning Forward/Backward */
-			 TRUE,      /* we are going to use posteriors to align */
-			 FALSE,     /* we're not rescanning */
-			 FALSE,     /* don't be memory efficient */
-			 be_safe,   /* can we accelerate w/ no -INFTY logsum funcs? */
-			 &cp9_fwd); /* give the DP matrix back */
-
-  fsc = Xcp9_FastBackward(cm, dsq, i0, j0, (j0-i0+1), 0, NULL, NULL, NULL,
-			  do_scan2bands, /* are we using scanning Forward/Backward */
-			  TRUE,  /* we are going to use posteriors to align */
-			  FALSE, /* we're not rescanning */
-			  FALSE, /* don't be memory efficient */
-			  &cp9_bck); /* give the DP matrix back */
+  if((status = Xcp9_FastForward(cm, errbuf, dsq, i0, j0, j0-i0+1, 0., NULL,
+				do_scan2bands, /* are we using scanning Forward/Backward */
+				TRUE,      /* we are going to use posteriors to align */
+				FALSE,     /* we're not rescanning */
+				FALSE,     /* don't be memory efficient */
+				be_safe,   /* can we accelerate w/ no -INFTY logsum funcs? */
+				NULL, NULL,
+				&cp9_fwd, /* give the DP matrix back */
+				&fsc)) != eslOK) return status;
+  if((status = Xcp9_FastBackward(cm, errbuf, dsq, i0, j0, (j0-i0+1), 0, NULL, 
+				 do_scan2bands, /* are we using scanning Forward/Backward */
+				 TRUE,  /* we are going to use posteriors to align */
+				 FALSE, /* we're not rescanning */
+				 FALSE, /* don't be memory efficient */
+				 NULL, NULL,
+				 &cp9_bck, /* give the DP matrix back */
+				 &fsc)) != eslOK) return status;
 
   if(cm->align_opts & CM_ALIGN_CHECKFB) cp9_DebugCheckFB(cp9_fwd, cp9_bck, cm->cp9, sc, i0, j0, dsq);
 
@@ -258,9 +261,9 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
 
   /* Step 3: HMM bands  ->  CM bands. */
-  cp9_HMM2ijBands(cm, errbuf, cm->cp9map, i0, j0, cp9b->pn_min_m, cp9b->pn_max_m, 
-		  cp9b->pn_min_i, cp9b->pn_max_i, cp9b->pn_min_d, cp9b->pn_max_d, 
-		  cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, debug_level);
+  if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9map, i0, j0, cp9b->pn_min_m, cp9b->pn_max_m, 
+			       cp9b->pn_min_i, cp9b->pn_max_i, cp9b->pn_min_d, cp9b->pn_max_d, 
+			       cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, debug_level)) != eslOK) return status;
   
   /* Use the CM bands on i and j to get bands on d, specific to j. */
   if(doing_search) cp9_RelaxRootBandsForSearch(cm, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax);
@@ -305,6 +308,7 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CP9_dpm
 		   int debug_level)
 {
   /*CP9_dpmatrix_t *cp9_mx;*/    /* growable DP matrix for viterbi                       */
+  int status;
   CP9_dpmatrix_t *cp9_fwd;       /* growable DP matrix for forward                       */
   CP9_dpmatrix_t *cp9_bck;       /* growable DP matrix for backward                      */
   CP9_dpmatrix_t *cp9_post;      /* growable DP matrix for posterior decode              */
@@ -325,21 +329,24 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CP9_dpm
   do_scan2bands = (cm->search_opts & CM_SEARCH_HMMSCANBANDS) ? TRUE : FALSE;
 
   /* Step 1: Get HMM posteriors.*/
-  sc = Xcp9_FastForward(cm, dsq, i0, j0, j0-i0+1, 0., NULL, NULL, NULL,
-			do_scan2bands, /* are we using scanning Forward/Backward */
-			TRUE,      /* we are going to use posteriors to align */
-			FALSE,     /* we're not rescanning */
-			FALSE,     /* don't be memory efficient */
-			be_safe,   /* can we accelerate w/ no -INFTY logsum funcs? */
-			&cp9_fwd); /* give the DP matrix back */
-
+  if((status = Xcp9_FastForward(cm, errbuf, dsq, i0, j0, j0-i0+1, 0., NULL,
+				do_scan2bands, /* are we using scanning Forward/Backward */
+				TRUE,      /* we are going to use posteriors to align */
+				FALSE,     /* we're not rescanning */
+				FALSE,     /* don't be memory efficient */
+				be_safe,   /* can we accelerate w/ no -INFTY logsum funcs? */
+				NULL, NULL,
+				&cp9_fwd,  /* give the DP matrix back */
+				&sc)) != eslOK) return status;
   if(debug_level > 0) printf("CP9 Forward  score : %.4f\n", sc);
-  sc = Xcp9_FastBackward(cm, dsq, i0, j0, (j0-i0+1), 0, NULL, NULL, NULL,
-			 do_scan2bands, /* are we using scanning Forward/Backward */
-			 TRUE,  /* we are going to use posteriors to align */
-			 FALSE, /* we're not rescanning */
-			 FALSE, /* don't be memory efficient */
-			 &cp9_bck); /* give the DP matrix back */
+  if((status = Xcp9_FastBackward(cm, errbuf, dsq, i0, j0, (j0-i0+1), 0, NULL, 
+				 do_scan2bands, /* are we using scanning Forward/Backward */
+				 TRUE,  /* we are going to use posteriors to align */
+				 FALSE, /* we're not rescanning */
+				 FALSE, /* don't be memory efficient */
+				 NULL, NULL,
+				 &cp9_bck, /* give the DP matrix back */
+				 &sc)) != eslOK) return status;
   if(debug_level > 0) printf("CP9 Backward score : %.4f\n", sc);
 
   if(cm->align_opts & CM_ALIGN_CHECKFB) 
