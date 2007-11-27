@@ -34,209 +34,198 @@
  * Incept:   EPN, Wed Nov 14 10:43:16 2007
  *
  * Purpose:  Given a CM and a sequence, call the correct search algorithm
- *           based on cm->search_opts. Uses fast 1.0 DP functions, as
+ *           based on search_opts. Uses fast 1.0 DP functions, as
  *           opposed to the old, slow DP functions called by 
  *           OldActuallySearchTarget().
  * 
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
+ *           fround          - filtering round we're currently on, 
+ *                             if fround == cm->fi->nrounds, we're done filtering (and possibly never filtered)
  *           dsq             - the target sequence (digitized)
  *           i0              - start of target subsequence (often 1, beginning of dsq)
  *           j0              - end of target subsequence (often L, end of dsq)
- *           cm_cutoff       - minimum CM  score to report 
- *           cp9_cutoff      - minimum CP9 score to report (or keep if filtering)
- *           results         - search_results_t to keep results in, must be empty; if NULL, don't add to it
- *           do_filter       - TRUE if we should filter, but only if cm->search_opts tells us to 
- *           doing_cm_stats  - TRUE if the reason we're scanning this seq is to build
- *                             a histogram to calculate Gumbels for the CM, in this
- *                             case we don't filter regardless of what cm->search_opts says.
- *           doing_cp9_stats - TRUE if we're calc'ing stats for the CP9, in this 
- *                             case we always run CP9Forward()
+ *           fround          - filter round, if > 0, we're filtering
+ *           results         - [0..cm-fi->nrounds] search_results_t to keep results for each round in, must be non NULL and empty
  *           ret_flen        - RETURN: subseq len that survived filter (NULL if not filtering)
- *           do_align_hits   - TRUE to do alignments and return  parsetrees in results
  *           ret_sc          - RETURN: Highest scoring hit from search (even if below cutoff).
  *
  * Returns: eslOK on success.
  */
-int ActuallySearchTarget(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
-			 float cp9_cutoff, search_results_t *results, int do_filter, 
-			 int doing_cm_stats, int doing_cp9_stats, int *ret_flen,
-			 int do_align_hits, float *ret_sc)
+int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, 
+			 search_results_t **results, int *ret_flen, float *ret_sc)
 {
-  int status;
-  float sc;
-  int flen;
-  int use_cp9;    
+  int               status;          /* easel status code */
+  float             sc;              /* score of best hit in seq */
+  float             bwd_sc;          /* score of best hit from Backward HMM algs */
+  int               flen;            /* filter length, length of i0..j0 that survives filter */
+  int               use_cp9;         /* TRUE to use HMM for searching */
+  int               h;               /* counter over hits */
+  int               i, j;            /* subseq start/end points */
+  int               do_collapse;     /* TRUE to collapse multiple overlapping hits together into a single hit */
+  int               next_j;          /* for collapsing overlapping hits together */
+  int               min_i;           /* a start point, used if we're scanning with HMM */
+  FilterInfo_t     *fi = cm->fi;     /* the FilterInfo */
+  int               W = cm->W;       /* W, max size of hit */
 
-  /*printf("in ActuallySearchTarget: i0: %d j0: %d do_filter: %d doing_cm_stats: %d doing_cp9_stats: %d\n", i0, j0, do_filter, doing_cm_stats, doing_cp9_stats);*/
-  /*printf("\ti0: %d j0: %d filter: %d\n", i0, j0, do_filter);*/
+  /* convenience pointers to cm->fi for this 'filter round' of searching */
+  float             cutoff;          /* cutoff for this round, HMM or CM, whichever is relevant for this round */
+  int               ftype;           /* filter type for this round FILTER_WITH_HMM, FILTER_WITH_HYBRID, or NO_FILTER */
+  HybridScanInfo_t *hsi;             /* hybrid scan info for this round, NULL unless ftype is FILTER_WITH_HYBRID */
+  search_results_t *round_results;   /* search_results for this round */
 
   /* Contract checks */
-  if(!(cm->flags & CMH_BITS))                     ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), CMH_BITS flag down.\n");
-  if(dsq == NULL)                                 ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): dsq is NULL.");
-  if(!(cm->flags & CMH_BITS))                     ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): CMH_BITS flag down.\n");
-  if(doing_cm_stats && doing_cp9_stats)           ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): doing_cm_stats and doing_cp9_stats both TRUE.\n");
-  if(results != NULL && results->num_results > 0) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): there's already hits in results.\n");
+  if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), CMH_BITS flag down.\n");
+  if(fi == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): filter info cm->fi is NULL.\n");
+  if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): dsq is NULL.");
+  if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): CMH_BITS flag down.\n");
+  if(fround > fi->nrounds)             ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): current round %d is greater than cm->fi->nrounds: %d\n", fround, fi->nrounds);
+  if(results[fround] == NULL)          ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): results for current round %d are NULL\n", fround);
+  if(results[fround]->num_results > 0) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): there's already hits in results for round %d.\n", fround);
 
   flen = (j0-i0+1);
 
+  /* TEMPORARY */
+  if(fi->ftype[fround] == FILTER_WITH_HYBRID)cm_Fail("ActuallySearchTarget, hybrid filtering not yet implemented.\n");
+
+  /* copy info for this round from FilterInfo fi */
+  cm->search_opts = fi->search_opts[fround]; 
+  cutoff          = fi->cutoff[fround];
+  ftype           = fi->ftype[fround];
+  hsi             = fi->hsi[fround]; /* may be NULL */
+  round_results   = results[fround]; /* may not be NULL, contract enforced this */
+
+  if(ftype == FILTER_WITH_HYBRID && hsi == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): current round %d is type FILTER_WITH_HYBRID, but hsi is NULL\n", fround);
   /* Check if we need the CP9 */
-  use_cp9 = FALSE;
-  /* use the CP9 b/c we're calcing CP9 Gumbel stats */
-  if(doing_cp9_stats) use_cp9 = TRUE;                     
-  /* use the CP9 b/c we're searching only with the CP9 HMM */
-  if(cm->search_opts & CM_SEARCH_HMMONLY) use_cp9 = TRUE; 
-  /* The third way we use the CP9 is if we're filtering, AND we haven't 
-   * called this function recursively from AFTER filtering (the do_filter flag)
-   * AND we're not determining CM Gumbel stats. */
-  if((cm->search_opts & CM_SEARCH_HMMFILTER) && (do_filter && !doing_cm_stats)) use_cp9 = TRUE;
+  use_cp9 = ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
 
   /* Check if we have a valid CP9 (if we need it) */
   if(use_cp9) {
     if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), trying to use CP9 HMM that is NULL\n");
     if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
-    if((cm->search_opts & CM_SEARCH_HBANDED) && cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), trying to use CP9 HMM for HMM banded search, but cm->cp9b is NULL.\n");
   }      
 
-  if(use_cp9)
-    sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen); /* TO DO: rewrite, with status */
-  else {
-      if(cm->search_opts & CM_SEARCH_HBANDED) {
-	if((status = cp9_Seq2Bands(cm, errbuf, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status;
-	/*debug_print_hmm_bands(stdout, (j0-i0+1), cp9b, cm->tau, 3);*/
-	if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cm_cutoff, results, cm->hbmx, &sc)) != eslOK) return status; }
-	else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cm_cutoff, results, cm->hbmx, &sc)) != eslOK) return status; }
-      }
-      else { /* don't do HMM banded search */
-	if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, dsq, i0, j0, cm->W, cm_cutoff, results, NULL, &sc)) != eslOK) return status; }
-	else                                   { if((status = FastCYKScan    (cm, errbuf, dsq, i0, j0, cm->W, cm_cutoff, results, NULL, &sc)) != eslOK) return status; }
-      }    
-  }
-  if((results != NULL && results->num_results > 0) && do_align_hits) {
-    if(cm->align_opts & CM_ALIGN_OLDDP) { 
-      OldActuallyAlignTargets(cm, NULL, 
-			      dsq, results,   /* put function into dsq_mode, designed for aligning search hits */
-			      0, 0, 0, NULL);
+  if(use_cp9) { 
+    search_results_t *fwd_results;
+    /* Scan the (sub)seq in forward direction w/Viterbi or Forward, getting j end points of hits above cutoff */
+    fwd_results = CreateResults(INIT_RESULTS);
+    if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
+      if((status = cp9_FastViterbi(cm, errbuf, dsq, i0, j0, W, cutoff, fwd_results, 
+				   TRUE,   /* we're scanning */
+				   FALSE,  /* we're not ultimately aligning */
+				   TRUE,   /* be memory efficient */
+				   NULL, NULL, NULL, NULL,  /* don't return best score at each posn, best scoring posn, dp matrix or traces */
+				   &sc)) != eslOK) return status;
     }
-    else {
-      if((status = ActuallyAlignTargets(cm, errbuf, NULL, 
-					dsq, results,      /* put function into dsq_mode, designed for aligning search hits */
-					0, 0, 0, NULL)) != eslOK) return status;
+    else if(cm->search_opts & CM_SEARCH_HMMFORWARD) { 
+      if((status = cp9_FastForward(cm, errbuf, dsq, i0, j0, W, cutoff, fwd_results,
+				   TRUE,   /* we're scanning */
+				   FALSE,  /* we're not ultimately aligning */
+				   FALSE,  /* we're not rescanning */
+				   TRUE,   /* be memory efficient */
+				   NULL, NULL, NULL, /* don't return best score at each posn, best scoring posn, or DP matrix */
+				   &sc)) != eslOK) return status;
+    }
+    /* Remove overlapping hits, if we're being greedy */
+    if(cm->search_opts & CM_SEARCH_HMMGREEDY) { /* resolve overlaps by being greedy */
+      ESL_DASSERT1((i0 == 1)); /* EPN, Tue Nov 27 13:59:31 2007 not sure why this is here */
+      remove_overlapping_hits (fwd_results, i0, j0);
+    }
+
+    /* determine start points (i) of the hits based on backward direction (Viterbi or Backward) scan starting at j */
+    for(h = 0; h < fwd_results->num_results; h++) {
+      min_i = (fwd_results->data[h].stop - W + 1) >= 1 ? (fwd_results->data[h].stop - W + 1) : 1;
+      if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
+	if((status = cp9_FastViterbiBackward(cm, errbuf, dsq, min_i, fwd_results->data[h].stop, W, cutoff, 
+					     round_results, /* report hits to this round's results */
+					     TRUE,   /* we're scanning */
+					     FALSE,  /* we're not ultimately aligning */
+					     TRUE,   /* be memory efficient */
+					     NULL, NULL, NULL, NULL,  /* don't return best score at each posn, best scoring posn, dp matrix or traces */
+					     &bwd_sc)) != eslOK) return status;
+      }
+      else { 
+	if((status = Xcp9_FastBackward(cm, errbuf, dsq, min_i, fwd_results->data[h].stop, W, cutoff, 
+				       round_results, /* report hits to this round's results */
+				       TRUE,   /* we're scanning */
+				       FALSE,  /* we're not ultimately aligning */
+				       FALSE,  /* we're not rescanning */
+				       TRUE,   /* be memory efficient */
+				       NULL, NULL, NULL,   /* don't return best score at each posn, best scoring posn, or DP matrix */
+				       &bwd_sc)) != eslOK) return status;
+      }
+      /* this only works if we've saved the matrices, and didn't do scan mode for both Forward and Backward:
+       * debug_check_CP9_FB(fmx, bmx, cm->cp9, cur_best_hmm_bsc, i0, j0, dsq); */
+      if(bwd_sc > sc) sc = bwd_sc;
+    }	  
+    FreeResults(fwd_results);
+  }
+  else { /* do not use CP9, we're scanning with CM */
+    if(cm->search_opts & CM_SEARCH_HBANDED) {
+      if((status = cp9_Seq2Bands(cm, errbuf, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status;
+      /*debug_print_hmm_bands(stdout, (j0-i0+1), cp9b, cm->tau, 3);*/
+      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, round_results, cm->hbmx, &sc)) != eslOK) return status; }
+      else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, round_results, cm->hbmx, &sc)) != eslOK) return status; }
+    }
+    else { /* don't do HMM banded search */
+      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, dsq, i0, j0, W, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
+      else                                   { if((status = FastCYKScan    (cm, errbuf, dsq, i0, j0, W, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
+    }    
+  }
+
+  if(fround < fi->nrounds) { /* we're filtering */
+    int   prev_j = j0;
+    int   nhits  = round_results->num_results;
+    
+    /* To be safe, we only trust that i..j of our filter-passing hit is within the real hit,
+     * so we add (W-1) to start point i and subtract (W-1) from j, and treat this region j-(W-1)..i+(W-1)
+     * as having survived the filter.
+     */
+    for(h = 0; h < nhits; h++) {
+      if(round_results->data[h].stop > prev_j) ESL_EXCEPTION(eslEINCOMPAT, "j's not in descending order");
+      prev_j = round_results->data[h].stop;
+
+      i = ((round_results->data[h].stop  - (W-1)) >= 1)    ? (round_results->data[h].stop  - (W-1)) : 1;
+      j = ((round_results->data[h].start + (W-1)) <= j0)   ? (round_results->data[h].start + (W-1)) : j0;
+
+      if((h+1) < nhits) next_j = ((round_results->data[h+1].start + (W-1)) <= j0) ? (round_results->data[h+1].start + (W-1)) : j0;
+      else              next_j = -1;
+      
+      /* Collapse multiple overlapping hits together into a single hit. 
+       * *Unless* our next round of searching is the final one, and we're going to do HMM banded search,
+       * in which case we want to treat each hit separately, so we get more reasonable bands.
+       */
+      do_collapse = (((fround+1) == fi->nrounds) && (fi->search_opts[fi->nrounds] & CM_SEARCH_HBANDED)) ? FALSE : TRUE;
+      if(do_collapse) { 
+	while(((h+1) < nhits) && (next_j >= i)) { /* suck in hit */
+	  h++;
+	  i = ((round_results->data[h].stop - (W-1)) >= 1) ? (round_results->data[h].stop - (W-1)) : 1;
+	  if((h+1) < nhits) next_j = ((round_results->data[h+1].start + (W-1)) <= j0) ? (round_results->data[h+1].start + (W-1)) : j0;
+	  else              next_j = -1;
+	  printf("\tsucked in subseq: hit %d new_i: %d j (still): %d\n", h, i, j);
+	}
+      }
+      /* next round: research this chunk that survived the filter */
+      if((status = ActuallySearchTarget(cm, errbuf, (fround+1), dsq, i, j, results, NULL, NULL)) != eslOK) return status;
+    }
+  }
+  else { /* we're done filtering, and we're done searching, get alignments if nec */
+    if((round_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN))) {
+      if(cm->align_opts & CM_ALIGN_OLDDP) { 
+	OldActuallyAlignTargets(cm, NULL, 
+				dsq, round_results,   /* put function into dsq_mode, designed for aligning search hits */
+				0, 0, 0, NULL);
+      }
+      else {
+	if((status = ActuallyAlignTargets(cm, errbuf, NULL, 
+					  dsq, round_results,      /* put function into dsq_mode, designed for aligning search hits */
+					  0, 0, 0, NULL)) != eslOK) return status;
+      }
     }
   }
   if(ret_sc != NULL) *ret_sc = sc;
   return eslOK;
 }  
-
-/* 
- * Function: OldActuallySearchTarget()
- * Incept:   EPN, Mon Jan  8 06:42:59 2007
- *
- * Purpose:  Given a CM and a sequence, call the correct search algorithm
- *           based on cm->search_opts. Uses v0.81 (old) DP functions, as
- *           opposed to the fast v1.0 (newer) DP functions called by 
- *           ActuallySearchTarget().
- * 
- * Args:     cm              - the covariance model
- *           dsq             - the target sequence (digitized)
- *           i0              - start of target subsequence (often 1, beginning of dsq)
- *           j0              - end of target subsequence (often L, end of dsq)
- *           cm_cutoff       - minimum CM  score to report 
- *           cp9_cutoff      - minimum CP9 score to report (or keep if filtering)
- *           results         - search_results_t to keep results in, must be empty; if NULL, don't add to it
- *           do_filter       - TRUE if we should filter, but only if cm->search_opts tells us to 
- *           doing_cm_stats  - TRUE if the reason we're scanning this seq is to build
- *                             a histogram to calculate Gumbels for the CM, in this
- *                             case we don't filter regardless of what cm->search_opts says.
- *           doing_cp9_stats - TRUE if we're calc'ing stats for the CP9, in this 
- *                             case we always run CP9Forward()
- *           ret_flen        - RETURN: subseq len that survived filter (NULL if not filtering)
- *           do_align_hits   - TRUE to do alignments and return  parsetrees in results
- *
- * Returns: Highest scoring hit from search (even if below cutoff).
- */
-float OldActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
-			     float cp9_cutoff, search_results_t *results, int do_filter, 
-			     int doing_cm_stats, int doing_cp9_stats, int *ret_flen,
-			     int do_align_hits)
-{
-  int status;
-  float sc;
-  int flen;
-  int use_cp9;    
-
-  /*printf("in OldActuallySearchTarget: i0: %d j0: %d do_filter: %d doing_cm_stats: %d doing_cp9_stats: %d\n", i0, j0, do_filter, doing_cm_stats, doing_cp9_stats);
-    printf("\ti0: %d j0: %d filter: %d\n", i0, j0, do_filter);*/
-
-  /* Contract checks */
-  if(dsq == NULL)                                 cm_Fail("OldActuallySearchTarget(): dsq is NULL.");
-  if(!(cm->flags & CMH_BITS))                     cm_Fail("OldActuallySearchTarget(): CMH_BITS flag down.\n");
-  if(doing_cm_stats && doing_cp9_stats)           cm_Fail("OldActuallySearchTarget(): doing_cm_stats and doing_cp9_stats both TRUE.\n");
-  if(results != NULL && results->num_results > 0) cm_Fail("OldActuallySearchTarget(): there's already hits in results.\n");
-
-  flen = (j0-i0+1);
-
-  /* Check if we need the CP9 */
-  use_cp9 = FALSE;
-  /* use the CP9 b/c we're calcing CP9 Gumbel stats */
-  if(doing_cp9_stats) use_cp9 = TRUE;                     
-  /* use the CP9 b/c we're searching only with the CP9 HMM */
-  if(cm->search_opts & CM_SEARCH_HMMONLY) use_cp9 = TRUE; 
-  /* The third way we use the CP9 is if we're filtering, AND we haven't 
-   * called this function recursively from AFTER filtering (the do_filter flag)
-   * AND we're not determining CM Gumbel stats. */
-  if((cm->search_opts & CM_SEARCH_HMMFILTER) && (do_filter && !doing_cm_stats)) use_cp9 = TRUE;
-
-  /* Check if we have a valid CP9 (if we need it) */
-  if(use_cp9) {
-    if(cm->cp9 == NULL)                    cm_Fail("OldActuallySearchTarget(), trying to use CP9 HMM that is NULL\n");
-    if(!(cm->cp9->flags & CPLAN9_HASBITS)) cm_Fail("OldActuallySearchTarget(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
-    if((cm->search_opts & CM_SEARCH_HBANDED) && cm->cp9b == NULL) cm_Fail("OldActuallySearchTarget(), trying to use CP9 HMM for HMM banded search, but cm->cp9b is NULL.\n");
-  }      
-
-  if(use_cp9)
-    sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);
-  else {
-      if(cm->search_opts & CM_SEARCH_HBANDED) {
-	if((status = cp9_Seq2Bands(cm, NULL, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail("OldActuallySearchTarget(): unrecoverable error in cp9_Seq2Bands().");
-
-	/*debug_print_hmm_bands(stdout, (j0-i0+1), cm->cp9b, cm->tau, 3);*/
-	if(cm->search_opts & CM_SEARCH_INSIDE)
-	  sc = iInsideBandedScan_jd(cm, dsq, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, 
-				    i0, j0, cm->W, cm_cutoff, results);
-	else /* don't do inside */
-	  sc = CYKBandedScan_jd(cm, dsq, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, 
-				i0, j0, cm->W, cm_cutoff, results);
-      }
-      else if(cm->search_opts & CM_SEARCH_NOQDB) {
-	if(cm->search_opts & CM_SEARCH_INSIDE)
-	  sc = iInsideScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results);
-	else /* don't do inside */
-	  sc = CYKScan (cm, dsq, i0, j0, cm->W, cm_cutoff, results);
-	/* sc = FastCYKScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results, NULL); */
-      }
-      else { /* use QDB */
-	if(cm->search_opts & CM_SEARCH_INSIDE)
-	  sc = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
-	else /* don't do inside */
-	  sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
-	/* sc = FastCYKScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results, NULL);*/
-      }
-  }    
-  if((results != NULL && results->num_results > 0) && do_align_hits) {
-    if(cm->align_opts & CM_ALIGN_OLDDP) { 
-      OldActuallyAlignTargets(cm, NULL, 
-			      dsq, results,   /* put function into dsq_mode, designed for aligning search hits */
-			      0, 0, 0, NULL);
-    }
-    else {
-      ActuallyAlignTargets(cm, NULL, NULL, 
-			   dsq, results,      /* put function into dsq_mode, designed for aligning search hits */
-			   0, 0, 0, NULL);
-    }
-   }
-  return sc;
-}
 
 
 /* 
@@ -2816,4 +2805,116 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *a
  ERROR:
   cm_Fail("Memory allocation error.");
 }
+
+
+/* 
+ * Function: OldActuallySearchTarget()
+ * Incept:   EPN, Mon Jan  8 06:42:59 2007
+ *
+ * Purpose:  Given a CM and a sequence, call the correct search algorithm
+ *           based on cm->search_opts. Uses v0.81 (old) DP functions, as
+ *           opposed to the fast v1.0 (newer) DP functions called by 
+ *           ActuallySearchTarget().
+ * 
+ * Args:     cm              - the covariance model
+ *           dsq             - the target sequence (digitized)
+ *           i0              - start of target subsequence (often 1, beginning of dsq)
+ *           j0              - end of target subsequence (often L, end of dsq)
+ *           cm_cutoff       - minimum CM  score to report 
+ *           cp9_cutoff      - minimum CP9 score to report (or keep if filtering)
+ *           results         - search_results_t to keep results in, must be empty; if NULL, don't add to it
+ *           do_filter       - TRUE if we should filter, but only if cm->search_opts tells us to 
+ *           doing_cm_stats  - TRUE if the reason we're scanning this seq is to build
+ *                             a histogram to calculate Gumbels for the CM, in this
+ *                             case we don't filter regardless of what cm->search_opts says.
+ *           doing_cp9_stats - TRUE if we're calc'ing stats for the CP9, in this 
+ *                             case we always run CP9Forward()
+ *           ret_flen        - RETURN: subseq len that survived filter (NULL if not filtering)
+ *           do_align_hits   - TRUE to do alignments and return  parsetrees in results
+ *
+ * Returns: Highest scoring hit from search (even if below cutoff).
+ */
+float OldActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
+			     float cp9_cutoff, search_results_t *results, int do_filter, 
+			     int doing_cm_stats, int doing_cp9_stats, int *ret_flen,
+			     int do_align_hits)
+{
+  int status;
+  float sc;
+  int flen;
+  int use_cp9;    
+
+  /*printf("in OldActuallySearchTarget: i0: %d j0: %d do_filter: %d doing_cm_stats: %d doing_cp9_stats: %d\n", i0, j0, do_filter, doing_cm_stats, doing_cp9_stats);
+    printf("\ti0: %d j0: %d filter: %d\n", i0, j0, do_filter);*/
+
+  /* Contract checks */
+  if(dsq == NULL)                                 cm_Fail("OldActuallySearchTarget(): dsq is NULL.");
+  if(!(cm->flags & CMH_BITS))                     cm_Fail("OldActuallySearchTarget(): CMH_BITS flag down.\n");
+  if(doing_cm_stats && doing_cp9_stats)           cm_Fail("OldActuallySearchTarget(): doing_cm_stats and doing_cp9_stats both TRUE.\n");
+  if(results != NULL && results->num_results > 0) cm_Fail("OldActuallySearchTarget(): there's already hits in results.\n");
+
+  flen = (j0-i0+1);
+
+  /* Check if we need the CP9 */
+  use_cp9 = FALSE;
+  /* use the CP9 b/c we're calcing CP9 Gumbel stats */
+  if(doing_cp9_stats) use_cp9 = TRUE;                     
+  /* use the CP9 b/c we're searching only with the CP9 HMM */
+  if(cm->search_opts & CM_SEARCH_HMMONLY) use_cp9 = TRUE; 
+  /* The third way we use the CP9 is if we're filtering, AND we haven't 
+   * called this function recursively from AFTER filtering (the do_filter flag)
+   * AND we're not determining CM Gumbel stats. */
+  if((cm->search_opts & CM_SEARCH_HMMFILTER) && (do_filter && !doing_cm_stats)) use_cp9 = TRUE;
+
+  /* Check if we have a valid CP9 (if we need it) */
+  if(use_cp9) {
+    if(cm->cp9 == NULL)                    cm_Fail("OldActuallySearchTarget(), trying to use CP9 HMM that is NULL\n");
+    if(!(cm->cp9->flags & CPLAN9_HASBITS)) cm_Fail("OldActuallySearchTarget(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
+    if((cm->search_opts & CM_SEARCH_HBANDED) && cm->cp9b == NULL) cm_Fail("OldActuallySearchTarget(), trying to use CP9 HMM for HMM banded search, but cm->cp9b is NULL.\n");
+  }      
+
+  if(use_cp9)
+    sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);
+  else {
+      if(cm->search_opts & CM_SEARCH_HBANDED) {
+	if((status = cp9_Seq2Bands(cm, NULL, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail("OldActuallySearchTarget(): unrecoverable error in cp9_Seq2Bands().");
+
+	/*debug_print_hmm_bands(stdout, (j0-i0+1), cm->cp9b, cm->tau, 3);*/
+	if(cm->search_opts & CM_SEARCH_INSIDE)
+	  sc = iInsideBandedScan_jd(cm, dsq, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, 
+				    i0, j0, cm->W, cm_cutoff, results);
+	else /* don't do inside */
+	  sc = CYKBandedScan_jd(cm, dsq, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, 
+				i0, j0, cm->W, cm_cutoff, results);
+      }
+      else if(cm->search_opts & CM_SEARCH_NOQDB) {
+	if(cm->search_opts & CM_SEARCH_INSIDE)
+	  sc = iInsideScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results);
+	else /* don't do inside */
+	  sc = CYKScan (cm, dsq, i0, j0, cm->W, cm_cutoff, results);
+	/* sc = FastCYKScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results, NULL); */
+      }
+      else { /* use QDB */
+	if(cm->search_opts & CM_SEARCH_INSIDE)
+	  sc = iInsideBandedScan(cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
+	else /* don't do inside */
+	  sc = CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, i0, j0, cm->W, cm_cutoff, results);
+	/* sc = FastCYKScan(cm, dsq, i0, j0, cm->W, cm_cutoff, results, NULL);*/
+      }
+  }    
+  if((results != NULL && results->num_results > 0) && do_align_hits) {
+    if(cm->align_opts & CM_ALIGN_OLDDP) { 
+      OldActuallyAlignTargets(cm, NULL, 
+			      dsq, results,   /* put function into dsq_mode, designed for aligning search hits */
+			      0, 0, 0, NULL);
+    }
+    else {
+      ActuallyAlignTargets(cm, NULL, NULL, 
+			   dsq, results,      /* put function into dsq_mode, designed for aligning search hits */
+			   0, 0, 0, NULL);
+    }
+   }
+  return sc;
+}
+
 #endif

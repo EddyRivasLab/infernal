@@ -34,7 +34,7 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define STRATOPTS  "--cmonly,--hmmfilter,--hmmonly"                 /* exclusive choice for search strategy */
+#define STRATOPTS  "--cmonly,--hmmfilter,--hmmviterbi,--hmmforward" /* exclusive choice for search strategy */
 #define ALPHOPTS   "--rna,--dna"                                    /* exclusive choice for output alphabet */
 
 #define I_CMCUTOPTS   "-E,-T,--ga,--tc,--nc,--hmmonly"                 /* exclusive choice for CM cutoff */
@@ -57,7 +57,8 @@ static ESL_OPTIONS options[] = {
   /* strategy choice */
   { "--cmonly",   eslARG_NONE,"default",NULL,NULL,      STRATOPTS, NULL,        NULL, "search only with CM, do not filter [default]", 2 },
   { "--hmmfilter",eslARG_NONE,  FALSE, NULL, NULL,      STRATOPTS, NULL,        NULL, "subseqs j-W+1..i+W-1 survive (j=end from Fwd, i=start from Bwd)", 2 },
-  { "--hmmonly",  eslARG_NONE,  FALSE, NULL, NULL,      STRATOPTS, NULL,        NULL, "do not use CM at all, just scan with HMM (Forward +  Backward)", 2 },
+  { "--hmmviterbi",eslARG_NONE, FALSE, NULL, NULL,      STRATOPTS, NULL,        NULL, "do not use CM at all, just scan with HMM (Viterbi alg)", 2 },
+  { "--hmmforward",eslARG_NONE, FALSE, NULL, NULL,      STRATOPTS, NULL,        NULL, "do not use CM at all, just scan with HMM (Forward alg)", 2 },
   /* CM cutoff options */
   { "-E",        eslARG_REAL,   "0.1", NULL, "x>0.",    NULL,      NULL,  I_CMCUTOPTS, "use cutoff E-value of <x> for CM search", 3 },
   { "-T",        eslARG_REAL,   "0.0", NULL, NULL,      NULL,      NULL,  I_CMCUTOPTS, "use cutoff bit score of <x> for CM search", 3 },
@@ -70,11 +71,10 @@ static ESL_OPTIONS options[] = {
   { "--hmmE",    eslARG_REAL,   "50.", NULL, "x>0.",    NULL,      NULL, I_HMMCUTOPTS2,"use cutoff E-value of <x> for CP9 HMM filter/search", 4 },
   { "--hmmT",    eslARG_REAL,   "0.0", NULL, NULL,      NULL,      NULL, I_HMMCUTOPTS2,"use cutoff bit score of <x> for CP9 HMM filter/search", 4 },
    /* QDB related options */
-  { "--beta",    eslARG_REAL,   "1e-7",NULL, "x>0",     NULL,      NULL, "--hmmonly", "set tail loss prob for QDB and window size calculation to <x>", 5 },
-  { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmonly", "DO NOT use query dependent banding (QDB) for acceleration", 5 },
-  { "--qdbfile", eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,"--hmmonly,--noqdb","read QDBs from file <s> (outputted from cmbuild)", 5 },
+  { "--beta",    eslARG_REAL,   "1e-7",NULL, "x>0",     NULL,      NULL, "--hmmviterbi,--hmmforward", "set tail loss prob for QDB and window size calculation to <x>", 5 },
+  { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "DO NOT use query dependent banding (QDB) for acceleration", 5 },
+  { "--qdbfile", eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,"--hmmviterbi,--hmmforward,--noqdb","read QDBs from file <s> (outputted from cmbuild)", 5 },
   /* HMM filtering options */
-  { "--hmmpad",  eslARG_INT,    NULL,  NULL, NULL,      NULL,"--hmmfilter",     NULL, "subseqs \'i-<n>..j+<n>\' survive", 6 },
   { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       NULL,       NULL, "calculate and use HMM bands in CM search", 6 },
   { "--tau",     eslARG_REAL,   "1e-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 6 },
   { "--scan2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "derive HMM bands from scanning Forward/Backward", 6 },
@@ -112,7 +112,6 @@ static ESL_OPTIONS options[] = {
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 12 },
 /* Other options */
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "arrest after start: for debugging MPI under gdb",   13 },  
-  { "--olddp",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "use older, slower (version 0.81) DP search functions",13 },  
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--qdbfile","run as an MPI parallel program", 13 },  
 #endif
@@ -442,10 +441,11 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    if ((status = process_search_workunit(go, cfg, errbuf, cm, dbseq->sq[rci]->dsq, dbseq->sq[rci]->n, 
 						  min_cm_cutoff, min_cp9_cutoff, &dbseq->results[rci])) != eslOK) cm_Fail(errbuf);
 	    remove_overlapping_hits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
-	    if(using_e_cutoff) remove_hits_over_e_cutoff(cm, dbseq->results[rci], dbseq->sq[rci], (cm->search_opts & CM_SEARCH_HMMONLY)); /* HMM hits? */
+	    if(using_e_cutoff) remove_hits_over_e_cutoff(cm, dbseq->results[rci], dbseq->sq[rci], 
+							 ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD))); /* HMM hits? */
 	  }
 	  print_results (cm, cfg->abc_out, cons, dbseq, cfg->do_rc,
-			 (cm->search_opts & CM_SEARCH_HMMONLY)); /* use HMM stats? */
+			 ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD))); /* use HMM stats? */
 	  for(rci = 0; rci <= cfg->do_rc; rci++) {
 	    FreeResults(dbseq->results[rci]);
 	    esl_sq_Destroy(dbseq->sq[rci]);
@@ -695,11 +695,12 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		    {
 		      for(rci = 0; rci <= cfg->do_rc; rci++) {
 			remove_overlapping_hits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
-			if(using_e_cutoff) remove_hits_over_e_cutoff(cm, dbseqlist[si_recv]->results[rci], 
-								     dbseqlist[si_recv]->sq[rci], (cm->search_opts & CM_SEARCH_HMMONLY)); /* HMM hits? */
+			if(using_e_cutoff) remove_hits_over_e_cutoff(cm, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci], 
+								     ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD)); /* HMM hits? */
+
 		      }					      
 		      print_results(cm, cfg->abc_out, cons, dbseqlist[si_recv], cfg->do_rc, 
-				    (cm->search_opts & CM_SEARCH_HMMONLY)); /* use HMM stats (used HMM only)? */
+				    ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD)); /* use HMM stats (used HMM only) */
 		      for(rci = 0; rci <= cfg->do_rc; rci++) {
 			esl_sq_Destroy(dbseqlist[si_recv]->sq[rci]);
 			FreeResults(dbseqlist[si_recv]->results[rci]);
@@ -881,33 +882,27 @@ process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
 			ESL_DSQ *dsq, int L, float min_cm_cutoff, float min_cp9_cutoff, search_results_t **ret_results)
 {
   int status;
-  search_results_t *results;
+  search_results_t **results;
+  int n;
 
-  results        = CreateResults(INIT_RESULTS);
-  if(cm->search_opts & CM_SEARCH_OLDDP) { 
-    OldActuallySearchTarget(cm, dsq, 1, L, min_cm_cutoff, min_cp9_cutoff, results,
-			    TRUE,  /* filter with a CP9 HMM if appropriate */
-			    FALSE, /* we're not building a histogram for CM stats  */
-			    FALSE, /* we're not building a histogram for CP9 stats */
-			    NULL,  /* filter fraction, TEMPORARILY NULL            */
-			    (! esl_opt_GetBoolean(go, "--noalign"))); /* get alignments of hits? */
-  }
-  else {
-    if((status = ActuallySearchTarget(cm, errbuf, dsq, 1, L, min_cm_cutoff, min_cp9_cutoff, results,
-				      TRUE,  /* filter with a CP9 HMM if appropriate */
-				      FALSE, /* we're not building a histogram for CM stats  */
-				      FALSE, /* we're not building a histogram for CP9 stats */
-				      NULL,  /* filter fraction, TEMPORARILY NULL            */
-				      (! esl_opt_GetBoolean(go, "--noalign")), /* get alignments of hits? */
-				      NULL)) != eslOK) goto ERROR;
-  }
-  *ret_results = results;
+  if(cm->fi == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm->fi is NULL in process_search_workunit()\n");
+
+  ESL_ALLOC(results, sizeof(search_results_t *) * (cm->fi->nrounds+1));
+  for(n = 0; n <= cm->fi->nrounds; n++) results[n] = CreateResults(INIT_RESULTS);
+
+  if((status = ActuallySearchTarget(cm, errbuf, 0, dsq, 1, L, results, NULL, NULL)) != eslOK) goto ERROR;
+
+  /* we only care about the final results, that survived all the rounds (all the filtering rounds plus the final round) */
+  *ret_results = results[cm->fi->nrounds];
+  /* free the results describing what survived each round of filtering (if any) */
+  for(n = 0; n < cm->fi->nrounds; n++) FreeResults(results[n]);
+  free(results);
+
   return eslOK;
   
  ERROR:
   ESL_DPRINTF1(("worker %d: has caught an error in process_search_workunit\n", cfg->my_rank));
   FreeCM(cm);
-  FreeResults(results);
   return status;
 }
 
@@ -937,11 +932,13 @@ static int
 initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   int status;
+  int use_hmmonly;
 
   /* set up CM parameters that are option-changeable */
   cm->beta   = esl_opt_GetReal(go, "--beta"); /* this will be DEFAULT_BETA unless changed at command line */
   cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
-  if(! esl_opt_IsDefault(go, "--hmmpad"))   cm->hmmpad       =       esl_opt_GetInteger(go, "--hmmpad");
+
+  use_hmmonly = (esl_opt_GetBoolean(go, "--hmmviterbi") || esl_opt_GetBoolean(go, "--hmmforward")) ? TRUE : FALSE;
 
   /* Update cm->config_opts and cm->align_opts based on command line options */
 
@@ -950,13 +947,13 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(! esl_opt_GetBoolean(go, "--hmmglocal"))   cm->config_opts |= CM_CONFIG_HMMLOCAL;
   if(! esl_opt_GetBoolean(go, "--hmmnoel"))     cm->config_opts |= CM_CONFIG_HMMEL;
   if(! esl_opt_GetBoolean(go, "--iins"))        cm->config_opts |= CM_CONFIG_ZEROINSERTS;
-  /* config QDB? Yes, unless --noqdb or --hmmonly enabled */
-  if(! (esl_opt_GetBoolean(go, "--noqdb") || esl_opt_GetBoolean(go, "--hmmonly")))
+  /* config QDB? Yes, unless --noqdb || --hmmviterbi || --hmmforward enabled */
+  if(! (esl_opt_GetBoolean(go, "--noqdb") || (use_hmmonly)))
     cm->config_opts |= CM_CONFIG_QDB;
   /* are we enforcing a subseq? */
   if(! esl_opt_IsDefault (go, "--enfseq")) {
     cm->config_opts |= CM_CONFIG_ENFORCE;
-    if((! esl_opt_GetBoolean(go, "--hmmonly")) && (! esl_opt_GetBoolean(go, "--enfnohmm")))
+    if((! use_hmmonly) && (! esl_opt_GetBoolean(go, "--enfnohmm")))
       /* We want to filter with special enforced CP9 HMM for the enforced subseq */
       cm->search_opts |= CM_SEARCH_HMMFILTER;
     cm->enf_start = EnforceFindEnfStart(cm, esl_opt_GetInteger(go, "--enfstart"));
@@ -973,12 +970,11 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(  esl_opt_GetBoolean(go, "--hmmgreedy"))   cm->search_opts |= CM_SEARCH_HMMGREEDY;
   if(  esl_opt_GetBoolean(go, "--noqdb"))       cm->search_opts |= CM_SEARCH_NOQDB;
   if(  esl_opt_GetBoolean(go, "--hmmfilter"))   cm->search_opts |= CM_SEARCH_HMMFILTER;
-  if(  esl_opt_GetBoolean(go, "--hmmonly"))     cm->search_opts |= CM_SEARCH_HMMONLY;
-  if(! esl_opt_IsDefault (go, "--hmmpad"))      cm->search_opts |= CM_SEARCH_HMMPAD;
+  if(  esl_opt_GetBoolean(go, "--hmmviterbi"))  cm->search_opts |= CM_SEARCH_HMMVITERBI;
+  if(  esl_opt_GetBoolean(go, "--hmmforward"))  cm->search_opts |= CM_SEARCH_HMMFORWARD;
   if(  esl_opt_GetBoolean(go, "--hbanded"))     cm->search_opts |= CM_SEARCH_HBANDED;
   if(  esl_opt_GetBoolean(go, "--scan2bands"))  cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
   if(  esl_opt_GetBoolean(go, "--sums"))        cm->search_opts |= CM_SEARCH_SUMS;
-  if(  esl_opt_GetBoolean(go, "--olddp"))       cm->search_opts |= CM_SEARCH_OLDDP;
 
   /* align_opts */
   cm->align_opts |= CM_ALIGN_HBANDED;
@@ -1024,13 +1020,12 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     fprintf(cfg->bfp, "beta:%f\n", cm->beta);
   }
 
-  /* setup ScanInfo for CYK/Inside scanning functions */
-  int do_float = TRUE;
-  int do_int   = FALSE;
-  if(cm->search_opts & CM_SEARCH_INSIDE) { do_float = FALSE; do_int = TRUE; }
-  cm_CreateScanInfo(cm, do_float, do_int);
-  if(cm->si == NULL) cm_Fail("initialize_cm(), CreateScanInfo() call failed.");
-  
+  /* create FilterInfo, specifying no filtering, we change this later if necessary */
+  cm_CreateFilterInfo(cm, 0.);
+  if(cm->fi == NULL) cm_Fail("initialize_cm(), CreateFilterInfo() call failed.");
+  cm_ValidateFilterInfo(cm->fi);
+  cm_DumpFilterInfo(cm->fi);
+
   if(cfg->my_rank == 0) printf("CM %d: %s\n", (cfg->ncm), cm->name);
   return eslOK;
   
@@ -1079,6 +1074,7 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
 {
   int           cm_mode  = -1;   /* CM algorithm mode                        */
   int           cp9_mode = -1;   /* CP9 algorithm mode                       */
+  int           use_hmmonly;     /* True if --hmmviterbi or --hmmforward enabled */
 
   /* Determine configuration of CM and CP9 based on cm->flags & cm->search_opts */
   CM2Gumbel_mode(cm, &cm_mode, &cp9_mode); 
@@ -1144,12 +1140,12 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
      esl_opt_IsDefault(go, "--hmmT"))
     {
       /* Choose from, in order of priority:
-       * 1. filter threshold in CM file (if ! --hmmonly)
+       * 1. filter threshold in CM file (if ! --hmmviterbi && ! --hmmforward) 
        * 2. default CP9 E value if CM file has Gumbel stats
        * 3. default CP9 bit score
        */
-      if((! esl_opt_GetBoolean(go, "--hmmonly")) && 
-	 cm->flags & CMH_FTHR_STATS)  /* if !hmm_only use CP9 filter threshold from CM file */
+      use_hmmonly = (esl_opt_GetBoolean(go, "--hmmviterbi") || esl_opt_GetBoolean(go, "--hmmforward")) ? TRUE : FALSE;
+      if((! use_hmmonly) && cm->flags & CMH_FTHR_STATS)  /* if !hmm_only use CP9 filter threshold from CM file */
 	{
 	  cm->cp9_cutoff_type = E_CUTOFF;
 	  if     (cp9_mode == CP9_L) cm->cp9_cutoff = cm->stats->fthrA[cm_mode]->l_eval;
@@ -1203,10 +1199,17 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
   *ret_min_cm_cutoff  = MinCMScCutoff(cm);
   *ret_min_cp9_cutoff = MinCP9ScCutoff(cm);
 
-  if (((!(cm->search_opts & CM_SEARCH_HMMONLY)) && (cm->cutoff_type     == E_CUTOFF))  || 
-      ((  cm->search_opts & CM_SEARCH_HMMONLY)  && (cm->cp9_cutoff_type == E_CUTOFF)))
+  if (((!use_hmmonly) && (cm->cutoff_type     == E_CUTOFF))  || 
+      (( use_hmmonly) && (cm->cp9_cutoff_type == E_CUTOFF)))
     *ret_using_e_cutoff = TRUE;
   else *ret_using_e_cutoff = FALSE;
+
+  /* finally, update fault FilterInfo, specifying no filtering, we'll change this later if nec */
+  if(cm->fi == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_cutoffs(), cm->fi is NULL. Shouldn't happen");
+  if(use_hmmonly) cm_UpdateFilterInfoCutoff(cm, cm->fi->nrounds, *ret_min_cp9_cutoff); /* update CP9 bit score cutoff */
+  else            cm_UpdateFilterInfoCutoff(cm, cm->fi->nrounds, *ret_min_cm_cutoff);  /* use CM  bit score cutoff */
+  cm_ValidateFilterInfo(cm->fi);
+  cm_DumpFilterInfo(cm->fi);
 
   return eslOK;
 }
@@ -1215,7 +1218,7 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
  * Set cm->W, the window size for scanning.
  *
  * 1. cm->W is overwritten here if --window enabled.
- * 2. cm->W is set to dmax[0] if --noqdb or --hmmonly enabled after calc'ing QDBs for 
+ * 2. cm->W is set to dmax[0] if --noqdb, --hmmviterbi, or --hmmforward enabled after calc'ing QDBs for 
  *    sole purpose of determining cm->W. 
  * 3. else cm->W was to cm->dmax[0] in ConfigCM()'s call to ConfigQDB(), 
  *    which is what it should be.
@@ -1223,14 +1226,17 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
 static int
 set_window(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
+  int use_hmmonly;
+  use_hmmonly = (esl_opt_GetBoolean(go, "--hmmviterbi") || esl_opt_GetBoolean(go, "--hmmforward")) ? TRUE : FALSE;
+
   if(! esl_opt_IsDefault(go, "--window")) {
-    if((! esl_opt_GetBoolean(go, "--noqdb")) && (! esl_opt_GetBoolean(go, "--hmmonly")))
+    if((! esl_opt_GetBoolean(go, "--noqdb")) && (! use_hmmonly))
       ESL_FAIL(eslEINCOMPAT, errbuf, "--window only makes sense with --noqdb or --hmmonly enabled. Use smaller --beta values to decrease window size.\n");
     cm->W = esl_opt_GetInteger(go, "--window");
   }
-  else if(esl_opt_GetBoolean(go, "--noqdb") || esl_opt_GetBoolean(go, "--hmmonly")) {
+  else if(esl_opt_GetBoolean(go, "--noqdb") || use_hmmonly) {
     if(cm->dmin != NULL || cm->dmax != NULL) 
-      ESL_FAIL(eslEINCONCEIVABLE, errbuf, "--hmmonly or --noqdb enabled, but cm->dmin and cm->dmax non-null. This shouldn't happen.");
+      ESL_FAIL(eslEINCONCEIVABLE, errbuf, "--hmmviterbi, --hmmforward or --noqdb enabled, but cm->dmin and cm->dmax non-null. This shouldn't happen.");
     int *dmin;
     int *dmax;
     int safe_windowlen = cm->clen * 2;
@@ -1247,6 +1253,17 @@ set_window(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     free(dmax);
     CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
   }
+
+  /* Setup ScanInfo for CYK/Inside scanning functions, this is dependent on W, so we can't 
+   * do it in initialize_cm(), but we have to wait til W is set, which just happened. 
+   */
+  int do_float = TRUE;
+  int do_int   = FALSE;
+  if(cm->search_opts & CM_SEARCH_INSIDE) { do_float = FALSE; do_int = TRUE; }
+  cm_CreateScanInfo(cm, do_float, do_int);
+  if(cm->si == NULL) cm_Fail("initialize_cm(), CreateScanInfo() call failed.");
+
+
   return eslOK;
 }
 
@@ -1376,6 +1393,7 @@ int print_search_info(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N, cha
   int p;
   float surv_fract;
   float avg_hit_len;
+  int use_hmmonly;
 
   /* Could use ESL_GETOPTS here, but using the CM flags assures we're reporting
    * on how the CM is actually config'ed, not how we want it to be, also
@@ -1383,60 +1401,58 @@ int print_search_info(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N, cha
    * really impt).
    */
 
-  if(!(cm->search_opts & CM_SEARCH_HMMONLY))
-    {
-      if(cm->cutoff_type == E_CUTOFF)
-	{
-	  fprintf(fp, "CM cutoff (E value):  %.2f\n", cm->cutoff);
-	  for(p = 0; p < cm->stats->np; p++)
-	    fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
-		    (cm->stats->gumAA[cm_mode][p]->mu - 
-		     (log(cm->cutoff) / cm->stats->gumAA[cm_mode][p]->lambda)), 
-		    cm->stats->gumAA[cm_mode][p]->mu, cm->stats->gumAA[cm_mode][p]->lambda);
-	}		       
-      else if (cm->cutoff_type == SCORE_CUTOFF) 
-	fprintf(fp, "CM cutoff (bit sc):   %.2f\n", cm->cutoff);
+  use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD));
+  if(! use_hmmonly) {
+    if(cm->cutoff_type == E_CUTOFF) {
+      fprintf(fp, "CM cutoff (E value):  %.2f\n", cm->cutoff);
+      for(p = 0; p < cm->stats->np; p++)
+	fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
+		(cm->stats->gumAA[cm_mode][p]->mu - (log(cm->cutoff) / cm->stats->gumAA[cm_mode][p]->lambda)), 
+		cm->stats->gumAA[cm_mode][p]->mu, cm->stats->gumAA[cm_mode][p]->lambda);
+    }		       
+    else if (cm->cutoff_type == SCORE_CUTOFF) fprintf(fp, "CM cutoff (bit sc):   %.2f\n", cm->cutoff);
       printf ("CM search algorithm:  ");
       if(cm->search_opts & CM_SEARCH_INSIDE) fprintf(fp, "Inside\n");
-      else fprintf(fp, "CYK\n");
+      else                                   fprintf(fp, "CYK\n");
       printf ("CM configuration:     ");
       if(cm->flags & CMH_LOCAL_BEGIN) fprintf(fp, "Local\n");
-      else fprintf(fp, "Glocal\n");
+      else                            fprintf(fp, "Glocal\n");
     }
   else 
     fprintf(fp, "Scanning with CP9 HMM only\n");
   if (cm->search_opts & CM_SEARCH_HMMFILTER)
     fprintf(fp, "Filtering with a CP9 HMM\n");
   
-  if(cm->search_opts & CM_SEARCH_HMMONLY || 
-     cm->search_opts & CM_SEARCH_HMMFILTER)
-    {
-      if(cm->cp9_cutoff_type == E_CUTOFF)
-	{
-	  if(!(cm->flags & CMH_GUMBEL_STATS))
-	    ESL_FAIL(eslEINCONCEIVABLE, errbuf, "trying to use E-value for CM cutoff, but CM has no Gumbel stats.");
-
-	  /* Predict survival fraction from filter based on E-value, consensus length, W and N */
-	  if(cp9_mode == CP9_G) avg_hit_len = cm->clen;       /* should be weighted sum of gamma[0] from QDB calc */
-	  if(cp9_mode == CP9_L) avg_hit_len = cm->clen * 0.5; /* should be weighted sum of gamma[0] from QDB calc */
-	  surv_fract = (cm->cp9_cutoff * ((2. * cm->W) - avg_hit_len)) / ((double) N); 
-	  /* HMM filtering sends j-W..i+W to be re-searched with CM for HMM hits i..j */
-	  fprintf(fp, "CP9 cutoff (E value): %.2f\n", cm->cp9_cutoff);
-	  fprintf(fp, "   Predicted survival fraction: %.5f (1/%.3f)\n", surv_fract, (1./surv_fract));
-	  for(p = 0; p < cm->stats->np; p++)
-	    fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
-		    (cm->stats->gumAA[cp9_mode][p]->mu - 
-		     (log(cm->cp9_cutoff) / cm->stats->gumAA[cp9_mode][p]->lambda)), 
-		    cm->stats->gumAA[cp9_mode][p]->mu, cm->stats->gumAA[cp9_mode][p]->lambda);
-	}
-      else if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
-	fprintf(fp, "CP9 cutoff (bit sc):  %.2f\n", cm->cp9_cutoff);
-      printf ("CP9 search algorithm: Forward/Backward\n");
-      printf ("CP9 configuration:    ");
-      if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) fprintf(fp, "Local\n");
-      else fprintf(fp, "Glocal\n");
+  if(use_hmmonly || cm->search_opts & CM_SEARCH_HMMFILTER) {
+    if(cm->cp9_cutoff_type == E_CUTOFF) {
+      if(!(cm->flags & CMH_GUMBEL_STATS))
+	ESL_FAIL(eslEINCONCEIVABLE, errbuf, "trying to use E-value for CM cutoff, but CM has no Gumbel stats.");
+      
+      /* Predict survival fraction from filter based on E-value, consensus length, W and N */
+      if(cp9_mode == CP9_G) avg_hit_len = cm->clen;       /* should be weighted sum of gamma[0] from QDB calc */
+      if(cp9_mode == CP9_L) avg_hit_len = cm->clen * 0.5; /* should be weighted sum of gamma[0] from QDB calc */
+      surv_fract = (cm->cp9_cutoff * ((2. * cm->W) - avg_hit_len)) / ((double) N); 
+      /* HMM filtering sends j-W..i+W to be re-searched with CM for HMM hits i..j */
+      fprintf(fp, "CP9 cutoff (E value): %.2f\n", cm->cp9_cutoff);
+      fprintf(fp, "   Predicted survival fraction: %.5f (1/%.3f)\n", surv_fract, (1./surv_fract));
+      for(p = 0; p < cm->stats->np; p++)
+	fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
+		(cm->stats->gumAA[cp9_mode][p]->mu - 
+		 (log(cm->cp9_cutoff) / cm->stats->gumAA[cp9_mode][p]->lambda)), 
+		cm->stats->gumAA[cp9_mode][p]->mu, cm->stats->gumAA[cp9_mode][p]->lambda);
     }
-  printf     ("N (db size, nt):      %ld\n\n", N);
+    else if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
+      fprintf(fp, "CP9 cutoff (bit sc):  %.2f\n", cm->cp9_cutoff);
+    if     (cm->search_opts & CM_SEARCH_HMMVITERBI) printf ("CP9 search algorithm: Viterbi\n");
+    else if(cm->search_opts & CM_SEARCH_HMMFORWARD) printf ("CP9 search algorithm: Forward\n");
+    printf ("CP9 configuration:    ");
+      if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) { 
+	if(cm->cp9->flags & CPLAN9_EL) fprintf(fp, "Local (EL on)\n");
+	else                           fprintf(fp, "Local (EL off)\n");
+      }
+      else                                    fprintf(fp, "Glocal\n");
+    }
+  printf     ("DB size, nt (N):      %ld\n\n", N);
   fflush(stdout);
   return eslOK;
 }

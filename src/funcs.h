@@ -392,13 +392,14 @@ extern float CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cut
 extern float CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
 			 int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
 			 int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx);
-extern float CP9Scan_dispatch(CM_t *cm,ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff, 
-			      float cp9_cutoff, search_results_t *results, int doing_cp9_stats, int *ret_flen);
+extern float CP9ForwardScanDemands(CP9_t *cp9, int L);
+/*
+  extern float CP9Scan_dispatch(CM_t *cm,ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff, 
+  float cp9_cutoff, search_results_t *results, int doing_cp9_stats, int *ret_flen);
 extern float RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, search_results_t *hmm_results, int i0, 
 				   int j0, int W, int padmode, int ipad, int jpad, int do_collapse,
 				   float cm_cutoff, float cp9_cutoff, search_results_t *results, 
 				   int *ret_flen);
-extern float CP9ForwardScanDemands(CP9_t *cp9, int L);
 extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
 				    float Fmin, float Smin, float Starget, float Spad, int N, 
 				    int use_cm_cutoff, float cm_ecutoff, int db_size, 
@@ -424,7 +425,7 @@ extern float FindExpFactor_min(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
 			       int emit_mode, int fthr_mode, int do_fastfil,
 			       int ntrials, float fp_min);
 extern float Filter_XFTableLookup(float X, float F, int emit_mode, int fthr_mode);
-     
+*/     
 /* from CP9_cm2wrhmm.c */
 extern int build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 			 float psi_vs_phi_threshold, int debug_level);
@@ -583,14 +584,8 @@ extern fullmat_t *ReadMatrix(const ESL_ALPHABET *abc, FILE *matfp);
 extern int ribosum_calc_targets(fullmat_t *fullmat);
 
 /* from cm_dispatch.c */
-extern int ActuallySearchTarget(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
-				float cp9_cutoff, search_results_t *results, int do_filter, 
-				int doing_cm_stats, int doing_cp9_stats, int *ret_flen,
-				int do_align_hits, float *ret_sc);
-extern float OldActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_cutoff, 
-				     float cp9_cutoff, search_results_t *results, int do_filter, 
-				     int doing_cm_stats, int doing_cp9_stats, int *ret_flen,
-				     int do_align_hits);
+extern int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, 
+				search_results_t **results, int *ret_flen, float *ret_sc);
 extern int ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
 				int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r);
 extern int OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
@@ -863,3 +858,12 @@ extern cm_GammaHitMx_t *cm_CreateGammaHitMx      (int L, int i0, int be_greedy, 
 extern void             cm_FreeGammaHitMx        (cm_GammaHitMx_t *gamma);
 extern void             cm_UpdateGammaHitMx      (cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, int *bestr, int doing_inside, search_results_t *results);
 extern void             cm_TBackGammaHitMx       (cm_GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
+
+/* from cm_filterinfo.c */
+extern int  cm_CreateFilterInfo(CM_t *cm, float cutoff);
+extern int  cm_AddHMMFilterInfo(CM_t *cm, int do_viterbi, float cutoff);
+extern void cm_FreeFilterInfo(FilterInfo_t *fi);
+extern void cm_DumpFilterInfo(FilterInfo_t *fi);
+extern void DumpSearchOpts(int search_opts);
+extern void cm_ValidateFilterInfo(FilterInfo_t *fi);
+extern void cm_UpdateFilterInfoCutoff(CM_t *cm, int nround, float cutoff);

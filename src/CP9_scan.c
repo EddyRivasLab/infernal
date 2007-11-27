@@ -1464,6 +1464,158 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
   return 0.; /* never reached */
 }
 
+/* Function: CP9ScanPosterior()
+ * based on Ian Holmes' hmmer/src/postprob.c::P7EmitterPosterior()
+ *
+ * Purpose:  Combines Forward and Backward scanning matrices into a posterior
+ *           probability matrix. 
+ *
+ *           The main difference between this function and CP9Posterior()
+ *           in hmmband.c is that this func takes matrices from CP9ForwardBackwardScan()
+ *           in which parses are allowed to start and end in any residue.
+ *           In CP9Posterior(), the matrices are calc'ed in CP9Forward()
+ *           and CP9Backward() which force all parses considered to start at posn
+ *           1 and end at L. This means here we have to calculate probability
+ *           that each residue from 1 to L is contained in any parse prior
+ *           to determining the posterior probability it was emitted from
+ *           each state.
+ * 
+ *           For emitters (match and inserts) the 
+ *           entries in row i of this matrix are the logs of the posterior 
+ *           probabilities of each state emitting symbol i of the sequence. 
+ *           For non-emitters the entries in row i of this matrix are the 
+ *           logs of the posterior probabilities of each state being 'visited' 
+ *           when the last emitted residue in the parse was symbol i of the
+ *           sequence. 
+ *           The last point distinguishes this function from P7EmitterPosterior() 
+ *           which set all posterior values for for non-emitting states to -INFTY.
+ *           The caller must allocate space for the matrix, although the
+ *           backward matrix can be used instead (overwriting it will not
+ *           compromise the algorithm).
+ *           
+ * Args:     dsq      - sequence in digitized form
+ *           i0       - start of target subsequence
+ *           j0       - end of target subsequence 
+ *           hmm      - the model
+ *           forward  - pre-calculated forward matrix
+ *           backward - pre-calculated backward matrix
+ *           mx       - pre-allocated dynamic programming matrix
+ *           
+ * Return:   void
+ */
+void
+CP9ScanPosterior(ESL_DSQ *dsq, int i0, int j0,
+		     CP9_t *hmm,
+		     CP9_dpmatrix_t *fmx,
+		     CP9_dpmatrix_t *bmx,
+		     CP9_dpmatrix_t *mx)
+{
+  int i;
+  int ip;
+  int k;
+  int fb_sum; /* tmp value, the probability that the current residue (i) was
+	       * visited in any parse */
+  /* contract check */
+  if(dsq == NULL)
+    cm_Fail("ERROR in CP9ScanPosterior(), dsq is NULL.");
+
+  /*printf("\n\nin CP9ScanPosterior() i0: %d, j0: %d\n", i0, j0);*/
+  fb_sum = -INFTY;
+  for (i = i0-1; i <= j0; i++) 
+    {
+      ip = i-i0+1; /* ip is relative position in seq, 0..L */
+      /*printf("bmx->mmx[i:%d][0]: %d\n", i, bmx->mmx[ip][0]); */
+      fb_sum = ILogsum(fb_sum, (bmx->mmx[ip][0])); 
+    }
+  /*printf("fb_sc: %f\n", Scorify(fb_sum));*/
+    /* fb_sum is the probability of all parses */
+
+    /*for(k = 1; k <= hmm->M; k++)*/
+  /*{*/
+      /*fbsum_ = ILogsum(fmx->mmx[0][k] + bmx->mmx[0][k]))*/; /* residue 0 can't be emitted
+								    * but we can start in BEGIN,
+								    * before any residues */
+      /*fb_sum = ILogsum(fb_sum, (fmx->imx[0][k] + bmx->imx[0][k]))*/; /* these will be all -INFTY */
+  /*}*/      
+
+  /* note boundary conditions, case by case by case... */
+  mx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - fb_sum;
+  mx->imx[0][0] = -INFTY; /*need seq to get here*/
+  mx->dmx[0][0] = -INFTY; /*D_0 does not exist*/
+  for (k = 1; k <= hmm->M; k++) 
+    {
+      mx->mmx[0][k] = -INFTY; /*need seq to get here*/
+      mx->imx[0][k] = -INFTY; /*need seq to get here*/
+      mx->dmx[0][k] = fmx->dmx[0][k] + bmx->dmx[0][k] - fb_sum;
+    }
+      
+  for (i = i0; i <= j0; i++)
+    {
+      ip = i-i0+1; /* ip is relative position in seq, 0..L */
+      /*fb_sum = -INFTY;*/ /* this will be probability of seeing residue i in any parse */
+      /*for (k = 0; k <= hmm->M; k++) 
+	{
+	fb_sum = ILogsum(fb_sum, (fmx->mmx[i][k] + bmx->mmx[i][k] - hmm->msc[dsq[i]][k]));*/
+	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
+      /*fb_sum = ILogsum(fb_sum, (fmx->imx[i][k] + bmx->imx[i][k] - hmm->isc[dsq[i]][k]));*/
+	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
+      /*}*/
+      mx->mmx[ip][0] = -INFTY; /*M_0 does not emit*/
+      mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[dsq[i]][0] - fb_sum;
+      /*hmm->isc[dsq[i]][0] will have been counted in both fmx->imx and bmx->imx*/
+      mx->dmx[ip][0] = -INFTY; /*D_0 does not exist*/
+      for (k = 1; k <= hmm->M; k++) 
+	{
+	  mx->mmx[ip][k] = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[dsq[i]][k] - fb_sum;
+	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
+	  mx->imx[ip][k] = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[dsq[i]][k] - fb_sum;
+	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
+	  mx->dmx[ip][k] = fmx->dmx[ip][k] + bmx->dmx[ip][k] - fb_sum;
+	}	  
+    }
+  /*
+  float temp_sc;
+  for (i = i0; i <= j0; i++)
+    {
+      ip = i-i0+1; 
+      for(k = 0; k <= hmm->M; k++)
+	{
+	  temp_sc = Score2Prob(mx->mmx[ip][k], 1.);
+	  if(temp_sc > .0001)
+	    printf("mx->mmx[%3d][%3d]: %9d | %8f\n", i, k, mx->mmx[ip][k], temp_sc);
+	  temp_sc = Score2Prob(mx->imx[ip][k], 1.);
+	  if(temp_sc > .0001)
+	    printf("mx->imx[%3d][%3d]: %9d | %8f\n", i, k, mx->imx[ip][k], temp_sc);
+	  temp_sc = Score2Prob(mx->dmx[ip][k], 1.);
+	  if(temp_sc > .0001)
+	    printf("mx->dmx[%3d][%3d]: %9d | %8f\n", i, k, mx->dmx[ip][k], temp_sc);
+	}
+    }
+  */
+}
+
+/* Function: CP9ForwardScanDemands()
+ * Date:     EPN, Fri Jun 15 10:08:40 2007
+ *
+ * Purpose:  Determine the number of calculations for 
+ *           a CP9 Forward scanner and return it.
+ *
+ * Args:     cp9    - the CP9 HMM
+ *           L      - length of sequence.
+ * 
+ * Returns: (float) the total number of DP calculations
+ */
+float
+CP9ForwardScanDemands(CP9_t *cp9, int L)
+{
+  float dpcalcs;	/* # of inner loops executed for non-bif calculations */
+
+  dpcalcs = L * cp9->M * 3.; /* 3 states per node, M nodes in the model */
+  return dpcalcs;
+}
+
+#if 0
+
 /***********************************************************************
  * Function: CP9Scan_dispatch()
  * Incept:   EPN, Tue Jan  9 06:28:49 2007
@@ -1781,155 +1933,6 @@ RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, search_results_t *hmm_results, int
   return best_cm_sc;
 }
 
-/* Function: CP9ScanPosterior()
- * based on Ian Holmes' hmmer/src/postprob.c::P7EmitterPosterior()
- *
- * Purpose:  Combines Forward and Backward scanning matrices into a posterior
- *           probability matrix. 
- *
- *           The main difference between this function and CP9Posterior()
- *           in hmmband.c is that this func takes matrices from CP9ForwardBackwardScan()
- *           in which parses are allowed to start and end in any residue.
- *           In CP9Posterior(), the matrices are calc'ed in CP9Forward()
- *           and CP9Backward() which force all parses considered to start at posn
- *           1 and end at L. This means here we have to calculate probability
- *           that each residue from 1 to L is contained in any parse prior
- *           to determining the posterior probability it was emitted from
- *           each state.
- * 
- *           For emitters (match and inserts) the 
- *           entries in row i of this matrix are the logs of the posterior 
- *           probabilities of each state emitting symbol i of the sequence. 
- *           For non-emitters the entries in row i of this matrix are the 
- *           logs of the posterior probabilities of each state being 'visited' 
- *           when the last emitted residue in the parse was symbol i of the
- *           sequence. 
- *           The last point distinguishes this function from P7EmitterPosterior() 
- *           which set all posterior values for for non-emitting states to -INFTY.
- *           The caller must allocate space for the matrix, although the
- *           backward matrix can be used instead (overwriting it will not
- *           compromise the algorithm).
- *           
- * Args:     dsq      - sequence in digitized form
- *           i0       - start of target subsequence
- *           j0       - end of target subsequence 
- *           hmm      - the model
- *           forward  - pre-calculated forward matrix
- *           backward - pre-calculated backward matrix
- *           mx       - pre-allocated dynamic programming matrix
- *           
- * Return:   void
- */
-void
-CP9ScanPosterior(ESL_DSQ *dsq, int i0, int j0,
-		     CP9_t *hmm,
-		     CP9_dpmatrix_t *fmx,
-		     CP9_dpmatrix_t *bmx,
-		     CP9_dpmatrix_t *mx)
-{
-  int i;
-  int ip;
-  int k;
-  int fb_sum; /* tmp value, the probability that the current residue (i) was
-	       * visited in any parse */
-  /* contract check */
-  if(dsq == NULL)
-    cm_Fail("ERROR in CP9ScanPosterior(), dsq is NULL.");
-
-  /*printf("\n\nin CP9ScanPosterior() i0: %d, j0: %d\n", i0, j0);*/
-  fb_sum = -INFTY;
-  for (i = i0-1; i <= j0; i++) 
-    {
-      ip = i-i0+1; /* ip is relative position in seq, 0..L */
-      /*printf("bmx->mmx[i:%d][0]: %d\n", i, bmx->mmx[ip][0]); */
-      fb_sum = ILogsum(fb_sum, (bmx->mmx[ip][0])); 
-    }
-  /*printf("fb_sc: %f\n", Scorify(fb_sum));*/
-    /* fb_sum is the probability of all parses */
-
-    /*for(k = 1; k <= hmm->M; k++)*/
-  /*{*/
-      /*fbsum_ = ILogsum(fmx->mmx[0][k] + bmx->mmx[0][k]))*/; /* residue 0 can't be emitted
-								    * but we can start in BEGIN,
-								    * before any residues */
-      /*fb_sum = ILogsum(fb_sum, (fmx->imx[0][k] + bmx->imx[0][k]))*/; /* these will be all -INFTY */
-  /*}*/      
-
-  /* note boundary conditions, case by case by case... */
-  mx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - fb_sum;
-  mx->imx[0][0] = -INFTY; /*need seq to get here*/
-  mx->dmx[0][0] = -INFTY; /*D_0 does not exist*/
-  for (k = 1; k <= hmm->M; k++) 
-    {
-      mx->mmx[0][k] = -INFTY; /*need seq to get here*/
-      mx->imx[0][k] = -INFTY; /*need seq to get here*/
-      mx->dmx[0][k] = fmx->dmx[0][k] + bmx->dmx[0][k] - fb_sum;
-    }
-      
-  for (i = i0; i <= j0; i++)
-    {
-      ip = i-i0+1; /* ip is relative position in seq, 0..L */
-      /*fb_sum = -INFTY;*/ /* this will be probability of seeing residue i in any parse */
-      /*for (k = 0; k <= hmm->M; k++) 
-	{
-	fb_sum = ILogsum(fb_sum, (fmx->mmx[i][k] + bmx->mmx[i][k] - hmm->msc[dsq[i]][k]));*/
-	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-      /*fb_sum = ILogsum(fb_sum, (fmx->imx[i][k] + bmx->imx[i][k] - hmm->isc[dsq[i]][k]));*/
-	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
-      /*}*/
-      mx->mmx[ip][0] = -INFTY; /*M_0 does not emit*/
-      mx->imx[ip][0] = fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[dsq[i]][0] - fb_sum;
-      /*hmm->isc[dsq[i]][0] will have been counted in both fmx->imx and bmx->imx*/
-      mx->dmx[ip][0] = -INFTY; /*D_0 does not exist*/
-      for (k = 1; k <= hmm->M; k++) 
-	{
-	  mx->mmx[ip][k] = fmx->mmx[ip][k] + bmx->mmx[ip][k] - hmm->msc[dsq[i]][k] - fb_sum;
-	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  mx->imx[ip][k] = fmx->imx[ip][k] + bmx->imx[ip][k] - hmm->isc[dsq[i]][k] - fb_sum;
-	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->imx and bmx->imx*/
-	  mx->dmx[ip][k] = fmx->dmx[ip][k] + bmx->dmx[ip][k] - fb_sum;
-	}	  
-    }
-  /*
-  float temp_sc;
-  for (i = i0; i <= j0; i++)
-    {
-      ip = i-i0+1; 
-      for(k = 0; k <= hmm->M; k++)
-	{
-	  temp_sc = Score2Prob(mx->mmx[ip][k], 1.);
-	  if(temp_sc > .0001)
-	    printf("mx->mmx[%3d][%3d]: %9d | %8f\n", i, k, mx->mmx[ip][k], temp_sc);
-	  temp_sc = Score2Prob(mx->imx[ip][k], 1.);
-	  if(temp_sc > .0001)
-	    printf("mx->imx[%3d][%3d]: %9d | %8f\n", i, k, mx->imx[ip][k], temp_sc);
-	  temp_sc = Score2Prob(mx->dmx[ip][k], 1.);
-	  if(temp_sc > .0001)
-	    printf("mx->dmx[%3d][%3d]: %9d | %8f\n", i, k, mx->dmx[ip][k], temp_sc);
-	}
-    }
-  */
-}
-
-/* Function: CP9ForwardScanDemands()
- * Date:     EPN, Fri Jun 15 10:08:40 2007
- *
- * Purpose:  Determine the number of calculations for 
- *           a CP9 Forward scanner and return it.
- *
- * Args:     cp9    - the CP9 HMM
- *           L      - length of sequence.
- * 
- * Returns: (float) the total number of DP calculations
- */
-float
-CP9ForwardScanDemands(CP9_t *cp9, int L)
-{
-  float dpcalcs;	/* # of inner loops executed for non-bif calculations */
-
-  dpcalcs = L * cp9->M * 3.; /* 3 states per node, M nodes in the model */
-  return dpcalcs;
-}
 
 /*
  * Function: FindCP9FilterThreshold()
@@ -2617,3 +2620,4 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   return 0.;
 }
 
+#endif

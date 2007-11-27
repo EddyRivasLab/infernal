@@ -27,16 +27,20 @@ cm_CreateScanInfo(CM_t *cm, int do_float, int do_int)
   int status;
   int j, v;
   int do_banded;
+  int use_hmmonly;
+  use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) ||  (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
 
-  if(! (cm->flags & CMH_BITS)) cm_Fail("cm_CreateScanInfo(), the CM flag for valid bit scores is down.");
-  if(cm->flags & CMH_SCANINFO) cm_Fail("cm_CreateScanInfo(), the CM flag for valid scan info is already up.");
-  if(cm->si != NULL) cm_Fail("cm_CreateScanInfo, the cm already points to a ScanInfo_t object.\n");
-  if((! do_float) && (!do_int)) cm_Fail("cm_CreateScanInfo, do_float and do_int both FALSE.\n");
-  if(cm->dmin == NULL && cm->dmax != NULL) cm_Fail("cm_CreateScanInfo(), cm->dmin == NULL, cm->dmax != NULL\n"); 
-  if(cm->dmin != NULL && cm->dmax == NULL) cm_Fail("cm_CreateScanInfo(), cm->dmin == NULL, cm->dmax != NULL\n"); 
+  if(! (cm->flags & CMH_BITS))                 cm_Fail("cm_CreateScanInfo(), the CM flag for valid bit scores is down.");
+  if(cm->flags & CMH_SCANINFO)                 cm_Fail("cm_CreateScanInfo(), the CM flag for valid scan info is already up.");
+  if(cm->si != NULL)                           cm_Fail("cm_CreateScanInfo, the cm already points to a ScanInfo_t object.\n");
+  if((! do_float) && (!do_int))                cm_Fail("cm_CreateScanInfo, do_float and do_int both FALSE.\n");
+  if(cm->dmin == NULL && cm->dmax != NULL)     cm_Fail("cm_CreateScanInfo(), cm->dmin == NULL, cm->dmax != NULL\n"); 
+  if(cm->dmin != NULL && cm->dmax == NULL)     cm_Fail("cm_CreateScanInfo(), cm->dmin == NULL, cm->dmax != NULL\n"); 
   if(cm->dmax != NULL && cm->W != cm->dmax[0]) cm_Fail("cm_CreateScanInfo(), cm->W: %d != cm->dmax[0]: %d\n", cm->W, cm->dmax[0]); 
   if((! cm->search_opts & CM_SEARCH_NOQDB) && (cm->dmin == NULL || cm->dmax == NULL))
     cm_Fail("cm_CreateScanInfo(), cm->dmin == NULL || cm->dmax == NULL, but !(cm->search_opts & CM_SEARCH_NOQDB)\n");
+  if(use_hmmonly && (cm->dmin != NULL && cm->dmax != NULL))
+    cm_Fail("cm_CreateScanInfo(), CM_SEARCH_HMMVITERBI or CM_SEARCH_HMMFORWARD but cm->dmin != NULL || cm->dmax != NULL\n");
 
   ScanInfo_t *si;
   ESL_ALLOC(si, sizeof(ScanInfo_t));
@@ -46,7 +50,7 @@ cm_CreateScanInfo(CM_t *cm, int do_float, int do_int)
   si->W     = cm->W;
   si->dmin  = cm->dmin; /* could be NULL */
   si->dmax  = cm->dmax; /* could be NULL */
-  do_banded = (cm->search_opts & CM_SEARCH_NOQDB) ? FALSE : TRUE;
+  do_banded = ((cm->search_opts & CM_SEARCH_NOQDB) || use_hmmonly) ? FALSE : TRUE;
 
   /* precalculate minimum and maximum d for each state and each sequence index (1..j..W). 
    * this is not always just dmin, dmax, (for ex. if j < W). */
@@ -160,7 +164,9 @@ cm_FloatizeScanInfo(CM_t *cm)
   int status;
   int j, v;
   int d, y, yoffset, w;
-  int do_banded = (cm->search_opts & CM_SEARCH_NOQDB) ? FALSE : TRUE;
+  int use_hmmonly;
+  use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) ||  (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
+  int do_banded = ((cm->search_opts & CM_SEARCH_NOQDB) || use_hmmonly) ? FALSE : TRUE;
 
   /* contract check */
   if(cm->si == NULL) cm_Fail("cm_FloatizeScanInfo(), cm->si is NULL.\n");
@@ -273,7 +279,9 @@ cm_IntizeScanInfo(CM_t *cm)
 {
   int status;
   int v, j, d, y, yoffset, w;
-  int do_banded = (cm->search_opts & CM_SEARCH_NOQDB) ? FALSE : TRUE;
+  int use_hmmonly;
+  use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) ||  (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
+  int do_banded = ((cm->search_opts & CM_SEARCH_NOQDB) || use_hmmonly) ? FALSE : TRUE;
 
   /* contract check */
   if(cm->si == NULL) cm_Fail("cm_IntizeScanInfo(), cm->si is NULL.\n");

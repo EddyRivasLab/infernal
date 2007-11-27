@@ -49,6 +49,7 @@ OBJS  = alphabet.o\
 	cm_errors.o\
 	cm_fastalign.o\
 	cm_fastsearch.o\
+	cm_filterinfo.o\
 	cm_masks.o\
 	cm_mx.o\
 	cm_postprob.o\

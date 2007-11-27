@@ -129,6 +129,7 @@ CreateCMShell(void)
   cm->hmmpad       = DEFAULT_HMMPAD; /* 0 residues */
   cm->stats        = NULL;
   cm->si           = NULL;
+  cm->fi           = NULL;
   cm->hbmx         = NULL;
   cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
@@ -361,6 +362,7 @@ FreeCM(CM_t *cm)
   if(cm->stats      != NULL) FreeCMStats(cm->stats);
   if(cm->hbmx       != NULL) cm_hb_mx_Destroy(cm->hbmx);
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
+  if (cm->fi     != NULL) cm_FreeFilterInfo(cm->fi); 
   free(cm);
 }
 
@@ -1711,6 +1713,8 @@ ExponentiateCM(CM_t *cm, double z)
 CM_t *
 DuplicateCM(CM_t *cm)
 {
+  cm_Fail("Duplicate CM is deprecated, you can undeprecate it, but then you have to figure out how to deal with cm->fi FilterInfo_t\n");
+       
   int       status;
   int       v;	          /* counter over states */
   int       x;		  /* counter over transitions, residues, nodes */

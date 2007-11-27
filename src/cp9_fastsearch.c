@@ -837,6 +837,8 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, in
   free(gback);
   free(gamma);
   free(savesc);
+  free(otsc);
+
   /*printf("returning from CP9Backward()\n");*/
   if(ret_psc != NULL) *ret_psc = scA;
   else free(scA);
@@ -2908,6 +2910,7 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
   free(gback);
   free(gamma);
   free(savesc);
+
   /*printf("returning from Xcp9_FastBackward()\n");*/
   if(ret_psc != NULL) *ret_psc = sc;
   else free(sc);
