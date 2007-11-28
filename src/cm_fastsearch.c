@@ -21,7 +21,7 @@
  * The 1.0 functions that end in 'HB()' use HMM bands to perform 
  * the search.
  * The 1.0 non-HB functions can be run with QDB on or off, which 
- * is implicit in the cm->si ScanInfo_t data structure,
+ * is implicit in the cm->smx ScanMatrix_t data structure,
  * which includes min/max d values for each state.
  *
  * EPN, Wed Sep 12 16:53:32 2007
@@ -52,9 +52,9 @@
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
  *           an optimized CYK scanning algorithm. Query-dependent 
- *           bands are used or not used as specified in ScanInfo_t <cm->si>.
+ *           bands are used or not used as specified in ScanMatrix_t <cm->smx>.
  *
- * Args:     cm              - the covariance model, must have valid scaninfo (si)
+ * Args:     cm              - the covariance model, must have valid scanmatrix (si)
  *           errbuf          - char buffer for reporting errors
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
@@ -104,29 +104,29 @@ FastCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float c
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)         ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, cm->si is not valid.\n");
+  if(! cm->flags & CMH_SCANMATRIX)         ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, cm->smx is not valid.\n");
   if(j0 < i0)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, dsq is NULL\n");
   if(cm->search_opts & CM_SEARCH_INSIDE) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CM_SEARCH_INSIDE flag raised");
-  if(! (cm->si->flags & cmSI_HAS_FLOAT)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
+  if(! (cm->smx->flags & cmSMX_HAS_FLOAT)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
 
-  /* make pointers to the ScanInfo/CM data for convenience */
-  ScanInfo_t *si = cm->si;      /* for convenience */
-  float ***alpha      = si->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
-  float ***alpha_begl = si->falpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = si->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = si->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  int    *bestr       = si->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d */
-  int    *dmin        = si->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
-  int    *dmax        = si->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
+  /* make pointers to the ScanMatrix/CM data for convenience */
+  ScanMatrix_t *smx = cm->smx;      /* for convenience */
+  float ***alpha      = smx->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
+  float ***alpha_begl = smx->falpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
+  int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d */
+  int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
+  int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   float **esc_vAA     = cm->oesc;        /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					  * and all possible emissions a (including ambiguities) */
   /* determine if we're doing banded/non-banded */
-  if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
+  if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -537,8 +537,8 @@ FastCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float c
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, si->bestr, FALSE, results);
-      /* cm_DumpScanInfoAlpha(cm, si, j, i0, TRUE); */
+      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, FALSE, results);
+      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
@@ -572,11 +572,11 @@ FastCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float c
  * Purpose:  Scan a sequence for matches to a covariance model, using
  *           an optimized Inside scanning algorithm that uses integer scores. 
  *           Query-dependent bands are used or not used as specified in 
- *           ScanInfo_t <si>.
+ *           ScanMatrix_t <si>.
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           si              - ScanInfo_t for this model (includes alpha DP matrix, qdbands etc.) 
+ *           si              - ScanMatrix_t for this model (includes alpha DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -620,34 +620,34 @@ FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  ScanInfo_t *si = cm->si;      /* for convenience */
+  ScanMatrix_t *smx = cm->smx;      /* for convenience */
   int      *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, cm->si is not valid.\n");
+  if(! cm->flags & CMH_SCANMATRIX)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, cm->smx is not valid.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (si->flags & cmSI_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
+  if(! (smx->flags & cmSMX_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, ScanMatrix's cmSMX_HAS_INT flag is not raised");
 
-  /* make pointers to the ScanInfo/CM data for convenience */
-  int   ***alpha      = si->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
-  int   ***alpha_begl = si->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = si->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = si->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  int    *dmin        = si->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
-  int    *dmax        = si->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
+  /* make pointers to the ScanMatrix/CM data for convenience */
+  int   ***alpha      = smx->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
+  int   ***alpha_begl = smx->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
+  int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
+  int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   int   **esc_vAA     = cm->ioesc;       /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					  * and all possible emissions a (including ambiguities) */
   /* determine if we're doing banded/non-banded */
-  if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
+  if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -1051,9 +1051,9 @@ FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, si->bestr, TRUE, results);
+	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
       }
-      /* cm_DumpScanInfoAlpha(cm, si, j, i0, FALSE); */
+      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
@@ -1088,11 +1088,11 @@ FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
  * Purpose:  Scan a sequence for matches to a covariance model, using
  *           an optimized Inside scanning algorithm that uses integer scores. 
  *           Query-dependent bands are used or not used as specified in 
- *           ScanInfo_t <si>.
+ *           ScanMatrix_t <si>.
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           si              - ScanInfo_t for this model (includes alpha DP matrix, qdbands etc.) 
+ *           si              - ScanMatrix_t for this model (includes alpha DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -1136,34 +1136,34 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  ScanInfo_t *si = cm->si;      /* for convenience */
+  ScanMatrix_t *smx = cm->smx;      /* for convenience */
   int      *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)             ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, cm->si is not valid.\n");
+  if(! cm->flags & CMH_SCANMATRIX)             ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, cm->smx is not valid.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (si->flags & cmSI_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
+  if(! (smx->flags & cmSMX_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, ScanMatrix's cmSMX_HAS_INT flag is not raised");
 
-  /* make pointers to the ScanInfo/CM data for convenience */
-  int   ***alpha      = si->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
-  int   ***alpha_begl = si->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = si->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = si->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  int    *dmin        = si->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
-  int    *dmax        = si->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
+  /* make pointers to the ScanMatrix/CM data for convenience */
+  int   ***alpha      = smx->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
+  int   ***alpha_begl = smx->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
+  int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
+  int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   int   **esc_vAA     = cm->ioesc;       /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					  * and all possible emissions a (including ambiguities) */
   /* determine if we're doing banded/non-banded */
-  if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
+  if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -1488,9 +1488,9 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, si->bestr, TRUE, results);
+	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
       }
-      /* cm_DumpScanInfoAlpha(cm, si, j, i0, FALSE); */
+      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
@@ -1525,11 +1525,11 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
  * Purpose:  Scan a sequence for matches to a covariance model, using
  *           an optimized Inside scanning algorithm that uses integer scores. 
  *           Query-dependent bands are used or not used as specified in 
- *           ScanInfo_t <si>.
+ *           ScanMatrix_t <si>.
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           si              - ScanInfo_t for this model (includes alpha DP matrix, qdbands etc.) 
+ *           si              - ScanMatrix_t for this model (includes alpha DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -1573,35 +1573,35 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  ScanInfo_t *si = cm->si;      /* for convenience */
+  ScanMatrix_t *smx = cm->smx;      /* for convenience */
   int      *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, cm->si is not valid.\n");
+  if(! cm->flags & CMH_SCANMATRIX)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, cm->smx is not valid.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (si->flags & cmSI_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
+  if(! (smx->flags & cmSMX_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, ScanMatrix's cmSMX_HAS_INT flag is not raised");
 
-  /* make pointers to the ScanInfo/CM data for convenience */
-  int   ***alpha      = si->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
-  int   ***alpha_begl = si->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = si->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = si->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  int    *dmin        = si->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
-  int    *dmax        = si->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
+  /* make pointers to the ScanMatrix/CM data for convenience */
+  int   ***alpha      = smx->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
+  int   ***alpha_begl = smx->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
+  int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
+  int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   int   **esc_vAA     = cm->ioesc;       /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					  * and all possible emissions a (including ambiguities) */
 
   /* determine if we're doing banded/non-banded */
-  if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
+  if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -2007,9 +2007,9 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, si->bestr, TRUE, results);
+	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
       }
-      /* cm_DumpScanInfoAlpha(cm, si, j, i0, FALSE); */
+      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
@@ -2044,7 +2044,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
  * Purpose:  Scan a sequence for matches to a covariance model, using
  *           an optimized Inside scanning algorithm that uses float scores. 
  *           Query-dependent bands are used or not used as specified in 
- *           ScanInfo_t <si>.
+ *           ScanMatrix_t <si>.
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
@@ -2091,33 +2091,33 @@ FastFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  ScanInfo_t *si = cm->si;      /* for convenience */
+  ScanMatrix_t *smx = cm->smx;      /* for convenience */
   float    *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)            ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, cm->si is not valid.\n");
+  if(! cm->flags & CMH_SCANMATRIX)            ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, cm->smx is not valid.\n");
   if(j0 < i0)                               ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                           ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, dsq is NULL\n");
   if(!(cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (cm->si->flags & cmSI_HAS_FLOAT))    ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
+  if(! (cm->smx->flags & cmSMX_HAS_FLOAT))    ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
 
-  /* make pointers to the ScanInfo/CM data for convenience */
-  float ***alpha      = si->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
-  float ***alpha_begl = si->falpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = si->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = si->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  int    *dmin        = si->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
-  int    *dmax        = si->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
+  /* make pointers to the ScanMatrix/CM data for convenience */
+  float ***alpha      = smx->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
+  float ***alpha_begl = smx->falpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
+  int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
+  int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   float **esc_vAA     = cm->oesc;        /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					  * and all possible emissions a (including ambiguities) */
   /* determine if we're doing banded/non-banded */
-  if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
+  if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -2513,8 +2513,8 @@ FastFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, si->bestr, TRUE, results);
-      /* cm_DumpScanInfoAlpha(cm, si, j, i0, FALSE); */
+      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
+      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
@@ -2547,14 +2547,14 @@ FastFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
  *           a reference CYK scanning algorithm. Query-dependent 
- *           bands are used or not used as specified in ScanInfo_t <si>.
+ *           bands are used or not used as specified in ScanMatrix_t <si>.
  *
  *           This function is slower, but easier to understand than the
  *           FastCYKScan() version.
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           si              - ScanInfo_t for this model (includes alpha DP matrix, qdbands etc.) 
+ *           si              - ScanMatrix_t for this model (includes alpha DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -2597,34 +2597,34 @@ RefCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cu
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  ScanInfo_t *si = cm->si;      /* for convenience */
+  ScanMatrix_t *smx = cm->smx;      /* for convenience */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)         ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, cm->si is not valid.\n");
+  if(! cm->flags & CMH_SCANMATRIX)         ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, cm->smx is not valid.\n");
   if(j0 < i0)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, dsq is NULL\n");
   if(cm->search_opts & CM_SEARCH_INSIDE) ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, CM_SEARCH_INSIDE flag raised");
-  if(! (cm->si->flags & cmSI_HAS_FLOAT)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
+  if(! (cm->smx->flags & cmSMX_HAS_FLOAT)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
 
-  /* make pointers to the ScanInfo/CM data for convenience */
-  float ***alpha      = si->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
-  float ***alpha_begl = si->falpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = si->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = si->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  int    *bestr       = si->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d */
-  int    *dmin        = si->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
-  int    *dmax        = si->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
+  /* make pointers to the ScanMatrix/CM data for convenience */
+  float ***alpha      = smx->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
+  float ***alpha_begl = smx->falpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
+  int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d */
+  int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
+  int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   float **esc_vAA     = cm->oesc;        /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					  * and all possible emissions a (including ambiguities) */
 
   /* determine if we're doing banded/non-banded */
-  if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
+  if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -2797,8 +2797,8 @@ RefCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cu
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, si->bestr, FALSE, results);
-      /* cm_DumpScanInfoAlpha(cm, si, j, i0, TRUE); */
+      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, FALSE, results);
+      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
@@ -2829,14 +2829,14 @@ RefCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cu
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
  *           a reference CYK scanning algorithm. Query-dependent 
- *           bands are used or not used as specified in ScanInfo_t <si>.
+ *           bands are used or not used as specified in ScanMatrix_t <si>.
  *
  *           This function is slower, but easier to understand than the
  *           FastCYKScan() version.
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           si              - ScanInfo_t for this model (includes alpha DP matrix, qdbands etc.) 
+ *           si              - ScanMatrix_t for this model (includes alpha DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -2879,34 +2879,34 @@ RefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, floa
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  ScanInfo_t *si = cm->si;      /* for convenience */
+  ScanMatrix_t *smx = cm->smx;      /* for convenience */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)             ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, cm->si is not valid.\n");
+  if(! cm->flags & CMH_SCANMATRIX)             ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, cm->smx is not valid.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (si->flags & cmSI_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
+  if(! (smx->flags & cmSMX_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, ScanMatrix's cmSMX_HAS_INT flag is not raised");
 
-  /* make pointers to the ScanInfo/CM data for convenience */
-  int   ***alpha      = si->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
-  int   ***alpha_begl = si->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = si->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = si->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  int    *dmin        = si->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
-  int    *dmax        = si->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
+  /* make pointers to the ScanMatrix/CM data for convenience */
+  int   ***alpha      = smx->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
+  int   ***alpha_begl = smx->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
+  int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
+  int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   int   **esc_vAA     = cm->ioesc;       /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					  * and all possible emissions a (including ambiguities) */
 
   /* determine if we're doing banded/non-banded */
-  if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
+  if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -3069,9 +3069,9 @@ RefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, floa
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, si->bestr, TRUE, results);
+	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
       }
-      /* cm_DumpScanInfoAlpha(cm, si, j, i0, FALSE);*/
+      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE);*/
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
@@ -3103,14 +3103,14 @@ RefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, floa
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
  *           a reference CYK scanning algorithm. Query-dependent 
- *           bands are used or not used as specified in ScanInfo_t <si>.
+ *           bands are used or not used as specified in ScanMatrix_t <si>.
  *
  *           This function is slower, but easier to understand than the
  *           FastCYKScan() version.
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           si              - ScanInfo_t for this model (includes alpha DP matrix, qdbands etc.) 
+ *           si              - ScanMatrix_t for this model (includes alpha DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -3153,35 +3153,35 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  ScanInfo_t *si = cm->si;      /* for convenience */
+  ScanMatrix_t *smx = cm->smx;      /* for convenience */
   int      *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)             ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, cm->si is not valid.\n");
+  if(! cm->flags & CMH_SCANMATRIX)             ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, cm->smx is not valid.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (si->flags & cmSI_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, ScanInfo's cmSI_HAS_INT flag is not raised");
+  if(! (smx->flags & cmSMX_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, ScanMatrix's cmSMX_HAS_INT flag is not raised");
 
-  /* make pointers to the ScanInfo/CM data for convenience */
-  int   ***alpha      = si->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
-  int   ***alpha_begl = si->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = si->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = si->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  int    *dmin        = si->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
-  int    *dmax        = si->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
+  /* make pointers to the ScanMatrix/CM data for convenience */
+  int   ***alpha      = smx->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
+  int   ***alpha_begl = smx->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
+  int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
+  int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   int   **esc_vAA     = cm->ioesc;       /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					  * and all possible emissions a (including ambiguities) */
 
   /* determine if we're doing banded/non-banded */
-  if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
+  if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -3362,9 +3362,9 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, si->bestr, TRUE, results);
+	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
       }
-      /* cm_DumpScanInfoAlpha(cm, si, j, i0, FALSE);*/
+      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE);*/
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
@@ -3397,14 +3397,14 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
  *           a reference CYK scanning algorithm. Query-dependent 
- *           bands are used or not used as specified in ScanInfo_t <si>.
+ *           bands are used or not used as specified in ScanMatrix_t <si>.
  *
  *           This function is slower, but easier to understand than the
  *           FastCYKScan() version.
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           si              - ScanInfo_t for this model (includes alpha DP matrix, qdbands etc.) 
+ *           si              - ScanMatrix_t for this model (includes alpha DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -3447,34 +3447,34 @@ RefFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, floa
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  ScanInfo_t *si = cm->si;      /* for convenience */
+  ScanMatrix_t *smx = cm->smx;    /* for convenience */
   float    *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   
   /* Contract check */
   if(! cm->flags & CMH_BITS)                ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANINFO)            ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, cm->si is not valid.\n");
+  if(! cm->flags & CMH_SCANMATRIX)            ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, cm->smx is not valid.\n");
   if(j0 < i0)                               ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                           ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, dsq is NULL\n");
   if(!(cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (cm->si->flags & cmSI_HAS_FLOAT))    ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, ScanInfo's cmSI_HAS_FLOAT flag is not raised");
+  if(! (cm->smx->flags & cmSMX_HAS_FLOAT))    ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
 
-  /* make pointers to the ScanInfo/CM data for convenience */
-  float ***alpha      = si->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
-  float ***alpha_begl = si->falpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
-  int   **dnAA        = si->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
-  int   **dxAA        = si->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  int    *dmin        = si->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
-  int    *dmax        = si->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
+  /* make pointers to the ScanMatrix/CM data for convenience */
+  float ***alpha      = smx->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
+  float ***alpha_begl = smx->falpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
+  int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
+  int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
+  int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   float **esc_vAA     = cm->oesc;        /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					  * and all possible emissions a (including ambiguities) */
 
   /* determine if we're doing banded/non-banded */
-  if(si->dmin != NULL && si->dmax != NULL) do_banded = TRUE;
+  if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
   if (W > L) W = L; 
-  if (W > si->W) ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, W: %d greater than si->W: %d\n", W, si->W);
+  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -3642,8 +3642,8 @@ RefFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, floa
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, si->bestr, TRUE, results);
-      /* cm_DumpScanInfoAlpha(cm, si, j, i0, FALSE); */
+      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
+      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
@@ -5160,7 +5160,7 @@ main(int argc, char **argv)
   }
   else { dmin = cm->dmin; dmax = cm->dmax; }
 
-  cm_CreateScanInfo(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
+  cm_CreateScanMatrix(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
 
   /* get sequences */
   if(do_random) {

@@ -861,7 +861,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
  *           eslEINVAL on contract violation.
  */
 void
-CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, struct cp9_dpmatrix_s *post, 
+CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, CP9_MX *post, 
 	       int *ret_node, int *ret_type, int do_fullsub, float pmass, int is_start,
 	       int print_flag)
 {

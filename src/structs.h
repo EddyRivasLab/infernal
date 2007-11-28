@@ -242,34 +242,24 @@ typedef struct cplan9_s {
 
 /* Declaration of CM Plan9 dynamic programming matrix structure.
  */
-typedef struct cp9_dpmatrix_s {
+typedef struct cp9_mx_s {
   int **mmx;			/* match scores  [0.1..N][0..M] */
   int **imx;			/* insert scores [0.1..N][0..M] */
   int **dmx;			/* delete scores [0.1..N][0..M] */
   int **elmx;			/* end local scores [0.1..N][0..M] */
   int  *erow;                   /* score for E state [0.1..N] */
-  /* Hidden ptrs where the real memory is kept; this trick was
-   * introduced by Erik Lindahl with the Altivec port; it's used to
-   * align xmx, etc. on 16-byte boundaries for cache optimization.
-   */
-  void *mmx_mem, *imx_mem, *dmx_mem, *elmx_mem;
+  /* Hidden ptrs where the real memory is kept */
+  int *mmx_mem, *imx_mem, *dmx_mem, *elmx_mem;
 
-  int *  workspace;      /* Workspace for altivec (aligned ptr)    */
-  int *  workspace_mem;  /* Actual allocated pointer for workspace */
+  int    M;             /* number of nodes in HMM this mx corresponds to, never changes */
+  int    rows;          /* generally L+1 or 2, # of DP rows in seq dimension, where L is length of seq,
+			 * == 2 if we're scanning in mem efficient mode, 
+			 * never shrinks, but can increase to 'grow' the matrix
+			 */
+  float  size_Mb;       /* current size of matrix in Megabytes */
   
-  /* The other trick brought in w/ the Lindahl Altivec port; dp matrix
-   * is retained and grown, rather than reallocated for every HMM or sequence.
-   * Keep track of current allocated-for size in rows (sequence length N)
-   * and columns (HMM length M). Also keep track of pad sizes: how much
-   * we should overallocate rows or columns when we reallocate. If pad = 0,
-   * then we're not growable in this dimension.
-   */
-  int maxN;			/* alloc'ed for seq of length N; N+1 rows */
-  int maxM;			/* alloc'ed for HMM of length M; M+1 cols */
 
-  int padN;			/* extra pad in sequence length/rows */
-  int padM;			/* extra pad in HMM length/columns   */
-} CP9_dpmatrix_t;
+} CP9_MX;
 
 
 /* CM Plan 9 model state types
@@ -494,7 +484,7 @@ typedef struct cmstats_s {
 #define CMH_QDB                (1<<10) /* query-dependent bands, QDB valid         */
 #define CMH_CP9                (1<<11) /* CP9 HMM is valid in cm->cp9              */
 #define CMH_CP9STATS           (1<<12) /* CP9 HMM has Gumbel stats                 */
-#define CMH_SCANINFO           (1<<13) /* ScanInfo si is valid                     */
+#define CMH_SCANMATRIX         (1<<13) /* ScanMatrix smx is valid                  */
 
 #define CM_IS_SUB              (1<<14) /* the CM is a sub CM                       */
 #define CM_ENFORCED            (1<<15) /* CM is reparam'ized to enforce a subseq   */
@@ -792,9 +782,30 @@ typedef struct cp9bands_s {
   int hd_needed;              /* Sum_v cp9b->jmax[v] - cp9b->jmin[v] + 1, number of hd arrays needed */
   int hd_alloced;             /* number of hd arrays currently alloc'ed */
 
+  /* Remainder of data was originally declared and allocated within specific functions that are called 
+   * for each sequence (each calculation of HMM bands), but this is wasteful as they are only
+   * dependent on the size of the CM or HMM, so we move them here, just so we only have to allocate them
+   * one time per model.
+   */
+
+  /* info for hmmband.c::cp9_FB2HMMBands() and cp9_FB2HMMBandsWithSums() functions */
+  int *kthresh_m, *kthresh_i, *kthresh_d; /* [0..k..hmm->M], individual thresholds for each state */
+  int *nset_m, *nset_i, *nset_d;          /* [0..k..hmm->M], has minimum been set for this state? */
+  int *xset_m, *xset_i, *xset_d;          /* [0..k..hmm->M], has maximum been set for this state? */
+  int *mass_m, *mass_i, *mass_d;          /* [0..k..hmm->M], summed log prob of pmx->mx[i][k] from 0..k or k..L */
+
+  /* info for hmmband.c::cp9_HMM2ijBands(), all run [0..cm->nodes-1] */
+  int *nss_imin;      /* nss_imin[n] = imin of each split set state in node n*/
+  int *nss_imax;      /* nss_imax[n] = imax of each split set state in node n*/
+  int *nss_jmin;      /* nss_jmin[n] = jmin of each split set state in node n*/
+  int *nss_jmax;      /* nss_jmax[n] = jmax of each split set state in node n*/
+  int *nis_imin;      /* nss_imin[n] = imin of each insert set state in node n*/
+  int *nis_imax;      /* nss_imax[n] = imax of each insert set state in node n*/
+  int *nis_jmin;      /* nss_jmin[n] = jmin of each insert set state in node n*/
+  int *nis_jmax;      /* nss_jmax[n] = jmax of each insert set state in node n*/
+  int *nss_max_imin;  /* nss_max_imin[n] = max imin over split set states in node n*/
+  int *nss_min_jmax;  /* nss_min_jmax[n] = min jmax over split set states in node n*/
 } CP9Bands_t;
-
-
 
 /* used by CM Plan 9 HMM structures */
 #define HMMMATCH  0
@@ -1148,21 +1159,21 @@ typedef struct hybridscaninfo_s {
                         */			
 } HybridScanInfo_t;
 
-/* Structure ScanInfo_t: Information used by all CYK/Inside scanning functions,
+/* Structure ScanMatrix_t: Information used by all CYK/Inside scanning functions,
  * compiled together into one data structure for convenience. 
  */
-#define cmSI_HAS_FLOAT (1 << 0)  /* if float versions of alpha and precalc'ed scores are valid */
-#define cmSI_HAS_INT   (1 << 1)  /* if int versions of alpha and precalc'ed scores are valid */
-typedef struct scaninfo_s {
+#define cmSMX_HAS_FLOAT (1 << 0)  /* if float versions of alpha and precalc'ed scores are valid */
+#define cmSMX_HAS_INT   (1 << 1)  /* if int versions of alpha and precalc'ed scores are valid */
+typedef struct scanmx_s {
   /* general info about the model/search */
   int     cm_M;        /* # states in the CM */
+  int     W;           /* max hit size */
   int    *dmin;        /* [0..v..cm->M-1] min subtree length for v using beta, just a ref, NULL for non-banded */
   int    *dmax;        /* [0..v..cm->M-1] max subtree length for v using beta, just a ref, NULL for non-banded */
-  int     W;           /* max hit size */
   int   **dnAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int   **dxAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int    *bestr;       /* auxil info: best root state at alpha[0][cur][d] */
-  int     flags;       /* flags for what info has been set (can be float and/or int versions of alpha and precalc'ed scores) */
+  int     flags;       /* flags for what info has been set (can be float and/or int versions of alpha) */
 
   /* falpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] and precalc'ed scores for
    * float implementations of CYK/Inside */
@@ -1174,7 +1185,7 @@ typedef struct scaninfo_s {
   int   ***ialpha;      /* non-BEGL_S states for int   versions of CYK/Inside */
   int   ***ialpha_begl; /*     BEGL_S states for int   versions of CYK/Inside */
 
-} ScanInfo_t;
+} ScanMatrix_t;
 
 /* Structure cm_GammaHitMx_t: gamma semi-HMM used for optimal hit resolution
  * of a CM scan. All arrays are 0..L.
@@ -1307,25 +1318,23 @@ typedef struct cm_s {
   double tau;           /* tail loss probability for HMM target dependent banding             */
 
   /* added by EPN, Tue Jan  2 14:24:08 2007 */
-  int       config_opts;/* model configuration options                                        */
-  int       align_opts; /* alignment options                                                  */
-  int       search_opts;/* search options                                                     */
-  CP9_t    *cp9;        /* a CM Plan 9 HMM, always built when the model is read from a file   */
-  CP9Map_t *cp9map;     /* the map from the Plan 9 HMM to the CM and vice versa               */
-  CP9Bands_t *cp9b;     /* the CP9 bands                                                      */
-  int       enf_start;  /* if(cm->config_opts & CM_CONFIG_ENFORCE) the first posn to enforce, else 0 */
-  char     *enf_seq;    /* if(cm->config_opts & CM_CONFIG_ENFORCE) the subseq to enforce, else NULL  */
-  float     enf_scdiff; /* if(cm->config_opts & CM_CONFIG_ENFORCE) the difference in scoring  *
-			 * cm->enfseq b/t the non-enforced & enforced CMs, this is subtracted *
-			 * from bit scores in cmsearch before assigned E-value stats which    *
-			 * are always calc'ed (histograms built) using non-enforced CMs/CP9s  */
-  float     sc_boost;   /* value added to CYK bit scores during search (usually 0.)           */
-  float cp9_sc_boost;   /* value added to Forward bit scores during CP9 search (usually 0.)   */
-  float     ffract;     /* desired filter fraction (0.99 -> filter out 99% of db), default: 0.*/
-  float    *root_trans; /* transition probs from state 0, saved IFF zeroed in ConfigLocal()   */
-  int       hmmpad;     /* if(cm->search_opts & CM_SEARCH_HMMPAD) # of res to -/+ from i/j    */
-  float     pbegin;     /* local begin prob to spread across internal nodes for local mode    */
-  float     pend;       /* local end prob to spread across internal nodes for local mode      */
+  int        config_opts;/* model configuration options                                        */
+  int        align_opts; /* alignment options                                                  */
+  int        search_opts;/* search options                                                     */
+  CP9_t     *cp9;        /* a CM Plan 9 HMM, always built when the model is read from a file   */
+  CP9Map_t  *cp9map;     /* the map from the Plan 9 HMM to the CM and vice versa               */
+  CP9Bands_t *cp9b;      /* the CP9 bands                                                      */
+  int        enf_start;  /* if(cm->config_opts & CM_CONFIG_ENFORCE) the first posn to enforce, else 0 */
+  char      *enf_seq;    /* if(cm->config_opts & CM_CONFIG_ENFORCE) the subseq to enforce, else NULL  */
+  float      enf_scdiff; /* if(cm->config_opts & CM_CONFIG_ENFORCE) the difference in scoring  *
+			  * cm->enfseq b/t the non-enforced & enforced CMs, this is subtracted *
+			  * from bit scores in cmsearch before assigned E-value stats which    *
+			  * are always calc'ed (histograms built) using non-enforced CMs/CP9s  */
+  float      ffract;     /* desired filter fraction (0.99 -> filter out 99% of db), default: 0.*/
+  float     *root_trans; /* transition probs from state 0, saved IFF zeroed in ConfigLocal()   */
+  int        hmmpad;     /* if(cm->search_opts & CM_SEARCH_HMMPAD) # of res to -/+ from i/j    */
+  float      pbegin;     /* local begin prob to spread across internal nodes for local mode    */
+  float      pend;       /* local end prob to spread across internal nodes for local mode      */
   
   /* search cutoffs */
   int       cutoff_type;/* either SC_CUTOFF or E_CUTOFF                                       */
@@ -1340,11 +1349,14 @@ typedef struct cm_s {
 
   CMStats_t *stats;     /* holds Gumbel stats and HMM filtering thresholds */
 
-  /* DP matrices and precalc'ed scores for DP algorithms */
-  ScanInfo_t *si;       /* matrices, info for CYK/Inside scans with this CM */
-  CM_HB_MX  *hbmx;     /* HMM banded float matrix */
+  /* DP matrices and some auxiliary info for DP algorithms */
+  ScanMatrix_t *smx;     /* matrices, info for CYK/Inside scans with this CM */
+  CM_HB_MX     *hbmx;    /* growable HMM banded float matrix */
+  CP9_MX       *cp9_mx;  /* growable CP9 DP matrix */
+  CP9_MX       *cp9_bmx; /* another growable CP9 DP matrix, 'b' is for backward,
+			  * only alloc'ed to any significant size if we do Forward,Backward->Posteriors */
 
-  /* filter info, NULL unless created in cmsearch */
+  /* filter info describing the cmsearch filtering strategy, NULL unless created in cmsearch */
   FilterInfo_t *fi;
 
   /* From 1.0-ification, based on HMMER3 */

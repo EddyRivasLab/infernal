@@ -210,8 +210,8 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   cm->dmin = NULL;
   cm->dmax = NULL;
   cm->search_opts |= CM_SEARCH_NOQDB;
-  cm_CreateScanInfo(cm, TRUE, TRUE);
-  if(cm->si == NULL) cm_Fail("summarize_search(), CreateScanInfo() call failed.");
+  cm_CreateScanMatrix(cm, TRUE, TRUE);
+  if(cm->smx == NULL) cm_Fail("summarize_search(), CreateScanMatrix() call failed.");
   
   /* cyk */
   /*OLDFastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);*/
@@ -229,14 +229,14 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   esl_stopwatch_Stop(w);
   t_i = w->user;
 
-  /* reset cm->dmin, cm->dmax, recalc scaninfo */
+  /* reset cm->dmin, cm->dmax, recalc scanmatrix */
   cm->dmin = tmp_dmin;
   cm->dmax = tmp_dmax;
   cm->search_opts &= ~CM_SEARCH_NOQDB;
   cm->search_opts &= ~CM_SEARCH_INSIDE;
-  cm_FreeScanInfo(cm);
-  cm_CreateScanInfo(cm, TRUE, TRUE);
-  if(cm->si == NULL) cm_Fail("summarize_search(), CreateScanInfo() call failed.");
+  cm_FreeScanMatrix(cm);
+  cm_CreateScanMatrix(cm, TRUE, TRUE);
+  if(cm->smx == NULL) cm_Fail("summarize_search(), CreateScanMatrix() call failed.");
 
   /* qdb cyk */
   /*XFastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);*/
@@ -256,12 +256,11 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   
   /* CP9 viterbi */
   esl_stopwatch_Start(w);
-  if((status = cp9_FastViterbi(cm, errbuf, dsq_cp9, 1, L_cp9, cm->W, 0., NULL,
+  if((status = cp9_FastViterbi(cm, errbuf, cm->cp9_mx, dsq_cp9, 1, L_cp9, cm->W, 0., NULL,
 			       TRUE,   /* we're scanning */
 			       FALSE,  /* we're not ultimately aligning */
 			       TRUE,   /* be memory efficient */
 			       NULL, NULL,
-			       NULL,   /* don't want the DP matrix back */
 			       NULL,   /* don't want traces back */
 			       NULL)) != eslOK) goto ERROR;
 
@@ -271,19 +270,19 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   /* CP9 forward */
   esl_stopwatch_Start(w);
   /* determine the minimum length we can search safely with the optimized forward implementation. */
-  if((status = cp9_WorstForward(cm, errbuf, -INFTY, TRUE, FALSE, &minL)) != eslOK) goto ERROR;
+  if((status = cp9_WorstForward(cm, errbuf, cm->cp9_mx, -INFTY, TRUE, FALSE, &minL)) != eslOK) goto ERROR;
   /*CP9Forward(cm, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, NULL, NULL,*/
   be_safe = FALSE;
   ESL_DPRINTF1(("minL: %d L: %d\n", minL, L));
   if(minL != -1 && minL <= L) be_safe = TRUE;
   esl_stopwatch_Start(w);
-  if((status = Xcp9_FastForward(cm, errbuf, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, 
+  if((status = Xcp9_FastForward(cm, errbuf, cm->cp9_mx, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, 
 				TRUE,   /* we are scanning */
 				FALSE,  /* we are not ultimately aligning */
 				FALSE,  /* we're not rescanning */
 				TRUE,   /* be memory efficient */
 				be_safe,
-				NULL, NULL, NULL, NULL)) != eslOK) goto ERROR;
+				NULL, NULL, NULL)) != eslOK) goto ERROR;
   esl_stopwatch_Stop(w);
   t_f = w->user;
 

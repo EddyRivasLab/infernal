@@ -53,12 +53,12 @@ OBJS  = alphabet.o\
 	cm_masks.o\
 	cm_mx.o\
 	cm_postprob.o\
-	cm_scaninfo.o\
 	cm_cp9_hybridsearch.o\
 	cplan9.o\
 	CP9_cm2wrhmm.o\
 	CP9_scan.o\
 	cp9_fastsearch.o\
+	cp9_mx.o\
 	display.o\
 	emit.o\
 	emitmap.o\

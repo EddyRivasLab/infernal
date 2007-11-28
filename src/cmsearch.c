@@ -1254,14 +1254,14 @@ set_window(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
   }
 
-  /* Setup ScanInfo for CYK/Inside scanning functions, this is dependent on W, so we can't 
+  /* Setup ScanMatrix for CYK/Inside scanning functions, this is dependent on W, so we can't 
    * do it in initialize_cm(), but we have to wait til W is set, which just happened. 
    */
   int do_float = TRUE;
   int do_int   = FALSE;
   if(cm->search_opts & CM_SEARCH_INSIDE) { do_float = FALSE; do_int = TRUE; }
-  cm_CreateScanInfo(cm, do_float, do_int);
-  if(cm->si == NULL) cm_Fail("initialize_cm(), CreateScanInfo() call failed.");
+  cm_CreateScanMatrix(cm, do_float, do_int);
+  if(cm->smx == NULL) cm_Fail("initialize_cm(), CreateScanMatrix() call failed.");
 
 
   return eslOK;

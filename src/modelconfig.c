@@ -54,23 +54,33 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
     ;/*cm_Fail("ERROR in ConfigCM() trying to search with HMM derived bands, but w/o using a HMM filter.");*/
 
   /* Check if we need to calculate QDBs and/or build a CP9 HMM. */
-  if(cm->config_opts & CM_CONFIG_QDB)
-  {
+  if(cm->config_opts & CM_CONFIG_QDB) {
     if(preset_dmin == NULL && preset_dmax == NULL) 
       do_calc_qdb   = TRUE;
     else 
       do_preset_qdb = TRUE;
   }
 
-  /* Build the CP9 HMM */
+  /* Build the CP9 HMM and associated data */
   /* IMPORTANT: do this before setting up CM for local mode
-     if we already have one, free it (wasteful but safe) */
+   * if we already have these, free them (wasteful but safe, 
+   * and not a big deal b/c we 'should' only call ConfigCM() once
+   * per CM.  
+   */
   if(cm->cp9map     != NULL) FreeCP9Map(cm->cp9map);
   if(cm->cp9b       != NULL) FreeCP9Bands(cm->cp9b);
   if(cm->cp9        != NULL) FreeCPlan9(cm->cp9);
+  if(cm->cp9_mx     != NULL) FreeCP9Matrix(cm->cp9_mx);
+  if(cm->cp9_bmx    != NULL) FreeCP9Matrix(cm->cp9_bmx);
 
   if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) cm_Fail("Couldn't build a CP9 HMM from the CM\n");
   cm->cp9b = AllocCP9Bands(cm, cm->cp9);
+  /* create the CP9 matrices, we init to 1 row, which is tiny so it's okay
+   * that we have two of them, we only grow them as needed, cp9_bmx is 
+   * only needed if we're doing Forward -> Backward -> Posteriors.
+   */
+  cm->cp9_mx  = CreateCP9Matrix(1, cm->cp9->M);
+  cm->cp9_bmx = CreateCP9Matrix(1, cm->cp9->M);
   cm->flags |= CMH_CP9; /* raise the CP9 flag */
   
   /* Possibly configure the CM for local alignment. */
@@ -304,8 +314,8 @@ ConfigCMEnforce(CM_t *cm)
   cm->enf_scdiff = enf_sc - nonenf_sc;
   cm->flags |= CM_ENFORCED; /* raise the enforced flag */
 
-  if(cm->flags & CMH_SCANINFO)
-    cm->flags &= ~CMH_SCANINFO; /* enforcement invalidates ScanInfo */
+  if(cm->flags & CMH_SCANMATRIX)
+    cm->flags &= ~CMH_SCANMATRIX; /* enforcement invalidates ScanMatrix */
 
   return; 
 }
@@ -410,8 +420,8 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
     CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
 				     * makes all CP9 (if non-null) inserts equiprobable */
-  if(cm->flags & CMH_SCANINFO)
-    cm->flags &= ~ CMH_SCANINFO; /* new local configuration invalidates ScanInfo */
+  if(cm->flags & CMH_SCANMATRIX)
+    cm->flags &= ~ CMH_SCANMATRIX; /* new local configuration invalidates ScanMatrix */
   return;
 
  ERROR:
@@ -478,8 +488,8 @@ ConfigGlobal(CM_t *cm)
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
     CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
 				     * makes all CP9 (if non-null) inserts equiprobable */
-  if(cm->flags & CMH_SCANINFO)
-    cm->flags &= ~ CMH_SCANINFO; /* new glocal configuration invalidates ScanInfo */
+  if(cm->flags & CMH_SCANMATRIX)
+    cm->flags &= ~ CMH_SCANMATRIX; /* new glocal configuration invalidates ScanMatrix */
 
   return;
 }
@@ -529,8 +539,8 @@ ConfigNoLocalEnds(CM_t *cm)
   cm->flags &= ~CMH_BITS;
   /* QDB still valid, local ends don't affect them */
 
-  if(cm->flags & CMH_SCANINFO)
-    cm->flags &= ~ CMH_SCANINFO; /* ScanInfo now invalid */
+  if(cm->flags & CMH_SCANMATRIX)
+    cm->flags &= ~ CMH_SCANMATRIX; /* ScanMatrix now invalid */
 
   return;
 }
@@ -594,8 +604,8 @@ ConfigLocalEnds(CM_t *cm, float p_internal_exit)
   cm->flags &= ~CMH_BITS;
   /* local end changes don't invalidate QDBs */
 
-  if(cm->flags & CMH_SCANINFO)
-    cm->flags &= ~ CMH_SCANINFO; /* ScanInfo now invalid */
+  if(cm->flags & CMH_SCANMATRIX)
+    cm->flags &= ~ CMH_SCANMATRIX; /* ScanMatrix now invalid */
 
   return;
 }
@@ -618,8 +628,8 @@ ConfigLocal_DisallowELEmissions(CM_t *cm)
   cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
   cm->iel_selfsc = -INFTY; 
   cm->iel_selfsc = -100 * INTSCALE; 
-  if(cm->flags & CMH_SCANINFO)
-    cm->flags &= ~ CMH_SCANINFO; /* ScanInfo now invalid */
+  if(cm->flags & CMH_SCANMATRIX)
+    cm->flags &= ~ CMH_SCANMATRIX; /* ScanMatrix now invalid */
   return;
 }
 
@@ -777,8 +787,8 @@ ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit)
   cm->flags |= CMH_LOCAL_END;
   FreeEmitMap(emap);
 
-  if(cm->flags & CMH_SCANINFO)
-    cm->flags &= ~ CMH_SCANINFO; /* ScanInfo now invalid */
+  if(cm->flags & CMH_SCANMATRIX)
+    cm->flags &= ~ CMH_SCANMATRIX; /* ScanMatrix now invalid */
 
   return;
 }
@@ -885,8 +895,8 @@ EnforceSubsequence(CM_t *cm)
 	printf("cm->e[v:%d][a:%d]: %f sc: %f\n", v, a, cm->e[v][a], cm->esc[v][a]);
     }
   printf("\n");*/
-  if(cm->flags & CMH_SCANINFO)
-    cm->flags &= ~ CMH_SCANINFO; /* ScanInfo now invalid */
+  if(cm->flags & CMH_SCANMATRIX)
+    cm->flags &= ~ CMH_SCANMATRIX; /* ScanMatrix now invalid */
 
   return eslOK;
 
@@ -966,8 +976,8 @@ EnforceScore(CM_t *cm)
   /*printf("in EnforceScore() returning sc: %f\n", score);*/
   esl_sq_Destroy(enf_sq);
 
-  if(cm->flags & CMH_SCANINFO)
-    cm->flags &= ~ CMH_SCANINFO; /* ScanInfo now invalid */
+  if(cm->flags & CMH_SCANMATRIX)
+    cm->flags &= ~ CMH_SCANMATRIX; /* ScanMatrix now invalid */
 
   return score;
 }
@@ -1174,8 +1184,8 @@ ConfigQDB(CM_t *cm)
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
     CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
 				     * makes all CP9 (if non-null) inserts equiprobable */
-  if(cm->flags & CMH_SCANINFO)
-    cm->flags &= ~ CMH_SCANINFO; /* new QDBs invalidate ScanInfo */
+  if(cm->flags & CMH_SCANMATRIX)
+    cm->flags &= ~ CMH_SCANMATRIX; /* new QDBs invalidate ScanMatrix */
 
   return eslOK;
 }

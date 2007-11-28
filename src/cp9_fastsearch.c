@@ -68,9 +68,9 @@
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_FastViterbi(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-		int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, 
-		CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr, float *ret_sc)
+cp9_FastViterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+		search_results_t *results, int do_scan, int doing_align, int be_efficient, int **ret_psc, 
+		int *ret_maxres, CP9trace_t **ret_tr, float *ret_sc)
 {
   int          status;
   int          j;           /*     actual   position in the subsequence                     */
@@ -80,7 +80,6 @@ cp9_FastViterbi(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
   int          L;           /* j0-i0+1: subsequence length                                  */
-  CP9_dpmatrix_t *mx;       /* the CP9 DP matrix                                            */
   int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
   int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
   int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
@@ -100,14 +99,16 @@ cp9_FastViterbi(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
 			     * else return best_hmm_sc if # HMM hits>0, else return best_sc */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
   int          c;           /* counter for EL states */
-  CP9trace_t  *tr;
+  CP9trace_t  *tr;          
   int          M;
 
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, cm->cp9 is NULL.\n");
-  if(be_efficient && (ret_mx != NULL)) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, passing in results data structure, but not in scanning mode.\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, dsq is NULL.");
+  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx is NULL.\n");
+  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx->M != cm->clen.\n");
+  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, cm->clen != cm->cp9->M.\n");
   if((cm->search_opts & CM_SEARCH_HMMGREEDY) && (cm->search_opts & CM_SEARCH_HMMRESCAN))
     ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
     
@@ -150,11 +151,12 @@ cp9_FastViterbi(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
   gback[0] = -1;
   ESL_ALLOC(savesc, sizeof(float) * (L+1));
 
-  /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
-   * M+1 columns */ 
-  if(be_efficient) nrows = 2;
-  else             nrows = L+1;
-  mx = AllocCPlan9Matrix(nrows, M, &mmx, &imx, &dmx, &elmx, &erow); 
+  /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
+   * stays M+1 columns */
+  if(be_efficient) nrows = 1; /* mx will be 2 rows */
+  else             nrows = L; /* mx will be L+1 rows */
+  if((status = GrowCP9Matrix(mx, errbuf, nrows, M, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
+  ESL_DPRINTF1(("cp9_FastViterbi(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
 
   /* scA will hold P(seq up to j | Model) in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+2));
@@ -293,9 +295,7 @@ cp9_FastViterbi(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
 	  savesc[jp] = IMPOSSIBLE;
 	  i = ((j-W+1)> i0) ? (j-W+1) : i0;
 	  ip = i-i0+1;
-	  curr_sc = gamma[ip-1] + fsc + cm->cp9_sc_boost;
-	  /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
-	   * value is 0.0 if technique not used. */
+	  curr_sc = gamma[ip-1] + fsc;
 	  if (curr_sc > gamma[jp])
 	    {
 	      gamma[jp]  = curr_sc;
@@ -383,8 +383,6 @@ cp9_FastViterbi(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
     }
   if(ret_psc != NULL) *ret_psc = scA;
   else free(scA);
-  if (ret_mx != NULL) *ret_mx = mx;
-  else                FreeCPlan9Matrix(mx);
   ESL_DPRINTF1(("cp9_FastViterbi() return score: %10.4f\n", return_sc));
 
   if(ret_sc != NULL) *ret_sc = return_sc;
@@ -413,9 +411,9 @@ cp9_FastViterbi(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_FastViterbiBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
 			int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, 
-			CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr, float *ret_sc)
+			CP9trace_t **ret_tr, float *ret_sc)
 {
   int          status;
   int          j;           /*     actual   position in the subsequence                     */
@@ -425,7 +423,6 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, in
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
   int          L;           /* j0-i0+1: subsequence length                                  */
-  CP9_dpmatrix_t *mx;       /* the CP9 DP matrix                                            */
   int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
   int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
   int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
@@ -452,9 +449,11 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, in
   /*printf("in CP9Viterbi() i0: %d j0: %d\n", i0, j0);  */
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbiBackward, cm->cp9 is NULL.\n");
-  if(be_efficient && (ret_mx != NULL)) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbiBackward, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbiBackward, passing in results data structure, but not in scanning mode.\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbiBackward, dsq is NULL.");
+  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx is NULL.\n");
+  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx->M != cm->clen.\n");
+  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, cm->clen != cm->cp9->M.\n");
   if((cm->search_opts & CM_SEARCH_HMMGREEDY) && (cm->search_opts & CM_SEARCH_HMMRESCAN))
     ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbiBackward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
     
@@ -502,11 +501,13 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, in
   gback[L]   = -1;
   ESL_ALLOC(savesc, sizeof(float) * (L+2));
 
-  /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
-   * M+1 columns */ 
-  if(be_efficient) nrows = 2;
-  else             nrows = L+1;
-  mx = AllocCPlan9Matrix(nrows, M, &mmx, &imx, &dmx, &elmx, &erow); 
+  /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
+   * stays M+1 columns */
+  if(be_efficient) nrows = 1; /* mx will be 2 rows */
+  else             nrows = L; /* mx will be L+1 rows */
+  if((status = GrowCP9Matrix(mx, errbuf, nrows, M, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
+  ESL_DPRINTF1(("cp9_FastViterbiBackward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
+
 
   /* scA will hold P(seq up to j | Model) in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+2));
@@ -767,9 +768,7 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, in
 	  savesc[ip] = IMPOSSIBLE;
 	  j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
 	  jp = j-i0+1;
-	  curr_sc = gamma[jp+1-1] + fsc + cm->cp9_sc_boost; /* *off-by-one* */
-	  /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
-	   * value is 0.0 if technique not used. */
+	  curr_sc = gamma[jp+1-1] + fsc;
 	  if (curr_sc > gamma[ip])
 	    {
 	      gamma[ip]  = curr_sc;
@@ -859,8 +858,6 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, in
       return_sc = best_hmm_sc;
       if(ret_maxres != NULL) *ret_maxres = best_hmm_pos;
     }
-  if (ret_mx != NULL) *ret_mx = mx;
-  else                FreeCPlan9Matrix(mx);
   ESL_DPRINTF1(("cp9_FastViterbiBackward() return score: %10.4f\n", return_sc));
 
   if(ret_sc != NULL) *ret_sc = return_sc;
@@ -940,7 +937,6 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, in
  *           be_efficient- TRUE to keep only 2 rows of DP matrix in memory, FALSE keep whole thing
  *           ret_psc   - RETURN: int log odds Forward score for each end point [0..(j0-i0+1)]
  *           ret_maxres- RETURN: start position that gives maximum score max argmax_i sc[i]
- *           ret_mx    - RETURN: CP9 Forward DP matrix, NULL if not wanted
  *           ret_sc    - RETURN: see below
  *
  * Returns:  <ret_sc>: if(!do_scan)     log P(S|M)/P(S|R), as a bit score
@@ -949,9 +945,9 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, in
  *           eslEINCOMPAT on contract violation;
  */
 int
-cp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
 		int do_scan, int doing_align, int doing_rescan, int be_efficient, int **ret_psc, 
-		int *ret_maxres, CP9_dpmatrix_t **ret_mx, float *ret_sc)
+		int *ret_maxres, float *ret_sc)
 {
   int          status;
   int          j;           /*     actual   position in the subsequence                     */
@@ -961,7 +957,6 @@ cp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
   int          L;           /* j0-i0+1: subsequence length                                  */
-  CP9_dpmatrix_t *mx;       /* the CP9 DP matrix                                            */
   int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
   int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
   int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
@@ -988,10 +983,12 @@ cp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
   /*printf("in cp9_FastForward() i0: %d j0: %d\n", i0, j0);  */
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, cm->cp9 is NULL.\n");
-  if(be_efficient && (ret_mx != NULL)) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(doing_rescan && !do_scan)         ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, doing_rescan but not do_scan");
   if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, passing in results data structure, but not in scanning mode.\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, dsq is NULL.");
+  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx is NULL.\n");
+  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx->M != cm->clen.\n");
+  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, cm->clen != cm->cp9->M.\n");
   if((cm->search_opts & CM_SEARCH_HMMGREEDY) && (cm->search_opts & CM_SEARCH_HMMRESCAN))
     ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
     
@@ -1034,11 +1031,12 @@ cp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
   gback[0] = -1;
   ESL_ALLOC(savesc, sizeof(float) * (L+1));
 
-  /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
-   * M+1 columns */ 
-  if(be_efficient) nrows = 2;
-  else             nrows = L+1;
-  mx = AllocCPlan9Matrix(nrows, M, &mmx, &imx, &dmx, &elmx, &erow); 
+  /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
+   * stays M+1 columns */
+  if(be_efficient) nrows = 1; /* mx will be 2 rows */
+  else             nrows = L; /* mx will be L+1 rows */
+  if((status = GrowCP9Matrix(mx, errbuf, nrows, M, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
+  ESL_DPRINTF1(("cp9_FastForward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
 
   /* scA will hold P(seq up to j | Model) in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+2));
@@ -1181,9 +1179,7 @@ cp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
 	  savesc[jp] = IMPOSSIBLE;
 	  i = ((j-W+1)> i0) ? (j-W+1) : i0;
 	  ip = i-i0+1;
-	  curr_sc = gamma[ip-1] + fsc + cm->cp9_sc_boost;
-	  /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
-	   * value is 0.0 if technique not used. */
+	  curr_sc = gamma[ip-1] + fsc;
 	  if (curr_sc > gamma[jp])
 	    {
 	      gamma[jp]  = curr_sc;
@@ -1297,8 +1293,6 @@ cp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
     }
   if(ret_psc != NULL) *ret_psc = scA;
   else free(scA);
-  if (ret_mx != NULL) *ret_mx = mx;
-  else                FreeCPlan9Matrix(mx);
   ESL_DPRINTF1(("cp9_FastForward() return score: %10.4f\n", return_sc));
 
   if(ret_sc != NULL) *ret_sc = return_sc;
@@ -1379,7 +1373,6 @@ cp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
  *           be_safe     - TRUE to never use ILogsumNI(sc1,sc2) (which assumes sc1, sc2 != -INFTY)
  *           ret_psc   - RETURN: int log odds Forward score for each end point [0..(j0-i0+1)]
  *           ret_maxres- RETURN: start position that gives maximum score max argmax_i sc[i]
- *           ret_mx    - RETURN: CP9 Forward DP matrix, NULL if not wanted
  *           ret_sc    - RETURN: see below
  *
  * Returns:  <ret_sc>: if(!do_scan)     log P(S|M)/P(S|R), as a bit score
@@ -1388,9 +1381,9 @@ cp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
  *           eslEINCOMPAT on contract violation;
  */
 int
-Xcp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+Xcp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
 		 int do_scan, int doing_align, int doing_rescan, int be_efficient, int be_safe, 
-		 int **ret_psc, int *ret_maxres, CP9_dpmatrix_t **ret_mx, float *ret_sc)
+		 int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
   int          j;           /*     actual   position in the subsequence                     */
@@ -1400,7 +1393,6 @@ Xcp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
   int          L;           /* j0-i0+1: subsequence length                                  */
-  CP9_dpmatrix_t *mx;       /* the CP9 DP matrix                                            */
   int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
   int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
   int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
@@ -1430,9 +1422,11 @@ Xcp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
 
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, cm->cp9 is NULL.\n");
-  if(be_efficient && (ret_mx != NULL)) ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(doing_rescan && !do_scan)         ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, doing_rescan but not do_scan");
   if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, passing in results data structure, but not in scanning mode.\n");
+  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, mx is NULL.\n");
+  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, mx->M != cm->clen.\n");
+  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, cm->clen != cm->cp9->M.\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, dsq is NULL.");
   if((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) && (! (cm->cp9->flags & CPLAN9_LOCAL_BEGIN))) ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, CPLAN9_LOCAL_BEGIN flag up, but CPLAN9_LOCAL_END flag down, this shouldn't happen.");
   if((! (cm->cp9->flags & CPLAN9_LOCAL_BEGIN)) && (cm->cp9->flags & CPLAN9_LOCAL_BEGIN)) ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, CPLAN9_LOCAL_BEGIN flag down, but CPLAN9_LOCAL_END flag up, this shouldn't happen.");
@@ -1483,15 +1477,16 @@ Xcp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
   gback[0] = -1;
   ESL_ALLOC(savesc, sizeof(float) * (L+1));
 
-  /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
-   * M+1 columns */ 
-  if(be_efficient) nrows = 2;
-  else             nrows = L+1;
-  mx = AllocCPlan9Matrix(nrows, M, &mmx, &imx, &dmx, &elmx, &erow); 
-
+  /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
+   * stays M+1 columns */
+  if(be_efficient) nrows = 1; /* mx will be 2 rows */
+  else             nrows = L; /* mx will be L+1 rows */
+  if((status = GrowCP9Matrix(mx, errbuf, nrows, M, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
+  ESL_DPRINTF1(("Xcp9_FastForward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
+			
   /* scA will hold P(seq up to j | Model) in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+2));
-			
+
   /* Initialization of the zero row. */
   mmx[0][0] = 0;      /* M_0 is state B, and everything starts in B */
   imx[0][0] = -INFTY; /* I_0 is state N, can't get here without emitting*/
@@ -1600,9 +1595,7 @@ Xcp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
       savesc[jp] = IMPOSSIBLE;
       i = ((j-W+1)> i0) ? (j-W+1) : i0;
       ip = i-i0+1;
-      curr_sc = gamma[ip-1] + fsc + cm->cp9_sc_boost;
-      /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
-       * value is 0.0 if technique not used. */
+      curr_sc = gamma[ip-1] + fsc;
       if (curr_sc > gamma[jp])
 	{
 	  gamma[jp]  = curr_sc;
@@ -2138,9 +2131,7 @@ Xcp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
 	  savesc[jp] = IMPOSSIBLE;
 	  i = ((j-W+1)> i0) ? (j-W+1) : i0;
 	  ip = i-i0+1;
-	  curr_sc = gamma[ip-1] + fsc + cm->cp9_sc_boost;
-	  /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
-	   * value is 0.0 if technique not used. */
+	  curr_sc = gamma[ip-1] + fsc;
 	  if (curr_sc > gamma[jp])
 	    {
 	      gamma[jp]  = curr_sc;
@@ -2254,8 +2245,6 @@ Xcp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
     }
   if(ret_psc != NULL) *ret_psc = scA;
   else free(scA);
-  if (ret_mx != NULL) *ret_mx = mx;
-  else                FreeCPlan9Matrix(mx);
   ESL_DPRINTF1(("Xcp9_FastForward() return score: %10.4f\n", return_sc));
 
   if(ret_sc != NULL) *ret_sc = return_sc;
@@ -2374,7 +2363,6 @@ Xcp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
  *           be_efficient- TRUE to keep only 2 rows of DP matrix in memory, FALSE keep whole thing
  *           ret_psc   - RETURN: int log odds Backward score for each end point [0..(j0-i0+1)]
  *           ret_maxres- RETURN: start position that gives maximum score max argmax_i sc[i]
- *           ret_mx    - RETURN: CP9 Forward DP matrix, NULL if not wanted
  *           ret_sc    - RETURN: see below
  *
  * Returns:  <ret_sc>: if(!do_scan)     log P(S|M)/P(S|R), as a bit score, this is B->M[0][0]
@@ -2384,9 +2372,9 @@ Xcp9_FastForward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
  *           eslEINCOMPAT on contract violation;
  */
 int
-Xcp9_FastBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
+Xcp9_FastBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
 		  int do_scan, int doing_align, int doing_rescan, int be_efficient, int **ret_psc, 
-		  int *ret_maxres, CP9_dpmatrix_t **ret_mx, float *ret_sc)
+		  int *ret_maxres, float *ret_sc)
 {
   int          status;
   int          j;           /*     actual   position in the subsequence                     */
@@ -2396,7 +2384,6 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
   int          L;           /* j0-i0+1: subsequence length                                  */
-  CP9_dpmatrix_t *mx;       /* the CP9 DP matrix                                            */
   int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
   int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
   int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
@@ -2418,14 +2405,17 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
   float        temp_sc;     /* temporary score                                              */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
   int          c;           /* counter for EL states */
+  int          M;           /* cm->cp9->M */
 
   /* printf("in Xcp9_FastBackward() i0: %d j0: %d do_scan: %d \n", i0, j0, do_scan); */
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastBackward, cm->cp9 is NULL.\n");
   if(doing_rescan && !do_scan)         ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastBackward, doing_rescan but not do_scan");
-  if(be_efficient && (ret_mx != NULL)) ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastBackward, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastBackward, passing in results data structure, but not in scanning mode.a\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastBackward, dsq is NULL.");
+  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx is NULL.\n");
+  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx->M != cm->clen.\n");
+  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, cm->clen != cm->cp9->M.\n");
   if((cm->search_opts & CM_SEARCH_HMMGREEDY) && (cm->search_opts & CM_SEARCH_HMMRESCAN))
     ESL_FAIL(eslEINCOMPAT, errbuf, "ERROR in Xcp9_FastBackward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
     
@@ -2434,6 +2424,7 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
   best_hmm_sc = IMPOSSIBLE;
   best_hmm_pos= -1;
   L = j0-i0+1;
+  M = cm->cp9->M;
   if (W > L) W = L; 
 
   /*****************************************************************
@@ -2452,11 +2443,12 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
   gback[L]   = -1;
   ESL_ALLOC(savesc, sizeof(float) * (L+2));
 
-  /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
-   * M+1 columns */ 
-  if(be_efficient) nrows = 2;
-  else             nrows = L+1; 
-  mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, &elmx, &erow);
+  /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
+   * stays M+1 columns */
+  if(be_efficient) nrows = 1; /* mx will be 2 rows */
+  else             nrows = L; /* mx will be L+1 rows */
+  if((status = GrowCP9Matrix(mx, errbuf, nrows, M, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
+  ESL_DPRINTF1(("Xcp9_FastBackward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
 
   /* sc will hold P(seq from i..j0 | Model) for each i in int log odds form */
   ESL_ALLOC(sc, sizeof(int) * (j0-i0+3));
@@ -2712,9 +2704,7 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
 	  savesc[ip] = IMPOSSIBLE;
 	  j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
 	  jp = j-i0+1;
-	  curr_sc = gamma[jp+1-1] + fsc + cm->cp9_sc_boost; /* *off-by-one* */
-	  /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
-	   * value is 0.0 if technique not used. */
+	  curr_sc = gamma[jp+1-1] + fsc;
 	  if (curr_sc > gamma[ip]) { 
 	    gamma[ip]  = curr_sc;
 	    /*printf("\ti: %d | gamma[i]: %f\n", i+1, gamma[ip]);*/
@@ -2809,9 +2799,7 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
     savesc[ip] = IMPOSSIBLE;
     j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
     jp = j-i0+1;
-    curr_sc = gamma[jp+1-1] + fsc + cm->cp9_sc_boost; /* *off-by-one* */
-    /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
-     * value is 0.0 if technique not used. */
+    curr_sc = gamma[jp+1-1] + fsc;
     if (curr_sc > gamma[ip]) {
       gamma[ip]  = curr_sc;
       /*printf("\ti: %d | gamma[i]: %f\n", i+1, gamma[ip]);*/
@@ -2872,7 +2860,7 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
 		  if(do_scan && cm->search_opts & CM_SEARCH_HMMRESCAN && doing_rescan == FALSE)
 		    {
 		      /*printf("rechecking hit from %d to %d\n", i, gback[ip]);*/
-		      Xcp9_FastBackward(cm, errbuf, dsq, i, gback[ip], cm->W, cutoff,  /* *off-by-one* i+1 */
+		      Xcp9_FastBackward(cm, errbuf, mx, dsq, i, gback[ip], cm->W, cutoff,  /* *off-by-one* i+1 */
 					NULL,  /* don't report hits to results data structure */
 					TRUE,  /* we're scanning */
 					FALSE, /* we're not ultimately aligning */
@@ -2881,7 +2869,6 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
 					TRUE,  /* be memory efficient */
 					NULL,  /* don't care about scores of each pos */
 					NULL,  /* don't care about best scoring position */
-					NULL,  /* don't want the DP matrix back */
 					&temp_sc);
 		      /*printf("new score: %f old score %f\n", temp_sc, savesc[ip]);*/
 		      if(temp_sc >= cutoff) 
@@ -2931,8 +2918,6 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
       return_sc = best_hmm_sc;
       if(ret_maxres != NULL) *ret_maxres = best_hmm_pos;
     }
-  if (ret_mx != NULL) *ret_mx = mx;
-  else                FreeCPlan9Matrix(mx);
   ESL_DPRINTF1(("Xcp9_FastBackward() return score: %10.4f\n", return_sc));
 
   if(ret_sc != NULL) *ret_sc = return_sc;
@@ -2955,6 +2940,7 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
  * Args:
  *           cm        - the covariance model, includes cm->cp9: a CP9 HMM
  *           errbuf    - char buffer for error messages
+ *           mx        - the DP matrix
  *           thresh    - score threshold, we seek seq length that can have a sc <= thresh
  *           doing_scan- TRUE if we're scanning, HMM can start to emit at any position
  *                       FALSE if we're not, HMM must start emitting at res 1
@@ -2969,13 +2955,12 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
  *           eslEINCOMPAT on contract violation
  */
 int
-cp9_WorstForward(CM_t *cm, char *errbuf, int thresh, int doing_scan, int doing_align, int *ret_L)
+cp9_WorstForward(CM_t *cm, char *errbuf, CP9_MX *mx, int thresh, int doing_scan, int doing_align, int *ret_L)
 {
   int          status;
   int          j;           /*     actual   position in the subsequence                     */
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
-  CP9_dpmatrix_t *mx;       /* the CP9 DP matrix                                            */
   int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
   int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
   int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
@@ -2991,6 +2976,9 @@ cp9_WorstForward(CM_t *cm, char *errbuf, int thresh, int doing_scan, int doing_a
 
   /* Contract checks */
   if(cm->cp9 == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_WorstForward, cm->cp9 is NULL.\n");
+  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx is NULL.\n");
+  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx->M != cm->clen.\n");
+  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, cm->clen != cm->cp9->M.\n");
     
   M = cm->cp9->M;
 
@@ -3041,9 +3029,11 @@ cp9_WorstForward(CM_t *cm, char *errbuf, int thresh, int doing_scan, int doing_a
   free(msc_vec);
   free(isc_vec);
 
-  /* Allocate DP matrix, 2 rows */
-  nrows = 2;
-  mx = AllocCPlan9Matrix(nrows, M, &mmx, &imx, &dmx, &elmx, &erow); 
+  /* Grow DP matrix if nec, to 2 rows */
+  nrows = 1; /* mx will be 2 rows */
+  if((status = GrowCP9Matrix(mx, errbuf, nrows, M, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
+  ESL_DPRINTF1(("Xcp9_WorstForward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
+
 
   /* Initialization of the zero row. */
   mmx[0][0] = 0;      /* M_0 is state B, and everything starts in B */

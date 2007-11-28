@@ -87,7 +87,7 @@ predict_xsub(CM_t *cm, float *cm_vcalcs, float *cm_expsc, float *cp9_expsc)
  * Returns:  max log P(S,tr|M)/P(S,tr|R), for argmax subseq S of input seq i0..j0,
  */
 float
-cm_cp9_HybridScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, int **ret_sc, 
+cm_cp9_HybridScan(CM_t *cm, CP9_MX *mx, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, int **ret_sc, 
 		  int *ret_bestpos, search_results_t *results, HybridScanInfo_t *hsi)
 {
   int          status;
@@ -98,7 +98,6 @@ cm_cp9_HybridScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, 
   int          cm_cur, cm_prv;    /* rows in alpha DP matrix 0 or 1                         */
   int          k;           /* CP9 HMM node position                                        */
   int          L;           /* j0-i0+1: subsequence length                                  */
-  CP9_dpmatrix_t *mx;       /* the CP9 DP matrix                                            */
   int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
   int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
   int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
@@ -206,8 +205,11 @@ cm_cp9_HybridScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, 
   gback[0] = -1;
   ESL_ALLOC(savesc, sizeof(float) * (L+1));
 
-  /* Allocate DP matrix */
-  mx = AllocCPlan9Matrix((W+1), M, &mmx, &imx, &dmx, &elmx, &erow); 
+
+  /* Grow DP matrix, in nec, to W+1 rows (depending on be_efficient), 
+   * stays M+1 columns */
+  GrowCP9Matrix(mx, NULL, W, M, &mmx, &imx, &dmx, &elmx, &erow); 
+  ESL_DPRINTF1(("cm_cp9_HybridScan(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
 
   /* scA will hold P(seq up to j | Model) in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+2));
@@ -1520,8 +1522,8 @@ main(int argc, char **argv)
 
   if((status = cm_CountSearchDPCalcs(cm, NULL, 1000, cm->dmin, cm->dmax, cm->W, &vcalcs, NULL)) != eslOK) cm_Fail("Error counting search dp calcs.");
 
-  ScanInfo_t *si;
-  si = cm_CreateScanInfo(cm);
+  ScanMatrix_t *smx;
+  smx = cm_CreateScanInfo(cm);
 
   HybridScanInfo_t *hsi;
   hsi_beta = esl_opt_GetReal(go, "--beta");
@@ -1568,7 +1570,7 @@ main(int argc, char **argv)
 
       if(esl_opt_GetBoolean(go, "-v")) { 
 	esl_stopwatch_Start(w);
-	sc = FastCYKScan(cm, si, dsq, 1, L, cm->W, 0., NULL, NULL);
+	sc = FastCYKScan(cm, smx, dsq, 1, L, cm->W, 0., NULL, NULL);
 	printf("%4d %-30s %10.4f bits ", (i+1), "cm_FastCYKScan(): ", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");

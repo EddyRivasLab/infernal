@@ -279,7 +279,7 @@ cm_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm comm, CM_t
 int
 cm_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm)
 {
-  cm_Fail("EPN, Fri Nov  9 08:55:23 2007, cm_MPIPack() shouldn't be used until oesc's, scaninfo, and CM_*HB_MX's are handled. Why not use cm_justread_MPIPack?()\n");
+  cm_Fail("EPN, Fri Nov  9 08:55:23 2007, cm_MPIPack() shouldn't be used until oesc's, scanmatrix, and CM_HB_MX's are handled. Why not use cm_justread_MPIPack?()\n");
 
   int   status;
   int   K      = cm->abc->K;

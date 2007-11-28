@@ -4,7 +4,7 @@
 /* cplan9.c based on plan7.c
  * EPN 02.27.06
  * 
- * Support for CM-Plan 9 HMM data structure, cplan9_s.
+ * Support for CM-Plan 9 HMM data structure, CP9_t.
  * Including support for a dp matrix structure for cplan_s,
  * cp9_dpmatrix_s.
  * 
@@ -92,7 +92,7 @@ AllocCPlan9Shell(void)
 }  
 
 void
-AllocCPlan9Body(struct cplan9_s *hmm, int M, const ESL_ALPHABET *abc) 
+AllocCPlan9Body(CP9_t *hmm, int M, const ESL_ALPHABET *abc) 
 {
   int status;
   int k, x;
@@ -211,7 +211,7 @@ FreeCPlan9(CP9_t *hmm)
  *           Leaves null model untouched. 
  */
 void
-ZeroCPlan9(struct cplan9_s *hmm)
+ZeroCPlan9(CP9_t *hmm)
 {
   int k;
   esl_vec_FSet(hmm->ins[0], hmm->abc->K, 0.);
@@ -253,7 +253,7 @@ ZeroCPlan9(struct cplan9_s *hmm)
  *           Convenience function.
  */
 void
-CPlan9SetNullModel(struct cplan9_s *hmm, float null[MAXABET], float p1)
+CPlan9SetNullModel(CP9_t *hmm, float null[MAXABET], float p1)
 {
   int x;
   for (x = 0; x < hmm->abc->K; x++)
@@ -362,7 +362,7 @@ CP9Logoddsify(CP9_t *hmm)
  * Returns:   (void)
  */
 void 
-CPlan9Rescale(struct cplan9_s *hmm, float scale)
+CPlan9Rescale(CP9_t *hmm, float scale)
 {
   int k;
 
@@ -397,7 +397,7 @@ CPlan9Rescale(struct cplan9_s *hmm, float scale)
  *           hmm is changed.
  */                          
 void
-CPlan9Renormalize(struct cplan9_s *hmm)
+CPlan9Renormalize(CP9_t *hmm)
 {
   int   k;			/* counter for model position */
   float d;			/* denominator */
@@ -439,245 +439,6 @@ CPlan9Renormalize(struct cplan9_s *hmm)
   hmm->flags |= CPLAN9_HASPROB;	/* set the probabilities OK flag */
 }
 
-/* Function: AllocCPlan9Matrix()
- * based on  AllocPlan7Matrix() <-- this function's comments below 
- * Date:     SRE, Tue Nov 19 07:14:47 2002 [St. Louis]
- *
- * Purpose:  Used to be the main allocator for dp matrices; we used to
- *           allocate, calculate, free. But this spent a lot of time
- *           in malloc(). Replaced with Create..() and Resize..() to
- *           allow matrix reuse in P7Viterbi(), the main alignment 
- *           engine. But matrices are alloc'ed by other alignment engines
- *           too, ones that are less frequently called and less 
- *           important to optimization of cpu performance. Instead of
- *           tracking changes through them, for now, provide
- *           an Alloc...() call with the same API that's just a wrapper.
- *
- * Args:     rows  - generally L+1, or 2; # of DP rows in seq dimension to alloc
- *           M     - size of model, in nodes
- *           xmx, mmx, imx, dmx 
- *                 - RETURN: ptrs to four mx components as a convenience
- *
- * Returns:  mx
- *           Caller free's w/ FreeCPlan9Matrix()
- */
-struct cp9_dpmatrix_s *
-AllocCPlan9Matrix(int rows, int M, int ***mmx, int ***imx, int ***dmx, int ***elmx, int **erow)
-{
-  struct cp9_dpmatrix_s *mx;
-  mx = CreateCPlan9Matrix(rows-1, M, 0, 0);
-  if (mmx != NULL) *mmx = mx->mmx;
-  if (imx != NULL) *imx = mx->imx;
-  if (dmx != NULL) *dmx = mx->dmx;
-  if (elmx!= NULL) *elmx= mx->elmx;
-  if (erow!= NULL) *erow= mx->erow;
-  
-  return mx;
-}
-
-/* Function: SizeCPlan9Matrix()
- * Date:     EPN, 04.21.06
- *
- * Purpose:  Return the size of a cp9_dpmatrix_s data structure with
- *           specified dimensions.
- *
- * Args:     rows  - generally L+1, or 2; # of DP rows in seq dimension to alloc
- *           M     - size of model, in nodes
- *
- * Returns:  size of cp9_dpmatrix_s in megabytes
- */
-float
-SizeCPlan9Matrix(int rows, int M)
-{
-  float ram;
-
-  ram  = (float) (sizeof(struct cp9_dpmatrix_s));
-  ram += (float) (sizeof(int *) * (rows+1) * 5);         /* mx->*mx */
-  ram += (float) (sizeof(int)   * (rows+1) * (M+1) * 4); /* mx->*mx_mem */
-  ram += (float) (sizeof(int)   * (rows+1));             /* mx->erow */
-  return (ram / 1000000.);
-}
-
-
-/* Function: FreeCPlan9Matrix()
- * based on  FreePlan7Matrix() <-- this function's comments below  
- * Purpose:  Free a dynamic programming matrix allocated by CreatePlan7Matrix().
- * 
- * Return:   (void)
- */
-void
-FreeCPlan9Matrix(struct cp9_dpmatrix_s *mx)
-{
-  free (mx->mmx_mem);
-  free (mx->imx_mem);
-  free (mx->dmx_mem);
-  free (mx->elmx_mem);
-  free (mx->mmx);
-  free (mx->imx);
-  free (mx->dmx);
-  free (mx->elmx);
-  free (mx->erow);
-  free (mx);
-}
-
-/* Function: CreateCPlan9Matrix()
- * based on  CreatePlan7Matrix() <-- this function's comments below  
- * Purpose:  Create a dynamic programming matrix for standard Forward,
- *           Backward, or Viterbi, with scores kept as scaled log-odds
- *           integers. Keeps 2D arrays compact in RAM in an attempt 
- *           to maximize cache hits. 
- *           
- *           The mx structure can be dynamically grown, if a new
- *           HMM or seq exceeds the currently allocated size. Dynamic
- *           growing is more efficient than an alloc/free of a whole
- *           matrix for every new target. The ResizePlan7Matrix()
- *           call does this reallocation, if needed. Here, in the
- *           creation step, we set up some pads - to inform the resizing
- *           call how much to overallocate when it realloc's. 
- *           
- * Args:     N     - N+1 rows are allocated, for sequence.  
- *           M     - size of model in nodes
- *           padN  - over-realloc in seq/row dimension, or 0
- *           padM  - over-realloc in HMM/column dimension, or 0
- *                 
- * Return:   mx
- *           mx is allocated here. Caller frees with FreeCPlan9Matrix(mx).
- */
-struct cp9_dpmatrix_s *
-CreateCPlan9Matrix(int N, int M, int padN, int padM)
-{
-  int status;
-  struct cp9_dpmatrix_s *mx;
-  int i;
-
-  ESL_ALLOC(mx,      sizeof(struct cp9_dpmatrix_s));
-  ESL_ALLOC(mx->mmx, sizeof(int *) * (N+1));
-  ESL_ALLOC(mx->imx, sizeof(int *) * (N+1));
-  ESL_ALLOC(mx->dmx, sizeof(int *) * (N+1));
-  ESL_ALLOC(mx->elmx,sizeof(int *) * (N+1)); 
-  /* slightly wasteful, some nodes can't go to EL (for ex: right half of MATPs) */
-  ESL_ALLOC(mx->erow,    sizeof(int) * (N+1));
-  ESL_ALLOC(mx->mmx_mem, sizeof(int) * ((N+1)*(M+1)));
-  ESL_ALLOC(mx->imx_mem, sizeof(int) * ((N+1)*(M+1)));
-  ESL_ALLOC(mx->dmx_mem, sizeof(int) * ((N+1)*(M+1)));
-  ESL_ALLOC(mx->elmx_mem,sizeof(int) * ((N+1)*(M+1)));
-
-  /* The indirect assignment below looks wasteful; it's actually
-   * used for aligning data on 16-byte boundaries as a cache 
-   * optimization in the fast altivec implementation
-   */
-  mx->mmx[0] = (int *) mx->mmx_mem;
-  mx->imx[0] = (int *) mx->imx_mem;
-  mx->dmx[0] = (int *) mx->dmx_mem;
-  mx->elmx[0]= (int *) mx->elmx_mem;
-  for (i = 1; i <= N; i++)
-    {
-      mx->mmx[i] = mx->mmx[0] + (i*(M+1));
-      mx->imx[i] = mx->imx[0] + (i*(M+1));
-      mx->dmx[i] = mx->dmx[0] + (i*(M+1));
-      mx->elmx[i]= mx->elmx[0]+ (i*(M+1));
-    }
-
-  mx->maxN = N;
-  mx->maxM = M;
-  mx->padN = padN;
-  mx->padM = padM;
-
-  return mx;
-
- ERROR:
-  cm_Fail("Memory allocation error.");
-  return NULL; /* never reached */
-}
-
-/* Function: ResizeCPlan9Matrix()
- * based on  ResizePlan7Matrix() <-- this function's comments below  
- * Purpose:  Reallocate a dynamic programming matrix, if necessary,
- *           for a problem of NxM: sequence length N, model size M.
- *           (N=1 for small memory score-only variants; we allocate
- *           N+1 rows in the DP matrix.) 
- *           
- *           We know (because of the way hmmsearch and hmmpfam are coded)
- *           that only one of the two dimensions is going to change
- *           in size after the first call to ResizePlan7Matrix();
- *           that is, for hmmsearch, we have one HMM of fixed size M
- *           and our target sequences may grow in N; for hmmpfam,
- *           we have one sequence of fixed size N and our target models
- *           may grow in M. What we have to watch out for is P7SmallViterbi()
- *           working on a divide and conquer problem and passing us N < maxN,
- *           M > maxM; we should definitely *not* reallocate a smaller N.
- *           Since we know that only one dimension is going to grow,
- *           we aren't scared of reallocating to maxN,maxM. (If both
- *           M and N could grow, we would be more worried.)
- *
- *           Returns individual ptrs to the four matrix components
- *           as a convenience.
- *           
- * Args:     mx    - an already allocated model to grow.
- *           N     - seq length to allocate for; N+1 rows
- *           M     - size of model
- *           xmx, mmx, imx, dmx, elmx, erow 
- *                 - RETURN: ptrs to four mx components as a convenience
- *                   
- * Return:   (void)
- *           mx is (re)allocated here.
- */
-void
-ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M, 
-		   int ***mmx, int ***imx, int ***dmx, int ***elmx, int **erow)
-{
-  int status;
-  void *tmp;
-  int i;
-  /*printf("N: %d | maxN: %d | M: %d | maxM: %d\n", N, mx->maxN, M, mx->maxM);*/
-
-  if (N <= mx->maxN && M <= mx->maxM) goto DONE;
-  
-  if (N > mx->maxN) {
-    N          += mx->padN; 
-    mx->maxN    = N; 
-    ESL_RALLOC(mx->mmx, tmp, sizeof(int *) * (mx->maxN+1));
-    ESL_RALLOC(mx->imx, tmp, sizeof(int *) * (mx->maxN+1));
-    ESL_RALLOC(mx->dmx, tmp, sizeof(int *) * (mx->maxN+1));
-    ESL_RALLOC(mx->elmx,tmp, sizeof(int *) * (mx->maxN+1));
-    ESL_RALLOC(mx->erow,tmp, sizeof(int)   * (mx->maxN+1));
-  }
-
-  if (M > mx->maxM) {
-    M += mx->padM; 
-    mx->maxM = M; 
-  }
-  
-  ESL_RALLOC(mx->mmx_mem, tmp, sizeof(int) * ((mx->maxN+1)*(mx->maxM+1)));
-  ESL_RALLOC(mx->imx_mem, tmp, sizeof(int) * ((mx->maxN+1)*(mx->maxM+1)));
-  ESL_RALLOC(mx->dmx_mem, tmp, sizeof(int) * ((mx->maxN+1)*(mx->maxM+1)));
-  ESL_RALLOC(mx->elmx_mem,tmp, sizeof(int) * ((mx->maxN+1)*(mx->maxM+1)));
-  
-  mx->mmx[0] = (int *) mx->mmx_mem;
-  mx->imx[0] = (int *) mx->imx_mem;
-  mx->dmx[0] = (int *) mx->dmx_mem;
-  mx->elmx[0]= (int *) mx->elmx_mem;
-
-  for (i = 1; i <= mx->maxN; i++)
-    {
-      mx->mmx[i] = mx->mmx[0] + (i*(mx->maxM+1));
-      mx->imx[i] = mx->imx[0] + (i*(mx->maxM+1));
-      mx->dmx[i] = mx->dmx[0] + (i*(mx->maxM+1));
-      mx->elmx[i]= mx->elmx[0]+ (i*(mx->maxM+1));
-    }
-
- DONE:
-  if (mmx != NULL) *mmx = mx->mmx;
-  if (imx != NULL) *imx = mx->imx;
-  if (dmx != NULL) *dmx = mx->dmx;
-  if (elmx!= NULL) *elmx= mx->elmx;
-  if (erow != NULL) *erow = mx->erow;
-  return;
-
- ERROR:
-  cm_Fail("Memory reallocation error.");
-}
-
 /* Function: CPlan9SWConfig()
  * EPN 05.30.06
  * based on SRE's Plan7SWConfig() from HMMER's plan7.c
@@ -714,7 +475,7 @@ ResizeCPlan9Matrix(struct cp9_dpmatrix_s *mx, int N, int M,
  *           HMM probabilities are modified.
  */
 void
-CPlan9SWConfig(struct cplan9_s *hmm, float pentry, float pexit)
+CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit)
 {
   float basep;			/* p1 for exits: the base p */
   int   k;			/* counter over states      */
@@ -1086,7 +847,7 @@ CPlan9InitEL(CM_t *cm, CP9_t *cp9)
  *           HMM probabilities are modified.
  */
 void
-CPlan9GlobalConfig(struct cplan9_s *hmm)
+CPlan9GlobalConfig(CP9_t *hmm)
 {
   int k;
   /* No special (*x* states in Plan 7) states in CM Plan 9 */
@@ -1143,7 +904,7 @@ CPlan9GlobalConfig(struct cplan9_s *hmm)
  *           HMM probabilities are modified.
  */
 void
-CPlan9SWConfigEnforce(struct cplan9_s *hmm, float pentry, float pexit,
+CPlan9SWConfigEnforce(CP9_t *hmm, float pentry, float pexit,
 		      int enf_start_pos, int enf_end_pos)
 {
   float basep;			/* p1 for exits: the base p */
@@ -1202,7 +963,7 @@ CPlan9SWConfigEnforce(struct cplan9_s *hmm, float pentry, float pexit,
  * Returns:  void
  */
 void
-CPlan9RenormalizeExits(struct cplan9_s *hmm, int spos)
+CPlan9RenormalizeExits(CP9_t *hmm, int spos)
 {
   int   k;
   float d;
@@ -1300,9 +1061,9 @@ CP9FreeTrace(CP9trace_t *tr)
  *           HMM probabilities are modified.
  */
 void
-CP9_2sub_cp9(struct cplan9_s *orig_hmm, struct cplan9_s **ret_sub_hmm, int spos, int epos, double **orig_phi)
+CP9_2sub_cp9(CP9_t *orig_hmm, CP9_t **ret_sub_hmm, int spos, int epos, double **orig_phi)
 {
-  struct cplan9_s       *sub_hmm;       
+  CP9_t       *sub_hmm;       
   int i, x;
   int orig_pos;
 
@@ -1397,7 +1158,7 @@ CP9_2sub_cp9(struct cplan9_s *orig_hmm, struct cplan9_s **ret_sub_hmm, int spos,
  *           HMM probabilities are modified.
  */
 void
-CP9_reconfig2sub(struct cplan9_s *hmm, int spos, int epos, int spos_nd,
+CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd,
 		 int epos_nd, double **orig_phi)
 {
   /* Make the necessary modifications. Since in cmalign --sub mode this
@@ -1930,7 +1691,7 @@ CP9PrintTrace(FILE *fp, CP9trace_t *tr, CP9_t *hmm, ESL_DSQ *dsq)
  *           return the integer score for that transition. 
  */
 int
-CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1, 
+CP9TransitionScoreLookup(CP9_t *hmm, char st1, int k1, 
 			 char st2, int k2)
 {
   switch (st1) {
@@ -2007,8 +1768,8 @@ CP9TransitionScoreLookup(struct cplan9_s *hmm, char st1, int k1,
  *           ret_tr is allocated here. Free using CP9FreeTrace().
  */
 void
-CP9ViterbiTrace(struct cplan9_s *hmm, ESL_DSQ *dsq, int i0, int j0,
-		struct cp9_dpmatrix_s *mx, CP9trace_t **ret_tr)
+CP9ViterbiTrace(CP9_t *hmm, ESL_DSQ *dsq, int i0, int j0,
+		CP9_MX *mx, CP9trace_t **ret_tr)
 {
   /* contract check */
   if(dsq == NULL)
@@ -2924,7 +2685,7 @@ DuplicateCP9(CM_t *src_cm, CM_t *dest_cm)
  * Note:     Trailing whitespace and \n's are chopped.     
  */
 void
-CPlan9SetName(struct cplan9_s *hmm, char *name)
+CPlan9SetName(CP9_t *hmm, char *name)
 {
   if (hmm->name != NULL) free(hmm->name);
   hmm->name = Strdup(name);
@@ -2937,7 +2698,7 @@ CPlan9SetName(struct cplan9_s *hmm, char *name)
  * Note:     Trailing whitespace and \n's are chopped.     
  */
 void
-CPlan9SetAccession(struct cplan9_s *hmm, char *acc)
+CPlan9SetAccession(CP9_t *hmm, char *acc)
 {
   if (hmm->acc != NULL) free(hmm->acc);
   hmm->acc = Strdup(acc);
@@ -2952,7 +2713,7 @@ CPlan9SetAccession(struct cplan9_s *hmm, char *acc)
  * Note:     Trailing whitespace and \n's are chopped.
  */
 void
-CPlan9SetDescription(struct cplan9_s *hmm, char *desc)
+CPlan9SetDescription(CP9_t *hmm, char *desc)
 {
   if (hmm->desc != NULL) free(hmm->desc);
   hmm->desc = Strdup(desc);
@@ -2967,7 +2728,7 @@ CPlan9SetDescription(struct cplan9_s *hmm, char *desc)
  *           command line log.
  */
 void
-CPlan9ComlogAppend(struct cplan9_s *hmm, int argc, char **argv)
+CPlan9ComlogAppend(CP9_t *hmm, int argc, char **argv)
 {
   int len;
   int i;
@@ -3004,7 +2765,7 @@ CPlan9ComlogAppend(struct cplan9_s *hmm, int argc, char **argv)
  * Purpose:  Set the ctime field in a new HMM to the current time.
  */
 void
-CPlan9SetCtime(struct cplan9_s *hmm)
+CPlan9SetCtime(CP9_t *hmm)
 {
   time_t date = time(NULL);
   if (hmm->ctime != NULL) free(hmm->ctime);

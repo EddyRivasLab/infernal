@@ -110,20 +110,20 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i
     /* Scan the (sub)seq in forward direction w/Viterbi or Forward, getting j end points of hits above cutoff */
     fwd_results = CreateResults(INIT_RESULTS);
     if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
-      if((status = cp9_FastViterbi(cm, errbuf, dsq, i0, j0, W, cutoff, fwd_results, 
+      if((status = cp9_FastViterbi(cm, errbuf, cm->cp9_mx, dsq, i0, j0, W, cutoff, fwd_results, 
 				   TRUE,   /* we're scanning */
 				   FALSE,  /* we're not ultimately aligning */
 				   TRUE,   /* be memory efficient */
-				   NULL, NULL, NULL, NULL,  /* don't return best score at each posn, best scoring posn, dp matrix or traces */
+				   NULL, NULL, NULL,  /* don't return best score at each posn, best scoring posn, or traces */
 				   &sc)) != eslOK) return status;
     }
     else if(cm->search_opts & CM_SEARCH_HMMFORWARD) { 
-      if((status = cp9_FastForward(cm, errbuf, dsq, i0, j0, W, cutoff, fwd_results,
+      if((status = cp9_FastForward(cm, errbuf, cm->cp9_mx, dsq, i0, j0, W, cutoff, fwd_results,
 				   TRUE,   /* we're scanning */
 				   FALSE,  /* we're not ultimately aligning */
 				   FALSE,  /* we're not rescanning */
 				   TRUE,   /* be memory efficient */
-				   NULL, NULL, NULL, /* don't return best score at each posn, best scoring posn, or DP matrix */
+				   NULL, NULL, /* don't return best score at each posn, or best scoring posn */
 				   &sc)) != eslOK) return status;
     }
     /* Remove overlapping hits, if we're being greedy */
@@ -136,22 +136,22 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i
     for(h = 0; h < fwd_results->num_results; h++) {
       min_i = (fwd_results->data[h].stop - W + 1) >= 1 ? (fwd_results->data[h].stop - W + 1) : 1;
       if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
-	if((status = cp9_FastViterbiBackward(cm, errbuf, dsq, min_i, fwd_results->data[h].stop, W, cutoff, 
+	if((status = cp9_FastViterbiBackward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, W, cutoff, 
 					     round_results, /* report hits to this round's results */
 					     TRUE,   /* we're scanning */
 					     FALSE,  /* we're not ultimately aligning */
 					     TRUE,   /* be memory efficient */
-					     NULL, NULL, NULL, NULL,  /* don't return best score at each posn, best scoring posn, dp matrix or traces */
+					     NULL, NULL, NULL,  /* don't return best score at each posn, best scoring posn, or traces */
 					     &bwd_sc)) != eslOK) return status;
       }
       else { 
-	if((status = Xcp9_FastBackward(cm, errbuf, dsq, min_i, fwd_results->data[h].stop, W, cutoff, 
+	if((status = Xcp9_FastBackward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, W, cutoff, 
 				       round_results, /* report hits to this round's results */
 				       TRUE,   /* we're scanning */
 				       FALSE,  /* we're not ultimately aligning */
 				       FALSE,  /* we're not rescanning */
 				       TRUE,   /* be memory efficient */
-				       NULL, NULL, NULL,   /* don't return best score at each posn, best scoring posn, or DP matrix */
+				       NULL, NULL,   /* don't return best score at each posn, best scoring posn */
 				       &bwd_sc)) != eslOK) return status;
       }
       /* this only works if we've saved the matrices, and didn't do scan mode for both Forward and Backward:
@@ -162,7 +162,7 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i
   }
   else { /* do not use CP9, we're scanning with CM */
     if(cm->search_opts & CM_SEARCH_HBANDED) {
-      if((status = cp9_Seq2Bands(cm, errbuf, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status;
+      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status;
       /*debug_print_hmm_bands(stdout, (j0-i0+1), cp9b, cm->tau, 3);*/
       if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, round_results, cm->hbmx, &sc)) != eslOK) return status; }
       else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, round_results, cm->hbmx, &sc)) != eslOK) return status; }
@@ -297,8 +297,6 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   CP9Bands_t  *cp9b;            /* data structure for hmm bands (bands on the hmm states) 
 				 * and arrays for CM state bands, derived from HMM bands */
   CP9Map_t       *cp9map;       /* maps the hmm to the cm and vice versa */
-  CP9_dpmatrix_t *cp9_post;     /* growable DP matrix for posterior decode              */
-  CP9_dpmatrix_t *cp9_mx;       /* growable DP matrix for viterbi                       */
   float           swentry;	/* S/W aggregate entry probability       */
   float           swexit;       /* S/W aggregate exit probability        */
 
@@ -505,12 +503,10 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
 
     /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
     if(sq_mode && do_hmmonly) {
-      cp9_mx  = CreateCPlan9Matrix(1, cm->cp9->M, 25, 0);
       if(sq_mode && !silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", seqs_to_aln->sq[i]->name);
-      sc = CP9ViterbiAlign(cur_dsq, 1, L, cm->cp9, cp9_mx, &(cp9_tr[i]));
+      sc = CP9ViterbiAlign(cur_dsq, 1, L, cm->cp9, cm->cp9_mx, &(cp9_tr[i]));
       if(sq_mode && !silent_mode) printf(" score: %10.2f bits\n", sc);
       parsesc[i] = sc;
-      FreeCPlan9Matrix(cp9_mx);
       continue;
     }
     /* Special case, if do_scoreonly, align seq with full CYK inside, just to 
@@ -525,7 +521,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
 
     /* Potentially, do HMM calculations. */
     if((!do_sub) && do_hbanded) {
-      if((status = cp9_Seq2Bands(orig_cm, errbuf, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) return status;
+      if((status = cp9_Seq2Bands(orig_cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) return status;
     }
     else if(do_sub) { 
       /* If we're in sub mode:
@@ -540,13 +536,13 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
        */
       
       /* (1) Get HMM posteriors */
-      if((status = cp9_Seq2Posteriors(orig_cm, errbuf, cur_dsq, 1, L, &cp9_post, debug_level)) != eslOK) return status; 
+      if((status = cp9_Seq2Posteriors(orig_cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, cur_dsq, 1, L, debug_level)) != eslOK) return status; 
       
       /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
        * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
        */
-      CP9NodeForPosn(orig_hmm, 1, L, 1, cp9_post, &spos, &spos_state, FALSE, 0., TRUE, debug_level);
-      CP9NodeForPosn(orig_hmm, 1, L, L, cp9_post, &epos, &epos_state, FALSE, 0., FALSE, debug_level);
+      CP9NodeForPosn(orig_hmm, 1, L, 1, cm->cp9_bmx, &spos, &spos_state, FALSE, 0., TRUE, debug_level);
+      CP9NodeForPosn(orig_hmm, 1, L, L, cm->cp9_bmx, &epos, &epos_state, FALSE, 0., FALSE, debug_level);
       /* Deal with special cases for sub-CM alignment:
        * If the most likely state to have emitted the first or last residue
        * is the insert state in node 0, it only makes sense to start modelling
@@ -574,7 +570,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
 	sub_cp9b   = sub_cm->cp9b;
 	sub_cp9map = sub_cm->cp9map;
 	/* (5) Do Forward/Backward again, and get HMM bands */
-	if((status = cp9_Seq2Bands(sub_cm, errbuf, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level)) != eslOK) return status;
+	if((status = cp9_Seq2Bands(sub_cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level)) != eslOK) return status;
 	hmm           = sub_hmm;    
 	cp9b          = sub_cp9b;
 	cp9map        = sub_cp9map;
@@ -727,7 +723,6 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
 	*cur_tr = orig_tr;
       }
       /* free sub_cm variables, we build a new sub CM for each seq */
-      FreeCPlan9Matrix(cp9_post);
       if(out_mx != NULL) { cm_hb_mx_Destroy(out_mx); out_mx = NULL; }
 
       FreeSubMap(submap);
@@ -843,8 +838,6 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   CP9Bands_t  *cp9b;            /* data structure for hmm bands (bands on the hmm states) 
 				 * and arrays for CM state bands, derived from HMM bands */
   CP9Map_t       *cp9map;       /* maps the hmm to the cm and vice versa */
-  CP9_dpmatrix_t *cp9_post;     /* growable DP matrix for posterior decode              */
-  CP9_dpmatrix_t *cp9_mx;       /* growable DP matrix for viterbi                       */
   float           swentry;	/* S/W aggregate entry probability       */
   float           swexit;       /* S/W aggregate exit probability        */
 
@@ -1042,12 +1035,10 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
 
     /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
     if(sq_mode && do_hmmonly) {
-      cp9_mx  = CreateCPlan9Matrix(1, cm->cp9->M, 25, 0);
       if(sq_mode && !silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", seqs_to_aln->sq[i]->name);
-      sc = CP9ViterbiAlign(cur_dsq, 1, L, cm->cp9, cp9_mx, &(cp9_tr[i]));
+      sc = CP9ViterbiAlign(cur_dsq, 1, L, cm->cp9, cm->cp9_mx, &(cp9_tr[i]));
       if(sq_mode && !silent_mode) printf(" score: %10.2f bits\n", sc);
       parsesc[i] = sc;
-      FreeCPlan9Matrix(cp9_mx);
       continue;
     }
     /* Special case, if do_scoreonly, align seq with full CYK inside, just to 
@@ -1062,7 +1053,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   
     /* Potentially, do HMM calculations. */
     if((!do_sub) && do_hbanded) {
-      if((status = cp9_Seq2Bands(orig_cm, NULL, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Bands().");
+      if((status = cp9_Seq2Bands(orig_cm, NULL, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Bands().");
     }
     else if(do_sub) { 
       /* If we're in sub mode:
@@ -1077,13 +1068,13 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
        */
       
       /* (1) Get HMM posteriors */
-      if((status = cp9_Seq2Posteriors(orig_cm, NULL, cur_dsq, 1, L, &cp9_post, debug_level)) != eslOK) cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Posteriors().");
+      if((status = cp9_Seq2Posteriors(orig_cm, NULL, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, cur_dsq, 1, L, debug_level)) != eslOK) cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Posteriors().");
       
       /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
        * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
        */
-      CP9NodeForPosn(orig_hmm, 1, L, 1, cp9_post, &spos, &spos_state, FALSE, 0., TRUE, debug_level);
-      CP9NodeForPosn(orig_hmm, 1, L, L, cp9_post, &epos, &epos_state, FALSE, 0., FALSE, debug_level);
+      CP9NodeForPosn(orig_hmm, 1, L, 1, cm->cp9_bmx, &spos, &spos_state, FALSE, 0., TRUE, debug_level);
+      CP9NodeForPosn(orig_hmm, 1, L, L, cm->cp9_bmx, &epos, &epos_state, FALSE, 0., FALSE, debug_level);
       /* Deal with special cases for sub-CM alignment:
        * If the most likely state to have emitted the first or last residue
        * is the insert state in node 0, it only makes sense to start modelling
@@ -1111,7 +1102,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
 	sub_cp9b   = sub_cm->cp9b;
 	sub_cp9map = sub_cm->cp9map;
 	/* (5) Do Forward/Backward again, and get HMM bands */
-	if((status = cp9_Seq2Bands(sub_cm, NULL, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level)) != eslOK)  cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Bands().");
+	if((status = cp9_Seq2Bands(sub_cm, NULL, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level)) != eslOK)  cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Bands().");
 	hmm           = sub_hmm;    
 	cp9b          = sub_cp9b;
 	cp9map        = sub_cp9map;
@@ -1336,7 +1327,6 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
 	*cur_tr = orig_tr;
       }  
       /* free sub_cm variables, we build a new sub CM for each seq */
-      FreeCPlan9Matrix(cp9_post);
       FreeSubMap(submap);
       FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
     }
@@ -2877,7 +2867,7 @@ float OldActuallySearchTarget(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, float cm_c
     sc = CP9Scan_dispatch(cm, dsq, i0, j0, cm->W, cm_cutoff, cp9_cutoff, results, doing_cp9_stats, ret_flen);
   else {
       if(cm->search_opts & CM_SEARCH_HBANDED) {
-	if((status = cp9_Seq2Bands(cm, NULL, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail("OldActuallySearchTarget(): unrecoverable error in cp9_Seq2Bands().");
+	if((status = cp9_Seq2Bands(cm, NULL, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail("OldActuallySearchTarget(): unrecoverable error in cp9_Seq2Bands().");
 
 	/*debug_print_hmm_bands(stdout, (j0-i0+1), cm->cp9b, cm->tau, 3);*/
 	if(cm->search_opts & CM_SEARCH_INSIDE)

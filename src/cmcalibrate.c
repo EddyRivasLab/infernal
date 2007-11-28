@@ -717,8 +717,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if((status = cm_CountSearchDPCalcs(cm, errbuf, 1000, cm->dmin, cm->dmax, cm->W, &(cfg->full_vcalcs), NULL)) != eslOK) return status;
 
   /* create and initialize scan info for CYK/Inside scanning functions */
-  cm_CreateScanInfo(cm, TRUE, TRUE);
-  if(cm->si == NULL) cm_Fail("initialize_cm(), CreateScanInfo() call failed.");
+  cm_CreateScanMatrix(cm, TRUE, TRUE);
+  if(cm->smx == NULL) cm_Fail("initialize_cm(), CreateScanMatrix() call failed.");
   
   /* create and initialize hybrid scan info */
   if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi);
@@ -1182,7 +1182,7 @@ cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
    * to how they were when we entered, and return TRUE.
    *
    * NOTE: We don't do a full non-banded parse to be 100% sure we don't exceed the cutoff, 
-   * unless --noqdb was enabled (ScanInfo_t *si stores dn/dx (min/max d) for each state), 
+   * unless --noqdb was enabled (ScanMatrix_t *smx stores dn/dx (min/max d) for each state), 
    * because we assume the --beta value used in *this* cmcalibrate 
    * run will also be used for any cmsearch runs.
    */

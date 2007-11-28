@@ -61,7 +61,7 @@
 float
 CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 	   int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
-	   int be_efficient, CP9_dpmatrix_t **ret_mx, CP9trace_t **ret_tr)
+	   int be_efficient, CP9_MX **ret_mx, CP9trace_t **ret_tr)
 {
   int          status;
   int          j;           /*     actual   position in the subsequence                     */
@@ -71,7 +71,7 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
   int          L;           /* j0-i0+1: subsequence length                                  */
-  CP9_dpmatrix_t *mx;       /* the CP9 DP matrix                                            */
+  CP9_MX *mx;       /* the CP9 DP matrix                                            */
   int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
   int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
   int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
@@ -129,9 +129,14 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
 
   /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
    * M+1 columns */ 
-  if(be_efficient) nrows = 2;
-  else             nrows = L+1;
-  mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, &elmx, &erow); 
+  if(be_efficient) nrows = 1;
+  else             nrows = L;
+  mx = CreateCP9Matrix(nrows, cm->cp9->M);
+  mmx = mx->mmx;
+  imx = mx->imx;
+  dmx = mx->dmx;
+  elmx = mx->elmx;
+  erow = mx->erow;
 
   /* sc will hold P(seq up to j | Model) in int log odds form */
   ESL_ALLOC(sc, sizeof(int) * (j0-i0+2));
@@ -318,9 +323,7 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
 	  savesc[jp] = IMPOSSIBLE;
 	  i = ((j-W+1)> i0) ? (j-W+1) : i0;
 	  ip = i-i0+1;
-	  curr_sc = gamma[ip-1] + fsc + cm->cp9_sc_boost;
-	  /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
-	   * value is 0.0 if technique not used. */
+	  curr_sc = gamma[ip-1] + fsc;
 	  if (curr_sc > gamma[jp])
 	    {
 	      gamma[jp]  = curr_sc;
@@ -408,7 +411,7 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
   if(ret_sc != NULL) *ret_sc = sc;
   else free(sc);
   if (ret_mx != NULL) *ret_mx = mx;
-  else                FreeCPlan9Matrix(mx);
+  else                FreeCP9Matrix(mx);
   /*printf("Viterbi return_sc: %f\n", return_sc);*/
 
   return return_sc;
@@ -494,7 +497,7 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
 float
 CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 	   int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, int doing_rescan, 
-	   int be_efficient, CP9_dpmatrix_t **ret_mx)
+	   int be_efficient, CP9_MX **ret_mx)
 {
   int          status;
   int          j;           /*     actual   position in the subsequence                     */
@@ -504,7 +507,7 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
   int          L;           /* j0-i0+1: subsequence length                                  */
-  CP9_dpmatrix_t *mx;       /* the CP9 DP matrix                                            */
+  CP9_MX *mx;       /* the CP9 DP matrix                                            */
   int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
   int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
   int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
@@ -564,9 +567,14 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
 
   /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
    * M+1 columns */ 
-  if(be_efficient) nrows = 2;
-  else             nrows = L+1;
-  mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, &elmx, &erow); 
+  if(be_efficient) nrows = 1;
+  else             nrows = L;
+  mx = CreateCP9Matrix(nrows, cm->cp9->M);
+  mmx = mx->mmx;
+  imx = mx->imx;
+  dmx = mx->dmx;
+  elmx = mx->elmx;
+  erow = mx->erow;
 
   /* sc will hold P(seq up to j | Model) in int log odds form */
   ESL_ALLOC(sc, sizeof(int) * (j0-i0+2));
@@ -712,9 +720,7 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
 	  savesc[jp] = IMPOSSIBLE;
 	  i = ((j-W+1)> i0) ? (j-W+1) : i0;
 	  ip = i-i0+1;
-	  curr_sc = gamma[ip-1] + fsc + cm->cp9_sc_boost;
-	  /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
-	   * value is 0.0 if technique not used. */
+	  curr_sc = gamma[ip-1] + fsc;
 	  if (curr_sc > gamma[jp])
 	    {
 	      gamma[jp]  = curr_sc;
@@ -828,7 +834,7 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
   if(ret_sc != NULL) *ret_sc = sc;
   else free(sc);
   if (ret_mx != NULL) *ret_mx = mx;
-  else                FreeCPlan9Matrix(mx);
+  else                FreeCP9Matrix(mx);
   /*printf("Forward return_sc: %f\n", return_sc);*/
 
   return return_sc;
@@ -955,7 +961,7 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
 float
 CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 	    int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
-	    int doing_rescan, int be_efficient, CP9_dpmatrix_t **ret_mx)
+	    int doing_rescan, int be_efficient, CP9_MX **ret_mx)
 {
   int          status;
   int          j;           /*     actual   position in the subsequence                     */
@@ -965,7 +971,7 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
   int          cur, prv;    /* rows in DP matrix 0 or 1                                     */
   int          k;           /* CP9 HMM node position                                        */
   int          L;           /* j0-i0+1: subsequence length                                  */
-  CP9_dpmatrix_t *mx;       /* the CP9 DP matrix                                            */
+  CP9_MX *mx;       /* the CP9 DP matrix                                            */
   int        **mmx;         /* DP matrix for match  state scores [0..1][0..cm->cp9->M]      */
   int        **imx;         /* DP matrix for insert state scores [0..1][0..cm->cp9->M]      */
   int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
@@ -1029,9 +1035,14 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
 
   /* Allocate DP matrix, either 2 rows or L+1 rows (depending on be_efficient),
    * M+1 columns */ 
-  if(be_efficient) nrows = 2;
-  else             nrows = L+1; 
-  mx = AllocCPlan9Matrix(nrows, cm->cp9->M, &mmx, &imx, &dmx, &elmx, &erow);
+  if(be_efficient) nrows = 1;
+  else             nrows = L; 
+  mx = CreateCP9Matrix(nrows, cm->cp9->M);
+  mmx = mx->mmx;
+  imx = mx->imx;
+  dmx = mx->dmx;
+  elmx = mx->elmx;
+  erow = mx->erow;
 
   /* sc will hold P(seq from i..j0 | Model) for each i in int log odds form */
   ESL_ALLOC(sc, sizeof(int) * (j0-i0+3));
@@ -1329,9 +1340,7 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
 	  savesc[ip] = IMPOSSIBLE;
 	  j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
 	  jp = j-i0+1;
-	  curr_sc = gamma[jp+1-1] + fsc + cm->cp9_sc_boost; /* *off-by-one* */
-	  /* cp9_sc_boost is experimental technique for finding hits < 0 bits. 
-	   * value is 0.0 if technique not used. */
+	  curr_sc = gamma[jp+1-1] + fsc; /* *off-by-one* */
 	  if (curr_sc > gamma[ip])
 	    {
 	      gamma[ip]  = curr_sc;
@@ -1455,7 +1464,7 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
       if(ret_bestpos != NULL) *ret_bestpos = best_hmm_pos;
     }
   if (ret_mx != NULL) *ret_mx = mx;
-  else                FreeCPlan9Matrix(mx);
+  else                FreeCP9Matrix(mx);
   /*printf("Backward return_sc: %f\n", return_sc);*/
   return return_sc;
 
@@ -1506,9 +1515,9 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
 void
 CP9ScanPosterior(ESL_DSQ *dsq, int i0, int j0,
 		     CP9_t *hmm,
-		     CP9_dpmatrix_t *fmx,
-		     CP9_dpmatrix_t *bmx,
-		     CP9_dpmatrix_t *mx)
+		     CP9_MX *fmx,
+		     CP9_MX *bmx,
+		     CP9_MX *mx)
 {
   int i;
   int ip;
@@ -2145,7 +2154,7 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   /*if(emit_mode == CM_GC && (fthr_mode == CM_LC || fthr_mode == CM_LI))*/
   ConfigForGumbelMode(cm_for_scoring, fthr_mode);
 
-  cm_CreateScanInfo(cm_for_scoring, TRUE, TRUE);
+  cm_CreateScanMatrix(cm_for_scoring, TRUE, TRUE);
 
   /* Configure the HMM based on the hmm_gum_mode */
   if(hmm_gum_mode == CP9_L)

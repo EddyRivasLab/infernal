@@ -118,28 +118,28 @@ CreateCMShell(void)
   cm->enf_start   = 0;
   cm->enf_seq     = NULL;
   cm->enf_scdiff  = 0.;
-  cm->sc_boost    = 0.;
   cm->ffract      = 0.;
   cm->cutoff_type = DEFAULT_CM_CUTOFF_TYPE; /* score cutoff */
   cm->cutoff      = DEFAULT_CM_CUTOFF;      /* 0.0 bits */
   cm->cp9_cutoff_type = DEFAULT_CP9_CUTOFF_TYPE; /* score cutoff */
   cm->cp9_cutoff      = DEFAULT_CP9_CUTOFF;      /* 0.0 bits */
-  cm->cp9_sc_boost = 0.;
   cm->root_trans   = NULL;
   cm->hmmpad       = DEFAULT_HMMPAD; /* 0 residues */
   cm->stats        = NULL;
-  cm->si           = NULL;
-  cm->fi           = NULL;
+  cm->smx          = NULL;
   cm->hbmx         = NULL;
+  cm->cp9_mx       = NULL;
+  cm->cp9_bmx      = NULL;
+  cm->fi           = NULL;
   cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
 
-  cm->ga     = 0.;  /* only valid if cm->flags & CMH_GA */
-  cm->tc     = 0.;  /* only valid if cm->flags & CMH_TC */
-  cm->nc     = 0.;  /* only valid if cm->flags & CMH_NC */
+  cm->ga       = 0.;  /* only valid if cm->flags & CMH_GA */
+  cm->tc       = 0.;  /* only valid if cm->flags & CMH_TC */
+  cm->nc       = 0.;  /* only valid if cm->flags & CMH_NC */
   cm->eff_nseq = 0.;  
-  cm->nseq = 0;
-  cm->clen = 0;
+  cm->nseq     = 0;
+  cm->clen     = 0;
   return cm;
 
  ERROR:
@@ -234,7 +234,9 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
    * it is initially empty, but expanded to fit target sequences as needed */
   cm->hbmx = cm_hb_mx_Create(cm->M);
 
-  /* we'll allocate the cp9, cp9b and cp9map only if nec inside ConfigCM() */
+  /* we'll allocate the cp9, cp9b, cp9map, cp9_mx and cp9_bmx inside ConfigCM(),
+   * we need some more info about the CM besides M and nnodes to build those
+   */
   return;
 
  ERROR:
@@ -314,7 +316,7 @@ CMRenormalize(CM_t *cm)
 void
 FreeCM(CM_t *cm)
 {
-  if (cm->si     != NULL) cm_FreeScanInfo(cm); /* free this first, it needs some info from cm->stid */
+  if (cm->smx    != NULL) cm_FreeScanMatrix(cm); /* free this first, it needs some info from cm->stid */
   if (cm->name   != NULL) free(cm->name);
   if (cm->acc    != NULL) free(cm->acc);
   if (cm->desc   != NULL) free(cm->desc);
@@ -361,6 +363,8 @@ FreeCM(CM_t *cm)
   if(cm->root_trans != NULL) free(cm->root_trans);
   if(cm->stats      != NULL) FreeCMStats(cm->stats);
   if(cm->hbmx       != NULL) cm_hb_mx_Destroy(cm->hbmx);
+  if(cm->cp9_mx     != NULL) FreeCP9Matrix(cm->cp9_mx);
+  if(cm->cp9_bmx    != NULL) FreeCP9Matrix(cm->cp9_bmx);
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
   if (cm->fi     != NULL) cm_FreeFilterInfo(cm->fi); 
   free(cm);
@@ -1722,7 +1726,7 @@ DuplicateCM(CM_t *cm)
   ESL_ALPHABET *abc;
   abc = esl_alphabet_Create(cm->abc->type);
 
-  /* Create the new model and copy everything over except the cp9, stats and ScanInfo */
+  /* Create the new model and copy everything over except the cp9, stats and ScanMatrix */
   new = CreateCM(cm->nodes, cm->M, cm->abc);
   esl_strdup(cm->name, -1, &(new->name));
   esl_strdup(cm->acc,  -1, &(new->acc));
@@ -1796,13 +1800,11 @@ DuplicateCM(CM_t *cm)
     esl_strdup(cm->enf_seq, -1, &(new->enf_seq));
   else new->enf_seq = NULL;
   new->enf_scdiff = cm->enf_scdiff;
-  new->sc_boost   = cm->sc_boost;
   new->ffract     = cm->ffract;
   new->cutoff_type= cm->cutoff_type;
   new->cutoff     = cm->cutoff;
   new->cp9_cutoff_type = cm->cp9_cutoff_type;
   new->cp9_cutoff = cm->cp9_cutoff;
-  new->cp9_sc_boost = cm->cp9_sc_boost;
   if(cm->root_trans == NULL)
     new->root_trans = NULL;
   else
@@ -1815,13 +1817,17 @@ DuplicateCM(CM_t *cm)
 
   new->cp9  = NULL;
 
-  /* calculate the ScanInfo, if it exists and is valid */
-  if(cm->flags & CMH_SCANINFO) {
-    cm_CreateScanInfo(new, (cm->si->flags & cmSI_HAS_FLOAT), (cm->si->flags & cmSI_HAS_INT));
+  /* calculate the ScanMatrix, if it exists and is valid */
+  if(cm->flags & CMH_SCANMATRIX) {
+    cm_CreateScanMatrix(new, (cm->smx->flags & cmSMX_HAS_FLOAT), (cm->smx->flags & cmSMX_HAS_INT));
   }
 
   /* create HMM banded matrix */
   new->hbmx = cm_hb_mx_Create(cm->M);
+
+  /* create CP9 matrix, if it exists in cm */
+  if(cm->cp9_mx  != NULL) new->cp9_mx = CreateCP9Matrix(1, cm->clen);
+  if(cm->cp9_bmx != NULL) new->cp9_bmx = CreateCP9Matrix(1, cm->clen);
 
   /* Copy the CM stats if they exist */
   if(cm->flags & CMH_GUMBEL_STATS)
