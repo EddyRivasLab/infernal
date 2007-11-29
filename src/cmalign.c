@@ -34,7 +34,7 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define ALGOPTS  "--cyk,--optacc,--inside,--hmmonly"         /* Exclusive choice for scoring algorithms */
+#define ALGOPTS  "--cyk,--optacc,--inside,--hmmviterbi"      /* Exclusive choice for scoring algorithms */
 #define MEMOPTS  "--small,--nosmall"                         /* Exclusive choice for memory choice */
 #define ACCOPTS  "--nonbanded,--hbanded,--qdb"               /* Exclusive choice for acceleration strategies */
 #define ALPHOPTS "--rna,--dna"                               /* Exclusive choice for output alphabet */
@@ -60,7 +60,7 @@ static ESL_OPTIONS options[] = {
   /* Algorithm options */
   { "--cyk",     eslARG_NONE,"default",NULL, NULL,   ALGOPTS,      NULL,        NULL, "align with the CYK algorithm", 3 },
   { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,"--nosmall",       NULL, "align with the Holmes/Durbin optimal accuracy algorithm", 3 },
-  { "--hmmonly", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm",3 },
+  { "--hmmviterbi",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm",3 },
   { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Inside algorithm", 3 },
   { "--post",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--nosmall",       NULL, "append posterior probabilities to alignment", 3 },
   { "--onepost", eslARG_NONE,   FALSE, NULL, NULL,      NULL,  "--post",        NULL, "only append single '0-9,*' character as posterior probability", 3 },
@@ -722,7 +722,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
   int i, imax;
 
   /* create a new MSA, if we didn't do --inside */
-  if(esl_opt_GetBoolean(go, "--cyk") || (esl_opt_GetBoolean(go, "--hmmonly") || (esl_opt_GetBoolean(go, "--optacc"))))
+  if(esl_opt_GetBoolean(go, "--cyk") || (esl_opt_GetBoolean(go, "--hmmviterbi") || (esl_opt_GetBoolean(go, "--optacc"))))
     {
       /* optionally include a fixed alignment provided with --withali,
        * this has already been checked to see it matches the CM structure */
@@ -732,9 +732,9 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	    ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have a SS_cons compatible with the CM\n", esl_opt_GetString(go, "--withali"));
 	}
       
-      if(esl_opt_GetBoolean(go, "--hmmonly"))
+      if(esl_opt_GetBoolean(go, "--hmmviterbi"))
 	{
-	  assert(seqs_to_aln->cp9_tr != NULL);
+	  ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
 	  if((status = CP9Traces2Alignment(cm, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->nseq, seqs_to_aln->cp9_tr, 
 					   esl_opt_GetBoolean(go, "-f"), esl_opt_GetBoolean(go, "-m"), &msa)) != eslOK)
 	    goto ERROR;
@@ -778,12 +778,12 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       /* Detailed traces for debugging training set. */
       if(cfg->tracefp != NULL)
 	{
-	  if(esl_opt_GetBoolean(go,"--hmmonly")) { printf("%-40s ... ", "Saving CP9 HMM traces"); fflush(stdout); }
-	  else                                   { printf("%-40s ... ", "Saving CM parsetrees");  fflush(stdout); }
+	  if(esl_opt_GetBoolean(go,"--hmmviterbi")) { printf("%-40s ... ", "Saving CP9 HMM traces"); fflush(stdout); }
+	  else                                      { printf("%-40s ... ", "Saving CM parsetrees");  fflush(stdout); }
 	  for (i = 0; i < msa->nseq; i++) 
 	    {
 	      fprintf(cfg->tracefp, "> %s\n", seqs_to_aln->sq[i]->name);
-	      if(esl_opt_GetBoolean(go,"--hmmonly")) 
+	      if(esl_opt_GetBoolean(go,"--hmmviterbi")) 
 		{
 		  fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
 		  CP9PrintTrace(cfg->tracefp, seqs_to_aln->cp9_tr[i], cm->cp9, seqs_to_aln->sq[i]->dsq);
@@ -871,7 +871,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;
   if(esl_opt_GetBoolean(go, "--sums"))        cm->align_opts  |= CM_ALIGN_SUMS;
   if(esl_opt_GetBoolean(go, "--sub"))         cm->align_opts  |= CM_ALIGN_SUB;
-  if(esl_opt_GetBoolean(go, "--hmmonly"))     cm->align_opts  |= CM_ALIGN_HMMONLY;
+  if(esl_opt_GetBoolean(go, "--hmmviterbi"))  cm->align_opts  |= CM_ALIGN_HMMVITERBI;
   if(esl_opt_GetBoolean(go, "--inside"))      cm->align_opts  |= CM_ALIGN_INSIDE;
   if(esl_opt_GetBoolean(go, "--small"))       cm->align_opts  |= CM_ALIGN_SMALL;
   if(esl_opt_GetBoolean(go, "--post"))        cm->align_opts  |= CM_ALIGN_POST;

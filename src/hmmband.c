@@ -128,38 +128,6 @@ AllocCP9Bands(CM_t *cm, CP9_t *hmm)
   cp9bands->hd_needed  = 0;
   cp9bands->hd_alloced = 0;
 
-  /* allocate information that is specific to individual functions,
-   * that used to get allocated within those funcs, once per sequence,
-   * strategy now is to allocate here, once per model (more efficient).
-   */
-  /* info for hmmband.c::cp9_FB2HMMBands() and cp9_FB2HMMBandsWithSums() functions */
-  ESL_ALLOC(cp9bands->nset_m, sizeof(int) * (hmm->M+1));
-  ESL_ALLOC(cp9bands->nset_i, sizeof(int) * (hmm->M+1));
-  ESL_ALLOC(cp9bands->nset_d, sizeof(int) * (hmm->M+1));
-  ESL_ALLOC(cp9bands->xset_m, sizeof(int) * (hmm->M+1));
-  ESL_ALLOC(cp9bands->xset_i, sizeof(int) * (hmm->M+1));
-  ESL_ALLOC(cp9bands->xset_d, sizeof(int) * (hmm->M+1));
-  ESL_ALLOC(cp9bands->mass_m, sizeof(int) * (hmm->M+1));
-  ESL_ALLOC(cp9bands->mass_i, sizeof(int) * (hmm->M+1));
-  ESL_ALLOC(cp9bands->mass_d, sizeof(int) * (hmm->M+1));  
-  ESL_ALLOC(cp9bands->kthresh_m, sizeof(int) * (hmm->M+1));
-  ESL_ALLOC(cp9bands->kthresh_i, sizeof(int) * (hmm->M+1));
-  ESL_ALLOC(cp9bands->kthresh_d, sizeof(int) * (hmm->M+1));  
-
-  /* info for hmmband.c::cp9_HMM2ijBands() */
-  ESL_ALLOC(cp9bands->nss_imin, sizeof(int) * cm->nodes);
-  ESL_ALLOC(cp9bands->nss_imax, sizeof(int) * cm->nodes);
-  ESL_ALLOC(cp9bands->nss_jmin, sizeof(int) * cm->nodes);
-  ESL_ALLOC(cp9bands->nss_jmax, sizeof(int) * cm->nodes);
-
-  ESL_ALLOC(cp9bands->nis_imin, sizeof(int) * cm->nodes);
-  ESL_ALLOC(cp9bands->nis_imax, sizeof(int) * cm->nodes);
-  ESL_ALLOC(cp9bands->nis_jmin, sizeof(int) * cm->nodes);
-  ESL_ALLOC(cp9bands->nis_jmax, sizeof(int) * cm->nodes);
-
-  ESL_ALLOC(cp9bands->nss_max_imin, sizeof(int) * cm->nodes);
-  ESL_ALLOC(cp9bands->nss_min_jmax, sizeof(int) * cm->nodes);
-
   return cp9bands;
 
  ERROR:
@@ -195,32 +163,6 @@ FreeCP9Bands(CP9Bands_t *cp9bands)
   free(cp9bands->isum_pn_m);
   free(cp9bands->isum_pn_i);
   free(cp9bands->isum_pn_d);
-
-  /* info for hmmband.c::cp9_FB2HMMBands() and cp9_FB2HMMBandsWithSums() */
-  free(cp9bands->nset_m);
-  free(cp9bands->nset_i);
-  free(cp9bands->nset_d);
-  free(cp9bands->xset_m);
-  free(cp9bands->xset_i);
-  free(cp9bands->xset_d);
-  free(cp9bands->mass_m);
-  free(cp9bands->mass_i);
-  free(cp9bands->mass_d);
-  free(cp9bands->kthresh_m);
-  free(cp9bands->kthresh_i);
-  free(cp9bands->kthresh_d);
-
-  /* info for hmmband.c::cp9_HMM2ijBands() */
-  free(cp9bands->nss_imin);
-  free(cp9bands->nss_imax);
-  free(cp9bands->nss_jmin);
-  free(cp9bands->nss_jmax);
-  free(cp9bands->nis_imin);
-  free(cp9bands->nis_imax);
-  free(cp9bands->nis_jmin);
-  free(cp9bands->nis_jmax);
-  free(cp9bands->nss_max_imin);
-  free(cp9bands->nss_min_jmax);
 
   free(cp9bands);
 }
@@ -375,7 +317,7 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, but cm->cp9map is NULL.\n");
   if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
     ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
-  if((cm->align_opts & CM_SEARCH_HMMSCANBANDS) && (! (cm->search_opts & CM_SEARCH_HBANDED))) 
+  if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && (! (cm->search_opts & CM_SEARCH_HBANDED))) 
     ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
 
   do_scan2bands = (cm->search_opts & CM_SEARCH_HMMSCANBANDS) ? TRUE : FALSE;
@@ -443,6 +385,7 @@ int
 cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
 		 int i0, int j0, int M, double p_thresh, int did_scan, int debug_level)
 {
+  int status;
   int k;                                  /* counter over nodes of the model */
   int L = j0-i0+1;                        /* length of sequence */
   int thresh = Prob2Score(((1. - p_thresh)/2.), 1.); /* allowable prob mass excluded on each side */
@@ -464,22 +407,19 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
 					   */
   if(bmx != pmx) GrowCP9Matrix(pmx, errbuf, L, M, NULL, NULL, NULL, NULL, NULL);
 
-  /* set pointers to cp9b data, and initializations,
-   * note: all this used to be allocated here, but that was wasteful, now it's allocated
-   * once per model (instead of once per sequence) in AllocCP9Bands()  
-   */
-  nset_m = cp9b->nset_m;
-  nset_i = cp9b->nset_i;
-  nset_d = cp9b->nset_d;
-  xset_m = cp9b->xset_m;
-  xset_i = cp9b->xset_i;
-  xset_d = cp9b->xset_d;
-  mass_m = cp9b->mass_m;
-  mass_i = cp9b->mass_i;
-  mass_d = cp9b->mass_d;
-  kthresh_m = cp9b->kthresh_m;
-  kthresh_i = cp9b->kthresh_i;
-  kthresh_d = cp9b->kthresh_d;
+  /* allocations and initializations */
+  ESL_ALLOC(nset_m, sizeof(int) * (M+1));
+  ESL_ALLOC(nset_i, sizeof(int) * (M+1));
+  ESL_ALLOC(nset_d, sizeof(int) * (M+1));
+  ESL_ALLOC(xset_m, sizeof(int) * (M+1));
+  ESL_ALLOC(xset_i, sizeof(int) * (M+1));
+  ESL_ALLOC(xset_d, sizeof(int) * (M+1));
+  ESL_ALLOC(mass_m, sizeof(int) * (M+1));
+  ESL_ALLOC(mass_i, sizeof(int) * (M+1));
+  ESL_ALLOC(mass_d, sizeof(int) * (M+1));  
+  ESL_ALLOC(kthresh_m, sizeof(int) * (M+1));
+  ESL_ALLOC(kthresh_i, sizeof(int) * (M+1));
+  ESL_ALLOC(kthresh_d, sizeof(int) * (M+1));  
 
   esl_vec_ISet(mass_m, M+1, -INFTY);
   esl_vec_ISet(mass_i, M+1, -INFTY);
@@ -657,7 +597,24 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
   cp9b->pn_max_d[0] = -1; /* D_0 doesn't exist */
 
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, (1.-p_thresh), 1);
+
+  free(mass_m);
+  free(mass_i);
+  free(mass_d);
+  free(nset_m);
+  free(nset_i);
+  free(nset_d);
+  free(xset_m);
+  free(xset_i);
+  free(xset_d);
+  free(kthresh_m);
+  free(kthresh_i);
+  free(kthresh_d);
+
   return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
 
@@ -693,6 +650,7 @@ int
 cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
 			int i0, int j0, int M, double p_thresh, int did_scan, int debug_level)
 {
+  int status;
   int k;                                  /* counter over nodes of the model */
   int L = j0-i0+1;                        /* length of sequence */
   int thresh = Prob2Score(((1. - p_thresh)/2.), 1.); /* allowable prob mass excluded on each side */
@@ -706,22 +664,19 @@ cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9
   
   if(bmx != pmx) GrowCP9Matrix(pmx, errbuf, L, M, NULL, NULL, NULL, NULL, NULL);
 
-  /* set pointers to cp9b data, and initializations,
-   * note: all this used to be allocated here, but that was wasteful, now it's allocated
-   * once per model (instead of once per sequence) in AllocCP9Bands()  
-   */
-  nset_m = cp9b->nset_m;
-  nset_i = cp9b->nset_i;
-  nset_d = cp9b->nset_d;
-  xset_m = cp9b->xset_m;
-  xset_i = cp9b->xset_i;
-  xset_d = cp9b->xset_d;
-  mass_m = cp9b->mass_m;
-  mass_i = cp9b->mass_i;
-  mass_d = cp9b->mass_d;
-  kthresh_m = cp9b->kthresh_m;
-  kthresh_i = cp9b->kthresh_i;
-  kthresh_d = cp9b->kthresh_d;
+  /* allocations and initializations */
+  ESL_ALLOC(nset_m, sizeof(int) * (M+1));
+  ESL_ALLOC(nset_i, sizeof(int) * (M+1));
+  ESL_ALLOC(nset_d, sizeof(int) * (M+1));
+  ESL_ALLOC(xset_m, sizeof(int) * (M+1));
+  ESL_ALLOC(xset_i, sizeof(int) * (M+1));
+  ESL_ALLOC(xset_d, sizeof(int) * (M+1));
+  ESL_ALLOC(mass_m, sizeof(int) * (M+1));
+  ESL_ALLOC(mass_i, sizeof(int) * (M+1));
+  ESL_ALLOC(mass_d, sizeof(int) * (M+1));  
+  ESL_ALLOC(kthresh_m, sizeof(int) * (M+1));
+  ESL_ALLOC(kthresh_i, sizeof(int) * (M+1));
+  ESL_ALLOC(kthresh_d, sizeof(int) * (M+1));  
 
   esl_vec_ISet(mass_m, M+1, -INFTY);
   esl_vec_ISet(mass_i, M+1, -INFTY);
@@ -839,7 +794,24 @@ cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9
   cp9b->pn_max_d[0] = -1; /* D_0 doesn't exist */
 
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, (1.-p_thresh), 1);
+
+  free(mass_m);
+  free(mass_i);
+  free(mass_d);
+  free(nset_m);
+  free(nset_i);
+  free(nset_d);
+  free(xset_m);
+  free(xset_i);
+  free(xset_d);
+  free(kthresh_m);
+  free(kthresh_i);
+  free(kthresh_d);
+
   return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
 /* Functions for getting posterior probabilities from the HMMs 
@@ -1505,6 +1477,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 {
   int v;              /* counter over states of the CM */
 
+  int status;
   int safe_imax; 
   int safe_jmin; 
 
@@ -1552,6 +1525,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
    * note: these arrays used to be allocated here, but that was wasteful, now it's allocated
    * once per model (instead of once per sequence) in AllocCP9Bands()  
    */
+
   pn_min_m = cp9b->pn_min_m;
   pn_max_m = cp9b->pn_max_m;
   pn_min_i = cp9b->pn_min_i;
@@ -1563,18 +1537,18 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
   jmin     = cp9b->jmin;
   jmax     = cp9b->jmax;
 
-  nss_imin = cp9b->nss_imin;
-  nss_imax = cp9b->nss_imax;
-  nss_jmin = cp9b->nss_jmin;
-  nss_jmax = cp9b->nss_jmax;
+  ESL_ALLOC(nss_imin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nss_imax, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nss_jmin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nss_jmax, sizeof(int) * cm->nodes);
 
-  nis_imin = cp9b->nis_imin;
-  nis_imax = cp9b->nis_imax;
-  nis_jmin = cp9b->nis_jmin;
-  nis_jmax = cp9b->nis_jmax;
+  ESL_ALLOC(nis_imin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nis_imax, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nis_jmin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nis_jmax, sizeof(int) * cm->nodes);
 
-  nss_max_imin = cp9b->nss_imin;
-  nss_min_jmax = cp9b->nss_imax;
+  ESL_ALLOC(nss_max_imin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nss_min_jmax, sizeof(int) * cm->nodes);
 
   esl_vec_ISet(nss_imin, cm->nodes, -1);
   esl_vec_ISet(nss_imax, cm->nodes, -1);
@@ -2290,7 +2264,20 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
     printf("bands on j\n");
     debug_print_bands(stdout, cm, jmin, jmax);
   }
+  free(nss_imin);
+  free(nss_imax);
+  free(nss_jmin);
+  free(nss_jmax);
+  free(nis_imin);
+  free(nis_imax);
+  free(nis_jmin);
+  free(nis_jmax); 
+  free(nss_max_imin);
+  free(nss_min_jmax);
   return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
 }
 
 /**************************************************************************

@@ -832,10 +832,10 @@ extern void    FreeCP9Matrix  (CP9_MX *mx);
 extern int     GrowCP9Matrix  (CP9_MX *mx, char *errbuf, int N, int M, int ***mmx, int ***imx, int ***dmx, int ***elmx, int **erow);
 
 /* from cm_cp9_hybridsearch.c */
-extern float cm_cp9_HybridScan(CM_t *cm, CP9_MX *mx, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float cutoff, int **ret_sc, 
-			       int *ret_bestpos, search_results_t *results, HybridScanInfo_t *hsi);
+extern int cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanInfo_t *hsi, int i0, int j0, int W, 
+			     float cutoff, search_results_t *results, int **ret_psc, int *ret_maxres, float *ret_sc);
 extern int predict_xsub(CM_t *cm, float *cm_vcalcs, float *cm_expsc, float *cp9_expsc);
-extern int cm_CalcAvgHitLength(CM_t *cm, double beta, float **ret_hitlen);
+extern void cm_CalcAvgHitLength(CM_t *cm, double beta, float **ret_hitlen);
 extern HybridScanInfo_t * cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs);
 extern int cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int vroot_to_add);
 extern int cm_ValidateHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi);

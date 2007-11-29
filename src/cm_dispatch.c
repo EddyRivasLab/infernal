@@ -352,9 +352,9 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   if(!(cm->flags & CMH_BITS))                            ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), CMH_BITS flag down.\n");
   if(r == NULL && (cm->align_opts & CM_ALIGN_SAMPLE))    ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), no source of randomness, but CM_ALIGN_SAMPLE alignment option on.\n");
   if(r != NULL && (!(cm->align_opts & CM_ALIGN_SAMPLE))) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), we have a source of randomness, but CM_ALIGN_SAMPLE alignment option off.\n");
-  if((cm->align_opts & CM_ALIGN_POST)      && (cm->align_opts & CM_ALIGN_HMMONLY)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), CM_ALIGN_POST and CM_ALIGN_HMMONLY options are incompatible.\n");
-  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_HMMONLY)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_HMMONLY options are incompatible.\n");
-  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_POST))    ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_POST options are incompatible.\n");
+  if((cm->align_opts & CM_ALIGN_POST)      && (cm->align_opts & CM_ALIGN_HMMVITERBI)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), CM_ALIGN_POST and CM_ALIGN_HMMVITERBI options are incompatible.\n");
+  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_HMMVITERBI)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_HMMVITERBI options are incompatible.\n");
+  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_POST))       ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_POST options are incompatible.\n");
 
   /* determine mode */
   if     (seqs_to_aln != NULL && (dsq == NULL && search_results == NULL))  sq_mode = TRUE;
@@ -368,10 +368,9 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   if( sq_mode && (seqs_to_aln->postcode2 != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode2 is non-NULL.\n");
   if( sq_mode && (seqs_to_aln->sc       != NULL))  cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->sc is non-NULL.\n");
   
-  if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_HMMONLY option on.\n");
-  //if(dsq_mode && (cm->align_opts & CM_ALIGN_POST))    cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_POST option on.\n");
-  if(dsq_mode && (cm->align_opts & CM_ALIGN_INSIDE))  cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_INSIDE option on.\n");
-  if(dsq_mode && (cm->align_opts & CM_ALIGN_SAMPLE))  cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_SAMPLE option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMVITERBI)) cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_HMMVITERBI option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_INSIDE))     cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_INSIDE option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_SAMPLE))     cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_SAMPLE option on.\n");
 
   /* save a copy of the align_opts we entered function with, we may change some of these for
    * individual target sequences, and we want to be able to change them back
@@ -382,7 +381,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   if(cm->align_opts  & CM_ALIGN_HBANDED)    do_hbanded   = TRUE;
   if(cm->align_opts  & CM_ALIGN_SUMS)       use_sums     = TRUE;
   if(cm->align_opts  & CM_ALIGN_SUB)        do_sub       = TRUE;
-  if(cm->align_opts  & CM_ALIGN_HMMONLY)    do_hmmonly   = TRUE;
+  if(cm->align_opts  & CM_ALIGN_HMMVITERBI) do_hmmonly   = TRUE;
   if(cm->align_opts  & CM_ALIGN_INSIDE)     do_inside    = TRUE;
   if(cm->align_opts  & CM_ALIGN_POST)       do_post      = TRUE;
   if(cm->align_opts  & CM_ALIGN_TIME)       do_timings   = TRUE;
@@ -506,7 +505,13 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
     /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
     if(sq_mode && do_hmmonly) {
       if(sq_mode && !silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", seqs_to_aln->sq[i]->name);
-      sc = CP9ViterbiAlign(cur_dsq, 1, L, cm->cp9, cm->cp9_mx, &(cp9_tr[i]));
+      if((status = cp9_FastViterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, L, 0., NULL,
+				   FALSE,  /* we are not scanning */
+				   TRUE,   /* we are aligning */
+				   FALSE,  /* don't be memory efficient */
+				   NULL, NULL, /* don't return best sc at each posn, or best scoring posn */
+				   &(cp9_tr[i]), /* return the trace */
+				   &sc)) != eslOK) return status;
       if(sq_mode && !silent_mode) printf(" score: %10.2f bits\n", sc);
       parsesc[i] = sc;
       continue;
@@ -523,7 +528,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
 
     /* Potentially, do HMM calculations. */
     if((!do_sub) && do_hbanded) {
-      if((status = cp9_Seq2Bands(orig_cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) return status;
+      if((status = cp9_Seq2Bands(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) return status;
     }
     else if(do_sub) { 
       /* If we're in sub mode:
@@ -538,13 +543,13 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
        */
       
       /* (1) Get HMM posteriors */
-      if((status = cp9_Seq2Posteriors(orig_cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, cur_dsq, 1, L, debug_level)) != eslOK) return status; 
+      if((status = cp9_Seq2Posteriors(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, 1, L, debug_level)) != eslOK) return status; 
       
       /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
        * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
        */
-      CP9NodeForPosn(orig_hmm, 1, L, 1, cm->cp9_bmx, &spos, &spos_state, FALSE, 0., TRUE, debug_level);
-      CP9NodeForPosn(orig_hmm, 1, L, L, cm->cp9_bmx, &epos, &epos_state, FALSE, 0., FALSE, debug_level);
+      CP9NodeForPosn(orig_hmm, 1, L, 1, orig_cm->cp9_bmx, &spos, &spos_state, FALSE, 0., TRUE, debug_level);
+      CP9NodeForPosn(orig_hmm, 1, L, L, orig_cm->cp9_bmx, &epos, &epos_state, FALSE, 0., FALSE, debug_level);
       /* Deal with special cases for sub-CM alignment:
        * If the most likely state to have emitted the first or last residue
        * is the insert state in node 0, it only makes sense to start modelling
@@ -572,7 +577,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
 	sub_cp9b   = sub_cm->cp9b;
 	sub_cp9map = sub_cm->cp9map;
 	/* (5) Do Forward/Backward again, and get HMM bands */
-	if((status = cp9_Seq2Bands(sub_cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level)) != eslOK) return status;
+	if((status = cp9_Seq2Bands(sub_cm, errbuf, sub_cm->cp9_mx, sub_cm->cp9_bmx, sub_cm->cp9_bmx, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level)) != eslOK) return status;
 	hmm           = sub_hmm;    
 	cp9b          = sub_cp9b;
 	cp9map        = sub_cp9map;
@@ -645,11 +650,20 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
 	    if(do_optacc) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
 	    else if (status == eslERANGE) { /* we can still do CYK D&C alignment with QDBs derived from the HMM bands */
 	      hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
-	      printf("Doing QDB D&C b/c HMM banded parse of seq %d was too memory intensive.\n", i);
+	      printf("Doing QDB D&C because HMM banded parse of seq %d was too memory intensive.\n", i);
 	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, cp9b->safe_hdmin, cp9b->safe_hdmax);
 	    }
 	    else return status; /* get here (!do_optacc) && FastAlignHB() returned status other than eslOK and eslERANGE */
 	  }
+	  /* SHOULD I UNCOMMENT THIS?: 
+	   * if we're aligning search hits, and we're !do_optacc, we realign if the HMM banded parse was > 0.01 bits less than the search score for this hit */
+	  /* if(dsq_mode && (! cm->search_opts & CM_SEARCH_INSIDE)) {
+	    if(!do_optacc && (sc - search_results->data[i].score) < 0.01) {
+	      ESL_DPRINTF1(("Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", sc, search_results->data[i].score));
+	      FreeParsetree(*cur_tr);
+	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL);
+	    }
+	    }*/
 	  if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level); /* allows you to see where the non-banded parse went outside the bands. */
 	} 
 	/* if CM_ALIGN_HMMSAFE option is enabled, realign seqs w/HMM banded parses < 0 bits,
@@ -897,9 +911,9 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   if(!(cm->flags & CMH_BITS))                            cm_Fail("OldActuallyAlignTargets(), CMH_BITS flag down.\n");
   if(r == NULL && (cm->align_opts & CM_ALIGN_SAMPLE))    cm_Fail("OldActuallyAlignTargets(), no source of randomness, but CM_ALIGN_SAMPLE alignment option on.\n");
   if(r != NULL && (!(cm->align_opts & CM_ALIGN_SAMPLE))) cm_Fail("OldActuallyAlignTargets(), we have a source of randomness, but CM_ALIGN_SAMPLE alignment option off.\n");
-  if((cm->align_opts & CM_ALIGN_POST)      && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("OldActuallyAlignTargets(), CM_ALIGN_POST and CM_ALIGN_HMMONLY options are incompatible.\n");
-  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("OldActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_HMMONLY options are incompatible.\n");
-  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_POST))    cm_Fail("OldActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_POST options are incompatible.\n");
+  if((cm->align_opts & CM_ALIGN_POST)      && (cm->align_opts & CM_ALIGN_HMMVITERBI)) cm_Fail("OldActuallyAlignTargets(), CM_ALIGN_POST and CM_ALIGN_HMMVITERBI options are incompatible.\n");
+  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_HMMVITERBI)) cm_Fail("OldActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_HMMVITERBI options are incompatible.\n");
+  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_POST))       cm_Fail("OldActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_POST options are incompatible.\n");
 
 
   /* determine mode */
@@ -914,10 +928,10 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   if( sq_mode && (seqs_to_aln->postcode2!= NULL)) cm_Fail("OldActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode2 is non-NULL.\n");
   if( sq_mode && (seqs_to_aln->sc       != NULL)) cm_Fail("OldActuallyAlignTargets(), in sq_mode, seqs_to_aln->sc is non-NULL.\n");
   
-  if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMONLY)) cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_HMMONLY option on.\n");
-  if(dsq_mode && (cm->align_opts & CM_ALIGN_POST))    cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_POST option on.\n");
-  if(dsq_mode && (cm->align_opts & CM_ALIGN_INSIDE))  cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_INSIDE option on.\n");
-  if(dsq_mode && (cm->align_opts & CM_ALIGN_SAMPLE))  cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_SAMPLE option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMVITERBI)) cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_HMMVITERBI option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_POST))       cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_POST option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_INSIDE))     cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_INSIDE option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_SAMPLE))     cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_SAMPLE option on.\n");
 
   /* set the options based on cm->align_opts */
   if(cm->align_opts  & CM_ALIGN_SMALL)      do_small     = TRUE;
@@ -926,7 +940,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   if(cm->align_opts  & CM_ALIGN_HBANDED)    do_hbanded   = TRUE;
   if(cm->align_opts  & CM_ALIGN_SUMS)       use_sums     = TRUE;
   if(cm->align_opts  & CM_ALIGN_SUB)        do_sub       = TRUE;
-  if(cm->align_opts  & CM_ALIGN_HMMONLY)    do_hmmonly   = TRUE;
+  if(cm->align_opts  & CM_ALIGN_HMMVITERBI) do_hmmonly   = TRUE;
   if(cm->align_opts  & CM_ALIGN_INSIDE)     do_inside    = TRUE;
   if(cm->align_opts  & CM_ALIGN_POST)       do_post      = TRUE;
   if(cm->align_opts  & CM_ALIGN_TIME)       do_timings   = TRUE;
@@ -1055,7 +1069,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   
     /* Potentially, do HMM calculations. */
     if((!do_sub) && do_hbanded) {
-      if((status = cp9_Seq2Bands(orig_cm, NULL, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Bands().");
+      if((status = cp9_Seq2Bands(orig_cm, NULL, orig_cm->cp9_mx, orig_cm->cp9_bmx, cm->cp9_bmx, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Bands().");
     }
     else if(do_sub) { 
       /* If we're in sub mode:
@@ -1070,13 +1084,13 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
        */
       
       /* (1) Get HMM posteriors */
-      if((status = cp9_Seq2Posteriors(orig_cm, NULL, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, cur_dsq, 1, L, debug_level)) != eslOK) cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Posteriors().");
+      if((status = cp9_Seq2Posteriors(orig_cm, NULL, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, 1, L, debug_level)) != eslOK) cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Posteriors().");
       
       /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
        * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
        */
-      CP9NodeForPosn(orig_hmm, 1, L, 1, cm->cp9_bmx, &spos, &spos_state, FALSE, 0., TRUE, debug_level);
-      CP9NodeForPosn(orig_hmm, 1, L, L, cm->cp9_bmx, &epos, &epos_state, FALSE, 0., FALSE, debug_level);
+      CP9NodeForPosn(orig_hmm, 1, L, 1, orig_cm->cp9_bmx, &spos, &spos_state, FALSE, 0., TRUE, debug_level);
+      CP9NodeForPosn(orig_hmm, 1, L, L, orig_cm->cp9_bmx, &epos, &epos_state, FALSE, 0., FALSE, debug_level);
       /* Deal with special cases for sub-CM alignment:
        * If the most likely state to have emitted the first or last residue
        * is the insert state in node 0, it only makes sense to start modelling
@@ -1104,7 +1118,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
 	sub_cp9b   = sub_cm->cp9b;
 	sub_cp9map = sub_cm->cp9map;
 	/* (5) Do Forward/Backward again, and get HMM bands */
-	if((status = cp9_Seq2Bands(sub_cm, NULL, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level)) != eslOK)  cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Bands().");
+	if((status = cp9_Seq2Bands(sub_cm, NULL, sub_cm->cp9_mx, sub_cm->cp9_bmx, sub_cm->cp9_bmx, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level)) != eslOK)  cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Bands().");
 	hmm           = sub_hmm;    
 	cp9b          = sub_cp9b;
 	cp9map        = sub_cp9map;

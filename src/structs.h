@@ -512,7 +512,7 @@ typedef struct cmstats_s {
 #define CM_ALIGN_HBANDED       (1<<2)  /* use HMM bands                            */
 #define CM_ALIGN_SUMS          (1<<3)  /* if using HMM bands, use posterior sums   */
 #define CM_ALIGN_SUB           (1<<4)  /* build a sub CM for each seq to align     */
-#define CM_ALIGN_HMMONLY       (1<<5)  /* use a CP9 HMM only to align              */
+#define CM_ALIGN_HMMVITERBI    (1<<5)  /* use a CP9 HMM only to align, w/viterbi   */
 #define CM_ALIGN_INSIDE        (1<<6)  /* use Inside, not CYK                      */
 #define CM_ALIGN_POST          (1<<7)  /* do inside/outside and append posteriors  */
 #define CM_ALIGN_TIME          (1<<8)  /* print out alignment timings              */
@@ -785,29 +785,6 @@ typedef struct cp9bands_s {
   int hd_needed;              /* Sum_v cp9b->jmax[v] - cp9b->jmin[v] + 1, number of hd arrays needed */
   int hd_alloced;             /* number of hd arrays currently alloc'ed */
 
-  /* Remainder of data was originally declared and allocated within specific functions that are called 
-   * for each sequence (each calculation of HMM bands), but this is wasteful as they are only
-   * dependent on the size of the CM or HMM, so we move them here, just so we only have to allocate them
-   * one time per model.
-   */
-
-  /* info for hmmband.c::cp9_FB2HMMBands() and cp9_FB2HMMBandsWithSums() functions */
-  int *kthresh_m, *kthresh_i, *kthresh_d; /* [0..k..hmm->M], individual thresholds for each state */
-  int *nset_m, *nset_i, *nset_d;          /* [0..k..hmm->M], has minimum been set for this state? */
-  int *xset_m, *xset_i, *xset_d;          /* [0..k..hmm->M], has maximum been set for this state? */
-  int *mass_m, *mass_i, *mass_d;          /* [0..k..hmm->M], summed log prob of pmx->mx[i][k] from 0..k or k..L */
-
-  /* info for hmmband.c::cp9_HMM2ijBands(), all run [0..cm->nodes-1] */
-  int *nss_imin;      /* nss_imin[n] = imin of each split set state in node n*/
-  int *nss_imax;      /* nss_imax[n] = imax of each split set state in node n*/
-  int *nss_jmin;      /* nss_jmin[n] = jmin of each split set state in node n*/
-  int *nss_jmax;      /* nss_jmax[n] = jmax of each split set state in node n*/
-  int *nis_imin;      /* nss_imin[n] = imin of each insert set state in node n*/
-  int *nis_imax;      /* nss_imax[n] = imax of each insert set state in node n*/
-  int *nis_jmin;      /* nss_jmin[n] = jmin of each insert set state in node n*/
-  int *nis_jmax;      /* nss_jmax[n] = jmax of each insert set state in node n*/
-  int *nss_max_imin;  /* nss_max_imin[n] = max imin over split set states in node n*/
-  int *nss_min_jmax;  /* nss_min_jmax[n] = min jmax over split set states in node n*/
 } CP9Bands_t;
 
 /* used by CM Plan 9 HMM structures */

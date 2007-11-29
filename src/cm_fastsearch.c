@@ -1,4 +1,5 @@
-/* cm_fastsearch.c
+/* 
+ * cm_fastsearch.c
  * DP functions for CYK and Inside CM similarity search, includes
  * fast (optimized) and reference versions. 
  * 
@@ -257,7 +258,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float c
 	      } /* end of for(d = dn; d <= dx; d++) */
 	      break;
 
-	    case 6: /* necessarily 2 inserts */
+	    case 6: 
 	      arow0 = (float * const) alpha[jp_y][y];
 	      arow1 = (float * const) alpha[jp_y][y+1];
 	      arow2 = (float * const) alpha[jp_y][y+2];
@@ -390,7 +391,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float c
 	      } /* end of for(d = dn; d <= dx; d++) */
 	      break;
 
-	    case 6: /* necessarily 2 inserts */
+	    case 6: 
 	      arow0 = (float * const) alpha[jp_y][y];
 	      arow1 = (float * const) alpha[jp_y][y+1];
 	      arow2 = (float * const) alpha[jp_y][y+2];
@@ -783,7 +784,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
 	      } /* end of for(d = dn; d <= dx; d++) */
 	      break;
 
-	    case 6: /* necessarily 2 inserts */
+	    case 6: 
 	      arow0 = (int * const) alpha[jp_y][y];
 	      arow1 = (int * const) alpha[jp_y][y+1];
 	      arow2 = (int * const) alpha[jp_y][y+2];
@@ -918,7 +919,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
 	      } /* end of for(d = dn; d <= dx; d++) */
 	      break;
 
-	    case 6: /* necessarily 2 inserts */
+	    case 6: 
 	      arow0 = (int * const) alpha[jp_y][y];
 	      arow1 = (int * const) alpha[jp_y][y+1];
 	      arow2 = (int * const) alpha[jp_y][y+2];
@@ -1299,7 +1300,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
 	      } /* end of for(d = dn; d <= dx; d++) */
 	      break;
 
-	    case 6: /* necessarily 2 inserts */
+	    case 6: 
 	      arow0 = (int * const) alpha[jp_y][y];
 	      arow1 = (int * const) alpha[jp_y][y+1];
 	      arow2 = (int * const) alpha[jp_y][y+2];
@@ -2249,7 +2250,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
 	      } /* end of for(d = dn; d <= dx; d++) */
 	      break;
 
-	    case 6: /* necessarily 2 inserts */
+	    case 6: 
 	      arow0 = (float * const) alpha[jp_y][y];
 	      arow1 = (float * const) alpha[jp_y][y+1];
 	      arow2 = (float * const) alpha[jp_y][y+2];
@@ -2384,7 +2385,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
 	      } /* end of for(d = dn; d <= dx; d++) */
 	      break;
 
-	    case 6: /* necessarily 2 inserts */
+	    case 6: 
 	      arow0 = (float * const) alpha[jp_y][y];
 	      arow1 = (float * const) alpha[jp_y][y+1];
 	      arow2 = (float * const) alpha[jp_y][y+2];
@@ -5314,7 +5315,7 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "--hbanded")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  if((status = cp9_Seq2Bands(cm, errbuf, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail(errbuf);
+	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail(errbuf);
 	  sc = CYKBandedScan_jd(cm, dsq, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, 
 				1, L, cm->W, 0., NULL);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "CYKBandedScan_jd(): ", sc);
@@ -5322,7 +5323,7 @@ main(int argc, char **argv)
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
-	  if((status = cp9_Seq2Bands(cm, errbuf, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail(errbuf);
+	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail(errbuf);
 	  FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, &sc);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScanHB(): ", sc);
 	  esl_stopwatch_Stop(w);
@@ -5331,7 +5332,7 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "--ihbanded")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  if((status = cp9_Seq2Bands(cm, errbuf, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail(errbuf);
+	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail(errbuf);
 	  sc = iInsideBandedScan_jd(cm, dsq, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, 
 				1, L, cm->W, 0., NULL);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "iInsideBandedScan_jd(): ", sc);
@@ -5339,7 +5340,7 @@ main(int argc, char **argv)
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
-	  if((status = cp9_Seq2Bands(cm, errbuf, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail(errbuf); 
+	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail(errbuf); 
  	  if((status = FastFInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastFInsideScanHB(): ", sc);
 	  esl_stopwatch_Stop(w);

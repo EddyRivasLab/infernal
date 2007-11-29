@@ -170,11 +170,10 @@ cp9_FastViterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
       cur = (j-i0+1);
       prv = (j-i0);
 
-      if(be_efficient)
-	{
-	  cur %= 2;
-	  prv %= 2;
-	}	  
+      if(be_efficient) {
+	cur %= 2;
+	prv %= 2;
+      }	  
       /* The 1 difference between a Viterbi scanner and the 
        * regular Viterbi. In non-scanner parse must begin in B at
        * position 0 (i0-1), in scanner we can start at any position 
@@ -2612,7 +2611,7 @@ main(int argc, char **argv)
 
   if (esl_opt_GetBoolean(go, "-x")) { 
     /* determine the minimum length we can search safely with the optimized forward version. */
-    if((status = cp9_WorstForward(cm, errbuf, -INFTY, do_scan, do_align, &minL)) != eslOK) cm_Fail(errbuf);
+    if((status = cp9_WorstForward(cm, errbuf, cm->cp9_mx, -INFTY, do_scan, do_align, &minL)) != eslOK) cm_Fail(errbuf);
     /* minL = 100000; */
   }
 
@@ -2621,11 +2620,10 @@ main(int argc, char **argv)
       esl_rnd_xfIID(r, cm->null, abc->K, L, dsq);
 
       esl_stopwatch_Start(w);
-      if((status = cp9_FastViterbi(cm, errbuf, dsq, 1, L, cm->W, 0., NULL,
+      if((status = cp9_FastViterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,
 				   do_scan,   /* are we scanning? */
 				   do_align,  /* are we aligning? */
 				   (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
-				   NULL,
 				   NULL,
 				   NULL,   /* don't want the DP matrix back */
 				   NULL,   /* don't want traces back */
@@ -2637,12 +2635,11 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "-f")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  if((status = cp9_FastForward(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, 
+	  if((status = cp9_FastForward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL, 
 				       do_scan,   /* are we scanning? */
 				       do_align,  /* are we aligning? */
-				       FALSE,  /* we're not rescanning */
 				       (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
-				       NULL, NULL,
+				       NULL, 
 				       NULL,  /* don't want the DP matrix back */
 				       &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "cp9_FastForward(): ", sc);
@@ -2656,7 +2653,6 @@ main(int argc, char **argv)
 	  sc = CP9Forward(cm, dsq, 1, L, cm->W, 0., NULL, NULL, NULL,
 			  do_scan,   /* are we scanning? */
 			  do_align,  /* are we aligning? */
-			  FALSE,  /* we're not rescanning */
 			  (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
 			  NULL);  /* don't want the DP matrix back */
 	  printf("%4d %-30s %10.4f bits ", (i+1), "CP9Forward(): ", sc);
@@ -2669,13 +2665,12 @@ main(int argc, char **argv)
 	  ESL_DPRINTF1(("minL: %d L: %d\n", minL, L));
 	  if(minL != -1 && minL <= L) be_safe = TRUE;
 	  esl_stopwatch_Start(w);
-	  if((status = Xcp9_FastForward(cm, errbuf, dsq, 1, L, cm->W, 0., NULL,
+	  if((status = Xcp9_FastForward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,
 					do_scan,   /* are we scanning? */
 					do_align,  /* are we aligning? */
-					FALSE,  /* we're not rescanning */
 					(! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
 					be_safe,
-					NULL, NULL,
+					NULL, 
 					NULL,  /* don't want the DP matrix back */
 					&sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "Xcp9_FastForward(): ", sc);

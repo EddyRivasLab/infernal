@@ -32,8 +32,8 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define ALGOPTS  "--std,--qdb,--qdbsmall,--qdbboth,--hbanded,--hmmonly"  /* Exclusive choice for scoring algorithms */
-#define SEQOPTS  "--emit,--random,--infile"                              /* Exclusive choice for sequence input */
+#define ALGOPTS  "--std,--qdb,--qdbsmall,--qdbboth,--hbanded,--hmmviterbi"  /* Exclusive choice for scoring algorithms */
+#define SEQOPTS  "--emit,--random,--infile"                                 /* Exclusive choice for sequence input */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -63,7 +63,7 @@ static ESL_OPTIONS options[] = {
   { "--hbanded", eslARG_NONE,   FALSE,  NULL, NULL,  ALGOPTS,      NULL,        NULL, "accelerate using CM plan 9 HMM banded CYK aln algorithm", 4 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 4 },
   { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "realign (non-banded) seqs with HMM banded CYK score < 0 bits", 4 },
-  { "--hmmonly", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm", 4 },
+  { "--hmmviterbi",eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm", 4 },
   { "--scoreonly",eslARG_NONE,  FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "for standard CYK stage, do only score, save memory", 4 },
   /* Options for testing multiple rounds of banded alignment, stage 2->N alignment */
   { "--betas",   eslARG_INT,  NULL,    NULL, "0<n<50",   NULL, "--betae",       NULL, "set initial (stage 2) tail loss prob to 10E-<x> for QDB", 5 },
@@ -836,7 +836,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       if (cfg->regressfp != NULL) 
 	{
 	  fprintf(cfg->regressfp, "> %s\n", seqs_to_aln->sq[i]->name);
-	  if(esl_opt_GetBoolean(go,"--hmmonly")) 
+	  if(esl_opt_GetBoolean(go,"--hmmviterbi")) 
 	    {
 	      ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
 	      fprintf(cfg->regressfp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
@@ -853,7 +853,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       if (cfg->tracefp != NULL) 
 	{
 	  fprintf(cfg->tracefp, "> %s\n", seqs_to_aln->sq[i]->name);
-	  if(esl_opt_GetBoolean(go,"--hmmonly")) 
+	  if(esl_opt_GetBoolean(go,"--hmmviterbi")) 
 	    {
 	      ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
 	      fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
@@ -907,7 +907,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       spdup = cfg->s1_w->user / cfg->w->user;
       printf("Speedup (user):          %.2f\n", spdup);
 
-      if(! esl_opt_GetBoolean(go, "--hmmonly"))
+      if(! esl_opt_GetBoolean(go, "--hmmviterbi"))
 	{
 	  printf("Avg bit score diff:      %.2f\n", (diff_sc / ((float) seqs_to_aln->nseq)));
 	  if(diff_ct == 0)
@@ -1017,7 +1017,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
     cm->config_opts = 0; /* clear configure options from previous stage */
 
     if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;
-    if(esl_opt_GetBoolean(go, "--hmmonly"))     cm->align_opts  |= CM_ALIGN_HMMONLY;
+    if(esl_opt_GetBoolean(go, "--hmmviterbi"))  cm->align_opts  |= CM_ALIGN_HMMVITERBI;
     if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
     if(esl_opt_GetBoolean(go, "--scoreonly"))   cm->align_opts  |= CM_ALIGN_SCOREONLY;
     if(esl_opt_GetBoolean(go, "--qdb") || esl_opt_GetBoolean(go, "--qdbsmall")) {                    
@@ -1059,7 +1059,7 @@ int summarize_align_options(const struct cfg_s *cfg, CM_t *cm)
   /* Algorithm */
   if(cm->align_opts & CM_ALIGN_INSIDE)
     printf("Algorithm:               Inside\n");
-  else if(cm->align_opts & CM_ALIGN_HMMONLY) 
+  else if(cm->align_opts & CM_ALIGN_HMMVITERBI) 
     printf("Algorithm:               CP9 HMM Viterbi\n");
   else if(cm->align_opts & CM_ALIGN_SCOREONLY)
     printf("Algorithm:               CYK Standard (score only)\n");
