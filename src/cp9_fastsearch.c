@@ -73,6 +73,7 @@ cp9_FastViterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
 		int *ret_maxres, CP9trace_t **ret_tr, float *ret_sc)
 {
   int          status;
+  GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
   int          i;           /* j-W: position in the subsequence                             */
@@ -87,20 +88,12 @@ cp9_FastViterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
   int         *erow;        /* end score for each position [0..1]                           */
   int         *scA;         /* prob (seq from j0..jp | HMM) [0..jp..cm->cp9->M]             */
   float        fsc;         /* float log odds score                                         */
-  float        curr_sc;     /* temporary score used for filling in gamma                    */
-  float       *gamma;       /* SHMM DP matrix for optimum nonoverlap resolution [0..j0-i0+1]*/
-  int         *gback;       /* traceback pointers for SHMM                      [0..j0-i0+1]*/ 
-  float       *savesc;      /* saves score of hit added to best parse at j      [0..j0-i0+1]*/ 
-  float        best_hmm_sc; /* Best overall score from semi-HMM to return if do_scan        */
-  float        best_hmm_pos;/* residue giving best_hmm_sc                                   */
-  float        best_sc;     /* Best score overall, returned if 0 hits found by HMM & do_scan*/
-  float        best_pos;    /* residue giving best_sc                                       */
-  float        return_sc;   /* score to return, if (!do_scan) return overall Viterbi sc,    *
-			     * else return best_hmm_sc if # HMM hits>0, else return best_sc */
+  float        best_sc;     /* score of best hit overall                                    */
+  float        best_pos;    /* residue (j) giving best_sc, where best hit ends              */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
-  int          c;           /* counter for EL states */
-  CP9trace_t  *tr;          
-  int          M;
+  int          c;           /* counter for EL states                                        */
+  CP9trace_t  *tr;          /* CP9 trace for full seq i0..j0, used if ret_tr != NULL        */
+  int          M;           /* cm->cp9->M, query length, number of consensus nodes of model */
 
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, cm->cp9 is NULL.\n");
@@ -109,47 +102,20 @@ cp9_FastViterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx is NULL.\n");
   if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx->M != cm->clen.\n");
   if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, cm->clen != cm->cp9->M.\n");
-  if((cm->search_opts & CM_SEARCH_HMMGREEDY) && (cm->search_opts & CM_SEARCH_HMMRESCAN))
-    ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
-  best_hmm_sc = IMPOSSIBLE;
-  best_hmm_pos= -1;
   L = j0-i0+1;
   M = cm->cp9->M;
   if (W > L) W = L; 
 
-  /* Transition scores */
-  int *otsc;
-  ESL_ALLOC(otsc,   sizeof(int)   * (M+1)  * cp9O_NTRANS);
-  for (k = 0 ; k <= M; k++) {
-    int *otsc_k = otsc + k*cp9O_NTRANS;
-    
-    otsc_k[cp9O_MM] = cm->cp9->tsc[CTMM][k];
-    otsc_k[cp9O_MI] = cm->cp9->tsc[CTMI][k];
-    otsc_k[cp9O_MD] = cm->cp9->tsc[CTMD][k];
-    otsc_k[cp9O_IM] = cm->cp9->tsc[CTIM][k];
-    otsc_k[cp9O_II] = cm->cp9->tsc[CTII][k];
-    otsc_k[cp9O_DM] = cm->cp9->tsc[CTDM][k];
-    otsc_k[cp9O_DD] = cm->cp9->tsc[CTDD][k];
-    otsc_k[cp9O_ID] = cm->cp9->tsc[CTID][k];
-    otsc_k[cp9O_DI] = cm->cp9->tsc[CTDI][k];
-    otsc_k[cp9O_BM] = cm->cp9->bsc[k];
-    otsc_k[cp9O_MEL]= cm->cp9->tsc[CTMEL][k];
-    otsc_k[cp9O_ME] = cm->cp9->esc[k];
-  }
-  int const *tsc = otsc;
-  /*****************************************************************
-   * gamma allocation and initialization.
+  int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
+
+  /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits.
-   *****************************************************************/ 
-  ESL_ALLOC(gamma, sizeof(float) * (L+1));
-  gamma[0] = 0.;
-  ESL_ALLOC(gback, sizeof(int)   * (L+1));
-  gback[0] = -1;
-  ESL_ALLOC(savesc, sizeof(float) * (L+1));
+   * of multiple nonoverlapping hits. */
+  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
+  else                gamma = NULL;
 
   /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
    * stays M+1 columns */
@@ -184,11 +150,7 @@ cp9_FastViterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
   scA[0]   = erow[0];
   fsc      = Scorify(scA[0]);
   /*printf("jp: %d j: %d fsc: %f isc: %d\n", jp, j, fsc, isc[jp]);*/
-  if(fsc > best_sc) 
-    {
-      best_sc = fsc;
-      best_pos= i0-1;
-    }
+  if(fsc > best_sc) { best_sc = fsc; best_pos= i0-1; }
   /*printf("jp: %d j: %d fsc: %f sc: %d\n", 0, i0-1, Scorify(sc[0]), sc[0]);*/
 
   /*****************************************************************
@@ -276,116 +238,36 @@ cp9_FastViterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
       scA[jp]   = endsc;
       fsc = Scorify(endsc);
 
-      if(fsc > best_sc)
-	{
-	  best_sc = fsc;
-	  best_pos= j;
-	}
-      if (fsc > best_hmm_sc)
-	{
-	  best_hmm_sc = fsc;
-	  best_hmm_pos= j;
-	}
-      if(!(cm->search_opts & CM_SEARCH_HMMGREEDY)) /* resolve overlaps optimally */
-	{
-	  /* The little semi-Markov model that deals with multihit parsing:
-	   */
-	  gamma[jp]  = gamma[jp-1] + 0; /* extend without adding a new hit */
-	  gback[jp]  = -1;
-	  savesc[jp] = IMPOSSIBLE;
-	  i = ((j-W+1)> i0) ? (j-W+1) : i0;
-	  ip = i-i0+1;
-	  curr_sc = gamma[ip-1] + fsc;
-	  if (curr_sc > gamma[jp])
-	    {
-	      gamma[jp]  = curr_sc;
-	      gback[jp]  = i;
-	      savesc[jp] = fsc;
-	    }
-	}
-      else
-	{
-	  /* Resolving overlaps greedily (RSEARCH style),  
-	   * Return best hit for each j, IFF it's above threshold */
-	  if (fsc >= cutoff) 
-	    {
-	      if(results != NULL) 
-		{
-		  i = ((j-W+1)> i0) ? (j-W+1) : i0;
-		  /*printf("VIT greedy REPORTING HIT: i: %d j: %d fsc: %f\n", i, j, fsc);*/
-		  report_hit (i, j, 0, fsc, results);
-		  /* 0 is for saver, which is irrelevant for HMM hits */
-		}
-	    }
-	}
+      if(fsc > best_sc) { best_sc = fsc; best_pos= j; }
+
+      /* determine safe start point, max of j-W+1 and i0 */
+      i = ((j-W+1)> i0) ? (j-W+1) : i0;
+      ip = i-i0+1;
+      if(results != NULL) UpdateGammaHitMxCP9Forward(gamma, ip, jp, fsc, results);
     } /* end loop over end positions j */
       
-  if((!(cm->search_opts & CM_SEARCH_HMMGREEDY)) && /* resolve overlaps optimally */
-     (!doing_align || do_scan)) /* else we can save time by skipping traceback */
-    {
-      /*****************************************************************
-       * Traceback stage.
-       * Recover all hits: an (i,j,sc) triple for each one and report them.
-       *****************************************************************/ 
-      j           = j0;
-      while (j >= i0) {
-	jp = j-i0+1;
-	if (gback[jp] == -1) /* no hit */
-	  j--; 
-	else                /* a hit, a palpable hit */
-	  {
-	    if(savesc[jp] > best_hmm_sc) 
-	      {
-		best_hmm_sc = savesc[jp];
-		best_hmm_pos= j;
-	      }
-	    if(savesc[jp] >= cutoff)
-	      {
-		if(results != NULL) /* report the hit */
-		  {
-		    /*printf("VIT reporting hit: i: %d j: %d sc: %f\n", gback[jp], j, savesc[jp]);*/
-		    report_hit(gback[jp], j, 0, savesc[jp], results); 
-		    /* 0 is for saver, which is irrelevant for HMM hits */
-		  }
-	      }
-	    j = gback[jp]-1;
-	  }
-      }
-    }
+  /* If recovering hits in a non-greedy manner, do the traceback.
+   * If we were greedy, then we've reported hits in UpdateGammaHitMxCP9Forward() for each position j */
+  if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxForward(gamma, results, i0, j0);
+
   /* clean up and exit */
-  free(gback);
-  free(gamma);
-  free(savesc);
-  free(otsc);
+  if(gamma != NULL) FreeGammaHitMx(gamma);
 
-  /* determine score to return: (I know, too complex) */
-  if(doing_align)
-    {
-      return_sc = Scorify(scA[(j0-i0+1)]); /* L = j0-i0+1 */
-      if(ret_maxres != NULL) *ret_maxres = i0;
-      if(ret_tr != NULL) 
-	{
-	  CP9ViterbiTrace(cm->cp9, dsq, i0, j0, mx, &tr);
-	  /* CP9PrintTrace(stdout, tr, cm->cp9, dsq); */
-	  *ret_tr = tr;
-	}
+  if(doing_align) { /* best_sc is the alignment score */
+    best_sc  = Scorify(scA[(j0-i0+1)]); /* L = j0-i0+1 */
+    best_pos = i0;
+    if(ret_tr != NULL) {
+      CP9ViterbiTrace(cm->cp9, dsq, i0, j0, mx, &tr);
+      /* CP9PrintTrace(stdout, tr, cm->cp9, dsq); */
+      *ret_tr = tr;
     }
-  else if(best_hmm_sc <= 0.) /* scanning and there were no hits found by the 
-			      * semi-HMM above 0.0 bits */
-    {
-      return_sc = best_sc;
-      if(ret_maxres != NULL) *ret_maxres = best_pos;
-    }
-  else
-    {
-      return_sc = best_hmm_sc;
-      if(ret_maxres != NULL) *ret_maxres = best_hmm_pos;
-    }
-  if(ret_psc != NULL) *ret_psc = scA;
-  else free(scA);
-  ESL_DPRINTF1(("cp9_FastViterbi() return score: %10.4f\n", return_sc));
+  }
+  if(ret_sc != NULL)     *ret_sc     = best_sc;
+  if(ret_maxres != NULL) *ret_maxres = best_pos;
+  if(ret_psc != NULL)    *ret_psc    = scA;
+  else                    free(scA);
+  ESL_DPRINTF1(("cp9_FastViterbi() return score: %10.4f\n", best_sc));
 
-  if(ret_sc != NULL) *ret_sc = return_sc;
   return eslOK;
 
  ERROR:
@@ -416,6 +298,7 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0
 			CP9trace_t **ret_tr, float *ret_sc)
 {
   int          status;
+  GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
   int          i;           /* j-W: position in the subsequence                             */
@@ -430,23 +313,12 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0
   int         *erow;        /* end score for each position [0..1]                           */
   int         *scA;         /* prob (seq from j0..jp | HMM) [0..jp..cm->cp9->M]             */
   float        fsc;         /* float log odds score                                         */
-  float        curr_sc;     /* temporary score used for filling in gamma                    */
-  float       *gamma;       /* SHMM DP matrix for optimum nonoverlap resolution [0..j0-i0+1]*/
-  int         *gback;       /* traceback pointers for SHMM                      [0..j0-i0+1]*/ 
-  float       *savesc;      /* saves score of hit added to best parse at j      [0..j0-i0+1]*/ 
-  float        best_hmm_sc; /* Best overall score from semi-HMM to return if do_scan        */
-  float        best_hmm_pos;/* residue giving best_hmm_sc                                   */
-  float        best_sc;     /* Best score overall, returned if 0 hits found by HMM & do_scan*/
-  float        best_pos;    /* residue giving best_sc                                       */
-  float        return_sc;   /* score to return, if (!do_scan) return overall Viterbi sc,    *
-			     * else return best_hmm_sc if # HMM hits>0, else return best_sc */
+  float        best_sc;     /* score of best hit overall                                    */
+  float        best_pos;    /* residue (i) giving best_sc, where best hit starts            */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
   int          c;           /* counter for EL states */
-  CP9trace_t  *tr;
-  int          M;
-  /*debug_print_cp9_params(stdout, cm->cp9, TRUE);*/
+  int          M;           /* cm->cp9->M, query length, number of consensus nodes of model */
 
-  /*printf("in CP9Viterbi() i0: %d j0: %d\n", i0, j0);  */
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbiBackward, cm->cp9 is NULL.\n");
   if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbiBackward, passing in results data structure, but not in scanning mode.\n");
@@ -454,52 +326,20 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx is NULL.\n");
   if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx->M != cm->clen.\n");
   if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, cm->clen != cm->cp9->M.\n");
-  if((cm->search_opts & CM_SEARCH_HMMGREEDY) && (cm->search_opts & CM_SEARCH_HMMRESCAN))
-    ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbiBackward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
     
+  int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
+
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
-  best_hmm_sc = IMPOSSIBLE;
-  best_hmm_pos= -1;
   L = j0-i0+1;
   M = cm->cp9->M;
   if (W > L) W = L; 
 
-  /* Transition scores */
-  int *otsc;
-  ESL_ALLOC(otsc,   sizeof(int)   * (M+1)  * cp9O_NTRANS);
-  for (k = 0 ; k <= M; k++) {
-    int *otsc_k = otsc + k*cp9O_NTRANS;
-    
-    otsc_k[cp9O_MM] = cm->cp9->tsc[CTMM][k];
-    otsc_k[cp9O_MI] = cm->cp9->tsc[CTMI][k];
-    otsc_k[cp9O_MD] = cm->cp9->tsc[CTMD][k];
-    otsc_k[cp9O_IM] = cm->cp9->tsc[CTIM][k];
-    otsc_k[cp9O_II] = cm->cp9->tsc[CTII][k];
-    otsc_k[cp9O_DM] = cm->cp9->tsc[CTDM][k];
-    otsc_k[cp9O_DD] = cm->cp9->tsc[CTDD][k];
-    otsc_k[cp9O_ID] = cm->cp9->tsc[CTID][k];
-    otsc_k[cp9O_DI] = cm->cp9->tsc[CTDI][k];
-    otsc_k[cp9O_BM] = cm->cp9->bsc[k];
-    otsc_k[cp9O_MEL]= cm->cp9->tsc[CTMEL][k];
-    otsc_k[cp9O_ME] = cm->cp9->esc[k];
-  }
-  int const *tsc = otsc;
-  /*****************************************************************
-   * gamma allocation and initialization.
+  /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits. We use it first for
-   * the Forward scan, and reuse it for the Backward scan.
-   *****************************************************************/ 
-  ESL_ALLOC(gamma, sizeof(float) * (L+2));
-  gamma[0]     = 0.; /* this is impossible, no hit can be rooted at ip=0, 
-		      * we require hits to have at least 1 emission,
-		      * plus, no positive scoring hit can have 0 emissions as 
-		      * all transition scores are negative */
-  gamma[L]   = 0.;
-  ESL_ALLOC(gback, sizeof(int)   * (L+2));
-  gback[L]   = -1;
-  ESL_ALLOC(savesc, sizeof(float) * (L+2));
+   * of multiple nonoverlapping hits. */
+  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, TRUE);
+  else                gamma = NULL;
 
   /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
    * stays M+1 columns */
@@ -507,7 +347,6 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0
   else             nrows = L; /* mx will be L+1 rows */
   if((status = GrowCP9Matrix(mx, errbuf, nrows, M, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
   ESL_DPRINTF1(("cp9_FastViterbiBackward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
-
 
   /* scA will hold P(seq up to j | Model) in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+2));
@@ -535,12 +374,12 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0
    * self loop b/c it's impossible to do that without emitting, and we've already seen our last res emitted. 
    * either way we don't have to modify it */
 
-  mmx[cur][cm->cp9->M]  = ESL_MAX(elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTMEL][cm->cp9->M],/* M_M<-EL_M<-E, with 0 self loops in EL_M */
-				  cm->cp9->esc[cm->cp9->M]);                              /* M_M<-E ... everything ends in E (the 0; 2^0=1.0) */
+  mmx[cur][cm->cp9->M]  = ESL_MAX(elmx[cur][cm->cp9->M] + TSC(cp9O_MEL,cm->cp9->M),/* M_M<-EL_M<-E, with 0 self loops in EL_M */
+				  TSC(cp9O_ME,cm->cp9->M));                              /* M_M<-E ... everything ends in E (the 0; 2^0=1.0) */
   mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M];  /* ... + emitted match symbol */
-  imx[cur][cm->cp9->M]  = cm->cp9->tsc[CTIM][cm->cp9->M];    /* I_M<-E ... everything ends in E (the 0; 2^0=1.0) */
+  imx[cur][cm->cp9->M]  = TSC(cp9O_IM,cm->cp9->M);    /* I_M<-E ... everything ends in E (the 0; 2^0=1.0) */
   imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M];  /* ... + emitted insert symbol */
-  dmx[cur][cm->cp9->M]  = cm->cp9->tsc[CTDM][cm->cp9->M];    /* D_M<-E */
+  dmx[cur][cm->cp9->M]  = TSC(cp9O_DM,cm->cp9->M);    /* D_M<-E */
 
   /*******************************************************************
    * No need to look at EL_k->M_M b/c elmx[cur] with cur == L means last emitted residue was L+1 
@@ -549,10 +388,10 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0
    *******************************************************************/
   for (k = cm->cp9->M-1; k >= 1; k--)
     {
-      mmx[cur][k]  = cm->cp9->esc[k];  /*M_k<- E */
-      mmx[cur][k]  = ESL_MAX(mmx[cur][k], dmx[cur][k+1] + cm->cp9->tsc[CTMD][k]);
+      mmx[cur][k]  = TSC(cp9O_ME,k);  /*M_k<- E */
+      mmx[cur][k]  = ESL_MAX(mmx[cur][k], dmx[cur][k+1] + TSC(cp9O_MD,k));
       if(cm->cp9->flags & CPLAN9_EL)
-	mmx[cur][k]  = ESL_MAX(mmx[cur][k], elmx[cur][k] + cm->cp9->tsc[CTMEL][k]);
+	mmx[cur][k]  = ESL_MAX(mmx[cur][k], elmx[cur][k] + TSC(cp9O_MEL,k));
       mmx[cur][k] += cm->cp9->msc[dsq[i]][k];
 
       /*******************************************************************
@@ -560,17 +399,17 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0
        * and this is impossible if we've come from M_M (only would be valid if we were coming from
        * E which is handled above with the EL_k->E code). 
        *******************************************************************/
-      imx[cur][k]  = dmx[cur][k+1] + cm->cp9->tsc[CTID][k];
+      imx[cur][k]  = dmx[cur][k+1] + TSC(cp9O_ID,k);
       imx[cur][k] += cm->cp9->isc[dsq[i]][k];
 
-      dmx[cur][k]  = dmx[cur][k+1] + cm->cp9->tsc[CTDD][k];
+      dmx[cur][k]  = dmx[cur][k+1] + TSC(cp9O_DD,k);
       /* elmx[cur][k] was set above, out of order */
     }
   
   /* remember M_0 is special, the B state, a non-emitter */
-  mmx[cur][0]  = dmx[cur][1] + cm->cp9->tsc[CTMD][0]; /* M_0(B)->D_1, no seq emitted, all deletes */
+  mmx[cur][0]  = dmx[cur][1] + TSC(cp9O_MD,0); /* M_0(B)->D_1, no seq emitted, all deletes */
   /* above line is diff from CPBackwardOLD() which has mmx[cur][0] = -INFTY; */
-  imx[cur][0]  = dmx[cur][1] + cm->cp9->tsc[CTID][0];
+  imx[cur][0]  = dmx[cur][1] + TSC(cp9O_ID,0);
   imx[cur][0] += cm->cp9->isc[dsq[i]][0];
 
   dmx[cur][0]   = -INFTY; /*D_0 doesn't exist*/
@@ -606,14 +445,14 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0
 	if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[cm->cp9->M]))
 	  elmx[cur][cm->cp9->M] = elmx[cur][cm->cp9->M] + cm->cp9->el_selfsc;
 	
-	mmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + cm->cp9->tsc[CTMI][cm->cp9->M];
+	mmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + TSC(cp9O_MI,cm->cp9->M);
 	mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M];
 	
 	if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[cm->cp9->M]))
 	  mmx[cur][cm->cp9->M] = ESL_MAX(mmx[cur][cm->cp9->M], 
-					 elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTMEL][cm->cp9->M]);
+					 elmx[cur][cm->cp9->M] + TSC(cp9O_MEL,cm->cp9->M));
 	
-	imx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + cm->cp9->tsc[CTII][cm->cp9->M];
+	imx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + TSC(cp9O_II,cm->cp9->M);
 	imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M];
       }
       else { /* ip == 0 */
@@ -621,7 +460,7 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0
 	imx[cur][cm->cp9->M] = -INFTY;  /* need seq to get here */
 	elmx[cur][cm->cp9->M]= -INFTY;  /* first emitted res can't be from an EL, need to see >= 1 matches */
       }
-      dmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + cm->cp9->tsc[CTDI][cm->cp9->M]; 
+      dmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + TSC(cp9O_DI,cm->cp9->M); 
 
       /*******************************************************************
        * 1b Handle EL, looking at EL_k->M_M for all valid k.
@@ -651,19 +490,19 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0
 	   * self loop b/c it's impossible to do that without emitting, and we've already seen our last res emitted,
 	   * either way we don't have to modify it */
 	  
-	  mmx[cur][cm->cp9->M] = ESL_MAX(mmx[cur][cm->cp9->M], elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTMEL][cm->cp9->M]);/* M_M<-EL_M<-E, with 0 selfs in EL_M */
-	  mmx[cur][cm->cp9->M] = ESL_MAX(mmx[cur][cm->cp9->M], cm->cp9->esc[cm->cp9->M]);                              /* M_M<-E ... */
+	  mmx[cur][cm->cp9->M] = ESL_MAX(mmx[cur][cm->cp9->M], elmx[cur][cm->cp9->M] + TSC(cp9O_MEL,cm->cp9->M));/* M_M<-EL_M<-E, with 0 selfs in EL_M */
+	  mmx[cur][cm->cp9->M] = ESL_MAX(mmx[cur][cm->cp9->M], TSC(cp9O_ME,cm->cp9->M));                              /* M_M<-E ... */
 	  ///mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M]; /* ... + emitted match symbol */
 	  /* DO NOT add contribution of emitting i from M, it's been added above */
 	  
 	  imx[cur][cm->cp9->M] = ESL_MAX(imx[cur][cm->cp9->M],
-					 (cm->cp9->tsc[CTIM][cm->cp9->M] +            /* I_M<-E + (only in scanner)     */
+					 (TSC(cp9O_IM,cm->cp9->M) +            /* I_M<-E + (only in scanner)     */
 					  0));                                        /* all parses end in E, 2^0 = 1.0;*/
 	  ///imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M]; /* ... + emitted insert symbol */  
 	  /* DO NOT add contribution of emitting i from M, it's been added above */
 	}
 	dmx[cur][cm->cp9->M] =  ESL_MAX(dmx[cur][cm->cp9->M], 
-					(cm->cp9->tsc[CTDM][cm->cp9->M] +            /* D_M<-E + (only in scanner)     */
+					(TSC(cp9O_DM,cm->cp9->M) +            /* D_M<-E + (only in scanner)     */
 					 0));                                        /* all parses end in E, 2^0 = 1.0;*/
       }
       /*printf("mmx[ip:%d][%d]: %d cur: %d\n", ip, cm->cp9->M, mmx[cur][cm->cp9->M], cur);
@@ -690,16 +529,16 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0
 	  if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[k]))
 	    elmx[cur][k] = ESL_MAX(elmx[cur][k], elmx[prv][k] + cm->cp9->el_selfsc);
 	  
-	  mmx[cur][k]  = ESL_MAX(ESL_MAX((mmx[prv][k+1] + cm->cp9->tsc[CTMM][k]),  
-					 (imx[prv][k]   + cm->cp9->tsc[CTMI][k])),
-				 (dmx[cur][k+1] + cm->cp9->tsc[CTMD][k]));
+	  mmx[cur][k]  = ESL_MAX(ESL_MAX((mmx[prv][k+1] + TSC(cp9O_MM,k)),  
+					 (imx[prv][k]   + TSC(cp9O_MI,k))),
+				 (dmx[cur][k+1] + TSC(cp9O_MD,k)));
 	  if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[k]))
-		mmx[cur][k] = ESL_MAX(mmx[cur][k], elmx[cur][k] + cm->cp9->tsc[CTMEL][k]); /* penalty for entering EL */
+		mmx[cur][k] = ESL_MAX(mmx[cur][k], elmx[cur][k] + TSC(cp9O_MEL,k)); /* penalty for entering EL */
 	      mmx[cur][k] += cm->cp9->msc[dsq[i]][k];
 
-	      imx[cur][k]  = ESL_MAX(ESL_MAX((mmx[prv][k+1] + cm->cp9->tsc[CTIM][k]),
-					     (imx[prv][k]   + cm->cp9->tsc[CTII][k])),
-				     (dmx[cur][k+1] + cm->cp9->tsc[CTID][k]));
+	      imx[cur][k]  = ESL_MAX(ESL_MAX((mmx[prv][k+1] + TSC(cp9O_IM,k)),
+					     (imx[prv][k]   + TSC(cp9O_II,k))),
+				     (dmx[cur][k+1] + TSC(cp9O_ID,k)));
 	      imx[cur][k] += cm->cp9->isc[dsq[i]][k];
 
 	}
@@ -711,22 +550,22 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0
 	if(do_scan && ip > 0) { /* add possibility of ending at this position from this state */
 	  mmx[cur][k] = 
 	    ESL_MAX(mmx[cur][k], 
-		    (cm->cp9->esc[k] +                    /* M_k<-E + (only in scanner)     */ 
+		    (TSC(cp9O_ME,k) +                    /* M_k<-E + (only in scanner)     */ 
 		     0));                                 /* all parses end in E, 2^0 = 1.0;*/
 	  /* DO NOT add contribution of emitting i from M, it's been added above */
 	  /* No EL contribution here b/c we'd be looking for M_k<-EL_k<-E, but EL_k<-E is impossible 
 	   * for k != cm->cp9->M; */
 	}	      
-	dmx[cur][k]  = ESL_MAX(ESL_MAX((mmx[prv][k+1] + cm->cp9->tsc[CTDM][k]),
-				       (imx[prv][k]   + cm->cp9->tsc[CTDI][k])),
-			       (dmx[cur][k+1] + cm->cp9->tsc[CTDD][k]));
+	dmx[cur][k]  = ESL_MAX(ESL_MAX((mmx[prv][k+1] + TSC(cp9O_DM,k)),
+				       (imx[prv][k]   + TSC(cp9O_DI,k))),
+			       (dmx[cur][k+1] + TSC(cp9O_DD,k)));
       } /* end of for (k = cm->cp9->M-1; k >= 1; k--) { */
       /* Case when k == 0 */
       /* imx[cur][0] is filled same as imx[cur][1..k] in the loop above */
       if(ip > 0) {
-	imx[cur][0] = ESL_MAX(ESL_MAX((mmx[prv][1] + cm->cp9->tsc[CTIM][0]),
-				      (imx[prv][0] + cm->cp9->tsc[CTII][0])),
-			      (dmx[cur][1] + cm->cp9->tsc[CTID][k]));
+	imx[cur][0] = ESL_MAX(ESL_MAX((mmx[prv][1] + TSC(cp9O_IM,0)),
+				      (imx[prv][0] + TSC(cp9O_II,0))),
+			      (dmx[cur][1] + TSC(cp9O_ID,k)));
 	imx[cur][0] += cm->cp9->isc[dsq[i]][k];
       }
       else /* ip == 0 */
@@ -736,131 +575,59 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0
 
       /*M_0 is the B state, it doesn't emit, and can be reached from any match via a begin transition */
       mmx[cur][0] = -INFTY;
-      for (k = cm->cp9->M; k >= 1; k--) mmx[cur][0] = ESL_MAX(mmx[cur][0], (mmx[prv][k] + cm->cp9->bsc[k]));
-      mmx[cur][0] = ESL_MAX(mmx[cur][0], (imx[prv][0] + cm->cp9->tsc[CTMI][0]));
-      mmx[cur][0] = ESL_MAX(mmx[cur][0], (dmx[cur][1] + cm->cp9->tsc[CTMD][0]));     /* B->D_1 */
+      for (k = cm->cp9->M; k >= 1; k--) mmx[cur][0] = ESL_MAX(mmx[cur][0], (mmx[prv][k] + TSC(cp9O_BM,k)));
+      mmx[cur][0] = ESL_MAX(mmx[cur][0], (imx[prv][0] + TSC(cp9O_MI,0)));
+      mmx[cur][0] = ESL_MAX(mmx[cur][0], (dmx[cur][1] + TSC(cp9O_MD,0)));     /* B->D_1 */
       /* No EL contribution here, can't go B->EL_* */
       
       /* determine isc, the int score of all possible parses starting at the current
        * position (i) of the target sequence. */
       scA[ip] = mmx[cur][0]; /* all parses must start in M_0, the B state */
       fsc = Scorify(scA[ip]);
-      /*printf("ip: %d i: %d fsc: %f i: %d\n", ip, i, fsc, sc[ip]);*/
-      if(fsc > best_sc) { best_sc = fsc; best_pos= i+1; } /* *off-by-one* (see *off-by-one* below) */
-      if(!(cm->search_opts & CM_SEARCH_HMMGREEDY)) /* resolve overlaps optimally */
-	{
-	  /* The little semi-Markov model that deals with multihit parsing:
-	   * *off-by-one*:
-	   * There's an off-by-one issue here: all Backward hits are rooted in 
-	   * M_O, the B (begin) state, which is a non-emitter.
-	   * let i = ip+i0-1 => ip = i-i0+1;
-	   * so sc[ip] = backward->mmx[ip][0] = summed log prob of all parses that end at j0, 
-	   * and start at position i+1 of the sequence (because i+1 is the last residue
-	   * whose emission has been accounted for). As a result, gamma indexing is off-by-one
-	   * with respect to sequence position, hence the i+1 or i-1 in the following
-	   * code blocks, each marked by "*off-by-one*" comment below. 
-	   * for example: let i0 = 2 gamma[ip=4], normally this means ip=4 corresponds to i=5 
-	   *              but due to this off-by-one sc[ip=4] corresponds to hits that start at i=6
-	   */
-	  gamma[ip]  = gamma[ip+1] + 0; /* extend without adding a new hit */
-	  /*printf("ip: %d | gamma[ip]: %f | gamma[ip+1]: %f\n", ip, gamma[ip], gamma[ip+1]);*/
-	  gback[ip]  = -1;
-	  savesc[ip] = IMPOSSIBLE;
-	  j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
-	  jp = j-i0+1;
-	  curr_sc = gamma[jp+1-1] + fsc;
-	  if (curr_sc > gamma[ip])
-	    {
-	      gamma[ip]  = curr_sc;
-	      /*printf("\ti: %d | gamma[i]: %f\n", i+1, gamma[ip]);*/
-	      gback[ip]  = j;
-	      savesc[ip] = fsc;
-	    }
-	  /*printf("i: %d ip: %d gamma[ip]: %f\n", i, ip, gamma[ip]);*/
-	}
-      else
-	{
-	  /* Resolving overlaps greedily (RSEARCH style),  
-	   * Return best hit for each j, IFF it's above threshold */
-	  if (fsc >= cutoff) 
-	    {
-	      if(results != NULL) 
-		{
-		  j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
-		  /*printf("BWD greedy REPORTING HIT: i: %d j: %d fsc: %f\n", i+1, j, fsc);*/ /* *off-by-one* */
-		  report_hit (i+1, j, 0, fsc, results); 
-		  /* 0 is for saver, which is irrelevant for HMM hits */
-		}
-	    }
-	}
-      
-      if (fsc > best_hmm_sc) { best_hmm_sc = fsc; best_hmm_pos= i; }
-    }
-  /* End of Backward recursion */
-  
-  if((!(cm->search_opts & CM_SEARCH_HMMGREEDY)) && /* resolve overlaps optimally */
-     (!doing_align || do_scan)) /* else we can save time by skipping traceback */
-    {
-      /*****************************************************************
-       * Traceback stage for Backward.
-       * Recover all hits: an (i,j,sc) triple for each one.
-       * Remember the off-by-one b/t seq index and gamma (see *off-by-one* above)
-       *****************************************************************/ 
-      i     = i0; 
-      while (i <= j0) 
-	{
-	  ip    = (i-1)-i0+1; /* *off-by-one*, i-1, ip corresponds to i+1 
-			       * (yes: i *-* 1 =>   ip corresponds to i *+* 1) */
-	  if (gback[ip] == -1) /* no hit */
-	    i++; 
-	  else                /* a hit, a palpable hit */
-	    {
-	      if(savesc[ip] > best_hmm_sc) 
-		{
-		  best_hmm_sc = savesc[ip];
-		  best_hmm_pos= i;
-		}
-	      if(savesc[ip] >= cutoff)
-		{
-		  if(results != NULL) /* report the hit */
-		    {
-		      /*printf("BWD optimal reporting hit i: %d j: %d sc: %f\n", i, gback[ip], savesc[ip]);*/
-		      report_hit(i, gback[ip], 0, savesc[ip], results); 
-		      /* 0 is for saver, which is irrelevant for HMM hits */
-		    }
-		}
-	      i = gback[ip]+1;
-	    }
-	}
-    }
-  free(gback);
-  free(gamma);
-  free(savesc);
-  free(otsc);
 
-  /*printf("returning from CP9Backward()\n");*/
-  if(ret_psc != NULL) *ret_psc = scA;
-  else free(scA);
-  /* determine score to return: (I know, too complex) */
-  if(doing_align)
-    {
-      return_sc = Scorify(mmx[cur][0]);
-      if(ret_maxres != NULL) *ret_maxres = i0;
-    }
-  else if(best_hmm_sc <= 0.) /* scanning and there were no hits found by the 
-			      * semi-HMM above 0.0 bits */
-    {
-      return_sc = best_sc;
-      if(ret_maxres != NULL) *ret_maxres = best_pos;
-    }
-  else
-    {
-      return_sc = best_hmm_sc;
-      if(ret_maxres != NULL) *ret_maxres = best_hmm_pos;
-    }
-  ESL_DPRINTF1(("cp9_FastViterbiBackward() return score: %10.4f\n", return_sc));
+      /* Update best_sc and gamma, the little semi-Markov model that deals with multihit parsing:
+       * There's a 'backwards-specific' off-by-one here, that only occurs b/c we're going backwards,
+       * this is probably implementation specific (meaning getting rid of it is possible, but
+       * I can't figure it out), but we deal with it (albeit confusingly) as follows:
+       * 
+       * '*off-by-one*' marked comments below refers to this issue:
+       * All Backward hits are rooted in M_O, the B (begin) state, which is a non-emitter.
+       * let i = ip+i0-1 => ip = i-i0+1;
+       * so sc[ip] = backward->mmx[ip][0] = summed log prob of all parses that end at j0, 
+       * and start at position i+1 of the sequence (because i+1 is the last residue
+       * whose emission has been accounted for). As a result, gamma indexing is off-by-one
+       * with respect to sequence position, hence the i+1 or i-1 in the following
+       * code blocks, each marked by "*off-by-one*" comment below. 
+       * for example: let i0 = 2 gamma[ip=4], normally this means ip=4 corresponds to i=5 
+       *              but due to this off-by-one sc[ip=4] corresponds to hits that start at i=6
+       */
 
-  if(ret_sc != NULL) *ret_sc = return_sc;
+      if(fsc > best_sc) { best_sc = fsc; best_pos= i+1; } /* *off-by-one* */
+
+      /* determine safe end point, min of i+1+W-1 and j0 */
+      j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
+      jp = j-i0+1;
+
+      if(results != NULL) UpdateGammaHitMxCP9Backward(gamma, ip, jp, fsc, results);
+    } /* end loop over end positions j */
+
+  /* If recovering hits in a non-greedy manner, do the traceback.
+   * If we were greedy, then we've reported hits in UpdateGammaHitMxCP9Forward() for each position j */
+  if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxBackward(gamma, results, i0, j0);
+
+  /* clean up and exit */
+  if(gamma != NULL) FreeGammaHitMx(gamma);
+
+  if(doing_align) { /* best_sc is the alignment score */
+    best_sc  = Scorify(scA[(j0-i0+1)]); /* L = j0-i0+1 */
+    best_pos = i0;
+  }
+  if(ret_sc != NULL)     *ret_sc     = best_sc;
+  if(ret_maxres != NULL) *ret_maxres = best_pos;
+  if(ret_psc != NULL)    *ret_psc    = scA;
+  else                    free(scA);
+  ESL_DPRINTF1(("cp9_FastViterbiBackward() return score: %10.4f\n", best_sc));
+
   return eslOK;
 
  ERROR:
@@ -932,8 +699,6 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0
  *                       FALSE if we're not, HMM must start emitting at i0, end emitting at j0
  *           doing_align  - TRUE if reason we've called this function is to help get posteriors
  *                          for CM alignment, in which case we can skip the traceback. 
- *           doing_rescan - TRUE if we've called this function recursively, and we don't
- *                          want to again
  *           be_efficient- TRUE to keep only 2 rows of DP matrix in memory, FALSE keep whole thing
  *           ret_psc   - RETURN: int log odds Forward score for each end point [0..(j0-i0+1)]
  *           ret_maxres- RETURN: start position that gives maximum score max argmax_i sc[i]
@@ -946,10 +711,10 @@ cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0
  */
 int
 cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-		int do_scan, int doing_align, int doing_rescan, int be_efficient, int **ret_psc, 
-		int *ret_maxres, float *ret_sc)
+		int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
+  GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
   int          i;           /* j-W: position in the subsequence                             */
@@ -964,72 +729,33 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
   int         *erow;        /* end score for each position [0..1]                           */
   int         *scA;         /* prob (seq from j0..jp | HMM) [0..jp..cm->cp9->M]             */
   float        fsc;         /* float log odds score                                         */
-  float        curr_sc;     /* temporary score used for filling in gamma                    */
-  float       *gamma;       /* SHMM DP matrix for optimum nonoverlap resolution [0..j0-i0+1]*/
-  int         *gback;       /* traceback pointers for SHMM                      [0..j0-i0+1]*/ 
-  float       *savesc;      /* saves score of hit added to best parse at j      [0..j0-i0+1]*/ 
-  float        best_hmm_sc; /* Best overall score from semi-HMM to return if do_scan        */
-  float        best_hmm_pos;/* residue giving best_hmm_sc                                   */
-  float        best_sc;     /* Best score overall, returned if 0 hits found by HMM & do_scan*/
-  float        best_pos;    /* residue giving best_sc                                       */
-  float        return_sc;   /* score to return, if (!do_scan) return overall Viterbi sc,    *
-			     * else return best_hmm_sc if # HMM hits>0, else return best_sc */
-  int          nrows = 2;   /* number of rows for the dp matrix */
-  int          c;           /* counter for EL states */
-  float        temp_sc;     /* temporary score                                              */
-  int          M;
-  int          accept;
-  /*debug_print_cp9_params(stdout, cm->cp9, TRUE);*/
-  /*printf("in cp9_FastForward() i0: %d j0: %d\n", i0, j0);  */
+  float        best_sc;     /* score of best hit overall                                    */
+  float        best_pos;    /* residue (j) giving best_sc, where best hit ends              */
+  int          nrows = 2;   /* number of rows for the dp matrix                             */
+  int          c;           /* counter for EL states                                        */
+  int          M;           /* cm->cp9->M, query length, number of consensus nodes of model */
+
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, cm->cp9 is NULL.\n");
-  if(doing_rescan && !do_scan)         ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, doing_rescan but not do_scan");
   if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, passing in results data structure, but not in scanning mode.\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, dsq is NULL.");
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx is NULL.\n");
   if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx->M != cm->clen.\n");
   if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, cm->clen != cm->cp9->M.\n");
-  if((cm->search_opts & CM_SEARCH_HMMGREEDY) && (cm->search_opts & CM_SEARCH_HMMRESCAN))
-    ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
-  best_hmm_sc = IMPOSSIBLE;
-  best_hmm_pos= -1;
   L = j0-i0+1;
   M = cm->cp9->M;
   if (W > L) W = L; 
 
-  /* Transition scores */
-  int *otsc;
-  ESL_ALLOC(otsc,   sizeof(int)   * (M+1)  * cp9O_NTRANS);
-  for (k = 0 ; k <= M; k++) {
-    int *otsc_k = otsc + k*cp9O_NTRANS;
-    
-    otsc_k[cp9O_MM] = cm->cp9->tsc[CTMM][k];
-    otsc_k[cp9O_MI] = cm->cp9->tsc[CTMI][k];
-    otsc_k[cp9O_MD] = cm->cp9->tsc[CTMD][k];
-    otsc_k[cp9O_IM] = cm->cp9->tsc[CTIM][k];
-    otsc_k[cp9O_II] = cm->cp9->tsc[CTII][k];
-    otsc_k[cp9O_DM] = cm->cp9->tsc[CTDM][k];
-    otsc_k[cp9O_DD] = cm->cp9->tsc[CTDD][k];
-    otsc_k[cp9O_ID] = cm->cp9->tsc[CTID][k];
-    otsc_k[cp9O_DI] = cm->cp9->tsc[CTDI][k];
-    otsc_k[cp9O_BM] = cm->cp9->bsc[k];
-    otsc_k[cp9O_MEL]= cm->cp9->tsc[CTMEL][k];
-    otsc_k[cp9O_ME] = cm->cp9->esc[k];
-  }
-  int const *tsc = otsc;
-  /*****************************************************************
-   * gamma allocation and initialization.
+  int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
+
+  /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits.
-   *****************************************************************/ 
-  ESL_ALLOC(gamma, sizeof(float) * (L+1));
-  gamma[0] = 0.;
-  ESL_ALLOC(gback, sizeof(int)   * (L+1));
-  gback[0] = -1;
-  ESL_ALLOC(savesc, sizeof(float) * (L+1));
+   * of multiple nonoverlapping hits. */
+  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
+  else                gamma = NULL;
 
   /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
    * stays M+1 columns */
@@ -1160,142 +886,32 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
       erow[cur] = endsc;
       scA[jp]   = endsc;
       fsc = Scorify(endsc);
-      if(fsc > best_sc)
-	{
-	  best_sc = fsc;
-	  best_pos= j;
-	}
-      if (fsc > best_hmm_sc)
-	{
-	  best_hmm_sc = fsc;
-	  best_hmm_pos= j;
-	}
-      if(!(cm->search_opts & CM_SEARCH_HMMGREEDY)) /* resolve overlaps optimally */
-	{
-	  /* The little semi-Markov model that deals with multihit parsing:
-	   */
-	  gamma[jp]  = gamma[jp-1] + 0; /* extend without adding a new hit */
-	  gback[jp]  = -1;
-	  savesc[jp] = IMPOSSIBLE;
-	  i = ((j-W+1)> i0) ? (j-W+1) : i0;
-	  ip = i-i0+1;
-	  curr_sc = gamma[ip-1] + fsc;
-	  if (curr_sc > gamma[jp])
-	    {
-	      gamma[jp]  = curr_sc;
-	      gback[jp]  = i;
-	      savesc[jp] = fsc;
-	    }
-	}
-      else
-	{
-	  /* Resolving overlaps greedily (RSEARCH style),  
-	   * Return best hit for each j, IFF it's above threshold */
-	  if (fsc >= cutoff) 
-	    {
-	      if(results != NULL) 
-		{
-		  i = ((j-W+1)> i0) ? (j-W+1) : i0;
-		  /*printf("VIT greedy REPORTING HIT: i: %d j: %d fsc: %f\n", i, j, fsc);*/
-		  report_hit (i, j, 0, fsc, results);
-		  /* 0 is for saver, which is irrelevant for HMM hits */
-		}
-	    }
-	}
+
+      if(fsc > best_sc) { best_sc = fsc; best_pos= j; }
+
+      /* determine safe start point, max of j-W+1 and i0 */
+      i = ((j-W+1)> i0) ? (j-W+1) : i0;
+      ip = i-i0+1;
+      if(results != NULL) UpdateGammaHitMxCP9Forward(gamma, ip, jp, fsc, results);
     } /* end loop over end positions j */
-      
-  if((!(cm->search_opts & CM_SEARCH_HMMGREEDY)) && /* resolve overlaps optimally */
-     (!doing_align || do_scan)) /* else we can save time by skipping traceback */
-    {
-      /*****************************************************************
-       * Traceback stage.
-       * Recover all hits: an (i,j,sc) triple for each one and report them.
-       *****************************************************************/ 
-      j           = j0;
-      while (j >= i0) {
-	jp = j-i0+1;
-	if (gback[jp] == -1) /* no hit */
-	  j--; 
-	else                /* a hit, a palpable hit */
-	  {
-	    if(savesc[jp] > best_hmm_sc) 
-	      {
-		best_hmm_sc = savesc[jp];
-		best_hmm_pos= j;
-	      }
-	    if(savesc[jp] >= cutoff)
-	      {
-		accept = TRUE;
-		/* Potentially rescan just the subseq that is the hit we're about to report.
-		 * Implemented to deal with fact that --enfseq option was enforcing the subseq
-		 * to have hit pass filter b/c this Forward scanning function is 'infinite' length
-		 * (Weinberg). Sometimes the subseq we're about to report has a really
-		 * crappy score, even though the cumulative Forward score (starting at i0) is good. */
-		if(do_scan && cm->search_opts & CM_SEARCH_HMMRESCAN && doing_rescan == FALSE)
-		  {
-		    /*printf("rechecking hit from %d to %d\n", gback[jp], j);*/
-		    temp_sc = CP9Forward(cm, dsq, gback[jp], j, cm->W, cutoff, 
-					 NULL,  /* don't care about scores of each pos */
-					 NULL,  /* don't care about best scoring position */
-					 NULL,  /* don't report hits to results data structure */
-					 TRUE,  /* we're scanning */
-					 FALSE, /* we're not ultimately aligning */
-					 TRUE,  /* set the doing_rescan arg to TRUE, 
-						   so we don't potentially infinitely recurse */
-					 TRUE,  /* be memory efficient */
-					 NULL); /* don't want the DP matrix back */
-		    /*printf("new score: %f old score %f\n", temp_sc, savesc[jp]);*/
-		    if(temp_sc >= cutoff) 
-		      { 
-			accept = TRUE; 
-			/*printf("rechecked hit from %d to %d\n", gback[jp], j);
-			  printf("new score: %f old score %f\n", temp_sc, savesc[jp]);*/
-		      }
-		    else accept = FALSE;
-		    savesc[jp] = temp_sc;
-		  }
-		if(accept)
-		  {
-		    if(results != NULL) /* report the hit */
-		      {
-			/*printf("FWD reporting hit: i: %d j: %d sc: %f\n", gback[jp], j, savesc[jp]);*/
-			report_hit(gback[jp], j, 0, savesc[jp], results); 
-			/* 0 is for saver, which is irrelevant for HMM hits */
-		      }
-		  }
-	      }
-	    j = gback[jp]-1;
-	  }
-      }
-    }
+  
+  /* If recovering hits in a non-greedy manner, do the traceback.
+   * If we were greedy, then we've reported hits already in UpdateGammaHitMxCP9Forward() for each position j */
+  if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxForward(gamma, results, i0, j0);
+
   /* clean up and exit */
-  free(gback);
-  free(gamma);
-  free(savesc);
-  free(otsc);
+  if(gamma != NULL) FreeGammaHitMx(gamma);
 
-  /* determine score to return: (I know, too complex) */
-  if(doing_align)
-    {
-      return_sc = Scorify(scA[(j0-i0+1)]); /* L = j0-i0+1 */
-      if(ret_maxres != NULL) *ret_maxres = i0;
-    }
-  else if(best_hmm_sc <= 0.) /* scanning and there were no hits found by the 
-			      * semi-HMM above 0.0 bits */
-    {
-      return_sc = best_sc;
-      if(ret_maxres != NULL) *ret_maxres = best_pos;
-    }
-  else
-    {
-      return_sc = best_hmm_sc;
-      if(ret_maxres != NULL) *ret_maxres = best_hmm_pos;
-    }
-  if(ret_psc != NULL) *ret_psc = scA;
-  else free(scA);
-  ESL_DPRINTF1(("cp9_FastForward() return score: %10.4f\n", return_sc));
+  if(doing_align) { /* best_sc is the alignment score */
+    best_sc  = Scorify(scA[(j0-i0+1)]); /* L = j0-i0+1 */
+    best_pos = i0;
+  }
+  if(ret_sc != NULL)     *ret_sc     = best_sc;
+  if(ret_maxres != NULL) *ret_maxres = best_pos;
+  if(ret_psc != NULL)    *ret_psc    = scA;
+  else                    free(scA);
+  ESL_DPRINTF1(("cp9_FastForward() return score: %10.4f\n", best_sc));
 
-  if(ret_sc != NULL) *ret_sc = return_sc;
   return eslOK;
 
  ERROR:
@@ -1367,8 +983,6 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
  *                       FALSE if we're not, HMM must start emitting at i0, end emitting at j0
  *           doing_align  - TRUE if reason we've called this function is to help get posteriors
  *                          for CM alignment, in which case we can skip the traceback. 
- *           doing_rescan - TRUE if we've called this function recursively, and we don't
- *                          want to again
  *           be_efficient- TRUE to keep only 2 rows of DP matrix in memory, FALSE keep whole thing
  *           be_safe     - TRUE to never use ILogsumNI(sc1,sc2) (which assumes sc1, sc2 != -INFTY)
  *           ret_psc   - RETURN: int log odds Forward score for each end point [0..(j0-i0+1)]
@@ -1382,10 +996,10 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
  */
 int
 Xcp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-		 int do_scan, int doing_align, int doing_rescan, int be_efficient, int be_safe, 
-		 int **ret_psc, int *ret_maxres, float *ret_sc)
+		 int do_scan, int doing_align, int be_efficient, int be_safe, int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
+  GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
   int          i;           /* j-W: position in the subsequence                             */
@@ -1400,29 +1014,16 @@ Xcp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j
   int         *erow;        /* end score for each position [0..1]                           */
   int         *scA;         /* prob (seq from j0..jp | HMM) [0..jp..cm->cp9->M]             */
   float        fsc;         /* float log odds score                                         */
-  float        curr_sc;     /* temporary score used for filling in gamma                    */
-  float       *gamma;       /* SHMM DP matrix for optimum nonoverlap resolution [0..j0-i0+1]*/
-  int         *gback;       /* traceback pointers for SHMM                      [0..j0-i0+1]*/ 
-  float       *savesc;      /* saves score of hit added to best parse at j      [0..j0-i0+1]*/ 
-  float        best_hmm_sc; /* Best overall score from semi-HMM to return if do_scan        */
-  float        best_hmm_pos;/* residue giving best_hmm_sc                                   */
-  float        best_sc;     /* Best score overall, returned if 0 hits found by HMM & do_scan*/
-  float        best_pos;    /* residue giving best_sc                                       */
-  float        return_sc;   /* score to return, if (!do_scan) return overall Viterbi sc,    *
-			     * else return best_hmm_sc if # HMM hits>0, else return best_sc */
-  int          accept;      /* flag used if cm->search_opts & CM_SEARCH_HMMRESCAN           */
-  float        temp_sc;     /* temporary score                                              */
+  float        best_sc;     /* score of best hit overall                                    */
+  float        best_pos;    /* residue (j) giving best_sc, where best hit ends              */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
   int          c;           /* counter for EL states                                        */
   int          M;           /* cm->cp9->M, number of nodes in the model                     */
   int          locality_mode; /* 1 of 4 locality modes, we can optimize (a bit) specifically*
 			       * for each of the 4 modes                                    */
-  /*debug_print_cp9_params(stdout, cm->cp9, TRUE);*/
-
 
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, cm->cp9 is NULL.\n");
-  if(doing_rescan && !do_scan)         ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, doing_rescan but not do_scan");
   if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, passing in results data structure, but not in scanning mode.\n");
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, mx is NULL.\n");
   if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, mx->M != cm->clen.\n");
@@ -1430,52 +1031,27 @@ Xcp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, dsq is NULL.");
   if((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) && (! (cm->cp9->flags & CPLAN9_LOCAL_BEGIN))) ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, CPLAN9_LOCAL_BEGIN flag up, but CPLAN9_LOCAL_END flag down, this shouldn't happen.");
   if((! (cm->cp9->flags & CPLAN9_LOCAL_BEGIN)) && (cm->cp9->flags & CPLAN9_LOCAL_BEGIN)) ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, CPLAN9_LOCAL_BEGIN flag down, but CPLAN9_LOCAL_END flag up, this shouldn't happen.");
-  if((cm->search_opts & CM_SEARCH_HMMGREEDY) && (cm->search_opts & CM_SEARCH_HMMRESCAN)) ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastForward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");    
+
+  int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
+
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
-  best_hmm_sc = IMPOSSIBLE;
-  best_hmm_pos= -1;
   L = j0-i0+1;
   M = cm->cp9->M;
   if (W > L) W = L; 
 
-  /* Transition scores, we get a little speed win by reordering them here */
-  int *otsc;
-  ESL_ALLOC(otsc,      sizeof(int)   * (M+1)  * cp9O_NTRANS);
-  for (k = 0 ; k <= M; k++) {
-    int *otsc_k = otsc + k*cp9O_NTRANS;
-
-    otsc_k[cp9O_MM] = cm->cp9->tsc[CTMM][k];
-    otsc_k[cp9O_MI] = cm->cp9->tsc[CTMI][k];
-    otsc_k[cp9O_MD] = cm->cp9->tsc[CTMD][k];
-    otsc_k[cp9O_IM] = cm->cp9->tsc[CTIM][k];
-    otsc_k[cp9O_II] = cm->cp9->tsc[CTII][k];
-    otsc_k[cp9O_DM] = cm->cp9->tsc[CTDM][k];
-    otsc_k[cp9O_DD] = cm->cp9->tsc[CTDD][k];
-    otsc_k[cp9O_ID] = cm->cp9->tsc[CTID][k];
-    otsc_k[cp9O_DI] = cm->cp9->tsc[CTDI][k];
-    otsc_k[cp9O_BM] = cm->cp9->bsc[k];
-    otsc_k[cp9O_MEL]= cm->cp9->tsc[CTMEL][k];
-    otsc_k[cp9O_ME] = cm->cp9->esc[k];
-  }
-  int const *tsc = otsc;
-
+  /* TODO: move this out of this function */
   /* determine and set locality mode, and check that transition guarantees hold */
   if((status = cp9_GetLocalityMode(cm->cp9, errbuf, &locality_mode)) != eslOK) return status;
   /* printf("locality mode: %d\n", locality_mode); */
   if((status = cp9_CheckTransitionGuarantees(cm->cp9, errbuf)) == eslEINCOMPAT) return status;
   else if (status != eslOK) be_safe = TRUE;
 
-  /*****************************************************************
-   * gamma allocation and initialization.
+  /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits.
-   *****************************************************************/ 
-  ESL_ALLOC(gamma, sizeof(float) * (L+1));
-  gamma[0] = 0.;
-  ESL_ALLOC(gback, sizeof(int)   * (L+1));
-  gback[0] = -1;
-  ESL_ALLOC(savesc, sizeof(float) * (L+1));
+   * of multiple nonoverlapping hits. */
+  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
+  else                gamma = NULL;
 
   /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
    * stays M+1 columns */
@@ -1510,11 +1086,7 @@ Xcp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j
   scA[0]   = erow[0];
   fsc      = Scorify(scA[0]);
   /*printf("jp: %d j: %d fsc: %f isc: %d\n", jp, j, fsc, isc[jp]);*/
-  if(fsc > best_sc) 
-    {
-      best_sc = fsc;
-      best_pos= i0-1;
-    }
+  if(fsc > best_sc) { best_sc = fsc; best_pos= i0-1; }
   /*printf("jp: %d j: %d fsc: %f sc: %d\n", 0, i0-1, Scorify(sc[0]), sc[0]);*/
 
   /* int ctr = 0; */
@@ -1583,41 +1155,14 @@ Xcp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j
   erow[cur] = endsc;
   scA[jp]   = endsc;
   fsc = Scorify(endsc);
-  /*printf("jp: %d j: %d fsc: %f sc: %d\n", jp, j, fsc, scA[jp]);*/
-  if (fsc > best_sc)      { best_sc     = fsc; best_pos    = j; }
-  if (fsc > best_hmm_sc)  { best_hmm_sc = fsc; best_hmm_pos= j; }
-  if(!(cm->search_opts & CM_SEARCH_HMMGREEDY)) /* resolve overlaps optimally */
-    {
-      /* The little semi-Markov model that deals with multihit parsing:
-       */
-      gamma[jp]  = gamma[jp-1] + 0; /* extend without adding a new hit */
-      gback[jp]  = -1;
-      savesc[jp] = IMPOSSIBLE;
-      i = ((j-W+1)> i0) ? (j-W+1) : i0;
-      ip = i-i0+1;
-      curr_sc = gamma[ip-1] + fsc;
-      if (curr_sc > gamma[jp])
-	{
-	  gamma[jp]  = curr_sc;
-	  gback[jp]  = i;
-	  savesc[jp] = fsc;
-	}
-    }
-  else
-    {
-      /* Resolving overlaps greedily (RSEARCH style),  
-       * Return best hit for each j, IFF it's above threshold */
-      if (fsc >= cutoff) 
-	{
-	  if(results != NULL) 
-	    {
-	      i = ((j-W+1)> i0) ? (j-W+1) : i0;
-	      /*printf("VIT greedy REPORTING HIT: i: %d j: %d fsc: %f\n", i, j, fsc);*/
-	      report_hit (i, j, 0, fsc, results);
-	      /* 0 is for saver, which is irrelevant for HMM hits */
-	    }
-	}
-    }
+
+  if(fsc > best_sc) { best_sc = fsc; best_pos= j; }
+  
+  /* determine safe start point, max of j-W+1 and i0 */
+  i = ((j-W+1)> i0) ? (j-W+1) : i0;
+  ip = i-i0+1;
+  if(results != NULL) UpdateGammaHitMxCP9Forward(gamma, ip, jp, fsc, results);
+
   /* end of special case position j == i0 */
 
   /*****************************************************************
@@ -2111,148 +1656,39 @@ Xcp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j
       erow[cur] = endsc;
       scA[jp]   = endsc;
       fsc = Scorify(endsc);
+
       /*printf("jp: %d j: %d fsc: %f sc: %d\n", jp, j, fsc, scA[jp]);*/
-      if(fsc > best_sc)
-	{
-	  best_sc = fsc;
-	  best_pos= j;
-	}
-      if (fsc > best_hmm_sc)
-	{
-	  best_hmm_sc = fsc;
-	  best_hmm_pos= j;
-	}
-      if(!(cm->search_opts & CM_SEARCH_HMMGREEDY)) /* resolve overlaps optimally */
-	{
-	  /* The little semi-Markov model that deals with multihit parsing:
-	   */
-	  gamma[jp]  = gamma[jp-1] + 0; /* extend without adding a new hit */
-	  gback[jp]  = -1;
-	  savesc[jp] = IMPOSSIBLE;
-	  i = ((j-W+1)> i0) ? (j-W+1) : i0;
-	  ip = i-i0+1;
-	  curr_sc = gamma[ip-1] + fsc;
-	  if (curr_sc > gamma[jp])
-	    {
-	      gamma[jp]  = curr_sc;
-	      gback[jp]  = i;
-	      savesc[jp] = fsc;
-	    }
-	}
-      else
-	{
-	  /* Resolving overlaps greedily (RSEARCH style),  
-	   * Return best hit for each j, IFF it's above threshold */
-	  if (fsc >= cutoff) 
-	    {
-	      if(results != NULL) 
-		{
-		  i = ((j-W+1)> i0) ? (j-W+1) : i0;
-		  /*printf("VIT greedy REPORTING HIT: i: %d j: %d fsc: %f\n", i, j, fsc);*/
-		  report_hit (i, j, 0, fsc, results);
-		  /* 0 is for saver, which is irrelevant for HMM hits */
-		}
-	    }
-	}
+      if(fsc > best_sc) { best_sc = fsc; best_pos= j; }
+  
+      /* determine safe start point, max of j-W+1 and i0 */
+      i = ((j-W+1)> i0) ? (j-W+1) : i0;
+      ip = i-i0+1;
+      if(results != NULL) UpdateGammaHitMxCP9Forward(gamma, ip, jp, fsc, results);
     } /* end loop over end positions j */
       
-  if((!(cm->search_opts & CM_SEARCH_HMMGREEDY)) && /* resolve overlaps optimally */
-     (!doing_align || do_scan)) /* else we can save time by skipping traceback */
-    {
-      /*****************************************************************
-       * Traceback stage.
-       * Recover all hits: an (i,j,sc) triple for each one and report them.
-       *****************************************************************/ 
-      j           = j0;
-      while (j >= i0) {
-	jp = j-i0+1;
-	if (gback[jp] == -1) /* no hit */
-	  j--; 
-	else                /* a hit, a palpable hit */
-	  {
-	    if(savesc[jp] > best_hmm_sc) 
-	      {
-		best_hmm_sc = savesc[jp];
-		best_hmm_pos= j;
-	      }
-	    if(savesc[jp] >= cutoff)
-	      {
-		accept = TRUE;
-		/* Potentially rescan just the subseq that is the hit we're about to report.
-		 * Implemented to deal with fact that --enfseq option was enforcing the subseq
-		 * to have hit pass filter b/c this Forward scanning function is 'infinite' length
-		 * (Weinberg). Sometimes the subseq we're about to report has a really
-		 * crappy score, even though the cumulative Forward score (starting at i0) is good. */
-		if(do_scan && cm->search_opts & CM_SEARCH_HMMRESCAN && doing_rescan == FALSE)
-		  {
-		    /*printf("rechecking hit from %d to %d\n", gback[jp], j);*/
-		    temp_sc = CP9Forward(cm, dsq, gback[jp], j, cm->W, cutoff, 
-					 NULL,  /* don't care about scores of each pos */
-					 NULL,  /* don't care about best scoring position */
-					 NULL,  /* don't report hits to results data structure */
-					 TRUE,  /* we're scanning */
-					 FALSE, /* we're not ultimately aligning */
-					 TRUE,  /* set the doing_rescan arg to TRUE, 
-						   so we don't potentially infinitely recurse */
-					 TRUE,  /* be memory efficient */
-					 NULL); /* don't want the DP matrix back */
-		    /*printf("new score: %f old score %f\n", temp_sc, savesc[jp]);*/
-		    if(temp_sc >= cutoff) 
-		      { 
-			accept = TRUE; 
-			/*printf("rechecked hit from %d to %d\n", gback[jp], j);
-			  printf("new score: %f old score %f\n", temp_sc, savesc[jp]);*/
-		      }
-		    else accept = FALSE;
-		    savesc[jp] = temp_sc;
-		  }
-		if(accept)
-		  {
-		    if(results != NULL) /* report the hit */
-		      {
-			/*printf("FWD reporting hit: i: %d j: %d sc: %f\n", gback[jp], j, savesc[jp]);*/
-			report_hit(gback[jp], j, 0, savesc[jp], results); 
-			/* 0 is for saver, which is irrelevant for HMM hits */
-		      }
-		  }
-	      }
-	    j = gback[jp]-1;
-	  }
-      }
-    }
+  /* If recovering hits in a non-greedy manner, do the traceback.
+   * If we were greedy, then we've reported hits already in UpdateGammaHitMxCP9Forward() for each position j */
+  if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxForward(gamma, results, i0, j0);
+
   /* clean up and exit */
-  free(gback);
-  free(gamma);
-  free(savesc);
-  free(otsc);
+  if(gamma != NULL) FreeGammaHitMx(gamma);
 
-  /* determine score to return: (I know, too complex) */
-  if(doing_align)
-    {
-      return_sc = Scorify(scA[(j0-i0+1)]); /* L = j0-i0+1 */
-      if(ret_maxres != NULL) *ret_maxres = i0;
-    }
-  else if(best_hmm_sc <= 0.) /* scanning and there were no hits found by the 
-			      * semi-HMM above 0.0 bits */
-    {
-      return_sc = best_sc;
-      if(ret_maxres != NULL) *ret_maxres = best_pos;
-    }
-  else
-    {
-      return_sc = best_hmm_sc;
-      if(ret_maxres != NULL) *ret_maxres = best_hmm_pos;
-    }
-  if(ret_psc != NULL) *ret_psc = scA;
-  else free(scA);
-  ESL_DPRINTF1(("Xcp9_FastForward() return score: %10.4f\n", return_sc));
+  if(doing_align) { /* best_sc is the alignment score */
+    best_sc  = Scorify(scA[(j0-i0+1)]); /* L = j0-i0+1 */
+    best_pos = i0;
+  }
+  if(ret_sc != NULL)     *ret_sc     = best_sc;
+  if(ret_maxres != NULL) *ret_maxres = best_pos;
+  if(ret_psc != NULL)    *ret_psc    = scA;
+  else                    free(scA);
+  ESL_DPRINTF1(("Xcp9_FastForward() return score: %10.4f\n", best_sc));
 
-  if(ret_sc != NULL) *ret_sc = return_sc;
   return eslOK;
 
  ERROR:
   ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.");
 }
+
 
 /*
  * Function: Xcp9_FastBackward()
@@ -2358,10 +1794,8 @@ Xcp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j
  *                       FALSE if we're not, HMM must start emitting at i0, end emitting at j0
  *           doing_align  - TRUE if reason we've called this function is to help get posteriors
  *                          for CM alignment, in which case we can skip the traceback. 
- *           doing_rescan - TRUE if we've called this function recursively, and we don't
- *                          want to again
  *           be_efficient- TRUE to keep only 2 rows of DP matrix in memory, FALSE keep whole thing
- *           ret_psc   - RETURN: int log odds Backward score for each end point [0..(j0-i0+1)]
+ *           ret_psc   - RETURN: int log odds Backward score for each start point [0..(j0-i0+1)]
  *           ret_maxres- RETURN: start position that gives maximum score max argmax_i sc[i]
  *           ret_sc    - RETURN: see below
  *
@@ -2373,10 +1807,10 @@ Xcp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j
  */
 int
 Xcp9_FastBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-		  int do_scan, int doing_align, int doing_rescan, int be_efficient, int **ret_psc, 
-		  int *ret_maxres, float *ret_sc)
+		  int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
+  GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
   int          j;           /*     actual   position in the subsequence                     */
   int          jp;          /* j': relative position in the subsequence                     */
   int          i;           /*     j-W: position in the subsequence                         */
@@ -2389,59 +1823,35 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int 
   int        **dmx;         /* DP matrix for delete state scores [0..1][0..cm->cp9->M]      */
   int        **elmx;        /* DP matrix for EL state scores [0..1][0..cm->cp9->M]          */
   int         *erow;        /* end score for each position [0..1]                           */
-  int         *sc;          /* prob (seq from j0..jp | HMM) [0..jp..cm->cp9->M]             */
+  int         *scA;         /* prob (seq from j0..jp | HMM) [0..jp..cm->cp9->M]             */
   float        fsc;         /* float log odds score                                         */
-  float        curr_sc;     /* temporary score used for filling in gamma                    */
-  float       *gamma;       /* SHMM DP matrix for optimum nonoverlap resolution [0..j0-i0+1]*/
-  int         *gback;       /* traceback pointers for SHMM                      [0..j0-i0+1]*/ 
-  float       *savesc;      /* saves score of hit added to best parse at j      [0..j0-i0+1]*/ 
-  float        best_hmm_sc; /* Best overall score from semi-HMM to return if do_scan        */
-  float        best_hmm_pos;/* residue giving best_hmm_sc                                   */
-  float        best_sc;     /* Best score overall, returned if 0 hits found by HMM & do_scan*/
-  float        best_pos;    /* residue giving best_sc                                       */
-  float        return_sc;   /* score to return, if (!do_scan) return overall Backward sc,   *
-			     * else return best_hmm_sc if # HMM hits>0, else return best_sc */
-  int          accept;      /* Flag used if cm->search_opts & CM_SEARCH_HMMRESCAN           */
-  float        temp_sc;     /* temporary score                                              */
+  float        best_sc;     /* score of best hit overall                                    */
+  float        best_pos;    /* residue (i) giving best_sc, where best hit starts            */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
   int          c;           /* counter for EL states */
   int          M;           /* cm->cp9->M */
 
-  /* printf("in Xcp9_FastBackward() i0: %d j0: %d do_scan: %d \n", i0, j0, do_scan); */
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastBackward, cm->cp9 is NULL.\n");
-  if(doing_rescan && !do_scan)         ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastBackward, doing_rescan but not do_scan");
   if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastBackward, passing in results data structure, but not in scanning mode.a\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "Xcp9_FastBackward, dsq is NULL.");
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx is NULL.\n");
   if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx->M != cm->clen.\n");
   if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, cm->clen != cm->cp9->M.\n");
-  if((cm->search_opts & CM_SEARCH_HMMGREEDY) && (cm->search_opts & CM_SEARCH_HMMRESCAN))
-    ESL_FAIL(eslEINCOMPAT, errbuf, "ERROR in Xcp9_FastBackward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
     
+  int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
+
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
-  best_hmm_sc = IMPOSSIBLE;
-  best_hmm_pos= -1;
   L = j0-i0+1;
   M = cm->cp9->M;
   if (W > L) W = L; 
 
-  /*****************************************************************
-   * gamma allocation and initialization.
+  /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
-   * of multiple nonoverlapping hits. We use it first for
-   * the Forward scan, and reuse it for the Backward scan.
-   *****************************************************************/ 
-  ESL_ALLOC(gamma, sizeof(float) * (L+2));
-  gamma[0]     = 0.; /* this is impossible, no hit can be rooted at ip=0, 
-		      * we require hits to have at least 1 emission,
-		      * plus, no positive scoring hit can have 0 emissions as 
-		      * all transition scores are negative */
-  gamma[L]   = 0.;
-  ESL_ALLOC(gback, sizeof(int)   * (L+2));
-  gback[L]   = -1;
-  ESL_ALLOC(savesc, sizeof(float) * (L+2));
+   * of multiple nonoverlapping hits. */
+  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, TRUE);
+  else                gamma = NULL;
 
   /* Grow DP matrix if nec, to either 2 rows or L+1 rows (depending on be_efficient), 
    * stays M+1 columns */
@@ -2450,8 +1860,8 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int 
   if((status = GrowCP9Matrix(mx, errbuf, nrows, M, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
   ESL_DPRINTF1(("Xcp9_FastBackward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
 
-  /* sc will hold P(seq from i..j0 | Model) for each i in int log odds form */
-  ESL_ALLOC(sc, sizeof(int) * (j0-i0+3));
+  /* scA will hold P(seq from i..j0 | Model) for each i in int log odds form */
+  ESL_ALLOC(scA, sizeof(int) * (j0-i0+3));
 
   /* Initialization of the L (i = j0, cur = (j0-i) = (j0-j0) %2 = 0) row. */
   if(be_efficient) cur = 0;
@@ -2479,12 +1889,12 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int 
    * either way we don't have to modify it */
 
   mmx[cur][cm->cp9->M]  = 0. + 
-    ILogsum(elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTMEL][cm->cp9->M],/* M_M<-EL_M<-E, with 0 self loops in EL_M */
-	    cm->cp9->esc[cm->cp9->M]);                             /* M_M<-E ... everything ends in E (the 0; 2^0=1.0) */
+    ILogsum(elmx[cur][cm->cp9->M] + TSC(cp9O_MEL,cm->cp9->M),/* M_M<-EL_M<-E, with 0 self loops in EL_M */
+	    TSC(cp9O_ME,cm->cp9->M));                             /* M_M<-E ... everything ends in E (the 0; 2^0=1.0) */
   mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M];  /* ... + emitted match symbol */
-  imx[cur][cm->cp9->M]  = 0. + cm->cp9->tsc[CTIM][cm->cp9->M];     /* I_M<-E ... everything ends in E (the 0; 2^0=1.0) */
+  imx[cur][cm->cp9->M]  = 0. + TSC(cp9O_IM,cm->cp9->M);     /* I_M<-E ... everything ends in E (the 0; 2^0=1.0) */
   imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M];  /* ... + emitted insert symbol */
-  dmx[cur][cm->cp9->M]  = cm->cp9->tsc[CTDM][cm->cp9->M];          /* D_M<-E */
+  dmx[cur][cm->cp9->M]  = TSC(cp9O_DM,cm->cp9->M);          /* D_M<-E */
 
   /*******************************************************************
    * No need to look at EL_k->M_M b/c elmx[cur] with cur == L means last emitted residue was L+1 
@@ -2494,10 +1904,10 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int 
 
   for (k = cm->cp9->M-1; k >= 1; k--)
     {
-      mmx[cur][k]  = 0 + cm->cp9->esc[k];  /*M_k<- E */
-      mmx[cur][k]  = ILogsum(mmx[cur][k], dmx[cur][k+1] + cm->cp9->tsc[CTMD][k]);
+      mmx[cur][k]  = 0 + TSC(cp9O_ME,k);  /*M_k<- E */
+      mmx[cur][k]  = ILogsum(mmx[cur][k], dmx[cur][k+1] + TSC(cp9O_MD,k));
       if(cm->cp9->flags & CPLAN9_EL)
-	mmx[cur][k]  = ILogsum(mmx[cur][k], elmx[cur][k] + cm->cp9->tsc[CTMEL][k]);
+	mmx[cur][k]  = ILogsum(mmx[cur][k], elmx[cur][k] + TSC(cp9O_MEL,k));
       mmx[cur][k] += cm->cp9->msc[dsq[i]][k];
 
       /*******************************************************************
@@ -2505,34 +1915,25 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int 
        * and this is impossible if we've come from M_M (only would be valid if we were coming from
        * E which is handled above with the EL_k->E code). 
        *******************************************************************/
-      imx[cur][k]  = dmx[cur][k+1] + cm->cp9->tsc[CTID][k];
+      imx[cur][k]  = dmx[cur][k+1] + TSC(cp9O_ID,k);
       imx[cur][k] += cm->cp9->isc[dsq[i]][k];
 
-      dmx[cur][k]  = dmx[cur][k+1] + cm->cp9->tsc[CTDD][k];
+      dmx[cur][k]  = dmx[cur][k+1] + TSC(cp9O_DD,k);
       /* elmx[cur][k] was set above, out of order */
     }
   
   /* remember M_0 is special, the B state, a non-emitter */
-  mmx[cur][0]  = dmx[cur][1] + cm->cp9->tsc[CTMD][0]; /* M_0(B)->D_1, no seq emitted, all deletes */
+  mmx[cur][0]  = dmx[cur][1] + TSC(cp9O_MD,0); /* M_0(B)->D_1, no seq emitted, all deletes */
   /* above line is diff from CPBackwardOLD() which has mmx[cur][0] = -INFTY; */
-  imx[cur][0]  = dmx[cur][1] + cm->cp9->tsc[CTID][0];
+  imx[cur][0]  = dmx[cur][1] + TSC(cp9O_ID,0);
   imx[cur][0] += cm->cp9->isc[dsq[i]][0];
 
   dmx[cur][0]   = -INFTY; /*D_0 doesn't exist*/
   elmx[cur][0]  = -INFTY; /*EL_0 doesn't exist*/
 
-  sc[ip] = mmx[cur][0]; /* all parses must start in M_0, the B state */
-  fsc = Scorify(sc[ip]);
-  /*printf("ip: %d i: %d fsc: %f i: %d\n", ip, i, fsc, sc[ip]);*/
-  /* we can't have a hit starting here, b/c it would correspond to all deletes,
-   * no seq emitted, so we skip the check for if(fsc > best_sc) */
+  scA[ip] = mmx[cur][0]; /* all parses must start in M_0, the B state */
+  fsc = Scorify(scA[ip]);
 
-  /*printf("sc[ip:%d]: %d\n", ip, sc[ip]);*/
-
-  /*printf("mmx[ip:%d][%d]: %d cur: %d\n", L+1, 0, mmx[cur][0], cur);
-    printf("imx[ip:%d][%d]: %d cur: %d\n", L+1, 0, imx[cur][0], cur);
-    printf("dmx[ip:%d][%d]: %d cur: %d\n", L+1, 0, dmx[cur][0], cur);*/
-  
   /*****************************************************************
    * The main loop: scan the sequence from position j0-1 to i0.
    *****************************************************************/
@@ -2552,17 +1953,17 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int 
       if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[cm->cp9->M]))
 	    elmx[cur][cm->cp9->M] = elmx[cur][cm->cp9->M] + cm->cp9->el_selfsc;
 
-      mmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + cm->cp9->tsc[CTMI][cm->cp9->M];
+      mmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + TSC(cp9O_MI,cm->cp9->M);
       mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M];
       
       if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[cm->cp9->M]))
 	mmx[cur][cm->cp9->M] = ILogsum(mmx[cur][cm->cp9->M], 
-				       elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTMEL][cm->cp9->M]);
+				       elmx[cur][cm->cp9->M] + TSC(cp9O_MEL,cm->cp9->M));
       
-      imx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + cm->cp9->tsc[CTII][cm->cp9->M];
+      imx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + TSC(cp9O_II,cm->cp9->M);
       imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M];
       
-      dmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + cm->cp9->tsc[CTDI][cm->cp9->M]; 
+      dmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + TSC(cp9O_DI,cm->cp9->M); 
       
       /*******************************************************************
        * 1b Handle EL, looking at EL_k->M_M for all valid k.
@@ -2595,20 +1996,20 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int 
 	  
 	  mmx[cur][cm->cp9->M]  =  
 	    ILogsum(mmx[cur][cm->cp9->M], 
-		    ILogsum(elmx[cur][cm->cp9->M] + cm->cp9->tsc[CTMEL][cm->cp9->M],/* M_M<-EL_M<-E, with 0 selfs in EL_M */
-			    cm->cp9->esc[cm->cp9->M]));                             /* M_M<-E ... */
+		    ILogsum(elmx[cur][cm->cp9->M] + TSC(cp9O_MEL,cm->cp9->M),/* M_M<-EL_M<-E, with 0 selfs in EL_M */
+			    TSC(cp9O_ME,cm->cp9->M)));                             /* M_M<-E ... */
 	  ///mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M]; /* ... + emitted match symbol */
 	  /* DO NOT add contribution of emitting i from M, it's been added above */
 	  
 	  imx[cur][cm->cp9->M]  =
 	    ILogsum(imx[cur][cm->cp9->M],
-		    (cm->cp9->tsc[CTIM][cm->cp9->M] +            /* I_M<-E + (only in scanner)     */
+		    (TSC(cp9O_IM,cm->cp9->M) +            /* I_M<-E + (only in scanner)     */
 		     0));                                        /* all parses end in E, 2^0 = 1.0;*/
 	  ///imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M]; /* ... + emitted insert symbol */  
 	  /* DO NOT add contribution of emitting i from M, it's been added above */
 	  dmx[cur][cm->cp9->M] =  
 	    ILogsum(dmx[cur][cm->cp9->M],
-		    (cm->cp9->tsc[CTDM][cm->cp9->M] +            /* D_M<-E + (only in scanner)     */
+		    (TSC(cp9O_DM,cm->cp9->M) +            /* D_M<-E + (only in scanner)     */
 		     0));                                        /* all parses end in E, 2^0 = 1.0;*/
 	}
       /*printf("mmx[ip:%d][%d]: %d cur: %d\n", ip, cm->cp9->M, mmx[cur][cm->cp9->M], cur);
@@ -2635,36 +2036,36 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int 
 	  if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[k]))
 	    elmx[cur][k] = ILogsum(elmx[cur][k], elmx[prv][k] + cm->cp9->el_selfsc);
 
-	  mmx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + cm->cp9->tsc[CTMM][k]),  
-					 (imx[prv][k]   + cm->cp9->tsc[CTMI][k])),
-				 (dmx[cur][k+1] + cm->cp9->tsc[CTMD][k]));
+	  mmx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + TSC(cp9O_MM,k)),  
+					 (imx[prv][k]   + TSC(cp9O_MI,k))),
+				 (dmx[cur][k+1] + TSC(cp9O_MD,k)));
 	  if((cm->cp9->flags & CPLAN9_EL) && (cm->cp9->has_el[k]))
-	    mmx[cur][k] = ILogsum(mmx[cur][k], elmx[cur][k] + cm->cp9->tsc[CTMEL][k]); /* penalty for entering EL */
+	    mmx[cur][k] = ILogsum(mmx[cur][k], elmx[cur][k] + TSC(cp9O_MEL,k)); /* penalty for entering EL */
 	  mmx[cur][k] += cm->cp9->msc[dsq[i]][k];
 	  
-	  imx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + cm->cp9->tsc[CTIM][k]),
-					 (imx[prv][k]   + cm->cp9->tsc[CTII][k])),
-				 (dmx[cur][k+1] + cm->cp9->tsc[CTID][k]));
+	  imx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + TSC(cp9O_IM,k)),
+					 (imx[prv][k]   + TSC(cp9O_II,k))),
+				 (dmx[cur][k+1] + TSC(cp9O_ID,k)));
 	  imx[cur][k] += cm->cp9->isc[dsq[i]][k];
 	  
 	  if(do_scan) { /* add possibility of ending at this position from this state */
 	    mmx[cur][k] = 
 	      ILogsum(mmx[cur][k], 
-		      (cm->cp9->esc[k] +                  /* M_k<-E + (only in scanner)     */ 
+		      (TSC(cp9O_ME,k) +                  /* M_k<-E + (only in scanner)     */ 
 		       0));                               /* all parses end in E, 2^0 = 1.0;*/
 	    /* DO NOT add contribution of emitting i from M, it's been added above */
 	    /* No EL contribution here b/c we'd be looking for M_k<-EL_k<-E, but EL_k<-E is impossible 
 	     * for k != cm->cp9->M; */
 	  }	      
-	  dmx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + cm->cp9->tsc[CTDM][k]),
-					 (imx[prv][k]   + cm->cp9->tsc[CTDI][k])),
-				 (dmx[cur][k+1] + cm->cp9->tsc[CTDD][k]));
+	  dmx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + TSC(cp9O_DM,k)),
+					 (imx[prv][k]   + TSC(cp9O_DI,k))),
+				 (dmx[cur][k+1] + TSC(cp9O_DD,k)));
 	}
       /* Case when k == 0 */
       /* imx[cur][0] is filled same as imx[cur][1..k] in the loop above */
-      imx[cur][0] = ILogsum(ILogsum((mmx[prv][1] + cm->cp9->tsc[CTIM][0]),
-				    (imx[prv][0] + cm->cp9->tsc[CTII][0])),
-			    (dmx[cur][1] + cm->cp9->tsc[CTID][k]));
+      imx[cur][0] = ILogsum(ILogsum((mmx[prv][1] + TSC(cp9O_IM,0)),
+				    (imx[prv][0] + TSC(cp9O_II,0))),
+			    (dmx[cur][1] + TSC(cp9O_ID,k)));
       imx[cur][0] += cm->cp9->isc[dsq[i]][k];
       dmx[cur][0]   = -INFTY; /* D_0 does not exist */
       elmx[cur][0]  = -INFTY; /* EL_0 does not exist */
@@ -2672,85 +2073,59 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int 
       /*M_0 is the B state, it doesn't emit, and can be reached from any match via a begin transition */
       mmx[cur][0] = -INFTY;
       for (k = cm->cp9->M; k >= 1; k--) 
-	mmx[cur][0] = ILogsum(mmx[cur][0], (mmx[prv][k] + cm->cp9->bsc[k]));
-      mmx[cur][0] = ILogsum(mmx[cur][0], (imx[prv][0] + cm->cp9->tsc[CTMI][0]));
-      mmx[cur][0] = ILogsum(mmx[cur][0], (dmx[cur][1] + cm->cp9->tsc[CTMD][0]));     /* B->D_1 */
+	mmx[cur][0] = ILogsum(mmx[cur][0], (mmx[prv][k] + TSC(cp9O_BM,k)));
+      mmx[cur][0] = ILogsum(mmx[cur][0], (imx[prv][0] + TSC(cp9O_MI,0)));
+      mmx[cur][0] = ILogsum(mmx[cur][0], (dmx[cur][1] + TSC(cp9O_MD,0)));     /* B->D_1 */
       /* No EL contribution here, can't go B->EL_* */
       
       /* determine isc, the int score of all possible parses starting at the current
        * position (i) of the target sequence. */
-      sc[ip] = mmx[cur][0]; /* all parses must start in M_0, the B state */
-      fsc = Scorify(sc[ip]);
-      /*printf("ip: %d i: %d fsc: %f i: %d\n", ip, i, fsc, sc[ip]);*/
-      if(fsc > best_sc) { best_sc = fsc; best_pos= i+1; } /* *off-by-one* (see *off-by-one* below) */
-      if(!(cm->search_opts & CM_SEARCH_HMMGREEDY)) /* resolve overlaps optimally */
-	{
-	  /* The little semi-Markov model that deals with multihit parsing:
-	   * *off-by-one*:
-	   * There's an off-by-one issue here: all Backward hits are rooted in 
-	   * M_O, the B (begin) state, which is a non-emitter.
-	   * let i = ip+i0-1 => ip = i-i0+1;
-	   * so sc[ip] = backward->mmx[ip][0] = summed log prob of all parses that end at j0, 
-	   * and start at position i+1 of the sequence (because i+1 is the last residue
-	   * whose emission has been accounted for). As a result, gamma indexing is off-by-one
-	   * with respect to sequence position, hence the i+1 or i-1 in the following
-	   * code blocks, each marked by "*off-by-one*" comment below. 
-	   * for example: let i0 = 2 gamma[ip=4], normally this means ip=4 corresponds to i=5 
-	   *              but due to this off-by-one sc[ip=4] corresponds to hits that start at i=6
-	   */
-	  gamma[ip]  = gamma[ip+1] + 0; /* extend without adding a new hit */
-	  /*printf("ip: %d | gamma[ip]: %f | gamma[ip+1]: %f\n", ip, gamma[ip], gamma[ip+1]);*/
-	  gback[ip]  = -1;
-	  savesc[ip] = IMPOSSIBLE;
-	  j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
-	  jp = j-i0+1;
-	  curr_sc = gamma[jp+1-1] + fsc;
-	  if (curr_sc > gamma[ip]) { 
-	    gamma[ip]  = curr_sc;
-	    /*printf("\ti: %d | gamma[i]: %f\n", i+1, gamma[ip]);*/
-	    gback[ip]  = j;
-	    savesc[ip] = fsc;
-	  }
-	  /*printf("i: %d ip: %d gamma[ip]: %f\n", i, ip, gamma[ip]);*/
-	}
-      else {
-	/* Resolving overlaps greedily (RSEARCH style),  
-	 * Return best hit for each j, IFF it's above threshold */
-	if (fsc >= cutoff) {
-	  if(results != NULL) {
-	    j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
-	    /*printf("BWD greedy REPORTING HIT: i: %d j: %d fsc: %f\n", i+1, j, fsc);*/ /* *off-by-one* */
-	    report_hit (i+1, j, 0, fsc, results); 
-	    /* 0 is for saver, which is irrelevant for HMM hits */
-	  }
-	}
-      }
-      if (fsc > best_hmm_sc) {
-	best_hmm_sc = fsc;
-	best_hmm_pos= i;
-      }
+      scA[ip] = mmx[cur][0]; /* all parses must start in M_0, the B state */
+      fsc = Scorify(scA[ip]);
+
+      /* Update best_sc and gamma, the little semi-Markov model that deals with multihit parsing:
+       * There's a 'backwards-specific' off-by-one here, that only occurs b/c we're going backwards,
+       * this is probably implementation specific (meaning getting rid of it is possible, but
+       * I can't figure it out), but we deal with it (albeit confusingly) as follows:
+       * 
+       * '*off-by-one*' marked comments below refers to this issue:
+       * All Backward hits are rooted in M_O, the B (begin) state, which is a non-emitter.
+       * let i = ip+i0-1 => ip = i-i0+1;
+       * so scA[ip] = backward->mmx[ip][0] = summed log prob of all parses that end at j0, 
+       * and start at position i+1 of the sequence (because i+1 is the last residue
+       * whose emission has been accounted for). As a result, gamma indexing is off-by-one
+       * with respect to sequence position, hence the i+1 or i-1 in the following
+       * code blocks, each marked by "*off-by-one*" comment below. 
+       * for example: let i0 = 2 gamma[ip=4], normally this means ip=4 corresponds to i=5 
+       *              but due to this off-by-one scA[ip=4] corresponds to hits that start at i=6
+       */
+
+      if(fsc > best_sc) { best_sc = fsc; best_pos= i+1; } /* *off-by-one* */
+
+      /* determine safe end point, min of i+1+W-1 and j0 */
+      j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
+      jp = j-i0+1;
+
+      if(results != NULL) UpdateGammaHitMxCP9Backward(gamma, ip, jp, fsc, results);
     }
   /*******************************************************************/
   /* Special case: ip == 0, i = i0-1; */
   ip = i-i0+1;		/* ip is relative index in dsq (0 to L-1) */
-  if(be_efficient)
-    {
-      cur = (j0-i)  %2;
-      prv = (j0-i+1)%2;
-    }	  
-  else
-    {
-      cur = ip;
-      prv = ip+1;
-    }
+  if(be_efficient) {
+    cur = (j0-i)  %2;
+    prv = (j0-i+1)%2;
+  }	  
+  else {
+    cur = ip;
+    prv = ip+1;
+  }
   /* init EL mx to -INFTY */
-  for (k = 1; k <= cm->cp9->M; k++)
-    elmx[cur][k] = -INFTY;
+  for (k = 1; k <= cm->cp9->M; k++) elmx[cur][k] = -INFTY;
 
   mmx[cur][cm->cp9->M] = -INFTY;  /* need seq to get here */
   imx[cur][cm->cp9->M] = -INFTY;  /* need seq to get here */
   elmx[cur][cm->cp9->M]= -INFTY;  /* first emitted res can't be from an EL, need to see >= 1 matches */
-  dmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + cm->cp9->tsc[CTDI][cm->cp9->M]; 
+  dmx[cur][cm->cp9->M]  = imx[prv][cm->cp9->M] + TSC(cp9O_DI,cm->cp9->M); 
   /* A main difference between a Backward scanner and 
    * regular Backward: a scanner can end at the END 
    * state at any position, regular can only end at
@@ -2759,7 +2134,7 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int 
     {	
       dmx[cur][cm->cp9->M] =  
 	ILogsum(dmx[cur][cm->cp9->M],
-		(cm->cp9->tsc[CTDM][cm->cp9->M] +            /* D_M<-E + (only in scanner)     */
+		(TSC(cp9O_DM,cm->cp9->M) +            /* D_M<-E + (only in scanner)     */
 		 0));                                        /* all parses end in E, 2^0 = 1.0;*/
     }
   for (k = cm->cp9->M-1; k >= 1; k--)
@@ -2767,9 +2142,9 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int 
       mmx[cur][k] = -INFTY; /* need seq to get here, unless we come from E in a scanner (below) */
       imx[cur][k] = -INFTY; /* need seq to get here */
       elmx[cur][k]= -INFTY;  /* first emitted res can't be from an EL, need to see >= 1 matches */
-      dmx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + cm->cp9->tsc[CTDM][k]),
-				     (imx[prv][k]   + cm->cp9->tsc[CTDI][k])),
-			     (dmx[cur][k+1] + cm->cp9->tsc[CTDD][k]));
+      dmx[cur][k]  = ILogsum(ILogsum((mmx[prv][k+1] + TSC(cp9O_DM,k)),
+				     (imx[prv][k]   + TSC(cp9O_DI,k))),
+			     (dmx[cur][k+1] + TSC(cp9O_DD,k)));
     }
 
   /* Case when k == 0 */
@@ -2781,146 +2156,43 @@ Xcp9_FastBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int 
   /*M_0 is the B state, it doesn't emit, and can be reached from any match via a begin transition */
   mmx[cur][0] = -INFTY;
   for (k = cm->cp9->M; k >= 1; k--) 
-    mmx[cur][0] = ILogsum(mmx[cur][0], (mmx[prv][k] + cm->cp9->bsc[k]));
-  mmx[cur][0] = ILogsum(mmx[cur][0], (imx[prv][0] + cm->cp9->tsc[CTMI][0]));
-  mmx[cur][0] = ILogsum(mmx[cur][0], (dmx[cur][1] + cm->cp9->tsc[CTMD][0]));     /* B->D_1 */
+    mmx[cur][0] = ILogsum(mmx[cur][0], (mmx[prv][k] + TSC(cp9O_BM,k)));
+  mmx[cur][0] = ILogsum(mmx[cur][0], (imx[prv][0] + TSC(cp9O_MI,0)));
+  mmx[cur][0] = ILogsum(mmx[cur][0], (dmx[cur][1] + TSC(cp9O_MD,0)));     /* B->D_1 */
   /* No EL contribution here, can't go B->EL_* */
       
-  /* determine isc, the int score of all possible parses starting at the current
-   * position (i) of the target sequence. */
-  sc[ip] = mmx[cur][0]; /* all parses must start in M_0, the B state */
-  fsc = Scorify(sc[ip]);
-  /*printf("ip: %d i: %d fsc: %f i: %d\n", ip, i, fsc, sc[ip]);*/
-  if(fsc > best_sc) { best_sc = fsc; best_pos= i+1; } /* *off-by-one* (see *off-by-one* below) */
-  if(!(cm->search_opts & CM_SEARCH_HMMGREEDY)) { /* resolve overlaps optimally */
-    gamma[ip]  = gamma[ip+1] + 0; /* extend without adding a new hit */
-    /*printf("ip: %d | gamma[ip]: %f | gamma[ip+1]: %f\n", ip, gamma[ip], gamma[ip+1]);*/
-    gback[ip]  = -1;
-    savesc[ip] = IMPOSSIBLE;
-    j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
-    jp = j-i0+1;
-    curr_sc = gamma[jp+1-1] + fsc;
-    if (curr_sc > gamma[ip]) {
-      gamma[ip]  = curr_sc;
-      /*printf("\ti: %d | gamma[i]: %f\n", i+1, gamma[ip]);*/
-      gback[ip]  = j;
-      savesc[ip] = fsc;
-    }
-  }
-  else {
-    /* Resolving overlaps greedily (RSEARCH style),  
-     * Return best hit for each j, IFF it's above threshold */
-    if (fsc >= cutoff) {
-      if(results != NULL) {
-	j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
-	/*printf("BWD greedy REPORTING HIT: i: %d j: %d fsc: %f\n", i+1, j, fsc);*/ /* *off-by-one* */
-	report_hit (i+1, j, 0, fsc, results); 
-	/* 0 is for saver, which is irrelevant for HMM hits */
-      }
-    }
-  }
-  if (fsc > best_hmm_sc) {
-    best_hmm_sc = fsc;
-    best_hmm_pos= i;
-  }
+  scA[ip] = mmx[cur][0]; /* all parses must start in M_0, the B state */
+  fsc = Scorify(scA[ip]);
+
+  /* Update best_sc and gamma for special case of ip == 0, '* off-by-one *' explained above still applies */
+  if(fsc > best_sc) { best_sc = fsc; best_pos= i+1; } /* *off-by-one* */
+
+  /* determine safe end point, min of i+1+W-1 and j0 */
+  j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
+  jp = j-i0+1;
+  
+  if(results != NULL) UpdateGammaHitMxCP9Backward(gamma, ip, jp, fsc, results);
   /* end of special case, ip == 0 */
   /**********************************************************************************/
   /* End of Backward recursion */
   
-  if((!(cm->search_opts & CM_SEARCH_HMMGREEDY)) && /* resolve overlaps optimally */
-     (!doing_align || do_scan)) /* else we can save time by skipping traceback */
-    {
-      /*****************************************************************
-       * Traceback stage for Backward.
-       * Recover all hits: an (i,j,sc) triple for each one.
-       * Remember the off-by-one b/t seq index and gamma (see *off-by-one* above)
-       *****************************************************************/ 
-      i     = i0; 
-      while (i <= j0) 
-	{
-	  ip    = (i-1)-i0+1; /* *off-by-one*, i-1, ip corresponds to i+1 
-			       * (yes: i *-* 1 =>   ip corresponds to i *+* 1) */
-	  if (gback[ip] == -1) /* no hit */
-	    i++; 
-	  else                /* a hit, a palpable hit */
-	    {
-	      if(savesc[ip] > best_hmm_sc) 
-		{
-		  best_hmm_sc = savesc[ip];
-		  best_hmm_pos= i;
-		}
-	      if(savesc[ip] >= cutoff)
-		{
-		  accept = TRUE;
-		  /* Potentially rescan just the subseq that is the hit we're about to report.
-		   * Implemented to deal with fact that --enfseq option was enforcing the subseq
-		   * to have hit pass filter b/c this Forward scanning function is 'infinite' length
-		   * (Weinberg). Sometimes the subseq we're about to report has a really
-		   * crappy score, even though the cumulative Backward score (ending at j0) is good. */
-		  if(do_scan && cm->search_opts & CM_SEARCH_HMMRESCAN && doing_rescan == FALSE)
-		    {
-		      /*printf("rechecking hit from %d to %d\n", i, gback[ip]);*/
-		      Xcp9_FastBackward(cm, errbuf, mx, dsq, i, gback[ip], cm->W, cutoff,  /* *off-by-one* i+1 */
-					NULL,  /* don't report hits to results data structure */
-					TRUE,  /* we're scanning */
-					FALSE, /* we're not ultimately aligning */
-					TRUE,  /* set the doing_rescan arg to TRUE, 
-						  so we don't potentially infinitely recurse */
-					TRUE,  /* be memory efficient */
-					NULL,  /* don't care about scores of each pos */
-					NULL,  /* don't care about best scoring position */
-					&temp_sc);
-		      /*printf("new score: %f old score %f\n", temp_sc, savesc[ip]);*/
-		      if(temp_sc >= cutoff) 
-			{ 
-			  accept = TRUE; 
-			  /*printf("rechecked hit from %d to %d\n", i, gback[ip]);
-			    printf("new score: %f old score %f\n", temp_sc, savesc[ip]);*/
-			}
-		      else accept = FALSE;
-		      savesc[ip] = temp_sc;
-		    }
-		  if(accept)
-		    {
-		      if(results != NULL) /* report the hit */
-			{
-			  /*printf("BWD optimal reporting hit i: %d j: %d sc: %f\n", i, gback[ip], savesc[ip]);*/
-			  report_hit(i, gback[ip], 0, savesc[ip], results); 
-			  /* 0 is for saver, which is irrelevant for HMM hits */
-			}
-		    }
-		}
-	      i = gback[ip]+1;
-	    }
-	}
-    }
-  free(gback);
-  free(gamma);
-  free(savesc);
+  /* If recovering hits in a non-greedy manner, do the traceback.
+   * If we were greedy, then we've reported hits in UpdateGammaHitMxCP9Forward() for each position j */
+  if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxBackward(gamma, results, i0, j0);
 
-  /*printf("returning from Xcp9_FastBackward()\n");*/
-  if(ret_psc != NULL) *ret_psc = sc;
-  else free(sc);
-  /* determine score to return: (I know, too complex) */
-  if(doing_align)
-    {
-      return_sc = Scorify(mmx[cur][0]);
-      if(ret_maxres != NULL) *ret_maxres = i0;
-    }
-  else if(best_hmm_sc <= 0.) /* scanning and there were no hits found by the 
-			      * semi-HMM above 0.0 bits */
-    {
-      return_sc = best_sc;
-      if(ret_maxres != NULL) *ret_maxres = best_pos;
-    }
-  else
-    {
-      return_sc = best_hmm_sc;
-      if(ret_maxres != NULL) *ret_maxres = best_hmm_pos;
-    }
-  ESL_DPRINTF1(("Xcp9_FastBackward() return score: %10.4f\n", return_sc));
+  /* clean up and exit */
+  if(gamma != NULL) FreeGammaHitMx(gamma);
 
-  if(ret_sc != NULL) *ret_sc = return_sc;
+  if(doing_align) { /* best_sc is the alignment score */
+    best_sc  = Scorify(scA[0]); 
+    best_pos = i0;
+  }
+  if(ret_sc != NULL)     *ret_sc     = best_sc;
+  if(ret_maxres != NULL) *ret_maxres = best_pos;
+  if(ret_psc != NULL)    *ret_psc    = scA;
+  else                    free(scA);
+  ESL_DPRINTF1(("Xcp9_FastBackward() return score: %10.4f\n", best_sc));
+
   return eslOK;
 
  ERROR:
@@ -2967,8 +2239,8 @@ cp9_WorstForward(CM_t *cm, char *errbuf, CP9_MX *mx, int thresh, int doing_scan,
   int        **elmx;        /* DP matrix for EL state scores [0..1][0..cm->cp9->M]          */
   int         *erow;        /* end score for each position [0..1]                           */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
-  int          c;           /* counter for EL states */
-  int          M;
+  int          c;           /* counter for EL states                                        */
+  int          M;           /* cm->cp9->M, query length, number of consensus nodes of model */
   int          minsc = 0;
   int          a;
   int          keep_going;
@@ -2980,28 +2252,8 @@ cp9_WorstForward(CM_t *cm, char *errbuf, CP9_MX *mx, int thresh, int doing_scan,
   if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, mx->M != cm->clen.\n");
   if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastViterbi, cm->clen != cm->cp9->M.\n");
     
+  int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
   M = cm->cp9->M;
-
-  /* Transition scores */
-  int *otsc;
-  ESL_ALLOC(otsc,   sizeof(int)   * (M+1)  * cp9O_NTRANS);
-  for (k = 0 ; k <= M; k++) {
-    int *otsc_k = otsc + k*cp9O_NTRANS;
-    
-    otsc_k[cp9O_MM] = cm->cp9->tsc[CTMM][k];
-    otsc_k[cp9O_MI] = cm->cp9->tsc[CTMI][k];
-    otsc_k[cp9O_MD] = cm->cp9->tsc[CTMD][k];
-    otsc_k[cp9O_IM] = cm->cp9->tsc[CTIM][k];
-    otsc_k[cp9O_II] = cm->cp9->tsc[CTII][k];
-    otsc_k[cp9O_DM] = cm->cp9->tsc[CTDM][k];
-    otsc_k[cp9O_DD] = cm->cp9->tsc[CTDD][k];
-    otsc_k[cp9O_ID] = cm->cp9->tsc[CTID][k];
-    otsc_k[cp9O_DI] = cm->cp9->tsc[CTDI][k];
-    otsc_k[cp9O_BM] = cm->cp9->bsc[k];
-    otsc_k[cp9O_MEL]= cm->cp9->tsc[CTMEL][k];
-    otsc_k[cp9O_ME] = cm->cp9->esc[k];
-  }
-  int const *tsc = otsc;
 
   /* get minimal scoring emission residue for each insert, match state */
   int *min_isc;

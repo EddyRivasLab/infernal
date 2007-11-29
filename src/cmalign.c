@@ -73,7 +73,8 @@ static ESL_OPTIONS options[] = {
   { "--hbanded", eslARG_NONE, "default",  NULL, NULL,  ACCOPTS,"--nosmall",     NULL, "accelerate using CM plan 9 HMM derived bands", 5 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,  ACCOPTS,      NULL,         NULL, "do not use bands to accelerate aln algorithm", 5 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 5 },
-  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,"--post,--optacc","--hbanded",NULL, "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 5 },
+  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded","--post,--optacc", "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 5 },
+  { "--checkfb", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 5 },
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 5 },
   { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,   ACCOPTS,      NULL,        NULL, "use query dependent banded CYK alignment algorithm", 5 },
   { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 5 },
@@ -876,6 +877,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--post"))        cm->align_opts  |= CM_ALIGN_POST;
   if(esl_opt_GetBoolean(go, "--time"))        cm->align_opts  |= CM_ALIGN_TIME;
   if(esl_opt_GetBoolean(go, "--checkpost"))   cm->align_opts  |= CM_ALIGN_CHECKINOUT;
+  if(esl_opt_GetBoolean(go, "--checkfb"))     cm->align_opts  |= CM_ALIGN_CHECKFB;
   if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
   if(esl_opt_GetBoolean(go, "--fins"))        cm->align_opts  |= CM_ALIGN_FLUSHINSERTS;
   if(esl_opt_GetBoolean(go, "--olddp"))       cm->align_opts  |= CM_ALIGN_OLDDP;

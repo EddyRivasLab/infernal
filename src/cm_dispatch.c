@@ -121,7 +121,6 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i
       if((status = cp9_FastForward(cm, errbuf, cm->cp9_mx, dsq, i0, j0, W, cutoff, fwd_results,
 				   TRUE,   /* we're scanning */
 				   FALSE,  /* we're not ultimately aligning */
-				   FALSE,  /* we're not rescanning */
 				   TRUE,   /* be memory efficient */
 				   NULL, NULL, /* don't return best score at each posn, or best scoring posn */
 				   &sc)) != eslOK) return status;
@@ -149,7 +148,6 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i
 				       round_results, /* report hits to this round's results */
 				       TRUE,   /* we're scanning */
 				       FALSE,  /* we're not ultimately aligning */
-				       FALSE,  /* we're not rescanning */
 				       TRUE,   /* be memory efficient */
 				       NULL, NULL,   /* don't return best score at each posn, best scoring posn */
 				       &bwd_sc)) != eslOK) return status;
@@ -498,6 +496,10 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
       cur_dsq = dsq + search_results->data[i].start - 1;
       cur_tr  = &(search_results->data[i].tr);
       L       = search_results->data[i].stop - search_results->data[i].start + 1;
+      if(L < 0) {
+	printf("holy shit\n");
+      }
+      ESL_DASSERT1((L >= 0));
     }
     if (L == 0) continue; /* silently skip zero length seqs */
 

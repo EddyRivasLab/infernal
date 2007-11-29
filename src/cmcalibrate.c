@@ -675,7 +675,6 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 					  NULL,   /* don't keep track of hits */
 					  TRUE,   /* we're scanning */
 					  FALSE,  /* we're not ultimately aligning */
-					  FALSE,  /* we're not rescanning */
 					  TRUE,   /* be memory efficient */
 					  NULL);  /* don't want the DP matrix back */
       free(dsq);

@@ -37,23 +37,23 @@
 #define STRATOPTS  "--cmonly,--hmmfilter,--hmmviterbi,--hmmforward" /* exclusive choice for search strategy */
 #define ALPHOPTS   "--rna,--dna"                                    /* exclusive choice for output alphabet */
 
-#define I_CMCUTOPTS   "-E,-T,--ga,--tc,--nc,--hmmonly"                 /* exclusive choice for CM cutoff */
+#define I_CMCUTOPTS   "-E,-T,--ga,--tc,--nc,--hmmviterbi,--hmmforward" /* exclusive choice for CM cutoff */
 #define I_HMMCUTOPTS1 "--hmmthr,--hmmcalcthr,--hmmE,--hmmT"            /* exclusive choice for HMM cutoff set 1 */
-#define I_HMMCUTOPTS2 "--hmmthr,--hmmcalcthr,--hmmE,--hmmT,--hmmonly"  /* exclusive choice for HMM cutoff set 2 */
+#define I_HMMCUTOPTS2 "--hmmthr,--hmmcalcthr,--hmmE,--hmmT,--hmmviterbi,--hmmforward"  /* exclusive choice for HMM cutoff set 2 */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   /* basic options */
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
-  { "-g",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmonly", "configure CM for glocal alignment [default: local]", 1 },
-  { "-i",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmonly", "use scanning Inside algorithm instead of CYK", 1 },
+  { "-g",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "configure CM for glocal alignment [default: local]", 1 },
+  { "-i",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "use scanning Inside algorithm instead of CYK", 1 },
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--toponly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the top strand", 1 },
   { "--window",  eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,        NULL, "set scanning window size to <n> [default: calculated]", 1 },
-  { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmonly", "turn on the post hoc second null model", 1 },
+  { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "turn on the post hoc second null model", 1 },
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
-  { "--rtrans",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmonly", "replace CM transition scores from <cmfile> with RSEARCH scores", 1 },
-  { "--greedy",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmonly", "resolve overlapping hits with a greedy algorithm a la RSEARCH", 1 },
+  { "--rtrans",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "replace CM transition scores from <cmfile> with RSEARCH scores", 1 },
+  { "--greedy",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "resolve overlapping hits with a greedy algorithm a la RSEARCH", 1 },
   /* strategy choice */
   { "--cmonly",   eslARG_NONE,"default",NULL,NULL,      STRATOPTS, NULL,        NULL, "search only with CM, do not filter [default]", 2 },
   { "--hmmfilter",eslARG_NONE,  FALSE, NULL, NULL,      STRATOPTS, NULL,        NULL, "subseqs j-W+1..i+W-1 survive (j=end from Fwd, i=start from Bwd)", 2 },
@@ -981,13 +981,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--optacc"))        cm->align_opts |= CM_ALIGN_OPTACC;
   if(esl_opt_GetBoolean(go, "--post"))          cm->align_opts |= CM_ALIGN_POST;
 
-  /* If do_enforce set do_hmm_rescan to TRUE if we're filtering or scanning with an HMM,
-   * this way only subseqs that include the enf_subseq should pass the filter */
-  if((esl_opt_GetBoolean(go, "--hmmrescan")) ||    
-      (((! esl_opt_IsDefault(go, "--enfseq")) && (! esl_opt_GetBoolean(go, "--enfnohmm"))) ||
-       ((! esl_opt_IsDefault(go, "--enfseq")) && (esl_opt_GetBoolean(go, "--hmmfilter")))))
-    cm->search_opts |= CM_SEARCH_HMMRESCAN; 
-  
   /* flags */
   if(  esl_opt_GetBoolean(go, "--rtrans"))      cm->flags       |= CM_RSEARCHTRANS;
 
@@ -1231,7 +1224,7 @@ set_window(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 
   if(! esl_opt_IsDefault(go, "--window")) {
     if((! esl_opt_GetBoolean(go, "--noqdb")) && (! use_hmmonly))
-      ESL_FAIL(eslEINCOMPAT, errbuf, "--window only makes sense with --noqdb or --hmmonly enabled. Use smaller --beta values to decrease window size.\n");
+      ESL_FAIL(eslEINCOMPAT, errbuf, "--window only makes sense with --noqdb, --hmmviterbi, or --hmmforward enabled. Use smaller --beta values to decrease window size.\n");
     cm->W = esl_opt_GetInteger(go, "--window");
   }
   else if(esl_opt_GetBoolean(go, "--noqdb") || use_hmmonly) {

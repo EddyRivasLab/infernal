@@ -168,10 +168,10 @@ typedef struct cplan9_s {
   float  *end;                  /* 1..M M->E state transitions (!= a dist!)   +*/
 
   /* The model's log-odds score form.
-   * These are created from the probabilities by LogoddsifyHMM_cp9().
+   * These are created from the probabilities by CP9Logoddsify().
    * By definition, null[] emission scores are all zero.
    * Note that emission distributions are over possible alphabet symbols,
-   * not just the unambiguous protein or DNA alphabet: we
+   * not just the unambiguous DNA alphabet: we
    * precalculate the scores for all IUPAC degenerate symbols we
    * may see. 
    *
@@ -185,6 +185,9 @@ typedef struct cplan9_s {
    * 16-byte boundaries. In the non-altivec code, this is just a little
    * redundancy; tsc and tsc_mem point to the same thing, for example.
    * 
+   * The otsc are reordered transition scores [0..k..M][0..cp9O_NTRANS-1], 
+   * for efficiency in DP calculations. This reordering is based on HMMER3. 
+   * 
    * CPLAN9_HASBITS flag is up when these scores are valid.
    */
   int  **tsc;                   /* transition scores     [0.9][0.M]       +*/
@@ -193,6 +196,7 @@ typedef struct cplan9_s {
   int   *bsc;                   /* begin transitions     [1.M]              +*/
   int   *esc;			/* end transitions       [1.M]              +*/
   int   *tsc_mem, *msc_mem, *isc_mem, *bsc_mem, *esc_mem;
+  int   *otsc;                  /* transition scores [0..M][0..9], special ordering */
 
   /* The null model probabilities.
    */
@@ -239,6 +243,7 @@ typedef struct cplan9_s {
 #define CTDM  7
 #define CTDI  8
 #define CTDD  9
+#define cp9_NTRANS 10
 
 /* Declaration of CM Plan9 dynamic programming matrix structure.
  */
@@ -260,7 +265,6 @@ typedef struct cp9_mx_s {
   
 
 } CP9_MX;
-
 
 /* CM Plan 9 model state types
  * used in traceback structure
@@ -527,19 +531,18 @@ typedef struct cmstats_s {
 #define CM_SEARCH_NOQDB        (1<<0)  /* DO NOT use QDB to search (QDB is default)*/
 #define CM_SEARCH_HMMONLY      (1<<1)  /* use a CP9 HMM only to search             */
 #define CM_SEARCH_HMMFILTER    (1<<2)  /* filter w/CP9 HMM, using forward/backward */
-#define CM_SEARCH_HMMRESCAN    (1<<3)  /* rescan HMM hits b/c Forward is inf length*/
-#define CM_SEARCH_HBANDED      (1<<4)  /* use HMM bands for search                 */
-#define CM_SEARCH_HMMSCANBANDS (1<<5)  /* filter w/CP9 HMM, and derive HMM bands   */
-#define CM_SEARCH_SUMS         (1<<6)  /* if using HMM bands, use posterior sums   */
-#define CM_SEARCH_INSIDE       (1<<7)  /* scan with Inside, not CYK                */
-#define CM_SEARCH_TOPONLY      (1<<8)  /* don't search reverse complement          */
-#define CM_SEARCH_NOALIGN      (1<<9) /* don't align hits, just report locations  */
-#define CM_SEARCH_NULL2        (1<<10) /* use post hoc second null model           */
-#define CM_SEARCH_RSEARCH      (1<<11) /* use RSEARCH parameterized CM             */
-#define CM_SEARCH_CMGREEDY     (1<<12) /* use greedy alg to resolve CM overlaps    */
-#define CM_SEARCH_HMMGREEDY    (1<<13) /* use greedy alg to resolve HMM overlaps   */
-#define CM_SEARCH_HMMVITERBI   (1<<14) /* search with CP9 HMM Viterbi              */
-#define CM_SEARCH_HMMFORWARD   (1<<15) /* search with CP9 HMM Forward              */
+#define CM_SEARCH_HBANDED      (1<<3)  /* use HMM bands for search                 */
+#define CM_SEARCH_HMMSCANBANDS (1<<4)  /* filter w/CP9 HMM, and derive HMM bands   */
+#define CM_SEARCH_SUMS         (1<<5)  /* if using HMM bands, use posterior sums   */
+#define CM_SEARCH_INSIDE       (1<<6)  /* scan with Inside, not CYK                */
+#define CM_SEARCH_TOPONLY      (1<<7)  /* don't search reverse complement          */
+#define CM_SEARCH_NOALIGN      (1<<8)  /* don't align hits, just report locations  */
+#define CM_SEARCH_NULL2        (1<<9)  /* use post hoc second null model           */
+#define CM_SEARCH_RSEARCH      (1<<10) /* use RSEARCH parameterized CM             */
+#define CM_SEARCH_CMGREEDY     (1<<11) /* use greedy alg to resolve CM overlaps    */
+#define CM_SEARCH_HMMGREEDY    (1<<12) /* use greedy alg to resolve HMM overlaps   */
+#define CM_SEARCH_HMMVITERBI   (1<<13) /* search with CP9 HMM Viterbi              */
+#define CM_SEARCH_HMMFORWARD   (1<<14) /* search with CP9 HMM Forward              */
 
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]
@@ -1025,18 +1028,6 @@ typedef struct _fullmat_t {
 /* Indices for transition scores tsc[k][] */
 /* order is optimized for dynamic programming */
 enum cp9o_tsc_e { 
-  /*  cp9O_MM = 0,
-  cp9O_IM = 1, 
-  cp9O_DM = 2, 
-  cp9O_MD = 3,
-  cp9O_DD = 4, 
-  cp9O_MI = 5, 
-  cp9O_II = 6, 
-  cp9O_ID = 7, 
-  cp9O_DI = 8, 
-  cp9O_BM = 9, 
-  cp9O_MEL=10, 
-  cp9O_ME =11 */
   cp9O_MM = 0,
   cp9O_IM = 1, 
   cp9O_DM = 2, 
@@ -1187,10 +1178,10 @@ typedef struct scanmx_s {
 
 } ScanMatrix_t;
 
-/* Structure cm_GammaHitMx_t: gamma semi-HMM used for optimal hit resolution
- * of a CM scan. All arrays are 0..L.
+/* Structure GammaHitMx_t: gamma semi-HMM used for optimal hit resolution
+ * of a CM or CP9 scan. All arrays are 0..L.
  */
-typedef struct cm_gammahitmx_s {
+typedef struct gammahitmx_s {
   int       L;                  /* length of sequence, arrays are size L+1 */
   float    *mx;                 /* [0..L] SHMM DP matrix for optimum nonoverlap resolution */
   int      *gback;              /* [0..L] traceback pointers for SHMM */ 
@@ -1199,7 +1190,7 @@ typedef struct cm_gammahitmx_s {
   float     cutoff;             /* minimum score to report */
   int       i0;                 /* position of first residue in sequence (gamma->mx[0] corresponds to this residue) */
   int       iamgreedy;          /* TRUE to use RSEARCH's greedy overlap resolution alg, FALSE to use optimal alg */
-} cm_GammaHitMx_t;
+} GammaHitMx_t;
 
 /* Structure Theta_t: probability a parsetree of score <= x will be emitted from
  *                    the subtree rooted at v.           

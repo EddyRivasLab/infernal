@@ -78,6 +78,8 @@ AllocCPlan9Shell(void)
   hmm->bsc = hmm->bsc_mem = NULL;
   hmm->esc = hmm->esc_mem = NULL;
 
+  hmm->otsc = NULL;
+
   hmm->has_el      = NULL;
   hmm->el_from_ct  = NULL;
   hmm->el_from_idx = NULL;
@@ -104,14 +106,14 @@ AllocCPlan9Body(CP9_t *hmm, int M, const ESL_ALPHABET *abc)
   ESL_ALLOC(hmm->t,   (M+1) *           sizeof(float *));
   ESL_ALLOC(hmm->mat, (M+1) *           sizeof(float *));
   ESL_ALLOC(hmm->ins, (M+1) *           sizeof(float *));
-  ESL_ALLOC(hmm->t[0],(10*(M+1))     *  sizeof(float));
+  ESL_ALLOC(hmm->t[0],(cp9_NTRANS*(M+1))     *  sizeof(float));
   ESL_ALLOC(hmm->mat[0],(MAXABET*(M+1)) * sizeof(float));
   ESL_ALLOC(hmm->ins[0],(MAXABET*(M+1)) * sizeof(float));
 
-  ESL_ALLOC(hmm->tsc, 10     *           sizeof(int *));
+  ESL_ALLOC(hmm->tsc, cp9_NTRANS *       sizeof(int *));
   ESL_ALLOC(hmm->msc, MAXDEGEN   *       sizeof(int *));
   ESL_ALLOC(hmm->isc, MAXDEGEN   *       sizeof(int *)); 
-  ESL_ALLOC(hmm->tsc_mem,(10*(M+1))     *       sizeof(int));
+  ESL_ALLOC(hmm->tsc_mem,(cp9_NTRANS*(M+1))     *       sizeof(int));
   ESL_ALLOC(hmm->msc_mem,(MAXDEGEN*(M+1)) * sizeof(int));
   ESL_ALLOC(hmm->isc_mem,(MAXDEGEN*(M+1)) *     sizeof(int));
 
@@ -119,25 +121,28 @@ AllocCPlan9Body(CP9_t *hmm, int M, const ESL_ALPHABET *abc)
   hmm->msc[0] = hmm->msc_mem;
   hmm->isc[0] = hmm->isc_mem;
 
+  /* transition scores reordered */
+  ESL_ALLOC(hmm->otsc, sizeof(int)   * (M+1)  * cp9O_NTRANS);
+
   /* note allocation strategy for important 2D arrays -- trying
    * to keep locality as much as possible, cache efficiency etc.
    */
   for (k = 1; k <= M; k++) {
     hmm->mat[k] = hmm->mat[0] + k * MAXABET;
     hmm->ins[k] = hmm->ins[0] + k * MAXABET;
-    hmm->t[k]   = hmm->t[0]   + k * 10;
+    hmm->t[k]   = hmm->t[0]   + k * cp9_NTRANS;
   }
   for (x = 1; x < MAXDEGEN; x++) {
     hmm->msc[x] = hmm->msc[0] + x * (M+1);
     hmm->isc[x] = hmm->isc[0] + x * (M+1);
   }
-  for (x = 0; x < 10; x++)
+  for (x = 0; x < cp9_NTRANS; x++)
     hmm->tsc[x] = hmm->tsc[0] + x * (M+1);
 
   /* tsc[x][0] is used as a boundary condition sometimes [Viterbi()],
    * so set to -inf always.
    */
-  for (x = 0; x < 10; x++)
+  for (x = 0; x < cp9_NTRANS; x++)
     hmm->tsc[x][0] = -INFTY;
 
   ESL_ALLOC(hmm->begin, (M+1) * sizeof(float));
@@ -182,6 +187,7 @@ FreeCPlan9(CP9_t *hmm)
   if (hmm->msc        != NULL) free(hmm->msc);
   if (hmm->isc        != NULL) free(hmm->isc);
   if (hmm->tsc        != NULL) free(hmm->tsc);
+  if (hmm->otsc       != NULL) free(hmm->otsc);
   if (hmm->mat        != NULL) free(hmm->mat);
   if (hmm->ins        != NULL) free(hmm->ins);
   if (hmm->t          != NULL) free(hmm->t);
@@ -215,10 +221,10 @@ ZeroCPlan9(CP9_t *hmm)
 {
   int k;
   esl_vec_FSet(hmm->ins[0], hmm->abc->K, 0.);
-  esl_vec_FSet(hmm->t[0], 10, 0.);
+  esl_vec_FSet(hmm->t[0], cp9_NTRANS, 0.);
   for (k = 1; k <= hmm->M; k++)
     {
-      esl_vec_FSet(hmm->t[k], 10, 0.);
+      esl_vec_FSet(hmm->t[k], cp9_NTRANS, 0.);
       esl_vec_FSet(hmm->mat[k], hmm->abc->K, 0.);
       esl_vec_FSet(hmm->ins[k], hmm->abc->K, 0.);
     }
@@ -346,6 +352,24 @@ CP9Logoddsify(CP9_t *hmm)
 	}
     }
   hmm->el_selfsc = Prob2Score(hmm->el_self, 1.0);
+
+  /* Finally, fill the efficiently reordered transition scores for this HMM. */
+  for (k = 0 ; k <= hmm->M; k++) {
+    int *otsc_k = hmm->otsc + k*cp9O_NTRANS;
+    otsc_k[cp9O_MM] = hmm->tsc[CTMM][k];
+    otsc_k[cp9O_MI] = hmm->tsc[CTMI][k];
+    otsc_k[cp9O_MD] = hmm->tsc[CTMD][k];
+    otsc_k[cp9O_IM] = hmm->tsc[CTIM][k];
+    otsc_k[cp9O_II] = hmm->tsc[CTII][k];
+    otsc_k[cp9O_DM] = hmm->tsc[CTDM][k];
+    otsc_k[cp9O_DD] = hmm->tsc[CTDD][k];
+    otsc_k[cp9O_ID] = hmm->tsc[CTID][k];
+    otsc_k[cp9O_DI] = hmm->tsc[CTDI][k];
+    otsc_k[cp9O_BM] = hmm->bsc[k];
+    otsc_k[cp9O_MEL]= hmm->tsc[CTMEL][k];
+    otsc_k[cp9O_ME] = hmm->esc[k];
+  }
+
   hmm->flags |= CPLAN9_HASBITS;	/* raise the log-odds ready flag */
 }
 
@@ -367,15 +391,15 @@ CPlan9Rescale(CP9_t *hmm, float scale)
   int k;
 
   /* emissions and transitions in the main model.
-   * Note that match states are 1..M, insert states are 1..M-1,
-   * and only nodes 1..M-1 have a valid array of transitions.
+   * Note that match states are 1..M, insert states are 0..M,
+   * and deletes are 0..M-1
    */
   for(k = 1; k <= hmm->M; k++) 
     esl_vec_FScale(hmm->mat[k], hmm->abc->K, scale);
   for(k = 0; k <=  hmm->M; k++) 
     esl_vec_FScale(hmm->ins[k], hmm->abc->K, scale);
   for(k = 0; k <  hmm->M; k++) 
-    esl_vec_FScale(hmm->t[k],   10,             scale);
+    esl_vec_FScale(hmm->t[k],   cp9_NTRANS,             scale);
 
   /* begin, end transitions; only valid [1..M] */
   esl_vec_FScale(hmm->begin+1, hmm->M, scale);
@@ -1106,7 +1130,7 @@ CP9_2sub_cp9(CP9_t *orig_hmm, CP9_t **ret_sub_hmm, int spos, int epos, double **
 	  sub_hmm->isc[x][i] = orig_hmm->isc[x][orig_pos];
 	}
 
-      for(x = 0; x < 10; x++)
+      for(x = 0; x < cp9_NTRANS; x++)
 	{
 	  sub_hmm->t[i][x]   = orig_hmm->t[orig_pos][x];
 	  sub_hmm->tsc[x][i] = orig_hmm->tsc[x][orig_pos];

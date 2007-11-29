@@ -265,18 +265,18 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 {
   int             status;
   int             use_sums; /* TRUE to fill and use posterior sums during HMM band calc, yields wider bands  */
-  int             sc;
-  float           fsc;
+  float           sc;
   int do_scan2bands;         /* TRUE to use scanning Forward/Backward to get posteriors */
   int be_safe = TRUE;        /* TEMPORARY, pass this in after calcing it once in actually_align_targets() */
 
   /* Contract checks */
-  if(cm->cp9 == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_seq2bands, but cm->cp9 is NULL.\n");
-  if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_seq2bands, but cm->cp9map is NULL.\n");
-  if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_seq2bands, dsq is NULL.");
-  if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED))           ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
-  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED)))        ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_seq2bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
-  if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_seq2bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
+  if(cm->cp9 == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, but cm->cp9 is NULL.\n");
+  if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, but cm->cp9map is NULL.\n");
+  if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, dsq is NULL.");
+  if(i0 > j0)            ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, i0: %d > j0: %d\n", i0, j0);
+  if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED))           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
+  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED)))        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
+  if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
   
   use_sums = ((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS)) ? TRUE : FALSE;
     
@@ -292,20 +292,22 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   if((status = Xcp9_FastForward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 0., NULL,
 				do_scan2bands, /* are we using scanning Forward/Backward */
 				TRUE,      /* we are going to use posteriors to align */
-				FALSE,     /* we're not rescanning */
 				FALSE,     /* don't be memory efficient */
 				be_safe,   /* can we accelerate w/ no -INFTY logsum funcs? */
 				NULL, NULL,
-				&fsc)) != eslOK) return status;
+				&sc)) != eslOK) return status;
   if((status = Xcp9_FastBackward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 0, NULL, 
 				 do_scan2bands, /* are we using scanning Forward/Backward */
 				 TRUE,  /* we are going to use posteriors to align */
-				 FALSE, /* we're not rescanning */
 				 FALSE, /* don't be memory efficient */
 				 NULL, NULL,
-				 &fsc)) != eslOK) return status;
+				 &sc)) != eslOK) return status;
 
-  if(cm->align_opts & CM_ALIGN_CHECKFB) cp9_DebugCheckFB(fmx, bmx, cm->cp9, sc, i0, j0, dsq);
+  if(cm->align_opts & CM_ALIGN_CHECKFB) { 
+    if((status = cp9_CheckFB(fmx, bmx, cm->cp9, errbuf, sc, i0, j0, dsq)) != eslOK) return status;
+    printf("Forward/Backward matrices checked.\n");
+  }
+
 
   /* Step 2: F/B -> HMM bands. */
   if(use_sums){
@@ -382,7 +384,6 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
   if((status = Xcp9_FastForward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 0., NULL,
 				do_scan2bands, /* are we using scanning Forward/Backward */
 				TRUE,      /* we are going to use posteriors to align */
-				FALSE,     /* we're not rescanning */
 				FALSE,     /* don't be memory efficient */
 				be_safe,   /* can we accelerate w/ no -INFTY logsum funcs? */
 				NULL, NULL,
@@ -391,14 +392,15 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
   if((status = Xcp9_FastBackward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 0, NULL, 
 				 do_scan2bands, /* are we using scanning Forward/Backward */
 				 TRUE,  /* we are going to use posteriors to align */
-				 FALSE, /* we're not rescanning */
 				 FALSE, /* don't be memory efficient */
 				 NULL, NULL,
 				 &sc)) != eslOK) return status;
-  if(debug_level > 0) printf("CP9 Backward score : %.4f\n", sc);
+  if(debug_level > 0) printf("CP9 Backward  score : %.4f\n", sc);
 
-  if(cm->align_opts & CM_ALIGN_CHECKFB) 
-    cp9_DebugCheckFB(fmx, bmx, cm->cp9, sc, i0, j0, dsq);
+  if(cm->align_opts & CM_ALIGN_CHECKFB) {
+    if((status = cp9_CheckFB(fmx, bmx, cm->cp9, errbuf, sc, i0, j0, dsq)) != eslOK) return status;
+    printf("Forward/Backward matrices checked.\n");
+  }
 
   /* Get posteriors */
   cp9_Posterior(dsq, i0, j0, cm->cp9, fmx, bmx, pmx, do_scan2bands);
@@ -2992,7 +2994,7 @@ ijdBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
 
 
 /*********************************************************************
- * Function: cp9_DebugCheckFB()
+ * Function: cp9_CheckFB()
  * 
  * Purpose:  Debugging function to make sure CP9Forward() and 
  *           CP9Backward are working by checking:
@@ -3011,14 +3013,16 @@ ijdBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
  * Note about sequence position indexing: although this function
  * works on a subsequence from i0 to j0, fmx and bmx have offset indices,
  * from 1 to W, with W = j0-i0+1.
- * Return:   (void) Exits if any errors are found.
+ * 
+ * Return:   eslOK on success;
+ *           eslFAIL if any residue fails check
  */
-void
-cp9_DebugCheckFB(CP9_MX *fmx, CP9_MX *bmx, 
-		 CP9_t *hmm, float sc, int i0, int j0, ESL_DSQ *dsq)
+int
+cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq)
 {
-  if(dsq == NULL)
-    cm_Fail("in cp9_DebugCheckFB(), dsq is NULL.");
+  if(fmx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_CheckFB(), fmx is NULL.\n");
+  if(bmx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_CheckFB(), bmx is NULL.\n");
+  if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_CheckFB(), dsq is NULL.");
 
   int k, i;
   float max_diff;  /* maximum allowed difference between sc and 
@@ -3031,57 +3035,47 @@ cp9_DebugCheckFB(CP9_MX *fmx, CP9_MX *bmx,
   int to_add;
 
   W  = j0-i0+1;		/* the length of the subsequence */
-
-  max_diff = 0.01;
-  /*printf("sc: %f\n", sc);*/
+  max_diff = 0.1;       /* tolerance, must be within .1 bits of original score */
 
   /* In all possible paths through the model, each residue of the sequence must have 
    * been emitted by exactly 1 insert or match state. */
-  for (ip = 1; ip <= W; ip++)
-    {
-      i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
-      fb_sum = -INFTY;
-      //fb_sum = ILogsum(fb_sum, (fmx->mmx[ip][0] + bmx->mmx[ip][0]));
-      //fb_sum = ILogsum(fb_sum, (fmx->imx[ip][0] + bmx->imx[ip][0]));
-      for (k = 0; k <= hmm->M; k++) 
-	{
-	  if(fmx->mmx[ip][k] == -INFTY) to_add = -INFTY;
-	  else if(bmx->mmx[ip][k] == -INFTY) to_add = -INFTY;
-	  else 
-	    {
-	      to_add = fmx->mmx[ip][k] + bmx->mmx[ip][k];
-	      if(k > 0) to_add -= hmm->msc[dsq[i]][k];
-	    }
-	  /* hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx
-	   * unless, we're talking about M_0, the B state, it doesn't emit */
-	  fb_sum = ILogsum(fb_sum, to_add);
-	  printf("fmx->mmx[ip:%d][k:%d]: %d\n", ip, k, fmx->mmx[ip][k]);
-	  printf("bmx->mmx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->mmx[ip][k]-hmm->msc[dsq[i]][k]), fb_sum);
-	  if(fmx->imx[ip][k] == -INFTY) to_add = -INFTY;
-	  else if(bmx->imx[ip][k] == -INFTY) to_add = -INFTY;
-	  else 
-	    {
-	      to_add = fmx->imx[ip][k] + bmx->imx[ip][k]; 
-	      to_add -= hmm->isc[dsq[i]][k];
-	    }
-	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-	  fb_sum = ILogsum(fb_sum, to_add);
-	  printf("fmx->imx[ip:%d][k:%d]: %d\n", ip, k, fmx->imx[ip][k]);
-	  printf("bmx->imx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->imx[ip][k]-hmm->isc[dsq[i]][k]), fb_sum);
-	  /*fb_sum = ILogsum(fb_sum, fmx->dmx[ip][k] + bmx->dmx[ip][k]);*/
-	  printf("fmx->dmx[ip:%d][k:%d]: %d\n",   ip, k, fmx->dmx[ip][k]);
-	  printf("bmx->dmx[ip:%d][k:%d]: %d\n\n", ip, k, bmx->dmx[ip][k]);
-	}
-      fb_sc  = Scorify(fb_sum);
-      diff = sc - fb_sc;
-      printf("ip: %d sc: %f diff: %f\n", ip, fb_sc, diff);
-      if(diff < 0.) diff *= -1.;
-      if(diff > max_diff)
-	{
-	  printf("ERROR, fb_sc[%d]: %f too different from P(x|hmm): %f\n", i, fb_sc, sc);
-	  exit(1);
-	}
+  for (ip = 1; ip <= W; ip++) {
+    i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
+    fb_sum = -INFTY;
+    for (k = 0; k <= hmm->M; k++) {
+      if     (fmx->mmx[ip][k] == -INFTY) to_add = -INFTY;
+      else if(bmx->mmx[ip][k] == -INFTY) to_add = -INFTY;
+      else {
+	to_add = fmx->mmx[ip][k] + bmx->mmx[ip][k];
+	if(k > 0) to_add -= hmm->msc[dsq[i]][k];
+      }
+      /* hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx
+       * unless, we're talking about M_0, the B state, it doesn't emit */
+      fb_sum = ILogsum(fb_sum, to_add);
+      
+      /*printf("fmx->mmx[ip:%d][k:%d]: %d\n", ip, k, fmx->mmx[ip][k]);
+	printf("bmx->mmx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->mmx[ip][k]-hmm->msc[dsq[i]][k]), fb_sum);
+      */
+      if     (fmx->imx[ip][k] == -INFTY) to_add = -INFTY;
+      else if(bmx->imx[ip][k] == -INFTY) to_add = -INFTY;
+      else  {
+	to_add  = fmx->imx[ip][k] + bmx->imx[ip][k]; 
+	to_add -= hmm->isc[dsq[i]][k];
+      }
+      /*hmm->isc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
+      fb_sum = ILogsum(fb_sum, to_add);
+      
+      /*printf("fmx->imx[ip:%d][k:%d]: %d\n", ip, k, fmx->imx[ip][k]);
+	printf("bmx->imx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->imx[ip][k]-hmm->isc[dsq[i]][k]), fb_sum);
+      */
     }
+    fb_sc  = Scorify(fb_sum);
+    diff = fabs(fb_sc - sc);
+    if((fabs(diff) > max_diff)) 
+      ESL_FAIL(eslFAIL, errbuf, "cp9_CheckFB(), residue at posn i:%d violates sum_k f[i][k]*b[i][k]=P(x|hmm), sum_k = %.4f bits (should be %.4f)\n", i, fb_sc, sc);
+  }
+  ESL_DPRINTF1(("cp9_CheckFB() passed, Forward/Backward matrices pass check.\n"));
+  return eslOK;
 }
 
 

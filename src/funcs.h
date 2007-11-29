@@ -386,10 +386,10 @@ extern float CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cut
 			int be_efficient, CP9_MX **ret_mx, CP9trace_t **ret_tr);
 extern float CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
 			int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
-			int doing_rescan, int be_efficient, CP9_MX **ret_mx);
+			int be_efficient, CP9_MX **ret_mx);
 extern float CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
 			 int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
-			 int doing_rescan, int be_efficient, CP9_MX **ret_mx);
+			 int be_efficient, CP9_MX **ret_mx);
 extern float CP9ForwardScanDemands(CP9_t *cp9, int L);
 /*
   extern float CP9Scan_dispatch(CM_t *cm,ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff, 
@@ -733,13 +733,11 @@ extern int cp9_FastViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *
 				   int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, 
 				   CP9trace_t **ret_tr, float *ret_sc);
 extern int cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-			   int do_scan, int doing_align, int doing_rescan, int be_efficient, int **ret_psc, int *ret_maxres,
-			   float *ret_sc);
+			   int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc);
 extern int Xcp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-			    int do_scan, int doing_align, int doing_rescan, int be_efficient, int be_safe, int **ret_psc, int *ret_maxres,
-			    float *ret_sc);
+			    int do_scan, int doing_align, int be_efficient, int be_safe, int **ret_psc, int *ret_maxres, float *ret_sc);
 extern int Xcp9_FastBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-			     int do_scan, int doing_align, int doing_rescan, int be_efficient, int **ret_psc, int *ret_maxres, 
+			     int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, 
 			     float *ret_sc);
 extern int cp9_WorstForward(CM_t *cm, char *errbuf, CP9_MX *mx, int thresh, int doing_scan, int doing_align, int *ret_L);
 extern int cp9_CheckTransitionGuarantees(CP9_t *cp9, char *errbuf);
@@ -788,7 +786,7 @@ extern void         cp9_IFillPostSums(CP9_MX *post, CP9Bands_t *cp9, int i0, int
 extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int debug_level);
 extern void         cp9_RelaxRootBandsForSearch(CM_t *cm, int *imin, int *imax, int *jmin, int *jmax);
 extern void         cp9_DebugPrintHMMBands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level);
-extern void         cp9_DebugCheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, float sc, int i0, int j0, ESL_DSQ *dsq);
+extern int          cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq);
 extern void         cp9_CompareBands(CP9Bands_t *cp9b1, CP9Bands_t *cp9b2);
 extern int          cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf);
 extern void         ijBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
@@ -803,10 +801,10 @@ extern float CP9ForwardAlign (ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *
 extern float CP9BackwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *mx);
 
 /* from cm_mx.c */
-extern CM_HB_MX *       cm_hb_mx_Create          (int M);
-extern int              cm_hb_mx_GrowTo          (CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L);
-extern int              cm_hb_mx_Dump            (FILE *ofp, CM_HB_MX *mx);
-extern void             cm_hb_mx_Destroy         (CM_HB_MX *mx);
+extern CM_HB_MX *       cm_hb_mx_Create            (int M);
+extern int              cm_hb_mx_GrowTo            (CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L);
+extern int              cm_hb_mx_Dump              (FILE *ofp, CM_HB_MX *mx);
+extern void             cm_hb_mx_Destroy           (CM_HB_MX *mx);
 extern int              cm_CreateScanMatrix        (CM_t *cm, int do_float, int do_int);           
 extern int              cm_FloatizeScanMatrix      (CM_t *cm);
 extern int              cm_IntizeScanMatrix        (CM_t *cm);
@@ -815,15 +813,18 @@ extern int              cm_FreeFloatsFromScanMatrix(CM_t *cm);
 extern int              cm_FreeIntsFromScanMatrix  (CM_t *cm);
 extern void             cm_FreeScanMatrix          (CM_t *cm);
 extern void             cm_DumpScanMatrixAlpha     (CM_t *cm, int j, int i0, int doing_float);
-extern float **         FCalcOptimizedEmitScores (CM_t *cm);
-extern int **           ICalcOptimizedEmitScores (CM_t *cm);
-extern void             FreeOptimizedEmitScores  (float **fesc_vAA, int **iesc_vAA, int M);
-extern float **         FCalcInitDPScores        (CM_t *cm);
-extern int **           ICalcInitDPScores        (CM_t *cm);
-extern cm_GammaHitMx_t *cm_CreateGammaHitMx      (int L, int i0, int be_greedy, float cutoff);
-extern void             cm_FreeGammaHitMx        (cm_GammaHitMx_t *gamma);
-extern void             cm_UpdateGammaHitMx      (cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, int *bestr, int doing_inside, search_results_t *results);
-extern void             cm_TBackGammaHitMx       (cm_GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
+extern float **         FCalcOptimizedEmitScores   (CM_t *cm);
+extern int **           ICalcOptimizedEmitScores   (CM_t *cm);
+extern void             FreeOptimizedEmitScores    (float **fesc_vAA, int **iesc_vAA, int M);
+extern float **         FCalcInitDPScores          (CM_t *cm);
+extern int **           ICalcInitDPScores          (CM_t *cm);
+extern GammaHitMx_t    *CreateGammaHitMx           (int L, int i0, int be_greedy, float cutoff, int do_backward);
+extern void             FreeGammaHitMx             (GammaHitMx_t *gamma);
+extern void             UpdateGammaHitMxCM         (GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, int *bestr, int doing_inside, search_results_t *results);
+extern void             UpdateGammaHitMxCP9Forward (GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results);
+extern void             UpdateGammaHitMxCP9Backward(GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results);
+extern void             TBackGammaHitMxForward     (GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
+extern void             TBackGammaHitMxBackward    (GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
 
 /* from cp9_mx.c */
 extern CP9_MX *CreateCP9Matrix(int N, int M);

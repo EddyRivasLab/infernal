@@ -77,7 +77,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float c
 	    search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
-  cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
+  GammaHitMx_t *gamma;          /* semi-HMM for hit resoultion */
   float    *vsc;                /* best score for each state (float) */
   float     vsc_root;           /* best overall score (score at ROOT_S) */
   int       yoffset;		/* offset to a child state */
@@ -139,7 +139,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float c
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = cm_CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff);
+  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
   else                gamma = NULL;
 
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
@@ -537,18 +537,18 @@ FastCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float c
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, FALSE, results);
+      if(results != NULL) UpdateGammaHitMxCM(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, FALSE, results);
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
   /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, they were reported in cm_UpdateGammaHitMx() for each position j */
+   * If we were greedy, they were reported in UpdateGammaHitMxCM() for each position j */
   if(results != NULL && gamma->iamgreedy == FALSE) 
-    cm_TBackGammaHitMx(gamma, results, i0, j0);
+    TBackGammaHitMxForward(gamma, results, i0, j0);
 
   /* clean up and return */
-  if(gamma != NULL) cm_FreeGammaHitMx(gamma);
+  if(gamma != NULL) FreeGammaHitMx(gamma);
   free(jp_wA);
   free(sc_v);
   free(init_scAA[0]);
@@ -599,7 +599,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
 		search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
-  cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
+  GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
   float    *vsc;                /* best score for each state (float) */
   float     vsc_root;           /* best overall score (score at ROOT_S) */
   int       yoffset;		/* offset to a child state */
@@ -660,7 +660,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = cm_CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff);
+  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
   else                gamma = NULL;
 
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
@@ -1051,19 +1051,19 @@ FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
+	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
   /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, they were reported in cm_UpdateGammaHitMx() for each position j */
+   * If we were greedy, they were reported in UpdateGammaHitMxCM() for each position j */
   if(results != NULL && gamma->iamgreedy == FALSE) 
-    cm_TBackGammaHitMx(gamma, results, i0, j0);
+    TBackGammaHitMxForward(gamma, results, i0, j0);
 
   /* clean up and return */
-  if(gamma != NULL) cm_FreeGammaHitMx(gamma);
+  if(gamma != NULL) FreeGammaHitMx(gamma);
   free(gamma_row);
   free(jp_wA);
   free(sc_v);
@@ -1115,7 +1115,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
 		search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
-  cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
+  GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
   float    *vsc;                /* best score for each state (float) */
   float     vsc_root;           /* best overall score (score at ROOT_S) */
   int       yoffset;		/* offset to a child state */
@@ -1176,7 +1176,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = cm_CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff);
+  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
   else                gamma = NULL;
 
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
@@ -1488,19 +1488,19 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
+	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
   /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, they were reported in cm_UpdateGammaHitMx() for each position j */
+   * If we were greedy, they were reported in UpdateGammaHitMxCM() for each position j */
   if(results != NULL && gamma->iamgreedy == FALSE) 
-    cm_TBackGammaHitMx(gamma, results, i0, j0);
+    TBackGammaHitMxForward(gamma, results, i0, j0);
 
   /* clean up and return */
-  if(gamma != NULL) cm_FreeGammaHitMx(gamma);
+  if(gamma != NULL) FreeGammaHitMx(gamma);
   free(jp_wA);
   free(sc_v);
   free(init_scAA[0]);
@@ -1552,7 +1552,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
 		search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
-  cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
+  GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
   float    *vsc;                /* best score for each state (float) */
   float     vsc_root;           /* best overall score (score at ROOT_S) */
   int       yoffset;		/* offset to a child state */
@@ -1614,7 +1614,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = cm_CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff);
+  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
   else                gamma = NULL;
 
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
@@ -2007,19 +2007,19 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
+	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
   /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, they were reported in cm_UpdateGammaHitMx() for each position j */
+   * If we were greedy, they were reported in UpdateGammaHitMxCM() for each position j */
   if(results != NULL && gamma->iamgreedy == FALSE) 
-    cm_TBackGammaHitMx(gamma, results, i0, j0);
+    TBackGammaHitMxForward(gamma, results, i0, j0);
 
   /* clean up and return */
-  if(gamma != NULL) cm_FreeGammaHitMx(gamma);
+  if(gamma != NULL) FreeGammaHitMx(gamma);
   free(jp_wA);
   free(sc_v);
   free(init_scAA[0]);
@@ -2070,7 +2070,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
 		search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
-  cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
+  GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
   float    *vsc;                /* best score for each state (float) */
   float     vsc_root;           /* best overall score (score at ROOT_S) */
   int       yoffset;		/* offset to a child state */
@@ -2130,7 +2130,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = cm_CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff);
+  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
   else                gamma = NULL;
 
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
@@ -2513,18 +2513,18 @@ FastFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
+      if(results != NULL) UpdateGammaHitMxCM(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
   /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, they were reported in cm_UpdateGammaHitMx() for each position j */
+   * If we were greedy, they were reported in UpdateGammaHitMxCM() for each position j */
   if(results != NULL && gamma->iamgreedy == FALSE) 
-    cm_TBackGammaHitMx(gamma, results, i0, j0);
+    TBackGammaHitMxForward(gamma, results, i0, j0);
 
   /* clean up and return */
-  if(gamma != NULL) cm_FreeGammaHitMx(gamma);
+  if(gamma != NULL) FreeGammaHitMx(gamma);
   free(jp_wA);
   free(sc_v);
   free(init_scAA[0]);
@@ -2577,7 +2577,7 @@ RefCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cu
 	   search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
-  cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
+  GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
   float    *vsc;                /* best score for each state (float) */
   float     vsc_root;           /* best overall score (score at ROOT_S) */
   int       yoffset;		/* offset to a child state */
@@ -2637,7 +2637,7 @@ RefCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cu
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = cm_CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff);
+  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
   else                gamma = NULL;
 
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
@@ -2797,18 +2797,18 @@ RefCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cu
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, FALSE, results);
+      if(results != NULL) UpdateGammaHitMxCM(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, FALSE, results);
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
   /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, they were reported in cm_UpdateGammaHitMx() for each position j */
+   * If we were greedy, they were reported in UpdateGammaHitMxCM() for each position j */
   if(results != NULL && gamma->iamgreedy == FALSE) 
-    cm_TBackGammaHitMx(gamma, results, i0, j0);
+    TBackGammaHitMxForward(gamma, results, i0, j0);
 
   /* clean up and return */
-  if(gamma != NULL) cm_FreeGammaHitMx(gamma);
+  if(gamma != NULL) FreeGammaHitMx(gamma);
   free(jp_wA);
   free(init_scAA[0]);
   free(init_scAA);
@@ -2859,7 +2859,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, floa
 	       search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
-  cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
+  GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
   float    *vsc;                /* best score for each state (float) */
   float     vsc_root;           /* best overall score (score at ROOT_S) */
   int       yoffset;		/* offset to a child state */
@@ -2919,7 +2919,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, floa
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = cm_CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff);
+  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
   else                gamma = NULL;
 
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
@@ -3069,19 +3069,19 @@ RefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, floa
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
+	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE);*/
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
   /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, they were reported in cm_UpdateGammaHitMx() for each position j */
+   * If we were greedy, they were reported in UpdateGammaHitMxCM() for each position j */
   if(results != NULL && gamma->iamgreedy == FALSE) 
-    cm_TBackGammaHitMx(gamma, results, i0, j0);
+    TBackGammaHitMxForward(gamma, results, i0, j0);
 
   /* clean up and return */
-  if(gamma != NULL) cm_FreeGammaHitMx(gamma);
+  if(gamma != NULL) FreeGammaHitMx(gamma);
   free(jp_wA);
   free(init_scAA[0]);
   free(init_scAA);
@@ -3133,7 +3133,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
 	       search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
-  cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
+  GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
   float    *vsc;                /* best score for each state (float) */
   float     vsc_root;           /* best overall score (score at ROOT_S) */
   int       yoffset;		/* offset to a child state */
@@ -3194,7 +3194,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = cm_CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff);
+  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
   else                gamma = NULL;
 
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
@@ -3362,19 +3362,19 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	cm_UpdateGammaHitMx(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
+	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE);*/
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
   /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, they were reported in cm_UpdateGammaHitMx() for each position j */
+   * If we were greedy, they were reported in UpdateGammaHitMxCM() for each position j */
   if(results != NULL && gamma->iamgreedy == FALSE) 
-    cm_TBackGammaHitMx(gamma, results, i0, j0);
+    TBackGammaHitMxForward(gamma, results, i0, j0);
 
   /* clean up and return */
-  if(gamma != NULL) cm_FreeGammaHitMx(gamma);
+  if(gamma != NULL) FreeGammaHitMx(gamma);
   free(jp_wA);
   free(sc_v);
   free(init_scAA[0]);
@@ -3427,7 +3427,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, floa
 	       search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
-  cm_GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
+  GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
   float    *vsc;                /* best score for each state (float) */
   float     vsc_root;           /* best overall score (score at ROOT_S) */
   int       yoffset;		/* offset to a child state */
@@ -3487,7 +3487,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, floa
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = cm_CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff);
+  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
   else                gamma = NULL;
 
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
@@ -3642,18 +3642,18 @@ RefFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, floa
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) cm_UpdateGammaHitMx(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
+      if(results != NULL) UpdateGammaHitMxCM(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
 
   /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, they were reported in cm_UpdateGammaHitMx() for each position j */
+   * If we were greedy, they were reported in UpdateGammaHitMxCM() for each position j */
   if(results != NULL && gamma->iamgreedy == FALSE) 
-    cm_TBackGammaHitMx(gamma, results, i0, j0);
+    TBackGammaHitMxForward(gamma, results, i0, j0);
 
   /* clean up and return */
-  if(gamma != NULL) cm_FreeGammaHitMx(gamma);
+  if(gamma != NULL) FreeGammaHitMx(gamma);
   free(jp_wA);
   free(init_scAA[0]);
   free(init_scAA);
@@ -4253,7 +4253,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
 {
 
   int      status;
-  cm_GammaHitMx_t *gamma; /* semi-HMM for hit resoultion */
+  GammaHitMx_t *gamma; /* semi-HMM for hit resoultion */
   int     *bestr;       /* best root state for d at current j */
   int      v,y,z;	/* indices for states  */
   int      j,d,i,k;	/* indices in sequence dimensions */
@@ -4318,7 +4318,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
 
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = cm_CreateGammaHitMx(j0-i0+1, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff);
+  if(results != NULL) gamma = CreateGammaHitMx(j0-i0+1, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
   else                gamma = NULL;
 
   /* Main recursion */
@@ -4566,8 +4566,8 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   /* first report all hits with j < jmin[0] are impossible, only if we're reporting hits to results */
   if(results != NULL) { 
     for(j = i0; j < jmin[v]; j++) {
-      cm_UpdateGammaHitMx(gamma, j-i0+1, 
-			  NULL, 0, 0,   /* alpha_row is NULL, we're telling cm_UpdateGammaHitMx, this j is can't be a hit end pt */
+      UpdateGammaHitMxCM(gamma, j-i0+1, 
+			  NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMxCM, this j is can't be a hit end pt */
 			  TRUE, bestr, FALSE, results);
     }
   }
@@ -4599,14 +4599,14 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
     
     /* report all hits with valid d for this j, only if results != NULL */
     if(results != NULL) { 
-      cm_UpdateGammaHitMx(gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, bestr, FALSE, results);
+      UpdateGammaHitMxCM(gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, bestr, FALSE, results);
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to results */
   if(results != NULL) { 
     for(j = jmax[v]+1; j <= j0; j++) {
-      cm_UpdateGammaHitMx(gamma, j-i0+1, 
-			  NULL, 0, 0,   /* alpha_row is NULL, we're telling cm_UpdateGammaHitMx, this j is can't be a hit end pt */
+      UpdateGammaHitMxCM(gamma, j-i0+1, 
+			  NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMxCM, this j is can't be a hit end pt */
 			  TRUE, bestr, FALSE, results);
     }
   }
@@ -4627,9 +4627,9 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   free(yvalidA);
   free(bestr);
 
-  if(results != NULL && gamma->iamgreedy == FALSE) cm_TBackGammaHitMx(gamma, results, i0, j0);
+  if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxForward(gamma, results, i0, j0);
 
-  if(gamma != NULL) cm_FreeGammaHitMx(gamma);
+  if(gamma != NULL) FreeGammaHitMx(gamma);
 
   if (ret_sc != NULL) *ret_sc = vsc_root;
   ESL_DPRINTF1(("FastCYKScanHB() return sc: %f\n", vsc_root));
@@ -4668,7 +4668,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
 {
 
   int      status;
-  cm_GammaHitMx_t *gamma; /* semi-HMM for hit resoultion */
+  GammaHitMx_t *gamma;  /* semi-HMM for hit resoultion */
   int      v,y,z;	/* indices for states  */
   int      j,d,i,k;	/* indices in sequence dimensions */
   float    sc;		/* a temporary variable holding a score */
@@ -4732,7 +4732,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
 
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse of multiple nonoverlapping hits. */
-  if(results != NULL) gamma = cm_CreateGammaHitMx(j0-i0+1, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff);
+  if(results != NULL) gamma = CreateGammaHitMx(j0-i0+1, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
   else                gamma = NULL;
 
   /* Main recursion */
@@ -4980,8 +4980,8 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
   /* first report all hits with j < jmin[0] are impossible, only if we're reporting hits to results */
   if(results != NULL) { 
     for(j = i0; j < jmin[v]; j++) {
-      cm_UpdateGammaHitMx(gamma, j-i0+1, 
-			  NULL, 0, 0,   /* alpha_row is NULL, we're telling cm_UpdateGammaHitMx, this j is can't be a hit end pt */
+      UpdateGammaHitMxCM(gamma, j-i0+1, 
+			  NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMxCM, this j is can't be a hit end pt */
 			  TRUE, NULL, TRUE, results);
     }
   }
@@ -5006,14 +5006,14 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
     
     /* report all hits with valid d for this j, only if results != NULL */
     if(results != NULL) { 
-      cm_UpdateGammaHitMx(gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, NULL, TRUE, results);
+      UpdateGammaHitMxCM(gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, NULL, TRUE, results);
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to results */
   if(results != NULL) { 
     for(j = jmax[v]+1; j <= j0; j++) {
-      cm_UpdateGammaHitMx(gamma, j-i0+1, 
-			  NULL, 0, 0,   /* alpha_row is NULL, we're telling cm_UpdateGammaHitMx, this j is can't be a hit end pt */
+      UpdateGammaHitMxCM(gamma, j-i0+1, 
+			  NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMxCM, this j is can't be a hit end pt */
 			  TRUE, NULL, TRUE, results);
     }
   }
@@ -5033,9 +5033,9 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
   free(el_scA);
   free(yvalidA);
 
-  if(results != NULL && gamma->iamgreedy == FALSE) cm_TBackGammaHitMx(gamma, results, i0, j0);
+  if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxForward(gamma, results, i0, j0);
 
-  if(gamma != NULL) cm_FreeGammaHitMx(gamma);
+  if(gamma != NULL) FreeGammaHitMx(gamma);
 
   ESL_DPRINTF1(("FastFInsideScanHB() return sc: %f\n", vsc_root));
   if (ret_sc != NULL) *ret_sc = vsc_root;

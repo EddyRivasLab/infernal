@@ -156,13 +156,8 @@ cm_cp9_HybridScan(CM_t *cm, CP9_MX *mx, ESL_DSQ *dsq, int *dmin, int *dmax, int 
 
   /*printf("in cm_cp9_HybridScan() i0: %d j0: %d\n", i0, j0);  */
   /* Contract checks */
-  if(cm->cp9 == NULL)
-    cm_Fail("in cm_cp9_HybridScan(), cm->cp9 is NULL.\n");
-  if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
-     (cm->search_opts & CM_SEARCH_HMMRESCAN))
-    cm_Fail("in cm_cp9_HybridScan(), CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
-  if(dsq == NULL)
-    cm_Fail("in cm_cp9_HybridScan(), dsq is NULL.");
+  if(cm->cp9 == NULL)    cm_Fail("in cm_cp9_HybridScan(), cm->cp9 is NULL.\n");
+  if(dsq == NULL)        cm_Fail("in cm_cp9_HybridScan(), dsq is NULL.");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;

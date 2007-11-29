@@ -103,9 +103,6 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
     cm_Fail("ERROR in CP9Viterbi, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)
     cm_Fail("ERROR in CP9Viterbi, passing in results data structure, but not in scanning mode.\n");
-  if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
-     (cm->search_opts & CM_SEARCH_HMMRESCAN))
-    cm_Fail("ERROR in CP9Viterbi, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
   if(dsq == NULL)
     cm_Fail("ERROR in CP9Viterbi, dsq is NULL.");
     
@@ -486,8 +483,6 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
  *                       FALSE if we're not, HMM must start emitting at i0, end emitting at j0
  *           doing_align  - TRUE if reason we've called this function is to help get posteriors
  *                          for CM alignment, in which case we can skip the traceback. 
- *           doing_rescan - TRUE if we've called this function recursively, and we don't
- *                          want to again
  *           be_efficient- TRUE to keep only 2 rows of DP matrix in memory, FALSE keep whole thing
  *           ret_mx    - RETURN: CP9 Forward DP matrix, NULL if not wanted
  *
@@ -496,7 +491,7 @@ CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
  */
 float
 CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-	   int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, int doing_rescan, 
+	   int *ret_bestpos, search_results_t *results, int do_scan, int doing_align,
 	   int be_efficient, CP9_MX **ret_mx)
 {
   int          status;
@@ -525,8 +520,6 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
   float        best_pos;    /* residue giving best_sc                                       */
   float        return_sc;   /* score to return, if (!do_scan) return overall Forward sc,    *
 			     * else return best_hmm_sc if # HMM hits>0, else return best_sc */
-  int          accept;      /* Flag used if cm->search_opts & CM_SEARCH_HMMRESCAN           */
-  float        temp_sc;     /* temporary score                                              */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
   int          c;           /* counter for EL states */
   /*debug_print_cp9_params(stdout, cm->cp9, TRUE);*/
@@ -535,15 +528,10 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
   /* Contract checks */
   if(cm->cp9 == NULL)
     cm_Fail("ERROR in CP9Forward, cm->cp9 is NULL.\n");
-  if(doing_rescan && !do_scan) 
-    cm_Fail("ERROR in CP9Forward, doing_rescan but not do_scan");
   if(be_efficient && (ret_mx != NULL))
     cm_Fail("ERROR in CP9Forward, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)
     cm_Fail("ERROR in CP9Forward, passing in results data structure, but not in scanning mode.\n");
-  if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
-     (cm->search_opts & CM_SEARCH_HMMRESCAN))
-    cm_Fail("ERROR in CP9Forward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
   if(dsq == NULL)
     cm_Fail("ERROR in CP9Forward, dsq is NULL.");
     
@@ -766,44 +754,12 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
 	      }
 	    if(savesc[jp] >= cutoff)
 	      {
-		accept = TRUE;
-		/* Potentially rescan just the subseq that is the hit we're about to report.
-		 * Implemented to deal with fact that --enfseq option was enforcing the subseq
-		 * to have hit pass filter b/c this Forward scanning function is 'infinite' length
-		 * (Weinberg). Sometimes the subseq we're about to report has a really
-		 * crappy score, even though the cumulative Forward score (starting at i0) is good. */
-		if(do_scan && cm->search_opts & CM_SEARCH_HMMRESCAN && doing_rescan == FALSE)
-		  {
-		    /*printf("rechecking hit from %d to %d\n", gback[jp], j);*/
-		    temp_sc = CP9Forward(cm, dsq, gback[jp], j, cm->W, cutoff, 
-					 NULL,  /* don't care about scores of each pos */
-					 NULL,  /* don't care about best scoring position */
-					 NULL,  /* don't report hits to results data structure */
-					 TRUE,  /* we're scanning */
-					 FALSE, /* we're not ultimately aligning */
-					 TRUE,  /* set the doing_rescan arg to TRUE, 
-						   so we don't potentially infinitely recurse */
-					 TRUE,  /* be memory efficient */
-					 NULL); /* don't want the DP matrix back */
-		    /*printf("new score: %f old score %f\n", temp_sc, savesc[jp]);*/
-		    if(temp_sc >= cutoff) 
-		      { 
-			accept = TRUE; 
-			/*printf("rechecked hit from %d to %d\n", gback[jp], j);
-			  printf("new score: %f old score %f\n", temp_sc, savesc[jp]);*/
-		      }
-		    else accept = FALSE;
-		    savesc[jp] = temp_sc;
-		  }
-		if(accept)
-		  {
-		    if(results != NULL) /* report the hit */
-		      {
-			/*printf("FWD reporting hit: i: %d j: %d sc: %f\n", gback[jp], j, savesc[jp]);*/
-			report_hit(gback[jp], j, 0, savesc[jp], results); 
-			/* 0 is for saver, which is irrelevant for HMM hits */
-		      }
-		  }
+		if(results != NULL) /* report the hit */
+		{
+		  /*printf("FWD reporting hit: i: %d j: %d sc: %f\n", gback[jp], j, savesc[jp]);*/
+		  report_hit(gback[jp], j, 0, savesc[jp], results); 
+		  /* 0 is for saver, which is irrelevant for HMM hits */
+		}
 	      }
 	    j = gback[jp]-1;
 	  }
@@ -949,8 +905,6 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
  *                       FALSE if we're not, HMM must start emitting at i0, end emitting at j0
  *           doing_align  - TRUE if reason we've called this function is to help get posteriors
  *                          for CM alignment, in which case we can skip the traceback. 
- *           doing_rescan - TRUE if we've called this function recursively, and we don't
- *                          want to again
  *           be_efficient- TRUE to keep only 2 rows of DP matrix in memory, FALSE keep whole thing
  *           ret_mx    - RETURN: CP9 Forward DP matrix, NULL if not wanted
  *
@@ -961,7 +915,7 @@ CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **re
 float
 CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
 	    int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
-	    int doing_rescan, int be_efficient, CP9_MX **ret_mx)
+	    int be_efficient, CP9_MX **ret_mx)
 {
   int          status;
   int          j;           /*     actual   position in the subsequence                     */
@@ -989,8 +943,6 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
   float        best_pos;    /* residue giving best_sc                                       */
   float        return_sc;   /* score to return, if (!do_scan) return overall Backward sc,   *
 			     * else return best_hmm_sc if # HMM hits>0, else return best_sc */
-  int          accept;      /* Flag used if cm->search_opts & CM_SEARCH_HMMRESCAN           */
-  float        temp_sc;     /* temporary score                                              */
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
   int          c;           /* counter for EL states */
 
@@ -998,15 +950,10 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
   /* Contract checks */
   if(cm->cp9 == NULL)
     cm_Fail("ERROR in CP9Backward, cm->cp9 is NULL.\n");
-  if(doing_rescan && !do_scan) 
-    cm_Fail("ERROR in CP9Backward, doing_rescan but not do_scan");
   if(be_efficient && (ret_mx != NULL))
     cm_Fail("ERROR in CP9Backward, be_efficient is TRUE, but ret_mx is non-NULL\n");
   if(results != NULL && !do_scan)
     cm_Fail("ERROR in CP9Backward, passing in results data structure, but not in scanning mode.a\n");
-  if((cm->search_opts & CM_SEARCH_HMMGREEDY) && 
-     (cm->search_opts & CM_SEARCH_HMMRESCAN))
-    cm_Fail("ERROR in CP9Backward, CM_SEARCH_HMMGREEDY and CM_SEARCH_HMMRESCAN flags up, this combo not yet implemented. Implement it!\n");
   if(dsq == NULL)
     cm_Fail("ERROR in CP9Backward, dsq is NULL.");
     
@@ -1397,43 +1344,11 @@ CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **r
 		}
 	      if(savesc[ip] >= cutoff)
 		{
-		  accept = TRUE;
-		  /* Potentially rescan just the subseq that is the hit we're about to report.
-		   * Implemented to deal with fact that --enfseq option was enforcing the subseq
-		   * to have hit pass filter b/c this Forward scanning function is 'infinite' length
-		   * (Weinberg). Sometimes the subseq we're about to report has a really
-		   * crappy score, even though the cumulative Backward score (ending at j0) is good. */
-		  if(do_scan && cm->search_opts & CM_SEARCH_HMMRESCAN && doing_rescan == FALSE)
+		  if(results != NULL) /* report the hit */
 		    {
-		      /*printf("rechecking hit from %d to %d\n", i, gback[ip]);*/
-		      temp_sc = CP9Backward(cm, dsq, i, gback[ip], cm->W, cutoff,  /* *off-by-one* i+1 */
-					    NULL,  /* don't care about scores of each pos */
-					    NULL,  /* don't care about best scoring position */
-					    NULL,  /* don't report hits to results data structure */
-					    TRUE,  /* we're scanning */
-					    FALSE, /* we're not ultimately aligning */
-					    TRUE,  /* set the doing_rescan arg to TRUE, 
-						      so we don't potentially infinitely recurse */
-					    TRUE,  /* be memory efficient */
-					    NULL); /* don't want the DP matrix back */
-		      /*printf("new score: %f old score %f\n", temp_sc, savesc[ip]);*/
-		      if(temp_sc >= cutoff) 
-			{ 
-			  accept = TRUE; 
-			  /*printf("rechecked hit from %d to %d\n", i, gback[ip]);
-			    printf("new score: %f old score %f\n", temp_sc, savesc[ip]);*/
-			}
-		      else accept = FALSE;
-		      savesc[ip] = temp_sc;
-		    }
-		  if(accept)
-		    {
-		      if(results != NULL) /* report the hit */
-			{
-			  /*printf("BWD optimal reporting hit i: %d j: %d sc: %f\n", i, gback[ip], savesc[ip]);*/
-			  report_hit(i, gback[ip], 0, savesc[ip], results); 
-			  /* 0 is for saver, which is irrelevant for HMM hits */
-			}
+		      /*printf("BWD optimal reporting hit i: %d j: %d sc: %f\n", i, gback[ip], savesc[ip]);*/
+		      report_hit(i, gback[ip], 0, savesc[ip], results); 
+		      /* 0 is for saver, which is irrelevant for HMM hits */
 		    }
 		}
 	      i = gback[ip]+1;

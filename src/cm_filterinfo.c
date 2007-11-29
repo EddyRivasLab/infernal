@@ -205,7 +205,6 @@ cm_ValidateFilterInfo(FilterInfo_t *fi)
     do_noqdb       = (fi->search_opts[n] & CM_SEARCH_NOQDB)        ? TRUE : FALSE;
     do_hmmonly     = (fi->search_opts[n] & CM_SEARCH_HMMONLY)      ? TRUE : FALSE;
     do_hmmfilter   = (fi->search_opts[n] & CM_SEARCH_HMMFILTER)    ? TRUE : FALSE;
-    do_hmmrescan   = (fi->search_opts[n] & CM_SEARCH_HMMRESCAN)    ? TRUE : FALSE;
     do_hbanded     = (fi->search_opts[n] & CM_SEARCH_HBANDED)      ? TRUE : FALSE;
     do_hmmscanbands= (fi->search_opts[n] & CM_SEARCH_HMMSCANBANDS) ? TRUE : FALSE;
     do_sums        = (fi->search_opts[n] & CM_SEARCH_SUMS)         ? TRUE : FALSE;
@@ -296,7 +295,6 @@ DumpSearchOpts(int search_opts)
   if(search_opts & CM_SEARCH_NOQDB)        printf("\tCM_SEARCH_NOQDB\n");
   if(search_opts & CM_SEARCH_HMMONLY)      printf("\tCM_SEARCH_HMMONLY\n");
   if(search_opts & CM_SEARCH_HMMFILTER)    printf("\tCM_SEARCH_HMMFILTER\n");
-  if(search_opts & CM_SEARCH_HMMRESCAN)    printf("\tCM_SEARCH_HMMRESCAN\n");
   if(search_opts & CM_SEARCH_HBANDED)      printf("\tCM_SEARCH_HBANDED\n");
   if(search_opts & CM_SEARCH_HMMSCANBANDS) printf("\tCM_SEARCH_HMMSCANBANDS\n");
   if(search_opts & CM_SEARCH_SUMS)         printf("\tCM_SEARCH_SUMS\n");

@@ -111,7 +111,6 @@ FreeCP9Matrix(CP9_MX *mx)
   free (mx);
 }
 
-
 /* 
  * Function: GrowCP9Matrix()
  *
@@ -144,7 +143,8 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int ***mmx, int ***imx, in
   void *p;
   int i;
 
-  if(mx->M != M) ESL_FAIL(eslEINCOMPAT, errbuf, "ResizeCP9Matrix(), mx->M: %d != M passed in: %d\n", mx->M, M);
+  if(mx->M != M) ESL_FAIL(eslEINCOMPAT, errbuf, "GrowCP9Matrix(), mx->M: %d != M passed in: %d\n", mx->M, M);
+  if(N < 0)      ESL_FAIL(eslEINCOMPAT, errbuf, "GrowCP9Matrix(), N: %d < 0\n", N);
 
   if (N <= mx->rows) goto DONE;
 
@@ -187,3 +187,4 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int ***mmx, int ***imx, in
  ERROR:
   ESL_FAIL(status, errbuf, ("ResizeCP9Matrix(), memory reallocation error."));
 }
+

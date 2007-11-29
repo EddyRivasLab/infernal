@@ -279,7 +279,6 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   if((status = Xcp9_FastForward(cm, errbuf, cm->cp9_mx, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, 
 				TRUE,   /* we are scanning */
 				FALSE,  /* we are not ultimately aligning */
-				FALSE,  /* we're not rescanning */
 				TRUE,   /* be memory efficient */
 				be_safe,
 				NULL, NULL, NULL)) != eslOK) goto ERROR;

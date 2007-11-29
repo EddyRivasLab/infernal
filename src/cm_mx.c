@@ -1,5 +1,5 @@
 /* 
- * CM_HB_MX, ScanMatrix_t, and cm_GammaHitMx_t implementations: 
+ * CM_HB_MX, ScanMatrix_t, and GammaHitMx_t implementations: 
  * dynamic programming matrices for CMs
  * 
  * CM_HB_MX is based heavily on HMMER 3's p7_gmx.c module.
@@ -10,9 +10,9 @@
  *   2. ScanMatrix_t data structure functions,
  *      auxiliary info and matrix of float and/or int scores for 
  *      query dependent banded or non-banded CM DP search functions
- *   3. cm_GammaHitMx_t data structure functions,
+ *   3. GammaHitMx_t data structure functions,
  *      semi-HMM data structure for optimal resolution of overlapping
- *      hits for CM DP search functions
+ *      hits for CM and CP9 DP search functions
  *
  * EPN, Fri Oct 26 05:04:34 2007
  * SVN $Id$
@@ -1066,26 +1066,28 @@ ICalcInitDPScores(CM_t *cm)
 
 
 /*****************************************************************
- *   3. cm_GammaHitMx_t data structure functions,
+ *   3. GammaHitMx_t data structure functions,
  *      Semi HMM data structure for optimal resolution of overlapping
  *      hits for CM DP search functions.
  *****************************************************************/
   
-/* Function: cm_CreateGammaHitMx()
+/* Function: CreateGammaHitMx()
  * Date:     EPN, Mon Nov  5 05:22:56 2007
  *
  * Purpose:  Allocate and initialize a gamma semi-HMM for 
  *           optimal hit resolution of a CM based scan.
- *            
- * Returns:  Newly allocated CMGammaHitMx_t object:
+ *           If(do_backward), L position is init'ed instead of
+ *           0th position, for Backward HMM scans.
+ * 
+ * Returns:  Newly allocated GammaHitMx_t object:
  */
-cm_GammaHitMx_t *
-cm_CreateGammaHitMx(int L, int i0, int be_greedy, float cutoff)
+GammaHitMx_t *
+CreateGammaHitMx(int L, int i0, int be_greedy, float cutoff, int do_backward)
 {
   int status;
 
-  cm_GammaHitMx_t *gamma;
-  ESL_ALLOC(gamma, sizeof(cm_GammaHitMx_t));
+  GammaHitMx_t *gamma;
+  ESL_ALLOC(gamma, sizeof(GammaHitMx_t));
 
   gamma->L  = L;
   gamma->i0 = i0;
@@ -1097,8 +1099,14 @@ cm_CreateGammaHitMx(int L, int i0, int be_greedy, float cutoff)
   ESL_ALLOC(gamma->savesc, sizeof(float) * (L+1));
   ESL_ALLOC(gamma->saver,  sizeof(int)   * (L+1));
     
-  gamma->mx[0]    = 0;
-  gamma->gback[0] = -1;
+  if(do_backward) { 
+    gamma->mx[L]    = 0;
+    gamma->gback[L] = -1;
+  } 
+  else { 
+    gamma->mx[0]    = 0;
+    gamma->gback[0] = -1;
+  }
   return gamma;
 
  ERROR:
@@ -1106,7 +1114,7 @@ cm_CreateGammaHitMx(int L, int i0, int be_greedy, float cutoff)
   return NULL;
 }
 
-/* Function: cm_FreeGammaHitMx()
+/* Function: FreeGammaHitMx()
  * Date:     EPN, Mon Nov  5 05:32:00 2007
  *
  * Purpose:  Free a gamma semi-HMM.
@@ -1114,7 +1122,7 @@ cm_CreateGammaHitMx(int L, int i0, int be_greedy, float cutoff)
  * Returns:  void;
  */
 void
-cm_FreeGammaHitMx(cm_GammaHitMx_t *gamma)
+FreeGammaHitMx(GammaHitMx_t *gamma)
 {
   free(gamma->mx);
   free(gamma->gback);
@@ -1125,11 +1133,10 @@ cm_FreeGammaHitMx(cm_GammaHitMx_t *gamma)
   return;
 }
 
-/* Function: cm_UpdateGammaHitMx()
+/* Function: UpdateGammaHitMxCM()
  * Date:     EPN, Mon Nov  5 05:41:14 2007
  *
  * Purpose:  Update a gamma semi-HMM for CM hits that end at gamma-relative position <j>.
- * Note:     Only difference with cm_UpdateIntGammaHitMx() is alpha_row is floats, not ints.
  *
  * Args:     gamma     - the gamma data structure
  *           j         - offset j for gamma must be between 0 and gamma->L
@@ -1146,8 +1153,8 @@ cm_FreeGammaHitMx(cm_GammaHitMx_t *gamma)
 
  */
 void
-cm_UpdateGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, 
-		    int *bestr, int doing_inside, search_results_t *results)
+UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, 
+		   int *bestr, int doing_inside, search_results_t *results)
 {
   int i, d;
   float sc;
@@ -1156,7 +1163,7 @@ cm_UpdateGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int
   int dmin, dmax;
   int ip, jp;
 
-  if(alpha_row == NULL && (!using_hmm_bands)) cm_Fail("cm_UpdateGammaHitMx(), alpha_row is NULL, but using_hmm_bands is FALSE.\n");
+  if(alpha_row == NULL && (!using_hmm_bands)) cm_Fail("UpdateGammaHitMxCM(), alpha_row is NULL, but using_hmm_bands is FALSE.\n");
   dmin = (using_hmm_bands) ? 0     : dn;
   dmax = (using_hmm_bands) ? dx-dn : dx;
 
@@ -1173,9 +1180,9 @@ cm_UpdateGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int
 	sc = gamma->mx[i-1] + alpha_row[d];
 	if (sc > gamma->mx[j]) {
 	  gamma->mx[j]     = sc;
-	  gamma->gback[j]  = i;
+	  gamma->gback[j]  = i + (gamma->i0-1);
 	  gamma->savesc[j] = alpha_row[d]; 
-	  gamma->saver[j]  = doing_inside ? -1 : bestr[d]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
+	  gamma->saver[j]  = doing_inside ? 0 : bestr[d]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
 	}
       }
     }
@@ -1189,7 +1196,7 @@ cm_UpdateGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int
      * d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
     /* First, report hit with d of dmin (min valid d) if >= cutoff */
     if (alpha_row[dmin] >= gamma->cutoff) {
-      r = doing_inside ? -1 : bestr[dmin]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
+      r = doing_inside ? 0 : bestr[dmin]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
       ip = using_hmm_bands ? j-(dmin+dn)+gamma->i0 : j-dmin+gamma->i0;
       jp = j-1+gamma->i0;
       report_hit (ip, jp, r, alpha_row[dmin], results);
@@ -1200,7 +1207,7 @@ cm_UpdateGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int
     for (d = dmin+1; d <= dmax; d++) {
       if (alpha_row[d] > alpha_row[bestd]) {
 	if (alpha_row[d] >= gamma->cutoff) { 
-	  r = doing_inside ? -1 : bestr[d]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
+	  r = doing_inside ? 0 : bestr[d]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
 	  ip = using_hmm_bands ? j-(d+dn)+gamma->i0 : j-d+gamma->i0;
 	  jp = j-1+gamma->i0;
 	  report_hit (ip, jp, r, alpha_row[d], results);
@@ -1212,33 +1219,191 @@ cm_UpdateGammaHitMx(cm_GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int
   return;
 }
 
-/* Function: cm_TBackGammaHitMx()
+
+/* Function: UpdateGammaHitMxCP9Forward()
+ * Date:     EPN, Wed Nov 28 16:55:18 2007
+ *
+ * Purpose:  Update a gamma semi-HMM for forward-direction CP9 hits that span i..j.
+ *
+ * Args:     gamma     - the gamma data structure
+ *           i         - offset i for gamma must be between 0 and gamma->L, this is usually min(j-W+1, i0)
+ *           j         - offset j for gamma must be between 0 and gamma->L
+ *           sc        - score of best hit for i..j
+ *           results   - results to add to, only used in this function if gamma->iamgreedy 
+ *
+ * Returns:  void;
+
+ */
+void
+UpdateGammaHitMxCP9Forward(GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results)
+{
+  float sc;
+  int ip, jp;
+
+  /* mode 1: non-greedy  */
+  if(! gamma->iamgreedy) {
+    gamma->mx[j]     = gamma->mx[j-1] + 0; 
+    gamma->gback[j]  = -1;
+    gamma->savesc[j] = IMPOSSIBLE;
+    gamma->saver[j]  = -1;
+
+    sc = gamma->mx[i-1] + hit_sc;
+    if (sc > gamma->mx[j]) {
+      gamma->mx[j]     = sc;
+      gamma->gback[j]  = i + (gamma->i0-1);
+      gamma->savesc[j] = hit_sc;
+      gamma->saver[j]  = 0; /* saver is invalid for CP9 hits */
+    }
+  }
+
+  /* mode 2: greedy */
+  if(gamma->iamgreedy) { 
+    /* Return best hit for each j, IFF it's above threshold */
+    if (hit_sc >= gamma->cutoff) { 
+      ip = i-1 + gamma->i0;
+      jp = j-1 + gamma->i0;
+      report_hit (ip, jp, 0, hit_sc, results); /* 0 is for saver, which is irrelevant for HMM hits */
+    }
+  }
+  return;
+}
+
+
+/* Function: UpdateGammaHitMxCP9Backward()
+ * Date:     EPN, Wed Nov 28 16:55:09 2007
+ *
+ * Purpose:  Update a gamma semi-HMM for backward-direction CP9 hits that span i..j.
+ *
+ *          Note: There's a 'backwards-specific' off-by-one here, that
+ *          only occurs b/c we're going backwards, this is probably
+ *          implementation specific (meaning getting rid of it is possible,
+ *          but I haven't figured out how to), but we deal
+ *          with it (albeit confusingly) as follows:
+ * 
+ *          '*off-by-one*' marked comments below refers to this issue:
+ *          All Backward hits are rooted in M_O, the B (begin) state,
+ *          which is * a non-emitter.  let i = ip+i0-1 => ip = i-i0+1;
+ *          so sc[ip] = * backward->mmx[ip][0] = summed log prob of
+ *          all parses that end at * j0, and start at position i+1 of
+ *          the sequence (because i+1 is the * last residue whose
+ *          emission has been accounted for). As a result, * gamma
+ *          indexing is off-by-one with respect to sequence position,
+ *          * hence the i+1 or i-1 in the following code blocks, each
+ *          marked by * "*off-by-one*" comment below.  for example:
+ *          let i0 = 2 gamma[ip=4], * normally this means ip=4
+ *          corresponds to i=5 but due to this * off-by-one sc[ip=4]
+ *          corresponds to hits that start at i=6
+ *
+ * Args:     gamma     - the gamma data structure
+ *           i         - offset i for gamma must be between 0 and gamma->L
+ *           j         - offset j for gamma must be between 0 and gamma->L, this is usually i+W-1
+ *           sc        - score of best hit for i..j
+ *           results   - results to add to, only used in this function if gamma->iamgreedy 
+ *
+ * Returns:  void;
+ */
+void
+UpdateGammaHitMxCP9Backward(GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results)
+{
+  float sc;
+  int ip, jp;
+
+  ESL_DASSERT1((i <= j));
+
+  /* mode 1: non-greedy  */
+  if(! gamma->iamgreedy) {
+    gamma->mx[i]     = gamma->mx[i+1] + 0; 
+    gamma->gback[i]  = -1;
+    gamma->savesc[i] = IMPOSSIBLE;
+    gamma->saver[i]  = -1;
+
+    sc = gamma->mx[j+1-1] + hit_sc; /* *off-by-one */
+    if (sc > gamma->mx[i]) {
+      gamma->mx[i]     = sc;
+      gamma->gback[i]  = j + (gamma->i0-1);
+      gamma->savesc[i] = hit_sc;
+      gamma->saver[i]  = 0; /* saver is invalid for CP9 hits */
+    }
+  }
+
+  /* mode 2: greedy */
+  if(gamma->iamgreedy) { 
+    /* Return best hit for each j, IFF it's above threshold */
+    if (hit_sc >= gamma->cutoff) { 
+      ip = i-1 + gamma->i0;
+      jp = j-1 + gamma->i0;
+      report_hit (ip+1, jp, 0, hit_sc, results); /* 0 is for saver, which is irrelevant for HMM hits */
+    }
+  }
+  return;
+}
+
+
+/* Function: TBackGammaHitMxForward()
  * Date:     EPN, Mon Nov  5 10:14:30 2007
  *
- * Purpose:  Traceback with a gamma semi-HMM for CM hits. gamma->iamgreedy should be FALSE.
+ * Purpose:  Traceback with a gamma semi-HMM for CM/CP9 hits in the forward
+ *           direction. See TBackGammaHitMxBackward() for backward direction.
+ *           gamma->iamgreedy should be FALSE.
  *            
  * Returns:  void; dies immediately upon an error.
  */
 void
-cm_TBackGammaHitMx(cm_GammaHitMx_t *gamma, search_results_t *results, int i0, int j0)
+TBackGammaHitMxForward(GammaHitMx_t *gamma, search_results_t *results, int i0, int j0)
 {
   int j, jp_g;
 
   if(gamma->iamgreedy) cm_Fail("cm_TBackGammaHitMx(), gamma->iamgreedy is TRUE.\n");   
-  if(results == NULL) cm_Fail("cm_TBackGammaHitMx(), results == NULL");
-  /*
-   * Traceback stage.
-   * Recover all hits: an (i,j,sc) triple for each one.
+  if(results == NULL)  cm_Fail("cm_TBackGammaHitMx(), results == NULL");
+  /* Recover all hits: an (i,j,sc) triple for each one.
    */
   j = j0;
   while (j >= i0) {
     jp_g = j-i0+1;
-    if (gamma->gback[jp_g] == -1) /* no hit */
-      j--; 
+    if (gamma->gback[jp_g] == -1) j--; /* no hit */
     else {              /* a hit, a palpable hit */
       if(gamma->savesc[jp_g] >= gamma->cutoff) /* report the hit */
 	report_hit(gamma->gback[jp_g], j, gamma->saver[jp_g], gamma->savesc[jp_g], results);
       j = gamma->gback[jp_g]-1;
+    }
+  }
+  return;
+}
+
+
+/* Function: TBackGammaHitMxBackward()
+ * Date:     EPN, Wed Nov 28 16:53:48 2007
+ *
+ * Purpose:  Traceback with a gamma semi-HMM for CP9 hits in the backward
+ *           direction. See TBackGammaHitMxForward() for forward direction.
+ *           gamma->iamgreedy should be FALSE.
+ *
+ *           Note: Remember the 'backward-specific' off-by-one b/t seq 
+ *           index and gamma (see *off-by-one* in 'Purpose' section 
+ *           of UpdateGammaHitMxCP9Backward, above)
+ *            
+ * Returns:  void; dies immediately upon an error.
+ */
+void
+TBackGammaHitMxBackward(GammaHitMx_t *gamma, search_results_t *results, int i0, int j0)
+{
+  int i, ip_g;
+
+  if(gamma->iamgreedy) cm_Fail("cm_TBackGammaHitMx(), gamma->iamgreedy is TRUE.\n");   
+  if(results == NULL)  cm_Fail("cm_TBackGammaHitMx(), results == NULL");
+  /* Recover all hits: an (i,j,sc) triple for each one.
+   */
+  i = i0;
+  while (i <= j0) {
+    ip_g   = (i-1)-i0+1; /* *off-by-one*, i-1, ip corresponds to i+1 
+			  * (yes: i *-* 1 =>   ip corresponds to i *+* 1) */
+    if (gamma->gback[ip_g] == -1) i++; /* no hit */ 
+    else {              /* a hit, a palpable hit */
+      if(gamma->savesc[ip_g] >= gamma->cutoff) { /* report the hit */
+	ESL_DASSERT1((i <= gamma->gback[ip_g]));
+	report_hit(i, gamma->gback[ip_g], gamma->saver[ip_g], gamma->savesc[ip_g], results);
+      }
+      i = gamma->gback[ip_g]+1;
     }
   }
   return;
