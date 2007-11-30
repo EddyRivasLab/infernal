@@ -210,8 +210,8 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   cm->dmin = NULL;
   cm->dmax = NULL;
   cm->search_opts |= CM_SEARCH_NOQDB;
-  cm_CreateScanMatrix(cm, TRUE, TRUE);
-  if(cm->smx == NULL) cm_Fail("summarize_search(), CreateScanMatrix() call failed.");
+  cm_CreateScanMatrixForCM(cm, TRUE, TRUE);
+  if(cm->smx == NULL) cm_Fail("summarize_search(), CreateScanMatrixForCM() call failed.");
   
   /* cyk */
   /*OLDFastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);*/
@@ -234,8 +234,8 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   cm->dmax = tmp_dmax;
   cm->search_opts &= ~CM_SEARCH_NOQDB;
   cm->search_opts &= ~CM_SEARCH_INSIDE;
-  cm_FreeScanMatrix(cm);
-  cm_CreateScanMatrix(cm, TRUE, TRUE);
+  cm_FreeScanMatrixForCM(cm);
+  cm_CreateScanMatrixForCM(cm, TRUE, TRUE);
   if(cm->smx == NULL) cm_Fail("summarize_search(), CreateScanMatrix() call failed.");
 
   /* qdb cyk */

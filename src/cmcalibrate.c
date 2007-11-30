@@ -716,8 +716,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if((status = cm_CountSearchDPCalcs(cm, errbuf, 1000, cm->dmin, cm->dmax, cm->W, &(cfg->full_vcalcs), NULL)) != eslOK) return status;
 
   /* create and initialize scan info for CYK/Inside scanning functions */
-  cm_CreateScanMatrix(cm, TRUE, TRUE);
-  if(cm->smx == NULL) cm_Fail("initialize_cm(), CreateScanMatrix() call failed.");
+  cm_CreateScanMatrixForCM(cm, TRUE, TRUE);
+  if(cm->smx == NULL) cm_Fail("initialize_cm(), CreateScanMatrixForCM() call failed.");
   
   /* create and initialize hybrid scan info */
   if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi);

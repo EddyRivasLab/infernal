@@ -244,7 +244,7 @@ cp9_FastViterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
       ip = i-i0+1;
       if(results != NULL) UpdateGammaHitMxCP9Forward(gamma, ip, jp, fsc, results);
     } /* end loop over end positions j */
-      
+  
   /* If recovering hits in a non-greedy manner, do the traceback.
    * If we were greedy, then we've reported hits in UpdateGammaHitMxCP9Forward() for each position j */
   if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxForward(gamma, results, i0, j0);

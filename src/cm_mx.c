@@ -287,43 +287,31 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx)
  *****************************************************************/
 
 
+
 /* Function: cm_CreateScanMatrix()
  * Date:     EPN, Sun Nov  4 19:56:58 2007
  *
- * Purpose:  Given a CM, allocate and initialize ScanMatrix_t object for that CM. 
+ * Purpose:  Given relevant info, allocate and initialize ScanMatrix_t object.
  *            
  * Returns:  eslOK on success, dies immediately on some error
  */
-int
-cm_CreateScanMatrix(CM_t *cm, int do_float, int do_int)
-{
+ScanMatrix_t *
+cm_CreateScanMatrix(CM_t *cm, int W, int *dmin, int *dmax, int do_banded, int do_int, int do_float)
+{ 
   int status;
-  int j, v;
-  int do_banded;
-  int use_hmmonly;
-  use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) ||  (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
-
-  if(! (cm->flags & CMH_BITS))                 cm_Fail("cm_CreateScanMatrix(), the CM flag for valid bit scores is down.");
-  if(cm->flags & CMH_SCANMATRIX)               cm_Fail("cm_CreateScanMatrix(), the CM flag for valid scan info is already up.");
-  if(cm->smx != NULL)                           cm_Fail("cm_CreateScanMatrix, the cm already points to a ScanMatrix_t object.\n");
-  if((! do_float) && (!do_int))                cm_Fail("cm_CreateScanMatrix, do_float and do_int both FALSE.\n");
-  if(cm->dmin == NULL && cm->dmax != NULL)     cm_Fail("cm_CreateScanMatrix(), cm->dmin == NULL, cm->dmax != NULL\n"); 
-  if(cm->dmin != NULL && cm->dmax == NULL)     cm_Fail("cm_CreateScanMatrix(), cm->dmin == NULL, cm->dmax != NULL\n"); 
-  if(cm->dmax != NULL && cm->W != cm->dmax[0]) cm_Fail("cm_CreateScanMatrix(), cm->W: %d != cm->dmax[0]: %d\n", cm->W, cm->dmax[0]); 
-  if((! cm->search_opts & CM_SEARCH_NOQDB) && (cm->dmin == NULL || cm->dmax == NULL))
-    cm_Fail("cm_CreateScanMatrix(), cm->dmin == NULL || cm->dmax == NULL, but !(cm->search_opts & CM_SEARCH_NOQDB)\n");
-  if(use_hmmonly && (cm->dmin != NULL && cm->dmax != NULL))
-    cm_Fail("cm_CreateScanMatrix(), CM_SEARCH_HMMVITERBI or CM_SEARCH_HMMFORWARD but cm->dmin != NULL || cm->dmax != NULL\n");
-
   ScanMatrix_t *smx;
+  int v,j;
+
+  if((!do_float) && (!do_int)) cm_Fail("cm_CreateScanMatrix(), do_float and do_int both FALSE.\n");
+  if((!do_float) && (!do_int)) cm_Fail("cm_CreateScanMatrix(), do_float and do_int both FALSE.\n");
+
   ESL_ALLOC(smx, sizeof(ScanMatrix_t));
 
   smx->flags = 0;
   smx->cm_M  = cm->M;
-  smx->W     = cm->W;
-  smx->dmin  = cm->dmin; /* could be NULL */
-  smx->dmax  = cm->dmax; /* could be NULL */
-  do_banded = ((cm->search_opts & CM_SEARCH_NOQDB) || use_hmmonly) ? FALSE : TRUE;
+  smx->W     = W;
+  smx->dmin  = dmin; /* could be NULL */
+  smx->dmax  = dmax; /* could be NULL */
 
   /* precalculate minimum and maximum d for each state and each sequence index (1..j..W). 
    * this is not always just dmin, dmax, (for ex. if j < W). */
@@ -383,16 +371,54 @@ cm_CreateScanMatrix(CM_t *cm, int do_float, int do_int)
   smx->ialpha      = NULL;
   smx->ialpha_begl = NULL;
 
-  cm->smx = smx;
   if(do_float) /* allocate float mx and scores */
-    cm_FloatizeScanMatrix(cm);
+    cm_FloatizeScanMatrix(cm, smx);
   if(do_int)   /* allocate int mx and scores */
-    cm_IntizeScanMatrix(cm);
+    cm_IntizeScanMatrix(cm, smx);
+  return smx;
+
+ ERROR:
+  cm_Fail("memory allocation error in cm_CreateScanMatrix().\n");
+  return NULL; /* NEVERREACHED */
+}
+
+/* Function: cm_CreateScanMatrixForCM()
+ * Date:     EPN, Fri Nov 30 06:07:23 2007
+ *
+ * Purpose:  Given a CM, allocate and initialize ScanMatrix_t object for that CM. 
+ *           Most of work is done by cm_CreateScanMatrix(). 
+ *
+ * Returns:  eslOK on success, dies immediately on some error
+ */
+int
+cm_CreateScanMatrixForCM(CM_t *cm, int do_float, int do_int)
+{
+  int status;
+  int j, v;
+  int do_banded;
+  int use_hmmonly;
+  use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) ||  (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
+
+  if(! (cm->flags & CMH_BITS))                 cm_Fail("cm_CreateScanMatrixForCM(), the CM flag for valid bit scores is down.");
+  if(cm->flags & CMH_SCANMATRIX)               cm_Fail("cm_CreateScanMatrixForCM(), the CM flag for valid scan info is already up.");
+  if(cm->smx != NULL)                          cm_Fail("cm_CreateScanMatrixForCM(), the cm already points to a ScanMatrix_t object.\n");
+  if(cm->dmin == NULL && cm->dmax != NULL)     cm_Fail("cm_CreateScanMatrixForCM(), cm->dmin == NULL, cm->dmax != NULL\n"); 
+  if(cm->dmin != NULL && cm->dmax == NULL)     cm_Fail("cm_CreateScanMatrixForCM(), cm->dmin == NULL, cm->dmax != NULL\n"); 
+  if(cm->dmax != NULL && cm->W != cm->dmax[0]) cm_Fail("cm_CreateScanMatrixForCM(), cm->W: %d != cm->dmax[0]: %d\n", cm->W, cm->dmax[0]); 
+  if((! cm->search_opts & CM_SEARCH_NOQDB) && (cm->dmin == NULL || cm->dmax == NULL))
+    cm_Fail("cm_CreateScanMatrixForCM(), cm->dmin == NULL || cm->dmax == NULL, but !(cm->search_opts & CM_SEARCH_NOQDB)\n");
+  if(use_hmmonly && (cm->dmin != NULL && cm->dmax != NULL))
+    cm_Fail("cm_CreateScanMatrixForCM(), CM_SEARCH_HMMVITERBI or CM_SEARCH_HMMFORWARD but cm->dmin != NULL || cm->dmax != NULL\n");
+
+  do_banded = ((cm->search_opts & CM_SEARCH_NOQDB) || use_hmmonly) ? FALSE : TRUE;
+
+  cm->smx = cm_CreateScanMatrix(cm, cm->W, cm->dmin, cm->dmax, do_banded, do_int, do_float);
+
   cm->flags |= CMH_SCANMATRIX; /* raise the flag for valid CMH_SCANMATRIX */
   return eslOK;
 
  ERROR:
-  cm_Fail("memory allocation error in cm_CreateScanMatrix().\n");
+  cm_Fail("memory allocation error in cm_CreateScanMatrixForCM().\n");
   return status; /* NEVERREACHED */
 }
 
@@ -400,22 +426,23 @@ cm_CreateScanMatrix(CM_t *cm, int do_float, int do_int)
 /* Function: cm_UpdateScanMatrix()
  * Date:     EPN, Wed Nov  7 12:49:36 2007
  *
- * Purpose:  Free, reallocate and recalculate the ScanMatrix for a CM.
+ * Purpose:  Free, reallocate and recalculate ScanMatrix cm->smx>
+ *           for CM <cm>.
  *            
  * Returns:  eslOK on success, dies immediately on an error.
  */
 int
-cm_UpdateScanMatrix(CM_t *cm)
+cm_UpdateScanMatrixForCM(CM_t *cm)
 {
   /* contract check */
   if(cm->flags & CMH_SCANMATRIX)    cm_Fail("cm_UpdateScanMatrix(), the CM flag for valid scan info is already up.");
   if(cm->smx->flags & cmSMX_HAS_FLOAT) {
-    cm_FreeFloatsFromScanMatrix(cm);
-    cm_FloatizeScanMatrix(cm);
+    cm_FreeFloatsFromScanMatrix(cm, cm->smx);
+    cm_FloatizeScanMatrix(cm, cm->smx);
   }
   if(cm->smx->flags & cmSMX_HAS_INT) {
-    cm_FreeIntsFromScanMatrix(cm);
-    cm_IntizeScanMatrix(cm);
+    cm_FreeIntsFromScanMatrix(cm, cm->smx);
+    cm_IntizeScanMatrix(cm, cm->smx);
   }
   cm->flags |= CMH_SCANMATRIX; /* ScanMatrix is valid now */
   return eslOK;
@@ -432,7 +459,7 @@ cm_UpdateScanMatrix(CM_t *cm)
  * Returns:  eslOK on success, dies immediately on an error.
  */
 int
-cm_FloatizeScanMatrix(CM_t *cm)
+cm_FloatizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 {
   int status;
   int j, v;
@@ -442,8 +469,6 @@ cm_FloatizeScanMatrix(CM_t *cm)
   int do_banded = ((cm->search_opts & CM_SEARCH_NOQDB) || use_hmmonly) ? FALSE : TRUE;
 
   /* contract check */
-  if(cm->smx == NULL) cm_Fail("cm_FloatizeScanMatrix(), cm->smx is NULL.\n");
-  ScanMatrix_t *smx = cm->smx;
   if(smx->flags & cmSMX_HAS_FLOAT) cm_Fail("cm_FloatizeScanMatrix(), si's cmSMX_HAS_FLOAT flag is already up.");
   if(smx->falpha != NULL)       cm_Fail("cm_FloatizeScanMatrix(), smx->falpha is not NULL.");
   if(smx->falpha_begl != NULL)  cm_Fail("cm_FloatizeScanMatrix(), smx->falpha_begl is not NULL.");
@@ -548,7 +573,7 @@ cm_FloatizeScanMatrix(CM_t *cm)
  * Returns:  eslOK on success, dies immediately on an error.
  */
 int
-cm_IntizeScanMatrix(CM_t *cm)
+cm_IntizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 {
   int status;
   int v, j, d, y, yoffset, w;
@@ -557,8 +582,6 @@ cm_IntizeScanMatrix(CM_t *cm)
   int do_banded = ((cm->search_opts & CM_SEARCH_NOQDB) || use_hmmonly) ? FALSE : TRUE;
 
   /* contract check */
-  if(cm->smx == NULL) cm_Fail("cm_IntizeScanMatrix(), cm->smx is NULL.\n");
-  ScanMatrix_t *smx = cm->smx;
   if(smx->flags & cmSMX_HAS_INT) cm_Fail("cm_IntizeScanMatrix(), si's cmSMX_HAS_INT flag is already up.");
   if(smx->ialpha != NULL)       cm_Fail("cm_IntizeScanMatrix(), smx->ialpha is not NULL.");
   if(smx->ialpha_begl != NULL)  cm_Fail("cm_IntizeScanMatrix(), smx->ialpha_begl is not NULL.");
@@ -577,7 +600,7 @@ cm_IntizeScanMatrix(CM_t *cm)
   }
   /* allocate ialpha_begl */
   ESL_ALLOC(smx->ialpha_begl, (sizeof(int **) * (smx->W+1)));
-  for (j = 0; j <= cm->W; j++) {
+  for (j = 0; j <= smx->W; j++) {
     ESL_ALLOC(smx->ialpha_begl[j], (sizeof(int *) * (cm->M)));
     for (v = cm->M-1; v >= 0; v--) {	
       if (cm->stid[v] == BEGL_S) ESL_ALLOC(smx->ialpha_begl[j][v], (sizeof(int) * (smx->W+1)));
@@ -655,18 +678,17 @@ cm_IntizeScanMatrix(CM_t *cm)
 /* Function: cm_FreeFloatsFromScanMatrix()
  * Date:     EPN, Wed Nov  7 10:03:55 2007
  *
- * Purpose:  Free float data structures in a ScanMatrix_t object for <cm>.
+ * Purpose:  Free float data structures in a ScanMatrix_t object 
+ *           corresponding to <cm>.
  *            
  * Returns:  eslOK on success, dies immediately on an error.
  */
 int
-cm_FreeFloatsFromScanMatrix(CM_t *cm)
+cm_FreeFloatsFromScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 {
   int j, v;
 
   /* contract check */
-  if(cm->smx == NULL) cm_Fail("cm_FreeFloatsFromScanMatrix(), cm->smx is NULL.\n");
-  ScanMatrix_t *smx = cm->smx;
   if(! smx->flags & cmSMX_HAS_FLOAT)    cm_Fail("cm_FreeFloatsFromScanMatrix(), si's cmSMX_HAS_FLOAT flag is down.");
   if(smx->falpha == NULL)       cm_Fail("cm_FreeFloatsFromScanMatrix(), smx->falpha is already NULL.");
   if(smx->falpha_begl == NULL)  cm_Fail("cm_FreeFloatsFromScanMatrix(), smx->falpha_begl is already NULL.");
@@ -692,18 +714,17 @@ cm_FreeFloatsFromScanMatrix(CM_t *cm)
 /* Function: cm_FreeIntsFromScanMatrix()
  * Date:     EPN, Wed Nov  7 09:56:01 2007
  *
- * Purpose:  Free int data structures in a ScanMatrix_t object for <cm>.
+ * Purpose:  Free int data structures in a ScanMatrix_t object 
+ *           corresponding to <cm>.
  *            
  * Returns:  eslOK on success, dies immediately on an error.
  */
 int
-cm_FreeIntsFromScanMatrix(CM_t *cm)
+cm_FreeIntsFromScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 {
   int j, v;
 
   /* contract check */
-  if(cm->smx == NULL) cm_Fail("cm_FreeIntsFromScanMatrix(), cm->smx is NULL.\n");
-  ScanMatrix_t *smx = cm->smx;
   if(! smx->flags & cmSMX_HAS_INT)    cm_Fail("cm_FreeIntsFromScanMatrix(), si's cmSMX_HAS_INT flag is down.");
   if(smx->ialpha == NULL)       cm_Fail("cm_FreeIntsFromScanMatrix(), smx->ialpha is already NULL.");
   if(smx->ialpha_begl == NULL)  cm_Fail("cm_FreeIntsFromScanMatrix(), smx->ialpha_begl is already NULL.");
@@ -729,17 +750,15 @@ cm_FreeIntsFromScanMatrix(CM_t *cm)
 /* Function: cm_FreeScanMatrix()
  * Date:     EPN, Sun Nov  4 20:57:32 2007
  *
- * Purpose:  Free a ScanMatrix_t object for <cm>.
+ * Purpose:  Free a ScanMatrix_t object corresponding
+ *           to CM <cm>.
  *            
  * Returns:  void
  */
 void
-cm_FreeScanMatrix(CM_t *cm)
+cm_FreeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 {
   int j;
-  /* contract check */
-  if(cm->smx == NULL) cm_Fail("cm_FreeScanMatrix(), cm->smx is NULL.\n");
-  ScanMatrix_t *smx = cm->smx;
   for(j = 1; j <= smx->W; j++) {
     free(smx->dnAA[j]);
     free(smx->dxAA[j]);
@@ -748,9 +767,27 @@ cm_FreeScanMatrix(CM_t *cm)
   free(smx->dxAA);
   free(smx->bestr);
   
-  if(smx->flags & cmSMX_HAS_FLOAT) cm_FreeFloatsFromScanMatrix(cm);
-  if(smx->flags & cmSMX_HAS_INT)   cm_FreeIntsFromScanMatrix(cm);
+  if(smx->flags & cmSMX_HAS_FLOAT) cm_FreeFloatsFromScanMatrix(cm, smx);
+  if(smx->flags & cmSMX_HAS_INT)   cm_FreeIntsFromScanMatrix(cm, smx);
   free(smx);
+  return;
+}
+
+
+/* Function: cm_FreeScanMatrixForCM()
+ * Date:     EPN, Fri Nov 30 06:47:12 2007
+ *
+ * Purpose:  Free a ScanMatrix_t object cm->smx for <cm>.
+ *            
+ * Returns:  void
+ */
+void
+cm_FreeScanMatrixForCM(CM_t *cm)
+{
+  int j;
+  /* contract check */
+  if(cm->smx == NULL) cm_Fail("cm_FreeScanMatrixForCM(), cm->smx is NULL.\n");
+  cm_FreeScanMatrix(cm, cm->smx);
   cm->smx = NULL;
   cm->flags &= ~CMH_SCANMATRIX; /* drop the 'cm has valid scanmatrix flag */
   return;

@@ -1253,8 +1253,8 @@ set_window(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   int do_float = TRUE;
   int do_int   = FALSE;
   if(cm->search_opts & CM_SEARCH_INSIDE) { do_float = FALSE; do_int = TRUE; }
-  cm_CreateScanMatrix(cm, do_float, do_int);
-  if(cm->smx == NULL) cm_Fail("initialize_cm(), CreateScanMatrix() call failed.");
+  cm_CreateScanMatrixForCM(cm, do_float, do_int);
+  if(cm->smx == NULL) cm_Fail("initialize_cm(), CreateScanMatrixForCM() call failed.");
 
 
   return eslOK;

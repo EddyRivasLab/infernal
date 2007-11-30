@@ -805,13 +805,15 @@ extern CM_HB_MX *       cm_hb_mx_Create            (int M);
 extern int              cm_hb_mx_GrowTo            (CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L);
 extern int              cm_hb_mx_Dump              (FILE *ofp, CM_HB_MX *mx);
 extern void             cm_hb_mx_Destroy           (CM_HB_MX *mx);
-extern int              cm_CreateScanMatrix        (CM_t *cm, int do_float, int do_int);           
-extern int              cm_FloatizeScanMatrix      (CM_t *cm);
-extern int              cm_IntizeScanMatrix        (CM_t *cm);
-extern int              cm_UpdateScanMatrix        (CM_t *cm);
-extern int              cm_FreeFloatsFromScanMatrix(CM_t *cm);
-extern int              cm_FreeIntsFromScanMatrix  (CM_t *cm);
-extern void             cm_FreeScanMatrix          (CM_t *cm);
+extern ScanMatrix_t *   cm_CreateScanMatrix        (CM_t *cm, int W, int *dmin, int *dmax, int do_banded, int do_int, int do_float);
+extern int              cm_CreateScanMatrixForCM   (CM_t *cm, int do_float, int do_int);           
+extern int              cm_FloatizeScanMatrix      (CM_t *cm, ScanMatrix_t *smx);
+extern int              cm_IntizeScanMatrix        (CM_t *cm, ScanMatrix_t *smx);
+extern int              cm_UpdateScanMatrixForCM   (CM_t *cm);
+extern int              cm_FreeFloatsFromScanMatrix(CM_t *cm, ScanMatrix_t *smx);
+extern int              cm_FreeIntsFromScanMatrix  (CM_t *cm, ScanMatrix_t *smx);
+extern void             cm_FreeScanMatrix          (CM_t *cm, ScanMatrix_t *smx);
+extern void             cm_FreeScanMatrixForCM     (CM_t *cm);
 extern void             cm_DumpScanMatrixAlpha     (CM_t *cm, int j, int i0, int doing_float);
 extern float **         FCalcOptimizedEmitScores   (CM_t *cm);
 extern int **           ICalcOptimizedEmitScores   (CM_t *cm);
@@ -839,7 +841,7 @@ extern void cm_CalcAvgHitLength(CM_t *cm, double beta, float **ret_hitlen);
 extern HybridScanInfo_t * cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs);
 extern int cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int vroot_to_add);
 extern int cm_ValidateHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi);
-extern void cm_FreeHybridScanInfo(HybridScanInfo_t *hsi);
+extern void cm_FreeHybridScanInfo(HybridScanInfo_t *hsi, CM_t *cm);
 
 
 /* from cm_theta.c */

@@ -77,7 +77,6 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
   float        fsc;         /* float log odds score                                         */
   float        best_sc;     /* score of best hit overall                                    */
   float        best_pos;    /* residue (j) giving best_sc, where best hit ends              */
-  int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
   int          c;           /* counter for EL states                                        */
   int          M;           /* cm->cp9->M, query length, number of consensus nodes of model */
 
@@ -97,32 +96,31 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  float    *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
-  float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
+  int      *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
+  int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
 
   /* HMM related ontract checks */
-  if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan, cm->cp9 is NULL.\n");
-  if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan, dsq is NULL.");
-  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan, mx is NULL.\n");
-  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan, mx->M != cm->clen.\n");
-  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan, cm->clen != cm->cp9->M.\n");
+  if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), cm->cp9 is NULL.\n");
+  if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), dsq is NULL.");
+  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), mx is NULL.\n");
+  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), mx->M != cm->clen.\n");
+  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), cm->clen != cm->cp9->M.\n");
  
   /* CM related contract checks */
-  if(! cm->flags & CMH_BITS)               ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANMATRIX)         ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan, cm->smx is not valid.\n");
-  if(j0 < i0)                              ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan, dsq is NULL\n");
-  if(cm->search_opts & CM_SEARCH_INSIDE)   ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan, CM_SEARCH_INSIDE flag raised");
-  if(cm->smx == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan, cm has no ScanMatrix");
-  if(! (cm->smx->flags & cmSMX_HAS_INT))   ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan, ScanMatrix's cmSMX_HAS_INT flag is not raised");
+  if(! cm->flags & CMH_BITS)               ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), CMH_BITS flag is not raised.\n");
+  if(! cm->flags & CMH_SCANMATRIX)         ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), cm->smx is not valid.\n");
+  if(j0 < i0)                              ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), dsq is NULL\n");
+  if(cm->search_opts & CM_SEARCH_INSIDE)   ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), CM_SEARCH_INSIDE flag raised");
+  if(hsi->smx == NULL)                     ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), hsi has no ScanMatrix");
+  if(! (hsi->smx->flags & cmSMX_HAS_INT))  ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), hsi's ScanMatrix's cmSMX_HAS_INT flag is not raised");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
-  ScanMatrix_t *smx = cm->smx;      /* for convenience */
+  ScanMatrix_t *smx   = hsi->smx;         /* we use hsi's ScanMatrix NOT the CM's */
   int   ***alpha      = smx->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
   int   ***alpha_begl = smx->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
   int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
   int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
-  int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d */
   int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
   int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   int   **esc_vAA     = cm->ioesc;        /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
@@ -162,11 +160,11 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
   ESL_ALLOC(jp_wA, sizeof(float) * (W+1));
 
   /* Initialize sc_v to size of M */
-  ESL_ALLOC(sc_v, (sizeof(float) * (W+1)));
-  esl_vec_FSet(sc_v, (W+1), IMPOSSIBLE);
+  ESL_ALLOC(sc_v, (sizeof(int) * (W+1)));
+  esl_vec_ISet(sc_v, (W+1), -INFTY);
 
   /* precalculate the initial scores for all cells of the CM matrix */
-  init_scAA = FCalcInitDPScores(cm);
+  init_scAA = ICalcInitDPScores(cm);
 
   /* HMM: allow a full HMM parse through all delete states, with 0 emissions,
    * this isn't really a hybrid hit, but it would be nonsense if reported anyway,
@@ -185,6 +183,9 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
   scA[0]   = erow[0];
   fsc      = Scorify(scA[0]);
   if(fsc > best_sc) { best_sc = fsc; best_pos= i0-1; }
+
+  printf("dmin[hsi->v_last: %4d]: %d\n", hsi->v_last, dnAA[W][hsi->v_last]);
+  printf("dmax[hsi->v_last: %4d]: %d\n", hsi->v_last, dxAA[W][hsi->v_last]);
 
   /*****************************************************************
    * The main loop: scan the sequence from position i0 to j0.
@@ -251,33 +252,6 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
 	    /* careful: y is in alpha (all children of a BEGL_S must be non BEGL_S) */
 	  }
 	}
-#if 0
-	else { 
-	  y = cm->cfirst[v]; 
-	  i = j - dnA[v] + 1;
-	  for (d = dnA[v]; d <= dxA[v]; d++) {
-	    sc = init_scAA[v][d]; /* state delta is 0 for BEGL_S st */
-	    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-	      sc = ESL_MAX (sc, alpha[jp_y][y+yoffset][d - sd] + cm->tsc[v][yoffset]);
-	    alpha[jp_v][v][d] = sc;
-	    
-	    switch (emitmode) {
-	    case EMITLEFT:
-	      alpha[jp_v][v][d] = sc + esc_v[dsq[i--]];
-	      break;
-	    case EMITNONE:
-	      alpha[jp_v][v][d] = sc;
-	      break;
-	    case EMITRIGHT:
-	      alpha[jp_v][v][d] = sc + esc_j;
-	      break;		
-	    case EMITPAIR:
-	      alpha[jp_v][v][d] = sc + esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
-	      break;
-	    }
-	  }
-	}
-#endif
 	else if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) { 
 	  y    = cm->cfirst[v];
 	  dp_y = dn - sd; /* initial dp_y, we increment it at end of 'for(d = ...' loop */
@@ -662,8 +636,7 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
 	  int m_v1 = cm->cp9map->hns2cs[k][HMMMATCH][0];
 	  int m_v2 = cm->cp9map->hns2cs[k][HMMMATCH][1];
 	  int i_v1 = cm->cp9map->hns2cs[k][HMMINSERT][0];
-	  int i_v2 = cm->cp9map->hns2cs[k][HMMINSERT][1];
-	  ESL_DASSERT1((i_v2 == -1)); /* right? */
+	  ESL_DASSERT1((cm->cp9map->hns2cs[k][HMMINSERT][1] == -1)); /* right? */
 	  int d_v1 = cm->cp9map->hns2cs[k][HMMDELETE][0];
 	  int d_v2 = cm->cp9map->hns2cs[k][HMMDELETE][1];
 	  
@@ -825,8 +798,7 @@ cm_CalcAvgHitLength(CM_t *cm, double beta, float **ret_avglen)
     safe_windowlen *= 2;
     if(safe_windowlen > (cm->clen * 1000)) cm_Fail("safe_windowlen big: %d\n", safe_windowlen);
   }
-  int v;
-  /* for(v = 0; v < cm->M; v++) printf("AVG LEN v: %4d d: %10.4f\n", v, avglen[v]); */
+  /* int v; for(v = 0; v < cm->M; v++) printf("AVG LEN v: %4d d: %10.4f\n", v, avglen[v]); */
 
   *ret_avglen = avglen;
 }
@@ -835,10 +807,11 @@ cm_CalcAvgHitLength(CM_t *cm, double beta, float **ret_avglen)
 /* Function: cm_FreeHybridScanInfo()
  * Date:     EPN, Thu Nov  1 14:16:18 2007
  *
- * Purpose:  Free a HybridScanInfo_t object.
+ * Purpose:  Free a HybridScanInfo_t object corresponding
+ *           to CM <cm>.            
  */
 void
-cm_FreeHybridScanInfo(HybridScanInfo_t *hsi)
+cm_FreeHybridScanInfo(HybridScanInfo_t *hsi, CM_t *cm)
 {
   int i;
   if(hsi->dmin != NULL)      free(hsi->dmin);
@@ -861,6 +834,7 @@ cm_FreeHybridScanInfo(HybridScanInfo_t *hsi)
   if(hsi->lastA != NULL)     free(hsi->lastA);
   for(i = 0; i < hsi->nstarts; i++) 
     if(hsi->withinAA[i] != NULL) free(hsi->withinAA[i]);
+  if(hsi->smx != NULL)       cm_FreeScanMatrix(cm, hsi->smx);
   free(hsi->withinAA);
   free(hsi);
 }
@@ -878,8 +852,8 @@ cm_FreeHybridScanInfo(HybridScanInfo_t *hsi)
  *           a state must be a possible local entry state AND must have an average
  *           subseq length of cfg->minlen.
  * 
- *           Step 2: Find which 'end group' each state v belongs to:
- *           Each end group is defined by a start/end state pair. 
+ *           Step 2: Find which 'start group' each state v belongs to:
+ *           Each start group is defined by a start/end state pair. 
  *           Each state v belongs to the group defined by start'/end'
  *           where start' is the maximum start state index that is 
  *           less than v. The assignments of states to groups is most
@@ -890,21 +864,21 @@ cm_FreeHybridScanInfo(HybridScanInfo_t *hsi)
 HybridScanInfo_t *
 cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs)
 {
-  int status;
-  int nd;
-  int v;
-  ESL_STACK   *pda;
-  int j_popped;
-  int i,j;
-  int on_right;
-  HybridScanInfo_t *hsi;
-  int safe_windowlen;
-  int k;
-  double avg_len_beta;
-  int cp9_ntrans;
-  int nd_clen;
-  CMEmitMap_t *emap;
-  int vx;
+  int               status;
+  HybridScanInfo_t *hsi;             /* the HybridScanInfo_t object we're creating */
+  int               nd;              /* counter over nodes of CM */
+  int               v;               /* counter over states of CM */
+  int               k;               /* counter over node of HMM */
+  ESL_STACK        *pda;             /* push down stack for traversing CM */
+  int               j_popped;        /* used when determining start groups */
+  int               i,j;             /* used when determining start groups */
+  int               on_right;        /* used when determining start groups */
+  int               safe_windowlen;  /* for calc'ing qdbs */
+  double            avg_len_beta;    /* tail loss prob for calc'ing avg len per subtree */
+  int               cp9_ntrans;      /* number of transitions for currently config'ed HMM */
+  int               nd_clen;         /* consensus length for a subtree */
+  CMEmitMap_t      *emap;            /* emit map for the cm */
+  int               vx;              /* a temporary, max v */
 
   /* contract check */
   if(cm->cp9 == NULL) cm_Fail("cm_CreateHybridScanInfo(), cm->cp9 is NULL.\n");
@@ -1139,6 +1113,10 @@ cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs)
     }
 
   cm_ValidateHybridScanInfo(cm, hsi);
+
+  /* create the scan matrix */
+  hsi->smx = cm_CreateScanMatrix(cm, hsi->W, hsi->dmin, hsi->dmax, TRUE, TRUE, FALSE); 
+
   return hsi;
 
   FreeEmitMap(emap);
@@ -1161,11 +1139,9 @@ cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs)
 int
 cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int v_root_to_add)
 {
-  int status;
   int nd;
   int v;
   int i,j;
-  int k_left, k_right;
   int v_left, v_right;
   int k;
   int M;
@@ -1278,10 +1254,6 @@ cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int v_root_to_add)
   FreeEmitMap(emap);
 
   return eslOK;
-
- ERROR:
-  cm_Fail("memory allocation error somewhere in cm_AddRootToHybridScanInfo().\n");
-  return status; /* NEVERREACHED */
 }
 
 
@@ -1297,7 +1269,6 @@ int
 cm_ValidateHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi)
 
 {
-  int status;
   int nd;
   int v, v2;
   int k;
@@ -1498,9 +1469,7 @@ main(int argc, char **argv)
   float          sc;
   char           *cmfile = esl_opt_GetArg(go, 1);
   CMFILE         *cmfp;	/* open input CM file stream */
-  int            *dmin;
-  int            *dmax;
-  float *vcalcs;
+  float          *vcalcs;
   double         hsi_beta;
   char           errbuf[cmERRBUFSIZE];
 
@@ -1510,19 +1479,21 @@ main(int argc, char **argv)
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
   if (!(CMFileRead(cmfp, &abc, &cm)))            cm_Fail("Failed to read CM");
   CMFileClose(cmfp);
-
+  
   if(esl_opt_GetBoolean(go, "-l")) 
     cm->config_opts  |= CM_CONFIG_LOCAL;
   cm->config_opts |= CM_CONFIG_QDB;
   ConfigCM(cm, NULL, NULL);
-
+  
   if((status = cm_CountSearchDPCalcs(cm, NULL, 1000, cm->dmin, cm->dmax, cm->W, &vcalcs, NULL)) != eslOK) cm_Fail("Error counting search dp calcs.");
-
+  
   HybridScanInfo_t *hsi;
   hsi_beta = esl_opt_GetReal(go, "--beta");
   hsi = cm_CreateHybridScanInfo(cm, hsi_beta, vcalcs[0]);
-  cm_CreateScanMatrix(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
-
+  if(esl_opt_GetBoolean(go, "-v")) { 
+    cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
+  }
+     
   /* for se.cm 
      cm_AddRootToHybridScanInfo(cm, hsi, 14);
      printf("added 14 to hybrid scan info\n");
@@ -1533,45 +1504,45 @@ main(int argc, char **argv)
   cm_AddRootToHybridScanInfo(cm, hsi, 125);
   printf("added 125 to hybrid scan info\n");
   
-  float *cm_expsc;
-  float *cp9_expsc;
-  /*cm_CalcExpSc(cm, &cm_expsc, &cp9_expsc);
+  /*float *cm_expsc;
+    float *cp9_expsc;
+    cm_CalcExpSc(cm, &cm_expsc, &cp9_expsc);
     cm_CountSearchDPCalcs(cm, 1000, cm->dmin, cm->dmax, cm->W, &vcalcs);
     predict_xsub(cm, vcalcs, cm_expsc, cp9_expsc);*/
 
 
-  for (i = 0; i < N; i++)
-    {
-      esl_rnd_xfIID(r, cm->null, abc->K, L, dsq);
-
+  for (i = 0; i < N; i++) {
+    esl_rnd_xfIID(r, cm->null, abc->K, L, dsq);
+    
+    esl_stopwatch_Start(w);
+    if((status = cm_cp9_HybridScan(cm, errbuf, cm->cp9_mx, dsq, hsi, 1, L, hsi->W, 0., 
+				   NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+    
+    printf("%4d %-30s %10.4f bits ", (i+1), "cm_cp9_HybridScan(): ", sc);
+    esl_stopwatch_Stop(w);
+    esl_stopwatch_Display(stdout, w, " CPU time: ");
+    
+    if(esl_opt_GetBoolean(go, "-v")) { 
       esl_stopwatch_Start(w);
-      if((status = cm_cp9_HybridScan(cm, errbuf, cm->cp9_mx, dsq, hsi, 1, L, hsi->W, 0., 
-				     NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-
-      printf("%4d %-30s %10.4f bits ", (i+1), "cm_cp9_HybridScan(): ", sc);
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_Display(stdout, w, " CPU time: ");
-      
-      if(esl_opt_GetBoolean(go, "-v")) { 
-	esl_stopwatch_Start(w);
       if((status = cp9_FastViterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,
 				   TRUE, FALSE, FALSE, NULL, NULL, NULL,
 				   &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits ", (i+1), "cm_FastViterbi(): ", sc);
-	esl_stopwatch_Stop(w);
-	esl_stopwatch_Display(stdout, w, " CPU time: ");
-      }
-
-      if(esl_opt_GetBoolean(go, "-v")) { 
-	esl_stopwatch_Start(w);
-	if((status = FastCYKScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits ", (i+1), "cm_FastCYKScan(): ", sc);
-	esl_stopwatch_Stop(w);
-	esl_stopwatch_Display(stdout, w, " CPU time: ");
-      }
-	 
+      printf("%4d %-30s %10.4f bits ", (i+1), "cm_FastViterbi(): ", sc);
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_Display(stdout, w, " CPU time: ");
     }
-
+    
+    if(esl_opt_GetBoolean(go, "-c")) { 
+      esl_stopwatch_Start(w);
+      if((status = FastCYKScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      printf("%4d %-30s %10.4f bits ", (i+1), "cm_FastCYKScan(): ", sc);
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_Display(stdout, w, " CPU time: ");
+    }
+    
+  }
+  
+  cm_FreeHybridScanInfo(hsi, cm);
   FreeCM(cm);
   free(dsq);
   esl_alphabet_Destroy(abc);

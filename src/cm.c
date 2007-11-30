@@ -316,7 +316,7 @@ CMRenormalize(CM_t *cm)
 void
 FreeCM(CM_t *cm)
 {
-  if (cm->smx    != NULL) cm_FreeScanMatrix(cm); /* free this first, it needs some info from cm->stid */
+  if (cm->smx    != NULL) cm_FreeScanMatrixForCM(cm); /* free this first, it needs some info from cm->stid */
   if (cm->name   != NULL) free(cm->name);
   if (cm->acc    != NULL) free(cm->acc);
   if (cm->desc   != NULL) free(cm->desc);
@@ -1819,7 +1819,7 @@ DuplicateCM(CM_t *cm)
 
   /* calculate the ScanMatrix, if it exists and is valid */
   if(cm->flags & CMH_SCANMATRIX) {
-    cm_CreateScanMatrix(new, (cm->smx->flags & cmSMX_HAS_FLOAT), (cm->smx->flags & cmSMX_HAS_INT));
+    cm_CreateScanMatrixForCM(new, (cm->smx->flags & cmSMX_HAS_FLOAT), (cm->smx->flags & cmSMX_HAS_INT));
   }
 
   /* create HMM banded matrix */

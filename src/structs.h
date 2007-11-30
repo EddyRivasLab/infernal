@@ -1069,69 +1069,11 @@ typedef struct cm_hb_mx_s {
 #define CM_HB_MX_MB_LIMIT 128 /* Megabyte limit for HMM banded CM DP matrices */
 #define CM_NB_MX_MB_LIMIT 128 /* Megabyte limit for non-banded CM DP matrices */
 
-#define MB_CM 0
-#define MB_CP9 1
-
-
-/* Structure HybridScanInfo_t: Information for a hybrid CP9 HMM/CM scan in 
- * which some states of the CM are used, and some states of the HMM are used.
- * This data structure keeps track of which HMM/CM states to use.
- */
-typedef struct hybridscaninfo_s {
-  int    cm_M;         /* # states in the CM */
-  int    cp9_M;        /* # nodes in the CP9 HMM, consensus length of the cm */
-  double beta;         /* beta used for calculating avglenA */                                           
-  int   *dmin;         /* [0..v..cm->M-1] min subtree length for v using beta */
-  int   *dmax;         /* [0..v..cm->M-1] max subtree length for v using beta */
-  int    W;            /* max hit size for hybrid scanner, set as hsi->dmax[0] */
-  float hybrid_ncalcs;   /* predicted # of millions of dp calcs for a hybrid scan per residue */
-  float full_cp9_ncalcs; /* predicted # of millions of dp calcs for a pure CP9 scan per residue */
-  float full_cm_ncalcs;  /* predicted # of millions of dp calcs for a pure CM scan per residue, with
-			  * this cannot be calc'ed from this object alone, b/c it depends on cm->beta,
-			  * this value is passed into cm_CreateHybridScanInfo() */
-  float *cm_vcalcs;      /* predicted # of millions of dp calcs for each subtree of the CM using hsi->dmin, hsi->dmax */
-  float *cp9_vcalcs;     /* predicted # of millions of dp calcs for each (implicit) subtree of the CP9 */
-
-  int   *k_mb;         /* [0..k..cm->clen] 2 possible values: MB_CM or MB_CP9 consensus col k is modelled by CM/CP9 */
-
-  int   *k_nxt;        /* [0..k..cm->clen-1] next closest cons col modelled by CP9, only valid if k_mb[k] == MB_CP9 */
-  int   *k_prv;        /* [1..k..cm->clen]   prev closest cons col modelled by CP9, only valid if k_mb[k] == MB_CP9 */
-  int    k_first;      /* min k for which k_mb[k] == MB_CP9 */
-  int    k_last;       /* max k for which k_mb[k] == MB_CP9 */
-
-  int   *k_nxtr;       /* [0..k..cm->clen-1] next closest column to use in CP9 DP algorithms */
-  int   *k_prvr;       /* [1..k..cm->clen]   prev closest column to use in CP9 DP algorithms */
-  int    k_firstr;     /* min k to use in CP9 DP algorithms */
-  int    k_lastr;      /* max k to use in CP9 DP algorithms */
-
-  int   *v_mb;         /* [0..v..cm->M-1]  2 possible values: MB_CM or MB_CP9 cm state v is modelled by CM/CP9 */
-  int   *v_nxt;        /* [1..v..cm->M-1]    next closest state modelled by CM, only valid if v_mb[v] == MB_CM */
-  int   *v_prv;        /* [1..v..cm->M-1]    prev closest state modelled by CM, only valid if v_mb[v] == MB_CM */
-  int    v_first;      /* min v for which v_mb[v] == MB_CM */
-  int    v_last;       /* max v for which v_mb[v] == MB_CM */
-  int    n_v_roots;    /* number of vroots */
-  int   *v_isroot;     /* [0..v..cm->M-1] TRUE if v is a sub CM root for the hybrid scan, FALSE if not */
-
-  /* nec? */ int    ncands;       /* number of candidate states, these *could* be sub CM roots */                   
-  /* nec? */ float  minlen;       /* minimum average length (avglen) a candidate state must have */                 
-  /* nec? */ int   *iscandA;      /* [0..v..cm->M-1] TRUE if state v is a candidate sub CM root, FALSE otherwise */   
-  float *avglenA;      /* [0..v..cm->M-1] average length of a hit rooted at v (from QDB) */                
-  int    nstarts;      /* # start states (and start groups) in the CM */                                 
-  int   *startA;       /* [0..i..cm->M-1] start group this state belongs to */                               
-  int   *firstA;       /* [0..i..nstarts-1], first state in start state i's group */                     
-  int   *lastA;        /* [0..i..nstarts-1], last state in start state i's group */                      
-  int  **withinAA;     /* [0..i..nstarts-1][0..j..nstarts-1] = TRUE if start state j's group             
-                        * is within start state i's group.                                               
-                        *  emap->startA[cm->nodemap[i]]->lpos < emap->startA[cm->nodemap[j]]->lpos  &&   
-                        *  emap->endA  [cm->nodemap[i]]->rpos > emap->endA  [cm->nodemap[j]]->rpos       
-                        */			
-} HybridScanInfo_t;
-
 /* Structure ScanMatrix_t: Information used by all CYK/Inside scanning functions,
  * compiled together into one data structure for convenience. 
  */
 #define cmSMX_HAS_FLOAT (1 << 0)  /* if float versions of alpha and precalc'ed scores are valid */
-#define cmSMX_HAS_INT   (1 << 1)  /* if int versions of alpha and precalc'ed scores are valid */
+#define cmSMX_HAS_INT   (1 << 1)  /* if int   versions of alpha and precalc'ed scores are valid */
 typedef struct scanmx_s {
   /* general info about the model/search */
   int     cm_M;        /* # states in the CM */
@@ -1183,6 +1125,66 @@ typedef struct theta_s {
   int       i0;                 /* position of first residue in sequence (gamma->mx[0] corresponds to this residue) */
 } Theta_t;
 
+/* Structure HybridScanInfo_t: Information for a hybrid CP9 HMM/CM scan in 
+ * which some states of the CM are used, and some states of the HMM are used.
+ * This data structure keeps track of which HMM/CM states to use.
+ */
+#define MB_CM 0
+#define MB_CP9 1
+typedef struct hybridscaninfo_s {
+  int    cm_M;         /* # states in the CM */
+  int    cp9_M;        /* # nodes in the CP9 HMM, consensus length of the cm */
+  double beta;         /* beta used for calculating avglenA */                                           
+  int   *dmin;         /* [0..v..cm->M-1] min subtree length for v using beta */
+  int   *dmax;         /* [0..v..cm->M-1] max subtree length for v using beta */
+  int    W;            /* max hit size for hybrid scanner, set as hsi->dmax[0] */
+  float hybrid_ncalcs;   /* predicted # of millions of dp calcs for a hybrid scan per residue */
+  float full_cp9_ncalcs; /* predicted # of millions of dp calcs for a pure CP9 scan per residue */
+  float full_cm_ncalcs;  /* predicted # of millions of dp calcs for a pure CM scan per residue, with
+			  * this cannot be calc'ed from this object alone, b/c it depends on cm->beta,
+			  * this value is passed into cm_CreateHybridScanInfo() */
+  float *cm_vcalcs;      /* predicted # of millions of dp calcs for each subtree of the CM using hsi->dmin, hsi->dmax */
+  float *cp9_vcalcs;     /* predicted # of millions of dp calcs for each (implicit) subtree of the CP9 */
+
+  int   *k_mb;         /* [0..k..cm->clen] 2 possible values: MB_CM or MB_CP9 consensus col k is modelled by CM/CP9 */
+
+  int   *k_nxt;        /* [0..k..cm->clen-1] next closest cons col modelled by CP9, only valid if k_mb[k] == MB_CP9 */
+  int   *k_prv;        /* [1..k..cm->clen]   prev closest cons col modelled by CP9, only valid if k_mb[k] == MB_CP9 */
+  int    k_first;      /* min k for which k_mb[k] == MB_CP9 */
+  int    k_last;       /* max k for which k_mb[k] == MB_CP9 */
+
+  int   *k_nxtr;       /* [0..k..cm->clen-1] next closest column to use in CP9 DP algorithms */
+  int   *k_prvr;       /* [1..k..cm->clen]   prev closest column to use in CP9 DP algorithms */
+  int    k_firstr;     /* min k to use in CP9 DP algorithms */
+  int    k_lastr;      /* max k to use in CP9 DP algorithms */
+
+  int   *v_mb;         /* [0..v..cm->M-1]  2 possible values: MB_CM or MB_CP9 cm state v is modelled by CM/CP9 */
+  int   *v_nxt;        /* [1..v..cm->M-1]    next closest state modelled by CM, only valid if v_mb[v] == MB_CM */
+  int   *v_prv;        /* [1..v..cm->M-1]    prev closest state modelled by CM, only valid if v_mb[v] == MB_CM */
+  int    v_first;      /* min v for which v_mb[v] == MB_CM */
+  int    v_last;       /* max v for which v_mb[v] == MB_CM */
+  int    n_v_roots;    /* number of vroots */
+  int   *v_isroot;     /* [0..v..cm->M-1] TRUE if v is a sub CM root for the hybrid scan, FALSE if not */
+
+  /* nec? */ int    ncands;       /* number of candidate states, these *could* be sub CM roots */                   
+  /* nec? */ float  minlen;       /* minimum average length (avglen) a candidate state must have */                 
+  /* nec? */ int   *iscandA;      /* [0..v..cm->M-1] TRUE if state v is a candidate sub CM root, FALSE otherwise */   
+  float *avglenA;      /* [0..v..cm->M-1] average length of a hit rooted at v (from QDB) */                
+  int    nstarts;      /* # start states (and start groups) in the CM */                                 
+  int   *startA;       /* [0..i..cm->M-1] start group this state belongs to */                               
+  int   *firstA;       /* [0..i..nstarts-1], first state in start state i's group */                     
+  int   *lastA;        /* [0..i..nstarts-1], last state in start state i's group */                      
+  int  **withinAA;     /* [0..i..nstarts-1][0..j..nstarts-1] = TRUE if start state j's group             
+                        * is within start state i's group.                                               
+                        *  emap->startA[cm->nodemap[i]]->lpos < emap->startA[cm->nodemap[j]]->lpos  &&   
+                        *  emap->endA  [cm->nodemap[i]]->rpos > emap->endA  [cm->nodemap[j]]->rpos       
+                        */			
+  ScanMatrix_t *smx;   /* CM DP scan matrix associated with this filter, has some redundant info (cm_M, dmin, dmax), 
+			* but the reason it's here is it's DP matrix which is specific to hsi's dmin/dmax,
+			* so having  hsi->smx prevents need to modify the CM's ScanMatrix cm->smx (which may 
+			* have correspond to different dmin/dmax), for a hybrid scan.
+			*/
+} HybridScanInfo_t;
 
 /* Structure FilterInfo_t: 
  * 
