@@ -420,7 +420,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   return status;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
   return eslFAIL; /* never reached */
 }
 
@@ -544,7 +544,7 @@ BandTruncationNegligible(double *density, int b, int W, double *ret_beta)
  *
  *            Caller frees the returned gamma with FreeBandDensities().
  *
- * Note:     Dies (esl_fatal()) from memory allocation error, without
+ * Note:     Dies (cm_Fail()) from memory allocation error, without
  *           cleanup.
  */
 int
@@ -560,10 +560,11 @@ BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
   int           status;		/* return status. */
   char         *name;           /* name for the seq we've emitted */
   ESL_RANDOMNESS  *r = NULL;    /* source of randomness */
+  int           namelen;        /* max int size for name */
 
   /* Create and seed RNG */
   if ((r = esl_randomness_CreateTimeseeded()) == NULL) 
-    esl_fatal("Failed to create random number generator: probably out of memory");
+    cm_Fail("Failed to create random number generator: probably out of memory");
 
   /* Allocate gamma, completely; and initialize to zeros. 
    * For consistency w/ BandCalculationEngine(), allocate a single
@@ -586,42 +587,45 @@ BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
 	gamma[v] = gamma[cm->M-1];
     }
 
+  namelen = 3 + IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
+
   /* Count Monte Carlo samples of subsequence lengths for
    * all nodes of sampled parsetrees.
    */
   status = 1;			
-  for (i = 0; i < nsample; i++)
-    {
-      sprintf(name, "seq%d", i+1);
-      EmitParsetree(cm, r, NULL, FALSE, &tr, NULL, &seqlen);
-      free(name);
-      if (seqlen > W) {
-	FreeParsetree(tr);
-	status = 0;		/* set status to FAILED */
-	continue;
-      }
-
-      /* The parsetree, though it's a tree, is stored as an
-       * array - so traversing it in preorder is trivial. It's
-       * already arranged in preorder.
-       */        
-      for (tidx = 0; tidx < tr->n; tidx++) 
-	{
-	  v = tr->state[tidx];
-	  n = (cm->sttype[v] == E_st) ? 0 : tr->emitr[tidx] - tr->emitl[tidx] + 1;
-	  gamma[v][n] += 1.;
-	}
+  for (i = 0; i < nsample; i++)  {
+    ESL_ALLOC(name, sizeof(char) * namelen);
+    sprintf(name, "seq%d", i+1);
+    EmitParsetree(cm, r, NULL, FALSE, &tr, NULL, &seqlen);
+    free(name);
+    if (seqlen > W) {
       FreeParsetree(tr);
+      status = 0;		/* set status to FAILED */
+      continue;
     }
+    
+    /* The parsetree, though it's a tree, is stored as an
+     * array - so traversing it in preorder is trivial. It's
+     * already arranged in preorder.
+     */        
+    for (tidx = 0; tidx < tr->n; tidx++) 
+      {
+	v = tr->state[tidx];
+	n = (cm->sttype[v] == E_st) ? 0 : tr->emitr[tidx] - tr->emitl[tidx] + 1;
+	gamma[v][n] += 1.;
+      }
+    FreeParsetree(tr);
+  }
 
   /* Return gamma, the observed counts (unnormalized densities).
    */
   *ret_gamma = gamma;
   esl_randomness_Destroy(r);
+  ESL_DPRINTF1(("Returning %d from BandMonteCarlo() (1 is passed, 0 failed)\n", status));
   return status;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
   return eslFAIL; /* never reached */
 }
 
@@ -724,7 +728,7 @@ PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W)
  *
  * Returns:  score of best overall hit
  *
- * Note:     Dies (esl_fatal()) from memory allocation error, without
+ * Note:     Dies (cm_Fail()) from memory allocation error, without
  *           cleanup.
  */
 float
@@ -733,13 +737,13 @@ CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int 
 {
   /* Contract check */
   if(j0 < i0)
-    esl_fatal("ERROR in CYKBandedScan, i0: %d j0: %d\n", i0, j0);
+    cm_Fail("ERROR in CYKBandedScan, i0: %d j0: %d\n", i0, j0);
   if(!(cm->flags & CMH_QDB))
-    esl_fatal("ERROR in CYKBandedScan, QDBs invalid\n");
+    cm_Fail("ERROR in CYKBandedScan, QDBs invalid\n");
   if(dsq == NULL)
-    esl_fatal("ERROR in CYKBandedScan, dsq is NULL.\n");
+    cm_Fail("ERROR in CYKBandedScan, dsq is NULL.\n");
   if(dmin == NULL || dmax == NULL)
-    esl_fatal("ERROR in CYKBandedScan, dmin and/or dmax are NULL.\n");
+    cm_Fail("ERROR in CYKBandedScan, dmin and/or dmax are NULL.\n");
 
   int       status;
   float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
@@ -1145,7 +1149,7 @@ CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int 
   return best_score;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
   return 0.; /* never reached */
 }
 
@@ -1306,6 +1310,6 @@ qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_l
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 

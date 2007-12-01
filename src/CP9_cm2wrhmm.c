@@ -16,6 +16,7 @@
 #include "esl_config.h"
 #include "config.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,11 +33,11 @@
 static float
 cm2hmm_emit_prob(CM_t *cm, CP9Map_t *cp9map, int x, int i, int k);
 static void
-cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, double *psi, char ***tmap);
+cm2hmm_special_trans_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, double *psi, char ***tmap);
 static void
-cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int k, double *psi, char ***tmap);
+cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *psi, char ***tmap);
 static void
-hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int a, int b, int k, int hmm_trans_idx, 
+hmm_add_single_trans_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int a, int b, int k, int hmm_trans_idx, 
 			 double *psi, char ***tmap);
 static float
 cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap, int k, double *psi);
@@ -44,7 +45,7 @@ static int
 check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, double threshold, 
 		     int debug_level);
 static int 
-CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float threshold, 
+CP9_node_chi_squared(CP9_t *ahmm, CP9_t *shmm, int nd, float threshold, 
 		     int print_flag);
 static int 
 check_cm_adj_bp(CM_t *cm, CP9Map_t *cp9map);
@@ -120,7 +121,7 @@ AllocCP9Map(CM_t *cm)
   return cp9map;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -178,7 +179,7 @@ FreeCP9Map(CP9Map_t *cp9map)
  *          will print an error statement and exit.
  */
 int
-build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
+build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 	      float psi_vs_phi_threshold, int debug_level)
 {
   int       status;
@@ -192,13 +193,13 @@ build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int do
 
   int ret_val;                 /* return value */
   CP9Map_t *cp9map;         
-  struct cplan9_s  *hmm;       /* CM plan 9 HMM we're going to construct from the sub_cm */
+  CP9_t  *hmm;       /* CM plan 9 HMM we're going to construct from the sub_cm */
 
   /* Contract check, we can't be in local mode in the CM */
   if(cm->flags & CMH_LOCAL_BEGIN)
-    esl_fatal("ERROR in build_cp9_hmm(), CMH_LOCAL_BEGIN flag is up.\n");
+    cm_Fail("ERROR in build_cp9_hmm(), CMH_LOCAL_BEGIN flag is up.\n");
   if(cm->flags & CMH_LOCAL_END)
-    esl_fatal("ERROR in build_cp9_hmm(), CMH_LOCAL_END flag is up.\n");
+    cm_Fail("ERROR in build_cp9_hmm(), CMH_LOCAL_END flag is up.\n");
 
   /* Allocate and initialize the cp9map */
   cp9map = AllocCP9Map(cm);
@@ -320,7 +321,7 @@ build_cp9_hmm(CM_t *cm, struct cplan9_s **ret_hmm, CP9Map_t **ret_cp9map, int do
   return ret_val;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0; /* never reached */
 }
 
@@ -722,25 +723,25 @@ map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v)
     {
       cp9map->cs2hn[v][0] = k;
       if(cp9map->cs2hs[v][0] != -1)
-	esl_fatal("ERROR in map_helper, cp9map->cs2hn[%d][0] is -1 but cp9map->cs2hs[%d][0] is not, this shouldn't happen.\n", v, v);
+	cm_Fail("ERROR in map_helper, cp9map->cs2hn[%d][0] is -1 but cp9map->cs2hs[%d][0] is not, this shouldn't happen.\n", v, v);
       cp9map->cs2hs[v][0] = ks;
     }
   else if (cp9map->cs2hn[v][1] == -1)
     {
       cp9map->cs2hn[v][1] = k;
       if(cp9map->cs2hs[v][1] != -1)
-	esl_fatal("ERROR in map_helper, cp9map->cs2hn[%d][0] is -1 but cp9map->cs2hs[%d][0] is not, this shouldn't happen.\n", v, v);
+	cm_Fail("ERROR in map_helper, cp9map->cs2hn[%d][0] is -1 but cp9map->cs2hs[%d][0] is not, this shouldn't happen.\n", v, v);
       cp9map->cs2hs[v][1] = ks;
     }
   else
-    esl_fatal("ERROR in map_helper, cp9map->cs2hn[%d][1] is not -1, and we're trying to add to it, this shouldn't happen.\n", v);
+    cm_Fail("ERROR in map_helper, cp9map->cs2hn[%d][1] is not -1, and we're trying to add to it, this shouldn't happen.\n", v);
 
   if(cp9map->hns2cs[k][ks][0] == -1)
     cp9map->hns2cs[k][ks][0] = v;
   else if(cp9map->hns2cs[k][ks][1] == -1)
     cp9map->hns2cs[k][ks][1] = v;
   else
-    esl_fatal("ERROR in map_helper, cp9map->hns2cs[%d][%d][1] is not -1, and we're trying to add to it, this shouldn't happen.\n", k, ks);
+    cm_Fail("ERROR in map_helper, cp9map->hns2cs[%d][%d][1] is not -1, and we're trying to add to it, this shouldn't happen.\n", k, ks);
   return;
 }
 
@@ -857,19 +858,19 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
       else if(cm->ndtype[n] == END_nd)
 	nstates = 1;
       else 
-	esl_fatal("ERROR: bogus node type: %d\n", n);
+	cm_Fail("ERROR: bogus node type: %d\n", n);
       for(v = cm->nodemap[n]; v < cm->nodemap[n] + nstates; v++)
 	if(cm->sttype[v] != IL_st && cm->sttype[v] != IR_st)
 	  summed_psi += psi[v];
       if((summed_psi < 0.999) || (summed_psi > 1.001))
-	esl_fatal("ERROR: summed psi of split states in node %d not 1.0 but : %f\n", n, summed_psi);
+	cm_Fail("ERROR: summed psi of split states in node %d not 1.0 but : %f\n", n, summed_psi);
       /* printf("split summed psi[%d]: %f\n", n, summed_psi);*/
     }
   /* Another sanity check, the only states that can have psi equal to 0
    * are detached insert states (states immediately prior to END_Es) */
   for(v = 0; v < cm->M; v++)
     if(psi[v] == 0. && cm->sttype[(v+1)] != E_st)
-      esl_fatal("ERROR: psi of state v:%d is 0.0 and this state is not a detached insert! HMM banding would have failed...\n", v);
+      cm_Fail("ERROR: psi of state v:%d is 0.0 and this state is not a detached insert! HMM banding would have failed...\n", v);
 }
 
 /**************************************************************************
@@ -1255,7 +1256,7 @@ make_tmap(char ****ret_tmap)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 
@@ -1327,7 +1328,7 @@ cm2hmm_emit_prob(CM_t *cm, CP9Map_t *cp9map, int x, int i, int k)
  * Returns: (void) 
  */
 static void
-cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, double *psi, 
+cm2hmm_special_trans_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, double *psi, 
 			 char ***tmap)
 {
   int  status;
@@ -1508,7 +1509,7 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, doubl
   hmm->t[0][CTMI] /= d;
   hmm->t[0][CTMD] /= d;
 
-  esl_vec_FNorm(hmm->t[0]+4, 3);	/* transitions out of insert for node 0 (state N)*/
+  esl_vec_FNorm(hmm->t[0]+cp9_TRANS_INSERT_OFFSET, 3);	/* transitions out of insert for node 0 (state N)*/
 
   k = 0;
   /*
@@ -1660,8 +1661,8 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, doubl
   d =esl_vec_FSum(hmm->t[k], 4) + hmm->end[k]; 
   esl_vec_FScale(hmm->t[k], 4, 1./d);
   hmm->end[k] /= d;
-  esl_vec_FNorm(hmm->t[k]+4, 3);
-  esl_vec_FNorm(hmm->t[k]+7, 3);
+  esl_vec_FNorm(hmm->t[k]+cp9_TRANS_INSERT_OFFSET, 3);
+  esl_vec_FNorm(hmm->t[k]+cp9_TRANS_DELETE_OFFSET, 3);
 
   /*
   printf("S hmm->t[%d][CTMM]: %f\n", k, hmm->t[k][CTMM]);
@@ -1682,7 +1683,7 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, doubl
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 /**************************************************************************
@@ -1707,7 +1708,7 @@ cm2hmm_special_trans_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, doubl
  * Returns: (void)    
  */
 static void
-cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int k, double *psi, char ***tmap)
+cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *psi, char ***tmap)
 {
   int status;
   int *ap; /* CM states a' that map to HMM state a, 
@@ -1924,8 +1925,8 @@ cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int k, 
   esl_vec_FScale(hmm->t[k], 4, 1./d);
   hmm->end[k] /= d;
 
-  esl_vec_FNorm(hmm->t[k]+4, 3);
-  esl_vec_FNorm(hmm->t[k]+7, 3);
+  esl_vec_FNorm(hmm->t[k]+cp9_TRANS_INSERT_OFFSET, 3);
+  esl_vec_FNorm(hmm->t[k]+cp9_TRANS_DELETE_OFFSET, 3);
   /* print transition probs for HMM */
   /*
     printf("hmm->t[%d][CTMM]: %f\n", k, hmm->t[k][CTMM]);
@@ -1945,7 +1946,7 @@ cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int k, 
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 /**************************************************************************
@@ -1970,7 +1971,7 @@ cm2hmm_trans_probs_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int k, 
  * Returns: ret_phi 
  */
 void
-fill_phi_cp9(struct cplan9_s *hmm, double ***ret_phi, int spos)
+fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos)
 {
   int status;
   int k;
@@ -2024,7 +2025,7 @@ fill_phi_cp9(struct cplan9_s *hmm, double ***ret_phi, int spos)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 
@@ -2048,7 +2049,7 @@ fill_phi_cp9(struct cplan9_s *hmm, double ***ret_phi, int spos)
  * Returns: (void) 
  */
 static void
-hmm_add_single_trans_cp9(CM_t *cm, struct cplan9_s *hmm, CP9Map_t *cp9map, int a, int b, int k, int hmm_trans_idx, 
+hmm_add_single_trans_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int a, int b, int k, int hmm_trans_idx, 
 			double *psi, char ***tmap)
 {
   /* check if we've got real CM state ids */
@@ -2250,7 +2251,7 @@ cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap
   return to_return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -2293,7 +2294,7 @@ check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, doub
   int ret_val; /* return value */
   int adj_bp_flag; /* a special case in which we always return TRUE after printing a warning */
 
-  if (cm->flags & CMH_LOCAL_BEGIN) esl_fatal("internal error: we're in CM local mode while trying to build a CP9 HMM");
+  if (cm->flags & CMH_LOCAL_BEGIN) cm_Fail("internal error: we're in CM local mode while trying to build a CP9 HMM");
 
   adj_bp_flag = FALSE;
   if(check_cm_adj_bp(cm, cp9map))
@@ -2351,7 +2352,7 @@ check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, doub
       ap[0] = cp9map->hns2cs[k][k_state][0];
       ap[1] = cp9map->hns2cs[k][k_state][1];
       if(ap[1] != -1)
-	esl_fatal("ERROR, HMM insert state of node %d maps to 2 CM insert states: %d and %d\n", k, ap[0], ap[1]);
+	cm_Fail("ERROR, HMM insert state of node %d maps to 2 CM insert states: %d and %d\n", k, ap[0], ap[1]);
       summed_psi = psi[ap[0]];
       violation = FALSE;
       diff = phi[k][1] - summed_psi;
@@ -2401,7 +2402,7 @@ check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, doub
   return ret_val;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -2419,7 +2420,7 @@ check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, doub
  * Returns: (void) 
  */
 void
-debug_print_cp9_params(FILE *fp, struct cplan9_s *hmm, int print_scores)
+debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores)
 {
   int k, i;
 
@@ -2537,13 +2538,14 @@ debug_print_cp9_params(FILE *fp, struct cplan9_s *hmm, int print_scores)
  * Args:    
  * CM_t *cm          - the CM
  * cplan9_s *hmm     - the HMM (models consensus columns spos to epos of the CM)
+ * ESL_RANDOMNESS r  - source of randomness
  * int print_flag    - TRUE to print useful debugging info
  *
  * Returns: TRUE: if CM and HMM are "close enough" (see code)
  *          FALSE: otherwise
  */
 int 
-CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo, 
+CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *subinfo, 
 		      int spos, int epos, float chi_thresh, int nsamples, int print_flag)
 {
   int status;
@@ -2569,7 +2571,7 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
   int v_ct;                 /* number of nodes that violate our threshold */
   int spredict_total_ct;       /* total number of nodes we thought would be violations */
   int swrong_total_ct; /* total number of nodes we thought would be violations but were not */
-  ESL_RANDOMNESS  *r = NULL;    /* source of randomness */
+  int namelen;         /* max int size for name */
 
   spredict_total_ct = 0;
   swrong_total_ct = 0;
@@ -2577,15 +2579,12 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
       
   msa_nseq = 1000;
 
-  /* Create and seed RNG */
-  if ((r = esl_randomness_CreateTimeseeded()) == NULL) 
-    esl_fatal("Failed to create random number generator: probably out of memory");
-
   /* Allocate and zero the new HMM we're going to build by sampling from
    * the CM.
    */
   shmm = AllocCPlan9(hmm->M, hmm->abc);
   ZeroCPlan9(shmm);
+  CPlan9SetNullModel(shmm, hmm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
 
   CPlan9Renormalize(hmm);
   CMRenormalize(cm);
@@ -2596,6 +2595,7 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
   ESL_ALLOC(tr, (sizeof(Parsetree_t) * msa_nseq));
   ESL_ALLOC(wgt,(sizeof(float)       * msa_nseq));
   esl_vec_FSet(wgt, msa_nseq, 1.0);
+  namelen = 3 + IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
 
   while(nsampled < nsamples)
     {
@@ -2618,15 +2618,16 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
 	msa_nseq = nsamples - nsampled;
       for (i = 0; i < msa_nseq; i++)
 	{
+	  ESL_ALLOC(name, sizeof(char) * namelen);
 	  sprintf(name, "seq%d", i+1);
-	  EmitParsetree(cm, r, name, FALSE, &(tr[i]), &(sq[i]), &L);
+	  EmitParsetree(cm, r, name, TRUE, &(tr[i]), &(sq[i]), &L);
 	  free(name);
 	}
       /* Build a new MSA from these parsetrees */
       Parsetrees2Alignment(cm, cm->abc, sq, NULL, tr, msa_nseq, TRUE, FALSE, &msa);
       /* MSA should be in text mode, not digitized */
       if(msa->flags & eslMSA_DIGITAL)
-      esl_fatal("ERROR in CP9_check_by_sampling(), sampled MSA should NOT be digitized.\n");
+      cm_Fail("ERROR in CP9_check_by_sampling(), sampled MSA should NOT be digitized.\n");
       
       /* Truncate the alignment prior to consensus column spos and after 
 	 consensus column epos */
@@ -2657,11 +2658,10 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
       for (i = 0; i < msa_nseq; i++)
 	{
 	  MakeDealignedString(msa->abc, msa->aseq[i], msa->alen, msa->aseq[i], &(tmp_text_sq)); 
+	  ESL_ALLOC(tmp_name, sizeof(char) * namelen);
 	  sprintf(tmp_name, "seq%d", i+1);
 	  esl_sq_CreateFrom(tmp_name, tmp_text_sq, NULL, NULL, NULL);
 	  free(tmp_text_sq);
-	  if(esl_sq_Digitize(msa->abc, sq[i]) != eslOK)
-	    esl_fatal("ERROR digitizing sequence in CP9_check_by_sampling().\n");
 	}
       
       /* Determine match assignment from RF annotation
@@ -2675,6 +2675,7 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
 	    matassign[apos+1] = 1;
 	}
       /* make fake tracebacks for each seq */
+      esl_msa_Digitize(msa->abc, msa);
       CP9_fake_tracebacks(msa, matassign, &cp9_tr);
       
       /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
@@ -2688,12 +2689,11 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
   esl_msa_Destroy(msa);
   free(matassign);
   free(useme);
-  for (i = 0; i < msa_nseq; i++)
-    {
-      CP9FreeTrace(cp9_tr[i]);
-      FreeParsetree(tr[i]);
-      esl_sq_Destroy(sq[i]);
-    }
+  for (i = 0; i < msa_nseq; i++) {
+    CP9FreeTrace(cp9_tr[i]);
+    FreeParsetree(tr[i]);
+    esl_sq_Destroy(sq[i]);
+  }
   free(cp9_tr);
 
   /* The new shmm is in counts form, filled with observations from MSAs sampled
@@ -2713,41 +2713,34 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
       debug_print_cp9_params(stdout, shmm, TRUE);
       printf("DONE PRINTING SAMPLED HMM PARAMS:\n");
     }
-  for(nd = 0; nd <= shmm->M; nd++)
-{
-      if(nd == 0 || nd == shmm->M)
-	{
-	  if(print_flag) printf("nd:%d\n", nd);
-	  if(!(CP9_node_chi_squared(hmm, shmm, nd, chi_thresh, print_flag)))
-	    {
-	      if(subinfo == NULL)
-		{
-		  v_ct++;
-		  printf("SAMPLING VIOLATION[%3d]: TRUE | spos: %3d | epos: %3d\n", nd, spos, epos);
-		}
-	      else if(subinfo != NULL && subinfo->imp_cc[nd] == 0)
-		{
-		  v_ct++;
-		  printf("SAMPLING VIOLATION[%3d]: TRUE | spos: %3d | epos: %3d | subinfo->imp_cc: %d\n", nd, spos, epos, subinfo->imp_cc[nd]);
-		}
-	      else if(subinfo != NULL && subinfo->imp_cc[nd] != 0)
-		{
-		  spredict_total_ct++;
-		  subinfo->spredict_ct[subinfo->imp_cc[nd]]++;
-		  if(print_flag) printf("PREDICTED SAMPLING VIOLATION[%3d]: TRUE | spos: %3d | epos: %3d | subinfo->imp_cc: %d\n", nd, spos, epos, subinfo->imp_cc[nd]);
-		}
-	    }
-	  else if(subinfo != NULL && subinfo->imp_cc[nd] != 0)
-	    {
-	      /* We predicted this node would fail, but it didn't */
-	      spredict_total_ct++;
-	      subinfo->spredict_ct[subinfo->imp_cc[nd]]++;
-	      swrong_total_ct++;
-	      subinfo->swrong_ct[subinfo->imp_cc[nd]]++;
-	      if(print_flag) printf("NON-VIOLATION[%3d] %3d : spos: %3d | epos: %3d | non-subinfo->imp_cc: %d\n", nd, swrong_total_ct, spos, epos, subinfo->imp_cc[nd]);
-	    }  
-	}
+  for(nd = 0; nd <= shmm->M; nd++) {
+    //if(nd == 0 || nd == shmm->M) {
+    if(print_flag) printf("nd:%d\n", nd);
+    if(!(CP9_node_chi_squared(hmm, shmm, nd, chi_thresh, print_flag))) {
+      if(subinfo == NULL) {
+	v_ct++;
+	printf("SAMPLING VIOLATION[%3d]: TRUE | spos: %3d | epos: %3d\n", nd, spos, epos);
+      }
+      else if(subinfo != NULL && subinfo->imp_cc[nd] == 0) {
+	v_ct++;
+	printf("SAMPLING VIOLATION[%3d]: TRUE | spos: %3d | epos: %3d | subinfo->imp_cc: %d\n", nd, spos, epos, subinfo->imp_cc[nd]);
+      }
+      else if(subinfo != NULL && subinfo->imp_cc[nd] != 0) {
+	spredict_total_ct++;
+	subinfo->spredict_ct[subinfo->imp_cc[nd]]++;
+	if(print_flag) printf("PREDICTED SAMPLING VIOLATION[%3d]: TRUE | spos: %3d | epos: %3d | subinfo->imp_cc: %d\n", nd, spos, epos, subinfo->imp_cc[nd]);
+      }
     }
+    else if(subinfo != NULL && subinfo->imp_cc[nd] != 0) {
+      /* We predicted this node would fail, but it didn't */
+      spredict_total_ct++;
+      subinfo->spredict_ct[subinfo->imp_cc[nd]]++;
+      swrong_total_ct++;
+      subinfo->swrong_ct[subinfo->imp_cc[nd]]++;
+      if(print_flag) printf("NON-VIOLATION[%3d] %3d : spos: %3d | epos: %3d | non-subinfo->imp_cc: %d\n", nd, swrong_total_ct, spos, epos, subinfo->imp_cc[nd]);
+    }  
+    //}
+  }
 
   /*Next, renormalize shmm and logoddisfy it */
   CPlan9Renormalize(shmm);
@@ -2768,15 +2761,12 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
       /*WriteStockholm(stdout, msa);*/
     }      
   FreeCPlan9(shmm);
-  esl_randomness_Destroy(r);
 
-  if(v_ct > 0)
-    return FALSE;
-  else
-    return TRUE;
+  if(v_ct > 0) return FALSE;
+  else         return TRUE;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return FALSE; /* never reached */
 }
 
@@ -2801,7 +2791,7 @@ CP9_check_by_sampling(CM_t *cm, struct cplan9_s *hmm, CMSubInfo_t *subinfo,
  * int print_flag    - TRUE to print useful debugging info
  */
 int
-CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float threshold, int print_flag)
+CP9_node_chi_squared(CP9_t *ahmm, CP9_t *shmm, int nd, float threshold, int print_flag)
 {
   int status;
   double p;
@@ -2815,7 +2805,7 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
   ret_val = TRUE;
 
   if(nd > shmm->M || nd >  ahmm->M)
-    esl_fatal("ERROR CP9_node_chi_squared() is being grossly misused.\n");
+    cm_Fail("ERROR CP9_node_chi_squared() is being grossly misused.\n");
 
   CPlan9Renormalize(ahmm);
   CPlan9GlobalConfig(ahmm);
@@ -2853,7 +2843,7 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
       if((check_m_nseq >= m_nseq && ((check_m_nseq - m_nseq) > 0.0001)) ||
 	 (check_m_nseq  < m_nseq && ((m_nseq - check_m_nseq) > 0.0001)))     
 	{
-	  esl_fatal("ERROR: node: %d has different number of sampled match emissions and transitions.\n");
+	  cm_Fail("ERROR: node: %d has different number of sampled match emissions and transitions.\n");
 	}
     }
   check_i_nseq = 0.;
@@ -2861,7 +2851,7 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
   if((check_i_nseq >= i_nseq && ((check_i_nseq - i_nseq) > 0.0001)) ||
      (check_i_nseq  < i_nseq && ((i_nseq - check_i_nseq) > 0.0001)))     
     {
-      esl_fatal("ERROR: node: %d has different number of sampled insert emissions and transitions.\n");
+      cm_Fail("ERROR: node: %d has different number of sampled insert emissions and transitions.\n");
     }
 
   /* Perform chi-squared tests using code borrowed from SRE in 
@@ -2872,91 +2862,75 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
       esl_vec_FScale(ahmm->mat[nd], MAXABET, esl_vec_FSum(shmm->mat[nd], MAXABET)); /* convert to #'s */
       p = FChiSquareFit(ahmm->mat[nd], shmm->mat[nd], MAXABET);	    /* compare #'s    */
       if (p < threshold)
-	esl_fatal("Rejected match emission distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	cm_Fail("Rejected match emission distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
       if(print_flag) printf("match emissions %d p: %f\n", nd, p);
     }
   /* check insert emissions */
   esl_vec_FScale(ahmm->ins[nd], MAXABET, esl_vec_FSum(shmm->ins[nd], MAXABET)); /* convert to #'s */
   p = FChiSquareFit(ahmm->ins[nd], shmm->ins[nd], MAXABET);	/* compare #'s    */
   if (p < threshold)
-    esl_fatal("Rejected insert emission distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+    cm_Fail("Rejected insert emission distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
   if(print_flag) printf("insert emissions %d p: %f\n", nd, p);
   
   /* check transitions */
   /* out of match, we're in global NW mode, so only non-zero begin is begin[1], 
    * and only non-zero end is end[hmm->M] */
-  ESL_ALLOC(temp_ahmm_trans, sizeof(float) * 9);
-  ESL_ALLOC(temp_shmm_trans, sizeof(float) * 9);
-  if(nd == 0 || nd == shmm->M) 
-    {
-      if(nd == 0) /* careful, begin[1] is really hmm->t[0][CTMM] */
-	{
-	  temp_ahmm_trans[0] = ahmm->begin[1];
-	  temp_shmm_trans[0] = shmm->begin[1];
-	  for(x = 1; x < 3; x++)
-	    {
-	      temp_ahmm_trans[x] = ahmm->t[0][x];
-	      temp_shmm_trans[x] = shmm->t[0][x];
-	    }
-	}
-      if(nd == shmm->M) /* careful, end[hmm->M] is really hmm->t[hmm->M][CTMM] */
-	{
-	  temp_ahmm_trans[0] = ahmm->end[ahmm->M];
-	  temp_shmm_trans[0] = shmm->end[shmm->M];
-	  for(x = 1; x < 3; x++)
-	    {
-	      temp_ahmm_trans[x] = ahmm->t[ahmm->M][x];
-	      temp_shmm_trans[x] = shmm->t[shmm->M][x];
-	    }
-	}
-      esl_vec_FScale(temp_ahmm_trans, 3, esl_vec_FSum(temp_shmm_trans, 3));     /* convert to #'s */         
-      p = FChiSquareFit(temp_ahmm_trans, temp_shmm_trans, 3);   /* compare #'s    */
-      if (p < threshold)
-	{
-	  //esl_fatal("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-	  if(print_flag) printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-	  ret_val = FALSE;
-	}
-      if(print_flag) printf("out of match %d p: %f\n", nd, p);
+  ESL_ALLOC(temp_ahmm_trans, sizeof(float) * cp9_NTRANS);
+  ESL_ALLOC(temp_shmm_trans, sizeof(float) * cp9_NTRANS);
+  if(nd == 0 || nd == shmm->M) {
+    if(nd == 0) { /* careful, begin[1] is really hmm->t[0][CTMM] */
+      temp_ahmm_trans[0] = ahmm->begin[1];
+      temp_shmm_trans[0] = shmm->begin[1];
+      for(x = 1; x < cp9_TRANS_NMATCH; x++) {
+	temp_ahmm_trans[x] = ahmm->t[0][x];
+	temp_shmm_trans[x] = shmm->t[0][x];
+      }
     }
-  else
-    {
-      esl_vec_FScale(ahmm->t[nd], 3, esl_vec_FSum(shmm->t[nd], 3));     /* convert to #'s */         
-      p = FChiSquareFit(ahmm->t[nd], shmm->t[nd], 3);   /* compare #'s    */
-      if (p < threshold)
-	{
-	  //esl_fatal("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-	  if(print_flag) printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-	  ret_val = FALSE;
-	}
-      if(print_flag) printf("out of match %d p: %f\n", nd, p);
+    if(nd == shmm->M) { /* careful, end[hmm->M] is really hmm->t[hmm->M][CTMM] */
+      temp_ahmm_trans[0] = ahmm->end[ahmm->M];
+      temp_shmm_trans[0] = shmm->end[shmm->M];
+      for(x = 1; x < cp9_TRANS_NMATCH; x++) {
+	temp_ahmm_trans[x] = ahmm->t[ahmm->M][x];
+	temp_shmm_trans[x] = shmm->t[shmm->M][x];
+      }
     }
-  /* out of insert */
-  esl_vec_FScale(ahmm->t[nd]+3, 3, esl_vec_FSum(shmm->t[nd]+3, 3));     /* convert to #'s */         
-  p = FChiSquareFit(ahmm->t[nd]+3, shmm->t[nd]+3, 3);   /* compare #'s    */
-  if (p < threshold)
-    {
-      //esl_fatal("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-      if(print_flag) printf("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+    esl_vec_FScale(temp_ahmm_trans, cp9_TRANS_NMATCH, esl_vec_FSum(temp_shmm_trans, cp9_TRANS_NMATCH));     /* convert to #'s */         
+    p = FChiSquareFit(temp_ahmm_trans, temp_shmm_trans, cp9_TRANS_NMATCH);   /* compare #'s    */
+    if (p < threshold) {
+      if(print_flag) printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
       ret_val = FALSE;
     }
+    if(print_flag) printf("out of match %d p: %f\n", nd, p);
+  }
+  else {
+    esl_vec_FScale(ahmm->t[nd], cp9_TRANS_NMATCH, esl_vec_FSum(shmm->t[nd], cp9_TRANS_NMATCH));     /* convert to #'s */         
+    p = FChiSquareFit(ahmm->t[nd], shmm->t[nd], cp9_TRANS_NMATCH);   /* compare #'s    */
+    if (p < threshold) {
+      if(print_flag) printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+      ret_val = FALSE;
+    }
+    if(print_flag) printf("out of match %d p: %f\n", nd, p);
+  }
+  /* out of insert */
+  esl_vec_FScale   (ahmm->t[nd] + cp9_TRANS_INSERT_OFFSET, cp9_TRANS_NINSERT, esl_vec_FSum(shmm->t[nd]+cp9_TRANS_INSERT_OFFSET, cp9_TRANS_NINSERT));     /* convert to #'s */         
+  p = FChiSquareFit(ahmm->t[nd] + cp9_TRANS_INSERT_OFFSET, shmm->t[nd] + cp9_TRANS_INSERT_OFFSET, cp9_TRANS_NINSERT);   /* compare #'s    */
+  if (p < threshold) {
+    if(print_flag) printf("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+    ret_val = FALSE;
+  }
   if(print_flag) printf("out of insert %d p: %f\n", nd, p);
 
   /* out of delete */
-  if(nd != 0)
-    {
-      esl_vec_FScale(ahmm->t[nd]+6, 3, esl_vec_FSum(shmm->t[nd]+6, 3));     /* convert to #'s */         
-      p = FChiSquareFit(ahmm->t[nd]+6, shmm->t[nd]+6, 3);   /* compare #'s    */
-      if (p < threshold)
-	{
-	  //esl_fatal("Rejected delete transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-	  if(print_flag) printf("Rejected delete transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-	  ret_val = FALSE;
-	}
+  if(nd != 0) { /* D_0 does not exist */
+    esl_vec_FScale     (ahmm->t[nd] + cp9_TRANS_DELETE_OFFSET, cp9_TRANS_NDELETE, esl_vec_FSum(shmm->t[nd] + cp9_TRANS_DELETE_OFFSET, cp9_TRANS_NDELETE));     /* convert to #'s */         
+      p = FChiSquareFit(ahmm->t[nd] + cp9_TRANS_DELETE_OFFSET, shmm->t[nd] + cp9_TRANS_DELETE_OFFSET, cp9_TRANS_NDELETE);   /* compare #'s    */
+      if (p < threshold) {
+	if(print_flag) printf("Rejected delete transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	ret_val = FALSE;
+      }
       if(print_flag) printf("out of delete %d p: %f\n\n", nd, p);
-    }
-  else
-    if(print_flag) printf("\n");
+  }
+  else if(print_flag) printf("\n");
 
   /* we've scaled some probabilities into counts, we want to get back into prob form */
   CPlan9Renormalize(ahmm);
@@ -2964,7 +2938,7 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
   return ret_val;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
   
@@ -2983,7 +2957,7 @@ CP9_node_chi_squared(struct cplan9_s *ahmm, struct cplan9_s *shmm, int nd, float
  * Returns: (void)
  */
 void
-debug_print_phi_cp9(struct cplan9_s *hmm, double **phi)
+debug_print_phi_cp9(CP9_t *hmm, double **phi)
 {
   int k;
 
@@ -3026,7 +3000,7 @@ FChiSquareFit(float *f1, float *f2, int N)
   if (n > 1) 
     {
       if(esl_stats_IncompleteGamma(((float) n-1.)/2., chisq/2., NULL, &qax) != eslOK)
-	esl_fatal("ERROR in FChiSquareFit() call to esl_stats_IncompleteGamma()");
+	cm_Fail("ERROR in FChiSquareFit() call to esl_stats_IncompleteGamma()");
       return (float) qax;
     }
   else 
@@ -3094,12 +3068,11 @@ MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, char *ss, cha
       }
   new[rpos] = '\0';
   if (alen != strlen(ss))
-    { esl_fatal("ERROR dealigning sequence."); }
+    { cm_Fail("ERROR dealigning sequence."); }
   *ret_s = new;
   return eslOK;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0; /* never reached */
 }
-

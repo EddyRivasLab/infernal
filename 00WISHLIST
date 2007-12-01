@@ -51,11 +51,13 @@ RNA basepairs. An example, semi-made up, would be as follows:
 
 
 
+CANONCIAL    *        *                                  *          *
 MODEL      <<<<<<-----<<<<<<__________________~~~~~~>>>>>>------->>>>>>
          1 gCuGGGUUUUUCCuuGuUCGCACCGGACACCUCCA*[12]*gCaaGGUUUUUAUCCCaGu 65
            GCU:::UUUU ::UU :UC  ACCG ACAC U CA      : AA:  UU UAU::: GU
   73425315 GCUAUUUUUUAUUUUAUUCAUACCGUACACAUACA*[16]*ACAAACAUUGUAUGGUCGU 73425384
 CANONCIAL  <<x<<<-----x<<<<<__________________~~~~~~>>>>>x------->>>x>>
+
 
 
 I propose using "x" as a symbol for pairs that form in the model, but are not Watson-

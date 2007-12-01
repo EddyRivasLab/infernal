@@ -548,8 +548,8 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
       /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
        * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
        */
-      CP9NodeForPosn(orig_hmm, 1, L, 1, orig_cm->cp9_bmx, &spos, &spos_state, FALSE, 0., TRUE, debug_level);
-      CP9NodeForPosn(orig_hmm, 1, L, L, orig_cm->cp9_bmx, &epos, &epos_state, FALSE, 0., FALSE, debug_level);
+      CP9NodeForPosn(orig_hmm, 1, L, 1, orig_cm->cp9_bmx, &spos, &spos_state, 0., TRUE, debug_level);
+      CP9NodeForPosn(orig_hmm, 1, L, L, orig_cm->cp9_bmx, &epos, &epos_state, 0., FALSE, debug_level);
       /* Deal with special cases for sub-CM alignment:
        * If the most likely state to have emitted the first or last residue
        * is the insert state in node 0, it only makes sense to start modelling
@@ -564,7 +564,6 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
       if(!(build_sub_cm(orig_cm, &sub_cm, 
 			spos, epos,         /* first and last col of structure kept in the sub_cm  */
 			&submap,            /* maps from the sub_cm to cm and vice versa           */
-			FALSE,              /* DON'T build a fullsub model (deprecated)            */
 			debug_level)))      /* print or don't print debugging info                 */
 	ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), unexpected error building a sub CM for seq %d.", i);
       /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded), this will also:  */
@@ -726,7 +725,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
       if(! do_inside) { 
 	/* Convert the sub_cm parsetree to a full CM parsetree */
 	if(debug_level > 0) ParsetreeDump(stdout, *cur_tr, cm, cur_dsq, NULL, NULL);
-	if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, *cur_tr, submap, FALSE, debug_level))) { 
+	if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, *cur_tr, submap, debug_level))) { 
 	  /* ParsetreeDump(stdout, orig_tr, orig_cm, cur_dsq, NULL, NULL); */
 	  ESL_FAIL(eslFAIL, errbuf, "ActuallyAlignTargets(), Unable to convert sub CM parsetree to original CM parsetree. This shouldn't happen.");
 	}
@@ -1089,8 +1088,8 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
       /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
        * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
        */
-      CP9NodeForPosn(orig_hmm, 1, L, 1, orig_cm->cp9_bmx, &spos, &spos_state, FALSE, 0., TRUE, debug_level);
-      CP9NodeForPosn(orig_hmm, 1, L, L, orig_cm->cp9_bmx, &epos, &epos_state, FALSE, 0., FALSE, debug_level);
+      CP9NodeForPosn(orig_hmm, 1, L, 1, orig_cm->cp9_bmx, &spos, &spos_state, 0., TRUE, debug_level);
+      CP9NodeForPosn(orig_hmm, 1, L, L, orig_cm->cp9_bmx, &epos, &epos_state, 0., FALSE, debug_level);
       /* Deal with special cases for sub-CM alignment:
        * If the most likely state to have emitted the first or last residue
        * is the insert state in node 0, it only makes sense to start modelling
@@ -1105,7 +1104,6 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
       if(!(build_sub_cm(orig_cm, &sub_cm, 
 			spos, epos,         /* first and last col of structure kept in the sub_cm  */
 			&submap,            /* maps from the sub_cm to cm and vice versa           */
-			FALSE,              /* DON'T build a fullsub model (deprecated)            */
 			debug_level)))      /* print or don't print debugging info                 */
 	cm_Fail("ERROR OldActuallyAlignTargets(), building sub CM.");
       /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded), this will also:  */
@@ -1329,7 +1327,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
       if(! do_inside) { 
 	/* Convert the sub_cm parsetree to a full CM parsetree */
 	if(debug_level > 0) ParsetreeDump(stdout, *cur_tr, cm, cur_dsq, NULL, NULL);
-	if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, *cur_tr, submap, FALSE, debug_level))) { 
+	if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, *cur_tr, submap, debug_level))) { 
 	  printf("\n\nIncorrectly converted original trace:\n");
 	  ParsetreeDump(stdout, orig_tr, orig_cm, cur_dsq, NULL, NULL);
 	  cm_Fail("this shouldn't happen.");
@@ -1767,8 +1765,8 @@ seqs_to_aln_t *CMEmitSeqsToAln(ESL_RANDOMNESS *r, CM_t *cm, int ncm, int nseq, i
 
   seqs_to_aln = CreateSeqsToAln(nseq, i_am_mpi_master);
 
-  if(cm->name != NULL) namelen = strlen(cm->name) + 50; /* 50 digit int is considered max, sloppy. */
-  else                 namelen = 100;                   /* 50 digit int is considered max, sloppy. */
+  namelen = IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
+  if(cm->name != NULL) namelen += strlen(cm->name) + 1;
   ESL_ALLOC(name, sizeof(char) * namelen);
 
   for(i = 0; i < nseq; i++)
@@ -1822,7 +1820,7 @@ seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, d
   seqs_to_aln = CreateSeqsToAln(nseq, i_am_mpi_master);
   ESL_ALLOC(randdsq,      sizeof(ESL_DSQ)* (L+2));
 
-  namelen = 100;                   /* 100 digit int is considered max, sloppy. */
+  namelen = IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
   ESL_ALLOC(name, sizeof(char) * namelen);
 
   for(i = 0; i < nseq; i++)

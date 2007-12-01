@@ -245,6 +245,13 @@ typedef struct cplan9_s {
 #define CTDD  9
 #define cp9_NTRANS 10
 
+#define cp9_TRANS_MATCH_OFFSET  0 /* hmm->t[k][0] is first transition out of match */
+#define cp9_TRANS_INSERT_OFFSET 4 /* hmm->t[k][4] is first transition out of insert */
+#define cp9_TRANS_DELETE_OFFSET 7 /* hmm->t[k][7] is first transition out of delete */
+#define cp9_TRANS_NMATCH        4 /* there are 4 transitions out of match */
+#define cp9_TRANS_NINSERT       3 /* there are 3 transitions out of insert */
+#define cp9_TRANS_NDELETE       3 /* there are 3 transitions out of delete */
+
 /* Declaration of CM Plan9 dynamic programming matrix structure.
  */
 typedef struct cp9_mx_s {

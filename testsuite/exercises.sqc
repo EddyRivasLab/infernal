@@ -29,38 +29,38 @@
 #
 1  prep      model/trna1          @cmbuild@ -F --wnone %TRNA1.CM% trna1415G.sto
 1  prep      model/trna2          @cmbuild@ --wnone --rf -F %TRNA2.CM% trna1415G.sto
-1  exercise  cmscore/trna1        @cmscore@ %TRNA1.CM% trna-regression.fa
-1  exercise  cmscore/trna2        @cmscore@ %TRNA2.CM% trna-regression.fa
-1  exercise  cmscore/local/trna1  @cmscore@ --local %TRNA1.CM% trna-regression.fa
-1  exercise  cmscore/local/trna2  @cmscore@ --local %TRNA2.CM% trna-regression.fa
+1  exercise  cmscore/trna1        @cmscore@ --infile trna-regression.fa %TRNA1.CM% 
+1  exercise  cmscore/trna2        @cmscore@ --infile trna-regression.fa %TRNA2.CM% 
+1  exercise  cmscore/local/trna1  @cmscore@ -l --infile trna-regression.fa %TRNA1.CM% 
+1  exercise  cmscore/local/trna2  @cmscore@ -l --infile trna-regression.fa %TRNA2.CM%
 
 2  prep      rand50               @shuffle@ -i -n 50 -t 90 --dna --seed 42 -o %RAND50%
-2  exercise  trna1/rand50         @cmscore@ %TRNA1.CM% %RAND50%
-2  exercise  trna2/rand50         @cmscore@ %TRNA2.CM% %RAND50%
-2  exercise  trna1/rand50/qdb     @cmscore@ --qdb %TRNA1.CM% %RAND50%
-2  exercise  trna2/rand50/qdb     @cmscore@ --qdb %TRNA2.CM% %RAND50%
+2  exercise  trna1/rand50         @cmscore@ --infile %RAND50% %TRNA1.CM% 
+2  exercise  trna2/rand50         @cmscore@ --infile %RAND50% %TRNA2.CM%
+2  exercise  trna1/rand50/qdb     @cmscore@ --infile %RAND50% --qdb %TRNA1.CM% 
+2  exercise  trna2/rand50/qdb     @cmscore@ --infile %RAND50% --qdb %TRNA2.CM% 
 
-2  exercise  trna1/rand50/local   @cmscore@ --local %TRNA1.CM% %RAND50%
-2  exercise  trna2/rand50/local   @cmscore@ --local %TRNA2.CM% %RAND50%
-2  exercise  trna1/rand50/local/q @cmscore@ --qdb --local %TRNA1.CM% %RAND50%
-2  exercise  trna2/rand50/local/q @cmscore@ --qdb --local %TRNA2.CM% %RAND50%
+2  exercise  trna1/rand50/local   @cmscore@ --infile %RAND50% -l %TRNA1.CM% 
+2  exercise  trna2/rand50/local   @cmscore@ --infile %RAND50% -l %TRNA2.CM% 
+2  exercise  trna1/rand50/local/q @cmscore@ --infile %RAND50% --qdb --local %TRNA1.CM% 
+2  exercise  trna2/rand50/local/q @cmscore@ --infile %RAND50% --qdb --local %TRNA2.CM%
 
 2  prep      model/rnaseP         @cmbuild@ --rf -F %RNASEP.CM% rnaseP-eubact.sto
 2  prep      model/srp            @cmbuild@ -F %SRP.CM% srp-euk.sto
 2  exercise  rnaseP/bsu           @cmscore@ %RNASEP.CM% rnaseP-bsu.fa
-2  exercise  rnaseP/bsu/qdb       @cmscore@ --qdb %RNASEP.CM% rnaseP-bsu.fa
-2  exercise  rnaseP/bsu/local     @cmscore@ --local %RNASEP.CM% rnaseP-bsu.fa
-2  exercise  rnaseP/bsu/local/qdb @cmscore@ --qdb --local %RNASEP.CM% rnaseP-bsu.fa
-2  exercise  srp/ffs              @cmscore@ %SRP.CM% ffs-ecoli.fa
-2  exercise  srp/ffs/qdb          @cmscore@ %SRP.CM% ffs-ecoli.fa
-2  exercise  srp/ffs/local        @cmscore@ --qdb --local %SRP.CM% ffs-ecoli.fa
-2  exercise  srp/ffs/local/qdb    @cmscore@ --qdb --local %SRP.CM% ffs-ecoli.fa
+2  exercise  rnaseP/bsu/qdb       @cmscore@ --infile rnaseP-bsu.fa --qdb %RNASEP.CM% 
+2  exercise  rnaseP/bsu/local     @cmscore@ --infile rnaseP-bsu.fa -l %RNASEP.CM% 
+2  exercise  rnaseP/bsu/local/qdb @cmscore@ --infile rnaseP-bsu.fa --qdb -l %RNASEP.CM% 
+2  exercise  srp/ffs              @cmscore@ --infile ffs-ecoli.fa %SRP.CM% 
+2  exercise  srp/ffs/qdb          @cmscore@ --infile ffs-ecoli.fa %SRP.CM% 
+2  exercise  srp/ffs/local        @cmscore@ --infile ffs-ecoli.fa --qdb -l %SRP.CM% 
+2  exercise  srp/ffs/local/qdb    @cmscore@ --infile ffs-ecoli.fa --qdb -l %SRP.CM%
 
 3  prep      rand20               @shuffle@ -i -n 20 -t 100 --dna --seed 42 -o %RAND20%
-3  exercise  rnaseP/rand          @cmscore@ %RNASEP.CM% %RAND20%
-3  exercise  rnaseP/rand/qdb      @cmscore@ --qdb %RNASEP.CM% %RAND20%
-3  exercise  rnaseP/rand/local    @cmscore@ --local %RNASEP.CM% %RAND20%
-3  exercise  rnaseP/rand/local/q  @cmscore@ --qdb --local %RNASEP.CM% %RAND20%
+3  exercise  rnaseP/rand          @cmscore@ --infile %RAND20% %RNASEP.CM% 
+3  exercise  rnaseP/rand/qdb      @cmscore@ --infile %RAND20% --qdb %RNASEP.CM% 
+3  exercise  rnaseP/rand/local    @cmscore@ --infile %RAND20% -l %RNASEP.CM% 
+3  exercise  rnaseP/rand/local/q  @cmscore@ --infile %RAND20% --qdb -l %RNASEP.CM% 
 
 # Exercises developed for bandcyk.c
 # xref notebook/1015-infernal-bands; xref STL7 p.130.

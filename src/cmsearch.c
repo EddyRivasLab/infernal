@@ -85,7 +85,7 @@ static ESL_OPTIONS options[] = {
   { "--hmmgreedy",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,  "--cmonly", "resolve HMM overlapping hits with a greedy algorithm a la RSEARCH", 7 },
   { "--hmmrescan",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,  "--cmonly", "rescan subseq hits w/Forward (auto ON if --enfseq)", 7 },
   /* filter threshold calculation options */
-  { "--seed",    eslARG_INT,    FALSE, NULL, "n>0",     NULL,"--hmmcalcthr",    NULL, "set random number generator seed to <n>", 8 },
+  { "--seed",    eslARG_INT,    NULL,  NULL, "n>0",     NULL,"--hmmcalcthr",    NULL, "set random number generator seed to <n>", 8 },
   { "--N",       eslARG_INT,   "1000", NULL, "n>0",     NULL,"--hmmcalcthr",    NULL, "number of emitted sequences for HMM filter threshold calc", 8 },
   { "--F",       eslARG_REAL,  "0.95", NULL, "0<x<=1",  NULL,"--hmmcalcthr",    NULL, "required fraction of seqs that survive HMM filter", 8 },
   { "--fstep",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hmmcalcthr",    NULL, "step from F to 1.0 while S < Starg", 8 },

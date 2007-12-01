@@ -53,7 +53,7 @@ static void  cm2sub_cm_subtract_root_subpaths(CM_t *orig_cm, CM_t *sub_cm, doubl
 static void  cm2sub_cm_find_impossible_misc_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo,
 						  CP9Map_t *orig_cp9map, CP9Map_t *sub_cp9map, int print_flag);
 static void  cm2sub_cm_find_impossible_matr_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo,
-						  CP9Map_t *orig_cp9map, CP9Map_t *sub_cp9map, int do_fullsub, int print_flag);
+						  CP9Map_t *orig_cp9map, CP9Map_t *sub_cp9map, int print_flag);
 
 
 /**************************************************************************
@@ -71,13 +71,10 @@ static void  cm2sub_cm_find_impossible_matr_cases(CM_t *orig_cm, CM_t *sub_cm, C
  * CM_t *orig_cm       - the original template CM
  * int sstruct         - the first (leftmost)  consensus posn we're keeping structure for
  * int estruct         - the last  (rightmost) consensus posn we're keeping structure for
- * int do_fullsub      - TRUE to model all 1..clen columns, removing struct before 
- *                       sstruct and after estruct, FALSE to only model [sstruct..estruct] 
- *                       columns
  */
 
 CMSubMap_t *
-AllocSubMap(CM_t *sub_cm, CM_t *orig_cm, int sstruct, int estruct, int do_fullsub)
+AllocSubMap(CM_t *sub_cm, CM_t *orig_cm, int sstruct, int estruct)
 {
   CMSubMap_t  *submap;
   int v;
@@ -98,19 +95,10 @@ AllocSubMap(CM_t *sub_cm, CM_t *orig_cm, int sstruct, int estruct, int do_fullsu
     }
   submap->sstruct = sstruct;
   submap->estruct = estruct;
-  if(do_fullsub) /* We're modelling all consensus columns */
-    {
-      submap->sub_clen = submap->orig_clen;
-      submap->spos     = 1;
-      /*submap->epos     = submap->sub_clen;*/
-      submap->epos     = submap->estruct;
-    }
-  else
-    {
-      submap->sub_clen = (submap->estruct-submap->sstruct+1);
-      submap->spos     = submap->sstruct;
-      submap->epos     = submap->estruct;
-    }
+  submap->sub_clen = (submap->estruct-submap->sstruct+1);
+  submap->spos     = submap->sstruct;
+  submap->epos     = submap->estruct;
+
   /* Allocate and initialize arrays */
   ESL_ALLOC(submap->s2o_id,   sizeof(int) *   (sub_cm->M+1));
   ESL_ALLOC(submap->s2o_smap, sizeof(int *) * (sub_cm->M+1));
@@ -132,7 +120,7 @@ AllocSubMap(CM_t *sub_cm, CM_t *orig_cm, int sstruct, int estruct, int do_fullsu
   return submap;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -196,7 +184,7 @@ AllocSubInfo(int clen)
   return subinfo;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -274,7 +262,7 @@ map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int print_flag)
 
   /* sanity check */
   if(sub_cm->M > orig_cm->M)
-    esl_fatal("ERROR: sub_cm has more states than orig_cm in map_orig2sub_cm()\n");
+    cm_Fail("ERROR: sub_cm has more states than orig_cm in map_orig2sub_cm()\n");
 
   /* We want maps from the orig_cm to a CP9 HMM and from the 
    * sub_cm to a CP9 HMM, but we don't need the actual HMMs, just
@@ -371,13 +359,13 @@ map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int print_flag)
 	      if(v_o == -1 && sub_cm->sttype[(v_s+1)] == E_st) /* v_s is a dead insert */
 		continue;
 	      if(v_o == -1 && sub_cm->sttype[v_s] != E_st)
-		esl_fatal("ERROR sub_cm state: %d type: %s node type: %s doesn't map to any state in orig_cm\n", v_s, sttypes[(int) sub_cm->sttype[v_s]], nodetypes[(int) sub_cm->ndtype[n_s]]);
+		cm_Fail("ERROR sub_cm state: %d type: %s node type: %s doesn't map to any state in orig_cm\n", v_s, sttypes[(int) sub_cm->sttype[v_s]], nodetypes[(int) sub_cm->ndtype[n_s]]);
 	      
 	      n_o = orig_cm->ndidx[v_o];
 	      if(print_flag) printf("sub v:%4d(%4d) %6s%6s | orig v:%4d(%4d) %6s%6s\n", v_s, n_s, nodetypes[(int) sub_cm->ndtype[n_s]], sttypes[(int) sub_cm->sttype[v_s]], v_o, n_o, nodetypes[(int) orig_cm->ndtype[n_o]], sttypes[(int) orig_cm->sttype[v_o]]);
 	      /* check to make sure submap->o2s_smap is consistent */
 	      if(submap->o2s_smap[v_o][0] != v_s && submap->o2s_smap[v_o][1] != v_s)
-		esl_fatal("ERROR inconsistency; neither o2s_smap[%d][0] and [1] is %d\n", v_o, v_s);
+		cm_Fail("ERROR inconsistency; neither o2s_smap[%d][0] and [1] is %d\n", v_o, v_s);
 	      
 	      v_o = submap->s2o_smap[v_s][1];
 	      if(v_o != -1)
@@ -387,7 +375,7 @@ map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int print_flag)
 		  /* check to make sure o2s_smap is consistent */
 		  if(submap->o2s_smap[v_o][0] != v_s && submap->o2s_smap[v_o][1] != v_s)
 		    {
-		      esl_fatal("ERROR inconsistency; neither o2s_smap[%d][0] and [1] is %d\n", v_o, v_s);
+		      cm_Fail("ERROR inconsistency; neither o2s_smap[%d][0] and [1] is %d\n", v_o, v_s);
 		    }
 		}
 	    }
@@ -402,7 +390,7 @@ map_orig2sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int print_flag)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 /**************************************************************************
@@ -462,7 +450,7 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig
   if(submap->o2s_smap[orig_v][0] == -1)
     {
       if (submap->o2s_smap[orig_v][1] != -1) 
-	esl_fatal("ERROR in map_orig2sub_cm_helper, submap->o2s_smap[%d][0] is -1 but submap->o2s_smap[%d][1] is not, this shouldn't happen.\n", orig_v, orig_v);
+	cm_Fail("ERROR in map_orig2sub_cm_helper, submap->o2s_smap[%d][0] is -1 but submap->o2s_smap[%d][1] is not, this shouldn't happen.\n", orig_v, orig_v);
       else
 	submap->o2s_smap[orig_v][0] = sub_v;
     }
@@ -472,7 +460,7 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig
 	/* abort!, we already have this mapping */
 	return 0;  
       else
-	esl_fatal("ERROR in map_orig2sub_cm_helper, submap->o2s_smap[%d][0] is not -1 and submap->o2s_smap[%d][1] is not -1, this shouldn't happen.\n", orig_v, orig_v);
+	cm_Fail("ERROR in map_orig2sub_cm_helper, submap->o2s_smap[%d][0] is not -1 and submap->o2s_smap[%d][1] is not -1, this shouldn't happen.\n", orig_v, orig_v);
     }
   else /* submap->o2s_smap[orig_v][0] != -1 && submap->o2s_smap[orig_v][1] == -1 */
     {
@@ -485,11 +473,11 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig
   /* now fill in submap->s2o_smap */
   if(submap->s2o_smap[sub_v][0] == -1)
     if (submap->s2o_smap[sub_v][1] != -1)
-      esl_fatal("ERROR in map_sub2orig_cm_helper, submap->s2o_smap[%d][0] is -1 but submap->s2o_smap[%d][1] is not, this shouldn't happen.\n", sub_v, sub_v);
+      cm_Fail("ERROR in map_sub2orig_cm_helper, submap->s2o_smap[%d][0] is -1 but submap->s2o_smap[%d][1] is not, this shouldn't happen.\n", sub_v, sub_v);
     else
       submap->s2o_smap[sub_v][0] = orig_v;
   else if (submap->s2o_smap[sub_v][1] != -1)
-    esl_fatal("ERROR in map_sub2orig_cm_helper, submap->s2o_smap[%d][0] is not -1 and submap->s2o_smap[%d][1] is not -1, this shouldn't happen.\n", sub_v, sub_v);
+    cm_Fail("ERROR in map_sub2orig_cm_helper, submap->s2o_smap[%d][0] is not -1 and submap->s2o_smap[%d][1] is not -1, this shouldn't happen.\n", sub_v, sub_v);
   else /* submap->s2o_smap[sub_v][0] != -1 && submap->s2o_smap[sub_v][1] == -1 */
     submap->s2o_smap[sub_v][1] = orig_v;
   return 1;
@@ -503,9 +491,7 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig
  * Purpose:   Given a template CM (orig_cm) built from an MSA of consensus columns 
  *            1..M, build a new, "sub CM" (sub_cm), that only models well-nested base pairs 
  *            that occur (have both left and right halves) between consensus columns 
- *            [sstruct..estruct]. If do_fullsub == TRUE, the sub CM will still model 
- *            all the consensus columns orig_cm models, with only structure removed.
- *            If do_fullsub == FALSE, the sub_cm will only model the consensus
+ *            [sstruct..estruct]. The sub_cm will only model the consensus
  *            columns between [sstruct..estruct].
  *
  *            We attempt to construct the sub CM such that: 
@@ -515,12 +501,12 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig
  *               is identical.
  *
  *            2. Alignments sampled from it should 'follow the same probability distributions'
- *               as alignments sampled from the template CM and then (if do_fullsub == TRUE)
- *               truncated, removing columns outside [sstruct..estruct] Specifically, 'follow
+ *               as alignments sampled from the template CM and then truncated,
+ *               removing columns outside [sstruct..estruct] Specifically, 'follow
  *               the same probability distributions' means if we built a ML HMM (Weinberg 
  *               style) from the resulting infinite alignments, we would have identical 
  *               HMMs for the sub-CM alignments and for the truncated template CMs. It turns
- *               out this is impossible if do_fullsub == FALSE for certain situations
+ *               out this is impossible for certain situations
  *               that cause differences in the topology of the orig_cm and sub_cm. These
  *               situations, so-called 'impossible cases', cause the distributions out of a
  *               single ML HMM node to be different between the orig_cm, but are relatively 
@@ -560,22 +546,15 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig
  * Args:      orig_cm      - the original model, which we're going to (potentially)
  *                           remove some structure from
  *            ret_sub_cm   - the new sub_cm built from orig_cm with some structure removed.
- *            sstruct         - the first position (consensus column) we want to keep structure
- *                           for, and if do_subfull == FALSE the first column we want 
- *                           the sub_cm to model at all 
- *            estruct         - the last position we want to keep structure for
- *                           and if do_subfull == FALSE the last column we want 
- *                           the sub_cm to model at all 
- *            do_fullsub   - TRUE to build a sub CM that models ALL consensus columns
- *                           in orig_cm, removing structure outside [sstruct..estruct]
+ *            sstruct      - the first position (consensus column) we want to model
+ *            estruct      - the last position we will model
  *            print_flag   - TRUE to print debugging statements    
  *
  * Returns:   int            TRUE if all checks passed or no checks were performed,
  *                           FALSE otherwise
  */
 int 
-build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, 
-	     int do_fullsub, int print_flag)
+build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, int print_flag)
 {
   int              status;
   CM_t            *sub_cm;      /* new covariance model, a submodel of the template */
@@ -592,18 +571,17 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
   int              i,j;         /* counters                                         */
   FILE            *ofp;         /* an open output file                              */
   int              spos;        /* first consensus (match) column of the orig_cm to 
-				 * model with the sub_cm (if do_fullsub, this is 1) */
+				 * model with the sub_cm */
   int              epos;        /* last consensus (match) column of the orig_cm to 
-				 * model with the sub_cm (if do_fullsub, this is  
-				 * total number of columns modelled by the orig_cm  */
+				 * model with the sub_cm */
   CMSubMap_t *submap;
 
   /* check to make sure that we can actually build a sub CM of this model */
   if((orig_cm->flags & CMH_LOCAL_BEGIN) ||
      (orig_cm->flags & CMH_LOCAL_END))
-    esl_fatal("ERROR trying to build a sub CM of a CM already in local mode, not yet supported.\n");
+    cm_Fail("ERROR trying to build a sub CM of a CM already in local mode, not yet supported.\n");
   if(orig_cm->flags & CM_IS_SUB)  
-    esl_fatal("ERROR trying to build a sub CM of a CM that is itself a sub CM.\n");
+    cm_Fail("ERROR trying to build a sub CM of a CM that is itself a sub CM.\n");
 
   /* Much of the code for building and checking sub CMs relies on the fact that every insert
    * state in the sub CM maps exactly 1 insert state in the original CM. This is fine if we
@@ -626,9 +604,6 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
 
   spos = sstruct;
   epos = estruct;
-  if(do_fullsub) /* we're modelling every consensus columns, just removing
-		  * structure outside sstruct and estruct */
-    { spos = 1; /*epos = con->clen;*/ }
 
   /* Fill a new ct array for the sub_cm. The sub_cm will only model the consensus columns
    * between spos and epos, and only the structure between spos
@@ -676,7 +651,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
       if(sub_ct[sub_cpos] == -1)         sub_cstr[sub_cpos] = '.'; 
       else if (sub_ct[sub_cpos]  > cpos) sub_cstr[sub_cpos] = '<';
       else if (sub_ct[sub_cpos]  < cpos) sub_cstr[sub_cpos] = '>';
-      else esl_fatal("ERROR: weird error in build_sub_cm()\n");
+      else cm_Fail("ERROR: weird error in build_sub_cm()\n");
     }
   sub_cstr[(epos-spos+1)] = '\0';
 
@@ -690,7 +665,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
   FreeCM(sub_cm);
   sub_cm = new;
 
-  submap = AllocSubMap(sub_cm, orig_cm, sstruct, estruct, do_fullsub);
+  submap = AllocSubMap(sub_cm, orig_cm, sstruct, estruct);
   if(print_flag)
     {
       printf("\n\norig struct: %s\n", con->cstr);
@@ -760,9 +735,9 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
 
 	  if((submap->s2o_smap[sub_cm->nodemap[n_s] + 4][1] != -1) ||
 	     (submap->s2o_smap[sub_cm->nodemap[n_s] + 5][1] != -1))
-	    esl_fatal("ERROR, MATP_IL or MATP_IR node: %d map to 2 cm states\n", n_s);
+	    cm_Fail("ERROR, MATP_IL or MATP_IR node: %d map to 2 cm states\n", n_s);
 	  if(submap->s2o_smap[sub_cm->nodemap[n_s] + 4][0] != (submap->s2o_smap[sub_cm->nodemap[n_s] + 5][0] - 1))
-	    esl_fatal("ERROR, MATP_IL or MATP_IR node: %d don't map to adjacent orig_cm states\n", n_s);
+	    cm_Fail("ERROR, MATP_IL or MATP_IR node: %d don't map to adjacent orig_cm states\n", n_s);
 	}
       if(sub_cm->ndtype[n_s] == ROOT_nd && sub_cm->ndtype[n_s+1] != BIF_nd) /* ROOT->BIFs are handled special
 									     * (see next loop) */
@@ -833,7 +808,7 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
   return TRUE; 
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return FALSE; /* never reached */
 }
 
@@ -861,8 +836,8 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
  *           eslEINVAL on contract violation.
  */
 void
-CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, CP9_MX *post, 
-	       int *ret_node, int *ret_type, int do_fullsub, float pmass, int is_start,
+CP9NodeForPosn(CP9_t *hmm, int i0, int j0, int x, CP9_MX *post, 
+	       int *ret_node, int *ret_type, float pmass, int is_start,
 	       int print_flag)
 {
   /* post->mmx[i][k]: posterior probability that posn i was emitted from node k's 
@@ -872,16 +847,15 @@ CP9NodeForPosn(struct cplan9_s *hmm, int i0, int j0, int x, CP9_MX *post,
 		    '1' for insert */
   int  max_sc;   /* score (log probability) from post matrix for max_k node max_type state type */
   int  k;        /* counter over nodes */
-  /* used only if do_fullsub = TRUE */
   int reached_mass; /* TRUE if we've reached our pmass */
   
   reached_mass = FALSE;
   if(!is_start) pmass = 1. - pmass; /* we move left to right */
   
-  /*printf("in CP9NodeForPosn is_start: %d pmass: %f\n", do_fullsub, is_start, pmass);*/
+  /*printf("in CP9NodeForPosn is_start: %d pmass: %f\n", is_start, pmass);*/
   if(x > j0 || x < i0)
     /*ESL_XFAIL(eslEINVAL, "ERROR in CP9NodeForPosn(), asking for position x: %d outside subseq bounds i0: %d j0: %d\n", x, i0, j0);*/
-    esl_fatal("ERROR in CP9NodeForPosn(), asking for position x: %d outside subseq bounds i0: %d j0: %d\n", x, i0, j0);
+    cm_Fail("ERROR in CP9NodeForPosn(), asking for position x: %d outside subseq bounds i0: %d j0: %d\n", x, i0, j0);
   
   if(post->mmx[x][0] > post->imx[x][0])
     {
@@ -959,7 +933,7 @@ StripWUSSGivenCC(ESL_MSA *msa, float gapthresh, int first_match, int last_match)
 
   /* Contract check */
   if(msa->flags & eslMSA_DIGITAL)
-    esl_fatal("ERROR in StripWUSSGivenCC, MSA is digitized.\n");
+    cm_Fail("ERROR in StripWUSSGivenCC, MSA is digitized.\n");
 
   /* 1. Determine match/insert assignments
    *    matassign is 1..alen. Values are 1 if a match column, 0 if insert column.
@@ -981,7 +955,7 @@ StripWUSSGivenCC(ESL_MSA *msa, float gapthresh, int first_match, int last_match)
    */
   ESL_ALLOC(ct, (msa->alen+1) * sizeof(int));
   if (esl_wuss2ct(msa->ss_cons, msa->alen, ct) != eslOK)  
-    esl_fatal("Consensus structure string is inconsistent"); 
+    cm_Fail("Consensus structure string is inconsistent"); 
 
   /* 3. Make sure the consensus structure "ct" is consistent with the match assignments.
    *    Wipe out all structure in insert columns; including the base-paired 
@@ -1018,13 +992,13 @@ StripWUSSGivenCC(ESL_MSA *msa, float gapthresh, int first_match, int last_match)
       if      (ct[apos] == 0   ) msa->ss_cons[apos-1] = '.';
       else if (ct[apos]  > apos) msa->ss_cons[apos-1] = '<';
       else if (ct[apos]  < apos) msa->ss_cons[apos-1] = '>';
-      else esl_fatal("ERROR: weird error in StripWUSSGivenCC\n");
+      else cm_Fail("ERROR: weird error in StripWUSSGivenCC\n");
     }
 
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 
@@ -1061,7 +1035,7 @@ cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int
 
   if(v_o1 == -1)
     {
-      esl_fatal("ERROR in cm2sub_cm_emit_probs, sub_cm state %d maps to 0 states in orig_cm (spos: %d epos: %d)\n", v_s, submap->spos, submap->epos);
+      cm_Fail("ERROR in cm2sub_cm_emit_probs, sub_cm state %d maps to 0 states in orig_cm (spos: %d epos: %d)\n", v_s, submap->spos, submap->epos);
     }
 
   if(sub_cm->sttype[v_s] == MP_st)
@@ -1096,7 +1070,7 @@ cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int
       else if(orig_cm->sttype[v_o2] == MR_st)
 	is_left = FALSE;
       else
-	esl_fatal("ERROR v_s: %d maps to a MP_st and another non-ML and non-MR state\n");
+	cm_Fail("ERROR v_s: %d maps to a MP_st and another non-ML and non-MR state\n");
 
       for(i = 0; i < MAXABET; i++)
 	if(is_left)
@@ -1106,7 +1080,7 @@ cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int
 	  for(j = i; j < (MAXABET*MAXABET); j+=MAXABET)
 	    sub_cm->e[v_s][i] += orig_psi[v_o1] * orig_cm->e[v_o1][j];
       if(orig_cm->sttype[v_o2] == MP_st)
-	esl_fatal("ERROR sub_cm state: %d maps to two MATP_MP states\n", v_s);
+	cm_Fail("ERROR sub_cm state: %d maps to two MATP_MP states\n", v_s);
 
       /*v_o2 must be ML or MR, which can all be handled identically */
       for(i = 0; i < MAXABET; i++)
@@ -1115,7 +1089,7 @@ cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int
       return;
     }
   else if(v_o2 != -1)
-    esl_fatal("ERROR sub_cm state: %d maps to two states (%d and %d), but neither is a MATP_MP\n", v_s, v_o1, v_o2);
+    cm_Fail("ERROR sub_cm state: %d maps to two states (%d and %d), but neither is a MATP_MP\n", v_s, v_o1, v_o2);
 
   /* If we get here, v_s maps to a single singlet emitter in orig_cm, v_o1 */
   for(i = 0; i < MAXABET; i++)
@@ -1181,7 +1155,7 @@ cm2sub_cm_trans_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tma
 	 sub_cm->sttype[v_s] != E_st &&
 	 sub_cm->sttype[v_s] != B_st)
 	/* special cases, S_st, E_st, B_st */
-	esl_fatal("ERROR, sub_cm state v_s: %d maps to no state in sub_cm, but it's not a B, E or S state\n", v_s);
+	cm_Fail("ERROR, sub_cm state v_s: %d maps to no state in sub_cm, but it's not a B, E or S state\n", v_s);
     }
   else
     {
@@ -1189,7 +1163,7 @@ cm2sub_cm_trans_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tma
 	 sub_cm->sttype[v_s] == E_st ||
 	 sub_cm->sttype[v_s] == B_st)
 	if(v_s != 0)
-	  esl_fatal("ERROR, sub_cm state v_s: %d is S, E or B but maps to a orig_cm state: v_o:%d\n", v_o);
+	  cm_Fail("ERROR, sub_cm state v_s: %d is S, E or B but maps to a orig_cm state: v_o:%d\n", v_o);
 
       for(yoffset = 0; yoffset < sub_cm->cnum[v_s]; yoffset++)
 	{
@@ -1302,9 +1276,9 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
 	    {
 	      diff = sub_cm->t[v_s_insert][0] - (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]);
 	      if(diff >= 0. && diff > 0.0001)
-		esl_fatal("ERROR, code for calc'ing BEGR_IL -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
+		cm_Fail("ERROR, code for calc'ing BEGR_IL -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
 	      if(diff <= 0. && diff < -0.0001)
-		esl_fatal("ERROR, code for calc'ing BEGR_IL -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
+		cm_Fail("ERROR, code for calc'ing BEGR_IL -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
 	    }
 
 	  /* BEGR_IL -> BEGR_IL will be the sum over possibly two orig_cm states v_o_insert that 
@@ -1315,7 +1289,7 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
 	  if(submap->s2o_smap[v_s_insert][1] != -1)
 	    {
 	      /* we have to factor in the other state as well. */
-	      esl_fatal("ERROR, BEGR_IL: %d maps to 2 orig_cm states, was hoping this was impossible - need to implement.\n", v_s_insert);
+	      cm_Fail("ERROR, BEGR_IL: %d maps to 2 orig_cm states, was hoping this was impossible - need to implement.\n", v_s_insert);
 	      v_o_insert = submap->s2o_smap[v_s_insert][1];
 	      sub_cm->t[v_s_insert][1] += orig_psi[v_o_insert] * (1. - orig_cm->t[v_o_insert][0]);
 	    }
@@ -1324,7 +1298,7 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
 	  il_psi   = orig_psi[submap->s2o_smap[v_s_insert][0]];
 	  if(submap->s2o_smap[v_s_insert][1] != -1)
 	    {
-	      esl_fatal("ERROR, BEGR_IL: %d maps to 2 orig_cm states, was hoping this was impossible - need to implement.\n", v_s_insert);
+	      cm_Fail("ERROR, BEGR_IL: %d maps to 2 orig_cm states, was hoping this was impossible - need to implement.\n", v_s_insert);
 	      il_psi+= orig_psi[submap->s2o_smap[v_s_insert][1]];
 	    }
 	  sub_cm->t[v_start][0] = (1. - sub_cm->t[v_s_insert][0]) * il_psi; /* set BEGR_S -> BEGR_IL */
@@ -1343,7 +1317,7 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
 	  il_psi   = orig_psi[submap->s2o_smap[v_s_insert][0]];
 	  if(submap->s2o_smap[v_s_insert][1] != -1)
 	    {
-	      esl_fatal("ERROR, BEGR_IL: %d maps to 2 orig_cm states, was hoping this was impossible - need to implement.\n", v_s_insert);
+	      cm_Fail("ERROR, BEGR_IL: %d maps to 2 orig_cm states, was hoping this was impossible - need to implement.\n", v_s_insert);
 	      il_psi += orig_psi[submap->s2o_smap[v_s_insert][1]];
 	    }
 	  sub_cm->t[v_start][0] = (1. - sub_cm->t[v_s_insert][0]) * il_psi; /* set BEGR_S -> BEGR_IL */
@@ -1363,9 +1337,9 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
 	    }
 	  //printf("BEGR->NON BIF  SUM: %f\n", sum);
 	  if(sum < 1.0 && ((1.0 - sum) > 0.001))
-	    esl_fatal("ERROR calculating transitions out of BEGR_S incorrectly\n");
+	    cm_Fail("ERROR calculating transitions out of BEGR_S incorrectly\n");
 	  if(sum > 1.0 && ((sum - 1.0) > 0.001))
-	    esl_fatal("ERROR calculating transitions out of BEGR_S incorrectly\n");
+	    cm_Fail("ERROR calculating transitions out of BEGR_S incorrectly\n");
 	}      
     }
   else if(sub_cm->ndtype[sub_nd] == ROOT_nd)
@@ -1427,9 +1401,9 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
 	    {
 	      diff = sub_cm->t[v_s_insert][0] - (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]);
 	      if(diff >= 0. && diff >= 0.0001)
-		esl_fatal("ERROR, code for calc'ing ROOT_IL -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
+		cm_Fail("ERROR, code for calc'ing ROOT_IL -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
 	      if(diff <= 0. && diff <= -0.0001)
-		esl_fatal("ERROR, code for calc'ing ROOT_IL -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
+		cm_Fail("ERROR, code for calc'ing ROOT_IL -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
 	    }
 	  /* We want to figure out what the virtual counts for the traansition ROOT_IL -> BIF_B should
 	   * be, but this depends on how we filled the virtual counts for the other two 
@@ -1461,9 +1435,9 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
 	    {
 	      diff = sub_cm->t[v_s_insert][0] - (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]);
 	      if(diff >= 0. && diff > 0.0001)
-		esl_fatal("ERROR, code for calc'ing ROOT_IR -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
+		cm_Fail("ERROR, code for calc'ing ROOT_IR -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
 	      if(diff <= 0. && diff < -0.0001)
-		esl_fatal("ERROR, code for calc'ing ROOT_IR -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
+		cm_Fail("ERROR, code for calc'ing ROOT_IR -> BIF_B is wrong, sub_cm->t[v_s_insert:%d][0] should be %f (based on your understanding) but its really %f\n", v_s_insert, (orig_psi[v_o_insert] * orig_cm->t[v_o_insert][0]), (sub_cm->t[v_s_insert][0]));
 	    }
 	  /* We can calculate what the ROOT_IR -> ROOT_IR probability should be, and then
 	   * just take 1.0 minus that probability to set ROOT_IR -> BIF.
@@ -1556,9 +1530,9 @@ cm2sub_cm_trans_probs_B_E(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char **
     orig_il = submap->s2o_smap[sub_il][0];
     orig_ir = submap->s2o_smap[sub_ir][0];
     if(into_end_flag && orig_ir != -1)
-      esl_fatal("ERROR in cm2sub_cm_trans_probs_B_E(), into_end_flag is TRUE but MATP_IR maps to a orig_cm state.\n");
+      cm_Fail("ERROR in cm2sub_cm_trans_probs_B_E(), into_end_flag is TRUE but MATP_IR maps to a orig_cm state.\n");
     if(orig_ir == -1 && !into_end_flag)
-      esl_fatal("ERROR in cm2sub_cm_trans_probs_B_E(), into_end_flag is FALSE but MATP_IR doesn't map to a orig_cm state.\n");
+      cm_Fail("ERROR in cm2sub_cm_trans_probs_B_E(), into_end_flag is FALSE but MATP_IR doesn't map to a orig_cm state.\n");
 
     for(sub_v = sub_cm->nodemap[psub_nd]; sub_v < sub_il; sub_v++)
       {
@@ -1588,7 +1562,7 @@ cm2sub_cm_trans_probs_B_E(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char **
     sub_i = sub_cm->nodemap[psub_nd] + 2; /* sub_i is MATL_IL or MATR_IR */
     orig_i = submap->s2o_smap[sub_i][0];
     if(into_end_flag && orig_i != -1)
-      esl_fatal("ERROR in cm2sub_cm_trans_probs_B_E(), into_end_flag is TRUE but MAT*_I* maps to a orig_cm state.\n");
+      cm_Fail("ERROR in cm2sub_cm_trans_probs_B_E(), into_end_flag is TRUE but MAT*_I* maps to a orig_cm state.\n");
 
     for(sub_v = sub_cm->nodemap[psub_nd]; sub_v < sub_i; sub_v++)
       {
@@ -1648,7 +1622,7 @@ cm2sub_cm_trans_probs_B_E(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char **
     break;
 
   default: 
-    esl_fatal("ERROR bogus node type transiting to END or BIF\n");
+    cm_Fail("ERROR bogus node type transiting to END or BIF\n");
     break;
   }
 
@@ -1926,7 +1900,7 @@ cm2sub_cm_sum_subpaths(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig
   return (float) to_return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -2019,7 +1993,7 @@ debug_print_cm_params(FILE *fp, CM_t *cm)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 /**************************************************************************
@@ -2039,21 +2013,21 @@ debug_print_cm_params(FILE *fp, CM_t *cm)
  * Args:    
  * CM_t *orig_cm     - the original, template CM
  * CM_t  *sub_cm     - the sub CM built from the orig_cm
+ * ESL_RANDOMNESS r  - source of randomness
  * CMSubMap_t submap
  * CMSubInfo_t subinfo       
  * float chi_thresh  - rejection threshold for chi-squared tests
  * int nsamples      - number of samples to use to build the ML HMM
- * int do_fullsub     - TRUE if this sub_cm is a 'full sub' CM
  * int print_flag    - TRUE to print useful info for debugging
  * Returns: TRUE: if CM and sub CM are "close enough" (see code)
  *          FALSE: otherwise
  */
 int 
-check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo,
-			 float chi_thresh, int nsamples, int do_fullsub, int print_flag)
+check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, CMSubMap_t *submap, CMSubInfo_t *subinfo,
+			 float chi_thresh, int nsamples, int print_flag)
 {
-  struct cplan9_s       *orig_hmm; /* constructed CP9 HMM from the original cm */
-  struct cplan9_s       *sub_hmm; /* constructed CP9 HMM from the sub_cm */
+  CP9_t       *orig_hmm; /* constructed CP9 HMM from the original cm */
+  CP9_t       *sub_hmm; /* constructed CP9 HMM from the sub_cm */
   CP9Map_t *orig_cp9map;         /* maps the orig_cm to the orig_hmm and vice versa */
   CP9Map_t *sub_cp9map;          /* maps the sub_cm to the sub_hmm and vice versa */
   int ret_val;         /* return value */
@@ -2064,20 +2038,20 @@ check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubI
   
   /* Build two CP9 HMMs, one for the orig_cm and one for the sub_cm */
   if(!build_cp9_hmm(orig_cm, &orig_hmm, &orig_cp9map, FALSE, 0.0001, print_flag))
-    esl_fatal("Couldn't build a CP9 HMM from the CM\n");
+    cm_Fail("Couldn't build a CP9 HMM from the CM\n");
   if(!build_cp9_hmm(sub_cm,  &sub_hmm,  &sub_cp9map,  FALSE, 0.0001, print_flag))
-    esl_fatal("Couldn't build a CP9 HMM from the CM\n");
+    cm_Fail("Couldn't build a CP9 HMM from the CM\n");
 
   /* Look for 'impossible' cases where we know the sub_cm 
    * construction procedure fails, in that the distribution of transitions out of CP9 nodes 
    * built from the sub_cm will be the same distros out of corresponding CP9 nodes built from 
    * the full CM. */
   cm2sub_cm_find_impossible_misc_cases(orig_cm, sub_cm, submap, subinfo, orig_cp9map, sub_cp9map, print_flag);
-  cm2sub_cm_find_impossible_matr_cases(orig_cm, sub_cm, submap, subinfo, orig_cp9map, sub_cp9map, do_fullsub, print_flag);
+  cm2sub_cm_find_impossible_matr_cases(orig_cm, sub_cm, submap, subinfo, orig_cp9map, sub_cp9map, print_flag);
 
-  if(!(CP9_check_by_sampling(orig_cm, sub_hmm, subinfo, submap->spos, submap->epos, chi_thresh,
+  if(!(CP9_check_by_sampling(orig_cm, sub_hmm, r, subinfo, submap->spos, submap->epos, chi_thresh,
 			     nsamples, print_flag)))
-    esl_fatal("CM Plan 9 built from sub_cm fails sampling check using orig_cm; sub_cm was built incorrectly.!\n");
+    cm_Fail("CM Plan 9 built from sub_cm fails sampling check using orig_cm; sub_cm was built incorrectly.!\n");
   else
     if(print_flag) printf("CM Plan 9 built from sub_cm passed sampling check; sub_cm was built correctly.\n");
 
@@ -2104,6 +2078,7 @@ check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubI
  * Args:    
  * CM_t *orig_cm     - the original, template CM
  * CM_t  *sub_cm     - the sub CM built from the orig_cm
+ * ESL_RANDOMNESS *r - source of randomness
  * int spos          - first consensus column in cm that hmm models (often 1)
  * int epos          -  last consensus column in cm that hmm models 
  * int nseq          - number of sequences to sample to build the new HMMs.
@@ -2112,11 +2087,11 @@ check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubI
  *          FALSE: otherwise
  */
 int 
-check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int nseq)
+check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, int spos, int epos, int nseq)
 {
   int status;
-  struct cplan9_s       *orig_hmm;/* constructed CP9 HMM from the sub_cm */
-  struct cplan9_s       *sub_hmm; /* constructed CP9 HMM from the sub_cm */
+  CP9_t       *orig_hmm;/* constructed CP9 HMM from the sub_cm */
+  CP9_t       *sub_hmm; /* constructed CP9 HMM from the sub_cm */
   int ret_val;                    /* return value */
   Parsetree_t **tr;               /* Parsetrees of emitted aligned sequences */
   ESL_SQ  **sq;                   /* sequences */
@@ -2137,14 +2112,9 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
   int nsampled;                 /* number of sequences sampled thus far */
   int debug_level;
   int cc;
-  ESL_RANDOMNESS  *r = NULL;    /* source of randomness */
   char         *tmp_name;           /* name for seqs */
   char         *tmp_text_sq;        /* text seqs */
   
-  /* Create and seed RNG */
-  if ((r = esl_randomness_CreateTimeseeded()) == NULL) 
-    esl_fatal("Failed to create random number generator: probably out of memory");
-
   debug_level = 0;
   ret_val = TRUE;
   msa_nseq = 1000;
@@ -2168,6 +2138,7 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
   ESL_ALLOC(tr, (sizeof(Parsetree_t) * msa_nseq));
   ESL_ALLOC(wgt,(sizeof(float)       * msa_nseq));
   esl_vec_FSet(wgt, msa_nseq, 1.0);
+  int namelen = 3 + IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
 
   while(nsampled < nseq)
     {
@@ -2191,6 +2162,7 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
 	msa_nseq = nseq - nsampled;
       for (i = 0; i < msa_nseq; i++)
 	{
+	  ESL_ALLOC(name, sizeof(char) * namelen);
 	  sprintf(name, "seq%d", i+1);
 	  EmitParsetree(orig_cm, r, name, FALSE, &(tr[i]), &(sq[i]), &L);
 	  free(name);
@@ -2199,7 +2171,7 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
       Parsetrees2Alignment(orig_cm, orig_cm->abc, sq, NULL, tr, msa_nseq, TRUE, FALSE, &msa);
       /* MSA should be in text mode, not digitized */
       if(msa->flags & eslMSA_DIGITAL)
-	esl_fatal("ERROR in sub_cm_check_by_sampling(), sampled MSA should NOT be digitized.\n");
+	cm_Fail("ERROR in sub_cm_check_by_sampling(), sampled MSA should NOT be digitized.\n");
       
       /* Truncate the alignment prior to consensus column spos and after 
 	 consensus column epos */
@@ -2228,11 +2200,12 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
       for (i = 0; i < msa_nseq; i++)
 	{
 	  MakeDealignedString(msa->abc, msa->aseq[i], msa->alen, msa->aseq[i], &(tmp_text_sq)); 
+	  ESL_ALLOC(tmp_name, sizeof(char) * namelen);
 	  sprintf(tmp_name, "seq%d", i+1);
 	  esl_sq_CreateFrom(tmp_name, tmp_text_sq, NULL, NULL, NULL);
 	  free(tmp_text_sq);
 	  if(esl_sq_Digitize(msa->abc, sq[i]) != eslOK)
-	    esl_fatal("ERROR digitizing sequence in CP9_check_by_sampling().\n");
+	    cm_Fail("ERROR digitizing sequence in CP9_check_by_sampling().\n");
 	}
       
       /* Determine match assignment from RF annotation
@@ -2299,6 +2272,7 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
 	msa_nseq = nseq - nsampled;
       for (i = 0; i < msa_nseq; i++)
 	{
+	  ESL_ALLOC(name, sizeof(char) * namelen);
 	  sprintf(name, "seq%d", i+1);
 	  EmitParsetree(sub_cm, r, name, FALSE, &(tr[i]), &(sq[i]), &L);
 	  free(name);
@@ -2307,7 +2281,7 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
       Parsetrees2Alignment(sub_cm, sub_cm->abc, sq, NULL, tr, msa_nseq, TRUE, FALSE, &msa);
       /* MSA should be in text mode, not digitized */
       if(msa->flags & eslMSA_DIGITAL)
-	esl_fatal("ERROR in sub_cm_check_by_sampling(), sampled MSA should NOT be digitized.\n");
+	cm_Fail("ERROR in sub_cm_check_by_sampling(), sampled MSA should NOT be digitized.\n");
       
       /* Determine match assignment from RF annotation
        */
@@ -2357,11 +2331,10 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int n
   
   FreeCPlan9(orig_hmm);
   FreeCPlan9(sub_hmm);
-  esl_randomness_Destroy(r);
   return TRUE;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return FALSE; /* never reached */
 }
 
@@ -2442,7 +2415,7 @@ check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, doubl
 	  if(v_o != -1)
 	    {
 	      if(is_insert) /* this insert state maps to 2 orig_cm inserts */
-		esl_fatal("ERROR, sub insert state maps to 2 orig_cm inserts.\n");
+		cm_Fail("ERROR, sub insert state maps to 2 orig_cm inserts.\n");
 	      temp_psi += orig_psi[v_o];
 	      if(print_flag)
 		printf("v_o2: %4d (%.6f)\n", v_o, orig_psi[v_o]);
@@ -2497,7 +2470,7 @@ check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, doubl
 	     sub_cm->sttype[v_s] != B_st &&
 	     sub_cm->sttype[v_s] != S_st &&
 	     sub_cm->sttype[v_s] != EL_st)
-	    esl_fatal("ERROR state v_s:%d maps to nothing and its not E,B,S,EL\n", v_s);
+	    cm_Fail("ERROR state v_s:%d maps to nothing and its not E,B,S,EL\n", v_s);
 	  if(print_flag) printf("E B S or EL\n");
 	}
     }
@@ -2528,7 +2501,7 @@ check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, doubl
   return ret_val;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0; /* never reached */
 }
 
@@ -2672,7 +2645,7 @@ cm2sub_cm_subtract_root_subpaths(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, 
 	 (orig_il < orig_ss && orig_il > orig_y) ||
 	 (orig_ir > orig_ss && orig_ir < orig_y) ||
 	 (orig_ir < orig_ss && orig_ir > orig_y))
-	esl_fatal("ERROR in cm2sub_cm_subtract_root_subpaths_helper() split set state guarantee violated!\n");
+	cm_Fail("ERROR in cm2sub_cm_subtract_root_subpaths_helper() split set state guarantee violated!\n");
     }
   
   
@@ -3011,7 +2984,7 @@ cm2sub_cm_find_impossible_misc_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
 	  /* do nothing */
 	}
       else
-	esl_fatal("ERROR, can't determine which state was detached\n");
+	cm_Fail("ERROR, can't determine which state was detached\n");
     }
   if(orig_ir2 != -1)
     {
@@ -3022,7 +2995,7 @@ cm2sub_cm_find_impossible_misc_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
 	  /* do nothing */
 	}
       else
-	esl_fatal("ERROR, can't determine which state was detached\n");
+	cm_Fail("ERROR, can't determine which state was detached\n");
     }
   
   /* Now orig_il1 and orig_ir1 map to the ONLY insert states that map to sub_cm 
@@ -3031,8 +3004,6 @@ cm2sub_cm_find_impossible_misc_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
     {
       /* we can get the distro out of 0 right in this case */
       subinfo->imp_cc[0] = FALSE; 
-      /* we can get the distro out of sub_clen right in this case ONLY
-       * if we're not in fullsub mode */
       if(submap->spos == submap->sstruct && submap->epos == submap->estruct)
 	subinfo->imp_cc[submap->sub_clen] = FALSE;
     }
@@ -3104,9 +3075,9 @@ cm2sub_cm_find_impossible_misc_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
 	    {
 	      sub_starts++;
 	      if(sub_cm->ndtype[sub_nd1] != MATP_nd && sub_cm->ndtype[sub_nd2] != MATP_nd)
-		esl_fatal("ERROR in cm2sub_cm_find_impossible_misc_cases() found impossible case not involving any MATP in the sub_cm, k: %d submap->epos-submap->spos+1: %d\n", k, submap->sub_clen);
+		cm_Fail("ERROR in cm2sub_cm_find_impossible_misc_cases() found impossible case not involving any MATP in the sub_cm, k: %d submap->epos-submap->spos+1: %d\n", k, submap->sub_clen);
 	      if(orig_cm->ndtype[orig_nd1] != MATP_nd && orig_cm->ndtype[orig_nd2] != MATP_nd)
-		esl_fatal("ERROR in cm2sub_cm_find_impossible_misc_cases() found impossible case not involving any MATP in the orig_cm\n, k: %d | submap->epos-submap->spos+1: %d", k, submap->sub_clen);
+		cm_Fail("ERROR in cm2sub_cm_find_impossible_misc_cases() found impossible case not involving any MATP in the orig_cm\n, k: %d | submap->epos-submap->spos+1: %d", k, submap->sub_clen);
 	    }	    
 	}
 
@@ -3129,7 +3100,7 @@ cm2sub_cm_find_impossible_misc_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }  
 
 /**************************************************************************
@@ -3161,13 +3132,12 @@ cm2sub_cm_find_impossible_misc_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
  * int *sub_cp9map->pos2nd
  * int *imp_cc
  * int spos;
- * int do_fullsub     - TRUE if this sub_cm is a 'full sub' CM
  * int epos;
  */
 
 static void
 cm2sub_cm_find_impossible_matr_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo, 
-				     CP9Map_t *orig_cp9map, CP9Map_t *sub_cp9map, int do_fullsub, int print_flag)
+				     CP9Map_t *orig_cp9map, CP9Map_t *sub_cp9map, int print_flag)
 {
   int status;
   int sub_k;
@@ -3245,7 +3215,7 @@ cm2sub_cm_find_impossible_matr_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
 	    correct_node_types_flag = FALSE;
 	  if(print_flag) printf("CASE 2 k: %d correct_node_types_flag: %d\n", sub_k, correct_node_types_flag);
 	  
-	  if(correct_node_types_flag == TRUE || do_fullsub)
+	  if(correct_node_types_flag == TRUE)
 	    {
 	      /* Determine if the next_orig_nd is the next left emitting
 	       * node of the orig_cm after orig_nd */
@@ -3273,14 +3243,9 @@ cm2sub_cm_find_impossible_matr_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
 		  if(print_flag) printf("CASE 2 k: %d sub_matr_stretch_flag: %d\n", sub_k, sub_matr_stretch_flag);
 		  if(sub_matr_stretch_flag == TRUE)
 		    {
-		      if(do_fullsub) 
-			{ 
-			  subinfo->imp_cc[sub_k] = 2;
-			  continue;
-			}
 		      /* This should be a MATR impossible case, 
 		       * Check all the criteria we *think* are always true in this situation,
-		       * esl_fatal if what we think is wrong. 
+		       * cm_Fail if what we think is wrong. 
 		       *
 		       * The orig_cm nodes that map to the same consensus columns
 		       * as the MATR nodes in the sub_cm must either be:
@@ -3315,16 +3280,16 @@ cm2sub_cm_find_impossible_matr_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
 			  if(orig_cp9map->nd2rpos[tmp_orig_nd] == (sub_cp9map->nd2rpos[tmp_sub_nd]+submap->spos-1)) /* Case 1 above */
 			    {
 			      if(orig_cm->ndtype[tmp_orig_nd] != MATP_nd && orig_cm->ndtype[tmp_orig_nd] != MATR_nd)
-				esl_fatal("ERROR 2 in cm2sub_cm_find_impossible_matr_cases() found impossible MATR case that can't be classified as case 1 or case 2, k: %d | submap->spos: %d submap->epos: %d", sub_k, submap->spos, submap->epos);
+				cm_Fail("ERROR 2 in cm2sub_cm_find_impossible_matr_cases() found impossible MATR case that can't be classified as case 1 or case 2, k: %d | submap->spos: %d submap->epos: %d", sub_k, submap->spos, submap->epos);
 			      if(orig_cm->ndtype[tmp_orig_nd] == MATP_nd && orig_cp9map->nd2lpos[tmp_orig_nd] >= submap->spos)
-				esl_fatal("ERROR 3 in cm2sub_cm_find_impossible_matr_cases() found impossible MATR case that can't be classified as case 1 or case 2, k: %d | submap->spos: %d submap->epos: %d", sub_k, submap->spos, submap->epos);
+				cm_Fail("ERROR 3 in cm2sub_cm_find_impossible_matr_cases() found impossible MATR case that can't be classified as case 1 or case 2, k: %d | submap->spos: %d submap->epos: %d", sub_k, submap->spos, submap->epos);
 			    }
 			  else if(orig_cp9map->nd2lpos[tmp_orig_nd] == (sub_cp9map->nd2rpos[tmp_sub_nd]+submap->spos-1)) /* Case 2 above */
 			    {
 			      if(orig_cm->ndtype[tmp_orig_nd] != MATP_nd && orig_cm->ndtype[tmp_orig_nd] != MATL_nd)
-				esl_fatal("ERROR 4 in cm2sub_cm_find_impossible_matr_cases() found impossible MATR case that can't be classified as case 1 or case 2, k: %d | submap->spos: %d submap->epos: %d", sub_k, submap->spos, submap->epos);
+				cm_Fail("ERROR 4 in cm2sub_cm_find_impossible_matr_cases() found impossible MATR case that can't be classified as case 1 or case 2, k: %d | submap->spos: %d submap->epos: %d", sub_k, submap->spos, submap->epos);
 			      if(orig_cm->ndtype[tmp_orig_nd] == MATP_nd && orig_cp9map->nd2rpos[tmp_orig_nd] <= submap->epos)
-				esl_fatal("ERROR 5 in cm2sub_cm_find_impossible_matr_cases() found impossible MATR case that can't be classified as case 1 or case 2, k: %d | submap->spos: %d submap->epos: %d | orig_cp9map->nd2rpos[%d]: %d", sub_k, submap->spos, submap->epos, tmp_orig_nd, orig_cp9map->nd2rpos[tmp_orig_nd]);
+				cm_Fail("ERROR 5 in cm2sub_cm_find_impossible_matr_cases() found impossible MATR case that can't be classified as case 1 or case 2, k: %d | submap->spos: %d submap->epos: %d | orig_cp9map->nd2rpos[%d]: %d", sub_k, submap->spos, submap->epos, tmp_orig_nd, orig_cp9map->nd2rpos[tmp_orig_nd]);
 			    }
 			}
 		      /* if we get here, we've satisfied all of our criteria */
@@ -3338,7 +3303,7 @@ cm2sub_cm_find_impossible_matr_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }  
 
 
@@ -3366,18 +3331,16 @@ cm2sub_cm_find_impossible_matr_cases(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *su
  * CMSubMap_t *submap
  * CMSubInfo_t *subinfo
  * float  pthresh    - the allowed difference in probability between HMMs
- * int do_fullsub     - TRUE if this sub_cm is a 'full sub' CM
  * int print_flag    - TRUE to print useful debugging info
  * 
  * Returns: TRUE: if CM and sub CM are "close enough" (see code)
  *          FALSE: otherwise
  */
 int 
-check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo, float pthresh,
-	     int do_fullsub, int print_flag)
+check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo, float pthresh, int print_flag)
 {
-  struct cplan9_s       *sub_hmm; /* constructed CP9 HMM from the sub_cm */
-  struct cplan9_s       *orig_hmm; /* constructed CP9 HMM from the original cm 
+  CP9_t       *sub_hmm; /* constructed CP9 HMM from the sub_cm */
+  CP9_t       *orig_hmm; /* constructed CP9 HMM from the original cm 
 				    * this will be reconfiged to match the sub_hmm */
   CP9Map_t *orig_cp9map;         /* maps the orig_cm to the orig_hmm and vice versa */
   CP9Map_t *sub_cp9map;          /* maps the sub_cm to the sub_hmm and vice versa */
@@ -3426,16 +3389,16 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
 
   /* Build two CP9 HMMs, one for the orig_cm and one for the sub_cm */
   if(!build_cp9_hmm(orig_cm, &orig_hmm, &orig_cp9map, FALSE, 0.0001, print_flag))
-    esl_fatal("Couldn't build a CP9 HMM from the CM\n");
+    cm_Fail("Couldn't build a CP9 HMM from the CM\n");
   if(!build_cp9_hmm(sub_cm,  &sub_hmm,  &sub_cp9map,  FALSE, 0.0001, print_flag))
-    esl_fatal("Couldn't build a CP9 HMM from the CM\n");
+    cm_Fail("Couldn't build a CP9 HMM from the CM\n");
 
   /* Look for 'impossible' cases where we know the sub_cm 
    * construction procedure fails, in that the distribution of transitions out of CP9 nodes 
    * built from the sub_cm will be the same distros out of corresponding CP9 nodes built from 
    * the full CM. */
   cm2sub_cm_find_impossible_misc_cases(orig_cm, sub_cm, submap, subinfo, orig_cp9map, sub_cp9map, print_flag);
-  cm2sub_cm_find_impossible_matr_cases(orig_cm, sub_cm, submap, subinfo, orig_cp9map, sub_cp9map, do_fullsub, print_flag);
+  cm2sub_cm_find_impossible_matr_cases(orig_cm, sub_cm, submap, subinfo, orig_cp9map, sub_cp9map, print_flag);
 
   /* Reconfig the orig_hmm so that it can only start in the spos node, and end from the epos node */
   /* Build the sub CP9 HMM by copying as much of the original cp9_hmm as possible */
@@ -3472,7 +3435,7 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
 	      if(print_flag) printf("mat[%d][%d] = %8.5f | %8.5f | (%8.5f)\n", 0, i, orig_hmm->mat[(submap->spos+k-1)][i], sub_hmm->mat[k][i], diff);
 	      if((diff > 0 && diff > pthresh) || (diff < 0 && diff < (-1. * pthresh)))
 		{
-		  esl_fatal("EMISSION PROBABILITY INCORRECT!\n");
+		  cm_Fail("EMISSION PROBABILITY INCORRECT!\n");
 		}
 	    }
 	}
@@ -3482,7 +3445,7 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
 	  if(print_flag) printf("ins[%d][%d] = %8.5f | %8.5f | (%8.5f)\n", 0, i, orig_hmm->ins[(submap->spos+k-1)][i], sub_hmm->ins[k][i], diff);
 	  if((diff > 0 && diff > pthresh) || (diff < 0 && diff < (-1. * pthresh)))
 	    {
-	      esl_fatal("EMISSION PROBABILITY INCORRECT!\n");
+	      cm_Fail("EMISSION PROBABILITY INCORRECT!\n");
 	    }
 	}
 
@@ -3635,7 +3598,7 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
     return TRUE;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return FALSE; /* never reached */
 }
 
@@ -3656,13 +3619,12 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
  * Parsetree_t **ret_orig_tr - orig_cm parstree allocated, filled and returned here
  * Parsetree_t *sub_tr       - the sub_cm parstree already filled
  * CMSubMap_t *submap        - map from the sub_cm to orig_cm and vice versa
- * int do_fullsub     - TRUE if this sub_cm is a 'full sub' CM
  * int print_flag    - TRUE to print useful debugging info
  */
 
 int
 sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Parsetree_t *sub_tr, 
-		    CMSubMap_t *submap, int do_fullsub, int print_flag)
+		    CMSubMap_t *submap, int print_flag)
 {
   int  status;
   Parsetree_t *orig_tr; /* the parsetree we're creating for the original CM */
@@ -3758,7 +3720,7 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
 	     sub_cm->sttype[sub_v] != E_st &&
 	     sub_cm->sttype[sub_v] != B_st &&
 	     sub_cm->sttype[sub_v] != EL_st)
-	    esl_fatal("ERROR 0 in sub_cm2cm_parstree()\n");
+	    cm_Fail("ERROR 0 in sub_cm2cm_parstree()\n");
 	  continue;
 	}
       orig_nd1 = orig_cm->ndidx[orig_v1];
@@ -3773,31 +3735,31 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
 	  il_used[orig_nd1] = orig_v1;
 	  il_ct[orig_nd1]++;
 	  if(orig_v2 != -1)
-	    esl_fatal("ERROR 1 in sub_cm2cm_parstree()\n");
+	    cm_Fail("ERROR 1 in sub_cm2cm_parstree()\n");
 	}
       else if(orig_cm->sttype[orig_v1] == IR_st)
 	{
 	  ir_used[orig_nd1] = orig_v1;
 	  ir_ct[orig_nd1]++;
 	  if(orig_v2 != -1)
-	    esl_fatal("ERROR 2 in sub_cm2cm_parstree()\n");
+	    cm_Fail("ERROR 2 in sub_cm2cm_parstree()\n");
 	}
       else if(sub_cm->ndtype[sub_cm->ndidx[sub_v]] == MATP_nd)
 	{
 	  ss_used[orig_nd1] = orig_v1;
 	  if(orig_v2 != -1)
-	    esl_fatal("ERROR 3 in sub_cm2cm_parsetree()\n");
+	    cm_Fail("ERROR 3 in sub_cm2cm_parsetree()\n");
 	}
       else if(orig_cm->ndtype[orig_nd1] == MATP_nd)
 	{
 	  if(orig_v2 == -1)
-	    esl_fatal("ERROR 4 in sub_cm2cm_parsetree()\n");
+	    cm_Fail("ERROR 4 in sub_cm2cm_parsetree()\n");
 	  /* We have to figure out which MATP split state sub_v corresponds to. */
 	  if(sub_cm->ndtype[sub_cm->ndidx[sub_v]] != MATL_nd && 
 	     sub_cm->ndtype[sub_cm->ndidx[sub_v]] != MATR_nd)
-	    esl_fatal("ERROR 5 in sub_cm2cm_parsetree()\n");
+	    cm_Fail("ERROR 5 in sub_cm2cm_parsetree()\n");
 	  if(orig_cm->ndtype[orig_nd2] != MATP_nd)
-	    esl_fatal("ERROR 6 in sub_cm2cm_parsetree()\n");
+	    cm_Fail("ERROR 6 in sub_cm2cm_parsetree()\n");
 	  
 	  if(sub_cm->sttype[sub_v] == D_st)
 	    {
@@ -3821,7 +3783,7 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
 			  orig_cm->sttype[orig_v2] == MR_st)
 		    ss_used[orig_nd1] = orig_cm->nodemap[orig_nd1] + 2; /* MATP_MR */
 		  else
-		    esl_fatal("ERROR 7 in sub_cm2cm_parsetree()\n");
+		    cm_Fail("ERROR 7 in sub_cm2cm_parsetree()\n");
 		}
 	      /* below is the only line we really need: 
 		 else
@@ -3835,7 +3797,7 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
 		      ss_used[orig_nd1] = orig_cm->nodemap[orig_nd1]; /* MATP_MP */
 		    }
 		  else 
-		    esl_fatal("ERROR 8 in sub_cm2cm_parsetree()\n");
+		    cm_Fail("ERROR 8 in sub_cm2cm_parsetree()\n");
 		}
 	      else if(orig_cm->sttype[ss_used[orig_nd1]] == MR_st) /* just for safety; should erase eventually */
 		{
@@ -3845,14 +3807,14 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
 		      ss_used[orig_nd1] = orig_cm->nodemap[orig_nd1]; /* MATP_MP */
 		    }
 		  else 
-		    esl_fatal("ERROR 9 in sub_cm2cm_parsetree()\n");
+		    cm_Fail("ERROR 9 in sub_cm2cm_parsetree()\n");
 		}
 	    }
 	}
       else
 	{
 	  if(orig_v2 != -1)
-	    esl_fatal("ERROR 5 in sub_cm2cm_parsetree()\n");
+	    cm_Fail("ERROR 5 in sub_cm2cm_parsetree()\n");
 	  ss_used[orig_nd1] = orig_v1;
 	}
     }
@@ -4014,7 +3976,7 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
   return 1;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0; /* never reached*/
 }
 
@@ -4092,7 +4054,7 @@ debug_print_misc_sub_cm_info(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CP
 	  /* do nothing */
 	}
       else
-	esl_fatal("ERROR, can't determine which state was detached in debug_print_misc_sub_cm_info\n");
+	cm_Fail("ERROR, can't determine which state was detached in debug_print_misc_sub_cm_info\n");
     }
   if(orig_ir2 != -1)
     {
@@ -4103,7 +4065,7 @@ debug_print_misc_sub_cm_info(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CP
 	  /* do nothing */
 	}
       else
-	esl_fatal("ERROR, can't determine which state was detached in debug_print_misc_sub_cm_info\n");
+	cm_Fail("ERROR, can't determine which state was detached in debug_print_misc_sub_cm_info\n");
     }
 
   /* Now orig_il1 and orig_ir1 map to the ONLY insert states that map to sub_cm 
@@ -4127,7 +4089,7 @@ debug_print_misc_sub_cm_info(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CP
       else if(orig_cp9map->nd2rpos[orig_cm->ndidx[(submap->s2o_smap[3][0])]] == submap->spos)
 	side_idx = 1;
       else
-	esl_fatal("ERROR MATP confusion! orig_cm node: %d | left: %d | right: %d | submap->spos: %d\n", (orig_cm->ndidx[(submap->s2o_smap[3][0])]), (orig_cp9map->nd2lpos[orig_cm->ndidx[(submap->s2o_smap[3][0])]]), (orig_cp9map->nd2rpos[orig_cm->ndidx[(submap->s2o_smap[3][0])]]), submap->spos);
+	cm_Fail("ERROR MATP confusion! orig_cm node: %d | left: %d | right: %d | submap->spos: %d\n", (orig_cm->ndidx[(submap->s2o_smap[3][0])]), (orig_cp9map->nd2lpos[orig_cm->ndidx[(submap->s2o_smap[3][0])]]), (orig_cp9map->nd2rpos[orig_cm->ndidx[(submap->s2o_smap[3][0])]]), submap->spos);
     }
   else if (orig_n1_type == MATP_nd && sub_cm->ndtype[1] == MATR_nd)
     {
@@ -4136,7 +4098,7 @@ debug_print_misc_sub_cm_info(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CP
       else if(orig_cp9map->nd2rpos[orig_cm->ndidx[(submap->s2o_smap[3][0])]] == submap->epos)
 	side_idx = 1;
       else
-	esl_fatal("ERROR MATP confusion! orig_cm node: %d | left: %d | right: %d | submap->spos: %d\n", (orig_cm->ndidx[(submap->s2o_smap[3][0])]), (orig_cp9map->nd2lpos[orig_cm->ndidx[(submap->s2o_smap[3][0])]]), (orig_cp9map->nd2rpos[orig_cm->ndidx[(submap->s2o_smap[3][0])]]), submap->spos);
+	cm_Fail("ERROR MATP confusion! orig_cm node: %d | left: %d | right: %d | submap->spos: %d\n", (orig_cm->ndidx[(submap->s2o_smap[3][0])]), (orig_cp9map->nd2lpos[orig_cm->ndidx[(submap->s2o_smap[3][0])]]), (orig_cp9map->nd2rpos[orig_cm->ndidx[(submap->s2o_smap[3][0])]]), submap->spos);
     }
   else
     {
@@ -4233,7 +4195,7 @@ debug_print_misc_sub_cm_info(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CP
  	{
 	  other_cc_il = orig_emap->lpos[orig_cm->ndidx[other_insert_il]] + 1;
 	  if(other_cc_il > submap->spos)
-	    esl_fatal("ERROR FUNKY\n");
+	    cm_Fail("ERROR FUNKY\n");
 	  ildual = 4;
 	}
       else /* ROOT_IL maps to IL, other maps to IR */
@@ -4264,7 +4226,7 @@ debug_print_misc_sub_cm_info(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CP
 	{
 	  other_cc_ir = orig_emap->rpos[orig_cm->ndidx[other_insert_ir]] - 1;
 	  if(other_cc_ir < submap->epos)
-	    esl_fatal("ERROR FUNKY\n");
+	    cm_Fail("ERROR FUNKY\n");
 	  irdual = 4;
 	}
     }	    
@@ -4293,7 +4255,7 @@ debug_print_misc_sub_cm_info(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CP
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 /**************************************************************************
@@ -4372,6 +4334,6 @@ debug_sub_cm_check_all_trans(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 #endif

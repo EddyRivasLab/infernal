@@ -1,5 +1,6 @@
 /* cp9-test.c
  * EPN, Mon Nov 13 17:49:07 2006
+ * Easelification: EPN, Fri Nov 30 10:14:17 2007
  * 
  * Test the CM -> CP9 HMM construction procedure.
  * 
@@ -8,6 +9,7 @@
  *****************************************************************  
  */
 
+#include "esl_config.h"
 #include "config.h"
 
 #include <stdio.h>
@@ -16,132 +18,98 @@
 #include <string.h>
 #include <time.h>
 
-#include "squid.h"
-#include "sqfuncs.h"
-#include "sre_stack.h"
-#include "stopwatch.h"          /* squid's process timing module        */
+#include "easel.h"
+#include "esl_getopts.h"
+#include "esl_random.h"
+#include "esl_stopwatch.h"
+#include "esl_stack.h"
+#include "esl_vectorops.h"
 
-#include "structs.h"
-#include "funcs.h"
+#include "funcs.h"		/* function declarations                */
+#include "structs.h"		/* data structures, macros, #define's   */
 
-static char banner[] = "cp9-test - test CP9 HMM construction procedure";
-
-static char usage[] = "\
-Usage: cp9-test [-options] <cmfile>\n\
-  where options are:\n\
-  -h     : help; print brief help on version and usage\n\
-  -s <n> : set random number seed\n\
-  -t <p> : probability threshold for reporting violations [default: 1E-4]\n\
-";
-
-static char experts[] = "\
-  --psionly   : only check that psi and phi values match\n\
-  --nseq <n>  : use <n> samples to build CP9 HMM for [df: 50000]\n\
-  --chi <f>   : fail sampling check if any chi-square test < <f> [df: 0.01]\n\
-  --dlev <n>  : set verbosity of debugging print statements to <n> (1..3)\n\
-";
-
-static struct opt_s OPTIONS[] = { 
-  { "-h", TRUE, sqdARG_NONE }, 
-  { "-s", TRUE, sqdARG_INT },
-  { "-t", TRUE, sqdARG_FLOAT },
-  { "--psionly",   FALSE, sqdARG_NONE },
-  { "--nseq",      FALSE, sqdARG_INT },
-  { "--chi",       FALSE, sqdARG_FLOAT },
-  { "--dlev",     FALSE, sqdARG_INT },
+static ESL_OPTIONS options[] = {
+  /* name        type         default  env  range toggles reqs incomp  help                                            docgroup*/
+  { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
+  { "-s",        eslARG_INT,     NULL, NULL, "n>0", NULL,  NULL, NULL, "set random number seed to <n>",                  0 },
+  { "-t",        eslARG_REAL,   "1E-4",NULL, "x>0.",NULL,  NULL, NULL, "probability threshold for reporting violations", 0 },
+  { "--psionly", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "only check that psi and phi values match",       1 },
+  { "--nseq",    eslARG_INT,   "50000",NULL, "n>=10000", NULL,  NULL, NULL, "use <n> samples to build CP9 HMM from",          1 },
+  { "--chi",     eslARG_REAL,   ".01", NULL, "x>0.",NULL,  NULL, NULL, "fail sampling check if any chi-square test < <f>", 1},
+  { "--dlev",    eslARG_INT,     NULL, NULL, "0<n<4",NULL, NULL, NULL, "set verbosity of debugging print statements to <n>", 1},
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
-#define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
+static char usage[]  = "[-options] <cmfile>";
+static char banner[] = "test CP9 HMM construction procedure";
 
 int
 main(int argc, char **argv)
 {
-  char              *cmfile;	  /* file to read CM from */	
+  ESL_GETOPTS       *go      = esl_getopts_CreateDefaultApp(options, 1, argc, argv, banner, usage);
+  char              *cmfile = esl_opt_GetArg(go, 1);
   CMFILE            *cmfp;        /* open CM file for reading */
   CM_t              *cm;          /* a covariance model       */
-  struct cplan9_s   *hmm;         /* constructed CP9 HMM; written to hmmfile              */
+  CP9_t             *hmm;         /* constructed CP9 HMM; written to hmmfile              */
   CP9Map_t          *cp9map;      /* maps the hmm to the cm and vice versa */
-  Stopwatch_t       *watch;       /* for timings */
   double             pthresh;     /* psi threshold for calling violations */
-  int                seed;	  /* random number seed for MC */
-  char              *optname;     /* name of option found by Getopt()        */
-  char              *optarg;      /* argument found by Getopt()              */
-  int                optind;      /* index in argv[]                         */
   int                nsamples;    /* Number of samples to build sampled HMM check. */
   float              chi_thresh;  /* if any chi-square test during the sampling check 
 				   * is below this threshold, fail. */
   int                do_psionly;  /* don't do a sampling check only compare the expected
 				   * number of times each HMM and CM state is entered */
   int                debug_level; /* verbosity of debugging printf statements */
+  ESL_STOPWATCH     *w    = NULL; /* for timings */
+  ESL_RANDOMNESS    *r    = NULL; /* source of randomness */
+  ESL_ALPHABET      *abc  = NULL; /* alphabet, for the CM */
+
   /*********************************************** 
    * Parse command line
    ***********************************************/
-  pthresh        = 0.0001;
-  do_psionly     = FALSE;
-  nsamples       = 50000;
-  chi_thresh     = 0.01;
-  debug_level    = 0;
-
-  while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
-		&optind, &optname, &optarg))  {
-    if      (strcmp(optname, "-s")          == 0) seed       = atoi(optarg);
-    else if (strcmp(optname, "-t")          == 0) pthresh    = atof(optarg);
-    else if (strcmp(optname, "--psionly")   == 0) do_psionly = TRUE;
-    else if (strcmp(optname, "--nseq")      == 0) nsamples   = atoi(optarg);
-    else if (strcmp(optname, "--chi")       == 0) chi_thresh = atof(optarg);
-    else if (strcmp(optname, "--dlev")      == 0) debug_level= atoi(optarg);
-    else if (strcmp(optname, "-h")          == 0) {
-      MainBanner(stdout, banner);
-      puts(usage);
-      puts(experts);
-      exit(EXIT_SUCCESS);
-    }
-  }
-
-  if (argc - optind != 1) Die("Incorrect number of arguments.\n%s\n", usage);
-  cmfile = argv[optind++];
+  pthresh        = esl_opt_GetReal   (go, "-t");
+  do_psionly     = esl_opt_GetBoolean(go, "--psionly");
+  nsamples       = esl_opt_GetInteger(go, "--nseq");
+  chi_thresh     = esl_opt_GetReal   (go, "--chi");
+  if(esl_opt_IsDefault(go, "--dlev")) debug_level = 0;
+  else                                debug_level = esl_opt_GetInteger(go, "--dlev");
  
-  if(nsamples < 10000)
-    Die("Minimum number of samples allowed is 10,000.\n");
-
   /********************************************`*** 
    * Preliminaries: get our CM
    ***********************************************/
 
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
-    Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
-  if (! CMFileRead(cmfp, &cm))
-    Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
-  if (cm == NULL) 
-    Die("%s empty?\n", cmfile);
+  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
+  if (!(CMFileRead(cmfp, &abc, &cm)))            cm_Fail("Failed to read CM");
   CMFileClose(cmfp);
 
-  watch = StopwatchCreate(); 
-  StopwatchZero(watch);
-  StopwatchStart(watch);
+  w  = esl_stopwatch_Create();
+  esl_stopwatch_Start(w);
   if(!build_cp9_hmm(cm, &hmm, &cp9map, TRUE, pthresh, debug_level))
-    Die("CM Plan 9 HMM fails the psi/phi comparison test.\n");
-  StopwatchStop(watch);
-  StopwatchDisplay(stdout, "CP9 construction CPU time: ", watch);
-
-  if(!do_psionly)
-    {
-      StopwatchZero(watch);
-      StopwatchStart(watch);
-      sre_srandom(seed);
-      if(!(CP9_check_by_sampling(cm, hmm, 
-				 NULL,     /* Don't keep track of failures (sub_cm feature) */
-				 1, hmm->M, chi_thresh, nsamples, debug_level)))
-	Die("CP9 HMM fails sampling check!\n");
+    cm_Fail("CM Plan 9 HMM fails the psi/phi comparison test.\n");
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(stdout, w, "CP9 construction CPU time: ");
+  
+  if(!do_psionly) {
+    esl_stopwatch_Start(w);
+    if (! esl_opt_IsDefault(go, "-s")) 
+      r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
+    else r = esl_randomness_CreateTimeseeded();
+    
+    if(!(CP9_check_by_sampling(cm, hmm, r,
+			       NULL,     /* Don't keep track of failures (sub_cm feature) */
+			       1, hmm->M, chi_thresh, nsamples, debug_level)))
+	cm_Fail("CP9 HMM fails sampling check!\n");
       else
 	printf("CP9 HMM passed sampling check.\n");
       
-      StopwatchStop(watch);
-      StopwatchDisplay(stdout, "CP9 sampling check CPU time: ", watch);
-    }
+    esl_stopwatch_Stop(w);
+    esl_stopwatch_Display(stdout, w, "CP9 sampling check CPU time: ");
+  }
   /* clean up and exit */
-  StopwatchFree(watch);
   FreeCP9Map(cp9map);
   FreeCPlan9(hmm);
   FreeCM(cm);
+  esl_alphabet_Destroy(abc);
+  esl_randomness_Destroy(r);
+  esl_stopwatch_Destroy(w);
+  esl_getopts_Destroy(go);
   return 0;
 }

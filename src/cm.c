@@ -12,10 +12,11 @@
 #include "esl_config.h"
 #include "config.h"
 
+#include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 #include <time.h>
 
 #include "easel.h"
@@ -316,7 +317,8 @@ CMRenormalize(CM_t *cm)
 void
 FreeCM(CM_t *cm)
 {
-  if (cm->smx    != NULL) cm_FreeScanMatrixForCM(cm); /* free this first, it needs some info from cm->stid */
+  if (cm->smx    != NULL) cm_FreeScanMatrixForCM(cm);    /* free this first, it needs some info from cm->stid */
+  if (cm->fi     != NULL) cm_FreeFilterInfo(cm->fi, cm); /* free this first, it needs some info from cm->stid */
   if (cm->name   != NULL) free(cm->name);
   if (cm->acc    != NULL) free(cm->acc);
   if (cm->desc   != NULL) free(cm->desc);
@@ -366,7 +368,6 @@ FreeCM(CM_t *cm)
   if(cm->cp9_mx     != NULL) FreeCP9Matrix(cm->cp9_mx);
   if(cm->cp9_bmx    != NULL) FreeCP9Matrix(cm->cp9_bmx);
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
-  if (cm->fi     != NULL) cm_FreeFilterInfo(cm->fi); 
   free(cm);
 }
 
@@ -2357,3 +2358,22 @@ cm_SetCtime(CM_t *cm)
 }
 /*---------------- end, internal-setting routines ---------------*/
 
+/* Function: IntMaxDigits()
+ * Date:     EPN, Fri Nov 30 14:51:12 2007
+ * 
+ * Returns: The number of digits in INT_MAX. 
+ *          Originally written to inform how big a 
+ *          string must be if it wants to hold any
+ *          possible positive integer.
+ */
+int
+IntMaxDigits()
+{
+  int big = INT_MAX;
+  int n   = 0;
+  while(big > 0) { 
+    big/=10;
+    n++;
+  }
+  return n;
+}

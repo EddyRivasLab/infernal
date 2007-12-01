@@ -1,6 +1,7 @@
 /* sub_cm-test.c
  * EPN, 09.18.06
- * 
+ * Easeled: EPN, Fri Nov 30 13:35:14 2007
+ *
  * Build many submodels from a template CM by choosing
  * random model start and end positions.
  * Compare the submodels to the corresponding stretch of
@@ -12,6 +13,7 @@
  *****************************************************************  
  */
 
+#include "esl_config.h"
 #include "config.h"
 
 #include <stdio.h>
@@ -20,77 +22,49 @@
 #include <string.h>
 #include <time.h>
 
-#include "squid.h"
-#include "sqfuncs.h"
-#include "dirichlet.h"
-#include "sre_stack.h"
+#include "easel.h"
+#include "esl_getopts.h"
+#include "esl_vectorops.h"
 
-#include "structs.h"
-#include "funcs.h"
+#include "funcs.h"		/* function declarations                */
+#include "structs.h"		/* data structures, macros, #define's   */
 
-static char banner[] = "sub_cm-test - test sub CM construction procedure";
-
-static char usage[] = "\
-Usage: sub_cm-test [-options] <cmfile>\n\
-  where options are:\n\
-  -h     : help; print brief help on version and usage\n\
-  -n <n> : number of sub CMs to build and test [default 100]\n\
-  -s <n> : set random number seed\n\
-  -b <n> : set sub CM begin consensus (match) column as <n>\n\
-  -e <n> : set sub CM end consensus (match) column as <n>\n\
-  -t <p> : probability threshold for reporting violations [default: 1E-5]\n\
-";
-
-static char experts[] = "\
-  --psionly   : only check that psi values match (don't build HMMs)\n\
-  --sample    : build and check two CP9 HMMs (one an ML HMM via sampling)\n\
-  --nseq <n>  : use <n> samples to build ML HMM for --sample [50000]\n\
-  --chi <f>   : fail sampling check if any chi-square test < <f> [0.01]\n\
-  --exhaust   : build and check every possible sub CM (all (N^2+N)/2)\n\
-  --full      : build sub CM(s) with ONLY structure removed\n\
-  --debug     : turn debugging print statements ON\n\
-";
-
-static struct opt_s OPTIONS[] = { 
-  { "-h", TRUE, sqdARG_NONE }, 
-  { "-n", TRUE, sqdARG_INT },
-  { "-s", TRUE, sqdARG_INT },
-  { "-t", TRUE, sqdARG_FLOAT },
-  { "-b", TRUE, sqdARG_INT },
-  { "-e", TRUE, sqdARG_INT },
-  { "--psionly",   FALSE, sqdARG_NONE },
-  { "--samplecp9", FALSE, sqdARG_NONE },
-  { "--nseq",      FALSE, sqdARG_INT },
-  { "--chi",       FALSE, sqdARG_FLOAT },
-  { "--sample",    FALSE, sqdARG_NONE },
-  { "--exhaust",   FALSE, sqdARG_NONE },
-  { "--full",      FALSE, sqdARG_NONE },
-  { "--debug",     FALSE, sqdARG_NONE },
+static ESL_OPTIONS options[] = {
+  /* name        type         default  env  range toggles reqs incomp  help                                            docgroup*/
+  { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",                     0 },
+  { "-n",        eslARG_INT,    "100", NULL, "n>0", NULL,  NULL, NULL, "number of sub CMs to build and test",                      0 },
+  { "-s",        eslARG_INT,     NULL, NULL, "n>0", NULL,  NULL, NULL, "set random number seed to <n>",                            0 },
+  { "-b",        eslARG_INT,     NULL, NULL, "n>0", NULL,  NULL, "--exhaust", "set sub CM begin consensus (match) column as <n>",         0 },
+  { "-e",        eslARG_INT,     NULL, NULL, "n>0", NULL,  NULL, "--exhaust", "set sub CM end   consensus (match) column as <n>",         0 },
+  { "-t",        eslARG_REAL,   "1E-5",NULL, "x>0.",NULL,  NULL, NULL, "probability threshold for reporting violations",           0 },
+  { "--psionly", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "only check that psi values match (don't build HMMs)",      1 },
+  { "--sample",  eslARG_NONE,   FALSE, NULL, "n>0", NULL,  NULL, NULL, "build and check two CP9 HMMs (one an ML HMM via sampling)", 1 },
+  { "--nseq",    eslARG_INT,  "50000", NULL,"n>=10000",NULL,"--sample", NULL, "use <n> samples to build ML HMM for --sample",             1 },
+  { "--chi",     eslARG_REAL,   ".01", NULL, "x>0.",NULL,  NULL, NULL, "fail sampling check if any chi-square test < <f>",         1 },
+  { "--exhaust", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "build and check every possible sub CM (all (N^2+N)/2)",    1 },
+  { "--debug",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "turn debugging print statements ON",                       1 },
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
-#define NOPTIONS (sizeof(OPTIONS) / sizeof(struct opt_s))
+static char usage[]  = "[-options] <cmfile>";
+static char banner[] = "test sub CM construction procedure";
 
 int
 main(int argc, char **argv)
 {
-  char    *cmfile;		/* file to read CM from */	
+  int                status;
+  ESL_GETOPTS       *go      = esl_getopts_CreateDefaultApp(options, 1, argc, argv, banner, usage);
+  char              *cmfile = esl_opt_GetArg(go, 1);
   CMFILE  *cmfp;		/* open CM file for reading */
   CM_t    *cm;			/* a covariance model       */
   CM_t    *sub_cm;              /* sub covariance model     */
-  int      v;			/* counter over states */
   int      nmodels;             /* number of sub CMs to build */
-  int      sstruct;                /* start position for sub CM */
-  int      estruct;                /* end position for sub CM */
-  int      ncols;               /* number of consensus (match) columns in CM */
+  int      sstruct;             /* start position for sub CM */
+  int      estruct;             /* end position for sub CM */
   int      i;                   /* counter over sub CMs */
   int      j;                   /* counter */
   int      temp;
 
   double   pthresh;		/* psi threshold for calling violations */
-  int      seed;		/* random number seed for MC */
-
-  char *optname;                /* name of option found by Getopt()        */
-  char *optarg;                 /* argument found by Getopt()              */
-  int   optind;                 /* index in argv[]                         */
   int   begin_set;              /* TRUE if -b entered at command line */
   int   end_set;                /* TRUE if -e entered at command line */
   int do_atest;                 /* TRUE to build 2 ML HMMs, one from the CM and one from
@@ -103,9 +77,6 @@ main(int argc, char **argv)
 				 * the CP9 analytically built from the sub_cm.
 				 */
   int do_exhaust;               /* TRUE to build every possible sub_cm */
-  int do_fullsub;               /* TRUE to build sub CM(s) that model same number of columns
-				 * as the template CM, with structure outside sstruct..estruct
-				 * removed.                          */
   int ndone;                    /* number of models built so far */
   int print_flag;               /* TRUE to print debug statements */
   int *awrong_total_ct;         /* For ALL 'atest's: the  number of times we predict we'll 
@@ -135,92 +106,60 @@ main(int argc, char **argv)
 				 */
   CMSubMap_t *submap;
   CMSubInfo_t *subinfo;
+  ESL_RANDOMNESS    *r    = NULL; /* source of randomness */
+  ESL_ALPHABET      *abc  = NULL; /* alphabet, for the CM */
+
   /*********************************************** 
    * Parse command line
    ***********************************************/
 
-  nmodels        = 100;
-  seed           = (int) time ((time_t *) NULL);
-  pthresh        = 0.00001;
-  begin_set      = FALSE;
-  end_set        = FALSE;
-  do_atest       = TRUE;
-  do_stest       = FALSE;
-  do_exhaust     = FALSE;
-  do_fullsub     = FALSE;
-  nsamples       = 50000;
-  chi_thresh     = 0.01;
-  npredict_cases = 6;
-  print_flag     = FALSE;
-
-  while (Getopt(argc, argv, OPTIONS, NOPTIONS, usage,
-		&optind, &optname, &optarg))  {
-    if      (strcmp(optname, "-n") == 0) nmodels        = atoi(optarg);
-    else if (strcmp(optname, "-s") == 0) seed           = atoi(optarg);
-    else if (strcmp(optname, "-t") == 0) pthresh        = atof(optarg);
-    else if (strcmp(optname, "-b") == 0) { begin_set = TRUE; sstruct = atoi(optarg); nmodels = 1; }
-    else if (strcmp(optname, "-e") == 0) { end_set   = TRUE; estruct = atoi(optarg); }
-    else if (strcmp(optname, "--psionly")   == 0) do_atest   = FALSE;
-    else if (strcmp(optname, "--sample")    == 0) do_stest   = TRUE;
-    else if (strcmp(optname, "--nseq")      == 0) nsamples = atoi(optarg);
-    else if (strcmp(optname, "--chi")       == 0) chi_thresh = atof(optarg);
-    else if (strcmp(optname, "--sample")    == 0) do_stest   = TRUE;
-    else if (strcmp(optname, "--exhaust")   == 0) do_exhaust = TRUE;
-    else if (strcmp(optname, "--full")      == 0) do_fullsub = TRUE;
-    else if (strcmp(optname, "--debug")     == 0) print_flag = TRUE;
-    else if (strcmp(optname, "-h") == 0) {
-      MainBanner(stdout, banner);
-      puts(usage);
-      puts(experts);
-      exit(EXIT_SUCCESS);
-    }
+  nmodels        =    esl_opt_GetInteger(go, "-n");
+  pthresh        =    esl_opt_GetReal   (go, "-t");
+  if(! esl_opt_IsDefault (go, "-b")) {
+    begin_set = TRUE;
+    sstruct   = esl_opt_GetInteger(go, "-b");
   }
+  else begin_set = FALSE;
+  if(! esl_opt_IsDefault (go, "-e")) {
+    end_set = TRUE;
+    estruct   = esl_opt_GetInteger(go, "-b");
+  }
+  else end_set = FALSE;
+  do_atest       = (! esl_opt_GetBoolean(go, "--psionly"));
+  do_stest       =    esl_opt_GetBoolean(go, "--sample");
+  nsamples       =    esl_opt_GetInteger(go, "--nseq");
+  chi_thresh     =    esl_opt_GetReal   (go, "--chi");
+  do_exhaust     =    esl_opt_GetBoolean(go, "--exhaust");
+  print_flag     =    esl_opt_GetBoolean(go, "--debug");
 
-  if (argc - optind != 1) Die("Incorrect number of arguments.\n%s\n", usage);
-  cmfile = argv[optind++];
- 
-  if((begin_set && !end_set) || (!begin_set && end_set))
-    Die("Must use both -b and -e or neither.\n");
-  if(do_exhaust && begin_set)
-    Die("--exhaust doesn't make sense with -b and -e.\n");
-  if(do_exhaust && do_stest)
-    Warn("--exhaust and --sample might take a long time...\n");
-  if(begin_set && nmodels != 1)
-    Die("-n does not make sense with -b and -e.\n");
-  if(begin_set && sstruct > estruct)
-    Die("For -b <x> and -e <y> y must be >= x.\n");
-  if(begin_set && sstruct > estruct)
-    Die("For -b <x> and -e <y> y must be >= x.\n");
-  if(nsamples < 10000)
-    Die("Minimum number of samples allowed is 10,000.\n");
+  if(begin_set && nmodels != 1)        cm_Fail("-n does not make sense with -b and -e.\n");
+  if(begin_set && sstruct > estruct)   cm_Fail("For -b <x> and -e <y> y must be >= x.\n");
+  if(begin_set && sstruct > estruct)   cm_Fail("For -b <x> and -e <y> y must be >= x.\n");
 
-  
+  if(do_exhaust && do_stest)           printf("--exhaust and --sample might take a long time...\n");
+  npredict_cases = 6;
+
   /********************************************`*** 
    * Preliminaries: get our CM
    ***********************************************/
 
-  sre_srandom(seed);
-
-  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
-    Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
-  if (! CMFileRead(cmfp, &cm))
-    Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
-  if (cm == NULL) 
-    Die("%s empty?\n", cmfile);
+  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
+  if (!(CMFileRead(cmfp, &abc, &cm)))            cm_Fail("Failed to read CM");
   CMFileClose(cmfp);
 
+  if (! esl_opt_IsDefault(go, "-s")) 
+    r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
+  else r = esl_randomness_CreateTimeseeded();
+  
   /* Allocate and initialize our *wrong_total_ct arrays */
-  apredict_total_ct       = MallocOrDie(sizeof(int) * (npredict_cases+1));
-  spredict_total_ct       = MallocOrDie(sizeof(int) * (npredict_cases+1));
-  awrong_total_ct = MallocOrDie(sizeof(int) * (npredict_cases+1));
-  swrong_total_ct = MallocOrDie(sizeof(int) * (npredict_cases+1));
-  for(i = 0; i <= npredict_cases; i++)
-    {
-      apredict_total_ct[i] = 0;
-      spredict_total_ct[i] = 0;
-      awrong_total_ct[i] = 0;
-      swrong_total_ct[i] = 0;
-    }
+  ESL_ALLOC(apredict_total_ct, (sizeof(int) * (npredict_cases+1)));
+  ESL_ALLOC(spredict_total_ct, (sizeof(int) * (npredict_cases+1)));
+  ESL_ALLOC(awrong_total_ct,   (sizeof(int) * (npredict_cases+1)));
+  ESL_ALLOC(swrong_total_ct,   (sizeof(int) * (npredict_cases+1)));
+  esl_vec_ISet(apredict_total_ct, (npredict_cases+1), 0);
+  esl_vec_ISet(spredict_total_ct, (npredict_cases+1), 0);
+  esl_vec_ISet(awrong_total_ct,   (npredict_cases+1), 0);
+  esl_vec_ISet(swrong_total_ct,   (npredict_cases+1), 0);
 
   /***********************************************************
    * Stategy: 
@@ -247,158 +186,133 @@ main(int argc, char **argv)
    * This is all done within the build_sub_cm() function. 
    *********************************************************/
 
-  /* Determine number of consensus columns modelled by CM */
-  ncols = 0;
-  for(v = 0; v <= cm->M; v++)
-    {
-      if(cm->stid[v] ==  MATP_MP)
-	ncols += 2;
-      else if(cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
-	ncols++;
-    }
   ndone = 0;
-  if(do_exhaust) /* Build every possible sub CM. */
-    {
-      nmodels = (ncols * ncols + ncols) / 2;
-      printf("Building and checking all possible sub CM (%5d different start/end positions):\n", ncols);
-
-      for(sstruct = 1; sstruct <= ncols; sstruct++)
-	{
-	  printf("\tBuilding models with start pos: %5d (%5d / %5d completed)\n", sstruct, ndone, nmodels);
-	  for(estruct = sstruct; estruct <= ncols; estruct++)
-	    {
-	      if(!(build_sub_cm(cm, &sub_cm, sstruct, estruct, &submap, do_fullsub, print_flag)))
-		Die("Couldn't build a sub_cm from CM with sstruct: %d estruct: %d\n", sstruct, estruct);
-	      /* Do the psi test */
-	      if(!check_orig_psi_vs_sub_psi(cm, sub_cm, submap, pthresh, print_flag))
-		{
-		  printf("\nSub CM construction for sstruct: %4d estruct: %4d failed psi test.\n", sstruct, estruct);
-		  Die("\tLooks like there's a bug...\n");
-		}
-	      /* Do analytical and/or sampling HMM tests */
-	      if(do_atest || do_stest)
-		{
-		  subinfo = AllocSubInfo(submap->epos-submap->spos+1);
-		  if(do_atest && !check_sub_cm(cm, sub_cm, submap, subinfo, pthresh, do_fullsub, print_flag))
-		    {
-		      printf("\nSub CM construction for sstruct: %4d estruct: %4d failed analytical HMM test.\n", sstruct, estruct);
-		      Die("\tLooks like there's a bug...\n");
-		    }
-		  if(do_stest && !check_sub_cm_by_sampling(cm, sub_cm, submap, subinfo, chi_thresh, 
-							   nsamples, do_fullsub, print_flag))
-		    {
-		      printf("\nSub CM construction for sstruct: %4d estruct: %4d failed sampling HMM test.\n", sstruct, estruct);
-		      Die("\tLooks like there's a bug...\n");
-		    }
-		  /* keep track of number of each case of wrong prediction */
-		  for(j = 1; j <= npredict_cases; j++)
-		    {
-		      apredict_total_ct[j] += subinfo->apredict_ct[j];
-		      spredict_total_ct[j] += subinfo->spredict_ct[j];
-		      awrong_total_ct[j] += subinfo->awrong_ct[j];
-		      swrong_total_ct[j] += subinfo->swrong_ct[j];
-		    }		  
-		  FreeSubInfo(subinfo);
-		}
-	      FreeCM(sub_cm);
-	      FreeSubMap(submap);
-	      ndone++;
-	    }	      
+  if(do_exhaust) { /* Build every possible sub CM. */
+    nmodels = (cm->clen * cm->clen + cm->clen) / 2;
+    printf("Building and checking all possible sub CM (%5d different start/end positions):\n", cm->clen);
+    
+    for(sstruct = 1; sstruct <= cm->clen; sstruct++) {
+      printf("\tBuilding models with start pos: %5d (%5d / %5d completed)\n", sstruct, ndone, nmodels);
+      for(estruct = sstruct; estruct <= cm->clen; estruct++) {
+	if(!(build_sub_cm(cm, &sub_cm, sstruct, estruct, &submap, print_flag)))
+	  cm_Fail("Couldn't build a sub_cm from CM with sstruct: %d estruct: %d\n", sstruct, estruct);
+	/* Do the psi test */
+	if(!check_orig_psi_vs_sub_psi(cm, sub_cm, submap, pthresh, print_flag)) {
+	  printf("\nSub CM construction for sstruct: %4d estruct: %4d failed psi test.\n", sstruct, estruct);
+	  cm_Fail("\tLooks like there's a bug...\n");
 	}
-      printf("\nDone. %5d sub CM(s) were constructed and passed the following tests:\n", ndone);
-      printf("\tpsi test\n");
-      if(do_atest)
-	printf("\tanalytical HMM test\n");
-      if(do_stest)
-	printf("\tsampling   HMM test\n");
-    }	 
+	/* Do analytical and/or sampling HMM tests */
+	if(do_atest || do_stest) {
+	  subinfo = AllocSubInfo(submap->epos-submap->spos+1);
+	  if(do_atest && !check_sub_cm(cm, sub_cm, submap, subinfo, pthresh, print_flag)) {
+	    printf("\nSub CM construction for sstruct: %4d estruct: %4d failed analytical HMM test.\n", sstruct, estruct);
+	    cm_Fail("\tLooks like there's a bug...\n");
+	  }
+	  if(do_stest && !check_sub_cm_by_sampling(cm, sub_cm, r, submap, subinfo, chi_thresh, nsamples, print_flag)) {
+	    printf("\nSub CM construction for sstruct: %4d estruct: %4d failed sampling HMM test.\n", sstruct, estruct);
+	    cm_Fail("\tLooks like there's a bug...\n");
+	  }
+	  /* keep track of number of each case of wrong prediction */
+	  for(j = 1; j <= npredict_cases; j++) {
+	    apredict_total_ct[j] += subinfo->apredict_ct[j];
+	    spredict_total_ct[j] += subinfo->spredict_ct[j];
+	    awrong_total_ct[j] += subinfo->awrong_ct[j];
+	    swrong_total_ct[j] += subinfo->swrong_ct[j];
+	  }		  
+	  FreeSubInfo(subinfo);
+	}
+	FreeCM(sub_cm);
+	FreeSubMap(submap);
+	ndone++;
+      }	      
+    }
+    printf("\nDone. %5d sub CM(s) were constructed and passed the following tests:\n", ndone);
+    printf("\tpsi test\n");
+    if(do_atest) printf("\tanalytical HMM test\n");
+    if(do_stest) printf("\tsampling   HMM test\n");
+  }	 
   else /* Build models with either preset begin point (sstruct) and end points (estruct) 
-	* or randomly chosen ones */
-    {
-      if(begin_set && end_set)
-	{
-	  if(sstruct < 1) sstruct = 1;
-	  if(estruct > ncols) estruct = ncols;
-	  printf("Building a single sub CM with sstruct: %4d and estruct: %4d ... ", sstruct, estruct);
+	* or randomly chosen ones */ {
+    if(begin_set && end_set) {
+      if(sstruct < 1) sstruct = 1;
+      if(estruct > cm->clen) estruct = cm->clen;
+      printf("Building a single sub CM with sstruct: %4d and estruct: %4d ... ", sstruct, estruct);
+    }
+    else printf("\tBuilding models with random start and end positions:\n");
+    for(i = 0; i < nmodels; i++) { /* if begin_set && end_set, nmodels is 1 */
+      if(!(begin_set && end_set)) {
+	/* Randomly pick a start and end between 1 and cm->clen, inclusive */
+	sstruct = esl_rnd_Choose(r, (cm->clen)) + 1;
+	estruct = esl_rnd_Choose(r, (cm->clen)) + 1;
+	ESL_DASSERT1((sstruct <= cm->clen));
+	ESL_DASSERT1((estruct <= cm->clen));
+	ESL_DASSERT1((sstruct >= 1));
+	ESL_DASSERT1((estruct >= 1));
+	if(sstruct > estruct) {
+	  temp = sstruct;
+	  sstruct = estruct;
+	  estruct = temp;
+	}	      
+      }
+      if(!(build_sub_cm(cm, &sub_cm, sstruct, estruct, &submap, print_flag))) 
+	cm_Fail("Couldn't build a sub_cm from CM with sstruct: %d estruct: %d\n", sstruct, estruct);
+	/* Do the psi test */
+      if(!check_orig_psi_vs_sub_psi(cm, sub_cm, submap, pthresh, print_flag)) {
+	printf("\nSub CM construction for sstruct: %4d estruct: %4d failed psi test.\n", sstruct, estruct);
+	cm_Fail("\tLooks like there's a bug...\n");
+      }
+      /* Do analytical and/or sampling HMM tests */
+      if(do_atest || do_stest) {
+	subinfo = AllocSubInfo(submap->epos-submap->spos+1);
+	if(do_atest && !check_sub_cm(cm, sub_cm, submap, subinfo, pthresh, print_flag)) {
+	  printf("\nSub CM construction for sstruct: %4d estruct: %4d failed analytical HMM test.\n", sstruct, estruct);
+	  cm_Fail("\tLooks like there's a bug...\n");
 	}
-      else
-	printf("\tBuilding models with random start and end positions:\n");
-      for(i = 0; i < nmodels; i++) /* if begin_set && end_set, nmodels is 1 */
-	{
-	  if(!(begin_set && end_set))
-	    {
-	      /* Randomly pick a start and end between 1 and ncols, inclusive */
-	      sstruct = ((int) (sre_random() * ncols)) + 1;
-	      estruct = ((int) (sre_random() * ncols)) + 1;
-	      if(sstruct > estruct)
-		{
-		  temp = sstruct;
-		  sstruct = estruct;
-		  estruct = temp;
-		}	      
-	    }
-	  if(!(build_sub_cm(cm, &sub_cm, sstruct, estruct, &submap, do_fullsub, print_flag)))
-	    Die("Couldn't build a sub_cm from CM with sstruct: %d estruct: %d\n", sstruct, estruct);
-	  /* Do the psi test */
-	  if(!check_orig_psi_vs_sub_psi(cm, sub_cm, submap, pthresh, print_flag))
-	    {
-	      printf("\nSub CM construction for sstruct: %4d estruct: %4d failed psi test.\n", sstruct, estruct);
-	      Die("\tLooks like there's a bug...\n");
-	    }
-	  /* Do analytical and/or sampling HMM tests */
-	  if(do_atest || do_stest)
-	    {
-	      subinfo = AllocSubInfo(submap->epos-submap->spos+1);
-	      if(do_atest && !check_sub_cm(cm, sub_cm, submap, subinfo, pthresh, do_fullsub, print_flag))
-		{
-		  printf("\nSub CM construction for sstruct: %4d estruct: %4d failed analytical HMM test.\n", sstruct, estruct);
-		  Die("\tLooks like there's a bug...\n");
-		}
-	      if(do_stest && !check_sub_cm_by_sampling(cm, sub_cm, submap, subinfo, chi_thresh, 
-						       nsamples, do_fullsub, print_flag))
-		{
-		  printf("\nSub CM construction for sstruct: %4d estruct: %4d failed sampling HMM test.\n", sstruct, estruct);
-		  Die("\tLooks like there's a bug...\n");
-		}
-	      /* keep track of number of each case of wrong prediction */
-	      for(j = 1; j <= npredict_cases; j++)
-		{
-		  apredict_total_ct[j] += subinfo->apredict_ct[j];
-		  spredict_total_ct[j] += subinfo->spredict_ct[j];
-		  awrong_total_ct[j] += subinfo->awrong_ct[j];
-		  swrong_total_ct[j] += subinfo->swrong_ct[j];
-		}		  
-	      FreeSubInfo(subinfo);
-	    }
-	  FreeCM(sub_cm);
-	  FreeSubMap(submap);
-	  ndone++;
+	if(do_stest && !check_sub_cm_by_sampling(cm, sub_cm, r, submap, subinfo, chi_thresh, 
+						 nsamples, print_flag)) {
+	  printf("\nSub CM construction for sstruct: %4d estruct: %4d failed sampling HMM test.\n", sstruct, estruct);
+	  cm_Fail("\tLooks like there's a bug...\n");
 	}
-      printf("done.\n%5d sub CMs were constructed and passed the following tests:\n", ndone);
-      printf("\tpsi test\n");
-      if(do_atest)
-	printf("\tanalytical HMM test\n");
-      if(do_stest)
-	printf("\tsampling   HMM test\n");
+	/* keep track of number of each case of wrong prediction */
+	for(j = 1; j <= npredict_cases; j++) {
+	  apredict_total_ct[j] += subinfo->apredict_ct[j];
+	  spredict_total_ct[j] += subinfo->spredict_ct[j];
+	  awrong_total_ct[j] += subinfo->awrong_ct[j];
+	  swrong_total_ct[j] += subinfo->swrong_ct[j];
+	}		  
+	FreeSubInfo(subinfo);
+      }
+      FreeCM(sub_cm);
+      FreeSubMap(submap);
+      ndone++;
     }
-  if(do_atest)
-    {
-      printf("\nPrinting summary of HMM nodes predicted to fail the analytical test:\n");
-      for(j = 1; j <= npredict_cases; j++)
-	printf("\tcase %d: %6d (%6d passed)\n", j, apredict_total_ct[j], awrong_total_ct[j]);
-    }
-  if(do_stest)
-    {
-      printf("\nPrinting summary of HMM nodes predicted to fail the sampling test:\n");
-      for(j = 1; j <= npredict_cases; j++)
-	printf("\tcase %d: %6d (%6d passed)\n", j, spredict_total_ct[j], swrong_total_ct[j]);
-    }
+    printf("done.\n%5d sub CMs were constructed and passed the following tests:\n", ndone);
+    printf("\tpsi test\n");
+    if(do_atest) printf("\tanalytical HMM test\n");
+    if(do_stest) printf("\tsampling   HMM test\n");
+  }
+  if(do_atest) {
+    printf("\nPrinting summary of HMM nodes predicted to fail the analytical test:\n");
+    for(j = 1; j <= npredict_cases; j++)
+      printf("\tcase %d: %6d (%6d passed)\n", j, apredict_total_ct[j], awrong_total_ct[j]);
+  }
+  if(do_stest) {
+    printf("\nPrinting summary of HMM nodes predicted to fail the sampling test:\n");
+    for(j = 1; j <= npredict_cases; j++)
+      printf("\tcase %d: %6d (%6d passed)\n", j, spredict_total_ct[j], swrong_total_ct[j]);
+  }
   printf("\n");
   free(apredict_total_ct);
   free(spredict_total_ct);
   free(awrong_total_ct);
   free(swrong_total_ct);
-
   FreeCM(cm);
+  esl_alphabet_Destroy(abc);
+  esl_randomness_Destroy(r);
+  esl_getopts_Destroy(go);
   return 0;
+
+ ERROR:
+  cm_Fail("main(), memory allocation error.");
+  return 1; /* NEVERREACHED */
 }

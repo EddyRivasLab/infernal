@@ -289,8 +289,8 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   int namelen;
   int i, L; 
 
-  if(cm->name != NULL) namelen = strlen(cm->name) + 50; /* 50 digit int is considered max, sloppy. */
-  else                 namelen = 100;                   /* 50 digit int is considered max, sloppy. */
+  namelen = IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
+  if(cm->name != NULL) namelen += strlen(cm->name) + 1;
   ESL_ALLOC(name, sizeof(char) * namelen);
 
   for(i = 0; i < esl_opt_GetInteger(go, "-n"); i++)
@@ -344,8 +344,8 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
     do_truncate = TRUE;
   else do_truncate = FALSE;
 
-  if(cm->name != NULL) namelen = strlen(cm->name) + 50; /* 50 digit int is considered max, sloppy. */
-  else                 namelen = 100;                   /* 50 digit int is considered max, sloppy. */
+  namelen = IntMaxDigits() + 1;
+  if(cm->name != NULL) namelen += strlen(cm->name) + 1;
   ESL_ALLOC(name, sizeof(char) * namelen);
 
   ESL_ALLOC(sq, sizeof(ESL_SQ *) * nseq);
@@ -485,8 +485,8 @@ build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf
     }
   ZeroCPlan9(shmm);
 
-  if(cm->name != NULL) namelen = strlen(cm->name) + 50; /* 50 digit int is considered max, sloppy. */
-  else                 namelen = 100;                   /* 50 digit int is considered max, sloppy. */
+  namelen = IntMaxDigits() + 1;
+  if(cm->name != NULL) namelen += strlen(cm->name) + 1;
   ESL_ALLOC(name, sizeof(char) * namelen);
 
   /* sample MSA(s) from the CM */

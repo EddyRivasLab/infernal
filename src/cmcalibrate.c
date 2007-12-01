@@ -533,6 +533,9 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* free muA and lambdaA */
 	} /* end of for(gum_mode = 0; gum_mode < NGUMBELMODES1; gum_mode++) */
       debug_print_cmstats(cfg->cmstatsA[cmi], (! esl_opt_GetBoolean(go, "--gumonly")));
+      if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi, cm);
+      cfg->hsi = NULL;
+      FreeCM(cm);
     }
   return;
 }
@@ -720,7 +723,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(cm->smx == NULL) cm_Fail("initialize_cm(), CreateScanMatrixForCM() call failed.");
   
   /* create and initialize hybrid scan info */
-  if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi);
+  assert(cfg->hsi == NULL);
   cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--fbeta"), cfg->full_vcalcs[0]);
   if(cfg->hsi == NULL) cm_Fail("initialize_cm(), CreateHybridScanInfo() call failed.");
 
@@ -1313,8 +1316,8 @@ seqs_to_aln_t *cm_emit_seqs_to_aln_above_cutoff(const ESL_GETOPTS *go, struct cf
 
   seqs_to_aln = CreateSeqsToAln(nseq, FALSE);
 
-  if(cm->name != NULL) namelen = strlen(cm->name) + 50; /* 50 digit int is considered max, sloppy. */
-  else                 namelen = 100;                   /* 50 digit int is considered max, sloppy. */
+  namelen = IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
+  if(cm->name != NULL) namelen += strlen(cm->name) + 1;
   ESL_ALLOC(name, sizeof(char) * namelen);
 
   while(i < nseq)

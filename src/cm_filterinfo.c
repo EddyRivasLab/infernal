@@ -122,16 +122,17 @@ cm_AddHMMFilterInfo(CM_t *cm, int do_viterbi, float cutoff)
 /* Function: cm_FreeFilterInfo()
  * Date:     EPN, Tue Nov 27 08:48:49 2007
  *
- * Purpose:  Free a FilterInfo_t object. 
+ * Purpose:  Free a FilterInfo_t object corresponding to 
+ *           CM <cm>.
  *            
  * Returns:  void
  */
 void
-cm_FreeFilterInfo(FilterInfo_t *fi)
+cm_FreeFilterInfo(FilterInfo_t *fi, CM_t *cm)
 {
   int n;
 
-  for(n = 0; n <= fi->nrounds; n++) if(fi->hsi[n] != NULL) cm_FreeHybridScanInfo(fi->hsi[n]); 
+  for(n = 0; n <= fi->nrounds; n++) if(fi->hsi[n] != NULL) cm_FreeHybridScanInfo(fi->hsi[n], cm); 
   free(fi->search_opts);
   free(fi->cutoff);
   free(fi->ftype);

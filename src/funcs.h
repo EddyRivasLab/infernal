@@ -104,7 +104,7 @@ extern int   DefaultNullModel(const ESL_ALPHABET *abc, float **ret_null);
 extern int   CMAllocNullModel(CM_t *cm);
 extern void  CMSetNullModel(CM_t *cm, float *null);
 extern int   CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null);
-
+extern int   IntMaxDigits();
 
 /* from cmio.c
  */
@@ -434,7 +434,7 @@ extern void fill_psi(CM_t *cm, double *psi, char ***tmap);
 extern void fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos);
 extern void make_tmap(char ****ret_tmap);
 
-extern int  CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, CMSubInfo_t *subinfo, int spos, int epos, 
+extern int  CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS *r, CMSubInfo_t *subinfo, int spos, int epos, 
 				  float chi_thresh, int nsamples, int print_flag);
 extern void debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores);
 extern void debug_print_phi_cp9(CP9_t *hmm, double **phi);
@@ -464,22 +464,18 @@ extern float iInsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int
 extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq);
 
 /* from sub_cm.c */
-extern int  build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, 
-			 int do_fullsub, int print_flag);
-extern void CP9NodeForPosn(CP9_t *hmm, int i0, int j0, int x, 
-			   CP9_MX *post, int *ret_node, int *ret_type,
-			   int do_fullsub, float pmass, int is_start, int print_flag);
+extern int  build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, int print_flag);
+extern void CP9NodeForPosn(CP9_t *hmm, int i0, int j0, int x, CP9_MX *post, int *ret_node, int *ret_type, float pmass, int is_start, int print_flag);
 extern void StripWUSSGivenCC(ESL_MSA *msa, float gapthresh, int first_match, int last_match);
 extern int  check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, double threshold, 
 				       int print_flag);
-extern int  check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo, float pthresh,
-			 int do_fullsub, int print_flag);
-extern int check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo,
-				    float chi_thresh, int nsamples, int do_fullsub, int print_flag);
-extern int  check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, int spos, int epos, int nseq);
+extern int  check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo, float pthresh, int print_flag);
+extern int check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, CMSubMap_t *submap, CMSubInfo_t *subinfo,
+				    float chi_thresh, int nsamples, int print_flag);
+extern int  check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, int spos, int epos, int nseq);
 extern int  sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Parsetree_t *sub_tr, 
-				CMSubMap_t *submap, int do_fullsub, int print_flag);
-extern CMSubMap_t  *AllocSubMap(CM_t *sub_cm, CM_t *orig_cm, int sstruct, int estruct, int do_fullsub);
+				CMSubMap_t *submap, int print_flag);
+extern CMSubMap_t  *AllocSubMap(CM_t *sub_cm, CM_t *orig_cm, int sstruct, int estruct);
 extern void         FreeSubMap(CMSubMap_t *submap);
 extern CMSubInfo_t *AllocSubInfo(int clen);
 extern void         FreeSubInfo(CMSubInfo_t *subinfo);
@@ -848,11 +844,10 @@ extern void cm_FreeHybridScanInfo(HybridScanInfo_t *hsi, CM_t *cm);
 extern int cm_CalcMaxSc(CM_t *cm, double **ret_maxsc, double **ret_maxsc_noss);
 extern Theta_t *cm_CalcTheta(CM_t *cm, Theta_t **ret_theta, float stepsize);
 
-
 /* from cm_filterinfo.c */
 extern int  cm_CreateFilterInfo(CM_t *cm, float cutoff);
 extern int  cm_AddHMMFilterInfo(CM_t *cm, int do_viterbi, float cutoff);
-extern void cm_FreeFilterInfo(FilterInfo_t *fi);
+extern void cm_FreeFilterInfo(FilterInfo_t *fi, CM_t *cm);
 extern void cm_DumpFilterInfo(FilterInfo_t *fi);
 extern void DumpSearchOpts(int search_opts);
 extern void cm_ValidateFilterInfo(FilterInfo_t *fi);

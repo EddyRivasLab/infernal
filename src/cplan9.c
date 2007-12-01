@@ -442,22 +442,20 @@ CPlan9Renormalize(CP9_t *hmm)
   hmm->t[0][CTMD] /= d;
   hmm->t[0][CTMEL] /= d;
 
-  esl_vec_FNorm(hmm->t[0]+4, 3);	        /* transitions out of insert for node 0 (state N)*/
-  esl_vec_FSet( hmm->t[0]+7, 3, 0.);    
+  esl_vec_FNorm(hmm->t[0] + cp9_TRANS_INSERT_OFFSET, cp9_TRANS_NINSERT);	        /* transitions out of insert for node 0 (state N)*/
+  esl_vec_FSet (hmm->t[0] + cp9_TRANS_DELETE_OFFSET, cp9_TRANS_NDELETE, 0.);    
 				/* main model transitions */
   for (k = 1; k <= hmm->M; k++) /* safe for node M too, hmm->t[hmm->M][CTMM] should be 0.*/
     {
-      d = esl_vec_FSum(hmm->t[k], 4) + hmm->end[k]; 
-      esl_vec_FScale(hmm->t[k], 4, 1./d);
+      d = esl_vec_FSum(hmm->t[k], cp9_TRANS_NMATCH) + hmm->end[k]; 
+      esl_vec_FScale(hmm->t[k], cp9_TRANS_NMATCH, 1./d);
       hmm->end[k] /= d;
 
-      esl_vec_FNorm(hmm->t[k]+4, 3);	/* insert */
-      esl_vec_FNorm(hmm->t[k]+7, 3);	/* delete */
+      esl_vec_FNorm(hmm->t[k] + cp9_TRANS_INSERT_OFFSET, cp9_TRANS_NINSERT);	/* insert */
+      esl_vec_FNorm(hmm->t[k] + cp9_TRANS_DELETE_OFFSET, cp9_TRANS_NDELETE);	/* delete */
     }
-				/* null model emissions */
+                                 /* null model emissions */
   esl_vec_FNorm(hmm->null, hmm->abc->K);
-
-				/* special transitions, none?*/
 
   hmm->flags &= ~CPLAN9_HASBITS;	/* clear the log-odds ready flag */
   hmm->flags |= CPLAN9_HASPROB;	/* set the probabilities OK flag */

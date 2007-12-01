@@ -122,6 +122,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float c
   int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   float **esc_vAA     = cm->oesc;        /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					  * and all possible emissions a (including ambiguities) */
+
   /* determine if we're doing banded/non-banded */
   if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
