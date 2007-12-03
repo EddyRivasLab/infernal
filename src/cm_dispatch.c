@@ -70,9 +70,10 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i
 
   /* convenience pointers to cm->fi for this 'filter round' of searching */
   float             cutoff;          /* cutoff for this round, HMM or CM, whichever is relevant for this round */
-  int               ftype;           /* filter type for this round FILTER_WITH_HMM, FILTER_WITH_HYBRID, or NO_FILTER */
+  int               ftype;           /* filter type for this round FILTER_WITH_HMM, FILTER_WITH_HYBRID, FILTER_WITH_CM or NO_FILTER */
   HybridScanInfo_t *hsi;             /* hybrid scan info for this round, NULL unless ftype is FILTER_WITH_HYBRID */
   search_results_t *round_results;   /* search_results for this round */
+  ScanMatrix_t     *smx;             /* will point to cm->smx if NO_FILTER || FILTER_WITH_HMM, else points to fi->hsi[fround]->smx */
 
   /* Contract checks */
   if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), CMH_BITS flag down.\n");
@@ -96,6 +97,12 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i
   round_results   = results[fround]; /* may not be NULL, contract enforced this */
 
   if(ftype == FILTER_WITH_HYBRID && hsi == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): current round %d is type FILTER_WITH_HYBRID, but hsi is NULL\n", fround);
+  if(ftype == FILTER_WITH_CM     && hsi == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): current round %d is type FILTER_WITH_CM, but hsi is NULL\n", fround);
+  if(ftype == FILTER_WITH_HYBRID || ftype == FILTER_WITH_CM) 
+    smx = hsi->smx; 
+  else
+    smx = cm->smx; 
+
   /* Check if we need the CP9 */
   use_cp9 = ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
 
@@ -166,8 +173,8 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i
       else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, round_results, cm->hbmx, &sc)) != eslOK) return status; }
     }
     else { /* don't do HMM banded search */
-      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, dsq, i0, j0, W, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
-      else                                   { if((status = FastCYKScan    (cm, errbuf, dsq, i0, j0, W, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
+      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, smx, dsq, i0, j0, W, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
+      else                                   { if((status = FastCYKScan    (cm, errbuf, smx, dsq, i0, j0, W, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
     }    
   }
 

@@ -1091,7 +1091,7 @@ typedef struct scanmx_s {
   int   **dxAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int    *bestr;       /* auxil info: best root state at alpha[0][cur][d] */
   int     flags;       /* flags for what info has been set (can be float and/or int versions of alpha) */
-
+  double  beta;        /* tail loss prob used for calc'ing dmin/dmax */
   /* falpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] and precalc'ed scores for
    * float implementations of CYK/Inside */
   float ***falpha;      /* non-BEGL_S states for float versions of CYK/Inside */
@@ -1141,10 +1141,13 @@ typedef struct theta_s {
 typedef struct hybridscaninfo_s {
   int    cm_M;         /* # states in the CM */
   int    cp9_M;        /* # nodes in the CP9 HMM, consensus length of the cm */
-  double beta;         /* beta used for calculating avglenA */                                           
-  int   *dmin;         /* [0..v..cm->M-1] min subtree length for v using beta */
-  int   *dmax;         /* [0..v..cm->M-1] max subtree length for v using beta */
   int    W;            /* max hit size for hybrid scanner, set as hsi->dmax[0] */
+  double        beta;  /* tail loss prob used to calcuate smx->dmin, smx->dmax */
+  ScanMatrix_t *smx;   /* CM DP scan matrix associated with this filter, has some redundant info (cm_M, dmin, dmax), 
+			* but the reason it's here is it's DP matrix which is specific to hsi's dmin/dmax,
+			* so having  hsi->smx prevents need to modify the CM's ScanMatrix cm->smx (which may 
+			* have correspond to different dmin/dmax), for a hybrid scan.
+			*/
   float hybrid_ncalcs;   /* predicted # of millions of dp calcs for a hybrid scan per residue */
   float full_cp9_ncalcs; /* predicted # of millions of dp calcs for a pure CP9 scan per residue */
   float full_cm_ncalcs;  /* predicted # of millions of dp calcs for a pure CM scan per residue, with
@@ -1177,6 +1180,7 @@ typedef struct hybridscaninfo_s {
   /* nec? */ float  minlen;       /* minimum average length (avglen) a candidate state must have */                 
   /* nec? */ int   *iscandA;      /* [0..v..cm->M-1] TRUE if state v is a candidate sub CM root, FALSE otherwise */   
   float *avglenA;      /* [0..v..cm->M-1] average length of a hit rooted at v (from QDB) */                
+  double avglen_beta;  /* tail loss prob used for calc'ing avglenA */
   int    nstarts;      /* # start states (and start groups) in the CM */                                 
   int   *startA;       /* [0..i..cm->M-1] start group this state belongs to */                               
   int   *firstA;       /* [0..i..nstarts-1], first state in start state i's group */                     
@@ -1186,11 +1190,6 @@ typedef struct hybridscaninfo_s {
                         *  emap->startA[cm->nodemap[i]]->lpos < emap->startA[cm->nodemap[j]]->lpos  &&   
                         *  emap->endA  [cm->nodemap[i]]->rpos > emap->endA  [cm->nodemap[j]]->rpos       
                         */			
-  ScanMatrix_t *smx;   /* CM DP scan matrix associated with this filter, has some redundant info (cm_M, dmin, dmax), 
-			* but the reason it's here is it's DP matrix which is specific to hsi's dmin/dmax,
-			* so having  hsi->smx prevents need to modify the CM's ScanMatrix cm->smx (which may 
-			* have correspond to different dmin/dmax), for a hybrid scan.
-			*/
 } HybridScanInfo_t;
 
 /* Structure FilterInfo_t: 
@@ -1213,7 +1212,8 @@ typedef struct filterinfo_s {
 /* possible values for ftype[] of FilterInfo_t objects */
 #define FILTER_WITH_HMM    0  
 #define FILTER_WITH_HYBRID 1
-#define NO_FILTER          2
+#define FILTER_WITH_CM     2
+#define NO_FILTER          3
 
 /* Structure: CM_t
  * Incept:    SRE, 9 Mar 2000 [San Carlos CA]

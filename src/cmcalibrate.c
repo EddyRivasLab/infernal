@@ -658,7 +658,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
       /* if nec, search with CM */
       if (use_cm)
 	{ 
-	  if((status = FastCYKScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, &(cur_vscA), &sc1)) != eslOK) return status;
+	  if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, &(cur_vscA), &sc1)) != eslOK) return status;
 	  /* sc1 = search_target_cm_calibration(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, &(cur_vscA)); */
 	  /*sc2 = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE); */
 	  /*printf("i: %4d sc1: %10.4f sc2: %10.4f\n", i, sc1, sc2);
@@ -1234,7 +1234,7 @@ cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
   cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
   if(turn_qdb_back_on) cm->search_opts &= ~CM_SEARCH_NOQDB; 
 
-  if((status = FastCYKScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) return status;
+  if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) return status;
   /* sc = search_target_cm_calibration(cm, dsq, dmin_default_beta, dmax_default_beta, 1, L, cm->W, NULL); */
   if(!turn_hbanded_back_off)      { cm->search_opts |= CM_SEARCH_HBANDED;      cm->tau = orig_tau; }
   if(!turn_hmmscanbands_back_off) { cm->search_opts |= CM_SEARCH_HMMSCANBANDS; cm->tau = orig_tau; }

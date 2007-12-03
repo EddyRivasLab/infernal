@@ -814,8 +814,6 @@ void
 cm_FreeHybridScanInfo(HybridScanInfo_t *hsi, CM_t *cm)
 {
   int i;
-  if(hsi->dmin != NULL)      free(hsi->dmin);
-  if(hsi->dmax != NULL)      free(hsi->dmax);
   if(hsi->cm_vcalcs != NULL) free(hsi->cm_vcalcs);
   if(hsi->cp9_vcalcs != NULL)free(hsi->cp9_vcalcs);
   if(hsi->k_mb != NULL)      free(hsi->k_mb);
@@ -874,11 +872,12 @@ cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs)
   int               i,j;             /* used when determining start groups */
   int               on_right;        /* used when determining start groups */
   int               safe_windowlen;  /* for calc'ing qdbs */
-  double            avg_len_beta;    /* tail loss prob for calc'ing avg len per subtree */
   int               cp9_ntrans;      /* number of transitions for currently config'ed HMM */
   int               nd_clen;         /* consensus length for a subtree */
   CMEmitMap_t      *emap;            /* emit map for the cm */
   int               vx;              /* a temporary, max v */
+  int              *dmin;            /* will become hsi->smx->dmin */
+  int              *dmax;            /* will become hsi->smx->dmax */
 
   /* contract check */
   if(cm->cp9 == NULL) cm_Fail("cm_CreateHybridScanInfo(), cm->cp9 is NULL.\n");
@@ -890,30 +889,33 @@ cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs)
   hsi->minlen = DEFAULT_HS_MINLEN;   /* currently 7., not user changeable, should it be? is 7 not good? */
   
   /* determine average length for each subtree (state) */
-  avg_len_beta = DEFAULT_HS_BETA; /* currently 1E-15 */
-  cm_CalcAvgHitLength(cm, avg_len_beta, &(hsi->avglenA));
+  hsi->avglen_beta = DEFAULT_HS_BETA; /* currently 1E-15 */
+  cm_CalcAvgHitLength(cm, hsi->avglen_beta, &(hsi->avglenA));
 
   /* get dmin, dmax for the hybrid scanner */
   hsi->beta = hsi_beta;
   safe_windowlen = cm->W * 2;
-  while(!(BandCalculationEngine(cm, safe_windowlen, hsi->beta, FALSE, &(hsi->dmin), &(hsi->dmax), NULL, NULL))) {
-    free(hsi->dmin);
-    free(hsi->dmax);
-    hsi->dmin = NULL;
-    hsi->dmax = NULL;
+  while(!(BandCalculationEngine(cm, safe_windowlen, hsi_beta, FALSE, &(dmin), &(dmax), NULL, NULL))) {
+    free(dmin);
+    free(dmax);
+    dmin = NULL;
+    dmax = NULL;
     safe_windowlen *= 2;
     if(safe_windowlen > (cm->clen * 1000)) cm_Fail("safe_windowlen big: %d\n", safe_windowlen);
   }
-  hsi->W = hsi->dmax[0];
+  hsi->W = dmax[0];
+
+  /* create the scan matrix, this stores the matrix, dmin, dmax, etc. */
+  hsi->smx = cm_CreateScanMatrix(cm, hsi->W, dmin, dmax, TRUE, TRUE, FALSE); 
 
   /* determine number of millions of DP calculations per residue for CM and CP9 */
   /* first the full CM, using cm->dmin and cm->dmax, this value is passed in 
-   * (different from # calcs using hsi->dmin and hsi->dmax b/c beta used to get hsi->dmin hsi->dmax may be different
-   *  than that used for cm->dmin, cm->dmax)
+   * (different from # calcs using hsi->smx->dmin and hsi->smx->dmax b/c beta used to get 
+   * hsi->smx->dmin hsi->smx->dmax may be different than that used for cm->dmin, cm->dmax)
    */
   hsi->full_cm_ncalcs = full_cm_ncalcs; /* this is passed in */
-  /* get counts of dp calcs for each subtree in the cm, using hsi->dmin, hsi->dmax */
-  if((status = cm_CountSearchDPCalcs(cm, NULL, 1000, hsi->dmin, hsi->dmax, cm->W, &(hsi->cm_vcalcs), NULL)) != eslOK) cm_Fail("cm_CreateHybridScanInfo(), error counting DP cells.");
+  /* get counts of dp calcs for each subtree in the cm, using hsi->smx->dmin, hsi->smx->dmax */
+  if((status = cm_CountSearchDPCalcs(cm, NULL, 1000, hsi->smx->dmin, hsi->smx->dmax, hsi->W, &(hsi->cm_vcalcs), NULL)) != eslOK) cm_Fail("cm_CreateHybridScanInfo(), error counting DP cells.");
 
   /* we can calc the number of CP9 DP calcs */
   cp9_ntrans = NHMMSTATETYPES * NHMMSTATETYPES; /* 3*3 = 9 transitions in global mode */
@@ -1113,9 +1115,6 @@ cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs)
     }
 
   cm_ValidateHybridScanInfo(cm, hsi);
-
-  /* create the scan matrix */
-  hsi->smx = cm_CreateScanMatrix(cm, hsi->W, hsi->dmin, hsi->dmax, TRUE, TRUE, FALSE); 
 
   return hsi;
 

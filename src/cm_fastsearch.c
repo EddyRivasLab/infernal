@@ -57,6 +57,7 @@
  *
  * Args:     cm              - the covariance model, must have valid scanmatrix (si)
  *           errbuf          - char buffer for reporting errors
+ *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -74,7 +75,7 @@
  *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
  */
 int
-FastCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 	    search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -105,14 +106,13 @@ FastCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float c
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANMATRIX)         ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, cm->smx is not valid.\n");
   if(j0 < i0)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, dsq is NULL\n");
   if(cm->search_opts & CM_SEARCH_INSIDE) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CM_SEARCH_INSIDE flag raised");
-  if(! (cm->smx->flags & cmSMX_HAS_FLOAT)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
+  if(! smx->flags & cmSMX_HAS_FLOAT)     ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
+  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
-  ScanMatrix_t *smx = cm->smx;      /* for convenience */
   float ***alpha      = smx->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
   float ***alpha_begl = smx->falpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
   int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
@@ -578,7 +578,8 @@ FastCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float c
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           si              - ScanMatrix_t for this model (includes alpha DP matrix, qdbands etc.) 
+ *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
+ *           si              - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -597,7 +598,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float c
  *           Dies immediately if some error occurs.
  */
 int
-FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 		search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -622,18 +623,17 @@ FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  ScanMatrix_t *smx = cm->smx;      /* for convenience */
   int      *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANMATRIX)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, cm->smx is not valid.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CM_SEARCH_INSIDE flag not raised");
   if(! (smx->flags & cmSMX_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, ScanMatrix's cmSMX_HAS_INT flag is not raised");
+  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
   int   ***alpha      = smx->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -1094,7 +1094,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           si              - ScanMatrix_t for this model (includes alpha DP matrix, qdbands etc.) 
+ *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -1113,7 +1113,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
  *           Dies immediately if some error occurs.
  */
 int
-XFastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 		search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -1138,18 +1138,17 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  ScanMatrix_t *smx = cm->smx;      /* for convenience */
   int      *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANMATRIX)             ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, cm->smx is not valid.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, CM_SEARCH_INSIDE flag not raised");
   if(! (smx->flags & cmSMX_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, ScanMatrix's cmSMX_HAS_INT flag is not raised");
+  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideCYKScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
   int   ***alpha      = smx->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -1531,7 +1530,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           si              - ScanMatrix_t for this model (includes alpha DP matrix, qdbands etc.) 
+ *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -1550,7 +1549,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, fl
  *           Dies immediately if some error occurs.
  */
 int
-X2FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 		search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -1575,18 +1574,17 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  ScanMatrix_t *smx = cm->smx;      /* for convenience */
   int      *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANMATRIX)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, cm->smx is not valid.\n");
-  if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, dsq is NULL\n");
-  if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CM_SEARCH_INSIDE flag not raised");
-  if(! (smx->flags & cmSMX_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, ScanMatrix's cmSMX_HAS_INT flag is not raised");
+  if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "X2FastIInsideScan, CMH_BITS flag is not raised.\n");
+  if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "X2FastIInsideScan, i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "X2FastIInsideScan, dsq is NULL\n");
+  if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "X2FastIInsideScan, CM_SEARCH_INSIDE flag not raised");
+  if(! (smx->flags & cmSMX_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "X2FastIInsideScan, ScanMatrix's cmSMX_HAS_INT flag is not raised");
+  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "X2FastIInsideScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
   int   ***alpha      = smx->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -2050,6 +2048,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
+ *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -2068,7 +2067,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, f
  *           Dies immediately if some error occurs.
  */
 int
-FastFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 		search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -2093,17 +2092,16 @@ FastFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  ScanMatrix_t *smx = cm->smx;      /* for convenience */
   float    *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANMATRIX)            ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, cm->smx is not valid.\n");
   if(j0 < i0)                               ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                           ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, dsq is NULL\n");
   if(!(cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, CM_SEARCH_INSIDE flag not raised");
   if(! (cm->smx->flags & cmSMX_HAS_FLOAT))    ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
+  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
   float ***alpha      = smx->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -2556,7 +2554,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           si              - ScanMatrix_t for this model (includes alpha DP matrix, qdbands etc.) 
+ *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -2575,7 +2573,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
  *           Dies immediately if some error occurs.
  */
 int
-RefCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 	   search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -2599,16 +2597,15 @@ RefCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cu
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  ScanMatrix_t *smx = cm->smx;      /* for convenience */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANMATRIX)         ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, cm->smx is not valid.\n");
   if(j0 < i0)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, dsq is NULL\n");
   if(cm->search_opts & CM_SEARCH_INSIDE) ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, CM_SEARCH_INSIDE flag raised");
   if(! (cm->smx->flags & cmSMX_HAS_FLOAT)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
+  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
   float ***alpha      = smx->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -2838,7 +2835,7 @@ RefCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cu
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           si              - ScanMatrix_t for this model (includes alpha DP matrix, qdbands etc.) 
+ *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -2857,7 +2854,7 @@ RefCYKScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cu
  *           Dies immediately if some error occurs.
  */
 int
-RefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 	       search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -2881,17 +2878,16 @@ RefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, floa
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  ScanMatrix_t *smx = cm->smx;      /* for convenience */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANMATRIX)             ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, cm->smx is not valid.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, CM_SEARCH_INSIDE flag not raised");
   if(! (smx->flags & cmSMX_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, ScanMatrix's cmSMX_HAS_INT flag is not raised");
+  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
   int   ***alpha      = smx->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -3112,7 +3108,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, floa
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           si              - ScanMatrix_t for this model (includes alpha DP matrix, qdbands etc.) 
+ *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -3131,7 +3127,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, floa
  *           Dies immediately if some error occurs.
  */
 int
-XRefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 	       search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -3155,18 +3151,17 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  ScanMatrix_t *smx = cm->smx;      /* for convenience */
   int      *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANMATRIX)             ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, cm->smx is not valid.\n");
   if(j0 < i0)                                ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, dsq is NULL\n");
   if(! (cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, CM_SEARCH_INSIDE flag not raised");
   if(! (smx->flags & cmSMX_HAS_INT))           ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, ScanMatrix's cmSMX_HAS_INT flag is not raised");
+  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
   int   ***alpha      = smx->ialpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -3406,7 +3401,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           si              - ScanMatrix_t for this model (includes alpha DP matrix, qdbands etc.) 
+ *           smx             - ScanMatrix_t for this search w/this model (incl. DP matrix, qdbands etc.) 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
@@ -3425,7 +3420,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, flo
  *           Dies immediately if some error occurs.
  */
 int
-RefFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
 	       search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -3449,17 +3444,16 @@ RefFInsideScan(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, int W, floa
   int       dn,   dx;           /* minimum/maximum valid d for current state */
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-  ScanMatrix_t *smx = cm->smx;    /* for convenience */
   float    *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   
   /* Contract check */
   if(! cm->flags & CMH_BITS)                ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CMH_BITS flag is not raised.\n");
-  if(! cm->flags & CMH_SCANMATRIX)            ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, cm->smx is not valid.\n");
   if(j0 < i0)                               ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                           ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, dsq is NULL\n");
   if(!(cm->search_opts & CM_SEARCH_INSIDE)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CM_SEARCH_INSIDE flag not raised");
   if(! (cm->smx->flags & cmSMX_HAS_FLOAT))    ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
+  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
   float ***alpha      = smx->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -5183,7 +5177,7 @@ main(int argc, char **argv)
       cm->search_opts  &= ~CM_SEARCH_INSIDE;
 
       esl_stopwatch_Start(w);
-      if((status = FastCYKScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5191,7 +5185,7 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "-w")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  if((status = RefCYKScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = RefCYKScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefCYKScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5221,19 +5215,19 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  if((status = FastIInsideScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
-	  if((status = XFastIInsideScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = XFastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "XFastIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
-	  if((status = X2FastIInsideScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);;
+	  if((status = X2FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);;
 	  printf("%4d %-30s %10.4f bits ", (i+1), "X2FastIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5243,13 +5237,13 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  if((status = RefIInsideScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = RefIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
-	  if((status = XRefIInsideScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = XRefIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "XRefIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5279,7 +5273,7 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  if((status = FastFInsideScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = FastFInsideScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastFInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5289,7 +5283,7 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  if((status = RefFInsideScan(cm, errbuf, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = RefFInsideScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefFInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
