@@ -61,7 +61,6 @@
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
- *           W               - max d: max size of a hit
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
@@ -75,7 +74,7 @@
  *           <ret_vsc> is filled with an array of the best hit to each state v (if non-NULL).
  */
 int
-FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	    search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -94,6 +93,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   int       dp_y;               /* offset d for state y */
   int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
   int       L;                  /* length of the subsequence (j0-i0+1) */
+  int       W;                  /* max d; max size of a hit, this is min(L, smx->W) */
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
@@ -102,7 +102,6 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   float    *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
-
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CMH_BITS flag is not raised.\n");
@@ -128,8 +127,8 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
+  W = smx->W;
   if (W > L) W = L; 
-  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -387,7 +386,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	      arow2 = (float * const) alpha[jp_y][y+2];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = ESL_MAX(arow2[dp_y] + tsc_v[2],
-			     arow1[dp_y] + tsc_v[1]);		
+				  arow1[dp_y] + tsc_v[1]);		
 		sc_v[d] = ESL_MAX(sc_v[d], init_scAA[v][dp_y]);
 		sc_v[d] = ESL_MAX(sc_v[d], arow0[dp_y] + tsc_v[0]);		
 	      } /* end of for(d = dn; d <= dx; d++) */
@@ -402,7 +401,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	      arow5 = (float * const) alpha[jp_y][y+5];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = ESL_MAX(arow5[dp_y] + tsc_v[5],
-			      init_scAA[v][dp_y]);
+				  init_scAA[v][dp_y]);
 		sc_v[d] = ESL_MAX(sc_v[d], arow4[dp_y] + tsc_v[4]);		
 		sc_v[d] = ESL_MAX(sc_v[d], arow3[dp_y] + tsc_v[3]);		
 		sc_v[d] = ESL_MAX(sc_v[d], arow2[dp_y] + tsc_v[2]);		
@@ -584,7 +583,6 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
- *           W               - max d: max size of a hit
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
@@ -599,7 +597,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
  *           Dies immediately if some error occurs.
  */
 int
-FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 		search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -618,6 +616,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   int       dp_y;               /* offset d for state y */
   int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
   int       L;                  /* length of the subsequence (j0-i0+1) */
+  int       W;                  /* max d; max size of a hit, this is min(L, smx->W) */
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
@@ -650,8 +649,8 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
+  W = smx->W;
   if (W > L) W = L; 
-  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -1100,7 +1099,6 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
- *           W               - max d: max size of a hit
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
@@ -1115,7 +1113,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
  *           Dies immediately if some error occurs.
  */
 int
-XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 		search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -1134,6 +1132,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
   int       dp_y;               /* offset d for state y */
   int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
   int       L;                  /* length of the subsequence (j0-i0+1) */
+  int       W;                  /* max d; max size of a hit, this is min(L, smx->W) */
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
@@ -1166,8 +1165,8 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
   if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
+  W = smx->W;
   if (W > L) W = L; 
-  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -1537,7 +1536,6 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
- *           W               - max d: max size of a hit
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
@@ -1552,7 +1550,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
  *           Dies immediately if some error occurs.
  */
 int
-X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 		search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -1571,6 +1569,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
   int       dp_y;               /* offset d for state y */
   int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
   int       L;                  /* length of the subsequence (j0-i0+1) */
+  int       W;                  /* max d; max size of a hit, this is min(L, smx->W) */
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
@@ -1604,8 +1603,8 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
   if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
+  W = smx->W;
   if (W > L) W = L; 
-  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -2056,7 +2055,6 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
- *           W               - max d: max size of a hit
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
@@ -2071,7 +2069,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
  *           Dies immediately if some error occurs.
  */
 int
-FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 		search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -2090,6 +2088,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   int       dp_y;               /* offset d for state y */
   int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
   int       L;                  /* length of the subsequence (j0-i0+1) */
+  int       W;                  /* max d; max size of a hit, this is min(L, smx->W) */
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
@@ -2121,8 +2120,8 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
+  W = smx->W;
   if (W > L) W = L; 
-  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -2563,7 +2562,6 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
- *           W               - max d: max size of a hit
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
@@ -2578,7 +2576,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
  *           Dies immediately if some error occurs.
  */
 int
-RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	   search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -2596,6 +2594,7 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
   int       jp_g;               /* offset j for gamma (j-i0+1) */
   int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
   int       L;                  /* length of the subsequence (j0-i0+1) */
+  int       W;                  /* max d; max size of a hit, this is min(L, smx->W) */
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
@@ -2628,8 +2627,8 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
   if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
+  W = smx->W;
   if (W > L) W = L; 
-  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -2845,7 +2844,6 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
- *           W               - max d: max size of a hit
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
@@ -2860,7 +2858,7 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
  *           Dies immediately if some error occurs.
  */
 int
-RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	       search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -2878,6 +2876,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
   int       jp_g;               /* offset j for gamma (j-i0+1) */
   int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
   int       L;                  /* length of the subsequence (j0-i0+1) */
+  int       W;                  /* max d; max size of a hit, this is min(L, smx->W) */
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
@@ -2910,8 +2909,8 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
   if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
+  W = smx->W;
   if (W > L) W = L; 
-  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -3119,7 +3118,6 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
- *           W               - max d: max size of a hit
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
@@ -3134,7 +3132,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
  *           Dies immediately if some error occurs.
  */
 int
-XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	       search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -3152,6 +3150,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   int       jp_g;               /* offset j for gamma (j-i0+1) */
   int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
   int       L;                  /* length of the subsequence (j0-i0+1) */
+  int       W;                  /* max d; max size of a hit, this is min(L, smx->W) */
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
@@ -3185,8 +3184,8 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
+  W = smx->W;
   if (W > L) W = L; 
-  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -3413,7 +3412,6 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
  *           dsq             - the digitized sequence
  *           i0              - start of target subsequence (1 for full seq)
  *           j0              - end of target subsequence (L for full seq)
- *           W               - max d: max size of a hit
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
@@ -3428,7 +3426,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
  *           Dies immediately if some error occurs.
  */
 int
-RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
+RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	       search_results_t *results, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -3446,6 +3444,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
   int       jp_g;               /* offset j for gamma (j-i0+1) */
   int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
   int       L;                  /* length of the subsequence (j0-i0+1) */
+  int       W;                  /* max d; max size of a hit, this is min(L, smx->W) */
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
   int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
@@ -3478,8 +3477,8 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
   if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
   L = j0-i0+1;
+  W = smx->W;
   if (W > L) W = L; 
-  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, W: %d greater than smx->W: %d\n", W, smx->W);
 
   /* set vsc array */
   vsc = NULL;
@@ -5165,7 +5164,7 @@ main(int argc, char **argv)
   }
   else { dmin = cm->dmin; dmax = cm->dmax; }
 
-  cm_CreateScanMatrix(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
+  cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
 
   /* get sequences */
   if(do_random) {
@@ -5186,7 +5185,7 @@ main(int argc, char **argv)
       cm->search_opts  &= ~CM_SEARCH_INSIDE;
 
       esl_stopwatch_Start(w);
-      if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5194,7 +5193,7 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "-w")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  if((status = RefCYKScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = RefCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefCYKScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5224,19 +5223,19 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
-	  if((status = XFastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = XFastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "XFastIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
-	  if((status = X2FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);;
+	  if((status = X2FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);;
 	  printf("%4d %-30s %10.4f bits ", (i+1), "X2FastIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5246,13 +5245,13 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  if((status = RefIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = RefIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
-	  if((status = XRefIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = XRefIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "XRefIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5282,7 +5281,7 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  if((status = FastFInsideScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = FastFInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastFInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5292,7 +5291,7 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  if((status = RefFInsideScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = RefFInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefFInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");

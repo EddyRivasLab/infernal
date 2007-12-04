@@ -947,7 +947,9 @@ fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   CP9Bands_t *cp9b= cm->cp9b;
   int       *jmin = cp9b->jmin;
   int     **hdmin = cp9b->hdmin;
+#if eslDEBUGLEVEL >= 1	
   int     **hdmax = cp9b->hdmax;
+#endif
 
   if(do_optacc) {
     status = optimal_accuracy_align_hb(cm, errbuf, dsq, L, i0, j0, 

@@ -178,8 +178,8 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i
       else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, round_results, cm->hbmx, &sc)) != eslOK) return status; }
     }
     else { /* don't do HMM banded search */
-      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, smx, dsq, i0, j0, smx->W, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
-      else                                   { if((status = FastCYKScan    (cm, errbuf, smx, dsq, i0, j0, smx->W, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
+      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, smx, dsq, i0, j0, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
+      else                                   { if((status = FastCYKScan    (cm, errbuf, smx, dsq, i0, j0, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
     }    
   }
 

@@ -216,7 +216,7 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   /* cyk */
   /*OLDFastCYKScan(cm, dsq, NULL, NULL, 1, L, cm->W, 0., NULL, NULL, NULL);*/
   esl_stopwatch_Start(w);
-  if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, NULL)) != eslOK) goto ERROR;
+  if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, NULL)) != eslOK) goto ERROR;
   //CYKScan (cm, dsq, 1, L, cm->W, 0., NULL);
   esl_stopwatch_Stop(w);
   t_c = w->user;
@@ -224,7 +224,7 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   /* inside */
   cm->search_opts |= CM_SEARCH_INSIDE;
   esl_stopwatch_Start(w);
-  if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, NULL)) != eslOK) goto ERROR;
+  if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, NULL)) != eslOK) goto ERROR;
   /* iInsideScan (cm, dsq, 1, L, cm->W, 0., NULL); */
   esl_stopwatch_Stop(w);
   t_i = w->user;
@@ -242,14 +242,14 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   /*XFastCYKScan(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL, NULL, NULL);*/
   esl_stopwatch_Start(w);
   /*CYKBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL); */
-  if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, NULL)) != eslOK) goto ERROR;
+  if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, NULL)) != eslOK) goto ERROR;
   esl_stopwatch_Stop(w);
   t_cq = w->user;
 
   /* qdb inside */
   cm->search_opts |= CM_SEARCH_INSIDE;
   esl_stopwatch_Start(w);
-  if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, NULL)) != eslOK) goto ERROR;
+  if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, NULL)) != eslOK) goto ERROR;
   /*iInsideBandedScan (cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, 0., NULL);*/
   esl_stopwatch_Stop(w);
   t_iq = w->user;

@@ -1086,17 +1086,22 @@ typedef struct scanmx_s {
   int   **dxAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int    *bestr;       /* auxil info: best root state at alpha[0][cur][d] */
   int     flags;       /* flags for what info has been set (can be float and/or int versions of alpha) */
-  double  beta;        /* tail loss prob used for calc'ing dmin/dmax */
-  /* falpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] and precalc'ed scores for
-   * float implementations of CYK/Inside */
-  float ***falpha;      /* non-BEGL_S states for float versions of CYK/Inside */
-  float ***falpha_begl; /*     BEGL_S states for float versions of CYK/Inside */
+  double  beta;        /* tail loss prob used for calc'ing dmin/dmax, invalid if dmin==dmax==NULL */
 
-  /* ialpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] and precalc'ed scores for
-   * integer implementations of CYK/Inside */
-  int   ***ialpha;      /* non-BEGL_S states for int   versions of CYK/Inside */
-  int   ***ialpha_begl; /*     BEGL_S states for int   versions of CYK/Inside */
+  /* falpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] for float implementations of CYK/Inside */
+  float ***falpha;          /* non-BEGL_S states for float versions of CYK/Inside */
+  float ***falpha_begl;     /*     BEGL_S states for float versions of CYK/Inside */
+  float   *falpha_mem;      /* ptr to the actual memory for falpha */
+  float   *falpha_begl_mem; /* ptr to the actual memory for falpha_begl */
 
+  /* ialpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] for integer implementations of CYK/Inside */
+  int   ***ialpha;          /* non-BEGL_S states for int   versions of CYK/Inside */
+  int   ***ialpha_begl;     /*     BEGL_S states for int   versions of CYK/Inside */
+  int     *ialpha_mem;      /* ptr to the actual memory for ialpha */
+  int     *ialpha_begl_mem; /* ptr to the actual memory for ialpha_begl */
+
+  int      ncells_alpha;      /* number of alloc'ed, valid cells for falpha and ialpha matrices, alloc'ed as contiguous block */
+  int      ncells_alpha_begl; /* number of alloc'ed, valid cells for falpha_begl and ialpha_begl matrices, alloc'ed as contiguous block */
 } ScanMatrix_t;
 
 /* Structure GammaHitMx_t: gamma semi-HMM used for optimal hit resolution
@@ -1298,13 +1303,6 @@ typedef struct cm_s {
   CP9_t     *cp9;        /* a CM Plan 9 HMM, always built when the model is read from a file   */
   CP9Map_t  *cp9map;     /* the map from the Plan 9 HMM to the CM and vice versa               */
   CP9Bands_t *cp9b;      /* the CP9 bands                                                      */
-  int        enf_start;  /* if(cm->config_opts & CM_CONFIG_ENFORCE) the first posn to enforce, else 0 */
-  char      *enf_seq;    /* if(cm->config_opts & CM_CONFIG_ENFORCE) the subseq to enforce, else NULL  */
-  float      enf_scdiff; /* if(cm->config_opts & CM_CONFIG_ENFORCE) the difference in scoring  *
-			  * cm->enfseq b/t the non-enforced & enforced CMs, this is subtracted *
-			  * from bit scores in cmsearch before assigned E-value stats which    *
-			  * are always calc'ed (histograms built) using non-enforced CMs/CP9s  */
-  float      ffract;     /* desired filter fraction (0.99 -> filter out 99% of db), default: 0.*/
   float     *root_trans; /* transition probs from state 0, saved IFF zeroed in ConfigLocal()   */
   float      pbegin;     /* local begin prob to spread across internal nodes for local mode    */
   float      pend;       /* local end prob to spread across internal nodes for local mode      */
@@ -1324,18 +1322,22 @@ typedef struct cm_s {
 			  * only alloc'ed to any significant size if we do Forward,Backward->Posteriors */
 
   /* search info describing the cmsearch filtering strategy, NULL unless created in cmsearch */
-  SearchInfo_t *si;
+  SearchInfo_t *si;      /* describes each round of filtering, and final round of searching */
 
-  CMStats_t *stats;     /* holds Gumbel stats and HMM filtering thresholds */
+  /* statistics */
+  CMStats_t *stats;      /* holds Gumbel stats and HMM filtering thresholds */
 
   const  ESL_ALPHABET *abc;     /* ptr to alphabet info (cm->abc->K is alphabet size)*/
 
-  /* EPN, Mon Dec  3 13:27:07 2007, these should be unnec, once SearchInfo_t is properly implemented */
-  /* search cutoffs */
-  //int       cutoff_type;/* either SCORE_CUTOFF or E_CUTOFF                                       */
-  //float     cutoff;     /* min bit score or max E val to keep in a scan (depending on cutoff_type) */
-  //int   cp9_cutoff_type;/* either SCORE_CUTOFF or E_CUTOFF                                       */
-  //float cp9_cutoff;     /* min bit score or max E val to keep from a CP9 scan                 */
+  /* currently unused */
+  float      ffract;     /* desired filter fraction (0.99 -> filter out 99% of db), default: 0.*/
+  /* i'm considering deleting these guys */
+  int        enf_start;  /* if(cm->config_opts & CM_CONFIG_ENFORCE) the first posn to enforce, else 0 */
+  char      *enf_seq;    /* if(cm->config_opts & CM_CONFIG_ENFORCE) the subseq to enforce, else NULL  */
+  float      enf_scdiff; /* if(cm->config_opts & CM_CONFIG_ENFORCE) the difference in scoring  *
+			  * cm->enfseq b/t the non-enforced & enforced CMs, this is subtracted *
+			  * from bit scores in cmsearch before assigned E-value stats which    *
+			  * are always calc'ed (histograms built) using non-enforced CMs/CP9s  */
 
 } CM_t;
 

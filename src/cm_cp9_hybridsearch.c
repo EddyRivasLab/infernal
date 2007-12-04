@@ -904,7 +904,7 @@ cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs)
   hsi->W = dmax[0];
 
   /* create the scan matrix, this stores the matrix, dmin, dmax, etc. */
-  hsi->smx = cm_CreateScanMatrix(cm, hsi->W, dmin, dmax, TRUE, TRUE, FALSE); 
+  hsi->smx = cm_CreateScanMatrix(cm, hsi->W, dmin, dmax, hsi->beta, TRUE, TRUE, FALSE); 
 
   /* determine number of millions of DP calculations per residue for CM and CP9 */
   /* first the full CM, using cm->dmin and cm->dmax, this value is passed in 

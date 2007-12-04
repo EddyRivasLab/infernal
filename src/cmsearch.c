@@ -42,7 +42,7 @@
 #define I_HMMCUTOPTS2  "--hmmcalcthr,--hmmE,--hmmT"            /* exclusive choice for HMM cutoff set 2 */
 #define FOPTS0        "--fcyk,--finside,--fhmmviterbi,--fhmmforward,--hmmviterbi,--hmmforward"  /* incompatible with --fgiven */
 #define FOPTS1        "--fcyk,--finside,--fgiven,--hmmviterbi,--hmmforward"           /* incompatible with --fcyk and --finside */
-#define FOPTS2        "--fhmmviteri,--fhmmforward,--fgiven,--hmmviterbi,--hmmforward" /* incompatible with --fhmmviterbi and --fhmmforward */
+#define FOPTS2        "--fhmmviterbi,--fhmmforward,--fgiven,--hmmviterbi,--hmmforward" /* incompatible with --fhmmviterbi and --fhmmforward */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -62,8 +62,8 @@ static ESL_OPTIONS options[] = {
   { "--hmmviterbi",eslARG_NONE, FALSE, NULL, NULL,      NULL,      NULL,    STRATOPTS, "use scanning HMM Viterbi algorithm", 2 },
   { "--hmmforward",eslARG_NONE, FALSE, NULL, NULL,      NULL,      NULL,    STRATOPTS, "use scanning HMM Forward algorithm", 2 },
   /* options for filtering with a CM */
-  { "--fgiven",     eslARG_NONE, NULL, NULL, NULL,     NULL,      NULL,       FOPTS0, "use filtering info from CM file", 14 },
-  { "--fcyk",       eslARG_NONE, FALSE,  NULL, NULL,     NULL,      NULL,       FOPTS1, "filter with CM CYK algorithm", 14 },
+  { "--fgiven",     eslARG_NONE, FALSE, NULL, NULL,     NULL,      NULL,       FOPTS0, "use filtering info from CM file", 14 },
+  { "--fcyk",       eslARG_NONE, FALSE, NULL, NULL,     NULL,      NULL,       FOPTS1, "filter with CM CYK algorithm", 14 },
   { "--finside",    eslARG_NONE, FALSE, NULL, NULL,     NULL,      NULL,       FOPTS1, "filter with CM Inside algorithm", 14 },
   { "--fhmmviterbi",eslARG_NONE, FALSE, NULL, NULL,     NULL,      NULL,       FOPTS2, "filter with HMM Viterbi algorithm", 14 },
   { "--fhmmforward",eslARG_NONE, FALSE, NULL, NULL,     NULL,      NULL,       FOPTS2, "filter with HMM Forward algorithm", 14 },
@@ -690,12 +690,11 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		    {
 		      for(rci = 0; rci <= cfg->do_rc; rci++) {
 			remove_overlapping_hits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
-			if(using_e_cutoff) remove_hits_over_e_cutoff(cm, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci], 
-								     ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD))); /* HMM hits? */
+			if(using_e_cutoff) remove_hits_over_e_cutoff(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]);
+
 
 		      }					      
-		      print_results(cm, cfg->abc_out, cons, dbseqlist[si_recv], cfg->do_rc, 
-				    ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD))); /* use HMM stats (used HMM only) */
+		      print_results(cm, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], cfg->do_rc);
 		      for(rci = 0; rci <= cfg->do_rc; rci++) {
 			esl_sq_Destroy(dbseqlist[si_recv]->sq[rci]);
 			FreeResults(dbseqlist[si_recv]->results[rci]);
@@ -1253,7 +1252,7 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       safe_windowlen *= 2;
       if(safe_windowlen > (cm->clen * 1000)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo(), band calculation safe_windowlen big: %d\n", safe_windowlen);
     }
-    fsmx = cm_CreateScanMatrix(cm, dmax[0], dmin, dmax, TRUE, add_inside_filter, add_cyk_filter);
+    fsmx = cm_CreateScanMatrix(cm, dmax[0], dmin, dmax, esl_opt_GetReal(go, "--fbeta"), TRUE, add_cyk_filter, add_inside_filter);
     /* add the filter */
     cm_AddFilterToSearchInfo(cm, add_cyk_filter, add_inside_filter, FALSE, FALSE, FALSE, fsmx, NULL, cutoff_type, cutoff);
     cm_ValidateSearchInfo(cm, cm->si);
@@ -1352,8 +1351,8 @@ set_window(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
   }
 
-  /* Setup ScanMatrix for CYK/Inside scanning functions, this is dependent on W, so we can't 
-   * do it in initialize_cm(), but we have to wait til W is set, which just happened. 
+  /* Setup ScanMatrix for CYK/Inside scanning functions, we can't 
+   * do it in initialize_cm(), b/c it's W dependent; W was just set.
    */
   int do_float = TRUE;
   int do_int   = FALSE;
@@ -1496,6 +1495,8 @@ int print_search_info(FILE *fp, CM_t *cm, long N, char *errbuf)
   int cp9_mode;
   int stype;
   int search_opts;
+  ScanMatrix_t *smx;
+  HybridScanInfo_t *hsi;
 
   /* contract check */
   if(cm->si == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo(), cm->si is NULL, shouldn't happen.\n");
@@ -1507,6 +1508,7 @@ int print_search_info(FILE *fp, CM_t *cm, long N, char *errbuf)
     
   using_filters = (si->nrounds > 0) ? TRUE : FALSE;
 
+  fprintf(fp,"------------------------------\n");
   for(n = 0; n <= si->nrounds; n++) {
     if(!using_filters)                        fprintf(fp, "No filtering.\n");
     else if(n < si->nrounds && using_filters) fprintf(fp, "Filter round %d of %d:\n", (n+1), si->nrounds); 
@@ -1516,6 +1518,8 @@ int print_search_info(FILE *fp, CM_t *cm, long N, char *errbuf)
     search_opts = si->search_opts[n];
     cutoff_type = si->cutoff_type[n];
     cutoff      = si->cutoff[n];
+    smx         = si->smx[n];
+    hsi         = si->hsi[n];
     
     /* Determine configuration of CM and CP9 based on cm->flags & cm->search_opts */
     CM2Gumbel_mode(cm, search_opts, &cm_mode, &cp9_mode); 
@@ -1539,6 +1543,8 @@ int print_search_info(FILE *fp, CM_t *cm, long N, char *errbuf)
       fprintf (fp, "CM configuration:     ");
       if(cm->flags & CMH_LOCAL_BEGIN) fprintf(fp, "Local\n");
       else                            fprintf(fp, "Glocal\n");
+      if(smx->dmin == NULL && smx->dmax == NULL) fprintf(fp, "QDB OFF\n");
+      else                                       fprintf(fp, "QDB ON, beta:        %6g\n", smx->beta);
     }
     else if (stype == SEARCH_WITH_HMM) { /* using the HMM this round */
       if(cutoff_type == E_CUTOFF) {
@@ -1572,10 +1578,14 @@ int print_search_info(FILE *fp, CM_t *cm, long N, char *errbuf)
       printf("Hybrid scanner cutoff (bit sc):    %.2f\n", cutoff);
       printf("TO DO: print more useful info here, like which sub CM roots are used and predicted speedup\n");
     }
-    printf     ("DB size, nt (N):      %ld\n\n", N);
-    if(n < si->nrounds) printf("---------------------------------------------------------------------------------\n");
+    fprintf(fp,"------------------------------\n");
+    if(n == si->nrounds) { 
+      fprintf(fp, "DB size, nt (N):      %ld\n", N);
+      fprintf(fp,"------------------------------\n");
+    }
   }
-  fflush(stdout);
+  fprintf(fp, "\n");
+  fflush(fp);
   return eslOK;
 }
 

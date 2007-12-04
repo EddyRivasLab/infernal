@@ -294,13 +294,12 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx)
  * Returns:  eslOK on success, dies immediately on some error
  */
 ScanMatrix_t *
-cm_CreateScanMatrix(CM_t *cm, int W, int *dmin, int *dmax, int do_banded, int do_int, int do_float)
+cm_CreateScanMatrix(CM_t *cm, int W, int *dmin, int *dmax, double beta, int do_banded, int do_float, int do_int)
 { 
   int status;
   ScanMatrix_t *smx;
   int v,j;
 
-  if((!do_float) && (!do_int)) cm_Fail("cm_CreateScanMatrix(), do_float and do_int both FALSE.\n");
   if((!do_float) && (!do_int)) cm_Fail("cm_CreateScanMatrix(), do_float and do_int both FALSE.\n");
 
   ESL_ALLOC(smx, sizeof(ScanMatrix_t));
@@ -310,6 +309,7 @@ cm_CreateScanMatrix(CM_t *cm, int W, int *dmin, int *dmax, int do_banded, int do
   smx->W     = W;
   smx->dmin  = dmin; /* could be NULL */
   smx->dmax  = dmax; /* could be NULL */
+  smx->beta  = beta; 
 
   /* precalculate minimum and maximum d for each state and each sequence index (1..j..W). 
    * this is not always just dmin, dmax, (for ex. if j < W). */
@@ -349,6 +349,9 @@ cm_CreateScanMatrix(CM_t *cm, int W, int *dmin, int *dmax, int do_banded, int do
    *    v ranges from 0..M-1 over states in the model
    *    d ranges from 0..W over subsequence lengths.
    * Note if v is NOT a BEGL_S alpha_begl[j][v] == NULL
+   *
+   * alpha and alpha_begl are allocated in contiguous blocks
+   * of memory in {f,i}alpha_mem and {f,i}alpha_begl_mem
    */
 
   /* Some info on alpha initialization 
@@ -361,13 +364,27 @@ cm_CreateScanMatrix(CM_t *cm, int W, int *dmin, int *dmax, int do_banded, int do
    * and, for banding: any cell outside our bands is impossible.
    * These inits are never changed in the recursion, so even with the
    * rolling, matrix face reuse strategy, this works.
+   *
+   * The way we initialize is just to set the entire matrix
+   * to -INFTY or IMPOSSIBLE (for ints and floats, respectively),
+   * and then reset those cells that should not be -INFTY or
+   * IMPOSSIBLE as listed above. This way we don't have to
+   * step through the bands, setting cells outside them to IMPOSSIBLE
+   * or -INFY;
    */
 
-  smx->falpha       = NULL;
-  smx->falpha_begl  = NULL;
+  smx->falpha          = NULL;
+  smx->falpha_begl     = NULL;
+  smx->falpha_mem      = NULL;
+  smx->falpha_begl_mem = NULL;
 
-  smx->ialpha      = NULL;
-  smx->ialpha_begl = NULL;
+  smx->ialpha          = NULL;
+  smx->ialpha_begl     = NULL;
+  smx->ialpha_mem      = NULL;
+  smx->ialpha_begl_mem = NULL;
+
+  smx->ncells_alpha      = 0;
+  smx->ncells_alpha_begl = 0;
 
   if(do_float) /* allocate float mx and scores */
     cm_FloatizeScanMatrix(cm, smx);
@@ -408,35 +425,9 @@ cm_CreateScanMatrixForCM(CM_t *cm, int do_float, int do_int)
 
   do_banded = ((cm->search_opts & CM_SEARCH_NOQDB) || use_hmmonly) ? FALSE : TRUE;
 
-  cm->smx = cm_CreateScanMatrix(cm, cm->W, cm->dmin, cm->dmax, do_banded, do_int, do_float);
+  cm->smx = cm_CreateScanMatrix(cm, cm->W, cm->dmin, cm->dmax, cm->beta, do_banded, do_float, do_int);
 
   cm->flags |= CMH_SCANMATRIX; /* raise the flag for valid CMH_SCANMATRIX */
-  return eslOK;
-}
-
-
-/* Function: cm_UpdateScanMatrix()
- * Date:     EPN, Wed Nov  7 12:49:36 2007
- *
- * Purpose:  Free, reallocate and recalculate ScanMatrix cm->smx>
- *           for CM <cm>.
- *            
- * Returns:  eslOK on success, dies immediately on an error.
- */
-int
-cm_UpdateScanMatrixForCM(CM_t *cm)
-{
-  /* contract check */
-  if(cm->flags & CMH_SCANMATRIX)    cm_Fail("cm_UpdateScanMatrix(), the CM flag for valid scan info is already up.");
-  if(cm->smx->flags & cmSMX_HAS_FLOAT) {
-    cm_FreeFloatsFromScanMatrix(cm, cm->smx);
-    cm_FloatizeScanMatrix(cm, cm->smx);
-  }
-  if(cm->smx->flags & cmSMX_HAS_INT) {
-    cm_FreeIntsFromScanMatrix(cm, cm->smx);
-    cm_IntizeScanMatrix(cm, cm->smx);
-  }
-  cm->flags |= CMH_SCANMATRIX; /* ScanMatrix is valid now */
   return eslOK;
 }
 
@@ -459,43 +450,84 @@ cm_FloatizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
   int use_hmmonly;
   use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) ||  (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
   int do_banded = ((cm->search_opts & CM_SEARCH_NOQDB) || use_hmmonly) ? FALSE : TRUE;
+  int n_begl;
+  int n_non_begl;
+  int cur_cell;
 
   /* contract check */
   if(smx->flags & cmSMX_HAS_FLOAT) cm_Fail("cm_FloatizeScanMatrix(), si's cmSMX_HAS_FLOAT flag is already up.");
   if(smx->falpha != NULL)       cm_Fail("cm_FloatizeScanMatrix(), smx->falpha is not NULL.");
   if(smx->falpha_begl != NULL)  cm_Fail("cm_FloatizeScanMatrix(), smx->falpha_begl is not NULL.");
   
-  /* allocate alpha */
+  /* allocate alpha 
+   * we allocate only as many cells as necessary,
+   * for falpha,      we only allocate for non-BEGL_S states,
+   * for falpha_begl, we only allocate for     BEGL_S states
+   *
+   * note: deck for the EL state, cm->M is never used for scanners
+   */
+  n_begl = 0;
+  for (v = 0; v < cm->M; v++) if (cm->stid[v] == BEGL_S) n_begl++;
+  n_non_begl = cm->M - n_begl;
+
+  /* allocate falpha */
+  /* j == 0 v == 0 cells, followed by j == 1 v == 0, then j == 0 v == 1 etc.. */
   ESL_ALLOC(smx->falpha,        sizeof(float **) * 2);
-  ESL_ALLOC(smx->falpha[0],     sizeof(float *) * cm->M);
-  ESL_ALLOC(smx->falpha[1],     sizeof(float *) * cm->M);
-  ESL_ALLOC(smx->falpha[0][0],  sizeof(float) * 2 * (cm->M) * (smx->W+1));
-  for (v = cm->M-1; v >= 0; v--) {	
+  ESL_ALLOC(smx->falpha[0],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, falpha[0][v] will be NULL */
+  ESL_ALLOC(smx->falpha[1],     sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, falpha[0][v] will be NULL */
+  ESL_ALLOC(smx->falpha_mem,    sizeof(float) * 2 * n_non_begl * (smx->W+1));
+  if((smx->flags & cmSMX_HAS_INT) && ((2 * n_non_begl * (smx->W+1)) != smx->ncells_alpha)) 
+    cm_Fail("cm_FloatizeScanMatrix(), cmSMX_HAS_INT flag raised, but smx->ncells_alpha %d != %d (predicted num float cells size)\n", smx->ncells_alpha, (2 * n_non_begl * (smx->W+1)));
+  smx->ncells_alpha = 2 * n_non_begl * (smx->W+1);
+
+  cur_cell = 0;
+  for (v = 0; v < cm->M; v++) {	
     if (cm->stid[v] != BEGL_S) {
-      smx->falpha[0][v] = smx->falpha[0][0] + (v           * (smx->W+1));
-      smx->falpha[1][v] = smx->falpha[0][0] + ((v + cm->M) * (smx->W+1));
+      smx->falpha[0][v] = smx->falpha_mem + cur_cell;
+      cur_cell += smx->W+1;
+      smx->falpha[1][v] = smx->falpha_mem + cur_cell;
+      cur_cell += smx->W+1;
     }
-    else smx->falpha[0][v] = smx->falpha[1][v] = NULL; /* BEGL_S */
+    else { 
+      smx->falpha[0][v] = NULL;
+      smx->falpha[1][v] = NULL;
+    }
   }
+  if(cur_cell != smx->ncells_alpha) cm_Fail("cm_FloatizeScanMatrix(), error allocating falpha, cell cts differ %d != %d\n", cur_cell, smx->ncells_alpha);
+
   /* allocate falpha_begl */
-  ESL_ALLOC(smx->falpha_begl, (sizeof(float **) * (smx->W+1)));
-  for (j = 0; j <= smx->W; j++) {
-    ESL_ALLOC(smx->falpha_begl[j], (sizeof(float *) * (cm->M)));
-    for (v = cm->M-1; v >= 0; v--) {	
-      if (cm->stid[v] == BEGL_S) ESL_ALLOC(smx->falpha_begl[j][v], (sizeof(float) * (smx->W+1)));
-      else smx->falpha_begl[j][v] = NULL; /* non-BEGL */
+  /* j == d, v == 0 cells, followed by j == d+1, v == 0, etc. */
+  ESL_ALLOC(smx->falpha_begl, sizeof(float **) * (smx->W+1));
+  for (j = 0; j <= smx->W; j++) 
+    ESL_ALLOC(smx->falpha_begl[j],  sizeof(float *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, falpha_begl[0][v] will be NULL */
+  ESL_ALLOC(smx->falpha_begl_mem,   sizeof(float) * (smx->W+1) * n_begl * (smx->W+1));
+  if((smx->flags & cmSMX_HAS_INT) && (((smx->W+1) * n_begl * (smx->W+1)) != smx->ncells_alpha_begl)) 
+    cm_Fail("cm_IntizeScanMatrix(), cmSMX_HAS_FLOAT flag raised, but smx->ncells_alpha_begl %d != %d (predicted num float cells size)\n", smx->ncells_alpha_begl, ((smx->W+1) * n_begl * (smx->W+1)));
+  smx->ncells_alpha_begl = (smx->W+1) * n_begl * (smx->W+1);
+
+  cur_cell = 0;
+  for (v = 0; v < cm->M; v++) {	
+    for (j = 0; j <= smx->W; j++) { 
+      if (cm->stid[v] == BEGL_S) {
+	smx->falpha_begl[j][v] = smx->falpha_begl_mem + cur_cell;
+	cur_cell += smx->W+1;
+      }
+      else smx->falpha_begl[j][v] = NULL;
     }
   }
-  /* initialize falpha and falpha_begl */
+  if(cur_cell != smx->ncells_alpha_begl) cm_Fail("cm_FloatizeScanMatrix(), error allocating falpha_begl, cell cts differ %d != %d\n", cur_cell, smx->ncells_alpha_begl);
+
+  /* Initialize matrix */
+  /* First, init entire matrix to IMPOSSIBLE */
+  esl_vec_FSet(smx->falpha_mem,      smx->ncells_alpha,      IMPOSSIBLE);
+  esl_vec_FSet(smx->falpha_begl_mem, smx->ncells_alpha_begl, IMPOSSIBLE);
+  /* Now, initialize cells that should not be IMPOSSIBLE in falpha and falpha_begl */
   for(v = cm->M-1; v >= 0; v--) {
     if(cm->stid[v] != BEGL_S) {
-      smx->falpha[0][v][0] = IMPOSSIBLE;
       if (cm->sttype[v] == E_st) { 
 	smx->falpha[0][v][0] = smx->falpha[1][v][0] = 0.;
-	/* rest of E deck is IMPOSSIBLE, this is rewritten if QDB is on, (slightly wasteful). */
-	for (d = 1; d <= smx->W; d++) smx->falpha[0][v][d] = smx->falpha[1][v][d] = IMPOSSIBLE;
+	/* rest of E deck is IMPOSSIBLE, it's already set */
       }
-      else if (cm->sttype[v] == MP_st) smx->falpha[0][v][1] = smx->falpha[1][v][1] = IMPOSSIBLE;
       else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) {
 	y = cm->cfirst[v];
 	smx->falpha[0][v][0] = cm->endsc[v];
@@ -520,30 +552,6 @@ cm_FloatizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 	smx->falpha_begl[j][v][0] = smx->falpha_begl[0][v][0];
     }
   }
-  /* query-dependent band imposition.
-   *   (note: E states have all their probability on d=0, so dmin[E] = dmax[E] = 0;
-   *    the first loop will be skipped, the second initializes the E states.)
-   */
-  if(do_banded) { 
-    for (v = 0; v < cm->M; v++) { 
-      if(cm->stid[v] != BEGL_S) {
-	for (d = 0; d < cm->dmin[v] && d <= smx->W; d++)
-	  for(j = 0; j < 2; j++) 
-	    smx->falpha[j][v][d]  = IMPOSSIBLE;
-	for (d = cm->dmax[v]+1; d <= smx->W; d++)
-	  for(j = 0; j < 2; j++)
-	    smx->falpha[j][v][d] = IMPOSSIBLE;
-      }
-      else { /* not BEGL_S state */
-	for (d = 0; d < cm->dmin[v] && d <= smx->W; d++)
-	  for(j = 0; j <= smx->W; j++)
-	    smx->falpha_begl[j][v][d] = IMPOSSIBLE;
-	for (d = cm->dmax[v]+1; d <= smx->W; d++)
-	  for(j = 0; j <= smx->W; j++)
-	    smx->falpha_begl[j][v][d] = IMPOSSIBLE;
-      }
-    }
-  }
   /* set the flag that tells us we've got valid floats */
   smx->flags |= cmSMX_HAS_FLOAT;
   return eslOK;
@@ -551,7 +559,7 @@ cm_FloatizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
  ERROR: 
   cm_Fail("memory allocation error.");
   return status; /* NEVERREACHED */
-}
+  }
 
 
 /* Function: cm_IntizeScanMatrix()
@@ -572,43 +580,84 @@ cm_IntizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
   int use_hmmonly;
   use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) ||  (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
   int do_banded = ((cm->search_opts & CM_SEARCH_NOQDB) || use_hmmonly) ? FALSE : TRUE;
+  int n_begl;
+  int n_non_begl;
+  int cur_cell;
 
   /* contract check */
   if(smx->flags & cmSMX_HAS_INT) cm_Fail("cm_IntizeScanMatrix(), si's cmSMX_HAS_INT flag is already up.");
   if(smx->ialpha != NULL)       cm_Fail("cm_IntizeScanMatrix(), smx->ialpha is not NULL.");
   if(smx->ialpha_begl != NULL)  cm_Fail("cm_IntizeScanMatrix(), smx->ialpha_begl is not NULL.");
 
+  /* allocate alpha 
+   * we allocate only as many cells as necessary,
+   * for ialpha,      we only allocate for non-BEGL_S states,
+   * for ialpha_begl, we only allocate for     BEGL_S states
+   *
+   * note: deck for the EL state, cm->M is never used for scanners
+   */
+  n_begl = 0;
+  for (v = 0; v < cm->M; v++) if (cm->stid[v] == BEGL_S) n_begl++;
+  n_non_begl = cm->M - n_begl;
+
   /* allocate ialpha */
+  /* j == 0 v == 0 cells, followed by j == 1 v == 0, then j == 0 v == 1 etc.. */
   ESL_ALLOC(smx->ialpha,        sizeof(int **) * 2);
-  ESL_ALLOC(smx->ialpha[0],     sizeof(int *) * cm->M);
-  ESL_ALLOC(smx->ialpha[1],     sizeof(int *) * cm->M);
-  ESL_ALLOC(smx->ialpha[0][0],  sizeof(int) * 2 * (cm->M) * (smx->W+1));
-  for (v = cm->M-1; v >= 0; v--) {	
+  ESL_ALLOC(smx->ialpha[0],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, ialpha[0][v] will be NULL */
+  ESL_ALLOC(smx->ialpha[1],     sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v == BEGL_S, ialpha[0][v] will be NULL */
+  ESL_ALLOC(smx->ialpha_mem,    sizeof(int) * 2 * n_non_begl * (smx->W+1));
+  if((smx->flags & cmSMX_HAS_FLOAT) && ((2 * n_non_begl * (smx->W+1)) != smx->ncells_alpha)) 
+    cm_Fail("cm_IntizeScanMatrix(), cmSMX_HAS_INT flag raised, but smx->ncells_alpha %d != %d (predicted num int cells size)\n", smx->ncells_alpha, (2 * n_non_begl * (smx->W+1)));
+  smx->ncells_alpha = 2 * n_non_begl * (smx->W+1);
+
+  cur_cell = 0;
+  for (v = 0; v < cm->M; v++) {	
     if (cm->stid[v] != BEGL_S) {
-      smx->ialpha[0][v] = smx->ialpha[0][0] + (v           * (smx->W+1));
-      smx->ialpha[1][v] = smx->ialpha[0][0] + ((v + cm->M) * (smx->W+1));
+      smx->ialpha[0][v] = smx->ialpha_mem + cur_cell;
+      cur_cell += smx->W+1;
+      smx->ialpha[1][v] = smx->ialpha_mem + cur_cell;
+      cur_cell += smx->W+1;
     }
-    else smx->ialpha[0][v] = smx->ialpha[1][v] = NULL; /* BEGL_S */
+    else { 
+      smx->ialpha[0][v] = NULL;
+      smx->ialpha[1][v] = NULL;
+    }
   }
+  if(cur_cell != smx->ncells_alpha) cm_Fail("cm_IntizeScanMatrix(), error allocating ialpha, cell cts differ %d != %d\n", cur_cell, smx->ncells_alpha);
+  
   /* allocate ialpha_begl */
-  ESL_ALLOC(smx->ialpha_begl, (sizeof(int **) * (smx->W+1)));
-  for (j = 0; j <= smx->W; j++) {
-    ESL_ALLOC(smx->ialpha_begl[j], (sizeof(int *) * (cm->M)));
-    for (v = cm->M-1; v >= 0; v--) {	
-      if (cm->stid[v] == BEGL_S) ESL_ALLOC(smx->ialpha_begl[j][v], (sizeof(int) * (smx->W+1)));
-      else smx->ialpha_begl[j][v] = NULL; /* non-BEGL */
+  /* j == d, v == 0 cells, followed by j == d+1, v == 0, etc. */
+  ESL_ALLOC(smx->ialpha_begl, sizeof(int **) * (smx->W+1));
+  for (j = 0; j <= smx->W; j++) 
+    ESL_ALLOC(smx->ialpha_begl[j],  sizeof(int *) * (cm->M)); /* we still allocate cm->M ptrs, if v != BEGL_S, ialpha_begl[0][v] will be NULL */
+  ESL_ALLOC(smx->ialpha_begl_mem,   sizeof(int) * (smx->W+1) * n_begl * (smx->W+1));
+  if((smx->flags & cmSMX_HAS_FLOAT) && (((smx->W+1) * n_begl * (smx->W+1)) != smx->ncells_alpha_begl)) 
+    cm_Fail("cm_IntizeScanMatrix(), cmSMX_HAS_INT flag raised, but smx->ncells_alpha_begl %d != %d (predicted num int cells size)\n", smx->ncells_alpha_begl, ((smx->W+1) * n_begl * (smx->W+1)));
+  smx->ncells_alpha_begl = (smx->W+1) * n_begl * (smx->W+1);
+
+  cur_cell = 0;
+  for (v = 0; v < cm->M; v++) {	
+    for (j = 0; j <= smx->W; j++) { 
+      if (cm->stid[v] == BEGL_S) {
+	smx->ialpha_begl[j][v] = smx->ialpha_begl_mem + cur_cell;
+	cur_cell += smx->W+1;
+      }
+      else smx->ialpha_begl[j][v] = NULL;
     }
   }
-  /* initialize ialpha and ialpha_begl */
+  if(cur_cell != smx->ncells_alpha_begl) cm_Fail("cm_IntizeScanMatrix(), error allocating ialpha_begl, cell cts differ %d != %d\n", cur_cell, smx->ncells_alpha_begl);
+
+  /* Initialize matrix */
+  /* First, init entire matrix to -INFTY */
+  esl_vec_ISet(smx->ialpha_mem,      smx->ncells_alpha,      -INFTY);
+  esl_vec_ISet(smx->ialpha_begl_mem, smx->ncells_alpha_begl, -INFTY);
+  /* Now, initialize cells that should not be -INFTY in ialpha and ialpha_begl */
   for(v = cm->M-1; v >= 0; v--) {
     if(cm->stid[v] != BEGL_S) {
-      smx->ialpha[0][v][0] = -INFTY;
       if (cm->sttype[v] == E_st) { 
 	smx->ialpha[0][v][0] = smx->ialpha[1][v][0] = 0.;
-	/* rest of E deck is -INFTY, this is rewritten if QDB is on, (slightly wasteful). */
-	for (d = 1; d <= smx->W; d++) smx->ialpha[0][v][d] = smx->ialpha[1][v][d] = -INFTY;
+	/* rest of E deck is -INFTY, it's already set */
       }
-      else if (cm->sttype[v] == MP_st) smx->ialpha[0][v][1] = smx->ialpha[1][v][1] = -INFTY;
       else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) {
 	y = cm->cfirst[v];
 	smx->ialpha[0][v][0] = cm->iendsc[v];
@@ -633,30 +682,7 @@ cm_IntizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 	smx->ialpha_begl[j][v][0] = smx->ialpha_begl[0][v][0];
     }
   }
-  /* query-dependent band imposition.
-   *   (note: E states have all their probability on d=0, so dmin[E] = dmax[E] = 0;
-   *    the first loop will be skipped, the second initializes the E states.)
-   */
-  if(do_banded) { 
-    for (v = 0; v < cm->M; v++) { 
-      if(cm->stid[v] != BEGL_S) {
-	for (d = 0; d < cm->dmin[v] && d <= smx->W; d++)
-	  for(j = 0; j < 2; j++) 
-	    smx->ialpha[j][v][d] = -INFTY;
-	for (d = cm->dmax[v]+1; d <= smx->W; d++)
-	  for(j = 0; j < 2; j++)
-	    smx->ialpha[j][v][d] = -INFTY;
-      }
-      else { /* not BEGL_S state */
-	for (d = 0; d < cm->dmin[v] && d <= smx->W; d++)
-	  for(j = 0; j <= smx->W; j++)
-	    smx->ialpha_begl[j][v][d] = -INFTY;
-	for (d = cm->dmax[v]+1; d <= smx->W; d++)
-	  for(j = 0; j <= smx->W; j++)
-	    smx->ialpha_begl[j][v][d] = -INFTY;
-      }
-    }
-  }
+
   /* set the flag that tells us we've got valid ints */
   smx->flags |= cmSMX_HAS_INT;
   return eslOK;
@@ -685,20 +711,17 @@ cm_FreeFloatsFromScanMatrix(CM_t *cm, ScanMatrix_t *smx)
   if(smx->falpha == NULL)       cm_Fail("cm_FreeFloatsFromScanMatrix(), smx->falpha is already NULL.");
   if(smx->falpha_begl == NULL)  cm_Fail("cm_FreeFloatsFromScanMatrix(), smx->falpha_begl is already NULL.");
 
-  free(smx->falpha[0][0]);
+  free(smx->falpha_mem);
   free(smx->falpha[1]);
   free(smx->falpha[0]);
   free(smx->falpha);
   smx->falpha = NULL;
-  for (j = 0; j <= smx->W; j++) {
-    for (v = 0; v < cm->M; v++) 
-      if (cm->stid[v] == BEGL_S) {
-	free(smx->falpha_begl[j][v]);
-      }
-    free(smx->falpha_begl[j]);
-  }
+
+  free(smx->falpha_begl_mem);
+  for (j = 0; j <= smx->W; j++) free(smx->falpha_begl[j]);
   free(smx->falpha_begl);
   smx->falpha_begl = NULL;
+
   smx->flags &= ~cmSMX_HAS_FLOAT;
   return eslOK;
 }
@@ -721,20 +744,17 @@ cm_FreeIntsFromScanMatrix(CM_t *cm, ScanMatrix_t *smx)
   if(smx->ialpha == NULL)       cm_Fail("cm_FreeIntsFromScanMatrix(), smx->ialpha is already NULL.");
   if(smx->ialpha_begl == NULL)  cm_Fail("cm_FreeIntsFromScanMatrix(), smx->ialpha_begl is already NULL.");
 
-  free(smx->ialpha[0][0]);
+  free(smx->ialpha_mem);
   free(smx->ialpha[1]);
   free(smx->ialpha[0]);
   free(smx->ialpha);
   smx->ialpha = NULL;
-  for (j = 0; j <= smx->W; j++) {
-    for (v = 0; v < cm->M; v++) 
-      if (cm->stid[v] == BEGL_S) {
-	free(smx->ialpha_begl[j][v]);
-      }
-    free(smx->ialpha_begl[j]);
-  }
+
+  free(smx->ialpha_begl_mem);
+  for (j = 0; j <= smx->W; j++) free(smx->ialpha_begl[j]);
   free(smx->ialpha_begl);
   smx->ialpha_begl = NULL;
+
   smx->flags &= ~cmSMX_HAS_INT;
   return eslOK;
 }
@@ -1436,3 +1456,30 @@ TBackGammaHitMxBackward(GammaHitMx_t *gamma, search_results_t *results, int i0, 
   }
   return;
 }
+
+#if 0
+/* Function: cm_UpdateScanMatrix()
+ * Date:     EPN, Wed Nov  7 12:49:36 2007
+ *
+ * Purpose:  Free, reallocate and recalculate ScanMatrix cm->smx>
+ *           for CM <cm>.
+ *            
+ * Returns:  eslOK on success, dies immediately on an error.
+ */
+int
+cm_UpdateScanMatrixForCM(CM_t *cm)
+{
+  /* contract check */
+  if(cm->flags & CMH_SCANMATRIX)    cm_Fail("cm_UpdateScanMatrix(), the CM flag for valid scan info is already up.");
+  if(cm->smx->flags & cmSMX_HAS_FLOAT) {
+    cm_FreeFloatsFromScanMatrix(cm, cm->smx);
+    cm_FloatizeScanMatrix(cm, cm->smx);
+  }
+  if(cm->smx->flags & cmSMX_HAS_INT) {
+    cm_FreeIntsFromScanMatrix(cm, cm->smx);
+    cm_IntizeScanMatrix(cm, cm->smx);
+  }
+  cm->flags |= CMH_SCANMATRIX; /* ScanMatrix is valid now */
+  return eslOK;
+}
+#endif

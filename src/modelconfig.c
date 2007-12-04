@@ -400,23 +400,27 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
 
   /* new local probs invalidate log odds scores and QDBs */
   cm->flags &= ~CMH_BITS;
-  /* Recalc QDBs if they exist */
-  if(cm->flags & CMH_QDB)
-    {
-      free(cm->dmin);
-      free(cm->dmax);
-      cm->dmin = NULL;
-      cm->dmax = NULL;
-      cm->flags &= ~CMH_QDB;
-      ConfigQDB(cm);
-    }      
-  
+  /* recalc QDBs if they exist */
+  if(cm->flags & CMH_QDB) {
+    free(cm->dmin);
+    free(cm->dmax);
+    cm->dmin = NULL;
+    cm->dmax = NULL;
+    cm->flags &= ~CMH_QDB;
+    ConfigQDB(cm);
+  }      
+  /* free and rebuild scan matrix to correspond to new QDBs, if it exists */
+  if(cm->flags & CMH_SCANMATRIX) {
+    int do_float = cm->smx->flags & cmSMX_HAS_FLOAT;
+    int do_int   = cm->smx->flags & cmSMX_HAS_INT;
+    cm_FreeScanMatrixForCM(cm);
+    cm_CreateScanMatrixForCM(cm, do_float, do_int);
+  }
+
   CMLogoddsify(cm);
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
     CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
 				     * makes all CP9 (if non-null) inserts equiprobable */
-  if(cm->flags & CMH_SCANMATRIX)
-    cm->flags &= ~ CMH_SCANMATRIX; /* new local configuration invalidates ScanMatrix */
   return;
 
  ERROR:
@@ -469,23 +473,26 @@ ConfigGlobal(CM_t *cm)
   /* new probs invalidate log odds scores and QDB */
   cm->flags &= ~CMH_BITS;
   /* Recalc QDBs if they exist */
-  if(cm->flags & CMH_QDB)
-    {
-      free(cm->dmin);
-      free(cm->dmax);
-      cm->dmin = NULL;
-      cm->dmax = NULL;
-      cm->flags &= ~CMH_QDB;
-      ConfigQDB(cm);
-    }      
+  if(cm->flags & CMH_QDB) {
+    free(cm->dmin);
+    free(cm->dmax);
+    cm->dmin = NULL;
+    cm->dmax = NULL;
+    cm->flags &= ~CMH_QDB;
+    ConfigQDB(cm);
+  }      
+  /* free and rebuild scan matrix to correspond to new QDBs, if it exists */
+  if(cm->flags & CMH_SCANMATRIX) {
+    int do_float = cm->smx->flags & cmSMX_HAS_FLOAT;
+    int do_int   = cm->smx->flags & cmSMX_HAS_INT;
+    cm_FreeScanMatrixForCM(cm);
+    cm_CreateScanMatrixForCM(cm, do_float, do_int);
+  }
 
   CMLogoddsify(cm);
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
     CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
 				     * makes all CP9 (if non-null) inserts equiprobable */
-  if(cm->flags & CMH_SCANMATRIX)
-    cm->flags &= ~ CMH_SCANMATRIX; /* new glocal configuration invalidates ScanMatrix */
-
   return;
 }
 
@@ -532,10 +539,9 @@ ConfigNoLocalEnds(CM_t *cm)
   cm->flags &= ~CMH_LOCAL_END; /* turn off local ends flag */
   /* new probs invalidate log odds scores */
   cm->flags &= ~CMH_BITS;
-  /* QDB still valid, local ends don't affect them */
-
-  if(cm->flags & CMH_SCANMATRIX)
-    cm->flags &= ~ CMH_SCANMATRIX; /* ScanMatrix now invalid */
+  /* local end changes don't invalidate QDBs, which means
+   * they don't affect the ScanMatrix either. 
+   */
 
   return;
 }
@@ -597,9 +603,9 @@ ConfigLocalEnds(CM_t *cm, float p_internal_exit)
 
   /* new probs invalidate log odds scores */
   cm->flags &= ~CMH_BITS;
-  /* local end changes don't invalidate QDBs */
-  if(cm->flags & CMH_SCANMATRIX)
-    cm->flags &= ~ CMH_SCANMATRIX; /* ScanMatrix now invalid */
+  /* local end changes don't invalidate QDBs, which means
+   * they don't affect the ScanMatrix either. 
+   */
 
   return;
 }
@@ -622,8 +628,6 @@ ConfigLocal_DisallowELEmissions(CM_t *cm)
   cm->el_selfsc = (IMPOSSIBLE / (cm->W+1));
   cm->iel_selfsc = -INFTY; 
   cm->iel_selfsc = -100 * INTSCALE; 
-  if(cm->flags & CMH_SCANMATRIX)
-    cm->flags &= ~ CMH_SCANMATRIX; /* ScanMatrix now invalid */
   return;
 }
 
@@ -781,9 +785,6 @@ ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit)
   cm->flags |= CMH_LOCAL_END;
   FreeEmitMap(emap);
 
-  if(cm->flags & CMH_SCANMATRIX)
-    cm->flags &= ~ CMH_SCANMATRIX; /* ScanMatrix now invalid */
-
   return;
 }
 
@@ -867,15 +868,21 @@ EnforceSubsequence(CM_t *cm)
   /* new probs invalidate log odds scores */
   cm->flags &= ~CMH_BITS;
   /* Recalc QDBs if they exist */
-  if(cm->flags & CMH_QDB)
-    {
-      free(cm->dmin);
-      free(cm->dmax);
-      cm->dmin = NULL;
-      cm->dmax = NULL;
-      cm->flags &= ~CMH_QDB;
-      ConfigQDB(cm);
-    }      
+  if(cm->flags & CMH_QDB) {
+    free(cm->dmin);
+    free(cm->dmax);
+    cm->dmin = NULL;
+    cm->dmax = NULL;
+    cm->flags &= ~CMH_QDB;
+    ConfigQDB(cm);
+  }      
+  /* free and rebuild scan matrix to correspond to new QDBs, if it exists */
+  if(cm->flags & CMH_SCANMATRIX) {
+    int do_float = cm->smx->flags & cmSMX_HAS_FLOAT;
+    int do_int   = cm->smx->flags & cmSMX_HAS_INT;
+    cm_FreeScanMatrixForCM(cm);
+    cm_CreateScanMatrixForCM(cm, do_float, do_int);
+  }
 
   CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
@@ -889,8 +896,6 @@ EnforceSubsequence(CM_t *cm)
 	printf("cm->e[v:%d][a:%d]: %f sc: %f\n", v, a, cm->e[v][a], cm->esc[v][a]);
     }
   printf("\n");*/
-  if(cm->flags & CMH_SCANMATRIX)
-    cm->flags &= ~ CMH_SCANMATRIX; /* ScanMatrix now invalid */
 
   return eslOK;
 
@@ -969,9 +974,6 @@ EnforceScore(CM_t *cm)
     }
   /*printf("in EnforceScore() returning sc: %f\n", score);*/
   esl_sq_Destroy(enf_sq);
-
-  if(cm->flags & CMH_SCANMATRIX)
-    cm->flags &= ~ CMH_SCANMATRIX; /* ScanMatrix now invalid */
 
   return score;
 }
@@ -1201,13 +1203,18 @@ ConfigQDB(CM_t *cm)
   cm->W = cm->dmax[0];
   cm->flags |= CMH_QDB; /* raise the QDB flag */
 
+  /* free and rebuild scan matrix to correspond to new QDBs, if it exists */
+  if(cm->flags & CMH_SCANMATRIX) {
+    int do_float = cm->smx->flags & cmSMX_HAS_FLOAT;
+    int do_int   = cm->smx->flags & cmSMX_HAS_INT;
+    cm_FreeScanMatrixForCM(cm);
+    cm_CreateScanMatrixForCM(cm, do_float, do_int);
+  }
+
   CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
     CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
 				     * makes all CP9 (if non-null) inserts equiprobable */
-  if(cm->flags & CMH_SCANMATRIX)
-    cm->flags &= ~ CMH_SCANMATRIX; /* new QDBs invalidate ScanMatrix */
-
   return eslOK;
 }
 
