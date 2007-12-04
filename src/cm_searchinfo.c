@@ -1,5 +1,6 @@
-/* SearchInfo_t implementations: information for filters of CM scans.
- * 
+/* SearchInfo_t implementations: information for CM/CP9 
+ * filters and scans.
+ *
  * EPN, Tue Nov 27 08:42:08 2007
  * SVN $Id$
  */
@@ -17,7 +18,7 @@
 /* Function: cm_CreateSearchInfo()
  * Date:     EPN, Tue Nov 27 12:57:24 2007
  *
- * Purpose:  Allocate and initialize a filter info object that
+ * Purpose:  Allocate and initialize a search info object that
  *           specifies that no filtering should be done. 
  *            
  * Returns:  cm->si points to a new SearchInfo_t object

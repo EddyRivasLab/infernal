@@ -49,10 +49,10 @@ OBJS  = alphabet.o\
 	cm_errors.o\
 	cm_fastalign.o\
 	cm_fastsearch.o\
-	cm_filterinfo.o\
 	cm_masks.o\
 	cm_mx.o\
 	cm_postprob.o\
+	cm_searchinfo.o\
 	cm_cp9_hybridsearch.o\
 	cplan9.o\
 	CP9_cm2wrhmm.o\
