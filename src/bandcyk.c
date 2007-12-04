@@ -355,19 +355,6 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   for (v = 1; v <= cm->M-1; v++)
     if (dmax[v] > dmax[0]) dmax[v] = dmax[0];
 
-  /* If we're in local mode, we set all local ends to impossible at
-   * the beginning of this function, we set them back here.
-   * Careful we can only call this once */
-  if(reset_local_ends)
-    {
-      ConfigLocalEnds(cm, cm->pend);
-      reset_local_ends = FALSE;
-      if(reset_cp9_local_ends)
-	{
-	  CPlan9ELConfig(cm);
-	  reset_cp9_local_ends = FALSE;
-	}
-    }
   if (! BandTruncationNegligible(gamma[0], dmax[0], W, NULL)) 
     { status = 0; goto CLEANUP; }
 
@@ -399,16 +386,16 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
   /* If we're in local mode, we set all local ends to impossible at
    * the beginning of this function, we set them back here.
    * Careful we can only call this once */
-  if(reset_local_ends)
-    {
-      ConfigLocalEnds(cm, cm->pend);
-      reset_local_ends = FALSE;
-      if(reset_cp9_local_ends)
-	{
-	  CPlan9ELConfig(cm);
-	  reset_cp9_local_ends = FALSE;
-	}
+  if(reset_local_ends) {
+    ConfigLocalEnds(cm, cm->pend);
+    reset_local_ends = FALSE;
+    CMLogoddsify(cm);
+    if(reset_cp9_local_ends) {
+      CPlan9ELConfig(cm);
+      reset_cp9_local_ends = FALSE;
+      CP9Logoddsify(cm->cp9);
     }
+  }
   if (ret_dmin  != NULL) *ret_dmin = dmin;   else free(dmin);
   if (ret_dmax  != NULL) *ret_dmax = dmax;   else free(dmax);
   if (ret_gamma != NULL) *ret_gamma = gamma; else FreeBandDensities(cm, gamma);

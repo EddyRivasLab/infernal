@@ -291,9 +291,6 @@ CP9Logoddsify(CP9_t *hmm)
   int x;			/* counter for symbols        */
   float  sc[MAXDEGEN];          /* 17, NEED TO INCREASE FOR BIGGER ALPHABETS! */
 
-  /*float accum;
-    float tbm, tme;
-  */
   if (hmm->flags & CPLAN9_HASBITS) return;
 
   /* Symbol emission scores

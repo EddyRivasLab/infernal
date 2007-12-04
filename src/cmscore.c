@@ -256,7 +256,7 @@ main(int argc, char **argv)
       MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
       MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
 
-      if(cfg.nproc == 1) cm_Fail("ERROR, MPI mode, but only 1 processor running...");
+      if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running... (did you run mpirun?)");
 
       if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
       else 		    mpi_master(go, &cfg);
@@ -648,7 +648,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		      if(worker_seqs_to_aln->sq       != NULL) free(worker_seqs_to_aln->sq);
 		      if(worker_seqs_to_aln->tr       != NULL) free(worker_seqs_to_aln->tr);
 		      if(worker_seqs_to_aln->cp9_tr   != NULL) free(worker_seqs_to_aln->cp9_tr);
-		      if(worker_seqs_to_aln->postcode != NULL) free(worker_seqs_to_aln->postcode);
+		      if(worker_seqs_to_aln->postcode1!= NULL) free(worker_seqs_to_aln->postcode1);
+		      if(worker_seqs_to_aln->postcode2!= NULL) free(worker_seqs_to_aln->postcode2);
 		      if(worker_seqs_to_aln->sc       != NULL) free(worker_seqs_to_aln->sc);
 		      free(worker_seqs_to_aln);
 		    }
@@ -690,7 +691,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* clean up, free everything in all_seqs_to_aln but the sqs, which we'll reuse for each stage */
 	  if(all_seqs_to_aln->tr       != NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->tr[i] != NULL)       { FreeParsetree(all_seqs_to_aln->tr[i]);  all_seqs_to_aln->tr[i] = NULL; } }
 	  if(all_seqs_to_aln->cp9_tr   != NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->cp9_tr[i] != NULL)   { CP9FreeTrace(all_seqs_to_aln->cp9_tr[i]); all_seqs_to_aln->tr[i] = NULL; } }
-	  if(all_seqs_to_aln->postcode != NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->postcode[i] != NULL) { free(all_seqs_to_aln->postcode[i]); all_seqs_to_aln->tr[i] = NULL; } }
+	  if(all_seqs_to_aln->postcode1!= NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->postcode1[i] != NULL) { free(all_seqs_to_aln->postcode1[i]); all_seqs_to_aln->tr[i] = NULL; } }
+	  if(all_seqs_to_aln->postcode2!= NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->postcode2[i] != NULL) { free(all_seqs_to_aln->postcode2[i]); all_seqs_to_aln->tr[i] = NULL; } }
 	  for (i=0; i < all_seqs_to_aln->nseq; i++) all_seqs_to_aln->sc[i] = IMPOSSIBLE;
 	}
       ESL_DPRINTF1(("MPI master: done with this CM.\n"));
@@ -943,9 +945,8 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   }
   else {
     if((status = ActuallyAlignTargets(cm, errbuf, seqs_to_aln,
-				       NULL, NULL,   /* we're not aligning search hits */
-				       esl_opt_GetInteger(go, "--banddump"),
-				       esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL)) != eslOK) goto ERROR;
+				      NULL, NULL,   /* we're not aligning search hits */
+				      FALSE, 0, TRUE, NULL)) != eslOK) goto ERROR;
   }
   return eslOK;
   

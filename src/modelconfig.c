@@ -48,11 +48,6 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
   int do_preset_qdb = FALSE;
   int v;
   
-  /* Contract checks */
-  if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && 
-     (!(cm->search_opts & CM_SEARCH_HMMFILTER)))
-    ;/*cm_Fail("ERROR in ConfigCM() trying to search with HMM derived bands, but w/o using a HMM filter.");*/
-
   /* Check if we need to calculate QDBs and/or build a CP9 HMM. */
   if(cm->config_opts & CM_CONFIG_QDB) {
     if(preset_dmin == NULL && preset_dmax == NULL) 
@@ -603,7 +598,6 @@ ConfigLocalEnds(CM_t *cm, float p_internal_exit)
   /* new probs invalidate log odds scores */
   cm->flags &= ~CMH_BITS;
   /* local end changes don't invalidate QDBs */
-
   if(cm->flags & CMH_SCANMATRIX)
     cm->flags &= ~ CMH_SCANMATRIX; /* ScanMatrix now invalid */
 
@@ -1035,16 +1029,22 @@ EnforceFindEnfStart(CM_t *cm, int enf_cc_start)
  * Purpose:  Configure a CM and it's CP9 for determining statistics for 
  *           a specific 'gum_mode'.
  *
- *           0. CM_LC: !cm->search_opts & CM_SEARCH_INSIDE  w/  local CM
- *           1. CM_GC: !cm->search_opts & CM_SEARCH_INSIDE  w/ glocal CM
- *           2. CM_LI:  cm->search_opts & CM_SEARCH_INSIDE  w/  local CM
- *           3. CM_GI:  cm->search_opts & CM_SEARCH_INSIDE  w/ glocal CM
- *           4. CP9_L:  cm->search_opts & CM_SEARCH_HMMONLY w/  local CP9 HMM
- *           5. CP9_G:  cm->search_opts & CM_SEARCH_HMMONLY w/ glocal CP9 HMM
+ *           0. CM_LC : !cm->search_opts & CM_SEARCH_INSIDE  w/  local CM
+ *           1. CM_GC : !cm->search_opts & CM_SEARCH_INSIDE  w/ glocal CM
+ *           2. CM_LI :  cm->search_opts & CM_SEARCH_INSIDE  w/  local CM
+ *           3. CM_GI :  cm->search_opts & CM_SEARCH_INSIDE  w/ glocal CM
+ *           4. CP9_LV:  cm->search_opts & CM_SEARCH_HMMVITERBI
+ *                      !cm->search_opts & CM_SEARCH_HMMFORWARD w/  local CP9 HMM
+ *           5. CP9_LV:  cm->search_opts & CM_SEARCH_HMMVITERBI
+ *                      !cm->search_opts & CM_SEARCH_HMMFORWARD w/ glocal CP9 HMM
+ *           6. CP9_LF: !cm->search_opts & CM_SEARCH_HMMVITERBI
+ *                       cm->search_opts & CM_SEARCH_HMMFORWARD w/  local CP9 HMM
+ *           7. CP9_LF: !cm->search_opts & CM_SEARCH_HMMVITERBI
+ *                       cm->search_opts & CM_SEARCH_HMMFORWARD w/ glocal CP9 HMM
  * 
  * Args:
  *           CM           - the covariance model
- *           gum_mode     - the mode 0..5
+ *           gum_mode     - the mode 0..7
  */
 int
 ConfigForGumbelMode(CM_t *cm, int gum_mode)
@@ -1058,38 +1058,59 @@ ConfigForGumbelMode(CM_t *cm, int gum_mode)
   case CM_LC: /* local CYK */
     /*printf("CM_LC\n");*/
     cm->search_opts &= ~CM_SEARCH_INSIDE;
-    cm->search_opts &= ~CM_SEARCH_HMMONLY;
+    cm->search_opts &= ~CM_SEARCH_HMMVITERBI;
+    cm->search_opts &= ~CM_SEARCH_HMMFORWARD;
     do_cm_local  = TRUE;
     break;
   case CM_GC: /* glocal CYK */
     /*printf("CM_GC\n");*/
     cm->search_opts &= ~CM_SEARCH_INSIDE;
-    cm->search_opts &= ~CM_SEARCH_HMMONLY;
+    cm->search_opts &= ~CM_SEARCH_HMMVITERBI;
+    cm->search_opts &= ~CM_SEARCH_HMMFORWARD;
     do_cm_local  = FALSE;
     break;
   case CM_LI: /* local inside */
     /*printf("CM_LI\n");*/
     cm->search_opts |= CM_SEARCH_INSIDE;
-    cm->search_opts &= ~CM_SEARCH_HMMONLY;
+    cm->search_opts &= ~CM_SEARCH_HMMVITERBI;
+    cm->search_opts &= ~CM_SEARCH_HMMFORWARD;
     do_cm_local  = TRUE;
     break;
   case CM_GI: /* glocal inside */
     /*printf("CM_GI\n");*/
     cm->search_opts |= CM_SEARCH_INSIDE;
-    cm->search_opts &= ~CM_SEARCH_HMMONLY;
+    cm->search_opts &= ~CM_SEARCH_HMMVITERBI;
+    cm->search_opts &= ~CM_SEARCH_HMMFORWARD;
     do_cm_local  = FALSE;
     break;
-  case CP9_L: /* local CP9 Forward */
-    /*printf("CP9_L\n");*/
+  case CP9_LV: /* local CP9 Viterbi */
+    /*printf("CP9_LV\n");*/
     cm->search_opts &= ~CM_SEARCH_INSIDE;
-    cm->search_opts |= CM_SEARCH_HMMONLY;
+    cm->search_opts |= CM_SEARCH_HMMVITERBI;
+    cm->search_opts &= ~CM_SEARCH_HMMFORWARD;
     do_cm_local   = TRUE; /* need CM local ends to make CP9 local ends */
     do_cp9_local  = TRUE;
     break;
-  case CP9_G: /* glocal CP9 Forward */
-    /*printf("CP9_G\n");*/
+  case CP9_GV: /* glocal CP9 Viterbi */
+    /*printf("CP9_GV\n");*/
     cm->search_opts &= ~CM_SEARCH_INSIDE;
-    cm->search_opts |= CM_SEARCH_HMMONLY;
+    cm->search_opts |=  CM_SEARCH_HMMVITERBI;
+    cm->search_opts &= ~CM_SEARCH_HMMFORWARD;
+    do_cp9_local  = FALSE;
+    break;
+  case CP9_LF: /* local CP9 Forward */
+    /*printf("CP9_LF\n");*/
+    cm->search_opts &= ~CM_SEARCH_INSIDE;
+    cm->search_opts &= ~CM_SEARCH_HMMVITERBI;
+    cm->search_opts |= CM_SEARCH_HMMFORWARD;
+    do_cm_local   = TRUE; /* need CM local ends to make CP9 local ends */
+    do_cp9_local  = TRUE;
+    break;
+  case CP9_GF: /* glocal CP9 Forward */
+    /*printf("CP9_GF\n");*/
+    cm->search_opts &= ~CM_SEARCH_INSIDE;
+    cm->search_opts &= ~CM_SEARCH_HMMVITERBI;
+    cm->search_opts |= CM_SEARCH_HMMFORWARD;
     do_cp9_local  = FALSE;
     break;
   default: 
@@ -1113,7 +1134,7 @@ ConfigForGumbelMode(CM_t *cm, int gum_mode)
   if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
     CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
 				     * makes all CP9 (if non-null) inserts equiprobable*/
-  if(cm->search_opts & CM_SEARCH_HMMONLY)
+  if((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD))
     {
       if(!(cm->flags & CMH_CP9) || cm->cp9 == NULL) /* error, we should have one */
 	cm_Fail("CP9 must already be built in ConfigForGumbelMode()\n");

@@ -286,8 +286,6 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx)
  *      query dependent banded or non-banded CM DP search functions
  *****************************************************************/
 
-
-
 /* Function: cm_CreateScanMatrix()
  * Date:     EPN, Sun Nov  4 19:56:58 2007
  *
@@ -393,8 +391,6 @@ cm_CreateScanMatrix(CM_t *cm, int W, int *dmin, int *dmax, int do_banded, int do
 int
 cm_CreateScanMatrixForCM(CM_t *cm, int do_float, int do_int)
 {
-  int status;
-  int j, v;
   int do_banded;
   int use_hmmonly;
   use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) ||  (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
@@ -416,10 +412,6 @@ cm_CreateScanMatrixForCM(CM_t *cm, int do_float, int do_int)
 
   cm->flags |= CMH_SCANMATRIX; /* raise the flag for valid CMH_SCANMATRIX */
   return eslOK;
-
- ERROR:
-  cm_Fail("memory allocation error in cm_CreateScanMatrixForCM().\n");
-  return status; /* NEVERREACHED */
 }
 
 
@@ -784,7 +776,6 @@ cm_FreeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 void
 cm_FreeScanMatrixForCM(CM_t *cm)
 {
-  int j;
   /* contract check */
   if(cm->smx == NULL) cm_Fail("cm_FreeScanMatrixForCM(), cm->smx is NULL.\n");
   cm_FreeScanMatrix(cm, cm->smx);

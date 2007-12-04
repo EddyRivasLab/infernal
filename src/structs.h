@@ -26,14 +26,9 @@
 #define cmERRBUFSIZE 1024
 
 /* various default parameters for CMs and CP9 HMMs */ 
-#define DEFAULT_CM_CUTOFF 0.1
-#define DEFAULT_CM_CUTOFF_TYPE E_CUTOFF
-#define DEFAULT_CP9_CUTOFF 0.0
-#define DEFAULT_CP9_CUTOFF_TYPE SCORE_CUTOFF
 #define DEFAULT_MIN_CP9_E_CUTOFF 1.0
 #define DEFAULT_BETA   0.0000001
 #define DEFAULT_TAU    0.0000001
-#define DEFAULT_HMMPAD 0
 #define DEFAULT_PBEGIN 0.05  /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_PEND   0.05  /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_ETARGET 0.54 /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
@@ -474,12 +469,14 @@ typedef struct cmstats_s {
 #define CM_GC 1
 #define CM_LI 2
 #define CM_GI 3
-#define CP9_L 4
-#define CP9_G 5
-#define NGUMBELMODES 6
+#define CP9_LV 4
+#define CP9_GV 5
+#define CP9_LF 6
+#define CP9_GF 7
+#define NGUMBELMODES 8
 #define NFTHRMODES   4
 #define NCMMODES     4
-#define NCP9MODES    2
+#define NCP9MODES    4
 
 /* status flags, cm->flags */
 #define CMH_BITS               (1<<0)  /* CM has valid log odds scores             */
@@ -536,20 +533,18 @@ typedef struct cmstats_s {
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_NOQDB        (1<<0)  /* DO NOT use QDB to search (QDB is default)*/
-#define CM_SEARCH_HMMONLY      (1<<1)  /* use a CP9 HMM only to search             */
-#define CM_SEARCH_HMMFILTER    (1<<2)  /* filter w/CP9 HMM, using forward/backward */
-#define CM_SEARCH_HBANDED      (1<<3)  /* use HMM bands for search                 */
-#define CM_SEARCH_HMMSCANBANDS (1<<4)  /* filter w/CP9 HMM, and derive HMM bands   */
-#define CM_SEARCH_SUMS         (1<<5)  /* if using HMM bands, use posterior sums   */
-#define CM_SEARCH_INSIDE       (1<<6)  /* scan with Inside, not CYK                */
-#define CM_SEARCH_TOPONLY      (1<<7)  /* don't search reverse complement          */
-#define CM_SEARCH_NOALIGN      (1<<8)  /* don't align hits, just report locations  */
-#define CM_SEARCH_NULL2        (1<<9)  /* use post hoc second null model           */
-#define CM_SEARCH_RSEARCH      (1<<10) /* use RSEARCH parameterized CM             */
-#define CM_SEARCH_CMGREEDY     (1<<11) /* use greedy alg to resolve CM overlaps    */
-#define CM_SEARCH_HMMGREEDY    (1<<12) /* use greedy alg to resolve HMM overlaps   */
-#define CM_SEARCH_HMMVITERBI   (1<<13) /* search with CP9 HMM Viterbi              */
-#define CM_SEARCH_HMMFORWARD   (1<<14) /* search with CP9 HMM Forward              */
+#define CM_SEARCH_HBANDED      (1<<1)  /* use HMM bands for search                 */
+#define CM_SEARCH_HMMSCANBANDS (1<<2)  /* filter w/CP9 HMM, and derive HMM bands   */
+#define CM_SEARCH_SUMS         (1<<3)  /* if using HMM bands, use posterior sums   */
+#define CM_SEARCH_INSIDE       (1<<4)  /* scan with Inside, not CYK                */
+#define CM_SEARCH_TOPONLY      (1<<5)  /* don't search reverse complement          */
+#define CM_SEARCH_NOALIGN      (1<<6)  /* don't align hits, just report locations  */
+#define CM_SEARCH_NULL2        (1<<7)  /* use post hoc second null model           */
+#define CM_SEARCH_RSEARCH      (1<<8)  /* use RSEARCH parameterized CM             */
+#define CM_SEARCH_CMGREEDY     (1<<9)  /* use greedy alg to resolve CM overlaps    */
+#define CM_SEARCH_HMMGREEDY    (1<<10) /* use greedy alg to resolve HMM overlaps   */
+#define CM_SEARCH_HMMVITERBI   (1<<11) /* search with CP9 HMM Viterbi              */
+#define CM_SEARCH_HMMFORWARD   (1<<12) /* search with CP9 HMM Forward              */
 
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]
@@ -1192,28 +1187,30 @@ typedef struct hybridscaninfo_s {
                         */			
 } HybridScanInfo_t;
 
-/* Structure FilterInfo_t: 
+/* Structure SearchInfo_t: 
  * 
- * Information for filters for CM scans.  <nrounds> holds number of
- * rounds of filtering.  <search_opts>, <cutoff>, <ftype>, and <hsi>
+ * Information for CM searches, including info on filters.  
+ * <nrounds> holds number of rounds of filtering.  
+ * <search_opts>, <cutoff>, <stype>, and <hsi>
  * are all arrays of length <nrounds + 1>, running [0..nrounds].  
  * The final value in all those arrays (index <nrounds>) corresponds to
  * the final scan, when filtering is finished.  A special case is when
  * <nrounds> == 0, in this case we're not filtering.
  */                                                                                                      
-typedef struct filterinfo_s {
+typedef struct searchinfo_s {
   int    nrounds;            /* number of rounds of filtering, if 0, we're not filtering */
-  int   *search_opts;        /* [0..n..nrounds] search options for each round of filtering including 0th round, the final round */
-  float *cutoff;             /* [0..n..nrounds] bit score threshold for each round */
-  int   *ftype;              /* [0..n..nrounds] filter 'type' "FILTER_WITH_HMM", "FILTER_WITH_HYBRID" for n < nrounds, NO_FILTER for n == nrounds*/
-  HybridScanInfo_t **hsi;    /* [0..n..nrounds] hybrid scan info for FILTER_WITH_HYBRID rounds, NULL if ftype[f] == FILTER_WITH_HMM */
-  
-} FilterInfo_t;
-/* possible values for ftype[] of FilterInfo_t objects */
-#define FILTER_WITH_HMM    0  
-#define FILTER_WITH_HYBRID 1
-#define FILTER_WITH_CM     2
-#define NO_FILTER          3
+  int   *stype;              /* [0..n..nrounds] search 'type' "SEARCH_WITH_HMM", "SEARCH_WITH_HYBRID", or "SEARCH_WITH_CM" */
+  int   *search_opts;        /* [0..n..nrounds] search options for each round of filtering, including the final round */
+  int   *cutoff_type;        /* [0..n..nrounds] SCORE_CUTOFF or E_CUTOFF */
+  float *cutoff;             /* [0..n..nrounds] cutoff threshold for each round, bit sc if cutoff_type[n] == SCORE_CUTOFF, else E-value */
+  ScanMatrix_t     **smx;    /* [0..n..nrounds] scanning DP matrix for each round, for final round (n==nrounds) si->smx[nrounds] == cm->smx */
+  HybridScanInfo_t **hsi;    /* [0..n..nrounds] hybrid scan info for SEARCH_WITH_HYBRID rounds, NULL if stype[f] != SEARCH_WITH_HYBRID */
+} SearchInfo_t;
+
+/* possible values for stype[] array in SearchInfo_t objects */
+#define SEARCH_WITH_HMM    0  
+#define SEARCH_WITH_HYBRID 1
+#define SEARCH_WITH_CM     2
 
 /* Structure: CM_t
  * Incept:    SRE, 9 Mar 2000 [San Carlos CA]
@@ -1309,22 +1306,15 @@ typedef struct cm_s {
 			  * are always calc'ed (histograms built) using non-enforced CMs/CP9s  */
   float      ffract;     /* desired filter fraction (0.99 -> filter out 99% of db), default: 0.*/
   float     *root_trans; /* transition probs from state 0, saved IFF zeroed in ConfigLocal()   */
-  int        hmmpad;     /* if(cm->search_opts & CM_SEARCH_HMMPAD) # of res to -/+ from i/j    */
   float      pbegin;     /* local begin prob to spread across internal nodes for local mode    */
   float      pend;       /* local end prob to spread across internal nodes for local mode      */
   
-  /* search cutoffs */
-  int       cutoff_type;/* either SC_CUTOFF or E_CUTOFF                                       */
-  float     cutoff;     /* min bit score or max E val to keep in a scan (depending on cutoff_type) */
-  int   cp9_cutoff_type;/* either SC_CUTOFF or E_CUTOFF                                       */
-  float cp9_cutoff;     /* min bit score or max E val to keep from a CP9 scan                 */
   
   int    W;             /* max d: max size of a hit (EPN 08.18.05) */
   float  el_selfsc;     /* score of a self transition in the EL state
 			 * the EL state emits only on self transition (EPN 11.15.05)*/
   int   iel_selfsc;     /* scaled int version of el_selfsc         */
 
-  CMStats_t *stats;     /* holds Gumbel stats and HMM filtering thresholds */
 
   /* DP matrices and some auxiliary info for DP algorithms */
   ScanMatrix_t *smx;     /* matrices, info for CYK/Inside scans with this CM */
@@ -1333,11 +1323,20 @@ typedef struct cm_s {
   CP9_MX       *cp9_bmx; /* another growable CP9 DP matrix, 'b' is for backward,
 			  * only alloc'ed to any significant size if we do Forward,Backward->Posteriors */
 
-  /* filter info describing the cmsearch filtering strategy, NULL unless created in cmsearch */
-  FilterInfo_t *fi;
+  /* search info describing the cmsearch filtering strategy, NULL unless created in cmsearch */
+  SearchInfo_t *si;
 
-  /* From 1.0-ification, based on HMMER3 */
+  CMStats_t *stats;     /* holds Gumbel stats and HMM filtering thresholds */
+
   const  ESL_ALPHABET *abc;     /* ptr to alphabet info (cm->abc->K is alphabet size)*/
+
+  /* EPN, Mon Dec  3 13:27:07 2007, these should be unnec, once SearchInfo_t is properly implemented */
+  /* search cutoffs */
+  //int       cutoff_type;/* either SCORE_CUTOFF or E_CUTOFF                                       */
+  //float     cutoff;     /* min bit score or max E val to keep in a scan (depending on cutoff_type) */
+  //int   cp9_cutoff_type;/* either SCORE_CUTOFF or E_CUTOFF                                       */
+  //float cp9_cutoff;     /* min bit score or max E val to keep from a CP9 scan                 */
+
 } CM_t;
 
 #endif /*STRUCTSH_INCLUDED*/

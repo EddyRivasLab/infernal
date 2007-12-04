@@ -586,10 +586,8 @@ extern int OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
 				   int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r);
 extern int  revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
 extern int  read_next_search_seq(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int do_revcomp, dbseq_t **ret_dbseq);
-extern void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq,
-			   int do_complement, int used_HMM);
-extern void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
-				       int used_HMM);
+extern void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_complement);
+extern void remove_hits_over_e_cutoff (CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_SQ *sq);
 extern seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master);
 extern seqs_to_aln_t *CreateSeqsToAlnFromSq(ESL_SQ **sq, int size, int i_am_mpi_master);
 extern int GrowSeqsToAln(seqs_to_aln_t *seqs_to_aln, int new_alloc, int i_am_mpi_master); 
@@ -612,10 +610,6 @@ extern struct p7prior_s *P7DefaultInfernalPrior(void);
 /* from stats.c */
 extern CMStats_t *AllocCMStats(int np);
 extern void FreeCMStats(CMStats_t *cmstats);
-extern int SetCMCutoff(CM_t *cm, int cm_cutoff_type, float cm_sc_cutoff, float cm_e_cutoff);
-extern int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e_cutoff,
-			float cm_e_cutoff);
-extern int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N);
 extern int debug_print_cmstats(CMStats_t *cmstats, int has_fthr);
 extern int debug_print_gumbelinfo(GumbelInfo_t *evd);
 extern int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr);
@@ -633,19 +627,22 @@ extern double RJK_ExtremeValueE (float x, double mu, double lambda);
 
 extern char resolve_degenerate (ESL_RANDOMNESS *r, char c);
 
-extern float MinCMScCutoff (CM_t *cm);
-extern float MinCP9ScCutoff (CM_t *cm);
-extern int   CM2Gumbel_mode(CM_t *cm, int *ret_cm_gum_mode, int *ret_cp9_gum_mode);
+extern float MinScCutoff (CM_t *cm, SearchInfo_t *si, int n);
+extern int   CM2Gumbel_mode(CM_t *cm, int search_opts, int *ret_cm_gum_mode, int *ret_cp9_gum_mode);
 extern int   CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest);
 extern int   CopyCMStatsGumbel(CMStats_t *src, CMStats_t *dest);
 extern int   CopyCMStats(CMStats_t *src, CMStats_t *dest);
-#ifdef HAVE_MPI
+/*extern int SetCMCutoff(CM_t *cm, int cm_cutoff_type, float cm_sc_cutoff, float cm_e_cutoff);
+  extern int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e_cutoff,
+  float cm_e_cutoff);
+extern int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N);
+extern float MinCP9ScCutoff (CM_t *cm);
 extern void parallel_make_histogram (int *gc_count, int *partitions, int num_partitions, 
 			      CM_t *cm, int num_samples, int sample_length,
 			      int doing_cp9_stats,
 			      int mpi_my_rank, int mpi_num_procs, 
 			      int mpi_master_rank);
-#endif
+*/
 
 /* from mpisupport.c */
 #if HAVE_MPI
@@ -654,6 +651,7 @@ extern int cm_worker_MPIBcast(int tag, MPI_Comm comm, char **buf, int *nalloc, E
 extern int cm_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm comm, CM_t **ret_cm);
 extern int cm_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm);
 extern int cm_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n);
+extern int cm_justread_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm comm, CM_t **ret_cm);
 extern int cm_justread_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm);
 extern int cm_justread_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n);
 
@@ -844,11 +842,12 @@ extern void cm_FreeHybridScanInfo(HybridScanInfo_t *hsi, CM_t *cm);
 extern int cm_CalcMaxSc(CM_t *cm, double **ret_maxsc, double **ret_maxsc_noss);
 extern Theta_t *cm_CalcTheta(CM_t *cm, Theta_t **ret_theta, float stepsize);
 
-/* from cm_filterinfo.c */
-extern int  cm_CreateFilterInfo(CM_t *cm, float cutoff);
-extern int  cm_AddHMMFilterInfo(CM_t *cm, int do_viterbi, float cutoff);
-extern void cm_FreeFilterInfo(FilterInfo_t *fi, CM_t *cm);
-extern void cm_DumpFilterInfo(FilterInfo_t *fi);
+/* from cm_searchinfo.c */
+extern int  cm_CreateSearchInfo(CM_t *cm, int cutoff_type, float cutoff);
+extern int  cm_AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_filter, int forward_filter,
+				     int hybrid_filter, ScanMatrix_t *smx, HybridScanInfo_t *hsi, int cutoff_type, float cutoff);
+extern void cm_FreeSearchInfo(SearchInfo_t *si, CM_t *cm);
+extern void cm_DumpSearchInfo(SearchInfo_t *si);
 extern void DumpSearchOpts(int search_opts);
-extern void cm_ValidateFilterInfo(FilterInfo_t *fi);
-extern void cm_UpdateFilterInfoCutoff(CM_t *cm, int nround, float cutoff);
+extern void cm_ValidateSearchInfo(CM_t *cm, SearchInfo_t *fi);
+extern void cm_UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float cutoff);

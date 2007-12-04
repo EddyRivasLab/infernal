@@ -364,24 +364,30 @@ write_ascii_cm(FILE *fp, CM_t *cm)
       fprintf(fp, "\n");
       for(p = 0; p < cm->stats->np; p++)
 	{
-	  fprintf(fp, "E-LC    %3d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-LC     %3d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[CM_LC][p]->N, cm->stats->gumAA[CM_LC][p]->L, 
 		  cm->stats->gumAA[CM_LC][p]->mu, cm->stats->gumAA[CM_LC][p]->lambda);
-	  fprintf(fp, "E-GC    %3d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-GC     %3d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[CM_GC][p]->N, cm->stats->gumAA[CM_GC][p]->L, 
 		  cm->stats->gumAA[CM_GC][p]->mu, cm->stats->gumAA[CM_GC][p]->lambda);
-	  fprintf(fp, "E-LI    %3d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-LI     %3d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[CM_LI][p]->N, cm->stats->gumAA[CM_LI][p]->L, 
 		  cm->stats->gumAA[CM_LI][p]->mu, cm->stats->gumAA[CM_LI][p]->lambda);
-	  fprintf(fp, "E-GI    %3d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-GI     %3d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[CM_GI][p]->N, cm->stats->gumAA[CM_GI][p]->L, 
 		  cm->stats->gumAA[CM_GI][p]->mu, cm->stats->gumAA[CM_GI][p]->lambda);
-	  fprintf(fp, "E-CP9L  %3d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[CP9_L][p]->N, cm->stats->gumAA[CP9_L][p]->L, 
-		  cm->stats->gumAA[CP9_L][p]->mu, cm->stats->gumAA[CP9_L][p]->lambda);
-	  fprintf(fp, "E-CP9G  %3d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[CP9_G][p]->N, cm->stats->gumAA[CP9_G][p]->L, 
-		  cm->stats->gumAA[CP9_G][p]->mu, cm->stats->gumAA[CP9_G][p]->lambda);
+	  fprintf(fp, "E-CP9LV  %3d  %5d  %5d  %10.5f  %10.5f\n", 
+		  p, cm->stats->gumAA[CP9_LV][p]->N, cm->stats->gumAA[CP9_LV][p]->L, 
+		  cm->stats->gumAA[CP9_LV][p]->mu, cm->stats->gumAA[CP9_LV][p]->lambda);
+	  fprintf(fp, "E-CP9GV  %3d  %5d  %5d  %10.5f  %10.5f\n", 
+		  p, cm->stats->gumAA[CP9_GV][p]->N, cm->stats->gumAA[CP9_GV][p]->L, 
+		  cm->stats->gumAA[CP9_GV][p]->mu, cm->stats->gumAA[CP9_GV][p]->lambda);
+	  fprintf(fp, "E-CP9LV  %3d  %5d  %5d  %10.5f  %10.5f\n", 
+		  p, cm->stats->gumAA[CP9_LF][p]->N, cm->stats->gumAA[CP9_LF][p]->L, 
+		  cm->stats->gumAA[CP9_LF][p]->mu, cm->stats->gumAA[CP9_LF][p]->lambda);
+	  fprintf(fp, "E-CP9GV  %3d  %5d  %5d  %10.5f  %10.5f\n", 
+		  p, cm->stats->gumAA[CP9_GF][p]->N, cm->stats->gumAA[CP9_GF][p]->L, 
+		  cm->stats->gumAA[CP9_GF][p]->mu, cm->stats->gumAA[CP9_GF][p]->lambda);
 	}
       /* currently either all EVD stats are calc'ed or none */
 
@@ -644,10 +650,14 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  gum_mode = CM_LI;
 	else if (strncmp(tok+2, "GI", 2) == 0) 
 	  gum_mode = CM_GI;
-	else if (strncmp(tok+2, "CP9L", 4) == 0) 
-	  gum_mode = CP9_L;
-	else if (strncmp(tok+2, "CP9G", 4) == 0) 
-	  gum_mode = CP9_G;
+	else if (strncmp(tok+2, "CP9LV", 4) == 0) 
+	  gum_mode = CP9_LV;
+	else if (strncmp(tok+2, "CP9GV", 4) == 0) 
+	  gum_mode = CP9_GV;
+	else if (strncmp(tok+2, "CP9LF", 4) == 0) 
+	  gum_mode = CP9_LF;
+	else if (strncmp(tok+2, "CP9GF", 4) == 0) 
+	  gum_mode = CP9_GF;
 	else                                         goto FAILURE;
 
 	/* now we know what EVD we're reading, read it */

@@ -120,18 +120,13 @@ CreateCMShell(void)
   cm->enf_seq     = NULL;
   cm->enf_scdiff  = 0.;
   cm->ffract      = 0.;
-  cm->cutoff_type = DEFAULT_CM_CUTOFF_TYPE; /* score cutoff */
-  cm->cutoff      = DEFAULT_CM_CUTOFF;      /* 0.0 bits */
-  cm->cp9_cutoff_type = DEFAULT_CP9_CUTOFF_TYPE; /* score cutoff */
-  cm->cp9_cutoff      = DEFAULT_CP9_CUTOFF;      /* 0.0 bits */
   cm->root_trans   = NULL;
-  cm->hmmpad       = DEFAULT_HMMPAD; /* 0 residues */
   cm->stats        = NULL;
   cm->smx          = NULL;
   cm->hbmx         = NULL;
   cm->cp9_mx       = NULL;
   cm->cp9_bmx      = NULL;
-  cm->fi           = NULL;
+  cm->si           = NULL;
   cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
 
@@ -318,7 +313,7 @@ void
 FreeCM(CM_t *cm)
 {
   if (cm->smx    != NULL) cm_FreeScanMatrixForCM(cm);    /* free this first, it needs some info from cm->stid */
-  if (cm->fi     != NULL) cm_FreeFilterInfo(cm->fi, cm); /* free this first, it needs some info from cm->stid */
+  if (cm->si     != NULL) cm_FreeSearchInfo(cm->si, cm); /* free this first, it needs some info from cm->stid */
   if (cm->name   != NULL) free(cm->name);
   if (cm->acc    != NULL) free(cm->acc);
   if (cm->desc   != NULL) free(cm->desc);
@@ -1718,7 +1713,7 @@ ExponentiateCM(CM_t *cm, double z)
 CM_t *
 DuplicateCM(CM_t *cm)
 {
-  cm_Fail("Duplicate CM is deprecated, you can undeprecate it, but then you have to figure out how to deal with cm->fi FilterInfo_t\n");
+  cm_Fail("Duplicate CM is deprecated, you can undeprecate it, but then you have to figure out how to deal with cm->si SearchInfo_t\n");
        
   int       status;
   int       v;	          /* counter over states */
@@ -1802,10 +1797,6 @@ DuplicateCM(CM_t *cm)
   else new->enf_seq = NULL;
   new->enf_scdiff = cm->enf_scdiff;
   new->ffract     = cm->ffract;
-  new->cutoff_type= cm->cutoff_type;
-  new->cutoff     = cm->cutoff;
-  new->cp9_cutoff_type = cm->cp9_cutoff_type;
-  new->cp9_cutoff = cm->cp9_cutoff;
   if(cm->root_trans == NULL)
     new->root_trans = NULL;
   else
@@ -1814,7 +1805,6 @@ DuplicateCM(CM_t *cm)
       for (v = 0; v < cm->cnum[0]; v++)
 	new->root_trans[v] = cm->root_trans[v];
     }
-  new->hmmpad = cm->hmmpad;
 
   new->cp9  = NULL;
 

@@ -40,84 +40,76 @@
  * 
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
- *           fround          - filtering round we're currently on, 
- *                             if fround == cm->fi->nrounds, we're done filtering (and possibly never filtered)
+ *           sround          - filtering round we're currently on, 
+ *                             if sround == cm->fi->nrounds, we're done filtering (and possibly never filtered)
  *           dsq             - the target sequence (digitized)
  *           i0              - start of target subsequence (often 1, beginning of dsq)
  *           j0              - end of target subsequence (often L, end of dsq)
- *           fround          - filter round, if > 0, we're filtering
+ *           sround          - filter round, if > 0, we're filtering
  *           results         - [0..cm-fi->nrounds] search_results_t to keep results for each round in, must be non NULL and empty
  *           ret_flen        - RETURN: subseq len that survived filter (NULL if not filtering)
  *           ret_sc          - RETURN: Highest scoring hit from search (even if below cutoff).
  *
  * Returns: eslOK on success.
  */
-int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, 
-			 search_results_t **results, int *ret_flen, float *ret_sc)
+int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int j0, search_results_t **results, int *ret_flen, float *ret_sc)
 {
   int               status;          /* easel status code */
   float             sc;              /* score of best hit in seq */
   float             bwd_sc;          /* score of best hit from Backward HMM algs */
   int               flen;            /* filter length, length of i0..j0 that survives filter */
-  int               use_cp9;         /* TRUE to use HMM for searching */
   int               h;               /* counter over hits */
   int               i, j;            /* subseq start/end points */
   int               do_collapse;     /* TRUE to collapse multiple overlapping hits together into a single hit */
   int               next_j;          /* for collapsing overlapping hits together */
   int               min_i;           /* a start point, used if we're scanning with HMM */
-  FilterInfo_t     *fi = cm->fi;     /* the FilterInfo */
-  int               W = cm->W;       /* W, max size of hit */
+  SearchInfo_t     *si = cm->si;     /* the SearchInfo */
 
-  /* convenience pointers to cm->fi for this 'filter round' of searching */
+  /* convenience pointers to cm->si for this 'filter round' of searching */
   float             cutoff;          /* cutoff for this round, HMM or CM, whichever is relevant for this round */
-  int               ftype;           /* filter type for this round FILTER_WITH_HMM, FILTER_WITH_HYBRID, FILTER_WITH_CM or NO_FILTER */
-  HybridScanInfo_t *hsi;             /* hybrid scan info for this round, NULL unless ftype is FILTER_WITH_HYBRID */
+  int               stype;           /* search type for this round SEARCH_WITH_HMM, SEARCH_WITH_HYBRID, or SEARCH_WITH_CM */
+  ScanMatrix_t     *smx;             /* scan matrix for this round, != NULL only if SEARCH_WITH_CM, and must == cm->smx if we're in the final round */
+  HybridScanInfo_t *hsi;             /* hybrid scan info for this round, NULL unless stype is SEARCH_WITH_HYBRID */
   search_results_t *round_results;   /* search_results for this round */
-  ScanMatrix_t     *smx;             /* will point to cm->smx if NO_FILTER || FILTER_WITH_HMM, else points to fi->hsi[fround]->smx */
 
   /* Contract checks */
   if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), CMH_BITS flag down.\n");
-  if(fi == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): filter info cm->fi is NULL.\n");
+  if(si == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): search info cm->si is NULL.\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): dsq is NULL.");
   if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): CMH_BITS flag down.\n");
-  if(fround > fi->nrounds)             ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): current round %d is greater than cm->fi->nrounds: %d\n", fround, fi->nrounds);
-  if(results[fround] == NULL)          ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): results for current round %d are NULL\n", fround);
-  if(results[fround]->num_results > 0) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): there's already hits in results for round %d.\n", fround);
+  if(sround > si->nrounds)             ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): current round %d is greater than cm->si->nrounds: %d\n", sround, si->nrounds);
+  if(results[sround] == NULL)          ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): results for current round %d are NULL\n", sround);
+
+  ESL_DPRINTF1(("In ActuallySearchTarget(), round: %d\n", sround));
 
   flen = (j0-i0+1);
 
   /* TEMPORARY */
-  if(fi->ftype[fround] == FILTER_WITH_HYBRID)cm_Fail("ActuallySearchTarget, hybrid filtering not yet implemented.\n");
+  if(si->stype[sround] == SEARCH_WITH_HYBRID) cm_Fail("ActuallySearchTarget, hybrid filtering not yet implemented.\n");
 
-  /* copy info for this round from FilterInfo fi */
-  cm->search_opts = fi->search_opts[fround]; 
-  cutoff          = fi->cutoff[fround];
-  ftype           = fi->ftype[fround];
-  hsi             = fi->hsi[fround]; /* may be NULL */
-  round_results   = results[fround]; /* may not be NULL, contract enforced this */
+  /* copy info for this round from SearchInfo fi */
+  cm->search_opts = si->search_opts[sround]; 
+  cutoff          = si->cutoff[sround];
+  stype           = si->stype[sround];
+  smx             = si->smx[sround]; /* may be NULL */
+  hsi             = si->hsi[sround]; /* may be NULL */
+  round_results   = results[sround]; /* may not be NULL, contract enforced this */
 
-  if(ftype == FILTER_WITH_HYBRID && hsi == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): current round %d is type FILTER_WITH_HYBRID, but hsi is NULL\n", fround);
-  if(ftype == FILTER_WITH_CM     && hsi == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): current round %d is type FILTER_WITH_CM, but hsi is NULL\n", fround);
-  if(ftype == FILTER_WITH_HYBRID || ftype == FILTER_WITH_CM) 
-    smx = hsi->smx; 
-  else
-    smx = cm->smx; 
-
-  /* Check if we need the CP9 */
-  use_cp9 = ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
-
-  /* Check if we have a valid CP9 (if we need it) */
-  if(use_cp9) {
-    if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), trying to use CP9 HMM that is NULL\n");
+  /* SEARCH_WITH_HMM section */
+  if(stype == SEARCH_WITH_HMM) { 
+    /* some SEARCH_WITH_HMM specific contract checks */
+    if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), trying to use CP9 HMM that is NULL.\n");
     if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
-  }      
+    if(smx != NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), round %d, SEARCH_WITH_HMM but smx != NULL.\n", sround);
+    if(hsi != NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), round %d, SEARCH_WITH_HMM but hsi != NULL.\n", sround);
+    if(! (cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD))
+      ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), search type for this round is SEARCH_WITH_HMM, but CM_SEARCH_HMMVITERBI and CM_SEARCH_HMMFORWARD flags are both down.");
 
-  if(use_cp9) { 
     search_results_t *fwd_results;
     /* Scan the (sub)seq in forward direction w/Viterbi or Forward, getting j end points of hits above cutoff */
     fwd_results = CreateResults(INIT_RESULTS);
     if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
-      if((status = cp9_FastViterbi(cm, errbuf, cm->cp9_mx, dsq, i0, j0, W, cutoff, fwd_results, 
+      if((status = cp9_FastViterbi(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, cutoff, fwd_results, 
 				   TRUE,   /* we're scanning */
 				   FALSE,  /* we're not ultimately aligning */
 				   TRUE,   /* be memory efficient */
@@ -125,7 +117,7 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i
 				   &sc)) != eslOK) return status;
     }
     else if(cm->search_opts & CM_SEARCH_HMMFORWARD) { 
-      if((status = cp9_FastForward(cm, errbuf, cm->cp9_mx, dsq, i0, j0, W, cutoff, fwd_results,
+      if((status = cp9_FastForward(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, cutoff, fwd_results,
 				   TRUE,   /* we're scanning */
 				   FALSE,  /* we're not ultimately aligning */
 				   TRUE,   /* be memory efficient */
@@ -140,9 +132,9 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i
 
     /* determine start points (i) of the hits based on backward direction (Viterbi or Backward) scan starting at j */
     for(h = 0; h < fwd_results->num_results; h++) {
-      min_i = (fwd_results->data[h].stop - W + 1) >= 1 ? (fwd_results->data[h].stop - W + 1) : 1;
+      min_i = (fwd_results->data[h].stop - cm->W + 1) >= 1 ? (fwd_results->data[h].stop - cm->W + 1) : 1;
       if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
-	if((status = cp9_FastViterbiBackward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, W, cutoff, 
+	if((status = cp9_FastViterbiBackward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, cm->W, cutoff, 
 					     round_results, /* report hits to this round's results */
 					     TRUE,   /* we're scanning */
 					     FALSE,  /* we're not ultimately aligning */
@@ -151,7 +143,7 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i
 					     &bwd_sc)) != eslOK) return status;
       }
       else { 
-	if((status = Xcp9_FastBackward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, W, cutoff, 
+	if((status = Xcp9_FastBackward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, cm->W, cutoff, 
 				       round_results, /* report hits to this round's results */
 				       TRUE,   /* we're scanning */
 				       FALSE,  /* we're not ultimately aligning */
@@ -165,20 +157,33 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i
     }	  
     FreeResults(fwd_results);
   }
-  else { /* do not use CP9, we're scanning with CM */
+  /* end of SEARCH_WITH_HMM section */
+  else if(stype == SEARCH_WITH_HYBRID) { 
+    /* contract check */
+    if(smx != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), round %d, SEARCH_WITH_HYBRID but smx != NULL.\n", sround);
+    if(hsi == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): current round %d is type SEARCH_WITH_HYBRID, but hsi is NULL\n", sround);
+    if((status = cm_cp9_HybridScan(cm, errbuf, cm->cp9_mx, dsq, hsi, i0, j0, hsi->W, cutoff, round_results, 
+				   NULL, NULL, /* don't return best score at each posn, and best scoring posn */
+				   &sc)) != eslOK) return status;
+  }  
+  else { /* stype == SEARCH_WITH_CM */
+    ESL_DASSERT1((stype == SEARCH_WITH_CM));
+    if(smx == NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), round %d, SEARCH_WITH_CM but smx == NULL.\n", sround);
+    if(sround == si->nrounds && smx != cm->smx) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), final round %d, SEARCH_WITH_CM but smx != cm->smx.\n", sround);
+    if(hsi != NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): round %d is type SEARCH_WITH_CM, but hsi is NULL\n", sround);
+
     if(cm->search_opts & CM_SEARCH_HBANDED) {
-      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status;
-      /*debug_print_hmm_bands(stdout, (j0-i0+1), cp9b, cm->tau, 3);*/
+      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status; 
       if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, round_results, cm->hbmx, &sc)) != eslOK) return status; }
       else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, round_results, cm->hbmx, &sc)) != eslOK) return status; }
     }
     else { /* don't do HMM banded search */
-      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, smx, dsq, i0, j0, W, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
-      else                                   { if((status = FastCYKScan    (cm, errbuf, smx, dsq, i0, j0, W, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
+      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, smx, dsq, i0, j0, smx->W, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
+      else                                   { if((status = FastCYKScan    (cm, errbuf, smx, dsq, i0, j0, smx->W, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
     }    
   }
 
-  if(fround < fi->nrounds) { /* we're filtering */
+  if(sround < si->nrounds) { /* we're filtering */
     int   prev_j = j0;
     int   nhits  = round_results->num_results;
     
@@ -190,28 +195,28 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i
       if(round_results->data[h].stop > prev_j) ESL_EXCEPTION(eslEINCOMPAT, "j's not in descending order");
       prev_j = round_results->data[h].stop;
 
-      i = ((round_results->data[h].stop  - (W-1)) >= 1)    ? (round_results->data[h].stop  - (W-1)) : 1;
-      j = ((round_results->data[h].start + (W-1)) <= j0)   ? (round_results->data[h].start + (W-1)) : j0;
+      i = ((round_results->data[h].stop  - (cm->W-1)) >= 1)    ? (round_results->data[h].stop  - (cm->W-1)) : 1;
+      j = ((round_results->data[h].start + (cm->W-1)) <= j0)   ? (round_results->data[h].start + (cm->W-1)) : j0;
 
-      if((h+1) < nhits) next_j = ((round_results->data[h+1].start + (W-1)) <= j0) ? (round_results->data[h+1].start + (W-1)) : j0;
+      if((h+1) < nhits) next_j = ((round_results->data[h+1].start + (cm->W-1)) <= j0) ? (round_results->data[h+1].start + (cm->W-1)) : j0;
       else              next_j = -1;
       
       /* Collapse multiple overlapping hits together into a single hit. 
        * *Unless* our next round of searching is the final one, and we're going to do HMM banded search,
        * in which case we want to treat each hit separately, so we get more reasonable bands.
        */
-      do_collapse = (((fround+1) == fi->nrounds) && (fi->search_opts[fi->nrounds] & CM_SEARCH_HBANDED)) ? FALSE : TRUE;
+      do_collapse = (((sround+1) == si->nrounds) && (si->search_opts[si->nrounds] & CM_SEARCH_HBANDED)) ? FALSE : TRUE;
       if(do_collapse) { 
 	while(((h+1) < nhits) && (next_j >= i)) { /* suck in hit */
 	  h++;
-	  i = ((round_results->data[h].stop - (W-1)) >= 1) ? (round_results->data[h].stop - (W-1)) : 1;
-	  if((h+1) < nhits) next_j = ((round_results->data[h+1].start + (W-1)) <= j0) ? (round_results->data[h+1].start + (W-1)) : j0;
+	  i = ((round_results->data[h].stop - (cm->W-1)) >= 1) ? (round_results->data[h].stop - (cm->W-1)) : 1;
+	  if((h+1) < nhits) next_j = ((round_results->data[h+1].start + (cm->W-1)) <= j0) ? (round_results->data[h+1].start + (cm->W-1)) : j0;
 	  else              next_j = -1;
 	  printf("\tsucked in subseq: hit %d new_i: %d j (still): %d\n", h, i, j);
 	}
       }
       /* next round: research this chunk that survived the filter */
-      if((status = ActuallySearchTarget(cm, errbuf, (fround+1), dsq, i, j, results, NULL, NULL)) != eslOK) return status;
+      if((status = ActuallySearchTarget(cm, errbuf, (sround+1), dsq, i, j, results, NULL, NULL)) != eslOK) return status;
     }
   }
   else { /* we're done filtering, and we're done searching, get alignments if nec */
@@ -1855,16 +1860,15 @@ seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, d
  * Purpose:  Given the needed information, prints the results.
  *
  *           cm                  the model
+ *           si                  SearchInfo, relevant round is final one, si->nrounds
  *           abc                 alphabet to use for output
  *           cons                consensus seq for model (query seq)
  *           dbseq               the database seq
  *           name                sequence name
  *           len                 length of the sequence
  *           do_complement       are we doing the minus strand
- *           used_HMM            did we use an HMM to get hits?
  */
-void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq,
-		    int do_complement, int used_HMM)
+void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_complement)
 {
   int i;
   char *name;
@@ -1874,7 +1878,7 @@ void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbse
   int in_revcomp;
   int header_printed = 0;
   int gc_comp;
-  float score_for_Eval; /* the score we'll determine the statistical signifance
+  float score_for_Eval; /* the score we'll determine the statistical significance
 			 * of. This will be the bit score stored in
 			 * dbseq unless (cm->flags & CM_ENFORCED)
 			 * in which case we subtract cm->enf_scdiff first. */
@@ -1890,25 +1894,18 @@ void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbse
    * resulting MSA in, but it has to make sense (see next few lines). */
   if(cm->abc->type == eslRNA) { 
       if(abc->type != eslRNA && abc->type != eslDNA)
-	cm_Fail("ERROR in print_results(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+	cm_Fail("print_results(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
   }
-  else if(cm->abc->K != abc->K)
-    cm_Fail("ERROR in print_results(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+  else if(cm->abc->K != abc->K) cm_Fail("print_results(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+  if(si == NULL) cm_Fail("print_results(), si == NULL.\n");
+  if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("print_results(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
 
-  if(used_HMM) {
-      if(cm->cp9_cutoff_type == E_CUTOFF) do_stats = TRUE;
-      else do_stats = FALSE;
-  }
-  else {
-    if(cm->cutoff_type == E_CUTOFF) do_stats = TRUE;
-    else do_stats = FALSE;
-  }
-  if(do_stats  && !(cm->flags & CMH_GUMBEL_STATS)) cm_Fail("ERROR in print_results, stats wanted but CM has no Gumbel stats\n");
+  do_stats = (si->cutoff_type[si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
+  if(do_stats  && !(cm->flags & CMH_GUMBEL_STATS)) cm_Fail("print_results(), stats wanted but CM has no Gumbel stats\n");
 
   if(do_stats) { /* Determine Gumbel mode to use */
-    CM2Gumbel_mode(cm, &cm_gum_mode, &cp9_gum_mode);
-    if(used_HMM) gum = cm->stats->gumAA[cp9_gum_mode];
-    else gum = cm->stats->gumAA[cm_gum_mode];
+    CM2Gumbel_mode(cm, cm->search_opts, &cm_gum_mode, &cp9_gum_mode);
+    gum = (si->stype[si->nrounds] == SEARCH_WITH_HMM) ? cm->stats->gumAA[cp9_gum_mode] : cm->stats->gumAA[cm_gum_mode];
   }
   emap = CreateEmitMap(cm);
   name = dbseq->sq[0]->name;
@@ -1991,12 +1988,12 @@ void print_results (CM_t *cm, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbse
  * 
  * Args:    
  *           cm      - the covariance model
+ *           si      - SearchInfo, relevant round is final one, si->nrounds
  *           results - the hits data structure
  *           seq     - seq hits lie within, needed to determine gc content
  *           used_HMM- TRUE if hits are to the CM's CP9 HMM, not the CMa
  */
-void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
-				int used_HMM)
+void remove_hits_over_e_cutoff (CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_SQ *sq)
 {
   int gc_comp;
   int i, x;
@@ -2012,59 +2009,49 @@ void remove_hits_over_e_cutoff (CM_t *cm, search_results_t *results, ESL_SQ *sq,
   float cutoff;         /* the max E-value we want to keep */
 
   /* Check contract */
-  if(!(cm->flags & CMH_GUMBEL_STATS))
-    cm_Fail("ERROR in remove_hits_over_e_cutoff, but CM has no GUM stats\n");
-  if(!(sq->flags & eslSQ_DIGITAL))
-    cm_Fail("ERROR in remove_hits_over_e_cutoff, sequences is not digitized.\n");
+  if(!(cm->flags & CMH_GUMBEL_STATS)) cm_Fail("remove_hits_over_e_cutoff(), but CM has no gumbel stats\n");
+  if(!(sq->flags & eslSQ_DIGITAL))    cm_Fail("remove_hits_over_e_cutoff(), sequences is not digitized.\n");
+  if(si == NULL) cm_Fail("remove_hits_over_e_cutoff(), si == NULL.\n");
+  if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("remove_hits_over_e_cutoff(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
 
-  if (results == NULL)
-    return;
+  if (results == NULL) return;
 
   /* Determine Gumbel mode to use */
-  CM2Gumbel_mode(cm, &cm_gum_mode, &cp9_gum_mode);
-  if(used_HMM) gum = cm->stats->gumAA[cp9_gum_mode];
-  else gum = cm->stats->gumAA[cm_gum_mode];
-
-  if(used_HMM) cutoff = cm->cp9_cutoff;
-  else         cutoff = cm->cutoff;
-
-  for (i=0; i<results->num_results; i++) 
-    {
-      gc_comp = get_gc_comp (sq, results->data[i].start, results->data[i].stop);
-      p = cm->stats->gc2p[gc_comp];
-      score_for_Eval = results->data[i].score;
-      if(cm->flags & CM_ENFORCED)
-	{
-	  /*printf("\n\tRM orig sc: %.3f", score_for_Eval);*/
-	  score_for_Eval -= cm->enf_scdiff;
-	  /*printf(" new sc: %.3f (diff: %.3f\n", score_for_Eval, cm->enf_scdiff);*/
-	}
-      /*printf("score_for_Eval: %f \n", score_for_Eval);*/
-      if (RJK_ExtremeValueE(score_for_Eval,
-			    gum[p]->mu, gum[p]->lambda) > cutoff) 
-	{
-	  results->data[i].start = -1;
-	}
-      /*printf("Eval: %f, start: %d\n", RJK_ExtremeValueE(score_for_Eval,
-	mu[gc_comp], lambda[gc_comp]),
-	results->data[i].start);*/
-    }
+  CM2Gumbel_mode(cm, si->search_opts[si->nrounds], &cm_gum_mode, &cp9_gum_mode);
+  gum = (si->stype[si->nrounds] == SEARCH_WITH_HMM) ? cm->stats->gumAA[cp9_gum_mode] : cm->stats->gumAA[cm_gum_mode];
   
-  for (x=0; x<results->num_results; x++) 
-    {
-      while (results->num_results > 0 && 
-	     results->data[results->num_results-1].start == -1)
-	results->num_results--;
-      if (x<results->num_results && results->data[x].start == -1) 
-	{
-	  swap = results->data[x];
-	  results->data[x] = results->data[results->num_results-1];
-	  results->data[results->num_results-1] = swap;
-	  results->num_results--;
-	}
+  ESL_DASSERT1((si->cutoff_type[si->nrounds] == E_CUTOFF));
+  cutoff = si->cutoff[si->nrounds];
+  
+  for (i=0; i<results->num_results; i++) {
+    gc_comp = get_gc_comp (sq, results->data[i].start, results->data[i].stop);
+    p = cm->stats->gc2p[gc_comp];
+    score_for_Eval = results->data[i].score;
+    if(cm->flags & CM_ENFORCED) {
+      /*printf("\n\tRM orig sc: %.3f", score_for_Eval);*/
+      score_for_Eval -= cm->enf_scdiff;
+      /*printf(" new sc: %.3f (diff: %.3f\n", score_for_Eval, cm->enf_scdiff);*/
     }
-  while (results->num_results > 0 &&
-	 results->data[results->num_results-1].start == -1)
+    /*printf("score_for_Eval: %f \n", score_for_Eval);*/
+    if (RJK_ExtremeValueE(score_for_Eval, gum[p]->mu, gum[p]->lambda) > cutoff)  
+      results->data[i].start = -1;
+    /*printf("Eval: %f, start: %d\n", RJK_ExtremeValueE(score_for_Eval,
+      mu[gc_comp], lambda[gc_comp]),
+      results->data[i].start);*/
+  }
+  
+  for (x=0; x<results->num_results; x++) {
+    while (results->num_results > 0 && 
+	   results->data[results->num_results-1].start == -1)
+      results->num_results--;
+    if (x<results->num_results && results->data[x].start == -1) {
+      swap = results->data[x];
+      results->data[x] = results->data[results->num_results-1];
+      results->data[results->num_results-1] = swap;
+      results->num_results--;
+    }
+  }
+  while (results->num_results > 0 && results->data[results->num_results-1].start == -1)
     results->num_results--;
   sort_results(results);
 }  
@@ -2832,7 +2819,7 @@ void parallel_search_database (ESL_SQFILE *dbfp, CM_t *cm, const ESL_ALPHABET *a
  *           i0              - start of target subsequence (often 1, beginning of dsq)
  *           j0              - end of target subsequence (often L, end of dsq)
  *           cm_cutoff       - minimum CM  score to report 
- *           cp9_cutoff      - minimum CP9 score to report (or keep if filtering)
+o *           cp9_cutoff      - minimum CP9 score to report (or keep if filtering)
  *           results         - search_results_t to keep results in, must be empty; if NULL, don't add to it
  *           do_filter       - TRUE if we should filter, but only if cm->search_opts tells us to 
  *           doing_cm_stats  - TRUE if the reason we're scanning this seq is to build

@@ -65,7 +65,7 @@ AllocCMStats(int np)
   return cmstats;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -92,140 +92,6 @@ FreeCMStats(CMStats_t *cmstats)
 }  
 
 
-/*
- * Function: SetCMCutoff
- * Date:     EPN, Thu May 17 13:30:41 2007
- * Purpose:  Fill cm->cutoff and cm->cutoff_type.
- */
-int SetCMCutoff(CM_t *cm, int cm_cutoff_type, float cm_sc_cutoff, float cm_e_cutoff)
-{
-  if(cm->search_opts & CM_SEARCH_HMMONLY) /* CM score cutoff won't be used */
-    {
-      cm->cutoff_type = SCORE_CUTOFF;
-      cm->cutoff   = 0.;
-    }
-  else
-    {
-      cm->cutoff_type = cm_cutoff_type;
-      if(cm->cutoff_type == SCORE_CUTOFF)
-	cm->cutoff = cm_sc_cutoff;
-      else 
-	{
-	  cm->cutoff = cm_e_cutoff;
-	  if(!(cm->flags & CMH_GUMBEL_STATS) && (!(cm->search_opts & CM_SEARCH_HMMONLY)))
-	    esl_fatal("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T.\n");
-	}
-    }
-  return eslOK;
-}
-
-/*
- * Function: SetCP9Cutoff
- * Date:     EPN, Thu May 17 13:33:14 2007
- * Purpose:  Fill cm->cp9_cutoff and cm->cp9_cutoff_type.
- */
-int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e_cutoff,
-		 float cm_e_cutoff)
-{
-  if(cm->search_opts & CM_SEARCH_HMMONLY || 
-     cm->search_opts & CM_SEARCH_HMMFILTER)
-    {
-      cm->cp9_cutoff_type = cp9_cutoff_type;  
-      if(cm->cp9_cutoff_type == SCORE_CUTOFF)
-	cm->cp9_cutoff = cp9_sc_cutoff;
-      else 
-	{
-
-	  if(!(cm->flags & CMH_GUMBEL_STATS))
-	    esl_fatal("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try --hmmT.\n");
-	  /*if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;
-	    if(cm->cutoff_type == E_CUTOFF && cp9_e_cutoff < cm_e_cutoff) cp9_e_cutoff = cm_e_cutoff;*/
-	  cm->cp9_cutoff = cp9_e_cutoff;
-	}
-    }
-  else /* we won't use the CP9 at all, set score cutoff with 0 bit cutoff */
-    {
-      cm->cp9_cutoff_type = SCORE_CUTOFF;
-      cm->cp9_cutoff      = 0.;
-    }
-  
-  return eslOK;
-}
-
-/*
- * Function: PrintSearchInfo
- * Date:     EPN, Thu May 17 14:47:36 2007
- * Purpose:  Print info about search (cutoffs, algorithm, etc.) to file or stdout 
- */
-int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N)
-{
-  int p, n;
-  int clen = 0;
-  float surv_fract;
-  float avg_hit_len;
-
-  for(n = 0; n < cm->nodes; n++) 
-    if     (cm->ndtype[n] == MATP_nd) clen += 2;
-    else if(cm->ndtype[n] == MATL_nd || cm->ndtype[n] == MATR_nd) clen += 1;
-
-  if(!(cm->search_opts & CM_SEARCH_HMMONLY))
-    {
-      if(cm->cutoff_type == E_CUTOFF)
-	{
-	  fprintf(fp, "CM cutoff (E value):  %.2f\n", cm->cutoff);
-	  for(p = 0; p < cm->stats->np; p++)
-	    fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
-		    (cm->stats->gumAA[cm_mode][p]->mu - 
-		     (log(cm->cutoff) / cm->stats->gumAA[cm_mode][p]->lambda)), 
-		    cm->stats->gumAA[cm_mode][p]->mu, cm->stats->gumAA[cm_mode][p]->lambda);
-	}		       
-      else if (cm->cutoff_type == SCORE_CUTOFF) 
-	fprintf(fp, "CM cutoff (bit sc):   %.2f\n", cm->cutoff);
-      printf ("CM search algorithm:  ");
-      if(cm->search_opts & CM_SEARCH_INSIDE) fprintf(fp, "Inside\n");
-      else fprintf(fp, "CYK\n");
-      printf ("CM configuration:     ");
-      if(cm->flags & CMH_LOCAL_BEGIN) fprintf(fp, "Local\n");
-      else fprintf(fp, "Glocal\n");
-    }
-  else 
-    fprintf(fp, "Scanning with CP9 HMM only\n");
-  if (cm->search_opts & CM_SEARCH_HMMFILTER)
-    fprintf(fp, "Filtering with a CP9 HMM\n");
-  
-  if(cm->search_opts & CM_SEARCH_HMMONLY || 
-     cm->search_opts & CM_SEARCH_HMMFILTER)
-    {
-      if(cm->cp9_cutoff_type == E_CUTOFF)
-	{
-	  if(!(cm->flags & CMH_GUMBEL_STATS))
-	    esl_fatal("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
-
-	  /* Predict survival fraction from filter based on E-value, consensus length, W and N */
-	  if(cp9_mode == CP9_G) avg_hit_len = clen;       /* should be weighted sum of gamma[0] from QDB calc */
-	  if(cp9_mode == CP9_L) avg_hit_len = clen * 0.5; /* should be weighted sum of gamma[0] from QDB calc */
-	  surv_fract = (cm->cp9_cutoff * ((2. * cm->W) - avg_hit_len)) / ((double) N); 
-	  /* HMM filtering sends j-W..i+W to be researched with CM for HMM hits i..j */
-	  fprintf(fp, "CP9 cutoff (E value): %.2f\n", cm->cp9_cutoff);
-	  fprintf(fp, "   Predicted survival fraction: %.5f (1/%.3f)\n", surv_fract, (1./surv_fract));
-	  for(p = 0; p < cm->stats->np; p++)
-	    fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
-		    (cm->stats->gumAA[cp9_mode][p]->mu - 
-		     (log(cm->cp9_cutoff) / cm->stats->gumAA[cp9_mode][p]->lambda)), 
-		    cm->stats->gumAA[cp9_mode][p]->mu, cm->stats->gumAA[cp9_mode][p]->lambda);
-	}
-      else if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
-	fprintf(fp, "CP9 cutoff (bit sc):  %.2f\n", cm->cp9_cutoff);
-      printf ("CP9 search algorithm: Forward/Backward\n");
-      printf ("CP9 configuration:    ");
-      if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) fprintf(fp, "Local\n");
-      else fprintf(fp, "Glocal\n");
-    }
-  printf     ("N (db size, nt):      %ld\n\n", N);
-  fflush(stdout);
-  return eslOK;
-}
-
 /* Function: debug_print_cmstats
  */
 int debug_print_cmstats(CMStats_t *cmstats, int has_fthr)
@@ -243,10 +109,14 @@ int debug_print_cmstats(CMStats_t *cmstats, int has_fthr)
       debug_print_gumbelinfo(cmstats->gumAA[CM_LI][p]);
       printf("cm_gi Gumbel:\t");
       debug_print_gumbelinfo(cmstats->gumAA[CM_GI][p]);
-      printf("cp9_l Gumbel:\t");
-      debug_print_gumbelinfo(cmstats->gumAA[CP9_L][p]);
-      printf("cp9_g Gumbel:\t");
-      debug_print_gumbelinfo(cmstats->gumAA[CP9_G][p]);
+      printf("cp9_lv Gumbel:\t");
+      debug_print_gumbelinfo(cmstats->gumAA[CP9_LV][p]);
+      printf("cp9_gv Gumbel:\t");
+      debug_print_gumbelinfo(cmstats->gumAA[CP9_GV][p]);
+      printf("cp9_lv Gumbel:\t");
+      debug_print_gumbelinfo(cmstats->gumAA[CP9_LF][p]);
+      printf("cp9_gv Gumbel:\t");
+      debug_print_gumbelinfo(cmstats->gumAA[CP9_GF][p]);
       printf("\n\n");
     }
 
@@ -283,15 +153,15 @@ int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr)
   double l_x;
   double g_x;
   double tmp_K, tmp_mu;
-  tmp_K = exp(cmstats->gumAA[CP9_G][0]->mu * cmstats->gumAA[CP9_G][0]->lambda) / 
-    cmstats->gumAA[CP9_G][0]->L;
-  tmp_mu = log(tmp_K * ((double) fthr->db_size)) / cmstats->gumAA[CP9_G][0]->lambda;
-  g_x = tmp_mu - (log(fthr->g_eval) / cmstats->gumAA[CP9_G][0]->lambda);
+  tmp_K = exp(cmstats->gumAA[CP9_GF][0]->mu * cmstats->gumAA[CP9_GF][0]->lambda) / 
+    cmstats->gumAA[CP9_GF][0]->L;
+  tmp_mu = log(tmp_K * ((double) fthr->db_size)) / cmstats->gumAA[CP9_GF][0]->lambda;
+  g_x = tmp_mu - (log(fthr->g_eval) / cmstats->gumAA[CP9_GF][0]->lambda);
 
-  tmp_K = exp(cmstats->gumAA[CP9_L][0]->mu * cmstats->gumAA[CP9_L][0]->lambda) / 
-    cmstats->gumAA[CP9_L][0]->L;
-  tmp_mu = log(tmp_K * ((double) fthr->db_size)) / cmstats->gumAA[CP9_L][0]->lambda;
-  l_x = tmp_mu - (log(fthr->l_eval) / cmstats->gumAA[CP9_L][0]->lambda);
+  tmp_K = exp(cmstats->gumAA[CP9_LF][0]->mu * cmstats->gumAA[CP9_LF][0]->lambda) / 
+    cmstats->gumAA[CP9_LF][0]->L;
+  tmp_mu = log(tmp_K * ((double) fthr->db_size)) / cmstats->gumAA[CP9_LF][0]->lambda;
+  l_x = tmp_mu - (log(fthr->l_eval) / cmstats->gumAA[CP9_LF][0]->lambda);
   printf("\tN: %d gsc: %.5f F: %.5f (%.5f bits) lsc: %.5f F: %.5f (%.5f bits)\n\tcmsc: %.5f db_size: %d was_fast: %d\n",
 	 fthr->N, fthr->g_eval, fthr->g_F, g_x, fthr->l_eval, fthr->l_F, l_x, fthr->cm_eval, fthr->db_size, fthr->was_fast);
   return eslOK;
@@ -307,11 +177,11 @@ int get_gc_comp(ESL_SQ *sq, int start, int stop)
 {
   /* contract check */
   if(sq->abc == NULL)
-    esl_fatal("get_gc_comp expects sq to have a valid alphabet.");
+    cm_Fail("get_gc_comp expects sq to have a valid alphabet.");
   if(! (sq->flags & eslSQ_DIGITAL))
-    esl_fatal("get_gc_comp expects sq to be digitized");
+    cm_Fail("get_gc_comp expects sq to be digitized");
   if(sq->abc->type != eslRNA && sq->abc->type != eslDNA)
-    esl_fatal("get_gc_comp expects alphabet of RNA or DNA");
+    cm_Fail("get_gc_comp expects alphabet of RNA or DNA");
 
   int status;
   int i;
@@ -328,7 +198,7 @@ int get_gc_comp(ESL_SQ *sq, int start, int stop)
   esl_vec_FSet(ct, sq->abc->K, 0.);
   for (i = start; i <= stop; i++)
   {
-    if(esl_abc_XIsGap(sq->abc, sq->dsq[i])) esl_fatal("in get_gc_comp, res %d is a gap!\n", i);
+    if(esl_abc_XIsGap(sq->abc, sq->dsq[i])) cm_Fail("in get_gc_comp, res %d is a gap!\n", i);
     esl_abc_FCount(sq->abc, ct, sq->dsq[i], 1.);
   }
   gc = ct[sq->abc->inmap[(int) 'G']] + ct[sq->abc->inmap[(int) 'C']];
@@ -338,7 +208,7 @@ int get_gc_comp(ESL_SQ *sq, int start, int stop)
   return ((int) gc);
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0; /* never reached */
 }
  
@@ -486,7 +356,7 @@ void GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double *
       esl_sq_Reuse(sq); 
     } 
   if (status != eslEOF) 
-    esl_fatal("Parse failed, line %d, file %s:\n%s", 
+    cm_Fail("Parse failed, line %d, file %s:\n%s", 
 	      sqfp->linenumber, sqfp->filename, sqfp->errbuf); 
   esl_sq_Destroy(sq); 
   esl_sqio_Rewind(sqfp);
@@ -502,7 +372,7 @@ void GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double *
   return; 
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 /*
@@ -542,81 +412,53 @@ double RJK_ExtremeValueE (float x, double mu, double lambda) {
 }
 
 /*
- * Function: MinCMScCutoff
+ * Function: MinScCutoff
  * Date:     EPN, Mon May  7 17:36:56 2007
- * Purpose:  Return the minimum bit score cutoff for a CM.
- *           Trivial if cm->cutoff_type == SCORE_CUTOFF,
- *           if E_CUTOFF return minimal bit score across 
+ *
+ * Purpose:  Return the minimum bit score cutoff for CM
+ *           for round n in SearchInfo_t si.
+ *           Trivial if si->cutoff_type[n] == SCORE_CUTOFF,
+ *           but if E_CUTOFF return minimal bit score across 
  *           all partitions for the E cutoff in the 
- *           appropriate search algorithm (local/glocal
- *           CYK/Inside combo)
+ *           appropriate search algorithm.
+ *
  */
-float MinCMScCutoff (CM_t *cm)
+float MinScCutoff (CM_t *cm, SearchInfo_t *si, int n)
 {
   float E, low_sc, sc;
-  int gum_mode;
+  int cm_mode, cp9_mode, gum_mode;
   int p; 
 
-  if(cm->cutoff_type == SCORE_CUTOFF)
-    return cm->cutoff;
+  /* contract check */
+  if(si == NULL)      cm_Fail("MinCMScCutoff(), si == NULL.\n");
+  if(n > si->nrounds) cm_Fail("MinCMScCutoff(), n (%d) > si->nrounds\n", n, si->nrounds);
+
+  if(si->cutoff_type[n] == SCORE_CUTOFF) return si->cutoff[n];
   
-  /* we better have stats */
-  if(!(cm->flags & CMH_GUMBEL_STATS))
-    esl_fatal("ERROR in MinCMScCutoff, cutoff type E value, but no stats.\n");
+  /* if we get here, cutoff_type is E_CUTOFF we better have stats */
+  ESL_DASSERT1((si->cutoff_type[n] == E_CUTOFF));
+  if(!(cm->flags & CMH_GUMBEL_STATS)) cm_Fail("ERROR in MinScCutoff, cutoff type E value, but no stats.\n");
 
   /* Determine appropriate Gumbel mode */
-  CM2Gumbel_mode(cm, &gum_mode, 
-	      NULL); /* don't care about CP9 Gumbel mode */
-  /*printf("in MinCMScCutoff, gum_mode: %d\n", gum_mode);*/
-  E = cm->cutoff;
+  CM2Gumbel_mode(cm, si->search_opts[n], &cm_mode, &cp9_mode);
+  E = si->cutoff[n];
 
-  low_sc = cm->stats->gumAA[gum_mode][0]->mu - 
-    (log(E) / cm->stats->gumAA[gum_mode][0]->lambda);
-  for (p = 1; p < cm->stats->np; p++) 
-    {
-      sc = cm->stats->gumAA[gum_mode][p]->mu - 
-	(log(E) / cm->stats->gumAA[gum_mode][p]->lambda);
-      if (sc < low_sc)
-	low_sc = sc;
+  if(si->stype[n] == SEARCH_WITH_HMM) {
+    ESL_DASSERT1(((si->search_opts[n] & CM_SEARCH_HMMVITERBI) || (si->search_opts[n] & CM_SEARCH_HMMFORWARD)));
+    gum_mode = cp9_mode; 
   }
-  return (low_sc);
-}
+  else if (si->stype[n] == SEARCH_WITH_CM) {
+    ESL_DASSERT1((! ((si->search_opts[n] & CM_SEARCH_HMMVITERBI) || (si->search_opts[n] & CM_SEARCH_HMMFORWARD))));
+    gum_mode = cm_mode; 
+  }
+  else cm_Fail("MinScCutoff(), asking for E-value cutoff for SEARCH_WITH_HYBRID search round.\n");
 
-/*
- * Function: MinCP9ScCutoff
- * Date:     EPN, Mon May  7 17:36:56 2007
- * Purpose:  Return the minimum bit score cutoff for a CM's
- *           CP9 HMM. Trivial if cm->cp9_cutoff_type == SCORE_CUTOFF,
- *           if E_CUTOFF return minimal bit score across 
- *           all partitions for the E cutoff in the 
- *           appropriate search algorithm (local/glocal)
- */
-float MinCP9ScCutoff (CM_t *cm)
-{
-  float E, low_sc, sc;
-  int gum_mode;
-  int p;
-
-  if(cm->cp9_cutoff_type == SCORE_CUTOFF)
-    return cm->cp9_cutoff;
-  
-  /* we better have stats */
-  if(!(cm->flags & CMH_GUMBEL_STATS))
-    esl_fatal("ERROR in MinCP9ScCutoff, cutoff type E value, but no stats.\n");
-
-  /* Determine appropriate Gumbel mode */
-  CM2Gumbel_mode(cm, NULL,  /* don't care about CM Gumbel mode */
-	      &gum_mode);
-  E = cm->cp9_cutoff;
-
-  low_sc = cm->stats->gumAA[gum_mode][0]->mu - 
+  low_sc = cm->stats->gumAA[cm_mode][0]->mu - 
     (log(E) / cm->stats->gumAA[gum_mode][0]->lambda);
-  for (p=1; p < cm->stats->np; p++) 
-    {
-      sc = cm->stats->gumAA[gum_mode][p]->mu - 
-	(log(E) / cm->stats->gumAA[gum_mode][p]->lambda);
-      if (sc < low_sc)
-	low_sc = sc;
+  for (p = 1; p < cm->stats->np; p++) {
+    sc = cm->stats->gumAA[gum_mode][p]->mu - 
+      (log(E) / cm->stats->gumAA[gum_mode][p]->lambda);
+    if (sc < low_sc) low_sc = sc;
   }
   return (low_sc);
 }
@@ -629,43 +471,35 @@ float MinCP9ScCutoff (CM_t *cm)
  *           given the flags and search options in the
  *           CM data structure.
  */
-int CM2Gumbel_mode(CM_t *cm, int *ret_cm_gum_mode, 
-		   int *ret_cp9_gum_mode)
+int CM2Gumbel_mode(CM_t *cm, int search_opts, int *ret_cm_gum_mode, int *ret_cp9_gum_mode)
 {
   int cm_gum_mode;
   int cp9_gum_mode;
 
   /* check contract */
-  if(!(cm->flags & CMH_CP9) || cm->cp9 == NULL)
-    esl_fatal("ERROR no CP9 in CM2Gumbel_mode()\n");
+  if(!(cm->flags & CMH_CP9) || cm->cp9 == NULL) cm_Fail("ERROR no CP9 in CM2Gumbel_mode()\n");
+  if(cm->flags & CMH_LOCAL_BEGIN) {
+    if(search_opts & CM_SEARCH_INSIDE) cm_gum_mode = CM_LI;
+    else               	               cm_gum_mode = CM_LC;
+  }
+  else {
+    if(search_opts & CM_SEARCH_INSIDE) cm_gum_mode = CM_GI;
+    else        	               cm_gum_mode = CM_GC;
+  }
 
-  if(cm->flags & CMH_LOCAL_BEGIN)
-    {
-      if(cm->search_opts & CM_SEARCH_INSIDE)
-	cm_gum_mode = CM_LI;
-      else
-	cm_gum_mode = CM_LC;
-    }
-  else
-    {
-      if(cm->search_opts & CM_SEARCH_INSIDE)
-	cm_gum_mode = CM_GI;
-      else
-	cm_gum_mode = CM_GC;
-    }
-
-  if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN)
-    cp9_gum_mode = CP9_L;
-  else
-    cp9_gum_mode = CP9_G;
+  if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) {
+    if(search_opts & CM_SEARCH_HMMFORWARD) cp9_gum_mode = CP9_LF;
+    else                                   cp9_gum_mode = CP9_LV;
+  }
+  else {
+    if(search_opts & CM_SEARCH_HMMFORWARD) cp9_gum_mode = CP9_GF;
+    else                                   cp9_gum_mode = CP9_GV;
+  }
 
   if(ret_cm_gum_mode  != NULL) *ret_cm_gum_mode  = cm_gum_mode;
   if(ret_cp9_gum_mode != NULL) *ret_cp9_gum_mode = cp9_gum_mode;
   return eslOK;
 }
-
-
-
 
 /* Function: CopyFThrInfo()
  * Incept:   EPN, Fri May  4 15:54:51 2007
@@ -695,7 +529,7 @@ int CopyCMStatsGumbel(CMStats_t *src, CMStats_t *dest)
 
   /* Check contract */
   if(src->np != dest->np)
-    esl_fatal("ERROR in CopyCMStatsGumbel() src->np: %d not equal to alloc'ed dest->np: %d\n", src->np, dest->np);
+    cm_Fail("ERROR in CopyCMStatsGumbel() src->np: %d not equal to alloc'ed dest->np: %d\n", src->np, dest->np);
 
   for(p = 0; p < src->np; p++)
     {
@@ -729,7 +563,7 @@ int CopyCMStats(CMStats_t *src, CMStats_t *dest)
 {
   /* Check contract */
   if(src->np != dest->np)
-    esl_fatal("ERROR in CopyCMStats() src->np: %d not equal to alloc'ed dest->np: %d\n", src->np, dest->np);
+    cm_Fail("ERROR in CopyCMStats() src->np: %d not equal to alloc'ed dest->np: %d\n", src->np, dest->np);
   
   CopyCMStatsGumbel(src, dest);
   CopyFThrInfo(src->fthrA[CM_LC], dest->fthrA[CM_LC]);
@@ -739,3 +573,179 @@ int CopyCMStats(CMStats_t *src, CMStats_t *dest)
   return eslOK;
 }
 
+#if 0
+/*
+ * Function: PrintSearchInfo
+ * Date:     EPN, Thu May 17 14:47:36 2007
+ * Purpose:  Print info about search (cutoffs, algorithm, etc.) to file or stdout 
+ */
+int PrintSearchInfo(FILE *fp, CM_t *cm, int cm_mode, int cp9_mode, long N)
+{
+  int p, n;
+  int clen = 0;
+  float surv_fract;
+  float avg_hit_len;
+
+  for(n = 0; n < cm->nodes; n++) 
+    if     (cm->ndtype[n] == MATP_nd) clen += 2;
+    else if(cm->ndtype[n] == MATL_nd || cm->ndtype[n] == MATR_nd) clen += 1;
+
+  if(!(cm->search_opts & CM_SEARCH_HMMONLY))
+    {
+      if(cm->cutoff_type == E_CUTOFF)
+	{
+	  fprintf(fp, "CM cutoff (E value):  %.2f\n", cm->cutoff);
+	  for(p = 0; p < cm->stats->np; p++)
+	    fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
+		    (cm->stats->gumAA[cm_mode][p]->mu - 
+		     (log(cm->cutoff) / cm->stats->gumAA[cm_mode][p]->lambda)), 
+		    cm->stats->gumAA[cm_mode][p]->mu, cm->stats->gumAA[cm_mode][p]->lambda);
+	}		       
+      else if (cm->cutoff_type == SCORE_CUTOFF) 
+	fprintf(fp, "CM cutoff (bit sc):   %.2f\n", cm->cutoff);
+      printf ("CM search algorithm:  ");
+      if(cm->search_opts & CM_SEARCH_INSIDE) fprintf(fp, "Inside\n");
+      else fprintf(fp, "CYK\n");
+      printf ("CM configuration:     ");
+      if(cm->flags & CMH_LOCAL_BEGIN) fprintf(fp, "Local\n");
+      else fprintf(fp, "Glocal\n");
+    }
+  else 
+    fprintf(fp, "Scanning with CP9 HMM only\n");
+  if (cm->search_opts & CM_SEARCH_HMMFILTER)
+    fprintf(fp, "Filtering with a CP9 HMM\n");
+  
+  if(cm->search_opts & CM_SEARCH_HMMONLY || 
+     cm->search_opts & CM_SEARCH_HMMFILTER)
+    {
+      if(cm->cp9_cutoff_type == E_CUTOFF)
+	{
+	  if(!(cm->flags & CMH_GUMBEL_STATS))
+	    cm_Fail("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T and/or --hmmT.\n");
+
+	  /* Predict survival fraction from filter based on E-value, consensus length, W and N */
+	  if(cp9_mode == CP9_G) avg_hit_len = clen;       /* should be weighted sum of gamma[0] from QDB calc */
+	  if(cp9_mode == CP9_L) avg_hit_len = clen * 0.5; /* should be weighted sum of gamma[0] from QDB calc */
+	  surv_fract = (cm->cp9_cutoff * ((2. * cm->W) - avg_hit_len)) / ((double) N); 
+	  /* HMM filtering sends j-W..i+W to be researched with CM for HMM hits i..j */
+	  fprintf(fp, "CP9 cutoff (E value): %.2f\n", cm->cp9_cutoff);
+	  fprintf(fp, "   Predicted survival fraction: %.5f (1/%.3f)\n", surv_fract, (1./surv_fract));
+	  for(p = 0; p < cm->stats->np; p++)
+	    fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
+		    (cm->stats->gumAA[cp9_mode][p]->mu - 
+		     (log(cm->cp9_cutoff) / cm->stats->gumAA[cp9_mode][p]->lambda)), 
+		    cm->stats->gumAA[cp9_mode][p]->mu, cm->stats->gumAA[cp9_mode][p]->lambda);
+	}
+      else if (cm->cp9_cutoff_type == SCORE_CUTOFF) 
+	fprintf(fp, "CP9 cutoff (bit sc):  %.2f\n", cm->cp9_cutoff);
+      printf ("CP9 search algorithm: Forward/Backward\n");
+      printf ("CP9 configuration:    ");
+      if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) fprintf(fp, "Local\n");
+      else fprintf(fp, "Glocal\n");
+    }
+  printf     ("N (db size, nt):      %ld\n\n", N);
+  fflush(stdout);
+  return eslOK;
+}
+
+/*
+ * Function: SetCMCutoff
+ * Date:     EPN, Thu May 17 13:30:41 2007
+ * Purpose:  Fill cm->cutoff and cm->cutoff_type.
+ */
+int SetCMCutoff(CM_t *cm, int cm_cutoff_type, float cm_sc_cutoff, float cm_e_cutoff)
+{
+  if(cm->search_opts & CM_SEARCH_HMMONLY) /* CM score cutoff won't be used */
+    {
+      cm->cutoff_type = SCORE_CUTOFF;
+      cm->cutoff   = 0.;
+    }
+  else
+    {
+      cm->cutoff_type = cm_cutoff_type;
+      if(cm->cutoff_type == SCORE_CUTOFF)
+	cm->cutoff = cm_sc_cutoff;
+      else 
+	{
+	  cm->cutoff = cm_e_cutoff;
+	  if(!(cm->flags & CMH_GUMBEL_STATS) && (!(cm->search_opts & CM_SEARCH_HMMONLY)))
+	    cm_Fail("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try -T.\n");
+	}
+    }
+  return eslOK;
+}
+
+/*
+ * Function: SetCP9Cutoff
+ * Date:     EPN, Thu May 17 13:33:14 2007
+ * Purpose:  Fill cm->cp9_cutoff and cm->cp9_cutoff_type.
+ */
+int SetCP9Cutoff(CM_t *cm, int cp9_cutoff_type, float cp9_sc_cutoff, float cp9_e_cutoff,
+		 float cm_e_cutoff)
+{
+  if(cm->search_opts & CM_SEARCH_HMMVITERBI || 
+     cm->search_opts & CM_SEARCH_HMMFORWARD)
+    {
+      cm->cp9_cutoff_type = cp9_cutoff_type;  
+      if(cm->cp9_cutoff_type == SCORE_CUTOFF)
+	cm->cp9_cutoff = cp9_sc_cutoff;
+      else 
+	{
+
+	  if(!(cm->flags & CMH_GUMBEL_STATS))
+	    cm_Fail("ERROR trying to use E-values but none in CM file.\nUse cmcalibrate or try --hmmT.\n");
+	  /*if(cp9_e_cutoff < DEFAULT_MIN_CP9_E_CUTOFF) cp9_e_cutoff = DEFAULT_MIN_CP9_E_CUTOFF;
+	    if(cm->cutoff_type == E_CUTOFF && cp9_e_cutoff < cm_e_cutoff) cp9_e_cutoff = cm_e_cutoff;*/
+	  cm->cp9_cutoff = cp9_e_cutoff;
+	}
+    }
+  else /* we won't use the CP9 at all, set score cutoff with 0 bit cutoff */
+    {
+      cm->cp9_cutoff_type = SCORE_CUTOFF;
+      cm->cp9_cutoff      = 0.;
+    }
+  
+  return eslOK;
+}
+
+
+/*
+ * Function: MinCP9ScCutoff
+ * Date:     EPN, Mon May  7 17:36:56 2007
+ * Purpose:  Return the minimum bit score cutoff for a CM's
+ *           CP9 HMM. Trivial if cm->cp9_cutoff_type == SCORE_CUTOFF,
+ *           if E_CUTOFF return minimal bit score across 
+ *           all partitions for the E cutoff in the 
+ *           appropriate search algorithm (local/glocal)
+ */
+float MinCP9ScCutoff (CM_t *cm)
+{
+  float E, low_sc, sc;
+  int gum_mode;
+  int p;
+
+  if(cm->cp9_cutoff_type == SCORE_CUTOFF)
+    return cm->cp9_cutoff;
+  
+  /* we better have stats */
+  if(!(cm->flags & CMH_GUMBEL_STATS))
+    cm_Fail("ERROR in MinCP9ScCutoff, cutoff type E value, but no stats.\n");
+
+  /* Determine appropriate Gumbel mode */
+  CM2Gumbel_mode(cm, cm->search_opts, NULL,  /* don't care about CM Gumbel mode */
+	      &gum_mode);
+  E = cm->cp9_cutoff;
+
+  low_sc = cm->stats->gumAA[gum_mode][0]->mu - 
+    (log(E) / cm->stats->gumAA[gum_mode][0]->lambda);
+  for (p=1; p < cm->stats->np; p++) 
+    {
+      sc = cm->stats->gumAA[gum_mode][p]->mu - 
+	(log(E) / cm->stats->gumAA[gum_mode][p]->lambda);
+      if (sc < low_sc)
+	low_sc = sc;
+  }
+  return (low_sc);
+}
+
+#endif
