@@ -446,10 +446,9 @@ cm_FloatizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 {
   int status;
   int j, v;
-  int d, y, yoffset, w;
+  int y, yoffset, w;
   int use_hmmonly;
   use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) ||  (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
-  int do_banded = ((cm->search_opts & CM_SEARCH_NOQDB) || use_hmmonly) ? FALSE : TRUE;
   int n_begl;
   int n_non_begl;
   int cur_cell;
@@ -576,10 +575,9 @@ int
 cm_IntizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 {
   int status;
-  int v, j, d, y, yoffset, w;
+  int v, j, y, yoffset, w;
   int use_hmmonly;
   use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) ||  (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
-  int do_banded = ((cm->search_opts & CM_SEARCH_NOQDB) || use_hmmonly) ? FALSE : TRUE;
   int n_begl;
   int n_non_begl;
   int cur_cell;
@@ -704,7 +702,7 @@ cm_IntizeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 int
 cm_FreeFloatsFromScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 {
-  int j, v;
+  int j;
 
   /* contract check */
   if(! smx->flags & cmSMX_HAS_FLOAT)    cm_Fail("cm_FreeFloatsFromScanMatrix(), si's cmSMX_HAS_FLOAT flag is down.");
@@ -737,7 +735,7 @@ cm_FreeFloatsFromScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 int
 cm_FreeIntsFromScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 {
-  int j, v;
+  int j;
 
   /* contract check */
   if(! smx->flags & cmSMX_HAS_INT)    cm_Fail("cm_FreeIntsFromScanMatrix(), si's cmSMX_HAS_INT flag is down.");
@@ -771,6 +769,9 @@ void
 cm_FreeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 {
   int j;
+  if(smx->dmin != cm->dmin) free(smx->dmin);
+  if(smx->dmax != cm->dmax) free(smx->dmax);
+
   for(j = 1; j <= smx->W; j++) {
     free(smx->dnAA[j]);
     free(smx->dxAA[j]);

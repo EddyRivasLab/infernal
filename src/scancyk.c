@@ -135,7 +135,7 @@ void FreeResults (search_results_t *r) {
   int i;
   if (r != NULL) {
     for (i=0; i < r->num_allocated; i++) {
-      if (r->data[i].tr != NULL)     FreeParsetree(r->data[i].tr);
+      if (r->data[i].tr     != NULL) FreeParsetree(r->data[i].tr);
       if (r->data[i].pcode1 != NULL) free(r->data[i].pcode1);
       if (r->data[i].pcode2 != NULL) free(r->data[i].pcode2);
     }

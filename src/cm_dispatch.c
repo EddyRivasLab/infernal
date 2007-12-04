@@ -63,6 +63,7 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i
   int               do_collapse;     /* TRUE to collapse multiple overlapping hits together into a single hit */
   int               next_j;          /* for collapsing overlapping hits together */
   int               min_i;           /* a start point, used if we're scanning with HMM */
+  int               h_existing;      /* number of hits in round_results that exist when this function is entered */
   SearchInfo_t     *si = cm->si;     /* the SearchInfo */
 
   /* convenience pointers to cm->si for this 'filter round' of searching */
@@ -94,6 +95,7 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i
   smx             = si->smx[sround]; /* may be NULL */
   hsi             = si->hsi[sround]; /* may be NULL */
   round_results   = results[sround]; /* may not be NULL, contract enforced this */
+  h_existing      = round_results->num_results; /* remember this, b/c we only want rescan survivors found in *this* function call */
 
   /* SEARCH_WITH_HMM section */
   if(stype == SEARCH_WITH_HMM) { 
@@ -191,7 +193,7 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i
      * so we add (W-1) to start point i and subtract (W-1) from j, and treat this region j-(W-1)..i+(W-1)
      * as having survived the filter.
      */
-    for(h = 0; h < nhits; h++) {
+    for(h = h_existing; h < nhits; h++) {
       if(round_results->data[h].stop > prev_j) ESL_EXCEPTION(eslEINCOMPAT, "j's not in descending order");
       prev_j = round_results->data[h].stop;
 
@@ -223,12 +225,12 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i
     if((round_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN))) {
       if(cm->align_opts & CM_ALIGN_OLDDP) { 
 	OldActuallyAlignTargets(cm, NULL, 
-				dsq, round_results,   /* put function into dsq_mode, designed for aligning search hits */
+				dsq, round_results, h_existing,  /* put function into dsq_mode, designed for aligning search hits */
 				0, 0, 0, NULL);
       }
       else {
 	if((status = ActuallyAlignTargets(cm, errbuf, NULL, 
-					  dsq, round_results,      /* put function into dsq_mode, designed for aligning search hits */
+					  dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
 					  0, 0, 0, NULL)) != eslOK) return status;
       }
     }
@@ -266,6 +268,7 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i
  *           seqs_to_aln    - the sequences (if sq_mode)
  *           dsq            - a single digitized sequence (if dsq_mode)
  *           search_results - search results with subsequence indices of dsq to align (if dsq_mode)
+ *           first_result   - index of first result in search_results to align (if dsq_mode)
  *           bdump_level    - verbosity level for band related print statements
  *           debug_level    - verbosity level for debugging print statements
  *           silent_mode    - TRUE to not print anything, FALSE to print scores 
@@ -280,7 +283,7 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i
  */
 int
 ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
-		       int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r)
+		     int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r)
 {
   int status;
   ESL_STOPWATCH *watch;         /* for timings */
@@ -291,6 +294,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   Parsetree_t **cur_tr;         /* pointer to the pointer to the parsetree we're currently creating */
   int L;                        /* length of sequence/subseq we're currently aligning */
   int i;                        /* counter over sequences */
+  int ip;                       /* offset index in search_results */
   int v;                        /* state counter */
   char        **postcode1 = NULL;/* posterior decode array of strings, tens place ('9' for 93) */
   char        **postcode2 = NULL;/* posterior decode array of strings, ones place ('3' for 93) */
@@ -373,16 +377,18 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   else if(seqs_to_aln == NULL && (dsq != NULL && search_results != NULL)) dsq_mode = TRUE;
   else   ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), can't determine mode (sq_mode or dsq_mode).\n");
 
-  if( sq_mode && (seqs_to_aln->sq       == NULL))  cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->sq is NULL.\n");
-  if( sq_mode && (seqs_to_aln->tr       != NULL))  cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->tr is non-NULL.\n");
-  if( sq_mode && (seqs_to_aln->cp9_tr   != NULL))  cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->cp9_tr is non-NULL.\n");
-  if( sq_mode && (seqs_to_aln->postcode1 != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode1 is non-NULL.\n");
-  if( sq_mode && (seqs_to_aln->postcode2 != NULL)) cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode2 is non-NULL.\n");
-  if( sq_mode && (seqs_to_aln->sc       != NULL))  cm_Fail("ActuallyAlignTargets(), in sq_mode, seqs_to_aln->sc is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->sq        == NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in sq_mode, seqs_to_aln->sq is NULL.\n");
+  if( sq_mode && (seqs_to_aln->tr        != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in sq_mode, seqs_to_aln->tr is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->cp9_tr    != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in sq_mode, seqs_to_aln->cp9_tr is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->postcode1 != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode1 is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->postcode2 != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode2 is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->sc        != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in sq_mode, seqs_to_aln->sc is non-NULL.\n");
   
-  if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMVITERBI)) cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_HMMVITERBI option on.\n");
-  if(dsq_mode && (cm->align_opts & CM_ALIGN_INSIDE))     cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_INSIDE option on.\n");
-  if(dsq_mode && (cm->align_opts & CM_ALIGN_SAMPLE))     cm_Fail("ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_SAMPLE option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMVITERBI)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_HMMVITERBI option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_INSIDE))     ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_INSIDE option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_SAMPLE))     ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_SAMPLE option on.\n");
+  if(dsq_mode && search_results == NULL)                 ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in dsq_mode, search_results are NULL.\n");
+  if(dsq_mode && (first_result > search_results->num_results)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in dsq_mode, first_result: %d > search_results->num_results: %d\n", first_result, search_results->num_results);
 
   /* save a copy of the align_opts we entered function with, we may change some of these for
    * individual target sequences, and we want to be able to change them back
@@ -429,7 +435,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   if((!do_sub) && (do_hbanded && (do_optacc || (do_post)))) out_mx = cm_hb_mx_Create(cm->M);
 
   if      (sq_mode)   nalign = seqs_to_aln->nseq;
-  else if(dsq_mode) { nalign = search_results->num_results; silent_mode = TRUE; }
+  else if(dsq_mode) { nalign = search_results->num_results - first_result; silent_mode = TRUE; }
 
   /* If sqmode: potentially allocate tr, cp9_tr, and postcodes. We'll set
    * seqs_to_aln->tr, seqs_to_aln->cp9_tr, seqs_to_aln->postcode1, 
@@ -504,12 +510,10 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
       L       = seqs_to_aln->sq[i]->n;
     }
     else if (dsq_mode) {
-      cur_dsq = dsq + search_results->data[i].start - 1;
-      cur_tr  = &(search_results->data[i].tr);
-      L       = search_results->data[i].stop - search_results->data[i].start + 1;
-      if(L < 0) {
-	printf("holy shit\n");
-      }
+      ip      = i + first_result;
+      cur_dsq = dsq + search_results->data[ip].start - 1;
+      cur_tr  = &(search_results->data[ip].tr);
+      L       = search_results->data[ip].stop - search_results->data[ip].start + 1;
       ESL_DASSERT1((L >= 0));
     }
     if (L == 0) continue; /* silently skip zero length seqs */
@@ -828,6 +832,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
  *           seqs_to_aln    - the sequences (if sq_mode)
  *           dsq            - a single digitized sequence (if dsq_mode)
  *           search_results - search results with subsequence indices of dsq to align (if dsq_mode)
+ *           first_result   - index of first result in search_results to align (if dsq_mode)
  *           bdump_level    - verbosity level for band related print statements
  *           debug_level    - verbosity level for debugging print statements
  *           silent_mode    - TRUE to not print anything, FALSE to print scores 
@@ -838,7 +843,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
  */
 int
 OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
-			int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r)
+			int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r)
 {
   int status;
   ESL_STOPWATCH *watch;         /* for timings */
@@ -849,6 +854,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   Parsetree_t **cur_tr;         /* pointer to the pointer to the parsetree we're currently creating */
   int L;                        /* length of sequence/subseq we're currently aligning */
   int i;                        /* counter over sequences */
+  int ip;                       /* offset index in search_results */
   int v;                        /* state counter */
   char        **postcode1 = NULL;/* posterior decode array of strings, tens place ('9' for 93) */
   char        **postcode2 = NULL;/* posterior decode array of strings, ones place ('3' for 93) */
@@ -926,7 +932,6 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_HMMVITERBI)) cm_Fail("OldActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_HMMVITERBI options are incompatible.\n");
   if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_POST))       cm_Fail("OldActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_POST options are incompatible.\n");
 
-
   /* determine mode */
   if     (seqs_to_aln != NULL && (dsq == NULL && search_results == NULL))  sq_mode = TRUE;
   else if(seqs_to_aln == NULL && (dsq != NULL && search_results != NULL)) dsq_mode = TRUE;
@@ -943,6 +948,8 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   if(dsq_mode && (cm->align_opts & CM_ALIGN_POST))       cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_POST option on.\n");
   if(dsq_mode && (cm->align_opts & CM_ALIGN_INSIDE))     cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_INSIDE option on.\n");
   if(dsq_mode && (cm->align_opts & CM_ALIGN_SAMPLE))     cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_SAMPLE option on.\n");
+  if(dsq_mode && search_results == NULL)                 cm_Fail("OldActuallyAlignTargets(), in dsq_mode, search_results are NULL.\n");
+  if(dsq_mode && (first_result > search_results->num_results)) cm_Fail("OldActuallyAlignTargets(), in dsq_mode, first_result: %d > search_results->num_results: %d\n", first_result, search_results->num_results);
 
   /* set the options based on cm->align_opts */
   if(cm->align_opts  & CM_ALIGN_SMALL)      do_small     = TRUE;
@@ -976,7 +983,7 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
   }
 
   if      (sq_mode)   nalign = seqs_to_aln->nseq;
-  else if(dsq_mode) { nalign = search_results->num_results; silent_mode = TRUE; }
+  else if(dsq_mode) { nalign = search_results->num_results - first_result; silent_mode = TRUE; }
 
   /* If sqmode: potentially allocate tr, cp9_tr, and postcodes. We'll set
    * seqs_to_aln->tr, seqs_to_aln->cp9_tr, seqs_to_aln->postcode1, and 
@@ -1054,9 +1061,10 @@ OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, sear
       L       = seqs_to_aln->sq[i]->n;
     }
     else if (dsq_mode) {
-      cur_dsq = dsq + search_results->data[i].start - 1;
-      cur_tr  = &(search_results->data[i].tr);
-      L       = search_results->data[i].stop - search_results->data[i].start + 1;
+      ip      = i + first_result; /* offset index in search_results structures */
+      cur_dsq = dsq + search_results->data[ip].start - 1;
+      cur_tr  = &(search_results->data[ip].tr);
+      L       = search_results->data[ip].stop - search_results->data[ip].start + 1;
     }
     if (L == 0) continue; /* silently skip zero length seqs */
 

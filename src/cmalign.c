@@ -827,13 +827,13 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 
   if(cm->align_opts & CM_ALIGN_OLDDP) { 
     OldActuallyAlignTargets(cm, seqs_to_aln,
-			    NULL, NULL,   /* we're not aligning search hits */
+			    NULL, NULL, 0,  /* we're not aligning search hits */
 			    esl_opt_GetInteger(go, "--banddump"),
 			    esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL);
   }
   else {
     if((status = ActuallyAlignTargets(cm, errbuf, seqs_to_aln,
-				       NULL, NULL,   /* we're not aligning search hits */
+				       NULL, NULL, 0,  /* we're not aligning search hits */
 				       esl_opt_GetInteger(go, "--banddump"),
 				       esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL)) != eslOK) goto ERROR;
   }

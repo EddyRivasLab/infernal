@@ -2550,7 +2550,7 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
 {
   int status;
   Parsetree_t **tr;             /* Parsetrees of emitted aligned sequences */
-  ESL_SQ  **sq;                 /* sequences */
+  ESL_SQ      **sq;             /* sequences */
   ESL_MSA           *msa;       /* alignment */
   float             *wgt;
   char *name;                   /* name for emitted seqs */
@@ -2572,6 +2572,8 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
   int spredict_total_ct;       /* total number of nodes we thought would be violations */
   int swrong_total_ct; /* total number of nodes we thought would be violations but were not */
   int namelen;         /* max int size for name */
+  char *tmp_name;           /* name for the seqs */
+  char *tmp_text_sq;        /* text seqs */
 
   spredict_total_ct = 0;
   swrong_total_ct = 0;
@@ -2591,38 +2593,36 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
 
   /* sample MSA(s) from the CM */
   nsampled = 0;
-  ESL_ALLOC(sq, sizeof(ESL_SQ) * msa_nseq);
-  ESL_ALLOC(tr, (sizeof(Parsetree_t) * msa_nseq));
-  ESL_ALLOC(wgt,(sizeof(float)       * msa_nseq));
+  ESL_ALLOC(sq, sizeof(ESL_SQ *)       * msa_nseq);
+  ESL_ALLOC(tr, (sizeof(Parsetree_t *) * msa_nseq));
+  ESL_ALLOC(wgt,(sizeof(float)         * msa_nseq));
   esl_vec_FSet(wgt, msa_nseq, 1.0);
   namelen = 3 + IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
+  ESL_ALLOC(tmp_name, sizeof(char) * namelen);
 
   while(nsampled < nsamples)
     {
-      if(nsampled != 0)
-	{
-	  /* clean up from previous MSA */
-	  esl_msa_Destroy(msa);
-	  free(matassign);
-	  free(useme);
-	  for (i = 0; i < msa_nseq; i++)
-	    {
-	      CP9FreeTrace(cp9_tr[i]);
-	      FreeParsetree(tr[i]);
-	      esl_sq_Reuse(sq[i]);
-	    }
-	  free(cp9_tr);
+      if(nsampled != 0)	{
+	/* clean up from previous MSA */
+	free(matassign);
+	free(useme);
+	for (i = 0; i < msa_nseq; i++) {
+	  CP9FreeTrace(cp9_tr[i]);
+	  FreeParsetree(tr[i]);
+	  esl_sq_Destroy(sq[i]);
 	}
+	free(cp9_tr);
+	esl_msa_Destroy(msa);
+      }
       /* Emit msa_nseq parsetrees from the CM */
       if(nsampled + msa_nseq > nsamples)
 	msa_nseq = nsamples - nsampled;
-      for (i = 0; i < msa_nseq; i++)
-	{
-	  ESL_ALLOC(name, sizeof(char) * namelen);
-	  sprintf(name, "seq%d", i+1);
-	  EmitParsetree(cm, r, name, TRUE, &(tr[i]), &(sq[i]), &L);
-	  free(name);
-	}
+      for (i = 0; i < msa_nseq; i++) {
+	ESL_ALLOC(name, sizeof(char) * namelen);
+	sprintf(name, "seq%d", i+1);
+	EmitParsetree(cm, r, name, TRUE, &(tr[i]), &(sq[i]), &L);
+	free(name);
+      }
       /* Build a new MSA from these parsetrees */
       Parsetrees2Alignment(cm, cm->abc, sq, NULL, tr, msa_nseq, TRUE, FALSE, &msa);
       /* MSA should be in text mode, not digitized */
@@ -2632,69 +2632,55 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
       /* Truncate the alignment prior to consensus column spos and after 
 	 consensus column epos */
       ESL_ALLOC(useme, sizeof(int) * (msa->alen+1));
-      for (apos = 0, cc = 0; apos < msa->alen; apos++)
-	{
-	  /* Careful here, placement of cc++ increment is impt, 
-	   * we want all inserts between cc=spos-1 and cc=spos,
-	   * and between cc=epos and cc=epos+1.
-	   */
-	  if(cc < (spos-1) || cc > epos)
-	    useme[apos] = 0;
-	  else
-	    useme[apos] = 1;
-	  if (!esl_abc_CIsGap(msa->abc, msa->rf[apos])) 
-	    { 
-	      cc++; 
-	      if(cc == (epos+1))
-		useme[apos] = 0; 
-	      /* we misassigned this guy, overwrite */ 
-	    }
+      for (apos = 0, cc = 0; apos < msa->alen; apos++) {
+	/* Careful here, placement of cc++ increment is impt, 
+	 * we want all inserts between cc=spos-1 and cc=spos,
+	 * and between cc=epos and cc=epos+1.
+	 */
+	useme[apos] = (cc < (spos-1) || cc > epos) ? 0 : 1;
+	if (!esl_abc_CIsGap(msa->abc, msa->rf[apos])) {
+	  cc++; 
+	  if(cc == (epos+1)) useme[apos] = 0; 
+	  /* we misassigned this guy, overwrite */ 
 	}
+      }
       esl_msa_ColumnSubset(msa, useme);
-      
-      /* Shorten the sequences */
-      char         *tmp_name;           /* name for the seqs */
-      char         *tmp_text_sq;        /* text seqs */
-      for (i = 0; i < msa_nseq; i++)
-	{
-	  MakeDealignedString(msa->abc, msa->aseq[i], msa->alen, msa->aseq[i], &(tmp_text_sq)); 
-	  ESL_ALLOC(tmp_name, sizeof(char) * namelen);
-	  sprintf(tmp_name, "seq%d", i+1);
-	  esl_sq_CreateFrom(tmp_name, tmp_text_sq, NULL, NULL, NULL);
-	  free(tmp_text_sq);
-	}
       
       /* Determine match assignment from RF annotation
        */
       ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
       matassign[0] = 0;
-      for (apos = 0; apos < msa->alen; apos++)
-	{
-	  matassign[apos+1] = 0;
-	  if (!esl_abc_CIsGap(msa->abc, msa->rf[apos])) 
-	    matassign[apos+1] = 1;
-	}
+      for (apos = 0; apos < msa->alen; apos++) {
+	matassign[apos+1] = 0;
+	if (!esl_abc_CIsGap(msa->abc, msa->rf[apos])) 
+	  matassign[apos+1] = 1;
+      }
       /* make fake tracebacks for each seq */
       esl_msa_Digitize(msa->abc, msa);
       CP9_fake_tracebacks(msa, matassign, &cp9_tr);
       
       /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
-      for (i = 0; i < msa->nseq; i++) {
+      for (i = 0; i < msa->nseq; i++) 
 	CP9TraceCount(shmm, sq[i]->dsq, wgt[i], cp9_tr[i]);
-      }
+
       nsampled += msa_nseq;
     }
 
   /* clean up from previous MSA */
-  esl_msa_Destroy(msa);
   free(matassign);
   free(useme);
+  //  free(name);
+  free(tmp_name);
   for (i = 0; i < msa_nseq; i++) {
     CP9FreeTrace(cp9_tr[i]);
     FreeParsetree(tr[i]);
     esl_sq_Destroy(sq[i]);
   }
+  esl_msa_Destroy(msa);
   free(cp9_tr);
+  free(tr);
+  free(sq);
+  free(wgt);
 
   /* The new shmm is in counts form, filled with observations from MSAs sampled
    * from the CM. 
@@ -2714,7 +2700,6 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
       printf("DONE PRINTING SAMPLED HMM PARAMS:\n");
     }
   for(nd = 0; nd <= shmm->M; nd++) {
-    //if(nd == 0 || nd == shmm->M) {
     if(print_flag) printf("nd:%d\n", nd);
     if(!(CP9_node_chi_squared(hmm, shmm, nd, chi_thresh, print_flag))) {
       if(subinfo == NULL) {
@@ -2739,7 +2724,6 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
       subinfo->swrong_ct[subinfo->imp_cc[nd]]++;
       if(print_flag) printf("NON-VIOLATION[%3d] %3d : spos: %3d | epos: %3d | non-subinfo->imp_cc: %d\n", nd, swrong_total_ct, spos, epos, subinfo->imp_cc[nd]);
     }  
-    //}
   }
 
   /*Next, renormalize shmm and logoddisfy it */
@@ -2836,41 +2820,35 @@ CP9_node_chi_squared(CP9_t *ahmm, CP9_t *shmm, int nd, float threshold, int prin
       d_nseq += shmm->t[nd][CTDD];
     }
 
-  if(nd != 0)
-    {
-      check_m_nseq = 0.;
-      for (x = 0; x < MAXABET; x++) check_m_nseq += shmm->mat[nd][x];
-      if((check_m_nseq >= m_nseq && ((check_m_nseq - m_nseq) > 0.0001)) ||
-	 (check_m_nseq  < m_nseq && ((m_nseq - check_m_nseq) > 0.0001)))     
-	{
-	  cm_Fail("ERROR: node: %d has different number of sampled match emissions and transitions.\n");
-	}
-    }
+  if(nd != 0) {
+    check_m_nseq = 0.;
+    for (x = 0; x < MAXABET; x++) check_m_nseq += shmm->mat[nd][x];
+    if(fabs(check_m_nseq - m_nseq) > 0.0001) cm_Fail("ERROR: node: %d has different number of sampled match emissions and transitions.\n");
+  }
   check_i_nseq = 0.;
   for (x = 0; x < MAXABET; x++) check_i_nseq += shmm->ins[nd][x];
   if((check_i_nseq >= i_nseq && ((check_i_nseq - i_nseq) > 0.0001)) ||
      (check_i_nseq  < i_nseq && ((i_nseq - check_i_nseq) > 0.0001)))     
-    {
-      cm_Fail("ERROR: node: %d has different number of sampled insert emissions and transitions.\n");
-    }
+    cm_Fail("ERROR: node: %d has different number of sampled insert emissions and transitions.\n");
 
   /* Perform chi-squared tests using code borrowed from SRE in 
    * infernal/testsuite/bandcyk-montecarlo-test.c */
   /* Check match emissions */
-  if(nd != 0)
-    {
-      esl_vec_FScale(ahmm->mat[nd], MAXABET, esl_vec_FSum(shmm->mat[nd], MAXABET)); /* convert to #'s */
-      p = FChiSquareFit(ahmm->mat[nd], shmm->mat[nd], MAXABET);	    /* compare #'s    */
-      if (p < threshold)
-	cm_Fail("Rejected match emission distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-      if(print_flag) printf("match emissions %d p: %f\n", nd, p);
+  if(nd != 0) {
+    esl_vec_FScale(ahmm->mat[nd], MAXABET, esl_vec_FSum(shmm->mat[nd], MAXABET)); /* convert to #'s */
+    p = FChiSquareFit(ahmm->mat[nd], shmm->mat[nd], MAXABET);	    /* compare #'s    */
+    if (p < threshold) {
+      printf("Rejected match emission distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+      ret_val = FALSE;
     }
+  }
   /* check insert emissions */
   esl_vec_FScale(ahmm->ins[nd], MAXABET, esl_vec_FSum(shmm->ins[nd], MAXABET)); /* convert to #'s */
   p = FChiSquareFit(ahmm->ins[nd], shmm->ins[nd], MAXABET);	/* compare #'s    */
-  if (p < threshold)
-    cm_Fail("Rejected insert emission distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
-  if(print_flag) printf("insert emissions %d p: %f\n", nd, p);
+  if (p < threshold) {
+    printf("Rejected insert emission distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+    ret_val = FALSE;
+  }
   
   /* check transitions */
   /* out of match, we're in global NW mode, so only non-zero begin is begin[1], 
@@ -2897,40 +2875,39 @@ CP9_node_chi_squared(CP9_t *ahmm, CP9_t *shmm, int nd, float threshold, int prin
     esl_vec_FScale(temp_ahmm_trans, cp9_TRANS_NMATCH, esl_vec_FSum(temp_shmm_trans, cp9_TRANS_NMATCH));     /* convert to #'s */         
     p = FChiSquareFit(temp_ahmm_trans, temp_shmm_trans, cp9_TRANS_NMATCH);   /* compare #'s    */
     if (p < threshold) {
-      if(print_flag) printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+      printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
       ret_val = FALSE;
     }
-    if(print_flag) printf("out of match %d p: %f\n", nd, p);
   }
   else {
     esl_vec_FScale(ahmm->t[nd], cp9_TRANS_NMATCH, esl_vec_FSum(shmm->t[nd], cp9_TRANS_NMATCH));     /* convert to #'s */         
     p = FChiSquareFit(ahmm->t[nd], shmm->t[nd], cp9_TRANS_NMATCH);   /* compare #'s    */
     if (p < threshold) {
-      if(print_flag) printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+      printf("Rejected match transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
       ret_val = FALSE;
     }
-    if(print_flag) printf("out of match %d p: %f\n", nd, p);
   }
   /* out of insert */
   esl_vec_FScale   (ahmm->t[nd] + cp9_TRANS_INSERT_OFFSET, cp9_TRANS_NINSERT, esl_vec_FSum(shmm->t[nd]+cp9_TRANS_INSERT_OFFSET, cp9_TRANS_NINSERT));     /* convert to #'s */         
   p = FChiSquareFit(ahmm->t[nd] + cp9_TRANS_INSERT_OFFSET, shmm->t[nd] + cp9_TRANS_INSERT_OFFSET, cp9_TRANS_NINSERT);   /* compare #'s    */
   if (p < threshold) {
-    if(print_flag) printf("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+    printf("Rejected insert transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
     ret_val = FALSE;
   }
-  if(print_flag) printf("out of insert %d p: %f\n", nd, p);
 
   /* out of delete */
   if(nd != 0) { /* D_0 does not exist */
     esl_vec_FScale     (ahmm->t[nd] + cp9_TRANS_DELETE_OFFSET, cp9_TRANS_NDELETE, esl_vec_FSum(shmm->t[nd] + cp9_TRANS_DELETE_OFFSET, cp9_TRANS_NDELETE));     /* convert to #'s */         
       p = FChiSquareFit(ahmm->t[nd] + cp9_TRANS_DELETE_OFFSET, shmm->t[nd] + cp9_TRANS_DELETE_OFFSET, cp9_TRANS_NDELETE);   /* compare #'s    */
       if (p < threshold) {
-	if(print_flag) printf("Rejected delete transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
+	printf("Rejected delete transition distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
 	ret_val = FALSE;
       }
-      if(print_flag) printf("out of delete %d p: %f\n\n", nd, p);
   }
   else if(print_flag) printf("\n");
+
+  free(temp_ahmm_trans);
+  free(temp_shmm_trans);
 
   /* we've scaled some probabilities into counts, we want to get back into prob form */
   CPlan9Renormalize(ahmm);

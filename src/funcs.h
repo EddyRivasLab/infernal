@@ -202,7 +202,7 @@ extern void         leftjustify(const ESL_ALPHABET *abc, char *s, int n);
 extern search_results_t *CreateResults (int size);
 extern void ExpandResults (search_results_t *r, int additional);
 extern void AppendResults (search_results_t *src_results, search_results_t *dest_results, int i0);
-extern void FreeResults (search_results_t *r);
+extern void FreeResults   (search_results_t *r);
 extern int  compare_results (const void *a_void, const void *b_void);
 extern void sort_results (search_results_t *results);
 extern void report_hit (int i, int j, int bestr, float score, search_results_t *results);
@@ -581,9 +581,9 @@ extern int ribosum_calc_targets(fullmat_t *fullmat);
 extern int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, 
 				search_results_t **results, int *ret_flen, float *ret_sc);
 extern int ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
-				int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r);
+				int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r);
 extern int OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
-				   int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r);
+				   int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r);
 extern int  revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
 extern int  read_next_search_seq(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int do_revcomp, dbseq_t **ret_dbseq);
 extern void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_complement);

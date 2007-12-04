@@ -940,12 +940,12 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 
   if(cm->align_opts & CM_ALIGN_OLDDP) { 
     OldActuallyAlignTargets(cm, seqs_to_aln,
-			    NULL, NULL,   /* we're not aligning search hits */
+			    NULL, NULL, 0,  /* we're not aligning search hits */
 			    0, 0, TRUE, NULL);
   }
   else {
     if((status = ActuallyAlignTargets(cm, errbuf, seqs_to_aln,
-				      NULL, NULL,   /* we're not aligning search hits */
+				      NULL, NULL, 0,  /* we're not aligning search hits */
 				      FALSE, 0, TRUE, NULL)) != eslOK) goto ERROR;
   }
   return eslOK;

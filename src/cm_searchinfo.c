@@ -141,6 +141,7 @@ cm_AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterb
   free(cm->si->stype);
   free(cm->si->smx);
   free(cm->si->hsi);
+  free(cm->si);
 
   cm->si = si;
   return eslOK;
@@ -170,6 +171,7 @@ cm_FreeSearchInfo(SearchInfo_t *si, CM_t *cm)
   free(si->cutoff_type);
   free(si->cutoff);
   free(si->stype);
+  free(si->smx);
   free(si->hsi);
 
   free(si);
