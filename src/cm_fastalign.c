@@ -4909,9 +4909,9 @@ alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hd
  * Benchmark driver
  *****************************************************************/
 #ifdef IMPL_FASTALIGN_BENCHMARK
-/* gcc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
+/* gcc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpalign.c 
  * gcc   -o benchmark-fastalign -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_fastalign.c old_cm_dpalign.o -linfernal -leasel -lm
- * mpicc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c  
+ * mpicc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpalign.c  
  * mpicc -o benchmark-fastalign -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_fastalign.c old_cm_dpalign.o -linfernal -leasel -lm
  * icc -g -O3 -static -DHAVE_CONFIG_H -I../easel  -c old_cm_dpalign.c 
  * icc -o benchmark-fastalign -O3 -static -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_fastalign.c old_cm_dpalign.o -linfernal -leasel -lm
