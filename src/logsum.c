@@ -1,7 +1,7 @@
 /* 
  * EPN, Fri Sep  7 16:44:58 2007
  *
- * The cm_FLogsum() function used for scaled integer log sums 
+ * The FLogsum() function used for scaled integer log sums 
  * in many Infernal dp functions. This was ripped out of HMMER3 
  * development code and Infernalized.
  *
@@ -47,7 +47,8 @@
  *
  * Following changes made for Infernal (which uses bits not nats):
  * o p7_ prefixes dropped.
- * o FLogsum() renamed to LogSum2() to match existing calls in Infernal
+ * o FLogsum() duplicated, and duplicate renamed to LogSum2() to match 
+ *   existing calls in Infernal
  * o magic 15.7 number changed to 23 (e^-15.7 = 1.5e-7) (2^-23. = 1.2e-7),
  *   not sure if this is right b/c I thought epsilon was 1.2e-7 (which != 1.5e-7)
  * o changed exp() calls to sreEXP2() calls.

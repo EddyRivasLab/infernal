@@ -52,8 +52,10 @@ OBJS  = cm.o\
 	cm_submodel.o\
 	cp9.o\
 	cp9_dp.o\
+	cp9_modelconfig.o\
 	cp9_modelmaker.o\
 	cp9_mx.o\
+	cp9_trace.o\
 	alphabet.o\
 	dispatch.o\
 	display.o\
@@ -66,6 +68,7 @@ OBJS  = cm.o\
 	prior.o\
 	rnamat.o\
 	searchinfo.o\
+	seqstoaln.o\
 	stats.o\
 	truncyk.o
 

@@ -1180,3 +1180,4 @@ FreeEmitMap(CMEmitMap_t *map)
   free(map->epos);
   free(map);
 }
+

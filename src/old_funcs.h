@@ -187,3 +187,44 @@ extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS
 				    int do_fastfil, int do_Fstep, int my_rank, int nproc, 
 				    int do_mpi, char *histfile, FILE *Rpts_fp, float *ret_F);
 #endif
+
+/* Old functions from cplan9.c for setting CP9 attributes.
+ * These attributes are never used anymore, as of 01.04.07
+ */
+#if 0
+extern void   CPlan9SetName(CP9_t *hmm, char *name);
+extern void   CPlan9SetAccession(CP9_t *hmm, char *acc);
+extern void   CPlan9SetDescription(CP9_t *hmm, char *desc);
+extern void   CPlan9ComlogAppend(CP9_t *hmm, int argc, char **argv);
+extern void   CPlan9SetCtime(CP9_t *hmm);
+#endif
+
+/* Old MPI functions from mpisupport.c */
+#if 0
+extern void mpi_worker_search_target(CM_t *cm, int my_rank);
+extern void mpi_worker_cm_and_cp9_search(CM_t *cm, int do_fast, int my_rank);
+extern void mpi_worker_cm_and_cp9_search_maxsc(CM_t *cm, int do_fast, int do_minmax, int my_rank);
+extern int dsq_MPISend(ESL_DSQ *dsq, int L, int dest);
+extern int dsq_MPIRecv(ESL_DSQ **ret_dsq, int *ret_L);
+extern int dsq_maxsc_MPISend(char *dsq, int L, float maxsc, int dest);
+extern int dsq_maxsc_MPIRecv(char **ret_dsq, int *ret_L, float *ret_maxsc);
+#endif
+
+#if 0
+/* old hmmband.c funcs */
+extern void simple_cp9_HMM2ijBands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right, 
+				   int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, 
+				   int *pn_min_d, int *pn_max_d, int *imin, int *imax, 
+				   int *jmin, int *jmax, int **cs2hn_map, int **cs2hs_map, 
+				   int debug_level);
+/* old hmmband.c Plan 7 HMM banding functions */
+extern void P7_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn_max, 
+			       double p_thresh, int state_type, int debug_level);
+extern void P7_map_cm2hmm_and_hmm2cm(CM_t *cm, struct plan7_s *hmm, int *node_cc_left, int *node_cc_right, int *cc_node_map, int ***ret_cs2hn_map, int ***ret_cs2hs_map, int ****ret_hns2cs_map, int debug_level);
+extern void P7_last_hmm_insert_state_hack(int M,  int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i);
+extern void P7_last_and_first_hmm_delete_state_hack(int M,  int *pn_min_m, int *pn_max_m, int *pn_min_d, int *pn_max_d, int L);
+extern void P7FullPosterior(int L, struct plan7_s *hmm, struct dpmatrix_s *forward, struct dpmatrix_s *backward, struct dpmatrix_s *mx);
+extern void P7_ifill_post_sums(struct dpmatrix_s *post, int L, int M, int *isum_pn_m, int *isum_pn_i, int *isum_pn_d);
+extern void P7_debug_print_post_decode(int L, int M, struct dpmatrix_s *posterior);
+extern void P7_debug_print_dp_matrix(int L, int M, struct dpmatrix_s *mx);
+#endif

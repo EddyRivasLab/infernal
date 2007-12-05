@@ -10,6 +10,7 @@
 #include <stdlib.h>
 
 #include "easel.h"
+#include "esl_gumbel.h"
 #include "esl_vectorops.h"
 
 #include "funcs.h"
@@ -620,6 +621,131 @@ void report_hit (int i, int j, int bestr, float score, search_results_t *results
 }
 
 
+/* Function: print_results
+ * Date:     RJK, Wed May 29, 2002 [St. Louis]
+ *           easelfied: EPN, Fri Dec  8 08:29:05 2006 
+ * Purpose:  Given the needed information, prints the results.
+ *
+ *           cm                  the model
+ *           si                  SearchInfo, relevant round is final one, si->nrounds
+ *           abc                 alphabet to use for output
+ *           cons                consensus seq for model (query seq)
+ *           dbseq               the database seq
+ *           name                sequence name
+ *           len                 length of the sequence
+ *           do_complement       are we doing the minus strand
+ */
+void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_complement)
+{
+  int i;
+  char *name;
+  int len;
+  search_results_t *results;
+  Fancyali_t *ali;
+  int in_revcomp;
+  int header_printed = 0;
+  int gc_comp;
+  float score_for_Eval; /* the score we'll determine the statistical significance
+			 * of. This will be the bit score stored in
+			 * dbseq unless (cm->flags & CM_ENFORCED)
+			 * in which case we subtract cm->enf_scdiff first. */
+  CMEmitMap_t *emap;    /* consensus emit map for the CM */
+  int do_stats;        
+  GumbelInfo_t **gum;      /* pointer to gum to use */
+  int cm_gum_mode;      /* Gumbel mode if we're using CM hits */
+  int cp9_gum_mode;     /* Gumbel mode if we're using HMM hits */
+  int p;                /* relevant partition */
+  int offset;         
+
+  /* Contract check: we allow the caller to specify the alphabet they want the 
+   * resulting MSA in, but it has to make sense (see next few lines). */
+  if(cm->abc->type == eslRNA) { 
+      if(abc->type != eslRNA && abc->type != eslDNA)
+	cm_Fail("print_results(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+  }
+  else if(cm->abc->K != abc->K) cm_Fail("print_results(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+  if(si == NULL) cm_Fail("print_results(), si == NULL.\n");
+  if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("print_results(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
+
+  do_stats = (si->cutoff_type[si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
+  if(do_stats  && !(cm->flags & CMH_GUMBEL_STATS)) cm_Fail("print_results(), stats wanted but CM has no Gumbel stats\n");
+
+  if(do_stats) { /* Determine Gumbel mode to use */
+    CM2Gumbel_mode(cm, cm->search_opts, &cm_gum_mode, &cp9_gum_mode);
+    gum = (si->stype[si->nrounds] == SEARCH_WITH_HMM) ? cm->stats->gumAA[cp9_gum_mode] : cm->stats->gumAA[cm_gum_mode];
+  }
+  emap = CreateEmitMap(cm);
+  name = dbseq->sq[0]->name;
+  len  = dbseq->sq[0]->n;
+
+  for (in_revcomp = 0; in_revcomp <= do_complement; in_revcomp++) {
+    results = dbseq->results[in_revcomp];
+    if (results == NULL || results->num_results == 0) continue;
+      
+    if (!header_printed) {
+      header_printed = 1;
+      printf (">%s\n\n", name);
+    }
+    printf ("  %s strand results:\n\n", in_revcomp ? "Minus" : "Plus");
+    
+    /*for (i=0; i<results->num_results; i++) 
+      printf("hit: %5d start: %5d stop: %5d len: %5d emitl[0]: %5d emitr[0]: %5d score: %9.3f\n", i, results->data[i].start, results->data[i].stop, len, results->data[i].tr->emitl[0], results->data[i].tr->emitr[0], results->data[i].score);*/
+    for (i=0; i<results->num_results; i++) {
+      gc_comp = get_gc_comp (dbseq->sq[in_revcomp], 
+			     results->data[i].start, results->data[i].stop);
+      printf (" Query = %d - %d, Target = %d - %d\n", 
+	      (emap->lpos[cm->ndidx[results->data[i].bestr]] + 1 
+	       - StateLeftDelta(cm->sttype[results->data[i].bestr])),
+	      (emap->rpos[cm->ndidx[results->data[i].bestr]] - 1 
+	       + StateRightDelta(cm->sttype[results->data[i].bestr])),
+	      COORDINATE(in_revcomp, results->data[i].start, len), 
+	      COORDINATE(in_revcomp, results->data[i].stop, len));
+      if (do_stats) {
+	p = cm->stats->gc2p[gc_comp];
+	score_for_Eval = results->data[i].score;
+	if(cm->flags & CM_ENFORCED) {
+	  printf("\n\torig sc: %.3f", score_for_Eval);
+	  score_for_Eval -= cm->enf_scdiff;
+	  printf(" new sc: %.3f (diff: %.3f\n\n", score_for_Eval, cm->enf_scdiff);
+	}
+	printf (" Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score,
+		RJK_ExtremeValueE(score_for_Eval, gum[p]->mu, 
+				  gum[p]->lambda),
+		esl_gumbel_surv((double) score_for_Eval, gum[p]->mu, 
+				gum[p]->lambda), gc_comp);
+	/*printf("  Mu[gc=%d]: %f, Lambda[gc=%d]: %f\n", gc_comp, mu[gc_comp], gc_comp,
+	  lambda[gc_comp]);
+	  ExtremeValueP(results->data[i].score, mu[gc_comp], 
+	  lambda[gc_comp]));*/
+      } 
+      else { /* don't print E-value stats */
+	printf (" Score = %.2f, GC = %3d\n", results->data[i].score, gc_comp);
+      }
+      printf ("\n");
+      if (results->data[i].tr != NULL) {
+	/* careful here, all parsetrees have emitl/emitr sequence indices
+	 * relative to the hit subsequence of the dsq (i.e. emitl[0] always = 1),
+	 * so we pass dsq + start-1.
+	 */
+	ali = CreateFancyAli (abc, results->data[i].tr, cm, cons, 
+			      dbseq->sq[in_revcomp]->dsq + 
+			      (results->data[i].start-1), 
+			      results->data[i].pcode1, results->data[i].pcode2);
+	
+	if(in_revcomp) offset = len - 1;
+	else           offset = 0;
+	PrintFancyAli(stdout, ali,
+		      (COORDINATE(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
+		      in_revcomp);
+	FreeFancyAli(ali);
+	printf ("\n");
+      }
+    }
+  }
+  fflush(stdout);
+  FreeEmitMap(emap);
+}
+
 /* Function: CountScanDPCalcs()
  * Date:     EPN, Wed Aug 22 09:08:03 2007
  *
@@ -713,3 +839,4 @@ CountScanDPCalcs(CM_t *cm, int L, int use_qdb)
     printf("%d CountScanDPCalcs total   %.0f\n", use_qdb, dpcalcs + dpcalcs_bif);*/
   return dpcalcs + dpcalcs_bif;
 }
+

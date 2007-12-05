@@ -1333,3 +1333,1519 @@ float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r,
   return 0.;
 }
 
+
+
+/* Following functions for CPlan9 HMMs were deprecated 01.04.07,
+ * we never use these aspects of a CP9 HMM.
+ */
+#if 0
+/* Function: CPlan9SetName()
+ * 
+ * Purpose:  Change the name of a CPlan9 HMM. Convenience function.
+ *      
+ * Note:     Trailing whitespace and \n's are chopped.     
+ */
+void
+CPlan9SetName(CP9_t *hmm, char *name)
+{
+  if (hmm->name != NULL) free(hmm->name);
+  hmm->name = Strdup(name);
+  StringChop(hmm->name);
+}
+/* Function: Cplan9SetAccession()
+ * 
+ * Purpose:  Change the accession number of a Cplan9 HMM. Convenience function.
+ *      
+ * Note:     Trailing whitespace and \n's are chopped.     
+ */
+void
+CPlan9SetAccession(CP9_t *hmm, char *acc)
+{
+  if (hmm->acc != NULL) free(hmm->acc);
+  hmm->acc = Strdup(acc);
+  StringChop(hmm->acc);
+  hmm->flags |= CPLAN9_ACC;
+}
+
+/* Function: CPlan9SetDescription()
+ * 
+ * Purpose:  Change the description line of a Cplan9 HMM. Convenience function.
+ * 
+ * Note:     Trailing whitespace and \n's are chopped.
+ */
+void
+CPlan9SetDescription(CP9_t *hmm, char *desc)
+{
+  if (hmm->desc != NULL) free(hmm->desc);
+  hmm->desc = Strdup(desc);
+  StringChop(hmm->desc); 
+  hmm->flags |= CPLAN9_DESC;
+}
+
+/* Function: CPlan9ComlogAppend()
+ * Date:     SRE, Wed Oct 29 09:57:30 1997 [TWA 721 over Greenland] 
+ * 
+ * Purpose:  Concatenate command line options and append to the
+ *           command line log.
+ */
+void
+CPlan9ComlogAppend(CP9_t *hmm, int argc, char **argv)
+{
+  int len;
+  int i;
+
+  /* figure out length of command line, w/ spaces and \n */
+  len = argc;
+  for (i = 0; i < argc; i++)
+    len += strlen(argv[i]);
+
+  /* allocate */
+  if (hmm->comlog != NULL)
+    {
+      len += strlen(hmm->comlog);
+      ESL_RALLOC(hmm->comlog, tmp, sizeof(char)* (len+1));
+    }
+  else
+    {
+      ESL_ALLOC(hmm->comlog, sizeof(char)* (len+1));
+      *(hmm->comlog) = '\0'; /* need this to make strcat work */
+    }
+
+  /* append */
+  strcat(hmm->comlog, "\n");
+  for (i = 0; i < argc; i++)
+    {
+      strcat(hmm->comlog, argv[i]);
+      if (i < argc-1) strcat(hmm->comlog, " ");
+    }
+}
+
+/* Function: CPlan9SetCtime()
+ * Date:     SRE, Wed Oct 29 11:53:19 1997 [TWA 721 over the Atlantic]
+ * 
+ * Purpose:  Set the ctime field in a new HMM to the current time.
+ */
+void
+CPlan9SetCtime(CP9_t *hmm)
+{
+  time_t date = time(NULL);
+  if (hmm->ctime != NULL) free(hmm->ctime);
+  hmm->ctime = Strdup(ctime(&date));
+  StringChop(hmm->ctime);
+}
+#endif
+
+/* OLD MPI functions */
+#if 0
+/**************************************************************************************/
+/* EPN, Thu May 10 10:11:18 2007 New functions roughly following Easel/H3 conventions */
+/* Function: mpi_worker_search_target()
+ * Incept:   EPN, Wed May  9 17:07:48 2007
+ * Purpose:  The main control for an MPI worker process for searching sequences. 
+ *           Worker receives CM, then loops over receipt of sequences, returning
+ *           best score and results data structure for each.
+ *           Never do revcomp, we'll call this function twice once with 
+ *           plus once with minus strand.
+ */
+void
+mpi_worker_search_target(CM_t *cm, int my_rank)
+{
+  ESL_DSQ *dsq = NULL;
+  int   L;
+  float best_sc;
+
+  int doing_cm_stats  = FALSE;
+  int doing_cp9_stats = FALSE;
+
+  if(cm->search_opts & CM_SEARCH_HMMONLY) doing_cp9_stats = TRUE;
+  else doing_cm_stats = TRUE;
+  /* Main loop */
+  while (dsq_MPIRecv(&dsq, &L) == eslOK)
+    {
+      best_sc = actually_search_target(cm, dsq, 1, L, 
+				       0.,    /* minimum CM bit cutoff, irrelevant (?) */
+				       0.,    /* minimum CP9 bit cutoff, irrelevant (?) */
+				       NULL,  /* do not keep results */
+				       FALSE, /* do not filter with a CP9 HMM */
+				       doing_cm_stats, doing_cp9_stats,
+				       NULL,  /* filter fraction, nobody cares */
+				       FALSE);/* don't align hits */
+      
+      MPI_Send(&(best_sc), 1, MPI_FLOAT, 0, 0, MPI_COMM_WORLD);
+      free(dsq);
+    }
+  return;
+
+}
+
+/* Function:  dsq_MPISend()
+ * Incept:    EPN, Wed May  9 17:30:14 2007
+ *
+ * Purpose:   Send sequence <dsq> to processor <dest>.
+ *            
+ * Returns:   eslOK on success; eslEINVAL if <dsq> is NULL
+ *            and eslESYS if there is an MPI error.
+ */
+int
+dsq_MPISend(ESL_DSQ *dsq, int L, int dest)
+{
+  int status;
+
+  if(dsq == NULL) { status = eslESYS; goto ERROR; }
+
+  if(MPI_Send(&L, 1, MPI_INT, dest, 0, MPI_COMM_WORLD) != 0) ESL_EXCEPTION(eslESYS, "mpi send failed.");
+  /* receiver will now allocate storage, before reading on...*/
+  if(MPI_Send(dsq, (L+2), MPI_BYTE, dest, 0, MPI_COMM_WORLD) != 0) ESL_EXCEPTION(eslESYS, "mpi send failed.");
+  return eslOK;
+
+ ERROR: 
+  return status;
+}
+
+/* Function: mpi_worker_cm_and_cp9_search()
+ * Incept:   EPN, Thu May 10 10:04:02 2007
+ * Purpose:  The main control for an MPI worker process for searching sequences
+ *           twice, once with a CM and once with a CP9, both scores are returned.
+ *           Called in mpi_FindCP9FilterThreshold9).
+ * Args:
+ *           cm       - the covariance model
+ *           do_fast  - don't search with CM, only do CP9 search
+ *           my_rank  - my MPI rank
+ */
+void
+mpi_worker_cm_and_cp9_search(CM_t *cm, int do_fast, int my_rank)
+{
+  int status;
+  ESL_DSQ *dsq = NULL;
+  int   L;
+  float *scores = NULL;
+  ESL_ALLOC(scores, sizeof(float) * 2);
+  int was_hmmonly;
+  if(cm->search_opts & CM_SEARCH_HMMONLY) was_hmmonly = TRUE;
+  else was_hmmonly = FALSE;
+  /* Main loop */
+  while (dsq_MPIRecv(&dsq, &L) == eslOK)
+    {
+      /* Do the CM search first */
+      cm->search_opts &= ~CM_SEARCH_HMMONLY;
+      if(do_fast)
+	scores[0] = 0.;
+      else
+	scores[0] = actually_search_target(cm, dsq, 1, L, 
+					   0.,    /* minimum CM bit cutoff, irrelevant (?) */
+					   0.,    /* minimum CP9 bit cutoff, irrelevant (?) */
+					   NULL,  /* do not keep results */
+					   FALSE, /* do not filter with a CP9 HMM */
+					   FALSE, FALSE, /* not doing CM or CP9 Gumbel calcs */
+					   NULL,  /* filter fraction, nobody cares */
+					   FALSE);/* don't align hits */
+      /* DO NOT CALL actually_search_target b/c that will run Forward then 
+       * Backward to get score of best hit, but we'll be detecting by a
+       * Forward scan (then running Backward only on hits above our threshold),
+       * since we're calc'ing the threshold here it's impt we only do Forward.
+       */
+      scores[1] =  CP9Forward(cm, dsq, 1, L, cm->W, 0., 
+			      NULL,   /* don't return scores of hits */
+			      NULL,   /* don't return posns of hits */
+			      NULL,   /* don't keep track of hits */
+			      TRUE,   /* we're scanning */
+			      FALSE,  /* we're not ultimately aligning */
+			      FALSE,  /* we're not rescanning */
+			      TRUE,   /* be memory efficient */
+			      NULL);  /* don't want the DP matrix back */
+      
+      MPI_Send(scores, 2, MPI_FLOAT, 0, 0, MPI_COMM_WORLD); /* send together so results don't interleave */
+      free(dsq);
+    }
+  if(was_hmmonly) cm->search_opts |= CM_SEARCH_HMMONLY;
+  else cm->search_opts &= ~CM_SEARCH_HMMONLY;
+  if(scores != NULL) free(scores);
+  /*printf("\trank: %d RETURNING!\n", my_rank);*/
+  return;
+  
+ ERROR:
+  if (dsq != NULL) free(dsq);
+  if (scores != NULL) free(scores);
+  return;
+}
+
+/* Function: mpi_worker_cm_and_cp9_search_maxsc()
+ * Incept:   EPN, Thu Jun  7 15:02:54 2007   
+ * Purpose:  The main control for an MPI worker process for searching sequences
+ *           with decreasingly fast techniques, quitting if any technique 
+ *           returns a score greater than some specified maximum bit score. 
+ *           The goal is to determine if the optimal parse is within a 
+ *           given range during a empirical HMM filter threshold calculation. 
+ *           Called in mpi_FindCP9FilterThreshold().
+ * Args:
+ *           cm       - the covariance model
+ *           do_fast  - don't search with CM, only do CP9 search
+ *           my_rank  - my MPI rank
+ */
+void
+mpi_worker_cm_and_cp9_search_maxsc(CM_t *cm, int do_fast, int do_minmax, int my_rank)
+{
+  int status;
+  char *dsq = NULL;
+  int   L;
+  float maxsc;
+  float *scores = NULL;
+  ESL_ALLOC(scores, sizeof(float) * 2);
+  int was_hmmonly;
+  int was_hbanded;
+  float orig_tau;
+  orig_tau = cm->tau;
+
+  if(cm->search_opts & CM_SEARCH_HMMONLY) was_hmmonly = TRUE;
+  else was_hmmonly = FALSE;
+  if(cm->search_opts & CM_SEARCH_HBANDED) was_hbanded = TRUE;
+  else was_hbanded = FALSE;
+  /* Main loop */
+  while (dsq_maxsc_MPIRecv(&dsq, &L, &maxsc) == eslOK)
+    {
+      /* Do the CM search first */
+      cm->search_opts &= ~CM_SEARCH_HMMONLY;
+      if(do_fast)
+	scores[0] = 0.;
+      else if(do_minmax)
+	{
+	  cm->search_opts |= CM_SEARCH_HBANDED;
+	  cm->tau = 0.1;
+	  scores[0] = actually_search_target(cm, dsq, 1, L,
+					     0.,    /* cutoff is 0 bits (actually we'll find highest
+						     * negative score if it's < 0.0) */
+					     0.,    /* CP9 cutoff is 0 bits */
+					     NULL,  /* don't keep results */
+					     FALSE, /* don't filter with a CP9 HMM */
+					     FALSE, /* we're not calcing CM  stats */
+					     FALSE, /* we're not calcing CP9 stats */
+					     NULL,  /* filter fraction N/A */
+					     FALSE);/* don't align hits */
+	  
+	  if(scores[0] < maxsc) /* search with another, less strict (lower tau)  HMM banded parse */
+	    {
+	      cm->tau = 1e-10;
+	      scores[0] = actually_search_target(cm, dsq, 1, L,
+						 0.,    /* cutoff is 0 bits (actually we'll find highest
+							 * negative score if it's < 0.0) */
+						 0.,    /* CP9 cutoff is 0 bits */
+						 NULL,  /* don't keep results */
+						 FALSE, /* don't filter with a CP9 HMM */
+						 FALSE, /* we're not calcing CM  stats */
+						 FALSE, /* we're not calcing CP9 stats */
+						 NULL,  /* filter fraction N/A */
+						 FALSE);/* don't align hits */
+	    }
+	}
+      else
+	scores[0] = actually_search_target(cm, dsq, 1, L, 
+					   0.,    /* minimum CM bit cutoff, irrelevant (?) */
+					   0.,    /* minimum CP9 bit cutoff, irrelevant (?) */
+					   NULL,  /* do not keep results */
+					   FALSE, /* do not filter with a CP9 HMM */
+					   FALSE, FALSE, /* not doing CM or CP9 Gumbel calcs */
+					   NULL,  /* filter fraction, nobody cares */
+					   FALSE);/* don't align hits */
+      
+      /* Now do HMM search, but if do_minmax, only do HMM search 
+       * if our CM score hasn't exceeded the max */
+      if(do_minmax && scores[0] > maxsc)
+	scores[1] = 0.;
+      else
+	/* DO NOT CALL actually_search_target b/c that will run Forward then 
+	 * Backward to get score of best hit, but we'll be detecting by a
+	 * Forward scan (then running Backward only on hits above our threshold),
+	 * since we're calc'ing the threshold here it's impt we only do Forward.
+	 */
+	scores[1] =  CP9Forward(cm, dsq, 1, L, cm->W, 0., 
+				NULL,   /* don't return scores of hits */
+				NULL,   /* don't return posns of hits */
+				NULL,   /* don't keep track of hits */
+				TRUE,   /* we're scanning */
+				FALSE,  /* we're not ultimately aligning */
+				FALSE,  /* we're not rescanning */
+				TRUE,   /* be memory efficient */
+				NULL);  /* don't want the DP matrix back */
+      MPI_Send(scores, 2, MPI_FLOAT, 0, 0, MPI_COMM_WORLD); /* send together so results don't interleave */
+      free(dsq);
+    }
+  if(was_hmmonly) cm->search_opts |= CM_SEARCH_HMMONLY;
+  else cm->search_opts &= ~CM_SEARCH_HMMONLY;
+  if(was_hbanded) cm->search_opts |= CM_SEARCH_HBANDED;
+  else cm->search_opts &= ~CM_SEARCH_HBANDED;
+  
+  if(scores != NULL) free(scores);
+  /*printf("\trank: %d RETURNING!\n", my_rank);*/
+  return;
+  
+ ERROR:
+  if (dsq != NULL) free(dsq);
+  if (scores != NULL) free(scores);
+  return;
+}
+
+/* Function:  dsq_MPIRecv()
+ * Incept:    EPN, Wed May  9 17:34:43 2007
+ *
+ * Purpose:   Receive a sequence sent from the master MPI process (src=0)
+ *            on a worker MPI process. 
+ *            
+ *            If it receives an end-of-data signal, returns <eslEOD>.
+ */
+int
+dsq_MPIRecv(ESL_DSQ **ret_dsq, int *ret_L)
+{
+  int status;
+  char *dsq = NULL;
+  MPI_Status mpistatus;
+  int L;
+  
+  if(MPI_Recv(&L, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_EXCEPTION(eslESYS, "mpi receive failed.");
+  ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
+  if(MPI_Recv(dsq, (L+2), MPI_CHAR, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0); ESL_EXCEPTION(eslESYS, "mpi receive failed.");
+  dsq[0] = dsq[(L+1)] = eslDSQ_SENTINEL;
+  *ret_L   = L;
+  *ret_dsq = dsq;
+  
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function:  dsq_maxsc_MPIRecv()
+ * Incept:    EPN, Thu Jun  7 15:00:29 2007    
+ *
+ * Purpose:   Receive a sequence and maximum score 
+ *            sent from the master MPI process (src=0)
+ *            on a worker MPI process. 
+ *            
+ *            If it receives an end-of-data signal, returns <eslEOD>.
+ */
+int
+dsq_maxsc_MPIRecv(char **ret_dsq, int *ret_L, float *ret_maxsc)
+{
+  int status;
+  char *dsq = NULL;
+  MPI_Status mpistatus;
+  int L;
+  float maxsc;
+  
+  MPI_Recv(&L, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus);
+  if (L == -1) return eslEOD;
+  ESL_ALLOC(dsq, sizeof(char) * (L+2));
+  MPI_Recv(dsq, (L+2), MPI_CHAR, 0, 0, MPI_COMM_WORLD, &mpistatus);
+  MPI_Recv(&maxsc, 1, MPI_FLOAT, 0, 0, MPI_COMM_WORLD, &mpistatus);
+  *ret_L   = L;
+  *ret_dsq = dsq;
+  *ret_maxsc = maxsc;
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+#endif
+
+
+#if 0
+/* Here are the P7 versions of the HMM banding related
+ * functions, for reference */
+
+/*****************************************************************************
+ * EPN 04.03.06
+ * Function: P7_hmm_band_bounds()
+ *
+ * Purpose:  Determine the band on all HMM states given the posterior
+ *           matrices. Do this by summing log probabilities, starting
+ *           at the sequence ends, and creeping in, until the half the
+ *           maximum allowable probability excluded is reached on each
+ *           side respectively.
+ * 
+ * below * = 'i', 'm' or 'd', for either (i)nsert, (m)atch or (d)elete states
+ * arguments:
+ *
+ * int post         posterior matrix for *mx (matches, inserts or deletes)
+ *                  2D int array [0.1..N][0.1..M] M = num nodes in HMM
+ * int   L          length of sequence (num rows of post matrix)
+ * int   M          number of nodes in HMM (num columns of post matrix)
+ * int  *isum_pn    [1..M] sum_pn[k] = sum over i of log probabilities
+ *                  from post->*mx[i][k]
+ *                  if NULL: don't use sums, just use raw log probs
+ * int pn_min       pn_min[k] = first position in band for * state of node k
+ *                  to be filled in this function.
+ * int pn_max       pn_max[k] = last position in band for * state of node k
+ *                  to be filled in this function.
+ * double p_thresh  the probability mass we're requiring is within each band
+ * int state_type   HMMMATCH, HMMINSERT, or HMMDELETE, for deletes we have to deal
+ *                  with the CM->HMM delete off-by-one issue (see code below).
+ * int debug_level  [0..3] tells the function what level of debugging print
+ *                  statements to print.
+ *****************************************************************************/
+void
+P7_hmm_band_bounds(int **post, int L, int M, int *isum_pn, int *pn_min, int *pn_max, 
+		   double p_thresh, int state_type, int debug_level)
+{
+  int k;         /* counter over nodes of the model */
+  int lmass_exc; /* the log of the probability mass currently excluded on the left*/
+  int rmass_exc; /* the log of the probability mass currently excluded on the right*/
+  int log_p_side;/* the log probability we're allowed to exclude on each side */
+  int curr_log_p_side; /* the log probability we're allowed to exclude on each side for the current state */
+  int argmax_pn; /* for curr state, the state with the highest log p, 
+	          * IFF we determine the entire sequence is outside the
+		  * band for a state, we set the band to a single position,
+		  * the most likely one. Therefore its value is only 
+		  * relevant (and valid!) if pmin[k] == L. 
+		  * (otherwise we'd have some positions within the band).*/
+  int max_post;  /* post[argmax_pn][k] for current k */
+  /* NOTE: all *log_p* structures, and other structures that hold log probs
+   * don't actually hold log probs. but scores, which are scaled up 1000X (INTSCALE)
+   */
+
+  log_p_side = Prob2Score(((1. - p_thresh)/2.), 1.); /* allowable prob mass excluded on each side */
+
+  /* step through each node */
+  for(k = 1; k <= M; k++)
+    {
+      curr_log_p_side = log_p_side; 
+      if(isum_pn != NULL) 
+	curr_log_p_side += isum_pn[k]; /* if we use sums strategy, normalize
+					* so total prob of entering k = 1. */
+      argmax_pn = 1;
+      max_post = post[1][k];
+      pn_min[k] = 2;
+      pn_max[k] = L-1;
+      lmass_exc = post[(pn_min[k]-1)][k];
+      rmass_exc = post[(pn_max[k]+1)][k];
+      /*creep in on the left, until we exceed our allowable prob mass to exclude.*/
+      while(pn_min[k] <= L && lmass_exc <= (curr_log_p_side))
+	{
+	  if(post[pn_min[k]][k] > max_post) /* save info on most likely posn 
+					     * in case whole seq is outside band */
+	    {
+	      max_post = post[pn_min[k]][k];
+	      argmax_pn = pn_min[k];
+	    }
+	  lmass_exc = ILogsum(lmass_exc, post[pn_min[k]][k]);
+	  pn_min[k]++;
+	}
+      /* we went one posn too far, back up*/
+      pn_min[k]--;
+      
+      /*creep in on the right, until we exceed our allowable prob mass to exclude.*/
+      while(pn_max[k] >= 1 && rmass_exc <= (curr_log_p_side))
+	{
+	  rmass_exc = ILogsum(rmass_exc, post[pn_max[k]][k]);
+	  pn_max[k]--;
+	}
+      /* we went one posn too far, back up*/
+      pn_max[k]++;
+      
+      if(pn_min[k] > pn_max[k])
+	{
+	  /* The sum of the posteriors for all posns for this state
+	   * is less than tau. Current strategy, set band to a single
+	   * cell, the most likely posn found when creeping in from left.
+	   */
+	  pn_min[k] = argmax_pn;
+	  pn_max[k] = argmax_pn;
+	}
+      if(state_type == HMMDELETE)
+	{
+	  /* We have to deal with off by ones in the delete states 
+	   * e.g. pn_min_d[k] = i, means posn i was last residue emitted
+	   * prior to entering node k's delete state. However, for a CM,
+	   * if a delete states sub-parsetree is bounded by i' and j', then
+	   * positions i' and j' HAVE YET TO BE EMITTED.
+	   */
+	  pn_min[k]++;
+	  pn_max[k]++;
+	  /* In plan 7 HMMs, a delete state can only be entered after
+	   * visiting at least one match state (M_1). But in a CM we 
+	   * can start in deletes, so we explicitly check and fix. 
+	   */
+	  if(pn_min[k] == 2) pn_min[k] = 1; 
+	}
+    }
+}
+
+
+/**************************************************************************
+ * P7_* functions no longer supported as of 10.26.06, 
+ *      They remain here for reference.
+ *      This code was written before the CMCP9Map_t data structure
+ *      was introduced.
+ * 
+ * simple_cp9_HMM2ijBands() is an attempt I made to simplify the horribly
+ *   convoluted cp9_HMM2ijBands() function, but it wasn't nearly as effective,
+ *   and often obscured the optimal alignment, so it was abandoned.
+ */
+/**************************************************************************
+ * EPN 03.26.06
+ * P7_map_cm2hmm_and_hmm2cm()
+ *
+ * Purpose:  Determine maps between a CM and an HMM by filling 3 multi-dimensional
+ *           arrays. All arrays must be pre-allocated and freed by caller.
+ * Args:    
+ * CM_t *cm          - the CM
+ * cplan9_s *hmm     - the HMM
+ * int *node_cc_left - consensus column each node's left emission maps to
+ *                     [0..(cm->nodes-1)], -1 if maps to no consensus column
+ * int *node_cc_right- consensus column each node's right emission corresponds to
+ *                     [0..(cm->nodes-1)], -1 if maps to no consensus column
+ * int *cc_node_map  - node that each consensus column maps to (is modelled by)
+ *                     [1..hmm_ncc]
+ * int **cs2hn_map   - 2D CM state to HMM node map, 1st D - CM state index
+ *                     2nd D - 0 or 1 (up to 2 matching HMM states), value: HMM node
+ *                     that contains state that maps to CM state, -1 if none.
+ * int **cs2hs_map   - 2D CM state to HMM node map, 1st D - CM state index
+ *                     2nd D - 2 elements for up to 2 matching HMM states, 
+ *                     value: HMM STATE (0(M), 1(I), 2(D) that maps to CM state, -1 if none.
+ * 
+ *                     For example: HMM node cs2hn_map[v][0], state cs2hs_map[v][0]
+ *                                  maps to CM state v.
+ * 
+ * int ***hns2cs_map  - 3D HMM node-state to CM state map, 1st D - HMM node index, 2nd D - 
+ *                      HMM state (0(M), 1(I), 2(D)), 3rd D - 2 elements for up to 
+ *                      2 matching CM states, value: CM states that map, -1 if none.
+ *              
+ *                     For example: CM states hns2cs_map[k][0][0] and hns2cs_map[k][0][1]
+ *                                  map to HMM node k's match state.
+ * Returns: (void) 
+ */
+void
+P7_map_cm2hmm_and_hmm2cm(CM_t *cm, struct plan7_s *hmm, int *node_cc_left, int *node_cc_right, int *cc_node_map, int ***ret_cs2hn_map, int ***ret_cs2hs_map, int ****ret_hns2cs_map, int debug_level)
+{
+
+  int status;
+  int k; /* HMM node counter */
+  int ks; /* HMM state counter (0(Match) 1(insert) or 2(delete)*/
+  int n; /* CM node that maps to HMM node k */
+  int nn; /* CM node index */
+  int n_begr; /* CM node index */
+  int is_left; /* TRUE if HMM node k maps to left half of CM node n */
+  int is_right; /* TRUE if HMM node k maps to right half of CM node n */
+  int v; /* state index in CM */
+  int v1, v2;
+  int **cs2hn_map;
+  int **cs2hs_map;
+  int ***hns2cs_map;
+
+  /* Allocate the maps */
+  ESL_ALLOC(cs2hn_map, sizeof(int *) * (cm->M+1));
+  ESL_ALLOC(cs2hn_map[0], sizeof(int) * 2 * (cm->M+1));
+  for(v = 0; v <= cm->M; v++) cs2hn_map[v]     = cs2hn_map[0] + v * 2; 
+  
+  ESL_ALLOC(cs2hs_map, sizeof(int *) * (cm->M+1));
+  ESL_ALLOC(cs2hs_map[0], sizeof(int) * 2 * (cm->M+1));
+  for(v = 0; v <= cm->M; v++) cs2hs_map[v]     = cs2hs_map[0] + v * 2; 
+
+  ESL_ALLOC(hns2cs_map, sizeof(int *) * (hmm->M+1));
+  ESL_ALLOC(hns2cs_map[0], sizeof(int) * 3 * 2 * (cm->M+1));
+  for(k = 0; k <= hmm->M; k++) 
+    {
+      hns2cs_map[k] = hns2cs_map[0] + k * 3 * 2; 
+      for(ks = 0; ks < 3; ks++) 
+	hns2cs_map[k][ks]    = hns2cs_map[k] + ks; 
+    }	
+      
+  /* Initialize the maps */
+  for(v = 0; v <= cm->M; v++)
+    {
+      cs2hn_map[v][0] = -1;
+      cs2hn_map[v][1] = -1;
+      cs2hs_map[v][0] = -1;
+      cs2hs_map[v][1] = -1;
+    }
+  for(k = 0; k <= hmm->M; k++)
+    {
+      for(ks = 0; ks < 3; ks++)
+	{
+	  hns2cs_map[k][ks][0] = -1;
+	  hns2cs_map[k][ks][1] = -1;
+	}
+    }
+
+  /* One of the few differences b/t this version (p7) of the function
+   * and the CP9 version, P7 HMMs have no node 0. We say nothing
+   * maps to the ROOT node states. (even though B maps to ROOT_S,
+   * N 'sort of' maps to ROOT_IL. Another difference is that Plan7 
+   * HMMs don't have  a D_1, I_M and D_M state, so they are not 
+   * mapped inside the following for loop.
+   */
+  
+  /* Step through HMM nodes, filling in maps as we go */
+  for(k = 1; k <= hmm->M; k++)
+    {
+      n = cc_node_map[k];
+      if(node_cc_left[n] == k)
+	{
+	  is_left = TRUE;
+	  is_right = FALSE;
+	}
+      else if(node_cc_right[n] == k)
+	{
+	  is_left = FALSE;
+	  is_right = TRUE;
+	}
+      switch(cm->ndtype[n])
+	{
+	case ROOT_nd:
+	case BIF_nd:
+	case BEGL_nd:
+	case BEGR_nd:
+	case END_nd:
+	  printf("ERROR: HMM node k doesn't map to MATP, MATR or MATL\n");
+	  exit(1);
+	  break;
+	  
+	case MATP_nd:
+	  if(is_left)
+	    {
+	      ks = 0; /*match*/
+	      v = cm->nodemap[n]; /*MATP_MP*/
+	      map_helper(cp9map, k, ks, v);
+	      v = cm->nodemap[n] + 1; /*MATP_ML*/
+	      map_helper(cp9map, k, ks, v);
+
+	      ks = 1; /*insert*/
+	      if(k != hmm->M)
+		{
+		  v = cm->nodemap[n] + 4; /*MATP_IL*/
+		  map_helper(cp9map, k, ks, v);
+		}
+	      ks = 2; /*delete*/
+	      if(k != hmm->M && k != 1)
+		{
+		  v = cm->nodemap[n] + 2; /*MATP_MR*/
+		  map_helper(cp9map, k, ks, v);
+		  v = cm->nodemap[n] + 3; /*MATP_D*/
+		  map_helper(cp9map, k, ks, v);
+		}
+	    }
+	  else if(is_right)
+	    {
+	      ks = 0; /*match*/
+	      v = cm->nodemap[n]; /*MATP_MP*/
+	      map_helper(cp9map, k, ks, v);
+	      v = cm->nodemap[n] + 2; /*MATP_MR*/
+	      map_helper(cp9map, k, ks, v);
+
+	      ks = 1; /*insert*/
+	      /* whoa... careful, we want the CM state that will insert to the RIGHT
+	       * of column k (the right consensus column modelled by MATP node n),
+	       * but MATP_IR inserts to the LEFT of column k.
+	       * What we need to determine is the CM node nn that models column k+1,
+	       * and further which half (left or right) of nn models k+1, then
+	       * we can map the HMM state to the correct CM state (see code).
+	       */
+	      if(k != hmm->M) /* There is o P7 I_M state */
+		{
+		  nn = cc_node_map[k+1];
+		  if(node_cc_left[nn] == (k+1))
+		    {
+		      /* find the closest BEGR node above node nn */
+		      n_begr = nn;
+		      while(n_begr >= 0 && (cm->ndtype[n_begr] != BEGR_nd))
+			n_begr--;
+		      if(n_begr == -1)
+			{
+			  printf("ERROR: can't find BEGR node above node %d\n", nn);
+			  printf("k is %d\n", k);
+			  exit(1);
+			}
+		      v = cm->nodemap[n_begr] + 1; /*BEGR_IL*/
+		      map_helper(cp9map, k, ks, v);
+		    }
+		  else if(node_cc_right[nn] == (k+1))
+		    {
+		      /*simple*/
+		      if(cm->ndtype[nn] == MATP_nd)
+			{
+			  v = cm->nodemap[nn] + 5; /*MATP_IR*/
+			  map_helper(cp9map, k, ks, v);
+			}
+		      else if(cm->ndtype[nn] == MATR_nd)
+			{
+			  v = cm->nodemap[nn] + 2; /*MATR_IR*/
+			  map_helper(cp9map, k, ks, v);
+			}
+		    }
+		} /* end of if (k != hmm->M) */
+	      /* NOT DONE YET, the MATP_IR has to map to an HMM state,
+	       * if the previous column (k-1) is modelled by a CM MATR or 
+	       * MATP node, then the above block will take care of this situation
+	       * (in the previous iteration of this loop when k = k-1), 
+	       * HOWEVER, if (k-1) is modelled by a MATL, then this 
+	       * MATP_IR's contribution to the HMM will be ignored, 
+	       * unless we do something about it. 
+	       */ 
+	      if(node_cc_left[cc_node_map[k-1]] == (k-1)) /*k-1 modelled by MATL*/
+		{
+		  if(cm->ndtype[cc_node_map[k-1]] != MATL_nd)
+		    {
+		      if(cm->ndtype[cc_node_map[k-1]] == MATP_nd)
+			{
+			  /* A rare, but possible case. Previous column
+			   * k-1 column is modelled by left half of the MATP
+			   * node whose right half models column k.
+			   * Proceed below. 
+			   */
+			}
+		      else
+			{
+			  printf("ERROR, full understanding of the CM architecture remains elusive 0)...\n");
+			  exit(1);
+			}
+		    }
+		  v = cm->nodemap[n] + 5; /*MATP_IR*/
+		  if(k != hmm->M) /* There is no plan 7 I_M state */
+		    map_helper(cp9map, (k-1), ks, v);
+		}
+	      
+	      ks = 2; /*delete*/
+	      v = cm->nodemap[n] + 1; /*MATP_ML*/
+	      if(k != 1 && k != hmm->M) /* There is no plan 7 D_1 or D_M state */
+		map_helper(cp9map, k, ks, v);
+	      
+	      v = cm->nodemap[n] + 3; /*MATP_D*/
+	      if(k != 1 && k != hmm->M) /* There is no plan 7 D_1 or D_M state */
+		map_helper(cp9map, k, ks, v);
+	    }
+	  break;
+
+	case MATL_nd:
+	  ks = 0; /*match*/
+	  v = cm->nodemap[n]; /*MATL_ML*/
+	  map_helper(cp9map, k, ks, v);
+
+	  ks = 1; /*insert*/
+	  v = cm->nodemap[n] + 2; /*MATL_IL*/
+	  if(k != hmm->M) /* There is no plan 7 I_M state */
+	    map_helper(cp9map, k, ks, v);
+
+	  ks = 2; /*delete*/
+	  v = cm->nodemap[n] + 1; /*MATL_D*/
+	  if(k != 1 && k != hmm->M) /* There is no plan 7 D_1 or D_M state */
+	    map_helper(cp9map, k, ks, v);
+
+	  break;
+
+	case MATR_nd:
+	  ks = 0; /*match*/
+	  v = cm->nodemap[n]; /*MATR_MR*/
+	  map_helper(cp9map, k, ks, v);
+
+	  ks = 1; /*insert*/
+	  /* whoa... careful, we want the CM state that will insert to the RIGHT
+	   * of column k (the consensus column modelled by MATR node n),
+	   * but MATR_IR inserts to the LEFT of column k.
+	   * What we need to determine is the CM node nn that models column k+1,
+	   * and further which half (left or right) of nn models k+1, then
+	   * we can map the HMM state to the correct CM state (see code).
+	   */
+	  if(k != hmm->M) /* There is no plan 7 I_M state */
+	    {
+	      nn = cc_node_map[k+1];
+	      if(node_cc_left[nn] == (k+1))
+		{
+		  /* find the closest BEGR node above node nn */
+		  n_begr = nn;
+		  while((cm->ndtype[n_begr] != BEGR_nd) && n_begr >= 0)
+		    n_begr--;
+		  if(n_begr == -1)
+		    {
+		      printf("ERROR: can't find BEGR node above node %d\n", nn);
+		      exit(1);
+		    }
+		  v = cm->nodemap[n_begr] + 1; /*BEGR_IL*/
+		  map_helper(cp9map, k, ks, v);
+		}
+	      else if(node_cc_right[nn] == (k+1))
+		{
+		  /*simple*/
+		  if(cm->ndtype[nn] == MATP_nd)
+		    {
+		      v = cm->nodemap[nn] + 5;
+		      map_helper(cp9map, k, ks, v);
+		    }
+		  else if(cm->ndtype[nn] == MATR_nd)
+		    {
+		      v = cm->nodemap[nn] + 2; /*MATP_IR*/
+		      map_helper(cp9map, k, ks, v);
+		    }
+		}
+	    } /* end of if (k != hmm->M) */
+	  if(node_cc_left[cc_node_map[k-1]] == (k-1)) /*k-1 modelled by MATL*/
+	    {
+	      //	      printf("ERROR, full understanding of the CM architecture remains elusive (1)...\n");
+	      exit(1);
+	    }
+	  
+	  ks = 2; /*delete*/
+	  v = cm->nodemap[n] + 1; /*MATR_D*/
+	  if(k != 1 && k != hmm->M) /* There is no plan 7 D_1 or D_M state */
+	    map_helper(cp9map, k, ks, v);
+	  break;
+	}
+    }
+
+  /* Check to make sure that insert states map to only 1 HMM node state. */
+  for(v = 0; v <= cm->M; v++)
+    {
+      if((cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) && cs2hn_map[v][1] != -1)
+	{
+	  printf("ERROR during cs2hn_map construction\ncs2hn_map[%d][0]: %d | cs2hn_map[%d][1]: %d AND v is an INSERT state\n", v, cs2hn_map[v][0], v, cs2hn_map[v][1]);
+	  exit(1);
+	}
+      /* each CM state should map to only 1 HMM state. */
+    }
+
+
+  /* print hns2cs_map, checking consistency with cs2hn_map and cs2hs_map along
+     the way.  */
+  for(k = 1; k <= hmm->M; k++)
+    {
+      for(ks = 0; ks < 3; ks++)
+	{
+	  v1 = hns2cs_map[k][ks][0];
+	  v2 = hns2cs_map[k][ks][1];
+	  if(debug_level > 1)
+	    printf("hns2cs[%3d][%3d][0]: %3d | hns2cs[%3d][%3d[1]: %3d\n", k, ks, v1, k, ks, v2);
+	  if(v1 != -1 && (cs2hn_map[v1][0] == k && cs2hs_map[v1][0] == ks))
+	    {
+	      /* okay */
+	    }
+	  else if(v1 != -1 && (cs2hn_map[v1][1] == k && cs2hs_map[v1][1] == ks))
+	    {
+	      /* okay */
+	    }
+	  else if(v2 != -1 && (cs2hn_map[v2][0] == k && cs2hs_map[v2][0] == ks))
+	    {
+	      /* okay */
+	    }
+	  else if(v2 != -1 && (cs2hn_map[v2][1] == k && cs2hs_map[v2][1] == ks))
+	    {
+	      /* okay */
+	    }
+	  else if(v1 == -1 && v2 == -1 && (k == 1 && ks == 2)) 
+	    {
+	      /*okay - D_0 maps to nothing */
+	    }
+	  else if(v1 == -1 && v2 == -1 && (k == hmm->M && ks == 1)) 
+	    {
+	      /*okay - D_0 maps to nothing */
+	    }
+	  else if(v1 == -1 && v2 == -1 && (k == hmm->M && ks == 2)) 
+	    {
+	      /*okay - D_0 maps to nothing */
+	    }
+	  else if(v1 == -1 && v2 == -1)
+	    /* only D_1, D_M and I_M should map to nothing*/
+	    {
+	      /* not okay */
+	      printf("maps inconsistent case 1, HMM node state (non D_0) maps to no CM state, v1: %d | v2: %d k: %d | ks: %d\n", v1, v2, k, ks);
+	      exit(1);
+	    }	      
+	  else
+	    {
+	      /* not okay */
+	      printf("maps inconsistent case 2 v1: %d | v2: %d k: %d | ks: %d\n", v1, v2, k, ks);
+	      exit(1);
+	    }
+	}
+    }
+  *ret_cs2hn_map = cs2hn_map;
+  *ret_cs2hs_map = cs2hs_map;
+  *ret_hns2cs_map = hns2cs_map;
+  return;
+ ERROR:
+  cm_Fail("Memory allocation error.\n");
+}
+
+/*****************************************************************************
+ * EPN 11.03.05
+ * Function: P7_last_hmm_insert_state_hack
+ *
+ * Purpose:  HMMER plan 7 doesn't have an insert node in
+ *           its final node, so we have to use a hack
+ *           to fill pn_min_i[hmm->M] and pn_max_i[hmm->M].
+ *           We simply use the match node's band.
+ * 
+ * arguments:
+ * int   M          number of nodes in HMM (num columns of post matrix)
+ * int *pn_min_m    pn_min[k] = first position in band for match state of node k
+ * int *pn_max_m    pn_max[k] = last position in band for match state of node k
+ * int *pn_min_i    pn_min[k] = first position in band for insert state of node k
+ *                  array element M is the only one filled in this function .
+ * int *pn_max_i    pn_max[k] = last position in band for insert state of node k
+ *                  array element M is the only one filled in this function .
+ *****************************************************************************/
+void
+P7_last_hmm_insert_state_hack(int M,  int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i)
+{
+  pn_min_i[M] = pn_min_m[M];
+  pn_max_i[M] = pn_max_m[M];
+}
+/*****************************************************************************
+ * EPN 12.18.05
+ * Function: P7_last_and_first_delete_state_hack
+ *
+ * Purpose:  P7 HMMs don't have delete states in their 
+ *           first or final node, so we have to use a hack
+ *           to fill pn_min_d[1], pn_max_d[1], pn_min_d[hmm->M] and 
+ *           pn_max_d[hmm->M]. We use the match state bands.
+ * 
+ * arguments:
+ * int   M          number of nodes in HMM (num columns of post matrix)
+ * int *pn_min_m    pn_min[k] = first position in band for match state of node k
+ * int *pn_max_m    pn_max[k] = last position in band for match state of node k
+ * int *pn_min_d    pn_min[k] = first position in band for delete state of node k
+ *                  array element M is the only one filled in this function .
+ * int *pn_max_d    pn_max[k] = last position in band for deletea state of node k
+ *                  array element M is the only one filled in this function .
+ * int L            length of target database sequence.
+ *****************************************************************************/
+void
+P7_last_and_first_hmm_delete_state_hack(int M,  int *pn_min_m, int *pn_max_m, int *pn_min_d, int *pn_max_d, int L)
+{
+  /* Maybe I should be basing the delete bands for the first state on the
+   * N state posteriors in the HMM, and for the last state on the 
+   * C state posteriors in the HMM.
+   */
+  pn_min_d[1] = pn_min_m[1];
+  pn_max_d[1] = pn_max_m[1]; 
+  pn_min_d[M] = pn_max_m[M];
+  pn_max_d[M] = pn_max_m[M];
+}
+
+/* Function: P7FullPosterior()
+ * based on Ian Holmes' hmmer/src/postprob.c::P7EmitterPosterior()
+ *
+ * Purpose:  Combines Forward and Backward matrices into a posterior
+ *           probability matrix.
+ *           For emitters (match and inserts) the entries in row i of this 
+ *           matrix are the logs of the posterior probabilities of each state 
+ *           emitting symbol i of the sequence. For non-emitters 
+ *           (main node deletes only (not XME, XMB)
+ *           the entries in row i of this matrix are the logs of the posterior
+ *           probabilities of each state being 'visited' when the last emitted
+ *           residue in the parse was symbol i of the sequence (I think this
+ *           is valid, but not sure (EPN)). The last point distinguishes this
+ *           function from P7EmitterPosterior() which set all posterior values
+ *           for for non-emitting states to -INFTY.
+ *           The caller must allocate space for the matrix, although the
+ *           backward matrix can be used instead (overwriting it will not
+ *           compromise the algorithm).
+ *           
+ * Args:     L        - length of sequence
+ *           hmm      - the model
+ *           forward  - pre-calculated forward matrix
+ *           backward - pre-calculated backward matrix
+ *           mx       - pre-allocated dynamic programming matrix
+ *           
+ * Return:   void
+ */
+void
+P7FullPosterior(int L,
+		 struct plan7_s *hmm,
+		 struct dpmatrix_s *forward,
+		 struct dpmatrix_s *backward,
+		 struct dpmatrix_s *mx)
+{
+  int i;
+  int k;
+  int sc;
+
+  sc = backward->xmx[0][XMN];
+  for (i = L; i >= 1; i--)
+    {
+      mx->xmx[i][XMC] = forward->xmx[i-1][XMC] + hmm->xsc[XTC][LOOP] + backward->xmx[i][XMC] - sc;
+      
+      mx->xmx[i][XMJ] = forward->xmx[i-1][XMJ] + hmm->xsc[XTJ][LOOP] + backward->xmx[i][XMJ] - sc;
+ 
+      mx->xmx[i][XMN] = forward->xmx[i-1][XMN] + hmm->xsc[XTN][LOOP] + backward->xmx[i][XMN] - sc;
+
+      mx->xmx[i][XMB] = mx->xmx[i][XME] = -INFTY;
+      
+      for (k = 1; k < hmm->M; k++) {
+	mx->mmx[i][k]  = backward->mmx[i][k];
+	/* we don't want to account for possibility we came from a delete, first of all
+	 * they don't emit so that means we'd be interested in the i index of the previous
+	 * delete state (forward->dmx[i][k-1], however, that value has already accounted
+	 * for the emission of position i; so its not of interest here.
+	 */
+	mx->mmx[i][k] += ILogsum(ILogsum(forward->mmx[i-1][k-1] + hmm->tsc[TMM][k-1],
+					 forward->imx[i-1][k-1] + hmm->tsc[TIM][k-1]),
+				 ILogsum(forward->xmx[i-1][XMB] + hmm->bsc[k],
+					 forward->dmx[i-1][k-1] + hmm->tsc[TDM][k-1]));
+	mx->mmx[i][k] -= sc;
+	
+	mx->imx[i][k]  = backward->imx[i][k];
+	mx->imx[i][k] += ILogsum(forward->mmx[i-1][k] + hmm->tsc[TMI][k],
+				 forward->imx[i-1][k] + hmm->tsc[TII][k]);
+	mx->imx[i][k] -= sc;
+	
+	/*mx->dmx[i][k] = -INFTY;*/
+	/* I think this is right?? */
+	mx->dmx[i][k]  = backward->dmx[i][k];
+	mx->dmx[i][k] += forward->dmx[i][k];
+	mx->dmx[i][k] -= sc;
+      }
+      mx->mmx[i][hmm->M]  = backward->mmx[i][hmm->M];
+      mx->mmx[i][hmm->M] += ILogsum(ILogsum(forward->mmx[i-1][hmm->M-1] + hmm->tsc[TMM][hmm->M-1],
+					    forward->imx[i-1][hmm->M-1] + hmm->tsc[TIM][hmm->M-1]),
+				    ILogsum(forward->xmx[i-1][XMB] + hmm->bsc[hmm->M],
+					    forward->dmx[i-1][hmm->M-1] + hmm->tsc[TDM][hmm->M-1]));
+      mx->mmx[i][hmm->M] -= sc;
+
+      mx->imx[i][hmm->M] = mx->dmx[i][hmm->M] = mx->dmx[i][0] = -INFTY;
+      
+    }
+  /*  for(i = 1; i <= L; i++)
+    {
+      for(k = 1; k < hmm->M; k++)
+	{
+	  temp_sc = Score2Prob(mx->mmx[i][k], 1.);
+	  if(temp_sc > .0001)
+	    printf("p7 mx->mmx[%3d][%3d]: %9d | %8f\n", i, k, mx->mmx[i][k], temp_sc);
+	  temp_sc = Score2Prob(mx->imx[i][k], 1.);
+	  if(temp_sc > .0001)
+	    printf("p7 mx->imx[%3d][%3d]: %9d | %8f\n", i, k, mx->imx[i][k], temp_sc);
+	  temp_sc = Score2Prob(mx->dmx[i][k], 1.);
+	  if(temp_sc > .0001)
+	    printf("p7 mx->dmx[%3d][%3d]: %9d | %8f\n", i, k, mx->dmx[i][k], temp_sc);
+	}
+    }
+  */
+}
+
+
+
+
+/*****************************************************************************
+ * EPN 12.16.05
+ * Function: P7_ifill_post_sums()
+ * based on: 
+ * Function: ifill_post_sums()
+ * EPN 11.23.05
+ *
+ * Purpose:  Given a posterior matrix post, where post->mmx[i][k]
+ *           is the log odds score of the probability that
+ *           match state k emitted position i of the sequence,
+ *           sum the log probabilities that each state emitted
+ *           each position. Do this for inserts and matches, and
+ *           and deletes.
+ * 
+ * arguments:
+ * dpmatrix_s *post dpmatrix_s posterior matrix, xmx, mmx, imx, dmx 
+ *                  2D int arrays. [0.1..N][0.1..M]
+ * int   L          length of sequence (num rows of matrix)
+ * int   M          number of nodes in HMM (num columns of matrix)
+ * int  *isum_pn_m  [1..M] sum_pn_m[k] = sum over i of log probabilities
+ *                  from post->mmx[i][k]
+ *                  filled in this function, must be freed by caller.
+ * int  *isum_pn_i  [1..M] sum_pn_m[k] = sum over i of log probabilities
+ *                  from post->imx[i][k]
+ *                  filled in this function, must be freed by caller.
+ * int  *isum_pn_d  [1..M] sum_pn_m[k] = sum over i of log probabilities
+ *                  from post->dmx[i][k]
+ *                  filled in this function, must be freed by caller.
+ *****************************************************************************/
+void
+P7_ifill_post_sums(struct dpmatrix_s *post, int L, int M,
+		  int *isum_pn_m, int *isum_pn_i, int *isum_pn_d)
+{
+  int i;            /* counter over positions of the sequence */
+  int k;            /* counter over nodes of the model */
+  
+  /* step through each node, fill the post sum structures */
+  for(k = 1; k <= M; k++)
+    {
+      isum_pn_m[k] = post->mmx[1][k];
+      isum_pn_i[k] = post->imx[1][k];
+      isum_pn_d[k] = post->dmx[1][k];
+      for(i = 2; i <= L; i++)
+	{
+	  isum_pn_m[k] = ILogsum(isum_pn_m[k], post->mmx[i][k]);
+	  isum_pn_i[k] = ILogsum(isum_pn_i[k], post->imx[i][k]);
+	  isum_pn_d[k] = ILogsum(isum_pn_d[k], post->dmx[i][k]);
+	} 
+    }
+}
+
+/*************************************************************
+ * EPN 10.10.05
+ * Function: P7_debug_print_post_decode()
+ *
+ * Purpose:  Print the post decode matrix.
+ * 
+ * arguments:
+ * L          length of sequence (num rows of matrix)
+ * M          number of nodes in HMM (num cols of matrix)
+ */
+
+void
+P7_debug_print_post_decode(int L, int M, struct dpmatrix_s *posterior)
+{
+  int i, k;
+  printf("\nPrinting post decode matrix :\n");
+  printf("************************************\n");
+  for(i = 1; i <= L; i++)
+    {
+      printf("====================================\n");
+      printf("score_pd:xmx[%3d][%3d(XMB)] : %.15f\n", i, XMB, DScore2Prob(posterior->xmx[i][XMB], 1.));
+      printf("score_pd:xmx[%3d][%3d(XME)] : %.15f\n", i, XME, DScore2Prob(posterior->xmx[i][XME], 1.));
+      printf("score_pd:xmx[%3d][%3d(XMC)] : %.15f\n", i, XMC, DScore2Prob(posterior->xmx[i][XMC], 1.));
+      printf("score_pd:xmx[%3d][%3d(XMJ)] : %.15f\n", i, XMJ, DScore2Prob(posterior->xmx[i][XMJ], 1.));
+      printf("score_pd:xmx[%3d][%3d(XMN)] : %.15f\n", i, XMN, DScore2Prob(posterior->xmx[i][XMN], 1.));
+      for(k = 1; k <= M; k++)
+	{
+	  printf("------------------------------------\n");
+	  printf("score_pd:mmx[%3d][%3d] : %.15f\n", i, k, DScore2Prob(posterior->mmx[i][k], 1.));
+	  printf("score_pd:imx[%3d][%3d] : %.15f\n", i, k, DScore2Prob(posterior->imx[i][k], 1.));
+	  printf("score_pd:dmx[%3d][%3d] : %.15f\n", i, k, DScore2Prob(posterior->dmx[i][k], 1.));
+	  printf("pd:mmx[%3d][%3d] : %d\n", i, k, posterior->mmx[i][k]);
+	  printf("pd:imx[%3d][%3d] : %d\n", i, k, posterior->imx[i][k]);
+	  printf("pd:dmx[%3d][%3d] : %d\n", i, k, posterior->dmx[i][k]);
+	}
+    }
+    printf("****************\n\n");
+}
+
+/* EPN 10.10.05
+ * Function: P7_debug_print_dp_matrix()
+ *
+ * Purpose:  Print a dp matrix.
+ * 
+ * arguments:
+ * L          length of sequence (num rows of matrix)
+ * M          number of nodes in HMM (num cols of matrix)
+ */
+
+void
+P7_debug_print_dp_matrix(int L, int M, struct dpmatrix_s *mx)
+{
+  int i, k;
+  printf("\nPrinting dp matrix :\n");
+  printf("************************************\n");
+  for(i = 1; i <= L; i++)
+    {
+      printf("====================================\n");
+      printf("score_dp:xmx[%3d][%3d (XMB)] : %.15f\n", i, XMB, DScore2Prob(mx->xmx[i][XMB], 1.));
+      printf("score_dp:xmx[%3d][%3d (XME)] : %.15f\n", i, XME, DScore2Prob(mx->xmx[i][XME], 1.));
+      printf("score_dp:xmx[%3d][%3d (XMC)] : %.15f\n", i, XMC, DScore2Prob(mx->xmx[i][XMC], 1.));
+      printf("score_dp:xmx[%3d][%3d (XMJ)] : %.15f\n", i, XMJ, DScore2Prob(mx->xmx[i][XMJ], 1.));
+      printf("score_dp:xmx[%3d][%3d (XMN)] : %.15f\n", i, XMN, DScore2Prob(mx->xmx[i][XMN], 1.));
+      for(k = 1; k <= M; k++)
+	{
+	  printf("------------------------------------\n");
+	  printf("score_dp:mmx[%3d][%3d] : %.15f\n", i, k, DScore2Prob(mx->mmx[i][k], 1.));
+	  printf("score_dp:imx[%3d][%3d] : %.15f\n", i, k, DScore2Prob(mx->imx[i][k], 1.));
+	  printf("score_dp:dmx[%3d][%3d] : %.15f\n", i, k, DScore2Prob(mx->dmx[i][k], 1.));
+	  printf("dp:mmx[%3d][%3d] : %d\n", i, k, mx->mmx[i][k]);
+	  printf("dp:imx[%3d][%3d] : %d\n", i, k, mx->imx[i][k]);
+	  printf("dp:dmx[%3d][%3d] : %d\n", i, k, mx->dmx[i][k]);
+	}
+    }
+    printf("****************\n\n");
+}
+
+/*****************************************************************************
+ * ABANDONED 04.20.06 - in practice doesn't work as well as cp9_HMM2ijBands()
+ *                      where precautions taken to ensure "safe" paths 
+ *                      make it more robust to finding the optimal alignment.
+ *                      This function, which doesn't take any precautions,
+ *                      often messes up alignment. Though messy, cp9_HMM2ijBands()
+ *                      is not worth overhauling right now. 
+ * 
+ * Function: simple_cp9_HMM2ijBands()
+ * 
+ * Purpose:  Determine the band for each cm state v on i (the band on the 
+ *           starting index in the subsequence emitted from the subtree rooted
+ *           at state v), and on j (the band on the ending index in the
+ *           subsequence emitted from the subtree rooted at state v). 
+ * 
+ *           Some i and d bands are calculated from HMM bands on match and insert 
+ *           and delete states from each node of the HMM that maps to a left emitting
+ *           node of the CM (including MATP nodes). The HMM bands were
+ *           calculated previously from the posterior matrices for mmx,
+ *           imx and dmx from HMMER.
+ * 
+ *           Some j bands are calculated from HMM bands on match and insert and
+ *           delete states from each node of the HMM that maps to a right emitting
+ *           node of the CM (including MATP nodes). 
+ * 
+ *           i and j bands that cannot be directly determined from the
+ *           HMM bands are inferred based on the constraints imposed
+ *           on them by the i and j bands that CAN be determined from
+ *           the HMM bands.
+ *             
+ * arguments:
+ *
+ * CM_t *cm         the CM 
+ * int  ncc         number of consensus columns in HMM and CM seed alignment
+ * int *node_cc_left consensus column each node's left emission maps to
+ *                   [0..(cm->nodes-1)], -1 if maps to no consensus column
+ * int *node_cc_right consensus column each node's right emission corresponds to
+ *                    [0..(cm->nodes-1)], -1 if maps to no consensus column
+ * int *cc_node_map  node that each consensus column maps to (is modelled by)
+ *                     [1..ncc]
+ * int  L           length of sequence we're aligning
+ * int *pn_min_m    pn_min_m[k] = first position in HMM band for match state of HMM node k
+ * int *pn_max_m    pn_max_m[k] = last position in HMM band for match state of HMM node k
+ * int *pn_min_i    pn_min_i[k] = first position in HMM band for insert state of HMM node k
+ * int *pn_max_i    pn_max_i[k] = last position in HMM band for insert state of HMM node k
+ * int *pn_min_d    pn_min_d[k] = first position in HMM band for delete state of HMM node k
+ * int *pn_max_d    pn_max_d[k] = last position in HMM band for delete state of HMM node k
+ * int *imin        imin[v] = first position in band on i for state v
+ *                  to be filled in this function. [1..M]
+ * int *imax        imax[v] = last position in band on i for state v
+ *                  to be filled in this function. [1..M]
+ * int *jmin        jmin[v] = first position in band on j for state v
+ *                  to be filled in this function. [1..M]
+ * int *jmax        jmax[v] = last position in band on j for state v
+ *                  to be filled in this function. [1..M]
+ * int **cs2hn_map  2D CM state to HMM node map, 1st D - CM state index
+ *                  2nd D - 0 or 1 (up to 2 matching HMM states), value: HMM node
+ *                  that contains state that maps to CM state, -1 if none.
+ * int debug_level  [0..3] tells the function what level of debugging print
+ *                  statements to print.
+ *****************************************************************************/
+void
+simple_cp9_HMM2ijBands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right, 
+		    int *pn_min_m, int *pn_max_m, int *pn_min_i, int *pn_max_i, 
+		    int *pn_min_d, int *pn_max_d, int *imin, int *imax, 
+		    int *jmin, int *jmax, int **cs2hn_map, int **cs2hs_map, 
+		    int debug_level)
+{
+
+  int v;
+  int n;
+  int prev_imin, prev_imax;
+  int prev_jmin, prev_jmax;
+  int is_left, is_right;
+
+  int k_left, k_right;
+  int ks_left, ks_right;
+  int careful;
+
+  int left_unknown;
+  int right_unknown; 
+  int last_E;
+  int y;
+  int at_new_node;
+  int prev_n;
+  int set_left_known;
+  int set_right_known;
+  careful = TRUE;
+  set_left_known = FALSE;
+  set_right_known = FALSE;
+
+  prev_n = cm->ndidx[cm->M-1];
+  for (v = (cm->M-1); v >= 0; v--)
+    {
+      is_left  = FALSE;
+      is_right = FALSE;
+      n        = cm->ndidx[v];    /* CM node that contains state v */
+
+      if(prev_n != n)
+	{
+	  at_new_node = TRUE;
+	  if(set_left_known == TRUE)
+	    {
+	      left_unknown = FALSE;
+	      for(y = v+1; y <= last_E; y++)
+		{
+		  imin[y] = prev_imin;
+		  imax[y] = prev_imax;
+		}
+	      set_left_known = FALSE;
+	    }
+	  if(set_right_known == TRUE)
+	    {
+	      right_unknown = FALSE;
+	      for(y = v+1; y <= last_E; y++)
+		{
+		  jmin[y] = prev_jmin;
+		  jmax[y] = prev_jmax;
+		}
+	      set_right_known = FALSE;
+	    }
+	}
+      else
+	{
+	  at_new_node = FALSE;
+	}
+      prev_n = n;
+
+      if(cm->sttype[v] == E_st)
+	{
+	  last_E = v;
+	  left_unknown  = TRUE;
+	  right_unknown = TRUE;
+	  prev_imin     = 0;
+	  prev_imax     = 0;
+	  prev_jmin     = 0;
+	  prev_jmax     = 0;
+	}
+      else if(cm->sttype[v] == B_st)
+	{
+	  /* special case, use i band from left child and j band from right child */
+	  imin[v] = imin[cm->cfirst[v]];
+	  imax[v] = imax[cm->cfirst[v]];
+	  jmin[v] = jmin[cm->cnum[v]];
+	  jmax[v] = jmax[cm->cnum[v]];
+	}
+      else
+	{
+	  if((cm->sttype[v] == IR_st) ||
+	     (cm->sttype[v] == MR_st && cm->ndtype[n] != MATP_nd) ||
+	     (cm->sttype[v] == D_st && cm->ndtype[n] == MATR_nd))
+	    {
+	      /* only for these cases will the CM state v map to only 1 HMM state that
+	       * is only giving information for bands on j, and not on i. 
+	       */
+	      k_right  = cs2hn_map[v][0]; /* HMM state 1 (0(match), 1(insert), or 2(delete) that maps to v */
+	      ks_right = cs2hs_map[v][0]; /* HMM state 2 (0(match), 1(insert), or 2(delete) that maps to v 
+					   * (-1 if none) */
+	      k_left = -1;
+	      ks_left = -1;
+	    }
+	  else
+	    {
+	      /* for these cases, the CM state v either maps to 1 or 2 HMM states, and
+	       * either gives us info on bands on i, j or both. 
+	       */
+	      k_left   = cs2hn_map[v][0]; /* HMM node 1 that maps to v */
+	      ks_left  = cs2hs_map[v][0]; /* HMM state 1 (0(match), 1(insert), or 2(delete) that maps to v */
+	      k_right  = cs2hn_map[v][1]; /* HMM node 2 that maps to v (-1 if none)*/
+	      ks_right = cs2hs_map[v][1]; /* HMM state 2 (0(match), 1(insert), or 2(delete) that maps to v 
+					   * (-1 if none) */
+	      /* the way cs2hs_map is constructed, by moving left to right in the HMM, guarantees
+	       * that FOR THESE CASES: cs2hn_map[v][0] < cs2hn_map[v][1]; 
+	       * so cs2hn_map[v][0] = the HMM node mapping to the left half of CM state v (or -1 if none)
+	       *  & cs2hn_map[v][1] = the HMM node mapping to the right half of CM state v (or -1 if none)
+	       */
+	      //printf("normal case v: %d | k_left: %d | k_right: %d\n", v, k_left, k_right);
+	    }
+
+	  if(k_left != -1)
+	    is_left = TRUE;
+	  if(k_right != -1)
+	    is_right = TRUE;
+
+	  if(is_left)
+	    {
+	      if(ks_left == HMMMATCH) /* match */
+		{
+		  imin[v] = pn_min_m[k_left];
+		  imax[v] = pn_max_m[k_left];
+		}		
+	      if(ks_left == HMMINSERT) /* insert */
+		{
+		  imin[v] = pn_min_i[k_left];
+		  imax[v] = pn_max_i[k_left];
+		}		
+	      if(ks_left == HMMDELETE) /* delete */
+		{
+		  imin[v] = pn_min_d[k_left];
+		  imax[v] = pn_max_d[k_left];
+		}		
+	      if(left_unknown) 
+		{
+		  /* we're going to  need to fill in imin and imax values 
+		   * up to the nearest E state, but not yet, wait til we
+		   * reach a new node, so we can be sure of safe imin and imax values.
+		   */
+		  set_left_known = TRUE;
+		  prev_imin = imin[v];
+		  prev_imax = imax[v];
+		}
+	      else if(at_new_node)
+		{
+		  prev_imin = imin[v];
+		  prev_imax = imax[v];
+		}
+	      else
+		{	      
+		  if(imin[v] < prev_imin)
+		    prev_imin = imin[v];
+		  if(imax[v] > prev_imax)
+		    prev_imax = imax[v];
+		}
+	    }	  
+	  else
+	    {
+	      //printf("setting imin[%d] to prev_imin%d\n", imin[v], prev_imin);
+	      //printf("setting imax[%d] to prev_imax%d\n", imax[v], prev_imax);
+	      imin[v] = prev_imin;
+	      imax[v] = prev_imax;
+	    }
+
+	  if(is_right)
+	    {
+	      if(ks_right == HMMMATCH) /* match */
+		{
+		  jmin[v] = pn_min_m[k_right];
+		  jmax[v] = pn_max_m[k_right];
+		}		
+	      if(ks_right == HMMINSERT) /* insert */
+		{
+		  jmin[v] = pn_min_i[k_right];
+		  jmax[v] = pn_max_i[k_right];
+		}		
+	      if(ks_right == HMMDELETE) /* delete */
+		{
+		  jmin[v] = pn_min_d[k_right];
+		  jmax[v] = pn_max_d[k_right];
+		  //printf("set v: %d | right delete | jmin[v]: %d | jmax[v]: %d\n", v, jmin[v], jmax[v]);
+		}		
+	      if(right_unknown) 
+		{
+		  /* we're going to  need to fill in jmin and jmax values 
+		   * up to the nearest E state, but not yet, wait til we
+		   * reach a new node, so we can be sure of safe imin and imax values.
+		   */
+		  set_right_known = TRUE;
+		  prev_jmin = jmin[v];
+		  prev_jmax = jmax[v];
+		}
+	      else if(at_new_node) 
+		{
+		  prev_jmin = jmin[v];
+		  prev_jmax = jmax[v];
+		}
+	      else
+		{
+		  if(jmin[v] < prev_jmin)
+		    prev_jmin = jmin[v];
+		  if(jmax[v] > prev_jmax)
+		    prev_jmax = jmax[v];
+		}
+	    }	  
+	  else
+	    {
+	      jmin[v] = prev_jmin;
+	      jmax[v] = prev_jmax;
+	    }
+
+	  if(!(is_left) && !(is_right)) /* v is a B, S or E state, which doesn't map to anything */
+	    {
+	      if(cm->sttype[v] != B_st && cm->sttype[v] != E_st && cm->sttype[v] != S_st)
+		{
+		  printf("ERROR: v: %d not B, S or E, but doesn't map to HMM. Exiting...\n", v);
+		  exit(1);
+		}
+	      imin[v] = prev_imin;
+	      imax[v] = prev_imax;
+	      jmin[v] = prev_jmin;
+	      jmax[v] = prev_jmax;
+	      //printf("no map for v: %d | imin: %d | imax: %d | jmin: %d | jmax: %d\n", v, imin[v], imax[v], jmin[v], jmax[v]);
+	    }
+	}
+    }      
+}
+
+#endif
+

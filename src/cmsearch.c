@@ -181,6 +181,7 @@ static int print_search_info(FILE *fp, CM_t *cm, long N, char *errbuf);
 
 static int read_qdb_file(FILE *fp, CM_t *cm, int *dmin, int *dmax);
 static int is_integer(char *s);
+static int read_next_search_seq(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int do_revcomp, dbseq_t **ret_dbseq);
 #if HAVE_MPI
 static int determine_cm_min_max_chunksize(struct cfg_s *cfg, CM_t *cm, int *ret_min_chunksize, int *ret_max_chunksize);
 static int determine_seq_chunksize(struct cfg_s *cfg, int L, int min_chunksize, int chunksize);
@@ -1593,6 +1594,55 @@ int print_search_info(FILE *fp, CM_t *cm, long N, char *errbuf)
   return eslOK;
 }
 
+
+/*
+ * Function: read_next_search_seq
+ *
+ * Date:     RJK, Wed May 29, 2002 [St. Louis]
+ *           easeled: EPN, Fri Dec  8 11:40:20 2006
+ *
+ * Purpose:  Given a dbfp and whether or not to take the reverse complement,
+ *           reads in the next sequence and prepares reverse complement.
+ *
+ * Returns:  eslOK on success; eslEOF if end of file, 
+ *           some other status code from esl_sqio_Read() if an error occurs.
+ */
+int read_next_search_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revcomp, dbseq_t **ret_dbseq) 
+{
+  int status;
+  dbseq_t *dbseq = NULL;
+
+  ESL_ALLOC(dbseq, sizeof(dbseq_t));
+  dbseq->sq[0] = NULL;
+  dbseq->sq[1] = NULL;
+
+  dbseq->sq[0] = esl_sq_CreateDigital(abc);
+
+  while((status = esl_sqio_Read(dbfp, dbseq->sq[0])) == eslOK && (dbseq->sq[0]->n == 0)) /* skip zero length seqs */
+    esl_sq_Reuse(dbseq->sq[0]);
+
+  if(status != eslOK) goto ERROR;
+  if (do_revcomp) {
+    /* make a new ESL_SQ object, to store the reverse complement */
+    if((dbseq->sq[1] = esl_sq_CreateDigitalFrom(abc, dbseq->sq[0]->name, dbseq->sq[0]->dsq, 
+						dbseq->sq[0]->n, dbseq->sq[0]->desc, 
+						dbseq->sq[0]->acc, dbseq->sq[0]->ss)) == NULL) goto ERROR;
+    /* reverse complement it in place */
+    revcomp(dbseq->sq[1]->abc, dbseq->sq[1], dbseq->sq[1]);
+  }
+  dbseq->results[0] = NULL;
+  dbseq->results[1] = NULL;
+
+  *ret_dbseq = dbseq;
+  return eslOK;
+
+ ERROR:
+  if(dbseq->sq[0] != NULL) esl_sq_Destroy(dbseq->sq[0]);
+  if(dbseq->sq[1] != NULL) esl_sq_Destroy(dbseq->sq[1]);
+  if(dbseq != NULL) free(dbseq);
+  return status;
+}
+
 #if HAVE_MPI
 /* determine_cm_min_max_chunksize()
  * Given a CM, return the minimum and maximum subseq length to 
@@ -1633,157 +1683,5 @@ determine_seq_chunksize(struct cfg_s *cfg, int L, int min_chunksize, int max_chu
   if(chunksize < min_chunksize) return min_chunksize;
   if(chunksize > max_chunksize) return max_chunksize;
   return chunksize;
-}
-#endif
-
-#if 0
-
-/* set_cutoffs()
- * Determine cutoffs for the CM and HMM.
- */
-static int
-set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_cm_mode, int *ret_cp9_mode,
-	    float *ret_min_cm_cutoff, float *ret_min_cp9_cutoff, int *ret_using_e_cutoff)
-{
-  int           cm_mode  = -1;   /* CM algorithm mode                        */
-  int           cp9_mode = -1;   /* CP9 algorithm mode                       */
-  int           use_hmmonly;     /* True if --hmmviterbi or --hmmforward enabled */
-
-  /* Determine configuration of CM and CP9 based on cm->flags & cm->search_opts */
-  CM2Gumbel_mode(cm, &cm_mode, &cp9_mode); 
-
-  /* Set up CM cutoff, either 0 or 1 of 6 options is enabled. 
-   * esl_opt_IsDefault() returns FALSE even if option is enabled with default value 
-   */
-  if(esl_opt_IsDefault(go, "-E") && 
-     esl_opt_IsDefault(go, "-T") && 
-     esl_opt_IsDefault(go, "--ga") && 
-     esl_opt_IsDefault(go, "--tc") && 
-     esl_opt_IsDefault(go, "--nc")) { 
-    /* Choose from, in order of priority:
-     * 1. default CM E value if CM file has Gumbel stats
-     * 3. default CM bit score
-     */
-    if(cm->flags & CMH_GUMBEL_STATS) { /* use default CM E-value cutoff */
-      cm->cutoff_type = E_CUTOFF;
-      cm->cutoff      = esl_opt_GetReal(go, "-E");
-    }
-    else { /* no Gumbel stats in CM file, use default bit score cutoff */
-      cm->cutoff_type = SCORE_CUTOFF;
-      cm->cutoff      = esl_opt_GetReal(go, "-T");
-    }
-  }
-  else if(! esl_opt_IsDefault(go, "-E")) {
-    if(! (cm->flags & CMH_GUMBEL_STATS))
-      ESL_FAIL(eslEINVAL, errbuf, "-E requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
-    cm->cutoff_type = E_CUTOFF;
-    cm->cutoff      = esl_opt_GetReal(go, "-E");
-  }
-  else if(! esl_opt_IsDefault(go, "-T")) {
-    cm->cutoff_type = SCORE_CUTOFF;
-    cm->cutoff      = esl_opt_GetReal(go, "-T");
-    if((cm->cutoff < 0.) && (! esl_opt_GetBoolean(go, "--greedy"))) ESL_FAIL(eslEINVAL, errbuf, "with -T <x> option, <x> can only be less than 0. if --greedy also enabled.");
-  }
-  else if(! esl_opt_IsDefault(go, "--ga")) {
-    if(! (cm->flags & CMH_GA))
-      ESL_FAIL(eslEINVAL, errbuf, "No GA gathering threshold in CM file, can't use --ga.");
-    cm->cutoff_type = SCORE_CUTOFF;
-    cm->cutoff      = esl_opt_GetReal(go, "--ga");
-  }
-  else if(! esl_opt_IsDefault(go, "--tc")) {
-    if(! (cm->flags & CMH_TC))
-      ESL_FAIL(eslEINVAL, errbuf, "No TC trusted cutoff in CM file, can't use --tc.");
-    cm->cutoff_type = SCORE_CUTOFF;
-    cm->cutoff      = esl_opt_GetReal(go, "--tc");
-  }
-  else if(! esl_opt_IsDefault(go, "--nc")) {
-    if(! (cm->flags & CMH_NC))
-      ESL_FAIL(eslEINVAL, errbuf, "No NC noise cutoff in CM file, can't use --nc.");
-    cm->cutoff_type = SCORE_CUTOFF;
-    cm->cutoff      = esl_opt_GetReal(go, "--nc");
-  }
-  else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No CM cutoff selected. This shouldn't happen.");
-
-  /* Set up CP9 HMM cutoff, either 0 or 1 of 5 options is enabled 
-   * esl_opt_IsDefault() returns FALSE even if option is enabled with default value 
-   */
-  if(esl_opt_IsDefault(go, "--hmmthr") && 
-     esl_opt_IsDefault(go, "--hmmcalcthr") && 
-     esl_opt_IsDefault(go, "--hmmE") && 
-     esl_opt_IsDefault(go, "--hmmT"))
-    {
-      /* Choose from, in order of priority:
-       * 1. filter threshold in CM file (if ! --hmmviterbi && ! --hmmforward) 
-       * 2. default CP9 E value if CM file has Gumbel stats
-       * 3. default CP9 bit score
-       */
-      use_hmmonly = (esl_opt_GetBoolean(go, "--hmmviterbi") || esl_opt_GetBoolean(go, "--hmmforward")) ? TRUE : FALSE;
-      if((! use_hmmonly) && cm->flags & CMH_FTHR_STATS)  /* if !hmm_only use CP9 filter threshold from CM file */
-	{
-	  cm->cp9_cutoff_type = E_CUTOFF;
-	  if     (cp9_mode == CP9_L) cm->cp9_cutoff = cm->stats->fthrA[cm_mode]->l_eval;
-	  else if(cp9_mode == CP9_G) cm->cp9_cutoff = cm->stats->fthrA[cm_mode]->g_eval;
-	  /* correct for new db size */
-	  cm->cp9_cutoff *= (double) cfg->N / (double) cm->stats->fthrA[cm_mode]->db_size; 
-	}
-      else if(cm->flags & CMH_GUMBEL_STATS) /* use default CP9 E-value cutoff */
-	{
-	  cm->cp9_cutoff_type = E_CUTOFF;
-	  cm->cp9_cutoff      = esl_opt_GetReal(go, "--hmmE"); 
-	}
-      else /* no filter stats nor Gumbel stats in CM file, use default bit score cutoff */
-	{
-	  cm->cp9_cutoff_type = SCORE_CUTOFF;
-	  cm->cp9_cutoff      = esl_opt_GetReal(go, "--hmmT");
-	}
-    }
-  else if(! esl_opt_IsDefault(go, "--hmmthr")) {
-    if(! (cm->flags & CMH_FTHR_STATS))
-      ESL_FAIL(eslEINVAL, errbuf, "--hmmthr requires filter threshold statistics in <cm file>. Use cmcalibrate to get CP9 filter threshold stats.");
-    cm->cp9_cutoff_type = E_CUTOFF;
-    if     (cp9_mode == CP9_L) cm->cp9_cutoff = cm->stats->fthrA[cm_mode]->l_eval;
-    else if(cp9_mode == CP9_G) cm->cp9_cutoff = cm->stats->fthrA[cm_mode]->g_eval;
-    /* correct for new db size */
-    cm->cp9_cutoff *= (double) cfg->N / (double) cm->stats->fthrA[cm_mode]->db_size; 
-  }
-  else if(! esl_opt_IsDefault(go, "--hmmcalcthr")) {
-    if(! (cm->flags & CMH_GUMBEL_STATS))
-      ESL_FAIL(eslEINVAL, errbuf, "--hmmcalcthr requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
-    cm->cp9_cutoff_type = E_CUTOFF;
-    /* this gets overwritten later after threshold is calculated */
-    cm->cp9_cutoff = esl_opt_GetReal(go, "--hmmE");
-  }
-  else if(! esl_opt_IsDefault(go, "--hmmE")) {
-    if(! (cm->flags & CMH_GUMBEL_STATS))
-      ESL_FAIL(eslEINVAL, errbuf, "--hmmE requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
-    cm->cp9_cutoff_type = E_CUTOFF;
-    cm->cp9_cutoff      = esl_opt_GetReal(go, "--hmmE");
-  }
-  else if(! esl_opt_IsDefault(go, "--hmmT")) {
-    cm->cp9_cutoff_type = SCORE_CUTOFF;
-    cm->cp9_cutoff      = esl_opt_GetReal(go, "--hmmT");
-    if((cm->cp9_cutoff < 0.) && (! esl_opt_GetBoolean(go, "--hmmgreedy"))) ESL_FAIL(eslEINVAL, errbuf, "with -hmmT <x> option, <x> can only be less than 0. if --hmmgreedy also enabled.");
-  }
-  else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No CP9 cutoff selected. This shouldn't happen.");
-     
-  *ret_cm_mode  = cm_mode;
-  *ret_cp9_mode = cp9_mode;
-
-  *ret_min_cm_cutoff  = MinCMScCutoff(cm);
-  *ret_min_cp9_cutoff = MinCP9ScCutoff(cm);
-
-  if (((!use_hmmonly) && (cm->cutoff_type     == E_CUTOFF))  || 
-      (( use_hmmonly) && (cm->cp9_cutoff_type == E_CUTOFF)))
-    *ret_using_e_cutoff = TRUE;
-  else *ret_using_e_cutoff = FALSE;
-
-  /* finally, update SearchInfo, specifying no filtering, we'll change this later if nec */
-  if(cm->si == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_cutoffs(), cm->si is NULL. Shouldn't happen");
-  if(use_hmmonly) UpdateSearchInfoCutoff(cm, cm->si->nrounds, *ret_min_cp9_cutoff); /* update CP9 bit score cutoff */
-  else            UpdateSearchInfoCutoff(cm, cm->si->nrounds, *ret_min_cm_cutoff);  /* use CM  bit score cutoff */
-  ValidateSearchInfo(cm, cm->si);
-  /* DumpSearchInfo(cm->si); */
-
-  return eslOK;
 }
 #endif

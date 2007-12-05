@@ -361,6 +361,40 @@ CMRescale(CM_t *cm, float scale)
 }
 
 
+/* Function:  CPlan9Rescale() 
+ *            EPN based on Steve Johnsons plan 7 version
+ *
+ * Purpose:   Scale a counts-based HMM by some factor, for
+ *            adjusting counts to a new effective sequence number.
+ *
+ * Args:      hmm        - counts based HMM.
+ *            scale      - scaling factor (e.g. eff_nseq/nseq); 1.0= no scaling.
+ *
+ * Returns:   (void)
+ */
+void 
+CPlan9Rescale(CP9_t *hmm, float scale)
+{
+  int k;
+
+  /* emissions and transitions in the main model.
+   * Note that match states are 1..M, insert states are 0..M,
+   * and deletes are 0..M-1
+   */
+  for(k = 1; k <= hmm->M; k++) 
+    esl_vec_FScale(hmm->mat[k], hmm->abc->K, scale);
+  for(k = 0; k <=  hmm->M; k++) 
+    esl_vec_FScale(hmm->ins[k], hmm->abc->K, scale);
+  for(k = 0; k <  hmm->M; k++) 
+    esl_vec_FScale(hmm->t[k],   cp9_NTRANS,             scale);
+
+  /* begin, end transitions; only valid [1..M] */
+  esl_vec_FScale(hmm->begin+1, hmm->M, scale);
+  esl_vec_FScale(hmm->end+1,   hmm->M, scale);
+  
+  return;
+}
+
 /* Function: CM_Eweight_RE [EPN]
  * based on:
  * Eweight() LSJ 2/6/04
@@ -704,3 +738,4 @@ CP9AverageMatchEntropy(CP9_t *cp9)
   /*printf("\nCP9 average entropy: %.5f / %.2f = %.5f\n", summed_entropy, (float) cp9->M, (summed_entropy/cp9->M));*/
   return (summed_entropy / ((float) cp9->M));
 }
+
