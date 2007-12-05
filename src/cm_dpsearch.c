@@ -5057,14 +5057,14 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
 /*****************************************************************
  * Benchmark driver
  *****************************************************************/
-#ifdef IMPL_FASTSEARCH_BENCHMARK
+#ifdef IMPL_SEARCH_BENCHMARK
 /* gcc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
- * gcc -o benchmark-fastsearch -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTSEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
+ * gcc -o benchmark-search -g -O2 -I. -L. -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
  * mpicc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
- * mpicc -o benchmark-fastsearch -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTSEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
+ * mpicc -o benchmark-search -g -O2 -I. -L. -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
  * icc -g -O3 -static -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
- * icc -o benchmark-fastsearch -O3 -static -I. -L. -I../easel -L../easel -DIMPL_FASTSEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
- * ./benchmark-fastsearch <cmfile>
+ * icc -o benchmark-search -O3 -static -I. -L. -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
+ * ./benchmark-search <cmfile>
  */
 
 #include "esl_config.h"
@@ -5369,5 +5369,5 @@ main(int argc, char **argv)
   cm_Fail("memory allocation error");
   return 0; /* never reached */
 }
-#endif /*IMPL_FASTSEARCH_BENCHMARK*/
+#endif /*IMPL_SEARCH_BENCHMARK*/
 

@@ -18,7 +18,7 @@
  * 
  * Speedups are approximate, and based on tests with 2 models, an SSU
  * model and a RNaseP model. Tests were performed with
- * benchmark-fastalign, a standalone executable included at the end of
+ * benchmark-align, a standalone executable included at the end of
  * this file that must be separately compiled (version tested was
  * subversion revision 2204, gcc -O2 compiled
  *  EPN, Mon Nov 12 13:41:57 2007).
@@ -4909,14 +4909,14 @@ alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hd
 /*****************************************************************
  * Benchmark driver
  *****************************************************************/
-#ifdef IMPL_FASTALIGN_BENCHMARK
+#ifdef IMPL_ALIGN_BENCHMARK
 /* gcc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpalign.c 
- * gcc   -o benchmark-fastalign -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_dpalign.c old_cm_dpalign.o -linfernal -leasel -lm
+ * gcc   -o benchmark-align -g -O2 -I. -L. -I../easel -L../easel -DIMPL_ALIGN_BENCHMARK cm_dpalign.c old_cm_dpalign.o -linfernal -leasel -lm
  * mpicc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpalign.c  
- * mpicc -o benchmark-fastalign -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_dpalign.c old_cm_dpalign.o -linfernal -leasel -lm
+ * mpicc -o benchmark-align -g -O2 -I. -L. -I../easel -L../easel -DIMPL_ALIGN_BENCHMARK cm_dpalign.c old_cm_dpalign.o -linfernal -leasel -lm
  * icc -g -O3 -static -DHAVE_CONFIG_H -I../easel  -c old_cm_dpalign.c 
- * icc -o benchmark-fastalign -O3 -static -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_dpalign.c old_cm_dpalign.o -linfernal -leasel -lm
- * ./benchmark-fastalign <cmfile>
+ * icc -o benchmark-align -O3 -static -I. -L. -I../easel -L../easel -DIMPL_ALIGN_BENCHMARK cm_dpalign.c old_cm_dpalign.o -linfernal -leasel -lm
+ * ./benchmark-align <cmfile>
  */
 
 #include "esl_config.h"
@@ -5171,4 +5171,4 @@ main(int argc, char **argv)
   cm_Fail("memory allocation error");
   return 0; /* NEVERREACHED */
 }
-#endif /*IMPL_FASTALIGN_BENCHMARK*/
+#endif /*IMPL_ALIGN_BENCHMARK*/

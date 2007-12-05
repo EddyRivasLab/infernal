@@ -432,74 +432,26 @@ extern void  CP9ReverseTrace(CP9trace_t *tr);
 extern int   CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
 				 int nseq, CP9trace_t **tr, int do_full, int do_matchonly, ESL_MSA **ret_msa);
 extern void  DuplicateCP9(CM_t *src_cm, CM_t *dest_cm);
-/* more from cplan9.c: functions stolen from HMMER-2.4::mathsupport.c */
 extern int   Prob2Score(float p, float null);
 extern float Score2Prob(int sc, float null);
 extern float Scorify(int sc);
 extern int   DegenerateSymbolScore(float *p, float *null, int ambig);
 
-/* from CP9_cm2wrhmm.c */
+/* from cp9_modelmaker.c */
+extern CP9Map_t *AllocCP9Map(CM_t *cm);
+extern void FreeCP9Map(CP9Map_t *cp9map);
 extern int build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 			 float psi_vs_phi_threshold, int debug_level);
 extern void CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level);
-extern void map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v);
-extern int  CP9_check_wrhmm(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int debug_level);
 extern void fill_psi(CM_t *cm, double *psi, char ***tmap);
 extern void fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos);
+extern void map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v);
 extern void make_tmap(char ****ret_tmap);
-
 extern int  CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS *r, CMSubInfo_t *subinfo, int spos, int epos, 
 				  float chi_thresh, int nsamples, int print_flag);
 extern void debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores);
 extern void debug_print_phi_cp9(CP9_t *hmm, double **phi);
-extern CP9Map_t *AllocCP9Map(CM_t *cm);
-extern void FreeCP9Map(CP9Map_t *cp9map);
 extern int  MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, char *ss, char **ret_s);
-
-/* from CP9_scan.c */
-extern float CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
-			int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
-			int be_efficient, CP9_MX **ret_mx, CP9trace_t **ret_tr);
-extern float CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
-			int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
-			int be_efficient, CP9_MX **ret_mx);
-extern float CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
-			 int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
-			 int be_efficient, CP9_MX **ret_mx);
-extern float CP9ForwardScanDemands(CP9_t *cp9, int L);
-/*
-  extern float CP9Scan_dispatch(CM_t *cm,ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff, 
-  float cp9_cutoff, search_results_t *results, int doing_cp9_stats, int *ret_flen);
-extern float RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, search_results_t *hmm_results, int i0, 
-				   int j0, int W, int padmode, int ipad, int jpad, int do_collapse,
-				   float cm_cutoff, float cp9_cutoff, search_results_t *results, 
-				   int *ret_flen);
-extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
-				    float Fmin, float Smin, float Starget, float Spad, int N, 
-				    int use_cm_cutoff, float cm_ecutoff, int db_size, 
-				    int emit_mode, int fthr_mode, int hmm_gum_mode, 
-				    int do_fastfil, int do_Fstep, int my_rank, int nproc, 
-				    int do_mpi, char *histfile, FILE *Rpts_fp, float *ret_F);
-extern float FindSubFilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
-				    float Fmin, float Smin, float Starget, float Spad, int N, 
-				    int use_cm_cutoff, float cm_ecutoff, int db_size, 
-				    int emit_mode, int fthr_mode, int hmm_gum_mode, 
-				    int do_fastfil, int do_Fstep, int my_rank, int nproc, 
-				    int do_mpi, char *histfile, FILE *Rpts_fp, float *ret_F);
-extern float FindExpFactor(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
-			   int use_cm_cutoff, float cm_ecutoff, int db_size, 
-			   int emit_mode, int fthr_mode, int do_fastfil,
-			   int ntrials, float fp_min, float fp_max);
-extern float FindExpFactor_minmax(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
-				  float cm_min_ecutoff, float cm_max_ecutoff, int db_size, 
-				  int emit_mode, int fthr_mode, int do_fastfil,
-				  int ntrials, float fp_min, float fp_max);
-extern float FindExpFactor_min(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
-			       float cm_min_ecutoff, int db_size, 
-			       int emit_mode, int fthr_mode, int do_fastfil,
-			       int ntrials, float fp_min);
-extern float Filter_XFTableLookup(float X, float F, int emit_mode, int fthr_mode);
-*/
 
 /* from cp9_dp.c */
 extern int cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
@@ -511,7 +463,7 @@ extern int cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq,
 extern int cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
 		       int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc);
 extern int cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-			    int do_scan, int doing_align, int be_efficient, int be_safe, int **ret_psc, int *ret_maxres, float *ret_sc);
+			   int do_scan, int doing_align, int be_efficient, int be_safe, int **ret_psc, int *ret_maxres, float *ret_sc);
 extern int cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
 			int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, 
 			float *ret_sc);

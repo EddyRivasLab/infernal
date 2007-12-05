@@ -1117,7 +1117,7 @@ cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int
  *           counts', then we'll normalize to probabilities
  *           later (outside this function).
  * 
- *           This is based on CP9_cm2wrhmm.c::cm2hmm_trans_probs_cp9()
+ *           This is based on cp9_modelmaker.c::cm2hmm_trans_probs_cp9()
  *           which was based on formulas/ideas in Zasha Weinberg's
  *           thesis (p.123).
  *

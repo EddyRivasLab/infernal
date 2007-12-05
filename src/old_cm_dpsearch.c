@@ -30,14 +30,6 @@
 #include <stdlib.h>
 
 #include "easel.h"
-#include "esl_msa.h"   
-#include "esl_sqio.h"
-#include "esl_stack.h"
-#include "esl_stopwatch.h"
-#include "esl_vectorops.h"
-
-
-#include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_dirichlet.h"
 #include "esl_distance.h"
@@ -53,7 +45,6 @@
 #include "esl_keyhash.h"
 #include "esl_minimizer.h"
 #include "esl_mixgev.h"
-/*#include "esl_mpi.h"*/
 #include "esl_msa.h"
 #include "esl_msacluster.h"
 #include "esl_msaweight.h"
@@ -70,7 +61,6 @@
 #include "esl_stats.h"
 #include "esl_stopwatch.h"
 #include "esl_stretchexp.h"
-/*#include "esl_swat.h"*/
 #include "esl_tree.h"
 #include "esl_vectorops.h"
 #include "esl_weibull.h"

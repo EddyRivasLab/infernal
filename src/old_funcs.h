@@ -71,7 +71,6 @@ extern float iInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
 extern float iInsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
 			       float cutoff, search_results_t *results);
 
-
 /* from old_cm_dpalign.c */
 extern int OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
 				   int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r);
@@ -130,22 +129,6 @@ extern float ParsetreeSampleFromIInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *ds
 					int ****ret_alpha);
 extern float ParsetreeSampleFromIInside_b_jd_me(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int ***alpha, CP9Bands_t *cp9b, 
 						Parsetree_t **ret_tr, int ****ret_alpha);
-
-/* cm_postprob.c: memory management routines analogous to those in smallcyk.c for
- * handling scaled int log odds scores instead of floats. */
-extern Ideckpool_t *Ideckpool_create(void);
-extern void    Ideckpool_push(struct Ideckpool_s *dpool, int **deck);
-extern int     Ideckpool_pop(struct Ideckpool_s *d, int ***ret_deck);
-extern void    Ideckpool_free(struct Ideckpool_s *d);
-extern int   **Ialloc_vjd_deck(int L, int i, int j);
-extern int     Isize_vjd_deck(int L, int i, int j);
-extern void    Ifree_vjd_deck(int **a, int i, int j);
-extern void    Ifree_vjd_matrix(int ***a, int M, int i, int j);
-extern int ** Ialloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
-
-
-/* from hbandcyk.c
- */
 extern float CYKInside_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, 
 			    Parsetree_t **ret_tr, int *jmin, int *jmax, 
 			    int **hdmin, int **hdmax, int *dmin, int *dmax);
@@ -158,3 +141,46 @@ extern float iInsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, 
 				  int j0, int W, float cutoff, search_results_t *results);
 extern int   ** alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
 extern char  ** alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
+/* memory management routines analogous to those in smallcyk.c for
+ * handling scaled int log odds scores instead of floats. */
+extern Ideckpool_t *Ideckpool_create(void);
+extern void    Ideckpool_push(struct Ideckpool_s *dpool, int **deck);
+extern int     Ideckpool_pop(struct Ideckpool_s *d, int ***ret_deck);
+extern void    Ideckpool_free(struct Ideckpool_s *d);
+extern int   **Ialloc_vjd_deck(int L, int i, int j);
+extern int     Isize_vjd_deck(int L, int i, int j);
+extern void    Ifree_vjd_deck(int **a, int i, int j);
+extern void    Ifree_vjd_matrix(int ***a, int M, int i, int j);
+extern int ** Ialloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
+
+
+/* from old_cp9_dp.c */
+extern float CP9Viterbi(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_sc, 
+			int *ret_bestpos, search_results_t *results, int do_scan, int doing_align, 
+			int be_efficient, CP9_MX **ret_mx, CP9trace_t **ret_tr);
+extern float CP9Forward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
+			int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
+			int be_efficient, CP9_MX **ret_mx);
+extern float CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, int **ret_isc, 
+			 int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
+			 int be_efficient, CP9_MX **ret_mx);
+extern float CP9ForwardScanDemands(CP9_t *cp9, int L);
+
+/* Functions below from old_miscfuncs.c are not compiled, they're not used for 
+ * any currently working code, bu are kept solely for reference */
+#if 0
+/* from old_miscfuncs.c */
+extern float CP9Scan_dispatch(CM_t *cm,ESL_DSQ *dsq, int i0, int j0, int W, float cm_cutoff, 
+			      float cp9_cutoff, search_results_t *results, int doing_cp9_stats, int *ret_flen);
+extern float RescanFilterSurvivors(CM_t *cm, ESL_DSQ *dsq, search_results_t *hmm_results, int i0, 
+				   int j0, int W, int padmode, int ipad, int jpad, int do_collapse,
+				   float cm_cutoff, float cp9_cutoff, search_results_t *results, 
+				   int *ret_flen);
+extern void  CP9ScanPosterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *mx)
+extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS *r, 
+				    float Fmin, float Smin, float Starget, float Spad, int N, 
+				    int use_cm_cutoff, float cm_ecutoff, int db_size, 
+				    int emit_mode, int fthr_mode, int hmm_gum_mode, 
+				    int do_fastfil, int do_Fstep, int my_rank, int nproc, 
+				    int do_mpi, char *histfile, FILE *Rpts_fp, float *ret_F);
+#endif

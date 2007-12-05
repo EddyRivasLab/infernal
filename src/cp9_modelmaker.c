@@ -1,11 +1,11 @@
-/* CP9_cm2wrhmm.c 
+/* cp9_modelmaker.c (formerly CP9_cm2wrhmm.c)
  * EPN 11.28.05
  *
  * Functions to build a Weinberg/Ruzzo maximum likelihood HMM from a CM. 
- * Uses the "CM plan 9" HMM architecture from cplan9.h and cplan.c. 
+ * Uses the "CM plan 9" (cp9) HMM architecture.
  * These functions use ideas/equations from Zasha Weinberg's thesis 
  * (notably p.122-124), but a CM plan 9 HMM is not exactly a Weinberg-Ruzzo
- * maximum likelihood heuristic HMM (though its close). 
+ * maximum likelihood heuristic HMM (though it's close). 
  *
  * build_cp9_hmm() is the main function, it sets the probabilities of
  * the HMM and (optionally) checks that the expected number of times
@@ -30,31 +30,17 @@
 #include "funcs.h"
 #include "structs.h"
 
-static float
-cm2hmm_emit_prob(CM_t *cm, CP9Map_t *cp9map, int x, int i, int k);
-static void
-cm2hmm_special_trans_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, double *psi, char ***tmap);
-static void
-cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *psi, char ***tmap);
-static void
-hmm_add_single_trans_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int a, int b, int k, int hmm_trans_idx, 
-			 double *psi, char ***tmap);
-static float
-cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap, int k, double *psi);
-static int
-check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, double threshold, 
-		     int debug_level);
-static int 
-CP9_node_chi_squared(CP9_t *ahmm, CP9_t *shmm, int nd, float threshold, 
-		     int print_flag);
-static int 
-check_cm_adj_bp(CM_t *cm, CP9Map_t *cp9map);
+static float      cm2hmm_emit_prob(CM_t *cm, CP9Map_t *cp9map, int x, int i, int k);
+static void       cm2hmm_special_trans_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, double *psi, char ***tmap);
+static void       cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *psi, char ***tmap);
+static void       hmm_add_single_trans_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int a, int b, int k, int hmm_trans_idx, double *psi, char ***tmap);
+static float      cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap, int k, double *psi);
+static int        check_psi_vs_phi_cp9(CM_t *cm, CP9Map_t *cp9map, double *psi, double **phi, double threshold, int debug_level);
+static int        CP9_node_chi_squared(CP9_t *ahmm, CP9_t *shmm, int nd, float threshold, int print_flag);
+static int        check_cm_adj_bp(CM_t *cm, CP9Map_t *cp9map);
+static float      FChiSquareFit(float *f1, float *f2, int N);
 
-static float
-FChiSquareFit(float *f1, float *f2, int N);
-
-/**************************************************************************
- * EPN 10.26.06
+/* EPN 10.26.06
  * Function: AllocCP9Map()
  * 
  * Purpose:  Allocate a CP9Map_t object that stores information mapping
@@ -67,7 +53,6 @@ FChiSquareFit(float *f1, float *f2, int N);
  * int cm_nodes - number of nodes in the CM             
  * Returns: CMSubInfo_t
  */
-
 CP9Map_t *
 AllocCP9Map(CM_t *cm)
 {

@@ -2524,9 +2524,10 @@ cp9_CheckTransitionGuarantees(CP9_t *cp9, char *errbuf)
 /*****************************************************************
  * Benchmark driver
  *****************************************************************/
-#ifdef IMPL_CP9_FASTSEARCH_BENCHMARK
-/* gcc -o benchmark-cp9_fastsearch -g -O2 -I. -L. -I../easel -L../easel -DIMPL_CP9_FASTSEARCH_BENCHMARK cp9_fastsearch.c -linfernal -leasel -lm
- * ./benchmark-cp9_fastsearch <cmfile>
+#ifdef IMPL_CP9_DP_BENCHMARK
+/* gcc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cp9_dp.c 
+ * gcc -o benchmark-cp9_dp -g -O2 -I. -L. -I../easel -L../easel -DIMPL_CP9_DP_BENCHMARK cp9_dp.c old_cp9_dp.o -linfernal -leasel -lm
+ * ./benchmark-cp9_dp <cmfile>
  */
 
 #include "esl_config.h"
@@ -2548,6 +2549,7 @@ cp9_CheckTransitionGuarantees(CP9_t *cp9, char *errbuf)
 #include <esl_wuss.h>
 
 #include "funcs.h"		/* function declarations                */
+#include "old_funcs.h"		/* function declarations for 0.81 versions */
 #include "structs.h"		/* data structures, macros, #define's   */
 
 static ESL_OPTIONS options[] = {
@@ -2705,4 +2707,4 @@ main(int argc, char **argv)
   esl_getopts_Destroy(go);
   return 0;
 }
-#endif /*IMPL_FASTSEARCH_BENCHMARK*/
+#endif /*IMPL_CP9_DP_BENCHMARK*/
