@@ -1,4 +1,4 @@
-/* modelconfig.c
+/* cm_modelconfig.c
  * SRE, Wed May  8 14:30:38 2002 [St. Louis]
  * SVN $Id$
  * 

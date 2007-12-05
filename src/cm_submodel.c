@@ -1,5 +1,5 @@
 /*****************************************************************
- * sub_cm.c
+ * cm_submodel.c (formerly sub_cm.c)
  * EPN 07.25.06 (Benasque)
  * 
  * Building submodels (sub CMs) from a template CM, that represent
@@ -9,6 +9,12 @@
  * structure outside a contiguous subset of the columns.
  *
  * These functions are still under development. No guarantees.
+ * 
+ * NOTE: 'sub CM' here does not correspond to Zasha Weinberg's use
+ *       of the term for filtering with subtrees of the model. To
+ *       be unambiguous, I should have not used 'sub CM', it's bad
+ *       form on my part. However 'sub CM' is so engrained in the 
+ *       codebase at this point, I'm wary to change it, so it stays.
  *
  ***************************************************************** 
  * @LICENSE@

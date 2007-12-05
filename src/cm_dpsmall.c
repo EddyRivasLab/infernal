@@ -1,4 +1,4 @@
-/* smallcyk.c
+/* cm_dpsmall.c  (formerly smallcyk.c)
  * SRE, Wed Aug  2 08:42:49 2000 [St. Louis]
  * SVN $Id$
  * 

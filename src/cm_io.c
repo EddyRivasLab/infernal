@@ -1,4 +1,4 @@
-/* cmio.c
+/* cm_io.c
  * SRE, Thu Aug  3 11:53:34 2000 [St. Louis]
  * SVN $Id$
  * 

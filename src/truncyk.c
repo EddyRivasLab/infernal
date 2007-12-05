@@ -26,7 +26,6 @@
 
 #include "structs.h"
 #include "funcs.h"
-#include "cm_postprob.h"
 
 #define BE_EFFICIENT 0
 #define BE_PARANOID  1
@@ -138,7 +137,7 @@ TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **re
    /* Check input parameters */
    if ( cm->stid[r] != ROOT_S )
    {
-      if (! (cm->flags & CM_LOCAL_BEGIN)) cm_Die("internal error: we're not in local mode, but r is not root");
+      if (! (cm->flags & CMH_LOCAL_BEGIN)) cm_Die("internal error: we're not in local mode, but r is not root");
       if ( (cm->stid[r] != MATP_MP) &&
            (cm->stid[r] != MATL_ML) &&
            (cm->stid[r] != MATR_MR) &&
@@ -207,7 +206,7 @@ TrCYK_Inside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t *
    /* Check input parameters */
    if ( cm->stid[r] != ROOT_S )
    {
-      if (! (cm->flags & CM_LOCAL_BEGIN)) cm_Die("internal error: we're not in local mode, but r is not root");
+      if (! (cm->flags & CMH_LOCAL_BEGIN)) cm_Die("internal error: we're not in local mode, but r is not root");
       if ( (cm->stid[r] != MATP_MP) &&
            (cm->stid[r] != MATL_ML) &&
            (cm->stid[r] != MATR_MR) &&

@@ -1,4 +1,4 @@
-/* cm_fastalign.c
+/* cm_dpalign.c
  * Optimized DP functions for HMM banded and non-banded, non-D&C CM alignment.
  * 
  * HMM banded functions, and their non-optimized analogs: 
@@ -43,7 +43,8 @@
  * FastOutsideAlign()           --> cm_postprob.c:FOutside()
  *  
  * Note: the smallcyk.c v0.81 functions are still used for D&C 
- * (divide and conquer) small-memory alignment. 
+ * (divide and conquer) small-memory alignment. Though smallcyk.c
+ * has been renamed cm_dpsmall.c
  *
  * Four additional functions exist in this file:
  * CMPosteriorHB()      : combine Inside/Outside matrices --> posterior matrix 
@@ -1079,7 +1080,7 @@ fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *        
  *           If (<do_optacc>) then post_mx must != NULL.
  *
- *           Very similar to smallcyk.c:insideT() in case of 
+ *           Very similar to cm_dpsmall.c:insideT() in case of 
  *           CYK alignment, but uses more efficient implementation
  *           of CYK alignment (fast_cyk_align()) as opposed to
  *           inside(). 
@@ -1329,7 +1330,7 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_M
 /* Function: FastAlign()
  * Date:     EPN, Sun Nov 18 19:26:45 2007
  *
- * Note:     Very similar to smallcyk.c:CYKInside() for case
+ * Note:     Very similar to cm_dpsmall.c:CYKInside() for case
  *           of CYK alignment, but uses slightly more efficient
  *           implementation (fast_cyk_align() instead of inside()).
  *
@@ -2198,7 +2199,7 @@ FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_M
       for (d = 0; d <= jp; d++) beta[cm->M][jp][d] = IMPOSSIBLE;
     }
     /* We don't have to worry about vroot -> EL transitions the way 
-     * smallcyk.c::outside() does, because vroot = 0.
+     * cm_dpsmall.c::outside() does, because vroot = 0.
      */
   }
   /* If we can do a local begin into v, overwrite IMPOSSIBLE with the local begin score. 
@@ -3952,7 +3953,7 @@ SampleFromInside(ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L,
   InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
 
   /* Stochastically traceback through the Inside matrix 
-   * this section of code is stolen and adapted from smallcyk.c:insideT() 
+   * this section of code is stolen and adapted from cm_dpsmall.c:insideT() 
    */
   pda = esl_stack_ICreate();
   v = 0;
@@ -4214,7 +4215,7 @@ SampleFromInsideHB(ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DSQ *dsq, int 
       esl_vec_FSet(bifvec, (d+1), IMPOSSIBLE); /* only valid d's will be reset to a non-IMPOSSIBLE score */
 
       /* This search for valid k's is complex, and uncommented. It was taken from
-       * cm_fastalign.c:fast_cyk_align_hb(), the B_st case. The code there is commented somewhat
+       * cm_dpalign.c:fast_cyk_align_hb(), the B_st case. The code there is commented somewhat
        * extensively. I'm pretty sure this is the most efficient (or at least close to it) 
        * way to find the valid cells in the DP matrix we're looking for. 
        */
@@ -4910,11 +4911,11 @@ alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hd
  *****************************************************************/
 #ifdef IMPL_FASTALIGN_BENCHMARK
 /* gcc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpalign.c 
- * gcc   -o benchmark-fastalign -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_fastalign.c old_cm_dpalign.o -linfernal -leasel -lm
+ * gcc   -o benchmark-fastalign -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_dpalign.c old_cm_dpalign.o -linfernal -leasel -lm
  * mpicc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpalign.c  
- * mpicc -o benchmark-fastalign -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_fastalign.c old_cm_dpalign.o -linfernal -leasel -lm
+ * mpicc -o benchmark-fastalign -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_dpalign.c old_cm_dpalign.o -linfernal -leasel -lm
  * icc -g -O3 -static -DHAVE_CONFIG_H -I../easel  -c old_cm_dpalign.c 
- * icc -o benchmark-fastalign -O3 -static -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_fastalign.c old_cm_dpalign.o -linfernal -leasel -lm
+ * icc -o benchmark-fastalign -O3 -static -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_dpalign.c old_cm_dpalign.o -linfernal -leasel -lm
  * ./benchmark-fastalign <cmfile>
  */
 

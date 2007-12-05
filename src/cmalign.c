@@ -52,7 +52,7 @@ static ESL_OPTIONS options[] = {
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
 #endif
   /* Miscellaneous expert options */
-  { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s>, not Stockholm",  2 },
+  /*  { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s>, not Stockholm",  2 },*/
   { "--time",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print timings for alignment, band calculation, etc.", 2 },
   { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 2 },
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
@@ -1279,7 +1279,7 @@ static int add_withali_pknots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *er
 
   /* 1. determine consensus columns of withmsa.  
    * If we've gotten this far, there should be same number as
-   * cm->clen. code block stolen from modelmaker.c matassign is
+   * cm->clen. code block stolen from cm_modelmaker.c matassign is
    * 1..alen. Values are 1 if a match (consensus) column, 0 if insert
    * column.
    */

@@ -256,13 +256,13 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   
   /* CP9 viterbi */
   esl_stopwatch_Start(w);
-  if((status = cp9_FastViterbi(cm, errbuf, cm->cp9_mx, dsq_cp9, 1, L_cp9, cm->W, 0., NULL,
-			       TRUE,   /* we're scanning */
-			       FALSE,  /* we're not ultimately aligning */
-			       TRUE,   /* be memory efficient */
-			       NULL, NULL,
-			       NULL,   /* don't want traces back */
-			       NULL)) != eslOK) goto ERROR;
+  if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq_cp9, 1, L_cp9, cm->W, 0., NULL,
+			   TRUE,   /* we're scanning */
+			   FALSE,  /* we're not ultimately aligning */
+			   TRUE,   /* be memory efficient */
+			   NULL, NULL,
+			   NULL,   /* don't want traces back */
+			   NULL)) != eslOK) goto ERROR;
 
   esl_stopwatch_Stop(w);
   t_v = w->user;
@@ -276,12 +276,12 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   ESL_DPRINTF1(("minL: %d L: %d\n", minL, L));
   if(minL != -1 && minL <= L) be_safe = TRUE;
   esl_stopwatch_Start(w);
-  if((status = Xcp9_FastForward(cm, errbuf, cm->cp9_mx, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, 
-				TRUE,   /* we are scanning */
-				FALSE,  /* we are not ultimately aligning */
-				TRUE,   /* be memory efficient */
-				be_safe,
-				NULL, NULL, NULL)) != eslOK) goto ERROR;
+  if((status = cp9_FastForward(cm, errbuf, cm->cp9_mx, dsq_cp9, 1, L_cp9, cm->W, 0., NULL, 
+			       TRUE,   /* we are scanning */
+			       FALSE,  /* we are not ultimately aligning */
+			       TRUE,   /* be memory efficient */
+			       be_safe,
+			       NULL, NULL, NULL)) != eslOK) goto ERROR;
   esl_stopwatch_Stop(w);
   t_f = w->user;
 
@@ -399,7 +399,7 @@ summarize_alignment(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, 
  * Date:     EPN, Wed Aug 22 09:08:03 2007
  *
  * Purpose:  Count all non-d&c inside DP calcs for a CM 
- *           alignment of a seq of length L. Similar to smallcyk.c's
+ *           alignment of a seq of length L. Similar to cm_dpsmall.c's
  *           CYKDemands() but takes into account number of
  *           transitions from each state, and is concerned
  *           with a scanning dp matrix, not an alignment matrix.

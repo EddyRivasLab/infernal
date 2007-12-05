@@ -768,7 +768,7 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
   if(ret_maxres != NULL) *ret_maxres = best_pos;
   if(ret_psc != NULL)    *ret_psc    = scA;
   else                    free(scA);
-  ESL_DPRINTF1(("cm_cp9_FastViterbi() return score: %10.4f\n", best_sc));
+  ESL_DPRINTF1(("cm_cp9_HybridScan() return score: %10.4f\n", best_sc));
 
   return eslOK;
 
@@ -1521,9 +1521,9 @@ main(int argc, char **argv)
     
     if(esl_opt_GetBoolean(go, "-v")) { 
       esl_stopwatch_Start(w);
-      if((status = cp9_FastViterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,
-				   TRUE, FALSE, FALSE, NULL, NULL, NULL,
-				   &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,
+			       TRUE, FALSE, FALSE, NULL, NULL, NULL,
+			       &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "cm_FastViterbi(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");

@@ -109,20 +109,20 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i
     /* Scan the (sub)seq in forward direction w/Viterbi or Forward, getting j end points of hits above cutoff */
     fwd_results = CreateResults(INIT_RESULTS);
     if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
-      if((status = cp9_FastViterbi(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, cutoff, fwd_results, 
-				   TRUE,   /* we're scanning */
-				   FALSE,  /* we're not ultimately aligning */
-				   TRUE,   /* be memory efficient */
-				   NULL, NULL, NULL,  /* don't return best score at each posn, best scoring posn, or traces */
-				   &sc)) != eslOK) return status;
+      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, cutoff, fwd_results, 
+			       TRUE,   /* we're scanning */
+			       FALSE,  /* we're not ultimately aligning */
+			       TRUE,   /* be memory efficient */
+			       NULL, NULL, NULL,  /* don't return best score at each posn, best scoring posn, or traces */
+			       &sc)) != eslOK) return status;
     }
     else if(cm->search_opts & CM_SEARCH_HMMFORWARD) { 
-      if((status = cp9_FastForward(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, cutoff, fwd_results,
-				   TRUE,   /* we're scanning */
-				   FALSE,  /* we're not ultimately aligning */
-				   TRUE,   /* be memory efficient */
-				   NULL, NULL, /* don't return best score at each posn, or best scoring posn */
-				   &sc)) != eslOK) return status;
+      if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, cutoff, fwd_results,
+			       TRUE,   /* we're scanning */
+			       FALSE,  /* we're not ultimately aligning */
+			       TRUE,   /* be memory efficient */
+			       NULL, NULL, /* don't return best score at each posn, or best scoring posn */
+			       &sc)) != eslOK) return status;
     }
     /* Remove overlapping hits, if we're being greedy */
     if(cm->search_opts & CM_SEARCH_HMMGREEDY) { /* resolve overlaps by being greedy */
@@ -134,22 +134,22 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i
     for(h = 0; h < fwd_results->num_results; h++) {
       min_i = (fwd_results->data[h].stop - cm->W + 1) >= 1 ? (fwd_results->data[h].stop - cm->W + 1) : 1;
       if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
-	if((status = cp9_FastViterbiBackward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, cm->W, cutoff, 
-					     round_results, /* report hits to this round's results */
-					     TRUE,   /* we're scanning */
-					     FALSE,  /* we're not ultimately aligning */
-					     TRUE,   /* be memory efficient */
-					     NULL, NULL, NULL,  /* don't return best score at each posn, best scoring posn, or traces */
-					     &bwd_sc)) != eslOK) return status;
+	if((status = cp9_ViterbiBackward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, cm->W, cutoff, 
+					 round_results, /* report hits to this round's results */
+					 TRUE,   /* we're scanning */
+					 FALSE,  /* we're not ultimately aligning */
+					 TRUE,   /* be memory efficient */
+					 NULL, NULL, NULL,  /* don't return best score at each posn, best scoring posn, or traces */
+					 &bwd_sc)) != eslOK) return status;
       }
       else { 
-	if((status = Xcp9_FastBackward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, cm->W, cutoff, 
-				       round_results, /* report hits to this round's results */
-				       TRUE,   /* we're scanning */
-				       FALSE,  /* we're not ultimately aligning */
-				       TRUE,   /* be memory efficient */
-				       NULL, NULL,   /* don't return best score at each posn, best scoring posn */
-				       &bwd_sc)) != eslOK) return status;
+	if((status = cp9_Backward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, cm->W, cutoff, 
+				  round_results, /* report hits to this round's results */
+				  TRUE,   /* we're scanning */
+				  FALSE,  /* we're not ultimately aligning */
+				  TRUE,   /* be memory efficient */
+				  NULL, NULL,   /* don't return best score at each posn, best scoring posn */
+				  &bwd_sc)) != eslOK) return status;
       }
       /* this only works if we've saved the matrices, and didn't do scan mode for both Forward and Backward:
        * debug_check_CP9_FB(fmx, bmx, cm->cp9, cur_best_hmm_bsc, i0, j0, dsq); */
@@ -510,13 +510,13 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
     /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
     if(sq_mode && do_hmmonly) {
       if(sq_mode && !silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", seqs_to_aln->sq[i]->name);
-      if((status = cp9_FastViterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, L, 0., NULL,
-				   FALSE,  /* we are not scanning */
-				   TRUE,   /* we are aligning */
-				   FALSE,  /* don't be memory efficient */
-				   NULL, NULL, /* don't return best sc at each posn, or best scoring posn */
-				   &(cp9_tr[i]), /* return the trace */
-				   &sc)) != eslOK) return status;
+      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, L, 0., NULL,
+			       FALSE,  /* we are not scanning */
+			       TRUE,   /* we are aligning */
+			       FALSE,  /* don't be memory efficient */
+			       NULL, NULL, /* don't return best sc at each posn, or best scoring posn */
+			       &(cp9_tr[i]), /* return the trace */
+			       &sc)) != eslOK) return status;
       if(sq_mode && !silent_mode) printf(" score: %10.2f bits\n", sc);
       parsesc[i] = sc;
       continue;

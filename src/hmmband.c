@@ -231,19 +231,19 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 
   do_scan2bands = (cm->search_opts & CM_SEARCH_HMMSCANBANDS) ? TRUE : FALSE;
   /* TO DO have these guys return status codes */
-  if((status = Xcp9_FastForward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 0., NULL,
-				do_scan2bands, /* are we using scanning Forward/Backward */
-				TRUE,      /* we are going to use posteriors to align */
-				FALSE,     /* don't be memory efficient */
-				be_safe,   /* can we accelerate w/ no -INFTY logsum funcs? */
-				NULL, NULL,
-				&sc)) != eslOK) return status;
-  if((status = Xcp9_FastBackward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 0, NULL, 
-				 do_scan2bands, /* are we using scanning Forward/Backward */
-				 TRUE,  /* we are going to use posteriors to align */
-				 FALSE, /* don't be memory efficient */
-				 NULL, NULL,
-				 &sc)) != eslOK) return status;
+  if((status = cp9_FastForward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 0., NULL,
+			       do_scan2bands, /* are we using scanning Forward/Backward */
+			       TRUE,      /* we are going to use posteriors to align */
+			       FALSE,     /* don't be memory efficient */
+			       be_safe,   /* can we accelerate w/ no -INFTY logsum funcs? */
+			       NULL, NULL,
+			       &sc)) != eslOK) return status;
+  if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 0, NULL, 
+			    do_scan2bands, /* are we using scanning Forward/Backward */
+			    TRUE,  /* we are going to use posteriors to align */
+			    FALSE, /* don't be memory efficient */
+			    NULL, NULL,
+			    &sc)) != eslOK) return status;
 
   if(cm->align_opts & CM_ALIGN_CHECKFB) { 
     if((status = cp9_CheckFB(fmx, bmx, cm->cp9, errbuf, sc, i0, j0, dsq)) != eslOK) return status;
@@ -323,20 +323,20 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
   do_scan2bands = (cm->search_opts & CM_SEARCH_HMMSCANBANDS) ? TRUE : FALSE;
 
   /* Step 1: Get HMM posteriors.*/
-  if((status = Xcp9_FastForward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 0., NULL,
-				do_scan2bands, /* are we using scanning Forward/Backward */
+  if((status = cp9_FastForward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 0., NULL,
+			       do_scan2bands, /* are we using scanning Forward/Backward */
 				TRUE,      /* we are going to use posteriors to align */
-				FALSE,     /* don't be memory efficient */
-				be_safe,   /* can we accelerate w/ no -INFTY logsum funcs? */
-				NULL, NULL,
-				&sc)) != eslOK) return status;
+			       FALSE,     /* don't be memory efficient */
+			       be_safe,   /* can we accelerate w/ no -INFTY logsum funcs? */
+			       NULL, NULL,
+			       &sc)) != eslOK) return status;
   if(debug_level > 0) printf("CP9 Forward  score : %.4f\n", sc);
-  if((status = Xcp9_FastBackward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 0, NULL, 
-				 do_scan2bands, /* are we using scanning Forward/Backward */
-				 TRUE,  /* we are going to use posteriors to align */
-				 FALSE, /* don't be memory efficient */
-				 NULL, NULL,
-				 &sc)) != eslOK) return status;
+  if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 0, NULL, 
+			    do_scan2bands, /* are we using scanning Forward/Backward */
+			    TRUE,  /* we are going to use posteriors to align */
+			    FALSE, /* don't be memory efficient */
+			    NULL, NULL,
+			    &sc)) != eslOK) return status;
   if(debug_level > 0) printf("CP9 Backward  score : %.4f\n", sc);
 
   if(cm->align_opts & CM_ALIGN_CHECKFB) {

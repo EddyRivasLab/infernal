@@ -841,7 +841,7 @@ CMSubtreeFindEnd(CM_t *cm, int r)
  *
  * Returns:  a state index, 0..cm->M-1
  *
- * Used in:  modelmaker.c:transmogrify() 
+ * Used in:  cm_modelmaker.c:transmogrify() 
  */
 int
 CalculateStateIndex(CM_t *cm, int node, char utype)
@@ -1311,7 +1311,7 @@ DeriveUniqueStateCode(int ndtype, int sttype)
  *           Input: a CM that's numbered in preorder traversal: 
  *           visit root, visit left, visit right. (e.g., left
  *           child S always visited before right child S, 
- *           cfirst[w] < cnum[y], as produced by modelmaker.c).
+ *           cfirst[w] < cnum[y], as produced by cm_modelmaker.c).
  *           
  *           Output: a renumbered CM, in a modified preorder traversal:
  *           visit root, visit min weight child, visit max weight child,

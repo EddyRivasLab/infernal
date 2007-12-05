@@ -1,12 +1,12 @@
-/* 
- * cm_fastsearch.c
+/* cm_dpsearch.c
+ *
  * DP functions for CYK and Inside CM similarity search, includes
  * fast (optimized) and reference versions. 
  * 
  * All CYK/Inside scanning functions were rewritten between
  * versions 0.81 and 1.0 Here's a list of the 1.0 functions
  * and their 0.81 analogs. All the 1.0 functions listed are in
- * this file (cm_fastsearch.c).
+ * this file (cm_dpsearch.c).
  *
  * 1.0 fast version    1.0 slow version   0.81 version            
  * ----------------    ----------------   -------------
@@ -3678,7 +3678,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
  * Date:     EPN, Thu Oct 18 05:09:13 2007 [updated to Easel, Infernal]
  *           RJK, Sun Mar 24, 2002 [STL->DCA]
  *           SRE, Mon Aug  7 13:15:37 2000 [St. Louis] 
- *                   (from inside() in smallcyk.c)
+ *                   (from inside() in cm_dpsmall.c)
  *
  * Purpose:  Run the inside phase of a CYK alignment algorithm, on 
  *           a complete sequence of length L.
@@ -5059,11 +5059,11 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
  *****************************************************************/
 #ifdef IMPL_FASTSEARCH_BENCHMARK
 /* gcc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
- * gcc -o benchmark-fastsearch -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTSEARCH_BENCHMARK cm_fastsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
+ * gcc -o benchmark-fastsearch -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTSEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
  * mpicc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
- * mpicc -o benchmark-fastsearch -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTSEARCH_BENCHMARK cm_fastsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
+ * mpicc -o benchmark-fastsearch -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTSEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
  * icc -g -O3 -static -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
- * icc -o benchmark-fastsearch -O3 -static -I. -L. -I../easel -L../easel -DIMPL_FASTSEARCH_BENCHMARK cm_fastsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
+ * icc -o benchmark-fastsearch -O3 -static -I. -L. -I../easel -L../easel -DIMPL_FASTSEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
  * ./benchmark-fastsearch <cmfile>
  */
 

@@ -678,7 +678,7 @@ CountScanDPCalcs(CM_t *cm, int L, int use_qdb)
 	      if(cm->dmin[v] == 0) bw--;
 	      dpcalcs += ((bw * L) - (bw * (bw-1) * 0.5)) * cm->cnum[v];
 
-	      /* non-obvious subtractions that match implementation in bandcyk.c::CYKBandedScan() */
+	      /* non-obvious subtractions that match implementation in cm_qdband.c::CYKBandedScan() */
 	      if(v == 0) dpcalcs  -= ((bw * L) - (bw * (bw-1) * 0.5)); 
 	      if(cm->sttype[v] == MP_st) dpcalcs  -= bw * cm->cnum[v];
 	    }

@@ -40,38 +40,39 @@ MYINCDIR = -I../easel
 PROGS = cmalign cmbuild cmemit cmscore cmsearch cmstat
 
 OBJS  = alphabet.o\
-	bandcyk.o\
 	cm.o\
-	cmio.o\
 	cm_cluster.o\
 	cm_dispatch.o\
+	cm_dpalign.o\
+	cm_dpsearch.o\
+	cm_dpsmall.o\
 	cm_eweight.o\
 	cm_errors.o\
-	cm_fastalign.o\
-	cm_fastsearch.o\
+	cm_io.o\
 	cm_masks.o\
+	cm_modelconfig.o\
+	cm_modelmaker.o\
 	cm_mx.o\
+	cm_parsetree.o\
+	cm_qdband.o\
+	cm_rnamat.o\
 	cm_searchinfo.o\
+	cm_submodel.o\
 	cm_cp9_hybridsearch.o\
-	cplan9.o\
+	cp9.o\
 	CP9_cm2wrhmm.o\
 	CP9_scan.o\
-	cp9_fastsearch.o\
+	cp9_dp.o\
 	cp9_mx.o\
 	display.o\
 	emit.o\
 	emitmap.o\
 	hmmband.o\
 	logsum.o\
-	modelconfig.o\
-	modelmaker.o\
 	mpisupport.o\
-	parsetree.o\
 	prior.o\
-	rnamat.o\
-	smallcyk.o\
-	sub_cm.o\
-	stats.o
+	stats.o\
+	truncyk.o
 
 HDRS  = funcs.h\
 	structs.h

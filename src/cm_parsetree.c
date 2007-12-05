@@ -1,4 +1,4 @@
-/* parsetree.c
+/* cm_parsetree.c
  * cove 1.0: Mon May 17 09:38:14 1993
  * moved to cove 2.0, Mon Sep  6 13:34:55 1993
  * cove4: SRE 29 Feb 2000 [Seattle]

@@ -1,4 +1,5 @@
-/* bandcyk.c
+/* cm_qdband.c (formerly bandcyk.c)
+ *
  * SRE, Wed Nov 20 07:46:56 2002 [flight home from Airlie mtg]
  * SVN $Id$
  * 

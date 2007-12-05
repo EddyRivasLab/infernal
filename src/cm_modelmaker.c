@@ -1,4 +1,4 @@
-/* modelmaker.c
+/* cm_modelmaker.c
  * SRE, 28 Feb 2000
  * SVN $Id$
  *

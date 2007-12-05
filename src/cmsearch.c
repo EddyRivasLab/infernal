@@ -258,7 +258,11 @@ main(int argc, char **argv)
   cfg.cmfile     = esl_opt_GetArg(go, 1); 
   cfg.sqfile     = esl_opt_GetArg(go, 2); 
   cfg.sqfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
-  cfg.fmt        = eslSQFILE_UNKNOWN;      /* autodetect sequence file format by default. */ 
+  if   (esl_opt_IsDefault(go, "--informat")) cfg.fmt = eslSQFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
+  else { 
+    cfg.fmt = esl_sqio_FormatCode(esl_opt_GetString(go, "--informat"));
+    if(cfg.fmt == eslSQFILE_UNKNOWN) cm_Fail("Can't recognize sequence file format: %s. valid options are: fasta, embl, genbank, ddbj, uniprot, stockholm, or pfam\n", esl_opt_GetString(go, "--informat"));
+  }
   cfg.abc        = NULL;	           /* created in init_master_cfg() in masters, or in mpi_worker() in workers */
   if      (esl_opt_GetBoolean(go, "--rna")) cfg.abc_out = esl_alphabet_Create(eslRNA);
   else if (esl_opt_GetBoolean(go, "--dna")) cfg.abc_out = esl_alphabet_Create(eslDNA);

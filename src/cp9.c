@@ -1,7 +1,7 @@
 /************************************************************
  * @LICENSE@
  ************************************************************/
-/* cplan9.c based on plan7.c
+/* cp9.c based on HMMER 2.x's plan7.c
  * EPN 02.27.06
  * 
  * Support for CM-Plan 9 HMM data structure, CP9_t.
