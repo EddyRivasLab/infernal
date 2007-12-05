@@ -80,10 +80,7 @@ extern void  CMSetNullModel(CM_t *cm, float *null);
 extern int   CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null);
 extern int   IntMaxDigits();
 
-/* from cm_cluster.c */
-int MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff, int do_corig, int *ret_num_msa, ESL_MSA ***ret_cmsa);
-
-/* from cm_dispatch.c */
+/* from dispatch.c */
 extern int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, 
 				search_results_t **results, int *ret_flen, float *ret_sc);
 extern int ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
@@ -198,21 +195,6 @@ extern void debug_print_shadow(void ***shadow, CM_t *cm, int L);
 extern void debug_print_shadow_banded(void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
 extern void debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int L, int *dmin, int *dmax);
 
-/* from cm_eweight.c */
-extern double CM_Eweight(CM_t *cm,  const Prior_t *pri, 
-			 float numb_seqs, float targetent);
-extern void ModelContent(float *ent1, float *ent2, int M);
-extern void CMRescale(CM_t *hmm, float scale);
-extern double CM_Eweight_RE(CM_t *cm, const Prior_t *pri, float numb_seqs, 
-			    float target_relent, float *randomseq);
-extern double DRelEntropy(double *p, double *f, int n);
-extern float CMAverageMatchEntropy(CM_t *cm);
-extern float CP9AverageMatchEntropy(CP9_t *cp9);
-
-/* from cm_errors.c */
-extern void cm_Die (char *format, ...);
-extern void cm_Fail(char *format, ...);
-
 /* from cm_io.c */
 extern CMFILE *CMFileOpen(char *cmfile, char *env);
 extern int     CMFileRead(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
@@ -223,7 +205,6 @@ extern int     CMFilePositionByKey(CMFILE *cmf, char *key);
 extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary);
 
 /* from cm_masks.c */
-extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq);
 
 /* from cm_modelconfig.c */
 extern int   ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax);
@@ -310,6 +291,8 @@ extern float        ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_D
 extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr);
 extern void         rightjustify(const ESL_ALPHABET *abc, char *s, int n);
 extern void         leftjustify(const ESL_ALPHABET *abc, char *s, int n);
+extern int          EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree_t **ret_tr, ESL_SQ **ret_sq, int *ret_N);
+extern float        ParsetreeScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq);
 
 /* from cm_qdband.c */
 extern void     BandExperiment(CM_t *cm);
@@ -331,32 +314,6 @@ extern float    CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int 
 extern void     ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
 extern void     qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_level);
 
-/* from cm_rnamat.c */
-extern int numbered_nucleotide (char c);
-extern int numbered_basepair (char c, char d);
-extern FILE *MatFileOpen (char *matfile);
-extern fullmat_t *ReadMatrix(const ESL_ALPHABET *abc, FILE *matfp);
-extern int ribosum_calc_targets(fullmat_t *fullmat);
-
-/* from cm_searchinfo.c */
-extern int  cm_CreateSearchInfo(CM_t *cm, int cutoff_type, float cutoff);
-extern int  cm_AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_filter, int forward_filter,
-				     int hybrid_filter, ScanMatrix_t *smx, HybridScanInfo_t *hsi, int cutoff_type, float cutoff);
-extern void cm_FreeSearchInfo(SearchInfo_t *si, CM_t *cm);
-extern void cm_DumpSearchInfo(SearchInfo_t *si);
-extern void DumpSearchOpts(int search_opts);
-extern void cm_ValidateSearchInfo(CM_t *cm, SearchInfo_t *fi);
-extern void cm_UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float cutoff);
-extern search_results_t *CreateResults (int size);
-extern void ExpandResults (search_results_t *r, int additional);
-extern void AppendResults (search_results_t *src_results, search_results_t *dest_results, int i0);
-extern void FreeResults   (search_results_t *r);
-extern int  compare_results (const void *a_void, const void *b_void);
-extern void sort_results (search_results_t *results);
-extern void report_hit (int i, int j, int bestr, float score, search_results_t *results);
-extern void remove_overlapping_hits (search_results_t *results, int i0, int j0);
-extern float CountScanDPCalcs(CM_t *cm, int L, int use_qdb);
-
 /* from cm_submodel.c */
 extern int  build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, int print_flag);
 extern void CP9NodeForPosn(CP9_t *hmm, int i0, int j0, int x, CP9_MX *post, int *ret_node, int *ret_type, float pmass, int is_start, int print_flag);
@@ -374,18 +331,6 @@ extern void         FreeSubMap(CMSubMap_t *submap);
 extern CMSubInfo_t *AllocSubInfo(int clen);
 extern void         FreeSubInfo(CMSubInfo_t *subinfo);
 extern void  debug_print_cm_params(FILE *fp, CM_t *cm);
-
-
-/* from cm_cp9_hybridsearch.c */
-extern int cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanInfo_t *hsi, int i0, int j0, int W, 
-			     float cutoff, search_results_t *results, int **ret_psc, int *ret_maxres, float *ret_sc);
-extern int predict_xsub(CM_t *cm, float *cm_vcalcs, float *cm_expsc, float *cp9_expsc);
-extern void cm_CalcAvgHitLength(CM_t *cm, double beta, float **ret_hitlen);
-extern HybridScanInfo_t * cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs);
-extern int cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int vroot_to_add);
-extern int cm_ValidateHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi);
-extern void cm_FreeHybridScanInfo(HybridScanInfo_t *hsi, CM_t *cm);
-
 
 /* from cp9.c */
 extern CP9_t *AllocCPlan9(int M, const ESL_ALPHABET *abc);
@@ -484,15 +429,24 @@ extern int            CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float
 extern void           FreeCMConsensus(CMConsensus_t *con);
 extern void           MainBanner(FILE *fp, char *banner); 
 extern int            IsCompensatory(const ESL_ALPHABET *abc, float *pij, int symi, int symj);
+extern CMEmitMap_t   *CreateEmitMap(CM_t *cm); 
+extern void           DumpEmitMap(FILE *fp, CMEmitMap_t *map, CM_t *cm);
+extern void           FreeEmitMap(CMEmitMap_t *map);
 
-/* from emit.c */
-extern int EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree_t **ret_tr, ESL_SQ **ret_sq, int *ret_N);
+/* from errors.c */
+extern void cm_Die (char *format, ...);
+extern void cm_Fail(char *format, ...);
 
-/* from emitmap.c */
-extern CMEmitMap_t *CreateEmitMap(CM_t *cm); 
-extern void         DumpEmitMap(FILE *fp, CMEmitMap_t *map, CM_t *cm);
-extern void         FreeEmitMap(CMEmitMap_t *map);
-
+/* from eweight.c */
+extern double CM_Eweight(CM_t *cm,  const Prior_t *pri, 
+			 float numb_seqs, float targetent);
+extern void ModelContent(float *ent1, float *ent2, int M);
+extern void CMRescale(CM_t *hmm, float scale);
+extern double CM_Eweight_RE(CM_t *cm, const Prior_t *pri, float numb_seqs, 
+			    float target_relent, float *randomseq);
+extern double DRelEntropy(double *p, double *f, int n);
+extern float CMAverageMatchEntropy(CM_t *cm);
+extern float CP9AverageMatchEntropy(CP9_t *cp9);
 
 /* from hmmband.c */
 extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
@@ -504,8 +458,7 @@ extern int          cp9_FB2HMMBands        (CP9_t *hmm, char *errbuf, ESL_DSQ *d
 				            int i0, int j0, int M, double p_thresh, int did_scan, int debug_level);
 extern int          cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
 					    int i0, int j0, int M, double p_thresh, int did_scan, int debug_level);
-extern void         cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx,
-				  CP9_MX *mx, int did_scan);
+extern void         cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *mx, int did_scan);
 extern void         cp9_IFillPostSums(CP9_MX *post, CP9Bands_t *cp9, int i0, int j0);
 extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int debug_level);
 extern void         cp9_RelaxRootBandsForSearch(CM_t *cm, int *imin, int *imax, int *jmin, int *jmax);
@@ -527,10 +480,15 @@ extern void hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, int **hdm
 extern void debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax);
 extern void PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax, int W);
 
-/* old functions (get rid of them ?) */
-extern float CP9ViterbiAlign (ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *mx, CP9trace_t **ret_tr);
-extern float CP9ForwardAlign (ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *mx);
-extern float CP9BackwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *mx);
+/* from hybridsearch.c */
+extern int cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanInfo_t *hsi, int i0, int j0, int W, 
+			     float cutoff, search_results_t *results, int **ret_psc, int *ret_maxres, float *ret_sc);
+extern int predict_xsub(CM_t *cm, float *cm_vcalcs, float *cm_expsc, float *cp9_expsc);
+extern void cm_CalcAvgHitLength(CM_t *cm, double beta, float **ret_hitlen);
+extern HybridScanInfo_t * cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs);
+extern int cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int vroot_to_add);
+extern int cm_ValidateHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi);
+extern void cm_FreeHybridScanInfo(HybridScanInfo_t *hsi, CM_t *cm);
 
 /* from logsum.c */
 extern void  init_ilogsum(void);
@@ -589,7 +547,6 @@ extern int dsq_maxsc_MPISend(char *dsq, int L, float maxsc, int dest);
 extern int dsq_maxsc_MPIRecv(char **ret_dsq, int *ret_L, float *ret_maxsc);
 #endif
 
-
 /* from prior.c */
 extern Prior_t *Prior_Create(void);
 extern void     Prior_Destroy(Prior_t *pri);
@@ -597,6 +554,32 @@ extern Prior_t *Prior_Read(FILE *fp);
 extern void     PriorifyCM(CM_t *cm, const Prior_t *pri);
 extern Prior_t *Prior_Default(void);
 extern struct p7prior_s *P7DefaultInfernalPrior(void);
+
+/* from rnamat.c */
+extern int numbered_nucleotide (char c);
+extern int numbered_basepair (char c, char d);
+extern FILE *MatFileOpen (char *matfile);
+extern fullmat_t *ReadMatrix(const ESL_ALPHABET *abc, FILE *matfp);
+extern int ribosum_calc_targets(fullmat_t *fullmat);
+
+/* from searchinfo.c */
+extern int  CreateSearchInfo(CM_t *cm, int cutoff_type, float cutoff);
+extern int  AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_filter, int forward_filter,
+				  int hybrid_filter, ScanMatrix_t *smx, HybridScanInfo_t *hsi, int cutoff_type, float cutoff);
+extern void FreeSearchInfo(SearchInfo_t *si, CM_t *cm);
+extern void DumpSearchInfo(SearchInfo_t *si);
+extern void DumpSearchOpts(int search_opts);
+extern void ValidateSearchInfo(CM_t *cm, SearchInfo_t *fi);
+extern void UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float cutoff);
+extern search_results_t *CreateResults (int size);
+extern void ExpandResults (search_results_t *r, int additional);
+extern void AppendResults (search_results_t *src_results, search_results_t *dest_results, int i0);
+extern void FreeResults   (search_results_t *r);
+extern int  compare_results (const void *a_void, const void *b_void);
+extern void sort_results (search_results_t *results);
+extern void report_hit (int i, int j, int bestr, float score, search_results_t *results);
+extern void remove_overlapping_hits (search_results_t *results, int i0, int j0);
+extern float CountScanDPCalcs(CM_t *cm, int L, int use_qdb);
 
 /* from stats.c */
 extern CMStats_t *AllocCMStats(int np);

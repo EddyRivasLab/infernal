@@ -1,4 +1,6 @@
-/* error handling.
+/* errors.c
+ * 
+ * error handling.
  * 
  * Infernal's fatal error messages distinguish between user errors
  * ("failure", with cm_Fail()) and internal faults ("death", with

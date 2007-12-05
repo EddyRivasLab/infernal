@@ -2,11 +2,12 @@
  * @LICENSE@
  ************************************************************/
 
-/* cm_dispatch.c
+/* dispatch.c
  * EPN, Wed Dec  6 06:11:46 2006
  * 
- * Dispatch functions for aligning and searching seqs
- * with a CM.
+ * The two all-important dispatch functions.
+ * ActuallySearchTarget() calls appropriate DP search functions.
+ * ActuallyAlignTargets() calls appropriate DP alignment functions.
  * 
  */
 

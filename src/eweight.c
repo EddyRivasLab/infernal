@@ -2,7 +2,7 @@
  * @LICENSE@
  ************************************************************/
 
-/* cm_eweight.c [EPN 11.07.05]
+/* eweight.c [EPN 11.07.05]
  * based on: HMMER 2.4devl's lsj_eweight.c
  * Most original comments from lsj_eweight.c untouched.
  * 

@@ -1,4 +1,4 @@
-/* cm_rnamat.c
+/* rnamat.c
  *
  * Routines for dealing with RNA subsitution/transition matrix.
  *

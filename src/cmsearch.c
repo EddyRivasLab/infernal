@@ -1071,7 +1071,7 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(cm->si != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo(), cm->si is not NULL, shouldn't happen.\n");
 
   /* Create SearchInfo, specifying no filtering, we change the threshold below */
-  cm_CreateSearchInfo(cm, SCORE_CUTOFF, 0.);
+  CreateSearchInfo(cm, SCORE_CUTOFF, 0.);
   if(cm->si == NULL) cm_Fail("set_searchinfo(), CreateSearchInfo() call failed.");
   SearchInfo_t *si = cm->si; 
 
@@ -1197,9 +1197,9 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     }
   }
   /* update the search info, which holds the thresholds */
-  cm_UpdateSearchInfoCutoff(cm, cm->si->nrounds, cutoff_type, cutoff);   
-  cm_ValidateSearchInfo(cm, cm->si);
-  /* cm_DumpSearchInfo(cm->si); */
+  UpdateSearchInfoCutoff(cm, cm->si->nrounds, cutoff_type, cutoff);   
+  ValidateSearchInfo(cm, cm->si);
+  /* DumpSearchInfo(cm->si); */
   /* done with threshold for final round */
 
   /* Set up the filters and their thresholds 
@@ -1258,9 +1258,9 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     }
     fsmx = cm_CreateScanMatrix(cm, dmax[0], dmin, dmax, esl_opt_GetReal(go, "--fbeta"), TRUE, add_cyk_filter, add_inside_filter);
     /* add the filter */
-    cm_AddFilterToSearchInfo(cm, add_cyk_filter, add_inside_filter, FALSE, FALSE, FALSE, fsmx, NULL, cutoff_type, cutoff);
-    cm_ValidateSearchInfo(cm, cm->si);
-    /* cm_DumpSearchInfo(cm->si); */
+    AddFilterToSearchInfo(cm, add_cyk_filter, add_inside_filter, FALSE, FALSE, FALSE, fsmx, NULL, cutoff_type, cutoff);
+    ValidateSearchInfo(cm, cm->si);
+    /* DumpSearchInfo(cm->si); */
   }
   else if (! esl_opt_IsDefault(go, "--fbeta")) ESL_FAIL(eslEINCOMPAT, errbuf, "--fbeta has an effect with --fcyk or --finside");
 
@@ -1307,9 +1307,9 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     }
     else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No HMM filter cutoff selected. This shouldn't happen.");
     /* add the filter */
-    cm_AddFilterToSearchInfo(cm, FALSE, FALSE, add_viterbi_filter, add_forward_filter, FALSE, NULL, NULL, cutoff_type, cutoff);
-    cm_ValidateSearchInfo(cm, cm->si);
-    /* cm_DumpSearchInfo(cm->si); */
+    AddFilterToSearchInfo(cm, FALSE, FALSE, add_viterbi_filter, add_forward_filter, FALSE, NULL, NULL, cutoff_type, cutoff);
+    ValidateSearchInfo(cm, cm->si);
+    /* DumpSearchInfo(cm->si); */
   }
 
   return eslOK;
@@ -1779,10 +1779,10 @@ set_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, in
 
   /* finally, update SearchInfo, specifying no filtering, we'll change this later if nec */
   if(cm->si == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_cutoffs(), cm->si is NULL. Shouldn't happen");
-  if(use_hmmonly) cm_UpdateSearchInfoCutoff(cm, cm->si->nrounds, *ret_min_cp9_cutoff); /* update CP9 bit score cutoff */
-  else            cm_UpdateSearchInfoCutoff(cm, cm->si->nrounds, *ret_min_cm_cutoff);  /* use CM  bit score cutoff */
-  cm_ValidateSearchInfo(cm, cm->si);
-  /* cm_DumpSearchInfo(cm->si); */
+  if(use_hmmonly) UpdateSearchInfoCutoff(cm, cm->si->nrounds, *ret_min_cp9_cutoff); /* update CP9 bit score cutoff */
+  else            UpdateSearchInfoCutoff(cm, cm->si->nrounds, *ret_min_cm_cutoff);  /* use CM  bit score cutoff */
+  ValidateSearchInfo(cm, cm->si);
+  /* DumpSearchInfo(cm->si); */
 
   return eslOK;
 }

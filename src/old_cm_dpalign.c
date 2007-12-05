@@ -62,7 +62,6 @@
 #include "esl_vectorops.h"
 #include "esl_weibull.h"
 #include "esl_wuss.h"
-*/
 
 #include "funcs.h"		/* external functions                   */
 #include "old_funcs.h"		/* old external functions               */

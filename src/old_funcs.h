@@ -165,6 +165,9 @@ extern float CP9Backward(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, float cu
 			 int *ret_maxres, search_results_t *results, int do_scan, int doing_align, 
 			 int be_efficient, CP9_MX **ret_mx);
 extern float CP9ForwardScanDemands(CP9_t *cp9, int L);
+extern float CP9ViterbiAlign (ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *mx, CP9trace_t **ret_tr);
+extern float CP9ForwardAlign (ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *mx);
+extern float CP9BackwardAlign(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *mx);
 
 /* Functions below from old_miscfuncs.c are not compiled, they're not used for 
  * any currently working code, bu are kept solely for reference */

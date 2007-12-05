@@ -312,8 +312,8 @@ CMRenormalize(CM_t *cm)
 void
 FreeCM(CM_t *cm)
 {
-  if (cm->smx    != NULL) cm_FreeScanMatrixForCM(cm);    /* free this first, it needs some info from cm->stid */
-  if (cm->si     != NULL) cm_FreeSearchInfo(cm->si, cm); /* free this first, it needs some info from cm->stid */
+  if (cm->smx    != NULL) cm_FreeScanMatrixForCM(cm); /* free this first, it needs some info from cm->stid */
+  if (cm->si     != NULL) FreeSearchInfo(cm->si, cm); /* free this first, it needs some info from cm->stid */
   if (cm->name   != NULL) free(cm->name);
   if (cm->acc    != NULL) free(cm->acc);
   if (cm->desc   != NULL) free(cm->desc);
