@@ -95,7 +95,6 @@ static ESL_OPTIONS options[] = {
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 9},
 /* Other options */
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "arrest after start: for debugging MPI under gdb",   10 },  
-  { "--olddp",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    "--optacc", "use older, slower (version 0.81) DP alignment functions",10 },  
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -825,18 +824,10 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 {
   int status;
 
-  if(cm->align_opts & CM_ALIGN_OLDDP) { 
-    OldActuallyAlignTargets(cm, seqs_to_aln,
-			    NULL, NULL, 0,  /* we're not aligning search hits */
-			    esl_opt_GetInteger(go, "--banddump"),
-			    esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL);
-  }
-  else {
-    if((status = ActuallyAlignTargets(cm, errbuf, seqs_to_aln,
-				       NULL, NULL, 0,  /* we're not aligning search hits */
-				       esl_opt_GetInteger(go, "--banddump"),
-				       esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL)) != eslOK) goto ERROR;
-  }
+  if((status = ActuallyAlignTargets(cm, errbuf, seqs_to_aln,
+				    NULL, NULL, 0,  /* we're not aligning search hits */
+				    esl_opt_GetInteger(go, "--banddump"),
+				    esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL)) != eslOK) goto ERROR;
   return eslOK;
   
  ERROR:
@@ -880,7 +871,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--checkfb"))     cm->align_opts  |= CM_ALIGN_CHECKFB;
   if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
   if(esl_opt_GetBoolean(go, "--fins"))        cm->align_opts  |= CM_ALIGN_FLUSHINSERTS;
-  if(esl_opt_GetBoolean(go, "--olddp"))       cm->align_opts  |= CM_ALIGN_OLDDP;
   if(esl_opt_GetBoolean(go, "--optacc"))      cm->align_opts  |= CM_ALIGN_OPTACC;
   if(esl_opt_GetString (go, "--enfseq") != NULL)
     {

@@ -51,7 +51,6 @@ OBJS  = alphabet.o\
 	cm_fastsearch.o\
 	cm_masks.o\
 	cm_mx.o\
-	cm_postprob.o\
 	cm_searchinfo.o\
 	cm_cp9_hybridsearch.o\
 	cplan9.o\
@@ -62,7 +61,6 @@ OBJS  = alphabet.o\
 	display.o\
 	emit.o\
 	emitmap.o\
-	hbandcyk.o\
 	hmmband.o\
 	logsum.o\
 	modelconfig.o\
@@ -71,8 +69,6 @@ OBJS  = alphabet.o\
 	parsetree.o\
 	prior.o\
 	rnamat.o\
-	scancyk.o\
-	scaninside.o\
 	smallcyk.o\
 	sub_cm.o\
 	stats.o

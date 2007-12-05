@@ -3228,6 +3228,253 @@ cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf)
   ESL_FAIL(status, errbuf, "Memory allocation error.");
 }
 
+
+/*****************************************************************************
+ * EPN 11.03.05
+ * Function: ij2d_bands()
+ *
+ * Purpose:  Determine the band for each cm state v on d (the band on the 
+ *           length of the subsequence emitted from the subtree rooted
+ *           at state v). These are easily calculated given the bands on i
+ *           and j.
+ * 
+ * arguments:
+ *
+ * CM_t *cm         the CM 
+ * int  W           length of sequence we're aligning
+ * int *imin        imin[v] = first position in band on i for state v
+ * int *imax        imax[v] = last position in band on i for state v
+ * int *jmin        jmin[v] = first position in band on j for state v
+ * int *jmax        jmax[v] = last position in band on j for state v
+ * int **hdmin      hdmin[v][j0] = first position in band on d for state v
+ *                                 and j position: j = j0+jmin[v].
+ *                  Filled in this function.
+ * int **hdmax      hdmax[v][j0] = last position in band on d for state v
+ *                                 and j position: j = j0+jmin[v].
+ *                  Filled in this function.
+ * int debug_level  [0..3] tells the function what level of debugging print
+ *                  statements to print.
+ *****************************************************************************/
+void
+ij2d_bands(CM_t *cm, int W, int *imin, int *imax, int *jmin, int *jmax,
+	   int **hdmin, int **hdmax, int debug_level)
+{
+  int v;            /* counter over states of the CM */
+  int j0;           /* counter over valid j's, but offset. j0+jmin[v] = actual j */
+  int j;            /* actual j */
+  int sd;           /* minimum d allowed for a state, ex: MP_st = 2, ML_st = 1. etc. */
+  for(v = 0; v < cm->M; v++) {
+    if(cm->sttype[v] == E_st) {
+      for(j0 = 0; j0 <= (jmax[v]-jmin[v]); j0++) {
+	hdmin[v][j0] = 0;
+	hdmax[v][j0] = 0;
+      }
+    }
+    else {
+      sd = StateDelta(cm->sttype[v]);
+      for(j0 = 0; j0 <= (jmax[v]-jmin[v]); j0++) {
+	j = j0+jmin[v];
+	hdmin[v][j0] = ESL_MAX((j - imax[v] + 1), sd);
+	hdmax[v][j0] = ESL_MAX((j - imin[v] + 1), sd);
+	/*printf("hd[%d][j=%d]: min: %d | max: %d\n", v, (j0+jmin[v]), hdmin[v][j0], hdmax[v][j0]);*/
+      }
+    }
+  }
+}
+
+/*****************************************************************************
+ * EPN, Thu Apr 26 13:27:16 2007
+ * Function: combine_qdb_hmm_d_bands()
+ *
+ * Purpose:  Given hdmin and hdmax bands, and query dependent bands (QDBs)
+ *           in cm->dmin and cm->dmax, combine them by redefining the 
+ *           hdmin and hdmax bands where necessary:
+ *           hdmin[v][j] = max(hdmin[v][j], dmin[v])
+ *           hdmax[v][j] = min(hdmin[v][j], dmin[v])
+ * 
+ * arguments:
+ *
+ * CM_t *cm         the CM 
+ * int *jmin        jmin[v] = first position in band on j for state v
+ * int *jmax        jmax[v] = last position in band on j for state v
+ * int **hdmin      hdmin[v][j0] = first position in band on d for state v
+ *                                 and j position: j = j0+jmin[v].
+ *                  Redefined in this function.
+ * int **hdmax      hdmax[v][j0] = last position in band on d for state v
+ *                                 and j position: j = j0+jmin[v].
+ *                  Redefined in this function.
+ *****************************************************************************/
+void
+combine_qdb_hmm_d_bands(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax)
+{
+  int v;            /* counter over states of the CM */
+  int jp;           /* counter over valid j's, but offset. jp+jmin[v] = actual j */
+
+  /* Contract check */
+  if(!(cm->flags & CMH_QDB))
+    esl_fatal("ERROR, in combine_qdb_hmm_d_bands(), CM QDBs invalid.\n");
+  if(cm->dmin == NULL || cm->dmax == NULL)
+    esl_fatal("ERROR, in combine_qdb_hmm_d_bands() but cm->dmin and/or cm->dmax is NULL.\n");
+
+  for(v = 0; v < cm->M; v++)
+    {
+      for(jp = 0; jp <= (jmax[v]-jmin[v]); jp++)
+	{
+	  hdmin[v][jp] = hdmin[v][jp] > cm->dmin[v] ? hdmin[v][jp] : cm->dmin[v];
+	  hdmax[v][jp] = hdmax[v][jp] < cm->dmax[v] ? hdmax[v][jp] : cm->dmax[v];
+	}
+    }
+}
+
+
+/*****************************************************************************
+ * EPN 11.04.05
+ * Function: hd2safe_hd_bands
+ *
+ * Purpose:  HMMERNAL milestone 4 function. Given 
+ *           hdmin and hdmax 2D arrays, simply
+ *           fill safe_hdmin and safe_hdmax (1D arrays):
+ *           safe_hdmin[v] = min_d (hdmin[v][j0])
+ *           safe_hdmax[v] = max_d (hdmax[v][j0])
+ * 
+ * arguments:
+ * int M            num states in the CM.
+ * int *jmin        jmin[v] = first position in band on j for state v
+ * int *jmax        jmax[v] = last position in band on j for state v
+ * int **hdmin      hdmin[v][j0] = first position in band on d for state v
+ *                                 and j position: j = j0+jmin[v].
+ * int **hdmax      hdmax[v][j0] = last position in band on d for state v
+ *                                 and j position: j = j0+jmin[v].
+ * int *safe_hdmin  safe_hdmin[v] = min_d (hdmin[v][j0]) (over all valid j0)
+ *                  filled in this function.
+ * int *safe_hdmax  safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0)
+ *                  filled in this function.
+ *****************************************************************************/
+void
+hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, int **hdmax,
+		 int *safe_hdmin, int *safe_hdmax)
+
+{
+  int v;            /* counter over states of the CM */
+  int j0;           /* counter over valid j's, but offset. j0+jmin[v] = actual j */
+
+  for(v = 0; v < M; v++)
+    {
+      safe_hdmin[v] = hdmin[v][0];
+      safe_hdmax[v] = hdmax[v][0];
+      /*printf("j0: %2d | j: %2d | v: %3d | smin %d | smax : %d\n", 0, (jmin[v]), v, safe_hdmin[v], safe_hdmax[v]);*/
+      for(j0 = 1; j0 <= (jmax[v]-jmin[v]); j0++)
+	{
+	  if(hdmin[v][j0] < safe_hdmin[v])
+	    safe_hdmin[v] = hdmin[v][j0];
+	  if(hdmax[v][j0] > safe_hdmax[v])
+	    safe_hdmax[v] = hdmax[v][j0];
+	  /*printf("j0: %2d | j: %2d | v: %3d | smin %d | smax : %d\n", j0, (j0+jmin[v]), v, safe_hdmin[v], safe_hdmax[v]);*/
+	}
+    }
+
+  for(v = 0; v < M; v++)
+    {
+      for(j0 = 1; j0 <= (jmax[v]-jmin[v]); j0++)
+	{
+	  /* check to make sure that hdmax[v][j0] doesn't exceed j */
+	  if(hdmax[v][j0] > (j0+jmin[v]))
+	    {
+	      printf("ERROR: hd2safe_bands.1\n");
+	      /*exit(1);*/
+	    }
+	}
+    }
+}
+
+/*****************************************************************************
+ * EPN 01.18.06
+ * Function: debug_print_hd_bands
+ *
+ * Purpose:  Print out the v and j dependent hd bands.
+ * 
+ *****************************************************************************/
+void
+debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
+{
+  int status;
+  int v, j;
+  char **sttypes;
+  char **nodetypes;
+
+  ESL_ALLOC(sttypes, sizeof(char *) * 10);
+  sttypes[0] = "D";
+  sttypes[1] = "MP";
+  sttypes[2] = "ML";
+  sttypes[3] = "MR";
+  sttypes[4] = "IL";
+  sttypes[5] = "IR";
+  sttypes[6] = "S";
+  sttypes[7] = "E";
+  sttypes[8] = "B";
+  sttypes[9] = "EL";
+
+  ESL_ALLOC(nodetypes, sizeof(char *) * 8);
+  nodetypes[0] = "BIF";
+  nodetypes[1] = "MATP";
+  nodetypes[2] = "MATL";
+  nodetypes[3] = "MATR";
+  nodetypes[4] = "BEGL";
+  nodetypes[5] = "BEGR";
+  nodetypes[6] = "ROOT";
+  nodetypes[7] = "END";
+
+  printf("\nPrinting hd bands :\n");
+  printf("****************\n");
+  for(v = 0; v < cm->M; v++)
+   {
+     for(j = jmin[v]; j <= jmax[v]; j++) 
+       {
+	 printf("band v:%d j:%d n:%d %-4s %-2s min:%d max:%d\n", v, j, cm->ndidx[v], nodetypes[(int) cm->ndtype[(int) cm->ndidx[v]]], sttypes[(int) cm->sttype[v]], hdmin[v][j-jmin[v]], hdmax[v][j-jmin[v]]);
+       }
+     printf("\n");
+   }
+  printf("****************\n\n");
+
+  free(sttypes);
+  free(nodetypes);
+  return;
+
+ ERROR:
+  esl_fatal("Memory allocation error.");
+}
+
+
+/* Function: PrintDPCellsSaved_jd()
+ * Prints out an estimate of the speed up due to j and d bands */
+void
+PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
+		     int W)
+{
+  int v;
+  int j;
+  int max;
+  double after, before;
+
+  printf("Printing DP cells saved using j and d bands:\n");
+  before = after = 0;
+  for (v = 0; v < cm->M; v++) 
+    {
+      for(j = 0; j <= W; j++)
+	if (cm->sttype[v] != E_st) 
+	  before += j + 1;
+      for(j = jmin[v]; j <= jmax[v]; j++)
+	if (cm->sttype[v] != E_st) 
+	  {
+	    max = (j < hdmax[v][j-jmin[v]]) ? j : hdmax[v][j-jmin[v]];
+	    after += max - hdmin[v][j-jmin[v]] + 1;
+	  }
+    }
+  printf("Before:  something like %.0f\n", before);
+  printf("After:   something like %.0f\n", after);
+  printf("Speedup: maybe %.2f fold\n\n", (float) before / (float) after);
+}
+
 #if 0
 /* Here are the P7 versions of the functions, for reference */
 

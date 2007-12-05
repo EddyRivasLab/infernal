@@ -27,7 +27,7 @@
  * data structure which only allocates cells within bands 
  * derived from a HMM Forward/Backward alignment of the
  * target sequence. The bands are stored in a CP9Bands_t object,
- * a pointer to which must exits in the cm (CM_t object).
+ * a pointer to which must exist in the cm (CM_t object).
  * 
  * Non-banded, non-D&C alignment functions were rewritten for completeness.
  * These are consistent with their HB counterparts, but require non-banded
@@ -1186,7 +1186,7 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
       case IL_st: i++;      break;
       case IR_st:      j--; break;
       case S_st:            break;
-      default:    esl_fatal("'Inconceivable!'\n'You keep using that word...'");
+      default:    cm_Fail("'Inconceivable!'\n'You keep using that word...'");
       }
       d = j-i+1;
 
@@ -4606,11 +4606,315 @@ CMCheckPosterior(CM_t *cm, char *errbuf, int i0, int j0, float ***post)
   return eslOK;
 }
 
+/* Function: CMPostalCode()
+ * Date:     EPN 05.25.06 based on SRE's PostalCode() 
+ *           from HMMER's postprob.c
+ *
+ * Purpose:  Given a parse tree and a posterior
+ *           probability cube, calculate two strings that
+ *           represents the confidence values on each 
+ *           residue in the sequence. 
+ *           
+ *           The code strings is 0..L-1  (L = len of target seq),
+ *           so it's in the coordinate system of the sequence string;
+ *           off by one from dsq; and convertible to the coordinate
+ *           system of aseq using MakeAlignedString().
+ *           
+ *           Values are 00-99,**  
+ *           for example, 93 means with >=93% posterior probabiility,
+ *           residue i is aligned to the state k that it
+ *           is assigned to in the given trace.
+ *
+ *           Because we have 2 digit precision, we need two
+ *           strings, the first will be the 'tens' place of
+ *           the posterior probability, '9' for the 93% example,
+ *           and the second string will hold the 'ones' place,
+ *           the '3' in the 93% example.
+ *
+ * Args:     L    - length of seq
+ *           post - posterior prob cube: see CMPosterior()
+ *           *tr  - parsetree to get a Postal code string for.   
+ *           ret_pcode1 - 'tens' place postal code string ('9' for 93)
+ *           ret_pcode2 - 'ones' place postal code string ('3' for 93)
+ * Returns:  void
+ *
+ */
+int
+Fscore2postcode(float sc)
+{
+  int i;
+  i = (int) (FScore2Prob(sc, 1.) * 100.);
+  ESL_DASSERT1((i >= 0 && i <= 100)); 
+  return i;
+}
+
+/* Function: FScore2Prob()
+ * 
+ * Purpose:  Convert a float log_2 odds score back to a probability;
+ *           needs the null model probability, if any, to do the conversion.
+ */
+float 
+FScore2Prob(float sc, float null)
+{
+  /*printf("in FScore2Prob: %10.2f sreEXP2: %10.2f\n", sc, (sreEXP2(sc)));*/
+  if (!(NOT_IMPOSSIBLE(sc))) return 0.;
+  else                       return (null * sreEXP2(sc));
+}
+
+
+void
+CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2)
+{
+  int status;
+  int x, v, i, j, d, r;
+  char *pcode1;
+  char *pcode2;
+  int p;
+
+  ESL_ALLOC(pcode1, (L+1) * sizeof(char)); 
+  ESL_ALLOC(pcode2, (L+1) * sizeof(char)); 
+
+  for (x = 0; x < tr->n; x++)
+    {
+      v = tr->state[x];
+      i = tr->emitl[x];
+      j = tr->emitr[x];
+      d = j-i+1;
+      /*printf("x: %2d | v: %2d | i: %2d | j: %2d | d: %2d | post[%d][%d][%d]: %f\n", x, v, i, j, d, v, j, d, post[v][j][d]);*/
+      /*
+       * Only P, L, R states have emissions.
+       */
+      if (cm->sttype[v] == MP_st) {
+	p = Fscore2postcode(post[v][j][d]);
+	if(p == 100) { 
+	  pcode1[i-1] = pcode1[j-1] = '*';
+	  pcode2[i-1] = pcode2[j-1] = '*';
+	}
+	else {
+	  pcode1[i-1] = pcode1[j-1] = '0' + (char) (p / 10);
+	  pcode2[i-1] = pcode2[j-1] = '0' + (char) (p % 10);
+	}
+      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
+	p = Fscore2postcode(post[v][j][d]);
+	if(p == 100) { 
+	  pcode1[i-1] = '*';
+	  pcode2[i-1] = '*';
+	}
+	else {
+	  pcode1[i-1] = '0' + (char) (p / 10);
+	  pcode2[i-1] = '0' + (char) (p % 10);
+	}
+      } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
+	p = Fscore2postcode(post[v][j][d]);
+	if(p == 100) { 
+	  pcode1[j-1] = '*';
+	  pcode2[j-1] = '*';
+	}
+	else {
+	  pcode1[j-1] = '0' + (char) (p / 10);
+	  pcode2[j-1] = '0' + (char) (p % 10);
+	}
+      } else if (cm->sttype[v] == EL_st) /*special case*/ {
+	for(r = (i-1); r <= (j-1); r++)
+	  {
+	    d = j - (r+1) + 1;
+	    p = Fscore2postcode(post[v][j][d]);
+	    if(p == 100) { 
+	      pcode1[r] = '*';
+	      pcode2[r] = '*';
+	    }
+	    else {
+	      pcode1[r] = '0' + (char) (p / 10);
+	      pcode2[r] = '0' + (char) (p % 10);
+	    }
+	    /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
+	  }
+      }
+    }
+  pcode1[L] = '\0';
+  pcode2[L] = '\0';
+
+  *ret_pcode1 = pcode1;
+  *ret_pcode2 = pcode2;
+  return;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return; /* never reached */
+}
+
+void
+CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2)
+{
+  int status;
+  int x, v, i, j, d, r, p;
+  char *pcode1;
+  char *pcode2;
+  int jp_v, dp_v;
+
+  /* variables used for memory efficient bands */
+  /* ptrs to cp9b info, for convenience */
+  CP9Bands_t *cp9b = cm->cp9b;
+  int     *jmin  = cp9b->jmin;  
+  int    **hdmin = cp9b->hdmin;
+  /* the DP matrix */
+  float ***post  = post_mx->dp; /* pointer to the post DP matrix */
+
+  ESL_ALLOC(pcode1, (L+1) * sizeof(char)); 
+  ESL_ALLOC(pcode2, (L+1) * sizeof(char)); 
+
+  for (x = 0; x < tr->n; x++) {
+    v = tr->state[x];
+    i = tr->emitl[x];
+    j = tr->emitr[x];
+    d = j-i+1;
+
+    /* Only P, L, R, and EL states have emissions. */
+    if(v != cm->M) { 
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+    }
+    else {
+      jp_v = j;
+      dp_v = d;
+    }      
+
+    if (cm->sttype[v] == MP_st) {
+	p = Fscore2postcode(post[v][jp_v][dp_v]);
+	if(p == 100) { 
+	  pcode1[i-1] = pcode1[j-1] = '*';
+	  pcode2[i-1] = pcode2[j-1] = '*';
+	}
+	else {
+	  pcode1[i-1] = pcode1[j-1] = '0' + (char) (p / 10);
+	  pcode2[i-1] = pcode2[j-1] = '0' + (char) (p % 10);
+	}
+      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
+	p = Fscore2postcode(post[v][jp_v][dp_v]);
+	if(p == 100) { 
+	  pcode1[i-1] = '*';
+	  pcode2[i-1] = '*';
+	}
+	else {
+	  pcode1[i-1] = '0' + (char) (p / 10);
+	  pcode2[i-1] = '0' + (char) (p % 10);
+	}
+      } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
+	p = Fscore2postcode(post[v][jp_v][dp_v]);
+	if(p == 100) { 
+	  pcode1[j-1] = '*';
+	  pcode2[j-1] = '*';
+	}
+	else {
+	  pcode1[j-1] = '0' + (char) (p / 10);
+	  pcode2[j-1] = '0' + (char) (p % 10);
+	}
+      } else if (cm->sttype[v] == EL_st) /*special case*/ {
+	for(r = (i-1); r <= (j-1); r++) {
+	  d = j - (r+1) + 1;
+	  p = Fscore2postcode(post[v][j][d]);
+	    if(p == 100) { 
+	      pcode1[r] = '*';
+	      pcode2[r] = '*';
+	    }
+	    else {
+	      pcode1[r] = '0' + (char) (p / 10);
+	      pcode2[r] = '0' + (char) (p % 10);
+	    }
+	    /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
+	  }
+      }
+    }
+  pcode1[L] = '\0';
+  pcode2[L] = '\0';
+  *ret_pcode1 = pcode1;
+  *ret_pcode2 = pcode2;
+  return;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return; /* never reached */
+}
+
+
+char  **
+alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax)
+{
+  int    status;
+  char **a;
+  int    jp;
+  int     bw; /* width of band, depends on jp, so we need to calculate
+	         this inside the jp loop*/
+  int     jfirst, jlast;
+
+  if(j < jmin || i > jmax)
+    cm_Fail("ERROR called alloc_jdbanded_vjd_yshadow_deck for i: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i, j, jmin, jmax);
+
+  ESL_ALLOC(a, sizeof(float *) * (L+1));  /* always alloc 0..L rows, some of which are NULL */
+  jfirst = ((i-1) > jmin) ? (i-1) : jmin;
+  jlast = (j < jmax) ? j : jmax;
+  for (jp = (jlast-jfirst+1); jp <= L;     jp++) a[jp]     = NULL;
+
+  /* jfirst is the first valid j, jlast is the last */
+  for (jp = jfirst; jp <= jlast; jp++)
+    {
+      /*printf("jp: %d | max : %d\n", jp, (jlast)); */
+      ESL_DASSERT2(hdmax[jp-jmin] <= (jp+1))
+      /* Based on my current understanding the above line should never be false, if it is means there's a valid d
+       * in the hd band that is invalid because its > j. I think I check, or ensure, that this
+       * doesn't happen when I'm constructing the d bands.
+       */
+      bw = hdmax[jp-jmin] - hdmin[jp-jmin] +1;
+
+      /*printf("\tallocated a[%d]\n", (jp-jfirst));*/
+      ESL_ALLOC(a[jp-jfirst], sizeof(char) * bw);
+    }
+  return a;
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return NULL; /* never reached */
+}
+int** 
+alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax)
+{
+  int   status;
+  int **a;
+  int   jp;
+  int     bw; /* width of band, depends on jp, so we need to calculate
+	         this inside the jp loop*/
+  int     jfirst, jlast;
+
+  if(j < jmin || i > jmax)
+    cm_Fail("ERROR called alloc_jdbanded_vjd_kshadow_deck for i: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i, j, jmin, jmax);
+
+  ESL_ALLOC(a, sizeof(float *) * (L+1));  /* always alloc 0..L rows, some of which are NULL */
+  jfirst = ((i-1) > jmin) ? (i-1) : jmin;
+  jlast = (j < jmax) ? j : jmax;
+  for (jp = (jlast-jfirst+1); jp <= L;     jp++) a[jp]     = NULL;
+
+  /* jfirst is the first valid j, jlast is the last */
+  for (jp = jfirst; jp <= jlast; jp++)
+    {
+      ESL_DASSERT1((hdmax[jp-jmin] <= (jp+1)));
+      bw = hdmax[jp-jmin] - hdmin[jp-jmin] +1;
+      ESL_ALLOC(a[jp-jfirst], sizeof(int) * bw);
+    }
+  return a;
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return NULL; /* never reached */
+}
+
 /*****************************************************************
  * Benchmark driver
  *****************************************************************/
 #ifdef IMPL_FASTALIGN_BENCHMARK
-/* gcc -o benchmark-fastalign -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_fastalign.c -linfernal -leasel -lm
+/* gcc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
+ * gcc   -o benchmark-fastalign -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_fastalign.c old_cm_dpalign.o -linfernal -leasel -lm
+ * mpicc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c  
+ * mpicc -o benchmark-fastalign -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_fastalign.c old_cm_dpalign.o -linfernal -leasel -lm
+ * icc -g -O3 -static -DHAVE_CONFIG_H -I../easel  -c old_cm_dpalign.c 
+ * icc -o benchmark-fastalign -O3 -static -I. -L. -I../easel -L../easel -DIMPL_FASTALIGN_BENCHMARK cm_fastalign.c old_cm_dpalign.o -linfernal -leasel -lm
  * ./benchmark-fastalign <cmfile>
  */
 
@@ -4633,6 +4937,7 @@ CMCheckPosterior(CM_t *cm, char *errbuf, int i0, int j0, float ***post)
 #include <esl_wuss.h>
 
 #include "funcs.h"		/* function declarations                */
+#include "old_funcs.h"		/* old  function declarations (from v0.81)*/
 #include "structs.h"		/* data structures, macros, #define's   */
 
 static ESL_OPTIONS options[] = {
@@ -4682,9 +4987,7 @@ main(int argc, char **argv)
   char           errbuf[cmERRBUFSIZE];
 
   int             ***oialpha;    
-  int             ***oibeta;     
   float           ***ofalpha;    
-  float           ***ofbeta;     
 
   if (esl_opt_GetBoolean(go, "-r"))  r = esl_randomness_CreateTimeseeded();
   else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
@@ -4743,12 +5046,12 @@ main(int argc, char **argv)
       esl_stopwatch_Start(w);
       if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, seqs_to_aln->sq[i]->dsq, 1, L, cm->cp9b, FALSE, 0)) != eslOK) cm_Fail(errbuf);
       esl_stopwatch_Stop(w);
-      printf("%4d %-30s %17s", i+1, "Exptl Band calc", "");
+      printf("%4d %-30s %17s", i+1, "Exptl Band calc:", "");
       esl_stopwatch_Display(stdout, w, "CPU time: ");
       
       esl_stopwatch_Start(w);
       if((status = FastAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, 1, L, cm->hbmx, FALSE, NULL, NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-      printf("%4d %-30s %10.4f bits ", (i+1), "FastAlignHB CYK (): ", sc);
+      printf("%4d %-30s %10.4f bits ", (i+1), "FastAlignHB() CYK:", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
       /* fpfast = fopen("tempfast", "w");
@@ -4759,7 +5062,7 @@ main(int argc, char **argv)
 	/* sc = CYKInside_b_jd(cm, seqs_to_aln->sq[i]->dsq, L, 0, 1, L, &slowtr, cp9b->jmin, */
 	sc = CYKInside_b_jd(cm, seqs_to_aln->sq[i]->dsq, L, 0, 1, L, NULL, cm->cp9b->jmin, 
 			    cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, cm->cp9b->safe_hdmin, cm->cp9b->safe_hdmax);
-	printf("%4d %-30s %10.4f bits ", (i+1), "CYKInside_b_jd SLOW (): ", sc);
+	printf("%4d %-30s %10.4f bits ", (i+1), "CYKInside_b_jd() SLOW:", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 	/*fpslow = fopen("tempslow", "w");
@@ -4770,14 +5073,14 @@ main(int argc, char **argv)
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
 	if((status = FastInsideAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, 1, L, cm->hbmx, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits ", (i+1), "FastInsideAlignHB (): ", sc);
+	printf("%4d %-30s %10.4f bits ", (i+1), "FastInsideAlignHB():", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
 	if((status = FastOutsideAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, 1, L, fout_mx, cm->hbmx, do_check, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits ", (i+1), "FastOutsideAlignHB (): ", sc);
+	printf("%4d %-30s %10.4f bits ", (i+1), "FastOutsideAlignHB():", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
       }
@@ -4786,7 +5089,7 @@ main(int argc, char **argv)
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
 	if((status = FastAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, 1, L, cm->hbmx, TRUE,     fout_mx, NULL,   NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	printf("%4d %-30s %10.4f bits ", (i+1), "FastAlignHB OA  (): ", sc);
+	printf("%4d %-30s %10.4f bits ", (i+1), "FastAlignHB() OA:", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
       }
@@ -4851,7 +5154,7 @@ main(int argc, char **argv)
       printf("\n");
     }
 
-  if(esl_opt_GetBoolean(go, "--fpost")) { 
+  if(esl_opt_GetBoolean(go, "--post") || esl_opt_GetBoolean(go, "--optacc")) { 
     cm_hb_mx_Destroy(fout_mx);
   }
   FreeCM(cm);

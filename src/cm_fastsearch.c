@@ -5058,8 +5058,12 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
  * Benchmark driver
  *****************************************************************/
 #ifdef IMPL_FASTSEARCH_BENCHMARK
-/* gcc -o benchmark-fastsearch -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTSEARCH_BENCHMARK cm_fastsearch.c -linfernal -leasel -lm
- * icc -o benchmark-fastsearch -O3 -static -I. -L. -I../easel -L../easel -DIMPL_FASTSEARCH_BENCHMARK cm_fastsearch.c -linfernal -leasel -lm
+/* gcc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
+ * gcc -o benchmark-fastsearch -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTSEARCH_BENCHMARK cm_fastsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
+ * mpicc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
+ * mpicc -o benchmark-fastsearch -g -O2 -I. -L. -I../easel -L../easel -DIMPL_FASTSEARCH_BENCHMARK cm_fastsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
+ * icc -g -O3 -static -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
+ * icc -o benchmark-fastsearch -O3 -static -I. -L. -I../easel -L../easel -DIMPL_FASTSEARCH_BENCHMARK cm_fastsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
  * ./benchmark-fastsearch <cmfile>
  */
 
@@ -5082,6 +5086,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
 #include <esl_wuss.h>
 
 #include "funcs.h"		/* function declarations                */
+#include "old_funcs.h"		/* function declarations for 0.81 versions */
 #include "structs.h"		/* data structures, macros, #define's   */
 
 static ESL_OPTIONS options[] = {

@@ -32,11 +32,641 @@
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
+#include "easel.h"
+#include "esl_alphabet.h"
+#include "esl_dirichlet.h"
+#include "esl_distance.h"
+#include "esl_dmatrix.h"
+#include "esl_exponential.h"
+#include "esl_fileparser.h"
+#include "esl_gamma.h"
+#include "esl_getopts.h"
+#include "esl_gev.h"
+#include "esl_gumbel.h"
+#include "esl_histogram.h"
+#include "esl_hyperexp.h"
+#include "esl_keyhash.h"
+#include "esl_minimizer.h"
+#include "esl_mixgev.h"
+/*#include "esl_mpi.h"*/
+#include "esl_msa.h"
+#include "esl_msacluster.h"
+#include "esl_msaweight.h"
+#include "esl_normal.h"
+#include "esl_paml.h"
+#include "esl_random.h"
+#include "esl_ratematrix.h"
+#include "esl_regexp.h"
+#include "esl_rootfinder.h"
+#include "esl_scorematrix.h"
+#include "esl_sqio.h"
+#include "esl_ssi.h"
+#include "esl_stack.h"
+#include "esl_stats.h"
+#include "esl_stopwatch.h"
+#include "esl_stretchexp.h"
+/*#include "esl_swat.h"*/
+#include "esl_tree.h"
+#include "esl_vectorops.h"
+#include "esl_weibull.h"
+#include "esl_wuss.h"
+
 #include "funcs.h"		/* external functions                   */
+#include "old_funcs.h"		/* old external functions               */
 #include "structs.h"		/* data structures, macros, #define's   */
 
 static int   get_iemission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
 static float get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
+
+/* 
+ * Function: OldActuallyAlignTargets
+ * Incept:   EPN, Tue Dec  5 14:25:02 2006
+ *
+ * Purpose:  Given a CM and sequences, do preliminaries, call the correct 
+ *           alignment function and return parsetrees and optionally postal codes 
+ *           (if cm->align_opts & CM_ALIGN_POST).
+ *           Uses version 0.81 (old) DP functions, as opposed to the fast version
+ *           1.0 DP functions called by ActuallyAlignTargets().
+ *
+ *           Two different modes are possible dependent on input args. Mode
+ *           is checked for during contract enforcement.
+ *
+ *           sq_mode: seqs_to_aln != NULL; dsq == NULL; results == NULL.
+ *                    align the seqs_to_aln->nseq ESL_SQ sq sequences store
+ *                    parsetrees or CP9 traces and/or postal codes in
+ *                    seqs_to_aln.
+ *
+ *          dsq_mode: seqs_to_aln == NULL; dsq != NULL, results != NULL.
+ *                    align the search results (hits) in results, which
+ *                    are all subsequences of a single sequence (dsq).
+ *                    parstrees are stored in seacrh_results.
+ *
+ * Args:     CM             - the covariance model
+ *           seqs_to_aln    - the sequences (if sq_mode)
+ *           dsq            - a single digitized sequence (if dsq_mode)
+ *           search_results - search results with subsequence indices of dsq to align (if dsq_mode)
+ *           first_result   - index of first result in search_results to align (if dsq_mode)
+ *           bdump_level    - verbosity level for band related print statements
+ *           debug_level    - verbosity level for debugging print statements
+ *           silent_mode    - TRUE to not print anything, FALSE to print scores 
+ *           r              - source of randomness (NULL unless CM_ALIGN_SAMPLE)
+ * 
+ * Returns:  eslOK on success;
+ *           Dies if there's an error (not good for MPI).
+ */
+int
+OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
+			int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r)
+{
+  int status;
+  ESL_STOPWATCH *watch;         /* for timings */
+  int sq_mode  = FALSE;         /* we're aligning nseq seqs in sq */
+  int dsq_mode = FALSE;         /* we're aligning search_results->num_results seqs, all subseqs of dsq */
+  int nalign   = 0;             /* number of sequences we're aligning */
+  ESL_DSQ *cur_dsq;             /* ptr to digitized sequence we're currently aligning */
+  Parsetree_t **cur_tr;         /* pointer to the pointer to the parsetree we're currently creating */
+  int L;                        /* length of sequence/subseq we're currently aligning */
+  int i;                        /* counter over sequences */
+  int ip;                       /* offset index in search_results */
+  int v;                        /* state counter */
+  char        **postcode1 = NULL;/* posterior decode array of strings, tens place ('9' for 93) */
+  char        **postcode2 = NULL;/* posterior decode array of strings, ones place ('3' for 93) */
+  Parsetree_t **tr       = NULL;/* parse trees for the sequences */
+  CP9trace_t  **cp9_tr   = NULL;/* CP9 traces for the sequences */
+  float         sc;		/* score for one sequence alignment */
+  float         maxsc;	        /* max score in all seqs */
+  float         minsc;	        /* min score in all seqs */
+  float         avgsc;      	/* avg score over all seqs */
+  float         tmpsc;          /* temporary score */
+
+  /* variables related to CM Plan 9 HMMs */
+  CP9_t       *hmm;             /* constructed CP9 HMM */
+  CP9Bands_t  *cp9b;            /* data structure for hmm bands (bands on the hmm states) 
+				 * and arrays for CM state bands, derived from HMM bands */
+  CP9Map_t       *cp9map;       /* maps the hmm to the cm and vice versa */
+  float           swentry;	/* S/W aggregate entry probability       */
+  float           swexit;       /* S/W aggregate exit probability        */
+
+  /* variables related to the do_sub option */
+  CM_t              *sub_cm;       /* sub covariance model                      */
+  CMSubMap_t        *submap;
+  CP9Bands_t        *sub_cp9b;     /* data structure for hmm bands (bands on the hmm states) 
+				    * and arrays for CM state bands, derived from HMM bands */
+  CM_t              *orig_cm;      /* the original, template covariance model the sub CM was built from */
+  int                spos;         /* HMM node most likely to have emitted posn 1 of target seq */
+  int                spos_state;   /* HMM state type for curr spos 0=match or 1=insert */
+  int                epos;         /* HMM node most likely to have emitted posn L of target seq */
+  int                epos_state;   /* HMM state type for curr epos 0=match or  1=insert */
+  Parsetree_t       *orig_tr;      /* parsetree for the orig_cm; created from the sub_cm parsetree */
+
+  CP9_t             *sub_hmm;      /* constructed CP9 HMM */
+  CP9Map_t          *sub_cp9map;   /* maps the sub_hmm to the sub_cm and vice versa */
+  CP9_t             *orig_hmm;     /* original CP9 HMM built from orig_cm */
+  CP9Map_t          *orig_cp9map;  /* original CP9 map */
+  CP9Bands_t        *orig_cp9b;    /* original CP9Bands */
+
+  /* variables related to query dependent banding (qdb) */
+  int    expand_flag;           /* TRUE if the dmin and dmax vectors have just been 
+				 * expanded (in which case we want to recalculate them 
+				 * before we align a new sequence), and FALSE if not*/
+  int *orig_dmin;               /* original dmin values passed in */
+  int *orig_dmax;               /* original dmax values passed in */
+
+  /* variables related to inside/outside */
+  /*float           ***alpha;*/     /* alpha DP matrix for Inside() */
+  /*float           ***beta; */     /* beta DP matrix for Inside() */
+  /*float           ***post; */     /* post DP matrix for Inside() */
+  int             ***alpha;    /* alpha DP matrix for Inside() */
+  int             ***beta;     /* beta DP matrix for Inside() */
+  int             ***post;     /* post DP matrix for Inside() */
+
+  float             *parsesc; /* parsetree scores of each sequence */
+
+  /* declare and initialize options */
+  int do_small     = FALSE;   /* TRUE to use D&C small alignment algs */
+  int do_local     = FALSE;   /* TRUE to do local alignment */
+  int do_qdb       = FALSE;   /* TRUE to do QDB alignment */
+  int do_hbanded   = FALSE;   /* TRUE to do HMM banded alignment */
+  int use_sums     = FALSE;   /* TRUE to use posterior sums for HMM banded alignment */
+  int do_sub       = FALSE;   /* TRUE to align to a sub CM */
+  int do_hmmonly   = FALSE;   /* TRUE to align with an HMM only */
+  int do_scoreonly = FALSE;   /* TRUE to only calculate the score */
+  int do_inside    = FALSE;   /* TRUE to do Inside also */
+  int do_post      = FALSE;   /* TRUE to calculate posterior probabilities */
+  int do_timings   = FALSE;   /* TRUE to report timings */
+  int do_check     = FALSE;   /* TRUE to check posteriors from Inside/Outside */
+  int do_sample    = FALSE;   /* TRUE to sample from an Inside matrix */
+
+  /* Contract check */
+  if(!(cm->flags & CMH_BITS))                            cm_Fail("OldActuallyAlignTargets(), CMH_BITS flag down.\n");
+  if(r == NULL && (cm->align_opts & CM_ALIGN_SAMPLE))    cm_Fail("OldActuallyAlignTargets(), no source of randomness, but CM_ALIGN_SAMPLE alignment option on.\n");
+  if(r != NULL && (!(cm->align_opts & CM_ALIGN_SAMPLE))) cm_Fail("OldActuallyAlignTargets(), we have a source of randomness, but CM_ALIGN_SAMPLE alignment option off.\n");
+  if((cm->align_opts & CM_ALIGN_POST)      && (cm->align_opts & CM_ALIGN_HMMVITERBI)) cm_Fail("OldActuallyAlignTargets(), CM_ALIGN_POST and CM_ALIGN_HMMVITERBI options are incompatible.\n");
+  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_HMMVITERBI)) cm_Fail("OldActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_HMMVITERBI options are incompatible.\n");
+  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_POST))       cm_Fail("OldActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_POST options are incompatible.\n");
+
+  /* determine mode */
+  if     (seqs_to_aln != NULL && (dsq == NULL && search_results == NULL))  sq_mode = TRUE;
+  else if(seqs_to_aln == NULL && (dsq != NULL && search_results != NULL)) dsq_mode = TRUE;
+  else   cm_Fail("OldActuallyAlignTargets(), can't determine mode (sq_mode or dsq_mode).\n");
+
+  if( sq_mode && (seqs_to_aln->sq       == NULL)) cm_Fail("OldActuallyAlignTargets(), in sq_mode, seqs_to_aln->sq is NULL.\n");
+  if( sq_mode && (seqs_to_aln->tr       != NULL)) cm_Fail("OldActuallyAlignTargets(), in sq_mode, seqs_to_aln->tr is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->cp9_tr   != NULL)) cm_Fail("OldActuallyAlignTargets(), in sq_mode, seqs_to_aln->cp9_tr is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->postcode1!= NULL)) cm_Fail("OldActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode1 is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->postcode2!= NULL)) cm_Fail("OldActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode2 is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->sc       != NULL)) cm_Fail("OldActuallyAlignTargets(), in sq_mode, seqs_to_aln->sc is non-NULL.\n");
+  
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMVITERBI)) cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_HMMVITERBI option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_POST))       cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_POST option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_INSIDE))     cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_INSIDE option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_SAMPLE))     cm_Fail("OldActuallyAlignTargets(), in dsq_mode, CM_ALIGN_SAMPLE option on.\n");
+  if(dsq_mode && search_results == NULL)                 cm_Fail("OldActuallyAlignTargets(), in dsq_mode, search_results are NULL.\n");
+  if(dsq_mode && (first_result > search_results->num_results)) cm_Fail("OldActuallyAlignTargets(), in dsq_mode, first_result: %d > search_results->num_results: %d\n", first_result, search_results->num_results);
+
+  /* set the options based on cm->align_opts */
+  if(cm->align_opts  & CM_ALIGN_SMALL)      do_small     = TRUE;
+  if(cm->config_opts & CM_CONFIG_LOCAL)     do_local     = TRUE;
+  if(cm->align_opts  & CM_ALIGN_QDB)        do_qdb       = TRUE;
+  if(cm->align_opts  & CM_ALIGN_HBANDED)    do_hbanded   = TRUE;
+  if(cm->align_opts  & CM_ALIGN_SUMS)       use_sums     = TRUE;
+  if(cm->align_opts  & CM_ALIGN_SUB)        do_sub       = TRUE;
+  if(cm->align_opts  & CM_ALIGN_HMMVITERBI) do_hmmonly   = TRUE;
+  if(cm->align_opts  & CM_ALIGN_INSIDE)     do_inside    = TRUE;
+  if(cm->align_opts  & CM_ALIGN_POST)       do_post      = TRUE;
+  if(cm->align_opts  & CM_ALIGN_TIME)       do_timings   = TRUE;
+  if(cm->align_opts  & CM_ALIGN_CHECKINOUT) do_check     = TRUE;
+  if(cm->align_opts  & CM_ALIGN_SCOREONLY)  do_scoreonly = TRUE;
+  if(cm->align_opts  & CM_ALIGN_SAMPLE)     do_sample    = TRUE;
+
+  /* another contract check */
+  if((do_sample + do_inside + do_post) > 1) cm_Fail("OldActuallyAlignTargets(), exactly 0 or 1 of the following must be TRUE (== 1):\n\tdo_sample = %d\n\tdo_inside = %d\n\tdo_post%d\n\tdo_hmmonly: %d\n\tdo_scoreonly: %d\n", do_sample, do_inside, do_post, do_hmmonly, do_scoreonly);
+
+  if(debug_level > 0) {
+    printf("do_local  : %d\n", do_local);
+    printf("do_qdb    : %d\n", do_qdb);
+    printf("do_hbanded: %d\n", do_hbanded);
+    printf("use_sums  : %d\n", use_sums);
+    printf("do_sub    : %d\n", do_sub);
+    printf("do_hmmonly: %d\n", do_hmmonly);
+    printf("do_inside : %d\n", do_inside);
+    printf("do_small  : %d\n", do_small);
+    printf("do_post   : %d\n", do_post);
+    printf("do_timings: %d\n", do_timings);
+  }
+
+  if      (sq_mode)   nalign = seqs_to_aln->nseq;
+  else if(dsq_mode) { nalign = search_results->num_results - first_result; silent_mode = TRUE; }
+
+  /* If sqmode: potentially allocate tr, cp9_tr, and postcodes. We'll set
+   * seqs_to_aln->tr, seqs_to_aln->cp9_tr, seqs_to_aln->postcode1, and 
+   * seqs_to_aln->postcode2 to these guys at end of function.
+   * 
+   * If dsqmode: do not allocate parsetree pointers, they already exist 
+   * in search_results.
+   */
+
+  tr       = NULL;
+  cp9_tr   = NULL;
+  postcode1= NULL;
+  postcode2= NULL;
+  if(sq_mode) {
+    if(!do_hmmonly && !do_scoreonly && !do_inside)
+      ESL_ALLOC(tr, sizeof(Parsetree_t *) * nalign);
+    else if(do_hmmonly) /* do_hmmonly */
+      ESL_ALLOC(cp9_tr, sizeof(CP9trace_t *) * nalign);
+    if(do_post) {
+      ESL_ALLOC(postcode1, sizeof(char **) * nalign);
+      ESL_ALLOC(postcode2, sizeof(char **) * nalign);
+    }
+  }   
+  ESL_ALLOC(parsesc, sizeof(float) * nalign);
+
+  minsc = FLT_MAX;
+  maxsc = -FLT_MAX;
+  avgsc = 0;
+  watch = esl_stopwatch_Create();
+
+  if(do_hbanded || do_sub) /* We need a CP9 HMM to build sub_cms */
+    {
+      if(cm->cp9 == NULL)                    cm_Fail("OldActuallyAlignTargets, trying to use CP9 HMM that is NULL\n");
+      if(cm->cp9b == NULL)                   cm_Fail("OldActuallyAlignTargets, cm->cp9b is NULL\n");
+      if(!(cm->cp9->flags & CPLAN9_HASBITS)) cm_Fail("OldActuallyAlignTargets, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
+
+      /* Keep data for the original CM safe; we'll be doing
+       * pointer swapping to ease the sub_cm alignment implementation. */
+      hmm         = cm->cp9;
+      cp9b        = cm->cp9b;
+      cp9map      = cm->cp9map;
+      orig_hmm    = hmm;
+      orig_cp9b   = cp9b;
+      orig_cp9map = cp9map;
+    }
+  /* Copy the QD bands in case we expand them. */
+  if(do_qdb) {
+    if(bdump_level > 1) debug_print_bands(stdout, cm, cm->dmin, cm->dmax);
+    expand_flag = FALSE;
+    /* Copy dmin and dmax, so we can replace them after expansion */
+    ESL_ALLOC(orig_dmin, sizeof(int) * cm->M);
+    ESL_ALLOC(orig_dmax, sizeof(int) * cm->M);
+    for(v = 0; v < cm->M; v++) {
+      orig_dmin[v] = cm->dmin[v];
+      orig_dmax[v] = cm->dmax[v];
+    }	  
+  }
+  if(do_sub) { /* to get spos and epos for the sub_cm, 
+	        * we config the HMM to local mode with equiprobable start/end points.*/
+    swentry = ((hmm->M)-1.)/hmm->M; /* all start pts equiprobable, including 1 */
+    swexit  = ((hmm->M)-1.)/hmm->M; /* all end   pts equiprobable, including M */
+    CPlan9SWConfig(hmm, swentry, swexit);
+    CP9Logoddsify(hmm);
+  }
+  orig_cm = cm;
+
+  /*****************************************************************
+   *  Collect parse trees for each sequence
+   *****************************************************************/
+  for (i = 0; i < nalign; i++) {
+    if(do_timings) esl_stopwatch_Start(watch);
+    if (sq_mode) { 
+      cur_dsq = seqs_to_aln->sq[i]->dsq;
+      cur_tr  = &(tr[i]);
+      L       = seqs_to_aln->sq[i]->n;
+    }
+    else if (dsq_mode) {
+      ip      = i + first_result; /* offset index in search_results structures */
+      cur_dsq = dsq + search_results->data[ip].start - 1;
+      cur_tr  = &(search_results->data[ip].tr);
+      L       = search_results->data[ip].stop - search_results->data[ip].start + 1;
+    }
+    if (L == 0) continue; /* silently skip zero length seqs */
+
+    /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
+    if(sq_mode && do_hmmonly) {
+      if(sq_mode && !silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", seqs_to_aln->sq[i]->name);
+      sc = CP9ViterbiAlign(cur_dsq, 1, L, cm->cp9, cm->cp9_mx, &(cp9_tr[i]));
+      if(sq_mode && !silent_mode) printf(" score: %10.2f bits\n", sc);
+      parsesc[i] = sc;
+      continue;
+    }
+    /* Special case, if do_scoreonly, align seq with full CYK inside, just to 
+     * get the score. For testing, probably in cmscore. */
+    if(sq_mode && do_scoreonly) {
+      if(sq_mode && !silent_mode) printf("Aligning (w/full CYK score only) %-30s", seqs_to_aln->sq[i]->name);
+      sc = CYKInsideScore(cm, cur_dsq, L, 0, 1, L, NULL, NULL); /* don't do QDB mode */
+      if(sq_mode && !silent_mode) printf("    score: %10.2f bits\n", sc);
+      parsesc[i] = sc;
+      continue;
+    }
+  
+    /* Potentially, do HMM calculations. */
+    if((!do_sub) && do_hbanded) {
+      if((status = cp9_Seq2Bands(orig_cm, NULL, orig_cm->cp9_mx, orig_cm->cp9_bmx, cm->cp9_bmx, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Bands().");
+    }
+    else if(do_sub) { 
+      /* If we're in sub mode:
+       * (1) Get HMM posteriors 
+       * (2) Infer the start (spos) and end (epos) HMM states by 
+       *     looking at the posterior matrix.
+       * (3) Build the sub_cm from the original CM.
+       *
+       * If we're also doing HMM banded alignment to sub CM:
+       * (4) Build a new CP9 HMM from the sub CM.
+       * (5) Do Forward/Backward again, and get HMM bands 
+       */
+      
+      /* (1) Get HMM posteriors */
+      if((status = cp9_Seq2Posteriors(orig_cm, NULL, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, 1, L, debug_level)) != eslOK) cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Posteriors().");
+      
+      /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
+       * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
+       */
+      CP9NodeForPosn(orig_hmm, 1, L, 1, orig_cm->cp9_bmx, &spos, &spos_state, 0., TRUE, debug_level);
+      CP9NodeForPosn(orig_hmm, 1, L, L, orig_cm->cp9_bmx, &epos, &epos_state, 0., FALSE, debug_level);
+      /* Deal with special cases for sub-CM alignment:
+       * If the most likely state to have emitted the first or last residue
+       * is the insert state in node 0, it only makes sense to start modelling
+       * at consensus column 1. */
+      if(spos == 0 && spos_state == 1) spos = 1;
+      if(epos == 0 && epos_state == 1) epos = 1;
+      /* If most-likely HMM node to emit final position comes BEFORE most-likely HMM node to emit first position,
+       * our HMM alignment is crap, default to using the full CM. */
+      if(epos < spos) { spos = 1; epos = cm->cp9->M; } 
+	  
+      /* (3) Build the sub_cm from the original CM. */
+      if(!(build_sub_cm(orig_cm, &sub_cm, 
+			spos, epos,         /* first and last col of structure kept in the sub_cm  */
+			&submap,            /* maps from the sub_cm to cm and vice versa           */
+			debug_level)))      /* print or don't print debugging info                 */
+	cm_Fail("ERROR OldActuallyAlignTargets(), building sub CM.");
+      /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded), this will also:  */
+      /* (4) Build a new CP9 HMM from the sub CM. */
+      ConfigCM(sub_cm, NULL, NULL);
+      cm    = sub_cm; /* orig_cm still points to the original CM */
+      if(do_hbanded) { /* we're doing HMM banded alignment to the sub_cm */
+	/* Get the HMM bands for the sub_cm */
+	sub_hmm    = sub_cm->cp9;
+	sub_cp9b   = sub_cm->cp9b;
+	sub_cp9map = sub_cm->cp9map;
+	/* (5) Do Forward/Backward again, and get HMM bands */
+	if((status = cp9_Seq2Bands(sub_cm, NULL, sub_cm->cp9_mx, sub_cm->cp9_bmx, sub_cm->cp9_bmx, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level)) != eslOK)  cm_Fail("OldActuallyAlignTargets(), unrecoverable error in cp9_Seq2Bands().");
+	hmm           = sub_hmm;    
+	cp9b          = sub_cp9b;
+	cp9map        = sub_cp9map;
+      }
+    }
+  
+    /* Determine which CYK alignment algorithm to use, based
+     * on command-line options AND memory requirements.
+     */
+    if(do_hbanded) {
+      /* write a function to determine size of jd banded memory
+       * req'd, and set do_small to true if its > thresh.
+       if(do_small) * We're only going to band on d in memory, but 
+       * we need to calculate safe_hd bands on the d dimension. 
+       {
+      */
+    }
+    if(do_qdb) {
+      /*Check if we need to reset the query dependent bands b/c they're currently expanded. */
+      if(expand_flag) {
+	for(v = 0; v < cm->M; v++) {
+	  cm->dmin[v] = orig_dmin[v];
+	  cm->dmax[v] = orig_dmax[v];
+	}
+	expand_flag = FALSE;
+      }
+      if((L < cm->dmin[0]) || (L > cm->dmax[0])) { 
+	/* the seq we're aligning is outside the root band, so we expand.*/
+	ExpandBands(cm, L, cm->dmin, cm->dmax);
+	if(sq_mode && debug_level > 0) printf("Expanded bands for seq : %s\n", seqs_to_aln->sq[i]->name);
+	if(bdump_level > 2) { printf("printing expanded bands :\n"); debug_print_bands(stdout, cm, cm->dmin, cm->dmax); }
+	expand_flag = TRUE;
+      }
+    }
+
+    if(sq_mode && !silent_mode) { 
+      if(do_sub) printf("Aligning (to a sub CM) %-20s", seqs_to_aln->sq[i]->name);
+      else       printf("Aligning %-30s", seqs_to_aln->sq[i]->name);
+    }
+
+    /* beginning of large if() else if() else if() ... statement */
+    if(do_sample) { 
+      if(do_hbanded) { /* sampling from inside HMM banded matrix */
+	IInside_b_jd_me(cm, cur_dsq, 1, L,
+			TRUE,	   /* non memory-saving mode, we sample from alpha mx */
+			NULL, &alpha,/* fill alpha, and return it, we'll sample a parsetree from it */
+			NULL, NULL,  /* manage your own deckpool, I don't want it */
+			do_local,    /* TRUE to allow local begins */
+			cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+	sc = ParsetreeSampleFromIInside_b_jd_me(r, cm, cur_dsq, L, alpha, cp9b, cur_tr, NULL);
+      }
+      else { /* sampling from inside matrix, but not HMM banded */
+	IInside(cm, cur_dsq, 1, L,
+		TRUE,            /* save full alpha, so we can sample from it,  */
+		NULL, &alpha,    /* fill alpha, and return it, we'll sample a parsetree from it */
+		NULL, NULL,      /* manage your own deckpool, I don't want it */
+		do_local);       /* TRUE to allow local begins */
+	sc = ParsetreeSampleFromIInside(r, cm, cur_dsq, L, alpha, cur_tr, NULL);
+      }
+    }
+    else if(do_inside) { 
+      if(do_hbanded) { /* HMM banded inside only */
+	sc = IInside_b_jd_me(cm, cur_dsq, 1, L,
+			     TRUE,	/* non memory-saving mode */
+			     NULL, NULL,	/* manage your own matrix, I don't want it */
+			     NULL, NULL,	/* manage your own deckpool, I don't want it */
+			     do_local,    /* TRUE to allow local begins */
+			     cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+      }
+      else { /* non-banded inside only */
+	sc = IInside(cm, cur_dsq, 1, L,
+		     FALSE,       /* memory-saving mode */
+		     NULL, NULL,	/* manage your own matrix, I don't want it */
+		     NULL, NULL,	/* manage your own deckpool, I don't want it */
+		     do_local);       /* TRUE to allow local begins */
+      }
+    }
+    else if (do_small) { /* small D&C CYK alignment */
+      if(do_qdb) { /* use QDBs when doing D&C CYK */
+	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, 
+				 cur_tr, cm->dmin, cm->dmax);
+	if(bdump_level > 0) qdb_trace_info_dump(cm, *cur_tr, cm->dmin, cm->dmax, bdump_level);
+      }
+      else if(do_hbanded) { /* use QDBs (safe d bands) derived from HMM bands when doing D&C CYK, HMM bands were not tight enough to allow HMM banded full CYK*/
+	/* Calc the safe d bands */
+	hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+			 cp9b->safe_hdmin, cp9b->safe_hdmax);
+	if(debug_level > 3) { printf("\nprinting hd bands\n\n"); debug_print_hd_bands(cm, cp9b->hdmin, cp9b->hdmax, cp9b->jmin, cp9b->jmax); printf("\ndone printing hd bands\n\n"); }
+	/* Note the following CYK call will not enforce j bands, even though user specified --hbanded. */
+	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, cp9b->safe_hdmin, cp9b->safe_hdmax);
+	if(bdump_level > 0) qdb_trace_info_dump(cm, *cur_tr, cm->dmin, cm->dmax, bdump_level);
+      }
+      else { /* small D&C CYK non-banded alignment */
+	/*printf("DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n"); debug_print_cm_params(cm); printf("DONE DEBUG PRINTING CM PARAMS BEFORE D&C CALL\n");*/
+	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
+	if(bdump_level > 0) { 
+	  /* We want QDB info but QDBs weren't used.  Useful if you're curious why a QDB banded parse is crappy 
+	   * relative to non-banded parse, e.g. allows you to see where the non-banded parse went outside the bands. */
+	  qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
+	}
+      }
+    }
+    else if(do_qdb) { /* non-small, QDB banded CYK alignment */
+      sc = CYKInside(cm, cur_dsq, L, 0, 1, L, cur_tr, cm->dmin, cm->dmax);
+      if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
+    }
+    else if(do_hbanded) { /* non-small, HMM banded CYK alignment */
+      sc = CYKInside_b_jd(cm, cur_dsq, L, 0, 1, L, cur_tr, cp9b->jmin, 
+			  cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
+      /* if CM_ALIGN_HMMSAFE option is enabled, realign seqs w/HMM banded parses < 0 bits */
+      if(cm->align_opts & CM_ALIGN_HMMSAFE && sc < 0.) { 
+	tmpsc = sc;
+	if(!silent_mode) printf("\n%s HMM banded parse had a negative score, realigning with non-banded CYK.\n", seqs_to_aln->sq[i]->name);
+	FreeParsetree(*cur_tr);
+	sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
+	if(!silent_mode && fabs(sc-tmpsc) < 0.01) printf("HMM banded parse was the optimal parse.\n\n");
+	else if (!silent_mode) printf("HMM banded parse was non-optimal, it was %.2f bits below the optimal.\n\n", (fabs(sc-tmpsc)));
+      }	      
+    }
+    else { /* non-small, non-banded CYK alignment */
+      sc = CYKInside(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL);
+      if(bdump_level > 0) { 
+	/* We want band info but --hbanded wasn't used.  Useful if you're curious why a banded parse is crappy 
+	 * relative to non-banded parse, e.g. allows you to see where the non-banded parse went outside the bands. */
+	qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level);
+      }
+    }
+    /* end of large if() else if() else if() else statement */
+  
+    if(do_post) { /* do Inside() and Outside() runs and use alpha and beta to get posteriors */
+      ESL_ALLOC(post, sizeof(int **) * (cm->M+1));
+      if(do_hbanded) { /* HMM banded Inside/Outside --> posteriors */
+	for (v = 0; v < cm->M; v++) post[v] = Ialloc_jdbanded_vjd_deck(L, 1, L, cp9b->jmin[v], cp9b->jmax[v], cp9b->hdmin[v], cp9b->hdmax[v]);
+	post[cm->M] = NULL;
+	post[cm->M] = Ialloc_vjd_deck(L, 1, L);
+	sc = IInside_b_jd_me(cm, cur_dsq, 1, L,
+			     TRUE,	/* save full alpha so we can run outside */
+			     NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
+			     NULL, NULL,	/* manage your own deckpool, I don't want it */
+			     do_local,       /* TRUE to allow local begins */
+			     cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+	sc = IOutside_b_jd_me(cm, cur_dsq, 1, L,
+			      TRUE,	/* save full beta */
+			      NULL, &beta,	/* fill beta, and return it, needed for ICMPosterior() */
+			      NULL, NULL,	/* manage your own deckpool, I don't want it */
+			      do_local,       /* TRUE to allow local begins */
+			      alpha, &alpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
+			      do_check,      /* TRUE to check Outside probs agree with Inside */
+			      cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax); /* j and d bands */
+	ICMPosterior_b_jd_me(L, cm, alpha, NULL, beta, NULL, post, &post,
+			     cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax);
+	ICMPostalCode_b_jd_me(cm, L, post, tr[i], cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 
+			      &(postcode1[i]), &(postcode2[i]));
+      }
+      else { /* non-HMM banded Inside/Outside --> posteriors */
+	for (v = 0; v < cm->M+1; v++) post[v] = Ialloc_vjd_deck(L, 1, L);
+	sc = IInside(cm, cur_dsq, 1, L,
+		     TRUE,	/* save full alpha so we can run outside */
+		     NULL, &alpha,	/* fill alpha, and return it, needed for IOutside() */
+		     NULL, NULL,	/* manage your own deckpool, I don't want it */
+		     do_local);       /* TRUE to allow local begins */
+	sc = IOutside(cm, cur_dsq, 1, L,
+		      TRUE,	/* save full beta */
+		      NULL, &beta,	/* fill beta, and return it, needed for CMPosterior() */
+		      NULL, NULL,	/* manage your own deckpool, I don't want it */
+		      do_local,       /* TRUE to allow local begins */
+		      alpha, &alpha,  /* alpha matrix from IInside(), and save it for CMPosterior*/
+		      do_check);      /* TRUE to check Outside probs agree with Inside */
+	ICMPosterior(L, cm, alpha, NULL, beta, NULL, post, &post); /* this frees alpha, beta */
+	if(do_check) { 
+	  ICMCheckPosterior(L, cm, post);
+	  printf("\nPosteriors checked (I).\n\n");
+	}
+	ICMPostalCode(cm, L, post, tr[i], &(postcode1[i]), &(postcode2[i]));
+      }
+      /* free post  */
+      if(post != NULL) Ifree_vjd_matrix(post, cm->M, 1, L);
+    }
+    /* done alignment for this seq */
+
+    avgsc += sc;
+    if (sc > maxsc) maxsc = sc;
+    if (sc < minsc) minsc = sc;
+      
+    if(!silent_mode) printf("    score: %10.2f bits\n", sc);
+    parsesc[i] = sc;
+      
+    /* check parsetree score if cm->align_opts & CM_ALIGN_CHECKPARSESC */
+    if((cm->align_opts & CM_ALIGN_CHECKPARSESC) &&
+       (!(cm->flags & CM_IS_SUB))) { 
+      if (fabs(sc - ParsetreeScore(cm, tr[i], cur_dsq, FALSE)) >= 0.01)
+	cm_Fail("ERROR in actually_align_target(), alignment score differs from its parse tree's score");
+    }
+
+    /* If requested, or if debug level high enough, print out the parse tree */
+    if((cm->align_opts & CM_ALIGN_PRINTTREES) || (debug_level > 2)) { 
+      fprintf(stdout, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], cur_dsq, FALSE));;
+      ParsetreeDump(stdout, tr[i], cm, cur_dsq, NULL, NULL);
+      fprintf(stdout, "//\n");
+    }
+    /* Dump the trace with info on i, j and d bands
+     * if bdump_level is high enough */
+    if(bdump_level > 0 && do_hbanded)
+      ijdBandedTraceInfoDump(cm, tr[i], cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, 1);
+
+
+    if(do_sub) { 
+      if(! do_inside) { 
+	/* Convert the sub_cm parsetree to a full CM parsetree */
+	if(debug_level > 0) ParsetreeDump(stdout, *cur_tr, cm, cur_dsq, NULL, NULL);
+	if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, *cur_tr, submap, debug_level))) { 
+	  printf("\n\nIncorrectly converted original trace:\n");
+	  ParsetreeDump(stdout, orig_tr, orig_cm, cur_dsq, NULL, NULL);
+	  cm_Fail("this shouldn't happen.");
+	}
+	if(debug_level > 0) { 
+	  printf("\n\nConverted original trace:\n");
+	  ParsetreeDump(stdout, orig_tr, orig_cm, cur_dsq, NULL, NULL);
+	}
+	/* Replace the sub_cm trace with the converted orig_cm trace. */
+	FreeParsetree(*cur_tr);
+	*cur_tr = orig_tr;
+      }  
+      /* free sub_cm variables, we build a new sub CM for each seq */
+      FreeSubMap(submap);
+      FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
+    }
+    if(do_timings) { 
+      esl_stopwatch_Stop(watch); 
+      esl_stopwatch_Display(stdout, watch, "seq alignment CPU time: ");
+      printf("\n");
+    }
+  }
+  /* done aligning all nalign seqs. */
+  /* Clean up. */
+  if (do_qdb) {
+    free(orig_dmin);
+    free(orig_dmax);
+  }
+  esl_stopwatch_Destroy(watch);
+  
+  if(sq_mode) {
+    seqs_to_aln->tr       = tr;       /* could be NULL */
+    seqs_to_aln->cp9_tr   = cp9_tr;   /* could be NULL */
+    seqs_to_aln->postcode1= postcode1;/* could be NULL */
+    seqs_to_aln->postcode2= postcode2;/* could be NULL */
+    seqs_to_aln->sc       = parsesc;  /* shouldn't be NULL */
+  }
+  else { /* dsq mode */
+    free(parsesc);
+  }
+
+  return eslOK;
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return status; /* NEVERREACHED */
+}
 
 /*****************************************************************
  * CM {F,I}Inside() & {F,I}Outside() functions.
@@ -1557,20 +2187,6 @@ IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
   return 0.; /* never reached */
 }
 
-/* Function: FScore2Prob()
- * 
- * Purpose:  Convert a float log_2 odds score back to a probability;
- *           needs the null model probability, if any, to do the conversion.
- */
-float 
-FScore2Prob(float sc, float null)
-{
-  /*printf("in FScore2Prob: %10.2f sreEXP2: %10.2f\n", sc, (sreEXP2(sc)));*/
-  if (!(NOT_IMPOSSIBLE(sc))) return 0.;
-  else                       return (null * sreEXP2(sc));
-}
-
-
 /***************************************************************/
 /* Function: FCMPosterior() 
  *           
@@ -1726,138 +2342,6 @@ ICMPosterior(int L, CM_t *cm, int   ***alpha, int   ****ret_alpha, int   ***beta
 
 }
 
-
-/* Function: CMPostalCode()
- * Date:     EPN 05.25.06 based on SRE's PostalCode() 
- *           from HMMER's postprob.c
- *
- * Purpose:  Given a parse tree and a posterior
- *           probability cube, calculate two strings that
- *           represents the confidence values on each 
- *           residue in the sequence. 
- *           
- *           The code strings is 0..L-1  (L = len of target seq),
- *           so it's in the coordinate system of the sequence string;
- *           off by one from dsq; and convertible to the coordinate
- *           system of aseq using MakeAlignedString().
- *           
- *           Values are 00-99,**  
- *           for example, 93 means with >=93% posterior probabiility,
- *           residue i is aligned to the state k that it
- *           is assigned to in the given trace.
- *
- *           Because we have 2 digit precision, we need two
- *           strings, the first will be the 'tens' place of
- *           the posterior probability, '9' for the 93% example,
- *           and the second string will hold the 'ones' place,
- *           the '3' in the 93% example.
- *
- * Args:     L    - length of seq
- *           post - posterior prob cube: see CMPosterior()
- *           *tr  - parsetree to get a Postal code string for.   
- *           ret_pcode1 - 'tens' place postal code string ('9' for 93)
- *           ret_pcode2 - 'ones' place postal code string ('3' for 93)
- * Returns:  void
- *
- */
-int
-Fscore2postcode(float sc)
-{
-  int i;
-  i = (int) (FScore2Prob(sc, 1.) * 100.);
-  ESL_DASSERT1((i >= 0 && i <= 100)); 
-  return i;
-}
-
-int 
-Iscore2postcode(int sc)
-{
-  int i;
-  i = (int) (Score2Prob(sc, 1.) * 100.);
-  ESL_DASSERT1((i >= 0 && i <= 100)); 
-  return i;
-}
-
-void
-CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2)
-{
-  int status;
-  int x, v, i, j, d, r;
-  char *pcode1;
-  char *pcode2;
-  int p;
-
-  ESL_ALLOC(pcode1, (L+1) * sizeof(char)); 
-  ESL_ALLOC(pcode2, (L+1) * sizeof(char)); 
-
-  for (x = 0; x < tr->n; x++)
-    {
-      v = tr->state[x];
-      i = tr->emitl[x];
-      j = tr->emitr[x];
-      d = j-i+1;
-      /*printf("x: %2d | v: %2d | i: %2d | j: %2d | d: %2d | post[%d][%d][%d]: %f\n", x, v, i, j, d, v, j, d, post[v][j][d]);*/
-      /*
-       * Only P, L, R states have emissions.
-       */
-      if (cm->sttype[v] == MP_st) {
-	p = Fscore2postcode(post[v][j][d]);
-	if(p == 100) { 
-	  pcode1[i-1] = pcode1[j-1] = '*';
-	  pcode2[i-1] = pcode2[j-1] = '*';
-	}
-	else {
-	  pcode1[i-1] = pcode1[j-1] = '0' + (char) (p / 10);
-	  pcode2[i-1] = pcode2[j-1] = '0' + (char) (p % 10);
-	}
-      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
-	p = Fscore2postcode(post[v][j][d]);
-	if(p == 100) { 
-	  pcode1[i-1] = '*';
-	  pcode2[i-1] = '*';
-	}
-	else {
-	  pcode1[i-1] = '0' + (char) (p / 10);
-	  pcode2[i-1] = '0' + (char) (p % 10);
-	}
-      } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
-	p = Fscore2postcode(post[v][j][d]);
-	if(p == 100) { 
-	  pcode1[j-1] = '*';
-	  pcode2[j-1] = '*';
-	}
-	else {
-	  pcode1[j-1] = '0' + (char) (p / 10);
-	  pcode2[j-1] = '0' + (char) (p % 10);
-	}
-      } else if (cm->sttype[v] == EL_st) /*special case*/ {
-	for(r = (i-1); r <= (j-1); r++)
-	  {
-	    d = j - (r+1) + 1;
-	    p = Fscore2postcode(post[v][j][d]);
-	    if(p == 100) { 
-	      pcode1[r] = '*';
-	      pcode2[r] = '*';
-	    }
-	    else {
-	      pcode1[r] = '0' + (char) (p / 10);
-	      pcode2[r] = '0' + (char) (p % 10);
-	    }
-	    /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
-	  }
-      }
-    }
-  pcode1[L] = '\0';
-  pcode2[L] = '\0';
-
-  *ret_pcode1 = pcode1;
-  *ret_pcode2 = pcode2;
-  return;
-
- ERROR:
-  cm_Fail("Memory allocation error.");
-  return; /* never reached */
-}
 
 /* ICMPostalCode() is the same as CMPostalCode, but uses scaled int log odds scores
  * instead of float log odds scores.
@@ -2025,97 +2509,13 @@ CMPostalCode_b_jd_me(CM_t *cm, int L, float ***post, Parsetree_t *tr,
 }
 
 
-void
-CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2)
+int 
+Iscore2postcode(int sc)
 {
-  int status;
-  int x, v, i, j, d, r, p;
-  char *pcode1;
-  char *pcode2;
-  int jp_v, dp_v;
-
-  /* variables used for memory efficient bands */
-  /* ptrs to cp9b info, for convenience */
-  CP9Bands_t *cp9b = cm->cp9b;
-  int     *jmin  = cp9b->jmin;  
-  int    **hdmin = cp9b->hdmin;
-  /* the DP matrix */
-  float ***post  = post_mx->dp; /* pointer to the post DP matrix */
-
-  ESL_ALLOC(pcode1, (L+1) * sizeof(char)); 
-  ESL_ALLOC(pcode2, (L+1) * sizeof(char)); 
-
-  for (x = 0; x < tr->n; x++) {
-    v = tr->state[x];
-    i = tr->emitl[x];
-    j = tr->emitr[x];
-    d = j-i+1;
-
-    /* Only P, L, R, and EL states have emissions. */
-    if(v != cm->M) { 
-      jp_v = j - jmin[v];
-      dp_v = d - hdmin[v][jp_v];
-    }
-    else {
-      jp_v = j;
-      dp_v = d;
-    }      
-
-    if (cm->sttype[v] == MP_st) {
-	p = Fscore2postcode(post[v][jp_v][dp_v]);
-	if(p == 100) { 
-	  pcode1[i-1] = pcode1[j-1] = '*';
-	  pcode2[i-1] = pcode2[j-1] = '*';
-	}
-	else {
-	  pcode1[i-1] = pcode1[j-1] = '0' + (char) (p / 10);
-	  pcode2[i-1] = pcode2[j-1] = '0' + (char) (p % 10);
-	}
-      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
-	p = Fscore2postcode(post[v][jp_v][dp_v]);
-	if(p == 100) { 
-	  pcode1[i-1] = '*';
-	  pcode2[i-1] = '*';
-	}
-	else {
-	  pcode1[i-1] = '0' + (char) (p / 10);
-	  pcode2[i-1] = '0' + (char) (p % 10);
-	}
-      } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
-	p = Fscore2postcode(post[v][jp_v][dp_v]);
-	if(p == 100) { 
-	  pcode1[j-1] = '*';
-	  pcode2[j-1] = '*';
-	}
-	else {
-	  pcode1[j-1] = '0' + (char) (p / 10);
-	  pcode2[j-1] = '0' + (char) (p % 10);
-	}
-      } else if (cm->sttype[v] == EL_st) /*special case*/ {
-	for(r = (i-1); r <= (j-1); r++) {
-	  d = j - (r+1) + 1;
-	  p = Fscore2postcode(post[v][j][d]);
-	    if(p == 100) { 
-	      pcode1[r] = '*';
-	      pcode2[r] = '*';
-	    }
-	    else {
-	      pcode1[r] = '0' + (char) (p / 10);
-	      pcode2[r] = '0' + (char) (p % 10);
-	    }
-	    /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
-	  }
-      }
-    }
-  pcode1[L] = '\0';
-  pcode2[L] = '\0';
-  *ret_pcode1 = pcode1;
-  *ret_pcode2 = pcode2;
-  return;
-
- ERROR:
-  cm_Fail("Memory allocation error.");
-  return; /* never reached */
+  int i;
+  i = (int) (Score2Prob(sc, 1.) * 100.);
+  ESL_DASSERT1((i >= 0 && i <= 100)); 
+  return i;
 }
 
 void
@@ -6016,3 +6416,1161 @@ get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j)
   else if(cm->sttype[v] == MP_st)                           return cm->oesc[v][dsq[i]*cm->abc->Kp+dsq[j]];
   else return 0.;
 }
+
+
+
+/*******************************************************************************
+ * 11.04.05
+ * EPN 
+ * Memory efficient banded versions of selected smallcyk.c functions that
+ * enforce bands in the d and j dimensions informed by an HMM Forward/Backward
+ * posterior decode of the target sequence.
+ * 
+ * These functions are modified from their originals in smallcyk.c to make 
+ * HMM banded FULL (not D&C) CYK alignment memory efficient. The starting
+ * point for CYKInside_b_jd() was CYKInside_b_me() in smallcyk.c. The main
+ * difference is that bands in the j dimension are enforced, and the d
+ * bands have j dependence. 
+ * 
+ * CYK_Inside_b_jd() only allocates cells within the j AND d bands.
+ * 
+ * Comments from smallcyk.c pertaining to CYK_Inside_b_me():
+ * .........................................................................
+ * The only real difficulty implementing memory efficient
+ * bands is in being able to determine what cell alpha[v][j][d] from the 
+ * non-memory efficient code corresponds to in the memory-efficient code (we'll
+ * call the corresponding cell a[v'][j'][d'] or a[vp][jp][dp]).  The reason
+ * v != v'; j != j' and d != d' is because the primes are offset due to the
+ * fact that some of the original alpha matrix deck (a[v]) has not been allocated
+ * due to the bands.  Therefore all of the differences between the *_b_me() functions
+ * and their *_b() versions is to deal with the offset issue.
+ * .........................................................................
+ * 
+ *******************************************************************************/
+
+/* The alignment engine. 
+ */
+static float inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, 
+			    int r, int z, int i0, int j0, 
+			    int do_full,
+			    float ***alpha, float ****ret_alpha, 
+			    struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+			    void ****ret_shadow, 
+			    int allow_begin, int *ret_b, float *ret_bsc,
+			    int *jmin, int *jmax,
+			    int **hdmin, int **hdmax,
+			    int *safe_hdmin, int *safe_hdmax);
+
+/* The traceback routine.
+ */
+
+static float insideT_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
+			     int r, int z, int i0, int j0, int allow_begin,
+			     int *jmin, int *jax,
+			     int **hdmin, int **hdmax,
+			     int *safe_hdmin, int *safe_hdmax);
+
+#define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
+#define BE_PARANOID   1		/* setting for do_full: keep whole matrix, perhaps for debugging */
+
+/* Special flags for use in shadow (traceback) matrices, instead of
+ * offsets to connected states. When yshad[0][][] is USED_LOCAL_BEGIN,
+ * the b value returned by inside() is the best connected state (a 0->b
+ * local entry). When yshad[v][][] is USED_EL, there is a v->EL transition
+ * and the remaining subsequence is aligned to the EL state. 
+ */
+#define USED_LOCAL_BEGIN 101
+#define USED_EL          102
+
+
+/* Function: CYKInside_b_jd()
+ *           EPN 11.04.05
+ * based on CYKInside_b() which was based on CYKInside()
+ *
+ * Only difference is bands are used in d and j dimesions: 
+ *
+ * Date:     SRE, Sun Jun  3 19:48:33 2001 [St. Louis]
+ *
+ * Purpose:  Wrapper for the insideT_b_jd_me() routine - solve
+ *           a full alignment problem, return the traceback
+ *           and the score, without dividing & conquering, using bands.
+ *           
+ *           Analogous to CYKDivideAndConquer() in many respects;
+ *           see the more extensive comments in that function for
+ *           more details on shared aspects.
+ *           
+ * Args:     cm     - the covariance model
+ *           sq     - the sequence, 1..L
+ *           r      - root of subgraph to align to target subseq (usually 0, the model's root)
+ *           i0     - start of target subsequence (often 1, beginning of dsq)
+ *           j0     - end of target subsequence (often L, end of dsq)
+ *           ret_tr - RETURN: traceback (pass NULL if trace isn't wanted)
+ *           dmin   - minimum d bound for each state v; [0..v..M-1]
+ *           dmax   - maximum d bound for each state v; [0..v..M-1]
+ *
+ * Returns:  score of the alignment in bits.
+ */
+float
+CYKInside_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr, 
+	       int *jmin, int *jmax, int **hdmin, int **hdmax, int *dmin, int *dmax)
+{
+  /* Contract check */
+  if(dsq == NULL)
+    cm_Fail("ERROR in CYKInside_b_jd(), dsq is NULL.\n");
+
+  Parsetree_t *tr;
+  int          z;
+  float        sc;
+
+  /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (j0-i0+1));
+    printf("alignment strategy:CYKInside_b_jd:b:nosmall\n"); 
+    printf("L: %d\n", L);*/
+
+  /* Trust, but verify.
+   * Check out input parameters.
+   */
+  if (cm->stid[r] != ROOT_S) {
+    if (! (cm->flags & CMH_LOCAL_BEGIN)) cm_Fail("internal error: we're not in local mode, but r is not root");
+    if (cm->stid[r] != MATP_MP && cm->stid[r] != MATL_ML &&
+	cm->stid[r] != MATR_MR && cm->stid[r] != BIF_B)
+      cm_Fail("internal error: trying to do a local begin at a non-mainline start");
+  }
+
+  /* Create the parse tree, and initialize.
+   */
+  tr = CreateParsetree(100);
+  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
+  z  = cm->M-1;
+  sc = 0.;
+
+  /* Deal with case where we already know a local entry transition 0->r
+   */
+  if (r != 0)
+    {
+      InsertTraceNode(tr, 0,  TRACE_LEFT_CHILD, i0, j0, r);
+      z  =  CMSubtreeFindEnd(cm, r);
+      sc =  cm->beginsc[r];
+    }
+
+  /* Solve the whole thing with one call to insideT_b_jd.  This calls
+     a memory efficient insideT function, which only allocates cells
+     in alpha within the bands. 
+   */
+  sc += insideT_b_jd_me(cm, dsq, L, tr, r, z, i0, j0, (r==0), jmin, jmax, hdmin, hdmax, 
+			dmin, dmax);
+
+  if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
+  ESL_DPRINTF1(("returning from CYKInside_b_jd() sc : %f\n", sc));
+
+  return sc;
+}
+
+
+ 
+/* EPN 03.29.06
+ * Function: inside_b_jd_me()
+ * based on inside_b_me() which was ...
+ * based on inside()
+ * Date:     SRE, Mon Aug  7 13:15:37 2000 [St. Louis]
+ *
+ * Purpose:  Run the inside phase of a CYK alignment algorithm
+ *           using bands in the j and d dimension from obtained
+ *           from an HMM forwards-backwards run. This function
+ *           is memory efficient in the j AND d dimension.
+ * 
+ *           To be able to consistently handle end states, the
+ *           original SRE behavior of reusing the end deck was
+ *           abandoned. Now each end state has its own deck, which
+ *           makes this implementation easier because each state
+ *           has its own bands on j, and thus has a state specific
+ *           offset with alpha[end][jp][dp] in the banded mem eff 
+ *           matrix corresponding to alpha[end][jp+jmin[end]][dp+hdmin[v][jp_v]]
+ *           in the platonic matrix.
+ *           
+ *           The deck re-use strategy in general does not work with
+ *           this implementation b/c each state has it's own j-specific
+ *           bands. 
+ *
+ *           Notes from inside():
+ *           A note on the loop conventions. We're going to keep the
+ *           sequence (dsq) and the matrix (alpha) in the full coordinate
+ *           system: [0..v..M-1][0..j..L][0..d..j]. However, we're
+ *           only calculating a part of that matrix: only vroot..vend
+ *           in the decks, i0-1..j in the rows, and up to j0-i0+1 in
+ *           the columns (d dimension). Where this is handled the most
+ *           is in two variables: W, which is the length of the subsequence
+ *           (j0-i0+1), and is oft used in place of L in the usual CYK;
+ *           and jp (read: j'), which is the *relative* j w.r.t. the
+ *           subsequence, ranging from 0..W, and then d ranges from 
+ *           0 to jp, and j is calculated from jp (i0-1+jp).
+ *           In this banded version, there are more offset issues,
+ *           these are detailed with comments in the code.
+ *
+ *           The caller is allowed to provide us with a preexisting
+ *           matrix and/or deckpool (thru "alpha" and "dpool"), or
+ *           have them newly created by passing NULL. If we pass in an
+ *           alpha, we expect that alpha[vroot..vend] are all NULL
+ *           decks already; any other decks <vroot and >vend will
+ *           be preserved. If we pass in a dpool, the decks *must* be
+ *           sized for the same subsequence i0,j0.
+ *           
+ *           Note that the (alpha, ret_alpha) calling idiom allows the
+ *           caller to provide an existing matrix or not, and to
+ *           retrieve the calculated matrix or not, in any combination.
+ *           
+ *           We also deal with local begins, by keeping track of the optimal
+ *           state that we could enter and account for the whole target 
+ *           sequence: b = argmax_v  alpha_v(i0,j0) + log t_0(v),
+ *           and bsc is the score for that. 
+ *
+ *           If vroot==0, i0==1, and j0==L (e.g. a complete alignment),
+ *           the optimal alignment might use a local begin transition, 0->b,
+ *           and we'd have to be able to trace that back. For any
+ *           problem where the caller sets allow_begin, we return a valid b 
+ *           (the optimal 0->b choice) and bsc (the score if 0->b is used).
+ *           If a local begin is part of the optimal parse tree, the optimal
+ *           alignment score returned by inside() will be bsc and yshad[0][L][L] 
+ *           will be USE_LOCAL_BEGIN, telling insideT() to check b and
+ *           start with a local 0->b entry transition. When inside()
+ *           is called on smaller subproblems (v != 0 || i0 > 1 || j0
+ *           < L), we're using inside() as an engine in divide &
+ *           conquer, and we don't use the overall return score nor
+ *           shadow matrices, but we do need allow_begin, b, and bsc for
+ *           divide&conquer to sort out where a local begin might be used.
+ *
+ * Args:     cm        - the model    [0..M-1]
+ *           sq        - the sequence [1..L]   
+ *                     - length of the dsq
+ *           vroot     - first start state of subtree (0, for whole model)
+ *           vend      - last end state of subtree (cm->M-1, for whole model)
+ *           i0        - first position in subseq to align (1, for whole seq)
+ *           j0        - last position in subseq to align (L, for whole seq)
+ *           do_full   - if TRUE, we save all the decks in alpha, instead of
+ *                       working in our default memory-efficient mode where 
+ *                       we reuse decks and only the uppermost deck (vroot) is valid
+ *                       at the end.
+ *           alpha     - if non-NULL, this is an existing matrix, with NULL
+ *                       decks for vroot..vend, and we'll fill in those decks
+ *                       appropriately instead of creating a new matrix
+ *           ret_alpha - if non-NULL, return the matrix with one or more
+ *                       decks available for examination (see "do_full")
+ *           dpool     - if non-NULL, this is an existing deck pool, possibly empty,
+ *                       but usually containing one or more allocated decks sized
+ *                       for this subsequence i0..j0.
+ *           ret_dpool - if non-NULL, return the deck pool for reuse -- these will
+ *                       *only* be valid on exactly the same i0..j0 subseq,
+ *                       because of the size of the subseq decks.
+ *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
+ *                       he intends to do a traceback.
+ *           allow_begin- TRUE to allow 0->b local alignment begin transitions. 
+ *           ret_b     - best local begin state, or NULL if unwanted
+ *           ret_bsc   - score for using ret_b, or NULL if unwanted                        
+ *           jmin      - minimum j bound for each state v; [0..v..M-1]
+ *           jmax      - maximum j bound for each state v; [0..v..M-1]
+ *           hdmin     - minimum d bound for each state v and valid j; 
+ *                       [0..v..M-1][0..j0..(jmax[v]-jmin[v])]
+ *                       careful: j dimension offset. j0-jmin[v] = j;
+ *           hdmax     - maximum d bound for each state v and valid j;
+ *                       [0..v..M-1][0..j0..(jmax[v]-jmin[v])]
+ *                       careful: j dimension offset. j0-jmin[v] = j;
+ * int *safe_hdmin     - safe_hdmin[v] = min_d (hdmin[v][j0]) (over all valid j0)
+ * int *safe_hdmax     - safe_hdmax[v] = max_d (hdmax[v][j0]) (over all valid j0)
+ *                       
+ * Returns: Score of the optimal alignment.  
+ */
+static float 
+inside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
+	       float ***alpha, float ****ret_alpha, 
+	       struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+	       void ****ret_shadow, 
+	       int allow_begin, int *ret_b, float *ret_bsc,
+	       int *jmin, int *jmax, int **hdmin, int **hdmax,
+	       int *safe_hdmin, int *safe_hdmax)
+{
+  int      status;
+  int     *touch;       /* keeps track of how many higher decks still need this deck */
+  int      v,y,z;	/* indices for states  */
+  int      j,d,i,k;	/* indices in sequence dimensions */
+  float    sc;		/* a temporary variable holding a score */
+  int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
+  int      W;		/* subsequence length */
+  void  ***shadow;      /* shadow matrix for tracebacks */
+  int    **kshad;       /* a shadow deck for bifurcations */
+  char   **yshad;       /* a shadow deck for every other kind of state */
+  int      b;		/* best local begin state */
+  float    bsc;		/* score for using the best local begin state */
+
+  /* variables used for memory efficient bands */
+  int      dp_v;           /* d index for state v in alpha w/mem eff bands */
+  int      dp_y;           /* d index for state y in alpha w/mem eff bands */
+  int      kp_z;           /* k (in the d dim) index for state z in alpha w/mem eff bands */
+  int      Wp;             /* W also changes depending on state */
+  int      jp_v, jp_y, jp_z;
+  int      kmin, kmax;
+  int      tmp_jmin, tmp_jmax;
+  float  **tmp_deck;       /* temp variable, used only to free deckpool at end */
+
+  /* Contract check */
+  if(dsq == NULL)
+    cm_Fail("ERROR in inside_b_jd_me(), dsq is NULL.\n");
+
+  /* Allocations and initializations
+   */
+  b   = -1;
+  bsc = IMPOSSIBLE;
+  W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
+				/* if caller didn't give us a deck pool, make one */
+  if (dpool == NULL) dpool = deckpool_create();
+
+  /* if caller didn't give us a matrix, make one.
+   * It's important to allocate for M+1 decks (deck M is for EL, local
+   * alignment) - even though Inside doesn't need EL, Outside does,
+   * and we might reuse this memory in a call to Outside.  
+   */
+  if (alpha == NULL) {
+    ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
+    for (v = 0; v <= cm->M; v++) alpha[v] = NULL;
+  }
+
+  ESL_ALLOC(touch, sizeof(int) * cm->M);
+  for (v = 0;     v < vroot; v++) touch[v] = 0;
+  for (v = vroot; v <= vend; v++) touch[v] = cm->pnum[v];
+  for (v = vend+1;v < cm->M; v++) touch[v] = 0;
+
+  /* The shadow matrix, if caller wants a traceback.
+   * We do some pointer tricks here to save memory. The shadow matrix
+   * is a void ***. Decks may either be char ** (usually) or
+   * int ** (for bifurcation decks). Watch out for the casts.
+   * For most states we only need
+   * to keep y as traceback info, and y <= 6. For bifurcations,
+   * we need to keep k, and k <= L, and L might be fairly big.
+   * (We could probably limit k to an unsigned short ... anyone
+   * aligning an RNA > 65536 would need a big computer... but
+   * we'll hold off on that for now. We could also pack more
+   * traceback pointers into a smaller space since we only really
+   * need 3 bits, not 8.)
+   */
+  if (ret_shadow != NULL) {
+    ESL_ALLOC(shadow, sizeof(void **) * cm->M);
+    for (v = 0; v < cm->M; v++) shadow[v] = NULL;
+  }
+
+  /* Main recursion
+   */
+  for (v = vend; v >= vroot; v--) 
+    {
+      /* First we need a deck to fill in. With memory efficient bands 
+       * we don't reuse decks b/c each state has different bands and therefore
+       * different deck sizes, so we ALWAYS allocate a deck here.
+       */
+      alpha[v] = alloc_jdbanded_vjd_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+      //printf("allocated 
+      if (cm->sttype[v] != E_st) {
+	if (ret_shadow != NULL) {
+	  if (cm->sttype[v] == B_st) {
+	    kshad     = alloc_jdbanded_vjd_kshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	    shadow[v] = (void **) kshad;
+	  } else {
+	    yshad     = alloc_jdbanded_vjd_yshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	    shadow[v] = (void **) yshad;
+	  }
+	}
+      }
+
+      /* We've only allocated alpha cells that are within the bands
+       * on the j and d dimensions. This means we have to deal
+       * with all sorts of offset issues, but we don't have to 
+       * waste time setting cells outside the bands to IMPOSSIBLE.
+       */
+      if (cm->sttype[v] == E_st)
+	{
+	  for (j = jmin[v]; j <= jmax[v]; j++)
+	    {
+	      jp_v = j - jmin[v];
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
+		{
+		  if(d != 0)
+		    cm_Fail("band on E state %d has a non-zero d value within its j band for j:%d\n", v, j);
+		  dp_v = d - hdmin[v][jp_v];  /* d index for state v
+						 in alpha w/mem eff bands */
+		  alpha[v][jp_v][dp_v] = 0.; /* for End states, d must be 0 */
+		}		    
+	    }
+	  continue;
+	}  
+      else if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
+	{
+	  for (j = jmin[v]; j <= jmax[v]; j++)
+	    {
+	      jp_v = j - jmin[v];
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
+		{
+		  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+		  alpha[v][jp_v][dp_v]  = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		  /* treat EL as emitting only on self transition */
+		  if (ret_shadow != NULL) yshad[jp_v][dp_v]  = USED_EL; 
+		  for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) 
+		    {
+		      yoffset = y - cm->cfirst[v];
+		      if(j >= jmin[y] && j <= jmax[y]) 
+			/* Enforces j is valid for state y */
+			{
+			  jp_y = j - jmin[y];
+			  if(d >= hdmin[y][jp_y] && d <= hdmax[y][jp_y])
+			    {
+			      dp_y = d - hdmin[y][jp_y];  /* d index for state y 
+							     in alpha w/mem eff bands */
+			      /* if we get here alpha[y][jp_y][dp_y] is a valid alpha cell
+			       * corresponding to alpha[y][j][d] in the platonic matrix.
+			       */
+			      if ((sc = alpha[y][jp_y][dp_y] + cm->tsc[v][yoffset]) > alpha[v][jp_v][dp_v])
+				{
+				  alpha[v][jp_v][dp_v] = sc; 
+				  if (ret_shadow != NULL) yshad[jp_v][dp_v] = yoffset;
+				}
+			    }
+			}
+		    }
+		  if (alpha[v][jp_v][dp_v] < IMPOSSIBLE)
+		    alpha[v][jp_v][dp_v] = IMPOSSIBLE;
+		}
+	    }
+	}
+      else if (cm->sttype[v] == B_st)
+	{
+	  y = cm->cfirst[v];
+	  z = cm->cnum[v];
+	  /* Any valid j must be within both state v and state z's j band 
+	   * I think jmin[v] <= jmin[z] is guaranteed by the way bands are 
+	   * constructed, but we'll check anyway. 
+	   */
+	  tmp_jmin = (jmin[v] > jmin[z]) ? jmin[v] : jmin[z];
+	  tmp_jmax = (jmax[v] < jmax[z]) ? jmax[v] : jmax[z];
+
+	  /* For any values of j within v's j band but outside of z's j band,
+	   * we have to set the corresponding alpha cells to IMPOSSIBLE.
+	   * This is done be the following two ugly for loops, 
+	   * which will only be looked at once for each B state, and
+	   * even then only *very* rarely entered. This
+	   * is why they're here, seemingly out of place before the 
+	   * main j loop below, where similar performing code would be 
+	   * looked at on the order of j times, instead of just once.
+	   */
+	  for(j = jmin[v]; j < tmp_jmin; j++)
+	    {
+	      jp_v = j-jmin[v];
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
+		{
+		  dp_v = d-hdmin[v][jp_v];
+		  alpha[v][jp_v][dp_v] = IMPOSSIBLE; /* this won't be changed */
+		}
+	    }
+	  if(tmp_jmax < jmax[v])
+	    for(j = (tmp_jmax+1); j <= jmax[v]; j++)
+	      {
+		jp_v = j-jmin[v];
+		for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
+		  {
+		    dp_v = d-hdmin[v][jp_v];
+		    alpha[v][jp_v][dp_v] = IMPOSSIBLE; /* this won't be changed */
+		  }
+	      }
+	  /* the main j loop */
+	  for (j = tmp_jmin; j <= tmp_jmax; j++)
+	    {
+	      jp_v = j - jmin[v];
+	      jp_y = j - jmin[y];
+	      jp_z = j - jmin[z];
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
+		{
+		  dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+
+		  /* Find the first k value that implies a valid cell in the y and z decks.
+		   * This k must satisfy the following 6 inequalities (some may be redundant):
+		   * (1) k >= j-jmax[y];
+		   * (2) k <= j-jmin[y]; 
+		   *     1 and 2 guarantee (j-k) is within state y's j band
+		   *
+		   * (3) k >= hdmin[z][j-jmin[z]];
+		   * (4) k <= hdmax[z][j-jmin[z]]; 
+		   *     3 and 4 guarantee k is within z's j=(j), d band
+		   *
+		   * (5) k >= d-hdmax[y][j-jmin[y]-k];
+		   * (6) k <= d-hdmin[y][j-jmin[y]-k]; 
+		   *     5 and 6 guarantee (d-k) is within state y's j=(j-k) d band
+		   */
+		  kmin = ((j-jmax[y]) > (hdmin[z][jp_z])) ? (j-jmax[y]) : hdmin[z][jp_z];
+		  /* kmin satisfies inequalities (1) and (3) */
+		  kmax = ( jp_y       < (hdmax[z][jp_z])) ?  jp_y       : hdmax[z][jp_z];
+		  /* kmax satisfies inequalities (2) and (4) */
+		  /* RHS of inequalities 5 and 6 are dependent on k, so we check
+		   * for these within the next for loop.
+		   */
+		  alpha[v][jp_v][dp_v] = IMPOSSIBLE; /* initialize */
+		  for(k = kmin; k <= kmax; k++)
+		    {
+		      if((k >= d - hdmax[y][jp_y-k]) && k <= d - hdmin[y][jp_y-k])
+			{
+			  /* for current k, all 6 inequalities have been satisified 
+			   * so we know the cells corresponding to the platonic 
+			   * matrix cells alpha[v][j][d], alpha[y][j-k][d-k], and
+			   * alpha[z][j][k] are all within the bands. These
+			   * cells correspond to alpha[v][jp_v][dp_v], 
+			   * alpha[y][jp_y-k][d-hdmin[jp_y-k]-k],
+			   * and alpha[z][jp_z][k-hdmin[jp_z]];
+			   */
+			  kp_z = k-hdmin[z][jp_z];
+			  dp_y = d-hdmin[y][jp_y-k];
+
+			  if ((sc = alpha[y][jp_y-k][dp_y - k] + alpha[z][jp_z][kp_z]) 
+			      > alpha[v][jp_v][dp_v])
+			    {
+			      alpha[v][jp_v][dp_v] = sc;
+			      if (ret_shadow != NULL) kshad[jp_v][dp_v] = kp_z;
+			    }
+			}
+		    }
+		  if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
+		}
+	    }
+	}
+      else if (cm->sttype[v] == MP_st)
+	{
+	  for (j = jmin[v]; j <= jmax[v]; j++)
+	    {
+	      jp_v = j - jmin[v];
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
+	      {
+		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+		alpha[v][jp_v][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
+		if(ret_shadow != NULL) yshad[jp_v][dp_v] = USED_EL;
+		for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) 
+		  {
+		    yoffset = y - cm->cfirst[v];
+		    if((j-1) >= jmin[y] && (j-1) <= jmax[y]) /* Enforces (j-1) is valid for state y */
+
+		      {
+			jp_y = j - jmin[y];
+			if((d-2) >= hdmin[y][jp_y-1] && (d-2) <= hdmax[y][jp_y-1])
+			  {
+			    dp_y = d - hdmin[y][jp_y-1];  /* d index for state y 
+							     in alpha w/mem eff bands */
+			    /* if we get here alpha[y][jp_y-1][dp_y-2] is a valid alpha cell
+			     * corresponding to alpha[y][j-1][d-2] in the platonic matrix.
+			     */
+			    if ((sc = alpha[y][jp_y-1][dp_y-2] + cm->tsc[v][yoffset]) > alpha[v][jp_v][dp_v])
+			      {
+				alpha[v][jp_v][dp_v] = sc; 
+				if (ret_shadow != NULL) yshad[jp_v][dp_v] = yoffset;
+			      }
+			  }
+		      }
+		  }
+		i = j-d+1;
+		if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->esc[v][(dsq[i]*cm->abc->K+dsq[j])];
+		else
+		  alpha[v][jp_v][dp_v] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
+		if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	      }
+	    }
+	}
+      else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st)
+	{
+	  for (j = jmin[v]; j <= jmax[v]; j++)
+	    {
+	      jp_v = j - jmin[v];
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
+	      {
+		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+		alpha[v][jp_v][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
+		if(ret_shadow != NULL) yshad[jp_v][dp_v] = USED_EL;
+		for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) 
+		  {
+		    yoffset = y - cm->cfirst[v];
+		    if(j >= jmin[y] && j <= jmax[y]) /* Enforces j is valid for state y */
+		      {
+			jp_y = j - jmin[y];
+			if((d-1) >= hdmin[y][jp_y] && (d-1) <= hdmax[y][jp_y])
+			  {
+			    dp_y = d - hdmin[y][jp_y];  /* d index for state y 
+							   in alpha w/mem eff bands */
+			    /* if we get here alpha[y][jp_y][dp_y-1] is a valid alpha cell
+			     * corresponding to alpha[y][j][d-1] in the platonic matrix.
+			     */
+			    if ((sc = alpha[y][jp_y][dp_y-1] + cm->tsc[v][yoffset]) > alpha[v][jp_v][dp_v])
+			      {
+				alpha[v][jp_v][dp_v] = sc; 
+				if (ret_shadow != NULL) yshad[jp_v][dp_v] = yoffset;
+			      }
+			  }
+		      }
+		  }
+		i = j-d+1;
+		if (dsq[i] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->esc[v][(int) dsq[i]];
+		else
+		  alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
+		if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	      }
+	    }
+	}
+      else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st)
+	{
+	  for (j = jmin[v]; j <= jmax[v]; j++)
+	    {
+	      jp_v = j - jmin[v];
+	      for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++)
+	      {
+		dp_v = d - hdmin[v][jp_v];  /* d index for state v in alpha w/mem eff bands */
+		alpha[v][jp_v][dp_v] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		/* treat EL as emitting only on self transition */
+		if(ret_shadow != NULL) yshad[jp_v][dp_v] = USED_EL;
+		for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) 
+		  {
+		    yoffset = y - cm->cfirst[v];
+		    if((j-1) >= jmin[y] && (j-1) <= jmax[y]) /* Enforces j-1 is valid for state y */
+
+		      {
+			jp_y = j - jmin[y];
+			if((d-1) >= hdmin[y][jp_y-1] && (d-1) <= hdmax[y][jp_y-1])
+			  {
+			    dp_y = d - hdmin[y][jp_y-1];  /* d index for state y 
+							     in alpha w/mem eff bands */
+			    /* if we get here alpha[y][jp_y-1][dp_y-1] is a valid alpha cell
+			     * corresponding to alpha[y][j-1][d-1] in the platonic matrix.
+			     */
+			    if ((sc = alpha[y][jp_y-1][dp_y-1] + cm->tsc[v][yoffset]) > alpha[v][jp_v][dp_v])
+			      {
+				alpha[v][jp_v][dp_v] = sc; 
+				if (ret_shadow != NULL) yshad[jp_v][dp_v] = yoffset;
+			      }
+			  }
+		      }
+		  }
+		if (dsq[j] < cm->abc->K)
+		  alpha[v][jp_v][dp_v] += cm->esc[v][(int) dsq[j]];
+		else
+		  alpha[v][jp_v][dp_v] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
+		if (alpha[v][jp_v][dp_v] < IMPOSSIBLE) alpha[v][jp_v][dp_v] = IMPOSSIBLE;
+	      }
+	    }
+	}
+      /*if((cm->sttype[v] != IL_st) && (cm->sttype[v] != IR_st) && (cm->sttype[v] != B_st)) {
+	for (j = jmin[v]; j <= jmax[v]; j++) { 
+	  jp_v  = j - jmin[v];
+	  i     = j - hdmin[v][jp_v] + 1;
+	  for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++, i--) {
+	    printf("alpha[v: %4d][jp_v: %4d][dp_v: %4d]: %.4f\n", v, jp_v, dp_v, alpha[v][jp_v][dp_v]);
+	    
+	  }
+	  printf("\n");
+	}
+	printf("\n\n");
+	}*/
+  
+      /* The following loops originally access alpha[v][j0][W] but the index W will be
+	 in different positions due to the bands */
+      if(j0 >= jmin[v] && j0 <= jmax[v])
+	{
+	  jp_v = j0 - jmin[v];
+	  if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v])
+	    {
+	      Wp = W - hdmin[v][jp_v];
+	      /* If we get here alpha[v][jp_v][Wp] is a valid cell
+	       * in the banded alpha matrix, corresponding to 
+	       * alpha[v][j0][W] in the platonic matrix.
+	       */
+	      /* Check for local begin getting us to the root.
+	       * This is "off-shadow": if/when we trace back, we'll handle this
+	       * case separately (and we'll know to do it because we'll immediately
+	       * see a USED_LOCAL_BEGIN flag in the shadow matrix, telling us
+	       * to jump right to state b; see below)
+	       */
+	      if (allow_begin && alpha[v][jp_v][Wp] + cm->beginsc[v] > bsc) 
+		{
+		  b   = v;
+		  bsc = alpha[v][jp_v][Wp] + cm->beginsc[v];
+		}
+	    }
+	}
+      /* Check for whether we need to store an optimal local begin score
+       * as the optimal overall score, and if we need to put a flag
+       * in the shadow matrix telling insideT() to use the b we return.
+       */
+      if (v == 0)
+	{
+	  if(j0 >= jmin[0] && j0 <= jmax[0])
+	    {
+	      jp_v = j0 - jmin[v];
+	      if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v])
+		{
+		  if (allow_begin && v == 0 && bsc > alpha[0][jp_v][Wp]) {
+		    alpha[0][jp_v][Wp] = bsc;
+		    if (ret_shadow != NULL) yshad[jp_v][Wp] = USED_LOCAL_BEGIN;
+		  }
+		}
+	    }
+	}
+      /* Now, if we're trying to reuse memory in our normal mode (e.g. ! do_full):
+       * Look at our children; if they're fully released, free them, we don't 
+       * reuse decks with bands b/c each state has different deck size.
+       */
+      if (! do_full) {
+	if (cm->sttype[v] == B_st) 
+	  { 
+	    /* we can definitely release the S children of a bifurc. */
+	    y = cm->cfirst[v];
+	    z = cm->cnum[v];  
+	    free_vjd_deck(alpha[y], i0, j0);
+	    alpha[y] = NULL;
+	    free_vjd_deck(alpha[z], i0, j0);
+	    alpha[z] = NULL;
+	  }
+	else
+	  {
+	    for (y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++)
+	      {
+		touch[y]--;
+		if (touch[y] == 0) 
+		  {
+		    free_vjd_deck(alpha[y], i0, j0);
+		    alpha[y] = NULL;
+		  }
+	      }
+	  }
+      }
+    } /* end loop over all v */
+  /*debug_print_alpha_banded_jd(alpha, cm, L, jmin, jmax, hdmin, hdmax);*/
+
+  /* Now we free our memory. 
+   * if we've got do_full set, all decks vroot..vend are now valid 
+   * else, only vroot deck is valid now and all others vroot+1..vend are NULL.
+   * We could check this status to be sure (and we used to) but now we trust. 
+   */
+  
+  Wp = W - hdmin[vroot][j0-jmin[vroot]];
+  sc =     alpha[vroot][j0-jmin[vroot]][Wp];
+
+  if (ret_b != NULL)   *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
+  if (ret_bsc != NULL) *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */
+
+  /* If the caller doesn't want the matrix, free it (saving the decks in the pool!)
+   * Else, pass it back to him.
+   */
+  if (ret_alpha == NULL) {
+    for (v = vroot; v <= vend; v++) 
+      if (alpha[v] != NULL) { 
+	deckpool_push(dpool, alpha[v]); alpha[v] = NULL;
+      }
+    free(alpha);
+  } else *ret_alpha = alpha;
+
+  /* If the caller doesn't want the deck pool, free it. 
+   * Else, pass it back to him.
+   */
+  if (ret_dpool == NULL) {
+    while (deckpool_pop(dpool, &tmp_deck)) free_vjd_deck(tmp_deck, i0, j0);
+    deckpool_free(dpool);
+  } else {
+    *ret_dpool = dpool;
+  }
+
+  free(touch);
+  if (ret_shadow != NULL) *ret_shadow = shadow;
+  /*printf("inside jd me returning sc: %f\n", sc);*/
+
+  return sc;
+
+ ERROR: 
+  cm_Fail("Memory allocation error.\n");
+  return 0.; /* never reached */
+}
+
+/* Function: insideT_b_jd_me()
+ *           EPN 03.29.06
+ * *based on insideT(), only difference is memory efficient bands on the j and d dimensions
+ *  are used : 
+ *
+ * Date:     SRE, Fri Aug 11 12:08:18 2000 [Pittsburgh]
+ *
+ * Purpose:  Call inside, get vjd shadow matrix;
+ *           then trace back. Append the trace to a given
+ *           traceback, which already has state r at tr->n-1.
+ */
+static float
+insideT_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
+		int r, int z, int i0, int j0, 
+		int allow_begin, int *jmin, int *jmax,
+		int **hdmin, int **hdmax,
+		int *safe_hdmin, int *safe_hdmax)
+{
+  /* Contract check */
+  if(dsq == NULL)
+    cm_Fail("ERROR in insideT_b_jd_me(), dsq is NULL.");
+
+  void   ***shadow;             /* the traceback shadow matrix */
+  float     sc;			/* the score of the CYK alignment */
+  ESL_STACK *pda;                /* stack that tracks bifurc parent of a right start */
+  int       v,j,d,i;		/* indices for state, j, subseq len */
+  int       k;			
+  int       y, yoffset;
+  int       bifparent;
+  int       b;
+  float     bsc;
+  int       jp_v;               /* j-jmin[v] for current j, and current v */
+  int       dp_v;               /* d-hdmin[v][jp_v] for current j, current v, current d*/
+  int       jp_z;               /* j-jmin[z] for current j, and current z */
+  int       kp_z;               /* the k value (d dim) from the shadow matrix
+				 * giving the len of right fragment offset in deck z,
+				 * k = kp_z + hdmin[z][jp_z]*/
+
+  sc = inside_b_jd_me(cm, dsq, L, r, z, i0, j0, 
+		      BE_EFFICIENT,	/* memory-saving mode */
+		      /*BE_PARANOID,*/	/* non-memory-saving mode */
+		      NULL, NULL,	/* manage your own matrix, I don't want it */
+		      NULL, NULL,	/* manage your own deckpool, I don't want it */
+		      &shadow,		/* return a shadow matrix to me. */
+		      allow_begin,      /* TRUE to allow local begins */
+		      &b, &bsc,	/* if allow_begin is TRUE, gives info on optimal b */
+		      jmin, jmax,    /* bands on j */
+		      hdmin, hdmax,  /* j dependent bands on d */
+		      safe_hdmin, safe_hdmax);
+
+  pda = esl_stack_ICreate();
+  v = r;
+  j = j0;
+  i = i0;
+  d = j0-i0+1;
+
+  jp_v = j - jmin[v];
+  dp_v = d - hdmin[v][jp_v];
+
+  while (1) {
+    if(cm->sttype[v] != EL_st && d > hdmax[v][jp_v])
+      cm_Fail("ERROR in insideT_b_jd(). d : %d > hdmax[%d] (%d)\n", d, v, hdmax[v]);
+    if(cm->sttype[v] != EL_st && d < hdmin[v][jp_v])
+      cm_Fail("ERROR in insideT_b_jd(). d : %d < hdmin[%d] (%d)\n", d, v, hdmin[v]);
+    
+    if (cm->sttype[v] == B_st) {
+      kp_z = ((int **) shadow[v])[jp_v][dp_v];   /* kp = offset len of right fragment */
+      z = cm->cnum[v];
+      jp_z = j-jmin[z];
+      k = kp_z + hdmin[z][jp_z];  /* k = offset len of right fragment */
+      
+      /* Store info about the right fragment that we'll retrieve later:
+       */
+      esl_stack_IPush(pda, j);	/* remember the end j    */
+      esl_stack_IPush(pda, k);	/* remember the subseq length k */
+      esl_stack_IPush(pda, tr->n-1);	/* remember the trace index of the parent B state */
+      /* Deal with attaching left start state.
+       */
+      j = j-k;
+      d = d-k;
+      i = j-d+1;
+      y = cm->cfirst[v];
+      InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+      v = y;
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+    } else if (cm->sttype[v] == E_st || cm->sttype[v] == EL_st) {
+      /* We don't trace back from an E or EL. Instead, we're done with the
+       * left branch of the tree, and we try to swing over to the right
+       * branch by popping a right start off the stack and attaching
+       * it. If the stack is empty, then we're done with the
+       * traceback altogether. This is the only way to break the
+       * while (1) loop.
+       */
+      if (esl_stack_IPop(pda, &bifparent) == eslEOD) break;
+      esl_stack_IPop(pda, &d);
+      esl_stack_IPop(pda, &j);
+      v = tr->state[bifparent];	/* recover state index of B */
+      y = cm->cnum[v];		/* find state index of right S */
+      i = j-d+1;
+				/* attach the S to the right */
+      InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
+      v = y;
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+    } else {
+      yoffset = ((char **) shadow[v])[jp_v][dp_v];
+      switch (cm->sttype[v]) {
+      case D_st:            break;
+      case MP_st: i++; j--; break;
+      case ML_st: i++;      break;
+      case MR_st:      j--; break;
+      case IL_st: i++;      break;
+      case IR_st:      j--; break;
+      case S_st:            break;
+      default:    cm_Fail("'Inconceivable!'\n'You keep using that word...'");
+      }
+      d = j-i+1;
+
+      if (yoffset == USED_EL) 
+	{	/* a local alignment end */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, cm->M);
+	  v = cm->M;		/* now we're in EL. */
+	  jp_v = j;
+	  dp_v = d;
+	}
+      else if (yoffset == USED_LOCAL_BEGIN) 
+	{ /* local begin; can only happen once, from root */
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, b);
+	  v = b;
+	  jp_v = j - jmin[v];
+	  dp_v = d - hdmin[v][jp_v];
+	}
+      else 
+	{
+	  y = cm->cfirst[v] + yoffset;
+	  InsertTraceNode(tr, tr->n-1, TRACE_LEFT_CHILD, i, j, y);
+	  v = y;
+	  jp_v = j - jmin[v];
+	  dp_v = d - hdmin[v][jp_v];
+	}
+    }
+  }
+  esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+  free_vjd_shadow_matrix(shadow, cm, i0, j0);
+  return sc;
+}
+
+  
+/* Functions: *jdbanded_*_vjd_*
+ * EPN 03.29.06 these functions were derived from their 
+ *              *_vjd_* analogs from SRE's smallcyk.c
+ * notes from smallcyk.c:
+ * Date:     SRE, Sat Aug 12 16:27:37 2000 [Titusville]
+ *
+ * Purpose:  Allocation and freeing of 3D matrices and 2D decks
+ *           in the vjd coord system. These can be called on
+ *           subsequences i..j, not just the full sequence 1..L,
+ *           so they need i,j... if you're doing the full sequence
+ *           just pass 1,L.
+ *           
+ *           Also deal with shadow matrices and shadow decks in the
+ *           vjd coordinate system. Note that bifurcation shadow decks
+ *           need more dynamic range than other shadow decks, hence
+ *           a separation into "kshadow" (BIFURC) and "yshadow" (other
+ *           states) decks, and some casting shenanigans in
+ *           a full ***shadow matrix.
+ *           
+ *           Values in yshad are offsets to the next connected state,
+ *           or a flag for local alignment. Possible offsets range from
+ *           0..5 (maximum of 6 connected states). The flags are
+ *           USED_LOCAL_BEGIN (101) and USED_EL (102), defined at
+ *           the top of this file. Only yshad[0][L][L] (e.g. root state 0,
+ *           aligned to the whole sequence) may be set to USED_LOCAL_BEGIN.
+ *           (Remember that the dynamic range of yshad, as a char, is 
+ *           0..127, in ANSI C; we don't know if a machine will make it
+ *           signed or unsigned.)
+ */
+float **
+alloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax)
+{
+  int     status;
+  float **a;
+  int     jp;
+  int     bw; /* width of band, depends on jp, so we need to calculate
+	         this inside the jp loop*/
+  int     jfirst, jlast;
+  /*printf("in alloc JD banded vjd deck, L : %d, i : %d, j : %d, jmin : %d, jmax : %d\n", L, i, j, jmin, jmax);*/
+
+  if(j < jmin || i > jmax)
+    cm_Fail("ERROR called alloc_jdbanded_vjd_deck for i: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i, j, jmin, jmax);
+
+  ESL_DPRINTF3(("alloc_vjd_deck : %.4f\n", size_vjd_deck(L,i,j)));
+  ESL_ALLOC(a, sizeof(float *) * (L+1));  /* always alloc 0..L rows, some of which are NULL */
+  for (jp = 0; jp <= L;     jp++) a[jp]     = NULL;
+
+  jfirst = ((i-1) > jmin) ? (i-1) : jmin;
+  jlast = (j < jmax) ? j : jmax;
+  /* jfirst is the first valid j, jlast is the last */
+  for (jp = jfirst; jp <= jlast; jp++)
+    {
+      /*printf("jfirst: %d | jlast: %d\n", jfirst, jlast);
+      printf("jp: %d | max : %d\n", jp, (jlast)); 
+      printf("hdmax[%d]: %d\n", (jp-jmin), hdmax[jp-jmin]);
+      */
+      ESL_DASSERT2(hdmax[jp-jmin] <= (jp+1))
+      /* Based on my current understanding the above line should never be false, if it is means there's a valid d
+       * in the hd band that is invalid because its > j. I think I check, or ensure, that this
+       * doesn't happen when I'm constructing the d bands.
+       */
+      bw = hdmax[jp-jmin] - hdmin[jp-jmin] +1;
+
+      /*a is offset only the first (jlast-jfirst+1) elements will be non-NULL*/
+      ESL_ALLOC(a[jp-jfirst], sizeof(float) * bw);
+      /*printf("\tallocated a[%d] | bw: %d\n", (jp-jfirst), bw);*/
+    }
+  return a;
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return NULL; /* never reached */
+}
+
+#if 0
+/******************************************************************/
+/* The below functions were written during debugging, and print
+   out either the shadow or alpha matrix.  They are kept
+   here just in case they're needed again.  Note : the functions
+   that print out the entire matrix are really only useful
+   when the BE_PARANOID flag is set, meaning that decks are
+   never freed until the end.
+*/
+/*================================================================*/
+
+/* Debugging functions that print info to STDOUT */
+static void debug_print_alpha_banded_jd(float ***alpha, CM_t *cm, int L, int *jmin, int *jmax, 
+					int **hdmin, int **hdmax);
+static void debug_print_shadow_banded_jd(void ***shadow, CM_t *cm, int L, int *jmin, int *jmax, 
+					 int **hdmin, int **hdmax);
+static void debug_print_shadow_banded_deck_jd(int v, void ***shadow, CM_t *cm, int L, int *jmin, int *jmax,
+					      int **hdmin, int **hdmax);
+
+/* EPN 03.29.06
+   debug_print_alpha_banded_jd()
+ * Function: debug_print_alpha_banded_jd
+ *
+ * Purpose:  Print alpha matrix banded in j and d dimensions
+ */
+void
+debug_print_alpha_banded_jd(float ***alpha, CM_t *cm, int L, int *jmin, int *jmax, 
+			    int **hdmin, int **hdmax)
+{
+  int v, j, d, dp, jp, max_v;
+
+  printf("\nPrinting banded alpha matrix :\n");
+  printf("************************************\n");
+  max_v = cm->M-1;
+  if(cm->flags & CMH_LOCAL_BEGIN)
+    {
+      max_v = cm->M;
+    }
+  for(v = 0; v < max_v; v++)
+    {
+      printf("====================================\n");
+      for(j = jmin[v]; j <= jmax[v]; j++)
+	{
+	  printf("------------------------------------\n");
+	  for (d = hdmin[v][j-jmin[v]]; d <= hdmax[v][j-jmin[v]]; d++) 
+	    {
+	      jp = j - jmin[v]; // j index for state v in alpha w/mem eff bands
+	      dp = d - hdmin[v][j-jmin[v]]; // d index for state v in alpha w/mem eff bands
+	      printf("alpha_jd[%2d][%2d][%2d] : %6.2f | j: %4d | d: %4d\n", v, jp, dp, alpha[v][jp][dp], j, d);
+	    }
+	}
+    }
+  printf("****************\n\n");
+}
+
+/* EPN 05.16.05
+   debug_print_shadow_banded()
+ * Function: debug_print_shadow_banded
+ *
+ * Purpose:  Print banded shadow matrix 
+ */
+static void
+debug_print_shadow_banded_jd(void ***shadow, CM_t *cm, int L, int *jmin, int *jmax, 
+			     int **hdmin, int **hdmax)
+{
+  int v, j, d, dp, jp;
+  int yoffset;
+  char yoffset_c;
+
+  printf("\nPrinting banded shadow matrix :\n");
+  printf("************************************\n");
+  for(v = 0; v < cm->M; v++)
+    {
+      printf("====================================\n");
+      for(j = jmin[v]; j <= jmax[v]; j++)
+	{
+	  printf("------------------------------------\n");
+	  for (d = hdmin[v][j-jmin[v]]; d <= hdmax[v][j-jmin[v]]; d++) 
+	    {
+	      jp = j - jmin[v]; // j index for state v in alpha w/mem eff bands
+	      dp = d - hdmin[v][j-jmin[v]]; // d index for state v in alpha w/mem eff bands
+	      if(cm->sttype[v] == E_st)
+		{
+		  printf("END state\n");
+		}
+	      else
+		{
+		  if(cm->sttype[v] == B_st)
+		    {
+		      yoffset = ((int **) shadow[v])[jp][dp];
+		      printf("INT  shadow_banded_jd[%2d][%2d][%2d] : %d| j: %d | d: %d\n", v, jp, dp, yoffset, jp, dp);
+		    }
+		  else
+		    {
+		      yoffset_c = ((char **) shadow[v])[jp][dp];
+		      printf("CHAR shadow_banded_jd[%2d][%2d][%2d] : %d| j: %d | d: %d\n", v, jp, dp, yoffset, jp, dp);
+		    }
+		}
+	    }
+	}
+    }
+  printf("****************\n\n");
+}
+
+/* EPN 05.16.05
+   debug_print_shadow_banded_deck_jd()
+ * Function: debug_print_shadow_banded_deck_jd
+ *
+ * Purpose:  Print banded (in j and d dimensions) shadow matrix deck
+ */
+
+static void
+debug_print_shadow_banded_deck_jd(int v, void ***shadow, CM_t *cm, int L, int *jmin, int *jmax,
+				  int **hdmin, int **hdmax)
+{
+  int j, d, dp, jp;
+  int yoffset;
+
+  printf("\nPrinting banded shadow matrix deck for v : %d:\n", v);
+  printf("====================================\n");
+  for(j = jmin[v]; j <= jmax[v]; j++)
+    {
+      printf("------------------------------------\n");
+      for (d = hdmin[v][j-jmin[v]]; d <= hdmax[v][j-jmin[v]]; d++) 
+	{
+	  jp = j - jmin[v]; // j index for state v in alpha w/mem eff bands
+	  dp = d - hdmin[v][j-jmin[v]]; // d index for state v in alpha w/mem eff bands
+	  if(cm->sttype[v] == E_st)
+	    {
+	      printf("END state\n");
+	    }
+	  else
+	    {
+	      yoffset = ((char **) shadow[v])[jp][dp];
+	      printf("shadow_banded_jd[%2d][%2d][%2d] : %d| j: %d | d: %d\n", v, jp, dp, yoffset, jp, dp);
+	    }
+	}
+    }
+}
+#endif
+
+#if 0
+/* Here are the non-memory efficient functions, kept around for reference */
+/* The alignment engine (not memory efficient) */
+static float inside_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, 
+			 int r, int z, int i0, int j0, 
+			 int do_full,
+			 float ***alpha, float ****ret_alpha, 
+			 struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
+			 void ****ret_shadow, 
+			 int allow_begin, int *ret_b, float *ret_bsc,
+			 int *jmin, int *jmax,
+			 int **hdmin, int **hdmax,
+			 int *safe_hdmin, int *safe_hdmax);
+
+/* The traceback routine (not memory efficient) */
+static float insideT_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
+			  int r, int z, int i0, int j0, int allow_begin,
+			  int *jmin, int *jax, 
+			  int **hdmin, int **hdmax,
+			  int *safe_hdmin, int *safe_hdmax);
+
+#endif

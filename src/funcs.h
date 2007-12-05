@@ -197,21 +197,6 @@ extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **r
 extern void         rightjustify(const ESL_ALPHABET *abc, char *s, int n);
 extern void         leftjustify(const ESL_ALPHABET *abc, char *s, int n);
 
-/* from scancyk.c
- */
-extern search_results_t *CreateResults (int size);
-extern void ExpandResults (search_results_t *r, int additional);
-extern void AppendResults (search_results_t *src_results, search_results_t *dest_results, int i0);
-extern void FreeResults   (search_results_t *r);
-extern int  compare_results (const void *a_void, const void *b_void);
-extern void sort_results (search_results_t *results);
-extern void report_hit (int i, int j, int bestr, float score, search_results_t *results);
-extern void remove_overlapping_hits (search_results_t *results, int i0, int j0);
-extern float CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
-		      float cutoff, search_results_t *results);
-extern float CYKScanRequires(CM_t *cm, int L, int W);
-extern float CountScanDPCalcs(CM_t *cm, int L, int use_qdb);
-
 /* from smallcyk.c
  */
 extern float CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, 
@@ -342,29 +327,6 @@ extern float Score2Prob(int sc, float null);
 extern float Scorify(int sc);
 extern int   DegenerateSymbolScore(float *p, float *null, int ambig);
 
-/* from hbandcyk.c
- */
-extern float CYKInside_b_jd(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, 
-			    Parsetree_t **ret_tr, int *jmin, int *jmax, 
-			    int **hdmin, int **hdmax, int *dmin, int *dmax);
-extern void PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
-		     int W);
-extern void ij2d_bands(CM_t *cm, int L, int *imin, int *imax, int *jmin, int *jmax,
-		       int **hdmin, int **hdmax, int debug_level);
-extern void combine_qdb_hmm_d_bands(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax);
-extern void hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, int **hdmax,
-			     int *safe_hdmin, int *safe_hdmax);
-extern void debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax);
-extern void debug_print_alpha_banded_jd(float ***alpha, CM_t *cm, int L, int *jmin, int *jmax, 
-					int **hdmin, int **hdmax);
-extern float ** alloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
-extern float CYKBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
-			      int j0, int W, float cutoff, search_results_t *results);
-extern float iInsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax, int i0, 
-				  int j0, int W, float cutoff, search_results_t *results);
-extern int   ** alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
-extern char  ** alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
-
 /* from cm_fastsearch.c */
 extern int  FastCYKScan      (CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, float **ret_vsc, float *ret_sc);
 extern int  FastIInsideScan  (CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, float **ret_vsc, float *ret_sc);
@@ -445,21 +407,6 @@ extern int  MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, c
 
 
 
-/* from scaninside.c */
-extern float  InsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
-			 float cutoff, search_results_t *results);
-extern float  InsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-			       float cutoff, search_results_t *results);
-extern void  InsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax,
-				 int i0, int j0, int W, 
-				 int *ret_nhits, int **ret_hitr, 
-				 int **ret_hiti, int **ret_hitj, float **ret_hitsc,
-				 float min_thresh);
-extern float iInsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
-			 float cutoff, search_results_t *results);
-extern float iInsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-			       float cutoff, search_results_t *results);
-
 /* from cm_masks.c */
 extern float CM_TraceScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq);
 
@@ -497,79 +444,6 @@ int MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff, int do_co
 extern void cm_Die (char *format, ...);
 extern void cm_Fail(char *format, ...);
 
-/* from cm_postprob.c */
-extern float FInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
-		     float ***alpha, float ****ret_alpha, 
-		     struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-		     int allow_begin);
-extern float IInside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
-		     int ***alpha, int ****ret_alpha, 
-		     struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
-		     int allow_begin);
-extern float FOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
-		      float ***beta, float ****ret_beta, 
-		      struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-		      int allow_begin, float ***alpha, float ****ret_alpha, int do_check);
-extern float IOutside(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
-		      int ***beta, int ****ret_beta, 
-		      struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
-		      int allow_begin, int ***alpha, int ****ret_alpha, int do_check);
-extern void  FCMPosterior(int L, CM_t *cm, float ***alpha, float ****ret_alpha, float ***beta, 
-			  float ****ret_beta, float ***post, float ****ret_post);
-extern void  ICMPosterior(int L, CM_t *cm, int ***alpha, int ****ret_alpha, int ***beta, 
-			 int ****ret_beta, int ***post, int ****ret_post);
-extern void CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2);
-extern void ICMPostalCode(CM_t *cm, int L, int ***post, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2);
-extern void CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2);
-extern int  Fscore2postcode(float sc);
-extern int  Iscore2postcode(int sc);
-extern float FScore2Prob(float sc, float null);
-extern void ICMCheckPosterior(int L, CM_t *cm, int ***post);
-extern float FInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
-			     float ***alpha, float ****ret_alpha, 
-			     struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-			     int allow_begin, int *jmin, int *jmax, int **hdmin, int **hdmax);
-extern float IInside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
-			     int ***alpha, int ****ret_alpha, 
-			     struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
-			     int allow_begin, int *jmin, int *jmax, int **hdmin, int **hdmax);
-extern float FOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
-			      float ***beta, float ****ret_beta, 
-			      struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
-			      int allow_begin, float ***alpha, float ****ret_alpha, 
-			      int do_check, int *jmin, int *jmax, int **hdmin, int **hdmax);
-extern float IOutside_b_jd_me(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int do_full,
-			      int ***beta, int ****ret_beta, 
-			      struct Ideckpool_s *dpool, struct Ideckpool_s **ret_dpool,
-			      int allow_begin, int ***alpha, int ****ret_alpha, 
-			      int do_check, int *jmin, int *jmax, int **hdmin, int **hdmax);
-extern void  CMPosterior_b_jd_me(int L, CM_t *cm, float ***alpha, float ****ret_alpha, 
-				 float ***beta, float ****ret_beta, float ***post, float ****ret_post,
-				 int *jmin, int *jmax, int **hdmin, int **hdmax);
-extern void ICMPosterior_b_jd_me(int L, CM_t *cm, int ***alpha, int ****ret_alpha, 
-				 int ***beta, int ****ret_beta, int ***post, int ****ret_post,
-				 int *jmin, int *jmax, int **hdmin, int **hdmax);
-extern void CMPostalCode_b_jd_me(CM_t *cm, int L, float ***post, Parsetree_t *tr,
-				   int *jmin, int *jmax, int **hdmin, int **hdmax, char **ret_pcode1, char **ret_pcode2);
-extern void ICMPostalCode_b_jd_me(CM_t *cm, int L, int ***post, Parsetree_t *tr,
-				  int *jmin, int *jmax, int **hdmin, int **hdmax, char **ret_pcode1, char **ret_pcode2);
-extern float ParsetreeSampleFromIInside(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int ***alpha, Parsetree_t **ret_tr,
-					int ****ret_alpha);
-extern float ParsetreeSampleFromIInside_b_jd_me(ESL_RANDOMNESS *r, CM_t *cm, ESL_DSQ *dsq, int L, int ***alpha, CP9Bands_t *cp9b, 
-						Parsetree_t **ret_tr, int ****ret_alpha);
-     
-/* cm_postprob.c: memory management routines analogous to those in smallcyk.c for
- * handling scaled int log odds scores instead of floats. */
-extern Ideckpool_t *Ideckpool_create(void);
-extern void    Ideckpool_push(struct Ideckpool_s *dpool, int **deck);
-extern int     Ideckpool_pop(struct Ideckpool_s *d, int ***ret_deck);
-extern void    Ideckpool_free(struct Ideckpool_s *d);
-extern int   **Ialloc_vjd_deck(int L, int i, int j);
-extern int     Isize_vjd_deck(int L, int i, int j);
-extern void    Ifree_vjd_deck(int **a, int i, int j);
-extern void    Ifree_vjd_matrix(int ***a, int M, int i, int j);
-extern int ** Ialloc_jdbanded_vjd_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
-
 /* from rnamat.c */
 extern int numbered_nucleotide (char c);
 extern int numbered_basepair (char c, char d);
@@ -582,8 +456,6 @@ extern int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq
 				search_results_t **results, int *ret_flen, float *ret_sc);
 extern int ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
 				int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r);
-extern int OldActuallyAlignTargets(CM_t *cm, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
-				   int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r);
 extern int  revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
 extern int  read_next_search_seq(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int do_revcomp, dbseq_t **ret_dbseq);
 extern void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_complement);
@@ -756,12 +628,20 @@ extern int FastInsideAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int
 extern int FastInsideAlign    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ****ret_mx, float *ret_sc);
 extern int FastOutsideAlignHB (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx,    CM_HB_MX *ins_mx, int do_check, float *ret_sc);
 extern int FastOutsideAlign   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ****ret_mx, float ***ins_mx, int do_check, float *ret_sc);
+extern int SampleFromInsideHB (ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *mx, Parsetree_t **ret_tr, float *ret_sc);
+extern int SampleFromInside   (ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float ***mx,  Parsetree_t **ret_tr, float *ret_sc);
+extern int   ** alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
+extern char  ** alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
+
+/* TO BE cm_postprob.c */
+extern void CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2);
+extern void CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2);
+extern float FScore2Prob(float sc, float null);
+extern int   Fscore2postcode(float sc);
 extern int CMPosteriorHB      (CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx);
 extern int CMPosterior        (CM_t *cm, char *errbuf, int i0, int j0, float ***ins_mx, float ***out_mx, float ***post_mx);
 extern int CMCheckPosteriorHB (CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post);
 extern int CMCheckPosterior   (CM_t *cm, char *errbuf, int i0, int j0, float ***post);
-extern int SampleFromInsideHB (ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, CM_HB_MX *mx, Parsetree_t **ret_tr, float *ret_sc);
-extern int SampleFromInside   (ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float ***mx,  Parsetree_t **ret_tr, float *ret_sc);
 
 
 /* from hmmband.c */
@@ -789,6 +669,14 @@ extern void         ijdBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin,
 					   int *jmin, int *jmax, int **hdmin, int **hdmax, 
 					   int debug_level);
 extern int          cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0);
+extern void ij2d_bands(CM_t *cm, int L, int *imin, int *imax, int *jmin, int *jmax,
+		       int **hdmin, int **hdmax, int debug_level);
+extern void combine_qdb_hmm_d_bands(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax);
+extern void hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, int **hdmax,
+			     int *safe_hdmin, int *safe_hdmax);
+extern void debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax);
+extern void PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax, int W);
+
 /* old functions (get rid of them ?) */
 extern float CP9ViterbiAlign (ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *mx, CP9trace_t **ret_tr);
 extern float CP9ForwardAlign (ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *mx);
@@ -837,11 +725,6 @@ extern int cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int vroot
 extern int cm_ValidateHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi);
 extern void cm_FreeHybridScanInfo(HybridScanInfo_t *hsi, CM_t *cm);
 
-
-/* from cm_theta.c */
-extern int cm_CalcMaxSc(CM_t *cm, double **ret_maxsc, double **ret_maxsc_noss);
-extern Theta_t *cm_CalcTheta(CM_t *cm, Theta_t **ret_theta, float stepsize);
-
 /* from cm_searchinfo.c */
 extern int  cm_CreateSearchInfo(CM_t *cm, int cutoff_type, float cutoff);
 extern int  cm_AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_filter, int forward_filter,
@@ -851,3 +734,17 @@ extern void cm_DumpSearchInfo(SearchInfo_t *si);
 extern void DumpSearchOpts(int search_opts);
 extern void cm_ValidateSearchInfo(CM_t *cm, SearchInfo_t *fi);
 extern void cm_UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float cutoff);
+extern search_results_t *CreateResults (int size);
+extern void ExpandResults (search_results_t *r, int additional);
+extern void AppendResults (search_results_t *src_results, search_results_t *dest_results, int i0);
+extern void FreeResults   (search_results_t *r);
+extern int  compare_results (const void *a_void, const void *b_void);
+extern void sort_results (search_results_t *results);
+extern void report_hit (int i, int j, int bestr, float score, search_results_t *results);
+extern void remove_overlapping_hits (search_results_t *results, int i0, int j0);
+extern float CountScanDPCalcs(CM_t *cm, int L, int use_qdb);
+
+
+/* from cm_theta.c */
+extern int cm_CalcMaxSc(CM_t *cm, double **ret_maxsc, double **ret_maxsc_noss);
+extern Theta_t *cm_CalcTheta(CM_t *cm, Theta_t **ret_theta, float stepsize);
