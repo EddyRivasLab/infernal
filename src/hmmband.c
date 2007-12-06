@@ -209,7 +209,6 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   int             use_sums; /* TRUE to fill and use posterior sums during HMM band calc, yields wider bands  */
   float           sc;
   int do_scan2bands;         /* TRUE to use scanning Forward/Backward to get posteriors */
-  int be_safe = TRUE;        /* TEMPORARY, pass this in after calcing it once in actually_align_targets() */
 
   /* Contract checks */
   if(cm->cp9 == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, but cm->cp9 is NULL.\n");
@@ -230,14 +229,12 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   /* Step 1: Get HMM Forward/Backward DP matrices. */
 
   do_scan2bands = (cm->search_opts & CM_SEARCH_HMMSCANBANDS) ? TRUE : FALSE;
-  /* TO DO have these guys return status codes */
-  if((status = cp9_FastForward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 0., NULL,
-			       do_scan2bands, /* are we using scanning Forward/Backward */
-			       TRUE,      /* we are going to use posteriors to align */
-			       FALSE,     /* don't be memory efficient */
-			       be_safe,   /* can we accelerate w/ no -INFTY logsum funcs? */
-			       NULL, NULL,
-			       &sc)) != eslOK) return status;
+  if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 0., NULL,
+			   do_scan2bands, /* are we using scanning Forward/Backward */
+			   TRUE,      /* we are going to use posteriors to align */
+			   FALSE,     /* don't be memory efficient */
+			   NULL, NULL,
+			   &sc)) != eslOK) return status;
   if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 0, NULL, 
 			    do_scan2bands, /* are we using scanning Forward/Backward */
 			    TRUE,  /* we are going to use posteriors to align */

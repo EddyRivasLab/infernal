@@ -610,8 +610,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       print_search_info(stdout, cm, cfg->N, errbuf);
       determine_cm_min_max_chunksize(cfg, cm, &min_chunksize, &max_chunksize);
-      printf("min_chunksize: %d\n", min_chunksize);
-      printf("max_chunksize: %d\n", max_chunksize);
+      ESL_DPRINTF1(("min_chunksize: %d\n", min_chunksize));
+      ESL_DPRINTF1(("max_chunksize: %d\n", max_chunksize));
 
       wi = 1;
       ndbseq = 0;
@@ -641,7 +641,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  sentlist[si]  = FALSE;
 		  have_work = TRUE;
 		  chunksize = determine_seq_chunksize(cfg, dbseq->sq[0]->n, min_chunksize, max_chunksize);
-		  printf("L: %d chunksize: %d\n", dbseq->sq[0]->n, chunksize);
+		  ESL_DPRINTF1(("L: %d chunksize: %d\n", dbseq->sq[0]->n, chunksize));
 		}
 	      else if(status == eslEOF) have_work = FALSE;
 	      else goto ERROR;

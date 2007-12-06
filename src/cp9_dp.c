@@ -715,7 +715,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
  */
 int
 cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-		int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc)
+	    int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
   GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
@@ -743,9 +743,9 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, cm->cp9 is NULL.\n");
   if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, passing in results data structure, but not in scanning mode.\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, dsq is NULL.");
-  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, mx is NULL.\n");
-  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, mx->M != cm->clen.\n");
-  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, cm->clen != cm->cp9->M.\n");
+  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, mx is NULL.\n");
+  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, mx->M != cm->clen.\n");
+  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, cm->clen != cm->cp9->M.\n");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;

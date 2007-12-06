@@ -474,7 +474,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       //if((status = initialize_sub_filter_info(go, cfg, cm))     != eslOK) cm_Fail("initialize_sub_info failed unexpectedly (status: %d)", status);
 
       //for(gum_mode = 0; gum_mode < NGUMBELMODES; gum_mode++) {
-      for(gum_mode = 0; gum_mode < 5; gum_mode += 4)  /* will fit CM_LC and CP9_L only */
+      for(gum_mode = 0; gum_mode < 5; gum_mode += 4)  /* will fit CM_LC and CP9_LV only */
       //for(gum_mode = 1; gum_mode < 2; gum_mode++) 
 	{
 	  ConfigForGumbelMode(cm, gum_mode);
@@ -658,7 +658,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
       /* if nec, search with CM */
       if (use_cm)
 	{ 
-	  if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, &(cur_vscA), &sc1)) != eslOK) return status;
+	  if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, &(cur_vscA), &sc1)) != eslOK) return status;
 	  /* sc1 = search_target_cm_calibration(cm, dsq, cm->dmin, cm->dmax, 1, L, cm->W, &(cur_vscA)); */
 	  /*sc2 = actually_search_target(cm, dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE); */
 	  /*printf("i: %4d sc1: %10.4f sc2: %10.4f\n", i, sc1, sc2);
@@ -672,14 +672,14 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 	  free(cur_vscA);
 	}
       /* if nec, search with CP9 */
-      if (use_cp9) cp9scA[i] = CP9Forward(cm, dsq, 1, L, cm->W, 0., 
-					  NULL,   /* don't return scores of hits */
-					  NULL,   /* don't return posns of hits */
-					  NULL,   /* don't keep track of hits */
-					  TRUE,   /* we're scanning */
-					  FALSE,  /* we're not ultimately aligning */
-					  TRUE,   /* be memory efficient */
-					  NULL);  /* don't want the DP matrix back */
+      if(use_cp9) 
+	if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL, 
+				 TRUE,   /* yes, we are scanning */
+				 FALSE,  /* no, we are not aligning */
+				 FALSE,  /* don't be memory efficient */
+				 NULL, 
+				 NULL,  /* don't want the DP matrix back */
+				 &(cp9scA[i]))) != eslOK) return status;
       free(dsq);
     }
   if(dnull != NULL) free(dnull);
@@ -723,7 +723,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(cm->smx == NULL) cm_Fail("initialize_cm(), CreateScanMatrixForCM() call failed.");
   
   /* create and initialize hybrid scan info */
-  assert(cfg->hsi == NULL);
+  ESL_DASSERT1((cfg->hsi == NULL));
   cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--fbeta"), cfg->full_vcalcs[0]);
   if(cfg->hsi == NULL) cm_Fail("initialize_cm(), CreateHybridScanInfo() call failed.");
 
@@ -1073,8 +1073,8 @@ calc_best_filter(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float **fil
   printf("***********************************\n\n");
 
   /* E is expected number of hits for db of length 2 * cm->W */
-  /* SHOULD THIS BE CP9_L???? */
-  E  = RJK_ExtremeValueE(sc, cfg->cmstatsA[cmi]->gumAA[CP9_L][0]->mu, cfg->cmstatsA[cmi]->gumAA[CP9_L][0]->lambda);
+  /* SHOULD THIS BE CP9_LF???? */
+  E  = RJK_ExtremeValueE(sc, cfg->cmstatsA[cmi]->gumAA[CP9_LF][0]->mu, cfg->cmstatsA[cmi]->gumAA[CP9_LF][0]->lambda);
   fil_calcs  = cfg->hsi->full_cp9_ncalcs;
   surv_calcs = E * (cm->W * 2) * cfg->hsi->full_cm_ncalcs;
   printf("HMM(L)        sc: %10.4f E: %10.4f filt: %10.4f ", sc, E, fil_calcs);
@@ -1234,7 +1234,7 @@ cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
   cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
   if(turn_qdb_back_on) cm->search_opts &= ~CM_SEARCH_NOQDB; 
 
-  if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, cm->W, 0., NULL, NULL, &sc)) != eslOK) return status;
+  if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) return status;
   /* sc = search_target_cm_calibration(cm, dsq, dmin_default_beta, dmax_default_beta, 1, L, cm->W, NULL); */
   if(!turn_hbanded_back_off)      { cm->search_opts |= CM_SEARCH_HBANDED;      cm->tau = orig_tau; }
   if(!turn_hmmscanbands_back_off) { cm->search_opts |= CM_SEARCH_HMMSCANBANDS; cm->tau = orig_tau; }
@@ -1259,6 +1259,7 @@ estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq,
   float cyk_megacalcs_per_sec = 250.;
   float ins_megacalcs_per_sec =  40.;
   float fwd_megacalcs_per_sec = 175.;
+  float vit_megacalcs_per_sec = 380.;
   
   float seconds = 0.;
 
@@ -1271,8 +1272,12 @@ estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq,
   case CM_GI:
     seconds = cfg->full_vcalcs[0] * (float) L * (float) nseq / ins_megacalcs_per_sec;
     break;
-  case CP9_L: 
-  case CP9_G: 
+  case CP9_LV: 
+  case CP9_GV: 
+    seconds = cfg->hsi->full_cp9_ncalcs * (float) L * (float) nseq / vit_megacalcs_per_sec;
+    break;
+  case CP9_LF: 
+  case CP9_GF: 
     seconds = cfg->hsi->full_cp9_ncalcs * (float) L * (float) nseq / fwd_megacalcs_per_sec;
     break;
   }

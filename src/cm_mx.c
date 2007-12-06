@@ -769,8 +769,8 @@ void
 cm_FreeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 {
   int j;
-  if(smx->dmin != cm->dmin) free(smx->dmin);
-  if(smx->dmax != cm->dmax) free(smx->dmax);
+  if(smx->dmin != cm->dmin && smx->dmin != NULL) free(smx->dmin);
+  if(smx->dmax != cm->dmax && smx->dmax != NULL) free(smx->dmax);
 
   for(j = 1; j <= smx->W; j++) {
     free(smx->dnAA[j]);
