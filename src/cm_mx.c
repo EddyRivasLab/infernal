@@ -412,22 +412,26 @@ cm_CreateScanMatrixForCM(CM_t *cm, int do_float, int do_int)
   int use_hmmonly;
   use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) ||  (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
 
-  if(! (cm->flags & CMH_BITS))                 cm_Fail("cm_CreateScanMatrixForCM(), the CM flag for valid bit scores is down.");
   if(cm->flags & CMH_SCANMATRIX)               cm_Fail("cm_CreateScanMatrixForCM(), the CM flag for valid scan info is already up.");
   if(cm->smx != NULL)                          cm_Fail("cm_CreateScanMatrixForCM(), the cm already points to a ScanMatrix_t object.\n");
   if(cm->dmin == NULL && cm->dmax != NULL)     cm_Fail("cm_CreateScanMatrixForCM(), cm->dmin == NULL, cm->dmax != NULL\n"); 
   if(cm->dmin != NULL && cm->dmax == NULL)     cm_Fail("cm_CreateScanMatrixForCM(), cm->dmin == NULL, cm->dmax != NULL\n"); 
   if(cm->dmax != NULL && cm->W != cm->dmax[0]) cm_Fail("cm_CreateScanMatrixForCM(), cm->W: %d != cm->dmax[0]: %d\n", cm->W, cm->dmax[0]); 
+  if((cm->dmin != NULL && cm->dmax != NULL) && (! (cm->flags & CMH_QDB))) 
+     cm_Fail("cm_CreateScanMatrixForCM(), cm->dmin != NULL, cm->dmax != NULL, but CMH_QDB flag down, bands are invalid\n"); 
   if((! cm->search_opts & CM_SEARCH_NOQDB) && (cm->dmin == NULL || cm->dmax == NULL))
     cm_Fail("cm_CreateScanMatrixForCM(), cm->dmin == NULL || cm->dmax == NULL, but !(cm->search_opts & CM_SEARCH_NOQDB)\n");
-  if(use_hmmonly && (cm->dmin != NULL && cm->dmax != NULL))
-    cm_Fail("cm_CreateScanMatrixForCM(), CM_SEARCH_HMMVITERBI or CM_SEARCH_HMMFORWARD but cm->dmin != NULL || cm->dmax != NULL\n");
 
   do_banded = ((cm->search_opts & CM_SEARCH_NOQDB) || use_hmmonly) ? FALSE : TRUE;
 
-  cm->smx = cm_CreateScanMatrix(cm, cm->W, cm->dmin, cm->dmax, cm->beta, do_banded, do_float, do_int);
-
-  cm->flags |= CMH_SCANMATRIX; /* raise the flag for valid CMH_SCANMATRIX */
+  if(use_hmmonly) { /* no matrix will be alloc'ed, we don't need it */
+    cm->smx = NULL;
+    cm->flags &= ~CMH_SCANMATRIX; /* raise the flag for valid CMH_SCANMATRIX */
+  }
+  else {
+    cm->smx = cm_CreateScanMatrix(cm, cm->W, cm->dmin, cm->dmax, cm->beta, do_banded, do_float, do_int);
+    cm->flags |= CMH_SCANMATRIX; /* raise the flag for valid CMH_SCANMATRIX */
+  }
   return eslOK;
 }
 
@@ -769,8 +773,10 @@ void
 cm_FreeScanMatrix(CM_t *cm, ScanMatrix_t *smx)
 {
   int j;
-  if(smx->dmin != cm->dmin && smx->dmin != NULL) free(smx->dmin);
-  if(smx->dmax != cm->dmax && smx->dmax != NULL) free(smx->dmax);
+  if(! ((cm->flags & CMH_SCANMATRIX) && (smx == cm->smx))) { /* don't free the cm->smx's dmin, dmax */
+    if(smx->dmin != cm->dmin && smx->dmin != NULL) { free(smx->dmin); smx->dmin = NULL; }
+    if(smx->dmax != cm->dmax && smx->dmax != NULL) { free(smx->dmax); smx->dmax = NULL; }
+  }
 
   for(j = 1; j <= smx->W; j++) {
     free(smx->dnAA[j]);

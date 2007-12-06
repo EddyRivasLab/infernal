@@ -56,6 +56,8 @@ static ESL_OPTIONS options[] = {
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
   { "--rtrans",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "replace CM transition scores from <cmfile> with RSEARCH scores", 1 },
   { "--greedy",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "resolve overlapping hits with a greedy algorithm a la RSEARCH", 1 },
+   { "--pbegin", eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local begin prob to <x>", 1 },
+  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local end prob to <x>", 1 },
   /* options for algorithm for final round of search */
   { "--cyk",       eslARG_NONE,"default",NULL,NULL,     NULL,      NULL,    STRATOPTS, "use scanning CM CYK algorithm", 2 },
   { "--inside",    eslARG_NONE, FALSE, NULL, NULL,      NULL,      NULL,    STRATOPTS, "use scanning CM Inside algorithm", 2 },
@@ -994,12 +996,18 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       fclose(qdb_fp);
     }
 
+  /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */
+  cm->pbegin = esl_opt_GetReal(go, "--pbegin");
+  cm->pend   = esl_opt_GetReal(go, "--pend");
+
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * set local mode, make cp9 HMM, calculate QD bands etc. 
    */
   ConfigCM(cm, cfg->preset_dmin, cfg->preset_dmax); /* preset_d* usually NULL, unless --qdbfile */
   if(cm->config_opts & CM_CONFIG_ENFORCE) ConfigCMEnforce(cm);
 
+  printf("cm->pbegin: %.3f\n", cm->pbegin);
+  printf("cm->pend: %.3f\n", cm->pend);
   /* print qdbs to file if nec */
   if(! esl_opt_IsDefault(go, "--bfile")) {
     fprintf(cfg->bfp, "beta:%f\n", cm->beta);
@@ -1363,7 +1371,8 @@ set_window(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   int do_int   = FALSE;
   if(cm->search_opts & CM_SEARCH_INSIDE) { do_float = FALSE; do_int = TRUE; }
   cm_CreateScanMatrixForCM(cm, do_float, do_int);
-  if(cm->smx == NULL) cm_Fail("set_window(), CreateScanMatrixForCM() call failed.");
+  if((!use_hmmonly) && cm->smx == NULL) cm_Fail("set_window(), use_hmmonly is FALSE, CreateScanMatrixForCM() call failed, mx is NULL.");
+  if(use_hmmonly    && cm->smx != NULL) cm_Fail("set_window(), use_hmmonly is TRUE, CreateScanMatrixForCM() call failed, mx is non-NULL.");
 
   return eslOK;
 }

@@ -30,9 +30,11 @@ int
 CreateSearchInfo(CM_t *cm, int cutoff_type, float cutoff)
 {
   int status;
+  int use_hmmonly;
 
   if(cm->si != NULL)  cm_Fail("CreateSearchInfo(), the cm already points to a SearchInfo_t object.\n");
-  
+  use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) ||  (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
+
   SearchInfo_t *si;
   ESL_ALLOC(si, sizeof(SearchInfo_t));
   
@@ -47,7 +49,7 @@ CreateSearchInfo(CM_t *cm, int cutoff_type, float cutoff)
   si->search_opts[0] = cm->search_opts;
   si->cutoff_type[0] = cutoff_type;
   si->cutoff[0]      = cutoff;
-  si->stype[0]       = SEARCH_WITH_CM;
+  si->stype[0]       = use_hmmonly ? SEARCH_WITH_HMM : SEARCH_WITH_CM;
   si->smx[0]         = cm->smx;  /* could be NULL */
   si->hsi[0]         = NULL;
 

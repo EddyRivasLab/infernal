@@ -107,6 +107,7 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, mx is NULL.\n");
   if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, mx->M != cm->clen.\n");
   if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, cm->clen != cm->cp9->M.\n");
+  if(cm->flags & CM_SEARCH_HMMFORWARD) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, CM_SEARCH_HMMFORWARD flag raised.\n");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
@@ -327,9 +328,10 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, cm->cp9 is NULL.\n");
   if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, passing in results data structure, but not in scanning mode.\n");
   if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, dsq is NULL.");
-  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, mx is NULL.\n");
-  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, mx->M != cm->clen.\n");
-  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, cm->clen != cm->cp9->M.\n");
+  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, mx is NULL.\n");
+  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, mx->M != cm->clen.\n");
+  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, cm->clen != cm->cp9->M.\n");
+  if(cm->flags & CM_SEARCH_HMMFORWARD) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, CM_SEARCH_HMMFORWARD flag raised.\n");
     
   int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
 
@@ -2628,13 +2630,13 @@ main(int argc, char **argv)
 
       esl_stopwatch_Start(w);
       if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,
-				   do_scan,   /* are we scanning? */
-				   do_align,  /* are we aligning? */
-				   (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
-				   NULL,
-				   NULL,   /* don't want the DP matrix back */
-				   NULL,   /* don't want traces back */
-				   &sc)) != eslOK) cm_Fail(errbuf);
+			       do_scan,   /* are we scanning? */
+			       do_align,  /* are we aligning? */
+			       (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
+			       NULL,   /* don't want best score at each posn back */
+			       NULL,   /* don't want the max scoring posn back */
+			       NULL,   /* don't want traces back */
+			       &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "cp9_Viterbi(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -2643,12 +2645,12 @@ main(int argc, char **argv)
 	{ 
 	  esl_stopwatch_Start(w);
 	  if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL, 
-				       do_scan,   /* are we scanning? */
-				       do_align,  /* are we aligning? */
-				       (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
-				       NULL, 
-				       NULL,  /* don't want the DP matrix back */
-				       &sc)) != eslOK) cm_Fail(errbuf);
+				   do_scan,   /* are we scanning? */
+				   do_align,  /* are we aligning? */
+				   (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
+				   NULL,   /* don't want best score at each posn back */
+				   NULL,   /* don't want the max scoring posn back */
+				   &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "cp9_Forward(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -2673,13 +2675,13 @@ main(int argc, char **argv)
 	  if(minL != -1 && minL <= L) be_safe = TRUE;
 	  esl_stopwatch_Start(w);
 	  if((status = cp9_FastForward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,
-					do_scan,   /* are we scanning? */
-					do_align,  /* are we aligning? */
-					(! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
-					be_safe,
-					NULL, 
-					NULL,  /* don't want the DP matrix back */
-					&sc)) != eslOK) cm_Fail(errbuf);
+				       do_scan,   /* are we scanning? */
+				       do_align,  /* are we aligning? */
+				       (! esl_opt_GetBoolean(go, "--full")),  /* memory efficient ? */
+				       be_safe,
+				       NULL,   /* don't want best score at each posn back */
+				       NULL,   /* don't want the max scoring posn back */
+				       &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "cp9_FastForward(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");

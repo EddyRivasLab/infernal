@@ -113,9 +113,9 @@ int debug_print_cmstats(CMStats_t *cmstats, int has_fthr)
       debug_print_gumbelinfo(cmstats->gumAA[CP9_LV][p]);
       printf("cp9_gv Gumbel:\t");
       debug_print_gumbelinfo(cmstats->gumAA[CP9_GV][p]);
-      printf("cp9_lv Gumbel:\t");
+      printf("cp9_lf Gumbel:\t");
       debug_print_gumbelinfo(cmstats->gumAA[CP9_LF][p]);
-      printf("cp9_gv Gumbel:\t");
+      printf("cp9_gf Gumbel:\t");
       debug_print_gumbelinfo(cmstats->gumAA[CP9_GF][p]);
       printf("\n\n");
     }

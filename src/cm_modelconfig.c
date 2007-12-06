@@ -1177,16 +1177,14 @@ ConfigQDB(CM_t *cm)
     cm_Fail("ERROR in ConfigQDB() CMH_QDB flag already up.\n");
 
   safe_windowlen = cm->W * 2;
-  if(cm->dmin != NULL) 
-    {
-      free(cm->dmin);
-      cm->dmin = NULL;
-    }
-  if(cm->dmax != NULL)
-    {
-      free(cm->dmax);
-      cm->dmax = NULL;
-    }
+  if(cm->dmin != NULL) {
+    free(cm->dmin);
+    cm->dmin = NULL;
+  }
+  if(cm->dmax != NULL) {
+    free(cm->dmax);
+    cm->dmax = NULL;
+  }
   /*debug_print_cm_params(cm);*/
   while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(cm->dmin), &(cm->dmax), NULL, NULL)))
     {

@@ -466,14 +466,14 @@ extern void         debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int
 extern void         PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax, int W);
 
 /* from hybridsearch.c */
-extern int cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanInfo_t *hsi, int i0, int j0, int W, 
-			     float cutoff, search_results_t *results, int **ret_psc, int *ret_maxres, float *ret_sc);
-extern int predict_xsub(CM_t *cm, float *cm_vcalcs, float *cm_expsc, float *cp9_expsc);
-extern void cm_CalcAvgHitLength(CM_t *cm, double beta, float **ret_hitlen);
+extern int                cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanInfo_t *hsi, int i0, int j0, int W, 
+					    float cutoff, search_results_t *results, int **ret_psc, int *ret_maxres, float *ret_sc);
+extern int                predict_xsub(CM_t *cm, float *cm_vcalcs, float *cm_expsc, float *cp9_expsc);
+extern void               cm_CalcAvgHitLength(CM_t *cm, double beta, float **ret_hitlen);
 extern HybridScanInfo_t * cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs);
-extern int cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int vroot_to_add);
-extern int cm_ValidateHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi);
-extern void cm_FreeHybridScanInfo(HybridScanInfo_t *hsi, CM_t *cm);
+extern int                cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int vroot_to_add);
+extern int                cm_ValidateHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi);
+extern void               cm_FreeHybridScanInfo(HybridScanInfo_t *hsi, CM_t *cm);
 
 /* from logsum.c */
 extern void  init_ilogsum(void);
