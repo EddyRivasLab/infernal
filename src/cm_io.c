@@ -335,20 +335,20 @@ write_ascii_cm(FILE *fp, CM_t *cm)
   fprintf(fp, "INFERNAL-1 [%s]\n", PACKAGE_VERSION);
 
   fprintf(fp, "NAME   %s\n", cm->name);
-  if (cm->acc  != NULL)    fprintf(fp, "ACC    %s\n", cm->acc);
-  if (cm->desc != NULL)    fprintf(fp, "DESC   %s\n", cm->desc);
+  if (cm->acc  != NULL)    fprintf(fp, "ACC      %s\n", cm->acc);
+  if (cm->desc != NULL)    fprintf(fp, "DESC     %s\n", cm->desc);
   /* Rfam cutoffs */
-  if (cm->flags & CMH_GA)  fprintf(fp, "GA     %.2f\n", cm->ga);
-  if (cm->flags & CMH_TC)  fprintf(fp, "TC     %.2f\n", cm->tc);
-  if (cm->flags & CMH_NC)  fprintf(fp, "NC     %.2f\n", cm->nc);
-  fprintf(fp, "STATES %d\n",   cm->M);
-  fprintf(fp, "NODES  %d\n",   cm->nodes);
+  if (cm->flags & CMH_GA)  fprintf(fp, "GA       %.2f\n", cm->ga);
+  if (cm->flags & CMH_TC)  fprintf(fp, "TC       %.2f\n", cm->tc);
+  if (cm->flags & CMH_NC)  fprintf(fp, "NC       %.2f\n", cm->nc);
+  fprintf(fp, "STATES   %d\n",   cm->M);
+  fprintf(fp, "NODES    %d\n",   cm->nodes);
   fprintf(fp, "ALPHABET %d\n", cm->abc->type);
-  fprintf(fp, "ELSELF %.8f\n", cm->el_selfsc);
-  fprintf(fp, "NSEQ   %d\n",   cm->nseq);
-  fprintf(fp, "EFFNSEQ %.8f\n",cm->eff_nseq);
-  fprintf(fp, "CLEN    %d\n",  cm->clen);
-  fputs("NULL  ", fp);
+  fprintf(fp, "ELSELF   %.8f\n", cm->el_selfsc);
+  fprintf(fp, "NSEQ     %d\n",   cm->nseq);
+  fprintf(fp, "EFFNSEQ  %.3f\n",cm->eff_nseq);
+  fprintf(fp, "CLEN     %d\n",  cm->clen);
+  fputs("NULL     ", fp);
   for (x = 0; x < cm->abc->K; x++)
     fprintf(fp, "%6s ", prob2ascii(cm->null[x], 1/(float)(cm->abc->K)));
   fputs("\n", fp);
@@ -364,28 +364,28 @@ write_ascii_cm(FILE *fp, CM_t *cm)
       fprintf(fp, "\n");
       for(p = 0; p < cm->stats->np; p++)
 	{
-	  fprintf(fp, "E-LC     %3d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-LC     %2d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[CM_LC][p]->N, cm->stats->gumAA[CM_LC][p]->L, 
 		  cm->stats->gumAA[CM_LC][p]->mu, cm->stats->gumAA[CM_LC][p]->lambda);
-	  fprintf(fp, "E-GC     %3d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-GC     %2d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[CM_GC][p]->N, cm->stats->gumAA[CM_GC][p]->L, 
 		  cm->stats->gumAA[CM_GC][p]->mu, cm->stats->gumAA[CM_GC][p]->lambda);
-	  fprintf(fp, "E-LI     %3d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-LI     %2d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[CM_LI][p]->N, cm->stats->gumAA[CM_LI][p]->L, 
 		  cm->stats->gumAA[CM_LI][p]->mu, cm->stats->gumAA[CM_LI][p]->lambda);
-	  fprintf(fp, "E-GI     %3d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-GI     %2d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[CM_GI][p]->N, cm->stats->gumAA[CM_GI][p]->L, 
 		  cm->stats->gumAA[CM_GI][p]->mu, cm->stats->gumAA[CM_GI][p]->lambda);
-	  fprintf(fp, "E-CP9LV  %3d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-CP9LV  %2d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[CP9_LV][p]->N, cm->stats->gumAA[CP9_LV][p]->L, 
 		  cm->stats->gumAA[CP9_LV][p]->mu, cm->stats->gumAA[CP9_LV][p]->lambda);
-	  fprintf(fp, "E-CP9GV  %3d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-CP9GV  %2d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[CP9_GV][p]->N, cm->stats->gumAA[CP9_GV][p]->L, 
 		  cm->stats->gumAA[CP9_GV][p]->mu, cm->stats->gumAA[CP9_GV][p]->lambda);
-	  fprintf(fp, "E-CP9LF  %3d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-CP9LF  %2d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[CP9_LF][p]->N, cm->stats->gumAA[CP9_LF][p]->L, 
 		  cm->stats->gumAA[CP9_LF][p]->mu, cm->stats->gumAA[CP9_LF][p]->lambda);
-	  fprintf(fp, "E-CP9GF  %3d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-CP9GF  %2d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[CP9_GF][p]->N, cm->stats->gumAA[CP9_GF][p]->L, 
 		  cm->stats->gumAA[CP9_GF][p]->mu, cm->stats->gumAA[CP9_GF][p]->lambda);
 	}

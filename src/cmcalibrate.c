@@ -101,7 +101,6 @@ struct cfg_s {
   double          *gc_freq;;
   double          *pgc_freq;
   int              be_verbose;	
-  ESL_STOPWATCH   *w;
   CMStats_t      **cmstatsA;          /* the CM stats data structures, 1 for each CM */
   HybridScanInfo_t *hsi;              /* information for a hybrid scan */ 
   int              ncm;                /* what number CM we're on */
@@ -175,6 +174,7 @@ main(int argc, char **argv)
 {
 
   ESL_GETOPTS     *go	   = NULL;     /* command line processing                     */
+  ESL_STOPWATCH   *w  = esl_stopwatch_Create();
   struct cfg_s     cfg;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
@@ -229,7 +229,6 @@ main(int argc, char **argv)
   cfg.gc_freq  = NULL; 
   cfg.pgc_freq = NULL; 
   cfg.r        = NULL; 
-  cfg.w        = NULL; 
   cfg.ncm      = 0;
   cfg.cmstatsA = NULL;
   cfg.hsi      = NULL;
@@ -262,6 +261,9 @@ main(int argc, char **argv)
    */
   while (cfg.do_stall); 
 
+  /* Start timing. */
+  esl_stopwatch_Start(w);
+
   /* Figure out who we are, and send control there: 
    * we might be an MPI master, an MPI worker, or a serial program.
    */
@@ -278,58 +280,65 @@ main(int argc, char **argv)
       if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
       else 		    mpi_master(go, &cfg);
 
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_MPIReduce(w, 0, MPI_COMM_WORLD);
       MPI_Finalize();
     }
   else
 #endif /*HAVE_MPI*/
     {
       serial_master(go, &cfg);
+      esl_stopwatch_Stop(w);
     }
 
-  /* Rewind the CM file for a second pass.
-   * Write a temporary CM file with new stats information in it
-   */
-  int   cmi;
-  CM_t *cm;
-  FILE *outfp;
-  sigset_t blocksigs;  /* list of signals to protect from             */
-  CMFileRewind(cfg.cmfp);
-  if (esl_FileExists(cfg.tmpfile))                    cm_Fail("Ouch. Temporary file %s appeared during the run.", cfg.tmpfile);
-  if ((outfp = fopen(cfg.tmpfile, cfg.mode)) == NULL) cm_Fail("Ouch. Temporary file %s couldn't be opened for writing.", cfg.tmpfile); 
-
-  for (cmi = 0; cmi < cfg.ncm; cmi++) {
-    if (!CMFileRead(cfg.cmfp, &(cfg.abc), &cm)) cm_Fail("Ran out of CMs too early in pass 2");
-    if (cm == NULL)                               cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
-    cm->stats = cfg.cmstatsA[cmi];
-    if(!(esl_opt_GetBoolean(go, "--filonly"))) cm->flags |= CMH_GUMBEL_STATS; 
-    /*if(!(esl_opt_GetBoolean(go, "--gumonly"))) cm->flags |= CMH_FTHR_STATS; */
-    CMFileWrite(outfp, cm, cfg.cmfp->is_binary);
-    FreeCM(cm);
-  } /* end of from idx = 0 to ncm */
-      
-  /* Now, carefully remove original file and replace it
-   * with the tmpfile. Note the protection from signals;
-   * we wouldn't want a user to ctrl-C just as we've deleted
-   * their CM file but before the new one is moved.
-   */
-  CMFileClose(cfg.cmfp);
-  if (fclose(outfp)   != 0)                            cm_Fail("system error during rewrite of CM file");
-  if (sigemptyset(&blocksigs) != 0)                    cm_Fail("system error during rewrite of CM file.");;
-  if (sigaddset(&blocksigs, SIGINT) != 0)              cm_Fail("system error during rewrite of CM file.");;
-  if (sigprocmask(SIG_BLOCK, &blocksigs, NULL) != 0)   cm_Fail("system error during rewrite of CM file.");;
-  if (remove(cfg.cmfile) != 0)                         cm_Fail("system error during rewrite of CM file.");;
-  if (rename(cfg.tmpfile, cfg.cmfile) != 0)            cm_Fail("system error during rewrite of CM file.");;
-  if (sigprocmask(SIG_UNBLOCK, &blocksigs, NULL) != 0) cm_Fail("system error during rewrite of CM file.");;
-  free(cfg.tmpfile);
-
-  /* Clean up */
-  if (cfg.my_rank == 0) {
+  if(cfg.my_rank == 0) { /* master, serial or mpi */
+    /* Rewind the CM file for a second pass.
+     * Write a temporary CM file with new stats information in it
+     */
+    int   cmi;
+    CM_t *cm;
+    FILE *outfp;
+    sigset_t blocksigs;  /* list of signals to protect from             */
+    CMFileRewind(cfg.cmfp);
+    if (esl_FileExists(cfg.tmpfile))                    cm_Fail("Ouch. Temporary file %s appeared during the run.", cfg.tmpfile);
+    if ((outfp = fopen(cfg.tmpfile, cfg.mode)) == NULL) cm_Fail("Ouch. Temporary file %s couldn't be opened for writing.", cfg.tmpfile); 
+    
+    for (cmi = 0; cmi < cfg.ncm; cmi++) {
+      if (!CMFileRead(cfg.cmfp, &(cfg.abc), &cm)) cm_Fail("Ran out of CMs too early in pass 2");
+      if (cm == NULL)                               cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
+      cm->stats = cfg.cmstatsA[cmi];
+      if(!(esl_opt_GetBoolean(go, "--filonly"))) cm->flags |= CMH_GUMBEL_STATS; 
+      /*if(!(esl_opt_GetBoolean(go, "--gumonly"))) cm->flags |= CMH_FTHR_STATS; */
+      CMFileWrite(outfp, cm, cfg.cmfp->is_binary);
+      FreeCM(cm);
+    } /* end of from idx = 0 to ncm */
+    
+    /* Now, carefully remove original file and replace it
+     * with the tmpfile. Note the protection from signals;
+     * we wouldn't want a user to ctrl-C just as we've deleted
+     * their CM file but before the new one is moved.
+     */
+    CMFileClose(cfg.cmfp);
+    if (fclose(outfp)   != 0)                            cm_Fail("system error during rewrite of CM file");
+    if (sigemptyset(&blocksigs) != 0)                    cm_Fail("system error during rewrite of CM file.");;
+    if (sigaddset(&blocksigs, SIGINT) != 0)              cm_Fail("system error during rewrite of CM file.");;
+    if (sigprocmask(SIG_BLOCK, &blocksigs, NULL) != 0)   cm_Fail("system error during rewrite of CM file.");;
+    if (remove(cfg.cmfile) != 0)                         cm_Fail("system error during rewrite of CM file.");;
+    if (rename(cfg.tmpfile, cfg.cmfile) != 0)            cm_Fail("system error during rewrite of CM file.");;
+    if (sigprocmask(SIG_UNBLOCK, &blocksigs, NULL) != 0) cm_Fail("system error during rewrite of CM file.");;
+    free(cfg.tmpfile);
+    
+    esl_stopwatch_Display(stdout, w, "# CPU time: ");
+    
+    /* master specific cleaning */
     if (cfg.gumhfp   != NULL) fclose(cfg.gumhfp);
     if (cfg.gumqfp   != NULL) fclose(cfg.gumqfp);
     if (cfg.filhfp   != NULL) fclose(cfg.filhfp);
     if (cfg.filrfp   != NULL) fclose(cfg.filrfp);
   }
+  /* clean up */
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
+  esl_stopwatch_Destroy(w);
   esl_getopts_Destroy(go);
   return 0;
 }
@@ -430,9 +439,6 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   }
   printf("Random seed: %ld\n", esl_randomness_GetSeed(cfg->r));
 
-  /* create the stopwatch */
-  cfg->w     = esl_stopwatch_Create();
-
   /* From HMMER 2.4X hmmcalibrate.c:
    * Generate calibrated CM(s) in a tmp file in the current
    * directory. When we're finished, we delete the original
@@ -451,7 +457,6 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (cfg->cmfp->is_binary) cfg->mode = "wb";
   else                      cfg->mode = "w"; 
 
-  if(cfg->w == NULL) cm_Fail("Failed to create stopwatch.");
   if(cfg->r == NULL) cm_Fail("Failed to create master RNG.");
 
   return eslOK;
@@ -477,7 +482,6 @@ init_worker_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   cfg->gc_freq  = NULL;
   cfg->pgc_freq = NULL;
   cfg->be_verbose = FALSE;
-  cfg->w = NULL;
   cfg->cmstatsA = NULL;
   cfg->hsi      = NULL;
   cfg->ncm      = 0;
@@ -568,7 +572,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		}
 	      else 
 		{ /* CP9 mode, fit gumbel for full HMM */
-		  if(do_time_estimates) estimate_workunit_time(go, cfg, cmN, cm->W*2, gum_mode);
+		  if(do_time_estimates) estimate_workunit_time(go, cfg, hmmN, cm->W*2, gum_mode);
 		  ESL_DPRINTF1(("\n\ncalling process_workunit to fit gumbel for p: %d CP9 mode: %d\n", p, gum_mode));
 		  if((status = process_workunit (go, cfg, errbuf, cm, hmmN, FALSE, NULL, &gum_cp9scA))                 != eslOK) cm_Fail(errbuf);
 		  if((status = fit_histogram(go, cfg, errbuf, gum_cp9scA, hmmN, &(cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->mu), 
@@ -766,7 +770,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  ESL_DPRINTF1(("MPI master: CM: %d gumbel mode: %d partition: %d\n", cfg->ncm, gum_mode, p));
 
 	  have_work     = TRUE;	/* TRUE while work remains  */
-	  esl_stopwatch_Start(cfg->w);  /* Start timing. */
 	  
 	  wi = 1;
 	  nseq_sent = 0;
