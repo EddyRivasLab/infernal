@@ -944,7 +944,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   return eslOK;
   
   ERROR:
-  ESL_DPRINTF1(("worker %d: has caught an error in process_search_workunit\n", cfg->my_rank));
+  ESL_DPRINTF1(("worker %d: has caught an error in process_workunit\n", cfg->my_rank));
   FreeCM(cm);
   return status;
 }

@@ -1006,8 +1006,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   ConfigCM(cm, cfg->preset_dmin, cfg->preset_dmax); /* preset_d* usually NULL, unless --qdbfile */
   if(cm->config_opts & CM_CONFIG_ENFORCE) ConfigCMEnforce(cm);
 
-  printf("cm->pbegin: %.3f\n", cm->pbegin);
-  printf("cm->pend: %.3f\n", cm->pend);
+  ESL_DPRINTF1(("cm->pbegin: %.3f\n", cm->pbegin));
+  ESL_DPRINTF1(("cm->pend: %.3f\n", cm->pend));
   /* print qdbs to file if nec */
   if(! esl_opt_IsDefault(go, "--bfile")) {
     fprintf(cfg->bfp, "beta:%f\n", cm->beta);
@@ -1542,9 +1542,8 @@ int print_search_info(FILE *fp, CM_t *cm, long N, char *errbuf)
       if(cutoff_type == E_CUTOFF) { /* we use the stats in cm->stats->gumAA[cm_mode], 
 				     * alternatively could store stats in search_info_t si, but I think that's 
 				     * more trouble than it's worse */
-	if(!(cm->flags & CMH_GUMBEL_STATS))
-	  fprintf(fp, "CM  cutoff (E value):  %.2f\n", cutoff);
-	ESL_FAIL(eslEINCOMPAT, errbuf, "trying to use E-value for HMM cutoff, but CM has no Gumbel stats.");
+	if(!(cm->flags & CMH_GUMBEL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "trying to use E-value for CM cutoff, but CM has no Gumbel stats.");
+	fprintf(fp, "CM  cutoff (E value):  %.2f\n", cutoff);
 	for(p = 0; p < cm->stats->np; p++)
 	  fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
 		  (cm->stats->gumAA[cm_mode][p]->mu - (log(cutoff) / cm->stats->gumAA[cm_mode][p]->lambda)), 

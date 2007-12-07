@@ -52,7 +52,7 @@ AllocCMStats(int np)
   ESL_ALLOC(cmstats->fthrA, sizeof(struct cp9filterthr_s *) * NFTHRMODES);
   for(i = 0; i < NGUMBELMODES; i++)
     {
-      ESL_ALLOC(cmstats->gumAA[i], sizeof(struct gumbelinfo_s *));
+      ESL_ALLOC(cmstats->gumAA[i], sizeof(struct gumbelinfo_s *) * cmstats->np);
       for(p = 0; p < cmstats->np; p++) { 
 	ESL_ALLOC(cmstats->gumAA[i][p], sizeof(struct gumbelinfo_s));
 	cmstats->gumAA[i][p]->isvalid = FALSE;
@@ -193,7 +193,6 @@ int get_gc_comp(ESL_SQ *sq, int start, int stop)
     start = stop;
     stop = i;
   }
-
   ESL_ALLOC(ct, sizeof(float) * sq->abc->K);
   esl_vec_FSet(ct, sq->abc->K, 0.);
   for (i = start; i <= stop; i++)
@@ -232,22 +231,18 @@ void GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double *
 {
   int               status;
   ESL_SQ           *sq;
-  int               i, j;  
+  int               i, j, jp;  
   long              N = 0;
   double           *gc_ct;
   int               gc;
-  char              allN[100]; /* used to check if curr DB chunk is all N's, if it is,
-				* we don't count it towards the GC content info */
-  int               allN_flag; /* stays up if curr DB chunk is all Ns */
+  int               all_ambig_flag; /* used to check if curr DB chunk is all ambiguous characters 
+				     * usually Ns, if it is, we don't count it towards the GC content info */
   /*printf("in GetDBInfo\n");*/
 
   ESL_ALLOC(gc_ct, sizeof(double) * GC_SEGMENTS);
   for (i=0; i<GC_SEGMENTS; i++)
     gc_ct[i] = 0.;
 
-  for (j=0; j<100; j++)
-    allN[j] = 'N';
-  
   if(ret_gc_ct != NULL) sq = esl_sq_CreateDigital(abc); 
   else                  sq = esl_sq_Create(); /* allows abc to be NULL if we don't care about gc stats */
   while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) 
@@ -256,31 +251,28 @@ void GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double *
       /*printf("new N: %d\n", N);*/
       if(ret_gc_ct != NULL) 
 	{
-	  for(i = 0; i < sq->n; i += 100)
+	  for(i = 1; i <= sq->n; i += 100)
 	    {
 	      j = (i+99 <= sq->n) ? i+99 : sq->n;
 	      gc = get_gc_comp(sq, i, j);
 	      /*printf(">%d.raw\n", i);*/
-	      allN_flag = TRUE;
-	      for(j = 0; j < 100 && (j+i) < sq->n; j++)
-		{
-		  if(abc->sym[sq->dsq[(i+j)]] != 'N')
-		    {
-		      allN_flag = FALSE;
-		      break;
-		    }
+	      all_ambig_flag = TRUE;
+	      for(jp = 0; jp < 100 && (jp+i) < sq->n; jp++) {
+		if(sq->dsq[i+jp] < abc->K) {
+		  all_ambig_flag = FALSE; 
+		  break; 
 		}
+	      }
 	      /*printf("N: %d i: %d gc: %d\n", N, i, gc);*/
 	      /* scale gc for chunks < 100 nt */
 	      if(j < 100) gc *= 100. / (float) j;
-	      
 	      /* don't count GC content of chunks < 20 nt, very hacky;
 	       * don't count GC content of chunks that are all N, this
 	       * will be common in RepeatMasked genomes where poly-Ns could
 	       * skew the base composition stats of the genome */
-	      if(j > 20 && !allN_flag)
+	      if(j > 20 && !all_ambig_flag)
 		{
-		  /*printf("j: %d i: %d N: %d adding 1 to gc_ct[%d]\n", j, i, N, ((int) gc));*/
+		  /*printf("j: %d i: %d adding 1 to gc_ct[%d]\n", j, i, ((int) gc));*/
 		  gc_ct[(int) gc] += 1.;
 		}
 	    }
@@ -293,14 +285,14 @@ void GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double *
   esl_sq_Destroy(sq); 
   esl_sqio_Rewind(sqfp);
 
+#ifdef PRINT_GC_COUNTS
+  for (i=0; i<GC_SEGMENTS; i++) 
+    printf ("%d\t%.4f\n", i, gc_ct[i]);
+#endif
+
   if(ret_N != NULL)      *ret_N     = N;
   if(ret_gc_ct != NULL)  *ret_gc_ct = gc_ct;
   else free(gc_ct);
-#ifdef PRINT_GC_COUNTS
-  for (i=0; i<GC_SEGMENTS; i++) 
-    printf ("%d\t%d\n", i, gc_ct[i]);
-#endif
-  
   return; 
 
  ERROR:

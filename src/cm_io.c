@@ -358,7 +358,7 @@ write_ascii_cm(FILE *fp, CM_t *cm)
   int p;
   if (cm->flags & CMH_GUMBEL_STATS)
     {
-      fprintf(fp, "PART    %3d  ", cm->stats->np);
+      fprintf(fp, "PART     %3d  ", cm->stats->np);
       for(p = 0; p < cm->stats->np; p++)
 	fprintf(fp, "%5d  %5d  ", cm->stats->ps[p], cm->stats->pe[p]);
       fprintf(fp, "\n");
@@ -382,10 +382,10 @@ write_ascii_cm(FILE *fp, CM_t *cm)
 	  fprintf(fp, "E-CP9GV  %3d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[CP9_GV][p]->N, cm->stats->gumAA[CP9_GV][p]->L, 
 		  cm->stats->gumAA[CP9_GV][p]->mu, cm->stats->gumAA[CP9_GV][p]->lambda);
-	  fprintf(fp, "E-CP9LV  %3d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-CP9LF  %3d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[CP9_LF][p]->N, cm->stats->gumAA[CP9_LF][p]->L, 
 		  cm->stats->gumAA[CP9_LF][p]->mu, cm->stats->gumAA[CP9_LF][p]->lambda);
-	  fprintf(fp, "E-CP9GV  %3d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-CP9GF  %3d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[CP9_GF][p]->N, cm->stats->gumAA[CP9_GF][p]->L, 
 		  cm->stats->gumAA[CP9_GF][p]->mu, cm->stats->gumAA[CP9_GF][p]->lambda);
 	}
@@ -492,7 +492,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   buf = NULL;
   n   = 0;
   for(i = 0; i < NGUMBELMODES; i++)  gum_flags[i] = FALSE;
-  for(i = 0; i < NFTHRMODES; i++) fthr_flags[i] = FALSE;
+  for(i = 0; i < NFTHRMODES; i++)    fthr_flags[i] = FALSE;
 
   if (feof(cmf->f) || esl_fgets(&buf, &n, cmf->f) != eslOK) return 0;
   
@@ -609,7 +609,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	      cm->null[x] = ascii2prob(tok, (1./(float) abc->K));
 	    }
 	}
-      /* information on partitions for EVDs */
+      /* Gumbel distribution information */
       else if (strcmp(tok, "PART") == 0) 
 	{
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
@@ -650,13 +650,13 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  gum_mode = CM_LI;
 	else if (strncmp(tok+2, "GI", 2) == 0) 
 	  gum_mode = CM_GI;
-	else if (strncmp(tok+2, "CP9LV", 4) == 0) 
+	else if (strncmp(tok+2, "CP9LV", 5) == 0) 
 	  gum_mode = CP9_LV;
-	else if (strncmp(tok+2, "CP9GV", 4) == 0) 
+	else if (strncmp(tok+2, "CP9GV", 5) == 0) 
 	  gum_mode = CP9_GV;
-	else if (strncmp(tok+2, "CP9LF", 4) == 0) 
+	else if (strncmp(tok+2, "CP9LF", 5) == 0) 
 	  gum_mode = CP9_LF;
-	else if (strncmp(tok+2, "CP9GF", 4) == 0) 
+	else if (strncmp(tok+2, "CP9GF", 5) == 0) 
 	  gum_mode = CP9_GF;
 	else                                         goto FAILURE;
 

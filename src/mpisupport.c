@@ -2038,4 +2038,290 @@ cm_digitized_sq_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, int *pos, M
   *ret_sq = NULL;
   return status;
 }
+
+
+/* Function:  cmcalibrate_cm_results_MPIPackSize()
+ * Synopsis:  Calculates number of bytes needed to pack a 
+ *            results for CM scan for cmcalibrate.
+ * Incept:    EPN, Thu Dec  6 16:44:17 2007
+ *
+ * Purpose:   Calculate an upper bound on the number of bytes
+ *            that <cmcalibrate_cm_results_MPIPack()> will need 
+ *            to pack it's results in a packed MPI message in 
+ *            communicator <comm>; return that number of bytes 
+ *            in <*ret_n>. 
+ *            
+ *            Caller will generally use this result to determine how
+ *            to allocate a buffer before starting to pack into it.
+ *
+ * Returns:   <eslOK> on success, and <*ret_n> contains the answer.
+ *
+ * Throws:    <eslESYS> if an MPI call fails, and <*ret_n> is set to 0. 
+ *
+ * Note:      The sizing calls here need to stay matched up with
+ *            the calls in <cmcalibrate_cm_results_MPIPack()>.
+ */
+int
+cmcalibrate_cm_results_MPIPackSize(float **vscAA, int nseq, int M, MPI_Comm comm, int *ret_n)
+{
+  int status;
+  int sz;
+  int n = 0;
+
+  status = MPI_Pack_size(1, MPI_INT, comm, &sz);   n += sz;      if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = MPI_Pack_size(M, MPI_FLOAT, comm, &sz); n += nseq*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+
+  *ret_n = n;
+  return eslOK;
+
+ ERROR:
+  *ret_n = 0;
+  return status;
+}
+
+/* Function:  cmcalibrate_cm_results_MPIPack()
+ * Synopsis:  Packs CM vscAA scores into MPI buffer.
+ * Incept:    EPN, Thu Dec  6 16:47:58 2007
+ *
+ * Purpose:   Packs <vscAA> into an MPI packed message 
+ *            buffer <buf> of length <n> bytes, 
+ *            starting at byte position
+ *            <*position>, for MPI communicator <comm>.
+ *
+ *            Note: <vscAA> is a 2D array, vscAA[0..v..M-1][0..i..nseq-1]
+ *            holding the best score for each subtree rooted 
+ *            at v for a CM scan (CYK/Inside) of sequence i.
+ *            But we send it as a 1D array, vscA, of M * nseq floats,
+ *            0..nseq-1 correspond to v==0, nseq..(2*nseq-1) correspond
+ *            to v==1, etc.
+ *
+ * Returns:   <eslOK> on success; <buf> now contains the
+ *            packed <tr>, and <*position> is set to the byte
+ *            immediately following the last byte of the results
+ *            in <buf>. 
+ *
+ * Throws:    <eslESYS> if an MPI call fails; or <eslEMEM> if the
+ *            buffer's length <n> is overflowed by trying to pack
+ *            <rnode> into <buf>. In either case, the state of
+ *            <buf> and <*position> is undefined, and both should
+ *            be considered to be corrupted.
+ *
+ */
+int
+cmcalibrate_cm_results_MPIPack(float **vscAA, int nseq, int M, char *buf, int n, int *position, MPI_Comm comm)
+{
+  int status;
+  int i,v,idx;
+  float *vscA = NULL;
+
+  ESL_DPRINTF1(("cmcalibrate_cm_results_MPIPack(): ready.\n"));
+
+  ESL_ALLOC(vscA, sizeof(float) * (M*nseq));
+  idx = 0;
+  for(v = 0; v < M; v++) 
+    for(i = 0; i < nseq; i++)
+      vscA[idx++] = vscAA[v][i];
+
+  status = MPI_Pack((int *) &(nseq), 1, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(vscA,  (M*nseq), MPI_FLOAT,  buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+
+  ESL_DPRINTF1(("cmcalibrate_cm_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
+
+  if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
+  return eslOK;
+
+ ERROR:
+  if(vscA  != NULL) free(vscA);
+  return status;
+}
+
+/* Function:  cmcalibrate_cm_results_MPIUnpack()
+ * Synopsis:  Unpacks <vscAA> from an MPI buffer.
+ * Incept:    EPN, Wed Aug 29 05:10:20 2007
+ *
+ * Purpose:   Unpack a newly allocated set of scores <vscAA> from MPI packed buffer
+ *            <buf>, starting from position <*pos>, where the total length
+ *            of the buffer in bytes is <n>. 
+ *
+ *            Note: We return <ret_vscAA> as a 2D array, 
+ *            ret_vscAA[0..v..M-1][0..i..nseq-1]
+ *            holding the best score for each subtree rooted 
+ *            at v for a CM scan (CYK/Inside) of sequence i.
+ *            But vscA is sent as a 1D array, of M * nseq floats,
+ *            0..nseq-1 correspond to v==0, nseq..(2*nseq-1) correspond
+ *            to v==1, etc.
+ *
+ * Returns:   <eslOK> on success. <*pos> is updated to the position of
+ *            the next element in <buf> to unpack (if any). <*ret_tr>
+ *            contains a newly allocated parsetree, which the caller is 
+ *            responsible for free'ing.
+ *            
+ * Throws:    <eslESYS> on an MPI call failure. <eslEMEM> on allocation failure.
+ *            In either case, <*ret_vscAA> is <NULL>, and the state of <buf>
+ *            and <*pos> is undefined and should be considered to be corrupted.
+ */
+int
+cmcalibrate_cm_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, int M, float ***ret_vscAA, int *ret_nseq)
+{
+  int status;
+  float  *vscA  = NULL;
+  float **vscAA = NULL;
+  int nseq = 0;
+  int i, v, idx;
+
+  status = MPI_Unpack (buf, n, pos, &nseq,        1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  ESL_ALLOC(vscA, sizeof(float) * (M*nseq));
+  status = MPI_Unpack (buf, n, pos, vscA, (M*nseq), MPI_FLOAT,  comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+
+  ESL_ALLOC(vscAA, sizeof(float *) * (M));
+  idx = 0;
+  for(v = 0; v < M; v++) { 
+    ESL_ALLOC(vscAA[v], sizeof(float) * nseq);
+    for(i = 0; i < nseq; i++)
+      vscAA[v][i] = vscA[idx++];
+  }
+  ESL_DASSERT1((idx == (M*nseq)));
+
+  free(vscA);
+  *ret_vscAA = vscAA;
+  *ret_nseq = nseq;
+  return eslOK;
+
+ ERROR:
+  if(vscA  != NULL) free(vscA);
+  if(vscAA != NULL) { 
+    for(i = 0; i < nseq; i++)
+      free(vscAA[i]);
+    free(vscAA);
+  }
+  *ret_vscAA = NULL;
+  *ret_nseq = 0;
+  return status;
+}
+
+
+/* Function:  cmcalibrate_cp9_results_MPIPackSize()
+ * Synopsis:  Calculates number of bytes needed to pack a 
+ *            results for CM scan for cmcalibrate.
+ * Incept:    EPN, Thu Dec  6 16:56:27 2007
+ *
+ * Purpose:   Calculate an upper bound on the number of bytes
+ *            that <cmcalibrate_cp9_results_MPIPack()> will need 
+ *            to pack it's results in a packed MPI message in 
+ *            communicator <comm>; return that number of bytes 
+ *            in <*ret_n>. 
+ *            
+ *            Caller will generally use this result to determine how
+ *            to allocate a buffer before starting to pack into it.
+ *
+ * Returns:   <eslOK> on success, and <*ret_n> contains the answer.
+ *
+ * Throws:    <eslESYS> if an MPI call fails, and <*ret_n> is set to 0. 
+ *
+ * Note:      The sizing calls here need to stay matched up with
+ *            the calls in <cmcalibrate_cp9_results_MPIPack()>.
+ */
+int
+cmcalibrate_cp9_results_MPIPackSize(float *cp9scA, int nseq, MPI_Comm comm, int *ret_n)
+{
+  int status;
+  int sz;
+  int n = 0;
+
+  status = MPI_Pack_size(1, MPI_INT, comm, &sz);   n += sz;      if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = MPI_Pack_size(1, MPI_FLOAT, comm, &sz); n += nseq*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+
+  *ret_n = n;
+  return eslOK;
+
+ ERROR:
+  *ret_n = 0;
+  return status;
+}
+
+/* Function:  cmcalibrate_cp9_results_MPIPack()
+ * Synopsis:  Packs CM vscAA scores into MPI buffer.
+ * Incept:    EPN, Thu Dec  6 16:56:31 2007
+ *
+ * Purpose:   Packs <vscAA> into an MPI packed message 
+ *            buffer <buf> of length <n> bytes, 
+ *            starting at byte position
+ *            <*position>, for MPI communicator <comm>.
+ *
+ *            <cp9scA> is an array, cp9scA[0..i..nseq-1]
+ *            holding the best score for a CP9 scan (Viterbi
+ *            or Forward) against sequence i.
+ * 
+ * Returns:   <eslOK> on success; <buf> now contains the
+ *            packed <tr>, and <*position> is set to the byte
+ *            immediately following the last byte of the results
+ *            in <buf>. 
+ *
+ * Throws:    <eslESYS> if an MPI call fails; or <eslEMEM> if the
+ *            buffer's length <n> is overflowed by trying to pack
+ *            <rnode> into <buf>. In either case, the state of
+ *            <buf> and <*position> is undefined, and both should
+ *            be considered to be corrupted.
+ *
+ */
+int
+cmcalibrate_cp9_results_MPIPack(float *cp9scA, int nseq, char *buf, int n, int *position, MPI_Comm comm)
+{
+  int status;
+
+  ESL_DPRINTF1(("cmcalibrate_cp9_results_MPIPack(): ready.\n"));
+  
+  status = MPI_Pack((int *) &(nseq), 1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(cp9scA,       nseq, MPI_FLOAT, buf, n, position,  comm);     if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  ESL_DPRINTF1(("cmcalibrate_cp9_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
+
+  if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
+  return eslOK;
+}
+
+/* Function:  cmcalibrate_cp9_results_MPIUnpack()
+ * Synopsis:  Unpacks <vscAA> from an MPI buffer.
+ * Incept:    EPN, Thu Dec  6 16:56:36 2007
+ *
+ * Purpose:   Unpack a newly allocated set of cp9 scores <cp9scA> from MPI packed buffer
+ *            <buf>, starting from position <*pos>, where the total length
+ *            of the buffer in bytes is <n>. 
+ *
+ *            <cp9scA> is an array, cp9scA[0..i..nseq-1]
+ *            holding the best score for a CP9 scan (Viterbi
+ *            or Forward) against sequence i.
+ *
+ * Returns:   <eslOK> on success. <*pos> is updated to the position of
+ *            the next element in <buf> to unpack (if any). <*ret_tr>
+ *            contains a newly allocated parsetree, which the caller is 
+ *            responsible for free'ing.
+ *            
+ * Throws:    <eslESYS> on an MPI call failure. <eslEMEM> on allocation failure.
+ *            In either case, <*ret_vscAA> is <NULL>, and the state of <buf>
+ *            and <*pos> is undefined and should be considered to be corrupted.
+ */
+int
+cmcalibrate_cp9_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_cp9scA, int *ret_nseq)
+{
+  int status;
+  float *cp9scA;
+  int nseq = 0;
+
+  status = MPI_Unpack (buf, n, pos, &nseq,        1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  ESL_ALLOC(cp9scA, sizeof(float) * nseq);
+  status = MPI_Unpack (buf, n, pos, cp9scA, nseq, MPI_FLOAT,  comm);  if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+
+  *ret_cp9scA = cp9scA;
+  *ret_nseq   = nseq;
+  return eslOK;
+
+ ERROR:
+  if(cp9scA != NULL) free(cp9scA);
+  *ret_cp9scA = NULL;
+  *ret_nseq = 0;
+  return status;
+}
+
+
 #endif
+

@@ -35,6 +35,9 @@
 #define DEFAULT_HS_MINLEN 7.  /* minimum length for a candidate sub CM root for a hybrid scan */
 #define DEFAULT_HS_BETA 1E-15 /* beta for calc'ing average hit length for sub cm roots of a hybrid scan */
 
+/* max number of parititons for cmcalibrate */
+#define MAX_PARTITIONS 20
+
 /* default num samples for CM and CP9 E-values */
 #define DEFAULT_NUM_SAMPLES 1000
 

@@ -518,6 +518,12 @@ extern int cm_cp9trace_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CP9t
 extern int cm_digitized_sq_MPIPackSize(const ESL_SQ *sq, MPI_Comm comm, int *ret_n);
 extern int cm_digitized_sq_MPIPack(const ESL_SQ *sq, char *buf, int n, int *position, MPI_Comm comm);
 extern int cm_digitized_sq_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, int *pos, MPI_Comm comm, ESL_SQ **ret_sq);
+extern int cmcalibrate_cm_results_MPIPackSize(float **vscAA, int nseq, int M, MPI_Comm comm, int *ret_n);
+extern int cmcalibrate_cm_results_MPIPack(float **vscAA, int nseq, int M, char *buf, int n, int *position, MPI_Comm comm);
+extern int cmcalibrate_cm_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, int M, float ***ret_vscAA, int *ret_nseq);
+extern int cmcalibrate_cp9_results_MPIPackSize(float *cp9scAA, int nseq, MPI_Comm comm, int *ret_n);
+extern int cmcalibrate_cp9_results_MPIPack(float *cp9scA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
+extern int cmcalibrate_cp9_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_cp9scA, int *ret_nseq);
 #endif
 
 /* from prior.c */
