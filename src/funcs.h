@@ -54,7 +54,6 @@ extern float rsearch_calculate_gap_penalty (char from_state, char to_state,
 					    float input_alpha, float input_beta, 
 					    float input_alphap, float input_betap);
 extern int   ExponentiateCM(CM_t *cm, double z);
-extern CM_t *DuplicateCM(CM_t *cm);
 extern void  cm_banner(FILE *fp, char *progname, char *banner);
 extern void  cm_CalcExpSc(CM_t *cm, float **ret_expsc, float **ret_expsc_noss);
 extern int   cm_Validate(CM_t *cm, float tol, char *errbuf);
@@ -72,6 +71,7 @@ extern int   CMAllocNullModel(CM_t *cm);
 extern void  CMSetNullModel(CM_t *cm, float *null);
 extern int   CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null);
 extern int   IntMaxDigits();
+/*extern CM_t *DuplicateCM(CM_t *cm);*/
 
 /* from dispatch.c */
 extern int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, 
@@ -205,7 +205,6 @@ extern void  ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_intern
 extern int   EnforceSubsequence(CM_t *cm);
 extern float EnforceScore(CM_t *cm);
 extern int   EnforceFindEnfStart(CM_t *cm, int enf_cc_start);
-extern int   ConfigForGumbelMode(CM_t *cm, int statmode);
 extern int   ConfigQDB(CM_t *cm);
 extern void  CMHackInsertScores(CM_t *cm);
 extern void  CP9HackInsertScores(CP9_t *cp9);
@@ -560,6 +559,11 @@ extern void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, 
 extern void report_hit (int i, int j, int bestr, float score, search_results_t *results);
 extern void remove_overlapping_hits (search_results_t *results, int i0, int j0);
 extern float CountScanDPCalcs(CM_t *cm, int L, int use_qdb);
+extern BestFilterInfo_t *CreateBestFilterInfo();
+extern int  SetBestFilterInfoHMM(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, int ftype, float sc_cutoff, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs);
+extern int  SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, float sc_cutoff, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs, HybridScanInfo_t *hsi, int np, GumbelInfo_t **hgumA);
+extern void FreeBestFilterInfo(BestFilterInfo_t *bf);
+extern void DumpBestFilterInfo(BestFilterInfo_t *bf);
 
 /* from seqstoaln.c */
 extern seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master);
@@ -576,17 +580,24 @@ extern CMStats_t *AllocCMStats(int np);
 extern void       FreeCMStats(CMStats_t *cmstats);
 extern int        debug_print_cmstats(CMStats_t *cmstats, int has_fthr);
 extern int        debug_print_gumbelinfo(GumbelInfo_t *evd);
-extern int        debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr);
 extern int        get_gc_comp(ESL_SQ *sq, int start, int stop);
 extern void       GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct);
 extern float      e_to_score (float E, double *mu, double *lambda);
 extern double     RJK_ExtremeValueE (float x, double mu, double lambda);
 extern float      MinScCutoff (CM_t *cm, SearchInfo_t *si, int n);
 extern int        CM2Gumbel_mode(CM_t *cm, int search_opts, int *ret_cm_gum_mode, int *ret_cp9_gum_mode);
-extern int        CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest);
-extern int        CopyCMStatsGumbel(CMStats_t *src, CMStats_t *dest);
-extern int        CopyCMStats(CMStats_t *src, CMStats_t *dest);
 extern void       remove_hits_over_e_cutoff (CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_SQ *sq);
+extern int        GumModeIsLocal(int gum_mode);
+extern int        GumModeIsForCM(int gum_mode);
+extern int        GumModeToSearchOpts(CM_t *cm, int gum_mode);
+extern int        GumModeToFthrMode(int gum_mode);
+extern GumbelInfo_t *CreateGumbelInfo();
+extern GumbelInfo_t *DuplicateGumbelInfo(GumbelInfo_t *src);
+/*extern int        CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest);
+  extern int        CopyCMStatsGumbel(CMStats_t *src, CMStats_t *dest);
+  extern int        CopyCMStats(CMStats_t *src, CMStats_t *dest);
+  extern int        debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr);*/
+
 
 /* from truncyk.c */
 float TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr);

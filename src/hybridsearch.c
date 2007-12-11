@@ -42,8 +42,6 @@
  *           i0         - start of target subsequence (1 for full seq)
  *           j0         - end of target subsequence (L for full seq)
  *           W          - max d: max size of a hit
- *           dmin       - minimum d for each CM state 
- *           dmax       - maximum d for each CM state 
  *           cutoff     - minimum score to report
  *           results   - search_results_t to add to; if NULL, don't keep results
  *           ret_psc    - RETURN: int log odds Forward score for each end point [0..(j0-i0+1)]
@@ -111,7 +109,6 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
   if(! cm->flags & CMH_SCANMATRIX)         ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), cm->smx is not valid.\n");
   if(j0 < i0)                              ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                          ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), dsq is NULL\n");
-  if(cm->search_opts & CM_SEARCH_INSIDE)   ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), CM_SEARCH_INSIDE flag raised");
   if(hsi->smx == NULL)                     ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), hsi has no ScanMatrix");
   if(! (hsi->smx->flags & cmSMX_HAS_INT))  ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan(), hsi's ScanMatrix's cmSMX_HAS_INT flag is not raised");
 
@@ -133,7 +130,7 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
   L = j0-i0+1;
   M = cm->cp9->M;
   if (W > L) W = L; 
-  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, W: %d greater than smx->W: %d\n", W, smx->W);
+  if (W > smx->W) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_cp9_HybridScan, W: %d greater than smx->W: %d\n", W, smx->W);
   int const *cp9tsc = cm->cp9->otsc; /* ptr to efficiently ordered CP9 transition scores           */
 
   /* gamma allocation and initialization.
@@ -184,8 +181,8 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
   fsc      = Scorify(scA[0]);
   if(fsc > best_sc) { best_sc = fsc; best_pos= i0-1; }
 
-  printf("dmin[hsi->v_last: %4d]: %d\n", hsi->v_last, dnAA[W][hsi->v_last]);
-  printf("dmax[hsi->v_last: %4d]: %d\n", hsi->v_last, dxAA[W][hsi->v_last]);
+  /*printf("dmin[hsi->v_last: %4d]: %d\n", hsi->v_last, dnAA[W][hsi->v_last]);
+    printf("dmax[hsi->v_last: %4d]: %d\n", hsi->v_last, dxAA[W][hsi->v_last]);*/
 
   /*****************************************************************
    * The main loop: scan the sequence from position i0 to j0.
@@ -903,8 +900,11 @@ cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs)
   }
   hsi->W = dmax[0];
 
-  /* create the scan matrix, this stores the matrix, dmin, dmax, etc. */
-  hsi->smx = cm_CreateScanMatrix(cm, hsi->W, dmin, dmax, hsi->beta, TRUE, TRUE, FALSE); 
+  /* create the scan matrix, this stores the matrix, dmin, dmax, etc.
+   * we create a float and a int matrix, cm_cp9_HybridScan() uses the int matrix,
+   * but we may also use the float matrix in FastCYKScan()
+   */
+  hsi->smx = cm_CreateScanMatrix(cm, hsi->W, dmin, dmax, hsi->beta, TRUE, TRUE, TRUE);
 
   /* determine number of millions of DP calculations per residue for CM and CP9 */
   /* first the full CM, using cm->dmin and cm->dmax, this value is passed in 
@@ -1128,9 +1128,15 @@ cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs)
  * Date:     EPN, Wed Oct 31 07:36:23 2007
  *
  * Purpose:  Given a CM and hybrid scan info <hsi>, add a root <v_root_to_add> to <hsi>.
- *           
- *            
- * Returns:  eslOK; dies immediately if <v_root_to_add> is incompatible with an existing
+ *           We can only add <v_root_to_add> if it doesn't conflict with any other
+ *           existing roots in <hsi>. A conflict occurs between states <v_root_to_add>
+ *           and state existing root v, if the subtree of <v_root_to_add> is completely
+ *           within the subtree of v. (It's okay if the subtree of v is within
+ *           the subtree of <v_root_to_add>, in this case we remove v as a sub root
+ *           before adding <v_root_to_add>.
+ *
+ * Returns:  eslOK; 
+ *           dies immediately if <v_root_to_add> is incompatible with an existing 
  *           v_root in hsi.
  */
 int
@@ -1143,6 +1149,11 @@ cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int v_root_to_add)
   int k;
   int M;
   int lpos, rpos;
+  int prv_pos, nxt_pos;
+
+  CMEmitMap_t *emap;
+  emap = CreateEmitMap(cm);
+  M    = hsi->cp9_M;
 
   i = hsi->startA[v_root_to_add];
   /* contract check */
@@ -1156,18 +1167,48 @@ cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int v_root_to_add)
   for(v = 0; v < cm->M; v++) { 
     if(hsi->v_isroot[v]) {
       j = hsi->startA[v];
-      if(i==j)           cm_Fail("Trying to add v_root %d, conflicts with existing v_root %d, both in start group: %d.\n", v_root_to_add, v, i);
-      if(hsi->withinAA[i][j]) cm_Fail("Trying to add v_root %d in start group %d, conflicts with existing v_root %d of start group %d, because groups %d and %d are not independent.\n", v_root_to_add, i, v, j, i, j);
+      if(i==j)                cm_Fail("Trying to add v_root %d, conflicts with existing v_root %d, both in start group: %d.\n", v_root_to_add, v, i);
+      if(hsi->withinAA[j][i]) cm_Fail("Trying to add v_root %d in start group %d, conflicts with existing v_root %d of start group %d, because groups %d's subtree is within group %d's subtree.\n", v_root_to_add, i, v, j, i, j);
+      if(hsi->withinAA[i][j]) { 
+	/* v is an existing root, whose subtree is completely within v_root_to_add that we want to add
+	 * as a new root. This is legal, but first we have to remove v as a root, because v_root_to_add
+	 * takes precedence over it */
+	printf("removing state v: %d as a root because new root: %d completely contains it's subtree\n", v, v_root_to_add);
+	/* v* data is fine, we can overwrite it without a problem */
+	/* need to rewrite k* data though.
+	 * This is tricky, wouldn't be surprised if it's slightly off, and crashes, but rarely */ 
+	nd = cm->ndidx[v];
+	lpos = emap->lpos[nd];
+	rpos = emap->rpos[nd];
+	for(k = 0; k < lpos; k++) if(hsi->k_mb[k] == MB_CP9) prv_pos = k;
+	for(k = M; k > rpos; k--) if(hsi->k_mb[k] == MB_CP9) nxt_pos = k;
+	if(lpos == 0) hsi->k_first = 0;
+	else {
+	  hsi->k_prv[lpos]    = prv_pos;
+	  hsi->k_nxt[prv_pos] = lpos;
+	}
+	if(rpos == M) hsi->k_last  = M;
+	else {
+	  hsi->k_nxt[rpos] = nxt_pos;
+	  hsi->k_prv[nxt_pos] = rpos;
+	}
+	/* the k_nxtr, k_prvr, k_firstr, k_lastr data should be fine */
+	hsi->v_isroot[v] = FALSE;
+	hsi->n_v_roots--;
+	printf("removing vroot: %4d, OLD speedup vs full CM:  %10.6f\n", v_root_to_add, hsi->full_cm_ncalcs / hsi->hybrid_ncalcs);
+	printf("removing vroot: %4d, OLD speedup vs full CP9: %10.6f\n", v_root_to_add, hsi->full_cp9_ncalcs / hsi->hybrid_ncalcs);
+	hsi->hybrid_ncalcs += hsi->cp9_vcalcs[v];
+	hsi->hybrid_ncalcs -= hsi->cm_vcalcs[v];
+	printf("removed  vroot: %4d, NEW speedup vs full CM:  %10.6f\n", v_root_to_add, hsi->full_cm_ncalcs / hsi->hybrid_ncalcs);
+	printf("removed  vroot: %4d, NEW speedup vs full CP9: %10.6f\n", v_root_to_add, hsi->full_cp9_ncalcs / hsi->hybrid_ncalcs);
+      }
     }
   }
 
   /* if we get here, v_root_to_add does not conflict with existing v_roots in hsi, so we add it */
-  CMEmitMap_t *emap;
-  emap = CreateEmitMap(cm);
   nd = cm->ndidx[v_root_to_add];
   
   /* update k_* data */
-  M    = hsi->cp9_M;
   lpos = emap->lpos[nd];
   rpos = emap->rpos[nd];
   if(lpos == 0 && rpos == M) cm_Fail("Adding v_root %d makes all positions modelled by CM, no need for hybrid search.\n", v_root_to_add);
@@ -1199,14 +1240,11 @@ cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int v_root_to_add)
   for(k = lpos+1; k <= rpos;   k++) hsi->k_nxtr[k] = -1;
   for(k = rpos;   k >= lpos+1; k--) hsi->k_prvr[k] = -1;
 
-		  
-  /* WRITE A VALIDATE FUNCTION THAT CHECKS THAT ALL VALUES IN A HYBRIDINFO_T OBJECT ARE VALID */
-
   /* update v_* data */
   for(v = v_root_to_add;   v <= hsi->lastA[i]; v++)     hsi->v_mb[v]  = MB_CM;
   for(v = v_root_to_add+1; v <= hsi->lastA[i]; v++)   { hsi->v_prv[v] = v-1; hsi->v_nxt[(v-1)] = v; }
   
-  /* 4 possible cases, we're adding first (1), leftmost (2), rightmost (3), or a middle chunk 
+  /* 4 possible cases, we're adding first (1), leftmost (2), rightmost (3), or a middle chunk (4)
    * of states (indices v_root_to_add..hsi->lastA[i]) to be modelled by CM 
    */
   if(hsi->n_v_roots == 0) { /* this is first v_root */
@@ -1217,25 +1255,25 @@ cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int v_root_to_add)
     hsi->v_prv[hsi->v_first]  = hsi->lastA[i];
     hsi->v_nxt[hsi->lastA[i]] = hsi->v_first;
     hsi->v_first              = v_root_to_add;
-    hsi->v_prv[v_root_to_add]  = -1; /* it's the first v modelled by the CM */
+    hsi->v_prv[v_root_to_add] = -1; /* it's the first v modelled by the CM */
   }
   else if(hsi->v_last  < v_root_to_add)  { /* we're adding right most (largest v) v_root */
     hsi->v_nxt[hsi->v_last]    = v_root_to_add;
-    hsi->v_prv[v_root_to_add]   = hsi->v_last;
+    hsi->v_prv[v_root_to_add]  = hsi->v_last;
     hsi->v_last                = hsi->lastA[i];
     hsi->v_nxt[hsi->lastA[i]]  = -1; /* it's the last v modelled by the CM */
   }
   else { /* we're adding v_root that is in the middle (not smallest v_root, not largest v_root) */
     /* find the first MB_CM chunks before and after the one we're adding (v_root_to_add..lastA[i]) */
     v_left = v_right = -1;
-    for(v = 0;       v <  v_root_to_add;  v++) if(hsi->v_mb[v] == MB_CM) v_left  = v;
+    for(v = 0;       v <  v_root_to_add; v++) if(hsi->v_mb[v] == MB_CM) v_left  = v;
     for(v = cm->M-1; v >  hsi->lastA[i]; v--) if(hsi->v_mb[v] == MB_CM) v_right = v;
     assert(v_left  != -1);
     assert(v_right != -1);
     hsi->v_prv[v_right]       = hsi->lastA[i]; 
     hsi->v_nxt[hsi->lastA[i]] = v_right; 
     hsi->v_nxt[v_left]        = v_root_to_add;
-    hsi->v_prv[v_root_to_add]  = v_left;
+    hsi->v_prv[v_root_to_add] = v_left;
   }
   hsi->n_v_roots++;
   hsi->v_isroot[v_root_to_add] = TRUE;
@@ -1324,7 +1362,6 @@ cm_ValidateHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi)
     for(v = 0; v < cm->M; v++) if(hsi->v_mb[v] == MB_CM) cm_Fail("cm_ValidateHybridScanInfo, no v_roots but hsi->v_mb[v:%d] is MB_CM\n", v);
     for(v = 0; v < cm->M; v++) if(hsi->v_isroot[v])      cm_Fail("cm_ValidateHybridScanInfo, no v_roots but hsi->v_isroot[v:%d] is TRUE\n", v);
     for(k = 0; k <= M; k++)    if(hsi->k_mb[k] == MB_CM) cm_Fail("cm_ValidateHybridScanInfo, no v_roots but hsi->k_mb[k:%d] is MB_CM\n", k);
-
   }
   else if(hsi->n_v_roots > 0) { 
     if(hsi->v_first < 0 || hsi->k_first > cm->M) cm_Fail("cm_ValidateHybridScanInfo, hsi->v_first out of 0..M=%d range (%d)\n", cm->M, hsi->v_first);

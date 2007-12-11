@@ -1032,7 +1032,7 @@ set_gumbels(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   int i, p;
 
   /* Determine K from mu, lambda, L, then set CM mu for N */
-  for(i = 0; i < NGUMBELMODES; i++)
+  for(i = 0; i < GUM_NMODES; i++)
     for(p = 0; p < cm->stats->np; p++)
       {
 	tmp_K = exp(cm->stats->gumAA[i][p]->mu * cm->stats->gumAA[i][p]->lambda) / 

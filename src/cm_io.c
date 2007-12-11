@@ -365,56 +365,58 @@ write_ascii_cm(FILE *fp, CM_t *cm)
       for(p = 0; p < cm->stats->np; p++)
 	{
 	  fprintf(fp, "E-LC     %2d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[CM_LC][p]->N, cm->stats->gumAA[CM_LC][p]->L, 
-		  cm->stats->gumAA[CM_LC][p]->mu, cm->stats->gumAA[CM_LC][p]->lambda);
+		  p, cm->stats->gumAA[GUM_CM_LC][p]->N, cm->stats->gumAA[GUM_CM_LC][p]->L, 
+		  cm->stats->gumAA[GUM_CM_LC][p]->mu, cm->stats->gumAA[GUM_CM_LC][p]->lambda);
 	  fprintf(fp, "E-GC     %2d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[CM_GC][p]->N, cm->stats->gumAA[CM_GC][p]->L, 
-		  cm->stats->gumAA[CM_GC][p]->mu, cm->stats->gumAA[CM_GC][p]->lambda);
+		  p, cm->stats->gumAA[GUM_CM_GC][p]->N, cm->stats->gumAA[GUM_CM_GC][p]->L, 
+		  cm->stats->gumAA[GUM_CM_GC][p]->mu, cm->stats->gumAA[GUM_CM_GC][p]->lambda);
 	  fprintf(fp, "E-LI     %2d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[CM_LI][p]->N, cm->stats->gumAA[CM_LI][p]->L, 
-		  cm->stats->gumAA[CM_LI][p]->mu, cm->stats->gumAA[CM_LI][p]->lambda);
+		  p, cm->stats->gumAA[GUM_CM_LI][p]->N, cm->stats->gumAA[GUM_CM_LI][p]->L, 
+		  cm->stats->gumAA[GUM_CM_LI][p]->mu, cm->stats->gumAA[GUM_CM_LI][p]->lambda);
 	  fprintf(fp, "E-GI     %2d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[CM_GI][p]->N, cm->stats->gumAA[CM_GI][p]->L, 
-		  cm->stats->gumAA[CM_GI][p]->mu, cm->stats->gumAA[CM_GI][p]->lambda);
+		  p, cm->stats->gumAA[GUM_CM_GI][p]->N, cm->stats->gumAA[GUM_CM_GI][p]->L, 
+		  cm->stats->gumAA[GUM_CM_GI][p]->mu, cm->stats->gumAA[GUM_CM_GI][p]->lambda);
 	  fprintf(fp, "E-CP9LV  %2d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[CP9_LV][p]->N, cm->stats->gumAA[CP9_LV][p]->L, 
-		  cm->stats->gumAA[CP9_LV][p]->mu, cm->stats->gumAA[CP9_LV][p]->lambda);
+		  p, cm->stats->gumAA[GUM_CP9_LV][p]->N, cm->stats->gumAA[GUM_CP9_LV][p]->L, 
+		  cm->stats->gumAA[GUM_CP9_LV][p]->mu, cm->stats->gumAA[GUM_CP9_LV][p]->lambda);
 	  fprintf(fp, "E-CP9GV  %2d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[CP9_GV][p]->N, cm->stats->gumAA[CP9_GV][p]->L, 
-		  cm->stats->gumAA[CP9_GV][p]->mu, cm->stats->gumAA[CP9_GV][p]->lambda);
+		  p, cm->stats->gumAA[GUM_CP9_GV][p]->N, cm->stats->gumAA[GUM_CP9_GV][p]->L, 
+		  cm->stats->gumAA[GUM_CP9_GV][p]->mu, cm->stats->gumAA[GUM_CP9_GV][p]->lambda);
 	  fprintf(fp, "E-CP9LF  %2d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[CP9_LF][p]->N, cm->stats->gumAA[CP9_LF][p]->L, 
-		  cm->stats->gumAA[CP9_LF][p]->mu, cm->stats->gumAA[CP9_LF][p]->lambda);
+		  p, cm->stats->gumAA[GUM_CP9_LF][p]->N, cm->stats->gumAA[GUM_CP9_LF][p]->L, 
+		  cm->stats->gumAA[GUM_CP9_LF][p]->mu, cm->stats->gumAA[GUM_CP9_LF][p]->lambda);
 	  fprintf(fp, "E-CP9GF  %2d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[CP9_GF][p]->N, cm->stats->gumAA[CP9_GF][p]->L, 
-		  cm->stats->gumAA[CP9_GF][p]->mu, cm->stats->gumAA[CP9_GF][p]->lambda);
+		  p, cm->stats->gumAA[GUM_CP9_GF][p]->N, cm->stats->gumAA[GUM_CP9_GF][p]->L, 
+		  cm->stats->gumAA[GUM_CP9_GF][p]->mu, cm->stats->gumAA[GUM_CP9_GF][p]->lambda);
 	}
       /* currently either all EVD stats are calc'ed or none */
 
+#if 0
       if (cm->flags & CMH_FTHR_STATS) /* FTHR stats are only possibly valid IF EVD stats valid */
 	{
 	  fprintf(fp, "FT-LC  %5d  %.3f  %15.5f  %.5f  %15.5f  %.5f  %d  %d\n", 
-		  cm->stats->fthrA[CM_LC]->N, cm->stats->fthrA[CM_LC]->cm_eval, 
-		  cm->stats->fthrA[CM_LC]->l_eval, cm->stats->fthrA[CM_LC]->l_F,
-		  cm->stats->fthrA[CM_LC]->g_eval, cm->stats->fthrA[CM_LC]->g_F, 
-		  cm->stats->fthrA[CM_LC]->db_size, cm->stats->fthrA[CM_LC]->was_fast);
+		  cm->stats->fthrA[FTHR_CM_LC]->N, cm->stats->fthrA[FTHR_CM_LC]->cm_eval, 
+		  cm->stats->fthrA[FTHR_CM_LC]->l_eval, cm->stats->fthrA[FTHR_CM_LC]->l_F,
+		  cm->stats->fthrA[FTHR_CM_LC]->g_eval, cm->stats->fthrA[FTHR_CM_LC]->g_F, 
+		  cm->stats->fthrA[FTHR_CM_LC]->db_size, cm->stats->fthrA[FTHR_CM_LC]->was_fast);
 	  fprintf(fp, "FT-GC  %5d  %.3f  %15.5f  %.5f  %15.5f  %.5f  %d  %d\n", 
-		  cm->stats->fthrA[CM_GC]->N, cm->stats->fthrA[CM_GC]->cm_eval, 
-		  cm->stats->fthrA[CM_GC]->l_eval, cm->stats->fthrA[CM_GC]->l_F,
-		  cm->stats->fthrA[CM_GC]->g_eval, cm->stats->fthrA[CM_GC]->g_F, 
-		  cm->stats->fthrA[CM_GC]->db_size, cm->stats->fthrA[CM_GC]->was_fast);
+		  cm->stats->fthrA[FTHR_CM_GC]->N, cm->stats->fthrA[FTHR_CM_GC]->cm_eval, 
+		  cm->stats->fthrA[FTHR_CM_GC]->l_eval, cm->stats->fthrA[FTHR_CM_GC]->l_F,
+		  cm->stats->fthrA[FTHR_CM_GC]->g_eval, cm->stats->fthrA[FTHR_CM_GC]->g_F, 
+		  cm->stats->fthrA[FTHR_CM_GC]->db_size, cm->stats->fthrA[FTHR_CM_GC]->was_fast);
 	  fprintf(fp, "FT-LI  %5d  %.3f  %15.5f  %.5f  %15.5f  %.5f  %d  %d\n", 
-		  cm->stats->fthrA[CM_LI]->N, cm->stats->fthrA[CM_LI]->cm_eval, 
-		  cm->stats->fthrA[CM_LI]->l_eval, cm->stats->fthrA[CM_LI]->l_F,
-		  cm->stats->fthrA[CM_LI]->g_eval, cm->stats->fthrA[CM_LI]->g_F, 
-		  cm->stats->fthrA[CM_LI]->db_size, cm->stats->fthrA[CM_LI]->was_fast);
+		  cm->stats->fthrA[FTHR_CM_LI]->N, cm->stats->fthrA[FTHR_CM_LI]->cm_eval, 
+		  cm->stats->fthrA[FTHR_CM_LI]->l_eval, cm->stats->fthrA[FTHR_CM_LI]->l_F,
+		  cm->stats->fthrA[FTHR_CM_LI]->g_eval, cm->stats->fthrA[FTHR_CM_LI]->g_F, 
+		  cm->stats->fthrA[FTHR_CM_LI]->db_size, cm->stats->fthrA[FTHR_CM_LI]->was_fast);
 	  fprintf(fp, "FT-GI  %5d  %.3f  %15.5f  %.5f  %15.5f  %.5f  %d  %d\n", 
-		  cm->stats->fthrA[CM_GI]->N, cm->stats->fthrA[CM_GI]->cm_eval, 
-		  cm->stats->fthrA[CM_GI]->l_eval, cm->stats->fthrA[CM_GI]->l_F,
-		  cm->stats->fthrA[CM_GI]->g_eval, cm->stats->fthrA[CM_GI]->g_F, 
-		  cm->stats->fthrA[CM_GI]->db_size, cm->stats->fthrA[CM_GI]->was_fast);
+		  cm->stats->fthrA[FTHR_CM_GI]->N, cm->stats->fthrA[FTHR_CM_GI]->cm_eval, 
+		  cm->stats->fthrA[FTHR_CM_GI]->l_eval, cm->stats->fthrA[FTHR_CM_GI]->l_F,
+		  cm->stats->fthrA[FTHR_CM_GI]->g_eval, cm->stats->fthrA[FTHR_CM_GI]->g_F, 
+		  cm->stats->fthrA[FTHR_CM_GI]->db_size, cm->stats->fthrA[FTHR_CM_GI]->was_fast);
 
 	} /* currently either all filter threshold stats are calc'ed or none */
+#endif
     }
 
   /* main model section */
@@ -472,8 +474,8 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   int     v,x,y,nd;		/* counters for states, events, nodes */
   char   *tok;
   int     toklen;
-  int     gum_flags[NGUMBELMODES]; /* keep track of which EVDs we've read */
-  int     fthr_flags[NFTHRMODES];/* keep track of which EVDs we've read */
+  int     gum_flags[GUM_NMODES]; /* keep track of which EVDs we've read */
+  int     fthr_flags[FTHR_NMODES];/* keep track of which EVDs we've read */
   int     gum_mode;             /* index of EVD info               */
   int     fthr_mode;            /* HMM filter threshold info       */
   int     have_gums;            /* for checking we get 0 or all EVDs*/
@@ -491,8 +493,8 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   cm  = NULL;
   buf = NULL;
   n   = 0;
-  for(i = 0; i < NGUMBELMODES; i++)  gum_flags[i] = FALSE;
-  for(i = 0; i < NFTHRMODES; i++)    fthr_flags[i] = FALSE;
+  for(i = 0; i < GUM_NMODES; i++)  gum_flags[i] = FALSE;
+  for(i = 0; i < FTHR_NMODES; i++)    fthr_flags[i] = FALSE;
 
   if (feof(cmf->f) || esl_fgets(&buf, &n, cmf->f) != eslOK) return 0;
   
@@ -643,21 +645,21 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
       {				
 	/* determine which EVD we're reading */
 	if (strncmp(tok+2, "LC", 2) == 0) 
-	  gum_mode = CM_LC;
+	  gum_mode = GUM_CM_LC;
 	else if (strncmp(tok+2, "GC", 2) == 0) 
-	  gum_mode = CM_GC;
+	  gum_mode = GUM_CM_GC;
 	else if (strncmp(tok+2, "LI", 2) == 0) 
-	  gum_mode = CM_LI;
+	  gum_mode = GUM_CM_LI;
 	else if (strncmp(tok+2, "GI", 2) == 0) 
-	  gum_mode = CM_GI;
+	  gum_mode = GUM_CM_GI;
 	else if (strncmp(tok+2, "CP9LV", 5) == 0) 
-	  gum_mode = CP9_LV;
+	  gum_mode = GUM_CP9_LV;
 	else if (strncmp(tok+2, "CP9GV", 5) == 0) 
-	  gum_mode = CP9_GV;
+	  gum_mode = GUM_CP9_GV;
 	else if (strncmp(tok+2, "CP9LF", 5) == 0) 
-	  gum_mode = CP9_LF;
+	  gum_mode = GUM_CP9_LF;
 	else if (strncmp(tok+2, "CP9GF", 5) == 0) 
-	  gum_mode = CP9_GF;
+	  gum_mode = GUM_CP9_GF;
 	else                                         goto FAILURE;
 
 	/* now we know what EVD we're reading, read it */
@@ -680,6 +682,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	
 	gum_flags[gum_mode] = TRUE;
       }
+#if 0
       /* HMM filter threshold info */
       else if (strncmp(tok, "FT-", 3) == 0) 
       {				
@@ -689,13 +692,13 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 
 	/* determine which filter threshold we're reading */
 	if (strncmp(tok+3, "LC", 2) == 0) 
-	  fthr_mode = CM_LC;
+	  fthr_mode = FTHR_CM_LC;
 	else if (strncmp(tok+3, "GC", 2) == 0) 
-	  fthr_mode = CM_GC;
+	  fthr_mode = FTHR_CM_GC;
 	else if (strncmp(tok+3, "LI", 2) == 0) 
-	  fthr_mode = CM_LI;
+	  fthr_mode = FTHR_CM_LI;
 	else if (strncmp(tok+3, "GI", 2) == 0) 
-	  fthr_mode = CM_GI;
+	  fthr_mode = FTHR_CM_GI;
 	else                                         goto FAILURE;
 
 	/* now we know what mode we're reading, read it */
@@ -726,6 +729,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 
 	fthr_flags[fthr_mode] = TRUE;
       }
+#endif
       else if (strcmp(tok, "MODEL:") == 0)
 	break;
     }
@@ -740,14 +744,14 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 
   /* if we have any EVD stats, we (currently) require all of them */
   have_gums = gum_flags[0];
-  for(gum_mode = 1; gum_mode < NGUMBELMODES; gum_mode++)
+  for(gum_mode = 1; gum_mode < GUM_NMODES; gum_mode++)
     if(((have_gums && (!gum_flags[gum_mode]))) ||
        ((!have_gums) && (gum_flags[gum_mode])))
       goto FAILURE;
   
-  /* if we have any HMM filter stats, we (currently) require all of them */
+  /* if we have any filter stats, we (currently) require all of them */
   have_fthrs = fthr_flags[0];
-  for(i = 0; i < NFTHRMODES; i++)
+  for(i = 0; i < FTHR_NMODES; i++)
     if(((have_fthrs && (!fthr_flags[i]))) ||
        ((!have_fthrs) && (fthr_flags[i])))
       goto FAILURE;
@@ -756,7 +760,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
    */
   CMZero(cm);
   if(have_gums)  cm->flags |= CMH_GUMBEL_STATS;
-  if(have_fthrs) cm->flags |= CMH_FTHR_STATS;
+  if(have_fthrs) cm->flags |= CMH_FILTER_STATS;
   nd = -1;
   cm->clen = 0;
   for (v = 0; v < cm->M; v++)
@@ -932,7 +936,7 @@ write_binary_cm(FILE *fp, CM_t *cm)
       tagged_fwrite(CMIO_NPART,   &cm->stats->np,   sizeof(int),  1, fp);  
       tagged_fwrite(CMIO_PARTS,   cm->stats->ps,    sizeof(int),  cm->stats->np, fp);  
       tagged_fwrite(CMIO_PARTE,   cm->stats->pe,    sizeof(int),  cm->stats->np, fp);  
-      for(i = 0; i < NGUMBELMODES; i++)
+      for(i = 0; i < GUM_NMODES; i++)
 	{
 	  for(p = 0; p < cm->stats->np; p++)
 	    {
@@ -942,17 +946,20 @@ write_binary_cm(FILE *fp, CM_t *cm)
 	      tagged_fwrite(CMIO_EVDLAMBDA, &cm->stats->gumAA[i][p]->lambda, sizeof(float),  1, fp);
 	    }
 	}
+      /* TEMPORARY! */
+      has_fthr = FALSE;
+      tagged_fwrite(CMIO_HASFTHR,  &has_fthr,   sizeof(int),  1, fp);  /* put a 0 to indicate no HMM filter stats */
+      /* TEMPORARY ! */
+#if 0
       /* HMM filter threshold stats, can only be valid if EVD_STATS also valid */ 
       if (!(cm->flags & CMH_FTHR_STATS))
 	{
-	  has_fthr = FALSE;
- 	  tagged_fwrite(CMIO_HASFTHR,  &has_fthr,   sizeof(int),  1, fp);  /* put a 0 to indicate no HMM filter stats */
 	} 
      else /* (cm->flags & CMH_FTHR_STATS) */
 	{
 	  has_fthr = TRUE;
 	  tagged_fwrite(CMIO_HASFTHR,  &has_fthr,   sizeof(int),  1, fp);  /* put a 1 to indicate valid HMM filter stats */
-	  for(i = 0; i < NFTHRMODES; i++)
+	  for(i = 0; i < FTHR_NMODES; i++)
 	    {
 	      tagged_fwrite(CMIO_FTHRN,    &cm->stats->fthrA[i]->N,        sizeof(int),   1, fp);      
 	      tagged_fwrite(CMIO_FTHRCMP,  &cm->stats->fthrA[i]->cm_eval,  sizeof(float), 1, fp);      
@@ -964,6 +971,7 @@ write_binary_cm(FILE *fp, CM_t *cm)
 	      tagged_fwrite(CMIO_FTHRFAST, &cm->stats->fthrA[i]->was_fast, sizeof(int),   1, fp);      
 	    }
 	}
+#endif
     }
   for (v = 0; v < cm->M; v++) {
     tagged_fwrite(CMIO_T, cm->t[v], sizeof(float), MAXCONNECT, fp);
@@ -1046,7 +1054,7 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
       cm->stats = AllocCMStats(np);
       if (! tagged_fread(CMIO_PARTS,     (void *) cm->stats->ps, sizeof(int),      np,        fp))     goto FAILURE;
       if (! tagged_fread(CMIO_PARTE,     (void *) cm->stats->pe, sizeof(int),      np,        fp))     goto FAILURE;
-      for(i = 0; i < NGUMBELMODES; i++)
+      for(i = 0; i < GUM_NMODES; i++)
 	{
 	  for(p = 0; p < cm->stats->np; p++)
 	    {
@@ -1059,10 +1067,11 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
       cm->flags |= CMH_GUMBEL_STATS;
     }
   if (! tagged_fread(CMIO_HASFTHR,     (void *) &(has_fthr), sizeof(int),         1,        fp))     goto FAILURE;
+#if 0
   /* We might have HMM filter threshold stats */
   if(has_fthr)
     {
-      for(i = 0; i < NFTHRMODES; i++)
+      for(i = 0; i < FTHR_NMODES; i++)
 	{
 	  if (! tagged_fread(CMIO_FTHRN,    (void *) &(cm->stats->fthrA[i]->N),          sizeof(int),   1, fp)) goto FAILURE;
 	  if (! tagged_fread(CMIO_FTHRCMP,  (void *) &(cm->stats->fthrA[i]->cm_eval),    sizeof(float), 1, fp)) goto FAILURE;
@@ -1075,6 +1084,7 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	}
       cm->flags |= CMH_FTHR_STATS;
     }
+#endif
   for (v = 0; v < cm->M; v++) {
     if (! tagged_fread(CMIO_T, (void *) cm->t[v], sizeof(float), MAXCONNECT, fp)) goto FAILURE;
     if (! tagged_fread(CMIO_E, (void *) cm->e[v], sizeof(float), cm->abc->K*cm->abc->K, fp)) goto FAILURE;

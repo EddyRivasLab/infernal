@@ -155,7 +155,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L)
 
   Mb_needed += ESL_MAX(((float) (sizeof(float) * mx->ncells_alloc)), ((float) (sizeof(float) * ncells))); /* mx->dp_mem */
   Mb_needed *= 0.000001; /* convert to megabytes */
-  ESL_DPRINTF1(("HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
+  ESL_DPRINTF2(("HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
   if(Mb_needed > CM_HB_MX_MB_LIMIT) ESL_FAIL(eslERANGE, errbuf, "cm_hb_mx_GrowTo(), requested size of HMM banded DP matrix %.2f Mb > %.2f Mb limit (CM_HB_MX_MB_LIMIT from structs.h).", Mb_needed, (float) CM_HB_MX_MB_LIMIT);
 
   /* must we realloc the full matrix? or can we get away with just
@@ -409,8 +409,6 @@ int
 cm_CreateScanMatrixForCM(CM_t *cm, int do_float, int do_int)
 {
   int do_banded;
-  int use_hmmonly;
-  use_hmmonly = ((cm->search_opts & CM_SEARCH_HMMVITERBI) ||  (cm->search_opts & CM_SEARCH_HMMFORWARD)) ? TRUE : FALSE;
 
   if(cm->flags & CMH_SCANMATRIX)               cm_Fail("cm_CreateScanMatrixForCM(), the CM flag for valid scan info is already up.");
   if(cm->smx != NULL)                          cm_Fail("cm_CreateScanMatrixForCM(), the cm already points to a ScanMatrix_t object.\n");
@@ -422,16 +420,11 @@ cm_CreateScanMatrixForCM(CM_t *cm, int do_float, int do_int)
   if((! cm->search_opts & CM_SEARCH_NOQDB) && (cm->dmin == NULL || cm->dmax == NULL))
     cm_Fail("cm_CreateScanMatrixForCM(), cm->dmin == NULL || cm->dmax == NULL, but !(cm->search_opts & CM_SEARCH_NOQDB)\n");
 
-  do_banded = ((cm->search_opts & CM_SEARCH_NOQDB) || use_hmmonly) ? FALSE : TRUE;
+  do_banded = (cm->search_opts & CM_SEARCH_NOQDB) ? FALSE : TRUE;
 
-  if(use_hmmonly) { /* no matrix will be alloc'ed, we don't need it */
-    cm->smx = NULL;
-    cm->flags &= ~CMH_SCANMATRIX; /* raise the flag for valid CMH_SCANMATRIX */
-  }
-  else {
-    cm->smx = cm_CreateScanMatrix(cm, cm->W, cm->dmin, cm->dmax, cm->beta, do_banded, do_float, do_int);
-    cm->flags |= CMH_SCANMATRIX; /* raise the flag for valid CMH_SCANMATRIX */
-  }
+  cm->smx = cm_CreateScanMatrix(cm, cm->W, cm->dmin, cm->dmax, cm->beta, do_banded, do_float, do_int);
+  cm->flags |= CMH_SCANMATRIX; /* raise the flag for valid CMH_SCANMATRIX */
+
   return eslOK;
 }
 

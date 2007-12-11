@@ -29,9 +29,9 @@
 #define DEFAULT_MIN_CP9_E_CUTOFF 1.0
 #define DEFAULT_BETA   0.0000001
 #define DEFAULT_TAU    0.0000001
-#define DEFAULT_PBEGIN 0.05  /* EPN 06.29.07 (formerly 0.5) */
-#define DEFAULT_PEND   0.05  /* EPN 06.29.07 (formerly 0.5) */
-#define DEFAULT_ETARGET 0.54 /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
+#define DEFAULT_PBEGIN 0.05   /* EPN 06.29.07 (formerly 0.5) */
+#define DEFAULT_PEND   0.05   /* EPN 06.29.07 (formerly 0.5) */
+#define DEFAULT_ETARGET 0.54  /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
 #define DEFAULT_HS_MINLEN 7.  /* minimum length for a candidate sub CM root for a hybrid scan */
 #define DEFAULT_HS_BETA 1E-15 /* beta for calc'ing average hit length for sub cm roots of a hybrid scan */
 
@@ -403,84 +403,6 @@ typedef struct cp9map_s {
   int    cm_nodes;  /* number of nodes in the CM this HMM maps to */
 } CP9Map_t;
 
-/* Structure GumbelInfo_t
- */
-typedef struct gumbelinfo_s {
-  int    N;             /* number of samples stats calc'ed from        */
-  int    L;             /* length of samples stats calc'ed from        */
-  double mu;		/* location param for gumbel, calced w/K,lambda*/
-  double lambda;	/* scale param gumbel                          */
-  int    isvalid;       /* TRUE if N, L, mu, lambda have been set, FALSE if not */
-} GumbelInfo_t;
-
-/* Structure CP9FThresh_t: CP9 HMM filter thresholds, determined empirically
- * by sampling from the CM
- */
-typedef struct cp9filterthr_s {
-  int   N;             /* number of CM hits used to get threshold ((N*fraction) passed)*/
-  float cm_eval;       /* CM E-value threshold, we rejected worse than   */
-  float l_eval;        /*  local CP9 scanning E-value threshold    */
-  float g_eval;        /* glocal CP9 scanning E-value threshold    */
-  float l_F;           /* fraction of empirical CM hits survive filter for l_eval cutoff */
-  float g_F;           /* fraction of empirical CM hits survive filter for g_eval cutoff */
-  int   db_size;       /* db size used to calculate Gum mu for *_eval calculations */
-  int   was_fast;      /* TRUE if hacky fast method for calcing thresholds was used */
-  int   isvalid;       /* TRUE if values have been set, FALSE if not */
-} CP9FilterThr_t;
-
-
-/* Structure SubFilterInfo_t: Information on possible sub CM filters for a CM.                           
- * States of a CM are grouped into 'start groups'. There is one start group                              
- * for each start state of the CM. A 'start group' begins with a start state and ends                    
- * with a E or B state, and includes all states in between.                                              
- */                                                                                                      
-typedef struct subfilterinfo_s {
-  int    M;            /* # states in the CM */                                                          
-  int    nstarts;      /* # start states (and start groups) in the CM */                                 
-  int    ncands;       /* number of candidate states, these *could* be sub CM roots */                   
-  double beta;         /* beta used for calculating avglenA */                                           
-  float  minlen;       /* minimum average length (avglen) a candidate state must have */                 
-  int   *iscandA;      /* [0..v..cm->M-1] TRUE if state v is a candidate sub CM root, FALSE otherwise */   
-  float *avglenA;      /* [0..v..cm->M-1] average length of a hit rooted at v (from QDB) */                
-  int   *startA;       /* [0..i..cm->M-1] start group this state belongs to */                               
-  int   *firstA;       /* [0..i..nstarts-1], first state in start state i's group */                     
-  int   *lastA;        /* [0..i..nstarts-1], last state in start state i's group */                      
-  int  **withinAA;     /* [0..i..nstarts-1][0..j..nstarts-1] = TRUE if start state j's group             
-                        * is within start state i's group.                                               
-                        *  emap->startA[cm->nodemap[i]]->lpos < emap->startA[cm->nodemap[j]]->lpos  &&   
-                        *  emap->endA  [cm->nodemap[i]]->rpos > emap->endA  [cm->nodemap[j]]->rpos       
-                        */			
-} SubFilterInfo_t;
-
-/* Structure CMStats_t
- */
-typedef struct cmstats_s {
-  int np;                    /* number of partitions, df: 1 */
-  int *ps;                   /* start GC content [0..100] of each partition */
-  int *pe;                   /* end   GC content [0..100] of each partition */
-  int gc2p[GC_SEGMENTS];     /* map from GC content to partition number     */
-  GumbelInfo_t ***gumAA;     /* [0..NSTATMODES-1][0..np-1] */
-  CP9FilterThr_t **fthrA;    /* [0..NFTHRMODES-1] */
-} CMStats_t;
-
-
-/* Stat modes, 
- * 0..NSTATMODES-1 are first dimension of cmstats->gumAA 
- * 0..NFTHRMODES-1 are only dimension cmstats->fthrA 
- */
-#define CM_LC 0  
-#define CM_GC 1
-#define CM_LI 2
-#define CM_GI 3
-#define CP9_LV 4
-#define CP9_GV 5
-#define CP9_LF 6
-#define CP9_GF 7
-#define NGUMBELMODES 8
-#define NFTHRMODES   4
-#define NCMMODES     4
-#define NCP9MODES    4
-
 /* status flags, cm->flags */
 #define CMH_BITS               (1<<0)  /* CM has valid log odds scores             */
 #define CMH_ACC                (1<<1)  /* accession number is available            */
@@ -491,7 +413,7 @@ typedef struct cmstats_s {
 #define CMH_LOCAL_BEGIN        (1<<6)  /* Begin distribution is active (local ali) */
 #define CMH_LOCAL_END          (1<<7)  /* End distribution is active (local ali)   */
 #define CMH_GUMBEL_STATS       (1<<8)  /* Gumbel stats for local/glocal CYK/Ins set*/
-#define CMH_FTHR_STATS         (1<<9)  /* CP9 HMM filter threshold stats are set   */
+#define CMH_FILTER_STATS       (1<<9)  /* 'best' filter threshold stats are set    */
 #define CMH_QDB                (1<<10) /* query-dependent bands, QDB valid         */
 #define CMH_CP9                (1<<11) /* CP9 HMM is valid in cm->cp9              */
 #define CMH_CP9STATS           (1<<12) /* CP9 HMM has Gumbel stats                 */
@@ -1148,11 +1070,11 @@ typedef struct hybridscaninfo_s {
   ScanMatrix_t *smx;   /* CM DP scan matrix associated with this filter, has some redundant info (cm_M, dmin, dmax), 
 			* but the reason it's here is it's DP matrix which is specific to hsi's dmin/dmax,
 			* so having  hsi->smx prevents need to modify the CM's ScanMatrix cm->smx (which may 
-			* have correspond to different dmin/dmax), for a hybrid scan.
+			* correspond to different dmin/dmax), for a hybrid scan.
 			*/
   float hybrid_ncalcs;   /* predicted # of millions of dp calcs for a hybrid scan per residue */
   float full_cp9_ncalcs; /* predicted # of millions of dp calcs for a pure CP9 scan per residue */
-  float full_cm_ncalcs;  /* predicted # of millions of dp calcs for a pure CM scan per residue, with
+  float full_cm_ncalcs;  /* predicted # of millions of dp calcs for a pure CM scan per residue, 
 			  * this cannot be calc'ed from this object alone, b/c it depends on cm->beta,
 			  * this value is passed into cm_CreateHybridScanInfo() */
   float *cm_vcalcs;      /* predicted # of millions of dp calcs for each subtree of the CM using hsi->dmin, hsi->dmax */
@@ -1218,6 +1140,91 @@ typedef struct searchinfo_s {
 #define SEARCH_WITH_HMM    0  
 #define SEARCH_WITH_HYBRID 1
 #define SEARCH_WITH_CM     2
+
+
+/* Structure GumbelInfo_t
+ */
+typedef struct gumbelinfo_s {
+  int    N;             /* number of samples stats calc'ed from        */
+  int    L;             /* length of samples stats calc'ed from        */
+  double mu;		/* location param for gumbel, calced w/K,lambda*/
+  double lambda;	/* scale param gumbel                          */
+  int    is_valid;      /* TRUE if N, L, mu, lambda have been set, FALSE if not */
+} GumbelInfo_t;
+
+
+/* Structure BestFilterInfo_t: 
+ * 
+ * Information for the predicted best filter for CM searches
+ * as determined in cmcalibrate (only used in cmcalibrate).
+ */                                                                                                      
+typedef struct bestfilterinfo_s {
+  int           cm_M;                /* # states in the CM */
+  float         cm_eval;             /* CM E-value threshold, we rejected worse than   */
+  float         F;                   /* fraction of empirical CM hits required to survive filter */
+  int           N;                   /* number of CM hits used to get threshold ((N*F) passed)*/
+  int           db_size;             /* db size used to calculate Gum mu for *_eval calculations */
+  int           is_valid;            /* TRUE if values have been set, FALSE if not */
+  int           ftype;               /* FILTER_WITH_HMM_VITERBI, FILTER_WITH_HMM_FORWARD, or FILTER_WITH_HYBRID */
+  float         sc_cutoff;           /* cutoff bit score threshold for filter */
+  float         e_cutoff;            /* cutoff E-value threshold for filter */
+  float         full_cm_ncalcs;      /* millions of DP calcs for full CM scan of length db_size */
+  float         fil_ncalcs;          /* millions of DP calcs for filter scan of length db_size */
+  float         fil_plus_surv_ncalcs;/* millions of DP calcs for filter scan + full CM scan of survivors of length db_size */
+  /* info for hybrid scanner, only valid if ftype == FILTER_WITH_HYBRID */
+  double        hbeta;               /* tail loss prob used to calculate dmin/dmax for hybrid filter */
+  int          *v_isroot;            /* [0..cm->M-1], TRUE if state v is a sub CM root in filter, false if not */
+  int            np;                 /* number of partitions (number of Gumbels in hgumA */
+  GumbelInfo_t **hgumA;              /* [0.p.np-1] Gumbel info for hybrid scanner, partition p, only non-NULL if ftype == FILTER_WITH_HYBRID */
+} BestFilterInfo_t;
+/* possible values for ftype[] array in FilterInfo_t objects */
+#define FILTER_WITH_HMM_VITERBI 0  
+#define FILTER_WITH_HMM_FORWARD 1  
+#define FILTER_WITH_HYBRID      2
+#define FILTER_NOTYETSET        3
+
+/* Structure CMStats_t
+ */
+typedef struct cmstats_s {
+  int np;                    /* number of partitions, df: 1 */
+  int *ps;                   /* start GC content [0..100] of each partition */
+  int *pe;                   /* end   GC content [0..100] of each partition */
+  int gc2p[GC_SEGMENTS];     /* map from GC content to partition number     */
+  GumbelInfo_t ***gumAA;     /* [0..GUM_NMODES-1][0..np-1] */
+  BestFilterInfo_t **bfA;    /* [0..FTHR_NMODES-1] */
+} CMStats_t;
+
+
+/* Gumbel modes, 
+ * 0..GUM_NMODES-1 are first dimension of cmstats->gumAA 
+ * order is important, it's exploited by cmcalibrate 
+ */
+#define GUM_CP9_GV 0
+#define GUM_CP9_GF 1
+#define GUM_CM_GC  2  
+#define GUM_CM_GI  3
+#define GUM_CP9_LV 4
+#define GUM_CP9_LF 5
+#define GUM_CM_LC  6
+#define GUM_CM_LI  7
+#define GUM_NMODES 8
+/*#define CM_LC 0  
+#define CM_GC 1
+#define CM_LI 2
+#define CM_GI 3
+#define CP9_LV 4
+#define CP9_GV 5
+#define CP9_LF 6
+#define CP9_GF 7*/
+
+/* Filter threshold modes, used in cmcalibrate 
+ * 0..FTHR_MODES-1 are only dimension cmstats->fthrA 
+ */
+#define FTHR_CM_GC 0
+#define FTHR_CM_GI 1
+#define FTHR_CM_LC 2
+#define FTHR_CM_LI 3
+#define FTHR_NMODES 4
 
 /* Structure: CM_t
  * Incept:    SRE, 9 Mar 2000 [San Carlos CA]
@@ -1345,3 +1352,45 @@ typedef struct cm_s {
 
 #endif /*STRUCTSH_INCLUDED*/
 
+#if 0
+
+/* Structure CP9FThresh_t: CP9 HMM filter thresholds, determined empirically
+ * by sampling from the CM
+ */
+typedef struct cp9filterthr_s {
+  int   N;             /* number of CM hits used to get threshold ((N*F) passed)*/
+  float cm_eval;       /* CM E-value threshold, we rejected worse than   */
+  float l_eval;        /*  local CP9 scanning E-value threshold    */
+  float g_eval;        /* glocal CP9 scanning E-value threshold    */
+  float l_F;           /* fraction of empirical CM hits survive filter for l_eval cutoff */
+  float g_F;           /* fraction of empirical CM hits survive filter for g_eval cutoff */
+  int   db_size;       /* db size used to calculate Gum mu for *_eval calculations */
+  int   was_fast;      /* TRUE if hacky fast method for calcing thresholds was used */
+  int   isvalid;       /* TRUE if values have been set, FALSE if not */
+} CP9FilterThr_t;
+
+
+/* Structure SubFilterInfo_t: Information on possible sub CM filters for a CM.                           
+ * States of a CM are grouped into 'start groups'. There is one start group                              
+ * for each start state of the CM. A 'start group' begins with a start state and ends                    
+ * with a E or B state, and includes all states in between.                                              
+ */                                                                                                      
+typedef struct subfilterinfo_s {
+  int    M;            /* # states in the CM */                                                          
+  int    nstarts;      /* # start states (and start groups) in the CM */                                 
+  int    ncands;       /* number of candidate states, these *could* be sub CM roots */                   
+  double beta;         /* beta used for calculating avglenA */                                           
+  float  minlen;       /* minimum average length (avglen) a candidate state must have */                 
+  int   *iscandA;      /* [0..v..cm->M-1] TRUE if state v is a candidate sub CM root, FALSE otherwise */   
+  float *avglenA;      /* [0..v..cm->M-1] average length of a hit rooted at v (from QDB) */                
+  int   *startA;       /* [0..i..cm->M-1] start group this state belongs to */                               
+  int   *firstA;       /* [0..i..nstarts-1], first state in start state i's group */                     
+  int   *lastA;        /* [0..i..nstarts-1], last state in start state i's group */                      
+  int  **withinAA;     /* [0..i..nstarts-1][0..j..nstarts-1] = TRUE if start state j's group             
+                        * is within start state i's group.                                               
+                        *  emap->startA[cm->nodemap[i]]->lpos < emap->startA[cm->nodemap[j]]->lpos  &&   
+                        *  emap->endA  [cm->nodemap[i]]->rpos > emap->endA  [cm->nodemap[j]]->rpos       
+                        */			
+} SubFilterInfo_t;
+
+#endif

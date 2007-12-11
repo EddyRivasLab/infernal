@@ -228,6 +228,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 
   /* Step 1: Get HMM Forward/Backward DP matrices. */
 
+
   do_scan2bands = (cm->search_opts & CM_SEARCH_HMMSCANBANDS) ? TRUE : FALSE;
   if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 0., NULL,
 			   do_scan2bands, /* are we using scanning Forward/Backward */
@@ -1808,6 +1809,12 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
     jmin[v] = ESL_MIN(jmin[v], j0);
     jmax[v] = ESL_MAX(jmax[v], i0);
     jmax[v] = ESL_MIN(jmax[v], j0);
+
+    /* Ensure: for all v imin[v] >= imin[0],
+     *                   jmax[v] <= jmax[0].
+     */
+    imin[v] = ESL_MAX(imin[v], imin[0]);
+    jmax[v] = ESL_MIN(jmax[v], jmax[0]);
 
     /* Ensure: jmax[v] - jmin[v] + 1 >= 0 
      *         imax[v] - imin[v] + 1 >= 0 

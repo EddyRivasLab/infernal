@@ -2849,3 +2849,139 @@ simple_cp9_HMM2ijBands(CM_t *cm, int ncc, int *node_cc_left, int *node_cc_right,
 
 #endif
 
+/* EPN, Mon Dec 10 09:20:02 2007, simplified use of gumbel modes in cmcalibrate,
+ * making ConfigForGumbelMode unnecessary */
+#if 0
+/*
+ * Function: ConfigForGumbelMode
+ * Date:     EPN, Thu May  3 09:05:48 2007
+ * Purpose:  Configure a CM and it's CP9 for determining statistics for 
+ *           a specific 'gum_mode'.
+ *
+ *           0. CM_LC : !cm->search_opts & CM_SEARCH_INSIDE  w/  local CM
+ *           1. CM_GC : !cm->search_opts & CM_SEARCH_INSIDE  w/ glocal CM
+ *           2. CM_LI :  cm->search_opts & CM_SEARCH_INSIDE  w/  local CM
+ *           3. CM_GI :  cm->search_opts & CM_SEARCH_INSIDE  w/ glocal CM
+ *           4. CP9_LV:  cm->search_opts & CM_SEARCH_HMMVITERBI
+ *                      !cm->search_opts & CM_SEARCH_HMMFORWARD w/  local CP9 HMM
+ *           5. CP9_LV:  cm->search_opts & CM_SEARCH_HMMVITERBI
+ *                      !cm->search_opts & CM_SEARCH_HMMFORWARD w/ glocal CP9 HMM
+ *           6. CP9_LF: !cm->search_opts & CM_SEARCH_HMMVITERBI
+ *                       cm->search_opts & CM_SEARCH_HMMFORWARD w/  local CP9 HMM
+ *           7. CP9_LF: !cm->search_opts & CM_SEARCH_HMMVITERBI
+ *                       cm->search_opts & CM_SEARCH_HMMFORWARD w/ glocal CP9 HMM
+ * 
+ * Args:
+ *           CM           - the covariance model
+ *           gum_mode     - the mode 0..7
+ */
+int
+ConfigForGumbelMode(CM_t *cm, int gum_mode)
+{
+  int do_cm_local  = FALSE;
+  int do_cp9_local = FALSE;
+
+  /*printf("in ConfigForGumbelMode\n");*/
+  /* First set search opts and flags based on gum_mode */
+  switch (gum_mode) {
+  case CM_LC: /* local CYK */
+    /*printf("CM_LC\n");*/
+    cm->search_opts &= ~CM_SEARCH_INSIDE;
+    cm->search_opts &= ~CM_SEARCH_HMMVITERBI;
+    cm->search_opts &= ~CM_SEARCH_HMMFORWARD;
+    do_cm_local  = TRUE;
+    break;
+  case CM_GC: /* glocal CYK */
+    /*printf("CM_GC\n");*/
+    cm->search_opts &= ~CM_SEARCH_INSIDE;
+    cm->search_opts &= ~CM_SEARCH_HMMVITERBI;
+    cm->search_opts &= ~CM_SEARCH_HMMFORWARD;
+    do_cm_local  = FALSE;
+    break;
+  case CM_LI: /* local inside */
+    /*printf("CM_LI\n");*/
+    cm->search_opts |= CM_SEARCH_INSIDE;
+    cm->search_opts &= ~CM_SEARCH_HMMVITERBI;
+    cm->search_opts &= ~CM_SEARCH_HMMFORWARD;
+    do_cm_local  = TRUE;
+    break;
+  case CM_GI: /* glocal inside */
+    /*printf("CM_GI\n");*/
+    cm->search_opts |= CM_SEARCH_INSIDE;
+    cm->search_opts &= ~CM_SEARCH_HMMVITERBI;
+    cm->search_opts &= ~CM_SEARCH_HMMFORWARD;
+    do_cm_local  = FALSE;
+    break;
+  case CP9_LV: /* local CP9 Viterbi */
+    /*printf("CP9_LV\n");*/
+    cm->search_opts &= ~CM_SEARCH_INSIDE;
+    cm->search_opts |= CM_SEARCH_HMMVITERBI;
+    cm->search_opts &= ~CM_SEARCH_HMMFORWARD;
+    do_cm_local   = TRUE; /* need CM local ends to make CP9 local ends */
+    do_cp9_local  = TRUE;
+    break;
+  case CP9_GV: /* glocal CP9 Viterbi */
+    /*printf("CP9_GV\n");*/
+    cm->search_opts &= ~CM_SEARCH_INSIDE;
+    cm->search_opts |=  CM_SEARCH_HMMVITERBI;
+    cm->search_opts &= ~CM_SEARCH_HMMFORWARD;
+    do_cp9_local  = FALSE;
+    break;
+  case CP9_LF: /* local CP9 Forward */
+    /*printf("CP9_LF\n");*/
+    cm->search_opts &= ~CM_SEARCH_INSIDE;
+    cm->search_opts &= ~CM_SEARCH_HMMVITERBI;
+    cm->search_opts |= CM_SEARCH_HMMFORWARD;
+    do_cm_local   = TRUE; /* need CM local ends to make CP9 local ends */
+    do_cp9_local  = TRUE;
+    break;
+  case CP9_GF: /* glocal CP9 Forward */
+    /*printf("CP9_GF\n");*/
+    cm->search_opts &= ~CM_SEARCH_INSIDE;
+    cm->search_opts &= ~CM_SEARCH_HMMVITERBI;
+    cm->search_opts |= CM_SEARCH_HMMFORWARD;
+    do_cp9_local  = FALSE;
+    break;
+  default: 
+    cm_Fail("ERROR unrecognized gum_mode: %d in ConfigForGumbelMode");
+  }
+  /* configure CM and, if needed, CP9 */
+  if(do_cm_local || do_cp9_local) 
+    {
+      /* If we're in local, wastefully convert to global, 
+       * then back to local, so we follow our rule that ConfigLocal()
+       * cannot be called with a model already locally configured.
+       * That rule was put in place to force caller to understand what
+       * it's doing. */
+      if(cm->flags & CMH_LOCAL_BEGIN || cm->flags & CMH_LOCAL_END) 
+	ConfigGlobal(cm);
+      ConfigLocal(cm, cm->pbegin, cm->pend);
+    }
+  else if(cm->flags & CMH_LOCAL_BEGIN || cm->flags & CMH_LOCAL_END) /* these *should* both either be up or down */
+    ConfigGlobal(cm);
+  CMLogoddsify(cm);
+  if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
+    CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
+				     * makes all CP9 (if non-null) inserts equiprobable*/
+  if((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD))
+    {
+      if(!(cm->flags & CMH_CP9) || cm->cp9 == NULL) /* error, we should have one */
+	cm_Fail("CP9 must already be built in ConfigForGumbelMode()\n");
+      if(do_cp9_local)
+	{
+	  /* To do: Make the CP9 local to match the CM, as close as we can */
+	  /*CPlan9CMLocalBeginConfig(cm); <-- Finish this function */
+	  CPlan9SWConfig(cm->cp9, cm->pbegin, cm->pbegin); 
+	  CPlan9ELConfig(cm);
+
+	  /* CPlan9SWConfig(cm->cp9, ((cm->cp9->M)-1.)/cm->cp9->M,*/  /* all start pts equiprobable, including 1 */
+	  /*                  ((cm->cp9->M)-1.)/cm->cp9->M);*/          /* all end pts equiprobable, including M */
+	}
+      else
+	CPlan9GlobalConfig(cm->cp9);
+      CP9Logoddsify(cm->cp9);
+      if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
+	CP9HackInsertScores(cm->cp9);
+    }
+  return eslOK;
+}

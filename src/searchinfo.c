@@ -842,3 +842,190 @@ CountScanDPCalcs(CM_t *cm, int L, int use_qdb)
   return dpcalcs + dpcalcs_bif;
 }
 
+
+/* Function: CreateBestFilterInfo()
+ * Date:     EPN, Mon Dec 10 12:16:22 2007
+ *
+ * Purpose:  Allocate and initialize a best filter info object. 
+ *            
+ * Returns:  Newly allocated BestFilterInfo_t object on success, NULL if some error occurs
+ */
+BestFilterInfo_t *
+CreateBestFilterInfo()
+{
+  int status;
+
+  BestFilterInfo_t *bf = NULL;
+  ESL_ALLOC(bf, sizeof(BestFilterInfo_t));
+
+  bf->cm_M      = 0;
+  bf->ftype     = FILTER_NOTYETSET;
+  bf->cm_eval   = 0.;
+  bf->F         = 0.;
+  bf->N         = 0;
+  bf->db_size   = 0;
+  bf->full_cm_ncalcs       = 1.; /* so calc'ed spdup = fil_plus_surv_ncalcs / full_cm_ncalcs = eslINFINITY */
+  bf->fil_ncalcs           = eslINFINITY;
+  bf->fil_plus_surv_ncalcs = eslINFINITY;
+  bf->sc_cutoff = 0.;
+  bf->e_cutoff  = 0.;
+  bf->hbeta     = 0.;
+  bf->v_isroot  = NULL;   
+  bf->np        = 0;
+  bf->hgumA     = NULL;   
+  bf->is_valid  = FALSE;
+  return bf;
+
+ ERROR:
+  return NULL; /* reached if memory error */
+}  
+
+/* Function: SetBestFilterInfoHMM()
+ * Date:     EPN, Mon Dec 10 13:30:34 2007
+ *
+ * Purpose:  Update a BestFilterInfo_t object to type
+ *           FILTER_WITH_HMM_VITERBI or FILTER_WITH_HMM_FORWARD.
+ *            
+ * Returns:  
+ *           eslOK on success, eslEINCOMPAT if contract violated
+ */
+int 
+SetBestFilterInfoHMM(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, int ftype, float sc_cutoff, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs)
+{
+  if(ftype != FILTER_WITH_HMM_VITERBI && ftype != FILTER_WITH_HMM_FORWARD) ESL_FAIL(eslEINCOMPAT, errbuf, "SetBestFilterInfoHMM(), ftype is neither FILTER_WITH_HMM_VITERBI nor FILTER_WITH_HMM_FORWARD.\n");
+  if(bf->is_valid) ESL_FAIL(eslEINCOMPAT, errbuf, "SetBestFilterInfoHMM(), bf->is_valid is TRUE (shouldn't happen, only time to set filter as HMM is when initializing BestFilter object.\n");
+
+  bf->cm_M      = cm_M;
+  bf->cm_eval   = cm_eval;
+  bf->F         = F;
+  bf->N         = N;
+  bf->db_size   = db_size;
+  bf->full_cm_ncalcs       = full_cm_ncalcs;
+
+  bf->ftype     = ftype;
+  bf->sc_cutoff = sc_cutoff;
+  bf->e_cutoff  = e_cutoff;
+  bf->fil_ncalcs = fil_ncalcs;
+  bf->fil_plus_surv_ncalcs = fil_plus_surv_ncalcs;
+  bf->is_valid   = TRUE;
+  return eslOK;
+}  
+
+/* Function: SetBestFilterInfoHybrid()
+ * Date:     EPN, Mon Dec 10 13:36:13 2007
+ *
+ * Purpose:  Update a BestFilterInfo_t object to type FILTER_WITH_HYBRID.
+ *            
+ * Returns:  eslOK on success, eslEINCOMPAT if contract violated, eslEMEM if memory error.
+ */
+int 
+SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, float sc_cutoff, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs, HybridScanInfo_t *hsi, int np, GumbelInfo_t **hgumA)
+{
+  int status;
+  int p;
+
+  if(hsi   == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "SetBestFilterInfoHybrid(), hsi is NULL.\n");
+  if(hgumA == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "SetBestFilterInfoHybrid(), hgumA is NULL.\n");
+
+  bf->cm_M      = cm_M;
+  bf->cm_eval   = cm_eval;
+  bf->F         = F;
+  bf->N         = N;
+  bf->db_size   = db_size;
+  bf->full_cm_ncalcs = full_cm_ncalcs;
+
+  bf->ftype     = FILTER_WITH_HYBRID;
+  bf->sc_cutoff = sc_cutoff;
+  bf->e_cutoff  = e_cutoff;
+  bf->fil_ncalcs = fil_ncalcs;
+  bf->fil_plus_surv_ncalcs = fil_plus_surv_ncalcs;
+  bf->is_valid  = TRUE;
+
+  if(bf->v_isroot != NULL) free(bf->v_isroot); /* probably unnec, but safe */
+  ESL_ALLOC(bf->v_isroot, sizeof(int) * bf->cm_M);
+  esl_vec_ICopy(hsi->v_isroot, bf->cm_M, bf->v_isroot);
+
+  /* if bf->hgum exists, free it */
+  if(bf->np != 0) for(p = 0; p < bf->np; p++) free(bf->hgumA[p]);
+  free(bf->hgumA);
+
+  ESL_ALLOC(bf->hgumA, sizeof(GumbelInfo_t *) * np);
+  bf->np = np;
+  for(p = 0; p < bf->np; p++) {
+    bf->hgumA[p] = DuplicateGumbelInfo(hgumA[p]);
+    if(bf->hgumA[p] == NULL) goto ERROR;
+  }
+  return eslOK;
+
+ ERROR:
+  return status;
+}  
+
+
+/* Function: FreeBestFilterInfo()
+ * Date:     EPN, Mon Dec 10 13:40:43 2007
+ *
+ * Purpose:  Free a BestFilterInfo_t object, but not the hsi it points to (if any)
+ *            
+ * Returns:  void
+ */
+void
+FreeBestFilterInfo(BestFilterInfo_t *bf)
+{
+  int p;
+  if(bf->np != 0) for(p = 0; p < bf->np; p++) free(bf->hgumA[p]);
+  free(bf->hgumA);
+  if(bf->v_isroot != NULL) free(bf->v_isroot);
+  free(bf);
+  return;
+}  
+
+
+/* Function: DumpBestFilterInfo()
+ * Date:     EPN, Mon Dec 10 12:22:10 2007
+ *
+ * Purpose:  Print out relevant info in a best filter info object.
+ *            
+ * Returns:  
+ *           eslOK on success, dies immediately on some error
+ */
+void
+DumpBestFilterInfo(BestFilterInfo_t *bf)
+{
+  int v, p;
+
+  if(! (bf->is_valid)) {
+    printf("BestFilterInfo_t not yet valid.\n");
+    return;
+  }
+
+  printf("BestFilterInfo_t:\n");
+  if(bf->ftype == FILTER_WITH_HMM_VITERBI)
+    printf("type: FILTER_WITH_HMM_VITERBI\n");
+  else if(bf->ftype == FILTER_WITH_HMM_FORWARD)
+    printf("type: FILTER_WITH_HMM_FORWARD\n");
+  else if(bf->ftype == FILTER_WITH_HYBRID) {
+    printf("type: FILTER_WITH_HYBRID\n");
+    printf("sub CM roots:\n");
+    for(v = 0; v < bf->cm_M; v++) { 
+      if(bf->v_isroot[v]) printf("\tv: %d\n", v);
+    }
+    if(bf->hgumA != NULL) 
+      for(p = 0; p < bf->np; p++) { 
+	printf("\nHybrid Gumbel, partition: %d\n", p);
+	debug_print_gumbelinfo(bf->hgumA[p]);
+      }
+  }
+  printf("CM E value cutoff:     %10.4f\n", bf->cm_eval);
+  printf("F:                     %10.4f\n", bf->F);
+  printf("N:                     %10d\n",   bf->N);
+  printf("DB size (for E-vals):  %10d\n",   bf->db_size);
+  printf("Filter bit sc  cutoff: %10.4f\n", bf->sc_cutoff);
+  printf("Filter E value cutoff: %10.4f\n", bf->e_cutoff);
+  printf("Full CM scan DP calcs: %10.4f\n", bf->full_cm_ncalcs);
+  printf("Filter scan DP calcs:  %10.4f\n", bf->fil_ncalcs);
+  printf("Fil + survivor calcs:  %10.4f\n", bf->fil_plus_surv_ncalcs);
+  printf("Speedup:               %10.4f\n", (bf->full_cm_ncalcs / bf->fil_plus_surv_ncalcs));
+  return;
+}  
+

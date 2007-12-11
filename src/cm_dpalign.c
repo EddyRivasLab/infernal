@@ -373,11 +373,12 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 	yoffset = y - cm->cfirst[v];
 	tsc = tsc_v[yoffset];
 	
-	/* EPN, Mon Nov 26 14:48:07 2007
-	 * jn = ESL_MAX(jmin[v], ESL_MIN(jmin[y] + sdr, jmax[y]));
-	 * jn = ESL_MAX(jn, jmin[y] + sdr);
-	 * jx = ESL_MIN(jmax[v], ESL_MAX(jmax[y] + sdr, jmin[y]));
-	 * jx = ESL_MIN(jx, jmax[y] + sdr);
+	/* j must satisfy:
+	 * j >= jmin[v]
+	 * j >= jmin[y]+sdr (follows from (j-sdr >= jmin[y]))
+	 * j <= jmax[v]
+	 * j <= jmax[y]+sdr (follows from (j-sdr <= jmax[y]))
+	 * this reduces to two ESL_MAX calls
 	 */
 	jn = ESL_MAX(jmin[v], jmin[y]+sdr);
 	jx = ESL_MIN(jmax[v], jmax[y]+sdr);
@@ -390,6 +391,13 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 	  ESL_DASSERT1((jp_v >= 0 && jp_v <= (jmax[v]-jmin[v])));
 	  ESL_DASSERT1((jp_y_sdr >= 0 && jp_y_sdr <= (jmax[y]-jmin[y])));
 	  
+	/* d must satisfy:
+	 * d >= hdmin[v][jp_v]
+	 * d >= hdmin[y][jp_y_sdr]+sd (follows from (d-sd >= hdmin[y][jp_y_sdr]))
+	 * d <= hdmax[v][jp_v]
+	 * d <= hdmax[y][jp_y_sdr]+sd (follows from (d-sd <= hdmax[y][jp_y_sdr]))
+	 * this reduces to two ESL_MAX calls
+	 */
 	  dn = ESL_MAX(hdmin[v][jp_v], hdmin[y][jp_y_sdr] + sd);
 	  dx = ESL_MIN(hdmax[v][jp_v], hdmax[y][jp_y_sdr] + sd);
 	  dpn     = dn - hdmin[v][jp_v];

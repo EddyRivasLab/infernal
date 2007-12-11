@@ -186,6 +186,7 @@ extern float FindCP9FilterThreshold(CM_t *cm, CMStats_t *cmstats, ESL_RANDOMNESS
 				    int emit_mode, int fthr_mode, int hmm_gum_mode, 
 				    int do_fastfil, int do_Fstep, int my_rank, int nproc, 
 				    int do_mpi, char *histfile, FILE *Rpts_fp, float *ret_F);
+extern int   ConfigForGumbelMode(CM_t *cm, int statmode);
 #endif
 
 /* Old functions from cplan9.c for setting CP9 attributes.
