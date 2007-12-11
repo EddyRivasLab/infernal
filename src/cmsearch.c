@@ -34,14 +34,15 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define STRATOPTS  "--cyk,--inside,--hmmviterbi,--hmmforward" /* exclusive choice for search strategy */
+#define STRATOPTS1 "--cyk,--inside,--hmmviterbi,--hmmforward" /* incompatible with --cyk, --inside */
+#define STRATOPTS2 "--cyk,--inside,--hmmviterbi,--hmmforward,--fgiven" /* incompatible with --hmmviterbi,--hmmforward */
 #define ALPHOPTS   "--rna,--dna"                              /* exclusive choice for output alphabet */
 
 #define I_CMCUTOPTS   "-E,-T,--ga,--tc,--nc,--hmmviterbi,--hmmforward" /* exclusive choice for CM cutoff */
 #define I_HMMCUTOPTS1  "--hmmcalcthr,--hmmE,--hmmT,--hmmviterbi,--hmmforward" /* exclusive choice for HMM cutoff set 1 */
 #define I_HMMCUTOPTS2  "--hmmcalcthr,--hmmE,--hmmT"            /* exclusive choice for HMM cutoff set 2 */
-#define FOPTS0        "--fcyk,--finside,--fhmmviterbi,--fhmmforward,--hmmviterbi,--hmmforward"  /* incompatible with --fgiven */
-#define FOPTS1        "--fcyk,--finside,--fgiven,--hmmviterbi,--hmmforward"           /* incompatible with --fcyk and --finside */
+#define FOPTS0        "--fhmmviterbi,--fhmmforward,--hmmviterbi,--hmmforward"  /* incompatible with --fgiven */
+#define FOPTS1        "--fcyk,--finside,--hmmviterbi,--hmmforward"           /* incompatible with --fcyk and --finside */
 #define FOPTS2        "--fhmmviterbi,--fhmmforward,--fgiven,--hmmviterbi,--hmmforward" /* incompatible with --fhmmviterbi and --fhmmforward */
 
 static ESL_OPTIONS options[] = {
@@ -56,13 +57,13 @@ static ESL_OPTIONS options[] = {
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
   { "--rtrans",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "replace CM transition scores from <cmfile> with RSEARCH scores", 1 },
   { "--greedy",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "resolve overlapping hits with a greedy algorithm a la RSEARCH", 1 },
-   { "--pbegin", eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local begin prob to <x>", 1 },
+  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local begin prob to <x>", 1 },
   { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local end prob to <x>", 1 },
   /* options for algorithm for final round of search */
-  { "--cyk",       eslARG_NONE,"default",NULL,NULL,     NULL,      NULL,    STRATOPTS, "use scanning CM CYK algorithm", 2 },
-  { "--inside",    eslARG_NONE, FALSE, NULL, NULL,      NULL,      NULL,    STRATOPTS, "use scanning CM Inside algorithm", 2 },
-  { "--hmmviterbi",eslARG_NONE, FALSE, NULL, NULL,      NULL,      NULL,    STRATOPTS, "use scanning HMM Viterbi algorithm", 2 },
-  { "--hmmforward",eslARG_NONE, FALSE, NULL, NULL,      NULL,      NULL,    STRATOPTS, "use scanning HMM Forward algorithm", 2 },
+  { "--cyk",       eslARG_NONE,"default",NULL,NULL,     NULL,      NULL,    STRATOPTS1, "use scanning CM CYK algorithm", 2 },
+  { "--inside",    eslARG_NONE, FALSE, NULL, NULL,      NULL,      NULL,    STRATOPTS1, "use scanning CM Inside algorithm", 2 },
+  { "--hmmviterbi",eslARG_NONE, FALSE, NULL, NULL,      NULL,      NULL,    STRATOPTS2, "use scanning HMM Viterbi algorithm", 2 },
+  { "--hmmforward",eslARG_NONE, FALSE, NULL, NULL,      NULL,      NULL,    STRATOPTS2, "use scanning HMM Forward algorithm", 2 },
   /* options for filtering with a CM */
   { "--fgiven",     eslARG_NONE, FALSE, NULL, NULL,     NULL,      NULL,       FOPTS0, "use filtering info from CM file", 14 },
   { "--fcyk",       eslARG_NONE, FALSE, NULL, NULL,     NULL,      NULL,       FOPTS1, "filter with CM CYK algorithm", 14 },
@@ -1063,6 +1064,7 @@ set_gumbels(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 static int
 set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
+  int status;
   int n;
   int stype;
   int add_cyk_filter     = FALSE;
@@ -1071,6 +1073,7 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   int add_forward_filter = FALSE;
   int search_opts;
   int use_hmmonly;
+  int fthr_mode;
   int cutoff_type;
   float cutoff;
   int  *dmin, *dmax; /* these become QDBs if we add a CM_FILTER */
@@ -1083,6 +1086,7 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   CreateSearchInfo(cm, SCORE_CUTOFF, 0.);
   if(cm->si == NULL) cm_Fail("set_searchinfo(), CreateSearchInfo() call failed.");
   SearchInfo_t *si = cm->si; 
+  if(si->nrounds > 0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_search_info(), si->nrounds (%d) > 0\n", si->nrounds);
 
   /*************************************************************************************
    * Filter related options:
@@ -1092,8 +1096,9 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
    *                                        --fcminside specifies use inside, not CYK
    * 0 or 1 rounds can by HMM filters, with --fhmm, --fhmmT, and --fhmmE (req's Gumbels)
    *                                        --fhmmforward specifies use forward, not viterbi
-   * Or user can specify that the filter info from the CM file be used: --fgiven
-   * CM file may have hybrid filters which cannot be specified on cmsearch command line
+   * Or user can specify that an HMM or hybrid filter as described in the the CM file 
+   * be used with option --fgiven. --fgiven is incompatible with --fhmmviterbi and --fhmmforward
+   * but not with --fcyk and --finside
    *
    *************************************************************************************
    * Final round related options (after all filtering is complete):
@@ -1110,19 +1115,10 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
    * --hmmforward: search with HMM forward
    * --hmmT:       bit score threshold for --hmmviterbi or --hmmforward
    * --hmmE:       E-value threshold (requires Gumbel info in CM file)
+   *
    *************************************************************************************
    */
   
-  /* did we read filter info from the CM? */
-  if(si->nrounds > 0) { 
-    if(! esl_opt_GetBoolean(go, "--fgiven")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_search_info(), --fgiven was not enabled but si->nrounds (%d) > 0\n", si->nrounds);
-    /* below should have be enforced by getopts */
-    ESL_DASSERT1((! esl_opt_GetBoolean(go, "--fcyk")));
-    ESL_DASSERT1((! esl_opt_GetBoolean(go, "--finside")));
-    ESL_DASSERT1((! esl_opt_GetBoolean(go, "--fhmmviterbi")));
-    ESL_DASSERT1((! esl_opt_GetBoolean(go, "--fhmmforward")));
-  }
-
   /* First, set up cutoff for final round, this will be round 0, unless filter info was read from the CM file */
   n           = si->nrounds;
   stype       = si->stype[n];
@@ -1214,9 +1210,6 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* Set up the filters and their thresholds 
    * 1. add a CM  filter, if necessary
    * 2. add a HMM filter, if necessary
-   *
-   * if --fgiven was enabled, --fcyk, --finside, --fhmmviterbi, --fhmmforward could NOT have been selected, 
-   * so we'll never enter any of the loops below.
    */
 
   /* CM filter */
@@ -1274,10 +1267,31 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   else if (! esl_opt_IsDefault(go, "--fbeta")) ESL_FAIL(eslEINCOMPAT, errbuf, "--fbeta has an effect with --fcyk or --finside");
 
   /* HMM filter */
+  /* if --fgiven was enabled, --fhmmviterbi, --fhmmforward could NOT have been selected, 
+   * so we won't enter any of the loops below.
+   */
   add_viterbi_filter = esl_opt_GetBoolean(go, "--fhmmviterbi");
   add_forward_filter = esl_opt_GetBoolean(go, "--fhmmforward");
   ESL_DASSERT1((!(add_viterbi_filter && add_forward_filter))); /* should be enforced by getopts */
-  if(add_viterbi_filter || add_forward_filter) { /* determine thresholds for filters */
+
+  if(esl_opt_GetBoolean(go, "--fgiven")) {
+    /* determine filter threshold mode, the mode of final stage of searching, either FTHR_CM_LC,
+     * FTHR_CM_LI, FTHR_CM_GC, FTHR_CM_GI, (can't be an HMM mode b/c getopts enforces --fgiven incompatible with
+     * --hmmviterbi and --hmmforward). 
+     */
+    if((status = CM2FthrMode(cm, errbuf, cm->search_opts, &fthr_mode)) != eslOK) return status;
+    if(!(cm->flags & CMH_FILTER_STATS))              ESL_FAIL(eslEINCOMPAT, errbuf,      "set_searchinfo(), --fgiven enabled, but cm's CMH_FILTER_STATS flag is down.");
+    if(cm->stats->bfA[fthr_mode]->is_valid == FALSE) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo(), --fgiven enabled, cm's CMH_FILTER_STATS is raised, but best filter info for fthr_mode is invalid.", fthr_mode);
+    ESL_DASSERT1((!add_viterbi_filter)); /* --fhmmviterbi is incompatible with --fgiven, enforced by getopts */
+    ESL_DASSERT1((!add_forward_filter)); /* --fhmmforward is incompatible with --fgiven, enforced by getopts */
+    cutoff_type = SCORE_CUTOFF;
+    cutoff      = cm->stats->bfA[fthr_mode]->sc_cutoff;
+    if(cm->stats->bfA[fthr_mode]->ftype == FILTER_WITH_HMM_VITERBI) add_viterbi_filter = TRUE;
+    if(cm->stats->bfA[fthr_mode]->ftype == FILTER_WITH_HMM_FORWARD) add_forward_filter = TRUE;
+    if(cm->stats->bfA[fthr_mode]->ftype == FILTER_WITH_HYBRID)      /*add_hybrid_filter = TRUE;*/
+      ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo(), --fgiven enabled and hybrid filter set in CM file, but we can't deal with this yet.\n");
+  }
+  else if(add_viterbi_filter || add_forward_filter) { /* determine thresholds for filters */
     /* Set up HMM cutoff, either 0 or 1 of 3 options is enabled */
     ESL_DASSERT1((! use_hmmonly)); /* should be enforced by getopts */
     if(esl_opt_IsDefault(go, "--hmmcalcthr") && 
@@ -1291,10 +1305,10 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 	cutoff_type = E_CUTOFF;
 	cutoff      = esl_opt_GetReal(go, "--hmmE");
       }
-	else { /* no Gumbel stats in CM file, use default bit score cutoff */
-	  cutoff_type = SCORE_CUTOFF;
-	  cutoff      = esl_opt_GetReal(go, "--hmmT");
-	}
+      else { /* no Gumbel stats in CM file, use default bit score cutoff */
+	cutoff_type = SCORE_CUTOFF;
+	cutoff      = esl_opt_GetReal(go, "--hmmT");
+      }
     }
     else if(! esl_opt_IsDefault(go, "--hmmcalcthr")) {
       if(! (cm->flags & CMH_GUMBEL_STATS))
@@ -1315,6 +1329,8 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       if((cutoff < 0.) && (! esl_opt_GetBoolean(go, "--hmmgreedy"))) ESL_FAIL(eslEINVAL, errbuf, "with --hmmT <x> option, <x> can only be less than 0. if --hmmgreedy also enabled.");
     }
     else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No HMM filter cutoff selected. This shouldn't happen.");
+  }
+  if(add_viterbi_filter || add_forward_filter) {
     /* add the filter */
     AddFilterToSearchInfo(cm, FALSE, FALSE, add_viterbi_filter, add_forward_filter, FALSE, NULL, NULL, cutoff_type, cutoff);
     ValidateSearchInfo(cm, cm->si);

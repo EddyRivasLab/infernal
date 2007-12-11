@@ -65,7 +65,7 @@ CreateSearchInfo(CM_t *cm, int cutoff_type, float cutoff)
 /* Function: AddFilterToSearchInfo()
  * Date:     EPN, Tue Nov 27 13:00:23 2007
  *
- * Purpose:  Add an HMM filter as the 1st round filter for CM <cm>.
+ * Purpose:  Add a filter as the 1st round filter for CM <cm>.
  *           A new SearchInfo_t object <fi> is created, and the existing
  *           information from cm->si is copied into it. cm->si is then
  *           freed and cm->si is set to point at fi.            

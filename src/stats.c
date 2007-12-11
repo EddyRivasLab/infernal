@@ -405,6 +405,38 @@ int CM2Gumbel_mode(CM_t *cm, int search_opts, int *ret_cm_gum_mode, int *ret_cp9
 
 
 /*
+ * Function: CM2FthrMode
+ * Date:     EPN, Tue Dec 11 13:16:35 2007
+ * Purpose:  Return the filter threshold mode for the CM 
+ *           given CM's flags and a passed in search options
+ *           int.
+ * 
+ * Returns: eslOK on success, eslEINCOMPAT if search_opts indicate
+ *          we're doing HMM search, errbuf is filled with error message.
+ */
+int CM2FthrMode(CM_t *cm, char *errbuf, int search_opts, int *ret_fthr_mode)
+{
+  int fthr_mode;
+
+  /* check contract */
+  if(search_opts & CM_SEARCH_HMMVITERBI) ESL_FAIL(eslEINCOMPAT, errbuf, "CM2FThrMode(), search_opts CM_SEARCH_HMMVITERBI flag raised.\n");
+  if(search_opts & CM_SEARCH_HMMFORWARD) ESL_FAIL(eslEINCOMPAT, errbuf, "CM2FThrMode(), search_opts CM_SEARCH_HMMFORWARD flag raised.\n");
+  if(ret_fthr_mode == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "CM2FThrMode(), ret_fthr_mode is NULL.");
+
+  if(cm->flags & CMH_LOCAL_BEGIN) {
+    if(search_opts & CM_SEARCH_INSIDE) fthr_mode = FTHR_CM_LI;
+    else               	               fthr_mode = FTHR_CM_LC;
+  }
+  else {
+    if(search_opts & CM_SEARCH_INSIDE) fthr_mode = FTHR_CM_GI;
+    else        	               fthr_mode = FTHR_CM_GC;
+  }
+  if(ret_fthr_mode  != NULL) *ret_fthr_mode  = fthr_mode;
+  return eslOK;
+}
+
+
+/*
  * Function: remove_hits_over_e_cutoff
  * Date:     RJK, Tue Oct 8, 2002 [St. Louis]
  * Purpose:  Given an E-value cutoff, lambdas, mus, a sequence, and
@@ -734,13 +766,13 @@ int CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest)
   return eslOK;
 }
 
-/* Function: CopyCMStatsGumbel()
+/* Function: DuplicateCMStatsGumbel()
  * Incept:   EPN, Mon May  7 06:04:58 2007
  * 
  * Purpose:  Copy the Gumbel stats in a source CMStats_t object into
  *           a pre-alloc'ed destination CMStats_t object.
  */
-int CopyCMStatsGumbel(CMStats_t *src, CMStats_t *dest)
+int DuplicateCMStatsGumbel(CMStats_t *src, CMStats_t *dest)
 {
   int i, p;
 
@@ -748,24 +780,21 @@ int CopyCMStatsGumbel(CMStats_t *src, CMStats_t *dest)
   if(src->np != dest->np)
     cm_Fail("ERROR in CopyCMStatsGumbel() src->np: %d not equal to alloc'ed dest->np: %d\n", src->np, dest->np);
 
-  for(p = 0; p < src->np; p++)
-    {
-      dest->ps[p] = src->ps[p];
-      dest->pe[p] = src->pe[p];
-    }
+  for(p = 0; p < src->np; p++) {
+    dest->ps[p] = src->ps[p];
+    dest->pe[p] = src->pe[p];
+  }
   for(i = 0; i < GC_SEGMENTS; i++)
     dest->gc2p[i] = src->gc2p[i]; 
 
-  for(i = 0; i < GUM_NMODES; i++)
-    {
-      for(p = 0; p < src->np; p++)
-	{
-	  dest->gumAA[i][p]->N      = src->gumAA[i][p]->N;
-	  dest->gumAA[i][p]->L      = src->gumAA[i][p]->L;
-	  dest->gumAA[i][p]->mu     = src->gumAA[i][p]->mu;
-	  dest->gumAA[i][p]->lambda = src->gumAA[i][p]->lambda;
-	}
+  for(i = 0; i < GUM_NMODES; i++) {
+    for(p = 0; p < src->np; p++) {
+      dest->gumAA[i][p]->N      = src->gumAA[i][p]->N;
+      dest->gumAA[i][p]->L      = src->gumAA[i][p]->L;
+      dest->gumAA[i][p]->mu     = src->gumAA[i][p]->mu;
+      dest->gumAA[i][p]->lambda = src->gumAA[i][p]->lambda;
     }
+  }
   return eslOK;
 }
 

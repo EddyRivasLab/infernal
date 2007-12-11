@@ -1442,6 +1442,43 @@ predict_xsub(CM_t *cm, float *cm_vcalcs, float *cm_expsc, float *cp9_expsc)
   return status; /* NEVERREACHED */
 }
 
+/* Function: cm_CheckCompatibleWithHybridScanInfo()
+ * Date:     EPN, Tue Dec 11 09:49:29 2007
+ *
+ * Purpose:  Given a CM and hybrid scan info <hsi>, determine if a root <v_root_to_add> 
+ *           is compatible with <hsi>, that is no existing root in <hsi> has a subtree
+ *           that completely spans the subtree of <v_root_to_add>. This is true if
+ *           hsi->withinAA[hsi->startA[v]][hsi->startA[v_root_to_add]] is true for
+ *           some existing root v.     
+ * 
+ * Returns:  TRUE if v_root_to_add is compatible with hsi, FALSE if not.
+ */
+int
+cm_CheckCompatibleWithHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int v_root_to_add)
+{
+  int nd;
+  int v;
+  int i,j;
+  int v_left, v_right;
+  int k;
+  int M;
+  int lpos, rpos;
+  int prv_pos, nxt_pos;
+
+  M    = hsi->cp9_M;
+  i = hsi->startA[v_root_to_add];
+  if(hsi->v_isroot[v_root_to_add]) return FALSE; /* v_root_to_add is already a root */
+  for(v = 0; v < cm->M; v++) { 
+    if(hsi->v_isroot[v]) {
+      j = hsi->startA[v];
+      if(i==j)                return FALSE; /* v_root_to_add is in same start group as v, but we only allow one sub cm root per start group */
+      if(hsi->withinAA[j][i]) return FALSE;
+    }
+  }
+  return TRUE;
+}
+
+
 /*****************************************************************
  * Benchmark driver
  *****************************************************************/

@@ -471,6 +471,7 @@ extern int                predict_xsub(CM_t *cm, float *cm_vcalcs, float *cm_exp
 extern void               cm_CalcAvgHitLength(CM_t *cm, double beta, float **ret_hitlen);
 extern HybridScanInfo_t * cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs);
 extern int                cm_AddRootToHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int vroot_to_add);
+extern int                cm_CheckCompatibleWithHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int v_root_to_add);
 extern int                cm_ValidateHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi);
 extern void               cm_FreeHybridScanInfo(HybridScanInfo_t *hsi, CM_t *cm);
 
@@ -586,6 +587,7 @@ extern float      e_to_score (float E, double *mu, double *lambda);
 extern double     RJK_ExtremeValueE (float x, double mu, double lambda);
 extern float      MinScCutoff (CM_t *cm, SearchInfo_t *si, int n);
 extern int        CM2Gumbel_mode(CM_t *cm, int search_opts, int *ret_cm_gum_mode, int *ret_cp9_gum_mode);
+extern int        CM2FthrMode(CM_t *cm, char *errbuf, int search_opts, int *ret_fthr_mode);
 extern void       remove_hits_over_e_cutoff (CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_SQ *sq);
 extern int        GumModeIsLocal(int gum_mode);
 extern int        GumModeIsForCM(int gum_mode);
