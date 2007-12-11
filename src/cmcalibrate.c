@@ -149,10 +149,10 @@ static void  serial_master (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
-static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
-			    int emit_from_cm, float ***ret_vscAA, float **ret_cp9scA, float **ret_other_cp9scA);
+/*static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
+  int emit_from_cm, float ***ret_vscAA, float **ret_cp9scA, float **ret_other_cp9scA);*/
 static int process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
-				   float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, float **ret_hyb_scA);
+				   float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, float **ret_hyb_scA, int **ret_partA);
 static int process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
 				   float ***ret_vscAA, float **ret_cp9scA, float **ret_hybscA);
 
@@ -170,9 +170,9 @@ static void estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cf
 static int read_partition_file(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int update_avg_hit_len(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int switch_global_to_local(CM_t *cm, char *errbuf);
-static int predict_hmm_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_vit_cp9scA, float *fil_fwd_cp9scA, BestFilterInfo_t *bf);
+static int predict_hmm_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_vit_cp9scA, float *fil_fwd_cp9scA, int *fil_partA, BestFilterInfo_t *bf);
 static int predict_best_sub_cm_roots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **fil_vscAA, int **ret_best_sub_roots);
-static int predict_hybrid_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_hybscA, GumbelInfo_t **gum_hybA, BestFilterInfo_t *bf, int *ret_getting_faster);
+static int predict_hybrid_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_hybscA, int *fil_partA, GumbelInfo_t **gum_hybA, BestFilterInfo_t *bf, int *ret_getting_faster);
 
 /*static int calc_best_filter(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float **fil_vscAA, float *fil_vit_cp9scA, float *fil_fwd_cp9scA);*/
 //static int initialize_sub_filter_info(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm);
@@ -382,7 +382,6 @@ main(int argc, char **argv)
  *    cfg->pstart      - array of partition starts 
  *    cfg->r           - source of randomness
  *    cfg->tmpfile     - temp file for rewriting cm file
- *    cfg->avglen      - avg len of subseq at each subtree of CM, allocated only
  *                   
  * Errors in the MPI master here are considered to be "recoverable",
  * in the sense that we'll try to delay output of the error message
@@ -569,6 +568,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   float   *gum_cp9scA     = NULL; /*                [0..nseq-1] best cp9 score for each random seq */
   float   *fil_vit_cp9scA = NULL; /*                [0..nseq-1] best cp9 Viterbi score for each emitted seq */
   float   *fil_fwd_cp9scA = NULL; /*                [0..nseq-1] best cp9 Forward score for each emitted seq */
+  int     *fil_partA      = NULL; /*                [0..nseq-1] partition of CM emitted seq */
   float   *gum_hybscA     = NULL; /*                [0..nseq-1] best hybrid score for each random seq */
   float   *fil_hybscA     = NULL; /*                [0..nseq-1] best hybrid score for each emitted seq */
 
@@ -589,7 +589,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       if((status = initialize_cm(go, cfg, errbuf, cm))      != eslOK) cm_Fail(errbuf);
       if((status = initialize_cmstats(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
-      update_avg_hit_len(go, cfg, errbuf, cm);
+      if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
 
       for(gum_mode = 0; gum_mode < GUM_NMODES; gum_mode++) {
 
@@ -599,8 +599,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	
 	/* do we need to switch from glocal configuration to local? */
 	if(gum_mode > 0 && (! GumModeIsLocal(gum_mode-1)) && GumModeIsLocal(gum_mode)) {
-	  if((status = switch_global_to_local(cm, errbuf)) != eslOK) cm_Fail(errbuf);
-	  update_avg_hit_len(go, cfg, errbuf, cm);
+	  if((status = switch_global_to_local(cm, errbuf)) != eslOK)      cm_Fail(errbuf);
+	  if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
 	}
 	/* TEMPORARY BLOCK */
 	if(GumModeIsLocal(gum_mode)) {
@@ -660,7 +660,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  
 	    /* search emitted sequences to get filter thresholds for HMM and each candidate sub CM root state */
 	    ESL_DPRINTF1(("\n\ncalling process_filter_workunit to get HMM filter thresholds for p: %d mode: %d\n", p, gum_mode));
-	    if((status = process_filter_workunit (go, cfg, errbuf, cm, filN, &fil_vscAA, &fil_vit_cp9scA, &fil_fwd_cp9scA, NULL)) != eslOK) cm_Fail(errbuf);
+	    if(fil_partA != NULL) free(fil_partA);
+	    if((status = process_filter_workunit (go, cfg, errbuf, cm, filN, &fil_vscAA, &fil_vit_cp9scA, &fil_fwd_cp9scA, NULL, &fil_partA)) != eslOK) cm_Fail(errbuf);
 	    /* determine the 'best' way to filter using a heuristic:
 	     * 1. predict speedup for HMM-only filter
 	     * 2. add 'best' sub CM root independent of those already chosen, and predict speedup for a hybrid scan
@@ -669,7 +670,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	     */
 
 	    /* 1. predict speedup for HMM-only filter */
-	    if((status = predict_hmm_filter_speedup(go, cfg, errbuf, cm, fil_vit_cp9scA, fil_fwd_cp9scA, cfg->cmstatsA[cmi]->bfA[fthr_mode])) != eslOK) cm_Fail(errbuf);
+	    if((status = predict_hmm_filter_speedup(go, cfg, errbuf, cm, fil_vit_cp9scA, fil_fwd_cp9scA, fil_partA, cfg->cmstatsA[cmi]->bfA[fthr_mode])) != eslOK) cm_Fail(errbuf);
 	    DumpBestFilterInfo(cfg->cmstatsA[cmi]->bfA[fthr_mode]);
 	    
 	    /* if desired, try hybrid filters to see if better than HMM */
@@ -695,9 +696,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		    debug_print_gumbelinfo(cfg->gum_hybA[p]);
 		  }		
 		  /* get hybrid scores of CM emitted seqs */
-		  if((status = process_filter_workunit (go, cfg, errbuf, cm, filN, NULL, NULL, NULL, &fil_hybscA)) != eslOK) cm_Fail(errbuf);
+		  if(fil_partA != NULL) free(fil_partA);
+		  if((status = process_filter_workunit (go, cfg, errbuf, cm, filN, NULL, NULL, NULL, &fil_hybscA, &fil_partA)) != eslOK) cm_Fail(errbuf);
 		  /* determine predicted speedup of hybrid scanner */
-		  if((status = predict_hybrid_filter_speedup(go, cfg, errbuf, cm, fil_hybscA, cfg->gum_hybA, cfg->cmstatsA[cmi]->bfA[fthr_mode], &getting_faster)) != eslOK) cm_Fail(errbuf);
+		  if((status = predict_hybrid_filter_speedup(go, cfg, errbuf, cm, fil_hybscA, fil_partA, cfg->gum_hybA, cfg->cmstatsA[cmi]->bfA[fthr_mode], &getting_faster)) != eslOK) cm_Fail(errbuf);
 		  DumpBestFilterInfo(cfg->cmstatsA[cmi]->bfA[fthr_mode]);
 		}
 		else { /* root we were going to add was incompatible, skip it */
@@ -1356,12 +1358,13 @@ process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
  *           ret_vit_cp9scA - RETURN: [0..nseq-1] best Viterbi CP9 score for each seq
  *           ret_fwd_cp9scA - RETURN: [0..nseq-1] best Forward CP9 score for each seq
  *           ret_hybscA     - RETURN: [0..nseq-1] best Hybrid CM/CP9 score for each seq
+ *           ret_partA      - RETURN: [0..nseq-1] partition of each seq 
  *
  * Returns:  eslOK on success; dies immediately if some error occurs.
  */
 static int
 process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
-			float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, float **ret_hybscA)
+			float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, float **ret_hybscA, int **ret_partA)
 {
   int            status;
   int            mode; /* 1 or 2 determined by status of input args, as explained in 'Purpose' above. */
@@ -1370,6 +1373,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   float         *vit_cp9scA = NULL;  /* [0..i..nseq-1] best CP9 Viterbi score for each seq */
   float         *fwd_cp9scA = NULL;  /* [0..i..nseq-1] best CP9 Forward score for each seq */
   float         *hybscA     = NULL;  /* [0..i..nseq-1] best hybrid CM/CP9 scanner score for each seq */
+  int           *partA      = NULL;  /* [0..i..nseq-1] partitions of each seq */
   int            p;                  /* what partition we're in, not used unless emit_from_cm = TRUE */
   int            i, v;
   int            L;
@@ -1383,10 +1387,12 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   if     (ret_vscAA != NULL && ret_vit_cp9scA != NULL && ret_fwd_cp9scA != NULL && ret_hybscA == NULL) mode = 1; /* running CM CYK and CP9 Viterbi and Forward */
   else if(ret_vscAA == NULL && ret_vit_cp9scA == NULL && ret_fwd_cp9scA == NULL && ret_hybscA != NULL) mode = 2; /* running hybrid CM/CP9 scanner */
   else ESL_FAIL(eslEINCOMPAT, errbuf, "can't determine mode in process_filter_workunit.");
+  if (ret_partA == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ret_partA is NULL in process_filter_workunit.");
 
   ESL_DPRINTF1(("in process_filter_workunit nseq: %d mode: %d\n", nseq, mode));
 
   /* determine algs we'll use and allocate the score arrays we'll pass back */
+  ESL_ALLOC(partA, sizeof(int) * nseq); /* will hold partitions */
   if(mode == 1) {
     ESL_ALLOC(vit_cp9scA, sizeof(float) * nseq); /* will hold Viterbi scores */
     ESL_ALLOC(fwd_cp9scA, sizeof(float) * nseq); /* will hold Forward scores */
@@ -1413,6 +1419,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
       if(nfailed > 1000 * nseq) ESL_FAIL(eslERANGE, errbuf, "process_filter_workunit(), max number of failures (%d) reached while trying to emit %d seqs.\n", nfailed, nseq);
       if((status = cm_find_hit_above_cutoff(go, cfg, errbuf, cm, dsq, tr, L, cfg->cutoffA[p], &sc)) != eslOK) return status;
     }
+    partA[i] = p;
     ESL_DPRINTF1(("i: %d nfailed: %d cutoff: %.3f\n", i, nfailed, cfg->cutoffA[p]));
 
     /* search dsq with mode-specific search algs */
@@ -1447,6 +1454,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
       for(v = 0; v < cm->M; v++) vscAA[v][i] = cur_vscA[v];
     free(cur_vscA);
   }
+  *ret_partA = partA;
   if(ret_vscAA      != NULL)  *ret_vscAA      = vscAA;
   if(ret_vit_cp9scA != NULL)  *ret_vit_cp9scA = vit_cp9scA;
   if(ret_fwd_cp9scA != NULL)  *ret_fwd_cp9scA = fwd_cp9scA;
@@ -1729,17 +1737,6 @@ cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
 
  ERROR:
   return status;
-}
-
-/* Function: pick_stemwinners()
- * Date:     
- *
- * Returns:  eslOK on success;
- */
-int 
-pick_stemwinners(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, double *muA, double *lambdaA, float *avglen, int **ret_vwin, int *ret_nwin)
-{
-  return eslOK;
 }
 
 /* Function: get_random_dsq()
@@ -2145,19 +2142,27 @@ switch_global_to_local(CM_t *cm, char *errbuf)
  *           Viterbi, then update a BestFilterInfo_t object to 
  *           hold info on the faster of the two.
  *            
+ * Args:     go  - command line options
+ *           cfg - cmcalibrate's cfg object, mucho data (probably too much)
+ *           errbuf - for printing error messages
+ *           cm - the model
+ *           fil_vit_cp9scA - [0..i..filN-1] best Viterbi score in sequence i 
+ *           fil_fwd_cp9scA - [0..i..filN-1] best Foward score in sequence i 
+ *           fil_partA      - [0..i..filN-1] partition of sequence i 
+ *           bf             - BestFilterInfo_t object, we'll update this to hold info on a Viterbi or Forward filter strategy 
+ *
  * Returns:  Updates BestFilterInfo_t object <bf> to hold info on fastest HMM filter, Viterbi or Forward
  *           eslOK on success;
  *           Other easel status code on an error with errbuf filled with error message.
  */
 int
-predict_hmm_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_vit_cp9scA, float *fil_fwd_cp9scA, BestFilterInfo_t *bf)
+predict_hmm_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_vit_cp9scA, float *fil_fwd_cp9scA, int *fil_partA, BestFilterInfo_t *bf)
 {
   int    status;
-  float  *sorted_fil_vit_cp9scA;  /* sorted Viterbi scores, so we can easily choose a threshold */
-  float  *sorted_fil_fwd_cp9scA;  /* sorted Forward scores, so we can easily choose a threshold */
-  float  vit_sc, fwd_sc, sc;      /* a Viterbi, Forward, and temporary score, respectively */
+  float *sorted_fil_vit_EA;       /* sorted Viterbi E-values, so we can easily choose a threshold */
+  float *sorted_fil_fwd_EA;       /* sorted Forward E-values, so we can easily choose a threshold */
   float  vit_E, fwd_E, E, tmp_E;  /* a Viterbi, Forward, and 2 temporary E values, respectively  */
-  int    cp9_vit_mode, cp9_fwd_mode, mode; /* a Viterbi, Forward, and temporary Gumbel mode, respectively  */
+  int    cp9_vit_mode, cp9_fwd_mode; /* a Viterbi, Forward Gumbel mode, respectively  */
   float  logsum_correction;       /* for correcting speedup calculation b/c Forward is slower than Viterbi due to logsums */
   int    evalue_L;                /* database length used for calcing E-values in CP9 gumbels from cfg->cmstats */
   float  fil_calcs;               /* number of million dp calcs predicted for the HMM filter scan */
@@ -2171,10 +2176,10 @@ predict_hmm_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
   float  vit_spdup, fwd_spdup, spdup; /* predicted speedups for Viterbi and Forward, and a temporary one */
   int    i, p;                    /* counters */
   int    cmi = cfg->ncm-1;        /* CM index we're on */
-  int   Fidx;                     /* index in sorted scores that threshold will be set at (1-F) * N */
-  float cm_eval = esl_opt_GetReal(go, "--eval"); /* E-value cutoff for accepting CM hits for filter test */
-  float F = esl_opt_GetReal(go, "--F"); /* fraction of CM seqs we require filter to let pass */
-  int   filN  = esl_opt_GetInteger(go, "--filN"); /* number of sequences we emitted from CM for filter test */
+  int    Fidx;                     /* index in sorted scores that threshold will be set at (1-F) * N */
+  float  cm_eval = esl_opt_GetReal(go, "--eval"); /* E-value cutoff for accepting CM hits for filter test */
+  float  F = esl_opt_GetReal(go, "--F"); /* fraction of CM seqs we require filter to let pass */
+  int    filN  = esl_opt_GetInteger(go, "--filN"); /* number of sequences we emitted from CM for filter test */
 
   cp9_vit_mode = (cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? GUM_CP9_LV : GUM_CP9_GV;
   cp9_fwd_mode = (cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? GUM_CP9_LF : GUM_CP9_GF;
@@ -2196,37 +2201,31 @@ predict_hmm_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
 
   Fidx  = (int) ((1. - F) * (float) filN);
 
-  /* allocate arrays for sorted scores */
-  ESL_ALLOC(sorted_fil_vit_cp9scA, sizeof(float) * filN);
-  esl_vec_FCopy(fil_vit_cp9scA, filN, sorted_fil_vit_cp9scA); 
-  esl_vec_FSortIncreasing(sorted_fil_vit_cp9scA, filN);
-  vit_sc = sorted_fil_vit_cp9scA[Fidx];
-
-  ESL_ALLOC(sorted_fil_fwd_cp9scA, sizeof(float) * filN);
-  esl_vec_FCopy(fil_fwd_cp9scA, filN, sorted_fil_fwd_cp9scA); 
-  esl_vec_FSortIncreasing(sorted_fil_fwd_cp9scA, filN);
-  fwd_sc = sorted_fil_fwd_cp9scA[Fidx];
-
-  for(i = 0; i < filN; i++) 
-    ESL_DPRINTF1(("HMM i: %4d vit sc: %10.4f fwd sc: %10.4f\n", i, sorted_fil_vit_cp9scA[i], sorted_fil_fwd_cp9scA[i]));
+  /* convert bit scores to E-values and sort them */
+  ESL_ALLOC(sorted_fil_vit_EA, sizeof(float) * filN);
+  ESL_ALLOC(sorted_fil_fwd_EA, sizeof(float) * filN);
+  for(i = 0; i < filN; i++) { 
+    p = fil_partA[i];
+    sorted_fil_vit_EA[i] = RJK_ExtremeValueE(fil_vit_cp9scA[i], cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][p]->mu, cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][p]->lambda); 
+    sorted_fil_fwd_EA[i] = RJK_ExtremeValueE(fil_fwd_cp9scA[i], cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][p]->mu, cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][p]->lambda); 
+  }
+  esl_vec_FSortDecreasing(sorted_fil_vit_EA, filN);
+  vit_E = sorted_fil_vit_EA[Fidx];
+  esl_vec_FSortDecreasing(sorted_fil_fwd_EA, filN);
+  fwd_E = sorted_fil_fwd_EA[Fidx];
+  
+  for(i = 0; i < filN; i++) ESL_DPRINTF1(("HMM i: %4d vit E: %10.4f fwd E: %10.4f\n", i, sorted_fil_vit_EA[i], sorted_fil_fwd_EA[i]));
 
   /* calculate speedup for Viterbi and Forward */
   for(i = 0; i < 2; i++) { /* silly loop, only used to avoid repeating the code block below that starts with 'E = ' and ends with 'spdup = ' */
-    if(i == 0) { mode = cp9_vit_mode; sc = vit_sc; logsum_correction = 1.; } /* Viterbi */
-    if(i == 1) { mode = cp9_fwd_mode; sc = fwd_sc; logsum_correction = 2.; } /* Forward */
+    if(i == 0) { E = vit_E; logsum_correction = 1.; } /* Viterbi */
+    if(i == 1) { E = fwd_E; logsum_correction = 2.; } /* Forward */
     /* logsum_correction corrects for fact that Forward takes about 2X as long as Viterbi, b/c it requires logsum operations instead of ESL_MAX's,
-     * so we factor this in when calc'ing the predicted speedup.
-     */
+     * so we factor this in when calc'ing the predicted speedup. */
 
-    /* set E as E-value for sc from partition that gives sc the lowest E-value (conservative, sc will be at least as significant as E across all partitions) */
-    E  = RJK_ExtremeValueE(sc, cfg->cmstatsA[cmi]->gumAA[mode][0]->mu, cfg->cmstatsA[cmi]->gumAA[mode][0]->lambda); 
-    for(p = 1; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) {
-      tmp_E = RJK_ExtremeValueE(sc, cfg->cmstatsA[cmi]->gumAA[mode][p]->mu, cfg->cmstatsA[cmi]->gumAA[mode][p]->lambda); 
-      if(tmp_E < E) E = tmp_E;
-    }
-    /* E is now expected number of CP9 Viterbi or Forward hits with sc at least sc in sequence DB of length evalue_L */
+    /* E is expected number of CP9 Viterbi or Forward hits with score above threshold (Fidx'th best score) sequence DB of length evalue_L */
     E *= cfg->dbsize / evalue_L;
-    /* E is now expected number of CP9 Viterbi or Forward hits with sc at least sc in sequence DB of length cfg->dbsize */
+    /* E is now expected number of CP9 Viterbi or Forward hits with score above threshold (Fidx'th best score) sequence DB of length cfg->dbsize */
     fil_calcs  = cfg->hsi->full_cp9_ncalcs; /* fil_calcs is millions of DP calcs for CP9 scan of 1 residue */
     fil_calcs *= cfg->dbsize;               /* fil_calcs is millions of DP calcs for CP9 scan of length cfg->dbsize */
     surv_calcs = E *     /* number of hits expected to survive filter */
@@ -2242,21 +2241,21 @@ predict_hmm_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
       vit_fil_calcs = fil_calcs * logsum_correction;
       vit_fil_plus_surv_calcs = fil_plus_surv_calcs;
       vit_E = E;
-      printf("HMM(vit) sc: %10.4f E: %10.4f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", vit_sc, vit_E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, vit_spdup);
+      printf("HMM(vit) E: %10.4f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", vit_E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, vit_spdup);
     }
     if(i == 1) { 
       fwd_spdup = spdup; 
       fwd_fil_calcs = fil_calcs * logsum_correction;
       fwd_fil_plus_surv_calcs = fil_plus_surv_calcs;
       fwd_E = E;
-      printf("HMM(fwd) sc: %10.4f E: %10.4f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", fwd_sc, fwd_E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, fwd_spdup);
+      printf("HMM(fwd) E: %10.4f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", fwd_E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, fwd_spdup);
     }
   }
   if(vit_spdup > fwd_spdup) { /* Viterbi is winner */
-    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_VITERBI, vit_sc, vit_E, vit_fil_calcs, vit_fil_plus_surv_calcs)) != eslOK) return status;
+    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_VITERBI, vit_E, vit_fil_calcs, vit_fil_plus_surv_calcs)) != eslOK) return status;
   }
   else { /* Forward is winner */
-    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_FORWARD, fwd_sc, fwd_E, vit_fil_calcs, vit_fil_plus_surv_calcs)) != eslOK) return status;
+    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_FORWARD, fwd_E, vit_fil_calcs, vit_fil_plus_surv_calcs)) != eslOK) return status;
   }
   return eslOK;
 
@@ -2273,6 +2272,15 @@ predict_hmm_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
  *           BestFilterInfo_t object <bf>, update <bf> to hold info 
  *           on the hybrid filter.
  *            
+ * Args:     go  - command line options
+ *           cfg - cmcalibrate's cfg object, mucho data (probably too much)
+ *           errbuf - for printing error messages
+ *           cm - the model
+ *           fil_hybscA     - [0..i..filN-1] best Foward score in sequence i 
+ *           gum_hybA       - [0..cfg->np]   hybrid gumbels for each partition
+ *           fil_partA      - [0..i..filN-1] partition of sequence i 
+ *           bf             - BestFilterInfo_t object, we'll update this to hold info on a Viterbi or Forward filter strategy 
+ * 
  * Returns:  possibly updates BestFilterInfo_t object <bf> to hold info on hybrid filter
  *           eslOK on success;
  *           Other easel status code on an error with errbuf filled with error message.
@@ -2280,12 +2288,11 @@ predict_hmm_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
  *           FALSE if not.
  */
 int
-predict_hybrid_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_hybscA, GumbelInfo_t **gum_hybA, BestFilterInfo_t *bf, int *ret_getting_faster)
+predict_hybrid_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_hybscA, int *fil_partA, GumbelInfo_t **gum_hybA, BestFilterInfo_t *bf, int *ret_getting_faster)
 {
   int    status;
-  float  *sorted_fil_hybscA;      /* sorted hybrid scores, so we can easily choose a threshold */
-  float  sc;                      /* a bit score */
-  float  E, tmp_E;                /* E-values */
+  float  *sorted_fil_hybEA;       /* sorted hybrid E-values, so we can easily choose a threshold */
+  float  E;                       /* E-value */
   int    evalue_L;                /* length used for calc'ing E values */
   float  fil_calcs;               /* number of million dp calcs predicted for the hybrid scan */
   float  surv_calcs;              /* number of million dp calcs predicted for the CM scan of filter survivors */
@@ -2311,25 +2318,21 @@ predict_hybrid_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *er
 
   Fidx  = (int) ((1. - F) * (float) filN);
 
-  /* allocate and fill array for sorted scores */
-  ESL_ALLOC(sorted_fil_hybscA, sizeof(float) * filN);
-  esl_vec_FCopy(fil_hybscA, filN, sorted_fil_hybscA); 
-  esl_vec_FSortIncreasing(sorted_fil_hybscA, filN);
-  sc = sorted_fil_hybscA[Fidx];
+  /* convert bit scores to E-values and sort them */
+  ESL_ALLOC(sorted_fil_hybEA, sizeof(float) * filN);
+  for(i = 0; i < filN; i++) { 
+    p = fil_partA[i];
+    sorted_fil_hybEA[i] = RJK_ExtremeValueE(fil_hybscA[i], gum_hybA[p]->mu, gum_hybA[p]->lambda); 
+  }
+  esl_vec_FSortDecreasing(sorted_fil_hybEA, filN);
+  E = sorted_fil_hybEA[Fidx];
 
-  for(i = 0; i < filN; i++) 
-    ESL_DPRINTF1(("HYBRID i: %4d sc: %10.4f\n", i, sorted_fil_hybscA[i]));
+  for(i = 0; i < filN; i++) ESL_DPRINTF1(("HYBRID i: %4d E: %10.4f\n", i, sorted_fil_hybEA[i]));
   
   /* calculate speedup */
-  /* set E as E-value for sc from partition that gives sc the lowest E-value (conservative, sc will be at least as significant as E across all partitions) */
-  E  = RJK_ExtremeValueE(sc, gum_hybA[0]->mu, gum_hybA[0]->lambda); 
-  for(p = 1; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) {
-    tmp_E = RJK_ExtremeValueE(sc, gum_hybA[p]->mu, gum_hybA[p]->lambda); 
-    if(tmp_E < E) E = tmp_E;
-  }
-  /* E is now expected number of hybrid hits with sc at least sc in sequence DB of length evalue_L */
+  /* E is expected number of hybrid hits with score above threshold (Fidx'th best score) at least sc in sequence DB of length evalue_L */
   E *= cfg->dbsize / evalue_L;
-  /* E is now expected number of CP9 Viterbi or Forward hits with sc at least sc in sequence DB of length cfg->dbsize */
+  /* E is now expected number of CP9 Viterbi or Forward hits with score above threshold in sequence DB of length cfg->dbsize */
   fil_calcs  = cfg->hsi->hybrid_ncalcs; /* fil_calcs is millions of DP calcs for hybrid scan of 1 residue */
   fil_calcs *= cfg->dbsize;             /* fil_calcs is millions of DP calcs for hybrid scan of length cfg->dbsize */
   surv_calcs = E *     /* number of hits expected to survive filter */
@@ -2340,10 +2343,10 @@ predict_hybrid_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *er
   nonfil_calcs *= cfg->dbsize;                  /* now nonfil-calcs corresponds to cfg->dbsize */
   spdup = nonfil_calcs / fil_plus_surv_calcs;
   
-  printf("HYBRID sc: %10.4f E: %10.4f filt: %10.4f surv: %10.4f sum: %10.4f full CM: %10.4f spdup %10.4f\n", sc, E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, spdup);
+  printf("HYBRID E: %10.4f filt: %10.4f surv: %10.4f sum: %10.4f full CM: %10.4f spdup %10.4f\n", E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, spdup);
 
   if(spdup > (bf->full_cm_ncalcs / bf->fil_plus_surv_ncalcs)) { /* hybrid is best filter strategy so far */
-    if((status = SetBestFilterInfoHybrid(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, sc, E, fil_calcs, fil_plus_surv_calcs, cfg->hsi, cfg->cmstatsA[cfg->ncm-1]->np, gum_hybA)) != eslOK) return status;
+    if((status = SetBestFilterInfoHybrid(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, E, fil_calcs, fil_plus_surv_calcs, cfg->hsi, cfg->cmstatsA[cfg->ncm-1]->np, gum_hybA)) != eslOK) return status;
     *ret_getting_faster = TRUE;
   }
   else *ret_getting_faster = FALSE;

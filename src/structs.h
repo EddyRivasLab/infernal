@@ -1120,18 +1120,29 @@ typedef struct hybridscaninfo_s {
  * 
  * Information for CM searches, including info on filters.  
  * <nrounds> holds number of rounds of filtering.  
- * <search_opts>, <cutoff>, <stype>, and <hsi>
+ * <search_opts>, <sc_cutoff>, <e_cutoff> <stype>, and <hsi>
  * are all arrays of length <nrounds + 1>, running [0..nrounds].  
  * The final value in all those arrays (index <nrounds>) corresponds to
  * the final scan, when filtering is finished.  A special case is when
  * <nrounds> == 0, in this case we're not filtering.
+ *
+ * A note about the mandatory use of two cutoffs <sc_cutoff> and <e_cutoff>
+ * If <cutoff_type> == E_CUTOFF, <sc_cutoff> is the minimal bit score
+ * that satisfies the E_CUTOFF for all partitions, this is used for
+ * reporting hits in SearchDispath(), but the final cutoff used is still
+ * <e_cutoff>.
+ * If <cutoff_type> == SCORE_CUTOFF, <e_cutoff> is set to -1., and never
+ * used. It should be considered invalid.
+ *
  */                                                                                                      
 typedef struct searchinfo_s {
   int    nrounds;            /* number of rounds of filtering, if 0, we're not filtering */
   int   *stype;              /* [0..n..nrounds] search 'type' "SEARCH_WITH_HMM", "SEARCH_WITH_HYBRID", or "SEARCH_WITH_CM" */
   int   *search_opts;        /* [0..n..nrounds] search options for each round of filtering, including the final round */
   int   *cutoff_type;        /* [0..n..nrounds] SCORE_CUTOFF or E_CUTOFF */
-  float *cutoff;             /* [0..n..nrounds] cutoff threshold for each round, bit sc if cutoff_type[n] == SCORE_CUTOFF, else E-value */
+  float *sc_cutoff;          /* [0..n..nrounds] bit score cutoff threshold for each round, always valid, 
+			      * if cutoff_type[n] == E_CUTOFF this is minimal bit score across all partitions for e_cutoff */
+  float *e_cutoff;           /* [0..n..nrounds] E-value cutoff threshold for each round, ONLY valid if if cutoff_type[n] == E_CUTOFF */
   ScanMatrix_t     **smx;    /* [0..n..nrounds] scanning DP matrix for each round, for final round (n==nrounds) si->smx[nrounds] == cm->smx */
   HybridScanInfo_t **hsi;    /* [0..n..nrounds] hybrid scan info for SEARCH_WITH_HYBRID rounds, NULL if stype[f] != SEARCH_WITH_HYBRID */
 } SearchInfo_t;
@@ -1166,8 +1177,7 @@ typedef struct bestfilterinfo_s {
   int           db_size;             /* db size used to calculate Gum mu for *_eval calculations */
   int           is_valid;            /* TRUE if values have been set, FALSE if not */
   int           ftype;               /* FILTER_WITH_HMM_VITERBI, FILTER_WITH_HMM_FORWARD, or FILTER_WITH_HYBRID */
-  float         sc_cutoff;           /* cutoff bit score threshold for filter */
-  float         e_cutoff;            /* cutoff E-value threshold for filter */
+  float         e_cutoff;            /* cutoff E-value threshold for filter (we can use this and db_size and Gumbel to get bit score for each partition) */
   float         full_cm_ncalcs;      /* millions of DP calcs for full CM scan of length db_size */
   float         fil_ncalcs;          /* millions of DP calcs for filter scan of length db_size */
   float         fil_plus_surv_ncalcs;/* millions of DP calcs for filter scan + full CM scan of survivors of length db_size */

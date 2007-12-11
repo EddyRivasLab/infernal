@@ -750,7 +750,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  char *apostcode1;   /* aligned posterior decode array */
 	  char *apostcode2;   /* aligned posterior decode array */
 	  if(seqs_to_aln->postcode1 == NULL || seqs_to_aln->postcode2 == NULL) 
-	    cm_Fail("ERROR --post enabled, but ActuallyAlignTargets() did not return post codes.\n");
+	    cm_Fail("ERROR --post enabled, but DispatchAlignments() did not return post codes.\n");
 
 	  imax = seqs_to_aln->nseq - 1;
 	  if(cfg->withmsa != NULL) imax -= cfg->withmsa->nseq;
@@ -824,10 +824,10 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 {
   int status;
 
-  if((status = ActuallyAlignTargets(cm, errbuf, seqs_to_aln,
-				    NULL, NULL, 0,  /* we're not aligning search hits */
-				    esl_opt_GetInteger(go, "--banddump"),
-				    esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL)) != eslOK) goto ERROR;
+  if((status = DispatchAlignments(cm, errbuf, seqs_to_aln,
+				  NULL, NULL, 0,  /* we're not aligning search hits */
+				  esl_opt_GetInteger(go, "--banddump"),
+				  esl_opt_GetInteger(go, "--dlev"), esl_opt_GetBoolean(go, "-q"), NULL)) != eslOK) goto ERROR;
   return eslOK;
   
  ERROR:

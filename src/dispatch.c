@@ -4,8 +4,8 @@
 /* dispatch.c
  * 
  * The two all-important dispatch functions:
- * ActuallySearchTarget() calls appropriate DP search functions.
- * ActuallyAlignTargets() calls appropriate DP alignment functions.
+ * DispatchSearch()     calls appropriate DP search functions.
+ * DispatchAlignments() calls appropriate DP alignment functions.
  * 
  * EPN, Wed Dec  6 06:11:46 2006
  */
@@ -30,7 +30,7 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 
 /* 
- * Function: ActuallySearchTarget()
+ * Function: DispatchSearch()
  * Incept:   EPN, Wed Nov 14 10:43:16 2007
  *
  * Purpose:  Given a CM and a sequence, call the correct search algorithm
@@ -50,7 +50,7 @@
  *
  * Returns: eslOK on success.
  */
-int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int j0, search_results_t **results, int *ret_flen, float *ret_sc)
+int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int j0, search_results_t **results, int *ret_flen, float *ret_sc)
 {
   int               status;          /* easel status code */
   float             sc;              /* score of best hit in seq */
@@ -72,23 +72,23 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i
   search_results_t *round_results;   /* search_results for this round */
 
   /* Contract checks */
-  if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), CMH_BITS flag down.\n");
-  if(si == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): search info cm->si is NULL.\n");
-  if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): dsq is NULL.");
-  if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): CMH_BITS flag down.\n");
-  if(sround > si->nrounds)             ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): current round %d is greater than cm->si->nrounds: %d\n", sround, si->nrounds);
-  if(results[sround] == NULL)          ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): results for current round %d are NULL\n", sround);
+  if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), CMH_BITS flag down.\n");
+  if(si == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): search info cm->si is NULL.\n");
+  if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): dsq is NULL.");
+  if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): CMH_BITS flag down.\n");
+  if(sround > si->nrounds)             ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): current round %d is greater than cm->si->nrounds: %d\n", sround, si->nrounds);
+  if(results[sround] == NULL)          ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): results for current round %d are NULL\n", sround);
 
-  ESL_DPRINTF1(("In ActuallySearchTarget(), round: %d\n", sround));
+  ESL_DPRINTF1(("In DispatchSearch(), round: %d\n", sround));
 
   flen = (j0-i0+1);
 
   /* TEMPORARY */
-  if(si->stype[sround] == SEARCH_WITH_HYBRID) cm_Fail("ActuallySearchTarget, hybrid filtering not yet implemented.\n");
+  if(si->stype[sround] == SEARCH_WITH_HYBRID) cm_Fail("DispatchSearch, hybrid filtering not yet implemented.\n");
 
   /* copy info for this round from SearchInfo fi */
   cm->search_opts = si->search_opts[sround]; 
-  cutoff          = si->cutoff[sround];
+  cutoff          = si->sc_cutoff[sround]; /* this will be a bit score regardless of whether the cutoff_type == E_CUTOFF */
   stype           = si->stype[sround];
   smx             = si->smx[sround]; /* may be NULL */
   hsi             = si->hsi[sround]; /* may be NULL */
@@ -98,12 +98,12 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i
   /* SEARCH_WITH_HMM section */
   if(stype == SEARCH_WITH_HMM) { 
     /* some SEARCH_WITH_HMM specific contract checks */
-    if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), trying to use CP9 HMM that is NULL.\n");
-    if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
-    if(smx != NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), round %d, SEARCH_WITH_HMM but smx != NULL.\n", sround);
-    if(hsi != NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), round %d, SEARCH_WITH_HMM but hsi != NULL.\n", sround);
+    if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), trying to use CP9 HMM that is NULL.\n");
+    if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
+    if(smx != NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round %d, SEARCH_WITH_HMM but smx != NULL.\n", sround);
+    if(hsi != NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round %d, SEARCH_WITH_HMM but hsi != NULL.\n", sround);
     if(! (cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD))
-      ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), search type for this round is SEARCH_WITH_HMM, but CM_SEARCH_HMMVITERBI and CM_SEARCH_HMMFORWARD flags are both down.");
+      ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), search type for this round is SEARCH_WITH_HMM, but CM_SEARCH_HMMVITERBI and CM_SEARCH_HMMFORWARD flags are both down.");
 
     search_results_t *fwd_results;
     /* Scan the (sub)seq in forward direction w/Viterbi or Forward, getting j end points of hits above cutoff */
@@ -160,17 +160,17 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i
   /* end of SEARCH_WITH_HMM section */
   else if(stype == SEARCH_WITH_HYBRID) { 
     /* contract check */
-    if(smx != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), round %d, SEARCH_WITH_HYBRID but smx != NULL.\n", sround);
-    if(hsi == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): current round %d is type SEARCH_WITH_HYBRID, but hsi is NULL\n", sround);
+    if(smx != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round %d, SEARCH_WITH_HYBRID but smx != NULL.\n", sround);
+    if(hsi == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): current round %d is type SEARCH_WITH_HYBRID, but hsi is NULL\n", sround);
     if((status = cm_cp9_HybridScan(cm, errbuf, cm->cp9_mx, dsq, hsi, i0, j0, hsi->W, cutoff, round_results, 
 				   NULL, NULL, /* don't return best score at each posn, and best scoring posn */
 				   &sc)) != eslOK) return status;
   }  
   else { /* stype == SEARCH_WITH_CM */
     ESL_DASSERT1((stype == SEARCH_WITH_CM));
-    if(smx == NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), round %d, SEARCH_WITH_CM but smx == NULL.\n", sround);
-    if(sround == si->nrounds && smx != cm->smx) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(), final round %d, SEARCH_WITH_CM but smx != cm->smx.\n", sround);
-    if(hsi != NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallySearchTarget(): round %d is type SEARCH_WITH_CM, but hsi is NULL\n", sround);
+    if(smx == NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round %d, SEARCH_WITH_CM but smx == NULL.\n", sround);
+    if(sround == si->nrounds && smx != cm->smx) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), final round %d, SEARCH_WITH_CM but smx != cm->smx.\n", sround);
+    if(hsi != NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): round %d is type SEARCH_WITH_CM, but hsi is NULL\n", sround);
 
     if(cm->search_opts & CM_SEARCH_HBANDED) {
       if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status; 
@@ -216,12 +216,12 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i
 	}
       }
       /* next round: research this chunk that survived the filter */
-      if((status = ActuallySearchTarget(cm, errbuf, (sround+1), dsq, i, j, results, NULL, NULL)) != eslOK) return status;
+      if((status = DispatchSearch(cm, errbuf, (sround+1), dsq, i, j, results, NULL, NULL)) != eslOK) return status;
     }
   }
   else { /* we're done filtering, and we're done searching, get alignments if nec */
     if((round_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN))) {
-      if((status = ActuallyAlignTargets(cm, errbuf, NULL, 
+      if((status = DispatchAlignments(cm, errbuf, NULL, 
 					dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
 					0, 0, 0, NULL)) != eslOK) return status;
     }
@@ -231,7 +231,7 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i
 }  
 
 /* 
- * Function: ActuallyAlignTargets
+ * Function: DispatchAlignments
  * Incept:   EPN, Thu Nov 15 11:35:23 2007
  *
  * Purpose:  Given a CM and sequences, do preliminaries, call the correct 
@@ -270,7 +270,7 @@ int ActuallySearchTarget(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i
  *           if(!eslOK) errbuf is filled with informative error message
  */
 int
-ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
+DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
 		     int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r)
 {
   int status;
@@ -353,30 +353,30 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   int do_hmmsafe   = FALSE;   /* TRUE to realign seqs with HMM banded parses < 0. bits (only works if !do_optacc && !do_post && do_hbanded)*/
 
   /* Contract check */
-  if(!(cm->flags & CMH_BITS))                            ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), CMH_BITS flag down.\n");
-  if(r == NULL && (cm->align_opts & CM_ALIGN_SAMPLE))    ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), no source of randomness, but CM_ALIGN_SAMPLE alignment option on.\n");
-  if(r != NULL && (!(cm->align_opts & CM_ALIGN_SAMPLE))) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), we have a source of randomness, but CM_ALIGN_SAMPLE alignment option off.\n");
-  if((cm->align_opts & CM_ALIGN_POST)      && (cm->align_opts & CM_ALIGN_HMMVITERBI)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), CM_ALIGN_POST and CM_ALIGN_HMMVITERBI options are incompatible.\n");
-  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_HMMVITERBI)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_HMMVITERBI options are incompatible.\n");
-  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_POST))       ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), CM_ALIGN_SCOREONLY and CM_ALIGN_POST options are incompatible.\n");
+  if(!(cm->flags & CMH_BITS))                            ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), CMH_BITS flag down.\n");
+  if(r == NULL && (cm->align_opts & CM_ALIGN_SAMPLE))    ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), no source of randomness, but CM_ALIGN_SAMPLE alignment option on.\n");
+  if(r != NULL && (!(cm->align_opts & CM_ALIGN_SAMPLE))) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), we have a source of randomness, but CM_ALIGN_SAMPLE alignment option off.\n");
+  if((cm->align_opts & CM_ALIGN_POST)      && (cm->align_opts & CM_ALIGN_HMMVITERBI)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), CM_ALIGN_POST and CM_ALIGN_HMMVITERBI options are incompatible.\n");
+  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_HMMVITERBI)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), CM_ALIGN_SCOREONLY and CM_ALIGN_HMMVITERBI options are incompatible.\n");
+  if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_POST))       ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), CM_ALIGN_SCOREONLY and CM_ALIGN_POST options are incompatible.\n");
 
   /* determine mode */
   if     (seqs_to_aln != NULL && (dsq == NULL && search_results == NULL))  sq_mode = TRUE;
   else if(seqs_to_aln == NULL && (dsq != NULL && search_results != NULL)) dsq_mode = TRUE;
-  else   ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), can't determine mode (sq_mode or dsq_mode).\n");
+  else   ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), can't determine mode (sq_mode or dsq_mode).\n");
 
-  if( sq_mode && (seqs_to_aln->sq        == NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in sq_mode, seqs_to_aln->sq is NULL.\n");
-  if( sq_mode && (seqs_to_aln->tr        != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in sq_mode, seqs_to_aln->tr is non-NULL.\n");
-  if( sq_mode && (seqs_to_aln->cp9_tr    != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in sq_mode, seqs_to_aln->cp9_tr is non-NULL.\n");
-  if( sq_mode && (seqs_to_aln->postcode1 != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode1 is non-NULL.\n");
-  if( sq_mode && (seqs_to_aln->postcode2 != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in sq_mode, seqs_to_aln->postcode2 is non-NULL.\n");
-  if( sq_mode && (seqs_to_aln->sc        != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in sq_mode, seqs_to_aln->sc is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->sq        == NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in sq_mode, seqs_to_aln->sq is NULL.\n");
+  if( sq_mode && (seqs_to_aln->tr        != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in sq_mode, seqs_to_aln->tr is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->cp9_tr    != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in sq_mode, seqs_to_aln->cp9_tr is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->postcode1 != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in sq_mode, seqs_to_aln->postcode1 is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->postcode2 != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in sq_mode, seqs_to_aln->postcode2 is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->sc        != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in sq_mode, seqs_to_aln->sc is non-NULL.\n");
   
-  if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMVITERBI)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_HMMVITERBI option on.\n");
-  if(dsq_mode && (cm->align_opts & CM_ALIGN_INSIDE))     ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_INSIDE option on.\n");
-  if(dsq_mode && (cm->align_opts & CM_ALIGN_SAMPLE))     ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in dsq_mode, CM_ALIGN_SAMPLE option on.\n");
-  if(dsq_mode && search_results == NULL)                 ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in dsq_mode, search_results are NULL.\n");
-  if(dsq_mode && (first_result > search_results->num_results)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), in dsq_mode, first_result: %d > search_results->num_results: %d\n", first_result, search_results->num_results);
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMVITERBI)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in dsq_mode, CM_ALIGN_HMMVITERBI option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_INSIDE))     ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in dsq_mode, CM_ALIGN_INSIDE option on.\n");
+  if(dsq_mode && (cm->align_opts & CM_ALIGN_SAMPLE))     ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in dsq_mode, CM_ALIGN_SAMPLE option on.\n");
+  if(dsq_mode && search_results == NULL)                 ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in dsq_mode, search_results are NULL.\n");
+  if(dsq_mode && (first_result > search_results->num_results)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in dsq_mode, first_result: %d > search_results->num_results: %d\n", first_result, search_results->num_results);
 
   /* save a copy of the align_opts we entered function with, we may change some of these for
    * individual target sequences, and we want to be able to change them back
@@ -398,7 +398,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   if(cm->align_opts  & CM_ALIGN_HMMSAFE)    do_hmmsafe   = TRUE;
 
   /* another contract check */
-  if((do_sample + do_inside + do_post + do_hmmonly + do_scoreonly) > 1) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), exactly 0 or 1 of the following must be TRUE (== 1):\n\tdo_sample = %d\n\tdo_inside = %d\n\t do_post = %d\n\tdo_hmmonly = %d\n\tdo_scoreonly = %d\n", do_sample, do_inside, do_post, do_hmmonly, do_scoreonly);
+  if((do_sample + do_inside + do_post + do_hmmonly + do_scoreonly) > 1) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), exactly 0 or 1 of the following must be TRUE (== 1):\n\tdo_sample = %d\n\tdo_inside = %d\n\t do_post = %d\n\tdo_hmmonly = %d\n\tdo_scoreonly = %d\n", do_sample, do_inside, do_post, do_hmmonly, do_scoreonly);
 
   if(debug_level > 0) {
     printf("do_local    : %d\n", do_local);
@@ -453,9 +453,9 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   watch = esl_stopwatch_Create();
 
   if(do_hbanded || do_sub) { /* We need a CP9 HMM to build sub_cms */
-    if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets, trying to use CP9 HMM that is NULL\n");
-    if(cm->cp9b == NULL)                   ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets, cm->cp9b is NULL\n");
-    if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
+    if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, trying to use CP9 HMM that is NULL\n");
+    if(cm->cp9b == NULL)                   ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, cm->cp9b is NULL\n");
+    if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
     
     /* Keep data for the original CM safe; we'll be doing
      * pointer swapping to ease the sub_cm alignment implementation. */
@@ -569,7 +569,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
 			spos, epos,         /* first and last col of structure kept in the sub_cm  */
 			&submap,            /* maps from the sub_cm to cm and vice versa           */
 			debug_level)))      /* print or don't print debugging info                 */
-	ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), unexpected error building a sub CM for seq %d.", i);
+	ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), unexpected error building a sub CM for seq %d.", i);
       /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded), this will also:  */
       /* (4) Build a new CP9 HMM from the sub CM. */
       ConfigCM(sub_cm, NULL, NULL);
@@ -673,8 +673,8 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
 	 * this should never happen in we're doing optimal accuracy or appending posteriors, due to option checking in cmalign, cmscore,
 	 * but we check here to be safe */
 	if(cm->align_opts & CM_ALIGN_HMMSAFE && sc < 0.) { 
-	  if(do_post)   ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_POST.\n");
-	  if(do_optacc) ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_OPTACC.\n");
+	  if(do_post)   ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_POST.\n");
+	  if(do_optacc) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_OPTACC.\n");
 	  tmpsc = sc;
 	  if(!silent_mode) printf("\n%s HMM banded parse had a negative score, realigning with non-banded CYK.\n", seqs_to_aln->sq[i]->name);
 	  FreeParsetree(*cur_tr);
@@ -709,9 +709,9 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
     /* check parsetree score if cm->align_opts & CM_ALIGN_CHECKPARSESC */
     if((cm->align_opts & CM_ALIGN_CHECKPARSESC) && (!(cm->flags & CM_IS_SUB))) { 
       if(do_optacc) 
-	ESL_FAIL(eslEINCOMPAT, errbuf, "ActuallyAlignTargets(), cm->align_opts CM_ALIGN_CHECKPARSESC, is on, but incompatible with another enabled option: CM_ALIGN_OPTACC.\n");
+	ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), cm->align_opts CM_ALIGN_CHECKPARSESC, is on, but incompatible with another enabled option: CM_ALIGN_OPTACC.\n");
       if (fabs(sc - ParsetreeScore(cm, tr[i], cur_dsq, FALSE)) >= 0.01)
-	ESL_FAIL(eslFAIL, errbuf, "ActuallyAlignTargets(), seq: %d alignment score %.3f differs from its parse tree's score: %.3f", i, sc, ParsetreeScore(cm, tr[i], cur_dsq, FALSE));
+	ESL_FAIL(eslFAIL, errbuf, "DispatchAlignments(), seq: %d alignment score %.3f differs from its parse tree's score: %.3f", i, sc, ParsetreeScore(cm, tr[i], cur_dsq, FALSE));
     }
 
     /* If requested, or if debug level high enough, print out the parse tree */
@@ -731,7 +731,7 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
 	if(debug_level > 0) ParsetreeDump(stdout, *cur_tr, cm, cur_dsq, NULL, NULL);
 	if(!(sub_cm2cm_parsetree(orig_cm, sub_cm, &orig_tr, *cur_tr, submap, debug_level))) { 
 	  /* ParsetreeDump(stdout, orig_tr, orig_cm, cur_dsq, NULL, NULL); */
-	  ESL_FAIL(eslFAIL, errbuf, "ActuallyAlignTargets(), Unable to convert sub CM parsetree to original CM parsetree. This shouldn't happen.");
+	  ESL_FAIL(eslFAIL, errbuf, "DispatchAlignments(), Unable to convert sub CM parsetree to original CM parsetree. This shouldn't happen.");
 	}
 	if(debug_level > 0) { 
 	  printf("\n\nConverted original trace:\n");
@@ -789,6 +789,6 @@ ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ
   
   return eslOK;
   ERROR:
-  ESL_FAIL(eslEMEM, errbuf, "ActuallyAlignTargets(), Memory allocation error.");
+  ESL_FAIL(eslEMEM, errbuf, "DispatchAlignments(), Memory allocation error.");
   return status; /* NEVERREACHED */
 }

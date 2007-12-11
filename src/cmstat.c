@@ -374,7 +374,7 @@ summarize_alignment(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, 
   cm->align_opts |= CM_ALIGN_HBANDED;
   esl_stopwatch_Start(w);
   seqs_to_aln = CreateSeqsToAlnFromSq(sq, N, FALSE);
-  if((status = ActuallyAlignTargets(cm, errbuf, seqs_to_aln, NULL, NULL, 0, 0, 0, TRUE, NULL)) != eslOK) goto ERROR;
+  if((status = DispatchAlignments(cm, errbuf, seqs_to_aln, NULL, NULL, 0, 0, 0, TRUE, NULL)) != eslOK) goto ERROR;
   esl_stopwatch_Stop(w);
   t_hb = w->user / (float) N;
   FreeSeqsToAln(seqs_to_aln);

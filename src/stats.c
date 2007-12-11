@@ -278,23 +278,38 @@ void GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double *
 }
 
 /*
- * Function: e_to_score()
- * Date:     RJK, Mon April 15 2002 [St. Louis]
- * Purpose:  Given an E-value and mu, lambda, and N, returns a value for S
- *           that will give such an E-value.  Basically the inverse of 
- *           ExtremeValueE
+ * Function: E2Score()
+ * Date:     EPN, Tue Dec 11 15:40:25 2007 
+ *           (morphed from RSEARCH: RJK, Mon April 15 2002 [St. Louis])
+ *
+ * Purpose:  Given an E-value and a CM with valid Gumbel stats determine
+ *           the minimal bit score that will give an E-value of 
+ *           E across all partitions. This will be a safe bit score
+ *           cutoff to use when returning hits in DispatchSearch().
+ *           Because no score less than this will have an E-value 
+ *           less than E.
+ *
+ * Returns:  eslOK on success, <ret_sc> filled with bit score
+ *           error code on failure, errbuf filled with message
  */
-float e_to_score (float E, double *mu, double *lambda) {
-  float lowest_score, result;
-  int i;
+int E2Score (CM_t *cm, char *errbuf, int gum_mode, float E, float *ret_sc)
+{
+  float low_sc, sc;
+  int p;
 
-  lowest_score = mu[0] - (log(E)/lambda[0]);
-  for (i=1; i<GC_SEGMENTS; i++) {
-    result = mu[i] - (log(E)/lambda[i]);
-    if (result < lowest_score)
-      lowest_score = result;
+  /* contract checks */
+  if(!(cm->flags & CMH_GUMBEL_STATS))        ESL_FAIL(eslEINCOMPAT, errbuf, "E2Score, CM's CMH_GUMBEL_STATS flag is down.");
+  if(ret_sc == NULL)                         ESL_FAIL(eslEINCOMPAT, errbuf, "E2Score, ret_sc is NULL");
+
+  low_sc = cm->stats->gumAA[gum_mode][0]->mu - (log(E) / cm->stats->gumAA[gum_mode][0]->lambda);
+  if(! cm->stats->gumAA[gum_mode][0]->is_valid) ESL_FAIL(eslEINCOMPAT, errbuf, "E2Score, CM's gumbel stats for mode: %d partition: %d are invalid.", gum_mode, p);
+  for(p = 1; p < cm->stats->np; p++) {
+    if(! cm->stats->gumAA[gum_mode][p]->is_valid) ESL_FAIL(eslEINCOMPAT, errbuf, "E2Score, CM's gumbel stats for mode: %d partition: %d are invalid.", gum_mode, p);
+    sc = cm->stats->gumAA[gum_mode][p]->mu - (log(E) / cm->stats->gumAA[gum_mode][p]->lambda);
+    low_sc = ESL_MIN(low_sc, sc);
   }
-  return (lowest_score);
+  *ret_sc = low_sc;
+  return eslOK;
 }
 
 
@@ -335,7 +350,7 @@ float MinScCutoff (CM_t *cm, SearchInfo_t *si, int n)
   if(si == NULL)      cm_Fail("MinCMScCutoff(), si == NULL.\n");
   if(n > si->nrounds) cm_Fail("MinCMScCutoff(), n (%d) > si->nrounds\n", n, si->nrounds);
 
-  if(si->cutoff_type[n] == SCORE_CUTOFF) return si->cutoff[n];
+  if(si->cutoff_type[n] == SCORE_CUTOFF) return si->sc_cutoff[n];
   
   /* if we get here, cutoff_type is E_CUTOFF we better have stats */
   ESL_DASSERT1((si->cutoff_type[n] == E_CUTOFF));
@@ -343,7 +358,7 @@ float MinScCutoff (CM_t *cm, SearchInfo_t *si, int n)
 
   /* Determine appropriate Gumbel mode */
   CM2Gumbel_mode(cm, si->search_opts[n], &cm_mode, &cp9_mode);
-  E = si->cutoff[n];
+  E = si->e_cutoff[n];
 
   if(si->stype[n] == SEARCH_WITH_HMM) {
     ESL_DASSERT1(((si->search_opts[n] & CM_SEARCH_HMMVITERBI) || (si->search_opts[n] & CM_SEARCH_HMMFORWARD)));
@@ -478,7 +493,7 @@ void remove_hits_over_e_cutoff (CM_t *cm, SearchInfo_t *si, search_results_t *re
   gum = (si->stype[si->nrounds] == SEARCH_WITH_HMM) ? cm->stats->gumAA[cp9_gum_mode] : cm->stats->gumAA[cm_gum_mode];
   
   ESL_DASSERT1((si->cutoff_type[si->nrounds] == E_CUTOFF));
-  cutoff = si->cutoff[si->nrounds];
+  cutoff = si->e_cutoff[si->nrounds];
   
   for (i=0; i<results->num_results; i++) {
     gc_comp = get_gc_comp (sq, results->data[i].start, results->data[i].stop);

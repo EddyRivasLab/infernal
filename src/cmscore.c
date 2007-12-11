@@ -937,9 +937,9 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 {
   int status;
 
-  if((status = ActuallyAlignTargets(cm, errbuf, seqs_to_aln,
-				    NULL, NULL, 0,  /* we're not aligning search hits */
-				    FALSE, 0, TRUE, NULL)) != eslOK) goto ERROR;
+  if((status = DispatchAlignments(cm, errbuf, seqs_to_aln,
+				  NULL, NULL, 0,  /* we're not aligning search hits */
+				  FALSE, 0, TRUE, NULL)) != eslOK) goto ERROR;
 
   return eslOK;
   

@@ -27,7 +27,7 @@
  *           eslOK on success, dies immediately on some error
  */
 int
-CreateSearchInfo(CM_t *cm, int cutoff_type, float cutoff)
+CreateSearchInfo(CM_t *cm, int cutoff_type, float sc_cutoff, float e_cutoff)
 {
   int status;
   int use_hmmonly;
@@ -41,14 +41,16 @@ CreateSearchInfo(CM_t *cm, int cutoff_type, float cutoff)
   si->nrounds = 0;
   ESL_ALLOC(si->search_opts, sizeof(int)                * (si->nrounds+1));
   ESL_ALLOC(si->cutoff_type, sizeof(int)                * (si->nrounds+1));
-  ESL_ALLOC(si->cutoff,      sizeof(float)              * (si->nrounds+1));
+  ESL_ALLOC(si->sc_cutoff,   sizeof(float)              * (si->nrounds+1));
+  ESL_ALLOC(si->e_cutoff,    sizeof(float)              * (si->nrounds+1));
   ESL_ALLOC(si->stype,       sizeof(int)                * (si->nrounds+1));
   ESL_ALLOC(si->smx,         sizeof(ScanMatrix_t *)     * (si->nrounds+1));
   ESL_ALLOC(si->hsi,         sizeof(HybridScanInfo_t *) * (si->nrounds+1));
 
   si->search_opts[0] = cm->search_opts;
   si->cutoff_type[0] = cutoff_type;
-  si->cutoff[0]      = cutoff;
+  si->sc_cutoff[0]   = sc_cutoff;
+  si->e_cutoff[0]    = e_cutoff;
   si->stype[0]       = use_hmmonly ? SEARCH_WITH_HMM : SEARCH_WITH_CM;
   si->smx[0]         = cm->smx;  /* could be NULL */
   si->hsi[0]         = NULL;
@@ -74,8 +76,8 @@ CreateSearchInfo(CM_t *cm, int cutoff_type, float cutoff)
  *           eslOK on success, dies immediately on some error
  */
 int
-AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_filter, int forward_filter, 
-		      int hybrid_filter, ScanMatrix_t *smx, HybridScanInfo_t *hsi, int cutoff_type, float cutoff)
+AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_filter, int forward_filter, int hybrid_filter, 
+		      ScanMatrix_t *smx, HybridScanInfo_t *hsi, int cutoff_type, float sc_cutoff, float e_cutoff)
 {
   int status;
   int n;
@@ -96,7 +98,8 @@ AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_f
   si->nrounds = orig_nrounds+1;
   ESL_ALLOC(si->search_opts, sizeof(int)   * (si->nrounds+1));
   ESL_ALLOC(si->cutoff_type, sizeof(int)   * (si->nrounds+1));
-  ESL_ALLOC(si->cutoff,      sizeof(float) * (si->nrounds+1));
+  ESL_ALLOC(si->sc_cutoff,   sizeof(float) * (si->nrounds+1));
+  ESL_ALLOC(si->e_cutoff,    sizeof(float) * (si->nrounds+1));
   ESL_ALLOC(si->stype,       sizeof(int)   * (si->nrounds+1));
   ESL_ALLOC(si->smx,         sizeof(ScanMatrix_t     *) * (si->nrounds+1));
   ESL_ALLOC(si->hsi,         sizeof(HybridScanInfo_t *) * (si->nrounds+1));
@@ -109,7 +112,8 @@ AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_f
   if(forward_filter) si->search_opts[0] |= CM_SEARCH_HMMFORWARD;
   
   si->cutoff_type[0] = cutoff_type;
-  si->cutoff[0]      = cutoff;
+  si->sc_cutoff[0]   = sc_cutoff;
+  si->e_cutoff[0]    = e_cutoff;
   if(viterbi_filter || forward_filter) { 
     si->stype[0] = SEARCH_WITH_HMM;
     si->smx[0]   = NULL;
@@ -131,7 +135,8 @@ AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_f
   for(n = 0; n <= orig_nrounds; n++) { 
     si->search_opts[(n+1)] = cm->si->search_opts[n];
     si->cutoff_type[(n+1)] = cm->si->cutoff_type[n];
-    si->cutoff[(n+1)]      = cm->si->cutoff[n];
+    si->sc_cutoff[(n+1)]   = cm->si->sc_cutoff[n];
+    si->e_cutoff[(n+1)]    = cm->si->e_cutoff[n];
     si->stype[(n+1)]       = cm->si->stype[n];
     /* and copy the ptr to smx and hsi */
     si->smx[(n+1)] = cm->si->smx[n];
@@ -141,7 +146,8 @@ AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_f
   /* free old cm->si, but be careful not to free smx[] and hsi[], we're still pointing to those */
   free(cm->si->search_opts);
   free(cm->si->cutoff_type);
-  free(cm->si->cutoff);
+  free(cm->si->sc_cutoff);
+  free(cm->si->e_cutoff);
   free(cm->si->stype);
   free(cm->si->smx);
   free(cm->si->hsi);
@@ -173,7 +179,8 @@ FreeSearchInfo(SearchInfo_t *si, CM_t *cm)
   for(n = 0; n <= si->nrounds; n++) if(si->hsi[n] != NULL) cm_FreeHybridScanInfo(si->hsi[n], cm); 
   free(si->search_opts);
   free(si->cutoff_type);
-  free(si->cutoff);
+  free(si->sc_cutoff);
+  free(si->e_cutoff);
   free(si->stype);
   free(si->smx);
   free(si->hsi);
@@ -190,7 +197,7 @@ FreeSearchInfo(SearchInfo_t *si, CM_t *cm)
  * Returns:  void.
  */
 void
-cm_DumpSearchInfo(SearchInfo_t *si)
+DumpSearchInfo(SearchInfo_t *si)
 {
   int n, v;
   printf("\nSearchInfo summary:\n");
@@ -201,8 +208,8 @@ cm_DumpSearchInfo(SearchInfo_t *si)
     if(si->stype[n] == SEARCH_WITH_HYBRID) printf("\ttype: Hybrid\n"); 
     if(si->stype[n] == SEARCH_WITH_CM)     printf("\ttype: CM\n"); 
     DumpSearchOpts(si->search_opts[n]);
-    if(si->cutoff_type[n] == SCORE_CUTOFF) printf("\tcutoff     : %10.4f bits\n", si->cutoff[n]);
-    else                                   printf("\tcutoff     : %10.4f E-value\n", si->cutoff[n]);
+    if(si->cutoff_type[n] == SCORE_CUTOFF) printf("\tcutoff     : %10.4f bits\n",    si->sc_cutoff[n]);
+    else                                   printf("\tcutoff     : %10.4f E-value\n", si->e_cutoff[n]);
     if(si->hsi[n] != NULL) { 
       printf("\tHybrid info:\n");
       printf("\t\tNumber of sub CM roots: %d\n", si->hsi[n]->n_v_roots);
@@ -314,12 +321,13 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
  * Returns:  void, dies if some error
  */
 void
-UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float cutoff)
+UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float sc_cutoff, float e_cutoff)
 {
   if(cm->si == NULL)           cm_Fail("UpdateSearchInfoCutoff(), cm->si is NULL.");
   if(nround > cm->si->nrounds) cm_Fail("UpdateSearchInfoCutoff(), requested round %d is > cm->si->nrounds\n", nround, cm->si->nrounds);
   cm->si->cutoff_type[nround] = cutoff_type;
-  cm->si->cutoff[nround]      = cutoff;
+  cm->si->sc_cutoff[nround]   = sc_cutoff;
+  cm->si->e_cutoff[nround]    = e_cutoff;
   return;
 }
 
@@ -672,7 +680,7 @@ void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConse
   do_stats = (si->cutoff_type[si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
   if(do_stats  && !(cm->flags & CMH_GUMBEL_STATS)) cm_Fail("print_results(), stats wanted but CM has no Gumbel stats\n");
 
-  if(do_stats) { /* Determine Gumbel mode to use */
+  if(do_stats) { /* determine Gumbel mode to use */
     CM2Gumbel_mode(cm, cm->search_opts, &cm_gum_mode, &cp9_gum_mode);
     gum = (si->stype[si->nrounds] == SEARCH_WITH_HMM) ? cm->stats->gumAA[cp9_gum_mode] : cm->stats->gumAA[cm_gum_mode];
   }
@@ -867,7 +875,6 @@ CreateBestFilterInfo()
   bf->full_cm_ncalcs       = 1.; /* so calc'ed spdup = fil_plus_surv_ncalcs / full_cm_ncalcs = eslINFINITY */
   bf->fil_ncalcs           = eslINFINITY;
   bf->fil_plus_surv_ncalcs = eslINFINITY;
-  bf->sc_cutoff = 0.;
   bf->e_cutoff  = 0.;
   bf->hbeta     = 0.;
   bf->v_isroot  = NULL;   
@@ -890,7 +897,7 @@ CreateBestFilterInfo()
  *           eslOK on success, eslEINCOMPAT if contract violated
  */
 int 
-SetBestFilterInfoHMM(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, int ftype, float sc_cutoff, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs)
+SetBestFilterInfoHMM(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, int ftype, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs)
 {
   if(ftype != FILTER_WITH_HMM_VITERBI && ftype != FILTER_WITH_HMM_FORWARD) ESL_FAIL(eslEINCOMPAT, errbuf, "SetBestFilterInfoHMM(), ftype is neither FILTER_WITH_HMM_VITERBI nor FILTER_WITH_HMM_FORWARD.\n");
   if(bf->is_valid) ESL_FAIL(eslEINCOMPAT, errbuf, "SetBestFilterInfoHMM(), bf->is_valid is TRUE (shouldn't happen, only time to set filter as HMM is when initializing BestFilter object.\n");
@@ -902,9 +909,8 @@ SetBestFilterInfoHMM(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval
   bf->db_size   = db_size;
   bf->full_cm_ncalcs       = full_cm_ncalcs;
 
-  bf->ftype     = ftype;
-  bf->sc_cutoff = sc_cutoff;
-  bf->e_cutoff  = e_cutoff;
+  bf->ftype      = ftype;
+  bf->e_cutoff   = e_cutoff;
   bf->fil_ncalcs = fil_ncalcs;
   bf->fil_plus_surv_ncalcs = fil_plus_surv_ncalcs;
   bf->is_valid   = TRUE;
@@ -919,7 +925,7 @@ SetBestFilterInfoHMM(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval
  * Returns:  eslOK on success, eslEINCOMPAT if contract violated, eslEMEM if memory error.
  */
 int 
-SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, float sc_cutoff, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs, HybridScanInfo_t *hsi, int np, GumbelInfo_t **hgumA)
+SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs, HybridScanInfo_t *hsi, int np, GumbelInfo_t **hgumA)
 {
   int status;
   int p;
@@ -935,7 +941,6 @@ SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_e
   bf->full_cm_ncalcs = full_cm_ncalcs;
 
   bf->ftype     = FILTER_WITH_HYBRID;
-  bf->sc_cutoff = sc_cutoff;
   bf->e_cutoff  = e_cutoff;
   bf->fil_ncalcs = fil_ncalcs;
   bf->fil_plus_surv_ncalcs = fil_plus_surv_ncalcs;
@@ -1020,7 +1025,6 @@ DumpBestFilterInfo(BestFilterInfo_t *bf)
   printf("F:                     %10.4f\n", bf->F);
   printf("N:                     %10d\n",   bf->N);
   printf("DB size (for E-vals):  %10d\n",   bf->db_size);
-  printf("Filter bit sc  cutoff: %10.4f\n", bf->sc_cutoff);
   printf("Filter E value cutoff: %10.4f\n", bf->e_cutoff);
   printf("Full CM scan DP calcs: %10.4f\n", bf->full_cm_ncalcs);
   printf("Filter scan DP calcs:  %10.4f\n", bf->fil_ncalcs);

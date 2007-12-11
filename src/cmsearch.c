@@ -146,6 +146,7 @@ struct cfg_s {
   long          N;              /* database size in nucleotides (doubled if doing rev comp) */
   int           ncm;            /* number CM we're at in file */
   int           do_rc;          /* should we search reverse complement? (for convenience */
+  float        *avglen;         /* [0..v..M-1] average hit len for subtree rooted at each state v for current CM */
 
   int           do_mpi;		/* TRUE if we're doing MPI parallelization */
   int           nproc;		/* how many MPI processes, total */
@@ -176,11 +177,12 @@ static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
 static int process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_DSQ *dsq, int L, search_results_t **ret_results);
 static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
+static int update_avg_hit_len(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int set_gumbels(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int set_window(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int calc_filter_threshold(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *ret_Smin);
-static int print_search_info(FILE *fp, CM_t *cm, long N, char *errbuf);
+static int print_search_info(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *cm, long N, char *errbuf);
 
 static int read_qdb_file(FILE *fp, CM_t *cm, int *dmin, int *dmax);
 static int is_integer(char *s);
@@ -281,6 +283,7 @@ main(int argc, char **argv)
   cfg.preset_dmin= NULL;                   /* filled in initialize_cm() only if --qdbfile, which conflicts with --mpi */
   cfg.preset_dmax= NULL;                   /* filled in initialize_cm() only if --qdbfile, which conflicts with --mpi */
   cfg.do_rc      = (! esl_opt_GetBoolean(go, "--toponly")); 
+  cfg.avglen     = NULL;                   /* filled in init_master_cfg() in masters, stays NULL for workers */
 
   cfg.do_mpi     = FALSE;	           /* this gets reset below, if we init MPI */
   cfg.nproc      = 0;		           /* this gets reset below, if we init MPI */
@@ -307,7 +310,7 @@ main(int argc, char **argv)
       MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
       MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
 
-      if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running... (did you run mpirun?)");
+      if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running... (did you execute mpirun?)");
 
       if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
       else 		    mpi_master(go, &cfg);
@@ -336,6 +339,7 @@ main(int argc, char **argv)
   }
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
   if (cfg.abc_out   != NULL) esl_alphabet_Destroy(cfg.abc_out);
+  if (cfg.avglen    != NULL) free(cfg.avglen);
   esl_getopts_Destroy(go);
   esl_stopwatch_Destroy(w);
   return 0;
@@ -347,14 +351,14 @@ main(int argc, char **argv)
  *    cfg->cmfile      - command line arg 1
  *    cfg->sqfile      - command line arg 2
  *    cfg->fmt         - format of output file
- * Sets: 
+ * Allocates/Sets: 
  *    cfg->sqfp        - open sequence file                
  *    cfg->cmfp        - open CM file                
  *    cfg->tfp         - optional output file
  *    cfg->bfp         - optional output file
  *    cfg->filhfp      - optional output file
  *    cfg->filrfp      - optional output file
- *                   
+ *
  * Errors in the MPI master here are considered to be "recoverable",
  * in the sense that we'll try to delay output of the error message
  * until we've cleanly shut down the worker processes. Therefore
@@ -436,6 +440,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* initialize the flags/options/params and configuration of the CM */
       if((  status = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
+      if((  status = update_avg_hit_len(go, cfg, errbuf, cm))               != eslOK) cm_Fail(errbuf);
       if((  status = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
       if(cm->flags & CMH_GUMBEL_STATS) 
 	if((status = set_gumbels(go, cfg, errbuf, cm))                      != eslOK) cm_Fail(errbuf);
@@ -443,7 +448,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = set_searchinfo(go, cfg, errbuf, cm))                     != eslOK) cm_Fail(errbuf);
       if(esl_opt_GetBoolean(go, "--hmmcalcthr"))
 	if((status = calc_filter_threshold(go, cfg, errbuf, cm, &Smin))     != eslOK) cm_Fail(errbuf);
-      print_search_info(stdout, cm, cfg->N, errbuf);
+      print_search_info(go, cfg, stdout, cm, cfg->N, errbuf);
       using_e_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
 	 
       while ((status = read_next_search_seq(cfg->abc, cfg->sqfp, cfg->do_rc, &dbseq)) == eslOK)
@@ -611,7 +616,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if(esl_opt_GetBoolean(go, "--hmmcalcthr"))
 	if((status = calc_filter_threshold(go, cfg, errbuf, cm, &Smin))     != eslOK) cm_Fail(errbuf);
 
-      print_search_info(stdout, cm, cfg->N, errbuf);
+      print_search_info(go, cfg, stdout, cm, cfg->N, errbuf);
       determine_cm_min_max_chunksize(cfg, cm, &min_chunksize, &max_chunksize);
       ESL_DPRINTF1(("min_chunksize: %d\n", min_chunksize));
       ESL_DPRINTF1(("max_chunksize: %d\n", max_chunksize));
@@ -825,7 +830,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = set_window(go, cfg, errbuf, cm))                         != eslOK) goto ERROR;
       if((status = set_searchinfo(go, cfg, errbuf, cm))                     != eslOK) goto ERROR;
       
-      /* print_search_info(stdout, cm, cm_mode, cp9_mode, cfg->N, errbuf); */
+      /* print_search_info(go, cfg, stdout, cm, cm_mode, cp9_mode, cfg->N, errbuf); */
       
       while((status = cm_dsq_MPIRecv(0, 0, MPI_COMM_WORLD, &wbuf, &wn, &dsq, &L)) == eslOK)
 	{
@@ -887,7 +892,7 @@ process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   ESL_ALLOC(results, sizeof(search_results_t *) * (cm->si->nrounds+1));
   for(n = 0; n <= cm->si->nrounds; n++) results[n] = CreateResults(INIT_RESULTS);
 
-  if((status = ActuallySearchTarget(cm, errbuf, 0, dsq, 1, L, results, NULL, NULL)) != eslOK) goto ERROR;
+  if((status = DispatchSearch(cm, errbuf, 0, dsq, 1, L, results, NULL, NULL)) != eslOK) goto ERROR;
 
   /* we only care about the final results, that survived all the rounds (all the filtering rounds plus the final round) */
   *ret_results = results[cm->si->nrounds];
@@ -1023,6 +1028,31 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   return status;
 }
 
+
+/* Function: update_avg_hit_len()
+ * Date:     EPN, Sun Dec  9 15:50:39 2007
+ * 
+ * Purpose:  Calculate the average subseq length rooted at each state
+ *           using the QDB calculation.
+ *
+ * Returns:  eslOK on success;
+ */
+int
+update_avg_hit_len(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
+{
+  int safe_windowlen;
+  float *avglen = NULL;
+
+  safe_windowlen = cm->W * 2;
+  while(!(BandCalculationEngine(cm, safe_windowlen, 1E-15, TRUE, NULL, NULL, NULL, &avglen))) {
+    safe_windowlen *= 2;
+    if(safe_windowlen > (cm->clen * 1000)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "update_avg_hit_len(), band calculation safe_windowlen big: %d\n", safe_windowlen);
+  }
+  if(cfg->avglen != NULL) free(cfg->avglen);
+  cfg->avglen = avglen;
+  return eslOK;
+}
+
 /* set_gumbels()
  * Setup Gumbel distribution parameters for CM and HMM based on DB size.
  */
@@ -1075,15 +1105,18 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   int use_hmmonly;
   int fthr_mode;
   int cutoff_type;
-  float cutoff;
+  float sc_cutoff = -1.;
+  float e_cutoff = -1.;
   int  *dmin, *dmax; /* these become QDBs if we add a CM_FILTER */
   ScanMatrix_t *fsmx; 
   int safe_windowlen;
+  float surv_fract;
+  int cm_mode, cp9_mode;
 
   if(cm->si != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo(), cm->si is not NULL, shouldn't happen.\n");
 
   /* Create SearchInfo, specifying no filtering, we change the threshold below */
-  CreateSearchInfo(cm, SCORE_CUTOFF, 0.);
+  CreateSearchInfo(cm, SCORE_CUTOFF, 0., -1.);
   if(cm->si == NULL) cm_Fail("set_searchinfo(), CreateSearchInfo() call failed.");
   SearchInfo_t *si = cm->si; 
   if(si->nrounds > 0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_search_info(), si->nrounds (%d) > 0\n", si->nrounds);
@@ -1124,6 +1157,9 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   stype       = si->stype[n];
   search_opts = si->search_opts[n];
 
+  /* determine configuration of CM and CP9 based on cm->flags & cm->search_opts */
+  CM2Gumbel_mode(cm, search_opts, &cm_mode, &cp9_mode); 
+
   use_hmmonly = ((search_opts & CM_SEARCH_HMMVITERBI) || (search_opts & CM_SEARCH_HMMFORWARD));
   if(! use_hmmonly) {
     if(stype != SEARCH_WITH_CM) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo(), search_opts for final round of search does not have HMMVITERBI or HMMFORWARD flags raised, but is not of type SEARCH_WITH_CM.");
@@ -1142,41 +1178,48 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
        */
       if(cm->flags & CMH_GUMBEL_STATS) { /* use default CM E-value cutoff */
 	cutoff_type = E_CUTOFF;
-	cutoff      = esl_opt_GetReal(go, "-E");
+	e_cutoff    = esl_opt_GetReal(go, "-E");
+	if((status = E2Score(cm, errbuf, cm_mode, e_cutoff, &sc_cutoff)) != eslOK) return status;
       }
       else { /* no Gumbel stats in CM file, use default bit score cutoff */
 	cutoff_type = SCORE_CUTOFF;
-	cutoff      = esl_opt_GetReal(go, "-T");
+	sc_cutoff   = esl_opt_GetReal(go, "-T");
+	e_cutoff    = -1.; /* invalid, we'll never use it */  
       }
     }
     else if(! esl_opt_IsDefault(go, "-E")) {
       if(! (cm->flags & CMH_GUMBEL_STATS))
 	ESL_FAIL(eslEINVAL, errbuf, "-E requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
       cutoff_type = E_CUTOFF;
-      cutoff      = esl_opt_GetReal(go, "-E");
+      e_cutoff    = esl_opt_GetReal(go, "-E");
+      if((status = E2Score(cm, errbuf, cm_mode, e_cutoff, &sc_cutoff)) != eslOK) return status;
     }
     else if(! esl_opt_IsDefault(go, "-T")) {
       cutoff_type = SCORE_CUTOFF;
-      cutoff      = esl_opt_GetReal(go, "-T");
-      if((cutoff < 0.) && (! esl_opt_GetBoolean(go, "--greedy"))) ESL_FAIL(eslEINVAL, errbuf, "with -T <x> option, <x> can only be less than 0. if --greedy also enabled.");
+      sc_cutoff   = esl_opt_GetReal(go, "-T");
+      e_cutoff    = -1.; /* invalid, we'll never use it */  
+      if((sc_cutoff < 0.) && (! esl_opt_GetBoolean(go, "--greedy"))) ESL_FAIL(eslEINVAL, errbuf, "with -T <x> option, <x> can only be less than 0. if --greedy also enabled.");
     }
     else if(! esl_opt_IsDefault(go, "--ga")) {
       if(! (cm->flags & CMH_GA))
 	ESL_FAIL(eslEINVAL, errbuf, "No GA gathering threshold in CM file, can't use --ga.");
       cutoff_type = SCORE_CUTOFF;
-      cutoff      = esl_opt_GetReal(go, "--ga");
+      sc_cutoff   = esl_opt_GetReal(go, "--ga");
+      e_cutoff    = -1.; /* we'll never use it */
     }
     else if(! esl_opt_IsDefault(go, "--tc")) {
       if(! (cm->flags & CMH_TC))
 	ESL_FAIL(eslEINVAL, errbuf, "No TC trusted cutoff in CM file, can't use --tc.");
       cutoff_type = SCORE_CUTOFF;
-      cutoff      = esl_opt_GetReal(go, "--tc");
+      sc_cutoff   = esl_opt_GetReal(go, "--tc");
+      e_cutoff    = -1.; /* we'll never use it */
     }
     else if(! esl_opt_IsDefault(go, "--nc")) {
       if(! (cm->flags & CMH_NC))
 	ESL_FAIL(eslEINVAL, errbuf, "No NC noise cutoff in CM file, can't use --nc.");
       cutoff_type = SCORE_CUTOFF;
-      cutoff      = esl_opt_GetReal(go, "--nc");
+      sc_cutoff   = esl_opt_GetReal(go, "--nc");
+      e_cutoff    = -1.; /* we'll never use it */
     }
     else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No CM cutoff selected. This shouldn't happen.");
   } /* end of if(! use_hmmonly) */
@@ -1193,16 +1236,18 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
        */
       if(cm->flags & CMH_GUMBEL_STATS) { /* use default CP9 E-value cutoff */
 	cutoff_type = E_CUTOFF;
-	cutoff      = esl_opt_GetReal(go, "--hmmE"); 
+	e_cutoff    = esl_opt_GetReal(go, "--hmmE"); 
+	if((status = E2Score(cm, errbuf, cp9_mode, e_cutoff, &sc_cutoff)) != eslOK) return status;
       }
       else { /* no Gumbel stats in CM file, use default bit score cutoff */
 	cutoff_type = SCORE_CUTOFF;
-	cutoff      = esl_opt_GetReal(go, "--hmmT");
+	sc_cutoff   = esl_opt_GetReal(go, "--hmmT");
+	e_cutoff    = -1; /* we'll never use it */
       }
     }
   }
   /* update the search info, which holds the thresholds */
-  UpdateSearchInfoCutoff(cm, cm->si->nrounds, cutoff_type, cutoff);   
+  UpdateSearchInfoCutoff(cm, cm->si->nrounds, cutoff_type, sc_cutoff, e_cutoff);   
   ValidateSearchInfo(cm, cm->si);
   /* DumpSearchInfo(cm->si); */
   /* done with threshold for final round */
@@ -1228,23 +1273,27 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
        */
       if(cm->flags & CMH_GUMBEL_STATS) { /* use default CM E-value cutoff */
 	cutoff_type = E_CUTOFF;
-	cutoff      = esl_opt_GetReal(go, "--fE");
+	e_cutoff    = esl_opt_GetReal(go, "--fE");
+	if((status  = E2Score(cm, errbuf, cm_mode, e_cutoff, &sc_cutoff)) != eslOK) return status;
       }
       else { /* no Gumbel stats in CM file, use default bit score cutoff */
 	cutoff_type = SCORE_CUTOFF;
-	cutoff      = esl_opt_GetReal(go, "--fT");
+	sc_cutoff   = esl_opt_GetReal(go, "--fT");
+	e_cutoff    = -1.; /* invalid, we'll never use it */  
       }
     }
     else if(! esl_opt_IsDefault(go, "--fE")) {
       if(! (cm->flags & CMH_GUMBEL_STATS))
 	ESL_FAIL(eslEINVAL, errbuf, "--fE requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
       cutoff_type = E_CUTOFF;
-      cutoff      = esl_opt_GetReal(go, "--fE");
+      e_cutoff    = esl_opt_GetReal(go, "--fE");
+      if((status  = E2Score(cm, errbuf, cm_mode, e_cutoff, &sc_cutoff)) != eslOK) return status;
     }
     else if(! esl_opt_IsDefault(go, "--fT")) {
       cutoff_type = SCORE_CUTOFF;
-      cutoff      = esl_opt_GetReal(go, "--fT");
-      if((cutoff < 0.) && (! esl_opt_GetBoolean(go, "--fgreedy"))) ESL_FAIL(eslEINVAL, errbuf, "with --fT <x> option, <x> can only be less than 0. if --fgreedy also enabled.");
+      sc_cutoff   = esl_opt_GetReal(go, "--fT");
+      if((sc_cutoff < 0.) && (! esl_opt_GetBoolean(go, "--fgreedy"))) ESL_FAIL(eslEINVAL, errbuf, "with --fT <x> option, <x> can only be less than 0. if --fgreedy also enabled.");
+      e_cutoff    = -1.; /* we'll never use it */
     }
     else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No CM filter cutoff selected. This shouldn't happen.");
     
@@ -1260,7 +1309,7 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     }
     fsmx = cm_CreateScanMatrix(cm, dmax[0], dmin, dmax, esl_opt_GetReal(go, "--fbeta"), TRUE, add_cyk_filter, add_inside_filter);
     /* add the filter */
-    AddFilterToSearchInfo(cm, add_cyk_filter, add_inside_filter, FALSE, FALSE, FALSE, fsmx, NULL, cutoff_type, cutoff);
+    AddFilterToSearchInfo(cm, add_cyk_filter, add_inside_filter, FALSE, FALSE, FALSE, fsmx, NULL, cutoff_type, sc_cutoff, e_cutoff);
     ValidateSearchInfo(cm, cm->si);
     /* DumpSearchInfo(cm->si); */
   }
@@ -1281,15 +1330,21 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
      */
     if((status = CM2FthrMode(cm, errbuf, cm->search_opts, &fthr_mode)) != eslOK) return status;
     if(!(cm->flags & CMH_FILTER_STATS))              ESL_FAIL(eslEINCOMPAT, errbuf,      "set_searchinfo(), --fgiven enabled, but cm's CMH_FILTER_STATS flag is down.");
-    if(cm->stats->bfA[fthr_mode]->is_valid == FALSE) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo(), --fgiven enabled, cm's CMH_FILTER_STATS is raised, but best filter info for fthr_mode is invalid.", fthr_mode);
+    if(cm->stats->bfA[fthr_mode]->is_valid == FALSE) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo(), --fgiven enabled, cm's CMH_FILTER_STATS is raised, but best filter info for fthr_mode %d is invalid.", fthr_mode);
     ESL_DASSERT1((!add_viterbi_filter)); /* --fhmmviterbi is incompatible with --fgiven, enforced by getopts */
     ESL_DASSERT1((!add_forward_filter)); /* --fhmmforward is incompatible with --fgiven, enforced by getopts */
-    cutoff_type = SCORE_CUTOFF;
-    cutoff      = cm->stats->bfA[fthr_mode]->sc_cutoff;
-    if(cm->stats->bfA[fthr_mode]->ftype == FILTER_WITH_HMM_VITERBI) add_viterbi_filter = TRUE;
-    if(cm->stats->bfA[fthr_mode]->ftype == FILTER_WITH_HMM_FORWARD) add_forward_filter = TRUE;
-    if(cm->stats->bfA[fthr_mode]->ftype == FILTER_WITH_HYBRID)      /*add_hybrid_filter = TRUE;*/
-      ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo(), --fgiven enabled and hybrid filter set in CM file, but we can't deal with this yet.\n");
+    cutoff_type = E_CUTOFF;
+    e_cutoff    = cm->stats->bfA[fthr_mode]->e_cutoff * ((double) cfg->N / (double) cm->stats->bfA[fthr_mode]->db_size); 
+    if((status  = E2Score(cm, errbuf, cm_mode, e_cutoff, &sc_cutoff)) != eslOK) return status; /* note: use cm_mode, not fthr_mode */
+
+    /* Predict survival fraction from filter based on E-value, assume average hit length is cfg->avglen[0] (from QD band calc) */
+    surv_fract = (e_cutoff * ((2. * cm->W) - cfg->avglen[0])) / ((double) cfg->N); 
+    if(surv_fract < 0.9) { /* else filtering is not worth it */
+      if(cm->stats->bfA[fthr_mode]->ftype == FILTER_WITH_HMM_VITERBI) add_viterbi_filter = TRUE;
+      if(cm->stats->bfA[fthr_mode]->ftype == FILTER_WITH_HMM_FORWARD) add_forward_filter = TRUE;
+      if(cm->stats->bfA[fthr_mode]->ftype == FILTER_WITH_HYBRID)      /*add_hybrid_filter = TRUE;*/
+	ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo(), --fgiven enabled and hybrid filter set in CM file, but we can't deal with this yet.\n");
+    }
   }
   else if(add_viterbi_filter || add_forward_filter) { /* determine thresholds for filters */
     /* Set up HMM cutoff, either 0 or 1 of 3 options is enabled */
@@ -1303,11 +1358,13 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
        */
       if(cm->flags & CMH_GUMBEL_STATS) { /* use default CM E-value cutoff */
 	cutoff_type = E_CUTOFF;
-	cutoff      = esl_opt_GetReal(go, "--hmmE");
+	e_cutoff    = esl_opt_GetReal(go, "--hmmE");
+	if((status  = E2Score(cm, errbuf, cp9_mode, e_cutoff, &sc_cutoff)) != eslOK) return status; 
       }
       else { /* no Gumbel stats in CM file, use default bit score cutoff */
 	cutoff_type = SCORE_CUTOFF;
-	cutoff      = esl_opt_GetReal(go, "--hmmT");
+	sc_cutoff   = esl_opt_GetReal(go, "--hmmT");
+	e_cutoff    = -1.; /* we'll never use this */
       }
     }
     else if(! esl_opt_IsDefault(go, "--hmmcalcthr")) {
@@ -1315,26 +1372,29 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 	ESL_FAIL(eslEINVAL, errbuf, "--hmmcalcthr requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
       cutoff_type = E_CUTOFF;
       /* this gets overwritten later after threshold is calculated */
-      cutoff = esl_opt_GetReal(go, "--hmmE");
+      e_cutoff = esl_opt_GetReal(go, "--hmmE");
+      if((status  = E2Score(cm, errbuf, cp9_mode, e_cutoff, &sc_cutoff)) != eslOK) return status; 
     }
     else if(! esl_opt_IsDefault(go, "--hmmE")) {
       if(! (cm->flags & CMH_GUMBEL_STATS))
 	ESL_FAIL(eslEINVAL, errbuf, "--hmmE requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
       cutoff_type = E_CUTOFF;
-      cutoff      = esl_opt_GetReal(go, "--hmmE");
+      e_cutoff    = esl_opt_GetReal(go, "--hmmE");
+      if((status  = E2Score(cm, errbuf, cp9_mode, e_cutoff, &sc_cutoff)) != eslOK) return status; 
     }
     else if(! esl_opt_IsDefault(go, "--hmmT")) {
       cutoff_type = SCORE_CUTOFF;
-      cutoff      = esl_opt_GetReal(go, "--hmmT");
-      if((cutoff < 0.) && (! esl_opt_GetBoolean(go, "--hmmgreedy"))) ESL_FAIL(eslEINVAL, errbuf, "with --hmmT <x> option, <x> can only be less than 0. if --hmmgreedy also enabled.");
+      sc_cutoff   = esl_opt_GetReal(go, "--hmmT");
+      e_cutoff    = -1.; /* we'll never use this */
+      if((sc_cutoff < 0.) && (! esl_opt_GetBoolean(go, "--hmmgreedy"))) ESL_FAIL(eslEINVAL, errbuf, "with --hmmT <x> option, <x> can only be less than 0. if --hmmgreedy also enabled.");
     }
     else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No HMM filter cutoff selected. This shouldn't happen.");
   }
   if(add_viterbi_filter || add_forward_filter) {
     /* add the filter */
-    AddFilterToSearchInfo(cm, FALSE, FALSE, add_viterbi_filter, add_forward_filter, FALSE, NULL, NULL, cutoff_type, cutoff);
+    AddFilterToSearchInfo(cm, FALSE, FALSE, add_viterbi_filter, add_forward_filter, FALSE, NULL, NULL, cutoff_type, sc_cutoff, e_cutoff);
     ValidateSearchInfo(cm, cm->si);
-    /* DumpSearchInfo(cm->si); */
+    /*DumpSearchInfo(cm->si); */
   }
 
   return eslOK;
@@ -1514,12 +1574,13 @@ is_integer(char *s)
  * Date:     EPN, Thu May 17 14:47:36 2007
  * Purpose:  Print info about search (cutoffs, algorithm, etc.) to file or stdout 
  */
-int print_search_info(FILE *fp, CM_t *cm, long N, char *errbuf)
+int print_search_info(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *cm, long N, char *errbuf)
 {
   int p, n;
   float surv_fract;
   int cutoff_type;
-  float cutoff;
+  float sc_cutoff;
+  float e_cutoff;
   int using_filters;
   int cm_mode;
   int cp9_mode;
@@ -1547,7 +1608,8 @@ int print_search_info(FILE *fp, CM_t *cm, long N, char *errbuf)
     stype       = si->stype[n];
     search_opts = si->search_opts[n];
     cutoff_type = si->cutoff_type[n];
-    cutoff      = si->cutoff[n];
+    sc_cutoff   = si->sc_cutoff[n];
+    e_cutoff    = si->e_cutoff[n];
     smx         = si->smx[n];
     hsi         = si->hsi[n];
     
@@ -1559,13 +1621,13 @@ int print_search_info(FILE *fp, CM_t *cm, long N, char *errbuf)
 				     * alternatively could store stats in search_info_t si, but I think that's 
 				     * more trouble than it's worse */
 	if(!(cm->flags & CMH_GUMBEL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "trying to use E-value for CM cutoff, but CM has no Gumbel stats.");
-	fprintf(fp, "CM  cutoff (E value):  %.2f\n", cutoff);
+	fprintf(fp, "CM  cutoff (E value): %.2f\n", e_cutoff);
 	for(p = 0; p < cm->stats->np; p++)
 	  fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
-		  (cm->stats->gumAA[cm_mode][p]->mu - (log(cutoff) / cm->stats->gumAA[cm_mode][p]->lambda)), 
+		  (cm->stats->gumAA[cm_mode][p]->mu - (log(e_cutoff) / cm->stats->gumAA[cm_mode][p]->lambda)), 
 		  cm->stats->gumAA[cm_mode][p]->mu, cm->stats->gumAA[cm_mode][p]->lambda);
       }
-      else if (cutoff_type == SCORE_CUTOFF) fprintf(fp, "CM cutoff (bit sc):   %.2f\n", cutoff);
+      else if (cutoff_type == SCORE_CUTOFF) fprintf(fp, "CM cutoff (bit sc):   %.2f\n", sc_cutoff);
       fprintf (fp, "CM search algorithm:  ");
       if(search_opts & CM_SEARCH_INSIDE) fprintf(fp, "Inside\n");
       else                               fprintf(fp, "CYK\n");
@@ -1578,23 +1640,22 @@ int print_search_info(FILE *fp, CM_t *cm, long N, char *errbuf)
     else if (stype == SEARCH_WITH_HMM) { /* using the HMM this round */
       if(cutoff_type == E_CUTOFF) {
 	if(!(cm->flags & CMH_GUMBEL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "trying to use E-value for HMM cutoff, but CM has no Gumbel stats.");
-	fprintf(fp, "CP9 cutoff (E value): %.2f\n", cutoff);
+	fprintf(fp, "CP9 cutoff (E value): %.2f\n", e_cutoff);
 	if(n < si->nrounds) { /* we're filtering */
 	  /* HMM filtering sends j-W..i+W to be re-searched with CM for HMM hits i..j */
-	  /* Predict survival fraction from filter based on E-value, assume average hit length is cm->clen 
-	   */
-	  surv_fract = (cutoff * ((2. * cm->W) - cm->clen)) / ((double) N); 
+	  /* Predict survival fraction from filter based on E-value, assume average hit length is cfg->avglen[0] (from QD band calc) */
+	  surv_fract = (e_cutoff * ((2. * cm->W) - cfg->avglen[0])) / ((double) N); 
 	  fprintf(fp, "   Predicted survival fraction: %.5f (1/%.3f)\n", surv_fract, (1./surv_fract));
 	}
 	for(p = 0; p < cm->stats->np; p++)
 	fprintf(fp, "   GC %2d-%3d bit sc:  %.2f mu: %.5f lambda: %.5f\n", cm->stats->ps[p], cm->stats->pe[p], 
 		(cm->stats->gumAA[cp9_mode][p]->mu - 
-		 (log(cutoff) / cm->stats->gumAA[cp9_mode][p]->lambda)), 
+		 (log(e_cutoff) / cm->stats->gumAA[cp9_mode][p]->lambda)), 
 		cm->stats->gumAA[cp9_mode][p]->mu, cm->stats->gumAA[cp9_mode][p]->lambda);
       }
-      else if (cutoff_type == SCORE_CUTOFF)            fprintf (fp, "CP9 cutoff (bit sc):  %.2f\n", cutoff);
-      if      (cm->search_opts & CM_SEARCH_HMMVITERBI) fprintf (fp, "CP9 search algorithm: Viterbi\n");
-      else if (cm->search_opts & CM_SEARCH_HMMFORWARD) fprintf (fp, "CP9 search algorithm: Forward\n");
+      else if (cutoff_type == SCORE_CUTOFF)        fprintf (fp, "CP9 cutoff (bit sc):  %.2f\n", sc_cutoff);
+      if      (search_opts & CM_SEARCH_HMMVITERBI) fprintf (fp, "CP9 search algorithm: Viterbi\n");
+      else if (search_opts & CM_SEARCH_HMMFORWARD) fprintf (fp, "CP9 search algorithm: Forward\n");
       printf ("CP9 configuration:    ");
       if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) { 
 	if(cm->cp9->flags & CPLAN9_EL) fprintf(fp, "Local (EL on)\n");
@@ -1604,7 +1665,7 @@ int print_search_info(FILE *fp, CM_t *cm, long N, char *errbuf)
     }
     else if(stype == SEARCH_WITH_HYBRID) {
       if(cutoff_type != SCORE_CUTOFF) ESL_FAIL(eslEINCOMPAT, errbuf, "search round %d is hybrid strategy, but with an E-value cutoff, not allowed.\n", n);
-      printf("Hybrid scanner cutoff (bit sc):    %.2f\n", cutoff);
+      printf("Hybrid scanner cutoff (bit sc):    %.2f\n", sc_cutoff);
       printf("TO DO: print more useful info here, like which sub CM roots are used and predicted speedup\n");
     }
     fprintf(fp,"------------------------------\n");
@@ -1617,7 +1678,6 @@ int print_search_info(FILE *fp, CM_t *cm, long N, char *errbuf)
   fflush(fp);
   return eslOK;
 }
-
 
 /*
  * Function: read_next_search_seq

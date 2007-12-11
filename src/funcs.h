@@ -74,10 +74,10 @@ extern int   IntMaxDigits();
 /*extern CM_t *DuplicateCM(CM_t *cm);*/
 
 /* from dispatch.c */
-extern int ActuallySearchTarget(CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, 
-				search_results_t **results, int *ret_flen, float *ret_sc);
-extern int ActuallyAlignTargets(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
-				int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r);
+extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, 
+			      search_results_t **results, int *ret_flen, float *ret_sc);
+extern int DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
+			      int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r);
 
 
 
@@ -542,14 +542,14 @@ extern fullmat_t *ReadMatrix(const ESL_ALPHABET *abc, FILE *matfp);
 extern int ribosum_calc_targets(fullmat_t *fullmat);
 
 /* from searchinfo.c */
-extern int  CreateSearchInfo(CM_t *cm, int cutoff_type, float cutoff);
-extern int  AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_filter, int forward_filter,
-				  int hybrid_filter, ScanMatrix_t *smx, HybridScanInfo_t *hsi, int cutoff_type, float cutoff);
+extern int  CreateSearchInfo(CM_t *cm, int cutoff_type, float sc_cutoff, float e_cutoff);
+extern int  AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_filter, int forward_filter, int hybrid_filter, 
+				  ScanMatrix_t *smx, HybridScanInfo_t *hsi, int cutoff_type, float sc_cutoff, float e_cutoff);
 extern void FreeSearchInfo(SearchInfo_t *si, CM_t *cm);
 extern void DumpSearchInfo(SearchInfo_t *si);
 extern void DumpSearchOpts(int search_opts);
 extern void ValidateSearchInfo(CM_t *cm, SearchInfo_t *fi);
-extern void UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float cutoff);
+extern void UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float sc_cutoff, float e_cutoff);
 extern search_results_t *CreateResults (int size);
 extern void ExpandResults (search_results_t *r, int additional);
 extern void AppendResults (search_results_t *src_results, search_results_t *dest_results, int i0);
@@ -561,8 +561,8 @@ extern void report_hit (int i, int j, int bestr, float score, search_results_t *
 extern void remove_overlapping_hits (search_results_t *results, int i0, int j0);
 extern float CountScanDPCalcs(CM_t *cm, int L, int use_qdb);
 extern BestFilterInfo_t *CreateBestFilterInfo();
-extern int  SetBestFilterInfoHMM(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, int ftype, float sc_cutoff, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs);
-extern int  SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, float sc_cutoff, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs, HybridScanInfo_t *hsi, int np, GumbelInfo_t **hgumA);
+extern int  SetBestFilterInfoHMM(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, int ftype, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs);
+extern int  SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs, HybridScanInfo_t *hsi, int np, GumbelInfo_t **hgumA);
 extern void FreeBestFilterInfo(BestFilterInfo_t *bf);
 extern void DumpBestFilterInfo(BestFilterInfo_t *bf);
 
@@ -583,7 +583,7 @@ extern int        debug_print_cmstats(CMStats_t *cmstats, int has_fthr);
 extern int        debug_print_gumbelinfo(GumbelInfo_t *evd);
 extern int        get_gc_comp(ESL_SQ *sq, int start, int stop);
 extern void       GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct);
-extern float      e_to_score (float E, double *mu, double *lambda);
+extern int        E2Score (CM_t *cm, char *errbuf, int gum_mode, float E, float *ret_sc);
 extern double     RJK_ExtremeValueE (float x, double mu, double lambda);
 extern float      MinScCutoff (CM_t *cm, SearchInfo_t *si, int n);
 extern int        CM2Gumbel_mode(CM_t *cm, int search_opts, int *ret_cm_gum_mode, int *ret_cp9_gum_mode);
