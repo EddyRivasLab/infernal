@@ -71,6 +71,12 @@ static unsigned int v01swap  = 0xb1b0ede3; /* v0.1 binary, byteswapped         *
 #define CMIO_HASEVD       35
 #define CMIO_HASFILTER    36
 #define CMIO_ABCTYPE      37
+#define CMIO_HASGA        38
+#define CMIO_HASTC        39
+#define CMIO_HASNC        40
+#define CMIO_GA           41
+#define CMIO_TC           42
+#define CMIO_NC           43
 
 static int  write_ascii_cm(FILE *fp, CM_t *cm);
 static int  read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
@@ -485,7 +491,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   buf = NULL;
   n   = 0;
   for(i = 0; i < GUM_NMODES; i++)  gum_flags[i] = FALSE;
-  for(i = 0; i < FTHR_NMODES; i++)    fthr_flags[i] = FALSE;
+  for(i = 0; i < FTHR_NMODES; i++) fthr_flags[i] = FALSE;
 
   if (feof(cmf->f) || esl_fgets(&buf, &n, cmf->f) != eslOK) return 0;
   
@@ -874,6 +880,7 @@ write_binary_cm(FILE *fp, CM_t *cm)
 {
   int v, i ,p;
   int has_gum, has_fthr;
+  int has_ga, has_tc, has_nc;
   int atype;
   atype = cm->abc->type;
 
@@ -886,9 +893,37 @@ write_binary_cm(FILE *fp, CM_t *cm)
   tagged_fwrite(CMIO_NODES,        &cm->nodes,      sizeof(int),   1, fp);  
   tagged_fwrite(CMIO_ALPHABETTYPE, &atype,          sizeof(int),   1, fp);
 
-  tagged_bin_string_write(CMIO_NAME, cm->name,  fp);
+
   tagged_bin_string_write(CMIO_ACC,  cm->acc,   fp);
   tagged_bin_string_write(CMIO_DESC, cm->desc,  fp);
+  /* Rfam cutoffs */
+  if (!(cm->flags & CMH_GA))  { 
+    has_ga = FALSE;
+    tagged_fwrite(CMIO_HASGA, &has_ga, sizeof(int),  1, fp);  /* put a 0 to indicate no GA cutoff */
+  }
+  else {
+    has_ga = TRUE;
+    tagged_fwrite(CMIO_HASGA, &has_ga, sizeof(int),  1, fp);  /* put a 0 to indicate GA cutoff is next */
+    tagged_fwrite(CMIO_GA, &cm->ga, sizeof(int),  1, fp);
+  }    
+  if (!(cm->flags & CMH_TC))  { 
+    has_tc = FALSE;
+    tagged_fwrite(CMIO_HASTC, &has_tc, sizeof(int),  1, fp);  /* put a 0 to indicate no TC cutoff */
+  }
+  else {
+    has_tc = TRUE;
+    tagged_fwrite(CMIO_HASTC, &has_tc, sizeof(int),  1, fp);  /* put a 0 to indicate TC cutoff is next */
+    tagged_fwrite(CMIO_TC, &cm->tc, sizeof(int),  1, fp);
+  }    
+  if (!(cm->flags & CMH_NC))  { 
+    has_nc = FALSE;
+    tagged_fwrite(CMIO_HASNC, &has_nc, sizeof(int),  1, fp);  /* put a 0 to indicate no NC cutoff */
+  }
+  else {
+    has_nc = TRUE;
+    tagged_fwrite(CMIO_HASNC, &has_nc, sizeof(int),  1, fp);  /* put a 0 to indicate NC cutoff is next */
+    tagged_fwrite(CMIO_NC, &cm->nc, sizeof(int),  1, fp);
+  }    
 
   tagged_fwrite(CMIO_NULL,         cm->null,       sizeof(float), cm->abc->K, fp);
   tagged_fwrite(CMIO_STTYPE,       cm->sttype,     sizeof(char),  cm->M, fp);
@@ -909,7 +944,7 @@ write_binary_cm(FILE *fp, CM_t *cm)
   if (!(cm->flags & CMH_GUMBEL_STATS))
     {
       has_gum = has_fthr = FALSE;
-      tagged_fwrite(CMIO_HASEVD,   &has_gum, sizeof(int),  1, fp);  /* put a 0 to indicate no EVD stats */
+      tagged_fwrite(CMIO_HASEVD,     &has_gum, sizeof(int),  1, fp);  /* put a 0 to indicate no EVD stats */
       tagged_fwrite(CMIO_HASFILTER,  &has_fthr, sizeof(int),  1, fp);  /* put a 0 to indicate no HMM filter stats */
     }
   else /* (cm->flags & CMH_GUMBEL_STATS), if this flag is up, ALL EVD stats are valid */
@@ -981,6 +1016,7 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   int           v;
   int           has_gum;
   int           has_fthr;
+  int           has_ga, has_tc, has_nc;
   int           np;
   int           i, p;
   ESL_ALPHABET *abc = NULL;
@@ -1008,6 +1044,22 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   if (! tagged_bin_string_read(CMIO_NAME, &(cm->name),  fp)) goto FAILURE;
   if (! tagged_bin_string_read(CMIO_ACC,  &(cm->acc),   fp)) goto FAILURE;
   if (! tagged_bin_string_read(CMIO_DESC, &(cm->desc),  fp)) goto FAILURE;
+  /* we might have any combo of Rfam cutoffs */
+  if (! tagged_fread(CMIO_HASGA,    (void *) &(has_ga),     sizeof(int),   1,         fp))    goto FAILURE;
+  if(has_ga) { 
+    if (! tagged_fread(CMIO_GA,    (void *) &(cm->ga),       sizeof(int),   1,         fp))    goto FAILURE;
+    cm->flags |= CMH_GA;
+  }
+  if (! tagged_fread(CMIO_HASTC,    (void *) &(has_tc),     sizeof(int),   1,         fp))    goto FAILURE;
+  if(has_tc) { 
+    if (! tagged_fread(CMIO_TC,    (void *) &(cm->tc),       sizeof(int),   1,         fp))    goto FAILURE;
+    cm->flags |= CMH_TC;
+  }
+  if (! tagged_fread(CMIO_HASNC,    (void *) &(has_nc),     sizeof(int),   1,         fp))    goto FAILURE;
+  if(has_nc) { 
+    if (! tagged_fread(CMIO_NC,    (void *) &(cm->nc),       sizeof(int),   1,         fp))    goto FAILURE;
+    cm->flags |= CMH_NC;
+  }
   
   if (! tagged_fread(CMIO_NULL,         (void *) cm->null,       sizeof(float), cm->abc->K, fp))    goto FAILURE;
   if (! tagged_fread(CMIO_STTYPE,       (void *) cm->sttype,     sizeof(char),  cm->M, fp))         goto FAILURE;

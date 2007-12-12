@@ -4868,11 +4868,9 @@ alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hd
   for (jp = jfirst; jp <= jlast; jp++)
     {
       /*printf("jp: %d | max : %d\n", jp, (jlast)); */
-      ESL_DASSERT2(hdmax[jp-jmin] <= (jp+1))
+      ESL_DASSERT1((hdmax[jp-jmin] <= (jp+1)));
       /* Based on my current understanding the above line should never be false, if it is means there's a valid d
-       * in the hd band that is invalid because its > j. I think I check, or ensure, that this
-       * doesn't happen when I'm constructing the d bands.
-       */
+       * in the hd band that is invalid because its > j.*/
       bw = hdmax[jp-jmin] - hdmin[jp-jmin] +1;
 
       /*printf("\tallocated a[%d]\n", (jp-jfirst));*/

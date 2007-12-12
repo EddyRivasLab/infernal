@@ -608,6 +608,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       
       /* initialize the flags/options/params of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
+      if((status   = update_avg_hit_len(go, cfg, errbuf, cm))               != eslOK) cm_Fail(errbuf);
       if((status   = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
       if(cm->flags & CMH_GUMBEL_STATS) 
 	if((status = set_gumbels(go, cfg, errbuf, cm))                      != eslOK) cm_Fail(errbuf);
@@ -617,6 +618,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	if((status = calc_filter_threshold(go, cfg, errbuf, cm, &Smin))     != eslOK) cm_Fail(errbuf);
 
       print_search_info(go, cfg, stdout, cm, cfg->N, errbuf);
+      using_e_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
       determine_cm_min_max_chunksize(cfg, cm, &min_chunksize, &max_chunksize);
       ESL_DPRINTF1(("min_chunksize: %d\n", min_chunksize));
       ESL_DPRINTF1(("max_chunksize: %d\n", max_chunksize));
@@ -825,6 +827,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       
       /* initialize the flags/options/params of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) goto ERROR;
+      if((status   = update_avg_hit_len(go, cfg, errbuf, cm))               != eslOK) goto ERROR;
       if(cm->flags & CMH_GUMBEL_STATS) 
 	if((status = set_gumbels(go, cfg, errbuf, cm))                      != eslOK) goto ERROR;
       if((status = set_window(go, cfg, errbuf, cm))                         != eslOK) goto ERROR;

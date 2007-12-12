@@ -2255,7 +2255,7 @@ predict_hmm_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
     if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_VITERBI, vit_E, vit_fil_calcs, vit_fil_plus_surv_calcs)) != eslOK) return status;
   }
   else { /* Forward is winner */
-    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_FORWARD, fwd_E, vit_fil_calcs, vit_fil_plus_surv_calcs)) != eslOK) return status;
+    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_FORWARD, fwd_E, fwd_fil_calcs, fwd_fil_plus_surv_calcs)) != eslOK) return status;
   }
   return eslOK;
 

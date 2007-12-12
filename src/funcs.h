@@ -524,6 +524,16 @@ extern int cmcalibrate_cm_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm
 extern int cmcalibrate_cp9_results_MPIPackSize(float *cp9scAA, int nseq, MPI_Comm comm, int *ret_n);
 extern int cmcalibrate_cp9_results_MPIPack(float *cp9scA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
 extern int cmcalibrate_cp9_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_cp9scA, int *ret_nseq);
+extern int cmstats_MPIPackSize(CMStats_t *cmstats, MPI_Comm comm, int *ret_n);
+extern int cmstats_MPIPack(CMStats_t *cmstats, char *buf, int n, int *position, MPI_Comm comm);
+extern int cmstats_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CMStats_t **ret_cmstats);
+extern int gumbel_info_MPIPackSize(GumbelInfo_t *gum, MPI_Comm comm, int *ret_n);
+extern int gumbel_info_MPIPack(GumbelInfo_t *gum, char *buf, int n, int *position, MPI_Comm comm);
+extern int gumbel_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, GumbelInfo_t **ret_gum);
+extern int best_filter_info_MPIPackSize(BestFilterInfo_t *bf, MPI_Comm comm, int *ret_n);
+extern int best_filter_info_MPIPack(BestFilterInfo_t *bf, char *buf, int n, int *position, MPI_Comm comm);
+extern int best_filter_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, BestFilterInfo_t **ret_bf);
+
 #endif
 
 /* from prior.c */

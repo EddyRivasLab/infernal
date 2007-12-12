@@ -1176,7 +1176,7 @@ typedef struct bestfilterinfo_s {
   int           N;                   /* number of CM hits used to get threshold ((N*F) passed)*/
   int           db_size;             /* db size used to calculate Gum mu for *_eval calculations */
   int           is_valid;            /* TRUE if values have been set, FALSE if not */
-  int           ftype;               /* FILTER_WITH_HMM_VITERBI, FILTER_WITH_HMM_FORWARD, or FILTER_WITH_HYBRID */
+  int           ftype;               /* FILTER_WITH_HMM_VITERBI, FILTER_WITH_HMM_FORWARD, FILTER_WITH_HYBRID or FILTER_NOTYETSET */
   float         e_cutoff;            /* cutoff E-value threshold for filter (we can use this and db_size and Gumbel to get bit score for each partition) */
   float         full_cm_ncalcs;      /* millions of DP calcs for full CM scan of length db_size */
   float         fil_ncalcs;          /* millions of DP calcs for filter scan of length db_size */
@@ -1196,7 +1196,7 @@ typedef struct bestfilterinfo_s {
 /* Structure CMStats_t
  */
 typedef struct cmstats_s {
-  int np;                    /* number of partitions, df: 1 */
+  int np;                    /* number of partitions, default: 1 */
   int *ps;                   /* start GC content [0..100] of each partition */
   int *pe;                   /* end   GC content [0..100] of each partition */
   int gc2p[GC_SEGMENTS];     /* map from GC content to partition number     */
@@ -1218,14 +1218,6 @@ typedef struct cmstats_s {
 #define GUM_CM_LC  6
 #define GUM_CM_LI  7
 #define GUM_NMODES 8
-/*#define CM_LC 0  
-#define CM_GC 1
-#define CM_LI 2
-#define CM_GI 3
-#define CP9_LV 4
-#define CP9_GV 5
-#define CP9_LF 6
-#define CP9_GF 7*/
 
 /* Filter threshold modes, used in cmcalibrate 
  * 0..FTHR_MODES-1 are only dimension cmstats->fthrA 
