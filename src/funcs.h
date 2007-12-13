@@ -104,7 +104,6 @@ extern int SampleFromInsideHB (ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DS
 extern int SampleFromInside   (ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float ***mx,  Parsetree_t **ret_tr, float *ret_sc);
 extern int   ** alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
 extern char  ** alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
-/* TO BE cm_postprob.c */
 extern void CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2);
 extern void CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2);
 extern float FScore2Prob(float sc, float null);
@@ -336,6 +335,7 @@ extern int cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int
 extern int cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
 			int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, 
 			float *ret_sc);
+extern int cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq);
 extern int cp9_WorstForward(CM_t *cm, char *errbuf, CP9_MX *mx, int thresh, int doing_scan, int doing_align, int *ret_L);
 extern int cp9_CheckTransitionGuarantees(CP9_t *cp9, char *errbuf);
 extern int cp9_GetLocalityMode(CP9_t *cp9, char *errbuf, int *ret_mode);
@@ -435,19 +435,14 @@ extern float  CP9AverageMatchEntropy(CP9_t *cp9);
 /* from hmmband.c */
 extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
 extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
-extern double       DScore2Prob(int sc, float null);
 extern int          cp9_Seq2Bands     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int debug_level);
-extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level);
 extern int          cp9_FB2HMMBands        (CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
 				            int i0, int j0, int M, double p_thresh, int did_scan, int debug_level);
 extern int          cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
 					    int i0, int j0, int M, double p_thresh, int did_scan, int debug_level);
-extern void         cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *mx, int did_scan);
-extern void         cp9_IFillPostSums(CP9_MX *post, CP9Bands_t *cp9, int i0, int j0);
 extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int debug_level);
 extern void         cp9_RelaxRootBandsForSearch(CM_t *cm, int *imin, int *imax, int *jmin, int *jmax);
 extern void         cp9_DebugPrintHMMBands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level);
-extern int          cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq);
 extern void         cp9_CompareBands(CP9Bands_t *cp9b1, CP9Bands_t *cp9b2);
 extern int          cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf);
 extern void         ijBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax, 
@@ -463,6 +458,12 @@ extern void         hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, i
 				     int *safe_hdmin, int *safe_hdmax);
 extern void         debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax);
 extern void         PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax, int W);
+
+/* from cp9_postprob.c */
+extern void         cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *mx, int did_scan);
+extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level);
+extern void         cp9_IFillPostSums(CP9_MX *post, CP9Bands_t *cp9, int i0, int j0);
+extern double       DScore2Prob(int sc, float null);
 
 /* from hybridsearch.c */
 extern int                cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanInfo_t *hsi, int i0, int j0, int W, 
@@ -518,12 +519,6 @@ extern int cm_cp9trace_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CP9t
 extern int cm_digitized_sq_MPIPackSize(const ESL_SQ *sq, MPI_Comm comm, int *ret_n);
 extern int cm_digitized_sq_MPIPack(const ESL_SQ *sq, char *buf, int n, int *position, MPI_Comm comm);
 extern int cm_digitized_sq_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, int *pos, MPI_Comm comm, ESL_SQ **ret_sq);
-extern int cmcalibrate_cm_results_MPIPackSize(float **vscAA, int nseq, int M, MPI_Comm comm, int *ret_n);
-extern int cmcalibrate_cm_results_MPIPack(float **vscAA, int nseq, int M, char *buf, int n, int *position, MPI_Comm comm);
-extern int cmcalibrate_cm_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, int M, float ***ret_vscAA, int *ret_nseq);
-extern int cmcalibrate_cp9_results_MPIPackSize(float *cp9scAA, int nseq, MPI_Comm comm, int *ret_n);
-extern int cmcalibrate_cp9_results_MPIPack(float *cp9scA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
-extern int cmcalibrate_cp9_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_cp9scA, int *ret_nseq);
 extern int cmstats_MPIPackSize(CMStats_t *cmstats, MPI_Comm comm, int *ret_n);
 extern int cmstats_MPIPack(CMStats_t *cmstats, char *buf, int n, int *position, MPI_Comm comm);
 extern int cmstats_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CMStats_t **ret_cmstats);
@@ -533,6 +528,15 @@ extern int gumbel_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, Gumb
 extern int best_filter_info_MPIPackSize(BestFilterInfo_t *bf, MPI_Comm comm, int *ret_n);
 extern int best_filter_info_MPIPack(BestFilterInfo_t *bf, char *buf, int n, int *position, MPI_Comm comm);
 extern int best_filter_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, BestFilterInfo_t **ret_bf);
+extern int cmcalibrate_cm_gumbel_results_MPIPackSize(float **vscAA, int nseq, int M, MPI_Comm comm, int *ret_n);
+extern int cmcalibrate_cm_gumbel_results_MPIPack(float **vscAA, int nseq, int M, char *buf, int n, int *position, MPI_Comm comm);
+extern int cmcalibrate_cm_gumbel_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, int M, float ***ret_vscAA, int *ret_nseq);
+extern int cmcalibrate_cp9_gumbel_results_MPIPackSize(float *cp9scAA, int nseq, MPI_Comm comm, int *ret_n);
+extern int cmcalibrate_cp9_gumbel_results_MPIPack(float *cp9scA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
+extern int cmcalibrate_cp9_gumbel_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_cp9scA, int *ret_nseq);
+extern int cmcalibrate_cp9_filter_results_MPIPackSize(int nseq, int M, MPI_Comm comm, int *ret_n);;
+extern int cmcalibrate_cp9_filter_results_MPIPack(float **vscAA, float *vit_cp9scA, float *fwd_cp9scA, int *partA, int nseq, int M, char *buf, int n, int *position, MPI_Comm comm);
+extern int cmcalibrate_cp9_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, int M, float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, int **ret_partA, int *ret_nseq);
 
 #endif
 
@@ -604,7 +608,9 @@ extern int        GumModeIsForCM(int gum_mode);
 extern int        GumModeToSearchOpts(CM_t *cm, int gum_mode);
 extern int        GumModeToFthrMode(int gum_mode);
 extern GumbelInfo_t *CreateGumbelInfo();
+extern void          SetGumbelInfo(GumbelInfo_t *gum, double mu, double lambda, int L, int N);
 extern GumbelInfo_t *DuplicateGumbelInfo(GumbelInfo_t *src);
+
 /*extern int        CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest);
   extern int        CopyCMStatsGumbel(CMStats_t *src, CMStats_t *dest);
   extern int        CopyCMStats(CMStats_t *src, CMStats_t *dest);

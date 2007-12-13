@@ -2132,7 +2132,6 @@ hmm2ij_state_step5_non_emitter_d0_hack(int v, int imax_v, int *jmin)
  * cp9_DebugPrintHMMBands()
  * ijBandedTraceInfoDump()
  * ijdBandedTraceInfoDump()
- * cp9_DebugCheckFB()
  */
 /**************************************************************
  * EPN 12.18.05
@@ -2551,93 +2550,6 @@ ijdBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
  ERROR:
   cm_Fail("Memory allocation error.\n");
 }
-
-
-/*********************************************************************
- * Function: cp9_CheckFB()
- * 
- * Purpose:  Debugging function to make sure CP9Forward() and 
- *           CP9Backward are working by checking:
- *           For all positions i, and states k:
- *             sum_k f[i][k] * b[i][k] = P(x|hmm)
- *           
- * Args:     fmx    - forward dp matrix, already filled
- *           bmx    - backward dp matrix, already filled
- *           hmm    - the model
- *           sc     - P(x|hmm) the probability of the entire
- *                    seq given the model
- *           i0     - start of target subsequence (often 1, beginning of dsq)
- *           j0     - end of target subsequence (often L, end of dsq)
- *           dsq    - the digitized sequence
- *           
- * Note about sequence position indexing: although this function
- * works on a subsequence from i0 to j0, fmx and bmx have offset indices,
- * from 1 to W, with W = j0-i0+1.
- * 
- * Return:   eslOK on success;
- *           eslFAIL if any residue fails check
- */
-int
-cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq)
-{
-  if(fmx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_CheckFB(), fmx is NULL.\n");
-  if(bmx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_CheckFB(), bmx is NULL.\n");
-  if(dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_CheckFB(), dsq is NULL.");
-
-  int k, i;
-  float max_diff;  /* maximum allowed difference between sc and 
-		    * sum_k f[i][k] * b[i][k] for any i */
-  float diff;
-  int fb_sum;
-  float fb_sc;
-  int   W;		/* subsequence length */
-  int   ip;		/* i': relative position in the subsequence  */
-  int to_add;
-
-  W  = j0-i0+1;		/* the length of the subsequence */
-  max_diff = 0.1;       /* tolerance, must be within .1 bits of original score */
-
-  /* In all possible paths through the model, each residue of the sequence must have 
-   * been emitted by exactly 1 insert or match state. */
-  for (ip = 1; ip <= W; ip++) {
-    i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
-    fb_sum = -INFTY;
-    for (k = 0; k <= hmm->M; k++) {
-      if     (fmx->mmx[ip][k] == -INFTY) to_add = -INFTY;
-      else if(bmx->mmx[ip][k] == -INFTY) to_add = -INFTY;
-      else {
-	to_add = fmx->mmx[ip][k] + bmx->mmx[ip][k];
-	if(k > 0) to_add -= hmm->msc[dsq[i]][k];
-      }
-      /* hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx
-       * unless, we're talking about M_0, the B state, it doesn't emit */
-      fb_sum = ILogsum(fb_sum, to_add);
-      
-      /*printf("fmx->mmx[ip:%d][k:%d]: %d\n", ip, k, fmx->mmx[ip][k]);
-	printf("bmx->mmx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->mmx[ip][k]-hmm->msc[dsq[i]][k]), fb_sum);
-      */
-      if     (fmx->imx[ip][k] == -INFTY) to_add = -INFTY;
-      else if(bmx->imx[ip][k] == -INFTY) to_add = -INFTY;
-      else  {
-	to_add  = fmx->imx[ip][k] + bmx->imx[ip][k]; 
-	to_add -= hmm->isc[dsq[i]][k];
-      }
-      /*hmm->isc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
-      fb_sum = ILogsum(fb_sum, to_add);
-      
-      /*printf("fmx->imx[ip:%d][k:%d]: %d\n", ip, k, fmx->imx[ip][k]);
-	printf("bmx->imx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->imx[ip][k]-hmm->isc[dsq[i]][k]), fb_sum);
-      */
-    }
-    fb_sc  = Scorify(fb_sum);
-    diff = fabs(fb_sc - sc);
-    if((fabs(diff) > max_diff)) 
-      ESL_FAIL(eslFAIL, errbuf, "cp9_CheckFB(), residue at posn i:%d violates sum_k f[i][k]*b[i][k]=P(x|hmm), sum_k = %.4f bits (should be %.4f)\n", i, fb_sc, sc);
-  }
-  ESL_DPRINTF1(("cp9_CheckFB() passed, Forward/Backward matrices pass check.\n"));
-  return eslOK;
-}
-
 
 /*********************************************************************
  * Function: cp9_RelaxRootBandsForSearch()

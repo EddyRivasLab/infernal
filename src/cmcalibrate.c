@@ -44,7 +44,8 @@
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
-#define MPI_NEXT_PARTITION -1 /* message to send to workers */
+#define MPI_FINISHED_GUMBEL     -1 /* message to send to workers */
+#define MPI_FINISHED_CP9_FILTER -2 /* message to send to workers */
 
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"
@@ -108,7 +109,11 @@ struct cfg_s {
   char            *tmpfile;            /* tmp file we're writing to */
   char            *mode;               /* write mode, "w" or "wb"                     */
   long             dbsize;             /* size of DB for gumbel stats (impt for E-value cutoffs for filters) */ 
-  int              np;                 /* number of partitions, 1 unless --pfile invoked */
+  int              np;                 /* number of partitions, must be 1 unless --pfile or --filonly invoked,
+					* once set, is never changed, once case we look out for: 
+					* if --filonly invoked and CM file has CMs with diff number of partitions,
+					* this is unlikely but possible, in this case we die in initialize_cmstats() 
+					*/
   int             *pstart;             /* [0..p..np-1], begin points for partitions, end pts are implicit */
   float           *avglen;             /* [0..v..M-1] average hit len for subtree rooted at each state v for current CM */
 
@@ -170,7 +175,7 @@ static void estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cf
 static int read_partition_file(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int update_avg_hit_len(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int switch_global_to_local(CM_t *cm, char *errbuf);
-static int predict_hmm_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_vit_cp9scA, float *fil_fwd_cp9scA, int *fil_partA, BestFilterInfo_t *bf);
+static int predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_vit_cp9scA, float *fil_fwd_cp9scA, int *fil_partA, BestFilterInfo_t *bf);
 static int predict_best_sub_cm_roots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **fil_vscAA, int **ret_best_sub_roots);
 static int predict_hybrid_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_hybscA, int *fil_partA, GumbelInfo_t **gum_hybA, BestFilterInfo_t *bf, int *ret_getting_faster);
 
@@ -332,6 +337,8 @@ main(int argc, char **argv)
       if (!CMFileRead(cfg.cmfp, &(cfg.abc), &cm)) cm_Fail("Ran out of CMs too early in pass 2");
       if (cm == NULL)                               cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
       cm->stats = cfg.cmstatsA[cmi];
+      cm->flags &= ~CMH_FILTER_STATS; /* forget that CM may have had filter stats, if --gumonly was invoked, it won't anymore */
+
       if(!(esl_opt_GetBoolean(go, "--filonly"))) cm->flags |= CMH_GUMBEL_STATS; 
       if(!(esl_opt_GetBoolean(go, "--gumonly"))) cm->flags |= CMH_FILTER_STATS; 
       CMFileWrite(outfp, cm, cfg.cmfp->is_binary);
@@ -378,7 +385,7 @@ main(int argc, char **argv)
  *    cfg->filrfp      - optional output file
  *    cfg->gc_freq     - observed GC freqs (if --dbfile invoked)
  *    cfg->cmstatsA    - the stats, allocated only
- *    cfg->np          - number of partitions
+ *    cfg->np          - number of partitions, never changes once set 
  *    cfg->pstart      - array of partition starts 
  *    cfg->r           - source of randomness
  *    cfg->tmpfile     - temp file for rewriting cm file
@@ -508,15 +515,12 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 static int
 init_worker_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
+  int status; 
   cfg->cmfile = NULL;
   cfg->abc      = NULL;
   cfg->gc_freq  = NULL;
   cfg->pgc_freq = NULL;
   cfg->be_verbose = FALSE;
-  cfg->cmstatsA = NULL;
-  cfg->hsi      = NULL;
-  cfg->ncm      = 0;
-  cfg->cmalloc  = 0;
   cfg->tmpfile  = NULL;
   cfg->mode     = NULL;
   cfg->dbsize  = 0;
@@ -533,14 +537,24 @@ init_worker_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   cfg->filhfp = NULL;
   cfg->filrfp = NULL;
   
+  /* allocate cmstats results per CM;
+   * we'll resize these arrays dynamically as we read more CMs.
+   */
+  cfg->cmalloc  = 128;
+  ESL_ALLOC(cfg->cmstatsA, sizeof(CMStats_t *) * cfg->cmalloc);
+  cfg->ncm      = 0;
+
   /* we may receive info pertaining to these from master 
    * inside mpi_worker(), at which time we'll update them
    */
-  cfg->np       = 0;
+  cfg->np       = 0;  
   cfg->pstart   = NULL;
   cfg->r        = NULL; /* we'll create this when seed is received from master */
 
   return eslOK;
+
+ ERROR:
+  return status;
 }
 
 /* serial_master()
@@ -571,12 +585,13 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int     *fil_partA      = NULL; /*                [0..nseq-1] partition of CM emitted seq */
   float   *gum_hybscA     = NULL; /*                [0..nseq-1] best hybrid score for each random seq */
   float   *fil_hybscA     = NULL; /*                [0..nseq-1] best hybrid score for each emitted seq */
-
+  double   tmp_mu, tmp_lambda;    /* temporary mu and lambda used for setting HMM gumbels */
   int      do_time_estimates = TRUE;
   int     *best_sub_roots = NULL; /* [0..cfg->hsi->nstarts-1], best predicted sub CM root filter for each start group */
   /* int      do_time_estimates = esl_opt_GetBoolean(go, "--etime"); */
   int s = 0;
   int getting_faster = TRUE;
+  void *tmp;
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
 
@@ -584,6 +599,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;
+      if(cfg->ncm == cfg->cmalloc) { /* expand our memory */
+	cfg->cmalloc  += 128;
+	ESL_RALLOC(cfg->cmstatsA, tmp, sizeof(CMStats_t *) * cfg->cmalloc);
+      }
       cmi = cfg->ncm-1;
       if (esl_opt_GetBoolean(go, "--filonly") && (! (cm->flags & CMH_GUMBEL_STATS))) cm_Fail("--filonly invoked, but CM %s (CM number %d) does not have Gumbel stats in CM file\n", cm->name, (cmi+1));
 
@@ -602,29 +621,14 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if((status = switch_global_to_local(cm, errbuf)) != eslOK)      cm_Fail(errbuf);
 	  if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
 	}
-	/* TEMPORARY BLOCK */
-	if(GumModeIsLocal(gum_mode)) {
-	  ESL_DASSERT1((cm->flags & CMH_LOCAL_BEGIN));
-	  ESL_DASSERT1((cm->flags & CMH_LOCAL_END));
-	  ESL_DASSERT1((cm->cp9->flags & CPLAN9_LOCAL_BEGIN));
-	  ESL_DASSERT1((cm->cp9->flags & CPLAN9_LOCAL_END));
-	  ESL_DASSERT1((cm->cp9->flags & CPLAN9_EL));
-	}
-	else {
-	  ESL_DASSERT1((!(cm->flags & CMH_LOCAL_BEGIN)));
-	  ESL_DASSERT1((!(cm->flags & CMH_LOCAL_END)));
-	  ESL_DASSERT1((!(cm->cp9->flags & CPLAN9_LOCAL_BEGIN)));
-	  ESL_DASSERT1((!(cm->cp9->flags & CPLAN9_LOCAL_END)));
-	  ESL_DASSERT1((!(cm->cp9->flags & CPLAN9_EL)));
-	}
-	/* END TEMPORARY BLOCK */
 	/* update search opts for gumbel mode */
 	GumModeToSearchOpts(cm, gum_mode);
 	
 	/* gumbel fitting section */
 	if(! (esl_opt_GetBoolean(go, "--filonly"))) {
 	  /* calculate gumbels for this gum mode */
-	  for (p = 0; p < cfg->cmstatsA[cmi]->np; p++) {
+	  ESL_DASSERT1((cfg->np == cfg->cmstatsA[cmi]->np));
+	  for (p = 0; p < cfg->np; p++) {
 	    if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
 	    if(GumModeIsForCM(gum_mode)) { /* CM mode */
 	      /* search random sequences to get gumbels for each candidate sub CM root state (including 0, the root of the full model) */
@@ -632,21 +636,14 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      ESL_DPRINTF1(("\n\ncalling process_gumbel_workunit to fit gumbel for p: %d CM mode: %d\n", p, gum_mode));
 	      if((status = process_gumbel_workunit (go, cfg, errbuf, cm, cmN, &gum_vscAA, NULL, NULL)) != eslOK) cm_Fail(errbuf);
 	      if((status = cm_fit_histograms(go, cfg, errbuf, cm, gum_vscAA, cmN, p)) != eslOK) cm_Fail(errbuf);
-	      cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->mu     = cfg->vmuAA[p][0];
-	      cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->lambda = cfg->vlambdaAA[p][0];
-	      cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->L      = cm->W*2;
-	      cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->N      = cmN;
-	      cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->is_valid = TRUE;
+	      SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], cfg->vmuAA[p][0], cfg->vlambdaAA[p][0], cm->W*2, cmN);
 	    }
 	    else { /* CP9 mode, fit gumbel for full HMM */
 	      if(do_time_estimates) estimate_workunit_time(go, cfg, hmmN, cm->W*2, gum_mode);
 	      ESL_DPRINTF1(("\n\ncalling process_gumbel_workunit to fit gumbel for p: %d CP9 mode: %d\n", p, gum_mode));
 	      if((status = process_gumbel_workunit (go, cfg, errbuf, cm, hmmN, NULL, &gum_cp9scA, NULL)) != eslOK) cm_Fail(errbuf);
-	      if((status = fit_histogram(go, cfg, errbuf, gum_cp9scA, hmmN, &(cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->mu), 
-					 &(cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->lambda)))     != eslOK) cm_Fail(errbuf);
-	      cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->L      = cm->W*2;
-	      cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->N      = hmmN;
-	      cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->is_valid = TRUE;
+	      if((status = fit_histogram(go, cfg, errbuf, gum_cp9scA, hmmN, &tmp_mu, &tmp_lambda))       != eslOK) cm_Fail(errbuf);
+	      SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], tmp_mu, tmp_lambda, cm->W*2, hmmN);
 	    }
 	  } /* end of for loop over partitions */
 	} /* end of if ! --filonly */
@@ -670,10 +667,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	     */
 
 	    /* 1. predict speedup for HMM-only filter */
-	    if((status = predict_hmm_filter_speedup(go, cfg, errbuf, cm, fil_vit_cp9scA, fil_fwd_cp9scA, fil_partA, cfg->cmstatsA[cmi]->bfA[fthr_mode])) != eslOK) cm_Fail(errbuf);
+	    if((status = predict_cp9_filter_speedup(go, cfg, errbuf, cm, fil_vit_cp9scA, fil_fwd_cp9scA, fil_partA, cfg->cmstatsA[cmi]->bfA[fthr_mode])) != eslOK) cm_Fail(errbuf);
 	    DumpBestFilterInfo(cfg->cmstatsA[cmi]->bfA[fthr_mode]);
 	    
-	    /* if desired, try hybrid filters to see if better than HMM */
+	    /* if desired, try hybrid filters to see if we can do better than the HMM */
 	    if(esl_opt_GetBoolean(go, "--hybrid")) {
 	      /* 2. predict best sub CM filter root state in each start group */
 	      if((status = predict_best_sub_cm_roots(go, cfg, errbuf, cm, fil_vscAA, &best_sub_roots)) != eslOK) cm_Fail(errbuf);
@@ -685,14 +682,12 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		if(cm_CheckCompatibleWithHybridScanInfo(cm, cfg->hsi, best_sub_roots[s])) {
 		  cm_AddRootToHybridScanInfo(cm, cfg->hsi, best_sub_roots[s++]);
 		  /* fit gumbels for new hybrid scanner */
-		  for (p = 0; p < cfg->cmstatsA[cmi]->np; p++) {
+		  ESL_DASSERT1((cfg->np == cfg->cmstatsA[cmi]->np));
+		  for (p = 0; p < cfg->np; p++) {
 		    if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
 		    if((status = process_gumbel_workunit (go, cfg, errbuf, cm, cmN, NULL, NULL, &gum_hybscA)) != eslOK) cm_Fail(errbuf);
-		    if((status = fit_histogram(go, cfg, errbuf, gum_hybscA, cmN, &(cfg->gum_hybA[p]->mu), 
-					       &(cfg->gum_hybA[p]->lambda)))     != eslOK) cm_Fail(errbuf);
-		    cfg->gum_hybA[p]->L       = cm->W*2;
-		    cfg->gum_hybA[p]->N       = cmN;
-		    cfg->gum_hybA[p]->is_valid = TRUE;
+		    if((status = fit_histogram(go, cfg, errbuf, gum_hybscA, cmN, &tmp_mu, &tmp_lambda))       != eslOK) cm_Fail(errbuf);
+		    SetGumbelInfo(cfg->gum_hybA[p], tmp_mu, tmp_lambda, cm->W*2, cmN);
 		    debug_print_gumbelinfo(cfg->gum_hybA[p]);
 		  }		
 		  /* get hybrid scores of CM emitted seqs */
@@ -720,6 +715,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       FreeCM(cm);
     }
   return;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return; /*NEVERREACHED*/
 }
 
 #ifdef HAVE_MPI
@@ -760,6 +759,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   char    *buf           = NULL;	/* input/output buffer, for packed MPI messages */
   int      bn            = 0;
   int      pos = 1;
+  void    *tmp;
 
   CM_t          *cm = NULL;
   int            cmN  = esl_opt_GetInteger(go, "--cmN");
@@ -767,13 +767,22 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int            filN = esl_opt_GetInteger(go, "--filN");
 
   int        gum_mode = 0;
+  int       fthr_mode = 0;
   int               p;
   float  **gum_vscAA  = NULL; /* [0..v..cm->M-1][0..nseq-1] best cm score for each state, each random seq */
-  float  **fil_vscAA  = NULL; /* [0..v..cm->M-1][0..nseq-1] best cm score for each state, each emitted seq */
   float   *gum_cp9scA = NULL; /*                [0..nseq-1] best cp9 score for each random seq */
-  float   *fil_cp9scA = NULL; /*                [0..nseq-1] best cp9 score for each emitted seq */
-  float  **worker_vscAA = NULL;
+
+  float  **fil_vscAA      = NULL; /* [0..v..cm->M-1][0..nseq-1] best cm score for each state, each emitted seq */
+  float   *fil_vit_cp9scA = NULL; /*                [0..nseq-1] best viterbi cp9 score for each emitted seq */
+  float   *fil_fwd_cp9scA = NULL; /*                [0..nseq-1] best forward cp9 score for each emitted seq */
+  int     *fil_partA      = NULL; /*                [0..nseq-1] partition each CM emitted seq belongs to */
+
+  /* data received from workers */
+  float  **worker_vscAA = NULL;   
   float   *worker_cp9scA = NULL;
+  float   *worker_vit_cp9scA = NULL;
+  float   *worker_fwd_cp9scA = NULL;
+  int     *worker_partA = NULL;
 
   long *seedlist = NULL;
   char  errbuf[cmERRBUFSIZE];
@@ -781,14 +790,16 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int   n, v, i;
   int working_on_cm;        /* TRUE when gum_mode is for CM gumbel */
   int working_on_cp9;       /* TRUE when gum_mode is for CP9 gumbel */
+  int gum_nseq_per_worker  = 0; /* when calcing gumbels, number of seqs to tell each worker to work on */
+  int gum_nseq_this_round  = 0; /* when calcing gumbels, number of seqs for current round */
+  int fil_nseq_per_worker  = (filN / (cfg->nproc-1)); /* when calcing filters, number of seqs to tell each worker to work on */
   int nseq_sent        = 0; /* number of seqs we've told workers to work on */
-  int nseq_per_worker  = 0; /* number of seqs to tell each worker to work on */
   int nseq_this_worker = 0; /* number of seqs to tell current worker to work on */
-  int nseq_this_round  = 0; /* number of seqs for current round */
   int nseq_just_recv   = 0; /* number of seqs we just received scores for from a worker */
   int nseq_recv        = 0; /* number of seqs we've received thus far this round from workers */
   int msg;
   int cmi;                  /* CM index, which number CM we're working on */
+  double tmp_mu, tmp_lambda;/* temporary mu and lambda used for setting HMM gumbels */
 
   /* Master initialization: including, figure out the alphabet type.
    * If any failure occurs, delay printing error message until we've shut down workers.
@@ -831,6 +842,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     MPI_Bcast(cfg->gc_freq, GC_SEGMENTS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
   }
   if(! (esl_opt_IsDefault(go, "--pfile"))) { /* broadcast partition info to workers */
+    ESL_DASSERT1((! (esl_opt_GetBoolean(go, "--filonly"))));
     MPI_Bcast(&(cfg->np),  1,       MPI_INT, 0, MPI_COMM_WORLD);
     ESL_DASSERT1((cfg->pstart != NULL));
     MPI_Bcast(cfg->pstart, cfg->np, MPI_INT, 0, MPI_COMM_WORLD);
@@ -851,40 +863,181 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
     {
       cfg->ncm++;  
+      if(cfg->ncm == cfg->cmalloc) { /* expand our memory */
+	cfg->cmalloc  += 128;
+	ESL_RALLOC(cfg->cmstatsA, tmp, sizeof(CMStats_t *) * cfg->cmalloc);
+      }
       cmi = cfg->ncm-1;
+      if (esl_opt_GetBoolean(go, "--filonly") && (! (cm->flags & CMH_GUMBEL_STATS))) cm_Fail("--filonly invoked, but CM %s (CM number %d) does not have Gumbel stats in CM file\n", cm->name, (cmi+1));
+
       ESL_DPRINTF1(("MPI master read CM number %d\n", cfg->ncm));
       if((status = cm_master_MPIBcast(cm, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
       
       /* initialize the flags/options/params of the CM */
-      if((status = initialize_cm(go, cfg, errbuf, cm))      != eslOK) cm_Fail(errbuf);
+      if((status = initialize_cm     (go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
       if((status = initialize_cmstats(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+      if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
 
-      ESL_ALLOC(gum_vscAA, sizeof(float *) * cm->M);
-      ESL_ALLOC(gum_cp9scA, sizeof(float)  * hmmN);
-      for(v = 0; v < cm->M; v++) ESL_ALLOC(gum_vscAA[v], sizeof(float) * cmN);
+      if(! (esl_opt_GetBoolean(go, "--filonly"))) { 
+	ESL_ALLOC(gum_vscAA, sizeof(float *) * cm->M);
+	for(v = 0; v < cm->M; v++) ESL_ALLOC(gum_vscAA[v], sizeof(float) * cmN);
+	ESL_ALLOC(gum_cp9scA, sizeof(float)  * hmmN);
+      }
 
-      for(gum_mode = 0; gum_mode < NGUMBELMODES; gum_mode++) {
-	ConfigForGumbelMode(cm, gum_mode);
-	working_on_cm   = (gum_mode < NCMMODES) ? TRUE  : FALSE;
-	working_on_cp9  = (gum_mode < NCMMODES) ? FALSE : TRUE;
-	nseq_per_worker = working_on_cm ? (int) (cmN / (cfg->nproc-1)) : (int) (hmmN / (cfg->nproc-1));
-	nseq_this_round = working_on_cm ? cmN : hmmN;
+      if(! (esl_opt_GetBoolean(go, "--gumonly"))) { 
+	ESL_ALLOC(fil_vscAA, sizeof(float *) * cm->M);
+	for(v = 0; v < cm->M; v++) ESL_ALLOC(fil_vscAA[v], sizeof(float) * filN);
+	ESL_ALLOC(fil_vit_cp9scA, sizeof(float) * filN);
+	ESL_ALLOC(fil_fwd_cp9scA, sizeof(float) * filN);
+	ESL_ALLOC(fil_partA,      sizeof(int) *   filN);
+      }
 
-	for (p = 0; p < cfg->np; p++) {
+      for(gum_mode = 0; gum_mode < GUM_NMODES; gum_mode++) {
 
-	  ESL_DPRINTF1(("MPI master: CM: %d gumbel mode: %d partition: %d\n", cfg->ncm, gum_mode, p));
+	if(GumModeIsForCM(gum_mode)) { working_on_cm = TRUE;  working_on_cp9 = FALSE; }
+	else                         { working_on_cm = FALSE; working_on_cp9 = TRUE;  }
+	gum_nseq_per_worker = working_on_cm ? (int) (cmN / (cfg->nproc-1)) : (int) (hmmN / (cfg->nproc-1));
+	gum_nseq_this_round = working_on_cm ? cmN : hmmN;
+
+	/* free and recalculate hybrid scan info, b/c when investigating hybrid filters we may have added sub CM roots */
+	if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi, cm);
+	cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--fbeta"), cfg->full_vcalcs[0]);
+
+	/* do we need to switch from glocal configuration to local? */
+	if(gum_mode > 0 && (! GumModeIsLocal(gum_mode-1)) && GumModeIsLocal(gum_mode)) {
+	  if((status = switch_global_to_local(cm, errbuf)) != eslOK)      cm_Fail(errbuf);
+	  if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	}
+	/* update search opts for gumbel mode */
+	GumModeToSearchOpts(cm, gum_mode);
+
+	/* gumbel fitting section */
+	if(! (esl_opt_GetBoolean(go, "--filonly"))) {
+	  for (p = 0; p < cfg->np; p++) {
+	    
+	    ESL_DPRINTF1(("MPI master: CM: %d gumbel mode: %d partition: %d\n", cfg->ncm, gum_mode, p));
+	    
+	    have_work     = TRUE;	/* TRUE while work remains  */
+	    
+	    wi = 1;
+	    nseq_sent = 0;
+	    nseq_recv = 0;
+	    while (have_work || nproc_working)
+	      {
+		if(have_work) { 
+		  if(nseq_sent < gum_nseq_this_round) {
+		    nseq_this_worker = (nseq_sent + gum_nseq_per_worker <= gum_nseq_this_round) ? 
+		      gum_nseq_per_worker : (gum_nseq_this_round - nseq_sent);
+		  }
+		  else { 
+		    have_work = FALSE;
+		    ESL_DPRINTF1(("MPI master has run out of numbers of sequences to dole out (%d doled)\n", nseq_sent));
+		  }
+		}
+		if ((have_work && nproc_working == cfg->nproc-1) || (!have_work && nproc_working > 0)) {
+		  /* we're waiting to receive */
+		  if (MPI_Probe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &mpistatus) != 0) cm_Fail("mpi probe failed");
+		  if (MPI_Get_count(&mpistatus, MPI_PACKED, &n)                != 0) cm_Fail("mpi get count failed");
+		  wi = mpistatus.MPI_SOURCE;
+		  ESL_DPRINTF1(("MPI master sees a result of %d bytes from worker %d\n", n, wi));
+	      
+		  if (n > bn) {
+		    if ((buf = realloc(buf, sizeof(char) * n)) == NULL) cm_Fail("reallocation failed");
+		    bn = n; 
+		  }
+		  if (MPI_Recv(buf, bn, MPI_PACKED, wi, 0, MPI_COMM_WORLD, &mpistatus) != 0) cm_Fail("mpi recv failed");
+		  ESL_DPRINTF1(("MPI master has received the buffer\n"));
+	      
+		  /* If we're in a recoverable error state, we're only clearing worker results;
+		   * just receive them, don't unpack them or print them.
+		   * But if our xstatus is OK, go ahead and process the result buffer.
+		   */
+		  if (xstatus == eslOK) /* worker reported success. Get the result. */
+		    {
+		      pos = 0;
+		      ESL_DPRINTF1(("MPI master sees that the result buffer contains calibration results\n"));
+		      if(working_on_cm) {
+			if ((status = cmcalibrate_cm_gumbel_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, cm->M, &worker_vscAA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
+			ESL_DPRINTF1(("MPI master has unpacked CM gumbel results\n"));
+			ESL_DASSERT1((nseq_just_recv > 0));
+			for(v = 0; v < cm->M; v++) {
+			  for(i = 0; i < nseq_just_recv; i++) {
+			    ESL_DPRINTF3(("\tscore from worker v: %d i: %d sc: %f\n", i, v, worker_vscAA[v][i]));
+			    gum_vscAA[v][nseq_recv+i] = worker_vscAA[v][i];
+			  }
+			  free(worker_vscAA[v]);
+			}
+			free(worker_vscAA);
+		      }
+		      else { /* working on cp9 */
+			if ((status = cmcalibrate_cp9_gumbel_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &worker_cp9scA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
+			ESL_DPRINTF1(("MPI master has unpacked CP9 gumbel results\n"));
+			ESL_DASSERT1((nseq_just_recv > 0));
+			for(i = 0; i < nseq_just_recv; i++) 
+			  gum_cp9scA[nseq_recv+i] = worker_cp9scA[i];
+			free(worker_cp9scA);
+		      }
+		      nseq_recv += nseq_just_recv;
+		    }
+		  else	/* worker reported an error. Get the errbuf. */
+		    {
+		      if (MPI_Unpack(buf, bn, &pos, errbuf, cmERRBUFSIZE, MPI_CHAR, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack of errbuf failed");
+		      ESL_DPRINTF1(("MPI master sees that the result buffer contains an error message\n"));
+		    }
+		  nproc_working--;
+		}
+	  
+		if (have_work)
+		  {   
+		    /* send new search job */
+		    ESL_DPRINTF1(("MPI master is sending nseq %d to worker %d\n", nseq_this_worker, wi));
+		    MPI_Send(&(nseq_this_worker), 1, MPI_INT, wi, 0, MPI_COMM_WORLD);
+	      
+		    wi++;
+		    nproc_working++;
+		    nseq_sent += nseq_this_worker;
+		  }
+	      }
+	    /* fit gumbels for this partition p, this gumbel mode gum_mode */
+	    if(working_on_cm) { 
+	      if((status = cm_fit_histograms(go, cfg, errbuf, cm, gum_vscAA, cmN, p)) != eslOK) cm_Fail(errbuf);
+	      SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], cfg->vmuAA[p][0], cfg->vlambdaAA[p][0], cm->W*2, cmN);
+	    }
+	    else /* working on CP9 */ {
+	      if((status = fit_histogram(go, cfg, errbuf, gum_cp9scA, hmmN, &tmp_mu, &tmp_lambda))       != eslOK) cm_Fail(errbuf);
+	      SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], tmp_mu, tmp_lambda, cm->W*2, hmmN);
+	    }
+	  }
+	  ESL_DPRINTF1(("MPI master: done with partition: %d for gumbel mode: %d for this CM. Telling all workers\n", p, gum_mode));
+	  for (wi = 1; wi < cfg->nproc; wi++) { 
+	    msg = MPI_FINISHED_GUMBEL;
+	    MPI_Send(&msg, 1, MPI_INT, wi, 0, MPI_COMM_WORLD);
+	  }
+	} /* end of if ! --filonly */
+
+	/* filter threshold section */
+	if(GumModeIsForCM(gum_mode) && (! (esl_opt_GetBoolean(go, "--gumonly")))) {
+	  fthr_mode = GumModeToFthrMode(gum_mode);
+	  ESL_DASSERT1((fthr_mode != -1));
+	  ESL_DPRINTF1(("MPI master: CM: %d fthr mode: %d\n", cfg->ncm, fthr_mode));
+
+	  if((status = update_cutoffs(go, cfg, errbuf, cm, gum_mode)) != eslOK) cm_Fail(errbuf);
+	  /* broadcast cutoffs */
+	  ESL_DASSERT1((cfg->cutoffA != NULL));
+	  MPI_Bcast(cfg->cutoffA, cfg->np, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
 	  have_work     = TRUE;	/* TRUE while work remains  */
-	  
+	    
 	  wi = 1;
+
 	  nseq_sent = 0;
 	  nseq_recv = 0;
 	  while (have_work || nproc_working)
 	    {
 	      if(have_work) { 
-		if(nseq_sent < nseq_this_round) {
-		  nseq_this_worker = (nseq_sent + nseq_per_worker <= nseq_this_round) ? 
-		    nseq_per_worker : (nseq_this_round - nseq_sent);
+		if(nseq_sent < filN) {
+		  nseq_this_worker = (nseq_sent + fil_nseq_per_worker <= filN) ? 
+		    fil_nseq_per_worker : (filN - nseq_sent);
 		}
 		else { 
 		  have_work = FALSE;
@@ -904,7 +1057,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		}
 		if (MPI_Recv(buf, bn, MPI_PACKED, wi, 0, MPI_COMM_WORLD, &mpistatus) != 0) cm_Fail("mpi recv failed");
 		ESL_DPRINTF1(("MPI master has received the buffer\n"));
-	      
+		
 		/* If we're in a recoverable error state, we're only clearing worker results;
 		 * just receive them, don't unpack them or print them.
 		 * But if our xstatus is OK, go ahead and process the result buffer.
@@ -912,28 +1065,29 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		if (xstatus == eslOK) /* worker reported success. Get the result. */
 		  {
 		    pos = 0;
-		    ESL_DPRINTF1(("MPI master sees that the result buffer contains calibration results\n"));
-		    if(working_on_cm) {
-		      if ((status = cmcalibrate_cm_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, cm->M, &worker_vscAA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
-		      ESL_DPRINTF1(("MPI master has unpacked CM gumbel results\n"));
-		      ESL_DASSERT1((nseq_just_recv > 0));
-		      for(v = 0; v < cm->M; v++) {
-			for(i = 0; i < nseq_just_recv; i++) {
-			  ESL_DPRINTF2(("\tscore from worker v: %d i: %d sc: %f\n", i, v, worker_vscAA[v][i]));
-			  gum_vscAA[v][nseq_recv+i] = worker_vscAA[v][i];
-			}
-			free(worker_vscAA[v]);
+		    ESL_DPRINTF1(("MPI master sees that the result buffer contains HMM filter results\n"));
+		    if ((status = cmcalibrate_cp9_filter_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, cm->M, &worker_vscAA, &worker_vit_cp9scA, &worker_fwd_cp9scA, &worker_partA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
+		    ESL_DPRINTF1(("MPI master has unpacked HMM filter results\n"));
+		    ESL_DASSERT1((nseq_just_recv > 0));
+		    ESL_DASSERT1((nseq_recv + nseq_just_recv <= filN));
+		    for(i = 0; i < nseq_just_recv; i++) {
+		      fil_vit_cp9scA[nseq_recv+i] = worker_vit_cp9scA[i];
+		      fil_fwd_cp9scA[nseq_recv+i] = worker_fwd_cp9scA[i];
+		      fil_partA[nseq_recv+i]      = worker_partA[i];
+		      printf("fil_partA[%d]: %d\n", nseq_recv+i, fil_partA[nseq_recv+i]);
+		      ESL_DASSERT1((fil_partA[nseq_recv+i] < cfg->np));
+		    }
+		    for(v = 0; v < cm->M; v++) {
+		      for(i = 0; i < nseq_just_recv; i++) {
+			ESL_DPRINTF3(("\tscore from worker v: %d i: %d sc: %f\n", i, v, worker_vscAA[v][i]));
+			fil_vscAA[v][nseq_recv+i] = worker_vscAA[v][i];
 		      }
-		      free(worker_vscAA);
+		      free(worker_vscAA[v]);
 		    }
-		    else { /* working on cp9 */
-		      if ((status = cmcalibrate_cp9_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &worker_cp9scA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
-		      ESL_DPRINTF1(("MPI master has unpacked CP9 gumbel results\n"));
-		      ESL_DASSERT1((nseq_just_recv > 0));
-		      for(i = 0; i < nseq_just_recv; i++) 
-			gum_cp9scA[nseq_recv+i] = worker_cp9scA[i];
-		      free(worker_cp9scA);
-		    }
+		    free(worker_vscAA);
+		    free(worker_vit_cp9scA);
+		    free(worker_fwd_cp9scA);
+		    free(worker_partA);
 		    nseq_recv += nseq_just_recv;
 		  }
 		else	/* worker reported an error. Get the errbuf. */
@@ -943,11 +1097,11 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  }
 		nproc_working--;
 	      }
-	  
+
 	      if (have_work)
 		{   
 		  /* send new search job */
-		  ESL_DPRINTF1(("MPI master is sending nseq %d to worker %d\n", nseq_this_worker, wi));
+		  ESL_DPRINTF1(("MPI master is sending HMM filter nseq %d to worker %d\n", nseq_this_worker, wi));
 		  MPI_Send(&(nseq_this_worker), 1, MPI_INT, wi, 0, MPI_COMM_WORLD);
 	      
 		  wi++;
@@ -955,26 +1109,13 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  nseq_sent += nseq_this_worker;
 		}
 	    }
-	  /* fit gumbels for this partition p, this gumbel mode gum_mode */
-	  if(working_on_cm) { 
-	    if((status = cm_fit_histograms(go, cfg, errbuf, cm, gum_vscAA, cmN, p)) != eslOK) cm_Fail(errbuf);
-	    cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->mu     = cfg->vmuAA[p][0];
-	    cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->lambda = cfg->vlambdaAA[p][0];
-	    cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->L      = cm->W*2;
-	    cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->N      = cmN;
-	    cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->is_valid = TRUE;
-	  }
-	  else /* working on CP9 */ {
-	    if((status = fit_histogram(go, cfg, errbuf, gum_cp9scA, hmmN, &(cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->mu), 
-				       &(cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->lambda)))     != eslOK) cm_Fail(errbuf);
-	    cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->L      = cm->W*2;
-	    cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->N      = hmmN;
-	    cfg->cmstatsA[cmi]->gumAA[gum_mode][p]->is_valid = TRUE;
-	  }
 
-	  ESL_DPRINTF1(("MPI master: done with partition: %d for gumbel mode: %d for this CM. Telling all workers\n", p, gum_mode));
+	  /* predict speedup for HMM-only filter */
+	  if((status = predict_cp9_filter_speedup(go, cfg, errbuf, cm, fil_vit_cp9scA, fil_fwd_cp9scA, fil_partA, cfg->cmstatsA[cmi]->bfA[fthr_mode])) != eslOK) cm_Fail(errbuf);
+	  DumpBestFilterInfo(cfg->cmstatsA[cmi]->bfA[fthr_mode]);
+	  ESL_DPRINTF1(("MPI master: done with HMM filter calc for fthr mode %d for this CM.\n", fthr_mode));
 	  for (wi = 1; wi < cfg->nproc; wi++) { 
-	    msg = MPI_NEXT_PARTITION;
+	    msg = MPI_FINISHED_CP9_FILTER;
 	    MPI_Send(&msg, 1, MPI_INT, wi, 0, MPI_COMM_WORLD);
 	  }
 	}
@@ -982,9 +1123,19 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       }
       ESL_DPRINTF1(("MPI master: done with this CM.\n"));
       debug_print_cmstats(cfg->cmstatsA[cmi], (! esl_opt_GetBoolean(go, "--gumonly")));
-      for(v = 0; v < cm->M; v++) free(gum_vscAA[v]);
-      free(gum_vscAA);
-      free(gum_cp9scA);
+      
+      if(! (esl_opt_GetBoolean(go, "--filonly"))) { 
+	for(v = 0; v < cm->M; v++) free(gum_vscAA[v]);
+	free(gum_vscAA);
+	free(gum_cp9scA);
+      }
+      if(! (esl_opt_GetBoolean(go, "--gumonly"))) { 
+	for(v = 0; v < cm->M; v++) free(fil_vscAA[v]);
+	free(fil_vscAA);
+	free(fil_vit_cp9scA);
+	free(fil_fwd_cp9scA);
+	free(fil_partA);
+      }
       FreeCM(cm);
     }
   
@@ -1018,12 +1169,19 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   MPI_Status  mpistatus;
   float  **gum_vscAA  = NULL; /* [0..v..cm->M-1][0..nseq-1] best cm score for each state, each random seq */
   float   *gum_cp9scA = NULL; /*                [0..nseq-1] best cp9 score for each random seq */
+  float  **fil_vscAA  = NULL; /* [0..v..cm->M-1][0..nseq-1] best cm score for each state, each emitted seq */
+  float   *fil_vit_cp9scA = NULL; /*                [0..nseq-1] best cp9 Viterbi score for each emitted seq */
+  float   *fil_fwd_cp9scA = NULL; /*                [0..nseq-1] best cp9 Forward score for each emitted seq */
+  int     *fil_partA      = NULL; /*                [0..nseq-1] partition of CM emitted seq */
+
   long     seed;  /* seed for RNG */
   int      gum_mode;
+  int      fthr_mode;
   int working_on_cm;        /* TRUE when gum_mode is for CM gumbel */
   int working_on_cp9;       /* TRUE when gum_mode is for CP9 gumbel */
   int nseq;
   int v, p;
+  void *tmp;
   int cmi;
 
   /* After master initialization: master broadcasts its status.
@@ -1075,77 +1233,140 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   else { /* no --pfile, set up default partition info */  
     cfg->np     = 1;
     ESL_ALLOC(cfg->pstart, sizeof(int) * cfg->np);
-    cfg->pstart = 0;
+    cfg->pstart[0] = 0;
   }
   
   /* source = 0 (master); tag = 0 */
   while ((status = cm_worker_MPIBcast(0, MPI_COMM_WORLD, &wbuf, &wn, &(cfg->abc), &cm)) == eslOK)
     {
+      cfg->ncm++;  
+      if(cfg->ncm == cfg->cmalloc) { /* expand our memory */
+	cfg->cmalloc  += 128;
+	ESL_RALLOC(cfg->cmstatsA, tmp, sizeof(CMStats_t *) * cfg->cmalloc);
+      }
+      cmi = cfg->ncm-1;
       ESL_DPRINTF1(("Worker %d succesfully received CM, num states: %d num nodes: %d\n", cfg->my_rank, cm->M, cm->nodes));
       
       /* initialize the flags/options/params of the CM */
-      if((status = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) goto ERROR;
+      if((status = initialize_cm(go, cfg, errbuf, cm))      != eslOK) goto CLEANERROR;
+      if((status = initialize_cmstats(go, cfg, errbuf, cm)) != eslOK) goto CLEANERROR;
+      if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK) goto CLEANERROR;
       
-      for(gum_mode = 0; gum_mode < NGUMBELMODES; gum_mode++) {
+      for(gum_mode = 0; gum_mode < GUM_NMODES; gum_mode++) {
+
+	/* free and recalculate hybrid scan info, b/c when investigating hybrid filters we may have added sub CM roots */
+	if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi, cm);
+	cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--fbeta"), cfg->full_vcalcs[0]);
+
 	ESL_DPRINTF1(("worker: %d gum_mode: %d nparts: %d\n", cfg->my_rank, gum_mode, cfg->np));
-	ConfigForGumbelMode(cm, gum_mode);
-	working_on_cm   = (gum_mode < NCMMODES) ? TRUE  : FALSE;
-	working_on_cp9  = (gum_mode < NCMMODES) ? FALSE : TRUE;
+	if(GumModeIsForCM(gum_mode)) { working_on_cm = TRUE;  working_on_cp9 = FALSE; }
+	else                         { working_on_cm = FALSE; working_on_cp9 = TRUE;  }
+
+	/* do we need to switch from glocal configuration to local? */
+	if(gum_mode > 0 && (! GumModeIsLocal(gum_mode-1)) && GumModeIsLocal(gum_mode)) 
+	  if((status = switch_global_to_local(cm, errbuf)) != eslOK)      cm_Fail(errbuf);
+	/* update search opts for gumbel mode */
+	GumModeToSearchOpts(cm, gum_mode);
 	
-	for (p = 0; p < cfg->np; p++) { /* for each partition */
+	/* gumbel fitting section */
+	if(! (esl_opt_GetBoolean(go, "--filonly"))) {
+	  for (p = 0; p < cfg->np; p++) { /* for each partition */
 	    
-	  ESL_DPRINTF1(("worker %d gum_mode: %d partition: %d\n", cfg->my_rank, gum_mode, p));
-	  if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
+	    ESL_DPRINTF1(("worker %d gum_mode: %d partition: %d\n", cfg->my_rank, gum_mode, p));
+	    if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
 	  
-	  if(MPI_Recv(&nseq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
-	  while(nseq != MPI_NEXT_PARTITION) {
-	    ESL_DPRINTF1(("worker %d: has received nseq: %d\n", cfg->my_rank, nseq));
+	    if(MPI_Recv(&nseq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
+	    while(nseq != MPI_FINISHED_GUMBEL) {
+	      ESL_DPRINTF1(("worker %d: has received nseq: %d\n", cfg->my_rank, nseq));
 	    
-	    if(working_on_cm) {
-	      if((status = process_workunit (go, cfg, errbuf, cm, nseq, FALSE, &gum_vscAA, NULL, NULL)) != eslOK) goto CLEANERROR;
+	      if(working_on_cm) {
+		if((status = process_gumbel_workunit (go, cfg, errbuf, cm, nseq, &gum_vscAA, NULL, NULL)) != eslOK) goto CLEANERROR;
+		ESL_DPRINTF1(("worker %d: has gathered CM gumbel results\n", cfg->my_rank));
+		n = 0;
+		if (cmcalibrate_cm_gumbel_results_MPIPackSize(gum_vscAA, nseq, cm->M, MPI_COMM_WORLD, &sz) != eslOK) goto CLEANERROR; n += sz;  
+		if (n > wn) {
+		  void *tmp;
+		  ESL_RALLOC(wbuf, tmp, sizeof(char) * n);
+		  wn = n;
+		}
+		ESL_DPRINTF1(("worker %d: has calculated the CM gumbel results will pack into %d bytes\n", cfg->my_rank, n));
+		status = eslOK;
+		pos = 0;
+		if (cmcalibrate_cm_gumbel_results_MPIPack(gum_vscAA, nseq, cm->M, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK) goto ERROR;
+		for(v = 0; v < cm->M; v++) free(gum_vscAA[v]);
+	      }
+
+	      else { /* working on cp9 */
+		if((status = process_gumbel_workunit (go, cfg, errbuf, cm, nseq, NULL, &gum_cp9scA, NULL)) != eslOK) cm_Fail(errbuf);
+		ESL_DPRINTF1(("worker %d: has gathered CP9 gumbel results\n", cfg->my_rank));
+		n = 0;
+		if (cmcalibrate_cp9_gumbel_results_MPIPackSize(gum_cp9scA, nseq, MPI_COMM_WORLD, &sz) != eslOK) goto CLEANERROR; n += sz;  
+		if (n > wn) {
+		  void *tmp;
+		  ESL_RALLOC(wbuf, tmp, sizeof(char) * n);
+		  wn = n;
+		}
+		ESL_DPRINTF1(("worker %d: has calculated the CP9 gumbel results will pack into %d bytes\n", cfg->my_rank, n));
+		status = eslOK;
+		pos = 0;
+		if (cmcalibrate_cp9_gumbel_results_MPIPack(gum_cp9scA, nseq, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK) goto ERROR;
+		free(gum_cp9scA);
+	      }	    
+
+	      MPI_Send(wbuf, pos, MPI_PACKED, 0, 0, MPI_COMM_WORLD);
+	      ESL_DPRINTF1(("worker %d: has sent gumbel results to master in message of %d bytes\n", cfg->my_rank, pos));
+
+	      /* receive next number of sequences, if MPI_FINISHED_GUMBEL, we'll stop */
+	      if(MPI_Recv(&nseq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
 	    }
-	    else  { /* working on cp9 */
-	      if((status = process_workunit (go, cfg, errbuf, cm, nseq, FALSE, NULL, &gum_cp9scA, NULL)) != eslOK) goto CLEANERROR;
-	    }
-	    ESL_DPRINTF1(("worker %d: has gathered gumbel results\n", cfg->my_rank));
+	    ESL_DPRINTF1(("worker %d gum_mode: %d finished partition: %d\n", cfg->my_rank, gum_mode, p));
+	  }
+	  ESL_DPRINTF1(("worker %d finished all partitions for gum_mode: %d\n", cfg->my_rank, gum_mode));
+	} /* end of if ! --filonly */
+	
+	/* filter threshold section */
+	if(GumModeIsForCM(gum_mode) && (! (esl_opt_GetBoolean(go, "--gumonly")))) {
+	  fthr_mode = GumModeToFthrMode(gum_mode);
+	  ESL_DASSERT1((fthr_mode != -1));
+	  ESL_DPRINTF1(("worker %d fthr_mode: %d\n", cfg->my_rank, fthr_mode));
+
+	  /* get cutoffs for each partition from master, cfg->np never changes */
+	  ESL_DASSERT1((cfg->cutoffA != NULL));
+	  MPI_Bcast(cfg->cutoffA, cfg->np, MPI_INT, 0, MPI_COMM_WORLD);
+
+	  if(MPI_Recv(&nseq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
+	  while(nseq != MPI_FINISHED_CP9_FILTER) {
+	    ESL_DPRINTF1(("worker %d: has received hmm filter nseq: %d\n", cfg->my_rank, nseq));
+	    
+	    if((status = process_filter_workunit (go, cfg, errbuf, cm, nseq, &fil_vscAA, &fil_vit_cp9scA, &fil_fwd_cp9scA, NULL, &fil_partA)) != eslOK) goto CLEANERROR;
+	    ESL_DPRINTF1(("worker %d: has gathered HMM filter results\n", cfg->my_rank));
 	    n = 0;
-	    if(working_on_cm) { 
-	      if (cmcalibrate_cm_results_MPIPackSize(gum_vscAA, nseq, cm->M, MPI_COMM_WORLD, &sz) != eslOK) goto CLEANERROR; n += sz;  
-	    }
-	    else { /* working on cp9 */
-	      if (cmcalibrate_cp9_results_MPIPackSize(gum_cp9scA, nseq, MPI_COMM_WORLD, &sz) != eslOK) goto CLEANERROR; n += sz;  
-	    }
+	    if (cmcalibrate_cp9_filter_results_MPIPackSize(nseq, cm->M, MPI_COMM_WORLD, &sz) != eslOK) goto CLEANERROR; n += sz;  
 	    if (n > wn) {
 	      void *tmp;
 	      ESL_RALLOC(wbuf, tmp, sizeof(char) * n);
 	      wn = n;
 	    }
-	    ESL_DPRINTF1(("worker %d: has calculated the gumbel results will pack into %d bytes\n", cfg->my_rank, n));
+	    ESL_DPRINTF1(("worker %d: has calculated the HMM filter results will pack into %d bytes\n", cfg->my_rank, n));
 	    status = eslOK;
 	    pos = 0;
-	    if(working_on_cm) {
-	      if (cmcalibrate_cm_results_MPIPack(gum_vscAA, nseq, cm->M, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK) goto ERROR;
-	    }
-	    else {
-	      if (cmcalibrate_cp9_results_MPIPack(gum_cp9scA, nseq, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK) goto ERROR;
-	    }	    
+	    if (cmcalibrate_cp9_filter_results_MPIPack(fil_vscAA, fil_vit_cp9scA, fil_fwd_cp9scA, fil_partA, nseq, cm->M, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK) goto ERROR;
+	    for(v = 0; v < cm->M; v++) free(fil_vscAA[v]);
+	    free(fil_vscAA);
+	    free(fil_vit_cp9scA);
+	    free(fil_fwd_cp9scA);
+	    free(fil_partA);
+
 	    MPI_Send(wbuf, pos, MPI_PACKED, 0, 0, MPI_COMM_WORLD);
-	    ESL_DPRINTF1(("worker %d: has sent gumbel results to master in message of %d bytes\n", cfg->my_rank, pos));
-	    
-	    if(working_on_cm) { 
-	      for(v = 0; v < cm->M; v++) free(gum_vscAA[v]);
-	      free(gum_vscAA);
-	    }
-	    else { /* working on cp9 */
-	      free(gum_cp9scA);
-	    }
-	    /* receive next number of sequences, if MPI_NEXT_PARTITION, we'll stop */
+	    ESL_DPRINTF1(("worker %d: has sent CP9 filter results to master in message of %d bytes\n", cfg->my_rank, pos));
+	    /* receive next number of sequences, if MPI_FINISHED_GUMBEL, we'll stop */
 	    if(MPI_Recv(&nseq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
 	  }
-	  ESL_DPRINTF1(("worker %d gum_mode: %d finished partition: %d\n", cfg->my_rank, gum_mode, p));
 	}
-	ESL_DPRINTF1(("worker %d finished all partitions for gum_mode: %d\n", cfg->my_rank, gum_mode));
-      }
+      } /* end of for(gum_mode = 0; gum_mode < GUM_NMODES; gum_mode++) */
+
+
+
       FreeCM(cm);
       cm = NULL;
       ESL_DPRINTF1(("worker %d finished all gum_modes for this cm.\n", cfg->my_rank));
@@ -1518,29 +1739,34 @@ initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
   int i;
   int p;
   int cmi = cfg->ncm-1;
-  int np = cfg->np;
 
-  ESL_DPRINTF1(("initializing cmstats for %d partitions\n", np));
+  ESL_DPRINTF1(("initializing cmstats for %d partitions\n", cfg->np));
 
+  cfg->cmstatsA[cmi] = AllocCMStats(cfg->np);
+  
   if(esl_opt_GetBoolean(go, "--filonly")) { 
+    /* set the cfg->np if this is the first CM */
+    if(cfg->ncm == 1) { 
+      cfg->np = cm->stats->np;
+      if(cfg->cutoffA != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "--filonly invoked, and we're on the first CM, but cfg->cutoffA already allocated.");
+      ESL_ALLOC(cfg->cutoffA, sizeof(float) * cfg->np);
+    }
+    /* Make sure the rare, rare case that would be a real pain in the ass to implement isn't happening:
+     * the case when we use --filonly with a CM file with > 1 CMs, and at least 2 of those CMs have
+     * gumbel stats for different numbers of partitions. If we did deal with this case then 
+     * it'd be a bitch to deal with, b/c cfg->np could change (and we'd have to send that
+     * info to the workers for each CM in MPI mode).
+     */
     ESL_DASSERT1((esl_opt_IsDefault(go, "--dbfile"))); /* getopts should enforce this */
     ESL_DASSERT1((esl_opt_IsDefault(go, "--pfile")));  /* getopts should enforce this */
     if(! (cm->flags & CMH_GUMBEL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "--filonly invoked by CM has no gumbel stats in initialize_cmstats()\n");
-    np = cm->stats->np;
-  }
-
-  cfg->cmstatsA[cmi] = AllocCMStats(np);
-  if(cfg->cutoffA != NULL) free(cfg->cutoffA);
-  ESL_ALLOC(cfg->cutoffA, sizeof(float) * np); /* number of partitions */
-  
-  /* if we're only calc'ing filter thresholds, we copy the 
-   * Gumbel stats from cm->stats. */
-  if(esl_opt_GetBoolean(go, "--filonly")) { 
-    esl_vec_ICopy(cm->stats->ps,   np, cfg->cmstatsA[cmi]->ps);
-    esl_vec_ICopy(cm->stats->pe,   np, cfg->cmstatsA[cmi]->pe);
+    if(cfg->np != cm->stats->np)         ESL_FAIL(eslEINCOMPAT, errbuf, "--filonly invoked and CM file has CMs with different numbers of partitions. We can't deal. Either split CMs into different files, or recalibrate them fully (without --filonly)");    
+    /* with --filonly, we're only calc'ing filter thresholds, so we copy the Gumbel stats from cm->stats. */
+    esl_vec_ICopy(cm->stats->ps,   cfg->np, cfg->cmstatsA[cmi]->ps);
+    esl_vec_ICopy(cm->stats->pe,   cfg->np, cfg->cmstatsA[cmi]->pe);
     esl_vec_ICopy(cm->stats->gc2p, GC_SEGMENTS, cfg->cmstatsA[cmi]->gc2p);
     for(i = 0; i < GUM_NMODES; i++) { 
-      for(p = 0; p < np; p++) {
+      for(p = 0; p < cfg->np; p++) {
 	cfg->cmstatsA[cmi]->gumAA[i][p]->N      = cm->stats->gumAA[i][p]->N;
 	cfg->cmstatsA[cmi]->gumAA[i][p]->L      = cm->stats->gumAA[i][p]->L;
 	cfg->cmstatsA[cmi]->gumAA[i][p]->mu     = cm->stats->gumAA[i][p]->mu;
@@ -1548,54 +1774,42 @@ initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
 	cfg->cmstatsA[cmi]->gumAA[i][p]->is_valid = cm->stats->gumAA[i][p]->is_valid;
       }
     }
+
     return eslOK;
   }
 
   /* if we get here --filonly was not invoked */
-
   ESL_DASSERT1((cfg->pstart[0] == 0));
-  for(p = 0; p < np;     p++) cfg->cmstatsA[cmi]->ps[p] = cfg->pstart[p];
-  for(p = 0; p < (np-1); p++) cfg->cmstatsA[cmi]->pe[p] = cfg->pstart[p+1]-1;
-  cfg->cmstatsA[cmi]->pe[(np-1)] = GC_SEGMENTS-1; /* this is 100 */
+  for(p = 0; p < cfg->np;     p++) cfg->cmstatsA[cmi]->ps[p] = cfg->pstart[p];
+  for(p = 0; p < (cfg->np-1); p++) cfg->cmstatsA[cmi]->pe[p] = cfg->pstart[p+1]-1;
+  cfg->cmstatsA[cmi]->pe[(cfg->np-1)] = GC_SEGMENTS-1; /* this is 100 */
   
-  for(p = 0; p < np; p++)
+  for(p = 0; p < cfg->np; p++)
     for(i = cfg->cmstatsA[cmi]->ps[p]; i <= cfg->cmstatsA[cmi]->pe[p]; i++)
       cfg->cmstatsA[cmi]->gc2p[i] = p; 
   
-  /* free, and then reallocate cfg->vmuAA, and cfg->vlambdaAA,
-   * only really nec if num partitions changes, which can only happen
-   * if --filonly and diff CMs in cm file have diff num partitions */
-  if(cfg->vmuAA != NULL) {
-    ESL_DASSERT1((cfg->ncm-2 >= 0));
-    for(p = 0; p < cfg->cmstatsA[cfg->ncm-2]->np; p++) 
-      { free(cfg->vmuAA[p]); cfg->vmuAA[p] = NULL; }
+  /* master only allocations, workers don't need this */
+  if(cfg->my_rank == 0) { 
+    /* if they're NULL, allocate cfg->vmuAA, cfg->vlambdaAA, and cfg->gum_hybA
+     * otherwise they're fine as they are because number of partitions never changes.
+     */
+    if(cfg->vmuAA == NULL) {
+      ESL_ALLOC(cfg->vmuAA,     sizeof(double *) * cfg->np);
+      ESL_ALLOC(cfg->vlambdaAA, sizeof(double *) * cfg->np);
+      for(p = 0; p < cfg->np; p++) {
+	cfg->vmuAA[p]     = NULL;
+	cfg->vlambdaAA[p] = NULL;
+      }
+    }
+    if(cfg->gum_hybA == NULL) {
+      ESL_ALLOC(cfg->gum_hybA, sizeof(GumbelInfo_t *) * cfg->np);
+      for(p = 0; p < cfg->np; p++) { 
+	ESL_ALLOC(cfg->gum_hybA[p], sizeof(GumbelInfo_t));
+	cfg->gum_hybA[p]->is_valid = FALSE;
+      }
+    }
   }
-
-  if(cfg->vlambdaAA != NULL) {
-    ESL_DASSERT1((cfg->ncm-2 >= 0));
-    for(p = 0; p < cfg->cmstatsA[cfg->ncm-2]->np; p++) 
-      { free(cfg->vlambdaAA[p]); cfg->vlambdaAA[p] = NULL; }
-  }
-  ESL_ALLOC(cfg->vmuAA,     sizeof(double *) * cfg->cmstatsA[cfg->ncm-1]->np);
-  ESL_ALLOC(cfg->vlambdaAA, sizeof(double *) * cfg->cmstatsA[cfg->ncm-1]->np);
-  for(p = 0; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) {
-    cfg->vmuAA[p]     = NULL;
-    cfg->vlambdaAA[p] = NULL;
-  }
-
-  /* free and then reallocate cfg->gum_hybA, 
-   * only really nec if num partitions changes, which can only happen
-   * if --filonly and diff CMs in cm file have diff num partitions */
-  if(cfg->gum_hybA != NULL) {
-    ESL_DASSERT1((cfg->ncm-2 >= 0));
-    for(p = 0; p < cfg->cmstatsA[cfg->ncm-2]->np; p++) 
-      { free(cfg->gum_hybA[p]); cfg->gum_hybA[p] = NULL; }
-  }
-  ESL_ALLOC(cfg->gum_hybA, sizeof(GumbelInfo_t *) * cfg->cmstatsA[cfg->ncm-1]->np);
-  for(p = 0; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) { 
-    ESL_ALLOC(cfg->gum_hybA[p], sizeof(GumbelInfo_t));
-    cfg->gum_hybA[p]->is_valid = FALSE;
-  }
+  if(cfg->cutoffA == NULL) ESL_ALLOC(cfg->cutoffA, sizeof(float) * cfg->np);
 
   return eslOK;
     
@@ -1617,15 +1831,15 @@ update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
   double         mu;
 
   if(esl_opt_GetBoolean(go, "--all")) {
-    for (p = 0; p < cfg->cmstatsA[cfg->ncm-1]->np; p++)
+    for (p = 0; p < cfg->np; p++)
       cfg->cutoffA[p] = -eslINFINITY;
   }
   else if (esl_opt_GetBoolean(go, "--ga"))   cm_Fail("update_cutoffs() --ga not yet implemented.");
-  else if (esl_opt_GetBoolean(go, "--nc"))   cm_Fail("update_cutoffs() --ga not yet implemented.");
-  else if (esl_opt_GetBoolean(go, "--tc"))   cm_Fail("update_cutoffs() --ga not yet implemented.");
+  else if (esl_opt_GetBoolean(go, "--nc"))   cm_Fail("update_cutoffs() --nc not yet implemented.");
+  else if (esl_opt_GetBoolean(go, "--tc"))   cm_Fail("update_cutoffs() --tc not yet implemented.");
   else ecutoff = esl_opt_GetReal(go, "--eval"); /* default, use --eval cutoff */
 
-  for (p = 0; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) {
+  for (p = 0; p < cfg->np; p++) {
     /* First determine mu based on db_size */
     tmp_K = exp(cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->mu * cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda) / 
       cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->L;
@@ -1812,6 +2026,7 @@ get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p, Parset
 
   /* determine the partition */
   p = cfg->cmstatsA[cfg->ncm-1]->gc2p[(get_gc_comp(sq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
+  ESL_DASSERT1((p < cfg->np));
 
   /* free everything allocated by a esl_sqio.c:esl_sq_CreateFrom() call, but the dsq */
   dsq = sq->dsq;
@@ -2134,7 +2349,7 @@ switch_global_to_local(CM_t *cm, char *errbuf)
   return eslOK;
 }
 
-/* Function: predict_hmm_filter_speedup()
+/* Function: predict_cp9_filter_speedup()
  * Date:     EPN, Mon Dec 10 11:55:24 2007
  *
  * Purpose:  Given a CM and scores for a CP9 Viterbi and Forward scan
@@ -2156,12 +2371,12 @@ switch_global_to_local(CM_t *cm, char *errbuf)
  *           Other easel status code on an error with errbuf filled with error message.
  */
 int
-predict_hmm_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_vit_cp9scA, float *fil_fwd_cp9scA, int *fil_partA, BestFilterInfo_t *bf)
+predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_vit_cp9scA, float *fil_fwd_cp9scA, int *fil_partA, BestFilterInfo_t *bf)
 {
   int    status;
   float *sorted_fil_vit_EA;       /* sorted Viterbi E-values, so we can easily choose a threshold */
   float *sorted_fil_fwd_EA;       /* sorted Forward E-values, so we can easily choose a threshold */
-  float  vit_E, fwd_E, E, tmp_E;  /* a Viterbi, Forward, and 2 temporary E values, respectively  */
+  float  vit_E, fwd_E, E;         /* a Viterbi, Forward, and 2 temporary E values, respectively  */
   int    cp9_vit_mode, cp9_fwd_mode; /* a Viterbi, Forward Gumbel mode, respectively  */
   float  logsum_correction;       /* for correcting speedup calculation b/c Forward is slower than Viterbi due to logsums */
   int    evalue_L;                /* database length used for calcing E-values in CP9 gumbels from cfg->cmstats */
@@ -2185,17 +2400,17 @@ predict_hmm_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
   cp9_fwd_mode = (cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? GUM_CP9_LF : GUM_CP9_GF;
 
   /* contract checks */
-  if(! (cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][0]->is_valid)) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_hmm_filter_speedup(), gumbel stats for CP9 viterbi mode: %d are not valid.\n", cp9_vit_mode);
-  if(! (cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][0]->is_valid)) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_hmm_filter_speedup(), gumbel stats for CP9 forward mode: %d are not valid.\n", cp9_fwd_mode);
-  if(cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][0]->L != cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][0]->L) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_hmm_filter_speedup(), db length for gumbel stats for CP9 viterbi (%d) and forward (%d) differ.\n", cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][0]->L, cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][0]->L);
+  if(! (cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][0]->is_valid)) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_cp9_filter_speedup(), gumbel stats for CP9 viterbi mode: %d are not valid.\n", cp9_vit_mode);
+  if(! (cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][0]->is_valid)) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_cp9_filter_speedup(), gumbel stats for CP9 forward mode: %d are not valid.\n", cp9_fwd_mode);
+  if(cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][0]->L != cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][0]->L) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_cp9_filter_speedup(), db length for gumbel stats for CP9 viterbi (%d) and forward (%d) differ.\n", cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][0]->L, cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][0]->L);
 
   evalue_L = cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][0]->L;
 
   /* contract checks specific to case when there is more than 1 partition */
   if(cfg->cmstatsA[cfg->ncm-1]->np != 1) { 
     for(p = 1; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) {
-      if(evalue_L != cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][p]->L) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_hmm_filter_speedup(), partition %d db length (%d) for Viterbi gumbel stats differ than from partition 1 Viterbi db length (%d).\n", p, cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][p]->L, evalue_L);
-      if(evalue_L != cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][p]->L) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_hmm_filter_speedup(), partition %d db length (%d) for Forward gumbel stats differ than from partition 1 Viterbi db length (%d).\n", p, cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][p]->L, evalue_L);
+      if(evalue_L != cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][p]->L) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_cp9_filter_speedup(), partition %d db length (%d) for Viterbi gumbel stats differ than from partition 1 Viterbi db length (%d).\n", p, cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][p]->L, evalue_L);
+      if(evalue_L != cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][p]->L) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_cp9_filter_speedup(), partition %d db length (%d) for Forward gumbel stats differ than from partition 1 Viterbi db length (%d).\n", p, cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][p]->L, evalue_L);
     }
   }
 
@@ -2300,7 +2515,6 @@ predict_hybrid_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *er
   float  nonfil_calcs;            /* number of million dp calcs predicted for a full CM scan */
   float  spdup;                   /* predicted speedups for Viterbi and Forward, and a temporary one */
   int    i, p;                    /* counters */
-  int    cmi = cfg->ncm-1;        /* CM index we're on */
   int    Fidx;                     /* index in sorted scores that threshold will be set at (1-F) * N */
   float  F = esl_opt_GetReal(go, "--F"); /* fraction of CM seqs we require filter to let pass */
   float  cm_eval = esl_opt_GetReal(go, "--eval"); /* E-value of cutoff for accepting CM seqs */
@@ -2373,8 +2587,6 @@ predict_best_sub_cm_roots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
 {
   int    status;
   float **sorted_fil_vscAA;       /* [0..v..cm->M-1][0..filN-1] best score for each state v, each target seq */
-  //float **sorted_fil_EAA;          /* [0..v..cm->M-1][0..filN-1] best E-value for each state v, each target seq */
-  int    evalue_L;                /* database length used for calcing E-values in CP9 gumbels from cfg->cmstats */
   float  fil_calcs;               /* number of million dp calcs predicted for the HMM filter scan */
   float  surv_calcs;              /* number of million dp calcs predicted for the CM scan of filter survivors */
   float  fil_plus_surv_calcs;     /* filter calcs plus survival calcs */ 
@@ -2383,10 +2595,8 @@ predict_best_sub_cm_roots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
   float  E, tmp_E;                /* E value */
   float  sc;                      /* bit score */
   int    i, p, s, v;              /* counters */
-  int    cmi = cfg->ncm-1;        /* CM index we're on */
   int    Fidx;                    /* index in sorted scores that threshold will be set at (1-F) * N */
   float  F = esl_opt_GetReal(go, "--F"); /* fraction of CM seqs we require filter to let pass */
-  float  cm_eval = esl_opt_GetReal(go, "--eval"); /* E-value of cutoff for accepting CM seqs */
   int    filN  = esl_opt_GetInteger(go, "--filN"); /* number of sequences we emitted from CM for filter test */
   int    nstarts;                  /* # start states (and start groups) in the CM, from cfg->hsi */                                 
   int   *best_per_start_v;         /* sub CM filter state v that gives best speedup per start group */
@@ -2457,7 +2667,6 @@ predict_best_sub_cm_roots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
   int *sorted_best_roots_start; 
   float *sorted_best_roots_spdup;
   int *already_chosen;
-  float *last_spdup;
   int s1, s2;
   int best_cur_v;
   int best_cur_start;

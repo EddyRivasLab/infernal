@@ -57,6 +57,7 @@ static ESL_OPTIONS options[] = {
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
   { "--rtrans",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "replace CM transition scores from <cmfile> with RSEARCH scores", 1 },
   { "--greedy",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "resolve overlapping hits with a greedy algorithm a la RSEARCH", 1 },
+  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "-g,--pbegin","set all local begins as equiprobable", 1 },
   { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local begin prob to <x>", 1 },
   { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local end prob to <x>", 1 },
   /* options for algorithm for final round of search */
@@ -516,8 +517,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
   CM_t *cm;
   CMConsensus_t *cons = NULL;     /* precalculated consensus info for display purposes */
-  int            cm_mode  = -1;   /* CM algorithm mode                        */
-  int            cp9_mode = -1;   /* CP9 algorithm mode                       */
   float          Smin;
 
   int si      = 0;
@@ -790,14 +789,11 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int           sz, n;		/* size of a packed message */
   int           pos;
   char          errbuf[cmERRBUFSIZE];
-  int           cm_mode  = -1;   /* CM algorithm mode                        */
-  int           cp9_mode = -1;   /* CP9 algorithm mode                       */
   /*float         Smin;*/
   /*MPI_Status  mpistatus;*/
   ESL_DSQ      *dsq = NULL;
   int           L;
   search_results_t *results = NULL;
-  int           using_e_cutoff;
 
   /* After master initialization: master broadcasts its status.
    */
@@ -938,6 +934,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   int status;
   int use_hmmonly;
+  int nstarts, nd;
 
   /* set up CM parameters that are option-changeable */
   cm->beta   = esl_opt_GetReal(go, "--beta"); /* this will be DEFAULT_BETA unless changed at command line */
@@ -1008,6 +1005,16 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */
   cm->pbegin = esl_opt_GetReal(go, "--pbegin");
   cm->pend   = esl_opt_GetReal(go, "--pend");
+  /* possibly overwrite local begin probs such that all begin points are equiprobable (--pebegin), there's
+   * no real analagous option for local ends, because local ends are all equally likely, --pend controls summed prob of
+   * local end */
+  if(esl_opt_GetBoolean(go, "--pebegin")) {
+    nstarts = 0;
+    for (nd = 2; nd < cm->nodes; nd++) 
+      if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd) 
+	nstarts++;
+    cm->pbegin = 1.- (1./(1+nstarts));
+  }
 
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * set local mode, make cp9 HMM, calculate QD bands etc. 
@@ -1075,15 +1082,14 @@ set_gumbels(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 	  cm->stats->gumAA[i][p]->lambda;
 	cm->stats->gumAA[i][p]->L = cfg->N; /* update L, the seq size the stats correspond to */
       }
-  printf ("CM/CP9 statistics read from CM file\n");
+  ESL_DPRINTF1(("CM/CP9 statistics read from CM file\n"));
   if (cm->stats->np == 1) 
-    printf ("No partition points\n");
-  else 
-    {
-      printf ("Partition points are: ");
-      for (p=0; p < cm->stats->np; p++)
-	printf ("%d %d..%d", p, cm->stats->ps[p], cm->stats->pe[p]);
-    }
+    ESL_DPRINTF1(("No partition points\n"));
+  else {
+    ESL_DPRINTF1(("Partition points are: "));
+    for (p=0; p < cm->stats->np; p++)
+      ESL_DPRINTF1(("%d %d..%d", p, cm->stats->ps[p], cm->stats->pe[p]));
+  }
 
   return eslOK;
 }

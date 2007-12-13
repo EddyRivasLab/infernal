@@ -716,6 +716,25 @@ CreateGumbelInfo()
 }  
 
 
+/* Function: SetGumbelInfo()
+ * Date:     EPN, Wed Dec 12 13:43:36 2007
+ *
+ * Purpose:  Set parameters of a gumbel info object and raise it's is_valid 'flag'.
+ *            
+ * Returns:  void
+ */
+void 
+SetGumbelInfo(GumbelInfo_t *gum, double mu, double lambda, int L, int N)
+{
+  gum->N = N;
+  gum->L = L;
+  gum->mu = mu;
+  gum->lambda = lambda;
+  gum->is_valid = TRUE;
+  return;
+}  
+
+
 /* Function: DuplicateGumbelInfo()
  * Date:     EPN, Tue Dec 11 05:28:13 2007
  *
