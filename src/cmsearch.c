@@ -58,6 +58,7 @@ static ESL_OPTIONS options[] = {
   { "--rtrans",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "replace CM transition scores from <cmfile> with RSEARCH scores", 1 },
   { "--greedy",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "resolve overlapping hits with a greedy algorithm a la RSEARCH", 1 },
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "-g,--pbegin","set all local begins as equiprobable", 1 },
+  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      NULL, "-g,--pend",  "set all local end probs to <x>", 1 },
   { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local begin prob to <x>", 1 },
   { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local end prob to <x>", 1 },
   /* options for algorithm for final round of search */
@@ -934,8 +935,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   int status;
   int use_hmmonly;
-  int nstarts, nd;
-
+  int nstarts, nexits, nd;
+  
   /* set up CM parameters that are option-changeable */
   cm->beta   = esl_opt_GetReal(go, "--beta"); /* this will be DEFAULT_BETA unless changed at command line */
   cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
@@ -1005,9 +1006,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */
   cm->pbegin = esl_opt_GetReal(go, "--pbegin");
   cm->pend   = esl_opt_GetReal(go, "--pend");
-  /* possibly overwrite local begin probs such that all begin points are equiprobable (--pebegin), there's
-   * no real analagous option for local ends, because local ends are all equally likely, --pend controls summed prob of
-   * local end */
+  /* possibly overwrite local begin probs such that all begin points are equiprobable (--pebegin) */
   if(esl_opt_GetBoolean(go, "--pebegin")) {
     nstarts = 0;
     for (nd = 2; nd < cm->nodes; nd++) 
@@ -1015,7 +1014,21 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 	nstarts++;
     cm->pbegin = 1.- (1./(1+nstarts));
   }
-
+  /* possibly overwrite cm->pend so that local end prob from all legal states is fixed,
+   * this is strange in that cm->pend may be placed as a number greater than 1., this number
+   * is then divided by nexits in ConfigLocalEnds() to get the prob for each v --> EL transition,
+   * this is guaranteed by the way we calculate it to be < 1.,  it's the argument from --pfend */
+  if(! esl_opt_IsDefault(go, "--pfend")) {
+    nexits = 0;
+    for (nd = 1; nd < cm->nodes; nd++) {
+      if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	   cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	   cm->ndtype[nd] == BEGR_nd) && 
+	  cm->ndtype[nd+1] != END_nd)
+	nexits++;
+    }
+    cm->pend = nexits * esl_opt_GetReal(go, "--pfend");
+  }
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * set local mode, make cp9 HMM, calculate QD bands etc. 
    */
