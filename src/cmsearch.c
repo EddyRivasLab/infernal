@@ -57,6 +57,8 @@ static ESL_OPTIONS options[] = {
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
   { "--rtrans",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "replace CM transition scores from <cmfile> with RSEARCH scores", 1 },
   { "--greedy",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "resolve overlapping hits with a greedy algorithm a la RSEARCH", 1 },
+  /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
+   * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "-g,--pbegin","set all local begins as equiprobable", 1 },
   { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      NULL, "-g,--pend",  "set all local end probs to <x>", 1 },
   { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local begin prob to <x>", 1 },

@@ -58,6 +58,13 @@ static ESL_OPTIONS options[] = {
   { "-s",        eslARG_INT,      "0", NULL, "n>=0",    NULL,      NULL,        NULL, "set random number seed to <n>",   1 },
   { "-t",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print timings for Gumbel fitting and CP9 filter calculation",  1},
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
+  /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
+   * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
+  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--pbegin","set all local begins as equiprobable", 1 },
+  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      NULL,    "--pend", "set all local end probs to <x>", 1 },
+  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        NULL, "set aggregate local begin prob to <x>", 1 },
+  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        NULL, "set aggregate local end prob to <x>", 1 },
+
   /* options for gumbel estimation */
   { "--gumonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--filonly", "only estimate Gumbels, don't calculate filter thresholds", 2},
   { "--cmN",     eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--filonly", "number of random sequences for CM gumbel estimation",    2 },
@@ -1699,6 +1706,7 @@ static int
 initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   int status;
+  int nstarts, nexits, nd;
 
   cm->beta   = esl_opt_GetReal(go, "--beta"); /* this will be 1e-7 (default beta) unless changed at command line */
 
@@ -1710,6 +1718,33 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   else
     cm->search_opts |= CM_SEARCH_NOQDB; /* don't use QDB to search */
 
+  /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */
+  cm->pbegin = esl_opt_GetReal(go, "--pbegin");
+  cm->pend   = esl_opt_GetReal(go, "--pend");
+  /* possibly overwrite local begin probs such that all begin points are equiprobable (--pebegin) */
+  if(esl_opt_GetBoolean(go, "--pebegin")) {
+    nstarts = 0;
+    for (nd = 2; nd < cm->nodes; nd++) 
+      if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd) 
+	nstarts++;
+    cm->pbegin = 1.- (1./(1+nstarts));
+  }
+  /* possibly overwrite cm->pend so that local end prob from all legal states is fixed,
+   * this is strange in that cm->pend may be placed as a number greater than 1., this number
+   * is then divided by nexits in ConfigLocalEnds() to get the prob for each v --> EL transition,
+   * this is guaranteed by the way we calculate it to be < 1.,  it's the argument from --pfend */
+  if(! esl_opt_IsDefault(go, "--pfend")) {
+    nexits = 0;
+    for (nd = 1; nd < cm->nodes; nd++) {
+      if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	   cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	   cm->ndtype[nd] == BEGR_nd) && 
+	  cm->ndtype[nd+1] != END_nd)
+	nexits++;
+    }
+    cm->pend = nexits * esl_opt_GetReal(go, "--pfend");
+  }
+
   ConfigCM(cm, NULL, NULL);
   
   /* count number of DP calcs */
@@ -1720,11 +1755,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE);
   if(cm->smx == NULL) cm_Fail("initialize_cm(), CreateScanMatrixForCM() call failed.");
   
-  /* create and initialize hybrid scan info */
-  /*ESL_DASSERT1((cfg->hsi == NULL));
-  cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--fbeta"), cfg->full_vcalcs[0]);
-  if(cfg->hsi == NULL) cm_Fail("initialize_cm(), CreateHybridScanInfo() call failed.");*/
-
   return eslOK;
 }
 
