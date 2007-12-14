@@ -830,10 +830,9 @@ typedef struct {
 #define MPI_WORK_SEARCH 1
 
 #define MPI_RESULTS_SEARCH 2
-/* MPI worker time constraints */
-#define MPI_WORKER_MIN_SEC 5.
-#define MPI_WORKER_MAX_SEC 60.
-#define MDPC_SEC 50.
+
+#define MPI_MIN_CHUNK_W_MULTIPLIER 10
+#define MPI_MAX_CHUNK_SIZE 1000000
 
 /* RSEARCH macros/#defines etc. (from rnamat.h) */
 

@@ -192,8 +192,7 @@ static int read_qdb_file(FILE *fp, CM_t *cm, int *dmin, int *dmax);
 static int is_integer(char *s);
 static int read_next_search_seq(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int do_revcomp, dbseq_t **ret_dbseq);
 #if HAVE_MPI
-static int determine_cm_min_max_chunksize(struct cfg_s *cfg, CM_t *cm, int *ret_min_chunksize, int *ret_max_chunksize);
-static int determine_seq_chunksize(struct cfg_s *cfg, int L, int min_chunksize, int chunksize);
+static int determine_seq_chunksize(struct cfg_s *cfg, int L, int W);
 #endif 
 
 int
@@ -548,8 +547,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
   int need_seq = TRUE;
   int chunksize;
-  int min_chunksize;
-  int max_chunksize;
   search_results_t *worker_results;
 
 
@@ -621,9 +618,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       print_search_info(go, cfg, stdout, cm, cfg->N, errbuf);
       using_e_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
-      determine_cm_min_max_chunksize(cfg, cm, &min_chunksize, &max_chunksize);
-      ESL_DPRINTF1(("min_chunksize: %d\n", min_chunksize));
-      ESL_DPRINTF1(("max_chunksize: %d\n", max_chunksize));
 
       wi = 1;
       ndbseq = 0;
@@ -652,7 +646,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  dbseqlist[si] = dbseq;
 		  sentlist[si]  = FALSE;
 		  have_work = TRUE;
-		  chunksize = determine_seq_chunksize(cfg, dbseq->sq[0]->n, min_chunksize, max_chunksize);
+		  chunksize = determine_seq_chunksize(cfg, dbseq->sq[0]->n, cm->W);
 		  ESL_DPRINTF1(("L: %d chunksize: %d\n", dbseq->sq[0]->n, chunksize));
 		}
 	      else if(status == eslEOF) have_work = FALSE;
@@ -732,8 +726,9 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if (have_work)
 	    {   
 	      /* send new search job */
-	      ESL_DPRINTF1(("MPI master is sending sequence to search to worker %d\n", wi));
 	      len = (chunksize < (dbseqlist[si]->sq[0]->n - seqpos + 1)) ? chunksize : (dbseqlist[si]->sq[0]->n - seqpos + 1);
+	      ESL_DPRINTF1(("MPI master is sending sequence i0..j0 %d..%d to search to worker %d\n", seqpos, seqpos+len-1, wi));
+	      assert(seqpos > 0);
 	      if ((status = cm_dsq_MPISend(dbseqlist[si]->sq[in_rc]->dsq+seqpos-1, len, wi, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI search job send failed");
 	      
 	      silist[wi]      = si;
@@ -1752,44 +1747,25 @@ int read_next_search_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revc
 }
 
 #if HAVE_MPI
-/* determine_cm_min_max_chunksize()
- * Given a CM, return the minimum and maximum subseq length to 
- * send to each process (min_chunksize & max_chunksize) based on 
- * minimum and maximum time we want a worker to spend working on a single
- * job, these are MPI_WORKER_MIN_SEC and MPI_WORKER_MAX_SEC constants from 
- * structs.h. 
- */
-static int
-determine_cm_min_max_chunksize(struct cfg_s *cfg, CM_t *cm, int *ret_min_chunksize, int *ret_max_chunksize)
-{
-  int   L = 1000000;
-  float dpc; /* number of million dp calcs for L = 1 MB with or without QDB (depending on cm->search_opts) */
-  /* TO DO: update CountScanDPCalcs() for HMM filtering, not just QDB */
-  dpc = CountScanDPCalcs(cm, L, (! (cm->search_opts & CM_SEARCH_NOQDB))) / 1000000;
-  printf("dpc: %f\n", dpc);
-  *ret_min_chunksize = (int) (((float) MPI_WORKER_MIN_SEC * (float) L) / (dpc / MDPC_SEC));
-  *ret_max_chunksize = (int) (((float) MPI_WORKER_MAX_SEC * (float) L) / (dpc / MDPC_SEC));
-  return eslOK;
-}
-
 /* determine_seq_chunksize()
+ * From RSEARCH, with one change, ideal situation is considered
+ * when we put 1 chunk for each STRAND of each seq on each proc.
  *
- * Given a sequence length, return the appropriate subseq length
- * to send to each process (chunksize). Ideally we send exactly 1 chunk
- * to each processor, but only if the time required is within a range
- * given by MPI_WORKER_MIN_SEC and MPI_WORKER_MAX_SEC (in structs.h). 
- * The chunksizes corresponding to those min/max times have been
- * precomputed for the current CM, and are sent in as min_chunksize
- * and max_chunksize.
+ * Set the chunk size as follows:
+ * 1.  Ideally take smallest multiple of cm->W that gives result greater than
+ *     (seqlen + (cm->W * (num_procs-2))) / (num_procs-1)
+ *     This should put one chunk for EACH STRAND on each processor.
+ * 2.  If this is less than MPI_MIN_CHUNK_W_MULTIPLIER * cm->W, use that value.
+ * 3.  If this is greater than MPI_MAX_CHUNK_SIZE, use that.
  */
 static int
-determine_seq_chunksize(struct cfg_s *cfg, int L, int min_chunksize, int max_chunksize)
+determine_seq_chunksize(struct cfg_s *cfg, int L, int W)
 {
   int chunksize;
-  if(cfg->do_rc) L *= 2;
-  chunksize = (int) ((float) L / (float) (cfg->nproc - 1));
-  if(chunksize < min_chunksize) return min_chunksize;
-  if(chunksize > max_chunksize) return max_chunksize;
+  chunksize = ((L + (W * (cfg->nproc-2))) / (cfg->nproc)) + 1;
+  chunksize = ((chunksize / W) + 1) * W;
+  chunksize = ESL_MAX(chunksize, W * MPI_MIN_CHUNK_W_MULTIPLIER); 
+  chunksize = ESL_MIN(chunksize, MPI_MAX_CHUNK_SIZE);
   return chunksize;
 }
 #endif

@@ -222,7 +222,7 @@ static void
 master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   int      status;
-  char     errbuf[eslERRBUFSIZE];
+  char     errbuf[cmERRBUFSIZE];
   CM_t    *cm = NULL;
 
   if ((status = init_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);

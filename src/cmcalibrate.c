@@ -1081,7 +1081,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		      fil_vit_cp9scA[nseq_recv+i] = worker_vit_cp9scA[i];
 		      fil_fwd_cp9scA[nseq_recv+i] = worker_fwd_cp9scA[i];
 		      fil_partA[nseq_recv+i]      = worker_partA[i];
-		      printf("fil_partA[%d]: %d\n", nseq_recv+i, fil_partA[nseq_recv+i]);
 		      ESL_DASSERT1((fil_partA[nseq_recv+i] < cfg->np));
 		    }
 		    for(v = 0; v < cm->M; v++) {
@@ -1357,6 +1356,8 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    ESL_DPRINTF1(("worker %d: has calculated the HMM filter results will pack into %d bytes\n", cfg->my_rank, n));
 	    status = eslOK;
 	    pos = 0;
+	    int i; for(i = 0; i < nseq; i++) assert(fil_partA[i] < cfg->np);
+
 	    if (cmcalibrate_cp9_filter_results_MPIPack(fil_vscAA, fil_vit_cp9scA, fil_fwd_cp9scA, fil_partA, nseq, cm->M, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK) goto ERROR;
 	    for(v = 0; v < cm->M; v++) free(fil_vscAA[v]);
 	    free(fil_vscAA);
@@ -1633,22 +1634,26 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   }
   else  /* mode == 2 */
     ESL_ALLOC(hybscA, sizeof(float) * nseq); /* will hold hybrid scores */
-  
+
+
   /* generate dsqs one at a time and collect best CM scores at each state and/or best overall CP9 score */
   for(i = 0; i < nseq; i++) {
     dsq = get_cmemit_dsq(cfg, cm, &L, &p, &tr);
-    /* we only want to use emitted seqs with a sc > cutoff, cm_find_hit_above_cutoff returns false if no such hit exists in dsq */
+    /* we only want to use emitted seqs with a sc > cutoff */
     if((status = cm_find_hit_above_cutoff(go, cfg, errbuf, cm, dsq, tr, L, cfg->cutoffA[p], &sc)) != eslOK) return status;
+    assert(p < cfg->np);
     while(sc < cfg->cutoffA[p]) { 
       free(dsq); 	
       /* parsetree tr is freed in cm_find_hit_above_cutoff() */
       dsq = get_cmemit_dsq(cfg, cm, &L, &p, &tr);
+      assert(p < cfg->np);
       nfailed++;
       if(nfailed > 1000 * nseq) ESL_FAIL(eslERANGE, errbuf, "process_filter_workunit(), max number of failures (%d) reached while trying to emit %d seqs.\n", nfailed, nseq);
       if((status = cm_find_hit_above_cutoff(go, cfg, errbuf, cm, dsq, tr, L, cfg->cutoffA[p], &sc)) != eslOK) return status;
     }
     partA[i] = p;
-    ESL_DPRINTF1(("i: %d nfailed: %d cutoff: %.3f\n", i, nfailed, cfg->cutoffA[p]));
+    assert(partA[i] < cfg->np);
+    ESL_DPRINTF1(("i: %d nfailed: %d cutoff: %.3f p: %d\n", i, nfailed, cfg->cutoffA[p], p));
 
     /* search dsq with mode-specific search algs */
     if(mode == 1) {

@@ -212,7 +212,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 	  i = ((round_results->data[h].stop - (cm->W-1)) >= 1) ? (round_results->data[h].stop - (cm->W-1)) : 1;
 	  if((h+1) < nhits) next_j = ((round_results->data[h+1].start + (cm->W-1)) <= j0) ? (round_results->data[h+1].start + (cm->W-1)) : j0;
 	  else              next_j = -1;
-	  printf("\tsucked in subseq: hit %d new_i: %d j (still): %d\n", h, i, j);
+	  ESL_DPRINTF1(("\tsucked in subseq: hit %d new_i: %d j (still): %d\n", h, i, j));
 	}
       }
       /* next round: research this chunk that survived the filter */

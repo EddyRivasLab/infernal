@@ -183,6 +183,7 @@ cm_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm comm, CM_t
 
   if ((cm = CreateCM(nnodes,M,(*abc))) == NULL) { status = eslEMEM; goto ERROR;    }
   K = cm->abc->K;
+  CMZero(cm);
 
   /* Unpack the rest of the CM */
   if (MPI_Unpack(buf, n, pos, &(cm->flags),              1,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
@@ -299,6 +300,7 @@ cm_justread_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm c
 
   if ((cm = CreateCM(nnodes,M,(*abc))) == NULL) { status = eslEMEM; goto ERROR;    }
   K = cm->abc->K;
+  CMZero(cm);
 
   /* Unpack the rest of the CM */
   if (MPI_Unpack(buf, n, pos, &(cm->flags),              1,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
