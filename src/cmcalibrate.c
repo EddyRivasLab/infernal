@@ -75,6 +75,7 @@ static ESL_OPTIONS options[] = {
   { "--gumqqfile",eslARG_STRING, NULL, NULL, NULL,      NULL,      NULL, "--filonly", "save Q-Q plot for Gumbel histogram(s) to file <s>", 2 },
   { "--beta",    eslARG_REAL,  "1e-7", NULL, "x>0",     NULL,      NULL,    "--noqdb", "set tail loss prob for Gumbel calculation to <x>", 5 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "DO NOT use query dependent banding (QDB) Gumbel searches", 5 },
+  { "--gtail",   eslARG_REAL,    "0.5",NULL, "0.0<x<0.6",NULL,     NULL,        NULL, "set fraction of right histogram tail to fit to Gumbel to <x>", 5 },
   /* options for filter threshold calculation */
   { "--filonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "only calculate filter thresholds, don't estimate Gumbels", 3},
   { "--filN",    eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--gumonly", "number of emitted sequences for HMM filter threshold calc",    3 },
@@ -82,7 +83,7 @@ static ESL_OPTIONS options[] = {
   { "--F",       eslARG_REAL,  "0.99", NULL, "0<x<=1",  NULL,      NULL, "--gumonly", "required fraction of seqs that survive HMM filter", 3},
   { "--fstep",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "step from F to 1.0 while S < Starg", 3},
   { "--starg",   eslARG_REAL,  "0.01", NULL, "0<x<=1",  NULL,      NULL, "--gumonly", "target filter survival fraction", 3},
-  { "--hybrid",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "try hybrid filters, and keep them if better than HMM", 3},
+  { "--hybrid",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--filonly,--gumonly", "try hybrid filters, and keep them if better than HMM", 3},
   { "--spad",    eslARG_REAL,  "1.0",  NULL, "0<=x<=1", NULL,      NULL, "--gumonly", "fraction of (sc(S) - sc(Starg)) to add to sc(S)", 3},
   { "--gemit",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "when calc'ing filter thresholds, always emit globally from CM",  3},
   { "--filhfile",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--gumonly", "save CP9 filter threshold histogram(s) to file <s>", 3},
@@ -819,7 +820,10 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   for (wi = 0; wi < cfg->nproc; wi++) 
     {
       /* not sure what to do here */
-      seedlist[wi] = wi;
+      /* seedlist[wi] = wi; */
+      seedlist[wi] = esl_rnd_Choose(cfg->r, 1000000000); /* not sure what to use as max for seed */
+      printf("wi seed: %ld\n", seedlist[wi]);
+      ESL_DPRINTF1(("wi seed: %ld\n", seedlist[wi]));
     }
   MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
   if (xstatus != eslOK) cm_Fail(errbuf);
@@ -1925,6 +1929,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
   int i;
   double *xv;         /* raw data from histogram */
   int     n,z;  
+  float tailfit;
 
   ESL_HISTOGRAM *h = NULL;       /* histogram of scores */
 
@@ -1937,7 +1942,8 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
     esl_histogram_Add(h, scores[i]);
 
   /* fit scores to a gumbel */
-  esl_histogram_GetTailByMass(h, 0.5, &xv, &n, &z); /* fit to right 50% */
+  tailfit = esl_opt_GetReal(go, "--gtail");
+  esl_histogram_GetTailByMass(h, tailfit, &xv, &n, &z); /* fit to right 'tailfit' fraction, 0.5 by default */
   esl_gumbel_FitCensored(xv, n, z, xv[0], &mu, &lambda);
 
   /* print to output files if nec */
@@ -1967,21 +1973,27 @@ cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
 {
   int status;
   int v;
-
+  
   if(cfg->vmuAA[p]     != NULL) free(cfg->vmuAA[p]);
   if(cfg->vlambdaAA[p] != NULL) free(cfg->vlambdaAA[p]);
   
-  ESL_ALLOC(cfg->vmuAA[p],     sizeof(double) * cm->M);
-  ESL_ALLOC(cfg->vlambdaAA[p], sizeof(double) * cm->M);
-
-  for(v = 0; v < cm->M; v++) {
-    if(cfg->hsi->iscandA[v]) {
-      /* printf("FITTING v: %d sttype: %d\n", v, cm->sttype[v]); */
-      fit_histogram(go, cfg, errbuf, vscA[v], nscores, &(cfg->vmuAA[p][v]), &(cfg->vlambdaAA[p][v]));
+  if(esl_opt_GetBoolean(go, "--hybrid")) { /* fit gumbels for each candidate sub CM root for a hybrid filter */
+    ESL_ALLOC(cfg->vmuAA[p],     sizeof(double) * cm->M);
+    ESL_ALLOC(cfg->vlambdaAA[p], sizeof(double) * cm->M);
+    
+    for(v = 0; v < cm->M; v++) {
+      if(cfg->hsi->iscandA[v]) {
+	/* printf("FITTING v: %d sttype: %d\n", v, cm->sttype[v]); */
+	fit_histogram(go, cfg, errbuf, vscA[v], nscores, &(cfg->vmuAA[p][v]), &(cfg->vlambdaAA[p][v]));
+      }
+      else cfg->vmuAA[p][v] = cfg->vlambdaAA[p][v] = -1.;
     }
-    else cfg->vmuAA[p][v] = cfg->vlambdaAA[p][v] = -1.;
+  } 
+  else { /* only fit root state 0, the full model */
+    ESL_ALLOC(cfg->vmuAA[p],     sizeof(double) * 1);
+    ESL_ALLOC(cfg->vlambdaAA[p], sizeof(double) * 1);
+    fit_histogram(go, cfg, errbuf, vscA[0], nscores, &(cfg->vmuAA[p][0]), &(cfg->vlambdaAA[p][0]));
   }
-
   return eslOK;
 
  ERROR:
