@@ -596,6 +596,9 @@ ConfigLocalEnds(CM_t *cm, float p_internal_exit)
 	denom = esl_vec_FSum(cm->t[v], cm->cnum[v]);
 	denom += cm->end[v];
 	esl_vec_FScale(cm->t[v], cm->cnum[v], 1./denom);
+	/* cm->t[v] vector will purposefully no longer sum to 1., 
+	 * if we were to append cm->end[v] as a new number in the vector, it would sum to 1. 
+	 */
       }
   }
 

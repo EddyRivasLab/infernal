@@ -424,6 +424,8 @@ typedef struct cp9map_s {
 #define CM_IS_RSEARCH          (1<<16) /* the CM was parameterized a la RSEARCH    */
 #define CM_RSEARCHTRANS        (1<<17) /* CM has/will have RSEARCH transitions     */
 #define CM_RSEARCHEMIT         (1<<18) /* CM has/will have RSEARCH emissions       */
+#define CM_EMIT_NO_LOCAL_BEGINS (1<<19) /* emitted parsetrees will never have local begins */
+#define CM_EMIT_NO_LOCAL_ENDS   (1<<20) /* emitted parsetrees will never have local ends   */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */

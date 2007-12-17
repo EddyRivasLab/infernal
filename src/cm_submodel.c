@@ -2120,6 +2120,7 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, int sp
   int cc;
   char         *tmp_name;           /* name for seqs */
   char         *tmp_text_sq;        /* text seqs */
+  char errbuf[cmERRBUFSIZE];
   
   debug_level = 0;
   ret_val = TRUE;
@@ -2170,7 +2171,7 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, int sp
 	{
 	  ESL_ALLOC(name, sizeof(char) * namelen);
 	  sprintf(name, "seq%d", i+1);
-	  EmitParsetree(orig_cm, r, name, FALSE, &(tr[i]), &(sq[i]), &L);
+	  if((status = EmitParsetree(orig_cm, errbuf, r, name, FALSE, &(tr[i]), &(sq[i]), &L)) != eslOK) cm_Fail(errbuf);
 	  free(name);
 	}
       /* Build a new MSA from these parsetrees */
@@ -2280,7 +2281,7 @@ check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, int sp
 	{
 	  ESL_ALLOC(name, sizeof(char) * namelen);
 	  sprintf(name, "seq%d", i+1);
-	  EmitParsetree(sub_cm, r, name, FALSE, &(tr[i]), &(sq[i]), &L);
+	  if((status = EmitParsetree(sub_cm, errbuf, r, name, FALSE, &(tr[i]), &(sq[i]), &L)) != eslOK) cm_Fail(errbuf);
 	  free(name);
 	}
       /* Build a new MSA from these parsetrees */

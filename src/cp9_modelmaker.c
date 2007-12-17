@@ -2558,6 +2558,7 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
   int swrong_total_ct; /* total number of nodes we thought would be violations but were not */
   int namelen;         /* max int size for name */
   char *tmp_name;           /* name for the seqs */
+  char errbuf[cmERRBUFSIZE];
 
   spredict_total_ct = 0;
   swrong_total_ct = 0;
@@ -2604,7 +2605,7 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
       for (i = 0; i < msa_nseq; i++) {
 	ESL_ALLOC(name, sizeof(char) * namelen);
 	sprintf(name, "seq%d", i+1);
-	EmitParsetree(cm, r, name, TRUE, &(tr[i]), &(sq[i]), &L);
+	if((status = EmitParsetree(cm, errbuf, r, name, TRUE, &(tr[i]), &(sq[i]), &L)) != eslOK) cm_Fail(errbuf);;
 	free(name);
       }
       /* Build a new MSA from these parsetrees */

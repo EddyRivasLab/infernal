@@ -271,7 +271,7 @@ extern float        ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_D
 extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr);
 extern void         rightjustify(const ESL_ALPHABET *abc, char *s, int n);
 extern void         leftjustify(const ESL_ALPHABET *abc, char *s, int n);
-extern int          EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree_t **ret_tr, ESL_SQ **ret_sq, int *ret_N);
+extern int          EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree_t **ret_tr, ESL_SQ **ret_sq, int *ret_N);
 extern float        ParsetreeScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq);
 
 /* from cm_qdband.c */

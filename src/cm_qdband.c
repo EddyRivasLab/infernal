@@ -549,6 +549,7 @@ BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
   char         *name;           /* name for the seq we've emitted */
   ESL_RANDOMNESS  *r = NULL;    /* source of randomness */
   int           namelen;        /* max int size for name */
+  char errbuf[cmERRBUFSIZE];
 
   /* Create and seed RNG */
   if ((r = esl_randomness_CreateTimeseeded()) == NULL) 
@@ -584,7 +585,7 @@ BandMonteCarlo(CM_t *cm, int nsample, int W, double ***ret_gamma)
   for (i = 0; i < nsample; i++)  {
     ESL_ALLOC(name, sizeof(char) * namelen);
     sprintf(name, "seq%d", i+1);
-    EmitParsetree(cm, r, NULL, FALSE, &tr, NULL, &seqlen);
+    if(EmitParsetree(cm, errbuf, r, NULL, FALSE, &tr, NULL, &seqlen) != eslOK) cm_Fail(errbuf);
     free(name);
     if (seqlen > W) {
       FreeParsetree(tr);

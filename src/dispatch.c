@@ -102,7 +102,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
     if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
     if(smx != NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round %d, SEARCH_WITH_HMM but smx != NULL.\n", sround);
     if(hsi != NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round %d, SEARCH_WITH_HMM but hsi != NULL.\n", sround);
-    if(! (cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD))
+    if(! ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD)))
       ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), search type for this round is SEARCH_WITH_HMM, but CM_SEARCH_HMMVITERBI and CM_SEARCH_HMMFORWARD flags are both down.");
 
     search_results_t *fwd_results;

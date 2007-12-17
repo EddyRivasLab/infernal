@@ -1445,6 +1445,7 @@ leftjustify(const ESL_ALPHABET *abc, char *s, int n)
  *            Added capacity for local begins/ends. [EPN, Wed May  2 05:59:19 2007]
  *
  * Args:      cm      - covariance model to generate from
+ *            errbuf  - for error messages
  *            r       - source of randomness
  *            name    - name for the sequence (ESL_SQ name field is mandatory)
  *            do_digital - TRUE to digitize sq before returning, FALSE not to
@@ -1453,13 +1454,14 @@ leftjustify(const ESL_ALPHABET *abc, char *s, int n)
  *            ret_N   - RETURN: length of generated sequence.
  *
  * Returns:   eslOK on success; eslEMEM on memory error;
+ *            eslEINCONCEIVABLE if something inconceivable happens.
  *            tr, sq are allocated here; whichever ones the caller
  *            requests (with non-NULL ret_ pointers) the caller is responsible
  *            for free'ing:
  *               FreeParsetree(tr); esl_sq_Destroy(sq);
  */
 int
-EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree_t **ret_tr, ESL_SQ **ret_sq, int *ret_N)
+EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree_t **ret_tr, ESL_SQ **ret_sq, int *ret_N)
 {
   int status;
   Parsetree_t *tr = NULL;       /* parse tree under construction */
@@ -1481,11 +1483,11 @@ EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree
 				 * for dealing with local end transitions */
   /* Contract check */
   if(cm->flags & CMH_LOCAL_END && (fabs(sreEXP2(cm->el_selfsc) - 1.0) < 0.01))
-    ESL_XEXCEPTION(eslEINVAL, "EL self transition probability %f is too high, would emit long (too long) EL insertions.", sreEXP2(cm->el_selfsc));
+    ESL_FAIL(eslEINVAL, errbuf, "EL self transition probability %f is too high, would emit long (too long) EL insertions.", sreEXP2(cm->el_selfsc));
   if(cm->abc == NULL)
-    ESL_XEXCEPTION(eslEINVAL, "CM does not have a valid alphabet.");
+    ESL_FAIL(eslEINVAL, errbuf, "CM does not have a valid alphabet.");
   if(ret_sq != NULL && name == NULL)
-    ESL_XEXCEPTION(eslEINVAL, "EmitParsetree requires a sequence name for the sequence it's creating.");
+    ESL_FAIL(eslEINVAL, errbuf, "EmitParsetree requires a sequence name for the sequence it's creating.");
 
   tr  = CreateParsetree(100);
   pda = esl_stack_ICreate();
@@ -1577,16 +1579,32 @@ EmitParsetree(CM_t *cm, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree
 	    }
 	  else
 	    {
-	      if(v == 0 && cm->flags & CMH_LOCAL_BEGIN)		/* ROOT_S with local begins, special */
-		y = esl_rnd_FChoose(r, cm->begin, cm->M); /* choose next state, y */
-	      else if(cm->flags & CMH_LOCAL_END) /* special case, we could transit to EL */
+	      if(v == 0 && cm->flags & CMH_LOCAL_BEGIN)	{ /* ROOT_S with local begins, special */
+		if(cm->flags & CM_EMIT_NO_LOCAL_BEGINS) { /* even though local begins are on, we don't allow them during emission */
+		  if(cm->root_trans == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "EmitParsetree(), cm->flags CM_EMIT_NO_LOCAL_BEGINS and CM_EMIT_GLOBAL flags raised, but cm->root_trans is NULL.");
+		  y = cm->cfirst[v] + esl_rnd_FChoose(r, cm->root_trans, cm->cnum[0]); /* choose next state, y, from 0's children using initial transitions (those from global model, read from CM file) */
+		}		  
+		else { 
+		  y = esl_rnd_FChoose(r, cm->begin, cm->M); /* choose next state, y */
+		}
+	      }
+	      else if(cm->flags & CMH_LOCAL_END) /* special case, we could transit to EL, if CM_EMIT_NO_LOCAL_ENDS flag is down */
 		{
-		  esl_vec_FSet(tmp_tvec, (MAXCONNECT+1), 0.);
-		  esl_vec_FCopy(cm->t[v], cm->cnum[v], tmp_tvec);
-		  tmp_tvec[cm->cnum[v]] = cm->end[v];
-		  y = esl_rnd_FChoose(r, tmp_tvec, (cm->cnum[v]+1)); /* choose next state, y's offset */
-		  if(y == cm->cnum[v]) y = cm->M; /* local end */
-		  else y += cm->cfirst[v];        
+		  if(cm->flags & CM_EMIT_NO_LOCAL_ENDS) { /* even though local ends are on, we dont allow them during emission */
+		    /* create temporary vector for choosing transition */
+		    esl_vec_FSet(tmp_tvec, (MAXCONNECT+1), 0.);
+		    esl_vec_FCopy(cm->t[v], cm->cnum[v], tmp_tvec);
+		    esl_vec_FNorm(tmp_tvec, cm->cnum[v]);
+		    y = cm->cfirst[v] + esl_rnd_FChoose(r, tmp_tvec, cm->cnum[v]); /* choose next state, y, but don't include a local end as a possibility */
+		  }		  
+		  else { /* we may choose a child of v, or a local end */
+		    esl_vec_FSet(tmp_tvec, (MAXCONNECT+1), 0.);
+		    esl_vec_FCopy(cm->t[v], cm->cnum[v], tmp_tvec);
+		    tmp_tvec[cm->cnum[v]] = cm->end[v];
+		    y = esl_rnd_FChoose(r, tmp_tvec, (cm->cnum[v]+1)); /* choose next state, y's offset */
+		    if(y == cm->cnum[v]) y = cm->M; /* local end */
+		    else y += cm->cfirst[v];        
+		  }
 		}		  
 	      else
 		y = cm->cfirst[v] + esl_rnd_FChoose(r, cm->t[v], cm->cnum[v]); /* choose next state, y */

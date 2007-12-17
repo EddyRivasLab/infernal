@@ -176,8 +176,8 @@ static int update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
 static int set_partition_gc_freq(struct cfg_s *cfg, int p);
 static int fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, double *ret_mu, double *ret_lambda);
 static int cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **vscA, int nscores, int p);
-static ESL_DSQ * get_random_dsq(const struct cfg_s *cfg, CM_t *cm, double *dnull, int L);
-static ESL_DSQ * get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p, Parsetree_t **ret_tr);
+static int get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, double *dnull, int L, ESL_DSQ **ret_dsq);
+static int get_cmemit_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, int *ret_p, Parsetree_t **ret_tr, ESL_DSQ **ret_dsq);
 static int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_DSQ *dsq, Parsetree_t *tr, int L, float cutoff, float *ret_sc);
 static void estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq, int L, int gum_mode);
 static int read_partition_file(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
@@ -1506,7 +1506,7 @@ process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   
   /* generate dsqs one at a time and collect best CM scores at each state and/or best overall CP9 score */
   for(i = 0; i < nseq; i++) {
-    dsq = get_random_dsq(cfg, cm, dnull, cm->W*2); 
+    if((status = get_random_dsq(cfg, errbuf, cm, dnull, cm->W*2, &dsq)) != eslOK) return status; 
     L = cm->W*2; 
     /* if nec, search with CM */
     if (do_cyk)    if((status = FastCYKScan    (cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, &(cur_vscA), &sc)) != eslOK) return status;
@@ -1642,14 +1642,14 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
 
   /* generate dsqs one at a time and collect best CM scores at each state and/or best overall CP9 score */
   for(i = 0; i < nseq; i++) {
-    dsq = get_cmemit_dsq(cfg, cm, &L, &p, &tr);
+    if((status = get_cmemit_dsq(cfg, errbuf, cm, &L, &p, &tr, &dsq)) != eslOK) return status;
     /* we only want to use emitted seqs with a sc > cutoff */
     if((status = cm_find_hit_above_cutoff(go, cfg, errbuf, cm, dsq, tr, L, cfg->cutoffA[p], &sc)) != eslOK) return status;
     assert(p < cfg->np);
     while(sc < cfg->cutoffA[p]) { 
       free(dsq); 	
       /* parsetree tr is freed in cm_find_hit_above_cutoff() */
-      dsq = get_cmemit_dsq(cfg, cm, &L, &p, &tr);
+      if((status = get_cmemit_dsq(cfg, errbuf, cm, &L, &p, &tr, &dsq)) != eslOK) return status;
       assert(p < cfg->np);
       nfailed++;
       if(nfailed > 1000 * nseq) ESL_FAIL(eslERANGE, errbuf, "process_filter_workunit(), max number of failures (%d) reached while trying to emit %d seqs.\n", nfailed, nseq);
@@ -1752,6 +1752,12 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 	nexits++;
     }
     cm->pend = nexits * esl_opt_GetReal(go, "--pfend");
+  }
+  /* process the --gemit option, this option forces all emitted parsetrees to be 'global'
+   * in that they'll never contain a local begin or local end. */
+  if(esl_opt_GetBoolean(go, "--gemit")) { 
+    cm->flags |= CM_EMIT_NO_LOCAL_BEGINS; 
+    cm->flags |= CM_EMIT_NO_LOCAL_ENDS;
   }
 
   ConfigCM(cm, NULL, NULL);
@@ -2011,10 +2017,11 @@ cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
  *              use choose a GC frequency from cfg->pgc_freq
  *              and generate with that
  *
- * Returns:  eslOK on success;
+ * Returns:  eslOK on success, ret_dsq filled with newly alloc'ed ESL_DSQ *,
+ *           some other status code on failure.
  */
-ESL_DSQ *
-get_random_dsq(const struct cfg_s *cfg, CM_t *cm, double *dnull, int L)
+int
+get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, double *dnull, int L, ESL_DSQ **ret_dsq)
 {
   int status;
   double  gc_comp;
@@ -2023,8 +2030,8 @@ get_random_dsq(const struct cfg_s *cfg, CM_t *cm, double *dnull, int L)
   ESL_DSQ *dsq = NULL;
 
   /* contract check, make sure we're in a valid mode */
-  if(cfg->pgc_freq == NULL && dnull == NULL) cm_Fail("get_random_dsq(), cfg->pgc_freq == NULL and dnull == NULL");
-  if(cfg->pgc_freq != NULL && dnull != NULL) cm_Fail("get_random_dsq(), cfg->pgc_freq != NULL and dnull != NULL");
+  if(cfg->pgc_freq == NULL && dnull == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "get_random_dsq(), cfg->pgc_freq == NULL and dnull == NULL");
+  if(cfg->pgc_freq != NULL && dnull != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "get_random_dsq(), cfg->pgc_freq != NULL and dnull != NULL");
 
   /* determine mode */ /* generate sequence */
   if      (cfg->pgc_freq == NULL && dnull != NULL) distro = dnull;
@@ -2038,14 +2045,14 @@ get_random_dsq(const struct cfg_s *cfg, CM_t *cm, double *dnull, int L)
   }
   /* generate sequence */
   ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
-  if (esl_rnd_xIID(cfg->r, distro, cm->abc->K, L, dsq) != eslOK) cm_Fail("get_random_dsq(): failure creating random sequence.");
+  if ((status = esl_rnd_xIID(cfg->r, distro, cm->abc->K, L, dsq) != eslOK)) return status;
 
   if (do_free_distro) free(distro);
-  return dsq;
+  *ret_dsq = dsq;
+  return eslOK;
 
  ERROR:
-  cm_Fail("get_random_dsq() memory allocation error.");
-  return NULL; /*NEVERREACHED */
+  return status;
 }
 
 /* Function: get_cmemit_dsq()
@@ -2053,26 +2060,28 @@ get_random_dsq(const struct cfg_s *cfg, CM_t *cm, double *dnull, int L)
  * 
  * Purpose:  Generate a dsq from a CM and return it.
  *
- * Returns:  eslOK on success;
+ * Returns:  eslOK on success, ESL_DSQ is filled with newly alloc'ed dsq; some other status code on an error, 
  */
-ESL_DSQ *
-get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p, Parsetree_t **ret_tr)
+int
+get_cmemit_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, int *ret_p, Parsetree_t **ret_tr, ESL_DSQ **ret_dsq)
 {
+  int status;
   int p;
   int L;
   ESL_SQ *sq;
   ESL_DSQ *dsq;
   Parsetree_t *tr;
 
-  EmitParsetree(cm, cfg->r, "irrelevant", TRUE, &tr, &sq, &L);
+  if((status = EmitParsetree(cm, errbuf, cfg->r, "irrelevant", TRUE, &tr, &sq, &L)) != eslOK) return status;
   while(L == 0) { 
     FreeParsetree(tr); 
     esl_sq_Destroy(sq); 
-    EmitParsetree(cm, cfg->r, "irrelevant", TRUE, &tr, &sq, &L);
+    if((status = EmitParsetree(cm, errbuf, cfg->r, "irrelevant", TRUE, &tr, &sq, &L)) != eslOK) return status;
   }
 
   /* determine the partition */
-  p = cfg->cmstatsA[cfg->ncm-1]->gc2p[(get_gc_comp(sq, 1, L))]; /* in get_gc_comp() should be i and j of best hit */
+  p = cfg->cmstatsA[cfg->ncm-1]->gc2p[(get_gc_comp(sq, 1, L))]; /* this is slightly wrong, 1,L for get_gc_comp() should be i and j of best hit */
+  assert(p < cfg->np);
   ESL_DASSERT1((p < cfg->np));
 
   /* free everything allocated by a esl_sqio.c:esl_sq_CreateFrom() call, but the dsq */
@@ -2085,7 +2094,8 @@ get_cmemit_dsq(const struct cfg_s *cfg, CM_t *cm, int *ret_L, int *ret_p, Parset
   *ret_L  = L;
   *ret_p  = p;
   *ret_tr = tr;
-  return dsq;
+  *ret_dsq = dsq;
+  return eslOK;
 }
 
 

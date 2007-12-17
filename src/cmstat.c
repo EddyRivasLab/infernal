@@ -366,7 +366,7 @@ summarize_alignment(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, 
   int i;
   for(i = 0; i < N; i++)
     {
-      EmitParsetree(cm, r, "seq", TRUE, NULL, &(sq[i]), &L);
+      if((status = EmitParsetree(cm, errbuf, r, "seq", TRUE, NULL, &(sq[i]), &L)) != eslOK) goto ERROR;
       /*esl_sqio_Write(stdout, sq[i], eslSQFILE_FASTA);*/
       L_avg += L;
     }

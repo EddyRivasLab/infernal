@@ -54,6 +54,7 @@ static ESL_OPTIONS options[] = {
   { "--exp",     eslARG_REAL,   NULL,  NULL, "x>0",     NULL,      NULL,        NULL, "exponentiate CM probabilities by <x> before emitting",  3 },
   { "--begin",   eslARG_INT,    NULL,  NULL, "n>=1",    NULL,"-a,--end",        NULL, "truncate alignment, begin at match column <n>", 3 },
   { "--end",     eslARG_INT,    NULL,  NULL, "n>=1",    NULL,"-a,--begin",      NULL, "truncate alignment,   end at match column <n>", 3 },
+  { "--gemit",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",        NULL, "disallow local begins and ends in emitted parsetrees", 3 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -263,6 +264,13 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
   /* Update cfg->cm->config_opts and cfg->cm->align_opts based on command line options */
   if(esl_opt_GetBoolean(go, "-l"))            cm->config_opts |= CM_CONFIG_LOCAL;
   if(esl_opt_GetBoolean(go, "--zeroinserts")) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
+  /* process the --gemit option, this option forces all emitted parsetrees to be 'global'
+   * in that they'll never contain a local begin or local end. */
+  if(esl_opt_GetBoolean(go, "--gemit")) { 
+    cm->flags |= CM_EMIT_NO_LOCAL_BEGINS; 
+    cm->flags |= CM_EMIT_NO_LOCAL_ENDS;
+  }
+
   ConfigCM(cm, NULL, NULL);
   if(! esl_opt_IsDefault(go, "--exp"))        ExponentiateCM(cm, esl_opt_GetReal(go, "--exp"));
   
@@ -297,7 +305,7 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
     {
       if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+1);
       else                 sprintf(name, "%d-%d", cfg->ncm, i+1);
-      EmitParsetree(cm, cfg->r, name, TRUE, &tr, &sq, &L);
+      if((status = EmitParsetree(cm, errbuf, cfg->r, name, TRUE, &tr, &sq, &L)) != eslOK) return status;
       sq->abc = cfg->abc_out;
       if((esl_sqio_Write(cfg->ofp, sq, eslSQFILE_FASTA)) != eslOK) 
 	ESL_FAIL(eslFAIL, errbuf, "Error writing unaligned sequences.");
@@ -355,7 +363,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
     {
       if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+1);
       else                 sprintf(name, "%d-%d", cfg->ncm, i+1);
-      EmitParsetree(cm, cfg->r, name, TRUE, &(tr[i]), &(sq[i]), &L);
+      if((status = EmitParsetree(cm, errbuf, cfg->r, name, TRUE, &(tr[i]), &(sq[i]), &L)) != eslOK) return status;
       sq[i]->abc = cfg->abc_out;
       if(cfg->pfp != NULL)
 	{
@@ -513,7 +521,7 @@ build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf
 	{
 	  if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+1);
 	  else                 sprintf(name, "%d-%d", cfg->ncm, i+1);
-	  EmitParsetree(cm, cfg->r, name, TRUE, &(tr[i]), &(sq[i]), &L);
+	  if((status = EmitParsetree(cm, errbuf, cfg->r, name, TRUE, &(tr[i]), &(sq[i]), &L)) != eslOK) cm_Fail(errbuf);
 	  sq[i]->abc = cfg->abc_out;
 	}
       /* Build a new MSA from these parsetrees */

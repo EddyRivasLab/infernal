@@ -363,6 +363,7 @@ seqs_to_aln_t *CMEmitSeqsToAln(ESL_RANDOMNESS *r, CM_t *cm, int ncm, int nseq, i
   int namelen;
   int L;
   int i;
+  char errbuf[cmERRBUFSIZE];
 
   seqs_to_aln = CreateSeqsToAln(nseq, i_am_mpi_master);
 
@@ -374,7 +375,7 @@ seqs_to_aln_t *CMEmitSeqsToAln(ESL_RANDOMNESS *r, CM_t *cm, int ncm, int nseq, i
     {
       if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+1);
       else                 sprintf(name, "%d-%d", ncm, i+1);
-      EmitParsetree(cm, r, name, TRUE, NULL, &(seqs_to_aln->sq[i]), &L);
+      if((status = EmitParsetree(cm, errbuf, r, name, TRUE, NULL, &(seqs_to_aln->sq[i]), &L)) != eslOK) cm_Fail(errbuf);
     }
   seqs_to_aln->nseq = nseq;
 
