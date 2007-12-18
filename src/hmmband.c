@@ -1814,7 +1814,9 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
      *                   jmax[v] <= jmax[0].
      */
     imin[v] = ESL_MAX(imin[v], imin[0]);
+    imax[v] = ESL_MAX(imax[v], imin[0]);
     jmax[v] = ESL_MIN(jmax[v], jmax[0]);
+    jmin[v] = ESL_MIN(jmin[v], jmax[0]);
 
     /* Ensure: jmax[v] - jmin[v] + 1 >= 0 
      *         imax[v] - imin[v] + 1 >= 0 

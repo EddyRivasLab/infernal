@@ -81,10 +81,12 @@ static ESL_OPTIONS options[] = {
   { "--filN",    eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--gumonly", "number of emitted sequences for HMM filter threshold calc",    3 },
   { "--fbeta",   eslARG_REAL,  "1e-3",NULL, "x>0",     NULL,      NULL, "--gumonly", "set tail loss prob for filtering sub-CMs QDB to <x>", 5 },
   { "--F",       eslARG_REAL,  "0.99", NULL, "0<x<=1",  NULL,      NULL, "--gumonly", "required fraction of seqs that survive HMM filter", 3},
-  { "--fstep",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "step from F to 1.0 while S < Starg", 3},
   { "--starg",   eslARG_REAL,  "0.01", NULL, "0<x<=1",  NULL,      NULL, "--gumonly", "target filter survival fraction", 3},
   { "--hybrid",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--filonly,--gumonly", "try hybrid filters, and keep them if better than HMM", 3},
   { "--spad",    eslARG_REAL,  "1.0",  NULL, "0<=x<=1", NULL,      NULL, "--gumonly", "fraction of (sc(S) - sc(Starg)) to add to sc(S)", 3},
+  { "--gemit",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "when calc'ing filter thresholds, always emit globally from CM",  3},
+  { "--fviterbi",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly,--fforward", "always choose CP9 Viterbi filter over CP9 Forward filter",  3},
+  { "--fforward",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly,--fviterbi", "always choose CP9 Forward filter over CP9 Viterbi filter",  3},
   { "--gemit",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "when calc'ing filter thresholds, always emit globally from CM",  3},
   { "--filhfile",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--gumonly", "save CP9 filter threshold histogram(s) to file <s>", 3},
   { "--filrfile",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--gumonly", "save CP9 filter threshold information in R format to file <s>", 3},
@@ -1047,7 +1049,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    {
 	      if(have_work) { 
 		if(nseq_sent < filN) {
-		  nseq_this_worker = (nseq_sent + fil_nseq_per_worker <= filN) ? 
+		  nseq_this_worker = ((nseq_sent + fil_nseq_per_worker) <= filN) ? 
 		    fil_nseq_per_worker : (filN - nseq_sent);
 		}
 		else { 
@@ -1080,7 +1082,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		    if ((status = cmcalibrate_cp9_filter_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, cm->M, &worker_vscAA, &worker_vit_cp9scA, &worker_fwd_cp9scA, &worker_partA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
 		    ESL_DPRINTF1(("MPI master has unpacked HMM filter results\n"));
 		    ESL_DASSERT1((nseq_just_recv > 0));
-		    ESL_DASSERT1((nseq_recv + nseq_just_recv <= filN));
+		    ESL_DASSERT1(((nseq_recv + nseq_just_recv) <= filN));
 		    for(i = 0; i < nseq_just_recv; i++) {
 		      fil_vit_cp9scA[nseq_recv+i] = worker_vit_cp9scA[i];
 		      fil_fwd_cp9scA[nseq_recv+i] = worker_fwd_cp9scA[i];
@@ -2235,8 +2237,8 @@ void
 estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq, int L, int gum_mode)
 {
   /* these are ballparks for a 3 GHz machine with optimized code */
-  float cyk_megacalcs_per_sec = 250.;
-  float ins_megacalcs_per_sec =  40.;
+  float cyk_megacalcs_per_sec = 275.;
+  float ins_megacalcs_per_sec =  75.;
   float fwd_megacalcs_per_sec = 175.;
   float vit_megacalcs_per_sec = 380.;
   
@@ -2438,21 +2440,28 @@ predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
   float  logsum_correction;       /* for correcting speedup calculation b/c Forward is slower than Viterbi due to logsums */
   int    evalue_L;                /* database length used for calcing E-values in CP9 gumbels from cfg->cmstats */
   float  fil_calcs;               /* number of million dp calcs predicted for the HMM filter scan */
-  float  vit_fil_calcs;           /* number of million dp calcs predicted for the HMM Viterbi filter scan */
-  float  fwd_fil_calcs;           /* number of million dp calcs predicted for the HMM Forward filter scan */
-  float  surv_calcs;              /* number of million dp calcs predicted for the CM scan of filter survivors */
-  float  fil_plus_surv_calcs;     /* filter calcs plus survival calcs */ 
+  float  vit_surv_calcs;          /* number of million dp calcs predicted for the CM scan of Viterbi filter survivors */
+  float  fwd_surv_calcs;          /* number of million dp calcs predicted for the CM scan of Forward filter survivors */
   float  vit_fil_plus_surv_calcs; /* Viterbi filter calcs plus survival calcs */ 
   float  fwd_fil_plus_surv_calcs; /* Foward filter calcs plus survival calcs */ 
   float  nonfil_calcs;            /* number of million dp calcs predicted for a full CM scan */
   float  vit_spdup, fwd_spdup, spdup; /* predicted speedups for Viterbi and Forward, and a temporary one */
   int    i, p;                    /* counters */
   int    cmi = cfg->ncm-1;        /* CM index we're on */
-  int    Fidx;                     /* index in sorted scores that threshold will be set at (1-F) * N */
+  int    Fidx;                    /* index in sorted scores that threshold will be set at (1-F) * N */
   float  cm_eval = esl_opt_GetReal(go, "--eval"); /* E-value cutoff for accepting CM hits for filter test */
   float  F = esl_opt_GetReal(go, "--F"); /* fraction of CM seqs we require filter to let pass */
   int    filN  = esl_opt_GetInteger(go, "--filN"); /* number of sequences we emitted from CM for filter test */
-
+  float  Starg   = esl_opt_GetReal(go, "--starg"); /* target survival fraction */
+  float  E_Starg;                 /* E-value threshold that exactly satisifies Starg survival fraction */
+  float  vit_E_F1;                /* viterbi E value if F were == 1.0 */
+  float  fwd_E_F1;                /* forward E value if F were == 1.0 */
+  float  surv_res_per_hit;        /* expected number of residues to survive filter from DB for each hit 2*W-avglen[0], twice W minus the average lenght of a hit from QDB calc */
+  float  Smin;                    /* minimally useful survival fraction, any less than this and our filter would be (predicted to be) doing more than 10X the work of the CM */
+  float  E_min;                   /* E-value threshold that exactly satisifies Smin survival fraction */
+  float  vit_surv_fract;          /* predicted survival fraction for Viterbi filter */
+  float  fwd_surv_fract;          /* predicted survival fraction for Forward filter */
+  
   cp9_vit_mode = (cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? GUM_CP9_LV : GUM_CP9_GV;
   cp9_fwd_mode = (cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? GUM_CP9_LF : GUM_CP9_GF;
 
@@ -2485,49 +2494,114 @@ predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
   vit_E = sorted_fil_vit_EA[Fidx];
   esl_vec_FSortDecreasing(sorted_fil_fwd_EA, filN);
   fwd_E = sorted_fil_fwd_EA[Fidx];
+
+  /* now vit_E and fwd_E are expected number of CP9 Viterbi/Forward hits with score above threshold 
+   * (Fidx'th best score) in a sequence DB of length evalue_L, convert that DB size to cfg->dbsize */
+  vit_E *= cfg->dbsize / evalue_L;
+  fwd_E *= cfg->dbsize / evalue_L;
+
+  fil_calcs  = cfg->hsi->full_cp9_ncalcs; /* fil_calcs is millions of DP calcs for CP9 scan of 1 residue */
+  fil_calcs *= cfg->dbsize;               /* fil_calcs is millions of DP calcs for CP9 scan of length cfg->dbsize */
+  nonfil_calcs = cfg->hsi->full_cm_ncalcs;      /* total number of millions of DP calculations for full CM scan of 1 residue */
+  nonfil_calcs *= cfg->dbsize;                  /* now nonfil-calcs corresponds to cfg->dbsize */
+
+  /* determine our thresholds:
+   * 1. if vit_E and/or fwd_E yield predicted survival fractions that are less than Starg:
+   *    rewrite vit_E or fwd_E as the maximum E-value threshold that sees ALL hits (when F==1.0,
+   *    this is {vit,fwd}_E_F1 below), and the E-value threshold that exactly satisfies Starg (E_Starg below).
+   * 2. if after 1, vit_E and/or fwd_E still yield predicted survival fractions less than Smin,
+   *    the survival fraction at which the number of DP calcs for the survivors of the filter is only
+   *    10% the number of dp calcs for the filter, then we set vit_E or fwd_E to the E value that
+   *    exactly satisfies Smin.
+   */
+  surv_res_per_hit = (2. * cm->W - (cfg->avglen[0])); /* avg length of surviving fraction of db from a single hit (cfg->avglen[0] is avg subseq len in subtree rooted at v==0, from QDB calculation) */
+  vit_E_F1= (sorted_fil_vit_EA[0] * (cfg->dbsize / evalue_L));
+  fwd_E_F1= (sorted_fil_fwd_EA[0] * (cfg->dbsize / evalue_L));
+  E_Starg = (Starg * (float) cfg->dbsize) / surv_res_per_hit;
+  Smin    = fil_calcs / (10. * nonfil_calcs);
+  E_min   = (Smin * (float) cfg->dbsize) / surv_res_per_hit;
+  if(Starg < Smin) { /* we never go less than Smin */
+    Starg = Smin;
+    E_Starg = E_min;
+  }
   
+  vit_surv_fract = (vit_E * surv_res_per_hit) / (float) cfg->dbsize;
+  fwd_surv_fract = (fwd_E * surv_res_per_hit) / (float) cfg->dbsize;
+  
+  ESL_DPRINTF1(("vit_E:    %.5f\n", vit_E));
+  ESL_DPRINTF1(("vit_surv: %.10f\n", vit_surv_fract));
+  ESL_DPRINTF1(("fwd_E:    %.5f\n", fwd_E));
+  ESL_DPRINTF1(("fwd_surv: %.10f\n", fwd_surv_fract));
+
+  ESL_DPRINTF1(("vit_E_F1: %.5f\n", vit_E_F1));
+  ESL_DPRINTF1(("fwd_E_F1: %.5f\n", fwd_E_F1));
+  ESL_DPRINTF1(("Starg:    %.5f\n", Starg));
+  ESL_DPRINTF1(("E_Starg:  %.5f\n", E_Starg));
+  ESL_DPRINTF1(("Smin:     %.5f\n", Smin));
+  ESL_DPRINTF1(("E_min:    %.5f\n", E_min));
+
+  if(vit_surv_fract < Starg) { 
+    if(vit_E_F1 < E_Starg) { 
+      vit_E = vit_E_F1;
+      ESL_DPRINTF1(("set vit_E as vit_E_F1: %.5f\n", vit_E));
+    }
+    else { 
+      vit_E = E_Starg;
+      ESL_DPRINTF1(("set vit_E as E_Starg: %.5f\n", vit_E));
+    }
+    if(vit_E < E_min) {
+      vit_E = E_min;
+      ESL_DPRINTF1(("set vit_E as E_min: %.5f\n", vit_E));
+    }      
+  }
+
+  if(fwd_surv_fract < Starg) { 
+    if(fwd_E_F1 < E_Starg) { 
+      fwd_E = fwd_E_F1;
+      ESL_DPRINTF1(("set fwd_E as fwd_E_F1: %.5f\n", fwd_E));
+    }
+    else { 
+      fwd_E = E_Starg;
+      ESL_DPRINTF1(("set fwd_E as E_Starg: %.5f\n", fwd_E));
+    }
+    if(fwd_E < E_min) {
+      fwd_E = E_min;
+      ESL_DPRINTF1(("set fwd_E as E_min: %.5f\n", fwd_E));
+    }      
+  }
+
   for(i = 0; i < filN; i++) ESL_DPRINTF1(("HMM i: %4d vit E: %10.4f fwd E: %10.4f\n", i, sorted_fil_vit_EA[i], sorted_fil_fwd_EA[i]));
 
-  /* calculate speedup for Viterbi and Forward */
-  for(i = 0; i < 2; i++) { /* silly loop, only used to avoid repeating the code block below that starts with 'E = ' and ends with 'spdup = ' */
-    if(i == 0) { E = vit_E; logsum_correction = 1.; } /* Viterbi */
-    if(i == 1) { E = fwd_E; logsum_correction = 2.; } /* Forward */
-    /* logsum_correction corrects for fact that Forward takes about 2X as long as Viterbi, b/c it requires logsum operations instead of ESL_MAX's,
-     * so we factor this in when calc'ing the predicted speedup. */
+  /* calculate speedup for Viterbi */
+  vit_surv_calcs = vit_E *     /* number of hits expected to survive filter */
+    surv_res_per_hit *         /* avg length of surviving fraction of db from a single hit */
+    cfg->hsi->full_cm_ncalcs;  /* number of calculations for full CM scan of 1 residue */
 
-    /* E is expected number of CP9 Viterbi or Forward hits with score above threshold (Fidx'th best score) sequence DB of length evalue_L */
-    E *= cfg->dbsize / evalue_L;
-    /* E is now expected number of CP9 Viterbi or Forward hits with score above threshold (Fidx'th best score) sequence DB of length cfg->dbsize */
-    fil_calcs  = cfg->hsi->full_cp9_ncalcs; /* fil_calcs is millions of DP calcs for CP9 scan of 1 residue */
-    fil_calcs *= cfg->dbsize;               /* fil_calcs is millions of DP calcs for CP9 scan of length cfg->dbsize */
-    surv_calcs = E *     /* number of hits expected to survive filter */
-      (2. * cm->W - (cfg->avglen[0])) * /* average length of surviving fraction of db from a single hit (cfg->avglen[0] is avg subseq len in  subtree rooted at v==0, from QDB calculation, so slightly inappropriate b/c we're concerned with HMM hits here) */
-      cfg->hsi->full_cm_ncalcs; /* number of calculations for full CM scan of 1 residue */
-    fil_plus_surv_calcs = (fil_calcs * logsum_correction) + surv_calcs; /* total number of millions of DP calculations expected using the CP9 filter for scan of cfg->dbsize (logsum corrected, Forward calcs *= 2.) */
-    nonfil_calcs = cfg->hsi->full_cm_ncalcs;      /* total number of millions of DP calculations for full CM scan of 1 residue */
-    nonfil_calcs *= cfg->dbsize;                  /* now nonfil-calcs corresponds to cfg->dbsize */
-    spdup = nonfil_calcs / fil_plus_surv_calcs;
+  fwd_surv_calcs = fwd_E *     /* number of hits expected to survive filter */
+    surv_res_per_hit *         /* avg length of surviving fraction of db from a single hit */
+    cfg->hsi->full_cm_ncalcs;  /* number of calculations for full CM scan of 1 residue */
 
-    if(i == 0) { 
-      vit_spdup = spdup; 
-      vit_fil_calcs = fil_calcs * logsum_correction;
-      vit_fil_plus_surv_calcs = fil_plus_surv_calcs;
-      vit_E = E;
-      printf("HMM(vit) E: %10.4f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", vit_E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, vit_spdup);
-    }
-    if(i == 1) { 
-      fwd_spdup = spdup; 
-      fwd_fil_calcs = fil_calcs * logsum_correction;
-      fwd_fil_plus_surv_calcs = fil_plus_surv_calcs;
-      fwd_E = E;
-      printf("HMM(fwd) E: %10.4f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", fwd_E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, fwd_spdup);
-    }
+  vit_fil_plus_surv_calcs = fil_calcs + vit_surv_calcs; /* total number of millions of DP calculations expected using the CP9 viterbi filter for scan of cfg->dbsize */
+  vit_spdup = nonfil_calcs / vit_fil_plus_surv_calcs;
+  fwd_fil_plus_surv_calcs = (fil_calcs * 2.) + fwd_surv_calcs; /* total number of millions of DP calculations expected using the CP9 forward filter for scan of cfg->dbsize (logsum corrected, Forward calcs *= 2.) */
+  fwd_spdup = nonfil_calcs / fwd_fil_plus_surv_calcs;
+  /* We multiply number of forward calculations by 2.0 to correct for the fact that Forward takes about 2X as long as Viterbi, b/c it requires logsum operations instead of ESL_MAX's,
+   * so we factor this in when calc'ing the predicted speedup. */
+
+  printf("HMM(vit) E: %10.4f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", vit_E, fil_calcs, vit_surv_calcs, vit_fil_plus_surv_calcs, nonfil_calcs, vit_spdup);
+  printf("HMM(fwd) E: %10.4f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", fwd_E, fil_calcs, fwd_surv_calcs, fwd_fil_plus_surv_calcs, nonfil_calcs, fwd_spdup);
+
+  if(esl_opt_GetBoolean(go, "--fviterbi")) { /* user specified Viterbi */
+    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_VITERBI, vit_E, fil_calcs, vit_fil_plus_surv_calcs)) != eslOK) return status;
   }
-  if(vit_spdup > fwd_spdup) { /* Viterbi is winner */
-    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_VITERBI, vit_E, vit_fil_calcs, vit_fil_plus_surv_calcs)) != eslOK) return status;
+  else if(esl_opt_GetBoolean(go, "--fforward")) { /* user specified Forward */
+    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_FORWARD, fwd_E, fil_calcs, fwd_fil_plus_surv_calcs)) != eslOK) return status;
+  }
+  else if (vit_spdup > fwd_spdup) { /* Viterbi is winner */
+    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_VITERBI, vit_E, fil_calcs, vit_fil_plus_surv_calcs)) != eslOK) return status;
   }
   else { /* Forward is winner */
-    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_FORWARD, fwd_E, fwd_fil_calcs, fwd_fil_plus_surv_calcs)) != eslOK) return status;
+    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_FORWARD, fwd_E, fil_calcs, fwd_fil_plus_surv_calcs)) != eslOK) return status;
   }
   return eslOK;
 
