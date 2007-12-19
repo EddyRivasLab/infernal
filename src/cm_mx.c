@@ -301,7 +301,7 @@ cm_CreateScanMatrix(CM_t *cm, int W, int *dmin, int *dmax, double beta, int do_b
   int v,j;
 
   if((!do_float) && (!do_int)) cm_Fail("cm_CreateScanMatrix(), do_float and do_int both FALSE.\n");
-  if(do_banded && (smx->dmin == NULL || smx->dmax == NULL)) cm_Fail("cm_CreateScanMatrix(), do_banded is TRUE, but smx->dmin or smx->dmax is NULL.\n");
+  if(do_banded && (dmin == NULL || dmax == NULL)) cm_Fail("cm_CreateScanMatrix(), do_banded is TRUE, but dmin or dmax is NULL.\n");
 
   ESL_ALLOC(smx, sizeof(ScanMatrix_t));
 
@@ -1195,7 +1195,6 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
  *           dx        - maximum d to look at
  *           using_hmm_bands - if TRUE, alpha_row is offset by dn, so we look at [0..dx-dn]
  *           bestr     - [dn..dx] root state (0 or local entry) corresponding to hit stored in alpha_row
- *           doing_inside - if TRUE, we don't store bestr, we've summed over all possible starts
  *           results   - results to add to, only used in this function if gamma->iamgreedy 
  *
  * Returns:  void;
@@ -1203,7 +1202,7 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
  */
 void
 UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, 
-		   int *bestr, int doing_inside, search_results_t *results)
+		   int *bestr, search_results_t *results)
 {
   int i, d;
   float sc;
@@ -1231,7 +1230,7 @@ UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx,
 	  gamma->mx[j]     = sc;
 	  gamma->gback[j]  = i + (gamma->i0-1);
 	  gamma->savesc[j] = alpha_row[d]; 
-	  gamma->saver[j]  = doing_inside ? 0 : bestr[d]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
+	  gamma->saver[j]  = bestr[d]; 
 	}
       }
     }
@@ -1245,7 +1244,7 @@ UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx,
      * d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
     /* First, report hit with d of dmin (min valid d) if >= cutoff */
     if (alpha_row[dmin] >= gamma->cutoff) {
-      r = doing_inside ? 0 : bestr[dmin]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
+      r = bestr[dmin]; 
       ip = using_hmm_bands ? j-(dmin+dn)+gamma->i0 : j-dmin+gamma->i0;
       jp = j-1+gamma->i0;
       report_hit (ip, jp, r, alpha_row[dmin], results);
@@ -1256,7 +1255,7 @@ UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx,
     for (d = dmin+1; d <= dmax; d++) {
       if (alpha_row[d] > alpha_row[bestd]) {
 	if (alpha_row[d] >= gamma->cutoff) { 
-	  r = doing_inside ? 0 : bestr[d]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
+	  r = bestr[d]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
 	  ip = using_hmm_bands ? j-(d+dn)+gamma->i0 : j-d+gamma->i0;
 	  jp = j-1+gamma->i0;
 	  report_hit (ip, jp, r, alpha_row[d], results);

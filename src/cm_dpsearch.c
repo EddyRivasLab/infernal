@@ -539,7 +539,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) UpdateGammaHitMxCM(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, FALSE, results);
+      if(results != NULL) UpdateGammaHitMxCM(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, results);
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -641,6 +641,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   int   ***alpha_begl = smx->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
   int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
   int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d */
   int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
   int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   int   **esc_vAA     = cm->ioesc;       /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
@@ -1024,6 +1025,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
       /* determine min/max d we're allowing for the root state and this position j */
       jp_v = cur;
       for (d = dnA[0]; d <= dxA[0]; d++) {
+	bestr[d] = 0;	/* root of the traceback = root state 0 */
 	y = cm->cfirst[0];
 	alpha[jp_v][0][d] = ESL_MAX(-INFTY, alpha[cur][y][d] + tsc_v[0]);
 	for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++) 
@@ -1036,13 +1038,21 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	    if(cm->stid[y] == BEGL_S) {
 	      jp_y = jp_wA[0];
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);
+		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);
+		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->ibeginsc[y])) {
+		  alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->ibeginsc[y];
+		  bestr[d] = y;
+		}
 	      }
 	    }
 	    else { /* y != BEGL_S */
 	      jp_y = cur;
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]);
+		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]);
+		if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->ibeginsc[y])) {
+		  alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->ibeginsc[y];
+		  bestr[d] = y;
+		}
 	      }
 	    }
 	  }
@@ -1054,7 +1064,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
+	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, results);
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
@@ -1157,6 +1167,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
   int   ***alpha_begl = smx->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
   int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
   int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d */
   int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
   int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   int   **esc_vAA     = cm->ioesc;       /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
@@ -1461,6 +1472,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
       /* determine min/max d we're allowing for the root state and this position j */
       jp_v = cur;
       for (d = dnA[0]; d <= dxA[0]; d++) {
+	bestr[d] = 0;	/* root of the traceback = root state 0 */
 	y = cm->cfirst[0];
 	alpha[jp_v][0][d] = ESL_MAX(-INFTY, alpha[cur][y][d] + tsc_v[0]);
 	for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++) 
@@ -1473,13 +1485,21 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
 	    if(cm->stid[y] == BEGL_S) {
 	      jp_y = jp_wA[0];
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);
+		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);
+		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->ibeginsc[y])) {
+		  alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->ibeginsc[y];
+		  bestr[d] = y;
+		}
 	      }
 	    }
 	    else { /* y != BEGL_S */
 	      jp_y = cur;
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]);
+		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]);
+		if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->ibeginsc[y])) {
+		  alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->ibeginsc[y];
+		  bestr[d] = y;
+		}
 	      }
 	    }
 	  }
@@ -1491,7 +1511,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
+	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, results);
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
@@ -1594,6 +1614,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
   int   ***alpha_begl = smx->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
   int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
   int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d */
   int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
   int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   int   **esc_vAA     = cm->ioesc;       /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
@@ -1980,6 +2001,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
       /* determine min/max d we're allowing for the root state and this position j */
       jp_v = cur;
       for (d = dnA[0]; d <= dxA[0]; d++) {
+	bestr[d] = 0;	/* root of the traceback = root state 0 */
 	y = cm->cfirst[0];
 	alpha[jp_v][0][d] = ESL_MAX(-INFTY, alpha[cur][y][d] + tsc_v[0]);
 	for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++) 
@@ -1992,13 +2014,21 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
 	    if(cm->stid[y] == BEGL_S) {
 	      jp_y = jp_wA[0];
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);
+		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);
+		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->ibeginsc[y])) {
+		  alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->ibeginsc[y];
+		  bestr[d] = y;
+		}
 	      }
 	    }
 	    else { /* y != BEGL_S */
 	      jp_y = cur;
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]);
+		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]);
+		if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->ibeginsc[y])) {
+		  alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->ibeginsc[y];
+		  bestr[d] = y;
+		}
 	      }
 	    }
 	  }
@@ -2010,7 +2040,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
+	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, results);
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
@@ -2112,6 +2142,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   float ***alpha_begl = smx->falpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
   int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
   int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d */
   int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
   int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   float **esc_vAA     = cm->oesc;        /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
@@ -2491,6 +2522,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
       /* determine min/max d we're allowing for the root state and this position j */
       jp_v = cur;
       for (d = dnA[0]; d <= dxA[0]; d++) {
+	bestr[d] = 0;	/* root of the traceback = root state 0 */
 	y = cm->cfirst[0];
 	alpha[jp_v][0][d] = ESL_MAX(IMPOSSIBLE, alpha[cur][y][d] + tsc_v[0]);
 	for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++) 
@@ -2502,13 +2534,23 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	  if(NOT_IMPOSSIBLE(cm->beginsc[y])) {
 	    if(cm->stid[y] == BEGL_S) {
 	      jp_y = jp_wA[0];
-	      for (d = dnA[y]; d <= dxA[y]; d++) 
-		alpha[jp_v][0][d] = FLogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->beginsc[y]);
+	      for (d = dnA[y]; d <= dxA[y]; d++) {
+		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->beginsc[y]);
+		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->beginsc[y])) {
+		  alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->beginsc[y];
+		  bestr[d] = y;
+		}
+	      }
 	    }
 	    else { /* y != BEGL_S */
 	      jp_y = cur;
-	      for (d = dnA[y]; d <= dxA[y]; d++) 
-		alpha[jp_v][0][d] = FLogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->beginsc[y]);
+	      for (d = dnA[y]; d <= dxA[y]; d++) {
+		//alpha[jp_v][0][d] = FLogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->beginsc[y]);
+		if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->beginsc[y])) {
+		  alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->beginsc[y];
+		  bestr[d] = y;
+		}
+	      }
 	    }
 	  }
 	}
@@ -2517,7 +2559,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) UpdateGammaHitMxCM(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
+      if(results != NULL) UpdateGammaHitMxCM(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, results);
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -2801,7 +2843,7 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) UpdateGammaHitMxCM(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, FALSE, results);
+      if(results != NULL) UpdateGammaHitMxCM(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, results);
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -2900,6 +2942,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
   int   ***alpha_begl = smx->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
   int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
   int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d */
   int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
   int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   int   **esc_vAA     = cm->ioesc;       /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
@@ -3043,6 +3086,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
       /* determine min/max d we're allowing for the root state and this position j */
       jp_v = cur;
       for (d = dnA[0]; d <= dxA[0]; d++) {
+	bestr[d] = 0;	/* root of the traceback = root state 0 */
 	y = cm->cfirst[0];
 	alpha[jp_v][0][d] = ESL_MAX(-INFTY, alpha[cur][y][d] + tsc_v[0]);
 	for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++) 
@@ -3055,13 +3099,21 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
 	    if(cm->stid[y] == BEGL_S) {
 	      jp_y = j % (W+1);
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);
+		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);
+		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->ibeginsc[y])) {
+		  alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->ibeginsc[y];
+		  bestr[d] = y;
+		}
 	      }
 	    }
 	    else { /* y != BEGL_S */
 	      jp_y = cur;
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]);
+		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]);
+		if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->ibeginsc[y])) {
+		  alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->ibeginsc[y];
+		  bestr[d] = y;
+		}
 	      }
 	    }
 	  }
@@ -3073,7 +3125,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
+	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, results);
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE);*/
     } /* end loop over end positions j */
@@ -3175,6 +3227,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   int   ***alpha_begl = smx->ialpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
   int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
   int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d */
   int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
   int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   int   **esc_vAA     = cm->ioesc;       /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
@@ -3336,6 +3389,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
       /* determine min/max d we're allowing for the root state and this position j */
       jp_v = cur;
       for (d = dnA[0]; d <= dxA[0]; d++) {
+	bestr[d] = 0;	/* root of the traceback = root state 0 */
 	y = cm->cfirst[0];
 	alpha[jp_v][0][d] = ESL_MAX(-INFTY, alpha[cur][y][d] + tsc_v[0]);
 	for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++) 
@@ -3348,13 +3402,21 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	    if(cm->stid[y] == BEGL_S) {
 	      jp_y = jp_wA[0];
 	      for (d = dnA[y]; d <= dxA[y]; d++) { 
-		alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);
+		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);
+		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->ibeginsc[y])) {
+		  alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->ibeginsc[y];
+		  bestr[d] = y;
+		}
 	      }
 	    }
 	    else { /* y != BEGL_S */
 	      jp_y = cur;
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]); 
+		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]); 
+		if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->ibeginsc[y])) {
+		  alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->ibeginsc[y];
+		  bestr[d] = y;
+		}
 	      }
 	    }
 	  }
@@ -3366,7 +3428,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
+	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, results);
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE);*/
     } /* end loop over end positions j */
@@ -3468,6 +3530,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
   float ***alpha_begl = smx->falpha_begl; /* [0..j..W][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v != BEGL_S */
   int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
   int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
+  int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d */
   int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
   int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   float **esc_vAA     = cm->oesc;        /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
@@ -3618,6 +3681,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
       /* determine min/max d we're allowing for the root state and this position j */
       jp_v = cur;
       for (d = dnA[0]; d <= dxA[0]; d++) {
+	bestr[d] = 0;	/* root of the traceback = root state 0 */
 	y = cm->cfirst[0];
 	alpha[jp_v][0][d] = ESL_MAX(IMPOSSIBLE, alpha[cur][y][d] + tsc_v[0]);
 	for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++) 
@@ -3630,13 +3694,21 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
 	    if(cm->stid[y] == BEGL_S) {
 	      jp_y = jp_wA[0];
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		alpha[jp_v][0][d] = FLogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->beginsc[y]);
+		//alpha[jp_v][0][d] = FLogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->beginsc[y]);
+		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->beginsc[y])) {
+		  alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->beginsc[y];
+		  bestr[d] = y;
+		}
 	      }
 	    }
 	    else { /* y != BEGL_S */
 	      jp_y = cur;
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		alpha[jp_v][0][d] = FLogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->beginsc[y]);
+		//alpha[jp_v][0][d] = FLogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->beginsc[y]);
+		if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->beginsc[y])) {
+		  alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->beginsc[y];
+		  bestr[d] = y;
+		}
 	      }
 	    }
 	  }
@@ -3646,7 +3718,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) UpdateGammaHitMxCM(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, TRUE, results);
+      if(results != NULL) UpdateGammaHitMxCM(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, results);
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -4290,6 +4362,8 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   if (mx == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB(), mx is NULL.\n");
   if (cm->cp9b == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB(), mx is NULL.\n");
 
+  ESL_DPRINTF1(("cm->search_opts & CM_SEARCH_HMMSCANBANDS: %d\n", cm->search_opts & CM_SEARCH_HMMSCANBANDS));
+
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
   CP9Bands_t *cp9b = cm->cp9b; 
@@ -4586,7 +4660,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
     for(j = i0; j < jmin[v]; j++) {
       UpdateGammaHitMxCM(gamma, j-i0+1, 
 			  NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMxCM, this j is can't be a hit end pt */
-			  TRUE, bestr, FALSE, results);
+			  TRUE, bestr, results);
     }
   }
     
@@ -4617,7 +4691,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
     
     /* report all hits with valid d for this j, only if results != NULL */
     if(results != NULL) { 
-      UpdateGammaHitMxCM(gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, bestr, FALSE, results);
+      UpdateGammaHitMxCM(gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, bestr, results);
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to results */
@@ -4625,7 +4699,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
     for(j = jmax[v]+1; j <= j0; j++) {
       UpdateGammaHitMxCM(gamma, j-i0+1, 
 			  NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMxCM, this j is can't be a hit end pt */
-			  TRUE, bestr, FALSE, results);
+			  TRUE, bestr, results);
     }
   }
   /* find the best scoring hit */
@@ -4687,8 +4761,10 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
 
   int      status;
   GammaHitMx_t *gamma;  /* semi-HMM for hit resoultion */
+  int     *bestr;       /* best root state for d at current j */
   int      v,y,z;	/* indices for states  */
   int      j,d,i,k;	/* indices in sequence dimensions */
+  float    sc;		/* a temporary variable holding a score */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int     *yvalidA;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
   float   *el_scA;      /* [0..d..W-1] probability of local end emissions of length d */
@@ -4711,6 +4787,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
   int      yvalid_ct;          /* for keeping track of which children are valid */
   float    vsc_root;           /* score of best hit */
   int      W;                  /* max d over all hdmax[v][j] for all valid v, j */
+
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScanHB(), dsq is NULL.\n");
   if (mx == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScanHB(), mx is NULL.\n");
@@ -4993,12 +5070,13 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
   jpx = jmax[v] - jmin[v];
   j   = jmin[v];
   
+  ESL_ALLOC(bestr, sizeof(int) * (W+1));
   /* first report all hits with j < jmin[0] are impossible, only if we're reporting hits to results */
   if(results != NULL) { 
     for(j = i0; j < jmin[v]; j++) {
       UpdateGammaHitMxCM(gamma, j-i0+1, 
 			  NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMxCM, this j is can't be a hit end pt */
-			  TRUE, NULL, TRUE, results);
+			  TRUE, bestr, results);
     }
   }
     
@@ -5014,15 +5092,21 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
 	  dpx  = dx - hdmin[v][jp_v];
 	  dp_y = dn - hdmin[y][jp_y];
 	  d    = dn;
-	  for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y++, d++) 
-	    alpha[0][jp_v][dp_v] = FLogsum(alpha[0][jp_v][dp_v], alpha[y][jp_y][dp_y] + cm->beginsc[y]);
+	  for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y++, d++) {
+	    //alpha[0][jp_v][dp_v] = FLogsum(alpha[0][jp_v][dp_v], alpha[y][jp_y][dp_y] + cm->beginsc[y]);
+	    sc = alpha[y][jp_y][dp_y] + cm->beginsc[y];
+	    if(sc > alpha[0][jp_v][dp_v]) {
+	      alpha[0][jp_v][dp_v] = sc;
+	      bestr[d] = y;
+	    }
+	  }
 	}
       } /* end of for(y = 1; y < cm->M; y++) */
     } /* end of if(cm->flags & CMH_LOCAL_BEGIN */
     
     /* report all hits with valid d for this j, only if results != NULL */
     if(results != NULL) { 
-      UpdateGammaHitMxCM(gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, NULL, TRUE, results);
+      UpdateGammaHitMxCM(gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, NULL, results);
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to results */
@@ -5030,7 +5114,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
     for(j = jmax[v]+1; j <= j0; j++) {
       UpdateGammaHitMxCM(gamma, j-i0+1, 
 			  NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMxCM, this j is can't be a hit end pt */
-			  TRUE, NULL, TRUE, results);
+			  TRUE, bestr, results);
     }
   }
   /* find the best scoring hit */
@@ -5048,6 +5132,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
 
   free(el_scA);
   free(yvalidA);
+  free(bestr);
 
   if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxForward(gamma, results, i0, j0);
 
