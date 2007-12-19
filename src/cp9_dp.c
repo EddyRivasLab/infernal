@@ -272,7 +272,6 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   if(ret_psc != NULL)    *ret_psc    = scA;
   else                    free(scA);
   ESL_DPRINTF1(("cp9_Viterbi() return score: %10.4f\n", best_sc));
-  ESL_DPRINTF1(("cp9_Viterbi() return score: %10.4f\n", best_sc));
 
   return eslOK;
 

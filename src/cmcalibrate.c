@@ -164,8 +164,7 @@ static void  serial_master (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
-/*static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
-  int emit_from_cm, float ***ret_vscAA, float **ret_cp9scA, float **ret_other_cp9scA);*/
+
 static int process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
 				   float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, float **ret_hyb_scA, int **ret_partA);
 static int process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
@@ -189,10 +188,6 @@ static int predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, 
 static int predict_best_sub_cm_roots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **fil_vscAA, int **ret_best_sub_roots);
 static int predict_hybrid_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_hybscA, int *fil_partA, GumbelInfo_t **gum_hybA, BestFilterInfo_t *bf, int *ret_getting_faster);
 
-/*static int calc_best_filter(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float **fil_vscAA, float *fil_vit_cp9scA, float *fil_fwd_cp9scA);*/
-//static int initialize_sub_filter_info(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm);
-//static int update_qdbs(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int doing_filter);
-//static float search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float **ret_vsc);
 int
 main(int argc, char **argv)
 {
@@ -261,8 +256,6 @@ main(int argc, char **argv)
   cfg.dbsize   = 1000000; /* default DB size = 1MB, NEVER changed */
   cfg.cutoffA  = NULL; 
   cfg.full_vcalcs = NULL;
-  //cfg.dmin_gumbel = NULL;
-  //cfg.dmax_gumbel = NULL;
   cfg.vmuAA     = NULL;
   cfg.vlambdaAA = NULL;
   cfg.gum_hybA  = NULL;
@@ -1764,6 +1757,26 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 
   ConfigCM(cm, NULL, NULL);
   
+  if(esl_opt_GetBoolean(go, "--noqdb")) { /* setup cm->W */ 
+    if(cm->dmin != NULL || cm->dmax != NULL) 
+      cm_Fail("initialize_cm() --noqdb enabled, but cm->dmin and cm->dmax non-null. This shouldn't happen.");
+    int *dmin;
+    int *dmax;
+    int safe_windowlen = cm->clen * 2;
+    while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(dmin), &(dmax), NULL, NULL)))
+      {
+	free(dmin);
+	free(dmax);
+	safe_windowlen *= 2;
+	if(safe_windowlen > (cm->clen * 1000))
+	  cm_Fail("initialize_cm(), safe_windowlen big: %d\n", safe_windowlen);
+      }
+    cm->W = dmax[0];
+    free(dmin);
+    free(dmax);
+    CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
+  }
+
   /* count number of DP calcs */
   if(cfg->full_vcalcs != NULL) free(cfg->full_vcalcs);
   if((status = cm_CountSearchDPCalcs(cm, errbuf, 1000, cm->dmin, cm->dmax, cm->W, &(cfg->full_vcalcs), NULL)) != eslOK) return status;

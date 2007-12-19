@@ -301,6 +301,7 @@ cm_CreateScanMatrix(CM_t *cm, int W, int *dmin, int *dmax, double beta, int do_b
   int v,j;
 
   if((!do_float) && (!do_int)) cm_Fail("cm_CreateScanMatrix(), do_float and do_int both FALSE.\n");
+  if(do_banded && (smx->dmin == NULL || smx->dmax == NULL)) cm_Fail("cm_CreateScanMatrix(), do_banded is TRUE, but smx->dmin or smx->dmax is NULL.\n");
 
   ESL_ALLOC(smx, sizeof(ScanMatrix_t));
 
@@ -420,8 +421,8 @@ cm_CreateScanMatrixForCM(CM_t *cm, int do_float, int do_int)
   if((! cm->search_opts & CM_SEARCH_NOQDB) && (cm->dmin == NULL || cm->dmax == NULL))
     cm_Fail("cm_CreateScanMatrixForCM(), cm->dmin == NULL || cm->dmax == NULL, but !(cm->search_opts & CM_SEARCH_NOQDB)\n");
 
-  do_banded = (cm->search_opts & CM_SEARCH_NOQDB) ? FALSE : TRUE;
-
+  do_banded   = (cm->search_opts & CM_SEARCH_NOQDB) ? FALSE : TRUE;
+  
   cm->smx = cm_CreateScanMatrix(cm, cm->W, cm->dmin, cm->dmax, cm->beta, do_banded, do_float, do_int);
   cm->flags |= CMH_SCANMATRIX; /* raise the flag for valid CMH_SCANMATRIX */
 
