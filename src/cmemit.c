@@ -40,6 +40,12 @@ static ESL_OPTIONS options[] = {
   { "-s",        eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,        NULL, "set random number generator seed to <n>",  1 },
   { "-n",        eslARG_INT,    "10",  NULL, "n>0",     NULL,      NULL,        NULL, "generate <n> sequences",  1 },
   { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress verbose banner",         1 },
+  /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
+   * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
+  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 1 },
+  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 1 },
+  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local begin prob to <x>", 1 },
+  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local end prob to <x>", 1 },
   /* output options */
   { "-o",        eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "save sequences in file <f>", 2 },
   { "-u",        eslARG_NONE,"default",NULL, NULL,   OUTOPTS,     NULL,        NULL, "write generated sequences as unaligned FASTA",  2 },
@@ -261,6 +267,8 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 static int
 initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf)
 {
+  int nstarts, nexits, nd;
+
   /* Update cfg->cm->config_opts and cfg->cm->align_opts based on command line options */
   if(esl_opt_GetBoolean(go, "-l"))            cm->config_opts |= CM_CONFIG_LOCAL;
   if(esl_opt_GetBoolean(go, "--zeroinserts")) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
@@ -270,6 +278,35 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
     cm->flags |= CM_EMIT_NO_LOCAL_BEGINS; 
     cm->flags |= CM_EMIT_NO_LOCAL_ENDS;
   }
+
+  /* BEGIN (POTENTIALLY) TEMPORARY BLOCK */
+  /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */
+  cm->pbegin = esl_opt_GetReal(go, "--pbegin");
+  cm->pend   = esl_opt_GetReal(go, "--pend");
+  /* possibly overwrite local begin probs such that all begin points are equiprobable (--pebegin) */
+  if(esl_opt_GetBoolean(go, "--pebegin")) {
+    nstarts = 0;
+    for (nd = 2; nd < cm->nodes; nd++) 
+      if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd) 
+	nstarts++;
+    cm->pbegin = 1.- (1./(1+nstarts));
+  }
+  /* possibly overwrite cm->pend so that local end prob from all legal states is fixed,
+   * this is strange in that cm->pend may be placed as a number greater than 1., this number
+   * is then divided by nexits in ConfigLocalEnds() to get the prob for each v --> EL transition,
+   * this is guaranteed by the way we calculate it to be < 1.,  it's the argument from --pfend */
+  if(! esl_opt_IsDefault(go, "--pfend")) {
+    nexits = 0;
+    for (nd = 1; nd < cm->nodes; nd++) {
+      if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	   cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	   cm->ndtype[nd] == BEGR_nd) && 
+	  cm->ndtype[nd+1] != END_nd)
+	nexits++;
+    }
+    cm->pend = nexits * esl_opt_GetReal(go, "--pfend");
+  }
+  /* END (POTENTIALLY) TEMPORARY BLOCK */
 
   ConfigCM(cm, NULL, NULL);
   if(! esl_opt_IsDefault(go, "--exp"))        ExponentiateCM(cm, esl_opt_GetReal(go, "--exp"));

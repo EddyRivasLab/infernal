@@ -82,6 +82,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 
   if (cm->config_opts & CM_CONFIG_LOCAL)
     { 
+      printf("About to call ConfigLocal, cm->pbegin %.5f cm->pend %.5f\n", cm->pbegin, cm->pend);
       ConfigLocal(cm, cm->pbegin, cm->pend);
       CMLogoddsify(cm);
     }

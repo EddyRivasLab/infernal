@@ -730,20 +730,18 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
  * Follows standard pattern for a master/worker load-balanced MPI program 
  * (SRE notes J1/78-79).
  * 
- * EPN: GOAL OF IMPLEMENTATION FOLLOWS IN LOWERCASE.
- * IT IS NOT YET ACHIEVED.
- * TO ACHIEVE WE'LL NEED ALL FUNCS CALLED BY MPI TO
- * RETURN CLEANLY ALWAYS - BIG TASK TO REWRITE THOSE.
- * CURRENTLY NEARLY ALL ERRORS ARE UNRECOVERABLE, BUT THESE
- * ARE NOT LIMITED TO MPI COMMUNICATION ERRORS.
- *
  * A master can only return if it's successful. 
  * Errors in an MPI master come in two classes: recoverable and nonrecoverable.
  * 
- * Recoverable errors include all worker-side errors, and any
+ * Recoverable errors include most worker-side errors, and any
  * master-side error that do not affect MPI communication. Error
  * messages from recoverable messages are delayed until we've cleanly
  * shut down the workers.
+ * 
+ * Some worker side errors (such as ESL_ALLOCs) are likely to be 
+ * unrecoverable and will almost certainly cause MPI to crash
+ * uncleanly, they're only here because I couldn't find a way around
+ * them without massive reimplementation. Hopefully they rarely occur.
  * 
  * Unrecoverable errors are master-side errors that may affect MPI
  * communication, meaning we cannot count on being able to reach the
@@ -763,6 +761,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int      bn            = 0;
   int      pos = 1;
   void    *tmp;
+  int      wi_error = 0;                /* worker index that sent back an error message, if an error occurs */
 
   CM_t          *cm = NULL;
   int            cmN  = esl_opt_GetInteger(go, "--cmN");
@@ -811,18 +810,18 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if (xstatus == eslOK) { bn = 4096; if ((buf = malloc(sizeof(char) * bn)) == NULL)    { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
   if (xstatus == eslOK) { if ((seedlist  = malloc(sizeof(long) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
 
+  MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  if (xstatus != eslOK) cm_Fail(errbuf);
+  ESL_DPRINTF1(("MPI master is initialized\n"));
+
   ESL_ALLOC(seedlist, sizeof(long) * cfg->nproc);
   for (wi = 0; wi < cfg->nproc; wi++) 
     {
       /* not sure what to do here */
       /* seedlist[wi] = wi; */
       seedlist[wi] = esl_rnd_Choose(cfg->r, 1000000000); /* not sure what to use as max for seed */
-      printf("wi seed: %ld\n", seedlist[wi]);
-      ESL_DPRINTF1(("wi seed: %ld\n", seedlist[wi]));
+      ESL_DPRINTF1(("wi %d seed: %ld\n", wi, seedlist[wi]));
     }
-  MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  if (xstatus != eslOK) cm_Fail(errbuf);
-  ESL_DPRINTF1(("MPI master is initialized\n"));
 
   /* Worker initialization:
    * Because we've already successfully initialized the master before we start
@@ -923,7 +922,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    
 	    ESL_DPRINTF1(("MPI master: CM: %d gumbel mode: %d partition: %d\n", cfg->ncm, gum_mode, p));
 	    
-	    have_work     = TRUE;	/* TRUE while work remains  */
+	    if(xstatus == eslOK) have_work     = TRUE;	/* TRUE while work remains  */
 	    
 	    wi = 1;
 	    nseq_sent = 0;
@@ -961,34 +960,40 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  if (xstatus == eslOK) /* worker reported success. Get the result. */
 		    {
 		      pos = 0;
-		      ESL_DPRINTF1(("MPI master sees that the result buffer contains calibration results\n"));
-		      if(working_on_cm) {
-			if ((status = cmcalibrate_cm_gumbel_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, cm->M, &worker_vscAA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
-			ESL_DPRINTF1(("MPI master has unpacked CM gumbel results\n"));
-			ESL_DASSERT1((nseq_just_recv > 0));
-			for(v = 0; v < cm->M; v++) {
-			  for(i = 0; i < nseq_just_recv; i++) {
-			    ESL_DPRINTF3(("\tscore from worker v: %d i: %d sc: %f\n", i, v, worker_vscAA[v][i]));
-			    gum_vscAA[v][nseq_recv+i] = worker_vscAA[v][i];
+		      if (MPI_Unpack(buf, bn, &pos, &xstatus, 1, MPI_INT, MPI_COMM_WORLD)     != 0)     cm_Fail("mpi unpack failed");
+		      if (xstatus == eslOK) /* worker reported success. Get the results. */
+			{
+			  ESL_DPRINTF1(("MPI master sees that the result buffer contains calibration results\n"));
+			  if(working_on_cm) {
+			    if ((status = cmcalibrate_cm_gumbel_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, cm->M, &worker_vscAA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
+			    ESL_DPRINTF1(("MPI master has unpacked CM gumbel results\n"));
+			    ESL_DASSERT1((nseq_just_recv > 0));
+			    for(v = 0; v < cm->M; v++) {
+			      for(i = 0; i < nseq_just_recv; i++) {
+				ESL_DPRINTF3(("\tscore from worker v: %d i: %d sc: %f\n", i, v, worker_vscAA[v][i]));
+				gum_vscAA[v][nseq_recv+i] = worker_vscAA[v][i];
+			      }
+			      free(worker_vscAA[v]);
+			    }
+			    free(worker_vscAA);
 			  }
-			  free(worker_vscAA[v]);
+			  else { /* working on cp9 */
+			    if ((status = cmcalibrate_cp9_gumbel_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &worker_cp9scA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
+			    ESL_DPRINTF1(("MPI master has unpacked CP9 gumbel results\n"));
+			    ESL_DASSERT1((nseq_just_recv > 0));
+			    for(i = 0; i < nseq_just_recv; i++) 
+			      gum_cp9scA[nseq_recv+i] = worker_cp9scA[i];
+			    free(worker_cp9scA);
+			  }
+			  nseq_recv += nseq_just_recv;
 			}
-			free(worker_vscAA);
-		      }
-		      else { /* working on cp9 */
-			if ((status = cmcalibrate_cp9_gumbel_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &worker_cp9scA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
-			ESL_DPRINTF1(("MPI master has unpacked CP9 gumbel results\n"));
-			ESL_DASSERT1((nseq_just_recv > 0));
-			for(i = 0; i < nseq_just_recv; i++) 
-			  gum_cp9scA[nseq_recv+i] = worker_cp9scA[i];
-			free(worker_cp9scA);
-		      }
-		      nseq_recv += nseq_just_recv;
-		    }
-		  else	/* worker reported an error. Get the errbuf. */
-		    {
-		      if (MPI_Unpack(buf, bn, &pos, errbuf, cmERRBUFSIZE, MPI_CHAR, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack of errbuf failed");
-		      ESL_DPRINTF1(("MPI master sees that the result buffer contains an error message\n"));
+		      else	/* worker reported an error. Get the errbuf. */
+			{
+			  if (MPI_Unpack(buf, bn, &pos, errbuf, cmERRBUFSIZE, MPI_CHAR, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack of errbuf failed");
+			  ESL_DPRINTF1(("MPI master sees that the result buffer contains an error message\n"));
+			  have_work = FALSE;
+			  wi_error  = wi;
+			}
 		    }
 		  nproc_working--;
 		}
@@ -1004,14 +1009,17 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		    nseq_sent += nseq_this_worker;
 		  }
 	      }
-	    /* fit gumbels for this partition p, this gumbel mode gum_mode */
-	    if(working_on_cm) { 
-	      if((status = cm_fit_histograms(go, cfg, errbuf, cm, gum_vscAA, cmN, p)) != eslOK) cm_Fail(errbuf);
-	      SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], cfg->vmuAA[p][0], cfg->vlambdaAA[p][0], cm->W*2, cmN);
-	    }
-	    else /* working on CP9 */ {
-	      if((status = fit_histogram(go, cfg, errbuf, gum_cp9scA, hmmN, &tmp_mu, &tmp_lambda))       != eslOK) cm_Fail(errbuf);
-	      SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], tmp_mu, tmp_lambda, cm->W*2, hmmN);
+
+	    if(xstatus == eslOK) { 
+	      /* fit gumbels for this partition p, this gumbel mode gum_mode */
+	      if(working_on_cm) { 
+		if((status = cm_fit_histograms(go, cfg, errbuf, cm, gum_vscAA, cmN, p)) != eslOK) cm_Fail(errbuf);
+		SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], cfg->vmuAA[p][0], cfg->vlambdaAA[p][0], cm->W*2, cmN);
+	      }
+	      else /* working on CP9 */ {
+		if((status = fit_histogram(go, cfg, errbuf, gum_cp9scA, hmmN, &tmp_mu, &tmp_lambda))       != eslOK) cm_Fail(errbuf);
+		SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], tmp_mu, tmp_lambda, cm->W*2, hmmN);
+	      }
 	    }
 	  }
 	  ESL_DPRINTF1(("MPI master: done with partition: %d for gumbel mode: %d for this CM. Telling all workers\n", p, gum_mode));
@@ -1027,12 +1035,17 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  ESL_DASSERT1((fthr_mode != -1));
 	  ESL_DPRINTF1(("MPI master: CM: %d fthr mode: %d\n", cfg->ncm, fthr_mode));
 
-	  if((status = update_cutoffs(go, cfg, errbuf, cm, gum_mode)) != eslOK) cm_Fail(errbuf);
+	  if(xstatus == eslOK) { if((status = update_cutoffs(go, cfg, errbuf, cm, gum_mode)) != eslOK) cm_Fail(errbuf); }
+	  else { /* a worker has seen an error and we're trying to finish cleanly, but we still need to broadcast cutoffs, 
+		  * their values don't matter */
+	    for (p = 0; p < cfg->np; p++) cfg->cutoffA[p] = -eslINFINITY;
+	  }
 	  /* broadcast cutoffs */
 	  ESL_DASSERT1((cfg->cutoffA != NULL));
 	  MPI_Bcast(cfg->cutoffA, cfg->np, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
-	  have_work     = TRUE;	/* TRUE while work remains  */
+	  if(xstatus == eslOK) have_work = TRUE;  /* TRUE while work remains  */
+	  else                 have_work = FALSE; /* we've seen an error and are trying to finish cleanly */
 	    
 	  wi = 1;
 
@@ -1071,34 +1084,40 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		if (xstatus == eslOK) /* worker reported success. Get the result. */
 		  {
 		    pos = 0;
-		    ESL_DPRINTF1(("MPI master sees that the result buffer contains HMM filter results\n"));
-		    if ((status = cmcalibrate_cp9_filter_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, cm->M, &worker_vscAA, &worker_vit_cp9scA, &worker_fwd_cp9scA, &worker_partA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
-		    ESL_DPRINTF1(("MPI master has unpacked HMM filter results\n"));
-		    ESL_DASSERT1((nseq_just_recv > 0));
-		    ESL_DASSERT1(((nseq_recv + nseq_just_recv) <= filN));
-		    for(i = 0; i < nseq_just_recv; i++) {
-		      fil_vit_cp9scA[nseq_recv+i] = worker_vit_cp9scA[i];
-		      fil_fwd_cp9scA[nseq_recv+i] = worker_fwd_cp9scA[i];
-		      fil_partA[nseq_recv+i]      = worker_partA[i];
-		      ESL_DASSERT1((fil_partA[nseq_recv+i] < cfg->np));
-		    }
-		    for(v = 0; v < cm->M; v++) {
-		      for(i = 0; i < nseq_just_recv; i++) {
-			ESL_DPRINTF3(("\tscore from worker v: %d i: %d sc: %f\n", i, v, worker_vscAA[v][i]));
-			fil_vscAA[v][nseq_recv+i] = worker_vscAA[v][i];
+		    if (MPI_Unpack(buf, bn, &pos, &xstatus, 1, MPI_INT, MPI_COMM_WORLD)     != 0)     cm_Fail("mpi unpack failed");
+		    if (xstatus == eslOK) /* worker reported success. Get the results. */
+		      {
+			ESL_DPRINTF1(("MPI master sees that the result buffer contains HMM filter results\n"));
+			if ((status = cmcalibrate_cp9_filter_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, cm->M, &worker_vscAA, &worker_vit_cp9scA, &worker_fwd_cp9scA, &worker_partA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
+			ESL_DPRINTF1(("MPI master has unpacked HMM filter results\n"));
+			ESL_DASSERT1((nseq_just_recv > 0));
+			ESL_DASSERT1(((nseq_recv + nseq_just_recv) <= filN));
+			for(i = 0; i < nseq_just_recv; i++) {
+			  fil_vit_cp9scA[nseq_recv+i] = worker_vit_cp9scA[i];
+			  fil_fwd_cp9scA[nseq_recv+i] = worker_fwd_cp9scA[i];
+			  fil_partA[nseq_recv+i]      = worker_partA[i];
+			  ESL_DASSERT1((fil_partA[nseq_recv+i] < cfg->np));
+			}
+			for(v = 0; v < cm->M; v++) {
+			  for(i = 0; i < nseq_just_recv; i++) {
+			    ESL_DPRINTF3(("\tscore from worker v: %d i: %d sc: %f\n", i, v, worker_vscAA[v][i]));
+			    fil_vscAA[v][nseq_recv+i] = worker_vscAA[v][i];
+			  }
+			  free(worker_vscAA[v]);
+			}
+			free(worker_vscAA);
+			free(worker_vit_cp9scA);
+			free(worker_fwd_cp9scA);
+			free(worker_partA);
+			nseq_recv += nseq_just_recv;
 		      }
-		      free(worker_vscAA[v]);
-		    }
-		    free(worker_vscAA);
-		    free(worker_vit_cp9scA);
-		    free(worker_fwd_cp9scA);
-		    free(worker_partA);
-		    nseq_recv += nseq_just_recv;
-		  }
-		else	/* worker reported an error. Get the errbuf. */
-		  {
-		    if (MPI_Unpack(buf, bn, &pos, errbuf, cmERRBUFSIZE, MPI_CHAR, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack of errbuf failed");
-		    ESL_DPRINTF1(("MPI master sees that the result buffer contains an error message\n"));
+		    else	/* worker reported an error. Get the errbuf. */
+		      {
+			if (MPI_Unpack(buf, bn, &pos, errbuf, cmERRBUFSIZE, MPI_CHAR, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack of errbuf failed");
+			ESL_DPRINTF1(("MPI master sees that the result buffer contains an error message\n"));
+			have_work = FALSE;
+			wi_error  = wi;
+		      }
 		  }
 		nproc_working--;
 	      }
@@ -1115,10 +1134,13 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		}
 	    }
 
-	  /* predict speedup for HMM-only filter */
-	  if((status = predict_cp9_filter_speedup(go, cfg, errbuf, cm, fil_vit_cp9scA, fil_fwd_cp9scA, fil_partA, cfg->cmstatsA[cmi]->bfA[fthr_mode])) != eslOK) cm_Fail(errbuf);
-	  DumpBestFilterInfo(cfg->cmstatsA[cmi]->bfA[fthr_mode]);
+	  if(xstatus == eslOK) { 
+	    /* predict speedup for HMM-only filter */
+	    if((status = predict_cp9_filter_speedup(go, cfg, errbuf, cm, fil_vit_cp9scA, fil_fwd_cp9scA, fil_partA, cfg->cmstatsA[cmi]->bfA[fthr_mode])) != eslOK) cm_Fail(errbuf);
+	    DumpBestFilterInfo(cfg->cmstatsA[cmi]->bfA[fthr_mode]);
+	  }
 	  ESL_DPRINTF1(("MPI master: done with HMM filter calc for fthr mode %d for this CM.\n", fthr_mode));
+	  
 	  for (wi = 1; wi < cfg->nproc; wi++) { 
 	    msg = MPI_FINISHED_CP9_FILTER;
 	    MPI_Send(&msg, 1, MPI_INT, wi, 0, MPI_COMM_WORLD);
@@ -1127,7 +1149,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	ESL_DPRINTF1(("MPI master: done with gumbel mode %d for this CM.\n", gum_mode));
       }
       ESL_DPRINTF1(("MPI master: done with this CM.\n"));
-      debug_print_cmstats(cfg->cmstatsA[cmi], (! esl_opt_GetBoolean(go, "--gumonly")));
+      if(xstatus == eslOK) debug_print_cmstats(cfg->cmstatsA[cmi], (! esl_opt_GetBoolean(go, "--gumonly")));
       
       if(! (esl_opt_GetBoolean(go, "--filonly"))) { 
 	for(v = 0; v < cm->M; v++) free(gum_vscAA[v]);
@@ -1151,7 +1173,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if((status = cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
   free(buf);
   
-  if (xstatus != eslOK) cm_Fail(errbuf);
+  if (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); cm_Fail(errbuf); }
   else                  return;
 
  ERROR: 
@@ -1188,6 +1210,11 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int v, p;
   void *tmp;
   int cmi;
+  int in_fil_section_flag = FALSE; /* set to TRUE while we're in the filter threshold calculation
+				    * section, we need to know this when we goto ERROR, b/c we have
+				    * to know how many more MPI_Recv() calls to make to match up
+				    * with the Master's sends before we can shut down.
+				    */
 
   /* After master initialization: master broadcasts its status.
    */
@@ -1253,9 +1280,9 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       ESL_DPRINTF1(("Worker %d succesfully received CM, num states: %d num nodes: %d\n", cfg->my_rank, cm->M, cm->nodes));
       
       /* initialize the flags/options/params of the CM */
-      if((status = initialize_cm(go, cfg, errbuf, cm))      != eslOK) goto CLEANERROR;
-      if((status = initialize_cmstats(go, cfg, errbuf, cm)) != eslOK) goto CLEANERROR;
-      if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK) goto CLEANERROR;
+      if((status = initialize_cm(go, cfg, errbuf, cm))      != eslOK) goto ERROR;
+      if((status = initialize_cmstats(go, cfg, errbuf, cm)) != eslOK) goto ERROR;
+      if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK) goto ERROR;
       
       for(gum_mode = 0; gum_mode < GUM_NMODES; gum_mode++) {
 
@@ -1269,7 +1296,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	/* do we need to switch from glocal configuration to local? */
 	if(gum_mode > 0 && (! GumModeIsLocal(gum_mode-1)) && GumModeIsLocal(gum_mode)) 
-	  if((status = switch_global_to_local(cm, errbuf)) != eslOK)      cm_Fail(errbuf);
+	  if((status = switch_global_to_local(cm, errbuf)) != eslOK) goto ERROR;
 	/* update search opts for gumbel mode */
 	GumModeToSearchOpts(cm, gum_mode);
 	
@@ -1280,15 +1307,20 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    ESL_DPRINTF1(("worker %d gum_mode: %d partition: %d\n", cfg->my_rank, gum_mode, p));
 	    if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
 	  
-	    if(MPI_Recv(&nseq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
+	    if(MPI_Recv(&nseq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XFAIL(eslESYS, errbuf, "mpi recv failed");
 	    while(nseq != MPI_FINISHED_GUMBEL) {
 	      ESL_DPRINTF1(("worker %d: has received nseq: %d\n", cfg->my_rank, nseq));
 	    
 	      if(working_on_cm) {
-		if((status = process_gumbel_workunit (go, cfg, errbuf, cm, nseq, &gum_vscAA, NULL, NULL)) != eslOK) goto CLEANERROR;
+		if((status = process_gumbel_workunit (go, cfg, errbuf, cm, nseq, &gum_vscAA, NULL, NULL)) != eslOK) goto ERROR;
 		ESL_DPRINTF1(("worker %d: has gathered CM gumbel results\n", cfg->my_rank));
 		n = 0;
-		if (cmcalibrate_cm_gumbel_results_MPIPackSize(gum_vscAA, nseq, cm->M, MPI_COMM_WORLD, &sz) != eslOK) goto CLEANERROR; n += sz;  
+		if (MPI_Pack_size(1, MPI_INT, MPI_COMM_WORLD, &sz) != 0) /* room for the status code */
+		  ESL_XFAIL(eslESYS, errbuf, "mpi pack size failed"); 
+		n += sz;
+		if (cmcalibrate_cm_gumbel_results_MPIPackSize(gum_vscAA, nseq, cm->M, MPI_COMM_WORLD, &sz) != eslOK)
+		  ESL_XFAIL(eslFAIL, errbuf, "cmcalibrate_cm_gumbel_results_MPIPackSize() call failed"); 
+		n += sz;  
 		if (n > wn) {
 		  void *tmp;
 		  ESL_RALLOC(wbuf, tmp, sizeof(char) * n);
@@ -1297,15 +1329,23 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		ESL_DPRINTF1(("worker %d: has calculated the CM gumbel results will pack into %d bytes\n", cfg->my_rank, n));
 		status = eslOK;
 		pos = 0;
-		if (cmcalibrate_cm_gumbel_results_MPIPack(gum_vscAA, nseq, cm->M, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK) goto ERROR;
+		if (MPI_Pack(&status, 1, MPI_INT, wbuf, wn, &pos, MPI_COMM_WORLD) != 0) 
+		  ESL_XFAIL(eslESYS, errbuf, "mpi pack failed.");
+		if ((status = cmcalibrate_cm_gumbel_results_MPIPack(gum_vscAA, nseq, cm->M, wbuf, wn, &pos, MPI_COMM_WORLD)) != eslOK) 
+		  ESL_XFAIL(eslFAIL, errbuf, "cmcalibrate_cm_gumbel_results_MPIPack() call failed.");
 		for(v = 0; v < cm->M; v++) free(gum_vscAA[v]);
 	      }
-
 	      else { /* working on cp9 */
-		if((status = process_gumbel_workunit (go, cfg, errbuf, cm, nseq, NULL, &gum_cp9scA, NULL)) != eslOK) cm_Fail(errbuf);
+		if((status = process_gumbel_workunit (go, cfg, errbuf, cm, nseq, NULL, &gum_cp9scA, NULL)) != eslOK) goto ERROR;
 		ESL_DPRINTF1(("worker %d: has gathered CP9 gumbel results\n", cfg->my_rank));
 		n = 0;
-		if (cmcalibrate_cp9_gumbel_results_MPIPackSize(gum_cp9scA, nseq, MPI_COMM_WORLD, &sz) != eslOK) goto CLEANERROR; n += sz;  
+		if (MPI_Pack_size(1, MPI_INT, MPI_COMM_WORLD, &sz) != 0) /* room for the status code */
+		  ESL_XFAIL(eslESYS, errbuf, "mpi pack size failed"); 
+		n += sz;
+		if ((status = cmcalibrate_cp9_gumbel_results_MPIPackSize(gum_cp9scA, nseq, MPI_COMM_WORLD, &sz)) != eslOK)
+		  ESL_XFAIL(eslFAIL, errbuf, "cmcalibrate_cp9_gumbel_results_MPIPackSize() call failed"); 
+		n += sz;  
+
 		if (n > wn) {
 		  void *tmp;
 		  ESL_RALLOC(wbuf, tmp, sizeof(char) * n);
@@ -1314,7 +1354,10 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		ESL_DPRINTF1(("worker %d: has calculated the CP9 gumbel results will pack into %d bytes\n", cfg->my_rank, n));
 		status = eslOK;
 		pos = 0;
-		if (cmcalibrate_cp9_gumbel_results_MPIPack(gum_cp9scA, nseq, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK) goto ERROR;
+		if (MPI_Pack(&status, 1, MPI_INT, wbuf, wn, &pos, MPI_COMM_WORLD) != 0) 
+		  ESL_XFAIL(eslESYS, errbuf, "mpi pack failed.");
+		if (cmcalibrate_cp9_gumbel_results_MPIPack(gum_cp9scA, nseq, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK) 
+		  ESL_XFAIL(eslFAIL, errbuf, "cmcalibrate_cp9_gumbel_results_MPIPack() call failed.");
 		free(gum_cp9scA);
 	      }	    
 
@@ -1322,7 +1365,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      ESL_DPRINTF1(("worker %d: has sent gumbel results to master in message of %d bytes\n", cfg->my_rank, pos));
 
 	      /* receive next number of sequences, if MPI_FINISHED_GUMBEL, we'll stop */
-	      if(MPI_Recv(&nseq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
+	      if(MPI_Recv(&nseq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XFAIL(eslESYS, errbuf, "mpi recv failed");
 	    }
 	    ESL_DPRINTF1(("worker %d gum_mode: %d finished partition: %d\n", cfg->my_rank, gum_mode, p));
 	  }
@@ -1331,6 +1374,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	
 	/* filter threshold section */
 	if(GumModeIsForCM(gum_mode) && (! (esl_opt_GetBoolean(go, "--gumonly")))) {
+	  in_fil_section_flag = TRUE;
 	  fthr_mode = GumModeToFthrMode(gum_mode);
 	  ESL_DASSERT1((fthr_mode != -1));
 	  ESL_DPRINTF1(("worker %d fthr_mode: %d\n", cfg->my_rank, fthr_mode));
@@ -1339,14 +1383,20 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  ESL_DASSERT1((cfg->cutoffA != NULL));
 	  MPI_Bcast(cfg->cutoffA, cfg->np, MPI_INT, 0, MPI_COMM_WORLD);
 
-	  if(MPI_Recv(&nseq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
+	  if(MPI_Recv(&nseq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XFAIL(eslESYS, errbuf, "mpi recv failed");
 	  while(nseq != MPI_FINISHED_CP9_FILTER) {
 	    ESL_DPRINTF1(("worker %d: has received hmm filter nseq: %d\n", cfg->my_rank, nseq));
 	    
-	    if((status = process_filter_workunit (go, cfg, errbuf, cm, nseq, &fil_vscAA, &fil_vit_cp9scA, &fil_fwd_cp9scA, NULL, &fil_partA)) != eslOK) goto CLEANERROR;
+	    if((status = process_filter_workunit (go, cfg, errbuf, cm, nseq, &fil_vscAA, &fil_vit_cp9scA, &fil_fwd_cp9scA, NULL, &fil_partA)) != eslOK) goto ERROR;
 	    ESL_DPRINTF1(("worker %d: has gathered HMM filter results\n", cfg->my_rank));
 	    n = 0;
-	    if (cmcalibrate_cp9_filter_results_MPIPackSize(nseq, cm->M, MPI_COMM_WORLD, &sz) != eslOK) goto CLEANERROR; n += sz;  
+
+	    if (MPI_Pack_size(1, MPI_INT, MPI_COMM_WORLD, &sz) != 0) /* room for the status code */
+	      ESL_XFAIL(eslESYS, errbuf, "mpi pack size failed"); 
+	    n += sz;
+	    if (cmcalibrate_cp9_filter_results_MPIPackSize(nseq, cm->M, MPI_COMM_WORLD, &sz) != eslOK)
+	      ESL_XFAIL(eslFAIL, errbuf, "cmcalibrate_cp9_filter_results_MPIPackSize() call failed"); 
+	    n += sz;  
 	    if (n > wn) {
 	      void *tmp;
 	      ESL_RALLOC(wbuf, tmp, sizeof(char) * n);
@@ -1357,7 +1407,11 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    pos = 0;
 	    int i; for(i = 0; i < nseq; i++) assert(fil_partA[i] < cfg->np);
 
-	    if (cmcalibrate_cp9_filter_results_MPIPack(fil_vscAA, fil_vit_cp9scA, fil_fwd_cp9scA, fil_partA, nseq, cm->M, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK) goto ERROR;
+	    if (MPI_Pack(&status, 1, MPI_INT, wbuf, wn, &pos, MPI_COMM_WORLD) != 0) 
+	      ESL_XFAIL(eslESYS, errbuf, "mpi pack failed.");
+	    if (cmcalibrate_cp9_filter_results_MPIPack(fil_vscAA, fil_vit_cp9scA, fil_fwd_cp9scA, fil_partA, nseq, cm->M, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK)
+	      ESL_XFAIL(eslFAIL, errbuf, "cmcalibrate_cp9_filter_results_MPIPack() call failed"); 
+
 	    for(v = 0; v < cm->M; v++) free(fil_vscAA[v]);
 	    free(fil_vscAA);
 	    free(fil_vit_cp9scA);
@@ -1367,12 +1421,11 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    MPI_Send(wbuf, pos, MPI_PACKED, 0, 0, MPI_COMM_WORLD);
 	    ESL_DPRINTF1(("worker %d: has sent CP9 filter results to master in message of %d bytes\n", cfg->my_rank, pos));
 	    /* receive next number of sequences, if MPI_FINISHED_GUMBEL, we'll stop */
-	    if(MPI_Recv(&nseq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
+	    if(MPI_Recv(&nseq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XFAIL(eslESYS, errbuf, "mpi recv failed");
 	  }
+	  in_fil_section_flag = FALSE;
 	}
       } /* end of for(gum_mode = 0; gum_mode < GUM_NMODES; gum_mode++) */
-
-
 
       FreeCM(cm);
       cm = NULL;
@@ -1384,16 +1437,33 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if (wbuf != NULL) free(wbuf);
   return;
 
- CLEANERROR:
+ ERROR:
   ESL_DPRINTF1(("worker %d: fails, is sending an error message, as follows:\n%s\n", cfg->my_rank, errbuf));
   pos = 0;
-  MPI_Pack(&status, 1,                MPI_INT,  wbuf, wn, &pos, MPI_COMM_WORLD);
+  if(status == eslEMEM) sprintf(errbuf, "Memory allocation error.");
+  MPI_Pack(&status, 1,               MPI_INT,  wbuf, wn, &pos, MPI_COMM_WORLD);
   MPI_Pack(errbuf,  cmERRBUFSIZE,    MPI_CHAR, wbuf, wn, &pos, MPI_COMM_WORLD);
   MPI_Send(wbuf, pos, MPI_PACKED, 0, 0, MPI_COMM_WORLD);
-  return;
 
- ERROR:
-  cm_Fail("Allocation error in mpi_worker");
+  /* if we get here this worker failed and sent an error message, now the master knows a worker
+   * failed but it has to continue through the mpi_master() code, sending the messages that
+   * the workers expect, telling them to continue to move through the loops in those functions.
+   * Minimal work will be done, but this is necessary so that we shut down cleanly. 
+   * Because the master is sending messages to us still, we have to receive them. We can't
+   * check that they're the expected messages though (codes telling us to keep moving through
+   * the loops) because even if they were the wrong messages we couldn't do anything about it,
+   * we've already entered error mode.
+   */
+  if(in_fil_section_flag) MPI_Recv(&nseq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus);
+  for(; gum_mode < GUM_NMODES; gum_mode++) {
+    MPI_Recv(&nseq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus);
+    if(GumModeIsForCM(gum_mode) && (! (esl_opt_GetBoolean(go, "--gumonly")))) {
+      MPI_Bcast(cfg->cutoffA, cfg->np, MPI_INT, 0, MPI_COMM_WORLD);
+      MPI_Recv(&nseq, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus);
+    }
+  }
+  status = cm_worker_MPIBcast(0, MPI_COMM_WORLD, &wbuf, &wn, &(cfg->abc), &cm);
+
   return;
 }
 #endif /*HAVE_MPI*/
@@ -1611,6 +1681,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   float          sc;
   int            inside_flag_raised = FALSE;
 
+
   /* determine mode, and enforce mode-specific contract */
   if     (ret_vscAA != NULL && ret_vit_cp9scA != NULL && ret_fwd_cp9scA != NULL && ret_hybscA == NULL) mode = 1; /* running CM CYK and CP9 Viterbi and Forward */
   else if(ret_vscAA == NULL && ret_vit_cp9scA == NULL && ret_fwd_cp9scA == NULL && ret_hybscA != NULL) mode = 2; /* running hybrid CM/CP9 scanner */
@@ -1635,6 +1706,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
     ESL_ALLOC(hybscA, sizeof(float) * nseq); /* will hold hybrid scores */
 
 
+
   /* generate dsqs one at a time and collect best CM scores at each state and/or best overall CP9 score */
   for(i = 0; i < nseq; i++) {
     if((status = get_cmemit_dsq(cfg, errbuf, cm, &L, &p, &tr, &dsq)) != eslOK) return status;
@@ -1650,6 +1722,15 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
       if(nfailed > 1000 * nseq) ESL_FAIL(eslERANGE, errbuf, "process_filter_workunit(), max number of failures (%d) reached while trying to emit %d seqs.\n", nfailed, nseq);
       if((status = cm_find_hit_above_cutoff(go, cfg, errbuf, cm, dsq, tr, L, cfg->cutoffA[p], &sc)) != eslOK) return status;
     }
+
+    /* to print seqs to stdout uncomment this block 
+    ESL_SQ *tmp;
+    tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq, L, NULL, NULL, NULL);
+    esl_sq_Textize(tmp);
+    printf(">seq%d\n%s\n", i, tmp->seq);
+    esl_sq_Destroy(tmp);
+    */
+
     partA[i] = p;
     assert(partA[i] < cfg->np);
     ESL_DPRINTF1(("i: %d nfailed: %d cutoff: %.3f p: %d\n", i, nfailed, cfg->cutoffA[p], p));
@@ -2175,7 +2256,7 @@ cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
 
   sc = ParsetreeScore(cm, tr, dsq, FALSE); 
   FreeParsetree(tr);
-  if(sc > cutoff) { /* parse score exceeds cutoff */
+  if(sc > cutoff || L == 0) { /* parse score exceeds cutoff, or zero length sequence (only 1 path is possible, must be parse score) */
     ESL_DASSERT1((cm->flags       == init_flags));
     ESL_DASSERT1((cm->search_opts == init_search_opts));
     /* printf("0 sc: %10.4f\n", sc); */
@@ -2193,30 +2274,36 @@ cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
   cm->search_opts |= CM_SEARCH_HBANDED;
   cm->tau = 0.01;
   if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) return status;
-  if((status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, &sc)) != eslOK) return status;
-  if(sc > cutoff) { 
-    if(turn_qdb_back_on)        cm->search_opts &= ~CM_SEARCH_NOQDB; 
-    if(turn_hbanded_back_off) { cm->search_opts &= ~CM_SEARCH_HBANDED; cm->tau = orig_tau; }
-    ESL_DASSERT1((cm->flags       == init_flags));
-    ESL_DASSERT1((cm->search_opts == init_search_opts));
-    *ret_sc = sc;
-    return eslOK;
+  status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, &sc);
+  if(status == eslOK) { /* FastCYKScanHB() successfully finished */
+    if(sc > cutoff) { /* score exceeds cutoff, we're done, reset search_opts and return */
+      if(turn_qdb_back_on)        cm->search_opts &= ~CM_SEARCH_NOQDB; 
+      if(turn_hbanded_back_off) { cm->search_opts &= ~CM_SEARCH_HBANDED; cm->tau = orig_tau; }
+      ESL_DASSERT1((cm->flags       == init_flags));
+      ESL_DASSERT1((cm->search_opts == init_search_opts));
+      *ret_sc = sc;
+      return eslOK;
+    }
   }
+  else if (status != eslERANGE) return status; /* else if status == eslERANGE, FastCYKScanHB() couldn't grow its DP matrix big enough, move onto next stage */
 
   /* stage 2 */
   cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
   cm->tau = 1e-10;
   if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) return status;
-  if((status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, &sc)) != eslOK) return status;
-  if(sc > cutoff) { 
-    if(turn_qdb_back_on)             cm->search_opts &= ~CM_SEARCH_NOQDB; 
-    if(turn_hbanded_back_off)      { cm->search_opts &= ~CM_SEARCH_HBANDED;      cm->tau = orig_tau; }
-    if(turn_hmmscanbands_back_off) { cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS; cm->tau = orig_tau; }
-    ESL_DASSERT1((cm->flags       == init_flags));
-    ESL_DASSERT1((cm->search_opts == init_search_opts));
-    *ret_sc = sc;
-    return eslOK;
+  status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, &sc);
+  if(status == eslOK) { /* FastCYKScanHB() successfully finished */
+    if(sc > cutoff) { /* score exceeds cutoff, we're done, reset search_opts and return */
+      if(turn_qdb_back_on)             cm->search_opts &= ~CM_SEARCH_NOQDB; 
+      if(turn_hbanded_back_off)      { cm->search_opts &= ~CM_SEARCH_HBANDED;      cm->tau = orig_tau; }
+      if(turn_hmmscanbands_back_off) { cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS; cm->tau = orig_tau; }
+      ESL_DASSERT1((cm->flags       == init_flags));
+      ESL_DASSERT1((cm->search_opts == init_search_opts));
+      *ret_sc = sc;
+      return eslOK;
+    }
   }
+  else if (status != eslERANGE) return status; /* else if status == eslERANGE, FastCYKScanHB() couldn't grow its DP matrix big enough, move onto next stage */
 
   /* stage 3, use 'default' dmin, dmax (which could be NULL) CYK or Inside */
   cm->search_opts &= ~CM_SEARCH_HBANDED;
@@ -2556,14 +2643,17 @@ predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
   if(vit_surv_fract < Starg) { 
     if(vit_E_F1 < E_Starg) { 
       vit_E = vit_E_F1;
+      printf("set vit_E as vit_E_F1: %.5f\n", vit_E);
       ESL_DPRINTF1(("set vit_E as vit_E_F1: %.5f\n", vit_E));
     }
     else { 
       vit_E = E_Starg;
+      printf("set vit_E as E_Starg: %.5f\n", vit_E);
       ESL_DPRINTF1(("set vit_E as E_Starg: %.5f\n", vit_E));
     }
     if(vit_E < E_min) {
       vit_E = E_min;
+      printf("set vit_E as E_min: %.5f\n", vit_E);
       ESL_DPRINTF1(("set vit_E as E_min: %.5f\n", vit_E));
     }      
   }
@@ -2571,19 +2661,22 @@ predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
   if(fwd_surv_fract < Starg) { 
     if(fwd_E_F1 < E_Starg) { 
       fwd_E = fwd_E_F1;
+      printf("set fwd_E as fwd_E_F1: %.5f\n", fwd_E);
       ESL_DPRINTF1(("set fwd_E as fwd_E_F1: %.5f\n", fwd_E));
     }
     else { 
       fwd_E = E_Starg;
+      printf("set fwd_E as E_Starg: %.5f\n", fwd_E);
       ESL_DPRINTF1(("set fwd_E as E_Starg: %.5f\n", fwd_E));
     }
     if(fwd_E < E_min) {
       fwd_E = E_min;
       ESL_DPRINTF1(("set fwd_E as E_min: %.5f\n", fwd_E));
+      printf("set fwd_E as E_min: %.5f\n", fwd_E);
     }      
   }
 
-  for(i = 0; i < filN; i++) ESL_DPRINTF1(("HMM i: %4d vit E: %10.4f fwd E: %10.4f\n", i, sorted_fil_vit_EA[i], sorted_fil_fwd_EA[i]));
+  for(i = 0; i < filN; i++) ESL_DPRINTF1(("HMM i: %4d vit E: %15.10f fwd E: %15.10f\n", i, sorted_fil_vit_EA[i], sorted_fil_fwd_EA[i]));
 
   /* calculate speedup for Viterbi */
   vit_surv_calcs = vit_E *     /* number of hits expected to survive filter */
@@ -2601,8 +2694,8 @@ predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
   /* We multiply number of forward calculations by 2.0 to correct for the fact that Forward takes about 2X as long as Viterbi, b/c it requires logsum operations instead of ESL_MAX's,
    * so we factor this in when calc'ing the predicted speedup. */
 
-  printf("HMM(vit) E: %10.4f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", vit_E, fil_calcs, vit_surv_calcs, vit_fil_plus_surv_calcs, nonfil_calcs, vit_spdup);
-  printf("HMM(fwd) E: %10.4f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", fwd_E, fil_calcs, fwd_surv_calcs, fwd_fil_plus_surv_calcs, nonfil_calcs, fwd_spdup);
+  printf("HMM(vit) E: %15.10f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", vit_E, fil_calcs, vit_surv_calcs, vit_fil_plus_surv_calcs, nonfil_calcs, vit_spdup);
+  printf("HMM(fwd) E: %15.10f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", fwd_E, fil_calcs, fwd_surv_calcs, fwd_fil_plus_surv_calcs, nonfil_calcs, fwd_spdup);
 
   if(esl_opt_GetBoolean(go, "--fviterbi")) { /* user specified Viterbi */
     if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_VITERBI, vit_E, fil_calcs, vit_fil_plus_surv_calcs)) != eslOK) return status;

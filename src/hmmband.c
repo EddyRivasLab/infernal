@@ -261,10 +261,9 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
 
   /* Step 3: HMM bands  ->  CM bands. */
-  if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, debug_level)) != eslOK) return status;
+  if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
   
   /* Use the CM bands on i and j to get bands on d, specific to j. */
-  if(doing_search) cp9_RelaxRootBandsForSearch(cm, cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax);
   /* cp9_GrowHDBands() must be called before ij2d_bands() so hdmin, hdmax are adjusted for new seq */
   if((status = cp9_GrowHDBands(cp9b, errbuf)) != eslOK) return status; 
   ij2d_bands(cm, (j0-i0+1), cp9b->imin, cp9b->imax, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, debug_level);
@@ -999,9 +998,7 @@ cp9_IFillPostSums(CP9_MX *post, CP9Bands_t *cp9b, int i0, int j0)
  *           on them by the i and j bands that CAN be determined from
  *           the HMM bands.
  *             
- *           Specifically, this function implements strategy 3 (EPN)
- *           of the hmm bands to i and j bands problem. The main idea
- *           of strategy 3 is to set i and j bands for each state v
+ *           Our strategy is to set i and j bands for each state v
  *           such that at least one state y (y \in C_v (y is reachable
  *           from v)) can be reached from v while staying within the i
  *           and j bands for v and y.  This constraint is enforced by
@@ -1021,11 +1018,7 @@ cp9_IFillPostSums(CP9_MX *post, CP9Bands_t *cp9b, int i0, int j0)
  *           for such states to the same as those for states in a close
  *           proximity. (see code for exact definitions)
  * 
- *           This function uses HMM derived bands on delete states I'm
- *           not sure if the method used to get these delete states is
- *           100% sound (as it required me writing a new function
- *           P7FullPosterior() to derive them from the HMMER forwards
- *           and backwards parses).  
+ *           This function uses HMM derived bands on delete states. 
  *
  * arguments:
  *
@@ -1035,13 +1028,14 @@ cp9_IFillPostSums(CP9_MX *post, CP9Bands_t *cp9b, int i0, int j0)
  * CP9Map_t *cp9map map from CM to CP9 HMM and vice versa
  * int i0           start of target subsequence (often 1, beginning of dsq)
  * int j0           end of target subsequence (often L, end of dsq)
+ * int doing_search TRUE if the bands will be used for a scanning CYK/Inside
  * int debug_level  [0..3] tells the function what level of debugging print
  *                  statements to print.
  *
  * Returns: eslOK on success;
  */
 int
-cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int debug_level)
+cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level)
 {
   int v;              /* counter over states of the CM */
 
@@ -1080,14 +1074,15 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
   int *nss_min_jmax;  /* nss_min_jmax[n] = min jmax over split set states in node n*/
 
   int n;            /* counter over CM nodes. */
-  int doing_search; /* TRUE if bands will be used to accelerate search, FALSE for alignment */
+  int y, yoffset;   /* counters over children states */
 
   /* Contract checks */
   if (cp9b == NULL)                                                                   ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), cp9b is NULL.\n");
   if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED))    ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
   if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
-
-  doing_search = (cm->search_opts & CM_SEARCH_HBANDED) ? TRUE : FALSE;
+  if(i0 < 1) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), i0 < 1: %d\n", i0);
+  if(j0 < 1) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), j0 < 1: %d\n", j0);
+  if(j0 < i0) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), i0 (%d) < j0 (%d)\n", i0, j0);
 
   /* set pointers to cp9b data
    * note: these arrays used to be allocated here, but that was wasteful, now it's allocated
@@ -1585,6 +1580,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	    tmp_jmax = nss_jmax[n+1];
 	  }
 	  else { /* we're doing alignment, enforce ROOT_S emits full sequence */
+	    /* for now, enforce ROOT_S emits full sequence at end of the function, we'll relax this if doing_search==TRUE */
 	    tmp_imin = i0;
 	    tmp_imax = i0;
 	    tmp_jmin = j0;
@@ -1601,7 +1597,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  v++; /*ROOT_IL SPECIAL CASE*/
 	  /* This state maps to the insert state of HMM node cp9map->cs2hn[v][0], which is HMM node 0*/
 	  if(doing_search)
-	    tmp_imin =  pn_min_i[cp9map->cs2hn[v][0]]; /* should this be imin[0]? */
+	  tmp_imin =  pn_min_i[cp9map->cs2hn[v][0]]; /* should this be imin[0]? */
 	  else
 	    tmp_imin =  i0; /* Have to be able to transit here from ROOT_S */
 	  tmp_imax = nss_imax[n+1];
@@ -1782,6 +1778,100 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
     }
 
    /* Tie up some loose ends: 
+    * 1. Ensure that all valid i are >= i0 and all valid j are <= j0
+    * 2. Ensure all bands have bandwidth >= 0 (see code) 
+    * 3. Set detached inserts states to imin=imax=jmin=jmax=i0 to avoid 
+    *    problems in downstream functions. These states WILL NEVER BE ENTERED 
+    * 4. Do a quick check to make sure we've assigned the bands
+    *    on i and j for all states to positive values (none were
+    *    left as -1 EXCEPT for end states which should have i bands left as -1).
+    * 5. If doing_search==TRUE, rewrite the bands on the 
+    *    ROOT_S state so they allow any possible transition to a child
+    *    that the child's bands would allow.
+    */
+
+   /* 1. Ensure that all valid i are >= i0 and all valid j are <= j0 */
+   for(v = 0; v < cm->M; v++) {
+     imin[v] = ESL_MAX(imin[v], i0); /* imin[v] can't be less than i0 */
+     imax[v] = ESL_MAX(imax[v], i0); /* imax[v] can't be less than i0 */
+     
+     imin[v] = ESL_MIN(imin[v], j0); /* imin[v] can't be more than j0 */
+     imax[v] = ESL_MIN(imax[v], j0); /* imax[v] can't be more than j0 */
+     
+     imax[v] = ESL_MIN(imax[v], j0); /* imax[v] can't be more than j0 */
+     
+     jmin[v] = ESL_MIN(jmin[v], j0); /* jmin[v] can't be more than j0 */
+     jmax[v] = ESL_MIN(jmax[v], j0); /* jmax[v] can't be more than j0 */
+     
+     jmin[v] = ESL_MAX(jmin[v], i0); /* jmin[v] can't be less than i0 */
+     jmax[v] = ESL_MAX(jmax[v], i0); /* jmax[v] can't be less than i0 */
+     
+     /* 2. Ensure all bands have bandwidth >= 0 
+      * Ensure: jmax[v] - jmin[v] + 1 >= 0 
+      *         imax[v] - imin[v] + 1 >= 0 
+      * jmax[v] - jmin[v] + 1 == 0 means there are no valid j's for state v,
+      * so state v is not allowed to be in the parse, we allow this (maybe we shouldn't)
+      */
+     imax[v] = ESL_MAX(imax[v], imin[v]-1);
+     jmin[v] = ESL_MIN(jmin[v], jmax[v]+1);
+     
+     /* 3. Set detached inserts states to imin=imax=jmin=jmax=i0 to avoid 
+      *    problems in downstream functions. These states WILL NEVER BE ENTERED 
+      */
+     if(cm->sttype[v+1] == E_st) imin[v] = imax[v] = jmin[v] = jmax[v] = i0;
+     
+     /* 4. Do a quick check to make sure we've assigned the bands
+      *    on i and j for all states to positive values (none were
+      *    left as -1 EXCEPT for end states which should have i bands left as -1).
+      */
+     ESL_DASSERT1((! ((cm->sttype[v] != E_st) && (imin[v] == -1))));
+     ESL_DASSERT1((! ((cm->sttype[v] != E_st) && (imax[v] == -1))));
+     ESL_DASSERT1((! ((cm->sttype[v] != E_st) && (jmin[v] == -1))));
+     ESL_DASSERT1((! ((cm->sttype[v] != E_st) && (jmax[v] == -1))));
+   }
+   
+   /* 5. If doing_search==TRUE, rewrite the bands on the 
+    *    ROOT_S state so they allow any possible transition to a child
+    *    that the child's bands would allow.
+    */
+   if(doing_search) { 
+     /* First look at children of 0 (these probs will be 0. if local begins on, but it doesn't matter for our purposes here) */
+     for (yoffset = 0; yoffset < cm->cnum[0]; yoffset++) {
+       y = cm->cnum[0] + yoffset;
+       imin[0] = ESL_MIN(imin[0], imin[y]);
+       imax[0] = ESL_MAX(imax[0], imax[y]);
+       jmin[0] = ESL_MIN(jmin[0], jmin[y]);
+       jmax[0] = ESL_MAX(jmax[0], jmax[y]);
+     }
+     /* now for possible local begins */
+     if(cm->flags & CMH_LOCAL_BEGIN) {
+       for (y = 1; y < cm->M; y++) {
+	 if(NOT_IMPOSSIBLE(cm->beginsc[y])) { 
+	   imin[0] = ESL_MIN(imin[0], imin[y]);
+	   imax[0] = ESL_MAX(imax[0], imax[y]);
+	   jmin[0] = ESL_MIN(jmin[0], jmin[y]);
+	   jmax[0] = ESL_MAX(jmax[0], jmax[y]);
+	 }
+       }
+     }
+   }
+  /* Final, exceedingly rare, special case */
+  if(i0 == j0) { /* special case that breaks DP recursion for MP states
+		  * b/c target seq is length 1, and all MPs are impossible,
+		  * yet above code just forced jmin[v] <= j0 and jmax[v] <= j0,
+		  * which says that MPs are possible.
+		  */
+    for(v = 0; v < cm->M; v++) {
+      if(cm->sttype[v] == MP_st) { 
+	jmin[v] = j0+1;
+	jmax[v] = j0+1;
+      }
+    }
+  }
+    
+#if 0
+  /* OLD CODE EPN, Fri Dec 21 09:14:32 2007 */
+   /* Tie up some loose ends: 
     * 1. Set detached inserts states to imin=imax=jmin=jmax=i0 to avoid 
     *    problems in downstream functions. These states WILL NEVER BE ENTERED 
     * 2. Do a quick check to make sure we've assigned the bands
@@ -1832,6 +1922,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
     ESL_DASSERT1((! ((cm->sttype[v] != E_st) && (jmin[v] == -1))));
     ESL_DASSERT1((! ((cm->sttype[v] != E_st) && (jmax[v] == -1))));
   }
+#endif
 
   if(debug_level > 0) { 
     printf("bands on i\n");
@@ -2554,55 +2645,6 @@ ijdBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
   cm_Fail("Memory allocation error.\n");
 }
 
-/*********************************************************************
- * Function: cp9_RelaxRootBandsForSearch()
- * 
- * Purpose:  In cp9_HMM2ijBands(), ROOT_S (state 0) sets imin[0]=imax[0]=i0,
- *           and jmin[0]=jmax[0]=j0, which is important for alignment,
- *           but during search enforces that the optimal alignment start
- *           at i0 and end at j0, but when searching we want to relax this
- *           requirement in case a higher scoring parse has different endpoints.
- *           This function sets imax[0] as maximum i = imax[1] (ROOT_IL) and
- *           jmin[0] = jmin[2] (ROOT_IR).
- *           
- * Args:
- * cm               the cm
- * int *imin        imin[v] = first position in band on i for state v
- * int *imax        imax[v] = last position in band on i for state v
- * int *jmin        jmin[v] = first position in band on j for state v
- * int *jmax        jmax[v] = last position in band on j for state v
- */
-void
-cp9_RelaxRootBandsForSearch(CM_t *cm, int *imin, int *imax, int *jmin, int *jmax)
-{
-  int y, yoffset;
-  /* look at all children y of ROOT_S (v == 0) and set:
-   * imin[0] = min_y imin[y];
-   * imax[0] = max_y imax[y];
-   * jmin[0] = min_y jmin[y];
-   * jmax[0] = max_y jmax[y];
-   */
-  /* First look at children of 0 (these probs will be 0. if local begins on, but it doesn't matter for our purposes here) */
-  for (yoffset = 0; yoffset < cm->cnum[0]; yoffset++) {
-    y = cm->cnum[0] + yoffset;
-    imin[0] = ESL_MIN(imin[0], imin[y]);
-    imax[0] = ESL_MAX(imax[0], imax[y]);
-    jmin[0] = ESL_MIN(jmin[0], jmin[y]);
-    jmax[0] = ESL_MAX(jmax[0], jmax[y]);
-  }
-  /* now for possible local begins */
-  if(cm->flags & CMH_LOCAL_BEGIN) {
-    for (y = 1; y < cm->M; y++) {
-      if(NOT_IMPOSSIBLE(cm->beginsc[y])) { 
-	imin[0] = ESL_MIN(imin[0], imin[y]);
-	imax[0] = ESL_MAX(imax[0], imax[y]);
-	jmin[0] = ESL_MIN(jmin[0], jmin[y]);
-	jmax[0] = ESL_MAX(jmax[0], jmax[y]);
-      }
-    }
-  }
-}
-
 
 /*
  * Function: cp9_ValidateBands()
@@ -2627,6 +2669,7 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0)
   int hd_needed;
   int j;
 
+
   if(cm->M    != cp9b->cm_M)  ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cm->M != cp9b->cm_M\n");
   if(cm->clen != cp9b->hmm_M) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cm->clen != cp9b->hmm_M\n");
   
@@ -2634,6 +2677,12 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0)
   for(v = 0; v < cp9b->cm_M; v++) 
     hd_needed += cp9b->jmax[v] - cp9b->jmin[v] + 1;
   if(hd_needed != cp9b->hd_needed) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->hd_needed inconsistent.");
+
+  for(v = 0; v < cm->M; v++) {
+    sd = StateDelta(cm->sttype[v]);
+    if(cp9b->jmin[v] < sd) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->jmin[v:%d]: %d < StateDelta[v]: %d.\n", v, cp9b->jmin[v], sd);
+    if(cp9b->jmax[v] < sd) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->jmax[v:%d]: %d < StateDelta[v]: %d.\n", v, cp9b->jmax[v], sd);
+  }
 
   for(v = 0; v < cm->M; v++) {
     if(cm->sttype[v] == E_st) {
@@ -2651,15 +2700,20 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0)
       }
     }
 
-    for(j = cp9b->jmin[v]; j <= cp9b->jmax[v]; j++) {
-      if(j < i0) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), j: %d outside i0:%d..j0:%d is within v's j band: jmin[%d]: %d jmax[%d]: %d\n", j, i0, j0, v, cp9b->jmin[v], v, cp9b->jmax[v]);
-      if(j > j0) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), j: %d outside i0:%d..j0:%d is within v's j band: jmin[%d]: %d jmax[%d]: %d\n", j, i0, j0, v, cp9b->jmin[v], v, cp9b->jmax[v]);
-      if(cp9b->hdmin[v][(j-cp9b->jmin[v])] < StateDelta(cm->sttype[v])) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmin[v][jp_v:%d] : %d less than StateDelta for v: %d\n", v, j, (j-cp9b->jmin[v]), cp9b->hdmin[v][(j-cp9b->jmin[v])], StateDelta(cm->sttype[v]));
-     if(cp9b->hdmax[v][(j-cp9b->jmin[v])] < StateDelta(cm->sttype[v])) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmax[v][jp_v:%d] : %d less than StateDelta for v: %d\n", v, j, (j-cp9b->jmin[v]), cp9b->hdmax[v][(j-cp9b->jmin[v])], StateDelta(cm->sttype[v]));
+    if(i0 == j0 && cm->sttype[v] == MP_st) { /* special case, MPs are impossible in this case */
+      if(cp9b->jmin[v] != j0+1) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), exceedingly rare case, i0==j0==%d v: %d is MP but jmin[v]: %d != j0+1\n", i0, v, cp9b->jmin[v]);
+      if(cp9b->jmax[v] != j0+1) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), exceedingly rare case, i0==j0==%d v: %d is MP but jmax[v]: %d != j0+1\n", i0, v, cp9b->jmax[v]);
     }
-
-    if(cp9b->imin[v] < cp9b->imin[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->imin[v:%d]: %d less than cp9b->imin[0]: %d.", v, cp9b->imin[v], cp9b->imin[0]);
-    if(cp9b->jmax[v] > cp9b->jmax[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->jmax[v:%d]: %d greater than cp9b->jmax[0]: %d.", v, cp9b->jmax[v], cp9b->jmax[0]);
+    else {
+      for(j = cp9b->jmin[v]; j <= cp9b->jmax[v]; j++) {
+	if(j < i0) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), j: %d outside i0:%d..j0:%d is within v's j band: jmin[%d]: %d jmax[%d]: %d\n", j, i0, j0, v, cp9b->jmin[v], v, cp9b->jmax[v]);
+	if(j > j0) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), j: %d outside i0:%d..j0:%d is within v's j band: jmin[%d]: %d jmax[%d]: %d\n", j, i0, j0, v, cp9b->jmin[v], v, cp9b->jmax[v]);
+	if(cp9b->hdmin[v][(j-cp9b->jmin[v])] < StateDelta(cm->sttype[v])) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmin[v][jp_v:%d] : %d less than StateDelta for v: %d\n", v, j, (j-cp9b->jmin[v]), cp9b->hdmin[v][(j-cp9b->jmin[v])], StateDelta(cm->sttype[v]));
+	if(cp9b->hdmax[v][(j-cp9b->jmin[v])] < StateDelta(cm->sttype[v])) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmax[v][jp_v:%d] : %d less than StateDelta for v: %d\n", v, j, (j-cp9b->jmin[v]), cp9b->hdmax[v][(j-cp9b->jmin[v])], StateDelta(cm->sttype[v]));
+      }
+      if(cp9b->jmax[v] > cp9b->jmax[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->jmax[v:%d]: %d greater than cp9b->jmax[0]: %d.", v, cp9b->jmax[v], cp9b->jmax[0]);
+    }
+    if(cp9b->imin[v] < cp9b->imin[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->imin[v:%d]: %d less than cp9b->imin[0]: %d, i0:%d j0:%d jmin[v]: %d jmax[v]: %d jmin[0]: %d jmax[0]: %d imax[v]:%d.", v, cp9b->imin[v], cp9b->imin[0], i0, j0, cp9b->jmin[v], cp9b->jmax[v], cp9b->jmin[0], cp9b->jmax[0], cp9b->imax[v]);
   }
   return eslOK;
 }
@@ -2962,3 +3016,61 @@ PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
   printf("After:   something like %.0f\n", after);
   printf("Speedup: maybe %.2f fold\n\n", (float) before / (float) after);
 }
+
+#if 0
+
+/*********************************************************************
+ * Function: cp9_RelaxRootBandsForSearch()
+ * 
+ * Purpose:  In cp9_HMM2ijBands(), ROOT_S (state 0) sets imin[0]=imax[0]=i0,
+ *           and jmin[0]=jmax[0]=j0, which is important for alignment,
+ *           but during search enforces that the optimal alignment start
+ *           at i0 and end at j0, but when searching we want to relax this
+ *           requirement in case a higher scoring parse has different endpoints.
+ *           See code for details.
+ *
+ * Args:
+ * cm               the cm
+ * i0               first position of seq
+ * j0               last position of seq
+ * int *imin        imin[v] = first position in band on i for state v
+ * int *imax        imax[v] = last position in band on i for state v
+ * int *jmin        jmin[v] = first position in band on j for state v
+ * int *jmax        jmax[v] = last position in band on j for state v
+ */
+void
+cp9_RelaxRootBandsForSearch(CM_t *cm, int i0, int j0, int *imin, int *imax, int *jmin, int *jmax)
+{
+  int y, yoffset;
+
+  if(i0 == j0) return; /* this is a special vanishingly rare case, we've set otherwise illegal jmin, jmax values for MP states
+			* b/c all MPs are impossible for a length 1 seq, do nothing in this case.
+			*/
+  /* look at all children y of ROOT_S (v == 0) and set:
+   * imin[0] = min_y imin[y];
+   * imax[0] = max_y imax[y];
+   * jmin[0] = min_y jmin[y];
+   * jmax[0] = max_y jmax[y];
+   */
+  /* First look at children of 0 (these probs will be 0. if local begins on, but it doesn't matter for our purposes here) */
+  for (yoffset = 0; yoffset < cm->cnum[0]; yoffset++) {
+    y = cm->cnum[0] + yoffset;
+    imin[0] = ESL_MIN(imin[0], imin[y]);
+    imax[0] = ESL_MAX(imax[0], imax[y]);
+    jmin[0] = ESL_MIN(jmin[0], jmin[y]);
+    jmax[0] = ESL_MAX(jmax[0], jmax[y]);
+  }
+  /* now for possible local begins */
+  if(cm->flags & CMH_LOCAL_BEGIN) {
+    for (y = 1; y < cm->M; y++) {
+      if(NOT_IMPOSSIBLE(cm->beginsc[y])) { 
+	imin[0] = ESL_MIN(imin[0], imin[y]);
+	imax[0] = ESL_MAX(imax[0], imax[y]);
+	jmin[0] = ESL_MIN(jmin[0], jmin[y]);
+	jmax[0] = ESL_MAX(jmax[0], jmax[y]);
+      }
+    }
+  }
+}
+
+#endif

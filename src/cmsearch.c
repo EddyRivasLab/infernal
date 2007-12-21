@@ -52,6 +52,7 @@ static ESL_OPTIONS options[] = {
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "configure CM for glocal alignment [default: local]", 1 },
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--toponly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the top strand", 1 },
+  { "--bottomonly", eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the bottom strand", 1 },
   { "--window",  eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,        NULL, "set scanning window size to <n> [default: calculated]", 1 },
   { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "turn on the post hoc second null model", 1 },
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
@@ -151,6 +152,7 @@ struct cfg_s {
   long          N;              /* database size in nucleotides (doubled if doing rev comp) */
   int           ncm;            /* number CM we're at in file */
   int           do_rc;          /* should we search reverse complement? (for convenience */
+  int           init_rci;       /* initial strand to search 0 for top, 1 for bottom (only 1 if --bottomonly enabled) */
   float        *avglen;         /* [0..v..M-1] average hit len for subtree rooted at each state v for current CM */
 
   int           do_mpi;		/* TRUE if we're doing MPI parallelization */
@@ -287,6 +289,7 @@ main(int argc, char **argv)
   cfg.preset_dmin= NULL;                   /* filled in initialize_cm() only if --qdbfile, which conflicts with --mpi */
   cfg.preset_dmax= NULL;                   /* filled in initialize_cm() only if --qdbfile, which conflicts with --mpi */
   cfg.do_rc      = (! esl_opt_GetBoolean(go, "--toponly")); 
+  cfg.init_rci   = esl_opt_GetBoolean(go, "--bottomonly") ? 1 : 0; 
   cfg.avglen     = NULL;                   /* filled in init_master_cfg() in masters, stays NULL for workers */
 
   cfg.do_mpi     = FALSE;	           /* this gets reset below, if we init MPI */
@@ -383,7 +386,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
   /* GetDBInfo() reads all sequences, rewinds seq file and returns db size */
   GetDBInfo(NULL, cfg->sqfp, &(cfg->N), NULL);  
-  if (! esl_opt_GetBoolean(go, "--toponly")) cfg->N *= 2;
+  if ((! esl_opt_GetBoolean(go, "--toponly")) && (! esl_opt_GetBoolean(go, "--bottomonly"))) cfg->N *= 2;
 
   /* open CM file */
   if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
@@ -433,9 +436,12 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int            using_e_cutoff;
   int            rci;
   dbseq_t       *dbseq = NULL;
+  int            do_top;
+
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   /*if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);*/
+  do_top = (cfg->init_rci == 0) ? TRUE : FALSE; 
 
   while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
     {
@@ -457,21 +463,21 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	 
       while ((status = read_next_search_seq(cfg->abc, cfg->sqfp, cfg->do_rc, &dbseq)) == eslOK)
 	{
-	  for(rci = 0; rci <= cfg->do_rc; rci++) {
+	  for(rci = cfg->init_rci; rci <= cfg->do_rc; rci++) {
 	    /*printf("SEARCHING >%s %d\n", dbseq->sq[reversed]->name, reversed);*/
 	    if ((status = process_search_workunit(go, cfg, errbuf, cm, dbseq->sq[rci]->dsq, dbseq->sq[rci]->n, &dbseq->results[rci])) != eslOK) cm_Fail(errbuf);
 	    remove_overlapping_hits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
 	    if(using_e_cutoff) remove_hits_over_e_cutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]); 
 	  }
-	  print_results (cm, cm->si, cfg->abc_out, cons, dbseq, cfg->do_rc);
-	  for(rci = 0; rci <= cfg->do_rc; rci++) {
+	  print_results (cm, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc);
+	  for(rci = 0; rci <= cfg->do_rc; rci++) { /* we can free results for top strand even if cfg->init_rci is 1, due to --bottomonly */
 	    FreeResults(dbseq->results[rci]);
 	    esl_sq_Destroy(dbseq->sq[rci]);
 	  }
 	  free(dbseq);
 	}
       if (status != eslEOF) cm_Fail("Parse failed, line %d, file %s:\n%s", 
-					  cfg->sqfp->linenumber, cfg->sqfp->filename, cfg->sqfp->errbuf);
+				    cfg->sqfp->linenumber, cfg->sqfp->filename, cfg->sqfp->errbuf);
       FreeCM(cm);
       FreeCMConsensus(cons);
       esl_sqio_Rewind(cfg->sqfp); /* we may be searching this file again with another CM */
@@ -484,17 +490,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
  * Follows standard pattern for a master/worker load-balanced MPI program 
  * (SRE notes J1/78-79).
  * 
- * EPN: GOAL OF IMPLEMENTATION FOLLOWS IN LOWERCASE.
- * IT IS NOT YET ACHIEVED.
- * TO ACHIEVE WE'LL NEED ALL FUNCS CALLED BY MPI TO
- * RETURN CLEANLY ALWAYS - BIG TASK TO REWRITE THOSE.
- * CURRENTLY NEARLY ALL ERRORS ARE UNRECOVERABLE, BUT THESE
- * ARE NOT LIMITED TO MPI COMMUNICATION ERRORS.
- *
  * A master can only return if it's successful. 
  * Errors in an MPI master come in two classes: recoverable and nonrecoverable.
  * 
- * Recoverable errors include all worker-side errors, and any
+ * Recoverable errors include (hopefully) all worker-side errors, and any
  * master-side error that do not affect MPI communication. Error
  * messages from recoverable messages are delayed until we've cleanly
  * shut down the workers.
@@ -517,6 +516,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int      bn            = 0;
   int      pos = 1;
   int      using_e_cutoff; 
+  int      wi_error = 0;                /* worker index that sent back an error message, if an error occurs */
 
   CM_t *cm;
   CMConsensus_t *cons = NULL;     /* precalculated consensus info for display purposes */
@@ -561,22 +561,23 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if (xstatus == eslOK) { if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) xstatus = status; }
   /*if (xstatus == eslOK) { if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) xstatus = status; }*/
   if (xstatus == eslOK) { bn = 4096; if ((buf = malloc(sizeof(char) * bn)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((silist = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((rclist = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((silist     = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((rclist     = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
   if (xstatus == eslOK) { if ((seqposlist = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((lenlist = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((dbseqlist = malloc(sizeof(dbseq_t *) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((sentlist = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((lenlist    = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((dbseqlist  = malloc(sizeof(dbseq_t *) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((sentlist   = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+
+  MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  if (xstatus != eslOK) cm_Fail(errbuf);
+  ESL_DPRINTF1(("MPI master is initialized\n"));
+
   for (wi = 0; wi < cfg->nproc; wi++) 
   { 
     silist[wi] = rclist[wi] = seqposlist[wi] = lenlist[wi] = -1;
     dbseqlist[wi] = NULL;
     sentlist[wi] = FALSE;
   }
-  MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  if (xstatus != eslOK) cm_Fail(errbuf);
-  ESL_DPRINTF1(("MPI master is initialized\n"));
-
   /* Worker initialization:
    * Because we've already successfully initialized the master before we start
    * initializing the workers, we don't expect worker initialization to fail;
@@ -600,7 +601,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * Unrecoverable errors just crash us out with cm_Fail().
    */
 
-  while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
+  while (xstatus == eslOK && CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
     {
       cfg->ncm++;  
       ESL_DPRINTF1(("MPI master read CM number %d\n", cfg->ncm));
@@ -638,7 +639,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  for(rci = 0; rci <= cfg->do_rc; rci++) {
 		    dbseq->results[rci] = CreateResults(INIT_RESULTS);
 		  }
-		  in_rc = FALSE;
+		  in_rc = (cfg->init_rci == 0) ? FALSE : TRUE; /* if --bottomonly --> cfg->init_rci = 1, and we only search bottom strand */
 		  seqpos = 1;
 		  
 		  si = 0;
@@ -676,50 +677,56 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      if (xstatus == eslOK) /* worker reported success. Get the result. */
 		{
 		  pos = 0;
-		  si_recv = silist[wi];
-		  ESL_DPRINTF1(("MPI master sees that the result buffer contains search results (si_recv:%d)\n", si_recv));
-		  if ((status = cm_search_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &worker_results)) != eslOK) cm_Fail("search results unpack failed");
-		  ESL_DPRINTF1(("MPI master has unpacked search results\n"));
-		      
-		  /* worker_results will be NULL if 0 results (hits) sent back */
-		  int x;
-		  if(worker_results != NULL) { 
-		    /* add results to dbseqlist[si_recv]->results[rclist[wi]] */
-		    if(! esl_opt_GetBoolean(go, "--noalign")) { 
-		      for(x = 0; x < worker_results->num_results; x++) {
-			assert(worker_results->data[x].tr != NULL);
-			assert(worker_results->data[x].tr->n > 0);
-		      }
-		    }
-		    AppendResults(worker_results, dbseqlist[si_recv]->results[rclist[wi]], seqposlist[wi]);
-		    /* careful, dbseqlist[si_recv]->results[rclist[wi]] now points to the nodes in worker_results->data,
-		     * don't free those (don't use FreeResults(worker_results)) */
-		    free(worker_results);
-		    worker_results = NULL;
-		  }
-		  dbseqlist[si_recv]->chunks_sent--;
-		  if(sentlist[si_recv] && dbseqlist[si_recv]->chunks_sent == 0)
+		  if (MPI_Unpack(buf, bn, &pos, &xstatus, 1, MPI_INT, MPI_COMM_WORLD)     != 0)     cm_Fail("mpi unpack failed");
+		  if (xstatus == eslOK) /* worker reported success. Get the results. */
 		    {
-		      for(rci = 0; rci <= cfg->do_rc; rci++) {
-			remove_overlapping_hits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
-			if(using_e_cutoff) remove_hits_over_e_cutoff(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]);
-
-
-		      }					      
-		      print_results(cm, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], cfg->do_rc);
-		      for(rci = 0; rci <= cfg->do_rc; rci++) {
-			esl_sq_Destroy(dbseqlist[si_recv]->sq[rci]);
-			FreeResults(dbseqlist[si_recv]->results[rci]);
+		      si_recv = silist[wi];
+		      ESL_DPRINTF1(("MPI master sees that the result buffer contains search results (si_recv:%d)\n", si_recv));
+		      if ((status = cm_search_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &worker_results)) != eslOK) cm_Fail("search results unpack failed");
+		      ESL_DPRINTF1(("MPI master has unpacked search results\n"));
+		      
+		      /* worker_results will be NULL if 0 results (hits) sent back */
+		      int x;
+		      if(worker_results != NULL) { 
+			/* add results to dbseqlist[si_recv]->results[rclist[wi]] */
+			if(! esl_opt_GetBoolean(go, "--noalign")) { 
+			  for(x = 0; x < worker_results->num_results; x++) {
+			    assert(worker_results->data[x].tr != NULL);
+			    assert(worker_results->data[x].tr->n > 0);
+			  }
+			}
+			AppendResults(worker_results, dbseqlist[si_recv]->results[rclist[wi]], seqposlist[wi]);
+			/* careful, dbseqlist[si_recv]->results[rclist[wi]] now points to the nodes in worker_results->data,
+			 * don't free those (don't use FreeResults(worker_results)) */
+			free(worker_results);
+			worker_results = NULL;
 		      }
-		      free(dbseqlist[si_recv]);
-		      dbseqlist[si_recv] = NULL;
-		      ndbseq--;
+		      dbseqlist[si_recv]->chunks_sent--;
+		      if(sentlist[si_recv] && dbseqlist[si_recv]->chunks_sent == 0)
+			{
+			  for(rci = 0; rci <= cfg->do_rc; rci++) {
+			    remove_overlapping_hits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
+			    if(using_e_cutoff) remove_hits_over_e_cutoff(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]);
+			    
+			    
+			  }					      
+			  print_results(cm, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc);
+			  for(rci = 0; rci <= cfg->do_rc; rci++) {
+			    esl_sq_Destroy(dbseqlist[si_recv]->sq[rci]);
+			    FreeResults(dbseqlist[si_recv]->results[rci]);
+			  }
+			  free(dbseqlist[si_recv]);
+			  dbseqlist[si_recv] = NULL;
+			  ndbseq--;
+			}
 		    }
-		}
-	      else	/* worker reported an error. Get the errbuf. */
-		{
-		  if (MPI_Unpack(buf, bn, &pos, errbuf, cmERRBUFSIZE, MPI_CHAR, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack of errbuf failed");
-		  ESL_DPRINTF1(("MPI master sees that the result buffer contains an error message\n"));
+		  else	/* worker reported an error. Get the errbuf. */
+		    {
+		      if (MPI_Unpack(buf, bn, &pos, errbuf, cmERRBUFSIZE, MPI_CHAR, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack of errbuf failed");
+		      ESL_DPRINTF1(("MPI master sees that the result buffer contains an error message\n"));
+		      have_work = FALSE;
+		      wi_error  = wi;
+		    }
 		}
 	      nproc_working--;
 	    }
@@ -767,7 +774,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if((status = cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
   free(buf);
   
-  if (xstatus != eslOK) cm_Fail(errbuf);
+  if (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); cm_Fail(errbuf); }
   else                  return;
 
  ERROR: 
@@ -837,7 +844,13 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  ESL_DPRINTF1(("worker %d: has gathered search results\n", cfg->my_rank));
 	  
 	  n = 0;
-	  if (cm_search_results_MPIPackSize(results, MPI_COMM_WORLD, &sz) != eslOK) goto ERROR; n += sz;  
+	  if (MPI_Pack_size(1, MPI_INT, MPI_COMM_WORLD, &sz) != 0) /* room for the status code */
+	    ESL_XFAIL(eslESYS, errbuf, "mpi pack size failed"); 
+	  n += sz;
+	  if (cm_search_results_MPIPackSize(results, MPI_COMM_WORLD, &sz) != eslOK)
+	    ESL_XFAIL(eslFAIL, errbuf, "cm_serch_results_MPIPackSize() call failed"); 
+	  n += sz;  
+
 	  if (n > wn) {
 	    void *tmp;
 	    ESL_RALLOC(wbuf, tmp, sizeof(char) * n);
@@ -847,7 +860,10 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  status = eslOK;
 
 	  pos = 0;
-	  if (cm_search_results_MPIPack(results, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK) goto ERROR;
+	  if (MPI_Pack(&status, 1, MPI_INT, wbuf, wn, &pos, MPI_COMM_WORLD) != 0) 
+	    ESL_XFAIL(eslESYS, errbuf, "mpi pack failed.");
+	  if (cm_search_results_MPIPack(results, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK)
+	    ESL_XFAIL(eslFAIL, errbuf, "cm_search_results_MPIPack() call failed"); 
 	  MPI_Send(wbuf, pos, MPI_PACKED, 0, 0, MPI_COMM_WORLD);
 	  ESL_DPRINTF1(("worker %d: has sent results to master in message of %d bytes\n", cfg->my_rank, pos));
 
@@ -855,12 +871,13 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  free(dsq);
 	}
       if(status == eslEOD)ESL_DPRINTF1(("worker %d: has seen message to stop with this CM.\n", cfg->my_rank));
-      else goto ERROR;
+      else ESL_XFAIL(eslFAIL, errbuf, "within CM loop, unexpected status code: %d received from cm_dsq_MPIRecv()\n", status);
+
       FreeCM(cm);
       cm = NULL;
     }
   if (status == eslEOD) ESL_DPRINTF1(("Worker %d told CMs are done.\n", cfg->my_rank));
-  else goto ERROR;
+  else ESL_XFAIL(eslFAIL, errbuf, "outside CM loop, unexpected status code: %d received from cm_seqs_to_aln_MPIRecv()\n", status);
   
   if (wbuf != NULL) free(wbuf);
   return;
@@ -871,6 +888,19 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   MPI_Pack(&status, 1,                MPI_INT,  wbuf, wn, &pos, MPI_COMM_WORLD);
   MPI_Pack(errbuf,  cmERRBUFSIZE,    MPI_CHAR, wbuf, wn, &pos, MPI_COMM_WORLD);
   MPI_Send(wbuf, pos, MPI_PACKED, 0, 0, MPI_COMM_WORLD);
+
+  /* if we get here this worker failed and sent an error message, now the master knows a worker
+   * failed but it has to send the message to all other workers (besides this one) to abort so they 
+   * can be shut down cleanly. As currently implemented, this means we have to wait here for that 
+   * signal which comes in the form of a special 'empty' work packet that tells us we're done with
+   * the current CM, and then a 'empty' CM broadcast that tells us we're done with all CMs in the file.
+   */
+  status = cm_dsq_MPIRecv(0, 0, MPI_COMM_WORLD, &wbuf, &wn, &dsq, &L);
+  status = cm_worker_MPIBcast(0, MPI_COMM_WORLD, &wbuf, &wn, &(cfg->abc), &cm);
+  /* status after each of the above calls should be eslEOD, but if it isn't we can't really do anything 
+   * about it b/c we've already sent our error message, so in that scenario the MPI will break uncleanly 
+   */
+
   return;
 }
 #endif /*HAVE_MPI*/

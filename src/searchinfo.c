@@ -643,9 +643,10 @@ void report_hit (int i, int j, int bestr, float score, search_results_t *results
  *           dbseq               the database seq
  *           name                sequence name
  *           len                 length of the sequence
- *           do_complement       are we doing the minus strand
+ *           do_top              are we doing the plus  (top)    strand
+ *           do_bottom       are we doing the minus (bottom) strand
  */
-void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_complement)
+void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom)
 {
   int i;
   char *name;
@@ -666,6 +667,7 @@ void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConse
   int cp9_gum_mode;     /* Gumbel mode if we're using HMM hits */
   int p;                /* relevant partition */
   int offset;         
+  int init_rci;         /* initial strand that's been searched, 0 if do_top, else 1 */
 
   /* Contract check: we allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
@@ -676,6 +678,7 @@ void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConse
   else if(cm->abc->K != abc->K) cm_Fail("print_results(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
   if(si == NULL) cm_Fail("print_results(), si == NULL.\n");
   if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("print_results(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
+  if((!do_top) && (!do_bottom)) cm_Fail("print_results(), do_top FALSE, and do_bottom FALSE, what's the point?\n");
 
   do_stats = (si->cutoff_type[si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
   if(do_stats  && !(cm->flags & CMH_GUMBEL_STATS)) cm_Fail("print_results(), stats wanted but CM has no Gumbel stats\n");
@@ -688,7 +691,8 @@ void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConse
   name = dbseq->sq[0]->name;
   len  = dbseq->sq[0]->n;
 
-  for (in_revcomp = 0; in_revcomp <= do_complement; in_revcomp++) {
+  init_rci = do_top ? 0 : 1; 
+  for (in_revcomp = init_rci; in_revcomp <= do_bottom; in_revcomp++) {
     results = dbseq->results[in_revcomp];
     if (results == NULL || results->num_results == 0) continue;
       

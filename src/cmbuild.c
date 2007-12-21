@@ -146,6 +146,7 @@ static int    check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg
 static int    set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t ***ret_msa_tr);
 static int    set_model_name(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
+static int    set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm, const Prior_t *pri);
 static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, const Prior_t *prior);
 static int    name_msa(const ESL_GETOPTS *go, ESL_MSA *msa, int nali);
@@ -160,7 +161,7 @@ static int    initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
 /* functions for dividing input MSA into clusters */
 static int    select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust, int *ret_nc);
 static float  find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret_nc);
-static int     MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff, int do_corig, int *ret_num_msa, ESL_MSA ***ret_cmsa);
+static int    MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff, int do_corig, int *ret_num_msa, ESL_MSA ***ret_cmsa);
 
 
 int
@@ -509,6 +510,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
   if ((status =  set_relative_weights   (go, cfg, errbuf, msa))                         != eslOK) goto ERROR;
   if ((status =  build_model            (go, cfg, errbuf, msa, &cm, ret_msa_tr))        != eslOK) goto ERROR;
   if ((status =  set_model_name         (go, cfg, errbuf, msa, cm))                     != eslOK) goto ERROR;
+  if ((status =  set_model_cutoffs      (go, cfg, errbuf, msa, cm))                     != eslOK) goto ERROR;
   if ((status =  set_effective_seqnumber(go, cfg, errbuf, msa, cm, cfg->pri))           != eslOK) goto ERROR;
   if ((status =  parameterize           (go, cfg, errbuf, cm, cfg->pri))                != eslOK) goto ERROR;
   
@@ -833,8 +835,9 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
 /* set_model_name()
  * Give the model a name based on the MSA name.
  * 
- * if msa->name is unavailable, or -n was used,
- * a fatal error is thrown. 
+ * We've ensured the msa has a name in name_msa() so if 
+ * for some inconceivable reason it doesn't 
+ * we die.
  *
  * note: This is much simpler than how HMMER3 does
  *       this. The reason is that the --ctarg --cmindiff
@@ -859,6 +862,37 @@ set_model_name(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL
  ERROR:
   if (cfg->be_verbose) fprintf(cfg->ofp, "FAILED.\n");
   return status;
+}
+
+/* set_model_cutoffs()
+ * If the msa had them available, set the Rfam
+ * cutoffs in the model.
+ * 
+ * Always returns eslOK;
+ * 
+ */
+static int
+set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm)
+{
+  if (cfg->be_verbose) {
+    fprintf(cfg->ofp, "%-40s ... ", "Setting model cutoffs");
+    fflush(cfg->ofp);
+  }
+
+  if(msa->cutset[eslMSA_TC1]) { 
+    cm->tc = msa->cutoff[eslMSA_TC1];
+    cm->flags |= CMH_TC;
+  }
+  if(msa->cutset[eslMSA_GA1]) { 
+    cm->ga = msa->cutoff[eslMSA_GA1];
+    cm->flags |= CMH_GA;
+  }
+  if(msa->cutset[eslMSA_NC1]) { 
+    cm->nc = msa->cutoff[eslMSA_NC1];
+    cm->flags |= CMH_NC;
+  }
+  if (cfg->be_verbose) fprintf(cfg->ofp, "done.\n");
+  return eslOK;
 }
 
 /* set_effective_seqnumber()

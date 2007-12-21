@@ -440,8 +440,8 @@ extern int          cp9_FB2HMMBands        (CP9_t *hmm, char *errbuf, ESL_DSQ *d
 				            int i0, int j0, int M, double p_thresh, int did_scan, int debug_level);
 extern int          cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
 					    int i0, int j0, int M, double p_thresh, int did_scan, int debug_level);
-extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int debug_level);
-extern void         cp9_RelaxRootBandsForSearch(CM_t *cm, int *imin, int *imax, int *jmin, int *jmax);
+extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level);
+/*extern void         cp9_RelaxRootBandsForSearch(CM_t *cm, int i0, int j0, int *imin, int *imax, int *jmin, int *jmax);*/
 extern void         cp9_DebugPrintHMMBands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level);
 extern void         cp9_CompareBands(CP9Bands_t *cp9b1, CP9Bands_t *cp9b2);
 extern int          cp9_GrowHDBands(CP9Bands_t *cp9b, char *errbuf);
@@ -570,7 +570,7 @@ extern void AppendResults (search_results_t *src_results, search_results_t *dest
 extern void FreeResults   (search_results_t *r);
 extern int  compare_results (const void *a_void, const void *b_void);
 extern void sort_results (search_results_t *results);
-extern void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_complement);
+extern void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom);
 extern void report_hit (int i, int j, int bestr, float score, search_results_t *results);
 extern void remove_overlapping_hits (search_results_t *results, int i0, int j0);
 extern float CountScanDPCalcs(CM_t *cm, int L, int use_qdb);

@@ -1304,6 +1304,8 @@ cm_seqs_to_aln_MPISend(seqs_to_aln_t *seqs_to_aln, int offset, int nseq_to_send,
 
   /* First, figure out the size of the work unit */
   if (MPI_Pack_size(2, MPI_INT, comm, &n) != 0) ESL_EXCEPTION(eslESYS, "mpi pack size failed"); 
+  /* this is size of the work unit, and the status code */
+
   if (seqs_to_aln != NULL) { 
     if ((status = cm_seqs_to_aln_MPIPackSize(seqs_to_aln, offset, nseq_to_send, comm, &sz)) != eslOK) return status;
     n += sz;
@@ -1481,6 +1483,7 @@ cm_seqs_to_aln_MPIPackSize(const seqs_to_aln_t *seqs_to_aln, int offset, int nse
       if(! NOT_IMPOSSIBLE(seqs_to_aln->sc[i])) { has_sc = FALSE; break; }
 
   status = MPI_Pack_size (1, MPI_INT, comm, &sz); n += 6*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  /* nseq_to_pack, has_sq, has_tr, has_cp9_tr, has_post, has_sc */
 
   if(has_sq) {
     for(i = offset; i < offset + nseq_to_pack; i++) {
@@ -1553,7 +1556,6 @@ cm_seqs_to_aln_MPIPack(const seqs_to_aln_t *seqs_to_aln, int offset, int nseq_to
   int has_cp9_tr  = TRUE;
   int has_post    = TRUE;  
   int has_sc      = TRUE;  
-
   /* careful, individual sq, tr, cp9_tr, postcode ptrs may be NULL even if ptr to ptrs is non-NULL,
    * example sq != NULL and sq[i] == NULL is possible. */
 
