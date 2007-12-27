@@ -993,9 +993,6 @@ typedef struct cm_hb_mx_s {
 			 * it when mx is freed. */
 } CM_HB_MX;
 
-#define CM_HB_MX_MB_LIMIT 256 /* Megabyte limit for HMM banded CM DP matrices */
-#define CM_NB_MX_MB_LIMIT 256 /* Megabyte limit for non-banded CM DP matrices */
-
 /* Structure ScanMatrix_t: Information used by all CYK/Inside scanning functions,
  * compiled together into one data structure for convenience. 
  */

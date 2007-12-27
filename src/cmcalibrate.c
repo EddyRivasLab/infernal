@@ -98,6 +98,7 @@ static ESL_OPTIONS options[] = {
   { "--all",     eslARG_NONE,   FALSE, NULL, NULL,   CUTOPTS,      NULL, "--gumonly", "accept all CM hits for filter calc, DO NOT use cutoff", 4}, 
 /* Other options */
   { "--stall",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb", 5 },  
+  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> (Mb)", 9 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program", 5 },  
 #endif
@@ -2230,13 +2231,18 @@ cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
 			 Parsetree_t *tr, int L, float cutoff, float *ret_sc)
 {
   int status;
-  int init_flags       = cm->flags;
-  int init_search_opts = cm->search_opts;
   int turn_qdb_back_on = FALSE;
   int turn_hbanded_back_off = FALSE;
   int turn_hmmscanbands_back_off = FALSE;
   double orig_tau = cm->tau;
   float sc;
+  float size_limit = esl_opt_GetReal(go, "--mxsize");
+
+#if eslDEBUGLEVEL >= 1
+  int init_flags       = cm->flags;
+  int init_search_opts = cm->search_opts;
+#endif
+
   if(ret_sc == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_find_hit_above_cutoff(), ret_sc == NULL.\n");
 
   /* Determine if this sequence has a hit in it above the cutoff as quickly as possible. 
@@ -2274,7 +2280,7 @@ cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
   cm->search_opts |= CM_SEARCH_HBANDED;
   cm->tau = 0.01;
   if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) return status;
-  status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, &sc);
+  status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, size_limit, &sc);
   if(status == eslOK) { /* FastCYKScanHB() successfully finished */
     if(sc > cutoff) { /* score exceeds cutoff, we're done, reset search_opts and return */
       if(turn_qdb_back_on)        cm->search_opts &= ~CM_SEARCH_NOQDB; 
@@ -2291,7 +2297,7 @@ cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
   cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
   cm->tau = 1e-10;
   if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) return status;
-  status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, &sc);
+  status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, size_limit, &sc);
   if(status == eslOK) { /* FastCYKScanHB() successfully finished */
     if(sc > cutoff) { /* score exceeds cutoff, we're done, reset search_opts and return */
       if(turn_qdb_back_on)             cm->search_opts &= ~CM_SEARCH_NOQDB; 
@@ -2535,9 +2541,8 @@ predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
   int    status;
   float *sorted_fil_vit_EA;       /* sorted Viterbi E-values, so we can easily choose a threshold */
   float *sorted_fil_fwd_EA;       /* sorted Forward E-values, so we can easily choose a threshold */
-  float  vit_E, fwd_E, E;         /* a Viterbi, Forward, and 2 temporary E values, respectively  */
+  float  vit_E, fwd_E;            /* a Viterbi and Forward E value */
   int    cp9_vit_mode, cp9_fwd_mode; /* a Viterbi, Forward Gumbel mode, respectively  */
-  float  logsum_correction;       /* for correcting speedup calculation b/c Forward is slower than Viterbi due to logsums */
   int    evalue_L;                /* database length used for calcing E-values in CP9 gumbels from cfg->cmstats */
   float  fil_calcs;               /* number of million dp calcs predicted for the HMM filter scan */
   float  vit_surv_calcs;          /* number of million dp calcs predicted for the CM scan of Viterbi filter survivors */
@@ -2545,7 +2550,7 @@ predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
   float  vit_fil_plus_surv_calcs; /* Viterbi filter calcs plus survival calcs */ 
   float  fwd_fil_plus_surv_calcs; /* Foward filter calcs plus survival calcs */ 
   float  nonfil_calcs;            /* number of million dp calcs predicted for a full CM scan */
-  float  vit_spdup, fwd_spdup, spdup; /* predicted speedups for Viterbi and Forward, and a temporary one */
+  float  vit_spdup, fwd_spdup;    /* predicted speedups for Viterbi and Forward */
   int    i, p;                    /* counters */
   int    cmi = cfg->ncm-1;        /* CM index we're on */
   int    Fidx;                    /* index in sorted scores that threshold will be set at (1-F) * N */

@@ -139,7 +139,7 @@ CreateCMShell(void)
   return cm;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
   return NULL; /* never reached */
 }
 void
@@ -293,7 +293,7 @@ CMRenormalize(CM_t *cm)
 	esl_vec_FNorm(cm->e[v], cm->abc->K * cm->abc->K);
     }
   if (cm->flags & CMH_LOCAL_BEGIN) esl_vec_FNorm(cm->begin, cm->M);
-  if (cm->flags & CMH_LOCAL_END)   esl_fatal("Renormalization of models in local end mode not supported yet");
+  if (cm->flags & CMH_LOCAL_END)   cm_Fail("Renormalization of models in local end mode not supported yet");
 }
 
 
@@ -377,7 +377,7 @@ int
 DefaultNullModel(const ESL_ALPHABET *abc, float **ret_null)
 {
   /* Contract check */
-  if(abc      == NULL) esl_fatal("ERROR in CMCreateNullModel, cm->abc is NULL.\n");
+  if(abc      == NULL) cm_Fail("ERROR in CMCreateNullModel, cm->abc is NULL.\n");
 
   int status;
   float *null = NULL;
@@ -405,8 +405,8 @@ CMAllocNullModel(CM_t *cm)
   int status;
 
   /* Contract check */
-  if(cm->abc  == NULL) esl_fatal("ERROR in CMAllocNullModel, cm->abc is NULL.\n");
-  if(cm->null != NULL) esl_fatal("ERROR in CMAllocNullModel, cm->null is not NULL.\n");
+  if(cm->abc  == NULL) cm_Fail("ERROR in CMAllocNullModel, cm->abc is NULL.\n");
+  if(cm->null != NULL) cm_Fail("ERROR in CMAllocNullModel, cm->null is not NULL.\n");
 
   status = DefaultNullModel(cm->abc, &(cm->null));
   return status;
@@ -420,8 +420,8 @@ void
 CMSetNullModel(CM_t *cm, float *null)
 {
   /* Contract check */
-  if(cm->abc  == NULL) esl_fatal("ERROR in CMCreateNullModel, cm->abc is NULL.\n");
-  if(cm->null == NULL) esl_fatal("ERROR in CMSetNullModel, cm->null is NULL.\n");
+  if(cm->abc  == NULL) cm_Fail("ERROR in CMCreateNullModel, cm->abc is NULL.\n");
+  if(cm->null == NULL) cm_Fail("ERROR in CMSetNullModel, cm->null is NULL.\n");
 
   int x;
   for (x = 0; x < cm->abc->K; x++)
@@ -443,7 +443,7 @@ int
 CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null)
 {
   /* Contract check */
-  if(abc  == NULL) esl_fatal("ERROR in CMReadNullModel, abc is NULL.\n");
+  if(abc  == NULL) cm_Fail("ERROR in CMReadNullModel, abc is NULL.\n");
 
   int status;
   float *null = NULL;
@@ -467,7 +467,7 @@ CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null)
    * sum to 1.0 exactly.
    */
   if ((fp = fopen(nullfile, "r")) == NULL)
-    esl_fatal("Failed to open null model file %s\n", nullfile);
+    cm_Fail("Failed to open null model file %s\n", nullfile);
   
   /* parse the file */
   x = 0;
@@ -484,7 +484,7 @@ CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null)
   }
   /*fragile*/
   if(sum > 1.00001 || sum < 0.99999)
-    esl_fatal("%s is not in CM null model file format.\nThere are not %d background probabilities that sum to exactly 1.0", nullfile, abc->K);
+    cm_Fail("%s is not in CM null model file format.\nThere are not %d background probabilities that sum to exactly 1.0", nullfile, abc->K);
   esl_vec_FNorm(null, abc->K);
     
   *ret_null = null;
@@ -870,7 +870,7 @@ CalculateStateIndex(CM_t *cm, int node, char utype)
   case MATR_IR: return base+2;
   case END_E:   return base;
   case BIF_B:   return base;
-  default: esl_fatal("bogus utype %d in CalculateStateIndex()", utype);
+  default: cm_Fail("bogus utype %d in CalculateStateIndex()", utype);
   }
   return base;			/* not used */
 }
@@ -894,7 +894,7 @@ TotalStatesInNode(int ndtype)
   case BEGR_nd:  return 2;
   case ROOT_nd:  return 3;
   case END_nd:   return 1;
-  default:       esl_fatal("Bogus node type %d", ndtype);
+  default:       cm_Fail("Bogus node type %d", ndtype);
   }
   return 0;/*NOTREACHED*/
 }
@@ -910,7 +910,7 @@ SplitStatesInNode(int ndtype)
   case BEGR_nd:  return 1;
   case ROOT_nd:  return 1;
   case END_nd:   return 1;
-  default:       esl_fatal("Bogus node type %d", ndtype);
+  default:       cm_Fail("Bogus node type %d", ndtype);
   }
   return 0;/*NOTREACHED*/
 }
@@ -926,7 +926,7 @@ InsertStatesInNode(int ndtype)
   case BEGR_nd:  return 1;
   case ROOT_nd:  return 2;
   case END_nd:   return 0;
-  default:       esl_fatal("Bogus node type %d", ndtype);
+  default:       cm_Fail("Bogus node type %d", ndtype);
   }
   return 0;/*NOTREACHED*/
 }
@@ -966,7 +966,7 @@ StateDelta(int sttype)
   case E_st:  return 0;
   case B_st:  return 0;
   case EL_st: return 0;
-  default: esl_fatal("bogus state type %d\n", sttype);
+  default: cm_Fail("bogus state type %d\n", sttype);
   }
   /*NOTREACHED*/
   return 0;
@@ -985,7 +985,7 @@ StateLeftDelta(int sttype)
   case E_st:  return 0;
   case B_st:  return 0;
   case EL_st: return 0;
-  default: esl_fatal("bogus state type %d\n", sttype);
+  default: cm_Fail("bogus state type %d\n", sttype);
   }
   /*NOTREACHED*/
   return 0;
@@ -1004,7 +1004,7 @@ StateRightDelta(int sttype)
   case E_st:  return 0;
   case B_st:  return 0;
   case EL_st: return 0;
-  default: esl_fatal("bogus state type %d\n", sttype);
+  default: cm_Fail("bogus state type %d\n", sttype);
   }
   /*NOTREACHED*/
   return 0;
@@ -1033,7 +1033,7 @@ Emitmode(int sttype)
   case E_st:  return EMITNONE;
   case B_st:  return EMITNONE;
   case EL_st: return EMITNONE;
-  default: esl_fatal("bogus state type %d\n", sttype);
+  default: cm_Fail("bogus state type %d\n", sttype);
   }
   /*NOTREACHED*/
   return 0;
@@ -1135,7 +1135,7 @@ Statetype(int type)
   case E_st:  return "E";
   case B_st:  return "B";
   case EL_st: return "EL";
-  default: esl_fatal("bogus state type %d\n", type);
+  default: cm_Fail("bogus state type %d\n", type);
   }
   return ""; /*NOTREACHED*/
 }
@@ -1167,7 +1167,7 @@ Nodetype(int type)
   case BEGR_nd:  return "BEGR";
   case ROOT_nd:  return "ROOT";
   case END_nd:   return "END";
-  default: esl_fatal("bogus node type %d\n", type);
+  default: cm_Fail("bogus node type %d\n", type);
   }
   return "";
 }
@@ -1210,7 +1210,7 @@ UniqueStatetype(int type)
   case END_E  : return "END_E";
   case BIF_B  : return "BIF_B";
   case END_EL : return "END_EL";
-  default: esl_fatal("bogus unique state type %d\n", type);
+  default: cm_Fail("bogus unique state type %d\n", type);
   }
   return "";
 }
@@ -1238,7 +1238,7 @@ UniqueStateCode(char *s)
   else if (strcmp(s, "BIF_B")   == 0) return BIF_B;
   else if (strcmp(s, "END_E")   == 0) return END_E;
   else if (strcmp(s, "END_EL")  == 0) return END_EL;
-  else esl_fatal("bogus unique statetype %s\n", s);
+  else cm_Fail("bogus unique statetype %s\n", s);
   return 0; /*NOTREACHED*/
 }
 int
@@ -1486,7 +1486,7 @@ CMRebalance(CM_t *cm)
   return new;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
   return NULL; /* never reached */
 }
 
@@ -2365,7 +2365,7 @@ DuplicateCM(CM_t *cm)
   return new;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
   return NULL; /* never reached */
 }
 #endif

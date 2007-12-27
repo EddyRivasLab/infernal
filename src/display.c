@@ -1151,7 +1151,7 @@ CreateEmitMap(CM_t *cm)
   return map;
 
  ERROR: 
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
   

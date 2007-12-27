@@ -125,6 +125,7 @@ static float get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
  *           vend      - last end state of subtree (cm->M-1, for whole model)
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           allow_begin-TRUE to allow 0->b local alignment begin transitions. 
  *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
  *                       he intends to do a traceback.
@@ -137,12 +138,12 @@ static float get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
  * Returns: <ret_sc>, <ret_b>, <ret_bsc>, <ret_shadow>, see 'Args'
  * 
  * Throws:  <eslOK> on success.
- *          <eslERANGE> if required CM_HB_MX size exceeds CM_HB_MBLIMIT set in structs.h, in 
+ *          <eslERANGE> if required CM_HB_MX size exceeds <size_limit>, in
  *                      this case, alignment has been aborted, ret_* variables are not valid
  */
 int
-fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow,  
-		  int allow_begin, int *ret_b, float *ret_bsc, CM_HB_MX *mx, float *ret_sc)
+fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit,
+		  void ****ret_shadow, int *ret_b, float *ret_bsc, CM_HB_MX *mx, float *ret_sc)
 {
   int      status;
   int      v,y,z;	/* indices for states  */
@@ -197,7 +198,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
 				/* if caller didn't give us a deck pool, make one */
   /* grow the matrix based on the current sequence and bands */
-  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W)) != eslOK) return status;
+  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W, size_limit)) != eslOK) return status;
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
   ESL_ALLOC(el_scA, sizeof(float) * (W+1));
@@ -619,6 +620,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
  *           allow_begin-TRUE to allow 0->b local alignment begin transitions. 
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
  *                       he intends to do a traceback.
  *           ret_b     - best local begin state, or NULL if unwanted
@@ -629,12 +631,12 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
  * Returns: <ret_sc>, <ret_b>, <ret_bsc>, <ret_mx>, <ret_shadow>, see 'Args'.
  * 
  * Throws:  <eslOK> on success.
- *          <eslERANGE> if required DP matrix size exceeds CM_NB_MBLIMIT set in structs.h, in 
- *                      this case, alignment has been aborted, ret_* variables are not valid
+ *          <eslERANGE> if required DP matrix size exceeds passed in <size_limit> 
+ *                      alignment has been aborted, ret_* variables are not valid
  */
 int
-fast_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, void ****ret_shadow,  
-	       int allow_begin, int *ret_b, float *ret_bsc, float ****ret_mx, float *ret_sc)
+fast_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin,
+	       float size_limit, void ****ret_shadow, int *ret_b, float *ret_bsc, float ****ret_mx, float *ret_sc)
 {
   int      status;
   int      v,y,z;	/* indices for states  */
@@ -669,8 +671,8 @@ fast_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend,
 
   /* allocate alpha (if it's small enough), allocate all decks, no deck reuse */
   Mb_for_alpha = ((float) size_vjd_deck(W, 1, W) * ((float) (cm->M)));
-  if(Mb_for_alpha > CM_NB_MX_MB_LIMIT) 
-    ESL_FAIL(eslERANGE, errbuf, "fast_cyk_align(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit (CM_NB_MX_MB_LIMIT from structs.h).", Mb_for_alpha, (float) CM_NB_MX_MB_LIMIT);
+  if(Mb_for_alpha > size_limit)
+    ESL_FAIL(eslERANGE, errbuf, "fast_cyk_align(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit (it may be possible to change limit with --mxsize option).", Mb_for_alpha, (float) size_limit);
   ESL_DPRINTF1(("Size of alpha matrix: %.2f\n", Mb_for_alpha));
 
   ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
@@ -922,14 +924,14 @@ fast_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend,
  *                                     in optimally accurate alignment in tr 
  *           
  * Throws:  <eslOK>     on success
- *          <eslERANGE> if required CM_HB_MX exceeds CM_HB_MBLIMIT set in structs.h, in 
+ *          <eslERANGE> if required CM_HB_MX exceeds <size_limit>, in 
  *                      this case, alignment has been aborted, tr has not been appended to
  *
  */
 int
 fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 	       int r, int z, int i0, int j0, 
-	       int allow_begin, CM_HB_MX *mx, int do_optacc, CM_HB_MX *post_mx, float *ret_sc)
+	       int allow_begin, CM_HB_MX *mx, int do_optacc, CM_HB_MX *post_mx, float size_limit, float *ret_sc)
 {
   int status;
   void   ***shadow;             /* the traceback shadow matrix */
@@ -961,7 +963,7 @@ fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 #endif
 
   if(do_optacc) {
-    status = optimal_accuracy_align_hb(cm, errbuf, dsq, L, i0, j0, 
+    status = optimal_accuracy_align_hb(cm, errbuf, dsq, L, i0, j0, size_limit,
 				       &shadow,	     /* return a shadow matrix to me. */
 				       &b, &bsc,     /* if allow_begin is TRUE, gives info on optimal b */
 				       mx,           /* the HMM banded mx to fill-in */
@@ -970,8 +972,9 @@ fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   }
   else {
     status = fast_cyk_align_hb(cm, errbuf, dsq, L, r, z, i0, j0, 
-			       &shadow,	     /* return a shadow matrix to me. */
 			       allow_begin,  /* TRUE to allow local begins */
+			       size_limit,   /* max size of DP matrix */
+			       &shadow,	     /* return a shadow matrix to me. */
 			       &b, &bsc,     /* if allow_begin is TRUE, gives info on optimal b */
 			       mx,           /* the HMM banded mx */
 			       &sc);         /* score of CYK parsetree */
@@ -1099,13 +1102,13 @@ fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           <ret_mx>: the DP matrix filled, NULL if not wanted 
  * 
  * Throws:  <eslOK>     on success
- *          <eslERANGE> if required DP matrix size exceeds CM_NB_MBLIMIT set in structs.h, in 
+ *          <eslERANGE> if required DP matrix size exceeds <size_limit>, in 
  *                      this case, alignment has been aborted, ret_* variables are not valid
  */
 int
 fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 	    int r, int z, int i0, int j0, 
-	    int allow_begin, float ****ret_mx, int do_optacc, float ***post_mx, float *ret_sc)
+	    int allow_begin, float ****ret_mx, int do_optacc, float ***post_mx, float size_limit, float *ret_sc)
 {
   int       status;
   void   ***shadow;             /* the traceback shadow matrix */
@@ -1124,7 +1127,7 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   if(do_optacc && post_mx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "fast_alignT(), do_optacc == TRUE but post_mx == NULL.\n");
 			 
   if(do_optacc) {
-    status = optimal_accuracy_align(cm, errbuf, dsq, L, i0, j0, 
+    status = optimal_accuracy_align(cm, errbuf, dsq, L, i0, j0, size_limit, 
 				    &shadow,	     /* return a shadow matrix to me. */
 				    &b, &bsc,	     /* if allow_begin is TRUE, gives info on optimal b */
 				    ret_mx,           /* the DP mx to fill-in */
@@ -1133,8 +1136,9 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   }
   else {
     status = fast_cyk_align(cm, errbuf, dsq, L, r, z, i0, j0, 
-			    &shadow,	    /* return a shadow matrix to me. */
 			    allow_begin,    /* TRUE to allow local begins */
+			    size_limit,     /* max size of DP matrix */
+			    &shadow,	    /* return a shadow matrix to me. */
 			    &b, &bsc,	    /* if allow_begin is TRUE, gives info on optimal b */
 			    ret_mx,         /* the DP mx to fill in */
 			    &sc);           /* score of CYK parsetree */
@@ -1261,6 +1265,7 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           L         - length of sequence 
  *           i0        - start of target subsequence (often 1, beginning of dsq)
  *           j0        - end of target subsequence (often L, end of dsq)
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           mx        - the main dp matrix, only cells within bands in cm->cp9b will be valid. 
  *           do_optacc - TRUE to not do CYK alignment, determine the Holmes/Durbin optimally 
  *                       accurate parsetree in ret_tr, requires post_mx != NULL
@@ -1276,12 +1281,12 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  * 
  * Throws:  <eslOK> on success; 
  *          <eslERANGE> if required CM_HB_MX for FastInsideAlignHB(), FastOutsideAlignHB() or
- *                      fast_cyk_align_hb() exceeds CM_HB_MBLIMIT set in structs.h, in this 
+ *                      fast_cyk_align_hb() exceeds <size_limit>, in this 
  *                      case, alignment has been aborted, ret_* variables are not valid 
  */
 
 int
-FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_MX *mx, int do_optacc,
+FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_MX *mx, int do_optacc,
 	    CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc)
 {
   int          status;
@@ -1304,10 +1309,10 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_M
 
   /* if doing post, fill Inside, Outside, Posterior matrices, in that order */
   if(do_post) { 
-    if((status = FastInsideAlignHB (cm, errbuf, dsq, i0, j0, mx, NULL)) != eslOK) return status;
-    if((status = FastOutsideAlignHB(cm, errbuf, dsq, i0, j0, post_mx, mx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), NULL)) != eslOK) return status;
+    if((status = FastInsideAlignHB (cm, errbuf, dsq, i0, j0, size_limit, mx, NULL)) != eslOK) return status;
+    if((status = FastOutsideAlignHB(cm, errbuf, dsq, i0, j0, size_limit, post_mx, mx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), NULL)) != eslOK) return status;
     /* Note: we can only check the posteriors in FastOutsideAlignHB() if local begin/ends are off */
-    if((status = CMPosteriorHB(cm, errbuf, i0, j0, mx, post_mx, post_mx)) != eslOK) return status;   
+    if((status = CMPosteriorHB(cm, errbuf, i0, j0, size_limit, mx, post_mx, post_mx)) != eslOK) return status;   
     if(cm->align_opts & CM_ALIGN_CHECKINOUT) { 
       if((status = CMCheckPosteriorHB(cm, errbuf, i0, j0, post_mx)) != eslOK) return status;
       printf("\nHMM banded posteriors checked.\n\n");
@@ -1320,7 +1325,7 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_M
   /* Fill in the parsetree (either CYK or optimally accurate (if do_optacc)), 
    * this will overwrite mx if (do_post) caused it to be filled in FastInsideAlignHB 
    */
-  if((status = fast_alignT_hb(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, mx, do_optacc, post_mx, &sc)) != eslOK) return status;
+  if((status = fast_alignT_hb(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, mx, do_optacc, post_mx, size_limit, &sc)) != eslOK) return status;
 
   if(have_pcodes) {
     CMPostalCodeHB(cm, L, post_mx, tr, &pcode1, &pcode2);
@@ -1377,6 +1382,7 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_M
  *           L         - length of sequence 
  *           i0        - start of target subsequence (often 1, beginning of dsq)
  *           j0        - end of target subsequence (often L, end of dsq)
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           ret_mx    - RETURN: the main dp matrix, we'll allocate and fill it, must be non-NULL
  *           do_optacc - TRUE to not do CYK alignment, determine the Holmes/Durbin optimally 
  *                       accurate parsetree in ret_tr, requires post_mx != NULL
@@ -1394,7 +1400,7 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, CM_HB_M
  * Throws:  <eslOK> on success; 
  */
 int
-FastAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float ****ret_mx, int do_optacc,
+FastAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, float ****ret_mx, int do_optacc,
 	  float ****ret_post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc)
 {
   int          status;
@@ -1417,10 +1423,10 @@ FastAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float ***
 
   /* if doing post, fill Inside, Outside, Posterior matrices, in that order */
   if(do_post) { 
-    if((status = FastInsideAlign (cm, errbuf, dsq, i0, j0, ret_mx,  NULL)) != eslOK) return status;
-    if((status = FastOutsideAlign(cm, errbuf, dsq, i0, j0, ret_post_mx, *ret_mx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), NULL)) != eslOK) return status;
+    if((status = FastInsideAlign (cm, errbuf, dsq, i0, j0, size_limit, ret_mx,  NULL)) != eslOK) return status;
+    if((status = FastOutsideAlign(cm, errbuf, dsq, i0, j0, size_limit, ret_post_mx, *ret_mx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), NULL)) != eslOK) return status;
     /* Note: we can only check the posteriors in FastOutsideAlign() if local begin/ends are off */
-    if((status = CMPosterior(cm, errbuf, i0, j0, *ret_mx, *ret_post_mx, *ret_post_mx)) != eslOK) return status;   
+    if((status = CMPosterior(cm, errbuf, i0, j0, size_limit, *ret_mx, *ret_post_mx, *ret_post_mx)) != eslOK) return status;   
     if(cm->align_opts & CM_ALIGN_CHECKINOUT) { 
       if((status = CMCheckPosterior(cm, errbuf, i0, j0, *ret_post_mx)) != eslOK) return status;
       printf("\nPosteriors checked.\n\n");
@@ -1434,10 +1440,10 @@ FastAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float ***
   InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
   /* Fill in the parsetree (either CYK or optimally accurate (if do_optacc)) */
   if(do_optacc) { /* we have to send the filled *ret_post_mx */
-    if((status = fast_alignT(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, ret_mx, do_optacc, *ret_post_mx, &sc)) != eslOK) return status;
+    if((status = fast_alignT(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, ret_mx, do_optacc, *ret_post_mx, size_limit, &sc)) != eslOK) return status;
   }
   else { /* don't need to send *ret_post_mx (in fact, it could be NULL) */
-    if((status = fast_alignT(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, ret_mx, do_optacc, NULL, &sc)) != eslOK) return status;
+    if((status = fast_alignT(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, ret_mx, do_optacc, NULL, size_limit, &sc)) != eslOK) return status;
   }
 
   if(have_pcodes) {
@@ -1474,17 +1480,18 @@ FastAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float ***
  *           dsq       - the digitized sequence
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align  (L, for whole seq)
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           mx        - the dp matrix, only cells within bands in cp9b will be valid
  *           ret_sc    - RETURN: log P(S|M)/P(S|R), as a bit score
  * 
  * Returns:  <ret_sc>
  *
  * Throws:  <eslOK> on success
- *          <eslERANGE> if required CM_HB_MX for exceeds CM_HB_MBLIMIT set in structs.h, 
+ *          <eslERANGE> if required CM_HB_MX for exceeds <size_limit>, 
  *                      in this case, alignment has been aborted, ret_sc is not valid
  */
 int
-FastInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx, float *ret_sc)
+FastInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_HB_MX *mx, float *ret_sc)
 {
   int      status;
   int      v,y,z;	/* indices for states  */
@@ -1534,7 +1541,7 @@ FastInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
 				/* if caller didn't give us a deck pool, make one */
   /* grow the matrix based on the current sequence and bands */
-  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W)) != eslOK) return status;
+  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W, size_limit)) != eslOK) return status;
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
   ESL_ALLOC(el_scA, sizeof(float) * (W+1));
@@ -1850,17 +1857,18 @@ FastInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX
  *           dsq       - the digitized sequence
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align  (L, for whole seq)
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           ret_mx    - RETURN: the dp matrix, we'll allocate and fill it here 
  *           ret_sc    - RETURN: log P(S|M)/P(S|R), as a bit score
  *                       
  * Returns:  <ret_sc>, <ret_mx>
  *
  * Throws:   <eslOK> on success.
- *           <eslERANGE> if required size of DP matrix exceeds CM_NB_MBLIMIT set in structs.h, 
- *                       in this case, alignment has been aborted, ret_sc, ret_mx are not valid
+ *           <eslERANGE> if required size of DP matrix exceeds <size_limit>,
+ *                       alignment has been aborted, ret_sc, ret_mx are not valid
  */
 int
-FastInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ****ret_mx, float *ret_sc)
+FastInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, float ****ret_mx, float *ret_sc)
 {
   int      status;
   int      v,y,z;	/* indices for states  */
@@ -1891,8 +1899,8 @@ FastInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ****
   
   /* allocate alpha (if it's small enough), allocate all decks, no deck reuse */
   Mb_for_alpha = ((float) size_vjd_deck(W, 1, W) * ((float) (cm->M+1)));
-  if(Mb_for_alpha > CM_NB_MX_MB_LIMIT) 
-    ESL_FAIL(eslERANGE, errbuf, "FastInsideAlign(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit (CM_NB_MX_MB_LIMIT from structs.h).", Mb_for_alpha, (float) CM_NB_MX_MB_LIMIT);
+  if(Mb_for_alpha > size_limit)
+    ESL_FAIL(eslERANGE, errbuf, "FastInsideAlign(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit (may be possible to change limit with --mxsize option).", Mb_for_alpha, (float) size_limit);
   ESL_DPRINTF1(("Size of alpha matrix: %.2f\n", Mb_for_alpha));
 
   ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
@@ -2115,6 +2123,7 @@ FastInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ****
  *           dsq       - the digitized sequence
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align  (L, for whole seq)
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           mx        - the dp matrix, only cells within bands in cp9b will be valid
  *           ins_mx    - the dp matrix from the Inside run calculation (required)
  *           do_check  - TRUE to attempt to check 
@@ -2124,11 +2133,11 @@ FastInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ****
  * Returns:  <ret_sc>
  *
  * Throws:  <eslOK> on success
- *          <eslERANGE> if required CM_HB_MX for exceeds CM_HB_MBLIMIT set in structs.h, 
+ *          <eslERANGE> if required CM_HB_MX for exceeds <size_limit>, 
  *                      in this case, alignment has been aborted, ret_sc is not valid *                       
  */
 int
-FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_MX *mx, 
+FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_HB_MX *mx, 
 		    CM_HB_MX *ins_mx, int do_check, float *ret_sc)
 {
   int      status;
@@ -2188,7 +2197,7 @@ FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_M
   esc_vAA = cm->oesc;            /* a ptr to the optimized emission scores */
 
   /* grow the matrix based on the current sequence and bands */
-  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W)) != eslOK) return status;
+  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W, size_limit)) != eslOK) return status;
 
   /* initialize all cells of the matrix to IMPOSSIBLE */
   esl_vec_FSet(beta[0][0], mx->ncells_valid, IMPOSSIBLE);
@@ -2666,6 +2675,7 @@ FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_M
  *           dsq       - the digitized sequence
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align  (L, for whole seq)
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           ret_mx    - the dp matrix, we'll allocate it here, NULL if not wanted
  *           ins_mx    - the pre-filled dp matrix from the Inside run calculation (required)
  *           do_check  - TRUE to attempt to check 
@@ -2675,11 +2685,11 @@ FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, CM_HB_M
  * Returns:  <ret_sc>, <ret_mx>
  *
  * Throws:   <eslOK> on success
- *           <eslERANGE> if required DP matrix size exceeds CM_NB_MBLIMIT set in structs.h, in 
- *                       this case, alignment has been aborted, ret_* variables are not valid
+ *           <eslERANGE> if required DP matrix size exceeds <size_limit>
+ *                       alignment has been aborted, ret_* variables are not valid
  */
 int 
-FastOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ****ret_mx, 
+FastOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, float ****ret_mx, 
 		 float ***ins_mx, int do_check, float *ret_sc)
 {
   int      status;
@@ -2722,8 +2732,8 @@ FastOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ***
 
   /* allocate beta (if it's small enough), allocate all decks, no deck reuse */
   Mb_for_beta = ((float) size_vjd_deck(W, 1, W) * ((float) (cm->M)));
-  if(Mb_for_beta > CM_NB_MX_MB_LIMIT) 
-    ESL_FAIL(eslERANGE, errbuf, "FastOutsideAlign(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit (CM_NB_MX_MB_LIMIT from structs.h).", Mb_for_beta, (float) CM_NB_MX_MB_LIMIT);
+  if(Mb_for_beta > size_limit)
+    ESL_FAIL(eslERANGE, errbuf, "FastOutsideAlign(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit (may be possible to change limit with --mxsize option).", Mb_for_beta, (float) size_limit);
   ESL_DPRINTF1(("Size of beta matrix: %.2f\n", Mb_for_beta));
 
   ESL_ALLOC(beta, sizeof(float **) * (cm->M+1));
@@ -2971,6 +2981,7 @@ FastOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ***
  *           errbuf   - char buffer for reporting errors
  *           i0       - first position of target seq we're aligning, usually 1 
  *           j0       - final position of target seq we're aligning, usually L (length of seq) 
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           ins_mx   - pre-calculated Inside matrix 
  *           out_mx   - pre-calculated Outside matrix
  *           post_mx  - pre-allocated matrix for Posteriors 
@@ -2978,7 +2989,7 @@ FastOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float ***
  * Return:   eslOK on succes, eslEINCOMPAT on contract violation, eslEMEM on memory allocation error
  */
 int
-CMPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx)
+CMPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, float size_limit, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx)
 {
   int      status;
   int      v, j, d;
@@ -3013,7 +3024,7 @@ CMPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX
   float ***post  = post_mx->dp; /* pointer to the post DP matrix */
 
   /* grow our post matrix, unless it's just the outside matrix, which is the correct size already */
-  if(out_mx != post_mx) if((status = cm_hb_mx_GrowTo(cm, post_mx, errbuf, cp9b, L)) != eslOK) return status; 
+  if(out_mx != post_mx) if((status = cm_hb_mx_GrowTo(cm, post_mx, errbuf, cp9b, L, size_limit)) != eslOK) return status; 
 
   Lp = L - hdmin[0][L-jmin[0]];
   sc = alpha[0][L-jmin[0]][Lp];
@@ -3067,6 +3078,7 @@ CMPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX
  *           errbuf   - char buffer for reporting errors
  *           i0       - first position of target seq we're aligning, must be 1 
  *           j0       - final position of target seq we're aligning, L (length of seq) 
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           ins_mx   - pre-calculated Inside matrix 
  *           out_mx   - pre-calculated Outside matrix
  *           post_mx  - pre-allocated matrix for Posteriors 
@@ -3074,7 +3086,7 @@ CMPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *ins_mx, CM_HB_MX
  * Return:   eslOK on succes, eslEINCOMPAT on contract violation
  */
 int
-CMPosterior(CM_t *cm, char *errbuf, int i0, int j0, float ***ins_mx, float ***out_mx, float ***post_mx)
+CMPosterior(CM_t *cm, char *errbuf, int i0, int j0, float size_limit, float ***ins_mx, float ***out_mx, float ***post_mx)
 {
   int   v, j, d;
   float sc;
@@ -3130,6 +3142,7 @@ CMPosterior(CM_t *cm, char *errbuf, int i0, int j0, float ***ins_mx, float ***ou
  *           L         - length of the dsq
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
  *                       he intends to do a traceback.
  *           ret_b     - best local begin state, or NULL if unwanted
@@ -3143,11 +3156,11 @@ CMPosterior(CM_t *cm, char *errbuf, int i0, int j0, float ***ins_mx, float ***ou
  * Returns: <ret_sc>, <ret_b>, <ret_bsc>, <ret_shadow>, see 'Args'
  * 
  * Throws:  <eslOK> on success.
- *          <eslERANGE> if required CM_HB_MX size exceeds CM_HB_MBLIMIT set in structs.h, in 
+ *          <eslERANGE> if required CM_HB_MX size exceeds <size_limit>, in 
  *                      this case, alignment has been aborted, ret_* variables are not valid
  */
 int
-optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, void ****ret_shadow,  
+optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, void ****ret_shadow,  
 			  int *ret_b, float *ret_bsc, CM_HB_MX *mx, CM_HB_MX *post_mx, float *ret_pp)
 {
   int      status;
@@ -3207,7 +3220,7 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
 				/* if caller didn't give us a deck pool, make one */
   /* grow the matrix based on the current sequence and bands */
-  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W)) != eslOK) return status;
+  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W, size_limit)) != eslOK) return status;
 
   /* initialize the EL deck, if it's valid */
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;  
@@ -3595,6 +3608,7 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
  *           L         - length of the dsq
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
  *                       he intends to do a traceback.
  *           ret_b     - best local begin state, or NULL if unwanted
@@ -3607,13 +3621,13 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
  * Returns: <ret_sc>, <ret_b>, <ret_bsc>, <ret_mx>, <ret_shadow>, see 'Args'
  * 
  * Throws:  <eslOK> on success.                        
- *          <eslERANGE> if required size of DP matrix exceeds CM_NB_MBLIMIT set in structs.h, 
- *                      in this case, alignment has been aborted, ret_sc, ret_mx are not valid
+ *          <eslERANGE> if required size of DP matrix exceeds <size_limit>
+ *                      alignment has been aborted, ret_sc, ret_mx are not valid
  *                      Note: this shouldn't happen as post_mx (which is the same size as ret_mx
  *                      will be) was allocated after surviving the same size check in a previous function.
  */
 int
-optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, void ****ret_shadow,  
+optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, void ****ret_shadow,  
 		       int *ret_b, float *ret_bsc, float ****ret_mx, float ***post_mx, float *ret_pp)
 {
   int      status;
@@ -3654,8 +3668,8 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
 
   /* allocate alpha (if it's small enough), allocate all decks, no deck reuse */
   Mb_for_alpha = ((float) size_vjd_deck(W, 1, W) * ((float) (cm->M-1)));
-  if(Mb_for_alpha > CM_NB_MX_MB_LIMIT) 
-    ESL_FAIL(eslERANGE, errbuf, "optimal_accuracy_align(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit (CM_NB_MX_MB_LIMIT from structs.h).", Mb_for_alpha, (float) CM_NB_MX_MB_LIMIT);
+  if(Mb_for_alpha > size_limit)
+    ESL_FAIL(eslERANGE, errbuf, "optimal_accuracy_align(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit (may be possible to change limit with --mxsize option).", Mb_for_alpha, (float) size_limit);
   ESL_DPRINTF1(("Size of alpha matrix: %.2f\n", Mb_for_alpha));
 
   ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
@@ -4965,6 +4979,7 @@ static ESL_OPTIONS options[] = {
   { "--post",   eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute fast float HMM banded Inside/Outside alignment algs", 0 },
   { "--ofpost",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute slow float HMM banded Inside/Outside alignment algs", 0 },
   { "--oipost",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute slow int   HMM banded Inside/Outside alignment algs", 0 },
+  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",NULL,  NULL, NULL, "set maximum allowable DP matrix size to <x> (Mb)", 0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -4995,6 +5010,7 @@ main(int argc, char **argv)
 
   int             ***oialpha;    
   float           ***ofalpha;    
+  float              size_limit = esl_opt_GetReal(go, "--mxsize");
 
   if (esl_opt_GetBoolean(go, "-r"))  r = esl_randomness_CreateTimeseeded();
   else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
@@ -5057,7 +5073,7 @@ main(int argc, char **argv)
       esl_stopwatch_Display(stdout, w, "CPU time: ");
       
       esl_stopwatch_Start(w);
-      if((status = FastAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, 1, L, cm->hbmx, FALSE, NULL, NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = FastAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, 1, L, size_limit, cm->hbmx, FALSE, NULL, NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastAlignHB() CYK:", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5079,14 +5095,14 @@ main(int argc, char **argv)
       if(esl_opt_GetBoolean(go, "--post")) {
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
-	if((status = FastInsideAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, 1, L, cm->hbmx, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = FastInsideAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, 1, L, size_limit, cm->hbmx, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastInsideAlignHB():", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
-	if((status = FastOutsideAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, 1, L, fout_mx, cm->hbmx, do_check, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = FastOutsideAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, 1, L, size_limit, fout_mx, cm->hbmx, do_check, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastOutsideAlignHB():", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5095,7 +5111,7 @@ main(int argc, char **argv)
       if(esl_opt_GetBoolean(go, "--optacc")) {
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
-	if((status = FastAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, 1, L, cm->hbmx, TRUE,     fout_mx, NULL,   NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = FastAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, 1, L, size_limit, cm->hbmx, TRUE,     fout_mx, NULL,   NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastAlignHB() OA:", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");

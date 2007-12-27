@@ -45,12 +45,13 @@
  *           j0              - end of target subsequence (often L, end of dsq)
  *           sround          - filter round, if > 0, we're filtering
  *           results         - [0..cm-fi->nrounds] search_results_t to keep results for each round in, must be non NULL and empty
+ *           size_limit      - max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           ret_flen        - RETURN: subseq len that survived filter (NULL if not filtering)
  *           ret_sc          - RETURN: Highest scoring hit from search (even if below cutoff).
  *
- * Returns: eslOK on success.
+ * Returns: eslOK on success. eslERANGE if we're doing HMM banded alignment and requested matrix is too big.
  */
-int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int j0, search_results_t **results, int *ret_flen, float *ret_sc)
+int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int j0, search_results_t **results, float size_limit, int *ret_flen, float *ret_sc)
 {
   int               status;          /* easel status code */
   float             sc;              /* score of best hit in seq */
@@ -174,8 +175,8 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 
     if(cm->search_opts & CM_SEARCH_HBANDED) {
       if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status; 
-      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, round_results, cm->hbmx, &sc)) != eslOK) return status; }
-      else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, round_results, cm->hbmx, &sc)) != eslOK) return status; }
+      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, round_results, cm->hbmx, size_limit, &sc)) != eslOK) return status; }
+      else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, round_results, cm->hbmx, size_limit, &sc)) != eslOK) return status; }
     }
     else { /* don't do HMM banded search */
       if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, smx, dsq, i0, j0, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
@@ -216,14 +217,14 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 	}
       }
       /* next round: research this chunk that survived the filter */
-      if((status = DispatchSearch(cm, errbuf, (sround+1), dsq, i, j, results, NULL, NULL)) != eslOK) return status;
+      if((status = DispatchSearch(cm, errbuf, (sround+1), dsq, i, j, results, size_limit, NULL, NULL)) != eslOK) return status;
     }
   }
   else { /* we're done filtering, and we're done searching, get alignments if nec */
     if((round_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN))) {
       if((status = DispatchAlignments(cm, errbuf, NULL, 
 					dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
-					0, 0, 0, NULL)) != eslOK) return status;
+					0, 0, 0, NULL, size_limit)) != eslOK) return status;
     }
   }
   if(ret_sc != NULL) *ret_sc = sc;
@@ -261,6 +262,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
  *           debug_level    - verbosity level for debugging print statements
  *           silent_mode    - TRUE to not print anything, FALSE to print scores 
  *           r              - source of randomness (NULL unless CM_ALIGN_SAMPLE)
+ *           size_limit     - max number of Mb for a DP matrix, if requestd matrix is bigger return eslERANGE 
  * 
  * Returns:  eslOK on success;
  *           eslERANGE if required memory for a DP matrix is too big;
@@ -271,7 +273,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
  */
 int
 DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
-		     int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r)
+		   int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r, float size_limit)
 {
   int status;
   ESL_STOPWATCH *watch;         /* for timings */
@@ -613,20 +615,20 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     /* beginning of large if() else if() else if() ... statement */
     if(do_sample) { 
       if(do_hbanded) { /* sampling from inside HMM banded matrix */
-	if((status = FastInsideAlignHB(cm, errbuf, cur_dsq, 1, L, cm->hbmx, NULL)) != eslOK) return status; /* errbuf will have been filled by FastInsideAlignHB() */
+	if((status = FastInsideAlignHB(cm, errbuf, cur_dsq, 1, L, size_limit, cm->hbmx, NULL)) != eslOK) return status; /* errbuf will have been filled by FastInsideAlignHB() */
 	if((status = SampleFromInsideHB(r, cm, errbuf, cur_dsq, L, cm->hbmx, cur_tr, &sc)) != eslOK) return status; /* errbuf will have been filled by SampleFromInsideHB() */
       }
       else { /* sampling from inside matrix, but not HMM banded */
-	if((status = FastInsideAlign(cm, errbuf, cur_dsq, 1, L, &alpha, NULL)) != eslOK) return status; /* errbuf will have been filled by FastInsideAlign() */
-	if((status = SampleFromInside(r, cm, errbuf, cur_dsq, L,  alpha, cur_tr, &sc)) != eslOK) return status; /* errbuf will have been filled by SampleFromInside() */
+	if((status = FastInsideAlign(cm, errbuf, cur_dsq, 1, L, size_limit, &alpha, NULL)) != eslOK) return status; /* errbuf will have been filled by FastInsideAlign() */
+	if((status = SampleFromInside(r, cm, errbuf, cur_dsq, L, alpha, cur_tr, &sc)) != eslOK) return status; /* errbuf will have been filled by SampleFromInside() */
       }
     }
     else if(do_inside) { 
       if(do_hbanded) { /* HMM banded inside only */
-	if((status = FastInsideAlignHB(cm, errbuf, cur_dsq, 1, L, cm->hbmx, &sc)) != eslOK) return status; /* errbuf will have been filled by FastInsideAlignHB() */
+	if((status = FastInsideAlignHB(cm, errbuf, cur_dsq, 1, L, size_limit, cm->hbmx, &sc)) != eslOK) return status; /* errbuf will have been filled by FastInsideAlignHB() */
       }
       else { /* non-banded inside only */
-	if((status = FastInsideAlign(cm, errbuf, cur_dsq, 1, L, NULL, &sc)) != eslOK) return status; 
+	if((status = FastInsideAlign(cm, errbuf, cur_dsq, 1, L, size_limit, NULL, &sc)) != eslOK) return status; 
       }
     }
     else if (do_small) { /* small D&C CYK alignment */
@@ -646,27 +648,28 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     else { /* non-small, non-QDB CYK or optimal accuracy alignment */
       if(do_hbanded) { 
 	if(do_post) { /* HMM banded CYK or optimal accuracy, posterior annotated */
-	  if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, cm->hbmx, do_optacc, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc)) != eslOK) return status;
+	  if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc)) != eslOK) return status;
 	}
 	else { /* HMM banded CYK or optimal accuracy, no posteriors */
-	  if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, cm->hbmx, do_optacc, out_mx, cur_tr, NULL, NULL, &sc)) != eslOK) {
+	  if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, out_mx, cur_tr, NULL, NULL, &sc)) != eslOK) {
 	    if(do_optacc) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
 	    else if (status == eslERANGE) { /* we can still do CYK D&C alignment with QDBs derived from the HMM bands */
 	      hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
-	      printf("Doing QDB D&C because HMM banded parse of seq %d was too memory intensive.\n", i);
-	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, cp9b->safe_hdmin, cp9b->safe_hdmax);
+	      ESL_DPRINTF1(("Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i));
+	      printf("Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i); 
+	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
 	    }
 	    else return status; /* get here (!do_optacc) && FastAlignHB() returned status other than eslOK and eslERANGE */
 	  }
-	  /* SHOULD I UNCOMMENT THIS?: 
-	   * if we're aligning search hits, and we're !do_optacc, we realign if the HMM banded parse was > 0.01 bits less than the search score for this hit */
-	  /* if(dsq_mode && (! cm->search_opts & CM_SEARCH_INSIDE)) {
-	    if(!do_optacc && (sc - search_results->data[i].score) < 0.01) {
-	      ESL_DPRINTF1(("Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", sc, search_results->data[i].score));
+	  /* if we're aligning search hits, and we're !do_optacc, we realign if the HMM banded parse was > 0.01 bits less than the search score for this hit */
+	  if(dsq_mode && (! (cm->search_opts & CM_SEARCH_INSIDE))) {
+	    if((!do_optacc) && ((fabs(sc - search_results->data[i].score)) > 0.01)) {
+	      ESL_DPRINTF1(("Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", i, sc, search_results->data[i].score));
+	      printf("Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", i, sc, search_results->data[i].score);
 	      FreeParsetree(*cur_tr);
 	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL);
 	    }
-	    }*/
+	  }
 	  if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level); /* allows you to see where the non-banded parse went outside the bands. */
 	} 
 	/* if CM_ALIGN_HMMSAFE option is enabled, realign seqs w/HMM banded parses < 0 bits,
@@ -685,10 +688,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       }
       else { 
 	if(do_post) { /* non-banded CYK or optimal accuracy, posterior annotated */
-	  if((status = FastAlign(cm, errbuf, cur_dsq, L, 1, L, &alpha, do_optacc, &beta, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc)) != eslOK) return status;
+	  if((status = FastAlign(cm, errbuf, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, &beta, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc)) != eslOK) return status;
 	}
 	else { /* non-banded CYK or optimal accuracy, no posteriors */
-	  if((status = FastAlign(cm, errbuf, cur_dsq, L, 1, L, &alpha, do_optacc, &beta, cur_tr, NULL, NULL, &sc)) != eslOK) return status;
+	  if((status = FastAlign(cm, errbuf, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, &beta, cur_tr, NULL, NULL, &sc)) != eslOK) return status;
 	}
 	if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level); /* allows you to see where the non-banded parse went outside the bands. */
       } 

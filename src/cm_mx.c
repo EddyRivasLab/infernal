@@ -1,5 +1,4 @@
-/* 
- * CM_HB_MX, ScanMatrix_t, and GammaHitMx_t implementations: 
+/* CM_HB_MX, ScanMatrix_t, and GammaHitMx_t implementations: 
  * dynamic programming matrices for CMs
  * 
  * CM_HB_MX is based heavily on HMMER 3's p7_gmx.c module.
@@ -112,19 +111,19 @@ cm_hb_mx_Create(int M)
  *            errbuf - char buffer for reporting errors
  *            cp9b   - the bands for the current target sequence
  *            L      - the length of the current target sequence we're aligning
+ *            size_limit- max number of Mb for DP matrix, if matrix is bigger -> return eslERANGE
  *
  * Returns:   <eslOK> on success, and <mx> may be reallocated upon
  *            return; any data that may have been in <mx> must be 
  *            assumed to be invalidated.
  *
- * Throws:    <eslERANGE> if required size to grow to exceeds 
- *            CM_HB_MX_LIMIT (defined in structs.h). This
- *            should be caught and appropriately handled by caller. 
+ * Throws:    <eslERANGE> if required size to grow to exceeds <size_limit>.
+ *            This should be caught and appropriately handled by caller. 
  *            <eslEINCOMPAT> on contract violation
  *            <eslEMEM> on memory allocation error.
  */
 int
-cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L)
+cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit)
 {
   int     status;
   void   *p;
@@ -156,7 +155,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L)
   Mb_needed += ESL_MAX(((float) (sizeof(float) * mx->ncells_alloc)), ((float) (sizeof(float) * ncells))); /* mx->dp_mem */
   Mb_needed *= 0.000001; /* convert to megabytes */
   ESL_DPRINTF2(("HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
-  if(Mb_needed > CM_HB_MX_MB_LIMIT) ESL_FAIL(eslERANGE, errbuf, "cm_hb_mx_GrowTo(), requested size of HMM banded DP matrix %.2f Mb > %.2f Mb limit (CM_HB_MX_MB_LIMIT from structs.h).", Mb_needed, (float) CM_HB_MX_MB_LIMIT);
+  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "cm_hb_mx_GrowTo(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit (suggestions (may or may not be possible): increase tau with --tau, or change limit with --mxsize option).", Mb_needed, (float) size_limit);
 
   /* must we realloc the full matrix? or can we get away with just
    * jiggering the pointers, if total required num cells is less

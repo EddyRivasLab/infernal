@@ -1,4 +1,4 @@
-/* cm_cp9_hybridsearch.c
+/* hybridsearch.c
  * EPN, Mon Oct 29 06:24:24 2007
  * 
  * Implementation of a hybrid CYK/Viterbi scanning algorithm.
@@ -1456,14 +1456,9 @@ predict_xsub(CM_t *cm, float *cm_vcalcs, float *cm_expsc, float *cp9_expsc)
 int
 cm_CheckCompatibleWithHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int v_root_to_add)
 {
-  int nd;
   int v;
   int i,j;
-  int v_left, v_right;
-  int k;
   int M;
-  int lpos, rpos;
-  int prv_pos, nxt_pos;
 
   M    = hsi->cp9_M;
   i = hsi->startA[v_root_to_add];

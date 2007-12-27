@@ -1,4 +1,4 @@
-/* 
+/* logsum.c
  * EPN, Fri Sep  7 16:44:58 2007
  *
  * The FLogsum() function used for scaled integer log sums 

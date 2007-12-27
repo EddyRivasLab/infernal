@@ -63,7 +63,7 @@ CreateParsetree(int size)
   new->n = 0;
   return new;
  ERROR:
-  esl_fatal("ERROR allocated parsetree.\n");
+  cm_Fail("ERROR allocated parsetree.\n");
   return NULL; /* never reached */
 }
 
@@ -88,7 +88,7 @@ GrowParsetree(Parsetree_t *tr)
   return;
   
  ERROR:
-  esl_fatal("ERROR growing parsetree.\n");
+  cm_Fail("ERROR growing parsetree.\n");
 }
 
 /* Function: FreeParsetree()
@@ -249,7 +249,7 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2)
 {
   /* contract check */
   if(dsq == NULL)
-    esl_fatal("ERROR in ParsetreeScore(), dsq is NULL.\n");
+    cm_Fail("ERROR in ParsetreeScore(), dsq is NULL.\n");
 
   int tidx;			/* counter through positions in the parsetree        */
   int v,y;			/* parent, child state index in CM                   */
@@ -389,11 +389,11 @@ ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int 
 
   /* Contract check */
   if(dmin == NULL && dmax != NULL)
-    esl_fatal("In ParsetreeDump(), dmin is NULL, dmax is not.\n");
+    cm_Fail("In ParsetreeDump(), dmin is NULL, dmax is not.\n");
   if(dmin != NULL && dmax == NULL)
-    esl_fatal("In ParsetreeDump(), dmax is NULL, dmin is not.\n");
+    cm_Fail("In ParsetreeDump(), dmax is NULL, dmin is not.\n");
   if(dsq == NULL)
-    esl_fatal("In ParsetreeDump(), dsq is NULL");
+    cm_Fail("In ParsetreeDump(), dsq is NULL");
 
   if(dmin != NULL && dmax != NULL) do_banded = TRUE;
   else                             do_banded = FALSE;
@@ -610,10 +610,10 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   if(cm->abc->type == eslRNA)
     { 
       if(abc->type != eslRNA && abc->type != eslDNA)
-	esl_fatal("ERROR in Parsetrees2Alignment(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+	cm_Fail("ERROR in Parsetrees2Alignment(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
     }
   else if(cm->abc->K != abc->K)
-    esl_fatal("ERROR in Parsetrees2Alignment(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+    cm_Fail("ERROR in Parsetrees2Alignment(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
 
   int          status;       /* easel status flag */
   ESL_MSA     *msa   = NULL; /* multiple sequence alignment */
@@ -753,7 +753,7 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
     {
       /* Contract check */
       if(! (sq[i]->flags & eslSQ_DIGITAL))
-	esl_fatal("ERROR in Parsetrees2Alignment(), sq %d is not digitized.\n", i);
+	cm_Fail("ERROR in Parsetrees2Alignment(), sq %d is not digitized.\n", i);
 
       /* Initialize the aseq with all pads '.' (in insert cols) 
        * and deletes '-' (in match cols).
@@ -1069,9 +1069,9 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_f
    * we assume we'll be calling this function serially for many parses and don't
    * want to need to switch CM back and forth from local/global */
   if((!(cm->flags & CMH_LOCAL_BEGIN)) || (!(cm->flags & CMH_LOCAL_END)))
-    esl_fatal("ERROR in ParsetreeScore_Global2Local() CM is not in local mode.\n");
+    cm_Fail("ERROR in ParsetreeScore_Global2Local() CM is not in local mode.\n");
   if(dsq == NULL)
-    esl_fatal("ERROR in ParsetreeScore_Global2Local(), dsq is NULL.\n");
+    cm_Fail("ERROR in ParsetreeScore_Global2Local(), dsq is NULL.\n");
 
   /* Allocate and initialize */
   ESL_ALLOC(v2n_map, sizeof(int)   * cm->M); 
@@ -1094,15 +1094,15 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_f
       v2n_ct[v]++; /* insert states could be visited > once */
       mode = tr->mode[tidx];
       if (v == cm->M) 
-	esl_fatal("ERROR in ParsetreeScore_Global2Local(), EL in parse, but it should be global!\n");
+	cm_Fail("ERROR in ParsetreeScore_Global2Local(), EL in parse, but it should be global!\n");
       if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) /* no scores in B,E */
 	{
 	  y = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
 
 	  if (y == cm->M) 
-	    esl_fatal("ERROR in ParsetreeScore_Global2Local(), EL in parse, but it should be global!\n");
+	    cm_Fail("ERROR in ParsetreeScore_Global2Local(), EL in parse, but it should be global!\n");
 	  if (v == 0 && y > cm->cnum[0])
-	    esl_fatal("ERROR in ParsetreeScore_Global2Local(), we did a local begin in the parse, but it should be global!\n");
+	    cm_Fail("ERROR in ParsetreeScore_Global2Local(), we did a local begin in the parse, but it should be global!\n");
 	  /* for v == 0, we don't care that transition score has changed from global CM that
 	   * was used to generate the parsetree, because the transition from root is not
 	   * considered when we look for best local parse below. */
@@ -1212,7 +1212,7 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_f
   return max_local_sc;
 
  ERROR: 
-  esl_fatal("ERROR in ParsetreeScore_Global2Local()\n");
+  cm_Fail("ERROR in ParsetreeScore_Global2Local()\n");
   return -1.;
 }
 
@@ -1233,9 +1233,9 @@ Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr)
 {
   /* Check the contract */
   if(cm->cp9 == NULL || (!(cm->flags & CMH_CP9)))
-    esl_fatal("In Parsetree2CP9trace, cm->cp9 is not valid.\n");
+    cm_Fail("In Parsetree2CP9trace, cm->cp9 is not valid.\n");
   if(cm->cp9map == NULL)
-    esl_fatal("In Parsetree2CP9trace, cm->cp9map is NULL.\n");
+    cm_Fail("In Parsetree2CP9trace, cm->cp9map is NULL.\n");
 
   int status;                /* Easel status                            */
   CP9trace_t *cp9_tr; /* the CP9 trace we're creating            */
@@ -1259,7 +1259,7 @@ Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr)
 
   /* Traverse parsetree, keeping track of implied HMM states used by each HMM node. */
   v = tr->state[0]; 
-  if(v != 0) esl_fatal("ERROR in Parsetree2CP9Trace(), first Parsetree node not root.\n");
+  if(v != 0) cm_Fail("ERROR in Parsetree2CP9Trace(), first Parsetree node not root.\n");
   /* we leave ks_ct[HMMMATCH][0] as 0 for convenience later, we know it was used. */
 
   for (tidx = 1; tidx < tr->n; tidx++) 

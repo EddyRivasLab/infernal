@@ -98,11 +98,11 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
   int  clen;                    /* consensus length of the model              */
 
   if (msa->ss_cons == NULL)
-    esl_fatal("No consensus structure annotation available for that alignment.");
+    cm_Fail("No consensus structure annotation available for that alignment.");
   if (! (msa->flags & eslMSA_DIGITAL))
-    esl_fatal("MSA is not digitized in HandModelMaker().");
+    cm_Fail("MSA is not digitized in HandModelMaker().");
   if (use_rf && msa->rf == NULL) 
-    esl_fatal("No reference annotation available for that alignment.");
+    cm_Fail("No reference annotation available for that alignment.");
 
   /* 1. Determine match/insert assignments
    *    matassign is 1..alen. Values are 1 if a match column, 0 if insert column.
@@ -135,7 +135,7 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
   esl_wuss_nopseudo(msa->ss_cons, msa->ss_cons); /* remove pknots in place */
   ESL_ALLOC(ct, (msa->alen+1) * sizeof(int));
   if (esl_wuss2ct(msa->ss_cons, msa->alen, ct) != eslOK)  
-    esl_fatal("Consensus structure string is inconsistent"); 
+    cm_Fail("Consensus structure string is inconsistent"); 
 
   /* 3. Make sure the consensus structure "ct" is consistent with the match assignments.
    *    Wipe out all structure in insert columns; including the base-paired 
@@ -345,7 +345,7 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return;
 }
 
@@ -694,7 +694,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
  *           It expects that local alignment transmogrification is only
  *           done in two situations: debugging, and training. Therefore,
  *           users don't provide local alignments to this function, and
- *           it's polite to esl_fatal() on any kind of input error.
+ *           it's polite to cm_Fail() on any kind of input error.
  * 
  * Args:     cm    - the newly built covariance model, corresponding to gtr
  *           gtr   - guide tree
@@ -982,7 +982,7 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
 	break;
 
       default: 
-	esl_fatal("bogus node type %d in transmogrify()", gtr->state[node]);
+	cm_Fail("bogus node type %d in transmogrify()", gtr->state[node]);
       }
     }
   if (nstarts > 1) goto FAILURE;
@@ -994,11 +994,11 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
   free(localrun);
   esl_stack_Destroy(pda);
   FreeParsetree(tr);
-  esl_fatal("transmogrification failed: bad input sequence.");
+  cm_Fail("transmogrification failed: bad input sequence.");
   return NULL;			/* not reached */
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL;			/* not reached */
 
 }
@@ -1047,7 +1047,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
   int  obs_clen;                /* observed (MATL+MATR+2*MATP) consensus len  */
 
   if (ss_cons == NULL)
-    esl_fatal("No consensus structure annotation available in ConsensusModelmaker().");
+    cm_Fail("No consensus structure annotation available in ConsensusModelmaker().");
 
   /* 1. Determine a "ct" array, base-pairing partners for each position.
    *    Disallow/ignore pseudoknots by removing them prior to making the ct array.
@@ -1058,7 +1058,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
   esl_wuss_nopseudo(ss_cons, ss_cons); /* remove pknots in place */
   ESL_ALLOC(ct, (clen+1) * sizeof(int));
   if (esl_wuss2ct(ss_cons, clen, ct) != eslOK)  
-    esl_fatal("Consensus structure string is inconsistent"); 
+    cm_Fail("Consensus structure string is inconsistent"); 
 
   /* 2. Construct a guide tree. 
    *    This codes is borrowed from HandModelmaker(), where it
@@ -1254,7 +1254,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 /**************************************************************************
@@ -1371,11 +1371,11 @@ cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach)
 	  if(do_check)
 	    {
 	      if(!(cm_check_before_detaching(cm, cc2lins_map[cc], cc2rins_map[cc])))
-		esl_fatal("ERROR cm_check_before_detaching() returned false\n");		 
+		cm_Fail("ERROR cm_check_before_detaching() returned false\n");		 
 	    }
 	  if(do_detach)
 	    if(!(cm_detach_state(cm, cc2lins_map[cc], cc2rins_map[cc])))
-	      esl_fatal("ERROR cm_detach_state() returned false\n");		 
+	      cm_Fail("ERROR cm_detach_state() returned false\n");		 
 	}
     }
 
@@ -1389,7 +1389,7 @@ cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach)
     return TRUE;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return FALSE; /* never reached */
 }
 
@@ -1426,7 +1426,7 @@ cm_detach_state(CM_t *cm, int insert1, int insert2)
   ret_val = FALSE;
 
   if(insert1 == insert2)
-    esl_fatal("ERROR in cm_detach_state: insert1==insert2:%d\n", insert1);
+    cm_Fail("ERROR in cm_detach_state: insert1==insert2:%d\n", insert1);
 
   if(cm->sttype[insert1+1] == E_st)
     {
@@ -1436,9 +1436,9 @@ cm_detach_state(CM_t *cm, int insert1, int insert2)
   else
     {
       if(cm->sttype[insert2+1] != E_st)
-	esl_fatal("ERROR: in cm_detach_state insert1: %d and insert2: %d neither map to END_E-1 states.\n", insert1, insert2);
+	cm_Fail("ERROR: in cm_detach_state insert1: %d and insert2: %d neither map to END_E-1 states.\n", insert1, insert2);
       if(ret_val)
-	esl_fatal("ERROR: in cm_detach_state insert1: %d and insert2: %d both map to END_E-1 states.\n", insert1, insert2);
+	cm_Fail("ERROR: in cm_detach_state insert1: %d and insert2: %d both map to END_E-1 states.\n", insert1, insert2);
       ret_val = TRUE;
       to_detach = insert2;
     }
@@ -1450,7 +1450,7 @@ cm_detach_state(CM_t *cm, int insert1, int insert2)
       else
 	{
 	  if(cm->stid[to_detach] != MATP_IR)
-	    esl_fatal("ERROR: in cm_detach_state trying to detach a non-IL, non-MATP_IR state!\n");
+	    cm_Fail("ERROR: in cm_detach_state trying to detach a non-IL, non-MATP_IR state!\n");
 	  x_offset = 1; /* MATP_* -> MATP_IR is second possible transition for MATP_*,
 			 * unless * == MATP_IR, but we don't get there in for loop below. */
 	}
@@ -1509,7 +1509,7 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
   ret_val = FALSE;
 
   if(insert1 == insert2)
-    esl_fatal("ERROR in cm_check_before_detaching(), insert1==insert2 (%d)\n", insert1);
+    cm_Fail("ERROR in cm_check_before_detaching(), insert1==insert2 (%d)\n", insert1);
 
   if(cm->sttype[insert1+1] == E_st)
     {
@@ -1520,7 +1520,7 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
   if(cm->sttype[insert2+1] == E_st)
     {
       if(ret_val)
-	esl_fatal("ERROR: in cm_check_before_detaching() insert1: %d and insert2: %d both map to END_E-1 states.\n", insert1, insert2);
+	cm_Fail("ERROR: in cm_check_before_detaching() insert1: %d and insert2: %d both map to END_E-1 states.\n", insert1, insert2);
       ret_val = TRUE;
       to_detach = insert2;
       to_keep   = insert1;
@@ -1536,7 +1536,7 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
 	  else
 	    diff = 0. - cm->e[to_detach][i];
 	  if(diff > 0.000001)
-	    esl_fatal("ERROR, to_detach state: %d e->[%d] is non-zero but rather %f\n", to_detach, i, cm->e[to_detach][i]);
+	    cm_Fail("ERROR, to_detach state: %d e->[%d] is non-zero but rather %f\n", to_detach, i, cm->e[to_detach][i]);
 	}
       for(yoffset = 0; yoffset < cm->cnum[to_detach]; yoffset++)
 	{
@@ -1546,7 +1546,7 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
 	  else
 	    diff = 0. - cm->t[to_detach][yoffset];
 	  if(diff > 0.000001)
-	    esl_fatal("ERROR, to_detach state: %d t->[%d] is non-zero but rather %f\n", to_detach, yoffset, cm->t[to_detach][yoffset]);
+	    cm_Fail("ERROR, to_detach state: %d t->[%d] is non-zero but rather %f\n", to_detach, yoffset, cm->t[to_detach][yoffset]);
 	}
     }
   return ret_val;
@@ -1575,7 +1575,7 @@ clean_cs(char *cs, int alen, int be_quiet)
    */
   ESL_ALLOC(ct, (alen+1) * sizeof(int));
   if (esl_wuss2ct(cs, alen, ct) != eslOK)  
-    esl_fatal("Consensus structure string is inconsistent"); 
+    cm_Fail("Consensus structure string is inconsistent"); 
   free(ct);
 
   /* 2. CS line is good, check for and remove pseudoknots 
@@ -1619,7 +1619,7 @@ clean_cs(char *cs, int alen, int be_quiet)
   return FALSE;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return FALSE; /* never reached */
 }
 

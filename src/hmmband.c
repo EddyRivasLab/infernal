@@ -2854,9 +2854,9 @@ combine_qdb_hmm_d_bands(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax
 
   /* Contract check */
   if(!(cm->flags & CMH_QDB))
-    esl_fatal("ERROR, in combine_qdb_hmm_d_bands(), CM QDBs invalid.\n");
+    cm_Fail("ERROR, in combine_qdb_hmm_d_bands(), CM QDBs invalid.\n");
   if(cm->dmin == NULL || cm->dmax == NULL)
-    esl_fatal("ERROR, in combine_qdb_hmm_d_bands() but cm->dmin and/or cm->dmax is NULL.\n");
+    cm_Fail("ERROR, in combine_qdb_hmm_d_bands() but cm->dmin and/or cm->dmax is NULL.\n");
 
   for(v = 0; v < cm->M; v++)
     {
@@ -2983,7 +2983,7 @@ debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 

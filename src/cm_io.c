@@ -185,7 +185,7 @@ CMFileOpen(char *cmfile, char *env)
     cmf->byteswap  = TRUE;
     return cmf;
   } else if (magic & 0x80000000) 
-    esl_fatal("\
+    cm_Fail("\
 %s appears to be a binary file but the format is not recognized.\n\
 It may be from an Infernal version more recent than yours,\n\
 or may be a different kind of binary altogether.\n", cmfile);
@@ -1190,7 +1190,7 @@ tagged_bin_string_read(int expected_tag, char **ret_s, FILE *fp)
   return 1;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0; /* never reached */
 }
 /*****************************************************************

@@ -1,12 +1,6 @@
-/* Optional support for MPI parallelization in Infernal.
+/* mpisupport.c
+ * Optional support for MPI parallelization in Infernal.
  * 
- * Contents:
- *    1. Communicating a CM.
- *    2. Benchmark driver.
- *    3. Unit tests.
- *    4. Test driver.
- *    5. Copyright and license information.
- *    
  * EPN, Mon Aug 27 12:38:13 2007
  * SVN $Id$
  */

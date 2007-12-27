@@ -57,7 +57,7 @@ static int    summarize_alignment(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_R
 static float  count_align_dp_calcs(CM_t *cm, int L);
 static double cm_MeanMatchRelativeEntropy(const CM_t *cm);
 static double cm_MeanMatchEntropy(const CM_t *cm);
-static double cm_MeanMatchInfo(const CM_t *cm);
+/*static double cm_MeanMatchInfo(const CM_t *cm);*/
 
 int
 main(int argc, char **argv)
@@ -337,6 +337,7 @@ summarize_alignment(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, 
   float t_dc; /* user seconds time for D&C alignment */
   float t_hb; /* user seconds time for HMM banded alignment */
   float mc_s; /* million calcs/second */
+  float size_limit = esl_opt_GetReal(go, "--mxsize");
 
   /* Create and align consensus sequence for D&C stats */
   CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &con);
@@ -374,7 +375,7 @@ summarize_alignment(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, 
   cm->align_opts |= CM_ALIGN_HBANDED;
   esl_stopwatch_Start(w);
   seqs_to_aln = CreateSeqsToAlnFromSq(sq, N, FALSE);
-  if((status = DispatchAlignments(cm, errbuf, seqs_to_aln, NULL, NULL, 0, 0, 0, TRUE, NULL)) != eslOK) goto ERROR;
+  if((status = DispatchAlignments(cm, errbuf, seqs_to_aln, NULL, NULL, 0, 0, 0, TRUE, NULL, size_limit)) != eslOK) goto ERROR;
   esl_stopwatch_Stop(w);
   t_hb = w->user / (float) N;
   FreeSeqsToAln(seqs_to_aln);
@@ -391,7 +392,7 @@ summarize_alignment(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, 
   FreeCMConsensus(con);
   return eslOK;
  ERROR:
-  esl_fatal("ERROR code %d in summarize_stats().", status);
+  cm_Fail("ERROR code %d in summarize_stats().", status);
   return status; /* NOTREACHED */
 }
 
@@ -532,7 +533,7 @@ cm_MeanMatchRelativeEntropy(const CM_t *cm)
   return KL;
   
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* NOTREACHED */
 }
 

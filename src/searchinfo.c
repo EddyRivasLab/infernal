@@ -385,7 +385,7 @@ search_results_t *CreateResults (int size) {
   }
   return (results);
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -412,7 +412,7 @@ void ExpandResults (search_results_t *results, int additional) {
   results->num_allocated+=additional;
   return;
  ERROR:
-  esl_fatal("Memory reallocation error.");
+  cm_Fail("Memory reallocation error.");
 }
 
 /* Function: AppendResults()
@@ -588,7 +588,7 @@ void remove_overlapping_hits (search_results_t *results, int i0, int j0)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 /*
@@ -616,7 +616,7 @@ void report_hit (int i, int j, int bestr, float score, search_results_t *results
 {
 
   if(results == NULL) 
-    esl_fatal("in report_hit, but results is NULL\n");
+    cm_Fail("in report_hit, but results is NULL\n");
   if (results->num_results == results->num_allocated) 
     ExpandResults (results, INIT_RESULTS);
 
@@ -783,7 +783,7 @@ CountScanDPCalcs(CM_t *cm, int L, int use_qdb)
   float dpcalcs_bif = 0.;
   
   /* Contract check */
-  if(cm->W > L) esl_fatal("ERROR in CountScanDPCalcs(), cm->W: %d exceeds L: %d\n", cm->W, L);
+  if(cm->W > L) cm_Fail("ERROR in CountScanDPCalcs(), cm->W: %d exceeds L: %d\n", cm->W, L);
 
   float  dpcells     = 0.;
   float  dpcells_bif = 0.;

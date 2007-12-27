@@ -131,6 +131,7 @@ static ESL_OPTIONS options[] = {
 /* Other options */
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb",   13 },  
   { "--hmmmaxE", eslARG_REAL,   NULL, NULL, "x>0.",     NULL,"--fgiven",        NULL, "with --fgiven, set maximum HMM filter E-value to <x>", 13 },
+  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> (Mb)", 9 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--qdbfile","run as an MPI parallel program", 13 },  
 #endif
@@ -914,13 +915,14 @@ process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   int status;
   search_results_t **results;
   int n;
+  float size_limit = esl_opt_GetReal(go, "--mxsize");
 
   if(cm->si == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm->si is NULL in process_search_workunit()\n");
 
   ESL_ALLOC(results, sizeof(search_results_t *) * (cm->si->nrounds+1));
   for(n = 0; n <= cm->si->nrounds; n++) results[n] = CreateResults(INIT_RESULTS);
 
-  if((status = DispatchSearch(cm, errbuf, 0, dsq, 1, L, results, NULL, NULL)) != eslOK) goto ERROR;
+  if((status = DispatchSearch(cm, errbuf, 0, dsq, 1, L, results, size_limit, NULL, NULL)) != eslOK) goto ERROR;
 
   /* we only care about the final results, that survived all the rounds (all the filtering rounds plus the final round) */
   *ret_results = results[cm->si->nrounds];
@@ -934,23 +936,6 @@ process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   ESL_DPRINTF1(("worker %d: has caught an error in process_search_workunit\n", cfg->my_rank));
   FreeCM(cm);
   return status;
-}
-
-/* A CP9 filter work unit consists of a CM and an int (nseq).
- * The job is to emit nseq sequences with a score better than cutoff (rejecting
- * those that are worse), and then search those seqs with a CP9, returning the scores of the
- * best CP9 hit within each sequence.
- */
-static int
-process_cp9filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq)
-{
-  /*int status;*/
-  cm_Fail("WRITE process_cp9filter_workunit()");
-  return eslOK;
-  
-  /* ERROR:
-  ESL_DPRINTF1(("worker %d: has caught an error in process_cp9filter_workunit\n", cfg->my_rank));
-  return status;*/
 }
 
 /* initialize_cm()
@@ -1827,5 +1812,25 @@ determine_seq_chunksize(struct cfg_s *cfg, int L, int W)
   chunksize = ESL_MAX(chunksize, W * MPI_MIN_CHUNK_W_MULTIPLIER); 
   chunksize = ESL_MIN(chunksize, MPI_MAX_CHUNK_SIZE);
   return chunksize;
+}
+#endif
+
+#if 0 
+
+/* A CP9 filter work unit consists of a CM and an int (nseq).
+ * The job is to emit nseq sequences with a score better than cutoff (rejecting
+ * those that are worse), and then search those seqs with a CP9, returning the scores of the
+ * best CP9 hit within each sequence.
+ */
+static int
+process_cp9filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq)
+{
+  /*int status;*/
+  cm_Fail("WRITE process_cp9filter_workunit()");
+  return eslOK;
+  
+  /* ERROR:
+  ESL_DPRINTF1(("worker %d: has caught an error in process_cp9filter_workunit\n", cfg->my_rank));
+  return status;*/
 }
 #endif

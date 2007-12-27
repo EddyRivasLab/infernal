@@ -46,7 +46,7 @@ Prior_Create(void)
   return pri;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -95,18 +95,18 @@ Prior_Read(FILE *fp)
   pri = Prior_Create();
 
   if ((efp = esl_fileparser_Create(fp)) == NULL)
-    esl_fatal("Failed to associate open prior file stream with fileparser");
+    cm_Fail("Failed to associate open prior file stream with fileparser");
   esl_fileparser_SetCommentChar(efp, '#');
 
   /* First entry is the strategy: "Dirichlet" is the only possibility now. */
   if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK) 
-    esl_fatal("%s\nPrior file parse failed, on first (Dirichlet) field", efp->errbuf);
+    cm_Fail("%s\nPrior file parse failed, on first (Dirichlet) field", efp->errbuf);
   if (strcasecmp(tok, "Dirichlet") != 0)
-    esl_fatal("No such prior strategy %s\n", tok);
+    cm_Fail("No such prior strategy %s\n", tok);
  
   /* Second entry is NTRANSSETS, which ought to be 74 */
   if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK)
-    esl_fatal("%s\nPrior file parse failed reading NTRANSSETS", efp->errbuf);
+    cm_Fail("%s\nPrior file parse failed reading NTRANSSETS", efp->errbuf);
   pri->tsetnum = atoi(tok);
   ESL_ALLOC(pri->t, sizeof(ESL_MIXDCHLET *) * pri->tsetnum);
   
@@ -115,22 +115,22 @@ Prior_Read(FILE *fp)
   for (i = 0; i < pri->tsetnum; i++)
     {
       if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK)
-	esl_fatal("%s\nPrior file parse failed at line %d reading unique statetype", 
+	cm_Fail("%s\nPrior file parse failed at line %d reading unique statetype", 
 	    efp->errbuf, efp->linenumber);
       if ((curr_state_id = UniqueStateCode(tok)) == -1)
-	esl_fatal("%s is not a uniq state;\nPrior file parse failed, line %d\n",
+	cm_Fail("%s is not a uniq state;\nPrior file parse failed, line %d\n",
 	    tok, efp->linenumber);
 
       if ((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslOK)
-	esl_fatal("%s\nPrior file parse failed reading node code", efp->errbuf);
+	cm_Fail("%s\nPrior file parse failed reading node code", efp->errbuf);
       if ((curr_next_node_id = NodeCode(tok)) == -1)
-	esl_fatal("%s is not a node code;\nPrior file parse failed, line %d\n",
+	cm_Fail("%s is not a node code;\nPrior file parse failed, line %d\n",
 	    tok, efp->linenumber);
 
       pri->tsetmap[curr_state_id][curr_next_node_id] = i;
 
       if (esl_mixdchlet_Read(efp, &(pri->t[i])) != eslOK)
-	esl_fatal("%s\nPrior file parse failed, reading transition prior %d at line %d.",
+	cm_Fail("%s\nPrior file parse failed, reading transition prior %d at line %d.",
 	    efp->errbuf, i, efp->linenumber);
       if (pri->t[i]->N > pri->maxnq)     pri->maxnq     = pri->t[i]->N;
       if (pri->t[i]->K > pri->maxnalpha) pri->maxnalpha = pri->t[i]->K;
@@ -139,7 +139,7 @@ Prior_Read(FILE *fp)
   /* Consensus base pair emission prior section.
    */
   if (esl_mixdchlet_Read(efp, &(pri->mbp)) != eslOK) 
-    esl_fatal("%s\nPrior file parse failed in base pair priors at line %d\n", 
+    cm_Fail("%s\nPrior file parse failed in base pair priors at line %d\n", 
 	efp->errbuf, efp->linenumber);
   if (pri->mbp->N > pri->maxnq)     pri->maxnq     = pri->mbp->N;
   if (pri->mbp->K > pri->maxnalpha) pri->maxnalpha = pri->mbp->K;
@@ -147,7 +147,7 @@ Prior_Read(FILE *fp)
   /* Consensus singlet emission prior section.
    */
   if (esl_mixdchlet_Read(efp, &(pri->mnt)) != eslOK) 
-    esl_fatal("%s\nPrior file parse failed in consensus singlet priors at line %d\n", 
+    cm_Fail("%s\nPrior file parse failed in consensus singlet priors at line %d\n", 
 	efp->errbuf, efp->linenumber);
   if (pri->mnt->N > pri->maxnq)     pri->maxnq     = pri->mnt->N;
   if (pri->mnt->K > pri->maxnalpha) pri->maxnalpha = pri->mnt->K;
@@ -155,7 +155,7 @@ Prior_Read(FILE *fp)
   /* Nonconsensus singlet emission prior section.
    */
   if (esl_mixdchlet_Read(efp, &(pri->i)) != eslOK)  
-    esl_fatal("%s\nPrior file parse failed in nonconsensus singlet priors at line %d\n", 
+    cm_Fail("%s\nPrior file parse failed in nonconsensus singlet priors at line %d\n", 
 	efp->errbuf, efp->linenumber);
   if (pri->i->N > pri->maxnq)     pri->maxnq     = pri->i->N;
   if (pri->i->K > pri->maxnalpha) pri->maxnalpha = pri->i->K;
@@ -164,7 +164,7 @@ Prior_Read(FILE *fp)
   return pri;
 
  ERROR: 
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -278,7 +278,7 @@ PriorifyCM(CM_t *cm, const Prior_t *pri)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 
@@ -1137,7 +1137,7 @@ Prior_Default(void)
    return pri;
 
  ERROR:
-   esl_fatal("Memory allocation error.");
+   cm_Fail("Memory allocation error.");
    return NULL;
 }
 

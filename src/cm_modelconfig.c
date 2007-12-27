@@ -82,7 +82,6 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 
   if (cm->config_opts & CM_CONFIG_LOCAL)
     { 
-      printf("About to call ConfigLocal, cm->pbegin %.5f cm->pend %.5f\n", cm->pbegin, cm->pend);
       ConfigLocal(cm, cm->pbegin, cm->pend);
       CMLogoddsify(cm);
     }
@@ -98,15 +97,17 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
 	   * we config the HMM to local mode with equiprobable start/end points.*/
 	  swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
 	  swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
+	  CPlan9SWConfig(cm->cp9, swentry, swexit);
 	}
       else
 	{
+	  //CPlan9CMLocalBeginConfig(cm);
 	  swentry = cm->pbegin;
 	  swexit  = cm->pbegin;
-	  /*swentry= ((cm->cp9->M)-1.)/cm->cp9->M;*/ /* all start pts equiprobable, including 1 */
-	  /*swexit = ((cm->cp9->M)-1.)/cm->cp9->M;*/ /* all end   pts equiprobable, including M */
+	  //swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
+	  //swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
+	  CPlan9SWConfig(cm->cp9, swentry, swexit);
 	}
-      CPlan9SWConfig(cm->cp9, swentry, swexit);
       CP9Logoddsify(cm->cp9);
     }
   if(cm->config_opts & CM_CONFIG_HMMEL)

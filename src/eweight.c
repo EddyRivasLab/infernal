@@ -261,7 +261,7 @@ CM_Eweight(CM_t *cm, const Prior_t *pri, float numb_seqs,
   return(eff_no);
 
  ERROR: 
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -644,7 +644,7 @@ CM_Eweight_RE(CM_t *cm, const Prior_t *pri, float numb_seqs,
   return(eff_no);
 
  ERROR: 
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 

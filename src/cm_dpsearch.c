@@ -3901,8 +3901,7 @@ int rsearch_CYKScan (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, 
 	  sc_v[d] = endsc;
 	for (yoffset= 0; yoffset < cnum; yoffset++) {
 	  gammap = gamma_jmod2[y+yoffset];
-#if 1
-	  /*#ifdef INTEL_COMPILER*/
+#ifdef INTEL_COMPILER
 #pragma ivdep
 #endif
 	  for (d = 0; d <= minDj; d++) {
@@ -3929,8 +3928,7 @@ int rsearch_CYKScan (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, 
 	  gamma_begr_s_p = gamma_begr_s[z][jmod2];
 	  for (k=0; k<=d; k++)
 	    sc_v[k] = gamma_begl_s_p[d-k];
-#if 1
-	  /*#ifdef INTEL_COMPILER*/
+#ifdef INTEL_COMPILER
 #pragma ivdep
 #endif
 	  for (k = 0; k <= d; k++) {
@@ -3951,8 +3949,7 @@ int rsearch_CYKScan (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, 
 	  sc_v[d] = endsc;
 	for (yoffset = 0; yoffset < cnum; yoffset++) {
 	  gammap = gamma_jmin1mod2[y+yoffset];
-#if 1
-	  /*#ifdef INTEL_COMPILER*/
+#ifdef INTEL_COMPILER
 #pragma ivdep
 #endif
 	  for (d = 2; d <= minDj; d++) {
@@ -3986,8 +3983,7 @@ int rsearch_CYKScan (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, 
 	  sc_v[d] = endsc;
 	for (yoffset=0; yoffset<cnum; yoffset++) {
 	  gammap = gamma_jmod2[y+yoffset];
-#if 1
-	  /*#ifdef INTEL_COMPILER*/
+#ifdef INTEL_COMPILER
 #pragma ivdep
 #endif
 	  for (d = 1; d <= minDj; d++) {
@@ -4042,8 +4038,7 @@ int rsearch_CYKScan (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, 
 	  sc_v[d] = endsc;
 	for (yoffset = 0; yoffset < cnum; yoffset++) {
 	  gammap = gamma_jmin1mod2[y+yoffset];
-#if 1
-	  /*#ifdef INTEL_COMPILER*/
+#ifdef INTEL_COMPILER
 #pragma ivdep
 #endif
 	  for (d = 1; d <= minDj; d++) {
@@ -4074,8 +4069,8 @@ int rsearch_CYKScan (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, 
       sc_v[d] = IMPOSSIBLE;
     for (yoffset = 0; yoffset < cnum; yoffset++) {
       gammap = gamma_jmod2[y+yoffset];
-#if 1
-      /*#ifdef INTEL_COMPILER*/
+
+#ifdef INTEL_COMPILER
 #pragma ivdep
 #endif
       for (d = 0; d <= minDj; d++) {
@@ -4092,8 +4087,8 @@ int rsearch_CYKScan (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, 
       for (y = 1; y < M; y++) {
 	beginsc = tsc[y];
 	gammap = gamma_jmod2[y];
-#if 1
-	/*#ifdef INTEL_COMPILER*/
+
+#ifdef INTEL_COMPILER
 #pragma ivdep
 #endif
 	for (d = 0; d <= minDj; d++) {
@@ -4106,8 +4101,8 @@ int rsearch_CYKScan (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, 
       }
     }
     gammap = gamma_jmod2[0];
-#if 1
-    /*#ifdef INTEL_COMPILER*/
+
+#ifdef INTEL_COMPILER
 #pragma ivdep
 #endif
     for (d = 0; d <= minDj; d++) {
@@ -4319,13 +4314,14 @@ cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W
  *           results   - search_results_t to add to; if NULL, don't add to it
  *           mx        - the dp matrix, only cells within bands in cm->cp9b will 
  *                       be valid. This is usually cm->hbmx.
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           ret_sc    - RETURN: score of best overall hit (vsc[0])
  *                       
  * Returns: eslOK on success
  *          <ret_sc>: score of the best hit.
  */
 int
-FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx, float *ret_sc)
+FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx, float size_limit, float *ret_sc)
 {
 
   int      status;
@@ -4376,7 +4372,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
 
   /* Allocations and initializations  */
   /* grow the matrix based on the current sequence and bands */
-  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, (j0-i0+1))) != eslOK) return status;
+  if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, (j0-i0+1), size_limit)) != eslOK) return status;
 
   /* determine W, the max size of hit that our bands will allow */
   W = 0;
@@ -4758,13 +4754,14 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
  *           results   - search_results_t to add to; if NULL, don't add to it
  *           mx        - the dp matrix, only cells within bands in cm->cp9b will 
  *                       be valid. This is usually cm->hbmx.
- *           ret_sc          - RETURN: score of best overall hit (vsc[0])
+ *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           ret_sc    - RETURN: score of best overall hit (vsc[0])
  *                       
  * Returns: eslOK on success
  *          <ret_sc>: score of the best hit.
  */
 int
-FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx, float *ret_sc)
+FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx, float size_limit, float *ret_sc)
 {
 
   int      status;
@@ -4813,7 +4810,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
 
   /* Allocations and initializations  */
   /* grow the matrix based on the current sequence and bands */
-  if((status =  cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, (j0-i0+1))) != eslOK) return status;
+  if((status =  cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, (j0-i0+1), size_limit)) != eslOK) return status;
 
   /* determine W, the max size of hit that our bands will allow */
   W = 0;

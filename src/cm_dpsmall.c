@@ -329,10 +329,10 @@ CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parset
    * Check out input parameters.
    */
   if (cm->stid[r] != ROOT_S) {
-    if (! (cm->flags & CMH_LOCAL_BEGIN)) esl_fatal("internal error: we're not in local mode, but r is not root");
+    if (! (cm->flags & CMH_LOCAL_BEGIN)) cm_Fail("internal error: we're not in local mode, but r is not root");
     if (cm->stid[r] != MATP_MP && cm->stid[r] != MATL_ML &&
 	cm->stid[r] != MATR_MR && cm->stid[r] != BIF_B)
-      esl_fatal("internal error: trying to do a local begin at a non-mainline start");
+      cm_Fail("internal error: trying to do a local begin at a non-mainline start");
   }
 
   /* Create a parse tree structure.
@@ -403,10 +403,10 @@ CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **re
    * Check out input parameters.
    */
   if (cm->stid[r] != ROOT_S) {
-    if (! (cm->flags & CMH_LOCAL_BEGIN)) esl_fatal("internal error: we're not in local mode, but r is not root");
+    if (! (cm->flags & CMH_LOCAL_BEGIN)) cm_Fail("internal error: we're not in local mode, but r is not root");
     if (cm->stid[r] != MATP_MP && cm->stid[r] != MATL_ML &&
 	cm->stid[r] != MATR_MR && cm->stid[r] != BIF_B)
-      esl_fatal("internal error: trying to do a local begin at a non-mainline start");
+      cm_Fail("internal error: trying to do a local begin at a non-mainline start");
   }
 
   /* Create the parse tree, and initialize.
@@ -721,7 +721,7 @@ generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    *    with wedge_splitter. 
    */
   if (v > z-5) {		/* no bifurc? it's a wedge problem  */
-    if (cm->sttype[z] != E_st) esl_fatal("inconceivable.");
+    if (cm->sttype[z] != E_st) cm_Fail("inconceivable.");
     sc = wedge_splitter(cm, dsq, L, tr, r, z, i0, j0);
     return sc;
   }
@@ -1617,7 +1617,7 @@ inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int d
   return sc;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
   return 0.; /* never reached */
 }
 
@@ -1701,7 +1701,7 @@ outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
   w1 = cm->nodemap[cm->ndidx[vroot]]; /* first state in split set */
   if (cm->sttype[vroot] == B_st) {    /* special boundary case of Outside on a single B state. */
     w2 = w1;
-    if (vend != vroot) esl_fatal("oh no. not again.");
+    if (vend != vroot) cm_Fail("oh no. not again.");
   } else
     w2 = cm->cfirst[w1]-1;	      /* last state in split set w1<=vroot<=w2 */
 
@@ -1777,7 +1777,7 @@ outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	if (beta[cm->M][j0][W] < IMPOSSIBLE) beta[cm->M][j0][W] = IMPOSSIBLE;
 	break;
       case B_st:		/* can't start w/ bifurcation at vroot. */
-      default: esl_fatal("bogus parent state %d\n", cm->sttype[vroot]);
+      default: cm_Fail("bogus parent state %d\n", cm->sttype[vroot]);
       }
     }
   }
@@ -1875,7 +1875,7 @@ outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		  beta[v][j][d] = sc;
 		break;
 
-	      default: esl_fatal("bogus child state %d\n", cm->sttype[y]);
+	      default: cm_Fail("bogus child state %d\n", cm->sttype[y]);
 	      }/* end switch over states*/
 	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 	    if (beta[v][j][d] < IMPOSSIBLE) beta[v][j][d] = IMPOSSIBLE;
@@ -1937,7 +1937,7 @@ outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		  beta[cm->M][j][d] = sc;
 		break;
 	      case B_st:  
-	      default: esl_fatal("bogus parent state %d\n", cm->sttype[v]);
+	      default: cm_Fail("bogus parent state %d\n", cm->sttype[v]);
 		/* note that although B is a valid vend for a segment we'd do
                    outside on, B->EL is set to be impossible, by the local alignment
                    config. There's no point in having a B->EL because B is a nonemitter
@@ -2007,7 +2007,7 @@ outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
 }
 
 
@@ -2212,7 +2212,7 @@ vinside(CM_t *cm, ESL_DSQ *dsq, int L,
 	shadow[v] = alloc_vji_shadow_deck(i0,i1,j1,j0);      
 				/* reassert our definition of a V problem */
       if (cm->sttype[v] == E_st || cm->sttype[v] == B_st || (cm->sttype[v] == S_st && v > r))
-	esl_fatal("you told me you wouldn't ever do that again.");
+	cm_Fail("you told me you wouldn't ever do that again.");
       
       if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	{
@@ -2407,7 +2407,7 @@ vinside(CM_t *cm, ESL_DSQ *dsq, int L,
   return sc;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
   return 0.; /* never reached */
 }
 
@@ -2540,7 +2540,7 @@ voutside(CM_t *cm, ESL_DSQ *dsq, int L,
       beta[cm->M][j0-j1][0] = cm->endsc[r] + 
 	(cm->el_selfsc * ((j0)-(i0)+1));
       break;
-    default:  esl_fatal("bogus parent state %d\n", cm->sttype[r]);
+    default:  cm_Fail("bogus parent state %d\n", cm->sttype[r]);
     }
   }
       
@@ -2639,7 +2639,7 @@ voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 		  beta[v][jp][ip] = sc;
 		break;
 
-	      default: esl_fatal("bogus parent state %d\n", cm->sttype[y]);
+	      default: cm_Fail("bogus parent state %d\n", cm->sttype[y]);
 	      }/* end switch over states*/
 	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 	    if (beta[v][jp][ip] < IMPOSSIBLE) beta[v][jp][ip] = IMPOSSIBLE;
@@ -2698,7 +2698,7 @@ voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 		     (cm->el_selfsc * (j-i+1))) > beta[cm->M][jp][ip])
 		    beta[cm->M][jp][ip] = sc;
 		break;
-	      default:  esl_fatal("bogus parent state %d\n", cm->sttype[y]);
+	      default:  cm_Fail("bogus parent state %d\n", cm->sttype[y]);
 	      } /* end switch over parent v state type */
 	    } /* end loop over ip */
 	} /* end loop over jp */
@@ -2761,7 +2761,7 @@ voutside(CM_t *cm, ESL_DSQ *dsq, int L,
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
 }
 
 /*****************************************************************
@@ -2872,7 +2872,7 @@ insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
       case IL_st: i++;      break;
       case IR_st:      j--; break;
       case S_st:            break;
-      default:    esl_fatal("'Inconceivable!'\n'You keep using that word...'");
+      default:    cm_Fail("'Inconceivable!'\n'You keep using that word...'");
       }
       d = j-i+1;
 
@@ -2983,7 +2983,7 @@ vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     case IL_st: i++;      break;
     case IR_st:      j--; break;
     case S_st:            break;
-    default:    esl_fatal("'Inconceivable!'\n'You keep using that word...'");
+    default:    cm_Fail("'Inconceivable!'\n'You keep using that word...'");
     }
 
     /* If the traceback pointer (yoffset) is -1, that's a special
@@ -3137,7 +3137,7 @@ cyk_deck_count(CM_t *cm, int r, int z)
   return ndecks;
 
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
   return 0; /* never reached */
 }
 
@@ -3202,7 +3202,7 @@ deckpool_create(void)
   dpool->n      = 0;
   return dpool;
  ERROR:
-  esl_fatal("Memory allocation error.\n");
+  cm_Fail("Memory allocation error.\n");
   return NULL; /* never reached */
 }
 void 
@@ -3219,7 +3219,7 @@ deckpool_push(struct deckpool_s *dpool, float **deck)
   ESL_DPRINTF3(("deckpool_push\n"));
   return;
  ERROR:
-  esl_fatal("Memory reallocation error.\n");
+  cm_Fail("Memory reallocation error.\n");
 }
 int
 deckpool_pop(struct deckpool_s *d, float ***ret_deck)
@@ -3279,7 +3279,7 @@ alloc_vjd_deck(int L, int i, int j)
   for (jp = 0;   jp <= j-i+1; jp++) ESL_ALLOC(a[jp+i-1], sizeof(float) * (jp+1));
   return a;
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 float
@@ -3320,7 +3320,7 @@ alloc_vjd_yshadow_deck(int L, int i, int j)
   for (jp = 0;   jp <= j-i+1; jp++) ESL_ALLOC(a[jp+i-1], sizeof(char) * (jp+1));
   return a;
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 float
@@ -3352,7 +3352,7 @@ alloc_vjd_kshadow_deck(int L, int i, int j)
   for (jp = j+1; jp <= L;     jp++) a[jp] = NULL;
   return a;
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 float
@@ -3418,7 +3418,7 @@ alloc_vji_deck(int i0, int i1, int j1, int j0)
     ESL_ALLOC(a[jp], sizeof(float)*(i1-i0+1));
   return a;
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 float
@@ -3463,7 +3463,7 @@ alloc_vji_shadow_deck(int i0, int i1, int j1, int j0)
     ESL_ALLOC(a[jp], sizeof(char)*(i1-i0+1));
   return a;
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 float		        /* allocation of a traceback ptr (shadow matrix) deck */
@@ -3625,7 +3625,7 @@ CYKOutside(CM_t *cm, ESL_DSQ *dsq, int L, float ***alpha)
 		      beta[v][j][d] = sc;
 		    break;
 
-		  default: esl_fatal("bogus parent state %d\n", cm->sttype[y]);
+		  default: cm_Fail("bogus parent state %d\n", cm->sttype[y]);
 		  }/* end switch over states*/
 		}
 	      }/*ends our handling of beta[v][j][d] */
@@ -3650,7 +3650,7 @@ CYKOutside(CM_t *cm, ESL_DSQ *dsq, int L, float ***alpha)
   /*beta*/
   return;
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 #endif 
 
@@ -3736,7 +3736,7 @@ generic_splitter_b(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    *    with wedge_splitter. 
    */
   if (v > z-5) {		/* no bifurc? it's a wedge problem  */
-    if (cm->sttype[z] != E_st) esl_fatal("inconceivable.");
+    if (cm->sttype[z] != E_st) cm_Fail("inconceivable.");
     sc = wedge_splitter_b(cm, dsq, L, tr, r, z, i0, j0, dmin, dmax);
     return sc;
   }
@@ -4671,7 +4671,7 @@ inside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int
   return sc;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -4747,7 +4747,7 @@ outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
   w1 = cm->nodemap[cm->ndidx[vroot]]; /* first state in split set */
   if (cm->sttype[vroot] == B_st) {    /* special boundary case of Outside on a single B state. */
     w2 = w1;
-    if (vend != vroot) esl_fatal("oh no. not again.");
+    if (vend != vroot) cm_Fail("oh no. not again.");
   } else
     w2 = cm->cfirst[w1]-1;	      /* last state in split set w1<=vroot<=w2 */
 
@@ -4820,7 +4820,7 @@ outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	if (beta[cm->M][j0][W] < IMPOSSIBLE) beta[cm->M][j0][W] = IMPOSSIBLE;
 	break;
       case B_st:		/* can't start w/ bifurcation at vroot. */
-      default: esl_fatal("bogus parent state %d\n", cm->sttype[vroot]);
+      default: cm_Fail("bogus parent state %d\n", cm->sttype[vroot]);
       }
     }
   }
@@ -4918,7 +4918,7 @@ outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		  beta[v][j][d] = sc;
 		break;
 
-	      default: esl_fatal("bogus child state %d\n", cm->sttype[y]);
+	      default: cm_Fail("bogus child state %d\n", cm->sttype[y]);
 	      }/* end switch over states*/
 	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 	    if (beta[v][j][d] < IMPOSSIBLE) beta[v][j][d] = IMPOSSIBLE;
@@ -4982,7 +4982,7 @@ outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		  beta[cm->M][j][d] = sc;
 		break;
 	      case B_st:  
-	      default: esl_fatal("bogus parent state %d\n", cm->sttype[v]);
+	      default: cm_Fail("bogus parent state %d\n", cm->sttype[v]);
 		/* note that although B is a valid vend for a segment we'd do
                    outside on, B->EL is set to be impossible, by the local alignment
                    config. There's no point in having a B->EL because B is a nonemitter
@@ -5052,7 +5052,7 @@ outside_b(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
   free(touch);
   return;
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 
@@ -5327,7 +5327,7 @@ vinside_b(CM_t *cm, ESL_DSQ *dsq, int L,
       }      
       /* reassert our definition of a V problem */
       if (cm->sttype[v] == E_st || cm->sttype[v] == B_st || (cm->sttype[v] == S_st && v > r))
-	esl_fatal("you told me you wouldn't ever do that again.");
+	cm_Fail("you told me you wouldn't ever do that again.");
       
       if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	{
@@ -5550,7 +5550,7 @@ vinside_b(CM_t *cm, ESL_DSQ *dsq, int L,
   return sc;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -5731,7 +5731,7 @@ voutside_b(CM_t *cm, ESL_DSQ *dsq, int L,
       beta[cm->M][j0-j1][0] = cm->endsc[r] + 
 	(cm->el_selfsc * ((j0)-(i0)+1));
       break;
-    default:  esl_fatal("bogus parent state %d\n", cm->sttype[r]);
+    default:  cm_Fail("bogus parent state %d\n", cm->sttype[r]);
     }
   }
       
@@ -5868,7 +5868,7 @@ voutside_b(CM_t *cm, ESL_DSQ *dsq, int L,
 		  beta[v][jp][ip] = sc;
 		break;
 
-	      default: esl_fatal("bogus parent state %d\n", cm->sttype[y]);
+	      default: cm_Fail("bogus parent state %d\n", cm->sttype[y]);
 	      }/* end switch over states*/
 	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
 	    if (beta[v][jp][ip] < IMPOSSIBLE) beta[v][jp][ip] = IMPOSSIBLE;
@@ -5938,7 +5938,7 @@ voutside_b(CM_t *cm, ESL_DSQ *dsq, int L,
 		     > beta[cm->M][jp][ip])
 		  beta[cm->M][jp][ip] = sc;
 		break;
-	      default:  esl_fatal("bogus parent state %d\n", cm->sttype[y]);
+	      default:  cm_Fail("bogus parent state %d\n", cm->sttype[y]);
 	      } /* end switch over parent v state type */
 	    } /* end loop over ip */
 	} /* end loop over jp */
@@ -6008,7 +6008,7 @@ voutside_b(CM_t *cm, ESL_DSQ *dsq, int L,
   free(imin);
   return;
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 
@@ -6091,7 +6091,7 @@ alloc_banded_vjd_deck(int L, int i, int j, int min, int max)
   return a;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -6122,7 +6122,7 @@ alloc_banded_vjd_yshadow_deck(int L, int i, int j, int min, int max)
   return a;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 int **
@@ -6151,7 +6151,7 @@ alloc_banded_vjd_kshadow_deck(int L, int i, int j, int min, int max)
   return a;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -6378,7 +6378,7 @@ debug_print_bands(FILE *fp, CM_t *cm, int *dmin, int *dmax)
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 /* EPN 05.09.05
@@ -6771,7 +6771,7 @@ inside_b_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, 
 		    }
 		}
 		else alpha[v][j][dp_v] = IMPOSSIBLE;
-		/*else esl_fatal("cell in alpha matrix was not filled in due to bands.\n");*/
+		/*else cm_Fail("cell in alpha matrix was not filled in due to bands.\n");*/
 		if (alpha[v][j][dp_v] < IMPOSSIBLE) alpha[v][j][dp_v] = IMPOSSIBLE;
 	      }
 	  }
@@ -6993,7 +6993,7 @@ inside_b_me(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, 
   return sc;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return 0.; /* never reached */
 }
 
@@ -7107,7 +7107,7 @@ insideT_b_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
       case IL_st: i++;      break;
       case IR_st:      j--; break;
       case S_st:            break;
-      default:    esl_fatal("'Inconceivable!'\n'You keep using that word...'");
+      default:    cm_Fail("'Inconceivable!'\n'You keep using that word...'");
       }
       d = j-i+1;
 

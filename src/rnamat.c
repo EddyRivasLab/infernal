@@ -21,14 +21,14 @@
 #include "structs.h"
 
 static matrix_t *setup_matrix (int size);
-static void print_matrix (FILE *fp, fullmat_t *fullmat);
+/*static void print_matrix (FILE *fp, fullmat_t *fullmat);
 static float get_min_alpha_beta_sum (fullmat_t *fullmat);
 static void FreeMat(fullmat_t *fullmat);
 static int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa);
-static int unpaired_res (int i);
+static void count_matrix (ESL_MSA *msa, fullmat_t *fullmat, double *background_nt, int cutoff_perc, int product_weights);
+static int unpaired_res (int i);*/
 static float simple_identity(const ESL_ALPHABET *abc, char *s1, char *s2);
 
-static void count_matrix (ESL_MSA *msa, fullmat_t *fullmat, double *background_nt, int cutoff_perc, int product_weights);
 /*
  * Maps c as follows:
  * A->0
@@ -140,7 +140,7 @@ int *rjk_KHS2ct(char *ss, int len) {
   return (ct);
   
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -165,7 +165,7 @@ matrix_t *setup_matrix (int size) {
   return(mat);
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 
@@ -278,8 +278,8 @@ void count_matrix (ESL_MSA *msa, fullmat_t *fullmat, double *background_nt,
 		   int cutoff_perc, int product_weights) {
 
   /* contract check */
-  if(msa->abc->type != eslRNA) esl_fatal("In count_matrix, MSA's alphabet is not RNA.");
-  if(msa->flags & eslMSA_DIGITAL) esl_fatal("In count_matrix, MSA must be text, not digitized.");
+  if(msa->abc->type != eslRNA) cm_Fail("In count_matrix, MSA's alphabet is not RNA.");
+  if(msa->flags & eslMSA_DIGITAL) cm_Fail("In count_matrix, MSA must be text, not digitized.");
 
   int status;
   int i, j;            /* Seqs we're checking */
@@ -310,7 +310,7 @@ void count_matrix (ESL_MSA *msa, fullmat_t *fullmat, double *background_nt,
   }
   for (i=0; i<msa->nseq; i++) {
     if (ct[i] == NULL) {
-    esl_fatal("CT string %d is NULL\n", i);
+    cm_Fail("CT string %d is NULL\n", i);
     }
   }
 
@@ -403,7 +403,7 @@ void count_matrix (ESL_MSA *msa, fullmat_t *fullmat, double *background_nt,
   return;
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 /*
@@ -474,7 +474,7 @@ fullmat_t *ReadMatrix(const ESL_ALPHABET *abc, FILE *matfp) {
 
   /* Contract check */
   if(abc->type != eslRNA)
-    esl_fatal("Trying to read RIBOSUM matrix from RSEARCH, but alphabet is not eslRNA.");
+    cm_Fail("Trying to read RIBOSUM matrix from RSEARCH, but alphabet is not eslRNA.");
 
   int status;
   char linebuf[256];
@@ -494,7 +494,7 @@ fullmat_t *ReadMatrix(const ESL_ALPHABET *abc, FILE *matfp) {
     strncpy (fullbuf+fullbuf_used, linebuf, 16384-fullbuf_used-1);
     fullbuf_used += strlen(linebuf);
     if (fullbuf_used >= 16384) {
-      esl_fatal ("ERROR: Matrix file bigger than 16kb\n");
+      cm_Fail ("ERROR: Matrix file bigger than 16kb\n");
     }
   }
 
@@ -507,7 +507,7 @@ fullmat_t *ReadMatrix(const ESL_ALPHABET *abc, FILE *matfp) {
   cp = cp + i;
   if(strstr (fullmat->name, "SUM")) { fullmat->scores_flag = TRUE; fullmat->probs_flag = FALSE; }
   else if(strstr (fullmat->name, "PROB")) { fullmat->scores_flag = FALSE; fullmat->probs_flag = TRUE; }
-  else esl_fatal("ERROR reading matrix, name does not include SUM or PROB.\n");
+  else cm_Fail("ERROR reading matrix, name does not include SUM or PROB.\n");
 
   /* Now, find the first A */
   cp = strchr (cp, 'A');
@@ -617,7 +617,7 @@ fullmat_t *ReadMatrix(const ESL_ALPHABET *abc, FILE *matfp) {
   return (fullmat);
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 

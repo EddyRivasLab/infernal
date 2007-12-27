@@ -96,7 +96,8 @@ static ESL_OPTIONS options[] = {
   { "--tau",     eslARG_REAL,   "1E-7", NULL, "0<x<1",    NULL,"--refine","--nonbanded", "set tail loss prob for --hbanded to <x>", 9 },
   { "--sub",     eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, use sub CM for columns b/t HMM start/end points", 9 },
   { "--local",   eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, align locally w.r.t the model", 9 },
-  { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,        NULL,"--refine",   NULL, "do not use bands to accelerate alignment with --refine", 5 },
+  { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,        NULL,"--refine",   NULL, "do not use bands to accelerate alignment with --refine", 9 },
+  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",      NULL,"--refine",   NULL, "set maximum allowable DP matrix size to <x> (Mb)", 9 },
 /* Selecting the input MSA alphabet rather than autoguessing it */
   { "--rna",     eslARG_NONE,   FALSE, NULL, NULL,   ALPHOPTS,    NULL,     NULL, "input alignment is RNA sequence data", 10},
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,   ALPHOPTS,    NULL,     NULL, "input alignment is DNA sequence data", 10},
@@ -332,9 +333,9 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     {
       FILE *pfp;
       if ((pfp = fopen(esl_opt_GetString(go, "--prior"), "r")) == NULL)
-	esl_fatal("Failed to open prior file %s\n", esl_opt_GetString(go, "--prior"));
+	cm_Fail("Failed to open prior file %s\n", esl_opt_GetString(go, "--prior"));
       if ((cfg->pri = Prior_Read(pfp)) == NULL)
-	esl_fatal("Failed to parse prior file %s\n", esl_opt_GetString(go, "--prior"));
+	cm_Fail("Failed to parse prior file %s\n", esl_opt_GetString(go, "--prior"));
       fclose(pfp);
     }
   else 
@@ -588,7 +589,8 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
                                                   /* sq,    tr, cp9_tr, post, sc */ 
       /* initialize/configure CM, we may be doing HMM banded alignment for ex. */
       initialize_cm(go, cfg, errbuf, cm);
-      DispatchAlignments(cm, errbuf, seqs_to_aln, NULL, NULL, 0, 0, 0, (!cfg->be_verbose), cfg->r);
+      if((status = DispatchAlignments(cm, errbuf, seqs_to_aln, NULL, NULL, 0, 0, 0, (!cfg->be_verbose), cfg->r, 
+				      esl_opt_GetReal(go, "--mxsize"))) != eslOK) cm_Fail(errbuf);
       
       /* sum parse scores and check for convergence */
       if(cfg->be_verbose) fprintf(cfg->ofp, "iteration: %4d\n", iter);
@@ -1000,7 +1002,7 @@ default_target_relent(const ESL_ALPHABET *abc, int clen, double eX)
 
   switch (abc->type) {
   case eslRNA:    if (etarget < DEFAULT_ETARGET)   etarget = DEFAULT_ETARGET;   break;
-  default:        esl_fatal("ERROR in default_target_relent(), alphabet not RNA!\n");
+  default:        cm_Fail("ERROR in default_target_relent(), alphabet not RNA!\n");
   }
   return etarget;
 }
@@ -1127,7 +1129,7 @@ save_countvectors(char *cfile, CM_t *cm)
  * Returns: (void) 
  */
 
-static void
+void
 model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq)
 {
   int status;
@@ -1165,7 +1167,7 @@ model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq)
   free(map);
 
  ERROR:
-  esl_fatal("Memory allocation error.");
+  cm_Fail("Memory allocation error.");
 }
 
 /* get_unaln_seqs_from_msa

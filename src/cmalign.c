@@ -98,7 +98,8 @@ static ESL_OPTIONS options[] = {
   { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 9},
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 9},
 /* Other options */
-  { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,    NULL, "arrest after start: for debugging MPI under gdb",   10 },  
+  { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb",   10 },  
+  { "--mxsize",  eslARG_REAL, "256.0",NULL, "x>0.",     NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> (Mb)", 10 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -230,7 +231,7 @@ main(int argc, char **argv)
   else                              cfg.be_verbose = TRUE;        
   if      (esl_opt_GetBoolean(go, "--rna")) cfg.abc_out = esl_alphabet_Create(eslRNA);
   else if (esl_opt_GetBoolean(go, "--dna")) cfg.abc_out = esl_alphabet_Create(eslDNA);
-  else    esl_fatal("Can't determine output alphabet");
+  else    cm_Fail("Can't determine output alphabet");
   cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.ofp        = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.tracefp    = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
@@ -858,7 +859,8 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   if((status = DispatchAlignments(cm, errbuf, seqs_to_aln,
 				  NULL, NULL, 0,  /* we're not aligning search hits */
 				  esl_opt_GetInteger(go, "--banddump"),
-				  esl_opt_GetInteger(go, "--dlev"), be_quiet, NULL)) != eslOK) goto ERROR;
+				  esl_opt_GetInteger(go, "--dlev"), be_quiet, NULL,
+				  esl_opt_GetReal(go, "--mxsize"))) != eslOK) goto ERROR;
   return eslOK;
   
  ERROR:
@@ -1094,8 +1096,8 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
 			   * positions to unaligned (non-gap) positions */
 
   /* Contract check */
-  if(cfg->withmsa == NULL) esl_fatal("ERROR in include_withali() withmsa is NULL.\n");
-  if(! (cfg->withmsa->flags & eslMSA_DIGITAL)) esl_fatal("ERROR in include_withali() withmsa is not digitized.\n");
+  if(cfg->withmsa == NULL) cm_Fail("ERROR in include_withali() withmsa is NULL.\n");
+  if(! (cfg->withmsa->flags & eslMSA_DIGITAL)) cm_Fail("ERROR in include_withali() withmsa is not digitized.\n");
 
   /* For each seq in the MSA, map the aligned sequences coords to 
    * the unaligned coords, we stay in digitized seq coords (1..alen),
@@ -1333,9 +1335,9 @@ static int add_withali_pknots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *er
   int           idx;     /* sequence index */
   int           i, j, i_cpos, j_cpos; /* residue position indices */
   /* Contract check */
-  if(cfg->withmsa == NULL) esl_fatal("ERROR in add_withali_pknots() cfg->withmsa is NULL.\n");
-  if(cfg->withss_cons  == NULL) esl_fatal("ERROR in add_withali_pknots() cfg->withss_cons is NULL.\n");
-  if(! (cfg->withmsa->flags & eslMSA_DIGITAL)) esl_fatal("ERROR in add_withali_pknots() cfg->withmsa is not digitized.\n");
+  if(cfg->withmsa == NULL) cm_Fail("ERROR in add_withali_pknots() cfg->withmsa is NULL.\n");
+  if(cfg->withss_cons  == NULL) cm_Fail("ERROR in add_withali_pknots() cfg->withss_cons is NULL.\n");
+  if(! (cfg->withmsa->flags & eslMSA_DIGITAL)) cm_Fail("ERROR in add_withali_pknots() cfg->withmsa is not digitized.\n");
 
   /* 10 easy, convoluted steps. One reason for so many steps is 
    * we can't build ss_cons strings from pseudoknotted ct arrays,
