@@ -317,12 +317,14 @@ int ReadSeqsToAln(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int do_r
   if(i == seqs_to_aln->nalloc) GrowSeqsToAln(seqs_to_aln, 100, i_am_mpi_master);
 
   seqs_to_aln->sq[i] = esl_sq_CreateDigital(abc);
+  if(seqs_to_aln->sq[i] == NULL) cm_Fail("Memory allocation error.");
   while (keep_reading && (status = esl_sqio_Read(seqfp, seqs_to_aln->sq[i])) == eslOK) {
     if(seqs_to_aln->sq[i]->n == 0) { esl_sq_Reuse(seqs_to_aln->sq[i]); continue; }
     i++;
     if(i == seqs_to_aln->nalloc) GrowSeqsToAln(seqs_to_aln, 100, i_am_mpi_master);
     if(! do_read_all && (i - nseq_orig) == nseq)   keep_reading = FALSE; 
     seqs_to_aln->sq[i] = esl_sq_CreateDigital(abc);
+    if(seqs_to_aln->sq[i] == NULL) cm_Fail("Memory allocation error.");
   }
   /* destroy the last sequence that was alloc'ed but not filled */
   esl_sq_Destroy(seqs_to_aln->sq[i]);

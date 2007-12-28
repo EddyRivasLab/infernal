@@ -1339,9 +1339,9 @@ CMRebalance(CM_t *cm)
    * renumbering the CM.
    */
   new = CreateCM(cm->nodes, cm->M, cm->abc);
-  esl_strdup(cm->name, -1, &(new->name));
-  esl_strdup(cm->acc,  -1, &(new->acc));
-  esl_strdup(cm->desc, -1, &(new->desc));
+  if((status = esl_strdup(cm->name, -1, &(new->name))) != eslOK) goto ERROR;
+  if((status = esl_strdup(cm->acc,  -1, &(new->acc)))  != eslOK) goto ERROR;
+  if((status = esl_strdup(cm->desc, -1, &(new->desc))) != eslOK) goto ERROR;
   new->flags = cm->flags;
   new->clen  = cm->clen;
   new->nseq     = cm->nseq;
@@ -1375,7 +1375,7 @@ CMRebalance(CM_t *cm)
    */
   v = 0;
   z = cm->M-1;
-  pda = esl_stack_ICreate();
+  if((pda = esl_stack_ICreate()) == NULL) goto ERROR;
   ESL_ALLOC(newidx, sizeof(int) * cm->M);
   for (nv = 0; nv < cm->M; nv++)
     {    
@@ -1431,8 +1431,8 @@ CMRebalance(CM_t *cm)
 
 	  if (wgt[w] <= wgt[y])	/* left (w) lighter or same weight? visit w first, defer y */
 	    { 
-	      esl_stack_IPush(pda, y); 
-	      esl_stack_IPush(pda, z);
+	      if((status = esl_stack_IPush(pda, y)) != eslOK) goto ERROR; 
+	      if((status = esl_stack_IPush(pda, z)) != eslOK) goto ERROR;
 	      v = w; 
 	      z = y-1;
 	      new->cfirst[nv] = nv+1;     /* left child is nv+1 */
@@ -1440,8 +1440,8 @@ CMRebalance(CM_t *cm)
 	    }  
 	  else			/* right (y) lighter? visit y first, defer w */
 	    { 
-	      esl_stack_IPush(pda, w); 
-	      esl_stack_IPush(pda, y-1);
+	      if((status = esl_stack_IPush(pda, w)) != eslOK)   goto ERROR; 
+	      if((status = esl_stack_IPush(pda, y-1)) != eslOK) goto ERROR;
 	      v = y;		/* z unchanged. */
 	      new->cfirst[nv] = nv+z-y+2; 
 	      new->cnum[nv]   = nv+1;     /* right child is nv+1 */
@@ -2249,6 +2249,7 @@ DuplicateCM(CM_t *cm)
   CM_t     *new;
   ESL_ALPHABET *abc;
   abc = esl_alphabet_Create(cm->abc->type);
+  if(abc == NULL) goto ERROR;
 
   /* Create the new model and copy everything over except the cp9, stats and ScanMatrix */
   new = CreateCM(cm->nodes, cm->M, cm->abc);
@@ -2321,7 +2322,7 @@ DuplicateCM(CM_t *cm)
   new->tau   = cm->tau;
   new->enf_start = cm->enf_start;
   if(cm->enf_seq != NULL)
-    esl_strdup(cm->enf_seq, -1, &(new->enf_seq));
+    if((status = esl_strdup(cm->enf_seq, -1, &(new->enf_seq))) != eslOK) goto ERROR;
   else new->enf_seq = NULL;
   new->enf_scdiff = cm->enf_scdiff;
   new->ffract     = cm->ffract;

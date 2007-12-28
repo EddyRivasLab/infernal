@@ -160,9 +160,9 @@ static int    convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa)
 static int    initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 /*static void   model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq);*/
 /* functions for dividing input MSA into clusters */
-static int    select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust, int *ret_nc);
-static float  find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret_nc);
-static int    MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff, int do_corig, int *ret_num_msa, ESL_MSA ***ret_cmsa);
+static int    select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust, int *ret_nc, char *errbuf);
+static float  find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret_nc, float *ret_mindiff, char *errbuf);
+static int    MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff, int do_corig, int *ret_num_msa, ESL_MSA ***ret_cmsa, char *errbuf);
 
 
 int
@@ -170,6 +170,7 @@ main(int argc, char **argv)
 {
   ESL_GETOPTS     *go = NULL;   /* command line processing                     */
   ESL_STOPWATCH   *w  = esl_stopwatch_Create();
+  if(w == NULL) cm_Fail("Memory allocation error, stopwatch could not be created.");
   struct cfg_s     cfg;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
@@ -318,7 +319,8 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   /* We can read DNA/RNA but internally we treat it as RNA */
   if(! (type == eslRNA || type == eslDNA))
     ESL_FAIL(status, errbuf, "Alphabet is not DNA/RNA in %s\n", cfg->alifile);
-  cfg->abc = esl_alphabet_Create(eslRNA);
+  if((cfg->abc = esl_alphabet_Create(eslRNA)) == NULL)
+    ESL_FAIL(status, errbuf, "Alphabet could not be created.\n");
   esl_msafile_SetDigital(cfg->afp, cfg->abc);
 
   /* open CM file for writing */
@@ -385,7 +387,7 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       if (! esl_opt_IsDefault(go, "--seed")) 
 	cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "--seed"));
       else cfg->r = esl_randomness_CreateTimeseeded();
-      if (cfg->r       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
+      if (cfg->r == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
     }
 
   if (cfg->pri   == NULL) ESL_FAIL(eslEINVAL, errbuf, "alphabet initialization failed");
@@ -441,8 +443,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if(do_cluster) /* divide input MSA into clusters, and build CM from each cluster */
 	{
 	  if((status = MSADivide(msa, esl_opt_GetBoolean(go, "--call"), esl_opt_GetInteger(go, "--ctarget"), 
-				 esl_opt_GetReal(go, "--cmindiff"), esl_opt_GetBoolean(go, "--corig"), &ncm, &cmsa)) != eslOK)
-	    cm_Fail("MSADivide error (code: %d)\n", status);
+				 esl_opt_GetReal(go, "--cmindiff"), esl_opt_GetBoolean(go, "--corig"), &ncm, &cmsa, errbuf)) != eslOK) cm_Fail(errbuf);
 	  esl_msa_Destroy(msa); /* we've copied the master msa into cmsa[ncm], we can delete this copy */
 	}
       for(c = 0; c < ncm; c++)
@@ -559,7 +560,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   if(init_cm         == NULL) cm_Fail("in refine_msa, init_cm passed in as NULL");
 
   /* copy input MSA's name, we'll copy it to the MSA we create at each iteration */
-  esl_strdup(input_msa->name, -1, &(msa_name));
+  if((status = esl_strdup(input_msa->name, -1, &(msa_name))) != eslOK) cm_Fail("Memory allocation error.");
 
   ESL_ALLOC(sc, sizeof(float) * nseq);
   esl_vec_FSet(sc, nseq, 0.);
@@ -576,7 +577,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
 
   if(cfg->be_verbose) {
     fprintf(cfg->ofp, "INITIAL (input msa)\n");
-    esl_msa_Write(stdout, input_msa, cfg->fmt); 
+    if((status = esl_msa_Write(stdout, input_msa, cfg->fmt)) != eslOK) cm_Fail("esl_msa_Write() failed with code: %d\n", status); 
   }
      
   while(1)
@@ -605,11 +606,11 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       msa = NULL; /* even if iter == 1; we set msa to NULL, so we don't klobber input_msa */
       if((status = Parsetrees2Alignment(cm, cm->abc, seqs_to_aln->sq, NULL, seqs_to_aln->tr, nseq, FALSE, FALSE, &msa)) != eslOK) 
 	cm_Fail("refine_msa() failed to make new MSA");
-      esl_strdup(msa_name, -1, &(msa->name)); 
+      if((status = esl_strdup(msa_name, -1, &(msa->name))) != eslOK) cm_Fail("esl_strdup call failed, probably out of memory.");
       esl_msa_Digitize(msa->abc, msa);
 
       if(cfg->be_verbose)
-	esl_msa_Write(stdout, msa, cfg->fmt); 
+	if((status = esl_msa_Write(stdout, msa, cfg->fmt)) != eslOK) cm_Fail("esl_msa_Write() failed with code: %d\n", status); 
 
       /* 3. msa -> cm */
       if(iter > 1) FreeCM(cm);
@@ -619,10 +620,10 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
     }
   if(cfg->be_verbose) {
     fprintf(cfg->ofp, "FINAL (iter: %d)\n", iter);
-    esl_msa_Write(stdout, msa, cfg->fmt); 
+    if((status = esl_msa_Write(stdout, msa, cfg->fmt)) != eslOK) cm_Fail("esl_msa_Write() failed with code: %d\n", status); 
   }
   /* write out final alignment */
-  esl_msa_Write(cfg->trfp, msa, cfg->fmt); 
+  if((status = esl_msa_Write(cfg->trfp, msa, cfg->fmt)) != eslOK) cm_Fail("esl_msa_Write() failed with code: %d\n", status); 
 
   /* if CM was in local mode for aligning input MSA seqs, make it global so we can write it out */
   if((cm->flags & CMH_LOCAL_BEGIN) || (cm->flags & CMH_LOCAL_END))
@@ -1045,7 +1046,7 @@ name_msa(const ESL_GETOPTS *go, ESL_MSA *msa, int nali)
 	sprintf(buffer, "-%d", (nali));
 	n += strlen(buffer);
 	ESL_RALLOC(name, tmp, sizeof(char)*(n+1));
-	esl_strcat(&name, -1, buffer, (n+1));
+	if((status = esl_strcat(&name, -1, buffer, (n+1))) != eslOK) goto ERROR;
 	ESL_ALLOC(msa->name, sizeof(char) * (strlen(name)+1));
 	strcpy(msa->name, name);
 	free(name);
@@ -1204,6 +1205,7 @@ get_unaln_seqs_from_msa(const ESL_MSA *msa, ESL_SQ ***ret_sq)
 	  uadsq[uapos++] = msa->ax[i][apos];
       
       sq[i] = esl_sq_CreateDigitalFrom(msa->abc, msa->sqname[i], uadsq, nongap_len, NULL, NULL, NULL); 
+      if(sq[i] == NULL) goto ERROR;
       free(uadsq);
     }
   *ret_sq = sq;
@@ -1342,12 +1344,13 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
  * int     do_orig      - TRUE to include the master MSA as one of the new MSAs
  * int    *ret_num_msa  - number of MSAs in ret_MSA
  * ESL_MSA  ***ret_cmsa - new MSAs, one for each cluster
+ * char     *errbuf     - buffer for error messages
  *           
  * Return: ret_cmsa (alloc'ed here) and ret_num_msa
  */
 int 
 MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff, 
-	  int do_orig, int *ret_num_msa, ESL_MSA ***ret_cmsa)
+	  int do_orig, int *ret_num_msa, ESL_MSA ***ret_cmsa, char *errbuf)
 {
   int   status;        /* Easel status code */
   ESL_MSA **cmsa = NULL;/* the new MSAs we're creating from clusters of seqs in mmsa */
@@ -1367,10 +1370,10 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
   void   *tmp;
 
   /* Contract check */
-  if((!do_all) && (target_nc == 0 && mindiff == 0.))  ESL_EXCEPTION(eslEINCOMPAT, "target_nc is 0 and mindiff is 0.0, exactly one must be non-zero");
-  if((!do_all) && (target_nc != 0 && mindiff != 0.))  ESL_EXCEPTION(eslEINCOMPAT, "target_nc is not 0 and mindiff is not 0.0, exactly one must be non-zero");
+  if((!do_all) && (target_nc == 0 && mindiff == 0.))  ESL_FAIL(eslEINCOMPAT, errbuf, "MSADivide() target_nc is 0 and mindiff is 0.0, exactly one must be non-zero");
+  if((!do_all) && (target_nc != 0 && mindiff != 0.))  ESL_FAIL(eslEINCOMPAT, errbuf, "MSADivide() target_nc is not 0 and mindiff is not 0.0, exactly one must be non-zero");
   /* mmsa must be digital */
-  if(!(mmsa->flags & eslMSA_DIGITAL))                 ESL_EXCEPTION(eslEINCOMPAT, "MSA is not digital.");
+  if(!(mmsa->flags & eslMSA_DIGITAL))                 ESL_FAIL(eslEINCOMPAT, errbuf, "MSADivide() MSA is not digital.");
 
   /* Mode 1: Each seq becomes own MSA. Easy. */
   if(do_all) {
@@ -1385,11 +1388,11 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
    }
   else { /* Mode 2 or Mode 3 */ 
     /* Create distance matrix and infer tree by single linkage clustering */
-    esl_dst_XDiffMx(mmsa->abc, mmsa->ax, mmsa->nseq, &D);
-    esl_tree_SingleLinkage(D, &T);
-    esl_tree_SetTaxaParents(T);
+    if((status = esl_dst_XDiffMx(mmsa->abc, mmsa->ax, mmsa->nseq, &D)) != eslOK) ESL_FAIL(status, errbuf, "esl_dst_XDiffMx() error, status: %d", status);
+    if((status = esl_tree_SingleLinkage(D, &T)) != eslOK)                        ESL_FAIL(status, errbuf, "esl_tree_SingleLinkage() error, status: %d", status);
+    if((status = esl_tree_SetTaxaParents(T)) != eslOK)                           ESL_FAIL(status, errbuf, "esl_tree_SetTaxaParentse() error, status: %d", status);
     /*esl_tree_WriteNewick(stdout, T);*/
-    esl_tree_Validate(T, NULL);
+    if((status = esl_tree_Validate(T, errbuf) != eslOK)) return status;
     
     /* determine the diff values: 
      * (use: n_child > n, unless n's children are taxa)
@@ -1418,7 +1421,7 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
     if(target_nc == 0) { /* Mode 2 */
       /* Define clusters that are at least mindiff different
        * from each other. */
-      select_node(T, diff, mindiff, &clust, &nc);
+      if((status = select_node(T, diff, mindiff, &clust, &nc, errbuf)) != eslOK) return status;
     }
     else { /* Mode 3, mindiff == 0.0 (it's in the contract) */
       /* Find the minimum fractional difference (mindiff) that 
@@ -1428,7 +1431,7 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
        * find exactly target_nc clusters b/c diff values are rounded
        * to nearest 0.001. */
       if(target_nc > (T->N)) target_nc = T->N; /* max num clusters is num seqs */
-      mindiff = find_mindiff(T, diff, target_nc, &clust, &nc);
+      if((status = find_mindiff(T, diff, target_nc, &clust, &nc, &mindiff, errbuf)) != eslOK) return status;
       printf("nc: %d target_nc: %d\n", nc, target_nc);
     }
     /* Determine the size of each cluster */
@@ -1464,21 +1467,18 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
   char *buffer;
   int ndigits;
   for(m = 0; m < nc; m++) {
-    esl_msa_SequenceSubset(mmsa, useme[m], &(cmsa[m]));
+    if((status = esl_msa_SequenceSubset(mmsa, useme[m], &(cmsa[m]))) != eslOK) ESL_FAIL(status, errbuf, "MSADivide(), esl_msa_SequenceSubset error, status: %d.", status);
     /* rename the MSA it by adding ".<m+1>" */
-    if(cmsa[m]->name == NULL) {
-      status = eslEINCONCEIVABLE;
-      goto ERROR;
-    }
+    if(cmsa[m]->name == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "MSADivide(), an msa's name is NULL, shouldn't happen.");
     ndigits  = strlen(cmsa[m]->name);
     ndigits += sprintf(buffer, ".%d", (m+1));
     ESL_RALLOC(cmsa[m]->name, tmp, sizeof(char)*(ndigits+1));
-    esl_strcat(&cmsa[m]->name, -1, buffer, (ndigits+1));
+    if ((status = esl_strcat(&cmsa[m]->name, -1, buffer, (ndigits+1))) != eslOK) goto ERROR;
     if ((status = esl_strchop(cmsa[m]->name, ndigits)) != eslOK) goto ERROR;
     free(useme[m]);
   }
   if(do_orig) {
-    esl_msa_SequenceSubset(mmsa, useme[nc], &(cmsa[nc]));
+    if((status = esl_msa_SequenceSubset(mmsa, useme[nc], &(cmsa[nc]))) != eslOK) ESL_FAIL(status, errbuf, "MSADivide(), esl_msa_SequenceSubset error, status: %d.", status);
     free(useme[nc]);
   }
   free(useme);
@@ -1537,8 +1537,7 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
  * Returns: node index (as explained in Purpose)
  */
 static int
-select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust, 
-	    int *ret_nc)
+select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust, int *ret_nc, char *errbuf)
 {
   int status;     /* Easel status code */
   ESL_STACK *ns1; /* stack for traversing tree */
@@ -1551,15 +1550,17 @@ select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust,
 
   /*printf("in selec_node mindiff: %f T->N: %d\n", mindiff, T->N);*/
   /* set tree cladesizes if not already set */
-  if(T->cladesize == NULL) esl_tree_SetCladesizes(T);
+  if(T->cladesize == NULL) 
+    if((status = esl_tree_SetCladesizes(T)) != eslOK) ESL_FAIL(status, errbuf, "select_node(), esl_tree_SetCladeSizes error, status: %d.", status);
 
   ESL_ALLOC(clust, (sizeof(int) * T->N));
   esl_vec_ISet(clust, T->N, 0);
 
-  ns1 = esl_stack_ICreate();
-  ns2 = esl_stack_ICreate();
+  if((ns1 = esl_stack_ICreate()) == NULL) ESL_FAIL(status, errbuf, "select_node(), failed to create a stack, probably out of memory, status: %d.", status);
+  if((ns2 = esl_stack_ICreate()) == NULL) ESL_FAIL(status, errbuf, "select_node(), failed to create a stack, probably out of memory, status: %d.", status);
 
-  esl_stack_IPush(ns1, 0);	/* push root on stack to start */
+  /* push root on stack to start */
+  if((status = esl_stack_IPush(ns1, 0)) != eslOK) ESL_FAIL(status, errbuf, "select_node(), failed to push onto a stack, probably out of memory, status: %d.", status);	
   maxsize  = 0;
   best     = 0;
   c        = 0;
@@ -1575,18 +1576,18 @@ select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust,
       while (esl_stack_IPop(ns2, &np) != eslEOD) {
 	/*printf("np: %d T->left[np]: %d\n", np, T->left[np]);*/
 	if(T->left[np]  <= 0) clust[(-1*T->left[np])]  = c;
-	else esl_stack_IPush(ns2, T->left[np]);
+	else { if((status = esl_stack_IPush(ns2, T->left[np])) != eslOK) ESL_FAIL(status, errbuf, "select_node(), failed to push onto a stack, probably out of memory, status: %d.", status); }
 	if(T->right[np] <= 0) clust[(-1*T->right[np])]  = c;
-	else esl_stack_IPush(ns2, T->right[np]);
+	else { if((status = esl_stack_IPush(ns2, T->right[np])) != eslOK) ESL_FAIL(status, errbuf, "select_node(), failed to push onto a stack, probably out of memory, status: %d.", status); }
       }
       c++;
     }
     else {		/* we're not a cluster, keep traversing */
       /*printf("n: %d T->left[n]: %d\n", n, T->left[n]);*/
       if(T->left[n]  <= 0) clust[(-1*T->left[n])]  = c++; /* single seq with its own cluster */
-      else esl_stack_IPush(ns1, T->left[n]);
+      else { if((status = esl_stack_IPush(ns1, T->left[n])) != eslOK) ESL_FAIL(status, errbuf, "select_node(), failed to push onto a stack, probably out of memory, status: %d.", status); }
       if(T->right[n] <= 0) clust[(-1*T->right[n])] = c++; /* single seq with its own cluster */
-      else esl_stack_IPush(ns1, T->right[n]);
+      else { if((status = esl_stack_IPush(ns1, T->right[n])) != eslOK) ESL_FAIL(status, errbuf, "select_node(), failed to push onto a stack, probably out of memory, status: %d.", status); }
     }
   }
   esl_stack_Destroy(ns1);
@@ -1621,28 +1622,30 @@ select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust,
  * int      target_nc - number of clusters we want
  * int     **ret_clust- [0..T->N-1] cluster number this seq is in, alloc'ed, filled here
  * int      *ret_nc   - number of clusters
+ * char     *errbuf   - buffer for error messages
  *
  * Returns: fractional difference (as explained in Purpose)
  */
 static float
-find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret_nc)
+find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret_nc, float *ret_mindiff, char *errbuf)
 {
-  float high = 1.0;
-  float low  = 0.0;
-  int   high_nc = 0;
-  int   low_nc = 0;
-  float mindiff = 0.5;
-  int curr_nc = -1;
-  int keep_going = TRUE;
-  float thresh = 0.001;
-  int *clust = NULL;
+  int   status;
+  float high       = 1.0;
+  float low        = 0.0;
+  int   high_nc    = 0;
+  int   low_nc     = 0;
+  float mindiff    = 0.5;
+  int   curr_nc    = -1;
+  int   keep_going = TRUE;
+  float thresh     = 0.001;
+  int  *clust      = NULL;
 
   /* Contract check */
-  if(target_nc > T->N) ESL_EXCEPTION(eslEINCOMPAT, "desired number of clusters is greater than number of seqs in the tree");
+  if(target_nc > T->N) ESL_FAIL(eslEINCOMPAT, errbuf, "find_mindiff(), desired number of clusters is greater than number of seqs in the tree");
 
   while(keep_going) {
     if(clust != NULL) free(clust);
-    select_node(T, diff, mindiff, &clust, &curr_nc);
+    if((status = select_node(T, diff, mindiff, &clust, &curr_nc, errbuf)) != eslOK) return status;
     if(curr_nc < target_nc) {
       high       = mindiff;
       high_nc    = curr_nc;
@@ -1665,20 +1668,21 @@ find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret
     /*printf("targ: %d curr: %d low: %d (%f) high: %d (%f)\n", target_nc, curr_nc, low_nc, low, high_nc, high);*/
     if(high_nc < target_nc) {
       mindiff = high;
-      select_node(T, diff, mindiff, &clust, &curr_nc);
+      if((status = select_node(T, diff, mindiff, &clust, &curr_nc, errbuf)) != eslOK) return status;
     }
     else
       while(high_nc > target_nc) {
 	high += thresh;
-	if(high > 1.0)  ESL_EXCEPTION(eslEINCONCEIVABLE, "mindiff has risen above 1.0");
+	if(high > 1.0)  ESL_FAIL(eslEINCONCEIVABLE, errbuf, "find_mindiff(), mindiff has risen above 1.0");
 	mindiff = high;
-	select_node(T, diff, mindiff, &clust, &curr_nc);
+	if((status = select_node(T, diff, mindiff, &clust, &curr_nc, errbuf)) != eslOK) return status;
 	high_nc = curr_nc;
       }
   }
   /*printf("FINAL mindiff: %f\n", mindiff);  */
   *ret_nc    = curr_nc;
   *ret_clust = clust;
+  *ret_mindiff = mindiff;
 
-  return mindiff;
+  return eslOK;
 }

@@ -3395,6 +3395,7 @@ float
 tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
           int i0, int j0, int r_allow_J, int r_allow_L, int r_allow_R)
 {
+  int         status;           /* easel status code */
    void    ***shadow;		/* standard shadow matrix with state information */
    void    ***L_shadow;		/* left marginal shadow matrix with state information */
    void    ***R_shadow;		/* right marginal shadow matrix with state information */
@@ -3432,7 +3433,7 @@ tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
    Lmode_shadow = all_shadow->Lmode;
    Rmode_shadow = all_shadow->Rmode;
 
-   pda = esl_stack_ICreate();
+   if((pda = esl_stack_ICreate()) == NULL) goto ERROR;
    d = j-i+1;
 
    if (r == 0)
@@ -3448,20 +3449,20 @@ tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
          {
             k = ((int **) shadow[v])[j][d];
 
-            esl_stack_IPush(pda, j);
-            esl_stack_IPush(pda, k);
-            esl_stack_IPush(pda, mode);
-            esl_stack_IPush(pda, tr->n-1);
+            if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+            if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;
+            if((status = esl_stack_IPush(pda, mode)) != eslOK) goto ERROR;
+            if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;
          }
          else if ( mode == 2 )
          {
             k = ((int **) L_shadow[v])[j][d];
 
             /* In left marginal mode, right child is always left marginal */
-            esl_stack_IPush(pda, j);
-            esl_stack_IPush(pda, k);
-            esl_stack_IPush(pda, mode);
-            esl_stack_IPush(pda, tr->n-1);
+            if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+            if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;
+            if((status = esl_stack_IPush(pda, mode)) != eslOK) goto ERROR;
+            if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;
 
             /* Retrieve mode of left child (should be 3 or 2) */
             mode = ((int **)Lmode_shadow[v])[j][d];
@@ -3472,10 +3473,10 @@ tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
 
             /* Retrieve mode of right child (should be 3 or 1) */
             mode = ((int **)Rmode_shadow[v])[j][d];
-            esl_stack_IPush(pda, j);
-            esl_stack_IPush(pda, k);
-            esl_stack_IPush(pda, mode);
-            esl_stack_IPush(pda, tr->n-1);
+            if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+            if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;
+            if((status = esl_stack_IPush(pda, mode)) != eslOK) goto ERROR;
+            if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;
 
             /* In right marginal mode, left child is always right marginal */
             mode = 1;
@@ -3485,10 +3486,10 @@ tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
             k = ((int **) T_shadow[v])[j][d];
 
              mode = 2;
-             esl_stack_IPush(pda, j);
-             esl_stack_IPush(pda, k);
-             esl_stack_IPush(pda, mode);
-             esl_stack_IPush(pda, tr->n-1);
+             if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+             if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;
+             if((status = esl_stack_IPush(pda, mode)) != eslOK) goto ERROR;
+             if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;
 
              mode = 1;
          }
@@ -3598,6 +3599,10 @@ tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
    free_vjd_shadow_matrix(Rmode_shadow, cm, i0, j0);
 
    return sc;
+
+ ERROR:
+   cm_Fail("Memory error.");
+   return 0.; /* NEVERREACHED */
 }
 
 /* Function: tr_vinsideT()

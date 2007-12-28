@@ -21,13 +21,13 @@
 #include "structs.h"
 
 static matrix_t *setup_matrix (int size);
+static float simple_identity(const ESL_ALPHABET *abc, char *s1, char *s2);
 /*static void print_matrix (FILE *fp, fullmat_t *fullmat);
 static float get_min_alpha_beta_sum (fullmat_t *fullmat);
 static void FreeMat(fullmat_t *fullmat);
 static int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa);
 static void count_matrix (ESL_MSA *msa, fullmat_t *fullmat, double *background_nt, int cutoff_perc, int product_weights);
 static int unpaired_res (int i);*/
-static float simple_identity(const ESL_ALPHABET *abc, char *s1, char *s2);
 
 /*
  * Maps c as follows:
@@ -118,13 +118,14 @@ int *rjk_KHS2ct(char *ss, int len) {
 	esl_stack_Destroy(pda);
 	return (NULL);
       } else if (ss[pos] == '>') {  /* left side of a pair: push onto stack */
-        esl_stack_IPush(pda, pos);
+        if((status = esl_stack_IPush(pda, pos)) != eslOK) goto ERROR;
       } else if (ss[pos] == '<') { /* right side of a pair; resolve pair */
 	if (esl_stack_IPop(pda, &pair) == eslEOD) {
 	  free (ct);
 	  esl_stack_Destroy(pda);
 	  return (NULL);
 	} else {
+	  if(status != eslOK) goto ERROR;
 	  ct[pos]  = pair;
 	  ct[pair] = pos;
 	}
@@ -936,7 +937,11 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa)
   esl_wuss2ct(msa->ss_cons, msa->alen, ct);  
 
   ESL_ALLOC(aseq, sizeof(char) * (msa->alen+1));
-  if(msa_entered_digitized) esl_msa_Textize(msa);
+  if(msa_entered_digitized) { 
+    status = esl_msa_Textize(msa);
+    if(status == eslECORRUPT)      cm_Fail("esl_msa_Textize() returned status: %d, the msa must contain invalid digitized chars.", status);
+    else if(status != eslOK) goto ERROR;
+  }
   /* remember we only have 1 seq in the MSA */
   for(apos = 0; apos < msa->alen; apos++)
     {
@@ -1056,8 +1061,9 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa)
 	    }	      
 	}
     }
-  if(msa_entered_digitized)
-    esl_msa_Digitize(msa->abc, msa);
+  if(msa_entered_digitized) {
+    if((status = esl_msa_Digitize(msa->abc, msa)) != eslOK) goto ERROR;
+  }
   return eslOK;
 
  ERROR:

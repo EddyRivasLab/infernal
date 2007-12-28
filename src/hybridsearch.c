@@ -1013,9 +1013,9 @@ cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs)
   j    = 0;
   hsi->firstA[0] = 0;
 
-  esl_stack_IPush(pda, 0);		/* 0 = left side. 1 would = right side. */
-  esl_stack_IPush(pda, j);		/* 0 = left side. 1 would = right side. */
-  esl_stack_IPush(pda, nd);
+  if((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;		/* 0 = left side. 1 would = right side. */
+  if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;		/* 0 = left side. 1 would = right side. */
+  if((status = esl_stack_IPush(pda, nd)) != eslOK) goto ERROR;
   while (esl_stack_IPop(pda, &nd) != eslEOD)
     {
       esl_stack_IPop(pda, &j_popped);
@@ -1051,30 +1051,30 @@ cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs)
 	      for(v = hsi->firstA[j]; v <= hsi->lastA[j]; v++) hsi->startA[v] = j;
 
 				/* push the BIF back on for its right side  */
-	      esl_stack_IPush(pda, 1);
-	      esl_stack_IPush(pda, j);
-	      esl_stack_IPush(pda, nd);
+	      if ((status = esl_stack_IPush(pda, 1)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, nd)) != eslOK) goto ERROR;
                             /* push node index for right child */
-	      esl_stack_IPush(pda, 0);
-	      esl_stack_IPush(pda, j);
-	      esl_stack_IPush(pda, cm->ndidx[cm->cnum[cm->nodemap[nd]]]);   
+	      if ((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, cm->ndidx[cm->cnum[cm->nodemap[nd]]])) != eslOK) goto ERROR;   
                             /* push node index for left child */
-	      esl_stack_IPush(pda, 0);
-	      esl_stack_IPush(pda, j);
-	      esl_stack_IPush(pda, cm->ndidx[cm->cfirst[cm->nodemap[nd]]]); 
+	      if ((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, cm->ndidx[cm->cfirst[cm->nodemap[nd]]])) != eslOK) goto ERROR; 
 	    }
 	  else
 	    {
 	      /* push the node back on for right side */
-	      esl_stack_IPush(pda, 1);
-	      esl_stack_IPush(pda, j);
-	      esl_stack_IPush(pda, nd);
+	      if ((status = esl_stack_IPush(pda, 1)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, nd)) != eslOK) goto ERROR;
 	      /* push next BIF, END node on */
 	      if (cm->ndtype[nd] != END_nd) {
 		while(cm->ndtype[nd] != BIF_nd && cm->ndtype[nd] != END_nd) nd++;
-		esl_stack_IPush(pda, 0);
-		esl_stack_IPush(pda, j);
-		esl_stack_IPush(pda, nd);
+		if ((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+		if ((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+		if ((status = esl_stack_IPush(pda, nd)) != eslOK) goto ERROR;
 	      }
 	    }
 	}

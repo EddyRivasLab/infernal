@@ -113,6 +113,8 @@ main(int argc, char **argv)
   cmfile     = esl_opt_GetArg(go, 1); 
   r = esl_randomness_CreateTimeseeded();
   w = esl_stopwatch_Create();
+  if(r == NULL) cm_Fail("Failed to create RNG, probably out of memory.\n");
+  if(w == NULL) cm_Fail("Failed to create stopwatch, probably out of memory.\n");
 
   /* Initializations: open the CM file
    */

@@ -2785,6 +2785,8 @@ insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	int r, int z, int i0, int j0, 
 	int allow_begin, int *dmin, int *dmax)
 {
+
+  int       status;
   void   ***shadow;             /* the traceback shadow matrix */
   float     sc;			/* the score of the CYK alignment */
   ESL_STACK *pda;                /* stack that tracks bifurc parent of a right start */
@@ -2818,6 +2820,7 @@ insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     }      
   
   pda = esl_stack_ICreate();
+  if(pda == NULL) goto ERROR;
   v = r;
   j = j0;
   i = i0;
@@ -2830,9 +2833,9 @@ insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
       /* Store info about the right fragment that we'll retrieve later:
        */
-      esl_stack_IPush(pda, j);	/* remember the end j    */
-      esl_stack_IPush(pda, k);	/* remember the subseq length k */
-      esl_stack_IPush(pda, tr->n-1);	/* remember the trace index of the parent B state */
+      if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;	/* remember the end j    */
+      if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;	/* remember the subseq length k */
+      if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;	/* remember the trace index of the parent B state */
 
       /* Deal with attaching left start state.
        */
@@ -2897,6 +2900,10 @@ insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
   free_vjd_shadow_matrix(shadow, cm, i0, j0);
   return sc;
+
+ ERROR: 
+  cm_Fail("Memory allocation error.");
+  return 0.; /* NEVERREACHED */
 }
 
 /* Function: vinsideT()
@@ -3101,6 +3108,8 @@ cyk_deck_count(CM_t *cm, int r, int z)
   ndecks = 1;			/* deck z, which we always need to start with. */
   nends  = CMSegmentCountStatetype(cm, r, z, E_st);
   pda    = esl_stack_ICreate();
+  if(pda == NULL) goto ERROR;
+
   ESL_ALLOC(touch, sizeof(int) * cm->M);
   for (v = 0; v < r;     v++) touch[v] = 0;
   for (v = r; v < z;     v++) touch[v] = cm->pnum[v];
@@ -3115,8 +3124,8 @@ cyk_deck_count(CM_t *cm, int r, int z)
       if (cm->sttype[v] == B_st) { /* release both S children of a bifurc */
 	w = cm->cfirst[v];
 	y = cm->cnum[v];
-	esl_stack_IPush(pda, w);
-	esl_stack_IPush(pda, y);
+	if((status =esl_stack_IPush(pda, w)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, y)) != eslOK) goto ERROR;
       } else {
 	for (w = cm->cfirst[v]; w < cm->cfirst[v]+cm->cnum[v]; w++)
 	  {
@@ -3125,9 +3134,9 @@ cyk_deck_count(CM_t *cm, int r, int z)
 	      {
 		if (cm->sttype[w] == E_st) { 
 		  nends--; 
-		  if (nends == 0) { esl_stack_IPush(pda, cm->M-1); }
+		  if (nends == 0) { if((status = esl_stack_IPush(pda, cm->M-1)) != eslOK) goto ERROR; }
 		} else 
-		  esl_stack_IPush(pda, w);
+		  if((status = esl_stack_IPush(pda, w)) != eslOK) goto ERROR;
 	      }
 	  }
       }
@@ -7012,6 +7021,7 @@ insideT_b_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	     int r, int z, int i0, int j0, 
 	     int allow_begin, int *dmin, int *dmax)
 {
+  int       status;
   void   ***shadow;             /* the traceback shadow matrix */
   float     sc;			/* the score of the CYK alignment */
   ESL_STACK *pda;                /* stack that tracks bifurc parent of a right start */
@@ -7033,6 +7043,7 @@ insideT_b_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 		   dmin, dmax);
 
   pda = esl_stack_ICreate();
+  if(pda == NULL) goto ERROR;
   v = r;
   j = j0;
   i = i0;
@@ -7056,9 +7067,9 @@ insideT_b_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
       
       /* Store info about the right fragment that we'll retrieve later:
        */
-      esl_stack_IPush(pda, j);	/* remember the end j    */
-      esl_stack_IPush(pda, k);	/* remember the subseq length k */
-      esl_stack_IPush(pda, tr->n-1);	/* remember the trace index of the parent B state */
+      if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;	/* remember the end j    */
+      if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;	/* remember the subseq length k */
+      if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;	/* remember the trace index of the parent B state */
       /* Deal with attaching left start state.
        */
       j = j-k;
@@ -7132,5 +7143,9 @@ insideT_b_me(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
   free_vjd_shadow_matrix(shadow, cm, i0, j0);
   return sc;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return 0.; /* NEVERREACHED */
 }
 

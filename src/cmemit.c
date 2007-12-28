@@ -101,7 +101,6 @@ int
 main(int argc, char **argv)
 {
   ESL_GETOPTS     *go = NULL;   /* command line processing                     */
-  /*ESL_STOPWATCH   *w  = esl_stopwatch_Create();*/
   struct cfg_s     cfg;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
@@ -156,10 +155,7 @@ main(int argc, char **argv)
   cfg.r          = NULL;	           /* created in init_cfg() */
 
   /* do work */
-  /*esl_stopwatch_Start(w);*/
   master(go, &cfg);
-  /*esl_stopwatch_Stop(w);
-    esl_stopwatch_Display(cfg.ofp, w, "# CPU time: ");*/
 
   /* Clean up the cfg. 
    */
@@ -171,7 +167,6 @@ main(int argc, char **argv)
   if (cfg.r     != NULL) esl_randomness_Destroy(cfg.r);
 
   esl_getopts_Destroy(go);
-  /*esl_stopwatch_Destroy(w);*/
   return 0;
 }
 

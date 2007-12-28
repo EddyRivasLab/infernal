@@ -745,6 +745,7 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
    * Now we can allocate for the MSA.
    */
   msa = esl_msa_Create(nseq, alen);
+  if(msa == NULL) goto ERROR;
   msa->nseq = nseq;
   msa->alen = alen;
   msa->abc  = (ESL_ALPHABET *) abc;
@@ -921,7 +922,7 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
 
   for (i = 0; i < nseq; i++)
     {
-      esl_strdup(sq[i]->name, -1, &(msa->sqname[i]));
+      if((status = esl_strdup(sq[i]->name, -1, &(msa->sqname[i]))) != eslOK) goto ERROR;
       /* TODO: individual SS annotations
        */
       if (wgt == NULL) msa->wgt[i] = 1.0;
@@ -1237,17 +1238,17 @@ Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr)
   if(cm->cp9map == NULL)
     cm_Fail("In Parsetree2CP9trace, cm->cp9map is NULL.\n");
 
-  int status;                /* Easel status                            */
-  CP9trace_t *cp9_tr; /* the CP9 trace we're creating            */
-  int **ks_ct = NULL; /* [0..2][0..cp9->M] number of times each state was used
-		       * 1st D: 0 = MATCH, 1 = INSERT, 2 = DELETE */
-  int  tidx;                 /* counter over parsetree nodes */
-  int  v;                    /* CM state index */
-  int  k, ks;                /* HMM nodes and state indices */
-  int  i;                    /* generic counter */
-  int  cp9_tr_size;          /* number of nodes we'll need for cp9_tr */
+  int status;                    /* Easel status                            */
+  CP9trace_t *cp9_tr;            /* the CP9 trace we're creating            */
+  int **ks_ct = NULL;            /* [0..2][0..cp9->M] number of times each state was used
+				  * 1st D: 0 = MATCH, 1 = INSERT, 2 = DELETE */
+  int  tidx;                     /* counter over parsetree nodes */
+  int  v;                        /* CM state index */
+  int  k, ks;                    /* HMM nodes and state indices */
+  int  i;                        /* generic counter */
+  int  cp9_tr_size;              /* number of nodes we'll need for cp9_tr */
   int  lmost_k = cm->cp9->M + 1; /* left most HMM node visited in parse (often 1) */
-  int  rmost_k = 0;          /* right most HMM node visited in parse (often M) */
+  int  rmost_k = 0;              /* right most HMM node visited in parse (often M) */
   int  ip;
   int  ins_ct = 0;               /* total number of inserts */
   ESL_ALLOC(ks_ct,           sizeof(int *) * 3);
@@ -1490,19 +1491,19 @@ EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digi
     ESL_FAIL(eslEINVAL, errbuf, "EmitParsetree requires a sequence name for the sequence it's creating.");
 
   tr  = CreateParsetree(100);
-  pda = esl_stack_ICreate();
-  gsq = esl_stack_CCreate();
+  if((pda = esl_stack_ICreate()) == NULL) goto ERROR;
+  if((gsq = esl_stack_CCreate()) == NULL) goto ERROR;
   N   = 0;			
   ESL_ALLOC(tmp_tvec, sizeof(float) * (MAXCONNECT+1)); /* enough room for max possible transitions, plus
 							* a local end transition */
   /* Init by pushing root state's info onto pda
    */
-  esl_stack_IPush(pda, -1);		/* doesn't emit an rchar */
-  esl_stack_IPush(pda, -1);		/* doesn't emit an lchar either */
-  esl_stack_IPush(pda, TRACE_LEFT_CHILD);
-  esl_stack_IPush(pda, -1);		/* attach this state to parsetree node -1 (init) */  
-  esl_stack_IPush(pda, 0);		/* it's the root state, v=0 */
-  esl_stack_IPush(pda, PDA_STATE);
+  if((status = esl_stack_IPush(pda, -1)) != eslOK) goto ERROR;		/* doesn't emit an rchar */
+  if((status = esl_stack_IPush(pda, -1)) != eslOK) goto ERROR;		/* doesn't emit an lchar either */
+  if((status = esl_stack_IPush(pda, TRACE_LEFT_CHILD)) != eslOK) goto ERROR;
+  if((status = esl_stack_IPush(pda, -1)) != eslOK) goto ERROR;		/* attach this state to parsetree node -1 (init) */  
+  if((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;		/* it's the root state, v=0 */
+  if((status = esl_stack_IPush(pda, PDA_STATE)) != eslOK) goto ERROR;
 
   /* Iterate until the pda is empty...
    */
@@ -1514,7 +1515,7 @@ EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digi
 	  esl_stack_IPop(pda, &rchar);
 
 	  if (rchar != -1) {
-	    esl_stack_CPush(gsq, cm->abc->sym[rchar]);
+	    if((status = esl_stack_CPush(gsq, cm->abc->sym[rchar])) != eslOK) goto ERROR;
 	    N++;
 	  }
 	  tr->emitr[tpos] = N;
@@ -1538,7 +1539,7 @@ EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digi
 	   */
 	  if (lchar != -1)
 	    {
-	      esl_stack_CPush(gsq, cm->abc->sym[lchar]);
+	      if((status = esl_stack_CPush(gsq, cm->abc->sym[lchar])) != eslOK) goto ERROR;
 	      N++;
 	    }
 
@@ -1547,9 +1548,9 @@ EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digi
            * to do this even if rchar is -1, to be sure that we will set the emitr
            * bound properly even for nonemitting states in the parsetree.
 	   */
-	  esl_stack_IPush(pda, rchar);
-	  esl_stack_IPush(pda, tpos);
-	  esl_stack_IPush(pda, PDA_RESIDUE);
+	  if((status = esl_stack_IPush(pda, rchar)) != eslOK) goto ERROR;
+	  if((status = esl_stack_IPush(pda, tpos)) != eslOK) goto ERROR;
+	  if((status = esl_stack_IPush(pda, PDA_RESIDUE)) != eslOK) goto ERROR;
 
 	  /* Decide what state we're going to next.
            * B is special case of a bifurcation to two S states. 
@@ -1561,21 +1562,21 @@ EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digi
 	  
 	      /* Push the right start state's info
 	       */
-	      esl_stack_IPush(pda, -1);		/* doesn't emit right */
-	      esl_stack_IPush(pda, -1);		/* doesn't emit left */
-	      esl_stack_IPush(pda, TRACE_RIGHT_CHILD); /* attach as right child of the B */
-	      esl_stack_IPush(pda, tpos);		/* attach it to B, which is tpos in parsetree*/
-	      esl_stack_IPush(pda, z);		/* state z */
-	      esl_stack_IPush(pda, PDA_STATE);
+	      if((status = esl_stack_IPush(pda, -1)) != eslOK) goto ERROR;		/* doesn't emit right */
+	      if((status = esl_stack_IPush(pda, -1)) != eslOK) goto ERROR;		/* doesn't emit left */
+	      if((status = esl_stack_IPush(pda, TRACE_RIGHT_CHILD)) != eslOK) goto ERROR; /* attach as right child of the B */
+	      if((status = esl_stack_IPush(pda, tpos)) != eslOK) goto ERROR;		/* attach it to B, which is tpos in parsetree*/
+	      if((status = esl_stack_IPush(pda, z)) != eslOK) goto ERROR;		/* state z */
+	      if((status = esl_stack_IPush(pda, PDA_STATE)) != eslOK) goto ERROR;
 
 	      /* Push the left start state's info
 	       */
-	      esl_stack_IPush(pda, -1);		/* doesn't emit right */
-	      esl_stack_IPush(pda, -1);		/* doesn't emit left */
-	      esl_stack_IPush(pda, TRACE_LEFT_CHILD); /* attach as left child of the B */
-	      esl_stack_IPush(pda, tpos);		/* attach it to B, which is tpos in parsetree*/
-	      esl_stack_IPush(pda, y);		/* state z */
-	      esl_stack_IPush(pda, PDA_STATE);
+	      if((status = esl_stack_IPush(pda, -1)) != eslOK) goto ERROR;		/* doesn't emit right */
+	      if((status = esl_stack_IPush(pda, -1)) != eslOK) goto ERROR;		/* doesn't emit left */
+	      if((status = esl_stack_IPush(pda, TRACE_LEFT_CHILD)) != eslOK) goto ERROR; /* attach as left child of the B */
+	      if((status = esl_stack_IPush(pda, tpos)) != eslOK) goto ERROR;		/* attach it to B, which is tpos in parsetree*/
+	      if((status = esl_stack_IPush(pda, y)) != eslOK) goto ERROR;		/* state z */
+	      if((status = esl_stack_IPush(pda, PDA_STATE)) != eslOK) goto ERROR;
 	    }
 	  else
 	    {
@@ -1651,7 +1652,7 @@ EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digi
 		  while(y == 0) /* we've self-transitioned, emit 1 res from NULL distro */
 		    {
 		      lchar = esl_rnd_FChoose(r, cm->null, cm->abc->K);
-		      esl_stack_CPush(gsq, cm->abc->sym[lchar]);
+		      if((status = esl_stack_CPush(gsq, cm->abc->sym[lchar])) != eslOK) goto ERROR;
 		      N++;
 		      y = esl_rnd_FChoose(r, tmp_tvec, 2); /* choose next state, either EL or implicit END */
 		    }
@@ -1659,20 +1660,21 @@ EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digi
 		}
 	      else 
 		{
-		  esl_stack_IPush(pda, rchar);		/* does it emit right? */
-		  esl_stack_IPush(pda, lchar);		/* does it emit left? */
-		  esl_stack_IPush(pda, TRACE_LEFT_CHILD); /* non-B's: attach as left child by conv */
-		  esl_stack_IPush(pda, tpos);		/* attach it to v, which is tpos in parsetree*/
-		  esl_stack_IPush(pda, y);		/* next state we're going to */
-		  esl_stack_IPush(pda, PDA_STATE);
+		  if((status = esl_stack_IPush(pda, rchar)) != eslOK) goto ERROR;		/* does it emit right? */
+		  if((status = esl_stack_IPush(pda, lchar)) != eslOK) goto ERROR;		/* does it emit left? */
+		  if((status = esl_stack_IPush(pda, TRACE_LEFT_CHILD)) != eslOK) goto ERROR; /* non-B's: attach as left child by conv */
+		  if((status = esl_stack_IPush(pda, tpos)) != eslOK) goto ERROR;		/* attach it to v, which is tpos in parsetree*/
+		  if((status = esl_stack_IPush(pda, y)) != eslOK) goto ERROR;		/* next state we're going to */
+		  if((status = esl_stack_IPush(pda, PDA_STATE)) != eslOK) goto ERROR;
 		}
 	    } /* end of PDA_STATE logic */  
 	} /* end of else (which we enter if v not a B state) */
     } /* end of main "while esl_stack_IPop()" loop */
 
-  seq = esl_stack_Convert2String(gsq); /* this destroys gsq char stack */
+  if((seq = esl_stack_Convert2String(gsq)) == NULL) goto ERROR; /* this destroys gsq char stack */
   if(name != NULL) sq  = esl_sq_CreateFrom(name, seq, NULL, NULL, NULL);
   else             sq  = esl_sq_CreateFrom("seq", seq, NULL, NULL, NULL); 
+  if(sq == NULL) goto ERROR;
   free(seq); /* we made a copy of this when creating sq */
   /* name can only be NULL if ret_sq == NULL, so we're throwing it away anyway */
 
@@ -1698,9 +1700,6 @@ EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digi
   return status;
 }
   
-
-
-
 /* Function: ParsetreeScoreCorrection()
  * based on     TraceScoreCorrection() from HMMER:
  * EPN 08.24.06 Janelia

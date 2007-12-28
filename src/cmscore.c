@@ -131,8 +131,10 @@ static int output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf,
 static int initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int summarize_align_options(const struct cfg_s *cfg, CM_t *cm);
 static int get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int i_am_mpi_master, seqs_to_aln_t **ret_seqs_to_aln);
+#ifdef HAVE_MPI
 static int determine_nseq_per_worker(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int *ret_nseq_worker);
 static int add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs, int offset);
+#endif
 
 int
 main(int argc, char **argv)
@@ -1196,6 +1198,7 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   return status; /* NEVERREACHED */
 }
 
+#ifdef HAVE_MPI
 /* determine_nseq_per_worker()
  * Given a CM, return the number of sequences we think we should send
  * to each worker (we don't know the number of sequences in the file).
@@ -1264,3 +1267,4 @@ add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs
 
   return eslOK;
 }
+#endif /* #ifdef HAVE_MPI */

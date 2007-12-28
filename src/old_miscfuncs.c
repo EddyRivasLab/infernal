@@ -2985,3 +2985,1218 @@ ConfigForGumbelMode(CM_t *cm, int gum_mode)
     }
   return eslOK;
 }
+
+
+/**************************************************************************
+ * EPN 09.06.06
+ * Function: check_sub_cm_by_sampling2()
+ *
+ * Purpose:  Given a CM and a sub CM that is supposed to mirror 
+ *           the CM as closely as possible between two given consensus
+ *           columns (spos and epos), check that the sub_cm was correctly 
+ *           constructed. 
+ *           
+ *           The approach is to sample from the CM and the sub_cm 
+ *           and use those samples to build two CP9 HMMs, then 
+ *           compare those two CP9 HMMs.
+ *
+ * Args:    
+ * CM_t *orig_cm     - the original, template CM
+ * CM_t  *sub_cm     - the sub CM built from the orig_cm
+ * ESL_RANDOMNESS *r - source of randomness
+ * int spos          - first consensus column in cm that hmm models (often 1)
+ * int epos          -  last consensus column in cm that hmm models 
+ * int nseq          - number of sequences to sample to build the new HMMs.
+ *
+ * Returns: TRUE: if CM and sub CM are "close enough" (see code)
+ *          FALSE: otherwise
+ */
+int 
+check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, int spos, int epos, int nseq)
+{
+  int status;
+  CP9_t       *orig_hmm;/* constructed CP9 HMM from the sub_cm */
+  CP9_t       *sub_hmm; /* constructed CP9 HMM from the sub_cm */
+  int ret_val;                    /* return value */
+  Parsetree_t **tr;               /* Parsetrees of emitted aligned sequences */
+  ESL_SQ  **sq;                   /* sequences */
+  ESL_MSA  *msa;                  /* alignment */
+  float    *wgt;
+  char     *name;                 /* name for emitted seqs */
+  int i;
+  int L;
+  int apos;
+  int *matassign;
+  int *useme;
+  CP9trace_t **cp9_tr;          /* fake tracebacks for each seq            */
+  int msa_nseq;                 /* this is the number of sequences per MSA,
+				 * current strategy is to sample (nseq/nseq_per_msa)
+				 * alignments from the CM, and add counts from
+				 * each to the shmm in counts form (to limit memory)
+				 */
+  int nsampled;                 /* number of sequences sampled thus far */
+  int debug_level;
+  int cc;
+  char         *tmp_name;           /* name for seqs */
+  char         *tmp_text_sq;        /* text seqs */
+  char errbuf[cmERRBUFSIZE];
+  
+  debug_level = 0;
+  ret_val = TRUE;
+  msa_nseq = 1000;
+  msa = NULL;
+  
+  /* Build two CP9 HMMs */
+  /* the orig_hmm only models consensus positions spos to epos of the orig_cm */
+  orig_hmm = AllocCPlan9((epos-spos+1), orig_cm->abc);
+  ZeroCPlan9(orig_hmm);
+  CPlan9SetNullModel(orig_hmm, orig_cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
+  
+  sub_hmm = AllocCPlan9((epos-spos+1), orig_cm->abc);
+  ZeroCPlan9(sub_hmm);
+  CPlan9SetNullModel(sub_hmm, sub_cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
+  
+  /* First sample from the orig_cm and use the samples to fill in orig_hmm
+   * sample MSA(s) from the CM 
+   */
+  nsampled = 0;
+  ESL_ALLOC(sq, sizeof(ESL_SQ *)     * msa_nseq);
+  ESL_ALLOC(tr, (sizeof(Parsetree_t) * msa_nseq));
+  ESL_ALLOC(wgt,(sizeof(float)       * msa_nseq));
+  esl_vec_FSet(wgt, msa_nseq, 1.0);
+  int namelen = 3 + IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
+
+  while(nsampled < nseq)
+    {
+      /*printf("nsampled: %d\n", nsampled);*/
+      if(nsampled != 0)
+	{
+	  /* clean up from previous MSA */
+	  esl_msa_Destroy(msa);
+	  free(matassign);
+	  free(useme);
+	  for (i = 0; i < msa_nseq; i++)
+	    {
+	      CP9FreeTrace(cp9_tr[i]);
+	      FreeParsetree(tr[i]);
+	      esl_sq_Reuse(sq[i]);
+	    }
+	  free(cp9_tr);
+	}
+      /* Emit msa_nseq parsetrees from the CM */
+      if(nsampled + msa_nseq > nseq)
+	msa_nseq = nseq - nsampled;
+      for (i = 0; i < msa_nseq; i++)
+	{
+	  ESL_ALLOC(name, sizeof(char) * namelen);
+	  sprintf(name, "seq%d", i+1);
+	  if((status = EmitParsetree(orig_cm, errbuf, r, name, FALSE, &(tr[i]), &(sq[i]), &L)) != eslOK) cm_Fail(errbuf);
+	  free(name);
+	}
+      /* Build a new MSA from these parsetrees */
+      Parsetrees2Alignment(orig_cm, orig_cm->abc, sq, NULL, tr, msa_nseq, TRUE, FALSE, &msa);
+      /* MSA should be in text mode, not digitized */
+      if(msa->flags & eslMSA_DIGITAL)
+	cm_Fail("ERROR in sub_cm_check_by_sampling(), sampled MSA should NOT be digitized.\n");
+      
+      /* Truncate the alignment prior to consensus column spos and after 
+	 consensus column epos */
+      ESL_ALLOC(useme, sizeof(int) * (msa->alen+1));
+      for (apos = 0, cc = 0; apos < msa->alen; apos++)
+	{
+	  /* Careful here, placement of cc++ increment is impt, 
+	   * we want all inserts between cc=spos-1 and cc=spos,
+	   * and between cc=epos and cc=epos+1.
+	   */
+	  if(cc < (spos-1) || cc > epos)
+	    useme[apos] = 0;
+	  else
+	    useme[apos] = 1;
+	  if (! esl_abc_CIsGap(msa->abc, msa->rf[apos]))
+	    { 
+	      cc++; 
+	      if(cc == (epos+1))
+		useme[apos] = 0; 
+	      /* we misassigned this guy, overwrite */ 
+	    }
+	}
+      esl_msa_ColumnSubset(msa, useme);
+      
+      /* Shorten the dsq's */
+      for (i = 0; i < msa_nseq; i++)
+	{
+	  MakeDealignedString(msa->abc, msa->aseq[i], msa->alen, msa->aseq[i], &(tmp_text_sq)); 
+	  ESL_ALLOC(tmp_name, sizeof(char) * namelen);
+	  sprintf(tmp_name, "seq%d", i+1);
+	  esl_sq_CreateFrom(tmp_name, tmp_text_sq, NULL, NULL, NULL);
+	  free(tmp_text_sq);
+	  if(esl_sq_Digitize(msa->abc, sq[i]) != eslOK)
+	    cm_Fail("ERROR digitizing sequence in CP9_check_by_sampling().\n");
+	}
+      
+      /* Determine match assignment from RF annotation
+       */
+      ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
+      matassign[0] = 0;
+      for (apos = 0; apos < msa->alen; apos++)
+	{
+	  matassign[apos+1] = 0;
+	  if (!esl_abc_CIsGap(msa->abc, msa->rf[apos])) 
+	    matassign[apos+1] = 1;
+	}
+      /* make fake tracebacks for each seq */
+      CP9_fake_tracebacks(msa, matassign, &cp9_tr);
+      
+      /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
+      for (i = 0; i < msa->nseq; i++) {
+	CP9TraceCount(orig_hmm, sq[i]->dsq, msa->wgt[i], cp9_tr[i]);
+      }
+      nsampled += msa_nseq;
+    }
+  /*Next, renormalize the orig_hmm and logoddisfy it */
+  CPlan9Renormalize(orig_hmm);
+  CP9Logoddsify(orig_hmm);
+  
+  /* clean up from previous MSA */
+  esl_msa_Destroy(msa);
+  free(matassign);
+  free(useme);
+  for (i = 0; i < msa_nseq; i++)
+    {
+      CP9FreeTrace(cp9_tr[i]);
+      FreeParsetree(tr[i]);
+      esl_sq_Destroy(sq[i]);
+    }
+  free(cp9_tr);
+  
+  /* Now for the sub_hmm. Sample from the sub_cm and use the 
+   * samples to fill in sub_hmm sample MSA(s) from the CM */
+  nsampled = 0;
+  ESL_ALLOC(sq, sizeof(ESL_SQ *)     * msa_nseq);
+  ESL_ALLOC(tr, (sizeof(Parsetree_t) * msa_nseq));
+  ESL_ALLOC(wgt,(sizeof(float)       * msa_nseq));
+  esl_vec_FSet(wgt, msa_nseq, 1.0);
+  
+  while(nsampled < nseq)
+    {
+      /*printf("nsampled: %d\n", nsampled);*/
+      if(nsampled != 0)
+	{
+	  /* clean up from previous MSA */
+	  esl_msa_Destroy(msa);
+	  free(matassign);
+	  for (i = 0; i < msa_nseq; i++)
+	    {
+	      CP9FreeTrace(cp9_tr[i]);
+	      FreeParsetree(tr[i]);
+	      esl_sq_Reuse(sq[i]);
+	    }
+	  free(cp9_tr);
+	}
+      /* Emit msa_nseq parsetrees from the CM */
+      if(nsampled + msa_nseq > nseq)
+	msa_nseq = nseq - nsampled;
+      for (i = 0; i < msa_nseq; i++)
+	{
+	  ESL_ALLOC(name, sizeof(char) * namelen);
+	  sprintf(name, "seq%d", i+1);
+	  if((status = EmitParsetree(sub_cm, errbuf, r, name, FALSE, &(tr[i]), &(sq[i]), &L)) != eslOK) cm_Fail(errbuf);
+	  free(name);
+	}
+      /* Build a new MSA from these parsetrees */
+      Parsetrees2Alignment(sub_cm, sub_cm->abc, sq, NULL, tr, msa_nseq, TRUE, FALSE, &msa);
+      /* MSA should be in text mode, not digitized */
+      if(msa->flags & eslMSA_DIGITAL)
+	cm_Fail("ERROR in sub_cm_check_by_sampling(), sampled MSA should NOT be digitized.\n");
+      
+      /* Determine match assignment from RF annotation
+       */
+      ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
+      matassign[0] = 0;
+      for (apos = 0; apos < msa->alen; apos++)
+	{
+	  matassign[apos+1] = 0;
+	  if (!esl_abc_CIsGap(msa->abc, msa->rf[apos])) 
+	    matassign[apos+1] = 1;
+	}
+      /* make fake tracebacks for each seq */
+      CP9_fake_tracebacks(msa, matassign, &cp9_tr);
+      
+      /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
+      for (i = 0; i < msa->nseq; i++) {
+	CP9TraceCount(orig_hmm, sq[i]->dsq, msa->wgt[i], cp9_tr[i]);
+      }
+      nsampled += msa_nseq;
+    }
+  
+  /*Next, renormalize the sub_hmm and logoddisfy it */
+  CPlan9Renormalize(sub_hmm);
+  CP9Logoddsify(sub_hmm);
+
+  /* clean up from previous MSA */
+  esl_msa_Destroy(msa);
+  free(matassign);
+  free(useme);
+  for (i = 0; i < msa_nseq; i++)
+    {
+      CP9FreeTrace(cp9_tr[i]);
+      FreeParsetree(tr[i]);
+      esl_sq_Destroy(sq[i]);
+    }
+  free(cp9_tr);
+  /**************************************************/
+  
+  printf("PRINTING SAMPLED ORIG HMM PARAMS:\n");
+  debug_print_cp9_params(stdout, orig_hmm, TRUE);
+  printf("DONE PRINTING SAMPLED ORIG HMM PARAMS:\n");
+  
+
+  printf("PRINTING SAMPLED SUB HMM PARAMS:\n");
+  debug_print_cp9_params(stdout, sub_hmm, TRUE);
+  printf("DONE PRINTING SAMPLED SUB HMM PARAMS:\n");
+  
+  FreeCPlan9(orig_hmm);
+  FreeCPlan9(sub_hmm);
+  return TRUE;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return FALSE; /* never reached */
+}
+
+#if 0
+/*
+ * Function: cm_emit_seqs_to_aln_above_cutoff()
+ * Date:     EPN, Mon Sep 10 17:31:36 2007
+ *
+ * Purpose:  Create a seqs_to_aln object by generating sequences
+ *           from a CM. Only accept sequences that have a CM hit
+ *           within them above a bit score cutoff.
+ *
+ * Args:     go              - getopts
+ *           cfg             - cmcalibrate's configuration
+ *           cm              - CM to emit from
+ *           nseq            - number of seqs to emit
+ *           cutoff          - bit score cutoff 
+ *
+ * Returns:  Ptr to a newly allocated seqs_to_aln object with nseq sequences to align.
+ *           Dies immediately on failure with informative error message.
+ */
+seqs_to_aln_t *cm_emit_seqs_to_aln_above_cutoff(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int nseq)
+{
+  int status;
+  seqs_to_aln_t *seqs_to_aln = NULL;
+  char *name = NULL;
+  int namelen;
+  int L;
+  int i;
+  int do_cyk = TRUE;
+  Parsetree_t *tr = NULL;
+
+  if(cm->dmin == NULL || cm->dmax == NULL) cm_Fail("cm_emit_seqs_to_aln_above_cutoff(), dmin, dmax are NULL.");
+  if(cm->search_opts & CM_SEARCH_NOQDB)    cm_Fail("cm_emit_seqs_to_aln_above_cutoff(), search opt NOQDB enabled.");
+
+  seqs_to_aln = CreateSeqsToAln(nseq, FALSE);
+
+  namelen = IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
+  if(cm->name != NULL) namelen += strlen(cm->name) + 1;
+  ESL_ALLOC(name, sizeof(char) * namelen);
+
+  while(i < nseq)
+    {
+      if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+1);
+      else                 sprintf(name, "%d-%d", cfg->ncm-1, i+1);
+      L = 0; 
+      EmitParsetree(cm, cfg->r, name, TRUE, &tr, &(seqs_to_aln->sq[i]), &L);
+      while(L == 0) { FreeParsetree(tr); esl_sq_Destroy(seqs_to_aln->sq[i]); EmitParsetree(cm, cfg->r, name, TRUE, &tr, &(seqs_to_aln->sq[i]), &L); }
+      p = cfg->cmstatsA[(ncm-1)]->gc2p[(get_gc_comp(seqs_to_aln->sq[i], 1, L))]; /* in get_gc_comp() should be i and j of best hit */
+
+      sc = ParsetreeScore(cm, tr, seqs_to_aln->sq[i]->dsq, FALSE); 
+      FreeParsetree(tr);
+      if(sc > cfg->cutoffA[p]) { i++; continue; }
+
+      /* If we get here, parse score is not above cfg->cutoffA[p], we want to determine if 
+       * this sequence has a hit in it above the cfg->cutoffA[p] as quickly as possible. 
+       *
+       * Stage 1: HMM banded search tau = 1e-2
+       * Stage 2: HMM banded search with scanning bands, tau = 1e-10
+       * Stage 3: QDB search (CYK or inside), beta = cm->beta (should be default beta)
+       *
+       * If we find a hit > cfg->cutoffA[p] at any stage, we accept the seq, increment i and move on.
+       * We don't do a full non-banded parse to ensure that we don't exceed the cfg->cutoffA[p], 
+       * because QDB is on in cmsearch by default.
+       */
+
+      /* stage 1 */
+      cm->search_opts |= CM_SEARCH_HBANDED;
+      cm->tau = 0.01;
+      if((sc = actually_search_target(cm, seqs_to_aln->sq[i]->dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cfg->cutoffA[p]) 
+	{ i++; break; }
+      s1_np++;
+      /* stage 2 */
+      cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
+      cm->tau = 1e-10;
+      if((sc = actually_search_target(cm, seqs_to_aln->sq[i]->dsq, 1, L, 0., 0., NULL, FALSE, FALSE, FALSE, NULL, FALSE)) > cfg->cutoffA[p]) 
+	{ i++; break; }
+      s2_np++;
+      /* stage 3 */
+      cm->search_opts &= ~CM_SEARCH_HBANDED;
+      cm->search_opts &= ~CM_SEARCH_HBANDED;
+      if((sc = search_target_cm_calibration(cm, seqs_to_aln->sq[i]->dsq, cm->dmin, cm->dmax, 1, seqs_to_aln->sq[i]->n, cm->W, NULL)) > cfg->cutoffA[p])
+	{ i++; break; }
+      s3_np++;
+      if(s3_np > (1000 * nseq)) cm_Fail("cm_emit_seqs_to_aln_above_cutoff(), wanted %d seqs above cutoff: %d bits, reached limit of %d seqs\n", nseq, cfg->cutoffA[p], (1000 * nseq));
+
+      /* didn't pass */
+      esl_sq_Destroy(seqs_to_aln->sq[i]);
+    }
+
+  seqs_to_aln->nseq = nseq;
+
+  free(name);
+  return seqs_to_aln;
+
+ ERROR:
+  cm_Fail("memory allocation error");
+  return NULL;
+}
+
+
+/* Function: search_target_cm_calibration() based on bandcyk.c:CYKBandedScan()
+ * Date:     EPN, Sun Sep  9 19:05:07 2007
+ *
+ * Purpose:  Scan a sequence for matches to a covariance model, using the
+ *           banded algorithm. If bands are NULL, reverts to non-banded
+ *           (scancyk.c:CYKScan()). 
+ *
+ *           Special local cmcalibrate function that only cares about
+ *           collecting the best score at each state for the sequence.
+ *
+ * Args:     cm        - the covariance model
+ *           dsq       - the digitized sequence
+ *           dmin      - minimum bound on d for state v; 0..M
+ *           dmax      - maximum bound on d for state v; 0..M          
+ *           i0        - start of target subsequence (1 for full seq)
+ *           j0        - end of target subsequence (L for full seq)
+ *           W         - max d: max size of a hit
+ *           ret_vsc  - RETURN: [0..v..M-1] best score at each state v
+ *
+ * Returns:  score of best overall hit (vsc[0]).
+ *           dies immediately if some error occurs.
+ */
+float 
+search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float **ret_vsc)
+{
+  int       status;
+  float  ***alpha;              /* CYK DP score matrix, [v][j][d] */
+  int    ***ialpha;             /* Inside DP score matrix, [v][j][d] */
+  float    *vsc;           /* best score for each state (float) */
+  float    *ivsc;          /* best score for each state (int, only used if do_inside) */
+  int       yoffset;		/* offset to a child state */
+  int       i,j;		/* index of start/end positions in sequence, 0..L */
+  int       d;			/* a subsequence length, 0..W */
+  int       k;			/* used in bifurc calculations: length of right subseq */
+  int       prv, cur;		/* previous, current j row (0 or 1) */
+  int       v, w, y;            /* state indices */
+  int       jp_v;  	        /* offset j for state v */
+  int       jp_y;  	        /* offset j for state y */
+  int       jp_w;  	        /* offset j for state w */
+  int       jmax;               /* when imposing bands, maximum j value in alpha matrix */
+  int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
+  int       L;                  /* length of the subsequence (j0-i0+1) */
+  int       dn;                 /* temporary value for min d in for loops */
+  int       dx;                 /* temporary value for max d in for loops */
+  int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
+
+  int       do_cyk    = FALSE;  /* TRUE: do cyk; FALSE: do_inside */
+  int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
+  float     ret_val;
+
+  /* determine if we're doing cyk/inside banded/non-banded */
+  if(! (cm->search_opts & CM_SEARCH_INSIDE)) do_cyk    = TRUE;
+  if(dmin != NULL && dmax != NULL)           do_banded = TRUE;
+
+  L = j0-i0+1;
+  if (W > L) W = L; 
+
+  ESL_ALLOC(vsc, sizeof(float) * cm->M);
+  esl_vec_FSet(vsc, cm->M, IMPOSSIBLE);
+
+  if(do_cyk) { 
+
+    /*****************************************************************
+     * alpha allocations.
+     * The scanning matrix is indexed [v][j][d]. 
+     *    v ranges from 0..M-1 over states in the model.
+     *    j takes values 0 or 1: only the previous (prv) or current (cur) row
+     *      with the exception of BEGL_S, where we have to have a whole W+1xW+1
+     *      deck in memory, and j ranges from 0..W, and yes it must be square
+     *      because we'll use a rolling pointer trick thru it
+     *    d ranges from 0..W over subsequence lengths.
+     * Note that E memory is shared: all E decks point at M-1 deck.
+     *****************************************************************/
+    ESL_ALLOC(alpha, (sizeof(float **) * cm->M));
+    for (v = cm->M-1; v >= 0; v--) {	/* reverse, because we allocate E_M-1 first */
+      if (cm->stid[v] == BEGL_S)
+	{
+	  ESL_ALLOC(alpha[v], (sizeof(float *) * (W+1)));
+	  for (j = 0; j <= W; j++)
+	    ESL_ALLOC(alpha[v][j], (sizeof(float) * (W+1)));
+	}
+      else if (cm->sttype[v] == E_st && v < cm->M-1) 
+	alpha[v] = alpha[cm->M-1];
+      else 
+	{
+	  ESL_ALLOC(alpha[v], sizeof(float *) * 2);
+	  for (j = 0; j < 2; j++) 
+	    ESL_ALLOC(alpha[v][j], (sizeof(float) * (W+1)));
+	}
+    }
+
+    /*****************************************************************
+     * alpha initializations.
+     * We initialize on d=0, subsequences of length 0; these are
+     * j-independent. Any generating state (P,L,R) is impossible on d=0.
+     * E=0 for d=0. B,S,D must be calculated. 
+     * Also, for MP, d=1 is impossible.
+     * Also, for E, all d>0 are impossible.
+     *
+     * and, for banding: any cell outside our bands is impossible.
+     * These inits are never changed in the recursion, so even with the
+     * rolling, matrix face reuse strategy, this works.
+     *****************************************************************/ 
+    for (v = cm->M-1; v >= 0; v--)
+      {
+	alpha[v][0][0] = IMPOSSIBLE;
+
+	if      (cm->sttype[v] == E_st)  alpha[v][0][0] = 0;
+	else if (cm->sttype[v] == MP_st) alpha[v][0][1] = alpha[v][1][1] = IMPOSSIBLE;
+	else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) 
+	  {
+	    y = cm->cfirst[v];
+	    alpha[v][0][0] = cm->endsc[v];
+	    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+	      alpha[v][0][0] = ESL_MAX(alpha[v][0][0], (alpha[y+yoffset][0][0] + cm->tsc[v][yoffset]));
+	    /* ...we don't bother to look at local alignment starts here... */
+	    alpha[v][0][0] = ESL_MAX(alpha[v][0][0], IMPOSSIBLE);
+	  }
+	else if (cm->sttype[v] == B_st) 
+	  {
+	    w = cm->cfirst[v];
+	    y = cm->cnum[v];
+	    alpha[v][0][0] = alpha[w][0][0] + alpha[y][0][0]; 
+	  }
+
+	alpha[v][1][0] = alpha[v][0][0];
+	if (cm->stid[v] == BEGL_S) 
+	  for (j = 2; j <= W; j++) 
+	    alpha[v][j][0] = alpha[v][0][0];
+      }
+    /* Impose the bands.
+     *   (note: E states have all their probability on d=0, so dmin[E] = dmax[E] = 0;
+     *    the first loop will be skipped, the second initializes the E states.)
+     */
+    if(do_banded) { 
+      for (v = 0; v < cm->M; v++) {
+	jmax = (cm->stid[v] == BEGL_S) ? W : 1;
+	for (d = 0; d < dmin[v] && d <=W; d++) 
+	  for(j = 0; j <= jmax; j++)
+	    alpha[v][j][d] = IMPOSSIBLE;
+	for (d = dmax[v]+1; d <= W;      d++) 
+	  for(j = 0; j <= jmax; j++)
+	    alpha[v][j][d] = IMPOSSIBLE;
+      }
+    }
+
+    /* The main loop: scan the sequence from position i0 to j0.
+     */
+    for (j = i0; j <= j0; j++) 
+      {
+	cur = j%2;
+	prv = (j-1)%2;
+	for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
+	  {
+	    /* determine min/max d we're allowing for this state v and this position j */
+	    if(do_banded) { 
+	      dn = (cm->sttype[v] == MP_st) ? ESL_MAX(dmin[v], 2) : ESL_MAX(dmin[v], 1); 
+	      dx = ESL_MIN((j-i0+1), dmax[v]); 
+	      dx = ESL_MIN(dx, W);
+	    }
+	    else { 
+	      dn = (cm->sttype[v] == MP_st) ? 2 : 1;
+	      dx = ESL_MIN((j-i0+1), W); 
+	    }
+
+	    jp_v = (cm->stid[v] == BEGL_S) ? (j % (W+1)) : cur;
+	    jp_y = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
+	    sd   = StateDelta(cm->sttype[v]);
+
+	    if(cm->sttype[v] == B_st) {
+	      w = cm->cfirst[v];
+	      y = cm->cnum[v];
+	      for (d = dn; d <= dx; d++) {
+		/* k is the length of the right fragment */
+		/* Careful, make sure k is consistent with bands in state w and state y. */
+		if(do_banded) {
+		  kmin = ESL_MAX(dmin[y], (d-dmax[w]));
+		  kmin = ESL_MAX(kmin, 0);
+		  kmax = ESL_MIN(dmax[y], (d-dmin[w]));
+		}
+		else { kmin = 0; kmax = d; }
+
+		alpha[v][jp_v][d] = ESL_MAX(IMPOSSIBLE, cm->endsc[v] + (cm->el_selfsc * (d - sd)));
+		for (k = kmin; k <= kmax; k++) { 
+		  jp_w = (j-k)%(W+1);	   /* jp is rolling index into BEGL_S deck j dimension */
+		      alpha[v][jp_v][d] = ESL_MAX(alpha[v][jp_v][d], (alpha[w][jp_w][d-k] + alpha[y][jp_y][k]));
+		}
+		vsc[v] = ESL_MAX(vsc[v], alpha[v][jp_v][d]);
+	      }
+	    }
+	    else { /* if cm->sttype[v] != B_st */
+	      for (d = dn; d <= dx; d++) {
+		alpha[v][jp_v][d] = ESL_MAX (IMPOSSIBLE, (cm->endsc[v] + (cm->el_selfsc * (d - sd))));
+		y = cm->cfirst[v];
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+		  alpha[v][jp_v][d] = ESL_MAX (alpha[v][jp_v][d], (alpha[y+yoffset][jp_y][d - sd] + cm->tsc[v][yoffset]));
+		
+		/* add in emission score, if any */
+		i = j-d+1;
+		switch (cm->sttype[v]) {
+		case MP_st: 
+		  if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		    alpha[v][jp_v][d] += cm->esc[v][(int) (dsq[i]*cm->abc->K+dsq[j])];
+		  else
+		    alpha[v][cur][d] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]);
+		  break;
+		case ML_st:
+		case IL_st:
+		  alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
+		  break;
+		case MR_st:
+		case IR_st:
+		  alpha[v][cur][d] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
+		  break;
+		} /* end of switch */
+		vsc[v] = ESL_MAX(vsc[v], alpha[v][jp_v][d]);
+	      } /* end of d = dn; d <= dx; d++ */
+	    } /* end of else (v != B_st) */
+	  } /*loop over decks v>0 */
+
+	/* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
+	 * 
+	 * If local begins are off, the hit must be rooted at v=0.
+	 * With local begins on, the hit is rooted at the second state in
+	 * the traceback (e.g. after 0), the internal entry point. Divide & conquer
+	 * can only handle this if it's a non-insert state; this is guaranteed
+	 * by the way local alignment is parameterized (other transitions are
+	 * -INFTY), which is probably a little too fragile of a method. 
+	 */
+
+	/* determine min/max d we're allowing for the root state and this position j */
+	if(do_banded) { 
+	  dn = ESL_MAX(dmin[0], 1); 
+	  dx = ESL_MIN((j-i0+1), dmax[0]); 
+	  dx = ESL_MIN(dx, W);
+	}
+	else { 
+	  dn = 1; 
+	  dx = ESL_MIN((j-i0+1), W); 
+	}
+	jp_v = cur;
+	jp_y = cur;
+	for (d = dn; d <= dx; d++) {
+	  y = cm->cfirst[0];
+	  alpha[0][cur][d] = ESL_MAX(IMPOSSIBLE, alpha[y][cur][d] + cm->tsc[0][0]);
+	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++) 
+	    alpha[0][cur][d] = ESL_MAX (alpha[0][cur][d], (alpha[y+yoffset][cur][d] + cm->tsc[0][yoffset]));
+	  vsc[0] = ESL_MAX(vsc[0], alpha[0][cur][d]);
+	}
+	
+	if (cm->flags & CM_LOCAL_BEGIN) {
+	  for (y = 1; y < cm->M; y++) {
+	    if(do_banded) {
+	      dn = (cm->sttype[y] == MP_st) ? ESL_MAX(dmin[y], 2) : ESL_MAX(dmin[y], 1); 
+	      dn = ESL_MAX(dn, dmin[0]);
+	      dx = ESL_MIN((j-i0+1), dmax[y]); 
+	      dx = ESL_MIN(dx, W);
+	    }
+	    else { 
+	      dn = 1; 
+	      dx = ESL_MIN((j-i0+1), W); 
+	    }
+	    jp_y = (cm->stid[y] == BEGL_S) ? (j % (W+1)) : cur;
+	    for (d = dn; d <= dx; d++) {
+	      alpha[0][cur][d] = ESL_MAX(alpha[0][cur][d], alpha[y][jp_y][d] + cm->beginsc[y]);
+	      vsc[0] = ESL_MAX(vsc[0], alpha[0][cur][d]);
+	    }
+	  }
+	}
+      } /* end loop over end positions j */
+    /* free alpha, we only care about vsc 
+     */
+    for (v = 0; v < cm->M; v++) 
+      {
+	if (cm->stid[v] == BEGL_S) {                     /* big BEGL_S decks */
+	  for (j = 0; j <= W; j++) free(alpha[v][j]);
+	  free(alpha[v]);
+	} else if (cm->sttype[v] == E_st && v < cm->M-1) { /* avoid shared E decks */
+	  continue;
+	} else {
+	  free(alpha[v][0]);
+	  free(alpha[v][1]);
+	  free(alpha[v]);
+	}
+      }
+    free(alpha);
+  }
+  /*********************
+   * end of if(do_cyk) *
+   *********************/
+  else { /* ! do_cyk, do_inside, with scaled int log odds scores instead of floats */
+
+    ESL_ALLOC(ivsc, sizeof(int) * cm->M);
+    esl_vec_FSet(ivsc, cm->M, -INFTY);
+    
+    /* ialpha allocations. (see comments for do_cyk section */ 
+    ESL_ALLOC(ialpha, sizeof(int **) * cm->M);
+    for (v = cm->M-1; v >= 0; v--) {	/* reverse, because we allocate E_M-1 first */
+    if (cm->stid[v] == BEGL_S)
+      {
+	ESL_ALLOC(ialpha[v], sizeof(int *) * (W+1));
+	for (j = 0; j <= W; j++)
+	  ESL_ALLOC(ialpha[v][j], sizeof(int) * (W+1));
+      }
+    else if (cm->sttype[v] == E_st && v < cm->M-1) 
+      ialpha[v] = ialpha[cm->M-1];
+    else 
+      {
+	ESL_ALLOC(ialpha[v], sizeof(int *) * 2);
+	for (j = 0; j < 2; j++) 
+	  ESL_ALLOC(ialpha[v][j], sizeof(int) * (W+1));
+      }
+    }
+    /* ialpha initializations. (see comments for do_cyk section */
+    for (v = cm->M-1; v >= 0; v--)  {
+	ialpha[v][0][0] = -INFTY;
+	if      (cm->sttype[v] == E_st)  ialpha[v][0][0] = 0;
+	else if (cm->sttype[v] == MP_st) ialpha[v][0][1] = ialpha[v][1][1] = -INFTY;
+	else if (cm->sttype[v] == S_st || cm->sttype[v] == D_st) 
+	  {
+	    y = cm->cfirst[v];
+	    ialpha[v][0][0] = cm->iendsc[v];
+	    for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+	      ialpha[v][0][0] = ILogsum(ialpha[v][0][0], (ialpha[y+yoffset][0][0] 
+							+ cm->itsc[v][yoffset]));
+	    /* ...we don't bother to look at local alignment starts here... */
+	    /* ! */
+	    if (ialpha[v][0][0] < -INFTY) ialpha[v][0][0] = -INFTY;	
+	  }
+	else if (cm->sttype[v] == B_st)  {
+	  w = cm->cfirst[v];
+	  y = cm->cnum[v];
+	  ialpha[v][0][0] = ialpha[w][0][0] + ialpha[y][0][0]; 
+	}
+      ialpha[v][1][0] = ialpha[v][0][0];
+      if (cm->stid[v] == BEGL_S) 
+	for (j = 2; j <= W; j++) 
+	  ialpha[v][j][0] = ialpha[v][0][0];
+    }
+    /* Impose the bands.
+     *   (note: E states have all their probability on d=0, so dmin[E] = dmax[E] = 0;
+     *    the first loop will be skipped, the second initializes the E states.)
+     */
+    if(do_banded) {
+      for (v = 0; v < cm->M; v++) {
+	if(cm->stid[v] == BEGL_S) jmax = W; 
+	else jmax = 1;
+	
+	dx = ESL_MIN(dmin[v], W);
+	for (d = 0; d < dx; d++) 
+	  for(j = 0; j <= jmax; j++)
+	    ialpha[v][j][d] = -INFTY;
+	
+	for (d = dmax[v]+1; d <= W;      d++) 
+	  for(j = 0; j <= jmax; j++)
+	    ialpha[v][j][d] = -INFTY;
+      }
+    }
+
+    /* The main loop: scan the sequence from position i0 to j0.
+     */
+    for (j = i0; j <= j0; j++) 
+      {
+	cur = j%2;
+	prv = (j-1)%2;
+	for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
+	  {
+	    /* determine min/max d we're allowing for this state v and this position j */
+	    if(do_banded) { 
+	      dn = (cm->sttype[v] == MP_st) ? ESL_MAX(dmin[v], 2) : ESL_MAX(dmin[v], 1); 
+	      dx = ESL_MIN((j-i0+1), dmax[v]); 
+	      dx = ESL_MIN(dx, W);
+	    }
+	    else { 
+	      dn = (cm->sttype[v] == MP_st) ? 2 : 1;
+	      dx = ESL_MIN((j-i0+1), W); 
+	    }
+
+	    jp_v = (cm->stid[v] == BEGL_S) ? (j % (W+1)) : cur;
+	    jp_y = (StateRightDelta(cm->sttype[v]) > 0) ? prv : cur;
+	    sd   = StateDelta(cm->sttype[v]);
+
+	    if(cm->sttype[v] == B_st) {
+	      w = cm->cfirst[v];
+	      y = cm->cnum[v];
+	      for (d = dn; d <= dx; d++) {
+		/* k is the length of the right fragment */
+		/* Careful, make sure k is consistent with bands in state w and state y. */
+		if(do_banded) {
+		  kmin = ESL_MAX(dmin[y], (d-dmax[w]));
+		  kmin = ESL_MAX(kmin, 0);
+		  kmax = ESL_MIN(dmax[y], (d-dmin[w]));
+		}
+		else { kmin = 0; kmax = d; }
+
+		ialpha[v][jp_v][d] = ESL_MAX(-INFTY, cm->iendsc[v] + (cm->iel_selfsc * (d - sd)));
+		for (k = kmin; k <= kmax; k++) { 
+		  jp_w = (j-k)%(W+1);	   /* jp is rolling index into BEGL_S deck j dimension */
+		      ialpha[v][jp_v][d] = ESL_MAX(ialpha[v][jp_v][d], (ialpha[w][jp_w][d-k] + ialpha[y][jp_y][k]));
+		}
+		ivsc[v] = ESL_MAX(ivsc[v], ialpha[v][jp_v][d]);
+	      }
+	    }
+	    else { /* if cm->sttype[v] != B_st */
+	      for (d = dn; d <= dx; d++) {
+		ialpha[v][jp_v][d] = ESL_MAX (-INFTY, (cm->iendsc[v] + (cm->iel_selfsc * (d - sd))));
+		y = cm->cfirst[v];
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+		  ialpha[v][jp_v][d] = ESL_MAX (ialpha[v][jp_v][d], (ialpha[y+yoffset][jp_y][d - sd] + cm->itsc[v][yoffset]));
+		
+		/* add in emission score, if any */
+		i = j-d+1;
+		switch (cm->sttype[v]) {
+		case MP_st: 
+		  if (dsq[i] < cm->abc->K && dsq[j] < cm->abc->K)
+		    ialpha[v][jp_v][d] += cm->iesc[v][(int) (dsq[i]*cm->abc->K+dsq[j])];
+		  else
+		    ialpha[v][cur][d] += iDegeneratePairScore(cm->abc, cm->iesc[v], dsq[i], dsq[j]);
+		  break;
+		case ML_st:
+		case IL_st:
+		  ialpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, dsq[i], cm->iesc[v]);
+		  break;
+		case MR_st:
+		case IR_st:
+		  ialpha[v][cur][d] += esl_abc_IAvgScore(cm->abc, dsq[j], cm->iesc[v]);
+		  break;
+		} /* end of switch */
+		ivsc[v] = ESL_MAX(ivsc[v], ialpha[v][jp_v][d]);
+	      } /* end of d = dn; d <= dx; d++ */
+	    } /* end of else (v != B_st) */
+	  } /*loop over decks v>0 */
+	/* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
+	 * 
+	 * If local begins are off, the hit must be rooted at v=0.
+	 * With local begins on, the hit is rooted at the second state in
+	 * the traceback (e.g. after 0), the internal entry point. Divide & conquer
+	 * can only handle this if it's a non-insert state; this is guaranteed
+	 * by the way local alignment is parameterized (other transitions are
+	 * -INFTY), which is probably a little too fragile of a method. 
+	 */
+
+	/* determine min/max d we're allowing for the root state and this position j */
+	if(do_banded) { 
+	  dn = ESL_MAX(dmin[0], 1); 
+	  dx = ESL_MIN((j-i0+1), dmax[0]); 
+	  dx = ESL_MIN(dx, W);
+	}
+	else { 
+	  dn = 1; 
+	  dx = ESL_MIN((j-i0+1), W); 
+	}
+	jp_v = cur;
+	jp_y = cur;
+	for (d = dn; d <= dx; d++) {
+	  y = cm->cfirst[0];
+	  ialpha[0][cur][d] = ESL_MAX(IMPOSSIBLE, ialpha[y][cur][d] + cm->itsc[0][0]);
+	  for (yoffset = 1; yoffset < cm->cnum[0]; yoffset++) 
+	    ialpha[0][cur][d] = ESL_MAX (ialpha[0][cur][d], (ialpha[y+yoffset][cur][d] + cm->itsc[0][yoffset]));
+	  ivsc[0] = ESL_MAX(ivsc[0], ialpha[0][cur][d]);
+	}
+	
+	if (cm->flags & CM_LOCAL_BEGIN) {
+	  for (y = 1; y < cm->M; y++) {
+	    if(do_banded) {
+	      dn = ESL_MAX(1,  dmin[y]);
+	      dn = ESL_MAX(dn, dmin[0]);
+	      dx = ESL_MIN((j-i0+1), dmax[y]); 
+	      dx = ESL_MIN(dx, W);
+	    }
+	    else { dn = 1; dx = W; }
+	    jp_y = (cm->stid[y] == BEGL_S) ? (j % (W+1)) : cur;
+	    for (d = dn; d <= dx; d++) {
+	      ialpha[0][cur][d] = ESL_MAX(ialpha[0][cur][d], ialpha[y][jp_y][d] + cm->ibeginsc[y]);
+	      ivsc[0] = ESL_MAX(ivsc[0], ialpha[0][cur][d]);
+	    }
+	  }
+	}
+      } /* end loop over end positions j */
+    /* free ialpha, we only care about ivsc 
+     */
+    for (v = 0; v < cm->M; v++) 
+      {
+	if (cm->stid[v] == BEGL_S) {                     /* big BEGL_S decks */
+	  for (j = 0; j <= W; j++) free(ialpha[v][j]);
+	  free(ialpha[v]);
+	} else if (cm->sttype[v] == E_st && v < cm->M-1) { /* avoid shared E decks */
+	  continue;
+	} else {
+	  free(ialpha[v][0]);
+	  free(ialpha[v][1]);
+	  free(ialpha[v]);
+	}
+      }
+    free(ialpha);
+    /* convert ivsc to floats in vsc */
+    ESL_ALLOC(vsc, sizeof(float) * cm->M);
+    for(v = 0; v < cm->M; v++)
+      vsc[v] = Scorify(ivsc[v]);
+    free(ivsc);
+  }
+  /**************************
+   * end of else (do_inside)
+   **************************/
+
+  ret_val = vsc[0];
+  if (ret_vsc != NULL) *ret_vsc = vsc;
+  else free(vsc);
+  
+  return ret_val;
+
+  ERROR:
+    cm_Fail("Memory allocation error.\n");
+    return 0.; /* NEVERREACHED */
+}
+#endif
+
+/* EPN, Mon Dec 10 13:15:32 2007, old process_workunit() function */
+#if 0
+
+/* Function: process_workunit()
+ * Date:     EPN, Mon Sep 10 16:55:09 2007
+ *
+ * Purpose:  A work unit consists of a CM, a int specifying a number of 
+ *           sequences <nseq>, and a flag indicated how to generate those
+ *           sequences. The job is to generate <nseq> sequences and search
+ *           them with a CM and/or CP9, saving scores, which are returned.
+ *
+ *           This function can be run in 1 of 3 modes, determined by the
+ *           status of the input variables:
+ *         
+ *           Mode 1. Gumbel calculation for CM. 
+ *           <emit_from_cm> is FALSE, <ret_vscAA> != NULL, <ret_cp9scA> == NULL
+ *           Emit randomly and search only with the CM. <ret_vscAA> is filled
+ *           with the best CM score at each state for each sequence.
+ *
+ *           Mode 2. Gumbel calculation for CP9.
+ *           <emit_from_cm> is FALSE, <ret_vscAA> == NULL, <ret_cp9scA> != NULL
+ *           Emit randomly and search only with the CP9. <ret_cp9scA> is filled
+ *           with the best CP9 score for each sequence.
+ *
+ *           Mode 3. Scores will eventually be used to determine filter thresholds.
+ *           <emit_from_cm> is TRUE, <ret_vscAA> != NULL, <ret_cp9scA> != NULL, 
+ *           <ret_other_cp9scA> != NULL.
+ *           Emit from the CM (which is already configured how we want it). Search
+ *           with the CM first, then with the CP9 twice, first w/Viterbi then w/Forward
+ *           <ret_vscAA> filled with the best CM score at each state for each sequence,
+ *           <ret_cp9scA> filled with the best CP9 Viterbi score for each sequence,
+ *           <ret_other_cp9scA> filled with the best CP9 Forward score for each sequence,
+ *           Importantly, in this mode, each sequence must have a NON-BANDED CM scan 
+ *           (either CYK or Inside) hit above a given cutoff. That cutoff is given
+ *           as a bit score in cfg->cutoffA[p], where p is the partition for the
+ *           sequence (p is determined in get_cmemit_dsq() called from this function). 
+ *           Sequences that have no hit better than cutoff are not accepted, (they're
+ *           rejected and not searched, and another seq is emitted). The cutoff[p] 
+ *           value is assumed to be already set before this function is entered.
+ *
+ *           The ability to run 3 different modes complicates the code a bit,
+ *           but I prefered it to making 2 separate functions b/c a significant
+ *           part of those 2 functions would have identical code. Also it makes
+ *           the MPI implementation a bit easier because the workers can always
+ *           call this function, whether they're calcing Gumbels or filter thresholds.
+ *
+ * Args:     go           - getopts
+ *           cfg          - cmcalibrate's configuration
+ *           errbuf       - for writing out error messages
+ *           cm           - the CM (already configured as we want it)
+ *           nseq         - number of seqs to generate
+ *           emit_from_cm - TRUE to emit from CM; FALSE emit random 
+ *           ret_vscAA    - RETURN: [0..v..cm->M-1][0..nseq-1] best 
+ *                                  score at each state v for each seq
+ *           ret_cp9scA   - RETURN: [0..nseq-1] best CP9 score for each seq
+ *                                  if (emit_from_cm) these will be Viterbi scores, else 
+ *                                  could be Viterbi or Forward
+ *           ret_other_cp9scA - RETURN: [0..nseq-1] best CP9 score for each seq
+ *                                      if (emit_from_cm) these will be Forward scores, else 
+ *                                      it will == NULL
+ *
+ * Returns:  eslOK on success; dies immediately if some error occurs.
+ */
+static int
+process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
+		 int emit_from_cm, float ***ret_vscAA, float **ret_cp9scA, float **ret_other_cp9scA)
+{
+  int            status;
+  int            mode; /* 1, 2, or 3, determined by status of input args, as explained in 'Purpose' above. */
+  float        **vscAA        = NULL;  /* [0..v..cm->M-1][0..i..nseq-1] best CM score for each state, each seq */
+  float         *cur_vscA     = NULL;  /* [0..v..cm->M-1]               best CM score for each state cur seq */
+  float         *cp9scA       = NULL;  /*                [0..i..nseq-1] best CP9 score for each seq, 
+					*                               if (emit_from_cm) these will be Viterbi scores,
+                                        *                               else they could be Viterbi or Forward */
+  float         *other_cp9scA = NULL;  /*                [0..i..nseq-1] best CP9 Forward score for each seq 
+					*                               only if (emit_from_cm), else stays NULL */
+  double        *dnull        = NULL; /* double version of cm->null, for generating random seqs */
+  int            p;                   /* what partition we're in, not used unless emit_from_cm = TRUE */
+  int            i;
+  int            v;
+  int            L;
+  int            nfailed = 0;
+  Parsetree_t   *tr;
+  ESL_DSQ       *dsq;
+  float          sc;
+  float         *fwd_sc_ptr;
+
+  /* determine mode, and enforce mode-specific contract */
+  if     (ret_vscAA != NULL && ret_cp9scA == NULL)     mode = 1; /* calcing CM  gumbel stats */
+  else if(ret_vscAA == NULL && ret_cp9scA != NULL)     mode = 2; /* calcing CP9 gumbel stats */
+  else if(ret_vscAA != NULL && ret_cp9scA != NULL && 
+	  ret_other_cp9scA != NULL && emit_from_cm) mode = 3; /* collecting filter threshold stats */
+  else ESL_FAIL(eslEINCOMPAT, errbuf, "can't determine mode in process_workunit.");
+  if(emit_from_cm && mode != 3) ESL_FAIL(eslEINCOMPAT, errbuf, "emit_from_cm is TRUE, but mode is: %d (should be 3)\n", mode);
+
+  ESL_DPRINTF1(("in process_workunit nseq: %d mode: %d\n", nseq, mode));
+
+  int do_cyk     = FALSE;
+  int do_inside  = FALSE;
+  int do_viterbi = FALSE;
+  int do_forward = FALSE;
+  /* determine algs we'll use and allocate the score arrays we'll pass back */
+  if(mode == 1 || mode == 3) {
+    if(cm->search_opts & CM_SEARCH_INSIDE) do_inside = TRUE;
+    else                                   do_cyk    = TRUE;
+    ESL_ALLOC(vscAA, sizeof(float *) * cm->M);
+    for(v = 0; v < cm->M; v++) ESL_ALLOC(vscAA[v], sizeof(float) * nseq);
+    ESL_ALLOC(cur_vscA, sizeof(float) * cm->M);
+  }
+  if(mode == 2) {
+    if(cm->search_opts & CM_SEARCH_HMMVITERBI) do_viterbi = TRUE;
+    if(cm->search_opts & CM_SEARCH_HMMFORWARD) do_forward = TRUE;
+    if((do_viterbi + do_forward) > 1) ESL_FAIL(eslEINVAL, errbuf, "process_workunit, mode 2, and cm->search_opts CM_SEARCH_HMMVITERBI and CM_SEARCH_HMMFORWARD flags both raised.");
+    ESL_ALLOC(cp9scA, sizeof(float) * nseq); /* will hold Viterbi or Forward scores */
+  }
+  if(mode == 3) {
+    do_viterbi = do_forward = TRUE;
+    ESL_ALLOC(cp9scA,       sizeof(float) * nseq); /* will hold Viterbi scores */
+    ESL_ALLOC(other_cp9scA, sizeof(float) * nseq); /* will hold Forward scores */
+  }
+  ESL_DPRINTF1(("do_cyk:     %d\ndo_inside:  %d\ndo_viterbi: %d\ndo_forward: %d\n", do_cyk, do_inside, do_viterbi, do_forward)); 
+  
+  /* fill dnull, a double version of cm->null, but only if we're going to need it to generate random seqs */
+  if(!emit_from_cm && cfg->pgc_freq == NULL) {
+    ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
+    for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
+    esl_vec_DNorm(dnull, cm->abc->K);    
+  }
+  
+  /* generate dsqs one at a time and collect best CM scores at each state and/or best overall CP9 score */
+  for(i = 0; i < nseq; i++) {
+    if(emit_from_cm) { /* if emit_from_cm == TRUE, use_cm == TRUE */
+      if(nfailed > 1000 * nseq) { cm_Fail("Max number of failures (%d) reached while trying to emit %d seqs.\n", nfailed, nseq); }
+      dsq = get_cmemit_dsq(cfg, cm, &L, &p, &tr);
+      /* we only want to use emitted seqs with a sc > cutoff, cm_find_hit_above_cutoff returns false if no such hit exists in dsq */
+      if((status = cm_find_hit_above_cutoff(go, cfg, errbuf, cm, dsq, tr, L, cfg->cutoffA[p], &sc)) != eslOK) return status;
+      while(sc < cfg->cutoffA[p]) { 
+	free(dsq); 	
+	/* parsetree tr is freed in cm_find_hit_above_cutoff() */
+	dsq = get_cmemit_dsq(cfg, cm, &L, &p, &tr);
+	nfailed++;
+	if((status = cm_find_hit_above_cutoff(go, cfg, errbuf, cm, dsq, tr, L, cfg->cutoffA[p], &sc)) != eslOK) return status;
+      }
+      ESL_DPRINTF1(("i: %d nfailed: %d\n", i, nfailed));
+    }
+    else { 
+      dsq = get_random_dsq(cfg, cm, dnull, cm->W*2); 
+      L = cm->W*2; 
+    }
+    /* if nec, search with CM */
+    if (do_cyk)    if((status = FastCYKScan    (cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, &(cur_vscA), &sc)) != eslOK) return status;
+    if (do_inside) if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, &(cur_vscA), &sc)) != eslOK) return status;
+    /* if nec, search with CP9 */
+    if (do_viterbi) 
+      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL, 
+			       TRUE,   /* yes, we are scanning */
+			       FALSE,  /* no, we are not aligning */
+			       FALSE,  /* don't be memory efficient */
+			       NULL,   /* don't want best score at each posn back */
+			       NULL,   /* don't want the max scoring posn back */
+			       NULL,   /* don't want traces back */
+			       &(cp9scA[i]))) != eslOK) return status;
+    if (do_forward) {
+      if      (mode == 2) fwd_sc_ptr = &(cp9scA[i]);       /* fill cp9scA[i] */
+      else if (mode == 3) fwd_sc_ptr = &(other_cp9scA[i]); /* fill other_cp9scA[i] */
+      if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL, 
+			       TRUE,   /* yes, we are scanning */
+			       FALSE,  /* no, we are not aligning */
+			       FALSE,  /* don't be memory efficient */
+			       NULL,   /* don't want best score at each posn back */
+			       NULL,   /* don't want the max scoring posn back */
+			       fwd_sc_ptr)) != eslOK) return status;
+    }
+    free(dsq);
+    if (cur_vscA != NULL) /* will be NULL if do_cyk == do_inside == FALSE (mode 2) */
+      for(v = 0; v < cm->M; v++) vscAA[v][i] = cur_vscA[v];
+    free(cur_vscA);
+  }
+
+  if(dnull != NULL) free(dnull);
+  if(ret_vscAA  != NULL)       *ret_vscAA  = vscAA;
+  if(ret_cp9scA != NULL)       *ret_cp9scA = cp9scA;
+  if(ret_other_cp9scA != NULL) *ret_other_cp9scA = other_cp9scA;
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+
+/* Function: calc_best_filter()
+ * Date:     EPN, Thu Nov  1 15:05:03 2007
+ *
+ * Purpose:  Given a CM and scores for a CP9 and CM scan of target seqs
+ *           determine the best filter we could use, either an HMM only
+ *           or a hybrid scan with >= 1 sub CM roots.
+ *            
+ * Returns:  eslOK on success;
+ *           Dies immediately on an error.
+ */
+int
+calc_best_filter(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, float **fil_vscAA, float *fil_vit_cp9scA, float *fil_fwd_cp9scA)
+{
+  int    status;
+  int    v;
+  float  *sorted_fil_vit_cp9scA;
+  float  *sorted_fil_fwd_cp9scA;
+  float **sorted_fil_vscAA;
+  float **sorted_fil_EAA;
+  int    filN  = esl_opt_GetInteger(go, "--filN");
+  int    Fidx;
+  float  vit_sc, fwd_sc, sc;
+  float  E;
+  float  fil_calcs;
+  float  surv_calcs;
+  float  fil_plus_surv_calcs;
+  float  nonfil_calcs;
+  float  spdup;
+  int    i;
+  int    cmi = cfg->ncm-1;
+  int    cp9_vit_mode, cp9_fwd_mode;
+  
+  float F = esl_opt_GetReal(go, "--F");
+  Fidx  = (int) ((1. - F) * (float) filN);
+
+  if(cfg->cmstatsA[cfg->ncm-1]->np != 1) cm_Fail("calc_sub_filter_sets(), not yet implemented for multiple partitions.\nYou'll need to keep track of partition of each sequence OR\nstore E-values not scores inside process_workunit.");
+
+  /* Determine the predicted CP9 filter speedup */
+  ESL_ALLOC(sorted_fil_vit_cp9scA, sizeof(float) * filN);
+  esl_vec_FCopy(fil_vit_cp9scA, filN, sorted_fil_vit_cp9scA); 
+  esl_vec_FSortIncreasing(sorted_fil_vit_cp9scA, filN);
+  vit_sc = sorted_fil_vit_cp9scA[Fidx];
+
+  ESL_ALLOC(sorted_fil_fwd_cp9scA, sizeof(float) * filN);
+  esl_vec_FCopy(fil_fwd_cp9scA, filN, sorted_fil_fwd_cp9scA); 
+  esl_vec_FSortIncreasing(sorted_fil_fwd_cp9scA, filN);
+  fwd_sc = sorted_fil_fwd_cp9scA[Fidx];
+
+  printf("\n\n***********************************\n\n");
+  for(i = 0; i < filN; i++)
+    printf("HMM i: %4d vit sc: %10.4f fwd sc: %10.4f\n", i, sorted_fil_vit_cp9scA[i], sorted_fil_fwd_cp9scA[i]);
+  printf("***********************************\n\n");
+
+  cp9_vit_mode = (cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? GUM_CP9_LV : GUM_CP9_GV;
+  cp9_fwd_mode = (cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? GUM_CP9_LF : GUM_CP9_GF;
+
+  /* print out predicted speed up with Viterbi filter */
+  /* E is expected number of hits for db of length 2 * cm->W */
+  /* EPN, Sun Dec  9 16:40:39 2007
+   * idea: calculate E for each partition, then take weighted average, assuming each GC segment is equally likely (or some other weighting) */
+  E  = RJK_ExtremeValueE(sc, cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][0]->mu, cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][0]->lambda);
+  fil_calcs  = cfg->hsi->full_cp9_ncalcs;
+  surv_calcs = (E / cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][0]->L) * /* calcs are in units of millions of dp calcs per residue */
+    (cfg->avglen[0]) * cfg->hsi->full_cm_ncalcs; /* cfg->avglen[0] is average length of subseq for subtree rooted at v==0, for current gumbel mode configuration */
+  fil_plus_surv_calcs = fil_calcs + surv_calcs;
+  nonfil_calcs = cfg->hsi->full_cm_ncalcs;
+  spdup = nonfil_calcs / fil_plus_surv_calcs; 
+  printf("HMM(vit) sc: %10.4f E: %10.4f filt: %10.4f surv: %10.4f sum: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", vit_sc, E, fil_calcs, surv_calcs, fil_plus_surv_calcs, fil_plus_surv_calcs, nonfil_calcs, spdup);
+
+  /* print out predicted speed up with Forward filter */
+  /* EPN, Sun Dec  9 16:40:39 2007
+   * idea: calculate E for each partition, then take weighted average, assuming each GC segment is equally likely (or some other weighting) */
+  E  = RJK_ExtremeValueE(sc, cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][0]->mu, cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][0]->lambda);
+  fil_calcs  = cfg->hsi->full_cp9_ncalcs;
+  surv_calcs = (E / cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][0]->L) * /* calcs are in units of millions of dp calcs per residue */
+    (cfg->avglen[0]) * cfg->hsi->full_cm_ncalcs; /* cfg->avglen[0] is average length of subseq for subtree rooted at v==0, for current gumbel mode configuration */
+  fil_plus_surv_calcs = fil_calcs + surv_calcs;
+  nonfil_calcs = cfg->hsi->full_cm_ncalcs;
+  spdup = nonfil_calcs / (fil_plus_surv_calcs * 2.); /* the '* 2.' is to correct for fact that Forward is about 2X slower than Viterbi, due to the logsum() instead of ESL_MAX() calculations */
+  printf("HMM(fwd) sc: %10.4f E: %10.4f filt: %10.4f surv: %10.4f sum: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", fwd_sc, E, fil_calcs, surv_calcs, fil_plus_surv_calcs, 2.*fil_plus_surv_calcs, nonfil_calcs, spdup);
+
+  exit(1);
+  /*****************TEMPORARY PRINTF BEGIN***************************/
+  ESL_ALLOC(sorted_fil_vscAA, sizeof(float *) * cm->M);
+  ESL_ALLOC(sorted_fil_EAA, sizeof(float *) * cm->M);
+
+  /*printf("\n\n***********************************\nvscAA[0] scores:\n");
+  for(i = 0; i < filN; i++)
+    printf("i: %4d sc: %10.4f\n", i, fil_vscAA[0][i]);
+    printf("***********************************\n\n");*/
+
+  for(v = 0; v < cm->M; v++)
+    {
+      ESL_ALLOC(sorted_fil_vscAA[v], sizeof(float) * filN);
+      esl_vec_FCopy(fil_vscAA[v], filN, sorted_fil_vscAA[v]); 
+      esl_vec_FSortIncreasing(sorted_fil_vscAA[v], filN);
+    }
+  for(v = 0; v < cm->M; v++) {
+    if(cfg->hsi->iscandA[v]) {
+      sc = sorted_fil_vscAA[v][Fidx];
+      /* E is expected number of hits for db of length 2 * cm->W */
+      E  = RJK_ExtremeValueE(sc, cfg->vmuAA[0][v], cfg->vlambdaAA[0][v]);
+      /* note partition = 0, this is bogus if more than 1 partition, that's why we die if there are more (see above). */
+      fil_calcs  = cfg->hsi->cm_vcalcs[v];
+      surv_calcs = E * (cm->W * 2) * cfg->hsi->full_cm_ncalcs;
+      printf("SUB %3d sg: %2d sc: %10.4f E: %10.4f filt: %10.4f ", v, cfg->hsi->startA[v], sc, E, fil_calcs);
+      fil_calcs += surv_calcs;
+      nonfil_calcs = cfg->hsi->full_cm_ncalcs;
+      spdup = nonfil_calcs / fil_calcs;
+      printf("surv: %10.4f sum : %10.4f full: %10.4f spdup %10.4f\n", surv_calcs, fil_calcs, nonfil_calcs, spdup);
+    }  
+  }
+  
+  for(v = 0; v < cm->M; v++) 
+    {
+      ESL_ALLOC(sorted_fil_EAA[v], sizeof(float *) * filN);
+      /* E is expected number of hits for db of length 2 * cm->W */
+      /* assumes only 1 partition */
+      /*sorted_fil_EAA[v] = RJK_ExtremeValueE(sorted_fil_vscAA[v], cfg->vmuAA[0][v], cfg->vlambdaAA[0][v]);*/
+    }      
+
+  /*****************TEMPORARY PRINTF END***************************/
+
+  return eslOK;
+
+ ERROR:
+  cm_Fail("calc_best_filter(), memory allocation error.");
+  return status; /* NEVERREACHED */
+}
+
+#endif 

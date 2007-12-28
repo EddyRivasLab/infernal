@@ -838,7 +838,8 @@ EnforceSubsequence(CM_t *cm)
 
   /* Now move on to the MATL nodes we're enforcing emits the cm->enf_seq */
   enf_sq  = esl_sq_CreateFrom("enforced", cm->enf_seq, NULL, NULL, NULL);
-  esl_sq_Digitize(cm->abc, enf_sq);
+  if(enf_sq == NULL) goto ERROR;
+  if((status = esl_sq_Digitize(cm->abc, enf_sq)) != eslOK) goto ERROR;
 
   for(nd = cm->enf_start; nd <= enf_end; nd++) 
     {
@@ -922,6 +923,7 @@ EnforceSubsequence(CM_t *cm)
 float
 EnforceScore(CM_t *cm)
 {
+  int     status;
   ESL_SQ *enf_sq;/* a digitized version of cm->enf_seq */
   int   enf_end; /* last node to be enforced */
   int   nd;      /* node index  */
@@ -958,7 +960,8 @@ EnforceScore(CM_t *cm)
 
   /* Now move on to the MATL nodes we're enforcing emits the cm->enf_seq */
   enf_sq  = esl_sq_CreateFrom("enforced", cm->enf_seq, NULL, NULL, NULL);
-  esl_sq_Digitize(cm->abc, enf_sq);
+  if(enf_sq == NULL) goto ERROR;
+  if((status = esl_sq_Digitize(cm->abc, enf_sq)) != eslOK) goto ERROR;
 
   for(nd = cm->enf_start; nd <= enf_end; nd++) 
     {
@@ -981,6 +984,10 @@ EnforceScore(CM_t *cm)
   esl_sq_Destroy(enf_sq);
 
   return score;
+
+ ERROR: 
+  cm_Fail("Memory allocation error.\n");
+  return status; /* never reached */
 }
 
 /*******************************************************************************

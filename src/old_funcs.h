@@ -229,3 +229,17 @@ extern void P7_ifill_post_sums(struct dpmatrix_s *post, int L, int M, int *isum_
 extern void P7_debug_print_post_decode(int L, int M, struct dpmatrix_s *posterior);
 extern void P7_debug_print_dp_matrix(int L, int M, struct dpmatrix_s *mx);
 #endif
+
+/* old sub_cm.c functions */
+#if 0 
+extern int  check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, int spos, int epos, int nseq);
+#endif
+
+#if 0
+/* old cmcalibrate.c functiions */
+extern seqs_to_aln_t *cm_emit_seqs_to_aln_above_cutoff(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int nseq);
+extern float  search_target_cm_calibration(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, float **ret_vsc);
+extern int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
+			    int emit_from_cm, float ***ret_vscAA, float **ret_cp9scA, float **ret_other_cp9scA);
+#endif
+

@@ -49,33 +49,31 @@ CP9Logoddsify(CP9_t *hmm)
 {
   int k;			/* counter for model position */
   int x;			/* counter for symbols        */
-  float  sc[MAXDEGEN];          /* 17, NEED TO INCREASE FOR BIGGER ALPHABETS! */
+  int sc[MAXDEGEN];             /* 17, NEED TO INCREASE FOR BIGGER ALPHABETS! */
 
   if (hmm->flags & CPLAN9_HASBITS) return;
 
   /* Symbol emission scores
    */
 
-  sc[hmm->abc->K]     = -eslINFINITY; /* gap character */
-  sc[hmm->abc->Kp-1]  = -eslINFINITY; /* missing data character */
+  sc[hmm->abc->K]     = -INFTY; /* gap character */
+  sc[hmm->abc->Kp-1]  = -INFTY; /* missing data character */
 
   /* Insert emission scores, relies on sc[K, Kp-1] initialization to -inf above */
   for (k = 0; k <= hmm->M; k++) {
     for (x = 0; x < hmm->abc->K; x++) 
       sc[x] = Prob2Score(hmm->ins[k][x], hmm->null[x]);
-    esl_abc_FExpectScVec(hmm->abc, sc, hmm->null); 
+    esl_abc_IExpectScVec(hmm->abc, sc, hmm->null); 
     for (x = 0; x < hmm->abc->Kp; x++) {
       hmm->isc[x][k] = sc[x];
     }
   }
 
   /* Match emission scores, relies on sc[K, Kp-1] initialization to -inf above */
-  sc[hmm->abc->K]     = -eslINFINITY; /* gap character */
-  sc[hmm->abc->Kp-1]  = -eslINFINITY; /* missing data character */
   for (k = 1; k <= hmm->M; k++) {
     for (x = 0; x < hmm->abc->K; x++) 
       sc[x] = Prob2Score(hmm->mat[k][x], hmm->null[x]);
-    esl_abc_FExpectScVec(hmm->abc, sc, hmm->null); 
+    esl_abc_IExpectScVec(hmm->abc, sc, hmm->null); 
     for (x = 0; x < hmm->abc->Kp; x++) {
       hmm->msc[x][k] = sc[x];
     }

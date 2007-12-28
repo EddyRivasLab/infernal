@@ -169,9 +169,10 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
   /* Fill in the lines: traverse the traceback.
    */
   pos = 0;
-  pda = esl_stack_ICreate();
-  esl_stack_IPush(pda, 0);
-  esl_stack_IPush(pda, PDA_STATE);
+  if((pda = esl_stack_ICreate()) == NULL) goto ERROR;
+  if((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+  if((status = esl_stack_IPush(pda, PDA_STATE)) != eslOK) goto ERROR;
+
   while (esl_stack_IPop(pda, &type) != eslEOD)
     {
       if (type == PDA_RESIDUE) {
@@ -341,30 +342,30 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	pos++;
       }
       if (do_right) {
-	esl_stack_IPush(pda, spos_r);
-	esl_stack_IPush(pda, cpos_r);
+	if ((status = esl_stack_IPush(pda, spos_r)) != eslOK) goto ERROR;
+	if ((status = esl_stack_IPush(pda, cpos_r)) != eslOK) goto ERROR;
 	if(have_pcodes) {
-	  esl_stack_IPush(pda, (int) rpost2);
-	  esl_stack_IPush(pda, (int) rpost1);
+	  if ((status = esl_stack_IPush(pda, (int) rpost2)) != eslOK) goto ERROR;
+	  if ((status = esl_stack_IPush(pda, (int) rpost1)) != eslOK) goto ERROR;
 	}
-	esl_stack_IPush(pda, (int) rseq);
-	esl_stack_IPush(pda, (int) rmid);
-	esl_stack_IPush(pda, (int) rcons);
-	esl_stack_IPush(pda, (int) rstr);
-	if (cm->annote != NULL) esl_stack_IPush(pda, (int) rannote);
-	esl_stack_IPush(pda, PDA_RESIDUE);
+	if ((status = esl_stack_IPush(pda, (int) rseq)) != eslOK) goto ERROR;
+	if ((status = esl_stack_IPush(pda, (int) rmid)) != eslOK) goto ERROR;
+	if ((status = esl_stack_IPush(pda, (int) rcons)) != eslOK) goto ERROR;
+	if ((status = esl_stack_IPush(pda, (int) rstr)) != eslOK) goto ERROR;
+	if (cm->annote != NULL) if ((status = esl_stack_IPush(pda, (int) rannote)) != eslOK) goto ERROR;
+	if ((status = esl_stack_IPush(pda, PDA_RESIDUE)) != eslOK) goto ERROR;
       }
 
       /* Push the child trace nodes onto the PDA;
        * right first, so it pops last.
        */
       if (tr->nxtr[ti] != -1) {
-	esl_stack_IPush(pda, tr->nxtr[ti]);
-	esl_stack_IPush(pda, PDA_STATE);
+	if ((status = esl_stack_IPush(pda, tr->nxtr[ti])) != eslOK) goto ERROR;
+	if ((status = esl_stack_IPush(pda, PDA_STATE)) != eslOK) goto ERROR;
       }
       if (tr->nxtl[ti] != -1) {
-	esl_stack_IPush(pda, tr->nxtl[ti]);
-	esl_stack_IPush(pda, PDA_STATE);
+	if ((status = esl_stack_IPush(pda, tr->nxtl[ti])) != eslOK) goto ERROR;
+	if ((status = esl_stack_IPush(pda, PDA_STATE)) != eslOK) goto ERROR;
       }
       else if (cm->sttype[v] != E_st) {
         /* Catch marginal-type local ends, treat like EL for output */
@@ -644,9 +645,9 @@ CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthres
   multiorder = createMultifurcationOrderChart(cm);
   createFaceCharts(cm, &inface, &outface);
 
-  pda = esl_stack_ICreate();
-  esl_stack_IPush(pda, 0);
-  esl_stack_IPush(pda, PDA_STATE);
+  if((pda = esl_stack_ICreate()) == NULL) goto ERROR;
+  if ((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+  if ((status = esl_stack_IPush(pda, PDA_STATE)) != eslOK) goto ERROR;
   while (esl_stack_IPop(pda, &type) != eslEOD) {
     if (type == PDA_RESIDUE) 
       {
@@ -721,15 +722,15 @@ CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthres
 	  cpos++;
 	}
 	if (rchar) {
-	  esl_stack_IPush(pda, nd);
-	  if (lchar) esl_stack_IPush(pda, cpos-1);
-	  else       esl_stack_IPush(pda, -1);
-	  esl_stack_IPush(pda, rstruc);
-	  esl_stack_IPush(pda, rchar);
-	  esl_stack_IPush(pda, PDA_RESIDUE);
+	  if ((status = esl_stack_IPush(pda, nd)) != eslOK) goto ERROR;
+	  if (lchar) { if ((status = esl_stack_IPush(pda, cpos-1)) != eslOK) goto ERROR; }
+	  else       { if ((status = esl_stack_IPush(pda, -1)) != eslOK) goto ERROR; }
+	  if ((status = esl_stack_IPush(pda, rstruc)) != eslOK) goto ERROR;
+	  if ((status = esl_stack_IPush(pda, rchar)) != eslOK) goto ERROR;
+	  if ((status = esl_stack_IPush(pda, PDA_RESIDUE)) != eslOK) goto ERROR;
 	} else {
-	  esl_stack_IPush(pda, nd);
-	  esl_stack_IPush(pda, PDA_MARKER);
+	  if ((status = esl_stack_IPush(pda, nd)) != eslOK) goto ERROR;
+	  if ((status = esl_stack_IPush(pda, PDA_MARKER)) != eslOK) goto ERROR;
 	}
 
 	/* Transit - to consensus states only.
@@ -737,14 +738,14 @@ CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthres
 	 * state without making assumptions about numbering or connectivity.
 	 */
 	if (cm->sttype[v] == B_st) {
-	  esl_stack_IPush(pda, cm->cnum[v]);     /* right S  */
-	  esl_stack_IPush(pda, PDA_STATE);
-	  esl_stack_IPush(pda, cm->cfirst[v]);   /* left S */
-	  esl_stack_IPush(pda, PDA_STATE);
+	  if ((status = esl_stack_IPush(pda, cm->cnum[v])) != eslOK) goto ERROR;     /* right S  */
+	  if ((status = esl_stack_IPush(pda, PDA_STATE)) != eslOK) goto ERROR;
+	  if ((status = esl_stack_IPush(pda, cm->cfirst[v])) != eslOK) goto ERROR;   /* left S */
+	  if ((status = esl_stack_IPush(pda, PDA_STATE)) != eslOK) goto ERROR;
 	} else if (cm->sttype[v] != E_st) {
 	  v = cm->nodemap[cm->ndidx[cm->cfirst[v] + cm->cnum[v] - 1]];
-	  esl_stack_IPush(pda, v);
-	  esl_stack_IPush(pda, PDA_STATE);
+	  if ((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;
+	  if ((status = esl_stack_IPush(pda, PDA_STATE)) != eslOK) goto ERROR;
 	}
       } /*end PDA_STATE block*/
 
@@ -1090,9 +1091,9 @@ CreateEmitMap(CM_t *cm)
 
   cpos = 0;
   nd   = 0;
-  pda  = esl_stack_ICreate();
-  esl_stack_IPush(pda, 0);		/* 0 = left side. 1 would = right side. */
-  esl_stack_IPush(pda, nd);
+  if ((pda  = esl_stack_ICreate()) == NULL) goto ERROR;
+  if ((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;		/* 0 = left side. 1 would = right side. */
+  if ((status = esl_stack_IPush(pda, nd)) != eslOK) goto ERROR;
   while (esl_stack_IPop(pda, &nd) != eslEOD)
     {
       esl_stack_IPop(pda, &on_right);
@@ -1110,24 +1111,24 @@ CreateEmitMap(CM_t *cm)
 	  if (cm->ndtype[nd] == BIF_nd) 
 	    {
 				/* push the BIF back on for its right side  */
-	      esl_stack_IPush(pda, 1);
-	      esl_stack_IPush(pda, nd);
+	      if ((status = esl_stack_IPush(pda, 1)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, nd)) != eslOK) goto ERROR;
                             /* push node index for right child */
-	      esl_stack_IPush(pda, 0);
-	      esl_stack_IPush(pda, cm->ndidx[cm->cnum[cm->nodemap[nd]]]);   
+	      if ((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, cm->ndidx[cm->cnum[cm->nodemap[nd]]])) != eslOK) goto ERROR;   
                             /* push node index for left child */
-	      esl_stack_IPush(pda, 0);
-	      esl_stack_IPush(pda, cm->ndidx[cm->cfirst[cm->nodemap[nd]]]); 
+	      if ((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, cm->ndidx[cm->cfirst[cm->nodemap[nd]]])) != eslOK) goto ERROR; 
 	    }
 	  else
 	    {
 				/* push the node back on for right side */
-	      esl_stack_IPush(pda, 1);
-	      esl_stack_IPush(pda, nd);
+	      if ((status = esl_stack_IPush(pda, 1)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, nd)) != eslOK) goto ERROR;
 				/* push child node on */
 	      if (cm->ndtype[nd] != END_nd) {
-		esl_stack_IPush(pda, 0);
-		esl_stack_IPush(pda, nd+1);
+		if ((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+		if ((status = esl_stack_IPush(pda, nd+1)) != eslOK) goto ERROR;
 	      }
 	    }
 	}

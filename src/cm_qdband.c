@@ -208,7 +208,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 	continue;
       }
 
-      if (esl_stack_PPop(beamstack, (void **) &gamma[v]) == eslEOD)
+      if (esl_stack_PPop(beamstack, (void **) &gamma[v]) == eslEOD) 
 	ESL_ALLOC(gamma[v], sizeof(double) * (W+1));		    
       esl_vec_DSet(gamma[v], W+1, 0.);
 
@@ -327,8 +327,12 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
       if ((! save_densities) && (! (cm->flags & CMH_LOCAL_BEGIN))) {
 	if (cm->sttype[v] == B_st)
 	  {  /* connected children of a B st are handled specially, remember */
-	    y = cm->cfirst[v]; esl_stack_PPush(beamstack, gamma[y]); gamma[y] = NULL;
-	    y = cm->cnum[v];   esl_stack_PPush(beamstack, gamma[y]); gamma[y] = NULL;
+	    y = cm->cfirst[v]; 
+	    if((status = esl_stack_PPush(beamstack, gamma[y])) != eslOK) goto ERROR; 
+	    gamma[y] = NULL;
+	    y = cm->cnum[v];   
+	    if((status = esl_stack_PPush(beamstack, gamma[y])) != eslOK) goto ERROR;
+	    gamma[y] = NULL;
 	  }
 	else
 	  {
@@ -336,7 +340,7 @@ BandCalculationEngine(CM_t *cm, int W, double p_thresh, int save_densities,
 	      {
 		touch[y]--;
 		if (touch[y] == 0 && cm->sttype[y] != E_st) {
-		  esl_stack_PPush(beamstack, gamma[y]); 
+		  if((status = esl_stack_PPush(beamstack, gamma[y])) != eslOK) goto ERROR; 
 		  gamma[y] = NULL;
 		}
 	      }

@@ -982,6 +982,7 @@ fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   if(status != eslOK) return status;
 
   pda = esl_stack_ICreate();
+  if(pda == NULL) goto ERROR;
   v = r;
   j = j0;
   i = i0;
@@ -1000,9 +1001,9 @@ fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
       
       /* Store info about the right fragment that we'll retrieve later:
        */
-      esl_stack_IPush(pda, j);	/* remember the end j    */
-      esl_stack_IPush(pda, k);	/* remember the subseq length k */
-      esl_stack_IPush(pda, tr->n-1);	/* remember the trace index of the parent B state */
+      if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;	/* remember the end j    */
+      if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;	/* remember the subseq length k */
+      if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR ;	/* remember the trace index of the parent B state */
       /* Deal with attaching left start state.
        */
       j = j-k;
@@ -1076,6 +1077,10 @@ fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   free_vjd_shadow_matrix(shadow, cm, i0, j0);
   if(ret_sc != NULL) *ret_sc = sc;
   return eslOK;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return eslOK; /* NEVERREACHED */
 }
 
 
@@ -1146,6 +1151,7 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   if(status != eslOK) return status;
 
   pda = esl_stack_ICreate();
+  if(pda == NULL) goto ERROR;
   v = r;
   j = j0;
   i = i0;
@@ -1157,9 +1163,9 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
       /* Store info about the right fragment that we'll retrieve later:
        */
-      esl_stack_IPush(pda, j);	/* remember the end j    */
-      esl_stack_IPush(pda, k);	/* remember the subseq length k */
-      esl_stack_IPush(pda, tr->n-1);	/* remember the trace index of the parent B state */
+      if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;	/* remember the end j    */
+      if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;	/* remember the subseq length k */
+      if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;	/* remember the trace index of the parent B state */
 
       /* Deal with attaching left start state.
        */
@@ -1225,6 +1231,10 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   free_vjd_shadow_matrix(shadow, cm, i0, j0);
   if(ret_sc != NULL) *ret_sc = sc;
   return eslOK;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return eslOK; /* NEVERREACHED */
 }
 
 /* Function: FastAlignHB()
@@ -3978,6 +3988,7 @@ SampleFromInside(ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L,
    * this section of code is stolen and adapted from cm_dpsmall.c:insideT() 
    */
   pda = esl_stack_ICreate();
+  if(pda == NULL) goto ERROR;
   v = 0;
 
   j = d = L;
@@ -4001,9 +4012,9 @@ SampleFromInside(ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L,
 
       /* Store info about the right fragment that we'll retrieve later:
        */
-      esl_stack_IPush(pda, j);	/* remember the end j    */
-      esl_stack_IPush(pda, k);	/* remember the subseq length k */
-      esl_stack_IPush(pda, tr->n-1);	/* remember the trace index of the parent B state */
+      if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;	/* remember the end j    */
+      if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;	/* remember the subseq length k */
+      if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;	/* remember the trace index of the parent B state */
 
       /* Deal with attaching left start state.
        */
@@ -4214,6 +4225,7 @@ SampleFromInsideHB(ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DSQ *dsq, int 
    * this section of code is stolen and adapted from hbandcyk.c:insideTHB() 
    */
   pda = esl_stack_ICreate();
+  if(pda == NULL) goto ERROR;
   v = 0;
 
   j = d = L;
@@ -4269,9 +4281,9 @@ SampleFromInsideHB(ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DSQ *dsq, int 
 
       /* Store info about the right fragment that we'll retrieve later:
        */
-      esl_stack_IPush(pda, j);	/* remember the end j    */
-      esl_stack_IPush(pda, k);	/* remember the subseq length k */
-      esl_stack_IPush(pda, tr->n-1);	/* remember the trace index of the parent B state */
+      if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;	/* remember the end j    */
+      if((status = esl_stack_IPush(pda, k)) != eslOK) goto ERROR;	/* remember the subseq length k */
+      if((status = esl_stack_IPush(pda, tr->n-1)) != eslOK) goto ERROR;	/* remember the trace index of the parent B state */
 
       /* Deal with attaching left start state.
        */

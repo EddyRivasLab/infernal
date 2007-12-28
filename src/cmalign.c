@@ -155,15 +155,18 @@ static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL
 static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, int *ret_nseq, char *errbuf);
 static int compare_cm_guide_trees(CM_t *cm1, CM_t *cm2);
 static int make_aligned_string(char *aseq, char *gapstring, int alen, char *ss, char **ret_s);
+static int add_withali_pknots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_MSA *newmsa);
+#ifdef HAVE_MPI
 static int determine_nseq_per_worker(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int *ret_nseq_worker);
 static int add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs, int offset);
-static int add_withali_pknots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_MSA *newmsa);
+#endif
 
 int
 main(int argc, char **argv)
 {
   ESL_GETOPTS     *go = NULL;   /* command line processing                     */
   ESL_STOPWATCH   *w  = esl_stopwatch_Create();
+  if(w == NULL) cm_Fail("Memory error, stopwatch not created.\n");
   struct cfg_s     cfg;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
@@ -387,6 +390,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       if(! (type == eslRNA || type == eslDNA))
 	ESL_FAIL(status, errbuf, "Alphabet is not DNA/RNA in %s\n", esl_opt_GetString(go, "--withali"));
       cfg->withali_abc = esl_alphabet_Create(eslRNA);
+      if(cfg->withali_abc == NULL) ESL_FAIL(status, errbuf, "Failed to create alphabet for --withali");
       esl_msafile_SetDigital(cfg->withalifp, cfg->withali_abc);
     }
 
@@ -1187,7 +1191,6 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
   return status;
 }
 
-
 /* Function: make_aligned_string() 
  * Incept:   EPN, Thu Aug  2 18:24:49 2007
  *           stolen from Squid:alignio.c:MakeAlignedString()
@@ -1237,77 +1240,6 @@ make_aligned_string(char *aseq, char *gapstring, int alen, char *ss, char **ret_
   if(new != NULL) free(new);
   return status;
 }
-
-/* determine_nseq_per_worker()
- * Given a CM, return the number of sequences we think we should send
- * to each worker (we don't know the number of sequences in the file).
- * The calculation is based on trying to get a worker to spend 
- * a specific amount of time MPI_WORKER_ALIGN_TARGET_SEC, a constant
- * from structs.h. 
- */
-static int
-determine_nseq_per_worker(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int *ret_nseq_worker)
-{
-  /**ret_nseq_worker = 5;*/
-  *ret_nseq_worker = 1;
-  return eslOK;
-}
-
-/* add_worker_seqs_to_master
- * Add results (parstrees or CP9 traces, and possibly postcodes) from a
- * worker's seqs_to_aln object to a master seqs_to_aln object.
- */
-static int
-add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs, int offset)
-{
-  int x;
-
-  if(worker_seqs->sq != NULL) cm_Fail("add_worker_seqs_to_master(), worker_seqs->sq non-NULL.");
-  if(master_seqs->nseq < (offset + worker_seqs->nseq)) cm_Fail("add_worker_seqs_to_master(), master->nseq: %d, offset %d, worker->nseq: %d\n", master_seqs->nseq, offset, worker_seqs->nseq);
-
-  if(worker_seqs->tr != NULL) {
-    if(master_seqs->tr == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned parsetrees, master->tr is NULL.");
-    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
-      assert(master_seqs->tr[x] == NULL); 
-      master_seqs->tr[x] = worker_seqs->tr[(x-offset)];
-    }
-  }
-
-  if(worker_seqs->cp9_tr != NULL) {
-    if(master_seqs->cp9_tr == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned cp9 traces, master->cp9_tr is NULL.");
-    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
-      assert(master_seqs->cp9_tr[x] == NULL); 
-      master_seqs->cp9_tr[x] = worker_seqs->cp9_tr[(x-offset)];
-    }
-  }
-
-  if(worker_seqs->postcode1 != NULL) {
-    if(master_seqs->postcode1 == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned postcodes, master->postcode1 is NULL.");
-    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
-      assert(master_seqs->postcode1[x] == NULL); 
-      master_seqs->postcode1[x] = worker_seqs->postcode1[(x-offset)];
-    }
-  }
-
-  if(worker_seqs->postcode2 != NULL) {
-    if(master_seqs->postcode2 == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned postcodes, master->postcode2 is NULL.");
-    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
-      assert(master_seqs->postcode2[x] == NULL); 
-      master_seqs->postcode2[x] = worker_seqs->postcode2[(x-offset)];
-    }
-  }
-
-  if(worker_seqs->sc != NULL) {
-    if(master_seqs->sc == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned scores, master->sc is NULL.");
-    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
-      assert(!(NOT_IMPOSSIBLE(master_seqs->sc[x])));
-      master_seqs->sc[x] = worker_seqs->sc[(x-offset)];
-    }
-  }
-
-  return eslOK;
-}
-
 
 /* Function: add_withali_pknots()
  * EPN, Wed Oct 17 18:24:33 2007
@@ -1478,3 +1410,76 @@ static int add_withali_pknots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *er
  ERROR:
   return status;
 }
+
+
+#ifdef HAVE_MPI
+/* determine_nseq_per_worker()
+ * Given a CM, return the number of sequences we think we should send
+ * to each worker (we don't know the number of sequences in the file).
+ * The calculation is based on trying to get a worker to spend 
+ * a specific amount of time MPI_WORKER_ALIGN_TARGET_SEC, a constant
+ * from structs.h. 
+ */
+static int
+determine_nseq_per_worker(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int *ret_nseq_worker)
+{
+  /**ret_nseq_worker = 5;*/
+  *ret_nseq_worker = 1;
+  return eslOK;
+}
+
+/* add_worker_seqs_to_master
+ * Add results (parstrees or CP9 traces, and possibly postcodes) from a
+ * worker's seqs_to_aln object to a master seqs_to_aln object.
+ */
+static int
+add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs, int offset)
+{
+  int x;
+
+  if(worker_seqs->sq != NULL) cm_Fail("add_worker_seqs_to_master(), worker_seqs->sq non-NULL.");
+  if(master_seqs->nseq < (offset + worker_seqs->nseq)) cm_Fail("add_worker_seqs_to_master(), master->nseq: %d, offset %d, worker->nseq: %d\n", master_seqs->nseq, offset, worker_seqs->nseq);
+
+  if(worker_seqs->tr != NULL) {
+    if(master_seqs->tr == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned parsetrees, master->tr is NULL.");
+    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
+      assert(master_seqs->tr[x] == NULL); 
+      master_seqs->tr[x] = worker_seqs->tr[(x-offset)];
+    }
+  }
+
+  if(worker_seqs->cp9_tr != NULL) {
+    if(master_seqs->cp9_tr == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned cp9 traces, master->cp9_tr is NULL.");
+    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
+      assert(master_seqs->cp9_tr[x] == NULL); 
+      master_seqs->cp9_tr[x] = worker_seqs->cp9_tr[(x-offset)];
+    }
+  }
+
+  if(worker_seqs->postcode1 != NULL) {
+    if(master_seqs->postcode1 == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned postcodes, master->postcode1 is NULL.");
+    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
+      assert(master_seqs->postcode1[x] == NULL); 
+      master_seqs->postcode1[x] = worker_seqs->postcode1[(x-offset)];
+    }
+  }
+
+  if(worker_seqs->postcode2 != NULL) {
+    if(master_seqs->postcode2 == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned postcodes, master->postcode2 is NULL.");
+    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
+      assert(master_seqs->postcode2[x] == NULL); 
+      master_seqs->postcode2[x] = worker_seqs->postcode2[(x-offset)];
+    }
+  }
+
+  if(worker_seqs->sc != NULL) {
+    if(master_seqs->sc == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned scores, master->sc is NULL.");
+    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
+      assert(!(NOT_IMPOSSIBLE(master_seqs->sc[x])));
+      master_seqs->sc[x] = worker_seqs->sc[(x-offset)];
+    }
+  }
+
+  return eslOK;
+}
+#endif /* of #ifdef HAVE_MPI */

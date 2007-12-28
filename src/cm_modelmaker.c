@@ -113,7 +113,7 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
   if (use_rf)
     {
       for (apos = 1; apos <= msa->alen; apos++)
-	matassign[apos] = (esl_abc_CIsGap(msa->abc, msa->rf[apos-1])? FALSE : TRUE);
+	matassign[apos] = (esl_abc_CIsGap(msa->abc, msa->rf[apos-1]) ? FALSE : TRUE);
     }
   else
     {
@@ -134,8 +134,9 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
    */
   esl_wuss_nopseudo(msa->ss_cons, msa->ss_cons); /* remove pknots in place */
   ESL_ALLOC(ct, (msa->alen+1) * sizeof(int));
-  if (esl_wuss2ct(msa->ss_cons, msa->alen, ct) != eslOK)  
+  if (esl_wuss2ct(msa->ss_cons, msa->alen, ct) == eslESYNTAX)  
     cm_Fail("Consensus structure string is inconsistent"); 
+  else if (esl_wuss2ct(msa->ss_cons, msa->alen, ct) != eslOK)  goto ERROR;
 
   /* 3. Make sure the consensus structure "ct" is consistent with the match assignments.
    *    Wipe out all structure in insert columns; including the base-paired 
@@ -158,6 +159,7 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
   nstates = nnodes = 0;
   gtr = CreateParsetree(100);	/* the parse tree we'll grow        */
   pda = esl_stack_ICreate();    /* a pushdown stack for our indices */
+  if(pda == NULL) goto ERROR;
   clen = 0;
 
   /* Construction strategy has to make sure we number the nodes in
@@ -174,16 +176,16 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
    * in both indices and values: e.g. the base pairing partner 
    * j of residue i is ct[i-1]-1. 
    */
-  esl_stack_IPush(pda, -1);		/* what node it's attached to */
-  esl_stack_IPush(pda, 1);		/* emitl */
-  esl_stack_IPush(pda, msa->alen);	/* emitr */
-  esl_stack_IPush(pda, ROOT_nd);	/* "state" (e.g. node type) */
+  if((status = esl_stack_IPush(pda, -1)) != eslOK) goto ERROR;		/* what node it's attached to */
+  if((status = esl_stack_IPush(pda, 1))  != eslOK) goto ERROR;		/* emitl */
+  if((status = esl_stack_IPush(pda, msa->alen)) != eslOK) goto ERROR;	/* emitr */
+  if((status = esl_stack_IPush(pda, ROOT_nd)) != eslOK)   goto ERROR;	/* "state" (e.g. node type) */
 
-  while (esl_stack_IPop(pda, &type) != eslEOD)	/* pop a node type to attach */
+  while (esl_stack_IPop(pda, &type) != eslEOD) /* pop a node type to attach */
     {
       esl_stack_IPop(pda, &j);
-      esl_stack_IPop(pda, &i);	/* i..j == subseq we're responsible for */
-      esl_stack_IPop(pda, &v);	/* v = index of parent node in gtr */
+      esl_stack_IPop(pda, &i); /* i..j == subseq we're responsible for */
+      esl_stack_IPop(pda, &v); /* v = index of parent node in gtr */
 
       /* This node accounts for i..j, but we usually don't know how yet.
        * Six possibilities:
@@ -206,20 +208,20 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, ROOT_nd);
 	for (; i <= j; i++) if (matassign[i]) break;
 	for (; j >= i; j--) if (matassign[j]) break;
-	esl_stack_IPush(pda, v);	/* here v==0 always. */
-	esl_stack_IPush(pda, i);
-	esl_stack_IPush(pda, j);
-	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;	/* here v==0 always. */
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
 	nstates += 3;		/* ROOT_nd -> S_st, IL_st, IR_st */
 	nnodes++;
       }
 
       else if (type == BEGL_nd) {    /* no inserts */
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, BEGL_nd);
-	esl_stack_IPush(pda, v);	
-	esl_stack_IPush(pda, i);
-	esl_stack_IPush(pda, j);
-	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;	
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
 	nstates += 1;		/* BEGL_nd -> S_st */
 	nnodes++;
       }
@@ -227,10 +229,10 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
       else if (type == BEGR_nd)  { /* look for INSL */
 	v = InsertTraceNode(gtr, v, TRACE_RIGHT_CHILD, i, j, BEGR_nd);
 	for (; i <= j; i++) if (matassign[i]) break; 
-	esl_stack_IPush(pda, v);	
-	esl_stack_IPush(pda, i);
-	esl_stack_IPush(pda, j);
-	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;	
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
 	nstates += 2;		/* BEGR_nd -> S_st IL_st */
 	nnodes++;
       }
@@ -239,10 +241,10 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 	 	/* i unpaired. This is a MATL node; allow INSL */
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATL_nd);
 	for (i = i+1; i <= j; i++)  if (matassign[i]) break;
-	esl_stack_IPush(pda, v);
-	esl_stack_IPush(pda, i);
-	esl_stack_IPush(pda, j);
-	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
 	nstates += 3;		/* MATL_nd -> ML_st, D_st, IL_st */
 	nnodes++;
 	clen += 1;
@@ -251,10 +253,10 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
       else if (ct[j] == 0) { 	/* j unpaired. MATR node. Deal with INSR */
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATR_nd);
 	for (j = j-1; j >= i; j--) if (matassign[j]) break;
-	esl_stack_IPush(pda, v);
-	esl_stack_IPush(pda, i);
-	esl_stack_IPush(pda, j);
-	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
 	nstates += 3;		/* MATR_nd -> MR_st, D_st, IL_st */
 	nnodes++;
 	clen += 1;
@@ -264,10 +266,10 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATP_nd);
 	for (i = i+1; i <= j; i++) if (matassign[i]) break;
 	for (j = j-1; j >= i; j--) if (matassign[j]) break;
-	esl_stack_IPush(pda, v);
-	esl_stack_IPush(pda, i);
-	esl_stack_IPush(pda, j);
-	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
 	nstates += 6;		/* MATP_nd -> MP_st, ML_st, MR_st, D_st, IL_st, IR_st */
 	nnodes++;
 	clen += 2;
@@ -313,15 +315,15 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 	      while (ct[k] == 0) k++;
 	    }
 				/* push the right BEGIN node first */
-	  esl_stack_IPush(pda, v);	
-	  esl_stack_IPush(pda, bestk);
-	  esl_stack_IPush(pda, j);
-	  esl_stack_IPush(pda, BEGR_nd);
+	  if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;	
+	  if((status = esl_stack_IPush(pda, bestk)) != eslOK) goto ERROR;
+	  if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	  if((status = esl_stack_IPush(pda, BEGR_nd)) != eslOK) goto ERROR;
 				/* then push the left BEGIN node */
-	  esl_stack_IPush(pda, v);	
-	  esl_stack_IPush(pda, i);
-	  esl_stack_IPush(pda, bestk-1);
-	  esl_stack_IPush(pda, BEGL_nd);
+	  if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;	
+	  if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	  if((status = esl_stack_IPush(pda, bestk-1)) != eslOK) goto ERROR;
+	  if((status = esl_stack_IPush(pda, BEGL_nd)) != eslOK) goto ERROR;
 	  nstates += 1;		/* BIF_nd -> B_st */
 	  nnodes++;
 	}
@@ -365,6 +367,7 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 void
 cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 {
+  int         status;
   ESL_STACK  *pda;              /* pushdown stack used for traversing gtr */
   int         v;		/* what node we're working on (in gtr index system)*/
   int         node;		/* what node (preorder traversal numbering of CM) */
@@ -383,9 +386,10 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 
   node = state = clen = 0;
   pda = esl_stack_ICreate();
-  esl_stack_IPush(pda, 0);		/* push ROOT_nd onto the stack */
+  if((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;		/* push ROOT_nd onto the stack */
   while (esl_stack_IPop(pda, &v) != eslEOD)
     {
+
       if      (gtr->state[v] == BIF_nd) {
 	prvnodetype = gtr->state[gtr->prv[v]];
 
@@ -397,14 +401,14 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	cm->stid[state]   = BIF_B;
 	cm->cfirst[state] = state+1;
 	cm->cnum[state]   = -1; /* we fill this in later, when we see the BEGR... */
-	esl_stack_IPush(pda, state);	/* ... the trick we use to remember the connection */
+	if((status = esl_stack_IPush(pda, state)) != eslOK) goto ERROR;	/* ... the trick we use to remember the connection */
 	cm->plast[state] = state-1;
 	cm->pnum[state]   = parent_count[prvnodetype];
 	state++;
 	
 	node++;
-	esl_stack_IPush(pda, gtr->nxtr[v]);
-	esl_stack_IPush(pda, gtr->nxtl[v]);
+	if((status = esl_stack_IPush(pda, gtr->nxtr[v])) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, gtr->nxtl[v])) != eslOK) goto ERROR;
       }
 
       else if (gtr->state[v] == MATP_nd) {
@@ -470,7 +474,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	state++;
 
 	node++;
-	esl_stack_IPush(pda, gtr->nxtl[v]);
+	if((status = esl_stack_IPush(pda, gtr->nxtl[v])) != eslOK) goto ERROR;
       }
 
       else if (gtr->state[v] == MATL_nd) {
@@ -509,7 +513,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	state++;
 
 	node++;
-	esl_stack_IPush(pda, gtr->nxtl[v]);
+	if((status = esl_stack_IPush(pda, gtr->nxtl[v])) != eslOK) goto ERROR;
       }
       
       else if (gtr->state[v] == MATR_nd) {
@@ -548,7 +552,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	state++;
 
 	node++;
-	esl_stack_IPush(pda, gtr->nxtl[v]);
+	if((status = esl_stack_IPush(pda, gtr->nxtl[v])) != eslOK) goto ERROR;
       }
 
       else if (gtr->state[v] == BEGL_nd) {
@@ -567,7 +571,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	state++;
 
 	node++;
-	esl_stack_IPush(pda, gtr->nxtl[v]);
+	if((status = esl_stack_IPush(pda, gtr->nxtl[v])) != eslOK) goto ERROR;
       }
 
       else if (gtr->state[v] == BEGR_nd) {
@@ -604,7 +608,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	state++;
 
 	node++;
-	esl_stack_IPush(pda, gtr->nxtl[v]);
+	if((status = esl_stack_IPush(pda, gtr->nxtl[v])) != eslOK) goto ERROR;
       }
 
       else if (gtr->state[v] == ROOT_nd) {
@@ -641,7 +645,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
 	state++;
 
 	node++;
-	esl_stack_IPush(pda, gtr->nxtl[v]);
+	if((status = esl_stack_IPush(pda, gtr->nxtl[v])) != eslOK) goto ERROR;
       }
 
       else if (gtr->state[v] == END_nd) {
@@ -666,6 +670,11 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
   cm->M     = state;
   cm->nodes = node;
   cm->clen  = clen;
+  return;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return; /* NEVERREACHED */
 }
 
 
@@ -801,9 +810,9 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
 				  gtr->emitl[node], gtr->emitr[node], state);
 	  if (! started) { started = TRUE; nstarts++; }
 	} 
-	esl_stack_IPush(pda, ended);   /* remember our ending status */
-	esl_stack_IPush(pda, started); /* remember our start status */
-	esl_stack_IPush(pda, tidx);    /* remember index in tr; we pop in BEGR */
+	if((status = esl_stack_IPush(pda, ended)) != eslOK) goto ERROR;   /* remember our ending status */
+	if((status = esl_stack_IPush(pda, started)) != eslOK) goto ERROR; /* remember our start status */
+	if((status = esl_stack_IPush(pda, tidx)) != eslOK) goto ERROR;    /* remember index in tr; we pop in BEGR */
 	break;
 
 	/* A MATP node.
@@ -1087,16 +1096,16 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
    * in both indices and values: e.g. the base pairing partner 
    * j of residue i is ct[i-1]-1. 
    */
-  esl_stack_IPush(pda, -1);		/* what node it's attached to */
-  esl_stack_IPush(pda, 1);		/* emitl */
-  esl_stack_IPush(pda, clen);	/* emitr */
-  esl_stack_IPush(pda, ROOT_nd);	/* "state" (e.g. node type) */
+  if((status = esl_stack_IPush(pda, -1)) != eslOK) goto ERROR;		/* what node it's attached to */
+  if((status = esl_stack_IPush(pda, 1)) != eslOK) goto ERROR;		/* emitl */
+  if((status = esl_stack_IPush(pda, clen)) != eslOK) goto ERROR;	/* emitr */
+  if((status = esl_stack_IPush(pda, ROOT_nd)) != eslOK) goto ERROR;	/* "state" (e.g. node type) */
 
-  while (esl_stack_IPop(pda, &type) != eslEOD)	/* pop a node type to attach */
+  while (esl_stack_IPop(pda, &type) != eslEOD) /* pop a node type to attach */
     {
       esl_stack_IPop(pda, &j);
-      esl_stack_IPop(pda, &i);	/* i..j == subseq we're responsible for */
-      esl_stack_IPop(pda, &v);	/* v = index of parent node in gtr */
+      esl_stack_IPop(pda, &i); /* i..j == subseq we're responsible for */
+      esl_stack_IPop(pda, &v); /* v = index of parent node in gtr */
 
       /* This node accounts for i..j, but we usually don't know how yet.
        * Six possibilities:
@@ -1117,30 +1126,30 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
 
       else if (type == ROOT_nd) { /* try to push i,j; but deal with INSL and INSR */
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, ROOT_nd);
-	esl_stack_IPush(pda, v);	/* here v==0 always. */
-	esl_stack_IPush(pda, i);
-	esl_stack_IPush(pda, j);
-	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;	/* here v==0 always. */
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
 	nstates += 3;		/* ROOT_nd -> S_st, IL_st, IR_st */
 	nnodes++;
       }
 
       else if (type == BEGL_nd) {    /* no inserts */
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, BEGL_nd);
-	esl_stack_IPush(pda, v);	
-	esl_stack_IPush(pda, i);
-	esl_stack_IPush(pda, j);
-	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;	
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
 	nstates += 1;		/* BEGL_nd -> S_st */
 	nnodes++;
       }
 
       else if (type == BEGR_nd)  { /* look for INSL */
 	v = InsertTraceNode(gtr, v, TRACE_RIGHT_CHILD, i, j, BEGR_nd);
-	esl_stack_IPush(pda, v);	
-	esl_stack_IPush(pda, i);
-	esl_stack_IPush(pda, j);
-	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;	
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
 	nstates += 2;		/* BEGR_nd -> S_st IL_st */
 	nnodes++;
       }
@@ -1149,10 +1158,10 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
 	 	/* i unpaired. This is a MATL node; allow INSL */
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATL_nd);
 	i++;
-	esl_stack_IPush(pda, v);
-	esl_stack_IPush(pda, i);
-	esl_stack_IPush(pda, j);
-	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
 	nstates += 3;		/* MATL_nd -> ML_st, D_st, IL_st */
 	nnodes++;
 	obs_clen++;
@@ -1161,10 +1170,10 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
       else if (ct[j] == 0) { 	/* j unpaired. MATR node. Deal with INSR */
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATR_nd);
 	j--;
-	esl_stack_IPush(pda, v);
-	esl_stack_IPush(pda, i);
-	esl_stack_IPush(pda, j);
-	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
 	nstates += 3;		/* MATR_nd -> MR_st, D_st, IL_st */
 	nnodes++;
 	obs_clen++;
@@ -1174,10 +1183,10 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
 	v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, MATP_nd);
 	i++;
 	j--;
-	esl_stack_IPush(pda, v);
-	esl_stack_IPush(pda, i);
-	esl_stack_IPush(pda, j);
-	esl_stack_IPush(pda, DUMMY_nd); /* we don't know yet what the next node will be */
+	if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	if((status = esl_stack_IPush(pda, DUMMY_nd)) != eslOK) goto ERROR; /* we don't know yet what the next node will be */
 	nstates += 6;		/* MATP_nd -> MP_st, ML_st, MR_st, D_st, IL_st, IR_st */
 	nnodes++;
 	obs_clen += 2;
@@ -1223,15 +1232,15 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
 	      while (ct[k] == 0) k++;
 	    }
 				/* push the right BEGIN node first */
-	  esl_stack_IPush(pda, v);	
-	  esl_stack_IPush(pda, bestk);
-	  esl_stack_IPush(pda, j);
-	  esl_stack_IPush(pda, BEGR_nd);
+	  if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;	
+	  if((status = esl_stack_IPush(pda, bestk)) != eslOK) goto ERROR;
+	  if((status = esl_stack_IPush(pda, j)) != eslOK) goto ERROR;
+	  if((status = esl_stack_IPush(pda, BEGR_nd)) != eslOK) goto ERROR;
 				/* then push the left BEGIN node */
-	  esl_stack_IPush(pda, v);	
-	  esl_stack_IPush(pda, i);
-	  esl_stack_IPush(pda, bestk-1);
-	  esl_stack_IPush(pda, BEGL_nd);
+	  if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;	
+	  if((status = esl_stack_IPush(pda, i)) != eslOK) goto ERROR;
+	  if((status = esl_stack_IPush(pda, bestk-1)) != eslOK) goto ERROR;
+	  if((status = esl_stack_IPush(pda, BEGL_nd)) != eslOK) goto ERROR;
 	  nstates += 1;		/* BIF_nd -> B_st */
 	  nnodes++;
 	}

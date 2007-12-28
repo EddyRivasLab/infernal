@@ -4,9 +4,7 @@
  * 
  * Building submodels (sub CMs) from a template CM, that represent
  * a contiguous subset of the consensus columns that were modelled 
- * by the template CM. Options exist to build a sub CM that
- * models the same consensus columns of the template, but without
- * structure outside a contiguous subset of the columns.
+ * by the template CM. 
  *
  * These functions are still under development. No guarantees.
  * 
@@ -2068,283 +2066,6 @@ check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, CMSubMa
   return TRUE; 
 }
 
-/**************************************************************************
- * EPN 09.06.06
- * Function: check_sub_cm_by_sampling2()
- *
- * Purpose:  Given a CM and a sub CM that is supposed to mirror 
- *           the CM as closely as possible between two given consensus
- *           columns (spos and epos), check that the sub_cm was correctly 
- *           constructed. 
- *           
- *           The approach is to sample from the CM and the sub_cm 
- *           and use those samples to build two CP9 HMMs, then 
- *           compare those two CP9 HMMs.
- *
- * Args:    
- * CM_t *orig_cm     - the original, template CM
- * CM_t  *sub_cm     - the sub CM built from the orig_cm
- * ESL_RANDOMNESS *r - source of randomness
- * int spos          - first consensus column in cm that hmm models (often 1)
- * int epos          -  last consensus column in cm that hmm models 
- * int nseq          - number of sequences to sample to build the new HMMs.
- *
- * Returns: TRUE: if CM and sub CM are "close enough" (see code)
- *          FALSE: otherwise
- */
-int 
-check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, int spos, int epos, int nseq)
-{
-  int status;
-  CP9_t       *orig_hmm;/* constructed CP9 HMM from the sub_cm */
-  CP9_t       *sub_hmm; /* constructed CP9 HMM from the sub_cm */
-  int ret_val;                    /* return value */
-  Parsetree_t **tr;               /* Parsetrees of emitted aligned sequences */
-  ESL_SQ  **sq;                   /* sequences */
-  ESL_MSA  *msa;                  /* alignment */
-  float    *wgt;
-  char     *name;                 /* name for emitted seqs */
-  int i;
-  int L;
-  int apos;
-  int *matassign;
-  int *useme;
-  CP9trace_t **cp9_tr;          /* fake tracebacks for each seq            */
-  int msa_nseq;                 /* this is the number of sequences per MSA,
-				 * current strategy is to sample (nseq/nseq_per_msa)
-				 * alignments from the CM, and add counts from
-				 * each to the shmm in counts form (to limit memory)
-				 */
-  int nsampled;                 /* number of sequences sampled thus far */
-  int debug_level;
-  int cc;
-  char         *tmp_name;           /* name for seqs */
-  char         *tmp_text_sq;        /* text seqs */
-  char errbuf[cmERRBUFSIZE];
-  
-  debug_level = 0;
-  ret_val = TRUE;
-  msa_nseq = 1000;
-  msa = NULL;
-  
-  /* Build two CP9 HMMs */
-  /* the orig_hmm only models consensus positions spos to epos of the orig_cm */
-  orig_hmm = AllocCPlan9((epos-spos+1), orig_cm->abc);
-  ZeroCPlan9(orig_hmm);
-  CPlan9SetNullModel(orig_hmm, orig_cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
-  
-  sub_hmm = AllocCPlan9((epos-spos+1), orig_cm->abc);
-  ZeroCPlan9(sub_hmm);
-  CPlan9SetNullModel(sub_hmm, sub_cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
-  
-  /* First sample from the orig_cm and use the samples to fill in orig_hmm
-   * sample MSA(s) from the CM 
-   */
-  nsampled = 0;
-  ESL_ALLOC(sq, sizeof(ESL_SQ *)     * msa_nseq);
-  ESL_ALLOC(tr, (sizeof(Parsetree_t) * msa_nseq));
-  ESL_ALLOC(wgt,(sizeof(float)       * msa_nseq));
-  esl_vec_FSet(wgt, msa_nseq, 1.0);
-  int namelen = 3 + IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
-
-  while(nsampled < nseq)
-    {
-      /*printf("nsampled: %d\n", nsampled);*/
-      if(nsampled != 0)
-	{
-	  /* clean up from previous MSA */
-	  esl_msa_Destroy(msa);
-	  free(matassign);
-	  free(useme);
-	  for (i = 0; i < msa_nseq; i++)
-	    {
-	      CP9FreeTrace(cp9_tr[i]);
-	      FreeParsetree(tr[i]);
-	      esl_sq_Reuse(sq[i]);
-	    }
-	  free(cp9_tr);
-	}
-      /* Emit msa_nseq parsetrees from the CM */
-      if(nsampled + msa_nseq > nseq)
-	msa_nseq = nseq - nsampled;
-      for (i = 0; i < msa_nseq; i++)
-	{
-	  ESL_ALLOC(name, sizeof(char) * namelen);
-	  sprintf(name, "seq%d", i+1);
-	  if((status = EmitParsetree(orig_cm, errbuf, r, name, FALSE, &(tr[i]), &(sq[i]), &L)) != eslOK) cm_Fail(errbuf);
-	  free(name);
-	}
-      /* Build a new MSA from these parsetrees */
-      Parsetrees2Alignment(orig_cm, orig_cm->abc, sq, NULL, tr, msa_nseq, TRUE, FALSE, &msa);
-      /* MSA should be in text mode, not digitized */
-      if(msa->flags & eslMSA_DIGITAL)
-	cm_Fail("ERROR in sub_cm_check_by_sampling(), sampled MSA should NOT be digitized.\n");
-      
-      /* Truncate the alignment prior to consensus column spos and after 
-	 consensus column epos */
-      ESL_ALLOC(useme, sizeof(int) * (msa->alen+1));
-      for (apos = 0, cc = 0; apos < msa->alen; apos++)
-	{
-	  /* Careful here, placement of cc++ increment is impt, 
-	   * we want all inserts between cc=spos-1 and cc=spos,
-	   * and between cc=epos and cc=epos+1.
-	   */
-	  if(cc < (spos-1) || cc > epos)
-	    useme[apos] = 0;
-	  else
-	    useme[apos] = 1;
-	  if (! esl_abc_CIsGap(msa->abc, msa->rf[apos]))
-	    { 
-	      cc++; 
-	      if(cc == (epos+1))
-		useme[apos] = 0; 
-	      /* we misassigned this guy, overwrite */ 
-	    }
-	}
-      esl_msa_ColumnSubset(msa, useme);
-      
-      /* Shorten the dsq's */
-      for (i = 0; i < msa_nseq; i++)
-	{
-	  MakeDealignedString(msa->abc, msa->aseq[i], msa->alen, msa->aseq[i], &(tmp_text_sq)); 
-	  ESL_ALLOC(tmp_name, sizeof(char) * namelen);
-	  sprintf(tmp_name, "seq%d", i+1);
-	  esl_sq_CreateFrom(tmp_name, tmp_text_sq, NULL, NULL, NULL);
-	  free(tmp_text_sq);
-	  if(esl_sq_Digitize(msa->abc, sq[i]) != eslOK)
-	    cm_Fail("ERROR digitizing sequence in CP9_check_by_sampling().\n");
-	}
-      
-      /* Determine match assignment from RF annotation
-       */
-      ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
-      matassign[0] = 0;
-      for (apos = 0; apos < msa->alen; apos++)
-	{
-	  matassign[apos+1] = 0;
-	  if (!esl_abc_CIsGap(msa->abc, msa->rf[apos])) 
-	    matassign[apos+1] = 1;
-	}
-      /* make fake tracebacks for each seq */
-      CP9_fake_tracebacks(msa, matassign, &cp9_tr);
-      
-      /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
-      for (i = 0; i < msa->nseq; i++) {
-	CP9TraceCount(orig_hmm, sq[i]->dsq, msa->wgt[i], cp9_tr[i]);
-      }
-      nsampled += msa_nseq;
-    }
-  /*Next, renormalize the orig_hmm and logoddisfy it */
-  CPlan9Renormalize(orig_hmm);
-  CP9Logoddsify(orig_hmm);
-  
-  /* clean up from previous MSA */
-  esl_msa_Destroy(msa);
-  free(matassign);
-  free(useme);
-  for (i = 0; i < msa_nseq; i++)
-    {
-      CP9FreeTrace(cp9_tr[i]);
-      FreeParsetree(tr[i]);
-      esl_sq_Destroy(sq[i]);
-    }
-  free(cp9_tr);
-  
-  /* Now for the sub_hmm. Sample from the sub_cm and use the 
-   * samples to fill in sub_hmm sample MSA(s) from the CM */
-  nsampled = 0;
-  ESL_ALLOC(sq, sizeof(ESL_SQ *)     * msa_nseq);
-  ESL_ALLOC(tr, (sizeof(Parsetree_t) * msa_nseq));
-  ESL_ALLOC(wgt,(sizeof(float)       * msa_nseq));
-  esl_vec_FSet(wgt, msa_nseq, 1.0);
-  
-  while(nsampled < nseq)
-    {
-      /*printf("nsampled: %d\n", nsampled);*/
-      if(nsampled != 0)
-	{
-	  /* clean up from previous MSA */
-	  esl_msa_Destroy(msa);
-	  free(matassign);
-	  for (i = 0; i < msa_nseq; i++)
-	    {
-	      CP9FreeTrace(cp9_tr[i]);
-	      FreeParsetree(tr[i]);
-	      esl_sq_Reuse(sq[i]);
-	    }
-	  free(cp9_tr);
-	}
-      /* Emit msa_nseq parsetrees from the CM */
-      if(nsampled + msa_nseq > nseq)
-	msa_nseq = nseq - nsampled;
-      for (i = 0; i < msa_nseq; i++)
-	{
-	  ESL_ALLOC(name, sizeof(char) * namelen);
-	  sprintf(name, "seq%d", i+1);
-	  if((status = EmitParsetree(sub_cm, errbuf, r, name, FALSE, &(tr[i]), &(sq[i]), &L)) != eslOK) cm_Fail(errbuf);
-	  free(name);
-	}
-      /* Build a new MSA from these parsetrees */
-      Parsetrees2Alignment(sub_cm, sub_cm->abc, sq, NULL, tr, msa_nseq, TRUE, FALSE, &msa);
-      /* MSA should be in text mode, not digitized */
-      if(msa->flags & eslMSA_DIGITAL)
-	cm_Fail("ERROR in sub_cm_check_by_sampling(), sampled MSA should NOT be digitized.\n");
-      
-      /* Determine match assignment from RF annotation
-       */
-      ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
-      matassign[0] = 0;
-      for (apos = 0; apos < msa->alen; apos++)
-	{
-	  matassign[apos+1] = 0;
-	  if (!esl_abc_CIsGap(msa->abc, msa->rf[apos])) 
-	    matassign[apos+1] = 1;
-	}
-      /* make fake tracebacks for each seq */
-      CP9_fake_tracebacks(msa, matassign, &cp9_tr);
-      
-      /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */
-      for (i = 0; i < msa->nseq; i++) {
-	CP9TraceCount(orig_hmm, sq[i]->dsq, msa->wgt[i], cp9_tr[i]);
-      }
-      nsampled += msa_nseq;
-    }
-  
-  /*Next, renormalize the sub_hmm and logoddisfy it */
-  CPlan9Renormalize(sub_hmm);
-  CP9Logoddsify(sub_hmm);
-
-  /* clean up from previous MSA */
-  esl_msa_Destroy(msa);
-  free(matassign);
-  free(useme);
-  for (i = 0; i < msa_nseq; i++)
-    {
-      CP9FreeTrace(cp9_tr[i]);
-      FreeParsetree(tr[i]);
-      esl_sq_Destroy(sq[i]);
-    }
-  free(cp9_tr);
-  /**************************************************/
-  
-  printf("PRINTING SAMPLED ORIG HMM PARAMS:\n");
-  debug_print_cp9_params(stdout, orig_hmm, TRUE);
-  printf("DONE PRINTING SAMPLED ORIG HMM PARAMS:\n");
-  
-
-  printf("PRINTING SAMPLED SUB HMM PARAMS:\n");
-  debug_print_cp9_params(stdout, sub_hmm, TRUE);
-  printf("DONE PRINTING SAMPLED SUB HMM PARAMS:\n");
-  
-  FreeCPlan9(orig_hmm);
-  FreeCPlan9(sub_hmm);
-  return TRUE;
-
- ERROR:
-  cm_Fail("Memory allocation error.");
-  return FALSE; /* never reached */
-}
-
 
 /**************************************************************************
  * EPN 09.07.06
@@ -3854,9 +3575,9 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
 
   pos   = 1;
   ss    = 0;
-  pda = esl_stack_ICreate();
-  esl_stack_IPush(pda, 0);		/* 0 = left side. 1 would = right side. */
-  esl_stack_IPush(pda, ss);
+  if((pda = esl_stack_ICreate()) == NULL) goto ERROR;
+  if((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;		/* 0 = left side. 1 would = right side. */
+  if((status = esl_stack_IPush(pda, ss)) != eslOK) goto ERROR;
   while (esl_stack_IPop(pda, &ss) != eslEOD)
     {
       esl_stack_IPop(pda, &on_right);
@@ -3877,24 +3598,24 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
 	  if (orig_cm->sttype[ss] == B_st)
 	    {
 	      /* push the BIF back on for its right side  */
-	      esl_stack_IPush(pda, 1);
-	      esl_stack_IPush(pda, ss);
+	      if((status = esl_stack_IPush(pda, 1)) != eslOK) goto ERROR;
+	      if((status = esl_stack_IPush(pda, ss)) != eslOK) goto ERROR;
 	      /* push node index for right child */
-	      esl_stack_IPush(pda, 0);
-	      esl_stack_IPush(pda, orig_cm->cnum[ss]);
+	      if((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+	      if((status = esl_stack_IPush(pda, orig_cm->cnum[ss])) != eslOK) goto ERROR;
 	      /* push node index for left child */
-	      esl_stack_IPush(pda, 0);
-	      esl_stack_IPush(pda, orig_cm->cfirst[ss]);
+	      if((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+	      if((status = esl_stack_IPush(pda, orig_cm->cfirst[ss])) != eslOK) goto ERROR;
 	    }
 	  else
 	    {
 	      /* push the node back on for right side */
-	      esl_stack_IPush(pda, 1);
-	      esl_stack_IPush(pda, ss);
+	      if((status = esl_stack_IPush(pda, 1)) != eslOK) goto ERROR;
+	      if((status = esl_stack_IPush(pda, ss)) != eslOK) goto ERROR;
 	      /* push split state of child node on */
 	      if (orig_cm->sttype[ss] != E_st) {
-		esl_stack_IPush(pda, 0);
-		esl_stack_IPush(pda, ss_used[orig_cm->ndidx[ss]+1]);
+		if((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+		if((status = esl_stack_IPush(pda, ss_used[orig_cm->ndidx[ss]+1])) != eslOK) goto ERROR;
 	      }
 	    }
 	  pos += il_ct[orig_cm->ndidx[ss]]; /* account for left inserts */
@@ -3986,8 +3707,6 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
   cm_Fail("Memory allocation error.");
   return 0; /* never reached*/
 }
-
-
 
 #if 0
 /* These two functions are not currently used, but could be useful for debugging 

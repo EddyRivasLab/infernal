@@ -113,9 +113,9 @@ CM_Eweight(CM_t *cm, const Prior_t *pri, float numb_seqs,
 	  /* cm->nodemap[i] = first state, node i (here, MP state) */
 
 	  /* Add priors to the current match state prob dist. (easel/esl_dirichlet.c) */
-	  esl_mixdchlet_MPParameters(counts, MAXABET*MAXABET,
-				     pri->mbp,
-				     mixq, probs);
+	  if((status = esl_mixdchlet_MPParameters(counts, MAXABET*MAXABET,
+						  pri->mbp,
+						  mixq, probs)) != eslOK) cm_Fail("esl_mixdchlet_MPParameters() call failed with status: %d\n", status);
 	  /* ent[] is assigned the current MP_st state emission entropy. */
 	  ent[i] = esl_vec_DEntropy(probs, (MAXABET * MAXABET));
 	}
@@ -128,9 +128,9 @@ CM_Eweight(CM_t *cm, const Prior_t *pri, float numb_seqs,
 	  /* cm->nodemap[i] = first state, node i (here, ML or MR state) */
 
 	  /* Add priors to the current match state prob dist. (easel/esl_dirichlet.c) */
-	  esl_mixdchlet_MPParameters(counts, MAXABET,
-				     pri->mnt,
-				     mixq, probs);
+	  if((status = esl_mixdchlet_MPParameters(counts, MAXABET,
+						  pri->mnt,
+						  mixq, probs)) != eslOK) cm_Fail("esl_mixdchlet_MPParameters() call failed with status: %d\n", status);
 	  /* ent[] is assigned the current consensus singlet emission entropy. */
 	  ent[i] = esl_vec_DEntropy(probs, MAXABET);
 	}
@@ -207,9 +207,9 @@ CM_Eweight(CM_t *cm, const Prior_t *pri, float numb_seqs,
 	      esl_vec_DScale(counts, (MAXABET*MAXABET), scale);
 	      
 	      /* Re-add priors to these scaled counts. (easel/esl_dirichlet.c) */
-	      esl_mixdchlet_MPParameters(counts, MAXABET*MAXABET,
-					 pri->mbp,
-					 mixq, probs);
+	      if((status = esl_mixdchlet_MPParameters(counts, MAXABET*MAXABET,
+						      pri->mbp,
+						      mixq, probs)) != eslOK) cm_Fail("esl_mixdchlet_MPParameters() call failed with status: %d\n", status);
 	      /* Again, ent[] is assigned the current match emission entropy */
 	      ent[i] = esl_vec_DEntropy(probs, (MAXABET * MAXABET));
 	    }
@@ -227,9 +227,9 @@ CM_Eweight(CM_t *cm, const Prior_t *pri, float numb_seqs,
 	      esl_vec_DScale(counts, MAXABET, scale);
 	      
 	      /* Re-add the priors to these scaled counts. (easel/esl_dirichlet.c) */
-	      esl_mixdchlet_MPParameters(counts, MAXABET,
-					 pri->mnt,
-					 mixq, probs);
+	      if((status = esl_mixdchlet_MPParameters(counts, MAXABET,
+						      pri->mnt,
+						      mixq, probs)) != eslOK) cm_Fail("esl_mixdchlet_MPParameters() call failed with status: %d\n", status);
 	      
 	      /* Again, ent[] is assigned the current match emission entropy */
 	      ent[i] = esl_vec_DEntropy(probs, MAXABET);
@@ -491,9 +491,9 @@ CM_Eweight_RE(CM_t *cm, const Prior_t *pri, float numb_seqs,
 	  /* cm->nodemap[i] = first state, node i (here, MP state) */
 
 	  /* Add priors to the current match state prob dist. (easel/esl_dirichlet.c) */
-	  esl_mixdchlet_MPParameters(counts, MAXABET*MAXABET,
-				     pri->mbp,
-				     mixq, probs);
+	  if((status = esl_mixdchlet_MPParameters(counts, MAXABET*MAXABET,
+						  pri->mbp,
+						  mixq, probs)) != eslOK) cm_Fail("esl_mixdchlet_MPParameters() call failed with status: %d\n", status);
 	  /* rel_ent[] is assigned the current MP_st state emission relative
 	   * entropy. */
 	  rel_ent[i] = DRelEntropy(probs, Drandomseq_bp, (MAXABET * MAXABET));
@@ -507,9 +507,9 @@ CM_Eweight_RE(CM_t *cm, const Prior_t *pri, float numb_seqs,
 	  /* cm->nodemap[i] = first state, node i (here, ML or MR state) */
 
 	  /* Add priors to the current match state prob dist. (easel/esl_dirichlet.c) */
-	  esl_mixdchlet_MPParameters(counts, MAXABET,
-				     pri->mnt,
-				     mixq, probs);
+	  if((status = esl_mixdchlet_MPParameters(counts, MAXABET,
+						  pri->mnt,
+						  mixq, probs)) != eslOK) cm_Fail("esl_mixdchlet_MPParameters() call failed with status: %d\n", status);
 	  /* rel_ent[] is assigned the current consensus singlet emission 
 	     relative entropy. */
 	  rel_ent[i] = DRelEntropy(probs, Drandomseq, MAXABET);
@@ -588,9 +588,9 @@ CM_Eweight_RE(CM_t *cm, const Prior_t *pri, float numb_seqs,
 	      esl_vec_DScale(counts, (MAXABET*MAXABET), scale);
 	      
 	      /* Re-add priors to these scaled counts. (easel/esl_dirichlet.c) */
-	      esl_mixdchlet_MPParameters(counts, MAXABET*MAXABET,
-					 pri->mbp,
-					 mixq, probs);
+	      if((status = esl_mixdchlet_MPParameters(counts, MAXABET*MAXABET,
+						      pri->mbp,
+						      mixq, probs)) != eslOK) cm_Fail("esl_mixdchlet_MPParameters() call failed with status: %d\n", status);
 	      /* Again, rel_ent[] is assigned the current match emission 
 		 relative entropy */
 	      rel_ent[i] = DRelEntropy(probs, Drandomseq_bp, (MAXABET * MAXABET));
@@ -609,9 +609,9 @@ CM_Eweight_RE(CM_t *cm, const Prior_t *pri, float numb_seqs,
 	      esl_vec_DScale(counts, MAXABET, scale);
 	      
 	      /* Re-add the priors to these scaled counts. (easel/esl_dirichlet.c) */
-	      esl_mixdchlet_MPParameters(counts, MAXABET,
-					 pri->mnt,
-					 mixq, probs);
+	      if((status = esl_mixdchlet_MPParameters(counts, MAXABET,
+						      pri->mnt,
+						      mixq, probs)) != eslOK) cm_Fail("esl_mixdchlet_MPParameters() call failed with status: %d\n", status);
 	      
 	      /* rel_ent[] is assigned the current consensus singlet emission 
 		 relative entropy. */

@@ -1136,7 +1136,7 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
       }
     }
                                 /* allocation for new alignment */
-  msa = esl_msa_Create(nseq, alen);
+  if((msa = esl_msa_Create(nseq, alen)) == NULL) goto ERROR;
   msa->nseq = nseq;
   msa->alen = alen;
   msa->abc  = (ESL_ALPHABET *) abc;
@@ -1267,7 +1267,7 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   /* copy names and weights */
   for (idx = 0; idx < nseq; idx++)
     {
-      esl_strdup(sq[idx]->name, -1, &(msa->sqname[idx]));
+      if((status = esl_strdup(sq[idx]->name, -1, &(msa->sqname[idx]))) != eslOK) goto ERROR;
       if (wgt == NULL) msa->wgt[idx] = 1.0;
       else             msa->wgt[idx] = wgt[idx];
     }

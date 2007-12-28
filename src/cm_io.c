@@ -510,12 +510,12 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
       else if (strcmp(tok, "NAME") == 0) 
 	{
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	  esl_strdup(tok, toklen, &(cm->name));
+	  if ((esl_strdup(tok, toklen, &(cm->name)))   != eslOK) goto MEMERROR;
 	}
       else if (strcmp(tok, "ACC") == 0) 
 	{
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	  esl_strdup(tok, toklen, &(cm->acc));
+	  if ((esl_strdup(tok, toklen, &(cm->acc)))    != eslOK) goto MEMERROR;
 	}
       else if (strcmp(tok, "DESC") == 0) 
 	{
@@ -867,6 +867,10 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   if (buf != NULL) free(buf);
   *ret_cm = NULL;
   return 1;
+
+    MEMERROR:
+  cm_Fail("Memory allocation error.");
+  return 1; /* NEVERREACHED */
 }
 
 /* Function: write_binary_cm()

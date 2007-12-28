@@ -21,9 +21,7 @@
 #include <math.h>
 
 #include "easel.h"
-#include "esl_gumbel.h"
 #include "esl_msa.h"         
-#include "esl_stack.h"
 #include "esl_stopwatch.h"   
 
 #include "funcs.h"		/* external functions                   */
@@ -452,7 +450,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   minsc =  FLT_MAX;
   maxsc = -FLT_MAX;
   avgsc = 0;
-  watch = esl_stopwatch_Create();
+  if((watch = esl_stopwatch_Create()) == NULL) goto ERROR;
 
   if(do_hbanded || do_sub) { /* We need a CP9 HMM to build sub_cms */
     if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, trying to use CP9 HMM that is NULL\n");
