@@ -58,17 +58,17 @@ static unsigned int v01swap  = 0xb1b0ede3; /* v0.1 binary, byteswapped         *
 #define CMIO_NPART        22
 #define CMIO_PARTS        23
 #define CMIO_PARTE        24
-#define CMIO_EVDN         25
-#define CMIO_EVDL         26
-#define CMIO_EVDMU        27
-#define CMIO_EVDLAMBDA    28
+#define CMIO_GUMN         25
+#define CMIO_GUML         26
+#define CMIO_GUMMU        27
+#define CMIO_GUMLAMBDA    28
 #define CMIO_FTHRTYPE     29
 #define CMIO_FTHRF        30
 #define CMIO_FTHRN        31
 #define CMIO_FTHRCME      32
 #define CMIO_FTHRE        33
 #define CMIO_FTHRDB       34
-#define CMIO_HASEVD       35
+#define CMIO_HASGUM       35
 #define CMIO_HASFILTER    36
 #define CMIO_ABCTYPE      37
 #define CMIO_HASGA        38
@@ -477,6 +477,9 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   int     fthr_mode;            /* HMM filter threshold info       */
   int     have_gums;            /* for checking we get 0 or all EVDs*/
   int     have_fthrs;           /* for checking we get 0 or all fthrs */
+  int     have_ga = FALSE;      /* we have GA cutoff, needed b/c we can't set cm->flags until after CreateCMBody() call */
+  int     have_tc = FALSE;      /* we have TC cutoff, needed b/c we can't set cm->flags until after CreateCMBody() call */
+  int     have_nc = FALSE;      /* we have NC cutoff, needed b/c we can't set cm->flags until after CreateCMBody() call */
   int     p;                    /* counter for partitions          */
   int     gc;                   /* counter over gc contents        */
   int     i;                    /* counter over gum_modes for EVDs */
@@ -493,7 +496,10 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   for(i = 0; i < GUM_NMODES; i++)  gum_flags[i] = FALSE;
   for(i = 0; i < FTHR_NMODES; i++) fthr_flags[i] = FALSE;
 
-  if (feof(cmf->f) || esl_fgets(&buf, &n, cmf->f) != eslOK) return 0;
+  if (feof(cmf->f) || esl_fgets(&buf, &n, cmf->f) != eslOK) { /* end of file, free buf and return 0 */
+    if(buf != NULL) free(buf);
+    return 0;
+  }
   
   if (strncmp(buf, "INFERNAL-1", 10) != 0)                 goto FAILURE;
 
@@ -526,19 +532,19 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	{
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  cm->ga = atof(tok);
-	  cm->flags |= CMH_GA;
+	  have_ga = TRUE;
 	}
       else if (strcmp(tok, "TC") == 0) 
 	{
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  cm->tc = atof(tok);
-	  cm->flags |= CMH_TC;
+	  have_tc = TRUE;
 	}
       else if (strcmp(tok, "NC") == 0) 
 	{
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  cm->nc = atof(tok);
-	  cm->flags |= CMH_NC;
+	  have_nc = TRUE;
 	}
       else if (strcmp(tok, "STATES") == 0) 
 	{
@@ -750,6 +756,9 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   CMZero(cm);
   if(have_gums)  cm->flags |= CMH_GUMBEL_STATS;
   if(have_fthrs) cm->flags |= CMH_FILTER_STATS;
+  if(have_ga)    cm->flags |= CMH_GA;
+  if(have_tc)    cm->flags |= CMH_TC;
+  if(have_nc)    cm->flags |= CMH_NC;
   nd = -1;
   cm->clen = 0;
   for (v = 0; v < cm->M; v++)
@@ -897,7 +906,7 @@ write_binary_cm(FILE *fp, CM_t *cm)
   tagged_fwrite(CMIO_NODES,        &cm->nodes,      sizeof(int),   1, fp);  
   tagged_fwrite(CMIO_ALPHABETTYPE, &atype,          sizeof(int),   1, fp);
 
-
+  tagged_bin_string_write(CMIO_NAME, cm->name,  fp);
   tagged_bin_string_write(CMIO_ACC,  cm->acc,   fp);
   tagged_bin_string_write(CMIO_DESC, cm->desc,  fp);
   /* Rfam cutoffs */
@@ -948,13 +957,13 @@ write_binary_cm(FILE *fp, CM_t *cm)
   if (!(cm->flags & CMH_GUMBEL_STATS))
     {
       has_gum = has_fthr = FALSE;
-      tagged_fwrite(CMIO_HASEVD,     &has_gum, sizeof(int),  1, fp);  /* put a 0 to indicate no EVD stats */
+      tagged_fwrite(CMIO_HASGUM,     &has_gum, sizeof(int),  1, fp);  /* put a 0 to indicate no EVD stats */
       tagged_fwrite(CMIO_HASFILTER,  &has_fthr, sizeof(int),  1, fp);  /* put a 0 to indicate no HMM filter stats */
     }
   else /* (cm->flags & CMH_GUMBEL_STATS), if this flag is up, ALL EVD stats are valid */
     {
       has_gum = TRUE;
-      tagged_fwrite(CMIO_HASEVD,  &has_gum,         sizeof(int),  1, fp);  /* put a 1 to indicate valid EVD stats */
+      tagged_fwrite(CMIO_HASGUM,  &has_gum,         sizeof(int),  1, fp);  /* put a 1 to indicate valid EVD stats */
       tagged_fwrite(CMIO_NPART,   &cm->stats->np,   sizeof(int),  1, fp);  
       tagged_fwrite(CMIO_PARTS,   cm->stats->ps,    sizeof(int),  cm->stats->np, fp);  
       tagged_fwrite(CMIO_PARTE,   cm->stats->pe,    sizeof(int),  cm->stats->np, fp);  
@@ -962,10 +971,10 @@ write_binary_cm(FILE *fp, CM_t *cm)
 	{
 	  for(p = 0; p < cm->stats->np; p++)
 	    {
-	      tagged_fwrite(CMIO_EVDN,      &cm->stats->gumAA[i][p]->N,      sizeof(int),    1, fp);
-	      tagged_fwrite(CMIO_EVDL,      &cm->stats->gumAA[i][p]->L,      sizeof(int),    1, fp);
-	      tagged_fwrite(CMIO_EVDMU,     &cm->stats->gumAA[i][p]->mu,     sizeof(float),  1, fp);
-	      tagged_fwrite(CMIO_EVDLAMBDA, &cm->stats->gumAA[i][p]->lambda, sizeof(float),  1, fp);
+	      tagged_fwrite(CMIO_GUMN,      &cm->stats->gumAA[i][p]->N,      sizeof(int),    1, fp);
+	      tagged_fwrite(CMIO_GUML,      &cm->stats->gumAA[i][p]->L,      sizeof(int),    1, fp);
+	      tagged_fwrite(CMIO_GUMMU,     &cm->stats->gumAA[i][p]->mu,     sizeof(float),  1, fp);
+	      tagged_fwrite(CMIO_GUMLAMBDA, &cm->stats->gumAA[i][p]->lambda, sizeof(float),  1, fp);
 	    }
 	}
       /* HMM filter threshold stats, can only be valid if EVD_STATS also valid */ 
@@ -1079,7 +1088,7 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   if (! tagged_fread(CMIO_W,            (void *) &(cm->W),       sizeof(int),   1,         fp))    goto FAILURE;
   if (! tagged_fread(CMIO_ELSELFSC,     (void *) &(cm->el_selfsc),sizeof(float),1,         fp))    goto FAILURE;
   /* We might have EVD stats */
-  if (! tagged_fread(CMIO_HASEVD,       (void *) &(has_gum),     sizeof(int),   1,         fp))    goto FAILURE;
+  if (! tagged_fread(CMIO_HASGUM,       (void *) &(has_gum),     sizeof(int),   1,         fp))    goto FAILURE;
   if(has_gum)
     {
       /* First is num partitions, allocate cmstats object based on this */
@@ -1091,10 +1100,10 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	{
 	  for(p = 0; p < cm->stats->np; p++)
 	    {
-	      if (! tagged_fread(CMIO_EVDN,     (void *) &(cm->stats->gumAA[i][p]->N),     sizeof(int),   1, fp)) goto FAILURE;
-	      if (! tagged_fread(CMIO_EVDL,     (void *) &(cm->stats->gumAA[i][p]->L),     sizeof(int),   1, fp)) goto FAILURE;
-	      if (! tagged_fread(CMIO_EVDMU,    (void *) &(cm->stats->gumAA[i][p]->mu),    sizeof(float), 1, fp)) goto FAILURE;
-	      if (! tagged_fread(CMIO_EVDLAMBDA,(void *) &(cm->stats->gumAA[i][p]->lambda),sizeof(float), 1, fp)) goto FAILURE;
+	      if (! tagged_fread(CMIO_GUMN,     (void *) &(cm->stats->gumAA[i][p]->N),     sizeof(int),   1, fp)) goto FAILURE;
+	      if (! tagged_fread(CMIO_GUML,     (void *) &(cm->stats->gumAA[i][p]->L),     sizeof(int),   1, fp)) goto FAILURE;
+	      if (! tagged_fread(CMIO_GUMMU,    (void *) &(cm->stats->gumAA[i][p]->mu),    sizeof(float), 1, fp)) goto FAILURE;
+	      if (! tagged_fread(CMIO_GUMLAMBDA,(void *) &(cm->stats->gumAA[i][p]->lambda),sizeof(float), 1, fp)) goto FAILURE;
 	    }
 	}
       cm->flags |= CMH_GUMBEL_STATS;

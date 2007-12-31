@@ -41,15 +41,14 @@
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
-  { "-n",        eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "name the CM(s) <s>",                     1 },
+  { "-n",        eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "name the CM(s) <s>, (only if single aln in file", 1 },
   { "-o",        eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "direct summary output to file <f>, not stdout", 1 },
   { "-A",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "append this CM to <cmfile>",             1 },
   { "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "force; allow overwriting of <cmfile>",   1 },
-  { "-v",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "verbose; print out extra information",   1 },
   { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "use tabular output summary format, 1 line per CM", 1 },
   { "--binary",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "save the model(s) in binary format",     2 },
   { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--rsearch", "use reference coordinate annotation to specify consensus", 2 },
-  { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s>, not Stockholm",  2 },
+  //  { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s>, not Stockholm",  2 },
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,      NULL,  "--rsearch", "fraction of gaps to allow in a consensus column [0..1]", 2 },
   { "--rsearch", eslARG_STRING, NULL,  NULL, NULL,      NULL, "--enone",        NULL,  "use RSEARCH parameterization with RIBOSUM matrix file <s>", 2 }, 
   { "--elself",  eslARG_REAL,  "0.94", NULL, "0<=x<=1", NULL,      NULL,        NULL, "set EL self transition prob to <x> [df: 0.94]", 2 },
@@ -130,7 +129,8 @@ struct cfg_s {
   FILE         *trfp;           /* if --refine, output file handle for dumping refined MSAs */
 
   int           be_verbose;	/* standard verbose output, as opposed to one-line-per-CM summary */
-  int           nali;		/* which # alignment this is in file (only valid in serial mode)   */
+  int           nali;		/* which # alignment this is in file */
+  int           ncm_total;      /* which # CM this is that we're constructing (we may build > 1 per file) */
   ESL_RANDOMNESS *r;            /* source of randomness, only created if --gibbs enabled */
 };
 
@@ -142,7 +142,7 @@ static int  init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static void  master (const ESL_GETOPTS *go, struct cfg_s *cfg);
 
 static int    process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t ***ret_msa_tr);
-static int    output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, ESL_MSA *msa, CM_t *cm);
+static int    output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, int cmidx, ESL_MSA *msa, CM_t *cm);
 static int    check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t ***ret_msa_tr);
@@ -150,7 +150,7 @@ static int    set_model_name(const ESL_GETOPTS *go, const struct cfg_s *cfg, cha
 static int    set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm, const Prior_t *pri);
 static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, const Prior_t *prior);
-static int    name_msa(const ESL_GETOPTS *go, ESL_MSA *msa, int nali);
+static int    name_msa(const ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa, int nali);
 static double default_target_relent(const ESL_ALPHABET *abc, int M, double eX);
 static int    save_countvectors(char *cfile, CM_t *cm);
 static void   strip_wuss(char *ss);
@@ -160,7 +160,7 @@ static int    convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa)
 static int    initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 /*static void   model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq);*/
 /* functions for dividing input MSA into clusters */
-static int    select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust, int *ret_nc, char *errbuf);
+static int    select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust, int *ret_nc, int *ret_best, char *errbuf);
 static float  find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret_nc, float *ret_mindiff, char *errbuf);
 static int    MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff, int do_corig, int *ret_num_msa, ESL_MSA ***ret_cmsa, char *errbuf);
 
@@ -244,8 +244,8 @@ main(int argc, char **argv)
   cfg.trfp       = NULL;	           /* opened (possibly) in init_cfg() */
   cfg.r          = NULL;	           /* created (possibly) in init_cfg() */
 
-  if (esl_opt_GetBoolean(go, "-v")) cfg.be_verbose = TRUE;
-  else                              cfg.be_verbose = FALSE;        
+  if (esl_opt_GetBoolean(go, "-1")) cfg.be_verbose = FALSE;
+  else                              cfg.be_verbose = TRUE;        
   cfg.nali       = 0;		           
 
   /* check if cmfile already exists, if it does and -F was not enabled then die */
@@ -393,6 +393,11 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (cfg->pri   == NULL) ESL_FAIL(eslEINVAL, errbuf, "alphabet initialization failed");
   if (cfg->null  == NULL) ESL_FAIL(eslEINVAL, errbuf, "null model initialization failed");
 
+  /* with msa == NULL, output_result() prints the tabular results header, if needed */
+  if (! cfg->be_verbose) output_result(go, cfg, errbuf, 0, 0, NULL, NULL);
+
+  cfg->nali = 0;
+  cfg->ncm_total = 0;
   return eslOK;
 }
 
@@ -422,6 +427,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((status = init_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
 
   cfg->nali = 0;
+  cfg->ncm_total = 0;
 
   do_cluster = FALSE;
   if((esl_opt_GetInteger(go, "--ctarget"))  || (esl_opt_GetReal   (go, "--cmindiff")) || 
@@ -436,7 +442,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* if it's unnamed, name the MSA, we require a name (different from 
        * HMMER 3), because it will be used to name the CM. */
-      if(name_msa(go, msa, cfg->nali) != eslOK) cm_Fail("Error (code: %d) naming MSA", status);
+      if(name_msa(go, errbuf, msa, cfg->nali) != eslOK) cm_Fail(errbuf);
       if(msa->name == NULL)                     cm_Fail("Error naming MSA");
       ncm = 1;     /* default: only build 1 CM for each MSA in alignment file */
 
@@ -448,6 +454,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
       for(c = 0; c < ncm; c++)
 	{
+	  cfg->ncm_total++;  
 	  if(do_cluster) {
 	      msa = cmsa[c];
 	      if(esl_opt_GetString(go, "--cdump") != NULL) esl_msa_Write(cfg->cdfp, msa, cfg->fmt); 
@@ -476,14 +483,13 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    } 
 	  }	  
 	  /* output cm */
-	  if ((status = output_result(go, cfg, errbuf, cfg->nali, msa,  cm)) != eslOK) cm_Fail(errbuf);
+	  if ((status = output_result(go, cfg, errbuf, cfg->nali, cfg->ncm_total, msa,  cm)) != eslOK) cm_Fail(errbuf);
 	  
-	  SummarizeCM(cfg->ofp, cm);  
+	  if(cfg->be_verbose) SummarizeCM(cfg->ofp, cm);  
 	  if(cfg->ofp != stdout) SummarizeCM(stdout, cm);  
 	  
 	  FreeCM(cm);
 	  fflush(cfg->cmfp);
-	  puts("//\n");
 
 	  if(tr != NULL) {
 	    for(i = 0; i < msa->nseq; i++)
@@ -660,7 +666,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
 }
 
 static int
-output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, ESL_MSA *msa, CM_t *cm)
+output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, int cmidx, ESL_MSA *msa, CM_t *cm)
 {
   int status;
 
@@ -670,8 +676,8 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
    */
   if (msa == NULL && ! cfg->be_verbose) 
     {
-      fprintf(cfg->ofp, "# %3s %-20s %5s %5s %5s\n", "idx", "name",                 "nseq",  "alen",  "M");
-      fprintf(cfg->ofp, "#%4s %-20s %5s %5s %5s\n", "----", "--------------------", "-----", "-----", "-----");
+      fprintf(cfg->ofp, "#%4s %6s %-20s %5s %5s %5s\n", "aln",  "cm idx", "name",                 "nseq",  "alen",  "M");
+      fprintf(cfg->ofp, "#%4s %6s %-20s %5s %5s %5s\n", "----", "------", "--------------------", "-----", "-----", "-----");
       return eslOK;
     }
 
@@ -679,8 +685,9 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   if ((status = CMFileWrite(cfg->cmfp, cm, esl_opt_GetBoolean(go, "--binary"))) != eslOK) return status;
   if (! cfg->be_verbose)	/* tabular output */
     {                    /* #   name nseq alen M */
-      fprintf(cfg->ofp, "%-5d %-20s %5d %5d %5d\n",
+      fprintf(cfg->ofp, " %4d %6d %-20s %5d %5d %5d\n",
 	      msaidx,
+	      cmidx,
 	      (msa->name != NULL) ? msa->name : "",
 	      msa->nseq,
 	      msa->alen,
@@ -696,28 +703,21 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
 static int
 check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa)
 {
-  int status;
   if (cfg->be_verbose) {
     fprintf(cfg->ofp, "%-40s ... ", "Checking MSA");  
     fflush(cfg->ofp); 
   }
 
-  if (esl_opt_GetBoolean(go, "--rf") && msa->rf == NULL) 
-    ESL_FAIL(eslFAIL, errbuf, "Alignment has no reference coord annotation.\n");
-  if (msa->ss_cons == NULL) 
-    ESL_FAIL(eslFAIL, errbuf, "Alignment did not contain consensus structure annotation.\n");
-  if (! clean_cs(msa->ss_cons, msa->alen, FALSE))
-    ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation\n");
-  if (esl_opt_GetBoolean(go, "--ignorant")) strip_wuss(msa->ss_cons);
-  
+  if (esl_opt_GetBoolean(go, "--rf") && msa->rf == NULL) ESL_FAIL(eslFAIL, errbuf, "Alignment has no reference coord annotation.\n");
+  if (msa->ss_cons == NULL)                              ESL_FAIL(eslFAIL, errbuf, "Alignment did not contain consensus structure annotation.\n");
+  if (! clean_cs(msa->ss_cons, msa->alen, FALSE))        ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation\n");
+  if (esl_opt_GetBoolean(go, "--ignorant"))              strip_wuss(msa->ss_cons); /* --ignorant, remove all bp info */
+
   /* MSA better have a name, we named it before */
-  if(msa->name == NULL) { sprintf(errbuf, "MSA is nameless"); goto ERROR; }
+  if(msa->name == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "MSA is nameless, (we thought we named it...) shouldn't happen");
 
   if (cfg->be_verbose) fprintf(cfg->ofp, "done.\n");
   return eslOK;
-
- ERROR:
-  return status;
 }
 
 /* set_relative_weights():
@@ -877,24 +877,26 @@ set_model_name(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL
 static int
 set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm)
 {
-  if (cfg->be_verbose) {
-    fprintf(cfg->ofp, "%-40s ... ", "Setting model cutoffs");
-    fflush(cfg->ofp);
-  }
-
+  int cutoff_was_set = FALSE;
   if(msa->cutset[eslMSA_TC1]) { 
     cm->tc = msa->cutoff[eslMSA_TC1];
     cm->flags |= CMH_TC;
+    cutoff_was_set = TRUE;
   }
   if(msa->cutset[eslMSA_GA1]) { 
     cm->ga = msa->cutoff[eslMSA_GA1];
     cm->flags |= CMH_GA;
+    cutoff_was_set = TRUE;
   }
   if(msa->cutset[eslMSA_NC1]) { 
     cm->nc = msa->cutoff[eslMSA_NC1];
     cm->flags |= CMH_NC;
+    cutoff_was_set = TRUE;
   }
-  if (cfg->be_verbose) fprintf(cfg->ofp, "done.\n");
+  if (cfg->be_verbose && cutoff_was_set ) {
+    fprintf(cfg->ofp, "%-40s ... ", "Set model cutoffs");
+    fprintf(cfg->ofp, "done.\n");
+  }
   return eslOK;
 }
 
@@ -1030,32 +1032,44 @@ strip_wuss(char *ss)
  * named "alignments-3".
  */
 int
-name_msa(const ESL_GETOPTS *go, ESL_MSA *msa, int nali)
+name_msa(const ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa, int nali)
 {
   int status;
   char *name = NULL;
+  char *buffer = NULL;
   void *tmp;
   int n;
-  char buffer[50];
-  if(msa != NULL && msa->name == NULL)  
-    {
-      esl_FileTail(esl_opt_GetArg(go, 2), TRUE, &name); /* TRUE=nosuffix */
-      if (name == NULL) cm_Fail("Error getting file tail of the MSA.\n");
-      else {
-	n  = strlen(name);
-	sprintf(buffer, "-%d", (nali));
-	n += strlen(buffer);
-	ESL_RALLOC(name, tmp, sizeof(char)*(n+1));
-	if((status = esl_strcat(&name, -1, buffer, (n+1))) != eslOK) goto ERROR;
-	ESL_ALLOC(msa->name, sizeof(char) * (strlen(name)+1));
-	strcpy(msa->name, name);
-	free(name);
-	if ((status = esl_strchop(msa->name, n)) != eslOK) goto ERROR;
-      }
-    }
+  int maxintlen;
+
+  if(! (esl_opt_IsDefault(go, "-n"))) { /* give the msa the -n name */
+    if(nali > 1) ESL_FAIL(eslEINCOMPAT, errbuf, "The -n option requires exactly 1 alignment, but the alignment file has > 1 alignments.");
+    if((status = esl_strdup(esl_opt_GetString(go, "-n"), -1, &name)) != eslOK) ESL_FAIL(status, errbuf, "name_msa(), esl_strdup, memory allocation error.");
+  }
+  else if(msa != NULL && msa->name == NULL) { /* we'll give the msa a name, but -n was not enabled */
+    esl_FileTail(esl_opt_GetArg(go, 2), TRUE, &name); /* TRUE=nosuffix */
+    if (name == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "Error getting file tail of the MSA.\n");
+  }
+  else if(msa != NULL && msa->name != NULL) return eslOK; /* keep the msa's existing name */
+
+  /* if we get here, name was set above */
+  n         = strlen(name);
+  maxintlen = IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
+  ESL_ALLOC(buffer, sizeof(char) * maxintlen);
+  sprintf(buffer, "-%d", (nali));
+  n += strlen(buffer);
+  ESL_RALLOC(name, tmp, sizeof(char)*(n+1));
+  if((status = esl_strcat(&name, -1, buffer, (n+1))) != eslOK) goto ERROR;
+  ESL_ALLOC(msa->name, sizeof(char) * (strlen(name)+1));
+  strcpy(msa->name, name);
+  free(name);
+  free(buffer);
+  if ((status = esl_strchop(msa->name, n)) != eslOK) goto ERROR;
+
+
   return eslOK;
  ERROR:
-  if(name != NULL) free(name);
+  if(name != NULL)   free(name);
+  if(buffer != NULL) free(buffer);
   return status;
 }
 
@@ -1367,7 +1381,10 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
   int    *clust = NULL;/* [0..T->N-1], cluster number (0..nc-1) this seq is in */
   int    *csize = NULL;/* [0..nc-1], size of each cluster */
   int   **useme = NULL;/* [0.m.nc-1][0.i.N] TRUE to use seq i in new MSA m, FALSE not to */
+  int     best;        /* 'best' node, returned by select_node() */
   void   *tmp;
+  char   *buffer = NULL;
+  int     ndigits;
 
   /* Contract check */
   if((!do_all) && (target_nc == 0 && mindiff == 0.))  ESL_FAIL(eslEINCOMPAT, errbuf, "MSADivide() target_nc is 0 and mindiff is 0.0, exactly one must be non-zero");
@@ -1421,7 +1438,7 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
     if(target_nc == 0) { /* Mode 2 */
       /* Define clusters that are at least mindiff different
        * from each other. */
-      if((status = select_node(T, diff, mindiff, &clust, &nc, errbuf)) != eslOK) return status;
+      if((status = select_node(T, diff, mindiff, &clust, &nc, &best, errbuf)) != eslOK) return status;
     }
     else { /* Mode 3, mindiff == 0.0 (it's in the contract) */
       /* Find the minimum fractional difference (mindiff) that 
@@ -1432,7 +1449,7 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
        * to nearest 0.001. */
       if(target_nc > (T->N)) target_nc = T->N; /* max num clusters is num seqs */
       if((status = find_mindiff(T, diff, target_nc, &clust, &nc, &mindiff, errbuf)) != eslOK) return status;
-      printf("nc: %d target_nc: %d\n", nc, target_nc);
+      /*printf("nc: %d target_nc: %d\n", nc, target_nc);*/
     }
     /* Determine the size of each cluster */
     ESL_ALLOC(csize, (sizeof(int) * (nc)));
@@ -1452,7 +1469,7 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
   }
   else {
     ESL_ALLOC(cmsa, (sizeof(ESL_MSA *) * (nc)));
-    for(m = 0; m <= nc; m++) cmsa[m] = NULL;
+    for(m = 0; m < nc; m++) cmsa[m] = NULL;
   }
   ESL_ALLOC(useme, (sizeof(int *) * (nc+1)));
   for(m = 0; m <= nc; m++) {
@@ -1464,8 +1481,7 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
   for(i = 0; i < mmsa->nseq; i++)
     if(clust[i] != -1) 
       useme[clust[i]][i] = TRUE;
-  char *buffer;
-  int ndigits;
+  ESL_ALLOC(buffer, sizeof(char) * (IntMaxDigits() + 1));  /* IntMaxDigits() returns number of digits in INT_MAX */
   for(m = 0; m < nc; m++) {
     if((status = esl_msa_SequenceSubset(mmsa, useme[m], &(cmsa[m]))) != eslOK) ESL_FAIL(status, errbuf, "MSADivide(), esl_msa_SequenceSubset error, status: %d.", status);
     /* rename the MSA it by adding ".<m+1>" */
@@ -1479,8 +1495,8 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
   }
   if(do_orig) {
     if((status = esl_msa_SequenceSubset(mmsa, useme[nc], &(cmsa[nc]))) != eslOK) ESL_FAIL(status, errbuf, "MSADivide(), esl_msa_SequenceSubset error, status: %d.", status);
-    free(useme[nc]);
   }
+  free(useme[nc]);
   free(useme);
   
   if(do_orig) *ret_num_msa = nc+1;
@@ -1495,6 +1511,8 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
   }
   if(clust != NULL)  free(clust);
   if(csize != NULL)  free(csize);
+  if(buffer!= NULL)  free(buffer);
+  
   return eslOK;
   
  ERROR: 
@@ -1503,6 +1521,7 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
   if(minrd != NULL) free(minrd);
   if(clust != NULL) free(clust);
   if(csize != NULL) free(csize);
+  if(buffer!= NULL) free(buffer);
   if(cmsa  != NULL) {
     for(m = 0; m < nc; m++)
       if(cmsa[m] != NULL) esl_msa_Destroy(cmsa[m]);
@@ -1516,11 +1535,15 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
  * Adapted from SRE's select_node() in maketestset.c originally written
  * for the PROFMARK HMMER benchmark.
  * 
+ * 
  * Purpose:  Define clusters of the taxa (seqs) in the tree such
  *           that minimum disparity b/t any 2 seqs in different 
  *           clusters is greater than <mindiff> and the number of
- *           clusters is maximized. Return the index of the node
+ *           clusters is maximized. <ret_best> is the index of the node
  *           of the tree under which the largest cluster belongs.
+ *           <ret_nc> is the number of clusters after clustering, 
+ *           <ret_clust> is an array [0..T->N-1] specifying which
+ *           cluster each taxa belongs to.
  *           
  *           For high disparities, this cluster may contain all
  *           the sequences, and we'll return the root node (0).
@@ -1533,11 +1556,13 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
  * double    mindiff  - (see description above)
  * int     **ret_clust- [0..T->N-1] cluster number this seq is in, alloc'ed, filled here
  * int      *ret_nc   - number of clusters
+ * int      *ret_best - RETURN: index of node of tree under which largest cluster belongs (see Purpose).
+ * char     *errbuf   - buffer for error messages
  *
  * Returns: node index (as explained in Purpose)
  */
 static int
-select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust, int *ret_nc, char *errbuf)
+select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust, int *ret_nc, int *ret_best, char *errbuf)
 {
   int status;     /* Easel status code */
   ESL_STACK *ns1; /* stack for traversing tree */
@@ -1594,14 +1619,15 @@ select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust, int *ret
   esl_stack_Destroy(ns2);
   *ret_nc = c;
   *ret_clust = clust;
+  *ret_best  = best;
   /*printf("nc: %d(%d) best: %d maxsize: %d nc: %d\n\n", *ret_nc, c, best, maxsize, c);
     for(n = 0; n < T->N; n++)
     printf("clust[%d]: %d\n", n, clust[n]);*/
+  return eslOK;
 
-  return best;
  ERROR: 
   if(clust != NULL) free(clust);
-  return status;
+  ESL_FAIL(status, errbuf, "select_node(), memory allocation error, status: %d.", status); 
 }
 
 
@@ -1636,6 +1662,7 @@ find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret
   int   low_nc     = 0;
   float mindiff    = 0.5;
   int   curr_nc    = -1;
+  int   curr_best  = -1;
   int   keep_going = TRUE;
   float thresh     = 0.001;
   int  *clust      = NULL;
@@ -1645,7 +1672,7 @@ find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret
 
   while(keep_going) {
     if(clust != NULL) free(clust);
-    if((status = select_node(T, diff, mindiff, &clust, &curr_nc, errbuf)) != eslOK) return status;
+    if((status = select_node(T, diff, mindiff, &clust, &curr_nc, &curr_best, errbuf)) != eslOK) return status;
     if(curr_nc < target_nc) {
       high       = mindiff;
       high_nc    = curr_nc;
@@ -1668,14 +1695,14 @@ find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret
     /*printf("targ: %d curr: %d low: %d (%f) high: %d (%f)\n", target_nc, curr_nc, low_nc, low, high_nc, high);*/
     if(high_nc < target_nc) {
       mindiff = high;
-      if((status = select_node(T, diff, mindiff, &clust, &curr_nc, errbuf)) != eslOK) return status;
+      if((status = select_node(T, diff, mindiff, &clust, &curr_nc, &curr_best, errbuf)) != eslOK) return status;
     }
     else
       while(high_nc > target_nc) {
 	high += thresh;
 	if(high > 1.0)  ESL_FAIL(eslEINCONCEIVABLE, errbuf, "find_mindiff(), mindiff has risen above 1.0");
 	mindiff = high;
-	if((status = select_node(T, diff, mindiff, &clust, &curr_nc, errbuf)) != eslOK) return status;
+	if((status = select_node(T, diff, mindiff, &clust, &curr_nc, &curr_best, errbuf)) != eslOK) return status;
 	high_nc = curr_nc;
       }
   }

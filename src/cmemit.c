@@ -36,31 +36,30 @@
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
+  { "-u",        eslARG_NONE,"default",NULL, NULL,   OUTOPTS,      NULL,        NULL, "write generated sequences as unaligned FASTA",  1 },
+  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,        NULL, "write generated sequences as a STOCKHOLM alignment",  1 },
+  { "-c",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,        NULL, "generate a single \"consensus\" sequence only",  1 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "local; emit from a locally configured model",  1 },
   { "-s",        eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,        NULL, "set random number generator seed to <n>",  1 },
   { "-n",        eslARG_INT,    "10",  NULL, "n>0",     NULL,      NULL,        NULL, "generate <n> sequences",  1 },
-  { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress verbose banner",         1 },
+  { "-o",        eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "save sequences in file <f>", 1 },
+  { "-v",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "be verbose; print banner and seed", 1 },
+  { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
   /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
    * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 1 },
   { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 1 },
   { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local begin prob to <x>", 1 },
   { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local end prob to <x>", 1 },
-  /* output options */
-  { "-o",        eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "save sequences in file <f>", 2 },
-  { "-u",        eslARG_NONE,"default",NULL, NULL,   OUTOPTS,     NULL,        NULL, "write generated sequences as unaligned FASTA",  2 },
-  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,        NULL, "write generated sequences as a STOCKHOLM alignment",  2 },
-  { "-c",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,        NULL, "generate a single \"consensus\" sequence only",  2 },
-  { "--hmmbuild",eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,   "--tfile", "build and output a ML CM Plan 9 HMM from generated alignment", 2 },
-  { "--tfile",   eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  2 },
+  /* additional output options */
   { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 2 },
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 2 },
+  { "--tfile",   eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  2 },
   /* Miscellaneous expert options */
-  { "--zeroinserts",eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "zero insert emission scores (A,C,G,U equiprobable)", 3 },
   { "--exp",     eslARG_REAL,   NULL,  NULL, "x>0",     NULL,      NULL,        NULL, "exponentiate CM probabilities by <x> before emitting",  3 },
   { "--begin",   eslARG_INT,    NULL,  NULL, "n>=1",    NULL,"-a,--end",        NULL, "truncate alignment, begin at match column <n>", 3 },
   { "--end",     eslARG_INT,    NULL,  NULL, "n>=1",    NULL,"-a,--begin",      NULL, "truncate alignment,   end at match column <n>", 3 },
-  { "--gemit",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",        NULL, "disallow local begins and ends in emitted parsetrees", 3 },
+  { "--hmmbuild",eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,   "--tfile", "build and output a ML CM Plan 9 HMM from generated alignment", 3 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -96,7 +95,6 @@ static int emit_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *
 static int build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf);
 static int truncate_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, char *errbuf);
 
-
 int
 main(int argc, char **argv)
 {
@@ -128,7 +126,7 @@ main(int argc, char **argv)
       esl_usage(stdout, argv[0], usage);
       puts("\nwhere general options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-      puts("\noutput options are:");
+      puts("\nadditional output options are:");
       esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
       puts("\nmiscellaneous expert options:");
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
@@ -153,6 +151,8 @@ main(int argc, char **argv)
   cfg.ofp        = NULL;	           /* opened in init_cfg() */
   cfg.pfp        = NULL;	           /* opened in init_cfg() */
   cfg.r          = NULL;	           /* created in init_cfg() */
+
+  if(esl_opt_GetBoolean(go, "-v")) cm_banner(stdout, argv[0], banner);
 
   /* do work */
   master(go, &cfg);
@@ -208,6 +208,8 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
   else cfg->r = esl_randomness_CreateTimeseeded();
 
+  if (esl_opt_GetBoolean(go, "-v")) printf("Random number generator seed: %ld\n\n", esl_randomness_GetSeed(cfg->r));
+
   if (cfg->abc_out == NULL) ESL_FAIL(eslEINVAL, errbuf, "Output alphabet creation failed.");
   if (cfg->r       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
 
@@ -236,6 +238,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
     cfg->ncm++;
     if((status = initialize_cm(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
+
     /* Pick 1 of 4 exclusive output options. Output is handled within each function. */
     if     (esl_opt_GetBoolean(go, "-u")) { 
       if((status = emit_unaligned(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
@@ -266,13 +269,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
 
   /* Update cfg->cm->config_opts and cfg->cm->align_opts based on command line options */
   if(esl_opt_GetBoolean(go, "-l"))            cm->config_opts |= CM_CONFIG_LOCAL;
-  if(esl_opt_GetBoolean(go, "--zeroinserts")) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
-  /* process the --gemit option, this option forces all emitted parsetrees to be 'global'
-   * in that they'll never contain a local begin or local end. */
-  if(esl_opt_GetBoolean(go, "--gemit")) { 
-    cm->flags |= CM_EMIT_NO_LOCAL_BEGINS; 
-    cm->flags |= CM_EMIT_NO_LOCAL_ENDS;
-  }
+  if(! esl_opt_GetBoolean(go, "--iins"))      cm->config_opts |= CM_CONFIG_ZEROINSERTS;
 
   /* BEGIN (POTENTIALLY) TEMPORARY BLOCK */
   /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */
@@ -319,7 +316,7 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
    * with sole exception that CM alphabet can be eslRNA with output alphabet eslDNA.
    */
   if(cm->abc->type != cfg->abc_out->type)
-    if(! (cm->abc->type == eslRNA && cfg->abc_out->type != eslDNA))
+    if(! (cm->abc->type == eslRNA && cfg->abc_out->type == eslDNA))
       ESL_FAIL(eslFAIL, errbuf, "CM alphabet type must match output alphabet type (unless CM=RNA and output=DNA).");
 
   int status;
@@ -367,7 +364,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   /* Contract check, output alphabet must be identical to CM alphabet 
    * with sole exception that CM alphabet can be eslRNA with output alphabet eslDNA. */
   if(cm->abc->type != cfg->abc_out->type)
-    if(! (cm->abc->type == eslRNA && cfg->abc_out->type != eslDNA))
+    if(! (cm->abc->type == eslRNA && cfg->abc_out->type == eslDNA))
       ESL_FAIL(eslFAIL, errbuf, "CM alphabet type must match output alphabet type (unless CM=RNA and output=DNA).");
 
   int status;
@@ -380,9 +377,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   int nseq = esl_opt_GetInteger(go, "-n");
   int do_truncate;
 
-  if((! esl_opt_IsDefault(go, "--begin")) && (! esl_opt_IsDefault(go, "--end"))) 
-    do_truncate = TRUE;
-  else do_truncate = FALSE;
+  do_truncate = ((! esl_opt_IsDefault(go, "--begin")) && (! esl_opt_IsDefault(go, "--end"))) ? TRUE : FALSE;
 
   namelen = IntMaxDigits() + 1;
   if(cm->name != NULL) namelen += strlen(cm->name) + 1;
@@ -416,8 +411,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
 
   /* Truncate the alignment if nec */
   if(do_truncate)
-    if((status = truncate_msa(go, cfg, msa, errbuf)) != eslOK) 
-      ESL_XFAIL(status, errbuf, "Error truncating alignment.");
+    if((status = truncate_msa(go, cfg, msa, errbuf)) != eslOK) cm_Fail(errbuf);
 
   /* Output the alignment */
   status = esl_msa_Write(cfg->ofp, msa, eslMSAFILE_STOCKHOLM);
@@ -524,6 +518,7 @@ build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf
       shmm = AllocCPlan9(cm->clen, cm->abc);
     }
   ZeroCPlan9(shmm);
+  CPlan9SetNullModel(shmm, cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
 
   namelen = IntMaxDigits() + 1;
   if(cm->name != NULL) namelen += strlen(cm->name) + 1;
@@ -532,7 +527,6 @@ build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf
   /* sample MSA(s) from the CM */
   ESL_ALLOC(sq,     sizeof(ESL_SQ *)      * msa_nseq);
   ESL_ALLOC(tr,     sizeof(Parsetree_t *) * msa_nseq);
-  ESL_ALLOC(cp9_tr, sizeof(CP9trace_t *)  * msa_nseq);
   while(nsampled < nseq)
     {
       if(nsampled != 0) 
@@ -565,8 +559,7 @@ build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf
 
       /* Truncate the alignment if nec */
       if(do_truncate)
-	if((status = truncate_msa(go, cfg, msa, errbuf)) != eslOK) 
-	  ESL_XFAIL(status, errbuf, "Error truncating alignment during HMM construction.");
+	if((status = truncate_msa(go, cfg, msa, errbuf)) != eslOK) cm_Fail(errbuf);
 
       /* Determine match assignment from RF annotation
        */
@@ -642,6 +635,8 @@ build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf
  * Truncate a MSA outside begin..end consensus columns 
  * (non-gap RF chars) and return the alignment. Careful
  * to remove any consensus structure outside begin..end.
+ * 
+ * 
  */
 static int
 truncate_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, char *errbuf)
@@ -660,8 +655,8 @@ truncate_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, char 
   int clen = 0;
   for (apos = 0, cc = 0; apos < msa->alen; apos++)
     if (!esl_abc_CIsGap(msa->abc, msa->rf[apos])) clen++;
-  if(esl_opt_GetInteger(go, "--end") > clen)
-    ESL_XFAIL(status, errbuf, "Error, with --end <n> option, <n> must be <= consensus length of CM (%d).\n", clen);
+  if(epos > clen)
+    ESL_XFAIL(eslEINCOMPAT, errbuf, "Error, with --end <n> option, <n> must be <= consensus length of CM (%d).\n", clen);
 
   /* remove pknots in place (actually unnec for CM ss_cons) */
   if((status = esl_wuss_nopseudo(msa->ss_cons, msa->ss_cons)) != eslOK) goto ERROR; 

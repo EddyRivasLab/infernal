@@ -4,7 +4,7 @@
  *
  * stats.c
  *
- * Routines for calculating statistics in rsearch.  
+ * Routines for calculating statistics in Infernal.  
  *
  * Robert J. Klein
  * Separate file started May 17, 2002

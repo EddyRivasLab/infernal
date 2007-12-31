@@ -1245,21 +1245,21 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       if(! (cm->flags & CMH_GA))
 	ESL_FAIL(eslEINVAL, errbuf, "No GA gathering threshold in CM file, can't use --ga.");
       cutoff_type = SCORE_CUTOFF;
-      sc_cutoff   = esl_opt_GetReal(go, "--ga");
+      sc_cutoff   = cm->ga;
       e_cutoff    = -1.; /* we'll never use it */
     }
     else if(! esl_opt_IsDefault(go, "--tc")) {
       if(! (cm->flags & CMH_TC))
 	ESL_FAIL(eslEINVAL, errbuf, "No TC trusted cutoff in CM file, can't use --tc.");
       cutoff_type = SCORE_CUTOFF;
-      sc_cutoff   = esl_opt_GetReal(go, "--tc");
+      sc_cutoff   = cm->tc;
       e_cutoff    = -1.; /* we'll never use it */
     }
     else if(! esl_opt_IsDefault(go, "--nc")) {
       if(! (cm->flags & CMH_NC))
 	ESL_FAIL(eslEINVAL, errbuf, "No NC noise cutoff in CM file, can't use --nc.");
       cutoff_type = SCORE_CUTOFF;
-      sc_cutoff   = esl_opt_GetReal(go, "--nc");
+      sc_cutoff   = cm->nc;
       e_cutoff    = -1.; /* we'll never use it */
     }
     else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No CM cutoff selected. This shouldn't happen.");
