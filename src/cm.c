@@ -136,12 +136,14 @@ CreateCMShell(void)
   cm->eff_nseq = 0.;  
   cm->nseq     = 0;
   cm->clen     = 0;
+  cm->comlog   = NULL;
   return cm;
 
  ERROR:
-  cm_Fail("Memory allocation error.\n");
+  cm_Fail("CreateCMShell() Memory allocation error.\n");
   return NULL; /* never reached */
 }
+
 void
 CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
 {
@@ -154,6 +156,8 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
 
 				/* null model information */
   CMAllocNullModel(cm);         
+
+  if((cm->comlog = CreateComLog()) == NULL) goto ERROR;
 
   ESL_ALLOC(cm->sttype, (nstates+1) * sizeof(char));
   ESL_ALLOC(cm->ndidx,   nstates    * sizeof(int));
@@ -236,9 +240,9 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   return;
 
  ERROR:
+  cm_Fail("CreateCMBody(), memory allocation error.");
   return; /* never reached */
 }
-
 
 /* Function: CMZero()
  * Date:     SRE, Mon Jul 31 19:14:31 2000 [St. Louis]
@@ -354,6 +358,7 @@ FreeCM(CM_t *cm)
   free(cm->iendsc);
   free(cm->dmin);
   free(cm->dmax);
+  if(cm->comlog     != NULL) FreeComLog(cm->comlog);
   if(cm->cp9map     != NULL) FreeCP9Map(cm->cp9map);
   if(cm->cp9b       != NULL) FreeCP9Bands(cm->cp9b);
   if(cm->cp9        != NULL) FreeCPlan9(cm->cp9);
@@ -1342,13 +1347,14 @@ CMRebalance(CM_t *cm)
   if((status = esl_strdup(cm->name, -1, &(new->name))) != eslOK) goto ERROR;
   if((status = esl_strdup(cm->acc,  -1, &(new->acc)))  != eslOK) goto ERROR;
   if((status = esl_strdup(cm->desc, -1, &(new->desc))) != eslOK) goto ERROR;
-  new->flags = cm->flags;
-  new->clen  = cm->clen;
+  new->flags    = cm->flags;
+  new->clen     = cm->clen;
   new->nseq     = cm->nseq;
   new->eff_nseq = cm->eff_nseq;
   if(cm->flags & CMH_GA) new->ga = cm->ga;
   if(cm->flags & CMH_TC) new->tc = cm->tc;
   if(cm->flags & CMH_NC) new->nc = cm->nc;
+  
 
   for (x = 0; x < cm->abc->K; x++) new->null[x] = cm->null[x];
 
@@ -2127,84 +2133,87 @@ cm_SetDescription(CM_t *cm, char *desc)
   return status;
 }
 
-/* Function: cm_AppendComlog()
- * Incept:   SRE, Mon Jan  1 18:23:42 2007 [Casa de Gatos]
- * 
- * Purpose:  Concatenate command line options and append as a new line in the
- *           command line log. Command line log is multiline, with each line
- *           ending in newline char, except for last line.
- *           
- * Returns:  <eslOK> on success.
- * 
- * Throws:   <eslEMEM> on allocation failure.          
- */
-int
-cm_AppendComlog(CM_t *cm, int argc, char **argv)
-{
-  int   status;
-  void *tmp;
-  int   n;
-  int   i;
-
-  /* figure out length of added command line, and (re)allocate comlog */
-  n = argc-1;	/* account for 1 space per arg, except last one */
-  for (i = 0; i < argc; i++)
-    n += strlen(argv[i]);
-
-  if (cm->comlog != NULL) {
-    n += strlen(cm->comlog) + 1; /* +1 for the \n we're going to add to the old comlog */
-    ESL_RALLOC(cm->comlog, tmp, sizeof(char)* (n+1));
-    strcat(cm->comlog, "\n");
-  } else {
-    ESL_ALLOC(cm->comlog, sizeof(char)* (n+1));
-    *(cm->comlog) = '\0'; /* need this to make strcat work */
-  }
-
-  for (i = 0; i < argc-1; i++)
-    {
-      strcat(cm->comlog, argv[i]);
-      strcat(cm->comlog, " ");
-    }
-  strcat(cm->comlog, argv[argc-1]);
-  return eslOK;
-
- ERROR:
-  return status;
-}
-
-/* Function: cm_SetCtime()
- * Date:     SRE, Wed Oct 29 11:53:19 1997 [TWA 721 over the Atlantic]
- * 
- * Purpose:  Set the <ctime> field in a new CM to the current time.
- *
- *           This function is not reentrant and not threadsafe, because
- *           it calls the nonreentrant ANSI C ctime() function.
- * 
- * Returns:  <eslOK> on success.
- * 
- * Throws:   <eslEMEM> on allocation failure. <eslESYS> if the <time()>
- *           system call fails to obtain the calendar time.
- */
-int
-cm_SetCtime(CM_t *cm)
-{
-  int    status;
-  char  *s = NULL;
-  time_t date;
-
-  if ((date   = time(NULL))                       == -1) { status = eslESYS; goto ERROR; }
-  if ((status = esl_strdup(ctime(&date), -1, &s)) != eslOK) goto ERROR;
-  if ((status = esl_strchop(s, -1))               != eslOK) goto ERROR;
-  
-  if (cm->ctime != NULL) free(cm->ctime);
-  cm->ctime = s;
-  return eslOK;
-
- ERROR:
-  if (s != NULL) free(s);
-  return status;
-}
 /*---------------- end, internal-setting routines ---------------*/
+  
+/* Function: CreateComLog()
+ * Date:     EPN, Mon Dec 31 10:51:14 2007
+ *
+ * Purpose:  Allocate and initialize a ComLog_t data structure.
+ * Returns:  Newly allocated ComLog_t object, this is NULL if
+ *           there's a memory allocation failure.
+ */
+ComLog_t *
+CreateComLog()
+{
+  int status;
+
+  ComLog_t *clog;
+  ESL_ALLOC(clog, sizeof(ComLog_t));
+
+  clog->bcom   = NULL;
+  clog->bdate  = NULL;
+  clog->ccom1  = NULL;
+  clog->cdate1 = NULL;
+  clog->ccom2  = NULL;
+  clog->cdate2 = NULL;
+
+  return clog;
+
+ ERROR:
+  return NULL;
+}
+
+/* Function: FreeComLog()
+ * Date:     EPN, Mon Dec 31 10:53:45 2007
+ *
+ * Purpose:  Free a ComLog_t data structure.
+ *            
+ * Returns:  void;
+ */
+void
+FreeComLog(ComLog_t *clog)
+{
+  if(clog->bcom   != NULL) free(clog->bcom);
+  if(clog->bdate  != NULL) free(clog->bdate);
+  if(clog->ccom1  != NULL) free(clog->ccom1);
+  if(clog->cdate1 != NULL) free(clog->cdate1);
+  if(clog->ccom2  != NULL) free(clog->ccom2);
+  if(clog->cdate2 != NULL) free(clog->cdate2);
+  free(clog);
+  return;
+}
+
+/* Function: CopyComLog()
+ * Date:     EPN, Mon Dec 31 10:53:45 2007
+ *
+ * Purpose:  Copy all the info in the ComLog_t data structure <src>
+ *           into <dest>, any info that was in <dest> is freed.
+ *
+ * Returns:  eslOK on success; eslEMEM on memory allocation error.
+ */
+int
+CopyComLog(const ComLog_t *src, ComLog_t *dest)
+{
+  int status;
+
+  if(dest->bcom   != NULL)  { free(dest->bcom);  dest->bcom = NULL;    }
+  if(dest->bdate  != NULL)  { free(dest->bdate); dest->bdate = NULL;   }
+  if(dest->ccom1  != NULL)  { free(dest->ccom1);  dest->ccom1 = NULL;  }
+  if(dest->cdate1 != NULL)  { free(dest->cdate1); dest->cdate1 = NULL; }
+  if(dest->ccom2  != NULL)  { free(dest->ccom2);  dest->ccom2 = NULL;  }
+  if(dest->cdate2 != NULL)  { free(dest->cdate2); dest->cdate2 = NULL; }
+
+  if(src->bcom   != NULL) { if((status = esl_strdup(src->bcom,  -1, &(dest->bcom)))   != eslOK) goto ERROR; }
+  if(src->bdate  != NULL) { if((status = esl_strdup(src->bdate, -1, &(dest->bdate)))  != eslOK) goto ERROR; }
+  if(src->ccom1  != NULL) { if((status = esl_strdup(src->ccom1, -1, &(dest->ccom1)))  != eslOK) goto ERROR; }
+  if(src->cdate1 != NULL) { if((status = esl_strdup(src->cdate1,-1, &(dest->cdate1))) != eslOK) goto ERROR; }
+  if(src->ccom2  != NULL) { if((status = esl_strdup(src->ccom2, -1, &(dest->ccom2)))  != eslOK) goto ERROR; }
+  if(src->cdate2 != NULL) { if((status = esl_strdup(src->cdate2,-1, &(dest->ccom2)))  != eslOK) goto ERROR; }
+  return eslOK;
+
+ ERROR:
+  return status;
+}
 
 /* Function: IntMaxDigits()
  * Date:     EPN, Fri Nov 30 14:51:12 2007
@@ -2368,5 +2377,85 @@ DuplicateCM(CM_t *cm)
  ERROR:
   cm_Fail("Memory allocation error.\n");
   return NULL; /* never reached */
+}
+#endif
+
+#if 0
+/* Function: cm_AppendComlog()
+ * Incept:   SRE, Mon Jan  1 18:23:42 2007 [Casa de Gatos]
+ * 
+ * Purpose:  Concatenate command line options and append as a new line in the
+ *           command line log. Command line log is multiline, with each line
+ *           ending in newline char, except for last line.
+ *           
+ * Returns:  <eslOK> on success.
+ * 
+ * Throws:   <eslEMEM> on allocation failure.          
+ */
+int
+cm_AppendComlog(CM_t *cm, int argc, char **argv)
+{
+  int   status;
+  void *tmp;
+  int   n;
+  int   i;
+
+  /* figure out length of added command line, and (re)allocate comlog */
+  n = argc-1;	/* account for 1 space per arg, except last one */
+  for (i = 0; i < argc; i++)
+    n += strlen(argv[i]);
+
+  if (cm->comlog != NULL) {
+    n += strlen(cm->comlog) + 1; /* +1 for the \n we're going to add to the old comlog */
+    ESL_RALLOC(cm->comlog, tmp, sizeof(char)* (n+1));
+    strcat(cm->comlog, "\n");
+  } else {
+    ESL_ALLOC(cm->comlog, sizeof(char)* (n+1));
+    *(cm->comlog) = '\0'; /* need this to make strcat work */
+  }
+
+  for (i = 0; i < argc-1; i++)
+    {
+      strcat(cm->comlog, argv[i]);
+      strcat(cm->comlog, " ");
+    }
+  strcat(cm->comlog, argv[argc-1]);
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function: cm_SetCdate()
+ * Date:     SRE, Wed Oct 29 11:53:19 1997 [TWA 721 over the Atlantic]
+ * 
+ * Purpose:  Set the <cdate> field in a new CM to the current time.
+ *
+ *           This function is not reentrant and not threadsafe, because
+ *           it calls the nonreentrant ANSI C cdate() function.
+ * 
+ * Returns:  <eslOK> on success.
+ * 
+ * Throws:   <eslEMEM> on allocation failure. <eslESYS> if the <time()>
+ *           system call fails to obtain the calendar time.
+ */
+int
+cm_SetCdate(CM_t *cm)
+{
+  int    status;
+  char  *s = NULL;
+  time_t date;
+
+  if ((date   = time(NULL))                       == -1) { status = eslESYS; goto ERROR; }
+  if ((status = esl_strdup(cdate(&date), -1, &s)) != eslOK) goto ERROR;
+  if ((status = esl_strchop(s, -1))               != eslOK) goto ERROR;
+  
+  if (cm->cdate != NULL) free(cm->cdate);
+  cm->cdate = s;
+  return eslOK;
+
+ ERROR:
+  if (s != NULL) free(s);
+  return status;
 }
 #endif

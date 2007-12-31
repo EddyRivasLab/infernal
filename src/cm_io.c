@@ -77,11 +77,16 @@ static unsigned int v01swap  = 0xb1b0ede3; /* v0.1 binary, byteswapped         *
 #define CMIO_GA           41
 #define CMIO_TC           42
 #define CMIO_NC           43
+#define CMIO_BCOM         44
+#define CMIO_BDATE        45
+#define CMIO_CCOM1        46
+#define CMIO_CDATE1       47
+#define CMIO_CCOM2        48
+#define CMIO_CDATE2       49
 
-static int  write_ascii_cm(FILE *fp, CM_t *cm);
+static int  write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf);
 static int  read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
-
-static int  write_binary_cm(FILE *fp, CM_t *cm);
+static int  write_binary_cm(FILE *fp, CM_t *cm, char *errbuf);
 static int  read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
 static void tagged_fwrite(int tag, void *ptr, size_t size, size_t nmemb, FILE *fp);
 static int  tagged_fread(int expected_tag, char *s, size_t size, size_t nmemb, FILE *fp);
@@ -313,15 +318,23 @@ CMFilePositionByIndex(CMFILE *cmf, int idx)
  * Purpose:   Write a CM to an open FILE.
  *            If do_binary is TRUE, use binary format; else flatfile.
  * Xref:      STL6 p.108.
+ *
+ * Returns: eslOK on success.
+ *          eslEINCOMPAT on contract violation (if a mandatory part of the CM is invalid)
  */
 int 
-CMFileWrite(FILE *fp, CM_t *cm, int do_binary)
+CMFileWrite(FILE *fp, CM_t *cm, int do_binary, char *errbuf)
 {
-  if((cm->flags & CMH_LOCAL_BEGIN) && (cm->flags & CMH_LOCAL_END)) cm_Fail("CMFileWrite(), CMH_LOCAL_BEGIN and CMH_LOCAL_END flags are up.");
-  if (cm->flags & CMH_LOCAL_BEGIN) cm_Fail("CMFileWrite(), CMH_LOCAL_BEGIN flag is up.");
-  if (cm->flags & CMH_LOCAL_END)   cm_Fail("CMFileWrite(), CMH_LOCAL_END flag is up.");
-  if (do_binary) return write_binary_cm(fp, cm);
-  else           return write_ascii_cm(fp, cm);
+  /* contract checks */
+  if (cm->name          == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "CMFileWrite(), cm->name is NULL.");
+  if (cm->comlog        == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "CMFileWrite(), cm->comlog is NULL.");
+  if (cm->comlog->bcom  == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "CMFileWrite(), cm->comlog->bcom is NULL.");
+  if (cm->comlog->bdate == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "CMFileWrite(), cm->comlog->bdate is NULL.");
+  if((cm->flags & CMH_LOCAL_BEGIN) && (cm->flags & CMH_LOCAL_END)) ESL_FAIL(eslEINCOMPAT, errbuf, "CMFileWrite(), CMH_LOCAL_BEGIN and CMH_LOCAL_END flags are up.");
+  if (cm->flags & CMH_LOCAL_BEGIN) ESL_FAIL(eslEINCOMPAT, errbuf, "CMFileWrite(), CMH_LOCAL_BEGIN flag is up.");
+  if (cm->flags & CMH_LOCAL_END)   ESL_FAIL(eslEINCOMPAT, errbuf, "CMFileWrite(), CMH_LOCAL_END flag is up.");
+  if (do_binary) return write_binary_cm(fp, cm, errbuf);
+  else           return write_ascii_cm(fp, cm, errbuf);
 }
 		   
 
@@ -330,15 +343,17 @@ CMFileWrite(FILE *fp, CM_t *cm, int do_binary)
  *
  * Purpose:   Write a CM in flatfile format.
  * Xref:      STL6 p.108
+ *
+ * Returns: eslOK on success;
  */
 static int
-write_ascii_cm(FILE *fp, CM_t *cm)
+write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
 {
   int v,x,y,nd;
-
+  
   fprintf(fp, "INFERNAL-1 [%s]\n", PACKAGE_VERSION);
 
-  fprintf(fp, "NAME   %s\n", cm->name);
+  fprintf(fp,                          "NAME     %s\n", cm->name);
   if (cm->acc  != NULL)    fprintf(fp, "ACC      %s\n", cm->acc);
   if (cm->desc != NULL)    fprintf(fp, "DESC     %s\n", cm->desc);
   /* Rfam cutoffs */
@@ -347,12 +362,18 @@ write_ascii_cm(FILE *fp, CM_t *cm)
   if (cm->flags & CMH_NC)  fprintf(fp, "NC       %.2f\n", cm->nc);
   fprintf(fp, "STATES   %d\n",   cm->M);
   fprintf(fp, "NODES    %d\n",   cm->nodes);
-  fprintf(fp, "ALPHABET %d\n", cm->abc->type);
+  fprintf(fp, "ALPHABET %d\n",   cm->abc->type);
   fprintf(fp, "ELSELF   %.8f\n", cm->el_selfsc);
   fprintf(fp, "NSEQ     %d\n",   cm->nseq);
-  fprintf(fp, "EFFNSEQ  %.3f\n",cm->eff_nseq);
-  fprintf(fp, "CLEN     %d\n",  cm->clen);
-  fputs("NULL     ", fp);
+  fprintf(fp, "EFFNSEQ  %.3f\n", cm->eff_nseq);
+  fprintf(fp, "CLEN     %d\n",   cm->clen);
+  fprintf(fp, "BCOM     %s\n",   cm->comlog->bcom);
+  fprintf(fp, "BDATE    %s\n",   cm->comlog->bdate);
+  if(cm->comlog->ccom1 != NULL) fprintf(fp, "CCOM1    %s\n", cm->comlog->ccom1);
+  if(cm->comlog->cdate1!= NULL) fprintf(fp, "CDATE1   %s\n", cm->comlog->cdate1);
+  if(cm->comlog->ccom2 != NULL) fprintf(fp, "CCOM2    %s\n", cm->comlog->ccom2);
+  if(cm->comlog->cdate2!= NULL) fprintf(fp, "CDATE2   %s\n", cm->comlog->cdate2);
+  fputs(      "NULL    ", fp);
   for (x = 0; x < cm->abc->K; x++)
     fprintf(fp, "%6s ", prob2ascii(cm->null[x], 1/(float)(cm->abc->K)));
   fputs("\n", fp);
@@ -362,7 +383,7 @@ write_ascii_cm(FILE *fp, CM_t *cm)
   int p;
   if (cm->flags & CMH_GUMBEL_STATS)
     {
-      fprintf(fp, "PART     %3d  ", cm->stats->np);
+      fprintf(fp, "PART     %-3d  ", cm->stats->np);
       for(p = 0; p < cm->stats->np; p++)
 	fprintf(fp, "%5d  %5d  ", cm->stats->ps[p], cm->stats->pe[p]);
       fprintf(fp, "\n");
@@ -397,19 +418,19 @@ write_ascii_cm(FILE *fp, CM_t *cm)
 
       if (cm->flags & CMH_FILTER_STATS) /* FILTER stats are only possibly valid IF EVD stats valid */
 	{
-	  fprintf(fp, "FT-LC  %d  %.5f  %d  %10.5f  %15.5f %d\n", 
+	  fprintf(fp, "FT-LC     %d  %.5f  %d  %10.5f  %15.5f %d\n", 
 		  cm->stats->bfA[FTHR_CM_LC]->ftype, cm->stats->bfA[FTHR_CM_LC]->F,
 		  cm->stats->bfA[FTHR_CM_LC]->N,     cm->stats->bfA[FTHR_CM_LC]->cm_eval,
 		  cm->stats->bfA[FTHR_CM_LC]->e_cutoff, cm->stats->bfA[FTHR_CM_LC]->db_size);
-	  fprintf(fp, "FT-LI  %d  %.5f  %d  %10.5f  %15.5f %d\n", 
+	  fprintf(fp, "FT-LI     %d  %.5f  %d  %10.5f  %15.5f %d\n", 
 		  cm->stats->bfA[FTHR_CM_LI]->ftype, cm->stats->bfA[FTHR_CM_LI]->F,
 		  cm->stats->bfA[FTHR_CM_LI]->N,     cm->stats->bfA[FTHR_CM_LI]->cm_eval,
 		  cm->stats->bfA[FTHR_CM_LI]->e_cutoff, cm->stats->bfA[FTHR_CM_LI]->db_size);
-	  fprintf(fp, "FT-GC  %d  %.5f  %d  %10.5f  %15.5f %d\n", 
+	  fprintf(fp, "FT-GC     %d  %.5f  %d  %10.5f  %15.5f %d\n", 
 		  cm->stats->bfA[FTHR_CM_GC]->ftype, cm->stats->bfA[FTHR_CM_GC]->F,
 		  cm->stats->bfA[FTHR_CM_GC]->N,     cm->stats->bfA[FTHR_CM_GC]->cm_eval,
 		  cm->stats->bfA[FTHR_CM_GC]->e_cutoff, cm->stats->bfA[FTHR_CM_GC]->db_size);
-	  fprintf(fp, "FT-GI  %d  %.5f  %d  %10.5f  %15.5f %d\n", 
+	  fprintf(fp, "FT-GI     %d  %.5f  %d  %10.5f  %15.5f %d\n", 
 		  cm->stats->bfA[FTHR_CM_GI]->ftype, cm->stats->bfA[FTHR_CM_GI]->F,
 		  cm->stats->bfA[FTHR_CM_GI]->N,     cm->stats->bfA[FTHR_CM_GI]->cm_eval,
 		  cm->stats->bfA[FTHR_CM_GI]->e_cutoff, cm->stats->bfA[FTHR_CM_GI]->db_size);
@@ -599,6 +620,49 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  clen = atoi(tok); /* we'll compare this to what we calculate at end of func */
 	  read_clen = TRUE;
+	}
+      /* comlog info, careful, we want the full line, so a token becomes a full line */
+      else if (strcmp(tok, "BCOM") == 0) 
+	{
+	  while(isspace((int) *s)) *s++; /* chew up leading whitespace */
+	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if(cm->comlog->bcom != NULL) free(cm->comlog->bcom);
+	  esl_strdup(tok, toklen, &(cm->comlog->bcom));
+	}
+      else if (strcmp(tok, "BDATE") == 0) 
+	{
+	  while(isspace((int) *s)) *s++; /* chew up leading whitespace */
+	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if(cm->comlog->bdate != NULL) free(cm->comlog->bdate);
+	  esl_strdup(tok, toklen, &(cm->comlog->bdate));
+	}
+      else if (strcmp(tok, "CCOM1") == 0) 
+	{
+	  while(isspace((int) *s)) *s++; /* chew up leading whitespace */
+	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if(cm->comlog->ccom1 != NULL) free(cm->comlog->ccom1);
+	  esl_strdup(tok, toklen, &(cm->comlog->ccom1));
+	}
+      else if (strcmp(tok, "CDATE1") == 0) 
+	{
+	  while(isspace((int) *s)) *s++; /* chew up leading whitespace */
+	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if(cm->comlog->cdate1 != NULL) free(cm->comlog->cdate1);
+	  esl_strdup(tok, toklen, &(cm->comlog->cdate1));
+	}
+      else if (strcmp(tok, "CCOM2") == 0) 
+	{
+	  while(isspace((int) *s)) *s++; /* chew up leading whitespace */
+	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if(cm->comlog->ccom2 != NULL) free(cm->comlog->ccom2);
+	  esl_strdup(tok, toklen, &(cm->comlog->ccom2));
+	}
+      else if (strcmp(tok, "CDATE2") == 0) 
+	{
+	  while(isspace((int) *s)) *s++; /* chew up leading whitespace */
+	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if(cm->comlog->cdate2 != NULL) free(cm->comlog->cdate2);
+	  esl_strdup(tok, toklen, &(cm->comlog->cdate2));
 	}
       else if (strcmp(tok, "NULL") == 0) 
 	{
@@ -889,7 +953,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
  *
  */
 static int
-write_binary_cm(FILE *fp, CM_t *cm)
+write_binary_cm(FILE *fp, CM_t *cm, char *errbuf)
 {
   int v, i ,p;
   int has_gum, has_fthr;
@@ -909,6 +973,15 @@ write_binary_cm(FILE *fp, CM_t *cm)
   tagged_bin_string_write(CMIO_NAME, cm->name,  fp);
   tagged_bin_string_write(CMIO_ACC,  cm->acc,   fp);
   tagged_bin_string_write(CMIO_DESC, cm->desc,  fp);
+
+  /* cm->comlog, the creation dates and command lines used to build/calibrate the model */
+  tagged_bin_string_write(CMIO_BCOM,   cm->comlog->bcom,  fp);
+  tagged_bin_string_write(CMIO_BDATE,  cm->comlog->bdate, fp);
+  tagged_bin_string_write(CMIO_CCOM1,  cm->comlog->ccom1, fp);
+  tagged_bin_string_write(CMIO_CDATE1, cm->comlog->cdate1,fp);
+  tagged_bin_string_write(CMIO_CCOM2,  cm->comlog->ccom2, fp);
+  tagged_bin_string_write(CMIO_CDATE2, cm->comlog->cdate2,fp);
+  
   /* Rfam cutoffs */
   if (!(cm->flags & CMH_GA))  { 
     has_ga = FALSE;
@@ -1057,6 +1130,14 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   if (! tagged_bin_string_read(CMIO_NAME, &(cm->name),  fp)) goto FAILURE;
   if (! tagged_bin_string_read(CMIO_ACC,  &(cm->acc),   fp)) goto FAILURE;
   if (! tagged_bin_string_read(CMIO_DESC, &(cm->desc),  fp)) goto FAILURE;
+
+  if (! tagged_bin_string_read(CMIO_BCOM,   &(cm->comlog->bcom),   fp)) goto FAILURE;
+  if (! tagged_bin_string_read(CMIO_BDATE,  &(cm->comlog->bdate),  fp)) goto FAILURE;
+  if (! tagged_bin_string_read(CMIO_CCOM1,  &(cm->comlog->ccom1),  fp)) goto FAILURE;
+  if (! tagged_bin_string_read(CMIO_CDATE1, &(cm->comlog->cdate1), fp)) goto FAILURE;
+  if (! tagged_bin_string_read(CMIO_CCOM2,  &(cm->comlog->ccom2),  fp)) goto FAILURE;
+  if (! tagged_bin_string_read(CMIO_CDATE2, &(cm->comlog->cdate2), fp)) goto FAILURE;
+
   /* we might have any combo of Rfam cutoffs */
   if (! tagged_fread(CMIO_HASGA,    (void *) &(has_ga),     sizeof(int),   1,         fp))    goto FAILURE;
   if(has_ga) { 
@@ -1325,3 +1406,4 @@ is_real(char *s)
   if (*s == '\0' && gotreal) return 1;
   else return 0;
 }
+

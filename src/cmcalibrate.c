@@ -128,6 +128,11 @@ struct cfg_s {
   int             *pstart;             /* [0..p..np-1], begin points for partitions, end pts are implicit */
   float           *avglen;             /* [0..v..M-1] average hit len for subtree rooted at each state v for current CM */
 
+  /* info for the comlog we'll add to the cmfiles */
+  char            *ccom;               /* command line used in this execution of cmcalibrate */
+  char            *cdate;              /* date of this execution of cmcalibrate */
+
+
   /* the following data is modified for each CM, and in some cases for each Gumbel mode for each CM,
    * it is assumed to be 'current' in many functions.
    */
@@ -190,6 +195,8 @@ static int switch_global_to_local(CM_t *cm, char *errbuf);
 static int predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_vit_cp9scA, float *fil_fwd_cp9scA, int *fil_partA, BestFilterInfo_t *bf);
 static int predict_best_sub_cm_roots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **fil_vscAA, int **ret_best_sub_roots);
 static int predict_hybrid_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_hybscA, int *fil_partA, GumbelInfo_t **gum_hybA, BestFilterInfo_t *bf, int *ret_getting_faster);
+static int get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
+static int update_comlog(const ESL_GETOPTS *go, char *errbuf, char *ccom, char *cdate, CM_t *cm);
 
 int
 main(int argc, char **argv)
@@ -265,6 +272,8 @@ main(int argc, char **argv)
   cfg.gum_hybA  = NULL;
   cfg.np        = 1;     /* default number of partitions is 1, changed if --pfile */
   cfg.pstart    = NULL;  /* allocated (by default to size 1) in init_master_cfg() */
+  cfg.ccom      = NULL;  /* created in get_cmcalibrate_comlog_info() for masters, stays NULL in workers */
+  cfg.cdate     = NULL;  /* created in get_cmcalibrate_comlog_info() for masters, stays NULL in workers */
 
   cfg.gumhfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.gumqfp   = NULL; /* ALWAYS remains NULL for mpi workers */
@@ -332,23 +341,30 @@ main(int argc, char **argv)
     /* Rewind the CM file for a second pass.
      * Write a temporary CM file with new stats information in it
      */
+    int   status;
     int   cmi;
     CM_t *cm;
     FILE *outfp;
     sigset_t blocksigs;  /* list of signals to protect from             */
+    char     errbuf[cmERRBUFSIZE];
+
     CMFileRewind(cfg.cmfp);
     if (esl_FileExists(cfg.tmpfile))                    cm_Fail("Ouch. Temporary file %s appeared during the run.", cfg.tmpfile);
     if ((outfp = fopen(cfg.tmpfile, cfg.mode)) == NULL) cm_Fail("Ouch. Temporary file %s couldn't be opened for writing.", cfg.tmpfile); 
     
     for (cmi = 0; cmi < cfg.ncm; cmi++) {
       if (!CMFileRead(cfg.cmfp, &(cfg.abc), &cm)) cm_Fail("Ran out of CMs too early in pass 2");
-      if (cm == NULL)                               cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
+      if (cm == NULL)                             cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
+
+      /* update the cm->comlog info */
+      if((status = update_comlog(go, errbuf, cfg.ccom, cfg.cdate, cm)) != eslOK) cm_Fail(errbuf);
+	
       cm->stats = cfg.cmstatsA[cmi];
       cm->flags &= ~CMH_FILTER_STATS; /* forget that CM may have had filter stats, if --gumonly was invoked, it won't anymore */
 
       if(!(esl_opt_GetBoolean(go, "--filonly"))) cm->flags |= CMH_GUMBEL_STATS; 
       if(!(esl_opt_GetBoolean(go, "--gumonly"))) cm->flags |= CMH_FILTER_STATS; 
-      CMFileWrite(outfp, cm, cfg.cmfp->is_binary);
+      if((status = CMFileWrite(outfp, cm, cfg.cmfp->is_binary, errbuf)) != eslOK) cm_Fail(go->errbuf);
       FreeCM(cm);
     } /* end of from idx = 0 to ncm */
     
@@ -374,6 +390,9 @@ main(int argc, char **argv)
     if (cfg.gumqfp   != NULL) fclose(cfg.gumqfp);
     if (cfg.filhfp   != NULL) fclose(cfg.filhfp);
     if (cfg.filrfp   != NULL) fclose(cfg.filrfp);
+    if (cfg.ccom     != NULL) free(cfg.ccom);
+    if (cfg.cdate    != NULL) free(cfg.cdate);
+
   }
   /* clean up */
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
@@ -503,6 +522,9 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
   cfg->avglen = NULL; /* this will be allocated and filled inside serial_master() or mpi_master() */
   if(cfg->r == NULL) cm_Fail("Failed to create master RNG.");
+
+  /* fill cfg->ccom, and cfg->cdate */
+  if((status = get_cmcalibrate_comlog_info(go, cfg, errbuf)) != eslOK) return status;
 
   return eslOK;
 
@@ -2960,3 +2982,125 @@ predict_best_sub_cm_roots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
   ESL_FAIL(status, errbuf, "predict_best_sub_cm_roots(), memory allocation error.");
   return status; /* NEVERREACHED */
 }
+
+
+/* Function: get_cmcalibrate_comlog_info
+ * Date:     EPN, Mon Dec 31 14:59:52 2007
+ *
+ * Purpose:  Create the cmcalibrate command info and creation date info 
+ *           to eventually be set in the CM's ComLog_t data structure.
+ *
+ * Returns:  eslOK on success, eslEINCOMPAT on contract violation.
+ */
+static int
+get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
+{
+  int status;
+  int i;
+  long seed;
+  long temp;
+  int  seedlen;
+  char *seedstr;
+
+  if(cfg->ccom  != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "get_cmcalibrate_comlog_info(), cfg->ccom  is non-NULL.");
+  if(cfg->cdate != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "get_cmcalibrate_comlog_info(), cfg->cdate is non-NULL.");
+  
+  
+  /* Set the cmbuild command info, the cfg->clog->bcom string */
+  for (i = 0; i < go->optind; i++) { /* copy all command line options, but not the command line args yet, we may need to append '--seed ' before the args */
+    esl_strcat(&(cfg->ccom),  -1, go->argv[i], -1);
+    esl_strcat(&(cfg->ccom),  -1, " ", 1);
+  }
+  /* if -s NOT enabled, we need to append the seed info also */
+  if(esl_opt_IsDefault(go, "-s")) {
+    if(cfg->r == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r is NULL but --gibbs enabled, shouldn't happen.");
+    seed = esl_randomness_GetSeed(cfg->r);
+    temp = seed; 
+    seedlen = 1; 
+    while(temp > 0) { temp/=10; seedlen++; } /* determine length of stringized version of seed */
+    seedlen += 4; /* strlen(' -s ') */
+    ESL_ALLOC(seedstr, sizeof(char) * (seedlen+1));
+    sprintf(seedstr, " -s %ld ", seed);
+    esl_strcat((&cfg->ccom), -1, seedstr, seedlen);
+  }
+  else { /* -s was enabled, we'll do a sanity check */
+    if(seed != (long) esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r's seed is %ld, but --seed was enabled with argument: %ld!, this shouldn't happen.", seed, (long) esl_opt_GetInteger(go, "-s"));
+  }
+
+  for (i = go->optind; i < go->argc; i++) { /* copy all command line options, but not the command line args yet, we may need to append '--seed ' before the args */
+    esl_strcat(&(cfg->ccom), -1, go->argv[i], -1);
+    if(i < (go->argc-1)) esl_strcat(&(cfg->ccom), -1, " ", 1);
+  }
+
+  /* Set the cmcalibrate call date, the cfg->clog->bdate string */
+  time_t date = time(NULL);
+  if((status = esl_strdup(ctime(&date), -1, &(cfg->cdate))) != eslOK) goto ERROR;
+  esl_strchop(cfg->cdate, -1); /* doesn't return anything but eslOK */
+
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "get_cmcalibrate_comlog_info() error status: %d, probably out of memory.", status);
+  return status; 
+}
+
+
+/* Function: update_comlog
+ * Date:     EPN, Mon Dec 31 15:14:26 2007
+ *
+ * Purpose:  Update the CM's comlog info to reflect the current
+ *           cmcalibrate call.
+ *
+ * Returns:  eslOK on success, eslEINCOMPAT on contract violation.
+ */
+static int
+update_comlog(const ESL_GETOPTS *go, char *errbuf, char *ccom, char *cdate, CM_t *cm)
+{
+  int status;
+  int which_comlog;       /* 1 or 2, 1 if we'll write to cm->ccom1 and cm->cdate1, 2 if we'll write to 
+			   * cm->ccom2 and cm->cdate2. Can only be 2 if --filonly enabled, otherwise
+			   * we're creating new gumbel stats and/or filter thresholds, so any previous info 
+			   * in the CM file from previous cmcalibrate calls will be deleted/overwritten. 
+			   */ 
+  
+  if(ccom  == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "update_comlog(), ccom  is non-NULL.");
+  if(cdate == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "update_comlog(), cdate is non-NULL.");
+
+  which_comlog = (esl_opt_GetBoolean(go, "--filonly")) ? 2 : 1; /* only way to write to comlog->ccom2, comlog->cdate2 is if --filonly was enabled */
+  
+  /* 2 possible cases, case 1: we're writing/overwriting cm->comlog->ccom1, cm->comlog->cdate1, 
+   * case 2: we're writing/overwriting cm->comlog->ccom2, cm->comlog->cdate2 
+   */
+
+  if(which_comlog == 1) {
+    /* free all cmcalibrate comlog info, we're about to overwrite any information that any previous cmcalibrate
+     * call could have written to the cm file.
+     */
+    if(cm->comlog->ccom1  != NULL)  { free(cm->comlog->ccom1);  cm->comlog->ccom1 = NULL;  }
+    if(cm->comlog->cdate1 != NULL)  { free(cm->comlog->cdate1); cm->comlog->cdate1 = NULL; }
+    if(cm->comlog->ccom2  != NULL)  { free(cm->comlog->ccom2);  cm->comlog->ccom2 = NULL;  }
+    if(cm->comlog->cdate2 != NULL)  { free(cm->comlog->cdate2); cm->comlog->cdate2 = NULL; }
+    
+    if((status = esl_strdup(ccom, -1, &(cm->comlog->ccom1)))  != eslOK) goto ERROR; 
+    if((status = esl_strdup(cdate,-1, &(cm->comlog->cdate1))) != eslOK) goto ERROR; 
+  }
+  else { /* which_comlog == 2 */
+    /* if it exists, free comlog info comlog->ccom2, comlog->cdate2,, we're about to overwrite the info
+     * corresponding to that cmcalibrate call (the filter threshold information ONLY) 
+     * First, assert we have comlog->ccom1, comlog->cdate1 */
+    if(cm->comlog->ccom1  == NULL)  ESL_FAIL(eslEINCOMPAT, errbuf, "update_comlog(), --filonly enabled, but cm->comlog->ccom1 is NULL.");
+    if(cm->comlog->ccom1  == NULL)  ESL_FAIL(eslEINCOMPAT, errbuf, "update_comlog(), --filonly enabled, but cm->comlog->cdate1 is NULL.");
+
+    if(cm->comlog->ccom2  != NULL)  { free(cm->comlog->ccom2);  cm->comlog->ccom2 = NULL;  }
+    if(cm->comlog->cdate2 != NULL)  { free(cm->comlog->cdate2); cm->comlog->cdate2 = NULL; }
+
+    if((status = esl_strdup(ccom, -1, &(cm->comlog->ccom2)))  != eslOK) goto ERROR; 
+    if((status = esl_strdup(cdate,-1, &(cm->comlog->cdate2))) != eslOK) goto ERROR; 
+  }
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "update_comlog() error status: %d, probably out of memory.", status);
+  return status; 
+}
+

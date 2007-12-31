@@ -234,6 +234,11 @@ cm_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm comm, CM_t
   if (MPI_Unpack(buf, n, pos, cm->itsc[0],    M*MAXCONNECT,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
 
   if (MPI_Unpack(buf, n, pos, &(has_stats),              1, MPI_INT,   comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
+
+  /* free the cm->comlog that was allocated inside the CreateCM() call, we'll allocate a new one, a bit messy */
+  FreeComLog(cm->comlog);
+  status   = comlog_MPIUnpack(buf, n, pos, comm, &(cm->comlog));  if (status != eslOK) return status;
+
   if (has_stats) { 
     status   = cmstats_MPIUnpack(buf, n, pos, comm, &(cm->stats));  if (status != eslOK) return status;
   }  
@@ -328,6 +333,10 @@ cm_justread_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm c
   if (MPI_Unpack(buf, n, pos, cm->t[0],       M*MAXCONNECT, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   
   if (MPI_Unpack(buf, n, pos, &(has_stats),              1, MPI_INT,   comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
+
+  /* free the cm->comlog that was allocated inside the CreateCM() call, we'll allocate a new one, a bit messy */
+  FreeComLog(cm->comlog);
+  status   = comlog_MPIUnpack(buf, n, pos, comm, &(cm->comlog));  if (status != eslOK) return status;
   if (has_stats) { 
     status   = cmstats_MPIUnpack(buf, n, pos, comm, &(cm->stats));  if (status != eslOK) return status;
   }  
@@ -435,6 +444,8 @@ cm_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm)
 
   if (MPI_Pack(cm->itsc[0],    M*MAXCONNECT,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
 
+  status = comlog_MPIPack(cm->comlog, buf, n, pos, comm);  if (status != eslOK) return status;
+
   has_stats = (cm->stats == NULL) ? FALSE : TRUE;
   if (MPI_Pack((int *) &(has_stats),      1, MPI_INT,   buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
   if (has_stats) { 
@@ -523,6 +534,8 @@ cm_justread_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm)
 
   if (MPI_Pack(cm->t[0],       M*MAXCONNECT, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
   
+  status = comlog_MPIPack(cm->comlog, buf, n, pos, comm);  if (status != eslOK) return status;
+
   has_stats = (cm->stats == NULL) ? FALSE : TRUE;
 
   if (MPI_Pack((int *) &(has_stats),      1, MPI_INT,   buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
@@ -613,6 +626,9 @@ cm_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
   n += sz; 
   /* itsc */
 
+  if ((status = comlog_MPIPackSize(cm->comlog, comm, &sz)) != eslOK) return status;
+  n += sz;
+
   if (MPI_Pack_size(1, MPI_INT,comm,&sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   /* has_stats: flag which tells worker whether or not it's about to get stats */
 
@@ -698,6 +714,9 @@ cm_justread_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
   if (MPI_Pack_size(M*MAXCONNECT,MPI_FLOAT,comm,&sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += sz; 
   /* t */
+
+  if ((status = comlog_MPIPackSize(cm->comlog, comm, &sz)) != eslOK) return status;
+  n += sz;
 
   if (MPI_Pack_size(1, MPI_INT,comm,&sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   n += sz;
@@ -2888,7 +2907,96 @@ cmcalibrate_cp9_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm co
   return status;
 }
 
+/* Function:  comlog_MPIPackSize()
+ * Synopsis:  Calculates number of bytes needed to pack a 
+ *            ComLog_t object. Follows 'Purpose' 
+ *            of other *_MPIPackSize() functions above. 
+ *
+ * Incept:    EPN, Mon Dec 31 14:31:04 2007
+ *
+ * Returns:   <eslOK> on success, and <*ret_n> contains the answer.
+ *
+ * Throws:    <eslESYS> if an MPI call fails, and <*ret_n> is set to 0. 
+ *
+ * Note:      The sizing calls here need to stay matched up with
+ *            the calls in <comlog_MPIPack()>.
+ */
+int
+comlog_MPIPackSize(ComLog_t *comlog, MPI_Comm comm, int *ret_n)
+{
+  int status;
+  int sz;
+  int n = 0;
 
+  status = esl_mpi_PackOptSize(comlog->bcom,  -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = esl_mpi_PackOptSize(comlog->bdate, -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = esl_mpi_PackOptSize(comlog->ccom1, -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = esl_mpi_PackOptSize(comlog->cdate1,-1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = esl_mpi_PackOptSize(comlog->ccom2, -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = esl_mpi_PackOptSize(comlog->cdate2,-1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+
+  *ret_n = n;
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function:  comlog_MPIPack()
+ * Synopsis:  Packs ComLog_t <comlog> into MPI buffer.
+ *            See 'Purpose','Returns' and 'Throws'
+ *            of other *_MPIPack()'s for more info.
+ *
+ * Incept:    EPN, Wed Dec 12 05:03:40 2007
+ */
+int
+comlog_MPIPack(ComLog_t *comlog, char *buf, int n, int *position, MPI_Comm comm)
+{
+  int status;
+
+  ESL_DPRINTF2(("comlog_MPIPack(): ready.\n"));
+  
+
+  status = esl_mpi_PackOpt(comlog->bcom,   -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = esl_mpi_PackOpt(comlog->bdate,  -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = esl_mpi_PackOpt(comlog->ccom1,  -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = esl_mpi_PackOpt(comlog->cdate1, -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = esl_mpi_PackOpt(comlog->ccom2,  -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = esl_mpi_PackOpt(comlog->cdate2, -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
+  ESL_DPRINTF2(("comlog_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
+
+  if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
+  return eslOK;
+}
+
+/* Function:  comlog_MPIUnpack()
+ * Synopsis:  Unpacks ComLog_t<comlog> from an MPI buffer.
+ *            Follows 'Purpose', 'Returns', 'Throws' of other
+ *            *_MPIUnpack() functions above.
+ *
+ * Incept:    EPN, Wed Dec 12 05:29:19 2007
+ */
+int
+comlog_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ComLog_t **ret_comlog)
+{
+  int status;
+  ComLog_t *comlog;
+
+  ESL_ALLOC(comlog, sizeof(ComLog_t));
+  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->bcom),   NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->bdate),  NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->ccom1),  NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->cdate1), NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->ccom2),  NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->cdate2), NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  *ret_comlog = comlog;
+  return eslOK;
+
+ ERROR:
+  if(comlog != NULL) free(comlog);
+  *ret_comlog = NULL;
+  return status;
+}
 
 #endif
 

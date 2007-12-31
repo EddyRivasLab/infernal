@@ -51,7 +51,7 @@ static ESL_OPTIONS options[] = {
   //  { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s>, not Stockholm",  2 },
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,      NULL,  "--rsearch", "fraction of gaps to allow in a consensus column [0..1]", 2 },
   { "--rsearch", eslARG_STRING, NULL,  NULL, NULL,      NULL, "--enone",        NULL,  "use RSEARCH parameterization with RIBOSUM matrix file <s>", 2 }, 
-  { "--elself",  eslARG_REAL,  "0.94", NULL, "0<=x<=1", NULL,      NULL,        NULL, "set EL self transition prob to <x> [df: 0.94]", 2 },
+  { "--elself",  eslARG_REAL,  "0.94", NULL, "0<=x<=1", NULL,      NULL,        NULL, "set EL self transition prob to <x>", 2 },
   { "--nodetach",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "do not 'detach' one of two inserts that model same column", 2 },
 /* Alternate relative sequence weighting strategies */
   /* --wme not implemented in Infernal yet (b/c it's not in HMMER3) */
@@ -87,16 +87,17 @@ static ESL_OPTIONS options[] = {
   { "--cmindiff",eslARG_REAL,   "0.",  NULL,"0.<=x<=1.",NULL,      NULL,    "--call", "min difference b/t 2 clusters is <x>, each cluster -> CM", 8 }, 
   { "--call",    eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "build a separate CM from every seq in MSA", 8 },
   { "--corig",   eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "build an additional CM from the original, full MSA", 8 }, 
-  { "--cdump",   eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "dump an MSA for each cluster (CM) to file <s>", 8 },
+  { "--cdump",   eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "dump the MSA for each cluster (CM) to file <s>", 8 },
 /* Refining the seed alignment */
-  { "--refine",  eslARG_OUTFILE, NULL,  NULL, NULL,       NULL,  NULL,       NULL, "refine input aln w/Expectation-Maximization, save to <s>", 9 },
-  { "--gibbs",   eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, use Gibbs sampling instead of EM", 9 },
-  { "--seed",    eslARG_INT,     NULL,  NULL, "n>0",      NULL,"--gibbs",    NULL, "w/--gibbs, set random number generator seed to <n>",  9 },
-  { "--tau",     eslARG_REAL,   "1E-7", NULL, "0<x<1",    NULL,"--refine","--nonbanded", "set tail loss prob for --hbanded to <x>", 9 },
-  { "--sub",     eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, use sub CM for columns b/t HMM start/end points", 9 },
-  { "--local",   eslARG_NONE,   FALSE,  NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, align locally w.r.t the model", 9 },
-  { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,        NULL,"--refine",   NULL, "do not use bands to accelerate alignment with --refine", 9 },
-  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",      NULL,"--refine",   NULL, "set maximum allowable DP matrix size to <x> (Mb)", 9 },
+  { "--refine",  eslARG_STRING, NULL,  NULL, NULL,       NULL,   NULL,       NULL, "refine input aln w/Expectation-Maximization, save to <s>", 9 },
+  { "--gibbs",   eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, use Gibbs sampling instead of EM", 9 },
+  { "--seed",    eslARG_INT,     NULL, NULL, "n>0",      NULL,"--gibbs",    NULL, "w/--gibbs, set random number generator seed to <n>",  9 },
+  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",    NULL,"--refine","--nonbanded", "set tail loss prob for --hbanded to <x>", 9 },
+  { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, use sub CM for columns b/t HMM start/end points", 9 },
+  { "--local",   eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, align locally w.r.t the model", 9 },
+  { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,       NULL,"--refine",   NULL, "do not use bands to accelerate alignment with --refine", 9 },
+  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",     NULL,"--refine",   NULL, "set maximum allowable DP matrix size to <x> (Mb)", 9 },
+  { "--verbose", eslARG_NONE,    NULL,  NULL, NULL,      NULL,"--refine",   "-1", "w/--refine, be verbose, print intermediate alignments", 9 },
 /* Selecting the input MSA alphabet rather than autoguessing it */
   { "--rna",     eslARG_NONE,   FALSE, NULL, NULL,   ALPHOPTS,    NULL,     NULL, "input alignment is RNA sequence data", 10},
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,   ALPHOPTS,    NULL,     NULL, "input alignment is DNA sequence data", 10},
@@ -132,6 +133,11 @@ struct cfg_s {
   int           nali;		/* which # alignment this is in file */
   int           ncm_total;      /* which # CM this is that we're constructing (we may build > 1 per file) */
   ESL_RANDOMNESS *r;            /* source of randomness, only created if --gibbs enabled */
+
+  ComLog_t       *comlog;       /* the comlog, same for all CMs, cfg.comlog serves as template 
+				 * for all CMs, and is copied to each CM data structure */
+  int            argc;          /* used to create the comlog */
+  char         **argv;          /* used to create the comlog, be careful not to free this though, it's just a ptr */
 };
 
 static char usage[]  = "[-options] <cmfile output> <alignment file>";
@@ -163,7 +169,7 @@ static int    initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
 static int    select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust, int *ret_nc, int *ret_best, char *errbuf);
 static float  find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret_nc, float *ret_mindiff, char *errbuf);
 static int    MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff, int do_corig, int *ret_num_msa, ESL_MSA ***ret_cmsa, char *errbuf);
-
+static int    write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 
 int
 main(int argc, char **argv)
@@ -243,6 +249,7 @@ main(int argc, char **argv)
   cfg.cdfp       = NULL;	           /* opened (possibly) in init_cfg() */
   cfg.trfp       = NULL;	           /* opened (possibly) in init_cfg() */
   cfg.r          = NULL;	           /* created (possibly) in init_cfg() */
+  cfg.comlog     = NULL;	           /* created in init_cfg() */
 
   if (esl_opt_GetBoolean(go, "-1")) cfg.be_verbose = FALSE;
   else                              cfg.be_verbose = TRUE;        
@@ -269,6 +276,7 @@ main(int argc, char **argv)
   if (cfg.cdfp  != NULL) fclose(cfg.cdfp);
   if (cfg.trfp  != NULL) fclose(cfg.trfp);
   if (cfg.r     != NULL) esl_randomness_Destroy(cfg.r);
+  if (cfg.comlog!= NULL) FreeComLog(cfg.comlog);
 
   esl_getopts_Destroy(go);
   esl_stopwatch_Destroy(w);
@@ -288,6 +296,7 @@ main(int argc, char **argv)
  *    cfg->pri     - prior, used for all models
  *    cfg->fullmat - RIBOSUM matrix used for all models (optional)
  *    cfg->cdfp    - open file to dump MSAs to (optional)
+ *    cfg->comlog  - only allocated
  */
 static int
 init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
@@ -390,8 +399,13 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       if (cfg->r == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
     }
 
-  if (cfg->pri   == NULL) ESL_FAIL(eslEINVAL, errbuf, "alphabet initialization failed");
-  if (cfg->null  == NULL) ESL_FAIL(eslEINVAL, errbuf, "null model initialization failed");
+  /* create the comlog */
+  cfg->comlog = CreateComLog();
+  if((status = write_cmbuild_info_to_comlog(go, cfg, errbuf)) != eslOK) return status;
+
+  if (cfg->pri    == NULL) ESL_FAIL(eslEINVAL, errbuf, "alphabet initialization failed");
+  if (cfg->null   == NULL) ESL_FAIL(eslEINVAL, errbuf, "null model initialization failed");
+  if (cfg->comlog == NULL) ESL_FAIL(eslEINVAL, errbuf, "comlog initialization failed");
 
   /* with msa == NULL, output_result() prints the tabular results header, if needed */
   if (! cfg->be_verbose) output_result(go, cfg, errbuf, 0, 0, NULL, NULL);
@@ -559,7 +573,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   CM_t            *cm          = NULL;
   seqs_to_aln_t   *seqs_to_aln = NULL; 
   ESL_MSA         *msa         = NULL;
-
+  int              print_all_alignments = esl_opt_GetBoolean(go, "--verbose");
   /* check contract */
   if(input_msa       == NULL) cm_Fail("in refine_msa, input_msa passed in as NULL");
   if(input_msa->name == NULL) cm_Fail("in refine_msa, input_msa must have a name");
@@ -579,9 +593,9 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   if(cfg->be_verbose) fprintf(cfg->ofp, "iteration: %4d\n", iter);
   for(i = 0; i < nseq; i++) sc[i] = ParsetreeScore(init_cm, input_msa_tr[i], sq[i]->dsq, FALSE);
   oldscore = esl_vec_FSum(sc, nseq);
-  fprintf(cfg->ofp, "iter: %4d (input alignment)     sc %10.4f (delta: N/A)\n", iter, oldscore);
+  if(cfg->be_verbose) fprintf(cfg->ofp, "iter: %4d (input alignment)     sc %10.4f (delta: N/A)\n", iter, oldscore);
 
-  if(cfg->be_verbose) {
+  if(print_all_alignments) {
     fprintf(cfg->ofp, "INITIAL (input msa)\n");
     if((status = esl_msa_Write(stdout, input_msa, cfg->fmt)) != eslOK) cm_Fail("esl_msa_Write() failed with code: %d\n", status); 
   }
@@ -603,7 +617,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       if(cfg->be_verbose) fprintf(cfg->ofp, "iteration: %4d\n", iter);
       totscore = esl_vec_FSum(seqs_to_aln->sc, nseq);
       delta    = (totscore - oldscore) / fabs(totscore);
-      fprintf(cfg->ofp, "iter: %4d old sc %10.4f new sc %10.4f (delta: %10.4f)\n", iter, oldscore, totscore, delta);
+      if(cfg->be_verbose) fprintf(cfg->ofp, "iter: %4d old sc %10.4f new sc %10.4f (delta: %10.4f)\n", iter, oldscore, totscore, delta);
       if(delta <= threshold && delta >= 0) break; /* only way out of while(1) loop */
       oldscore = totscore;
 
@@ -615,7 +629,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       if((status = esl_strdup(msa_name, -1, &(msa->name))) != eslOK) cm_Fail("esl_strdup call failed, probably out of memory.");
       esl_msa_Digitize(msa->abc, msa);
 
-      if(cfg->be_verbose)
+      if(print_all_alignments)
 	if((status = esl_msa_Write(stdout, msa, cfg->fmt)) != eslOK) cm_Fail("esl_msa_Write() failed with code: %d\n", status); 
 
       /* 3. msa -> cm */
@@ -628,7 +642,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
     fprintf(cfg->ofp, "FINAL (iter: %d)\n", iter);
     if((status = esl_msa_Write(stdout, msa, cfg->fmt)) != eslOK) cm_Fail("esl_msa_Write() failed with code: %d\n", status); 
   }
-  /* write out final alignment */
+  /* write out final alignment to output file */
   if((status = esl_msa_Write(cfg->trfp, msa, cfg->fmt)) != eslOK) cm_Fail("esl_msa_Write() failed with code: %d\n", status); 
 
   /* if CM was in local mode for aligning input MSA seqs, make it global so we can write it out */
@@ -680,15 +694,17 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
       fprintf(cfg->ofp, "#%4s %6s %-20s %5s %5s %5s\n", "----", "------", "--------------------", "-----", "-----", "-----");
       return eslOK;
     }
-
-  if ((status = cm_Validate(cm, 0.0001, errbuf))  != eslOK) return status;
-  if ((status = CMFileWrite(cfg->cmfp, cm, esl_opt_GetBoolean(go, "--binary"))) != eslOK) return status;
+  
+  /* copy the cmbuild command info to the CM */
+  if ((status = CopyComLog(cfg->comlog, cm->comlog)) != eslOK) ESL_FAIL(eslFAIL, errbuf, "Problem copying com log info to CM. Probably out of memory.");
+  if ((status = cm_Validate(cm, 0.0001, errbuf))     != eslOK) return status;
+  if ((status = CMFileWrite(cfg->cmfp, cm, esl_opt_GetBoolean(go, "--binary"), errbuf)) != eslOK) return status;
   if (! cfg->be_verbose)	/* tabular output */
-    {                    /* #   name nseq alen M */
+    {                /* # aln cm  name nseq alen M */
       fprintf(cfg->ofp, " %4d %6d %-20s %5d %5d %5d\n",
 	      msaidx,
 	      cmidx,
-	      (msa->name != NULL) ? msa->name : "",
+	      cm->name, 
 	      msa->nseq,
 	      msa->alen,
 	      cm->clen);
@@ -708,10 +724,10 @@ check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf
     fflush(cfg->ofp); 
   }
 
-  if (esl_opt_GetBoolean(go, "--rf") && msa->rf == NULL) ESL_FAIL(eslFAIL, errbuf, "Alignment has no reference coord annotation.\n");
-  if (msa->ss_cons == NULL)                              ESL_FAIL(eslFAIL, errbuf, "Alignment did not contain consensus structure annotation.\n");
-  if (! clean_cs(msa->ss_cons, msa->alen, FALSE))        ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation\n");
-  if (esl_opt_GetBoolean(go, "--ignorant"))              strip_wuss(msa->ss_cons); /* --ignorant, remove all bp info */
+  if (esl_opt_GetBoolean(go, "--rf") && msa->rf == NULL)        ESL_FAIL(eslFAIL, errbuf, "Alignment has no reference coord annotation.\n");
+  if (msa->ss_cons == NULL)                                     ESL_FAIL(eslFAIL, errbuf, "Alignment did not contain consensus structure annotation.\n");
+  if (! clean_cs(msa->ss_cons, msa->alen, (! cfg->be_verbose))) ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation\n");
+  if (esl_opt_GetBoolean(go, "--ignorant"))                     strip_wuss(msa->ss_cons); /* --ignorant, remove all bp info */
 
   /* MSA better have a name, we named it before */
   if(msa->name == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "MSA is nameless, (we thought we named it...) shouldn't happen");
@@ -1713,3 +1729,67 @@ find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret
 
   return eslOK;
 }
+
+/* Function: write_cmbuild_info_to_comlog
+ * Date:     EPN, Mon Dec 31 10:17:21 2007
+ *
+ * Purpose:  Set the cmbuild command info and creation date info 
+ *           in a ComLog_t data structure.
+ *           clog->bcom, clog->bdate should be NULL when we enter this function.
+ *
+ * Returns:  eslOK on success, eslEINCOMPAT on contract violation.
+ */
+static int
+write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
+{
+  int status;
+  int i;
+  long seed;
+  long temp;
+  int  seedlen;
+  char *seedstr;
+
+  if(cfg->comlog->bcom != NULL)  ESL_FAIL(eslEINCOMPAT, errbuf, "write_cmbuild_info_to_comlog(), cfg->comlog->bcom is non-NULL.");
+  if(cfg->comlog->bdate != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "write_cmbuild_info_to_comlog(), cfg->comlog->bcom is non-NULL.");
+
+  /* Set the cmbuild command info, the cfg->comlog->bcom string */
+  for (i = 0; i < go->optind; i++) { /* copy all command line options, but not the command line args yet, we may need to append '--seed ' before the args */
+    esl_strcat(&(cfg->comlog->bcom), -1, go->argv[i], -1);
+    esl_strcat(&(cfg->comlog->bcom), -1, " ", 1);
+  }
+  /* if --gibbs enabled, and --seed NOT enabled, we need to append the seed info also */
+  if(esl_opt_GetBoolean(go, "--gibbs")) {
+    if(cfg->r == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "write_cmbuild_info_to_comlog(), cfg->r is NULL but --gibbs enabled, shouldn't happen.");
+    seed = esl_randomness_GetSeed(cfg->r);
+    if(esl_opt_IsDefault(go, "--seed")) {
+      temp = seed; 
+      seedlen = 1; 
+      while(temp > 0) { temp/=10; seedlen++; } /* determine length of stringized version of seed */
+      seedlen += 8; /* strlen(' --seed ') */
+
+      ESL_ALLOC(seedstr, sizeof(char) * (seedlen+1));
+      sprintf(seedstr, " --seed %ld ", seed);
+      esl_strcat((&cfg->comlog->bcom), -1, seedstr, seedlen);
+    }
+    else { /* --seed was enabled with --gibbs, we'll do a sanity check */
+      if(seed != (long) esl_opt_GetInteger(go, "--seed")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "write_cmbuild_info_to_comlog(), cfg->r's seed is %ld, but --seed was enabled with argument: %ld!, this shouldn't happen.", seed, (long) esl_opt_GetInteger(go, "--seed"));
+    }
+  }
+
+  for (i = go->optind; i < go->argc; i++) { /* copy all command line options, but not the command line args yet, we may need to append '--seed ' before the args */
+    esl_strcat(&(cfg->comlog->bcom), -1, go->argv[i], -1);
+    if(i < (go->argc-1)) esl_strcat(&(cfg->comlog->bcom), -1, " ", 1);
+  }
+
+  /* Set the cmbuild creation date, the cfg->comlog->bdate string */
+  time_t date = time(NULL);
+  if((status = esl_strdup(ctime(&date), -1, &(cfg->comlog->bdate))) != eslOK) goto ERROR;
+  esl_strchop(cfg->comlog->bdate, -1); /* doesn't return anything but eslOK */
+
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "write_cmbuild_info_to_comlog() error status: %d, probably out of memory.", status);
+  return status; 
+}
+

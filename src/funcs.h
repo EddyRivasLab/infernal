@@ -71,6 +71,9 @@ extern int   CMAllocNullModel(CM_t *cm);
 extern void  CMSetNullModel(CM_t *cm, float *null);
 extern int   CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null);
 extern int   IntMaxDigits();
+extern ComLog_t * CreateComLog();
+extern void       FreeComLog(ComLog_t *clog);
+extern int        CopyComLog(const ComLog_t *src, ComLog_t *dest);
 /*extern CM_t *DuplicateCM(CM_t *cm);*/
 
 /* from dispatch.c */
@@ -78,8 +81,6 @@ extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, 
 			      search_results_t **results, float size_limit, int *ret_flen, float *ret_sc);
 extern int DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
 			      int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r, float size_limit);
-
-
 
 /* from cm_dpalign.c */
 extern int fast_cyk_align_hb (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit,
@@ -183,9 +184,7 @@ extern void    CMFileClose(CMFILE *cmf);
 extern void    CMFileRewind(CMFILE *cmf);
 extern int     CMFilePositionByIndex(CMFILE *cmf, int idx);
 extern int     CMFilePositionByKey(CMFILE *cmf, char *key);
-extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary);
-
-/* from cm_masks.c */
+extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary, char *errbuf);
 
 /* from cm_modelconfig.c */
 extern int   ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax);
@@ -220,7 +219,6 @@ extern int  cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detac
 extern int  cm_check_before_detaching(CM_t *cm, int insert1, int insert2);
 extern int  cm_detach_state(CM_t *cm, int insert1, int insert2);
 extern int  clean_cs(char *cs, int alen, int be_quiet);
-
 
 /* from cm_mx.c */
 extern CM_HB_MX *       cm_hb_mx_Create            (int M);
@@ -538,6 +536,9 @@ extern int cmcalibrate_cp9_gumbel_results_MPIUnpack(char *buf, int n, int *pos, 
 extern int cmcalibrate_cp9_filter_results_MPIPackSize(int nseq, int M, MPI_Comm comm, int *ret_n);;
 extern int cmcalibrate_cp9_filter_results_MPIPack(float **vscAA, float *vit_cp9scA, float *fwd_cp9scA, int *partA, int nseq, int M, char *buf, int n, int *position, MPI_Comm comm);
 extern int cmcalibrate_cp9_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, int M, float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, int **ret_partA, int *ret_nseq);
+extern int comlog_MPIPackSize(ComLog_t *gum, MPI_Comm comm, int *ret_n);
+extern int comlog_MPIPack    (ComLog_t *gum, char *buf, int n, int *position, MPI_Comm comm);
+extern int comlog_MPIUnpack  (char *buf, int n, int *pos, MPI_Comm comm, ComLog_t **ret_comlog);
 
 #endif
 
@@ -611,12 +612,6 @@ extern int        GumModeToFthrMode(int gum_mode);
 extern GumbelInfo_t *CreateGumbelInfo();
 extern void          SetGumbelInfo(GumbelInfo_t *gum, double mu, double lambda, int L, int N);
 extern GumbelInfo_t *DuplicateGumbelInfo(GumbelInfo_t *src);
-
-/*extern int        CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest);
-  extern int        CopyCMStatsGumbel(CMStats_t *src, CMStats_t *dest);
-  extern int        CopyCMStats(CMStats_t *src, CMStats_t *dest);
-  extern int        debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr);*/
-
 
 /* from truncyk.c */
 float TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr);

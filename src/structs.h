@@ -1226,6 +1226,23 @@ typedef struct cmstats_s {
 #define FTHR_CM_LI 3
 #define FTHR_NMODES 4
 
+/* Structure ComLog_t: command line info used to build/calibrate a CM.
+ * 
+ * bcom, bdate must be non-NULL. 
+ * ccom1, cdate1 is non-NULL only if at least 1 cmcalibrate call was performed for this cm
+ * ccom2, cdate2 is non-NULL only if at > 1 cmcalibrate calls were performed for this cm AND
+ * the most recent cmcalibrate call had --filonly enabled (meaning only filter thresholds were rewritten).
+ * 
+ */
+typedef struct comlog_s {
+  char     *bcom;           /* command line used for cmbuild, if --gibbs used w/o --seed, --seed will be artificially appended */
+  char     *bdate;          /* date of cmbuild call */
+  char     *ccom1;          /* command line used for first of up to two cmcalibrate calls, if -s not used, -s will be artificially appended */
+  char     *cdate1;         /* date of first of up to two cmcalibrate call */
+  char     *ccom2;          /* command line used for second of up to two cmcalibrate calls, if -s not used, -s will be artificially appended */
+  char     *cdate2;         /* date of second of up to two cmcalibrate call */
+} ComLog_t;
+
 /* Structure: CM_t
  * Incept:    SRE, 9 Mar 2000 [San Carlos CA]
  * 
@@ -1246,10 +1263,9 @@ typedef struct cm_s {
   char *annote;         /*   consensus column annotation line, or NULL     */ /* ONLY PARTIALLY IMPLEMENTED, BEWARE */
 
   /* new for 1.0 */
-  char  *comlog;	/*   command line(s) that built model      (mandatory) */ /* String, \0-terminated */
+  ComLog_t *comlog;	/*   creation dates and command line(s) that built/calibrated the model (mandatory) */
   int    nseq;		/*   number of training sequences          (mandatory) */
   float  eff_nseq;	/*   effective number of seqs (<= nseq)    (mandatory) */
-  char  *ctime;		/*   creation date                         (mandatory) */
   float  ga;	        /*   per-seq/per-domain gathering thresholds (bits) (CMH_GA) */
   float  tc;            /*   per-seq/per-domain trusted cutoff (bits)       (CMH_TC) */
   float  nc;	        /*   per-seq/per-domain noise cutoff (bits)         (CMH_NC) */
@@ -1321,7 +1337,6 @@ typedef struct cm_s {
   float  el_selfsc;     /* score of a self transition in the EL state
 			 * the EL state emits only on self transition (EPN 11.15.05)*/
   int   iel_selfsc;     /* scaled int version of el_selfsc         */
-
 
   /* DP matrices and some auxiliary info for DP algorithms */
   ScanMatrix_t *smx;     /* matrices, info for CYK/Inside scans with this CM */

@@ -4449,6 +4449,8 @@ SampleFromInsideHB(ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DSQ *dsq, int 
     }
   }
   esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
+
+  *ret_tr = tr; /* contract checked ret_tr was non-NULL */
   if(ret_sc != NULL) *ret_sc = fsc;
   ESL_DPRINTF1(("SampleFromInsideHB() return sc: %f\n", fsc));
   return eslOK;
