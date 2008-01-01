@@ -22,12 +22,12 @@
 
 static matrix_t *setup_matrix (int size);
 static float simple_identity(const ESL_ALPHABET *abc, char *s1, char *s2);
-/*static void print_matrix (FILE *fp, fullmat_t *fullmat);
-static float get_min_alpha_beta_sum (fullmat_t *fullmat);
-static void FreeMat(fullmat_t *fullmat);
-static int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa);
-static void count_matrix (ESL_MSA *msa, fullmat_t *fullmat, double *background_nt, int cutoff_perc, int product_weights);
-static int unpaired_res (int i);*/
+/*
+  static void print_matrix (FILE *fp, fullmat_t *fullmat);
+  static float get_min_alpha_beta_sum (fullmat_t *fullmat);
+  static void count_matrix (ESL_MSA *msa, fullmat_t *fullmat, double *background_nt, int cutoff_perc, int product_weights);
+  static int unpaired_res (int i);
+*/
 
 /*
  * Maps c as follows:
@@ -847,8 +847,8 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa)
   char      *cp;          /* tmp char pointer for finding c in degen_string */
   char       c_m;         /* tmp char for current bp mate's degeneracy, uppercase */
   char      *cp_m;        /* tmp char pointer for finding c_m in degen_string */
-  char degen_string[12] = "XRYMKSWHBVDN";
-  char rna_string[4] =    "ACGU";
+  char degen_string[13] = "XRYMKSWHBVDN\0";
+  char rna_string[5] =    "ACGU\0";
   int  **degen_mx;
   float      *unpaired_marginals;
   float      *paired_marginals;
@@ -860,15 +860,15 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa)
   int        argmax;    
   int        mate;       /* used as ct[apos-1] */
   int        status;
-  int        msa_entered_digitized;
-  /* Check the contract. */
-  if(!(fullmat->probs_flag)) ESL_EXCEPTION(eslEINVAL, "in ribosum_MSA_resolve_degeneracies(), matrix is not in probs mode");
-  if(fullmat->scores_flag) ESL_EXCEPTION(eslEINVAL, "in ribosum_MSA_resolve_degeneracies(), matrix is in scores mode");
-  if(msa->nseq != 1) ESL_EXCEPTION(eslEINVAL, "MSA does not have exactly 1 seq"); 
-  if(fullmat->abc->type != eslRNA) ESL_EXCEPTION(eslEINVAL, " matrix alphabet not RNA");
-  if(msa->abc->type != eslRNA && msa->abc->type != eslDNA) ESL_EXCEPTION(eslEINVAL, " MSA alphabet not DNA or RNA");
+  ESL_ALPHABET *msa_abc = msa->abc; /* when we textize this, msa->abc will be set to NULL! */
 
-  msa_entered_digitized = msa->flags & eslMSA_DIGITAL;
+  /* Check the contract. */
+  if(!(fullmat->probs_flag))                               ESL_EXCEPTION(eslEINVAL, "in ribosum_MSA_resolve_degeneracies(), matrix is not in probs mode");
+  if(fullmat->scores_flag)                                 ESL_EXCEPTION(eslEINVAL, "in ribosum_MSA_resolve_degeneracies(), matrix is in scores mode");
+  if(msa->nseq != 1)                                       ESL_EXCEPTION(eslEINVAL, "MSA does not have exactly 1 seq"); 
+  if(fullmat->abc->type != eslRNA)                         ESL_EXCEPTION(eslEINVAL, " matrix alphabet not RNA");
+  if(! (msa->flags & eslMSA_DIGITAL))                       ESL_EXCEPTION(eslEINVAL, " MSA is not digitized");
+  if(msa->abc->type != eslRNA && msa->abc->type != eslDNA) ESL_EXCEPTION(eslEINVAL, " MSA alphabet not DNA or RNA");
   
   /*printf("in ribosum_MSA_resolve_degeneracies()\n");*/
   
@@ -935,22 +935,23 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa)
   /* get ct array, indexed 1..alen while apos is 0..alen-1 */
   ESL_ALLOC(ct, (msa->alen+1) * sizeof(int));
   esl_wuss2ct(msa->ss_cons, msa->alen, ct);  
-
+  
   ESL_ALLOC(aseq, sizeof(char) * (msa->alen+1));
-  if(msa_entered_digitized) { 
-    status = esl_msa_Textize(msa);
-    if(status == eslECORRUPT)      cm_Fail("esl_msa_Textize() returned status: %d, the msa must contain invalid digitized chars.", status);
-    else if(status != eslOK) goto ERROR;
-  }
+  status = esl_msa_Textize(msa);
+  if(status == eslECORRUPT)      cm_Fail("esl_msa_Textize() returned status: %d, the msa must contain invalid digitized chars.", status);
+  else if(status != eslOK) goto ERROR;
+
   /* remember we only have 1 seq in the MSA */
   for(apos = 0; apos < msa->alen; apos++)
     {
       if (esl_abc_CIsGap(fullmat->abc, msa->aseq[0][apos])) continue; /* we can still have gaps in 1 seq MSA, they'll
-							 * be dealt with (ignored) in 
-							 * modelmaker.c:HandModelMaker() */
-      mate = ct[apos];
-      if(mate != 0 && (mate) < apos) continue; /* we've already dealt with that guy */ 
-      if(mate != 0 && esl_abc_CIsGap(msa->abc, msa->aseq[0][(mate-1)])) mate = 0; /* pretend he's SS */
+								       * be dealt with (ignored) in 
+								       * modelmaker.c:HandModelMaker() */
+      mate = ct[(apos+1)]; /* apos is 0..alen-1, ct is 1..alen, so mate will be 1..alen now */
+      if(mate != 0 && esl_abc_CIsGap(msa_abc, msa->aseq[0][(mate-1)])) mate = 0; 
+      /* apos is a base paired res, but mate is a gap, pretend apos is SS for our purposes here */
+      else if(mate != 0 && ((mate-1) < apos)) continue; 
+      /* apos is a base paired res, but we've already changed him to an unambiguous res when we changed his mate (which was not a gap) */
 
       c = toupper(msa->aseq[0][apos]);
       if(c == 'T') c = 'U'; 
@@ -987,7 +988,7 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa)
 		  */
 		  if((cp_m = strchr(degen_string, c_m)) == NULL) ESL_XEXCEPTION(eslEINVAL, "character is not ACGTU or a recognized ambiguity code");
 		  dpos_m = cp_m-degen_string;
-		  /* we know that mate-1 > apos, we continued above if that was false */
+		  /* we know that mate != 0 and (mate-1) >= apos, we continued above if that was false */
 		  idx = 0;
 		  for(i = 0; i < (fullmat->abc->K); i++)
 		    for(j = 0; j < (fullmat->abc->K); j++)
@@ -1061,9 +1062,25 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa)
 	    }	      
 	}
     }
-  if(msa_entered_digitized) {
-    if((status = esl_msa_Digitize(msa->abc, msa)) != eslOK) goto ERROR;
+  /* go through the sequence again, there should be no ambiguities now */
+  for(apos = 0; apos < msa->alen; apos++) {
+    if(esl_abc_CIsGap(msa_abc, msa->aseq[0][apos])) continue;
+    c = toupper(msa->aseq[0][apos]);
+    if(c == 'T') c = 'U'; 
+    cp = strchr(rna_string, c);
+    if(cp == NULL) ESL_XEXCEPTION(eslEINVAL, "ribosum_MSA_resolve_degeneracies(), second pass check character %d (%c) is still ambiguous!\n", apos, c);
   }
+
+  if((status = esl_msa_Digitize(msa_abc, msa)) != eslOK) goto ERROR;
+  free(unpaired_marginals);
+  free(paired_marginals);
+  free(cur_unpaired_marginals);
+  free(cur_paired_marginals);
+  for(i = 0; i < 12; i++) free(degen_mx[i]);
+  free(degen_mx);
+  free(ct);
+  free(aseq);
+
   return eslOK;
 
  ERROR:

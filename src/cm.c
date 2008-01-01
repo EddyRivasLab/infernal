@@ -453,7 +453,7 @@ CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null)
   int status;
   float *null = NULL;
   FILE *fp;
-  char *buf;
+  char *buf = NULL;
   char *s;
   int   n;			/* length of buf */
   int   x;
@@ -462,7 +462,6 @@ CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null)
   float sum;
 
   ESL_ALLOC(null, sizeof(float) * abc->K);
-  buf = NULL;
   n   = 0;
   sum = 0.;
   /* Expects a file with cm->abc->K lines that don't begin with "# ".
@@ -493,11 +492,13 @@ CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null)
   esl_vec_FNorm(null, abc->K);
     
   *ret_null = null;
+  if(buf  != NULL) free(buf);
   fclose(fp);
   return eslOK;
 
  ERROR:
   fclose(fp);
+  if(buf  != NULL) free(buf);
   if(null != NULL) free(null);
   return status;
 }
@@ -587,7 +588,7 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 		      for (x=0; x<cm->abc->K; x++) 
 			for (y=0; y<cm->abc->K; y++) 
 			  printf("cm->e[v:%d][%d]: %f\n", v, (x*cm->abc->K+y), cm->e[v][(x*cm->abc->K+y)]);
-		      ESL_EXCEPTION(eslEINVAL, "cm->e[v:%d] a MATP_MP has > 1 non-zero count"); 
+		      ESL_EXCEPTION(eslEINVAL, "cm->e[v:%d] a MATP_MP has > 1 non-zero count", v); 
 		    }
 		  cur_emission = numbered_basepair(cm->abc->sym[x], cm->abc->sym[y]);
 		  found_ct_flag = TRUE;
@@ -602,7 +603,10 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 	  for (x=0; x<cm->abc->K; x++) 
 	    if (fabs(cm->e[v][x] - 0.) > thresh) 
 		{
-		  if(found_ct_flag) ESL_EXCEPTION(eslEINVAL, "cm->e[v:%d] a MAT{L,R}_M{L,R} has > 1 non-zero count"); 
+		  if(found_ct_flag) { 
+		    for (y=0; y<cm->abc->K; y++) printf("cm->e[v:%d][%d]: %f\n", v, x, cm->e[v][x]);
+		    ESL_EXCEPTION(eslEINVAL, "cm->e[v:%d] a MAT{L,R}_M{L,R} has > 1 non-zero count", v); 
+		  }
 		  cur_emission = numbered_nucleotide(cm->abc->sym[x]);
 		  found_ct_flag = TRUE;
 		}

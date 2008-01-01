@@ -555,7 +555,9 @@ extern int numbered_nucleotide (char c);
 extern int numbered_basepair (char c, char d);
 extern FILE *MatFileOpen (char *matfile);
 extern fullmat_t *ReadMatrix(const ESL_ALPHABET *abc, FILE *matfp);
+extern int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa);
 extern int ribosum_calc_targets(fullmat_t *fullmat);
+extern void FreeMat(fullmat_t *fullmat);
 
 /* from searchinfo.c */
 extern int  CreateSearchInfo(CM_t *cm, int cutoff_type, float sc_cutoff, float e_cutoff);

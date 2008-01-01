@@ -143,10 +143,8 @@ struct cfg_s {
 static char usage[]  = "[-options] <cmfile output> <alignment file>";
 static char banner[] = "build RNA covariance model(s) from alignment";
 
-static int  init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
-
-static void  master (const ESL_GETOPTS *go, struct cfg_s *cfg);
-
+static int    init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
+static void   master (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static int    process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t ***ret_msa_tr);
 static int    output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, int cmidx, ESL_MSA *msa, CM_t *cm);
 static int    check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
@@ -326,10 +324,8 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     else if (status != eslOK)       ESL_FAIL(status, errbuf, "Failed to read alignment file %s\n", cfg->alifile);
   }
   /* We can read DNA/RNA but internally we treat it as RNA */
-  if(! (type == eslRNA || type == eslDNA))
-    ESL_FAIL(status, errbuf, "Alphabet is not DNA/RNA in %s\n", cfg->alifile);
-  if((cfg->abc = esl_alphabet_Create(eslRNA)) == NULL)
-    ESL_FAIL(status, errbuf, "Alphabet could not be created.\n");
+  if(! (type == eslRNA || type == eslDNA))              ESL_FAIL(status, errbuf, "Alphabet is not DNA/RNA in %s\n", cfg->alifile);
+  if((cfg->abc = esl_alphabet_Create(eslRNA)) == NULL)  ESL_FAIL(status, errbuf, "Alphabet could not be created.\n");
   esl_msafile_SetDigital(cfg->afp, cfg->abc);
 
   /* open CM file for writing */
@@ -485,7 +481,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    fputs("", cfg->ofp);
 	    fflush(stdout);
 	  }
-	  
+
 	  /* msa -> cm */
 	  if ((status = process_workunit(go, cfg, errbuf, msa, &cm, &tr)) != eslOK) cm_Fail(errbuf);
 	  /* optionally, iterative over cm -> parsetrees -> msa -> cm ... until convergence, via EM (or Gibbs - not yet, but eventually) */
@@ -515,6 +511,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
     }
   if(do_cluster) free(cmsa);
+  if(cfg->fullmat != NULL) FreeMat(cfg->fullmat);
   return;
 }
 
@@ -729,6 +726,15 @@ check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf
   if (! clean_cs(msa->ss_cons, msa->alen, (! cfg->be_verbose))) ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation\n");
   if (esl_opt_GetBoolean(go, "--ignorant"))                     strip_wuss(msa->ss_cons); /* --ignorant, remove all bp info */
 
+  if (! esl_opt_IsDefault(go, "--rsearch")) { 
+    if(msa->nseq != 1) ESL_FAIL(eslEINCOMPAT, errbuf,"with --rsearch option, all of the input alignments must have exactly 1 sequence");
+    /* We can't have ambiguous bases in the MSA, only A,C,G,U will do. The reason is that rsearch_CMProbifyEmissions() expects each
+     * cm->e prob vector to have exactly 1.0 count for exactly 1 singlet or base pair. If we have ambiguous residues we'll have a 
+     * fraction of a count for more than one residue/base pair for some v. 
+     * ribosum_MSA_resolve_degeneracies() replaces ambiguous bases with most likely compatible base */
+    ribosum_MSA_resolve_degeneracies(cfg->fullmat, msa); /* cm_Fails() if some error is encountered */
+  }
+
   /* MSA better have a name, we named it before */
   if(msa->name == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "MSA is nameless, (we thought we named it...) shouldn't happen");
 
@@ -785,7 +791,7 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
   if(cfg->be_verbose) fprintf(cfg->ofp, "done.\n");
   
   /* set the CM's null model, if rsearch mode, use the bg probs used to calc RIBOSUM */
-  if(esl_opt_GetString(go, "--rsearch") != NULL) CMSetNullModel(cm, cfg->fullmat->g); 
+  if(! esl_opt_IsDefault(go, "--rsearch")) CMSetNullModel(cm, cfg->fullmat->g); 
   else CMSetNullModel(cm, cfg->null); 
   
   /* if we're using RSEARCH emissions (--rsearch) set the flag */
@@ -976,11 +982,10 @@ parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t 
     fflush(cfg->ofp);
   }
   PriorifyCM(cm, prior);
-  if(esl_opt_GetString(go, "--rsearch") != NULL)
-    {
-      /*rsearch_CMProbifyEmissions(cm, fullmat); *//* use those probs to set CM probs from cts */
-      /*debug_print_cm_params(cm);*/
-    }
+  if(! (esl_opt_IsDefault(go, "--rsearch"))) {
+    rsearch_CMProbifyEmissions(cm, cfg->fullmat); /* use those probs to set CM probs from cts */
+    /*debug_print_cm_params(cm);*/
+  }
   
   if(!esl_opt_GetBoolean(go, "--nodetach")) /* Detach dual inserts where appropriate, if
 					     * we get here we've already checked these states */
@@ -1747,7 +1752,7 @@ write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *err
   long seed;
   long temp;
   int  seedlen;
-  char *seedstr;
+  char *seedstr = NULL;
 
   if(cfg->comlog->bcom != NULL)  ESL_FAIL(eslEINCOMPAT, errbuf, "write_cmbuild_info_to_comlog(), cfg->comlog->bcom is non-NULL.");
   if(cfg->comlog->bdate != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "write_cmbuild_info_to_comlog(), cfg->comlog->bcom is non-NULL.");
@@ -1786,9 +1791,11 @@ write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *err
   if((status = esl_strdup(ctime(&date), -1, &(cfg->comlog->bdate))) != eslOK) goto ERROR;
   esl_strchop(cfg->comlog->bdate, -1); /* doesn't return anything but eslOK */
 
+  if(seedstr != NULL) free(seedstr);
   return eslOK;
 
  ERROR:
+  if(seedstr != NULL) free(seedstr);
   ESL_FAIL(status, errbuf, "write_cmbuild_info_to_comlog() error status: %d, probably out of memory.", status);
   return status; 
 }
