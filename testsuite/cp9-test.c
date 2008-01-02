@@ -34,7 +34,7 @@ static ESL_OPTIONS options[] = {
   { "-s",        eslARG_INT,     NULL, NULL, "n>0", NULL,  NULL, NULL, "set random number seed to <n>",                  0 },
   { "-t",        eslARG_REAL,   "1E-4",NULL, "x>0.",NULL,  NULL, NULL, "probability threshold for reporting violations", 0 },
   { "--psionly", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "only check that psi and phi values match",       1 },
-  { "--nseq",    eslARG_INT,   "50000",NULL, "n>=10000", NULL,  NULL, NULL, "use <n> samples to build CP9 HMM from",          1 },
+  { "--nseq",    eslARG_INT,  "500000",NULL, "n>=1000", NULL,  NULL, NULL, "use <n> samples to build CP9 HMM from",          1 },
   { "--chi",     eslARG_REAL,   ".01", NULL, "x>0.",NULL,  NULL, NULL, "fail sampling check if any chi-square test < <f>", 1},
   { "--dlev",    eslARG_INT,     NULL, NULL, "0<n<4",NULL, NULL, NULL, "set verbosity of debugging print statements to <n>", 1},
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },

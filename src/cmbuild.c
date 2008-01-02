@@ -41,18 +41,18 @@
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
-  { "-n",        eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "name the CM(s) <s>, (only if single aln in file", 1 },
   { "-o",        eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "direct summary output to file <f>, not stdout", 1 },
+  { "-n",        eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "name the CM(s) <s>, (only if single aln in file)", 1 },
   { "-A",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "append this CM to <cmfile>",             1 },
   { "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "force; allow overwriting of <cmfile>",   1 },
   { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "use tabular output summary format, 1 line per CM", 1 },
+/* Expert model construction options */
+  { "--rsearch", eslARG_INFILE, NULL,  NULL, NULL,      NULL, "--enone",        NULL,  "use RSEARCH parameterization with RIBOSUM matrix file <s>", 2 }, 
   { "--binary",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "save the model(s) in binary format",     2 },
+  { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s> (Stockholm or Pfam)",  2 },
   { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--rsearch", "use reference coordinate annotation to specify consensus", 2 },
-  //  { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s>, not Stockholm",  2 },
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,      NULL,  "--rsearch", "fraction of gaps to allow in a consensus column [0..1]", 2 },
-  { "--rsearch", eslARG_STRING, NULL,  NULL, NULL,      NULL, "--enone",        NULL,  "use RSEARCH parameterization with RIBOSUM matrix file <s>", 2 }, 
   { "--elself",  eslARG_REAL,  "0.94", NULL, "0<=x<=1", NULL,      NULL,        NULL, "set EL self transition prob to <x>", 2 },
-  { "--nodetach",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "do not 'detach' one of two inserts that model same column", 2 },
 /* Alternate relative sequence weighting strategies */
   /* --wme not implemented in Infernal yet (b/c it's not in HMMER3) */
   { "--wgsc",    eslARG_NONE,"default",NULL, NULL,    WGTOPTS,    NULL,      NULL, "Gerstein/Sonnhammer/Chothia tree weights",         3},
@@ -68,35 +68,35 @@ static ESL_OPTIONS options[] = {
   { "--ere",     eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set target relative entropy to <x>",      4},
   { "--eX",      eslARG_REAL,  "6.0",  NULL,"x>0",       NULL, "--eent",  "--ere", "for --eent: set minimum total rel ent param to <x>",  4}, 
 /* Verbose output files */
-  { "--cfile",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save count vectors to file <s>", 5 },
-  { "--cmtbl",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tabular description of CM topology to file <s>", 5 },
-  { "--emap",    eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save consensus emit map to file <s>", 5 },
-  { "--gtree",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tree description of master tree to file <s>", 5 },
-  { "--gtbl",    eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tabular description of master tree to file <s>", 5 },
-  { "--tfile",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence tracebacks to file <s>", 5 },
-  { "--bfile",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save bands to file <f>, which can be read by cmsearch", 5 },
+  { "--cfile",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save count vectors to file <s>", 5 },
+  { "--cmtbl",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tabular description of CM topology to file <s>", 5 },
+  { "--emap",    eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save consensus emit map to file <s>", 5 },
+  { "--gtree",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tree description of master tree to file <s>", 5 },
+  { "--gtbl",    eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tabular description of master tree to file <s>", 5 },
+  { "--tfile",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence tracebacks to file <s>", 5 },
 /* Debugging/experimentation */
   { "--nobalance",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "don't rebalance the CM; number in strict preorder", 6 },
-  { "--regress",  eslARG_STRING, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test information to file <s>", 6 },  
+  { "--regress",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test information to file <s>", 6 },  
   { "--ignorant", eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "strip the structural info from input alignment", 6 },
+  { "--nodetach",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "do not 'detach' one of two inserts that model same column", 6 },
 /* Customizing null model or priors */
-  { "--null",    eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read null (random sequence) model from file <s>", 7 },
-  { "--prior",   eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read priors from file <s>", 7 },
+  { "--null",    eslARG_INFILE,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read null (random sequence) model from file <s>", 7 },
+  { "--prior",   eslARG_INFILE,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read priors from file <s>", 7 },
 /* Building multiple CMs after clustering input MSA */
-  { "--ctarget", eslARG_INT,    "0",   NULL, "n>=0",    NULL,      NULL,    "--call", "build (at most) <n> CMs by partitioning MSA into <n> clusters", 8 },
-  { "--cmindiff",eslARG_REAL,   "0.",  NULL,"0.<=x<=1.",NULL,      NULL,    "--call", "min difference b/t 2 clusters is <x>, each cluster -> CM", 8 }, 
+  { "--ctarget", eslARG_INT,   NULL,   NULL, "n>0" ,    NULL,      NULL,    "--call", "build (at most) <n> CMs by partitioning MSA into <n> clusters", 8 },
+  { "--cmaxid",  eslARG_REAL,  NULL,   NULL,"0.<x<1.",  NULL,      NULL,    "--call", "max fractional id b/t 2 clusters is <x>, each cluster -> CM", 8 }, 
   { "--call",    eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "build a separate CM from every seq in MSA", 8 },
   { "--corig",   eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "build an additional CM from the original, full MSA", 8 }, 
-  { "--cdump",   eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "dump the MSA for each cluster (CM) to file <s>", 8 },
+  { "--cdump",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump the MSA for each cluster (CM) to file <s>", 8 },
 /* Refining the seed alignment */
-  { "--refine",  eslARG_STRING, NULL,  NULL, NULL,       NULL,   NULL,       NULL, "refine input aln w/Expectation-Maximization, save to <s>", 9 },
+  { "--refine",  eslARG_OUTFILE, NULL, NULL, NULL,       NULL,   NULL,       NULL, "refine input aln w/Expectation-Maximization, save to <s>", 9 },
   { "--gibbs",   eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, use Gibbs sampling instead of EM", 9 },
-  { "--seed",    eslARG_INT,     NULL, NULL, "n>0",      NULL,"--gibbs",    NULL, "w/--gibbs, set random number generator seed to <n>",  9 },
-  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",    NULL,"--refine","--nonbanded", "set tail loss prob for --hbanded to <x>", 9 },
+  { "-s",        eslARG_INT,     NULL, NULL, "n>0",      NULL,"--gibbs",    NULL, "w/--gibbs, set random number generator seed to <n>",  9 },
+  { "-l",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, align locally w.r.t the model", 9 },
   { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, use sub CM for columns b/t HMM start/end points", 9 },
-  { "--local",   eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, align locally w.r.t the model", 9 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,       NULL,"--refine",   NULL, "do not use bands to accelerate alignment with --refine", 9 },
-  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",     NULL,"--refine",   NULL, "set maximum allowable DP matrix size to <x> (Mb)", 9 },
+  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",    NULL,"--refine","--nonbanded", "set tail loss prob for --hbanded to <x>", 9 },
+  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",     NULL,"--refine",   NULL, "set maximum allowable DP matrix size to <x> Mb", 9 },
   { "--verbose", eslARG_NONE,    NULL,  NULL, NULL,      NULL,"--refine",   "-1", "w/--refine, be verbose, print intermediate alignments", 9 },
 /* Selecting the input MSA alphabet rather than autoguessing it */
   { "--rna",     eslARG_NONE,   FALSE, NULL, NULL,   ALPHOPTS,    NULL,     NULL, "input alignment is RNA sequence data", 10},
@@ -166,7 +166,7 @@ static int    initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
 /* functions for dividing input MSA into clusters */
 static int    select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust, int *ret_nc, int *ret_best, char *errbuf);
 static float  find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret_nc, float *ret_mindiff, char *errbuf);
-static int    MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff, int do_corig, int *ret_num_msa, ESL_MSA ***ret_cmsa, char *errbuf);
+static int    MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, int target_nc, int do_orig, int *ret_num_msa, ESL_MSA ***ret_cmsa, char *errbuf);
 static int    write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 
 int
@@ -236,7 +236,6 @@ main(int argc, char **argv)
    */
   cfg.ofp        = NULL;	           /* opened in init_cfg() */
   cfg.alifile    = esl_opt_GetArg(go, 2);
-  cfg.fmt        = eslMSAFILE_UNKNOWN;     /* autodetect alignment format by default. */ 
   cfg.afp        = NULL;	           /* created in init_cfg() */
   cfg.abc        = NULL;	           /* created in init_cfg() */
   cfg.cmfile     = esl_opt_GetArg(go, 1); 
@@ -248,6 +247,13 @@ main(int argc, char **argv)
   cfg.trfp       = NULL;	           /* opened (possibly) in init_cfg() */
   cfg.r          = NULL;	           /* created (possibly) in init_cfg() */
   cfg.comlog     = NULL;	           /* created in init_cfg() */
+
+  if   (esl_opt_IsDefault(go, "--informat")) cfg.fmt = eslMSAFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
+  else { 
+    cfg.fmt = esl_sqio_FormatCode(esl_opt_GetString(go, "--informat"));
+    if(cfg.fmt == eslSQFILE_UNKNOWN)                                  cm_Fail("Can't recognize sequence file format: %s. valid options are: stockholm or pfam\n", esl_opt_GetString(go, "--informat"));
+    if(cfg.fmt != eslMSAFILE_STOCKHOLM && cfg.fmt != eslMSAFILE_PFAM) cm_Fail("Sequence file format: %s is not accepted by cmbuild, valid options are: stockholm or pfam\n", esl_opt_GetString(go, "--informat"));
+  }
 
   if (esl_opt_GetBoolean(go, "-1")) cfg.be_verbose = FALSE;
   else                              cfg.be_verbose = TRUE;        
@@ -375,9 +381,16 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   /* if --cdump enabled, open output file for cluster MSAs */
   if (esl_opt_GetString(go, "--cdump") != NULL)
     {
+      /* check to make sure there's a reason for this option, --cmaxid, --ctarget or --call MUST also be enabled */
+      if((esl_opt_IsDefault(go, "--ctarget")) && (esl_opt_IsDefault(go, "--cmaxid")) && (esl_opt_IsDefault(go, "--call")))
+	cm_Fail("--cdump only makes sense in combination with --ctarget, --cmaxid, OR --call");
       if ((cfg->cdfp = fopen(esl_opt_GetString(go, "--cdump"), "w")) == NULL)
 	cm_Fail("Failed to open output file %s for writing MSAs to", esl_opt_GetString(go, "--cdump"));
     }
+  /* if --corig enabled, make sure either --cmaxid, --ctarget, or --call also enabled */
+  if (esl_opt_GetBoolean(go, "--corig"))
+    if((esl_opt_IsDefault(go, "--ctarget")) && (esl_opt_IsDefault(go, "--cmaxid")) && (esl_opt_IsDefault(go, "--call")))
+      cm_Fail("--corig only makes sense in combination with --ctarget, --cmaxid, OR --call");
 
   /* if --refine enabled, open output file for refined MSAs */
   if (esl_opt_GetString(go, "--refine") != NULL)
@@ -389,8 +402,8 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if(esl_opt_GetBoolean(go, "--gibbs"))
     {
       /* create RNG */
-      if (! esl_opt_IsDefault(go, "--seed")) 
-	cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "--seed"));
+      if (! esl_opt_IsDefault(go, "-s")) 
+	cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
       else cfg->r = esl_randomness_CreateTimeseeded();
       if (cfg->r == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
     }
@@ -429,7 +442,12 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int          i = 0;
   int      niter = 0;
   /* cluster option related variables */
-  int          do_cluster; /* TRUE if --ctarget || --cmindiff || --call */
+  int          do_cluster; /* TRUE if --ctarget || --cmaxid || --call */
+  int          do_ctarget; /* TRUE if --ctarget */
+  int          do_cmindiff; /* TRUE if --cmaxid  */
+  int          do_call;    /* TRUE if --call */
+  int          nc;         /* number of clusters, only != 0 if do_ctarget */
+  float        mindiff;    /* minimum fractional diff b/t clusters, only != 0. if do_cmindiff */
   int          ncm = 1;    /* number of CMs to be built for current MSA */
   int          c   = 0;    /* counter over CMs built for a single MSA */
   ESL_MSA    **cmsa;       /* pointer to cluster MSAs to build CMs from */
@@ -439,10 +457,14 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   cfg->nali = 0;
   cfg->ncm_total = 0;
 
-  do_cluster = FALSE;
-  if((esl_opt_GetInteger(go, "--ctarget"))  || (esl_opt_GetReal   (go, "--cmindiff")) || 
-     (esl_opt_GetBoolean(go, "--call")))
-    do_cluster = TRUE;
+  do_ctarget  = (esl_opt_IsDefault(go, "--ctarget")) ? FALSE : TRUE;
+  do_cmindiff = (esl_opt_IsDefault(go, "--cmaxid"))  ? FALSE : TRUE;
+  do_call     = esl_opt_GetBoolean(go, "--call");
+  do_cluster = (do_ctarget || do_cmindiff || do_call) ? TRUE : FALSE;
+  if((do_ctarget + do_cmindiff + do_call) > TRUE) cm_Fail("More than one of --ctarget, --cmaxid, --call were enabled, shouldn't happen.");
+
+  nc      = do_ctarget  ? esl_opt_GetInteger(go, "--ctarget")    : 0;
+  mindiff = do_cmindiff ? (1. - esl_opt_GetReal(go, "--cmaxid")) : 0.;
 
   while ((status = esl_msa_Read(cfg->afp, &msa)) != eslEOF)
     {
@@ -458,8 +480,8 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       if(do_cluster) /* divide input MSA into clusters, and build CM from each cluster */
 	{
-	  if((status = MSADivide(msa, esl_opt_GetBoolean(go, "--call"), esl_opt_GetInteger(go, "--ctarget"), 
-				 esl_opt_GetReal(go, "--cmindiff"), esl_opt_GetBoolean(go, "--corig"), &ncm, &cmsa, errbuf)) != eslOK) cm_Fail(errbuf);
+	  if((status = MSADivide(msa, do_call, do_cmindiff, do_ctarget, mindiff, nc,
+				 esl_opt_GetBoolean(go, "--corig"), &ncm, &cmsa, errbuf)) != eslOK) cm_Fail(errbuf);
 	  esl_msa_Destroy(msa); /* we've copied the master msa into cmsa[ncm], we can delete this copy */
 	}
       for(c = 0; c < ncm; c++)
@@ -495,9 +517,11 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* output cm */
 	  if ((status = output_result(go, cfg, errbuf, cfg->nali, cfg->ncm_total, msa,  cm)) != eslOK) cm_Fail(errbuf);
 	  
-	  if(cfg->be_verbose) SummarizeCM(cfg->ofp, cm);  
-	  if(cfg->ofp != stdout) SummarizeCM(stdout, cm);  
-	  
+	  if(cfg->be_verbose) { 
+	    SummarizeCM(cfg->ofp, cm);  
+	    fprintf(cfg->ofp, "\n");
+	  }
+
 	  FreeCM(cm);
 	  fflush(cfg->cmfp);
 
@@ -687,7 +711,7 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
    */
   if (msa == NULL && ! cfg->be_verbose) 
     {
-      fprintf(cfg->ofp, "#%4s %6s %-20s %5s %5s %5s\n", "aln",  "cm idx", "name",                 "nseq",  "alen",  "M");
+      fprintf(cfg->ofp, "#%4s %6s %-20s %5s %5s %5s\n", "aln",  "cm idx", "name",                 "nseq",  "alen",  "clen");
       fprintf(cfg->ofp, "#%4s %6s %-20s %5s %5s %5s\n", "----", "------", "--------------------", "-----", "-----", "-----");
       return eslOK;
     }
@@ -865,7 +889,7 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
  * we die.
  *
  * note: This is much simpler than how HMMER3 does
- *       this. The reason is that the --ctarg --cmindiff
+ *       this. The reason is that the --ctarg --cmaxid
  *       cluster options produce N > 1 CM per MSA,
  *       which are named <msa->name>.1 .. <msa->name>.N.
  * 
@@ -1319,7 +1343,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   if(esl_opt_GetBoolean(go, "--sub"))         cm->align_opts  |= CM_ALIGN_SUB;
 
   /* update cm->config_opts */
-  if(esl_opt_GetBoolean(go, "--local"))
+  if(esl_opt_GetBoolean(go, "-l"))
     {
       cm->config_opts |= CM_CONFIG_LOCAL;
       cm->config_opts |= CM_CONFIG_HMMLOCAL;
@@ -1348,13 +1372,13 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
  *           the number of new MSAs is number of seqs in input 
  *           master MSA. 
  *
- *        2. if(!do_all) && target_nc == 0: define clusters
+ *        2. if(do_mindiff): define clusters
  *           such that we maximize the number of clusters while
  *           satisfying: minimum fractional difference b/t any 
  *           2 seqs in different clusters >= 'mindiff'. 
  *           The contract states that mindiff > 0. in this case.
  *           
- *        3. if(!do_all) && mindiff == 0.: define clusters 
+ *        3. if(do_nc).: define clusters 
  *           such that we have exactly 'target_nc' clusters by
  *           searching for the 'mindiff' that gives exactly
  *           'target_nc' clusters. (We guarantee we can do this
@@ -1372,10 +1396,12 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
  * ESL_MSA *mmsa         - the master MSA, we cluster the seqs in this guy
  *                        and build a new MSA from each cluster
  * int     do_all       - TRUE (mode 1): each seq is its own cluster
- * int     target_nc    - number of clusters to define (0 indicates mode 2)
+ * int     do_mindiff   - TRUE (mode 2): satisfy clusters are at least mindiff different
+ * int     do_nc        - TRUE (mode 3): set mindiff such that we get excatly target_nc clusters
  * float   mindiff      - the minimum fractional difference allowed
  *                        between 2 seqs of different clusters
  *                        (0. indicates mode 3) 
+ * int     target_nc    - number of clusters to define (0 indicates mode 2)
  * int     do_orig      - TRUE to include the master MSA as one of the new MSAs
  * int    *ret_num_msa  - number of MSAs in ret_MSA
  * ESL_MSA  ***ret_cmsa - new MSAs, one for each cluster
@@ -1384,7 +1410,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
  * Return: ret_cmsa (alloc'ed here) and ret_num_msa
  */
 int 
-MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff, 
+MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, int target_nc,
 	  int do_orig, int *ret_num_msa, ESL_MSA ***ret_cmsa, char *errbuf)
 {
   int   status;        /* Easel status code */
@@ -1408,10 +1434,14 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
   int     ndigits;
 
   /* Contract check */
-  if((!do_all) && (target_nc == 0 && mindiff == 0.))  ESL_FAIL(eslEINCOMPAT, errbuf, "MSADivide() target_nc is 0 and mindiff is 0.0, exactly one must be non-zero");
-  if((!do_all) && (target_nc != 0 && mindiff != 0.))  ESL_FAIL(eslEINCOMPAT, errbuf, "MSADivide() target_nc is not 0 and mindiff is not 0.0, exactly one must be non-zero");
+  if((do_all + do_nc + do_mindiff) != 1) ESL_FAIL(eslEINCOMPAT, errbuf, "MSADivide() exactly 1 of do_all, do_nc, do_mindiff must be TRUE.");
+  if( do_nc && target_nc == 0)           ESL_FAIL(eslEINCOMPAT, errbuf, "MSADivide() target_nc is 0 but do_nc is TRUE!");
+  if( do_mindiff && mindiff <= 0.)       ESL_FAIL(eslEINCOMPAT, errbuf, "MSADivide() mindiff is <= 0. but do_mindiff is TRUE!");
+  if( do_mindiff && target_nc != 0)      ESL_FAIL(eslEINCOMPAT, errbuf, "MSADivide() do_mindiff is TRUE, but target_nc != 0");
   /* mmsa must be digital */
   if(!(mmsa->flags & eslMSA_DIGITAL))                 ESL_FAIL(eslEINCOMPAT, errbuf, "MSADivide() MSA is not digital.");
+
+  if(do_nc) mindiff = 0.;
 
   /* Mode 1: Each seq becomes own MSA. Easy. */
   if(do_all) {
@@ -1456,12 +1486,12 @@ MSADivide(ESL_MSA *mmsa, int do_all, int target_nc, float mindiff,
       for (n = 0; n < (T->N-1); n++)
       printf("left[n:%d]: %d right[n:%d]: %d\n", n, T->left[n], n, T->right[n]);*/
     
-    if(target_nc == 0) { /* Mode 2 */
+    if(do_mindiff) { /* Mode 2 */
       /* Define clusters that are at least mindiff different
        * from each other. */
       if((status = select_node(T, diff, mindiff, &clust, &nc, &best, errbuf)) != eslOK) return status;
     }
-    else { /* Mode 3, mindiff == 0.0 (it's in the contract) */
+    else { /* Mode 3, do_nc == TRUE, mindiff was set to 0.0 above */
       /* Find the minimum fractional difference (mindiff) that 
        * gives exactly target_nc clusters, also define clusters
        * based on that mindiff, this is all done with find_mindiff(),
@@ -1758,30 +1788,30 @@ write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *err
   if(cfg->comlog->bdate != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "write_cmbuild_info_to_comlog(), cfg->comlog->bcom is non-NULL.");
 
   /* Set the cmbuild command info, the cfg->comlog->bcom string */
-  for (i = 0; i < go->optind; i++) { /* copy all command line options, but not the command line args yet, we may need to append '--seed ' before the args */
+  for (i = 0; i < go->optind; i++) { /* copy all command line options, but not the command line args yet, we may need to append '-s ' before the args */
     esl_strcat(&(cfg->comlog->bcom), -1, go->argv[i], -1);
     esl_strcat(&(cfg->comlog->bcom), -1, " ", 1);
   }
-  /* if --gibbs enabled, and --seed NOT enabled, we need to append the seed info also */
+  /* if --gibbs enabled, and -s NOT enabled, we need to append the seed info also */
   if(esl_opt_GetBoolean(go, "--gibbs")) {
     if(cfg->r == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "write_cmbuild_info_to_comlog(), cfg->r is NULL but --gibbs enabled, shouldn't happen.");
     seed = esl_randomness_GetSeed(cfg->r);
-    if(esl_opt_IsDefault(go, "--seed")) {
+    if(esl_opt_IsDefault(go, "-s")) {
       temp = seed; 
       seedlen = 1; 
       while(temp > 0) { temp/=10; seedlen++; } /* determine length of stringized version of seed */
-      seedlen += 8; /* strlen(' --seed ') */
+      seedlen += 4; /* strlen(' -s ') */
 
       ESL_ALLOC(seedstr, sizeof(char) * (seedlen+1));
-      sprintf(seedstr, " --seed %ld ", seed);
+      sprintf(seedstr, " -s %ld ", seed);
       esl_strcat((&cfg->comlog->bcom), -1, seedstr, seedlen);
     }
-    else { /* --seed was enabled with --gibbs, we'll do a sanity check */
-      if(seed != (long) esl_opt_GetInteger(go, "--seed")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "write_cmbuild_info_to_comlog(), cfg->r's seed is %ld, but --seed was enabled with argument: %ld!, this shouldn't happen.", seed, (long) esl_opt_GetInteger(go, "--seed"));
+    else { /* -s was enabled with --gibbs, we'll do a sanity check */
+      if(seed != (long) esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "write_cmbuild_info_to_comlog(), cfg->r's seed is %ld, but -s was enabled with argument: %ld!, this shouldn't happen.", seed, (long) esl_opt_GetInteger(go, "-s"));
     }
   }
 
-  for (i = go->optind; i < go->argc; i++) { /* copy all command line options, but not the command line args yet, we may need to append '--seed ' before the args */
+  for (i = go->optind; i < go->argc; i++) { /* copy all command line options, but not the command line args yet, we may need to append '-s ' before the args */
     esl_strcat(&(cfg->comlog->bcom), -1, go->argv[i], -1);
     if(i < (go->argc-1)) esl_strcat(&(cfg->comlog->bcom), -1, " ", 1);
   }

@@ -131,7 +131,7 @@ static ESL_OPTIONS options[] = {
 /* Other options */
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb",   13 },  
   { "--hmmmaxE", eslARG_REAL,   NULL, NULL, "x>0.",     NULL,"--fgiven",        NULL, "with --fgiven, set maximum HMM filter E-value to <x>", 13 },
-  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> (Mb)", 9 },
+  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 9 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--qdbfile","run as an MPI parallel program", 13 },  
 #endif

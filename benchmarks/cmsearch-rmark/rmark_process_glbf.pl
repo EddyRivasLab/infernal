@@ -130,7 +130,7 @@ if (defined $opt_G) { $do_bralibase3 = 1; }
 
 $usage = "Usage: perl rmark_process_glbf.pl\n\t<'E' if E-values used (lower score is better), 'B' if higher is better>\n\t<.rmm file used>\n\t<.rmk file used>\n\t<seq directory with *.ali, *.test, *.idx, *.raw files>\n\t<index file with family names; provide path>\n\t<genome root <X>, <X>.fa and <X>.ebd must be in seq dir>\n\t<concatenated *.glbf output from >= 1 rmark.pl runs; in CWD>\n\t<output root>\n";
 $options_usage  = "\nOptions: (see code for details)\n\t";
-$options_usage  = "-G     : operate in BRALIBASE3 Genome benchmark mode (not RMARK.pl)\n\n\t";
+$options_usage .= "-G     : operate in BRALIBASE3 Genome benchmark mode (not RMARK.pl)\n\n\t";
 $options_usage .= "Hit resolution options:\n\t";
 $options_usage .= "-R hit : [default] each hit is a single positive/negative\n\t";
 $options_usage .= "-R fnt : treat every nucleotide as a separate positive or negative.\n\t";

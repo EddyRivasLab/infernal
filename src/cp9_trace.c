@@ -194,7 +194,8 @@ CP9_fake_tracebacks(ESL_MSA *msa, int *matassign, CP9trace_t ***ret_tr)
  * 
  * Purpose:  Count a traceback into a count-based HMM structure.
  *           (Usually as part of a model parameter re-estimation.)
- *           
+ *           Traceback should not have any EL state visits in it.
+ * 
  * Args:     hmm   - counts-based CM Plan 9 HMM
  *           dsq   - sequence that traceback aligns to the HMM (1..L)
  *           wt    - weight on the sequence
@@ -206,8 +207,8 @@ void
 CP9TraceCount(CP9_t *hmm, ESL_DSQ *dsq, float wt, CP9trace_t *tr)
 {
   /* contract check */
-  if(dsq == NULL)
-    cm_Fail("ERROR in CP9TraceCount(), dsq is NULL.");
+  if(dsq == NULL)            cm_Fail("ERROR in CP9TraceCount(), dsq is NULL.");
+  if(hmm->flags & CPLAN9_EL) cm_Fail("CP9TraceCount(), EL states are on, which this function is not setup for.");
   
   int tpos;                     /* position in tr */
   int i;			/* symbol position in seq */
@@ -286,6 +287,9 @@ CP9TraceCount(CP9_t *hmm, ESL_DSQ *dsq, float wt, CP9trace_t *tr)
 	      CP9Statetype(tr->statetype[tpos]), 
 	      CP9Statetype(tr->statetype[tpos+1]));
 	}
+	break;
+      case CSTEL:
+	cm_Fail("EL in traceback in CP9TraceCount(), this function is being abused.");
 	break;
       case CSTE:
 	break; /* E is the last. It makes no transitions. */

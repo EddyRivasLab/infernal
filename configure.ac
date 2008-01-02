@@ -244,6 +244,20 @@ AC_ARG_ENABLE(lfs,
         ;;
 esac])
 
+
+# --enable-devopts        Enable development options, (options that are too fragile for normal users)
+#
+AC_ARG_ENABLE(devopts, 
+[  --enable-devopts            enable fragile options still under development],
+[case $enable_devopts in
+   yes) AC_MSG_NOTICE([configured to include optional development options])
+	AC_DEFINE(HAVE_DEVOPTS)
+        ;;
+   no)  ;;
+    *)  echo "Ignoring unknown argument to --enable-devopts: $enable_devopts"
+        ;;
+esac])
+
 # Default option for rigfilters is OFF
 rigfilters=0;
 # --with-rigfilters     install rigorous filters

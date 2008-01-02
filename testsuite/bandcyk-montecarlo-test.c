@@ -39,7 +39,7 @@ static ESL_OPTIONS options[] = {
   { "-n",        eslARG_INT,  "10000", NULL, NULL,  NULL,  NULL, NULL, "number of monte carlo samples to do",           0 },
   { "-s",        eslARG_INT,     NULL, NULL, "n>0", NULL,  NULL, NULL, "set random number seed for Monte Carlo to <n>", 0 },
   { "-t",        eslARG_REAL,   "0.01",NULL, "x>0.",NULL,  NULL, NULL, "threshold for rejecting hypothesis that distros are identical ", 0 },
-  { "-W",        eslARG_INT,  "1000",  NULL, "n>0", NULL,  NULL, NULL, "set maximum W (subseq length) to <n>",          0 },
+  { "-W",        eslARG_INT,   "1000", NULL, "n>0", NULL,  NULL, NULL, "set maximum W (subseq length) to <n>",          0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -73,7 +73,6 @@ main(int argc, char **argv)
   maxW           = esl_opt_GetInteger(go, "-W");
   mc_nsample     = esl_opt_GetInteger(go, "-n");
   threshold      = esl_opt_GetReal   (go, "-t");
-  threshold      = 0.01;
 
   /* create RNG */
   if (! esl_opt_IsDefault(go, "-s")) 

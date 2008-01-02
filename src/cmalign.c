@@ -34,20 +34,22 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define ALGOPTS  "--cyk,--optacc,--inside,--hmmviterbi"      /* Exclusive choice for scoring algorithms */
-#define MEMOPTS  "--small,--nosmall"                         /* Exclusive choice for memory choice */
-#define ACCOPTS  "--nonbanded,--hbanded,--qdb"               /* Exclusive choice for acceleration strategies */
+#define ALGOPTS  "--cyk,--optacc,--hmmviterbi"               /* Exclusive choice for scoring algorithms */
 #define ALPHOPTS "--rna,--dna"                               /* Exclusive choice for output alphabet */
+#define ACCOPTS  "--nonbanded,--hbanded"                     /* Exclusive choice for acceleration strategies */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
-  { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "align locally w.r.t. the model",         1 },
   { "-o",        eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "output the alignment to file <f>, not stdout", 1 },
-  { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress verbose banner",         1 },
+  { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "align locally w.r.t. the model",         1 },
+  { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress banner and scores, print only the alignment", 1 },
   { "-f",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include all  match columns in output alignment", 1 },
   { "-m",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include only match columns in output alignment", 1 },
-  { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "use tabular output summary format, 1 line per sequence", 1 },
+  { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
+  { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "flush inserts left/right in output alignment", 1 },
+  { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
+  { "--time",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        "-q", "print run time for each sequence alignment", 1 },
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 1 },
   { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 1 },
   { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local begin prob to <x>", 1 },
@@ -55,51 +57,49 @@ static ESL_OPTIONS options[] = {
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
 #endif
-  /* Miscellaneous expert options */
-  /*  { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s>, not Stockholm",  2 },*/
-  { "--time",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print timings for alignment, band calculation, etc.", 2 },
-  { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 2 },
-  { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
-  { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "flush inserts left/right in output alignment", 1 },
   /* Algorithm options */
-  { "--cyk",     eslARG_NONE,"default",NULL, NULL,   ALGOPTS,      NULL,        NULL, "align with the CYK algorithm", 3 },
-  { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,"--nosmall",       NULL, "align with the Holmes/Durbin optimal accuracy algorithm", 3 },
-  { "--hmmviterbi",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm",3 },
-  { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "don't align; return scores from the Inside algorithm", 3 },
-  { "--post",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--nosmall",       NULL, "append posterior probabilities to alignment", 3 },
-  { "--onepost", eslARG_NONE,   FALSE, NULL, NULL,      NULL,  "--post",        NULL, "only append single '0-9,*' character as posterior probability", 3 },
-  { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,  "--post",        NULL, "check that posteriors are correctly calc'ed", 3 },
-  { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "build sub CM for columns b/t HMM predicted start/end points", 3 },
-  /* Memory options */
-  { "--nosmall", eslARG_NONE,"default", NULL, NULL,   MEMOPTS,      NULL,  "--small", "use normal alignment algorithm, not d&c", 4 },
-  { "--small",   eslARG_NONE,   FALSE,  NULL, NULL,  MEMOPTS,      NULL, "--nosmall", "use divide and conquer (d&c) alignment algorithm", 4 },
+  { "--cyk",     eslARG_NONE,"default",NULL, NULL,     ALGOPTS,    NULL,        NULL, "align with the CYK algorithm", 2 },
+  { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,     ALGOPTS,    NULL,   "--small", "align with the Holmes/Durbin optimal accuracy algorithm", 2 },
+  { "--hmmviterbi",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,    NULL,        NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm",2 },
+  { "--post",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,   "--small", "append posterior probabilities to alignment", 2 },
+  { "--onepost", eslARG_NONE,   FALSE, NULL, NULL,      NULL,  "--post",        NULL, "only append single '0-9,*' character as posterior probability", 2 },
+  { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
+  { "--small",   eslARG_NONE,   FALSE,  NULL, NULL,     NULL,      NULL, "--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
+#ifdef HAVE_DEVOPTS
+  { "--inside",   eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,     ALGOPTS, "don't align; return scores from the Inside algorithm", 2 },
+  { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,  "--post",        NULL, "check that posteriors are correctly calc'ed", 2 },
+#endif
   /* Banded alignment */
-  { "--hbanded", eslARG_NONE, "default",  NULL, NULL,  ACCOPTS,"--nosmall",     NULL, "accelerate using CM plan 9 HMM derived bands", 5 },
-  { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,  ACCOPTS,      NULL,         NULL, "do not use bands to accelerate aln algorithm", 5 },
-  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 5 },
-  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded","--post,--optacc", "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 5 },
-  { "--checkfb", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 5 },
-  { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 5 },
-  { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,   ACCOPTS,      NULL,        NULL, "use query dependent banded CYK alignment algorithm", 5 },
-  { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 5 },
+  { "--hbanded", eslARG_NONE, "default",  NULL, NULL,   NULL,     NULL,    "--small", "accelerate using CM plan 9 HMM derived bands", 3 },
+  { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,      NULL,     NULL,  "--hbanded", "do not use bands to accelerate aln algorithm", 3 },
+  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 3 },
+  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded","--post,--optacc", "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 3 },
+#ifdef HAVE_DEVOPTS
+  { "--checkfb", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "check that HMM posteriors for bands were correctly calc'ed", 3},
+  { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 3 },
+  { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--nonbanded,--hbanded", "use query dependent banded CYK alignment algorithm", 3 },
+  { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 3 },
+#endif
   /* Including a preset alignment */
-  { "--withali", eslARG_STRING, NULL,  NULL, NULL,      NULL,    "--cyk",       NULL, "incl. alignment in <f> (must be aln <cm file> was built from)", 6 },
-  { "--withpknots",eslARG_NONE, NULL,  NULL, NULL,      NULL,"--withali",       NULL, "incl. structure (w/pknots) from <f> from --withali <f>", 6 },
-  { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--withali",       NULL, "--rf was originally used with cmbuild", 6 },
-  { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,"--withali",       NULL, "--gapthresh <x> was originally used with cmbuild", 6 },
+  { "--withali", eslARG_STRING, NULL,  NULL, NULL,      NULL,    "--cyk",       NULL, "incl. alignment in <f> (must be aln <cm file> was built from)", 4 },
+  { "--withpknots",eslARG_NONE, NULL,  NULL, NULL,      NULL,"--withali",       NULL, "incl. structure (w/pknots) from <f> from --withali <f>", 4 },
+  { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--withali",       NULL, "--rf was originally used with cmbuild", 4 },
+  { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,"--withali",       NULL, "--gapthresh <x> was originally used with cmbuild", 4 },
+#ifdef HAVE_DEVOPTS
   /* Enforcing a subsequence */
-  { "--enfstart",eslARG_INT,    FALSE, NULL, "n>0",     NULL,"--enfseq",        NULL, "enforce MATL stretch starting at consensus position <n>", 7 },
-  { "--enfseq",  eslARG_STRING, NULL,  NULL, NULL,      NULL,"--enfstart",      NULL, "enforce MATL stretch starting at --enfstart <n> emits seq <s>", 7 },
+  { "--enfstart",eslARG_INT,    FALSE, NULL, "n>0",     NULL,"--enfseq",        NULL, "enforce MATL stretch starting at consensus position <n>", 5 },
+  { "--enfseq",  eslARG_STRING, NULL,  NULL, NULL,      NULL,"--enfstart",      NULL, "enforce MATL stretch starting at --enfstart <n> emits seq <s>", 5 },
+#endif
   /* Verbose output files/debugging */
-  { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence tracebacks to file <f>", 8 },
-  { "--banddump",eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of band info print statements to <n>", 8 },
-  { "--dlev",    eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of debugging print statements to <n>", 8 },
-/* Setting output alphabet */
-  { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 9},
-  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 9},
+  { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 6 },
+  { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence parsetrees to file <f>", 6 },
+  { "--banddump",eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of band info print statements to <n>", 6 },
+  { "--dlev",    eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of debugging print statements to <n>", 6 },
 /* Other options */
-  { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb",   10 },  
-  { "--mxsize",  eslARG_REAL, "256.0",NULL, "x>0.",     NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> (Mb)", 10 },
+  { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 7},
+  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 7},
+  { "--mxsize",  eslARG_REAL, "256.0",NULL, "x>0.",     NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 7},
+  { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb", 7},  
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -194,24 +194,20 @@ main(int argc, char **argv)
       esl_usage(stdout, argv[0], usage);
       puts("\nwhere general options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-      puts("\nexpert miscellaneous options:");
+      puts("\nalignment algorithm related options:");
       esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-      puts("\noptions specifying alignment algorithm:");
-      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
-      puts("\nmemory related options:");
-      esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
       puts("\nbanded dynamic programming acceleration options:");
-      esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
       puts("\noptions for including a fixed alignment within output alignment:");
-      esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
+      esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
+#if HAVE_DEVOPTS
       puts("\noptions for enforcing alignment of a single-stranded subsequence:");
-      esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
+      esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
+#endif
       puts("\nverbose output files and debugging:");
-      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
-      puts("\noptions for selecting output alphabet:");
-      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
-      puts("\n  other options:");
-      esl_opt_DisplayHelp(stdout, go, 10, 2, 80);
+      esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
+      puts("\nother options:");
+      esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       exit(0);
     }
   if (esl_opt_ArgNumber(go) != 2) 
@@ -228,9 +224,13 @@ main(int argc, char **argv)
   cfg.cmfile     = esl_opt_GetArg(go, 1); 
   cfg.sqfile     = esl_opt_GetArg(go, 2); 
   cfg.sqfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
-  cfg.fmt        = eslSQFILE_UNKNOWN;      /* autodetect sequence file format by default. */ 
+  if   (esl_opt_IsDefault(go, "--informat")) cfg.fmt = eslSQFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
+  else { 
+    cfg.fmt = esl_sqio_FormatCode(esl_opt_GetString(go, "--informat"));
+    if(cfg.fmt == eslSQFILE_UNKNOWN) cm_Fail("Can't recognize sequence file format: %s. valid options are: fasta, embl, genbank, ddbj, uniprot, stockholm, or pfam\n", esl_opt_GetString(go, "--informat"));
+  }
   cfg.abc        = NULL;	           /* created in init_master_cfg() in masters, or in mpi_worker() in workers */
-  if (esl_opt_GetBoolean(go, "-1")) cfg.be_verbose = FALSE;        
+  if (esl_opt_GetBoolean(go, "-q")) cfg.be_verbose = FALSE;        
   else                              cfg.be_verbose = TRUE;        
   if      (esl_opt_GetBoolean(go, "--rna")) cfg.abc_out = esl_alphabet_Create(eslRNA);
   else if (esl_opt_GetBoolean(go, "--dna")) cfg.abc_out = esl_alphabet_Create(eslDNA);
@@ -250,6 +250,9 @@ main(int argc, char **argv)
   cfg.nproc      = 0;		           /* this gets reset below, if we init MPI */
   cfg.my_rank    = 0;		           /* this gets reset below, if we init MPI */
   cfg.do_stall   = esl_opt_GetBoolean(go, "--stall");
+
+  if(cfg.be_verbose) cm_banner(stdout, argv[0], banner);
+
 
   /* This is our stall point, if we need to wait until we get a
    * debugger attached to this process for debugging (especially
@@ -288,7 +291,7 @@ main(int argc, char **argv)
       serial_master(go, &cfg);
       esl_stopwatch_Stop(w);
     }
-  if (cfg.my_rank == 0) esl_stopwatch_Display(stdout, w, "# CPU time: ");
+  if (cfg.my_rank == 0 && cfg.be_verbose) esl_stopwatch_Display(stdout, w, "# CPU time: ");
 
   /* Clean up the shared cfg. 
    */
@@ -431,6 +434,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       /* clean up */
       FreeSeqsToAln(seqs_to_aln);
       FreeCM(cm);
+      esl_sqio_Rewind(cfg->sqfp); /* we may be searching this file again with another CM */
     }   
   return;
 }
@@ -854,7 +858,6 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 		 seqs_to_aln_t *seqs_to_aln)
 {
   int status;
-  int be_quiet = esl_opt_GetBoolean(go, "-q");
 
 #ifdef HAVE_MPI
   if(esl_opt_GetBoolean(go, "--mpi")) be_quiet = TRUE;
@@ -863,7 +866,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   if((status = DispatchAlignments(cm, errbuf, seqs_to_aln,
 				  NULL, NULL, 0,  /* we're not aligning search hits */
 				  esl_opt_GetInteger(go, "--banddump"),
-				  esl_opt_GetInteger(go, "--dlev"), be_quiet, NULL,
+				  esl_opt_GetInteger(go, "--dlev"), (! cfg->be_verbose), NULL,
 				  esl_opt_GetReal(go, "--mxsize"))) != eslOK) goto ERROR;
   return eslOK;
   
@@ -884,8 +887,10 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   int nstarts, nexits, nd;
 
   /* set up params/flags/options of the CM */
-  cm->beta   = esl_opt_GetReal(go, "--beta"); /* this will be DEFAULT_BETA unless changed at command line */
   cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
+#if HAVE_DEVOPTS  
+  cm->beta   = esl_opt_GetReal(go, "--beta"); /* this will be DEFAULT_BETA unless changed at command line */
+#endif
 
   /* update cm->config_opts */
   if(esl_opt_GetBoolean(go, "-l"))
@@ -898,32 +903,33 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 
   /* update cm->align_opts */
   if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;
-  if(esl_opt_GetBoolean(go, "--sums"))        cm->align_opts  |= CM_ALIGN_SUMS;
   if(esl_opt_GetBoolean(go, "--sub"))         cm->align_opts  |= CM_ALIGN_SUB;
   if(esl_opt_GetBoolean(go, "--hmmviterbi"))  cm->align_opts  |= CM_ALIGN_HMMVITERBI;
-  if(esl_opt_GetBoolean(go, "--inside"))      cm->align_opts  |= CM_ALIGN_INSIDE;
   if(esl_opt_GetBoolean(go, "--small"))       cm->align_opts  |= CM_ALIGN_SMALL;
   if(esl_opt_GetBoolean(go, "--post"))        cm->align_opts  |= CM_ALIGN_POST;
   if(esl_opt_GetBoolean(go, "--time"))        cm->align_opts  |= CM_ALIGN_TIME;
-  if(esl_opt_GetBoolean(go, "--checkpost"))   cm->align_opts  |= CM_ALIGN_CHECKINOUT;
-  if(esl_opt_GetBoolean(go, "--checkfb"))     cm->align_opts  |= CM_ALIGN_CHECKFB;
   if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
   if(esl_opt_GetBoolean(go, "--fins"))        cm->align_opts  |= CM_ALIGN_FLUSHINSERTS;
   if(esl_opt_GetBoolean(go, "--optacc"))      cm->align_opts  |= CM_ALIGN_OPTACC;
+
+#if HAVE_DEVOPTS
+  if(esl_opt_GetBoolean(go, "--inside"))      cm->align_opts  |= CM_ALIGN_INSIDE;
+  if(esl_opt_GetBoolean(go, "--checkpost"))   cm->align_opts  |= CM_ALIGN_CHECKINOUT;
+  if(esl_opt_GetBoolean(go, "--checkfb"))     cm->align_opts  |= CM_ALIGN_CHECKFB;
+  if(esl_opt_GetBoolean(go, "--sums"))        cm->align_opts  |= CM_ALIGN_SUMS;
   if(esl_opt_GetString (go, "--enfseq") != NULL)
     {
       cm->config_opts |= CM_CONFIG_ENFORCE;
       cm->enf_start    = EnforceFindEnfStart(cm, esl_opt_GetInteger(go, "--enfstart"));
       cm->enf_seq      = esl_opt_GetString(go, "--enfseq");
     }
-
   /* config QDB? */
   if(esl_opt_GetBoolean(go, "--qdb"))          
     { 
       cm->align_opts  |= CM_ALIGN_QDB;
       cm->config_opts |= CM_CONFIG_QDB;
     }
-
+#endif
 
   /* BEGIN (POTENTIALLY) TEMPORARY BLOCK */
   /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */
@@ -962,11 +968,10 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
    */
   ConfigCM(cm, NULL, NULL); 
   if(cm->config_opts & CM_CONFIG_ENFORCE) ConfigCMEnforce(cm);
-  /* TEMPORARY */
-  /* debug_print_cm_params(stdout, cm);
-     exit(1); */
 
-  if(cfg->my_rank == 0) printf("CM %d: %s\n", (cfg->ncm), cm->name);
+  /* if(cfg->my_rank == 0) printf("CM %d: %s\n", (cfg->ncm), cm->name); 
+   * debug_print_cm_params(stdout, cm);
+   */
 
   /* if we're master and we're trying to include an alignment, make sure it is consistent with CM structure */
   if(cfg->my_rank == 0 && (! esl_opt_IsDefault(go, "--withali"))) { 

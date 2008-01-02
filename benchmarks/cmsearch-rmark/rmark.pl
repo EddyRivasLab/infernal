@@ -17,6 +17,7 @@
 # Options:
 #        -E <x> : use E-values [default], set max E-val to keep as <x> [default: 2]
 #        -B <x> : use bit scores, set min score to keep as <x>
+#        -P <x> : parallelize using MPI on <x> processors
 #
 # Example:  perl rmark.pl infernal.rmm inf-72.rmk rmark-test/ rmark-test.idx
 #                         rmark-test.fa rmark-test_out
@@ -40,14 +41,16 @@ $b_cutoff = 0.0;
 $use_evalues   = 1;
 $use_bitscores = 0;
 
-getopts('E:B:');
+getopts('E:B:P:');
 if (defined $opt_E) { $e_cutoff = $opt_E; }
 if (defined $opt_B) { $b_cutoff = $opt_B; $use_evalues = 0; $use_bitscores = 1; }
+if (defined $opt_P) { $nprocs   = $opt_P; $do_mpi = 1; }
 
 $usage = "Usage: perl rmark.pl\n\t<.rmm rmark module>\n\t<.rmk rmark config file>\n\t<seq directory with *.ali, *.test, *.idx, *.raw files>\n\t<index file with family names; provide path>\n\t<genome file; must be in seq dir>\n\t<output root, for naming output files>\n";
 $options_usage  = "\nOptions:\n\t";
 $options_usage .= "-E <x> : use E-values [default], set max E-val to keep as <x> [default: 2]\n\t";
 $options_usage .= "-B <x> : use bit scores, set min score to keep as <x>\n\n";
+$options_usage .= "-P <x> : parallelize using MPI on <x> processors\n\n";
 
 if(@ARGV != 6)
 {

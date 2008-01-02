@@ -18,6 +18,9 @@
 # Options:
 #        -E <x> : use E-values [default], set max E-val to keep as <x> [df: 100]
 #        -B <x> : use bit scores, set min score to keep as <x>
+#        -O <x> : using old, version 0.x Infernal [default: using 1.x Infernal]
+#        -A     : use all nodes of cluster
+
 # Example:  perl rmark_MPI_cmsearch.pl 100 infernal.rmm inf-71.rmk rmark-test/ rmark-test 
 #                                      inf-71
 #
@@ -44,16 +47,21 @@ $e_cutoff = 100;
 $b_cutoff = 0.0;
 $use_evalues   = 1;
 $use_bitscores = 0;
+$pre_version1 = 0;
+$use_all_nodes = 0;
 
-getopts('E:B:');
+getopts('E:B:O:A');
 if (defined $opt_E) { $e_cutoff = $opt_E; }
 if (defined $opt_B) { $b_cutoff = $opt_B; $use_evalues = 0; $use_bitscores = 1; }
-if (defined $opt_P) { $nprocs   = $opt_P; $do_mpi = 1; }
+if (defined $opt_O) { $pre_version1 = 1; }
+if (defined $opt_A) { $use_all_nodes = 1; }
 
 $usage = "Usage: perl rmark_MPI_cmsearch.pl\n\t<num processors to use>\n\t<.rmm file name>\n\t<.rmk file name>\n\t<dir with *.ali *.idx *.test and *.raw files>\n\t<index file with family names; provide path>\n\t<genome root X, X.fa, X.ebd must be in seq dir>\n\t<directory with CM files>\n\t<output file root>\n";
 $options_usage  = "\nOptions:\n\t";
 $options_usage .= "-E <x> : use E-values [default], set max E-val to keep as <x> [df: 2]\n\t";
-$options_usage .= "-B <x> : use bit scores, set min score to keep as <x>\n\n";
+$options_usage .= "-B <x> : use bit scores, set min score to keep as <x>\n\t";
+$options_usage .= "-O <x> : using old, version 0.x Infernal [default: using 1.x Infernal]\n\n";
+$options_usage .= "-A     : use all nodes of cluster\n\n";
 
 if(@ARGV != 8)
 {
@@ -149,9 +157,17 @@ for($i = 0; $i < scalar(@fam_roots_arr); $i++)
     $cmsearch_name = $run_dir . "\/" . "rm-$fam.cmsearch";
     $out_name = $run_dir . "\/" . "rm-$fam.out";
 
-    $cmsearch_call = "mpirun -l C $cms --noalign $cm $genome_file";
+    if($pre_version1) { $cmsearch_call = "mpirun -l C $cms --noalign $cm $genome_file"; }
+    else              { $cmsearch_call = "mpirun -l C $cms --mpi --noalign $cm $genome_file"; }
 
-    $exec_line = "qsub -q c05.q,c06.q,c07.q,c08.q,c09.q,c10.q,c11.q,c12.q,c13.q,c14.q -N $job_name -o $out_name -b y -cwd -V -j y -pe lam-mpi-tight $nprocs \'" . $cmsearch_call . " > $cmsearch_name\'";
+    if($use_all_nodes) 
+    {
+	$exec_line = "qsub -N $job_name -o $out_name -b y -cwd -V -j y -pe lam-mpi-tight $nprocs \'" . $cmsearch_call . " > $cmsearch_name\'";
+    }
+    else # only use c05-c14 
+    {
+	$exec_line = "qsub -q c05.q,c06.q,c07.q,c08.q,c09.q,c10.q,c11.q,c12.q,c13.q,c14.q -N $job_name -o $out_name -b y -cwd -V -j y -pe lam-mpi-tight $nprocs \'" . $cmsearch_call . " > $cmsearch_name\'";
+    }
     push(@exec_lines, $exec_line);
 }
 
