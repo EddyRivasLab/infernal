@@ -775,7 +775,7 @@ CP9ViterbiTrace(CP9_t *hmm, ESL_DSQ *dsq, int i0, int j0,
 		      tr->statetype[tpos] = CSTEL;
 		      k = hmm->el_from_idx[(hmm->M+1)][c];
 		      tr->nodeidx[tpos]   = k;
-		      tr->pos[tpos]       = i;
+		      tr->pos[tpos]       = i--;
 		      error_flag = FALSE;
 		      break;
 		    }
