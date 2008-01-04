@@ -5279,7 +5279,15 @@ main(int argc, char **argv)
     ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
     esl_vec_DNorm(dnull, cm->abc->K);
-    seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, L, FALSE);
+    /* get gamma[0] from the QDB calc alg, which will serve as the length distro for random seqs */
+    int safe_windowlen = cm->clen * 2;
+    double **gamma = NULL;
+    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
+      safe_windowlen *= 2;
+      if(safe_windowlen > (cm->clen * 1000)) cm_Fail("Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
+    }
+    seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, gamma[0], safe_windowlen, FALSE);
+    FreeBandDensities(cm, gamma);
     free(dnull);
   }
   else /* don't randomly generate seqs, emit them from the CM */

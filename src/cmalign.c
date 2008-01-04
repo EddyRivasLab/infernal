@@ -43,12 +43,10 @@ static ESL_OPTIONS options[] = {
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
   { "-o",        eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "output the alignment to file <f>, not stdout", 1 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "align locally w.r.t. the model",         1 },
+  { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,   "--small", "append posterior probabilities to alignment", 1 },
   { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress banner and scores, print only the alignment", 1 },
-  { "-f",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include all  match columns in output alignment", 1 },
-  { "-m",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include only match columns in output alignment", 1 },
-  { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
-  { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "flush inserts left/right in output alignment", 1 },
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
+  { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
   { "--time",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        "-q", "print run time for each sequence alignment", 1 },
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 1 },
   { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 1 },
@@ -61,44 +59,46 @@ static ESL_OPTIONS options[] = {
   { "--cyk",     eslARG_NONE,"default",NULL, NULL,     ALGOPTS,    NULL,        NULL, "align with the CYK algorithm", 2 },
   { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,     ALGOPTS,    NULL,   "--small", "align with the Holmes/Durbin optimal accuracy algorithm", 2 },
   { "--hmmviterbi",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,    NULL,        NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm",2 },
-  { "--post",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,   "--small", "append posterior probabilities to alignment", 2 },
-  { "--onepost", eslARG_NONE,   FALSE, NULL, NULL,      NULL,  "--post",        NULL, "only append single '0-9,*' character as posterior probability", 2 },
   { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
   { "--small",   eslARG_NONE,   FALSE,  NULL, NULL,     NULL,      NULL, "--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
 #ifdef HAVE_DEVOPTS
-  { "--inside",   eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,     ALGOPTS, "don't align; return scores from the Inside algorithm", 2 },
-  { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,  "--post",        NULL, "check that posteriors are correctly calc'ed", 2 },
+  { "--inside",   eslARG_NONE,  FALSE, NULL, NULL,      ALGOPTS,   NULL,     ALGOPTS, "don't align; return scores from the Inside algorithm", 2 },
+  { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      "-p",        NULL, "check that posteriors are correctly calc'ed", 2 },
 #endif
   /* Banded alignment */
   { "--hbanded", eslARG_NONE, "default",  NULL, NULL,   NULL,     NULL,    "--small", "accelerate using CM plan 9 HMM derived bands", 3 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,      NULL,     NULL,  "--hbanded", "do not use bands to accelerate aln algorithm", 3 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 3 },
-  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded","--post,--optacc", "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 3 },
+  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded","--hmmviterbi,-p,--optacc", "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 3 },
+  { "--mxsize",  eslARG_REAL, "256.0",NULL, "x>0.",     NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 3},
 #ifdef HAVE_DEVOPTS
   { "--checkfb", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "check that HMM posteriors for bands were correctly calc'ed", 3},
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 3 },
   { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--nonbanded,--hbanded", "use query dependent banded CYK alignment algorithm", 3 },
   { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 3 },
 #endif
+  /* Options that modify how the output alignment is created */
+  { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 4},
+  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 4},
+  { "--matchonly",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include only match columns in output alignment", 4 },
+  { "--resonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include only match columns with >= 1 residues in output aln", 4 },
+  { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "flush inserts left/right in output alignment", 4 },
+  { "--onepost", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       "-p",       NULL, "with -p, only append single '0-9,*' char as posterior probability", 4 },
   /* Including a preset alignment */
-  { "--withali", eslARG_STRING, NULL,  NULL, NULL,      NULL,    "--cyk",       NULL, "incl. alignment in <f> (must be aln <cm file> was built from)", 4 },
-  { "--withpknots",eslARG_NONE, NULL,  NULL, NULL,      NULL,"--withali",       NULL, "incl. structure (w/pknots) from <f> from --withali <f>", 4 },
-  { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--withali",       NULL, "--rf was originally used with cmbuild", 4 },
-  { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,"--withali",       NULL, "--gapthresh <x> was originally used with cmbuild", 4 },
+  { "--withali", eslARG_STRING, NULL,  NULL, NULL,      NULL,    "--cyk",       NULL, "incl. alignment in <f> (must be aln <cm file> was built from)", 5 },
+  { "--withpknots",eslARG_NONE, NULL,  NULL, NULL,      NULL,"--withali",       NULL, "incl. structure (w/pknots) from <f> from --withali <f>", 5 },
+  { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--withali",       NULL, "--rf was originally used with cmbuild", 5 },
+  { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,"--withali",       NULL, "--gapthresh <x> was originally used with cmbuild", 5 },
 #ifdef HAVE_DEVOPTS
   /* Enforcing a subsequence */
-  { "--enfstart",eslARG_INT,    FALSE, NULL, "n>0",     NULL,"--enfseq",        NULL, "enforce MATL stretch starting at consensus position <n>", 5 },
-  { "--enfseq",  eslARG_STRING, NULL,  NULL, NULL,      NULL,"--enfstart",      NULL, "enforce MATL stretch starting at --enfstart <n> emits seq <s>", 5 },
+  { "--enfstart",eslARG_INT,    FALSE, NULL, "n>0",     NULL,"--enfseq",        NULL, "enforce MATL stretch starting at consensus position <n>", 6 },
+  { "--enfseq",  eslARG_STRING, NULL,  NULL, NULL,      NULL,"--enfstart",      NULL, "enforce MATL stretch starting at --enfstart <n> emits seq <s>", 6 },
 #endif
   /* Verbose output files/debugging */
-  { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 6 },
-  { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence parsetrees to file <f>", 6 },
-  { "--banddump",eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of band info print statements to <n>", 6 },
-  { "--dlev",    eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of debugging print statements to <n>", 6 },
-/* Other options */
-  { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 7},
-  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 7},
-  { "--mxsize",  eslARG_REAL, "256.0",NULL, "x>0.",     NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 7},
+  { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 7 },
+  { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence parsetrees to file <f>", 7 },
+  { "--banddump",eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of band info print statements to <n>", 7 },
+  { "--dlev",    eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of debugging print statements to <n>", 7 },
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb", 7},  
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -198,15 +198,15 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
       puts("\nbanded dynamic programming acceleration options:");
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
-      puts("\noptions for including a fixed alignment within output alignment:");
+      puts("\noutput options:");
       esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
+      puts("\noptions for including a fixed alignment within output alignment:");
+      esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
 #if HAVE_DEVOPTS
       puts("\noptions for enforcing alignment of a single-stranded subsequence:");
-      esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
+      esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
 #endif
       puts("\nverbose output files and debugging:");
-      esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
-      puts("\nother options:");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       exit(0);
     }
@@ -369,7 +369,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
   /* optionally, open regression file */
   if (esl_opt_GetString(go, "--regress") != NULL) {
-    if ((cfg->regressfp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) 
+    if ((cfg->regressfp = fopen(esl_opt_GetString(go, "--regress"), "w")) == NULL) 
 	ESL_FAIL(eslFAIL, errbuf, "Failed to open --regress output file %s\n", esl_opt_GetString(go, "--regress"));
     }
 
@@ -763,29 +763,29 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       if(esl_opt_GetString(go, "--withali") != NULL)
 	{
 	  if((status = include_withali(go, cfg, cm, &(seqs_to_aln->sq), &(seqs_to_aln->tr), &(seqs_to_aln->nseq), errbuf)) != eslOK)
-	    ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have a SS_cons compatible with the CM\n", esl_opt_GetString(go, "--withali"));
+	    ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have SS_cons annotation compatible with the CM\n", esl_opt_GetString(go, "--withali"));
 	}
       
       if(esl_opt_GetBoolean(go, "--hmmviterbi"))
 	{
 	  ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
 	  if((status = CP9Traces2Alignment(cm, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->nseq, seqs_to_aln->cp9_tr, 
-					   esl_opt_GetBoolean(go, "-f"), esl_opt_GetBoolean(go, "-m"), &msa)) != eslOK)
+					   (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), &msa)) != eslOK)
 	    goto ERROR;
 	}
       else
 	{
 	  assert(seqs_to_aln->tr != NULL);
 	  if((status = Parsetrees2Alignment(cm, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, seqs_to_aln->nseq, 
-					    esl_opt_GetBoolean(go, "-f"), esl_opt_GetBoolean(go, "-m"), &msa)) != eslOK)
+					    (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), &msa)) != eslOK)
 	    goto ERROR;
 	}
-      if(esl_opt_GetBoolean(go, "--post")) 
+      if(esl_opt_GetBoolean(go, "-p")) 
 	{                                                                              
 	  char *apostcode1;   /* aligned posterior decode array */
 	  char *apostcode2;   /* aligned posterior decode array */
 	  if(seqs_to_aln->postcode1 == NULL || seqs_to_aln->postcode2 == NULL) 
-	    cm_Fail("ERROR --post enabled, but DispatchAlignments() did not return post codes.\n");
+	    cm_Fail("-p enabled, but DispatchAlignments() did not return post codes.\n");
 
 	  imax = seqs_to_aln->nseq - 1;
 	  if(cfg->withmsa != NULL) imax -= cfg->withmsa->nseq;
@@ -836,7 +836,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  /* Must delete author info from msa, because it contains version
 	   * and won't diff clean in regression tests. */
 	  if(msa->au != NULL) free(msa->au); msa->au = NULL;
-	  status = esl_msa_Write(cfg->ofp, msa, eslMSAFILE_STOCKHOLM);
+	  status = esl_msa_Write(cfg->regressfp, msa, eslMSAFILE_STOCKHOLM);
 	  if (status == eslEMEM)    ESL_FAIL(status, errbuf, "Memory error when outputting regression file\n");
 	  else if (status != eslOK) ESL_FAIL(status, errbuf, "Writing regression file failed with error %d\n", status);
 	}
@@ -858,6 +858,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 		 seqs_to_aln_t *seqs_to_aln)
 {
   int status;
+  int be_quiet = (! cfg->be_verbose);
 
 #ifdef HAVE_MPI
   if(esl_opt_GetBoolean(go, "--mpi")) be_quiet = TRUE;
@@ -866,7 +867,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   if((status = DispatchAlignments(cm, errbuf, seqs_to_aln,
 				  NULL, NULL, 0,  /* we're not aligning search hits */
 				  esl_opt_GetInteger(go, "--banddump"),
-				  esl_opt_GetInteger(go, "--dlev"), (! cfg->be_verbose), NULL,
+				  esl_opt_GetInteger(go, "--dlev"), be_quiet, NULL,
 				  esl_opt_GetReal(go, "--mxsize"))) != eslOK) goto ERROR;
   return eslOK;
   
@@ -906,7 +907,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--sub"))         cm->align_opts  |= CM_ALIGN_SUB;
   if(esl_opt_GetBoolean(go, "--hmmviterbi"))  cm->align_opts  |= CM_ALIGN_HMMVITERBI;
   if(esl_opt_GetBoolean(go, "--small"))       cm->align_opts  |= CM_ALIGN_SMALL;
-  if(esl_opt_GetBoolean(go, "--post"))        cm->align_opts  |= CM_ALIGN_POST;
+  if(esl_opt_GetBoolean(go, "-p"))            cm->align_opts  |= CM_ALIGN_POST;
   if(esl_opt_GetBoolean(go, "--time"))        cm->align_opts  |= CM_ALIGN_TIME;
   if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
   if(esl_opt_GetBoolean(go, "--fins"))        cm->align_opts  |= CM_ALIGN_FLUSHINSERTS;

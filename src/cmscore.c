@@ -32,50 +32,58 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define ALGOPTS  "--std,--qdb,--qdbsmall,--qdbboth,--hbanded,--hmmviterbi"  /* Exclusive choice for scoring algorithms */
+#ifdef HAVEDEVOPTS
+#define ALGOPTS  "--std,--qdb,--qdbsmall,--qdbboth,--hbanded,--hmmviterbi"  /* Exclusive choice for scoring algorithms ifdef #HAVE_DEVOPTS*/
+#else
+#define ALGOPTS  "--std,--hbanded,--hmmviterbi"                             /* Exclusive choice for scoring algorithms */
+#endif
 #define SEQOPTS  "--emit,--random,--infile"                                 /* Exclusive choice for sequence input */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
+  { "-n",        eslARG_INT,     "10", NULL, "n>0",     NULL,      NULL,  "--infile", "generate <n> sequences",  1 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,     "--sub", "align locally w.r.t. the model",         1 },
+  { "-s",        eslARG_INT,     NULL, NULL, "n>0",     NULL,      NULL,  "--infile", "set random number seed to <n>", 1 },
   { "-i",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print individual timings & scores, not just summary", 1 },
-  { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "use tabular output summary format, 1 line per sequence", 1 },
+  { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress verbose banner", 1 },
+  { "--iins",     eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 2 },
+  { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
 #endif
   /* Miscellaneous expert options */
-  { "--stringent",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "require the two parsetrees to be identical", 2 },
-  { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
-  { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 2 },
   /* options for generating/reading sequences to score */
-  { "--emit",    eslARG_INT,    "100", NULL, "n>0",     NULL,      NULL,     SEQOPTS, "emit <n> sequences from each CM [default: 100]", 3 },
-  { "--random",  eslARG_INT,    "100", NULL, "n>0",     NULL,      NULL,     SEQOPTS, "emit <n> random seq from cm->null model (length = CM consensus)", 3},
-  { "--infile",  eslARG_INFILE,  NULL, NULL, NULL,      NULL,      NULL,     SEQOPTS, "read sequences to align from file <s>", 3 },
-  { "--outfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,  "--infile", "save seqs to file <s>", 3 },
-  { "--seed",    eslARG_INT,     NULL, NULL, "n>0",     NULL,      NULL,    "--seed", "set random number seed to <n>", 3 },
+  { "--emit",    eslARG_NONE,"default",NULL,"n>0",   SEQOPTS,      NULL,     SEQOPTS, "emit <n> sequences from each CM [default: 100]", 2 },
+  { "--random",  eslARG_NONE,   FALSE, NULL,"n>0",   SEQOPTS,      NULL,     SEQOPTS, "emit <n> random seq from cm->null model (length = CM consensus)", 2},
+  { "--infile",  eslARG_INFILE,  NULL, NULL, NULL,   SEQOPTS,      NULL,     SEQOPTS, "read sequences to align from file <s>", 2 },
+  { "--outfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,  "--infile", "save seqs to file <s> in FASTA format", 2 },
   /* Stage 2 algorithm options */
-  { "--std",     eslARG_NONE,"default",NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare divide and conquer versus standard CYK", 4 },
-  { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare non-banded d&c versus QDB standard CYK", 4 },
-  { "--qdbsmall",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare non-banded d&c versus QDB d&c", 4 },
-  { "--qdbboth", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare        QDB d&c versus QDB standard CYK", 4 },
-  { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,      NULL,        NULL, "set tail loss prob for QDB to <x>", 4 },
-  { "--hbanded", eslARG_NONE,   FALSE,  NULL, NULL,  ALGOPTS,      NULL,        NULL, "accelerate using CM plan 9 HMM banded CYK aln algorithm", 4 },
-  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 4 },
-  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "realign (non-banded) seqs with HMM banded CYK score < 0 bits", 4 },
-  { "--hmmviterbi",eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm", 4 },
-  { "--scoreonly",eslARG_NONE,  FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "for standard CYK stage, do only score, save memory", 4 },
+  { "--hbanded", eslARG_NONE,"default",NULL, NULL,  ALGOPTS,      NULL,        NULL, "compare d&c optimal CYK versus HMM banded CYK", 3 },
+  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 3 },
+  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "realign (non-banded) seqs with HMM banded CYK score < 0 bits", 3 },
+  { "--std",     eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare divide and conquer (d&c) versus standard CYK", 3 },
+  { "--hmmviterbi",eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm", 3 },
+  { "--scoreonly",eslARG_NONE,  FALSE, NULL, NULL,      NULL,   "--std",        NULL, "for standard CYK stage, do only score, save memory", 3 },
+#ifdef HAVE_DEVOPTS
+  { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare non-banded d&c versus QDB standard CYK", 3 },
+  { "--qdbsmall",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare non-banded d&c versus QDB d&c", 3 },
+  { "--qdbboth", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare        QDB d&c versus QDB standard CYK", 3 },
+  { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,      NULL,        NULL, "set tail loss prob for QDB to <x>", 3 },
+#endif
   /* Options for testing multiple rounds of banded alignment, stage 2->N alignment */
-  { "--betas",   eslARG_INT,  NULL,    NULL, "0<n<50",   NULL, "--betae",       NULL, "set initial (stage 2) tail loss prob to 10E-<x> for QDB", 5 },
-  { "--betae",   eslARG_INT,  NULL,    NULL, "0<n<50",   NULL, "--betas",       NULL, "set final   (stage N) tail loss prob to 10E-<x> for QDB", 5 },
-  { "--taus",    eslARG_INT,  NULL,    NULL, "0<n<50",   NULL,"--hbanded,--taue",NULL,"set initial (stage 2) tail loss prob to 10E-<x> for HMM banding", 5 },
-  { "--taue",    eslARG_INT,  NULL,    NULL, "0<n<50",   NULL,"--hbanded,--taus",NULL,"set final   (stage N) tail loss prob to 10E-<x> for HMM banding", 5 },
+  { "--taus",    eslARG_INT,  NULL,    NULL, "0<n<=30", NULL,"--hbanded,--taue",NULL,"set initial (stage 2) tail loss prob to 1E-<x> for HMM banding", 4 },
+  { "--taue",    eslARG_INT,  NULL,    NULL, "0<n<=30", NULL,"--hbanded,--taus",NULL,"set final   (stage N) tail loss prob to 1E-<x> for HMM banding", 4 },
+#ifdef HAVE_DEVOPTS
+  { "--betas",   eslARG_INT,  NULL,    NULL, "0<n<=30", NULL, "--betae",       NULL, "set initial (stage 2) tail loss prob to 1E-<x> for QDB", 4 },
+  { "--betae",   eslARG_INT,  NULL,    NULL, "0<n<=30", NULL, "--betas",       NULL, "set final   (stage N) tail loss prob to 1E-<x> for QDB", 4 },
+#endif
   /* Output options */
-  { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 6 },
-  { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  6 },
+  { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 4 },
+  { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  4 },
   /* Other options */
-  { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb",   7 },  
-  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 7 },
+  { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb",   5 },  
+  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 5 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -167,18 +175,20 @@ main(int argc, char **argv)
       esl_usage(stdout, argv[0], usage);
       puts("\nwhere general options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-      puts("\nexpert miscellaneous options:");
-      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
       puts("\noptions for source of input sequences:");
-      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
       puts("\nstage 2 alignment options, to compare to stage 1 (D&C non-banded), are:");
-      esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+#ifdef HAVE_DEVOPTS
       puts("\noptions for testing multiple tau/beta values for --hbanded/--qdb:");
-      esl_opt_DisplayHelp(stdout, go, 5, 2, 80); 
+#else
+      puts("\noptions for testing multiple tau values for --hbanded:");
+#endif
+      esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
       puts("\noutput options are:");
-      esl_opt_DisplayHelp(stdout, go, 6, 2, 80); 
+      esl_opt_DisplayHelp(stdout, go, 5, 2, 80); 
       puts("\n  other options:");
-      esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
+      esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
       exit(0);
     }
   if (esl_opt_ArgNumber(go) != 1) 
@@ -191,6 +201,13 @@ main(int argc, char **argv)
       exit(1);
     }
   /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
+  if ((! esl_opt_IsDefault(go, "--taus")) && (! esl_opt_IsDefault(go, "--taue")))
+    if((esl_opt_GetInteger(go, "--taus")) > (esl_opt_GetInteger(go, "--taue")))
+      {
+	printf("Error parsing options, --taus <n> argument must be less than --taue <n> argument.\n");
+	exit(1);
+      }
+#ifdef HAVE_DEVOPTS
   /* Can't have --betas and --betae without a --qdb* option */
   if ((! esl_opt_IsDefault(go, "--betas")) && (! esl_opt_IsDefault(go, "--betae")))
     if(! ((esl_opt_GetBoolean(go, "--qdb")) || (esl_opt_GetBoolean(go, "--qdbsmall"))))
@@ -204,20 +221,14 @@ main(int argc, char **argv)
 	printf("Error parsing options, --betas <n> argument must be less than --betae <n> argument.\n");
 	exit(1);
       }
-  if ((! esl_opt_IsDefault(go, "--taus")) && (! esl_opt_IsDefault(go, "--taue")))
-    if((esl_opt_GetInteger(go, "--taus")) > (esl_opt_GetInteger(go, "--taue")))
-      {
-	printf("Error parsing options, --taus <n> argument must be less than --taue <n> argument.\n");
-	exit(1);
-      }
-
+#endif
 
   /* Initialize what we can in the config structure (without knowing the input alphabet yet).
    */
   cfg.cmfile     = esl_opt_GetArg(go, 1); 
   cfg.infmt      = eslSQFILE_UNKNOWN;      /* autodetect sequence file format by default. */ 
   cfg.abc        = NULL;	           /* created in init_master_cfg() in masters, or in mpi_worker() in workers */
-  if (esl_opt_GetBoolean(go, "-1")) cfg.be_verbose = FALSE;        
+  if (esl_opt_GetBoolean(go, "-q")) cfg.be_verbose = FALSE;        
   else                              cfg.be_verbose = TRUE;        
   cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.sqfp       = NULL;                   /* opened in init_master_cfg() in masters, stays NULL for workers */
@@ -238,6 +249,8 @@ main(int argc, char **argv)
   cfg.nproc      = 0;		           /* this gets reset below, if we init MPI */
   cfg.my_rank    = 0;		           /* this gets reset below, if we init MPI */
   cfg.do_stall   = esl_opt_GetBoolean(go, "--stall");
+
+  if(cfg.be_verbose) cm_banner(stdout, argv[0], banner);
 
   /* This is our stall point, if we need to wait until we get a
    * debugger attached to this process for debugging (especially
@@ -356,8 +369,8 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     }
 
   /* create RNG */
-  if (! esl_opt_IsDefault(go, "--seed")) 
-    cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "--seed"));
+  if (! esl_opt_IsDefault(go, "-s")) 
+    cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
   else cfg->r = esl_randomness_CreateTimeseeded();
 
   if (cfg->r       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
@@ -389,7 +402,16 @@ init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   cfg->beta = NULL;
   cfg->tau  = NULL;
 
-  if((! (esl_opt_IsDefault(go, "--betas"))) && (! (esl_opt_IsDefault(go, "--betae"))))
+  if((! (esl_opt_IsDefault(go, "--taus"))) && (! (esl_opt_IsDefault(go, "--taue"))))
+    {
+      cfg->nstages = esl_opt_GetInteger(go, "--taue") - esl_opt_GetInteger(go, "--taus") + 2;
+      ESL_ALLOC(cfg->tau, sizeof(double) * cfg->nstages);
+      cfg->tau[1] = pow(10., (-1. * esl_opt_GetInteger(go, "--taus")));
+      for(s = 2; s < cfg->nstages; s++)
+	cfg->tau[s] = cfg->tau[(s-1)] / 10.;
+    }
+#ifdef HAVE_DEVOPTS
+  else if((! (esl_opt_IsDefault(go, "--betas"))) && (! (esl_opt_IsDefault(go, "--betae"))))
     {
       cfg->nstages = esl_opt_GetInteger(go, "--betae") - esl_opt_GetInteger(go, "--betas") + 2;
       ESL_ALLOC(cfg->beta, sizeof(double) * cfg->nstages);
@@ -398,29 +420,24 @@ init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       for(s = 2; s < cfg->nstages; s++)
 	cfg->beta[s] = cfg->beta[(s-1)] / 10.;
     }
-  else if((! (esl_opt_IsDefault(go, "--taus"))) && (! (esl_opt_IsDefault(go, "--taue"))))
-    {
-      cfg->nstages = esl_opt_GetInteger(go, "--taue") - esl_opt_GetInteger(go, "--taus") + 2;
-      ESL_ALLOC(cfg->tau, sizeof(double) * cfg->nstages);
-      cfg->tau[1] = pow(10., (-1. * esl_opt_GetInteger(go, "--taus")));
-      for(s = 2; s < cfg->nstages; s++)
-	cfg->tau[s] = cfg->tau[(s-1)] / 10.;
-    }
+#endif
   else
     {
       cfg->nstages = 2;
-      if(esl_opt_GetBoolean(go, "--qdb") || esl_opt_GetBoolean(go, "--qdbsmall"))
-	{
-	  ESL_ALLOC(cfg->beta, sizeof(double) * cfg->nstages);
-	  cfg->beta[0] = 0.; /* this won't matter b/c stage 1 is non-QDB */
-	  cfg->beta[1] = esl_opt_GetReal(go, "--beta");
-	}
-      else if(esl_opt_GetBoolean(go, "--hbanded"))
+      if(esl_opt_GetBoolean(go, "--hbanded"))
 	{
 	  ESL_ALLOC(cfg->tau, sizeof(double) * cfg->nstages);
 	  cfg->tau[0] = 0.; /* this won't matter b/c stage 1 is non-banded */
 	  cfg->tau[1] = esl_opt_GetReal(go, "--tau");
 	}
+#ifdef HAVE_DEVOPTS
+      else if(esl_opt_GetBoolean(go, "--qdb") || esl_opt_GetBoolean(go, "--qdbsmall"))
+	{
+	  ESL_ALLOC(cfg->beta, sizeof(double) * cfg->nstages);
+	  cfg->beta[0] = 0.; /* this won't matter b/c stage 1 is non-QDB */
+	  cfg->beta[1] = esl_opt_GetReal(go, "--beta");
+	}
+#endif
     }  
   cfg->s1_w  = esl_stopwatch_Create();
   cfg->w     = esl_stopwatch_Create();
@@ -935,7 +952,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  /* TO DO: write function that inside actually_align_targets() takes
 	   * a CP9 parse, and converts it to a CM parsetree */
 	  if(esl_opt_GetBoolean(go, "-i"))
-	    printf("%-12s S1: %.3f S%d: %.3f diff: %.3f\n", seqs_to_aln->sq[i]->name, cfg->s1_sc[i], (cfg->s+1), seqs_to_aln->sc[i], (fabs(cfg->s1_sc[i] - seqs_to_aln->sc[i])));
+	    printf("%-40s S1: %10.4f S%d: %10.4f diff: %10.4f\n", seqs_to_aln->sq[i]->name, cfg->s1_sc[i], (cfg->s+1), seqs_to_aln->sc[i], (fabs(cfg->s1_sc[i] - seqs_to_aln->sc[i])));
 	  if(fabs(cfg->s1_sc[i] -  seqs_to_aln->sc[i]) > 0.0001) {
 	    diff_ct++;
 	    diff_sc += fabs(cfg->s1_sc[i] - seqs_to_aln->sc[i]);
@@ -950,19 +967,16 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       esl_stopwatch_Display(stdout, cfg->w, "");
       spdup = cfg->s1_w->user / cfg->w->user;
       printf("Speedup (user):          %.2f\n", spdup);
-
-      if(! esl_opt_GetBoolean(go, "--hmmviterbi"))
-	{
-	  printf("Avg bit score diff:      %.2f\n", (diff_sc / ((float) seqs_to_aln->nseq)));
-	  if(diff_ct == 0)
-	    printf("Avg sc diff(>1e-4):      %.2f\n", 0.);
-	  else
-	    printf("Avg sc diff(>1e-4):      %.2f\n", (diff_sc / ((float) diff_ct)));
-	  printf("Num   diff (>1e-4):      %d\n", (diff_ct));
-	  printf("Fract diff (>1e-4):      %.5f\n", (((float) diff_ct) / ((float) seqs_to_aln->nseq)));
-	  printf("---------------------------------\n");
-	  printf("\n");
-	}
+      
+      printf("Avg bit score diff:      %.2f\n", (diff_sc / ((float) seqs_to_aln->nseq)));
+      if(diff_ct == 0)
+	printf("Avg sc diff(>1e-4):      %.2f\n", 0.);
+      else
+	printf("Avg sc diff(>1e-4):      %.2f\n", (diff_sc / ((float) diff_ct)));
+      printf("Num   diff (>1e-4):      %d\n", (diff_ct));
+      printf("Fract diff (>1e-4):      %.5f\n", (((float) diff_ct) / ((float) seqs_to_aln->nseq)));
+      printf("---------------------------------\n");
+      printf("\n");
     }
   return eslOK;
 
@@ -1002,6 +1016,8 @@ static int
 initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   /* Some stuff we do no matter what stage we're on */
+    cm->align_opts  = 0;  /* clear alignment options from previous stage */
+    cm->config_opts = 0;  /* clear configure options from previous stage */
 
   /* set up params/flags/options of the CM */
   if(cfg->beta != NULL) cm->beta = cfg->beta[cfg->s];
@@ -1011,28 +1027,28 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   cm->align_opts  |= CM_ALIGN_CHECKPARSESC;
 
   /* Update cm->config_opts and cm->align_opts based on command line options */
-  if(esl_opt_GetBoolean(go, "-l"))
-    {
-      cm->config_opts |= CM_CONFIG_LOCAL;
-      cm->config_opts |= CM_CONFIG_HMMLOCAL;
-      cm->config_opts |= CM_CONFIG_HMMEL;
-    }
-  if(esl_opt_GetBoolean(go, "--sub"))         
-    { 
-      cm->align_opts  |=  CM_ALIGN_SUB;
-      cm->align_opts  &= ~CM_ALIGN_CHECKPARSESC; /* parsetree score won't match aln score */
-    }
+  if(esl_opt_GetBoolean(go, "-l")) {
+    cm->config_opts |= CM_CONFIG_LOCAL;
+    cm->config_opts |= CM_CONFIG_HMMLOCAL;
+    cm->config_opts |= CM_CONFIG_HMMEL;
+  }
+  if(esl_opt_GetBoolean(go, "--sub")) {        
+    cm->align_opts  |=  CM_ALIGN_SUB;
+    cm->align_opts  &= ~CM_ALIGN_CHECKPARSESC; /* parsetree score won't match aln score */
+  }
   /*if(  esl_opt_GetBoolean(go, "-i"))         cm->align_opts  |= CM_ALIGN_TIME;*/
   if(! esl_opt_GetBoolean(go, "--iins"))     cm->config_opts |= CM_CONFIG_ZEROINSERTS;
     
   /* do stage 1 specific stuff */
   if(cfg->s == 0) { /* set up stage 1 alignment we'll compare all other stages to */
     cm->align_opts |= CM_ALIGN_SMALL;
+#ifdef HAVE_DEVOPTS
     /* only one option allows cmscore NOT to do standard CYK as first stage aln */
     if(esl_opt_GetBoolean(go, "--qdbboth")) { 
       cm->align_opts  |= CM_ALIGN_QDB;
       cm->config_opts |= CM_CONFIG_QDB;
     }
+#endif
     /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
      * set local mode, make cp9 HMM, calculate QD bands etc. 
      */
@@ -1048,14 +1064,13 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
       cm->dmax = NULL;
       cm->flags &= ~CMH_QDB;
     }
-    cm->align_opts  = 0;  /* clear alignment options from previous stage */
-    cm->config_opts = 0; /* clear configure options from previous stage */
 
     if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;
     if(esl_opt_GetBoolean(go, "--hmmviterbi"))  cm->align_opts  |= CM_ALIGN_HMMVITERBI;
     if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
     if(esl_opt_GetBoolean(go, "--scoreonly"))   cm->align_opts  |= CM_ALIGN_SCOREONLY;
-    if(esl_opt_GetBoolean(go, "--qdb") || esl_opt_GetBoolean(go, "--qdbsmall")) {                    
+#ifdef HAVE_DEVOPTS
+    if(esl_opt_GetBoolean(go, "--qdb") || esl_opt_GetBoolean(go, "--qdbsmall") || esl_opt_GetBoolean(go, "--qdbboth")) {                    
       cm->align_opts  |= CM_ALIGN_QDB;
       cm->config_opts |= CM_CONFIG_QDB;
       /* calc QDBs for this stage */
@@ -1063,12 +1078,13 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
     }
     /* only one way stage 2+ alignment will be D&C, if --qdbsmall was enabled */
     if(esl_opt_GetBoolean(go, "--qdbsmall"))  cm->align_opts  |= CM_ALIGN_SMALL;
+#endif
   }
   if(cfg->my_rank == 0) 
     {
       if(cfg->s == 0 && cfg->ncm == 1) {
-	if     (! esl_opt_IsDefault(go, "--infile")) printf("Sequence mode: file (%s)\n", esl_opt_GetString(go, "--infile"));
-	else if(! esl_opt_IsDefault(go, "--random")) printf("Sequence mode: random (seed: %ld)\n", esl_randomness_GetSeed(cfg->r));
+	if     (! esl_opt_IsDefault(go, "--infile")) printf("Sequence mode: input file (%s)\n", esl_opt_GetString(go, "--infile"));
+	else if( esl_opt_GetBoolean(go, "--random")) printf("Sequence mode: random (seed: %ld)\n", esl_randomness_GetSeed(cfg->r));
 	else                                         printf("Sequence mode: CM emitted (seed: %ld)\n", esl_randomness_GetSeed(cfg->r));
       }
       if(cfg->s == 0) { 
@@ -1149,28 +1165,32 @@ static int
 get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int i_am_mpi_master, seqs_to_aln_t **ret_seqs_to_aln)
 {
   int status = eslOK;
-  int do_emit   = FALSE;
-  int do_random = FALSE;
-  int do_infile = FALSE;
+  int do_emit   =    esl_opt_GetBoolean(go, "--emit");
+  int do_random =    esl_opt_GetBoolean(go, "--random");
+  int do_infile = (! esl_opt_IsDefault (go, "--infile"));
+  int nseq      =    esl_opt_GetInteger(go, "-n");
   seqs_to_aln_t *seqs_to_aln = NULL;
   double *dnull = NULL;
   int i;
+  int safe_windowlen = cm->clen * 2;
+  double **gamma = NULL;
 
-  if  (  esl_opt_IsDefault(go, "--emit") && esl_opt_IsDefault(go, "--random") && esl_opt_IsDefault(go, "--infile")) do_emit = TRUE;
-  if  (! esl_opt_IsDefault(go, "--emit"))   do_emit = TRUE;
-  if  (! esl_opt_IsDefault(go, "--random")) do_random = TRUE;
-  if  (! esl_opt_IsDefault(go, "--infile")) do_infile = TRUE;
-
+  assert((do_emit + do_random + do_infile) == 1);
   ESL_DASSERT1(((do_emit + do_random + do_infile) == 1));
 
   if(do_emit) {
-    seqs_to_aln = CMEmitSeqsToAln(cfg->r, cm, cfg->ncm, esl_opt_GetInteger(go, "--emit"), i_am_mpi_master);
+    seqs_to_aln = CMEmitSeqsToAln(cfg->r, cm, cfg->ncm, nseq, i_am_mpi_master);
   }
   else if(do_random) {
     ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
     esl_vec_DNorm(dnull, cm->abc->K);
-    seqs_to_aln = RandomEmitSeqsToAln(cfg->r, cm->abc, dnull, cfg->ncm, esl_opt_GetInteger(go, "--random"), cm->clen, i_am_mpi_master);
+
+    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
+      safe_windowlen *= 2;
+      if(safe_windowlen > (cm->clen * 1000)) cm_Fail("Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
+    }
+    seqs_to_aln = RandomEmitSeqsToAln(cfg->r, cm->abc, dnull, cfg->ncm, nseq, gamma[0], safe_windowlen, i_am_mpi_master);
     free(dnull);
   }
   else if(do_infile)
@@ -1187,8 +1207,9 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   if(cfg->ofp != NULL) {
     for(i = 0; i < seqs_to_aln->nseq; i++)
       if((esl_sqio_Write(cfg->ofp, seqs_to_aln->sq[i], eslSQFILE_FASTA)) != eslOK) cm_Fail("Error writing unaligned sequences to %s.", esl_opt_GetString(go, "--outfile"));
-    fprintf(cfg->ofp, "//\n");
   }
+
+  if(gamma != NULL) FreeBandDensities(cm, gamma);
 
   *ret_seqs_to_aln = seqs_to_aln;
   return eslOK;

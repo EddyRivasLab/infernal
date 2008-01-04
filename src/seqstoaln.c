@@ -405,23 +405,25 @@ seqs_to_aln_t *CMEmitSeqsToAln(ESL_RANDOMNESS *r, CM_t *cm, int ncm, int nseq, i
  *           pdist           - probability distribution to use for emitting
  *           extranum        - use this as first part of sequence name (could be ncm)
  *           nseq            - number of seqs to emit
- *           L               - length to make sequences 
+ *           L_distro        - length distribution (0..Lmax) to draw L (lengths of random seqs) from
+ *           Lmax            - maximum length in L_distro
  *           i_am_mpi_master - TRUE if called from MPI master (see Note)
  *
  * Returns:  Ptr to a newly allocated seqs_to_aln object with nseq sequences to align.
  *           Dies immediately on failure with informative error message.
  */
-seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, double *pdist, int extranum, int nseq, int L, int i_am_mpi_master) 
+seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, double *pdist, int extranum, int nseq, double *L_distro, int Lmax, int i_am_mpi_master) 
 {
   int status;
   seqs_to_aln_t *seqs_to_aln = NULL;
   char *name = NULL;
   int namelen;
   int i;
+  int L;
+
   ESL_DSQ *randdsq = NULL;
 
   seqs_to_aln = CreateSeqsToAln(nseq, i_am_mpi_master);
-  ESL_ALLOC(randdsq,      sizeof(ESL_DSQ)* (L+2));
 
   namelen = IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
   ESL_ALLOC(name, sizeof(char) * namelen);
@@ -429,14 +431,16 @@ seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, d
   for(i = 0; i < nseq; i++)
     {
       sprintf(name, "randseq%d-%d", extranum, i+1);
+      L = esl_rnd_DChoose(r, L_distro, Lmax+1);
+      ESL_ALLOC(randdsq, sizeof(ESL_DSQ)* (L+2));
       if (esl_rnd_xIID(r, pdist, abc->K, L, randdsq)  != eslOK) cm_Fail("RandomEmitSeqsToAln(): failure creating random sequence.");
       if((seqs_to_aln->sq[i] = esl_sq_CreateDigitalFrom(abc, name, randdsq, L, NULL, NULL, NULL)) == NULL) 
 	 cm_Fail("RandomEmitSeqsToAln() error.");
+      free(randdsq);
     }
   seqs_to_aln->nseq = nseq;
 
   free(name);
-  free(randdsq);
   return seqs_to_aln;
 
  ERROR:

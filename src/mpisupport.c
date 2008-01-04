@@ -325,18 +325,17 @@ cm_justread_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm c
   if (MPI_Unpack(buf, n, pos, cm->pnum,                  M,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
 
   if (MPI_Unpack(buf, n, pos, cm->nodemap,          nnodes,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
-
   if (MPI_Unpack(buf, n, pos, cm->ndtype,           nnodes,  MPI_CHAR, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   
   if (MPI_Unpack(buf, n, pos, cm->e[0],              M*K*K, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
 
   if (MPI_Unpack(buf, n, pos, cm->t[0],       M*MAXCONNECT, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   
-  if (MPI_Unpack(buf, n, pos, &(has_stats),              1, MPI_INT,   comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
-
   /* free the cm->comlog that was allocated inside the CreateCM() call, we'll allocate a new one, a bit messy */
   FreeComLog(cm->comlog);
   status   = comlog_MPIUnpack(buf, n, pos, comm, &(cm->comlog));  if (status != eslOK) return status;
+
+  if (MPI_Unpack(buf, n, pos, &(has_stats),              1, MPI_INT,   comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   if (has_stats) { 
     status   = cmstats_MPIUnpack(buf, n, pos, comm, &(cm->stats));  if (status != eslOK) return status;
   }  

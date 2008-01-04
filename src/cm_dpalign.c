@@ -672,7 +672,7 @@ fast_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend,
   /* allocate alpha (if it's small enough), allocate all decks, no deck reuse */
   Mb_for_alpha = ((float) size_vjd_deck(W, 1, W) * ((float) (cm->M)));
   if(Mb_for_alpha > size_limit)
-    ESL_FAIL(eslERANGE, errbuf, "fast_cyk_align(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit (it may be possible to change limit with --mxsize option).", Mb_for_alpha, (float) size_limit);
+    ESL_FAIL(eslERANGE, errbuf, "fast_cyk_align(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit\n(it may be possible to change limit with --mxsize option).", Mb_for_alpha, (float) size_limit);
   ESL_DPRINTF1(("Size of alpha matrix: %.2f\n", Mb_for_alpha));
 
   ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
@@ -1910,7 +1910,7 @@ FastInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size
   /* allocate alpha (if it's small enough), allocate all decks, no deck reuse */
   Mb_for_alpha = ((float) size_vjd_deck(W, 1, W) * ((float) (cm->M+1)));
   if(Mb_for_alpha > size_limit)
-    ESL_FAIL(eslERANGE, errbuf, "FastInsideAlign(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit (may be possible to change limit with --mxsize option).", Mb_for_alpha, (float) size_limit);
+    ESL_FAIL(eslERANGE, errbuf, "FastInsideAlign(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit\n(it may be possible to change limit with --mxsize option).", Mb_for_alpha, (float) size_limit);
   ESL_DPRINTF1(("Size of alpha matrix: %.2f\n", Mb_for_alpha));
 
   ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
@@ -2743,7 +2743,7 @@ FastOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
   /* allocate beta (if it's small enough), allocate all decks, no deck reuse */
   Mb_for_beta = ((float) size_vjd_deck(W, 1, W) * ((float) (cm->M)));
   if(Mb_for_beta > size_limit)
-    ESL_FAIL(eslERANGE, errbuf, "FastOutsideAlign(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit (may be possible to change limit with --mxsize option).", Mb_for_beta, (float) size_limit);
+    ESL_FAIL(eslERANGE, errbuf, "FastOutsideAlign(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit\n(it may be possible to change limit with --mxsize option).", Mb_for_beta, (float) size_limit);
   ESL_DPRINTF1(("Size of beta matrix: %.2f\n", Mb_for_beta));
 
   ESL_ALLOC(beta, sizeof(float **) * (cm->M+1));
@@ -3679,7 +3679,7 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
   /* allocate alpha (if it's small enough), allocate all decks, no deck reuse */
   Mb_for_alpha = ((float) size_vjd_deck(W, 1, W) * ((float) (cm->M-1)));
   if(Mb_for_alpha > size_limit)
-    ESL_FAIL(eslERANGE, errbuf, "optimal_accuracy_align(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit (may be possible to change limit with --mxsize option).", Mb_for_alpha, (float) size_limit);
+    ESL_FAIL(eslERANGE, errbuf, "optimal_accuracy_align(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit\n(it may be possible to change limit with --mxsize option).", Mb_for_alpha, (float) size_limit);
   ESL_DPRINTF1(("Size of alpha matrix: %.2f\n", Mb_for_alpha));
 
   ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
@@ -5065,7 +5065,15 @@ main(int argc, char **argv)
     ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
     esl_vec_DNorm(dnull, cm->abc->K);
-    seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, L, FALSE);
+    /* get gamma[0] from the QDB calc alg, which will serve as the length distro for random seqs */
+    int safe_windowlen = cm->clen * 2;
+    double **gamma = NULL;
+    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
+      safe_windowlen *= 2;
+      if(safe_windowlen > (cm->clen * 1000)) cm_Fail("Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
+    }
+    seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, gamma[0], safe_windowlen, FALSE);
+    FreeBandDensities(cm, gamma);
     free(dnull);
   }
   else /* don't randomly generate seqs, emit them from the CM */

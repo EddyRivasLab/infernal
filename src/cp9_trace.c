@@ -984,8 +984,8 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
    * the inserts and adopts 'flush left for IL / flush right for IR'
    * behavior (which older versions of Infernal used).
    */
-  ESL_ALLOC(insleft, sizeof(int) * emap->clen);
-  esl_vec_ISet(insleft, cm->clen, -1);
+  ESL_ALLOC(insleft, sizeof(int) * (emap->clen+1));
+  esl_vec_ISet(insleft, (cm->clen+1), -1);
   for(nd = 0; nd < cm->nodes; nd++)
     {
       if(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == BEGR_nd || cm->ndtype[nd] == ROOT_nd)
@@ -994,9 +994,10 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
       if(cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd)
 	insleft[emap->rpos[nd]-1] = FALSE;
     }
+  if(insleft[emap->clen] == -1) insleft[emap->clen] = FALSE; /* special case, insleft[emap->clen] == -1 IFF cpos==emap->clen is modelled by MATR or MATP. */
   /* check we've constructed insleft properly, TEMPORARY */
   for(cpos = 0; cpos <= emap->clen; cpos++)
-    assert(insleft[cpos] != -1);
+    ESL_DASSERT1((insleft[cpos] != -1));
 
   /* Here's the problem. We want to align the match states in columns,
    * but some sequences have inserted symbols in them; we need some
@@ -1338,6 +1339,7 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   FreeEmitMap(emap);
   free(eluse);
   free(iuse);
+  free(matuse);
   free(maxins);
   free(maxels);
   free(matmap);

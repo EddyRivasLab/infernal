@@ -89,14 +89,16 @@ static ESL_OPTIONS options[] = {
   { "--corig",   eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "build an additional CM from the original, full MSA", 8 }, 
   { "--cdump",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump the MSA for each cluster (CM) to file <s>", 8 },
 /* Refining the seed alignment */
-  { "--refine",  eslARG_OUTFILE, NULL, NULL, NULL,       NULL,   NULL,       NULL, "refine input aln w/Expectation-Maximization, save to <s>", 9 },
-  { "--gibbs",   eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, use Gibbs sampling instead of EM", 9 },
-  { "-s",        eslARG_INT,     NULL, NULL, "n>0",      NULL,"--gibbs",    NULL, "w/--gibbs, set random number generator seed to <n>",  9 },
-  { "-l",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, align locally w.r.t the model", 9 },
-  { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",   NULL, "w/--refine, use sub CM for columns b/t HMM start/end points", 9 },
-  { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,       NULL,"--refine",   NULL, "do not use bands to accelerate alignment with --refine", 9 },
+  { "--refine",  eslARG_OUTFILE, NULL, NULL, NULL,       NULL,   NULL,          NULL, "refine input aln w/Expectation-Maximization, save to <s>", 9 },
+  { "--gibbs",   eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, use Gibbs sampling instead of EM", 9 },
+  { "-s",        eslARG_INT,     NULL, NULL, "n>0",      NULL,"--gibbs",        NULL, "w/--gibbs, set random number generator seed to <n>",  9 },
+  { "-l",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, align locally w.r.t the model", 9 },
+  { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, use sub CM for columns b/t HMM start/end points", 9 },
+  { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,       NULL,"--refine",       NULL, "do not use bands to accelerate alignment with --refine", 9 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",    NULL,"--refine","--nonbanded", "set tail loss prob for --hbanded to <x>", 9 },
-  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",     NULL,"--refine",   NULL, "set maximum allowable DP matrix size to <x> Mb", 9 },
+  { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, use informative insert emissions, do not zero them", 9 },
+  { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, flush inserts left/right in alignments", 9 },
+  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",     NULL,"--refine",       NULL, "set maximum allowable DP matrix size to <x> Mb", 9 },
   { "--verbose", eslARG_NONE,    NULL,  NULL, NULL,      NULL,"--refine",   "-1", "w/--refine, be verbose, print intermediate alignments", 9 },
 /* Selecting the input MSA alphabet rather than autoguessing it */
   { "--rna",     eslARG_NONE,   FALSE, NULL, NULL,   ALPHOPTS,    NULL,     NULL, "input alignment is RNA sequence data", 10},
@@ -1069,8 +1071,9 @@ strip_wuss(char *ss)
 
 /* name_msa() 
  *
- * Give a MSA a name if it doesn't have one,
- * Naming rule is the suffixless name of the file it came from,
+ * Give a MSA a name if it doesn't have one.
+ * If -n <s> was enabled, name it <s>, else the 
+ * naming rule is the suffixless name of the file it came from,
  * plus a "-<X>" with <X> = number MSA in the file.
  *
  * For example the 3rd MSA in file "alignments.stk" would be
@@ -1086,32 +1089,35 @@ name_msa(const ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa, int nali)
   int n;
   int maxintlen;
 
+  if(msa == NULL) ESL_FAIL(status, errbuf, "name_msa(), msa is NULL.");
+
+  if(esl_opt_IsDefault(go, "-n") && msa->name != NULL) return eslOK; /* keep the msa's existing name */
+
   if(! (esl_opt_IsDefault(go, "-n"))) { /* give the msa the -n name */
     if(nali > 1) ESL_FAIL(eslEINCOMPAT, errbuf, "The -n option requires exactly 1 alignment, but the alignment file has > 1 alignments.");
     if((status = esl_strdup(esl_opt_GetString(go, "-n"), -1, &name)) != eslOK) ESL_FAIL(status, errbuf, "name_msa(), esl_strdup, memory allocation error.");
   }
-  else if(msa != NULL && msa->name == NULL) { /* we'll give the msa a name, but -n was not enabled */
+  /* give the msa a name, the name of the file it comes from without the filetail, plus an appended "-X" where
+   * X is the index of the alignment in the file 
+   */
+  else { 
     esl_FileTail(esl_opt_GetArg(go, 2), TRUE, &name); /* TRUE=nosuffix */
     if (name == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "Error getting file tail of the MSA.\n");
+    n         = strlen(name);
+    maxintlen = IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
+    ESL_ALLOC(buffer, sizeof(char) * maxintlen);
+    sprintf(buffer, "-%d", (nali));
+    n += strlen(buffer);
+    ESL_RALLOC(name, tmp, sizeof(char)*(n+1));
+    if((status = esl_strcat(&name, -1, buffer, -1)) != eslOK) goto ERROR;
   }
-  else if(msa != NULL && msa->name != NULL) return eslOK; /* keep the msa's existing name */
 
-  /* if we get here, name was set above */
-  n         = strlen(name);
-  maxintlen = IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
-  ESL_ALLOC(buffer, sizeof(char) * maxintlen);
-  sprintf(buffer, "-%d", (nali));
-  n += strlen(buffer);
-  ESL_RALLOC(name, tmp, sizeof(char)*(n+1));
-  if((status = esl_strcat(&name, -1, buffer, (n+1))) != eslOK) goto ERROR;
-  ESL_ALLOC(msa->name, sizeof(char) * (strlen(name)+1));
-  strcpy(msa->name, name);
-  free(name);
-  free(buffer);
-  if ((status = esl_strchop(msa->name, n)) != eslOK) goto ERROR;
+  if((status = esl_strdup(name, -1, &(msa->name))) != eslOK) ESL_FAIL(status, errbuf, "name_msa(), esl_strdup, memory allocation error.");
 
-
+  if(name   != NULL) free(name);
+  if(buffer != NULL) free(buffer);
   return eslOK;
+
  ERROR:
   if(name != NULL)   free(name);
   if(buffer != NULL) free(buffer);
@@ -1341,6 +1347,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   else                                        cm->align_opts  |= CM_ALIGN_HBANDED;
 
   if(esl_opt_GetBoolean(go, "--sub"))         cm->align_opts  |= CM_ALIGN_SUB;
+  if(esl_opt_GetBoolean(go, "--fins"))        cm->align_opts  |= CM_ALIGN_FLUSHINSERTS;
 
   /* update cm->config_opts */
   if(esl_opt_GetBoolean(go, "-l"))
@@ -1349,6 +1356,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
       cm->config_opts |= CM_CONFIG_HMMLOCAL;
       cm->config_opts |= CM_CONFIG_HMMEL;
     }
+  if(! esl_opt_GetBoolean(go, "--iins"))      cm->config_opts |= CM_CONFIG_ZEROINSERTS;
 
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * this may make a cp9 HMM, for example.
