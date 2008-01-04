@@ -433,8 +433,7 @@ typedef struct cp9map_s {
 #define CM_CONFIG_HMMEL        (1<<2)  /* configure the CP9   for local alignment  */
 #define CM_CONFIG_ENFORCE      (1<<3)  /* enforce a subseq be incl. in each parse  */
 #define CM_CONFIG_ENFORCEHMM   (1<<4)  /* build CP9 HMM to only enforce subseq     */
-#define CM_CONFIG_ZEROINSERTS  (1<<5)  /* make all insert emissions equiprobable   */
-#define CM_CONFIG_QDB          (1<<6)  /* calculate query dependent bands          */
+#define CM_CONFIG_QDB          (1<<5)  /* calculate query dependent bands          */
 
 /* alignment options, cm->align_opts */
 /* alignment options, cm->align_opts */

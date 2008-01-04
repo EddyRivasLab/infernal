@@ -204,8 +204,6 @@ extern int   EnforceSubsequence(CM_t *cm);
 extern float EnforceScore(CM_t *cm);
 extern int   EnforceFindEnfStart(CM_t *cm, int enf_cc_start);
 extern int   ConfigQDB(CM_t *cm);
-extern void  CMHackInsertScores(CM_t *cm);
-extern void  CP9HackInsertScores(CP9_t *cp9);
 
 /* from cm_modelmaker.c */
 extern void HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh, 

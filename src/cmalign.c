@@ -46,7 +46,6 @@ static ESL_OPTIONS options[] = {
   { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,   "--small", "append posterior probabilities to alignment", 1 },
   { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress banner and scores, print only the alignment", 1 },
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
-  { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
   { "--time",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        "-q", "print run time for each sequence alignment", 1 },
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 1 },
   { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 1 },
@@ -900,7 +899,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       cm->config_opts |= CM_CONFIG_HMMLOCAL;
       cm->config_opts |= CM_CONFIG_HMMEL;
     }
-  if(! esl_opt_GetBoolean(go, "--iins"))      cm->config_opts |= CM_CONFIG_ZEROINSERTS;
 
   /* update cm->align_opts */
   if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;

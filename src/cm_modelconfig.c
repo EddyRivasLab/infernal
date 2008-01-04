@@ -178,9 +178,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
    * transitions. Transitions scores are overwritten in CMLogoddsify() 
    */
   CMLogoddsify(cm);
-  if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
-    CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
-				     * makes all CP9 (if non-null) inserts equiprobable */
+
   /*debug_print_cm_params(stdout, cm);
     debug_print_cp9_params(stdout, cm->cp9, TRUE);*/
   return eslOK;
@@ -263,9 +261,6 @@ ConfigCMEnforce(CM_t *cm)
       ConfigLocalEnforce(cm, cm->pbegin, cm->pend); /* even in local we require each parse 
 						     * go through the enforced subseq */
       CMLogoddsify(cm);
-      if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
-	CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
-				     * makes all CP9 (if non-null) inserts equiprobable */
     }
   /* Possibly configure the CP9 for local alignment
    * Note: CP9 local/glocal config does not necessarily match CM config 
@@ -282,10 +277,6 @@ ConfigCMEnforce(CM_t *cm)
       CP9Logoddsify(cm->cp9);
     }
      
-  if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
-    CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
-				     * makes all CP9 (if non-null) inserts equiprobable*/
-
   if(cm->config_opts & CM_CONFIG_ENFORCEHMM)
     {
       if(!(cm->flags & CMH_CP9))
@@ -301,7 +292,6 @@ ConfigCMEnforce(CM_t *cm)
       enf_start_pos = emap->lpos[cm->enf_start];
       enf_end_pos   = emap->lpos[enf_end];
       FreeEmitMap(emap);
-      CP9HackInsertScores(cm->cp9);
       CP9EnforceHackMatchScores(cm->cp9, enf_start_pos, enf_end_pos);
     }	
 
@@ -420,9 +410,6 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
      cm_Fail("ConfigLocal(), CM had a scan matrix, but ConfigQDB didn't rebuild it.");
      
   CMLogoddsify(cm);
-  if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
-    CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
-				     * makes all CP9 (if non-null) inserts equiprobable */
   return;
 
  ERROR:
@@ -492,9 +479,6 @@ ConfigGlobal(CM_t *cm)
   }
 
   CMLogoddsify(cm);
-  if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
-    CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
-				     * makes all CP9 (if non-null) inserts equiprobable */
   return;
 }
 
@@ -891,9 +875,6 @@ EnforceSubsequence(CM_t *cm)
   }
 
   CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
-  if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
-    CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
-				     * makes all CP9 (if non-null) inserts equiprobable */
 
   /*for(nd = cm->enf_start; nd <= enf_end; nd++) 
     {
@@ -1088,91 +1069,5 @@ ConfigQDB(CM_t *cm)
   }
 
   CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
-  if(cm->config_opts & CM_CONFIG_ZEROINSERTS)
-    CMHackInsertScores(cm);	    /* insert emissions are all equiprobable,
-				     * makes all CP9 (if non-null) inserts equiprobable */
   return eslOK;
-}
-
-
-/* Function:  CMHackInsertScores()
- * Incept:    SRE, Wed Jul 24 09:48:22 2002 [St. Louis]
- *
- * Purpose:   Temporary (I hope): make all insert scores 0.
- *            If you let inserts train on the data, you can get
- *            positive insert emission scores. Local alignments,
- *            in particular, can then consist of just a couple of
- *            consensus states and a long string of insert 
- *            states, hitting base-composition-biased sequence
- *            with very high score. This is a Bad Thing.
- *            
- *            The long term solution for this problem will
- *            go in with mixture Dirichlet priors, but for now
- *            (with only Laplace coded), this'll appease the
- *            pitchfork and torches mob at Cambridge.
- *
- * Args:      cm - the model 
- *
- * Returns:   (void)
- *
- * Xref:      STL6 p.93.
- */
-void
-CMHackInsertScores(CM_t *cm)
-{
-  int v, x;
-  for (v = 0; v < cm->M; v++)
-    {
-      if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st)
-	for (x = 0; x < cm->abc->K; x++)
-	  {
-	    cm->esc[v][x]  = 0.;
-	    cm->iesc[v][x] = 0;
-	  }
-    }
-  if(cm->ioesc != NULL) { 
-    for (v = 0; v < cm->M; v++)
-      {
-	if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) { 
-	  for (x = 0; x < cm->abc->K; x++)
-	    cm->ioesc[v][x]  = 0;
-	  for(x = cm->abc->K+1; x < cm->abc->Kp-1; x++) /* note boundary conditions, gap, missing data symbols stay IMPOSSIBLE */
-	    cm->ioesc[v][x]  = 0;
-	}
-      }
-  }
-  if(cm->oesc != NULL) { 
-    for (v = 0; v < cm->M; v++)
-      {
-	if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
-	  for (x = 0; x < cm->abc->K; x++)
-	    cm->oesc[v][x]  = 0.;
-	  for(x = cm->abc->K+1; x < cm->abc->Kp-1; x++) /* note boundary conditions, gap, missing data symbols stay IMPOSSIBLE */
-	    cm->oesc[v][x]  = 0.;
-	}
-      }
-  }
-
-  if(cm->cp9 != NULL)
-    CP9HackInsertScores(cm->cp9);
-}
-
-/* Function:  CP9HackInsertScores()
- * Incept:    EPN, Fri Feb  9 10:59:12 2007
- *
- * Purpose:   Make all inserts 0. Usually called from CMHackInsertScores()
- *            to make the HMM inserts match the CM inserts.
- *
- * Args:      cp9 - the CP9 HMM 
- *
- * Returns:   (void)
- */
-void
-CP9HackInsertScores(CP9_t *cp9)
-{
-  int k, x;
-  for (k = 0; k <= cp9->M; k++)
-    /* CP9 HMMs have insert states in nodes 0 and M */
-    for (x = 0; x < MAXDEGEN; x++)
-      cp9->isc[x][k] = 0;
 }

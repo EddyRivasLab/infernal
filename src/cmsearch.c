@@ -55,7 +55,6 @@ static ESL_OPTIONS options[] = {
   { "--bottomonly", eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the bottom strand", 1 },
   { "--window",  eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,        NULL, "set scanning window size to <n> [default: calculated]", 1 },
   { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "turn on the post hoc second null model", 1 },
-  { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
   { "--rtrans",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "replace CM transition scores from <cmfile> with RSEARCH scores", 1 },
   { "--greedy",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--hmmviterbi,--hmmforward", "resolve overlapping hits with a greedy algorithm a la RSEARCH", 1 },
   /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
@@ -963,7 +962,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(! esl_opt_GetBoolean(go, "-g"))            cm->config_opts |= CM_CONFIG_LOCAL;
   if(! esl_opt_GetBoolean(go, "--hmmglocal"))   cm->config_opts |= CM_CONFIG_HMMLOCAL;
   if(! esl_opt_GetBoolean(go, "--hmmnoel"))     cm->config_opts |= CM_CONFIG_HMMEL;
-  if(! esl_opt_GetBoolean(go, "--iins"))        cm->config_opts |= CM_CONFIG_ZEROINSERTS;
   /* config QDB? Yes, unless --noqdb || --hmmviterbi || --hmmforward enabled */
   if(! (esl_opt_GetBoolean(go, "--noqdb") || (use_hmmonly)))
     cm->config_opts |= CM_CONFIG_QDB;

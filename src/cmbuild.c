@@ -44,6 +44,7 @@ static ESL_OPTIONS options[] = {
   { "-o",        eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "direct summary output to file <f>, not stdout", 1 },
   { "-n",        eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "name the CM(s) <s>, (only if single aln in file)", 1 },
   { "-A",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "append this CM to <cmfile>",             1 },
+  { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 9 },
   { "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "force; allow overwriting of <cmfile>",   1 },
   { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "use tabular output summary format, 1 line per CM", 1 },
 /* Expert model construction options */
@@ -96,7 +97,6 @@ static ESL_OPTIONS options[] = {
   { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, use sub CM for columns b/t HMM start/end points", 9 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,       NULL,"--refine",       NULL, "do not use bands to accelerate alignment with --refine", 9 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",    NULL,"--refine","--nonbanded", "set tail loss prob for --hbanded to <x>", 9 },
-  { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, use informative insert emissions, do not zero them", 9 },
   { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, flush inserts left/right in alignments", 9 },
   { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",     NULL,"--refine",       NULL, "set maximum allowable DP matrix size to <x> Mb", 9 },
   { "--verbose", eslARG_NONE,    NULL,  NULL, NULL,      NULL,"--refine",   "-1", "w/--refine, be verbose, print intermediate alignments", 9 },
@@ -170,6 +170,7 @@ static int    select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_c
 static float  find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret_nc, float *ret_mindiff, char *errbuf);
 static int    MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, int target_nc, int do_orig, int *ret_num_msa, ESL_MSA ***ret_cmsa, char *errbuf);
 static int    write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
+static int    flatten_insert_emissions(CM_t *cm);
 
 int
 main(int argc, char **argv)
@@ -1002,6 +1003,7 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
 static int
 parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, const Prior_t *prior)
 {
+  int status; 
 
   if (cfg->be_verbose){
     fprintf(cfg->ofp, "%-40s ... ", "Converting counts to probabilities"); 
@@ -1020,6 +1022,12 @@ parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t 
 				      FALSE, /* Don't check states have 0 counts (they won't due to priors) */
 				      TRUE); /* Detach the states by setting trans probs into them as 0.0   */
     }
+  if(! esl_opt_GetBoolean(go, "--iins")) { /* set all insert emission probabilities equal to the cm->null probabilities */ 
+    if((status = flatten_insert_emissions(cm)) != eslOK) return status; 
+    /* Note: flatten_insert_emissions() is purposefully a static function local to cmbuild.c b/c once CM files are calibrated
+     * no other executable (i.e. cmsearch) should be able to modify the scores of the CM, as that would invalidate the Gumbels */
+  }
+
   CMRenormalize(cm);
   CMLogoddsify(cm);
 
@@ -1356,7 +1364,6 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
       cm->config_opts |= CM_CONFIG_HMMLOCAL;
       cm->config_opts |= CM_CONFIG_HMMEL;
     }
-  if(! esl_opt_GetBoolean(go, "--iins"))      cm->config_opts |= CM_CONFIG_ZEROINSERTS;
 
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * this may make a cp9 HMM, for example.
@@ -1838,3 +1845,37 @@ write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *err
   return status; 
 }
 
+/* Function: flatten_insert_emissions()
+ *
+ * Purpose:  Set the insert emission *probabilities* of a CM to it's 
+ *           null model probabilities. Subsequently in CMLogoddsify(),
+ *           all insert emissions scores will become 0.0 bits.
+ *           This option is called by default for all CMs unless --iins
+ *           was enabled on the command line. It is impt that if we're
+ *           going to zero insert scores, we do it within the CM file 
+ *           (as opposed to previous versions of infernal which allowed us 
+ *            to zero inserts with cmsearch, for example), because now we
+ *           have E-values and if a Gumbel is fit to a CM with zeroed 
+ *           inserts or with informative inserts, those insert scores should
+ *           never change as long as that Gumbel is used.
+ * 
+ * Returns: eslOK on success.
+ */
+int
+flatten_insert_emissions(CM_t *cm)
+{
+  int v;
+
+  /* Contract check */
+  if(cm->abc  == NULL) cm_Fail("flatten_insert_emissions(), cm->abc is NULL.\n");
+  if(cm->null == NULL) cm_Fail("flatten_insert_emissions(), cm->null is NULL.\n");
+
+  esl_vec_FNorm(cm->null, cm->abc->K);
+  for (v = 0; v < cm->M; v++) {
+    if(cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) {
+      esl_vec_FSet(cm->e[v],    (cm->abc->K * cm->abc->K), 0.); /* zero them out */
+      esl_vec_FCopy(cm->null, cm->abc->K, cm->e[v]); /* overwrite first cm->abc->K values (rest are irrelevant for non-MP states) with cm->null */
+    }
+  }
+  return eslOK;
+}

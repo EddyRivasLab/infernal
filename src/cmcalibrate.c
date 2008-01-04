@@ -57,7 +57,6 @@ static ESL_OPTIONS options[] = {
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
   { "-s",        eslARG_INT,      "0", NULL, "n>=0",    NULL,      NULL,        NULL, "set random number seed to <n>",   1 },
   { "-t",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print timings for Gumbel fitting and CP9 filter calculation",  1},
-  { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
   /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
    * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--pbegin","set all local begins as equiprobable", 1 },
@@ -1821,8 +1820,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 
   cm->beta   = esl_opt_GetReal(go, "--beta"); /* this will be 1e-7 (default beta) unless changed at command line */
 
-  if(!(esl_opt_GetBoolean(go, "--iins"))) cm->config_opts |= CM_CONFIG_ZEROINSERTS;
-
   /* config QDB? Yes, unless --noqdb enabled */
   if(! (esl_opt_GetBoolean(go, "--noqdb"))) 
     cm->config_opts |= CM_CONFIG_QDB;   /* configure QDB */
@@ -2536,7 +2533,6 @@ switch_global_to_local(CM_t *cm, char *errbuf)
   CPlan9SWConfig(cm->cp9, cm->pbegin, cm->pbegin); 
   /* CPlan9ELConfig() configures CP9 for CM EL local ends, then logoddisfies CP9 */
   CPlan9ELConfig(cm);
-  if(cm->config_opts & CM_CONFIG_ZEROINSERTS) CP9HackInsertScores(cm->cp9);
   return eslOK;
 }
 

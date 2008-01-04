@@ -330,8 +330,6 @@ DuplicateCP9(CM_t *src_cm, CM_t *dest_cm)
   CP9Logoddsify(dest_cm->cp9); /* fill in all the integer log odds scores:
 				* msc, isc, bsc, esc, tsc, the *sc_mem
 				* pointers were set up in AllocCPlan9() */
-  if(src_cm->config_opts & CM_CONFIG_ZEROINSERTS)
-    CP9HackInsertScores(dest_cm->cp9);
     
   /*
     FILE *fp;

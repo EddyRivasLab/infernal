@@ -46,7 +46,6 @@ static ESL_OPTIONS options[] = {
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,     "--sub", "align locally w.r.t. the model",         1 },
   { "-s",        eslARG_INT,     NULL, NULL, "n>0",     NULL,      NULL,  "--infile", "set random number seed to <n>", 1 },
   { "-a",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print individual timings & scores, not just a summary", 1 },
-  { "--iins",     eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
   { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 1 },
   { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 1 },
 #ifdef HAVE_MPI
@@ -1038,7 +1037,6 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
     cm->align_opts  &= ~CM_ALIGN_CHECKPARSESC; /* parsetree score won't match aln score */
   }
   /*if(  esl_opt_GetBoolean(go, "-a"))         cm->align_opts  |= CM_ALIGN_TIME;*/
-  if(! esl_opt_GetBoolean(go, "--iins"))     cm->config_opts |= CM_CONFIG_ZEROINSERTS;
     
   /* do stage 1 specific stuff */
   if(cfg->s == 0) { /* set up stage 1 alignment we'll compare all other stages to */

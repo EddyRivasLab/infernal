@@ -57,9 +57,9 @@ extern float CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W,
 		      float cutoff, search_results_t *results);
 extern float CYKScanRequires(CM_t *cm, int L, int W);
 
-extern float  InsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
+extern float InsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
 			 float cutoff, search_results_t *results);
-extern float  InsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
+extern float InsideBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
 			       float cutoff, search_results_t *results);
 extern void  InsideBandedScan_jd(CM_t *cm, ESL_DSQ *dsq, int *jmin, int *jmax, int **hdmin, int **hdmax,
 				 int i0, int j0, int W, 
@@ -243,3 +243,8 @@ extern int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
 			    int emit_from_cm, float ***ret_vscAA, float **ret_cp9scA, float **ret_other_cp9scA);
 #endif
 
+#if 0
+/* EPN, Fri Jan  4 14:27:42 2008, realized we shouldn't allow zeroing of inserts outside cmbuild, b/c this would invalidate E-values */
+extern void  CMHackInsertScores(CM_t *cm);
+extern void  CP9HackInsertScores(CP9_t *cp9);
+#endif

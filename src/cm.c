@@ -390,6 +390,7 @@ DefaultNullModel(const ESL_ALPHABET *abc, float **ret_null)
   int x;
   for (x = 0; x < abc->K; x++)
     null[x] = 1./(float) abc->K;
+  esl_vec_FNorm(null, abc->K); /* completely unnecessary */
   *ret_null = null;
   return eslOK;
 
@@ -431,6 +432,8 @@ CMSetNullModel(CM_t *cm, float *null)
   int x;
   for (x = 0; x < cm->abc->K; x++)
     cm->null[x] = null[x];
+  esl_vec_FNorm(cm->null, cm->abc->K);
+  return;
 }
 
 
