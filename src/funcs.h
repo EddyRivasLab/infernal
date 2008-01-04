@@ -405,7 +405,7 @@ float  RightMarginalScore(const ESL_ALPHABET *abc, float *esc, int dres);
 
 /* from display.c */
 extern Fancyali_t    *CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, char *pcode1, char *pcode2);
-extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp);
+extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp, int do_noncompensatory);
 extern void           FreeFancyAli(Fancyali_t *ali);
 extern int            CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthresh, CMConsensus_t **ret_cons);
 extern void           FreeCMConsensus(CMConsensus_t *con);
@@ -574,7 +574,7 @@ extern void AppendResults (search_results_t *src_results, search_results_t *dest
 extern void FreeResults   (search_results_t *r);
 extern int  compare_results (const void *a_void, const void *b_void);
 extern void sort_results (search_results_t *results);
-extern void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom);
+extern void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory);
 extern void report_hit (int i, int j, int bestr, float score, search_results_t *results);
 extern void remove_overlapping_hits (search_results_t *results, int i0, int j0);
 extern float CountScanDPCalcs(CM_t *cm, int L, int use_qdb);

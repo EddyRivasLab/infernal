@@ -115,6 +115,7 @@ static ESL_OPTIONS options[] = {
   { "--noalign", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,       NULL, "find start/stop/score only; don't do alignments", 9 },
   { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "align hits with the Holmes/Durbin optimal accuracy algorithm", 9 },
   { "--post",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "append posterior probabilities to hit alignments", 9 },
+  { "--addx",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "add line to output alnments marking non-compensatory bps with 'x'", 9},
   /* Enforcing a subsequence */
   { "--enfstart",eslARG_INT,    FALSE, NULL, "n>0",     NULL,"--enfseq",        NULL, "enforce MATL stretch starting at consensus position <n>", 10 },
   { "--enfseq",  eslARG_STRING, NULL,  NULL, NULL,      NULL,"--enfstart",      NULL, "enforce MATL stretch starting at --enfstart <n> emits seq <s>", 10 },
@@ -470,7 +471,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    remove_overlapping_hits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
 	    if(using_e_cutoff) remove_hits_over_e_cutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]); 
 	  }
-	  print_results (cm, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc);
+	  print_results (cm, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
 	  for(rci = 0; rci <= cfg->do_rc; rci++) { /* we can free results for top strand even if cfg->init_rci is 1, due to --bottomonly */
 	    FreeResults(dbseq->results[rci]);
 	    esl_sq_Destroy(dbseq->sq[rci]);

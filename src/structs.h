@@ -577,6 +577,7 @@ typedef struct fancyali_s {
   char *cstr;		/* CM consensus structure line                 */
   char *cseq;		/* CM consensus sequence line                  */
   char *mid;		/* alignment identity middle line              */
+  char *top;		/* optional, non-compensatory 'x' top line     */
   char *aseq;		/* aligned target sequence                     */
   char *pcode1;         /* aligned posteriors 'ones' place (9 in 93)   */
   char *pcode2;         /* aligned posteriors 'tens' place (3 in 93)   */

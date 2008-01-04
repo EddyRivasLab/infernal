@@ -643,10 +643,11 @@ void report_hit (int i, int j, int bestr, float score, search_results_t *results
  *           dbseq               the database seq
  *           name                sequence name
  *           len                 length of the sequence
- *           do_top              are we doing the plus  (top)    strand
- *           do_bottom       are we doing the minus (bottom) strand
+ *           do_top              are we doing the plus  (top)    strand?
+ *           do_bottom           are we doing the minus (bottom) strand?
+ *           do_noncompensatory  are we printing the optional non-compensatory line?
  */
-void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom)
+void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory)
 {
   int i;
   char *name;
@@ -750,7 +751,7 @@ void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConse
 	else           offset = 0;
 	PrintFancyAli(stdout, ali,
 		      (COORDINATE(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
-		      in_revcomp);
+		      in_revcomp, do_noncompensatory);
 	FreeFancyAli(ali);
 	printf ("\n");
       }

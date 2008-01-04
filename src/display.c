@@ -41,8 +41,8 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  *            cm    - model
  *            cons  - consensus information for cm; see CreateCMConsensus()
  *            dsq   - digitized sequence
- *            pcode1- posteriors, 'ones' place, '9' in '93', NULL if none
- *            pcode2- posteriors, 'tens' place, '3' in '93', NULL if none
+ *            pcode1- posteriors, 'tens' place, '9' in '93', NULL if none
+ *            pcode2- posteriors, 'ones' place, '3' in '93', NULL if none
  *
  * Returns:   fancy alignment structure.
  *            Caller frees, with FreeFancyAli(ali).
@@ -70,6 +70,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
   int         lstr, rstr;	/* chars in structure line; left, right      */
   int         lcons, rcons;	/* chars in consensus line; left, right      */
   int         lmid, rmid;	/* chars in ali quality line; left, right    */
+  int         ltop, rtop;	/* chars in optional noncompensatory line; left, right */
   int         lseq, rseq;	/* chars in aligned target line; left, right */
   int         lpost1, rpost1;	/* chars in aligned posteriors, left, right  */
   int         lpost2, rpost2;	/* chars in aligned posteriors, left, right  */
@@ -142,6 +143,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
   ESL_ALLOC(ali->cstr, sizeof(char) * (ali->len+1));
   ESL_ALLOC(ali->cseq, sizeof(char) * (ali->len+1));
   ESL_ALLOC(ali->mid,  sizeof(char) * (ali->len+1));
+  ESL_ALLOC(ali->top,  sizeof(char) * (ali->len+1));
   ESL_ALLOC(ali->aseq, sizeof(char) * (ali->len+1));
   if(have_pcodes) { 
     ESL_ALLOC(ali->pcode1, sizeof(char) * (ali->len+1));
@@ -158,6 +160,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
   memset(ali->cstr, ' ', ali->len);
   memset(ali->cseq, ' ', ali->len);
   memset(ali->mid,  ' ', ali->len);
+  memset(ali->top,  ' ', ali->len);
   memset(ali->aseq, ' ', ali->len);
   if(have_pcodes) { 
     memset(ali->pcode1, ' ', ali->len);
@@ -183,6 +186,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	esl_stack_IPop(pda, &rstr); 	  ali->cstr[pos]   = rstr;
 	esl_stack_IPop(pda, &rcons);	  ali->cseq[pos]   = rcons;
 	esl_stack_IPop(pda, &rmid);	  ali->mid[pos]    = rmid;
+	esl_stack_IPop(pda, &rtop);	  ali->top[pos]    = rtop;
 	esl_stack_IPop(pda, &rseq);       ali->aseq[pos]   = rseq;
 	if(have_pcodes) {
 	  esl_stack_IPop(pda, &rpost1);    ali->pcode1[pos] = rpost1;
@@ -296,6 +300,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
       /* Use emission p and score to set lmid, rmid line for emitting states.
        */
       lmid = rmid = ' ';
+      ltop = rtop = ' ';
       if (cm->sttype[v] == MP_st) {
 	if (lseq == toupper(lcons) && rseq == toupper(rcons))
 	  {
@@ -305,9 +310,13 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
         else if (mode != 3)
           ;
 	else if (IsCompensatory(cm->abc, cm->e[v], symi, symj)) 
-	  lmid = rmid = ':';
-	else if (DegeneratePairScore(cm->abc, cm->esc[v], symi, symj) >= 0)
+	    lmid = rmid = ':';
+	else if (DegeneratePairScore(cm->abc, cm->esc[v], symi, symj) >= 0) 
 	  lmid = rmid = '+';
+
+	/* determine ltop, rtop for optional noncompensatory annotation, they are 'x' if lmid, rmid are ' ', and ' ' otherwise */
+	if (lmid == ' ' && rmid == ' ') 
+	  ltop = rtop = 'x';
       } else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
 	if (lseq == toupper(lcons)) 
 	  lmid = lseq;
@@ -332,6 +341,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	ali->cstr[pos]   = lstr;
 	ali->cseq[pos]   = lcons;
 	ali->mid[pos]    = lmid;
+	ali->top[pos]    = ltop;
 	ali->aseq[pos]   = lseq;
 	if(have_pcodes) {
 	  ali->pcode1[pos] = lpost1;
@@ -349,6 +359,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	  if ((status = esl_stack_IPush(pda, (int) rpost1)) != eslOK) goto ERROR;
 	}
 	if ((status = esl_stack_IPush(pda, (int) rseq)) != eslOK) goto ERROR;
+	if ((status = esl_stack_IPush(pda, (int) rtop)) != eslOK) goto ERROR;
 	if ((status = esl_stack_IPush(pda, (int) rmid)) != eslOK) goto ERROR;
 	if ((status = esl_stack_IPush(pda, (int) rcons)) != eslOK) goto ERROR;
 	if ((status = esl_stack_IPush(pda, (int) rstr)) != eslOK) goto ERROR;
@@ -389,6 +400,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
   ali->cstr[ali->len] = '\0';
   ali->cseq[ali->len] = '\0';
   ali->mid[ali->len]  = '\0';
+  ali->top[ali->len]  = '\0';
   ali->aseq[ali->len] = '\0';
   if(have_pcodes) { 
     ali->pcode1[ali->len] = '\0';
@@ -437,10 +449,12 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
  *                   to ease MPI search, all target hits start at posn 1
  *           in_revcomp- TRUE if hit we're printing an alignment for a
  *                       cmsearch hit on reverse complement strand.
+ *           do_noncompensatory - TRUE to print special non-compensatory
+ *                                annotation at top of alignment, FALSE not to.
  * Returns:  (void)
  */
 void
-PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp)
+PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp, int do_noncompensatory)
 {
   int   status;
   char *buf;
@@ -488,6 +502,10 @@ PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp)
        */
       if (ali->annote != NULL) {
 	strncpy(buf, ali->annote+pos, linelength);
+	fprintf(fp, "  %8s %s\n", " ", buf);
+      }
+      if (do_noncompensatory && ali->top != NULL) {
+	strncpy(buf, ali->top+pos, linelength);  
 	fprintf(fp, "  %8s %s\n", " ", buf);
       }
       if (ali->cstr != NULL) {
@@ -551,6 +569,7 @@ FreeFancyAli(Fancyali_t *ali)
   if (ali->cstr   != NULL) free(ali->cstr);
   if (ali->cseq   != NULL) free(ali->cseq);
   if (ali->mid    != NULL) free(ali->mid);
+  if (ali->top    != NULL) free(ali->top);
   if (ali->aseq   != NULL) free(ali->aseq);
   if (ali->pcode1 != NULL) free(ali->pcode1);
   if (ali->pcode2 != NULL) free(ali->pcode2);
