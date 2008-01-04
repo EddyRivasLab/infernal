@@ -33,9 +33,9 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 
 #ifdef HAVEDEVOPTS
-#define ALGOPTS  "--std,--qdb,--qdbsmall,--qdbboth,--hbanded,--hmmviterbi"  /* Exclusive choice for scoring algorithms ifdef #HAVE_DEVOPTS*/
+#define ALGOPTS  "--nonbanded,--qdb,--qdbsmall,--qdbboth,--hbanded,--hmmviterbi"  /* Exclusive choice for scoring algorithms ifdef #HAVE_DEVOPTS*/
 #else
-#define ALGOPTS  "--std,--hbanded,--hmmviterbi"                             /* Exclusive choice for scoring algorithms */
+#define ALGOPTS  "--nonbanded,--hbanded,--hmmviterbi"                             /* Exclusive choice for scoring algorithms */
 #endif
 #define SEQOPTS  "--emit,--random,--infile"                                 /* Exclusive choice for sequence input */
 
@@ -45,26 +45,25 @@ static ESL_OPTIONS options[] = {
   { "-n",        eslARG_INT,     "10", NULL, "n>0",     NULL,      NULL,  "--infile", "generate <n> sequences",  1 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,     "--sub", "align locally w.r.t. the model",         1 },
   { "-s",        eslARG_INT,     NULL, NULL, "n>0",     NULL,      NULL,  "--infile", "set random number seed to <n>", 1 },
-  { "-i",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print individual timings & scores, not just summary", 1 },
-  { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress verbose banner", 1 },
-  { "--iins",     eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 2 },
-  { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
+  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print individual timings & scores, not just a summary", 1 },
+  { "--iins",     eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
+  { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 1 },
+  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 1 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
 #endif
-  /* Miscellaneous expert options */
   /* options for generating/reading sequences to score */
-  { "--emit",    eslARG_NONE,"default",NULL,"n>0",   SEQOPTS,      NULL,     SEQOPTS, "emit <n> sequences from each CM [default: 100]", 2 },
-  { "--random",  eslARG_NONE,   FALSE, NULL,"n>0",   SEQOPTS,      NULL,     SEQOPTS, "emit <n> random seq from cm->null model (length = CM consensus)", 2},
+  { "--emit",    eslARG_NONE,"default",NULL,"n>0",   SEQOPTS,      NULL,     SEQOPTS, "emit <n> sequences from each CM", 2 },
+  { "--random",  eslARG_NONE,   FALSE, NULL,"n>0",   SEQOPTS,      NULL,     SEQOPTS, "emit <n> random seq from cm->null model", 2},
   { "--infile",  eslARG_INFILE,  NULL, NULL, NULL,   SEQOPTS,      NULL,     SEQOPTS, "read sequences to align from file <s>", 2 },
   { "--outfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,  "--infile", "save seqs to file <s> in FASTA format", 2 },
   /* Stage 2 algorithm options */
   { "--hbanded", eslARG_NONE,"default",NULL, NULL,  ALGOPTS,      NULL,        NULL, "compare d&c optimal CYK versus HMM banded CYK", 3 },
-  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 3 },
-  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "realign (non-banded) seqs with HMM banded CYK score < 0 bits", 3 },
-  { "--std",     eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare divide and conquer (d&c) versus standard CYK", 3 },
-  { "--hmmviterbi",eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm", 3 },
-  { "--scoreonly",eslARG_NONE,  FALSE, NULL, NULL,      NULL,   "--std",        NULL, "for standard CYK stage, do only score, save memory", 3 },
+  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",      NULL, "set tail loss prob for --hbanded to <x>", 3 },
+  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",      NULL, "realign (non-banded) seqs with HMM banded CYK score < 0 bits", 3 },
+  { "--nonbanded",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,      NULL, "compare divide and conquer (d&c) versus standard non-banded CYK", 3 },
+  { "--scoreonly",eslARG_NONE,  FALSE, NULL, NULL,      NULL,"--nonbanded","--tfile", "with --nonbanded, do only score, save memory", 3 },
+  { "--hmmviterbi",eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,      NULL,       NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm", 3 },
 #ifdef HAVE_DEVOPTS
   { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare non-banded d&c versus QDB standard CYK", 3 },
   { "--qdbsmall",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare non-banded d&c versus QDB d&c", 3 },
@@ -78,12 +77,10 @@ static ESL_OPTIONS options[] = {
   { "--betas",   eslARG_INT,  NULL,    NULL, "0<n<=30", NULL, "--betae",       NULL, "set initial (stage 2) tail loss prob to 1E-<x> for QDB", 4 },
   { "--betae",   eslARG_INT,  NULL,    NULL, "0<n<=30", NULL, "--betas",       NULL, "set final   (stage N) tail loss prob to 1E-<x> for QDB", 4 },
 #endif
-  /* Output options */
-  { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 4 },
-  { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  4 },
-  /* Other options */
+  /* Verbose output files/debugging */
+  { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 5 },
+  { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  5 },
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb",   5 },  
-  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 5 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -94,7 +91,6 @@ static ESL_OPTIONS options[] = {
  */
 struct cfg_s {
   ESL_ALPHABET *abc;		/* digital alphabet for input */
-  int           be_verbose;	/* one-line-per-seq summary */
   int           nseq;           /* which number sequence this is in file (only valid in serial mode) */
   int           nstages;        /* number of stages of alignment we'll do */
   int           s;              /* which stage we're on [0..nstages-1], 0 = stage 1, 1 = stage 2 etc. */
@@ -185,10 +181,8 @@ main(int argc, char **argv)
       puts("\noptions for testing multiple tau values for --hbanded:");
 #endif
       esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
-      puts("\noutput options are:");
+      puts("\nverbose output files and debugging:");
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80); 
-      puts("\n  other options:");
-      esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
       exit(0);
     }
   if (esl_opt_ArgNumber(go) != 1) 
@@ -228,8 +222,6 @@ main(int argc, char **argv)
   cfg.cmfile     = esl_opt_GetArg(go, 1); 
   cfg.infmt      = eslSQFILE_UNKNOWN;      /* autodetect sequence file format by default. */ 
   cfg.abc        = NULL;	           /* created in init_master_cfg() in masters, or in mpi_worker() in workers */
-  if (esl_opt_GetBoolean(go, "-q")) cfg.be_verbose = FALSE;        
-  else                              cfg.be_verbose = TRUE;        
   cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.sqfp       = NULL;                   /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.ofp        = NULL;                   /* opened in init_master_cfg() in masters, stays NULL for workers */
@@ -250,7 +242,6 @@ main(int argc, char **argv)
   cfg.my_rank    = 0;		           /* this gets reset below, if we init MPI */
   cfg.do_stall   = esl_opt_GetBoolean(go, "--stall");
 
-  if(cfg.be_verbose) cm_banner(stdout, argv[0], banner);
 
   /* This is our stall point, if we need to wait until we get a
    * debugger attached to this process for debugging (especially
@@ -265,7 +256,6 @@ main(int argc, char **argv)
   if (esl_opt_GetBoolean(go, "--mpi")) 
     {
       cfg.do_mpi     = TRUE;
-      cfg.be_verbose = FALSE;
 
       MPI_Init(&argc, &argv);
       MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
@@ -274,13 +264,17 @@ main(int argc, char **argv)
       if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running... (did you run mpirun?)");
 
       if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
-      else 		    mpi_master(go, &cfg);
+      else {
+	cm_banner(stdout, argv[0], banner);
+	mpi_master(go, &cfg);
+      }
 
       MPI_Finalize();
     }
   else
 #endif /*HAVE_MPI*/
     {
+      cm_banner(stdout, argv[0], banner);
       serial_master(go, &cfg);
     }
 
@@ -897,7 +891,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       if (cfg->regressfp != NULL) 
 	{
 	  fprintf(cfg->regressfp, "> %s\n", seqs_to_aln->sq[i]->name);
-	  if(esl_opt_GetBoolean(go,"--hmmviterbi")) 
+	  if(cfg->s > 0 && esl_opt_GetBoolean(go,"--hmmviterbi")) 
 	    {
 	      ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
 	      fprintf(cfg->regressfp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
@@ -914,7 +908,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       if (cfg->tracefp != NULL) 
 	{
 	  fprintf(cfg->tracefp, "> %s\n", seqs_to_aln->sq[i]->name);
-	  if(esl_opt_GetBoolean(go,"--hmmviterbi")) 
+	  if(cfg->s > 0 && esl_opt_GetBoolean(go,"--hmmviterbi")) 
 	    {
 	      ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
 	      fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
@@ -923,7 +917,12 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  else
 	    {
 	      ESL_DASSERT1((seqs_to_aln->tr != NULL));
-	      fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE));
+	      if(esl_opt_GetBoolean(go, "--sub")) { 
+		fprintf(cfg->tracefp, "  SUB CM PARSE SCORE                               : %.2f bits\n", seqs_to_aln->sc[i]);
+		fprintf(cfg->tracefp, "  SUB CM ALIGNMENT MAPPED ONTO ORIG CM PARSE SCORE : %.2f bits\n", ParsetreeScore(cm, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE));
+	      }
+	      else 
+		fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE));
 	      ParsetreeDump(cfg->tracefp, seqs_to_aln->tr[i], cm, seqs_to_aln->sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
 	    }
 	  fprintf(cfg->tracefp, "//\n");
@@ -951,12 +950,14 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	{
 	  /* TO DO: write function that inside actually_align_targets() takes
 	   * a CP9 parse, and converts it to a CM parsetree */
-	  if(esl_opt_GetBoolean(go, "-i"))
-	    printf("%-40s S1: %10.4f S%d: %10.4f diff: %10.4f\n", seqs_to_aln->sq[i]->name, cfg->s1_sc[i], (cfg->s+1), seqs_to_aln->sc[i], (fabs(cfg->s1_sc[i] - seqs_to_aln->sc[i])));
+	  if(esl_opt_GetBoolean(go, "-a"))
+	    printf("%-40s S1: %10.4f S%d: %10.4f diff: %10.4f\n", seqs_to_aln->sq[i]->name, cfg->s1_sc[i], (cfg->s+1), seqs_to_aln->sc[i], (cfg->s1_sc[i] - seqs_to_aln->sc[i]));
 	  if(fabs(cfg->s1_sc[i] -  seqs_to_aln->sc[i]) > 0.0001) {
 	    diff_ct++;
-	    diff_sc += fabs(cfg->s1_sc[i] - seqs_to_aln->sc[i]);
+	    diff_sc += cfg->s1_sc[i] - seqs_to_aln->sc[i]; /* don't take absolute value in case cur stage sc > stage 1 sc, for example with -l --hmmviterbi */
 	  }
+	  if(esl_opt_GetBoolean(go, "--nonbanded") && (fabs(cfg->s1_sc[i] -  seqs_to_aln->sc[i]) >= 0.01))
+	    cm_Fail("Non-banded standard CYK score (%.3f bits) differs from D&C CYK score (%.3f bits)", cfg->s1_sc[i], seqs_to_aln->sc[i]);
 	}
       /* Print summary for this stage versus stage 1 */ 
       printf("Results summary for stage %d:\n", (cfg->s+1));
@@ -1036,7 +1037,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
     cm->align_opts  |=  CM_ALIGN_SUB;
     cm->align_opts  &= ~CM_ALIGN_CHECKPARSESC; /* parsetree score won't match aln score */
   }
-  /*if(  esl_opt_GetBoolean(go, "-i"))         cm->align_opts  |= CM_ALIGN_TIME;*/
+  /*if(  esl_opt_GetBoolean(go, "-a"))         cm->align_opts  |= CM_ALIGN_TIME;*/
   if(! esl_opt_GetBoolean(go, "--iins"))     cm->config_opts |= CM_CONFIG_ZEROINSERTS;
     
   /* do stage 1 specific stuff */

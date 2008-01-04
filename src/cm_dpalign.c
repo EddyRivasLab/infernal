@@ -672,7 +672,7 @@ fast_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend,
   /* allocate alpha (if it's small enough), allocate all decks, no deck reuse */
   Mb_for_alpha = ((float) size_vjd_deck(W, 1, W) * ((float) (cm->M)));
   if(Mb_for_alpha > size_limit)
-    ESL_FAIL(eslERANGE, errbuf, "fast_cyk_align(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit\n(it may be possible to change limit with --mxsize option).", Mb_for_alpha, (float) size_limit);
+    ESL_FAIL(eslERANGE, errbuf, "fast_cyk_align(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit.\nSuggestions (may or may not be possible): enable --small, --scoreonly, or change size limit with --mxsize option.", Mb_for_alpha, (float) size_limit);
   ESL_DPRINTF1(("Size of alpha matrix: %.2f\n", Mb_for_alpha));
 
   ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
@@ -1314,7 +1314,7 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
   if(post_mx == NULL && have_pcodes) ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), post_mx == NULL but ret_pcode{1|2} != NULL.\n");
   if(do_optacc && post_mx == NULL)   ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), do_optacc is TRUE, but post_mx == NULL.\n");
 
-  /*PrintDPCellsSaved_jd(cm, jmin, jmax, hdmin, hdmax, (j0-i0+1));*/
+  /* PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, (j0-i0+1)); */
   do_post = (do_optacc || have_pcodes) ? TRUE : FALSE;
 
   /* if doing post, fill Inside, Outside, Posterior matrices, in that order */
@@ -1910,7 +1910,7 @@ FastInsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size
   /* allocate alpha (if it's small enough), allocate all decks, no deck reuse */
   Mb_for_alpha = ((float) size_vjd_deck(W, 1, W) * ((float) (cm->M+1)));
   if(Mb_for_alpha > size_limit)
-    ESL_FAIL(eslERANGE, errbuf, "FastInsideAlign(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit\n(it may be possible to change limit with --mxsize option).", Mb_for_alpha, (float) size_limit);
+    ESL_FAIL(eslERANGE, errbuf, "FastInsideAlign(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit.\nSuggestions (may or may not be possible): enable --small, --scoreonly, or change size limit with --mxsize option.", Mb_for_alpha, (float) size_limit);
   ESL_DPRINTF1(("Size of alpha matrix: %.2f\n", Mb_for_alpha));
 
   ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
@@ -2743,7 +2743,7 @@ FastOutsideAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float siz
   /* allocate beta (if it's small enough), allocate all decks, no deck reuse */
   Mb_for_beta = ((float) size_vjd_deck(W, 1, W) * ((float) (cm->M)));
   if(Mb_for_beta > size_limit)
-    ESL_FAIL(eslERANGE, errbuf, "FastOutsideAlign(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit\n(it may be possible to change limit with --mxsize option).", Mb_for_beta, (float) size_limit);
+    ESL_FAIL(eslERANGE, errbuf, "FastOutsideAlign(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit.\nSuggestions (may or may not be possible): enable --small, --scoreonly, or change size limit with --mxsize option.", Mb_for_beta, (float) size_limit);
   ESL_DPRINTF1(("Size of beta matrix: %.2f\n", Mb_for_beta));
 
   ESL_ALLOC(beta, sizeof(float **) * (cm->M+1));
@@ -3679,7 +3679,7 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
   /* allocate alpha (if it's small enough), allocate all decks, no deck reuse */
   Mb_for_alpha = ((float) size_vjd_deck(W, 1, W) * ((float) (cm->M-1)));
   if(Mb_for_alpha > size_limit)
-    ESL_FAIL(eslERANGE, errbuf, "optimal_accuracy_align(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit\n(it may be possible to change limit with --mxsize option).", Mb_for_alpha, (float) size_limit);
+    ESL_FAIL(eslERANGE, errbuf, "optimal_accuracy_align(), requested size of non-banded DP matrix %.2f Mb > %.2f Mb limit.\nSuggestions (may or may not be possible): enable --small, --scoreonly, or change size limit with --mxsize.", Mb_for_alpha, (float) size_limit);
   ESL_DPRINTF1(("Size of alpha matrix: %.2f\n", Mb_for_alpha));
 
   ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));

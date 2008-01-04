@@ -35,14 +35,40 @@ The alignment that
 makes is written in Stockholm format.
 It can be redirected to a file
 using the
-.I -o
+.B -o
 option.
 
-By default, the CYK algorithm is used for CM alignment.
-An HMM banded CYK alignment algorithm that offers a significant
-speed-up is enabled with the 
-.I --hbanded 
-option (see below).
+.PP
+.B cmalign 
+uses an HMM banding technique to accelerate alignment by default as
+described below for the
+.B --hbanded 
+option. HMM banding can be turned off with the 
+.B --nonbanded
+option.
+
+.PP
+By default, 
+.B cmalign
+uses the CYK algorithm to determine the "optimal"
+alignment of each target sequence (actually, the "optimal"
+alignment consistent with the HMM bands, unless 
+.B --nonbanded
+is enabled). This behavior can be changed, as described below and in
+the User's Guide, with
+the 
+.B --optacc
+or 
+.B --hmmviterbi 
+options.
+
+.PP
+It is possible to include the fixed training alignment used to build the CM
+within the output alignment of
+.B cmalign.
+This is done using the 
+.B --withali 
+option, as desribed below and in the User's Guide.
 
 .SH OPTIONS
 
@@ -50,6 +76,12 @@ option (see below).
 .B -h
 Print brief help; includes version number and summary of
 all options, including expert options.
+
+.TP
+.BI -o " <f>"
+Save the alignment in Stockholm format to a file
+.I <f>.
+The default is to write it to standard output.
 
 .TP
 .B -l
@@ -62,18 +94,39 @@ The default is to globally align the query model to the target
 sequences.
 
 .TP
-.BI -o " <f>"
-Save the alignment in Stockholm format to a file
-.I <f>.
-The default is to write it to standard output.
+.BI -p
+Annotate the alignment with posterior probabilities calculated using
+the Inside and Outside algorithms. 
+The
+.B -p 
+option causes additional annotation to appear in the output alignment,
+but does not modify the alignment itself (that is, the relative positions of
+the residues are unchanged).
+Two characters for each residue are used to annotate the posterior 
+probability that the corresponding residue aligns at the corresponding
+position in the Stockholm alignment. These characters have the Stockholm
+markup tags "#=GR
+<seq name> POSTX." and "#=GR <seq name> POST.X", and can only have the
+values: "0-9", "*" or ".". They indicate the tens and ones
+place for the posterior probability: an "8" for "POSTX." and a "3" for "POST.X"
+indicates that the posterior probability is between 0.83 and 0.84. A
+"*" for both "POSTX." and "POST.X" indicates that the confidence
+estimate is "very nearly" 1.0 (it's hard to be exact here due to
+numerical precision issues) A "." 
+in both "POSTX." and "POST.X" indicates that that column aligns to
+a gap. When used in combination with 
+.B --nonbanded,
+the calculation of the posterior probabilities considers all possible
+alignments of the target sequence to the CM. Without
+.B --nonbanded
+(in HMM banded mode), the calculation considers only possible
+alignments within the HMM bands. 
 
 .TP
 .B -q
 Quiet; suppress the verbose banner, and only print the resulting
 alignment to stdout. This allows piping the alignment to the input 
 of other programs, for example.
-
-.SH EXPERT OPTIONS
 
 .TP
 .BI --informat " <s>"
@@ -89,115 +142,67 @@ of @PACKAGE@.
 .I <s>
 is case-insensitive.
 This option is a bit forward-looking;
-.B cmalign
+.B cmsearch 
 currently only accepts FASTA format, but
-this will not be true in the future.
+this may not be true in the future.
 
 .TP
-.B --nosmall
-Use the normal CYK alignment algorithm. The default is
-to use the divide and conquer algorithm described in SR Eddy, 
-BMC Bioinformatics 3:18, 2002. This
-is useful for debugging, and checking that the
-two algorithms give identical results. The "normal" algorithm requires
-too much memory for most uses.
+.B --iins
+Turn off the default 
+behavior of setting all CM insert emission scores to 0.0 bits prior to
+alignment. This default behavior originated in 
+.B cmsearch 
+to avoid high-scoring hits to low complexity sequence favored by high 
+insert state emission scores and is applied to
+.B cmalign
+for consistency. When 
+.B --iins
+is enabled the insert emission scores are read from
+.I cmfile
+that were calculated in 
+.B cmbuild 
+and are unmodified prior to emitting sequences.
 
 .TP
-.BI --regress " <f>"
-Save regression test information to a file
-.I <f>. 
-This is part of the automated testing procedure at each release. 
+.B --time
+Print to stdout the time it takes to align each sequence.
 
 .TP
-.B --full
-Include all match columns in the output alignment. By default only
-consensus columns in which at least one sequence has a non-gap character
-are included.
+.BI --mpi
+Run as an MPI parallel program. This option will only be available if
+This option will only be available if @PACKAGE@ has been configured
+and built with the "--enable-mpi" flag (see User's Guide for details).
+
+.SH EXPERT OPTIONS
 
 .TP
-.BI --tfile " <f>"
-Dump tabular sequence tracebacks for each individual
-sequence to a file 
-.I <f>.
-Primarily useful for debugging.
+.B --cyk
+Align sequences using the CYK algorithm. This is default behavior, so
+this option is probably useless. 
+The CYK alignment will be constrained by HMM bands for acceleration
+unless the
+.B --nonbanded 
+option is enabled. 
 
 .TP
-.BI --banddump " <n>"
-Set verbosity level for debugging print statements related to
-query-dependent bands (QDB) (the
-.B --qdb
-option) to 
-.I <n>. 
-Where 
-.I <n> 
-is 1, 2 or 3. By default debugging print statements are turned off.
+.B --optacc
+Do not use CYK to align the sequences, instead use the Durbin/Holmes optimal accuracy
+algorithm. Whereas CYK determines the alignment with the optimal score,
+the optimal accuracy algorithm determines the alignment that
+maximizes the posterior probabilities of the aligned residues within it.
+The posterior probabilites are determined using (possibly HMM banded)  
+variants of the Inside and Outside algorithms. 
+When 
+.B --optacc 
+is enabled the scores reported are not bit scores but the average posterior
+probability of the aligned residues in the optimally accurate alignment.
 
 .TP
-.BI --dlev " <n>"
-Set verbosity level for general debugging print statements
-.I <n>. 
-Where 
-.I <n> 
-is 1, 2 or 3. By default debugging print statements are turned off.
-
-.TP
-.BI --time
-Print timings for band calculation and alignment for each sequence in 
-.I seqfile.
-
-.TP
-.TP
-.BI --inside
-Instead of aligning the sequences in 
-.I seqfile 
-to the CM with CYK, use the Inside algorithm to score each sequence against
-the CM, and print out scores. Each Inside score is the summed score of
-the all possible alignments of the sequence to the CM. When enabled,
-the output does not include an alignment.
-
-.TP
-.BI --outside
-Instead of aligning the sequences in 
-.I seqfile 
-to the CM with CYK, use the Outside algorithm to score each sequence against
-the CM, and print out scores. Each Outside score is the summed score of
-the all possible alignments of the sequence to the CM. 
-When enabled, the output does not include an alignment.
-
-.TP
-.BI --post
-Calculate "confidence estimates" for each residue of the
-alignment and include them in the alignment. These estimates are based
-on posterior probabilities that each residue aligns at each position
-of the alignment. The posterior probabilites can be determined only
-after running the Inside and Outside algorithms. The alignment is not
-changed when 
-.B --post
-is used, it is still the CYK optimal alignment. The confidence
-estimates appear as "#=GR <seq name> POST" annotation in the output
-Stockholm alignment for each sequence. This annotation includes the
-digits "0-9", "*" and "." characters. A "8" indicates that the
-confidence estimate for the corresponding residue being aligned to the
-corresponding column is between 80
-and 90%. A "7" indicates the
-same, but between 70 and 80%, and so on for the other digits. A "*"
-indicates that the confidence estimate is "very nearly" 100% (it's
-hard to be exact here due to numerical precision issues) A "." 
-indicates that that column aligns to a gap in the corresponding sequence.
-
-.TP
-.BI --checkpost
-Perform a check that the result of the Inside and Outside algorithms
-make sense by ensuring they give the same score to each sequence
-(while allowing for slight differences due to numerical precision issues). This is primarily
-useful for debugging.
-
-.TP
-.BI --zeroinserts
-Set all insert emission scores to 0.0 bits. Default behavior is to
-read them from the CM file. Zeroing inserts is default behavior
-for 
-.B cmsearch.
+.B --hmmviterbi
+Do not use the CM CYK algorithm to align the sequences, instead use
+the HMM Viterbi algorithm to align with a CM Plan 9 HMM. This is
+faster than CM alignment, but usually less accurate because the
+structure of the RNA family is ignored. 
 
 .TP
 .BI --sub
@@ -207,59 +212,78 @@ consensus columns, and a new sub CM is constructed that only models
 consensus columns from start to end. The sequence is then aligned to this sub CM.
 This option is useful for aligning sequences that are known to
 truncated, non-full length sequences.
-This "sub CM" procedure is not the same
-as the "sub CMs" described by Weinberg and Ruzzo.
+This "sub CM" procedure is not the same as the "sub CMs" described by
+Weinberg and Ruzzo.
 
 .TP
-.BI --elsilent
-Disallow emissions from the local end (EL) state.
-
-.TP
-.BI --enfstart " <n>"
-Used in combination with 
-.BI --enfseq " <s>"
-to attempt to enforce the subsequence 
-.I <s>
-align beginning at consensus column 
-.I <n>.
-A major limitation to this option is that the consensus columns from (
-.I <n>
--1) to (
-.I <n> 
-+ length(
-.I <s>
-)-1) must all be modelled by MATL nodes. This may change in future versions.
-
-.TP
-.BI --enfseq " <s>"
-Used in combination with 
-.BI --enfstart " <n>"
-to enforce the subsequence 
-.I <s>
-occur beginning at consensus column
-.I <n> as described above. 
+.B --small
+Use the divide and conquer CYK alignment algorithm described in SR
+Eddy, BMC Bioinformatics 3:18, 2002. This option is recommended whenever
+.B --nonbanded
+is used because standard CM alignment without HMM banding requires a lot of
+memory, especially for large RNAs.
+.B --small
+allows CM alignment within practical memory limits,
+reducing the memory required for alignment LSU rRNA, the largest known
+RNAs, from 150 Gb to less than 300 Mb.
+This option can only be used in combination with
+.B --nonbanded.
 
 .TP
 .B --hbanded
-Score each sequence to an HMM derived from the CM in
-.I cmfile 
+This option is turned on by default.
+Accelerate alignment by pruning away regions of the CM DP matrix that
+are deemed negligible by an HMM. 
+First, score each sequence with a CM plan 9 HMM derived from the CM 
 using the Forward and Backward HMM algorithms and calculate posterior
-probabilities each residue aligns to each state of the HMM. Use these
-posterior probabilities to derive constraints (bands) for the CM, and
-use them to accelerate CM alignment. This method sacrifices the
-guarantee that the optimal alignment will be found.
-When not run in local mode with 
-.B -l,
-this option yields a significant speed-up
-(around 25-fold for the average family), while rarely missing the
-optimal alignment. It has not been rigorously tested in local mode
-yet, so use at your own risk with
-.B -l.
+probabilities that each residue aligns to each state of the HMM. Use these
+posterior probabilities to derive constraints (bands) on the CM DP
+matrix. Finally, the target sequence is aligned to the CM using the
+banded DP matrix, during which cells outside the bands are ignored. Usually most
+of the full DP matrix lies outside the bands 
+(often more than 95%), making this technique faster because
+fewer DP calculations are required, and more memory efficient because
+only cells within the bands need be allocated. 
+
+However, HMM banding sacrifices the guarantee of determining the
+optimal alignment, which will be missed if it lies outside the
+bands.
+The tau paramater (analagous to the beta parameter for QDB
+calculation in 
+.B cmsearch
+) is the amount of probability mass
+considered negligible during HMM band calculation; lower
+values of tau yield greater speedups but also a greater chance of missing
+the optimal alignment. The default tau is 1E-7, determined
+empirically as a good tradeoff between sensitivity and speed, though
+this value can be changed with the
+.B --tau " <x>" 
+option. The level of acceleration increases with both the
+length and primary sequence conservation level of the family. For
+example, with 
+the default tau of 1E-7, tRNA models (low primary sequence
+conservation with length of about 75 residues) show about 10X acceleration,
+and SSU bacterial rRNA models (high primary sequence conservation with
+length of about 1500 residues) show about 700X. 
+HMM banding can be turned off with the 
+.B --nonbanded 
+option.
 
 .TP
-.BI --tau " <f>"
+.B --nonbanded
+Turns off HMM banding. The standard CYK alignment algorithm (or
+optimal accuracy algorithm 
+.B --optacc
+is enabled) is used to determine the guaranteed optimal alignment. The 
+.B --small
+option is recommended in combination with this option, because
+standard alignment without HMM banding requires a lot of memory (see
+.B --small).
+
+.TP
+.BI --tau " <x>"
 Set the tail loss probability used during HMM band calculation to
-.I <f>. 
+.I <x>. 
 This is the amount of probability mass within the HMM posterior
 probabilities that is considered negligible. The default value is 1E-7.
 In general, higher values will result in greater acceleration, but
@@ -268,39 +292,85 @@ bands.
 
 .TP
 .B --hsafe
-Must be used in combination with
-.B --hbanded.
-In HMM banded mode, realign any sequences with a negative alignment
+In HMM banded mode,
+realign any sequences with a negative alignment
 score using non-banded CYK to guarantee finding the optimal
-alignment. Based on empirical tests, the fraction of
+alignment. 
+Based on empirical tests, the fraction of
 HMM banded alignments that are non-optimal and have negative scores is
 much higher than for those with positive scores.
+This option is incompatible with
+.B --optacc
+and
+.B --hmmviterbi.
 
 .TP
-.B --hmmonly
-Align each sequence to an HMM derived from the CM in 
-.I cmfile
-using the Viterbi HMM alignment algorithm. Currently, no alignment is
-printed when this option is enabled, only scores are printed. 
-
-.TP
-.B --qdb
-Accelerate alignment using query-dependent bands (QDB) as described in
-(Nawrocki and Eddy, PLoS Computational Biology 3(3): e56, 2007) to constrain
-the CYK alignment. In practice, acceleration due to
-QDB seems to be significantly less than acceleration due to 
-the 
-.B --hbanded 
-option, and the chance of missing the optimal alignment is slightly
-more with QDB.
-
-.TP
-.BI --beta " <x>"
-Set the tail loss probability of QDB to 
+.BI --mxsize " <x>"
+Set the maximum allowable DP matrix size to 
 .I <x>
-The default value is 1E-7.
-In general, higher values will result in greater acceleration, but
-increase the chance of missing the optimal alignment due to the bands.
+megabytes. By default this size is 256 Mb. 
+This should be large enough for the vast majority of alignments, 
+however if it is not 
+.B cmalign 
+will exit prematurely and report an error message that 
+the matrix exceeded it's maximum allowable size. In this case, the
+.B --mxsize 
+can be used to raise the limit.
+This is most likely to occur when the
+.B --nonbanded
+option is used without the
+.B --small 
+option, but can still occur when
+.B --nonbanded 
+is not used.
+
+.TP
+.BI --rna
+Output the alignments as RNA sequence alignments. This is true by default.
+
+.TP
+.BI --dna
+Output the alignments as DNA sequence alignments. 
+
+.TP
+.B --matchonly
+Only include match columns in the output alignment, do not include
+any insertions relative to the consensus model. 
+
+.TP
+.B --resonly
+Only include match columns in the output alignment that 
+have at least 1 residue (non-gap character) in them. By default all match columns are
+printed to the alignment, even those that are 100% gaps. 
+.B --resonly
+replicates the default behavior of previous versions of
+.B cmalign.
+
+.TP
+.B --fins
+Change the 
+behavior of how insert emissions are placed in the alignment. 
+By default, all contiguous blocks of inserts are split in half, and
+half the residues are flushed left against the nearest consensus
+column to the left, and half are flushed right against the nearest
+consensus column on the right. With
+.B --fins
+inserts are not split in half, instead all inserted residues from IL
+states are flushed left, and all inserted residues from IR states are
+flushed right. 
+.B --fins 
+replicates the default behavior of previous versions of
+.B cmalign.
+
+.TP
+.B --onepost
+Modifies behavior of the 
+.B -p
+option. Use only one character instead of two to annotate the
+posterior probability of each aligned residue. Specifically, only the "#=GR
+<seq name> POSTX." tag is printed to the alignment. An "8" for
+"POSTX." indicates a posterior probability between 0.8 and 0.9 for the
+corresponding residue. 
 
 .TP 
 .BI --withali " <f>"
@@ -332,11 +402,21 @@ To specify that the
 .B --rf
 option to 
 .B cmbuild
-was used enable the
+was used, enable the
 .B --rf
 option to 
 .B cmalign
-(described below).
+(see 
+.B --rf 
+below).
+
+.TP 
+.B --withpknots
+Must be used in combination with 
+.BI --withali " <f>".
+Propogate structural information for any pseudoknots that exist in
+.I <f> 
+to the output alignment. 
 
 .TP 
 .B --rf
@@ -364,7 +444,54 @@ option was supplied to
 when the CM was constructed from the alignment file
 .I <f>.
 
+.TP
+.BI --regress " <f>"
+Save regression test information to a file
+.I <f>. 
+This is part of the automated testing procedure at each release. 
 
+.TP
+.BI --tfile " <f>"
+Dump tabular sequence tracebacks for each individual
+sequence to a file 
+.I <f>.
+Primarily useful for debugging.
+
+.TP
+.BI --banddump " <n>"
+Set verbosity level for debugging print statements related to
+banded alignment to 
+.I <n>. 
+Where 
+.I <n> 
+is 1, 2 or 3. By default debugging print statements are turned off.
+
+.TP
+.BI --dlev " <n>"
+Set verbosity level for alignment related
+debugging print statements
+.I <n>. 
+Where 
+.I <n> 
+is 1, 2 or 3. By default debugging print statements are turned off.
+
+.TP
+.BI --dlev " <n>"
+Set verbosity level for general debugging print statements
+.I <n>. 
+Where 
+.I <n> 
+is 1, 2 or 3. By default debugging print statements are turned off.
+
+.TP
+.BI --stall
+Stall the program immediately after starting up to allow a user
+to attach a debugging tool such as gdb to the process.
+Developed for debugging under MPI parallelization, which is turned on
+with the 
+.B --mpi
+option.  This option will only be available if @PACKAGE@ has been configured
+and built with the "--enable-mpi" flag (see User's Guide for details).
 
 
 

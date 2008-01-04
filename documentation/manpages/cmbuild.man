@@ -68,7 +68,7 @@ contains more than one alignment).
 The default is to use the name of the alignment 
 (given by the #=GF ID tag, in Stockholm format),
 or if that is not present, to use the name of
-the alignment file minus any file type extension plus a \'-\' and a positive
+the alignment file minus any file type extension plus a "-" and a positive
 integer indicating the position of that alignment in the file
 (that is, the first alignment in a file "myrnas.sto" would give
 a CM named "myrnas-1", the second alignment would give a CM named "myrnas-2").
@@ -98,32 +98,40 @@ option is set.
 .TP
 .BI -1
 Reduce the summary output to a single line in tabular format for each
-CM that is built. Each line has six fields, \'aln\': the index of the
-alignment used to build the CM, \'cm idx\': the index of the CM in 
+CM that is built. Each line has six fields, "aln": the index of the
+alignment used to build the CM, "cm idx": the index of the CM in 
 .I cmfile, 
-\'name\': the name of the CM, \'nseq\': the number of sequences in the
-alignment used to build the CM, \'alen\': the length of the alignment
-used to build the CM, and \'clen\': the consensus length of the CM.
+"name": the name of the CM, "nseq": the number of sequences in the
+alignment used to build the CM, "alen": the length of the alignment
+used to build the CM, and "clen": the consensus length of the CM.
 
 .SH EXPERT OPTIONS
 
 .TP
 .BI --rsearch " <f>"
-Use RSEARCH parameterization with the RIBOSUM matrix in file 
+Parameterize emission scores a la RSEARCH, using the RIBOSUM
+matrix in file 
 .I <f>.
+Actually, the emission scores will not be exactly the RIBOSUM scores,
+because of differences in the modelling strategy in @PACKAGE@ and
+RSEARCH, but they will be as close as @PACKAGE@ can get.
 RIBOSUM matrix files are included with @PACKAGE@ in the 
-\'matrices/\'
+"matrices/"
 subdirectory of the top-level @PACKAGE@ directory.
 RIBOSUM matrices are substitution score matrices trained specifically
 for structural RNAs with separate single stranded residue and base pair
 substitution scores. For more information see the RSEARCH publication 
-(Klein and Eddy, BMC Bioinformatics 4:44, 2003). With 
+(Klein and Eddy, BMC Bioinformatics 4:44, 2003). Actually, the
+emission scores will not exactly 
+
+With 
 .B --rsearch 
 enabled, all alignments in 
 .I alifile
-must contain exactly 1 sequence or the
+must contain exactly one sequence or the
 .B --call 
-option must be used as described below.
+option must also be enabled. 
+
 
 .TP
 .BI --binary 
@@ -169,7 +177,7 @@ above) to
 The default is 0.5.
 
 .TP
-.B --elself " <x>"
+.BI --elself " <x>"
 Set the local end (EL) state self transition probability to 
 .I <x>.
 By default this probability is 0.94 (optimized using an internal
@@ -219,7 +227,7 @@ is to determine new sequence weights by the
 Gerstein/Sonnhammer/Chothia algorithm, ignoring any annotated weights.
 
 .TP 
-.B --pbswitch " <n>"
+.BI --pbswitch " <n>"
 Set the cutoff for automatically switching the weighting method to the Henikoff
 position-based weighting scheme to 
 .I <n>.
@@ -438,7 +446,7 @@ with the exception of the final CM built from the original alignment
 which is named in the default manner, without an appended integer. 
 
 .TP 
-.B --refine " <f>"
+.BI --refine " <f>"
 Attempt to refine the alignment before building the CM using
 expectation-maximization (EM). A CM is first built from the initial
 alignment as usual. Then, the sequences in the alignment are realigned
@@ -536,7 +544,7 @@ full CYK algorithm which is guaranteed to give the optimal alignment.
 This will slow down the run significantly, especially for large models.
 
 .TP
-.BI --tau " <f>"
+.BI --tau " <x>"
 With 
 .B --refine, 
 set the tail loss probability used during HMM band calculation to
@@ -546,6 +554,37 @@ probabilities that is considered negligible. The default value is 1E-7.
 In general, higher values will result in greater acceleration, but
 increase the chance of missing the optimal alignment due to the HMM
 bands.
+
+.TP
+.B --iins
+With
+.B --refine,
+turn off the default 
+behavior of setting all CM insert emission scores to 0.0 bits prior to
+aligning sequences. This default behavior originated in 
+.B cmsearch 
+to avoid high-scoring hits to low complexity sequence favored by high 
+insert state emission scores, and is applied to
+.B cmbuild
+here in 
+.B --refine 
+mode for consistency. 
+
+.TP
+.B --fins
+With
+.B --refine,
+change the 
+behavior of how insert emissions are placed in the alignment. 
+By default, all contiguous blocks of inserts are split in half, and
+half the residues are flushed left against the nearest consensus
+column to the left, and half are flushed right against the nearest
+consensus column on the right. With
+.B --fins
+inserts are not split in half, instead all inserted residues from IL
+states are flushed left, instead all inserted residues from IR states are
+flushed right. This was the default behavior of previous versions of
+@PACKAGE@.
 
 .TP
 .BI --mxsize " <x>"

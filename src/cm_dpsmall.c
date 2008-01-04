@@ -366,6 +366,7 @@ CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parset
   /* Free memory and return
    */
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
+  ESL_DPRINTF1(("returning from CYKDivideAndConquer() sc : %f\n", sc)); 
   return sc;
 }
 
