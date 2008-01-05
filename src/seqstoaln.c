@@ -426,11 +426,14 @@ seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, d
   seqs_to_aln = CreateSeqsToAln(nseq, i_am_mpi_master);
 
   namelen = IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
+  namelen *= 2; /* we'll use two ints in the name below */ 
+  namelen += 2; /* for the two '-'s */
+  namelen += 7; /* for the two 'randseq's */
   ESL_ALLOC(name, sizeof(char) * namelen);
 
   for(i = 0; i < nseq; i++)
     {
-      sprintf(name, "randseq%d-%d", extranum, i+1);
+      sprintf(name, "randseq-%d-%d", extranum, i+1);
       L = esl_rnd_DChoose(r, L_distro, Lmax+1);
       ESL_ALLOC(randdsq, sizeof(ESL_DSQ)* (L+2));
       if (esl_rnd_xIID(r, pdist, abc->K, L, randdsq)  != eslOK) cm_Fail("RandomEmitSeqsToAln(): failure creating random sequence.");

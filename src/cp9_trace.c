@@ -654,35 +654,37 @@ CP9ViterbiTrace(CP9_t *hmm, ESL_DSQ *dsq, int i0, int j0,
 
     case CSTD:			/* D connects from M,D,I, (D_1 also connects from B (M_0) */
       /*printf("CSTD k: %d i:%d \n", k, i);*/
-      if (dmx[i][k+1] <= -INFTY) { CP9FreeTrace(tr); *ret_tr = NULL; return; }
-      else if(k == 0) /* D_0 connects from B(M_0), and I_0 */
+       sc = dmx[i][k+1];
+       if (sc <= -INFTY) { CP9FreeTrace(tr); *ret_tr = NULL; return; }
+       else if(k == 0) /* D_1 connects from B(M_0), and I_0, when k == 0, we're dealing with D_1, a confusing off-by-one */
 	{
-	  if(dmx[i][k+1] == mmx[i][k] + hmm->tsc[CTMD][k])
+	  if(sc == mmx[i][k] + hmm->tsc[CTMD][k])
 	    {
 	      tr->statetype[tpos] = CSTB;
 	      tr->nodeidx[tpos]   = 0;
 	      tr->pos[tpos]       = 0;
 	    }
-	  if (dmx[i][k+1] == imx[i][k] + hmm->tsc[CTID][k])
+	  else if (sc == imx[i][k] + hmm->tsc[CTID][k])
 	    {
 	      tr->statetype[tpos] = CSTI;
-	      tr->nodeidx[tpos]   = k--;
+	      tr->nodeidx[tpos]   = k;
 	      tr->pos[tpos]       = i--;
 	    }
+	  else cm_Fail("traceback failed");
 	} /* else k != 0 */
-      else if (dmx[i][k+1] == mmx[i][k] + hmm->tsc[CTMD][k])
+      else if (sc == mmx[i][k] + hmm->tsc[CTMD][k])
 	{
 	  tr->statetype[tpos] = CSTM;
 	  tr->nodeidx[tpos]   = k--;
 	  tr->pos[tpos]       = i--;
 	}
-      else if (dmx[i][k+1] == imx[i][k] + hmm->tsc[CTID][k]) 
+      else if (sc == imx[i][k] + hmm->tsc[CTID][k]) 
 	{
 	  tr->statetype[tpos] = CSTI;
-	  tr->nodeidx[tpos]   = k--;
+	  tr->nodeidx[tpos]   = k;
 	  tr->pos[tpos]       = i--;
 	}
-      else if (dmx[i][k+1] == dmx[i][k] + hmm->tsc[CTDD][k]) 
+      else if (sc == dmx[i][k] + hmm->tsc[CTDD][k]) 
 	{
 	  tr->statetype[tpos] = CSTD;
 	  tr->nodeidx[tpos]   = k--;
@@ -703,7 +705,7 @@ CP9ViterbiTrace(CP9_t *hmm, ESL_DSQ *dsq, int i0, int j0,
 	      tr->nodeidx[tpos]   = 0;
 	      tr->pos[tpos]       = 0;
 	    }
-	  if (sc == imx[i][k] + hmm->tsc[CTII][k])
+	  else if (sc == imx[i][k] + hmm->tsc[CTII][k])
 	    {
 	      tr->statetype[tpos] = CSTI;
 	      tr->nodeidx[tpos]   = k;

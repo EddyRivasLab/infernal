@@ -263,6 +263,7 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
     best_pos = i0;
     if(ret_tr != NULL) {
       CP9ViterbiTrace(cm->cp9, dsq, i0, j0, mx, &tr);
+      if(tr == NULL) ESL_FAIL(eslFAIL, errbuf, "CP9ViterbiTrace() returned NULL, problem with traceback.");
       /* CP9PrintTrace(stdout, tr, cm->cp9, dsq); */
       *ret_tr = tr;
     }
