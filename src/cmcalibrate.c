@@ -66,6 +66,7 @@ static ESL_OPTIONS options[] = {
 
   /* options for gumbel estimation */
   { "--gumonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--filonly", "only estimate Gumbels, don't calculate filter thresholds", 2},
+  { "--gumL",    eslARG_INT,     NULL, NULL, "n>0",     NULL,      NULL, "--filonly", "set length of random seqs to search for Gumbel estimation to <n>", 2},
   { "--cmN",     eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--filonly", "number of random sequences for CM gumbel estimation",    2 },
   { "--hmmN",    eslARG_INT,   "5000", NULL, "n>0",     NULL,      NULL, "--filonly", "number of random sequences for CP9 HMM gumbel estimation",    2 },
   { "--dbfile",  eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL, "--filonly", "use GC content distribution from file <s>",  2},
@@ -90,7 +91,7 @@ static ESL_OPTIONS options[] = {
   { "--filhfile",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--gumonly", "save CP9 filter threshold histogram(s) to file <s>", 3},
   { "--filrfile",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--gumonly", "save CP9 filter threshold information in R format to file <s>", 3},
   /* exclusive choice of filter threshold cutoff */
-  { "--eval",    eslARG_REAL,   "0.1", NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "min CM E-val (for a 1MB db) to consider for filter thr calc", 4}, 
+  { "--eval",    eslARG_REAL,   "0.1", NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "min CM E-val (for a 1 Mb db) to consider for filter thr calc", 4}, 
   { "--ga",      eslARG_NONE,   FALSE, NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "use CM gathering threshold as minimum sc for filter thr calc", 4}, 
   { "--nc",      eslARG_NONE,   FALSE, NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "use CM noise cutoff as minimum sc for filter thr calc", 4}, 
   { "--tc",      eslARG_NONE,   FALSE, NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "use CM trusted cutoff as minimum sc for filter thr calc", 4},   
@@ -174,7 +175,7 @@ static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 
 static int process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
 				   float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, float **ret_hyb_scA, int **ret_partA);
-static int process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
+static int process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq, int L,
 				   float ***ret_vscAA, float **ret_cp9scA, float **ret_hybscA);
 
 static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
@@ -601,8 +602,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int            cmN  = esl_opt_GetInteger(go, "--cmN");
   int            hmmN = esl_opt_GetInteger(go, "--hmmN");
   int            filN = esl_opt_GetInteger(go, "--filN");
-  /*int           *vwin = NULL;
-    int            nwin = 0;*/
   int        gum_mode  = 0;
   int        fthr_mode = 0;
   int      p;
@@ -618,11 +617,12 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   double   tmp_mu, tmp_lambda;    /* temporary mu and lambda used for setting HMM gumbels */
   int      do_time_estimates = TRUE;
   int     *best_sub_roots = NULL; /* [0..cfg->hsi->nstarts-1], best predicted sub CM root filter for each start group */
+  int            L;  /* length of sequences to search for gumbel fitting, L==cm->W*2 unless --gumL enabled, 
+		      * in which case L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL") */
   /* int      do_time_estimates = esl_opt_GetBoolean(go, "--etime"); */
   int s = 0;
   int getting_faster = TRUE;
   void *tmp;
-
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
 
   while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
@@ -657,6 +657,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	/* gumbel fitting section */
 	if(! (esl_opt_GetBoolean(go, "--filonly"))) {
 	  /* calculate gumbels for this gum mode */
+	  /* determine length of seqs to search for gumbel fitting */
+	  if(esl_opt_IsDefault(go, "--gumL")) L = cm->W*2; 
+	  else                                L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL")); /* minimum L we allow is 2 * cm->W, this is enforced silently (!) */
+
 	  ESL_DASSERT1((cfg->np == cfg->cmstatsA[cmi]->np));
 	  for (p = 0; p < cfg->np; p++) {
 	    if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
@@ -664,16 +668,16 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      /* search random sequences to get gumbels for each candidate sub CM root state (including 0, the root of the full model) */
 	      if(do_time_estimates) estimate_workunit_time(go, cfg, cmN, cm->W*2, gum_mode);
 	      ESL_DPRINTF1(("\n\ncalling process_gumbel_workunit to fit gumbel for p: %d CM mode: %d\n", p, gum_mode));
-	      if((status = process_gumbel_workunit (go, cfg, errbuf, cm, cmN, &gum_vscAA, NULL, NULL)) != eslOK) cm_Fail(errbuf);
+	      if((status = process_gumbel_workunit (go, cfg, errbuf, cm, cmN, L, &gum_vscAA, NULL, NULL)) != eslOK) cm_Fail(errbuf);
 	      if((status = cm_fit_histograms(go, cfg, errbuf, cm, gum_vscAA, cmN, p)) != eslOK) cm_Fail(errbuf);
-	      SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], cfg->vmuAA[p][0], cfg->vlambdaAA[p][0], cm->W*2, cmN);
+	      SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], cfg->vmuAA[p][0], cfg->vlambdaAA[p][0], L, cmN);
 	    }
 	    else { /* CP9 mode, fit gumbel for full HMM */
 	      if(do_time_estimates) estimate_workunit_time(go, cfg, hmmN, cm->W*2, gum_mode);
 	      ESL_DPRINTF1(("\n\ncalling process_gumbel_workunit to fit gumbel for p: %d CP9 mode: %d\n", p, gum_mode));
-	      if((status = process_gumbel_workunit (go, cfg, errbuf, cm, hmmN, NULL, &gum_cp9scA, NULL)) != eslOK) cm_Fail(errbuf);
+	      if((status = process_gumbel_workunit (go, cfg, errbuf, cm, hmmN, L, NULL, &gum_cp9scA, NULL)) != eslOK) cm_Fail(errbuf);
 	      if((status = fit_histogram(go, cfg, errbuf, gum_cp9scA, hmmN, &tmp_mu, &tmp_lambda))       != eslOK) cm_Fail(errbuf);
-	      SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], tmp_mu, tmp_lambda, cm->W*2, hmmN);
+	      SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], tmp_mu, tmp_lambda, L, hmmN);
 	    }
 	  } /* end of for loop over partitions */
 	} /* end of if ! --filonly */
@@ -715,7 +719,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  ESL_DASSERT1((cfg->np == cfg->cmstatsA[cmi]->np));
 		  for (p = 0; p < cfg->np; p++) {
 		    if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
-		    if((status = process_gumbel_workunit (go, cfg, errbuf, cm, cmN, NULL, NULL, &gum_hybscA)) != eslOK) cm_Fail(errbuf);
+		    if((status = process_gumbel_workunit (go, cfg, errbuf, cm, cmN, L, NULL, NULL, &gum_hybscA)) != eslOK) cm_Fail(errbuf);
 		    if((status = fit_histogram(go, cfg, errbuf, gum_hybscA, cmN, &tmp_mu, &tmp_lambda))       != eslOK) cm_Fail(errbuf);
 		    SetGumbelInfo(cfg->gum_hybA[p], tmp_mu, tmp_lambda, cm->W*2, cmN);
 		    debug_print_gumbelinfo(cfg->gum_hybA[p]);
@@ -1235,6 +1239,8 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int v, p;
   void *tmp;
   int cmi;
+  int            L;  /* length of sequences to search for gumbel fitting, L==cm->W*2 unless --gumL enabled, 
+		      * in which case L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL") */
   int in_fil_section_flag = FALSE; /* set to TRUE while we're in the filter threshold calculation
 				    * section, we need to know this when we goto ERROR, b/c we have
 				    * to know how many more MPI_Recv() calls to make to match up
@@ -1327,6 +1333,8 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	
 	/* gumbel fitting section */
 	if(! (esl_opt_GetBoolean(go, "--filonly"))) {
+	  if(esl_opt_IsDefault(go, "--gumL")) L = cm->W*2; 
+	  else                                L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL")); /* minimum L we allow is 2 * cm->W, this is enforced silently (!) */
 	  for (p = 0; p < cfg->np; p++) { /* for each partition */
 	    
 	    ESL_DPRINTF1(("worker %d gum_mode: %d partition: %d\n", cfg->my_rank, gum_mode, p));
@@ -1337,7 +1345,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      ESL_DPRINTF1(("worker %d: has received nseq: %d\n", cfg->my_rank, nseq));
 	    
 	      if(working_on_cm) {
-		if((status = process_gumbel_workunit (go, cfg, errbuf, cm, nseq, &gum_vscAA, NULL, NULL)) != eslOK) goto ERROR;
+		if((status = process_gumbel_workunit (go, cfg, errbuf, cm, nseq, L, &gum_vscAA, NULL, NULL)) != eslOK) goto ERROR;
 		ESL_DPRINTF1(("worker %d: has gathered CM gumbel results\n", cfg->my_rank));
 		n = 0;
 		if (MPI_Pack_size(1, MPI_INT, MPI_COMM_WORLD, &sz) != 0) /* room for the status code */
@@ -1361,7 +1369,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		for(v = 0; v < cm->M; v++) free(gum_vscAA[v]);
 	      }
 	      else { /* working on cp9 */
-		if((status = process_gumbel_workunit (go, cfg, errbuf, cm, nseq, NULL, &gum_cp9scA, NULL)) != eslOK) goto ERROR;
+		if((status = process_gumbel_workunit (go, cfg, errbuf, cm, nseq, L, NULL, &gum_cp9scA, NULL)) != eslOK) goto ERROR;
 		ESL_DPRINTF1(("worker %d: has gathered CP9 gumbel results\n", cfg->my_rank));
 		n = 0;
 		if (MPI_Pack_size(1, MPI_INT, MPI_COMM_WORLD, &sz) != 0) /* room for the status code */
@@ -1531,6 +1539,8 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
  *           errbuf       - for writing out error messages
  *           cm           - the CM (already configured as we want it)
  *           nseq         - number of seqs to generate
+ *           L            - length of sequences to search, L==cm->W*2 unless --gumL enabled, in which case
+ *                          L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL")
  *           ret_vscAA    - RETURN: [0..v..cm->M-1][0..nseq-1] best score at each state v for each seq
  *           ret_cp9scA   - RETURN: [0..nseq-1] best CP9 score for each seq
  *           ret_hybscA   - RETURN: [0..nseq-1] best hybrid score for each seq
@@ -1539,7 +1549,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
  */
 static int
 process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
-			float ***ret_vscAA, float **ret_cp9scA, float **ret_hybscA)
+			int L, float ***ret_vscAA, float **ret_cp9scA, float **ret_hybscA)
 {
   int            status;
   int            mode; /* 1, 2, or 3, determined by status of input args, as explained in 'Purpose' above. */
@@ -1550,7 +1560,6 @@ process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   double        *dnull        = NULL; /* double version of cm->null, for generating random seqs */
   int            i;
   int            v;
-  int            L;
   ESL_DSQ       *dsq;
   float          sc;
 
@@ -1560,7 +1569,8 @@ process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   else if(ret_vscAA == NULL && ret_cp9scA == NULL && ret_hybscA != NULL) mode = 3; /* calcing hybrid gumbel stats */
   else ESL_FAIL(eslEINCOMPAT, errbuf, "can't determine mode in process_gumbel_workunit.");
 
-  ESL_DPRINTF1(("in process_gumbel_workunit nseq: %d mode: %d\n", nseq, mode));
+  ESL_DPRINTF1(("in process_gumbel_workunit nseq: %d L: %d mode: %d\n", nseq, L, mode));
+  printf("in process_gumbel_workunit nseq: %d L: %d mode: %d\n", nseq, L, mode);
 
   int do_cyk     = FALSE;
   int do_inside  = FALSE;
@@ -1596,8 +1606,8 @@ process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   
   /* generate dsqs one at a time and collect best CM scores at each state and/or best overall CP9 score */
   for(i = 0; i < nseq; i++) {
-    if((status = get_random_dsq(cfg, errbuf, cm, dnull, cm->W*2, &dsq)) != eslOK) return status; 
-    L = cm->W*2; 
+    if((status = get_random_dsq(cfg, errbuf, cm, dnull, L, &dsq)) != eslOK) return status; 
+
     /* if nec, search with CM */
     if (do_cyk)    if((status = FastCYKScan    (cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, &(cur_vscA), &sc)) != eslOK) return status;
     if (do_inside) if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, &(cur_vscA), &sc)) != eslOK) return status;
@@ -2372,6 +2382,8 @@ estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq,
   float vit_megacalcs_per_sec = 380.;
   
   float seconds = 0.;
+
+  if(! esl_opt_IsDefault(go, "--gumL")) L = ESL_MAX(L, esl_opt_GetInteger(go, "--gumL")); /* minimum L we allow is 2 * cm->W (L is sent into this func as 2 * cm->W), this is enforced silently (!) */
 
   switch(gum_mode) { 
   case GUM_CM_LC: 
