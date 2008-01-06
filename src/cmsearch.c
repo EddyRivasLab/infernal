@@ -231,7 +231,7 @@ main(int argc, char **argv)
       esl_usage(stdout, argv[0], usage);
       puts("\nwhere general options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-      puts("\nstrategy choice: (exclusive) [default: CM only]");
+      puts("\nstrategy choice: (exclusive) [default: --cyk]");
       esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
       puts("\nCM cutoff options (exclusive) [default: E value of 0.1]");
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
@@ -711,7 +711,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			    
 			    
 			  }					      
-			  print_results(cm, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc);
+			  print_results(cm, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
 			    esl_sq_Destroy(dbseqlist[si_recv]->sq[rci]);
 			    FreeResults(dbseqlist[si_recv]->results[rci]);
@@ -1164,12 +1164,12 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /*************************************************************************************
    * Filter related options:
    *
-   * User can specify 0 to 2 rounds of filtering and cutoffs on the command line, 
-   * 0 or 1 rounds can be CM  filters, with --fcm,  --fcmT,  and --fcmE (req's Gumbels)
-   *                                        --fcminside specifies use inside, not CYK
-   * 0 or 1 rounds can by HMM filters, with --fhmm, --fhmmT, and --fhmmE (req's Gumbels)
+   * User can specify 0,1 or 2 rounds of filtering and cutoffs on the command line, 
+   * 0 or 1 rounds can be CM  filters, with --fcyk or --finside, --fcmT,  and --fcmE (req's Gumbels)
+   *                                        --finside specifies use inside, not CYK
+   * 0 or 1 rounds can by HMM filters, with --fhmmviterbi or --fhmmforward, --fhmmT, and --fhmmE (req's Gumbels)
    *                                        --fhmmforward specifies use forward, not viterbi
-   * Or user can specify that an HMM or hybrid filter as described in the the CM file 
+   * Or user can specify that an HMM filter as described in the the CM file 
    * be used with option --fgiven. --fgiven is incompatible with --fhmmviterbi and --fhmmforward
    * but not with --fcyk and --finside
    *

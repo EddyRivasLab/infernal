@@ -426,8 +426,12 @@ extern void   CPlan9Rescale(CP9_t *hmm, float scale);
 extern double CM_Eweight_RE(CM_t *cm, const Prior_t *pri, float numb_seqs, 
 			    float target_relent, float *randomseq);
 extern double DRelEntropy(double *p, double *f, int n);
-extern float  CMAverageMatchEntropy(CM_t *cm);
-extern float  CP9AverageMatchEntropy(CP9_t *cp9);
+extern double cm_MeanMatchInfo(const CM_t *cm);
+extern double cm_MeanMatchEntropy(const CM_t *cm);
+extern double cm_MeanMatchRelativeEntropy(const CM_t *cm);
+extern double cp9_MeanMatchInfo(const CM_t *cm);
+extern double cp9_MeanMatchEntropy(const CM_t *cm);
+extern double cp9_MeanMatchRelativeEntropy(const CM_t *cm);
 
 /* from hmmband.c */
 extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);

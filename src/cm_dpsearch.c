@@ -678,7 +678,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   init_scAA = ICalcInitDPScores(cm);
   
   /* allocate/initialize gamma_row, only used for updating gamma if results != NULL */
-  ESL_ALLOC(gamma_row, sizeof(float) * W+1);
+  ESL_ALLOC(gamma_row, sizeof(float) * (W+1));
   esl_vec_FSet(gamma_row, (W+1), IMPOSSIBLE);
 
   /* The main loop: scan the sequence from position i0 to j0.

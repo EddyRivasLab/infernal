@@ -1182,7 +1182,7 @@ typedef struct bestfilterinfo_s {
   /* info for hybrid scanner, only valid if ftype == FILTER_WITH_HYBRID */
   double        hbeta;               /* tail loss prob used to calculate dmin/dmax for hybrid filter */
   int          *v_isroot;            /* [0..cm->M-1], TRUE if state v is a sub CM root in filter, false if not */
-  int            np;                 /* number of partitions (number of Gumbels in hgumA */
+  int            np;                 /* number of partitions (number of Gumbels in hgumA) */
   GumbelInfo_t **hgumA;              /* [0.p.np-1] Gumbel info for hybrid scanner, partition p, only non-NULL if ftype == FILTER_WITH_HYBRID */
 } BestFilterInfo_t;
 /* possible values for ftype[] array in FilterInfo_t objects */

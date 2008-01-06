@@ -66,7 +66,7 @@ static ESL_OPTIONS options[] = {
 
   /* options for gumbel estimation */
   { "--gumonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--filonly", "only estimate Gumbels, don't calculate filter thresholds", 2},
-  { "--gumL",    eslARG_INT,     NULL, NULL, "n>0",     NULL,      NULL, "--filonly", "set length of random seqs to search for Gumbel estimation to <n>", 2},
+  { "--gumL",    eslARG_INT,     NULL, NULL, "n>0",     NULL,      NULL, "--filonly", "set length of random seqs for Gumbel estimation to <n>", 2},
   { "--cmN",     eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--filonly", "number of random sequences for CM gumbel estimation",    2 },
   { "--hmmN",    eslARG_INT,   "5000", NULL, "n>0",     NULL,      NULL, "--filonly", "number of random sequences for CP9 HMM gumbel estimation",    2 },
   { "--dbfile",  eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL, "--filonly", "use GC content distribution from file <s>",  2},
@@ -833,6 +833,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int msg;
   int cmi;                  /* CM index, which number CM we're working on */
   double tmp_mu, tmp_lambda;/* temporary mu and lambda used for setting HMM gumbels */
+  int            L;  /* length of sequences to search for gumbel fitting, L==cm->W*2 unless --gumL enabled, 
+		      * in which case L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL") */
 
   /* Master initialization: including, figure out the alphabet type.
    * If any failure occurs, delay printing error message until we've shut down workers.
@@ -947,6 +949,9 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	/* gumbel fitting section */
 	if(! (esl_opt_GetBoolean(go, "--filonly"))) {
+	  if(esl_opt_IsDefault(go, "--gumL")) L = cm->W*2; 
+	  else                                L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL")); /* minimum L we allow is 2 * cm->W, this is enforced silently (!) */
+
 	  for (p = 0; p < cfg->np; p++) {
 	    
 	    ESL_DPRINTF1(("MPI master: CM: %d gumbel mode: %d partition: %d\n", cfg->ncm, gum_mode, p));
@@ -1043,11 +1048,11 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      /* fit gumbels for this partition p, this gumbel mode gum_mode */
 	      if(working_on_cm) { 
 		if((status = cm_fit_histograms(go, cfg, errbuf, cm, gum_vscAA, cmN, p)) != eslOK) cm_Fail(errbuf);
-		SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], cfg->vmuAA[p][0], cfg->vlambdaAA[p][0], cm->W*2, cmN);
+		SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], cfg->vmuAA[p][0], cfg->vlambdaAA[p][0], L, cmN);
 	      }
 	      else /* working on CP9 */ {
 		if((status = fit_histogram(go, cfg, errbuf, gum_cp9scA, hmmN, &tmp_mu, &tmp_lambda))       != eslOK) cm_Fail(errbuf);
-		SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], tmp_mu, tmp_lambda, cm->W*2, hmmN);
+		SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], tmp_mu, tmp_lambda, L, hmmN);
 	      }
 	    }
 	  }
@@ -2091,7 +2096,6 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
       params[1] = lambda;
       esl_histogram_PlotQQ(cfg->gumqfp, h, &esl_exp_generic_invcdf, params);
   }
-
   esl_histogram_Destroy(h);
 
   *ret_mu     = mu;

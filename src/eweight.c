@@ -662,7 +662,7 @@ double DRelEntropy(double *p, double *f, int n)
   double eps;
   double temp;
 
-  eps = 0.0000000001;
+  eps = 0.0000001;
 
   rel_entropy = 0.;
   for(i = 0; i < n; i++)
@@ -678,64 +678,189 @@ double DRelEntropy(double *p, double *f, int n)
   return(1.44269504 * rel_entropy); /* converts to bits */
 }
 
-/***********************************************************************
- * Function: CMAverageMatchEntropy
- * Incept:   EPN, Tue May  1 14:06:37 2007
- * 
- * Purpose:  Return the average match state entropy for a CM. 
- *           Calculated as summed entropy of all match states (including
- *           MATP_MPs) divided by (2*|MATP_MP| + |MATL_ML| + |MATR_MR|).
+/* Function:  cm_MeanMatchInfo()
+ * Incept:    SRE, Fri May  4 11:43:56 2007 [Janelia]
  *
- * Args:    cm       - the covariance model
- *
- * Returns: (void) 
+ * Purpose:   Calculate the mean information content per match state
+ *            emission distribution, in bits:
+ *            
+ *            \[
+ *              \frac{1}{M} \sum_{k=1}^{M}
+ *                \left[ 
+ *                   - \sum_x p_k(x) \log_2 p_k(x) 
+ *                   + \sum_x f(x) \log_2 f(x)
+ *                \right] 
+ *            \]
+ *            
+ *            where $p_k(x)$ is emission probability for symbol $x$
+ *            from match state $k$, and $f(x)$ is the null model's
+ *            background emission probability for $x$.
+ *            
  */
-float
-CMAverageMatchEntropy(CM_t *cm)
+double
+cm_MeanMatchInfo(const CM_t *cm)
 {
-  float summed_entropy, denom; 
-  int v;
-  summed_entropy = denom = 0.;
-  for(v = 0; v < cm->M; v++)
-    { 
+  return esl_vec_FEntropy(cm->null, cm->abc->K) - cm_MeanMatchEntropy(cm);
+}
+
+/*
+ * Function: cm_MeanMatchEntropy
+ * Incept:   EPN, Tue May  1 14:06:37 2007
+ *           Updated to match Sean's analogous p7_MeanMatchEntropy() in 
+ *           HMMER3's hmmstat.c, EPN, Sat Jan  5 14:48:27 2008.
+ * 
+ * Purpose:   Calculate the mean entropy per match state emission
+ *            distribution, in bits:
+ *            
+ *            \[
+ *              \frac{1}{clen} \sum_{v=0}^{M-1} -\sum_x p_v(x) \log_2 p_v(x)
+ *            \]
+ *       
+ *            where $p_v(x)$ is emission probability for symbol $x$
+ *            from MATL\_ML, MATR\_MR or MATP\_MP state $v$. For MATP\_MP
+ *            states symbols $x$ are base pairs.
+ */
+double
+cm_MeanMatchEntropy(const CM_t *cm)
+{
+  int    v;
+  double H = 0.;
+
+  for (v = 0; v < cm->M; v++)
+    {
       if(cm->stid[v] == MATP_MP)
-	{
-	  denom          += 2.; /* two match columns */
-	  summed_entropy += esl_vec_FEntropy(cm->e[v], (MAXABET * MAXABET));
-	}
+       H += esl_vec_FEntropy(cm->e[v], (cm->abc->K * cm->abc->K));
       else if(cm->stid[v] == MATL_ML || 
 	      cm->stid[v] == MATR_MR)
-	{
-	  denom          += 1.; /* two match columns */
-	  summed_entropy += esl_vec_FEntropy(cm->e[v], MAXABET);
-	}
+	H += esl_vec_FEntropy(cm->e[v], cm->abc->K);
     }
-  /*printf("\nCM  average entropy: %.5f / %.2f = %.5f\n", summed_entropy, denom, (summed_entropy/denom));*/
-  return (summed_entropy / denom);
+  H /= (double) cm->clen;
+  return H;
 }
 
-/***********************************************************************
- * Function: CP9AverageMatchEntropy
- * Incept:   EPN, Tue May  1 14:13:39 2007
- * 
- * Purpose:  Return the average match state entropy for a CP9 HMM. 
- *           Calculated as summed entropy of all match states divided
- *           by number of match states. One match state per node.
- * 
- * Args:    cp9       - the CM Plan 9 HMM
+
+/* Function:  cm_MeanMatchRelativeEntropy()
+ * Incept:    SRE, Fri May 11 09:25:01 2007 [Janelia]
  *
- * Returns: (void) 
+ * Purpose:   Calculate the mean relative entropy per match state emission
+ *            distribution, in bits:
+ *            
+ *            \[
+ *              \frac{1}{M} \sum_{v=0}^{M-1} \sum_x p_v(x) \log_2 \frac{p_v(x)}{f(x)}
+ *            \]
+ *       
+ *            where $p_v(x)$ is emission probability for symbol $x$
+ *            from MATL\_ML, MATR\_MR, or MATP\_MP state state $v$, 
+ *            and $f(x)$ is the null model's background emission 
+ *            probability for $x$. For MATP\_MP states, $x$ is a 
+ *            base pair.
  */
-float
-CP9AverageMatchEntropy(CP9_t *cp9)
+double
+cm_MeanMatchRelativeEntropy(const CM_t *cm)
 {
-  float summed_entropy;
-  int k;
-  summed_entropy = 0.;
-  for(k = 1; k <= cp9->M; k++)
-    summed_entropy += esl_vec_FEntropy(cp9->mat[k], MAXABET);
+  int    status;
+  int    v;
+  double KL = 0.;
+  float *pair_null;
+  int i,j;
+  
+  ESL_ALLOC(pair_null, (sizeof(float) * cm->abc->K * cm->abc->K));
+  for(i = 0; i < cm->abc->K; i++)
+    for(j = 0; j < cm->abc->K; j++)
+      pair_null[(i * cm->abc->K) + j] = cm->null[i] * cm->null[j]; 
+  
+  for (v = 0; v < cm->M; v++)
+    if(cm->stid[v] == MATP_MP)
+      KL += esl_vec_FRelEntropy(cm->e[v], pair_null, (cm->abc->K * cm->abc->K));
+    else if(cm->stid[v] == MATL_ML || 
+	    cm->stid[v] == MATR_MR)
+      KL += esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K);
+  
+  free(pair_null);
 
-  /*printf("\nCP9 average entropy: %.5f / %.2f = %.5f\n", summed_entropy, (float) cp9->M, (summed_entropy/cp9->M));*/
-  return (summed_entropy / ((float) cp9->M));
+  KL /= (double) cm->clen;
+  return KL;
+  
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return 0.; /* NOTREACHED */
 }
 
+/* Function:  cp9_MeanMatchInfo()
+ * Incept:    SRE, Fri May  4 11:43:56 2007 [Janelia]
+ *
+ * Purpose:   Calculate the mean information content per match state
+ *            emission distribution, in bits:
+ *            
+ *            \[
+ *              \frac{1}{M} \sum_{k=1}^{M}
+ *                \left[ 
+ *                   - \sum_x p_k(x) \log_2 p_k(x) 
+ *                   + \sum_x f(x) \log_2 f(x)
+ *                \right] 
+ *            \]
+ *            
+ *            where $p_k(x)$ is emission probability for symbol $x$
+ *            from match state $k$, and $f(x)$ is the null model's
+ *            background emission probability for $x$.
+ *            
+ *            This statistic is used in "entropy weighting" to set the
+ *            total sequence weight when model building.
+ */
+double
+cp9_MeanMatchInfo(const CM_t *cm)
+{
+  return esl_vec_FEntropy(cm->null, cm->abc->K) - cp9_MeanMatchEntropy(cm);
+}
+
+/* Function:  cp9_MeanMatchEntropy()
+ * Incept:    SRE, Fri May  4 13:37:15 2007 [Janelia]
+ *
+ * Purpose:   Calculate the mean entropy per match state emission
+ *            distribution, in bits:
+ *            
+ *            \[
+ *              \frac{1}{M} \sum_{k=1}^{M} -\sum_x p_k(x) \log_2 p_k(x)
+ *            \]
+ *       
+ *            where $p_k(x)$ is emission probability for symbol $x$
+ *            from match state $k$.
+ */
+double
+cp9_MeanMatchEntropy(const CM_t *cm)
+{
+  int    k;
+  double H = 0.;
+
+  for (k = 1; k <= cm->cp9->M; k++)
+    H += esl_vec_FEntropy(cm->cp9->mat[k], cm->abc->K);
+  H /= (double) cm->cp9->M;
+  return H;
+}
+
+
+/* Function:  cp9_MeanMatchRelativeEntropy()
+ * Incept:    SRE, Fri May 11 09:25:01 2007 [Janelia]
+ *
+ * Purpose:   Calculate the mean relative entropy per match state emission
+ *            distribution, in bits:
+ *            
+ *            \[
+ *              \frac{1}{M} \sum_{k=1}^{M} \sum_x p_k(x) \log_2 \frac{p_k(x)}{f(x)}
+ *            \]
+ *       
+ *            where $p_k(x)$ is emission probability for symbol $x$
+ *            from match state $k$, and $f(x)$ is the null model's 
+ *            background emission probability for $x$. 
+ */
+double
+cp9_MeanMatchRelativeEntropy(const CM_t *cm)
+{
+  int    k;
+  double KL = 0.;
+
+  for (k = 1; k <= cm->cp9->M; k++)
+    KL += esl_vec_FRelEntropy(cm->cp9->mat[k], cm->null, cm->abc->K);
+  KL /= (double) cm->cp9->M;
+  return KL;
+}
