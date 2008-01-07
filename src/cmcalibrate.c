@@ -55,7 +55,7 @@
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
-  { "-s",        eslARG_INT,      "0", NULL, "n>=0",    NULL,      NULL,        NULL, "set random number seed to <n>",   1 },
+  { "-s",        eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,        NULL, "set random number generator seed to <n>",  1 },
   { "-t",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print timings for Gumbel fitting and CP9 filter calculation",  1},
   /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
    * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
@@ -492,14 +492,9 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   cfg->ncm      = 0;
 
   /* seed master's RNG */
-  if(esl_opt_GetInteger(go, "-s") > 0) {
-      if ((cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"))) == NULL)
-	cm_Fail("Failed to create random number generator: probably out of memory");
-  }
-  else {
-    if ((cfg->r = esl_randomness_CreateTimeseeded()) == NULL)
-      cm_Fail("Failed to create random number generator: probably out of memory");
-  }
+  if (! esl_opt_IsDefault(go, "-s")) 
+    cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
+  else cfg->r = esl_randomness_CreateTimeseeded();
   printf("Random seed: %ld\n", esl_randomness_GetSeed(cfg->r));
 
   /* From HMMER 2.4X hmmcalibrate.c:
@@ -3019,14 +3014,14 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
   
   
   /* Set the cmbuild command info, the cfg->clog->bcom string */
-  for (i = 0; i < go->optind; i++) { /* copy all command line options, but not the command line args yet, we may need to append '--seed ' before the args */
+  for (i = 0; i < go->optind; i++) { /* copy all command line options, but not the command line args yet, we may need to append '-s ' before the args */
     esl_strcat(&(cfg->ccom),  -1, go->argv[i], -1);
     esl_strcat(&(cfg->ccom),  -1, " ", 1);
   }
   /* if -s NOT enabled, we need to append the seed info also */
+  seed = esl_randomness_GetSeed(cfg->r);
   if(esl_opt_IsDefault(go, "-s")) {
     if(cfg->r == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r is NULL but --gibbs enabled, shouldn't happen.");
-    seed = esl_randomness_GetSeed(cfg->r);
     temp = seed; 
     seedlen = 1; 
     while(temp > 0) { temp/=10; seedlen++; } /* determine length of stringized version of seed */
@@ -3036,10 +3031,10 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
     esl_strcat((&cfg->ccom), -1, seedstr, seedlen);
   }
   else { /* -s was enabled, we'll do a sanity check */
-    if(seed != (long) esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r's seed is %ld, but --seed was enabled with argument: %ld!, this shouldn't happen.", seed, (long) esl_opt_GetInteger(go, "-s"));
+    if(seed != (long) esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r's seed is %ld, but -s was enabled with argument: %ld!, this shouldn't happen.", seed, (long) esl_opt_GetInteger(go, "-s"));
   }
 
-  for (i = go->optind; i < go->argc; i++) { /* copy all command line options, but not the command line args yet, we may need to append '--seed ' before the args */
+  for (i = go->optind; i < go->argc; i++) { /* copy all command line options, but not the command line args yet, we may need to append '-s ' before the args */
     esl_strcat(&(cfg->ccom), -1, go->argv[i], -1);
     if(i < (go->argc-1)) esl_strcat(&(cfg->ccom), -1, " ", 1);
   }

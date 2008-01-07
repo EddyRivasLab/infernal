@@ -1023,9 +1023,8 @@ write_binary_cm(FILE *fp, CM_t *cm, char *errbuf)
   /* Gumbel stats */
   if (!(cm->flags & CMH_GUMBEL_STATS))
     {
-      has_gum = has_fthr = FALSE;
-      tagged_fwrite(CMIO_HASGUM,     &has_gum, sizeof(int),  1, fp);  /* put a 0 to indicate no EVD stats */
-      tagged_fwrite(CMIO_HASFILTER,  &has_fthr, sizeof(int),  1, fp);  /* put a 0 to indicate no HMM filter stats */
+      has_gum = FALSE;
+      tagged_fwrite(CMIO_HASGUM,     &has_gum,  sizeof(int),  1, fp);  /* put a 0 to indicate no EVD stats */
     }
   else /* (cm->flags & CMH_GUMBEL_STATS), if this flag is up, ALL EVD stats are valid */
     {
@@ -1040,29 +1039,30 @@ write_binary_cm(FILE *fp, CM_t *cm, char *errbuf)
 	    {
 	      tagged_fwrite(CMIO_GUMN,      &cm->stats->gumAA[i][p]->N,      sizeof(int),    1, fp);
 	      tagged_fwrite(CMIO_GUML,      &cm->stats->gumAA[i][p]->L,      sizeof(int),    1, fp);
-	      tagged_fwrite(CMIO_GUMMU,     &cm->stats->gumAA[i][p]->mu,     sizeof(float),  1, fp);
-	      tagged_fwrite(CMIO_GUMLAMBDA, &cm->stats->gumAA[i][p]->lambda, sizeof(float),  1, fp);
+	      tagged_fwrite(CMIO_GUMMU,     &cm->stats->gumAA[i][p]->mu,     sizeof(double),  1, fp);
+	      tagged_fwrite(CMIO_GUMLAMBDA, &cm->stats->gumAA[i][p]->lambda, sizeof(double),  1, fp);
 	    }
 	}
-      /* HMM filter threshold stats, can only be valid if EVD_STATS also valid */ 
-      if (!(cm->flags & CMH_FILTER_STATS))
+    }
+  /* HMM filter threshold stats */
+  if (!(cm->flags & CMH_FILTER_STATS))
+    {
+      has_fthr = FALSE;
+      tagged_fwrite(CMIO_HASFILTER,  &has_fthr,   sizeof(int),  1, fp);  /* put a 0 to indicate no HMM filter stats */
+    } 
+  else /* (cm->flags & CMH_FILTERSTATS), check to make sure Gumbel stats are also valid, they should be */
+    {
+      has_fthr = TRUE;
+      if(! (cm->flags & CMH_GUMBEL_STATS)) cm_Fail("writing binary CM file, filter stats were valid, but gumbel stats were not, this shouldn't happen.");
+      tagged_fwrite(CMIO_HASFILTER,  &has_fthr,   sizeof(int),  1, fp);  /* put a 1 to indicate valid HMM filter stats */
+      for(i = 0; i < FTHR_NMODES; i++)
 	{
-	  has_fthr = FALSE;
- 	  tagged_fwrite(CMIO_HASFILTER,  &has_fthr,   sizeof(int),  1, fp);  /* put a 0 to indicate no HMM filter stats */
-	} 
-     else /* (cm->flags & CMH_FILTERSTATS) */
-	{
-	  has_fthr = TRUE;
-	  tagged_fwrite(CMIO_HASFILTER,  &has_fthr,   sizeof(int),  1, fp);  /* put a 1 to indicate valid HMM filter stats */
-	  for(i = 0; i < FTHR_NMODES; i++)
-	    {
-	      tagged_fwrite(CMIO_FTHRTYPE, &cm->stats->bfA[i]->ftype,    sizeof(int),   1, fp);      
-	      tagged_fwrite(CMIO_FTHRF,    &cm->stats->bfA[i]->F,        sizeof(float), 1, fp);      
-	      tagged_fwrite(CMIO_FTHRN,    &cm->stats->bfA[i]->N,        sizeof(int),   1, fp);      
-	      tagged_fwrite(CMIO_FTHRCME,  &cm->stats->bfA[i]->cm_eval,  sizeof(float), 1, fp);      
-	      tagged_fwrite(CMIO_FTHRE,    &cm->stats->bfA[i]->e_cutoff, sizeof(float), 1, fp);      
-	      tagged_fwrite(CMIO_FTHRDB,   &cm->stats->bfA[i]->db_size,  sizeof(int),   1, fp);      
-	    }
+	  tagged_fwrite(CMIO_FTHRTYPE, &cm->stats->bfA[i]->ftype,    sizeof(int),   1, fp);      
+	  tagged_fwrite(CMIO_FTHRF,    &cm->stats->bfA[i]->F,        sizeof(float), 1, fp);      
+	  tagged_fwrite(CMIO_FTHRN,    &cm->stats->bfA[i]->N,        sizeof(int),   1, fp);      
+	  tagged_fwrite(CMIO_FTHRCME,  &cm->stats->bfA[i]->cm_eval,  sizeof(float), 1, fp);      
+	  tagged_fwrite(CMIO_FTHRE,    &cm->stats->bfA[i]->e_cutoff, sizeof(float), 1, fp);      
+	  tagged_fwrite(CMIO_FTHRDB,   &cm->stats->bfA[i]->db_size,  sizeof(int),   1, fp);      
 	}
     }
 
@@ -1108,7 +1108,7 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   int           has_fthr;
   int           has_ga, has_tc, has_nc;
   int           np;
-  int           i, p;
+  int           i, p, gc;
   ESL_ALPHABET *abc = NULL;
   int           status;
 
@@ -1174,14 +1174,25 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
       cm->stats = AllocCMStats(np);
       if (! tagged_fread(CMIO_PARTS,     (void *) cm->stats->ps, sizeof(int),      np,        fp))     goto FAILURE;
       if (! tagged_fread(CMIO_PARTE,     (void *) cm->stats->pe, sizeof(int),      np,        fp))     goto FAILURE;
+      /* Now set the gc2p GC content to partition map, 
+       * [0..GC_SEGMENTS], telling which partition each belongs to */
+      gc = 0;
+      for(p = 0; p < cm->stats->np; p++) {
+	if(cm->stats->ps[p] != gc)                   goto FAILURE;
+	while(gc <= cm->stats->pe[p]) 
+	  cm->stats->gc2p[gc++] = p;
+      }
+      if(gc != GC_SEGMENTS)                         goto FAILURE;
+
       for(i = 0; i < GUM_NMODES; i++)
 	{
 	  for(p = 0; p < cm->stats->np; p++)
 	    {
 	      if (! tagged_fread(CMIO_GUMN,     (void *) &(cm->stats->gumAA[i][p]->N),     sizeof(int),   1, fp)) goto FAILURE;
 	      if (! tagged_fread(CMIO_GUML,     (void *) &(cm->stats->gumAA[i][p]->L),     sizeof(int),   1, fp)) goto FAILURE;
-	      if (! tagged_fread(CMIO_GUMMU,    (void *) &(cm->stats->gumAA[i][p]->mu),    sizeof(float), 1, fp)) goto FAILURE;
-	      if (! tagged_fread(CMIO_GUMLAMBDA,(void *) &(cm->stats->gumAA[i][p]->lambda),sizeof(float), 1, fp)) goto FAILURE;
+	      if (! tagged_fread(CMIO_GUMMU,    (void *) &(cm->stats->gumAA[i][p]->mu),    sizeof(double), 1, fp)) goto FAILURE;
+	      if (! tagged_fread(CMIO_GUMLAMBDA,(void *) &(cm->stats->gumAA[i][p]->lambda),sizeof(double), 1, fp)) goto FAILURE;
+	      cm->stats->gumAA[i][p]->is_valid = TRUE; /* set valid flag */
 	    }
 	}
       cm->flags |= CMH_GUMBEL_STATS;
@@ -1190,6 +1201,7 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   /* We might have HMM filter threshold stats */
   if(has_fthr)
     {
+      if(! has_gum) goto FAILURE; /* filter threshold stats should only exist if gumbel stats exist */
       for(i = 0; i < FTHR_NMODES; i++)
 	{
 	  if (! tagged_fread(CMIO_FTHRTYPE, (void *) &(cm->stats->bfA[i]->ftype),      sizeof(int),   1, fp)) goto FAILURE;
@@ -1198,6 +1210,7 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  if (! tagged_fread(CMIO_FTHRCME,  (void *) &(cm->stats->bfA[i]->cm_eval),    sizeof(float), 1, fp)) goto FAILURE;
 	  if (! tagged_fread(CMIO_FTHRE,    (void *) &(cm->stats->bfA[i]->e_cutoff),   sizeof(float), 1, fp)) goto FAILURE;
 	  if (! tagged_fread(CMIO_FTHRDB,   (void *) &(cm->stats->bfA[i]->db_size),    sizeof(int),   1, fp)) goto FAILURE;
+	  cm->stats->bfA[i]->is_valid = TRUE; /* set valid flag */
 	}
       cm->flags |= CMH_FILTER_STATS;
     }

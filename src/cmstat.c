@@ -32,26 +32,24 @@
 #include "funcs.h"		/* function declarations                */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define STATSOPTS  "-m,--all,--locale,--glocale,--localfc,--glocalfc,--localfi,--glocalfi" /* exclusive choice of stats info */
-#define STATSOPTS2 "--locale,--glocale,--localfc,--glocalfc,--localfi,--glocalfi"          /* incompatible with -g, --beta, and --search */
+#define ONELINEOPTS  "-m,--locale,--glocale,--localfc,--glocalfc,--localfi,--glocalfi" /* exclusive choice of 'only print one line summary' stats */
+#define NOTMOPTS     "--locale,--glocale,--localfc,--glocalfc,--localfi,--glocalfi"    /* incompatible with -g, --beta, and --search */
 
 static ESL_OPTIONS options[] = {
-  /* name           type      default      env  range     toggles      reqs     incomp  help  docgroup*/
-  { "-h",        eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,      NULL, "show brief help on version and usage",   1 },
-  { "-m",        eslARG_NONE,   "default", NULL, NULL,      NULL,      NULL, STATSOPTS, "print one line summary of model statistics", 1 },
-  { "-g",        eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, STATSOPTS, "configure CM for glocal alignment [default: local]", 1 },
-  { "--all",     eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, STATSOPTS, "print all stats available in CM file", 1 },
-  { "--locale",  eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, STATSOPTS, "print one line summary of  local E-value statistics", 1 },
-  { "--glocale", eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, STATSOPTS, "print one line summary of glocal E-value statistics", 1 },
-  { "--localfc", eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, STATSOPTS, "print one line summary of  local CYK    filter thr stats", 1 },
-  { "--glocalfc",eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, STATSOPTS, "print one line summary of glocal CYK    filter thr stats", 1 },
-  { "--localfi", eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, STATSOPTS, "print one line summary of  local Inside filter thr stats", 1 },
-  { "--glocalfi",eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, STATSOPTS, "print one line summary of glocal Inside filter thr stats", 1 },
-  { "--beta",    eslARG_REAL,   "1E-7",    NULL, "0<x<1",   NULL,      NULL, STATSOPTS2,"set tail loss prob for W calc and QDB stats to <x>", 1 },
-  /* search stats options */
-  { "--search",  eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, STATSOPTS2,"do search timing experiments", 2 },
-  { "--cmL",     eslARG_INT,    "1000",    NULL, "n>0",     NULL,"--search",      NULL, "length of sequences for CM search stats", 2 },
-  { "--cp9L",    eslARG_INT,    "100000",  NULL, "n>0",     NULL,"--search",      NULL, "length of sequences for CP9 HMM search stats", 2 },
+  /* name           type      default      env  range     toggles      reqs     incomp    help  docgroup*/
+  { "-h",        eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,      NULL,   "show brief help on version and usage",   1 },
+  { "-g",        eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, NOTMOPTS,    "configure CM for glocal alignment [default: local]", 1 },
+  { "-m",        eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of model statistics", 1 },
+  { "--locale",  eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of  local E-value statistics", 1 },
+  { "--glocale", eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of glocal E-value statistics", 1 },
+  { "--localfc", eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of  local CYK    filter threshold stats", 1 },
+  { "--glocalfc",eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of glocal CYK    filter threshold stats", 1 },
+  { "--localfi", eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of  local Inside filter threshold stats", 1 },
+  { "--glocalfi",eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of glocal Inside filter threshold stats", 1 },
+  { "--beta",    eslARG_REAL,   "1E-7",    NULL, "0<x<1",   NULL,      NULL, NOTMOPTS,    "set tail loss prob for W calc and QDB stats to <x>", 1 },
+  { "--search",  eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, NOTMOPTS,    "do search timing experiments", 1 },
+  { "--cmL",     eslARG_INT,    "1000",    NULL, "n>0",     NULL,"--search",      NULL,   "length of sequences for CM search stats", 1 },
+  { "--hmmL",    eslARG_INT,    "100000",  NULL, "n>0",     NULL,"--search",      NULL,   "length of sequences for CP9 HMM search stats", 1 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -88,12 +86,6 @@ main(int argc, char **argv)
   float surv_fract;
   int   cm_mode, hmm_mode;
 
-  ESL_ALLOC(ftype, sizeof(char *) * 2);
-  assert(FILTER_WITH_HMM_VITERBI == 0);
-  assert(FILTER_WITH_HMM_FORWARD == 1);
-  if((status = esl_strdup("vit", -1, &(ftype[FILTER_WITH_HMM_VITERBI]))) != eslOK) cm_Fail("Memory allocation error.");
-  if((status = esl_strdup("fwd", -1, &(ftype[FILTER_WITH_HMM_FORWARD]))) != eslOK) cm_Fail("Memory allocation error.");
-
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
   FLogsumInit();
@@ -113,10 +105,8 @@ main(int argc, char **argv)
     {
       cm_banner(stdout, argv[0], banner);
       esl_usage(stdout, argv[0], usage);
-      puts("\nwhere basic options are:");
+      puts("\nwhere options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-      puts("\noptions for statistics on search:");
-      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
       exit(0);
     }
   if (esl_opt_ArgNumber(go) != 1) 
@@ -128,6 +118,7 @@ main(int argc, char **argv)
       printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
+  cm_banner(stdout, argv[0], banner);
 
   cmfile     = esl_opt_GetArg(go, 1); 
   r = esl_randomness_CreateTimeseeded();
@@ -140,18 +131,24 @@ main(int argc, char **argv)
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
     cm_Fail("Failed to open covariance model save file %s\n", cmfile);
 
-  /* Main body: read CMs one at a time, print one line of stats (unless --all) 
-   * if -m:              print general model stats [default], and optionally determine search stats (if --search)
+  ESL_ALLOC(ftype, sizeof(char *) * 2);
+  assert(FILTER_WITH_HMM_VITERBI == 0);
+  assert(FILTER_WITH_HMM_FORWARD == 1);
+  if((status = esl_strdup("vit", -1, &(ftype[FILTER_WITH_HMM_VITERBI]))) != eslOK) cm_Fail("Memory allocation error.");
+  if((status = esl_strdup("fwd", -1, &(ftype[FILTER_WITH_HMM_FORWARD]))) != eslOK) cm_Fail("Memory allocation error.");
+
+  /* Main body: read CMs one at a time, print stats 
+   * Options for only printing 1 line per CM: 
+   * if -m:              print general model stats, and optionally determine search stats (if --search)
    * else if  --locale:  print  local gumbel stats
    * else if --glocale:  print glocal gumbel stats
    * else if  --localfc: print  local CYK    filter threshold stats
    * else if --glocalfc: print glocal CYK    filter threshold stats
    * else if  --localfc: print  local Inside filter threshold stats
    * else if --glocalfc: print glocal Inside filter threshold stats
-   *
-   * if --all was enabled print all stats.
+   * else (default):     print all stat categories, one category at a time 
    */
-  int do_general  = esl_opt_GetBoolean(go, "-m");
+  int do_model    = esl_opt_GetBoolean(go, "-m");
   int do_locale   = esl_opt_GetBoolean(go, "--locale");
   int do_glocale  = esl_opt_GetBoolean(go, "--glocale");
   int do_localfc  = esl_opt_GetBoolean(go, "--localfc");
@@ -159,9 +156,10 @@ main(int argc, char **argv)
   int do_localfi  = esl_opt_GetBoolean(go, "--localfi");
   int do_glocalfi = esl_opt_GetBoolean(go, "--glocalfi");
   /* assert we only have one of our exclusive modes on, getops should've already handled this actually */
-  if((do_general + do_locale + do_glocale + do_localfc + do_glocalfc + do_localfi + do_glocalfi) != 1) 
-    cm_Fail("error parsing options, exactly 1 of the following should be true (1):\ndo_general: %d\ndo_locale: %d\ndo_glocale: %d\ndo_localfc: %d\ndo_glocalfc: %d\ndo_localfi: %d\ndo_glocalfi: %d\n", do_general, do_locale, do_glocale, do_localfc, do_glocalfc, do_localfi, do_glocalfi);
-  if (esl_opt_GetBoolean(go, "--all")) do_general = do_locale = do_glocale = do_localfc = do_glocalfc = do_localfi = do_glocalfi = TRUE;
+  if((do_model + do_locale + do_glocale + do_localfc + do_glocalfc + do_localfi + do_glocalfi) > 1) 
+    cm_Fail("error parsing options, exactly 1 or 0 of the following should be true (1):\ndo_model: %d\ndo_locale: %d\ndo_glocale: %d\ndo_localfc: %d\ndo_glocalfc: %d\ndo_localfi: %d\ndo_glocalfi: %d\n", do_model, do_locale, do_glocale, do_localfc, do_glocalfc, do_localfi, do_glocalfi);
+  if((do_model + do_locale + do_glocale + do_localfc + do_glocalfc + do_localfi + do_glocalfi) == 0)  /* no one line options selected, do them all */
+    do_model = do_locale = do_glocale = do_localfc = do_glocalfc = do_localfi = do_glocalfi = TRUE;
   int doing_locale   = FALSE;
   int doing_glocale  = FALSE;
   int doing_localfc  = FALSE;
@@ -170,7 +168,7 @@ main(int argc, char **argv)
   int doing_glocalfi = FALSE;
 
   /* print general model stats (default) */
-  if(do_general) { 
+  if(do_model) { 
     ncm = 0;
     while (CMFileRead(cmfp, &abc, &cm))
       {
@@ -265,6 +263,7 @@ main(int argc, char **argv)
     if(!seen_gumbels_yet) {
       if(doing_locale  && esl_opt_GetBoolean(go, "--locale"))  cm_Fail("--locale option enabled but none of the CMs in %s have Gumbel stats.", cmfile);
       if(doing_glocale && esl_opt_GetBoolean(go, "--glocale")) cm_Fail("--glocale option enabled but none of the CMs in %s have Gumbel stats.", cmfile);
+      if(doing_glocale && (! esl_opt_GetBoolean(go, "--glocale")))   printf("# No E-value Gumbel statistics.\n");
     }
   }
   /* print filter threshold stats if requested */
@@ -348,8 +347,8 @@ main(int argc, char **argv)
       if(doing_glocalfc && esl_opt_GetBoolean(go, "--glocalfc")) cm_Fail("--glocalfc option enabled but none of the CMs in %s have filter threshold stats.", cmfile);
       if(doing_localfi  && esl_opt_GetBoolean(go, "--localfi"))  cm_Fail("--localfi option enabled but none of the CMs in %s have filter threshold stats.", cmfile);
       if(doing_glocalfi && esl_opt_GetBoolean(go, "--glocalfi")) cm_Fail("--glocalfi option enabled but none of the CMs in %s have filter threshold stats.", cmfile);
+      if(doing_glocalfi && (! esl_opt_GetBoolean(go, "--glocalfi"))) printf("# No filter threshold statistics.\n");
     }
-      
   }
   free(ftype[0]);
   free(ftype[1]);
@@ -377,7 +376,7 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
 {
   int status;     
   int L_cm  = esl_opt_GetInteger(go, "--cmL");  /* length sequence to search with CM */
-  int L_cp9 = esl_opt_GetInteger(go, "--cp9L"); /* length sequence to search with CP9 */
+  int L_cp9 = esl_opt_GetInteger(go, "--hmmL"); /* length sequence to search with CP9 */
   float dpc;       /* number of     mega-DP calcs for search of length L */
   float dpc_q;     /* number of QDB mega-DP calcs for search of length L */
   float th_acc;    /* theoretical QDB acceleration */
@@ -505,7 +504,7 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   float L_cp9_kb = (float) L_cp9 / 1000.;
   printf("#\n");
   printf("#\t\t\t search statistics:\n");
-  printf("#\t\t\t %7s %6s %6s %8s   %5s %5s %5s\n",           "alg",     "Mc/kb",  "Mc/s",   "kb/s",     "beta",   "qdbXt", "qdbXa");
+  printf("#\t\t\t %7s %6s %6s %8s   %5s %5s %5s\n",           "alg",     "Mc/kb",  "Mc/s",   "kb/s",     "beta",   "qdbXt", "qdbXe");
   printf("#\t\t\t %7s %6s %6s %8s   %5s %5s %5s\n",           "-------", "------", "------", "--------", "-----",  "-----", "-----");
   /* cyk non-banded */
   float dpc_kb = dpc * (1000. / (float) L_cm); /* convert to cells per KB */
