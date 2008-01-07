@@ -31,7 +31,7 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 
 #define ALPHOPTS "--rna,--dna"                         /* Exclusive options for alphabet choice */
-#define OUTOPTS  "-u,-c,-a,--hmmbuild"                 /* Exclusive options for output */
+#define OUTOPTS  "-u,-c,-a,--ahmm,--shmm"                     /* Exclusive options for output */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -58,7 +58,8 @@ static ESL_OPTIONS options[] = {
   { "--exp",     eslARG_REAL,   NULL,  NULL, "x>0",     NULL,      NULL,        NULL, "exponentiate CM probabilities by <x> before emitting",  3 },
   { "--begin",   eslARG_INT,    NULL,  NULL, "n>=1",    NULL,    "--end",       NULL, "truncate alignment, begin at match column <n>", 3 },
   { "--end",     eslARG_INT,    NULL,  NULL, "n>=1",    NULL,  "--begin",       NULL, "truncate alignment,   end at match column <n>", 3 },
-  { "--hmmbuild",eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL, "-l,--tfile", "build and output a ML CM Plan 9 HMM from generated alignment", 3 },
+  { "--shmm",    eslARG_OUTFILE,NULL,  NULL, NULL,   OUTOPTS,      NULL, "-l,--tfile","build, output a ML CM Plan 9 HMM from generated alignment to <f>", 3 },
+  { "--ahmm",    eslARG_OUTFILE,NULL,  NULL, NULL,   OUTOPTS,      NULL,        NULL, "output parameters of analytically built CM Plan 9 HMM to <f>", 3 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -76,6 +77,8 @@ struct cfg_s {
   ESL_ALPHABET *abc_out; 	/* digital alphabet for writing */
   FILE         *ofp;		/* output file (default is stdout) */
   FILE         *pfp;		/* optional output file for parsetrees */
+  FILE         *shmmfp;		/* optional output file for sampled HMM */
+  FILE         *ahmmfp;		/* optional output file for analytically built HMM */
   ESL_RANDOMNESS *r;            /* source of randomness */
   int           ncm;            /* number CM we're at in file */
 };
@@ -158,6 +161,8 @@ main(int argc, char **argv)
   cfg.abc_out    = NULL;	           /* created in init_cfg() */
   cfg.ofp        = NULL;	           /* opened in init_cfg() */
   cfg.pfp        = NULL;	           /* opened in init_cfg() */
+  cfg.shmmfp     = NULL;	           /* opened in init_cfg() */
+  cfg.ahmmfp     = NULL;	           /* opened in init_cfg() */
   cfg.r          = NULL;	           /* created in init_cfg() */
 
   if(esl_opt_GetBoolean(go, "-v")) cm_banner(stdout, argv[0], banner);
@@ -168,7 +173,19 @@ main(int argc, char **argv)
   /* Clean up the cfg. 
    */
   if (! esl_opt_IsDefault(go, "-o")) { fclose(cfg.ofp); }
-  if (cfg.pfp   != NULL) fclose(cfg.pfp);
+  if (cfg.pfp   != NULL) { 
+    fclose(cfg.pfp);
+    printf("Parsetrees saved to file %s.\n", esl_opt_GetString(go, "--tfile"));
+  }
+  if(cfg.shmmfp != NULL) { 
+    fclose(cfg.shmmfp);
+    printf("Sampled global CP9 HMM model parameters saved to file %s.\n", esl_opt_GetString(go, "--shmm"));
+  }
+  if(cfg.ahmmfp != NULL) { 
+    fclose(cfg.ahmmfp);
+    if(esl_opt_GetBoolean(go, "-l")) printf("Analytically built local CP9 HMM model parameters saved to file %s.\n", esl_opt_GetString(go, "--ahmm"));
+    else                             printf("Analytically built global CP9 HMM model parameters saved to file %s.\n", esl_opt_GetString(go, "--ahmm"));
+  }
   if (cfg.abc   != NULL) { esl_alphabet_Destroy(cfg.abc); cfg.abc = NULL; }
   if (cfg.abc_out != NULL) esl_alphabet_Destroy(cfg.abc_out);
   if (cfg.cmfp  != NULL) CMFileClose(cfg.cmfp);
@@ -186,6 +203,8 @@ main(int argc, char **argv)
  *    cfg->abc_out - digital alphabet for output
  *    cfg->ofp     - open output alignment file                
  *    cfg->pfp     - optional output file for parsetrees
+ *    cfg->shmmfp  - optional output file for sampled HMM
+ *    cfg->ahmmfp  - optional output file for analytically built HMM
  *    cfg->r       - source of randomness
  */
 static int
@@ -209,6 +228,18 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (esl_opt_GetString(go, "--tfile") != NULL) {
     if ((cfg->pfp = fopen(esl_opt_GetString(go, "--tfile"), "w")) == NULL)
       ESL_FAIL(eslFAIL, errbuf, "Failed to open --tfile output file %s\n", esl_opt_GetString(go, "--tfile"));
+  }
+
+  /* open sampled HMM (--shmm) output file if necessary */
+  if (esl_opt_GetString(go, "--shmm") != NULL) {
+    if ((cfg->shmmfp = fopen(esl_opt_GetString(go, "--shmm"), "w")) == NULL)
+      ESL_FAIL(eslFAIL, errbuf, "Failed to open --shmm output file %s\n", esl_opt_GetString(go, "--shmm"));
+  }
+
+  /* open analytically built HMM (--ahmm) output file if necessary */
+  if (esl_opt_GetString(go, "--ahmm") != NULL) {
+    if ((cfg->ahmmfp = fopen(esl_opt_GetString(go, "--ahmm"), "w")) == NULL)
+      ESL_FAIL(eslFAIL, errbuf, "Failed to open --ahmm output file %s\n", esl_opt_GetString(go, "--ahmm"));
   }
 
   /* create RNG */
@@ -257,7 +288,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     else if(esl_opt_GetBoolean(go, "-a")) {
       if((status = emit_alignment(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
     }
-    else if(esl_opt_GetBoolean(go, "--hmmbuild")) {
+    else if(! esl_opt_IsDefault(go, "--shmm")) {
       if((status = build_cp9     (go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
     }
     FreeCM(cm);
@@ -276,7 +307,11 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
   int nstarts, nexits, nd;
 
   /* Update cfg->cm->config_opts and cfg->cm->align_opts based on command line options */
-  if(esl_opt_GetBoolean(go, "-l"))            cm->config_opts |= CM_CONFIG_LOCAL;
+  if(esl_opt_GetBoolean(go, "-l")) {
+    cm->config_opts |= CM_CONFIG_LOCAL;
+    cm->config_opts |= CM_CONFIG_HMMLOCAL;
+    cm->config_opts |= CM_CONFIG_HMMEL;
+  }
 
   /* BEGIN (POTENTIALLY) TEMPORARY BLOCK */
   /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */
@@ -306,8 +341,16 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
     cm->pend = nexits * esl_opt_GetReal(go, "--pfend");
   }
   /* END (POTENTIALLY) TEMPORARY BLOCK */
-
+  
   ConfigCM(cm, NULL, NULL);
+
+  /* print the CP9 params if nec */
+  if(cfg->ahmmfp != NULL) {
+    if(esl_opt_GetBoolean(go, "-l")) fprintf(cfg->ahmmfp, "# Printing analytically built CP9 HMM parameters (local configuration):\n");
+    else                             fprintf(cfg->ahmmfp, "# Printing analytically built CP9 HMM parameters (global configuration):\n");
+    debug_print_cp9_params(cfg->ahmmfp, cm->cp9, TRUE);
+  }
+
   if(! esl_opt_IsDefault(go, "--exp"))        ExponentiateCM(cm, esl_opt_GetReal(go, "--exp"));
   
   return eslOK;
@@ -354,7 +397,6 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       FreeParsetree(tr);
       esl_sq_Destroy(sq); /* can't reuse b/c a new one is allocated in EmitParsetree() */
     }
-  if(cfg->pfp != NULL) printf("Parsetrees saved to file %s.\n", esl_opt_GetString(go, "--tfile"));
   free(name);
   return eslOK;
 
@@ -425,7 +467,6 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   if      (status == eslEMEM) ESL_XFAIL(status, errbuf, "Memory error when outputting alignment\n");
   else if (status != eslOK)   ESL_XFAIL(status, errbuf, "Writing alignment file failed with error %d\n", status);
 
-  if(cfg->pfp != NULL) printf("Parsetrees saved to file %s.\n", esl_opt_GetString(go, "--tfile"));
   for(i = 0; i < nseq; i++)
     {
       esl_sq_Destroy(sq[i]);
@@ -604,16 +645,16 @@ build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf
   free(sq);
   free(name);
 
-  printf("Printing NON-normalized sampled HMM parameters:\n");
-  debug_print_cp9_params(stdout, shmm, FALSE);
-  printf("finished printing NON-normalized sampled HMM parameters.\n");
+  if(cfg->shmmfp == NULL) cm_Fail("build_cp9(): no open file for sampled HMM parameters.");
+  fprintf(cfg->shmmfp, "# Printing NON-normalized sampled HMM parameters (global configuration):\n");
+  debug_print_cp9_params(cfg->shmmfp, shmm, FALSE);
 
   CPlan9Renormalize(shmm);
   CP9Logoddsify(shmm);
 
-  printf("Printing normalized sampled HMM parameters:\n");
-  debug_print_cp9_params(stdout, shmm, TRUE);
-  printf("finished printing normalized sampled HMM parameters.\n");
+  fprintf(cfg->shmmfp, "# Printing normalized sampled HMM parameters (global configuration):\n");
+  debug_print_cp9_params(cfg->shmmfp, shmm, TRUE);
+
 
   FreeCPlan9(shmm);
   return eslOK;

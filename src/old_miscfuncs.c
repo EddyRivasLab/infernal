@@ -4803,54 +4803,6 @@ void ModelContent(float *ent1, float *ent2, int M)
   printf("Diff: %2.4f\n", (mean2-mean1));
 }
 
-/* Function:  CMRescale() 
- *            
- * Incept:    EPN 11.07.05
- * based on:  HMMER's plan7.c's Plan7Rescale() (Steve Johnson)
- *
- * Purpose:   Scale a counts-based CM by some factor, for
- *            adjusting counts to a new effective sequence number.
- *
- * Args:      cm         - counts based CM.
- *            scale      - scaling factor (e.g. eff_nseq/nseq); 1.0= no scaling.
- *
- * Returns:   (void)
- */
-void 
-CMRescale(CM_t *cm, float scale)
-{
-  int v;
-
-  for (v = 0; v < cm->M; v++)
-    {
-      /* Scale transition counts vector if not a BIF or E state */
-      if (cm->sttype[v] != B_st && cm->sttype[v] != E_st)
-	{
-	  /* Number of transitions is cm->cnum[v] */
-	  esl_vec_FScale(cm->t[v], cm->cnum[v], scale);
-	}
-      /* Scale emission counts vectors */
-      if (cm->sttype[v] == MP_st)
-	{       /* Consensus base pairs */
-	  esl_vec_FScale(cm->e[v], (MAXABET*MAXABET), scale);
-	}
-      else if ((cm->sttype[v] == ML_st) ||
-	       (cm->sttype[v] == MR_st) ||
-	       (cm->sttype[v] == IL_st) ||
-	       (cm->sttype[v] == IR_st))
-	{      /* singlets (some consensus, some not)*/
-	  esl_vec_FScale(cm->e[v], MAXABET, scale);
-	}
-    }/* end loop over states v */
-
-  /* begin, end transitions; only valid [0..M-1] */
-  esl_vec_FScale(cm->begin, cm->M, scale);
-  esl_vec_FScale(cm->end,   cm->M, scale);
-  
-  return;
-}
-
-
 
 /* Function: CM_Eweight_RE [EPN]
  * based on:

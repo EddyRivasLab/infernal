@@ -2411,10 +2411,12 @@ debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores)
 
   /*fprintf(fp, "Printing CP9 HMM parameters in debug_print_cp9_params:\n\n");*/
 
+  fprintf(fp, "Consensus Length: %d\n", hmm->M);
+  fprintf(fp, "Node: 0\n");
   for(i = 0; i < MAXABET; i++)
     {
-      if(print_scores) fprintf(fp, "\tins[%d][%d] = %f | %d\n", 0, i, hmm->ins[0][i], hmm->isc[i][0]);
-      else             fprintf(fp, "\tins[%d][%d] = %f\n", 0, i, hmm->ins[0][i]);
+      if(print_scores) fprintf(fp, "ins[%3d][%3d] = %.3f | %10d\n", 0, i, hmm->ins[0][i], hmm->isc[i][0]);
+      else             fprintf(fp, "ins[%3d][%3d] = %.3f\n", 0, i, hmm->ins[0][i]);
     }  
   fprintf(fp, "\n");
 
@@ -2449,31 +2451,31 @@ debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores)
       for(i = 0; i < MAXABET; i++)
 	{
 	  if(print_scores) 
-	    fprintf(fp, "mat[%3d][%3d] = %.3f | %d\n", k, i, hmm->mat[k][i], hmm->msc[i][k]);
+	    fprintf(fp, "mat[%3d][%3d] = %.3f | %10d\n", k, i, hmm->mat[k][i], hmm->msc[i][k]);
 	  else
 	    fprintf(fp, "mat[%3d][%3d] = %.3f\n", k, i, hmm->mat[k][i]);
 	}
       for(i = 0; i < MAXABET; i++)
 	{
 	  if(print_scores)
-	    fprintf(fp, "ins[%3d][%3d] = %.3f | %d\n", k, i, hmm->ins[k][i], hmm->isc[i][k]);
+	    fprintf(fp, "ins[%3d][%3d] = %.3f | %10d\n", k, i, hmm->ins[k][i], hmm->isc[i][k]);
 	  else
 	    fprintf(fp, "ins[%3d][%3d] = %.3f\n", k, i, hmm->ins[k][i]);
 	}
       fprintf(fp, "\n");
       if(print_scores) { 
-	fprintf(fp, "\tCTMM[%d]  = %f | %d\n", k, hmm->t[k][CTMM], hmm->tsc[CTMM][k]);
-	fprintf(fp, "\tCTMI[%d]  = %f | %d\n", k, hmm->t[k][CTMI], hmm->tsc[CTMI][k]);
-	fprintf(fp, "\tCTMD[%d]  = %f | %d\n", k, hmm->t[k][CTMD], hmm->tsc[CTMD][k]);
-	fprintf(fp, "\tCTMEL[%d] = %f | %d\n", k, hmm->t[k][CTMEL], hmm->tsc[CTMEL][k]);
-	fprintf(fp, "\tCTIM[%d]  = %f | %d\n", k, hmm->t[k][CTIM], hmm->tsc[CTIM][k]);
-	fprintf(fp, "\tCTII[%d]  = %f | %d\n", k, hmm->t[k][CTII], hmm->tsc[CTII][k]);
-	fprintf(fp, "\tCTID[%d]  = %f | %d\n", k, hmm->t[k][CTID], hmm->tsc[CTID][k]);
-	fprintf(fp, "\tCTDM[%d]  = %f | %d\n", k, hmm->t[k][CTDM], hmm->tsc[CTDM][k]);
-	fprintf(fp, "\tCTDI[%d]  = %f | %d\n", k, hmm->t[k][CTDI], hmm->tsc[CTDI][k]);
-	fprintf(fp, "\tCTDD[%d]  = %f | %d\n", k, hmm->t[k][CTDD], hmm->tsc[CTDD][k]);
-	fprintf(fp, "\t beg[%d]  = %f | %d\n", k, hmm->begin[k], hmm->bsc[k]);
-	fprintf(fp, "\t end[%d]  = %f | %d\n", k, hmm->end[k], hmm->esc[k]);
+	fprintf(fp, "\tCTMM[%d]  = %f | %10d\n", k, hmm->t[k][CTMM], hmm->tsc[CTMM][k]);
+	fprintf(fp, "\tCTMI[%d]  = %f | %10d\n", k, hmm->t[k][CTMI], hmm->tsc[CTMI][k]);
+	fprintf(fp, "\tCTMD[%d]  = %f | %10d\n", k, hmm->t[k][CTMD], hmm->tsc[CTMD][k]);
+	fprintf(fp, "\tCTMEL[%d] = %f | %10d\n", k, hmm->t[k][CTMEL], hmm->tsc[CTMEL][k]);
+	fprintf(fp, "\tCTIM[%d]  = %f | %10d\n", k, hmm->t[k][CTIM], hmm->tsc[CTIM][k]);
+	fprintf(fp, "\tCTII[%d]  = %f | %10d\n", k, hmm->t[k][CTII], hmm->tsc[CTII][k]);
+	fprintf(fp, "\tCTID[%d]  = %f | %10d\n", k, hmm->t[k][CTID], hmm->tsc[CTID][k]);
+	fprintf(fp, "\tCTDM[%d]  = %f | %10d\n", k, hmm->t[k][CTDM], hmm->tsc[CTDM][k]);
+	fprintf(fp, "\tCTDI[%d]  = %f | %10d\n", k, hmm->t[k][CTDI], hmm->tsc[CTDI][k]);
+	fprintf(fp, "\tCTDD[%d]  = %f | %10d\n", k, hmm->t[k][CTDD], hmm->tsc[CTDD][k]);
+	fprintf(fp, "\t beg[%d]  = %f | %10d\n", k, hmm->begin[k], hmm->bsc[k]);
+	fprintf(fp, "\t end[%d]  = %f | %10d\n", k, hmm->end[k], hmm->esc[k]);
       }
       else {
 	fprintf(fp, "\tCTMM[%d]  = %f\n", k, hmm->t[k][CTMM]);

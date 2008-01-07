@@ -521,6 +521,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if ((status = output_result(go, cfg, errbuf, cfg->nali, cfg->ncm_total, msa,  cm)) != eslOK) cm_Fail(errbuf);
 	  
 	  if(cfg->be_verbose) { 
+	    fprintf(cfg->ofp, "\n");
 	    SummarizeCM(cfg->ofp, cm);  
 	    fprintf(cfg->ofp, "\n");
 	  }
