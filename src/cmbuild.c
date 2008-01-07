@@ -965,6 +965,7 @@ static int
 set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
 			char *errbuf, ESL_MSA *msa, CM_t *cm, const Prior_t *pri)
 {
+  int status;
   double neff;
 
   if(cfg->be_verbose) fprintf(cfg->ofp, "%-40s ... ", "Set effective sequence number");
@@ -989,9 +990,12 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
       if (esl_opt_IsDefault(go, "--ere")) etarget = default_target_relent(cm->abc, clen, esl_opt_GetReal(go, "--eX"));
       else                                etarget = esl_opt_GetReal(go, "--ere");
 
-      neff = CM_Eweight_RE(cm, pri, (float) msa->nseq, etarget, cm->null);
+      status = cm_EntropyWeight(cm, pri, etarget, &neff);
+      if      (status == eslEMEM) ESL_FAIL(status, errbuf, "memory allocation failed");
+      else if (status != eslOK)   ESL_FAIL(status, errbuf, "internal failure in entropy weighting algorithm");
+
       cm->eff_nseq = neff;
-      CMRescale(cm, neff / (float) msa->nseq);
+      cm_Rescale(cm, neff / (float) msa->nseq);
       if(cfg->be_verbose) fprintf(cfg->ofp, "done. [etarget %.2f bits; neff %.2f]\n", etarget, neff);
     }
   return eslOK;

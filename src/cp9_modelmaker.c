@@ -2409,8 +2409,7 @@ debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores)
 {
   int k, i;
 
-  printf("Printing CP9 HMM parameters in debug_print_cp9_params:\n\n");
-  fprintf(fp, "Printing CP9 HMM parameters in debug_print_cp9_params:\n\n");
+  /*fprintf(fp, "Printing CP9 HMM parameters in debug_print_cp9_params:\n\n");*/
 
   for(i = 0; i < MAXABET; i++)
     {

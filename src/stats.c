@@ -765,7 +765,7 @@ DuplicateGumbelInfo(GumbelInfo_t *src)
 /* Function: CopyCMStats()
  * Incept:   EPN, Tue May 29 06:00:41 2007
  * 
- * Purpose:  Copy the Gumbel and possibly bes filter info
+ * Purpose:  Copy the Gumbel and possibly best filter info
  *           in a source CMStats_t object into
  *           a pre-alloc'ed destination CMStats_t object.
  */

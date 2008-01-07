@@ -357,8 +357,8 @@ extern void  CPlan9CMLocalBeginConfig(CM_t *cm);
 /* from cp9_modelmaker.c */
 extern CP9Map_t *AllocCP9Map(CM_t *cm);
 extern void FreeCP9Map(CP9Map_t *cp9map);
-extern int build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
-			 float psi_vs_phi_threshold, int debug_level);
+extern int  build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
+			  float psi_vs_phi_threshold, int debug_level);
 extern void CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level);
 extern void fill_psi(CM_t *cm, double *psi, char ***tmap);
 extern void fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos);
@@ -418,14 +418,9 @@ extern void cm_Die (char *format, ...);
 extern void cm_Fail(char *format, ...);
 
 /* from eweight.c */
-extern double CM_Eweight(CM_t *cm,  const Prior_t *pri, 
-			 float numb_seqs, float targetent);
-extern void   ModelContent(float *ent1, float *ent2, int M);
-extern void   CMRescale(CM_t *hmm, float scale);
-extern void   CPlan9Rescale(CP9_t *hmm, float scale);
-extern double CM_Eweight_RE(CM_t *cm, const Prior_t *pri, float numb_seqs, 
-			    float target_relent, float *randomseq);
-extern double DRelEntropy(double *p, double *f, int n);
+extern int    cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double *ret_Neff);
+extern void   cm_Rescale(CM_t *hmm, float scale);
+extern void   cp9_Rescale(CP9_t *hmm, float scale);
 extern double cm_MeanMatchInfo(const CM_t *cm);
 extern double cm_MeanMatchEntropy(const CM_t *cm);
 extern double cm_MeanMatchRelativeEntropy(const CM_t *cm);

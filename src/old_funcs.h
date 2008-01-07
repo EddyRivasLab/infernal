@@ -248,3 +248,14 @@ extern int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char
 extern void  CMHackInsertScores(CM_t *cm);
 extern void  CP9HackInsertScores(CP9_t *cp9);
 #endif
+
+#if 0
+/* EPN, Mon Jan  7 14:10:43 2008, changed entropy weighting functions to HMMER3 entropy weighting functions */
+extern double CM_Eweight(CM_t *cm,  const Prior_t *pri, 
+			 float numb_seqs, float targetent);
+extern void   ModelContent(float *ent1, float *ent2, int M);
+extern double CM_Eweight_RE(CM_t *cm, const Prior_t *pri, float numb_seqs, 
+			    float target_relent, float *randomseq);
+extern double DRelEntropy(double *p, double *f, int n);
+#endif
+ 
