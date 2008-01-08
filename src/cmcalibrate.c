@@ -59,6 +59,7 @@ static ESL_OPTIONS options[] = {
 #ifdef HAVE_DEVOPTS 
   { "-v",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print arguably interesting info",  1},
 #endif
+  { "--id",        eslARG_NONE, FALSE, NULL, NULL,      NULL,      NULL,        NULL, "use same seqs for all Gumbel fittings", 1},
   /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
    * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--pbegin","set all local begins as equiprobable", 1 },
@@ -648,6 +649,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 				   * in which case L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL") */
   char     time_buf[128];	  /* string for printing elapsed time (safely holds up to 10^14 years) */
   void    *tmp;
+  long     seed;
 #ifdef HAVE_DEVOPTS
   /* variables for --hybrid */
   float   *gum_hybscA     = NULL; /*                [0..nseq-1] best hybrid score for each random seq */
@@ -690,7 +692,16 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
 	/* update search opts for gumbel mode */
 	GumModeToSearchOpts(cm, gum_mode);
-	
+	/* if --id, we free RNG, then create a new one and reseed it with the initial seed,
+	 * so we use same seqs for Gumbel fittings of all CM modes and HMM modes 
+	 * (but if --cmN <n> != --hmmN <n>) they won't be the same between CM and HMM modes. 
+	 */
+	if(esl_opt_GetBoolean(go, "--id")) {
+	  seed = esl_randomness_GetSeed(cfg->r);
+	  esl_randomness_Destroy(cfg->r);
+	  cfg->r = esl_randomness_Create(seed);
+	}
+
 	/* gumbel fitting section */
 	if(! (esl_opt_GetBoolean(go, "--filonly"))) {
 	  /* calculate gumbels for this gum mode */
@@ -1380,7 +1391,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int nseq;
   int v, p;
   void *tmp;
-  int cmi;
+  int  cmi;
   int            L;  /* length of sequences to search for gumbel fitting, L==cm->W*2 unless --gumL enabled, 
 		      * in which case L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL") */
   int in_fil_section_flag = FALSE; /* set to TRUE while we're in the filter threshold calculation
@@ -1478,6 +1489,15 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if((status = switch_global_to_local(cm, errbuf)) != eslOK) goto ERROR;
 	/* update search opts for gumbel mode */
 	GumModeToSearchOpts(cm, gum_mode);
+	/* if --id, we free RNG, then create a new one and reseed it with the initial seed,
+	 * so we use same seqs for Gumbel fittings of all CM modes and HMM modes 
+	 * (but if --cmN <n> != --hmmN <n>) they won't be the same between CM and HMM modes. 
+	 */
+	if(esl_opt_GetBoolean(go, "--id")) {
+	  seed = esl_randomness_GetSeed(cfg->r);
+	  esl_randomness_Destroy(cfg->r);
+	  cfg->r = esl_randomness_Create(seed);
+	}
 	
 	/* gumbel fitting section */
 	if(! (esl_opt_GetBoolean(go, "--filonly"))) {
@@ -1829,6 +1849,15 @@ process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
 				     &(hybscA[i]))) != eslOK) return status;
     }
 #endif
+
+    /*to print seqs to stdout uncomment this block 
+    ESL_SQ *tmp;
+    tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq, L, NULL, NULL, NULL);
+    esl_sq_Textize(tmp);
+    printf(">seq%d\n%s\n", i, tmp->seq);
+    esl_sq_Destroy(tmp);
+    */
+
     free(dsq);
     if (cur_vscA != NULL) /* will be NULL if do_cyk == do_inside == FALSE (mode 2) */
       for(v = 0; v < cm->M; v++) vscAA[v][i] = cur_vscA[v];
@@ -1974,7 +2003,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
       if((status = cm_find_hit_above_cutoff(go, cfg, errbuf, cm, dsq, tr, L, cfg->cutoffA[p], &sc)) != eslOK) return status;
     }
 
-    /* to print seqs to stdout uncomment this block 
+    /*to print seqs to stdout uncomment this block  
     ESL_SQ *tmp;
     tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq, L, NULL, NULL, NULL);
     esl_sq_Textize(tmp);
@@ -3413,6 +3442,7 @@ print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
 {
   printf("%-8s %s\n", "CM:",      cm->name); 
   if(esl_opt_GetBoolean(go, "--noqdb")) printf("%-8s %s %g\n", "beta:", "0.0 (--noqdb), for W calc: ", cm->beta); 
+  else                                  printf("%-8s %g\n", "beta:", cm->beta); 
   printf("%-8s %s\n", "command:", cfg->ccom);
   printf("%-8s %s\n", "date:",    cfg->cdate);
   printf("%-8s %d\n", "nproc:",   (cfg->nproc == 0) ? 1 : cfg->nproc);
