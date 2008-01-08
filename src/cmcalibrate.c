@@ -75,6 +75,7 @@ static ESL_OPTIONS options[] = {
   { "--gcfromdb",eslARG_INFILE,  NULL, NULL, NULL,      NULL,      NULL, "--filonly", "use GC content distribution from file <s>",  2},
   { "--pfile",   eslARG_INFILE,  NULL, NULL, NULL,      NULL,"--gcfromdb",        NULL, "read partition info for Gumbels from file <s>", 2},
   { "--gumhfile",eslARG_OUTFILE,  NULL, NULL, NULL,     NULL,      NULL, "--filonly", "save fitted Gumbel histogram(s) to file <s>", 2 },
+  { "--gumsfile",eslARG_OUTFILE,  NULL, NULL, NULL,     NULL,      NULL, "--filonly", "save survival plot to file <s>", 2 },
   { "--gumqqfile",eslARG_OUTFILE, NULL, NULL, NULL,     NULL,      NULL, "--filonly", "save Q-Q plot for Gumbel histogram(s) to file <s>", 2 },
   { "--beta",    eslARG_REAL,  "1e-7", NULL, "x>0",     NULL,      NULL,    "--noqdb", "set tail loss prob for Gumbel calculation to <x>", 5 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "DO NOT use query dependent banding (QDB) Gumbel searches", 5 },
@@ -158,6 +159,7 @@ struct cfg_s {
   /* Masters only (i/o streams) */
   CMFILE       *cmfp;		/* open input CM file stream       */
   FILE         *gumhfp;        /* optional output for gumbel histograms */
+  FILE         *gumsfp;        /* optional output for gumbel survival plot */
   FILE         *gumqfp;        /* optional output for gumbel QQ file */
   FILE         *filhfp;        /* optional output for filter histograms */
   FILE         *filrfp;        /* optional output for filter info for R */
@@ -285,6 +287,7 @@ main(int argc, char **argv)
   cfg.cdate     = NULL;  /* created in get_cmcalibrate_comlog_info() for masters, stays NULL in workers */
 
   cfg.gumhfp   = NULL; /* ALWAYS remains NULL for mpi workers */
+  cfg.gumsfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.gumqfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.filhfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.filrfp   = NULL; /* ALWAYS remains NULL for mpi workers */
@@ -401,10 +404,26 @@ main(int argc, char **argv)
     esl_stopwatch_Display(stdout, w, "# CPU time: ");
     
     /* master specific cleaning */
-    if (cfg.gumhfp   != NULL) fclose(cfg.gumhfp);
-    if (cfg.gumqfp   != NULL) fclose(cfg.gumqfp);
-    if (cfg.filhfp   != NULL) fclose(cfg.filhfp);
-    if (cfg.filrfp   != NULL) fclose(cfg.filrfp);
+    if (cfg.gumhfp   != NULL) { 
+      fclose(cfg.gumhfp);
+      printf("High score for random seqs histograms saved to file %s.\n", esl_opt_GetString(go, "--gumhfile"));
+    }
+    if (cfg.gumsfp   != NULL) { 
+      fclose(cfg.gumsfp);
+      printf("Survival plot for Gumbels saved to file %s.\n", esl_opt_GetString(go, "--gumhfile"));
+    }
+    if (cfg.gumqfp   != NULL) { 
+      fclose(cfg.gumqfp);
+      printf("Gumbel QQ plots saved to file %s.\n", esl_opt_GetString(go, "--gumhfile"));
+    }
+    if (cfg.filhfp   != NULL) { 
+      fclose(cfg.filhfp);
+      printf("Filter histograms saved to file %s.\n", esl_opt_GetString(go, "--gumhfile"));
+    }
+    if (cfg.filrfp   != NULL) {
+      fclose(cfg.filrfp);
+      printf("Filter R info saved to file %s.\n", esl_opt_GetString(go, "--gumhfile"));
+    }
     if (cfg.ccom     != NULL) free(cfg.ccom);
     if (cfg.cdate    != NULL) free(cfg.cdate);
 
@@ -421,6 +440,7 @@ main(int argc, char **argv)
  * Allocates/sets: 
  *    cfg->cmfp        - open CM file                
  *    cfg->gumhfp      - optional output file
+ *    cfg->gumsfp      - optional output file
  *    cfg->gumqfp      - optional output file
  *    cfg->filhfp      - optional output file
  *    cfg->filrfp      - optional output file
@@ -450,6 +470,13 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     {
       if ((cfg->gumhfp = fopen(esl_opt_GetString(go, "--gumhfile"), "w")) == NULL)
 	ESL_FAIL(eslFAIL, errbuf, "Failed to open gumbel histogram save file %s for writing\n", esl_opt_GetString(go, "--gumhfile"));
+    }
+
+  /* optionally, open survival plot */
+  if (esl_opt_GetString(go, "--gumsfile") != NULL) 
+    {
+      if ((cfg->gumsfp = fopen(esl_opt_GetString(go, "--gumsfile"), "w")) == NULL)
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open survival plot save file %s for writing\n", esl_opt_GetString(go, "--gumsfile"));
     }
 
   /* optionally, open gumbel QQ plot file */
@@ -595,6 +622,7 @@ init_worker_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   
   cfg->cmfp = NULL;
   cfg->gumhfp = NULL;
+  cfg->gumsfp = NULL;
   cfg->gumqfp = NULL;
   cfg->filhfp = NULL;
   cfg->filrfp = NULL;
@@ -2348,6 +2376,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
   double *xv;         /* raw data from histogram */
   int     n,z;  
   float tailfit;
+  double mufix;
 
   ESL_HISTOGRAM *h = NULL;       /* histogram of scores */
 
@@ -2363,6 +2392,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
   tailfit = esl_opt_GetReal(go, "--gtail");
   esl_histogram_GetTailByMass(h, tailfit, &xv, &n, &z); /* fit to right 'tailfit' fraction, 0.5 by default */
   esl_gumbel_FitCensored(xv, n, z, xv[0], &mu, &lambda);
+  esl_gumbel_FitCensoredLoc(xv, n, z, xv[0], 0.693147, &mufix);
 
   /* print to output files if nec */
   if(cfg->gumhfp != NULL)
@@ -2373,6 +2403,13 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
       params[1] = lambda;
       esl_histogram_PlotQQ(cfg->gumqfp, h, &esl_exp_generic_invcdf, params);
   }
+
+  if (cfg->gumsfp != NULL) {
+    esl_histogram_PlotSurvival(cfg->gumsfp, h);
+    esl_gumbel_Plot(cfg->gumsfp, mu,    lambda,   esl_gumbel_surv, h->xmin - 5., h->xmax + 5., 0.1);
+    esl_gumbel_Plot(cfg->gumsfp, mufix, 0.693147, esl_gumbel_surv, h->xmin - 5., h->xmax + 5., 0.1);
+  }
+
   esl_histogram_Destroy(h);
 
   *ret_mu     = mu;
@@ -2394,6 +2431,7 @@ cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
   if(cfg->vmuAA[p]     != NULL) free(cfg->vmuAA[p]);
   if(cfg->vlambdaAA[p] != NULL) free(cfg->vlambdaAA[p]);
   
+#ifdef HAVE_DEVOPTS
   if(esl_opt_GetBoolean(go, "--hybrid")) { /* fit gumbels for each candidate sub CM root for a hybrid filter */
     ESL_ALLOC(cfg->vmuAA[p],     sizeof(double) * cm->M);
     ESL_ALLOC(cfg->vlambdaAA[p], sizeof(double) * cm->M);
@@ -2407,10 +2445,13 @@ cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *
     }
   } 
   else { /* only fit root state 0, the full model */
+#endif
     ESL_ALLOC(cfg->vmuAA[p],     sizeof(double) * 1);
     ESL_ALLOC(cfg->vlambdaAA[p], sizeof(double) * 1);
     if((status = fit_histogram(go, cfg, errbuf, vscA[0], nscores, &(cfg->vmuAA[p][0]), &(cfg->vlambdaAA[p][0]))) != eslOK) return status;
+#ifdef HAVE_DEVOPTS
   }
+#endif
   return eslOK;
 
  ERROR:
@@ -3453,7 +3494,11 @@ print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   else if(esl_opt_GetBoolean(go,"--ga"))      printf("GA (%.2f bits)\n", cm->ga);
   else if(esl_opt_GetBoolean(go,"--all"))     printf("none, all CM seqs accepted\n");
   else printf("E value (%g)\n", esl_opt_GetReal(go, "--filE"));
-  printf("%-8s %.3f Mb\n", "db size:", (cfg->dbsize/1000000.));
+
+  if(esl_opt_GetBoolean(go,"--gumonly")) printf("N/A (gumbel only)\n");
+  else { 
+    printf("%-8s %.3f Mb\n", "db size:", (cfg->dbsize/1000000.));
+  }
   printf("\n");
   printf("%6s  %3s  %3s  %3s %5s %6s %5s %5s    percent complete         %10s\n", "",       "",     "",    "",     "",        "",     "",         "",  "");
   printf("%6s  %3s  %3s  %3s %5s %6s %5s %5s [5.......50.......100] %10s\n", "stage",  "mod",  "cfg", "alg",  "gumN",    "len",  "filN",     "cut", "elapsed");
