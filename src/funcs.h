@@ -530,9 +530,12 @@ extern int cmcalibrate_cm_gumbel_results_MPIUnpack(char *buf, int n, int *pos, M
 extern int cmcalibrate_cp9_gumbel_results_MPIPackSize(float *cp9scAA, int nseq, MPI_Comm comm, int *ret_n);
 extern int cmcalibrate_cp9_gumbel_results_MPIPack(float *cp9scA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
 extern int cmcalibrate_cp9_gumbel_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_cp9scA, int *ret_nseq);
-extern int cmcalibrate_cp9_filter_results_MPIPackSize(int nseq, int M, MPI_Comm comm, int *ret_n);;
-extern int cmcalibrate_cp9_filter_results_MPIPack(float **vscAA, float *vit_cp9scA, float *fwd_cp9scA, int *partA, int nseq, int M, char *buf, int n, int *position, MPI_Comm comm);
-extern int cmcalibrate_cp9_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, int M, float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, int **ret_partA, int *ret_nseq);
+extern int cmcalibrate_cp9_filter_results_MPIPackSize(int nseq, MPI_Comm comm, int *ret_n);;
+extern int cmcalibrate_cp9_filter_results_MPIPack(float *vit_cp9scA, float *fwd_cp9scA, int *partA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
+extern int cmcalibrate_cp9_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, int **ret_partA, int *ret_nseq);
+extern int cmcalibrate_cp9_filter_results_hyb_MPIPackSize(int nseq, int M, MPI_Comm comm, int *ret_n);;
+extern int cmcalibrate_cp9_filter_results_hyb_MPIPack(float **vscAA, float *vit_cp9scA, float *fwd_cp9scA, int *partA, int nseq, int M, char *buf, int n, int *position, MPI_Comm comm);
+extern int cmcalibrate_cp9_filter_results_hyb_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, int M, float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, int **ret_partA, int *ret_nseq);
 extern int comlog_MPIPackSize(ComLog_t *gum, MPI_Comm comm, int *ret_n);
 extern int comlog_MPIPack    (ComLog_t *gum, char *buf, int n, int *position, MPI_Comm comm);
 extern int comlog_MPIUnpack  (char *buf, int n, int *pos, MPI_Comm comm, ComLog_t **ret_comlog);
@@ -611,6 +614,8 @@ extern int        GumModeToFthrMode(int gum_mode);
 extern GumbelInfo_t *CreateGumbelInfo();
 extern void          SetGumbelInfo(GumbelInfo_t *gum, double mu, double lambda, int L, int N);
 extern GumbelInfo_t *DuplicateGumbelInfo(GumbelInfo_t *src);
+extern char         *DescribeGumMode(int gum_mode);
+extern char         *DescribeFthrMode(int fthr_mode);
 
 /* from truncyk.c */
 float TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr);

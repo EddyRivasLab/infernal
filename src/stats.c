@@ -761,99 +761,46 @@ DuplicateGumbelInfo(GumbelInfo_t *src)
   return NULL; /* reached if memory error */
 }  
 
-#if 0
-/* Function: CopyCMStats()
- * Incept:   EPN, Tue May 29 06:00:41 2007
- * 
- * Purpose:  Copy the Gumbel and possibly best filter info
- *           in a source CMStats_t object into
- *           a pre-alloc'ed destination CMStats_t object.
+
+/* Function:  DescribeGumMode()
+ * Incept:    EPN, Mon Jan  7 18:04:31 2008
+ *
+ * Purpose:   Returns the Gumbel mode in text.
+ *            For example, <DescribeGumMode(GUM_CM_GC)>
+ *            returns "glocal CM  CYK".
  */
-int CopyCMStats(CMStats_t *src, CMStats_t *dest)
+char *
+DescribeGumMode(int gum_mode)
 {
-  /* Check contract */
-  if(src->np != dest->np)
-    cm_Fail("ERROR in CopyCMStats() src->np: %d not equal to alloc'ed dest->np: %d\n", src->np, dest->np);
-  
-  CopyCMStatsGumbel(src, dest);
-  CopyFThrInfo(src->fthrA[FTHR_CM_LC], dest->fthrA[FTHR_CM_LC]);
-  CopyFThrInfo(src->fthrA[FTHR_CM_GC], dest->fthrA[FTHR_CM_GC]);
-  CopyFThrInfo(src->fthrA[FTHR_CM_LI], dest->fthrA[FTHR_CM_LI]);
-  CopyFThrInfo(src->fthrA[FTHR_CM_GI], dest->fthrA[FTHR_CM_GI]);
-  return eslOK;
-}
-
-
-/* Function: CopyFThrInfo()
- * Incept:   EPN, Fri May  4 15:54:51 2007
- */
-int CopyFThrInfo(CP9FilterThr_t *src, CP9FilterThr_t *dest)
-{
-  dest->N           = src->N;
-  dest->cm_eval     = src->cm_eval;
-  dest->l_eval      = src->l_eval;
-  dest->l_F         = src->l_F;
-  dest->g_eval      = src->g_eval;
-  dest->g_F         = src->g_F;
-  dest->db_size     = src->db_size;
-  dest->was_fast    = src->was_fast;
-  return eslOK;
-}
-
-/* Function: DuplicateCMStatsGumbel()
- * Incept:   EPN, Mon May  7 06:04:58 2007
- * 
- * Purpose:  Copy the Gumbel stats in a source CMStats_t object into
- *           a pre-alloc'ed destination CMStats_t object.
- */
-int DuplicateCMStatsGumbel(CMStats_t *src, CMStats_t *dest)
-{
-  int i, p;
-
-  /* Check contract */
-  if(src->np != dest->np)
-    cm_Fail("ERROR in CopyCMStatsGumbel() src->np: %d not equal to alloc'ed dest->np: %d\n", src->np, dest->np);
-
-  for(p = 0; p < src->np; p++) {
-    dest->ps[p] = src->ps[p];
-    dest->pe[p] = src->pe[p];
+  switch (gum_mode) {
+  case GUM_CP9_GV: return "HMM  glc  vit";
+  case GUM_CP9_GF: return "HMM  glc  fwd";
+  case GUM_CM_GC:  return " CM  glc  cyk";
+  case GUM_CM_GI:  return " CM  glc  ins";
+  case GUM_CP9_LV: return "HMM  loc  vit";
+  case GUM_CP9_LF: return "HMM  loc  fwd";
+  case GUM_CM_LC:  return " CM  loc  cyk";
+  case GUM_CM_LI:  return " CM  loc  ins";
+  default:     return "?";
   }
-  for(i = 0; i < GC_SEGMENTS; i++)
-    dest->gc2p[i] = src->gc2p[i]; 
-
-  for(i = 0; i < GUM_NMODES; i++) {
-    for(p = 0; p < src->np; p++) {
-      dest->gumAA[i][p]->N      = src->gumAA[i][p]->N;
-      dest->gumAA[i][p]->L      = src->gumAA[i][p]->L;
-      dest->gumAA[i][p]->mu     = src->gumAA[i][p]->mu;
-      dest->gumAA[i][p]->lambda = src->gumAA[i][p]->lambda;
-    }
-  }
-  return eslOK;
 }
 
-/* Function: debug_print_filterthrinfo
+
+/* Function:  DescribeFthrMode()
+ * Incept:    EPN, Mon Jan  7 18:41:41 2008
+ *
+ * Purpose:   Returns the Filter thresold mode in text.
+ *            For example, <DescribeFThrMode(GUM_CM_GC)>
+ *            returns "glocal CM CYK".
  */
-int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr)
+char *
+DescribeFthrMode(int fthr_mode)
 {
-  if(! fthr->isvalid) { printf("invalid (not yet set)\n"); return eslOK; }
-
-  double l_x;
-  double g_x;
-  double tmp_K, tmp_mu;
-  tmp_K = exp(cmstats->gumAA[GUM_CP9_GF][0]->mu * cmstats->gumAA[GUM_CP9_GF][0]->lambda) / 
-    cmstats->gumAA[GUM_CP9_GF][0]->L;
-  tmp_mu = log(tmp_K * ((double) fthr->db_size)) / cmstats->gumAA[GUM_CP9_GF][0]->lambda;
-  g_x = tmp_mu - (log(fthr->g_eval) / cmstats->gumAA[GUM_CP9_GF][0]->lambda);
-
-  tmp_K = exp(cmstats->gumAA[GUM_CP9_LF][0]->mu * cmstats->gumAA[GUM_CP9_LF][0]->lambda) / 
-    cmstats->gumAA[GUM_CP9_LF][0]->L;
-  tmp_mu = log(tmp_K * ((double) fthr->db_size)) / cmstats->gumAA[GUM_CP9_LF][0]->lambda;
-  l_x = tmp_mu - (log(fthr->l_eval) / cmstats->gumAA[GUM_CP9_LF][0]->lambda);
-  printf("\tN: %d gsc: %.5f F: %.5f (%.5f bits) lsc: %.5f F: %.5f (%.5f bits)\n\tcmsc: %.5f db_size: %d was_fast: %d\n",
-	 fthr->N, fthr->g_eval, fthr->g_F, g_x, fthr->l_eval, fthr->l_F, l_x, fthr->cm_eval, fthr->db_size, fthr->was_fast);
-  return eslOK;
+  switch (fthr_mode) {
+  case FTHR_CM_GC:  return "glc  cyk";
+  case FTHR_CM_GI:  return "glc  ins";
+  case FTHR_CM_LC:  return "loc  cyk";
+  case FTHR_CM_LI:  return "loc  ins";
+  default:     return "?";
+  }
 }
-
-#endif
-

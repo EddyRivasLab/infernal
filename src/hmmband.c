@@ -215,7 +215,6 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, but cm->cp9map is NULL.\n");
   if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, dsq is NULL.");
   if(i0 > j0)            ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, i0: %d > j0: %d\n", i0, j0);
-  if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED))           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
   if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED)))        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
   if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
   
@@ -1078,7 +1077,6 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 
   /* Contract checks */
   if (cp9b == NULL)                                                                   ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), cp9b is NULL.\n");
-  if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED))    ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
   if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
   if(i0 < 1) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), i0 < 1: %d\n", i0);
   if(j0 < 1) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), j0 < 1: %d\n", j0);
@@ -1785,7 +1783,8 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
     * 4. Do a quick check to make sure we've assigned the bands
     *    on i and j for all states to positive values (none were
     *    left as -1 EXCEPT for end states which should have i bands left as -1).
-    * 5. If doing_search==TRUE, rewrite the bands on the 
+    * 5. Ensure imin[0] <= imin[v] for all v and jmax[0] >= jmax[v] for all v.
+    * 6. If doing_search==TRUE, rewrite the bands on the 
     *    ROOT_S state so they allow any possible transition to a child
     *    that the child's bands would allow.
     */
@@ -1828,9 +1827,13 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
      ESL_DASSERT1((! ((cm->sttype[v] != E_st) && (imax[v] == -1))));
      ESL_DASSERT1((! ((cm->sttype[v] != E_st) && (jmin[v] == -1))));
      ESL_DASSERT1((! ((cm->sttype[v] != E_st) && (jmax[v] == -1))));
+
+     /* 5. Ensure imin[0] <= imin[v] for all v and jmax[0] >= jmax[v] for all v. */
+     imin[0] = ESL_MIN(imin[0], imin[v]);
+     jmax[0] = ESL_MAX(jmax[0], jmax[v]);
    }
    
-   /* 5. If doing_search==TRUE, rewrite the bands on the 
+   /* 6. If doing_search==TRUE, rewrite the bands on the 
     *    ROOT_S state so they allow any possible transition to a child
     *    that the child's bands would allow.
     */

@@ -2755,17 +2755,143 @@ cmcalibrate_cp9_gumbel_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm co
 
 /* Function:  cmcalibrate_cp9_filter_results_MPIPackSize()
  * Synopsis:  Calculates number of bytes needed to pack 
- *            CP9 filter results for cmcalibrate.
+ *            CP9 filter results for cmcalibrate without --hybrid.
+ *            enabled. 
+ *           
+ *            Differs from cmcalibrate_cp9_filter_results_hyb_MPIPackSize()
+ *            in that vscAA, best scores for each state from CM scans 
+ *            ARE NOT packed. They're irrelevant unless --hybrid was enabled.
+ *
+ *            Follows, 'Purpose', 'Returns', 'Throws' of
+ *            the many other *_MPIPackSize() funcs above.
+ *            
+ * Incept:    EPN, Tue Jan  8 15:14:17 2008
+ *           
+ * Note:      The sizing calls here need to stay matched up with
+ *            the calls in <cmcalibrate_cp9_filter_results_MPIPack()>.
+ */
+int
+cmcalibrate_cp9_filter_results_MPIPackSize(int nseq, MPI_Comm comm, int *ret_n)
+{
+  int status;
+  int sz;
+  int n = 0;
+
+  status = MPI_Pack_size(1, MPI_INT, comm, &sz);        n += sz;   if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  /* for nseq */
+  status = MPI_Pack_size(nseq, MPI_FLOAT, comm, &sz);   n += 2*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  /* for vit_cp9scA, fwd_cp9scA */
+  status = MPI_Pack_size(nseq, MPI_INT,   comm, &sz);   n += sz;   if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  /* for partA */
+
+  *ret_n = n;
+  return eslOK;
+
+ ERROR:
+  *ret_n = 0;
+  return status;
+}
+
+/* Function:  cmcalibrate_cp9_filter_results_MPIPack()
+ * Synopsis:  Packs cmcalibrate CP9 filter results into MPI buffer.
+ *            Follows, 'Purpose', 'Returns', 'Throws' of
+ *            the many other *_MPIPack() funcs above.
+ * 
+ * Incept:    EPN, Wed Dec 12 16:36:02 2007
+ *
+ *            Differs from cmcalibrate_cp9_filter_results_hyb_MPIPackSize()
+ *            in that vscAA, best scores for each state from CM scans 
+ *            ARE NOT packed, those scores are only relevant if --hybrid
+ *            was enabled in cmcalibrate.
+ *
+ */
+int
+cmcalibrate_cp9_filter_results_MPIPack(float *vit_cp9scA, float *fwd_cp9scA, int *partA, int nseq, char *buf, int n, int *position, MPI_Comm comm)
+{
+  int status;
+
+  ESL_DPRINTF2(("cmcalibrate_cp9_filter_results_MPIPack(): ready.\n"));
+
+  status = MPI_Pack((int *) &(nseq), 1,        MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(vit_cp9scA,      nseq,     MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(fwd_cp9scA,      nseq,     MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(partA,           nseq,     MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+
+  ESL_DPRINTF2(("cmcalibrate_cp9_filter_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
+
+  if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
+  return eslOK;
+
+}
+
+/* Function:  cmcalibrate_cp9_filter_results_MPIUnpack()
+ * Synopsis:  Unpacks cmcalibrate cp9 filter results from an MPI buffer.
+ *            Follows, 'Purpose', 'Returns', 'Throws' of
+ *            the many other *_MPIUnpack() funcs above.
+ * Incept:    EPN, Wed Dec 12 16:38:15 2007
+ *
+ *            Differs from cmcalibrate_cp9_filter_results_hyb_MPIPackSize()
+ *            in that vscAA, best scores for each state from CM scans 
+ *            is NOT packed. Those scores are only relevant if --hybrid
+ *            was enabled for cmcalibrate.
+ *
+ */
+int
+cmcalibrate_cp9_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, int **ret_partA, int *ret_nseq)
+{
+  int status;
+  float  *vit_cp9scA  = NULL;
+  float  *fwd_cp9scA  = NULL;
+  int    *partA       = NULL;
+  int nseq = 0;
+
+  status = MPI_Unpack (buf, n, pos, &nseq,        1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+
+  ESL_ALLOC(vit_cp9scA, sizeof(float) * nseq);
+  status = MPI_Unpack (buf, n, pos, vit_cp9scA, nseq, MPI_FLOAT,  comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+
+  ESL_ALLOC(fwd_cp9scA, sizeof(float) * nseq);
+  status = MPI_Unpack (buf, n, pos, fwd_cp9scA, nseq, MPI_FLOAT,  comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+
+  ESL_ALLOC(partA,      sizeof(int) * nseq);
+  status = MPI_Unpack (buf, n, pos, partA, nseq, MPI_INT,    comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+
+  *ret_vit_cp9scA = vit_cp9scA;
+  *ret_fwd_cp9scA = fwd_cp9scA;
+  *ret_partA      = partA;
+  *ret_nseq = nseq;
+  return eslOK;
+
+  ESL_DPRINTF1(("cmcalibrate_cp9_filter_results_MPIUnpack() done.\n"));
+
+ ERROR:
+  if(vit_cp9scA != NULL) free(vit_cp9scA);
+  if(fwd_cp9scA != NULL) free(fwd_cp9scA);
+  if(partA      != NULL) free(partA);
+  *ret_nseq = 0;
+  return status;
+}
+
+/* Function:  cmcalibrate_cp9_filter_results_hyb_MPIPackSize()
+ * Synopsis:  Calculates number of bytes needed to pack 
+ *            CP9 filter results for cmcalibrate with --hybrid.
+ *            enabled. 
+ *           
+ *            Differs from cmcalibrate_cp9_filter_results_MPIPackSize()
+ *            in that vscAA, best scores for each state from CM scans 
+ *            is packed. these scores are eventually used to calculate
+ *            Gumbels for each possible sub CM state.
+ *
  *            Follows, 'Purpose', 'Returns', 'Throws' of
  *            the many other *_MPIPackSize() funcs above.
  *            
  * Incept:    EPN, Wed Dec 12 16:30:20 2007
  *           
  * Note:      The sizing calls here need to stay matched up with
- *            the calls in <cmcalibrate_cp9_filter_results_MPIPack()>.
+ *            the calls in <cmcalibrate_cp9_filter_results_hyb_MPIPack()>.
  */
 int
-cmcalibrate_cp9_filter_results_MPIPackSize(int nseq, int M, MPI_Comm comm, int *ret_n)
+cmcalibrate_cp9_filter_results_hyb_MPIPackSize(int nseq, int M, MPI_Comm comm, int *ret_n)
 {
   int status;
   int sz;
@@ -2788,12 +2914,17 @@ cmcalibrate_cp9_filter_results_MPIPackSize(int nseq, int M, MPI_Comm comm, int *
   return status;
 }
 
-/* Function:  cmcalibrate_cp9_filter_results_MPIPack()
+/* Function:  cmcalibrate_cp9_filter_results_hyb_MPIPack()
  * Synopsis:  Packs cmcalibrate CP9 filter results into MPI buffer.
  *            Follows, 'Purpose', 'Returns', 'Throws' of
  *            the many other *_MPIPack() funcs above.
  * 
  * Incept:    EPN, Wed Dec 12 16:36:02 2007
+ *
+ *            Differs from cmcalibrate_cp9_filter_results_MPIPackSize()
+ *            in that vscAA, best scores for each state from CM scans 
+ *            is packed. these scores are eventually used to calculate
+ *            Gumbels for each possible sub CM state.
  *
  *            Note: <vscAA> is a 2D array, vscAA[0..v..M-1][0..i..nseq-1]
  *            holding the best score for each subtree rooted 
@@ -2804,13 +2935,13 @@ cmcalibrate_cp9_filter_results_MPIPackSize(int nseq, int M, MPI_Comm comm, int *
  *
  */
 int
-cmcalibrate_cp9_filter_results_MPIPack(float **vscAA, float *vit_cp9scA, float *fwd_cp9scA, int *partA, int nseq, int M, char *buf, int n, int *position, MPI_Comm comm)
+cmcalibrate_cp9_filter_results_hyb_MPIPack(float **vscAA, float *vit_cp9scA, float *fwd_cp9scA, int *partA, int nseq, int M, char *buf, int n, int *position, MPI_Comm comm)
 {
   int status;
   int i,v,idx;
   float *vscA = NULL;
 
-  ESL_DPRINTF2(("cmcalibrate_cp9_filter_results_MPIPack(): ready.\n"));
+  ESL_DPRINTF2(("cmcalibrate_cp9_filter_results_hyb_MPIPack(): ready.\n"));
 
   ESL_ALLOC(vscA, sizeof(float) * (M*nseq));
   idx = 0;
@@ -2824,7 +2955,7 @@ cmcalibrate_cp9_filter_results_MPIPack(float **vscAA, float *vit_cp9scA, float *
   status = MPI_Pack(fwd_cp9scA,      nseq,     MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack(partA,           nseq,     MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
 
-  ESL_DPRINTF2(("cmcalibrate_cp9_filter_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
+  ESL_DPRINTF2(("cmcalibrate_cp9_filter_results_hyb_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
 
   if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
   return eslOK;
@@ -2834,11 +2965,16 @@ cmcalibrate_cp9_filter_results_MPIPack(float **vscAA, float *vit_cp9scA, float *
   return status;
 }
 
-/* Function:  cmcalibrate_cp9_filter_results_MPIUnpack()
+/* Function:  cmcalibrate_cp9_filter_results_hyb_MPIUnpack()
  * Synopsis:  Unpacks cmcalibrate cp9 filter results from an MPI buffer.
  *            Follows, 'Purpose', 'Returns', 'Throws' of
  *            the many other *_MPIUnpack() funcs above.
  * Incept:    EPN, Wed Dec 12 16:38:15 2007
+ *
+ *            Differs from cmcalibrate_cp9_filter_results_MPIPackSize()
+ *            in that vscAA, best scores for each state from CM scans 
+ *            is packed. these scores are eventually used to calculate
+ *            Gumbels for each possible sub CM state.
  *
  *            Note: We return <ret_vscAA> as a 2D array, 
  *            ret_vscAA[0..v..M-1][0..i..nseq-1]
@@ -2850,7 +2986,7 @@ cmcalibrate_cp9_filter_results_MPIPack(float **vscAA, float *vit_cp9scA, float *
  *
  */
 int
-cmcalibrate_cp9_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, int M, float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, int **ret_partA, int *ret_nseq)
+cmcalibrate_cp9_filter_results_hyb_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, int M, float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, int **ret_partA, int *ret_nseq)
 {
   int status;
   float  *vit_cp9scA  = NULL;

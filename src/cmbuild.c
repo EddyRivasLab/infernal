@@ -251,6 +251,9 @@ main(int argc, char **argv)
   cfg.r          = NULL;	           /* created (possibly) in init_cfg() */
   cfg.comlog     = NULL;	           /* created in init_cfg() */
 
+  /* print the banner */
+  cm_banner(stdout, argv[0], banner);
+
   if   (esl_opt_IsDefault(go, "--informat")) cfg.fmt = eslMSAFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
   else { 
     cfg.fmt = esl_sqio_FormatCode(esl_opt_GetString(go, "--informat"));
@@ -523,7 +526,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if(cfg->be_verbose) { 
 	    fprintf(cfg->ofp, "\n");
 	    SummarizeCM(cfg->ofp, cm);  
-	    fprintf(cfg->ofp, "\n");
+	    fprintf(cfg->ofp, "//\n");
 	  }
 
 	  FreeCM(cm);

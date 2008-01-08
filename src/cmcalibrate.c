@@ -7,8 +7,7 @@
  * based on HMMER-2.3.2's hmmcalibrate.c from SRE
  *
  * MPI example:  
- * qsub -N testrun -j y -R y -b y -cwd -V -pe lam-mpi-tight 32 'mpirun -l C ./mpi-cmcalibrate foo.cm > foo.out'
- * -l forces line buffered output
+ * qsub -N testrun -j y -R y -b y -cwd -V -pe lam-mpi-tight 32 'mpirun C ./mpi-cmcalibrate foo.cm > foo.out'
  *  
  ************************************************************
  * @LICENSE@
@@ -50,13 +49,16 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"
 
-#define CUTOPTS  "--eval,--ga,--nc,--tc,--all"  /* Exclusive choice for filter threshold score cutoff */
+#define CUTOPTS  "--filE,--ga,--nc,--tc,--all"  /* Exclusive choice for filter threshold score cutoff */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
   { "-s",        eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,        NULL, "set random number generator seed to <n>",  1 },
   { "-t",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print timings for Gumbel fitting and CP9 filter calculation",  1},
+#ifdef HAVE_DEVOPTS 
+  { "-v",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print arguably interesting info",  1},
+#endif
   /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
    * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--pbegin","set all local begins as equiprobable", 1 },
@@ -69,29 +71,30 @@ static ESL_OPTIONS options[] = {
   { "--gumL",    eslARG_INT,     NULL, NULL, "n>0",     NULL,      NULL, "--filonly", "set length of random seqs for Gumbel estimation to <n>", 2},
   { "--cmN",     eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--filonly", "number of random sequences for CM gumbel estimation",    2 },
   { "--hmmN",    eslARG_INT,   "5000", NULL, "n>0",     NULL,      NULL, "--filonly", "number of random sequences for CP9 HMM gumbel estimation",    2 },
-  { "--dbfile",  eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL, "--filonly", "use GC content distribution from file <s>",  2},
-  { "--pfile",   eslARG_STRING,  NULL, NULL, NULL,      NULL,"--dbfile",        NULL, "read partition info for Gumbels from file <s>", 2},
-  { "--gumhfile",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL, "--filonly", "save fitted Gumbel histogram(s) to file <s>", 2 },
-  { "--gumqqfile",eslARG_STRING, NULL, NULL, NULL,      NULL,      NULL, "--filonly", "save Q-Q plot for Gumbel histogram(s) to file <s>", 2 },
+  { "--gcfromdb",eslARG_INFILE,  NULL, NULL, NULL,      NULL,      NULL, "--filonly", "use GC content distribution from file <s>",  2},
+  { "--pfile",   eslARG_INFILE,  NULL, NULL, NULL,      NULL,"--gcfromdb",        NULL, "read partition info for Gumbels from file <s>", 2},
+  { "--gumhfile",eslARG_OUTFILE,  NULL, NULL, NULL,     NULL,      NULL, "--filonly", "save fitted Gumbel histogram(s) to file <s>", 2 },
+  { "--gumqqfile",eslARG_OUTFILE, NULL, NULL, NULL,     NULL,      NULL, "--filonly", "save Q-Q plot for Gumbel histogram(s) to file <s>", 2 },
   { "--beta",    eslARG_REAL,  "1e-7", NULL, "x>0",     NULL,      NULL,    "--noqdb", "set tail loss prob for Gumbel calculation to <x>", 5 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "DO NOT use query dependent banding (QDB) Gumbel searches", 5 },
   { "--gtail",   eslARG_REAL,    "0.5",NULL, "0.0<x<0.6",NULL,     NULL,        NULL, "set fraction of right histogram tail to fit to Gumbel to <x>", 5 },
   /* options for filter threshold calculation */
   { "--filonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "only calculate filter thresholds, don't estimate Gumbels", 3},
   { "--filN",    eslARG_INT,   "1000", NULL, "n>0",     NULL,      NULL, "--gumonly", "number of emitted sequences for HMM filter threshold calc",    3 },
-  { "--fbeta",   eslARG_REAL,  "1e-3",NULL, "x>0",     NULL,      NULL, "--gumonly", "set tail loss prob for filtering sub-CMs QDB to <x>", 5 },
   { "--F",       eslARG_REAL,  "0.99", NULL, "0<x<=1",  NULL,      NULL, "--gumonly", "required fraction of seqs that survive HMM filter", 3},
+  { "--db",      eslARG_INFILE,  NULL, NULL, NULL,      NULL,  "--filE", "--gumonly", "with --filE, set database size to size of <f>, not 1 Mb",  2},
   { "--starg",   eslARG_REAL,  "0.01", NULL, "0<x<=1",  NULL,      NULL, "--gumonly", "target filter survival fraction", 3},
-  { "--hybrid",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--filonly,--gumonly", "try hybrid filters, and keep them if better than HMM", 3},
-  { "--spad",    eslARG_REAL,  "1.0",  NULL, "0<=x<=1", NULL,      NULL, "--gumonly", "fraction of (sc(S) - sc(Starg)) to add to sc(S)", 3},
   { "--gemit",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "when calc'ing filter thresholds, always emit globally from CM",  3},
   { "--fviterbi",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly,--fforward", "always choose CP9 Viterbi filter over CP9 Forward filter",  3},
   { "--fforward",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly,--fviterbi", "always choose CP9 Forward filter over CP9 Viterbi filter",  3},
-  { "--gemit",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--gumonly", "when calc'ing filter thresholds, always emit globally from CM",  3},
-  { "--filhfile",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--gumonly", "save CP9 filter threshold histogram(s) to file <s>", 3},
-  { "--filrfile",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL, "--gumonly", "save CP9 filter threshold information in R format to file <s>", 3},
+  { "--filhfile",eslARG_OUTFILE, NULL,  NULL, NULL,     NULL,      NULL, "--gumonly", "save CP9 filter threshold histogram(s) to file <s>", 3},
+  { "--filrfile",eslARG_OUTFILE, NULL,  NULL, NULL,     NULL,      NULL, "--gumonly", "save CP9 filter threshold information in R format to file <s>", 3},
+  #ifdef HAVE_DEVOPTS
+  { "--hybrid",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--filonly,--gumonly", "try hybrid filters, and keep them if better than HMM", 3},
+  { "--filbeta", eslARG_REAL,  "1e-3",NULL, "x>0",     NULL,      NULL, "--gumonly", "set tail loss prob for filtering sub-CMs QDB to <x>", 5 },
+#endif 
   /* exclusive choice of filter threshold cutoff */
-  { "--eval",    eslARG_REAL,   "0.1", NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "min CM E-val (for a 1 Mb db) to consider for filter thr calc", 4}, 
+  { "--filE",    eslARG_REAL,   "0.1", NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "min CM E-val (for a 1 Mb db) to consider for filter thr calc", 4}, 
   { "--ga",      eslARG_NONE,   FALSE, NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "use CM gathering threshold as minimum sc for filter thr calc", 4}, 
   { "--nc",      eslARG_NONE,   FALSE, NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "use CM noise cutoff as minimum sc for filter thr calc", 4}, 
   { "--tc",      eslARG_NONE,   FALSE, NULL, "x>0",  CUTOPTS,      NULL, "--gumonly", "use CM trusted cutoff as minimum sc for filter thr calc", 4},   
@@ -110,12 +113,13 @@ struct cfg_s {
   char            *cmfile;	      /* name of input CM file  */ 
   ESL_RANDOMNESS  *r;
   ESL_ALPHABET    *abc;
+  ESL_STOPWATCH   *w_stage;           /* stopwatch for each gumbel, filter stage */
   double          *gc_freq;;
   double          *pgc_freq;
-  int              be_verbose;	
   CMStats_t      **cmstatsA;          /* the CM stats data structures, 1 for each CM */
   HybridScanInfo_t *hsi;              /* information for a hybrid scan */ 
   int              ncm;                /* what number CM we're on */
+  int              be_verbose;	       /* print extra info, only can be TRUE if #ifdef HAVE_DEVOPTS */
   int              cmalloc;            /* number of cmstats we have allocated */
   char            *tmpfile;            /* tmp file we're writing to */
   char            *mode;               /* write mode, "w" or "wb"                     */
@@ -160,7 +164,7 @@ struct cfg_s {
 };
 
 static char usage[]  = "[-options] <cmfile>";
-static char banner[] = "fit Gumbels for E-value stats and calculate HMM filter threshold stats";
+static char banner[] = "fit Gumbels for E-values and calculate HMM filter thresholds";
 
 static int init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 #ifdef HAVE_MPI
@@ -193,10 +197,14 @@ static int read_partition_file(const ESL_GETOPTS *go, struct cfg_s *cfg, char *e
 static int update_avg_hit_len(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int switch_global_to_local(CM_t *cm, char *errbuf);
 static int predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_vit_cp9scA, float *fil_fwd_cp9scA, int *fil_partA, BestFilterInfo_t *bf);
-static int predict_best_sub_cm_roots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **fil_vscAA, int **ret_best_sub_roots);
-static int predict_hybrid_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_hybscA, int *fil_partA, GumbelInfo_t **gum_hybA, BestFilterInfo_t *bf, int *ret_getting_faster);
 static int get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int update_comlog(const ESL_GETOPTS *go, char *errbuf, char *ccom, char *cdate, CM_t *cm);
+static void format_time_string(char *buf, double sec, int do_frac);
+static int print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
+#ifdef HAVE_DEVOPTS
+static int predict_best_sub_cm_roots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **fil_vscAA, int **ret_best_sub_roots);
+static int predict_hybrid_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_hybscA, int *fil_partA, GumbelInfo_t **gum_hybA, BestFilterInfo_t *bf, int *ret_getting_faster);
+#endif
 
 int
 main(int argc, char **argv)
@@ -264,7 +272,7 @@ main(int argc, char **argv)
   cfg.hsi      = NULL;
   cfg.tmpfile  = NULL;
   cfg.mode     = NULL;
-  cfg.dbsize   = 1000000; /* default DB size = 1MB, NEVER changed */
+  cfg.dbsize   = 1000000; /* default DB size, changed if --db */
   cfg.cutoffA  = NULL; 
   cfg.full_vcalcs = NULL;
   cfg.vmuAA     = NULL;
@@ -280,11 +288,13 @@ main(int argc, char **argv)
   cfg.filhfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.filrfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.abc      = NULL; 
+  cfg.w_stage  = NULL; 
 
   cfg.do_mpi   = FALSE;
   cfg.my_rank  = 0;
   cfg.nproc    = 0;
   cfg.do_stall = esl_opt_GetBoolean(go, "--stall");
+  cfg.be_verbose = FALSE;
 
   ESL_DASSERT1((GUM_CP9_GV == 0));
   ESL_DASSERT1((GUM_CP9_GF == 1));
@@ -324,7 +334,10 @@ main(int argc, char **argv)
       if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running... (did you run mpirun?)");
 
       if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
-      else 		    mpi_master(go, &cfg);
+      else { 
+	cm_banner(stdout, argv[0], banner);
+	mpi_master(go, &cfg);
+      }
 
       esl_stopwatch_Stop(w);
       esl_stopwatch_MPIReduce(w, 0, MPI_COMM_WORLD);
@@ -333,6 +346,7 @@ main(int argc, char **argv)
   else
 #endif /*HAVE_MPI*/
     {
+      cm_banner(stdout, argv[0], banner);
       serial_master(go, &cfg);
       esl_stopwatch_Stop(w);
     }
@@ -409,13 +423,13 @@ main(int argc, char **argv)
  *    cfg->gumqfp      - optional output file
  *    cfg->filhfp      - optional output file
  *    cfg->filrfp      - optional output file
- *    cfg->gc_freq     - observed GC freqs (if --dbfile invoked)
+ *    cfg->gc_freq     - observed GC freqs (if --gcfromdb invoked)
  *    cfg->cmstatsA    - the stats, allocated only
  *    cfg->np          - number of partitions, never changes once set 
  *    cfg->pstart      - array of partition starts 
  *    cfg->r           - source of randomness
  *    cfg->tmpfile     - temp file for rewriting cm file
- *                   
+ *    cfg->be_verbose  - print extra info? (only available #ifdef HAVE_DEVOPTS) 
  * Errors in the MPI master here are considered to be "recoverable",
  * in the sense that we'll try to delay output of the error message
  * until we've cleanly shut down the worker processes. Therefore
@@ -457,11 +471,11 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     }
 
   /* optionally, get distribution of GC content from an input database (default is use cm->null for GC distro) */
-  if(esl_opt_GetString(go, "--dbfile") != NULL) {
+  if(esl_opt_GetString(go, "--gcfromdb") != NULL) {
     ESL_ALPHABET *tmp_abc = NULL;
     tmp_abc = esl_alphabet_Create(eslRNA);
     ESL_SQFILE      *dbfp;             
-    status = esl_sqfile_Open(esl_opt_GetString(go, "--dbfile"), eslSQFILE_UNKNOWN, NULL, &dbfp);
+    status = esl_sqfile_Open(esl_opt_GetString(go, "--gcfromdb"), eslSQFILE_UNKNOWN, NULL, &dbfp);
     if (status == eslENOTFOUND)    cm_Fail("No such file."); 
     else if (status == eslEFORMAT) cm_Fail("Format unrecognized."); 
     else if (status == eslEINVAL)  cm_Fail("Can’t autodetect stdin or .gz."); 
@@ -474,6 +488,18 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     ESL_ALLOC(cfg->pgc_freq, sizeof(double) * GC_SEGMENTS);
   }
 
+  /* optionally, set cfg->dbsize as size of db in file <f> from --db <f> */
+  if(esl_opt_GetString(go, "--db") != NULL) {
+    ESL_SQFILE      *dbfp;             
+    status = esl_sqfile_Open(esl_opt_GetString(go, "--gcfromdb"), eslSQFILE_UNKNOWN, NULL, &dbfp);
+    if (status == eslENOTFOUND)    cm_Fail("No such file."); 
+    else if (status == eslEFORMAT) cm_Fail("Format unrecognized."); 
+    else if (status == eslEINVAL)  cm_Fail("Can’t autodetect stdin or .gz."); 
+    else if (status != eslOK)      cm_Fail("Failed to open sequence database file, code %d.", status); 
+    GetDBInfo(NULL, dbfp, &(cfg->dbsize), NULL);  
+    esl_sqfile_Close(dbfp); 
+  }
+
   /* set up the partition data that's used for all CMs */
   if(esl_opt_IsDefault(go, "--pfile")) { /* by default we have 1 partition 0..100 */
     ESL_ALLOC(cfg->pstart, sizeof(int) * 1);
@@ -483,6 +509,11 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   else { /* setup cfg->np and cfg->pstart in read_partition_file() */
     if((status = read_partition_file(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   }
+
+  cfg->be_verbose = FALSE;
+#ifdef HAVE_DEVOPTS
+  if (esl_opt_GetBoolean(go, "-v")) cfg->be_verbose = TRUE;        
+#endif
 
   /* Initial allocations for results per CM;
    * we'll resize these arrays dynamically as we read more CMs.
@@ -495,7 +526,11 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (! esl_opt_IsDefault(go, "-s")) 
     cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
   else cfg->r = esl_randomness_CreateTimeseeded();
-  printf("Random seed: %ld\n", esl_randomness_GetSeed(cfg->r));
+
+  /* create the stopwatch */
+  cfg->w_stage = esl_stopwatch_Create();
+
+  printf("Random number generator seed: %ld\n", esl_randomness_GetSeed(cfg->r));
 
   /* From HMMER 2.4X hmmcalibrate.c:
    * Generate calibrated CM(s) in a tmp file in the current
@@ -516,7 +551,8 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   else                      cfg->mode = "w"; 
 
   cfg->avglen = NULL; /* this will be allocated and filled inside serial_master() or mpi_master() */
-  if(cfg->r == NULL) cm_Fail("Failed to create master RNG.");
+  if(cfg->r       == NULL) cm_Fail("Failed to create master RNG.");
+  if(cfg->w_stage == NULL) cm_Fail("Failed to create stopwatch.");
 
   /* fill cfg->ccom, and cfg->cdate */
   if((status = get_cmcalibrate_comlog_info(go, cfg, errbuf)) != eslOK) return status;
@@ -591,14 +627,14 @@ init_worker_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 static void
 serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 {
-  int            status;
-  char           errbuf[cmERRBUFSIZE];
-  CM_t          *cm = NULL;
-  int            cmN  = esl_opt_GetInteger(go, "--cmN");
-  int            hmmN = esl_opt_GetInteger(go, "--hmmN");
-  int            filN = esl_opt_GetInteger(go, "--filN");
-  int        gum_mode  = 0;
-  int        fthr_mode = 0;
+  int      status;
+  char     errbuf[cmERRBUFSIZE];
+  CM_t    *cm = NULL;
+  int      cmN  = esl_opt_GetInteger(go, "--cmN");
+  int      hmmN = esl_opt_GetInteger(go, "--hmmN");
+  int      filN = esl_opt_GetInteger(go, "--filN");
+  int      gum_mode  = 0;
+  int      fthr_mode = 0;
   int      p;
   int      cmi;
   float  **gum_vscAA      = NULL; /* [0..v..cm->M-1][0..nseq-1] best cm score for each state, each random seq */
@@ -607,17 +643,20 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   float   *fil_vit_cp9scA = NULL; /*                [0..nseq-1] best cp9 Viterbi score for each emitted seq */
   float   *fil_fwd_cp9scA = NULL; /*                [0..nseq-1] best cp9 Forward score for each emitted seq */
   int     *fil_partA      = NULL; /*                [0..nseq-1] partition of CM emitted seq */
+  double   tmp_mu, tmp_lambda;    /* temporary mu and lambda used for setting HMM gumbels */
+  int      L;                     /* length of sequences to search for gumbel fitting, L==cm->W*2 unless --gumL enabled, 
+				   * in which case L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL") */
+  char     time_buf[128];	  /* string for printing elapsed time (safely holds up to 10^14 years) */
+  void    *tmp;
+#ifdef HAVE_DEVOPTS
+  /* variables for --hybrid */
   float   *gum_hybscA     = NULL; /*                [0..nseq-1] best hybrid score for each random seq */
   float   *fil_hybscA     = NULL; /*                [0..nseq-1] best hybrid score for each emitted seq */
-  double   tmp_mu, tmp_lambda;    /* temporary mu and lambda used for setting HMM gumbels */
-  int      do_time_estimates = TRUE;
   int     *best_sub_roots = NULL; /* [0..cfg->hsi->nstarts-1], best predicted sub CM root filter for each start group */
-  int            L;  /* length of sequences to search for gumbel fitting, L==cm->W*2 unless --gumL enabled, 
-		      * in which case L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL") */
-  /* int      do_time_estimates = esl_opt_GetBoolean(go, "--etime"); */
-  int s = 0;
-  int getting_faster = TRUE;
-  void *tmp;
+  int      s = 0;
+  int      getting_faster = TRUE;
+#endif
+
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
 
   while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
@@ -634,12 +673,15 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = initialize_cm(go, cfg, errbuf, cm))      != eslOK) cm_Fail(errbuf);
       if((status = initialize_cmstats(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
       if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+      if((status = print_cm_info     (go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
 
       for(gum_mode = 0; gum_mode < GUM_NMODES; gum_mode++) {
 
+#ifdef HAVE_DEVOPTS
 	/* free and recalculate hybrid scan info, b/c when investigating hybrid filters we may have added sub CM roots */
 	if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi, cm);
-	cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--fbeta"), cfg->full_vcalcs[0]);
+	cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--filbeta"), cfg->full_vcalcs[0]);
+#endif
 	
 	/* do we need to switch from glocal configuration to local? */
 	if(gum_mode > 0 && (! GumModeIsLocal(gum_mode-1)) && GumModeIsLocal(gum_mode)) {
@@ -658,28 +700,37 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	  ESL_DASSERT1((cfg->np == cfg->cmstatsA[cmi]->np));
 	  for (p = 0; p < cfg->np; p++) {
+	    esl_stopwatch_Start(cfg->w_stage);
 	    if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
 	    if(GumModeIsForCM(gum_mode)) { /* CM mode */
 	      /* search random sequences to get gumbels for each candidate sub CM root state (including 0, the root of the full model) */
-	      if(do_time_estimates) estimate_workunit_time(go, cfg, cmN, cm->W*2, gum_mode);
+	      if(cfg->be_verbose) estimate_workunit_time(go, cfg, cmN, L, gum_mode);
 	      ESL_DPRINTF1(("\n\ncalling process_gumbel_workunit to fit gumbel for p: %d CM mode: %d\n", p, gum_mode));
+	      printf("gumbel  %-12s %5d %6d %5s %5s [", DescribeGumMode(gum_mode), cmN, L, "-", "-");
+	      fflush(stdout);
 	      if((status = process_gumbel_workunit (go, cfg, errbuf, cm, cmN, L, &gum_vscAA, NULL, NULL)) != eslOK) cm_Fail(errbuf);
 	      if((status = cm_fit_histograms(go, cfg, errbuf, cm, gum_vscAA, cmN, p)) != eslOK) cm_Fail(errbuf);
 	      SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], cfg->vmuAA[p][0], cfg->vlambdaAA[p][0], L, cmN);
 	    }
 	    else { /* CP9 mode, fit gumbel for full HMM */
-	      if(do_time_estimates) estimate_workunit_time(go, cfg, hmmN, cm->W*2, gum_mode);
+	      if(cfg->be_verbose) estimate_workunit_time(go, cfg, hmmN, L, gum_mode);
 	      ESL_DPRINTF1(("\n\ncalling process_gumbel_workunit to fit gumbel for p: %d CP9 mode: %d\n", p, gum_mode));
+	      printf("gumbel  %-12s %5d %6d %5s %5s [", DescribeGumMode(gum_mode), hmmN, L, "-", "-");
+	      fflush(stdout);
 	      if((status = process_gumbel_workunit (go, cfg, errbuf, cm, hmmN, L, NULL, &gum_cp9scA, NULL)) != eslOK) cm_Fail(errbuf);
 	      if((status = fit_histogram(go, cfg, errbuf, gum_cp9scA, hmmN, &tmp_mu, &tmp_lambda))       != eslOK) cm_Fail(errbuf);
 	      SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], tmp_mu, tmp_lambda, L, hmmN);
 	    }
+	    esl_stopwatch_Stop(cfg->w_stage);
+	    format_time_string(time_buf, cfg->w_stage->elapsed, 0);
+	    printf(" %10s\n", time_buf);
 	  } /* end of for loop over partitions */
 	} /* end of if ! --filonly */
 	
 	/* filter threshold section */
 	if(! (esl_opt_GetBoolean(go, "--gumonly"))) {
 	  if(GumModeIsForCM(gum_mode)) { /* CM mode, we want to do filter threshold calculations */
+	    esl_stopwatch_Start(cfg->w_stage);
 	    fthr_mode = GumModeToFthrMode(gum_mode);
 	    ESL_DASSERT1((fthr_mode != -1));
 	    if((status = update_cutoffs(go, cfg, errbuf, cm, gum_mode)) != eslOK) cm_Fail(errbuf);
@@ -687,18 +738,38 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    /* search emitted sequences to get filter thresholds for HMM and each candidate sub CM root state */
 	    ESL_DPRINTF1(("\n\ncalling process_filter_workunit to get HMM filter thresholds for p: %d mode: %d\n", p, gum_mode));
 	    if(fil_partA != NULL) free(fil_partA);
-	    if((status = process_filter_workunit (go, cfg, errbuf, cm, filN, &fil_vscAA, &fil_vit_cp9scA, &fil_fwd_cp9scA, NULL, &fil_partA)) != eslOK) cm_Fail(errbuf);
+	    ///printf("filter  %3s  %-8s %5s %6s %5d %5g [", "-", DescribeFthrMode(fthr_mode), "-", "-", filN, esl_opt_GetReal(go, "--filE"));
+	    printf("filter  %3s  %-8s %5s %6s %5d ", "-", DescribeFthrMode(fthr_mode), "-", "-", filN);
+	    if     (esl_opt_GetBoolean(go, "--all")) printf("infty [");
+	    else if(esl_opt_GetBoolean(go, "--ga"))  printf("   GA [");
+	    else if(esl_opt_GetBoolean(go, "--nc"))  printf("   NC [");
+	    else if(esl_opt_GetBoolean(go, "--tc"))  printf("   TC [");
+	    else                                     printf("%5g [", esl_opt_GetReal(go, "--filE"));
+	    fflush(stdout);
+
+#ifdef HAVE_DEVOPTS
+	    if(esl_opt_GetBoolean(go, "--hybrid")) { /* we want fil_vscAA filled with hybrid scanning scores */
+	      if((status = process_filter_workunit (go, cfg, errbuf, cm, filN, &fil_vscAA, &fil_vit_cp9scA, &fil_fwd_cp9scA, NULL, &fil_partA)) != eslOK) cm_Fail(errbuf);
+	    }
+	    else { /* we don't want fil_vscAA filled with hybrid scanning scores */
+#endif
+	      if((status = process_filter_workunit (go, cfg, errbuf, cm, filN, NULL, &fil_vit_cp9scA, &fil_fwd_cp9scA, NULL, &fil_partA)) != eslOK) cm_Fail(errbuf);
+#ifdef HAVE_DEVOPTS
+	    }	      
+#endif
 	    /* determine the 'best' way to filter using a heuristic:
 	     * 1. predict speedup for HMM-only filter
+	     * if --hybrid, continue to 2, else use HMM filter as 'best' filter.
 	     * 2. add 'best' sub CM root independent of those already chosen, and predict speedup for a hybrid scan
 	     * 3. repeat 2 until predicted speedup drops
-	     * best filter is either HMM only or fastest combo of sub CM roots
+	     * if --hybrid, best filter is either HMM only or fastest combo of sub CM roots
 	     */
 
 	    /* 1. predict speedup for HMM-only filter */
 	    if((status = predict_cp9_filter_speedup(go, cfg, errbuf, cm, fil_vit_cp9scA, fil_fwd_cp9scA, fil_partA, cfg->cmstatsA[cmi]->bfA[fthr_mode])) != eslOK) cm_Fail(errbuf);
-	    DumpBestFilterInfo(cfg->cmstatsA[cmi]->bfA[fthr_mode]);
+	    if(cfg->be_verbose) DumpBestFilterInfo(cfg->cmstatsA[cmi]->bfA[fthr_mode]);
 	    
+#ifdef HAVE_DEVOPTS	    
 	    /* if desired, try hybrid filters to see if we can do better than the HMM */
 	    if(esl_opt_GetBoolean(go, "--hybrid")) {
 	      /* 2. predict best sub CM filter root state in each start group */
@@ -716,8 +787,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		    if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
 		    if((status = process_gumbel_workunit (go, cfg, errbuf, cm, cmN, L, NULL, NULL, &gum_hybscA)) != eslOK) cm_Fail(errbuf);
 		    if((status = fit_histogram(go, cfg, errbuf, gum_hybscA, cmN, &tmp_mu, &tmp_lambda))       != eslOK) cm_Fail(errbuf);
-		    SetGumbelInfo(cfg->gum_hybA[p], tmp_mu, tmp_lambda, cm->W*2, cmN);
-		    debug_print_gumbelinfo(cfg->gum_hybA[p]);
+		    SetGumbelInfo(cfg->gum_hybA[p], tmp_mu, tmp_lambda, L, cmN);
+		    if(cfg->be_verbose) debug_print_gumbelinfo(cfg->gum_hybA[p]);
 		  }		
 		  /* get hybrid scores of CM emitted seqs */
 		  if(fil_partA != NULL) free(fil_partA);
@@ -731,17 +802,22 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		}
 	      }
 	    }
-	    //if((status = calc_best_filter(go, cfg, cm, fil_vscAA, fil_vit_cp9scA, fil_fwd_cp9scA)) != eslOK) cm_Fail("unexpected error code: %d in calc_best_filter.");
-	    /* determine HMM filter threshold */
-	    /* if((status = calc_cp9_filter_thr(go, cfg, errbuf, cm, fil_vscAA)) != eslOK) cm_Fail("unexpected error code: %d in calc_cp9_filter_thr.");*/
+#endif
+	    esl_stopwatch_Stop(cfg->w_stage);
+	    format_time_string(time_buf, cfg->w_stage->elapsed, 0);
+	    printf(" %10s\n", time_buf);
 	  }
 	}
 	/* free muA and lambdaA */
       } /* end of for(gum_mode = 0; gum_mode < NCMMODES; gum_mode++) */
-      debug_print_cmstats(cfg->cmstatsA[cmi], (! esl_opt_GetBoolean(go, "--gumonly")));
+      if(cfg->be_verbose) debug_print_cmstats(cfg->cmstatsA[cmi], (! esl_opt_GetBoolean(go, "--gumonly")));
+#ifdef HAVE_DEVOPTS
       if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi, cm);
       cfg->hsi = NULL;
+#endif
       FreeCM(cm);
+      printf("//\n");
+      fflush(stdout);
     }
   return;
 
@@ -789,7 +865,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   void    *tmp;
   int      wi_error = 0;                /* worker index that sent back an error message, if an error occurs */
 
-  CM_t          *cm = NULL;
+  CM_t           *cm  = NULL;
   int            cmN  = esl_opt_GetInteger(go, "--cmN");
   int            hmmN = esl_opt_GetInteger(go, "--hmmN");
   int            filN = esl_opt_GetInteger(go, "--filN");
@@ -830,6 +906,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   double tmp_mu, tmp_lambda;/* temporary mu and lambda used for setting HMM gumbels */
   int            L;  /* length of sequences to search for gumbel fitting, L==cm->W*2 unless --gumL enabled, 
 		      * in which case L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL") */
+  char     time_buf[128];	  /* string for printing elapsed time (safely holds up to 10^14 years) */
+  float    update_i;
 
   /* Master initialization: including, figure out the alphabet type.
    * If any failure occurs, delay printing error message until we've shut down workers.
@@ -861,15 +939,19 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if (status != eslOK) cm_Fail("One or more MPI worker processes failed to initialize.");
   ESL_DPRINTF1(("%d workers are initialized\n", cfg->nproc-1));
 
-  /* 2 special (annoying) case:
-   * case 1: if we've used the --dbfile option, we read in a seq file to fill
+  /* 3 special (annoying) case:
+   * case 1: if we've used the --gcfromdb option, we read in a seq file to fill
    * cfg->gc_freq, and we need to broadcast that info to workers
    *
    * case 2: if we are calculating stats for more than 1 partition, 
    * (--pfile invoked), we need to broadcast that information to 
    * the workers. 
+   *
+   * case 3: if we've changed the default dbsize for the CM E-value cutoff
+   * in the filter threshold calculation (--db invoked), we need to broadcast 
+   * that information to the workers.
    */
-  if(! (esl_opt_IsDefault(go, "--dbfile"))) { /* receive gc_freq info from master */
+  if(! (esl_opt_IsDefault(go, "--gcfromdb"))) { /* receive gc_freq info from master */
     MPI_Bcast(cfg->gc_freq, GC_SEGMENTS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
   }
   if(! (esl_opt_IsDefault(go, "--pfile"))) { /* broadcast partition info to workers */
@@ -877,6 +959,9 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     MPI_Bcast(&(cfg->np),  1,       MPI_INT, 0, MPI_COMM_WORLD);
     ESL_DASSERT1((cfg->pstart != NULL));
     MPI_Bcast(cfg->pstart, cfg->np, MPI_INT, 0, MPI_COMM_WORLD);
+  }
+  if(! (esl_opt_IsDefault(go, "--db"))) { /* receive cfg->dbsize info from master */
+    MPI_Bcast(&(cfg->dbsize), 1, MPI_LONG, 0, MPI_COMM_WORLD);
   }
 
   /* Main loop: combining load workers, send/receive, clear workers loops;
@@ -908,6 +993,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = initialize_cm     (go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
       if((status = initialize_cmstats(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
       if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+      if((status = print_cm_info     (go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
 
       if(! (esl_opt_GetBoolean(go, "--filonly"))) { 
 	ESL_ALLOC(gum_vscAA, sizeof(float *) * cm->M);
@@ -929,10 +1015,13 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	else                         { working_on_cm = FALSE; working_on_cp9 = TRUE;  }
 	gum_nseq_per_worker = working_on_cm ? (int) (cmN / (cfg->nproc-1)) : (int) (hmmN / (cfg->nproc-1));
 	gum_nseq_this_round = working_on_cm ? cmN : hmmN;
+	update_i = gum_nseq_this_round / 20.;
 
+#ifdef HAVE_DEVOPTS
 	/* free and recalculate hybrid scan info, b/c when investigating hybrid filters we may have added sub CM roots */
 	if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi, cm);
-	cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--fbeta"), cfg->full_vcalcs[0]);
+	cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--filbeta"), cfg->full_vcalcs[0]);
+#endif
 
 	/* do we need to switch from glocal configuration to local? */
 	if(gum_mode > 0 && (! GumModeIsLocal(gum_mode-1)) && GumModeIsLocal(gum_mode)) {
@@ -948,9 +1037,12 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  else                                L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL")); /* minimum L we allow is 2 * cm->W, this is enforced silently (!) */
 
 	  for (p = 0; p < cfg->np; p++) {
-	    
 	    ESL_DPRINTF1(("MPI master: CM: %d gumbel mode: %d partition: %d\n", cfg->ncm, gum_mode, p));
 	    
+	    esl_stopwatch_Start(cfg->w_stage);
+	    printf("gumbel  %-12s %5d %6d %5s %5s [", DescribeGumMode(gum_mode), gum_nseq_this_round, L, "-", "-");
+	    fflush(stdout);
+
 	    if(xstatus == eslOK) have_work     = TRUE;	/* TRUE while work remains  */
 	    
 	    wi = 1;
@@ -1001,6 +1093,11 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			      for(i = 0; i < nseq_just_recv; i++) {
 				ESL_DPRINTF3(("\tscore from worker v: %d i: %d sc: %f\n", i, v, worker_vscAA[v][i]));
 				gum_vscAA[v][nseq_recv+i] = worker_vscAA[v][i];
+				if(nseq_recv+i > update_i) {
+				  printf("=");
+				  fflush(stdout); 
+				  update_i += gum_nseq_this_round / 20.; 
+				}
 			      }
 			      free(worker_vscAA[v]);
 			    }
@@ -1010,8 +1107,14 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			    if ((status = cmcalibrate_cp9_gumbel_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &worker_cp9scA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
 			    ESL_DPRINTF1(("MPI master has unpacked CP9 gumbel results\n"));
 			    ESL_DASSERT1((nseq_just_recv > 0));
-			    for(i = 0; i < nseq_just_recv; i++) 
+			    for(i = 0; i < nseq_just_recv; i++) {
 			      gum_cp9scA[nseq_recv+i] = worker_cp9scA[i];
+			      if(nseq_recv+i > update_i) {
+				printf("=");
+				fflush(stdout); 
+				update_i += gum_nseq_this_round / 20.; 
+			      }
+			    }
 			    free(worker_cp9scA);
 			  }
 			  nseq_recv += nseq_just_recv;
@@ -1050,6 +1153,9 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], tmp_mu, tmp_lambda, L, hmmN);
 	      }
 	    }
+	    esl_stopwatch_Stop(cfg->w_stage);
+	    format_time_string(time_buf, cfg->w_stage->elapsed, 0);
+	    printf("=] %10s\n", time_buf);
 	  }
 	  ESL_DPRINTF1(("MPI master: done with partition: %d for gumbel mode: %d for this CM. Telling all workers\n", p, gum_mode));
 	  for (wi = 1; wi < cfg->nproc; wi++) { 
@@ -1063,6 +1169,16 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  fthr_mode = GumModeToFthrMode(gum_mode);
 	  ESL_DASSERT1((fthr_mode != -1));
 	  ESL_DPRINTF1(("MPI master: CM: %d fthr mode: %d\n", cfg->ncm, fthr_mode));
+
+	  esl_stopwatch_Start(cfg->w_stage);
+	  ///printf("filter  %3s  %-8s %5s %6s %5d %5g [", "-", DescribeFthrMode(fthr_mode), "-", "-", filN, esl_opt_GetReal(go, "--filE"));
+	  printf("filter  %3s  %-8s %5s %6s %5d ", "-", DescribeFthrMode(fthr_mode), "-", "-", filN);
+	  if     (esl_opt_GetBoolean(go, "--all")) printf("infty [");
+	  else if(esl_opt_GetBoolean(go, "--ga"))  printf("   GA [");
+	  else if(esl_opt_GetBoolean(go, "--nc"))  printf("   NC [");
+	  else if(esl_opt_GetBoolean(go, "--tc"))  printf("   TC [");
+	  else                                     printf("%5g [", esl_opt_GetReal(go, "--filE"));
+	  fflush(stdout);
 
 	  if(xstatus == eslOK) { if((status = update_cutoffs(go, cfg, errbuf, cm, gum_mode)) != eslOK) cm_Fail(errbuf); }
 	  else { /* a worker has seen an error and we're trying to finish cleanly, but we still need to broadcast cutoffs, 
@@ -1080,6 +1196,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	  nseq_sent = 0;
 	  nseq_recv = 0;
+	  update_i = filN / 20.;
 	  while (have_work || nproc_working)
 	    {
 	      if(have_work) { 
@@ -1117,7 +1234,16 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		    if (xstatus == eslOK) /* worker reported success. Get the results. */
 		      {
 			ESL_DPRINTF1(("MPI master sees that the result buffer contains HMM filter results\n"));
-			if ((status = cmcalibrate_cp9_filter_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, cm->M, &worker_vscAA, &worker_vit_cp9scA, &worker_fwd_cp9scA, &worker_partA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
+#ifdef HAVE_DEVOPTS
+			if (esl_opt_GetBoolean(go, "--hybrid")) { /* we receive worker_vscAA along with worker_vit_cp9scA and worker_fwd_cp9scA */
+			  if ((status = cmcalibrate_cp9_filter_results_hyb_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, cm->M, &worker_vscAA, &worker_vit_cp9scA, &worker_fwd_cp9scA, &worker_partA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
+			}
+			else { /* only receive worker_vit_cp9scA, worker_fwd_cp9scA, no worker_vscAA, it's only used if --hybrid */
+#endif
+			  if ((status = cmcalibrate_cp9_filter_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &worker_vit_cp9scA, &worker_fwd_cp9scA, &worker_partA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
+#ifdef HAVE_DEVOPTS
+			}
+#endif
 			ESL_DPRINTF1(("MPI master has unpacked HMM filter results\n"));
 			ESL_DASSERT1((nseq_just_recv > 0));
 			ESL_DASSERT1(((nseq_recv + nseq_just_recv) <= filN));
@@ -1126,15 +1252,25 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			  fil_fwd_cp9scA[nseq_recv+i] = worker_fwd_cp9scA[i];
 			  fil_partA[nseq_recv+i]      = worker_partA[i];
 			  ESL_DASSERT1((fil_partA[nseq_recv+i] < cfg->np));
-			}
-			for(v = 0; v < cm->M; v++) {
-			  for(i = 0; i < nseq_just_recv; i++) {
-			    ESL_DPRINTF3(("\tscore from worker v: %d i: %d sc: %f\n", i, v, worker_vscAA[v][i]));
-			    fil_vscAA[v][nseq_recv+i] = worker_vscAA[v][i];
+			  if(nseq_recv+i > update_i) {
+			    printf("=");
+			    fflush(stdout); 
+			    update_i += filN / 20.; 
 			  }
-			  free(worker_vscAA[v]);
 			}
-			free(worker_vscAA);
+#ifdef HAVE_DEVOPTS
+			if(esl_opt_GetBoolean(go, "--hybrid")) {
+			  for(v = 0; v < cm->M; v++) {
+			    for(i = 0; i < nseq_just_recv; i++) {
+			      ESL_DPRINTF3(("\tscore from worker v: %d i: %d sc: %f\n", i, v, worker_vscAA[v][i]));
+			      printf("\tscore from worker v: %d i: %d sc: %f\n", i, v, worker_vscAA[v][i]);
+			      fil_vscAA[v][nseq_recv+i] = worker_vscAA[v][i];
+			    }
+			    free(worker_vscAA[v]);
+			  }
+			  free(worker_vscAA);
+			}
+#endif
 			free(worker_vit_cp9scA);
 			free(worker_fwd_cp9scA);
 			free(worker_partA);
@@ -1166,7 +1302,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if(xstatus == eslOK) { 
 	    /* predict speedup for HMM-only filter */
 	    if((status = predict_cp9_filter_speedup(go, cfg, errbuf, cm, fil_vit_cp9scA, fil_fwd_cp9scA, fil_partA, cfg->cmstatsA[cmi]->bfA[fthr_mode])) != eslOK) cm_Fail(errbuf);
-	    DumpBestFilterInfo(cfg->cmstatsA[cmi]->bfA[fthr_mode]);
+	    if(cfg->be_verbose) DumpBestFilterInfo(cfg->cmstatsA[cmi]->bfA[fthr_mode]);
 	  }
 	  ESL_DPRINTF1(("MPI master: done with HMM filter calc for fthr mode %d for this CM.\n", fthr_mode));
 	  
@@ -1174,11 +1310,15 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    msg = MPI_FINISHED_CP9_FILTER;
 	    MPI_Send(&msg, 1, MPI_INT, wi, 0, MPI_COMM_WORLD);
 	  }
+
+	  esl_stopwatch_Stop(cfg->w_stage);
+	  format_time_string(time_buf, cfg->w_stage->elapsed, 0);
+	  printf("=] %10s\n", time_buf);
 	}
 	ESL_DPRINTF1(("MPI master: done with gumbel mode %d for this CM.\n", gum_mode));
       }
       ESL_DPRINTF1(("MPI master: done with this CM.\n"));
-      if(xstatus == eslOK) debug_print_cmstats(cfg->cmstatsA[cmi], (! esl_opt_GetBoolean(go, "--gumonly")));
+      if(xstatus == eslOK) if(cfg->be_verbose) { debug_print_cmstats(cfg->cmstatsA[cmi], (! esl_opt_GetBoolean(go, "--gumonly"))); }
       
       if(! (esl_opt_GetBoolean(go, "--filonly"))) { 
 	for(v = 0; v < cm->M; v++) free(gum_vscAA[v]);
@@ -1193,6 +1333,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	free(fil_partA);
       }
       FreeCM(cm);
+      printf("//\n");
+      fflush(stdout);
     }
   
   /* On success or recoverable errors:
@@ -1271,7 +1413,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_DPRINTF1(("worker %d: initialized seed: %ld\n", cfg->my_rank, seed));
 
   /* 2 special (annoying) cases: 
-   * case 1: if we've used the --dbfile option, we read in a seq file to fill
+   * case 1: if we've used the --gcfromdb option, we read in a seq file to fill
    * cfg->gc_freq, and we need that info here for the worker, so we receive
    * it's broadcast from the master
    * 
@@ -1280,7 +1422,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * via broadcast from master. Otherwise we need to setup the default partition info
    * (single partition, 0..100 GC content)
    */
-  if(! (esl_opt_IsDefault(go, "--dbfile"))) { /* receive gc_freq info from master */
+  if(! (esl_opt_IsDefault(go, "--gcfromdb"))) { /* receive gc_freq info from master */
     ESL_DASSERT1((cfg->gc_freq == NULL));
     ESL_ALLOC(cfg->gc_freq,  sizeof(double) * GC_SEGMENTS);
     ESL_ALLOC(cfg->pgc_freq, sizeof(double) * GC_SEGMENTS);
@@ -1298,6 +1440,10 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
     ESL_ALLOC(cfg->pstart, sizeof(int) * cfg->np);
     cfg->pstart[0] = 0;
   }
+  if(! (esl_opt_IsDefault(go, "--db"))) { /* receive dbsize for CM evalue cutoff for filter thr calc from master */
+    MPI_Bcast(&(cfg->dbsize), 1, MPI_LONG, 0, MPI_COMM_WORLD);
+  } /* else cfg->dbsize set to default 1 Mb when cfg was created */
+
   
   /* source = 0 (master); tag = 0 */
   while ((status = cm_worker_MPIBcast(0, MPI_COMM_WORLD, &wbuf, &wn, &(cfg->abc), &cm)) == eslOK)
@@ -1317,9 +1463,11 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       
       for(gum_mode = 0; gum_mode < GUM_NMODES; gum_mode++) {
 
+#ifdef HAVE_DEVOPTS
 	/* free and recalculate hybrid scan info, b/c when investigating hybrid filters we may have added sub CM roots */
 	if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi, cm);
-	cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--fbeta"), cfg->full_vcalcs[0]);
+	cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--filbeta"), cfg->full_vcalcs[0]);
+#endif
 
 	ESL_DPRINTF1(("worker: %d gum_mode: %d nparts: %d\n", cfg->my_rank, gum_mode, cfg->np));
 	if(GumModeIsForCM(gum_mode)) { working_on_cm = TRUE;  working_on_cp9 = FALSE; }
@@ -1420,15 +1568,36 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  while(nseq != MPI_FINISHED_CP9_FILTER) {
 	    ESL_DPRINTF1(("worker %d: has received hmm filter nseq: %d\n", cfg->my_rank, nseq));
 	    
-	    if((status = process_filter_workunit (go, cfg, errbuf, cm, nseq, &fil_vscAA, &fil_vit_cp9scA, &fil_fwd_cp9scA, NULL, &fil_partA)) != eslOK) goto ERROR;
+
+#ifdef HAVE_DEVOPTS
+	    if(esl_opt_GetBoolean(go, "--hybrid")) { /* we want fil_vscAA filled with CM scanning scores */
+	      if((status = process_filter_workunit (go, cfg, errbuf, cm, nseq, &fil_vscAA, &fil_vit_cp9scA, &fil_fwd_cp9scA, NULL, &fil_partA)) != eslOK) goto ERROR;
+	    }
+	    else { /* we don't want fil_vscAA filled with CM scanning scores */
+#endif
+	      if((status = process_filter_workunit (go, cfg, errbuf, cm, nseq, NULL, &fil_vit_cp9scA, &fil_fwd_cp9scA, NULL, &fil_partA)) != eslOK) goto ERROR;
+#ifdef HAVE_DEVOPTS
+	    }
+#endif
 	    ESL_DPRINTF1(("worker %d: has gathered HMM filter results\n", cfg->my_rank));
 	    n = 0;
 
 	    if (MPI_Pack_size(1, MPI_INT, MPI_COMM_WORLD, &sz) != 0) /* room for the status code */
 	      ESL_XFAIL(eslESYS, errbuf, "mpi pack size failed"); 
 	    n += sz;
-	    if (cmcalibrate_cp9_filter_results_MPIPackSize(nseq, cm->M, MPI_COMM_WORLD, &sz) != eslOK)
-	      ESL_XFAIL(eslFAIL, errbuf, "cmcalibrate_cp9_filter_results_MPIPackSize() call failed"); 
+
+#ifdef HAVE_DEVOPTS
+	    if (esl_opt_GetBoolean(go, "--hybrid")) { /* we send back fil_vscAA along with fil_vit_cp9scA and fil_fwd_cp9scA */
+	      if(cmcalibrate_cp9_filter_results_hyb_MPIPackSize(nseq, cm->M, MPI_COMM_WORLD, &sz) != eslOK)
+		ESL_XFAIL(eslFAIL, errbuf, "cmcalibrate_cp9_filter_results_MPIPackSize() call failed"); 
+	    }
+	    else { /* only send back fil_vit_cp9scA, fil_fwd_cp9scA, fil_vscAA is irrelevant, it's only used if --hybrid */
+#endif
+	      if(cmcalibrate_cp9_filter_results_MPIPackSize(nseq, MPI_COMM_WORLD, &sz) != eslOK)
+		ESL_XFAIL(eslFAIL, errbuf, "cmcalibrate_cp9_filter_results_MPIPackSize() call failed"); 
+#ifdef HAVE_DEVOPTS
+	      }
+#endif
 	    n += sz;  
 	    if (n > wn) {
 	      void *tmp;
@@ -1442,11 +1611,21 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	    if (MPI_Pack(&status, 1, MPI_INT, wbuf, wn, &pos, MPI_COMM_WORLD) != 0) 
 	      ESL_XFAIL(eslESYS, errbuf, "mpi pack failed.");
-	    if (cmcalibrate_cp9_filter_results_MPIPack(fil_vscAA, fil_vit_cp9scA, fil_fwd_cp9scA, fil_partA, nseq, cm->M, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK)
-	      ESL_XFAIL(eslFAIL, errbuf, "cmcalibrate_cp9_filter_results_MPIPack() call failed"); 
+#ifdef HAVE_DEVOPTS
+	    if (esl_opt_GetBoolean(go, "--hybrid")) { /* we send back fil_vscAA along with fil_vit_cp9scA and fil_fwd_cp9scA */
+	      if (cmcalibrate_cp9_filter_results_hyb_MPIPack(fil_vscAA, fil_vit_cp9scA, fil_fwd_cp9scA, fil_partA, nseq, cm->M, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK)
+		ESL_XFAIL(eslFAIL, errbuf, "cmcalibrate_cp9_filter_results_MPIPack() call failed"); 
+	      for(v = 0; v < cm->M; v++) free(fil_vscAA[v]);
+	      free(fil_vscAA);
+	    }
+	    else { /* only send back fil_vit_cp9scA, fil_fwd_cp9scA, fil_vscAA is irrelevant, it's only used if --hybrid */
+#endif
+	      if (cmcalibrate_cp9_filter_results_MPIPack(fil_vit_cp9scA, fil_fwd_cp9scA, fil_partA, nseq, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK)
+		ESL_XFAIL(eslFAIL, errbuf, "cmcalibrate_cp9_filter_results_MPIPack() call failed"); 
+#ifdef HAVE_DEVOPTS
+	    }
 
-	    for(v = 0; v < cm->M; v++) free(fil_vscAA[v]);
-	    free(fil_vscAA);
+#endif
 	    free(fil_vit_cp9scA);
 	    free(fil_fwd_cp9scA);
 	    free(fil_partA);
@@ -1562,6 +1741,7 @@ process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   int            v;
   ESL_DSQ       *dsq;
   float          sc;
+  float          update_i = nseq / 20.;
 
   /* determine mode, and enforce mode-specific contract */
   if     (ret_vscAA != NULL && ret_cp9scA == NULL && ret_hybscA == NULL) mode = 1; /* calcing CM     gumbel stats */
@@ -1570,7 +1750,6 @@ process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   else ESL_FAIL(eslEINCOMPAT, errbuf, "can't determine mode in process_gumbel_workunit.");
 
   ESL_DPRINTF1(("in process_gumbel_workunit nseq: %d L: %d mode: %d\n", nseq, L, mode));
-  printf("in process_gumbel_workunit nseq: %d L: %d mode: %d\n", nseq, L, mode);
 
   int do_cyk     = FALSE;
   int do_inside  = FALSE;
@@ -1585,16 +1764,22 @@ process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
     for(v = 0; v < cm->M; v++) ESL_ALLOC(vscAA[v], sizeof(float) * nseq);
     ESL_ALLOC(cur_vscA, sizeof(float) * cm->M);
   }
-  if(mode == 2) {
+  else if(mode == 2) {
     if(cm->search_opts & CM_SEARCH_HMMVITERBI) do_viterbi = TRUE;
     if(cm->search_opts & CM_SEARCH_HMMFORWARD) do_forward = TRUE;
-    if((do_viterbi + do_forward) > 1) ESL_FAIL(eslEINVAL, errbuf, "process_workunit, mode 2, and cm->search_opts CM_SEARCH_HMMVITERBI and CM_SEARCH_HMMFORWARD flags both raised.");
+    if((do_viterbi + do_forward) > 1) ESL_FAIL(eslEINVAL, errbuf, "process_gumbel_workunit, mode 2, and cm->search_opts CM_SEARCH_HMMVITERBI and CM_SEARCH_HMMFORWARD flags both raised.");
     ESL_ALLOC(cp9scA, sizeof(float) * nseq); /* will hold Viterbi or Forward scores */
   }
-  if(mode == 3) {
+#ifdef HAVE_DEVOPTS
+  else if(mode == 3) {
     do_hybrid = TRUE;
     ESL_ALLOC(hybscA,       sizeof(float) * nseq); /* will hold hybrid scores */
   }
+#endif
+  else if(mode == 3) { /* never entered if HAVE_DEVOPTS is defined */
+    ESL_FAIL(eslEINCOMPAT, errbuf, "process_gumbel_workunit(), mode 3 unavailable (HAVE_DEVOPTS is undefined)");
+  }
+
   ESL_DPRINTF1(("do_cyk:     %d\ndo_inside:  %d\ndo_viterbi: %d\ndo_forward: %d\ndo_hybrid: %d", do_cyk, do_inside, do_viterbi, do_forward, do_hybrid)); 
   
   /* fill dnull, a double version of cm->null, but only if we're going to need it to generate random seqs */
@@ -1606,6 +1791,11 @@ process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   
   /* generate dsqs one at a time and collect best CM scores at each state and/or best overall CP9 score */
   for(i = 0; i < nseq; i++) {
+    if(cfg->my_rank == 0 && i > update_i) { /* print status update to stdout */
+      printf("=");
+      fflush(stdout); 
+      update_i += nseq / 20.; 
+    }
     if((status = get_random_dsq(cfg, errbuf, cm, dnull, L, &dsq)) != eslOK) return status; 
 
     /* if nec, search with CM */
@@ -1630,6 +1820,7 @@ process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
 			       NULL,   /* don't want the max scoring posn back */
 			       &(cp9scA[i]))) != eslOK) return status;
     }
+#ifdef HAVE_DEVOPTS
     if (do_hybrid) {
       if((status = cm_cp9_HybridScan(cm, errbuf, cm->cp9_mx, dsq, cfg->hsi, 1, L, cfg->hsi->W, 0., 
 				     NULL, /* don't report results */
@@ -1637,11 +1828,13 @@ process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
 				     NULL, /* don't want the max scoring posn back */
 				     &(hybscA[i]))) != eslOK) return status;
     }
+#endif
     free(dsq);
     if (cur_vscA != NULL) /* will be NULL if do_cyk == do_inside == FALSE (mode 2) */
       for(v = 0; v < cm->M; v++) vscAA[v][i] = cur_vscA[v];
     free(cur_vscA);
   }
+  if(cfg->my_rank == 0) { printf("=]"); }
 
   if(dnull != NULL) free(dnull);
   if(ret_vscAA  != NULL) *ret_vscAA  = vscAA;
@@ -1651,7 +1844,7 @@ process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
 
  ERROR:
   return status;
-}
+  }
 
 
 /* Function: process_filter_workunit()
@@ -1660,23 +1853,34 @@ process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
  * Purpose:  A filter work unit consists of a CM, an int specifying a 
  *           number of sequences <nseq>, and a flag indicating how to search
  *           the sequences. The job is to generate <nseq> sequences from the
- *           CM and search them with either (a) the CM using bands from
+ *           CM and search them, the way they're searched is mode dependent
+ *           (see below).  with either (a) the CM using bands from
  *           hybrid scanning info in cfg->hsi, then the CP9 HMM with Viterbi and 
  *           Forward or (b) using the hybrid CM/CP9 CYK/Viterbi algorithm
  *           with the hybrid scanning info in cfg->hsi.
  *
- *           Thus, this function can be run in 1 of 2 modes, determined by the
- *           status of the input variables:
+ *           Thus, this function can be run in 1 of 3 modes, determined by the
+ *           status of the input variables. Note modes 2 and 3 are only possible
+ *           if the --hybrid option is enabled, which is only even available if
+ *           HAVE_DEVOPTS is defined.
  *         
- *           Mode 1. Scores will be used for calc'ing filter threshold of CP9 HMM
- *           and CM scores will be used to predict which sub CM roots will be good 
- *           at filtering.
- *           <ret_vscAA> != NULL, <ret_vit_cp9scA> != NULL, <ret_fwd_cp9scA> != NULL, <ret_hyb_cmscA> == NULL
+ *           Mode 1. Scores will be used for calc'ing filter threshold of CP9 HMM.
+ *           <ret_vscAA> == NULL, <ret_vit_cp9scA> != NULL, <ret_fwd_cp9scA> != NULL, <ret_hyb_cmscA> == NULL
  *           Emit from CM and score with CP9 Viterbi and Forward, <ret_vit_cp9scA> 
  *           and <ret_fwd_cp9scA> are filled with the best CP9 Viterbi/HMM score 
  *           for each sequence.
  *
- *           Mode 2. Scores will be used for calc'ing filter threshold of hybrid scanner.
+ *           Mode 2. Scores will be used for calc'ing filter threshold of CP9 HMM
+ *           and CM scores will be used to predict which sub CM roots will be good 
+ *           at filtering.
+ *           <ret_vscAA> != NULL, <ret_vit_cp9scA> != NULL, <ret_fwd_cp9scA> != NULL, <ret_hyb_cmscA> == NULL
+ *           Emit from CM and search first with CM using QDBs from hybrid scanning
+ *           info in cfg->hsi, best score from each state of the CM for each 
+ *           seq is stored in >ret_vscAA>. Then search (same seq) with CM CP9 Viterbi and Forward, 
+ *           <ret_vit_cp9scA> and <ret_fwd_cp9scA> are filled with the best CP9 
+ *           Viterbi/HMM score for each sequence.
+ *
+ *           Mode 3. Scores will be used for calc'ing filter threshold of hybrid scanner.
  *           <ret_vscAA> == NULL, <ret_vit_cp9scA> == NULL, <ret_fwd_cp9scA> == NULL, <ret_hybscA> != NULL
  *           Emit from CM and score with hybrid CM/CP9 CYK/Viterbi scanner, 
  *           <ret_hybscA> are filled with the best hybrid scanner scores 
@@ -1715,44 +1919,56 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   ESL_DSQ       *dsq;
   float          sc;
   int            inside_flag_raised = FALSE;
+  float          update_i = nseq / 20.;
 
 
   /* determine mode, and enforce mode-specific contract */
-  if     (ret_vscAA != NULL && ret_vit_cp9scA != NULL && ret_fwd_cp9scA != NULL && ret_hybscA == NULL) mode = 1; /* running CM CYK and CP9 Viterbi and Forward */
-  else if(ret_vscAA == NULL && ret_vit_cp9scA == NULL && ret_fwd_cp9scA == NULL && ret_hybscA != NULL) mode = 2; /* running hybrid CM/CP9 scanner */
+  if     (ret_vscAA == NULL && ret_vit_cp9scA != NULL && ret_fwd_cp9scA != NULL && ret_hybscA == NULL) mode = 1; /* running CP9 Viterbi and Forward */
+#if HAVE_DEVOPTS
+  else if(ret_vscAA != NULL && ret_vit_cp9scA != NULL && ret_fwd_cp9scA != NULL && ret_hybscA == NULL) mode = 2; /* running CM CYK and CP9 Viterbi and Forward */
+  else if(ret_vscAA == NULL && ret_vit_cp9scA == NULL && ret_fwd_cp9scA == NULL && ret_hybscA != NULL) mode = 3; /* running hybrid CM/CP9 scanner */
+#endif
   else ESL_FAIL(eslEINCOMPAT, errbuf, "can't determine mode in process_filter_workunit.");
   if (ret_partA == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ret_partA is NULL in process_filter_workunit.");
 
   ESL_DPRINTF1(("in process_filter_workunit nseq: %d mode: %d\n", nseq, mode));
+  /* if we get this far, if HAVE_DEVOPTS is undefined, mode MUST be 1 */
+
+#ifndef HAVE_DEVOPTS
+  if(mode != 1) ESL_FAIL(eslEINCOMPAT, errbuf, "HAVE_DEVOPTS is undefined, but mode is not 1 in process_filter_workunit(). This shoudln't happen.");
+#endif
 
   /* determine algs we'll use and allocate the score arrays we'll pass back */
   ESL_ALLOC(partA, sizeof(int) * nseq); /* will hold partitions */
-  if(mode == 1) {
+
+  if(mode == 1 || mode == 2) {
     ESL_ALLOC(vit_cp9scA, sizeof(float) * nseq); /* will hold Viterbi scores */
     ESL_ALLOC(fwd_cp9scA, sizeof(float) * nseq); /* will hold Forward scores */
-    ESL_ALLOC(vscAA, sizeof(float *) * cm->M);
-    for(v = 0; v < cm->M; v++) ESL_ALLOC(vscAA[v], sizeof(float) * nseq);
-    ESL_ALLOC(cur_vscA, sizeof(float) * cm->M);
-
+    if(mode == 2) { 
+      ESL_ALLOC(vscAA, sizeof(float *) * cm->M);
+      for(v = 0; v < cm->M; v++) ESL_ALLOC(vscAA[v], sizeof(float) * nseq);
+      ESL_ALLOC(cur_vscA, sizeof(float) * cm->M);
+    }
     if(cm->search_opts & CM_SEARCH_INSIDE) { inside_flag_raised = TRUE; cm->search_opts &= ~CM_SEARCH_INSIDE; }
     else inside_flag_raised = FALSE;
   }
-  else  /* mode == 2 */
+  else  /* mode == 3 */
     ESL_ALLOC(hybscA, sizeof(float) * nseq); /* will hold hybrid scores */
-
-
 
   /* generate dsqs one at a time and collect best CM scores at each state and/or best overall CP9 score */
   for(i = 0; i < nseq; i++) {
+    if(cfg->my_rank == 0 && i > update_i) { /* print status update to stdout */
+      printf("=");
+      fflush(stdout); 
+      update_i += nseq / 20.; 
+    }
     if((status = get_cmemit_dsq(cfg, errbuf, cm, &L, &p, &tr, &dsq)) != eslOK) return status;
     /* we only want to use emitted seqs with a sc > cutoff */
     if((status = cm_find_hit_above_cutoff(go, cfg, errbuf, cm, dsq, tr, L, cfg->cutoffA[p], &sc)) != eslOK) return status;
-    assert(p < cfg->np);
     while(sc < cfg->cutoffA[p]) { 
       free(dsq); 	
       /* parsetree tr is freed in cm_find_hit_above_cutoff() */
       if((status = get_cmemit_dsq(cfg, errbuf, cm, &L, &p, &tr, &dsq)) != eslOK) return status;
-      assert(p < cfg->np);
       nfailed++;
       if(nfailed > 1000 * nseq) ESL_FAIL(eslERANGE, errbuf, "process_filter_workunit(), max number of failures (%d) reached while trying to emit %d seqs.\n", nfailed, nseq);
       if((status = cm_find_hit_above_cutoff(go, cfg, errbuf, cm, dsq, tr, L, cfg->cutoffA[p], &sc)) != eslOK) return status;
@@ -1771,9 +1987,9 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
     ESL_DPRINTF1(("i: %d nfailed: %d cutoff: %.3f p: %d\n", i, nfailed, cfg->cutoffA[p], p));
 
     /* search dsq with mode-specific search algs */
-    if(mode == 1) {
-      /* note: with FastCYKScan, we use cfg->hsi->smx scan matrix, which may have qdbs calc'ed differently than cm->smx */
-      if((status = FastCYKScan(cm, errbuf, cfg->hsi->smx, dsq, 1, L, 0., NULL, &(cur_vscA), NULL)) != eslOK) return status;
+    if(mode == 1 || mode == 2) {
+      /* Note: in mode 2, with FastCYKScan, we use cfg->hsi->smx scan matrix, which may have qdbs calc'ed differently than cm->smx */
+      if(mode == 2) { if((status = FastCYKScan(cm, errbuf, cfg->hsi->smx, dsq, 1, L, 0., NULL, &(cur_vscA), NULL)) != eslOK) return status; }
       if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL, 
 			       TRUE,   /* yes, we are scanning */
 			       FALSE,  /* no, we are not aligning */
@@ -1790,7 +2006,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
 			       NULL,   /* don't want the max scoring posn back */
 			       &(fwd_cp9scA[i]))) != eslOK) return status;
     }
-    else { /* mode == 2 */
+    else { /* mode == 3 */
       if((status = cm_cp9_HybridScan(cm, errbuf, cm->cp9_mx, dsq, cfg->hsi, 1, L, cfg->hsi->W, 0., 
 				     NULL, /* don't report results */
 				     NULL, /* don't want best score at each posn back */
@@ -1798,10 +2014,11 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
 				     &(hybscA[i]))) != eslOK) return status;
     }
     free(dsq);
-    if (cur_vscA != NULL) /* will be NULL if do_cyk == do_inside == FALSE (mode 2) */
+    if (cur_vscA != NULL) /* will be NULL if do_cyk == do_inside == FALSE (mode 3) */
       for(v = 0; v < cm->M; v++) vscAA[v][i] = cur_vscA[v];
     free(cur_vscA);
   }
+  if(cfg->my_rank == 0) { printf("=]"); }
   *ret_partA = partA;
   if(ret_vscAA      != NULL)  *ret_vscAA      = vscAA;
   if(ret_vit_cp9scA != NULL)  *ret_vit_cp9scA = vit_cp9scA;
@@ -1931,7 +2148,7 @@ initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
      * it'd be a bitch to deal with, b/c cfg->np could change (and we'd have to send that
      * info to the workers for each CM in MPI mode).
      */
-    ESL_DASSERT1((esl_opt_IsDefault(go, "--dbfile"))); /* getopts should enforce this */
+    ESL_DASSERT1((esl_opt_IsDefault(go, "--gcfromdb"))); /* getopts should enforce this */
     ESL_DASSERT1((esl_opt_IsDefault(go, "--pfile")));  /* getopts should enforce this */
     if(! (cm->flags & CMH_GUMBEL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "--filonly invoked by CM has no gumbel stats in initialize_cmstats()\n");
     if(cfg->np != cm->stats->np)         ESL_FAIL(eslEINCOMPAT, errbuf, "--filonly invoked and CM file has CMs with different numbers of partitions. We can't deal. Either split CMs into different files, or recalibrate them fully (without --filonly)");    
@@ -2000,26 +2217,62 @@ static int
 update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int fthr_mode)
 {
   double         tmp_K;          /* used for recalc'ing Gumbel stats for DB size */
-  double         ecutoff;       /* filled if we're using an E-value cutoff */
-  int            p;
-  double         mu;
+  double         e_cutoff;       /* E-value cutoff for each partition */
+  int            sc_cutoff;      /* bit score cutoff for each partition */
+  int            p;              /* partition index */
+  double         mu;             /* mu for a requested db size (which is 1Mb unless --db enabled) */
+  int            revert_to_default_filE; /* if --ga, --nc, or --tc enabled but CM does not have GA, NC or TC cutoff in the CM file,
+					  * and we've already calibrated at least 1 CM in this CM file, pretend like --ga, --nc, or --tc,
+					  * was not enabled by reverting to the default --filE value of 0.1
+					  */
+  /* if --ga, --nc, or --tc: 
+   * cfg->filE:                set as E-value (in 1Mb db) that the GA, NC, or TC bit score corresponds to for each partition in this fthr_mode
+   * cfg->cutoffA[0..p..np-1]: set as GA, NC, or TC bit score for all p for this fthr_mode
+   */
+  if ((esl_opt_GetBoolean(go, "--ga")) || (esl_opt_GetBoolean(go, "--nc")) || (esl_opt_GetBoolean(go, "--tc"))) {
+    if(esl_opt_GetBoolean(go, "--ga")) { 
+      if(! (cm->flags & CMH_GA)) {
+	if(cfg->ncm > 1) revert_to_default_filE = TRUE;
+	else             cm_Fail("--ga enabled but first CM in CM file does not have a Rfam GA cutoff.");
+      }
+      else sc_cutoff = cm->ga;
+    }
+    if(esl_opt_GetBoolean(go, "--nc")) { 
+      if(! (cm->flags & CMH_NC)) {
+	if(cfg->ncm > 1) revert_to_default_filE = TRUE;
+	else             cm_Fail("--nc enabled but first CM in CM file does not have a Rfam NC cutoff.");
+      }
+      else sc_cutoff = cm->nc;
+    }
+    if(esl_opt_GetBoolean(go, "--tc")) { 
+      if(! (cm->flags & CMH_TC)) {
+	if(cfg->ncm > 1) revert_to_default_filE = TRUE;
+	else             cm_Fail("--tc enabled but first CM in CM file does not have a Rfam TC cutoff.");
+      }
+      else sc_cutoff = cm->tc;
+    }
+    if(! revert_to_default_filE) { /* we've set sc_cutoff above, now determine e_cutoff for each partition */
+      for (p = 0; p < cfg->np; p++) 
+	cfg->cutoffA[p] = sc_cutoff; /* either cm->ga, cm->nc, or cm->tc as set above */
+      return eslOK; /* we're done */
+    }
+  }
 
   if(esl_opt_GetBoolean(go, "--all")) {
     for (p = 0; p < cfg->np; p++)
       cfg->cutoffA[p] = -eslINFINITY;
   }
-  else if (esl_opt_GetBoolean(go, "--ga"))   cm_Fail("update_cutoffs() --ga not yet implemented.");
-  else if (esl_opt_GetBoolean(go, "--nc"))   cm_Fail("update_cutoffs() --nc not yet implemented.");
-  else if (esl_opt_GetBoolean(go, "--tc"))   cm_Fail("update_cutoffs() --tc not yet implemented.");
-  else ecutoff = esl_opt_GetReal(go, "--eval"); /* default, use --eval cutoff */
-
-  for (p = 0; p < cfg->np; p++) {
-    /* First determine mu based on db_size */
-    tmp_K = exp(cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->mu * cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda) / 
-      cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->L;
-    mu = log(tmp_K  * ((double) cfg->dbsize)) / cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda;
-    /* Now determine bit score */
-    cfg->cutoffA[p] = mu - (log(ecutoff) / cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda);
+  else { /* either none of: --filE, --ga, --nc, --tc, --all were enabled, or --filE was enabled, 
+	  * or --ga, --nc, --tc were enabled, but CM does not have cm->ga, cm->nc, or cm->tc and CM is not first in file */
+    e_cutoff = esl_opt_GetReal(go, "--filE"); 
+    for (p = 0; p < cfg->np; p++) {
+      /* first determine mu based on db_size */
+      tmp_K = exp(cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->mu * cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda) / 
+	cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->L;
+      mu = log(tmp_K  * ((double) cfg->dbsize)) / cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda;
+      /* Now determine bit score */
+      cfg->cutoffA[p] = mu - (log(e_cutoff) / cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda);
+    }
   }
   return eslOK;
 }  
@@ -2028,7 +2281,7 @@ update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm,
  * Date:     EPN, Mon Sep 10 08:00:27 2007
  *
  * Purpose:  Set up the GC freq to sample from for the current partition. 
- *           Only used if --dbfile used to read in dbseq from which to derive
+ *           Only used if --gcfromdb used to read in dbseq from which to derive
  *           GC distributions for >= 1 partition.
  *
  * Returns:  eslOK on success;
@@ -2587,7 +2840,7 @@ predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
   int    i, p;                    /* counters */
   int    cmi = cfg->ncm-1;        /* CM index we're on */
   int    Fidx;                    /* index in sorted scores that threshold will be set at (1-F) * N */
-  float  cm_eval = esl_opt_GetReal(go, "--eval"); /* E-value cutoff for accepting CM hits for filter test */
+  float  filE = esl_opt_GetReal(go, "--filE"); /* E-value cutoff for accepting CM hits for filter test */
   float  F = esl_opt_GetReal(go, "--F"); /* fraction of CM seqs we require filter to let pass */
   int    filN  = esl_opt_GetInteger(go, "--filN"); /* number of sequences we emitted from CM for filter test */
   float  Starg   = esl_opt_GetReal(go, "--starg"); /* target survival fraction */
@@ -2681,36 +2934,36 @@ predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
   if(vit_surv_fract < Starg) { 
     if(vit_E_F1 < E_Starg) { 
       vit_E = vit_E_F1;
-      printf("set vit_E as vit_E_F1: %.5f\n", vit_E);
-      ESL_DPRINTF1(("set vit_E as vit_E_F1: %.5f\n", vit_E));
+      if(cfg->be_verbose) printf("set vit_E as vit_E_F1: %.5f\n", vit_E);
+      else { ESL_DPRINTF1(("set vit_E as vit_E_F1: %.5f\n", vit_E)); }
     }
     else { 
       vit_E = E_Starg;
-      printf("set vit_E as E_Starg: %.5f\n", vit_E);
-      ESL_DPRINTF1(("set vit_E as E_Starg: %.5f\n", vit_E));
+      if(cfg->be_verbose) printf("set vit_E as E_Starg: %.5f\n", vit_E);
+      else { ESL_DPRINTF1(("set vit_E as E_Starg: %.5f\n", vit_E)); }
     }
     if(vit_E < E_min) {
       vit_E = E_min;
-      printf("set vit_E as E_min: %.5f\n", vit_E);
-      ESL_DPRINTF1(("set vit_E as E_min: %.5f\n", vit_E));
+      if(cfg->be_verbose) printf("set vit_E as E_min: %.5f\n", vit_E);
+      else { ESL_DPRINTF1(("set vit_E as E_min: %.5f\n", vit_E)); }
     }      
   }
 
   if(fwd_surv_fract < Starg) { 
     if(fwd_E_F1 < E_Starg) { 
       fwd_E = fwd_E_F1;
-      printf("set fwd_E as fwd_E_F1: %.5f\n", fwd_E);
-      ESL_DPRINTF1(("set fwd_E as fwd_E_F1: %.5f\n", fwd_E));
+      if(cfg->be_verbose) printf("set fwd_E as fwd_E_F1: %.5f\n", fwd_E);
+      else { ESL_DPRINTF1(("set fwd_E as fwd_E_F1: %.5f\n", fwd_E)); }
     }
     else { 
       fwd_E = E_Starg;
-      printf("set fwd_E as E_Starg: %.5f\n", fwd_E);
-      ESL_DPRINTF1(("set fwd_E as E_Starg: %.5f\n", fwd_E));
+      if(cfg->be_verbose) printf("set fwd_E as E_Starg: %.5f\n", fwd_E);
+      else { ESL_DPRINTF1(("set fwd_E as E_Starg: %.5f\n", fwd_E)); }
     }
     if(fwd_E < E_min) {
       fwd_E = E_min;
-      ESL_DPRINTF1(("set fwd_E as E_min: %.5f\n", fwd_E));
-      printf("set fwd_E as E_min: %.5f\n", fwd_E);
+      if(cfg->be_verbose) printf("set fwd_E as E_min: %.5f\n", fwd_E);
+      else { ESL_DPRINTF1(("set fwd_E as E_min: %.5f\n", fwd_E)); }
     }      
   }
 
@@ -2732,20 +2985,26 @@ predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
   /* We multiply number of forward calculations by 2.0 to correct for the fact that Forward takes about 2X as long as Viterbi, b/c it requires logsum operations instead of ESL_MAX's,
    * so we factor this in when calc'ing the predicted speedup. */
 
-  printf("HMM(vit) E: %15.10f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", vit_E, fil_calcs, vit_surv_calcs, vit_fil_plus_surv_calcs, nonfil_calcs, vit_spdup);
-  printf("HMM(fwd) E: %15.10f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", fwd_E, fil_calcs, fwd_surv_calcs, fwd_fil_plus_surv_calcs, nonfil_calcs, fwd_spdup);
+  if(cfg->be_verbose) { 
+    printf("\nHMM(vit) E: %15.10f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", vit_E, fil_calcs, vit_surv_calcs, vit_fil_plus_surv_calcs, nonfil_calcs, vit_spdup);
+    printf("HMM(fwd) E: %15.10f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", fwd_E, fil_calcs, fwd_surv_calcs, fwd_fil_plus_surv_calcs, nonfil_calcs, fwd_spdup);
+  }
+  else {
+    ESL_DPRINTF1(("\nHMM(vit) E: %15.10f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", vit_E, fil_calcs, vit_surv_calcs, vit_fil_plus_surv_calcs, nonfil_calcs, vit_spdup));
+    ESL_DPRINTF1(("HMM(fwd) E: %15.10f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", fwd_E, fil_calcs, fwd_surv_calcs, fwd_fil_plus_surv_calcs, nonfil_calcs, fwd_spdup));
+  }
 
   if(esl_opt_GetBoolean(go, "--fviterbi")) { /* user specified Viterbi */
-    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_VITERBI, vit_E, fil_calcs, vit_fil_plus_surv_calcs)) != eslOK) return status;
+    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, filE, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_VITERBI, vit_E, fil_calcs, vit_fil_plus_surv_calcs)) != eslOK) return status;
   }
   else if(esl_opt_GetBoolean(go, "--fforward")) { /* user specified Forward */
-    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_FORWARD, fwd_E, fil_calcs, fwd_fil_plus_surv_calcs)) != eslOK) return status;
+    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, filE, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_FORWARD, fwd_E, fil_calcs, fwd_fil_plus_surv_calcs)) != eslOK) return status;
   }
   else if (vit_spdup > fwd_spdup) { /* Viterbi is winner */
-    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_VITERBI, vit_E, fil_calcs, vit_fil_plus_surv_calcs)) != eslOK) return status;
+    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, filE, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_VITERBI, vit_E, fil_calcs, vit_fil_plus_surv_calcs)) != eslOK) return status;
   }
   else { /* Forward is winner */
-    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_FORWARD, fwd_E, fil_calcs, fwd_fil_plus_surv_calcs)) != eslOK) return status;
+    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, filE, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_FORWARD, fwd_E, fil_calcs, fwd_fil_plus_surv_calcs)) != eslOK) return status;
   }
   return eslOK;
 
@@ -2792,7 +3051,7 @@ predict_hybrid_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *er
   int    i, p;                    /* counters */
   int    Fidx;                     /* index in sorted scores that threshold will be set at (1-F) * N */
   float  F = esl_opt_GetReal(go, "--F"); /* fraction of CM seqs we require filter to let pass */
-  float  cm_eval = esl_opt_GetReal(go, "--eval"); /* E-value of cutoff for accepting CM seqs */
+  float  filE = esl_opt_GetReal(go, "--filE"); /* E-value of cutoff for accepting CM seqs */
   int    filN  = esl_opt_GetInteger(go, "--filN"); /* number of sequences we emitted from CM for filter test */
 
   /* contract checks */
@@ -2832,10 +3091,11 @@ predict_hybrid_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *er
   nonfil_calcs *= cfg->dbsize;                  /* now nonfil-calcs corresponds to cfg->dbsize */
   spdup = nonfil_calcs / fil_plus_surv_calcs;
   
-  printf("HYBRID E: %10.4f filt: %10.4f surv: %10.4f sum: %10.4f full CM: %10.4f spdup %10.4f\n", E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, spdup);
+  if(cfg->be_verbose) printf("HYBRID E: %10.4f filt: %10.4f surv: %10.4f sum: %10.4f full CM: %10.4f spdup %10.4f\n", E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, spdup);
+  else { ESL_DPRINTF1(("HYBRID E: %10.4f filt: %10.4f surv: %10.4f sum: %10.4f full CM: %10.4f spdup %10.4f\n", E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, spdup)); }
 
   if(spdup > (bf->full_cm_ncalcs / bf->fil_plus_surv_ncalcs)) { /* hybrid is best filter strategy so far */
-    if((status = SetBestFilterInfoHybrid(bf, errbuf, cm->M, cm_eval, F, filN, cfg->dbsize, nonfil_calcs, E, fil_calcs, fil_plus_surv_calcs, cfg->hsi, cfg->cmstatsA[cfg->ncm-1]->np, gum_hybA)) != eslOK) return status;
+    if((status = SetBestFilterInfoHybrid(bf, errbuf, cm->M, filE, F, filN, cfg->dbsize, nonfil_calcs, E, fil_calcs, fil_plus_surv_calcs, cfg->hsi, cfg->cmstatsA[cfg->ncm-1]->np, gum_hybA)) != eslOK) return status;
     *ret_getting_faster = TRUE;
   }
   else *ret_getting_faster = FALSE;
@@ -2922,7 +3182,8 @@ predict_best_sub_cm_roots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
       nonfil_calcs = cfg->hsi->full_cm_ncalcs;      /* total number of millions of DP calculations for full CM scan of 1 residue */
       nonfil_calcs *= cfg->dbsize;                  /* now nonfil-calcs corresponds to cfg->dbsize */
       spdup = nonfil_calcs / fil_plus_surv_calcs;
-      printf("SUB %3d sg: %2d sc: %10.4f E: %10.4f filt: %10.4f surv: %10.4f sum: %10.4f full CM: %10.4f spdup %10.4f\n", v, cfg->hsi->startA[v], sc, E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, spdup);
+      if(cfg->be_verbose) { printf("SUB %3d sg: %2d sc: %10.4f E: %10.4f filt: %10.4f surv: %10.4f sum: %10.4f full CM: %10.4f spdup %10.4f\n", v, cfg->hsi->startA[v], sc, E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, spdup); } 
+      else                { ESL_DPRINTF1(("SUB %3d sg: %2d sc: %10.4f E: %10.4f filt: %10.4f surv: %10.4f sum: %10.4f full CM: %10.4f spdup %10.4f\n", v, cfg->hsi->startA[v], sc, E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, spdup)); } 
       s = cfg->hsi->startA[v];
       if(spdup > best_per_start_spdup[s] && cm->ndidx[v] != 0) { /* can't filter with a state in node 0 */
 	best_per_start_v[s]     = v;
@@ -2931,7 +3192,8 @@ predict_best_sub_cm_roots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
     }  
   }
   for(s = 0; s < nstarts; s++) { 
-    printf("START %d v: %d spdup: %10.4f\n", s, best_per_start_v[s], best_per_start_spdup[s]);
+    if(cfg->be_verbose) printf("START %d v: %d spdup: %10.4f\n", s, best_per_start_v[s], best_per_start_spdup[s]);
+    else {       ESL_DPRINTF1(("START %d v: %d spdup: %10.4f\n", s, best_per_start_v[s], best_per_start_spdup[s])); }
     ESL_DASSERT1((best_per_start_v[s] != -1));
   }
 
@@ -2971,7 +3233,8 @@ predict_best_sub_cm_roots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
     already_chosen[best_cur_start] = TRUE;
   }
   for(s1 = 0; s1 < nstarts; s1++) {
-    printf("SORTED rank: %d v: %d spdup: %.5f start: %d\n", s1, sorted_best_roots_v[s1], sorted_best_roots_spdup[s1], sorted_best_roots_start[s1]);
+    if(cfg->be_verbose) printf("SORTED rank: %d v: %d spdup: %.5f start: %d\n", s1, sorted_best_roots_v[s1], sorted_best_roots_spdup[s1], sorted_best_roots_start[s1]);
+    else { ESL_DPRINTF1(("SORTED rank: %d v: %d spdup: %.5f start: %d\n", s1, sorted_best_roots_v[s1], sorted_best_roots_spdup[s1], sorted_best_roots_start[s1])); } 
     ESL_DASSERT1((sorted_best_roots_v[s1] != -1));
   }
   *ret_sorted_best_roots_v = sorted_best_roots_v;
@@ -3111,3 +3374,59 @@ update_comlog(const ESL_GETOPTS *go, char *errbuf, char *ccom, char *cdate, CM_t
   return status; 
 }
 
+
+/* format_time_string()
+ * Date:     SRE, Fri Nov 26 15:06:28 1999 [St. Louis]
+ *
+ * Purpose:  Given a number of seconds, format into
+ *           hh:mm:ss.xx in a provided buffer.
+ *
+ * Args:     buf     - allocated space (128 is plenty!)
+ *           sec     - number of seconds
+ *           do_frac - TRUE (1) to include hundredths of a sec
+ */
+static void
+format_time_string(char *buf, double sec, int do_frac)
+{
+  int h, m, s, hs;
+  
+  h  = (int) (sec / 3600.);
+  m  = (int) (sec / 60.) - h * 60;
+  s  = (int) (sec) - h * 3600 - m * 60;
+  if (do_frac) {
+    hs = (int) (sec * 100.) - h * 360000 - m * 6000 - s * 100;
+    sprintf(buf, "%02d:%02d:%02d.%02d", h,m,s,hs);
+  } else {
+    sprintf(buf, "%02d:%02d:%02d", h,m,s);
+  }
+}
+
+/* Function: print_cm_info
+ * Date:     EPN, Tue Jan  8 05:51:47 2008
+ *
+ * Purpose:  Print per-CM info to stdout. 
+ *
+ * Returns:  eslOK on success
+ */
+static int
+print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
+{
+  printf("%-8s %s\n", "CM:",      cm->name); 
+  if(esl_opt_GetBoolean(go, "--noqdb")) printf("%-8s %s %g\n", "beta:", "0.0 (--noqdb), for W calc: ", cm->beta); 
+  printf("%-8s %s\n", "command:", cfg->ccom);
+  printf("%-8s %s\n", "date:",    cfg->cdate);
+  printf("%-8s %d\n", "nproc:",   (cfg->nproc == 0) ? 1 : cfg->nproc);
+  printf("%-8s ", "fil cut:");
+  if     (esl_opt_GetBoolean(go,"--gumonly")) printf("N/A (gumbel only)\n");
+  else if(esl_opt_GetBoolean(go,"--nc"))      printf("NC (%.2f bits)\n", cm->nc);
+  else if(esl_opt_GetBoolean(go,"--tc"))      printf("TC (%.2f bits)\n", cm->tc);
+  else if(esl_opt_GetBoolean(go,"--ga"))      printf("GA (%.2f bits)\n", cm->ga);
+  else if(esl_opt_GetBoolean(go,"--all"))     printf("none, all CM seqs accepted\n");
+  else printf("E value (%g)\n", esl_opt_GetReal(go, "--filE"));
+  printf("%-8s %.3f Mb\n", "db size:", (cfg->dbsize/1000000.));
+  printf("\n");
+  printf("%6s  %3s  %3s  %3s %5s %6s %5s %5s    percent complete         %10s\n", "",       "",     "",    "",     "",        "",     "",         "",  "");
+  printf("%6s  %3s  %3s  %3s %5s %6s %5s %5s [5.......50.......100] %10s\n", "stage",  "mod",  "cfg", "alg",  "gumN",    "len",  "filN",     "cut", "elapsed");
+  printf("%6s  %3s  %3s  %3s %5s %6s %5s %5s %22s %10s\n", "------", "---", "---", "---", "-----", "------", "-----", "-----", "----------------------", "----------");
+  return eslOK;
+}
