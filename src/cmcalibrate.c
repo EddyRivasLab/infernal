@@ -145,6 +145,7 @@ struct cfg_s {
   float           *cutoffA;            /* bit score cutoff for each partition, changes to reflect
 				        * current mode CM is in, on masters and workers */
   float           *full_vcalcs;        /* [0..v..cm->M-1] millions of calcs for each subtree to scan 1 residue with --beta  */
+  float            full_cp9_ncalcs;    /*                 millions of calcs for CP9 HMM to scan 1 residue, updated when model is localfied */
   double         **vmuAA;              /* [0..np-1][0..cm->M-1], mu for each partition, each state, 
 				        * if vmuAA[p][v] == -1 : we're not fitting state v to a gumbel */
   double         **vlambdaAA;          /* same as vmuAA, but lambda */
@@ -198,7 +199,7 @@ static int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *c
 static void estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq, int L, int gum_mode);
 static int read_partition_file(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int update_avg_hit_len(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int switch_global_to_local(CM_t *cm, char *errbuf);
+static int switch_global_to_local(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, char *errbuf);
 static int predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_vit_cp9scA, float *fil_fwd_cp9scA, int *fil_partA, BestFilterInfo_t *bf);
 static int get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int update_comlog(const ESL_GETOPTS *go, char *errbuf, char *ccom, char *cdate, CM_t *cm);
@@ -708,14 +709,16 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       for(gum_mode = 0; gum_mode < GUM_NMODES; gum_mode++) {
 
 #ifdef HAVE_DEVOPTS
-	/* free and recalculate hybrid scan info, b/c when investigating hybrid filters we may have added sub CM roots */
-	if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi, cm);
-	cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--filbeta"), cfg->full_vcalcs[0]);
+	if(esl_opt_GetBoolean(go, "--hybrid") { 
+	  /* free and recalculate hybrid scan info, b/c when investigating hybrid filters we may have added sub CM roots
+	   */
+	  if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi, cm);
+	  cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--filbeta"), cfg->full_vcalcs[0]);
+	}
 #endif
-	
 	/* do we need to switch from glocal configuration to local? */
 	if(gum_mode > 0 && (! GumModeIsLocal(gum_mode-1)) && GumModeIsLocal(gum_mode)) {
-	  if((status = switch_global_to_local(cm, errbuf)) != eslOK)      cm_Fail(errbuf);
+	  if((status = switch_global_to_local(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
 	  if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
 	}
 	/* update search opts for gumbel mode */
@@ -850,10 +853,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	/* free muA and lambdaA */
       } /* end of for(gum_mode = 0; gum_mode < NCMMODES; gum_mode++) */
       if(cfg->be_verbose) debug_print_cmstats(cfg->cmstatsA[cmi], (! esl_opt_GetBoolean(go, "--gumonly")));
-#ifdef HAVE_DEVOPTS
       if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi, cm);
       cfg->hsi = NULL;
-#endif
       FreeCM(cm);
       printf("//\n");
       fflush(stdout);
@@ -1057,14 +1058,16 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	update_i = gum_nseq_this_round / 20.;
 
 #ifdef HAVE_DEVOPTS
-	/* free and recalculate hybrid scan info, b/c when investigating hybrid filters we may have added sub CM roots */
-	if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi, cm);
-	cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--filbeta"), cfg->full_vcalcs[0]);
+	if(esl_opt_GetBoolean(go, "--hybrid") { 
+	  /* free and recalculate hybrid scan info, b/c when investigating hybrid filters we may have added sub CM roots */
+	  if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi, cm);
+	  cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--filbeta"), cfg->full_vcalcs[0]);
+	}
 #endif
 
 	/* do we need to switch from glocal configuration to local? */
 	if(gum_mode > 0 && (! GumModeIsLocal(gum_mode-1)) && GumModeIsLocal(gum_mode)) {
-	  if((status = switch_global_to_local(cm, errbuf)) != eslOK)      cm_Fail(errbuf);
+	  if((status = switch_global_to_local(go, cfg, cm, errbuf)) != eslOK)      cm_Fail(errbuf);
 	  if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
 	}
 	/* update search opts for gumbel mode */
@@ -1503,9 +1506,12 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       for(gum_mode = 0; gum_mode < GUM_NMODES; gum_mode++) {
 
 #ifdef HAVE_DEVOPTS
-	/* free and recalculate hybrid scan info, b/c when investigating hybrid filters we may have added sub CM roots */
-	if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi, cm);
-	cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--filbeta"), cfg->full_vcalcs[0]);
+	if(esl_opt_GetBoolean(go, "--hybrid") { 
+	  /* free and recalculate hybrid scan info, b/c when investigating hybrid filters we may have added sub CM roots 
+	   */
+	  if(cfg->hsi != NULL) cm_FreeHybridScanInfo(cfg->hsi, cm);
+	  cfg->hsi = cm_CreateHybridScanInfo(cm, esl_opt_GetReal(go, "--filbeta"), cfg->full_vcalcs[0]);
+	}
 #endif
 
 	ESL_DPRINTF1(("worker: %d gum_mode: %d nparts: %d\n", cfg->my_rank, gum_mode, cfg->np));
@@ -1514,7 +1520,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	/* do we need to switch from glocal configuration to local? */
 	if(gum_mode > 0 && (! GumModeIsLocal(gum_mode-1)) && GumModeIsLocal(gum_mode)) 
-	  if((status = switch_global_to_local(cm, errbuf)) != eslOK) goto ERROR;
+	  if((status = switch_global_to_local(go, cfg, cm, errbuf)) != eslOK) goto ERROR;
 	/* update search opts for gumbel mode */
 	GumModeToSearchOpts(cm, gum_mode);
 	/* if --id, we free RNG, then create a new one and reseed it with the initial seed,
@@ -2168,6 +2174,11 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* count number of DP calcs */
   if(cfg->full_vcalcs != NULL) free(cfg->full_vcalcs);
   if((status = cm_CountSearchDPCalcs(cm, errbuf, 1000, cm->dmin, cm->dmax, cm->W, &(cfg->full_vcalcs), NULL)) != eslOK) return status;
+  
+  /* set number of CP9 DP calcs, used to determine efficiency of CP9 filters, at first it's global mode, then
+   * when switch_global_to_local() is called, cfg->full_cp9_ncalcs is updated to ncalcs in local mode */
+  int cp9_ntrans = NHMMSTATETYPES * NHMMSTATETYPES; /* 3*3 = 9 transitions in global mode */
+  cfg->full_cp9_ncalcs = (cp9_ntrans * cm->cp9->M) / 1000000.; /* convert to millions of calcs per residue */
 
   /* create and initialize scan info for CYK/Inside scanning functions */
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE);
@@ -2718,11 +2729,11 @@ estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq,
     break;
   case GUM_CP9_LV: 
   case GUM_CP9_GV: 
-    seconds = cfg->hsi->full_cp9_ncalcs * (float) L * (float) nseq / vit_megacalcs_per_sec;
+    seconds = cfg->full_cp9_ncalcs * (float) L * (float) nseq / vit_megacalcs_per_sec;
     break;
   case GUM_CP9_LF: 
   case GUM_CP9_GF: 
-    seconds = cfg->hsi->full_cp9_ncalcs * (float) L * (float) nseq / fwd_megacalcs_per_sec;
+    seconds = cfg->full_cp9_ncalcs * (float) L * (float) nseq / fwd_megacalcs_per_sec;
     break;
   }
   printf("Estimated time for this workunit: %10.2f seconds\n", seconds);
@@ -2845,13 +2856,16 @@ update_avg_hit_len(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
  *           in cmcalibrate.c, b/c we don't check if CM is in rsearch mode
  *           or any other jazz that'll never happen in cmcalibrate.
  *
- * Args:      cm - the model
+ * Args:      go     - get opts
+ *            cfg    - cmcalibrate's cfg
+ *            cm     - the model
+ *            errbuf - for printing errors
  *
  * Returns:   eslOK on succes, othewise some other easel status code and
  *            errbuf is filled with error message.
  */
 int 
-switch_global_to_local(CM_t *cm, char *errbuf)
+switch_global_to_local(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, char *errbuf)
 {
   if(cm->flags & CMH_LOCAL_BEGIN) ESL_FAIL(eslEINCOMPAT, errbuf, "switch_global_to_local(), CMH_LOCAL_BEGIN flag already raised.\n");
   if(cm->flags & CMH_LOCAL_END)   ESL_FAIL(eslEINCOMPAT, errbuf, "switch_global_to_local(), CMH_LOCAL_END flag already raised.\n");
@@ -2867,6 +2881,12 @@ switch_global_to_local(CM_t *cm, char *errbuf)
   CPlan9SWConfig(cm->cp9, cm->pbegin, cm->pbegin); 
   /* CPlan9ELConfig() configures CP9 for CM EL local ends, then logoddisfies CP9 */
   CPlan9ELConfig(cm);
+
+  int cp9_ntrans = NHMMSTATETYPES * NHMMSTATETYPES; /* 3*3 = 9 transitions in global mode */
+  if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) cp9_ntrans++; /* will be true */
+  if(cm->cp9->flags & CPLAN9_LOCAL_END)   cp9_ntrans++; /* will be true */
+  if(cm->cp9->flags & CPLAN9_EL)          cp9_ntrans++; /* will be true */
+  cfg->full_cp9_ncalcs = (cp9_ntrans * cm->cp9->M) / 1000000.; /* convert to millions of calcs per residue */
   return eslOK;
 }
 
@@ -2961,10 +2981,10 @@ predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
   vit_E *= cfg->dbsize / evalue_L;
   fwd_E *= cfg->dbsize / evalue_L;
 
-  fil_calcs  = cfg->hsi->full_cp9_ncalcs; /* fil_calcs is millions of DP calcs for CP9 scan of 1 residue */
-  fil_calcs *= cfg->dbsize;               /* fil_calcs is millions of DP calcs for CP9 scan of length cfg->dbsize */
-  nonfil_calcs = cfg->hsi->full_cm_ncalcs;      /* total number of millions of DP calculations for full CM scan of 1 residue */
-  nonfil_calcs *= cfg->dbsize;                  /* now nonfil-calcs corresponds to cfg->dbsize */
+  fil_calcs  = cfg->full_cp9_ncalcs;  /* fil_calcs is millions of DP calcs for CP9 scan of 1 residue */
+  fil_calcs *= cfg->dbsize;           /* fil_calcs is millions of DP calcs for CP9 scan of length cfg->dbsize */
+  nonfil_calcs = cfg->full_vcalcs[0]; /* total number of millions of DP calculations for full CM scan of 1 residue */
+  nonfil_calcs *= cfg->dbsize;        /* now nonfil-calcs corresponds to cfg->dbsize */
 
   /* determine our thresholds:
    * 1. if vit_E and/or fwd_E yield predicted survival fractions that are less than Starg:
@@ -3042,11 +3062,11 @@ predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
   /* calculate speedup for Viterbi */
   vit_surv_calcs = vit_E *     /* number of hits expected to survive filter */
     surv_res_per_hit *         /* avg length of surviving fraction of db from a single hit */
-    cfg->hsi->full_cm_ncalcs;  /* number of calculations for full CM scan of 1 residue */
+    cfg->full_vcalcs[0];       /* number of calculations for full CM scan of 1 residue */
 
   fwd_surv_calcs = fwd_E *     /* number of hits expected to survive filter */
     surv_res_per_hit *         /* avg length of surviving fraction of db from a single hit */
-    cfg->hsi->full_cm_ncalcs;  /* number of calculations for full CM scan of 1 residue */
+    cfg->full_vcalcs[0];       /* number of calculations for full CM scan of 1 residue */
 
   vit_fil_plus_surv_calcs = fil_calcs + vit_surv_calcs; /* total number of millions of DP calculations expected using the CP9 viterbi filter for scan of cfg->dbsize */
   vit_spdup = nonfil_calcs / vit_fil_plus_surv_calcs;
@@ -3495,7 +3515,7 @@ print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   else if(esl_opt_GetBoolean(go,"--all"))     printf("none, all CM seqs accepted\n");
   else printf("E value (%g)\n", esl_opt_GetReal(go, "--filE"));
 
-  if(esl_opt_GetBoolean(go,"--gumonly")) printf("N/A (gumbel only)\n");
+  if(esl_opt_GetBoolean(go,"--gumonly")) printf("%-8s N/A (gumbel only)\n", "db size:");
   else { 
     printf("%-8s %.3f Mb\n", "db size:", (cfg->dbsize/1000000.));
   }

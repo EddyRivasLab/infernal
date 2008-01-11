@@ -1867,7 +1867,8 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
     for(v = 0; v < cm->M; v++) {
       if(cm->sttype[v] == MP_st) { 
 	jmin[v] = j0+1;
-	jmax[v] = j0+1;
+	jmax[v] = j0;
+	/* now 'for (j = jmin[v]; j <= jmax[v]; j++)' { loops will never be entered, b/c jmin[v] == 2, jmax[v] == 1 */
       }
     }
   }

@@ -4561,12 +4561,12 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
 	  i     = j - hdmin[v][jp_v] + 1;
 	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
 	    {
-	      if(FALSE) { 
+	      /*if(i < i0 || j > j0) { 
 		printf("dsq[i:%d]: %d\n", i, dsq[i]);
 		printf("dsq[j:%d]: %d\n", j, dsq[j]);
 		printf("esc_v[%d]: %.5f\n", dsq[i]*cm->abc->Kp+dsq[j], esc_v[dsq[i]*cm->abc->Kp+dsq[j]]);;
 		printf("i0: %d j0: %d\n", i0, j0);
-	      }
+		}*/
 	      alpha[v][jp_v][dp_v] += esc_v[dsq[i--]*cm->abc->Kp+dsq[j]];
 	    }
 	}

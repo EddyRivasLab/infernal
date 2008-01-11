@@ -622,8 +622,13 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       print_searchinfo(go, cfg, stdout, cm, cfg->N, errbuf);
       using_e_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
 
+      /* reset vars for searching with current CM */
       wi = 1;
       ndbseq = 0;
+      need_seq = TRUE;
+      have_work = TRUE;	/* TRUE while work remains  */
+      seqpos = 1;
+      in_rc = FALSE;
       while (have_work || nproc_working)
 	{
 	  if (need_seq) /* see mpifuncs.c:search_enqueue*/
