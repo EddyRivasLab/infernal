@@ -127,7 +127,7 @@ extern int  RefFInsideScan   (CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ
 extern int  rsearch_CYKScan  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, int D, search_results_t *results, float *ret_sc);
 extern int  FastCYKScanHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx, float size_limit, float *ret_sc);
 extern int  FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx, float size_limit, float *ret_sc);
-extern int  cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W, float **ret_vcalcs, float *ret_calcs);
+extern int  cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W, int correct_for_first_W, float **ret_vcalcs, float *ret_calcs);
 
 /* from cm_dpsmall.c */
 extern float CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, 
@@ -524,18 +524,12 @@ extern int gumbel_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, Gumb
 extern int best_filter_info_MPIPackSize(BestFilterInfo_t *bf, MPI_Comm comm, int *ret_n);
 extern int best_filter_info_MPIPack(BestFilterInfo_t *bf, char *buf, int n, int *position, MPI_Comm comm);
 extern int best_filter_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, BestFilterInfo_t **ret_bf);
-extern int cmcalibrate_cm_gumbel_results_MPIPackSize(float **vscAA, int nseq, int M, MPI_Comm comm, int *ret_n);
-extern int cmcalibrate_cm_gumbel_results_MPIPack(float **vscAA, int nseq, int M, char *buf, int n, int *position, MPI_Comm comm);
-extern int cmcalibrate_cm_gumbel_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, int M, float ***ret_vscAA, int *ret_nseq);
-extern int cmcalibrate_cp9_gumbel_results_MPIPackSize(float *cp9scAA, int nseq, MPI_Comm comm, int *ret_n);
-extern int cmcalibrate_cp9_gumbel_results_MPIPack(float *cp9scA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
-extern int cmcalibrate_cp9_gumbel_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_cp9scA, int *ret_nseq);
-extern int cmcalibrate_cp9_filter_results_MPIPackSize(int nseq, MPI_Comm comm, int *ret_n);;
-extern int cmcalibrate_cp9_filter_results_MPIPack(float *vit_cp9scA, float *fwd_cp9scA, int *partA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
-extern int cmcalibrate_cp9_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, int **ret_partA, int *ret_nseq);
-extern int cmcalibrate_cp9_filter_results_hyb_MPIPackSize(int nseq, int M, MPI_Comm comm, int *ret_n);;
-extern int cmcalibrate_cp9_filter_results_hyb_MPIPack(float **vscAA, float *vit_cp9scA, float *fwd_cp9scA, int *partA, int nseq, int M, char *buf, int n, int *position, MPI_Comm comm);
-extern int cmcalibrate_cp9_filter_results_hyb_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, int M, float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, int **ret_partA, int *ret_nseq);
+extern int cmcalibrate_gumbel_results_MPIPackSize(float *scA, int nseq, MPI_Comm comm, int *ret_n);
+extern int cmcalibrate_gumbel_results_MPIPack(float *scA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
+extern int cmcalibrate_gumbel_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_scA, int *ret_nseq);
+extern int cmcalibrate_filter_results_MPIPackSize(int nseq, MPI_Comm comm, int *ret_n);
+extern int cmcalibrate_filter_results_MPIPack(float *cyk_scA, float *ins_scA, float *fwd_scA, int *partA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
+extern int cmcalibrate_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_cyk_scA, float **ret_ins_scA, float **ret_fwd_scA, int **ret_partA, int *ret_nseq);
 extern int comlog_MPIPackSize(ComLog_t *gum, MPI_Comm comm, int *ret_n);
 extern int comlog_MPIPack    (ComLog_t *gum, char *buf, int n, int *position, MPI_Comm comm);
 extern int comlog_MPIUnpack  (char *buf, int n, int *pos, MPI_Comm comm, ComLog_t **ret_comlog);

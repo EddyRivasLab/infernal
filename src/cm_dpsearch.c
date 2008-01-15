@@ -4186,13 +4186,15 @@ int rsearch_CYKScan (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, 
  *           dmin      - minimum bound on d for state v; 0..M
  *           dmax      - maximum bound on d for state v; 0..M          
  *           W         - max d: max size of a hit
- *           ret_vcalcs- RETURN: [0..v..M-1] number of DP calcs for scanning with sub-CM at v
- *           ret_calcs - RETURN: number of calcs to search L residues with full model (ret_vcalcs[0]).
+ *           correct_for_first_W - TRUE: to only count search for j=W+1..L because first W residues require
+ *                                       fewer DP calcs b/c d <= j for all j.
+ *           ret_vcalcs- RETURN: [0..v..M-1] number of Millions of DP calcs per residue for scanning with sub-CM at v
+ *           ret_calcs - RETURN: number of Millions of calcs per residue to search L residues with full model (ret_vcalcs[0]).
  *
  * Returns:  eslOK on success
  */
 int
-cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W, float **ret_vcalcs, float *ret_calcs)
+cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W, int correct_for_first_W, float **ret_vcalcs, float *ret_calcs)
 {
   int       status;
   float     *vcalcs;            /* [0..v..cm->M-1] # of calcs for subtree rooted at v */
@@ -4203,6 +4205,10 @@ cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W
   int       dn;                 /* temporary value for min d in for loops */
   int       dx;                 /* temporary value for max d in for loops */
   int       do_banded = FALSE;  /* TRUE: use QDBs, FALSE: don't   */
+  int       jfirst;             /* first j to consider (1 unless correct_for_first_W) */
+  int       Leff;               /* effective L, this is L unless correct_for_first_W  */
+
+  if ((W > L) && (correct_for_first_W)) cm_Fail("gross misuse of cm_CountSearchDPCalcs(), W: %d > L: %d and correct_for_first_W is TRUE.\n", W, L);
 
   if(dmin != NULL && dmax != NULL) do_banded = TRUE;
   if (W > L) W = L; 
@@ -4212,7 +4218,9 @@ cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W
 
   /* we ignore initialization and band imposition, a little imprecise */
   /* Recursion. */
-  for (j = 1; j <= L; j++) {
+  Leff   = correct_for_first_W ? (L-W): L;
+  jfirst = correct_for_first_W ? (W+1) : 1;
+  for (j = jfirst; j <= L; j++) {
     for (v = cm->M-1; v > 0; v--) { /* ...almost to ROOT; we handle ROOT specially... */
       if(do_banded) { 
 	dn = (cm->sttype[v] == MP_st) ? ESL_MAX(dmin[v], 2) : ESL_MAX(dmin[v], 1); 
@@ -4278,12 +4286,12 @@ cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W
     if     (cm->sttype[v] == B_st) vcalcs[v] += vcalcs[cm->cnum[v]] + vcalcs[cm->cfirst[v]];
     else if(cm->sttype[v] != E_st) vcalcs[v] += vcalcs[v+1];
   }
-  
   /* convert to millions of calcs */
   for (v = cm->M-1; v >= 0; v--) vcalcs[v] /= 1000000.;
   /* convert to per residue */
-  for (v = cm->M-1; v >= 0; v--) vcalcs[v] /= L;
+  for (v = cm->M-1; v >= 0; v--) vcalcs[v] /= Leff;
 
+  ESL_DPRINTF1(("cm_CountSearchDPCalcs(), vcalcs[0]: %f\n", vcalcs[0]));
   /* for (v = cm->M-1; v >= 0; v--) printf("vcalcs[%4d]: %.3f\n", v, vcalcs[v]); */
   
   if(ret_calcs != NULL)  *ret_calcs  = vcalcs[0];

@@ -20,9 +20,6 @@
 #include "esl_random.h"
 #include "esl_sqio.h"
 
-#define USE_NEWLOGSUM 1
-#define USE_OLDLOGSUM 0
-
 #define cmERRBUFSIZE 1024
 
 /* various default parameters for CMs and CP9 HMMs */ 
@@ -38,8 +35,8 @@
 /* max number of parititons for cmcalibrate */
 #define MAX_PARTITIONS 20
 
-/* default num samples for CM and CP9 E-values */
-#define DEFAULT_NUM_SAMPLES 1000
+/* database size for E-values in Mb for HMM filter thresholds */
+#define FTHR_DBSIZE_MB 1 
 
 #define GC_SEGMENTS 101                   /* Possible integer GC contents */
 
@@ -916,12 +913,11 @@ typedef struct _fullmat_t {
  * EPN: Infernal uses bits, not nats. 1.2e-7 =~ 2^-23 =~ e^-16. 
  *      And I've removed the p7_ prefixes.
  */
-#if USE_NEWLOGSUM
+#if 1
 #define INTSCALE     1000.0f
 #define LOGSUM_TBL   23000
 #endif
-/* Below is infernal -->v0.81 constants for logsums */
-#if USE_OLDLOGSUM
+#if 0
 #define INTSCALE    1000.0      /* scaling constant for floats to integer scores */
 #define LOGSUM_TBL  20000       /* controls precision of ILogsum()            */
 #endif

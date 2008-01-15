@@ -5186,3 +5186,1411 @@ int debug_print_filterthrinfo(CMStats_t *cmstats, CP9FilterThr_t *fthr)
 
 #endif
 
+/* EPN, Tue Jan 15 09:02:07 2008
+ * Between revisions 2298-2299:
+ * Major overhaul of how cmcalibrate does filter thresholds. 
+ * --hybrid option abandoned (temporarily?) 
+ * and HMM threshold for ALL relevant CM cutoffs implemented, instead of only doing a single CM cutoff.
+ * 
+ * The revision 2298 functions are copied below: 
+ * These functions are (possibly) also in cmcalibrate-hybrid.c. 
+
+static int process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq, int L,
+				   float ***ret_vscAA, float **ret_cp9scA, float **ret_hybscA);
+static int process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
+				   float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, float **ret_hyb_scA, int **ret_partA);
+static int cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_DSQ *dsq, Parsetree_t *tr, int L, float cutoff, float *ret_sc);
+static int predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_vit_cp9scA, float *fil_fwd_cp9scA, int *fil_partA, BestFilterInfo_t *bf);
+static int predict_best_sub_cm_roots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **fil_vscAA, int **ret_best_sub_roots);
+static int predict_hybrid_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_hybscA, int *fil_partA, GumbelInfo_t **gum_hybA, BestFilterInfo_t *bf, int *ret_getting_faster);
+static int  update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int fthr_mode);
+static int cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **vscA, int nscores, int p);
+
+And old mpisupport.c functions used with cmcalibrate --hybrid that were unnecessarily complex.
+extern int cmcalibrate_cm_gumbel_results_MPIPackSize(float **vscAA, int nseq, int M, MPI_Comm comm, int *ret_n);
+extern int cmcalibrate_cm_gumbel_results_MPIPack(float **vscAA, int nseq, int M, char *buf, int n, int *position, MPI_Comm comm);
+extern int cmcalibrate_cm_gumbel_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, int M, float ***ret_vscAA, int *ret_nseq);
+extern int cmcalibrate_cp9_filter_results_hyb_MPIPackSize(int nseq, int M, MPI_Comm comm, int *ret_n);;
+extern int cmcalibrate_cp9_filter_results_hyb_MPIPack(float **vscAA, float *vit_cp9scA, float *fwd_cp9scA, int *partA, int nseq, int M, char *buf, int n, int *position, MPI_Comm comm);
+extern int cmcalibrate_cp9_filter_results_hyb_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, int M, float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, int **ret_partA, int *ret_nseq);
+*/
+#if 0
+
+
+/* Function: process_gumbel_workunit()
+ * Date:     EPN, Mon Dec 10 06:09:09 2007
+ *
+ * Purpose:  A gumbel work unit consists of a CM, and an int specifying a 
+ *           number of sequences <nseq>. The job is to randomly generate <nseq> 
+ *           sequences using the cm->null background distribution, and 
+ *           search them with either (a) the CM, (b) the CM's CP9 HMM, or
+ *           (c) a hybrid CM/CP9 CYK/Viterbi scanning algorithm, with hybrid
+ *           scanning info in cfg->hsi.
+ *
+ *           Thus, this function can be run in 1 of 3 modes, determined by the
+ *           status of the input variables:
+ *         
+ *           Mode 1. Gumbel calculation for CM. 
+ *           <ret_vscAA> != NULL, <ret_cp9scA> == NULL, <ret_hybscA> == NULL.
+ *           Search random sequences with only the CM, either CYK or Inside
+ *           (as specified by cm->search_opts>. <ret_vscAA> is filled
+ *           with the best CM score at each state for each sequence.
+ *
+ *           Mode 2. Gumbel calculation for the CP9. 
+ *           <ret_vscAA> == NULL, <ret_cp9scA> != NULL, <ret_hybscA> == NULL.
+ *           Search random sequences with only the CP9, either Viterbi or Forward
+ *           (as specified by cm->search_opts). <ret_cp9scA> is filled
+ *           with the best CP9 score for each sequence.
+ *
+ *           Mode 3. Gumbel calculation for hybrid scanner.
+ *           <ret_vscAA> == NULL, <ret_cp9scA> == NULL, <ret_hybscA> != NULL.
+ *           Search random sequences with only a hybrid CM/CP9 scanner, 
+ *           using hybrid info in cfg->hsi. <ret_hybscA> is filled
+ *           with the best hybrid score for each sequence.
+ *
+ * Args:     go           - getopts
+ *           cfg          - cmcalibrate's configuration
+ *           errbuf       - for writing out error messages
+ *           cm           - the CM (already configured as we want it)
+ *           nseq         - number of seqs to generate
+ *           L            - length of sequences to search, L==cm->W*2 unless --gumL enabled, in which case
+ *                          L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL")
+ *           ret_vscAA    - RETURN: [0..v..cm->M-1][0..nseq-1] best score at each state v for each seq
+ *           ret_cp9scA   - RETURN: [0..nseq-1] best CP9 score for each seq
+ *           ret_hybscA   - RETURN: [0..nseq-1] best hybrid score for each seq
+ *
+ * Returns:  eslOK on success; dies immediately if some error occurs.
+ */
+static int
+process_gumbel_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
+			int L, float ***ret_vscAA, float **ret_cp9scA, float **ret_hybscA)
+{
+  int            status;
+  int            mode; /* 1, 2, or 3, determined by status of input args, as explained in 'Purpose' above. */
+  float        **vscAA        = NULL;  /* [0..v..cm->M-1][0..i..nseq-1] best CM score for each state, each seq */
+  float         *cur_vscA     = NULL;  /* [0..v..cm->M-1]               best CM score for each state cur seq */
+  float         *cp9scA       = NULL;  /*                [0..i..nseq-1] best CP9 score for each seq, */
+  float         *hybscA       = NULL;  /*                [0..i..nseq-1] best hybrid score for each seq */
+  double        *dnull        = NULL; /* double version of cm->null, for generating random seqs */
+  int            i;
+  int            v;
+  ESL_DSQ       *dsq;
+  float          sc;
+  float          update_i = nseq / 20.;
+
+  /* determine mode, and enforce mode-specific contract */
+  if     (ret_vscAA != NULL && ret_cp9scA == NULL && ret_hybscA == NULL) mode = 1; /* calcing CM     gumbel stats */
+  else if(ret_vscAA == NULL && ret_cp9scA != NULL && ret_hybscA == NULL) mode = 2; /* calcing CP9    gumbel stats */
+  else if(ret_vscAA == NULL && ret_cp9scA == NULL && ret_hybscA != NULL) mode = 3; /* calcing hybrid gumbel stats */
+  else ESL_FAIL(eslEINCOMPAT, errbuf, "can't determine mode in process_gumbel_workunit.");
+
+  ESL_DPRINTF1(("in process_gumbel_workunit nseq: %d L: %d mode: %d\n", nseq, L, mode));
+
+  int do_cyk     = FALSE;
+  int do_inside  = FALSE;
+  int do_viterbi = FALSE;
+  int do_forward = FALSE;
+  int do_hybrid  = FALSE;
+  /* determine algs we'll use and allocate the score arrays we'll pass back */
+  if(mode == 1) {
+    if(cm->search_opts & CM_SEARCH_INSIDE) do_inside = TRUE;
+    else                                   do_cyk    = TRUE;
+    ESL_ALLOC(vscAA, sizeof(float *) * cm->M);
+    for(v = 0; v < cm->M; v++) ESL_ALLOC(vscAA[v], sizeof(float) * nseq);
+    ESL_ALLOC(cur_vscA, sizeof(float) * cm->M);
+  }
+  else if(mode == 2) {
+    if(cm->search_opts & CM_SEARCH_HMMVITERBI) do_viterbi = TRUE;
+    if(cm->search_opts & CM_SEARCH_HMMFORWARD) do_forward = TRUE;
+    if((do_viterbi + do_forward) > 1) ESL_FAIL(eslEINVAL, errbuf, "process_gumbel_workunit, mode 2, and cm->search_opts CM_SEARCH_HMMVITERBI and CM_SEARCH_HMMFORWARD flags both raised.");
+    ESL_ALLOC(cp9scA, sizeof(float) * nseq); /* will hold Viterbi or Forward scores */
+  }
+#ifdef HAVE_DEVOPTS
+  else if(mode == 3) {
+    do_hybrid = TRUE;
+    ESL_ALLOC(hybscA,       sizeof(float) * nseq); /* will hold hybrid scores */
+  }
+#endif
+  else if(mode == 3) { /* never entered if HAVE_DEVOPTS is defined */
+    ESL_FAIL(eslEINCOMPAT, errbuf, "process_gumbel_workunit(), mode 3 unavailable (HAVE_DEVOPTS is undefined)");
+  }
+
+  ESL_DPRINTF1(("do_cyk:     %d\ndo_inside:  %d\ndo_viterbi: %d\ndo_forward: %d\ndo_hybrid: %d", do_cyk, do_inside, do_viterbi, do_forward, do_hybrid)); 
+  
+  /* fill dnull, a double version of cm->null, but only if we're going to need it to generate random seqs */
+  if(cfg->pgc_freq == NULL) {
+    ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
+    for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
+    esl_vec_DNorm(dnull, cm->abc->K);    
+  }
+  
+  /* generate dsqs one at a time and collect best CM scores at each state and/or best overall CP9 score */
+  for(i = 0; i < nseq; i++) {
+    if(cfg->my_rank == 0 && i > update_i) { /* print status update to stdout */
+      printf("=");
+      fflush(stdout); 
+      update_i += nseq / 20.; 
+    }
+    if((status = get_random_dsq(cfg, errbuf, cm, dnull, L, &dsq)) != eslOK) return status; 
+
+    /* if nec, search with CM */
+    if (do_cyk)    if((status = FastCYKScan    (cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, &(cur_vscA), &sc)) != eslOK) return status;
+    if (do_inside) if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, &(cur_vscA), &sc)) != eslOK) return status;
+    /* if nec, search with CP9 */
+    if (do_viterbi) 
+      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL, 
+			       TRUE,   /* yes, we are scanning */
+			       FALSE,  /* no, we are not aligning */
+			       FALSE,  /* don't be memory efficient */
+			       NULL,   /* don't want best score at each posn back */
+			       NULL,   /* don't want the max scoring posn back */
+			       NULL,   /* don't want traces back */
+			       &(cp9scA[i]))) != eslOK) return status;
+    if (do_forward) {
+      if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL, 
+			       TRUE,   /* yes, we are scanning */
+			       FALSE,  /* no, we are not aligning */
+			       FALSE,  /* don't be memory efficient */
+			       NULL,   /* don't want best score at each posn back */
+			       NULL,   /* don't want the max scoring posn back */
+			       &(cp9scA[i]))) != eslOK) return status;
+    }
+#ifdef HAVE_DEVOPTS
+    if (do_hybrid) {
+      if((status = cm_cp9_HybridScan(cm, errbuf, cm->cp9_mx, dsq, cfg->hsi, 1, L, cfg->hsi->W, 0., 
+				     NULL, /* don't report results */
+				     NULL, /* don't want best score at each posn back */
+				     NULL, /* don't want the max scoring posn back */
+				     &(hybscA[i]))) != eslOK) return status;
+    }
+#endif
+
+    /*to print seqs to stdout uncomment this block 
+    ESL_SQ *tmp;
+    tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq, L, NULL, NULL, NULL);
+    esl_sq_Textize(tmp);
+    printf(">seq%d\n%s\n", i, tmp->seq);
+    esl_sq_Destroy(tmp);
+    */
+
+    free(dsq);
+    if (cur_vscA != NULL) /* will be NULL if do_cyk == do_inside == FALSE (mode 2) */
+      for(v = 0; v < cm->M; v++) vscAA[v][i] = cur_vscA[v];
+    free(cur_vscA);
+  }
+  if(cfg->my_rank == 0) { printf("=]"); }
+
+  if(dnull != NULL) free(dnull);
+  if(ret_vscAA  != NULL) *ret_vscAA  = vscAA;
+  if(ret_cp9scA != NULL) *ret_cp9scA = cp9scA;
+  if(ret_hybscA != NULL) *ret_hybscA = hybscA;
+  return eslOK;
+
+ ERROR:
+  return status;
+  }
+
+/* Function: process_filter_workunit()
+ * Date:     EPN, Mon Dec 10 05:48:35 2007
+ *
+ * Purpose:  A filter work unit consists of a CM, an int specifying a 
+ *           number of sequences <nseq>, and a flag indicating how to search
+ *           the sequences. The job is to generate <nseq> sequences from the
+ *           CM and search them, the way they're searched is mode dependent
+ *           (see below).  with either (a) the CM using bands from
+ *           hybrid scanning info in cfg->hsi, then the CP9 HMM with Viterbi and 
+ *           Forward or (b) using the hybrid CM/CP9 CYK/Viterbi algorithm
+ *           with the hybrid scanning info in cfg->hsi.
+ *
+ *           Thus, this function can be run in 1 of 3 modes, determined by the
+ *           status of the input variables. Note modes 2 and 3 are only possible
+ *           if the --hybrid option is enabled, which is only even available if
+ *           HAVE_DEVOPTS is defined.
+ *         
+ *           Mode 1. Scores will be used for calc'ing filter threshold of CP9 HMM.
+ *           <ret_vscAA> == NULL, <ret_vit_cp9scA> != NULL, <ret_fwd_cp9scA> != NULL, <ret_hyb_cmscA> == NULL
+ *           Emit from CM and score with CP9 Viterbi and Forward, <ret_vit_cp9scA> 
+ *           and <ret_fwd_cp9scA> are filled with the best CP9 Viterbi/HMM score 
+ *           for each sequence.
+ *
+ *           Mode 2. Scores will be used for calc'ing filter threshold of CP9 HMM
+ *           and CM scores will be used to predict which sub CM roots will be good 
+ *           at filtering.
+ *           <ret_vscAA> != NULL, <ret_vit_cp9scA> != NULL, <ret_fwd_cp9scA> != NULL, <ret_hyb_cmscA> == NULL
+ *           Emit from CM and search first with CM using QDBs from hybrid scanning
+ *           info in cfg->hsi, best score from each state of the CM for each 
+ *           seq is stored in >ret_vscAA>. Then search (same seq) with CM CP9 Viterbi and Forward, 
+ *           <ret_vit_cp9scA> and <ret_fwd_cp9scA> are filled with the best CP9 
+ *           Viterbi/HMM score for each sequence.
+ *
+ *           Mode 3. Scores will be used for calc'ing filter threshold of hybrid scanner.
+ *           <ret_vscAA> == NULL, <ret_vit_cp9scA> == NULL, <ret_fwd_cp9scA> == NULL, <ret_hybscA> != NULL
+ *           Emit from CM and score with hybrid CM/CP9 CYK/Viterbi scanner, 
+ *           <ret_hybscA> are filled with the best hybrid scanner scores 
+ *           for each sequence.
+ *
+ * Args:     go             - getopts
+ *           cfg            - cmcalibrate's configuration
+ *           errbuf         - for writing out error messages
+ *           cm             - the CM (already configured as we want it)
+ *           nseq           - number of seqs to generate
+ *           ret_vscAA      - RETURN: [0..v..cm->M-1][0..nseq-1] best score at each state v for each seq
+ *           ret_vit_cp9scA - RETURN: [0..nseq-1] best Viterbi CP9 score for each seq
+ *           ret_fwd_cp9scA - RETURN: [0..nseq-1] best Forward CP9 score for each seq
+ *           ret_hybscA     - RETURN: [0..nseq-1] best Hybrid CM/CP9 score for each seq
+ *           ret_partA      - RETURN: [0..nseq-1] partition of each seq 
+ *
+ * Returns:  eslOK on success; dies immediately if some error occurs.
+ */
+static int
+process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
+			float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, float **ret_hybscA, int **ret_partA)
+{
+  int            status;
+  int            mode; /* 1 or 2 determined by status of input args, as explained in 'Purpose' above. */
+  float        **vscAA      = NULL;  /* [0..v..cm->M-1][0..i..nseq-1] best CM score for each state, each seq */
+  float         *cur_vscA   = NULL;  /* [0..v..cm->M-1]               best CM score for each state cur seq */
+  float         *vit_cp9scA = NULL;  /* [0..i..nseq-1] best CP9 Viterbi score for each seq */
+  float         *fwd_cp9scA = NULL;  /* [0..i..nseq-1] best CP9 Forward score for each seq */
+  float         *hybscA     = NULL;  /* [0..i..nseq-1] best hybrid CM/CP9 scanner score for each seq */
+  int           *partA      = NULL;  /* [0..i..nseq-1] partitions of each seq */
+  int            p;                  /* what partition we're in, not used unless emit_from_cm = TRUE */
+  int            i, v;
+  int            L;
+  int            nfailed = 0;
+  Parsetree_t   *tr;
+  ESL_DSQ       *dsq;
+  float          sc;
+  int            inside_flag_raised = FALSE;
+  float          update_i = nseq / 20.;
+
+
+  /* determine mode, and enforce mode-specific contract */
+  if     (ret_vscAA == NULL && ret_vit_cp9scA != NULL && ret_fwd_cp9scA != NULL && ret_hybscA == NULL) mode = 1; /* running CP9 Viterbi and Forward */
+#if HAVE_DEVOPTS
+  else if(ret_vscAA != NULL && ret_vit_cp9scA != NULL && ret_fwd_cp9scA != NULL && ret_hybscA == NULL) mode = 2; /* running CM CYK and CP9 Viterbi and Forward */
+  else if(ret_vscAA == NULL && ret_vit_cp9scA == NULL && ret_fwd_cp9scA == NULL && ret_hybscA != NULL) mode = 3; /* running hybrid CM/CP9 scanner */
+#endif
+  else ESL_FAIL(eslEINCOMPAT, errbuf, "can't determine mode in process_filter_workunit.");
+  if (ret_partA == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ret_partA is NULL in process_filter_workunit.");
+
+  ESL_DPRINTF1(("in process_filter_workunit nseq: %d mode: %d\n", nseq, mode));
+  /* if we get this far, if HAVE_DEVOPTS is undefined, mode MUST be 1 */
+
+#ifndef HAVE_DEVOPTS
+  if(mode != 1) ESL_FAIL(eslEINCOMPAT, errbuf, "HAVE_DEVOPTS is undefined, but mode is not 1 in process_filter_workunit(). This shoudln't happen.");
+#endif
+
+  /* determine algs we'll use and allocate the score arrays we'll pass back */
+  ESL_ALLOC(partA, sizeof(int) * nseq); /* will hold partitions */
+
+  if(mode == 1 || mode == 2) {
+    ESL_ALLOC(vit_cp9scA, sizeof(float) * nseq); /* will hold Viterbi scores */
+    ESL_ALLOC(fwd_cp9scA, sizeof(float) * nseq); /* will hold Forward scores */
+    if(mode == 2) { 
+      ESL_ALLOC(vscAA, sizeof(float *) * cm->M);
+      for(v = 0; v < cm->M; v++) ESL_ALLOC(vscAA[v], sizeof(float) * nseq);
+      ESL_ALLOC(cur_vscA, sizeof(float) * cm->M);
+    }
+    if(cm->search_opts & CM_SEARCH_INSIDE) { inside_flag_raised = TRUE; cm->search_opts &= ~CM_SEARCH_INSIDE; }
+    else inside_flag_raised = FALSE;
+  }
+  else  /* mode == 3 */
+    ESL_ALLOC(hybscA, sizeof(float) * nseq); /* will hold hybrid scores */
+
+  /* generate dsqs one at a time and collect best CM scores at each state and/or best overall CP9 score */
+  for(i = 0; i < nseq; i++) {
+    if(cfg->my_rank == 0 && i > update_i) { /* print status update to stdout */
+      printf("=");
+      fflush(stdout); 
+      update_i += nseq / 20.; 
+    }
+    if((status = get_cmemit_dsq(cfg, errbuf, cm, &L, &p, &tr, &dsq)) != eslOK) return status;
+    /* we only want to use emitted seqs with a sc > cutoff */
+    if((status = cm_find_hit_above_cutoff(go, cfg, errbuf, cm, dsq, tr, L, cfg->cutoffA[p], &sc)) != eslOK) return status;
+    while(sc < cfg->cutoffA[p]) { 
+      free(dsq); 	
+      /* parsetree tr is freed in cm_find_hit_above_cutoff() */
+      if((status = get_cmemit_dsq(cfg, errbuf, cm, &L, &p, &tr, &dsq)) != eslOK) return status;
+      nfailed++;
+      if(nfailed > 1000 * nseq) ESL_FAIL(eslERANGE, errbuf, "process_filter_workunit(), max number of failures (%d) reached while trying to emit %d seqs.\n", nfailed, nseq);
+      if((status = cm_find_hit_above_cutoff(go, cfg, errbuf, cm, dsq, tr, L, cfg->cutoffA[p], &sc)) != eslOK) return status;
+    }
+
+    /*to print seqs to stdout uncomment this block  
+    ESL_SQ *tmp;
+    tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq, L, NULL, NULL, NULL);
+    esl_sq_Textize(tmp);
+    printf(">seq%d\n%s\n", i, tmp->seq);
+    esl_sq_Destroy(tmp);
+    */
+
+    partA[i] = p;
+    assert(partA[i] < cfg->np);
+    ESL_DPRINTF1(("i: %d nfailed: %d cutoff: %.3f p: %d\n", i, nfailed, cfg->cutoffA[p], p));
+
+    /* search dsq with mode-specific search algs */
+    if(mode == 1 || mode == 2) {
+      /* Note: in mode 2, with FastCYKScan, we use cfg->hsi->smx scan matrix, which may have qdbs calc'ed differently than cm->smx */
+      if(mode == 2) { if((status = FastCYKScan(cm, errbuf, cfg->hsi->smx, dsq, 1, L, 0., NULL, &(cur_vscA), NULL)) != eslOK) return status; }
+      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL, 
+			       TRUE,   /* yes, we are scanning */
+			       FALSE,  /* no, we are not aligning */
+			       FALSE,  /* don't be memory efficient */
+			       NULL,   /* don't want best score at each posn back */
+			       NULL,   /* don't want the max scoring posn back */
+			       NULL,   /* don't want traces back */
+			       &(vit_cp9scA[i]))) != eslOK) return status;
+      if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL, 
+			       TRUE,   /* yes, we are scanning */
+			       FALSE,  /* no, we are not aligning */
+			       FALSE,  /* don't be memory efficient */
+			       NULL,   /* don't want best score at each posn back */
+			       NULL,   /* don't want the max scoring posn back */
+			       &(fwd_cp9scA[i]))) != eslOK) return status;
+    }
+    else { /* mode == 3 */
+      if((status = cm_cp9_HybridScan(cm, errbuf, cm->cp9_mx, dsq, cfg->hsi, 1, L, cfg->hsi->W, 0., 
+				     NULL, /* don't report results */
+				     NULL, /* don't want best score at each posn back */
+				     NULL, /* don't want the max scoring posn back */
+				     &(hybscA[i]))) != eslOK) return status;
+    }
+    free(dsq);
+    if (cur_vscA != NULL) /* will be NULL if do_cyk == do_inside == FALSE (mode 3) */
+      for(v = 0; v < cm->M; v++) vscAA[v][i] = cur_vscA[v];
+    free(cur_vscA);
+  }
+  if(cfg->my_rank == 0) { printf("=]"); }
+  *ret_partA = partA;
+  if(ret_vscAA      != NULL)  *ret_vscAA      = vscAA;
+  if(ret_vit_cp9scA != NULL)  *ret_vit_cp9scA = vit_cp9scA;
+  if(ret_fwd_cp9scA != NULL)  *ret_fwd_cp9scA = fwd_cp9scA;
+  if(ret_hybscA != NULL)      *ret_hybscA     = hybscA;
+
+  if(inside_flag_raised) cm->search_opts |= CM_SEARCH_INSIDE;
+
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+
+/*
+ * Function: cm_find_hit_above_cutoff()
+ * Date:     EPN, Wed Sep 12 04:59:08 2007
+ *
+ * Purpose:  Given a CM, a sequence, and a cutoff, try to 
+ *           *quickly* answer the question: Does this sequence 
+ *           contain a hit to the CM above the cutoff?
+ *           To do this we first check the parsetree score, and
+ *           then do do up to 3 iterations of search.
+ *           The first 2 are performend with j and d bands 
+ *           (of decreasing tightness), then default 
+ *           search (with QDB unless --noqdb enabled) is done.
+ *           We return TRUE if any search finds a hit above
+ *           cutoff, and FALSE otherwise.
+ *
+ * Args:     go              - getopts
+ *           cfg             - cmcalibrate's configuration
+ *           errbuf          - char buffer for error message
+ *           cm              - CM to emit from
+ *           dsq             - the digitized sequence to search
+ *           tr              - parsetree for dsq
+ *           L               - length of sequence
+ *           cutoff          - bit score cutoff 
+ *           ret_sc          - score of a hit within dsq, if < cutoff,
+ *                             this is score of best hit within dsq, which
+ *                             means no hit with sc > cutoff exists. If > cutoff,
+ *                             not necessarily score of best hit within dsq.
+ *
+ * Returns:  eslOK on success. other status code upon failure, errbuf filled with error message.
+ */
+int 
+cm_find_hit_above_cutoff(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_DSQ *dsq,
+			 Parsetree_t *tr, int L, float cutoff, float *ret_sc)
+{
+  int status;
+  int turn_qdb_back_on = FALSE;
+  int turn_hbanded_back_off = FALSE;
+  int turn_hmmscanbands_back_off = FALSE;
+  double orig_tau = cm->tau;
+  float sc;
+  float size_limit = esl_opt_GetReal(go, "--mxsize");
+
+#if eslDEBUGLEVEL >= 1
+  int init_flags       = cm->flags;
+  int init_search_opts = cm->search_opts;
+#endif
+
+  if(ret_sc == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_find_hit_above_cutoff(), ret_sc == NULL.\n");
+
+  /* Determine if this sequence has a hit in it above the cutoff as quickly as possible. 
+   * Stage 0: Check parsetree score
+   * Stage 1: HMM banded search tau = 1e-2
+   * Stage 2: HMM banded search with scanning bands, tau = 1e-10
+   * Stage 3: QDB search (CYK or inside), beta = --beta, (THIS IS MOST LENIENT SEARCH WE'LL DO)
+   *
+   * The earliest stage at which we find a hit > cutoff at any stage, we return cm->flags, cm->search_opts
+   * to how they were when we entered, and return TRUE.
+   *
+   * NOTE: We don't do a full non-banded parse to be 100% sure we don't exceed the cutoff, 
+   * unless --noqdb was enabled (ScanMatrix_t *smx stores dn/dx (min/max d) for each state), 
+   * because we assume the --beta value used in *this* cmcalibrate 
+   * run will also be used for any cmsearch runs.
+   */
+
+  sc = ParsetreeScore(cm, tr, dsq, FALSE); 
+  FreeParsetree(tr);
+  if(sc > cutoff || L == 0) { /* parse score exceeds cutoff, or zero length sequence (only 1 path is possible, must be parse score) */
+    ESL_DASSERT1((cm->flags       == init_flags));
+    ESL_DASSERT1((cm->search_opts == init_search_opts));
+    /* printf("0 sc: %10.4f\n", sc); */
+    *ret_sc = sc;
+    return eslOK;
+  } 
+
+  if(!(cm->search_opts & CM_SEARCH_NOQDB))        turn_qdb_back_on = TRUE;
+  if(!(cm->search_opts & CM_SEARCH_HBANDED))      turn_hbanded_back_off = TRUE;
+  if(!(cm->search_opts & CM_SEARCH_HMMSCANBANDS)) turn_hmmscanbands_back_off = TRUE;
+
+  cm->search_opts |= CM_SEARCH_NOQDB;
+
+  /* stage 1 */
+  cm->search_opts |= CM_SEARCH_HBANDED;
+  cm->tau = 0.01;
+  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) return status;
+  status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, size_limit, &sc);
+  if(status == eslOK) { /* FastCYKScanHB() successfully finished */
+    if(sc > cutoff) { /* score exceeds cutoff, we're done, reset search_opts and return */
+      if(turn_qdb_back_on)        cm->search_opts &= ~CM_SEARCH_NOQDB; 
+      if(turn_hbanded_back_off) { cm->search_opts &= ~CM_SEARCH_HBANDED; cm->tau = orig_tau; }
+      ESL_DASSERT1((cm->flags       == init_flags));
+      ESL_DASSERT1((cm->search_opts == init_search_opts));
+      *ret_sc = sc;
+      return eslOK;
+    }
+  }
+  else if (status != eslERANGE) return status; /* else if status == eslERANGE, FastCYKScanHB() couldn't grow its DP matrix big enough, move onto next stage */
+
+  /* stage 2 */
+  cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
+  cm->tau = 1e-10;
+  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) return status;
+  status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, size_limit, &sc);
+  if(status == eslOK) { /* FastCYKScanHB() successfully finished */
+    if(sc > cutoff) { /* score exceeds cutoff, we're done, reset search_opts and return */
+      if(turn_qdb_back_on)             cm->search_opts &= ~CM_SEARCH_NOQDB; 
+      if(turn_hbanded_back_off)      { cm->search_opts &= ~CM_SEARCH_HBANDED;      cm->tau = orig_tau; }
+      if(turn_hmmscanbands_back_off) { cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS; cm->tau = orig_tau; }
+      ESL_DASSERT1((cm->flags       == init_flags));
+      ESL_DASSERT1((cm->search_opts == init_search_opts));
+      *ret_sc = sc;
+      return eslOK;
+    }
+  }
+  else if (status != eslERANGE) return status; /* else if status == eslERANGE, FastCYKScanHB() couldn't grow its DP matrix big enough, move onto next stage */
+
+  /* stage 3, use 'default' dmin, dmax (which could be NULL) CYK or Inside */
+  cm->search_opts &= ~CM_SEARCH_HBANDED;
+  cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
+  if(turn_qdb_back_on) cm->search_opts &= ~CM_SEARCH_NOQDB; 
+
+  if(cm->search_opts & CM_SEARCH_INSIDE) {
+    if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) return status;
+  }
+  else { 
+    if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) return status;
+  }
+  if(!turn_hbanded_back_off)      { cm->search_opts |= CM_SEARCH_HBANDED;      cm->tau = orig_tau; }
+  if(!turn_hmmscanbands_back_off) { cm->search_opts |= CM_SEARCH_HMMSCANBANDS; cm->tau = orig_tau; }
+  ESL_DASSERT1((cm->flags       == init_flags));
+  ESL_DASSERT1((cm->search_opts == init_search_opts));
+
+  /*if(sc > cutoff) { printf("3 sc: %10.4f\n", sc); }*/
+  *ret_sc = sc;
+  return eslOK;
+}
+
+
+/* Function: predict_cp9_filter_speedup()
+ * Date:     EPN, Mon Dec 10 11:55:24 2007
+ *
+ * Purpose:  Given a CM and scores for a CP9 Viterbi and Forward scan
+ *           of target seqs predict the speedup with an HMM filter, Forward and
+ *           Viterbi, then update a BestFilterInfo_t object to 
+ *           hold info on the faster of the two.
+ *            
+ * Args:     go  - command line options
+ *           cfg - cmcalibrate's cfg object, mucho data (probably too much)
+ *           errbuf - for printing error messages
+ *           cm - the model
+ *           fil_vit_cp9scA - [0..i..filN-1] best Viterbi score in sequence i 
+ *           fil_fwd_cp9scA - [0..i..filN-1] best Foward score in sequence i 
+ *           fil_partA      - [0..i..filN-1] partition of sequence i 
+ *           bf             - BestFilterInfo_t object, we'll update this to hold info on a Viterbi or Forward filter strategy 
+ *
+ * Returns:  Updates BestFilterInfo_t object <bf> to hold info on fastest HMM filter, Viterbi or Forward
+ *           eslOK on success;
+ *           Other easel status code on an error with errbuf filled with error message.
+ */
+int
+predict_cp9_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_vit_cp9scA, float *fil_fwd_cp9scA, int *fil_partA, BestFilterInfo_t *bf)
+{
+  int    status;
+  float *sorted_fil_vit_EA;       /* sorted Viterbi E-values, so we can easily choose a threshold */
+  float *sorted_fil_fwd_EA;       /* sorted Forward E-values, so we can easily choose a threshold */
+  float  vit_E, fwd_E;            /* a Viterbi and Forward E value */
+  int    cp9_vit_mode, cp9_fwd_mode; /* a Viterbi, Forward Gumbel mode, respectively  */
+  int    evalue_L;                /* database length used for calcing E-values in CP9 gumbels from cfg->cmstats */
+  float  fil_calcs;               /* number of million dp calcs predicted for the HMM filter scan */
+  float  vit_surv_calcs;          /* number of million dp calcs predicted for the CM scan of Viterbi filter survivors */
+  float  fwd_surv_calcs;          /* number of million dp calcs predicted for the CM scan of Forward filter survivors */
+  float  vit_fil_plus_surv_calcs; /* Viterbi filter calcs plus survival calcs */ 
+  float  fwd_fil_plus_surv_calcs; /* Foward filter calcs plus survival calcs */ 
+  float  nonfil_calcs;            /* number of million dp calcs predicted for a full CM scan */
+  float  vit_spdup, fwd_spdup;    /* predicted speedups for Viterbi and Forward */
+  int    i, p;                    /* counters */
+  int    cmi = cfg->ncm-1;        /* CM index we're on */
+  int    Fidx;                    /* index in sorted scores that threshold will be set at (1-F) * N */
+  float  filE = esl_opt_GetReal(go, "--filE"); /* E-value cutoff for accepting CM hits for filter test */
+  float  F = esl_opt_GetReal(go, "--F"); /* fraction of CM seqs we require filter to let pass */
+  int    filN  = esl_opt_GetInteger(go, "--filN"); /* number of sequences we emitted from CM for filter test */
+  float  Starg   = esl_opt_GetReal(go, "--starg"); /* target survival fraction */
+  float  E_Starg;                 /* E-value threshold that exactly satisifies Starg survival fraction */
+  float  vit_E_F1;                /* viterbi E value if F were == 1.0 */
+  float  fwd_E_F1;                /* forward E value if F were == 1.0 */
+  float  surv_res_per_hit;        /* expected number of residues to survive filter from DB for each hit 2*W-avglen[0], twice W minus the average lenght of a hit from QDB calc */
+  float  Smin;                    /* minimally useful survival fraction, any less than this and our filter would be (predicted to be) doing more than 10X the work of the CM */
+  float  E_min;                   /* E-value threshold that exactly satisifies Smin survival fraction */
+  float  vit_surv_fract;          /* predicted survival fraction for Viterbi filter */
+  float  fwd_surv_fract;          /* predicted survival fraction for Forward filter */
+  
+  cp9_vit_mode = (cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? GUM_CP9_LV : GUM_CP9_GV;
+  cp9_fwd_mode = (cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? GUM_CP9_LF : GUM_CP9_GF;
+
+  /* contract checks */
+  if(! (cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][0]->is_valid)) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_cp9_filter_speedup(), gumbel stats for CP9 viterbi mode: %d are not valid.\n", cp9_vit_mode);
+  if(! (cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][0]->is_valid)) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_cp9_filter_speedup(), gumbel stats for CP9 forward mode: %d are not valid.\n", cp9_fwd_mode);
+  if(cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][0]->L != cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][0]->L) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_cp9_filter_speedup(), db length for gumbel stats for CP9 viterbi (%d) and forward (%d) differ.\n", cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][0]->L, cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][0]->L);
+
+  evalue_L = cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][0]->L;
+
+  /* contract checks specific to case when there is more than 1 partition */
+  if(cfg->cmstatsA[cfg->ncm-1]->np != 1) { 
+    for(p = 1; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) {
+      if(evalue_L != cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][p]->L) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_cp9_filter_speedup(), partition %d db length (%d) for Viterbi gumbel stats differ than from partition 1 Viterbi db length (%d).\n", p, cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][p]->L, evalue_L);
+      if(evalue_L != cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][p]->L) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_cp9_filter_speedup(), partition %d db length (%d) for Forward gumbel stats differ than from partition 1 Viterbi db length (%d).\n", p, cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][p]->L, evalue_L);
+    }
+  }
+
+  Fidx  = (int) ((1. - F) * (float) filN);
+
+  /* convert bit scores to E-values and sort them */
+  ESL_ALLOC(sorted_fil_vit_EA, sizeof(float) * filN);
+  ESL_ALLOC(sorted_fil_fwd_EA, sizeof(float) * filN);
+  for(i = 0; i < filN; i++) { 
+    p = fil_partA[i];
+    sorted_fil_vit_EA[i] = RJK_ExtremeValueE(fil_vit_cp9scA[i], cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][p]->mu, cfg->cmstatsA[cmi]->gumAA[cp9_vit_mode][p]->lambda); 
+    sorted_fil_fwd_EA[i] = RJK_ExtremeValueE(fil_fwd_cp9scA[i], cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][p]->mu, cfg->cmstatsA[cmi]->gumAA[cp9_fwd_mode][p]->lambda); 
+  }
+  esl_vec_FSortDecreasing(sorted_fil_vit_EA, filN);
+  vit_E = sorted_fil_vit_EA[Fidx];
+  esl_vec_FSortDecreasing(sorted_fil_fwd_EA, filN);
+  fwd_E = sorted_fil_fwd_EA[Fidx];
+
+  /* now vit_E and fwd_E are expected number of CP9 Viterbi/Forward hits with score above threshold 
+   * (Fidx'th best score) in a sequence DB of length evalue_L, convert that DB size to cfg->dbsize */
+  vit_E *= cfg->dbsize / evalue_L;
+  fwd_E *= cfg->dbsize / evalue_L;
+
+  fil_calcs  = cfg->full_cp9_ncalcs;  /* fil_calcs is millions of DP calcs for CP9 scan of 1 residue */
+  fil_calcs *= cfg->dbsize;           /* fil_calcs is millions of DP calcs for CP9 scan of length cfg->dbsize */
+  nonfil_calcs = cfg->full_vcalcs[0]; /* total number of millions of DP calculations for full CM scan of 1 residue */
+  nonfil_calcs *= cfg->dbsize;        /* now nonfil-calcs corresponds to cfg->dbsize */
+
+  /* determine our thresholds:
+   * 1. if vit_E and/or fwd_E yield predicted survival fractions that are less than Starg:
+   *    rewrite vit_E or fwd_E as the maximum E-value threshold that sees ALL hits (when F==1.0,
+   *    this is {vit,fwd}_E_F1 below), and the E-value threshold that exactly satisfies Starg (E_Starg below).
+   * 2. if after 1, vit_E and/or fwd_E still yield predicted survival fractions less than Smin,
+   *    the survival fraction at which the number of DP calcs for the survivors of the filter is only
+   *    10% the number of dp calcs for the filter, then we set vit_E or fwd_E to the E value that
+   *    exactly satisfies Smin.
+   */
+  surv_res_per_hit = (2. * cm->W - (cfg->avglen[0])); /* avg length of surviving fraction of db from a single hit (cfg->avglen[0] is avg subseq len in subtree rooted at v==0, from QDB calculation) */
+  vit_E_F1= (sorted_fil_vit_EA[0] * (cfg->dbsize / evalue_L));
+  fwd_E_F1= (sorted_fil_fwd_EA[0] * (cfg->dbsize / evalue_L));
+  E_Starg = (Starg * (float) cfg->dbsize) / surv_res_per_hit;
+  Smin    = fil_calcs / (10. * nonfil_calcs);
+  E_min   = (Smin * (float) cfg->dbsize) / surv_res_per_hit;
+  if(Starg < Smin) { /* we never go less than Smin */
+    Starg = Smin;
+    E_Starg = E_min;
+  }
+  
+  vit_surv_fract = (vit_E * surv_res_per_hit) / (float) cfg->dbsize;
+  fwd_surv_fract = (fwd_E * surv_res_per_hit) / (float) cfg->dbsize;
+  
+  ESL_DPRINTF1(("vit_E:    %.5f\n", vit_E));
+  ESL_DPRINTF1(("vit_surv: %.10f\n", vit_surv_fract));
+  ESL_DPRINTF1(("fwd_E:    %.5f\n", fwd_E));
+  ESL_DPRINTF1(("fwd_surv: %.10f\n", fwd_surv_fract));
+
+  ESL_DPRINTF1(("vit_E_F1: %.5f\n", vit_E_F1));
+  ESL_DPRINTF1(("fwd_E_F1: %.5f\n", fwd_E_F1));
+  ESL_DPRINTF1(("Starg:    %.5f\n", Starg));
+  ESL_DPRINTF1(("E_Starg:  %.5f\n", E_Starg));
+  ESL_DPRINTF1(("Smin:     %.5f\n", Smin));
+  ESL_DPRINTF1(("E_min:    %.5f\n", E_min));
+
+  if(vit_surv_fract < Starg) { 
+    if(vit_E_F1 < E_Starg) { 
+      vit_E = vit_E_F1;
+      if(cfg->be_verbose) printf("set vit_E as vit_E_F1: %.5f\n", vit_E);
+      else { ESL_DPRINTF1(("set vit_E as vit_E_F1: %.5f\n", vit_E)); }
+    }
+    else { 
+      vit_E = E_Starg;
+      if(cfg->be_verbose) printf("set vit_E as E_Starg: %.5f\n", vit_E);
+      else { ESL_DPRINTF1(("set vit_E as E_Starg: %.5f\n", vit_E)); }
+    }
+    if(vit_E < E_min) {
+      vit_E = E_min;
+      if(cfg->be_verbose) printf("set vit_E as E_min: %.5f\n", vit_E);
+      else { ESL_DPRINTF1(("set vit_E as E_min: %.5f\n", vit_E)); }
+    }      
+  }
+
+  if(fwd_surv_fract < Starg) { 
+    if(fwd_E_F1 < E_Starg) { 
+      fwd_E = fwd_E_F1;
+      if(cfg->be_verbose) printf("set fwd_E as fwd_E_F1: %.5f\n", fwd_E);
+      else { ESL_DPRINTF1(("set fwd_E as fwd_E_F1: %.5f\n", fwd_E)); }
+    }
+    else { 
+      fwd_E = E_Starg;
+      if(cfg->be_verbose) printf("set fwd_E as E_Starg: %.5f\n", fwd_E);
+      else { ESL_DPRINTF1(("set fwd_E as E_Starg: %.5f\n", fwd_E)); }
+    }
+    if(fwd_E < E_min) {
+      fwd_E = E_min;
+      if(cfg->be_verbose) printf("set fwd_E as E_min: %.5f\n", fwd_E);
+      else { ESL_DPRINTF1(("set fwd_E as E_min: %.5f\n", fwd_E)); }
+    }      
+  }
+
+  for(i = 0; i < filN; i++) ESL_DPRINTF1(("HMM i: %4d vit E: %15.10f fwd E: %15.10f\n", i, sorted_fil_vit_EA[i], sorted_fil_fwd_EA[i]));
+
+  /* calculate speedup for Viterbi */
+  vit_surv_calcs = vit_E *     /* number of hits expected to survive filter */
+    surv_res_per_hit *         /* avg length of surviving fraction of db from a single hit */
+    cfg->full_vcalcs[0];       /* number of calculations for full CM scan of 1 residue */
+
+  fwd_surv_calcs = fwd_E *     /* number of hits expected to survive filter */
+    surv_res_per_hit *         /* avg length of surviving fraction of db from a single hit */
+    cfg->full_vcalcs[0];       /* number of calculations for full CM scan of 1 residue */
+
+  vit_fil_plus_surv_calcs = fil_calcs + vit_surv_calcs; /* total number of millions of DP calculations expected using the CP9 viterbi filter for scan of cfg->dbsize */
+  vit_spdup = nonfil_calcs / vit_fil_plus_surv_calcs;
+  fwd_fil_plus_surv_calcs = (fil_calcs * 2.) + fwd_surv_calcs; /* total number of millions of DP calculations expected using the CP9 forward filter for scan of cfg->dbsize (logsum corrected, Forward calcs *= 2.) */
+  fwd_spdup = nonfil_calcs / fwd_fil_plus_surv_calcs;
+  /* We multiply number of forward calculations by 2.0 to correct for the fact that Forward takes about 2X as long as Viterbi, b/c it requires logsum operations instead of ESL_MAX's,
+   * so we factor this in when calc'ing the predicted speedup. */
+
+  if(cfg->be_verbose) { 
+    printf("\nHMM(vit) E: %15.10f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", vit_E, fil_calcs, vit_surv_calcs, vit_fil_plus_surv_calcs, nonfil_calcs, vit_spdup);
+    printf("HMM(fwd) E: %15.10f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", fwd_E, fil_calcs, fwd_surv_calcs, fwd_fil_plus_surv_calcs, nonfil_calcs, fwd_spdup);
+  }
+  else {
+    ESL_DPRINTF1(("\nHMM(vit) E: %15.10f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", vit_E, fil_calcs, vit_surv_calcs, vit_fil_plus_surv_calcs, nonfil_calcs, vit_spdup));
+    ESL_DPRINTF1(("HMM(fwd) E: %15.10f filt: %10.4f surv: %10.4f logsum corrected sum: %10.4f full CM: %10.4f spdup %10.4f\n", fwd_E, fil_calcs, fwd_surv_calcs, fwd_fil_plus_surv_calcs, nonfil_calcs, fwd_spdup));
+  }
+
+  if(esl_opt_GetBoolean(go, "--fviterbi")) { /* user specified Viterbi */
+    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, filE, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_VITERBI, vit_E, fil_calcs, vit_fil_plus_surv_calcs)) != eslOK) return status;
+  }
+  else if(esl_opt_GetBoolean(go, "--fforward")) { /* user specified Forward */
+    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, filE, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_FORWARD, fwd_E, fil_calcs, fwd_fil_plus_surv_calcs)) != eslOK) return status;
+  }
+  else if (vit_spdup > fwd_spdup) { /* Viterbi is winner */
+    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, filE, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_VITERBI, vit_E, fil_calcs, vit_fil_plus_surv_calcs)) != eslOK) return status;
+  }
+  else { /* Forward is winner */
+    if((status = SetBestFilterInfoHMM(bf, errbuf, cm->M, filE, F, filN, cfg->dbsize, nonfil_calcs, FILTER_WITH_HMM_FORWARD, fwd_E, fil_calcs, fwd_fil_plus_surv_calcs)) != eslOK) return status;
+  }
+  return eslOK;
+
+ ERROR:
+  return status; 
+}
+
+
+/* Function: predict_best_sub_cm_roots()
+ * Date:     EPN, Mon Dec 10 15:56:00 2007
+ *
+ * Purpose:  Given a CM and scores for a CM scan of target seqs
+ *           predict the best sub CM roots we could use to 
+ *           filter with.
+ *            
+ * Returns:  eslOK on success;
+ *           Other status code on error, with error message in errbuf.
+ */
+int 
+predict_best_sub_cm_roots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float **fil_vscAA, int **ret_sorted_best_roots_v)
+{
+  int    status;
+  float **sorted_fil_vscAA;       /* [0..v..cm->M-1][0..filN-1] best score for each state v, each target seq */
+  float  fil_calcs;               /* number of million dp calcs predicted for the HMM filter scan */
+  float  surv_calcs;              /* number of million dp calcs predicted for the CM scan of filter survivors */
+  float  fil_plus_surv_calcs;     /* filter calcs plus survival calcs */ 
+  float  nonfil_calcs;            /* number of million dp calcs predicted for a full CM scan */
+  float  spdup;                   /* predicted speedup a sub CM filter */
+  float  E, tmp_E;                /* E value */
+  float  sc;                      /* bit score */
+  int    i, p, s, v;              /* counters */
+  int    Fidx;                    /* index in sorted scores that threshold will be set at (1-F) * N */
+  float  F = esl_opt_GetReal(go, "--F"); /* fraction of CM seqs we require filter to let pass */
+  int    filN  = esl_opt_GetInteger(go, "--filN"); /* number of sequences we emitted from CM for filter test */
+  int    nstarts;                  /* # start states (and start groups) in the CM, from cfg->hsi */                                 
+  int   *best_per_start_v;         /* sub CM filter state v that gives best speedup per start group */
+  float *best_per_start_spdup;     /* best sub CM filter state speedup per start group */
+
+  if(ret_sorted_best_roots_v == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_best_sub_cm_roots, ret_sorted_best_roots_v == NULL.\n");
+
+  Fidx  = (int) ((1. - F) * (float) filN);
+
+  ESL_ALLOC(sorted_fil_vscAA, sizeof(float *) * cm->M);
+  /*ESL_ALLOC(sorted_fil_EAA, sizeof(float *) * cm->M);*/
+
+  nstarts = cfg->hsi->nstarts;
+  ESL_ALLOC(best_per_start_v,     sizeof(int)   * nstarts);
+  ESL_ALLOC(best_per_start_spdup, sizeof(float) * nstarts);
+  for(s = 0; s < nstarts; s++) {
+    best_per_start_v[s] = -1;
+    best_per_start_spdup[s] = -eslINFINITY;
+  }
+
+  for(v = 0; v < cm->M; v++) {
+    ESL_ALLOC(sorted_fil_vscAA[v], sizeof(float) * filN);
+    esl_vec_FCopy(fil_vscAA[v], filN, sorted_fil_vscAA[v]); 
+    esl_vec_FSortIncreasing(sorted_fil_vscAA[v], filN);
+  }
+  ESL_DPRINTF1(("vscAA[0] scores:\n"));
+  for(i = 0; i < filN; i++) ESL_DPRINTF1(("i: %4d sc: %10.4f\n", i, sorted_fil_vscAA[0][i]));
+
+  for(v = 0; v < cm->M; v++) {
+    if(cfg->hsi->iscandA[v]) {
+      sc = sorted_fil_vscAA[v][Fidx];
+      /* set E as E-value for sc from partition that gives sc the lowest E-value (conservative, sc will be at least as significant as E across all partitions) */
+      E  = RJK_ExtremeValueE(sc, cfg->vmuAA[0][v], cfg->vlambdaAA[0][v]); 
+      for(p = 1; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) {
+	tmp_E = RJK_ExtremeValueE(sc, cfg->vmuAA[p][v], cfg->vlambdaAA[p][v]); 
+	if(tmp_E < E) E = tmp_E;
+      }
+      /* E is now expected number of hits for db of cfg->length 2 * cm->W */
+      E *= cfg->dbsize / (cm->W * 2.);
+      /* E is now expected number of hits for db of cfg->dbsize */
+
+      fil_calcs   = cfg->hsi->cm_vcalcs[v]; /* fil_calcs is millions of DP calcs for sub CM (root = v) scan of 1 residue */
+      fil_calcs  *= cfg->dbsize;            /* fil_calcs is millions of DP calcs for sub CM (root = v) scan of length cfg->dbsize */
+      surv_calcs = E *     /* number of hits expected to survive filter */
+	(2. * cm->W - (cfg->avglen[v])) * /* average length of surviving fraction of db from a single hit (cfg->avglen[v] is avg subseq len in  subtree rooted at v */
+	cfg->hsi->full_cm_ncalcs; /* number of calculations for full CM scan of 1 residue */
+      fil_plus_surv_calcs = fil_calcs + surv_calcs;
+      nonfil_calcs = cfg->hsi->full_cm_ncalcs;      /* total number of millions of DP calculations for full CM scan of 1 residue */
+      nonfil_calcs *= cfg->dbsize;                  /* now nonfil-calcs corresponds to cfg->dbsize */
+      spdup = nonfil_calcs / fil_plus_surv_calcs;
+      if(cfg->be_verbose) { printf("SUB %3d sg: %2d sc: %10.4f E: %10.4f filt: %10.4f surv: %10.4f sum: %10.4f full CM: %10.4f spdup %10.4f\n", v, cfg->hsi->startA[v], sc, E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, spdup); } 
+      else                { ESL_DPRINTF1(("SUB %3d sg: %2d sc: %10.4f E: %10.4f filt: %10.4f surv: %10.4f sum: %10.4f full CM: %10.4f spdup %10.4f\n", v, cfg->hsi->startA[v], sc, E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, spdup)); } 
+      s = cfg->hsi->startA[v];
+      if(spdup > best_per_start_spdup[s] && cm->ndidx[v] != 0) { /* can't filter with a state in node 0 */
+	best_per_start_v[s]     = v;
+	best_per_start_spdup[s] = spdup;
+      }	
+    }  
+  }
+  for(s = 0; s < nstarts; s++) { 
+    if(cfg->be_verbose) printf("START %d v: %d spdup: %10.4f\n", s, best_per_start_v[s], best_per_start_spdup[s]);
+    else {       ESL_DPRINTF1(("START %d v: %d spdup: %10.4f\n", s, best_per_start_v[s], best_per_start_spdup[s])); }
+    ESL_DASSERT1((best_per_start_v[s] != -1));
+  }
+
+  /* sort the best sub CM roots (1 per start group) by their speedup,
+   * this is an embarassing N^2 sorting, but biggest RNAs have ~ 100 starts, so this is okay I guess (LSU has ~140 starts) 
+   */
+  int *sorted_best_roots_v; 
+  int *sorted_best_roots_start; 
+  float *sorted_best_roots_spdup;
+  int *already_chosen;
+  int s1, s2;
+  int best_cur_v;
+  int best_cur_start;
+  float best_cur_spdup;
+
+  ESL_ALLOC(sorted_best_roots_v,     sizeof(int) * nstarts);
+  ESL_ALLOC(sorted_best_roots_start, sizeof(int) * nstarts);
+  ESL_ALLOC(sorted_best_roots_spdup, sizeof(int) * nstarts);
+  ESL_ALLOC(already_chosen,          sizeof(int) * nstarts);
+  esl_vec_ISet(already_chosen, nstarts, FALSE);
+  for(s1 = 0; s1 < nstarts; s1++) {
+    best_cur_v = -1;
+    best_cur_start = -1;
+    best_cur_spdup = -eslINFINITY;
+    for(s2 = 0; s2 < nstarts; s2++) { 
+      if(! already_chosen[s2]) {
+	if(best_per_start_spdup[s2] > best_cur_spdup) { 
+	  best_cur_v = best_per_start_v[s2];
+	  best_cur_start = s2;
+	  best_cur_spdup = best_per_start_spdup[s2];
+	}
+      }
+    }
+    sorted_best_roots_v[s1] = best_cur_v;
+    sorted_best_roots_start[s1] = best_cur_start;
+    sorted_best_roots_spdup[s1] = best_cur_spdup;
+    already_chosen[best_cur_start] = TRUE;
+  }
+  for(s1 = 0; s1 < nstarts; s1++) {
+    if(cfg->be_verbose) printf("SORTED rank: %d v: %d spdup: %.5f start: %d\n", s1, sorted_best_roots_v[s1], sorted_best_roots_spdup[s1], sorted_best_roots_start[s1]);
+    else { ESL_DPRINTF1(("SORTED rank: %d v: %d spdup: %.5f start: %d\n", s1, sorted_best_roots_v[s1], sorted_best_roots_spdup[s1], sorted_best_roots_start[s1])); } 
+    ESL_DASSERT1((sorted_best_roots_v[s1] != -1));
+  }
+  *ret_sorted_best_roots_v = sorted_best_roots_v;
+
+  free(sorted_best_roots_start);
+  free(sorted_best_roots_spdup);
+  free(already_chosen);
+  free(best_per_start_v);
+  free(best_per_start_spdup);
+  for(v = 0; v < cm->M; v++) free(sorted_fil_vscAA[v]);
+  free(sorted_fil_vscAA);
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "predict_best_sub_cm_roots(), memory allocation error.");
+  return status; /* NEVERREACHED */
+}
+
+
+/* Function: predict_hybrid_filter_speedup()
+ * Date:     EPN, Tue Dec 11 04:56:39 2007
+ *
+ * Purpose:  Given a CM and scores for a hybrid CYK/Viterbi scan
+ *           of target seqs predict the speedup with a hybrid filter,
+ *           then if it's faster than the existing best filter in
+ *           BestFilterInfo_t object <bf>, update <bf> to hold info 
+ *           on the hybrid filter.
+ *            
+ * Args:     go  - command line options
+ *           cfg - cmcalibrate's cfg object, mucho data (probably too much)
+ *           errbuf - for printing error messages
+ *           cm - the model
+ *           fil_hybscA     - [0..i..filN-1] best Foward score in sequence i 
+ *           gum_hybA       - [0..cfg->np]   hybrid gumbels for each partition
+ *           fil_partA      - [0..i..filN-1] partition of sequence i 
+ *           bf             - BestFilterInfo_t object, we'll update this to hold info on a Viterbi or Forward filter strategy 
+ * 
+ * Returns:  possibly updates BestFilterInfo_t object <bf> to hold info on hybrid filter
+ *           eslOK on success;
+ *           Other easel status code on an error with errbuf filled with error message.
+ *           <ret_getting_faster> set to TRUE if hybrid scanner replaced previous best filter,
+ *           FALSE if not.
+ */
+int
+predict_hybrid_filter_speedup(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *fil_hybscA, int *fil_partA, GumbelInfo_t **gum_hybA, BestFilterInfo_t *bf, int *ret_getting_faster)
+{
+  int    status;
+  float  *sorted_fil_hybEA;       /* sorted hybrid E-values, so we can easily choose a threshold */
+  float  E;                       /* E-value */
+  int    evalue_L;                /* length used for calc'ing E values */
+  float  fil_calcs;               /* number of million dp calcs predicted for the hybrid scan */
+  float  surv_calcs;              /* number of million dp calcs predicted for the CM scan of filter survivors */
+  float  fil_plus_surv_calcs;     /* filter calcs plus survival calcs */ 
+  float  nonfil_calcs;            /* number of million dp calcs predicted for a full CM scan */
+  float  spdup;                   /* predicted speedups for Viterbi and Forward, and a temporary one */
+  int    i, p;                    /* counters */
+  int    Fidx;                     /* index in sorted scores that threshold will be set at (1-F) * N */
+  float  F = esl_opt_GetReal(go, "--F"); /* fraction of CM seqs we require filter to let pass */
+  float  filE = esl_opt_GetReal(go, "--filE"); /* E-value of cutoff for accepting CM seqs */
+  int    filN  = esl_opt_GetInteger(go, "--filN"); /* number of sequences we emitted from CM for filter test */
+
+  /* contract checks */
+  if(! (gum_hybA[0]->is_valid)) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_hybrid_filter_speedup(), gumbel stats for hybrid scanner are not valid.\n");
+  evalue_L = gum_hybA[0]->L;
+  /* contract checks specific to case when there is more than 1 partition */
+  if(cfg->cmstatsA[cfg->ncm-1]->np != 1) { 
+    for(p = 1; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) {
+      if(evalue_L != gum_hybA[p]->L) ESL_FAIL(eslEINCOMPAT, errbuf, "predict_hybrid_filter_speedup(), partition %d db length (%d) for hybrid gumbel stats differ than from partition 1 hybrid db length (%d).\n", p, gum_hybA[p]->L, evalue_L);
+    }
+  }
+
+  Fidx  = (int) ((1. - F) * (float) filN);
+
+  /* convert bit scores to E-values and sort them */
+  ESL_ALLOC(sorted_fil_hybEA, sizeof(float) * filN);
+  for(i = 0; i < filN; i++) { 
+    p = fil_partA[i];
+    sorted_fil_hybEA[i] = RJK_ExtremeValueE(fil_hybscA[i], gum_hybA[p]->mu, gum_hybA[p]->lambda); 
+  }
+  esl_vec_FSortDecreasing(sorted_fil_hybEA, filN);
+  E = sorted_fil_hybEA[Fidx];
+
+  for(i = 0; i < filN; i++) ESL_DPRINTF1(("HYBRID i: %4d E: %10.4f\n", i, sorted_fil_hybEA[i]));
+  
+  /* calculate speedup */
+  /* E is expected number of hybrid hits with score above threshold (Fidx'th best score) at least sc in sequence DB of length evalue_L */
+  E *= cfg->dbsize / evalue_L;
+  /* E is now expected number of CP9 Viterbi or Forward hits with score above threshold in sequence DB of length cfg->dbsize */
+  fil_calcs  = cfg->hsi->hybrid_ncalcs; /* fil_calcs is millions of DP calcs for hybrid scan of 1 residue */
+  fil_calcs *= cfg->dbsize;             /* fil_calcs is millions of DP calcs for hybrid scan of length cfg->dbsize */
+  surv_calcs = E *     /* number of hits expected to survive filter */
+    (2. * cm->W - (cfg->avglen[0])) * /* average length of surviving fraction of db from a single hit (cfg->avglen[0] is avg subseq len in  subtree rooted at v==0, from QDB calculation, so slightly inappropriate b/c we're concerned with hybrid hits here) */
+    cfg->hsi->full_cm_ncalcs; /* number of calculations for full CM scan of 1 residue */
+  fil_plus_surv_calcs = fil_calcs  + surv_calcs; /* total number of millions of DP calculations expected using the hybrid filter for scan of cfg->dbsize (logsum corrected, Forward calcs *= 2.) */
+  nonfil_calcs = cfg->hsi->full_cm_ncalcs;      /* total number of millions of DP calculations for full CM scan of 1 residue */
+  nonfil_calcs *= cfg->dbsize;                  /* now nonfil-calcs corresponds to cfg->dbsize */
+  spdup = nonfil_calcs / fil_plus_surv_calcs;
+  
+  if(cfg->be_verbose) printf("HYBRID E: %10.4f filt: %10.4f surv: %10.4f sum: %10.4f full CM: %10.4f spdup %10.4f\n", E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, spdup);
+  else { ESL_DPRINTF1(("HYBRID E: %10.4f filt: %10.4f surv: %10.4f sum: %10.4f full CM: %10.4f spdup %10.4f\n", E, fil_calcs, surv_calcs, fil_plus_surv_calcs, nonfil_calcs, spdup)); }
+
+  if(spdup > (bf->full_cm_ncalcs / bf->fil_plus_surv_ncalcs)) { /* hybrid is best filter strategy so far */
+    if((status = SetBestFilterInfoHybrid(bf, errbuf, cm->M, filE, F, filN, cfg->dbsize, nonfil_calcs, E, fil_calcs, fil_plus_surv_calcs, cfg->hsi, cfg->cmstatsA[cfg->ncm-1]->np, gum_hybA)) != eslOK) return status;
+    *ret_getting_faster = TRUE;
+  }
+  else *ret_getting_faster = FALSE;
+
+  return eslOK;
+
+ ERROR:
+  return status; 
+}
+
+/* update_cutoffs()
+ * Update the cfg->cutoffA array to have the bit score cutoff for each partition
+ * for the 'current' cm (number ncm-1).
+ */
+static int
+update_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int fthr_mode)
+{
+  double         tmp_K;          /* used for recalc'ing Gumbel stats for DB size */
+  double         e_cutoff;       /* E-value cutoff for each partition */
+  int            sc_cutoff;      /* bit score cutoff for each partition */
+  int            p;              /* partition index */
+  double         mu;             /* mu for a requested db size (which is 1Mb unless --db enabled) */
+  int            revert_to_default_filE; /* if --ga, --nc, or --tc enabled but CM does not have GA, NC or TC cutoff in the CM file,
+					  * and we've already calibrated at least 1 CM in this CM file, pretend like --ga, --nc, or --tc,
+					  * was not enabled by reverting to the default --fil-E value of 0.1
+					  */
+  revert_to_default_filE = FALSE;
+  /* if --ga, --nc, or --tc: 
+   * cfg->filE:                set as E-value (in 1Mb db) that the GA, NC, or TC bit score corresponds to for each partition in this fthr_mode
+   * cfg->cutoffA[0..p..np-1]: set as GA, NC, or TC bit score for all p for this fthr_mode
+   */
+  if ((esl_opt_GetBoolean(go, "--ga")) || (esl_opt_GetBoolean(go, "--nc")) || (esl_opt_GetBoolean(go, "--tc"))) {
+    if(esl_opt_GetBoolean(go, "--ga")) { 
+      if(! (cm->flags & CMH_GA)) {
+	if(cfg->ncm > 1) revert_to_default_filE = TRUE;
+	else             cm_Fail("--ga enabled but first CM in CM file does not have a Rfam GA cutoff.");
+      }
+      else sc_cutoff = cm->ga;
+    }
+    if(esl_opt_GetBoolean(go, "--nc")) { 
+      if(! (cm->flags & CMH_NC)) {
+	if(cfg->ncm > 1) revert_to_default_filE = TRUE;
+	else             cm_Fail("--nc enabled but first CM in CM file does not have a Rfam NC cutoff.");
+      }
+      else sc_cutoff = cm->nc;
+    }
+    if(esl_opt_GetBoolean(go, "--tc")) { 
+      if(! (cm->flags & CMH_TC)) {
+	if(cfg->ncm > 1) revert_to_default_filE = TRUE;
+	else             cm_Fail("--tc enabled but first CM in CM file does not have a Rfam TC cutoff.");
+      }
+      else sc_cutoff = cm->tc;
+    }
+    if(! revert_to_default_filE) { /* we've set sc_cutoff above, now determine e_cutoff for each partition */
+      for (p = 0; p < cfg->np; p++) 
+	cfg->cutoffA[p] = sc_cutoff; /* either cm->ga, cm->nc, or cm->tc as set above */
+      return eslOK; /* we're done */
+    }
+  }
+
+  if(esl_opt_GetBoolean(go, "--all")) {
+    for (p = 0; p < cfg->np; p++)
+      cfg->cutoffA[p] = -eslINFINITY;
+  }
+  else { /* either none of: --fil-E, --ga, --nc, --tc, --all were enabled, or --fil-E was enabled, 
+	  * or --ga, --nc, --tc were enabled, but CM does not have cm->ga, cm->nc, or cm->tc and CM is not first in file */
+    e_cutoff = esl_opt_GetReal(go, "--fil-E"); 
+    for (p = 0; p < cfg->np; p++) {
+      /* first determine mu based on db_size */
+      tmp_K = exp(cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->mu * cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda) / 
+	cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->L;
+      mu = log(tmp_K  * ((double) cfg->dbsize)) / cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda;
+      /* Now determine bit score */
+      cfg->cutoffA[p] = mu - (log(e_cutoff) / cfg->cmstatsA[cfg->ncm-1]->gumAA[fthr_mode][p]->lambda);
+    }
+  }
+  return eslOK;
+}  
+
+/* cm_fit_histograms()
+ * We want gumbels for each cm state we can do a legal local begin into.
+ * Call fit_histogram() for each such state.
+ */
+static int
+cm_fit_histograms(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
+		  float **vscA, int nscores, int p)
+{
+  int status;
+  
+  if(cfg->vmuAA[p]     != NULL) free(cfg->vmuAA[p]);
+  if(cfg->vlambdaAA[p] != NULL) free(cfg->vlambdaAA[p]);
+  
+  ESL_ALLOC(cfg->vmuAA[p],     sizeof(double) * 1);
+  ESL_ALLOC(cfg->vlambdaAA[p], sizeof(double) * 1);
+  if((status = fit_histogram(go, cfg, errbuf, vscA[0], nscores, &(cfg->vmuAA[p][0]), &(cfg->vlambdaAA[p][0]))) != eslOK) return status;
+
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+#endif
+#if 0
+
+/* Function:  cmcalibrate_cm_gumbel_results_MPIPackSize()
+ * Synopsis:  Calculates number of bytes needed to pack a 
+ *            results for CM scan for cmcalibrate.
+ * Incept:    EPN, Thu Dec  6 16:44:17 2007
+ *
+ * Purpose:   Calculate an upper bound on the number of bytes
+ *            that <cmcalibrate_cm_gumbel_results_MPIPack()> will need 
+ *            to pack it's results in a packed MPI message in 
+ *            communicator <comm>; return that number of bytes 
+ *            in <*ret_n>. 
+ *            
+ *            Caller will generally use this result to determine how
+ *            to allocate a buffer before starting to pack into it.
+ *
+ * Returns:   <eslOK> on success, and <*ret_n> contains the answer.
+ *
+ * Throws:    <eslESYS> if an MPI call fails, and <*ret_n> is set to 0. 
+ *
+ * Note:      The sizing calls here need to stay matched up with
+ *            the calls in <cmcalibrate_cm_gumbel_results_MPIPack()>.
+ */
+int
+cmcalibrate_cm_gumbel_results_MPIPackSize(float **vscAA, int nseq, int M, MPI_Comm comm, int *ret_n)
+{
+  int status;
+  int sz;
+  int n = 0;
+
+  status = MPI_Pack_size(1, MPI_INT, comm, &sz);   n += sz;      if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = MPI_Pack_size(M, MPI_FLOAT, comm, &sz); n += nseq*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+
+  *ret_n = n;
+  return eslOK;
+
+ ERROR:
+  *ret_n = 0;
+  return status;
+}
+
+/* Function:  cmcalibrate_cm_gumbel_results_MPIPack()
+ * Synopsis:  Packs CM vscAA scores into MPI buffer.
+ * Incept:    EPN, Thu Dec  6 16:47:58 2007
+ *
+ * Purpose:   Packs <vscAA> into an MPI packed message 
+ *            buffer <buf> of length <n> bytes, 
+ *            starting at byte position
+ *            <*position>, for MPI communicator <comm>.
+ *
+ *            Note: <vscAA> is a 2D array, vscAA[0..v..M-1][0..i..nseq-1]
+ *            holding the best score for each subtree rooted 
+ *            at v for a CM scan (CYK/Inside) of sequence i.
+ *            But we send it as a 1D array, vscA, of M * nseq floats,
+ *            0..nseq-1 correspond to v==0, nseq..(2*nseq-1) correspond
+ *            to v==1, etc.
+ *
+ * Returns:   <eslOK> on success; <buf> now contains the
+ *            packed <tr>, and <*position> is set to the byte
+ *            immediately following the last byte of the results
+ *            in <buf>. 
+ *
+ * Throws:    <eslESYS> if an MPI call fails; or <eslEMEM> if the
+ *            buffer's length <n> is overflowed by trying to pack
+ *            <rnode> into <buf>. In either case, the state of
+ *            <buf> and <*position> is undefined, and both should
+ *            be considered to be corrupted.
+ *
+ */
+int
+cmcalibrate_cm_gumbel_results_MPIPack(float **vscAA, int nseq, int M, char *buf, int n, int *position, MPI_Comm comm)
+{
+  int status;
+  int i,v,idx;
+  float *vscA = NULL;
+
+  ESL_DPRINTF2(("cmcalibrate_cm_gumbel_results_MPIPack(): ready.\n"));
+
+  ESL_ALLOC(vscA, sizeof(float) * (M*nseq));
+  idx = 0;
+  for(v = 0; v < M; v++) 
+    for(i = 0; i < nseq; i++)
+      vscA[idx++] = vscAA[v][i];
+
+  status = MPI_Pack((int *) &(nseq), 1, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(vscA,  (M*nseq), MPI_FLOAT,  buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+
+  ESL_DPRINTF2(("cmcalibrate_cm_gumbel_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
+
+  if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
+  return eslOK;
+
+ ERROR:
+  if(vscA  != NULL) free(vscA);
+  return status;
+}
+
+/* Function:  cmcalibrate_cm_gumbel_results_MPIUnpack()
+ * Synopsis:  Unpacks <vscAA> from an MPI buffer.
+ * Incept:    EPN, Wed Aug 29 05:10:20 2007
+ *
+ * Purpose:   Unpack a newly allocated set of scores <vscAA> from MPI packed buffer
+ *            <buf>, starting from position <*pos>, where the total length
+ *            of the buffer in bytes is <n>. 
+ *
+ *            Note: We return <ret_vscAA> as a 2D array, 
+ *            ret_vscAA[0..v..M-1][0..i..nseq-1]
+ *            holding the best score for each subtree rooted 
+ *            at v for a CM scan (CYK/Inside) of sequence i.
+ *            But vscA is sent as a 1D array, of M * nseq floats,
+ *            0..nseq-1 correspond to v==0, nseq..(2*nseq-1) correspond
+ *            to v==1, etc.
+ *
+ * Returns:   <eslOK> on success. <*pos> is updated to the position of
+ *            the next element in <buf> to unpack (if any). <*ret_tr>
+ *            contains a newly allocated parsetree, which the caller is 
+ *            responsible for free'ing.
+ *            
+ * Throws:    <eslESYS> on an MPI call failure. <eslEMEM> on allocation failure.
+ *            In either case, <*ret_vscAA> is <NULL>, and the state of <buf>
+ *            and <*pos> is undefined and should be considered to be corrupted.
+ */
+int
+cmcalibrate_cm_gumbel_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, int M, float ***ret_vscAA, int *ret_nseq)
+{
+  int status;
+  float  *vscA  = NULL;
+  float **vscAA = NULL;
+  int nseq = 0;
+  int i, v, idx;
+
+  status = MPI_Unpack (buf, n, pos, &nseq,        1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  ESL_ALLOC(vscA, sizeof(float) * (M*nseq));
+  status = MPI_Unpack (buf, n, pos, vscA, (M*nseq), MPI_FLOAT,  comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+
+  ESL_ALLOC(vscAA, sizeof(float *) * (M));
+  idx = 0;
+  for(v = 0; v < M; v++) { 
+    ESL_ALLOC(vscAA[v], sizeof(float) * nseq);
+    for(i = 0; i < nseq; i++)
+      vscAA[v][i] = vscA[idx++];
+  }
+  ESL_DASSERT1((idx == (M*nseq)));
+
+  free(vscA);
+  *ret_vscAA = vscAA;
+  *ret_nseq = nseq;
+  return eslOK;
+
+ ERROR:
+  if(vscA  != NULL) free(vscA);
+  if(vscAA != NULL) { 
+    for(i = 0; i < nseq; i++)
+      free(vscAA[i]);
+    free(vscAA);
+  }
+  *ret_vscAA = NULL;
+  *ret_nseq = 0;
+  return status;
+}
+
+
+/* Function:  cmcalibrate_cp9_filter_results_hyb_MPIPackSize()
+ * Synopsis:  Calculates number of bytes needed to pack 
+ *            CP9 filter results for cmcalibrate with --hybrid.
+ *            enabled. 
+ *           
+ *            Differs from cmcalibrate_cp9_filter_results_MPIPackSize()
+ *            in that vscAA, best scores for each state from CM scans 
+ *            is packed. these scores are eventually used to calculate
+ *            Gumbels for each possible sub CM state.
+ *
+ *            Follows, 'Purpose', 'Returns', 'Throws' of
+ *            the many other *_MPIPackSize() funcs above.
+ *            
+ * Incept:    EPN, Wed Dec 12 16:30:20 2007
+ *           
+ * Note:      The sizing calls here need to stay matched up with
+ *            the calls in <cmcalibrate_cp9_filter_results_hyb_MPIPack()>.
+ */
+int
+cmcalibrate_cp9_filter_results_hyb_MPIPackSize(int nseq, int M, MPI_Comm comm, int *ret_n)
+{
+  int status;
+  int sz;
+  int n = 0;
+
+  status = MPI_Pack_size(1, MPI_INT, comm, &sz);        n += sz;   if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  /* for nseq */
+  status = MPI_Pack_size(M*nseq, MPI_FLOAT, comm, &sz); n += sz;   if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  /* for vscAA (we'll send it as a 1D array of M * nseq floats */
+  status = MPI_Pack_size(nseq, MPI_FLOAT, comm, &sz);   n += 2*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  /* for vit_cp9scA, fwd_cp9scA */
+  status = MPI_Pack_size(nseq, MPI_INT,   comm, &sz);   n += sz;   if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  /* for partA */
+
+  *ret_n = n;
+  return eslOK;
+
+ ERROR:
+  *ret_n = 0;
+  return status;
+}
+
+/* Function:  cmcalibrate_cp9_filter_results_hyb_MPIPack()
+ * Synopsis:  Packs cmcalibrate CP9 filter results into MPI buffer.
+ *            Follows, 'Purpose', 'Returns', 'Throws' of
+ *            the many other *_MPIPack() funcs above.
+ * 
+ * Incept:    EPN, Wed Dec 12 16:36:02 2007
+ *
+ *            Differs from cmcalibrate_cp9_filter_results_MPIPackSize()
+ *            in that vscAA, best scores for each state from CM scans 
+ *            is packed. these scores are eventually used to calculate
+ *            Gumbels for each possible sub CM state.
+ *
+ *            Note: <vscAA> is a 2D array, vscAA[0..v..M-1][0..i..nseq-1]
+ *            holding the best score for each subtree rooted 
+ *            at v for a CM scan of sequence i.
+ *            But we send it as a 1D array, vscA, of M * nseq floats,
+ *            0..nseq-1 correspond to v==0, nseq..(2*nseq-1) correspond
+ *            to v==1, etc.
+ *
+ */
+int
+cmcalibrate_cp9_filter_results_hyb_MPIPack(float **vscAA, float *vit_cp9scA, float *fwd_cp9scA, int *partA, int nseq, int M, char *buf, int n, int *position, MPI_Comm comm)
+{
+  int status;
+  int i,v,idx;
+  float *vscA = NULL;
+
+  ESL_DPRINTF2(("cmcalibrate_cp9_filter_results_hyb_MPIPack(): ready.\n"));
+
+  ESL_ALLOC(vscA, sizeof(float) * (M*nseq));
+  idx = 0;
+  for(v = 0; v < M; v++) 
+    for(i = 0; i < nseq; i++)
+      vscA[idx++] = vscAA[v][i];
+
+  status = MPI_Pack((int *) &(nseq), 1,        MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(vscA,            (M*nseq), MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(vit_cp9scA,      nseq,     MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(fwd_cp9scA,      nseq,     MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(partA,           nseq,     MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+
+  ESL_DPRINTF2(("cmcalibrate_cp9_filter_results_hyb_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
+
+  if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
+  return eslOK;
+
+ ERROR:
+  if(vscA  != NULL) free(vscA);
+  return status;
+}
+
+/* Function:  cmcalibrate_cp9_filter_results_hyb_MPIUnpack()
+ * Synopsis:  Unpacks cmcalibrate cp9 filter results from an MPI buffer.
+ *            Follows, 'Purpose', 'Returns', 'Throws' of
+ *            the many other *_MPIUnpack() funcs above.
+ * Incept:    EPN, Wed Dec 12 16:38:15 2007
+ *
+ *            Differs from cmcalibrate_cp9_filter_results_MPIPackSize()
+ *            in that vscAA, best scores for each state from CM scans 
+ *            is packed. these scores are eventually used to calculate
+ *            Gumbels for each possible sub CM state.
+ *
+ *            Note: We return <ret_vscAA> as a 2D array, 
+ *            ret_vscAA[0..v..M-1][0..i..nseq-1]
+ *            holding the best score for each subtree rooted 
+ *            at v for a CM scan of sequence i.
+ *            But vscA is sent as a 1D array, of M * nseq floats,
+ *            0..nseq-1 correspond to v==0, nseq..(2*nseq-1) correspond
+ *            to v==1, etc.
+ *
+ */
+int
+cmcalibrate_cp9_filter_results_hyb_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, int M, float ***ret_vscAA, float **ret_vit_cp9scA, float **ret_fwd_cp9scA, int **ret_partA, int *ret_nseq)
+{
+  int status;
+  float  *vit_cp9scA  = NULL;
+  float  *fwd_cp9scA  = NULL;
+  int    *partA       = NULL;
+  float  *vscA  = NULL;
+  float **vscAA = NULL;
+  int nseq = 0;
+  int i, v, idx;
+
+  status = MPI_Unpack (buf, n, pos, &nseq,        1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  ESL_ALLOC(vscA, sizeof(float) * (M*nseq));
+  status = MPI_Unpack (buf, n, pos, vscA, (M*nseq), MPI_FLOAT,  comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+
+  ESL_ALLOC(vscAA, sizeof(float *) * (M));
+  idx = 0;
+  for(v = 0; v < M; v++) { 
+    ESL_ALLOC(vscAA[v], sizeof(float) * nseq);
+    for(i = 0; i < nseq; i++)
+      vscAA[v][i] = vscA[idx++];
+  }
+  ESL_DASSERT1((idx == (M*nseq)));
+
+  ESL_ALLOC(vit_cp9scA, sizeof(float) * nseq);
+  status = MPI_Unpack (buf, n, pos, vit_cp9scA, nseq, MPI_FLOAT,  comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+
+  ESL_ALLOC(fwd_cp9scA, sizeof(float) * nseq);
+  status = MPI_Unpack (buf, n, pos, fwd_cp9scA, nseq, MPI_FLOAT,  comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+
+  ESL_ALLOC(partA,      sizeof(int) * nseq);
+  status = MPI_Unpack (buf, n, pos, partA, nseq, MPI_INT,    comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+
+  *ret_vscAA = vscAA;
+  *ret_vit_cp9scA = vit_cp9scA;
+  *ret_fwd_cp9scA = fwd_cp9scA;
+  *ret_partA      = partA;
+  *ret_nseq = nseq;
+  return eslOK;
+
+ ERROR:
+  if(vit_cp9scA != NULL) free(vit_cp9scA);
+  if(vit_cp9scA != NULL) free(fwd_cp9scA);
+  if(partA      != NULL) free(partA);
+
+  if(vscA  != NULL) free(vscA);
+  if(vscAA != NULL) { 
+    for(i = 0; i < nseq; i++)
+      free(vscAA[i]);
+    free(vscAA);
+  }
+  *ret_vscAA = NULL;
+  *ret_nseq = 0;
+  return status;
+}
+
+#endif
