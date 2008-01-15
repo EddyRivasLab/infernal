@@ -1185,6 +1185,30 @@ typedef struct bestfilterinfo_s {
   int            np;                 /* number of partitions (number of Gumbels in hgumA) */
   GumbelInfo_t **hgumA;              /* [0.p.np-1] Gumbel info for hybrid scanner, partition p, only non-NULL if ftype == FILTER_WITH_HYBRID */
 } BestFilterInfo_t;
+
+
+/* Structure HMMFilterInfo_t: 
+ * 
+ * Information for HMM filters of CM searches as determined in cmcalibrate. 
+ */                                                                                                      
+typedef struct hmmfilterinfo_s {
+  int           cm_M;                /* # states in the CM */
+  float         cm_eval;             /* CM E-value threshold, we rejected worse than   */
+  float         F;                   /* fraction of empirical CM hits required to survive filter */
+  int           N;                   /* number of CM hits used to get threshold ((N*F) passed)*/
+  int           db_size;             /* db size used to calculate Gum mu for *_eval calculations */
+  int           is_valid;            /* TRUE if values have been set, FALSE if not */
+  int           ftype;               /* FILTER_WITH_HMM_VITERBI, FILTER_WITH_HMM_FORWARD, FILTER_WITH_HYBRID or FILTER_NOTYETSET */
+  float         full_cm_ncalcs;      /* millions of DP calcs for full CM scan of length db_size */
+  float         fil_ncalcs;          /* millions of DP calcs for filter scan of length db_size */
+  float         fil_plus_surv_ncalcs;/* millions of DP calcs for filter scan + full CM scan of survivors of length db_size */
+  int           ncuts;               
+  float         *fwd_E_cut;          /* cutoff E-value threshold for filter (we can use this and db_size and Gumbel to get bit score for each partition) */
+  float         *cm_E_cut;           /* cutoff E-value threshold for filter (we can use this and db_size and Gumbel to get bit score for each partition) */
+  int           always_better_than_Smax; 
+
+} HMMFilterInfo_t;
+
 /* possible values for ftype[] array in FilterInfo_t objects */
 #define FILTER_WITH_HMM_VITERBI 0  
 #define FILTER_WITH_HMM_FORWARD 1  
