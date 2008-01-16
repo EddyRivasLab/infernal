@@ -577,6 +577,12 @@ extern int  SetBestFilterInfoHMM(BestFilterInfo_t *bf, char *errbuf, int cm_M, f
 extern int  SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs, HybridScanInfo_t *hsi, int np, GumbelInfo_t **hgumA);
 extern void FreeBestFilterInfo(BestFilterInfo_t *bf);
 extern void DumpBestFilterInfo(BestFilterInfo_t *bf);
+extern HMMFilterInfo_t *CreateHMMFilterInfo();
+extern int  SetHMMFilterInfoHMM(HMMFilterInfo_t *hfi, char *errbuf, float F, int N, int dbsize, int ncut, float *cm_E_cut, float *fwd_E_cut, int always_better_than_Smax);
+extern void FreeHMMFilterInfo(HMMFilterInfo_t *hfi);
+extern void DumpHMMFilterInfo(HMMFilterInfo_t *hfi);
+
+
 
 /* from seqstoaln.c */
 extern seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master);
@@ -595,7 +601,8 @@ extern int        debug_print_cmstats(CMStats_t *cmstats, int has_fthr);
 extern int        debug_print_gumbelinfo(GumbelInfo_t *evd);
 extern int        get_gc_comp(ESL_SQ *sq, int start, int stop);
 extern void       GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct);
-extern int        E2Score (CM_t *cm, char *errbuf, int gum_mode, float E, float *ret_sc);
+extern int        E2Score (CM_t *cm, char *errbuf, int gum_mode, float E,  float *ret_sc);
+extern int        Score2E (CM_t *cm, char *errbuf, int gum_mode, float sc, float *ret_E);
 extern double     RJK_ExtremeValueE (float x, double mu, double lambda);
 extern float      MinScCutoff (CM_t *cm, SearchInfo_t *si, int n);
 extern int        CM2Gumbel_mode(CM_t *cm, int search_opts, int *ret_cm_gum_mode, int *ret_cp9_gum_mode);

@@ -1038,3 +1038,112 @@ DumpBestFilterInfo(BestFilterInfo_t *bf)
   return;
 }  
 
+/* Function: CreateHMMFilterInfo()
+ * Date:     EPN, Tue Jan 15 18:04:56 2008
+ *
+ * Purpose:  Allocate and initialize a HMM filter info object. 
+ *            
+ * Returns:  Newly allocated HMMFilterInfo_t object on success, NULL if some error occurs
+ */
+HMMFilterInfo_t *
+CreateHMMFilterInfo()
+{
+  int status;
+
+  HMMFilterInfo_t *hfi = NULL;
+  ESL_ALLOC(hfi, sizeof(HMMFilterInfo_t));
+
+  hfi->is_valid  = FALSE;
+  hfi->F         = 0.;
+  hfi->N         = 0;
+  hfi->dbsize    = 0;
+  hfi->ncut      = 0;
+  hfi->cm_E_cut  = NULL;
+  hfi->fwd_E_cut = NULL;
+  hfi->always_better_than_Smax = FALSE;
+  return hfi;
+
+ ERROR:
+  return NULL; /* reached if memory error */
+}  
+
+/* Function: SetHMMFilterInfo()
+ * Date:     EPN, Tue Jan 15 18:08:31 2008
+ *
+ * Purpose:  Fill data for a HMMFilterInfo_t object.
+ *            
+ * Returns:  eslOK on success, eslEINCOMPAT if contract violated
+ */
+int 
+SetHMMFilterInfoHMM(HMMFilterInfo_t *hfi, char *errbuf, float F, int N, int dbsize, int ncut, float *cm_E_cut, float *fwd_E_cut, int always_better_than_Smax)
+{
+  int status;
+  int i;
+  if(hfi->is_valid) ESL_FAIL(eslEINCOMPAT, errbuf, "SetHMMFilterInfoHMM(), hfi->is_valid is TRUE (shouldn't happen, only time to set filter as HMM is when initializing HMMFilter object.\n");
+  hfi->ncut      = ncut;
+  hfi->F         = F;
+  hfi->N         = N;
+  hfi->dbsize    = dbsize;
+  ESL_ALLOC(hfi->cm_E_cut,  sizeof(float) * ncut);
+  ESL_ALLOC(hfi->fwd_E_cut, sizeof(float) * ncut);
+  for(i = 0; i < ncut; i++) { 
+    hfi->cm_E_cut[i]  = cm_E_cut[i];
+    hfi->fwd_E_cut[i] = fwd_E_cut[i];
+  }
+  hfi->always_better_than_Smax = always_better_than_Smax;
+
+  hfi->is_valid   = TRUE;
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(status, errbuf, "SetHMMFilterInfoHMM(), memory allocation error.");
+}  
+
+/* Function: FreeHMMFilterInfo()
+ * Date:     EPN, Tue Jan 15 18:13:15 2008
+ *
+ * Purpose:  Free a HMMFilterInfo_t object
+ *            
+ * Returns:  void
+ */
+void
+FreeHMMFilterInfo(HMMFilterInfo_t *hfi)
+{
+  free(hfi->cm_E_cut);
+  free(hfi->fwd_E_cut);
+  free(hfi);
+  return;
+}  
+
+/* Function: DumpHMMFilterInfo()
+ * Date:     EPN, Mon Dec 10 12:22:10 2007
+ *
+ * Purpose:  Print out relevant info in a hmm filter info object.
+ *           
+ *            
+ * Returns:  
+ *           eslOK on success, dies immediately on some error
+ */
+void
+DumpHMMFilterInfo(HMMFilterInfo_t *hfi)
+{
+  int i;
+
+  if(! (hfi->is_valid)) {
+    printf("HMMFilterInfo_t not yet valid.\n");
+    return;
+  }
+
+  printf("HMMFilterInfo_t:\n");
+
+  printf("F:                     %10.4f\n", hfi->F);
+  printf("N:                     %10d\n",   hfi->N);
+  printf("DB size (for E-vals):  %10d\n",   hfi->dbsize);
+  printf("ncut:                  %10d\n",   hfi->ncut);
+
+  for(i = 0; i < hfi->ncut; i++) 
+    printf("%5d cm_E: %15.7f fwd_E: %15.7f\n", i, hfi->cm_E_cut[i], hfi->fwd_E_cut[i]);
+
+  return;
+}  
+

@@ -34,7 +34,7 @@
  *
  * Purpose:  Allocate a CMStats_t data structure given
  *           the number of partitions and relevant info needed
- *           for creating the BestFilter_t objects.
+ *           for creating the HMMFilter_t objects.
  * 
  * Args:     np - number of partitions 
  */
@@ -51,7 +51,7 @@ AllocCMStats(int np)
   ESL_ALLOC(cmstats->ps, sizeof(int) * cmstats->np);
   ESL_ALLOC(cmstats->pe, sizeof(int) * cmstats->np);
   ESL_ALLOC(cmstats->gumAA, sizeof(GumbelInfo_t **) * GUM_NMODES);
-  ESL_ALLOC(cmstats->bfA, sizeof(BestFilterInfo_t *) * FTHR_NMODES);
+  ESL_ALLOC(cmstats->hfiA,  sizeof(HMMFilterInfo_t *) * FTHR_NMODES);
   for(i = 0; i < GUM_NMODES; i++) {
     ESL_ALLOC(cmstats->gumAA[i], sizeof(GumbelInfo_t *) * cmstats->np);
     for(p = 0; p < cmstats->np; p++) {
@@ -60,8 +60,8 @@ AllocCMStats(int np)
     }
   }
   for(i = 0; i < FTHR_NMODES; i++) {
-    cmstats->bfA[i] = CreateBestFilterInfo();
-    if(cmstats->bfA[i] == NULL) goto ERROR; /* memory error */
+    cmstats->hfiA[i] = CreateHMMFilterInfo();
+    if(cmstats->hfiA[i] == NULL) goto ERROR; /* memory error */
   }
   return cmstats;
 
@@ -85,8 +85,8 @@ FreeCMStats(CMStats_t *cmstats)
     }
   free(cmstats->gumAA);
   for(i = 0; i < FTHR_NMODES; i++)
-    free(cmstats->bfA[i]);
-  free(cmstats->bfA);
+    FreeHMMFilterInfo(cmstats->hfiA[i]);
+  free(cmstats->hfiA);
   free(cmstats->ps);
   free(cmstats->pe);
   free(cmstats);
@@ -124,13 +124,13 @@ int debug_print_cmstats(CMStats_t *cmstats, int has_fthr)
   if(has_fthr)
     {
       printf("Filter CM_LC info:\n");
-      DumpBestFilterInfo(cmstats->bfA[FTHR_CM_LC]);
+      DumpHMMFilterInfo(cmstats->hfiA[FTHR_CM_LC]);
       printf("Filter CM_LI info:\n");
-      DumpBestFilterInfo(cmstats->bfA[FTHR_CM_LI]);
+      DumpHMMFilterInfo(cmstats->hfiA[FTHR_CM_LI]);
       printf("Filter CM_GC info:\n");
-      DumpBestFilterInfo(cmstats->bfA[FTHR_CM_GC]);
+      DumpHMMFilterInfo(cmstats->hfiA[FTHR_CM_GC]);
       printf("Filter CM_GI info:\n");
-      DumpBestFilterInfo(cmstats->bfA[FTHR_CM_GI]);
+      DumpHMMFilterInfo(cmstats->hfiA[FTHR_CM_GI]);
       printf("\n\n");
     }
   return eslOK;
@@ -277,14 +277,13 @@ void GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double *
   cm_Fail("Memory allocation error.");
 }
 
-/*
- * Function: E2Score()
+/* Function: E2Score()
  * Date:     EPN, Tue Dec 11 15:40:25 2007 
  *           (morphed from RSEARCH: RJK, Mon April 15 2002 [St. Louis])
  *
- * Purpose:  Given an E-value and a CM with valid Gumbel stats determine
- *           the minimal bit score that will give an E-value of 
- *           E across all partitions. This will be a safe bit score
+ * Purpose:  Given an E-value <E> and a CM with valid Gumbel stats 
+ *           determine the minimal bit score that will give an E-value 
+ *           of <E> across all partitions. This will be a safe bit score
  *           cutoff to use when returning hits in DispatchSearch().
  *           Because no score less than this will have an E-value 
  *           less than E.
@@ -309,6 +308,42 @@ int E2Score (CM_t *cm, char *errbuf, int gum_mode, float E, float *ret_sc)
     low_sc = ESL_MIN(low_sc, sc);
   }
   *ret_sc = low_sc;
+  return eslOK;
+}
+
+
+/* Function: Score2E()
+ * Date:     EPN, Wed Jan 16 14:25:44 2008
+ *
+ * Purpose:  Given a bit score <sc> and a CM with valid Gumbel stats
+ *           determine the maximal E-value that will be assigned to 
+ *           bit score of <sc> across all partitions. 
+ *           This will be a 'safe' E-value cutoff to use 
+ *           to always return hits with bit score of <sc> or greater.
+ *           because no E-value higher than this will be assigned to
+ *           a bit score greater than <sc>.
+ *
+ * Returns:  eslOK on success, <ret_E> filled with E value
+ *           error code on failure, errbuf filled with message
+ */
+int Score2E (CM_t *cm, char *errbuf, int gum_mode, float sc, float *ret_E)
+{
+  float high_E, E;
+  int p;
+
+  /* contract checks */
+  if(!(cm->flags & CMH_GUMBEL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "Score2E(), CM's CMH_GUMBEL_STATS flag is down.");
+  if(ret_E == NULL)                   ESL_FAIL(eslEINCOMPAT, errbuf, "Score2E(), ret_E is NULL");
+
+  high_E = RJK_ExtremeValueE(sc, cm->stats->gumAA[gum_mode][0]->mu, cm->stats->gumAA[gum_mode][0]->lambda);
+
+  if(! cm->stats->gumAA[gum_mode][0]->is_valid) ESL_FAIL(eslEINCOMPAT, errbuf, "Score2E(), CM's gumbel stats for mode: %d partition: %d are invalid.", gum_mode, p);
+  for(p = 1; p < cm->stats->np; p++) {
+    if(! cm->stats->gumAA[gum_mode][p]->is_valid) ESL_FAIL(eslEINCOMPAT, errbuf, "Score2E(), CM's gumbel stats for mode: %d partition: %d are invalid.", gum_mode, p);
+    E = RJK_ExtremeValueE(sc, cm->stats->gumAA[gum_mode][p]->mu, cm->stats->gumAA[gum_mode][p]->lambda);
+    high_E = ESL_MAX(high_E, E);
+  }
+  *ret_E = high_E;
   return eslOK;
 }
 

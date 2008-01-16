@@ -130,7 +130,7 @@ static ESL_OPTIONS options[] = {
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 12 },
 /* Other options */
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb",   13 },  
-  { "--hmmmaxE", eslARG_REAL,   NULL, NULL, "x>0.",     NULL,"--fgiven",        NULL, "with --fgiven, set maximum HMM filter E-value to <x>", 13 },
+  { "--hmmEmax", eslARG_REAL,   NULL, NULL, "x>0.",     NULL,"--fgiven",        NULL, "with --fgiven, set maximum HMM filter E-value to <x>", 13 },
   { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 9 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--qdbfile","run as an MPI parallel program", 13 },  
@@ -1157,6 +1157,9 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   int safe_windowlen;
   float surv_fract;
   int cm_mode, cp9_mode;
+  float final_round_e_cutoff = -1.; 
+  int cut_point;
+  float dbsize_factor;
 
   if(cm->si != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo(), cm->si is not NULL, shouldn't happen.\n");
 
@@ -1386,27 +1389,56 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
      * FTHR_CM_LI, FTHR_CM_GC, FTHR_CM_GI, (can't be an HMM mode b/c getopts enforces --fgiven incompatible with
      * --hmmviterbi and --hmmforward). 
      */
+
     if((status = CM2FthrMode(cm, errbuf, cm->search_opts, &fthr_mode)) != eslOK) return status;
-    if(!(cm->flags & CMH_FILTER_STATS))              ESL_FAIL(eslEINCOMPAT, errbuf,      "set_searchinfo(), --fgiven enabled, but cm's CMH_FILTER_STATS flag is down.");
-    if(cm->stats->bfA[fthr_mode]->is_valid == FALSE) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo(), --fgiven enabled, cm's CMH_FILTER_STATS is raised, but best filter info for fthr_mode %d is invalid.", fthr_mode);
+    HMMFilterInfo_t *hfi_ptr = cm->stats->hfiA[fthr_mode]; /* for convenience */
+    if(!(cm->flags & CMH_FILTER_STATS))   ESL_FAIL(eslEINCOMPAT, errbuf,      "set_searchinfo(), --fgiven enabled, but cm's CMH_FILTER_STATS flag is down.");
+    if(hfi_ptr->is_valid == FALSE)        ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo(), --fgiven enabled, cm's CMH_FILTER_STATS is raised, but best filter info for fthr_mode %d is invalid.", fthr_mode);
     ESL_DASSERT1((!add_viterbi_filter)); /* --fhmmviterbi is incompatible with --fgiven, enforced by getopts */
     ESL_DASSERT1((!add_forward_filter)); /* --fhmmforward is incompatible with --fgiven, enforced by getopts */
+
+    /* determine the E cutoff used for the final round of searching (when we'll be done filtering), 
+     * if a score cutoff <sc> is used for final round, determine the safe E value, the max E that will be assigned
+     * to a score of <sc> across all partitions.
+     */
+    if(cm->si->cutoff_type[cm->si->nrounds] == SCORE_CUTOFF) { 
+      if((status = Score2E(cm, errbuf, cm_mode, cm->si->sc_cutoff[cm->si->nrounds], &final_round_e_cutoff)) != eslOK) return status;
+    }
+    else final_round_e_cutoff = cm->si->e_cutoff[cm->si->nrounds];
+
     cutoff_type = E_CUTOFF;
-    e_cutoff    = cm->stats->bfA[fthr_mode]->e_cutoff * ((double) cfg->N / (double) cm->stats->bfA[fthr_mode]->db_size); 
-    /* check if --hmmmaxE applies */
-    if((! esl_opt_IsDefault(go, "--hmmmaxE")) && (cm->stats->bfA[fthr_mode]->ftype == FILTER_WITH_HMM_VITERBI || cm->stats->bfA[fthr_mode]->ftype == FILTER_WITH_HMM_FORWARD)) {
-      e_cutoff = ESL_MIN(e_cutoff, esl_opt_GetReal(go, "--hmmmaxE"));
+    cut_point = 0;
+    dbsize_factor = (double) cfg->N / (double) hfi_ptr->dbsize; 
+    printf("final_round_e_cutoff: %f\n", final_round_e_cutoff);
+
+    while(((cut_point+1) < hfi_ptr->ncut)  /* we're not at final cut point */
+	  && ((hfi_ptr->cm_E_cut[(cut_point+1)] * dbsize_factor) > final_round_e_cutoff))  /* next cut point is still > final_round_e_cutoff */
+      { cut_point++; }
+    e_cutoff = hfi_ptr->fwd_E_cut[cut_point] * ((double) cfg->N / (double) hfi_ptr->dbsize); 
+    /* check if --hmmEmax applies */
+    if(! (esl_opt_IsDefault(go, "--hmmEmax"))) {
+      e_cutoff = ESL_MIN(e_cutoff, esl_opt_GetReal(go, "--hmmEmax"));
     }
     if((status  = E2Score(cm, errbuf, cm_mode, e_cutoff, &sc_cutoff)) != eslOK) return status; /* note: use cm_mode, not fthr_mode */
-
+    /* if cut_point == 0: final_round_e_cutoff >= cm_E_cut[0]:
+     * if  hfi_ptr->always_better_than_Smax, than cm_E_cut[0] was the worst (highest) E-value we observed in cmcalibrate, 
+     *                                       so we could find F fraction of ALL CM hits with fwd_E_cut[0], use that.
+     * if !hfi_ptr->always_better_than_Smax, than cm_E_cut[0] was NOT the worst E-value we observed in cmcalibrate, 
+     *                                       so we know that it's not worth filtering for CM E-value cutoffs higher than 
+     *                                       cm_E_cut[0]. Don't filter.
+     */
+    if((cut_point == 0) && (hfi_ptr->always_better_than_Smax == FALSE)) { 	
+      add_forward_filter = FALSE;
+      printf("cut_point 0, always_better FALSE\n");
+    }
+    else { 
+      add_forward_filter = TRUE;
+      /* TEMPORARY */ if(cut_point == 0) printf("cut_point 0, always_better TRUE\n");
+    }
+    /* TEMPORARY! */
     /* Predict survival fraction from filter based on E-value, assume average hit length is cfg->avglen[0] (from QD band calc) */
     surv_fract = (e_cutoff * ((2. * cm->W) - cfg->avglen[0])) / ((double) cfg->N); 
-    if(surv_fract < 0.9) { /* else filtering is not worth it */
-      if(cm->stats->bfA[fthr_mode]->ftype == FILTER_WITH_HMM_VITERBI) add_viterbi_filter = TRUE;
-      if(cm->stats->bfA[fthr_mode]->ftype == FILTER_WITH_HMM_FORWARD) add_forward_filter = TRUE;
-      if(cm->stats->bfA[fthr_mode]->ftype == FILTER_WITH_HYBRID)      /*add_hybrid_filter = TRUE;*/
-	ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo(), --fgiven enabled and hybrid filter set in CM file, but we can't deal with this yet.\n");
-    }
+    printf("\n\nsurv_fract: %f\n\n\n", surv_fract);
   }
   else if(add_viterbi_filter || add_forward_filter) { /* determine thresholds for filters */
     /* Set up HMM cutoff, either 0 or 1 of 3 options is enabled */

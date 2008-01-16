@@ -62,30 +62,31 @@ static unsigned int v01swap  = 0xb1b0ede3; /* v0.1 binary, byteswapped         *
 #define CMIO_GUML         26
 #define CMIO_GUMMU        27
 #define CMIO_GUMLAMBDA    28
-#define CMIO_FTHRTYPE     29
+#define CMIO_FTHRNCUT     29
 #define CMIO_FTHRF        30
 #define CMIO_FTHRN        31
-#define CMIO_FTHRCME      32
-#define CMIO_FTHRE        33
-#define CMIO_FTHRDB       34
-#define CMIO_HASGUM       35
-#define CMIO_HASFILTER    36
-#define CMIO_ABCTYPE      37
-#define CMIO_HASGA        38
-#define CMIO_HASTC        39
-#define CMIO_HASNC        40
-#define CMIO_GA           41
-#define CMIO_TC           42
-#define CMIO_NC           43
-#define CMIO_BCOM         44
-#define CMIO_BDATE        45
-#define CMIO_CCOM1        46
-#define CMIO_CDATE1       47
-#define CMIO_CCOM2        48
-#define CMIO_CDATE2       49
-#define CMIO_NSEQ         50
-#define CMIO_EFFNSEQ      51
-#define CMIO_CLEN         52
+#define CMIO_FTHRDB       32
+#define CMIO_FTHRABTS     33
+#define CMIO_FTHRCMECUT   34
+#define CMIO_FTHRFWDECUT  35
+#define CMIO_HASGUM       36
+#define CMIO_HASFILTER    37
+#define CMIO_ABCTYPE      38
+#define CMIO_HASGA        39
+#define CMIO_HASTC        40
+#define CMIO_HASNC        41
+#define CMIO_GA           42
+#define CMIO_TC           43
+#define CMIO_NC           44
+#define CMIO_BCOM         45
+#define CMIO_BDATE        46
+#define CMIO_CCOM1        47
+#define CMIO_CDATE1       48
+#define CMIO_CCOM2        49
+#define CMIO_CDATE2       50
+#define CMIO_NSEQ         51
+#define CMIO_EFFNSEQ      52
+#define CMIO_CLEN         53
 
 static int  write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf);
 static int  read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
@@ -352,7 +353,7 @@ CMFileWrite(FILE *fp, CM_t *cm, int do_binary, char *errbuf)
 static int
 write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
 {
-  int v,x,y,nd;
+  int v,x,y,nd,i;
   
   fprintf(fp, "INFERNAL-1 [%s]\n", PACKAGE_VERSION);
 
@@ -392,28 +393,28 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
       fprintf(fp, "\n");
       for(p = 0; p < cm->stats->np; p++)
 	{
-	  fprintf(fp, "E-LC     %2d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-LC     %-2d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[GUM_CM_LC][p]->N, cm->stats->gumAA[GUM_CM_LC][p]->L, 
 		  cm->stats->gumAA[GUM_CM_LC][p]->mu, cm->stats->gumAA[GUM_CM_LC][p]->lambda);
-	  fprintf(fp, "E-GC     %2d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-GC     %-2d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[GUM_CM_GC][p]->N, cm->stats->gumAA[GUM_CM_GC][p]->L, 
 		  cm->stats->gumAA[GUM_CM_GC][p]->mu, cm->stats->gumAA[GUM_CM_GC][p]->lambda);
-	  fprintf(fp, "E-LI     %2d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-LI     %-2d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[GUM_CM_LI][p]->N, cm->stats->gumAA[GUM_CM_LI][p]->L, 
 		  cm->stats->gumAA[GUM_CM_LI][p]->mu, cm->stats->gumAA[GUM_CM_LI][p]->lambda);
-	  fprintf(fp, "E-GI     %2d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-GI     %-2d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[GUM_CM_GI][p]->N, cm->stats->gumAA[GUM_CM_GI][p]->L, 
 		  cm->stats->gumAA[GUM_CM_GI][p]->mu, cm->stats->gumAA[GUM_CM_GI][p]->lambda);
-	  fprintf(fp, "E-CP9LV  %2d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-CP9LV  %-2d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[GUM_CP9_LV][p]->N, cm->stats->gumAA[GUM_CP9_LV][p]->L, 
 		  cm->stats->gumAA[GUM_CP9_LV][p]->mu, cm->stats->gumAA[GUM_CP9_LV][p]->lambda);
-	  fprintf(fp, "E-CP9GV  %2d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-CP9GV  %-2d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[GUM_CP9_GV][p]->N, cm->stats->gumAA[GUM_CP9_GV][p]->L, 
 		  cm->stats->gumAA[GUM_CP9_GV][p]->mu, cm->stats->gumAA[GUM_CP9_GV][p]->lambda);
-	  fprintf(fp, "E-CP9LF  %2d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-CP9LF  %-2d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[GUM_CP9_LF][p]->N, cm->stats->gumAA[GUM_CP9_LF][p]->L, 
 		  cm->stats->gumAA[GUM_CP9_LF][p]->mu, cm->stats->gumAA[GUM_CP9_LF][p]->lambda);
-	  fprintf(fp, "E-CP9GF  %2d  %5d  %5d  %10.5f  %10.5f\n", 
+	  fprintf(fp, "E-CP9GF  %-2d  %5d  %5d  %10.5f  %10.5f\n", 
 		  p, cm->stats->gumAA[GUM_CP9_GF][p]->N, cm->stats->gumAA[GUM_CP9_GF][p]->L, 
 		  cm->stats->gumAA[GUM_CP9_GF][p]->mu, cm->stats->gumAA[GUM_CP9_GF][p]->lambda);
 	}
@@ -421,22 +422,49 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
 
       if (cm->flags & CMH_FILTER_STATS) /* FILTER stats are only possibly valid IF EVD stats valid */
 	{
-	  fprintf(fp, "FT-LC     %d  %.5f  %d  %10.5f  %15.5f %d\n", 
-		  cm->stats->bfA[FTHR_CM_LC]->ftype, cm->stats->bfA[FTHR_CM_LC]->F,
-		  cm->stats->bfA[FTHR_CM_LC]->N,     cm->stats->bfA[FTHR_CM_LC]->cm_eval,
-		  cm->stats->bfA[FTHR_CM_LC]->e_cutoff, cm->stats->bfA[FTHR_CM_LC]->db_size);
-	  fprintf(fp, "FT-LI     %d  %.5f  %d  %10.5f  %15.5f %d\n", 
-		  cm->stats->bfA[FTHR_CM_LI]->ftype, cm->stats->bfA[FTHR_CM_LI]->F,
-		  cm->stats->bfA[FTHR_CM_LI]->N,     cm->stats->bfA[FTHR_CM_LI]->cm_eval,
-		  cm->stats->bfA[FTHR_CM_LI]->e_cutoff, cm->stats->bfA[FTHR_CM_LI]->db_size);
-	  fprintf(fp, "FT-GC     %d  %.5f  %d  %10.5f  %15.5f %d\n", 
-		  cm->stats->bfA[FTHR_CM_GC]->ftype, cm->stats->bfA[FTHR_CM_GC]->F,
-		  cm->stats->bfA[FTHR_CM_GC]->N,     cm->stats->bfA[FTHR_CM_GC]->cm_eval,
-		  cm->stats->bfA[FTHR_CM_GC]->e_cutoff, cm->stats->bfA[FTHR_CM_GC]->db_size);
-	  fprintf(fp, "FT-GI     %d  %.5f  %d  %10.5f  %15.5f %d\n", 
-		  cm->stats->bfA[FTHR_CM_GI]->ftype, cm->stats->bfA[FTHR_CM_GI]->F,
-		  cm->stats->bfA[FTHR_CM_GI]->N,     cm->stats->bfA[FTHR_CM_GI]->cm_eval,
-		  cm->stats->bfA[FTHR_CM_GI]->e_cutoff, cm->stats->bfA[FTHR_CM_GI]->db_size);
+	  fprintf(fp, "FT-LC    %d  %.5f  %d  %d  %d\n", 
+		  cm->stats->hfiA[FTHR_CM_LC]->ncut,  cm->stats->hfiA[FTHR_CM_LC]->F,
+		  cm->stats->hfiA[FTHR_CM_LC]->N,     cm->stats->hfiA[FTHR_CM_LC]->dbsize,
+		  cm->stats->hfiA[FTHR_CM_LC]->always_better_than_Smax);
+	  fprintf(fp, "         ");
+	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_LC]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_LC]->cm_E_cut[i]);
+	  fprintf(fp, "\n");
+	  fprintf(fp, "         ");
+	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_LC]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_LC]->fwd_E_cut[i]);
+	  fprintf(fp, "\n");
+
+	  fprintf(fp, "FT-LI    %d  %.5f  %d  %d  %d\n", 
+		  cm->stats->hfiA[FTHR_CM_LI]->ncut,  cm->stats->hfiA[FTHR_CM_LI]->F,
+		  cm->stats->hfiA[FTHR_CM_LI]->N,      cm->stats->hfiA[FTHR_CM_LI]->dbsize,
+		  cm->stats->hfiA[FTHR_CM_LI]->always_better_than_Smax);
+	  fprintf(fp, "         ");
+	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_LI]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_LI]->cm_E_cut[i]);
+	  fprintf(fp, "\n");
+	  fprintf(fp, "         ");
+	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_LI]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_LI]->fwd_E_cut[i]);
+	  fprintf(fp, "\n");
+
+	  fprintf(fp, "FT-GC    %d  %.5f  %d  %d  %d\n", 
+		  cm->stats->hfiA[FTHR_CM_GC]->ncut,  cm->stats->hfiA[FTHR_CM_GC]->F,
+		  cm->stats->hfiA[FTHR_CM_GC]->N,      cm->stats->hfiA[FTHR_CM_GC]->dbsize,
+		  cm->stats->hfiA[FTHR_CM_GC]->always_better_than_Smax);
+	  fprintf(fp, "         ");
+	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_GC]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_GC]->cm_E_cut[i]);
+	  fprintf(fp, "\n");
+	  fprintf(fp, "         ");
+	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_GC]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_GC]->fwd_E_cut[i]);
+	  fprintf(fp, "\n");
+
+	  fprintf(fp, "FT-GI    %d  %.5f  %d  %d  %d\n", 
+		  cm->stats->hfiA[FTHR_CM_GI]->ncut,  cm->stats->hfiA[FTHR_CM_GI]->F,
+		  cm->stats->hfiA[FTHR_CM_GI]->N,      cm->stats->hfiA[FTHR_CM_GI]->dbsize,
+		  cm->stats->hfiA[FTHR_CM_GI]->always_better_than_Smax);
+	  fprintf(fp, "         ");
+	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_GI]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_GI]->cm_E_cut[i]);
+	  fprintf(fp, "\n");
+	  fprintf(fp, "         ");
+	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_GI]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_GI]->fwd_E_cut[i]);
+	  fprintf(fp, "\n");
 	} /* currently either all filter threshold stats are calc'ed or none */
     }
 
@@ -540,12 +568,12 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
       else if (strcmp(tok, "NAME") == 0) 
 	{
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	  if ((esl_strdup(tok, toklen, &(cm->name)))   != eslOK) goto MEMERROR;
+	  if ((esl_strdup(tok, toklen, &(cm->name)))   != eslOK) goto ERROR;
 	}
       else if (strcmp(tok, "ACC") == 0) 
 	{
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	  if ((esl_strdup(tok, toklen, &(cm->acc)))    != eslOK) goto MEMERROR;
+	  if ((esl_strdup(tok, toklen, &(cm->acc)))    != eslOK) goto ERROR;
 	}
       else if (strcmp(tok, "DESC") == 0) 
 	{
@@ -772,24 +800,39 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	/* now we know what mode we're reading, read it */
 	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	if (! is_integer(tok))                                 goto FAILURE;
-	cm->stats->bfA[fthr_mode]->ftype = atoi(tok);
+	cm->stats->hfiA[fthr_mode]->ncut = atoi(tok);
 	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	if (! is_real(tok))                                    goto FAILURE;
-	cm->stats->bfA[fthr_mode]->F = atof(tok);
+	cm->stats->hfiA[fthr_mode]->F = atof(tok);
 	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	if (! is_integer(tok))                                 goto FAILURE;
-	cm->stats->bfA[fthr_mode]->N = atoi(tok);
-	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	if (! is_real(tok))                                    goto FAILURE;
-	cm->stats->bfA[fthr_mode]->cm_eval = atof(tok);
-	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	if (! is_real(tok))                                    goto FAILURE;
-	cm->stats->bfA[fthr_mode]->e_cutoff = atof(tok);
+	cm->stats->hfiA[fthr_mode]->N = atoi(tok);
 	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	if (! is_integer(tok))                                 goto FAILURE;
-	cm->stats->bfA[fthr_mode]->db_size = atoi(tok);
+	cm->stats->hfiA[fthr_mode]->dbsize = atoi(tok);
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                                 goto FAILURE;
+	cm->stats->hfiA[fthr_mode]->always_better_than_Smax = atoi(tok);
 
-	cm->stats->bfA[fthr_mode]->is_valid = TRUE; /* set valid flag */
+	/* alloc for, and read a new line, the CM cut points */
+	ESL_ALLOC(cm->stats->hfiA[fthr_mode]->cm_E_cut,  sizeof(float) * cm->stats->hfiA[fthr_mode]->ncut);
+	if (esl_fgets(&buf, &n, cmf->f) != eslOK) goto FAILURE;
+	s = buf;
+	for(i = 0; i < cm->stats->hfiA[fthr_mode]->ncut; i++) { 
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if (! is_real(tok))                                    goto FAILURE;
+	  cm->stats->hfiA[fthr_mode]->cm_E_cut[i] = atof(tok);
+	}
+
+	ESL_ALLOC(cm->stats->hfiA[fthr_mode]->fwd_E_cut, sizeof(float) * cm->stats->hfiA[fthr_mode]->ncut);
+	if (esl_fgets(&buf, &n, cmf->f) != eslOK) goto FAILURE;
+	s = buf;
+	for(i = 0; i < cm->stats->hfiA[fthr_mode]->ncut; i++) { 
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if (! is_real(tok))                                    goto FAILURE;
+	  cm->stats->hfiA[fthr_mode]->fwd_E_cut[i] = atof(tok);
+	}
+	cm->stats->hfiA[fthr_mode]->is_valid = TRUE;
 	fthr_flags[fthr_mode] = TRUE;
       }
       else if (strcmp(tok, "MODEL:") == 0)
@@ -813,10 +856,9 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   
   /* if we have any filter stats, we (currently) require all of them */
   have_fthrs = fthr_flags[0];
-  for(i = 0; i < FTHR_NMODES; i++)
-    if(((have_fthrs && (!fthr_flags[i]))) ||
-       ((!have_fthrs) && (fthr_flags[i])))
-      goto FAILURE;
+  for(i = 0; i < FTHR_NMODES; i++) {
+    if(((have_fthrs && (!fthr_flags[i]))) || ((!have_fthrs) && (fthr_flags[i]))) goto FAILURE;
+  }
 
   /* Main model section. 
    */
@@ -944,8 +986,8 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   *ret_cm = NULL;
   return 1;
 
-    MEMERROR:
-  cm_Fail("Memory allocation error.");
+ ERROR:
+  cm_Fail("read_ascii_cm(): memory allocation failed.");
   return 1; /* NEVERREACHED */
 }
 
@@ -1057,12 +1099,13 @@ write_binary_cm(FILE *fp, CM_t *cm, char *errbuf)
       tagged_fwrite(CMIO_HASFILTER,  &has_fthr,   sizeof(int),  1, fp);  /* put a 1 to indicate valid HMM filter stats */
       for(i = 0; i < FTHR_NMODES; i++)
 	{
-	  tagged_fwrite(CMIO_FTHRTYPE, &cm->stats->bfA[i]->ftype,    sizeof(int),   1, fp);      
-	  tagged_fwrite(CMIO_FTHRF,    &cm->stats->bfA[i]->F,        sizeof(float), 1, fp);      
-	  tagged_fwrite(CMIO_FTHRN,    &cm->stats->bfA[i]->N,        sizeof(int),   1, fp);      
-	  tagged_fwrite(CMIO_FTHRCME,  &cm->stats->bfA[i]->cm_eval,  sizeof(float), 1, fp);      
-	  tagged_fwrite(CMIO_FTHRE,    &cm->stats->bfA[i]->e_cutoff, sizeof(float), 1, fp);      
-	  tagged_fwrite(CMIO_FTHRDB,   &cm->stats->bfA[i]->db_size,  sizeof(int),   1, fp);      
+	  tagged_fwrite(CMIO_FTHRNCUT,   &cm->stats->hfiA[i]->ncut,                    sizeof(int),   1, fp);      
+	  tagged_fwrite(CMIO_FTHRF,      &cm->stats->hfiA[i]->F,                       sizeof(float), 1, fp);      
+	  tagged_fwrite(CMIO_FTHRN,      &cm->stats->hfiA[i]->N,                       sizeof(int),   1, fp);      
+	  tagged_fwrite(CMIO_FTHRDB,     &cm->stats->hfiA[i]->dbsize,                  sizeof(int),   1, fp);      
+	  tagged_fwrite(CMIO_FTHRABTS,   &cm->stats->hfiA[i]->always_better_than_Smax, sizeof(int),   1, fp);      
+	  tagged_fwrite(CMIO_FTHRCMECUT,  cm->stats->hfiA[i]->cm_E_cut,                sizeof(float), cm->stats->hfiA[i]->ncut, fp);      
+	  tagged_fwrite(CMIO_FTHRFWDECUT, cm->stats->hfiA[i]->fwd_E_cut,               sizeof(float), cm->stats->hfiA[i]->ncut, fp);      
 	}
     }
 
@@ -1204,13 +1247,16 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
       if(! has_gum) goto FAILURE; /* filter threshold stats should only exist if gumbel stats exist */
       for(i = 0; i < FTHR_NMODES; i++)
 	{
-	  if (! tagged_fread(CMIO_FTHRTYPE, (void *) &(cm->stats->bfA[i]->ftype),      sizeof(int),   1, fp)) goto FAILURE;
-	  if (! tagged_fread(CMIO_FTHRF,    (void *) &(cm->stats->bfA[i]->F),          sizeof(float), 1, fp)) goto FAILURE;
-	  if (! tagged_fread(CMIO_FTHRN,    (void *) &(cm->stats->bfA[i]->N),          sizeof(int),   1, fp)) goto FAILURE;
-	  if (! tagged_fread(CMIO_FTHRCME,  (void *) &(cm->stats->bfA[i]->cm_eval),    sizeof(float), 1, fp)) goto FAILURE;
-	  if (! tagged_fread(CMIO_FTHRE,    (void *) &(cm->stats->bfA[i]->e_cutoff),   sizeof(float), 1, fp)) goto FAILURE;
-	  if (! tagged_fread(CMIO_FTHRDB,   (void *) &(cm->stats->bfA[i]->db_size),    sizeof(int),   1, fp)) goto FAILURE;
-	  cm->stats->bfA[i]->is_valid = TRUE; /* set valid flag */
+	  if (! tagged_fread(CMIO_FTHRNCUT,    (void *) &(cm->stats->hfiA[i]->ncut),                    sizeof(int),   1, fp)) goto FAILURE;
+	  if (! tagged_fread(CMIO_FTHRF,       (void *) &(cm->stats->hfiA[i]->F),                       sizeof(float), 1, fp)) goto FAILURE;
+	  if (! tagged_fread(CMIO_FTHRN,       (void *) &(cm->stats->hfiA[i]->N),                       sizeof(int),   1, fp)) goto FAILURE;
+	  if (! tagged_fread(CMIO_FTHRDB,      (void *) &(cm->stats->hfiA[i]->dbsize),                  sizeof(int),   1, fp)) goto FAILURE;
+	  if (! tagged_fread(CMIO_FTHRABTS,    (void *) &(cm->stats->hfiA[i]->always_better_than_Smax), sizeof(int),   1, fp)) goto FAILURE;
+	  ESL_ALLOC(cm->stats->hfiA[i]->cm_E_cut,  sizeof(float) * cm->stats->hfiA[i]->ncut);
+	  ESL_ALLOC(cm->stats->hfiA[i]->fwd_E_cut, sizeof(float) * cm->stats->hfiA[i]->ncut);
+	  if (! tagged_fread(CMIO_FTHRCMECUT,  (void *)  cm->stats->hfiA[i]->cm_E_cut,                 sizeof(float), cm->stats->hfiA[i]->ncut, fp)) goto FAILURE;
+	  if (! tagged_fread(CMIO_FTHRFWDECUT, (void *)  cm->stats->hfiA[i]->fwd_E_cut,                sizeof(float), cm->stats->hfiA[i]->ncut, fp)) goto FAILURE;
+	  cm->stats->hfiA[i]->is_valid = TRUE; /* set valid flag */
 	}
       cm->flags |= CMH_FILTER_STATS;
     }
@@ -1254,6 +1300,10 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   if (cm != NULL) FreeCM(cm);
   *ret_cm = NULL;
   return 1;
+
+ ERROR: 
+  cm_Fail("read_binary_cm(), memory allocation request failed.\n");
+  return 1; /* NEVER REACHED */
 }
 
 static void

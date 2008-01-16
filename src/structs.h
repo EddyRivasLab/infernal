@@ -36,7 +36,7 @@
 #define MAX_PARTITIONS 20
 
 /* database size for E-values in Mb for HMM filter thresholds */
-#define FTHR_DBSIZE_MB 1 
+#define FTHR_DBSIZE 1000000
 
 #define GC_SEGMENTS 101                   /* Possible integer GC contents */
 
@@ -1183,27 +1183,37 @@ typedef struct bestfilterinfo_s {
 } BestFilterInfo_t;
 
 
+
 /* Structure HMMFilterInfo_t: 
  * 
  * Information for HMM filters of CM searches as determined in cmcalibrate. 
  */                                                                                                      
 typedef struct hmmfilterinfo_s {
-  int           cm_M;                /* # states in the CM */
-  float         cm_eval;             /* CM E-value threshold, we rejected worse than   */
-  float         F;                   /* fraction of empirical CM hits required to survive filter */
-  int           N;                   /* number of CM hits used to get threshold ((N*F) passed)*/
-  int           db_size;             /* db size used to calculate Gum mu for *_eval calculations */
-  int           is_valid;            /* TRUE if values have been set, FALSE if not */
-  int           ftype;               /* FILTER_WITH_HMM_VITERBI, FILTER_WITH_HMM_FORWARD, FILTER_WITH_HYBRID or FILTER_NOTYETSET */
-  float         full_cm_ncalcs;      /* millions of DP calcs for full CM scan of length db_size */
-  float         fil_ncalcs;          /* millions of DP calcs for filter scan of length db_size */
-  float         fil_plus_surv_ncalcs;/* millions of DP calcs for filter scan + full CM scan of survivors of length db_size */
-  int           ncuts;               
-  float         *fwd_E_cut;          /* cutoff E-value threshold for filter (we can use this and db_size and Gumbel to get bit score for each partition) */
-  float         *cm_E_cut;           /* cutoff E-value threshold for filter (we can use this and db_size and Gumbel to get bit score for each partition) */
-  int           always_better_than_Smax; 
-
+  int    is_valid;                /* TRUE if values have been set, FALSE if not */
+  float  F;                       /* fraction of empirical CM hits required to survive filter */
+  int    N;                       /* number of CM hits used to get threshold ((N*F) passed)*/
+  int    dbsize;                  /* db size used to calculate E-values in fwd_E_cut and cm_E_cut, SHOULD ALWAYS BE FTHR_DBSIZE_MB 1 */
+  int    ncut;                    /* number of filter threshold cutoff pairs we have, size of fwd_E_cut and cm_E_cut arrays */
+  float *cm_E_cut;                /* [0..i..ncut-1] CM E-value cutoff used to determine fwd_E_cut[i], fwd_E_cut[i], 
+				   * at least F fraction of hits with optimal hits with CM E-value < cm_E_cut[i] were able
+				   * to be recognized with by a forward HMM scan with E-value cutoff fwd_E_cut[i].
+				   * These are sorted in decreasing order, from worst, highest E-value to best, lowest.
+				   */
+  float *fwd_E_cut;               /* [0..i..ncut-1] cutoff E-value threshold for HMM forward filter, using this cutoff
+				   * we were able to find at least F fraction of CYK hits with E-value of cm_E_cut[i] or better.
+				   * (we can use this E-value and db_size and Gumbel to get bit score for each partition) 
+				   */
+  int    always_better_than_Smax; /* tells us what we should do if given a CM E-value cutoff worse (higher) than cm_E_cut[0]:
+				   * If TRUE  we should use fwd_E_cut[0] as the HMM filter cutoff. In this case cm_E_cut[0] was
+				   *          the worst CM E-value we observed. And we could still recognize F fraction of the hits
+				   *          with an expected survival fraction < Smax.
+				   * If FALSE we should turn HMM filtering off in this scenario. In this case cm_E_cut[0] was
+				   *          not the worst E-value we observed, so there were some for which we couldn't
+				   *          filter effectively (cm_E_cut[0] is the worst E-value cutoff we did observe for
+				   *          which we can filter with expected survival fraction < Smax.
+				   */
 } HMMFilterInfo_t;
+
 
 /* possible values for ftype[] array in FilterInfo_t objects */
 #define FILTER_WITH_HMM_VITERBI 0  
@@ -1219,7 +1229,7 @@ typedef struct cmstats_s {
   int *pe;                   /* end   GC content [0..100] of each partition */
   int gc2p[GC_SEGMENTS];     /* map from GC content to partition number     */
   GumbelInfo_t ***gumAA;     /* [0..GUM_NMODES-1][0..np-1] */
-  BestFilterInfo_t **bfA;    /* [0..FTHR_NMODES-1] */
+  HMMFilterInfo_t **hfiA;    /* [0..FTHR_NMODES-1] */
 } CMStats_t;
 
 
