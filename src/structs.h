@@ -1157,33 +1157,6 @@ typedef struct gumbelinfo_s {
   int    is_valid;      /* TRUE if N, L, mu, lambda have been set, FALSE if not */
 } GumbelInfo_t;
 
-
-/* Structure BestFilterInfo_t: 
- * 
- * Information for the predicted best filter for CM searches
- * as determined in cmcalibrate (only used in cmcalibrate).
- */                                                                                                      
-typedef struct bestfilterinfo_s {
-  int           cm_M;                /* # states in the CM */
-  float         cm_eval;             /* CM E-value threshold, we rejected worse than   */
-  float         F;                   /* fraction of empirical CM hits required to survive filter */
-  int           N;                   /* number of CM hits used to get threshold ((N*F) passed)*/
-  int           db_size;             /* db size used to calculate Gum mu for *_eval calculations */
-  int           is_valid;            /* TRUE if values have been set, FALSE if not */
-  int           ftype;               /* FILTER_WITH_HMM_VITERBI, FILTER_WITH_HMM_FORWARD, FILTER_WITH_HYBRID or FILTER_NOTYETSET */
-  float         e_cutoff;            /* cutoff E-value threshold for filter (we can use this and db_size and Gumbel to get bit score for each partition) */
-  float         full_cm_ncalcs;      /* millions of DP calcs for full CM scan of length db_size */
-  float         fil_ncalcs;          /* millions of DP calcs for filter scan of length db_size */
-  float         fil_plus_surv_ncalcs;/* millions of DP calcs for filter scan + full CM scan of survivors of length db_size */
-  /* info for hybrid scanner, only valid if ftype == FILTER_WITH_HYBRID */
-  double        hbeta;               /* tail loss prob used to calculate dmin/dmax for hybrid filter */
-  int          *v_isroot;            /* [0..cm->M-1], TRUE if state v is a sub CM root in filter, false if not */
-  int            np;                 /* number of partitions (number of Gumbels in hgumA) */
-  GumbelInfo_t **hgumA;              /* [0.p.np-1] Gumbel info for hybrid scanner, partition p, only non-NULL if ftype == FILTER_WITH_HYBRID */
-} BestFilterInfo_t;
-
-
-
 /* Structure HMMFilterInfo_t: 
  * 
  * Information for HMM filters of CM searches as determined in cmcalibrate. 
@@ -1213,6 +1186,31 @@ typedef struct hmmfilterinfo_s {
 				   *          which we can filter with expected survival fraction < Smax.
 				   */
 } HMMFilterInfo_t;
+
+/* Structure BestFilterInfo_t: 
+ * 
+ * Information for the predicted best filter for CM searches
+ * as determined in cmcalibrate (only used in cmcalibrate).
+ */                                                                                                      
+typedef struct bestfilterinfo_s {
+  int           cm_M;                /* # states in the CM */
+  float         cm_eval;             /* CM E-value threshold, we rejected worse than   */
+  float         F;                   /* fraction of empirical CM hits required to survive filter */
+  int           N;                   /* number of CM hits used to get threshold ((N*F) passed)*/
+  int           db_size;             /* db size used to calculate Gum mu for *_eval calculations */
+  int           is_valid;            /* TRUE if values have been set, FALSE if not */
+  int           ftype;               /* FILTER_WITH_HMM_VITERBI, FILTER_WITH_HMM_FORWARD, FILTER_WITH_HYBRID or FILTER_NOTYETSET */
+  float         e_cutoff;            /* cutoff E-value threshold for filter (we can use this and db_size and Gumbel to get bit score for each partition) */
+  float         full_cm_ncalcs;      /* millions of DP calcs for full CM scan of length db_size */
+  float         fil_ncalcs;          /* millions of DP calcs for filter scan of length db_size */
+  float         fil_plus_surv_ncalcs;/* millions of DP calcs for filter scan + full CM scan of survivors of length db_size */
+  /* info for hybrid scanner, only valid if ftype == FILTER_WITH_HYBRID */
+  double        hbeta;               /* tail loss prob used to calculate dmin/dmax for hybrid filter */
+  int          *v_isroot;            /* [0..cm->M-1], TRUE if state v is a sub CM root in filter, false if not */
+  int            np;                 /* number of partitions (number of Gumbels in hgumA) */
+  GumbelInfo_t **hgumA;              /* [0.p.np-1] Gumbel info for hybrid scanner, partition p, only non-NULL if ftype == FILTER_WITH_HYBRID */
+} BestFilterInfo_t;
+
 
 
 /* possible values for ftype[] array in FilterInfo_t objects */

@@ -521,6 +521,9 @@ extern int cmstats_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CMStats_
 extern int gumbel_info_MPIPackSize(GumbelInfo_t *gum, MPI_Comm comm, int *ret_n);
 extern int gumbel_info_MPIPack(GumbelInfo_t *gum, char *buf, int n, int *position, MPI_Comm comm);
 extern int gumbel_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, GumbelInfo_t **ret_gum);
+extern int hmm_filter_info_MPIPackSize(HMMFilterInfo_t *hfi, MPI_Comm comm, int *ret_n);
+extern int hmm_filter_info_MPIPack(HMMFilterInfo_t *hfi, char *buf, int n, int *position, MPI_Comm comm);
+extern int hmm_filter_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, HMMFilterInfo_t **ret_hfi);
 extern int best_filter_info_MPIPackSize(BestFilterInfo_t *bf, MPI_Comm comm, int *ret_n);
 extern int best_filter_info_MPIPack(BestFilterInfo_t *bf, char *buf, int n, int *position, MPI_Comm comm);
 extern int best_filter_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, BestFilterInfo_t **ret_bf);

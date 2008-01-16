@@ -1109,8 +1109,8 @@ SetHMMFilterInfoHMM(HMMFilterInfo_t *hfi, char *errbuf, float F, int N, int dbsi
 void
 FreeHMMFilterInfo(HMMFilterInfo_t *hfi)
 {
-  free(hfi->cm_E_cut);
-  free(hfi->fwd_E_cut);
+  if(hfi->cm_E_cut  != NULL) free(hfi->cm_E_cut);
+  if(hfi->fwd_E_cut != NULL) free(hfi->fwd_E_cut);
   free(hfi);
   return;
 }  

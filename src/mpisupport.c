@@ -2144,7 +2144,7 @@ cmstats_MPIPackSize(CMStats_t *cmstats, MPI_Comm comm, int *ret_n)
     }
   }   
   for(f = 0; f < FTHR_NMODES; f++) { /* add size of best filter info for each filter mode */
-    if ((status = best_filter_info_MPIPackSize(cmstats->bfA[f], comm, &sz))  != eslOK) goto ERROR; n += sz;
+    if ((status = hmm_filter_info_MPIPackSize(cmstats->hfiA[f], comm, &sz))  != eslOK) goto ERROR; n += sz;
   }
 
   *ret_n = n;
@@ -2185,7 +2185,7 @@ cmstats_MPIPack(CMStats_t *cmstats, char *buf, int n, int *position, MPI_Comm co
     }
   }
   for(f = 0; f < FTHR_NMODES; f++) { 
-    status = best_filter_info_MPIPack(cmstats->bfA[f], buf, n, position, comm);  if (status != eslOK) return status;
+    status = hmm_filter_info_MPIPack(cmstats->hfiA[f], buf, n, position, comm);  if (status != eslOK) return status;
   }
 
   if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
@@ -2228,9 +2228,9 @@ cmstats_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CMStats_t **ret_cms
       status = gumbel_info_MPIUnpack(buf, n, pos, comm, &(cmstats->gumAA[g][p]));  if (status != eslOK) return status;
     }
   }
-  ESL_ALLOC(cmstats->bfA, sizeof(BestFilterInfo_t *) * FTHR_NMODES);
+  ESL_ALLOC(cmstats->hfiA, sizeof(HMMFilterInfo_t *) * FTHR_NMODES);
   for(f = 0; f < FTHR_NMODES; f++) { 
-    status = best_filter_info_MPIUnpack(buf, n, pos, comm, &(cmstats->bfA[f]));  if (status != eslOK) return status;
+    status = hmm_filter_info_MPIUnpack(buf, n, pos, comm, &(cmstats->hfiA[f]));  if (status != eslOK) return status;
   }
   *ret_cmstats = cmstats;
   return eslOK;
@@ -2329,6 +2329,103 @@ gumbel_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, GumbelInfo_t **
   return status;
 }
 
+/* Function:  hmm_filter_info_MPIPackSize()
+ * Synopsis:  Calculates number of bytes needed to pack a 
+ *            HMMFilterInfo_t object. Follows 'Purpose' 
+ *            of other *_MPIPackSize() functions above. 
+ *
+ * Incept:    EPN, Wed Dec 12 05:29:15 2007
+ *
+ * Returns:   <eslOK> on success, and <*ret_n> contains the answer.
+ *
+ * Throws:    <eslESYS> if an MPI call fails, and <*ret_n> is set to 0. 
+ *
+ * Note:      The sizing calls here need to stay matched up with
+ *            the calls in <hmm_filter_info_MPIPack()>.
+ */
+int
+hmm_filter_info_MPIPackSize(HMMFilterInfo_t *hfi, MPI_Comm comm, int *ret_n)
+{
+  int status;
+  int sz;
+  int n = 0;
+
+  status = MPI_Pack_size(1, MPI_INT, comm, &sz);    n += 5*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  /*  is_valid, N, dbsize, ncut, always_better_than_Smax */
+  status = MPI_Pack_size(1, MPI_FLOAT, comm, &sz);  n += sz;   if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  /*  F */
+  status = MPI_Pack_size(1, MPI_INT, comm, &sz);    n += hfi->ncut*2*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  /* cm_E_cut, fwd_E_cut arrays */
+  *ret_n = n;
+  return eslOK;
+
+ ERROR:
+  *ret_n = 0;
+  return status;
+}
+
+/* Function:  hmm_filter_info_MPIPack()
+ * Synopsis:  Packs HMMFilterInfo_t <hfi> into MPI buffer.
+ *            See 'Purpose','Returns' and 'Throws'
+ *            of other *_MPIPack()'s for more info.
+ *
+ * Incept:    EPN, Wed Dec 12 05:29:10 2007
+ */
+int
+hmm_filter_info_MPIPack(HMMFilterInfo_t *hfi, char *buf, int n, int *position, MPI_Comm comm)
+{
+  int status;
+
+  ESL_DPRINTF2(("hmm_filter_info_MPIPack(): ready.\n"));
+  
+  status = MPI_Pack((int *) &(hfi->is_valid),                1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((int *) &(hfi->N),                       1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((int *) &(hfi->dbsize),                  1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((int *) &(hfi->ncut),                    1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((int *) &(hfi->always_better_than_Smax), 1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+
+  status = MPI_Pack((float *)  &(hfi->F),                    1, MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((float *)  hfi->cm_E_cut,        hfi->ncut, MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((float *)  hfi->fwd_E_cut,       hfi->ncut, MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+
+  if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
+  return eslOK;
+}
+
+/* Function:  hmm_filter_info_MPIUnpack()
+ * Synopsis:  Unpacks HMMFilterInfo_t <hfi> from an MPI buffer.
+ *            Follows 'Purpose', 'Returns', 'Throws' of other
+ *            *_MPIUnpack() functions above.
+ *
+ * Incept:    EPN, Wed Dec 12 05:29:05 2007
+ */
+int
+hmm_filter_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, HMMFilterInfo_t **ret_hfi)
+{
+  int status;
+  HMMFilterInfo_t *hfi;
+
+  ESL_ALLOC(hfi, sizeof(HMMFilterInfo_t));
+  status = MPI_Unpack (buf, n, pos, &(hfi->is_valid),                1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &(hfi->N),                       1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &(hfi->dbsize),                  1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &(hfi->ncut),                    1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &(hfi->always_better_than_Smax), 1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+
+  status = MPI_Unpack (buf, n, pos, &(hfi->F),                       1, MPI_FLOAT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  ESL_ALLOC(hfi->cm_E_cut,  sizeof(float) * hfi->ncut);
+  ESL_ALLOC(hfi->fwd_E_cut, sizeof(float) * hfi->ncut);
+  status = MPI_Unpack (buf, n, pos, hfi->cm_E_cut,           hfi->ncut, MPI_FLOAT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, hfi->fwd_E_cut,          hfi->ncut, MPI_FLOAT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+
+  *ret_hfi = hfi;
+  return eslOK;
+
+ ERROR:
+  if(hfi != NULL) FreeHMMFilterInfo(hfi);
+  *ret_hfi = NULL;
+  return status;
+}
 
 /* Function:  best_filter_info_MPIPackSize()
  * Synopsis:  Calculates number of bytes needed to pack a 
