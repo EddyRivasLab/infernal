@@ -6594,3 +6594,118 @@ cmcalibrate_cp9_filter_results_hyb_MPIUnpack(char *buf, int n, int *pos, MPI_Com
 }
 
 #endif
+
+#if 0
+
+/* Function:  summarize_alignment()
+ * Incept:    
+ *
+ * Purpose:   Summarize alignment statistics to varying extents
+ *            based on command-line options.
+ */
+int
+summarize_alignment(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w) 
+{
+  /* HERE: do HMM banded alignment stats
+   * sample N=100 seqs, and calculate posteriors, determine new
+   * number of CYK DP calcs AND CP9 F/B calcs to get bands. */
+  int status;
+  float dpc;  /* # DP calcs for non-banded alignment of consensus */
+  CMConsensus_t *con = NULL;            /* consensus info for the CM */
+  ESL_SQ *csq = NULL;
+  float t_dc; /* user seconds time for D&C alignment */
+  float t_hb; /* user seconds time for HMM banded alignment */
+  float mc_s; /* million calcs/second */
+  float size_limit = esl_opt_GetReal(go, "--mxsize");
+
+  /* Create and align consensus sequence for D&C stats */
+  CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &con);
+  if((csq = esl_sq_CreateFrom("consensus", con->cseq, NULL, NULL, NULL)) == NULL)
+    { status = eslEMEM; goto ERROR; }
+  esl_sq_Digitize(cm->abc, csq);
+  dpc = count_align_dp_calcs(cm, csq->n) / 1000000.;
+
+  /* cyk inside (score only) */
+  esl_stopwatch_Start(w);
+  /*CYKDivideAndConquer(cm, csq->dsq, csq->n, 0, 1, csq->n, NULL, NULL, NULL);*/
+  CYKInsideScore(cm, csq->dsq, csq->n, 0, 1, csq->n, 
+		 NULL, NULL); /* don't do QDB mode */
+  esl_stopwatch_Stop(w);
+  t_dc = w->user;
+  mc_s = dpc / t_dc;
+
+  /* HMM banded */
+  /* Emit N seqs, and align them, to get total time up to reasonable level,
+   * and to average out tightness of bands */
+  int N = esl_opt_GetInteger(go, "-N");
+  seqs_to_aln_t *seqs_to_aln = NULL;
+  ESL_SQ **sq = NULL;
+  ESL_ALLOC(sq, sizeof(ESL_SQ *) * N);
+  int L; 
+  float L_avg = 0.; 
+  int i;
+  for(i = 0; i < N; i++)
+    {
+      if((status = EmitParsetree(cm, errbuf, r, "seq", TRUE, NULL, &(sq[i]), &L)) != eslOK) goto ERROR;
+      /*esl_sqio_Write(stdout, sq[i], eslSQFILE_FASTA);*/
+      L_avg += L;
+    }
+  L_avg /= (float) N;
+  cm->align_opts |= CM_ALIGN_HBANDED;
+  esl_stopwatch_Start(w);
+  seqs_to_aln = CreateSeqsToAlnFromSq(sq, N, FALSE);
+  if((status = DispatchAlignments(cm, errbuf, seqs_to_aln, NULL, NULL, 0, 0, 0, TRUE, NULL, size_limit)) != eslOK) goto ERROR;
+  esl_stopwatch_Stop(w);
+  t_hb = w->user / (float) N;
+  FreeSeqsToAln(seqs_to_aln);
+
+  fprintf(ofp, "#\n");
+  fprintf(ofp, "#\t\t\t Alignment statistics:\n");
+  fprintf(ofp, "#\t\t\t %7s %6s %6s %8s %8s %8s\n",             "alg",     "Mc",     "L",     "Mc/s",    "s/seq",        "accel");
+  fprintf(ofp, "#\t\t\t %7s %6s %6s %8s %8s %8s\n",             "-------", "------", "------","--------", "--------", "--------");
+  /*mc_s = dpc / t_dc; */
+  fprintf(ofp, " \t\t\t %7s %6.1f %6d %8.1f %8.3f %8s\n",       "cyk",      dpc,      csq->n,  mc_s,      t_dc,       "-");
+  fprintf(ofp, " \t\t\t %7s %6s %6.0f %8s %8.3f %8.2f\n",       "hb cyk",   "?",      L_avg,   "?",       t_hb,       (t_dc/t_hb));
+
+  esl_sq_Destroy(csq);
+  FreeCMConsensus(con);
+  return eslOK;
+ ERROR:
+  cm_Fail("ERROR code %d in summarize_stats().", status);
+  return status; /* NOTREACHED */
+}
+
+/* Function: count_align_dp_calcs()
+ * Date:     EPN, Wed Aug 22 09:08:03 2007
+ *
+ * Purpose:  Count all non-d&c inside DP calcs for a CM 
+ *           alignment of a seq of length L. Similar to cm_dpsmall.c's
+ *           CYKDemands() but takes into account number of
+ *           transitions from each state, and is concerned
+ *           with a scanning dp matrix, not an alignment matrix.
+ *
+ * Args:     cm     - the model
+ *           L      - length of sequence
+ *
+ * Returns: (float) the total number of DP calculations.
+ */
+float count_align_dp_calcs(CM_t *cm, int L)
+{
+  int v, j;
+  float dpcalcs = 0.;
+  float dpcalcs_bif = 0.;
+  
+  float  dpcells     = 0.;
+  float  dpcells_bif = 0.;
+
+  dpcells = (L+2) * (L+1) * 0.5; /* fillable dp cells per state (deck) */
+  for (j = 0; j <= L; j++)
+    dpcells_bif += (j+2) * (j+1) * .5;
+  dpcalcs_bif = CMCountStatetype(cm, B_st) * dpcells_bif; /* no choice of transitions */
+  for(v = 0; v < cm->M; v++)
+    if(cm->sttype[v] != B_st && cm->sttype[v] != E_st)
+      dpcalcs += dpcells * cm->cnum[v]; /* cnum choices of transitions */
+
+  return dpcalcs + dpcalcs_bif;
+}
+#endif

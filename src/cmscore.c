@@ -283,15 +283,15 @@ main(int argc, char **argv)
     if (cfg.cmfp      != NULL) CMFileClose(cfg.cmfp);
     if (cfg.sqfp      != NULL) esl_sqfile_Close(cfg.sqfp);
     if (cfg.tracefp   != NULL) {
-      printf("Parsetrees saved in file %s.\n", esl_opt_GetString(go, "--tfile"));
+      printf("# Parsetrees saved in file %s.\n", esl_opt_GetString(go, "--tfile"));
       fclose(cfg.tracefp);
     }
     if (cfg.regressfp   != NULL) {
-      printf("Regression data (parsetrees) saved in file %s.\n", esl_opt_GetString(go, "--regress"));
+      printf("# Regression data (parsetrees) saved in file %s.\n", esl_opt_GetString(go, "--regress"));
       fclose(cfg.regressfp);
     }
     if (cfg.ofp       != NULL) { 
-      printf("Sequences scored against the CM saved in file %s.\n", esl_opt_GetString(go, "--outfile"));
+      printf("# Sequences scored against the CM saved in file %s.\n", esl_opt_GetString(go, "--outfile"));
       fclose(cfg.ofp);
     }
     if (cfg.s1_sc     != NULL) free(cfg.s1_sc);

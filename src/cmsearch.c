@@ -150,7 +150,7 @@ struct cfg_s {
   ESL_SQFILE   *sqfp;           /* open sequence input file stream */
   int           fmt;		/* format code for seqfile */
   ESL_ALPHABET *abc;		/* digital alphabet for input */
-  long          N;              /* database size in nucleotides (doubled if doing rev comp) */
+  long          dbsize;         /* database size in nucleotides (doubled if doing rev comp) */
   int           ncm;            /* number CM we're at in file */
   int           do_rc;          /* should we search reverse complement? (for convenience */
   int           init_rci;       /* initial strand to search 0 for top, 1 for bottom (only 1 if --bottomonly enabled) */
@@ -279,7 +279,7 @@ main(int argc, char **argv)
   if      (esl_opt_GetBoolean(go, "--rna")) cfg.abc_out = esl_alphabet_Create(eslRNA);
   else if (esl_opt_GetBoolean(go, "--dna")) cfg.abc_out = esl_alphabet_Create(eslDNA);
   else    cm_Fail("Can't determine output alphabet");
-  cfg.N          = 0;                      /* db size  */
+  cfg.dbsize     = 0;                      /* db size  */
   cfg.ncm        = 0;                      /* what number CM we're on, updated in masters, stays 0 (irrelevant) for workers */
   cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.tfp        = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
@@ -385,8 +385,8 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   cfg->fmt = cfg->sqfp->format;
 
   /* GetDBInfo() reads all sequences, rewinds seq file and returns db size */
-  GetDBInfo(NULL, cfg->sqfp, &(cfg->N), NULL);  
-  if ((! esl_opt_GetBoolean(go, "--toponly")) && (! esl_opt_GetBoolean(go, "--bottomonly"))) cfg->N *= 2;
+  GetDBInfo(NULL, cfg->sqfp, &(cfg->dbsize), NULL);  
+  if ((! esl_opt_GetBoolean(go, "--toponly")) && (! esl_opt_GetBoolean(go, "--bottomonly"))) cfg->dbsize *= 2;
 
   /* open CM file */
   if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
@@ -453,12 +453,12 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((  status = update_avg_hit_len(go, cfg, errbuf, cm))               != eslOK) cm_Fail(errbuf);
       if((  status = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
       if(cm->flags & CMH_GUMBEL_STATS) 
-	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->N))            != eslOK) cm_Fail(errbuf);
+	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->dbsize))            != eslOK) cm_Fail(errbuf);
       if((status = set_window (go, cfg, errbuf, cm))                        != eslOK) cm_Fail(errbuf);
       if((status = set_searchinfo(go, cfg, errbuf, cm))                     != eslOK) cm_Fail(errbuf);
       if(esl_opt_GetBoolean(go, "--hmmcalcthr"))
 	if((status = calc_filter_threshold(go, cfg, errbuf, cm, &Smin))     != eslOK) cm_Fail(errbuf);
-      print_searchinfo(go, cfg, stdout, cm, cfg->N, errbuf);
+      print_searchinfo(go, cfg, stdout, cm, cfg->dbsize, errbuf);
       using_e_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
 	 
       while ((status = read_next_search_seq(cfg->abc, cfg->sqfp, cfg->do_rc, &dbseq)) == eslOK)
@@ -584,7 +584,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * so we just receive a quick OK/error code reply from each worker to be sure,
    * and don't worry about an informative message. 
    */
-  MPI_Bcast(&(cfg->N), 1, MPI_LONG, 0, MPI_COMM_WORLD);
+  MPI_Bcast(&(cfg->dbsize), 1, MPI_LONG, 0, MPI_COMM_WORLD);
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
   if (status != eslOK) cm_Fail("One or more MPI worker processes failed to initialize.");
   ESL_DPRINTF1(("%d workers are initialized\n", cfg->nproc-1));
@@ -612,13 +612,13 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status   = update_avg_hit_len(go, cfg, errbuf, cm))               != eslOK) cm_Fail(errbuf);
       if((status   = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
       if(cm->flags & CMH_GUMBEL_STATS) 
-	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->N))            != eslOK) cm_Fail(errbuf);
+	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->dbsize))            != eslOK) cm_Fail(errbuf);
       if((status = set_window (go, cfg, errbuf, cm))                        != eslOK) cm_Fail(errbuf);
       if((status = set_searchinfo(go, cfg, errbuf, cm))                     != eslOK) cm_Fail(errbuf);
       if(esl_opt_GetBoolean(go, "--hmmcalcthr"))
 	if((status = calc_filter_threshold(go, cfg, errbuf, cm, &Smin))     != eslOK) cm_Fail(errbuf);
 
-      print_searchinfo(go, cfg, stdout, cm, cfg->N, errbuf);
+      print_searchinfo(go, cfg, stdout, cm, cfg->dbsize, errbuf);
       using_e_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
 
       /* reset vars for searching with current CM */
@@ -818,14 +818,14 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * we can pack an error result into it, because after initialization,
    * errors will be returned as packed (code, errbuf) messages.
    */
-  MPI_Bcast(&(cfg->N), 1, MPI_LONG, 0, MPI_COMM_WORLD);
+  MPI_Bcast(&(cfg->dbsize), 1, MPI_LONG, 0, MPI_COMM_WORLD);
   if (xstatus == eslOK) { wn = 4096;  if ((wbuf = malloc(wn * sizeof(char))) == NULL) xstatus = eslEMEM; }
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD); /* everyone sends xstatus back to master */
   if (xstatus != eslOK) {
     if (wbuf != NULL) free(wbuf);
     return; /* shutdown; we passed the error back for the master to deal with. */
   }
-  ESL_DPRINTF1(("worker %d: initialized N: %ld\n", cfg->my_rank, cfg->N));
+  ESL_DPRINTF1(("worker %d: initialized N: %ld\n", cfg->my_rank, cfg->dbsize));
   
   /* source = 0 (master); tag = 0 */
   while ((status = cm_worker_MPIBcast(0, MPI_COMM_WORLD, &wbuf, &wn, &(cfg->abc), &cm)) == eslOK)
@@ -836,11 +836,11 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) goto ERROR;
       if((status   = update_avg_hit_len(go, cfg, errbuf, cm))               != eslOK) goto ERROR;
       if(cm->flags & CMH_GUMBEL_STATS) 
-	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->N))            != eslOK) goto ERROR;
+	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->dbsize))            != eslOK) goto ERROR;
       if((status = set_window(go, cfg, errbuf, cm))                         != eslOK) goto ERROR;
       if((status = set_searchinfo(go, cfg, errbuf, cm))                     != eslOK) goto ERROR;
       
-      /* print_searchinfo(go, cfg, stdout, cm, cm_mode, cp9_mode, cfg->N, errbuf); */
+      /* print_searchinfo(go, cfg, stdout, cm, cm_mode, cp9_mode, cfg->dbsize, errbuf); */
       
       while((status = cm_dsq_MPIRecv(0, 0, MPI_COMM_WORLD, &wbuf, &wn, &dsq, &L)) == eslOK)
 	{
@@ -1124,9 +1124,7 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   int safe_windowlen;
   float surv_fract;
   int cm_mode, cp9_mode;
-  float final_round_e_cutoff = -1.; 
   int cut_point;
-  float dbsize_factor;
 
   if(cm->si != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo(), cm->si is not NULL, shouldn't happen.\n");
 
@@ -1364,48 +1362,36 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     ESL_DASSERT1((!add_viterbi_filter)); /* --fhmmviterbi is incompatible with --fgiven, enforced by getopts */
     ESL_DASSERT1((!add_forward_filter)); /* --fhmmforward is incompatible with --fgiven, enforced by getopts */
 
-    /* determine the E cutoff used for the final round of searching (when we'll be done filtering), 
-     * if a score cutoff <sc> is used for final round, determine the safe E value, the max E that will be assigned
-     * to a score of <sc> across all partitions.
-     */
-    if(cm->si->cutoff_type[cm->si->nrounds] == SCORE_CUTOFF) { 
-      if((status = Score2E(cm, errbuf, cm_mode, cm->si->sc_cutoff[cm->si->nrounds], &final_round_e_cutoff)) != eslOK) return status;
-    }
-    else final_round_e_cutoff = cm->si->e_cutoff[cm->si->nrounds];
-
     cutoff_type = E_CUTOFF;
-    cut_point = 0;
-    dbsize_factor = (double) cfg->N / (double) hfi_ptr->dbsize; 
-    printf("final_round_e_cutoff: %f\n", final_round_e_cutoff);
-
-    while(((cut_point+1) < hfi_ptr->ncut)  /* we're not at final cut point */
-	  && ((hfi_ptr->cm_E_cut[(cut_point+1)] * dbsize_factor) > final_round_e_cutoff))  /* next cut point is still > final_round_e_cutoff */
-      { cut_point++; }
-    e_cutoff = hfi_ptr->fwd_E_cut[cut_point] * ((double) cfg->N / (double) hfi_ptr->dbsize); 
-    /* check if --hmmEmax applies */
-    if(! (esl_opt_IsDefault(go, "--hmmEmax"))) {
-      e_cutoff = ESL_MIN(e_cutoff, esl_opt_GetReal(go, "--hmmEmax"));
-    }
-    if((status  = E2Score(cm, errbuf, cm_mode, e_cutoff, &sc_cutoff)) != eslOK) return status; /* note: use cm_mode, not fthr_mode */
-    /* if cut_point == 0: final_round_e_cutoff >= cm_E_cut[0]:
-     * if  hfi_ptr->always_better_than_Smax, than cm_E_cut[0] was the worst (highest) E-value we observed in cmcalibrate, 
-     *                                       so we could find F fraction of ALL CM hits with fwd_E_cut[0], use that.
-     * if !hfi_ptr->always_better_than_Smax, than cm_E_cut[0] was NOT the worst E-value we observed in cmcalibrate, 
-     *                                       so we know that it's not worth filtering for CM E-value cutoffs higher than 
-     *                                       cm_E_cut[0]. Don't filter.
-     */
-    if((cut_point == 0) && (hfi_ptr->always_better_than_Smax == FALSE)) { 	
-      add_forward_filter = FALSE;
-      printf("cut_point 0, always_better FALSE\n");
+    
+    /* determine the appropriate filter cut point <cut_point> to use, for details
+     * see comments in function: searchinfo.c:GetHMMFilterFwdECutGivenCME() for details */
+    if(cm->si->cutoff_type[cm->si->nrounds] == SCORE_CUTOFF) { 
+      if((status = GetHMMFilterFwdECutGivenCMBitScore(hfi_ptr, errbuf, cm->si->sc_cutoff[cm->si->nrounds], cfg->dbsize, &cut_point, cm, cm_mode)) != eslOK) return status; 
+      /* cm->si->sc_cutoff[cm->si->nrounds] is bit score cutoff used for the final round of searching (when we'll be done filtering) */
     }
     else { 
-      add_forward_filter = TRUE;
-      /* TEMPORARY */ if(cut_point == 0) printf("cut_point 0, always_better TRUE\n");
+      if((status = GetHMMFilterFwdECutGivenCME(hfi_ptr, errbuf, cm->si->e_cutoff[cm->si->nrounds], cfg->dbsize, &cut_point)) != eslOK) return status; 
+      /* cm->si->e_cutoff[cm->si->nrounds] is E cutoff used for the final round of searching (when we'll be done filtering) */
     }
-    /* TEMPORARY! */
-    /* Predict survival fraction from filter based on E-value, assume average hit length is cfg->avglen[0] (from QD band calc) */
-    surv_fract = (e_cutoff * ((2. * cm->W) - cfg->avglen[0])) / ((double) cfg->N); 
-    printf("\n\nsurv_fract: %f\n\n\n", surv_fract);
+    if(cut_point != -1) { /* it's worth it to filter */
+      e_cutoff = hfi_ptr->fwd_E_cut[cut_point] * ((double) cfg->dbsize / (double) hfi_ptr->dbsize); 
+      /* check if --hmmEmax applies */
+      if(! (esl_opt_IsDefault(go, "--hmmEmax"))) {
+	e_cutoff = ESL_MIN(e_cutoff, esl_opt_GetReal(go, "--hmmEmax"));
+      }
+      if((status  = E2Score(cm, errbuf, cm_mode, e_cutoff, &sc_cutoff)) != eslOK) return status; /* note: use cm_mode, not fthr_mode */
+      add_forward_filter = TRUE;
+      /* TEMPORARY! */
+      /* Predict survival fraction from filter based on E-value, assume average hit length is cfg->avglen[0] (from QD band calc) */
+      surv_fract = (e_cutoff * ((2. * cm->W) - cfg->avglen[0])) / ((double) cfg->dbsize); 
+      printf("\n\nsurv_fract: %f\n\n\n", surv_fract);
+    }
+    else { /* it's not worth it to filter, our HMM filter cutoff would be so low, 
+	    * letting so much of the db survive, the filter is a waste of time */
+      add_forward_filter = FALSE;
+      printf("cut_point -1, always_better FALSE\n");
+    }
   }
   else if(add_viterbi_filter || add_forward_filter) { /* determine thresholds for filters */
     /* Set up HMM cutoff, either 0 or 1 of 3 options is enabled */

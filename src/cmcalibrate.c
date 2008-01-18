@@ -377,23 +377,23 @@ main(int argc, char **argv)
     /* master specific cleaning */
     if (cfg.gumhfp   != NULL) { 
       fclose(cfg.gumhfp);
-      printf("High score for random seqs histograms saved to file %s.\n", esl_opt_GetString(go, "--gum-hfile"));
+      printf("# High score for random seqs histograms saved to file %s.\n", esl_opt_GetString(go, "--gum-hfile"));
     }
     if (cfg.gumsfp   != NULL) { 
       fclose(cfg.gumsfp);
-      printf("Survival plot for Gumbels saved to file %s.\n", esl_opt_GetString(go, "--gum-sfile"));
+      printf("# Survival plot for Gumbels saved to file %s.\n", esl_opt_GetString(go, "--gum-sfile"));
     }
     if (cfg.gumqfp   != NULL) { 
       fclose(cfg.gumqfp);
-      printf("Gumbel QQ plots saved to file %s.\n", esl_opt_GetString(go, "--gum-qqfile"));
+      printf("# Gumbel QQ plots saved to file %s.\n", esl_opt_GetString(go, "--gum-qqfile"));
     }
     if (cfg.filhfp   != NULL) { 
       fclose(cfg.filhfp);
-      printf("Filter histograms saved to file %s.\n", esl_opt_GetString(go, "--fil-hfile"));
+      printf("# Filter histograms saved to file %s.\n", esl_opt_GetString(go, "--fil-hfile"));
     }
     if (cfg.filrfp   != NULL) {
       fclose(cfg.filrfp);
-      printf("Filter R info saved to file %s.\n", esl_opt_GetString(go, "--fil-rfile"));
+      printf("# Filter R info saved to file %s.\n", esl_opt_GetString(go, "--fil-rfile"));
     }
     if (cfg.ccom     != NULL) free(cfg.ccom);
     if (cfg.cdate    != NULL) free(cfg.cdate);

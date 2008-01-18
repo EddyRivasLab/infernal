@@ -1164,27 +1164,27 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &hmm_ncalcs_per_res)) != eslOK) return status;
   if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, hfi->beta, &cm_ncalcs_per_res, &W))  != eslOK) return status;
 
-  printf("# %-4s  %-15s  %5s  %6s  %7s  %7s  %5s  %7s  %7s\n", "idx",  "name",                 "clen",   "F",      "nseq",    "db (Mb)", "beta",  "use qdb", "always?");
-  printf("# %-4s  %-15s  %5s  %6s  %7s  %7s  %5s  %7s  %7s\n", "----", "--------------------", "-----",  "------", "-------", "-------", "-----", "-------", "-------");
-  printf("%6d  %-25s  %5d  %6.4f  %7d  %7.1f  %4g  %7s  %7s\n",
+  fprintf(fp, "# %4s  %-15s  %4s  %6s  %7s  %7s  %5s  %7s  %7s\n", "idx",  "name",            "clen",   "F",      "nseq",    "db (Mb)", "beta",  "use qdb", "always?");
+  fprintf(fp, "# %4s  %-15s  %4s  %6s  %7s  %7s  %5s  %7s  %7s\n", "----", "---------------", "-----",  "------", "-------", "-------", "-----", "-------", "-------");
+  fprintf(fp, "%6d  %-15s  %4d  %6.4f  %7d  %7.1f  %4g  %7s  %7s\n",
 	 cmi, cm->name, cm->clen, hfi->F, hfi->N, hfi->dbsize / 1000000., hfi->beta, 
 	 hfi->use_qdb ? "yes" : "no", 
 	 hfi->always_better_than_Smax ? "yes" : "no");
-  printf("#\n");
-  printf("#\n");
-  printf("#%10s  %s\n", "", "CM E-value cutoff / HMM Forward E-value filter cutoff pairs:");
-  printf("#%10s  %-4s  %8s  %6s  %8s  %6s  %6s  %7s  %7s\n", "", "idx",  "cm E",     "cm bit", "hmm E",  "hmmbit", "surv",   "xhmm",    "speedup");
-  printf("#%10s  %-4s  %8s  %6s  %8s  %6s  %6s  %7s  %7s\n", "", "----", "--------", "------", "-----_", "------", "------", "-------", "-------");
+  fprintf(fp, "#\n");
+  fprintf(fp, "#\n");
+  fprintf(fp, "#%11s  %s\n", "", "CM E-value cutoff / HMM Forward E-value filter cutoff pairs:");
+  fprintf(fp, "#%11s  %-4s  %8s  %6s  %8s  %6s  %6s  %7s  %7s\n", "", "idx",  "cm E",     "cm bit", "hmm E",  "hmmbit", "surv",   "xhmm",    "speedup");
+  fprintf(fp, "#%11s  %-4s  %8s  %6s  %8s  %6s  %6s  %7s  %7s\n", "", "----", "--------", "------", "------", "------", "------", "-------", "-------");
   for(i = 0; i < hfi->ncut; i++) {
     cm_E  = hfi->cm_E_cut[i]  * ((double) dbsize / (double) hfi->dbsize);
     hmm_E = hfi->fwd_E_cut[i] * ((double) dbsize / (double) hfi->dbsize);
     if((status = E2Score(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
     if((status = E2Score(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
-    fprintf(fp, "%9s  %6d  ", "", i);
-    if(cm_E < 0.01)  fprintf(fp, "%8.4g  ", cm_E);
+    fprintf(fp, "%10s  %6d  ", "", i);
+    if(cm_E < 0.01)  fprintf(fp, "%4.2e  ", cm_E);
     else             fprintf(fp, "%8.3f  ", cm_E);
     fprintf(fp, "%6.1f  ", cm_bit_sc);
-    if(hmm_E < 0.01) fprintf(fp, "%8.4g  ", hmm_E);
+    if(hmm_E < 0.01) fprintf(fp, "%4.2e  ", hmm_E);
     else             fprintf(fp, "%8.3f  ", hmm_E);
     fprintf(fp, "%6.1f  ", hmm_bit_sc);
     fprintf(fp, "%6.4f  %7.1f  %7.1f\n", 
@@ -1194,6 +1194,191 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   }
   return eslOK;
 }  
+
+
+/* Function: DumpHMMFilterInfoForCME()
+ * Date:     EPN, Fri Jan 18 10:48:01 2008
+ *
+ * Purpose:  Given a CM E-value cutoff <cm_E> for a specified
+ *           database size <dbsize>, print info on the HMM filter cutoff 
+ *           (if any) that would be used for that CM E-value cutoff
+ *           in cmsearch.
+ *           Does some expensive calculations (like QDB calc to
+ *           get average length of hits) to determine predicted
+ *           speedups, etc, when using the filters.
+ *            
+ * Returns:  eslOK on success, other Easel status code on some error
+ */
+int
+DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_E, int do_header)
+{
+  int i, p;
+  int status;
+  float avg_hit_len;
+  float cm_ncalcs_per_res;
+  int   W; /* window size calculated using hfi->beta */
+  float hmm_ncalcs_per_res;
+  float cm_bit_sc;
+  float hmm_bit_sc;
+  float hmm_E;
+
+  /* contract checks */
+  if(! (cm->flags & CMH_GUMBEL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfoForCME(), cm does not have Gumbel stats.");
+  /* When this function is entered, for all i and p, the following should be true:
+   * dbsize == cm->stats->gumAA[0..i..GUM_NMODES-1]][0..p..np-1]->N 
+   */
+  for(i = 0; i < GUM_NMODES; i++) { 
+    for(p = 0; p < cm->stats->np; p++) {
+      if(dbsize != cm->stats->gumAA[i][p]->dbsize) 
+	ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfoForCME(), cm gumbel dbsize: %ld != dbsize: %ld for gum_mode: %d partition: %d\n", cm->stats->gumAA[i][p]->dbsize, dbsize, i, p); 
+    }
+  }
+
+  if(! (hfi->is_valid)) {
+    fprintf(fp, "HMMFilterInfo_t not yet valid.\n");
+    return eslOK;
+  }
+
+  if((status = cm_GetAvgHitLen        (cm,      errbuf, &avg_hit_len))        != eslOK) return status;
+  if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &hmm_ncalcs_per_res)) != eslOK) return status;
+  if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, hfi->beta, &cm_ncalcs_per_res, &W))  != eslOK) return status;
+
+  if(do_header) { 
+    fprintf(fp, "# %4s  %-15s  %4s  %8s  %6s  %6s  %6s  %7s  %7s\n", "idx",  "name",            "clen", "cm E",     "cm bit", "hmmbit", "surv",   "xhmm",    "speedup");
+    fprintf(fp, "# %4s  %-15s  %4s  %8s  %6s  %6s  %6s  %7s  %7s\n", "----", "---------------", "----", "--------", "------", "------", "------", "-------", "-------");
+  }
+  fprintf(fp, "%6d  %-15s  %4d  ", cmi, cm->name, cm->clen);
+  if((status = GetHMMFilterFwdECutGivenCME(hfi, errbuf, cm_E, dbsize, &i)) != eslOK) return status; 
+
+  if(i == -1) { /* flag for 'not worth filtering' */
+    /*fprintf(fp, "do not filter; predicted to be a waste of time\n");*/
+    if((status = E2Score(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
+    if(cm_E < 0.01)  fprintf(fp, "%4.2e  ", cm_E);
+    else             fprintf(fp, "%8.3f  ", cm_E);
+    fprintf(fp, "%6.1f  ", cm_bit_sc);
+    fprintf(fp, "%6s  ", "-");
+    fprintf(fp, "%6.4f  %7.1f  %7.1f\n", 
+	    1.0, cm_ncalcs_per_res / hmm_ncalcs_per_res, 1.0);
+    
+  }
+ else {
+    hmm_E = hfi->fwd_E_cut[i] * ((double) dbsize / (double) hfi->dbsize);
+    if((status = E2Score(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
+    if((status = E2Score(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
+    if(cm_E < 0.01)  fprintf(fp, "%4.2e  ", cm_E);
+    else             fprintf(fp, "%8.3f  ", cm_E);
+    fprintf(fp, "%6.1f  ", cm_bit_sc);
+    fprintf(fp, "%6.1f  ", hmm_bit_sc);
+    fprintf(fp, "%6.4f  %7.1f  %7.1f\n", 
+	    GetHMMFilterS      (hfi, i, W, avg_hit_len),
+	    GetHMMFilterXHMM   (hfi, i, W, avg_hit_len, cm_ncalcs_per_res, hmm_ncalcs_per_res),
+	    GetHMMFilterSpeedup(hfi, i, W, avg_hit_len, cm_ncalcs_per_res, hmm_ncalcs_per_res));
+ }
+  return eslOK;
+}  
+
+/* Function: DumpHMMFilterInfoForCMBitScore()
+ * Date:     EPN, Fri Jan 18 10:47:54 2008
+ *
+ * Purpose:  Given a CM bit score cutoff <cm_bit_sc> for a specified
+ *           database size <dbsize>, print info on the HMM filter cutoff 
+ *           (if any) that would be used for that CM bit score cutoff
+ *           in cmsearch.
+ *           Simply determines CM E value that corresponds to <cm_bit_sc> 
+ *           then calls that DumpHMMFilterInfoForCME().
+ *             
+ * Returns:  eslOK on success, other Easel status code on some error
+ */
+int
+DumpHMMFilterInfoForCMBitScore(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_bit_sc, int do_header)
+{
+  int status;
+  float cm_E;
+
+  if((status = Score2E(cm, errbuf, cm_mode, cm_bit_sc, &cm_E)) != eslOK)  return status;
+  if((status = DumpHMMFilterInfoForCME(fp, hfi, errbuf, cm, cm_mode, hmm_mode, dbsize, cmi, cm_E, do_header)) != eslOK) return status;
+
+  return eslOK;
+}  
+
+
+/* Function: PlotHMMFilterInfo()
+ * Date:     EPN, Mon Dec 10 12:22:10 2007
+ *
+ * Purpose:  Print out HMM filter stats for each cut point in an 
+ *           HMMFilterInfo_t object in xmgrace format. Run in 
+ *           8 possible modes, depending on value of <mode>:
+ * 
+ *           mode  #define (structs.h)  x values            y values
+ *           ----  -------------------  ------------------  --------------------
+ *              0  FTHR_PLOT_CME_HMME   CM E-value cutoffs  HMM E-value cutoffs 
+ *              1  FTHR_PLOT_CME_S      CM E-value cutoffs  predicted survival fraction (S)
+ *              2  FTHR_PLOT_CME_XHMM   CM E-value cutoffs  predicted xhmm (factor slower than HMM only scan) 
+ *              3  FTHR_PLOT_CME_SPDUP  CM E-value cutoffs  predicted speedup using filter 
+ *              4  FTHR_PLOT_CMB_HMMB   CM bit sc cutoffs   HMM bit score cutoffs 
+ *              5  FTHR_PLOT_CMB_S      CM bit sc cutoffs   predicted survival fraction (S)
+ *              6  FTHR_PLOT_CMB_XHMM   CM bit sc cutoffs   predicted xhmm (factor slower than HMM only scan) 
+ *              7  FTHR_PLOT_CMB_SPDUP  CM bit sc cutoffs   predicted speedup using filter 
+ *            
+ * Returns:  eslOK on success, other Easel status code on some error
+ */
+int
+PlotHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int mode)
+{
+  int i, p;
+  int status;
+  float avg_hit_len;
+  float cm_ncalcs_per_res;
+  int   W; /* window size calculated using hfi->beta */
+  float hmm_ncalcs_per_res;
+  float cm_bit_sc;
+  float hmm_bit_sc;
+  float cm_E;
+  float hmm_E;
+
+  /* contract checks */
+  if(mode < 0 || mode >= FTHR_NPLOT) ESL_FAIL(eslEINCOMPAT, errbuf, "PlotHMMFilterInfo(), mode: %d is outside allowed range of [%d-%d]", mode, 0, (FTHR_NPLOT-1));
+  if(! (cm->flags & CMH_GUMBEL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "PlotHMMFilterInfo(), cm does not have Gumbel stats.");
+  /* When this function is entered, for all i and p, the following should be true:
+   * dbsize == cm->stats->gumAA[0..i..GUM_NMODES-1]][0..p..np-1]->N 
+   */
+  for(i = 0; i < GUM_NMODES; i++) { 
+    for(p = 0; p < cm->stats->np; p++) {
+      if(dbsize != cm->stats->gumAA[i][p]->dbsize) 
+	ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfo(), cm gumbel dbsize: %ld != dbsize: %ld for gum_mode: %d partition: %d\n", cm->stats->gumAA[i][p]->dbsize, dbsize, i, p); 
+    }
+  }
+
+  if(! (hfi->is_valid)) {
+    fprintf(fp, "HMMFilterInfo_t not yet valid.\n");
+    return eslOK;
+  }
+
+  if(mode != FTHR_PLOT_CME_HMME) { /* these calculations are unnec for FTHR_PLOT_CME_HMME */
+    if((status = cm_GetAvgHitLen        (cm,      errbuf, &avg_hit_len))        != eslOK) return status;
+    if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &hmm_ncalcs_per_res)) != eslOK) return status;
+    if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, hfi->beta, &cm_ncalcs_per_res, &W))  != eslOK) return status;
+  }
+  for(i = 0; i < hfi->ncut; i++) {
+    cm_E  = hfi->cm_E_cut[i]  * ((double) dbsize / (double) hfi->dbsize);
+    hmm_E = hfi->fwd_E_cut[i] * ((double) dbsize / (double) hfi->dbsize);
+    if((status = E2Score(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
+    if((status = E2Score(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
+
+    switch (mode) { 
+    case FTHR_PLOT_CME_HMME:  fprintf(fp, "%g\t%g\n", cm_E, hmm_E); break;
+    case FTHR_PLOT_CME_S:     fprintf(fp, "%g\t%f\n", cm_E, GetHMMFilterS(hfi, i, W, avg_hit_len)); break;
+    case FTHR_PLOT_CME_XHMM:  fprintf(fp, "%g\t%f\n", cm_E, GetHMMFilterXHMM(hfi, i, W, avg_hit_len, cm_ncalcs_per_res, hmm_ncalcs_per_res)); break; 
+    case FTHR_PLOT_CME_SPDUP: fprintf(fp, "%g\t%f\n", cm_E, GetHMMFilterSpeedup(hfi, i, W, avg_hit_len, cm_ncalcs_per_res, hmm_ncalcs_per_res)); break;
+    case FTHR_PLOT_CMB_HMMB:  fprintf(fp, "%f\t%f\n", cm_bit_sc, hmm_bit_sc); break; 
+    case FTHR_PLOT_CMB_S:     fprintf(fp, "%f\t%f\n", cm_bit_sc, GetHMMFilterS(hfi, i, W, avg_hit_len)); break;
+    case FTHR_PLOT_CMB_XHMM:  fprintf(fp, "%f\t%f\n", cm_bit_sc, GetHMMFilterXHMM(hfi, i, W, avg_hit_len, cm_ncalcs_per_res, hmm_ncalcs_per_res)); break;
+    case FTHR_PLOT_CMB_SPDUP: fprintf(fp, "%f\t%f\n", cm_bit_sc, GetHMMFilterSpeedup(hfi, i, W, avg_hit_len, cm_ncalcs_per_res, hmm_ncalcs_per_res)); break;
+    }
+  }
+  fprintf(fp, "&\n");
+  return eslOK;
+}    
 
 /* Function: GetHMMFilterS()
  * Date:     EPN, Wed Jan 16 21:21:55 2008
@@ -1274,3 +1459,96 @@ GetHMMFilterSpeedup(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len, flo
   return(c / total_calcs);
 }
 
+/* Function: GetHMMFilterFwdECutGivenCME()
+ * EPN, Fri Jan 18 09:48:55 2008
+ *
+ * Purpose:  Given a CM E value cutoff <cm_E> to use in 
+ *           cmsearch for a search of a database of <dbsize> 
+ *           size, determine the appropriate HMM filter cutoff 
+ *           to use for a HMM forward filter, if any.
+ *            
+ * Returns:  <ret_cut_pt>: index of forward filter E value cutoff to use in hfi->fwd_E_cut[].
+ *           if we shouldn't bother filtering, we set *ret_cut_pt to -1.
+ *           eslOK on success, eslEINCOMPAT on contract violation.
+ */
+int
+GetHMMFilterFwdECutGivenCME(HMMFilterInfo_t *hfi, char *errbuf, float cm_E, long dbsize, int *ret_cut_pt)
+{
+  int c = -1;
+  double dbsize_factor = (double) dbsize / (double) hfi->dbsize;
+
+  /* contract check */
+  if(ret_cut_pt == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "GetHMMFilterFwdECutGivenCME(), ret_cut_pt == NULL");
+
+  while(((c+1) < hfi->ncut)  /* we're not at final cut point */
+	&& ((hfi->cm_E_cut[(c+1)] * dbsize_factor) > cm_E))  /* next cut point is still > E_cut */
+    { c++; }
+  /* now c is the max c for which cm_E_cut[c] * dbsize_factor < cm_E 
+   * boundary cases: 
+   *
+   * if c == hfi->ncut-1: cm_E_cut[c] * dbsize_factor > cm_E for all c == 0..hfi->ncut-1
+   *                      This means cm_E is better than the ((1. - FTHR_MAXFRACT) * hfi->N)th
+   *                      best CM E value we observed after sampling and finding the optimal CM hit in 
+   *                      hfi->N seqs in cmcalibrate. In this case, we use the fwd_E_cut[hfi->ncut-1] 
+   *                      for the forward filter. This should be safe b/c this fwd_E value has empirically
+   *                      shown it can find hfi->F fraction for a worse CM E-value cutoff than cm_E.
+   *
+   * if c == -1:          cm_E_cut[0] * dbsize_factor < cm_E
+   *                      What this means depends on the value of the hfi->always_better_than_Smax parameter:
+   *
+   *                      (A) if hfi->always_better_than_Smax == FALSE: 
+   *                          cm_E is greater than the maximum cm E value cutoff we determined it was 
+   *                          worth filtering for in cmcalibrate. In this case we turn filtering off 
+   *                          by returning -1.
+   *
+   *                      (B) if hfi->always_better_than_Smax == TRUE: 
+   *                          cm_E is greater than the maximum cm E value we observed after sampling 
+   *                          and finding the optimal CM hit in hfi->N seqs in cmcalibrate. In this 
+   *                          case, it's unclear what the best stratgey is. The current strategy is 
+   *                          to use the fwd_E_cut[0] E cutoff by returning 0. This is potentially 
+   *                          unsafe because it means there are sequences that have E values E such 
+   *                          that 
+   *                             cm_E > E > cm_E_cut[0]
+   *                          that our HMM filter will likely miss, but there's really nothing we 
+   *                          can do about it because we have no way of sampling these sequences
+   *                          w.r.t the true CM distribution over sequences. That's exactly what 
+   *                          we tried to do in cmcalibrate but we did not sample deeply enough.
+   *                          (To get around this case, I tried some tricks with exponentiating 
+   *                          the CM's parameters by <x> < 1 to try to sample sequences with lower
+   *                          scores but this mucks with the CM distribution in a way I don't understand, 
+   *                          so it was abandonded.)
+   */
+  if(c == -1 && hfi->always_better_than_Smax) c = 0; /* case B above */
+  *ret_cut_pt = c;
+  return eslOK;
+}
+
+/* Function: GetHMMFilterFwdECutGivenCMBitScore()
+ * EPN, Fri Jan 18 10:37:20 2008
+ *
+ * Purpose:  Given a CM bit score cutoff <cm_bit_sc> to use in 
+ *           cmsearch for a search of a database of <dbsize> 
+ *           size, determine the appropriate HMM filter cutoff 
+ *           to use for a HMM forward filter, if any.
+ *            
+ * Returns:  <ret_cut_pt>: index of forward filter E value cutoff to use in hfi->fwd_E_cut[].
+ *           if we shouldn't bother filtering, we set *ret_cut_pt to -1.
+ *           eslOK on success, eslEINCOMPAT on contract violation.
+ */
+int
+GetHMMFilterFwdECutGivenCMBitScore(HMMFilterInfo_t *hfi, char *errbuf, float cm_bit_sc, long dbsize, int *ret_cut_pt, CM_t *cm, int cm_mode)
+{
+  int status;
+  float cm_E; /* the max 'safe' E value cm_bit_sc corresponds to, across all partitions */
+  int cut_pt;
+
+  /* contract check */
+  if(ret_cut_pt == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "GetHMMFilterFwdECutGivenCMBitScore(), ret_cut_pt == NULL");
+
+  if((status = Score2E(cm, errbuf, cm_mode, cm_bit_sc, &cm_E)) != eslOK)          return status;
+  if((status = GetHMMFilterFwdECutGivenCME(hfi, errbuf, cm_E, dbsize, &cut_pt)) != eslOK) return status; 
+
+  *ret_cut_pt = cut_pt;
+
+  return eslOK;
+}

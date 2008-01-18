@@ -38,7 +38,8 @@
 /* database size for E-values in Mb for HMM filter thresholds */
 #define FTHR_DBSIZE 1000000
 
-#define GC_SEGMENTS 101                   /* Possible integer GC contents */
+/* number of possible integer GC contents, example 40 = 0.40 GC */
+#define GC_SEGMENTS 101
 
 #define BE_EFFICIENT  0		/* setting for do_full: small memory mode */
 #define BE_PARANOID   1		/* setting for do_full: keep whole matrix, perhaps for debugging */
@@ -1198,6 +1199,16 @@ typedef struct hmmfilterinfo_s {
 				   */
 } HMMFilterInfo_t;
 
+/* different possible x/y values for HMM filter threshold plots in cmstat */
+#define FTHR_PLOT_CME_HMME  0 /* HMM filter E-value cutoffs versus CM E-value cutoffs */
+#define FTHR_PLOT_CME_S     1 /* predicted survival fraction versus CM E-value cutoffs */
+#define FTHR_PLOT_CME_XHMM  2 /* predicted xhmm (factor slower than HMM only scan) versus CM E-value cutoffs */
+#define FTHR_PLOT_CME_SPDUP 3 /* predicted speedup with filter versus CM E-value cutoffs */
+#define FTHR_PLOT_CMB_HMMB  4 /* HMM filter bit score cutoffs versus CM bit score cutoffs */
+#define FTHR_PLOT_CMB_S     5 /* predicted survival fraction versus CM bit score cutoffs */
+#define FTHR_PLOT_CMB_XHMM  6 /* predicted xhmm (factor slower than HMM only scan) versus CM bit score cutoffs */
+#define FTHR_PLOT_CMB_SPDUP 7 /* predicted speedup with filter versus CM bit score cutoffs */
+#define FTHR_NPLOT          8
 /* Structure BestFilterInfo_t: 
  * 
  * Information for the predicted best filter for CM searches
