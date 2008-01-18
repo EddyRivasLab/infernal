@@ -32,33 +32,35 @@
 #include "funcs.h"		/* function declarations                */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define ONELINEOPTS  "-m,--le,--ge,--lfc,--gfc,--lfi,--gfi" /* exclusive choice of summary stats */
+#define ONELINEOPTS  "-m,--all,--le,--ge,--lfc,--gfc,--lfi,--gfi" /* exclusive choice of summary stats */
 #define NOTMOPTS     "--le,--ge,--lfc,--gfc,--lfi,--gfi"    /* incompatible with -g, --beta, and --search */
-#define CMCUTOPTS    "-E,-T,--ga,--tc,--nc"                 /* exclusive choice for CM cutoff */
+#define CMCUTOPTS    "-E,-T,--ga,--tc,--nc,--range"         /* exclusive choice for CM cutoff */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default      env  range     toggles      reqs     incomp    help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
   { "-o",        eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "direct output to file <f>, not stdout", 1 },
   { "-g",        eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,    NOTMOPTS, "configure CM for glocal alignment [default: local]", 1 },
-  { "-m",        eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of model statistics", 1 },
-  { "--le",      eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of  local E-value statistics", 1 },
-  { "--ge",      eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of glocal E-value statistics", 1 },
-  { "--lfc",     eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print summary of  local CYK    filter threshold stats", 1 },
-  { "--gfc",     eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print summary of glocal CYK    filter threshold stats", 1 },
-  { "--lfi",     eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print summary of  local Inside filter threshold stats", 1 },
-  { "--gfi",     eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print summary of glocal Inside filter threshold stats", 1 },
-  { "--seqfile", eslARG_INFILE, FALSE,     NULL, NULL,      NULL,      NULL,        NULL, "for filter stats: compute E-value cutoffs for sequence file <f>", 1 },
-  { "--toponly", eslARG_NONE,   FALSE,     NULL, NULL,      NULL,"--seqfile",       NULL, "with --seqfile, only consider top-strand", 1},
+  { "-m",        eslARG_NONE,"default",    NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of model statistics", 1 },
+  { "--all",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "print model, E-value and filter thresholds stats", 1 },
+  { "--le",      eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print one line summary of  local E-value statistics", 1 },
+  { "--ge",      eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print one line summary of glocal E-value statistics", 1 },
   { "--beta",    eslARG_REAL,   "1E-7",    NULL, "0<x<1",   NULL,      NULL,    NOTMOPTS, "set tail loss prob for W calc and QDB stats to <x>", 1 },
   { "--search",  eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,    NOTMOPTS, "do search timing experiments", 1 },
   { "--cmL",     eslARG_INT,    "1000",    NULL, "n>0",     NULL,"--search",        NULL, "length of sequences for CM search stats", 1 },
   { "--hmmL",    eslARG_INT,    "100000",  NULL, "n>0",     NULL,"--search",        NULL, "length of sequences for CP9 HMM search stats", 1 },
-  { "-E",        eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,   CMCUTOPTS, "for filter stats: only print HMM filter for cmsearch E cutoff <x>", 2}, 
-  { "-T",        eslARG_REAL,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "for filter stats: only print HMM filter for cmsearch bit cutoff <x>", 2}, 
-  { "--ga",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "for filter stats: only print HMM filter for Rfam GA cutoff", 2}, 
-  { "--tc",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "for filter stats: only print HMM filter for Rfam TC cutoff", 2}, 
-  { "--nc",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "for filter stats: only print HMM filter for Rfam NC cutoff", 2}, 
+  { "--lfc",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of  local CYK    filter threshold stats", 2 },
+  { "--gfc",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of glocal CYK    filter threshold stats", 2 },
+  { "--lfi",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of  local Inside filter threshold stats", 2 },
+  { "--gfi",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of glocal Inside filter threshold stats", 2 },
+  { "-E",        eslARG_REAL,   "0.1",     NULL, "x>0",     NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for cmsearch E cutoff <x>", 2}, 
+  { "-T",        eslARG_REAL,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for cmsearch bit cutoff <x>", 2}, 
+  { "--ga",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for Rfam GA cutoff", 2}, 
+  { "--tc",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for Rfam TC cutoff", 2}, 
+  { "--nc",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for Rfam NC cutoff", 2}, 
+  { "--range",   eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print full range CM/HMM filter cutoff points", 2}, 
+  { "--seqfile", eslARG_INFILE, FALSE,     NULL, NULL,      NULL,      NULL,        NULL, "compute E-value cutoffs for sequence file <f>", 2 },
+  { "--toponly", eslARG_NONE,   FALSE,     NULL, NULL,      NULL,"--seqfile",       NULL, "with --seqfile, only consider top-strand", 2 },
   { "--efile",   eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "output HMM filter E-val cutoff vs CM E-val cutoff plots to <f>", 3},
   { "--bfile",   eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "output HMM filter bit sc cutoff vs CM bit sc cutoff plots to <f>", 3},
   { "--sfile",   eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "output predicted survival fraction vs CM cutoff plots to <f>", 3},
@@ -99,7 +101,24 @@ main(int argc, char **argv)
   FILE            *afp = NULL;  /* for --afile output */
   int              seen_gumbels_yet = FALSE; /* set to true if Gumbels read */
   int              seen_fthr_yet    = FALSE; /* set to true if filter threshold stats read */
-
+  /* variables for filter threshold stats */
+  int              do_filter_stats;                 /* TRUE if --lfc, --gfc, --lfi or --gfi */
+  int              do_avg_stats;                    /* TRUE to print average stats */
+  float            avg_clen = 0.;                   /* average consensus length */
+  float            cm_E, avg_cm_E = 0.;             /* cm E value cutoff */
+  float            cm_bit_sc, avg_cm_bit_sc = 0.;   /* cm bit score cutoff */
+  float            hmm_E, avg_hmm_E = 0.;           /* hmm E value cutoff */
+  float            hmm_bit_sc, avg_hmm_bit_sc = 0.; /* hmm bit score cutoff */
+  float            S, avg_S = 0.;                   /* survival fraction */
+  float            xhmm, avg_xhmm = 0.;             /* filter scan takes <xhmm> times as long as hmm only scan */
+  float            spdup, avg_spdup = 0.;           /* predicted speedup using filter */
+  float            tot_xhmm = 0.;                   /* total xhmm for all CMs */
+  float            tot_spdup = 0.;                  /* total predicted speedup using filters for all CMs */
+  float            cm_ncalcs, tot_cm_ncalcs = 0.;   /* total millions of dp calcs for CM per residue for all CMs */
+  float            hmm_ncalcs, tot_hmm_ncalcs = 0.; /* total millions of dp calcs for HMM per residue for all CMs */
+  float            tot_cm_surv_plus_fil_calcs = 0.; /* total millions of dp calcs for HMM per residue plus CM search of survivors for all CMs */
+  int              do_filter;                       /* TRUE if it's worth filtering for current model */
+  int              nfilter = 0;                     /* number of models it's worth filtering for */
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
   FLogsumInit();
@@ -121,9 +140,9 @@ main(int argc, char **argv)
       esl_usage(stdout, argv[0], usage);
       puts("\nwhere options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-      puts("\n  options to modify behavior of --lfc, --gfc, --lfi or --gfi:");
+      puts("\n  options for printing filter threshold statistics:");
       esl_opt_DisplayHelp(stdout, go, 2, 2, 80);
-      puts("\n  optional save files for plots with --lfc, --gfc, --lfi or --gfi:");
+      puts("\n  optional xmgrace plots for --lfc, --gfc, --lfi or --gfi:");
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
       exit(0);
     }
@@ -137,25 +156,22 @@ main(int argc, char **argv)
       exit(1);
     }
 
+  do_filter_stats = ((esl_opt_GetBoolean(go, "--all")) || (esl_opt_GetBoolean(go, "--lfc")) || (esl_opt_GetBoolean(go, "--lfi")) || (esl_opt_GetBoolean(go, "--gfc")) || (esl_opt_GetBoolean(go, "--gfi")));
+
   /* check for incompatible options combos too convoluted for esl_getopts */
   if (esl_opt_GetBoolean(go, "--bits")) { 
     if((esl_opt_IsDefault(go, "--sfile")) && (esl_opt_IsDefault(go, "--xfile")) && (esl_opt_IsDefault(go, "--afile"))) {
       cm_Fail("--bits only works with --sfile, --xfile and/or --afile");
     }
   }
-  if(! ((esl_opt_IsDefault(go, "--sfile")) && (esl_opt_IsDefault(go, "--xfile")) && (esl_opt_IsDefault(go, "--afile")) && (esl_opt_IsDefault(go, "--efile")) && (esl_opt_IsDefault(go, "--bfile")))) { 
-    if(! ((esl_opt_GetBoolean(go, "--lfc")) || (esl_opt_GetBoolean(go, "--lfi")) || (esl_opt_GetBoolean(go, "--gfc")) || (esl_opt_GetBoolean(go, "--gfi")))) { 
-      cm_Fail("--{e,b,s,x,a}file options only work with --lfc, --lfi, --gfc or --gfi");
-    }
+  if((! do_filter_stats) && (! ((esl_opt_IsDefault(go, "--sfile")) && (esl_opt_IsDefault(go, "--xfile")) && (esl_opt_IsDefault(go, "--afile")) && (esl_opt_IsDefault(go, "--efile")) && (esl_opt_IsDefault(go, "--bfile"))))) { 
+    cm_Fail("--{e,b,s,x,a}file options only work with --lfc, --lfi, --gfc or --gfi");
   }
-  if((!(esl_opt_IsDefault(go, "--seqfile"))) && 
-     (!(esl_opt_GetBoolean(go, "--lfc"))) && (!(esl_opt_GetBoolean(go, "--lfi"))) && (!(esl_opt_GetBoolean(go, "--gfc"))) && (!(esl_opt_GetBoolean(go, "--gfi")))) {
+  if((! do_filter_stats) && (!(esl_opt_IsDefault(go, "--seqfile")))) {
     cm_Fail("--seqfile only makes sense with one of: --lfc, --lfi, --gfc, or --gfi");
   }
-  if(! ((esl_opt_IsDefault(go, "-E")) && (esl_opt_IsDefault(go, "-T")) && (esl_opt_IsDefault(go, "--ga")) && (esl_opt_IsDefault(go, "--nc")) && (esl_opt_IsDefault(go, "--tc")))) {
-    if(! ((esl_opt_GetBoolean(go, "--lfc")) || (esl_opt_GetBoolean(go, "--lfi")) || (esl_opt_GetBoolean(go, "--gfc")) || (esl_opt_GetBoolean(go, "--gfi")))) {
-      cm_Fail("-E,-T,--ga,--nc, and --tc options only work with --lfc, --lfi, --gfc or --gfi");
-    }
+  if((! do_filter_stats) && (! ((esl_opt_IsDefault(go, "-E")) && (esl_opt_IsDefault(go, "-T")) && (esl_opt_IsDefault(go, "--ga")) && (esl_opt_IsDefault(go, "--nc")) && (esl_opt_IsDefault(go, "--tc")) && (esl_opt_IsDefault(go, "--range"))))) {
+    cm_Fail("-E,-T,--ga,--nc, --tc, and --range options only work with --lfc, --lfi, --gfc or --gfi");
   }
 
   cm_banner(stdout, argv[0], banner);
@@ -215,14 +231,14 @@ main(int argc, char **argv)
 
   /* Main body: read CMs one at a time, print stats 
    * Options for only printing 1 line per CM: 
-   * if -m:              print general model stats, and optionally determine search stats (if --search)
-   * else if  --le:  print  local gumbel stats
-   * else if --ge:  print glocal gumbel stats
-   * else if  --lfc: print  local CYK    filter threshold stats
-   * else if --gfc: print glocal CYK    filter threshold stats
-   * else if  --lfc: print  local Inside filter threshold stats
-   * else if --gfc: print glocal Inside filter threshold stats
-   * else (default):     print all stat categories, one category at a time 
+   * if -m (default): print general model stats, and optionally determine search stats (if --search)
+   * else if --le:    print  local gumbel stats
+   * else if --ge:    print glocal gumbel stats
+   * else if --lfc:   print  local CYK    filter threshold stats
+   * else if --gfc:   print glocal CYK    filter threshold stats
+   * else if --lfc:   print  local Inside filter threshold stats
+   * else if --gfc:   print glocal Inside filter threshold stats
+   * else if --all:   print all stat categories, one category at a time 
    */
   int do_model    = esl_opt_GetBoolean(go, "-m");
   int do_locale   = esl_opt_GetBoolean(go, "--le");
@@ -234,8 +250,10 @@ main(int argc, char **argv)
   /* assert we only have one of our exclusive modes on, getops should've already handled this actually */
   if((do_model + do_locale + do_glocale + do_localfc + do_glocalfc + do_localfi + do_glocalfi) > 1) 
     cm_Fail("error parsing options, exactly 1 or 0 of the following should be true (1):\ndo_model: %d\ndo_locale: %d\ndo_glocale: %d\ndo_localfc: %d\ndo_glocalfc: %d\ndo_localfi: %d\ndo_glocalfi: %d\n", do_model, do_locale, do_glocale, do_localfc, do_glocalfc, do_localfi, do_glocalfi);
-  if((do_model + do_locale + do_glocale + do_localfc + do_glocalfc + do_localfi + do_glocalfi) == 0)  /* no one line options selected, do them all */
-    do_model = do_locale = do_glocale = TRUE;
+  if(esl_opt_GetBoolean(go, "--all"))  /* bombard the unprepared user with info */
+  ///if((do_model + do_locale + do_glocale + do_localfc + do_glocalfc + do_localfi + do_glocalfi) == 0)  /* no one line options selected, do them all */
+  ///do_model = do_locale = do_glocale = TRUE;
+    do_model = do_locale = do_glocale = do_localfc = do_glocalfc = do_localfi = do_glocalfi = TRUE;
   int doing_locale   = FALSE;
   int doing_glocale  = FALSE;
   int doing_localfc  = FALSE;
@@ -248,6 +266,7 @@ main(int argc, char **argv)
     ncm = 0;
     while (CMFileRead(cmfp, &abc, &cm))
       {
+	if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cmfile);
 	if(ncm == 0 || (esl_opt_GetBoolean(go, "--search"))) { 
 	  fprintf(ofp, "#\n");
 	  fprintf(ofp, "# %-4s %-20s %8s %8s %4s %5s %5s %3s %13s\n",    "",     "",                     "",         "",         "",     "",      "",      "",    "    relent   ");
@@ -256,7 +275,6 @@ main(int argc, char **argv)
 	  fprintf(ofp, "# %-4s %-20s %8s %8s %4s %5s %5s %3s %6s %6s\n", "----", "--------------------", "--------", "--------", "----", "-----", "-----", "---", "------", "------");
 	}
 	ncm++;
-
 
 	cm->beta = esl_opt_GetReal(go, "--beta");
 	cm->config_opts |= CM_CONFIG_QDB;
@@ -296,6 +314,7 @@ main(int argc, char **argv)
     seen_gumbels_yet = FALSE;
     CMFileRewind(cmfp);
     while (CMFileRead(cmfp, &abc, &cm)) {
+      if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cmfile);
       ncm++;
       if(cm->flags & CMH_GUMBEL_STATS) {
 	if(!seen_gumbels_yet) {
@@ -311,7 +330,7 @@ main(int argc, char **argv)
 	}
 	for(p = 0; p < cm->stats->np; p++) { 
 	  if(doing_locale) {
-	    fprintf(ofp, "%6d %-15s %2d %2d %3d %5.2f %5.3f %5.2f %5.3f %5.2f %5.3f %5.2f %5.3f\n",
+	    fprintf(ofp, "%6d %-15s %2d %2d %3d %5.1f %5.3f %5.1f %5.3f %5.1f %5.3f %5.1f %5.3f\n",
 		   ncm,
 		   cm->name,
 		   p+1,
@@ -322,7 +341,7 @@ main(int argc, char **argv)
 		   cm->stats->gumAA[GUM_CP9_LF][p]->mu, cm->stats->gumAA[GUM_CP9_LF][p]->lambda);
 	  }
 	  else { /* glocal */
-	    fprintf(ofp, "%6d %-15s %2d %2d %3d %5.2f %5.3f %5.2f %5.3f %5.2f %5.3f %5.2f %5.3f\n",
+	    fprintf(ofp, "%6d %-15s %2d %2d %3d %5.1f %5.3f %5.1f %5.3f %5.1f %5.3f %5.1f %5.3f\n",
 		   ncm,
 		   cm->name,
 		   p+1,
@@ -355,6 +374,8 @@ main(int argc, char **argv)
 
     ncm = 0;
     seen_fthr_yet = FALSE;
+    avg_clen = avg_cm_E = avg_cm_bit_sc = avg_hmm_E = avg_hmm_bit_sc = avg_S = avg_xhmm = avg_spdup = 0.;
+    tot_xhmm = tot_spdup = tot_cm_ncalcs = tot_hmm_ncalcs = tot_cm_surv_plus_fil_calcs = 0.;
 
     if(doing_glocalfc) { fthr_mode = FTHR_CM_GC; cm_mode = GUM_CM_GC; hmm_mode = GUM_CP9_GF; }
     if(doing_glocalfi) { fthr_mode = FTHR_CM_GI; cm_mode = GUM_CM_GI; hmm_mode = GUM_CP9_GF; }
@@ -362,6 +383,7 @@ main(int argc, char **argv)
     if(doing_localfi)  { fthr_mode = FTHR_CM_LI; cm_mode = GUM_CM_LI; hmm_mode = GUM_CP9_LF; }
     CMFileRewind(cmfp);
     while (CMFileRead(cmfp, &abc, &cm)) {
+      if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cmfile);
       ncm++;
       if(cm->flags & CMH_FILTER_STATS) {
 	if(! (cm->flags & CMH_GUMBEL_STATS)) cm_Fail("cm: %d has filter threshold stats, but no Gumbel stats, this shouldn't happen.");
@@ -380,30 +402,51 @@ main(int argc, char **argv)
 	  if(doing_localfi)  fprintf(ofp, "# local Inside filter threshold stats ");
 	  if(doing_glocalfi) fprintf(ofp, "# glocal Inside filter threshold stats ");
 	}  
-	if(! esl_opt_IsDefault(go, "-E")) { 
-	  if(!seen_fthr_yet) fprintf(ofp, "for E-value cutoff of %4g\n#\n", esl_opt_GetReal(go, "-E"));
-	  if((status = DumpHMMFilterInfoForCME(ofp, cm->stats->hfiA[fthr_mode], errbuf, cm, cm_mode, hmm_mode, dbsize, ncm, esl_opt_GetReal(go, "-E"), (!seen_fthr_yet))) != eslOK) cm_Fail(errbuf);
+	if(! esl_opt_GetBoolean(go, "--range")) {
+	  do_avg_stats = TRUE;
+	  if((! esl_opt_IsDefault(go, "-T")) || (! esl_opt_IsDefault(go, "--ga")) || (! esl_opt_IsDefault(go, "--nc")) || (! esl_opt_IsDefault(go, "--tc"))) { 
+	    if(! esl_opt_IsDefault(go, "-T")) { 
+	      cm_bit_sc = esl_opt_GetReal(go, "-T");
+	      if (!seen_fthr_yet) fprintf(ofp, "for bit score cutoff of %4g\n#\n", esl_opt_GetReal(go, "-T"));
+	    }
+	    else if(! esl_opt_IsDefault(go, "--ga")) { 
+	      cm_bit_sc = cm->ga;
+	      if(!seen_fthr_yet) fprintf(ofp, "for Rfam GA gathering cutoff from CM file\n#\n");
+	      if(! (cm->flags & CMH_GA)) ESL_FAIL(eslEINVAL, errbuf, "No GA gathering threshold in CM file for cm: %d, can't use --ga.", ncm);
+	    }
+	    else if(! esl_opt_IsDefault(go, "--tc")) { 
+	      cm_bit_sc = cm->tc;
+	      if(!seen_fthr_yet) fprintf(ofp, "for Rfam TC gathering cutoff from CM file\n#\n");
+	      if(! (cm->flags & CMH_TC)) ESL_FAIL(eslEINVAL, errbuf, "No TC trusted cutoff in CM file for cm: %d, can't use --tc.", ncm);
+	    }
+	    else if(! esl_opt_IsDefault(go, "--nc")) { 
+	      cm_bit_sc = cm->nc;
+	      if(!seen_fthr_yet) fprintf(ofp, "for Rfam NC gathering cutoff from CM file\n#\n");
+	      if(! (cm->flags & CMH_NC)) ESL_FAIL(eslEINVAL, errbuf, "No NC gathering threshold in CM file for cm: %d, can't use --nc.", ncm);
+	    }
+	    if((status = DumpHMMFilterInfoForCMBitScore(ofp, cm->stats->hfiA[fthr_mode], errbuf, cm, cm_mode, hmm_mode, dbsize, ncm, cm_bit_sc, (!seen_fthr_yet),
+							&cm_E, &hmm_E, &hmm_bit_sc, &S, &xhmm, &spdup, &cm_ncalcs, &hmm_ncalcs, &do_filter)) != eslOK) cm_Fail(errbuf);
+	    if(do_filter) nfilter++;
+	  }
+	  else { /* default with --lfc,--gfc,--lfi,--gfi and ! --range is to use -E, with default value 0.1, the default cmsearch strategy */
+	    cm_E = esl_opt_GetReal(go, "-E");
+	    if(!seen_fthr_yet) fprintf(ofp, "for E-value cutoff of %4g\n#\n", cm_E);
+	    if((status = DumpHMMFilterInfoForCME(ofp, cm->stats->hfiA[fthr_mode], errbuf, cm, cm_mode, hmm_mode, dbsize, ncm, cm_E, (!seen_fthr_yet), 
+						 &cm_bit_sc, &hmm_E, &hmm_bit_sc, &S, &xhmm, &spdup, &cm_ncalcs, &hmm_ncalcs, &do_filter)) != eslOK) cm_Fail(errbuf);
+	    if(do_filter) nfilter++;
+	  }
+	  avg_clen       += cm->clen;
+	  avg_cm_E       += cm_E;
+	  avg_cm_bit_sc  += cm_bit_sc;
+	  avg_hmm_bit_sc += hmm_bit_sc;
+	  avg_S          += S;
+	  avg_xhmm       += xhmm;
+	  avg_spdup      += spdup;
+	  tot_cm_ncalcs  += cm_ncalcs;
+	  tot_hmm_ncalcs += hmm_ncalcs;
+	  tot_cm_surv_plus_fil_calcs += (cm_ncalcs / spdup);
 	}
-	else if(! esl_opt_IsDefault(go, "-T")) { 
-	  if (!seen_fthr_yet) fprintf(ofp, "for bit score cutoff of %4g\n#\n", esl_opt_GetReal(go, "-T"));
-	  if((status = DumpHMMFilterInfoForCMBitScore(ofp, cm->stats->hfiA[fthr_mode], errbuf, cm, cm_mode, hmm_mode, dbsize, ncm, esl_opt_GetReal(go, "-T"), (!seen_fthr_yet))) != eslOK) cm_Fail(errbuf);
-	}
-	else if(! esl_opt_IsDefault(go, "--ga")) { 
-	  if(!seen_fthr_yet) fprintf(ofp, "for Rfam GA gathering cutoff from CM file\n#\n");
-	  if(! (cm->flags & CMH_GA)) ESL_FAIL(eslEINVAL, errbuf, "No GA gathering threshold in CM file for cm: %d, can't use --ga.", ncm);
-	  if((status = DumpHMMFilterInfoForCMBitScore(ofp, cm->stats->hfiA[fthr_mode], errbuf, cm, cm_mode, hmm_mode, dbsize, ncm, cm->ga, (!seen_fthr_yet))) != eslOK) cm_Fail(errbuf);
-	}
-	else if(! esl_opt_IsDefault(go, "--tc")) { 
-	  if(!seen_fthr_yet) fprintf(ofp, "for Rfam TC gathering cutoff from CM file\n#\n");
-	  if(! (cm->flags & CMH_TC)) ESL_FAIL(eslEINVAL, errbuf, "No TC trusted cutoff in CM file for cm: %d, can't use --tc.", ncm);
-	  if((status = DumpHMMFilterInfoForCMBitScore(ofp, cm->stats->hfiA[fthr_mode], errbuf, cm, cm_mode, hmm_mode, dbsize, ncm, cm->tc, (!seen_fthr_yet))) != eslOK) cm_Fail(errbuf);
-	}
-	else if(! esl_opt_IsDefault(go, "--nc")) { 
-	  if(!seen_fthr_yet) fprintf(ofp, "for Rfam NC gathering cutoff from CM file\n#\n");
-	  if(! (cm->flags & CMH_NC)) ESL_FAIL(eslEINVAL, errbuf, "No NC gathering threshold in CM file for cm: %d, can't use --nc.", ncm);
-	  if((status = DumpHMMFilterInfoForCMBitScore(ofp, cm->stats->hfiA[fthr_mode], errbuf, cm, cm_mode, hmm_mode, dbsize, ncm, cm->nc, (!seen_fthr_yet))) != eslOK) cm_Fail(errbuf);
-	}
-	else {
+	else { /* --range enabled */
 	  fprintf(ofp, "for all filter cutoffs in CM file\n#\n");
 	  if((status = DumpHMMFilterInfo(ofp, cm->stats->hfiA[fthr_mode], errbuf, cm, cm_mode, hmm_mode, dbsize, ncm)) != eslOK) cm_Fail(errbuf);
 	}
@@ -422,6 +465,25 @@ main(int argc, char **argv)
       if(doing_localfi  && esl_opt_GetBoolean(go, "--lfi"))  cm_Fail("--lfi option enabled but none of the CMs in %s have filter threshold stats.", cmfile);
       if(doing_glocalfi && esl_opt_GetBoolean(go, "--gfi")) cm_Fail("--gfi option enabled but none of the CMs in %s have filter threshold stats.", cmfile);
       if(doing_glocalfi && (! esl_opt_GetBoolean(go, "--gfi"))) fprintf(ofp, "# No filter threshold statistics.\n");
+    }
+    if(do_avg_stats && ncm > 1) { 
+      avg_clen       /= ncm;
+      avg_cm_E       /= ncm;
+      avg_cm_bit_sc  /= ncm;
+      avg_hmm_E      /= nfilter;
+      avg_hmm_bit_sc /= nfilter;
+      avg_S          /= ncm;
+      avg_xhmm       /= ncm;
+      avg_spdup      /= ncm;
+      tot_spdup       = tot_cm_ncalcs / tot_cm_surv_plus_fil_calcs;
+      tot_xhmm        = tot_cm_surv_plus_fil_calcs / tot_hmm_ncalcs;
+      fprintf(ofp, "# %4s  %-15s  %4s  %8s  %6s  %6s  %6s  %7s  %7s\n", "----", "---------------", "----", "--------", "------", "------", "------", "-------", "-------");
+      fprintf(ofp, "%6s  %-15s  %4d  ", "-", "*Average*", (int) (avg_clen+0.5));
+      if(avg_cm_E < 0.01)  fprintf(ofp, "%4.2e  ", avg_cm_E);
+      else                 fprintf(ofp, "%8.3f  ", avg_cm_E);
+      fprintf(ofp, "%6.1f  %6.1f  %6.4f  %7.1f  %7.1f\n", avg_cm_bit_sc, avg_hmm_bit_sc, avg_S, avg_xhmm, avg_spdup);
+
+      fprintf(ofp, "%6s  %-15s  %4s  %8s  %6s  %6s  %6s  %7.1f  %7.1f\n", "-", "*Total*", "-", "-", "-", "-", "-", tot_xhmm, tot_spdup);
     }
   }
   esl_alphabet_Destroy(abc);

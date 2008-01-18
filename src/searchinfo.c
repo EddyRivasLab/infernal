@@ -1208,9 +1208,20 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
  *           speedups, etc, when using the filters.
  *            
  * Returns:  eslOK on success, other Easel status code on some error
+ *           optionally (if non-NULL):
+ *           <ret_cm_bit_sc>:          cm bit score cutoff
+ *           <ret_hmm_E>:              HMM filter threshold E-value
+ *           <ret_hmm_bit_sc>:         HMM filter threshold bit score
+ *           <ret_S>:                  predicted filter survival fraction 
+ *           <ret_xhmm>:               predicted xhmm factor (predicted speed * hmm speed) 
+ *           <ret_spdup>:              predicted speedup from using filter versus only CM search with hfi->beta QDBs (unless !hfi->use_qdb) 
+ *           <ret_cm_ncalcs_per_res>:  millions of dp calcs for CM search of 1 residue
+ *           <ret_hmm_ncalcs_per_res>: millions of dp calcs for HMM search of 1 residue
+ *           <ret_do_filter>:          TRUE if filtering predicted to save time, FALSE if not
  */
 int
-DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_E, int do_header)
+DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_E, int do_header, 
+			float *ret_cm_bit_sc, float *ret_hmm_E, float *ret_hmm_bit_sc, float *ret_S, float *ret_xhmm, float *ret_spdup, float *ret_cm_ncalcs_per_res, float *ret_hmm_ncalcs_per_res, int *ret_do_filter)
 {
   int i, p;
   int status;
@@ -1221,6 +1232,9 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
   float cm_bit_sc;
   float hmm_bit_sc;
   float hmm_E;
+  float S;     /* predicted survival fraction */
+  float xhmm;  /* filtered scan will take <xhmm> times as long as HMM only scan */
+  float spdup; /* predicted speedup of filtered scan relative to CM scan */
 
   /* contract checks */
   if(! (cm->flags & CMH_GUMBEL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfoForCME(), cm does not have Gumbel stats.");
@@ -1248,32 +1262,37 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
     fprintf(fp, "# %4s  %-15s  %4s  %8s  %6s  %6s  %6s  %7s  %7s\n", "----", "---------------", "----", "--------", "------", "------", "------", "-------", "-------");
   }
   fprintf(fp, "%6d  %-15s  %4d  ", cmi, cm->name, cm->clen);
-  if((status = GetHMMFilterFwdECutGivenCME(hfi, errbuf, cm_E, dbsize, &i)) != eslOK) return status; 
+  if((status = GetHMMFilterFwdECutGivenCME(hfi, errbuf, cm_E, dbsize, &i)) != eslOK) return status;
+  if((status = E2Score(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
+  if(cm_E < 0.01)  fprintf(fp, "%4.2e  ", cm_E);
+  else             fprintf(fp, "%8.3f  ", cm_E);
+  fprintf(fp, "%6.1f  ", cm_bit_sc);
 
-  if(i == -1) { /* flag for 'not worth filtering' */
-    /*fprintf(fp, "do not filter; predicted to be a waste of time\n");*/
-    if((status = E2Score(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
-    if(cm_E < 0.01)  fprintf(fp, "%4.2e  ", cm_E);
-    else             fprintf(fp, "%8.3f  ", cm_E);
-    fprintf(fp, "%6.1f  ", cm_bit_sc);
-    fprintf(fp, "%6s  ", "-");
-    fprintf(fp, "%6.4f  %7.1f  %7.1f\n", 
-	    1.0, cm_ncalcs_per_res / hmm_ncalcs_per_res, 1.0);
-    
-  }
- else {
+  if(i != -1) { 
     hmm_E = hfi->fwd_E_cut[i] * ((double) dbsize / (double) hfi->dbsize);
-    if((status = E2Score(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
     if((status = E2Score(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
-    if(cm_E < 0.01)  fprintf(fp, "%4.2e  ", cm_E);
-    else             fprintf(fp, "%8.3f  ", cm_E);
-    fprintf(fp, "%6.1f  ", cm_bit_sc);
     fprintf(fp, "%6.1f  ", hmm_bit_sc);
-    fprintf(fp, "%6.4f  %7.1f  %7.1f\n", 
-	    GetHMMFilterS      (hfi, i, W, avg_hit_len),
-	    GetHMMFilterXHMM   (hfi, i, W, avg_hit_len, cm_ncalcs_per_res, hmm_ncalcs_per_res),
-	    GetHMMFilterSpeedup(hfi, i, W, avg_hit_len, cm_ncalcs_per_res, hmm_ncalcs_per_res));
- }
+    S     = GetHMMFilterS      (hfi, i, W, avg_hit_len);
+    xhmm  = GetHMMFilterXHMM   (hfi, i, W, avg_hit_len, cm_ncalcs_per_res, hmm_ncalcs_per_res);
+    spdup = GetHMMFilterSpeedup(hfi, i, W, avg_hit_len, cm_ncalcs_per_res, hmm_ncalcs_per_res);
+  }
+  else { /* i == -1, special case: filter isn't worth it */
+    fprintf(fp, "%6s  ", "-");
+    S    = 1.0;
+    xhmm = cm_ncalcs_per_res / hmm_ncalcs_per_res;
+    spdup = 1.0;
+  }
+  fprintf(fp, "%6.4f  %7.1f  %7.1f\n", S, xhmm, spdup);
+
+  if(ret_cm_bit_sc != NULL)          *ret_cm_bit_sc          = cm_bit_sc;
+  if(ret_hmm_E      != NULL)         *ret_hmm_E      = (i == -1) ? -1. : hmm_E;
+  if(ret_hmm_bit_sc != NULL)         *ret_hmm_bit_sc = (i == -1) ? -1. : hmm_bit_sc;
+  if(ret_S     != NULL)              *ret_S                  = S;
+  if(ret_xhmm  != NULL)              *ret_xhmm               = xhmm;
+  if(ret_spdup != NULL)              *ret_spdup              = spdup;
+  if(ret_cm_ncalcs_per_res  != NULL) *ret_cm_ncalcs_per_res  = cm_ncalcs_per_res;
+  if(ret_hmm_ncalcs_per_res != NULL) *ret_hmm_ncalcs_per_res = hmm_ncalcs_per_res;
+  if(ret_do_filter != NULL)          *ret_do_filter          = (i == -1) ? FALSE : TRUE;
   return eslOK;
 }  
 
@@ -1288,16 +1307,28 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
  *           then calls that DumpHMMFilterInfoForCME().
  *             
  * Returns:  eslOK on success, other Easel status code on some error
+ *           optionally (if non-NULL):
+ *           <ret_cm_E>:               cm E value cutoff
+ *           <ret_hmm_bit_sc>:         HMM filter threshold bit score
+ *           <ret_S>:                  predicted filter survival fraction 
+ *           <ret_xhmm>:               predicted xhmm factor (predicted speed * hmm speed) 
+ *           <ret_spdup>:              predicted speedup from using filter versus only CM search with hfi->beta QDBs (unless !hfi->use_qdb) 
+ *           <ret_cm_ncalcs_per_res>:  millions of dp calcs for CM search OF 1 RESIDUE
+ *           <ret_hmm_ncalcs_per_res>: millions of dp calcs for HMM search OF 1 RESIDUE
+ *           <ret_do_filter>:          TRUE if filtering predicted to save time, FALSE if not
  */
 int
-DumpHMMFilterInfoForCMBitScore(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_bit_sc, int do_header)
+DumpHMMFilterInfoForCMBitScore(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_bit_sc, int do_header, 
+			       float *ret_cm_E, float *ret_hmm_E, float *ret_hmm_bit_sc, float *ret_S, float *ret_xhmm, float *ret_spdup, float *ret_cm_ncalcs_per_res, float *ret_hmm_ncalcs_per_res, int *ret_do_filter)
 {
   int status;
   float cm_E;
 
   if((status = Score2E(cm, errbuf, cm_mode, cm_bit_sc, &cm_E)) != eslOK)  return status;
-  if((status = DumpHMMFilterInfoForCME(fp, hfi, errbuf, cm, cm_mode, hmm_mode, dbsize, cmi, cm_E, do_header)) != eslOK) return status;
+  if((status = DumpHMMFilterInfoForCME(fp, hfi, errbuf, cm, cm_mode, hmm_mode, dbsize, cmi, cm_E, do_header,
+				       NULL, ret_hmm_E, ret_hmm_bit_sc, ret_S, ret_xhmm, ret_spdup, ret_cm_ncalcs_per_res, ret_hmm_ncalcs_per_res, ret_do_filter)) != eslOK) return status;
 
+  if(ret_cm_E != NULL) *ret_cm_E = cm_E;
   return eslOK;
 }  
 
