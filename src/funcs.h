@@ -74,7 +74,7 @@ extern int   IntMaxDigits();
 extern ComLog_t * CreateComLog();
 extern void       FreeComLog(ComLog_t *clog);
 extern int        CopyComLog(const ComLog_t *src, ComLog_t *dest);
-/*extern CM_t *DuplicateCM(CM_t *cm);*/
+extern int        cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avg_hit_len);
 
 /* from dispatch.c */
 extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, 
@@ -289,6 +289,7 @@ extern float    CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int 
 			      float cutoff, search_results_t *results);
 extern void     ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
 extern void     qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_level);
+extern int      cm_GetNCalcsPerResidueForGivenBeta(CM_t *cm, char *errbuf, int no_qdb, double beta, float *ret_cm_ncalcs_per_res, int *ret_W);
 
 /* from cm_submodel.c */
 extern int  build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, int print_flag);
@@ -316,6 +317,7 @@ extern void   FreeCPlan9(CP9_t *hmm);
 extern void   ZeroCPlan9(CP9_t *hmm);
 extern void   CPlan9SetNullModel(CP9_t *hmm, float null[MAXABET], float p1);
 extern void   DuplicateCP9(CM_t *src_cm, CM_t *dest_cm);
+extern int    cp9_GetNCalcsPerResidue(CP9_t *cp9, char *errbuf, float *ret_cp9_ncalcs_per_res);
 
 /* from cp9_dp.c */
 extern int cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
@@ -581,11 +583,13 @@ extern int  SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M
 extern void FreeBestFilterInfo(BestFilterInfo_t *bf);
 extern void DumpBestFilterInfo(BestFilterInfo_t *bf);
 extern HMMFilterInfo_t *CreateHMMFilterInfo();
-extern int  SetHMMFilterInfoHMM(HMMFilterInfo_t *hfi, char *errbuf, float F, int N, int dbsize, int ncut, float *cm_E_cut, float *fwd_E_cut, int always_better_than_Smax);
+extern int  SetHMMFilterInfoHMM(HMMFilterInfo_t *hfi, char *errbuf, float F, int N, int dbsize, int ncut, float *cm_E_cut, float *fwd_E_cut, int always_better_than_Smax, double beta, int use_qdb);
 extern void FreeHMMFilterInfo(HMMFilterInfo_t *hfi);
-extern void DumpHMMFilterInfo(HMMFilterInfo_t *hfi);
-
-
+extern int   DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int ncm);
+extern float GetHMMFilterS(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len);
+extern float GetHMMFilterTotalCalcs(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len, float cm_ncalcs_per_res, float hmm_ncalcs_per_res);
+extern float GetHMMFilterXHMM(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len, float cm_ncalcs_per_res, float hmm_ncalcs_per_res);
+extern float GetHMMFilterSpeedup(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len, float cm_ncalcs_per_res, float hmm_ncalcs_per_res);
 
 /* from seqstoaln.c */
 extern seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master);
@@ -600,7 +604,7 @@ extern seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET 
 /* from stats.c */
 extern CMStats_t *AllocCMStats(int np);
 extern void       FreeCMStats(CMStats_t *cmstats);
-extern int        debug_print_cmstats(CMStats_t *cmstats, int has_fthr);
+extern int        debug_print_cmstats(CM_t *cm, char *errbuf, CMStats_t *cmstats, int has_fthr);
 extern int        debug_print_gumbelinfo(GumbelInfo_t *evd);
 extern int        get_gc_comp(ESL_SQ *sq, int start, int stop);
 extern void       GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct);
@@ -616,10 +620,11 @@ extern int        GumModeIsForCM(int gum_mode);
 extern int        GumModeToSearchOpts(CM_t *cm, int gum_mode);
 extern int        GumModeToFthrMode(int gum_mode);
 extern GumbelInfo_t *CreateGumbelInfo();
-extern void          SetGumbelInfo(GumbelInfo_t *gum, double mu, double lambda, int L, int N);
+extern void          SetGumbelInfo(GumbelInfo_t *gum, double mu, double lambda, long dbsize, int N);
 extern GumbelInfo_t *DuplicateGumbelInfo(GumbelInfo_t *src);
 extern char         *DescribeGumMode(int gum_mode);
 extern char         *DescribeFthrMode(int fthr_mode);
+extern int           UpdateGumbelsForDBSize(CM_t *cm, char *errbuf, long dbsize);
 
 /* from truncyk.c */
 float TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr);

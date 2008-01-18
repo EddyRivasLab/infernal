@@ -1151,7 +1151,7 @@ typedef struct searchinfo_s {
  */
 typedef struct gumbelinfo_s {
   int    N;             /* number of samples stats calc'ed from        */
-  int    L;             /* length of samples stats calc'ed from        */
+  long   dbsize;        /* dbsize, mu, lambda stats correspond to      */
   double mu;		/* location param for gumbel, calced w/K,lambda*/
   double lambda;	/* scale param gumbel                          */
   int    is_valid;      /* TRUE if N, L, mu, lambda have been set, FALSE if not */
@@ -1165,8 +1165,19 @@ typedef struct hmmfilterinfo_s {
   int    is_valid;                /* TRUE if values have been set, FALSE if not */
   float  F;                       /* fraction of empirical CM hits required to survive filter */
   int    N;                       /* number of CM hits used to get threshold ((N*F) passed)*/
-  int    dbsize;                  /* db size used to calculate E-values in fwd_E_cut and cm_E_cut, SHOULD ALWAYS BE FTHR_DBSIZE_MB 1 */
+  long   dbsize;                  /* db size used to calculate E-values in fwd_E_cut and cm_E_cut, SHOULD ALWAYS BE FTHR_DBSIZE_MB 1 */
   int    ncut;                    /* number of filter threshold cutoff pairs we have, size of fwd_E_cut and cm_E_cut arrays */
+  double beta;                    /* beta used to derive QDBs for determining the number of CM search DP calcs for the
+				   * CM search 'next step' after the filter. If hfi->use_qdb == FALSE, this is the beta used to
+				   * calculate the window length W for the calculation of number of DP calcs for a non-banded
+				   * 'next step' CM search.
+				   */
+  int    use_qdb;                 /* FALSE if number of DP calculations counted for 'next step' CM search phase was for a 
+				   * non-banded search. Important when the target and minimal survival fractions are set
+				   * b/c those fractions are dependent on the number of calcs the 'next step' CM search will
+				   * need to take per residue of the survival fraction from the filter. 
+				   * TRUE if QDBs with tail loss beta = hfi->beta was used to count DP calcs for CM search.
+				   */
   float *cm_E_cut;                /* [0..i..ncut-1] CM E-value cutoff used to determine fwd_E_cut[i], fwd_E_cut[i], 
 				   * at least F fraction of hits with optimal hits with CM E-value < cm_E_cut[i] were able
 				   * to be recognized with by a forward HMM scan with E-value cutoff fwd_E_cut[i].

@@ -95,9 +95,11 @@ FreeCMStats(CMStats_t *cmstats)
 
 /* Function: debug_print_cmstats
  */
-int debug_print_cmstats(CMStats_t *cmstats, int has_fthr)
+int debug_print_cmstats(CM_t *cm, char *errbuf, CMStats_t *cmstats, int has_fthr)
 {
+  int status;
   int p;
+
   printf("Num partitions: %d\n", cmstats->np);
   for (p = 0; p < cmstats->np; p++)
     {
@@ -124,13 +126,13 @@ int debug_print_cmstats(CMStats_t *cmstats, int has_fthr)
   if(has_fthr)
     {
       printf("Filter CM_LC info:\n");
-      DumpHMMFilterInfo(cmstats->hfiA[FTHR_CM_LC]);
+      if((status = DumpHMMFilterInfo(stdout, cmstats->hfiA[FTHR_CM_LC], errbuf, cm, GUM_CM_LC, GUM_CP9_LF, cmstats->hfiA[FTHR_CM_LC]->dbsize, 1)) != eslOK) return status;
       printf("Filter CM_LI info:\n");
-      DumpHMMFilterInfo(cmstats->hfiA[FTHR_CM_LI]);
+      if((status = DumpHMMFilterInfo(stdout, cmstats->hfiA[FTHR_CM_LI], errbuf, cm, GUM_CM_LI, GUM_CP9_LF, cmstats->hfiA[FTHR_CM_LI]->dbsize, 1)) != eslOK) return status;
       printf("Filter CM_GC info:\n");
-      DumpHMMFilterInfo(cmstats->hfiA[FTHR_CM_GC]);
+      if((status = DumpHMMFilterInfo(stdout, cmstats->hfiA[FTHR_CM_GC], errbuf, cm, GUM_CM_GC, GUM_CP9_GF, cmstats->hfiA[FTHR_CM_GC]->dbsize, 1)) != eslOK) return status;
       printf("Filter CM_GI info:\n");
-      DumpHMMFilterInfo(cmstats->hfiA[FTHR_CM_GI]);
+      if((status = DumpHMMFilterInfo(stdout, cmstats->hfiA[FTHR_CM_GI], errbuf, cm, GUM_CM_GI, GUM_CP9_GF, cmstats->hfiA[FTHR_CM_GI]->dbsize, 1)) != eslOK) return status;
       printf("\n\n");
     }
   return eslOK;
@@ -140,7 +142,7 @@ int debug_print_cmstats(CMStats_t *cmstats, int has_fthr)
  */
 int debug_print_gumbelinfo(GumbelInfo_t *gum)
 {
-  if(gum->is_valid) printf("N: %d L: %d lambda: %.5f mu: %.5f\n", gum->N, gum->L, gum->lambda, gum->mu);
+  if(gum->is_valid) printf("N: %d dbsize: %ld lambda: %.5f mu: %.5f\n", gum->N, gum->dbsize, gum->lambda, gum->mu);
   else             printf("invalid (not yet set)\n");
   return eslOK;
 }
@@ -740,7 +742,7 @@ CreateGumbelInfo()
   ESL_ALLOC(gum, sizeof(GumbelInfo_t));
 
   gum->N = 0;
-  gum->L = 0;
+  gum->dbsize = 0;
   gum->mu = 0.;
   gum->lambda = 0.;
   gum->is_valid = FALSE;
@@ -759,10 +761,10 @@ CreateGumbelInfo()
  * Returns:  void
  */
 void 
-SetGumbelInfo(GumbelInfo_t *gum, double mu, double lambda, int L, int N)
+SetGumbelInfo(GumbelInfo_t *gum, double mu, double lambda, long dbsize, int N)
 {
   gum->N = N;
-  gum->L = L;
+  gum->dbsize = dbsize;
   gum->mu = mu;
   gum->lambda = lambda;
   gum->is_valid = TRUE;
@@ -786,7 +788,7 @@ DuplicateGumbelInfo(GumbelInfo_t *src)
   ESL_ALLOC(dest, sizeof(GumbelInfo_t));
 
   dest->N = src->N;
-  dest->L = src->L;
+  dest->dbsize = src->dbsize;
   dest->mu = src->mu;
   dest->lambda = src->lambda;
   dest->is_valid = src->is_valid;
@@ -839,3 +841,36 @@ DescribeFthrMode(int fthr_mode)
   default:     return "?";
   }
 }
+
+
+/* Function: UpdateGumbelsForDBSize()
+ * Date:     EPN, Thu Jan 17 09:38:06 2008
+ *
+ * Purpose:  Update the mu, lambda and L parameters of the
+ *           GumbelInfo_t objects in a CM's cm->stats object 
+ *           to reflect a database of size <dbsize>.
+ *            
+ * Returns:  eslOK on success, other Easel status code on contract 
+ *           violation with informative error message in errbuf.
+ */
+int 
+UpdateGumbelsForDBSize(CM_t *cm, char *errbuf, long dbsize)
+{
+  double tmp_K;     /* for converting mu from cmfile to mu for dbsize */
+  int i, p;
+
+  /* contract checks */
+  if(! (cm->flags & CMH_GUMBEL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateGumbelsForDBSize(), cm does not have Gumbel stats.");
+
+  /* Determine K from mu, lambda, L, then set CM mu for N */
+  for(i = 0; i < GUM_NMODES; i++)
+    for(p = 0; p < cm->stats->np; p++) {
+      if(cm->stats->gumAA[i][p]->dbsize != dbsize) { 
+	tmp_K = exp(cm->stats->gumAA[i][p]->mu * cm->stats->gumAA[i][p]->lambda) / cm->stats->gumAA[i][p]->dbsize;
+	cm->stats->gumAA[i][p]->mu = log(tmp_K * ((double) dbsize)) / cm->stats->gumAA[i][p]->lambda;
+	cm->stats->gumAA[i][p]->dbsize = dbsize; /* update dbsize */
+      }
+    }
+  return eslOK;
+}  
+

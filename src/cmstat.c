@@ -32,20 +32,22 @@
 #include "funcs.h"		/* function declarations                */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define ONELINEOPTS  "-m,--locale,--glocale,--localfc,--glocalfc,--localfi,--glocalfi" /* exclusive choice of 'only print one line summary' stats */
-#define NOTMOPTS     "--locale,--glocale,--localfc,--glocalfc,--localfi,--glocalfi"    /* incompatible with -g, --beta, and --search */
+#define ONELINEOPTS  "-m,--le,--ge,--lfc,--gfc,--lfi,--gfi" /* exclusive choice of summary stats */
+#define NOTMOPTS     "--le,--ge,--lfc,--gfc,--lfi,--gfi"    /* incompatible with -g, --beta, and --search */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default      env  range     toggles      reqs     incomp    help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,      NULL,   "show brief help on version and usage",   1 },
   { "-g",        eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, NOTMOPTS,    "configure CM for glocal alignment [default: local]", 1 },
   { "-m",        eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of model statistics", 1 },
-  { "--locale",  eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of  local E-value statistics", 1 },
-  { "--glocale", eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of glocal E-value statistics", 1 },
-  { "--localfc", eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of  local CYK    filter threshold stats", 1 },
-  { "--glocalfc",eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of glocal CYK    filter threshold stats", 1 },
-  { "--localfi", eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of  local Inside filter threshold stats", 1 },
-  { "--glocalfi",eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of glocal Inside filter threshold stats", 1 },
+  { "--le",      eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of  local E-value statistics", 1 },
+  { "--ge",      eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of glocal E-value statistics", 1 },
+  { "--lfc",     eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of  local CYK    filter threshold stats", 1 },
+  { "--gfc",     eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of glocal CYK    filter threshold stats", 1 },
+  { "--lfi",     eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of  local Inside filter threshold stats", 1 },
+  { "--gfi",     eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of glocal Inside filter threshold stats", 1 },
+  { "--seqfile", eslARG_INFILE, FALSE,     NULL, NULL,      NULL,      NULL,      NULL,   "for filter stats: compute E-value cutoffs for sequence file <f>", 1 },
+  { "--toponly", eslARG_NONE,   FALSE,     NULL, NULL,      NULL,"--seqfile",     NULL,   "with --seqfile, only consider top-strand", 1},
   { "--beta",    eslARG_REAL,   "1E-7",    NULL, "0<x<1",   NULL,      NULL, NOTMOPTS,    "set tail loss prob for W calc and QDB stats to <x>", 1 },
   { "--search",  eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL, NOTMOPTS,    "do search timing experiments", 1 },
   { "--cmL",     eslARG_INT,    "1000",    NULL, "n>0",     NULL,"--search",      NULL,   "length of sequences for CM search stats", 1 },
@@ -60,6 +62,7 @@ static char banner[] = "display summary statistics for CMs";
 static int    summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w); 
 /*static int    summarize_alignment(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w); */
 static float  count_align_dp_calcs(CM_t *cm, int L);
+static int    initialize_cm(CM_t *cm, int cm_mode, int hmm_mode);
 
 int
 main(int argc, char **argv)
@@ -77,14 +80,9 @@ main(int argc, char **argv)
   int seen_gumbels_yet = FALSE;
   int seen_fthr_yet    = FALSE;
   int p, i;
-  char **ftype; /* for printing filter threshold types, only used if --localf{c,i} or --glocalf{c,i} enabled */
   int   fthr_mode;
-  int   safe_windowlen;
-  float *avglen;
-  float cm_sc_cutoff;
-  float hmm_sc_cutoff;
-  float surv_fract;
   int   cm_mode, hmm_mode;
+  long dbsize;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
@@ -131,35 +129,47 @@ main(int argc, char **argv)
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
     cm_Fail("Failed to open covariance model save file %s\n", cmfile);
 
-  ESL_ALLOC(ftype, sizeof(char *) * 2);
-  assert(FILTER_WITH_HMM_VITERBI == 0);
-  assert(FILTER_WITH_HMM_FORWARD == 1);
-  if((status = esl_strdup("vit", -1, &(ftype[FILTER_WITH_HMM_VITERBI]))) != eslOK) cm_Fail("Memory allocation error.");
-  if((status = esl_strdup("fwd", -1, &(ftype[FILTER_WITH_HMM_FORWARD]))) != eslOK) cm_Fail("Memory allocation error.");
+  /* if --seqfile enabled, read the sequence file to get the database size, else we use 1 Mb as db size */
+  if(!(esl_opt_IsDefault(go, "--seqfile"))) { 
+    if((!(esl_opt_GetBoolean(go, "--lfc"))) && (!(esl_opt_GetBoolean(go, "--lfi"))) && (!(esl_opt_GetBoolean(go, "--gfc"))) && (!(esl_opt_GetBoolean(go, "--gfi"))))
+      cm_Fail("--seqfile only makes sense with one of: --lfc, --lfi, --gfc, or --gfi");
+    /* open input sequence file */
+    ESL_SQFILE      *sqfp;             
+    status = esl_sqfile_Open(esl_opt_GetString(go, "--seqfile"), eslSQFILE_UNKNOWN, NULL, &sqfp);
+    if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "File %s doesn't exist or is not readable\n", esl_opt_GetString(go, "--seqfile"));
+    else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of sequence file %s\n", esl_opt_GetString(go, "--seqfile"));
+    else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Can’t autodetect stdin or .gz."); 
+    else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
+    /* GetDBInfo() reads all sequences, rewinds seq file and returns db size */
+    GetDBInfo(NULL, sqfp, &(dbsize), NULL);  
+    esl_sqfile_Close(sqfp); 
+    if (! esl_opt_GetBoolean(go, "--toponly")) dbsize *= 2;
+  }
+  else dbsize = FTHR_DBSIZE; /* 1 Mb */
 
   /* Main body: read CMs one at a time, print stats 
    * Options for only printing 1 line per CM: 
    * if -m:              print general model stats, and optionally determine search stats (if --search)
-   * else if  --locale:  print  local gumbel stats
-   * else if --glocale:  print glocal gumbel stats
-   * else if  --localfc: print  local CYK    filter threshold stats
-   * else if --glocalfc: print glocal CYK    filter threshold stats
-   * else if  --localfc: print  local Inside filter threshold stats
-   * else if --glocalfc: print glocal Inside filter threshold stats
+   * else if  --le:  print  local gumbel stats
+   * else if --ge:  print glocal gumbel stats
+   * else if  --lfc: print  local CYK    filter threshold stats
+   * else if --gfc: print glocal CYK    filter threshold stats
+   * else if  --lfc: print  local Inside filter threshold stats
+   * else if --gfc: print glocal Inside filter threshold stats
    * else (default):     print all stat categories, one category at a time 
    */
   int do_model    = esl_opt_GetBoolean(go, "-m");
-  int do_locale   = esl_opt_GetBoolean(go, "--locale");
-  int do_glocale  = esl_opt_GetBoolean(go, "--glocale");
-  int do_localfc  = esl_opt_GetBoolean(go, "--localfc");
-  int do_glocalfc = esl_opt_GetBoolean(go, "--glocalfc");
-  int do_localfi  = esl_opt_GetBoolean(go, "--localfi");
-  int do_glocalfi = esl_opt_GetBoolean(go, "--glocalfi");
+  int do_locale   = esl_opt_GetBoolean(go, "--le");
+  int do_glocale  = esl_opt_GetBoolean(go, "--ge");
+  int do_localfc  = esl_opt_GetBoolean(go, "--lfc");
+  int do_glocalfc = esl_opt_GetBoolean(go, "--gfc");
+  int do_localfi  = esl_opt_GetBoolean(go, "--lfi");
+  int do_glocalfi = esl_opt_GetBoolean(go, "--gfi");
   /* assert we only have one of our exclusive modes on, getops should've already handled this actually */
   if((do_model + do_locale + do_glocale + do_localfc + do_glocalfc + do_localfi + do_glocalfi) > 1) 
     cm_Fail("error parsing options, exactly 1 or 0 of the following should be true (1):\ndo_model: %d\ndo_locale: %d\ndo_glocale: %d\ndo_localfc: %d\ndo_glocalfc: %d\ndo_localfi: %d\ndo_glocalfi: %d\n", do_model, do_locale, do_glocale, do_localfc, do_glocalfc, do_localfi, do_glocalfi);
   if((do_model + do_locale + do_glocale + do_localfc + do_glocalfc + do_localfi + do_glocalfi) == 0)  /* no one line options selected, do them all */
-    do_model = do_locale = do_glocale = do_localfc = do_glocalfc = do_localfi = do_glocalfi = TRUE;
+    do_model = do_locale = do_glocale = TRUE;
   int doing_locale   = FALSE;
   int doing_glocale  = FALSE;
   int doing_localfc  = FALSE;
@@ -261,13 +271,13 @@ main(int argc, char **argv)
       FreeCM(cm);
     }
     if(!seen_gumbels_yet) {
-      if(doing_locale  && esl_opt_GetBoolean(go, "--locale"))  cm_Fail("--locale option enabled but none of the CMs in %s have Gumbel stats.", cmfile);
-      if(doing_glocale && esl_opt_GetBoolean(go, "--glocale")) cm_Fail("--glocale option enabled but none of the CMs in %s have Gumbel stats.", cmfile);
-      if(doing_glocale && (! esl_opt_GetBoolean(go, "--glocale")))   printf("# No E-value Gumbel statistics.\n");
+      if(doing_locale  && esl_opt_GetBoolean(go, "--le"))  cm_Fail("--le option enabled but none of the CMs in %s have Gumbel stats.", cmfile);
+      if(doing_glocale && esl_opt_GetBoolean(go, "--ge")) cm_Fail("--ge option enabled but none of the CMs in %s have Gumbel stats.", cmfile);
+      if(doing_glocale && (! esl_opt_GetBoolean(go, "--ge")))   printf("# No E-value Gumbel statistics.\n");
     }
   }
   /* print filter threshold stats if requested */
-  for(i = 0; i < 4; i++) { /* 4 possible modes, local cyk, glocal cyk, local inside, glocal inside */
+  for(i = 0; i < 4; i++) { /* 4 possible modes, glocal cyk, glocal inside, local cyk, local inside */
     if(i == 0 && !do_localfc)  continue;
     if(i == 1 && !do_glocalfc) continue;
     if(i == 2 && !do_localfi)  continue;
@@ -280,41 +290,23 @@ main(int argc, char **argv)
     ncm = 0;
     seen_fthr_yet = FALSE;
 
-    if(doing_localfc)  { fthr_mode = FTHR_CM_LC; cm_mode = GUM_CM_LC; }
-    if(doing_glocalfc) { fthr_mode = FTHR_CM_GC; cm_mode = GUM_CM_GC; }
-    if(doing_localfi)  { fthr_mode = FTHR_CM_LI; cm_mode = GUM_CM_LI; }
-    if(doing_glocalfi) { fthr_mode = FTHR_CM_GI; cm_mode = GUM_CM_GI; }
+    if(doing_glocalfc) { fthr_mode = FTHR_CM_GC; cm_mode = GUM_CM_GC; hmm_mode = GUM_CP9_GF; }
+    if(doing_glocalfi) { fthr_mode = FTHR_CM_GI; cm_mode = GUM_CM_GI; hmm_mode = GUM_CP9_GF; }
+    if(doing_localfc)  { fthr_mode = FTHR_CM_LC; cm_mode = GUM_CM_LC; hmm_mode = GUM_CP9_LF; }
+    if(doing_localfi)  { fthr_mode = FTHR_CM_LI; cm_mode = GUM_CM_LI; hmm_mode = GUM_CP9_LF; }
     CMFileRewind(cmfp);
     while (CMFileRead(cmfp, &abc, &cm)) {
       ncm++;
       if(cm->flags & CMH_FILTER_STATS) {
 	if(! (cm->flags & CMH_GUMBEL_STATS)) cm_Fail("cm: %d has filter threshold stats, but no Gumbel stats, this shouldn't happen.");
-	/* we only expect filter types HMM viterbi or HMM forward */
-	if(cm->stats->bfA[fthr_mode]->ftype != FILTER_WITH_HMM_VITERBI && cm->stats->bfA[fthr_mode]->ftype != FILTER_WITH_HMM_FORWARD) 
-	  cm_Fail("Unrecognized filter type: %d (not HMM viterbi nor HMM forward)", cm->stats->bfA[fthr_mode]->ftype);
-	/* we expect theoretical db size used to calc filter threshold stats is 1 Mb */
-	if(cm->stats->bfA[fthr_mode]->db_size != 1000000)
-	  cm_Fail("Expected db size of 1 Mb in cm file for filter thr stats, but read db size of %d residues.", cm->stats->bfA[fthr_mode]->db_size);
-
-	if(fthr_mode == FTHR_CM_LC || fthr_mode == FTHR_CM_LI) hmm_mode = (cm->stats->bfA[fthr_mode]->ftype == FILTER_WITH_HMM_VITERBI) ? GUM_CP9_LV : GUM_CP9_LF;
-	if(fthr_mode == FTHR_CM_GC || fthr_mode == FTHR_CM_GI) hmm_mode = (cm->stats->bfA[fthr_mode]->ftype == FILTER_WITH_HMM_VITERBI) ? GUM_CP9_GV : GUM_CP9_GF;
-
-	cm->beta = esl_opt_GetReal(go, "--beta");
-	cm->config_opts |= CM_CONFIG_LOCAL;
-	cm->config_opts |= CM_CONFIG_HMMLOCAL;
-	cm->config_opts |= CM_CONFIG_HMMEL;
-	ConfigCM(cm, NULL, NULL);
-	/* get avglen of hits at each state, we'll use this to determine the predicted survival fraction */
-	safe_windowlen = cm->W * 2;
-	while(!(BandCalculationEngine(cm, safe_windowlen, 1E-15, TRUE, NULL, NULL, NULL, &avglen))) {
-	  safe_windowlen *= 2;
-	  if(safe_windowlen > (cm->clen * 1000)) cm_Fail(" band calculation safe_windowlen big: %d\n", safe_windowlen);
-	}
-	if((status  = E2Score(cm, errbuf, cm_mode,  cm->stats->bfA[fthr_mode]->cm_eval,  &cm_sc_cutoff))  != eslOK) cm_Fail(errbuf); 
-	if((status  = E2Score(cm, errbuf, hmm_mode, cm->stats->bfA[fthr_mode]->e_cutoff, &hmm_sc_cutoff)) != eslOK) cm_Fail(errbuf); 
-	surv_fract = (cm->stats->bfA[fthr_mode]->e_cutoff * ((2. * cm->W) - avglen[0])) / ((double) cm->stats->bfA[fthr_mode]->db_size); 
-	free(avglen);
-
+	/* we expect theoretical db size used to calc filter threshold stats is FTHR_DBSIZE (1 Mb) */
+	if(cm->stats->hfiA[fthr_mode]->dbsize != FTHR_DBSIZE)
+	  cm_Fail("Expected db size of %d in cm file for filter thr stats, but read db size of %d residues.", FTHR_DBSIZE, cm->stats->hfiA[fthr_mode]->dbsize);
+	/* update the Gumbels for the dbsize of the HMM filters */
+	if((status = UpdateGumbelsForDBSize(cm, errbuf, dbsize)) != eslOK) cm_Fail(errbuf);
+	
+	/* initialize model and determine average hit length, number of CM DP calcs per residue and number of HMM DP calcs per residue */
+	initialize_cm(cm, cm_mode, hmm_mode);
 	if(!seen_fthr_yet) {
 	  printf("#\n");
 	  if(doing_localfc)  printf("# local CYK filter threshold statistics\n");
@@ -322,47 +314,26 @@ main(int argc, char **argv)
 	  if(doing_localfi)  printf("# local Inside filter threshold statistics\n");
 	  if(doing_glocalfi) printf("# glocal Inside filter threshold statistics\n");
 	  printf("#\n");
-	  
-	  printf("# %-4s %-15s %6s %5s %7s %6s %3s %8s %7s %8s\n", "idx",  "name",            "F",      "N",     "cm E",    "cm sc",  "alg", "hmm E",    "hmm sc",  "surv");
-	  printf("# %-4s %-15s %6s %5s %7s %6s %3s %8s %7s %8s\n", "----", "---------------", "------", "-----", "-------", "------", "---", "--------", "-------", "--------");
 	  seen_fthr_yet = TRUE;
-	}
-
-	printf("%6d %-15s %6.4f %5d %7.3g %6.3f %3s %8.3g %7.3f %8.4f\n",
-	       ncm,
-	       cm->name,
-	       cm->stats->bfA[fthr_mode]->F, 
-	       cm->stats->bfA[fthr_mode]->N, 
-	       cm->stats->bfA[fthr_mode]->cm_eval, 
-	       cm_sc_cutoff,
-	       ftype[cm->stats->bfA[fthr_mode]->ftype], 
-	       cm->stats->bfA[fthr_mode]->e_cutoff, 
-	       hmm_sc_cutoff,
-	       surv_fract);
+	}  
+	if((status = DumpHMMFilterInfo(stdout, cm->stats->hfiA[fthr_mode], errbuf, cm, cm_mode, hmm_mode, dbsize, ncm)) != eslOK) cm_Fail(errbuf);
       }
       FreeCM(cm);
     }
     if(!seen_fthr_yet) { 
-      if(doing_localfc  && esl_opt_GetBoolean(go, "--localfc"))  cm_Fail("--localfc option enabled but none of the CMs in %s have filter threshold stats.", cmfile);
-      if(doing_glocalfc && esl_opt_GetBoolean(go, "--glocalfc")) cm_Fail("--glocalfc option enabled but none of the CMs in %s have filter threshold stats.", cmfile);
-      if(doing_localfi  && esl_opt_GetBoolean(go, "--localfi"))  cm_Fail("--localfi option enabled but none of the CMs in %s have filter threshold stats.", cmfile);
-      if(doing_glocalfi && esl_opt_GetBoolean(go, "--glocalfi")) cm_Fail("--glocalfi option enabled but none of the CMs in %s have filter threshold stats.", cmfile);
-      if(doing_glocalfi && (! esl_opt_GetBoolean(go, "--glocalfi"))) printf("# No filter threshold statistics.\n");
+      if(doing_localfc  && esl_opt_GetBoolean(go, "--lfc"))  cm_Fail("--lfc option enabled but none of the CMs in %s have filter threshold stats.", cmfile);
+      if(doing_glocalfc && esl_opt_GetBoolean(go, "--gfc")) cm_Fail("--gfc option enabled but none of the CMs in %s have filter threshold stats.", cmfile);
+      if(doing_localfi  && esl_opt_GetBoolean(go, "--lfi"))  cm_Fail("--lfi option enabled but none of the CMs in %s have filter threshold stats.", cmfile);
+      if(doing_glocalfi && esl_opt_GetBoolean(go, "--gfi")) cm_Fail("--gfi option enabled but none of the CMs in %s have filter threshold stats.", cmfile);
+      if(doing_glocalfi && (! esl_opt_GetBoolean(go, "--gfi"))) printf("# No filter threshold statistics.\n");
     }
   }
-  free(ftype[0]);
-  free(ftype[1]);
-  free(ftype);
   esl_alphabet_Destroy(abc);
   esl_stopwatch_Destroy(w);
   esl_randomness_Destroy(r);
   CMFileClose(cmfp);
   esl_getopts_Destroy(go);
   return 0;
-
- ERROR:
-  cm_Fail("Memory allocation error.");
-  return 0; /* NEVERREACHED */
 }
 
 /* Function:  summarize_search()
@@ -651,3 +622,21 @@ float count_align_dp_calcs(CM_t *cm, int L)
   return dpcalcs + dpcalcs_bif;
 }
 
+/* initialize_cm()
+ * Setup the CM based on the Gumbel mode,
+ * only set flags and a few parameters. ConfigCM() configures
+ * the CM.
+ */
+static int
+initialize_cm(CM_t *cm, int cm_mode, int hmm_mode)
+{
+  /* Update cm->config_opt based on gumbel mode */
+  if(GumModeIsLocal(cm_mode))  cm->config_opts |= CM_CONFIG_LOCAL;
+  if(GumModeIsLocal(hmm_mode)) {
+    cm->config_opts |= CM_CONFIG_HMMLOCAL;
+    cm->config_opts |= CM_CONFIG_HMMEL;
+  }
+  ConfigCM(cm, NULL, NULL);
+
+  return eslOK;
+}

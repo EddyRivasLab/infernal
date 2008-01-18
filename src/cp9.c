@@ -347,3 +347,29 @@ DuplicateCP9(CM_t *src_cm, CM_t *dest_cm)
   dest_cm->cp9->flags = src_cm->cp9->flags;
 }
 
+/* Function: cp9_GetNCalcsPerResidue()
+ * Date:     EPN, Thu Jan 17 06:12:37 2008
+ * 
+ * Returns: eslOK on success, eslEINCOMPAT on contract violation.
+ *          <ret_cp9_ncalcs_per_res> set as millions of DP calculations 
+ *          per residue for the CP9 HMM.
+ */
+int
+cp9_GetNCalcsPerResidue(CP9_t *cp9, char *errbuf, float *ret_cp9_ncalcs_per_res)
+{
+  int cp9_ntrans;
+  float cp9_ncalcs_per_res;
+  
+  if(cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_GetNCalcsPerRes(), cp9 == NULL.");
+  if(ret_cp9_ncalcs_per_res == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_GetNCalcsPerRes(), ret_cp9_ncalcs_per_res == NULL.");
+
+  /* determine millions of CP9 DP calcs per residue */
+  cp9_ntrans = NHMMSTATETYPES * NHMMSTATETYPES; /* 3*3 = 9 transitions in global mode */
+  if(cp9->flags & CPLAN9_LOCAL_BEGIN) cp9_ntrans++; 
+  if(cp9->flags & CPLAN9_LOCAL_END)   cp9_ntrans++; 
+  if(cp9->flags & CPLAN9_EL)          cp9_ntrans++; 
+  cp9_ncalcs_per_res = (cp9_ntrans * cp9->M) / 1000000.; /* convert to millions of calcs per residue */
+
+  *ret_cp9_ncalcs_per_res = cp9_ncalcs_per_res;
+  return eslOK;
+}

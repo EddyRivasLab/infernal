@@ -2241,3 +2241,31 @@ IntMaxDigits()
   }
   return n;
 }
+
+/* Function: cm_GetAvgHitLen()
+ * Date:     EPN, Thu Jan 17 05:52:00 2008
+ * 
+ * Returns: eslOK on success, eslEINCOMPAT on contract violation
+ *          <ret_avg_hit_len> set as average hit length of a hit for a CM, 
+ *          determined using the QDB band calculation engine.
+ */
+int
+cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avg_hit_len)
+{
+  int    safe_windowlen;
+  float *avglenA;
+  float  avg_hit_len;
+
+  if(ret_avg_hit_len == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_GetAvgHitLen(), ret_avg_hit_len == NULL.");
+
+  safe_windowlen = cm->W * 2;
+  while(!(BandCalculationEngine(cm, safe_windowlen, 1E-15, TRUE, NULL, NULL, NULL, &avglenA))) {
+    safe_windowlen *= 2;
+    if(safe_windowlen > (cm->clen * 1000)) cm_Fail("GetCMAvgHitLen(), band calculation safe_windowlen big: %d\n", safe_windowlen);
+  }
+  avg_hit_len = avglenA[0];
+  free(avglenA);
+  *ret_avg_hit_len = avg_hit_len;
+
+  return eslOK;
+}

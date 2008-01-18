@@ -186,7 +186,6 @@ static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static int process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_DSQ *dsq, int L, search_results_t **ret_results);
 static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int update_avg_hit_len(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int set_gumbels(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int print_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *cm, long N, char *errbuf);
 static int set_window(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
@@ -454,7 +453,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((  status = update_avg_hit_len(go, cfg, errbuf, cm))               != eslOK) cm_Fail(errbuf);
       if((  status = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
       if(cm->flags & CMH_GUMBEL_STATS) 
-	if((status = set_gumbels(go, cfg, errbuf, cm))                      != eslOK) cm_Fail(errbuf);
+	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->N))            != eslOK) cm_Fail(errbuf);
       if((status = set_window (go, cfg, errbuf, cm))                        != eslOK) cm_Fail(errbuf);
       if((status = set_searchinfo(go, cfg, errbuf, cm))                     != eslOK) cm_Fail(errbuf);
       if(esl_opt_GetBoolean(go, "--hmmcalcthr"))
@@ -613,7 +612,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status   = update_avg_hit_len(go, cfg, errbuf, cm))               != eslOK) cm_Fail(errbuf);
       if((status   = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
       if(cm->flags & CMH_GUMBEL_STATS) 
-	if((status = set_gumbels(go, cfg, errbuf, cm))                      != eslOK) cm_Fail(errbuf);
+	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->N))            != eslOK) cm_Fail(errbuf);
       if((status = set_window (go, cfg, errbuf, cm))                        != eslOK) cm_Fail(errbuf);
       if((status = set_searchinfo(go, cfg, errbuf, cm))                     != eslOK) cm_Fail(errbuf);
       if(esl_opt_GetBoolean(go, "--hmmcalcthr"))
@@ -837,7 +836,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) goto ERROR;
       if((status   = update_avg_hit_len(go, cfg, errbuf, cm))               != eslOK) goto ERROR;
       if(cm->flags & CMH_GUMBEL_STATS) 
-	if((status = set_gumbels(go, cfg, errbuf, cm))                      != eslOK) goto ERROR;
+	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->N))            != eslOK) goto ERROR;
       if((status = set_window(go, cfg, errbuf, cm))                         != eslOK) goto ERROR;
       if((status = set_searchinfo(go, cfg, errbuf, cm))                     != eslOK) goto ERROR;
       
@@ -1098,38 +1097,6 @@ update_avg_hit_len(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
   cfg->avglen = avglen;
   return eslOK;
 }
-
-/* set_gumbels()
- * Setup Gumbel distribution parameters for CM and HMM based on DB size.
- */
-static int
-set_gumbels(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
-{
-  double tmp_K;                 /* for converting mu from cmfile to mu for N*/
-  int i, p;
-
-  /* Determine K from mu, lambda, L, then set CM mu for N */
-  for(i = 0; i < GUM_NMODES; i++)
-    for(p = 0; p < cm->stats->np; p++)
-      {
-	tmp_K = exp(cm->stats->gumAA[i][p]->mu * cm->stats->gumAA[i][p]->lambda) / 
-	  cm->stats->gumAA[i][p]->L;
-	cm->stats->gumAA[i][p]->mu = log(tmp_K * ((double) cfg->N)) /
-	  cm->stats->gumAA[i][p]->lambda;
-	cm->stats->gumAA[i][p]->L = cfg->N; /* update L, the seq size the stats correspond to */
-      }
-  ESL_DPRINTF1(("CM/CP9 statistics read from CM file\n"));
-  if (cm->stats->np == 1) 
-    ESL_DPRINTF1(("No partition points\n"));
-  else {
-    ESL_DPRINTF1(("Partition points are: "));
-    for (p=0; p < cm->stats->np; p++)
-      ESL_DPRINTF1(("%d %d..%d", p, cm->stats->ps[p], cm->stats->pe[p]));
-  }
-
-  return eslOK;
-}
-
 
 /* set_searchinfo()
  * Determine how many rounds of searching we will do (all rounds but last

@@ -118,7 +118,7 @@ struct cfg_s {
 					* if --fil-only invoked and CM file has CMs with diff number of partitions,
 					* this is unlikely but possible, in this case we die in initialize_cmstats() */
   int             *pstart;             /* [0..p..np-1], begin points for partitions, end pts are implicit */
-  float           *avglen;             /* [0..v..M-1] average hit len for subtree rooted at each state v for current CM */
+  float            avg_hit_len;        /* average CM hit length, calc'ed using QDB calculation algorithm */
 
   /* info for the comlog we'll add to the cmfiles */
   char            *ccom;               /* command line used in this execution of cmcalibrate */
@@ -167,10 +167,9 @@ static int initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *er
 static int  set_partition_gc_freq(struct cfg_s *cfg, int p);
 static int  fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, double *ret_mu, double *ret_lambda);
 static int  get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, double *dnull, int L, ESL_DSQ **ret_dsq);
-static int  get_cmemit_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, int *ret_p, Parsetree_t **ret_tr, ESL_DSQ **ret_dsq);
+static int  get_cmemit_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, int *ret_p, ESL_DSQ **ret_dsq);
 static void estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq, int L, int gum_mode);
 static int  read_partition_file(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
-static int  update_avg_hit_len(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int  switch_global_to_local(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, char *errbuf);
 extern int  update_dp_calcs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int  get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
@@ -232,18 +231,18 @@ main(int argc, char **argv)
    */
   cfg.cmfile  = esl_opt_GetArg(go, 1);
   if (cfg.cmfile == NULL) cm_Fail("Failed to read <cmfile> argument from command line.");
-  cfg.r        = NULL; 
-  cfg.abc      = NULL; 
-  cfg.w_stage  = NULL; 
-  cfg.gc_freq  = NULL; 
-  cfg.pgc_freq = NULL; 
-  cfg.be_verbose = FALSE;
-  cfg.cmalloc  = 128;
-  cfg.tmpfile  = NULL;
-  cfg.mode     = NULL;
-  cfg.np        = 1;     /* default number of partitions is 1, changed if --gum-pfile */
-  cfg.pstart    = NULL;  /* allocated (by default to size 1) in init_master_cfg() */
-  cfg.avglen    = NULL; 
+  cfg.r           = NULL; 
+  cfg.abc         = NULL; 
+  cfg.w_stage     = NULL; 
+  cfg.gc_freq     = NULL; 
+  cfg.pgc_freq    = NULL; 
+  cfg.be_verbose  = FALSE;
+  cfg.cmalloc     = 128;
+  cfg.tmpfile     = NULL;
+  cfg.mode        = NULL;
+  cfg.np          = 1;     /* default number of partitions is 1, changed if --gum-pfile */
+  cfg.pstart      = NULL;  /* allocated (by default to size 1) in init_master_cfg() */
+  cfg.avg_hit_len = 0.;
 
   /* Initial allocations for results per CM;
    * we'll resize these arrays dynamically as we read more CMs.
@@ -348,6 +347,7 @@ main(int argc, char **argv)
       /* update the cm->comlog info */
       if((status = update_comlog(go, errbuf, cfg.ccom, cfg.cdate, cm)) != eslOK) cm_Fail(errbuf);
 	
+      if(cm->flags & CMH_GUMBEL_STATS) FreeCMStats(cm->stats); 
       cm->stats = cfg.cmstatsA[cmi];
       cm->flags &= ~CMH_FILTER_STATS; /* forget that CM may have had filter stats, if --gum-only was invoked, it won't anymore */
 
@@ -397,9 +397,13 @@ main(int argc, char **argv)
     }
     if (cfg.ccom     != NULL) free(cfg.ccom);
     if (cfg.cdate    != NULL) free(cfg.cdate);
+    if (cfg.cmstatsA != NULL) free(cfg.cmstatsA);
   }
   /* clean up */
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
+  if (cfg.pstart    != NULL) free(cfg.pstart);
+  if (cfg.w_stage   != NULL) esl_stopwatch_Destroy(cfg.w_stage);
+  if (cfg.r         != NULL) esl_randomness_Destroy(cfg.r);
   esl_stopwatch_Destroy(w);
   esl_getopts_Destroy(go);
   return 0;
@@ -534,9 +538,8 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (cfg->cmfp->is_binary) cfg->mode = "wb";
   else                      cfg->mode = "w"; 
 
-  cfg->avglen = NULL; /* this will be allocated and filled inside serial_master() or mpi_master() */
-  if(cfg->r       == NULL) cm_Fail("Failed to create master RNG.");
-  if(cfg->w_stage == NULL) cm_Fail("Failed to create stopwatch.");
+  if(cfg->r        == NULL) cm_Fail("Failed to create master RNG.");
+  if(cfg->w_stage  == NULL) cm_Fail("Failed to create stopwatch.");
 
   /* fill cfg->ccom, and cfg->cdate */
   if((status = get_cmcalibrate_comlog_info(go, cfg, errbuf)) != eslOK) return status;
@@ -601,10 +604,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       cmi = cfg->ncm-1;
       if (esl_opt_GetBoolean(go, "--fil-only") && (! (cm->flags & CMH_GUMBEL_STATS))) cm_Fail("--fil-only invoked, but CM %s (CM number %d) does not have Gumbel stats in CM file\n", cm->name, (cmi+1));
 
-      if((status = initialize_cm(go, cfg, errbuf, cm))      != eslOK) cm_Fail(errbuf);
-      if((status = initialize_cmstats(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
-      if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
-      if((status = print_cm_info     (go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+      if((status = initialize_cm(go, cfg, errbuf, cm))               != eslOK) cm_Fail(errbuf);
+      if((status = initialize_cmstats(go, cfg, errbuf, cm))          != eslOK) cm_Fail(errbuf);
+      if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len))) != eslOK) cm_Fail(errbuf);
+      if((status = print_cm_info     (go, cfg, errbuf, cm))          != eslOK) cm_Fail(errbuf);
 
       for(gum_mode = 0; gum_mode < GUM_NMODES; gum_mode++) {
 
@@ -613,8 +616,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	/* do we need to switch from glocal configuration to local? */
 	if(gum_mode > 0 && (! GumModeIsLocal(gum_mode-1)) && GumModeIsLocal(gum_mode)) {
-	  if((status = switch_global_to_local(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
-	  if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	  if((status = switch_global_to_local(go, cfg, cm, errbuf))      != eslOK) cm_Fail(errbuf);
+	  if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len))) != eslOK) cm_Fail(errbuf);
 	}
 	/* update search opts for gumbel mode */
 	GumModeToSearchOpts(cm, gum_mode);
@@ -660,6 +663,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    esl_stopwatch_Stop(cfg->w_stage);
 	    format_time_string(time_buf, cfg->w_stage->elapsed, 0);
 	    printf(" %10s\n", time_buf);
+	    free(gum_scA);
 	  } /* end of for loop over partitions */
 	} /* end of if ! --fil-only */
 	
@@ -671,8 +675,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  fthr_mode = GumModeToFthrMode(gum_mode);
 	  /* search emitted sequences to get filter thresholds for HMM and each candidate sub CM root state */
 	  ESL_DPRINTF1(("\n\ncalling process_filter_workunit to get HMM filter thresholds for p: %d mode: %d\n", p, gum_mode));
-	  if(fil_partA != NULL) free(fil_partA);
-	  /* FIX ME! */ printf("filter  %3s  %-8s %5s %6s %5d %5s [", "-", DescribeFthrMode(fthr_mode), "-", "-", filN, "");
+	  printf("filter  %3s  %-8s %5s %6s %5d %5s [", "-", "-", "-", "-", filN, "");
 	  fflush(stdout);
 	  
 	  if((status = process_filter_workunit (go, cfg, errbuf, cm, filN, &fil_cyk_scA, &fil_ins_scA, &fil_fwd_scA, &fil_partA)) != eslOK) cm_Fail(errbuf);
@@ -684,23 +687,17 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* set cutoffs for forward HMM filters, first for CYK, then for Inside */
 	  if((status = get_hmm_filter_cutoffs(go, cfg, errbuf, cm, fil_cyk_scA, fil_fwd_scA, fil_partA, gum_cm_cyk_mode, cfg->cmstatsA[cmi]->hfiA[fil_cm_cyk_mode])) != eslOK) cm_Fail(errbuf);
 	  if((status = get_hmm_filter_cutoffs(go, cfg, errbuf, cm, fil_ins_scA, fil_fwd_scA, fil_partA, gum_cm_ins_mode, cfg->cmstatsA[cmi]->hfiA[fil_cm_ins_mode])) != eslOK) cm_Fail(errbuf);
-	  if(cfg->be_verbose) DumpHMMFilterInfo(cfg->cmstatsA[cmi]->hfiA[fil_cm_cyk_mode]);
-	  if(cfg->be_verbose) DumpHMMFilterInfo(cfg->cmstatsA[cmi]->hfiA[fil_cm_ins_mode]);
+	  free(fil_cyk_scA);
+	  free(fil_ins_scA);
+	  free(fil_fwd_scA);
+	  free(fil_partA);
 	  
 	  esl_stopwatch_Stop(cfg->w_stage);
 	  format_time_string(time_buf, cfg->w_stage->elapsed, 0);
 	  printf(" %10s\n", time_buf);
 	}
       } /* end of for(gum_mode = 0; gum_mode < NCMMODES; gum_mode++) */
-      if(cfg->be_verbose) debug_print_cmstats(cfg->cmstatsA[cmi], (! esl_opt_GetBoolean(go, "--gum-only")));
-
-      if(! (esl_opt_GetBoolean(go, "--fil-only"))) free(gum_scA);
-      if(! (esl_opt_GetBoolean(go, "--gum-only"))) { 
-	free(fil_cyk_scA);
-	free(fil_ins_scA);
-	free(fil_fwd_scA);
-	free(fil_partA);
-      }
+      if(cfg->be_verbose) if((status = debug_print_cmstats(cm, errbuf, cfg->cmstatsA[cmi], (! esl_opt_GetBoolean(go, "--gum-only")))) != eslOK) cm_Fail(errbuf);
       FreeCM(cm);
       printf("//\n");
       fflush(stdout);
@@ -873,10 +870,10 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = cm_master_MPIBcast(cm, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
       
       /* initialize the flags/options/params of the CM */
-      if((status = initialize_cm     (go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
-      if((status = initialize_cmstats(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
-      if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
-      if((status = print_cm_info     (go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+      if((status = initialize_cm     (go, cfg, errbuf, cm))          != eslOK) cm_Fail(errbuf);
+      if((status = initialize_cmstats(go, cfg, errbuf, cm))          != eslOK) cm_Fail(errbuf);
+      if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len))) != eslOK) cm_Fail(errbuf);
+      if((status = print_cm_info     (go, cfg, errbuf, cm))          != eslOK) cm_Fail(errbuf);
 
       if(! (esl_opt_GetBoolean(go, "--gum-only"))) { 
 	ESL_ALLOC(fil_cyk_scA, sizeof(float) * filN);
@@ -895,8 +892,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	/* do we need to switch from glocal configuration to local? */
 	if(gum_mode > 0 && (! GumModeIsLocal(gum_mode-1)) && GumModeIsLocal(gum_mode)) {
-	  if((status = switch_global_to_local(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
-	  if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK)     cm_Fail(errbuf);
+	  if((status = switch_global_to_local(go, cfg, cm, errbuf))      != eslOK) cm_Fail(errbuf);
+	  if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len))) != eslOK) cm_Fail(errbuf);
 	}
 	/* update search opts for gumbel mode */
 	GumModeToSearchOpts(cm, gum_mode);
@@ -1018,7 +1015,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  esl_stopwatch_Start(cfg->w_stage);
 	  fthr_mode = GumModeToFthrMode(gum_mode);
 	  ESL_DPRINTF1(("MPI master: CM: %d fthr mode: %d\n", cfg->ncm, fthr_mode));
-	  /* FIX ME! */printf("filter  %3s  %-8s %5s %6s %5d %5s [", "-", DescribeFthrMode(fthr_mode), "-", "-", filN, ""); 
+	  printf("filter  %3s  %-8s %5s %6s %5d %5s [", "-", "-", "-", "-", filN, ""); 
 	  fflush(stdout);
 
 	  if(xstatus == eslOK) have_work = TRUE;  /* TRUE while work remains  */
@@ -1118,8 +1115,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    /* set cutoffs for forward HMM filters, first for CYK, then for Inside */
 	    if((status = get_hmm_filter_cutoffs(go, cfg, errbuf, cm, fil_cyk_scA, fil_fwd_scA, fil_partA, gum_cm_cyk_mode, cfg->cmstatsA[cmi]->hfiA[fil_cm_cyk_mode])) != eslOK) cm_Fail(errbuf);
 	    if((status = get_hmm_filter_cutoffs(go, cfg, errbuf, cm, fil_ins_scA, fil_fwd_scA, fil_partA, gum_cm_ins_mode, cfg->cmstatsA[cmi]->hfiA[fil_cm_ins_mode])) != eslOK) cm_Fail(errbuf);
-	    if(cfg->be_verbose) DumpHMMFilterInfo(cfg->cmstatsA[cmi]->hfiA[fil_cm_cyk_mode]);
-	    if(cfg->be_verbose) DumpHMMFilterInfo(cfg->cmstatsA[cmi]->hfiA[fil_cm_ins_mode]);
 	  }
 	  ESL_DPRINTF1(("MPI master: done with HMM filter calc for fthr mode %d for this CM.\n", fthr_mode));
 	  
@@ -1135,7 +1130,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	ESL_DPRINTF1(("MPI master: done with gumbel mode %d for this CM.\n", gum_mode));
       }
       ESL_DPRINTF1(("MPI master: done with this CM.\n"));
-      if(xstatus == eslOK) if(cfg->be_verbose) { debug_print_cmstats(cfg->cmstatsA[cmi], (! esl_opt_GetBoolean(go, "--gum-only"))); }
+      if(xstatus == eslOK) if(cfg->be_verbose) if((status = debug_print_cmstats(cm, errbuf, cfg->cmstatsA[cmi], (! esl_opt_GetBoolean(go, "--gum-only")))) != eslOK) cm_Fail(errbuf);
       
       if(! (esl_opt_GetBoolean(go, "--fil-only"))) free(gum_scA);
       if(! (esl_opt_GetBoolean(go, "--gum-only"))) { 
@@ -1265,9 +1260,9 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       ESL_DPRINTF1(("Worker %d succesfully received CM, num states: %d num nodes: %d\n", cfg->my_rank, cm->M, cm->nodes));
       
       /* initialize the flags/options/params of the CM */
-      if((status = initialize_cm(go, cfg, errbuf, cm))      != eslOK) goto ERROR;
-      if((status = initialize_cmstats(go, cfg, errbuf, cm)) != eslOK) goto ERROR;
-      if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK) goto ERROR;
+      if((status = initialize_cm(go, cfg, errbuf, cm))               != eslOK) goto ERROR;
+      if((status = initialize_cmstats(go, cfg, errbuf, cm))          != eslOK) goto ERROR;
+      if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len))) != eslOK) goto ERROR;
       
       for(gum_mode = 0; gum_mode < GUM_NMODES; gum_mode++) {
 
@@ -1277,8 +1272,8 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	/* do we need to switch from glocal configuration to local? */
 	if(gum_mode > 0 && (! GumModeIsLocal(gum_mode-1)) && GumModeIsLocal(gum_mode)) {
-	  if((status = switch_global_to_local(go, cfg, cm, errbuf)) != eslOK) goto ERROR;
-	  if((status = update_avg_hit_len(go, cfg, errbuf, cm)) != eslOK)     goto ERROR;
+	  if((status = switch_global_to_local(go, cfg, cm, errbuf))      != eslOK) goto ERROR;
+	  if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len))) != eslOK) goto ERROR;
 	}
 	/* update search opts for gumbel mode */
 	GumModeToSearchOpts(cm, gum_mode);
@@ -1622,7 +1617,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_IsDefault(go, "--gum-beta")) { /* NO QDBs, we still need to setup cm->W */ 
     if(cm->dmin != NULL || cm->dmax != NULL) 
       cm_Fail("initialize_cm() --gum-beta NOT enabled, but cm->dmin and cm->dmax non-null. This shouldn't happen.");
-    while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(dmin), &(dmax), NULL, NULL)))
+    while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, FALSE, &(dmin), &(dmax), NULL, NULL)))
       {
 	free(dmin);
 	free(dmax);
@@ -1680,7 +1675,7 @@ initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
     for(i = 0; i < GUM_NMODES; i++) { 
       for(p = 0; p < cfg->np; p++) {
 	cfg->cmstatsA[cmi]->gumAA[i][p]->N      = cm->stats->gumAA[i][p]->N;
-	cfg->cmstatsA[cmi]->gumAA[i][p]->L      = cm->stats->gumAA[i][p]->L;
+	cfg->cmstatsA[cmi]->gumAA[i][p]->dbsize = cm->stats->gumAA[i][p]->dbsize;
 	cfg->cmstatsA[cmi]->gumAA[i][p]->mu     = cm->stats->gumAA[i][p]->mu;
 	cfg->cmstatsA[cmi]->gumAA[i][p]->lambda = cm->stats->gumAA[i][p]->lambda;
 	cfg->cmstatsA[cmi]->gumAA[i][p]->is_valid = cm->stats->gumAA[i][p]->is_valid;
@@ -1842,20 +1837,18 @@ get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, double *dnull, i
  * Returns:  eslOK on success, ESL_DSQ is filled with newly alloc'ed dsq; some other status code on an error, 
  */
 int
-get_cmemit_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, int *ret_p, Parsetree_t **ret_tr, ESL_DSQ **ret_dsq)
+get_cmemit_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, int *ret_p, ESL_DSQ **ret_dsq)
 {
   int status;
   int p;
   int L;
   ESL_SQ *sq;
   ESL_DSQ *dsq;
-  Parsetree_t *tr;
 
-  if((status = EmitParsetree(cm, errbuf, cfg->r, "irrelevant", TRUE, &tr, &sq, &L)) != eslOK) return status;
+  if((status = EmitParsetree(cm, errbuf, cfg->r, "irrelevant", TRUE, NULL, &sq, &L)) != eslOK) return status;
   while(L == 0) { 
-    FreeParsetree(tr); 
     esl_sq_Destroy(sq); 
-    if((status = EmitParsetree(cm, errbuf, cfg->r, "irrelevant", TRUE, &tr, &sq, &L)) != eslOK) return status;
+    if((status = EmitParsetree(cm, errbuf, cfg->r, "irrelevant", TRUE, NULL, &sq, &L)) != eslOK) return status;
   }
 
   /* determine the partition */
@@ -1872,7 +1865,6 @@ get_cmemit_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, int 
 
   *ret_L  = L;
   *ret_p  = p;
-  *ret_tr = tr;
   *ret_dsq = dsq;
   return eslOK;
 }
@@ -2001,31 +1993,6 @@ read_partition_file(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   return status;
 }
 
-
-/* Function: update_avg_hit_len()
- * Date:     EPN, Sun Dec  9 15:50:39 2007
- * 
- * Purpose:  Calculate the average subseq length rooted at each state
- *           using the QDB calculation.
- *
- * Returns:  eslOK on success;
- */
-int
-update_avg_hit_len(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
-{
-  int safe_windowlen;
-  float *avglen = NULL;
-
-  safe_windowlen = cm->W * 2;
-  while(!(BandCalculationEngine(cm, safe_windowlen, 1E-15, TRUE, NULL, NULL, NULL, &avglen))) {
-    safe_windowlen *= 2;
-    if(safe_windowlen > (cm->clen * 1000)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "update_avg_hit_len(), band calculation safe_windowlen big: %d\n", safe_windowlen);
-  }
-  if(cfg->avglen != NULL) free(cfg->avglen);
-  cfg->avglen = avglen;
-  return eslOK;
-}
-
 /* Function: switch_global_to_local()
  * Incept:   EPN, Mon Dec 10 08:43:32 2007
  * 
@@ -2069,7 +2036,7 @@ switch_global_to_local(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, char 
   if(esl_opt_IsDefault(go, "--gum-beta")) { /* NO QDBs, we still need to setup cm->W */ 
     if(cm->dmin != NULL || cm->dmax != NULL) 
       cm_Fail("initialize_cm() --gum-beta NOT enabled, but cm->dmin and cm->dmax non-null. This shouldn't happen.");
-    while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(dmin), &(dmax), NULL, NULL)))
+    while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, FALSE, &(dmin), &(dmax), NULL, NULL)))
       {
 	free(dmin);
 	free(dmax);
@@ -2132,7 +2099,7 @@ update_dp_calcs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
   /* get cfg->fil_cm_ncalcs */
   if(! (esl_opt_GetBoolean(go, "--fil-noqdb"))) { /* Assume QDBs will be on in cmsearch, determine those QDBs */
     safe_windowlen = cm->clen * 2;
-    while(!(BandCalculationEngine(cm, safe_windowlen, esl_opt_GetReal(go, "--fil-beta"), 0, &(dmin), &(dmax), NULL, NULL))) {
+    while(!(BandCalculationEngine(cm, safe_windowlen, esl_opt_GetReal(go, "--fil-beta"), FALSE, &(dmin), &(dmax), NULL, NULL))) {
       free(dmin);
       free(dmax);
       safe_windowlen *= 2;
@@ -2140,11 +2107,12 @@ update_dp_calcs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
 	cm_Fail("initialize_cm(), safe_windowlen big: %d\n", safe_windowlen);
     }
     fil_W = dmax[0];
+    if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*fil_W, dmin, dmax, fil_W, TRUE,  NULL, &(cfg->fil_cm_ncalcs))) != eslOK) return status;
     free(dmin);
     free(dmax);
-    if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*fil_W, dmin, dmax, fil_W, TRUE,  NULL, &(cfg->fil_cm_ncalcs))) != eslOK) return status;
   }
   else { /* assume QDBs will be off in cmsearch, get counts */
+    fil_W = cm->W;
     if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*fil_W, NULL, NULL, fil_W, TRUE,  NULL, &(cfg->fil_cm_ncalcs))) != eslOK) return status;
   }
     
@@ -2198,6 +2166,7 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
     ESL_ALLOC(seedstr, sizeof(char) * (seedlen+1));
     sprintf(seedstr, " -s %ld ", seed);
     esl_strcat((&cfg->ccom), -1, seedstr, seedlen);
+    free(seedstr);
   }
   else { /* -s was enabled, we'll do a sanity check */
     if(seed != (long) esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r's seed is %ld, but -s was enabled with argument: %ld!, this shouldn't happen.", seed, (long) esl_opt_GetInteger(go, "-s"));
@@ -2317,14 +2286,14 @@ format_time_string(char *buf, double sec, int do_frac)
 static int
 print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
-  printf("%-8s %s\n", "CM:",      cm->name); 
-  if(esl_opt_IsDefault(go, "--gum-beta"))      printf("%-8s %s %g\n", "gumbel beta:", "0.0 (no qdbs), for W calc: ", cm->beta); 
-  else                                         printf("%-8s %g\n",    "gumbel beta:", cm->beta); 
-  if(esl_opt_GetBoolean(go, "--fil-noqdb"))    printf("%-8s %s %g\n", "filter beta:", "0.0 (no qdbs), for W calc: ", cm->beta); 
-  else                                         printf("%-8s %g\n",    "filter beta:", esl_opt_GetReal(go, "--fil-beta")); 
-  printf("%-8s %s\n", "command:", cfg->ccom);
-  printf("%-8s %s\n", "date:",    cfg->cdate);
-  printf("%-8s %d\n", "nproc:",   (cfg->nproc == 0) ? 1 : cfg->nproc);
+  printf("%-12s %s\n", "CM:",      cm->name); 
+  if(esl_opt_IsDefault(go, "--gum-beta"))      printf("%-12s %s %g\n", "gumbel beta:", "0.0 (no qdbs), for W calc: ", cm->beta); 
+  else                                         printf("%-12s %g\n",    "gumbel beta:", cm->beta); 
+  if(esl_opt_GetBoolean(go, "--fil-noqdb"))    printf("%-12s %s %g\n", "filter beta:", "0.0 (no qdbs), for W calc: ", cm->beta); 
+  else                                         printf("%-12s %g\n",    "filter beta:", esl_opt_GetReal(go, "--fil-beta")); 
+  printf("%-12s %s\n", "command:", cfg->ccom);
+  printf("%-12s %s\n", "date:",    cfg->cdate);
+  printf("%-12s %d\n", "nproc:",   (cfg->nproc == 0) ? 1 : cfg->nproc);
   printf("\n");
   printf("%6s  %3s  %3s  %3s %5s %6s %5s %5s    percent complete         %10s\n", "",       "",     "",    "",     "",        "",     "",         "",  "");
   printf("%6s  %3s  %3s  %3s %5s %6s %5s %5s [5.......50.......100] %10s\n", "stage",  "mod",  "cfg", "alg",  "gumN",    "len",  "filN",          "",  "elapsed");
@@ -2362,12 +2331,11 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   float         *cyk_scA  = NULL;  /* [0..i..nseq-1] best CM CYK score for each state, each seq */
   float         *ins_scA  = NULL;  /* [0..i..nseq-1] best CM Inside score for each state, each seq */
   float         *fwd_scA = NULL;   /* [0..i..nseq-1] best CP9 Viterbi score for each seq */
-  int           *partA  = NULL;  /* [0..i..nseq-1] partitions of each seq */
-  int            p;              /* what partition we're in */
+  int           *partA  = NULL;    /* [0..i..nseq-1] partitions of each seq */
+  int            p;                /* what partition we're in */
   int            i;
   int            L;
   ESL_DSQ       *dsq;
-  Parsetree_t   *tr;
   int            inside_flag_raised = FALSE;
   int            hbanded_flag_raised = FALSE;
   int            scanbands_flag_raised = FALSE;
@@ -2398,7 +2366,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
       fflush(stdout); 
       update_i += nseq / 20.; 
     }
-    if((status = get_cmemit_dsq(cfg, errbuf, cm, &L, &p, &tr, &dsq)) != eslOK) return status;
+    if((status = get_cmemit_dsq(cfg, errbuf, cm, &L, &p, &dsq)) != eslOK) return status;
     partA[i] = p;
     /*to print seqs to stdout uncomment this block  
     ESL_SQ *tmp;
@@ -2563,16 +2531,16 @@ int
 get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *cm_scA, float *fwd_scA, int *partA, int cm_mode, HMMFilterInfo_t *hfi)
 {
   int    status;
-  float  fil_calcs;               /* number of million dp calcs predicted for the HMM filter scan */
-  float  nonfil_calcs;            /* number of million dp calcs predicted for a full CM scan */
-  int    evalue_L;                /* database length used for calcing E-values in CP9 gumbels from cfg->cmstats */
+  float  fil_ncalcs;              /* number of million dp calcs predicted for the HMM filter scan */
+  float  cm_ncalcs;               /* number of million dp calcs predicted for a full (next-step-after-filter) CM scan */
+  long   evalue_L;                /* database length used for calcing E-values in CP9 gumbels from cfg->cmstats */
   int    i, p;                    /* counters */
   int    cmi   = cfg->ncm-1;      /* CM index we're on */
   float  F     = esl_opt_GetReal   (go, "--fil-F");    /* fraction of CM seqs we require filter to let pass */
   int    filN  = esl_opt_GetInteger(go, "--fil-N"); /* number of sequences we emitted from CM for filter test */
   float  xhmm  = esl_opt_GetReal   (go, "--fil-xhmm"); /* number of sequences we emitted from CM for filter test */
   int    Fidx;                    /* index in sorted scores that threshold will be set at (1-F) * N */
-  float  surv_res_per_hit;        /* expected number of residues to survive filter from DB for each hit 2*W-avglen[0], twice W minus the average lenght of a hit from QDB calc */
+  float  surv_res_per_hit;        /* expected number of residues to survive filter from DB for each hit 2*W-avg_hit_len, twice W minus the average lenght of a hit from QDB calc */
   float  Smax;                    /* maximally useful survival fraction, close to 0.5 */
   float  Starg;                   /* our target survival fraction, if we achieve this fraction the search should take xhmm times longer than a HMM only search */
   float  Smin;                    /* minimally useful survival fraction, any less than this and our filter would be (predicted to be) doing more than 10X the work of the CM */
@@ -2582,63 +2550,66 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   double dbsize;                  /* database size the E-values refer to, just a scaling factor */
   int   *cmi2fwdi;                /* [0..i..filN] map between by_cmA and by_fwdA elements, cmi2fwdi[j] == k ==> by_cmA[j].i == by_fwdA[k].i */
   int    j;                       /* counter */
+  int    always_better_than_Smax; /* TRUE if worst observed cm E value (by_cmA[0].cm_E) still gives us a survival fraction better (less) than Smax */
+  double fil_beta;                /* QDB tail loss used for calculating cm_ncalcs */
+  int    use_qdb;                 /* TRUE unless --fil-noqdb enabled, if TRUE, cm_ncalcs is number of calcs for a non-banded scan */
   
   fseq_Eval_t *by_cmA;            /* [0..i..filN] list of fseq_Eval_t for all filN observed seqs, sorted by decreasing CM      E-value */
   fseq_Eval_t *by_fwdA;           /* [0..i..filN] list of fseq_Eval_t for all filN observed seqs, sorted by decreasing Forward E-value */
   float        cm_E, fwd_E;       /* a CM E-value and Forward E-value */
   int          hmm_fwd_mode = (cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? GUM_CP9_LF : GUM_CP9_GF;
-  
+
   /* contract checks */
   if(! (cfg->cmstatsA[cmi]->gumAA[cm_mode][0]->is_valid))      ESL_FAIL(eslEINCOMPAT, errbuf, "get_hmm_filter_cutoffs(), gumbel stats for CM mode: %d are not valid.\n", cm_mode);
   if(! (cfg->cmstatsA[cmi]->gumAA[hmm_fwd_mode][0]->is_valid)) ESL_FAIL(eslEINCOMPAT, errbuf, "get_hmm_filter_cutoffs(), gumbel stats for HMM fwd mode: %d are not valid.\n", hmm_fwd_mode);
 
-  evalue_L = cfg->cmstatsA[cmi]->gumAA[hmm_fwd_mode][0]->L;
-  if(evalue_L != cfg->cmstatsA[cmi]->gumAA[cm_mode][0]->L) ESL_FAIL(eslEINCOMPAT, errbuf,     "get_hmm_filter_cutoffs(), E value L used to HMM forward different than for CM mode: %d. This shouldn't happen.", cm_mode);
+  evalue_L = cfg->cmstatsA[cmi]->gumAA[hmm_fwd_mode][0]->dbsize;
+  if(evalue_L != cfg->cmstatsA[cmi]->gumAA[cm_mode][0]->dbsize) ESL_FAIL(eslEINCOMPAT, errbuf,     "get_hmm_filter_cutoffs(), E value L used to HMM forward different than for CM mode: %d. This shouldn't happen.", cm_mode);
 
   /* contract checks specific to case when there is more than 1 partition */
   if(cfg->cmstatsA[cfg->ncm-1]->np != 1) { 
     for(p = 1; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) {
-      if(evalue_L != cfg->cmstatsA[cmi]->gumAA[hmm_fwd_mode][p]->L) ESL_FAIL(eslEINCOMPAT, errbuf, "get_hmm_filter_cutoffs(), partition %d db length (%d) for Forward gumbel stats differ than from partition 1 Forward db length (%d).\n", p, cfg->cmstatsA[cmi]->gumAA[hmm_fwd_mode][p]->L, evalue_L);
+      if(evalue_L != cfg->cmstatsA[cmi]->gumAA[hmm_fwd_mode][p]->dbsize) ESL_FAIL(eslEINCOMPAT, errbuf, "get_hmm_filter_cutoffs(), partition %d db length (%ld) for Forward gumbel stats differ than from partition 1 Forward db length (%ld).\n", p, cfg->cmstatsA[cmi]->gumAA[hmm_fwd_mode][p]->dbsize, evalue_L);
     }
   }
 
   /* Determine our target, min and max E-value cutoffs for the HMM forward scan
    * these are independent of the observed scores. Each of these is calculated
    * based on how it affects <total_calcs>. <total_calcs> is the sum of the
-   * number of DP calculations required for the HMM filter <fil_calcs>, plus the predicted
+   * number of DP calculations required for the HMM filter <fil_ncalcs>, plus the predicted
    * number of DP calculations required for the CM to search the survival fraction
-   * <nonfil_calcs> * survival fract. So if <total_calcs> is <xhmm> * <fil_calcs>, the 
+   * <cm_ncalcs> * survival fract. So if <total_calcs> is <xhmm> * <fil_ncalcs>, the 
    * required timewe predict to do a HMM filter plus CM scan of survivors is <xhmm> times the
    * time it would take to do an HMM only scan. 
    * 
-   * fwd_Etarg:  the target  forward E-value cutoff. If used <total_calcs> = <xhmm> * <fil_calcs>
+   * fwd_Etarg:  the target  forward E-value cutoff. If used <total_calcs> = <xhmm> * <fil_ncalcs>
    *             <xhmm> is obtained from the --fil-xhmm, by default it is 2.0.
    * fwd_Emin:   the minimal forward E-value cutoff, anything less than this is overkill. 
-   *             If used <total_calcs> = 1.1 * fil_calcs.
+   *             If used <total_calcs> = 1.1 * fil_ncalcs.
    * fwd_Emax:   the maximum forward E-value cutoff we'll accept as useful. If used 
-   *             <total_calcs> = 0.5 * <nonfil_calcs> (we expect HMM filter to give us 
+   *             <total_calcs> = 0.5 * <cm_ncalcs> (we expect HMM filter to give us 
    *                                                   2X speedup versus full CM)
    *
    * forward filter   predicted 
    * E-value cutoff   survival fraction
    * --------------   -----------------
-   * fwd_Emax         Smax  = 0.5 -  (fil_calcs / nonfil_calcs)
-   * fwd_Etarg        Starg = xhmm * (fil_calcs / nonfil_calcs)
-   * fwd_Emin         Smin  = 0.1  * (fil_calcs / nonfil_calcs)
+   * fwd_Emax         Smax  = 0.5 -  (fil_ncalcs / cm_ncalcs)
+   * fwd_Etarg        Starg = xhmm * (fil_ncalcs / cm_ncalcs)
+   * fwd_Emin         Smin  = 0.1  * (fil_ncalcs / cm_ncalcs)
    */
-  dbsize           = FTHR_DBSIZE;                       /* FTHR_DBSIZE_MB is 1000000, (1Mb) */
-  fil_calcs        = cfg->cp9_ncalcs;                   /* fil_calcs is millions of DP calcs for HMM Forward scan of 1 residue */
-  fil_calcs       *= dbsize;                            /* now fil_calcs is millions of DP calcs for HMM Forward scan of length 1 Mb */
-  nonfil_calcs     = cfg->fil_cm_ncalcs;                /* total number of millions of DP calculations for full CM scan of 1 residue */
-  nonfil_calcs    *= dbsize;                            /* now nonfil-calcs corresponds to dbsize (1 Mb)*/
-  surv_res_per_hit = (2. * cm->W - (cfg->avglen[0]));   /* avg length of surviving fraction of db from a single hit (cfg->avglen[0] is avg subseq len in subtree rooted at v==0, from QDB calculation) */
-  Smin             = 0.1 *  (fil_calcs / nonfil_calcs); /* if survival fraction == Smin, total number of DP calcs (filter + survivors) == (1.1) * fil_calcs, so a HMM + CM search will take only 10% longer than HMM only */
-  Starg            = xhmm * (fil_calcs / nonfil_calcs); /* if survival fraction == Starg, the total number DP calcs (filter + survivors) == (1 + xhmm) * fil_calcs,
-							 * so if xhmm = 1 (which is default), our target is for the HMM filter + CM search of survivors (with QDB possibly) 
-							 * to take 1+1 = 2 times as long as only the HMM filter would take. */ 
-  Smax             = 0.5 -  (fil_calcs / nonfil_calcs); /* if survival fraction == Smax, total number of DP calcs (filter+survivors) == 1/2 * nonfil_calcs, so our predicted speedup
-							 * by using the filter is 2 fold */
-  if(Smin > Smax) { /* rare case, happens only if fil_calcs >= 5/11 * nonfil_calcs, in this case we don't filter */
+  dbsize           = FTHR_DBSIZE;                          /* FTHR_DBSIZE_MB is 1000000, (1Mb) */
+  fil_ncalcs       = cfg->cp9_ncalcs;                      /* fil_ncalcs is millions of DP calcs for HMM Forward scan of 1 residue */
+  fil_ncalcs      *= dbsize;                               /* now fil_ncalcs is millions of DP calcs for HMM Forward scan of length 1 Mb */
+  cm_ncalcs        = cfg->fil_cm_ncalcs;                   /* total number of millions of DP calculations for full CM scan of 1 residue */
+  cm_ncalcs       *= dbsize;                               /* now cm_ncalcs corresponds to dbsize (1 Mb)*/
+  surv_res_per_hit = (2. * cm->W - (cfg->avg_hit_len));    /* avg length of surviving fraction of db from a single hit (cfg->avg_hit_len is avg subseq len in subtree rooted at v==0, from QDB calculation) */
+  Smin             =  0.1      * (fil_ncalcs / cm_ncalcs); /* if survival fraction == Smin, total number of DP calcs (filter + survivors) == (1.1) * fil_ncalcs, so a HMM + CM search will take only 10% longer than HMM only */
+  Starg            = (xhmm-1.) * (fil_ncalcs / cm_ncalcs); /* if survival fraction == Starg, the total number DP calcs (filter + survivors) == (1 + xhmm) * fil_ncalcs,
+							    * so if xhmm = 2 (which is default), our target is for the HMM filter + CM search of survivors (with QDB possibly) 
+							    * to take 2 times long as only the HMM filter would take. */ 
+  Smax             = 0.5 -  (fil_ncalcs / cm_ncalcs);      /* if survival fraction == Smax, total number of DP calcs (filter+survivors) == 1/2 * cm_ncalcs, so our predicted speedup
+							    * by using the filter is 2 fold */
+  if(Smin > Smax) { /* rare case, happens only if fil_ncalcs >= 5/11 * cm_ncalcs, in this case we don't filter */
     /* this will probably never happen, but if it does, we set 1 cut point, set the CM E-value to 0.0 and set
      * always_better_than_Smax to FALSE, then in cmsearch no matter what CM E-value cutoff <E> is used, a filter will
      * not be used, because <E> > 0.0 for all valid <E>. 
@@ -2649,7 +2620,10 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
     ESL_ALLOC(cm_E_cut,  sizeof(float) * 1);
     cm_E_cut[0]  = 0.0;         
     fwd_E_cut[0] = 1E20; /* this is irrelevant actually */
-    if((status = SetHMMFilterInfoHMM(hfi, errbuf, F, filN, dbsize, 1, cm_E_cut, fwd_E_cut, FALSE)) != eslOK) return status;
+    always_better_than_Smax = FALSE;
+    fil_beta                = esl_opt_GetBoolean(go, "--fil-noqdb") ? cm->beta : esl_opt_GetReal(go, "--fil-beta");
+    use_qdb                 = esl_opt_GetBoolean(go, "--fil-noqdb") ? FALSE : TRUE;
+    if((status = SetHMMFilterInfoHMM(hfi, errbuf, F, filN, dbsize, 1, cm_E_cut, fwd_E_cut, always_better_than_Smax, fil_beta, use_qdb)) != eslOK) return status;
     free(cm_E_cut);
     free(fwd_E_cut);
     return eslOK; 
@@ -2657,12 +2631,16 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   if(Starg < Smin) { /* another rare case min value for --fil-xhmm is 0.1, so if Starg < Smin it's just because of precision issues, nevertheless we have to deal */
     Starg = Smin;
   }
-  if(Starg > Smax) { /* yet another rare case, happens only if fil_calcs >= (0.5 * nonfil_calcs) / (xhmm+1), when xhmm = 1, this is when fil_calcs <= nonfil_calcs / 4 */
+  if(Starg > Smax) { /* yet another rare case, happens only if fil_ncalcs >= (0.5 * cm_ncalcs) / (xhmm+1), when xhmm = 1, this is when fil_ncalcs <= cm_ncalcs / 4 */
     Starg = Smax;
   }
   fwd_Emax         = (Smax  * (float) dbsize) / surv_res_per_hit;
   fwd_Etarg        = (Starg * (float) dbsize) / surv_res_per_hit;
   fwd_Emin         = (Smin  * (float) dbsize) / surv_res_per_hit;
+
+  assert(fwd_Emax > -0.000001);
+  assert(fwd_Emax > -0.000001);
+  assert(fwd_Emin > -0.000001);
 
   /* Copy bit scores to three separate quicksort-able data structures, 
    * Sort one by CM E-value, one by Inside E-value and one by Forward E-value.
@@ -2685,7 +2663,7 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
     by_cmA[i].fwd_E = by_fwdA[i].fwd_E = fwd_E;
   }
   /* qsort */
-  qsort(by_cmA,  filN, sizeof(fseq_Eval_t),  compare_fseq_by_cm_Eval);
+  qsort(by_cmA,  filN, sizeof(fseq_Eval_t), compare_fseq_by_cm_Eval);
   qsort(by_fwdA, filN, sizeof(fseq_Eval_t), compare_fseq_by_fwd_Eval);
 
   /* determine the mapping between the sorted CM list and sorted Fwd list.
@@ -2696,11 +2674,14 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
    * this out. Nevertheless, max <n> for --fil-N option is 100,000.
    */
   ESL_ALLOC(cmi2fwdi, sizeof(int) * filN);
+  esl_vec_ISet(cmi2fwdi, filN, -1);
   for(i = 0; i < filN; i++) {
     for(j = 0; j < filN; j++) {
       if(by_cmA[i].i == by_fwdA[j].i) cmi2fwdi[i] = j;
     }
   }
+  for(i = 0; i < filN; i++) assert(cmi2fwdi[i] != -1);
+
   /* A few more preparations before the main loop:
    * we want Fidx such that in the sorted arrays, by_cmA and by_fwdA, F fraction of the elements 
    * have E value <= score of element [Fidx], including element Fidx. Some examples:
@@ -2730,11 +2711,11 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
    * it's non-trivial, and worth precalculating to avoid putting the messy code that does
    * it in the loop below. 
    */
-  int curN    = filN;
+  int curN = filN;
   int *change_fwd_F;
   int prv_Fidx;
   int cur_Fidx;
-  ESL_ALLOC(change_fwd_F, sizeof(int) * filN);
+  ESL_ALLOC(change_fwd_F, sizeof(int) * (filN+1));
   prv_Fidx = Fidx;
   for(i = filN-1; i >= 0; i--) { 
     cur_Fidx = (int) ((1. - F) * (float) i);
@@ -2868,10 +2849,10 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
 
     keep_going = TRUE;
     while(keep_going) { 
-      if(fwd_E_cut[ip] < max_next_E_cut) keep_going = FALSE; /* the difference between this E-value cut, and the prev one we added is > 10% */ 
-      if(ip == imin_at_Emin)             keep_going = FALSE; /* min i for which we acheive Smin,  we want to add this point no matter what */
-      if(ip == imin_at_Etarg)            keep_going = FALSE; /* min i for which we acheive Starg, we want to add this point no matter what */
-      if(ip >  imax)                     keep_going = FALSE; /* we're done with the list */
+      if(ip == imin_at_Emin)                  keep_going = FALSE; /* min i for which we acheive Smin,  we want to add this point no matter what */
+      else if(ip == imin_at_Etarg)            keep_going = FALSE; /* min i for which we acheive Starg, we want to add this point no matter what */
+      else if(ip >  imax)                     keep_going = FALSE; /* we're done with the list */
+      else if(fwd_E_cut[ip] < max_next_E_cut) keep_going = FALSE; /* the difference between this E-value cut, and the prev one we added is > 10% */ 
       if(keep_going) ip++; /* skip all points that fail 4 ifs() above */
     }
   }
@@ -2891,9 +2872,10 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   }
   assert(i == n2save);
 
-  int always_better_than_Smax;
   always_better_than_Smax = (imax_above_Emax == -1) ? TRUE : FALSE;
-  if((status = SetHMMFilterInfoHMM(hfi, errbuf, F, filN, dbsize, n2save, cm_E_cut2save, fwd_E_cut2save, always_better_than_Smax)) != eslOK) return status;
+  fil_beta                = esl_opt_GetBoolean(go, "--fil-noqdb") ? cm->beta : esl_opt_GetReal(go, "--fil-beta");
+  use_qdb                 = esl_opt_GetBoolean(go, "--fil-noqdb") ? FALSE : TRUE;
+  if((status = SetHMMFilterInfoHMM(hfi, errbuf, F, filN, dbsize, n2save, cm_E_cut2save, fwd_E_cut2save, always_better_than_Smax, fil_beta, use_qdb)) != eslOK) return status;
 
   free(by_cmA);
   free(by_fwdA);

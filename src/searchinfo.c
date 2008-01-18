@@ -1058,6 +1058,8 @@ CreateHMMFilterInfo()
   hfi->N         = 0;
   hfi->dbsize    = 0;
   hfi->ncut      = 0;
+  hfi->beta      = 0.;
+  hfi->use_qdb   = FALSE;
   hfi->cm_E_cut  = NULL;
   hfi->fwd_E_cut = NULL;
   hfi->always_better_than_Smax = FALSE;
@@ -1075,7 +1077,7 @@ CreateHMMFilterInfo()
  * Returns:  eslOK on success, eslEINCOMPAT if contract violated
  */
 int 
-SetHMMFilterInfoHMM(HMMFilterInfo_t *hfi, char *errbuf, float F, int N, int dbsize, int ncut, float *cm_E_cut, float *fwd_E_cut, int always_better_than_Smax)
+SetHMMFilterInfoHMM(HMMFilterInfo_t *hfi, char *errbuf, float F, int N, int dbsize, int ncut, float *cm_E_cut, float *fwd_E_cut, int always_better_than_Smax, double beta, int use_qdb)
 {
   int status;
   int i;
@@ -1084,6 +1086,8 @@ SetHMMFilterInfoHMM(HMMFilterInfo_t *hfi, char *errbuf, float F, int N, int dbsi
   hfi->F         = F;
   hfi->N         = N;
   hfi->dbsize    = dbsize;
+  hfi->beta      = beta;
+  hfi->use_qdb   = use_qdb;
   ESL_ALLOC(hfi->cm_E_cut,  sizeof(float) * ncut);
   ESL_ALLOC(hfi->fwd_E_cut, sizeof(float) * ncut);
   for(i = 0; i < ncut; i++) { 
@@ -1119,31 +1123,154 @@ FreeHMMFilterInfo(HMMFilterInfo_t *hfi)
  * Date:     EPN, Mon Dec 10 12:22:10 2007
  *
  * Purpose:  Print out relevant info in a hmm filter info object.
- *           
+ *           Does some expensive calculations (like QDB calc to
+ *           get average length of hits) to determine predicted
+ *           speedups, etc, when using the filters.
  *            
- * Returns:  
- *           eslOK on success, dies immediately on some error
+ * Returns:  eslOK on success, other Easel status code on some error
  */
-void
-DumpHMMFilterInfo(HMMFilterInfo_t *hfi)
+int
+DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi)
 {
-  int i;
+  int i, p;
+  int status;
+  float avg_hit_len;
+  float cm_ncalcs_per_res;
+  int   W; /* window size calculated using hfi->beta */
+  float hmm_ncalcs_per_res;
+  float cm_bit_sc;
+  float hmm_bit_sc;
+  float cm_E;
+  float hmm_E;
 
-  if(! (hfi->is_valid)) {
-    printf("HMMFilterInfo_t not yet valid.\n");
-    return;
+  /* contract checks */
+  if(! (cm->flags & CMH_GUMBEL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfo(), cm does not have Gumbel stats.");
+  /* When this function is entered, for all i and p, the following should be true:
+   * dbsize == cm->stats->gumAA[0..i..GUM_NMODES-1]][0..p..np-1]->N 
+   */
+  for(i = 0; i < GUM_NMODES; i++) { 
+    for(p = 0; p < cm->stats->np; p++) {
+      if(dbsize != cm->stats->gumAA[i][p]->dbsize) 
+	ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfo(), cm gumbel dbsize: %ld != dbsize: %ld for gum_mode: %d partition: %d\n", cm->stats->gumAA[i][p]->dbsize, dbsize, i, p); 
+    }
   }
 
-  printf("HMMFilterInfo_t:\n");
+  if(! (hfi->is_valid)) {
+    fprintf(fp, "HMMFilterInfo_t not yet valid.\n");
+    return eslOK;
+  }
 
-  printf("F:                     %10.4f\n", hfi->F);
-  printf("N:                     %10d\n",   hfi->N);
-  printf("DB size (for E-vals):  %10d\n",   hfi->dbsize);
-  printf("ncut:                  %10d\n",   hfi->ncut);
+  if((status = cm_GetAvgHitLen        (cm,      errbuf, &avg_hit_len))        != eslOK) return status;
+  if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &hmm_ncalcs_per_res)) != eslOK) return status;
+  if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, hfi->beta, &cm_ncalcs_per_res, &W))  != eslOK) return status;
 
-  for(i = 0; i < hfi->ncut; i++) 
-    printf("%5d cm_E: %15.7f fwd_E: %15.7f\n", i, hfi->cm_E_cut[i], hfi->fwd_E_cut[i]);
-
-  return;
+  printf("# %-4s  %-15s  %5s  %6s  %7s  %7s  %5s  %7s  %7s\n", "idx",  "name",                 "clen",   "F",      "nseq",    "db (Mb)", "beta",  "use qdb", "always?");
+  printf("# %-4s  %-15s  %5s  %6s  %7s  %7s  %5s  %7s  %7s\n", "----", "--------------------", "-----",  "------", "-------", "-------", "-----", "-------", "-------");
+  printf("%6d  %-25s  %5d  %6.4f  %7d  %7.1f  %4g  %7s  %7s\n",
+	 cmi, cm->name, cm->clen, hfi->F, hfi->N, hfi->dbsize / 1000000., hfi->beta, 
+	 hfi->use_qdb ? "yes" : "no", 
+	 hfi->always_better_than_Smax ? "yes" : "no");
+  printf("#\n");
+  printf("#\n");
+  printf("#%10s  %s\n", "", "CM E-value cutoff / HMM Forward E-value filter cutoff pairs:");
+  printf("#%10s  %-4s  %8s  %6s  %8s  %6s  %6s  %7s  %7s\n", "", "idx",  "cm E",     "cm bit", "hmm E",  "hmmbit", "surv",   "xhmm",    "speedup");
+  printf("#%10s  %-4s  %8s  %6s  %8s  %6s  %6s  %7s  %7s\n", "", "----", "--------", "------", "-----_", "------", "------", "-------", "-------");
+  for(i = 0; i < hfi->ncut; i++) {
+    cm_E  = hfi->cm_E_cut[i]  * ((double) dbsize / (double) hfi->dbsize);
+    hmm_E = hfi->fwd_E_cut[i] * ((double) dbsize / (double) hfi->dbsize);
+    if((status = E2Score(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
+    if((status = E2Score(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
+    fprintf(fp, "%9s  %6d  ", "", i);
+    if(cm_E < 0.01)  fprintf(fp, "%8.4g  ", cm_E);
+    else             fprintf(fp, "%8.3f  ", cm_E);
+    fprintf(fp, "%6.1f  ", cm_bit_sc);
+    if(hmm_E < 0.01) fprintf(fp, "%8.4g  ", hmm_E);
+    else             fprintf(fp, "%8.3f  ", hmm_E);
+    fprintf(fp, "%6.1f  ", hmm_bit_sc);
+    fprintf(fp, "%6.4f  %7.1f  %7.1f\n", 
+	   GetHMMFilterS      (hfi, i, W, avg_hit_len),
+	   GetHMMFilterXHMM   (hfi, i, W, avg_hit_len, cm_ncalcs_per_res, hmm_ncalcs_per_res),
+	   GetHMMFilterSpeedup(hfi, i, W, avg_hit_len, cm_ncalcs_per_res, hmm_ncalcs_per_res));
+  }
+  return eslOK;
 }  
+
+/* Function: GetHMMFilterS()
+ * Date:     EPN, Wed Jan 16 21:21:55 2008
+ *
+ * Purpose:  Return the survival fraction S for a given
+ *           cut point in an HMM filter object.
+ *            
+ * Returns:  Survival fraction for cut point 'cut',
+ *           dies if cut >= hfi->ncut (out of bounds)
+ */
+float 
+GetHMMFilterS(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len)
+{
+  if(cut >= hfi->ncut) cm_Fail("HMMFilterS() request cut point %d, when only %d exist.", cut, hfi->ncut);
+  float surv_res_per_hit = ((float) 2 * W) - avg_hit_len;
+  return((hfi->fwd_E_cut[cut] * surv_res_per_hit) / (float) hfi->dbsize);
+}
+
+/* Function: GetHMMFilterTotalCalcs()
+ * Date:     EPN, Wed Jan 16 21:37:54 2008
+ *
+ * Purpose:  Returns the predicted number of millions
+ *           of DP calcs for a HMM filter scan plus
+ *           the CM search of the survivors for
+ *           a sequence of length <hfi->dbsize>.
+
+ * Returns:  number of millions of dp calcs
+ *           dies if cut >= hfi->ncut (out of bounds)
+ */
+float 
+GetHMMFilterTotalCalcs(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len, float cm_ncalcs_per_res, float hmm_ncalcs_per_res)
+{
+  if(cut >= hfi->ncut) cm_Fail("HMMFilterS() request cut point %d, when only %d exist.", cut, hfi->ncut);
+  float S = GetHMMFilterS(hfi, cut, W, avg_hit_len);
+  float f = hmm_ncalcs_per_res * (float) hfi->dbsize; 
+  float c = cm_ncalcs_per_res  * (float) hfi->dbsize; 
+  return(f + (S * c));
+}
+
+/* Function: GetHMMFilterXHMM()
+ * Date:     EPN, Wed Jan 16 21:29:37 2008
+ *
+ * Purpose:  Return the <xhmm> factor for a given
+ *           cut point in an HMM filter object.
+ *           If <xhmm> = 2.0, the HMM filter plus
+ *           the CM search of the survivors should
+ *           take twice as long as the HMM ONLY scan.
+ *            
+ * Returns:  <xhmm>
+ *           dies if cut >= hfi->ncut (out of bounds)
+ */
+float 
+GetHMMFilterXHMM(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len, float cm_ncalcs_per_res, float hmm_ncalcs_per_res)
+{
+  if(cut >= hfi->ncut) cm_Fail("HMMFilterS() request cut point %d, when only %d exist.", cut, hfi->ncut);
+  float total_calcs = GetHMMFilterTotalCalcs(hfi, cut, W, avg_hit_len, cm_ncalcs_per_res, hmm_ncalcs_per_res);
+  float f = hmm_ncalcs_per_res * (float) hfi->dbsize; 
+  return(total_calcs / f);
+}
+
+/* Function: GetHMMFilterSpeedup()
+ * EPN, Wed Jan 16 21:44:13 2008
+ *
+ * Purpose:  Return the predicted speedup for 
+ *           a HMM filter scan plus CM search 
+ *           of survivors versus a non-filtered
+ *           CM search of hfi->dbsize residues.
+ *            
+ * Returns:  predicted speedup
+ *           dies if cut >= hfi->ncut (out of bounds)
+ */
+float 
+GetHMMFilterSpeedup(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len, float cm_ncalcs_per_res, float hmm_ncalcs_per_res)
+{
+  if(cut >= hfi->ncut) cm_Fail("HMMFilterS() request cut point %d, when only %d exist.", cut, hfi->ncut);
+  float total_calcs = GetHMMFilterTotalCalcs(hfi, cut, W, avg_hit_len, cm_ncalcs_per_res, hmm_ncalcs_per_res);
+  float c = cm_ncalcs_per_res  * (float) hfi->dbsize; 
+  return(c / total_calcs);
+}
 

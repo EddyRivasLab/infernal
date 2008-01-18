@@ -66,27 +66,29 @@ static unsigned int v01swap  = 0xb1b0ede3; /* v0.1 binary, byteswapped         *
 #define CMIO_FTHRF        30
 #define CMIO_FTHRN        31
 #define CMIO_FTHRDB       32
-#define CMIO_FTHRABTS     33
-#define CMIO_FTHRCMECUT   34
-#define CMIO_FTHRFWDECUT  35
-#define CMIO_HASGUM       36
-#define CMIO_HASFILTER    37
-#define CMIO_ABCTYPE      38
-#define CMIO_HASGA        39
-#define CMIO_HASTC        40
-#define CMIO_HASNC        41
-#define CMIO_GA           42
-#define CMIO_TC           43
-#define CMIO_NC           44
-#define CMIO_BCOM         45
-#define CMIO_BDATE        46
-#define CMIO_CCOM1        47
-#define CMIO_CDATE1       48
-#define CMIO_CCOM2        49
-#define CMIO_CDATE2       50
-#define CMIO_NSEQ         51
-#define CMIO_EFFNSEQ      52
-#define CMIO_CLEN         53
+#define CMIO_FTHRBETA     33
+#define CMIO_FTHRUSEQDB   34
+#define CMIO_FTHRABTS     35
+#define CMIO_FTHRCMECUT   36
+#define CMIO_FTHRFWDECUT  37
+#define CMIO_HASGUM       38
+#define CMIO_HASFILTER    39
+#define CMIO_ABCTYPE      40
+#define CMIO_HASGA        41
+#define CMIO_HASTC        42
+#define CMIO_HASNC        43
+#define CMIO_GA           44
+#define CMIO_TC           45
+#define CMIO_NC           46
+#define CMIO_BCOM         47
+#define CMIO_BDATE        48
+#define CMIO_CCOM1        49
+#define CMIO_CDATE1       50
+#define CMIO_CCOM2        51
+#define CMIO_CDATE2       52
+#define CMIO_NSEQ         53
+#define CMIO_EFFNSEQ      54
+#define CMIO_CLEN         55
 
 static int  write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf);
 static int  read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
@@ -393,38 +395,39 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
       fprintf(fp, "\n");
       for(p = 0; p < cm->stats->np; p++)
 	{
-	  fprintf(fp, "E-LC     %-2d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[GUM_CM_LC][p]->N, cm->stats->gumAA[GUM_CM_LC][p]->L, 
+	  fprintf(fp, "E-LC     %-2d  %5d  %5ld  %10.5f  %10.5f\n", 
+		  p, cm->stats->gumAA[GUM_CM_LC][p]->N, cm->stats->gumAA[GUM_CM_LC][p]->dbsize, 
 		  cm->stats->gumAA[GUM_CM_LC][p]->mu, cm->stats->gumAA[GUM_CM_LC][p]->lambda);
-	  fprintf(fp, "E-GC     %-2d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[GUM_CM_GC][p]->N, cm->stats->gumAA[GUM_CM_GC][p]->L, 
+	  fprintf(fp, "E-GC     %-2d  %5d  %5ld  %10.5f  %10.5f\n", 
+		  p, cm->stats->gumAA[GUM_CM_GC][p]->N, cm->stats->gumAA[GUM_CM_GC][p]->dbsize, 
 		  cm->stats->gumAA[GUM_CM_GC][p]->mu, cm->stats->gumAA[GUM_CM_GC][p]->lambda);
-	  fprintf(fp, "E-LI     %-2d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[GUM_CM_LI][p]->N, cm->stats->gumAA[GUM_CM_LI][p]->L, 
+	  fprintf(fp, "E-LI     %-2d  %5d  %5ld  %10.5f  %10.5f\n", 
+		  p, cm->stats->gumAA[GUM_CM_LI][p]->N, cm->stats->gumAA[GUM_CM_LI][p]->dbsize, 
 		  cm->stats->gumAA[GUM_CM_LI][p]->mu, cm->stats->gumAA[GUM_CM_LI][p]->lambda);
-	  fprintf(fp, "E-GI     %-2d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[GUM_CM_GI][p]->N, cm->stats->gumAA[GUM_CM_GI][p]->L, 
+	  fprintf(fp, "E-GI     %-2d  %5d  %5ld  %10.5f  %10.5f\n", 
+		  p, cm->stats->gumAA[GUM_CM_GI][p]->N, cm->stats->gumAA[GUM_CM_GI][p]->dbsize, 
 		  cm->stats->gumAA[GUM_CM_GI][p]->mu, cm->stats->gumAA[GUM_CM_GI][p]->lambda);
-	  fprintf(fp, "E-CP9LV  %-2d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[GUM_CP9_LV][p]->N, cm->stats->gumAA[GUM_CP9_LV][p]->L, 
+	  fprintf(fp, "E-CP9LV  %-2d  %5d  %5ld  %10.5f  %10.5f\n", 
+		  p, cm->stats->gumAA[GUM_CP9_LV][p]->N, cm->stats->gumAA[GUM_CP9_LV][p]->dbsize, 
 		  cm->stats->gumAA[GUM_CP9_LV][p]->mu, cm->stats->gumAA[GUM_CP9_LV][p]->lambda);
-	  fprintf(fp, "E-CP9GV  %-2d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[GUM_CP9_GV][p]->N, cm->stats->gumAA[GUM_CP9_GV][p]->L, 
+	  fprintf(fp, "E-CP9GV  %-2d  %5d  %5ld  %10.5f  %10.5f\n", 
+		  p, cm->stats->gumAA[GUM_CP9_GV][p]->N, cm->stats->gumAA[GUM_CP9_GV][p]->dbsize, 
 		  cm->stats->gumAA[GUM_CP9_GV][p]->mu, cm->stats->gumAA[GUM_CP9_GV][p]->lambda);
-	  fprintf(fp, "E-CP9LF  %-2d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[GUM_CP9_LF][p]->N, cm->stats->gumAA[GUM_CP9_LF][p]->L, 
+	  fprintf(fp, "E-CP9LF  %-2d  %5d  %5ld  %10.5f  %10.5f\n", 
+		  p, cm->stats->gumAA[GUM_CP9_LF][p]->N, cm->stats->gumAA[GUM_CP9_LF][p]->dbsize, 
 		  cm->stats->gumAA[GUM_CP9_LF][p]->mu, cm->stats->gumAA[GUM_CP9_LF][p]->lambda);
-	  fprintf(fp, "E-CP9GF  %-2d  %5d  %5d  %10.5f  %10.5f\n", 
-		  p, cm->stats->gumAA[GUM_CP9_GF][p]->N, cm->stats->gumAA[GUM_CP9_GF][p]->L, 
+	  fprintf(fp, "E-CP9GF  %-2d  %5d  %5ld  %10.5f  %10.5f\n", 
+		  p, cm->stats->gumAA[GUM_CP9_GF][p]->N, cm->stats->gumAA[GUM_CP9_GF][p]->dbsize, 
 		  cm->stats->gumAA[GUM_CP9_GF][p]->mu, cm->stats->gumAA[GUM_CP9_GF][p]->lambda);
 	}
       /* currently either all EVD stats are calc'ed or none */
 
       if (cm->flags & CMH_FILTER_STATS) /* FILTER stats are only possibly valid IF EVD stats valid */
 	{
-	  fprintf(fp, "FT-LC    %d  %.5f  %d  %d  %d\n", 
+	  fprintf(fp, "FT-LC    %d  %.5f  %d  %ld  %g  %d  %d\n", 
 		  cm->stats->hfiA[FTHR_CM_LC]->ncut,  cm->stats->hfiA[FTHR_CM_LC]->F,
 		  cm->stats->hfiA[FTHR_CM_LC]->N,     cm->stats->hfiA[FTHR_CM_LC]->dbsize,
+		  cm->stats->hfiA[FTHR_CM_LC]->beta,  cm->stats->hfiA[FTHR_CM_LC]->use_qdb,
 		  cm->stats->hfiA[FTHR_CM_LC]->always_better_than_Smax);
 	  fprintf(fp, "         ");
 	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_LC]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_LC]->cm_E_cut[i]);
@@ -433,9 +436,10 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
 	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_LC]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_LC]->fwd_E_cut[i]);
 	  fprintf(fp, "\n");
 
-	  fprintf(fp, "FT-LI    %d  %.5f  %d  %d  %d\n", 
+	  fprintf(fp, "FT-LI    %d  %.5f  %d  %ld  %g  %d  %d\n", 
 		  cm->stats->hfiA[FTHR_CM_LI]->ncut,  cm->stats->hfiA[FTHR_CM_LI]->F,
-		  cm->stats->hfiA[FTHR_CM_LI]->N,      cm->stats->hfiA[FTHR_CM_LI]->dbsize,
+		  cm->stats->hfiA[FTHR_CM_LI]->N,     cm->stats->hfiA[FTHR_CM_LI]->dbsize,
+		  cm->stats->hfiA[FTHR_CM_LI]->beta,  cm->stats->hfiA[FTHR_CM_LI]->use_qdb,
 		  cm->stats->hfiA[FTHR_CM_LI]->always_better_than_Smax);
 	  fprintf(fp, "         ");
 	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_LI]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_LI]->cm_E_cut[i]);
@@ -444,9 +448,10 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
 	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_LI]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_LI]->fwd_E_cut[i]);
 	  fprintf(fp, "\n");
 
-	  fprintf(fp, "FT-GC    %d  %.5f  %d  %d  %d\n", 
+	  fprintf(fp, "FT-GC    %d  %.5f  %d  %ld  %g  %d  %d\n", 
 		  cm->stats->hfiA[FTHR_CM_GC]->ncut,  cm->stats->hfiA[FTHR_CM_GC]->F,
-		  cm->stats->hfiA[FTHR_CM_GC]->N,      cm->stats->hfiA[FTHR_CM_GC]->dbsize,
+		  cm->stats->hfiA[FTHR_CM_GC]->N,     cm->stats->hfiA[FTHR_CM_GC]->dbsize,
+		  cm->stats->hfiA[FTHR_CM_GC]->beta,  cm->stats->hfiA[FTHR_CM_GC]->use_qdb,
 		  cm->stats->hfiA[FTHR_CM_GC]->always_better_than_Smax);
 	  fprintf(fp, "         ");
 	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_GC]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_GC]->cm_E_cut[i]);
@@ -455,9 +460,10 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
 	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_GC]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_GC]->fwd_E_cut[i]);
 	  fprintf(fp, "\n");
 
-	  fprintf(fp, "FT-GI    %d  %.5f  %d  %d  %d\n", 
+	  fprintf(fp, "FT-GI    %d  %.5f  %d  %ld  %g  %d  %d\n", 
 		  cm->stats->hfiA[FTHR_CM_GI]->ncut,  cm->stats->hfiA[FTHR_CM_GI]->F,
-		  cm->stats->hfiA[FTHR_CM_GI]->N,      cm->stats->hfiA[FTHR_CM_GI]->dbsize,
+		  cm->stats->hfiA[FTHR_CM_GI]->N,     cm->stats->hfiA[FTHR_CM_GI]->dbsize,
+		  cm->stats->hfiA[FTHR_CM_GI]->beta,  cm->stats->hfiA[FTHR_CM_GI]->use_qdb,
 		  cm->stats->hfiA[FTHR_CM_GI]->always_better_than_Smax);
 	  fprintf(fp, "         ");
 	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_GI]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_GI]->cm_E_cut[i]);
@@ -770,7 +776,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	cm->stats->gumAA[gum_mode][p]->N = atoi(tok);
 	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	if (! is_integer(tok))                                     goto FAILURE;
-	cm->stats->gumAA[gum_mode][p]->L = atoi(tok);
+	cm->stats->gumAA[gum_mode][p]->dbsize = (long) atoi(tok);
 	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	if (! is_real(tok))                                    goto FAILURE;
 	cm->stats->gumAA[gum_mode][p]->mu = atof(tok);
@@ -809,7 +815,13 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	cm->stats->hfiA[fthr_mode]->N = atoi(tok);
 	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	if (! is_integer(tok))                                 goto FAILURE;
-	cm->stats->hfiA[fthr_mode]->dbsize = atoi(tok);
+	cm->stats->hfiA[fthr_mode]->dbsize = (long) atoi(tok);
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                                    goto FAILURE;
+	cm->stats->hfiA[fthr_mode]->beta = atof(tok);
+	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                                 goto FAILURE;
+	cm->stats->hfiA[fthr_mode]->use_qdb = atoi(tok);
 	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	if (! is_integer(tok))                                 goto FAILURE;
 	cm->stats->hfiA[fthr_mode]->always_better_than_Smax = atoi(tok);
@@ -1080,7 +1092,7 @@ write_binary_cm(FILE *fp, CM_t *cm, char *errbuf)
 	  for(p = 0; p < cm->stats->np; p++)
 	    {
 	      tagged_fwrite(CMIO_GUMN,      &cm->stats->gumAA[i][p]->N,      sizeof(int),    1, fp);
-	      tagged_fwrite(CMIO_GUML,      &cm->stats->gumAA[i][p]->L,      sizeof(int),    1, fp);
+	      tagged_fwrite(CMIO_GUML,      &cm->stats->gumAA[i][p]->dbsize, sizeof(long),    1, fp);
 	      tagged_fwrite(CMIO_GUMMU,     &cm->stats->gumAA[i][p]->mu,     sizeof(double),  1, fp);
 	      tagged_fwrite(CMIO_GUMLAMBDA, &cm->stats->gumAA[i][p]->lambda, sizeof(double),  1, fp);
 	    }
@@ -1102,7 +1114,9 @@ write_binary_cm(FILE *fp, CM_t *cm, char *errbuf)
 	  tagged_fwrite(CMIO_FTHRNCUT,   &cm->stats->hfiA[i]->ncut,                    sizeof(int),   1, fp);      
 	  tagged_fwrite(CMIO_FTHRF,      &cm->stats->hfiA[i]->F,                       sizeof(float), 1, fp);      
 	  tagged_fwrite(CMIO_FTHRN,      &cm->stats->hfiA[i]->N,                       sizeof(int),   1, fp);      
-	  tagged_fwrite(CMIO_FTHRDB,     &cm->stats->hfiA[i]->dbsize,                  sizeof(int),   1, fp);      
+	  tagged_fwrite(CMIO_FTHRDB,     &cm->stats->hfiA[i]->dbsize,                  sizeof(long),  1, fp);      
+	  tagged_fwrite(CMIO_FTHRBETA,   &cm->stats->hfiA[i]->beta,                    sizeof(double), 1, fp);      
+	  tagged_fwrite(CMIO_FTHRUSEQDB, &cm->stats->hfiA[i]->use_qdb,                 sizeof(int),  1, fp);      
 	  tagged_fwrite(CMIO_FTHRABTS,   &cm->stats->hfiA[i]->always_better_than_Smax, sizeof(int),   1, fp);      
 	  tagged_fwrite(CMIO_FTHRCMECUT,  cm->stats->hfiA[i]->cm_E_cut,                sizeof(float), cm->stats->hfiA[i]->ncut, fp);      
 	  tagged_fwrite(CMIO_FTHRFWDECUT, cm->stats->hfiA[i]->fwd_E_cut,               sizeof(float), cm->stats->hfiA[i]->ncut, fp);      
@@ -1231,8 +1245,8 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	{
 	  for(p = 0; p < cm->stats->np; p++)
 	    {
-	      if (! tagged_fread(CMIO_GUMN,     (void *) &(cm->stats->gumAA[i][p]->N),     sizeof(int),   1, fp)) goto FAILURE;
-	      if (! tagged_fread(CMIO_GUML,     (void *) &(cm->stats->gumAA[i][p]->L),     sizeof(int),   1, fp)) goto FAILURE;
+	      if (! tagged_fread(CMIO_GUMN,     (void *) &(cm->stats->gumAA[i][p]->N),     sizeof(int),    1, fp)) goto FAILURE;
+	      if (! tagged_fread(CMIO_GUML,     (void *) &(cm->stats->gumAA[i][p]->dbsize),sizeof(long),   1, fp)) goto FAILURE;
 	      if (! tagged_fread(CMIO_GUMMU,    (void *) &(cm->stats->gumAA[i][p]->mu),    sizeof(double), 1, fp)) goto FAILURE;
 	      if (! tagged_fread(CMIO_GUMLAMBDA,(void *) &(cm->stats->gumAA[i][p]->lambda),sizeof(double), 1, fp)) goto FAILURE;
 	      cm->stats->gumAA[i][p]->is_valid = TRUE; /* set valid flag */
@@ -1250,7 +1264,9 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  if (! tagged_fread(CMIO_FTHRNCUT,    (void *) &(cm->stats->hfiA[i]->ncut),                    sizeof(int),   1, fp)) goto FAILURE;
 	  if (! tagged_fread(CMIO_FTHRF,       (void *) &(cm->stats->hfiA[i]->F),                       sizeof(float), 1, fp)) goto FAILURE;
 	  if (! tagged_fread(CMIO_FTHRN,       (void *) &(cm->stats->hfiA[i]->N),                       sizeof(int),   1, fp)) goto FAILURE;
-	  if (! tagged_fread(CMIO_FTHRDB,      (void *) &(cm->stats->hfiA[i]->dbsize),                  sizeof(int),   1, fp)) goto FAILURE;
+	  if (! tagged_fread(CMIO_FTHRDB,      (void *) &(cm->stats->hfiA[i]->dbsize),                  sizeof(long),  1, fp)) goto FAILURE;
+	  if (! tagged_fread(CMIO_FTHRBETA,    (void *) &(cm->stats->hfiA[i]->beta),                    sizeof(double),1, fp)) goto FAILURE;
+	  if (! tagged_fread(CMIO_FTHRUSEQDB,  (void *) &(cm->stats->hfiA[i]->use_qdb),                 sizeof(int),   1, fp)) goto FAILURE;
 	  if (! tagged_fread(CMIO_FTHRABTS,    (void *) &(cm->stats->hfiA[i]->always_better_than_Smax), sizeof(int),   1, fp)) goto FAILURE;
 	  ESL_ALLOC(cm->stats->hfiA[i]->cm_E_cut,  sizeof(float) * cm->stats->hfiA[i]->ncut);
 	  ESL_ALLOC(cm->stats->hfiA[i]->fwd_E_cut, sizeof(float) * cm->stats->hfiA[i]->ncut);

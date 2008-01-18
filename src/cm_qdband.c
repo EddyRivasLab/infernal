@@ -1306,3 +1306,49 @@ qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_l
   cm_Fail("Memory allocation error.");
 }
 
+
+/* Function: cm_GetNCalcsPerResidueForGivenBeta()
+ * Date:     EPN, Thu Jan 17 05:54:51 2008
+ * 
+ * Returns: eslOK on success, eslEINCOMPAT on contract violation.
+ *          <ret_cm_ncalcs_per_res> set as millions of DP calculations 
+ *          per residue using beta tail loss for QDB. If no_qdb == TRUE,
+ *          without using QDBs, but still get W from QDB calc with beta.
+ *          <ret_W> set as W from QDB calc (dmax[0]) with beta. 
+ */
+int
+cm_GetNCalcsPerResidueForGivenBeta(CM_t *cm, char *errbuf, int no_qdb, double beta, float *ret_cm_ncalcs_per_res, int *ret_W)
+{
+  int    status;
+  int    safe_windowlen;
+  float  cm_ncalcs_per_res;
+  int   *dmin, *dmax;
+  int    W;
+  
+  if(ret_cm_ncalcs_per_res == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_GetNCalcsPerResForGivenBeta(), ret_cm_ncalcs_per_res == NULL.");
+  if(ret_W == NULL)                 ESL_FAIL(eslEINCOMPAT, errbuf, "cm_GetNCalcsPerResForGivenBeta(), ret_W == NULL.");
+
+  /* even if no_qdb == TRUE, use QDB calc with beta tail loss to get W */
+  safe_windowlen = cm->clen * 2;
+  while(!(BandCalculationEngine(cm, safe_windowlen, beta, FALSE, &(dmin), &(dmax), NULL, NULL))) {
+    free(dmin);
+    free(dmax);
+    safe_windowlen *= 2;
+    if(safe_windowlen > (cm->clen * 1000))
+      cm_Fail("initialize_cm_for_filter_stats(), safe_windowlen big: %d\n", safe_windowlen);
+  }
+  W = dmax[0];
+  if(no_qdb) { /* count millions of DP calcs per resiude for non-banded search, with W as just calculated with beta (NOT cm->W) */
+    if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*W, NULL, NULL, W, TRUE,  NULL, &(cm_ncalcs_per_res))) != eslOK) return status;
+  }
+  else {
+    if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*W, dmin, dmax, W, TRUE,  NULL, &cm_ncalcs_per_res)) != eslOK) cm_Fail(errbuf);
+  }
+  free(dmin);
+  free(dmax);
+
+  *ret_cm_ncalcs_per_res = cm_ncalcs_per_res;
+  *ret_W = W;
+
+  return eslOK;
+}

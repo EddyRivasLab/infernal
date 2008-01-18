@@ -4191,7 +4191,7 @@ int rsearch_CYKScan (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, 
  *           ret_vcalcs- RETURN: [0..v..M-1] number of Millions of DP calcs per residue for scanning with sub-CM at v
  *           ret_calcs - RETURN: number of Millions of calcs per residue to search L residues with full model (ret_vcalcs[0]).
  *
- * Returns:  eslOK on success
+ * Returns:  eslOK
  */
 int
 cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W, int correct_for_first_W, float **ret_vcalcs, float *ret_calcs)
@@ -4208,7 +4208,7 @@ cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W
   int       jfirst;             /* first j to consider (1 unless correct_for_first_W) */
   int       Leff;               /* effective L, this is L unless correct_for_first_W  */
 
-  if ((W > L) && (correct_for_first_W)) cm_Fail("gross misuse of cm_CountSearchDPCalcs(), W: %d > L: %d and correct_for_first_W is TRUE.\n", W, L);
+  if ((W > L) && (correct_for_first_W)) ESL_FAIL(eslFAIL, errbuf, "gross misuse of cm_CountSearchDPCalcs(), W: %d > L: %d and correct_for_first_W is TRUE.\n", W, L);
 
   if(dmin != NULL && dmax != NULL) do_banded = TRUE;
   if (W > L) W = L; 
