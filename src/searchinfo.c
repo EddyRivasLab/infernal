@@ -681,8 +681,8 @@ void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConse
   if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("print_results(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
   if((!do_top) && (!do_bottom)) cm_Fail("print_results(), do_top FALSE, and do_bottom FALSE, what's the point?\n");
 
-  do_stats = (si->cutoff_type[si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
-  if(do_stats  && !(cm->flags & CMH_GUMBEL_STATS)) cm_Fail("print_results(), stats wanted but CM has no Gumbel stats\n");
+  if((si->cutoff_type[si->nrounds] == E_CUTOFF)  && !(cm->flags & CMH_GUMBEL_STATS)) cm_Fail("print_results(), stats wanted but CM has no Gumbel stats\n");
+  do_stats = (cm->flags & CMH_GUMBEL_STATS) ? TRUE : FALSE;
 
   if(do_stats) { /* determine Gumbel mode to use */
     CM2Gumbel_mode(cm, cm->search_opts, &cm_gum_mode, &cp9_gum_mode);
