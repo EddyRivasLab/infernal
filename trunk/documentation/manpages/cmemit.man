@@ -1,0 +1,179 @@
+.TH "cmemit" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
+
+.SH NAME
+.TP 
+cmemit - generate sequences from a covariance model
+
+.SH SYNOPSIS
+.B cmemit
+.I [options]
+.I cmfile
+.I seqfile
+
+.SH DESCRIPTION
+
+.B cmemit
+reads the covariance model(s) (CMs) in
+.I cmfile
+and generates a number of sequences from the CM(s);
+or if the -c option is selected, generates a single majority-rule
+consensus. This can be useful for various application in which one
+needs a simulation of sequences consistent with a sequence family
+consensus. By default,
+.B cmemit 
+generates 10 sequences and outputs them in FASTA (unaligned) format.
+
+.SH GENERAL OPTIONS
+
+.TP
+.B -h
+Print brief help; includes version number and summary of
+all options, including expert options.
+
+.TP
+.BI -o " <f>" 
+Save the synthetic sequences to file 
+.I <f> 
+rather than writing them to stdout. 
+
+.TP
+.BI -n " <n>"
+Generate 
+.I <n>
+sequences. Default is 10. 
+
+.TP
+.B -u
+Write the generated sequences in unaligned format (FASTA). This is the
+default, so this option is probably useless.
+
+.TP
+.B -a
+Write the generated sequences in an aligned format (STOCKHOLM) with
+consensus structure annotation rather than FASTA. 
+
+.TP
+.B -c
+Predict a single majority-rule consensus sequence instead of sampling
+sequences from the CM\'s probability distribution. Highly conserved
+residues (base paired residues that score higher than 3.0 bits, or
+single stranded residues that score higher than 1.0 bits) are shown in
+upper case; others are shown in lower case.
+
+.TP
+.B -l
+Configure the CMs into local mode before emitting sequences. See the
+User's Guide for more information on locally configured CMs.
+
+.TP
+.BI -s " <n>"
+Set the random seed to 
+.I <n>, 
+where <n> is a positive integer. The default is to use time() to
+generate a different seed for each run, which means that two different
+runs of 
+.B cmemit 
+on the same CM will give different
+results. You can use this option to generate reproducible results.
+
+.TP
+.B -v
+Be verbose. Print the seed used by the random number generator and the
+@PACKAGE@ banner. For convenience 
+.B cmemit 
+prints only sequence data by default.
+
+.TP
+.B --iins
+Turn off the default 
+behavior of setting all CM insert emission scores to 0.0 bits prior to
+emitting sequences. This default behavior originated in 
+.B cmsearch 
+to avoid high-scoring hits to low complexity sequence favored by high 
+insert state emission scores, and is applied to
+.B cmemit
+for consistency. When 
+.B --iins
+is enabled the insert emission scores are read from
+.I cmfile
+that were calculated in 
+.B cmbuild 
+and are unmodified prior to emitting sequences.
+
+.SH EXPERT OPTIONS
+
+.TP
+.BI --rna
+Specify that the emitted sequences be output as RNA sequences. This is true by default.
+
+.TP
+.BI --dna
+Specify that the emitted sequences be output as DNA sequences. By default,
+the output alphabet is RNA. 
+
+.TP
+.BI --tfile " <f>"
+Dump tabular sequence parsetrees (tracebacks) for each 
+emitted sequence to file 
+.I <f>.
+Primarily useful for debugging.
+
+.TP
+.BI --exp " <x>"
+Exponentiate the emission and transition probabilities of the CM by
+.I <x>
+and then renormalize those distributions before emitting
+sequences. This option changes the CM probability distribution of
+parsetrees relative to default. With 
+.I <x> 
+less than 1.0 the emitted sequences will tend to have
+lower bit scores upon alignment to the CM with
+.B cmalign.
+With <x> greater than 1.0, the emitted sequences will tend
+to have higher bit scores upon alignment to
+the CM. This bit score difference will increase as <x> moves
+further away from 1.0 in either direction. 
+If <x> equals 1.0, this option has no effect relative to default.
+This option is useful for generating sequences that are either 
+difficult (
+.I <x> 
+< 1.0) or easy (
+.I <x> 
+> 1.0) for the CM to
+distinguish as homologous from background.
+
+.TP
+.BI --begin " <n>"
+Truncate the resulting alignment by removing all residues before consensus column 
+.I <n>,
+where <n> is a positive integer no greater than the consensus length of
+the CM. Must be used in combination with 
+.B --end 
+and either 
+.B -a 
+or
+.B --hmmbuild.
+
+.TP
+.BI --end " <n>"
+Truncate the resulting alignment by removing all residues after consensus column 
+.I <n>,
+where <n> is a positive integer no greater than the consensus length of
+the CM. Must be used in combination with 
+.B --begin 
+and either 
+.B -a 
+or 
+.B --hmmbuild.
+
+.TP
+.B --hmmbuild
+Use the generated sequences to train a CM Plan 9 maximum-likelihood
+HMM without using pseudo-counts. Print the counts and normalized
+probabilities of the HMM. Primarily useful for debugging.
+
+
+
+
+
+

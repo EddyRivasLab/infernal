@@ -1,0 +1,392 @@
+.TH "cmscore" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
+
+.SH NAME
+.TP 
+cmscore - align and score one or more sequences to a CM
+
+.SH SYNOPSIS
+.B cmscore
+.I [options]
+.I cmfile
+.I seqfile
+
+.SH DESCRIPTION
+
+.B cmscore
+uses the
+covariance model (CM) in
+.I cmfile
+to align and score the sequences in
+.I seqfile,
+and output summary statistics on timings and scores.
+.B cmscore 
+is a testbed 
+for new CM alignment algorithms, and it is also used by the testsuite.
+It is not intended to be particularly useful in the real world. Documentation
+is provided for completeness, and to aid our own memories.
+
+.PP
+.B cmscore
+aligns the sequence(s) in
+.I seqfile 
+using two 
+alignment algorithms and compares the scores and timings of each algorithm. By
+default the two algorithms compared are the divide and conquer (D&C) CYK algorithm 
+(SR Eddy, BMC Bioinformatics 3:18, 2002), and the HMM banded standard
+CYK algorithm. 
+When the
+.B --std
+option is enabled D&C CYK is compared with the standard CYK alignment algorithm.
+In this case, because both algorithms should find the optimal
+alignment the parsetree scores should be nearly identical (within 0.01
+bits), if this is not the case for any sequence
+.B cmscore
+exits and prints an error message. 
+When the
+.B --hmmviterbi 
+option is enabled D&C CYK is compared with Viterbi alignment to a CM
+Plan 9 HMM constructed to be maximally similar to the CM. 
+
+While non-banded CYK variants are guaranteed to find the optimal
+alignment and score of each sequence, HMM banded CYK sacrifices
+this guarantee for acceleration. The level of acceleration can be
+controlled by the tau parameter, which is set with the
+.BI --tau " <x>"
+option. This is described in more detail in the man page for
+.B cmalign, 
+but in short, 
+.I <x>
+is a rough estimate at the probability that the optimal alignment will be
+missed. The greater
+.I <x> 
+is, the greater the acceleration, but the greater the chance of
+missing the optimal alignment. By default tau is set as 1E-7.
+.B cmscore
+is useful for testing for values of tau that give the best
+trade-off between acceleration versus accuracy.
+To make this testing easier, multiple tau values can be tested within
+a single cmscore call. The 
+.BI --taus " <x>"
+and
+.BI --taue " <x>"
+option combination allow the user to specify a beginning tau
+value and an ending tau value. For example, 
+.BI --taus " 3"
+and
+and
+.BI --taue " 5"
+would first align the sequences in 
+.I seqfile
+with non-banded D&C CYK, and then perform 3 additional HMM banded alignments, first with
+tau=1E-3, next with tau=1E-4 and finally with
+tau=1E-5. Currently, only
+values of 1E-<x> can be used. Summary statistics on timings and how
+often the optimal alignment is missed for each value or tau are
+printed to stdout.
+
+.PP
+When comparing the non-banded standard CYK and D&C CYK
+algorithms with the 
+.B --std
+option, the two parse trees
+should usually be identical for any sequence, because the optimal alignment
+score is guaranteed. However, there can be cases of ties, where two or
+more different parse trees have identical scores. In such cases, it is
+possible for the two parse trees to differ. The parse tree selected
+as "optimal" from amongst the ties is arbitrary, dependent on order of
+evaluation in the DP traceback, and the order of evaluation for D&C
+vs. standard CYK is different.  Thus, in its testsuite role,
+.B cmscore 
+checks that the scores are within 0.01 bits of each other, but
+does not check that the parse trees are absolutely identical.
+
+.PP
+Currently, the sequence file must be in FASTA format.
+
+.PP
+The sequences are treated as single stranded RNAs; that is,
+only the given strand of each sequence is aligned and scored, and
+no reverse complementing is done.
+
+.PP
+CM files are profiles of RNA consensus secondary structure. A
+CM file is produced by the 
+.B cmbuild 
+program, from a given RNA sequence alignment of known 
+consensus structure.
+
+.SH OPTIONS
+
+.TP
+.B -h
+Print brief help; includes version number and summary of
+all options, including expert options.
+
+.TP
+.BI -n <n>
+Set the number of sequences to generate and align to 
+.I <n>.
+This option is incompatible with the
+.B --infile
+option.
+
+.TP
+.B -l
+Turn on the local alignment algorithm, which allows the alignment
+to span two or more subsequences if necessary (e.g. if the structures
+of the query model and target sequence are only partially shared),
+allowing certain large insertions and deletions in the structure
+to be penalized differently than normal indels.
+The default is to globally align the query model to the target
+sequences.
+
+.TP
+.B -l
+Turn on the local alignment algorithm, which allows the alignment
+to span two or more subsequences if necessary (e.g. if the structures
+of the query model and target sequence are only partially shared),
+allowing certain large insertions and deletions in the structure
+to be penalized differently than normal indels.
+The default is to globally align the query model to the target
+sequences.
+
+.TP
+.BI -s " <n>"
+Set the random seed to 
+.I <n>, 
+where <n> is a positive integer. The default is to use time() to
+generate a different seed for each run, which means that two different
+runs of 
+.B cmscore
+on the same CM will give different
+results. You can use this option to generate reproducible results.
+The random number generator is used to generate sequences to score,
+so 
+.B -s
+is incompatible with the
+.B --infile 
+option which supplies the sequences to score in an input file.
+
+.TP
+.B -a
+Print individual timings and score comparisons for each sequence in 
+.I seqfile. 
+By default only summary statistics are printed.
+
+.TP
+.B --iins
+Turn off the default 
+behavior of setting all CM insert emission scores to 0.0 bits prior to
+alignment. This default behavior originated in 
+.B cmsearch 
+to avoid high-scoring hits to low complexity sequence favored by high 
+insert state emission scores and is applied to
+.B cmalign
+for consistency. When 
+.B --iins
+is enabled the insert emission scores are read from
+.I cmfile
+that were calculated in 
+.B cmbuild 
+and are unmodified prior to emitting sequences.
+
+.TP
+.BI --sub
+Turn on the sub model construction and alignment procedure. For each
+sequence, an HMM is first used to predict the model start and end
+consensus columns, and a new sub CM is constructed that only models
+consensus columns from start to end. The sequence is then aligned to this sub CM.
+This option is useful for aligning sequences that are known to
+truncated, non-full length sequences.
+This "sub CM" procedure is not the same as the "sub CMs" described by
+Weinberg and Ruzzo.
+When used in combination with 
+.B --tfile
+the parsetree printed is not the sub CM parsetree, but rather the sub
+CM parstree mapped onto the topology of the original CM. This mapped
+parsetree will likely have a different score (sometimes much worse)
+than the sub CM parsetree, both of those scores are printed to the
+parsetree file for each sequence.
+
+.TP
+.BI --mxsize " <x>"
+Set the maximum allowable DP matrix size to 
+.I <x>
+megabytes. By default this size is 256 Mb. 
+This should be large enough for the most alignments, 
+however if it is not 
+.B cmscore
+will exit prematurely and report an error message that 
+the matrix exceeded it's maximum allowable size. In this case, the
+.B --mxsize 
+can be used to raise the limit, or if
+.B --std 
+is enabled, the 
+.B --scoreonly 
+option will solve the memory issue.
+This memory error is most likely to occur when the
+.B --std
+option is used without the
+.B --scoreonly
+option, but can still occur when
+.B --std
+is not used. 
+
+.TP
+.BI --mpi
+Run as an MPI parallel program. This option will only be available if
+This option will only be available if @PACKAGE@ has been configured
+and built with the "--enable-mpi" flag (see User's Guide for details).
+
+.SH EXPERT OPTIONS
+
+.TP
+.B --emit
+Generate sequences to score by sampling from the CM. 
+This option is on by default. The number of sequences generated is
+10 by default but can be changed with the 
+.B -n
+option. The sequences generated from the CM can be saved to an output file
+in FASTA format with the 
+.B --outfile
+option.
+
+.TP
+.B --random
+Generate sequences to score by sampling from the CMs null
+distribution. This option turns the 
+.B --emit
+option off.
+By default the CM distribution will be 0.25 for each of the
+four RNA nucleotides, but it may be different if the
+.B --null
+option was used when
+.B cmbuild 
+created the 
+.I cmfile.
+The length of the sequences generated is sampled from the length
+distribution of the CM. The average length of the random sequences 
+will be the consensus length of the RNA family modelled by
+the CM (or very close to it).
+The number of sequences generated is
+10 by default but can be changed with the 
+.B -n
+option. The random sequences generated can be saved to an output file
+in FASTA format with the 
+.B --outfile
+option.
+
+.TP
+.BI --infile <f>
+Sequences to score are read from the file
+.I <f>.
+All the sequences from 
+.I <f> are read and scored, the
+.B -n
+and
+.B -s 
+options are incompatible with
+.B --infile.
+
+
+.TP
+.BI --outfile <f>
+Save generated sequences that are scored to the file
+.I <f>
+in FASTA format.
+This option is incompatible with the 
+.B --infile
+option.
+
+.TP 
+.B --hbanded
+Specify that the second stage alignment algorithm be HMM banded CYK. 
+This option is on by default. For more information on this option, 
+see the description of the
+.B --hbanded 
+option in the man page for 
+.B cmalign. 
+
+.TP
+.BI --tau " <x>"
+For stage 2 alignment, set the tail loss probability used during HMM band calculation to
+.I <x>. 
+This is the amount of probability mass within the HMM posterior
+probabilities that is considered negligible. The default value is 1E-7.
+In general, higher values will result in greater acceleration, but
+increase the chance of missing the optimal alignment due to the HMM
+bands.
+
+.TP
+.B --hsafe
+For stage 2 HMM banded alignment,
+realign any sequences with a negative alignment
+score using non-banded CYK to guarantee finding the optimal
+alignment. 
+
+.TP
+.B --nonbanded
+Specify that the second stage alignment algorithm be standard,
+non-banded, non-D&C CYK. When 
+.B --nonbanded
+is enabled, the program fails with a non-zero exit code and prints an
+error message if the parsetree
+score for any sequence from stage 1 D&C alignment and stage 2
+alignment differs by more than 0.01 bits. In theory, this should never
+happen as both algorithms are guaranteed to determine the optimal parsetree.
+For larger RNAs (more than 300 residues) if memory is limiting,
+.B --nonbanded 
+should be used in combination with 
+.B --scoreonly.
+
+.TP
+.B --scoreonly
+With 
+.B --nonbanded
+during the second stage standard non-banded CYK alignment, use the  "score only" variant 
+of the algorithm to save memory, and don't recover a parse tree. 
+
+.TP
+.B --hmmviterbi
+Specify that the second stage alignment algorithm be Viterbi to a CM
+Plan 9 HMM. 
+.TP
+.BI --taus " <n>"
+Specify the first alignment algorithm as non-banded D&C CYK, and
+multiple stages of HMM banded CYK alignment. The first HMM banded
+alignment will use tau=1E-<x>, which will be the highest value of tau
+used.  Must be used in combination with
+.B --taue.
+
+.TP
+.BI --taue " <n>"
+Specify the first alignment algorithm as non-banded D&C CYK, and
+multiple stages of HMM banded CYK alignment. The final HMM banded
+alignment will use tau=1E-<x>, which will be the lowest value of tau
+used.  Must be used in combination with
+.B --taus.
+
+
+.TP
+.BI --regress " <f>"
+Save regression test information to a file
+.I <f>. 
+This is part of the automated testing procedure at each release. 
+
+.TP
+.BI --tfile " <f>"
+Print the parsetrees for each alignment of each sequence to file
+.I <f>.
+
+.TP
+.BI --stall
+Stall the program immediately after starting up to allow a user
+to attach a debugging tool such as gdb to the process.
+Developed for debugging under MPI parallelization, which is turned on
+with the 
+.B --mpi
+option.  This option will only be available if @PACKAGE@ has been configured
+and built with the "--enable-mpi" flag (see User's Guide for details).
+
+
+

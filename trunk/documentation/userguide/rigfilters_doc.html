@@ -1,0 +1,106 @@
+<html>
+	<head>
+		<title>README for cm2hmm</title></head>
+	<body>
+		<H1>README for cm2hmm</H1>
+		<P>This program implements the techniques described in&nbsp;Z. Weinberg and W.L. 
+			Ruzzo (2004) "Faster genome annotation of non-coding RNA families without loss 
+			of accuracy", in <EM>Proc. Eighth Annual International Conference on Research in 
+				Computational Molecular Biology (RECOMB),</EM> ACM Press, 243-251.</P>
+		<H2>
+			<H2>Licensing</H2>
+		</H2>
+		<P>The source code for cm2hmm and cm2hmmsearch&nbsp;is 
+			copyright 2004 by Zasha Weinberg and distributed under the BSD license.&nbsp;
+		</P>
+		<P>The source depends on the cfsqp 3rd-party library.&nbsp; CFSQP is 
+			distributed by <A href="http://www.aemdesign.com">www.aemdesign.com</A>.&nbsp; 
+			It is not freely available, but is available on request for free&nbsp;for 
+			academic institutions.</P>
+		<H2>Installation</H2>
+		<P>Installation is handled as an integrated part of the Infernal package.</P>
+		<P>To include rigorous filters when building Infernal, first configure the package</P>
+		<pre>./configure --with-rigfilters --with-cfsqp=/path/to/cfsqp</pre>
+		<P>The first option specifies that cm2hmm should be compiled (off by default), and the 
+			second specifies the location of the cfsqp source code.  Alternatively, you may
+			copy the source code into infernal-x.xx/rigfilters/cfsqp/ and omit the second
+			option.</P>
+		<P>Following a successful configure, type <pre>make</pre></P>
+		<H2>Usage</H2>
+		<P><tt>cm2hmm</tt> creates a compact- or expanded-type HMM from a given CM.&nbsp; 
+			<tt>cm2hmmsearch</tt> searches a FASTA sequence file using a CM and profile HMM 
+			rigorous filters created using cm2hmm.&nbsp; Both programs display simple usage 
+			instructions when run without any parameters.</P>
+		<P> The input format for cm2hmm is:</P>
+		<pre>
+cm2hmm &lt;input CM file name&gt; &lt;output HMM file name&gt; &lt;0th-order Markov model specification&gt; &lt;HMM type &amp; output format&gt; &lt;solver specification&gt;
+        &lt;input CM file name&gt; : file name of a CM in Infernal format.
+	&lt;output HMM file name&gt; : file name of HMM to create.
+        &lt;0th-order Markov model specification&gt; : one of the following:
+                uniform : use a uniform 0th-order model (all nucleotides have probability 0.25)
+                gc &lt;fraction&gt; : the G+C content is &lt;fraction&gt;, a number from 0 to 1.
+                file &lt;file name&gt; : load it from a file (logic to create these files from an input sequence may or may not be implemented in distribution.
+        &lt;HMM type &amp; output format&gt; : one of the following:
+                compact : create a compact-type profile HMM in the default text format.
+                expanded : create an expanded-type profile HMM in the default text format.
+        &lt;solver-specification&gt; : one option currently:
+		cfsqp &lt;B&gt; &lt;C&gt; : use CFSQP, sending solver parameters B&amp;C.  &lt;B&gt;=0, &lt;C&gt;=1 are reasonable parameters.  Refer to the CFSQP manual for details.
+		</pre>
+		<P>The input format for cm2hmmsearch is:</P>
+		<pre>
+cm2hmmsearch &lt;window len&gt; &lt;score threshold&gt; &lt;CM file name&gt; &lt;compact profile HMM file name&gt; &lt;expanded profile HMM file name&gt; &lt;sequence file&gt; &lt;run CM?&gt;
+        &lt;window len&gt; : window length parameter for CM scan.
+        &lt;score threshold&gt; : hits below this threshold will be ignored (and likely filtered out by the profile HMMs).
+        &lt;CM file name&gt; : file name of a CM in Infernal format.
+        &lt;compact profile HMM file name&gt; : name of a profile HMM to do filtering, or "-" (a single dash) to not use this HMM.  Although this HMM is presumed to be compact type, this is not enforced.
+	&lt;expanded profile HMM file name&gt; : similar idea to previous field, but for the expanded profile HMM.
+        &lt;sequence file&gt; : name of a sequence file in FASTA format.
+        &lt;run CM?&gt; : if "0" do NOT actually run the CM, just do the filtering and report the filtering fraction.  If "1", run the CM to find hits.
+		</pre>
+		<P>Here's an example of creating both compact- and expanded-type HMMs for RF00095, 
+			and scanning the <EM>Pyrococcus abyssi</EM> genome.</P>
+		<P>From infernal-x.xx/rigfilters/cm2hmm, enter the following commands (which each take a minute or so to complete):</P>
+		<tt>
+			<P>cm2hmm data/RF00095.cm data/RF00095_compact.hmm file data/Ecoli_0mm.mm 
+				compact cfsqp 0 1</P>
+			<P>cm2hmm data/RF00095.cm data/RF00095_expanded.hmm file 
+				data/Ecoli_0mm.mm&nbsp;expanded cfsqp 0 1</P>
+			<P>cm2hmmsearch 150 23.5 data/RF00095.cm data/RF00095_compact.hmm 
+				data/RF00095_expanded.hmm data/AL096836.fna 1</P>
+		</tt>
+		<P>The first two commands create the HMMs given the CM in data/RF00095.cm.&nbsp; 
+			They are both optimized based on a 0th-order Markov model of the <EM>E. coli</EM>
+			K-12 genome.&nbsp; The last command uses these HMMs to accelerate a search of 
+			the <EM>Pyrococcus abyssi</EM>&nbsp;genome (data/AL096836.fna).&nbsp; The 
+			search outputs the family members found in basically the same format as 
+			Infernal.&nbsp; An important new piece of information is the 'frac let thru so 
+			far', which gives the filtering fraction measured on this genome.&nbsp; The 
+			reported filtering fraction is for the 2nd HMM, i.e. the expanded-type 
+			one.&nbsp; (2d-fracLetsThru is a measure of the filtering fraction that 
+			attempts to reflect the fact that the dynamic programming algorithm for CMs has 
+			an extra dimension, so the filtering fraction is a somewhat pessimistic 
+			estimate of the actual speed-up).
+		</P>
+		<H3>What 0th-order Markov model to use?</H3>
+		<P>The choice of Markov model in the infinite-length forward algorithm does not 
+			usually affect the filtering fraction that much, but&nbsp;a&nbsp;good choice 
+			can yield a modest improvement in filtering&nbsp;fraction&nbsp;(typically 
+			around 10%).&nbsp; In general, it's best to use the 0th-order model of the 
+			genome that has the highest (worst) filtering fraction.&nbsp; To estimate this, 
+			create a compact-type HMM from any model, and run it on the <EM>Bordetella</EM>,
+			<EM>E. coli</EM> and <EM>S. aureus</EM>&nbsp;genomes.</P>
+		<H3>Using compact- or expanded-type HMMs, or both</H3>
+		<P>Once you've picked a 0th-order Markov model, the easiest thing to do is to 
+			create both compact- and expanded-type HMMs, and run them on the three 
+			genomes.&nbsp; This yields an estimate of the filtering fraction for the two 
+			HMMs.&nbsp; If the filtering fraction of the compact-type HMMs is above 0.25, 
+			it's probably not worth using it (this is based on a rule of thumb that the 
+			expanded-type HMM runs 30% slower than the compact-type HMM, so if the 
+			compact-type fraction is above 0.25, it's not worth using it).&nbsp; If the 
+			compact-type HMM filtering fraction is low, there's no need to use the 
+			expanded-type HMM, but it can't hurt.</P>
+		<P>The difference in speed between the CM and the HMMs is mainly dependent on the 
+			window length W.&nbsp; The HMM is faster than the CM by a factor of usually a 
+			bit over W.&nbsp; So, if the filtering fraction is significantly below 1/W, 
+			then the search time is dominated by the HMM's search time, and there's no 
+			point in getting a better filtering fraction.</P>

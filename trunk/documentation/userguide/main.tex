@@ -1,0 +1,47 @@
+% Organizing document for the Infernal User's Guide
+%
+% SVN $Id$
+
+\documentclass[11pt]{article}
+\usepackage[pdftex]{graphicx}  
+\usepackage{html}		% From the LaTeX2html translator
+\usepackage{apalike}
+\usepackage{fullpage}
+\usepackage{times}
+\usepackage{fancyvrb}
+
+\setcounter{secnumdepth}{1}
+
+\input{macros}
+
+\begin{document}
+
+\bibliographystyle{apalike}
+
+\input{titlepage}
+\input{copyright}
+\newpage
+\tableofcontents
+
+\newpage
+\input{intro}
+\newpage
+\input{install}
+\newpage
+\input{tutorial}
+\newpage
+\input{cmbuild}
+\newpage
+\input{formats}
+\subsection{Dirichlet prior files}
+\input{format_prior}
+\newpage
+\input{manpages}
+
+%\newpage
+%\section*{Index of frequently asked questions}
+%\listoffaqs
+
+\newpage
+\bibliography{master,lab}
+\end{document}

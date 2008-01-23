@@ -1,0 +1,43 @@
+# Infernal's bug tests; an sqc command file.
+# SRE, Tue Dec 31 12:19:36 2002
+# CVS $Id$
+#
+# To run on all bugs:  ../ssdk/sqc -m 2 bugs.sqc ../src/
+#     only open bugs:  ../ssdk/sqc -m 1 bugs.sqc ../src/
+#
+# Code must be compiled w/ ${CC} = ccmalloc gcc
+# to use the -m option and test all bugs, including the
+# memory leaks. Else, omit the -m.
+#
+# Which means, by convention, all open bugs have priority 1
+# in the script; all closed bugs have priority 2.
+#
+# bug tests are in reverse chronological order...
+
+# i1 - vault bad SS_cons bug. 2 Jan 03, xref STL7 p.12
+#
+2 exercise i1/vault-sscons   ./i1 @cmbuild@ @cmalign@
+
+# i2 - cmalign memory leak. 5 Jan 03, xref STL7 p.15
+#
+2 prep       i2/cmalign-leak   @cmbuild@ %CM% i2.sto
+2 exercise   i2/cmalign-leak   @cmalign@ %CM% i2.fa
+
+# i3 - local begins rooted at inserts. 4 Mar 03, xref STL7 p.43
+2 exercise   i3/insert-roots   ./i3 @cmbuild@ @cmsearch@
+
+# i6 - local D&C score/parsetree score discrepancy. 6 Nov 06
+2 exercise   i6/cmalign-local  ./i6 @cmbuild@ @cmscore@
+
+# i9 - QDB D&C versus non-D&C alignment score discrepancy
+2 exercise   i9/cmalign-qdb  ./i9 @cmbuild@ @cmscore@ i9.sto
+
+# i10 - QDB search error if W is set at command line
+2 exercise   i10/cmsearch-W  ./i10 @cmbuild@ @cmsearch@
+
+# i11 - Incorrect insert state detachment in zero length hairpin loops
+2 exercise   i11/cmbuild-detach ./i11 @cmbuild@ @cmalign@
+
+# i12 - Mishandling basepair emit scores in *outside* funcs
+2 exercise   i12/cmalign-outside ./i12 @cmbuild@ @cmalign@
+

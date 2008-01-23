@@ -1,0 +1,23 @@
+\begin{figure}
+\begin{center}
+\includegraphics[width=6.4in]{figs/speedup}
+\caption{\textbf{CPU time required by CM searches with and without
+    QDB.} The time required for searching the 1 Mb target pseudogenome
+    with each of the 51 benchmark models is shown as a point, plotted
+    on a log-log graph as a function of the average length of the RNA
+    sequences in the query alignment; open circles are without QDB,
+    and filled circles are with QDB (with the default $\beta = 
+    10^{-7}$). Lines represent fits to a power law ($aN^b$), showing that
+    for a fixed $L=$ 1 Mb target database size, the standard CYK
+    algorithm empirically scales as $N^{2.36}$ and the QDB algorithm
+    scales as $N^{1.32}$. The apparent intersection of the linear
+    fitted lines is deceptive. At small query lengths,
+    run time is dominated by factors other than the CM alignment
+    computation, such as i/o. QDB searches are always faster
+    than non-banded searches even for synthetic tiny
+    queries of less than 10 nt (data not shown).}
+\label{fig:speedup}
+\end{center}
+\end{figure}
+
+

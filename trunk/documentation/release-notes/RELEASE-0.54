@@ -1,0 +1,2 @@
+0.54   SRE, Sun Jan  5 17:44:39 2003
+  - bug #i2 fixed (cmalign memory leak) 
