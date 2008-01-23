@@ -101,13 +101,13 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   int          M;           /* cm->cp9->M, query length, number of consensus nodes of model */
 
   /* Contract checks */
-  if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, cm->cp9 is NULL.\n");
-  if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, passing in results data structure, but not in scanning mode.\n");
-  if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, dsq is NULL.");
-  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, mx is NULL.\n");
-  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, mx->M != cm->clen.\n");
-  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, cm->clen != cm->cp9->M.\n");
-  if(cm->flags & CM_SEARCH_HMMFORWARD) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, CM_SEARCH_HMMFORWARD flag raised.\n");
+  if(cm->cp9 == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, cm->cp9 is NULL.\n");
+  if(results != NULL && !do_scan)            ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, passing in results data structure, but not in scanning mode.\n");
+  if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, dsq is NULL.");
+  if(mx == NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, mx is NULL.\n");
+  if(mx->M != cm->clen)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, mx->M != cm->clen.\n");
+  if(cm->clen != cm->cp9->M)                 ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, cm->clen != cm->cp9->M.\n");
+  if(cm->search_opts & CM_SEARCH_HMMFORWARD) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, CM_SEARCH_HMMFORWARD flag raised in search_opts.\n");
     
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
@@ -326,13 +326,13 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
   int          M;           /* cm->cp9->M, query length, number of consensus nodes of model */
 
   /* Contract checks */
-  if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, cm->cp9 is NULL.\n");
-  if(results != NULL && !do_scan)      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, passing in results data structure, but not in scanning mode.\n");
-  if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, dsq is NULL.");
-  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, mx is NULL.\n");
-  if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, mx->M != cm->clen.\n");
-  if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, cm->clen != cm->cp9->M.\n");
-  if(cm->flags & CM_SEARCH_HMMFORWARD) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, CM_SEARCH_HMMFORWARD flag raised.\n");
+  if(cm->cp9 == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, cm->cp9 is NULL.\n");
+  if(results != NULL && !do_scan)            ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, passing in results data structure, but not in scanning mode.\n");
+  if(dsq == NULL)                            ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, dsq is NULL.");
+  if(mx == NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, mx is NULL.\n");
+  if(mx->M != cm->clen)                      ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, mx->M != cm->clen.\n");
+  if(cm->clen != cm->cp9->M)                 ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, cm->clen != cm->cp9->M.\n");
+  if(cm->search_opts & CM_SEARCH_HMMFORWARD) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, CM_SEARCH_HMMFORWARD flag raised.\n");
     
   int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
 

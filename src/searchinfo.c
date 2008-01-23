@@ -110,6 +110,14 @@ AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_f
   if(inside_filter)  si->search_opts[0] |= CM_SEARCH_INSIDE;
   if(viterbi_filter) si->search_opts[0] |= CM_SEARCH_HMMVITERBI;
   if(forward_filter) si->search_opts[0] |= CM_SEARCH_HMMFORWARD;
+  if(sc_cutoff < -eslSMALLX1) { /* if we're asking to return negative scores, turn on the greedy hit resolution algorithm (that's the only way we can return negative scoring hits */
+    if(viterbi_filter || forward_filter) si->search_opts[0] |= CM_SEARCH_HMMGREEDY;
+    if(cyk_filter     || inside_filter)  si->search_opts[0] |= CM_SEARCH_CMGREEDY;
+  }
+  else { /* turn greedy options off, (they may already be off) */
+    if(cm->si->stype[0] == SEARCH_WITH_HMM) si->search_opts[0] &= ~CM_SEARCH_HMMGREEDY;
+    if(cm->si->stype[0] == SEARCH_WITH_CM)  si->search_opts[0] &= ~CM_SEARCH_CMGREEDY;
+  }
   
   si->cutoff_type[0] = cutoff_type;
   si->sc_cutoff[0]   = sc_cutoff;
@@ -237,7 +245,6 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
   int do_hmmscanbands;
   int do_sums;
   int do_inside;
-  int do_toponly;
   int do_noalign;
   int do_null2;
   int do_rsearch;
@@ -252,7 +259,6 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
     do_hmmscanbands= (si->search_opts[n] & CM_SEARCH_HMMSCANBANDS) ? TRUE : FALSE;
     do_sums        = (si->search_opts[n] & CM_SEARCH_SUMS)         ? TRUE : FALSE;
     do_inside      = (si->search_opts[n] & CM_SEARCH_INSIDE)       ? TRUE : FALSE;
-    do_toponly     = (si->search_opts[n] & CM_SEARCH_TOPONLY)      ? TRUE : FALSE;
     do_noalign     = (si->search_opts[n] & CM_SEARCH_NOALIGN)      ? TRUE : FALSE;
     do_null2       = (si->search_opts[n] & CM_SEARCH_NULL2)        ? TRUE : FALSE;
     do_rsearch     = (si->search_opts[n] & CM_SEARCH_RSEARCH)      ? TRUE : FALSE;
@@ -264,7 +270,7 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
     if(n < si->nrounds) { 
       if(!do_noalign) cm_Fail("ValidateSearchInfo(), round %d has CM_SEARCH_NOALIGN flag down.\n", n);
       if(si->stype[n] == SEARCH_WITH_HMM) {
-	sum = do_noqdb + do_hbanded + do_hmmscanbands + do_sums + do_inside + do_toponly + do_null2 + do_rsearch + do_cmgreedy;
+	sum = do_noqdb + do_hbanded + do_hmmscanbands + do_sums + do_inside + do_null2 + do_rsearch + do_cmgreedy;
 	if(sum != 0 || (do_hmmviterbi + do_hmmforward != 1)) { 
 	  printf("ValidateSearchInfo(), round %d is SEARCH_WITH_HMM but search opts are invalid\n", n);
 	  DumpSearchOpts(si->search_opts[n]);
@@ -278,7 +284,7 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
 	if(si->hsi[n]->smx == NULL) cm_Fail("ValidateSearchInfo(), round %d is SEARCH_WITH_HYBRID but hsi[%d]->smx is NULL\n", n, n);
 	if(si->smx[n] != NULL)      cm_Fail("ValidateSearchInfo(), round %d is SEARCH_WITH_HYBRID but smx[%d] is not NULL\n", n, n);
 	if(si->hsi[n]->v_isroot[0]) cm_Fail("ValidateSearchInfo(), round %d is SEARCH_WITH_HYBRID and hsi->vi_isroot[0] is TRUE, this shouldn't happen, we might as well filter with a SEARCH_WITH_CM filter.");
-	sum = do_hbanded + do_hmmscanbands + do_sums + do_toponly + do_null2 + do_rsearch + do_cmgreedy;	
+	sum = do_hbanded + do_hmmscanbands + do_sums + do_null2 + do_rsearch + do_cmgreedy;	
 	if(sum != 0 || (do_hmmviterbi + do_hmmforward != 1)) { 
 	  printf("ValidateSearchInfo(), round %d is SEARCH_WITH_HYBRID but search opts are invalid\n", n);
 	  DumpSearchOpts(si->search_opts[n]);
@@ -287,7 +293,7 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
       }
       else if (si->stype[n] == SEARCH_WITH_CM) {
 	if(si->smx[n] == NULL) cm_Fail("ValidateSearchInfo(), round %d is SEARCH_WITH_CM but smx[%d] is NULL\n", n, n);
-	sum = do_hbanded + do_hmmscanbands + do_sums + do_toponly + do_null2 + do_rsearch + do_hmmviterbi + do_hmmforward;	
+	sum = do_hbanded + do_hmmscanbands + do_sums + do_null2 + do_rsearch + do_hmmviterbi + do_hmmforward;	
 	if(sum != 0) {
 	  printf("ValidateSearchInfo(), round %d is SEARCH_WITH_CM but search opts are invalid\n", n);
 	    DumpSearchOpts(si->search_opts[n]);
@@ -323,11 +329,22 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
 void
 UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float sc_cutoff, float e_cutoff)
 {
+  if(cutoff_type == E_CUTOFF)  
+    if(! (cm->flags & CMH_GUMBEL_STATS)) cm_Fail("UpdateSearchInfoCutoff(), cm->si is NULL.");
   if(cm->si == NULL)           cm_Fail("UpdateSearchInfoCutoff(), cm->si is NULL.");
   if(nround > cm->si->nrounds) cm_Fail("UpdateSearchInfoCutoff(), requested round %d is > cm->si->nrounds\n", nround, cm->si->nrounds);
   cm->si->cutoff_type[nround] = cutoff_type;
   cm->si->sc_cutoff[nround]   = sc_cutoff;
   cm->si->e_cutoff[nround]    = e_cutoff;
+  if(sc_cutoff < -eslSMALLX1) { /* if we're asking to return negative scores, turn on the greedy hit resolution algorithm (that's the only way we can return negative scoring hits */
+    if(cm->si->stype[nround] == SEARCH_WITH_HMM) cm->si->search_opts[nround] |= CM_SEARCH_HMMGREEDY;
+    if(cm->si->stype[nround] == SEARCH_WITH_CM)  cm->si->search_opts[nround] |= CM_SEARCH_CMGREEDY;
+  }
+  else { /* turn greedy options off, (they may already be off) */
+    if(cm->si->stype[nround] == SEARCH_WITH_HMM) cm->si->search_opts[nround] &= ~CM_SEARCH_HMMGREEDY;
+    if(cm->si->stype[nround] == SEARCH_WITH_CM)  cm->si->search_opts[nround] &= ~CM_SEARCH_CMGREEDY;
+  }
+
   return;
 }
 
@@ -346,7 +363,6 @@ DumpSearchOpts(int search_opts)
   if(search_opts & CM_SEARCH_HMMSCANBANDS) printf("\tCM_SEARCH_HMMSCANBANDS\n");
   if(search_opts & CM_SEARCH_SUMS)         printf("\tCM_SEARCH_SUMS\n");
   if(search_opts & CM_SEARCH_INSIDE)       printf("\tCM_SEARCH_INSIDE\n");
-  if(search_opts & CM_SEARCH_TOPONLY)      printf("\tCM_SEARCH_TOPONLY\n");
   if(search_opts & CM_SEARCH_NOALIGN)      printf("\tCM_SEARCH_NOALIGN\n");
   if(search_opts & CM_SEARCH_NULL2)        printf("\tCM_SEARCH_NULL2\n");
   if(search_opts & CM_SEARCH_RSEARCH)      printf("\tCM_SEARCH_RSEARCH\n");
@@ -637,6 +653,7 @@ void report_hit (int i, int j, int bestr, float score, search_results_t *results
  * Purpose:  Given the needed information, prints the results.
  *
  *           cm                  the model
+ *           fp                  open file ptr to print to
  *           si                  SearchInfo, relevant round is final one, si->nrounds
  *           abc                 alphabet to use for output
  *           cons                consensus seq for model (query seq)
@@ -647,7 +664,7 @@ void report_hit (int i, int j, int bestr, float score, search_results_t *results
  *           do_bottom           are we doing the minus (bottom) strand?
  *           do_noncompensatory  are we printing the optional non-compensatory line?
  */
-void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory)
+void print_results (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory)
 {
   int i;
   char *name;
@@ -657,10 +674,7 @@ void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConse
   int in_revcomp;
   int header_printed = 0;
   int gc_comp;
-  float score_for_Eval; /* the score we'll determine the statistical significance
-			 * of. This will be the bit score stored in
-			 * dbseq unless (cm->flags & CM_ENFORCED)
-			 * in which case we subtract cm->enf_scdiff first. */
+  float score_for_Eval; /* the score we'll determine the statistical significance of */
   CMEmitMap_t *emap;    /* consensus emit map for the CM */
   int do_stats;        
   GumbelInfo_t **gum;      /* pointer to gum to use */
@@ -699,16 +713,16 @@ void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConse
       
     if (!header_printed) {
       header_printed = 1;
-      printf (">%s\n\n", name);
+      fprintf(fp, ">%s\n\n", name);
     }
-    printf ("  %s strand results:\n\n", in_revcomp ? "Minus" : "Plus");
+    fprintf(fp, "  %s strand results:\n\n", in_revcomp ? "Minus" : "Plus");
     
     /*for (i=0; i<results->num_results; i++) 
       printf("hit: %5d start: %5d stop: %5d len: %5d emitl[0]: %5d emitr[0]: %5d score: %9.3f\n", i, results->data[i].start, results->data[i].stop, len, results->data[i].tr->emitl[0], results->data[i].tr->emitr[0], results->data[i].score);*/
     for (i=0; i<results->num_results; i++) {
       gc_comp = get_gc_comp (dbseq->sq[in_revcomp], 
 			     results->data[i].start, results->data[i].stop);
-      printf (" Query = %d - %d, Target = %d - %d\n", 
+      fprintf(fp, " Query = %d - %d, Target = %d - %d\n", 
 	      (emap->lpos[cm->ndidx[results->data[i].bestr]] + 1 
 	       - StateLeftDelta(cm->sttype[results->data[i].bestr])),
 	      (emap->rpos[cm->ndidx[results->data[i].bestr]] - 1 
@@ -718,25 +732,16 @@ void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConse
       if (do_stats) {
 	p = cm->stats->gc2p[gc_comp];
 	score_for_Eval = results->data[i].score;
-	if(cm->flags & CM_ENFORCED) {
-	  printf("\n\torig sc: %.3f", score_for_Eval);
-	  score_for_Eval -= cm->enf_scdiff;
-	  printf(" new sc: %.3f (diff: %.3f\n\n", score_for_Eval, cm->enf_scdiff);
-	}
-	printf (" Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score,
+	fprintf(fp, " Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score,
 		RJK_ExtremeValueE(score_for_Eval, gum[p]->mu, 
 				  gum[p]->lambda),
 		esl_gumbel_surv((double) score_for_Eval, gum[p]->mu, 
 				gum[p]->lambda), gc_comp);
-	/*printf("  Mu[gc=%d]: %f, Lambda[gc=%d]: %f\n", gc_comp, mu[gc_comp], gc_comp,
-	  lambda[gc_comp]);
-	  ExtremeValueP(results->data[i].score, mu[gc_comp], 
-	  lambda[gc_comp]));*/
       } 
       else { /* don't print E-value stats */
-	printf (" Score = %.2f, GC = %3d\n", results->data[i].score, gc_comp);
+	fprintf(fp, " Score = %.2f, GC = %3d\n", results->data[i].score, gc_comp);
       }
-      printf ("\n");
+      fprintf(fp, "\n");
       if (results->data[i].tr != NULL) {
 	/* careful here, all parsetrees have emitl/emitr sequence indices
 	 * relative to the hit subsequence of the dsq (i.e. emitl[0] always = 1),
@@ -753,7 +758,7 @@ void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConse
 		      (COORDINATE(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
 		      in_revcomp, do_noncompensatory);
 	FreeFancyAli(ali);
-	printf ("\n");
+	fprintf(fp, "\n");
       }
     }
   }
@@ -1058,8 +1063,6 @@ CreateHMMFilterInfo()
   hfi->N         = 0;
   hfi->dbsize    = 0;
   hfi->ncut      = 0;
-  hfi->beta      = 0.;
-  hfi->use_qdb   = FALSE;
   hfi->cm_E_cut  = NULL;
   hfi->fwd_E_cut = NULL;
   hfi->always_better_than_Smax = FALSE;
@@ -1077,7 +1080,7 @@ CreateHMMFilterInfo()
  * Returns:  eslOK on success, eslEINCOMPAT if contract violated
  */
 int 
-SetHMMFilterInfoHMM(HMMFilterInfo_t *hfi, char *errbuf, float F, int N, int dbsize, int ncut, float *cm_E_cut, float *fwd_E_cut, int always_better_than_Smax, double beta, int use_qdb)
+SetHMMFilterInfoHMM(HMMFilterInfo_t *hfi, char *errbuf, float F, int N, int dbsize, int ncut, float *cm_E_cut, float *fwd_E_cut, int always_better_than_Smax)
 {
   int status;
   int i;
@@ -1086,8 +1089,6 @@ SetHMMFilterInfoHMM(HMMFilterInfo_t *hfi, char *errbuf, float F, int N, int dbsi
   hfi->F         = F;
   hfi->N         = N;
   hfi->dbsize    = dbsize;
-  hfi->beta      = beta;
-  hfi->use_qdb   = use_qdb;
   ESL_ALLOC(hfi->cm_E_cut,  sizeof(float) * ncut);
   ESL_ALLOC(hfi->fwd_E_cut, sizeof(float) * ncut);
   for(i = 0; i < ncut; i++) { 
@@ -1136,7 +1137,7 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   int status;
   float avg_hit_len;
   float cm_ncalcs_per_res;
-  int   W; /* window size calculated using hfi->beta */
+  int   W; /* window size calculated using cm->beta */
   float hmm_ncalcs_per_res;
   float cm_bit_sc;
   float hmm_bit_sc;
@@ -1162,13 +1163,12 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
 
   if((status = cm_GetAvgHitLen        (cm,      errbuf, &avg_hit_len))        != eslOK) return status;
   if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &hmm_ncalcs_per_res)) != eslOK) return status;
-  if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, hfi->beta, &cm_ncalcs_per_res, &W))  != eslOK) return status;
+  if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->beta, &cm_ncalcs_per_res, &W))  != eslOK) return status;
 
-  fprintf(fp, "# %4s  %-15s  %4s  %6s  %7s  %7s  %5s  %7s  %7s\n", "idx",  "name",            "clen",   "F",      "nseq",    "db (Mb)", "beta",  "use qdb", "always?");
-  fprintf(fp, "# %4s  %-15s  %4s  %6s  %7s  %7s  %5s  %7s  %7s\n", "----", "---------------", "-----",  "------", "-------", "-------", "-----", "-------", "-------");
-  fprintf(fp, "%6d  %-15s  %4d  %6.4f  %7d  %7.1f  %4g  %7s  %7s\n",
-	 cmi, cm->name, cm->clen, hfi->F, hfi->N, hfi->dbsize / 1000000., hfi->beta, 
-	 hfi->use_qdb ? "yes" : "no", 
+  fprintf(fp, "# %4s  %-15s  %4s  %6s  %7s  %7s  %7s\n", "idx",  "name",            "clen",   "F",      "nseq",    "db (Mb)", "always?");
+  fprintf(fp, "# %4s  %-15s  %4s  %6s  %7s  %7s  %7s\n", "----", "---------------", "-----",  "------", "-------", "-------", "-------");
+  fprintf(fp, "%6d  %-15s  %4d  %6.4f  %7d  %7.1f  %7s\n",
+	 cmi, cm->name, cm->clen, hfi->F, hfi->N, hfi->dbsize / 1000000.,
 	 hfi->always_better_than_Smax ? "yes" : "no");
   fprintf(fp, "#\n");
   fprintf(fp, "#\n");
@@ -1214,7 +1214,7 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
  *           <ret_hmm_bit_sc>:         HMM filter threshold bit score
  *           <ret_S>:                  predicted filter survival fraction 
  *           <ret_xhmm>:               predicted xhmm factor (predicted speed * hmm speed) 
- *           <ret_spdup>:              predicted speedup from using filter versus only CM search with hfi->beta QDBs (unless !hfi->use_qdb) 
+ *           <ret_spdup>:              predicted speedup from using filter versus only CM search with cm->beta QDBs
  *           <ret_cm_ncalcs_per_res>:  millions of dp calcs for CM search of 1 residue
  *           <ret_hmm_ncalcs_per_res>: millions of dp calcs for HMM search of 1 residue
  *           <ret_do_filter>:          TRUE if filtering predicted to save time, FALSE if not
@@ -1227,7 +1227,7 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
   int status;
   float avg_hit_len;
   float cm_ncalcs_per_res;
-  int   W; /* window size calculated using hfi->beta */
+  int   W; /* window size calculated using cm->beta */
   float hmm_ncalcs_per_res;
   float cm_bit_sc;
   float hmm_bit_sc;
@@ -1255,7 +1255,7 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
 
   if((status = cm_GetAvgHitLen        (cm,      errbuf, &avg_hit_len))        != eslOK) return status;
   if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &hmm_ncalcs_per_res)) != eslOK) return status;
-  if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, hfi->beta, &cm_ncalcs_per_res, &W))  != eslOK) return status;
+  if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->beta, &cm_ncalcs_per_res, &W))  != eslOK) return status;
 
   if(do_header) { 
     fprintf(fp, "# %4s  %-15s  %4s  %8s  %6s  %6s  %6s  %7s  %7s\n", "idx",  "name",            "clen", "cm E",     "cm bit", "hmmbit", "surv",   "xhmm",    "speedup");
@@ -1312,7 +1312,7 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
  *           <ret_hmm_bit_sc>:         HMM filter threshold bit score
  *           <ret_S>:                  predicted filter survival fraction 
  *           <ret_xhmm>:               predicted xhmm factor (predicted speed * hmm speed) 
- *           <ret_spdup>:              predicted speedup from using filter versus only CM search with hfi->beta QDBs (unless !hfi->use_qdb) 
+ *           <ret_spdup>:              predicted speedup from using filter versus only CM search with cm->beta QDBs
  *           <ret_cm_ncalcs_per_res>:  millions of dp calcs for CM search OF 1 RESIDUE
  *           <ret_hmm_ncalcs_per_res>: millions of dp calcs for HMM search OF 1 RESIDUE
  *           <ret_do_filter>:          TRUE if filtering predicted to save time, FALSE if not
@@ -1360,7 +1360,7 @@ PlotHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   int status;
   float avg_hit_len;
   float cm_ncalcs_per_res;
-  int   W; /* window size calculated using hfi->beta */
+  int   W; /* window size calculated using cm->beta */
   float hmm_ncalcs_per_res;
   float cm_bit_sc;
   float hmm_bit_sc;
@@ -1388,7 +1388,7 @@ PlotHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   if(mode != FTHR_PLOT_CME_HMME) { /* these calculations are unnec for FTHR_PLOT_CME_HMME */
     if((status = cm_GetAvgHitLen        (cm,      errbuf, &avg_hit_len))        != eslOK) return status;
     if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &hmm_ncalcs_per_res)) != eslOK) return status;
-    if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, hfi->beta, &cm_ncalcs_per_res, &W))  != eslOK) return status;
+    if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->beta, &cm_ncalcs_per_res, &W))  != eslOK) return status;
   }
   for(i = 0; i < hfi->ncut; i++) {
     cm_E  = hfi->cm_E_cut[i]  * ((double) dbsize / (double) hfi->dbsize);
@@ -1582,4 +1582,33 @@ GetHMMFilterFwdECutGivenCMBitScore(HMMFilterInfo_t *hfi, char *errbuf, float cm_
   *ret_cut_pt = cut_pt;
 
   return eslOK;
+}
+
+
+/* Function: SurvFract2E()
+ * Date:     EPN, Mon Jan 21 09:27:07 2008
+ *
+ * Purpose:  Return the E-value that will give 
+ *           a specific survival fraction S given
+ *           W, avg_hit_len, and dbsize.
+ */
+float 
+SurvFract2E(float S, int W, float avg_hit_len, long dbsize)
+{
+  float surv_res_per_hit = ((float) 2 * W) - avg_hit_len;
+  return((S * (double) dbsize) / surv_res_per_hit);
+}
+
+
+/* Function: E2SurvFract()
+ * Date:     EPN, Mon Jan 21 09:27:07 2008
+ *
+ * Purpose:  Return the survival fraction S given 
+ *           an E-value cutoff, W, avg_hit_len, and dbsize.
+ */
+float 
+E2SurvFract(float E, int W, float avg_hit_len, long dbsize)
+{
+  float surv_res_per_hit = ((float) 2 * W) - avg_hit_len;
+  return((E * surv_res_per_hit) / ((double) dbsize));
 }

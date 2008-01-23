@@ -123,11 +123,16 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 			       NULL, NULL, /* don't return best score at each posn, or best scoring posn */
 			       &sc)) != eslOK) return status;
     }
+#if 0 /* EPN, Tue Jan 22 14:26:57 2008, we don't need to remove overlaps, they'll be collapsed below
+       * (unless do_hbanded), and even if they weren't it's okay b/c we remove overlaps before
+       * we print results in cmsearch.
+       */
     /* Remove overlapping hits, if we're being greedy */
     if(cm->search_opts & CM_SEARCH_HMMGREEDY) { /* resolve overlaps by being greedy */
       ESL_DASSERT1((i0 == 1)); /* EPN, Tue Nov 27 13:59:31 2007 not sure why this is here */
       remove_overlapping_hits (fwd_results, i0, j0);
     }
+#endif
 
     /* determine start points (i) of the hits based on backward direction (Viterbi or Backward) scan starting at j */
     for(h = 0; h < fwd_results->num_results; h++) {

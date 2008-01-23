@@ -105,6 +105,9 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CMH_BITS flag is not raised.\n");
+  if(j0 < i0) {
+    printf("whoa\n");
+  }
   if(j0 < i0)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, dsq is NULL\n");
   if(cm->search_opts & CM_SEARCH_INSIDE) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CM_SEARCH_INSIDE flag raised");

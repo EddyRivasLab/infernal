@@ -402,36 +402,33 @@ typedef struct cp9map_s {
 } CP9Map_t;
 
 /* status flags, cm->flags */
-#define CMH_BITS               (1<<0)  /* CM has valid log odds scores             */
-#define CMH_ACC                (1<<1)  /* accession number is available            */
-#define CMH_DESC               (1<<2)  /* description exists                       */
-#define CMH_GA                 (1<<3)  /* gathering threshold exists               */
-#define CMH_TC                 (1<<4)  /* trusted cutoff exists                    */
-#define CMH_NC                 (1<<5)  /* noise cutoff exists                      */
-#define CMH_LOCAL_BEGIN        (1<<6)  /* Begin distribution is active (local ali) */
-#define CMH_LOCAL_END          (1<<7)  /* End distribution is active (local ali)   */
-#define CMH_GUMBEL_STATS       (1<<8)  /* Gumbel stats set                         */
-#define CMH_FILTER_STATS       (1<<9)  /* 'best' filter threshold stats are set    */
-#define CMH_QDB                (1<<10) /* query-dependent bands, QDBs valid        */
-#define CMH_CP9                (1<<11) /* CP9 HMM is valid in cm->cp9              */
-#define CMH_CP9STATS           (1<<12) /* CP9 HMM has Gumbel stats                 */
-#define CMH_SCANMATRIX         (1<<13) /* ScanMatrix smx is valid                  */
+#define CMH_BITS                (1<<0)  /* CM has valid log odds scores             */
+#define CMH_ACC                 (1<<1)  /* accession number is available            */
+#define CMH_DESC                (1<<2)  /* description exists                       */
+#define CMH_GA                  (1<<3)  /* gathering threshold exists               */
+#define CMH_TC                  (1<<4)  /* trusted cutoff exists                    */
+#define CMH_NC                  (1<<5)  /* noise cutoff exists                      */
+#define CMH_LOCAL_BEGIN         (1<<6)  /* Begin distribution is active (local ali) */
+#define CMH_LOCAL_END           (1<<7)  /* End distribution is active (local ali)   */
+#define CMH_GUMBEL_STATS        (1<<8)  /* Gumbel stats set                         */
+#define CMH_FILTER_STATS        (1<<9)  /* 'best' filter threshold stats are set    */
+#define CMH_QDB                 (1<<10) /* query-dependent bands, QDBs valid        */
+#define CMH_CP9                 (1<<11) /* CP9 HMM is valid in cm->cp9              */
+#define CMH_CP9STATS            (1<<12) /* CP9 HMM has Gumbel stats                 */
+#define CMH_SCANMATRIX          (1<<13) /* ScanMatrix smx is valid                  */
 
-#define CM_IS_SUB              (1<<14) /* the CM is a sub CM                       */
-#define CM_ENFORCED            (1<<15) /* CM is reparam'ized to enforce a subseq   */
-#define CM_IS_RSEARCH          (1<<16) /* the CM was parameterized a la RSEARCH    */
-#define CM_RSEARCHTRANS        (1<<17) /* CM has/will have RSEARCH transitions     */
-#define CM_RSEARCHEMIT         (1<<18) /* CM has/will have RSEARCH emissions       */
-#define CM_EMIT_NO_LOCAL_BEGINS (1<<19) /* emitted parsetrees will never have local begins */
-#define CM_EMIT_NO_LOCAL_ENDS   (1<<20) /* emitted parsetrees will never have local ends   */
+#define CM_IS_SUB               (1<<14) /* the CM is a sub CM                       */
+#define CM_IS_RSEARCH           (1<<15) /* the CM was parameterized a la RSEARCH    */
+#define CM_RSEARCHTRANS         (1<<16) /* CM has/will have RSEARCH transitions     */
+#define CM_RSEARCHEMIT          (1<<17) /* CM has/will have RSEARCH emissions       */
+#define CM_EMIT_NO_LOCAL_BEGINS (1<<18) /* emitted parsetrees will never have local begins */
+#define CM_EMIT_NO_LOCAL_ENDS   (1<<19) /* emitted parsetrees will never have local ends   */
 
 /* model configuration options, cm->config_opts */
 #define CM_CONFIG_LOCAL        (1<<0)  /* configure the model for local alignment  */
 #define CM_CONFIG_HMMLOCAL     (1<<1)  /* configure the CP9   for local alignment  */
-#define CM_CONFIG_HMMEL        (1<<2)  /* configure the CP9   for local alignment  */
-#define CM_CONFIG_ENFORCE      (1<<3)  /* enforce a subseq be incl. in each parse  */
-#define CM_CONFIG_ENFORCEHMM   (1<<4)  /* build CP9 HMM to only enforce subseq     */
-#define CM_CONFIG_QDB          (1<<5)  /* calculate query dependent bands          */
+#define CM_CONFIG_HMMEL        (1<<2)  /* configure the CP9 for EL local aln       */
+#define CM_CONFIG_QDB          (1<<3)  /* calculate query dependent bands          */
 
 /* alignment options, cm->align_opts */
 /* alignment options, cm->align_opts */
@@ -460,14 +457,13 @@ typedef struct cp9map_s {
 #define CM_SEARCH_HMMSCANBANDS (1<<2)  /* filter w/CP9 HMM, and derive HMM bands   */
 #define CM_SEARCH_SUMS         (1<<3)  /* if using HMM bands, use posterior sums   */
 #define CM_SEARCH_INSIDE       (1<<4)  /* scan with Inside, not CYK                */
-#define CM_SEARCH_TOPONLY      (1<<5)  /* don't search reverse complement          */
-#define CM_SEARCH_NOALIGN      (1<<6)  /* don't align hits, just report locations  */
-#define CM_SEARCH_NULL2        (1<<7)  /* use post hoc second null model           */
-#define CM_SEARCH_RSEARCH      (1<<8)  /* use RSEARCH parameterized CM             */
-#define CM_SEARCH_CMGREEDY     (1<<9)  /* use greedy alg to resolve CM overlaps    */
-#define CM_SEARCH_HMMGREEDY    (1<<10) /* use greedy alg to resolve HMM overlaps   */
-#define CM_SEARCH_HMMVITERBI   (1<<11) /* search with CP9 HMM Viterbi              */
-#define CM_SEARCH_HMMFORWARD   (1<<12) /* search with CP9 HMM Forward              */
+#define CM_SEARCH_NOALIGN      (1<<5)  /* don't align hits, just report locations  */
+#define CM_SEARCH_NULL2        (1<<6)  /* use post hoc second null model           */
+#define CM_SEARCH_RSEARCH      (1<<7)  /* use RSEARCH parameterized CM             */
+#define CM_SEARCH_CMGREEDY     (1<<8)  /* use greedy alg to resolve CM overlaps    */
+#define CM_SEARCH_HMMGREEDY    (1<<9) /* use greedy alg to resolve HMM overlaps   */
+#define CM_SEARCH_HMMVITERBI   (1<<10) /* search with CP9 HMM Viterbi              */
+#define CM_SEARCH_HMMFORWARD   (1<<11) /* search with CP9 HMM Forward              */
 
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]
@@ -1168,17 +1164,6 @@ typedef struct hmmfilterinfo_s {
   int    N;                       /* number of CM hits used to get threshold ((N*F) passed)*/
   long   dbsize;                  /* db size used to calculate E-values in fwd_E_cut and cm_E_cut, SHOULD ALWAYS BE FTHR_DBSIZE_MB 1 */
   int    ncut;                    /* number of filter threshold cutoff pairs we have, size of fwd_E_cut and cm_E_cut arrays */
-  double beta;                    /* beta used to derive QDBs for determining the number of CM search DP calcs for the
-				   * CM search 'next step' after the filter. If hfi->use_qdb == FALSE, this is the beta used to
-				   * calculate the window length W for the calculation of number of DP calcs for a non-banded
-				   * 'next step' CM search.
-				   */
-  int    use_qdb;                 /* FALSE if number of DP calculations counted for 'next step' CM search phase was for a 
-				   * non-banded search. Important when the target and minimal survival fractions are set
-				   * b/c those fractions are dependent on the number of calcs the 'next step' CM search will
-				   * need to take per residue of the survival fraction from the filter. 
-				   * TRUE if QDBs with tail loss beta = hfi->beta was used to count DP calcs for CM search.
-				   */
   float *cm_E_cut;                /* [0..i..ncut-1] CM E-value cutoff used to determine fwd_E_cut[i], fwd_E_cut[i], 
 				   * at least F fraction of hits with optimal hits with CM E-value < cm_E_cut[i] were able
 				   * to be recognized with by a forward HMM scan with E-value cutoff fwd_E_cut[i].
@@ -1368,7 +1353,14 @@ typedef struct cm_s {
   /* query dependent bands (QDB) on subsequence lengths at each state                         */
   int   *dmin;          /* minimum d bound for each state v; [0..v..M-1] (NULL if non-banded) */
   int   *dmax;          /* maximum d bound for each state v; [0..v..M-1] (NULL if non-banded) */
-  double beta;          /* tail loss probability for QDB                                      */
+  double beta;          /* tail loss probability for QDB, stored in CM file as minimum allowed
+			 * beta, i.e. set as beta to be used for calculating cm->W whenever
+			 * QDB is NOT being used. If QDB is being used, cm->W is set as
+			 * dmax[0] using the beta specified by the user. The user cannot
+			 * specify a beta greater than the beta value stored in the CM file,
+			 * mainly because the beta from the CM file is used to calculate W
+			 * during model calibration.
+			 */
   double tau;           /* tail loss probability for HMM target dependent banding             */
 
   /* added by EPN, Tue Jan  2 14:24:08 2007 */
@@ -1402,17 +1394,6 @@ typedef struct cm_s {
   CMStats_t *stats;      /* holds Gumbel stats and HMM filtering thresholds */
 
   const  ESL_ALPHABET *abc;     /* ptr to alphabet info (cm->abc->K is alphabet size)*/
-
-  /* currently unused */
-  float      ffract;     /* desired filter fraction (0.99 -> filter out 99% of db), default: 0.*/
-  /* i'm considering deleting these guys */
-  int        enf_start;  /* if(cm->config_opts & CM_CONFIG_ENFORCE) the first posn to enforce, else 0 */
-  char      *enf_seq;    /* if(cm->config_opts & CM_CONFIG_ENFORCE) the subseq to enforce, else NULL  */
-  float      enf_scdiff; /* if(cm->config_opts & CM_CONFIG_ENFORCE) the difference in scoring  *
-			  * cm->enfseq b/t the non-enforced & enforced CMs, this is subtracted *
-			  * from bit scores in cmsearch before assigned E-value stats which    *
-			  * are always calc'ed (histograms built) using non-enforced CMs/CP9s  */
-
 } CM_t;
 
 #endif /*STRUCTSH_INCLUDED*/

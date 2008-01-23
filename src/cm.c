@@ -111,15 +111,11 @@ CreateCMShell(void)
   
   cm->dmin         = NULL;
   cm->dmax         = NULL;
-  cm->beta         = DEFAULT_BETA;     /* 1E-7 the default beta (tail loss for QDB) */
+  cm->beta         = DEFAULT_BETA;     /* will be set when beta is read from cmfile */
   cm->tau          = DEFAULT_TAU;      /* 1E-7 the default tau  (tail loss for HMM banding) */
   cm->cp9          = NULL;          
   cm->cp9b         = NULL;
   cm->cp9map       = NULL;
-  cm->enf_start    = 0;
-  cm->enf_seq      = NULL;
-  cm->enf_scdiff   = 0.;
-  cm->ffract       = 0.;
   cm->root_trans   = NULL;
   cm->stats        = NULL;
   cm->smx          = NULL;
@@ -322,10 +318,6 @@ FreeCM(CM_t *cm)
   if (cm->acc    != NULL) free(cm->acc);
   if (cm->desc   != NULL) free(cm->desc);
   if (cm->annote != NULL) free(cm->annote);
-  /* This gives a memory error, b/c it's copied from optarg
-   * in cmsearch.c (I can't find where optarg is alloc'ed,
-   * worst case scenario: small memory leak here */
-  /*if (cm->enf_seq != NULL) free(cm->enf_seq);*/
 
   free(cm->null);
   free(cm->sttype);

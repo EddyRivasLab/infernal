@@ -70,8 +70,8 @@ static ESL_OPTIONS options[] = {
   { "--gum-L",          eslARG_INT,     NULL,   NULL, "n>0",    NULL,        NULL,"--fil-only", "set length of random seqs for gumbel estimation to <n>", 2},
   { "--gum-cmN",        eslARG_INT,     "1000", NULL, "n>0",    NULL,        NULL,"--fil-only", "number of random sequences for CM gumbel estimation",    2 },
   { "--gum-hmmN",       eslARG_INT,     "5000", NULL, "n>0",    NULL,        NULL,"--fil-only", "number of random sequences for CP9 HMM gumbel estimation",    2 },
+  { "--gum-beta",       eslARG_REAL,    NULL,   NULL, "x>0",    NULL,        NULL,        NULL, "set tail loss prob for QDBs in gumbel calc to <x>, [default: no QDBs]", 5 },
   { "--gum-gcfromdb",   eslARG_INFILE,  NULL,   NULL, NULL,     NULL,        NULL,"--fil-only", "use GC content distribution from file <s>",  2},
-  { "--gum-beta",       eslARG_REAL,    NULL,   NULL, "x>0.000000000000001", NULL,NULL,   NULL, "set tail loss prob for QDBs in gumbel calc to <x>, [default: no QDBs]", 5 },
   { "--gum-gtail",      eslARG_REAL,    "0.5",  NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of right histogram tail to fit to gumbel to <x>", 5 },
   { "--gum-pfile",      eslARG_INFILE,  NULL,   NULL, NULL,     NULL,"--gum-gcfromdb",    NULL, "read partition info for gumbels from file <s>", 2},
   { "--gum-hfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,"--fil-only", "save fitted gumbel histogram(s) to file <s>", 2 },
@@ -81,8 +81,6 @@ static ESL_OPTIONS options[] = {
   { "--fil-only",       eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,"--gum-only", "only calculate filter thresholds, don't estimate gumbels", 3},
   { "--fil-N",          eslARG_INT,     "4000", NULL, "10<=n<=100000",NULL,  NULL,"--gum-only", "number of emitted sequences for HMM filter threshold calc",    3 },
   { "--fil-F",          eslARG_REAL,    "0.99", NULL, "0<x<=1", NULL,        NULL,"--gum-only", "required fraction of seqs that survive HMM filter", 3},
-  { "--fil-beta",       eslARG_REAL,    "1e-7", NULL, "x>0",    NULL,        NULL,        NULL, "set tail loss prob for QDBs in filter calculation to <x>", 5 },
-  { "--fil-noqdb",      eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "do not use QDBs for filter calculation", 5 },
   { "--fil-xhmm",       eslARG_REAL,    "2.0",  NULL, "x>=1.1", NULL,        NULL,"--gum-only", "set target time for filtered search as <x> times HMM time", 3},
   { "--fil-hbanded",    eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,"--gum-only", "use HMM banded search for filter calculation", 3},
   { "--fil-tau",        eslARG_REAL,    "1e-7", NULL, "0<x<1",  NULL, "--fbanded",        NULL, "set tail loss prob for --fbanded to <x>", 6 },
@@ -128,8 +126,7 @@ struct cfg_s {
   /* the following data is modified for each CM, and in some cases for each Gumbel mode for each CM,
    * it is assumed to be 'current' in many functions.
    */
-  float            gum_cm_ncalcs;   /* millions of calcs for each CM scan of 1 residue with NO QDBs, unless --gum-beta <x> invoked, then it's with QDBs with beta=<x> */
-  float            fil_cm_ncalcs;   /* millions of calcs for full CM scan of 1 residue, with --fil-beta <x>, if --fil-noqdb, beta = 0. */
+  float            fil_cm_ncalcs;   /* millions of calcs for full CM scan of 1 residue, with QDBs from beta == cm->beta */
   float            cp9_ncalcs;      /* millions of calcs for CP9 HMM scan of 1 residue, updated when model is localfied */
   /* mpi */
   int              do_mpi;
@@ -168,7 +165,6 @@ static int  set_partition_gc_freq(struct cfg_s *cfg, int p);
 static int  fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, double *ret_mu, double *ret_lambda);
 static int  get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, double *dnull, int L, ESL_DSQ **ret_dsq);
 static int  get_cmemit_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, int *ret_p, ESL_DSQ **ret_dsq);
-static void estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq, int L, int gum_mode);
 static int  read_partition_file(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int  switch_global_to_local(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, char *errbuf);
 extern int  update_dp_calcs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
@@ -254,7 +250,6 @@ main(int argc, char **argv)
   cfg.ccom      = NULL;  /* created in get_cmcalibrate_comlog_info() for masters, stays NULL in workers */
   cfg.cdate     = NULL;  /* created in get_cmcalibrate_comlog_info() for masters, stays NULL in workers */
 
-  cfg.gum_cm_ncalcs = 0;
   cfg.fil_cm_ncalcs = 0;
   cfg.cp9_ncalcs    = 0;
 
@@ -650,7 +645,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
 
 	    gumN = working_on_cm ? cmN : hmmN;
-	    if(cfg->be_verbose) estimate_workunit_time(go, cfg, gumN, gumL, gum_mode);
 	    ESL_DPRINTF1(("\n\ncalling process_gumbel_workunit to fit gumbel for p: %d GUM mode: %d\n", p, gum_mode));
 	    printf("gumbel  %-12s %5d %6d %5s %5s [", DescribeGumMode(gum_mode), gumN, gumL, "-", "-");
 	    fflush(stdout);
@@ -1564,15 +1558,15 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   int status;
   int nstarts, nexits, nd;
-  int safe_windowlen;
-  int *dmin, *dmax;
 
   /* config QDB? NO!, unless --gum-beta enabled */
   if(esl_opt_IsDefault(go, "--gum-beta")) { 
     cm->search_opts |= CM_SEARCH_NOQDB; /* don't use QDB to search */
-    cm->beta = DEFAULT_BETA;
+    /* cm->beta will be set as beta read from cmfile */
   }
   else {
+    /* ensure for <x> from --gum-beta: <x> >= cm->beta from cmfile */
+    if((cm->beta - esl_opt_GetReal(go, "--gum-beta")) < -1E-5) ESL_FAIL(eslEINCOMPAT, errbuf, "Minimum allowed <x> for --gum-beta <x> is %g (from cmfile, change with cmbuild --minbeta).\n", cm->beta);
     cm->config_opts |= CM_CONFIG_QDB;   /* configure QDB */
     cm->beta = esl_opt_GetReal(go, "--gum-beta"); 
   }
@@ -1612,25 +1606,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 
   ConfigCM(cm, NULL, NULL);
   
-  /* we may still need to determine cm->W */
-  safe_windowlen = cm->clen * 2;
-  if(esl_opt_IsDefault(go, "--gum-beta")) { /* NO QDBs, we still need to setup cm->W */ 
-    if(cm->dmin != NULL || cm->dmax != NULL) 
-      cm_Fail("initialize_cm() --gum-beta NOT enabled, but cm->dmin and cm->dmax non-null. This shouldn't happen.");
-    while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, FALSE, &(dmin), &(dmax), NULL, NULL)))
-      {
-	free(dmin);
-	free(dmax);
-	safe_windowlen *= 2;
-	if(safe_windowlen > (cm->clen * 1000))
-	  cm_Fail("initialize_cm(), safe_windowlen big: %d\n", safe_windowlen);
-      }
-    cm->W = dmax[0];
-    free(dmin);
-    free(dmax);
-    CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
-  }
-
   /* create and initialize scan info for CYK/Inside scanning functions */
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE);
   if(cm->smx == NULL) cm_Fail("initialize_cm(), CreateScanMatrixForCM() call failed.");
@@ -1869,49 +1844,6 @@ get_cmemit_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, int 
   return eslOK;
 }
 
-/* Function: estimate_workunit_time()
- * Date:     EPN, Thu Nov  1 17:57:20 2007
- * 
- * Purpose:  Estimate time req'd for a cmcalibrate workunit
- *
- * Returns:  eslOK on success;
- */
-void
-estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq, int L, int gum_mode)
-{
-  /* these are ballparks for a 3 GHz machine with optimized code */
-  float cyk_megacalcs_per_sec = 275.;
-  float ins_megacalcs_per_sec =  75.;
-  float fwd_megacalcs_per_sec = 175.;
-  float vit_megacalcs_per_sec = 380.;
-  
-  float seconds = 0.;
-
-  if(! esl_opt_IsDefault(go, "--gum-L")) L = ESL_MAX(L, esl_opt_GetInteger(go, "--gum-L")); /* minimum L we allow is 2 * cm->W (L is sent into this func as 2 * cm->W), this is enforced silently (!) */
-
-  switch(gum_mode) { 
-  case GUM_CM_LC: 
-  case GUM_CM_GC: 
-    seconds = cfg->gum_cm_ncalcs * (float) L * (float) nseq / cyk_megacalcs_per_sec;
-    break;
-  case GUM_CM_LI:
-  case GUM_CM_GI:
-    seconds = cfg->gum_cm_ncalcs * (float) L * (float) nseq / ins_megacalcs_per_sec;
-    break;
-  case GUM_CP9_LV: 
-  case GUM_CP9_GV: 
-    seconds = cfg->cp9_ncalcs * (float) L * (float) nseq / vit_megacalcs_per_sec;
-    break;
-  case GUM_CP9_LF: 
-  case GUM_CP9_GF: 
-    seconds = cfg->cp9_ncalcs * (float) L * (float) nseq / fwd_megacalcs_per_sec;
-    break;
-  }
-  printf("Estimated time for this workunit: %10.2f seconds\n", seconds);
-
-  return;
-}
-
 /* Function: read_partition_file
  * Date:     EPN, Fri Dec  7 08:38:41 2007
  * 
@@ -2031,26 +1963,35 @@ switch_global_to_local(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, char 
   /* CPlan9ELConfig() configures CP9 for CM EL local ends, then logoddisfies CP9 */
   CPlan9ELConfig(cm);
 
-  /* we may still need to update cm->W */
-  safe_windowlen = cm->clen * 2;
-  if(esl_opt_IsDefault(go, "--gum-beta")) { /* NO QDBs, we still need to setup cm->W */ 
-    if(cm->dmin != NULL || cm->dmax != NULL) 
-      cm_Fail("initialize_cm() --gum-beta NOT enabled, but cm->dmin and cm->dmax non-null. This shouldn't happen.");
-    while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, FALSE, &(dmin), &(dmax), NULL, NULL)))
-      {
-	free(dmin);
-	free(dmax);
-	safe_windowlen *= 2;
-	if(safe_windowlen > (cm->clen * 1000))
-	  cm_Fail("initialize_cm(), safe_windowlen big: %d\n", safe_windowlen);
-      }
-    cm->W = dmax[0];
-    free(dmin);
-    free(dmax);
-    CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
+  /* if the CM had QDBs, we need to recalculate them */
+  if(cm->flags & CMH_QDB) { 
+    free(cm->dmin); 
+    free(cm->dmax); 
+    cm->dmin = cm->dmax = NULL;
+    cm->flags &= ~CMH_QDB;
+    ConfigQDB(cm);
+  }
+  else { /* we still need to update cm->W */
+    safe_windowlen = cm->clen * 2;
+    if(esl_opt_IsDefault(go, "--gum-beta")) { /* NO QDBs, we still need to setup cm->W */ 
+      if(cm->dmin != NULL || cm->dmax != NULL) 
+	cm_Fail("initialize_cm() --gum-beta NOT enabled, but cm->dmin and cm->dmax non-null. This shouldn't happen.");
+      while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, FALSE, &(dmin), &(dmax), NULL, NULL)))
+	{
+	  free(dmin);
+	  free(dmax);
+	  safe_windowlen *= 2;
+	  if(safe_windowlen > (cm->clen * 1000))
+	    cm_Fail("initialize_cm(), safe_windowlen big: %d\n", safe_windowlen);
+	}
+      cm->W = dmax[0];
+      free(dmin);
+      free(dmax);
+      CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
+    }
   }
 
-  /* update cfg->fil_cm_ncalcs, cfg->gum_cm_ncalcs and cfg->cp9_ncalcs */
+  /* update cfg->fil_cm_ncalcs and cfg->cp9_ncalcs */
   if((status = update_dp_calcs(go, cfg, errbuf, cm)) != eslOK) return status;
 
   return eslOK;
@@ -2059,7 +2000,7 @@ switch_global_to_local(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, char 
 /* Function: update_dp_calcs()
  * Incept:   EPN, Tue Jan 15 15:40:40 2008
  * 
- * Purpose:  Update cfg->gum_ncalcs, cfg->fil_ncalcs and cfg->cp9_ncalcs
+ * Purpose:  Update cfg->fil_ncalcs and cfg->cp9_ncalcs
  *           based on configuration of CM.
  *
  * Args:      go     - get opts
@@ -2077,44 +2018,35 @@ update_dp_calcs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
   int *dmin; /* potentially used to calculate temporary d bands */
   int *dmax; /* potentially used to calculate temporary d bands */
   int  safe_windowlen; /* potentially used to calculate temporary d bands */
-  int  fil_W;          /* cm->W assumed to be used in cmsearch where filter thresholds will be used*/
 
   /* Count number of DP calcs, these counts are used to determine target, minimum and maximum survival
    * fractions for HMM filter thresholds in get_hmm_filter_cutoffs() (see that code for details).
    * Our predicted running times for searches in get_hmm_filter_cutoffs() are calculated based
    * on cfg->fil_cm_calcs and cfg->fil_cp9_calcs. cfg->fil_cm_calcs is calculated assuming we'll
-   * use a QDB filter with beta=1E-7 (by default), unless --fil-beta or --fil-noqdb is enabled.
+   * use a QDB filter with beta == cm->beta. 
    *
    * We want to set for global mode:
-   * cfg->gum_cm_ncalcs;  millions of calcs for each CM scan of 1 residue with NO QDBs, unless --gum-beta <x> invoked, then it's with QDBs with beta=<x>
-   * cfg->fil_cm_ncalcs:  millions of calcs for full CM scan of 1 residue, with --fil-beta <x>, if --fil-noqdb, beta = 0. 
+   * cfg->fil_cm_ncalcs:  millions of calcs for full CM scan of 1 residue, with QDBs using beta = cm->beta from cmfile
    * cfg->cp9_ncalcs:     millions of calcs for CP9 HMM scan of 1 residue
    *
-   * This function is called twice. Once for globa mode and then for local mode when models get localized.
+   * This function is called twice. Once for global mode and then for local mode when models get localized.
    */
 
-  /* get cfg->gum_cm_ncalcs */
-  if((status = cm_CountSearchDPCalcs(cm, errbuf, 10.*cm->W, cm->dmin, cm->dmax, cm->W, FALSE, NULL, &(cfg->gum_cm_ncalcs))) != eslOK) return status;
-
-  /* get cfg->fil_cm_ncalcs */
-  if(! (esl_opt_GetBoolean(go, "--fil-noqdb"))) { /* Assume QDBs will be on in cmsearch, determine those QDBs */
-    safe_windowlen = cm->clen * 2;
-    while(!(BandCalculationEngine(cm, safe_windowlen, esl_opt_GetReal(go, "--fil-beta"), FALSE, &(dmin), &(dmax), NULL, NULL))) {
-      free(dmin);
-      free(dmax);
-      safe_windowlen *= 2;
-      if(safe_windowlen > (cm->clen * 1000))
-	cm_Fail("initialize_cm(), safe_windowlen big: %d\n", safe_windowlen);
-    }
-    fil_W = dmax[0];
-    if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*fil_W, dmin, dmax, fil_W, TRUE,  NULL, &(cfg->fil_cm_ncalcs))) != eslOK) return status;
+  /* get cfg->fil_cm_ncalcs, we ALWAYS assume that QDB CYK will be used as a second filter after HMM filtering
+   * in cmsearch, so we determine target survival fractions based on DP counts for QDB searches, not non-QDB searches */
+  safe_windowlen = cm->clen * 2;
+  while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, FALSE, &(dmin), &(dmax), NULL, NULL))) {
     free(dmin);
     free(dmax);
+    safe_windowlen *= 2;
+    if(safe_windowlen > (cm->clen * 1000))
+      cm_Fail("initialize_cm(), safe_windowlen big: %d\n", safe_windowlen);
   }
-  else { /* assume QDBs will be off in cmsearch, get counts */
-    fil_W = cm->W;
-    if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*fil_W, NULL, NULL, fil_W, TRUE,  NULL, &(cfg->fil_cm_ncalcs))) != eslOK) return status;
-  }
+  ESL_DASSERT1((dmax[0] == cm->W)); /* cm->W should have been calculated with cm->beta */
+  assert(dmax[0] == cm->W); 
+  if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*cm->W, dmin, dmax, cm->W, TRUE,  NULL, &(cfg->fil_cm_ncalcs))) != eslOK) return status;
+  free(dmin);
+  free(dmax);
     
   /* get cfg->cp9_ncalcs, used to determine efficiency of CP9 filters, at first it's global mode, then
    * when switch_global_to_local() is called, cfg->full_cp9_ncalcs is updated to ncalcs in local mode */
@@ -2286,14 +2218,12 @@ format_time_string(char *buf, double sec, int do_frac)
 static int
 print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
-  printf("%-12s %s\n", "CM:",      cm->name); 
-  if(esl_opt_IsDefault(go, "--gum-beta"))      printf("%-12s %s %g\n", "gumbel beta:", "0.0 (no qdbs), for W calc: ", cm->beta); 
-  else                                         printf("%-12s %g\n",    "gumbel beta:", cm->beta); 
-  if(esl_opt_GetBoolean(go, "--fil-noqdb"))    printf("%-12s %s %g\n", "filter beta:", "0.0 (no qdbs), for W calc: ", cm->beta); 
-  else                                         printf("%-12s %g\n",    "filter beta:", esl_opt_GetReal(go, "--fil-beta")); 
-  printf("%-12s %s\n", "command:", cfg->ccom);
-  printf("%-12s %s\n", "date:",    cfg->cdate);
-  printf("%-12s %d\n", "nproc:",   (cfg->nproc == 0) ? 1 : cfg->nproc);
+  printf("%-8s %s\n", "CM:",      cm->name); 
+  if(esl_opt_IsDefault(go, "--gum-beta"))      printf("%-8s %s %g\n", "beta:", "0.0 (no qdbs), for W calc and filter thresholds: ", cm->beta); 
+  else                                         printf("%-8s %g\n",    "beta:", cm->beta); 
+  printf("%-8s %s\n", "command:", cfg->ccom);
+  printf("%-8s %s\n", "date:",    cfg->cdate);
+  printf("%-8s %d\n", "nproc:",   (cfg->nproc == 0) ? 1 : cfg->nproc);
   printf("\n");
   printf("%6s  %3s  %3s  %3s %5s %6s %5s %5s    percent complete         %10s\n", "",       "",     "",    "",     "",        "",     "",         "",  "");
   printf("%6s  %3s  %3s  %3s %5s %6s %5s %5s [5.......50.......100] %10s\n", "stage",  "mod",  "cfg", "alg",  "gumN",    "len",  "filN",          "",  "elapsed");
@@ -2551,8 +2481,6 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   int   *cmi2fwdi;                /* [0..i..filN] map between by_cmA and by_fwdA elements, cmi2fwdi[j] == k ==> by_cmA[j].i == by_fwdA[k].i */
   int    j;                       /* counter */
   int    always_better_than_Smax; /* TRUE if worst observed cm E value (by_cmA[0].cm_E) still gives us a survival fraction better (less) than Smax */
-  double fil_beta;                /* QDB tail loss used for calculating cm_ncalcs */
-  int    use_qdb;                 /* TRUE unless --fil-noqdb enabled, if TRUE, cm_ncalcs is number of calcs for a non-banded scan */
   
   fseq_Eval_t *by_cmA;            /* [0..i..filN] list of fseq_Eval_t for all filN observed seqs, sorted by decreasing CM      E-value */
   fseq_Eval_t *by_fwdA;           /* [0..i..filN] list of fseq_Eval_t for all filN observed seqs, sorted by decreasing Forward E-value */
@@ -2621,9 +2549,7 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
     cm_E_cut[0]  = 0.0;         
     fwd_E_cut[0] = 1E20; /* this is irrelevant actually */
     always_better_than_Smax = FALSE;
-    fil_beta                = esl_opt_GetBoolean(go, "--fil-noqdb") ? cm->beta : esl_opt_GetReal(go, "--fil-beta");
-    use_qdb                 = esl_opt_GetBoolean(go, "--fil-noqdb") ? FALSE : TRUE;
-    if((status = SetHMMFilterInfoHMM(hfi, errbuf, F, filN, dbsize, 1, cm_E_cut, fwd_E_cut, always_better_than_Smax, fil_beta, use_qdb)) != eslOK) return status;
+    if((status = SetHMMFilterInfoHMM(hfi, errbuf, F, filN, dbsize, 1, cm_E_cut, fwd_E_cut, always_better_than_Smax)) != eslOK) return status;
     free(cm_E_cut);
     free(fwd_E_cut);
     return eslOK; 
@@ -2873,9 +2799,7 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   assert(i == n2save);
 
   always_better_than_Smax = (imax_above_Emax == -1) ? TRUE : FALSE;
-  fil_beta                = esl_opt_GetBoolean(go, "--fil-noqdb") ? cm->beta : esl_opt_GetReal(go, "--fil-beta");
-  use_qdb                 = esl_opt_GetBoolean(go, "--fil-noqdb") ? FALSE : TRUE;
-  if((status = SetHMMFilterInfoHMM(hfi, errbuf, F, filN, dbsize, n2save, cm_E_cut2save, fwd_E_cut2save, always_better_than_Smax, fil_beta, use_qdb)) != eslOK) return status;
+  if((status = SetHMMFilterInfoHMM(hfi, errbuf, F, filN, dbsize, n2save, cm_E_cut2save, fwd_E_cut2save, always_better_than_Smax)) != eslOK) return status;
 
   free(by_cmA);
   free(by_fwdA);

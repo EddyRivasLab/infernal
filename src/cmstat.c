@@ -276,7 +276,11 @@ main(int argc, char **argv)
 	}
 	ncm++;
 
-	cm->beta = esl_opt_GetReal(go, "--beta");
+	if(! esl_opt_IsDefault(go, "--beta")) { 
+	  /* ensure for <x> from --beta: <x> >= cm->beta from cmfile */
+	  if((cm->beta - esl_opt_GetReal(go, "beta")) < -1E-5) cm_Fail("Minimum allowed <x> for --beta <x> is %g (from cmfile, change with cmbuild --minbeta).\n", cm->beta);
+	  cm->beta = esl_opt_GetReal(go, "--beta");
+	} /* else cm->beta will be equal to beta from CM file */
 	cm->config_opts |= CM_CONFIG_QDB;
 	/* update cm->config_opts */
 	if(! esl_opt_GetBoolean(go, "-g"))
@@ -285,7 +289,6 @@ main(int argc, char **argv)
 	    cm->config_opts |= CM_CONFIG_HMMLOCAL;
 	    cm->config_opts |= CM_CONFIG_HMMEL;
 	  }
-	/*ConfigQDB(cm);*/
 	ConfigCM(cm, NULL, NULL);
 
 	fprintf(ofp, "%6d %-20s %8d %8.2f %4d %5d %5d %3d %6.2f %6.2f\n",

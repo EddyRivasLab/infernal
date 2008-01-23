@@ -188,7 +188,6 @@ extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary, char *errbuf);
 
 /* from cm_modelconfig.c */
 extern int   ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax);
-extern void  ConfigCMEnforce(CM_t *cm);
 extern void  ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit);
 extern void  ConfigGlobal(CM_t *cm);
 extern void  ConfigNoLocalEnds(CM_t *cm);
@@ -197,12 +196,6 @@ extern void  ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
 				float p_internal_exit, int sstruct_nd,
 				int estruct_nd);
 extern void  ConfigLocal_DisallowELEmissions(CM_t *cm);
-extern void  ConfigLocal_fullsub_post(CM_t *sub_cm, CM_t *orig_cm, CP9Map_t *orig_cp9map, CMSubMap_t *submap,
-				     CP9_MX *post, int L);
-extern void  ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit);
-extern int   EnforceSubsequence(CM_t *cm);
-extern float EnforceScore(CM_t *cm);
-extern int   EnforceFindEnfStart(CM_t *cm, int enf_cc_start);
 extern int   ConfigQDB(CM_t *cm);
 
 /* from cm_modelmaker.c */
@@ -573,7 +566,7 @@ extern void AppendResults (search_results_t *src_results, search_results_t *dest
 extern void FreeResults   (search_results_t *r);
 extern int  compare_results (const void *a_void, const void *b_void);
 extern void sort_results (search_results_t *results);
-extern void print_results (CM_t *cm, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory);
+extern void print_results (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory);
 extern void report_hit (int i, int j, int bestr, float score, search_results_t *results);
 extern void remove_overlapping_hits (search_results_t *results, int i0, int j0);
 extern float CountScanDPCalcs(CM_t *cm, int L, int use_qdb);
@@ -583,21 +576,22 @@ extern int  SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M
 extern void FreeBestFilterInfo(BestFilterInfo_t *bf);
 extern void DumpBestFilterInfo(BestFilterInfo_t *bf);
 extern HMMFilterInfo_t *CreateHMMFilterInfo();
-extern int  SetHMMFilterInfoHMM(HMMFilterInfo_t *hfi, char *errbuf, float F, int N, int dbsize, int ncut, float *cm_E_cut, float *fwd_E_cut, int always_better_than_Smax, double beta, int use_qdb);
+extern int  SetHMMFilterInfoHMM(HMMFilterInfo_t *hfi, char *errbuf, float F, int N, int dbsize, int ncut, float *cm_E_cut, float *fwd_E_cut, int always_better_than_Smax);
 extern void FreeHMMFilterInfo(HMMFilterInfo_t *hfi);
-extern int   DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int ncm);
-extern int DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_E, int do_header, 
-				   float *ret_cm_bit_sc, float *ret_hmm_E, float *ret_hmm_bit_sc, float *ret_S, float *ret_xhmm, float *ret_spdup, float *ret_cm_ncalcs_per_res, float *ret_hmm_ncalcs_per_res, int *ret_do_filter);
-extern int DumpHMMFilterInfoForCMBitScore(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_bit_sc, int do_header, 
-					  float *ret_cm_E, float *ret_hmm_E, float *ret_hmm_bit_sc, float *ret_S, float *ret_xhmm, float *ret_spdup, float *ret_cm_ncalcs_per_res, float *ret_hmm_ncalcs_per_res, int *ret_do_filter);
+extern int  DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int ncm);
+extern int  DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_E, int do_header, 
+				    float *ret_cm_bit_sc, float *ret_hmm_E, float *ret_hmm_bit_sc, float *ret_S, float *ret_xhmm, float *ret_spdup, float *ret_cm_ncalcs_per_res, float *ret_hmm_ncalcs_per_res, int *ret_do_filter);
+extern int  DumpHMMFilterInfoForCMBitScore(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_bit_sc, int do_header, 
+					   float *ret_cm_E, float *ret_hmm_E, float *ret_hmm_bit_sc, float *ret_S, float *ret_xhmm, float *ret_spdup, float *ret_cm_ncalcs_per_res, float *ret_hmm_ncalcs_per_res, int *ret_do_filter);
 extern int   PlotHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int mode);
 extern float GetHMMFilterS(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len);
 extern float GetHMMFilterTotalCalcs(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len, float cm_ncalcs_per_res, float hmm_ncalcs_per_res);
 extern float GetHMMFilterXHMM(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len, float cm_ncalcs_per_res, float hmm_ncalcs_per_res);
 extern float GetHMMFilterSpeedup(HMMFilterInfo_t *hfi, int cut, int W, float avg_hit_len, float cm_ncalcs_per_res, float hmm_ncalcs_per_res);
-extern int GetHMMFilterFwdECutGivenCME(HMMFilterInfo_t *hfi, char *errbuf, float cm_E, long dbsize, int *ret_cut_pt);
-extern int GetHMMFilterFwdECutGivenCMBitScore(HMMFilterInfo_t *hfi, char *errbuf, float cm_bit_sc, long dbsize, int *ret_cut_pt, CM_t *cm, int cm_mode);
-
+extern int   GetHMMFilterFwdECutGivenCME(HMMFilterInfo_t *hfi, char *errbuf, float cm_E, long dbsize, int *ret_cut_pt);
+extern int   GetHMMFilterFwdECutGivenCMBitScore(HMMFilterInfo_t *hfi, char *errbuf, float cm_bit_sc, long dbsize, int *ret_cut_pt, CM_t *cm, int cm_mode);
+extern float SurvFract2E(float S, int W, float avg_hit_len, long dbsize);
+extern float E2SurvFract(float E, int W, float avg_hit_len, long dbsize);
 
 /* from seqstoaln.c */
 extern seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master);
@@ -619,7 +613,6 @@ extern void       GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret
 extern int        E2Score (CM_t *cm, char *errbuf, int gum_mode, float E,  float *ret_sc);
 extern int        Score2E (CM_t *cm, char *errbuf, int gum_mode, float sc, float *ret_E);
 extern double     RJK_ExtremeValueE (float x, double mu, double lambda);
-extern float      MinScCutoff (CM_t *cm, SearchInfo_t *si, int n);
 extern int        CM2Gumbel_mode(CM_t *cm, int search_opts, int *ret_cm_gum_mode, int *ret_cp9_gum_mode);
 extern int        CM2FthrMode(CM_t *cm, char *errbuf, int search_opts, int *ret_fthr_mode);
 extern void       remove_hits_over_e_cutoff (CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_SQ *sq);

@@ -89,6 +89,7 @@ static unsigned int v01swap  = 0xb1b0ede3; /* v0.1 binary, byteswapped         *
 #define CMIO_NSEQ         53
 #define CMIO_EFFNSEQ      54
 #define CMIO_CLEN         55
+#define CMIO_MINBETA      56
 
 static int  write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf);
 static int  read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
@@ -370,6 +371,7 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
   fprintf(fp, "NODES    %d\n",   cm->nodes);
   fprintf(fp, "ALPHABET %d\n",   cm->abc->type);
   fprintf(fp, "ELSELF   %.8f\n", cm->el_selfsc);
+  fprintf(fp, "MINBETA  %g\n",   cm->beta);
   fprintf(fp, "NSEQ     %d\n",   cm->nseq);
   fprintf(fp, "EFFNSEQ  %.3f\n", cm->eff_nseq);
   fprintf(fp, "CLEN     %d\n",   cm->clen);
@@ -424,10 +426,9 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
 
       if (cm->flags & CMH_FILTER_STATS) /* FILTER stats are only possibly valid IF EVD stats valid */
 	{
-	  fprintf(fp, "FT-LC    %d  %.5f  %d  %ld  %g  %d  %d\n", 
+	  fprintf(fp, "FT-LC    %d  %.5f  %d  %ld  %d\n", 
 		  cm->stats->hfiA[FTHR_CM_LC]->ncut,  cm->stats->hfiA[FTHR_CM_LC]->F,
 		  cm->stats->hfiA[FTHR_CM_LC]->N,     cm->stats->hfiA[FTHR_CM_LC]->dbsize,
-		  cm->stats->hfiA[FTHR_CM_LC]->beta,  cm->stats->hfiA[FTHR_CM_LC]->use_qdb,
 		  cm->stats->hfiA[FTHR_CM_LC]->always_better_than_Smax);
 	  fprintf(fp, "         ");
 	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_LC]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_LC]->cm_E_cut[i]);
@@ -436,10 +437,9 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
 	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_LC]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_LC]->fwd_E_cut[i]);
 	  fprintf(fp, "\n");
 
-	  fprintf(fp, "FT-LI    %d  %.5f  %d  %ld  %g  %d  %d\n", 
+	  fprintf(fp, "FT-LI    %d  %.5f  %d  %ld  %d\n", 
 		  cm->stats->hfiA[FTHR_CM_LI]->ncut,  cm->stats->hfiA[FTHR_CM_LI]->F,
 		  cm->stats->hfiA[FTHR_CM_LI]->N,     cm->stats->hfiA[FTHR_CM_LI]->dbsize,
-		  cm->stats->hfiA[FTHR_CM_LI]->beta,  cm->stats->hfiA[FTHR_CM_LI]->use_qdb,
 		  cm->stats->hfiA[FTHR_CM_LI]->always_better_than_Smax);
 	  fprintf(fp, "         ");
 	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_LI]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_LI]->cm_E_cut[i]);
@@ -448,10 +448,9 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
 	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_LI]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_LI]->fwd_E_cut[i]);
 	  fprintf(fp, "\n");
 
-	  fprintf(fp, "FT-GC    %d  %.5f  %d  %ld  %g  %d  %d\n", 
+	  fprintf(fp, "FT-GC    %d  %.5f  %d  %ld  %d\n", 
 		  cm->stats->hfiA[FTHR_CM_GC]->ncut,  cm->stats->hfiA[FTHR_CM_GC]->F,
 		  cm->stats->hfiA[FTHR_CM_GC]->N,     cm->stats->hfiA[FTHR_CM_GC]->dbsize,
-		  cm->stats->hfiA[FTHR_CM_GC]->beta,  cm->stats->hfiA[FTHR_CM_GC]->use_qdb,
 		  cm->stats->hfiA[FTHR_CM_GC]->always_better_than_Smax);
 	  fprintf(fp, "         ");
 	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_GC]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_GC]->cm_E_cut[i]);
@@ -460,10 +459,9 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
 	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_GC]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_GC]->fwd_E_cut[i]);
 	  fprintf(fp, "\n");
 
-	  fprintf(fp, "FT-GI    %d  %.5f  %d  %ld  %g  %d  %d\n", 
+	  fprintf(fp, "FT-GI    %d  %.5f  %d  %ld  %d\n", 
 		  cm->stats->hfiA[FTHR_CM_GI]->ncut,  cm->stats->hfiA[FTHR_CM_GI]->F,
 		  cm->stats->hfiA[FTHR_CM_GI]->N,     cm->stats->hfiA[FTHR_CM_GI]->dbsize,
-		  cm->stats->hfiA[FTHR_CM_GI]->beta,  cm->stats->hfiA[FTHR_CM_GI]->use_qdb,
 		  cm->stats->hfiA[FTHR_CM_GI]->always_better_than_Smax);
 	  fprintf(fp, "         ");
 	  for(i = 0; i < cm->stats->hfiA[FTHR_CM_GI]->ncut; i++) fprintf(fp, "%10g ", cm->stats->hfiA[FTHR_CM_GI]->cm_E_cut[i]);
@@ -642,6 +640,11 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  cm->el_selfsc = atof(tok);
 	}
+      else if (strcmp(tok, "MINBETA") == 0) 
+	{
+	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  cm->beta = (double) atof(tok);
+	}
       else if (strcmp(tok, "NSEQ") == 0) 
 	{
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
@@ -818,12 +821,6 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	cm->stats->hfiA[fthr_mode]->dbsize = (long) atoi(tok);
 	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	if (! is_real(tok))                                    goto FAILURE;
-	cm->stats->hfiA[fthr_mode]->beta = atof(tok);
-	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	if (! is_integer(tok))                                 goto FAILURE;
-	cm->stats->hfiA[fthr_mode]->use_qdb = atoi(tok);
-	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	if (! is_integer(tok))                                 goto FAILURE;
 	cm->stats->hfiA[fthr_mode]->always_better_than_Smax = atoi(tok);
 
 	/* alloc for, and read a new line, the CM cut points */
@@ -1060,6 +1057,7 @@ write_binary_cm(FILE *fp, CM_t *cm, char *errbuf)
   }    
 
   tagged_fwrite(CMIO_ELSELFSC,    &cm->el_selfsc,   sizeof(float), 1, fp);  
+  tagged_fwrite(CMIO_MINBETA,     &cm->beta,        sizeof(double),1, fp);  
   tagged_fwrite(CMIO_NSEQ,        &cm->nseq,        sizeof(int),   1, fp);  
   tagged_fwrite(CMIO_EFFNSEQ,     &cm->eff_nseq,    sizeof(float), 1, fp);  
   tagged_fwrite(CMIO_CLEN,        &cm->clen,        sizeof(int),   1, fp);  
@@ -1115,8 +1113,6 @@ write_binary_cm(FILE *fp, CM_t *cm, char *errbuf)
 	  tagged_fwrite(CMIO_FTHRF,      &cm->stats->hfiA[i]->F,                       sizeof(float), 1, fp);      
 	  tagged_fwrite(CMIO_FTHRN,      &cm->stats->hfiA[i]->N,                       sizeof(int),   1, fp);      
 	  tagged_fwrite(CMIO_FTHRDB,     &cm->stats->hfiA[i]->dbsize,                  sizeof(long),  1, fp);      
-	  tagged_fwrite(CMIO_FTHRBETA,   &cm->stats->hfiA[i]->beta,                    sizeof(double), 1, fp);      
-	  tagged_fwrite(CMIO_FTHRUSEQDB, &cm->stats->hfiA[i]->use_qdb,                 sizeof(int),  1, fp);      
 	  tagged_fwrite(CMIO_FTHRABTS,   &cm->stats->hfiA[i]->always_better_than_Smax, sizeof(int),   1, fp);      
 	  tagged_fwrite(CMIO_FTHRCMECUT,  cm->stats->hfiA[i]->cm_E_cut,                sizeof(float), cm->stats->hfiA[i]->ncut, fp);      
 	  tagged_fwrite(CMIO_FTHRFWDECUT, cm->stats->hfiA[i]->fwd_E_cut,               sizeof(float), cm->stats->hfiA[i]->ncut, fp);      
@@ -1208,6 +1204,7 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
     cm->flags |= CMH_NC;
   }
   if (! tagged_fread(CMIO_ELSELFSC, (void *) &(cm->el_selfsc), sizeof(float), 1, fp)) goto FAILURE;
+  if (! tagged_fread(CMIO_MINBETA,  (void *) &(cm->beta),      sizeof(double),1, fp)) goto FAILURE;
   if (! tagged_fread(CMIO_NSEQ,     (void *) &(cm->nseq),      sizeof(int),   1, fp)) goto FAILURE;
   if (! tagged_fread(CMIO_EFFNSEQ,  (void *) &(cm->eff_nseq),  sizeof(float), 1, fp)) goto FAILURE;
   if (! tagged_fread(CMIO_CLEN,     (void *) &(cm->clen),      sizeof(int),   1, fp)) goto FAILURE;
@@ -1265,8 +1262,6 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  if (! tagged_fread(CMIO_FTHRF,       (void *) &(cm->stats->hfiA[i]->F),                       sizeof(float), 1, fp)) goto FAILURE;
 	  if (! tagged_fread(CMIO_FTHRN,       (void *) &(cm->stats->hfiA[i]->N),                       sizeof(int),   1, fp)) goto FAILURE;
 	  if (! tagged_fread(CMIO_FTHRDB,      (void *) &(cm->stats->hfiA[i]->dbsize),                  sizeof(long),  1, fp)) goto FAILURE;
-	  if (! tagged_fread(CMIO_FTHRBETA,    (void *) &(cm->stats->hfiA[i]->beta),                    sizeof(double),1, fp)) goto FAILURE;
-	  if (! tagged_fread(CMIO_FTHRUSEQDB,  (void *) &(cm->stats->hfiA[i]->use_qdb),                 sizeof(int),   1, fp)) goto FAILURE;
 	  if (! tagged_fread(CMIO_FTHRABTS,    (void *) &(cm->stats->hfiA[i]->always_better_than_Smax), sizeof(int),   1, fp)) goto FAILURE;
 	  ESL_ALLOC(cm->stats->hfiA[i]->cm_E_cut,  sizeof(float) * cm->stats->hfiA[i]->ncut);
 	  ESL_ALLOC(cm->stats->hfiA[i]->fwd_E_cut, sizeof(float) * cm->stats->hfiA[i]->ncut);

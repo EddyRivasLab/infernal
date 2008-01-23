@@ -366,59 +366,6 @@ double RJK_ExtremeValueE (float x, double mu, double lambda) {
 }
 
 /*
- * Function: MinScCutoff
- * Date:     EPN, Mon May  7 17:36:56 2007
- *
- * Purpose:  Return the minimum bit score cutoff for CM
- *           for round n in SearchInfo_t si.
- *           Trivial if si->cutoff_type[n] == SCORE_CUTOFF,
- *           but if E_CUTOFF return minimal bit score across 
- *           all partitions for the E cutoff in the 
- *           appropriate search algorithm.
- *
- */
-float MinScCutoff (CM_t *cm, SearchInfo_t *si, int n)
-{
-  float E, low_sc, sc;
-  int cm_mode, cp9_mode, gum_mode;
-  int p; 
-
-  /* contract check */
-  if(si == NULL)      cm_Fail("MinCMScCutoff(), si == NULL.\n");
-  if(n > si->nrounds) cm_Fail("MinCMScCutoff(), n (%d) > si->nrounds\n", n, si->nrounds);
-
-  if(si->cutoff_type[n] == SCORE_CUTOFF) return si->sc_cutoff[n];
-  
-  /* if we get here, cutoff_type is E_CUTOFF we better have stats */
-  ESL_DASSERT1((si->cutoff_type[n] == E_CUTOFF));
-  if(!(cm->flags & CMH_GUMBEL_STATS)) cm_Fail("ERROR in MinScCutoff, cutoff type E value, but no stats.\n");
-
-  /* Determine appropriate Gumbel mode */
-  CM2Gumbel_mode(cm, si->search_opts[n], &cm_mode, &cp9_mode);
-  E = si->e_cutoff[n];
-
-  if(si->stype[n] == SEARCH_WITH_HMM) {
-    ESL_DASSERT1(((si->search_opts[n] & CM_SEARCH_HMMVITERBI) || (si->search_opts[n] & CM_SEARCH_HMMFORWARD)));
-    gum_mode = cp9_mode; 
-  }
-  else if (si->stype[n] == SEARCH_WITH_CM) {
-    ESL_DASSERT1((! ((si->search_opts[n] & CM_SEARCH_HMMVITERBI) || (si->search_opts[n] & CM_SEARCH_HMMFORWARD))));
-    gum_mode = cm_mode; 
-  }
-  else cm_Fail("MinScCutoff(), asking for E-value cutoff for SEARCH_WITH_HYBRID search round.\n");
-
-  low_sc = cm->stats->gumAA[cm_mode][0]->mu - 
-    (log(E) / cm->stats->gumAA[gum_mode][0]->lambda);
-  for (p = 1; p < cm->stats->np; p++) {
-    sc = cm->stats->gumAA[gum_mode][p]->mu - 
-      (log(E) / cm->stats->gumAA[gum_mode][p]->lambda);
-    if (sc < low_sc) low_sc = sc;
-  }
-  return (low_sc);
-}
-
-
-/*
  * Function: CM2Gumbel_mode
  * Date:     EPN, Mon May  7 17:43:28 2007
  * Purpose:  Return the gum_mode for the CM and HMM
@@ -507,10 +454,7 @@ void remove_hits_over_e_cutoff (CM_t *cm, SearchInfo_t *si, search_results_t *re
   int gc_comp;
   int i, x;
   search_result_node_t swap;
-  float score_for_Eval; /* the score we'll determine the statistical signifance
-			 * of. This will be the bit score stored in
-			 * dbseq unless (cm->flags & CM_ENFORCED)
-			 * in which case we subtract cm->enf_scdiff first. */
+  float score_for_Eval; /* the score we'll determine the statistical signifance of. */
   int cm_gum_mode;      /* Gumbel mode if we're using CM hits */
   int cp9_gum_mode;     /* Gumbel mode if we're using HMM hits */
   int p;                /* relevant partition */
@@ -536,17 +480,8 @@ void remove_hits_over_e_cutoff (CM_t *cm, SearchInfo_t *si, search_results_t *re
     gc_comp = get_gc_comp (sq, results->data[i].start, results->data[i].stop);
     p = cm->stats->gc2p[gc_comp];
     score_for_Eval = results->data[i].score;
-    if(cm->flags & CM_ENFORCED) {
-      /*printf("\n\tRM orig sc: %.3f", score_for_Eval);*/
-      score_for_Eval -= cm->enf_scdiff;
-      /*printf(" new sc: %.3f (diff: %.3f\n", score_for_Eval, cm->enf_scdiff);*/
-    }
-    /*printf("score_for_Eval: %f \n", score_for_Eval);*/
     if (RJK_ExtremeValueE(score_for_Eval, gum[p]->mu, gum[p]->lambda) > cutoff)  
       results->data[i].start = -1;
-    /*printf("Eval: %f, start: %d\n", RJK_ExtremeValueE(score_for_Eval,
-      mu[gc_comp], lambda[gc_comp]),
-      results->data[i].start);*/
   }
   
   for (x=0; x<results->num_results; x++) {

@@ -6709,3 +6709,1135 @@ float count_align_dp_calcs(CM_t *cm, int L)
   return dpcalcs + dpcalcs_bif;
 }
 #endif
+
+/* EPN, Sun Jan 20 11:14:02 2008 
+ * from cmcalibrate.c: revision 2305
+ */
+#if 0
+
+/* Function: estimate_workunit_time()
+ * Date:     EPN, Thu Nov  1 17:57:20 2007
+ * 
+ * Purpose:  Estimate time req'd for a cmcalibrate workunit
+ *
+ * Returns:  eslOK on success;
+ */
+void
+estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq, int L, int gum_mode)
+{
+  /* these are ballparks for a 3 GHz machine with optimized code */
+  float cyk_megacalcs_per_sec = 275.;
+  float ins_megacalcs_per_sec =  75.;
+  float fwd_megacalcs_per_sec = 175.;
+  float vit_megacalcs_per_sec = 380.;
+  
+  float seconds = 0.;
+
+  if(! esl_opt_IsDefault(go, "--gum-L")) L = ESL_MAX(L, esl_opt_GetInteger(go, "--gum-L")); /* minimum L we allow is 2 * cm->W (L is sent into this func as 2 * cm->W), this is enforced silently (!) */
+
+  switch(gum_mode) { 
+  case GUM_CM_LC: 
+  case GUM_CM_GC: 
+    seconds = cfg->gum_cm_ncalcs * (float) L * (float) nseq / cyk_megacalcs_per_sec;
+    break;
+  case GUM_CM_LI:
+  case GUM_CM_GI:
+    seconds = cfg->gum_cm_ncalcs * (float) L * (float) nseq / ins_megacalcs_per_sec;
+    break;
+  case GUM_CP9_LV: 
+  case GUM_CP9_GV: 
+    seconds = cfg->cp9_ncalcs * (float) L * (float) nseq / vit_megacalcs_per_sec;
+    break;
+  case GUM_CP9_LF: 
+  case GUM_CP9_GF: 
+    seconds = cfg->cp9_ncalcs * (float) L * (float) nseq / fwd_megacalcs_per_sec;
+    break;
+  }
+  printf("Estimated time for this workunit: %10.2f seconds\n", seconds);
+
+  return;
+}
+#endif
+
+/* EPN, Sun Jan 20 14:19:42 2008
+ * Decided to remove the --enforce options. 
+ * Here's the related functions.
+ * These are revision 2305.
+ */
+#if 0
+/*extern void  ConfigCMEnforce(CM_t *cm);*/
+/*extern void  ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit);*/
+/*extern int   EnforceSubsequence(CM_t *cm);*/
+/*extern float EnforceScore(CM_t *cm);*/
+/*extern int   EnforceFindEnfStart(CM_t *cm, int enf_cc_start);*/
+
+/*
+ * Function: ConfigCMEnforce
+ * Date:     EPN, Wed Feb 14 12:57:21 2007
+ * Purpose:  Configure a CM for enforcing a subsequence for search or 
+ *           alignment. 
+ * 
+ * Args:     CM           - the covariance model
+ */
+void
+ConfigCMEnforce(CM_t *cm)
+{
+  int do_build_cp9  = FALSE;
+  int enf_start_pos;            /* consensus left position node enf_start emits to   */
+  int enf_end_pos;              /* consensus left position node enf_end   emits to   */
+  int enf_end;                  /* last node we're enforcing                         */
+  CMEmitMap_t *emap;            /* consensus emit map for the CM, used iff enforcing */
+  float nonenf_sc;              /* score of cm->enfseq we're about to enforce before *
+				 * we reparameterize the CM                          */
+  float enf_sc;                 /* score of cm->enfseq subseq after CM is            *
+				 * reparameterized to enforce it                     */
+
+  /* Contract checks */
+  if(!(cm->config_opts & CM_CONFIG_ENFORCE))
+    cm_Fail("ERROR in ConfigCMEnforce() trying to enforce a subsequence but CM_CONFIG_ENFORCE flag is down.");
+  if(cm->flags & CM_ENFORCED)
+    cm_Fail("ERROR in ConfigCMEnforce() trying to enforce a subsequence but CM_IS_ENFORCED flag is up.");
+  /* Can't enforce in RSEARCH mode yet */  
+  if(cm->flags & CM_IS_RSEARCH)
+    cm_Fail("ERROR in ConfigCMEnforce() trying to enforce a subsequence in RSEARCH mode, not yet implemented.");
+  /* Can't enforce in sub mode */  
+  if(cm->align_opts & CM_ALIGN_SUB)
+    cm_Fail("ERROR in ConfigCMEnforce() can't enforce a subsequence in sub alignment mode.");
+
+  /* First, get the score of the enforced subseq for the non-enforced model */
+  nonenf_sc = EnforceScore(cm);
+
+  /* IMPORTANT: if CM has local begins, make it global, we'll relocalize 
+   * it later based on cm->config_opts, cm->search_opts, and/or cm->align_opts,
+   * we need to do this so we can build a CP9 (which can't be done with local CMs yet)*/
+  if(cm->flags & CMH_LOCAL_BEGIN)
+    ConfigGlobal(cm);
+
+  /* Enforce the sequence */
+  EnforceSubsequence(cm);
+
+  /* if we have a CP9, free it, and build a new one, (this one will automatically
+   * have the subseq enforced b/c it's built from the reparam'ized CM) */
+  if(cm->flags & CMH_CP9)
+    {
+      FreeCPlan9(cm->cp9);
+      cm->flags &= ~CMH_CP9; /* drop the CP9 flag */
+      do_build_cp9 = TRUE;
+    }
+  else if (cm->config_opts & CM_CONFIG_ENFORCEHMM)
+    {
+      /* we didn't have a CP9 before, but we need one now */
+      do_build_cp9 = TRUE;
+    }
+  if(do_build_cp9)
+    {
+      if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), 
+			TRUE, /* b/c we're enforcing, check CP9 mirrors CM */
+			0.0001, 0)))
+	cm_Fail("Couldn't build a CP9 HMM from the CM\n");
+      cm->flags |= CMH_CP9; /* raise the CP9 flag */
+    }
+
+  /* Configure the CM for local alignment . */
+  if (cm->config_opts & CM_CONFIG_LOCAL)
+    { 
+      ConfigLocalEnforce(cm, cm->pbegin, cm->pend); /* even in local we require each parse 
+						     * go through the enforced subseq */
+      CMLogoddsify(cm);
+    }
+  /* Possibly configure the CP9 for local alignment
+   * Note: CP9 local/glocal config does not necessarily match CM config 
+   *       in fact cmsearch default is local CM, glocal CP9 */
+  if((cm->flags & CMH_CP9) && (cm->config_opts & CM_CONFIG_HMMLOCAL))
+    {
+      /* Set up the CP9 locality to enforce a subseq */
+      emap = CreateEmitMap(cm); 
+      enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
+      enf_start_pos = emap->lpos[cm->enf_start];
+      enf_end_pos   = emap->lpos[enf_end];
+      FreeEmitMap(emap);
+      CPlan9SWConfigEnforce(cm->cp9, cm->pbegin, cm->pbegin, enf_start_pos, enf_end_pos);
+      CP9Logoddsify(cm->cp9);
+    }
+     
+  if(cm->config_opts & CM_CONFIG_ENFORCEHMM)
+    {
+      if(!(cm->flags & CMH_CP9))
+	cm_Fail("ERROR trying to configure the HMM for naive enforcement, but the cm's CMH_CP9 flag is down.\n");
+      /* We make the HMM ignorant of any sequence conservation besides
+       * the enforced subseq. This way ALL subseqs with the enforced
+       * subseq will be recognized as high scoring by the HMM and 
+       * be passed to the CM (if filtering (which is default in this mode)).
+       * To achieve this, make all emissions (match and insert) score 0,
+       * except for the few match emissions that model the enforced subseq */
+      emap = CreateEmitMap(cm); 
+      enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
+      enf_start_pos = emap->lpos[cm->enf_start];
+      enf_end_pos   = emap->lpos[enf_end];
+      FreeEmitMap(emap);
+      CP9EnforceHackMatchScores(cm->cp9, enf_start_pos, enf_end_pos);
+    }	
+
+  /* Determine the score of the enforced subseq for the enforced model */
+  enf_sc = EnforceScore(cm);
+  
+  cm->enf_scdiff = enf_sc - nonenf_sc;
+  cm->flags |= CM_ENFORCED; /* raise the enforced flag */
+
+  if(cm->flags & CMH_SCANMATRIX)
+    cm->flags &= ~CMH_SCANMATRIX; /* enforcement invalidates ScanMatrix */
+
+  return; 
+}
+
+/* EPN, Thu Jan  4 10:10:07 2007
+ * 
+ * Function: ConfigLocalEnforce
+ * 
+ * Purpose:  Given a CM with valid cm->enf_start and cm->enf_seq variables,
+ *           modify local entries and exits so that the nodes starting
+ *           at cm->enf_start and going to cm->enf_start + strlen(cm->enf_seq)
+ *           must be entered, i.e. disallow any local pass that omits them.
+ * 
+ * Args:     CM           - the covariance model
+ *           p_internal_start - total prob of a local begin to spread 
+ *           p_internal_exit  - total prob of a local end to spread
+ */
+void
+ConfigLocalEnforce(CM_t *cm, float p_internal_start, float p_internal_exit)
+{
+  int v;			/* counter over states */
+  int nd;			/* counter over nodes */
+  int nstarts;			/* number of possible internal starts */
+  int enf_start_pos;            /* consensus left position node enf_start emits to */
+  int enf_end_pos;              /* consensus left position node enf_end   emits to */
+  int nexits;			/* number of possible internal ends */
+  float denom;
+  CMEmitMap_t *emap;            /* consensus emit map for the CM */
+  int enf_end;
+
+  /* Contract checks */
+  if(cm->enf_seq == NULL || cm->enf_start == 0)
+    cm_Fail("ERROR, in ConfigLocalEnforce, but no subseq to enforce.\n");
+  if(cm->flags & CMH_LOCAL_BEGIN)
+    cm_Fail("ERROR in ConfigLocalEnforce() CMH_LOCAL_BEGIN flag already up.\n");
+  if(cm->flags & CMH_LOCAL_END)
+    cm_Fail("ERROR in ConfigLocalEnforce() CMH_LOCAL_END flag already up.\n");
+
+  enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
+  /* We want every parse to go through the MATL stretch from enf_start
+   * to enf_end. To enforce this we disallow local begin and ends that
+   * would allow parses to miss these nodes. */
+  for(nd = cm->enf_start; nd <= enf_end; nd++)
+    {
+      if(cm->ndtype[nd] != MATL_nd)
+	cm_Fail("ERROR, trying to enforce a non-MATL stretch (node: %d not MATL).\n", nd);
+    }
+  emap = CreateEmitMap(cm); /* diff from ConfigLocalEnds() */
+  enf_start_pos = emap->lpos[cm->enf_start];
+  enf_end_pos   = emap->lpos[enf_end];
+
+  /* The following code is copied from ConfigLocal() and ConfigLocalEnds()
+   * with modification to disallow local begins before enf_start and 
+   * disallow exits from between closest_start and enf_end. This 
+   * implementation sets local entry to the first node as 1-p_internal_start,
+   * and end from final node as 1-p_internal_exit. */
+
+  /*****************************************************************
+   * Internal entry.
+   *****************************************************************/
+  /* Count "internal" nodes: MATP, MATL, MATR, and BIF nodes.
+   * Ignore all start nodes, and also node 1 (which is always the
+   * "first" node and gets an entry prob of 1-p_internal_start).
+   */
+  nstarts = 0;
+  for (nd = 2; nd < cm->nodes; nd++) {
+    if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+    	cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd) 
+      if(emap->lpos[nd] <= enf_start_pos &&
+	 emap->rpos[nd] >= enf_end_pos) /* diff from ConfigLocalEnds() */
+	nstarts++;
+  }
+
+  /* Zero everything.
+   */
+  for (v = 0; v < cm->M; v++)  cm->begin[v] = 0.;
+
+  /* Erase the previous transition p's from node 0. The only
+   * way out of node 0 is going to be local begin transitions
+   * from the root v=0 directly to MATP_MP, MATR_MR, MATL_ML,
+   * and BIF_B states.
+   */
+  for (v = 0; v < cm->cnum[0]; v++)  cm->t[0][v] = 0.;
+
+  /* Node 1 gets prob 1-p_internal_start.
+   */
+  cm->begin[cm->nodemap[1]] = 1.-p_internal_start;
+
+  /* Remaining nodes share p_internal_start.
+   */
+  for (nd = 2; nd < cm->nodes; nd++) 
+    {
+      if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	  cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd)  
+	{
+	  if(emap->lpos[nd] <= enf_start_pos &&
+	     emap->rpos[nd] >= enf_end_pos) /* diff from ConfigLocalEnds() */
+	    {
+	      /*printf("enabling local begin into nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);*/
+	      cm->begin[cm->nodemap[nd]] = p_internal_start/(float)nstarts;
+	    }
+	  else
+	    ;/*printf("NOT enabling local begin into nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);*/
+	}
+    }
+  cm->flags |= CMH_LOCAL_BEGIN;
+  
+  /*****************************************************************
+   * Internal exit.
+   *****************************************************************/
+  /* Count internal nodes MATP, MATL, MATR, BEGL, BEGR that aren't
+   * adjacent to END nodes.
+   */
+  nexits = 0;
+  for (nd = 1; nd < cm->nodes; nd++) {
+    if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	 cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	 cm->ndtype[nd] == BEGR_nd) && 
+	cm->ndtype[nd+1] != END_nd)
+      if(emap->lpos[nd] >= enf_end_pos || 
+	 emap->rpos[nd] <  enf_start_pos) /* diff from ConfigLocalEnds() */
+	nexits++;
+  } 
+  /* Spread the exit probability across internal nodes.
+   * Currently does not compensate for the decreasing probability
+   * of reaching a node, the way HMMER does: therefore the probability
+   * of exiting at later nodes is actually lower than the probability 
+   * of exiting at earlier nodes. This should be a small effect.
+   */
+  for (v = 0; v < cm->M; v++) cm->end[v] = 0.;
+  for (nd = 1; nd < cm->nodes; nd++) {
+    if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	 cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	 cm->ndtype[nd] == BEGR_nd) && 
+	cm->ndtype[nd+1] != END_nd)
+      {
+	v = cm->nodemap[nd];
+	if(emap->lpos[nd] >= enf_end_pos || 
+	   emap->rpos[nd] <  enf_start_pos) /* diff from ConfigLocalEnds() */
+	  {
+	    /*printf("enabling local end from nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);*/
+	    cm->end[v] = p_internal_exit / (float) nexits;
+	  }
+	else
+	  {
+	    ;/*printf("NOT enabling local end from nd: %d lpos: %d rpos: %d s: %d e: %d\n", nd, emap->lpos[nd], emap->rpos[nd], enf_start_pos, enf_end_pos);*/
+	  }
+	/* renormalize the main model transition distribution,
+	 * it's important to do this for all states that
+	 * may have had a local end possible prior to this function call*/
+	denom = esl_vec_FSum(cm->t[v], cm->cnum[v]);
+	denom += cm->end[v];
+	esl_vec_FScale(cm->t[v], cm->cnum[v], 1./denom);
+      }
+  }
+  cm->flags |= CMH_LOCAL_END;
+  FreeEmitMap(emap);
+
+  return;
+}
+
+/*******************************************************************************
+ * Function: EnforceSubsequence()
+ * Date:     EPN, Thu Jan  4 10:13:08 2007
+ * Purpose:  Modify CM probabilities so that if a particular subsequence (cm->enf_subseq)
+ *           is not emitted, a big bit score penalty is incurred. Specifically designed
+ *           for enforcing the telomerase RNA template sequence.
+ */
+int  
+EnforceSubsequence(CM_t *cm)
+{
+  int status;
+  int nd;
+  float small_chance = 1e-15; /* any parse not including the enforced path includes
+			       * an emission or transition with a -45 bit score */
+  int   enf_end;
+  int v;
+  int a;
+  float *nt;
+  ESL_SQ *enf_sq = NULL;     /* We'll fill this with enf_seq and digitize it */
+
+  ESL_ALLOC(nt, sizeof(float) * cm->abc->K);
+
+  enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
+  /*printf("in EnforceSubsequence, start posn: %d cm->enf_seq: %s\n", cm->enf_start, cm->enf_seq);*/
+  for(nd = (cm->enf_start-1); nd <= enf_end; nd++)
+    {
+      if(cm->ndtype[nd] != MATL_nd)
+	cm_Fail("ERROR, trying to enforce a non-MATL stretch (node: %d not MATL).\n", nd);
+    }
+
+  /* Go through each node and enforce the template by changing the
+   * emission and transition probabilities as appropriate. */
+
+  /* First deal with node before cm->enf_start, we want to ensure that cm->enf_start is
+   * entered. We know cm->enf_start - 1 and cm->enf_start are both MATL nodes */
+  nd = cm->enf_start - 1;
+  v  = cm->nodemap[nd];       /* MATL_ML*/
+  cm->t[v][2] = small_chance; /* ML->D  */
+  v++;                        /* MATL_D */
+  cm->t[v][2] = small_chance; /*  D->D  */
+  v++;                        /* MATL_IL*/
+  cm->t[v][2] = small_chance; /*  IL->D */
+
+  /* Now move on to the MATL nodes we're enforcing emits the cm->enf_seq */
+  enf_sq  = esl_sq_CreateFrom("enforced", cm->enf_seq, NULL, NULL, NULL);
+  if(enf_sq == NULL) goto ERROR;
+  if((status = esl_sq_Digitize(cm->abc, enf_sq)) != eslOK) goto ERROR;
+
+  for(nd = cm->enf_start; nd <= enf_end; nd++) 
+    {
+      /*printf("enforcing subseq for node: %d\n", nd);*/
+      /* Enforce the transitions, unless we're the last node of the stretch */
+      v  = cm->nodemap[nd];       /* MATL_ML*/
+      if(nd < enf_end)
+	{
+	  cm->t[v][0] = small_chance; /* ML->IL */
+	  cm->t[v][2] = small_chance; /* ML->D  */
+	}
+      /* Enforce the emission. Taking into account ambiguities. */
+      esl_vec_FSet(nt, cm->abc->K, 0.);
+      /*printf("enf_dsq[%d]: %d\n", (nd-cm->enf_start+1), (int) (enf_dsq[(nd-cm->enf_start+1)]));*/
+      esl_abc_FCount(cm->abc, nt, enf_sq->dsq[(nd - cm->enf_start + 1)], 1.);
+      /* nt is now a count vector norm'ed to 1.0 with relative contributions 
+       * of each (A,C,G,U) nucleotides towards the (potentially ambiguous)
+       * residue in enf_dsq[(nd-cm->enf_start+1)]) 
+       */
+
+      for(a = 0; a < cm->abc->K; a++)
+	{
+	  /* start out by setting each residue to 'small_chance' */
+	  cm->e[v][a] =  small_chance;
+	  cm->e[v][a] += nt[a];
+	}
+    }
+  free(nt);
+  esl_sq_Destroy(enf_sq);
+
+  CMRenormalize(cm);
+  /* new probs invalidate log odds scores */
+  cm->flags &= ~CMH_BITS;
+  /* Recalc QDBs if they exist */
+  if(cm->flags & CMH_QDB) {
+    free(cm->dmin);
+    free(cm->dmax);
+    cm->dmin = NULL;
+    cm->dmax = NULL;
+    cm->flags &= ~CMH_QDB;
+    ConfigQDB(cm);
+  }      
+  /* free and rebuild scan matrix to correspond to new QDBs, if it exists */
+  if(cm->flags & CMH_SCANMATRIX) {
+    int do_float = cm->smx->flags & cmSMX_HAS_FLOAT;
+    int do_int   = cm->smx->flags & cmSMX_HAS_INT;
+    cm_FreeScanMatrixForCM(cm);
+    cm_CreateScanMatrixForCM(cm, do_float, do_int);
+  }
+
+  CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
+
+  /*for(nd = cm->enf_start; nd <= enf_end; nd++) 
+    {
+      v  = cm->nodemap[nd];      
+      for(a = 0; a < cm->abc->K; a++)
+	printf("cm->e[v:%d][a:%d]: %f sc: %f\n", v, a, cm->e[v][a], cm->esc[v][a]);
+    }
+  printf("\n");*/
+
+  return eslOK;
+
+ ERROR: 
+  cm_Fail("Memory allocation error.\n");
+  return status; /* never reached */
+}
+
+/*******************************************************************************
+ * Function: EnforceScore()
+ * Date:     EPN, Wed Feb 14 16:19:22 2007
+ * Purpose:  Determine the subparse score of aligning cm->enfseq to the MATL_ML 
+ *           states of consecutive MATL nodes starting at cm->enfstart. This
+ *           function can be called before and after enforcing the subseq 
+ *           via reparameterization of the relevant nodes, to determine the
+ *           score difference of cm->enfseq b/t the non-enforced and enforced
+ *           CMs.
+ */
+float
+EnforceScore(CM_t *cm)
+{
+  int     status;
+  ESL_SQ *enf_sq;/* a digitized version of cm->enf_seq */
+  int   enf_end; /* last node to be enforced */
+  int   nd;      /* node index  */
+  int   v;       /* state index */
+  int   i;       /* sequence position index */
+  float score;   /* score of subparse that starts in first MATL_ML of enforced stretch,
+		  * goes through each MATL_ML and emits the enforced residues (which
+		  * can be ambiguous). */
+
+  /* Contract check. */
+  if(!(cm->config_opts & CM_CONFIG_ENFORCE))
+    cm_Fail("ERROR in EnforceScore(), cm->config_opt CM_CONFIG_ENFORCE not raised.\n");
+
+  enf_end = cm->enf_start + strlen(cm->enf_seq) - 1;
+  /*printf("in EnforceScore(), start posn: %d cm->enf_seq: %s\n", cm->enf_start, cm->enf_seq);*/
+  for(nd = (cm->enf_start-1); nd <= enf_end; nd++)
+    {
+      if(cm->ndtype[nd] != MATL_nd)
+	cm_Fail("ERROR, trying to enforce a non-MATL stretch (node: %d not MATL).\n", nd);
+    }
+
+  /* Go through each node and determine the score of the subparse that
+   * goes through the nodes that are/will be enforced.  To start, we
+   * have to transit to MATL_ML of cm->enf_start from either MATL_ML
+   * of MATL_ML or MATL_IL of nd=cm->enf_start-1, but we don't know
+   * which.  Can't think of robust way of handling this, current
+   * strategy is to take the average of the two transition scores.
+   * (this is hacky, but should have small effect on cm->enf_scdiff).
+   */
+  nd = cm->enf_start - 1;
+  v  = cm->nodemap[nd];       /* MATL_ML*/
+  score =  (cm->tsc[v][1] + cm->tsc[v+2][1]) / 2;
+  /*printf("init v: %d ML->ML: %f IL->ML: %f avg: %f\n", v, cm->tsc[v][1], cm->tsc[(v+2)][1], score);*/
+
+  /* Now move on to the MATL nodes we're enforcing emits the cm->enf_seq */
+  enf_sq  = esl_sq_CreateFrom("enforced", cm->enf_seq, NULL, NULL, NULL);
+  if(enf_sq == NULL) goto ERROR;
+  if((status = esl_sq_Digitize(cm->abc, enf_sq)) != eslOK) goto ERROR;
+
+  for(nd = cm->enf_start; nd <= enf_end; nd++) 
+    {
+      i = nd - cm->enf_start+1; /* enf_dsq goes 1..(strlen(cm->enf_seq)) 
+				 * bordered by sentinels */
+      /* Add score for the MATL_ML->MATL_ML transition, 
+       * unless we're the last node of the stretch */
+      v  = cm->nodemap[nd];       /* MATL_ML*/
+      if(nd < enf_end)
+	score += cm->tsc[v][1]; /* ML->ML */
+
+      /* Add score for the emission. Taking into account ambiguities. */
+      if (enf_sq->dsq[i] < cm->abc->K)
+	score += cm->esc[v][enf_sq->dsq[i]];
+      else
+	score += esl_abc_FAvgScore(cm->abc, enf_sq->dsq[i], cm->esc[v]);
+
+    }
+  /*printf("in EnforceScore() returning sc: %f\n", score);*/
+  esl_sq_Destroy(enf_sq);
+
+  return score;
+
+ ERROR: 
+  cm_Fail("Memory allocation error.\n");
+  return status; /* never reached */
+}
+
+/*******************************************************************************
+ * Function: EnforceFindEnfStart()
+ * Date:     EPN, Fri Feb  9 10:32:44 2007
+ * Purpose:  Determine the node cm->enf_start given the consensus column it 
+ *           models, and check that it's a MATL node (this requirement could 
+ *           be relaxed in the future).
+ * Returns:  (int) the CM MATL node index that emits to consensus column 
+ *           enf_cc_start. Dies if there's no such node.
+ */
+int  
+EnforceFindEnfStart(CM_t *cm, int enf_cc_start)
+{
+  CMEmitMap_t *emap;            /* consensus emit map for the CM */
+  int enf_start;                /* CM MATL node that emits to enf_cc_start */
+  int nd;                       /* counter over nodes */
+  
+  emap      = CreateEmitMap(cm); 
+  enf_start = -1;
+  if(enf_cc_start > emap->clen)
+    cm_Fail("ERROR --enfstart <n>, there's only %d columns, you chose column %d\n", 
+	enf_cc_start, emap->clen);
+  for(nd = 0; nd < cm->nodes; nd++)
+    {
+      if(emap->lpos[nd] == enf_cc_start) 
+	{
+	  if(cm->ndtype[nd] == MATL_nd)	      
+	    {
+	      enf_start = nd;
+	      break;
+	    }
+	  else if(cm->ndtype[nd] == MATP_nd)	      
+	    cm_Fail("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by a MATP node.\n", enf_cc_start);
+	}
+      else if(emap->rpos[nd] == enf_cc_start)
+	{
+	  if(cm->ndtype[nd] == MATR_nd)	      
+	    cm_Fail("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by a MATR node.\n", enf_cc_start);
+	  if(cm->ndtype[nd] == MATP_nd)	      
+	    cm_Fail("ERROR --enfstart <n>, <n> must correspond to MATL modelled column\nbut %d is modelled by the right half of a MATP node.\n", enf_cc_start);
+	}	      
+    }
+  if(enf_start == -1)
+    cm_Fail("ERROR trying to determine the start node for the enforced subsequence.\n");
+  FreeEmitMap(emap);
+  return(enf_start);
+}
+#endif
+
+/* EPN, Mon Jan 21 10:20:50 2008
+ * reorg of cmsearch, deemed some functions unnec: 
+ * 
+ * static int set_window(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
+ * static int read_qdb_file(FILE *fp, CM_t *cm, int *dmin, int *dmax);
+ * 
+ * and others were rewritten:
+ * static int set_searchinfo_OLD(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
+ */
+
+#if 0 
+
+/* A CP9 filter work unit consists of a CM and an int (nseq).
+ * The job is to emit nseq sequences with a score better than cutoff (rejecting
+ * those that are worse), and then search those seqs with a CP9, returning the scores of the
+ * best CP9 hit within each sequence.
+ */
+static int
+process_cp9filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq)
+{
+  /*int status;*/
+  cm_Fail("WRITE process_cp9filter_workunit()");
+  return eslOK;
+  
+  /* ERROR:
+  ESL_DPRINTF1(("worker %d: has caught an error in process_cp9filter_workunit\n", cfg->my_rank));
+  return status;*/
+}
+#endif
+#if 0
+/* set_searchinfo_OLD()
+ * Determine how many rounds of searching we will do (all rounds but last
+ * round are filters), and set the relevant info in the SearchInfo_t <cm->si>
+ * object, including cutoffs.
+ */
+static int
+set_searchinfo_OLD(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
+{
+  int status;
+  int n;
+  int stype;
+  int add_cyk_filter     = FALSE;
+  int add_inside_filter  = FALSE;
+  int add_viterbi_filter = FALSE;
+  int add_forward_filter = FALSE;
+  int search_opts;
+  int use_hmmonly;
+  int fthr_mode;
+  int cutoff_type;
+  float sc_cutoff = -1.;
+  float e_cutoff = -1.;
+  int  *dmin, *dmax; /* these become QDBs if we add a CM_FILTER */
+  ScanMatrix_t *fsmx; 
+  int safe_windowlen;
+  float surv_fract;
+  int cm_mode, cp9_mode;
+  int cut_point;
+
+  if(cm->si != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo(), cm->si is not NULL, shouldn't happen.\n");
+
+  /* Create SearchInfo, specifying no filtering, we change the threshold below */
+  CreateSearchInfo(cm, SCORE_CUTOFF, 0., -1.);
+  if(cm->si == NULL) cm_Fail("set_searchinfo(), CreateSearchInfo() call failed.");
+  SearchInfo_t *si = cm->si; 
+  if(si->nrounds > 0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_search_info(), si->nrounds (%d) > 0\n", si->nrounds);
+
+  /*************************************************************************************
+   * Filter related options:
+   *
+   * User can specify 0,1 or 2 rounds of filtering and cutoffs on the command line, 
+   * 0 or 1 rounds can be CM  filters, with --fcyk or --finside, --fcmT,  and --fcmE (req's Gumbels)
+   *                                        --finside specifies use inside, not CYK
+   * 0 or 1 rounds can by HMM filters, with --fhmmviterbi or --fhmmforward, --fhmmT, and --fhmmE (req's Gumbels)
+   *                                        --fhmmforward specifies use forward, not viterbi
+   * Or user can specify that an HMM filter as described in the the CM file 
+   * be used with option --fgiven. --fgiven is incompatible with --fhmmviterbi and --fhmmforward
+   * but not with --fcyk and --finside
+   *
+   *************************************************************************************
+   * Final round related options (after all filtering is complete):
+   *
+   * --cyk:        search with CM CYK (TRUE by default)
+   * --inside:     search with CM inside 
+   * -T:           CM bit score threshold
+   * -E:           CM E-value threshold (requires Gumbel info in CM file)
+   * --ga:         use Rfam gathering threshold (bit sc) from CM file
+   * --tc:         use Rfam trusted cutoff      (bit sc) from CM file
+   * --nc:         use Rfam noise cutoff        (bit sc) from CM file
+   *
+   * --viterbi: search with HMM viterbi
+   * --forward: search with HMM forward
+   * --hmmT:       bit score threshold for --viterbi or --forward
+   * --hmmE:       E-value threshold (requires Gumbel info in CM file)
+   *
+   *************************************************************************************
+   */
+  
+  /* First, set up cutoff for final round, this will be round 0, unless filter info was read from the CM file */
+  n           = si->nrounds;
+  stype       = si->stype[n];
+  search_opts = si->search_opts[n];
+
+  /* determine configuration of CM and CP9 based on cm->flags & cm->search_opts */
+  CM2Gumbel_mode(cm, search_opts, &cm_mode, &cp9_mode); 
+
+  use_hmmonly = ((search_opts & CM_SEARCH_HMMVITERBI) || (search_opts & CM_SEARCH_HMMFORWARD));
+  if(! use_hmmonly) {
+    if(stype != SEARCH_WITH_CM) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo(), search_opts for final round of search does not have HMMVITERBI or HMMFORWARD flags raised, but is not of type SEARCH_WITH_CM.");
+    /* set up CM cutoff, either 0 or 1 of 6 options is enabled. 
+     * esl_opt_IsDefault() returns FALSE even if option is enabled with default value 
+     * We will NOT use this if --viterbi
+     */
+    if(esl_opt_IsDefault(go, "-E") && 
+       esl_opt_IsDefault(go, "-T") && 
+       esl_opt_IsDefault(go, "--ga") && 
+       esl_opt_IsDefault(go, "--tc") && 
+       esl_opt_IsDefault(go, "--nc")) { 
+      /* Choose from, in order of priority:
+       * 1. default CM E value if CM file has Gumbel stats
+       * 3. default CM bit score
+       */
+      if(cm->flags & CMH_GUMBEL_STATS) { /* use default CM E-value cutoff */
+	cutoff_type = E_CUTOFF;
+	e_cutoff    = esl_opt_GetReal(go, "-E");
+	if((status = E2Score(cm, errbuf, cm_mode, e_cutoff, &sc_cutoff)) != eslOK) return status;
+      }
+      else { /* no Gumbel stats in CM file, use default bit score cutoff */
+	cutoff_type = SCORE_CUTOFF;
+	sc_cutoff   = esl_opt_GetReal(go, "-T");
+	e_cutoff    = -1.; /* invalid, we'll never use it */  
+      }
+    }
+    else if(! esl_opt_IsDefault(go, "-E")) {
+      if(! (cm->flags & CMH_GUMBEL_STATS))
+	ESL_FAIL(eslEINVAL, errbuf, "-E requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
+      cutoff_type = E_CUTOFF;
+      e_cutoff    = esl_opt_GetReal(go, "-E");
+      if((status = E2Score(cm, errbuf, cm_mode, e_cutoff, &sc_cutoff)) != eslOK) return status;
+    }
+    else if(! esl_opt_IsDefault(go, "-T")) {
+      cutoff_type = SCORE_CUTOFF;
+      sc_cutoff   = esl_opt_GetReal(go, "-T");
+      e_cutoff    = -1.; /* invalid, we'll never use it */  
+      if((sc_cutoff < 0.) && (! esl_opt_GetBoolean(go, "--greedy"))) ESL_FAIL(eslEINVAL, errbuf, "with -T <x> option, <x> can only be less than 0. if --greedy also enabled.");
+    }
+    else if(! esl_opt_IsDefault(go, "--ga")) {
+      if(! (cm->flags & CMH_GA))
+	ESL_FAIL(eslEINVAL, errbuf, "No GA gathering threshold in CM file, can't use --ga.");
+      cutoff_type = SCORE_CUTOFF;
+      sc_cutoff   = cm->ga;
+      e_cutoff    = -1.; /* we'll never use it */
+    }
+    else if(! esl_opt_IsDefault(go, "--tc")) {
+      if(! (cm->flags & CMH_TC))
+	ESL_FAIL(eslEINVAL, errbuf, "No TC trusted cutoff in CM file, can't use --tc.");
+      cutoff_type = SCORE_CUTOFF;
+      sc_cutoff   = cm->tc;
+      e_cutoff    = -1.; /* we'll never use it */
+    }
+    else if(! esl_opt_IsDefault(go, "--nc")) {
+      if(! (cm->flags & CMH_NC))
+	ESL_FAIL(eslEINVAL, errbuf, "No NC noise cutoff in CM file, can't use --nc.");
+      cutoff_type = SCORE_CUTOFF;
+      sc_cutoff   = cm->nc;
+      e_cutoff    = -1.; /* we'll never use it */
+    }
+    else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No CM cutoff selected. This shouldn't happen.");
+  } /* end of if(! use_hmmonly) */
+  else { 
+    if(stype != SEARCH_WITH_HMM) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "search_opts for final round of search has HMMVITERBI or HMMFORWARD flags raised, but is not of type SEARCH_WITH_HMM.");
+    /* Set up CP9 HMM cutoff, either 0 or 1 of 2 options is enabled 
+     * esl_opt_IsDefault() returns FALSE even if option is enabled with default value 
+     */
+    if(esl_opt_IsDefault(go, "--hmmE") && 
+       esl_opt_IsDefault(go, "--hmmT")) {
+      /* Choose from, in order of priority:
+       * 1. default CP9 E value if CM file has Gumbel stats
+       * 2. default CP9 bit score
+       */
+      if(cm->flags & CMH_GUMBEL_STATS) { /* use default CP9 E-value cutoff */
+	cutoff_type = E_CUTOFF;
+	e_cutoff    = esl_opt_GetReal(go, "--hmmE"); 
+	if((status = E2Score(cm, errbuf, cp9_mode, e_cutoff, &sc_cutoff)) != eslOK) return status;
+      }
+      else { /* no Gumbel stats in CM file, use default bit score cutoff */
+	cutoff_type = SCORE_CUTOFF;
+	sc_cutoff   = esl_opt_GetReal(go, "--hmmT");
+	e_cutoff    = -1; /* we'll never use it */
+      }
+    }
+    else if(! esl_opt_IsDefault(go, "--hmmE")) {
+      if(! (cm->flags & CMH_GUMBEL_STATS))
+	ESL_FAIL(eslEINVAL, errbuf, "--hmmE requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
+      cutoff_type = E_CUTOFF;
+      e_cutoff    = esl_opt_GetReal(go, "--hmmE");
+      if((status  = E2Score(cm, errbuf, cp9_mode, e_cutoff, &sc_cutoff)) != eslOK) return status; 
+    }
+    else if(! esl_opt_IsDefault(go, "--hmmT")) {
+      cutoff_type = SCORE_CUTOFF;
+      sc_cutoff   = esl_opt_GetReal(go, "--hmmT");
+      e_cutoff    = -1.; /* we'll never use this */
+      if((sc_cutoff < 0.) && (! esl_opt_GetBoolean(go, "--hmmgreedy"))) ESL_FAIL(eslEINVAL, errbuf, "with --hmmT <x> option, <x> can only be less than 0. if --hmmgreedy also enabled.");
+    }
+  }
+  /* update the search info, which holds the thresholds */
+  UpdateSearchInfoCutoff(cm, cm->si->nrounds, cutoff_type, sc_cutoff, e_cutoff);   
+  ValidateSearchInfo(cm, cm->si);
+  /* DumpSearchInfo(cm->si); */
+  /* done with threshold for final round */
+
+  /* Set up the filters and their thresholds 
+   * 1. add a CM  filter, if necessary
+   * 2. add a HMM filter, if necessary
+   */
+
+  /* CM filter */
+  add_cyk_filter    = esl_opt_GetBoolean(go, "--fcyk");
+  add_inside_filter = esl_opt_GetBoolean(go, "--finside");
+  ESL_DASSERT1((!(add_cyk_filter && add_inside_filter))); /* should be enforced by getopts */
+  if(add_cyk_filter || add_inside_filter) { /* determine thresholds for filters */
+    /* set up CM filter cutoff, either 0 or 1 of 2 options is enabled. 
+     * esl_opt_IsDefault() returns FALSE even if option is enabled with default value 
+     */
+    if(esl_opt_IsDefault(go, "--fE") && 
+       esl_opt_IsDefault(go, "--fT")) {
+      /* Choose from, in order of priority:
+       * 1. default CM filter E value if CM file has Gumbel stats
+       * 3. default CM filter bit score
+       */
+      if(cm->flags & CMH_GUMBEL_STATS) { /* use default CM E-value cutoff */
+	cutoff_type = E_CUTOFF;
+	e_cutoff    = esl_opt_GetReal(go, "--fE");
+	if((status  = E2Score(cm, errbuf, cm_mode, e_cutoff, &sc_cutoff)) != eslOK) return status;
+      }
+      else { /* no Gumbel stats in CM file, use default bit score cutoff */
+	cutoff_type = SCORE_CUTOFF;
+	sc_cutoff   = esl_opt_GetReal(go, "--fT");
+	e_cutoff    = -1.; /* invalid, we'll never use it */  
+      }
+    }
+    else if(! esl_opt_IsDefault(go, "--fE")) {
+      if(! (cm->flags & CMH_GUMBEL_STATS))
+	ESL_FAIL(eslEINVAL, errbuf, "--fE requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
+      cutoff_type = E_CUTOFF;
+      e_cutoff    = esl_opt_GetReal(go, "--fE");
+      if((status  = E2Score(cm, errbuf, cm_mode, e_cutoff, &sc_cutoff)) != eslOK) return status;
+    }
+    else if(! esl_opt_IsDefault(go, "--fT")) {
+      cutoff_type = SCORE_CUTOFF;
+      sc_cutoff   = esl_opt_GetReal(go, "--fT");
+      if((sc_cutoff < 0.) && (! esl_opt_GetBoolean(go, "--fgreedy"))) ESL_FAIL(eslEINVAL, errbuf, "with --fT <x> option, <x> can only be less than 0. if --fgreedy also enabled.");
+      e_cutoff    = -1.; /* we'll never use it */
+    }
+    else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No CM filter cutoff selected. This shouldn't happen.");
+    
+    /* build the ScanMatrix_t for this round, requires calcing dmin, dmax */
+    safe_windowlen = cm->W * 2;
+    while(!(BandCalculationEngine(cm, safe_windowlen, esl_opt_GetReal(go, "--fbeta"), FALSE, &dmin, &dmax, NULL, NULL))) {
+      free(dmin);
+      free(dmax);
+      dmin = NULL;
+      dmax = NULL;
+      safe_windowlen *= 2;
+      if(safe_windowlen > (cm->clen * 1000)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo(), band calculation safe_windowlen big: %d\n", safe_windowlen);
+    }
+    fsmx = cm_CreateScanMatrix(cm, dmax[0], dmin, dmax, esl_opt_GetReal(go, "--fbeta"), TRUE, add_cyk_filter, add_inside_filter);
+    /* add the filter */
+    AddFilterToSearchInfo(cm, add_cyk_filter, add_inside_filter, FALSE, FALSE, FALSE, fsmx, NULL, cutoff_type, sc_cutoff, e_cutoff);
+    ValidateSearchInfo(cm, cm->si);
+    /* DumpSearchInfo(cm->si); */
+  }
+  else if (! esl_opt_IsDefault(go, "--fbeta")) ESL_FAIL(eslEINCOMPAT, errbuf, "--fbeta has an effect with --fcyk or --finside");
+
+  /* HMM filter */
+  /* if --fgiven was enabled, --fhmmviterbi, --fhmmforward could NOT have been selected, 
+   * so we won't enter any of the loops below.
+   */
+  add_viterbi_filter = esl_opt_GetBoolean(go, "--fhmmviterbi");
+  add_forward_filter = esl_opt_GetBoolean(go, "--fhmmforward");
+  ESL_DASSERT1((!(add_viterbi_filter && add_forward_filter))); /* should be enforced by getopts */
+
+  if(esl_opt_GetBoolean(go, "--fgiven")) {
+    /* determine filter threshold mode, the mode of final stage of searching, either FTHR_CM_LC,
+     * FTHR_CM_LI, FTHR_CM_GC, FTHR_CM_GI, (can't be an HMM mode b/c getopts enforces --fgiven incompatible with
+     * --viterbi and --forward). 
+     */
+
+    if((status = CM2FthrMode(cm, errbuf, cm->search_opts, &fthr_mode)) != eslOK) return status;
+    HMMFilterInfo_t *hfi_ptr = cm->stats->hfiA[fthr_mode]; /* for convenience */
+    if(!(cm->flags & CMH_FILTER_STATS))   ESL_FAIL(eslEINCOMPAT, errbuf,      "set_searchinfo(), --fgiven enabled, but cm's CMH_FILTER_STATS flag is down.");
+    if(hfi_ptr->is_valid == FALSE)        ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo(), --fgiven enabled, cm's CMH_FILTER_STATS is raised, but best filter info for fthr_mode %d is invalid.", fthr_mode);
+    ESL_DASSERT1((!add_viterbi_filter)); /* --fhmmviterbi is incompatible with --fgiven, enforced by getopts */
+    ESL_DASSERT1((!add_forward_filter)); /* --fhmmforward is incompatible with --fgiven, enforced by getopts */
+
+    cutoff_type = E_CUTOFF;
+    
+    /* determine the appropriate filter cut point <cut_point> to use, for details
+     * see comments in function: searchinfo.c:GetHMMFilterFwdECutGivenCME() for details */
+    if(cm->si->cutoff_type[cm->si->nrounds] == SCORE_CUTOFF) { 
+      if((status = GetHMMFilterFwdECutGivenCMBitScore(hfi_ptr, errbuf, cm->si->sc_cutoff[cm->si->nrounds], cfg->dbsize, &cut_point, cm, cm_mode)) != eslOK) return status; 
+      /* cm->si->sc_cutoff[cm->si->nrounds] is bit score cutoff used for the final round of searching (when we'll be done filtering) */
+    }
+    else { 
+      if((status = GetHMMFilterFwdECutGivenCME(hfi_ptr, errbuf, cm->si->e_cutoff[cm->si->nrounds], cfg->dbsize, &cut_point)) != eslOK) return status; 
+      /* cm->si->e_cutoff[cm->si->nrounds] is E cutoff used for the final round of searching (when we'll be done filtering) */
+    }
+    if(cut_point != -1) { /* it's worth it to filter */
+      e_cutoff = hfi_ptr->fwd_E_cut[cut_point] * ((double) cfg->dbsize / (double) hfi_ptr->dbsize); 
+      /* check if --hmmEmax applies */
+      if(! (esl_opt_IsDefault(go, "--hmmEmax"))) {
+	e_cutoff = ESL_MIN(e_cutoff, esl_opt_GetReal(go, "--hmmEmax"));
+      }
+      if((status  = E2Score(cm, errbuf, cm_mode, e_cutoff, &sc_cutoff)) != eslOK) return status; /* note: use cm_mode, not fthr_mode */
+      add_forward_filter = TRUE;
+      /* TEMPORARY! */
+      /* Predict survival fraction from filter based on E-value, assume average hit length is cfg->avg_hit_len (from QD band calc) */
+      surv_fract = (e_cutoff * ((2. * cm->W) - cfg->avg_hit_len)) / ((double) cfg->dbsize); 
+      printf("\n\nsurv_fract: %f\n\n\n", surv_fract);
+    }
+    else { /* it's not worth it to filter, our HMM filter cutoff would be so low, 
+	    * letting so much of the db survive, the filter is a waste of time */
+      add_forward_filter = FALSE;
+      printf("cut_point -1, always_better FALSE\n");
+    }
+  }
+  else if(add_viterbi_filter || add_forward_filter) { /* determine thresholds for filters */
+    /* Set up HMM cutoff, either 0 or 1 of 3 options is enabled */
+    ESL_DASSERT1((! use_hmmonly)); /* should be enforced by getopts */
+    if(esl_opt_IsDefault(go, "--hmmcalcthr") && 
+       esl_opt_IsDefault(go, "--hmmE") && 
+       esl_opt_IsDefault(go, "--hmmT")) {
+      /* Choose from, in order of priority:
+       * 1. default CP9 E value if CM file has Gumbel stats
+       * 2. default CP9 bit score
+       */
+      if(cm->flags & CMH_GUMBEL_STATS) { /* use default CM E-value cutoff */
+	cutoff_type = E_CUTOFF;
+	e_cutoff    = esl_opt_GetReal(go, "--hmmE");
+	if((status  = E2Score(cm, errbuf, cp9_mode, e_cutoff, &sc_cutoff)) != eslOK) return status; 
+      }
+      else { /* no Gumbel stats in CM file, use default bit score cutoff */
+	cutoff_type = SCORE_CUTOFF;
+	sc_cutoff   = esl_opt_GetReal(go, "--hmmT");
+	e_cutoff    = -1.; /* we'll never use this */
+      }
+    }
+    else if(! esl_opt_IsDefault(go, "--hmmcalcthr")) {
+      if(! (cm->flags & CMH_GUMBEL_STATS))
+	ESL_FAIL(eslEINVAL, errbuf, "--hmmcalcthr requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
+      cutoff_type = E_CUTOFF;
+      /* this gets overwritten later after threshold is calculated */
+      e_cutoff = esl_opt_GetReal(go, "--hmmE");
+      if((status  = E2Score(cm, errbuf, cp9_mode, e_cutoff, &sc_cutoff)) != eslOK) return status; 
+    }
+    else if(! esl_opt_IsDefault(go, "--hmmE")) {
+      if(! (cm->flags & CMH_GUMBEL_STATS))
+	ESL_FAIL(eslEINVAL, errbuf, "--hmmE requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
+      cutoff_type = E_CUTOFF;
+      e_cutoff    = esl_opt_GetReal(go, "--hmmE");
+      if((status  = E2Score(cm, errbuf, cp9_mode, e_cutoff, &sc_cutoff)) != eslOK) return status; 
+    }
+    else if(! esl_opt_IsDefault(go, "--hmmT")) {
+      cutoff_type = SCORE_CUTOFF;
+      sc_cutoff   = esl_opt_GetReal(go, "--hmmT");
+      e_cutoff    = -1.; /* we'll never use this */
+      if((sc_cutoff < 0.) && (! esl_opt_GetBoolean(go, "--hmmgreedy"))) ESL_FAIL(eslEINVAL, errbuf, "with --hmmT <x> option, <x> can only be less than 0. if --hmmgreedy also enabled.");
+    }
+    else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No HMM filter cutoff selected. This shouldn't happen.");
+  }
+  if(add_viterbi_filter || add_forward_filter) {
+    /* add the filter */
+    AddFilterToSearchInfo(cm, FALSE, FALSE, add_viterbi_filter, add_forward_filter, FALSE, NULL, NULL, cutoff_type, sc_cutoff, e_cutoff);
+    ValidateSearchInfo(cm, cm->si);
+    /*DumpSearchInfo(cm->si); */
+  }
+
+  return eslOK;
+}
+#endif
+#if 0
+/* set_window()
+ * Set cm->W, the window size for scanning.
+ *
+ * 1. cm->W is set to dmax[0] if --noqdb, --viterbi, or --forward enabled after calc'ing QDBs 
+ *    with beta == cm->beta of (esl_opt_GetReal(go, "--beta")) if that was enabled. 
+ * 3. else cm->W was set to cm->dmax[0] in ConfigCM()'s call to ConfigQDB(), 
+ *    which is what it should be.
+ */
+static int
+set_window(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
+{
+  int use_hmmonly;
+  int do_float;
+  int do_int;
+
+  use_hmmonly = (esl_opt_GetBoolean(go, "--viterbi") || esl_opt_GetBoolean(go, "--forward")) ? TRUE : FALSE;
+
+  if(esl_opt_GetBoolean(go, "--noqdb") || use_hmmonly) {
+    if(cm->dmin != NULL || cm->dmax != NULL) 
+      ESL_FAIL(eslEINCONCEIVABLE, errbuf, "--viterbi, --forward or --noqdb enabled, but cm->dmin and cm->dmax non-null. This shouldn't happen.");
+    int *dmin;
+    int *dmax;
+    int safe_windowlen = cm->clen * 2;
+    while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, 0, &(dmin), &(dmax), NULL, NULL)))
+      {
+	free(dmin);
+	free(dmax);
+	safe_windowlen *= 2;
+	if(safe_windowlen > (cm->clen * 1000))
+	  ESL_FAIL(eslEINVAL, errbuf, "ERROR in set_window, safe_windowlen big: %d\n", safe_windowlen);
+      }
+    cm->W = dmax[0];
+    free(dmin);
+    free(dmax);
+    CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
+  }
+
+  /* Setup ScanMatrix for CYK/Inside scanning functions, we can't 
+   * do it in initialize_cm(), b/c it's W dependent; W was just set.
+   * We don't need it if we're only using an HMM though.
+   */
+  if(use_hmmonly) cm->smx = NULL;
+  else { 
+    do_float = TRUE;
+    do_int   = FALSE;
+    if(cm->search_opts & CM_SEARCH_INSIDE) { do_float = FALSE; do_int = TRUE; }
+    cm_CreateScanMatrixForCM(cm, do_float, do_int);
+    if(cm->smx == NULL) cm_Fail("set_window(), use_hmmonly is FALSE, CreateScanMatrixForCM() call failed, mx is NULL.");
+  }
+
+  return eslOK;
+}
+#endif
+#if 0
+
+/* read_qdb_file()
+ * Read QDBs from a file outputted from cmbuild. Only useful for testing/debugging,
+ */
+static int  
+read_qdb_file(FILE *fp, CM_t *cm, int *dmin, int *dmax)
+{
+  int     status;
+  char   *buf;
+  int     n;			/* length of buf */
+  char   *s;
+  int     M;			/* number of states in model */
+  int     v;		        /* counter for states */
+  char   *tok;
+  int     toklen;
+  int     read_v;
+
+  /* format of QDB file: 
+   * line  1        :<cm->M>
+   * lines 2 -> M+1 :<v> <dmin> <dmax> */
+
+  buf = NULL;
+  n   = 0;
+  if (feof(fp) || (status = esl_fgets(&buf, &n, fp)) != eslOK) goto ERROR;
+
+  s   = buf;
+  if ((status = esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto ERROR;
+  if (! is_integer(tok))                                    goto ERROR;
+  M = atoi(tok);
+  if(M != cm->M) goto ERROR;
+
+  v = 0;
+  while ((status = esl_fgets(&buf, &n, fp)) == eslOK) 
+    {
+      if (strncmp(buf, "//", 2) == 0) 
+	break;
+      s   = buf;
+      if ((status = esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto ERROR;      
+      if (! is_integer(tok)) { status = eslEINVAL;                    goto ERROR; }
+      read_v = atoi(tok);
+      if(v != read_v) goto ERROR;
+
+      if ((status = esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto ERROR;      
+      if (! is_integer(tok)) { status = eslEINVAL;                    goto ERROR; }
+      dmin[v] = atoi(tok);
+
+      if ((status = esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto ERROR;      
+      if (! is_integer(tok)) {                                        goto ERROR; }
+      dmax[v] = atoi(tok);
+
+      v++;
+    }
+  if(v != M) { status = eslEINVAL; goto ERROR; }
+  if(status != eslOK) goto ERROR;
+
+  if (buf != NULL) free(buf);
+  return eslOK;
+
+ ERROR:
+  if (cm != NULL)  FreeCM(cm);
+  if (buf != NULL) free(buf);
+  return status;
+}
+#endif
+#if
+//extern float      MinScCutoff (CM_t *cm, SearchInfo_t *si, int n);
+/*
+ * Function: MinScCutoff
+ * Date:     EPN, Mon May  7 17:36:56 2007
+ *
+ * Purpose:  Return the minimum bit score cutoff for CM
+ *           for round n in SearchInfo_t si.
+ *           Trivial if si->cutoff_type[n] == SCORE_CUTOFF,
+ *           but if E_CUTOFF return minimal bit score across 
+ *           all partitions for the E cutoff in the 
+ *           appropriate search algorithm.
+ *
+ */
+float MinScCutoff (CM_t *cm, SearchInfo_t *si, int n)
+{
+  float E, low_sc, sc;
+  int cm_mode, cp9_mode, gum_mode;
+  int p; 
+
+  /* contract check */
+  if(si == NULL)      cm_Fail("MinCMScCutoff(), si == NULL.\n");
+  if(n > si->nrounds) cm_Fail("MinCMScCutoff(), n (%d) > si->nrounds\n", n, si->nrounds);
+
+  if(si->cutoff_type[n] == SCORE_CUTOFF) return si->sc_cutoff[n];
+  
+  /* if we get here, cutoff_type is E_CUTOFF we better have stats */
+  ESL_DASSERT1((si->cutoff_type[n] == E_CUTOFF));
+  if(!(cm->flags & CMH_GUMBEL_STATS)) cm_Fail("ERROR in MinScCutoff, cutoff type E value, but no stats.\n");
+
+  /* Determine appropriate Gumbel mode */
+  CM2Gumbel_mode(cm, si->search_opts[n], &cm_mode, &cp9_mode);
+  E = si->e_cutoff[n];
+
+  if(si->stype[n] == SEARCH_WITH_HMM) {
+    ESL_DASSERT1(((si->search_opts[n] & CM_SEARCH_HMMVITERBI) || (si->search_opts[n] & CM_SEARCH_HMMFORWARD)));
+    gum_mode = cp9_mode; 
+  }
+  else if (si->stype[n] == SEARCH_WITH_CM) {
+    ESL_DASSERT1((! ((si->search_opts[n] & CM_SEARCH_HMMVITERBI) || (si->search_opts[n] & CM_SEARCH_HMMFORWARD))));
+    gum_mode = cm_mode; 
+  }
+  else cm_Fail("MinScCutoff(), asking for E-value cutoff for SEARCH_WITH_HYBRID search round.\n");
+
+  low_sc = cm->stats->gumAA[cm_mode][0]->mu - 
+    (log(E) / cm->stats->gumAA[gum_mode][0]->lambda);
+  for (p = 1; p < cm->stats->np; p++) {
+    sc = cm->stats->gumAA[gum_mode][p]->mu - 
+      (log(E) / cm->stats->gumAA[gum_mode][p]->lambda);
+    if (sc < low_sc) low_sc = sc;
+  }
+  return (low_sc);
+}
+#endif

@@ -74,7 +74,7 @@ static ESL_OPTIONS options[] = {
   { "--checkfb", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "check that HMM posteriors for bands were correctly calc'ed", 3},
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 3 },
   { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--nonbanded,--hbanded", "use query dependent banded CYK alignment algorithm", 3 },
-  { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 3 },
+  { "--beta",    eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 3 },
 #endif
   /* Options that modify how the output alignment is created */
   { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 4},
@@ -88,11 +88,6 @@ static ESL_OPTIONS options[] = {
   { "--withpknots",eslARG_NONE, NULL,  NULL, NULL,      NULL,"--withali",       NULL, "incl. structure (w/pknots) from <f> from --withali <f>", 5 },
   { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--withali",       NULL, "--rf was originally used with cmbuild", 5 },
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,"--withali",       NULL, "--gapthresh <x> was originally used with cmbuild", 5 },
-#ifdef HAVE_DEVOPTS
-  /* Enforcing a subsequence */
-  { "--enfstart",eslARG_INT,    FALSE, NULL, "n>0",     NULL,"--enfseq",        NULL, "enforce MATL stretch starting at consensus position <n>", 6 },
-  { "--enfseq",  eslARG_STRING, NULL,  NULL, NULL,      NULL,"--enfstart",      NULL, "enforce MATL stretch starting at --enfstart <n> emits seq <s>", 6 },
-#endif
   /* Verbose output files/debugging */
   { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 7 },
   { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence parsetrees to file <f>", 7 },
@@ -201,10 +196,6 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
       puts("\noptions for including a fixed alignment within output alignment:");
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
-#if HAVE_DEVOPTS
-      puts("\noptions for enforcing alignment of a single-stranded subsequence:");
-      esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
-#endif
       puts("\nverbose output files and debugging:");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       exit(0);
@@ -889,7 +880,11 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* set up params/flags/options of the CM */
   cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
 #if HAVE_DEVOPTS  
-  cm->beta   = esl_opt_GetReal(go, "--beta"); /* this will be DEFAULT_BETA unless changed at command line */
+  if(! esl_opt_IsDefault(go, "--beta")) { 
+    /* ensure for <x> from --beta: <x> >= cm->beta from cmfile */
+    if((cm->beta - esl_opt_GetReal(go, "beta")) < -1E-5) ESL_FAIL(eslEINCOMPAT, errbuf, "Minimum allowed <x> for --beta <x> is %g (from cmfile, change with cmbuild --minbeta).\n", cm->beta);
+    cm->beta = esl_opt_GetReal(go, "--beta");
+  } /* else cm->beta will be equal to beta from CM file */
 #endif
 
   /* update cm->config_opts */
@@ -917,12 +912,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--checkpost"))   cm->align_opts  |= CM_ALIGN_CHECKINOUT;
   if(esl_opt_GetBoolean(go, "--checkfb"))     cm->align_opts  |= CM_ALIGN_CHECKFB;
   if(esl_opt_GetBoolean(go, "--sums"))        cm->align_opts  |= CM_ALIGN_SUMS;
-  if(esl_opt_GetString (go, "--enfseq") != NULL)
-    {
-      cm->config_opts |= CM_CONFIG_ENFORCE;
-      cm->enf_start    = EnforceFindEnfStart(cm, esl_opt_GetInteger(go, "--enfstart"));
-      cm->enf_seq      = esl_opt_GetString(go, "--enfseq");
-    }
   /* config QDB? */
   if(esl_opt_GetBoolean(go, "--qdb"))          
     { 
@@ -967,7 +956,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
    * set local mode, make cp9 HMM, calculate QD bands etc. 
    */
   ConfigCM(cm, NULL, NULL); 
-  if(cm->config_opts & CM_CONFIG_ENFORCE) ConfigCMEnforce(cm);
 
   /* if(cfg->my_rank == 0) printf("CM %d: %s\n", (cfg->ncm), cm->name); 
    * debug_print_cm_params(stdout, cm);

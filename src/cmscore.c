@@ -67,7 +67,7 @@ static ESL_OPTIONS options[] = {
   { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare non-banded d&c versus QDB standard CYK", 3 },
   { "--qdbsmall",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare non-banded d&c versus QDB d&c", 3 },
   { "--qdbboth", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare        QDB d&c versus QDB standard CYK", 3 },
-  { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,      NULL,        NULL, "set tail loss prob for QDB to <x>", 3 },
+  { "--beta",    eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      NULL,        NULL, "set tail loss prob for QDB to <x>", 3 },
 #endif
   /* Options for testing multiple rounds of banded alignment, stage 2->N alignment */
   { "--taus",    eslARG_INT,  NULL,    NULL, "0<n<=30", NULL,"--hbanded,--taue",NULL,"set initial (stage 2) tail loss prob to 1E-<x> for HMM banding", 4 },
@@ -428,7 +428,12 @@ init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	{
 	  ESL_ALLOC(cfg->beta, sizeof(double) * cfg->nstages);
 	  cfg->beta[0] = 0.; /* this won't matter b/c stage 1 is non-QDB */
-	  cfg->beta[1] = esl_opt_GetReal(go, "--beta");
+	  if(! esl_opt_IsDefault(go, "--beta")) { 
+	    /* ensure for <x> from --beta: <x> >= cm->beta from cmfile */
+	    if((cm->beta - esl_opt_GetReal(go, "beta")) < -1E-5) ESL_FAIL(eslEINCOMPAT, errbuf, "Minimum allowed <x> for --beta <x> is %g (from cmfile, change with cmbuild --minbeta).\n", cm->beta);
+	    cm->beta = esl_opt_GetReal(go, "--beta");
+	  } /* else cm->beta will be equal to beta from CM file */
+	  cfg->beta[1] = cm->beta;
 	}
 #endif
     }  

@@ -188,10 +188,8 @@ cm_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm comm, CM_t
   if (MPI_Unpack(buf, n, pos, &(cm->clen),               1,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &(cm->iel_selfsc),         1,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &(cm->W),                  1,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
-  if (MPI_Unpack(buf, n, pos, &(cm->enf_start),          1,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
 
   if (MPI_Unpack(buf, n, pos, &(cm->el_selfsc),          1, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
-  if (MPI_Unpack(buf, n, pos, &(cm->enf_scdiff),         1, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &(cm->pbegin),             1, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &(cm->pend),               1, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &(cm->eff_nseq),           1, MPI_FLOAT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
@@ -243,7 +241,6 @@ cm_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm comm, CM_t
     status   = cmstats_MPIUnpack(buf, n, pos, comm, &(cm->stats));  if (status != eslOK) return status;
   }  
 
-  if (                            (status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(cm->enf_seq), NULL, MPI_CHAR, comm)) != eslOK) goto ERROR;
   if (                            (status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(cm->name),    NULL, MPI_CHAR, comm)) != eslOK) goto ERROR;
   if (cm->flags & CMH_ACC)  { if ((status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(cm->acc),     NULL, MPI_CHAR, comm)) != eslOK) goto ERROR; }
   if (cm->flags & CMH_DESC) { if ((status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(cm->desc),    NULL, MPI_CHAR, comm)) != eslOK) goto ERROR; }
@@ -398,10 +395,8 @@ cm_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm)
   if (MPI_Pack(&(cm->clen),               1,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->iel_selfsc),         1,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->W),                  1,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
-  if (MPI_Pack(&(cm->enf_start),          1,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
 
   if (MPI_Pack(&(cm->el_selfsc),          1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
-  if (MPI_Pack(&(cm->enf_scdiff),         1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->pbegin),             1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->pend),               1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
   if (MPI_Pack(&(cm->eff_nseq),           1, MPI_FLOAT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
@@ -451,7 +446,6 @@ cm_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm)
     status = cmstats_MPIPack(cm->stats, buf, n, pos, comm);  if (status != eslOK) return status;
   }
   
-  if (                            (status = esl_mpi_PackOpt(cm->enf_seq, -1, MPI_CHAR, buf, n, pos, comm)) != eslOK) return status; 
   if (                            (status = esl_mpi_PackOpt(cm->name,    -1, MPI_CHAR, buf, n, pos, comm)) != eslOK) return status; 
   if (cm->flags & CMH_ACC)  { if ((status = esl_mpi_PackOpt(cm->acc,     -1, MPI_CHAR, buf, n, pos, comm)) != eslOK) return status; }
   if (cm->flags & CMH_DESC) { if ((status = esl_mpi_PackOpt(cm->desc,    -1, MPI_CHAR, buf, n, pos, comm)) != eslOK) return status; }
@@ -575,14 +569,13 @@ cm_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
   int   sz;
 
   if (MPI_Pack_size(1,         MPI_INT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");   
-  n += 12*sz; 
-  /* M, nodes, abc->type, flags, config_opts, search_opts, align_opts, nseq, clen, iel_selfsc, (10)
-   * W, enf_start (2) 
+  n += 11*sz; 
+  /* M, nodes, abc->type, flags, config_opts, search_opts, align_opts, nseq, clen, iel_selfsc, W (11)
    */
 
   if (MPI_Pack_size(1,       MPI_FLOAT, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  n += (8+K)*sz; 
-  /* el_selfsc, enf_scdiff, pbegin, pend, eff_nseq (5) 
+  n += (7+K)*sz; 
+  /* el_selfsc, pbegin, pend, eff_nseq (4) 
    * ga, tc, nc, null (3+K) */
 
   if (MPI_Pack_size(1,      MPI_DOUBLE, comm, &sz) != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
@@ -635,9 +628,6 @@ cm_MPIPackSize(CM_t *cm, MPI_Comm comm, int *ret_n)
     if ((status = cmstats_MPIPackSize(cm->stats, comm, &sz)) != eslOK) return status;
     n += sz;
   }
-
-  if ((status = esl_mpi_PackOptSize(cm->enf_seq, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; 
-  n += sz; /* enf_seq */
 
   if ((status = esl_mpi_PackOptSize(cm->name, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; 
   n += sz; /* name */
@@ -2352,14 +2342,12 @@ hmm_filter_info_MPIPackSize(HMMFilterInfo_t *hfi, MPI_Comm comm, int *ret_n)
   int sz;
   int n = 0;
 
-  status = MPI_Pack_size(1, MPI_INT, comm, &sz);    n += 5*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  /*  is_valid, N, ncut, always_better_than_Smax, use_qdb */
+  status = MPI_Pack_size(1, MPI_INT, comm, &sz);    n += 4*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  /*  is_valid, N, ncut, always_better_than_Smax */
   status = MPI_Pack_size(1, MPI_LONG,comm, &sz);    n +=  sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   /*  dbsize */
   status = MPI_Pack_size(1, MPI_FLOAT, comm, &sz);  n += sz;   if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   /*  F */
-  status = MPI_Pack_size(1, MPI_DOUBLE, comm, &sz); n += sz;   if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  /*  beta */
   status = MPI_Pack_size(1, MPI_INT, comm, &sz);    n += hfi->ncut*2*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   /* cm_E_cut, fwd_E_cut arrays */
   *ret_n = n;
@@ -2389,9 +2377,7 @@ hmm_filter_info_MPIPack(HMMFilterInfo_t *hfi, char *buf, int n, int *position, M
   status = MPI_Pack((int *)    &(hfi->dbsize),                  1, MPI_LONG,  buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack((int *)    &(hfi->ncut),                    1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack((int *)    &(hfi->always_better_than_Smax), 1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = MPI_Pack((int *)    &(hfi->use_qdb),                 1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack((float *)  &(hfi->F),                       1, MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = MPI_Pack((double *) &(hfi->beta),                    1, MPI_DOUBLE,buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack((float *)  hfi->cm_E_cut,           hfi->ncut, MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack((float *)  hfi->fwd_E_cut,          hfi->ncut, MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
 
@@ -2418,9 +2404,7 @@ hmm_filter_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, HMMFilterIn
   status = MPI_Unpack (buf, n, pos, &(hfi->dbsize),                  1, MPI_LONG,  comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, &(hfi->ncut),                    1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, &(hfi->always_better_than_Smax), 1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = MPI_Unpack (buf, n, pos, &(hfi->use_qdb),                 1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, &(hfi->F),                       1, MPI_FLOAT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = MPI_Unpack (buf, n, pos, &(hfi->beta),                    1, MPI_DOUBLE,comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   ESL_ALLOC(hfi->cm_E_cut,  sizeof(float) * hfi->ncut);
   ESL_ALLOC(hfi->fwd_E_cut, sizeof(float) * hfi->ncut);
   status = MPI_Unpack (buf, n, pos, hfi->cm_E_cut,           hfi->ncut, MPI_FLOAT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
