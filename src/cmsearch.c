@@ -162,9 +162,6 @@ static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf,
 static int set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int print_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *cm, long N, char *errbuf);
 static int read_next_search_seq(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int do_revcomp, dbseq_t **ret_dbseq);
-#if HAVE_MPI
-static int determine_seq_chunksize(struct cfg_s *cfg, int L, int W);
-#endif 
 
 int
 main(int argc, char **argv)
@@ -476,25 +473,23 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   CM_t *cm;
   CMConsensus_t *cons = NULL;     /* precalculated consensus info for display purposes */
 
-  int si      = 0;
-  int si_recv = 1;
-  int *silist = NULL;
-
-  int in_rc = FALSE;
-  int *rclist = NULL;
-  int rci;
-
-  int seqpos = 1;
-  int *seqposlist = NULL;
-
-  int len;
-  int *lenlist = NULL;
-
-  int *sentlist = NULL;
-
-  int ndbseq = 0;
-  dbseq_t **dbseqlist    = NULL;
-  dbseq_t *dbseq = NULL;
+  int si      = 0;        /* sequence index */
+  int si_recv = 1;        /* sequence index of the sequence we've just received results for from a worker */
+  /* properties of the workers, indexed 1..wi..nproc-1 */
+  int *silist = NULL;     /* [0..wi..nproc-1], the sequence index worker wi is working on */
+  int in_rc = FALSE;      /* are we currently on the reverse complement? */
+  int *rclist = NULL;     /* [0..wi..nproc-1] 0 if worker wi is searching top strand, 1 if wi is searching bottom strand */
+  int rci;                /* index that ranges from 0 to 1 */
+  int seqpos = 1;         /* sequence position in the current sequence */
+  int *seqposlist = NULL; /* [0..wi..nproc-1] the first position of the sequence that worker wi is searching */
+  int len;                /* length of chunk */
+  int *lenlist = NULL;    /* [0..wi..nproc-1] length of chunk worker wi is searching */
+  /* properties of the sequences currently being worked on, we can have at most 1 per worker, so these are of size 
+   * cfg->nproc, but indexed by si = 0..nproc-2, cfg->nproc-1 is never used. */
+  int *sentlist = NULL;   /* [0..si..nproc-1] TRUE if all chunks for sequence index si have been sent, FALSE otherwise */
+  int ndbseq = 0;         /* ndbseq is the number of currently active sequences, we can read a new seq IFF ndbseq < (cfg->nproc-1) */
+  dbseq_t **dbseqlist= NULL; /* pointers to the dbseq_t objects that hold the actual sequence data, and the results data */
+  dbseq_t  *dbseq = NULL;  /* a database sequence */
   
   char     errbuf[cmERRBUFSIZE];
   MPI_Status mpistatus; 
@@ -576,7 +571,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       in_rc = FALSE;
       while (have_work || nproc_working)
 	{
-	  if (need_seq) /* see mpifuncs.c:search_enqueue*/
+	  if (need_seq) 
 	    {
 	      need_seq = FALSE;
 	      /* read a new seq */
@@ -599,7 +594,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  dbseqlist[si] = dbseq;
 		  sentlist[si]  = FALSE;
 		  have_work = TRUE;
-		  chunksize = determine_seq_chunksize(cfg, dbseq->sq[0]->n, cm->W);
+		  chunksize = DetermineSeqChunksize(cfg->nproc, dbseq->sq[0]->n, cm->W);
 		  ESL_DPRINTF1(("L: %d chunksize: %d\n", dbseq->sq[0]->n, chunksize));
 		}
 	      else if(status == eslEOF) have_work = FALSE;
@@ -1556,26 +1551,3 @@ int read_next_search_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revc
   if(dbseq != NULL) free(dbseq);
   return status;
 }
-#if HAVE_MPI
-/* determine_seq_chunksize()
- * From RSEARCH, with one change, ideal situation is considered
- * when we put 1 chunk for each STRAND of each seq on each proc.
- *
- * Set the chunk size as follows:
- * 1.  Ideally take smallest multiple of cm->W that gives result greater than
- *     (seqlen + (cm->W * (num_procs-2))) / (num_procs-1)
- *     This should put one chunk for EACH STRAND on each processor.
- * 2.  If this is less than MPI_MIN_CHUNK_W_MULTIPLIER * cm->W, use that value.
- * 3.  If this is greater than MPI_MAX_CHUNK_SIZE, use that.
- */
-static int
-determine_seq_chunksize(struct cfg_s *cfg, int L, int W)
-{
-  int chunksize;
-  chunksize = ((L + (W * (cfg->nproc-2))) / (cfg->nproc)) + 1;
-  chunksize = ((chunksize / W) + 1) * W;
-  chunksize = ESL_MAX(chunksize, W * MPI_MIN_CHUNK_W_MULTIPLIER); 
-  chunksize = ESL_MIN(chunksize, MPI_MAX_CHUNK_SIZE);
-  return chunksize;
-}
-#endif
