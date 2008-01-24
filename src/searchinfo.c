@@ -348,6 +348,72 @@ UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float sc_cutoff, f
   return;
 }
 
+/* Function: UpdateSearchOptsForGumMode
+ * Date:     EPN, Thu Jan 24 11:57:20 2008
+ * Purpose:  Given a gumbel mode and a search round <round>, update cm->si
+ *           SearchInfo_t for that round.
+ *           that gumbel mode. 
+ *
+ *           0. GUM_CM_GC : !cm->si->search_opts[round] & CM_SEARCH_INSIDE
+ *           1. GUM_CM_GI : !cm->si->search_opts[round] & CM_SEARCH_INSIDE
+ *           4. GUM_CP9_GV:  cm->si->search_opts[round] & CM_SEARCH_HMMVITERBI
+ *                          !cm->si->search_opts[round] & CM_SEARCH_HMMFORWARD
+ *           5. GUM_CP9_GF:  cm->si->search_opts[round] & CM_SEARCH_HMMVITERBI
+ *                          !cm->si->search_opts[round] & CM_SEARCH_HMMFORWARD
+ *           3. GUM_CM_LC :  cm->si->search_opts[round] & CM_SEARCH_INSIDE
+ *           2. GUM_CM_LI :  cm->si->search_opts[round] & CM_SEARCH_INSIDE
+ *           6. GUM_CP9_LV: !cm->si->search_opts[round] & CM_SEARCH_HMMVITERBI
+ *                           cm->si->search_opts[round] & CM_SEARCH_HMMFORWARD
+ *           7. GUM_CP9_LF: !cm->si->search_opts[round] & CM_SEARCH_HMMVITERBI
+ *                           cm->si->search_opts[round] & CM_SEARCH_HMMFORWARD
+ * 
+ * Args:
+ *           CM           - the covariance model
+ *           gum_mode     - the mode 0..GUM_NMODES-1
+ */
+void
+UpdateSearchInfoForGumMode(CM_t *cm, int round, int gum_mode)
+{
+  if(cm->si == NULL)           cm_Fail("UpdateSearchInfoForGumMode(), cm->si is NULL.");
+  if(round > cm->si->nrounds)  cm_Fail("UpdateSearchInfoForGumMode(), requested round %d is > cm->si->nrounds\n", round, cm->si->nrounds);
+
+  ESL_DASSERT1((gum_mode >= 0 && gum_mode < GUM_NMODES));
+
+  switch (gum_mode) {
+  case GUM_CM_GC: 
+  case GUM_CM_LC: /* CYK, local or glocal */
+    cm->si->search_opts[round] &= ~CM_SEARCH_INSIDE;
+    cm->si->search_opts[round] &= ~CM_SEARCH_HMMVITERBI;
+    cm->si->search_opts[round] &= ~CM_SEARCH_HMMFORWARD;
+    cm->si->stype[round] = SEARCH_WITH_CM;
+    break;
+  case GUM_CM_GI: 
+  case GUM_CM_LI: /* Inside, local or glocal */
+    cm->si->search_opts[round] |= CM_SEARCH_INSIDE;
+    cm->si->search_opts[round] &= ~CM_SEARCH_HMMVITERBI;
+    cm->si->search_opts[round] &= ~CM_SEARCH_HMMFORWARD;
+    cm->si->stype[round] = SEARCH_WITH_CM;
+    break;
+  case GUM_CP9_GV: 
+  case GUM_CP9_LV: /* Viterbi, local or glocal */
+    cm->si->search_opts[round] &= ~CM_SEARCH_INSIDE;
+    cm->si->search_opts[round] |= CM_SEARCH_HMMVITERBI;
+    cm->si->search_opts[round] &= ~CM_SEARCH_HMMFORWARD;
+    cm->si->stype[round] = SEARCH_WITH_HMM;
+    break;
+  case GUM_CP9_GF: 
+  case GUM_CP9_LF: /* Forward, local or glocal */
+    cm->si->search_opts[round] &= ~CM_SEARCH_INSIDE;
+    cm->si->search_opts[round] &= ~CM_SEARCH_HMMVITERBI;
+    cm->si->search_opts[round] |= CM_SEARCH_HMMFORWARD;
+    cm->si->stype[round] = SEARCH_WITH_HMM;
+    break;
+  default: 
+    cm_Fail("UpdateSearchOptsForGumMode(): bogus gum_mode: %d\n", gum_mode);
+  }
+  return;
+}
+
 /* Function: DumpSearchOpts()
  * Date:     EPN, Tue Nov 27 09:02:21 2007
  *
@@ -464,7 +530,7 @@ void AppendResults (search_results_t *src_results, search_results_t *dest_result
   for(i = 0; i < src_results->num_results; i++) 
     {
       ip = dest_results->num_results;
-      report_hit (src_results->data[i].start+i0-1, src_results->data[i].stop+i0-1, 
+      ReportHit (src_results->data[i].start+i0-1, src_results->data[i].stop+i0-1, 
 		  src_results->data[i].bestr,      src_results->data[i].score,
 		  dest_results);
       if(src_results->data[i].tr != NULL)
@@ -477,8 +543,7 @@ void AppendResults (search_results_t *src_results, search_results_t *dest_result
   return;
 }
 
-/*
- * Function: FreeResults()
+/* Function: FreeResults()
  * Date:     RJK, Mon Apr 1 2002 [St. Louis]
  * Purpose:  Frees a results structure
  */
@@ -496,15 +561,14 @@ void FreeResults (search_results_t *r) {
 }
 
 
-/*
- * Function: compare_results()
+/* Function: CompareResultsByEndPoint()
  * Date:     RJK, Wed Apr 10, 2002 [St. Louis]
  * Purpose:  Compares two search_result_node_ts based on score and returns -1
  *           if first is higher score than second, 0 if equal, 1 if first
  *           score is lower.  This results in sorting by score, highest
  *           first.
  */
-int compare_results (const void *a_void, const void *b_void) {
+int CompareResultsByScore (const void *a_void, const void *b_void) {
   search_result_node_t *a, *b;
  
   a = (search_result_node_t *)a_void;
@@ -522,8 +586,28 @@ int compare_results (const void *a_void, const void *b_void) {
     return (0);
 }
 
+/* Function: CompareResultsByEndPoint()
+ * Date:     RJK, Wed Apr 10, 2002 [St. Louis]
+ * Purpose:  Compares two search_result_node_ts based on end point and returns -1
+ *           if first is higher score than second, 0 if equal, 1 if first
+ *           score is lower.  This results in sorting by end points j, highest
+ *           first.
+ */
+int CompareResultsByEndPoint (const void *a_void, const void *b_void) {
+  search_result_node_t *a, *b;
+ 
+  a = (search_result_node_t *)a_void;
+  b = (search_result_node_t *)b_void;
+
+  if      (a->stop  < b->stop)  return ( 1);
+  else if (a->stop  > b->stop)  return (-1);
+  else if (a->start < b->start) return ( 1);
+  else if (a->start > b->start) return (-1);
+  else                          return ( 0);
+}
+
 /*
- * Function: remove_overlapping_hits ()
+ * Function: RemoveOverlappingHits ()
  * Date:     EPN, Tue Apr  3 14:36:38 2007
  * Plucked verbatim out of RSEARCH.
  * RSEARCH date: RJK, Sun Mar 31, 2002 [LGA Gate D7]
@@ -540,7 +624,7 @@ int compare_results (const void *a_void, const void *b_void) {
  *        i0    - first position of subsequence results work for (1 for full seq)
  *        j0    - last  position of subsequence results work for (L for full seq)
  */
-void remove_overlapping_hits (search_results_t *results, int i0, int j0)
+void RemoveOverlappingHits (search_results_t *results, int i0, int j0)
 {
   int status;
   char *covered_yet;
@@ -561,7 +645,7 @@ void remove_overlapping_hits (search_results_t *results, int i0, int j0)
   for (x=0; x<=L; x++)
     covered_yet[x] = 0;
 
-  sort_results (results);
+  SortResultsByScore(results);
 
   for (x=0; x<results->num_results; x++) {
     covered = 0;
@@ -600,7 +684,7 @@ void remove_overlapping_hits (search_results_t *results, int i0, int j0)
 	 results->data[results->num_results-1].start == -1)
     results->num_results--;
 
-  sort_results(results);
+  SortResultsByScore(results);
   return;
 
  ERROR:
@@ -608,18 +692,92 @@ void remove_overlapping_hits (search_results_t *results, int i0, int j0)
 }
 
 /*
- * Function: sort_results()
+ * Function: RemoveHitsOverECutoff
+ * Date:     RJK, Tue Oct 8, 2002 [St. Louis]
+ * Purpose:  Given an E-value cutoff, lambdas, mus, a sequence, and
+ *           a list of results, calculates GC content for each hit, 
+ *           calculates E-value, and decides whether to keep hit or not.
+ * 
+ * Args:    
+ *           cm      - the covariance model
+ *           si      - SearchInfo, relevant round is final one, si->nrounds
+ *           results - the hits data structure
+ *           seq     - seq hits lie within, needed to determine gc content
+ *           used_HMM- TRUE if hits are to the CM's CP9 HMM, not the CMa
+ */
+void RemoveHitsOverECutoff (CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_SQ *sq)
+{
+  int gc_comp;
+  int i, x;
+  search_result_node_t swap;
+  float score_for_Eval; /* the score we'll determine the statistical signifance of. */
+  int cm_gum_mode;      /* Gumbel mode if we're using CM hits */
+  int cp9_gum_mode;     /* Gumbel mode if we're using HMM hits */
+  int p;                /* relevant partition */
+  GumbelInfo_t **gum;      /* pointer to gum to use */
+  float cutoff;         /* the max E-value we want to keep */
+
+  /* Check contract */
+  if(!(cm->flags & CMH_GUMBEL_STATS)) cm_Fail("remove_hits_over_e_cutoff(), but CM has no gumbel stats\n");
+  if(!(sq->flags & eslSQ_DIGITAL))    cm_Fail("remove_hits_over_e_cutoff(), sequences is not digitized.\n");
+  if(si == NULL) cm_Fail("remove_hits_over_e_cutoff(), si == NULL.\n");
+  if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("remove_hits_over_e_cutoff(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
+
+  if (results == NULL) return;
+
+  /* Determine Gumbel mode to use */
+  CM2Gumbel_mode(cm, si->search_opts[si->nrounds], &cm_gum_mode, &cp9_gum_mode);
+  gum = (si->stype[si->nrounds] == SEARCH_WITH_HMM) ? cm->stats->gumAA[cp9_gum_mode] : cm->stats->gumAA[cm_gum_mode];
+  
+  ESL_DASSERT1((si->cutoff_type[si->nrounds] == E_CUTOFF));
+  cutoff = si->e_cutoff[si->nrounds];
+  
+  for (i=0; i<results->num_results; i++) {
+    gc_comp = get_gc_comp (sq, results->data[i].start, results->data[i].stop);
+    p = cm->stats->gc2p[gc_comp];
+    score_for_Eval = results->data[i].score;
+    if (RJK_ExtremeValueE(score_for_Eval, gum[p]->mu, gum[p]->lambda) > cutoff)  
+      results->data[i].start = -1;
+  }
+  
+  for (x=0; x<results->num_results; x++) {
+    while (results->num_results > 0 && 
+	   results->data[results->num_results-1].start == -1)
+      results->num_results--;
+    if (x<results->num_results && results->data[x].start == -1) {
+      swap = results->data[x];
+      results->data[x] = results->data[results->num_results-1];
+      results->data[results->num_results-1] = swap;
+      results->num_results--;
+    }
+  }
+  while (results->num_results > 0 && results->data[results->num_results-1].start == -1)
+    results->num_results--;
+  SortResultsByScore(results);
+}  
+
+/* Function: SortResults()
  * Date:    RJK,  Sun Mar 31, 2002 [AA Flight 2869 LGA->STL]
- * Purpose: Given a results array, sorts it with a call to qsort
+ * Purpose: Given a results array, sorts it by score with a call to qsort
  *
  */
-void sort_results (search_results_t *results) 
+void SortResultsByScore (search_results_t *results) 
 {
-  qsort (results->data, results->num_results, sizeof(search_result_node_t), compare_results);
+  qsort (results->data, results->num_results, sizeof(search_result_node_t), CompareResultsByScore);
+}
+
+/* Function: SortResultsByEndPoint()
+ * Date:     EPN, Thu Jan 24 13:06:50 2008
+ * Purpose:  Given a results array, sorts it by end point with a call to qsort
+ *
+ */
+void SortResultsByEndPoint (search_results_t *results) 
+{
+  qsort (results->data, results->num_results, sizeof(search_result_node_t), CompareResultsByEndPoint);
 }
 
 /*
- * Function: report_hit()
+ * Function: ReportHit()
  * Date:     RJK, Sun Mar 31, 2002 [LGA Gate D7]
  *
  * Given j,d, coordinates, a score, and a search_results_t data type,
@@ -628,11 +786,11 @@ void sort_results (search_results_t *results)
  * Non-overlap algorithm is now done in the scanning routine by Sean's
  * Semi-HMM code.  I've just kept the hit report structure for convenience.
  */
-void report_hit (int i, int j, int bestr, float score, search_results_t *results) 
+void ReportHit (int i, int j, int bestr, float score, search_results_t *results) 
 {
 
   if(results == NULL) 
-    cm_Fail("in report_hit, but results is NULL\n");
+    cm_Fail("in ReportHit, but results is NULL\n");
   if (results->num_results == results->num_allocated) 
     ExpandResults (results, INIT_RESULTS);
 
@@ -647,7 +805,7 @@ void report_hit (int i, int j, int bestr, float score, search_results_t *results
 }
 
 
-/* Function: print_results
+/* Function: PrintResults
  * Date:     RJK, Wed May 29, 2002 [St. Louis]
  *           easelfied: EPN, Fri Dec  8 08:29:05 2006 
  * Purpose:  Given the needed information, prints the results.
@@ -664,7 +822,7 @@ void report_hit (int i, int j, int bestr, float score, search_results_t *results
  *           do_bottom           are we doing the minus (bottom) strand?
  *           do_noncompensatory  are we printing the optional non-compensatory line?
  */
-void print_results (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory)
+void PrintResults (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory)
 {
   int i;
   char *name;
@@ -765,6 +923,36 @@ void print_results (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *ab
   fflush(stdout);
   FreeEmitMap(emap);
 }
+
+/*
+ * Function: ScoresFromResults()
+ * Date:     EPN, Thu Jan 24 05:36:54 2008
+ * Purpose:  Given a search_results_t results data structure, return the scores within 
+ *           it as a vector of floats in <ret_scA> and the number of scores you've
+ *           returned in <ret_scN>.
+ *
+ * Returns:  eslOK on success, <ret_scA> alloc'ed and filled with scores, <ret_scN> set
+ *           as number of scores in <ret_scA>. If <ret_scN> == 0, <ret_scA> will be NULL.
+ */
+int ScoresFromResults(search_results_t *results, char *errbuf, float **ret_scA, int *ret_scN) 
+{
+  int status;
+  float *scA = NULL;
+  int    scN = results->num_results;
+  int    i;
+
+  if(ret_scA == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ScoresFromResults(), ret_scA is NULL.");
+
+  ESL_ALLOC(scA, sizeof(float) * scN);
+  for(i = 0; i < scN; i++) scA[i] = results->data[i].score;
+  *ret_scA = scA;
+  *ret_scN = scN;
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "ScoresFromResults(), memory allocation error.");
+}
+
 
 /* Function: CountScanDPCalcs()
  * Date:     EPN, Wed Aug 22 09:08:03 2007

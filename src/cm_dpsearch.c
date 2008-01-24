@@ -4121,7 +4121,7 @@ int rsearch_CYKScan (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, 
 	 d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
       /* First, report hit with d of 1 if > cutoff */
       if (j > 0 && gamma_jmod2[0][1] >= cutoff) 
-	report_hit (j, j, bestr[1], gamma_jmod2[0][1], results);
+	ReportHit (j, j, bestr[1], gamma_jmod2[0][1], results);
 
       dmax = 1;
       /* Now, if current score is greater than maximum seen previous, report
@@ -4129,7 +4129,7 @@ int rsearch_CYKScan (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float cutoff, 
       for (d=2; d<=minDj; d++) {
 	if (gamma_jmod2[0][d] > gamma_jmod2[0][dmax]) {
 	  if (j > 0 && gamma_jmod2[0][d] >= cutoff)
-	    report_hit (j-d+1, j, bestr[d], gamma_jmod2[0][d], results);
+	    ReportHit (j-d+1, j, bestr[d], gamma_jmod2[0][d], results);
 	  dmax = d;
 	}
       }
@@ -5164,6 +5164,53 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
 }
 
 
+/* Function: ProcessSearchWorkunit()
+ * Date:     EPN, Wed Jan 23 17:26:24 2008
+ *
+ * Purpose:  Perform search workunit, which consists of a CM, digitized sequence
+ *           and indices i and j. The job is to search dsq from i..j and return 
+ *           search results in <*ret_results>. Called by cmsearch and cmcalibrate,
+ *           which is why it's here and not local in cmsearch.c.
+ *
+ * Args:     cm              - the covariance model, must have valid searchinfo (si).
+ *           errbuf          - char buffer for reporting errors
+ *           dsq             - the digitized sequence
+ *           L               - length of target sequence 
+ *           ret_results     - search_results_t to create and fill
+ *           mxsize_limit    - maximum size of HMM banded matrix allowed.
+ *           my_rank         - rank of processor calling this function, 0 if master (serial or MPI)
+ * 
+ *
+ * Returns:  eslOK on succes;
+ *           <ret_results> is filled with a newly alloc'ed and filled search_results_t structure, must be freed by caller
+ */
+int
+ProcessSearchWorkunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, search_results_t **ret_results, float mxsize_limit, int my_rank)
+{
+  int status;
+  search_results_t **results;
+  int n;
+
+  if(cm->si == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm->si is NULL in ProcessSearchWorkunit()\n");
+
+  ESL_ALLOC(results, sizeof(search_results_t *) * (cm->si->nrounds+1));
+  for(n = 0; n <= cm->si->nrounds; n++) results[n] = CreateResults(INIT_RESULTS);
+
+  if((status = DispatchSearch(cm, errbuf, 0, dsq, 1, L, results, mxsize_limit, NULL, NULL)) != eslOK) goto ERROR;
+
+  /* we only care about the final results, that survived all the rounds (all the filtering rounds plus the final round) */
+  *ret_results = results[cm->si->nrounds];
+  /* free the results describing what survived each round of filtering (if any) */
+  for(n = 0; n < cm->si->nrounds; n++) FreeResults(results[n]);
+  free(results);
+
+  return eslOK;
+  
+ ERROR:
+  ESL_DPRINTF1(("worker %d: has caught an error in ProcessSearchWorkunit\n", my_rank));
+  FreeCM(cm);
+  return status;
+}
 
 
 

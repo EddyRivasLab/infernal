@@ -435,71 +435,6 @@ int CM2FthrMode(CM_t *cm, char *errbuf, int search_opts, int *ret_fthr_mode)
 }
 
 
-/*
- * Function: remove_hits_over_e_cutoff
- * Date:     RJK, Tue Oct 8, 2002 [St. Louis]
- * Purpose:  Given an E-value cutoff, lambdas, mus, a sequence, and
- *           a list of results, calculates GC content for each hit, 
- *           calculates E-value, and decides whether to keep hit or not.
- * 
- * Args:    
- *           cm      - the covariance model
- *           si      - SearchInfo, relevant round is final one, si->nrounds
- *           results - the hits data structure
- *           seq     - seq hits lie within, needed to determine gc content
- *           used_HMM- TRUE if hits are to the CM's CP9 HMM, not the CMa
- */
-void remove_hits_over_e_cutoff (CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_SQ *sq)
-{
-  int gc_comp;
-  int i, x;
-  search_result_node_t swap;
-  float score_for_Eval; /* the score we'll determine the statistical signifance of. */
-  int cm_gum_mode;      /* Gumbel mode if we're using CM hits */
-  int cp9_gum_mode;     /* Gumbel mode if we're using HMM hits */
-  int p;                /* relevant partition */
-  GumbelInfo_t **gum;      /* pointer to gum to use */
-  float cutoff;         /* the max E-value we want to keep */
-
-  /* Check contract */
-  if(!(cm->flags & CMH_GUMBEL_STATS)) cm_Fail("remove_hits_over_e_cutoff(), but CM has no gumbel stats\n");
-  if(!(sq->flags & eslSQ_DIGITAL))    cm_Fail("remove_hits_over_e_cutoff(), sequences is not digitized.\n");
-  if(si == NULL) cm_Fail("remove_hits_over_e_cutoff(), si == NULL.\n");
-  if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("remove_hits_over_e_cutoff(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
-
-  if (results == NULL) return;
-
-  /* Determine Gumbel mode to use */
-  CM2Gumbel_mode(cm, si->search_opts[si->nrounds], &cm_gum_mode, &cp9_gum_mode);
-  gum = (si->stype[si->nrounds] == SEARCH_WITH_HMM) ? cm->stats->gumAA[cp9_gum_mode] : cm->stats->gumAA[cm_gum_mode];
-  
-  ESL_DASSERT1((si->cutoff_type[si->nrounds] == E_CUTOFF));
-  cutoff = si->e_cutoff[si->nrounds];
-  
-  for (i=0; i<results->num_results; i++) {
-    gc_comp = get_gc_comp (sq, results->data[i].start, results->data[i].stop);
-    p = cm->stats->gc2p[gc_comp];
-    score_for_Eval = results->data[i].score;
-    if (RJK_ExtremeValueE(score_for_Eval, gum[p]->mu, gum[p]->lambda) > cutoff)  
-      results->data[i].start = -1;
-  }
-  
-  for (x=0; x<results->num_results; x++) {
-    while (results->num_results > 0 && 
-	   results->data[results->num_results-1].start == -1)
-      results->num_results--;
-    if (x<results->num_results && results->data[x].start == -1) {
-      swap = results->data[x];
-      results->data[x] = results->data[results->num_results-1];
-      results->data[results->num_results-1] = swap;
-      results->num_results--;
-    }
-  }
-  while (results->num_results > 0 && results->data[results->num_results-1].start == -1)
-    results->num_results--;
-  sort_results(results);
-}  
-
 
 /* Function: GumModeIsLocal()
  * Date:     EPN, Mon Dec 10 09:07:59 2007
@@ -563,66 +498,6 @@ GumModeIsForCM(int gum_mode)
   }
   return FALSE; /* never reached */
 }
-
-
-/* Function: GumModeToSearchOpts
- * Date:     EPN, Mon Dec 10 09:14:12 2007
- * Purpose:  Given a gumbel mode, update cm->search_opts to reflect
- *           that gumbel mode. 
- *
- *           0. GUM_CM_GC : !cm->search_opts & CM_SEARCH_INSIDE
- *           1. GUM_CM_GI : !cm->search_opts & CM_SEARCH_INSIDE
- *           4. GUM_CP9_GV:  cm->search_opts & CM_SEARCH_HMMVITERBI
- *                          !cm->search_opts & CM_SEARCH_HMMFORWARD
- *           5. GUM_CP9_GF:  cm->search_opts & CM_SEARCH_HMMVITERBI
- *                          !cm->search_opts & CM_SEARCH_HMMFORWARD
- *           3. GUM_CM_LC :  cm->search_opts & CM_SEARCH_INSIDE
- *           2. GUM_CM_LI :  cm->search_opts & CM_SEARCH_INSIDE
- *           6. GUM_CP9_LV: !cm->search_opts & CM_SEARCH_HMMVITERBI
- *                           cm->search_opts & CM_SEARCH_HMMFORWARD
- *           7. GUM_CP9_LF: !cm->search_opts & CM_SEARCH_HMMVITERBI
- *                           cm->search_opts & CM_SEARCH_HMMFORWARD
- * 
- * Args:
- *           CM           - the covariance model
- *           gum_mode     - the mode 0..GUM_NMODES-1
- */
-int
-GumModeToSearchOpts(CM_t *cm, int gum_mode)
-{
-  ESL_DASSERT1((gum_mode >= 0 && gum_mode < GUM_NMODES));
-
-  switch (gum_mode) {
-  case GUM_CM_GC: 
-  case GUM_CM_LC: /* CYK, local or glocal */
-    cm->search_opts &= ~CM_SEARCH_INSIDE;
-    cm->search_opts &= ~CM_SEARCH_HMMVITERBI;
-    cm->search_opts &= ~CM_SEARCH_HMMFORWARD;
-    break;
-  case GUM_CM_GI: 
-  case GUM_CM_LI: /* Inside, local or glocal */
-    cm->search_opts |= CM_SEARCH_INSIDE;
-    cm->search_opts &= ~CM_SEARCH_HMMVITERBI;
-    cm->search_opts &= ~CM_SEARCH_HMMFORWARD;
-    break;
-  case GUM_CP9_GV: 
-  case GUM_CP9_LV: /* Viterbi, local or glocal */
-    cm->search_opts &= ~CM_SEARCH_INSIDE;
-    cm->search_opts |= CM_SEARCH_HMMVITERBI;
-    cm->search_opts &= ~CM_SEARCH_HMMFORWARD;
-    break;
-  case GUM_CP9_GF: 
-  case GUM_CP9_LF: /* Forward, local or glocal */
-    cm->search_opts &= ~CM_SEARCH_INSIDE;
-    cm->search_opts &= ~CM_SEARCH_HMMVITERBI;
-    cm->search_opts |= CM_SEARCH_HMMFORWARD;
-    break;
-  default: 
-    cm_Fail("GumModeToSearchOpts(): bogus gum_mode: %d\n", gum_mode);
-  }
-  return eslOK;
-}
-
 
 /* Function: GumModeToFthrMode()
  * Date:     EPN, Mon Dec 10 09:31:48 2007

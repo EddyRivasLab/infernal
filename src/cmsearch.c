@@ -158,7 +158,6 @@ static void  serial_master (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
-static int process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_DSQ *dsq, int L, search_results_t **ret_results);
 static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int print_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *cm, long N, char *errbuf);
@@ -421,11 +420,11 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	{
 	  for(rci = cfg->init_rci; rci <= cfg->do_rc; rci++) {
 	    /*printf("SEARCHING >%s %d\n", dbseq->sq[reversed]->name, reversed);*/
-	    if ((status = process_search_workunit(go, cfg, errbuf, cm, dbseq->sq[rci]->dsq, dbseq->sq[rci]->n, &dbseq->results[rci])) != eslOK) cm_Fail(errbuf);
-	    remove_overlapping_hits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
-	    if(using_e_cutoff) remove_hits_over_e_cutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]); 
+	    if ((status = ProcessSearchWorkunit(cm, errbuf, dbseq->sq[rci]->dsq, dbseq->sq[rci]->n, &dbseq->results[rci], esl_opt_GetReal(go, "--mxsize"), cfg->my_rank)) != eslOK) cm_Fail(errbuf);
+	    RemoveOverlappingHits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
+	    if(using_e_cutoff) RemoveHitsOverECutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]); 
 	  }
-	  print_results (cm, cfg->ofp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
+	  PrintResults (cm, cfg->ofp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
 	  for(rci = 0; rci <= cfg->do_rc; rci++) { /* we can free results for top strand even if cfg->init_rci is 1, due to --bottomonly */
 	    FreeResults(dbseq->results[rci]);
 	    esl_sq_Destroy(dbseq->sq[rci]);
@@ -657,12 +656,10 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		      if(sentlist[si_recv] && dbseqlist[si_recv]->chunks_sent == 0)
 			{
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
-			    remove_overlapping_hits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
-			    if(using_e_cutoff) remove_hits_over_e_cutoff(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]);
-			    
-			    
+			    RemoveOverlappingHits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
+			    if(using_e_cutoff) RemoveHitsOverECutoff(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]);
 			  }					      
-			  print_results(cm, cfg->ofp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
+			  PrintResults(cm, cfg->ofp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
 			    esl_sq_Destroy(dbseqlist[si_recv]->sq[rci]);
 			    FreeResults(dbseqlist[si_recv]->results[rci]);
@@ -791,7 +788,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       while((status = cm_dsq_MPIRecv(0, 0, MPI_COMM_WORLD, &wbuf, &wn, &dsq, &L)) == eslOK)
 	{
 	  ESL_DPRINTF1(("worker %d: has received search job, length: %d\n", cfg->my_rank, L));
-	  if ((status = process_search_workunit(go, cfg, errbuf, cm, dsq, L, &results)) != eslOK) goto ERROR;
+	  if ((status = ProcessSearchWorkunit(cm, errbuf, dsq, L, &results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank)) != eslOK) goto ERROR;
 	  ESL_DPRINTF1(("worker %d: has gathered search results\n", cfg->my_rank));
 	  
 	  n = 0;
@@ -855,38 +852,6 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   return;
 }
 #endif /*HAVE_MPI*/
-
-/* A search work unit consists of a CM, digitized sequence dsq, and indices i and j.
- * The job is to search dsq from i..j and return search results in <*ret_results>.
- */
-static int
-process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_DSQ *dsq, int L, search_results_t **ret_results)
-{
-  int status;
-  search_results_t **results;
-  int n;
-  float size_limit = esl_opt_GetReal(go, "--mxsize");
-
-  if(cm->si == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm->si is NULL in process_search_workunit()\n");
-
-  ESL_ALLOC(results, sizeof(search_results_t *) * (cm->si->nrounds+1));
-  for(n = 0; n <= cm->si->nrounds; n++) results[n] = CreateResults(INIT_RESULTS);
-
-  if((status = DispatchSearch(cm, errbuf, 0, dsq, 1, L, results, size_limit, NULL, NULL)) != eslOK) goto ERROR;
-
-  /* we only care about the final results, that survived all the rounds (all the filtering rounds plus the final round) */
-  *ret_results = results[cm->si->nrounds];
-  /* free the results describing what survived each round of filtering (if any) */
-  for(n = 0; n < cm->si->nrounds; n++) FreeResults(results[n]);
-  free(results);
-
-  return eslOK;
-  
- ERROR:
-  ESL_DPRINTF1(("worker %d: has caught an error in process_search_workunit\n", cfg->my_rank));
-  FreeCM(cm);
-  return status;
-}
 
 /* initialize_cm()
  * Setup the CM based on the command-line options/defaults;

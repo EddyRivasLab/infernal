@@ -70,9 +70,8 @@ static ESL_OPTIONS options[] = {
   { "--gum-L",          eslARG_INT,     NULL,   NULL, "n>0",    NULL,        NULL,"--fil-only", "set length of random seqs for gumbel estimation to <n>", 2},
   { "--gum-cmN",        eslARG_INT,     "1000", NULL, "n>0",    NULL,        NULL,"--fil-only", "number of random sequences for CM gumbel estimation",    2 },
   { "--gum-hmmN",       eslARG_INT,     "5000", NULL, "n>0",    NULL,        NULL,"--fil-only", "number of random sequences for CP9 HMM gumbel estimation",    2 },
-  { "--gum-beta",       eslARG_REAL,    NULL,   NULL, "x>0",    NULL,        NULL,        NULL, "set tail loss prob for QDBs in gumbel calc to <x>, [default: no QDBs]", 5 },
+  { "--gum-beta",       eslARG_REAL,    NULL,   NULL, "x>0",    NULL,        NULL,        NULL, "turn QDB on for gumbel calc and set tail loss prob to <x>", 2 },
   { "--gum-gcfromdb",   eslARG_INFILE,  NULL,   NULL, NULL,     NULL,        NULL,"--fil-only", "use GC content distribution from file <s>",  2},
-  { "--gum-gtail",      eslARG_REAL,    "0.5",  NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of right histogram tail to fit to gumbel to <x>", 5 },
   { "--gum-pfile",      eslARG_INFILE,  NULL,   NULL, NULL,     NULL,"--gum-gcfromdb",    NULL, "read partition info for gumbels from file <s>", 2},
   { "--gum-hfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,"--fil-only", "save fitted gumbel histogram(s) to file <s>", 2 },
   { "--gum-sfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,"--fil-only", "save survival plot to file <s>", 2 },
@@ -91,6 +90,11 @@ static ESL_OPTIONS options[] = {
 /* Other options */
   { "--stall",          eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 5 },  
   { "--mxsize",         eslARG_REAL,    "256.0",NULL, "x>0.",   NULL,        NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 9 },
+  { "--exp-T",          eslARG_REAL,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "set bit sc cutoff for exp tail fitting to <x> [df: -INFTY]", 9 },
+  { "--exp-L",          eslARG_INT,     "100000",NULL,"10000<=n<=1000000",NULL,NULL,      NULL, "set length of random sequences for exp tail fitting to <n>", 9 },
+  { "--exp-cmN",        eslARG_INT,     "1",    NULL, "n<=100",  NULL,       NULL,        NULL, "set number of random sequences for CM exp tail fitting to <n>", 9 },
+  { "--exp-hmmN",       eslARG_INT,     "1",    NULL, "n<=100",  NULL,       NULL,        NULL, "set number of random sequences for HMM exp tail fitting to <n>", 9 },
+  { "--exp-tail",       eslARG_REAL,    "0.5",  NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of right histogram tail to fit to exp tail to <x>", 9 },
 #ifdef HAVE_MPI
   { "--mpi",            eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "run as an MPI parallel program", 5 },  
 #endif
@@ -117,6 +121,7 @@ struct cfg_s {
 					* this is unlikely but possible, in this case we die in initialize_cmstats() */
   int             *pstart;             /* [0..p..np-1], begin points for partitions, end pts are implicit */
   float            avg_hit_len;        /* average CM hit length, calc'ed using QDB calculation algorithm */
+  double          *dnull;              /* double version of cm->null, for generating random seqs */
 
   /* info for the comlog we'll add to the cmfiles */
   char            *ccom;               /* command line used in this execution of cmcalibrate */
@@ -163,6 +168,7 @@ static int initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *er
 
 static int  set_partition_gc_freq(struct cfg_s *cfg, int p);
 static int  fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, double *ret_mu, double *ret_lambda);
+static int  fit_histogram_exp(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, double *ret_mu, double *ret_lambda);
 static int  get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, double *dnull, int L, ESL_DSQ **ret_dsq);
 static int  get_cmemit_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, int *ret_p, ESL_DSQ **ret_dsq);
 static int  read_partition_file(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
@@ -175,6 +181,7 @@ static int  print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *
 static int  get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *cm_scA, float *fwd_scA, int *partA, int cm_mode, HMMFilterInfo_t *hfi);
 static int  compare_fseq_by_cm_Eval (const void *a_void, const void *b_void);
 static int  compare_fseq_by_fwd_Eval(const void *a_void, const void *b_void);
+static int  set_dnull(CM_t *cm, char *errbuf, double **ret_dnull);
 
 int
 main(int argc, char **argv)
@@ -565,17 +572,22 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int      working_on_cp9;        /* TRUE when gum_mode is for CP9 gumbel */
   int      gum_mode;              /* ctr over gumbel modes */
 
-  /* gumbel related vars */
-  int      cmN  = esl_opt_GetInteger(go, "--gum-cmN");  /* number of random sequences to search for CM gumbel fitting */
-  int      hmmN = esl_opt_GetInteger(go, "--gum-hmmN"); /* number of random sequences to search for CM gumbel fitting */
-  int      gumN;                  /* number of sequences to search for gumbel fitting of current gumbel mode, either --gum-cmN or --gum-hmmN */
-  int      gumL;                  /* length of sequences to search for gumbel fitting, L==cm->W*2 unless --gum-L enabled, 
-				   * in which case L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gum-L") */  
-  float   *gum_scA        = NULL; /* best cm or hmm score for each random seq */
-  int      gum_cm_cyk_mode;       /* CYK    gum mode CM is in GUM_CM_LC or GUM_CM_GC */
-  int      gum_cm_ins_mode;       /* Inside gum mode CM is in GUM_CM_LI or GUM_CM_GI */
-  double   tmp_mu, tmp_lambda;    /* temporary mu and lambda used for setting gumbels */
-
+  /* exptail related vars */
+  int                cmN = esl_opt_GetInteger(go, "--exp-cmN");  /* number of random sequences to search for CM gumbel fitting */
+  int               hmmN = esl_opt_GetInteger(go, "--exp-hmmN"); /* number of random sequences to search for CM gumbel fitting */
+  int               expN;                                        /* number of sequences to search for exp tail fitting of current exp mode, either --exp-cmN or --exp-hmmN */
+  int               expL = esl_opt_GetInteger(go, "--exp-L");    /* lengths of sequences to search for exp tail fitting of current exp mode, either --exp-cmN or --exp-hmmN */
+  int               exp_cm_cyk_mode;                             /* CYK    gum mode CM is in GUM_CM_LC or GUM_CM_GC */
+  int               exp_cm_ins_mode;                             /* Inside gum mode CM is in GUM_CM_LI or GUM_CM_GI */
+  int               exp_scN = 0;                                 /* number of hits reported thus far, for all seqs */
+  float            *exp_scA = NULL;                              /* [0..exp_scN-1] hit scores for all seqs */
+  ESL_DSQ          *dsq = NULL;                                  /* digitized sequence to search */
+  search_results_t *results;                                     /* results (hits) from current sequence */
+  double           *dnull = NULL;                                /* double version of cm->null, for generating random seqs */
+  int               i;                                           /* counter over sequences */
+  int               h;                                           /* counter over hits */
+  double   tmp_mu, tmp_lambda;                                   /* temporary mu and lambda used for setting exp tails */
+  
   /* filter threshold related vars */
   int      filN = esl_opt_GetInteger(go, "--fil-N"); /* number of sequences to search for filter threshold calculation */
   int      fthr_mode = 0;         /* CM mode for filter threshold calculation, FTHR_CM_GC, FTHR_CM_GI, FTHR_CM_LC, FTHR_CM_LI */
@@ -602,11 +614,12 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = initialize_cm(go, cfg, errbuf, cm))               != eslOK) cm_Fail(errbuf);
       if((status = initialize_cmstats(go, cfg, errbuf, cm))          != eslOK) cm_Fail(errbuf);
       if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len))) != eslOK) cm_Fail(errbuf);
-      if((status = print_cm_info     (go, cfg, errbuf, cm))          != eslOK) cm_Fail(errbuf);
+      if((status = print_cm_info(go, cfg, errbuf, cm))               != eslOK) cm_Fail(errbuf);
+      if((status = set_dnull(cm, errbuf, &dnull))                    != eslOK) cm_Fail(errbuf);
 
       for(gum_mode = 0; gum_mode < GUM_NMODES; gum_mode++) {
 
-	if(GumModeIsForCM(gum_mode)) { working_on_cm = TRUE;  working_on_cp9 = FALSE; }
+	if(GumModeIsForCM(gum_mode)) { working_on_cm = TRUE; working_on_cp9 = FALSE; }
 	else                         { working_on_cm = FALSE; working_on_cp9 = TRUE;  }
 
 	/* do we need to switch from glocal configuration to local? */
@@ -614,10 +627,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if((status = switch_global_to_local(go, cfg, cm, errbuf))      != eslOK) cm_Fail(errbuf);
 	  if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len))) != eslOK) cm_Fail(errbuf);
 	}
-	/* update search opts for gumbel mode */
-	GumModeToSearchOpts(cm, gum_mode);
+	/* update search info for round 0 (final round) for gumbel mode */
+	UpdateSearchInfoForGumMode(cm, 0, gum_mode);
 
-	/* We want to use the same seqs for Gumbel fittings of all CM modes and HMM modes, 
+	/* We want to use the same seqs for exp tail fittings of all CM modes and HMM modes, 
 	 * so we free RNG, then create a new one and reseed it with the initial seed,
 	 * The following pairs of modes will have identical sequences used for each member of the pair:
 	 * 1. GUM_CP9_GV and GUM_CP9_GF
@@ -632,32 +645,46 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	cfg->r = esl_randomness_Create(seed);
 
 	/**************************/
-	/* gumbel fitting section */
+	/* exponential tail fitting section */
 	/**************************/
 	if(! (esl_opt_GetBoolean(go, "--fil-only"))) {
 	  /* calculate gumbels for this gum mode */
 	  /* determine length of seqs to search for gumbel fitting */
-	  if(esl_opt_IsDefault(go, "--gum-L")) gumL = cm->W*2; 
-	  else                                 gumL = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gum-L")); /* minimum L we allow is 2 * cm->W, this is enforced silently (!) */
 	  ESL_DASSERT1((cfg->np == cfg->cmstatsA[cmi]->np));
 	  for (p = 0; p < cfg->np; p++) {
 	    esl_stopwatch_Start(cfg->w_stage);
 	    if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
+	    expN = working_on_cm ? cmN : hmmN;
 
-	    gumN = working_on_cm ? cmN : hmmN;
-	    ESL_DPRINTF1(("\n\ncalling process_gumbel_workunit to fit gumbel for p: %d GUM mode: %d\n", p, gum_mode));
-	    printf("gumbel  %-12s %5d %6d %5s %5s [", DescribeGumMode(gum_mode), gumN, gumL, "-", "-");
+	    ESL_DPRINTF1(("\n\ncalling ProcessSearchWorkunit to fit exp tail for p: %d GUM mode: %d\n", p, gum_mode));
+	    printf("exp     %-12s %5d %6d %5s %5s [", DescribeGumMode(gum_mode), expN, expL, "-", "-");
 	    fflush(stdout);
 
-	    /* do the work, fit the histogram, update gumbel info in cmstats */
-	    if((status = process_gumbel_workunit (go, cfg, errbuf, cm, gumN, gumL, working_on_cm, &gum_scA))!= eslOK) cm_Fail(errbuf);
-	    if((status = fit_histogram(go, cfg, errbuf, gum_scA, gumN, &tmp_mu, &tmp_lambda))               != eslOK) cm_Fail(errbuf);
-	    SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], tmp_mu, tmp_lambda, gumL, gumN);
+	    exp_scN  = 0;
+	    for(i = 0; i < expN; i++) { 
+	      /* do the work, fit the histogram, update gumbel info in cmstats */
+	      if((status = get_random_dsq        (cfg, errbuf, cm, dnull, expL, &dsq)) != eslOK) cm_Fail(errbuf); 
+	      if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, expL, &results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank)) != eslOK) cm_Fail(errbuf);
+	      printf("\nN hits 0: %12d\n", results->num_results);
+	      RemoveOverlappingHits(results, 1, expL);
+	      printf("N hits 1: %12d\n", results->num_results);
+
+	      if(results->num_results > 0) { 
+		if(i == 0) ESL_ALLOC (exp_scA, sizeof(float) * (exp_scN + results->num_results));
+		else       ESL_RALLOC(exp_scA, tmp, sizeof(float) * (exp_scN + results->num_results));
+		for(h = 0; h < results->num_results; h++) exp_scA[(exp_scN+h)] = results->data[h].score;
+		exp_scN += results->num_results;
+	      }
+	      FreeResults(results);
+	      free(dsq);
+	    }
+	    if((status = fit_histogram_exp(go, cfg, errbuf, exp_scA, exp_scN, &tmp_mu, &tmp_lambda))                             != eslOK) cm_Fail(errbuf);
+	    SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], tmp_mu, tmp_lambda, expL, expN);
 
 	    esl_stopwatch_Stop(cfg->w_stage);
 	    format_time_string(time_buf, cfg->w_stage->elapsed, 0);
 	    printf(" %10s\n", time_buf);
-	    free(gum_scA);
+	    free(exp_scA);
 	  } /* end of for loop over partitions */
 	} /* end of if ! --fil-only */
 	
@@ -674,13 +701,13 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  
 	  if((status = process_filter_workunit (go, cfg, errbuf, cm, filN, &fil_cyk_scA, &fil_ins_scA, &fil_fwd_scA, &fil_partA)) != eslOK) cm_Fail(errbuf);
 	  
-	  gum_cm_cyk_mode  = (cm->flags & CMH_LOCAL_BEGIN) ? GUM_CM_LC  : GUM_CM_GC;
-	  gum_cm_ins_mode  = (cm->flags & CMH_LOCAL_BEGIN) ? GUM_CM_LI  : GUM_CM_GI;
+	  exp_cm_cyk_mode  = (cm->flags & CMH_LOCAL_BEGIN) ? GUM_CM_LC  : GUM_CM_GC;
+	  exp_cm_ins_mode  = (cm->flags & CMH_LOCAL_BEGIN) ? GUM_CM_LI  : GUM_CM_GI;
 	  fil_cm_cyk_mode  = (cm->flags & CMH_LOCAL_BEGIN) ? FTHR_CM_LC : FTHR_CM_GC;
 	  fil_cm_ins_mode  = (cm->flags & CMH_LOCAL_BEGIN) ? FTHR_CM_LI : FTHR_CM_GI;
 	  /* set cutoffs for forward HMM filters, first for CYK, then for Inside */
-	  if((status = get_hmm_filter_cutoffs(go, cfg, errbuf, cm, fil_cyk_scA, fil_fwd_scA, fil_partA, gum_cm_cyk_mode, cfg->cmstatsA[cmi]->hfiA[fil_cm_cyk_mode])) != eslOK) cm_Fail(errbuf);
-	  if((status = get_hmm_filter_cutoffs(go, cfg, errbuf, cm, fil_ins_scA, fil_fwd_scA, fil_partA, gum_cm_ins_mode, cfg->cmstatsA[cmi]->hfiA[fil_cm_ins_mode])) != eslOK) cm_Fail(errbuf);
+	  if((status = get_hmm_filter_cutoffs(go, cfg, errbuf, cm, fil_cyk_scA, fil_fwd_scA, fil_partA, exp_cm_cyk_mode, cfg->cmstatsA[cmi]->hfiA[fil_cm_cyk_mode])) != eslOK) cm_Fail(errbuf);
+	  if((status = get_hmm_filter_cutoffs(go, cfg, errbuf, cm, fil_ins_scA, fil_fwd_scA, fil_partA, exp_cm_ins_mode, cfg->cmstatsA[cmi]->hfiA[fil_cm_ins_mode])) != eslOK) cm_Fail(errbuf);
 	  free(fil_cyk_scA);
 	  free(fil_ins_scA);
 	  free(fil_fwd_scA);
@@ -693,6 +720,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       } /* end of for(gum_mode = 0; gum_mode < NCMMODES; gum_mode++) */
       if(cfg->be_verbose) if((status = debug_print_cmstats(cm, errbuf, cfg->cmstatsA[cmi], (! esl_opt_GetBoolean(go, "--gum-only")))) != eslOK) cm_Fail(errbuf);
       FreeCM(cm);
+      free(dnull);
       printf("//\n");
       fflush(stdout);
     }
@@ -904,7 +932,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    ESL_DPRINTF1(("MPI master: CM: %d gumbel mode: %d partition: %d\n", cfg->ncm, gum_mode, p));
 	    
 	    esl_stopwatch_Start(cfg->w_stage);
-	    printf("gumbel  %-12s %5d %6d %5s %5s [", DescribeGumMode(gum_mode), gumN, gumL, "-", "-");
+	    printf("gumbel  %-12s %5d %6d %5s %5s [", DescribeGumMode(gum_mode), expN, expL, "-", "-");
 	    fflush(stdout);
 
 	    if(xstatus == eslOK) have_work     = TRUE;	/* TRUE while work remains  */
@@ -1558,6 +1586,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   int status;
   int nstarts, nexits, nd;
+  float exp_cutoff;
 
   /* config QDB? NO!, unless --gum-beta enabled */
   if(esl_opt_IsDefault(go, "--gum-beta")) { 
@@ -1597,18 +1626,31 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     }
     cm->pend = nexits * esl_opt_GetReal(go, "--pfend");
   }
-  /* process the --gemit option, this option forces all emitted parsetrees to be 'global'
+  /* process the --fil-gemit option, this option forces all emitted parsetrees to be 'global'
    * in that they'll never contain a local begin or local end. */
   if(esl_opt_GetBoolean(go, "--fil-gemit")) { 
     cm->flags |= CM_EMIT_NO_LOCAL_BEGINS; 
     cm->flags |= CM_EMIT_NO_LOCAL_ENDS;
   }
 
+  cm->search_opts |= CM_SEARCH_NOALIGN;
+
+  /* ALWAYS use the greedy overlap resolution algorithm to return hits for exp calculation
+   * it's irrelevant for filter threshold stats, we return best score per seq for that */
+  cm->search_opts |= CM_SEARCH_CMGREEDY;
+  cm->search_opts |= CM_SEARCH_HMMGREEDY;
+
   ConfigCM(cm, NULL, NULL);
   
   /* create and initialize scan info for CYK/Inside scanning functions */
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE);
   if(cm->smx == NULL) cm_Fail("initialize_cm(), CreateScanMatrixForCM() call failed.");
+
+  /* create the search info, which holds the thresholds for final round */
+  if(esl_opt_IsDefault(go, "--exp-T")) exp_cutoff = -eslINFINITY;
+  else exp_cutoff = esl_opt_GetReal(go, "--exp-T");
+  CreateSearchInfo(cm, SCORE_CUTOFF, exp_cutoff, -1.);
+  ValidateSearchInfo(cm, cm->si);
   
   if((status = update_dp_calcs(go, cfg, errbuf, cm)) != eslOK) return status;
   return eslOK;
@@ -1727,7 +1769,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
     if((status = esl_histogram_Add(h, scores[i])) != eslOK) ESL_FAIL(status, errbuf, "fit_histogram(), esl_histogram_Add() call returned non-OK status: %d\n", status);
 
   /* fit scores to a gumbel */
-  tailfit = esl_opt_GetReal(go, "--gum-gtail");
+  tailfit = esl_opt_GetReal(go, "--exp-tail");
   esl_histogram_GetTailByMass(h, tailfit, &xv, &n, &z); /* fit to right 'tailfit' fraction, 0.5 by default */
   esl_gumbel_FitCensored(xv, n, z, xv[0], &mu, &lambda);
   esl_gumbel_FitCensoredLoc(xv, n, z, xv[0], 0.693147, &mufix);
@@ -1746,6 +1788,65 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
     esl_histogram_PlotSurvival(cfg->gumsfp, h);
     esl_gumbel_Plot(cfg->gumsfp, mu,    lambda,   esl_gumbel_surv, h->xmin - 5., h->xmax + 5., 0.1);
     esl_gumbel_Plot(cfg->gumsfp, mufix, 0.693147, esl_gumbel_surv, h->xmin - 5., h->xmax + 5., 0.1);
+  }
+
+  esl_histogram_Destroy(h);
+
+  *ret_mu     = mu;
+  *ret_lambda = lambda;
+  return eslOK;
+}
+
+
+/* fit_histogram_exp()
+ * Create, fill and fit a histogram to an exponential tail. Data to fill the histogram
+ * is given as <data>.
+ */
+static int
+fit_histogram_exp(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores,
+		  double *ret_mu, double *ret_lambda)
+{
+  int status;
+  double mu;
+  double lambda;
+  int i;
+  double *xv;         /* raw data from histogram */
+  int     n,z;  
+  float tailp;
+  double mufix;
+  double  params[2];
+
+  ESL_HISTOGRAM *h = NULL;       /* histogram of scores */
+
+  /* Initialize histogram; these numbers are guesses */
+  if((h = esl_histogram_CreateFull(-100., 100., .25)) == NULL) return eslEMEM;    
+
+  /* fill histogram */
+  for(i = 0; i < nscores; i++)
+    if((status = esl_histogram_Add(h, scores[i])) != eslOK) ESL_FAIL(status, errbuf, "fit_histogram(), esl_histogram_Add() call returned non-OK status: %d\n", status);
+
+  /* fit scores to a gumbel */
+  tailp = esl_opt_GetReal(go, "--exp-tail");
+  esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); /* fit to right 'tailfit' fraction, 0.5 by default */
+  esl_exp_FitComplete(xv, n, &(params[0]), &(params[1]));
+  esl_histogram_SetExpectedTail(h, params[0], tailp, &esl_exp_generic_cdf, &params);
+
+  printf("# Exponential fit to %.2f%% tail: lambda = %f\n", tailp*100.0, params[1]);
+  exit(1);
+  mu = params[0];
+  lambda = params[1];
+
+  /* print to output files if nec */
+  if(cfg->gumhfp != NULL)
+    esl_histogram_Plot(cfg->gumhfp, h);
+  if(cfg->gumqfp != NULL) {
+      esl_histogram_PlotQQ(cfg->gumqfp, h, &esl_exp_generic_invcdf, params);
+  }
+
+  if (cfg->gumsfp != NULL) {
+    esl_histogram_PlotSurvival(cfg->gumsfp, h);
+    esl_exp_Plot(cfg->gumsfp, mu,    lambda,   esl_exp_surv, h->xmin - 5., h->xmax + 5., 0.1);
+    esl_exp_Plot(cfg->gumsfp, mufix, 0.693147, esl_exp_surv, h->xmin - 5., h->xmax + 5., 0.1);
   }
 
   esl_histogram_Destroy(h);
@@ -2229,6 +2330,34 @@ print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   printf("%6s  %3s  %3s  %3s %5s %6s %5s %5s [5.......50.......100] %10s\n", "stage",  "mod",  "cfg", "alg",  "gumN",    "len",  "filN",          "",  "elapsed");
   printf("%6s  %3s  %3s  %3s %5s %6s %5s %5s %22s %10s\n", "------", "---", "---", "---", "-----", "------", "-----", "-----", "----------------------", "----------");
   return eslOK;
+}
+
+
+/* Function: set_dnull
+ * Date:     EPN, Thu Jan 24 09:48:54 2008
+ *
+ * Purpose:  Allocate, fill and return dnull, a double version of cm->null used
+ *           for generating random seqs.
+ *
+ * Returns:  eslOK on success
+ */
+static int
+set_dnull(CM_t *cm, char *errbuf, double **ret_dnull)
+{
+  int status;
+  double *dnull;
+  int i;
+
+  if(ret_dnull == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "set_dnull(), ret_dnull is NULL.");
+  ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
+  for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
+  esl_vec_DNorm(dnull, cm->abc->K);    
+  *ret_dnull = dnull;
+
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(eslEINCOMPAT, errbuf, "set_dnull(), memory allocation error.");
 }
 
 

@@ -55,6 +55,9 @@
 /* from old_cm_dpsearch.c */
 extern float CYKScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
 		      float cutoff, search_results_t *results);
+extern float CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
+			   float cutoff, search_results_t *results);
+
 extern float CYKScanRequires(CM_t *cm, int L, int W);
 
 extern float InsideScan(CM_t *cm, ESL_DSQ *dsq, int i0, int j0, int W, 
