@@ -2059,8 +2059,6 @@ update_dp_calcs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
   return eslOK;
 }
 
-
-
 /* Function: get_cmcalibrate_comlog_info
  * Date:     EPN, Mon Dec 31 14:59:52 2007
  *
@@ -2083,7 +2081,7 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
   if(cfg->cdate != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "get_cmcalibrate_comlog_info(), cfg->cdate is non-NULL.");
   
   
-  /* Set the cmbuild command info, the cfg->clog->bcom string */
+  /* Set the cmcalibrate command info, the cfg->ccom string */
   for (i = 0; i < go->optind; i++) { /* copy all command line options, but not the command line args yet, we may need to append '-s ' before the args */
     esl_strcat(&(cfg->ccom),  -1, go->argv[i], -1);
     esl_strcat(&(cfg->ccom),  -1, " ", 1);
@@ -2104,12 +2102,12 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
     if(seed != (long) esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r's seed is %ld, but -s was enabled with argument: %ld!, this shouldn't happen.", seed, (long) esl_opt_GetInteger(go, "-s"));
   }
 
-  for (i = go->optind; i < go->argc; i++) { /* copy all command line options, but not the command line args yet, we may need to append '-s ' before the args */
+  for (i = go->optind; i < go->argc; i++) { /* copy command line args yet */
     esl_strcat(&(cfg->ccom), -1, go->argv[i], -1);
     if(i < (go->argc-1)) esl_strcat(&(cfg->ccom), -1, " ", 1);
   }
 
-  /* Set the cmcalibrate call date, the cfg->clog->bdate string */
+  /* Set the cmcalibrate call date, the cfg->cdate string */
   time_t date = time(NULL);
   if((status = esl_strdup(ctime(&date), -1, &(cfg->cdate))) != eslOK) goto ERROR;
   esl_strchop(cfg->cdate, -1); /* doesn't return anything but eslOK */

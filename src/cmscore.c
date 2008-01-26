@@ -33,20 +33,21 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 
 #ifdef HAVEDEVOPTS
-#define ALGOPTS  "--nonbanded,--qdb,--qdbsmall,--qdbboth,--hbanded,--hmmviterbi"  /* Exclusive choice for scoring algorithms ifdef #HAVE_DEVOPTS*/
+#define ALGOPTS  "--nonbanded,--qdb,--qdbsmall,--qdbboth,--hbanded,--hmmviterbi,--hmmforward"  /* Exclusive choice for scoring algorithms ifdef #HAVE_DEVOPTS*/
 #else
-#define ALGOPTS  "--nonbanded,--hbanded,--hmmviterbi"                             /* Exclusive choice for scoring algorithms */
+#define ALGOPTS  "--nonbanded,--hbanded,--hmmviterbi,--hmmforward"                             /* Exclusive choice for scoring algorithms */
 #endif
 #define SEQOPTS  "--emit,--random,--infile"                                 /* Exclusive choice for sequence input */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
+  { "-o",        eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "direct output to file <f>, not stdout", 1 },
   { "-n",        eslARG_INT,     "10", NULL, "n>0",     NULL,      NULL,  "--infile", "generate <n> sequences",  1 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,     "--sub", "align locally w.r.t. the model",         1 },
   { "-s",        eslARG_INT,     NULL, NULL, "n>0",     NULL,      NULL,  "--infile", "set random number seed to <n>", 1 },
   { "-a",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print individual timings & scores, not just a summary", 1 },
-  { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 1 },
+  { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL, "-l,search", "build sub CM for columns b/t HMM predicted start/end points", 1 },
   { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 1 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
@@ -59,14 +60,14 @@ static ESL_OPTIONS options[] = {
   /* Stage 2 algorithm options */
   { "--hbanded", eslARG_NONE,"default",NULL, NULL,  ALGOPTS,      NULL,        NULL, "compare d&c optimal CYK versus HMM banded CYK", 3 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",      NULL, "set tail loss prob for --hbanded to <x>", 3 },
-  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",      NULL, "realign (non-banded) seqs with HMM banded CYK score < 0 bits", 3 },
-  { "--nonbanded",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,      NULL, "compare divide and conquer (d&c) versus standard non-banded CYK", 3 },
-  { "--scoreonly",eslARG_NONE,  FALSE, NULL, NULL,      NULL,"--nonbanded","--tfile", "with --nonbanded, do only score, save memory", 3 },
+  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded","--search", "realign (non-banded) seqs with HMM banded CYK score < 0 bits", 3 },
+  { "--nonbanded",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,"--search", "compare divide and conquer (d&c) versus standard non-banded CYK", 3 },
+  { "--scoreonly",eslARG_NONE,  FALSE, NULL, NULL,      NULL,"--nonbanded","--tfile,--search", "with --nonbanded, do only score, save memory", 3 },
   { "--hmmviterbi",eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,      NULL,       NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm", 3 },
 #ifdef HAVE_DEVOPTS
   { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare non-banded d&c versus QDB standard CYK", 3 },
-  { "--qdbsmall",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare non-banded d&c versus QDB d&c", 3 },
-  { "--qdbboth", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare        QDB d&c versus QDB standard CYK", 3 },
+  { "--qdbsmall",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,  "--search", "compare non-banded d&c versus QDB d&c", 3 },
+  { "--qdbboth", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,  "--search", "compare        QDB d&c versus QDB standard CYK", 3 },
   { "--beta",    eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      NULL,        NULL, "set tail loss prob for QDB to <x>", 3 },
 #endif
   /* Options for testing multiple rounds of banded alignment, stage 2->N alignment */
@@ -77,6 +78,9 @@ static ESL_OPTIONS options[] = {
   { "--betae",   eslARG_INT,  NULL,    NULL, "0<n<=30", NULL, "--betas",       NULL, "set final   (stage N) tail loss prob to 1E-<x> for QDB", 4 },
 #endif
   /* Verbose output files/debugging */
+  { "--search",  eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "run algorithms in scanning search mode", 5 },
+  { "--hmmforward",eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,"--search",        NULL, "align to a CM Plan 9 HMM with the Forward algorithm", 3 },
+  { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--search",        NULL, "with --search use inside instead of CYK", 3 },
   { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 5 },
   { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  5 },
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb",   5 },  
@@ -107,14 +111,18 @@ struct cfg_s {
   int           my_rank;	/* who am I, in 0..nproc-1 */
   int           do_stall;	/* TRUE to stall the program until gdb attaches */
 
+  /* info for the comlog we'll add to the cmfiles */
+  char            *ccom;        /* command line used in this execution of cmscore */
+  char            *cdate;       /* date of this execution of cmscore */
+
   /* Masters only (i/o streams) */
   char         *cmfile;	        /* name of input CM file  */ 
   CMFILE       *cmfp;		/* open input CM file stream       */
   ESL_SQFILE   *sqfp;           /* open sequence input file stream */
+  FILE         *ofp;            /* output file (default is stdout) */
   FILE         *tracefp;	/* optional output for parsetrees  */
   FILE         *regressfp;	/* optional output for regression test  */
-  FILE         *ofp;	        /* name of output sequence file  */ 
-
+  FILE         *sfp;	        /* optional output for sequence file  */ 
 };
 
 static char usage[]  = "[-options] <cmfile>";
@@ -129,11 +137,21 @@ static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
 
-static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
+static int process_align_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
+static int process_cmscore_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
 static int output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
-static int initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int summarize_align_options(const struct cfg_s *cfg, CM_t *cm);
+static int initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
+static int initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int i_am_mpi_master, seqs_to_aln_t **ret_seqs_to_aln);
+static int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, float *ret_sc);
+static int get_command(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, char **ret_command);
+static int get_date(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, char **ret_date);
+static int print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
+static void print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq);
+static void print_stage_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
+static void print_seq_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
+static int print_align_options(const struct cfg_s *cfg, CM_t *cm);
+static int print_search_options(const struct cfg_s *cfg, CM_t *cm);
 #ifdef HAVE_MPI
 static int determine_nseq_per_worker(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int *ret_nseq_worker);
 static int add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs, int offset);
@@ -224,6 +242,7 @@ main(int argc, char **argv)
   cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.sqfp       = NULL;                   /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.ofp        = NULL;                   /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.sfp        = NULL;                   /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.tracefp    = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.regressfp  = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.nseq       = 0;		           /* this counter is incremented in masters */
@@ -290,10 +309,15 @@ main(int argc, char **argv)
       printf("# Regression data (parsetrees) saved in file %s.\n", esl_opt_GetString(go, "--regress"));
       fclose(cfg.regressfp);
     }
-    if (cfg.ofp       != NULL) { 
+    if (cfg.sfp       != NULL) { 
       printf("# Sequences scored against the CM saved in file %s.\n", esl_opt_GetString(go, "--outfile"));
-      fclose(cfg.ofp);
+      fclose(cfg.sfp);
     }
+    if (cfg.sfp       != NULL) { 
+      printf("# Sequences scored against the CM saved in file %s.\n", esl_opt_GetString(go, "--outfile"));
+      fclose(cfg.sfp);
+    }
+    if (cfg.ofp       != NULL) fclose(cfg.ofp);
     if (cfg.s1_sc     != NULL) free(cfg.s1_sc);
   }
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
@@ -330,6 +354,12 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
   int status;
 
+  /* open output file, or set to stdout if none */
+  if (esl_opt_GetString(go, "-o") != NULL) {
+    if ((cfg->ofp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) 
+      ESL_FAIL(eslFAIL, errbuf, "Failed to open -o output file %s\n", esl_opt_GetString(go, "-o"));
+  } else cfg->ofp = stdout;
+
   /* open CM file */
   if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
     ESL_FAIL(eslFAIL, errbuf, "Failed to open covariance model save file %s\n", cfg->cmfile);
@@ -345,7 +375,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   }
   /* optionally, open output file */
   if (esl_opt_GetString(go, "--outfile") != NULL) {
-    if ((cfg->ofp = fopen(esl_opt_GetString(go, "--outfile"), "w")) == NULL) 
+    if ((cfg->sfp = fopen(esl_opt_GetString(go, "--outfile"), "w")) == NULL) 
       ESL_FAIL(eslFAIL, errbuf, "Failed to open --outfile output file %s\n", esl_opt_GetString(go, "--outfile"));
   } 
 
@@ -466,6 +496,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+  if((status  = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
 
   while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
     {
@@ -474,6 +505,9 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* get sequences, either generate them (--emit (default) or --random) or read them (--infile) */
       if((status = get_sequences(go, cfg, errbuf, cm, FALSE, &seqs_to_aln)) != eslOK) cm_Fail(errbuf);
+
+      /* print the per-cm info */
+      print_cm_info (go, cfg, errbuf, cm, seqs_to_aln->nseq);
 	  
       /* align sequences cfg->nstages times */
       for(cfg->s = 0; cfg->s < cfg->nstages; cfg->s++) 
@@ -482,12 +516,19 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if(cfg->s == 0) esl_stopwatch_Start(cfg->s1_w);
 	  else            esl_stopwatch_Start(cfg->w);
 	  
-	  /* initialize the flags/options/params of the CM for the current stage */
-	  if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	  if(esl_opt_GetBoolean(go, "--search")) {
+	    /* initialize the flags/options/params of the CM for the current stage */
+	    if((status = initialize_cm_for_search(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	    /* align all sequences, keep scores in seqs_to_aln->sc */
+	    if ((status = process_cmscore_search_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
+	  }
+	  else {
+	    /* initialize the flags/options/params of the CM for the current stage */
+	    if((status = initialize_cm_for_align(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	    /* align all sequences, keep scores in seqs_to_aln->sc */
+	    if ((status = process_align_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
+	  }
 
-	  /* align all sequences, keep scores in sc */
-	  if ((status = process_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
-	  
 	  /* stop timing, and output result */
 	  if(cfg->s == 0) esl_stopwatch_Stop(cfg->s1_w);
 	  else            esl_stopwatch_Stop(cfg->w);
@@ -556,7 +597,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if (xstatus == eslOK) { if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) xstatus = status; }
   if (xstatus == eslOK) { if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) xstatus = status; }
   if (xstatus == eslOK) { bn = 4096; if ((buf = malloc(sizeof(char) * bn)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((seqidx  = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((seqidx = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((status = print_run_info(go, cfg, errbuf))  != eslOK) xstatus = status; }
 
   MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
   if (xstatus != eslOK) cm_Fail(errbuf);
@@ -604,15 +646,22 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if(cfg->s == 0) esl_stopwatch_Start(cfg->s1_w);
 	  else            esl_stopwatch_Start(cfg->w);
 	  
-	  /* initialize the flags/options/params of the CM for the current stage */
-	  if((status = initialize_cm(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	  /* initialize the flags/options/params of the CM for current stage */
+	  if(esl_opt_GetBoolean(go, "--search")) { 
+	    if((status = initialize_cm_for_search(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	  }
+	  else {
+	    if((status = initialize_cm_for_align(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	  }
 
 	  if(cfg->s == 0) {
 	    /* get sequences, either generate them (--emit (default) or --random) or read them (--infile) */
 	    if((status = get_sequences(go, cfg, errbuf, cm, TRUE, &all_seqs_to_aln)) != eslOK) cm_Fail(errbuf);
+	    /* print the per-cm info */
+	    print_cm_info (go, cfg, errbuf, cm, all_seqs_to_aln->nseq);
 	  }
 
-	  /* determine number of sequences per worker, depends on the stage (b/c stage 1 is slow, stage 2+ may be fast) */
+	  /* determine number of sequences per worker */
 	  determine_nseq_per_worker(go, cfg, cm, &nseq_per_worker); /* this func dies internally if there's some error */
 	  ESL_DPRINTF1(("cfg->s: %d nseq_per_worker: %d\n", cfg->s, nseq_per_worker));
 	  
@@ -789,15 +838,28 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  else            esl_stopwatch_Start(cfg->w);
 
 	  /* initialize the flags/options/params of the CM for current stage */
-	  if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) goto ERROR;
+	  if(esl_opt_GetBoolean(go, "--search")) { 
+	    if((status = initialize_cm_for_search(go, cfg, errbuf, cm)) != eslOK) goto ERROR;
+	  }
+	  else {
+	    if((status = initialize_cm_for_align(go, cfg, errbuf, cm)) != eslOK) goto ERROR;
+	  }
       
 	  while((status = cm_seqs_to_aln_MPIRecv(cfg->abc, 0, 0, MPI_COMM_WORLD, &wbuf, &wn, &seqs_to_aln)) == eslOK)
 	    {
 	      ESL_DPRINTF1(("worker %d: has received alignment job, nseq: %d\n", cfg->my_rank, seqs_to_aln->nseq));
-	      /* align all sequences */
-	      if ((status = process_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) goto ERROR;
-	      ESL_DPRINTF1(("worker %d: has gathered alignment results\n", cfg->my_rank));
-	      
+
+	      if(esl_opt_GetBoolean(go, "--search")) { 
+		/* align all sequences, keep scores in seqs_to_aln->sc */
+		if ((status = process_cmscore_search_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
+		ESL_DPRINTF1(("worker %d: has gathered search results\n", cfg->my_rank));
+	      }
+	      else {
+		/* align all sequences */
+		if ((status = process_align_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) goto ERROR;
+		ESL_DPRINTF1(("worker %d: has gathered alignment results\n", cfg->my_rank));
+	      }
+
 	      /* clean up, free everything in seqs_to_aln but the scores, and maybe the parsetrees or 
 	       * cp9_traces (only if --regress or --tfile enabled though), which we'll pass back to the master */
 	      do_free_tr = do_free_cp9_tr = TRUE;
@@ -888,6 +950,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 {
   int status;
   int i;
+  char time_buf[128];	  /* another string for printing elapsed time */
 
   /* print the parsetrees to regression file or parse file */
   for(i = 0; i < seqs_to_aln->nseq; i++)
@@ -936,26 +999,36 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
   /* print info about scores of parsetrees */
   if(cfg->s == 0) /* store the scores, only */
     {
+      FormatTimeString(time_buf, cfg->s1_w->user, TRUE);
       ESL_ALLOC(cfg->s1_sc, sizeof(float) * seqs_to_aln->nseq);
       for(i = 0; i < seqs_to_aln->nseq; i++) {
 	cfg->s1_sc[i] = seqs_to_aln->sc[i];
 	/*cfg->s1_sc[i] = ParsetreeScore(cm, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE);
 	  ESL_DASSERT1(((fabs(cfg->s1_sc[i] - seqs_to_aln->sc[i])) < 1e-4));*/
       }
+      /* Print summary for stage 1 */ 
+      print_stage_column_headings(go, cfg);
+      fprintf(cfg->ofp, "  %5d", (cfg->s+1)); /* stage number */
+      if(esl_opt_GetBoolean(go, "--search")) print_search_options(cfg, cm);
+      else                                   print_align_options(cfg, cm);
+      fprintf(cfg->ofp, "  %11s  %6s  %7s  %7s  %6s\n", 
+	      time_buf,                  /* time */
+	      "-", "-", "-", "-");  /* comparisons with stage 1 are all N/A */
     }
   else /* if(cfg->s > 0) we don't do the comparison test for stage 0 */
     {
       /* Compare parsetrees from stage 1 and stage s (current stage) and collect stats */
       double diff_sc = 0.; /* difference in summed parse scores for this stage versus stage 1 */
       int    diff_ct = 0.; /* number of parses different between this stage and stage 1 */
-      double spdup;        /* speed-up versus stage 1 */
 
+      FormatTimeString(time_buf, cfg->w->user, TRUE);
+      if(esl_opt_GetBoolean(go, "-a")) print_seq_column_headings(go, cfg);
       for(i = 0; i < seqs_to_aln->nseq; i++)
 	{
 	  /* TO DO: write function that inside actually_align_targets() takes
 	   * a CP9 parse, and converts it to a CM parsetree */
-	  if(esl_opt_GetBoolean(go, "-a"))
-	    printf("%-40s S1: %10.4f S%d: %10.4f diff: %10.4f\n", seqs_to_aln->sq[i]->name, cfg->s1_sc[i], (cfg->s+1), seqs_to_aln->sc[i], (cfg->s1_sc[i] - seqs_to_aln->sc[i]));
+	  if(esl_opt_GetBoolean(go, "-a")) 
+	    fprintf(cfg->ofp, "  %-25.25s  %6d  %11.4f  %11.4f  %10.4f\n", seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, cfg->s1_sc[i], seqs_to_aln->sc[i], cfg->s1_sc[i] - seqs_to_aln->sc[i]);
 	  if(fabs(cfg->s1_sc[i] -  seqs_to_aln->sc[i]) > 0.0001) {
 	    diff_ct++;
 	    diff_sc += cfg->s1_sc[i] - seqs_to_aln->sc[i]; /* don't take absolute value in case cur stage sc > stage 1 sc, for example with -l --hmmviterbi */
@@ -963,25 +1036,18 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  if(esl_opt_GetBoolean(go, "--nonbanded") && (fabs(cfg->s1_sc[i] -  seqs_to_aln->sc[i]) >= 0.01))
 	    cm_Fail("Non-banded standard CYK score (%.3f bits) differs from D&C CYK score (%.3f bits)", cfg->s1_sc[i], seqs_to_aln->sc[i]);
 	}
+      if(esl_opt_GetBoolean(go, "-a")) print_stage_column_headings(go, cfg);
+
       /* Print summary for this stage versus stage 1 */ 
-      printf("Results summary for stage %d:\n", (cfg->s+1));
-      printf("---------------------------------\n");
-      printf("Number seqs aligned:     %d\n", seqs_to_aln->nseq);
-      esl_stopwatch_Display(stdout, cfg->s1_w, "Stage  1 time:           ");
-      printf("Stage %2d time:           ", (cfg->s+1));
-      esl_stopwatch_Display(stdout, cfg->w, "");
-      spdup = cfg->s1_w->user / cfg->w->user;
-      printf("Speedup (user):          %.2f\n", spdup);
-      
-      printf("Avg bit score diff:      %.2f\n", (diff_sc / ((float) seqs_to_aln->nseq)));
-      if(diff_ct == 0)
-	printf("Avg sc diff(>1e-4):      %.2f\n", 0.);
-      else
-	printf("Avg sc diff(>1e-4):      %.2f\n", (diff_sc / ((float) diff_ct)));
-      printf("Num   diff (>1e-4):      %d\n", (diff_ct));
-      printf("Fract diff (>1e-4):      %.5f\n", (((float) diff_ct) / ((float) seqs_to_aln->nseq)));
-      printf("---------------------------------\n");
-      printf("\n");
+      fprintf(cfg->ofp, "  %5d", (cfg->s+1)); /* stage number */
+      if(esl_opt_GetBoolean(go, "--search")) print_search_options(cfg, cm);
+      else                                   print_align_options(cfg, cm);
+      fprintf(cfg->ofp, "  %11s  %6.2f  %7d  %7.5f  %6.2f\n", 
+	      time_buf,                                            /* time */
+	      cfg->s1_w->user / cfg->w->user,                      /* speedup versus stage 1 */
+	      diff_ct,                                             /* number of seqs with different scores */
+	      ((float) diff_ct) / ((float) seqs_to_aln->nseq),     /* fraction that are different */
+	      (diff_ct == 0) ? 0. : (diff_sc / ((float) diff_ct)));/* avg score diff for those that are diff */
     }
   return eslOK;
 
@@ -990,11 +1056,12 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 }
 
 /* An alignment work unit consists a seqs_to_aln_t object which contains sequences to align, 
- * and space for their parsetrees, or CP9 traces, and possibly postal codes.
- * The job is to align the sequences and create parsetrees or cp9 traces and maybe postal codes.
+ * and space for their parsetrees, or CP9 traces, and postal codes.
+ * The job is to align the sequences and collect alignment scores and possibly
+ * create parsetrees or cp9 traces.
  */
 static int
-process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
+process_align_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 		 seqs_to_aln_t *seqs_to_aln)
 {
   int status;
@@ -1007,18 +1074,45 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   return eslOK;
   
   ERROR:
-  ESL_DPRINTF1(("worker %d: has caught an error in process_workunit\n", cfg->my_rank));
+  ESL_DPRINTF1(("worker %d: has caught an error in process_align_workunit\n", cfg->my_rank));
   FreeCM(cm);
   return status;
 }
 
-/* initialize_cm()
+/* A search work unit consists a seqs_to_aln_t object which contains sequences to search, 
+ * and space for their parsetrees, or CP9 traces, and postal codes, but all we care about
+ * is the score of the best hit in each sequence.
+ * The job is to search the sequences and return the scores.
+ */
+static int
+process_cmscore_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
+				seqs_to_aln_t *seqs_to_aln)
+{
+  int status;
+  int i;
+  float *scA; /* will store scores of all sequences */
+
+  ESL_ALLOC(scA, sizeof(float) * seqs_to_aln->nseq);
+  for(i = 0; i < seqs_to_aln->nseq; i++) { 
+    if((status = dispatch_search_for_cmscore(cm, errbuf, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n,
+					     esl_opt_GetReal(go, "--mxsize"), &(scA[i]))) != eslOK) goto ERROR;
+  }
+  seqs_to_aln->sc = scA;
+  return eslOK;
+  
+  ERROR:
+  ESL_DPRINTF1(("worker %d: has caught an error in process_cmscore_search_workunit\n", cfg->my_rank));
+  FreeCM(cm);
+  return status;
+}
+
+/* initialize_cm_for_align()
  * Setup the CM based on the command-line options/defaults
  * for the specified stage alignment. We only set flags and 
  * a few parameters. ConfigCM() configures the CM.
  */
 static int
-initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
+initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   /* Some stuff we do no matter what stage we're on */
     cm->align_opts  = 0;  /* clear alignment options from previous stage */
@@ -1041,7 +1135,6 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
     cm->align_opts  |=  CM_ALIGN_SUB;
     cm->align_opts  &= ~CM_ALIGN_CHECKPARSESC; /* parsetree score won't match aln score */
   }
-  /*if(  esl_opt_GetBoolean(go, "-a"))         cm->align_opts  |= CM_ALIGN_TIME;*/
     
   /* do stage 1 specific stuff */
   if(cfg->s == 0) { /* set up stage 1 alignment we'll compare all other stages to */
@@ -1084,76 +1177,121 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
     if(esl_opt_GetBoolean(go, "--qdbsmall"))  cm->align_opts  |= CM_ALIGN_SMALL;
 #endif
   }
-  if(cfg->my_rank == 0) 
-    {
-      if(cfg->s == 0 && cfg->ncm == 1) {
-	if     (! esl_opt_IsDefault(go, "--infile")) printf("Sequence mode: input file (%s)\n", esl_opt_GetString(go, "--infile"));
-	else if( esl_opt_GetBoolean(go, "--random")) printf("Sequence mode: random (seed: %ld)\n", esl_randomness_GetSeed(cfg->r));
-	else                                         printf("Sequence mode: CM emitted (seed: %ld)\n", esl_randomness_GetSeed(cfg->r));
-      }
-      if(cfg->s == 0) { 
-	printf("=================================\n");
-	printf("CM: ");
-	if(cm->name == NULL) printf("%d\n", (cfg->ncm+1));
-	else printf("%s\n", cm->name);
-	printf("=================================\n");
-      }
-      printf("Stage %2d alignment:\n", (cfg->s+1));
-      summarize_align_options(cfg, cm);
-    }
   return eslOK;
 }
 
-/* Function: summarize_align_options
+
+/* initialize_cm_for_search()
+ * Setup the CM based on the command-line options/defaults
+ * for the specified stage alignment. We only set flags and 
+ * a few parameters. ConfigCM() configures the CM.
+ */
+static int
+initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
+{
+  /* Some stuff we do no matter what stage we're on */
+    cm->search_opts  = 0;  /* clear alignment options from previous stage */
+    cm->config_opts = 0;  /* clear configure options from previous stage */
+
+  /* set up params/flags/options of the CM */
+  if(cfg->beta != NULL) cm->beta = cfg->beta[cfg->s];
+  if(cfg->tau  != NULL) cm->tau  = cfg->tau[cfg->s];
+
+  /* Update cm->config_opts and cm->align_opts based on command line options */
+  if(esl_opt_GetBoolean(go, "-l")) {
+    cm->config_opts |= CM_CONFIG_LOCAL;
+    cm->config_opts |= CM_CONFIG_HMMLOCAL;
+    cm->config_opts |= CM_CONFIG_HMMEL;
+  }
+  if(esl_opt_GetBoolean(go, "--inside"))      cm->search_opts  |= CM_SEARCH_INSIDE;
+  cm->search_opts |= CM_SEARCH_NOQDB;
+  cm->search_opts |= CM_SEARCH_NOALIGN;
+      
+  /* do stage 1 specific stuff */
+  if(cfg->s == 0) { /* set up stage 1 alignment we'll compare all other stages to */
+    cm->search_opts |= CM_SEARCH_NOQDB;
+    /* configure the CM for search based on cm->config_opts and cm->align_opts.
+     * set local mode, make cp9 HMM, calculate QD bands etc. 
+     */
+    ConfigCM(cm, NULL, NULL);
+  }
+  else { /* cfg->s > 0, we're at least on stage 2, 
+	    don't call ConfigCM() again, only info that may change is QDBs, and search_opts */
+    /* Clear QDBs if they exist */
+    if(cm->flags & CMH_QDB) {
+      free(cm->dmin);
+      free(cm->dmax);
+      cm->dmin = NULL;
+      cm->dmax = NULL;
+      cm->flags &= ~CMH_QDB;
+    }
+
+    if(esl_opt_GetBoolean(go, "--hbanded"))     cm->search_opts  |= CM_SEARCH_HBANDED;
+    if(esl_opt_GetBoolean(go, "--hmmviterbi"))  { 
+      cm->search_opts  |= CM_SEARCH_HMMVITERBI;
+      cm->search_opts  &= ~CM_SEARCH_INSIDE;
+    }
+    if(esl_opt_GetBoolean(go, "--hmmforward")) {
+      cm->search_opts  |= CM_SEARCH_HMMFORWARD;
+      cm->search_opts  &= ~CM_SEARCH_INSIDE;
+    }
+#ifdef HAVE_DEVOPTS    
+    if(esl_opt_GetBoolean(go, "--qdb")) {
+      cm->search_opts &= ~CM_CONFIG_NOQDB;
+      cm->config_opts |= CM_CONFIG_QDB;
+      /* calc QDBs for this stage */
+      ConfigQDB(cm);
+    }
+#endif
+  }
+  /* create scan matrix (for all rounds, including first round, round 0) */
+  if(cm->flags & CMH_SCANMATRIX) { cm_FreeScanMatrixForCM(cm); cm->smx = NULL; }
+  cm_CreateScanMatrixForCM(cm, TRUE, TRUE);
+  if(cm->smx == NULL) ESL_FAIL(eslFAIL, errbuf, "initialize_cm_for_search(), CreateScanMatrixForCM() call failed.");
+    
+  /* create the search info (for all rounds, including first round, round 0) */
+  if(cm->si != NULL) { FreeSearchInfo(cm->si, cm); cm->si = NULL; }
+
+  CreateSearchInfo(cm, SCORE_CUTOFF, 0.0, -1.); /* 0.0 is score threshold, it's irrelevant we find best score per seq regardless */
+  ValidateSearchInfo(cm, cm->si);
+
+  return eslOK;
+}
+
+/* Function: print_align_options
  * Date:     EPN, Wed Jan 17 09:08:18 2007
  * Purpose:  Print out alignment options in pretty format. 
  */
-int summarize_align_options(const struct cfg_s *cfg, CM_t *cm)
+int print_align_options(const struct cfg_s *cfg, CM_t *cm)
 {
-  printf("---------------------------------\n");
-  /* Algorithm */
-  if(cm->align_opts & CM_ALIGN_INSIDE)
-    printf("Algorithm:               Inside\n");
-  else if(cm->align_opts & CM_ALIGN_HMMVITERBI) 
-    printf("Algorithm:               CP9 HMM Viterbi\n");
-  else if(cm->align_opts & CM_ALIGN_SCOREONLY)
-    printf("Algorithm:               CYK Standard (score only)\n");
-  else if(cm->align_opts & CM_ALIGN_SMALL)
-    printf("Algorithm:               CYK D&C\n");
-  else 
-    printf("Algorithm:               CYK Standard\n");
+  /* algorithm */
+  if     (cm->align_opts & CM_ALIGN_HMMVITERBI) fprintf(cfg->ofp, "  %7s", "hmm vit");
+  else if(cm->align_opts & CM_ALIGN_SMALL)      fprintf(cfg->ofp, "  %7s", "cyk d&c");
+  else                                          fprintf(cfg->ofp, "  %7s", "cyk std");
+  /* bands and beta/tau*/
+  if     (cm->align_opts & CM_ALIGN_HBANDED)    fprintf(cfg->ofp, "  %5s  %6.0e", "hmm", cm->tau);
+  else if(cm->align_opts & CM_ALIGN_QDB)        fprintf(cfg->ofp, "  %5s  %6.0e", "qdb", cm->beta);
+  else                                          fprintf(cfg->ofp, "  %5s  %6s", "-", "-");
 
-  /* Bands */
-  if(cm->align_opts & CM_ALIGN_HBANDED)
-    {
-      if(cm->align_opts & CM_ALIGN_SUMS)
-	printf("Bands:                   CP9 HMM (sums)\n");
-      else
-	printf("Bands:                   CP9 HMM\n"); 
-      printf("Tail loss:               %g\n", cm->tau);
-    }
-  else if(cm->align_opts & CM_ALIGN_QDB)
-    {
-      printf("Bands:                   QDB\n"); 
-      printf("Tail loss:               %g\n", cm->beta);
-    }
-  else
-    {
-      printf("Bands:                   None\n"); 
-      printf("Tail loss:               0.0\n");
-    }
+  return eslOK;
+}
 
-  /* Locality */
-  if(cm->config_opts & CM_CONFIG_LOCAL)
-    printf("Local:                   Yes\n");
-  else
-    printf("Local:                   No\n");
+/* Function: print_search_options
+ * Date:     EPN, Fri Jan 25 09:26:32 2008
+ * Purpose:  Print out search options in pretty format. 
+ */
+int print_search_options(const struct cfg_s *cfg, CM_t *cm)
+{
+  /* algorithm */
+  if     (cm->search_opts & CM_SEARCH_HMMVITERBI) fprintf(cfg->ofp, "  %7s", "hmm vit");
+  else if(cm->search_opts & CM_SEARCH_HMMVITERBI) fprintf(cfg->ofp, "  %7s", "hmm fwd");
+  else if(cm->search_opts & CM_SEARCH_INSIDE)     fprintf(cfg->ofp, "  %7s", "inside");
+  else                                            fprintf(cfg->ofp, "  %7s", "cyk");
+  /* bands and beta/tau*/
+  if     (cm->search_opts & CM_SEARCH_HBANDED)    fprintf(cfg->ofp, "  %5s  %6.0e", "hmm", cm->tau);
+  else if(! (cm->search_opts & CM_SEARCH_NOQDB))  fprintf(cfg->ofp, "  %5s  %6.0e", "qdb", cm->beta);
+  else                                            fprintf(cfg->ofp, "  %5s  %6s", "-", "-");
 
-  /* Sub mode? */
-  if(cm->align_opts & CM_ALIGN_SUB)
-    printf("Sub mode.\n");
-
-  printf("---------------------------------\n");
   return eslOK;
 }
 
@@ -1208,9 +1346,9 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   else cm_Fail("get_sequences() error, !do_emit, !do_random and !do_infile.");
 
   /* optionally, print out the sequences to outfile */
-  if(cfg->ofp != NULL) {
+  if(cfg->sfp != NULL) {
     for(i = 0; i < seqs_to_aln->nseq; i++)
-      if((esl_sqio_Write(cfg->ofp, seqs_to_aln->sq[i], eslSQFILE_FASTA)) != eslOK) cm_Fail("Error writing unaligned sequences to %s.", esl_opt_GetString(go, "--outfile"));
+      if((esl_sqio_Write(cfg->sfp, seqs_to_aln->sq[i], eslSQFILE_FASTA)) != eslOK) cm_Fail("Error writing unaligned sequences to %s.", esl_opt_GetString(go, "--outfile"));
   }
 
   if(gamma != NULL) FreeBandDensities(cm, gamma);
@@ -1223,13 +1361,269 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   return status; /* NEVERREACHED */
 }
 
+/* Function: dispatch_search_for_cmscore()
+ * Incept:   EPN, Fri Jan 25 09:43:52 2008
+ *            
+ * Purpose:  Given a CM and a sequence, call the correct search algorithm
+ *           based on search_info and return the score of the best
+ *           scoring sequence in the hit in <ret_sc>. Based on dispatch.c:DispatchSearch(),
+ *           but simpler, no filtering is allowed and we don't care about storing
+ *           results, all we want is the score of the best hit.
+ * 
+ * Args:     cm              - the covariance model
+ *           errbuf          - char buffer for reporting errors
+ *           dsq             - the target sequence (digitized)
+ *           i0              - start of target subsequence (often 1, beginning of dsq)
+ *           j0              - end of target subsequence (often L, end of dsq)
+ *           size_limit      - max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
+ *           ret_sc          - RETURN: Highest scoring hit from search (even if below cutoff).
+ *
+ * Returns: eslOK on success. eslERANGE if we're doing HMM banded alignment and requested matrix is too big.
+ */
+int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, float *ret_sc)
+{
+  int               status;          /* easel status code */
+  float             sc;              /* score of best hit in seq */
+  int               i, j;            /* subseq start/end points */
+  int               sround;          /* round 0 */
+  SearchInfo_t     *si = cm->si;     /* the SearchInfo */
+
+  /* convenience pointers to cm->si for this 'filter round' of searching */
+  float             cutoff;          /* cutoff for this round, HMM or CM, whichever is relevant for this round */
+  int               stype;           /* search type for this round SEARCH_WITH_HMM, SEARCH_WITH_HYBRID, or SEARCH_WITH_CM */
+  ScanMatrix_t     *smx;             /* scan matrix for this round, != NULL only if SEARCH_WITH_CM, and must == cm->smx if we're in the final round */
+  HybridScanInfo_t *hsi;             /* hybrid scan info for this round, NULL unless stype is SEARCH_WITH_HYBRID */
+
+  /* Contract checks */
+  if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(), CMH_BITS flag down.\n");
+  if(si == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(): search info cm->si is NULL.\n");
+  if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(): dsq is NULL.");
+  if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(): CMH_BITS flag down.\n");
+  if(si->nrounds != 0)                 ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(): si->nrounds != 0\n");
+  if(si->stype[0] == SEARCH_WITH_HYBRID) ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(): hybrid filtering not yet implemented.\n");
+
+  /* copy info for this round from SearchInfo fi */
+  sround = 0;
+  cm->search_opts = si->search_opts[sround]; 
+  cutoff          = si->sc_cutoff[sround]; /* this will be a bit score regardless of whether the cutoff_type == E_CUTOFF */
+  stype           = si->stype[sround];
+  smx             = si->smx[sround]; /* may be NULL */
+  hsi             = si->hsi[sround]; /* may be NULL */
+
+  /* SEARCH_WITH_HMM section */
+  if(stype == SEARCH_WITH_HMM) { 
+    /* some SEARCH_WITH_HMM specific contract checks */
+    if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(), trying to use CP9 HMM that is NULL.\n");
+    if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
+    if(hsi != NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(), SEARCH_WITH_HMM but hsi != NULL.\n");
+    if(! ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD)))
+      ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(), search type for this round is SEARCH_WITH_HMM, but CM_SEARCH_HMMVITERBI and CM_SEARCH_HMMFORWARD flags are both down.");
+
+    /* Scan the (sub)seq in forward direction w/Viterbi or Forward, find score of best hit and it's endpoint j, then if CM_SEARCH_HMMFORWARD, go backwards to get it's start point, and a better guess at it's score */
+    if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
+      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, cutoff, 
+			       NULL,   /* don't store hits */
+			       TRUE,   /* we're scanning */
+			       FALSE,  /* we're not ultimately aligning */
+			       TRUE,   /* be memory efficient */
+			       NULL, NULL, NULL,  /* don't return best score at each posn, best scoring posn, or traces */
+			       &sc)) != eslOK) return status;
+    }
+    else if(cm->search_opts & CM_SEARCH_HMMFORWARD) { 
+      if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, i0, j0, cm->W, cutoff, 
+			       NULL,   /* don't store hits */
+			       TRUE,   /* we're scanning */
+			       FALSE,  /* we're not ultimately aligning */
+			       TRUE,   /* be memory efficient */
+			       NULL,   /* don't return best score at each posn */
+			       &j,     /* return end point j of best scoring hit */
+			       &sc)) != eslOK) return status;
+      if((status = cp9_Backward(cm, errbuf, cm->cp9_mx, dsq, i0, j, cm->W, cutoff, 
+				NULL,   /* don't report hits */
+				TRUE,   /* we're scanning */
+				FALSE,  /* we're not ultimately aligning */
+				TRUE,   /* be memory efficient */
+				NULL,   /* don't return best score at each posn */
+				&i,     /* return start point i of best scoring hit, not used actually */
+			       &sc)) != eslOK) return status;
+      /* now sc is score of Forward hit from i..j, this is the *probably* the best hit in the sequence i0..j0,
+       * but we can't be sure, it's possible that a hit in the cp9_Forward() run that ended at j' != j, had a 
+       * lower cumulative score from i0..j' then did i0..j, and then when we found i' that maximized the score
+       * from i'..j' the score of i'..j' > sc. This is possible, but I'm not sure how we could test for it, or
+       * if we even care.
+       */
+    }
+  }
+  else { /* stype == SEARCH_WITH_CM */
+    ESL_DASSERT1((stype == SEARCH_WITH_CM));
+    if(smx == NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(), SEARCH_WITH_CM but smx == NULL.\n");
+    if(hsi != NULL)                             ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(): SEARCH_WITH_CM, but hsi is NULL\n");
+
+    if(cm->search_opts & CM_SEARCH_HBANDED) {
+      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status; 
+      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, NULL, cm->hbmx, size_limit, &sc)) != eslOK) return status; }
+      else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, NULL, cm->hbmx, size_limit, &sc)) != eslOK) return status; }
+    }
+    else { /* don't do HMM banded search */
+      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, smx, dsq, i0, j0, cutoff, NULL, NULL, &sc)) != eslOK) return status; }
+      else                                   { if((status = FastCYKScan    (cm, errbuf, smx, dsq, i0, j0, cutoff, NULL, NULL, &sc)) != eslOK) return status; }
+    }    
+    /* now sc is score of best hit found by the relevant CM scanning algorithm */
+  }
+  /* don't do alignments */
+  if(ret_sc != NULL) *ret_sc = sc;
+  return eslOK;
+}  
+
+/* Function: print_cm_info
+ * Date:     EPN, Fri Jan 25 13:43:28 2008
+ *
+ * Purpose:  Print per-CM info to output file (stdout unless -o). 
+ */
+static void
+print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq)
+{
+  fprintf(cfg->ofp, "# %4s  %-25s  %5s  %6s  %3s  %6s\n", "idx",  "cm name",                   "strat", "config", "sub", "nseq"  ); 
+  fprintf(cfg->ofp, "# %4s  %-25s  %5s  %6s  %3s  %6s\n", "----", "-------------------------", "-----", "------", "---", "------"); 
+  fprintf(cfg->ofp, "# %4d  %-25.25s  %5s  %6s  %3s  %6d\n", 
+	  cfg->ncm, 
+	  cm->name,
+	  (esl_opt_GetBoolean(go, "--search")) ? "search" : "align", 
+	  (esl_opt_GetBoolean(go, "-l")) ? "local" : "glocal",
+	  (esl_opt_GetBoolean(go, "--sub")) ? "yes" : "no",
+	  nseq);
+  return;
+}
+
+/* Function: print_stage_column_headings()
+ * Date:     EPN, Fri Jan 25 15:17:09 2008
+ *
+ * Purpose:  Print per stage column headings to output file (stdout unless -o). 
+ *
+ * Returns:  eslOK on success
+ */
+static void
+print_stage_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg)
+{
+  int do_qdb = FALSE;
+#ifdef HAVE_DEVOPTS 
+  if((esl_opt_GetBoolean(go, "--qdb")) || (esl_opt_GetBoolean(go, "--qdbsmall")) || (esl_opt_GetBoolean(go, "--qdbboth")) || (! esl_opt_IsDefault(go, "--betas"))) do_qdb = TRUE;
+#endif
+  fprintf(cfg->ofp, "#\n");
+  fprintf(cfg->ofp, "# %5s  %7s  %5s  %6s  %11s  %32s\n",               "",      "",        "",      "",                         "",            "    comparison with stage 1    ");
+  fprintf(cfg->ofp, "# %5s  %7s  %5s  %6s  %11s  %32s\n",               "",      "",        "",      "",                         "",            "--------------------------------");
+  fprintf(cfg->ofp, "# %5s  %7s  %5s  %6s  %11s  %6s  %7s  %7s  %6s\n", "stage", "alg",     "bands", (do_qdb) ? "beta" : "tau",  "run time",    "spdup",  "num dif", "frc dif", "sc dif");
+  fprintf(cfg->ofp, "# %5s  %7s  %5s  %6s  %11s  %6s  %7s  %7s  %6s\n", "-----", "-------", "-----", "------",                   "-----------", "------", "-------", "-------", "------");
+  return;
+}
+
+
+/* Function: print_seq_column_headings()
+ * Date:     EPN, Fri Jan 25 15:17:09 2008
+ *
+ * Purpose:  Print sequence column headings to output file (stdout unless -o). 
+ *           These are printed only if -a enabled. 
+ *
+ * Returns:  eslOK on success
+ */
+static void
+print_seq_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg)
+{
+  fprintf(cfg->ofp, "#\n");
+  fprintf(cfg->ofp, "# %-25s  %6s  %11s  %5s %2d %2s  %10s\n", "seq name",                  "length", "stage 1 sc",  "stage", cfg->s+1, "sc", "sc dif");
+  fprintf(cfg->ofp, "# %25s  %6s  %11s  %11s  %10s\n",        "-------------------------",  "------", "-----------", "-----------",           "----------");
+  return;
+}
+
+/* Function: print_run_info
+ * Date:     EPN, Fri Jan 25 13:43:28 2008
+ *
+ * Purpose:  Print information on this run of cmscore.
+ *           Command used to run it, and execution date.
+ *
+ * Returns:  eslOK on success
+ */
+static int
+print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
+{
+  int status;
+  char *command;
+  char *date;
+
+  if((status = get_command(go, cfg, errbuf, &command)) != eslOK) return status;
+  if((status = get_date   (go, cfg, errbuf, &date))    != eslOK) return status;
+
+  fprintf(cfg->ofp, "%-10s %s\n",  "# command:", command);
+  fprintf(cfg->ofp, "%-10s %s\n",  "# date:",    date);
+  fprintf(cfg->ofp, "%-10s %ld\n", "# seed:",    esl_randomness_GetSeed(cfg->r));
+  if(cfg->nproc > 1) fprintf(cfg->ofp, "# %-8s %d\n", "nproc:", cfg->nproc);
+  if     (! esl_opt_IsDefault(go, "--infile")) fprintf(cfg->ofp, "%-10s input file (%s)\n", "# mode:", esl_opt_GetString(go, "--infile"));
+  else if( esl_opt_GetBoolean(go, "--random")) fprintf(cfg->ofp, "%-10s random\n", "# mode:");
+  else                                         fprintf(cfg->ofp, "%-10s cm emitted\n", "# mode:");
+
+  fprintf(cfg->ofp, "#\n");
+  free(command);
+  free(date);
+  return eslOK;
+}
+
+/* Function: get_command
+ * Date:     EPN, Fri Jan 25 13:56:10 2008
+ *
+ * Purpose:  Return the command used to call cmscore in <ret_command>.
+ *
+ * Returns:  eslOK on success; eslEMEM on allocation failure.
+ */
+int 
+get_command(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, char **ret_command)
+{
+  int status;
+  int i;
+  char *command = NULL;
+
+  for (i = 0; i < go->argc; i++) { /* copy all command line options and args */
+    if((status = esl_strcat(&(command),  -1, go->argv[i], -1)) != eslOK) goto ERROR;
+    if(i < (go->argc-1)) if((status = esl_strcat(&(command), -1, " ", 1)) != eslOK) goto ERROR;
+  }
+  *ret_command = command;
+
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "get_command(): memory allocation error.");
+  return status;
+}
+
+/* Function: get_date
+ * Date:     EPN, Fri Jan 25 13:59:22 2008
+ *
+ * Purpose:  Return the a string that gives the date cmscore was called.
+ *
+ * Returns:  eslOK on success; eslEMEM on allocation failure.
+ */
+int 
+get_date(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, char **ret_date)
+{
+  int status;
+  time_t date = time(NULL);
+  char *sdate = NULL;
+
+  if((status = esl_strdup(ctime(&date), -1, &sdate)) != eslOK) goto ERROR;
+  esl_strchop(sdate, -1); /* doesn't return anything but eslOK */
+
+  *ret_date = sdate;
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "get_date() error status: %d, probably out of memory.", status);
+  return status; 
+}
+
 #ifdef HAVE_MPI
 /* determine_nseq_per_worker()
  * Given a CM, return the number of sequences we think we should send
  * to each worker (we don't know the number of sequences in the file).
- * The calculation is based on trying to get a worker to spend 
- * a specific amount of time MPI_WORKER_ALIGN_TARGET_SEC, a constant
- * from structs.h. 
+ * Currently 5 sequences per proc, could get more fancy.
  */
 static int
 determine_nseq_per_worker(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int *ret_nseq_worker)

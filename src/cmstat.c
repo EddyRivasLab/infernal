@@ -291,7 +291,7 @@ main(int argc, char **argv)
 	  }
 	ConfigCM(cm, NULL, NULL);
 
-	fprintf(ofp, "%6d %-20s %8d %8.2f %4d %5d %5d %3d %6.2f %6.2f\n",
+	fprintf(ofp, "%6d %-20.20s %8d %8.2f %4d %5d %5d %3d %6.2f %6.2f\n",
 	       ncm,
 	       cm->name,
 	       cm->nseq,
@@ -333,7 +333,7 @@ main(int argc, char **argv)
 	}
 	for(p = 0; p < cm->stats->np; p++) { 
 	  if(doing_locale) {
-	    fprintf(ofp, "%6d %-15s %2d %2d %3d %5.1f %5.3f %5.1f %5.3f %5.1f %5.3f %5.1f %5.3f\n",
+	    fprintf(ofp, "%6d %-15.15s %2d %2d %3d %5.1f %5.3f %5.1f %5.3f %5.1f %5.3f %5.1f %5.3f\n",
 		   ncm,
 		   cm->name,
 		   p+1,
@@ -344,7 +344,7 @@ main(int argc, char **argv)
 		   cm->stats->gumAA[GUM_CP9_LF][p]->mu, cm->stats->gumAA[GUM_CP9_LF][p]->lambda);
 	  }
 	  else { /* glocal */
-	    fprintf(ofp, "%6d %-15s %2d %2d %3d %5.1f %5.3f %5.1f %5.3f %5.1f %5.3f %5.1f %5.3f\n",
+	    fprintf(ofp, "%6d %-15.15s %2d %2d %3d %5.1f %5.3f %5.1f %5.3f %5.1f %5.3f %5.1f %5.3f\n",
 		   ncm,
 		   cm->name,
 		   p+1,

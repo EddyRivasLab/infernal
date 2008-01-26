@@ -407,6 +407,7 @@ extern int            IsCompensatory(const ESL_ALPHABET *abc, float *pij, int sy
 extern CMEmitMap_t   *CreateEmitMap(CM_t *cm); 
 extern void           DumpEmitMap(FILE *fp, CMEmitMap_t *map, CM_t *cm);
 extern void           FreeEmitMap(CMEmitMap_t *map);
+extern void           FormatTimeString(char *buf, double sec, int do_frac);
 
 /* from errors.c */
 extern void cm_Die (char *format, ...);

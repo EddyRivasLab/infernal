@@ -1201,3 +1201,28 @@ FreeEmitMap(CMEmitMap_t *map)
   free(map);
 }
 
+/* format_time_string()
+ * Date:     SRE, Fri Nov 26 15:06:28 1999 [St. Louis]
+ *
+ * Purpose:  Given a number of seconds, format into
+ *           hh:mm:ss.xx in a provided buffer.
+ *
+ * Args:     buf     - allocated space (128 is plenty!)
+ *           sec     - number of seconds
+ *           do_frac - TRUE (1) to include hundredths of a sec
+ */
+void
+FormatTimeString(char *buf, double sec, int do_frac)
+{
+  int h, m, s, hs;
+  
+  h  = (int) (sec / 3600.);
+  m  = (int) (sec / 60.) - h * 60;
+  s  = (int) (sec) - h * 3600 - m * 60;
+  if (do_frac) {
+    hs = (int) (sec * 100.) - h * 360000 - m * 6000 - s * 100;
+    sprintf(buf, "%02d:%02d:%02d.%02d", h,m,s,hs);
+  } else {
+    sprintf(buf, "%02d:%02d:%02d", h,m,s);
+  }
+}
