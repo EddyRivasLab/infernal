@@ -25,9 +25,11 @@
 #include <string.h>
 #include <ctype.h>
 #include <float.h>
+#include <limits.h>
 #include <math.h>
 
 #include "easel.h"
+#include "esl_stack.h"
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
@@ -209,6 +211,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   int             use_sums; /* TRUE to fill and use posterior sums during HMM band calc, yields wider bands  */
   float           sc;
   int do_scan2bands;         /* TRUE to use scanning Forward/Backward to get posteriors */
+  int do_simple;
 
   /* Contract checks */
   if(cm->cp9 == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, but cm->cp9 is NULL.\n");
@@ -219,6 +222,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   if((cm->search_opts & CM_SEARCH_HMMSCANBANDS) && (!(cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Seq2Bands, CM_SEARCH_HMMSCANBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
   
   use_sums = ((cm->align_opts & CM_ALIGN_SUMS) || (cm->search_opts & CM_SEARCH_SUMS)) ? TRUE : FALSE;
+  do_simple = ((cm->align_opts & CM_ALIGN_HMM2IJSIMPLE) || (cm->search_opts & CM_SEARCH_HMM2IJSIMPLE)) ? TRUE : FALSE;
     
   /* Step 1: Get HMM Forward/Backward DP matrices.
    * Step 2: F/B       -> HMM bands.
@@ -255,12 +259,17 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   }
   else {
     if((status = cp9_FB2HMMBands(cm->cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, i0, j0, cp9b->hmm_M,
-				 (1.-cm->tau), (cm->search_opts & CM_SEARCH_HMMSCANBANDS), debug_level)) != eslOK) return status;
+				 (1.-cm->tau), (cm->search_opts & CM_SEARCH_HMMSCANBANDS), debug_level, do_simple)) != eslOK) return status;
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
 
   /* Step 3: HMM bands  ->  CM bands. */
+  if(do_simple) {
+    if((status = hmm2ij_new(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
+  }
+  else {
   if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
+  }
   
   /* Use the CM bands on i and j to get bands on d, specific to j. */
   /* cp9_GrowHDBands() must be called before ij2d_bands() so hdmin, hdmax are adjusted for new seq */
@@ -271,6 +280,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
   if((status = cp9_ValidateBands(cm, errbuf, cp9b, i0, j0)) != eslOK) return status;
   ESL_DPRINTF1(("bands validated.\n"));
 #endif
+  if(debug_level > 0) debug_print_ij_bands(cm); 
 
   if(debug_level > 0) PrintDPCellsSaved_jd(cm, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, (j0-i0+1));
 
@@ -380,7 +390,7 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
  */
 int
 cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
-		 int i0, int j0, int M, double p_thresh, int did_scan, int debug_level)
+		int i0, int j0, int M, double p_thresh, int did_scan, int debug_level, int do_simple)
 {
   int status;
   int k;                                  /* counter over nodes of the model */
@@ -556,37 +566,73 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
       }
     }
   }	 
-  /* Some states may not have had their min/max set. This occurs if the entire
-   * state is outside the band (i.e. the summed probablity the state is entered for ANY i
-   * is less than our threshold. Current strategy in this situation is to set the
-   * band to width 1 of the most likely position for that state, but to do that we
-   * need to find what the most likely posn is, we could do this in the loop above,
-   * but this is a rare situation, and so that turns out to be wasteful.
-   */
-  for(k = 0; k <= M; k++)
-    {
-      /* theoretically either nset_*[k] and xset_*[k] should be either both TRUE or both
-       * FALSE, but I'm slightly worried about rare precision issues, so we check if one 
-       * or the other is unset, and if so, we set both to argmax position */
-      if((! nset_m[k]) || (! xset_m[k])) { 
-	max = pmx->mmx[0][k];
-	for(ip = 1; ip <= L; ip++)
-	  if(pmx->mmx[ip][k] > max) { pnmax = i; max = pmx->mmx[ip][k]; }
-	cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = pnmax;
+
+  if(do_simple) {
+    /* new way as of EPN, Sun Jan 27 08:48:34 2008 */
+    /* Some states may not have had their min/max set. This occurs if the entire
+     * state is outside the band (i.e. the summed probablity the state is entered for ANY i
+     * is less than our threshold. Current strategy in this situation is to set the
+     * pn_min_* and pn_max_* values as special flags, (-2) so the function that
+     * uses them to derive i and j bands knows this is the case and handles it
+     * accordingly.
+     */
+    for(k = 0; k <= M; k++)
+      {
+	/* theoretically either nset_*[k] and xset_*[k] should be either both TRUE or both
+	 * FALSE, but I'm slightly worried about rare precision issues, so we check if one 
+	 * or the other is unset, and if so, we set both to argmax position */
+	if(((! nset_m[k])) || (! xset_m[k]) || (cp9b->pn_max_m[k] < cp9b->pn_min_m[k])) { 
+	  ///cp9b->pn_min_m[k] = INT_MAX;
+	  ///cp9b->pn_max_m[k] = INT_MIN;
+	  cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = -1;
+	}
+	if(((! nset_i[k])) || (! xset_i[k]) || (cp9b->pn_max_i[k] < cp9b->pn_min_i[k])) { 
+	  ///acp9b->pn_min_i[k] = INT_MAX;
+	  ///cp9b->pn_max_i[k] = INT_MIN;
+	  cp9b->pn_min_i[k] = cp9b->pn_max_i[k] = -1;
+	}
+	if(((! nset_d[k])) || (! xset_d[k]) || (cp9b->pn_max_d[k] < cp9b->pn_min_d[k])) { 
+	  ///acp9b->pn_min_d[k] = INT_MAX;
+	  ///cp9b->pn_max_d[k] = INT_MIN;
+	  cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = -1;
+	}
       }
-      if((! nset_i[k]) || (! xset_i[k])) { 
-	max = pmx->imx[0][k];
-	for(ip = 1; ip <= L; ip++)
-	  if(pmx->imx[ip][k] > max) { pnmax = i; max = pmx->imx[ip][k]; }
-	cp9b->pn_min_i[k] = cp9b->pn_max_i[k] = pnmax;
+  }
+  else { 
+    /* old way, prior to Sun Jan 27 08:46:16 2008 */
+    /* Some states may not have had their min/max set. This occurs if the entire
+     * state is outside the band (i.e. the summed probablity the state is entered for ANY i
+     * is less than our threshold. Current strategy in this situation is to set the
+     * band to width 1 of the most likely position for that state, but to do that we
+     * need to find what the most likely posn is, we could do this in the loop above,
+     * but this is a rare situation, and so that turns out to be wasteful.
+     */
+    for(k = 0; k <= M; k++)
+      {
+	/* theoretically either nset_*[k] and xset_*[k] should be either both TRUE or both
+	 * FALSE, but I'm slightly worried about rare precision issues, so we check if one 
+	 * or the other is unset, and if so, we set both to argmax position */
+	if((! nset_m[k]) || (! xset_m[k])) { 
+	  max = pmx->mmx[0][k];
+	  for(ip = 1; ip <= L; ip++)
+	    if(pmx->mmx[ip][k] > max) { pnmax = i; max = pmx->mmx[ip][k]; }
+	  cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = pnmax;
+	}
+	if((! nset_i[k]) || (! xset_i[k])) { 
+	  max = pmx->imx[0][k];
+	  for(ip = 1; ip <= L; ip++)
+	    if(pmx->imx[ip][k] > max) { pnmax = i; max = pmx->imx[ip][k]; }
+	  cp9b->pn_min_i[k] = cp9b->pn_max_i[k] = pnmax;
+	}
+	if((! nset_d[k]) || (! xset_d[k])) { 
+	  max = pmx->dmx[0][k];
+	  for(ip = 1; ip <= L; ip++)
+	    if(pmx->dmx[ip][k] > max) { pnmax = i; max = pmx->dmx[ip][k]; }
+	  cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = pnmax + 1; /* see "off-by-one" comment * above */
+	}
       }
-      if((! nset_d[k]) || (! xset_d[k])) { 
-	max = pmx->dmx[0][k];
-	for(ip = 1; ip <= L; ip++)
-	  if(pmx->dmx[ip][k] > max) { pnmax = i; max = pmx->dmx[ip][k]; }
-	cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = pnmax + 1; /* see "off-by-one" comment * above */
-      }
-    }
+  }
+
   /* correct for M_0 off-by-one explained in comment * above */
   cp9b->pn_min_m[0]++;
   cp9b->pn_max_m[0]++;
@@ -1935,6 +1981,8 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
     printf("bands on j\n");
     debug_print_bands(stdout, cm, jmin, jmax);
   }
+  /* debug_print_ij_bands(cm); */
+
   free(nss_imin);
   free(nss_imax);
   free(nss_jmin);
@@ -2991,6 +3039,24 @@ debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax)
 }
 
 
+/*****************************************************************************
+ * Function: debug_print_ij_bands
+ *
+ * Purpose:  Print out i and j bands for all states v.
+ * 
+ *****************************************************************************/
+void
+debug_print_ij_bands(CM_t *cm)
+{
+  int v;
+  printf("%5s  %-7s    %5s  %5s    %5s  %5s\n", "v",     "type",    "imin",  "imax",  "jmin",  "jmax");
+  printf("%5s  %-7s    %5s  %5s    %5s  %5s\n", "-----", "-------", "-----", "-----", "-----", "-----");
+  for(v = 0; v < cm->M; v++)
+    printf("%5d  %-7s    %5d  %5d    %5d  %5d\n", v, CMStateid(cm->stid[v]), cm->cp9b->imin[v], cm->cp9b->imax[v], cm->cp9b->jmin[v], cm->cp9b->jmax[v]);
+  return;
+}
+
+
 /* Function: PrintDPCellsSaved_jd()
  * Prints out an estimate of the speed up due to j and d bands */
 void
@@ -3020,6 +3086,768 @@ PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax,
   printf("After:   something like %.0f\n", after);
   printf("Speedup: maybe %.2f fold\n\n", (float) before / (float) after);
 }
+
+
+
+/*********************************************************************
+ * Function: hmm2ij_new()
+ * 
+ *
+ * Args:
+ * cm               the cm
+ * i0               first position of seq
+ * j0               last position of seq
+ * int *imin        imin[v] = first position in band on i for state v
+ * int *imax        imax[v] = last position in band on i for state v
+ * int *jmin        jmin[v] = first position in band on j for state v
+ * int *jmax        jmax[v] = last position in band on j for state v
+ */
+int
+hmm2ij_new(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level)
+{
+
+  int status;
+  int v;
+
+  /* ptrs to cp9b data, for convenience */
+  int *pn_min_m;      /* pn_min_m[k] = first position in HMM band for match state of HMM node k */
+  int *pn_max_m;      /* pn_max_m[k] = last position in HMM band for match state of HMM node k */
+  int *pn_min_i;      /* pn_min_i[k] = first position in HMM band for insert state of HMM node k */
+  int *pn_max_i;      /* pn_max_i[k] = last position in HMM band for insert state of HMM node k */
+  int *pn_min_d;      /* pn_min_d[k] = first position in HMM band for delete state of HMM node k */
+  int *pn_max_d;      /* pn_max_d[k] = last position in HMM band for delete state of HMM node k */
+  int *imin;          /* imin[v] = first position in band on i for state v to be filled in this function. [1..M] */
+  int *imax;          /* imax[v] = last position in band on i for state v to be filled in this function. [1..M] */
+  int *jmin;          /* jmin[v] = first position in band on j for state v to be filled in this function. [1..M] */
+  int *jmax;          /* jmax[v] = last position in band on j for state v to be filled in this function. [1..M] */
+  
+  int *nss_imin;      /* nss_imin[n] = imin of each split set state in node n*/
+  int *nss_imax;      /* nss_imax[n] = imax of each split set state in node n*/
+  int *nss_jmin;      /* nss_jmin[n] = jmin of each split set state in node n*/
+  int *nss_jmax;      /* nss_jmax[n] = jmax of each split set state in node n*/
+
+  int *nis_imin;      /* nss_imin[n] = imin of each insert set state in node n*/
+  int *nis_imax;      /* nss_imax[n] = imax of each insert set state in node n*/
+  int *nis_jmin;      /* nss_jmin[n] = jmin of each insert set state in node n*/
+  int *nis_jmax;      /* nss_jmax[n] = jmax of each insert set state in node n*/
+
+  int *nss_max_imin;  /* nss_max_imin[n] = max imin over split set states in node n*/
+  int *nss_min_jmax;  /* nss_min_jmax[n] = min jmax over split set states in node n*/
+
+  int nd;           /* counter over CM nodes. */
+  int y, yoffset;   /* counters over children states */
+  /* Contract checks */
+
+  if (cp9b == NULL)                                                                   ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), cp9b is NULL.\n");
+  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
+  if(i0 < 1) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), i0 < 1: %d\n", i0);
+  if(j0 < 1) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), j0 < 1: %d\n", j0);
+  if(j0 < i0) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), i0 (%d) < j0 (%d)\n", i0, j0);
+
+  pn_min_m = cp9b->pn_min_m;
+  pn_max_m = cp9b->pn_max_m;
+  pn_min_i = cp9b->pn_min_i;
+  pn_max_i = cp9b->pn_max_i;
+  pn_min_d = cp9b->pn_min_d;
+  pn_max_d = cp9b->pn_max_d;
+  imin     = cp9b->imin;
+  imax     = cp9b->imax;
+  jmin     = cp9b->jmin;
+  jmax     = cp9b->jmax;
+
+  ESL_ALLOC(nss_imin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nss_imax, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nss_jmin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nss_jmax, sizeof(int) * cm->nodes);
+
+  ESL_ALLOC(nis_imin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nis_imax, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nis_jmin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nis_jmax, sizeof(int) * cm->nodes);
+
+  ESL_ALLOC(nss_max_imin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nss_min_jmax, sizeof(int) * cm->nodes);
+
+#if 0
+  esl_vec_ISet(nss_imin, cm->nodes, j0+1); /* to allow deletes to be entered after all residues i0..j0 have been emitted */
+  esl_vec_ISet(nss_imax, cm->nodes, i0); 
+  esl_vec_ISet(nss_jmin, cm->nodes, j0);    
+  esl_vec_ISet(nss_jmax, cm->nodes, i0-1); /* to allow deletes to be entered before any residues i0..j0 have been emitted */
+
+  esl_vec_ISet(nis_imin, cm->nodes, j0);
+  esl_vec_ISet(nis_imax, cm->nodes, i0);
+  esl_vec_ISet(nis_jmin, cm->nodes, j0);
+  esl_vec_ISet(nis_jmax, cm->nodes, i0);
+#endif
+
+  esl_vec_ISet(nss_imin, cm->nodes, INT_MAX);
+  esl_vec_ISet(nss_imax, cm->nodes, INT_MIN); 
+  esl_vec_ISet(nss_jmin, cm->nodes, INT_MAX);    
+  esl_vec_ISet(nss_jmax, cm->nodes, INT_MIN);
+
+  esl_vec_ISet(nis_imin, cm->nodes, INT_MAX);
+  esl_vec_ISet(nis_imax, cm->nodes, INT_MIN);
+  esl_vec_ISet(nis_jmin, cm->nodes, INT_MAX);
+  esl_vec_ISet(nis_jmax, cm->nodes, INT_MIN);
+
+  /* Initialize all bands to -1. */
+  esl_vec_ISet(imin, cm->M, -1);
+  esl_vec_ISet(imax, cm->M, -1);
+  esl_vec_ISet(jmin, cm->M, -1);
+  esl_vec_ISet(jmax, cm->M, -1);
+
+  /* TEMPORARY to deal with incorrect handling of delete off-by-one in cp9_FB2HMMBandsWithSums() */
+  int k;
+  for(k = 0; k <= cm->cp9->M; k++) { 
+    pn_min_d[k]--;
+    pn_max_d[k]--;
+  }
+
+  /* Step 1. Fill n{i,s}s_{i,j}{min,max}[0..nd..cm->nodes-1] arrays: 
+   *              nss_imin[nd]: min i for all split set states in node nd
+   *              nss_imax[nd]: max i for all split set states in node nd
+   *              nss_jmin[nd]: min j for all split set states in node nd
+   *              nss_jmax[nd]: max j for all split set states in node nd
+   *              nis_imin[nd]: min i for all insert states in node nd
+   *              nis_imax[nd]: max i for all insert states in node nd
+   *              nis_jmin[nd]: min j for all insert states in node nd
+   *              nis_jmax[nd]: max j for all insert states in node nd
+   */
+
+  /* Special case: if !doing_search, we require full target seq to align to model, so 
+   * already have a few constraints: 
+   * ROOT_S  must have imin == i0  jmax == j0
+   */
+  if(! doing_search) { 
+    nss_imin[0] = i0;
+    nss_jmax[0] = j0;
+  }
+
+  for(v = 0; v < cm->M; v++) {
+#if eslDEBUGLEVEL >= 1
+    if(cm->stid[v] == MATP_MP || cm->stid[v] == MATP_D || cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR) ESL_DASSERT1((cp9map->cs2hn[v][1] != -1));
+    else ESL_DASSERT1((cp9map->cs2hn[v][1] == -1));
+    if((cm->sttype[v+1] == E_st) || ((v > 0)  && (cm->sttype[v] == S_st || cm->sttype[v] == B_st || cm->sttype[v] == E_st))) ESL_DASSERT1((cp9map->cs2hn[v][0] == -1));
+    else ESL_DASSERT1((cp9map->cs2hn[v][0] != -1));
+#endif    
+    nd = cm->ndidx[v];
+    if(cp9map->cs2hn[v][0] != -1) { 
+      /* MATCH state */
+      if(StateMapsMatch(cm->stid[v])) {
+	if(StateMapsLeft(cm->stid[v])) { 
+	  imin[v] = pn_min_m[cp9map->cs2hn[v][0]];
+	  imax[v] = pn_max_m[cp9map->cs2hn[v][0]];
+	  if(imin[v] >= 0) nss_imin[nd] = ESL_MIN(nss_imin[nd], imin[v]);
+	  if(imax[v] >= 0) nss_imax[nd] = ESL_MAX(nss_imax[nd], imax[v]);
+	}
+	else { /* state must map right */
+	  ESL_DASSERT1((StateMapsRight(cm->stid[v])));
+	  jmin[v] = pn_min_m[cp9map->cs2hn[v][0]];
+	  jmax[v] = pn_max_m[cp9map->cs2hn[v][0]];
+	  if(jmin[v] >= 0) nss_jmin[nd] = ESL_MIN(nss_jmin[nd], jmin[v]);
+	  if(jmax[v] >= 0) nss_jmax[nd] = ESL_MAX(nss_jmax[nd], jmax[v]);
+	}
+	if(cm->stid[v] == MATP_MP) { /* special case, only match state type that can map to two HMM states */
+	  ESL_DASSERT1((cp9map->cs2hn[v][1] != -1));
+	  jmin[v] = pn_min_m[cp9map->cs2hn[v][1]];
+	  jmax[v] = pn_max_m[cp9map->cs2hn[v][1]];
+	  if(jmin[v] >= 0) nss_jmin[nd] = ESL_MIN(nss_jmin[nd], jmin[v]);
+	  if(jmax[v] >= 0) nss_jmax[nd] = ESL_MAX(nss_jmax[nd], jmax[v]);
+	}
+      }
+      /* INSERT state */
+      else if (StateMapsInsert(cm->stid[v])) { 
+	if(StateMapsLeft(cm->stid[v])) { 
+	  imin[v] = pn_min_i[cp9map->cs2hn[v][0]];
+	  imax[v] = pn_max_i[cp9map->cs2hn[v][0]];
+	  if(imin[v] >= 0) nis_imin[nd] = ESL_MIN(nss_imin[nd], imin[v]);
+	  if(imax[v] >= 0) nis_imax[nd] = ESL_MAX(nss_imax[nd], imax[v]);
+	}
+	else { /* state must map right */
+	  ESL_DASSERT1((StateMapsRight(cm->stid[v])));
+	  jmin[v] = pn_min_i[cp9map->cs2hn[v][0]];
+	  jmax[v] = pn_max_i[cp9map->cs2hn[v][0]];
+	  if(jmin[v] >= 0) nis_jmin[nd] = ESL_MIN(nss_jmin[nd], jmin[v]);
+	  if(jmax[v] >= 0) nis_jmax[nd] = ESL_MAX(nss_jmax[nd], jmax[v]);
+	}
+      }
+      /* DELETE state */
+      else if(StateMapsDelete(cm->stid[v])) { 
+	if(StateMapsLeft(cm->stid[v])) { 
+	  imin[v] = pn_min_d[cp9map->cs2hn[v][0]] + 1;
+	  imax[v] = pn_max_d[cp9map->cs2hn[v][0]] + 1;
+	  if(imin[v] >= 0) nss_imin[nd] = ESL_MIN(nss_imin[nd], imin[v]);
+	  if(imax[v] >= 0) nss_imax[nd] = ESL_MAX(nss_imax[nd], imax[v]);
+	}
+	else { /* state must map right */
+	  ESL_DASSERT1((StateMapsRight(cm->stid[v])));
+	  jmin[v] = pn_min_d[cp9map->cs2hn[v][0]];
+	  jmax[v] = pn_max_d[cp9map->cs2hn[v][0]];
+	  if(jmin[v] >= 0) nss_jmin[nd] = ESL_MIN(nss_jmin[nd], jmin[v]);
+	  if(jmax[v] >= 0) nss_jmax[nd] = ESL_MAX(nss_jmax[nd], jmax[v]);
+	}
+	if(cm->ndtype[cm->ndidx[v]] == MATP_nd) { /* special case, 3 delete state types (MATP_ML, MATP_MR, MATP_D) that can map to two HMM states */
+	  ESL_DASSERT1((cp9map->cs2hn[v][1] != -1));
+	  jmin[v] = pn_min_d[cp9map->cs2hn[v][1]];
+	  jmax[v] = pn_max_d[cp9map->cs2hn[v][1]];
+	  if(jmin[v] >= 0) nss_jmin[nd] = ESL_MIN(nss_jmin[nd], jmin[v]);
+	  if(jmax[v] >= 0) nss_jmax[nd] = ESL_MAX(nss_jmax[nd], jmax[v]);
+	}
+      }
+    }
+  }
+  ///debug_print_ij_bands(cm); 
+
+  /* Step 2: Traverse nodes from cpos = 1..clen using a stack and filling
+   *         in i and j bands (imin, imax, jmin, jmax) for all states that
+   *         don't map to HMM states.
+   */
+  ESL_STACK   *pda;
+  int          on_right;
+  int cur_imin, cur_imax, cur_jmin, cur_jmax;
+  int tmp_imin, tmp_imax, tmp_jmin, tmp_jmax;
+
+
+  for(nd = 0; nd < cm->nodes; nd++) { 
+    ///printf("nd: %4d ss_in: %4d ss_ix: %4d  ss_jn: %4d ss_jx: %4d    is_in: %4d is_ix: %4d  is_jn: %4d is_jx: %4d\n", nd, nss_imin[nd], nss_imax[nd], nss_jmin[nd], nss_jmax[nd], nis_imin[nd], nis_imax[nd], nis_jmin[nd], nis_jmax[nd]);
+  }
+
+  cur_imin = i0;
+  cur_imax = j0+1;
+  cur_jmin = i0-1; 
+  cur_jmax = j0;
+  nd   = 0;
+  if ((pda  = esl_stack_ICreate()) == NULL) goto ERROR;
+  if ((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;		/* 0 = left side. 1 would = right side. */
+  if ((status = esl_stack_IPush(pda, nd)) != eslOK) goto ERROR;
+  while (esl_stack_IPop(pda, &nd) != eslEOD)
+    {
+      if(NodeMapsRight(cm->ndtype[nd])) { 
+	tmp_jmin = ESL_MIN(nis_jmin[nd], nss_jmin[nd]) - 1; /* allow right emission, j will decrement by 1 */
+	tmp_jmax = ESL_MAX(nis_jmax[nd], nss_jmax[nd]);
+	if(tmp_jmin >= 0 && tmp_jmin <= j0) cur_jmin = ESL_MAX(tmp_jmin, (i0-1));
+	if(tmp_jmax >= 0 && tmp_jmax <= j0) cur_jmax = ESL_MIN(tmp_jmax, j0);
+      }
+
+      esl_stack_IPop(pda, &on_right);
+      if (on_right) 
+	{
+	  if((cm->ndtype[nd] == BIF_nd) || NodeMapsLeft(cm->ndtype[nd])) { 
+	    /* pop off cur_imin, cur_imax */
+	    esl_stack_IPop(pda, &tmp_imax);
+	    esl_stack_IPop(pda, &tmp_imin);
+	    if(tmp_imin >= 0 && tmp_imin <= (j0+1)) cur_imin = ESL_MAX(tmp_imin, i0);
+	    if(tmp_imax >= 0 && tmp_imax <= (j0+1)) cur_imax = ESL_MIN(tmp_imax, (j0+1));
+	  }	    
+	  for(v = cm->nodemap[nd]; v < (cm->nodemap[nd] + TotalStatesInNode(cm->ndtype[nd])); v++) { 
+	    if(!(StateIsDetached(cm, v))) { 
+	      if(imin[v] < 0) imin[v] = cur_imin;
+	      if(imax[v] < 0) imax[v] = cur_imax;
+	      if(jmin[v] < 0) jmin[v] = cur_jmin;
+	      if(jmax[v] < 0) jmax[v] = cur_jmax;
+	    }
+	  }
+	  ///printf("R %3d  %5d  %5d    %5d  %5d\n", nd, cur_imin, cur_imax, cur_jmin, cur_jmax); 
+	}
+      else
+	{
+	  if (cm->ndtype[nd] == BIF_nd) 
+	    {
+	                    /* push on cur_imin, cur_imax */
+	      if ((status = esl_stack_IPush(pda, cur_imin)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, cur_imax)) != eslOK) goto ERROR;
+  			    /* push the BIF back on for its right side  */
+	      if ((status = esl_stack_IPush(pda, 1)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, nd)) != eslOK) goto ERROR;
+                            /* push node index for right child */
+	      if ((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, cm->ndidx[cm->cnum[cm->nodemap[nd]]])) != eslOK) goto ERROR;   
+                            /* push node index for left child */
+	      if ((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, cm->ndidx[cm->cfirst[cm->nodemap[nd]]])) != eslOK) goto ERROR; 
+	    }
+	  else
+	    {
+	      if(NodeMapsLeft(cm->ndtype[nd])) { 
+		/* push on cur_imin, cur_imax */
+		tmp_imin = ESL_MIN(nis_imin[nd], nss_imin[nd]);
+		tmp_imax = ESL_MAX(nis_imax[nd], nss_imax[nd]) + 1; /* allow left emission, i will increment by 1 */
+		if(tmp_imin >= 0 && tmp_imin <= (j0+1)) cur_imin = ESL_MAX(tmp_imin, i0);
+		if(tmp_imax >= 0 && tmp_imax <= (j0+1)) cur_imax = ESL_MIN(tmp_imax, (j0+1));
+		///printf("L %3d  %5d  %5d (pushing: %5d  %5d)\n", nd, cur_imin, cur_imax, tmp_imin, tmp_imax);
+
+		///if ((status = esl_stack_IPush(pda, cur_imin)) != eslOK) goto ERROR;
+		///if ((status = esl_stack_IPush(pda, cur_imax)) != eslOK) goto ERROR;
+		if ((status = esl_stack_IPush(pda, tmp_imin)) != eslOK) goto ERROR;
+		if ((status = esl_stack_IPush(pda, tmp_imax)) != eslOK) goto ERROR;
+	      }
+	      
+				/* push the node back on for right side */
+	      if ((status = esl_stack_IPush(pda, 1)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, nd)) != eslOK) goto ERROR;
+                 	      /* push child node on */
+	      if (cm->ndtype[nd] != END_nd) {
+		if ((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+		if ((status = esl_stack_IPush(pda, nd+1)) != eslOK) goto ERROR;
+	      }
+	    }
+	}
+    }
+  for (v = 0; v < cm->M; v++) { 
+    /* TEMPORARY */ if(StateIsDetached(cm, v)) imin[v] = imax[v] = jmin[v] = jmax[v] = i0; 
+  }
+  ///debug_print_ij_bands(cm); 
+
+  /* AT THIS POINT ALL BANDS SHOULD BE WITHIN VALID RANGE! */
+  ESL_DPRINTF1(("i0: %d j0: %d\n", i0, j0));
+  for (v = 0; v < cm->M; v++) { 
+    ESL_DPRINTF1(("v: %4d in: %4d ix: %4d  jn: %4d jx: %4d\n", v, imin[v], imax[v], jmin[v], jmax[v]));
+    ESL_DASSERT1((imin[v] >= (i0)));
+    ESL_DASSERT1((imax[v] >= (i0)));
+    ESL_DASSERT1((imin[v] <= (j0+1)));
+    ESL_DASSERT1((imax[v] <= (j0+1)));
+    ESL_DASSERT1((jmin[v] >= (i0-1)));
+    ESL_DASSERT1((jmax[v] >= (i0-1)));
+    ESL_DASSERT1((jmin[v] <= (j0)));
+    ESL_DASSERT1((jmax[v] <= (j0)));
+  }
+
+  /* Step 3: Enforce safe transitions.
+   *         Goal is to enforce there's at least 1 valid path through the model.
+   *         For each node, we must be able to reach at least 1 split set state of the next node. 
+   */
+  int sdl, sdr;
+  int child_imin, child_imax, child_jmin, child_jmax;
+  int v0, y0;
+  int i_overlap, j_overlap;
+  int keep_going;
+  int w;
+  for (nd = 0; nd < cm->nodes; nd++) { 
+    v = cm->nodemap[nd];
+    if(cm->ndtype[nd] == BIF_nd) { /* special case, BIF_nds */
+      w = cm->cfirst[v]; /* BEGL_S */
+      y = cm->cnum[v];   /* BEGR_S */
+      i_overlap = (ESL_MIN(imax[v], imax[w]) - ESL_MAX(imin[v], imin[w]) + 1);
+      j_overlap = (ESL_MIN(jmax[v], jmax[y]) - ESL_MAX(jmin[v], jmin[y]) + 1);
+      if(i_overlap >= 1 && j_overlap >= 1) { /* possible transition exists between v and w and between v and y */
+	;///printf("PASS v %4d sdl: %d sdr: %d (i: %4d..%4d j: %4d..%4d) --> w: %4d (i: %4d..%4d) y: %4d (j: %4d..%4d) i_overlap: %4d j_overlap: %4d\n", 
+	///v, sdl, sdr, imin[v], imax[v], jmin[v], jmax[v], w, imin[w], imax[w], y, jmin[y], jmax[y], i_overlap, j_overlap);
+      }
+      else { 
+	printf("FAIL v %4d sdl: %d sdr: %d (i: %4d..%4d j: %4d..%4d) --> w: %4d (i: %4d..%4d) y: %4d (j: %4d..%4d) i_overlap: %4d j_overlap: %4d\n", 
+	       v, sdl, sdr, imin[v], imax[v], jmin[v], jmax[v], w, imin[w], imax[w], y, jmin[y], jmax[y], i_overlap, j_overlap);
+	cm_Fail("bif, children don't pass check, this should be impossible i think.");
+      }
+    }
+    else if (cm->ndtype[nd] != END_nd) { /* non-BIF node, non-END node */
+      /* Make sure that for each split set state, we can reach at least one split set state in the next
+       * node. This ensures there's a valid path from any split set state to at least one split set state
+       * in the next node. This seems not strict enough - we could try to require only that one split set
+       * state v0 in the current node can reach at least one split set state y0 in the next node, but then we'd
+       * have to keep track of the y0's when going to the next node, and that's too complex I think.
+       */
+      v0 = cm->nodemap[nd];
+      for(v = v0; v < v0 + SplitStatesInNode(cm->ndtype[cm->ndidx[v]]); v++) { 
+	sdl = StateLeftDelta(cm->sttype[v]);
+	sdr = StateRightDelta(cm->sttype[v]);
+	child_imin = imin[v] + sdl;
+	child_imax = imax[v] + sdl;
+	child_jmin = jmin[v] - sdr;
+	child_jmax = jmax[v] - sdr;
+	y = y0;
+	y0 = cm->nodemap[nd+1]; /* first state in next node's split set */
+	while(keep_going && y < (y0 + SplitStatesInNode(cm->ndtype[cm->ndidx[v]+1]))) { 
+	  i_overlap = (ESL_MIN(imax[y], child_imax) - ESL_MAX(imin[y], child_imin) + 1);
+	  j_overlap = (ESL_MIN(jmax[y], child_jmax) - ESL_MAX(jmin[y], child_jmin) + 1);
+	  if(i_overlap >= 1 && j_overlap >= 1) { /* possible transition exists between v and y0 */
+	    keep_going = FALSE;
+	    ///printf("PASS v %4d sdl: %d sdr: %d (i: %4d..%4d j: %4d..%4d) --> y: %4d (i: %4d..%4d j: %4d..%4d) i_overlap: %4d j_overlap: %4d\n", 
+	    ///v, sdl, sdr, imin[v], imax[v], jmin[v], jmax[v], y, imin[y], imax[y], jmin[y], jmax[y], i_overlap, j_overlap);
+	  }
+	  else {
+	    y++;
+	    ///printf("FAIL v %4d sdl: %d sdr: %d (i: %4d..%4d j: %4d..%4d) --> y: %4d (i: %4d..%4d j: %4d..%4d) i_overlap: %4d j_overlap: %4d\n", 
+	    ///v, sdl, sdr, imin[v], imax[v], jmin[v], jmax[v], y, imin[y], imax[y], jmin[y], jmax[y], i_overlap, j_overlap);
+	  }
+	}
+	if(keep_going) cm_Fail("no child state passes check for v: %d.", v);
+      }
+    }
+  }
+
+#if 0
+/*OLD Harder test EPN, Mon Jan 28 07:24:53 2008:
+ * Tried to enforce that for every reachable state v, we had a possible reachable child. I realized
+ * this is too strict, all we really want to enforce is that theres 1 non-impossible parse given
+ * the bands, this way we 'trust' the bands more than the more strict way, which is good. Tau should
+ * be how we dial down the band tightness, not this 'safe-band-enforcment technique 
+ */
+
+  /* Step 3: Enforce safe transitions.
+   */
+  int sdl, sdr;
+  int child_imin, child_imax, child_jmin, child_jmax;
+  int y0;
+  int i_overlap, j_overlap;
+  int keep_going;
+  int w;
+  for (v = 0; v < cm->M; v++) { 
+    if(cm->sttype[v] != E_st && (! StateIsDetached(cm, v))) { 
+      if(cm->sttype[v] == B_st) { /* special case, B_sts */
+	w = cm->cfirst[v]; /* BEGL_S */
+	y = cm->cnum[v];   /* BEGR_S */
+	i_overlap = (ESL_MIN(imax[v], imax[w]) - ESL_MAX(imin[v], imin[w]) + 1);
+	j_overlap = (ESL_MIN(jmax[v], jmax[y]) - ESL_MAX(jmin[v], jmin[y]) + 1);
+	if(i_overlap >= 1 && j_overlap >= 1) { /* possible transition exists between v and w and between v and y */
+	  printf("PASS v %4d sdl: %d sdr: %d (i: %4d..%4d j: %4d..%4d) --> w: %4d (i: %4d..%4d) y: %4d (j: %4d..%4d) i_overlap: %4d j_overlap: %4d\n", 
+		 v, sdl, sdr, imin[v], imax[v], jmin[v], jmax[v], w, imin[w], imax[w], y, jmin[y], jmax[y], i_overlap, j_overlap);
+	}
+	else { 
+	  printf("FAIL v %4d sdl: %d sdr: %d (i: %4d..%4d j: %4d..%4d) --> w: %4d (i: %4d..%4d) y: %4d (j: %4d..%4d) i_overlap: %4d j_overlap: %4d\n", 
+		 v, sdl, sdr, imin[v], imax[v], jmin[v], jmax[v], w, imin[w], imax[w], y, jmin[y], jmax[y], i_overlap, j_overlap);
+	  cm_Fail("bif, children don't pass check, this should be impossible i think.");
+	}
+      }
+      else { /* non-B state, non-E state, non-detached state */
+	keep_going = TRUE;
+	sdl = StateLeftDelta(cm->sttype[v]);
+	sdr = StateRightDelta(cm->sttype[v]);
+	y0 = cm->nodemap[cm->ndidx[v]+1]; /* first state in next node's split set */
+	y = y0;
+	child_imin = imin[v] + sdl;
+	child_imax = imax[v] + sdl;
+	child_jmin = jmin[v] - sdr;
+	child_jmax = jmax[v] - sdr;
+	while(keep_going && y < (y0 + SplitStatesInNode(cm->ndtype[cm->ndidx[v]+1]))) { 
+	  i_overlap = (ESL_MIN(imax[y], child_imax) - ESL_MAX(imin[y], child_imin) + 1);
+	  j_overlap = (ESL_MIN(jmax[y], child_jmax) - ESL_MAX(jmin[y], child_jmin) + 1);
+	  if(i_overlap >= 1 && j_overlap >= 1) { /* possible transition exists between v and y0 */
+	    keep_going = FALSE;
+	    printf("PASS v %4d sdl: %d sdr: %d (i: %4d..%4d j: %4d..%4d) --> y: %4d (i: %4d..%4d j: %4d..%4d) i_overlap: %4d j_overlap: %4d\n", 
+		   v, sdl, sdr, imin[v], imax[v], jmin[v], jmax[v], y, imin[y], imax[y], jmin[y], jmax[y], i_overlap, j_overlap);
+	  }
+	  else {
+	    y++;
+	    printf("FAIL v %4d sdl: %d sdr: %d (i: %4d..%4d j: %4d..%4d) --> y: %4d (i: %4d..%4d j: %4d..%4d) i_overlap: %4d j_overlap: %4d\n", 
+		   v, sdl, sdr, imin[v], imax[v], jmin[v], jmax[v], y, imin[y], imax[y], jmin[y], jmax[y], i_overlap, j_overlap);
+	  }
+	}
+	if(keep_going) cm_Fail("no child state passes check.");
+      }
+    }
+  }
+#endif
+
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
+}
+
+
+/* Function: StateMapsLeft()
+ * 
+ * Purpose:  Returns TRUE if cm unique states type <stid> is
+ *           a state type that maps emits or deletes on the left.
+ */
+int
+StateMapsLeft(char stid)
+{
+  switch (stid) {
+  case MATP_MP: /* match left, match right */
+  case MATP_ML: /* match left, delete right */
+  case MATP_MR: /* delete left, match right */
+  case MATP_D:  /* delete left, delete right */
+  case MATP_IL: 
+  case BEGR_IL: 
+  case MATL_ML: 
+  case MATL_D:  
+  case MATL_IL: 
+  case ROOT_IL: 
+    return TRUE;
+  default: 
+    return FALSE;
+  }
+}
+
+/* Function: StateMapsRight()
+ * 
+ * Purpose:  Returns TRUE if cm unique states type <stid> is
+ *           a state type that maps emits or deletes on the right.
+ */
+int
+StateMapsRight(char stid)
+{
+  switch (stid) {
+  case MATP_MP: /* match left, match right */
+  case MATP_ML: /* match left, delete right */
+  case MATP_MR: /* delete left, match right */
+  case MATP_D:  /* delete left, delete right */
+  case MATP_IR: 
+  case MATR_MR: 
+  case MATR_D:  
+  case MATR_IR: 
+  case ROOT_IR: 
+    return TRUE;
+  default: 
+    return FALSE;
+  }
+}
+
+
+/* Function: StateMapsMatch()
+ * 
+ * Purpose:  Returns TRUE if cm unique states type <stid> maps
+ *           to an HMM match state type.
+ */
+int
+StateMapsMatch(char stid)
+{
+  switch (stid) {
+  case MATP_MP: 
+  case MATL_ML: 
+  case MATR_MR: 
+    return TRUE;
+  default: 
+    return FALSE;
+  }
+}
+
+
+/* Function: StateMapsInsert()
+ * 
+ * Purpose:  Returns TRUE if cm unique states type <stid> maps
+ *           to an HMM insert state type.
+ */
+int
+StateMapsInsert(char stid)
+{
+  switch (stid) {
+  case MATP_IL: 
+  case MATP_IR: 
+  case MATL_IL: 
+  case MATR_IR: 
+  case BEGR_IL: 
+  case ROOT_IL: 
+  case ROOT_IR: 
+    return TRUE;
+  default: 
+    return FALSE;
+  }
+}
+
+
+/* Function: StateMapsDelete()
+ * 
+ * Purpose:  Returns TRUE if cm unique states type <stid> maps
+ *           to an HMM delete state type.
+ */
+int
+StateMapsDelete(char stid)
+{
+  switch (stid) {
+  case MATP_ML:  /* delete right */
+  case MATP_MR:  /* delete left */
+  case MATP_D:   /* delete pair */
+  case MATL_D:   
+  case MATR_D:  
+    return TRUE;
+  default: 
+    return FALSE;
+  }
+}
+
+
+/* Function: NodeMapsLeft()
+ * 
+ * Purpose:  Returns TRUE if cm node type is a type with 
+ *           at least one left emitting (possibly insert) 
+ *           state within it.
+ */
+int
+NodeMapsLeft(char ndtype)
+{
+  switch (ndtype) {
+  case MATP_nd: 
+  case MATL_nd: 
+  case ROOT_nd: 
+  case BEGR_nd: 
+    return TRUE;
+  default: 
+    return FALSE;
+  }
+}
+
+
+
+/* Function: NodeMapsRight()
+ * 
+ * Purpose:  Returns TRUE if cm node type is a type with 
+ *           at least one right emitting (possibly insert) 
+ *           state within it.
+ */
+int
+NodeMapsRight(char ndtype)
+{
+  switch (ndtype) {
+  case MATP_nd: 
+  case MATR_nd: 
+  case ROOT_nd: 
+    return TRUE;
+  default: 
+    return FALSE;
+  }
+}
+
+
+/* Function: StateIsDetached()
+ * 
+ * Purpose:  Returns TRUE if state v of cm is a detached
+ *           insert. This should be true IFF type of next
+ *           state is an END_E, meaning state v is an 
+ *           IL_st or (rarely) a MATP_IR state.
+ */
+int
+StateIsDetached(CM_t *cm, int v)	
+{
+  if(cm->stid[(v+1)] == END_E) { 
+#if eslDEBUGLEVEL >= 1
+    /* check to make sure the state is actually detached */
+    int y, x, x_offset;
+    /* Determine if b is an IL_st, or the rare case of a MATP_IR st */
+    if(cm->sttype[v] == IL_st) x_offset = 0;
+    else {
+      ESL_DASSERT1((cm->stid[v] == MATP_IR)); /* if assertion fails, v is a non-IL, non-MATP_IR state, should'nt be detached */
+      x_offset = 1; /* MATP_y -> MATP_IR is second possible transition for MATP_*,
+		     * unless MATP_y == MATP_IR, but we don't get there in for loop below. */
+    }
+    for (y = cm->pnum[v]-1; y >= 1; y--) { /* y >= 1 means we never get to v->v prob, which is irrelevant. */
+      x = cm->plast[v] - y;
+      ESL_DASSERT1((fabs(cm->t[x][x_offset] - 0.0) < eslSMALLX1)); 
+    }
+#endif
+    return TRUE;
+  }
+  return FALSE;
+}
+
+
+/* Function: debug_print_parsetree_and_ij_bands()
+ * Date:     EPN, Sun Jan 27 16:38:14 2008
+ *
+ * Purpose:  Print a parsetree a la ParseTreeDump() but supplement it
+ *           with details on where the parsetree violates i and j bands
+ *           (if at all) from a cp9bands data structure.
+ *
+ * Args:    fp    - FILE to write output to.
+ *          tr    - parsetree to examine.
+ *          cm    - model that was aligned to dsq to generate the parsetree
+ *          dsq   - digitized sequence that was aligned to cm to generate the parsetree
+ *          gamma - cumulative subsequence length probability distributions
+ *                  used to generate the bands; from BandDistribution(); [0..v..M-1][0..W]
+ *          W     - maximum window length W (gamma distributions range up to this)        
+ *          cp9b  - CP9 bands object with i and j bands
+ *
+ * Returns:  (void)
+ */
+void
+debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, CP9Bands_t *cp9b)
+{
+  int   x;
+  char  syml, symr;
+  float tsc;
+  float esc;
+  int   v,y;
+  int   mode;
+
+  /* Contract check */
+  if(dsq == NULL)  cm_Fail("In debug_print_parsetree_and_ij_bands(), dsq is NULL");
+
+  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s   %5s %5s %5s    %5s %5s %5s\n",
+	  " idx ", "emitl", "emitr", "state", " nxtl", " nxtr", " prv ", " tsc ", " esc ", 
+	  " imin", " imax", "idiff", "jmin", "jmax", "jdiff");
+  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s   %5s %5s %5s    %5s %5s %5s\n",
+	  "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----",
+	  "-----", "-----", "-----", "-----", "-----", "-----");
+  for (x = 0; x < tr->n; x++)
+    {
+      v = tr->state[x];
+      mode = tr->mode[x];
+
+      /* Set syml, symr: one char representation of what we emit, or ' '.
+       * Set esc:        emission score, or 0.
+       * Only P, L, R states have emissions.
+       */
+      syml = symr = ' ';
+      esc = 0.;
+      if (cm->sttype[v] == MP_st) {
+	if (mode == 3 || mode == 2) syml = cm->abc->sym[dsq[tr->emitl[x]]]; 
+	if (mode == 3 || mode == 1) symr = cm->abc->sym[dsq[tr->emitr[x]]];
+	if      (mode == 3) esc = DegeneratePairScore(cm->abc, cm->esc[v], dsq[tr->emitl[x]], dsq[tr->emitr[x]]);
+        else if (mode == 2) esc =   LeftMarginalScore(cm->abc, cm->esc[v], dsq[tr->emitl[x]]);
+        else if (mode == 1) esc =  RightMarginalScore(cm->abc, cm->esc[v],                        dsq[tr->emitr[x]]);
+      } else if ( (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) && (mode == 3 || mode == 2) ) {
+	syml = cm->abc->sym[dsq[tr->emitl[x]]];
+	esc  = esl_abc_FAvgScore(cm->abc, dsq[tr->emitl[x]], cm->esc[v]);
+      } else if ( (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) && (mode == 3 || mode == 1) ) {
+	symr = cm->abc->sym[dsq[tr->emitr[x]]];
+	esc  = esl_abc_FAvgScore(cm->abc, dsq[tr->emitr[x]], cm->esc[v]);
+      }
+
+      /* Set tsc: transition score, or 0.
+       * B, E, and the special EL state (M, local end) have no transitions.
+       */
+      tsc = 0.;
+      if (v != cm->M && cm->sttype[v] != B_st && cm->sttype[v] != E_st) {
+	y = tr->state[tr->nxtl[x]];
+
+        if (tr->nxtl[x] == -1)
+          ;
+	else if (v == 0 && (cm->flags & CMH_LOCAL_BEGIN))
+	  tsc = cm->beginsc[y];
+	else if (y == cm->M) /* CMH_LOCAL_END is presumably set, else this wouldn't happen */
+	  tsc = cm->endsc[v] + (cm->el_selfsc * (tr->emitr[x] - tr->emitl[x] + 1 - StateDelta(cm->sttype[v])));
+	else 		/* y - cm->first[v] gives us the offset in the transition vector */
+	  tsc = cm->tsc[v][y - cm->cfirst[v]];
+      }
+
+      /* Print the info line for this state
+       */
+      fprintf(fp, "%5d %5d%c %5d%c %5d%-2s %5d %5d %5d %5.2f %5.2f ",
+	      x, tr->emitl[x], syml, tr->emitr[x], symr, tr->state[x], 
+	      Statetype(cm->sttype[v]), tr->nxtl[x], tr->nxtr[x], tr->prv[x], tsc, esc);
+      if(tr->emitl[x] < cp9b->imin[tr->state[x]]) { 
+	fprintf(fp, "%5d %5d %5d   ", 
+		cp9b->imin[tr->state[x]], cp9b->imax[tr->state[x]], (tr->emitl[x] - cp9b->imin[tr->state[x]]));
+      }
+      else if(tr->emitl[x] > cp9b->imax[tr->state[x]]) { 
+	fprintf(fp, "%5d %5d %5d   ", 
+		cp9b->imin[tr->state[x]], cp9b->imax[tr->state[x]], (tr->emitl[x] - cp9b->imax[tr->state[x]]));
+      }
+      else { 
+	fprintf(fp, "%5d %5d %5s   ", 
+		cp9b->imin[tr->state[x]], cp9b->imax[tr->state[x]], "");
+      }
+      if(tr->emitr[x] < cp9b->jmin[tr->state[x]]) { 
+	fprintf(fp, "%5d %5d %5d\n", 
+		cp9b->jmin[tr->state[x]], cp9b->jmax[tr->state[x]], (tr->emitr[x] - cp9b->jmin[tr->state[x]]));
+      }
+      else if(tr->emitr[x] > cp9b->jmax[tr->state[x]]) { 
+	fprintf(fp, "%5d %5d %5d\n", 
+		cp9b->jmin[tr->state[x]], cp9b->jmax[tr->state[x]], (tr->emitr[x] - cp9b->jmax[tr->state[x]]));
+      }
+      else { 
+	fprintf(fp, "%5d %5d %5s\n", 
+		cp9b->jmin[tr->state[x]], cp9b->jmax[tr->state[x]], "");
+      }
+    }
+
+  fprintf(fp, "%5s %6s %6s %7s %5s %5s %5s %5s %5s %5s %5s %5s %5s    %5s %5s %5s\n",
+	  "-----", "------", "------", "-------", "-----","-----", "-----","-----", "-----",
+	  "-----", "-----", "-----", "-----", "-----", "-----", "-----");
+
+  fflush(fp);
+} 
 
 #if 0
 
@@ -3078,3 +3906,4 @@ cp9_RelaxRootBandsForSearch(CM_t *cm, int i0, int j0, int *imin, int *imax, int 
 }
 
 #endif
+

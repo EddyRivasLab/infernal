@@ -81,6 +81,7 @@ static ESL_OPTIONS options[] = {
   { "--search",  eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "run algorithms in scanning search mode", 5 },
   { "--hmmforward",eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,"--search",        NULL, "align to a CM Plan 9 HMM with the Forward algorithm", 3 },
   { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--search",        NULL, "with --search use inside instead of CYK", 3 },
+  { "--simple",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use new simple hmm2ij band alg", 3 },
   { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 5 },
   { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  5 },
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb",   5 },  
@@ -1163,6 +1164,7 @@ initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
     }
 
     if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;
+    if(esl_opt_GetBoolean(go, "--simple"))      cm->align_opts  |= CM_ALIGN_HMM2IJSIMPLE;
     if(esl_opt_GetBoolean(go, "--hmmviterbi"))  cm->align_opts  |= CM_ALIGN_HMMVITERBI;
     if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
     if(esl_opt_GetBoolean(go, "--scoreonly"))   cm->align_opts  |= CM_ALIGN_SCOREONLY;
@@ -1227,6 +1229,7 @@ initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
     }
 
     if(esl_opt_GetBoolean(go, "--hbanded"))     cm->search_opts  |= CM_SEARCH_HBANDED;
+    if(esl_opt_GetBoolean(go, "--simple"))      cm->search_opts  |= CM_SEARCH_HMM2IJSIMPLE;
     if(esl_opt_GetBoolean(go, "--hmmviterbi"))  { 
       cm->search_opts  |= CM_SEARCH_HMMVITERBI;
       cm->search_opts  &= ~CM_SEARCH_INSIDE;

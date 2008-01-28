@@ -450,6 +450,7 @@ typedef struct cp9map_s {
 #define CM_ALIGN_FLUSHINSERTS  (1<<15) /* flush inserts L/R like pre 1.0 infernal  */
 #define CM_ALIGN_CHECKFB       (1<<16) /* check forward/backward CP9 HMM calcs     */
 #define CM_ALIGN_OPTACC        (1<<17) /* no CYK, aln w/Holmes/Durbin opt accuracy */
+#define CM_ALIGN_HMM2IJSIMPLE  (1<<18) /* use new simple hmm2ij bands alg          */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_NOQDB        (1<<0)  /* DO NOT use QDB to search (QDB is default)*/
@@ -464,6 +465,7 @@ typedef struct cp9map_s {
 #define CM_SEARCH_HMMGREEDY    (1<<9) /* use greedy alg to resolve HMM overlaps   */
 #define CM_SEARCH_HMMVITERBI   (1<<10) /* search with CP9 HMM Viterbi              */
 #define CM_SEARCH_HMMFORWARD   (1<<11) /* search with CP9 HMM Forward              */
+#define CM_SEARCH_HMM2IJSIMPLE  (1<<12) /* use new simple hmm2ij bands alg          */
 
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]

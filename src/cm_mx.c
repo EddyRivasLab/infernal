@@ -189,7 +189,6 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
    */
   cur_size = 0;
   for(v = 0; v < mx->M; v++) { 
-    /* mx->dp[v][0] = mx->dp_mem + cur_size; unnec, right? */
     for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
       mx->dp[v][jp] = mx->dp_mem + cur_size;
       cur_size     += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;

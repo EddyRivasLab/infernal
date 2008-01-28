@@ -429,7 +429,7 @@ extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
 extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
 extern int          cp9_Seq2Bands     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int debug_level);
 extern int          cp9_FB2HMMBands        (CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
-				            int i0, int j0, int M, double p_thresh, int did_scan, int debug_level);
+				            int i0, int j0, int M, double p_thresh, int did_scan, int debug_level, int do_simple);
 extern int          cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
 					    int i0, int j0, int M, double p_thresh, int did_scan, int debug_level);
 extern int          cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level);
@@ -450,6 +450,17 @@ extern void         hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, i
 				     int *safe_hdmin, int *safe_hdmax);
 extern void         debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax);
 extern void         PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax, int W);
+extern int          hmm2ij_new(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level);
+extern void         debug_print_ij_bands(CM_t *cm);
+extern int          StateMapsLeft(char st);
+extern int          StateMapsRight(char st);
+extern int          StateMapsMatch(char st);
+extern int          StateMapsInsert(char st);
+extern int          StateMapsDelete(char st);
+extern int          NodeMapsLeft(char ndtype);
+extern int          NodeMapsRight(char ndtype);
+extern int          StateIsDetached(CM_t *cm, int v);
+extern void         debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, CP9Bands_t *cp9b);
 
 /* from cp9_postprob.c */
 extern void         cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *mx, int did_scan);
