@@ -7841,3 +7841,1045 @@ float MinScCutoff (CM_t *cm, SearchInfo_t *si, int n)
   return (low_sc);
 }
 #endif
+
+
+/* EPN, Mon Feb  4 15:55:43 2008
+ * Working in ~/notebook/7_0127_inf_hmm2ij_simple/
+ * cleaning up old versions of functions that were developed
+ * during that notebook directory's duration of work.
+ */
+/*********************************************************************
+ * Function: hmm2ij_newer()
+ * 
+ *
+ * Args:
+ * cm               the cm
+ * i0               first position of seq
+ * j0               last position of seq
+ * int *imin        imin[v] = first position in band on i for state v
+ * int *imax        imax[v] = last position in band on i for state v
+ * int *jmin        jmin[v] = first position in band on j for state v
+ * int *jmax        jmax[v] = last position in band on j for state v
+ */
+int
+hmm2ij_newer(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int i0, int j0, int doing_search, int debug_level)
+{
+
+  int status;
+  int v;
+
+  /* ptrs to cp9b data, for convenience */
+  int *pn_min_m;      /* pn_min_m[k] = first position in HMM band for match state of HMM node k */
+  int *pn_max_m;      /* pn_max_m[k] = last position in HMM band for match state of HMM node k */
+  int *pn_min_i;      /* pn_min_i[k] = first position in HMM band for insert state of HMM node k */
+  int *pn_max_i;      /* pn_max_i[k] = last position in HMM band for insert state of HMM node k */
+  int *pn_min_d;      /* pn_min_d[k] = first position in HMM band for delete state of HMM node k */
+  int *pn_max_d;      /* pn_max_d[k] = last position in HMM band for delete state of HMM node k */
+  int *imin;          /* imin[v] = first position in band on i for state v to be filled in this function. [1..M] */
+  int *imax;          /* imax[v] = last position in band on i for state v to be filled in this function. [1..M] */
+  int *jmin;          /* jmin[v] = first position in band on j for state v to be filled in this function. [1..M] */
+  int *jmax;          /* jmax[v] = last position in band on j for state v to be filled in this function. [1..M] */
+  
+  int nd;           /* counter over CM nodes. */
+  int y;   /* counters over children states */
+  /* Contract checks */
+
+  if (cp9b == NULL)                                                                   ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), cp9b is NULL.\n");
+  if(!((cm->align_opts & CM_ALIGN_HBANDED) || (cm->search_opts & CM_SEARCH_HBANDED))) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both down, exactly 1 must be up.\n");
+  if(i0 < 1) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), i0 < 1: %d\n", i0);
+  if(j0 < 1) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), j0 < 1: %d\n", j0);
+  if(j0 < i0) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_HMM2ijBands(), i0 (%d) < j0 (%d)\n", i0, j0);
+
+  pn_min_m = cp9b->pn_min_m;
+  pn_max_m = cp9b->pn_max_m;
+  pn_min_i = cp9b->pn_min_i;
+  pn_max_i = cp9b->pn_max_i;
+  pn_min_d = cp9b->pn_min_d;
+  pn_max_d = cp9b->pn_max_d;
+  imin     = cp9b->imin;
+  imax     = cp9b->imax;
+  jmin     = cp9b->jmin;
+  jmax     = cp9b->jmax;
+
+#if 0 
+  /* Initialize all *min bands to INT_MAX and *max bands to -INT_MAX */
+  esl_vec_ISet(imin, cm->M,  INT_MAX);
+  esl_vec_ISet(imax, cm->M, -INT_MAX);
+  esl_vec_ISet(jmin, cm->M,  INT_MAX);
+  esl_vec_ISet(jmax, cm->M, -INT_MAX);
+#endif
+  /* Initialize all *min bands to INT_MAX and *max bands to -INT_MAX */
+  esl_vec_ISet(imin, cm->M, -1);
+  esl_vec_ISet(imax, cm->M, -1);
+  esl_vec_ISet(jmin, cm->M, -1);
+  esl_vec_ISet(jmax, cm->M, -1);
+
+  /* TEMPORARY to deal with incorrect handling of delete off-by-one in cp9_FB2HMMBandsWithSums() */
+  int k;
+  for(k = 0; k <= cm->cp9->M; k++) { 
+    if(pn_min_d[k] != -1) pn_min_d[k]--;
+    if(pn_min_d[k] != -1) pn_max_d[k]--;
+  }
+
+  ////cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
+
+  /* Step 2: Traverse nodes from cpos = 1..clen using a stack and filling
+   *         in i and j bands (imin, imax, jmin, jmax) for all states that
+   *         don't map to HMM states.
+   */
+  ESL_STACK   *pda;
+  ESL_STACK   *pda2;
+  int          on_right;
+  int          abv_ss_imin, abv_ss_imax, abv_ss_jmin, abv_ss_jmax;
+  int          blw_ss_imin, blw_ss_imax, blw_ss_jmin, blw_ss_jmax;
+  int          ss_imin, ss_imax, ss_jmin, ss_jmax;
+  int          sd;
+  int          w;
+  int          just_saw_begl_on_right = FALSE;
+#if 0
+  abv_ss_imin = blw_ss_imin = i0;
+  abv_ss_imax = blw_ss_imax = j0+1;
+  abv_ss_jmin = blw_ss_jmin = i0-1; 
+  abv_ss_jmax = blw_ss_jmax = j0;
+#endif
+  abv_ss_imin = abv_ss_jmin = blw_ss_imin = blw_ss_jmin =  INT_MAX;
+  abv_ss_imax = abv_ss_jmax = blw_ss_imax = blw_ss_jmax = -INT_MAX;
+  ///if(! doing_search) { abv_ss_imin = i0; abv_ss_jmax = j0; } /* this will make ROOT_S necessarily have imin[0] = i0, jmax[0] = j0, which
+  ///* is mandatory if we're aligning, b/c we have to align the full seq */
+  
+  nd   = 0;
+  if ((pda  = esl_stack_ICreate()) == NULL) goto ERROR;
+  if ((pda2 = esl_stack_ICreate()) == NULL) goto ERROR;
+  if ((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;		/* 0 = left side. 1 would = right side. */
+  if ((status = esl_stack_IPush(pda, nd)) != eslOK) goto ERROR;
+  while (esl_stack_IPop(pda, &nd) != eslEOD)
+    {
+      esl_stack_IPop(pda, &on_right);
+
+      /* begin temporary block */
+      if (just_saw_begl_on_right) { if((cm->ndtype[nd] != BEGR_nd) || on_right)     cm_Fail("you don't get it (1)."); }
+      else                        { if((cm->ndtype[nd] == BEGR_nd) && (! on_right)) cm_Fail("you don't get it (2)."); }
+      just_saw_begl_on_right = FALSE;
+      /* end temporary block */
+
+      if (on_right) 
+	{
+	  ////printf("on right nd: %d\n", nd);
+	  if(cm->ndtype[nd] == BIF_nd) { /* special case, set i bands based on left child, j bands based on right child */
+	    esl_stack_IPop(pda2, &blw_ss_imax);
+	    esl_stack_IPop(pda2, &blw_ss_imin);
+
+	    v = cm->nodemap[nd];
+	    w = cm->cfirst[v]; /* BEGL_S */
+	    y = cm->cnum[v];   /* BEGR_S */
+	    imin[v] = imin[w];
+	    imax[v] = imax[w];
+	    jmin[v] = jmin[y];
+	    jmax[v] = jmax[y];
+	  }
+	  else { 
+	    HMM2ijBandsForNode(cm, cp9b, cp9map, nd, i0, &ss_imin, &ss_imax, &ss_jmin, &ss_jmax);
+	    
+	    if(cm->ndtype[nd] != BEGR_nd) {  /* HACK! justify this, reason is that BEGR only has an insert, and we can set
+					      * that insert in HMM2ijBnadsForNode if it has an explicit band from the HMM,
+					      * but that shouldn't impact our implicit band on BEGR...
+					      */
+	      if(ss_imin != -1) blw_ss_imin = ss_imin;
+	      if(ss_imax != -1) blw_ss_imax = ss_imax;
+	      if(ss_jmin != -1) blw_ss_jmin = ss_jmin;
+	      if(ss_jmax != -1) blw_ss_jmax = ss_jmax;
+	    }
+	    /* pop off {s,i}_{i,j}{min,max} if they're not -1, update cur_{s,i}_{i,j}{min, max} */
+	    esl_stack_IPop(pda, &abv_ss_jmax);
+	    esl_stack_IPop(pda, &abv_ss_jmin);
+	    esl_stack_IPop(pda, &abv_ss_imax);
+	    esl_stack_IPop(pda, &abv_ss_imin);
+	    ss_imin = ESL_MIN(abv_ss_imin, blw_ss_imin);
+	    ss_imax = ESL_MAX(abv_ss_imax, blw_ss_imax);
+	    ss_jmin = ESL_MIN(abv_ss_jmin, blw_ss_jmin);
+	    ss_jmax = ESL_MAX(abv_ss_jmax, blw_ss_jmax);
+	    if(ss_imin ==  INT_MAX) ss_imin = i0;
+	    if(ss_imax == -INT_MAX) ss_imax = j0+1;
+	    if(ss_jmin ==  INT_MAX) ss_jmin = i0-1;
+	    if(ss_jmax == -INT_MAX) ss_jmax = j0;
+
+	    ////printf("nd: %4d abv  (%11d %11d  %11d %11d)\n", nd, abv_ss_imin, abv_ss_imax, abv_ss_jmin, abv_ss_jmax);
+	    ////printf("nd: %4d blw  (%11d %11d  %11d %11d)\n", nd, blw_ss_imin, blw_ss_imax, blw_ss_jmin, blw_ss_jmax);
+	    ////printf("nd: %4d bst  (%11d %11d  %11d %11d)\n", nd, ss_imin, ss_imax, ss_jmin, ss_jmax);
+
+	    if(cm->ndtype[nd] == BEGL_nd) { /* reset blw_ss_{i,j}{min,max} to their initial values for next stem */
+	      //// printf("HEYA resetting blw_ss_imin: %d blw_ss_imax: %d blw_ss_jmin: %d blw_ss_jmax: %d\n", blw_ss_imin, blw_ss_imax, blw_ss_jmin, blw_ss_jmax);
+	      if ((status = esl_stack_IPush(pda2, blw_ss_imin)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda2, blw_ss_imax)) != eslOK) goto ERROR;
+	      abv_ss_imin = abv_ss_jmin = blw_ss_imin = blw_ss_jmin =  INT_MAX;
+	      abv_ss_imax = abv_ss_jmax = blw_ss_imax = blw_ss_jmax = -INT_MAX;
+	      ///blw_ss_imin = blw_ss_jmin =  INT_MAX;
+	      ///blw_ss_imax = blw_ss_jmax = -INT_MAX;
+	      just_saw_begl_on_right = TRUE;
+	    }
+	  }	    
+	  /* set bands for states in node nd */
+	  /* the split set states */
+	  for(v = cm->nodemap[nd]; v < (cm->nodemap[nd] + TotalStatesInNode(cm->ndtype[nd])); v++) { 
+	    sd = StateDelta(cm->sttype[v]);
+#if 0 
+	    if(imin[v] == -1) { 
+	      printf("!i v: %d setting imin[v] as MIN(ss_imin: %d (jmin[v]-sd+1): %d)\n", v, ss_imin, jmin[v]-sd+1);
+	      imin[v] = (jmin[v] == -1) ? ss_imin : ESL_MIN(ss_imin, (jmin[v] - sd + 1)); /* if jmin != INT_MAX, we set jmin explicitly based on an HMM band and we enforce that jmin[v] - imin[v] +1 >= sd */
+	    }
+	    if(imax[v] == -1) imax[v] = ss_imax;
+	    if(jmin[v] == -1) { 
+	      printf("!j v: %d setting jmin[v] as MIN(ss_jmin: %d (imin[v]+sd-1): %d)\n", v, ss_jmin, imin[v]+sd-1);
+	      jmin[v] = ESL_MAX(ss_jmin, (imin[v] + sd - 1)); /* enforces that jmin[v] - imin[v] +1 >= sd, if jmin[v] - imin[v] + 1 < sd, there is no valid i for which j == jmin[v] is valid (d will be < sd) */
+	    }
+	    if(jmax[v] == -1) jmax[v] = ss_jmax;
+#endif
+#if  1
+	    if(imin[v] == -1) imin[v] = ss_imin;
+	    if(imax[v] == -1) imax[v] = ss_imax;
+	    if(jmin[v] == -1) jmin[v] = ESL_MAX(ss_jmin, i0+sd-1); /* j must be at least i0+sd-1, that is i0 for singlet emitters, i0+1 for MP states */
+	    if(jmax[v] == -1) jmax[v] = ESL_MAX(ss_jmax, i0+sd-1); /* j must be at least i0+sd-1, that is i0 for singlet emitters, i0+1 for MP states */
+#endif
+	  }
+	}
+      else
+	{
+	  if (cm->ndtype[nd] == BIF_nd)
+	    {
+	      /* BIF is special, we infer bands from left and right child, no pushing nec */
+  			    /* push the BIF back on for its right side  */
+	      if ((status = esl_stack_IPush(pda, 1)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, nd)) != eslOK) goto ERROR;
+                            /* push node index for right child */
+	      if ((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, cm->ndidx[cm->cnum[cm->nodemap[nd]]])) != eslOK) goto ERROR;   
+                            /* push node index for left child */
+	      if ((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, cm->ndidx[cm->cfirst[cm->nodemap[nd]]])) != eslOK) goto ERROR; 
+	    }
+	  else
+	    {
+	      HMM2ijBandsForNode(cm, cp9b, cp9map, nd, i0, &ss_imin, &ss_imax, &ss_jmin, &ss_jmax);
+	      
+	      if(ss_imin != -1) abv_ss_imin = ss_imin;
+	      if(ss_imax != -1) abv_ss_imax = ss_imax;
+	      if(ss_jmin != -1) abv_ss_jmin = ss_jmin;
+	      if(ss_jmax != -1) abv_ss_jmax = ss_jmax;
+	      /* push bands to stack */
+	      if ((status = esl_stack_IPush(pda, abv_ss_imin)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, abv_ss_imax)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, abv_ss_jmin)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, abv_ss_jmax)) != eslOK) goto ERROR;
+				/* push the node back on for right side */
+	      if ((status = esl_stack_IPush(pda, 1)) != eslOK) goto ERROR;
+	      if ((status = esl_stack_IPush(pda, nd)) != eslOK) goto ERROR;
+                 	      /* push child node on */
+	      if (cm->ndtype[nd] != END_nd) {
+		if ((status = esl_stack_IPush(pda, 0)) != eslOK) goto ERROR;
+		if ((status = esl_stack_IPush(pda, nd+1)) != eslOK) goto ERROR;
+	      }
+	    }
+	}
+    }
+  if(! doing_search) { /* if we're aligning the full seq must be aligned at the root state */
+    imin[0] = imin[1] = i0; /* first residue must be in subtree of ROOT_S and IFF ROOT_IL is used, of ROOT_IL also */
+    jmax[0] = jmax[1] = jmax[2] = j0; /* final residue must be in subtree of ROOT_S and IFF ROOT_IL is used and/or ROOT_IR is used, of them also */
+  }
+
+  for (v = 0; v < cm->M; v++) { 
+    /* TEMPORARY */ if(StateIsDetached(cm, v)) imin[v] = imax[v] = jmin[v] = jmax[v] = i0; 
+  }
+  ////debug_print_ij_bands(cm); 
+
+
+  /* AT THIS POINT ALL BANDS SHOULD BE WITHIN VALID RANGE! */
+  /* EVENTUALLY WHEN --simple IS DEFAULT, PUT THIS IN cp9_validateBands() */
+  //ESL_DPRINTF1(("i0: %d j0: %d\n", i0, j0));
+  ////printf("i0: %d j0: %d\n", i0, j0);
+  for (v = 0; v < cm->M; v++) { 
+    sd = StateDelta(cm->sttype[v]);
+
+    //ESL_DPRINTF1(("v: %4d in: %4d ix: %4d  jn: %4d jx: %4d\n", v, imin[v], imax[v], jmin[v], jmax[v]));
+    ////printf("v: %4d in: %4d ix: %4d  jn: %4d jx: %4d\n", v, imin[v], imax[v], jmin[v], jmax[v]);
+    ESL_DASSERT1((imin[v] >= (i0)));    /* min allowed i is i0 */
+    ESL_DASSERT1((imax[v] >= (i0)));    /* min allowed i is i0 */
+    ESL_DASSERT1((imin[v] <= (j0+1)));  /* max allowed i is j0+1 */
+    ESL_DASSERT1((imax[v] <= (j0+1)));  /* max allowed i is j0+1 */
+    ESL_DASSERT1((jmin[v] >= (i0-1)));  /* min allowed j is i0-1 */
+    ESL_DASSERT1((jmax[v] >= (i0-1)));  /* min allowed j is i0-1 */
+    ESL_DASSERT1((jmin[v] <= (j0)));    /* max allowed j is j0 */
+    ESL_DASSERT1((jmax[v] <= (j0)));    /* max allowed j is j0 */
+
+    ESL_DASSERT1((imax[v] >= imin[v])); /* imax[v] >= imin[v] */
+    ESL_DASSERT1((jmax[v] >= jmin[v])); /* jmax[v] >= jmin[v] */
+
+    ESL_DASSERT1(((jmax[v]-imin[v]+1) <= (j0-i0+1))); /* largest  possible d is max j - max i + 1 = j0-i0+1 */
+
+    assert(imin[v] >= (i0));    /* min allowed i is i0 */
+    assert(imax[v] >= (i0));    /* min allowed i is i0 */
+    assert(imin[v] <= (j0+1));  /* max allowed i is j0+1 */
+    assert(imax[v] <= (j0+1));  /* max allowed i is j0+1 */
+    assert(jmin[v] >= (i0-1));  /* min allowed j is i0-1 */
+    assert(jmax[v] >= (i0-1));  /* min allowed j is i0-1 */
+    assert(jmin[v] <= (j0));    /* max allowed j is j0 */
+    assert(jmax[v] <= (j0));    /* max allowed j is j0 */
+
+    assert(imax[v] >= imin[v]); /* imax[v] >= imin[v] */
+    assert(jmax[v] >= jmin[v]); /* jmax[v] >= jmin[v] */
+
+    assert((jmax[v]-imin[v]+1) <= (j0-i0+1)); /* largest  possible d is max j - min i + 1 = j0-i0+1 */
+  }
+
+  /* Step 3: Enforce safe transitions.
+   *         Goal is to enforce there's at least 1 valid path through the model.
+   */
+  int child_imin, child_imax, child_jmin, child_jmax;
+  int *v_is_r,  *r_imin, *r_imax, *r_jmin, *r_jmax; /* r = reachable */
+  int *nd_is_r, *nd_r_imin, *nd_r_imax, *nd_r_jmin, *nd_r_jmax; /* r = reachable */
+  int sdl, sdr;
+  int y_nd, w_nd;
+  ESL_ALLOC(v_is_r,   sizeof(int) * cm->M);
+  ESL_ALLOC(r_imin, sizeof(int) * cm->M);
+  ESL_ALLOC(r_imax, sizeof(int) * cm->M);
+  ESL_ALLOC(r_jmin, sizeof(int) * cm->M);
+  ESL_ALLOC(r_jmax, sizeof(int) * cm->M);
+  ESL_ALLOC(nd_is_r,   sizeof(int) * cm->nodes);
+  ESL_ALLOC(nd_r_imin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nd_r_imax, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nd_r_jmin, sizeof(int) * cm->nodes);
+  ESL_ALLOC(nd_r_jmax, sizeof(int) * cm->nodes);
+
+  esl_vec_ISet(v_is_r, cm->M, FALSE);
+  esl_vec_ISet(nd_is_r, cm->nodes, FALSE);
+
+#if 0
+  for (v = 0; v < cm->M; v++) { 
+    r_imin[v] = imin[v];
+    r_imax[v] = imax[v];
+    r_jmin[v] = jmin[v];
+    r_jmax[v] = jmax[v];
+  }
+
+  for (nd = 0; nd < cm->nodes; nd++) { 
+    v0 = cm->nodemap[nd];
+    nd_r_imin[nd] = imin[v0];
+    nd_r_imax[nd] = imax[v0];
+    nd_r_jmin[nd] = jmin[v0];
+    nd_r_jmax[nd] = jmax[v0];
+  }
+#endif
+  for (v = 0; v < cm->M; v++) { 
+    r_imin[v] =  INT_MAX;
+    r_imax[v] = -INT_MAX;
+    r_jmin[v] =  INT_MAX;
+    r_jmax[v] = -INT_MAX;
+  }
+
+  for (nd = 0; nd < cm->nodes; nd++) { 
+    nd_r_imin[nd] =  INT_MAX;
+    nd_r_imax[nd] = -INT_MAX;
+    nd_r_jmin[nd] =  INT_MAX;
+    nd_r_jmax[nd] = -INT_MAX;
+  }
+
+  ////printf("safe parse check\n");
+  nd_is_r[0] = TRUE;
+  v_is_r[0] = TRUE;
+  r_imin[0] = nd_r_imin[0] = imin[0];
+  r_imax[0] = nd_r_imax[0] = imax[0];
+  r_jmin[0] = nd_r_jmin[0] = jmin[0];
+  r_jmax[0] = nd_r_jmax[0] = jmax[0];
+  
+  for (nd = 0; nd < cm->nodes; nd++) { 
+    for (v = cm->nodemap[nd]; v < (cm->nodemap[nd] + TotalStatesInNode(cm->ndtype[nd])); v++) { 
+      if(StateIsDetached(cm, v)) { ; } 
+      else if(cm->sttype[v] == E_st) { 
+	if((r_imin[v] <= r_imax[v] && r_jmin[v] <= r_jmax[v]) && ((r_imax[v] - r_jmin[v] - 1) >= 0)) { 
+	  /* END state v is reachable for some i, j such that j-i+1 = d = 0 (which is required for E states) */
+	  v_is_r[v] = TRUE;
+	  nd_is_r[nd] = TRUE;
+	}
+	else { /* no possible i, j such that j-i+1 = d = 0, this means E is unreachable (d must be 0 for end states */	  
+	  v_is_r[v] = FALSE;
+	  nd_is_r[nd] = FALSE;
+	  //printf("END_E nd: %d v: %d unreachable!\n", nd, v);
+	  //return eslOK;
+	}
+      }	      
+      else if (cm->sttype[v] == B_st) { 
+	/* same loop as if v != B_st, (the else case below) but we know sdl = sdr = 0, and we have two children BEGL_S and BEGR_S */
+	if((r_imin[v] <= r_imax[v] && r_jmin[v] <= r_jmax[v]) && ((r_jmax[v] - r_imin[v] + 1) >= sd)) { 
+	  /* v is reachable for some i, j */
+	  v_is_r[v] = TRUE; 
+	  nd_is_r[nd] = TRUE;
+	  w = cm->cfirst[v]; /* BEGL_S */
+	  y = cm->cnum[v];   /* BEGR_S */
+
+	  r_imin[w] = ESL_MAX(imin[w], imin[v]);
+	  r_imax[w] = ESL_MIN(imax[w], imax[v]);
+	  r_jmin[w] = jmin[w];
+	  r_jmax[w] = jmax[w];
+	  w_nd = cm->ndidx[w];
+	  nd_r_imin[w_nd] = r_imin[w];
+	  nd_r_imax[w_nd] = r_imax[w];
+	  nd_r_jmin[w_nd] = r_jmin[w];
+	  nd_r_jmax[w_nd] = r_jmax[w];
+
+	  r_imin[y] = imin[y];
+	  r_imax[y] = imax[y];
+	  r_jmin[y] = ESL_MAX(jmin[y], jmin[v]);
+	  r_jmax[y] = ESL_MIN(jmax[y], jmax[v]);
+	  y_nd = cm->ndidx[y];
+	  nd_r_imin[y_nd] = r_imin[y];
+	  nd_r_imax[y_nd] = r_imax[y];
+	  nd_r_jmin[y_nd] = r_jmin[y];
+	  nd_r_jmax[y_nd] = r_jmax[y];
+
+	  if(r_jmax[w] < (r_imin[y]-1)) { 
+	    cm_Fail("BEGL_S state w: %d nd: %d and BEGR_S state y: %d nd: %d  bands fail to touch, residues %d to %d cannot be emitted!\n", w, w_nd, y, y_nd, r_jmax[w]+1, r_imin[y]-1);
+	    ////printf("BEGL_S state w: %d nd: %d and BEGR_S state y: %d nd: %d  bands fail to touch, residues %d to %d cannot be emitted! (unreachable cm) \n", w, w_nd, y, y_nd, r_jmax[w]+1, r_imin[y]-1);
+	    return eslOK;
+	  }	     
+	}
+	else { /* v is not reachable for any i, j */
+	  v_is_r[v] = FALSE; 
+	}
+      }
+      else { 
+	sdl = StateLeftDelta(cm->sttype[v]);
+	sdr = StateRightDelta(cm->sttype[v]);
+	sd  = sdl + sdr;
+	if((r_imin[v] <= r_imax[v] && r_jmin[v] <= r_jmax[v]) && ((r_jmax[v] - r_imin[v] + 1) >= sd)) { 
+	  /* v is reachable for some i, j */
+	  v_is_r[v] = TRUE; 
+	  nd_is_r[nd] = TRUE;
+	  child_imin = r_imin[v] + sdl;
+	  child_imax = r_imax[v] + sdl;
+	  child_jmin = r_jmin[v] - sdr;
+	  child_jmax = r_jmax[v] - sdr;
+	  if(cm->sttype[v] == IL_st) child_imax = ESL_MAX(child_imax, (imax[v]+1));
+	  if(cm->sttype[v] == IR_st) child_jmin = ESL_MIN(child_jmin, (jmin[v]-1));
+	  for(y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) { 
+	    r_imin[y] = ESL_MIN(r_imin[y], ESL_MAX(imin[y], child_imin));
+	    r_imax[y] = ESL_MAX(r_imax[y], ESL_MIN(imax[y], child_imax));
+	    r_jmin[y] = ESL_MIN(r_jmin[y], ESL_MAX(jmin[y], child_jmin));
+	    r_jmax[y] = ESL_MAX(r_jmax[y], ESL_MIN(jmax[y], child_jmax));
+	    ////printf("\tv: %d y: %d (%11d %11d  %11d %11d)\n", v, y, r_imin[y], r_imax[y], r_jmin[y], r_jmax[y]);
+	    y_nd = cm->ndidx[y];
+	    nd_r_imin[y_nd] = ESL_MIN(nd_r_imin[y_nd], r_imin[y]);
+	    nd_r_imax[y_nd] = ESL_MAX(nd_r_imax[y_nd], r_imax[y]);
+	    nd_r_jmin[y_nd] = ESL_MIN(nd_r_jmin[y_nd], r_jmin[y]);
+	    nd_r_jmax[y_nd] = ESL_MAX(nd_r_jmax[y_nd], r_jmax[y]);
+	    if(cm->sttype[v] == IL_st && cm->sttype[y] == IR_st) { imax[y] = ESL_MAX(imax[y], imax[v]+1); } /* talk about a hack... ILs and IRs in the same state cause some weird situations, 
+													     * here I'm enforcing that we can reach an IR from an IL in the same state no matter
+													     * what, this is to avoid problems downstream */
+	  }
+	}
+	else { /* v is not reachable for any i, j */
+	  v_is_r[v] = FALSE; 
+	}
+      } /* end of if v != B_st */
+      
+      ////printf("ck v  %4s %2s %4d R %d (%11d %11d  %11d %11d)\n", Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v]), v, v_is_r[v], r_imin[v], r_imax[v], r_jmin[v], r_jmax[v]);
+    } /* end of for (v) loop */
+    ////printf("ck nd %4s    %4d R %d (%11d %11d  %11d %11d)\n", Nodetype(cm->ndtype[nd]), nd, nd_is_r[nd], nd_r_imin[nd], nd_r_imax[nd], nd_r_jmin[nd], nd_r_jmax[nd]);
+    ////printf("\n");
+    if(nd_is_r[nd] == FALSE) { 
+      cm_Fail("node %d is unreachable\n", nd);
+      ////printf("! node %d is unreachable cm\n", nd);
+      return eslOK;
+    }
+  }
+  ////printf("all nodes reachable\n");
+
+  /* a final check to make sure we didn't mess up */
+  /* make sure each residue can be emitted by at least one emitter */
+  for(v = 0; v < cm->M; v++) { 
+	sdl = StateLeftDelta(cm->sttype[v]);
+	sdr = StateRightDelta(cm->sttype[v]);
+	/* HERE HERE HERE */
+  }
+
+
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "Memory allocation error.\n");
+}
+
+
+/* Function: HMM2ijBandsForNode()
+ * 
+ * Purpose:  Given HMM bands, determine the min and max bands on 
+ *           i for a CM node. 
+ */
+int
+HMM2ijBandsForNode(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, int nd, int i0,
+		   int *ret_ss_imin, int *ret_ss_imax, int *ret_ss_jmin, int *ret_ss_jmax)
+{
+  int ss_imin, ss_imax, ss_jmin, ss_jmax;
+  int v;
+  
+  ss_imin = ss_jmin =  INT_MAX;
+  ss_imax = ss_jmax = -INT_MAX;
+
+  for(v = cm->nodemap[nd]; v < cm->nodemap[nd] + TotalStatesInNode(cm->ndtype[nd]); v++) { 
+    if(cp9map->cs2hn[v][0] != -1) { 
+      /* MATCH state */
+      if(StateMapsMatch(cm->stid[v])) {
+	if(StateMapsLeft(cm->stid[v])) { 
+	  cp9b->imin[v] = cp9b->pn_min_m[cp9map->cs2hn[v][0]];
+	  cp9b->imax[v] = cp9b->pn_max_m[cp9map->cs2hn[v][0]];
+	  if(cp9b->imin[v] != -1) ss_imin = ESL_MIN(ss_imin, cp9b->imin[v]);
+	  if(cp9b->imax[v] != -1) ss_imax = ESL_MAX(ss_imax, cp9b->imax[v]+1); 
+	  /* +1 above allows left emission, i will increment by 1, note: we don't 
+	   * have to ensure cp9b->imax[v]+1 <= (j0+1) (i think) b/c pn_max_m[k] <= j0 */
+	}
+	else { /* state must map right */
+	  ESL_DASSERT1((StateMapsRight(cm->stid[v])));
+	  cp9b->jmin[v] = cp9b->pn_min_m[cp9map->cs2hn[v][0]];
+	  cp9b->jmax[v] = cp9b->pn_max_m[cp9map->cs2hn[v][0]];
+	  if(cp9b->jmin[v] != -1) ss_jmin = ESL_MIN(ss_jmin, cp9b->jmin[v]-1);
+	  /* -1 above allows right emission, j will decrement by 1, note: we don't 
+	   * have to ensure cp9b->jmin[v]-1 >= (i0-1) (i think) b/c pn_min_m[k] >= i0 */
+	  if(cp9b->jmax[v] != -1) ss_jmax = ESL_MAX(ss_jmax, cp9b->jmax[v]);
+	}
+	if(cm->stid[v] == MATP_MP) { /* special case, only match state type that can map to two HMM states, 
+				      * also special [*1*] b/c jmin[v] >= i0+1 and jmax[v] >= i0+1 b/c 
+				      * MATP_MP's emit left and right, so i emitted from MP >= i0, thus j emitted from 
+				      * MP >= i0+1. 
+				      */
+	  ESL_DASSERT1((cp9map->cs2hn[v][1] != -1));
+	  if(cp9b->pn_max_m[cp9map->cs2hn[v][1]] == i0) { /* special case (see [*1*] above), HMM tells us right half of MP state must emit first residue 
+							   * in sequence (i0, this is probably very rare); in this case we ignore the HMM */
+	    ESL_DASSERT1((pn_min_m[cp9map->cs2hn[v][1]] == i0));
+	    cp9b->jmin[v] = -1; /* ignore hmm */
+	    cp9b->jmax[v] = -1; /* ignore hmm */
+	  }
+	  else if (cp9b->pn_min_m[cp9map->cs2hn[v][1]] == i0) { /* special case (see [*1*] above), HMM tells us right half of MP state could possibly
+						 		 * emit first residue (i0), we ignore it and say the leftmost residue it could emit is i0+1 */
+	    cp9b->jmin[v] = i0 + 1; /* pad 1 onto what the hmm thought */
+	    cp9b->jmax[v] = cp9b->pn_max_m[cp9map->cs2hn[v][1]]; 
+	  }
+	  else { 
+	    cp9b->jmin[v] = cp9b->pn_min_m[cp9map->cs2hn[v][1]];
+	    cp9b->jmax[v] = cp9b->pn_max_m[cp9map->cs2hn[v][1]];
+	    if(cp9b->jmin[v] != -1) ss_jmin = ESL_MIN(ss_jmin, cp9b->jmin[v]-1);
+	    /* -1 above allows right emission, j will decrement by 1, note: we don't 
+	     * have to ensure cp9b->jmin[v]-1 >= (i0-1) (i think) b/c pn_min_m[k] >= i0 */
+	    if(cp9b->jmax[v] != -1) ss_jmax = ESL_MAX(ss_jmax, cp9b->jmax[v]);
+	  }
+	}
+      }
+      /* INSERT state */
+      else if (StateMapsInsert(cm->stid[v])) { 
+	if(StateMapsLeft(cm->stid[v])) { 
+	  cp9b->imin[v] = cp9b->pn_min_i[cp9map->cs2hn[v][0]];
+	  cp9b->imax[v] = cp9b->pn_max_i[cp9map->cs2hn[v][0]];
+	  if(cp9b->imin[v] != -1) ss_imin = ESL_MIN(ss_imin, cp9b->imin[v]);
+	  if(cp9b->imax[v] != -1) ss_imax = ESL_MAX(ss_imax, cp9b->imax[v]+1); 
+	  /* +1 above allows left emission, i will increment by 1, note: we don't 
+	   * have to ensure cp9b->imax[v]+1 <= (j0+1) (i think) b/c pn_max_i[k] <= j0 */
+	}
+	else { /* state must map right */
+	  ESL_DASSERT1((StateMapsRight(cm->stid[v])));
+	  cp9b->jmin[v] = cp9b->pn_min_i[cp9map->cs2hn[v][0]];
+	  cp9b->jmax[v] = cp9b->pn_max_i[cp9map->cs2hn[v][0]];
+	  if(cp9b->jmin[v] != -1) ss_jmin = ESL_MIN(ss_jmin, cp9b->jmin[v]-1);
+	  /* -1 above allows right emission, j will decrement by 1, note: we don't 
+	   * have to ensure cp9b->jmin[v]-1 >= (i0-1) (i think) b/c pn_min_i[k] >= i0 */
+	  if(cp9b->jmax[v] != -1) ss_jmax = ESL_MAX(ss_jmax, cp9b->jmax[v]);
+	}
+      }
+      /* DELETE state */
+      else if(StateMapsDelete(cm->stid[v])) { 
+	if(StateMapsLeft(cm->stid[v])) { 
+	  cp9b->imin[v] = (cp9b->pn_min_d[cp9map->cs2hn[v][0]] == -1) ? -1 : cp9b->pn_min_d[cp9map->cs2hn[v][0]] + 1;
+	  cp9b->imax[v] = (cp9b->pn_max_d[cp9map->cs2hn[v][0]] == -1) ? -1 : cp9b->pn_max_d[cp9map->cs2hn[v][0]] + 1;
+	  if(cp9b->imin[v] != -1) ss_imin = ESL_MIN(ss_imin, cp9b->imin[v]);
+	  if(cp9b->imax[v] != -1) ss_imax = ESL_MAX(ss_imax, cp9b->imax[v]);
+	}
+	else { /* state must map right */
+	  ESL_DASSERT1((StateMapsRight(cm->stid[v])));
+	  cp9b->jmin[v] = cp9b->pn_min_d[cp9map->cs2hn[v][0]];
+	  cp9b->jmax[v] = cp9b->pn_max_d[cp9map->cs2hn[v][0]];
+	  if(cp9b->jmin[v] != -1) ss_jmin = ESL_MIN(ss_jmin, cp9b->jmin[v]);
+	  if(cp9b->jmax[v] != -1) ss_jmax = ESL_MAX(ss_jmax, cp9b->jmax[v]);
+	}
+
+	if(cm->ndtype[cm->ndidx[v]] == MATP_nd) { /* special case 3 delete state types (MATP_ML, MATP_MR, MATP_D) that can map to two HMM states */
+	  ESL_DASSERT1((cp9map->cs2hn[v][1] != -1));
+	  if(cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR) { 
+	    /* really special case [*2*] because v emits (left in case of MATP_ML, right in case of MATP_MR), 
+	     * so jmin[v] >= i0 and jmax[v] >= i0 (can't be i0-1). j == i0-1 is non-sensical because we have 
+	     * to emit at least 1  residue, so d >= 1 thus i <= j, so if j == i0-1, i would be i0-1 which doesn't make sense. 
+	     * This is similar to the case for MATP_MP above (see [*1*]) 
+	     */
+ 	    if(cp9b->pn_max_d[cp9map->cs2hn[v][1]] == (i0-1)) { /* special case (see [*2*] above), HMM tells us this ML or MR state can't emit! 
+								 * (this is probably very rare); in this case we ignore the HMM */
+	      ESL_DASSERT1((pn_min_d[cp9map->cs2hn[v][1]] == i0-1));
+	      cp9b->jmin[v] = -1; /* ignore hmm */
+	      cp9b->jmax[v] = -1; /* ignore hmm */
+	    }
+	    else if (cp9b->pn_min_d[cp9map->cs2hn[v][1]] == i0-1) { /* special case (see [*2*] above), HMM tells us this ML or MR state could possibly
+								     * emit 0 residues, we ignore it and say the leftmost residue it could emit is i0 */
+	      cp9b->jmin[v] = i0; /* pad 1 onto what the hmm thought */
+	      cp9b->jmax[v] = cp9b->pn_max_d[cp9map->cs2hn[v][1]];
+	    }
+	    else { 
+	      cp9b->jmin[v] = cp9b->pn_min_d[cp9map->cs2hn[v][1]];
+	      cp9b->jmax[v] = cp9b->pn_max_d[cp9map->cs2hn[v][1]];
+	      if(cp9b->jmin[v] != -1) ss_jmin = ESL_MIN(ss_jmin, cp9b->jmin[v]);
+	      if(cp9b->jmax[v] != -1) ss_jmax = ESL_MAX(ss_jmax, cp9b->jmax[v]);
+	    }
+	  } /* end of if cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR */
+	  else { /* node type is MATP_nd, but we're not a MATP_ML or MATP_MR, we must be a MATP_D, don't have same issues as MATP_ML or MATP_MR b/c we don't emit */
+	    cp9b->jmin[v] = cp9b->pn_min_d[cp9map->cs2hn[v][1]];
+	    cp9b->jmax[v] = cp9b->pn_max_d[cp9map->cs2hn[v][1]];
+	    if(cp9b->jmin[v] != -1) ss_jmin = ESL_MIN(ss_jmin, cp9b->jmin[v]);
+	    if(cp9b->jmax[v] != -1) ss_jmax = ESL_MAX(ss_jmax, cp9b->jmax[v]);
+	  }
+	}
+      }
+    }
+    printf("OLD v:  %4d h2ij (%11d %11d  %11d %11d)\n", v, cp9b->imin[v], cp9b->imax[v], cp9b->jmin[v], cp9b->jmax[v]);
+  }
+
+  printf("OLD nd: %4d h2ij (%11d %11d  %11d %11d)\n", nd, ss_imin, ss_imax, ss_jmin, ss_jmax);
+
+  if(ret_ss_imin != NULL) *ret_ss_imin = (ss_imin !=  INT_MAX) ? ss_imin : -1; 
+  if(ret_ss_imax != NULL) *ret_ss_imax = (ss_imax != -INT_MAX) ? ss_imax : -1; 
+  if(ret_ss_jmin != NULL) *ret_ss_jmin = (ss_jmin !=  INT_MAX) ? ss_jmin : -1; 
+  if(ret_ss_jmax != NULL) *ret_ss_jmax = (ss_jmax != -INT_MAX) ? ss_jmax : -1; 
+  return eslOK;
+}
+
+  
+
+/* Function: HMM2ijBandsForNode_new()
+ * Incept:   EPN, Fri Feb  1 14:31:10 2008
+ * 
+ * Purpose:  Set minimum and maximum i and j bands for all states in 
+ *           node <nd>. This is done using the HMM bands in <cp9b>.
+ *           We consider CM states as having two 'sides' a left and
+ *           a right. Some CM states map to two HMM states, one on the
+ *           left side and one on the right (MATP_MP, MATP_ML, MATP_MP
+ *           and MATP_D). Some CM states map to one HMM state on the
+ *           left and zero on the right (MATL_ML, MATL_D, and all IL 
+ *           states). Some states map to one HMM state on the right
+ *           and zero on the left (MATR_MR, MATR_D, and all IR states).
+ *           And some CM states map to zero states on both the left and
+ *           the right (S, B, and E states), for these states no 
+ *           action is taken. 
+ *
+ *           First, i bands (imin/imax) are set for CM states v which
+ *           map to a HMM state on the left. Then j bands (jmin/jmax) are 
+ *           set for v which map to an HMM state on the right.
+ */
+int
+HMM2ijBandsForNode_new(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, int nd, int i0, int *ret_nd_imin, int *ret_nd_imax, int *ret_nd_jmin, int *ret_nd_jmax)
+{
+  int nd_imin, nd_imax, nd_jmin, nd_jmax; /* min/max i/j values in this node <nd>, 
+					     set based on min/max i/j values for states v within <nd> */
+  int v;   /* state index, ranges across all states in node <nd> */
+  int hn1; /* first  HMM node that v maps to, will be -1 (flag for invalid) if v 
+	    * is not an emitter or delete (-1 for S, B and E states) */
+  int hn2; /* second HMM node that v maps to, will be -1 (flag for invalid) if v 
+	      is a non-insert state in a MATP node, only MATP_MP, MATP_ML, MATP_MR, MATP_D map 
+	      to 2 different HMM nodes, and these sometimes require special care (see special cases below) */
+  int sd;  /* number of residues emitted from an HMM state that v maps to, either 1 or 0 */
+
+  nd_imin = nd_jmin =  INT_MAX; 
+  nd_imax = nd_jmax = -INT_MAX;
+
+  for(v = cm->nodemap[nd]; v < cm->nodemap[nd] + TotalStatesInNode(cm->ndtype[nd]); v++) { 
+    if(!StateIsDetached(cm, v)) { /* detached inserts are unreachable, skip them */
+      hn1 = cp9map->cs2hn[v][0]; /* -1 only if v is a S, B, or E state */
+      hn2 = cp9map->cs2hn[v][1]; /* -1 unless v is in non-insert state in a MATP node (either MATP_MP, MATP_ML, MATP_MR, MATP_MP */
+      /* set i bands for state v, if left side of v maps to an HMM state */
+      switch(cm->stid[v]) { 
+      case MATP_MP:
+      case MATP_ML:
+      case MATL_ML:
+	cp9b->imin[v] = cp9b->pn_min_m[hn1];
+	cp9b->imax[v] = cp9b->pn_max_m[hn1];
+	sd = 1;
+	break;
+	
+      case MATP_IL:
+      case MATL_IL:
+      case ROOT_IL: 
+      case BEGR_IL: 
+	cp9b->imin[v] = cp9b->pn_min_i[hn1];
+	cp9b->imax[v] = cp9b->pn_max_i[hn1];
+	sd = 1;
+	break;
+	
+      case MATP_D:
+      case MATP_MR:
+      case MATL_D:
+	cp9b->imin[v] = (cp9b->pn_min_d[hn1] == -1) ? -1 : cp9b->pn_min_d[hn1] + 1;
+	cp9b->imax[v] = (cp9b->pn_max_d[hn1] == -1) ? -1 : cp9b->pn_max_d[hn1] + 1;
+	/* the plus 1 is to deal with an off-by-one between the HMM and CM, an HMM parse that has a delete state D_k
+	 * entered at residue i means that residue i has already been emitted by a match or insert state to the left
+	 * of D_k. In a CM, if a delete state v has a subtree from i..j, this means that residue i has yet to be 
+	 * emitted, so we need to correct for this with the + 1 above (but only for imin, imax, not for jmin, jmax below). 
+	 */
+	sd = 0;
+	break;
+	
+	if(cp9b->imin[v] != -1) nd_imin = ESL_MIN(nd_imin, cp9b->imin[v]);
+	if(cp9b->imax[v] != -1) nd_imax = ESL_MAX(nd_imax, cp9b->imax[v]+sd); 
+      }
+
+      /* set j bands for state v, if right side of v maps to an HMM state */
+      switch(cm->stid[v]) { 
+      case MATR_MR:
+	cp9b->jmin[v] = cp9b->pn_min_m[hn1];
+	cp9b->jmax[v] = cp9b->pn_max_m[hn1];
+	sd = 1;
+	break;
+	
+      case MATP_IR:
+      case MATR_IR: 
+      case ROOT_IR: 
+	cp9b->jmin[v] = cp9b->pn_min_i[hn1];
+	cp9b->jmax[v] = cp9b->pn_max_i[hn1];
+	sd = 1;
+	break;
+	
+      case MATR_D:
+	cp9b->jmin[v] = cp9b->pn_min_d[hn1];
+	cp9b->jmax[v] = cp9b->pn_max_d[hn1];
+	sd = 0;
+	break;
+	
+      case MATP_MR: /* maps to 2 HMM states, right side (this side) maps to cp9map->cs2hn[v][*1*] */
+	cp9b->jmin[v] = cp9b->pn_min_m[hn2];
+	cp9b->jmax[v] = cp9b->pn_max_m[hn2];
+	sd = 1;
+	break;
+
+      case MATP_D: /* maps to 2 HMM states, right side (this side) maps to cp9map->cs2hn[v][*1*] */
+	cp9b->jmin[v] = cp9b->pn_min_d[hn2];
+	cp9b->jmax[v] = cp9b->pn_max_d[hn2];
+	sd = 0;
+      break;
+
+      /* the two special cases, MATP_MP and MATP_ML, which also map to HMM states that emit on the
+       * left, so we have to be careful about boundary conditions (see comments below).
+       */
+      case MATP_MP:
+	/* special case [*1*]: v emits left and right, so jmin[v] >= i0+1 and jmax[v] >= i0+1
+	 * b/c i emitted from MATP_MP >= i0, thus j emitted from MATP_MP >= i0+1. 
+	 */
+	if(cp9b->pn_max_m[hn2] == i0) { /* HMM tells us right half of MP state must emit first residue in the sequence,
+					 * but we know it can't because the left half of this MATP_MP state must emit 1 residue, 
+					 * which can't be before the first one. In this case we ignore the HMM and set
+					 * the j band to dummy values which means it's unset, i.e. it doesn't yet exist. */
+	  ESL_DASSERT1((pn_min_m[hn2] == i0));
+	  cp9b->jmin[v] = -1; /* ignore hmm */
+	  cp9b->jmax[v] = -1; /* ignore hmm */
+	}
+	else if (cp9b->pn_min_m[hn2] == i0) { /* HMM tells us right half of MP state could possibly
+					       * emit first residue (i0), but we know it can't (see comment above).
+					       * we ignore it and say the leftmost residue it could emit is i0+1 */
+	  cp9b->jmin[v] = i0 + 1; /* pad 1 onto what the hmm thought */
+	  cp9b->jmax[v] = cp9b->pn_max_m[hn2]; /* leave this, we konw it's not == i0, we checked for that case above */
+	}
+	else { 
+	  cp9b->jmin[v] = cp9b->pn_min_m[hn2]; 
+	  cp9b->jmax[v] = cp9b->pn_max_m[hn2];
+	}
+	sd = 1;
+	break;
+	
+      case MATP_ML:
+	/* special case [*2*]: v emits left, so jmin[v] >= i0 and jmax[v] >= i0 
+	 * b/c i emitted from MATP_ML >= i0, thus j must be >= i0
+	 * This is similar to the case for MATP_MP above (see [*1*]) 
+	 */
+	if(cp9b->pn_max_d[hn2] == (i0-1)) { /* HMM tells us we can only enter this state having emitted 0 residues,
+					     * we know better, in this case we ignore the HMM, and set the j band
+					     * to dummy values, which means it's unset and doesn't yet exist
+					     */
+	  ESL_DASSERT1((pn_min_d[hn2] == i0-1));
+	  cp9b->jmin[v] = -1; /* ignore hmm */
+	  cp9b->jmax[v] = -1; /* ignore hmm */
+	}
+	else if (cp9b->pn_min_d[hn2] == (i0-1)) { /* HMM tells us right half of MATP_ML state could be entered
+						   * having emitted 0 residues, but we know it can't (see comment above).
+						   * we ignore it and say we must have at least emitted residue i0.
+						   */
+	  cp9b->jmin[v] = i0; /* pad 1 onto what the hmm thought */
+	  cp9b->jmax[v] = cp9b->pn_max_d[hn2]; /* leave this, we know it's not == i0-1, we checked for that case above */
+	}
+	else { 
+	  cp9b->jmin[v] = cp9b->pn_min_d[hn2];
+	  cp9b->jmax[v] = cp9b->pn_max_d[hn2];
+	}
+        sd = 0; 
+	break;
+      }
+      
+      if(cp9b->jmin[v] != -1) nd_jmin = ESL_MIN(nd_jmin, cp9b->jmin[v]-sd);
+      if(cp9b->jmax[v] != -1) nd_jmax = ESL_MAX(nd_jmax, cp9b->jmax[v]);
+      /* '-sd' in the jmin setting above allows right emission for emitters, j will decrement by 1, 
+       * note: we don't have to ensure cp9b->jmin[v]-sd >= (i0-1) (i think) b/c pn_min_{m,i}[k] >= i0 for all k >= 1 */
+      ////printf("NEW v:  %4d h2ij (%11d %11d  %11d %11d)\n", v, cp9b->imin[v], cp9b->imax[v], cp9b->jmin[v], cp9b->jmax[v]);
+    }
+  }
+  
+  ////printf("NEW nd: %4d h2ij (%11d %11d  %11d %11d)\n", nd, nd_imin, nd_imax, nd_jmin, nd_jmax);
+  ////HMM2ijBandsForNode(cm, cp9b, cp9map, nd, i0, NULL, NULL, NULL, NULL);
+  ////printf("\n");
+
+  if(ret_nd_imin != NULL) *ret_nd_imin = (nd_imin !=  INT_MAX) ? nd_imin : -1; 
+  if(ret_nd_imax != NULL) *ret_nd_imax = (nd_imax != -INT_MAX) ? nd_imax : -1; 
+  if(ret_nd_jmin != NULL) *ret_nd_jmin = (nd_jmin !=  INT_MAX) ? nd_jmin : -1; 
+  if(ret_nd_jmax != NULL) *ret_nd_jmax = (nd_jmax != -INT_MAX) ? nd_jmax : -1; 
+  return eslOK;
+}
+
+/* Function: HMM2ijBandsForCpos()
+ * Incept:   EPN, Mon Feb  4 05:31:43 2008
+ * 
+ */
+int
+HMM2ijBandsForCpos(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, int k, int i0, int j0, int r_mn, int r_mx, int r_in, int r_ix, int r_dn, int r_dx, int *r_nxt_nnA, int *r_nxt_nxA)
+{
+  int imin, imax, jmin, jmax;
+  int v1, v2;   
+  int r_nxt_nn, r_nxt_nx;
+  int sd;  /* number of residues emitted from an HMM state that v maps to, either 1 or 0 */
+  int v, nd;
+
+  r_nxt_nn =  INT_MAX;
+  r_nxt_nx = -INT_MAX;
+
+  /* match state */
+  if(r_mn <= r_mx) { /* M_k is reachable for i = r_mn[k]..r_mx[k] */
+    imin = jmin = r_mn;
+    imax = jmax = r_mx;
+  }
+  else { 
+#if 0
+    imin = i0+1; 
+    imax = i0; 
+    jmin = j0+1;
+    jmax = j0;
+#endif 
+    imin = imax = jmin = jmax = -2;
+  }
+  
+  v1 = cp9map->hns2cs[k][HMMMATCH][0];
+  v2 = cp9map->hns2cs[k][HMMMATCH][1];
+  printf("k: %4d MATCH  v1: %4d %4s %2s v2: %4d %4s %2s\n", k, v1, ((v1 == -1) ? "" : Nodetype(cm->ndtype[cm->ndidx[v1]])), ((v1 == -1) ? "" : Statetype(cm->sttype[v1])), v2, ((v2 == -1) ? "" : Nodetype(cm->ndtype[cm->ndidx[v2]])), ((v2 == -1) ? "" : Statetype(cm->sttype[v2])));
+  
+  switch(cm->sttype[v1]) { 
+  case S_st: /* special case the ROOT_S CM state maps to the M_0 HMM state */
+    break;
+  case MP_st: 
+    if(cp9map->nd2lpos[cm->ndidx[v1]] == k) { 
+      cp9b->imin[v1] = imin;
+      cp9b->imax[v1] = imax;
+      r_nxt_nn = ESL_MIN(r_nxt_nn, imin + 1);
+      r_nxt_nx = ESL_MAX(r_nxt_nx, imax + 1);
+    }
+    else { 
+      assert(cp9map->nd2rpos[cm->ndidx[v1]] == k);
+      cp9b->jmin[v1] = jmin;
+      cp9b->jmax[v1] = jmax;
+      r_nxt_nn = ESL_MIN(r_nxt_nn, jmin - 1);
+      r_nxt_nx = ESL_MAX(r_nxt_nx, jmax - 1);
+    }
+    break;
+  case ML_st: 
+    cp9b->imin[v1] = imin;
+    cp9b->imax[v1] = imax;
+    r_nxt_nn = ESL_MIN(r_nxt_nn, imin + 1);
+    r_nxt_nx = ESL_MAX(r_nxt_nx, imax + 1);
+    break;
+  case MR_st: 
+    cp9b->jmin[v1] = jmin;
+    cp9b->jmax[v1] = jmax;
+    r_nxt_nn = ESL_MIN(r_nxt_nn, jmin - 1);
+    r_nxt_nx = ESL_MAX(r_nxt_nx, jmax - 1);
+    assert(cm->ndtype[cm->ndidx[v1]] == MATR_nd);
+    cp9b->imin[v] = r_nxt_nnA[cm->ndidx[v1]];
+    cp9b->imax[v] = r_nxt_nxA[cm->ndidx[v1]];
+    break;
+  default:
+    cm_Fail("0 bogus state type (%d) for state %d\n", cm->sttype[v1], v1);
+  }
+  
+  if(v2 != -1) { 
+    switch(cm->sttype[v2]) { 
+    case ML_st: 
+      cp9b->imin[v2] = imin;
+      cp9b->imax[v2] = imax;
+      r_nxt_nn = ESL_MIN(r_nxt_nn, imin + 1);
+      r_nxt_nx = ESL_MAX(r_nxt_nx, imax + 1);
+      break;
+    case MR_st: 
+      cp9b->jmin[v2] = jmin;
+      cp9b->jmax[v2] = jmax;
+      r_nxt_nn = ESL_MIN(r_nxt_nn, jmin - 1);
+      r_nxt_nx = ESL_MAX(r_nxt_nx, jmax - 1);
+      break;
+    default:
+      cm_Fail("1 bogus state type (%d) for state %d\n", cm->sttype[v1], v1);
+    }
+  }
+
+  /* insert state */
+  v1 = cp9map->hns2cs[k][HMMINSERT][0];
+  assert(cp9map->hns2cs[k][HMMINSERT][1] == -1);
+  printf("k: %4d INSERT v1: %4d %4s %2s v2: %4d %4s %2s\n", k, v1, ((v1 == -1) ? "" : Nodetype(cm->ndtype[cm->ndidx[v1]])), ((v1 == -1) ? "" : Statetype(cm->sttype[v1])), v2, ((v2 == -1) ? "" : Nodetype(cm->ndtype[cm->ndidx[v2]])), ((v2 == -1) ? "" : Statetype(cm->sttype[v2])));
+
+  if(r_in <= r_ix) { /* I_k is reachable for i = r_in..r_ix */
+    imin = jmin = r_in;
+    imax = jmax = r_ix;
+  }
+  else { 
+#if 0
+    imin = i0+1; 
+    imax = i0; 
+    jmin = j0+1;
+    jmax = j0;
+#endif 
+    imin = imax = jmin = jmax = -2;
+  }
+
+  switch(cm->sttype[v1]) { 
+  case IL_st: 
+    cp9b->imin[v1] = imin;
+    cp9b->imax[v1] = imax;
+    r_nxt_nn = ESL_MIN(r_nxt_nn, imin + 1);
+    r_nxt_nx = ESL_MAX(r_nxt_nx, imax + 1);
+    break;
+  case IR_st: 
+    cp9b->jmin[v1] = jmin;
+    cp9b->jmax[v1] = jmax;
+    r_nxt_nn = ESL_MIN(r_nxt_nn, jmin - 1);
+    r_nxt_nx = ESL_MAX(r_nxt_nx, jmax - 1);
+    break;
+  default:
+    cm_Fail("2 bogus state type (%d) for state %d\n", cm->sttype[v1], v1);
+  }
+
+  if(k > 0) { /* no D_0 state */
+    /* delete state */
+    v1 = cp9map->hns2cs[k][HMMDELETE][0];
+    v2 = cp9map->hns2cs[k][HMMDELETE][1];
+    printf("k: %4d DELETE v1: %4d %4s %2s v2: %4d %4s %2s\n", k, v1, ((v1 == -1) ? "" : Nodetype(cm->ndtype[cm->ndidx[v1]])), ((v1 == -1) ? "" : Statetype(cm->sttype[v1])), v2, ((v2 == -1) ? "" : Nodetype(cm->ndtype[cm->ndidx[v2]])), ((v2 == -1) ? "" : Statetype(cm->sttype[v2])));
+
+    if(r_dn <= r_dx) { /* M_k is reachable for i = r_dn[k]..r_dx[k] */
+      imin = jmin = r_dn;
+      imax = jmax = r_dx;
+    }
+    else { 
+#if 0
+      imin = i0+1; 
+      imax = i0; 
+      jmin = j0+1;
+      jmax = j0;
+#endif 
+      imin = imax = jmin = jmax = -2;
+    }
+  
+    switch(cm->sttype[v1]) { 
+    case D_st: 
+      if(cp9map->nd2lpos[cm->ndidx[v1]] == k) { 
+	cp9b->imin[v1] = imin;
+	cp9b->imax[v1] = imax;
+	r_nxt_nn = ESL_MIN(r_nxt_nn, imin);
+	r_nxt_nx = ESL_MAX(r_nxt_nx, imax);
+      }
+      else { 
+	assert(cp9map->nd2rpos[cm->ndidx[v1]] == k);
+	cp9b->jmin[v1] = jmin;
+	cp9b->jmax[v1] = jmax;
+	r_nxt_nn = ESL_MIN(r_nxt_nn, jmin);
+	r_nxt_nx = ESL_MAX(r_nxt_nx, jmax);
+      }
+      break;
+    case ML_st: 
+      cp9b->jmin[v1] = imin;
+      cp9b->jmax[v1] = imax;
+      r_nxt_nn = ESL_MIN(r_nxt_nn, jmin);
+      r_nxt_nx = ESL_MAX(r_nxt_nx, jmax);
+      break;
+    case MR_st: 
+      cp9b->imin[v1] = imin;
+      cp9b->imax[v1] = imax;
+      r_nxt_nn = ESL_MIN(r_nxt_nn, imin);
+      r_nxt_nx = ESL_MAX(r_nxt_nx, imax);
+      break;
+    default:
+      cm_Fail("3 bogus state type (%d) for state %d\n", cm->sttype[v1], v1);
+    }
+  
+    if(v2 != -1) { 
+      switch(cm->sttype[v2]) { 
+      case D_st: 
+	if(cp9map->nd2lpos[cm->ndidx[v2]] == k) { 
+	  cp9b->imin[v2] = imin;
+	  cp9b->imax[v2] = imax;
+	  r_nxt_nn = ESL_MIN(r_nxt_nn, imin);
+	  r_nxt_nx = ESL_MAX(r_nxt_nx, imax);
+	}
+	else { 
+	  assert(cp9map->nd2rpos[cm->ndidx[v2]] == k);
+	  cp9b->jmin[v2] = jmin;
+	  cp9b->jmax[v2] = jmax;
+	  r_nxt_nn = ESL_MIN(r_nxt_nn, jmin);
+	  r_nxt_nx = ESL_MAX(r_nxt_nx, jmax);
+	}
+      break;
+      case ML_st: 
+	cp9b->imin[v2] = imin;
+	cp9b->imax[v2] = imax;
+	r_nxt_nn = ESL_MIN(r_nxt_nn, imin);
+	r_nxt_nx = ESL_MAX(r_nxt_nx, imax);
+	break;
+      case MR_st: 
+	cp9b->jmin[v2] = jmin;
+	cp9b->jmax[v2] = jmax;
+	r_nxt_nn = ESL_MIN(r_nxt_nn, jmin);
+	r_nxt_nx = ESL_MAX(r_nxt_nx, jmax);
+	break;
+      default:
+	cm_Fail("4 bogus state type (%d) for state %d\n", cm->sttype[v2], v2);
+      }
+    }
+  }
+  /* now update the r_nxt_nnA and r_nxt_nxA arrays, which keep track of which residues are reachable in the next HMM node,
+   * and fill in j bands for any CM MATL nodes in the CM between this */
+  int nxt_nd;
+  if(k < cp9b->hmm_M) nxt_nd = cp9map->pos2nd[k+1];
+  else                nxt_nd = cm->nodes;
+  printf("! k: %4d (nd: %4d, nxt: %4d)\n", k, cp9map->pos2nd[k], nxt_nd);
+  ///if(cm->ndtype[nd] == MATP_nd) { /* special case, if we're on the right side of a MATP we can now set the MATP_IL's jmin/jmax and MATP_IR's imin/imax */ 
+  nd = cp9map->pos2nd[k] + 1; 
+  while(nd != nxt_nd) { 
+    r_nxt_nnA[nd] = r_nxt_nn;
+    r_nxt_nxA[nd] = r_nxt_nx;
+    if(cm->ndtype[nd] == MATL_nd) { /* set jmin, jmax */
+      printf("\tsetting jmin/jmax for MATL node: %d\n", nd);
+      for(v = cm->nodemap[nd]; v < cm->nodemap[nd] + TotalStatesInNode(cm->ndtype[nd]); v++) { 
+	if(cp9b->imax[v] - cp9b->imin[v] >= 0) { 
+	  cp9b->jmin[v] = r_nxt_nn;
+	  cp9b->jmax[v] = r_nxt_nx;
+	}
+      }
+    }
+    if(nxt_nd < nd) nd--;
+    else nd++;
+  }
+  return eslOK;
+}
+
+
+#endif
+

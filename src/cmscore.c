@@ -79,9 +79,9 @@ static ESL_OPTIONS options[] = {
 #endif
   /* Verbose output files/debugging */
   { "--search",  eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "run algorithms in scanning search mode", 5 },
-  { "--hmmforward",eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,"--search",        NULL, "align to a CM Plan 9 HMM with the Forward algorithm", 3 },
-  { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--search",        NULL, "with --search use inside instead of CYK", 3 },
-  { "--simple",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use new simple hmm2ij band alg", 3 },
+  { "--hmmforward",eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,"--search",        NULL, "align to a CM Plan 9 HMM with the Forward algorithm", 5 },
+  { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--search",        NULL, "with --search use inside instead of CYK", 5 },
+  { "--old",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use old hmm to cm band calculation algorithm", 5},
   { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 5 },
   { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  5 },
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb",   5 },  
@@ -309,10 +309,6 @@ main(int argc, char **argv)
     if (cfg.regressfp   != NULL) {
       printf("# Regression data (parsetrees) saved in file %s.\n", esl_opt_GetString(go, "--regress"));
       fclose(cfg.regressfp);
-    }
-    if (cfg.sfp       != NULL) { 
-      printf("# Sequences scored against the CM saved in file %s.\n", esl_opt_GetString(go, "--outfile"));
-      fclose(cfg.sfp);
     }
     if (cfg.sfp       != NULL) { 
       printf("# Sequences scored against the CM saved in file %s.\n", esl_opt_GetString(go, "--outfile"));
@@ -1034,6 +1030,10 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	    diff_ct++;
 	    diff_sc += cfg->s1_sc[i] - seqs_to_aln->sc[i]; /* don't take absolute value in case cur stage sc > stage 1 sc, for example with -l --hmmviterbi */
 	  }
+	  /*////*/if(seqs_to_aln->sc[i] < -10000.) { 
+	    ///cm_Fail("cm: %s seq %d got impossible score: %f\n", cm->name, i, seqs_to_aln->sc[i]); 
+	    printf("cm: %s seq %d got impossible score: %f\n", cm->name, i, seqs_to_aln->sc[i]); 
+	  }
 	  if(esl_opt_GetBoolean(go, "--nonbanded") && (fabs(cfg->s1_sc[i] -  seqs_to_aln->sc[i]) >= 0.01))
 	    cm_Fail("Non-banded standard CYK score (%.3f bits) differs from D&C CYK score (%.3f bits)", cfg->s1_sc[i], seqs_to_aln->sc[i]);
 	}
@@ -1164,7 +1164,7 @@ initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
     }
 
     if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;
-    if(esl_opt_GetBoolean(go, "--simple"))      cm->align_opts  |= CM_ALIGN_HMM2IJSIMPLE;
+    if(esl_opt_GetBoolean(go, "--old"))         cm->align_opts  |= CM_ALIGN_HMM2IJOLD;
     if(esl_opt_GetBoolean(go, "--hmmviterbi"))  cm->align_opts  |= CM_ALIGN_HMMVITERBI;
     if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
     if(esl_opt_GetBoolean(go, "--scoreonly"))   cm->align_opts  |= CM_ALIGN_SCOREONLY;
@@ -1229,7 +1229,7 @@ initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
     }
 
     if(esl_opt_GetBoolean(go, "--hbanded"))     cm->search_opts  |= CM_SEARCH_HBANDED;
-    if(esl_opt_GetBoolean(go, "--simple"))      cm->search_opts  |= CM_SEARCH_HMM2IJSIMPLE;
+    if(esl_opt_GetBoolean(go, "--old"))         cm->search_opts  |= CM_SEARCH_HMM2IJOLD;
     if(esl_opt_GetBoolean(go, "--hmmviterbi"))  { 
       cm->search_opts  |= CM_SEARCH_HMMVITERBI;
       cm->search_opts  &= ~CM_SEARCH_INSIDE;
@@ -1334,8 +1334,10 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
     while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
       safe_windowlen *= 2;
       if(safe_windowlen > (cm->clen * 1000)) cm_Fail("Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
+      FreeBandDensities(cm, gamma);
     }
     seqs_to_aln = RandomEmitSeqsToAln(cfg->r, cm->abc, dnull, cfg->ncm, nseq, gamma[0], safe_windowlen, i_am_mpi_master);
+    FreeBandDensities(cm, gamma);
     free(dnull);
   }
   else if(do_infile)
@@ -1353,8 +1355,6 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
     for(i = 0; i < seqs_to_aln->nseq; i++)
       if((esl_sqio_Write(cfg->sfp, seqs_to_aln->sq[i], eslSQFILE_FASTA)) != eslOK) cm_Fail("Error writing unaligned sequences to %s.", esl_opt_GetString(go, "--outfile"));
   }
-
-  if(gamma != NULL) FreeBandDensities(cm, gamma);
 
   *ret_seqs_to_aln = seqs_to_aln;
   return eslOK;

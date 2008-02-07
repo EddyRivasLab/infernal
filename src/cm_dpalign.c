@@ -240,7 +240,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
     /* Get a shadow deck to fill in and initialize all valid cells for state v */
     if (cm->sttype[v] != E_st) {
       if (cm->sttype[v] == B_st) {
-	kshad     = alloc_jdbanded_vjd_kshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	kshad     = (jmin[v] == -1) ? NULL : alloc_jdbanded_vjd_kshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 	shadow[v] = (void **) kshad;
 	/* initialize all valid cells for state v to IMPOSSIBLE (local ends are impossible for B states) */
 	assert(! (NOT_IMPOSSIBLE(cm->endsc[v])));
@@ -253,7 +253,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 	  }
 	}
       } else { /* ! B_st && ! E_st */
-	yshad     = alloc_jdbanded_vjd_yshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	yshad     = (jmin[v] == -1) ? NULL : alloc_jdbanded_vjd_yshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 	shadow[v] = (void **) yshad;
 	/* initialize all valid cells for state v */
 	if(NOT_IMPOSSIBLE(cm->endsc[v])) {
@@ -3289,7 +3289,7 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	  }
 	}
       } else { /* ! B_st && ! E_st */
-	yshad     = alloc_jdbanded_vjd_yshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	yshad     = (jmin[v] == -1) ? NULL : alloc_jdbanded_vjd_yshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 	shadow[v] = (void **) yshad;
 	/* initialize all valid cells for state v */
 	if(have_el && NOT_IMPOSSIBLE(cm->endsc[v])) { 
@@ -4884,9 +4884,10 @@ alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hd
 	         this inside the jp loop*/
   int     jfirst, jlast;
 
-  if(j < jmin || i > jmax)
-    cm_Fail("ERROR called alloc_jdbanded_vjd_yshadow_deck for i: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i, j, jmin, jmax);
-
+  if(jmin < (i-1) || jmax > j) { 
+    cm_Fail("called alloc_jdbanded_vjd_yshadow_deck for i-1: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i-1, j, jmin, jmax);
+  }
+  
   ESL_ALLOC(a, sizeof(float *) * (L+1));  /* always alloc 0..L rows, some of which are NULL */
   jfirst = ((i-1) > jmin) ? (i-1) : jmin;
   jlast = (j < jmax) ? j : jmax;
@@ -4919,9 +4920,9 @@ alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hd
 	         this inside the jp loop*/
   int     jfirst, jlast;
 
-  if(j < jmin || i > jmax)
-    cm_Fail("ERROR called alloc_jdbanded_vjd_kshadow_deck for i: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i, j, jmin, jmax);
-
+  if(jmin < (i-1) || jmax > j) { 
+    cm_Fail("ERROR called alloc_jdbanded_vjd_kshadow_deck for i-1: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i-1, j, jmin, jmax);
+  }
   ESL_ALLOC(a, sizeof(float *) * (L+1));  /* always alloc 0..L rows, some of which are NULL */
   jfirst = ((i-1) > jmin) ? (i-1) : jmin;
   jlast = (j < jmax) ? j : jmax;
