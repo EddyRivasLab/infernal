@@ -46,13 +46,18 @@ extern int   NodeCode(char *s);
 extern char *UniqueStatetype(int type);
 extern int   UniqueStateCode(char *s);
 extern int   DeriveUniqueStateCode(int ndtype, int sttype);
+extern int   StateMapsLeft(char st);
+extern int   StateMapsRight(char st);
+extern int   StateMapsMatch(char st);
+extern int   StateMapsInsert(char st);
+extern int   StateMapsDelete(char st);
+extern int   NodeMapsLeft(char ndtype);
+extern int   NodeMapsRight(char ndtype);
+extern int   StateIsDetached(CM_t *cm, int v);
 extern CM_t *CMRebalance(CM_t *cm);
 extern int **IMX2Alloc(int rows, int cols);
 extern void  IMX2Free(int **mx);
-extern float rsearch_calculate_gap_penalty (char from_state, char to_state, 
-					    int from_node, int to_node, 
-					    float input_alpha, float input_beta, 
-					    float input_alphap, float input_betap);
+extern float rsearch_calculate_gap_penalty (char from_state, char to_state, int from_node, int to_node, float input_alpha, float input_beta, float input_alphap, float input_betap);
 extern int   ExponentiateCM(CM_t *cm, double z);
 extern void  cm_banner(FILE *fp, char *progname, char *banner);
 extern void  cm_CalcExpSc(CM_t *cm, float **ret_expsc, float **ret_expsc_noss);
@@ -65,7 +70,6 @@ extern int   cm_SetAccession(CM_t *cm, char *acc);
 extern int   cm_SetDescription(CM_t *cm, char *desc);
 extern int   cm_AppendComlog(CM_t *cm, int argc, char **argv);
 extern int   cm_SetCtime(CM_t *cm);
-
 extern int   DefaultNullModel(const ESL_ALPHABET *abc, float **ret_null);
 extern int   CMAllocNullModel(CM_t *cm);
 extern void  CMSetNullModel(CM_t *cm, float *null);
@@ -334,16 +338,13 @@ extern int cp9_GetLocalityMode(CP9_t *cp9, char *errbuf, int *ret_mode);
 /* from cp9_modelconfig.c */
 extern void  CP9Logoddsify(CP9_t *hmm);
 extern void  CPlan9Renormalize(CP9_t *hmm);
-extern void  CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit);
-extern void  CPlan9SWConfigEnforce(CP9_t *hmm, float pentry, float pexit, int enf_start_pos, int enf_end_pos);
+extern void  CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit, int do_match_local_cm);
 extern void  CPlan9ELConfig(CM_t *cm);
 extern void  CPlan9NoEL(CM_t *cm);
 extern void  CPlan9InitEL(CM_t *cm, CP9_t *cp9);
-extern void  CPlan9GlobalConfig(CP9_t *hmm);
 extern void  CPlan9RenormalizeExits(CP9_t *hmm, int spos);
 extern void  CP9_2sub_cp9(CP9_t *orig_hmm, CP9_t **ret_sub_hmm, int spos, int epos, double **orig_phi);
 extern void  CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
-extern void  CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos);
 extern int   Prob2Score(float p, float null);
 extern float Score2Prob(int sc, float null);
 extern float Scorify(int sc);
@@ -439,7 +440,7 @@ extern int          HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map
 					      int **ret_r_nn_i, int **ret_r_nx_i, int **ret_r_nn_j, int **ret_r_nx_j);
 extern int          HMMBandsFixUnreachable(CP9Bands_t *cp9b, char *errbuf, int k, int r_prv_min, int r_prv_max, int r_insert_prv_min);
 extern int          HMMBandsFillGap(CP9Bands_t *cp9b, char *errbuf, int k, int min1, int max1, int min2, int max2, int prv_nd_r_mn, int prv_nd_r_dn);
-extern int          CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf);
+extern int          CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0, int doing_search);
 /*extern void         cp9_RelaxRootBandsForSearch(CM_t *cm, int i0, int j0, int *imin, int *imax, int *jmin, int *jmax);*/
 extern void         cp9_DebugPrintHMMBands(FILE *ofp, int L, CP9Bands_t *cp9b, double hmm_bandp, int debug_level);
 extern void         cp9_CompareBands(CP9Bands_t *cp9b1, CP9Bands_t *cp9b2);
@@ -458,14 +459,6 @@ extern void         hd2safe_hd_bands(int M, int *jmin, int *jmax, int **hdmin, i
 extern void         debug_print_hd_bands(CM_t *cm, int **hdmin, int **hdmax, int *jmin, int *jmax);
 extern void         PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **hdmin, int **hdmax, int W);
 extern void         debug_print_ij_bands(CM_t *cm);
-extern int          StateMapsLeft(char st);
-extern int          StateMapsRight(char st);
-extern int          StateMapsMatch(char st);
-extern int          StateMapsInsert(char st);
-extern int          StateMapsDelete(char st);
-extern int          NodeMapsLeft(char ndtype);
-extern int          NodeMapsRight(char ndtype);
-extern int          StateIsDetached(CM_t *cm, int v);
 extern void         debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, CP9Bands_t *cp9b);
 
 /* from cp9_postprob.c */

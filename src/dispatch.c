@@ -487,7 +487,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 	        * we config the HMM to local mode with equiprobable start/end points.*/
     swentry = ((hmm->M)-1.)/hmm->M; /* all start pts equiprobable, including 1 */
     swexit  = ((hmm->M)-1.)/hmm->M; /* all end   pts equiprobable, including M */
-    CPlan9SWConfig(hmm, swentry, swexit);
+    CPlan9SWConfig(cm->cp9, swentry, swexit, FALSE); /* FALSE means don't make I_0, D_1, I_M unreachable (like a local CM, undesirable for sub CM strategy)) */
     CP9Logoddsify(hmm);
   }
   orig_cm = cm;

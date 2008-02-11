@@ -86,30 +86,35 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
       CMLogoddsify(cm);
     }
   /* Possibly configure the CP9 for local alignment
-   * Note: CP9 local/glocal config does not necessarily match CM config 
-   *       in fact cmsearch default is local CM, glocal CP9 */
-  if((cm->config_opts & CM_CONFIG_HMMLOCAL) ||
-     (cm->align_opts  & CM_ALIGN_SUB))
-    {
-      if(cm->align_opts & CM_ALIGN_SUB)
-	{
-	  /* To get spos and epos for the sub_cm, 
-	   * we config the HMM to local mode with equiprobable start/end points.*/
-	  swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
-	  swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
-	  CPlan9SWConfig(cm->cp9, swentry, swexit);
-	}
-      else
-	{
-	  //CPlan9CMLocalBeginConfig(cm);
-	  swentry = cm->pbegin;
-	  swexit  = cm->pbegin;
-	  //swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
-	  //swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
-	  CPlan9SWConfig(cm->cp9, swentry, swexit);
-	}
-      CP9Logoddsify(cm->cp9);
+   * Note: CP9 local/glocal config does not have to necessarily match CM config,
+   *       although all the executables are currently setup so that when CM goes
+   *       local HMM goes local.
+   */
+  if((cm->config_opts & CM_CONFIG_HMMLOCAL) || (cm->align_opts  & CM_ALIGN_SUB)) {
+    if(cm->align_opts & CM_ALIGN_SUB) {
+      /* To get spos and epos for the sub_cm, 
+       * we config the HMM to local mode with equiprobable start/end points.
+       * and we DO NOT make I_0 and I_M unreachable. These states map to ROOT_IL and ROOT_IR,
+       * which are unreachable in a locally configured CM. 
+       */
+      swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
+      swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
+      CPlan9SWConfig(cm->cp9, swentry, swexit, FALSE); /* FALSE means don't make I_0, D_1, I_M unreachable */
     }
+    else { 
+      /* if we're setting up the HMM for local search/alignment but NOT for a sub CM alignment, 
+       * we DO make I_0 and I_M unreachable. These states map to ROOT_IL and ROOT_IR,
+       * which are unreachable in a locally configured CM. 
+       */
+      /* CPlan9CMLocalBeginConfig(cm); */
+      swentry = cm->pbegin;
+      swexit  = cm->pbegin;
+      /* swentry= ((cm->cp9->M)-1.)/cm->cp9->M; *//* all start pts equiprobable, including 1 */
+      /* swexit = ((cm->cp9->M)-1.)/cm->cp9->M; *//* all end   pts equiprobable, including M */
+      CPlan9SWConfig(cm->cp9, swentry, swexit, TRUE); /* TRUE means do make I_0, D_1, I_M unreachable to match the CM */
+    }
+    CP9Logoddsify(cm->cp9);
+  }
   if(cm->config_opts & CM_CONFIG_HMMEL)
     CPlan9ELConfig(cm);
 

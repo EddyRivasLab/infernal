@@ -207,31 +207,69 @@ CPlan9Renormalize(CP9_t *hmm)
  *           points leads to an easily solved piece of algebra, giving:
  *                      p_1 = pexit / (M-1)
  *                      p_x = p_1 / (1 - (x-1) p_1)
+ *
+ *           Modified EPN, Thu Feb  7 15:54:16 2008, as follows:
+ *           To better match a locally configured CM, if <do_match_local_cm>
+ *           we disallow insertions before the first (emitting) match state, 
+ *           (from I_0), and after the final (emitting) match state,
+ *           (from I_M). I_0 maps to ROOT_IL and I_M maps to ROOT_IR
+ *           which can never be entered in a locally configured CM
+ *           (b/c the ROOT_S state MUST jump into a local begin state, which
+ *            are always match states>). Also we disallow a M_0->D_1 transition
+ *           because these would be impossible in a locally configured CM also.
+ *
+ *           <do_match_local_cm> is usually TRUE, unless we're configuring
+ *           the CP9 specifically for eventual sub CM alignment, where
+ *           the goal is simply find the most likely start/end point
+ *           of the alignment with this CP9 (in that case we want
+ *           I_0 and I_M reachable).
  *           
  * Args:     hmm    - the CM Plan 9 model w/ data-dep prob's valid
  *           pentry - probability of an internal entry somewhere;
  *                    will be evenly distributed over M-1 match states
  *           pexit  - probability of an internal exit somewhere; 
  *                    will be distributed over M-1 match states.
+ *           do_match_local_cm - TRUE to make I_0, D_1 and I_M unreachable
+ *                    to better match a locally configured CM.
  *                    
  * Return:   (void)
  *           HMM probabilities are modified.
  */
 void
-CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit)
+CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit, int do_match_local_cm)
 {
   float basep;			/* p1 for exits: the base p */
   int   k;			/* counter over states      */
-
+  float d;
+  
   /* No special (*x* states in Plan 7) states in CM Plan 9 */
 
-  /*for (k = 1; k <= hmm->M; k++)
-    printf("before anything: end[%d]: %f\n", k, hmm->end[k]);*/
+  /*for (k = 1; k <= hmm->M; k++) printf("before anything: end[%d]: %f\n", k, hmm->end[k]);*/
   /* Configure entry.
    */
+  if(do_match_local_cm) { 
+    hmm->t[0][CTMI] = 0.;
+    hmm->t[0][CTMD] = 0.;
+    hmm->t[0][CTMM] = 0.; /* already was 0.0, transition from M_0 to M_1 is begin[1] */
+    hmm->t[0][CTMEL] = 0.; /* already was 0.0, can never do a local end from M_0 */
+
+    hmm->t[hmm->M][CTMI] = 0.;
+    hmm->t[hmm->M][CTDI] = 0.;
+
+    /* renormalize transitions out of M_M */
+    d = esl_vec_FSum(hmm->t[hmm->M], cp9_TRANS_NMATCH) + hmm->end[hmm->M]; 
+    esl_vec_FScale(hmm->t[hmm->M], cp9_TRANS_NMATCH, 1./d);
+    hmm->end[hmm->M] /= d;
+    
+    /* renormalize transitions out of D_M */
+    esl_vec_FNorm(hmm->t[hmm->M] + cp9_TRANS_DELETE_OFFSET, cp9_TRANS_NDELETE);	/* delete */
+
+  }
   hmm->begin[1] = (1. - pentry) * (1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTMEL]));
-  esl_vec_FSet(hmm->begin+2, hmm->M-1, (pentry * (1.- (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTMEL]))) 
-       / (float)(hmm->M-1));
+  esl_vec_FSet(hmm->begin+2, hmm->M-1, (pentry * (1.- (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTMEL]))) / (float)(hmm->M-1));
+  /* note: hmm->t[0][CTMEL] == 0. (can't locally end from begin) 
+   *       and if do_match_local_cm, hmm->t[0][CTMI] and hmm->t[0][CTMD] were just set to 0. 
+   */
   
   /* Configure exit.
    * Don't touch hmm->end[hmm->M]
@@ -241,8 +279,7 @@ CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit)
   for (k = 1; k < hmm->M; k++)
     hmm->end[k] = basep / (1. - basep * (float) (k-1));
   CPlan9RenormalizeExits(hmm, 1);
-  /*for (k = 1; k <= hmm->M; k++)
-    printf("after renormalizing: end[%d]: %f\n", k, hmm->end[k]);*/
+  /*for (k = 1; k <= hmm->M; k++) printf("after renormalizing: end[%d]: %f\n", k, hmm->end[k]);*/
 
   hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
   hmm->flags       |= CPLAN9_LOCAL_BEGIN; /* local begins now on */
@@ -250,7 +287,6 @@ CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit)
 
   CP9Logoddsify(hmm);
 }
-
 
 /* Function: CPlan9SWConfigEnforce()
  * EPN, Fri Feb  9 05:47:37 2007
@@ -377,7 +413,7 @@ CPlan9ELConfig(CM_t *cm)
 	cm_Fail("In CPlan9ELConfig(), not all CM states EL probs are identical.\n");
       }
     }
-    if(! seen_exit) cm_Fail("In CPlan9ELConfig(), CM_LOCAL_END flag up, but all CM local end probs are zero."); 
+    if(! seen_exit && cm->nodes != 3) cm_Fail("In CPlan9ELConfig(), CM_LOCAL_END flag up, cm->nodes != 3, but all CM local end probs are zero."); 
   }
   else {
     /* CM_LOCAL_END flag is down, local ends are off in the CM 
@@ -562,57 +598,6 @@ CPlan9InitEL(CM_t *cm, CP9_t *cp9)
   cm_Fail("Memory allocation error.");
 }
 
-/* Function: CPlan9GlobalConfig()
- * EPN 09.24.06
- * based on SRE's Plan7GlobalConfig() from HMMER's plan7.c
- * 
- * Purpose:  Set the alignment independent parameters of
- *           a CM Plan 9 model to (Needleman/Wunsch) configuration.
- *           Make all transitions to EL states impossible.
- *           
- * Args:     hmm    - the CM Plan 9 model w/ data-dep prob's valid
- *           pentry - probability of an internal entry somewhere;
- *                    will be evenly distributed over M-1 match states
- *           pexit  - probability of an internal exit somewhere; 
- *                    will be distributed over M-1 match states.
- *                    
- * Return:   (void)
- *           HMM probabilities are modified.
- */
-void
-CPlan9GlobalConfig(CP9_t *hmm)
-{
-  int k;
-  /* No special (*x* states in Plan 7) states in CM Plan 9 */
-
-  /* Configure entry.
-   * Exactly 3 ways to start, B->M_1 (hmm->begin[1]), B->I_0 (hmm->t[0][CTMI]),
-   *                      and B->D_1 (hmm->t[0][CTMD])
-   */
-  hmm->begin[1] = 1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTMEL]); 
-  /* this is okay, hmm->t[0] is never changed, even during local
-   * configuration */
-  esl_vec_FSet(hmm->begin+2, hmm->M-1, 0.);
-  
-  hmm->end[hmm->M] = 1. - hmm->t[hmm->M][CTMI];
-  esl_vec_FSet(hmm->end+1, hmm->M-1, 0.);
-  CPlan9RenormalizeExits(hmm, 1);
-
-  /* Make all transitions to EL impossible, node 0, M special and should 
-   * always have CTMEL transition as impossible. */
-  for(k = 1; k < hmm->M; k++)
-    {
-      hmm->t[k][CTMEL] = 0.;
-      esl_vec_FNorm(hmm->t[k], 4); /* renormalize transitions out of node k */
-    }
-  hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
-  hmm->flags       &= ~CPLAN9_LOCAL_BEGIN; /* local begins now off */
-  hmm->flags       &= ~CPLAN9_LOCAL_END;   /* local ends now off */
-  hmm->flags       &= ~CPLAN9_EL;          /* EL end locals now off */
-
-  CP9Logoddsify(hmm);
-}
-
 
 /* Function: CPlan9RenormalizeExits()
  * EPN 05.30.06 based on SRE's Plan7RenormalizeExits() from
@@ -647,8 +632,10 @@ CPlan9RenormalizeExits(CP9_t *hmm, int spos)
     }
   /* Take care of hmm->M node, which is special */
   d = hmm->t[hmm->M][CTMI] + hmm->t[hmm->M][CTMEL]; /* CTMD is IMPOSSIBLE, CTMM is hmm->end[hmm-M] */
-  hmm->t[hmm->M][CTMI] *= (1.-hmm->end[hmm->M])/d;
-  hmm->t[hmm->M][CTMEL] *= (1.-hmm->end[hmm->M])/d;
+  if(! (fabs(d-0.) < eslSMALLX1)) { /* don't divide by d if it's zero */
+    hmm->t[hmm->M][CTMI] *= (1.-hmm->end[hmm->M])/d;
+    hmm->t[hmm->M][CTMEL] *= (1.-hmm->end[hmm->M])/d;
+  }
   return;
 }
 
@@ -890,8 +877,15 @@ CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos)
 int
 Prob2Score(float p, float null)
 {
-  if   (p == 0.0) return -INFTY;
-  else            return (int) floor(0.5 + INTSCALE * sreLOG2(p/null));
+  /*EPN, Fri Feb  8 06:53:02 2008, shouldn't this first line be something like: 
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    if   (fabs(p - 0.) < eslSMALLX1) return -INFTY; LHS is TRUE if p is virtually 0 (eslSMALLX1 is 5e-9) 
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    I didn't change it pre-1.0 release, b/c I was afraid of unforeseen downstream consequences,
+    and it doesn't seem to cause any problems...
+  */
+  if                    (p == 0.0) return -INFTY;
+  else                             return (int) floor(0.5 + INTSCALE * sreLOG2(p/null));
 }
 
 /* Function: Score2Prob()

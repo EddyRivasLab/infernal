@@ -57,6 +57,8 @@ static ESL_OPTIONS options[] = {
   { "--random",  eslARG_NONE,   FALSE, NULL,"n>0",   SEQOPTS,      NULL,     SEQOPTS, "emit <n> random seq from cm->null model", 2},
   { "--infile",  eslARG_INFILE,  NULL, NULL, NULL,   SEQOPTS,      NULL,     SEQOPTS, "read sequences to align from file <s>", 2 },
   { "--outfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,  "--infile", "save seqs to file <s> in FASTA format", 2 },
+  { "--Lmin",    eslARG_INT,    FALSE, NULL,"0<n<=1000000",NULL,"--random,--Lmax", NULL, "with --random, specify minimum length of random sequences as <n>", 2},
+  { "--Lmax",    eslARG_INT,    FALSE, NULL,"0<n<=1000000",NULL,"--random,--Lmin", NULL, "with --random, specify maximum length of random sequences as <n>", 2},
   /* Stage 2 algorithm options */
   { "--hbanded", eslARG_NONE,"default",NULL, NULL,  ALGOPTS,      NULL,        NULL, "compare d&c optimal CYK versus HMM banded CYK", 3 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",      NULL, "set tail loss prob for --hbanded to <x>", 3 },
@@ -1315,10 +1317,13 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   int do_infile = (! esl_opt_IsDefault (go, "--infile"));
   int nseq      =    esl_opt_GetInteger(go, "-n");
   seqs_to_aln_t *seqs_to_aln = NULL;
-  double *dnull = NULL;
-  int i;
-  int safe_windowlen = cm->clen * 2;
-  double **gamma = NULL;
+  double        *dnull = NULL;
+  int            i;
+  int            safe_windowlen = cm->clen * 2;
+  double       **gamma = NULL;
+  double        *Ldistro = NULL;
+  int            lengths_specified = FALSE;
+  int            L, Lmin, Lmax;
 
   assert((do_emit + do_random + do_infile) == 1);
   ESL_DASSERT1(((do_emit + do_random + do_infile) == 1));
@@ -1331,13 +1336,28 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
     esl_vec_DNorm(dnull, cm->abc->K);
 
-    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
-      safe_windowlen *= 2;
-      if(safe_windowlen > (cm->clen * 1000)) cm_Fail("Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
-      FreeBandDensities(cm, gamma);
+    lengths_specified = (esl_opt_IsDefault(go, "--Lmin") && esl_opt_IsDefault(go, "--Lmax")) ? FALSE : TRUE;
+    if(!lengths_specified) { /* set random sequence length distribution as length distribution of generative CM, obtained from QDB calc */
+      while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
+	safe_windowlen *= 2;
+	if(safe_windowlen > (cm->clen * 1000)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
+	FreeBandDensities(cm, gamma);
+      }
+      Ldistro = gamma[0];
+      Lmax    = safe_windowlen;
     }
-    seqs_to_aln = RandomEmitSeqsToAln(cfg->r, cm->abc, dnull, cfg->ncm, nseq, gamma[0], safe_windowlen, i_am_mpi_master);
-    FreeBandDensities(cm, gamma);
+    else { /* --Lmin <n1> and --Lmax <n2> enabled, set length distribution as uniform from <n1>..<n2> inclusive */
+      Lmin = esl_opt_GetInteger(go, "--Lmin"); 
+      Lmax = esl_opt_GetInteger(go, "--Lmax"); 
+      if(Lmin > Lmax) ESL_FAIL(eslEINCOMPAT, errbuf, "with --Lmin <n1> and --Lmax <n2>, <n2> must be >= <n1>.");
+      ESL_ALLOC(Ldistro, sizeof(double) * (Lmax + 1));
+      for(L = 0;    L < Lmin;  L++)  Ldistro[L] = 0.;
+      for(L = Lmin; L <= Lmax; L++)  Ldistro[L] = 1. / (float) (Lmax - Lmin + 1);
+    }
+    seqs_to_aln = RandomEmitSeqsToAln(cfg->r, cm->abc, dnull, cfg->ncm, nseq, Ldistro, Lmax, i_am_mpi_master);
+
+    if(gamma != NULL) FreeBandDensities(cm, gamma);
+    else              free(Ldistro);
     free(dnull);
   }
   else if(do_infile)

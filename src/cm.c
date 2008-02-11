@@ -1306,6 +1306,187 @@ DeriveUniqueStateCode(int ndtype, int sttype)
   }
 }
 
+
+
+/* Function: StateMapsLeft()
+ * 
+ * Purpose:  Returns TRUE if cm unique states type <stid> is
+ *           a state type that maps emits or deletes on the left.
+ */
+int
+StateMapsLeft(char stid)
+{
+  switch (stid) {
+  case MATP_MP: /* match left, match right */
+  case MATP_ML: /* match left, delete right */
+  case MATP_MR: /* delete left, match right */
+  case MATP_D:  /* delete left, delete right */
+  case MATP_IL: 
+  case BEGR_IL: 
+  case MATL_ML: 
+  case MATL_D:  
+  case MATL_IL: 
+  case ROOT_IL: 
+    return TRUE;
+  default: 
+    return FALSE;
+  }
+}
+
+/* Function: StateMapsRight()
+ * 
+ * Purpose:  Returns TRUE if cm unique states type <stid> is
+ *           a state type that maps emits or deletes on the right.
+ */
+int
+StateMapsRight(char stid)
+{
+  switch (stid) {
+  case MATP_MP: /* match left, match right */
+  case MATP_ML: /* match left, delete right */
+  case MATP_MR: /* delete left, match right */
+  case MATP_D:  /* delete left, delete right */
+  case MATP_IR: 
+  case MATR_MR: 
+  case MATR_D:  
+  case MATR_IR: 
+  case ROOT_IR: 
+    return TRUE;
+  default: 
+    return FALSE;
+  }
+}
+
+/* Function: StateMapsMatch()
+ * 
+ * Purpose:  Returns TRUE if cm unique states type <stid> maps
+ *           to an HMM match state type.
+ */
+int
+StateMapsMatch(char stid)
+{
+  switch (stid) {
+  case MATP_MP: 
+  case MATL_ML: 
+  case MATR_MR: 
+    return TRUE;
+  default: 
+    return FALSE;
+  }
+}
+
+/* Function: StateMapsInsert()
+ * 
+ * Purpose:  Returns TRUE if cm unique states type <stid> maps
+ *           to an HMM insert state type.
+ */
+int
+StateMapsInsert(char stid)
+{
+  switch (stid) {
+  case MATP_IL: 
+  case MATP_IR: 
+  case MATL_IL: 
+  case MATR_IR: 
+  case BEGR_IL: 
+  case ROOT_IL: 
+  case ROOT_IR: 
+    return TRUE;
+  default: 
+    return FALSE;
+  }
+}
+
+/* Function: StateMapsDelete()
+ * 
+ * Purpose:  Returns TRUE if cm unique states type <stid> maps
+ *           to an HMM delete state type.
+ */
+int
+StateMapsDelete(char stid)
+{
+  switch (stid) {
+  case MATP_ML:  /* delete right */
+  case MATP_MR:  /* delete left */
+  case MATP_D:   /* delete pair */
+  case MATL_D:   
+  case MATR_D:  
+    return TRUE;
+  default: 
+    return FALSE;
+  }
+}
+
+/* Function: NodeMapsLeft()
+ * 
+ * Purpose:  Returns TRUE if cm node type is a type with 
+ *           at least one left emitting (possibly insert) 
+ *           state within it.
+ */
+int
+NodeMapsLeft(char ndtype)
+{
+  switch (ndtype) {
+  case MATP_nd: 
+  case MATL_nd: 
+  case ROOT_nd: 
+  case BEGR_nd: 
+    return TRUE;
+  default: 
+    return FALSE;
+  }
+}
+
+/* Function: NodeMapsRight()
+ * 
+ * Purpose:  Returns TRUE if cm node type is a type with 
+ *           at least one right emitting (possibly insert) 
+ *           state within it.
+ */
+int
+NodeMapsRight(char ndtype)
+{
+  switch (ndtype) {
+  case MATP_nd: 
+  case MATR_nd: 
+  case ROOT_nd: 
+    return TRUE;
+  default: 
+    return FALSE;
+  }
+}
+
+/* Function: StateIsDetached()
+ * 
+ * Purpose:  Returns TRUE if state v of cm is a detached
+ *           insert. This should be true IFF type of next
+ *           state is an END_E, meaning state v is an 
+ *           IL_st or (rarely) a MATP_IR state.
+ */
+int
+StateIsDetached(CM_t *cm, int v)	
+{
+  if(cm->stid[(v+1)] == END_E) { 
+#if eslDEBUGLEVEL >= 1
+    /* check to make sure the state is actually detached */
+    int y, x, x_offset;
+    /* Determine if b is an IL_st, or the rare case of a MATP_IR st */
+    if(cm->sttype[v] == IL_st) x_offset = 0;
+    else {
+      ESL_DASSERT1((cm->stid[v] == MATP_IR)); /* if assertion fails, v is a non-IL, non-MATP_IR state, should'nt be detached */
+      x_offset = 1; /* MATP_y -> MATP_IR is second possible transition for MATP_*,
+		     * unless MATP_y == MATP_IR, but we don't get there in for loop below. */
+    }
+    for (y = cm->pnum[v]-1; y >= 1; y--) { /* y >= 1 means we never get to v->v prob, which is irrelevant. */
+      x = cm->plast[v] - y;
+      ESL_DASSERT1((fabs(cm->t[x][x_offset] - 0.0) < eslSMALLX1)); 
+    }
+#endif
+    return TRUE;
+  }
+  return FALSE;
+}
+
 /* Function: CMRebalance()
  * Date:     SRE, Mon Apr  8 11:40:46 2002 [St. Louis]
  *

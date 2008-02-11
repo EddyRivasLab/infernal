@@ -6770,6 +6770,8 @@ estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq,
 /*extern int   EnforceSubsequence(CM_t *cm);*/
 /*extern float EnforceScore(CM_t *cm);*/
 /*extern int   EnforceFindEnfStart(CM_t *cm, int enf_cc_start);*/
+/*extern void  CPlan9SWConfigEnforce(CP9_t *hmm, float pentry, float pexit, int enf_start_pos, int enf_end_pos);*/
+/*extern void  CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos);*/
 
 /*
  * Function: ConfigCMEnforce
@@ -7286,6 +7288,97 @@ EnforceFindEnfStart(CM_t *cm, int enf_cc_start)
     cm_Fail("ERROR trying to determine the start node for the enforced subsequence.\n");
   FreeEmitMap(emap);
   return(enf_start);
+}
+
+
+/* Function:  CP9EnforceHackMatchScores()
+ * Incept:    EPN, Fri Feb  9 11:06:31 2007
+ *
+ * Purpose:   Make all match emissions 0, except those enforce
+ *            a specified subsequence (it's assumed the CP9 
+ *            is already set up for this enforcement). 
+ *
+ * Args:      cp9           - the CP9 HMM 
+ *            enf_start_pos - first posn of enforced subseq
+ *            enf_end_pos   - last  posn of enforced subseq
+ * Returns:   (void)
+ */
+void
+CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos)
+{
+  int k, x;
+  for (k = 1; k < enf_start_pos; k++) /* M_0 is the begin state, it's silent */
+    for (x = 0; x < MAXDEGEN; x++)
+      cp9->msc[x][k] = 0.;
+  for (k = enf_end_pos+1; k <= cp9->M; k++)
+    for (x = 0; x < MAXDEGEN; x++)
+      cp9->msc[x][k] = 0.;
+}
+
+/* Function: CPlan9SWConfigEnforce()
+ * EPN, Fri Feb  9 05:47:37 2007
+ * based on SRE's Plan7SWConfig() from HMMER's plan7.c
+ * 
+ * Purpose:  Set the alignment independent parameters of
+ *           a CM Plan 9 model to hmmsw (Smith/Waterman) configuration.
+ *           Same as CPlan9SWConfig but enforces a contiguous subset of
+ *           nodes start at x, ending at y must be entered by forbidding
+ *           local entries after x and local exits before y.
+ *           
+ * Args:     hmm    - the CM Plan 9 model w/ data-dep prob's valid
+ *           pentry - probability of an internal entry somewhere;
+ *                    will be evenly distributed over (enf_start) 
+ *                    match states
+ *           pexit  - probability of an internal exit somewhere; 
+ *                    will be distributed over (M-enf_end) match 
+ *                    states.
+ *           enf_start_pos - HMM node where enforced node subset begins         
+ *           enf_end_pos   - HMM node where enforced node subset ends
+ * Return:   (void)
+ *           HMM probabilities are modified.
+ */
+void
+CPlan9SWConfigEnforce(CP9_t *hmm, float pentry, float pexit,
+		      int enf_start_pos, int enf_end_pos)
+{
+  float basep;			/* p1 for exits: the base p */
+  int   k;			/* counter over states      */
+
+  /* No special (*x* states in Plan 7) states in CM Plan 9 */
+
+  /* Configure entry.
+   * To match CM, we enforce the only way out of the B state (M_0)
+   * is through a local begin into a match state 
+   */
+  hmm->t[0][CTMI] = hmm->t[0][CTMD] = hmm->t[0][CTMEL] = 0.;
+  hmm->begin[1] = 1. - pentry;
+  for (k = 2; k <= enf_start_pos; k++)
+    hmm->begin[k] = pentry / (float)(enf_start_pos-1);
+
+  /* OLD WAY (more smith-waterman-like, less CM-like) EPN, Thu Jun 21 15:30:46 2007
+     hmm->begin[1] = (1. - pentry) * (1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD])); 
+  for (k = 2; k <= enf_start_pos; k++)
+    hmm->begin[k] = (pentry * (1.- (hmm->t[0][CTMI] + hmm->t[0][CTMD]))) / (float)(enf_start_pos-1);
+  for (k = (enf_start_pos+1); k <= hmm->M; k++)
+    hmm->begin[k] = 0.;
+  */
+    
+  /* Configure exit.
+   * Don't touch hmm->end[hmm->M]
+   */
+  if(enf_end_pos == hmm->M) /* no local exit possible */
+    basep = 0.0;
+  else
+    basep = pexit / (float) (hmm->M-enf_end_pos);
+
+  for (k = 0; k < enf_end_pos; k++)
+    hmm->end[k] = 0.;
+  for (k = enf_end_pos; k < hmm->M; k++)
+    hmm->end[k] = basep / (1. - basep * (float) ((k-enf_end_pos)-1));
+  CPlan9RenormalizeExits(hmm, 1);
+  hmm->flags       &= ~CPLAN9_HASBITS;     /* reconfig invalidates log-odds scores */
+  hmm->flags       |= CPLAN9_LOCAL_BEGIN; /* local begins now on */
+  hmm->flags       |= CPLAN9_LOCAL_END;   /* local ends now on */
 }
 #endif
 
@@ -8882,4 +8975,69 @@ HMM2ijBandsForCpos(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, int k, int i0, 
 
 
 #endif
+/* EPN, Thu Feb  7 17:56:18 2008
+   Got rid of: 
+   extern void  CPlan9GlobalConfig(CP9_t *hmm);
+   
+   The reason I wanted to get rid of this CPlan9GlobalConfig() call is b/c I've changed
+    how CP9's are locally configured, and the M_0->I_0, M_0->D_1, M_M->I_M and D_M->I_M transitions
+    are all set to IMPOSSIBLE (to make a local CP9 more like a local CM), and thus it makes it
+    hard to change a locally configured CP9 back to global mode b/c the initial values of those
+    transitions is lost (the solution would be to add vectors to the cp9 data structure that
+    remember these transition probs, but I don't have to do that if I NEVER need to globalize 
+    a locally configured CP9.
 
+*/
+#if 0
+/* Function: CPlan9GlobalConfig()
+ * EPN 09.24.06
+ * based on SRE's Plan7GlobalConfig() from HMMER's plan7.c
+ * 
+ * Purpose:  Set the alignment independent parameters of
+ *           a CM Plan 9 model to (Needleman/Wunsch) configuration.
+ *           Make all transitions to EL states impossible.
+ *           
+ * Args:     hmm    - the CM Plan 9 model w/ data-dep prob's valid
+ *           pentry - probability of an internal entry somewhere;
+ *                    will be evenly distributed over M-1 match states
+ *           pexit  - probability of an internal exit somewhere; 
+ *                    will be distributed over M-1 match states.
+ *                    
+ * Return:   (void)
+ *           HMM probabilities are modified.
+ */
+void
+CPlan9GlobalConfig(CP9_t *hmm)
+{
+  cm_Fail("you can't use CPlan9GlobalConfig(), unless you've stored what transitions M_0->I_0, M_0->D_1, M_M->I_M and D_M->I_M were before you localized this HMM!\n");
+  int k;
+  /* No special (*x* states in Plan 7) states in CM Plan 9 */
+
+  /* Configure entry.
+   * Exactly 3 ways to start, B->M_1 (hmm->begin[1]), B->I_0 (hmm->t[0][CTMI]),
+   *                      and B->D_1 (hmm->t[0][CTMD])
+   */
+  hmm->begin[1] = 1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTMEL]); 
+  /* this is okay, hmm->t[0] is never changed, even during local
+   * configuration */
+  esl_vec_FSet(hmm->begin+2, hmm->M-1, 0.);
+  
+  hmm->end[hmm->M] = 1. - hmm->t[hmm->M][CTMI];
+  esl_vec_FSet(hmm->end+1, hmm->M-1, 0.);
+  CPlan9RenormalizeExits(hmm, 1);
+
+  /* Make all transitions to EL impossible, node 0, M special and should 
+   * always have CTMEL transition as impossible. */
+  for(k = 1; k < hmm->M; k++)
+    {
+      hmm->t[k][CTMEL] = 0.;
+      esl_vec_FNorm(hmm->t[k], 4); /* renormalize transitions out of node k */
+    }
+  hmm->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
+  hmm->flags       &= ~CPLAN9_LOCAL_BEGIN; /* local begins now off */
+  hmm->flags       &= ~CPLAN9_LOCAL_END;   /* local ends now off */
+  hmm->flags       &= ~CPLAN9_EL;          /* EL end locals now off */
+
+  CP9Logoddsify(hmm);
+}
+#endif

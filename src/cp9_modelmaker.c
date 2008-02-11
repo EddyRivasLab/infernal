@@ -2778,7 +2778,32 @@ CP9_node_chi_squared(CP9_t *ahmm, CP9_t *shmm, int nd, float threshold, int prin
     cm_Fail("ERROR CP9_node_chi_squared() is being grossly misused.\n");
 
   CPlan9Renormalize(ahmm);
-  CPlan9GlobalConfig(ahmm);
+  /*
+    EPN, Thu Feb  7 17:49:46 2008
+    I think this CPlan9GlobalConfig() call is superfluous, in my tests it did nothing.
+    I could be wrong in some cases though. I'm not too too worried about it though,
+    because this function was useful primarily during development of the CP9 and sub CM
+    construction code, which I now trust. And more importantly, this function (CP9_node_chi_squared)
+    CANNOT be called from anything but cp9-test and sub_cm-test which are testsuite 
+    executables.
+
+    The reason I wanted to get rid of this CPlan9GlobalConfig() call is b/c I've changed
+    how CP9's are locally configured, and the M_0->I_0, M_0->D_1, M_M->I_M and D_M->I_M transitions
+    are all set to IMPOSSIBLE (to make a local CP9 more like a local CM), and thus it makes it
+    hard to change a locally configured CP9 back to global mode b/c the initial values of those
+    transitions is lost (the solution would be to add vectors to the cp9 data structure that
+    remember these transition probs, but I don't have to do that if I NEVER need to globalize 
+    a locally configured CP9 (and this was the only function call of CPlan9GlobalConfig().
+    CPlan9GlobalConfig() has been relocated to old_miscfuncs.c where it is not compiled
+    or used.
+
+    start of old code block
+    ~~~~~~~~~~~~~~~~~~~~~~~~~
+    CPlan9GlobalConfig(ahmm);
+    ~~~~~~~~~~~~~~~~~~~~~~~~~
+    end of old code block 
+  */
+
   CP9Logoddsify(ahmm);
 
   /* First determine the sum of the counts for each state. This

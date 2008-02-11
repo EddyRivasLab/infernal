@@ -202,7 +202,7 @@ typedef struct cplan9_s {
   float  el_self;                  /* EL transition self loop probability    */
   int    el_selfsc;                /* EL transition self loop score          */
   int   *has_el;                   /* has_el[k] is TRUE if node k has an EL state */
-  int   *el_from_ct;               /* el_from_ct[k] is the number of HMM nodes kp
+  int   *el_from_ct;               /* [0..M+1] el_from_ct[k] is the number of HMM nodes kp
 				    * where a transition from kp's EL state to k's
 				    * match state is valid. */
   int  **el_from_idx;              /* [0..M+1][] el_from_idx[k] is an array of 
