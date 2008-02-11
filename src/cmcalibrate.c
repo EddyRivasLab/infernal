@@ -2266,7 +2266,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   ESL_DSQ       *dsq;
   int            inside_flag_raised = FALSE;
   int            hbanded_flag_raised = FALSE;
-  int            scanbands_flag_raised = FALSE;
+  int            alnbands_flag_raised = FALSE;
   float          update_i = nseq / 20.;
 
   if(ret_cyk_scA == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "process_filter_workunit(), ret_cyk_scA != NULL.");
@@ -2285,7 +2285,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
 
   inside_flag_raised = (cm->search_opts & CM_SEARCH_INSIDE) ? TRUE : FALSE;
   hbanded_flag_raised = (cm->search_opts & CM_SEARCH_HBANDED) ? TRUE : FALSE;
-  scanbands_flag_raised = (cm->search_opts & CM_SEARCH_HMMSCANBANDS) ? TRUE : FALSE;
+  alnbands_flag_raised = (cm->search_opts & CM_SEARCH_HMMALNBANDS) ? TRUE : FALSE;
 
   /* generate dsqs one at a time and collect optimal CM CYK/Inside scores and/or best CP9 Forward score */
   for(i = 0; i < nseq; i++) {
@@ -2318,7 +2318,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
       cm->search_opts &= ~CM_SEARCH_INSIDE;
       cm->search_opts |= CM_SEARCH_HBANDED;
       cm->tau = esl_opt_GetReal(go, "--fil-tau");
-      if(esl_opt_GetBoolean(go, "--fil-scan2bands")) cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
+      if(esl_opt_GetBoolean(go, "--fil-aln2bands")) cm->search_opts |= CM_SEARCH_HMMALNBANDS;
       if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) return status; 
       if((status = FastCYKScanHB  (cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, 256., &(cyk_scA[i]))) != eslOK) return status; 
 
@@ -2343,7 +2343,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
 
   if(inside_flag_raised) cm->search_opts |= CM_SEARCH_INSIDE;
   if(! hbanded_flag_raised) cm->search_opts &= ~CM_SEARCH_HBANDED;
-  if(! scanbands_flag_raised) cm->search_opts &= ~CM_SEARCH_HMMSCANBANDS;
+  if(! alnbands_flag_raised) cm->search_opts &= ~CM_SEARCH_HMMALNBANDS;
 
   return eslOK;
 

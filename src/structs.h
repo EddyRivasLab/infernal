@@ -455,7 +455,7 @@ typedef struct cp9map_s {
 /* search options, cm->search_opts */
 #define CM_SEARCH_NOQDB        (1<<0)  /* DO NOT use QDB to search (QDB is default)*/
 #define CM_SEARCH_HBANDED      (1<<1)  /* use HMM bands for search                 */
-#define CM_SEARCH_HMMSCANBANDS (1<<2)  /* filter w/CP9 HMM, and derive HMM bands   */
+#define CM_SEARCH_HMMALNBANDS  (1<<2)  /* force full aln when deriving HMM bands   */
 #define CM_SEARCH_SUMS         (1<<3)  /* if using HMM bands, use posterior sums   */
 #define CM_SEARCH_INSIDE       (1<<4)  /* scan with Inside, not CYK                */
 #define CM_SEARCH_NOALIGN      (1<<5)  /* don't align hits, just report locations  */

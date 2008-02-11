@@ -74,7 +74,7 @@ static ESL_OPTIONS options[] = {
   { "--beta",    eslARG_REAL,  NULL,  NULL, "x>0",      NULL,      NULL,  HMMONLYOPTS, "set tail loss prob for QDB and window size calculation to <x>", 4 },
   { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  HMMONLYOPTS, "calculate and use HMM bands in final round of CM search", 4 },
   { "--tau",     eslARG_REAL,   "1e-7",NULL, "0<x<1",   NULL,"--hbanded", HMMONLYOPTS, "set tail loss prob for --hbanded to <x>", 4 },
-  { "--scan2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL,"--hbanded", HMMONLYOPTS, "w/--hbanded derive HMM bands from scanning Forward/Backward", 4 },
+  { "--aln2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL, "--hbanded", HMMONLYOPTS, "w/--hbanded derive HMM bands w/o scanning Forward/Backward", 4 },
   /* filtering options, by default do HMM, then CYK filter */
   { "--fil-qdb",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-qdb,--qdb", "filter with CM QDB (banded) CYK algorithm", 5 },
   { "--fil-no-qdb",eslARG_NONE, FALSE,     NULL, NULL,  NULL,      NULL,"--fil-qdb",    "do not filter with CM banded CYK", 5 },
@@ -926,7 +926,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(  esl_opt_GetBoolean(go, "--null2"))       cm->search_opts |= CM_SEARCH_NULL2;
   if(! esl_opt_GetBoolean(go, "--qdb"))         cm->search_opts |= CM_SEARCH_NOQDB;
   if(  esl_opt_GetBoolean(go, "--hbanded"))     cm->search_opts |= CM_SEARCH_HBANDED;
-  if(  esl_opt_GetBoolean(go, "--scan2bands"))  cm->search_opts |= CM_SEARCH_HMMSCANBANDS;
+  if(  esl_opt_GetBoolean(go, "--aln2bands"))   cm->search_opts |= CM_SEARCH_HMMALNBANDS;
   if(  esl_opt_GetBoolean(go, "--viterbi"))  { 
     cm->search_opts |= CM_SEARCH_HMMVITERBI;
     cm->search_opts |= CM_SEARCH_NOQDB;
@@ -1537,7 +1537,7 @@ int print_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *c
 
       fprintf(cfg->ofp, "  %6.2f  %6.4f  %10.2f\n", sc_cutoff, surv_fract, seconds);
     }
-    else cm_Fail("write code for print_searchinfo without E-values\n");
+    //else cm_Fail("write code for print_searchinfo without E-values\n");
   }
   fprintf(fp, "\n");
   fflush(fp);

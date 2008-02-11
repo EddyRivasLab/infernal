@@ -770,6 +770,7 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   else             nrows = L; /* mx will be L+1 rows */
   if((status = GrowCP9Matrix(mx, errbuf, nrows, M, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
   ESL_DPRINTF2(("cp9_Forward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
+  ESL_DPRINTF1(("cp9_Forward do_scan: %d\n", do_scan));
 
   /* scA will hold P(seq up to j | Model) in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+2));
@@ -1866,6 +1867,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
   else             nrows = L; /* mx will be L+1 rows */
   if((status = GrowCP9Matrix(mx, errbuf, nrows, M, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
   ESL_DPRINTF2(("cp9_Backward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
+  ESL_DPRINTF1(("cp9_Backward do_scan: %d\n", do_scan));
 
   /* scA will hold P(seq from i..j0 | Model) for each i in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+3));

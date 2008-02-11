@@ -242,7 +242,7 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
   int n, sum;
   int do_noqdb;
   int do_hbanded;
-  int do_hmmscanbands;
+  int do_hmmalnbands;
   int do_sums;
   int do_inside;
   int do_noalign;
@@ -256,7 +256,7 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
   for(n = 0; n <= si->nrounds; n++) { 
     do_noqdb       = (si->search_opts[n] & CM_SEARCH_NOQDB)        ? TRUE : FALSE;
     do_hbanded     = (si->search_opts[n] & CM_SEARCH_HBANDED)      ? TRUE : FALSE;
-    do_hmmscanbands= (si->search_opts[n] & CM_SEARCH_HMMSCANBANDS) ? TRUE : FALSE;
+    do_hmmalnbands = (si->search_opts[n] & CM_SEARCH_HMMALNBANDS)  ? TRUE : FALSE;
     do_sums        = (si->search_opts[n] & CM_SEARCH_SUMS)         ? TRUE : FALSE;
     do_inside      = (si->search_opts[n] & CM_SEARCH_INSIDE)       ? TRUE : FALSE;
     do_noalign     = (si->search_opts[n] & CM_SEARCH_NOALIGN)      ? TRUE : FALSE;
@@ -270,7 +270,7 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
     if(n < si->nrounds) { 
       if(!do_noalign) cm_Fail("ValidateSearchInfo(), round %d has CM_SEARCH_NOALIGN flag down.\n", n);
       if(si->stype[n] == SEARCH_WITH_HMM) {
-	sum = do_noqdb + do_hbanded + do_hmmscanbands + do_sums + do_inside + do_null2 + do_rsearch + do_cmgreedy;
+	sum = do_noqdb + do_hbanded + do_hmmalnbands + do_sums + do_inside + do_null2 + do_rsearch + do_cmgreedy;
 	if(sum != 0 || (do_hmmviterbi + do_hmmforward != 1)) { 
 	  printf("ValidateSearchInfo(), round %d is SEARCH_WITH_HMM but search opts are invalid\n", n);
 	  DumpSearchOpts(si->search_opts[n]);
@@ -284,7 +284,7 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
 	if(si->hsi[n]->smx == NULL) cm_Fail("ValidateSearchInfo(), round %d is SEARCH_WITH_HYBRID but hsi[%d]->smx is NULL\n", n, n);
 	if(si->smx[n] != NULL)      cm_Fail("ValidateSearchInfo(), round %d is SEARCH_WITH_HYBRID but smx[%d] is not NULL\n", n, n);
 	if(si->hsi[n]->v_isroot[0]) cm_Fail("ValidateSearchInfo(), round %d is SEARCH_WITH_HYBRID and hsi->vi_isroot[0] is TRUE, this shouldn't happen, we might as well filter with a SEARCH_WITH_CM filter.");
-	sum = do_hbanded + do_hmmscanbands + do_sums + do_null2 + do_rsearch + do_cmgreedy;	
+	sum = do_hbanded + do_hmmalnbands + do_sums + do_null2 + do_rsearch + do_cmgreedy;	
 	if(sum != 0 || (do_hmmviterbi + do_hmmforward != 1)) { 
 	  printf("ValidateSearchInfo(), round %d is SEARCH_WITH_HYBRID but search opts are invalid\n", n);
 	  DumpSearchOpts(si->search_opts[n]);
@@ -293,7 +293,7 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
       }
       else if (si->stype[n] == SEARCH_WITH_CM) {
 	if(si->smx[n] == NULL) cm_Fail("ValidateSearchInfo(), round %d is SEARCH_WITH_CM but smx[%d] is NULL\n", n, n);
-	sum = do_hbanded + do_hmmscanbands + do_sums + do_null2 + do_rsearch + do_hmmviterbi + do_hmmforward;	
+	sum = do_hbanded + do_hmmalnbands + do_sums + do_null2 + do_rsearch + do_hmmviterbi + do_hmmforward;	
 	if(sum != 0) {
 	  printf("ValidateSearchInfo(), round %d is SEARCH_WITH_CM but search opts are invalid\n", n);
 	    DumpSearchOpts(si->search_opts[n]);
@@ -360,7 +360,7 @@ DumpSearchOpts(int search_opts)
 {
   if(search_opts & CM_SEARCH_NOQDB)        printf("\tCM_SEARCH_NOQDB\n");
   if(search_opts & CM_SEARCH_HBANDED)      printf("\tCM_SEARCH_HBANDED\n");
-  if(search_opts & CM_SEARCH_HMMSCANBANDS) printf("\tCM_SEARCH_HMMSCANBANDS\n");
+  if(search_opts & CM_SEARCH_HMMALNBANDS)  printf("\tCM_SEARCH_HMMALNBANDS\n");
   if(search_opts & CM_SEARCH_SUMS)         printf("\tCM_SEARCH_SUMS\n");
   if(search_opts & CM_SEARCH_INSIDE)       printf("\tCM_SEARCH_INSIDE\n");
   if(search_opts & CM_SEARCH_NOALIGN)      printf("\tCM_SEARCH_NOALIGN\n");

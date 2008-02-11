@@ -352,12 +352,15 @@ int ReadSeqsToAln(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int do_r
  *           cm              - CM to emit from
  *           ncm             - number for CM (only for naming seqs if cm->name == NULL)
  *           nseq            - number of seqs to emit
+ *           padW            - pad W-L residues on either side of the sequence to simulate
+ *                             what happens when a hit survives a filter
+ *           pdist           - probability distribution to use for to padW, can be NULL if padW == FALSE
  *           i_am_mpi_master - TRUE if called from MPI master (see Note)
  *
  * Returns:  Ptr to a newly allocated seqs_to_aln object with nseq sequences to align.
  *           Dies immediately on failure with informative error message.
  */
-seqs_to_aln_t *CMEmitSeqsToAln(ESL_RANDOMNESS *r, CM_t *cm, int ncm, int nseq, int i_am_mpi_master) 
+seqs_to_aln_t *CMEmitSeqsToAln(ESL_RANDOMNESS *r, CM_t *cm, int ncm, int nseq, int padW, double *pdist, int i_am_mpi_master) 
 {
   int status;
   seqs_to_aln_t *seqs_to_aln = NULL;
@@ -366,6 +369,13 @@ seqs_to_aln_t *CMEmitSeqsToAln(ESL_RANDOMNESS *r, CM_t *cm, int ncm, int nseq, i
   int L;
   int i;
   char errbuf[cmERRBUFSIZE];
+  int padL;
+  int half_padL;
+  int n, np;
+  ESL_DSQ *randdsq = NULL;
+  ESL_DSQ *newdsq = NULL;
+
+  if(padW == TRUE && pdist == NULL) cm_Fail("CMEmitSeqsToAln(), padW is TRUE, but pdist is NULL, shouldn't happen\n");
 
   seqs_to_aln = CreateSeqsToAln(nseq, i_am_mpi_master);
 
@@ -381,6 +391,31 @@ seqs_to_aln_t *CMEmitSeqsToAln(ESL_RANDOMNESS *r, CM_t *cm, int ncm, int nseq, i
       while(L == 0) { 
 	esl_sq_Destroy(seqs_to_aln->sq[i]); 
 	if((status = EmitParsetree(cm, errbuf, r, name, TRUE, NULL, &(seqs_to_aln->sq[i]), &L)) != eslOK) cm_Fail(errbuf); 
+      }
+      if(padW) { /* pad the sequence equally on both sides, so that the full length of the entire sequence is (2*cm->W)-L */
+	padL      = (cm->W - L) * 2;
+	half_padL = padL / 2;
+	if(padL > 0) { 
+	  ESL_ALLOC(randdsq, sizeof(ESL_DSQ)* (padL+2));
+	  ESL_ALLOC(newdsq,  sizeof(ESL_DSQ)* (L+padL+2));
+	  if (esl_rnd_xIID(r, pdist, cm->abc->K, padL, randdsq)   != eslOK) cm_Fail("CMEmitSeqsToAln(): failure creating random sequence.");
+	  for(n = 0; n <= half_padL; n++) { 
+	    np = n;
+	    newdsq[np] = randdsq[n];
+	  }
+	  for(n = 1; n <= L; n++) { 
+	    np = half_padL + n;
+	    newdsq[np] = seqs_to_aln->sq[i]->dsq[n];
+	  }
+	  for(n = half_padL+1; n <= (padL+1); n++) { 
+	    np = L + n;
+	    newdsq[np] = randdsq[n];
+	  }	  
+	  free(seqs_to_aln->sq[i]->dsq);
+	  seqs_to_aln->sq[i]->dsq = newdsq;
+	  seqs_to_aln->sq[i]->n = L+padL;
+	  free(randdsq);
+	}
       }
     }
   seqs_to_aln->nseq = nseq;

@@ -47,7 +47,7 @@ static ESL_OPTIONS options[] = {
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,     "--sub", "align locally w.r.t. the model",         1 },
   { "-s",        eslARG_INT,     NULL, NULL, "n>0",     NULL,      NULL,  "--infile", "set random number seed to <n>", 1 },
   { "-a",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print individual timings & scores, not just a summary", 1 },
-  { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL, "-l,search", "build sub CM for columns b/t HMM predicted start/end points", 1 },
+  { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL, "-l,--search", "build sub CM for columns b/t HMM predicted start/end points", 1 },
   { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 1 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
@@ -59,9 +59,11 @@ static ESL_OPTIONS options[] = {
   { "--outfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,  "--infile", "save seqs to file <s> in FASTA format", 2 },
   { "--Lmin",    eslARG_INT,    FALSE, NULL,"0<n<=1000000",NULL,"--random,--Lmax", NULL, "with --random, specify minimum length of random sequences as <n>", 2},
   { "--Lmax",    eslARG_INT,    FALSE, NULL,"0<n<=1000000",NULL,"--random,--Lmin", NULL, "with --random, specify maximum length of random sequences as <n>", 2},
+  { "--pad",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--emit,--search", NULL, "with --emit, pad (W-L) residues on each side of emitted sequence", 2},
   /* Stage 2 algorithm options */
   { "--hbanded", eslARG_NONE,"default",NULL, NULL,  ALGOPTS,      NULL,        NULL, "compare d&c optimal CYK versus HMM banded CYK", 3 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",      NULL, "set tail loss prob for --hbanded to <x>", 3 },
+  { "--aln2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL,"--hbanded,--search",NULL, "w/--hbanded derive HMM bands w/o scanning Forward/Backward", 3 },
   { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded","--search", "realign (non-banded) seqs with HMM banded CYK score < 0 bits", 3 },
   { "--nonbanded",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,"--search", "compare divide and conquer (d&c) versus standard non-banded CYK", 3 },
   { "--scoreonly",eslARG_NONE,  FALSE, NULL, NULL,      NULL,"--nonbanded","--tfile,--search", "with --nonbanded, do only score, save memory", 3 },
@@ -85,7 +87,7 @@ static ESL_OPTIONS options[] = {
   { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--search",        NULL, "with --search use inside instead of CYK", 5 },
   { "--old",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use old hmm to cm band calculation algorithm", 5},
   { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 5 },
-  { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  5 },
+  { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,  "--search", "dump parsetrees to file <f>",  5 },
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb",   5 },  
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -987,8 +989,9 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 		fprintf(cfg->tracefp, "  SUB CM PARSE SCORE                               : %.2f bits\n", seqs_to_aln->sc[i]);
 		fprintf(cfg->tracefp, "  SUB CM ALIGNMENT MAPPED ONTO ORIG CM PARSE SCORE : %.2f bits\n", ParsetreeScore(cm, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE));
 	      }
-	      else 
+	      else { 
 		fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE));
+	      }
 	      ParsetreeDump(cfg->tracefp, seqs_to_aln->tr[i], cm, seqs_to_aln->sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
 	    }
 	  fprintf(cfg->tracefp, "//\n");
@@ -1231,6 +1234,7 @@ initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
     }
 
     if(esl_opt_GetBoolean(go, "--hbanded"))     cm->search_opts  |= CM_SEARCH_HBANDED;
+    if(esl_opt_GetBoolean(go, "--aln2bands"))   cm->search_opts  |= CM_SEARCH_HMMALNBANDS;
     if(esl_opt_GetBoolean(go, "--old"))         cm->search_opts  |= CM_SEARCH_HMM2IJOLD;
     if(esl_opt_GetBoolean(go, "--hmmviterbi"))  { 
       cm->search_opts  |= CM_SEARCH_HMMVITERBI;
@@ -1327,15 +1331,14 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
 
   assert((do_emit + do_random + do_infile) == 1);
   ESL_DASSERT1(((do_emit + do_random + do_infile) == 1));
+  ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
+  for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
+  esl_vec_DNorm(dnull, cm->abc->K);
 
   if(do_emit) {
-    seqs_to_aln = CMEmitSeqsToAln(cfg->r, cm, cfg->ncm, nseq, i_am_mpi_master);
+    seqs_to_aln = CMEmitSeqsToAln(cfg->r, cm, cfg->ncm, nseq, esl_opt_GetBoolean(go, "--pad"), dnull, i_am_mpi_master);
   }
   else if(do_random) {
-    ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
-    for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
-    esl_vec_DNorm(dnull, cm->abc->K);
-
     lengths_specified = (esl_opt_IsDefault(go, "--Lmin") && esl_opt_IsDefault(go, "--Lmax")) ? FALSE : TRUE;
     if(!lengths_specified) { /* set random sequence length distribution as length distribution of generative CM, obtained from QDB calc */
       while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
@@ -1358,7 +1361,6 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
 
     if(gamma != NULL) FreeBandDensities(cm, gamma);
     else              free(Ldistro);
-    free(dnull);
   }
   else if(do_infile)
     {
@@ -1376,6 +1378,7 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
       if((esl_sqio_Write(cfg->sfp, seqs_to_aln->sq[i], eslSQFILE_FASTA)) != eslOK) cm_Fail("Error writing unaligned sequences to %s.", esl_opt_GetString(go, "--outfile"));
   }
 
+  free(dnull);
   *ret_seqs_to_aln = seqs_to_aln;
   return eslOK;
 
@@ -1494,6 +1497,7 @@ int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, in
     /* now sc is score of best hit found by the relevant CM scanning algorithm */
   }
   /* don't do alignments */
+
   if(ret_sc != NULL) *ret_sc = sc;
   return eslOK;
 }  
@@ -1506,9 +1510,9 @@ int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, in
 static void
 print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq)
 {
-  fprintf(cfg->ofp, "# %4s  %-25s  %5s  %6s  %3s  %6s\n", "idx",  "cm name",                   "strat", "config", "sub", "nseq"  ); 
-  fprintf(cfg->ofp, "# %4s  %-25s  %5s  %6s  %3s  %6s\n", "----", "-------------------------", "-----", "------", "---", "------"); 
-  fprintf(cfg->ofp, "# %4d  %-25.25s  %5s  %6s  %3s  %6d\n", 
+  fprintf(cfg->ofp, "# %4s  %-25s  %6s  %6s  %3s  %6s\n", "idx",  "cm name",                   "strat",  "config", "sub", "nseq"  ); 
+  fprintf(cfg->ofp, "# %4s  %-25s  %6s  %6s  %3s  %6s\n", "----", "-------------------------", "------", "------", "---", "------"); 
+  fprintf(cfg->ofp, "# %4d  %-25.25s  %6s  %6s  %3s  %6d\n", 
 	  cfg->ncm, 
 	  cm->name,
 	  (esl_opt_GetBoolean(go, "--search")) ? "search" : "align", 

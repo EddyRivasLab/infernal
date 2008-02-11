@@ -5078,7 +5078,7 @@ main(int argc, char **argv)
     free(dnull);
   }
   else /* don't randomly generate seqs, emit them from the CM */
-    seqs_to_aln = CMEmitSeqsToAln(r, cm, 1, N, FALSE);
+    seqs_to_aln = CMEmitSeqsToAln(r, cm, 1, N, FALSE, NULL, FALSE);
 
   /* create the matrix, it'll be empty initially */
   if(esl_opt_GetBoolean(go, "--post") || esl_opt_GetBoolean(go, "--optacc")) { 
