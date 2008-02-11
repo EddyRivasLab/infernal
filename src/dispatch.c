@@ -577,7 +577,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 	ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), unexpected error building a sub CM for seq %d.", i);
       /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded), this will also:  */
       /* (4) Build a new CP9 HMM from the sub CM. */
-      ConfigCM(sub_cm, NULL, NULL);
+      ConfigCM(sub_cm, NULL, NULL, FALSE);
       cm    = sub_cm; /* orig_cm still points to the original CM */
       if(do_hbanded) { /* we're doing HMM banded alignment to the sub_cm */
 	/* Get the HMM bands for the sub_cm */
