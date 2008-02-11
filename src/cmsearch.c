@@ -979,7 +979,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * set local mode, make cp9 HMM, calculate QD bands etc. 
    */
-  ConfigCM(cm, NULL, NULL); 
+  ConfigCM(cm, NULL, NULL, TRUE); 
 
   /* Setup ScanMatrix for CYK/Inside scanning functions, we can't 
    * do it in initialize_cm(), b/c it's W dependent; W was just set.
@@ -1279,7 +1279,7 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
    * A. determine thresholds/stats for HMM filter to add
    * B. determine thresholds/stats for CM QDB filter to add
    * C. add QDB filter, if necessary (before HMM filter, filters added like a stack, HMM filter is added last but used first)
-   * D. add HMM filter, if necessary (after QDB filter, filters added like a stack, HMM filter is added last but used first)
+   * D. add HMM filter, if necessary (after QDB filter)
    */
 
   /* 1. determine thresholds/stats for HMM filter */

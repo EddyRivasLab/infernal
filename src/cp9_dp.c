@@ -2699,7 +2699,7 @@ main(int argc, char **argv)
     cm->config_opts |= CM_CONFIG_LOCAL;
     cm->config_opts |= CM_CONFIG_HMMEL;
   }
-  ConfigCM(cm, NULL, NULL);
+  ConfigCM(cm, NULL, NULL, TRUE);
   init_ilogsum();
 
   if (esl_opt_GetBoolean(go, "-a"))  { do_scan = FALSE; do_align = TRUE;  }

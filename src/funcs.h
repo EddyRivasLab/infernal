@@ -191,7 +191,7 @@ extern int     CMFilePositionByKey(CMFILE *cmf, char *key);
 extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary, char *errbuf);
 
 /* from cm_modelconfig.c */
-extern int   ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax);
+extern int   ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax, int always_calc_W);
 extern void  ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit);
 extern void  ConfigGlobal(CM_t *cm);
 extern void  ConfigNoLocalEnds(CM_t *cm);

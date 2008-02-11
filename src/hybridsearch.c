@@ -1549,7 +1549,7 @@ main(int argc, char **argv)
   if(esl_opt_GetBoolean(go, "-l")) 
     cm->config_opts  |= CM_CONFIG_LOCAL;
   cm->config_opts |= CM_CONFIG_QDB;
-  ConfigCM(cm, NULL, NULL);
+  ConfigCM(cm, NULL, NULL, TRUE);
   
   if((status = cm_CountSearchDPCalcs(cm, NULL, cm->W*10, cm->dmin, cm->dmax, cm->W, TRUE, &vcalcs, NULL)) != eslOK) cm_Fail("Error counting search dp calcs.");
   

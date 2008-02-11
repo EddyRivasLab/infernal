@@ -504,12 +504,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;
 
-      /* get sequences, either generate them (--emit (default) or --random) or read them (--infile) */
-      if((status = get_sequences(go, cfg, errbuf, cm, FALSE, &seqs_to_aln)) != eslOK) cm_Fail(errbuf);
-
-      /* print the per-cm info */
-      print_cm_info (go, cfg, errbuf, cm, seqs_to_aln->nseq);
-	  
       /* align sequences cfg->nstages times */
       for(cfg->s = 0; cfg->s < cfg->nstages; cfg->s++) 
 	{
@@ -520,12 +514,24 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if(esl_opt_GetBoolean(go, "--search")) {
 	    /* initialize the flags/options/params of the CM for the current stage */
 	    if((status = initialize_cm_for_search(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	  }
+	  else { 
+	    /* initialize the flags/options/params of the CM for the current stage */
+	    if((status = initialize_cm_for_align(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	  }
+
+	  if(cfg->s == 0) {
+	    /* get sequences, either generate them (--emit (default) or --random) or read them (--infile) */
+	    if((status = get_sequences(go, cfg, errbuf, cm, FALSE, &seqs_to_aln)) != eslOK) cm_Fail(errbuf);
+	    /* print the per-cm info */
+	    print_cm_info (go, cfg, errbuf, cm, seqs_to_aln->nseq);
+	  }
+
+	  if(esl_opt_GetBoolean(go, "--search")) {
 	    /* align all sequences, keep scores in seqs_to_aln->sc */
 	    if ((status = process_cmscore_search_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
 	  }
 	  else {
-	    /* initialize the flags/options/params of the CM for the current stage */
-	    if((status = initialize_cm_for_align(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
 	    /* align all sequences, keep scores in seqs_to_aln->sc */
 	    if ((status = process_align_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
 	  }
@@ -1155,7 +1161,7 @@ initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
     /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
      * set local mode, make cp9 HMM, calculate QD bands etc. 
      */
-    ConfigCM(cm, NULL, NULL);
+    ConfigCM(cm, NULL, NULL, FALSE);
   }
   else { /* cfg->s > 0, we're at least on stage 2, 
 	    don't call ConfigCM() again, only info that may change is QDBs, and align_opts */
@@ -1220,7 +1226,7 @@ initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
     /* configure the CM for search based on cm->config_opts and cm->align_opts.
      * set local mode, make cp9 HMM, calculate QD bands etc. 
      */
-    ConfigCM(cm, NULL, NULL);
+    ConfigCM(cm, NULL, NULL, TRUE);
   }
   else { /* cfg->s > 0, we're at least on stage 2, 
 	    don't call ConfigCM() again, only info that may change is QDBs, and search_opts */

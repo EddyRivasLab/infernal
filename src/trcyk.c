@@ -68,7 +68,7 @@ main(int argc, char **argv)
 
    if (do_local) cm->config_opts |= CM_CONFIG_LOCAL;
 
-   ConfigCM(cm, NULL, NULL);
+   ConfigCM(cm, NULL, NULL, TRUE);
    CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &cons);
 
    seq = esl_sq_Create();

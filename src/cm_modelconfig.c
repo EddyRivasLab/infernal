@@ -34,13 +34,15 @@
  * Args:     CM           - the covariance model
  *           preset_dmin  - supplied dmin values, NULL if none
  *           preset_dmax  - supplied dmax values, NULL if none
+ *           always_calc_W - TRUE to always calculate W even if we're not calcing
+ *                           QDBs, FALSE to only calc W if we're calcing QDBs
  *
  * Returns:   <eslOK> on success.
  *            <eslEINVAL> on contract violation.
  *            <eslEMEM> on memory allocation error.
  */
 int 
-ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
+ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax, int always_calc_W)
 {
   int status;
   float swentry, swexit;
@@ -154,11 +156,12 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax)
       cm->W = cm->dmax[0];
       cm->flags |= CMH_QDB; /* raise the QDB flag */
     }
-  else { /* we didn't set up QDBs, but we still need to set cm->W, we 
-	  * set it as dmax[0] from the QDB calculation using cm->beta, 
-	  * but don't save dmin/dmax.
-	  * (This if, else if, esle could definitely be better organized) 
-	  */
+  else if(always_calc_W) { 
+    /* we didn't set up QDBs, but we still need to set cm->W, we 
+     * set it as dmax[0] from the QDB calculation using cm->beta, 
+     * but don't save dmin/dmax.
+     * (This if, else if, esle could definitely be better organized) 
+     */
     int safe_windowlen = cm->clen * 2;
     int *dmin, *dmax;
     while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, FALSE, &(dmin), &(dmax), NULL, NULL)))

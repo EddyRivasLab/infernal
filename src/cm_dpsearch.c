@@ -5275,7 +5275,7 @@ main(int argc, char **argv)
   if(  esl_opt_GetBoolean(go, "--ihbanded"))    cm->search_opts |= CM_SEARCH_HBANDED;
   cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
   cm->config_opts |= CM_CONFIG_QDB;
-  ConfigCM(cm, NULL, NULL);
+  ConfigCM(cm, NULL, NULL, TRUE);
 
   if (esl_opt_GetBoolean(go, "--noqdb")) { 
     dmin = NULL; dmax = NULL;

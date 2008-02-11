@@ -1604,7 +1604,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     cm->flags |= CM_EMIT_NO_LOCAL_ENDS;
   }
 
-  ConfigCM(cm, NULL, NULL);
+  ConfigCM(cm, NULL, NULL, TRUE);
   
   /* create and initialize scan info for CYK/Inside scanning functions */
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE);

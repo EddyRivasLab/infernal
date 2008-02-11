@@ -1386,7 +1386,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * this may make a cp9 HMM, for example.
    */
-  ConfigCM(cm, NULL, NULL); 
+  ConfigCM(cm, NULL, NULL, FALSE); /* FALSE says don't calc W */
 
   return eslOK;
 }

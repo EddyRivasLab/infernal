@@ -289,7 +289,7 @@ main(int argc, char **argv)
 	    cm->config_opts |= CM_CONFIG_HMMLOCAL;
 	    cm->config_opts |= CM_CONFIG_HMMEL;
 	  }
-	ConfigCM(cm, NULL, NULL);
+	ConfigCM(cm, NULL, NULL, TRUE);
 
 	fprintf(ofp, "%6d %-20.20s %8d %8.2f %4d %5d %5d %3d %6.2f %6.2f\n",
 	       ncm,
@@ -691,7 +691,7 @@ initialize_cm(CM_t *cm, int cm_mode, int hmm_mode)
     cm->config_opts |= CM_CONFIG_HMMLOCAL;
     cm->config_opts |= CM_CONFIG_HMMEL;
   }
-  ConfigCM(cm, NULL, NULL);
+  ConfigCM(cm, NULL, NULL, TRUE);
 
   return eslOK;
 }
