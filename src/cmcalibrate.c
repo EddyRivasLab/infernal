@@ -1893,7 +1893,7 @@ fit_histogram_exp(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float 
   /* fill histogram */
   for(i = 0; i < nscores; i++) {
     if((status = esl_histogram_Add(h, scores[i])) != eslOK) ESL_FAIL(status, errbuf, "fit_histogram(), esl_histogram_Add() call returned non-OK status: %d\n", status);
-    printf("%4d %.3f\n", i, scores[i]);
+    ///printf("%4d %.3f\n", i, scores[i]);
   }
 
   /* fit scores to a gumbel */

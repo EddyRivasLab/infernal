@@ -31,8 +31,9 @@
  * Function: DispatchSearch()
  * Incept:   EPN, Wed Nov 14 10:43:16 2007
  *
- * Purpose:  Given a CM and a sequence, call the correct search algorithm
- *           based on search_opts. 
+ * Purpose:  Given a CM and a sequence, call the correct search algorithms
+ *           based on search_info in cm->si. Handles up to 2 levels of filtering by
+ *           calling itself recursively.
  * 
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
@@ -41,7 +42,6 @@
  *           dsq             - the target sequence (digitized)
  *           i0              - start of target subsequence (often 1, beginning of dsq)
  *           j0              - end of target subsequence (often L, end of dsq)
- *           sround          - filter round, if > 0, we're filtering
  *           results         - [0..cm-fi->nrounds] search_results_t to keep results for each round in, must be non NULL and empty
  *           size_limit      - max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           ret_flen        - RETURN: subseq len that survived filter (NULL if not filtering)
