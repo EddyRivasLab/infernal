@@ -216,7 +216,7 @@ CPlan9Renormalize(CP9_t *hmm)
  *           which can never be entered in a locally configured CM
  *           (b/c the ROOT_S state MUST jump into a local begin state, which
  *            are always match states>). Also we disallow a M_0->D_1 transition
- *           because these would be impossible in a locally configured CM also.
+ *           because these would be impossible in a locally configured CM.
  *
  *           <do_match_local_cm> is usually TRUE, unless we're configuring
  *           the CP9 specifically for eventual sub CM alignment, where
@@ -231,12 +231,15 @@ CPlan9Renormalize(CP9_t *hmm)
  *                    will be distributed over M-1 match states.
  *           do_match_local_cm - TRUE to make I_0, D_1 and I_M unreachable
  *                    to better match a locally configured CM.
+ *           first_cm_ndtype - only used if do_match_local_cm is TRUE
+ *                             if it's MATL or MATP then D_1 should be unreachable (it is in the CM)
+ *                             if it's MATR or MATP then D_M should be unreachable (it is in the CM)
  *                    
  * Return:   (void)
  *           HMM probabilities are modified.
  */
 void
-CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit, int do_match_local_cm)
+CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit, int do_match_local_cm, int first_cm_ndtype)
 {
   float basep;			/* p1 for exits: the base p */
   int   k;			/* counter over states      */
@@ -249,12 +252,17 @@ CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit, int do_match_local_cm)
    */
   if(do_match_local_cm) { 
     hmm->t[0][CTMI] = 0.;
-    hmm->t[0][CTMD] = 0.;
-    hmm->t[0][CTMM] = 0.; /* already was 0.0, transition from M_0 to M_1 is begin[1] */
+    hmm->t[0][CTMM] = 0.;  /* already was 0.0, transition from M_0 to M_1 is begin[1] */
     hmm->t[0][CTMEL] = 0.; /* already was 0.0, can never do a local end from M_0 */
+    if((first_cm_ndtype == MATL_nd) || (first_cm_ndtype == MATP_nd)) { /* CM can't possibly reach the CM delete state that maps to D_1, make D_1 unreachable too */
+      hmm->t[0][CTMD] = 0.;
+    }
 
     hmm->t[hmm->M][CTMI] = 0.;
     hmm->t[hmm->M][CTDI] = 0.;
+    if((first_cm_ndtype == MATR_nd) || (first_cm_ndtype == MATP_nd)) { /* CM can't possibly reach the CM delete state that maps to D_M, make D_M unreachable too */
+      hmm->t[hmm->M][CTMD] = 0.;
+    }
 
     /* renormalize transitions out of M_M */
     d = esl_vec_FSum(hmm->t[hmm->M], cp9_TRANS_NMATCH) + hmm->end[hmm->M]; 
@@ -263,8 +271,8 @@ CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit, int do_match_local_cm)
     
     /* renormalize transitions out of D_M */
     esl_vec_FNorm(hmm->t[hmm->M] + cp9_TRANS_DELETE_OFFSET, cp9_TRANS_NDELETE);	/* delete */
-
   }
+
   hmm->begin[1] = (1. - pentry) * (1. - (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTMEL]));
   esl_vec_FSet(hmm->begin+2, hmm->M-1, (pentry * (1.- (hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTMEL]))) / (float)(hmm->M-1));
   /* note: hmm->t[0][CTMEL] == 0. (can't locally end from begin) 

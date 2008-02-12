@@ -101,7 +101,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax, int always_calc_W)
        */
       swentry= ((cm->cp9->M)-1.)/cm->cp9->M; /* all start pts equiprobable, including 1 */
       swexit = ((cm->cp9->M)-1.)/cm->cp9->M; /* all end   pts equiprobable, including M */
-      CPlan9SWConfig(cm->cp9, swentry, swexit, FALSE); /* FALSE means don't make I_0, D_1, I_M unreachable */
+      CPlan9SWConfig(cm->cp9, swentry, swexit, FALSE, cm->ndtype[1]); /* FALSE means don't make I_0, D_1, I_M unreachable */
     }
     else { 
       /* if we're setting up the HMM for local search/alignment but NOT for a sub CM alignment, 
@@ -113,7 +113,7 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax, int always_calc_W)
       swexit  = cm->pbegin;
       /* swentry= ((cm->cp9->M)-1.)/cm->cp9->M; *//* all start pts equiprobable, including 1 */
       /* swexit = ((cm->cp9->M)-1.)/cm->cp9->M; *//* all end   pts equiprobable, including M */
-      CPlan9SWConfig(cm->cp9, swentry, swexit, TRUE); /* TRUE means do make I_0, D_1, I_M unreachable to match the CM */
+      CPlan9SWConfig(cm->cp9, swentry, swexit, TRUE, cm->ndtype[1]); /* TRUE means do make I_0, D_1, I_M unreachable to match the CM */
     }
     CP9Logoddsify(cm->cp9);
   }

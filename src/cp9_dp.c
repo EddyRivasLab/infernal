@@ -1954,7 +1954,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
       else { cur = ip; prv = ip+1; }
 
       /* init EL mx to -INFTY */
-      for (k = 1; k <= cm->cp9->M; k++) elmx[cur][k] = -INFTY;
+      for (k = 0; k <= cm->cp9->M; k++) elmx[cur][k] = -INFTY;
       
       /* elmx[cur][k] is possibly of coming from self (EL_k), we 
        * can't have come from END b/c we haven't emitted the last res of the seq yet.

@@ -1959,7 +1959,7 @@ switch_global_to_local(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, char 
    * logoddsifies CM, and makes inserts equiprobable (if nec) */
   ConfigLocal(cm, cm->pbegin, cm->pend); 
   /* CPlan9SWConfig() configures CP9 for local alignment, then logoddisfies CP9 (wastefully in this case) */
-  CPlan9SWConfig(cm->cp9, cm->pbegin, cm->pbegin, TRUE);  /* TRUE means do make I_0, D_1, I_M unreachable to match the CM */
+  CPlan9SWConfig(cm->cp9, cm->pbegin, cm->pbegin, TRUE, cm->ndtype[1]);  /* TRUE means do make I_0, D_1, I_M unreachable to match the CM */
   /* CPlan9ELConfig() configures CP9 for CM EL local ends, then logoddisfies CP9 */
   CPlan9ELConfig(cm);
 

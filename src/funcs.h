@@ -338,7 +338,7 @@ extern int cp9_GetLocalityMode(CP9_t *cp9, char *errbuf, int *ret_mode);
 /* from cp9_modelconfig.c */
 extern void  CP9Logoddsify(CP9_t *hmm);
 extern void  CPlan9Renormalize(CP9_t *hmm);
-extern void  CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit, int do_match_local_cm);
+extern void  CPlan9SWConfig(CP9_t *hmm, float pentry, float pexit, int do_match_local_cm, int first_cm_ndtype);
 extern void  CPlan9ELConfig(CM_t *cm);
 extern void  CPlan9NoEL(CM_t *cm);
 extern void  CPlan9InitEL(CM_t *cm, CP9_t *cp9);

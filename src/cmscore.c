@@ -547,7 +547,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
       FreeSeqsToAln(seqs_to_aln); 
       FreeCM(cm);
-      printf("//\n");
+      fprintf(cfg->ofp, "//\n");
     }
 }
 
@@ -781,7 +781,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       FreeSeqsToAln(all_seqs_to_aln); 
       FreeCM(cm);
-      printf("//\n");
+      fprintf(cfg->ofp, "//\n");
     }
 
   /* On success or recoverable errors:
