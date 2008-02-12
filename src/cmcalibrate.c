@@ -92,7 +92,7 @@ static ESL_OPTIONS options[] = {
   { "--mxsize",         eslARG_REAL,    "256.0",NULL, "x>0.",   NULL,        NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 9 },
   { "--exp-T",          eslARG_REAL,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "set bit sc cutoff for exp tail fitting to <x> [df: -INFTY]", 9 },
   { "--exp-L",          eslARG_INT,     "100000",NULL, "1000<=n<=1000000",NULL,NULL,      NULL, "set length of random sequences for exp tail fitting to <n>", 9 },
-  { "--exp-cmN",        eslARG_INT,     "1",    NULL, "n<=100",  NULL,       NULL,        NULL, "set number of random sequences for CM exp tail fitting to <n>", 9 },
+  { "--exp-cmN",        eslARG_INT,     "10",   NULL, "n<=100",  NULL,       NULL,        NULL, "set number of random sequences for CM exp tail fitting to <n>", 9 },
   { "--exp-hmmN",       eslARG_INT,     "10",   NULL, "n<=100",  NULL,       NULL,        NULL, "set number of random sequences for HMM exp tail fitting to <n>", 9 },
   { "--exp-tail",       eslARG_REAL,    "0.5",  NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of right histogram tail to fit to exp tail to <x>", 9 },
 #ifdef HAVE_MPI
@@ -1896,13 +1896,26 @@ fit_histogram_exp(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float 
     ///printf("%4d %.3f\n", i, scores[i]);
   }
 
-  /* fit scores to a gumbel */
+  /* fit scores to an exponential tail */
+  /* temporary block, fit to 41 different tailp values */
+  float a;
+  printf("\n");
+  for(a = 0.; a >= -4.; a -= 0.1) { 
+    tailp = pow(10., a);
+    esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); /* fit to right 'tailfit' fraction, 0.5 by default */
+    esl_exp_FitComplete(xv, n, &(params[0]), &(params[1]));
+    esl_histogram_SetExpectedTail(h, params[0], tailp, &esl_exp_generic_cdf, &params);
+    printf("# TEST Exponential fit to fraction %.9f tail: lambda = %f\n", tailp, params[1]);
+  }
+  printf("\n");
+  /* end temporary block */
+
   tailp = esl_opt_GetReal(go, "--exp-tail");
   esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); /* fit to right 'tailfit' fraction, 0.5 by default */
   esl_exp_FitComplete(xv, n, &(params[0]), &(params[1]));
   esl_histogram_SetExpectedTail(h, params[0], tailp, &esl_exp_generic_cdf, &params);
 
-  printf("# Exponential fit to %.2f%% tail: lambda = %f\n", tailp*100.0, params[1]);
+  printf("# Exponential fit to %.7f%% tail: lambda = %f\n", tailp*100.0, params[1]);
   mu = params[0];
   lambda = params[1];
 
