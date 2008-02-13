@@ -1903,9 +1903,12 @@ fit_histogram_exp(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float 
   for(a = 0.; a >= -4.; a -= 0.1) { 
     tailp = pow(10., a);
     esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); /* fit to right 'tailfit' fraction, 0.5 by default */
-    esl_exp_FitComplete(xv, n, &(params[0]), &(params[1]));
-    esl_histogram_SetExpectedTail(h, params[0], tailp, &esl_exp_generic_cdf, &params);
-    printf("# TEST Exponential fit to fraction %.9f tail: lambda = %f\n", tailp, params[1]);
+    if(n > 1) { 
+      esl_exp_FitComplete(xv, n, &(params[0]), &(params[1]));
+      esl_histogram_SetExpectedTail(h, params[0], tailp, &esl_exp_generic_cdf, &params);
+      printf("# TEST Exponential fit to fraction %.9f tail: lambda = %f (nsamples: %d)\n", tailp, params[1], n);
+    }
+    else printf("# TEST Exponential fit to fraction %.9f tail: lambda = N/A (nsamples: %d)\n", tailp, n);
   }
   printf("\n");
   /* end temporary block */
