@@ -133,6 +133,8 @@ extern int  rsearch_CYKScan  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float
 extern int  FastCYKScanHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx, float size_limit, float *ret_sc);
 extern int  FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx, float size_limit, float *ret_sc);
 extern int  cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W, int correct_for_first_W, float **ret_vcalcs, float *ret_calcs);
+extern int  ProcessSearchWorkunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, search_results_t **ret_results, float mxsize_limit, int my_rank);
+extern int  DetermineSeqChunksize(int nproc, int L, int W);
 
 /* from cm_dpsmall.c */
 extern float CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, 
@@ -283,8 +285,6 @@ extern void     BandBounds(double **gamma, int M, int W, double p,
 extern void     PrintBandGraph(FILE *fp, double **gamma, int *min, int *max, int v, int W);
 
 extern void     PrintDPCellsSaved(CM_t *cm, int *min, int *max, int W);
-extern float    CYKBandedScan(CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax, int i0, int j0, int W, 
-			      float cutoff, search_results_t *results);
 extern void     ExpandBands(CM_t *cm, int qlen, int *dmin, int *dmax);
 extern void     qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *dmax, int bdump_level);
 extern int      cm_GetNCalcsPerResidueForGivenBeta(CM_t *cm, char *errbuf, int no_qdb, double beta, float *ret_cm_ncalcs_per_res, int *ret_W);
@@ -572,16 +572,22 @@ extern void DumpSearchInfo(SearchInfo_t *si);
 extern void DumpSearchOpts(int search_opts);
 extern void ValidateSearchInfo(CM_t *cm, SearchInfo_t *fi);
 extern void UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float sc_cutoff, float e_cutoff);
+extern void UpdateSearchInfoForGumMode(CM_t *cm, int round, int gum_mode);
+
 extern search_results_t *CreateResults (int size);
-extern void ExpandResults (search_results_t *r, int additional);
-extern void AppendResults (search_results_t *src_results, search_results_t *dest_results, int i0);
-extern void FreeResults   (search_results_t *r);
-extern int  compare_results (const void *a_void, const void *b_void);
-extern void sort_results (search_results_t *results);
-extern void print_results (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory);
-extern void report_hit (int i, int j, int bestr, float score, search_results_t *results);
-extern void remove_overlapping_hits (search_results_t *results, int i0, int j0);
-extern float CountScanDPCalcs(CM_t *cm, int L, int use_qdb);
+extern void ExpandResults              (search_results_t *r, int additional);
+extern void AppendResults              (search_results_t *src_results, search_results_t *dest_results, int i0);
+extern void FreeResults                (search_results_t *r);
+extern int  CompareResultsByScore      (const void *a_void, const void *b_void);
+extern int  CompareResultsByEndPoint   (const void *a_void, const void *b_void);
+extern void SortResultsByScore         (search_results_t *results);
+extern void SortResultsByEndPoint      (search_results_t *results);
+extern void PrintResults               (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory);
+extern void ReportHit                  (int i, int j, int bestr, float score, search_results_t *results);
+extern void RemoveOverlappingHits      (search_results_t *results, int i0, int j0);
+extern void RemoveHitsOverECutoff      (CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_SQ *sq);
+extern int  ScoresFromResults          (search_results_t *results, char *errbuf, float **ret_scA, int *ret_scN); 
+extern float CountScanDPCalcs          (CM_t *cm, int L, int use_qdb);
 extern BestFilterInfo_t *CreateBestFilterInfo();
 extern int  SetBestFilterInfoHMM(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, int ftype, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs);
 extern int  SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs, HybridScanInfo_t *hsi, int np, GumbelInfo_t **hgumA);
@@ -627,10 +633,8 @@ extern int        Score2E (CM_t *cm, char *errbuf, int gum_mode, float sc, float
 extern double     RJK_ExtremeValueE (float x, double mu, double lambda);
 extern int        CM2Gumbel_mode(CM_t *cm, int search_opts, int *ret_cm_gum_mode, int *ret_cp9_gum_mode);
 extern int        CM2FthrMode(CM_t *cm, char *errbuf, int search_opts, int *ret_fthr_mode);
-extern void       remove_hits_over_e_cutoff (CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_SQ *sq);
 extern int        GumModeIsLocal(int gum_mode);
 extern int        GumModeIsForCM(int gum_mode);
-extern int        GumModeToSearchOpts(CM_t *cm, int gum_mode);
 extern int        GumModeToFthrMode(int gum_mode);
 extern GumbelInfo_t *CreateGumbelInfo();
 extern void          SetGumbelInfo(GumbelInfo_t *gum, double mu, double lambda, long dbsize, int N);

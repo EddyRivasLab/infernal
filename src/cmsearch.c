@@ -158,14 +158,10 @@ static void  serial_master (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
-static int process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_DSQ *dsq, int L, search_results_t **ret_results);
 static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int print_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *cm, long N, char *errbuf);
 static int read_next_search_seq(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int do_revcomp, dbseq_t **ret_dbseq);
-#if HAVE_MPI
-static int determine_seq_chunksize(struct cfg_s *cfg, int L, int W);
-#endif 
 
 int
 main(int argc, char **argv)
@@ -421,11 +417,11 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	{
 	  for(rci = cfg->init_rci; rci <= cfg->do_rc; rci++) {
 	    /*printf("SEARCHING >%s %d\n", dbseq->sq[reversed]->name, reversed);*/
-	    if ((status = process_search_workunit(go, cfg, errbuf, cm, dbseq->sq[rci]->dsq, dbseq->sq[rci]->n, &dbseq->results[rci])) != eslOK) cm_Fail(errbuf);
-	    remove_overlapping_hits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
-	    if(using_e_cutoff) remove_hits_over_e_cutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]); 
+	    if ((status = ProcessSearchWorkunit(cm, errbuf, dbseq->sq[rci]->dsq, dbseq->sq[rci]->n, &dbseq->results[rci], esl_opt_GetReal(go, "--mxsize"), cfg->my_rank)) != eslOK) cm_Fail(errbuf);
+	    RemoveOverlappingHits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
+	    if(using_e_cutoff) RemoveHitsOverECutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]); 
 	  }
-	  print_results (cm, cfg->ofp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
+	  PrintResults (cm, cfg->ofp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
 	  for(rci = 0; rci <= cfg->do_rc; rci++) { /* we can free results for top strand even if cfg->init_rci is 1, due to --bottomonly */
 	    FreeResults(dbseq->results[rci]);
 	    esl_sq_Destroy(dbseq->sq[rci]);
@@ -477,25 +473,23 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   CM_t *cm;
   CMConsensus_t *cons = NULL;     /* precalculated consensus info for display purposes */
 
-  int si      = 0;
-  int si_recv = 1;
-  int *silist = NULL;
-
-  int in_rc = FALSE;
-  int *rclist = NULL;
-  int rci;
-
-  int seqpos = 1;
-  int *seqposlist = NULL;
-
-  int len;
-  int *lenlist = NULL;
-
-  int *sentlist = NULL;
-
-  int ndbseq = 0;
-  dbseq_t **dbseqlist    = NULL;
-  dbseq_t *dbseq = NULL;
+  int si      = 0;        /* sequence index */
+  int si_recv = 1;        /* sequence index of the sequence we've just received results for from a worker */
+  /* properties of the workers, indexed 1..wi..nproc-1 */
+  int *silist = NULL;     /* [0..wi..nproc-1], the sequence index worker wi is working on */
+  int in_rc = FALSE;      /* are we currently on the reverse complement? */
+  int *rclist = NULL;     /* [0..wi..nproc-1] 0 if worker wi is searching top strand, 1 if wi is searching bottom strand */
+  int rci;                /* index that ranges from 0 to 1 */
+  int seqpos = 1;         /* sequence position in the current sequence */
+  int *seqposlist = NULL; /* [0..wi..nproc-1] the first position of the sequence that worker wi is searching */
+  int len;                /* length of chunk */
+  int *lenlist = NULL;    /* [0..wi..nproc-1] length of chunk worker wi is searching */
+  /* properties of the sequences currently being worked on, we can have at most 1 per worker, so these are of size 
+   * cfg->nproc, but indexed by si = 0..nproc-2, cfg->nproc-1 is never used. */
+  int *sentlist = NULL;   /* [0..si..nproc-1] TRUE if all chunks for sequence index si have been sent, FALSE otherwise */
+  int ndbseq = 0;         /* ndbseq is the number of currently active sequences, we can read a new seq IFF ndbseq < (cfg->nproc-1) */
+  dbseq_t **dbseqlist= NULL; /* pointers to the dbseq_t objects that hold the actual sequence data, and the results data */
+  dbseq_t  *dbseq = NULL;  /* a database sequence */
   
   char     errbuf[cmERRBUFSIZE];
   MPI_Status mpistatus; 
@@ -577,7 +571,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       in_rc = FALSE;
       while (have_work || nproc_working)
 	{
-	  if (need_seq) /* see mpifuncs.c:search_enqueue*/
+	  if (need_seq) 
 	    {
 	      need_seq = FALSE;
 	      /* read a new seq */
@@ -600,7 +594,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  dbseqlist[si] = dbseq;
 		  sentlist[si]  = FALSE;
 		  have_work = TRUE;
-		  chunksize = determine_seq_chunksize(cfg, dbseq->sq[0]->n, cm->W);
+		  chunksize = DetermineSeqChunksize(cfg->nproc, dbseq->sq[0]->n, cm->W);
 		  ESL_DPRINTF1(("L: %d chunksize: %d\n", dbseq->sq[0]->n, chunksize));
 		}
 	      else if(status == eslEOF) have_work = FALSE;
@@ -657,12 +651,10 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		      if(sentlist[si_recv] && dbseqlist[si_recv]->chunks_sent == 0)
 			{
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
-			    remove_overlapping_hits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
-			    if(using_e_cutoff) remove_hits_over_e_cutoff(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]);
-			    
-			    
+			    RemoveOverlappingHits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
+			    if(using_e_cutoff) RemoveHitsOverECutoff(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]);
 			  }					      
-			  print_results(cm, cfg->ofp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
+			  PrintResults(cm, cfg->ofp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
 			    esl_sq_Destroy(dbseqlist[si_recv]->sq[rci]);
 			    FreeResults(dbseqlist[si_recv]->results[rci]);
@@ -791,7 +783,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       while((status = cm_dsq_MPIRecv(0, 0, MPI_COMM_WORLD, &wbuf, &wn, &dsq, &L)) == eslOK)
 	{
 	  ESL_DPRINTF1(("worker %d: has received search job, length: %d\n", cfg->my_rank, L));
-	  if ((status = process_search_workunit(go, cfg, errbuf, cm, dsq, L, &results)) != eslOK) goto ERROR;
+	  if ((status = ProcessSearchWorkunit(cm, errbuf, dsq, L, &results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank)) != eslOK) goto ERROR;
 	  ESL_DPRINTF1(("worker %d: has gathered search results\n", cfg->my_rank));
 	  
 	  n = 0;
@@ -855,38 +847,6 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   return;
 }
 #endif /*HAVE_MPI*/
-
-/* A search work unit consists of a CM, digitized sequence dsq, and indices i and j.
- * The job is to search dsq from i..j and return search results in <*ret_results>.
- */
-static int
-process_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_DSQ *dsq, int L, search_results_t **ret_results)
-{
-  int status;
-  search_results_t **results;
-  int n;
-  float size_limit = esl_opt_GetReal(go, "--mxsize");
-
-  if(cm->si == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm->si is NULL in process_search_workunit()\n");
-
-  ESL_ALLOC(results, sizeof(search_results_t *) * (cm->si->nrounds+1));
-  for(n = 0; n <= cm->si->nrounds; n++) results[n] = CreateResults(INIT_RESULTS);
-
-  if((status = DispatchSearch(cm, errbuf, 0, dsq, 1, L, results, size_limit, NULL, NULL)) != eslOK) goto ERROR;
-
-  /* we only care about the final results, that survived all the rounds (all the filtering rounds plus the final round) */
-  *ret_results = results[cm->si->nrounds];
-  /* free the results describing what survived each round of filtering (if any) */
-  for(n = 0; n < cm->si->nrounds; n++) FreeResults(results[n]);
-  free(results);
-
-  return eslOK;
-  
- ERROR:
-  ESL_DPRINTF1(("worker %d: has caught an error in process_search_workunit\n", cfg->my_rank));
-  FreeCM(cm);
-  return status;
-}
 
 /* initialize_cm()
  * Setup the CM based on the command-line options/defaults;
@@ -1591,26 +1551,3 @@ int read_next_search_seq (const ESL_ALPHABET *abc, ESL_SQFILE *dbfp, int do_revc
   if(dbseq != NULL) free(dbseq);
   return status;
 }
-#if HAVE_MPI
-/* determine_seq_chunksize()
- * From RSEARCH, with one change, ideal situation is considered
- * when we put 1 chunk for each STRAND of each seq on each proc.
- *
- * Set the chunk size as follows:
- * 1.  Ideally take smallest multiple of cm->W that gives result greater than
- *     (seqlen + (cm->W * (num_procs-2))) / (num_procs-1)
- *     This should put one chunk for EACH STRAND on each processor.
- * 2.  If this is less than MPI_MIN_CHUNK_W_MULTIPLIER * cm->W, use that value.
- * 3.  If this is greater than MPI_MAX_CHUNK_SIZE, use that.
- */
-static int
-determine_seq_chunksize(struct cfg_s *cfg, int L, int W)
-{
-  int chunksize;
-  chunksize = ((L + (W * (cfg->nproc-2))) / (cfg->nproc)) + 1;
-  chunksize = ((chunksize / W) + 1) * W;
-  chunksize = ESL_MAX(chunksize, W * MPI_MIN_CHUNK_W_MULTIPLIER); 
-  chunksize = ESL_MIN(chunksize, MPI_MAX_CHUNK_SIZE);
-  return chunksize;
-}
-#endif

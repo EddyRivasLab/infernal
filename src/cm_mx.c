@@ -1245,7 +1245,7 @@ UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx,
       r = bestr[dmin]; 
       ip = using_hmm_bands ? j-(dmin+dn)+gamma->i0 : j-dmin+gamma->i0;
       jp = j-1+gamma->i0;
-      report_hit (ip, jp, r, alpha_row[dmin], results);
+      ReportHit (ip, jp, r, alpha_row[dmin], results);
     }
     bestd = dmin;
     /* Now, if current score is greater than maximum seen previous, report
@@ -1253,10 +1253,10 @@ UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx,
     for (d = dmin+1; d <= dmax; d++) {
       if (alpha_row[d] > alpha_row[bestd]) {
 	if (alpha_row[d] >= gamma->cutoff) { 
-	  r = bestr[d]; /* saver/bestr is invalid for Inside, we've summed all parses, none of this single parse crap */
+	  r = bestr[d]; 
 	  ip = using_hmm_bands ? j-(d+dn)+gamma->i0 : j-d+gamma->i0;
 	  jp = j-1+gamma->i0;
-	  report_hit (ip, jp, r, alpha_row[d], results);
+	  ReportHit (ip, jp, r, alpha_row[d], results);
 	}
 	bestd = d;
       }
@@ -1308,7 +1308,7 @@ UpdateGammaHitMxCP9Forward(GammaHitMx_t *gamma, int i, int j, float hit_sc, sear
     if (hit_sc >= gamma->cutoff) { 
       ip = i-1 + gamma->i0;
       jp = j-1 + gamma->i0;
-      report_hit (ip, jp, 0, hit_sc, results); /* 0 is for saver, which is irrelevant for HMM hits */
+      ReportHit (ip, jp, 0, hit_sc, results); /* 0 is for saver, which is irrelevant for HMM hits */
     }
   }
   return;
@@ -1378,7 +1378,7 @@ UpdateGammaHitMxCP9Backward(GammaHitMx_t *gamma, int i, int j, float hit_sc, sea
     if (hit_sc >= gamma->cutoff) { 
       ip = i-1 + gamma->i0;
       jp = j-1 + gamma->i0;
-      report_hit (ip+1, jp, 0, hit_sc, results); /* 0 is for saver, which is irrelevant for HMM hits */
+      ReportHit (ip+1, jp, 0, hit_sc, results); /* 0 is for saver, which is irrelevant for HMM hits */
     }
   }
   return;
@@ -1409,7 +1409,7 @@ TBackGammaHitMxForward(GammaHitMx_t *gamma, search_results_t *results, int i0, i
     if (gamma->gback[jp_g] == -1) j--; /* no hit */
     else {              /* a hit, a palpable hit */
       if(gamma->savesc[jp_g] >= gamma->cutoff) /* report the hit */
-	report_hit(gamma->gback[jp_g], j, gamma->saver[jp_g], gamma->savesc[jp_g], results);
+	ReportHit(gamma->gback[jp_g], j, gamma->saver[jp_g], gamma->savesc[jp_g], results);
       j = gamma->gback[jp_g]-1;
     }
   }
@@ -1447,7 +1447,7 @@ TBackGammaHitMxBackward(GammaHitMx_t *gamma, search_results_t *results, int i0, 
     else {              /* a hit, a palpable hit */
       if(gamma->savesc[ip_g] >= gamma->cutoff) { /* report the hit */
 	ESL_DASSERT1((i <= gamma->gback[ip_g]));
-	report_hit(i, gamma->gback[ip_g], gamma->saver[ip_g], gamma->savesc[ip_g], results);
+	ReportHit(i, gamma->gback[ip_g], gamma->saver[ip_g], gamma->savesc[ip_g], results);
       }
       i = gamma->gback[ip_g]+1;
     }

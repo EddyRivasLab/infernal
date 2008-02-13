@@ -31,8 +31,9 @@
  * Function: DispatchSearch()
  * Incept:   EPN, Wed Nov 14 10:43:16 2007
  *
- * Purpose:  Given a CM and a sequence, call the correct search algorithm
- *           based on search_opts. 
+ * Purpose:  Given a CM and a sequence, call the correct search algorithms
+ *           based on search_info in cm->si. Handles up to 2 levels of filtering by
+ *           calling itself recursively.
  * 
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
@@ -41,7 +42,6 @@
  *           dsq             - the target sequence (digitized)
  *           i0              - start of target subsequence (often 1, beginning of dsq)
  *           j0              - end of target subsequence (often L, end of dsq)
- *           sround          - filter round, if > 0, we're filtering
  *           results         - [0..cm-fi->nrounds] search_results_t to keep results for each round in, must be non NULL and empty
  *           size_limit      - max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           ret_flen        - RETURN: subseq len that survived filter (NULL if not filtering)
@@ -99,7 +99,6 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
     /* some SEARCH_WITH_HMM specific contract checks */
     if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), trying to use CP9 HMM that is NULL.\n");
     if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
-    if(smx != NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round %d, SEARCH_WITH_HMM but smx != NULL.\n", sround);
     if(hsi != NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round %d, SEARCH_WITH_HMM but hsi != NULL.\n", sround);
     if(! ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD)))
       ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), search type for this round is SEARCH_WITH_HMM, but CM_SEARCH_HMMVITERBI and CM_SEARCH_HMMFORWARD flags are both down.");
@@ -123,16 +122,12 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 			       NULL, NULL, /* don't return best score at each posn, or best scoring posn */
 			       &sc)) != eslOK) return status;
     }
-#if 0 /* EPN, Tue Jan 22 14:26:57 2008, we don't need to remove overlaps, they'll be collapsed below
-       * (unless do_hbanded), and even if they weren't it's okay b/c we remove overlaps before
-       * we print results in cmsearch.
-       */
     /* Remove overlapping hits, if we're being greedy */
     if(cm->search_opts & CM_SEARCH_HMMGREEDY) { /* resolve overlaps by being greedy */
       ESL_DASSERT1((i0 == 1)); /* EPN, Tue Nov 27 13:59:31 2007 not sure why this is here */
-      remove_overlapping_hits (fwd_results, i0, j0);
+      RemoveOverlappingHits (fwd_results, i0, j0);
+      SortResultsByEndPoint(fwd_results);
     }
-#endif
 
     /* determine start points (i) of the hits based on backward direction (Viterbi or Backward) scan starting at j */
     for(h = 0; h < fwd_results->num_results; h++) {
