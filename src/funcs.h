@@ -26,6 +26,7 @@ extern void  CMSimpleProbify(CM_t *cm);
 extern int   rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat);
 extern void  CMLogoddsify(CM_t *cm);
 extern int   CMCountStatetype(CM_t *cm, char type);
+extern int   CMCountNodetype(CM_t *cm, char type);
 extern int   CMSegmentCountStatetype(CM_t *cm, int r, int z, char type);
 extern int   CMSubtreeCountStatetype(CM_t *cm, int v, char type);
 extern int   CMSubtreeFindEnd(CM_t *cm, int v);

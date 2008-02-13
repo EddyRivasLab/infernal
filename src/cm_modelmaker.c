@@ -670,6 +670,21 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
   cm->M     = state;
   cm->nodes = node;
   cm->clen  = clen;
+
+  /* A couple of checks to make sure our CM is valid for local alignment/search.
+   * The following is invalid:
+   * 1. CMs with exactly 3 nodes. This must be either {ROOT, MATL, END} or
+   *    {ROOT, MATP, END}. Either way a local end is impossible b/c local ends
+   *    from nodes adjacent to end states are impossible. This is bad. Even
+   *    worse is a {ROOT, MATL, END} model can't emit/align more than a single
+   *    residue in local mode (ROOT_IL, ROOT_IR are unreachable, and so is MATL_IL,
+   *    b/c it was detached to remove an ambiguity with ROOT_IR).
+   * 2. CMs with 0 MATL, MATR and BIF nodes. The reason is because such a CM only has
+   *    a ROOT, a bunch of MATPs and an END, and it is impossible to align a single
+   *    residue to such a model when it's in local mode. 
+   */
+  if(cm->nodes == 3) cm_Fail("cm_from_guide(), it's illegal to construct a CM of only 3 nodes.\n"); 
+  if((CMCountNodetype(cm, MATL_nd) == 0) && (CMCountNodetype(cm, MATL_nd) == 0) && (CMCountNodetype(cm,BIF_nd) == 0)) cm_Fail("cm_from_guide(), it's illegal to construct a CM with 0 MATL, MATR and BIF nodes.\n"); 
   return;
 
  ERROR:

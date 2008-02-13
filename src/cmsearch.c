@@ -78,8 +78,8 @@ static ESL_OPTIONS options[] = {
   /* filtering options, by default do HMM, then CYK filter */
   { "--fil-qdb",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-qdb,--qdb", "filter with CM QDB (banded) CYK algorithm", 5 },
   { "--fil-no-qdb",eslARG_NONE, FALSE,     NULL, NULL,  NULL,      NULL,"--fil-qdb",    "do not filter with CM banded CYK", 5 },
-  { "--fil-hmm",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-hmm", "filter with HMM Forward algorithm", 5 },
-  { "--fil-no-hmm",eslARG_NONE, FALSE,     NULL, NULL,  NULL,      NULL,"-fil-hmm",     "do not filter with HMM fowward algorithm", 5 },
+  { "--fil-hmm",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-hmm", "filter with HMM forward algorithm", 5 },
+  { "--fil-no-hmm",eslARG_NONE, FALSE,     NULL, NULL,  NULL,      NULL,"-fil-hmm",     "do not filter with HMM forward algorithm", 5 },
   /* filter cutoff options */
   {"--fil-S-qdb",eslARG_REAL,  "0.02",NULL, "0<x<1.",    NULL,      NULL, "--fil-T-qdb", "set QDB CM filter cutoff to achieve survival fraction <x>", 6 },
   ///{ "--fil-E-qdb",eslARG_REAL,  "0.02",NULL, "x>0.",    NULL,      NULL, "--fil-T-qdb", "use E-value of <x> QDB CM filter", 6 },

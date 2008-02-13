@@ -1033,11 +1033,11 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       if(esl_opt_GetBoolean(go, "-a")) print_seq_column_headings(go, cfg);
       for(i = 0; i < seqs_to_aln->nseq; i++)
 	{
-	  /* TO DO: write function that inside actually_align_targets() takes
+	  /* TO DO: write function that inside DispatchAlignments() takes
 	   * a CP9 parse, and converts it to a CM parsetree */
 	  if(esl_opt_GetBoolean(go, "-a")) 
 	    fprintf(cfg->ofp, "  %-25.25s  %6d  %11.4f  %11.4f  %10.4f\n", seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, cfg->s1_sc[i], seqs_to_aln->sc[i], cfg->s1_sc[i] - seqs_to_aln->sc[i]);
-	  if(fabs(cfg->s1_sc[i] -  seqs_to_aln->sc[i]) > 0.0001) {
+	  if(fabs(cfg->s1_sc[i] - seqs_to_aln->sc[i]) > 0.01) {
 	    diff_ct++;
 	    diff_sc += cfg->s1_sc[i] - seqs_to_aln->sc[i]; /* don't take absolute value in case cur stage sc > stage 1 sc, for example with -l --hmmviterbi */
 	  }

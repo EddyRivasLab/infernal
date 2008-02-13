@@ -828,6 +828,16 @@ CMSubtreeFindEnd(CM_t *cm, int r)
   }
   return (r-1);
 }
+int
+CMCountNodetype(CM_t *cm, char type)
+{
+  int nd;
+  int count = 0;
+  for(nd = 0; nd < cm->nodes; nd++) { 
+    if(cm->ndtype[nd] == type) count++;
+  }
+  return count;
+}
 
 /* Function: CalculateStateIndex()
  * Date:     SRE, Mon Jul 31 15:37:55 2000 [St. Louis]

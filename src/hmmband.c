@@ -1,15 +1,10 @@
 /* hmmband.c
- * EPN 12.16.05 (many functions older than this)
+ * EPN 12.16.05 
  * 
- * Functions to support CM Plan 9 (CP9) HMMs for band 
- * calculation. Includes functions for calc'ing 
- * posteriors. 
- *
- * Note: At the end of the function are old versions
- *       of plan 7 HMM functions related to the CP9 
- *       functions. Plan 7 HMMs for banding are no
- *       longer supported as of 10.26.06; these
- *       functions are kept here for reference.
+ * Functions to support deriving bands for a constrained CM
+ * parse of a target sequence using CM. Bands are derived
+ * from CM plan 9 HMM (CP9 HMM) Forward/Backward parses of
+ * the target.
  * 
  * 
  *****************************************************************
@@ -447,7 +442,16 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
 
       i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
       k = 0;
-      pmx->mmx[ip][0] = -INFTY; /* M_0 doesn't emit */
+      /* new block EPN, Wed Feb 13 11:58:52 2008 */
+      pmx->mmx[ip][0] = ESL_MAX(fmx->mmx[ip][0] + bmx->mmx[ip][0] - sc, -INFTY); /* M_0 doesn't emit */
+      if(! nset_m[0]) { 
+	if((mass_m[0] = ILogsum(mass_m[0], pmx->mmx[ip][0])) > thresh) { 
+	  cp9b->pn_min_m[0] = i;
+	  nset_m[0] = TRUE; 
+	}
+      }
+      /* end of new block, old line used to be: pmx->mmx[ip][0] = -INFTY; */
+
       pmx->imx[ip][0] = ESL_MAX(fmx->imx[ip][0] + bmx->imx[ip][0] - hmm->isc[dsq[i]][0] - sc, -INFTY);
       /*hmm->isc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
       if(! nset_i[0]) { 
@@ -1448,7 +1452,22 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
   ////cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1); 
  
   /* Step 2: Traverse the CM from left to right in consensus position coordinates. Fill in the 
-   *         i and j bands (imin, imax, jmin, jmax) for all states as we go. 
+   *         i and j bands (imin, imax, jmin, jmax) for all states as we go. The CM is traversed
+   *         using a stack, each node is visited twice (this is based on Sean's cleaner: 
+   *         display.c::CreateEmitMap(). The first time a node <nd> is visited we're 'on the left'
+   *         and then we push it back to the stack, and visit it again 'on the right' later. We
+   *         are moving around the perimeter of the guide tree, stepping one position at a time
+   *         in the consensus sequence coordinates, from left to right. We mainly set bands
+   *         when we're 'on the right', with the exception of Left emitting states, which are
+   *         set when we're on the HMM. All emitting states and delete states v have either 
+   *         i, or j or both bands that can be set 'explicitly' based on the HMM bands for 
+   *         the HMM state that maps to v. For example we can set the i bands for MATL_ML 
+   *         states, and the j bands for MATR_MR states. All other bands (and both i 
+   *         and j bands for S states, B states, E states) are set 'implicitly based on the
+   *         explicit bands, and the r_* data structures we filled in HMMBandsEnforceValidParse().
+   *         The goal was to make this function as clean and simple as possible, and although
+   *         it doesn't look it, this is as good as I can get it. There are many special 
+   *         cases that make an elegant implementation beyond me.
    */
   if(! doing_search) { 
     assert(r_mn[0] == (i0-1)); 
@@ -1467,7 +1486,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
       esl_stack_IPop(nd_pda, &on_right);
       if (on_right) {
 	switch(cm->ndtype[nd]) { /* this is a massive switch, we set i and j bands for almost all
-				  * states here when we're on the right (sole exceptions are
+				  * states here when we're on the right (sole exceptions are i bands for
 				  * MATP_nd states (except MATP_IR), and MATL_nd states) */
 
 	case BIF_nd: /* special case, set i bands based on left child, j bands based on right child */
@@ -1478,7 +1497,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  imax[v] = imax[w];
 	  jmin[v] = jmin[y];
 	  jmax[v] = jmax[y];
-	  /* check for possibility that either child is not reachable, only will happen with local on */
+	  /* check for possibility that either child is not reachable, will only possibly happen with local on */
 	  if(imin[v] == -1 || jmin[v] == -1) { 
 	    /* either the left child, or right child is not reachable, make them both unreachable as well as the BIF state */
 	    imin[v] = imin[w] = imin[y] = jmin[v] = jmin[w] = jmin[y] = -1;
@@ -1865,8 +1884,6 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
     } 
     ////nd = cm->ndidx[v]; printf("nd: %4d v: %4d  %4s %2s (%11d %11d  %11d %11d) (HMM nd: %4d %4d)\n", nd, v, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v]), cp9b->imin[v], cp9b->imax[v], cp9b->jmin[v], cp9b->jmax[v], cp9map->cs2hn[v][0], cp9map->cs2hn[v][1]);
   }
-  /* check for valid CM parse, there should be one */
-  if((status = CMBandsCheckValidParse(cm, cp9b, errbuf, i0, j0, doing_search)) != eslOK) return status;
 #endif
   /* final check, it's possible, but unlikely that some states had valid i bands set, but invalid j bands set, 
    * or vice versa, we handle this by making these states unreachable */
@@ -1876,54 +1893,167 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
       cp9b->imax[v] = cp9b->jmax[v] = -2;
     }
   }
-  /* A final hack. If we're doing alignment, and the hmm used to derive bands has local begins and ends on,
+
+  /* A final, brutal hack. If the hmm used to derive bands has local begins, ends and ELs on,
    * it's possible (but extremely rare empirically, even with very high tau values (0.49!)) that no valid 
-   * CM valid parse exists within the i and j bands.  To avoid this, we implement a brutal hack here.
-   * 1. assert CM local begins and ends are on (they should be if we're using a localized HMM to get bands).
-   * 2. find the 'topmost' node <nd> (node with smallest node index) that is a MATP, MATL, or MATR without a next
-   *    node END_nd. These are nodes into which we can do a local begin and out of which we can do a local
-   *    end.
-   * 3. set imin[cm->nodemap[nd] == imax[cm->nodemap[nd] == i0 and
-   *        jmin[cm->nodemap[nd] == jmax[cm->nodemap[nd] == j0 
-   * If no such node exists (which will only be true for a CM of 3 nodes (ROOT, MATL, END) or (ROOT, MATP, END),
-   * contrive the bands so a parse exists, with all emissions from the ROOT_IL state.
+   * CM parse exists within the i and j bands. To avoid this, we implement a brutal hack here.
+   * There's 2 relevant cases: 
+   * 
+   * Case 1: node 1 is a MATP, MATR, or MATL node (this is the easier case)
+   * Case 2: node 1 is a BIF node 
+   *
+   * Case 1: node 1 is a MATP, MATR, or MATL node (this is the easier case)
+   * A. assert CM local begins and ends are on (they should be if we're using a localized HMM to get bands).
+   *    and we can do a local begin into and a local end out of node 1. This will be TRUE unless there
+   *    are only 3 nodes in the CM (which is impossible, cmbuild won't build a 3 node CM - the reason is that
+   *    such a CM would suck at local alignment b/c no local ends are possible (not to mention they're too small 
+   *    to be useful, and that if node 1 == MATL the CM can only emit/align 1 residue in local mode b/c the 
+   *    ROOT_IL, ROOT_IR are unreachable and the MATL_IL is detached!). 
+   *
+   * B. if we're doing alignment (full target must be accounted for): 
+   *    v = cm->nodemap[nd]
+   *    set imin[v] = ESL_MIN(imin[v], i0) 
+   *        imax[v] = ESL_MAX(imax[v], i0)
+   *        jmin[v] = ESL_MIN(jmin[v], j0) 
+   *        jmax[v] = ESL_MAX(jmax[v], j0)
+   *    else if we're doing search and v is unreachable, make it reachable by setting
+   *        imin[v] = imin[0]; 
+   *        imax[v] = imax[0]; 
+   *        jmin[v] = jmin[0]; 
+   *        jmax[v] = jmax[0]; 
+   *    then we'll be able to emit some residues from v, (so we're guaranteed a valid parse.
+   *
+   * Case 2: node 1 is a BIF node 
+   * v = cm->nodemap[nd] (the BIF_B state)
+   * if v is reachable and we're doing alignment, expand it's bands so that it can 
+   * account for the full seq: 
+   *    set imin[v] = ESL_MIN(imin[v], i0) 
+   *        imax[v] = ESL_MAX(imax[v], i0)
+   *        jmin[v] = ESL_MIN(jmin[v], j0) 
+   *        jmax[v] = ESL_MAX(jmax[v], j0)
+   * else if v is reachable and we're doing search, ensure that one contiguous chunk of
+   * seq can be emitted by BIF's children (see code)
+   *
+   * if v is not reachable (if we're doing search or not), we enforce 1 valid parse, 
+   * the BIF must emit the full target, residues i0..j0-1 from its' BEGL_S's EL state, and
+   * residue j0 from it's BEGR_S EL state.
    */
-  if(hmm_is_localized && !doing_search) {
+  if(hmm_is_localized) { 
     assert(cm->flags & CMH_LOCAL_BEGIN); /* asserted in contract too */
     assert(cm->flags & CMH_LOCAL_END);   /* asserted in contract too */
-    nd = 1;
-    while((nd < cm->nodes) && 
-	  (!(NOT_IMPOSSIBLE(cm->beginsc[cm->nodemap[nd]]))) && (!(NOT_IMPOSSIBLE(cm->endsc[cm->nodemap[nd]])))) nd++;
-    if(nd == cm->nodes) { /* must be 3 node model */
-      if(cm->nodes != 3) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "cp9_HMM2ijBands(), !doing_search and cm/hmm are locally configured, cm->nodes != 3, but there's state that can undergo a local begin and end! Shouldn't happen.");
-      imin[0] = imax[0] = imax[1] = imax[1] = i0;
-      jmin[0] = jmax[0] = jmax[1] = jmax[1] = i0; /* ROOT_IL emits i0..j0 */
-      nd = 1;
-      if(cm->ndtype[1] == MATL_nd) { /* MATL_D is state 4, END_E is state 6 */
-	imin[4] = imax[4] = imin[6] = imax[6] = j0+1;
-	jmin[4] = jmax[4] = jmin[6] = jmax[6] = j0;
-      }
-      else if(cm->ndtype[1] == MATP_nd) { /* MATP_D is state 6, END_E is state 9 */
-	imin[6] = imax[6] = imin[9] = imax[9] = j0+1;
-	jmin[6] = jmax[6] = jmin[9] = jmax[9] = j0;
-      }
+    if(cm->nodes == 3) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "cp9_HMM2ijBands(), cm/hmm are locally configured, only 3 nodes in the CM, this is an illegal CM b/c local ENDs are impossible.");
+    nd = 1; 
+    if(i0 == j0) { 
+      while((nd < cm->nodes) && (cm->ndtype[nd] == MATP_nd)) nd++; /* a local begin into a MATP_MP state can't happen when the target is 1 residue, it must emit 2 residues */
+      if(cm->ndtype[nd] == END_nd) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "cp9_HMM2ijBands(), CM has no MATL, MATR or BIF nodes, this shouldn't happen (cmbuild forbids it)!\n");
     }
-    else { /* nd is index of first node we can do a local begin into and local end out of */
+    if(cm->ndtype[nd] == BIF_nd) {
       v = cm->nodemap[nd];
-      imin[v] = imax[v] = i0;
-      jmin[v] = jmax[v] = j0;
+      w = cm->cfirst[v]; /* BEGL_S */
+      y = cm->cnum[v];   /* BEGR_S */
+      if(imin[v] != -1) { /* v is reachble, it's children should be also */
+	assert(imin[w] != -1);
+	assert(imin[y] != -1);
+	if(!doing_search) { /* we need to be able to account for the full sequence */
+	  imin[v] = ESL_MIN(imin[v], i0);
+	  imax[v] = ESL_MAX(imax[v], i0);
+	  jmin[v] = ESL_MIN(jmin[v], j0);
+	  jmax[v] = ESL_MAX(jmax[v], j0);
+	  imin[w] = imin[v];
+	  imax[w] = imax[v];
+	  jmax[w] = ESL_MAX(jmax[w], imax[w]);
+	  jmin[y] = jmin[v];
+	  jmax[y] = jmax[v];
+	  imin[y] = ESL_MIN(imin[y], jmin[y]);
+	  /* now ensure that imin[y] <= jmax[w]+1, so we can definitely emit the full seq */
+	  imin[y] = ESL_MIN(imin[y], jmax[w]+1);
+	  imax[y] = ESL_MAX(imin[y], imax[y]);
+	}
+	else { /* doing search, we only need to be able to emit some range of residues from BEGL and BEGR's EL states */
+	  imin[y] = ESL_MIN(imin[y], jmax[w]+1);
+	  imax[y] = ESL_MAX(imin[y], imax[y]);
+	}
+      } /* end of if(imin[v] != -1) */
+      else { /* imin[v] == -1, v is unreachable, make it reachable */
+	assert(imin[w] == -1);
+	assert(imin[y] == -1);
+	if(! doing_search) { 
+	  /* if we're doing alignment, we enforce that the full seq must be emittable 
+	   * by BIF and it's children's (BEGL_S and BEGR_S) EL states */
+	  imin[v] = i0;
+	  imax[v] = i0;
+	  jmin[v] = j0;
+	  jmax[v] = j0;
+	  imin[w] = i0; /* w will emit i0..j0-1 (which may be 0 residues if i0==j0) */
+	  imax[w] = i0;
+	  jmin[w] = j0-1;
+	  jmax[w] = j0-1; 
+	  imin[y] = j0; /* y will emit only j0 */
+	  imax[y] = j0;
+	  jmin[y] = j0;
+	  jmax[y] = j0;
+	}
+	else { 
+	  /* if we're doing search we enforce that the residues from imin[0]..jmax[0] are emittable 
+	   * by BIF and it's children's (BEGL_S and BEGR_S) EL states */
+	  imin[v] = imin[0];
+	  imax[v] = imin[0];
+	  jmin[v] = jmax[0];
+	  jmax[v] = jmax[0];
+	  imin[w] = imin[0]; /* w will emit imin[0]..jmax[0]-1 (which may be 0 residues if imin[0]==jmax[0]) */
+	  imax[w] = imin[0];
+	  jmin[w] = jmax[0]-1;
+	  jmax[w] = jmax[0]-1; 
+	  imin[y] = jmax[0]; /* y will emit only jmax[0] */
+	  imax[y] = jmax[0]; /* y will emit only jmax[0] */
+	  jmin[y] = jmax[0];
+	  jmax[y] = jmax[0];
+	}	  
+      }
+    } /* end of if(cm->ndtype[nd] == BIF_nd) */
+    else { 
+      /* node nd is a MATL, MATR or MATP */
+      ESL_DASSERT1((cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd));
+      assert(cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATR_nd);
+      v = cm->nodemap[nd];
+      /* we can do a local begin into and local end out of v */
+      ESL_DASSERT1((NOT_IMPOSSIBLE(cm->beginsc[v])));
+      ESL_DASSERT1((NOT_IMPOSSIBLE(cm->endsc[v])));
+      assert(NOT_IMPOSSIBLE(cm->beginsc[v]));
+      assert(NOT_IMPOSSIBLE(cm->endsc[v]));
+      if(!doing_search) { /* we need to be able to account for the full sequence */
+	if(imin[v] == -1) { /* v is unreachable, make it reachable only for emitting the full seq */
+	  imin[v] = imax[v] = i0;
+	  jmin[v] = jmax[v] = j0;
+	}
+	else { /* v is reachable, expand it's band so it can emit the full seq */
+	  imin[v] = ESL_MIN(imin[v], i0);
+	  imax[v] = ESL_MAX(imax[v], i0);
+	  jmin[v] = ESL_MIN(jmin[v], j0);
+	  jmax[v] = ESL_MAX(jmax[v], j0);
+	}
+      }
+      else { /* doing search, do not need to account for full target sequence, make it so we can reach v for some i and j (this will guarantee >= 1 valid parse) */
+	if(imin[v] == -1) { /* v is unreachable */
+	  imin[v] = imin[0];
+	  imax[v] = imax[0];
+	  jmin[v] = jmin[0];
+	  jmax[v] = jmax[0];
+	}
+	else { /* v is reachable, make sure it's reachable from the ROOT_S state, expand the ROOT_S band */
+	  imin[0] = ESL_MIN(imin[0], imin[v]);
+	  imax[0] = ESL_MAX(imax[0], imax[v]);
+	  jmin[0] = ESL_MIN(jmin[0], jmin[v]);
+	  jmax[0] = ESL_MAX(jmax[0], jmax[v]);
+	}
+      }
     }
   }
-
-#if 0
-  /* temp section */
-  FILE *fp;
-  fp = fopen("new.ij", "w");
-  for(v = 0; v < cm->M; v++) { 
-    fprintf(fp, "v: %4d  %11d %11d  %11d %11d\n", v, imin[v], imax[v], jmin[v], jmax[v]);
-  }
-  fclose(fp);
-  /* end temp section */
+  /* end of brutal hack */
+#if 1
+  //#if eslDEBUGLEVEL >= 1
+  /* check for valid CM parse, there should be one */
+  if((status = CMBandsCheckValidParse(cm, cp9b, errbuf, i0, j0, doing_search)) != eslOK) return status;
 #endif
 
   esl_stack_Destroy(nd_pda);
@@ -1980,7 +2110,13 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
  *           just set the reachable band for M_4 to 3..7. So, that's
  *           what we do, and we doctor the band of I_3 so that M_4 *can*
  *           be reached for i == 5. This is done in HMMBandsFillGap().
- *           See that function for details.
+ *           See that function for details. This hack is only performed
+ *           for models NOT in local mode. If we are in local mode,
+ *           this 'gap' situation comes up much more often, but when 
+ *           we're in local mode, we can use an EL state in the CM
+ *           to basically always get a valid parse, so we're not
+ *           so worried about enforcing a valid parse and we skip
+ *           this hack.
  *
  * Args:     cp9b - the CP9 bands object
  *           cp9map - map from CM to cp9 
@@ -2020,7 +2156,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
   int *r_nn_j; /* [0..k..hmm_M] minimal residue position for which we can reach node k (any of M_k, I_k, D_k) */
   int *r_nx_j; /* [0..k..hmm_M] maximal residue position for which we can reach node k (any of M_k, I_k, D_k) */
   /* r_nn_i and r_nx_i are used when setting i bands, and r_nn_j and r_nx_j are used when setting j bands .
-   * the values can differ vecause of an off-by-one issue with the non-emitting (delete and M_0) states of the HMM:  
+   * The values can differ vecause of an off-by-one issue with the non-emitting (delete and M_0) states of the HMM:  
    * pn_min_d[k] = i, means posn i was last residue emitted prior to entering node k's delete state. However, for a CM,
    * if a delete states sub-parsetree is bounded by i' and j', this means positions i' and j' HAVE YET TO BE EMITTED.
    * For i states this means we have to add 1 to the delete band positions, but for j states we do not, the off-by-one
@@ -2038,7 +2174,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
   int  x;          /* a temporary maximum residue position */
   int  c;          /* counter */
   int sd;          /* state delta, number of emissions for each state */
-  int hmm_is_localized; /* TRUE if HMM has local begins, ends or ELs on */
+  int local_begins_ends_on; /* TRUE if HMM has local begins (M_0(B) -> M_k for k = 1..M and local ends (M_k -> E) for k = 1..M-1 */
   int j0_is_reachable = FALSE; /* TRUE if we can reach j0 for some node */
   /* ptrs to cp9b data, for convenience */
   int *pn_min_m;      /* pn_min_m[k] = first position in HMM band for match state of HMM node k */
@@ -2048,6 +2184,9 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
   int *pn_min_d;      /* pn_min_d[k] = first position in HMM band for delete state of HMM node k */
   int *pn_max_d;      /* pn_max_d[k] = final position in HMM band for delete state of HMM node k */
 
+  if((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) && (! (cm->cp9->flags & CPLAN9_LOCAL_END))) ESL_FAIL(eslEINCOMPAT, errbuf, "HMMBandsEnforceValidParse(), HMM has local begins ON but local ends OFF. Both must be on, or both must be off.");
+  local_begins_ends_on = ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) && (cm->cp9->flags & CPLAN9_LOCAL_END)) ? TRUE : FALSE;
+  
   pn_min_m = cp9b->pn_min_m;
   pn_max_m = cp9b->pn_max_m;
   pn_min_i = cp9b->pn_min_i;
@@ -2069,15 +2208,9 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
   ESL_ALLOC(r_nn_hmm, sizeof(int) * (hmm_M+1));
   ESL_ALLOC(r_nx_hmm, sizeof(int) * (hmm_M+1));
 
-  int *old_r_nn_i, *old_r_nx_i, *old_r_nn_j, *old_r_nx_j;
-  ESL_ALLOC(old_r_nn_i, sizeof(int) * (hmm_M+1));
-  ESL_ALLOC(old_r_nx_i, sizeof(int) * (hmm_M+1));
-  ESL_ALLOC(old_r_nn_j, sizeof(int) * (hmm_M+1));
-  ESL_ALLOC(old_r_nx_j, sizeof(int) * (hmm_M+1));
-
   for(k = 0; k <= hmm_M; k++) { 
-    r_mn[k] = r_in[k] = r_dn[k] = r_nn_i[k] = r_nn_j[k] = old_r_nn_i[k] = old_r_nn_j[k] = r_nn_hmm[k] = INT_MAX;
-    r_mx[k] = r_ix[k] = r_dx[k] = r_nx_i[k] = r_nx_j[k] = old_r_nx_i[k] = old_r_nx_j[k] = r_nx_hmm[k] = INT_MIN;
+    r_mn[k] = r_in[k] = r_dn[k] = r_nn_i[k] = r_nn_j[k] = r_nn_hmm[k] = INT_MAX;
+    r_mx[k] = r_ix[k] = r_dx[k] = r_nx_i[k] = r_nx_j[k] = r_nx_hmm[k] = INT_MIN;
   }
   r_begn = INT_MAX;
   r_begx = INT_MIN;
@@ -2088,17 +2221,6 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
   ESL_ALLOC(filled_gap, sizeof(int) * (hmm_M+1));
   esl_vec_ISet(was_unr,    (hmm_M+1), FALSE);
   esl_vec_ISet(filled_gap, (hmm_M+1), FALSE);
-
-  hmm_is_localized = ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) || (cm->cp9->flags & CPLAN9_LOCAL_END) || (cm->cp9->flags & CPLAN9_EL)) ? TRUE : FALSE;
-#if 0 
-  ESL_ALLOC(end_from_el, sizeof(int) * (cm->cp9->M+1));
-  esl_vec_ISet(end_from_el, cm->cp9->M, FALSE);
-  if(cm->cp9->flags & CPLAN9_EL) {
-    for(c = 0; c < cm->cp9->el_from_ct[cm->cp9->M+1]; c++)       /* el_from_ct[cm->cp9->M+1] holds # ELs that can go to END */
-      end_from_el[cm->cp9->el_from_idx[cm->cp9->M+1][c]] = TRUE; /* M_EL->E is possible */
-  }
-  /* TEMP */ for(k = 0; k <= cm->cp9->M; k++) printf("end_from_el[k:%d]: %d\n", k, end_from_el[k]);
-#endif
 
   /* debugging printf block */
   ////cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
@@ -2111,8 +2233,10 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
    */
 
   if(! doing_search) assert(pn_min_m[0] == (i0-1)); 
-  r_mn[0] = pn_min_m[0]; /* initialize min reachable residue for M_0 as pn_min_m[0] */
-  r_mx[0] = pn_max_m[0]; /* initialize min reachable residue for M_0 as pn_max_m[0] */
+  if(pn_min_m[0] != -1) { 
+    r_mn[0] = pn_min_m[0]; /* initialize min reachable residue for M_0 as pn_min_m[0] */
+    r_mx[0] = pn_max_m[0]; /* initialize min reachable residue for M_0 as pn_max_m[0] */
+  }
 
   /* The main loop: for each node, for each state, determine which residues are reachable given
    * the reachable residues for the states in the previous node and current node.
@@ -2188,7 +2312,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	    n = ESL_MIN(n, pn_max_m[k+1]); /* n can't be more than pn_max_m[k+1] */
 	    x = ESL_MIN(x, pn_max_m[k+1]); /* x can't be more than pn_max_m[k+1] */
 	    if(r_mn[k+1] != INT_MAX) { 
-	      if(!hmm_is_localized && ESL_MIN(x, r_mx[k+1]) - ESL_MAX(n, r_mn[k+1]) < -1) { 
+	      if(!local_begins_ends_on && ESL_MIN(x, r_mx[k+1]) - ESL_MAX(n, r_mn[k+1]) < -1) { 
 		/* there's a 'gap' of >= 1 residue between n..x and r_mn[k+1].._r_mx[k+1], fill the gap by expanding band of I_k */
 		if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_mn[k+1], r_mx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
 		just_filled_gap = TRUE;
@@ -2210,7 +2334,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	    n = ESL_MIN(n, pn_max_m[k+1]); /* n can't be more than pn_max_m[k+1] */
 	    x = ESL_MIN(x, pn_max_m[k+1]); /* x can't be more than pn_max_m[k+1] */
 	    if(r_mn[k+1] != INT_MAX) { 
-	      if(!hmm_is_localized && ESL_MIN(x, r_mx[k+1]) - ESL_MAX(n, r_mn[k+1]) < -1) { 
+	      if(!local_begins_ends_on && ESL_MIN(x, r_mx[k+1]) - ESL_MAX(n, r_mn[k+1]) < -1) { 
 		/* there's a 'gap' of >= 1 residue between n..x and r_mn[k+1].._r_mx[k+1], fill the gap by expanding band of I_k */
 		ESL_DASSERT1((k != 0));
 		if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_mn[k+1], r_mx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
@@ -2232,7 +2356,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	    n = ESL_MAX(n, pn_min_m[k+1]); /* n can't be less than pn_min_m[k+1] */
 	    n = ESL_MIN(n, pn_max_m[k+1]); /* n can't be more than pn_max_m[k+1] */
 	    x = ESL_MIN(x, pn_max_m[k+1]); /* x can't be more than pn_max_m[k+1] */
-	    if(!hmm_is_localized && ESL_MIN(x, r_mx[k+1]) - ESL_MAX(n, r_mn[k+1]) < -1) { 
+	    if(!local_begins_ends_on && ESL_MIN(x, r_mx[k+1]) - ESL_MAX(n, r_mn[k+1]) < -1) { 
 	      /* there's a 'gap' of >= 1 residue between n..x and r_mn[k+1].._r_mx[k+1], fill the gap by expanding band of I_k */
 	      ESL_DASSERT1((k != 0));
 	      if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_mn[k+1], r_mx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
@@ -2245,7 +2369,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	}
       }
       /* EL_kp->M_k+1 transition, we could have come from 1 or more EL states */
-      if(cm->cp9->flags & CPLAN9_LOCAL_END) { 
+      if(cm->cp9->flags & CPLAN9_EL) { 
 	if(pn_min_m[k+1] != -1) { 
 	  for(c = 0; c < cm->cp9->el_from_ct[k+1]; c++) { /* el_from_ct[k+1] holds # ELs that can go to k+1 */
 	    kp = cm->cp9->el_from_idx[k+1][c];
@@ -2257,7 +2381,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 		n = ESL_MIN(n, pn_max_m[k+1]); /* n can't be more than pn_max_m[k+1] */
 		x = ESL_MIN(x, pn_max_m[k+1]); /* x can't be more than pn_max_m[k+1] */
 		if(r_mn[k+1] != INT_MAX) { 
-		  if(!hmm_is_localized && ESL_MIN(x, r_mx[k+1]) - ESL_MAX(n, r_mn[k+1]) < -1) { 
+		  if(!local_begins_ends_on && ESL_MIN(x, r_mx[k+1]) - ESL_MAX(n, r_mn[k+1]) < -1) { 
 		    /* there's a 'gap' of >= 1 residue between n..x and r_mn[k+1].._r_mx[k+1], fill the gap by expanding band of I_k */
 		    ESL_DASSERT1((k != 0));
 		    if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_mn[k+1], r_mx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
@@ -2275,7 +2399,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
       /* Begin ->M_k+1 transition, if local begins are on, we could go B->M_k+1, this is always true if M_k+1 is reachbale and (doing_search),
        * if we're doing alignment this is true only if the first residue is within the band on M_k+1 
        */
-      if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) { 
+      if(local_begins_ends_on) { 
 	if(pn_min_m[k+1] != -1) { 
 	  if(doing_search) { 
 	    n = pn_min_m[k+1]; 
@@ -2285,17 +2409,17 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	  }
 	  else { /* doing alignment, we can only do a local begin into M_k+1 if the first residue is within it's band */
 	    if(pn_min_m[k+1] == r_mn[0]+1) { 
-	      r_mn[k] = ESL_MIN(r_mn[k], r_mn[0]+1); 
-	      r_mx[k] = ESL_MAX(r_mx[k], r_mn[0]+1); /* not a typo, r_mx[0] == r_mn[0] (it's the begin state) */
+	      r_mn[k+1] = ESL_MIN(r_mn[k+1], r_mn[0]+1); 
+	      r_mx[k+1] = ESL_MAX(r_mx[k+1], r_mn[0]+1); /* not a typo, r_mx[0] == r_mn[0] (it's the begin state) */
 	    }
 	  }
 	}
       }
     } /* end of if(k < hmm_M) */
     /* transitions to END state */
-    if(k == hmm_M || cm->cp9->flags & CPLAN9_LOCAL_END) { /* handle transitions fromM_k to END */
+    if(k == hmm_M || local_begins_ends_on) { /* handle transitions from M_k to END */
       if(r_mn[k] <= r_mx[k] && cm->cp9->esc[k] != -INFTY) { /* if M_k is reachable and we're allowed to transit to E */
-	/* M_M->E transition */
+	/* M_k->E transition */
 	n = r_mn[k];
 	x = r_mx[k];
 	/* note: we don't have to worry about filling gaps here (that is if gap of >= 1 residue between [n..x] and [r_endn..r_endx]
@@ -2329,7 +2453,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	////printf("2 r_endn,x: %d..%d\n", r_endn, r_endx);
 	ESL_DASSERT1((r_endn <= r_endx));
       }
-      /* finally, deal with the possibility that get to E from an EL state */
+      /* finally, deal with the possibility that we go to E from an EL state */
       if(cm->cp9->flags & CMH_LOCAL_END) { 
 	for(c = 0; c < cm->cp9->el_from_ct[k+1]; c++) { /* el_from_ct[k+1] holds # ELs that can go to k+1 */
 	  kp = cm->cp9->el_from_idx[k+1][c];
@@ -2357,7 +2481,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	    n = ESL_MIN(n, pn_max_d[k+1]); /* n can't be more than pn_max_d[k+1] */
 	    x = ESL_MIN(x, pn_max_d[k+1]); /* x can't be more than pn_max_d[k+1] */
 	    if(r_dn[k+1] != INT_MAX) { 
-	      if(!hmm_is_localized && ESL_MIN(x, r_dx[k+1]) - ESL_MAX(n, r_dn[k+1]) < -1) { 
+	      if(!local_begins_ends_on && ESL_MIN(x, r_dx[k+1]) - ESL_MAX(n, r_dn[k+1]) < -1) { 
 		/* there's a 'gap' of >= 1 residue between n..x and r_dn[k+1].._r_dx[k+1], fill the gap by expanding band of I_k */
 		ESL_DASSERT1((k != 0));
 		if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_dn[k+1], r_dx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
@@ -2381,7 +2505,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	    n = ESL_MIN(n, pn_max_d[k+1]); /* n can't be more than pn_max_d[k+1] */
 	    x = ESL_MIN(x, pn_max_d[k+1]); /* x can't be more than pn_max_d[k+1] */
 	    if(r_dn[k+1] != INT_MAX) { 
-	      if(!hmm_is_localized && ESL_MIN(x, r_dx[k+1]) - ESL_MAX(n, r_dn[k+1]) < -1) { 
+	      if(!local_begins_ends_on && ESL_MIN(x, r_dx[k+1]) - ESL_MAX(n, r_dn[k+1]) < -1) { 
 		/* there's a 'gap' of >= 1 residue between n..x and r_dn[k+1].._r_dx[k+1], fill the gap by expanding band of I_k */
 		ESL_DASSERT1((k != 0));
 		if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_dn[k+1], r_dx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
@@ -2392,7 +2516,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	    r_dx[k+1] = ESL_MAX(r_dx[k+1], x);
 	    ESL_DASSERT1((r_dn[k+1] <= r_dx[k+1]));
 	  }
-}
+	}
       }
       /* D_k -> D_k+1 */
       if(r_dn[k] <= r_dx[k]) { 
@@ -2404,7 +2528,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	    n = ESL_MIN(n, pn_max_d[k+1]); /* n can't be more than pn_max_d[k+1] */
 	    x = ESL_MIN(x, pn_max_d[k+1]); /* x can't be more than pn_max_d[k+1] */
 	    if(r_dn[k+1] != INT_MAX) { 
-	      if(!hmm_is_localized && ESL_MIN(x, r_dx[k+1]) - ESL_MAX(n, r_dn[k+1]) < -1) { /* FALSE if n..x overlaps with r_mn[k+1].._r_mx[k+1] by at least 1 residue, if FAILs we have to pick to either NOT change r_mn, r_mx, or change them to n and x */
+	      if(!local_begins_ends_on && ESL_MIN(x, r_dx[k+1]) - ESL_MAX(n, r_dn[k+1]) < -1) { /* FALSE if n..x overlaps with r_mn[k+1].._r_mx[k+1] by at least 1 residue, if FAILs we have to pick to either NOT change r_mn, r_mx, or change them to n and x */
 		ESL_DASSERT1((k != 0));
 		if((status = HMMBandsFillGap(cp9b, errbuf, k, n, x, r_dn[k+1], r_dx[k+1], r_mn[k-1], r_dn[k-1])) != eslOK) return status;
 		just_filled_gap = TRUE;
@@ -2418,7 +2542,10 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
       }
     }
 
-    /* update the reachable-by-node bands, which residues can we reach this node for? */
+    /* update the reachable-by-node bands, which residues can we reach this node for?
+     * inside the following if's we don't have to check if r_*n[k], r_*x[k] == INT_MAX or
+     * INT_MIN, b/c we only enter the ifs if r_*n[k] <= r_*x[k] 
+     */
     if(r_mn[k] <= r_mx[k]) { /* M_k is reachable for i = r_mn[k]..r_mx[k] */
       r_nn_hmm[k] = ESL_MIN(r_nn_hmm[k], r_mn[k]);
       r_nx_hmm[k] = ESL_MAX(r_nx_hmm[k], r_mx[k]);
@@ -2432,16 +2559,35 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	r_nn_j[k-1] = ESL_MIN(r_nn_j[k-1], r_mn[k]-sd);
 	r_nx_j[k-1] = ESL_MAX(r_nx_j[k-1], r_mx[k]-sd);
       }
-      if(k == hmm_M) { 
-	r_nn_j[k] = ESL_MIN(r_nn_j[k], r_mn[k]);
-	r_nx_j[k] = ESL_MAX(r_nx_j[k], r_mx[k]);
+      if((local_begins_ends_on && k > 0) || k == hmm_M) { /* we can go to end from M_k with i from r_mn[k]..r_mx[k] */
+	if(doing_search) { 
+	  r_nn_j[k] = ESL_MIN(r_nn_j[k], r_mn[k]);
+	  r_nx_j[k] = ESL_MAX(r_nx_j[k], r_mx[k]);
+	}
+	else { /* have to emit j0 from last match state visited */
+	  if(r_mx[k] == j0) { 
+	    r_nn_j[k] = ESL_MIN(r_nn_j[k], j0);
+	    r_nx_j[k] = ESL_MAX(r_nx_j[k], j0);
+	  }
+	}
       }
-      if((hmm_is_localized && k > 0) || k == 1) { 
-	r_begn = ESL_MIN(r_begn, r_mn[k]);
-	r_begx = ESL_MAX(r_begx, r_mx[k]);
+      if((local_begins_ends_on && k > 0) || k == 1) { /* we can go from begin to M_k with i to r_mn[k]..r_mx[k] */
+	if(doing_search) { 
+	  r_nn_i[k] = ESL_MIN(r_nn_i[k], r_mn[k]); 
+	  r_nx_i[k] = ESL_MAX(r_nx_i[k], r_mx[k]);
+	  /* superfluous */
+	  r_begn = ESL_MIN(r_begn, r_mn[k]);
+	  r_begx = ESL_MAX(r_begx, r_mx[k]);
+	}
+	else { /* have to emit i0 from first match state entered */
+	  if(r_mn[k] == i0) { 
+	    r_nn_i[k] = ESL_MIN(r_nn_i[k], i0);
+	    r_nx_i[k] = ESL_MAX(r_nx_i[k], i0);
+	  }
+	}
       }
     }
-    if(r_in[k] <= r_ix[k]) { /* M_k is reachable for i = r_in[k]..r_ix[k] */
+    if(r_in[k] <= r_ix[k]) { /* I_k is reachable for i = r_in[k]..r_ix[k] */
       r_nn_hmm[k] = ESL_MIN(r_nn_hmm[k], r_in[k]);
       r_nx_hmm[k] = ESL_MAX(r_nx_hmm[k], r_ix[k]);
 
@@ -2453,6 +2599,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
       r_nn_j[k] = ESL_MIN(r_nn_j[k], r_in[k]-sd);
       r_nx_j[k] = ESL_MAX(r_nx_j[k], r_ix[k]-sd);
 
+      /* superfluous */
       if(k == 0) { 
 	r_begn = ESL_MIN(r_begn, r_in[k]);
 	r_begx = ESL_MAX(r_begx, r_ix[k]);
@@ -2476,46 +2623,10 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	r_begx = ESL_MAX(r_begx, r_dx[k]+1);
       }
     }
-    ////printf("k: %d r_begn: %d r_begx: %d\n", k, r_begn, r_begx);
-    /* OLD WAY */
-    if(k == 0) { 
-      if(r_mn[k] <= r_mx[k]) { /* M_k is reachable for i = r_mn[k]..r_mx[k] */
-	old_r_nn_i[k] = ESL_MIN(old_r_nn_i[k], r_mn[k]+1);
-	old_r_nx_i[k] = ESL_MAX(old_r_nx_i[k], r_mx[k]+1);
-	old_r_nn_j[k] = ESL_MIN(old_r_nn_j[k], r_in[k]);
-	old_r_nx_j[k] = ESL_MAX(old_r_nx_j[k], r_ix[k]);
-      }
-      if(r_in[k] <= r_ix[k]) { /* I_k is reachable for i = r_mn[k]..r_mx[k] */
-	old_r_nn_i[k] = ESL_MIN(old_r_nn_i[k], r_in[k]);
-	old_r_nx_i[k] = ESL_MAX(old_r_nx_i[k], r_ix[k]);
-	old_r_nn_j[k] = ESL_MIN(old_r_nn_j[k], r_in[k]);
-	old_r_nx_j[k] = ESL_MAX(old_r_nx_j[k], r_ix[k]);
-      }
-    }
-    if(r_mn[k] <= r_mx[k]) { /* M_k is reachable for i = r_mn[k]..r_mx[k] */
-      old_r_nn_i[k] = ESL_MIN(old_r_nn_i[k], r_mn[k]);
-      old_r_nx_i[k] = ESL_MAX(old_r_nx_i[k], r_mx[k]);
-      old_r_nn_j[k] = ESL_MIN(old_r_nn_j[k], r_mn[k]);
-      old_r_nx_j[k] = ESL_MAX(old_r_nx_j[k], r_mx[k]);
-    }
-    if(r_in[k] <= r_ix[k]) { /* I_k is reachable for i = r_mn[k]..r_mx[k] */
-      old_r_nn_i[k] = ESL_MIN(old_r_nn_i[k], r_in[k]);
-      old_r_nx_i[k] = ESL_MAX(old_r_nx_i[k], r_ix[k]);
-      old_r_nn_j[k] = ESL_MIN(old_r_nn_j[k], r_in[k]);
-      old_r_nx_j[k] = ESL_MAX(old_r_nx_j[k], r_ix[k]);
-    }
-    if(r_dn[k] <= r_dx[k]) { /* D_k is reachable for i = r_mn[k]..r_mx[k] */
-      old_r_nn_i[k] = ESL_MIN(old_r_nn_i[k], r_dn[k]+1);
-      old_r_nx_i[k] = ESL_MAX(old_r_nx_i[k], r_dx[k]+1);
-      old_r_nn_j[k] = ESL_MIN(old_r_nn_j[k], r_dn[k]);
-      old_r_nx_j[k] = ESL_MAX(old_r_nx_j[k], r_dx[k]);
-    }
-
-    /* END OLD WAY */
-
-    /* is the node reachable? (we don't care if we're in local mode) */
-    if((!hmm_is_localized) && (r_mn[k] > r_mx[k]) && (r_dn[k] > r_dx[k])) { 
+    /* is the node reachable? (it doesn't matter if we're in local mode) */
+    if((!local_begins_ends_on) && (r_mn[k] > r_mx[k]) && (r_dn[k] > r_dx[k])) { 
       printf("! HMM node %d is unreachable hmm!\n", k); 
+      assert(k != 0);
       ESL_DASSERT1((just_filled_gap == FALSE));
       ESL_DPRINTF1(("! HMM node %d is unreachable hmm!\n", k)); 
       if(was_unr[k]) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "HMMBandsEnforceValidParse() node k %d was determined unreachable in second pass! Shouldn't happen (coding error).\n", k);
@@ -2554,10 +2665,10 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
   }
 
   /* A hack! set r_nn_j[hmm_M] to rend_n and r_nx_j[hmm_M] to rend_x, b/c we 
-   * only use r_nn_j[hmm_M] and r_nx_j[hmm_M] to set j bands on stats of non-right
+   * only use r_nn_j[hmm_M] and r_nx_j[hmm_M] to set j bands on states of non-right
    * emitting CM nodes (non-MATR MATP nodes) and we need the ones above all non
    * emitters (where rpos == hmm_M) to have the j bands equal to the band on the
-   * HMM E state. This is a hack b/c there should be a band on the E state itself,
+   * HMM END state. This is a hack b/c there should be a band on the E state itself,
    * which should map to right half of ROOT_S, but I didn't implement it that way.
    */
   r_nn_i[1]     = ESL_MIN(r_nn_i[1], r_begn);
@@ -2567,7 +2678,6 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 
 
   for(k = 0; k <= hmm_M; k++) { 
-    ////printf("OLD v NEW k: %4d   %11d (%11d) %11d (%11d)  %11d (%11d) %11d (%11d)\n", k, r_nn_i[k], old_r_nn_i[k], r_nx_i[k], old_r_nx_i[k], r_nn_j[k], old_r_nn_j[k], r_nn_j[k], old_r_nn_j[k]);
     if(r_mn[k]  == INT_MAX) r_mn[k] = -1;
     if(r_mx[k]  == INT_MIN) r_mx[k] = -2;
     if(r_in[k]  == INT_MAX) r_in[k] = -1;
@@ -2575,7 +2685,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
     if(r_dn[k]  == INT_MAX) r_dn[k] = -1;
     if(r_dx[k]  == INT_MIN) r_dx[k] = -2;
 
-    if(!hmm_is_localized) { 
+    if(!local_begins_ends_on) { 
       ESL_DASSERT1((r_nn_i[k]  != INT_MAX));
       ESL_DASSERT1((r_nx_i[k]  != INT_MIN));
       ESL_DASSERT1((r_nn_j[k]  != INT_MAX));
@@ -2596,26 +2706,10 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
   *ret_r_ix = r_ix;
   *ret_r_dn = r_dn;
   *ret_r_dx = r_dx;
-#if 1
   *ret_r_nn_i = r_nn_i;
   *ret_r_nx_i = r_nx_i;
   *ret_r_nn_j = r_nn_j;
   *ret_r_nx_j = r_nx_j;
-  free(old_r_nn_i);
-  free(old_r_nx_i);
-  free(old_r_nn_j);
-  free(old_r_nx_j);
-#endif
-#if 0
-  *ret_r_nn_i = old_r_nn_i;
-  *ret_r_nx_i = old_r_nx_i;
-  *ret_r_nn_j = old_r_nn_j;
-  *ret_r_nx_j = old_r_nx_j;
-  free(r_nn_i);
-  free(r_nx_i);
-  free(r_nn_j);
-  free(r_nx_j);
-#endif
   free(was_unr); 
   free(filled_gap);
   free(r_nn_hmm);
@@ -2879,6 +2973,8 @@ CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0,
   int y_nd, w_nd;             /* node index */
   int cm_is_localized;        /* TRUE if local begins and ends are on, if we can reach a state v with a non-impossible endsc[v], we can finish the parse for any i,j reachable for v */
 
+  printf("TEMP in CMBandsCheckValidParse() i0: %d j0: %d\n", i0, j0);
+
   if((cm->flags & CMH_LOCAL_BEGIN) && (! (cm->flags & CMH_LOCAL_END))) ESL_FAIL(eslEINCOMPAT, errbuf, "CMBandsCheckValidParse(), cm flag CMH_LOCAL_BEGIN is up and cm flag CMH_LOCAL_END is down. This is unexpected, we can't deal.");
   if((! cm->flags & CMH_LOCAL_BEGIN) && ((cm->flags & CMH_LOCAL_END))) ESL_FAIL(eslEINCOMPAT, errbuf, "CMBandsCheckValidParse(), cm flag CMH_LOCAL_BEGIN is down and cm flag CMH_LOCAL_END is up. This is unexpected, we can't deal.");
 
@@ -2937,10 +3033,17 @@ CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0,
   if(cm->flags & CMH_LOCAL_BEGIN) { 
     for(v = 0; v < cm->M; v++) { 
       if(NOT_IMPOSSIBLE(cm->beginsc[v])) { 
-	r_imin[v] = ESL_MAX(imin[v], imin[0]);
-	r_imax[v] = ESL_MIN(imax[v], imax[0]);
-	r_jmin[v] = ESL_MAX(jmin[v], jmin[0]);
-	r_jmax[v] = ESL_MIN(jmax[v], jmax[0]);
+	if(imin[v] != -1 && jmin[v] != -1) {
+	  if(((ESL_MIN(imax[v], imax[0]) - ESL_MAX(imin[v], imin[0])) >= 0) && /* TRUE if imin[v]..imax[v] overlaps with imin[0]..imax[0] by at least 1 residue */
+	     ((ESL_MIN(jmax[v], jmax[0]) - ESL_MAX(jmin[v], jmin[0])) >= 0)) {  /* TRUE if jmin[v]..jmax[v] overlaps with jmin[0]..jmax[0] by at least 1 residue */
+	    r_imin[v] = ESL_MAX(imin[v], imin[0]);
+	    r_imax[v] = ESL_MIN(imax[v], imax[0]);
+	    r_jmin[v] = ESL_MAX(jmin[v], jmin[0]);
+	    r_jmax[v] = ESL_MIN(jmax[v], jmax[0]);
+	    v_is_r[v]  = TRUE;
+	    nd_is_r[cm->ndidx[v]] = TRUE;
+	  }
+	}
 	ESL_DASSERT1(((cm->stid[v] == MATP_MP) || (cm->stid[v] == MATR_MR) || (cm->stid[v] == MATL_ML) || (cm->stid[v] == BIF_B)));
 	assert((cm->stid[v] == MATP_MP) || (cm->stid[v] == MATR_MR) || (cm->stid[v] == MATL_ML) || (cm->stid[v] == BIF_B));
       }
@@ -2959,10 +3062,6 @@ CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0,
 	    v_is_r[v] = TRUE;
 	    nd_is_r[nd] = TRUE;
 	  }
-	  else { /* no possible i, j such that j-i+1 = d = 0, this means E is unreachable (d must be 0 for end states */	  
-	    v_is_r[v] = FALSE;
-	    nd_is_r[nd] = FALSE;
-	  }
 	}	      
 	else if (cm->sttype[v] == B_st) { 
 	  /* same loop as if v != B_st, (the else case below) but we know sdl = sdr = 0, and we have two children BEGL_S and BEGR_S */
@@ -2973,6 +3072,7 @@ CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0,
 	    w = cm->cfirst[v]; /* BEGL_S */
 	    y = cm->cnum[v];   /* BEGR_S */
 	    
+	    /* only way to get to a BEGL_S is through it's BIF parent, even with local begins (no local begin in BEGL_S) */
 	    r_imin[w] = ESL_MAX(imin[w], imin[v]);
 	    r_imax[w] = ESL_MIN(imax[w], imax[v]);
 	    r_jmin[w] = jmin[w];
@@ -2983,6 +3083,7 @@ CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0,
 	    nd_r_jmin[w_nd] = r_jmin[w];
 	    nd_r_jmax[w_nd] = r_jmax[w];
 	    
+	    /* only way to get to a BEGR_S is through it's BIF parent, even with local begins (no local begin in BEGR_S) */
 	    r_imin[y] = imin[y];
 	    r_imax[y] = imax[y];
 	    r_jmin[y] = ESL_MAX(jmin[y], jmin[v]);
@@ -2992,9 +3093,6 @@ CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0,
 	    nd_r_imax[y_nd] = r_imax[y];
 	    nd_r_jmin[y_nd] = r_jmin[y];
 	    nd_r_jmax[y_nd] = r_jmax[y];
-	  }
-	  else { /* v is not reachable for any i, j */
-	    v_is_r[v] = FALSE; 
 	  }
 	}
 	else { /* state is not a B_st nor an E_st */
@@ -3039,14 +3137,11 @@ CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0,
 	      }
 	    }
 	  }
-	  else { /* v is not reachable for any i, j */
-	    v_is_r[v] = FALSE; 
-	  }
 	} /* end of else that's entered if v != E_st nor B_st */
       } /* end of if(!StateIsDetached) */	
 	////if(v_is_r[v]) printf("ck v  %4s %2s %4d R %d (%11d %11d  %11d %11d) (HMM nd: %4d %4d)\n", Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v]), v, v_is_r[v], r_imin[v], r_imax[v], r_jmin[v], r_jmax[v], cm->cp9map->cs2hn[v][0], cm->cp9map->cs2hn[v][1]);
     } /* end of for (v) loop */
-
+   
     ////printf("ck nd %4s    %4d R %d (%11d %11d  %11d %11d)\n\n", Nodetype(cm->ndtype[nd]), nd, nd_is_r[nd], nd_r_imin[nd], nd_r_imax[nd], nd_r_jmin[nd], nd_r_jmax[nd]); 
   }
   /* now we know what states are reachable for what i and j,  check if a valid parse exists */
@@ -3066,7 +3161,7 @@ CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0,
   else if(doing_search && cm_is_localized) { /* we're doing a local search, we have a valid parse if any state from which a local end is possible is reachable */
     v = 0;
     while(v < cm->M && !(v_is_r[v] && NOT_IMPOSSIBLE(cm->endsc[v]))) v++; /* increment v until we come to a state that is reachable and can go to EL, or we run out of states */
-    if(v == cm->M) ESL_FAIL(eslFAIL, errbuf, "CMBandsCheckValidParse(), doing_search is TRUE and CM is locally configured, but we can't reach a single CM state v from which an EL is possible.\n");
+    if(v == cm->M && i0 != j0) ESL_FAIL(eslFAIL, errbuf, "CMBandsCheckValidParse(), doing_search is TRUE and CM is locally configured, i0 != j0, but we can't reach a single CM state v from which an EL is possible.\n");
   }
 
   free(v_is_r);

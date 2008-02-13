@@ -50,14 +50,6 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax, int always_calc_W)
   int do_preset_qdb = FALSE;
   int v;
   
-  /* Check if we need to calculate QDBs and/or build a CP9 HMM. */
-  if(cm->config_opts & CM_CONFIG_QDB) {
-    if(preset_dmin == NULL && preset_dmax == NULL) 
-      do_calc_qdb   = TRUE;
-    else 
-      do_preset_qdb = TRUE;
-  }
-
   /* Build the CP9 HMM and associated data */
   /* IMPORTANT: do this before setting up CM for local mode
    * if we already have these, free them (wasteful but safe, 
@@ -135,32 +127,33 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax, int always_calc_W)
    * local is set up because we want to consider local begins, but NOT local
    * ends. This is inefficient, local ends are set up twice currently, once
    * before QDB calc, then turned off in BandCalculationEngine() then 
-   * back on. This should be fixed. */
-  if (do_calc_qdb)
-    {
-      if(cm->flags & CMH_QDB) cm_Fail("ERROR in ConfigCM() CM already has QDBs\n");
-      ConfigQDB(cm);
-    }
-  else if(do_preset_qdb)
-    {
-      if(cm->flags & CMH_QDB) cm_Fail("ERROR in ConfigCM() CM already has QDBs\n");
-      ESL_ALLOC(cm->dmin, sizeof(int) * cm->M);
-      ESL_ALLOC(cm->dmax, sizeof(int) * cm->M);
-      for(v = 0; v < cm->M; v++)
-	{
-	  cm->dmin[v] = preset_dmin[v];
-	  cm->dmax[v] = preset_dmax[v];
-	}
-      /* Set W as dmax[0], we're wasting time otherwise, looking at
-       * hits that are bigger than we're allowing with QDB. */
-      cm->W = cm->dmax[0];
-      cm->flags |= CMH_QDB; /* raise the QDB flag */
-    }
-  else if(always_calc_W) { 
+   * back on. */
+  if(cm->config_opts & CM_CONFIG_QDB) {
+    if(preset_dmin == NULL && preset_dmax == NULL) do_calc_qdb   = TRUE;
+    else                                           do_preset_qdb = TRUE;
+  }
+  if (do_calc_qdb) { 
+    if(cm->flags & CMH_QDB) cm_Fail("ERROR in ConfigCM() CM already has QDBs\n");
+    ConfigQDB(cm);
+  }
+  else if(do_preset_qdb) { 
+    if(cm->flags & CMH_QDB) cm_Fail("ERROR in ConfigCM() CM already has QDBs\n");
+    ESL_ALLOC(cm->dmin, sizeof(int) * cm->M);
+    ESL_ALLOC(cm->dmax, sizeof(int) * cm->M);
+    for(v = 0; v < cm->M; v++)
+      {
+	cm->dmin[v] = preset_dmin[v];
+	cm->dmax[v] = preset_dmax[v];
+      }
+    /* Set W as dmax[0], we're wasting time otherwise, looking at
+     * hits that are bigger than we're allowing with QDB. */
+    cm->W = cm->dmax[0];
+    cm->flags |= CMH_QDB; /* raise the QDB flag */
+  }
+  else if(always_calc_W) {
     /* we didn't set up QDBs, but we still need to set cm->W, we 
      * set it as dmax[0] from the QDB calculation using cm->beta, 
      * but don't save dmin/dmax.
-     * (This if, else if, esle could definitely be better organized) 
      */
     int safe_windowlen = cm->clen * 2;
     int *dmin, *dmax;
@@ -171,12 +164,12 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax, int always_calc_W)
 	safe_windowlen *= 2;
 	if(safe_windowlen > (cm->clen * 1000))
 	  cm_Fail("ConfigCM(), safe_windowlen big: %d\n", safe_windowlen);
-      }
+	}
     cm->W = dmax[0];
     free(dmin);
     free(dmax);
   }
-
+  
   /*
   fp = fopen("temphmm2" ,"w");
   debug_print_cp9_params(fp, cm->cp9, TRUE);
