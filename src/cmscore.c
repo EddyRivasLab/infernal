@@ -48,7 +48,7 @@ static ESL_OPTIONS options[] = {
   { "-s",        eslARG_INT,     NULL, NULL, "n>0",     NULL,      NULL,  "--infile", "set random number seed to <n>", 1 },
   { "-a",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print individual timings & scores, not just a summary", 1 },
   { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL, "-l,--search", "build sub CM for columns b/t HMM predicted start/end points", 1 },
-  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 1 },
+  { "--mxsize",  eslARG_REAL, "512.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 1 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
 #endif

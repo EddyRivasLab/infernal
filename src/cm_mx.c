@@ -425,7 +425,7 @@ cm_CreateScanMatrixForCM(CM_t *cm, int do_float, int do_int)
   
   if(do_banded) beta_W = ESL_MAX(cm->beta_W, cm->beta_qdb);
   else beta_W = cm->beta_W;
-  printf("TEMP cm_CreateScanMatrix(), do_banded: %d beta_W: %g beta_qdb: %g\n", do_banded, beta_W, cm->beta_qdb);
+  /*printf("TEMP cm_CreateScanMatrix(), do_banded: %d beta_W: %g beta_qdb: %g\n", do_banded, beta_W, cm->beta_qdb);*/
   cm->smx = cm_CreateScanMatrix(cm, cm->W, cm->dmin, cm->dmax, beta_W, cm->beta_qdb, do_banded, do_float, do_int);
   cm->flags |= CMH_SCANMATRIX; /* raise the flag for valid CMH_SCANMATRIX */
   if(cm->si != NULL) { /* CM has searchinfo, update the final round so it points at cm->smx */
@@ -1218,7 +1218,7 @@ UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx,
   int ip, jp;
 
   if(alpha_row == NULL && (!using_hmm_bands)) cm_Fail("UpdateGammaHitMxCM(), alpha_row is NULL, but using_hmm_bands is FALSE.\n");
-  dmin = (using_hmm_bands) ? 0     : dn;
+  dmin = (using_hmm_bands) ? 1     : dn; /* d can be 0, but we never report hits of length 0, downstream functions assume d != 0 */
   dmax = (using_hmm_bands) ? dx-dn : dx;
 
   /* mode 1: non-greedy  */
@@ -1249,7 +1249,7 @@ UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx,
      * resolution algorithm.  Specifically, at the given j, any hit with a
      * d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
     /* First, report hit with d of dmin (min valid d) if >= cutoff */
-    if (NOT_IMPOSSIBLE(alpha_row[dmin]) && alpha_row[dmin] >= gamma->cutoff) {
+    if (alpha_row[dmin] >= gamma->cutoff && NOT_IMPOSSIBLE(alpha_row[dmin])) {
       r = bestr[dmin]; 
       ip = using_hmm_bands ? j-(dmin+dn)+gamma->i0 : j-dmin+gamma->i0;
       jp = j-1+gamma->i0;
@@ -1262,7 +1262,7 @@ UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx,
        it if >= cutoff and set new max */
     for (d = dmin+1; d <= dmax; d++) {
       if (alpha_row[d] > alpha_row[bestd]) {
-	if (alpha_row[d] >= gamma->cutoff) { 
+	if (alpha_row[d] >= gamma->cutoff && NOT_IMPOSSIBLE(alpha_row[d])) { 
 	  r = bestr[d]; 
 	  ip = using_hmm_bands ? j-(d+dn)+gamma->i0 : j-d+gamma->i0;
 	  jp = j-1+gamma->i0;

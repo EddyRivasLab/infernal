@@ -123,7 +123,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   float **esc_vAA     = cm->oesc;         /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					   * and all possible emissions a (including ambiguities) */
 
-  printf("TEMP in FastCYKScan(): i0: %d j0: %d\n", i0, j0);
+  /*printf("TEMP in FastCYKScan(): i0: %d j0: %d\n", i0, j0);*/
 
   /* determine if we're doing banded/non-banded */
   if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
@@ -629,7 +629,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
 
-  printf("TEMP in FastIInsideScan(): i0: %d j0: %d\n", i0, j0);
+  /*printf("TEMP in FastIInsideScan(): i0: %d j0: %d\n", i0, j0);*/
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CMH_BITS flag is not raised.\n");

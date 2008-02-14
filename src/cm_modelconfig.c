@@ -566,9 +566,9 @@ ConfigQDBAndW(CM_t *cm, int do_calc_qdb)
     cm_FreeScanMatrixForCM(cm);
     cm_CreateScanMatrixForCM(cm, do_float, do_int);
   }
-  if(mode == 1 || mode == 3) printf("TEMP leaving ConfigQDBAndW(), mode: %d, set cm->W as:     %d with beta_W:   %g\n", mode, cm->W, cm->beta_W);
-  if(mode == 2)              printf("TEMP leaving ConfigQDBAndW(), mode: %d, set cm->W as:     %d with beta_W:   %g\n", mode, cm->W, cm->beta_qdb);
-  if(mode == 2 || mode == 3) printf("TEMP leaving ConfigQDBAndW(), mode: %d, set qdbs dmax[0]: %d with beta_qdb: %g\n", mode, cm->dmax[0], cm->beta_qdb);
+  /*if(mode == 1 || mode == 3) printf("TEMP leaving ConfigQDBAndW(), mode: %d, set cm->W as:     %d with beta_W:   %g\n", mode, cm->W, cm->beta_W);
+    if(mode == 2)              printf("TEMP leaving ConfigQDBAndW(), mode: %d, set cm->W as:     %d with beta_W:   %g\n", mode, cm->W, cm->beta_qdb);
+    if(mode == 2 || mode == 3) printf("TEMP leaving ConfigQDBAndW(), mode: %d, set qdbs dmax[0]: %d with beta_qdb: %g\n", mode, cm->dmax[0], cm->beta_qdb);*/
   CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
   return eslOK;
 }

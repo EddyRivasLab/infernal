@@ -223,7 +223,16 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
     if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
   }
   else {
-    if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
+    if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) { 
+      ESL_SQ *tmp;
+      tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq+i0-1, (j0-i0+1), NULL, NULL, NULL);
+      esl_sq_Textize(tmp);
+      printf("HEY! cm: %s\n", cm->name);
+      printf(">irrelevant\n%s\n", tmp->seq);
+      esl_sq_Destroy(tmp);
+      return status; 
+    }
+    /* ORIG LINE if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;*/
   }
   
   /* Use the CM bands on i and j to get bands on d, specific to j. */
@@ -1941,6 +1950,10 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
   if(hmm_is_localized) { 
     assert(cm->flags & CMH_LOCAL_BEGIN); /* asserted in contract too */
     assert(cm->flags & CMH_LOCAL_END);   /* asserted in contract too */
+    if(imin[0] == -1) { /* ROOT_S is unreachable, uhh... */
+      imin[0] = imax[0] = i0;
+      jmin[0] = jmax[0] = j0;
+    }
     if(cm->nodes == 3) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "cp9_HMM2ijBands(), cm/hmm are locally configured, only 3 nodes in the CM, this is an illegal CM b/c local ENDs are impossible.");
     nd = 1; 
     if(i0 == j0) { 
@@ -2973,7 +2986,7 @@ CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0,
   int y_nd, w_nd;             /* node index */
   int cm_is_localized;        /* TRUE if local begins and ends are on, if we can reach a state v with a non-impossible endsc[v], we can finish the parse for any i,j reachable for v */
 
-  printf("TEMP in CMBandsCheckValidParse() i0: %d j0: %d\n", i0, j0);
+  /*printf("TEMP in CMBandsCheckValidParse() i0: %d j0: %d\n", i0, j0);*/
 
   if((cm->flags & CMH_LOCAL_BEGIN) && (! (cm->flags & CMH_LOCAL_END))) ESL_FAIL(eslEINCOMPAT, errbuf, "CMBandsCheckValidParse(), cm flag CMH_LOCAL_BEGIN is up and cm flag CMH_LOCAL_END is down. This is unexpected, we can't deal.");
   if((! cm->flags & CMH_LOCAL_BEGIN) && ((cm->flags & CMH_LOCAL_END))) ESL_FAIL(eslEINCOMPAT, errbuf, "CMBandsCheckValidParse(), cm flag CMH_LOCAL_BEGIN is down and cm flag CMH_LOCAL_END is up. This is unexpected, we can't deal.");
