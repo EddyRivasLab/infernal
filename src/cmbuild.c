@@ -47,7 +47,7 @@ static ESL_OPTIONS options[] = {
   { "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "force; allow overwriting of <cmfile>",   1 },
   { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "use tabular output summary format, 1 line per CM", 1 },
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
-  { "--minbeta", eslARG_REAL,   "1E-7",NULL, "x>0.0000000000000001",NULL,NULL,  NULL, "set minimal tail loss for QDB, and default for calc'ing W to <x>", 1 },
+  { "--Wbeta",   eslARG_REAL,   "1E-7",NULL, "x>0.0000000000000001",NULL,NULL,  NULL, "set tail loss prob for calc'ing W (max size of a hit) to <x>", 1 },
 /* Expert model construction options */
   { "--rsearch", eslARG_INFILE, NULL,  NULL, NULL,      NULL, "--enone",        NULL,  "use RSEARCH parameterization with RIBOSUM matrix file <s>", 2 }, 
   { "--binary",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "save the model(s) in binary format",     2 },
@@ -870,11 +870,9 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
   cm->el_selfsc = sreLOG2(esl_opt_GetReal(go, "--elself"));
   if(cfg->be_verbose) fprintf(cfg->ofp, "done.\n");
 
-  /* set the beta parameter, which is not used in cmbuild, but is used by cmcalibrate to set cm->W
-   * and sets minimum beta for QDB analysis post-cmcalibrate (that is, cm->beta can be changed in 
-   * cmsearch, but only to values <= this beta, which is printed in the CM file).
-   */
-  cm->beta = esl_opt_GetReal(go, "--minbeta");
+  /* set the cm->beta_W parameter, which is not used in cmbuild, but is used by cmcalibrate and
+   * cmsearch (and possibly others) to set cm->W */
+  cm->beta_W = esl_opt_GetReal(go, "--Wbeta");
 
   cm->el_selfsc = sreLOG2(esl_opt_GetReal(go, "--elself"));
   if(cfg->be_verbose) fprintf(cfg->ofp, "done.\n");
@@ -1386,7 +1384,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * this may make a cp9 HMM, for example.
    */
-  ConfigCM(cm, NULL, NULL, FALSE); /* FALSE says don't calc W */
+  ConfigCM(cm, FALSE); /* FALSE says don't calc W */
 
   return eslOK;
 }

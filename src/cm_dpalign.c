@@ -5054,7 +5054,7 @@ main(int argc, char **argv)
   }
   if(esl_opt_GetBoolean(go, "--hmmcheck")) cm->align_opts |= CM_ALIGN_CHECKFB;
 
-  ConfigCM(cm, NULL, NULL, FALSE);
+  ConfigCM(cm, FALSE); /* FALSE says don't bother calc'ing W, we won't need it */
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();

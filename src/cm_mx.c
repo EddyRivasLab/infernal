@@ -292,7 +292,7 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx)
  * Returns:  eslOK on success, dies immediately on some error
  */
 ScanMatrix_t *
-cm_CreateScanMatrix(CM_t *cm, int W, int *dmin, int *dmax, double beta, int do_banded, int do_float, int do_int)
+cm_CreateScanMatrix(CM_t *cm, int W, int *dmin, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int)
 { 
   int status;
   ScanMatrix_t *smx;
@@ -303,12 +303,13 @@ cm_CreateScanMatrix(CM_t *cm, int W, int *dmin, int *dmax, double beta, int do_b
 
   ESL_ALLOC(smx, sizeof(ScanMatrix_t));
 
-  smx->flags = 0;
-  smx->cm_M  = cm->M;
-  smx->W     = W;
-  smx->dmin  = dmin; /* could be NULL */
-  smx->dmax  = dmax; /* could be NULL */
-  smx->beta  = beta; 
+  smx->flags    = 0;
+  smx->cm_M     = cm->M;
+  smx->W        = W;
+  smx->dmin     = dmin; /* could be NULL */
+  smx->dmax     = dmax; /* could be NULL */
+  smx->beta_W   = beta_W; 
+  smx->beta_qdb = beta_qdb; 
 
   /* precalculate minimum and maximum d for each state and each sequence index (1..j..W). 
    * this is not always just dmin, dmax, (for ex. if j < W). */
@@ -408,12 +409,13 @@ int
 cm_CreateScanMatrixForCM(CM_t *cm, int do_float, int do_int)
 {
   int do_banded;
+  double beta_W;
 
   if(cm->flags & CMH_SCANMATRIX)               cm_Fail("cm_CreateScanMatrixForCM(), the CM flag for valid scan info is already up.");
   if(cm->smx != NULL)                          cm_Fail("cm_CreateScanMatrixForCM(), the cm already points to a ScanMatrix_t object.\n");
   if(cm->dmin == NULL && cm->dmax != NULL)     cm_Fail("cm_CreateScanMatrixForCM(), cm->dmin == NULL, cm->dmax != NULL\n"); 
   if(cm->dmin != NULL && cm->dmax == NULL)     cm_Fail("cm_CreateScanMatrixForCM(), cm->dmin == NULL, cm->dmax != NULL\n"); 
-  if(cm->dmax != NULL && cm->W != cm->dmax[0]) cm_Fail("cm_CreateScanMatrixForCM(), cm->W: %d != cm->dmax[0]: %d\n", cm->W, cm->dmax[0]); 
+  if(cm->dmax != NULL && cm->W > cm->dmax[0])  cm_Fail("cm_CreateScanMatrixForCM(), cm->W: %d > cm->dmax[0]: %d (cm->W can be less than cm->dmax[0] but not greater)\n", cm->W, cm->dmax[0]); 
   if((cm->dmin != NULL && cm->dmax != NULL) && (! (cm->flags & CMH_QDB))) 
      cm_Fail("cm_CreateScanMatrixForCM(), cm->dmin != NULL, cm->dmax != NULL, but CMH_QDB flag down, bands are invalid\n"); 
   if((! cm->search_opts & CM_SEARCH_NOQDB) && (cm->dmin == NULL || cm->dmax == NULL))
@@ -421,8 +423,14 @@ cm_CreateScanMatrixForCM(CM_t *cm, int do_float, int do_int)
 
   do_banded   = (cm->search_opts & CM_SEARCH_NOQDB) ? FALSE : TRUE;
   
-  cm->smx = cm_CreateScanMatrix(cm, cm->W, cm->dmin, cm->dmax, cm->beta, do_banded, do_float, do_int);
+  if(do_banded) beta_W = ESL_MAX(cm->beta_W, cm->beta_qdb);
+  else beta_W = cm->beta_W;
+  printf("TEMP cm_CreateScanMatrix(), do_banded: %d beta_W: %g beta_qdb: %g\n", do_banded, beta_W, cm->beta_qdb);
+  cm->smx = cm_CreateScanMatrix(cm, cm->W, cm->dmin, cm->dmax, beta_W, cm->beta_qdb, do_banded, do_float, do_int);
   cm->flags |= CMH_SCANMATRIX; /* raise the flag for valid CMH_SCANMATRIX */
+  if(cm->si != NULL) { /* CM has searchinfo, update the final round so it points at cm->smx */
+    UpdateSearchInfoForNewSMX(cm);
+  }
 
   return eslOK;
 }
@@ -1241,10 +1249,12 @@ UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx,
      * resolution algorithm.  Specifically, at the given j, any hit with a
      * d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
     /* First, report hit with d of dmin (min valid d) if >= cutoff */
-    if (alpha_row[dmin] >= gamma->cutoff) {
+    if (NOT_IMPOSSIBLE(alpha_row[dmin]) && alpha_row[dmin] >= gamma->cutoff) {
       r = bestr[dmin]; 
       ip = using_hmm_bands ? j-(dmin+dn)+gamma->i0 : j-dmin+gamma->i0;
       jp = j-1+gamma->i0;
+      assert(ip >= gamma->i0);
+      assert(jp >= gamma->i0);
       ReportHit (ip, jp, r, alpha_row[dmin], results);
     }
     bestd = dmin;
@@ -1256,6 +1266,8 @@ UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx,
 	  r = bestr[d]; 
 	  ip = using_hmm_bands ? j-(d+dn)+gamma->i0 : j-d+gamma->i0;
 	  jp = j-1+gamma->i0;
+	  assert(ip >= gamma->i0);
+	  assert(jp >= gamma->i0);
 	  ReportHit (ip, jp, r, alpha_row[d], results);
 	}
 	bestd = d;

@@ -276,11 +276,8 @@ main(int argc, char **argv)
 	}
 	ncm++;
 
-	if(! esl_opt_IsDefault(go, "--beta")) { 
-	  /* ensure for <x> from --beta: <x> >= cm->beta from cmfile */
-	  if((cm->beta - esl_opt_GetReal(go, "beta")) < -1E-5) cm_Fail("Minimum allowed <x> for --beta <x> is %g (from cmfile, change with cmbuild --minbeta).\n", cm->beta);
-	  cm->beta = esl_opt_GetReal(go, "--beta");
-	} /* else cm->beta will be equal to beta from CM file */
+	if(! esl_opt_IsDefault(go, "--beta")) cm->beta_qdb = esl_opt_GetReal(go, "--beta");
+	/* else cm->beta_qdb will be set as cm->beta_W read from CM file */
 	cm->config_opts |= CM_CONFIG_QDB;
 	/* update cm->config_opts */
 	if(! esl_opt_GetBoolean(go, "-g"))
@@ -289,7 +286,7 @@ main(int argc, char **argv)
 	    cm->config_opts |= CM_CONFIG_HMMLOCAL;
 	    cm->config_opts |= CM_CONFIG_HMMEL;
 	  }
-	ConfigCM(cm, NULL, NULL, TRUE);
+	ConfigCM(cm, TRUE); /* TRUE says: calculate W */
 
 	fprintf(ofp, "%6d %-20.20s %8d %8.2f %4d %5d %5d %3d %6.2f %6.2f\n",
 	       ncm,
@@ -656,11 +653,11 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   mc_s = dpc_q / t_cq; 
   kb_s = ((float) L_cm_kb) / t_cq; 
   emp_acc = t_c / t_cq; 
-  fprintf(ofp, " \t\t\t %7s %6.1f %6.1f %8.2f   %5g %5.1f %5.1f\n", "cyk",     dpc_q_kb, mc_s, kb_s, cm->beta, th_acc, emp_acc);
+  fprintf(ofp, " \t\t\t %7s %6.1f %6.1f %8.2f   %5g %5.1f %5.1f\n", "cyk",     dpc_q_kb, mc_s, kb_s, cm->beta_qdb, th_acc, emp_acc);
   mc_s = dpc_q / t_iq; 
   kb_s = ((float) L_cm_kb) / t_iq; 
   emp_acc = t_i / t_iq; 
-  fprintf(ofp, " \t\t\t %7s %6.1f %6.1f %8.2f   %5g %5.1f %5.1f\n", "inside",  dpc_q_kb, mc_s, kb_s, cm->beta, th_acc, emp_acc);
+  fprintf(ofp, " \t\t\t %7s %6.1f %6.1f %8.2f   %5g %5.1f %5.1f\n", "inside",  dpc_q_kb, mc_s, kb_s, cm->beta_qdb, th_acc, emp_acc);
   mc_s = dpc_v / t_v; 
   kb_s = ((float) L_cp9_kb) / t_v; 
   float dpc_v_kb = dpc_v * (1000. / (float) L_cp9); /* convert to cells per KB */
@@ -685,13 +682,13 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
 static int
 initialize_cm(CM_t *cm, int cm_mode, int hmm_mode)
 {
-  /* Update cm->config_opt based on gumbel mode */
+  /* Update cm->config_opts based on gumbel mode */
   if(GumModeIsLocal(cm_mode))  cm->config_opts |= CM_CONFIG_LOCAL;
   if(GumModeIsLocal(hmm_mode)) {
     cm->config_opts |= CM_CONFIG_HMMLOCAL;
     cm->config_opts |= CM_CONFIG_HMMEL;
   }
-  ConfigCM(cm, NULL, NULL, TRUE);
+  ConfigCM(cm, TRUE); /* TRUE says: calculate W */
 
   return eslOK;
 }

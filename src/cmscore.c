@@ -459,12 +459,9 @@ init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	{
 	  ESL_ALLOC(cfg->beta, sizeof(double) * cfg->nstages);
 	  cfg->beta[0] = 0.; /* this won't matter b/c stage 1 is non-QDB */
-	  if(! esl_opt_IsDefault(go, "--beta")) { 
-	    /* ensure for <x> from --beta: <x> >= cm->beta from cmfile */
-	    if((cm->beta - esl_opt_GetReal(go, "beta")) < -1E-5) ESL_FAIL(eslEINCOMPAT, errbuf, "Minimum allowed <x> for --beta <x> is %g (from cmfile, change with cmbuild --minbeta).\n", cm->beta);
-	    cm->beta = esl_opt_GetReal(go, "--beta");
-	  } /* else cm->beta will be equal to beta from CM file */
-	  cfg->beta[1] = cm->beta;
+	  if(! esl_opt_IsDefault(go, "--beta")) cm->beta_qdb = esl_opt_GetReal(go, "--beta");
+	  /* else cm->beta_qdb will be equal to beta from CM file */
+	  cfg->beta[1] = cm->beta_qdb;
 	}
 #endif
     }  
@@ -1131,7 +1128,7 @@ initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
     cm->config_opts = 0;  /* clear configure options from previous stage */
 
   /* set up params/flags/options of the CM */
-  if(cfg->beta != NULL) cm->beta = cfg->beta[cfg->s];
+  if(cfg->beta != NULL) cm->beta_qdb = cfg->beta[cfg->s];
   if(cfg->tau  != NULL) cm->tau  = cfg->tau[cfg->s];
 
   /* enable option to check parsetree score against the alignment score */
@@ -1161,7 +1158,7 @@ initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
     /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
      * set local mode, make cp9 HMM, calculate QD bands etc. 
      */
-    ConfigCM(cm, NULL, NULL, FALSE);
+    ConfigCM(cm, FALSE); /* FALSE says don't bother calc'ing W, we won't need it */
   }
   else { /* cfg->s > 0, we're at least on stage 2, 
 	    don't call ConfigCM() again, only info that may change is QDBs, and align_opts */
@@ -1207,7 +1204,7 @@ initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
     cm->config_opts = 0;  /* clear configure options from previous stage */
 
   /* set up params/flags/options of the CM */
-  if(cfg->beta != NULL) cm->beta = cfg->beta[cfg->s];
+  if(cfg->beta != NULL) cm->beta_qdb = cfg->beta[cfg->s];
   if(cfg->tau  != NULL) cm->tau  = cfg->tau[cfg->s];
 
   /* Update cm->config_opts and cm->align_opts based on command line options */
@@ -1226,7 +1223,7 @@ initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
     /* configure the CM for search based on cm->config_opts and cm->align_opts.
      * set local mode, make cp9 HMM, calculate QD bands etc. 
      */
-    ConfigCM(cm, NULL, NULL, TRUE);
+    ConfigCM(cm, TRUE); /* TRUE says calculate W */
   }
   else { /* cfg->s > 0, we're at least on stage 2, 
 	    don't call ConfigCM() again, only info that may change is QDBs, and search_opts */
@@ -1285,7 +1282,7 @@ int print_align_options(const struct cfg_s *cfg, CM_t *cm)
   else                                          fprintf(cfg->ofp, "  %7s", "cyk std");
   /* bands and beta/tau*/
   if     (cm->align_opts & CM_ALIGN_HBANDED)    fprintf(cfg->ofp, "  %5s  %6.0e", "hmm", cm->tau);
-  else if(cm->align_opts & CM_ALIGN_QDB)        fprintf(cfg->ofp, "  %5s  %6.0e", "qdb", cm->beta);
+  else if(cm->align_opts & CM_ALIGN_QDB)        fprintf(cfg->ofp, "  %5s  %6.0e", "qdb", cm->beta_qdb);
   else                                          fprintf(cfg->ofp, "  %5s  %6s", "-", "-");
 
   return eslOK;
@@ -1304,7 +1301,7 @@ int print_search_options(const struct cfg_s *cfg, CM_t *cm)
   else                                            fprintf(cfg->ofp, "  %7s", "cyk");
   /* bands and beta/tau*/
   if     (cm->search_opts & CM_SEARCH_HBANDED)    fprintf(cfg->ofp, "  %5s  %6.0e", "hmm", cm->tau);
-  else if(! (cm->search_opts & CM_SEARCH_NOQDB))  fprintf(cfg->ofp, "  %5s  %6.0e", "qdb", cm->beta);
+  else if(! (cm->search_opts & CM_SEARCH_NOQDB))  fprintf(cfg->ofp, "  %5s  %6.0e", "qdb", cm->beta_qdb);
   else                                            fprintf(cfg->ofp, "  %5s  %6s", "-", "-");
 
   return eslOK;

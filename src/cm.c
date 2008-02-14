@@ -111,7 +111,8 @@ CreateCMShell(void)
   
   cm->dmin         = NULL;
   cm->dmax         = NULL;
-  cm->beta         = DEFAULT_BETA;     /* will be set when beta is read from cmfile */
+  cm->beta_W       = DEFAULT_BETA;     /* will be set when beta_W is read from cmfile */
+  cm->beta_qdb     = DEFAULT_BETA;   /* will be set to beta_W when beta_W is read from cmfile */
   cm->tau          = DEFAULT_TAU;      /* 1E-7 the default tau  (tail loss for HMM banding) */
   cm->cp9          = NULL;          
   cm->cp9b         = NULL;

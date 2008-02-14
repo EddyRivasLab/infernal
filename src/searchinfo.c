@@ -348,7 +348,7 @@ UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float sc_cutoff, f
   return;
 }
 
-/* Function: UpdateSearchOptsForGumMode
+/* Function: UpdateSearchInfoForGumMode
  * Date:     EPN, Thu Jan 24 11:57:20 2008
  * Purpose:  Given a gumbel mode and a search round <round>, update cm->si
  *           SearchInfo_t for that round.
@@ -409,8 +409,28 @@ UpdateSearchInfoForGumMode(CM_t *cm, int round, int gum_mode)
     cm->si->stype[round] = SEARCH_WITH_HMM;
     break;
   default: 
-    cm_Fail("UpdateSearchOptsForGumMode(): bogus gum_mode: %d\n", gum_mode);
+    cm_Fail("UpdateSearchInfoForGumMode(): bogus gum_mode: %d\n", gum_mode);
   }
+  return;
+}
+
+
+/* Function: UpdateSearchInfoForNewSMX()
+ * Date:     EPN, Thu Feb 14 11:38:23 2008
+ * Purpose:  Point the ScanMatrix_t for the final round of searching to the 
+ *           cm->smx.
+ *
+ * 
+ *           CM           - the covariance model
+ */
+void
+UpdateSearchInfoForNewSMX(CM_t *cm)
+{
+  if(cm->si == NULL)                cm_Fail("UpdateSearchInfoForNewSMX(), cm->si is NULL.");
+  if(cm->smx == NULL)               cm_Fail("UpdateSearchInfoForNewSMX(), cm->smx is NULL.");
+  if(!(cm->flags & CMH_SCANMATRIX)) cm_Fail("UpdateSearchInfoForNewSMX(), CMH_SCAN_MATRIX flag is down.");
+
+  cm->si->smx[cm->si->nrounds] = cm->smx;
   return;
 }
 
@@ -652,6 +672,9 @@ void RemoveOverlappingHits (search_results_t *results, int i0, int j0)
     for (y=results->data[x].start; y<=results->data[x].stop && !covered; y++) {
       {
 	yp = y-i0+1; 
+	if(yp <= 0 || yp > L) { 
+	  printf("whoa\n");
+	}
 	assert(yp > 0 && yp <= L);
 	if (covered_yet[yp] != 0) {
 	  covered = 1;
@@ -789,8 +812,7 @@ void SortResultsByEndPoint (search_results_t *results)
 void ReportHit (int i, int j, int bestr, float score, search_results_t *results) 
 {
 
-  if(results == NULL) 
-    cm_Fail("in ReportHit, but results is NULL\n");
+  if(results == NULL) cm_Fail("in ReportHit, but results is NULL\n");
   if (results->num_results == results->num_allocated) 
     ExpandResults (results, INIT_RESULTS);
 
@@ -1325,7 +1347,7 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   int status;
   float avg_hit_len;
   float cm_ncalcs_per_res;
-  int   W; /* window size calculated using cm->beta */
+  int   W; /* window size calculated using cm->beta_W */
   float hmm_ncalcs_per_res;
   float cm_bit_sc;
   float hmm_bit_sc;
@@ -1351,7 +1373,7 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
 
   if((status = cm_GetAvgHitLen        (cm,      errbuf, &avg_hit_len))        != eslOK) return status;
   if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &hmm_ncalcs_per_res)) != eslOK) return status;
-  if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->beta, &cm_ncalcs_per_res, &W))  != eslOK) return status;
+  if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->beta_qdb, &cm_ncalcs_per_res, &W))  != eslOK) return status;
 
   fprintf(fp, "# %4s  %-15s  %4s  %6s  %7s  %7s  %7s\n", "idx",  "name",            "clen",   "F",      "nseq",    "db (Mb)", "always?");
   fprintf(fp, "# %4s  %-15s  %4s  %6s  %7s  %7s  %7s\n", "----", "---------------", "-----",  "------", "-------", "-------", "-------");
@@ -1402,7 +1424,7 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
  *           <ret_hmm_bit_sc>:         HMM filter threshold bit score
  *           <ret_S>:                  predicted filter survival fraction 
  *           <ret_xhmm>:               predicted xhmm factor (predicted speed * hmm speed) 
- *           <ret_spdup>:              predicted speedup from using filter versus only CM search with cm->beta QDBs
+ *           <ret_spdup>:              predicted speedup from using filter versus only CM search with cm->beta_qdb QDBs
  *           <ret_cm_ncalcs_per_res>:  millions of dp calcs for CM search of 1 residue
  *           <ret_hmm_ncalcs_per_res>: millions of dp calcs for HMM search of 1 residue
  *           <ret_do_filter>:          TRUE if filtering predicted to save time, FALSE if not
@@ -1415,7 +1437,7 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
   int status;
   float avg_hit_len;
   float cm_ncalcs_per_res;
-  int   W; /* window size calculated using cm->beta */
+  int   W; /* window size calculated using cm->beta_qdb */
   float hmm_ncalcs_per_res;
   float cm_bit_sc;
   float hmm_bit_sc;
@@ -1443,7 +1465,7 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
 
   if((status = cm_GetAvgHitLen        (cm,      errbuf, &avg_hit_len))        != eslOK) return status;
   if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &hmm_ncalcs_per_res)) != eslOK) return status;
-  if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->beta, &cm_ncalcs_per_res, &W))  != eslOK) return status;
+  if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->beta_qdb, &cm_ncalcs_per_res, &W))  != eslOK) return status;
 
   if(do_header) { 
     fprintf(fp, "# %4s  %-15s  %4s  %8s  %6s  %6s  %6s  %7s  %7s\n", "idx",  "name",            "clen", "cm E",     "cm bit", "hmmbit", "surv",   "xhmm",    "speedup");
@@ -1500,7 +1522,7 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
  *           <ret_hmm_bit_sc>:         HMM filter threshold bit score
  *           <ret_S>:                  predicted filter survival fraction 
  *           <ret_xhmm>:               predicted xhmm factor (predicted speed * hmm speed) 
- *           <ret_spdup>:              predicted speedup from using filter versus only CM search with cm->beta QDBs
+ *           <ret_spdup>:              predicted speedup from using filter versus only CM search with cm->beta_qdb QDBs
  *           <ret_cm_ncalcs_per_res>:  millions of dp calcs for CM search OF 1 RESIDUE
  *           <ret_hmm_ncalcs_per_res>: millions of dp calcs for HMM search OF 1 RESIDUE
  *           <ret_do_filter>:          TRUE if filtering predicted to save time, FALSE if not
@@ -1548,7 +1570,7 @@ PlotHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   int status;
   float avg_hit_len;
   float cm_ncalcs_per_res;
-  int   W; /* window size calculated using cm->beta */
+  int   W; /* window size calculated using cm->beta_qdb */
   float hmm_ncalcs_per_res;
   float cm_bit_sc;
   float hmm_bit_sc;
@@ -1576,7 +1598,7 @@ PlotHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   if(mode != FTHR_PLOT_CME_HMME) { /* these calculations are unnec for FTHR_PLOT_CME_HMME */
     if((status = cm_GetAvgHitLen        (cm,      errbuf, &avg_hit_len))        != eslOK) return status;
     if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &hmm_ncalcs_per_res)) != eslOK) return status;
-    if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->beta, &cm_ncalcs_per_res, &W))  != eslOK) return status;
+    if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->beta_qdb, &cm_ncalcs_per_res, &W))  != eslOK) return status;
   }
   for(i = 0; i < hfi->ncut; i++) {
     cm_E  = hfi->cm_E_cut[i]  * ((double) dbsize / (double) hfi->dbsize);

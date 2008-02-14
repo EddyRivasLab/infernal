@@ -955,7 +955,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * set local mode, make cp9 HMM, calculate QD bands etc. 
    */
-  ConfigCM(cm, NULL, NULL, FALSE);  /* FALSE says do not calculate W unless nec b/c we're using QDBs */
+  ConfigCM(cm, FALSE);  /* FALSE says do not calculate W unless nec b/c we're using QDBs */
 
   /* if(cfg->my_rank == 0) printf("CM %d: %s\n", (cfg->ncm), cm->name); 
    * debug_print_cm_params(stdout, cm);

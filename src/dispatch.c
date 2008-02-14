@@ -54,7 +54,6 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
   int               status;          /* easel status code */
   float             sc;              /* score of best hit in seq */
   float             bwd_sc;          /* score of best hit from Backward HMM algs */
-  int               flen;            /* filter length, length of i0..j0 that survives filter */
   int               h;               /* counter over hits */
   int               i, j;            /* subseq start/end points */
   int               do_collapse;     /* TRUE to collapse multiple overlapping hits together into a single hit */
@@ -69,6 +68,10 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
   ScanMatrix_t     *smx;             /* scan matrix for this round, != NULL only if SEARCH_WITH_CM, and must == cm->smx if we're in the final round */
   HybridScanInfo_t *hsi;             /* hybrid scan info for this round, NULL unless stype is SEARCH_WITH_HYBRID */
   search_results_t *round_results;   /* search_results for this round */
+  search_results_t *cur_results;     /* search_results for *this* call to DispatchSearch, copied to round_results at end of function */
+  int               prev_j;          /* used to collapse hits within same W bubble together when filtering */
+  int               nhits;           /* number of hits */
+
 
   /* Contract checks */
   if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), CMH_BITS flag down.\n");
@@ -77,10 +80,12 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
   if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): CMH_BITS flag down.\n");
   if(sround > si->nrounds)             ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): current round %d is greater than cm->si->nrounds: %d\n", sround, si->nrounds);
   if(results[sround] == NULL)          ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): results for current round %d are NULL\n", sround);
+  if(j0 < i0) {
+    printf("whoa\n");
+  }
+  if(j0 < i0)                          ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): i0: %d < j0: %d (i0 should always be less than j0)\n", i0, j0);
 
   ESL_DPRINTF1(("In DispatchSearch(), round: %d\n", sround));
-
-  flen = (j0-i0+1);
 
   /* TEMPORARY */
   if(si->stype[sround] == SEARCH_WITH_HYBRID) cm_Fail("DispatchSearch, hybrid filtering not yet implemented.\n");
@@ -91,8 +96,10 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
   stype           = si->stype[sround];
   smx             = si->smx[sround]; /* may be NULL */
   hsi             = si->hsi[sround]; /* may be NULL */
-  round_results   = results[sround]; /* may not be NULL, contract enforced this */
+  round_results   = results[sround]; /* must not be NULL, contract enforced this */
   h_existing      = round_results->num_results; /* remember this, b/c we only want rescan survivors found in *this* function call */
+
+  cur_results = CreateResults(INIT_RESULTS);
 
   /* SEARCH_WITH_HMM section */
   if(stype == SEARCH_WITH_HMM) { 
@@ -122,7 +129,8 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 			       NULL, NULL, /* don't return best score at each posn, or best scoring posn */
 			       &sc)) != eslOK) return status;
     }
-    /* Remove overlapping hits, if we're being greedy */
+    /* If hits were reported greedily, remove overlapping hits, and sort by decreasing end point 
+     * (if not greedy, we'll have 0 overlaps, and already be sorted by end point) */
     if(cm->search_opts & CM_SEARCH_HMMGREEDY) { /* resolve overlaps by being greedy */
       ESL_DASSERT1((i0 == 1)); /* EPN, Tue Nov 27 13:59:31 2007 not sure why this is here */
       RemoveOverlappingHits (fwd_results, i0, j0);
@@ -134,7 +142,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       min_i = (fwd_results->data[h].stop - cm->W + 1) >= 1 ? (fwd_results->data[h].stop - cm->W + 1) : 1;
       if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
 	if((status = cp9_ViterbiBackward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, cm->W, cutoff, 
-					 round_results, /* report hits to this round's results */
+					 cur_results, /* report hits to cur_results */
 					 TRUE,   /* we're scanning */
 					 FALSE,  /* we're not ultimately aligning */
 					 TRUE,   /* be memory efficient */
@@ -143,7 +151,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       }
       else { 
 	if((status = cp9_Backward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, cm->W, cutoff, 
-				  round_results, /* report hits to this round's results */
+				  cur_results, /* report hits to this round's results */
 				  TRUE,   /* we're scanning */
 				  FALSE,  /* we're not ultimately aligning */
 				  TRUE,   /* be memory efficient */
@@ -161,7 +169,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
     /* contract check */
     if(smx != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round %d, SEARCH_WITH_HYBRID but smx != NULL.\n", sround);
     if(hsi == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): current round %d is type SEARCH_WITH_HYBRID, but hsi is NULL\n", sround);
-    if((status = cm_cp9_HybridScan(cm, errbuf, cm->cp9_mx, dsq, hsi, i0, j0, hsi->W, cutoff, round_results, 
+    if((status = cm_cp9_HybridScan(cm, errbuf, cm->cp9_mx, dsq, hsi, i0, j0, hsi->W, cutoff, cur_results, 
 				   NULL, NULL, /* don't return best score at each posn, and best scoring posn */
 				   &sc)) != eslOK) return status;
   }  
@@ -173,31 +181,37 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 
     if(cm->search_opts & CM_SEARCH_HBANDED) {
       if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status; 
-      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, round_results, cm->hbmx, size_limit, &sc)) != eslOK) return status; }
-      else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, round_results, cm->hbmx, size_limit, &sc)) != eslOK) return status; }
+      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, cur_results, cm->hbmx, size_limit, &sc)) != eslOK) return status; }
+      else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, cur_results, cm->hbmx, size_limit, &sc)) != eslOK) return status; }
     }
     else { /* don't do HMM banded search */
-      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, smx, dsq, i0, j0, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
-      else                                   { if((status = FastCYKScan    (cm, errbuf, smx, dsq, i0, j0, cutoff, round_results, NULL, &sc)) != eslOK) return status; }
+      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, smx, dsq, i0, j0, cutoff, cur_results, NULL, &sc)) != eslOK) return status; }
+      else                                   { if((status = FastCYKScan    (cm, errbuf, smx, dsq, i0, j0, cutoff, cur_results, NULL, &sc)) != eslOK) return status; }
     }    
+    /* If hits were reported greedily, remove overlapping hits, and sort by decreasing end point 
+     * (if not greedy, we'll have 0 overlaps, and already be sorted by end point) */
+    if(cm->search_opts & CM_SEARCH_CMGREEDY) { /* resolve overlaps by being greedy */
+      ESL_DASSERT1((i0 == 1)); /* EPN, Tue Nov 27 13:59:31 2007 not sure why this is here */
+      RemoveOverlappingHits (cur_results, i0, j0);
+      SortResultsByEndPoint(cur_results);
+    }
   }
 
   if(sround < si->nrounds) { /* we're filtering */
-    int   prev_j = j0;
-    int   nhits  = round_results->num_results;
-    
+    prev_j = j0;
+    nhits  = cur_results->num_results;
     /* To be safe, we only trust that i..j of our filter-passing hit is within the real hit,
      * so we add (W-1) to start point i and subtract (W-1) from j, and treat this region j-(W-1)..i+(W-1)
      * as having survived the filter.
      */
-    for(h = h_existing; h < nhits; h++) {
-      if(round_results->data[h].stop > prev_j) ESL_EXCEPTION(eslEINCOMPAT, "j's not in descending order");
-      prev_j = round_results->data[h].stop;
+    for(h = 0; h < nhits; h++) {
+      if(cur_results->data[h].stop > prev_j) ESL_EXCEPTION(eslEINCOMPAT, "j's not in descending order");
+      prev_j = cur_results->data[h].stop;
 
-      i = ((round_results->data[h].stop  - (cm->W-1)) >= 1)    ? (round_results->data[h].stop  - (cm->W-1)) : 1;
-      j = ((round_results->data[h].start + (cm->W-1)) <= j0)   ? (round_results->data[h].start + (cm->W-1)) : j0;
+      i = ((cur_results->data[h].stop  - (cm->W-1)) >= 1)    ? (cur_results->data[h].stop  - (cm->W-1)) : 1;
+      j = ((cur_results->data[h].start + (cm->W-1)) <= j0)   ? (cur_results->data[h].start + (cm->W-1)) : j0;
 
-      if((h+1) < nhits) next_j = ((round_results->data[h+1].start + (cm->W-1)) <= j0) ? (round_results->data[h+1].start + (cm->W-1)) : j0;
+      if((h+1) < nhits) next_j = ((cur_results->data[h+1].start + (cm->W-1)) <= j0) ? (cur_results->data[h+1].start + (cm->W-1)) : j0;
       else              next_j = -1;
       
       /* Collapse multiple overlapping hits together into a single hit. 
@@ -208,8 +222,8 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       if(do_collapse) { 
 	while(((h+1) < nhits) && (next_j >= i)) { /* suck in hit */
 	  h++;
-	  i = ((round_results->data[h].stop - (cm->W-1)) >= 1) ? (round_results->data[h].stop - (cm->W-1)) : 1;
-	  if((h+1) < nhits) next_j = ((round_results->data[h+1].start + (cm->W-1)) <= j0) ? (round_results->data[h+1].start + (cm->W-1)) : j0;
+	  i = ((cur_results->data[h].stop - (cm->W-1)) >= 1) ? (cur_results->data[h].stop - (cm->W-1)) : 1;
+	  if((h+1) < nhits) next_j = ((cur_results->data[h+1].start + (cm->W-1)) <= j0) ? (cur_results->data[h+1].start + (cm->W-1)) : j0;
 	  else              next_j = -1;
 	  ESL_DPRINTF1(("\tsucked in subseq: hit %d new_i: %d j (still): %d\n", h, i, j));
 	}
@@ -219,11 +233,14 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
     }
   }
   else { /* we're done filtering, and we're done searching, get alignments if nec */
-    if((round_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN))) {
+    AppendResults(cur_results, round_results, 1);
+    if((cur_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN))) {
+      /* copy cur_results to final_results */
       if((status = DispatchAlignments(cm, errbuf, NULL, 
-					dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
-					0, 0, 0, NULL, size_limit)) != eslOK) return status;
+				      dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
+				      0, 0, 0, NULL, size_limit)) != eslOK) return status;
     }
+    FreeResults(cur_results);
   }
   if(ret_sc != NULL) *ret_sc = sc;
   return eslOK;
@@ -572,7 +589,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 	ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), unexpected error building a sub CM for seq %d.", i);
       /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded), this will also:  */
       /* (4) Build a new CP9 HMM from the sub CM. */
-      ConfigCM(sub_cm, NULL, NULL, FALSE);
+      ConfigCM(sub_cm, FALSE); /* FALSE says: don't calculate W, we won't need it */
       cm    = sub_cm; /* orig_cm still points to the original CM */
       if(do_hbanded) { /* we're doing HMM banded alignment to the sub_cm */
 	/* Get the HMM bands for the sub_cm */

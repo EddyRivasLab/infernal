@@ -60,7 +60,7 @@ static ESL_OPTIONS options[] = {
   { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local end prob to <x>", 1 },
   /* options for algorithm for final round of search */
   { "--inside",  eslARG_NONE,  "default",NULL,NULL,    NULL,       NULL,    STRATOPTS1, "use scanning CM Inside algorithm", 2 },
-  { "--cyk",     eslARG_NONE,  FALSE, NULL, NULL,      NULL,       NULL,    STRATOPTS1, "use scanning CM CYK algorithm", 2 },
+  { "--cyk",     eslARG_NONE,  FALSE, NULL, NULL, "--inside",      NULL,    STRATOPTS1, "use scanning CM CYK algorithm", 2 },
   { "--viterbi", eslARG_NONE,  FALSE, NULL, NULL, "--fil-hmm,--fil-qdb",     NULL,    STRATOPTS2, "use scanning HMM Viterbi algorithm", 2 },
   { "--forward", eslARG_NONE,  FALSE, NULL, NULL, "--fil-hmm,--fil-qdb",     NULL,    STRATOPTS2, "use scanning HMM Forward algorithm", 2 },
   /* CM cutoff options */
@@ -70,16 +70,17 @@ static ESL_OPTIONS options[] = {
   { "--tc",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    CUTOPTS2, "use CM Rfam TC trusted cutoff as cutoff bit score", 3 },
   { "--nc",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    CUTOPTS2, "use CM Rfam NC noise cutoff as cutoff bit score", 3 },
   /* banded options (for final round of searching) */
-  { "--qdb",     eslARG_NONE,  FALSE, NULL, NULL,"--fil-qdb,--fil-no-qdb",      NULL,  HMMONLYOPTS, "use QDBs in final round of searching (after >= 0 filters)", 4 },
-  { "--beta",    eslARG_REAL,  NULL,  NULL, "x>0",      NULL,      NULL,  HMMONLYOPTS, "set tail loss prob for QDB and window size calculation to <x>", 4 },
+  { "--no-qdb",  eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,  HMMONLYOPTS, "do not use QDBs in final round of searching (after >= 0 filters)", 4 },
+  { "--beta",    eslARG_REAL,  "1e-13",NULL, "0<x<1",   NULL,      NULL,  HMMONLYOPTS, "set tail loss prob for QDB calculation to <x>", 4 },
   { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  HMMONLYOPTS, "calculate and use HMM bands in final round of CM search", 4 },
   { "--tau",     eslARG_REAL,   "1e-7",NULL, "0<x<1",   NULL,"--hbanded", HMMONLYOPTS, "set tail loss prob for --hbanded to <x>", 4 },
   { "--aln2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL, "--hbanded", HMMONLYOPTS, "w/--hbanded derive HMM bands w/o scanning Forward/Backward", 4 },
   /* filtering options, by default do HMM, then CYK filter */
-  { "--fil-qdb",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-qdb,--qdb", "filter with CM QDB (banded) CYK algorithm", 5 },
-  { "--fil-no-qdb",eslARG_NONE, FALSE,     NULL, NULL,  NULL,      NULL,"--fil-qdb",    "do not filter with CM banded CYK", 5 },
+  { "--fil-qdb",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-qdb", "filter with CM QDB (banded) CYK algorithm", 5 },
+  { "--fil-beta",  eslARG_REAL, NULL,      NULL, "x>0", NULL,      NULL,"--fil-no-qdb", "set tail loss prob for filter QDB and W calculation to <x>", 4 },
+  { "--fil-no-qdb",eslARG_NONE, FALSE,     NULL, NULL,  "--fil-qdb",NULL,         NULL, "do not filter with CM banded CYK", 5 },
   { "--fil-hmm",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-hmm", "filter with HMM forward algorithm", 5 },
-  { "--fil-no-hmm",eslARG_NONE, FALSE,     NULL, NULL,  NULL,      NULL,"-fil-hmm",     "do not filter with HMM forward algorithm", 5 },
+  { "--fil-no-hmm",eslARG_NONE, FALSE,     NULL, NULL,  "--fil-hmm",NULL,         NULL, "do not filter with HMM forward algorithm", 5 },
   /* filter cutoff options */
   {"--fil-S-qdb",eslARG_REAL,  "0.02",NULL, "0<x<1.",    NULL,      NULL, "--fil-T-qdb", "set QDB CM filter cutoff to achieve survival fraction <x>", 6 },
   ///{ "--fil-E-qdb",eslARG_REAL,  "0.02",NULL, "x>0.",    NULL,      NULL, "--fil-T-qdb", "use E-value of <x> QDB CM filter", 6 },
@@ -860,11 +861,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   int nstarts, nexits, nd;
   
   /* set up CM parameters that are option-changeable */
-  if(! esl_opt_IsDefault(go, "--beta")) { 
-    if((cm->beta - esl_opt_GetReal(go, "--beta")) < -1E-5) ESL_FAIL(eslEINCOMPAT, errbuf, "Minimum allowed <x> for --beta <x> is %g (from cmfile, change with cmbuild --minbeta).\n", cm->beta);
-    cm->beta = esl_opt_GetReal(go, "--beta");
-  }
-  cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
+  cm->beta_qdb = esl_opt_GetReal(go, "--beta");
+  cm->tau      = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
 
   use_hmmonly = (esl_opt_GetBoolean(go, "--viterbi") || esl_opt_GetBoolean(go, "--forward")) ? TRUE : FALSE;
 
@@ -876,15 +874,15 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     cm->config_opts |= CM_CONFIG_HMMLOCAL;
     cm->config_opts |= CM_CONFIG_HMMEL;
   }
-  /* config QDB for final round of search? only if --qdb, otherwise we only use QDB to filter */
-  if(esl_opt_GetBoolean(go, "--qdb")) cm->config_opts |= CM_CONFIG_QDB;
+  /* config QDB for final round of search? yes, unless --no-qdb, otherwise we only use QDB to filter */
+  if(! esl_opt_GetBoolean(go, "--no-qdb")) cm->config_opts |= CM_CONFIG_QDB;
 
   /* search_opts */
   if(! use_hmmonly) 
     if(  esl_opt_GetBoolean(go, "--inside"))      cm->search_opts |= CM_SEARCH_INSIDE;
   if(  esl_opt_GetBoolean(go, "--noalign"))     cm->search_opts |= CM_SEARCH_NOALIGN;
   if(  esl_opt_GetBoolean(go, "--null2"))       cm->search_opts |= CM_SEARCH_NULL2;
-  if(! esl_opt_GetBoolean(go, "--qdb"))         cm->search_opts |= CM_SEARCH_NOQDB;
+  if(  esl_opt_GetBoolean(go, "--no-qdb"))      cm->search_opts |= CM_SEARCH_NOQDB;
   if(  esl_opt_GetBoolean(go, "--hbanded"))     cm->search_opts |= CM_SEARCH_HBANDED;
   if(  esl_opt_GetBoolean(go, "--aln2bands"))   cm->search_opts |= CM_SEARCH_HMMALNBANDS;
   if(  esl_opt_GetBoolean(go, "--viterbi"))  { 
@@ -939,7 +937,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * set local mode, make cp9 HMM, calculate QD bands etc. 
    */
-  ConfigCM(cm, NULL, NULL, TRUE); 
+  ConfigCM(cm, TRUE);  /* TRUE says: calculate W */
 
   /* Setup ScanMatrix for CYK/Inside scanning functions, we can't 
    * do it in initialize_cm(), b/c it's W dependent; W was just set.
@@ -958,9 +956,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   ESL_DPRINTF1(("cm->pend: %.3f\n", cm->pend));
   /* print qdbs to file if nec */
   if(! esl_opt_IsDefault(go, "--bfile")) {
-    fprintf(cfg->bfp, "beta:%f\n", cm->beta);
+    fprintf(cfg->bfp, "beta:%f\n", cm->beta_qdb);
     debug_print_bands(cfg->bfp, cm, cm->dmin, cm->dmax);
-    fprintf(cfg->bfp, "beta:%f\n", cm->beta);
   }
 
   if(cfg->my_rank == 0) fprintf(cfg->ofp, "CM %d: %s\n", (cfg->ncm), cm->name);
@@ -1081,10 +1078,9 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
  *
  * 
  * beta, the tail loss probability for the QDB calculation is determined as follows:
- * If --beta <x> is not enabled, cm->beta is used as set in the cmfile by cmbuild.
- * If --beta <x> is enabled, <x> is used, but only if <x> <= cm->beta, otherwise
- * we through an error, die and tell the user.
- *
+ * If --fil-beta <x> is not enabled, cm->beta_qdb is set as cm->beta_W as read in the cmfile
+ *               and initially set by cmbuild.
+ * If --fil-beta <x> is enabled, <x> is used as cm->beta_qdb
  *
  * Final round related options (after all filtering is complete):
  *
@@ -1126,7 +1122,9 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   float fhmm_S = -1;          /* predicted survival fraction from HMM filter round */
   int   do_qdb_filter = TRUE; /* TRUE to add QDB filter, FALSE not to */
   int   do_hmm_filter = TRUE; /* TRUE to add HMM filter, FALSE not to */
-  double fqdb_beta;           /* beta for QDBs in QDB filter round */
+  double fqdb_beta_qdb;       /* beta for QDBs in QDB filter round */
+  double fqdb_beta_W;         /* beta for W in QDB filter round */
+  int    fqdb_W;              /* W for QDB filter round */
   int   *fqdb_dmin, *fqdb_dmax; /* d bands (QDBs) for QDB filter round */
   int safe_windowlen;         /* used to get QDBs */
   ScanMatrix_t *fqdb_smx = NULL;/* the scan matrix for the QDB filter round */
@@ -1320,27 +1318,36 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   fqdb_S = fqdb_E = fqdb_sc = -1.;
   
   if(do_qdb_filter && esl_opt_GetBoolean(go, "--fil-qdb")) { /* determine thresholds, beta for qdb cyk filter */
-
-      /* build the ScanMatrix_t for the QDB filter round, requires calcing dmin, dmax */
-      if(! esl_opt_IsDefault(go, "--beta")) { 
-	/* ensure for <x> from --beta: <x> >= cm->beta from cmfile */
-	if((cm->beta - esl_opt_GetReal(go, "beta")) < -1E-5) cm_Fail("Minimum allowed <x> for --beta <x> is %g (from cmfile, change with cmbuild --minbeta).\n", cm->beta);
-	fqdb_beta = esl_opt_GetReal(go, "--beta");
-      } /* else cm->beta will be equal to beta from CM file */
-      else fqdb_beta = cm->beta;
-      safe_windowlen = cm->W * 2;
-      while(!(BandCalculationEngine(cm, safe_windowlen, fqdb_beta, FALSE, &fqdb_dmin, &fqdb_dmax, NULL, NULL))) {
-	free(fqdb_dmin);
-	free(fqdb_dmax);
-	fqdb_dmin = NULL;
-	fqdb_dmax = NULL;
-	safe_windowlen *= 2;
-	if(safe_windowlen > (cm->clen * 1000)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo(), band calculation safe_windowlen big: %d\n", safe_windowlen);
-      }
-      fqdb_smx = cm_CreateScanMatrix(cm, fqdb_dmax[0], fqdb_dmin, fqdb_dmax, fqdb_beta, TRUE, TRUE, FALSE);
-
+    /* build the ScanMatrix_t for the QDB filter round, requires calcing dmin, dmax */
+    if(! esl_opt_IsDefault(go, "--fil-beta")) fqdb_beta_qdb = esl_opt_GetReal(go, "--fil-beta");
+    else fqdb_beta_qdb = cm->beta_W; /* use beta used to calc W in CM file by default */
+    safe_windowlen = cm->W * 3;
+    while(!(BandCalculationEngine(cm, safe_windowlen, fqdb_beta_qdb, FALSE, &fqdb_dmin, &fqdb_dmax, NULL, NULL))) {
+      free(fqdb_dmin);
+      free(fqdb_dmax);
+      fqdb_dmin = NULL;
+      fqdb_dmax = NULL;
+      safe_windowlen *= 2;
+      if(safe_windowlen > (cm->clen * 1000)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo(), band calculation safe_windowlen big: %d\n", safe_windowlen);
+    }
+    /* tricky step here, W is calculated for filter using maximum of fqdb_beta_qdb and cm->beta_W, this is b/c 
+     * model was (possibly) calibrated with W as calc'ed with cm->beta_W and we don't want a bigger hit
+     * to be possible then was during calibration (could overestimate significance of scores), 
+     * W can be less than cm->beta_W though because that would only lead to possible underestimation 
+     * of significance of scores (the good direction).
+     */
+    if(cm->beta_W > fqdb_beta_qdb) { 
+      fqdb_beta_W = cm->beta_W;
+      fqdb_W  = cm->W;
+    }
+    else { 
+      fqdb_beta_W = fqdb_beta_qdb;
+      fqdb_W  = fqdb_dmax[0];
+    }
+    fqdb_smx = cm_CreateScanMatrix(cm, fqdb_W, fqdb_dmin, fqdb_dmax, fqdb_beta_W, fqdb_beta_qdb, TRUE, TRUE, FALSE);
+    
     if(esl_opt_IsDefault(go, "--fil-S-qdb") && esl_opt_IsDefault(go, "--fil-T-qdb")) {
-
+      
       /* No relevant options selected. Choose from, in order of priority:
        * 1. CM filter E value that gives default survival fraction 
        * 2. default CM filter bit score
@@ -1391,7 +1398,8 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 
     }
     if(fqdb_S > 0.9) do_qdb_filter = FALSE; /* turn off QDB filter if predicted survival fraction is crappy */
-  }    
+  }
+  else do_qdb_filter = FALSE;
 
   /* C. add QDB filter, if necessary (before HMM filter, filters added like a stack, HMM filter is added last but used first) */
   if(do_qdb_filter) { 
@@ -1471,8 +1479,8 @@ int print_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *c
     gum_mode = (stype == SEARCH_WITH_CM) ? cm_mode : cp9_mode; 
 
     use_qdb     = (smx == NULL || (smx->dmin == NULL && smx->dmax == NULL)) ? FALSE : TRUE;
-    if(use_qdb) { if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, smx->beta, &cm_ncalcs_per_res, &W))  != eslOK) return status; }
-    else        { if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, TRUE,  cm->beta,  &cm_ncalcs_per_res, &W))  != eslOK) return status; }
+    if(use_qdb) { if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, smx->beta_qdb, &cm_ncalcs_per_res, &W))  != eslOK) return status; }
+    else        { if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, TRUE,  cm->beta_W,    &cm_ncalcs_per_res, &W))  != eslOK) return status; }
 
     if(cm->flags & CMH_GUMBEL_STATS) { 
       prv_surv_fract = surv_fract;
@@ -1485,7 +1493,7 @@ int print_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *c
       fprintf(cfg->ofp, "  %3d", (n+1));
       if(stype == SEARCH_WITH_CM) { 
 	fprintf(cfg->ofp, "  %3s  %3s  %3s  ", "cm", ((cm->flags & CMH_LOCAL_BEGIN) ? "loc" : "glc"), ((search_opts & CM_SEARCH_INSIDE) ? "ins" : "cyk"));
-	if(use_qdb) fprintf(cfg->ofp, "%5g", smx->beta);
+	if(use_qdb) fprintf(cfg->ofp, "%5g", smx->beta_qdb);
 	else        fprintf(cfg->ofp, "%5s", "-");
       }
       else { 

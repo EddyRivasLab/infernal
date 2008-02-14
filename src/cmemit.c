@@ -342,7 +342,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
   }
   /* END (POTENTIALLY) TEMPORARY BLOCK */
   
-  ConfigCM(cm, NULL, NULL, FALSE);
+  ConfigCM(cm, FALSE); /* FALSE says don't bother calc'ing W, we won't need it */
 
   /* print the CP9 params if nec */
   if(cfg->ahmmfp != NULL) {

@@ -66,7 +66,7 @@ static ESL_OPTIONS options[] = {
   { "--pend",            eslARG_REAL,   "0.05", NULL, "0<x<1",  NULL,        NULL,        NULL, "set aggregate local end prob to <x>", 1 },
 
   /* options for gumbel estimation */
-  { "--gum-only",       eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,"--fil-only", "only estimate gumbels, don't calculate HMM filter thresholds", 2},
+  { "--gum-only",       eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,"--fil-only", "only estimate gumbels, don't calc HMM filter thresholds", 2},
   { "--gum-L",          eslARG_INT,     NULL,   NULL, "n>0",    NULL,        NULL,"--fil-only", "set length of random seqs for gumbel estimation to <n>", 2},
   { "--gum-cmN",        eslARG_INT,     "1000", NULL, "n>0",    NULL,        NULL,"--fil-only", "number of random sequences for CM gumbel estimation",    2 },
   { "--gum-hmmN",       eslARG_INT,     "5000", NULL, "n>0",    NULL,        NULL,"--fil-only", "number of random sequences for CP9 HMM gumbel estimation",    2 },
@@ -82,21 +82,21 @@ static ESL_OPTIONS options[] = {
   { "--fil-F",          eslARG_REAL,    "0.99", NULL, "0<x<=1", NULL,        NULL,"--gum-only", "required fraction of seqs that survive HMM filter", 3},
   { "--fil-xhmm",       eslARG_REAL,    "2.0",  NULL, "x>=1.1", NULL,        NULL,"--gum-only", "set target time for filtered search as <x> times HMM time", 3},
   { "--fil-hbanded",    eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,"--gum-only", "use HMM banded search for filter calculation", 3},
-  { "--fil-tau",        eslARG_REAL,    "1e-7", NULL, "0<x<1",  NULL, "--fbanded",        NULL, "set tail loss prob for --fbanded to <x>", 6 },
-  { "--fil-scan2bands", eslARG_NONE,    FALSE,  NULL, NULL,     NULL, "--fbanded",        NULL, "derive HMM bands from scanning Forward/Backward", 6 },
+  { "--fil-tau",        eslARG_REAL,    "1e-7", NULL, "0<x<1",  NULL, "--fbanded",        NULL, "set tail loss prob for --fbanded to <x>", 3 },
+  { "--fil-aln2bands",  eslARG_NONE,    FALSE,  NULL, NULL,     NULL, "--fbanded",        NULL, "derive HMM bands w/o scanning Forward/Backward", 3 },
   { "--fil-gemit",      eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,"--gum-only", "when calc'ing filter thresholds, always emit globally from CM",  3},
   { "--fil-hfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,"--gum-only", "save CP9 filter threshold histogram(s) to file <s>", 3},
   { "--fil-rfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,"--gum-only", "save CP9 filter threshold information in R format to file <s>", 3},
 /* Other options */
-  { "--stall",          eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 5 },  
+  { "--stall",          eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 9 },  
   { "--mxsize",         eslARG_REAL,    "256.0",NULL, "x>0.",   NULL,        NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 9 },
   { "--exp-T",          eslARG_REAL,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "set bit sc cutoff for exp tail fitting to <x> [df: -INFTY]", 9 },
   { "--exp-L",          eslARG_INT,     "100000",NULL, "1000<=n<=1000000",NULL,NULL,      NULL, "set length of random sequences for exp tail fitting to <n>", 9 },
   { "--exp-cmN",        eslARG_INT,     "10",   NULL, "n<=100",  NULL,       NULL,        NULL, "set number of random sequences for CM exp tail fitting to <n>", 9 },
   { "--exp-hmmN",       eslARG_INT,     "10",   NULL, "n<=100",  NULL,       NULL,        NULL, "set number of random sequences for HMM exp tail fitting to <n>", 9 },
-  { "--exp-tail",       eslARG_REAL,    "0.5",  NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of right histogram tail to fit to exp tail to <x>", 9 },
+  { "--exp-tail",       eslARG_REAL,    "0.01", NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of right histogram tail to fit to exp tail to <x>", 9 },
 #ifdef HAVE_MPI
-  { "--mpi",            eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "run as an MPI parallel program", 5 },  
+  { "--mpi",            eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "run as an MPI parallel program", 9 },  
 #endif
 
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -131,7 +131,7 @@ struct cfg_s {
   /* the following data is modified for each CM, and in some cases for each Gumbel mode for each CM,
    * it is assumed to be 'current' in many functions.
    */
-  float            fil_cm_ncalcs;   /* millions of calcs for full CM scan of 1 residue, with QDBs from beta == cm->beta */
+  float            fil_cm_ncalcs;   /* millions of calcs for full CM scan of 1 residue, with QDBs from beta == cm->beta_qdb */
   float            cp9_ncalcs;      /* millions of calcs for CP9 HMM scan of 1 residue, updated when model is localfied */
   /* mpi */
   int              do_mpi;
@@ -217,8 +217,8 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
       puts("\ngeneral CP9 HMM filter threshold calculation options :");
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
-      puts("\noptions for CM score cutoff to to use for filter threshold calculation:");
-      esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
+      puts("\nother options (FIX ME!):");
+      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
       exit(0);
     }
   if (esl_opt_ArgNumber(go) != 1) 
@@ -656,7 +656,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    expN = working_on_cm ? cmN : hmmN;
 
 	    ESL_DPRINTF1(("\n\ncalling ProcessSearchWorkunit to fit exp tail for p: %d GUM mode: %d\n", p, gum_mode));
-	    printf("exp     %-12s %5d %6d %5s %5s [", DescribeGumMode(gum_mode), expN, expL, "-", "-");
+	    printf(" %6s  %-12s %5d %6d %5s %5s [", "exp", DescribeGumMode(gum_mode), expN, expL, "-", "-");
 	    fflush(stdout);
 
 	    exp_scN  = 0;
@@ -1660,13 +1660,11 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* config QDB? NO!, unless --gum-beta enabled */
   if(esl_opt_IsDefault(go, "--gum-beta")) { 
     cm->search_opts |= CM_SEARCH_NOQDB; /* don't use QDB to search */
-    /* cm->beta will be set as beta read from cmfile */
+    /* cm->beta_qdb == cm->beta_W, both will be set as beta_W read from cmfile */
   }
   else {
-    /* ensure for <x> from --gum-beta: <x> >= cm->beta from cmfile */
-    if((cm->beta - esl_opt_GetReal(go, "--gum-beta")) < -1E-5) ESL_FAIL(eslEINCOMPAT, errbuf, "Minimum allowed <x> for --gum-beta <x> is %g (from cmfile, change with cmbuild --minbeta).\n", cm->beta);
     cm->config_opts |= CM_CONFIG_QDB;   /* configure QDB */
-    cm->beta = esl_opt_GetReal(go, "--gum-beta"); 
+    cm->beta_qdb = esl_opt_GetReal(go, "--gum-beta"); 
   }
 
   /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */
@@ -1701,7 +1699,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     cm->flags |= CM_EMIT_NO_LOCAL_BEGINS; 
     cm->flags |= CM_EMIT_NO_LOCAL_ENDS;
   }
-
   cm->search_opts |= CM_SEARCH_NOALIGN;
 
   /* ALWAYS use the greedy overlap resolution algorithm to return hits for exp calculation
@@ -1709,7 +1706,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   cm->search_opts |= CM_SEARCH_CMGREEDY;
   cm->search_opts |= CM_SEARCH_HMMGREEDY;
 
-  ConfigCM(cm, NULL, NULL, TRUE);
+  ConfigCM(cm, TRUE); /* TRUE says: calculate W */
   
   /* create and initialize scan info for CYK/Inside scanning functions */
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE);
@@ -2132,8 +2129,6 @@ int
 switch_global_to_local(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, char *errbuf)
 {
   int status;
-  int safe_windowlen;
-  int *dmin, *dmax;
 
   if(cm->flags & CMH_LOCAL_BEGIN) ESL_FAIL(eslEINCOMPAT, errbuf, "switch_global_to_local(), CMH_LOCAL_BEGIN flag already raised.\n");
   if(cm->flags & CMH_LOCAL_END)   ESL_FAIL(eslEINCOMPAT, errbuf, "switch_global_to_local(), CMH_LOCAL_END flag already raised.\n");
@@ -2150,33 +2145,16 @@ switch_global_to_local(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, char 
   /* CPlan9ELConfig() configures CP9 for CM EL local ends, then logoddisfies CP9 */
   CPlan9ELConfig(cm);
 
-  /* if the CM had QDBs, we need to recalculate them */
+  /* recalculate cm->W and recalculate QDBs (if the CM has them) */
   if(cm->flags & CMH_QDB) { 
     free(cm->dmin); 
     free(cm->dmax); 
     cm->dmin = cm->dmax = NULL;
     cm->flags &= ~CMH_QDB;
-    ConfigQDB(cm);
+    ConfigQDBAndW(cm, TRUE); /* TRUE says: calculate QDBs */
   }
-  else { /* we still need to update cm->W */
-    safe_windowlen = cm->clen * 2;
-    if(esl_opt_IsDefault(go, "--gum-beta")) { /* NO QDBs, we still need to setup cm->W */ 
-      if(cm->dmin != NULL || cm->dmax != NULL) 
-	cm_Fail("initialize_cm() --gum-beta NOT enabled, but cm->dmin and cm->dmax non-null. This shouldn't happen.");
-      while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, FALSE, &(dmin), &(dmax), NULL, NULL)))
-	{
-	  free(dmin);
-	  free(dmax);
-	  safe_windowlen *= 2;
-	  if(safe_windowlen > (cm->clen * 1000))
-	    cm_Fail("initialize_cm(), safe_windowlen big: %d\n", safe_windowlen);
-	}
-      cm->W = dmax[0];
-      free(dmin);
-      free(dmax);
-      CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
-    }
-  }
+  else ConfigQDBAndW(cm, FALSE); /* FALSE says: don't calc QDBs */
+  /* this will create a new scan matrix, we need to update searchinfo so it points to this scan matrix */
 
   /* update cfg->fil_cm_ncalcs and cfg->cp9_ncalcs */
   if((status = update_dp_calcs(go, cfg, errbuf, cm)) != eslOK) return status;
@@ -2210,10 +2188,10 @@ update_dp_calcs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
    * fractions for HMM filter thresholds in get_hmm_filter_cutoffs() (see that code for details).
    * Our predicted running times for searches in get_hmm_filter_cutoffs() are calculated based
    * on cfg->fil_cm_calcs and cfg->fil_cp9_calcs. cfg->fil_cm_calcs is calculated assuming we'll
-   * use a QDB filter with beta == cm->beta. 
+   * use a QDB filter with beta == cm->beta_qdb. 
    *
    * We want to set for global mode:
-   * cfg->fil_cm_ncalcs:  millions of calcs for full CM scan of 1 residue, with QDBs using beta = cm->beta from cmfile
+   * cfg->fil_cm_ncalcs:  millions of calcs for full CM scan of 1 residue, with QDBs using beta = cm->beta_qdb from cmfile
    * cfg->cp9_ncalcs:     millions of calcs for CP9 HMM scan of 1 residue
    *
    * This function is called twice. Once for global mode and then for local mode when models get localized.
@@ -2222,14 +2200,14 @@ update_dp_calcs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
   /* get cfg->fil_cm_ncalcs, we ALWAYS assume that QDB CYK will be used as a second filter after HMM filtering
    * in cmsearch, so we determine target survival fractions based on DP counts for QDB searches, not non-QDB searches */
   safe_windowlen = cm->clen * 2;
-  while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, FALSE, &(dmin), &(dmax), NULL, NULL))) {
+  while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta_qdb, FALSE, &(dmin), &(dmax), NULL, NULL))) {
     free(dmin);
     free(dmax);
     safe_windowlen *= 2;
     if(safe_windowlen > (cm->clen * 1000))
       cm_Fail("initialize_cm(), safe_windowlen big: %d\n", safe_windowlen);
   }
-  ESL_DASSERT1((dmax[0] == cm->W)); /* cm->W should have been calculated with cm->beta */
+  ESL_DASSERT1((dmax[0] == cm->W)); /* cm->W should have been calculated with cm->beta_qdb */
   assert(dmax[0] == cm->W); 
   if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*cm->W, dmin, dmax, cm->W, TRUE,  NULL, &(cfg->fil_cm_ncalcs))) != eslOK) return status;
   free(dmin);
@@ -2403,16 +2381,17 @@ format_time_string(char *buf, double sec, int do_frac)
 static int
 print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
-  printf("%-8s %s\n", "CM:",      cm->name); 
-  if(esl_opt_IsDefault(go, "--gum-beta"))      printf("%-8s %s %g\n", "beta:", "0.0 (no qdbs), for W calc and filter thresholds: ", cm->beta); 
-  else                                         printf("%-8s %g\n",    "beta:", cm->beta); 
-  printf("%-8s %s\n", "command:", cfg->ccom);
-  printf("%-8s %s\n", "date:",    cfg->cdate);
-  printf("%-8s %d\n", "nproc:",   (cfg->nproc == 0) ? 1 : cfg->nproc);
+  printf("%-9s %s\n", "CM:",      cm->name); 
+  printf("%-9s %g\n", "beta W:",  cm->beta_W); 
+  if(esl_opt_IsDefault(go, "--gum-beta")) printf("%-9s %s\n", "beta qdb:", "0.0 (no qdbs)");
+  else                                    printf("%-9s %g\n", "beta qdb:", cm->beta_qdb); 
+  printf("%-9s %s\n", "command:", cfg->ccom);
+  printf("%-9s %s\n", "date:",    cfg->cdate);
+  printf("%-9s %d\n", "nproc:",   (cfg->nproc == 0) ? 1 : cfg->nproc);
   printf("\n");
-  printf("%6s  %3s  %3s  %3s %5s %6s %5s %5s    percent complete         %10s\n", "",       "",     "",    "",     "",        "",     "",         "",  "");
-  printf("%6s  %3s  %3s  %3s %5s %6s %5s %5s [5.......50.......100] %10s\n", "stage",  "mod",  "cfg", "alg",  "gumN",    "len",  "filN",          "",  "elapsed");
-  printf("%6s  %3s  %3s  %3s %5s %6s %5s %5s %22s %10s\n", "------", "---", "---", "---", "-----", "------", "-----", "-----", "----------------------", "----------");
+  printf("%7s  %3s  %3s  %3s %5s %6s %5s %5s    percent complete         %10s\n", "",       "",     "",    "",     "",        "",     "",         "",  "");
+  printf("%7s  %3s  %3s  %3s %5s %6s %5s %5s [5.......50.......100] %10s\n", "stage",  "mod",  "cfg", "alg",  "gumN",    "len",  "filN",          "",  "elapsed");
+  printf("%7s  %3s  %3s  %3s %5s %6s %5s %5s %22s %10s\n", "------", "---", "---", "---", "-----", "------", "-----", "-----", "----------------------", "----------");
   return eslOK;
 }
 

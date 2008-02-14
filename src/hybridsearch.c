@@ -904,7 +904,7 @@ cm_CreateHybridScanInfo(CM_t *cm, double hsi_beta, float full_cm_ncalcs)
    * we create a float and a int matrix, cm_cp9_HybridScan() uses the int matrix,
    * but we may also use the float matrix in FastCYKScan()
    */
-  hsi->smx = cm_CreateScanMatrix(cm, hsi->W, dmin, dmax, hsi->beta, TRUE, TRUE, TRUE);
+  hsi->smx = cm_CreateScanMatrix(cm, hsi->W, dmin, dmax, hsi->beta, hsi->beta, TRUE, TRUE, TRUE);
 
   /* determine number of millions of DP calculations per residue for CM and CP9 */
   /* first the full CM, using cm->dmin and cm->dmax, this value is passed in 
@@ -1549,7 +1549,7 @@ main(int argc, char **argv)
   if(esl_opt_GetBoolean(go, "-l")) 
     cm->config_opts  |= CM_CONFIG_LOCAL;
   cm->config_opts |= CM_CONFIG_QDB;
-  ConfigCM(cm, NULL, NULL, TRUE);
+  ConfigCM(cm, TRUE); /* TRUE says: calculate W */
   
   if((status = cm_CountSearchDPCalcs(cm, NULL, cm->W*10, cm->dmin, cm->dmax, cm->W, TRUE, &vcalcs, NULL)) != eslOK) cm_Fail("Error counting search dp calcs.");
   

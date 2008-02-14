@@ -32,8 +32,6 @@
  *           QDBs can also be passed in. 
  * 
  * Args:     CM           - the covariance model
- *           preset_dmin  - supplied dmin values, NULL if none
- *           preset_dmax  - supplied dmax values, NULL if none
  *           always_calc_W - TRUE to always calculate W even if we're not calcing
  *                           QDBs, FALSE to only calc W if we're calcing QDBs
  *
@@ -42,13 +40,9 @@
  *            <eslEMEM> on memory allocation error.
  */
 int 
-ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax, int always_calc_W)
+ConfigCM(CM_t *cm, int always_calc_W)
 {
-  int status;
   float swentry, swexit;
-  int do_calc_qdb   = FALSE;
-  int do_preset_qdb = FALSE;
-  int v;
   
   /* Build the CP9 HMM and associated data */
   /* IMPORTANT: do this before setting up CM for local mode
@@ -129,58 +123,11 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax, int always_calc_W)
    * before QDB calc, then turned off in BandCalculationEngine() then 
    * back on. */
   if(cm->config_opts & CM_CONFIG_QDB) {
-    if(preset_dmin == NULL && preset_dmax == NULL) do_calc_qdb   = TRUE;
-    else                                           do_preset_qdb = TRUE;
-  }
-  if (do_calc_qdb) { 
     if(cm->flags & CMH_QDB) cm_Fail("ERROR in ConfigCM() CM already has QDBs\n");
-    ConfigQDB(cm);
+    ConfigQDBAndW(cm, TRUE);
   }
-  else if(do_preset_qdb) { 
-    if(cm->flags & CMH_QDB) cm_Fail("ERROR in ConfigCM() CM already has QDBs\n");
-    ESL_ALLOC(cm->dmin, sizeof(int) * cm->M);
-    ESL_ALLOC(cm->dmax, sizeof(int) * cm->M);
-    for(v = 0; v < cm->M; v++)
-      {
-	cm->dmin[v] = preset_dmin[v];
-	cm->dmax[v] = preset_dmax[v];
-      }
-    /* Set W as dmax[0], we're wasting time otherwise, looking at
-     * hits that are bigger than we're allowing with QDB. */
-    cm->W = cm->dmax[0];
-    cm->flags |= CMH_QDB; /* raise the QDB flag */
-  }
-  else if(always_calc_W) {
-    /* we didn't set up QDBs, but we still need to set cm->W, we 
-     * set it as dmax[0] from the QDB calculation using cm->beta, 
-     * but don't save dmin/dmax.
-     */
-    int safe_windowlen = cm->clen * 2;
-    int *dmin, *dmax;
-    while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta, FALSE, &(dmin), &(dmax), NULL, NULL)))
-      {
-	free(dmin);
-	free(dmax);
-	safe_windowlen *= 2;
-	if(safe_windowlen > (cm->clen * 1000))
-	  cm_Fail("ConfigCM(), safe_windowlen big: %d\n", safe_windowlen);
-	}
-    cm->W = dmax[0];
-    free(dmin);
-    free(dmax);
-  }
+  else if(always_calc_W) ConfigQDBAndW(cm, FALSE); /* FALSE says: don't calculate QDBs, W will still be calc'ed and set */
   
-  /*
-  fp = fopen("temphmm2" ,"w");
-  debug_print_cp9_params(fp, cm->cp9, TRUE);
-  fclose(fp);
-
-  fp = fopen("tempcm2" ,"w");
-  debug_print_cm_params(fp, cm);
-  fclose(fp);
-  */
-
-  /*cm_Fail("done.\n");*/
   /* We need to ensure that cm->el_selfsc * W >= IMPOSSIBLE
    * (cm->el_selfsc is the score for an EL self transition) This is
    * done because we potentially multiply cm->el_selfsc * W, and add
@@ -202,10 +149,6 @@ ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax, int always_calc_W)
   /*debug_print_cm_params(stdout, cm);
     debug_print_cp9_params(stdout, cm->cp9, TRUE);*/
   return eslOK;
-
- ERROR:
-  cm_Fail("Memory allocation error.");
-  return status; /* NOTREACHED */
 }
 
 /*
@@ -304,11 +247,11 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
     cm->dmin = NULL;
     cm->dmax = NULL;
     cm->flags &= ~CMH_QDB;
-    ConfigQDB(cm);
+    ConfigQDBAndW(cm, TRUE); /* TRUE says: calc QDBs */
   }      
-  /* ConfigQDB should rebuild scan matrix, if it existed */
+  /* ConfigQDBAndW should rebuild scan matrix, if it existed */
   if((! (cm->flags & CMH_SCANMATRIX)) && had_scanmatrix)
-     cm_Fail("ConfigLocal(), CM had a scan matrix, but ConfigQDB didn't rebuild it.");
+     cm_Fail("ConfigLocal(), CM had a scan matrix, but ConfigQDBAndW didn't rebuild it.");
      
   CMLogoddsify(cm);
   return;
@@ -369,7 +312,7 @@ ConfigGlobal(CM_t *cm)
     cm->dmin = NULL;
     cm->dmax = NULL;
     cm->flags &= ~CMH_QDB;
-    ConfigQDB(cm);
+    ConfigQDBAndW(cm, TRUE); /* TRUE says: calc QDBs */
   }      
   /* free and rebuild scan matrix to correspond to new QDBs, if it exists */
   if(cm->flags & CMH_SCANMATRIX) {
@@ -521,8 +464,118 @@ ConfigLocal_DisallowELEmissions(CM_t *cm)
   return;
 }
 
-/*
- * Function: ConfigQDB
+/* Function: ConfigQDBAndW
+ * Date:     EPN, Wed Feb 13 17:44:02 2008
+ *
+ * Purpose:  Configure a CM's query dependent bands (QDBs) and/or 
+ *           window length (W).
+ * 
+ * Args:     CM           - the covariance model
+ *           do_calc_qdb  - TRUE to calculate QDBs and set cm->dmin, cm->dmax
+ *                          using cm->beta_qdb
+ */
+int
+ConfigQDBAndW(CM_t *cm, int do_calc_qdb)
+{
+  int mode;
+  int v;
+  int safe_windowlen;
+  int *dmin, *dmax;
+
+  /* Three possible modes, depending on input args. 
+   * We'll have do the band calculation either:
+   *
+   * 1. one time with beta == cm->beta_W to calculate cm->W.
+   * 2. one time with beta == cm->beta_qdb to calculate cm->dmin and
+   *    cm->dmax bands, and implicitly W.
+   * 3. twice, once with beta == cm->beta_W, to calculate cm->W,
+   *    and again with beta == cm->beta_qdb to calculate cm->dmin
+   *    cm->dmax bands. 
+   */
+
+  if(!do_calc_qdb) mode = 1;
+  else { /* do_calc_qdb */
+    if((cm->beta_W - cm->beta_qdb) > eslSMALLX1) { 
+      mode = 3;
+      /* TRUE if cm->beta_W used to calc W is greater than cm->beta_qdb,
+       * in this case, we're in mode 3, cm->W will be less than
+       * cm->dmax[0] (and cm->dmax[v] for other v as well). 
+       * That's okay, we'll truncate those bands on d to 
+       * never exceed W, but they'll be wider for some v than
+       * they would have if we used cm->beta_W to calc qdbs.
+       * (Imagine a CM with node 1 == BIF_nd, the BEGL and BEGR
+       * subtrees can have wide bands, they just can't both 
+       * combine to have a BIF subtree that exceeds cm->W, this
+       * allows insertions in BEGL or BEGR subtrees, but not both.
+       */
+    }
+    else mode = 2; 
+    /* only calculate bands with cm->beta_qdb, then set W
+     * as cm->dmax[0]. This may give W less than we would've
+     * got with cm->beta_W. But if we're using the QDBs anyway,
+     * the biggest hit we'll possibly get is cm->dmax[0] residues.
+     */
+  }
+
+  /* run band calculation(s) */
+  if(mode == 1 || mode == 3) { /* calculate cm->W */
+    safe_windowlen = cm->clen * 3;
+    while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta_W, FALSE, &(dmin), &(dmax), NULL, NULL))) { 
+      free(dmin);
+      free(dmax);
+      safe_windowlen *= 2;
+      if(safe_windowlen > (cm->clen * 1000)) cm_Fail("ConfigQDBAndW(), mode 2, safe_windowlen big: %d\n", safe_windowlen);
+    }
+    cm->W = dmax[0];
+    free(dmin);
+    free(dmax);
+  }
+  if(mode == 2 || mode == 3) { /* calculate QDBs */
+    safe_windowlen = cm->clen * 3;
+    /* Contract check */
+    if(cm->flags & CMH_QDB) cm_Fail("ConfigQDBAndW(): about to calculate QDBs, but CMH_QDB flag is already up.\n");
+    if(cm->dmin != NULL) { free(cm->dmin); cm->dmin = NULL; }
+    if(cm->dmax != NULL) { free(cm->dmax); cm->dmax = NULL; } 
+    while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta_qdb, FALSE, &(cm->dmin), &(cm->dmax), NULL, NULL))) { 
+      free(cm->dmin); cm->dmin = NULL;
+      free(cm->dmax); cm->dmax = NULL;
+      safe_windowlen *= 2;
+      if(safe_windowlen > (cm->clen * 1000)) cm_Fail("ConfigQDBAndW(), mode 2, safe_windowlen big: %d\n", safe_windowlen);
+    }
+    if(mode == 2) { /* set W as dmax[0], we're wasting time otherwise, looking at
+		     * hits that are bigger than we're allowing with QDB. */
+      cm->W = cm->dmax[0];
+    } /* else, mode == 3, we set cm->W in loop above, it will be less than dmax[0] */
+
+    else { /* mode == 3 */
+      /* Quick check to make sure that cm->W >= dmin[v] for all v. If it's not, something went wrong */
+      for(v = 0; v < cm->M; v++) { 
+	if(cm->W < cm->dmin[v]) cm_Fail("ConfigQDBAndW(), mode 3, cm->W set as %d with beta: %g, but dmin[v:%d] (%d) exceeds it. QDBs calc'ed with beta: %g. This shouldn't happen.\n", cm->W, cm->beta_W, v, dmin[v], cm->beta_qdb); }
+    }
+    cm->flags |= CMH_QDB; /* raise the QDB flag */
+  }
+  /* free and rebuild scan matrix to correspond to new QDBs and/or W, 
+   * if it exists, this is where QDBs are potentially truncated 
+   * in mode 3, that is: for all v, dmax[v] is reassigned as 
+   * min(cm->dmax[v], cm->W) (note: we've ensured that 
+   * dmin[v] < cm->W for all v above) 
+   */
+  if(cm->flags & CMH_SCANMATRIX) {
+    int do_float = cm->smx->flags & cmSMX_HAS_FLOAT;
+    int do_int   = cm->smx->flags & cmSMX_HAS_INT;
+    cm_FreeScanMatrixForCM(cm);
+    cm_CreateScanMatrixForCM(cm, do_float, do_int);
+  }
+  if(mode == 1 || mode == 3) printf("TEMP leaving ConfigQDBAndW(), mode: %d, set cm->W as:     %d with beta_W:   %g\n", mode, cm->W, cm->beta_W);
+  if(mode == 2)              printf("TEMP leaving ConfigQDBAndW(), mode: %d, set cm->W as:     %d with beta_W:   %g\n", mode, cm->W, cm->beta_qdb);
+  if(mode == 2 || mode == 3) printf("TEMP leaving ConfigQDBAndW(), mode: %d, set qdbs dmax[0]: %d with beta_qdb: %g\n", mode, cm->dmax[0], cm->beta_qdb);
+  CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
+  return eslOK;
+}
+
+
+#if 0
+/* Function: ConfigQDB
  * Date:     EPN, Thu May  3 14:37:09 2007
  * Purpose:  Configure a CM's query dependent bands (QDBs).
  * Args:
@@ -573,3 +626,4 @@ ConfigQDB(CM_t *cm)
   CMLogoddsify(cm); /* QDB calculation invalidates log odds scores */
   return eslOK;
 }
+#endif

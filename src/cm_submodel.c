@@ -687,7 +687,8 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
   CMZero(sub_cm);
   CMSetNullModel(sub_cm, orig_cm->null);
   sub_cm->el_selfsc = orig_cm->el_selfsc;
-  sub_cm->beta      = orig_cm->beta;
+  sub_cm->beta_W    = orig_cm->beta_W;
+  sub_cm->beta_qdb  = orig_cm->beta_qdb;
   sub_cm->tau       = orig_cm->tau;
    
   /* copy the options from the template CM, but turn off the CM_ALIGN_SUB options 

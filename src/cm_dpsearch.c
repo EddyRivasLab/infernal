@@ -105,9 +105,6 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CMH_BITS flag is not raised.\n");
-  if(j0 < i0) {
-    printf("whoa\n");
-  }
   if(j0 < i0)                            ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, i0: %d j0: %d\n", i0, j0);
   if(dsq == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, dsq is NULL\n");
   if(cm->search_opts & CM_SEARCH_INSIDE) ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CM_SEARCH_INSIDE flag raised");
@@ -123,8 +120,10 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d */
   int    *dmin        = smx->dmin;        /* [0..v..cm->M-1] minimum d allowed for this state */
   int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
-  float **esc_vAA     = cm->oesc;        /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
-					  * and all possible emissions a (including ambiguities) */
+  float **esc_vAA     = cm->oesc;         /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
+					   * and all possible emissions a (including ambiguities) */
+
+  printf("TEMP in FastCYKScan(): i0: %d j0: %d\n", i0, j0);
 
   /* determine if we're doing banded/non-banded */
   if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
@@ -629,6 +628,8 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   int      *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
+
+  printf("TEMP in FastIInsideScan(): i0: %d j0: %d\n", i0, j0);
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "FastIInsideScan, CMH_BITS flag is not raised.\n");
@@ -5349,7 +5350,7 @@ main(int argc, char **argv)
   if(  esl_opt_GetBoolean(go, "--ihbanded"))    cm->search_opts |= CM_SEARCH_HBANDED;
   cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
   cm->config_opts |= CM_CONFIG_QDB;
-  ConfigCM(cm, NULL, NULL, TRUE);
+  ConfigCM(cm, TRUE); /* TRUE says: calculate W */
 
   if (esl_opt_GetBoolean(go, "--noqdb")) { 
     dmin = NULL; dmax = NULL;

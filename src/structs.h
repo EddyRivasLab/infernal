@@ -1003,7 +1003,8 @@ typedef struct scanmx_s {
   int   **dxAA;        /* [1..j..W][0..v..M-1] max d value allowed for posn j, state v */
   int    *bestr;       /* auxil info: best root state at alpha[0][cur][d] */
   int     flags;       /* flags for what info has been set (can be float and/or int versions of alpha) */
-  double  beta;        /* tail loss prob used for calc'ing dmin/dmax, invalid if dmin==dmax==NULL */
+  double  beta_qdb;    /* tail loss prob used for calc'ing dmin/dmax, invalid if dmin==dmax==NULL */
+  double  beta_W;      /* tail loss prob used for calc'ing W, often == beta_qdb, may be greater, can't be less */
 
   /* falpha dp matrices [0..j..1][0..v..cm->M-1][0..d..W] for float implementations of CYK/Inside */
   float ***falpha;          /* non-BEGL_S states for float versions of CYK/Inside */
@@ -1352,17 +1353,20 @@ typedef struct cm_s {
 
   int    flags;		/* status flags                                    */
 
-  /* query dependent bands (QDB) on subsequence lengths at each state                         */
+  /* W and query dependent bands (QDB) on subsequence lengths at each state */
   int   *dmin;          /* minimum d bound for each state v; [0..v..M-1] (NULL if non-banded) */
   int   *dmax;          /* maximum d bound for each state v; [0..v..M-1] (NULL if non-banded) */
-  double beta;          /* tail loss probability for QDB, stored in CM file as minimum allowed
-			 * beta, i.e. set as beta to be used for calculating cm->W whenever
-			 * QDB is NOT being used. If QDB is being used, cm->W is set as
-			 * dmax[0] using the beta specified by the user. The user cannot
-			 * specify a beta greater than the beta value stored in the CM file,
-			 * mainly because the beta from the CM file is used to calculate W
-			 * during model calibration.
-			 */
+  int    W;             /* max d: max size of a hit (EPN 08.18.05)                            */
+  double beta_qdb;      /* tail loss probability for QDB calculation used to set dmin/dmax    */
+  double beta_W;        /* tail loss probability for QDB calculation used to set W, often     *
+			 * equal to beta_qdb, but not always. beta_W >= beta_qdb ALWAYS.      *
+			 * If beta_W > beta_qdb, dmax[0] > W, d values > W are not allowed    *
+			 * in the DP algorithms though (enforced sneakily when the            *
+			 * ScanMatrix_t is built). However, if beta_W > beta_qdb, we still    *
+			 * can get less sensitivity loss w.r.t non-banded than if bands were  * 
+			 * tighter with beta_W == beta_qdb; because some subtrees (think      * 
+			 * BEGL's and BEGRs) still have wider bands, it's just the nodes near * 
+			 * the root that will have their dmax values truncated to <= cm->W.   */
   double tau;           /* tail loss probability for HMM target dependent banding             */
 
   /* added by EPN, Tue Jan  2 14:24:08 2007 */
@@ -1377,7 +1381,6 @@ typedef struct cm_s {
   float      pend;       /* local end prob to spread across internal nodes for local mode      */
   
   
-  int    W;             /* max d: max size of a hit (EPN 08.18.05) */
   float  el_selfsc;     /* score of a self transition in the EL state
 			 * the EL state emits only on self transition (EPN 11.15.05)*/
   int   iel_selfsc;     /* scaled int version of el_selfsc         */

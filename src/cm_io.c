@@ -89,7 +89,7 @@ static unsigned int v01swap  = 0xb1b0ede3; /* v0.1 binary, byteswapped         *
 #define CMIO_NSEQ         53
 #define CMIO_EFFNSEQ      54
 #define CMIO_CLEN         55
-#define CMIO_MINBETA      56
+#define CMIO_WBETA        56
 
 static int  write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf);
 static int  read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
@@ -371,7 +371,7 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
   fprintf(fp, "NODES    %d\n",   cm->nodes);
   fprintf(fp, "ALPHABET %d\n",   cm->abc->type);
   fprintf(fp, "ELSELF   %.8f\n", cm->el_selfsc);
-  fprintf(fp, "MINBETA  %g\n",   cm->beta);
+  fprintf(fp, "WBETA    %g\n",   cm->beta_W);
   fprintf(fp, "NSEQ     %d\n",   cm->nseq);
   fprintf(fp, "EFFNSEQ  %.3f\n", cm->eff_nseq);
   fprintf(fp, "CLEN     %d\n",   cm->clen);
@@ -640,10 +640,11 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  cm->el_selfsc = atof(tok);
 	}
-      else if (strcmp(tok, "MINBETA") == 0) 
+      else if (strcmp(tok, "WBETA") == 0) 
 	{
 	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	  cm->beta = (double) atof(tok);
+	  cm->beta_W = (double) atof(tok);
+	  cm->beta_qdb = cm->beta_W;
 	}
       else if (strcmp(tok, "NSEQ") == 0) 
 	{
@@ -1057,7 +1058,7 @@ write_binary_cm(FILE *fp, CM_t *cm, char *errbuf)
   }    
 
   tagged_fwrite(CMIO_ELSELFSC,    &cm->el_selfsc,   sizeof(float), 1, fp);  
-  tagged_fwrite(CMIO_MINBETA,     &cm->beta,        sizeof(double),1, fp);  
+  tagged_fwrite(CMIO_WBETA,       &cm->beta_W,      sizeof(double),1, fp);  
   tagged_fwrite(CMIO_NSEQ,        &cm->nseq,        sizeof(int),   1, fp);  
   tagged_fwrite(CMIO_EFFNSEQ,     &cm->eff_nseq,    sizeof(float), 1, fp);  
   tagged_fwrite(CMIO_CLEN,        &cm->clen,        sizeof(int),   1, fp);  
@@ -1204,7 +1205,8 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
     cm->flags |= CMH_NC;
   }
   if (! tagged_fread(CMIO_ELSELFSC, (void *) &(cm->el_selfsc), sizeof(float), 1, fp)) goto FAILURE;
-  if (! tagged_fread(CMIO_MINBETA,  (void *) &(cm->beta),      sizeof(double),1, fp)) goto FAILURE;
+  if (! tagged_fread(CMIO_WBETA,    (void *) &(cm->beta_W),    sizeof(double),1, fp)) goto FAILURE;
+  cm->beta_qdb = cm->beta_W;
   if (! tagged_fread(CMIO_NSEQ,     (void *) &(cm->nseq),      sizeof(int),   1, fp)) goto FAILURE;
   if (! tagged_fread(CMIO_EFFNSEQ,  (void *) &(cm->eff_nseq),  sizeof(float), 1, fp)) goto FAILURE;
   if (! tagged_fread(CMIO_CLEN,     (void *) &(cm->clen),      sizeof(int),   1, fp)) goto FAILURE;

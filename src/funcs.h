@@ -194,7 +194,7 @@ extern int     CMFilePositionByKey(CMFILE *cmf, char *key);
 extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary, char *errbuf);
 
 /* from cm_modelconfig.c */
-extern int   ConfigCM(CM_t *cm, int *preset_dmin, int *preset_dmax, int always_calc_W);
+extern int   ConfigCM(CM_t *cm, int always_calc_W);
 extern void  ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit);
 extern void  ConfigGlobal(CM_t *cm);
 extern void  ConfigNoLocalEnds(CM_t *cm);
@@ -203,7 +203,8 @@ extern void  ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
 				float p_internal_exit, int sstruct_nd,
 				int estruct_nd);
 extern void  ConfigLocal_DisallowELEmissions(CM_t *cm);
-extern int   ConfigQDB(CM_t *cm);
+//extern int   ConfigQDB(CM_t *cm);
+extern int   ConfigQDBAndW(CM_t *cm, int do_calc_qdb);
 
 /* from cm_modelmaker.c */
 extern void HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh, 
@@ -223,7 +224,7 @@ extern CM_HB_MX *       cm_hb_mx_Create            (int M);
 extern int              cm_hb_mx_GrowTo            (CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
 extern int              cm_hb_mx_Dump              (FILE *ofp, CM_HB_MX *mx);
 extern void             cm_hb_mx_Destroy           (CM_HB_MX *mx);
-extern ScanMatrix_t *   cm_CreateScanMatrix        (CM_t *cm, int W, int *dmin, int *dmax, double beta, int do_banded, int do_float, int do_int);
+extern ScanMatrix_t *   cm_CreateScanMatrix        (CM_t *cm, int W, int *dmin, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int);
 extern int              cm_CreateScanMatrixForCM   (CM_t *cm, int do_float, int do_int);           
 extern int              cm_FloatizeScanMatrix      (CM_t *cm, ScanMatrix_t *smx);
 extern int              cm_IntizeScanMatrix        (CM_t *cm, ScanMatrix_t *smx);
@@ -573,6 +574,7 @@ extern void DumpSearchOpts(int search_opts);
 extern void ValidateSearchInfo(CM_t *cm, SearchInfo_t *fi);
 extern void UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float sc_cutoff, float e_cutoff);
 extern void UpdateSearchInfoForGumMode(CM_t *cm, int round, int gum_mode);
+extern void UpdateSearchInfoForNewSMX(CM_t *cm);
 
 extern search_results_t *CreateResults (int size);
 extern void ExpandResults              (search_results_t *r, int additional);
