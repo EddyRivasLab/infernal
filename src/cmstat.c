@@ -91,7 +91,7 @@ main(int argc, char **argv)
   int              status;      /* easel status */
   int              p, i;        /* counters */
   int              fthr_mode;   /* filter threshold mode */
-  int              cm_mode, hmm_mode; /* gumbel modes for CM, CP9 */
+  int              cm_mode, hmm_mode; /* exp tail modes for CM, CP9 */
   long             dbsize;      /* database size E-values correspond to */
   FILE            *ofp = stdout;/* for -o output */
   FILE            *efp = NULL;  /* for --efile output */
@@ -99,7 +99,7 @@ main(int argc, char **argv)
   FILE            *sfp = NULL;  /* for --sfile output */
   FILE            *xfp = NULL;  /* for --xfile output */
   FILE            *afp = NULL;  /* for --afile output */
-  int              seen_gumbels_yet = FALSE; /* set to true if Gumbels read */
+  int              seen_exps_yet = FALSE; /* set to true if exp tails read */
   int              seen_fthr_yet    = FALSE; /* set to true if filter threshold stats read */
   /* variables for filter threshold stats */
   int              do_filter_stats;                 /* TRUE if --lfc, --gfc, --lfi or --gfi */
@@ -232,8 +232,8 @@ main(int argc, char **argv)
   /* Main body: read CMs one at a time, print stats 
    * Options for only printing 1 line per CM: 
    * if -m (default): print general model stats, and optionally determine search stats (if --search)
-   * else if --le:    print  local gumbel stats
-   * else if --ge:    print glocal gumbel stats
+   * else if --le:    print  local exp tail stats
+   * else if --ge:    print glocal exp tail stats
    * else if --lfc:   print  local CYK    filter threshold stats
    * else if --gfc:   print glocal CYK    filter threshold stats
    * else if --lfc:   print  local Inside filter threshold stats
@@ -304,29 +304,29 @@ main(int argc, char **argv)
 	FreeCM(cm);
       }    
   }
-  /* print local or glocal gumbel stats if requested */
+  /* print local or glocal exp tail stats if requested */
   for(i = 0; i < 2; i++) { 
     if(i == 0 && !do_locale)  continue;
     if(i == 1 && !do_glocale) continue;
     if(i == 0) { doing_locale = TRUE;  doing_glocale = FALSE; }
     if(i == 1) { doing_locale = FALSE; doing_glocale = TRUE;  }
     ncm = 0;
-    seen_gumbels_yet = FALSE;
+    seen_exps_yet = FALSE;
     CMFileRewind(cmfp);
     while (CMFileRead(cmfp, &abc, &cm)) {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cmfile);
       ncm++;
-      if(cm->flags & CMH_GUMBEL_STATS) {
-	if(!seen_gumbels_yet) {
+      if(cm->flags & CMH_EXPTAIL_STATS) {
+	if(!seen_exps_yet) {
 	  fprintf(ofp, "#\n");
-	  if(doing_locale) fprintf(ofp, "# local gumbel statistics \n");
-	  else             fprintf(ofp, "# glocal gumbel statistics \n");
+	  if(doing_locale) fprintf(ofp, "# local exp tail statistics \n");
+	  else             fprintf(ofp, "# glocal exp tail statistics \n");
 	  fprintf(ofp, "#\n");
 	  fprintf(ofp, "# %-4s %-15s %2s %2s %3s %11s %11s %11s %11s\n",             "",     "",                "",   "",   "",    "cyk",            "inside",         "viterbi",        "forward");
 	  fprintf(ofp, "# %-4s %-15s %2s %2s %3s %11s %11s %11s %11s\n",             "",     "",                "",   "",   "",    "-----------",    "-----------",    "-----------",    "-----------");
 	  fprintf(ofp, "# %-4s %-15s %2s %2s %3s %5s %5s %5s %5s %5s %5s %5s %5s\n", "idx",  "name",            "p",  "ps", "pe",  "mu",    "lmbda", "mu",    "lmbda", "mu",    "lmbda", "mu",    "lmbda");
 	  fprintf(ofp, "# %-4s %-15s %2s %2s %3s %5s %5s %5s %5s %5s %5s %5s %5s\n", "----", "---------------", "--", "--", "---", "-----", "-----", "-----", "-----", "-----", "-----", "-----", "-----");
-	  seen_gumbels_yet = TRUE;
+	  seen_exps_yet = TRUE;
 	}
 	for(p = 0; p < cm->stats->np; p++) { 
 	  if(doing_locale) {
@@ -335,10 +335,10 @@ main(int argc, char **argv)
 		   cm->name,
 		   p+1,
 		   cm->stats->ps[p], cm->stats->pe[p],
-		   cm->stats->gumAA[GUM_CM_LC][p]->mu,  cm->stats->gumAA[GUM_CM_LC][p]->lambda,
-		   cm->stats->gumAA[GUM_CM_LI][p]->mu,  cm->stats->gumAA[GUM_CM_LI][p]->lambda,
-		   cm->stats->gumAA[GUM_CP9_LV][p]->mu, cm->stats->gumAA[GUM_CP9_LV][p]->lambda,
-		   cm->stats->gumAA[GUM_CP9_LF][p]->mu, cm->stats->gumAA[GUM_CP9_LF][p]->lambda);
+		   cm->stats->expAA[EXP_CM_LC][p]->mu_extrap,  cm->stats->expAA[EXP_CM_LC][p]->lambda,
+		   cm->stats->expAA[EXP_CM_LI][p]->mu_extrap,  cm->stats->expAA[EXP_CM_LI][p]->lambda,
+		   cm->stats->expAA[EXP_CP9_LV][p]->mu_extrap, cm->stats->expAA[EXP_CP9_LV][p]->lambda,
+		   cm->stats->expAA[EXP_CP9_LF][p]->mu_extrap, cm->stats->expAA[EXP_CP9_LF][p]->lambda);
 	  }
 	  else { /* glocal */
 	    fprintf(ofp, "%6d %-15.15s %2d %2d %3d %5.1f %5.3f %5.1f %5.3f %5.1f %5.3f %5.1f %5.3f\n",
@@ -346,19 +346,19 @@ main(int argc, char **argv)
 		   cm->name,
 		   p+1,
 		   cm->stats->ps[p], cm->stats->pe[p],
-		   cm->stats->gumAA[GUM_CM_GC][p]->mu,  cm->stats->gumAA[GUM_CM_GC][p]->lambda,
-		   cm->stats->gumAA[GUM_CM_GI][p]->mu,  cm->stats->gumAA[GUM_CM_GI][p]->lambda,
-		   cm->stats->gumAA[GUM_CP9_GV][p]->mu, cm->stats->gumAA[GUM_CP9_GV][p]->lambda,
-		   cm->stats->gumAA[GUM_CP9_GF][p]->mu, cm->stats->gumAA[GUM_CP9_GF][p]->lambda);
+		   cm->stats->expAA[EXP_CM_GC][p]->mu_extrap,  cm->stats->expAA[EXP_CM_GC][p]->lambda,
+		   cm->stats->expAA[EXP_CM_GI][p]->mu_extrap,  cm->stats->expAA[EXP_CM_GI][p]->lambda,
+		   cm->stats->expAA[EXP_CP9_GV][p]->mu_extrap, cm->stats->expAA[EXP_CP9_GV][p]->lambda,
+		   cm->stats->expAA[EXP_CP9_GF][p]->mu_extrap, cm->stats->expAA[EXP_CP9_GF][p]->lambda);
 	  }
 	}
       }
       FreeCM(cm);
     }
-    if(!seen_gumbels_yet) {
-      if(doing_locale  && esl_opt_GetBoolean(go, "--le"))  cm_Fail("--le option enabled but none of the CMs in %s have Gumbel stats.", cmfile);
-      if(doing_glocale && esl_opt_GetBoolean(go, "--ge")) cm_Fail("--ge option enabled but none of the CMs in %s have Gumbel stats.", cmfile);
-      if(doing_glocale && (! esl_opt_GetBoolean(go, "--ge")))   fprintf(ofp, "# No E-value Gumbel statistics.\n");
+    if(!seen_exps_yet) {
+      if(doing_locale  && esl_opt_GetBoolean(go, "--le"))  cm_Fail("--le option enabled but none of the CMs in %s have exp tail stats.", cmfile);
+      if(doing_glocale && esl_opt_GetBoolean(go, "--ge")) cm_Fail("--ge option enabled but none of the CMs in %s have exp tail stats.", cmfile);
+      if(doing_glocale && (! esl_opt_GetBoolean(go, "--ge")))   fprintf(ofp, "# No E-value exp tail statistics.\n");
     }
   }
   /* print filter threshold stats if requested */
@@ -377,21 +377,21 @@ main(int argc, char **argv)
     avg_clen = avg_cm_E = avg_cm_bit_sc = avg_hmm_E = avg_hmm_bit_sc = avg_S = avg_xhmm = avg_spdup = 0.;
     tot_xhmm = tot_spdup = tot_cm_ncalcs = tot_hmm_ncalcs = tot_cm_surv_plus_fil_calcs = 0.;
 
-    if(doing_glocalfc) { fthr_mode = FTHR_CM_GC; cm_mode = GUM_CM_GC; hmm_mode = GUM_CP9_GF; }
-    if(doing_glocalfi) { fthr_mode = FTHR_CM_GI; cm_mode = GUM_CM_GI; hmm_mode = GUM_CP9_GF; }
-    if(doing_localfc)  { fthr_mode = FTHR_CM_LC; cm_mode = GUM_CM_LC; hmm_mode = GUM_CP9_LF; }
-    if(doing_localfi)  { fthr_mode = FTHR_CM_LI; cm_mode = GUM_CM_LI; hmm_mode = GUM_CP9_LF; }
+    if(doing_glocalfc) { fthr_mode = FTHR_CM_GC; cm_mode = EXP_CM_GC; hmm_mode = EXP_CP9_GF; }
+    if(doing_glocalfi) { fthr_mode = FTHR_CM_GI; cm_mode = EXP_CM_GI; hmm_mode = EXP_CP9_GF; }
+    if(doing_localfc)  { fthr_mode = FTHR_CM_LC; cm_mode = EXP_CM_LC; hmm_mode = EXP_CP9_LF; }
+    if(doing_localfi)  { fthr_mode = FTHR_CM_LI; cm_mode = EXP_CM_LI; hmm_mode = EXP_CP9_LF; }
     CMFileRewind(cmfp);
     while (CMFileRead(cmfp, &abc, &cm)) {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cmfile);
       ncm++;
       if(cm->flags & CMH_FILTER_STATS) {
-	if(! (cm->flags & CMH_GUMBEL_STATS)) cm_Fail("cm: %d has filter threshold stats, but no Gumbel stats, this shouldn't happen.");
+	if(! (cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("cm: %d has filter threshold stats, but no exp tail stats, this shouldn't happen.");
 	/* we expect theoretical db size used to calc filter threshold stats is FTHR_DBSIZE (1 Mb) */
 	if(cm->stats->hfiA[fthr_mode]->dbsize != FTHR_DBSIZE)
 	  cm_Fail("Expected db size of %d in cm file for filter thr stats, but read db size of %d residues.", FTHR_DBSIZE, cm->stats->hfiA[fthr_mode]->dbsize);
-	/* update the Gumbels for the dbsize of the HMM filters */
-	if((status = UpdateGumbelsForDBSize(cm, errbuf, dbsize)) != eslOK) cm_Fail(errbuf);
+	/* update the exp tail for the dbsize of the HMM filters */
+	if((status = UpdateExpsForDBSize(cm, errbuf, dbsize)) != eslOK) cm_Fail(errbuf);
 	
 	/* initialize model and determine average hit length, number of CM DP calcs per residue and number of HMM DP calcs per residue */
 	initialize_cm(cm, cm_mode, hmm_mode);
@@ -675,16 +675,16 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
 }
 
 /* initialize_cm()
- * Setup the CM based on the Gumbel mode,
+ * Setup the CM based on the exp tail mode,
  * only set flags and a few parameters. ConfigCM() configures
  * the CM.
  */
 static int
 initialize_cm(CM_t *cm, int cm_mode, int hmm_mode)
 {
-  /* Update cm->config_opts based on gumbel mode */
-  if(GumModeIsLocal(cm_mode))  cm->config_opts |= CM_CONFIG_LOCAL;
-  if(GumModeIsLocal(hmm_mode)) {
+  /* Update cm->config_opts based on exp tail mode */
+  if(ExpModeIsLocal(cm_mode))  cm->config_opts |= CM_CONFIG_LOCAL;
+  if(ExpModeIsLocal(hmm_mode)) {
     cm->config_opts |= CM_CONFIG_HMMLOCAL;
     cm->config_opts |= CM_CONFIG_HMMEL;
   }

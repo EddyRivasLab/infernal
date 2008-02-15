@@ -10,7 +10,7 @@
 #include <stdlib.h>
 
 #include "easel.h"
-#include "esl_gumbel.h"
+#include "esl_exponential.h"
 #include "esl_vectorops.h"
 
 #include "funcs.h"
@@ -330,7 +330,7 @@ void
 UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float sc_cutoff, float e_cutoff)
 {
   if(cutoff_type == E_CUTOFF)  
-    if(! (cm->flags & CMH_GUMBEL_STATS)) cm_Fail("UpdateSearchInfoCutoff(), cm->si is NULL.");
+    if(! (cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("UpdateSearchInfoCutoff(), cm->si is NULL.");
   if(cm->si == NULL)           cm_Fail("UpdateSearchInfoCutoff(), cm->si is NULL.");
   if(nround > cm->si->nrounds) cm_Fail("UpdateSearchInfoCutoff(), requested round %d is > cm->si->nrounds\n", nround, cm->si->nrounds);
   cm->si->cutoff_type[nround] = cutoff_type;
@@ -348,68 +348,68 @@ UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float sc_cutoff, f
   return;
 }
 
-/* Function: UpdateSearchInfoForGumMode
+/* Function: UpdateSearchInfoForExpMode
  * Date:     EPN, Thu Jan 24 11:57:20 2008
- * Purpose:  Given a gumbel mode and a search round <round>, update cm->si
+ * Purpose:  Given a exp tail mode and a search round <round>, update cm->si
  *           SearchInfo_t for that round.
- *           that gumbel mode. 
+ *           that exp tail mode. 
  *
- *           0. GUM_CM_GC : !cm->si->search_opts[round] & CM_SEARCH_INSIDE
- *           1. GUM_CM_GI : !cm->si->search_opts[round] & CM_SEARCH_INSIDE
- *           4. GUM_CP9_GV:  cm->si->search_opts[round] & CM_SEARCH_HMMVITERBI
+ *           0. EXP_CM_GC : !cm->si->search_opts[round] & CM_SEARCH_INSIDE
+ *           1. EXP_CM_GI : !cm->si->search_opts[round] & CM_SEARCH_INSIDE
+ *           4. EXP_CP9_GV:  cm->si->search_opts[round] & CM_SEARCH_HMMVITERBI
  *                          !cm->si->search_opts[round] & CM_SEARCH_HMMFORWARD
- *           5. GUM_CP9_GF:  cm->si->search_opts[round] & CM_SEARCH_HMMVITERBI
+ *           5. EXP_CP9_GF:  cm->si->search_opts[round] & CM_SEARCH_HMMVITERBI
  *                          !cm->si->search_opts[round] & CM_SEARCH_HMMFORWARD
- *           3. GUM_CM_LC :  cm->si->search_opts[round] & CM_SEARCH_INSIDE
- *           2. GUM_CM_LI :  cm->si->search_opts[round] & CM_SEARCH_INSIDE
- *           6. GUM_CP9_LV: !cm->si->search_opts[round] & CM_SEARCH_HMMVITERBI
+ *           3. EXP_CM_LC :  cm->si->search_opts[round] & CM_SEARCH_INSIDE
+ *           2. EXP_CM_LI :  cm->si->search_opts[round] & CM_SEARCH_INSIDE
+ *           6. EXP_CP9_LV: !cm->si->search_opts[round] & CM_SEARCH_HMMVITERBI
  *                           cm->si->search_opts[round] & CM_SEARCH_HMMFORWARD
- *           7. GUM_CP9_LF: !cm->si->search_opts[round] & CM_SEARCH_HMMVITERBI
+ *           7. EXP_CP9_LF: !cm->si->search_opts[round] & CM_SEARCH_HMMVITERBI
  *                           cm->si->search_opts[round] & CM_SEARCH_HMMFORWARD
  * 
  * Args:
  *           CM           - the covariance model
- *           gum_mode     - the mode 0..GUM_NMODES-1
+ *           exp_mode     - the mode 0..EXP_NMODES-1
  */
 void
-UpdateSearchInfoForGumMode(CM_t *cm, int round, int gum_mode)
+UpdateSearchInfoForExpMode(CM_t *cm, int round, int exp_mode)
 {
-  if(cm->si == NULL)           cm_Fail("UpdateSearchInfoForGumMode(), cm->si is NULL.");
-  if(round > cm->si->nrounds)  cm_Fail("UpdateSearchInfoForGumMode(), requested round %d is > cm->si->nrounds\n", round, cm->si->nrounds);
+  if(cm->si == NULL)           cm_Fail("UpdateSearchInfoForExpMode(), cm->si is NULL.");
+  if(round > cm->si->nrounds)  cm_Fail("UpdateSearchInfoForExpMode(), requested round %d is > cm->si->nrounds\n", round, cm->si->nrounds);
 
-  ESL_DASSERT1((gum_mode >= 0 && gum_mode < GUM_NMODES));
+  ESL_DASSERT1((exp_mode >= 0 && exp_mode < EXP_NMODES));
 
-  switch (gum_mode) {
-  case GUM_CM_GC: 
-  case GUM_CM_LC: /* CYK, local or glocal */
+  switch (exp_mode) {
+  case EXP_CM_GC: 
+  case EXP_CM_LC: /* CYK, local or glocal */
     cm->si->search_opts[round] &= ~CM_SEARCH_INSIDE;
     cm->si->search_opts[round] &= ~CM_SEARCH_HMMVITERBI;
     cm->si->search_opts[round] &= ~CM_SEARCH_HMMFORWARD;
     cm->si->stype[round] = SEARCH_WITH_CM;
     break;
-  case GUM_CM_GI: 
-  case GUM_CM_LI: /* Inside, local or glocal */
+  case EXP_CM_GI: 
+  case EXP_CM_LI: /* Inside, local or glocal */
     cm->si->search_opts[round] |= CM_SEARCH_INSIDE;
     cm->si->search_opts[round] &= ~CM_SEARCH_HMMVITERBI;
     cm->si->search_opts[round] &= ~CM_SEARCH_HMMFORWARD;
     cm->si->stype[round] = SEARCH_WITH_CM;
     break;
-  case GUM_CP9_GV: 
-  case GUM_CP9_LV: /* Viterbi, local or glocal */
+  case EXP_CP9_GV: 
+  case EXP_CP9_LV: /* Viterbi, local or glocal */
     cm->si->search_opts[round] &= ~CM_SEARCH_INSIDE;
     cm->si->search_opts[round] |= CM_SEARCH_HMMVITERBI;
     cm->si->search_opts[round] &= ~CM_SEARCH_HMMFORWARD;
     cm->si->stype[round] = SEARCH_WITH_HMM;
     break;
-  case GUM_CP9_GF: 
-  case GUM_CP9_LF: /* Forward, local or glocal */
+  case EXP_CP9_GF: 
+  case EXP_CP9_LF: /* Forward, local or glocal */
     cm->si->search_opts[round] &= ~CM_SEARCH_INSIDE;
     cm->si->search_opts[round] &= ~CM_SEARCH_HMMVITERBI;
     cm->si->search_opts[round] |= CM_SEARCH_HMMFORWARD;
     cm->si->stype[round] = SEARCH_WITH_HMM;
     break;
   default: 
-    cm_Fail("UpdateSearchInfoForGumMode(): bogus gum_mode: %d\n", gum_mode);
+    cm_Fail("UpdateSearchInfoForExpMode(): bogus exp_mode: %d\n", exp_mode);
   }
   return;
 }
@@ -734,23 +734,23 @@ void RemoveHitsOverECutoff (CM_t *cm, SearchInfo_t *si, search_results_t *result
   int i, x;
   search_result_node_t swap;
   float score_for_Eval; /* the score we'll determine the statistical signifance of. */
-  int cm_gum_mode;      /* Gumbel mode if we're using CM hits */
-  int cp9_gum_mode;     /* Gumbel mode if we're using HMM hits */
+  int cm_exp_mode;      /* exp tail mode if we're using CM hits */
+  int cp9_exp_mode;     /* exp tail mode if we're using HMM hits */
   int p;                /* relevant partition */
-  GumbelInfo_t **gum;      /* pointer to gum to use */
+  ExpInfo_t **exp;      /* pointer to exp tail to use */
   float cutoff;         /* the max E-value we want to keep */
 
   /* Check contract */
-  if(!(cm->flags & CMH_GUMBEL_STATS)) cm_Fail("remove_hits_over_e_cutoff(), but CM has no gumbel stats\n");
+  if(!(cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("remove_hits_over_e_cutoff(), but CM has no exp tail stats\n");
   if(!(sq->flags & eslSQ_DIGITAL))    cm_Fail("remove_hits_over_e_cutoff(), sequences is not digitized.\n");
   if(si == NULL) cm_Fail("remove_hits_over_e_cutoff(), si == NULL.\n");
   if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("remove_hits_over_e_cutoff(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
 
   if (results == NULL) return;
 
-  /* Determine Gumbel mode to use */
-  CM2Gumbel_mode(cm, si->search_opts[si->nrounds], &cm_gum_mode, &cp9_gum_mode);
-  gum = (si->stype[si->nrounds] == SEARCH_WITH_HMM) ? cm->stats->gumAA[cp9_gum_mode] : cm->stats->gumAA[cm_gum_mode];
+  /* Determine exp tail mode to use */
+  CM2ExpMode(cm, si->search_opts[si->nrounds], &cm_exp_mode, &cp9_exp_mode);
+  exp = (si->stype[si->nrounds] == SEARCH_WITH_HMM) ? cm->stats->expAA[cp9_exp_mode] : cm->stats->expAA[cm_exp_mode];
   
   ESL_DASSERT1((si->cutoff_type[si->nrounds] == E_CUTOFF));
   cutoff = si->e_cutoff[si->nrounds];
@@ -759,7 +759,7 @@ void RemoveHitsOverECutoff (CM_t *cm, SearchInfo_t *si, search_results_t *result
     gc_comp = get_gc_comp (sq, results->data[i].start, results->data[i].stop);
     p = cm->stats->gc2p[gc_comp];
     score_for_Eval = results->data[i].score;
-    if (RJK_ExtremeValueE(score_for_Eval, gum[p]->mu, gum[p]->lambda) > cutoff)  
+    if (Score2E(score_for_Eval, exp[p]->mu_extrap, exp[p]->lambda, exp[p]->cur_eff_dbsize) > cutoff)  
       results->data[i].start = -1;
   }
   
@@ -857,9 +857,9 @@ void PrintResults (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc
   float score_for_Eval; /* the score we'll determine the statistical significance of */
   CMEmitMap_t *emap;    /* consensus emit map for the CM */
   int do_stats;        
-  GumbelInfo_t **gum;      /* pointer to gum to use */
-  int cm_gum_mode;      /* Gumbel mode if we're using CM hits */
-  int cp9_gum_mode;     /* Gumbel mode if we're using HMM hits */
+  ExpInfo_t **exp;      /* pointer to exp tail to use */
+  int cm_exp_mode;      /* exp tail mode if we're using CM hits */
+  int cp9_exp_mode;     /* exp tail mode if we're using HMM hits */
   int p;                /* relevant partition */
   int offset;         
   int init_rci;         /* initial strand that's been searched, 0 if do_top, else 1 */
@@ -876,12 +876,12 @@ void PrintResults (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc
   if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("print_results(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
   if((!do_top) && (!do_bottom)) cm_Fail("print_results(), do_top FALSE, and do_bottom FALSE, what's the point?\n");
 
-  if((si->cutoff_type[si->nrounds] == E_CUTOFF)  && !(cm->flags & CMH_GUMBEL_STATS)) cm_Fail("print_results(), stats wanted but CM has no Gumbel stats\n");
-  do_stats = (cm->flags & CMH_GUMBEL_STATS) ? TRUE : FALSE;
+  if((si->cutoff_type[si->nrounds] == E_CUTOFF)  && !(cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("print_results(), stats wanted but CM has no exp tail stats\n");
+  do_stats = (cm->flags & CMH_EXPTAIL_STATS) ? TRUE : FALSE;
 
-  if(do_stats) { /* determine Gumbel mode to use */
-    CM2Gumbel_mode(cm, cm->search_opts, &cm_gum_mode, &cp9_gum_mode);
-    gum = (si->stype[si->nrounds] == SEARCH_WITH_HMM) ? cm->stats->gumAA[cp9_gum_mode] : cm->stats->gumAA[cm_gum_mode];
+  if(do_stats) { /* determine exp tail mode to use */
+    CM2ExpMode(cm, cm->search_opts, &cm_exp_mode, &cp9_exp_mode);
+    exp = (si->stype[si->nrounds] == SEARCH_WITH_HMM) ? cm->stats->expAA[cp9_exp_mode] : cm->stats->expAA[cm_exp_mode];
   }
   emap = CreateEmitMap(cm);
   name = dbseq->sq[0]->name;
@@ -913,8 +913,8 @@ void PrintResults (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc
       if (do_stats) {
 	p = cm->stats->gc2p[gc_comp];
 	score_for_Eval = results->data[i].score;
-	Pval = esl_exp_surv((double) score_for_Eval, gum[p]->mu, gum[p]->lambda);
-	Eval = Pval * gum[p]->dbsize;
+	Pval = esl_exp_surv((double) score_for_Eval, exp[p]->mu_extrap, exp[p]->lambda);
+	Eval = Pval * exp[p]->cur_eff_dbsize;
 	fprintf(fp, " Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score, Eval, Pval, gc_comp);
       } 
       else { /* don't print E-value stats */
@@ -1098,7 +1098,7 @@ CreateBestFilterInfo()
   bf->hbeta     = 0.;
   bf->v_isroot  = NULL;   
   bf->np        = 0;
-  bf->hgumA     = NULL;   
+  bf->hexpA     = NULL;   
   bf->is_valid  = FALSE;
   return bf;
 
@@ -1144,13 +1144,13 @@ SetBestFilterInfoHMM(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval
  * Returns:  eslOK on success, eslEINCOMPAT if contract violated, eslEMEM if memory error.
  */
 int 
-SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs, HybridScanInfo_t *hsi, int np, GumbelInfo_t **hgumA)
+SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs, HybridScanInfo_t *hsi, int np, ExpInfo_t **hexpA)
 {
   int status;
   int p;
 
   if(hsi   == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "SetBestFilterInfoHybrid(), hsi is NULL.\n");
-  if(hgumA == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "SetBestFilterInfoHybrid(), hgumA is NULL.\n");
+  if(hexpA == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "SetBestFilterInfoHybrid(), hexpA is NULL.\n");
 
   bf->cm_M      = cm_M;
   bf->cm_eval   = cm_eval;
@@ -1169,15 +1169,15 @@ SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_e
   ESL_ALLOC(bf->v_isroot, sizeof(int) * bf->cm_M);
   esl_vec_ICopy(hsi->v_isroot, bf->cm_M, bf->v_isroot);
 
-  /* if bf->hgum exists, free it */
-  if(bf->np != 0) for(p = 0; p < bf->np; p++) free(bf->hgumA[p]);
-  free(bf->hgumA);
+  /* if bf->hexp exists, free it */
+  if(bf->np != 0) for(p = 0; p < bf->np; p++) free(bf->hexpA[p]);
+  free(bf->hexpA);
 
-  ESL_ALLOC(bf->hgumA, sizeof(GumbelInfo_t *) * np);
+  ESL_ALLOC(bf->hexpA, sizeof(ExpInfo_t *) * np);
   bf->np = np;
   for(p = 0; p < bf->np; p++) {
-    bf->hgumA[p] = DuplicateGumbelInfo(hgumA[p]);
-    if(bf->hgumA[p] == NULL) goto ERROR;
+    bf->hexpA[p] = DuplicateExpInfo(hexpA[p]);
+    if(bf->hexpA[p] == NULL) goto ERROR;
   }
   return eslOK;
 
@@ -1197,8 +1197,8 @@ void
 FreeBestFilterInfo(BestFilterInfo_t *bf)
 {
   int p;
-  if(bf->np != 0) for(p = 0; p < bf->np; p++) free(bf->hgumA[p]);
-  free(bf->hgumA);
+  if(bf->np != 0) for(p = 0; p < bf->np; p++) free(bf->hexpA[p]);
+  free(bf->hexpA);
   if(bf->v_isroot != NULL) free(bf->v_isroot);
   free(bf);
   return;
@@ -1234,10 +1234,10 @@ DumpBestFilterInfo(BestFilterInfo_t *bf)
     for(v = 0; v < bf->cm_M; v++) { 
       if(bf->v_isroot[v]) printf("\tv: %d\n", v);
     }
-    if(bf->hgumA != NULL) 
+    if(bf->hexpA != NULL) 
       for(p = 0; p < bf->np; p++) { 
-	printf("\nHybrid Gumbel, partition: %d\n", p);
-	debug_print_gumbelinfo(bf->hgumA[p]);
+	printf("\nHybrid Exp tail, partition: %d\n", p);
+	debug_print_expinfo(bf->hexpA[p]);
       }
   }
   printf("CM E value cutoff:     %10.4f\n", bf->cm_eval);
@@ -1354,14 +1354,14 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   float hmm_E;
 
   /* contract checks */
-  if(! (cm->flags & CMH_GUMBEL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfo(), cm does not have Gumbel stats.");
+  if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfo(), cm does not have Exp Tail stats.");
   /* When this function is entered, for all i and p, the following should be true:
-   * dbsize == cm->stats->gumAA[0..i..GUM_NMODES-1]][0..p..np-1]->N 
+   * dbsize == cm->stats->expAA[0..i..EXP_NMODES-1]][0..p..np-1]->N 
    */
-  for(i = 0; i < GUM_NMODES; i++) { 
+  for(i = 0; i < EXP_NMODES; i++) { 
     for(p = 0; p < cm->stats->np; p++) {
-      if(dbsize != cm->stats->gumAA[i][p]->dbsize) 
-	ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfo(), cm gumbel dbsize: %ld != dbsize: %ld for gum_mode: %d partition: %d\n", cm->stats->gumAA[i][p]->dbsize, dbsize, i, p); 
+      if(dbsize != cm->stats->expAA[i][p]->dbsize) 
+	ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfo(), cm exp tail dbsize: %ld != dbsize: %ld for exp_mode: %d partition: %d\n", cm->stats->expAA[i][p]->dbsize, dbsize, i, p); 
     }
   }
 
@@ -1387,8 +1387,8 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   for(i = 0; i < hfi->ncut; i++) {
     cm_E  = hfi->cm_E_cut[i]  * ((double) dbsize / (double) hfi->dbsize);
     hmm_E = hfi->fwd_E_cut[i] * ((double) dbsize / (double) hfi->dbsize);
-    if((status = E2Score(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
-    if((status = E2Score(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
+    if((status = E2MinScore(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
+    if((status = E2MinScore(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
     fprintf(fp, "%10s  %6d  ", "", i);
     if(cm_E < 0.01)  fprintf(fp, "%4.2e  ", cm_E);
     else             fprintf(fp, "%8.3f  ", cm_E);
@@ -1446,14 +1446,14 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
   float spdup; /* predicted speedup of filtered scan relative to CM scan */
 
   /* contract checks */
-  if(! (cm->flags & CMH_GUMBEL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfoForCME(), cm does not have Gumbel stats.");
+  if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfoForCME(), cm does not have Exp Tail stats.");
   /* When this function is entered, for all i and p, the following should be true:
-   * dbsize == cm->stats->gumAA[0..i..GUM_NMODES-1]][0..p..np-1]->N 
+   * dbsize == cm->stats->expAA[0..i..EXP_NMODES-1]][0..p..np-1]->N 
    */
-  for(i = 0; i < GUM_NMODES; i++) { 
+  for(i = 0; i < EXP_NMODES; i++) { 
     for(p = 0; p < cm->stats->np; p++) {
-      if(dbsize != cm->stats->gumAA[i][p]->dbsize) 
-	ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfoForCME(), cm gumbel dbsize: %ld != dbsize: %ld for gum_mode: %d partition: %d\n", cm->stats->gumAA[i][p]->dbsize, dbsize, i, p); 
+      if(dbsize != cm->stats->expAA[i][p]->dbsize) 
+	ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfoForCME(), cm exp tail dbsize: %ld != dbsize: %ld for exp_mode: %d partition: %d\n", cm->stats->expAA[i][p]->dbsize, dbsize, i, p); 
     }
   }
 
@@ -1472,14 +1472,14 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
   }
   fprintf(fp, "%6d  %-15s  %4d  ", cmi, cm->name, cm->clen);
   if((status = GetHMMFilterFwdECutGivenCME(hfi, errbuf, cm_E, dbsize, &i)) != eslOK) return status;
-  if((status = E2Score(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
+  if((status = E2MinScore(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
   if(cm_E < 0.01)  fprintf(fp, "%4.2e  ", cm_E);
   else             fprintf(fp, "%8.3f  ", cm_E);
   fprintf(fp, "%6.1f  ", cm_bit_sc);
 
   if(i != -1) { 
     hmm_E = hfi->fwd_E_cut[i] * ((double) dbsize / (double) hfi->dbsize);
-    if((status = E2Score(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
+    if((status = E2MinScore(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
     fprintf(fp, "%6.1f  ", hmm_bit_sc);
     S     = GetHMMFilterS      (hfi, i, W, avg_hit_len);
     xhmm  = GetHMMFilterXHMM   (hfi, i, W, avg_hit_len, cm_ncalcs_per_res, hmm_ncalcs_per_res);
@@ -1533,7 +1533,7 @@ DumpHMMFilterInfoForCMBitScore(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_
   int status;
   float cm_E;
 
-  if((status = Score2E(cm, errbuf, cm_mode, cm_bit_sc, &cm_E)) != eslOK)  return status;
+  if((status = Score2MaxE(cm, errbuf, cm_mode, cm_bit_sc, &cm_E)) != eslOK)  return status;
   if((status = DumpHMMFilterInfoForCME(fp, hfi, errbuf, cm, cm_mode, hmm_mode, dbsize, cmi, cm_E, do_header,
 				       NULL, ret_hmm_E, ret_hmm_bit_sc, ret_S, ret_xhmm, ret_spdup, ret_cm_ncalcs_per_res, ret_hmm_ncalcs_per_res, ret_do_filter)) != eslOK) return status;
 
@@ -1578,14 +1578,14 @@ PlotHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
 
   /* contract checks */
   if(mode < 0 || mode >= FTHR_NPLOT) ESL_FAIL(eslEINCOMPAT, errbuf, "PlotHMMFilterInfo(), mode: %d is outside allowed range of [%d-%d]", mode, 0, (FTHR_NPLOT-1));
-  if(! (cm->flags & CMH_GUMBEL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "PlotHMMFilterInfo(), cm does not have Gumbel stats.");
+  if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "PlotHMMFilterInfo(), cm does not have Exp Tail stats.");
   /* When this function is entered, for all i and p, the following should be true:
-   * dbsize == cm->stats->gumAA[0..i..GUM_NMODES-1]][0..p..np-1]->N 
+   * dbsize == cm->stats->expAA[0..i..EXP_NMODES-1]][0..p..np-1]->N 
    */
-  for(i = 0; i < GUM_NMODES; i++) { 
+  for(i = 0; i < EXP_NMODES; i++) { 
     for(p = 0; p < cm->stats->np; p++) {
-      if(dbsize != cm->stats->gumAA[i][p]->dbsize) 
-	ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfo(), cm gumbel dbsize: %ld != dbsize: %ld for gum_mode: %d partition: %d\n", cm->stats->gumAA[i][p]->dbsize, dbsize, i, p); 
+      if(dbsize != cm->stats->expAA[i][p]->dbsize) 
+	ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfo(), cm exp tail dbsize: %ld != dbsize: %ld for exp_mode: %d partition: %d\n", cm->stats->expAA[i][p]->dbsize, dbsize, i, p); 
     }
   }
 
@@ -1602,8 +1602,8 @@ PlotHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   for(i = 0; i < hfi->ncut; i++) {
     cm_E  = hfi->cm_E_cut[i]  * ((double) dbsize / (double) hfi->dbsize);
     hmm_E = hfi->fwd_E_cut[i] * ((double) dbsize / (double) hfi->dbsize);
-    if((status = E2Score(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
-    if((status = E2Score(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
+    if((status = E2MinScore(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
+    if((status = E2MinScore(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
 
     switch (mode) { 
     case FTHR_PLOT_CME_HMME:  fprintf(fp, "%g\t%g\n", cm_E, hmm_E); break;
@@ -1785,7 +1785,7 @@ GetHMMFilterFwdECutGivenCMBitScore(HMMFilterInfo_t *hfi, char *errbuf, float cm_
   /* contract check */
   if(ret_cut_pt == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "GetHMMFilterFwdECutGivenCMBitScore(), ret_cut_pt == NULL");
 
-  if((status = Score2E(cm, errbuf, cm_mode, cm_bit_sc, &cm_E)) != eslOK)          return status;
+  if((status = Score2MaxE(cm, errbuf, cm_mode, cm_bit_sc, &cm_E)) != eslOK)          return status;
   if((status = GetHMMFilterFwdECutGivenCME(hfi, errbuf, cm_E, dbsize, &cut_pt)) != eslOK) return status; 
 
   *ret_cut_pt = cut_pt;

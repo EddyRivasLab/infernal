@@ -24,8 +24,8 @@
 #endif
 
 #include "easel.h"              /* better general sequence analysis library */
+#include "esl_exponential.h"
 #include "esl_getopts.h"
-#include "esl_gumbel.h"
 #include "esl_mpi.h"
 #include "esl_msa.h"
 #include "esl_sqio.h"
@@ -408,8 +408,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((  status = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
       if((  status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len)))      != eslOK) cm_Fail(errbuf);
       if((  status = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
-      if(cm->flags & CMH_GUMBEL_STATS) 
-	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->dbsize, cfg->avg_hit_len)) != eslOK) cm_Fail(errbuf);
+      if(cm->flags & CMH_EXPTAIL_STATS) 
+	if((status = UpdateExpsForDBSize(cm, errbuf, cfg->dbsize))          != eslOK) cm_Fail(errbuf);
       if((status = set_searchinfo(go, cfg, errbuf, cm))                     != eslOK) cm_Fail(errbuf);
       print_searchinfo(go, cfg, stdout, cm, cfg->dbsize, errbuf);
       using_e_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
@@ -556,8 +556,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
       if((status   = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len)))      != eslOK) cm_Fail(errbuf);
       if((status   = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
-      if(cm->flags & CMH_GUMBEL_STATS) 
-	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->dbsize, cfg->avg_hit_len)) != eslOK) cm_Fail(errbuf);
+      if(cm->flags & CMH_EXPTAIL_STATS) 
+	if((status = UpdateExpsForDBSize(cm, errbuf, cfg->dbsize))          != eslOK) cm_Fail(errbuf);
       if((status = set_searchinfo(go, cfg, errbuf, cm))                     != eslOK) cm_Fail(errbuf);
 
       print_searchinfo(go, cfg, stdout, cm, cfg->dbsize, errbuf);
@@ -775,8 +775,8 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       /* initialize the flags/options/params of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) goto ERROR;
       if((status   = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len)))      != eslOK) goto ERROR;
-      if(cm->flags & CMH_GUMBEL_STATS) 
-	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->dbsize, cfg->avg_hit_len)) != eslOK) goto ERROR;
+      if(cm->flags & CMH_EXPTAIL_STATS) 
+	if((status = UpdateExpsForDBSize(cm, errbuf, cfg->dbsize))          != eslOK) goto ERROR;
       if((status = set_searchinfo(go, cfg, errbuf, cm))                     != eslOK) goto ERROR;
       
       /* print_searchinfo(go, cfg, stdout, cm, cm_mode, cp9_mode, cfg->dbsize, errbuf); */
@@ -975,13 +975,13 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
  *
  * User can specify 0 or 1 round of HMM filtering with Forward, followed by 0 or 
  * 1 round of CM filtering with QDB CYK. This is determined as described below. 
- * The default behavior depends on whether or not the CM file has gumbel and 
+ * The default behavior depends on whether or not the CM file has exp tail and 
  * filter threshold information from cmcalibrate.
  * 
  * HMM filtering:
  * ('none' below means none of --fil-no-hmm, --fil-T-hmm, --fil-S-hmm, --fil-Smax-hmm) 
  * 
- *                    gumbel &
+ *                  exp tail &
  *                  filter thr 
  *   options        in cmfile?    filter/don't filter and cutoff determination
  *   -------       ----------    ------------------------------------------------
@@ -1017,7 +1017,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
  * ('none' below means none of --fil-no-qdb, --fil-T-qdb, --fil-S-qdb) 
  *                               
  *                                final 
- *                    gumbel &    round 
+ *                  exp tail &    round 
  *                  filter thr    cutoff
  *   options        in cmfile?    type    filter/don't filter and cutoff determination
  *   -------       -----------    ------  -----------------------------------------
@@ -1028,7 +1028,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
  * 
  *HERE HERE HERE 
  *                                final 
- *                    gumbel &    round 
+ *                  exp tail &    round 
  *                  filter thr    cutoff
  *   options        in cmfile?    type    filter/don't filter and cutoff determination
  *   -------       -----------    ------  -----------------------------------------
@@ -1053,7 +1053,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
  *
  * ('none' below means none of --fil-no-qdb, --fil-T-qdb, --fil-S-qdb) 
  * 
- *                    gumbel &
+ *                  exp tail &
  *                  filter thr 
  *   options        in cmfile?    filter/don't filter and cutoff determination
  *   -------       -----------    ------------------------------------------------
@@ -1089,7 +1089,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
  * --forward:    search with HMM Forward
  * --viterbi:    search with HMM Viterbi
  * -T:           CM/HMM bit score threshold
- * -E:           CM/HMM E-value threshold (requires gumbel info in CM file)
+ * -E:           CM/HMM E-value threshold (requires exp tail info in CM file)
  * --ga:         use Rfam gathering threshold (bit sc) from CM file 
  * --tc:         use Rfam trusted cutoff      (bit sc) from CM file
  * --nc:         use Rfam noise cutoff        (bit sc) from CM file
@@ -1105,12 +1105,12 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   int stype;                  /* type of filter */
   int search_opts;            /* search_opts for filter */
   int use_hmmonly;            /* TRUE if --viterbi or --forward */
-  int we_have_gumbels;        /* TRUE if cm->flags & CMH_GUMBEL_STATS */
+  int we_have_exps;           /* TRUE if cm->flags & CMH_EXPTAIL_STATS */
   int we_have_fthr;           /* TRUE if cm->flags & CMH_FILTER_STATS */
   int fthr_mode;              /* filter threshold mode */
-  float final_E  = -1.;       /* final round E-value cutoff, stays -1 if !CMH_GUMBEL_STATS */
-  float fqdb_E   = -1.;       /* QDB filter round E-value cutoff, stays -1 if !CMH_GUMBEL_STATS */
-  float fhmm_E   = -1.;       /* HMM filter round E-value cutoff, stays -1 if !CMH_GUMBEL_STATS */
+  float final_E  = -1.;       /* final round E-value cutoff, stays -1 if !CMH_EXPTAIL_STATS */
+  float fqdb_E   = -1.;       /* QDB filter round E-value cutoff, stays -1 if !CMH_EXPTAIL_STATS */
+  float fhmm_E   = -1.;       /* HMM filter round E-value cutoff, stays -1 if !CMH_EXPTAIL_STATS */
   float final_sc = -1.;       /* final round bit score cutoff */
   float fqdb_sc  = -1.;       /* QDB filter round bit score cutoff */
   float fhmm_sc  = -1.;       /* HMM filter round bit score cutoff */
@@ -1128,8 +1128,8 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   int   *fqdb_dmin, *fqdb_dmax; /* d bands (QDBs) for QDB filter round */
   int safe_windowlen;         /* used to get QDBs */
   ScanMatrix_t *fqdb_smx = NULL;/* the scan matrix for the QDB filter round */
-  int cm_mode, hmm_mode;      /* CM gumbel mode and CP9 HMM gumbel mode for gumbel statistics */
-  int qdb_mode;               /* CM gumbel mode during QDB filter round */
+  int cm_mode, hmm_mode;      /* CM exp tail mode and CP9 HMM exp tail mode for E-value statistics */
+  int qdb_mode;               /* CM exp tail mode during QDB filter round */
   int cut_point;              /* HMM forward E-value cut point from filter threshold stats */
 
   if(cm->si != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo(), cm->si is not NULL, shouldn't happen.\n");
@@ -1144,13 +1144,13 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   n           = si->nrounds;
   stype       = si->stype[n];
   search_opts = si->search_opts[n];
-  we_have_gumbels = (cm->flags & CMH_GUMBEL_STATS);
-  we_have_fthr    = (cm->flags & CMH_FILTER_STATS);
+  we_have_exps= (cm->flags & CMH_EXPTAIL_STATS);
+  we_have_fthr= (cm->flags & CMH_FILTER_STATS);
   use_hmmonly = ((search_opts & CM_SEARCH_HMMVITERBI) || (search_opts & CM_SEARCH_HMMFORWARD));
   if(use_hmmonly) do_hmm_filter = do_qdb_filter = FALSE; /* don't filter if we're searching only with the HMM */
   if((! use_hmmonly) && (stype != SEARCH_WITH_CM)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo(), search_opts for final round of search does not have HMMVITERBI or HMMFORWARD flags raised, but is not of type SEARCH_WITH_CM.");
   /* determine configuration of CM and CP9 HMM based on cm->flags & cm->search_opts */
-  CM2Gumbel_mode(cm, search_opts, &cm_mode, &hmm_mode); 
+  CM2ExpMode(cm, search_opts, &cm_mode, &hmm_mode); 
 
   final_S = final_E = final_sc = -1.;
   /* set up final round cutoff, either 0 or 1 of 5 options is enabled. 
@@ -1162,25 +1162,25 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
      esl_opt_IsDefault(go, "--tc") && 
      esl_opt_IsDefault(go, "--nc")) { 
     /* Choose from, in order of priority:
-     * 1. default E value if CM file has Gumbel stats
+     * 1. default E value if CM file has exp tail stats
      * 3. default bit score
      */
-    if(we_have_gumbels) { /* use default E-value cutoff */
+    if(we_have_exps) { /* use default E-value cutoff */
       final_ctype = E_CUTOFF;
       final_E     = esl_opt_GetReal(go, "-E");
-      if((status = E2Score(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_E, &final_sc)) != eslOK) return status;
+      if((status = E2MinScore(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_E, &final_sc)) != eslOK) return status;
     }
-    else { /* no Gumbel stats in CM file, use default bit score cutoff */
+    else { /* no exp tail stats in CM file, use default bit score cutoff */
       final_ctype = SCORE_CUTOFF;
       final_sc    = esl_opt_GetReal(go, "-T");
       final_E     = -1.; /* invalid, we'll never use it */  
     }
   }
   else if(! esl_opt_IsDefault(go, "-E")) { /* -E enabled, use that */
-    if(!we_have_gumbels) ESL_FAIL(eslEINVAL, errbuf, "-E requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
+    if(!we_have_exps) ESL_FAIL(eslEINVAL, errbuf, "-E requires exp tail statistics in <cm file>. Use cmcalibrate to get exp tail stats.");
     final_ctype = E_CUTOFF;
     final_E     = esl_opt_GetReal(go, "-E");
-    if((status = E2Score(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_E, &final_sc)) != eslOK) return status;
+    if((status = E2MinScore(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_E, &final_sc)) != eslOK) return status;
   }
   else if(! esl_opt_IsDefault(go, "-T")) { /* -T enabled, use that */
     final_ctype = SCORE_CUTOFF;
@@ -1211,12 +1211,12 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 
   else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No final round cutoff selected. This shouldn't happen.");
 
-  if(we_have_gumbels) { 
+  if(we_have_exps) { 
     if(final_ctype == SCORE_CUTOFF) { /* determine max E-value that corresponds to final_sc bit sc cutoff  across all partitions */
-      if((status = Score2E(cm, errbuf, hmm_mode, final_sc, &final_E)) != eslOK) return status;
+      if((status = Score2MaxE(cm, errbuf, hmm_mode, final_sc, &final_E)) != eslOK) return status;
     }
     else if(final_ctype == E_CUTOFF) { /* determine min bit sc that corresponds to final_E E-val cutoff across all partitions */
-      if((status  = E2Score(cm, errbuf, hmm_mode, final_E, &final_sc)) != eslOK) return status;
+      if((status  = E2MinScore(cm, errbuf, hmm_mode, final_E, &final_sc)) != eslOK) return status;
     }
     final_S = E2SurvFract(final_E, cm->W, cfg->avg_hit_len, cfg->dbsize);
   }
@@ -1225,7 +1225,7 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   ValidateSearchInfo(cm, cm->si);
   /* DumpSearchInfo(cm->si); */
 
-  if(we_have_gumbels) { 
+  if(we_have_exps) { 
     final_S = E2SurvFract(final_E, cm->W, cfg->avg_hit_len, cfg->dbsize);
     if(final_S >= 0.09) do_qdb_filter = FALSE; /* we want QDB filter to let through 10X survival fraction of final round, so if final round S > 0.09, qdb filter would only filter out 10% of database, so we turn it off */
   }
@@ -1275,7 +1275,7 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 	      fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-Smax-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
 	    }
 	  }
-	  if((status  = E2Score(cm, errbuf, cm_mode, fhmm_E, &fhmm_sc)) != eslOK) return status; /* note: use cm_mode, not fthr_mode */
+	  if((status  = E2MinScore(cm, errbuf, cm_mode, fhmm_E, &fhmm_sc)) != eslOK) return status; /* note: use cm_mode, not fthr_mode */
 	}
 	else { 
 	  do_hmm_filter = FALSE;
@@ -1291,7 +1291,7 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     } /* end of if(esl_opt_IsDefault(go, "--fil-S-hmm") && esl_opt_IsDefault(go, "--fil-T-hmm")),
        * if we get here, we have no HMM filter relevant options selected. */
     else if(! esl_opt_IsDefault(go, "--fil-S-hmm")) {
-      if(!we_have_gumbels) ESL_FAIL(eslEINVAL, errbuf, "--fil-S-hmm requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
+      if(!we_have_exps) ESL_FAIL(eslEINVAL, errbuf, "--fil-S-hmm requires exp tail statistics in <cm file>. Use cmcalibrate to get exp tail stats.");
       fhmm_ctype = E_CUTOFF;
       fhmm_E     = SurvFract2E(esl_opt_GetReal(go, "--fil-S-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
       fhmm_E     = ESL_MIN(fhmm_E, 1.0); /* we don't allow filter E cutoffs below 1. */
@@ -1302,19 +1302,19 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     }
     else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No HMM filter cutoff selected. This shouldn't happen.");
 
-    if(we_have_gumbels) { 
+    if(we_have_exps) { 
       if(fhmm_ctype == SCORE_CUTOFF) { /* determine max E-value that corresponds to fhmm_sc bit sc cutoff  across all partitions */
-	if((status = Score2E(cm, errbuf, hmm_mode, fhmm_sc, &fhmm_E)) != eslOK) return status;
+	if((status = Score2MaxE(cm, errbuf, hmm_mode, fhmm_sc, &fhmm_E)) != eslOK) return status;
       }
       else if(fhmm_ctype == E_CUTOFF) { /* determine min bit sc that corresponds to fhmm_E E-val cutoff across all partitions */
-	if((status  = E2Score(cm, errbuf, hmm_mode, fhmm_E, &fhmm_sc)) != eslOK) return status;
+	if((status  = E2MinScore(cm, errbuf, hmm_mode, fhmm_E, &fhmm_sc)) != eslOK) return status;
       }
       fhmm_S = E2SurvFract(fhmm_E, cm->W, cfg->avg_hit_len, cfg->dbsize);
     }
   }
 
   /* B. determine thresholds/stats for CM QDB filter to add (do this after HMM stats b/c we use fhmm_S when setting fqdb_E */
-  qdb_mode = (GumModeIsLocal(cm_mode)) ? GUM_CM_LC : GUM_CM_GC; /* always do CYK with QDB filter, only question is local or glocal? */
+  qdb_mode = (ExpModeIsLocal(cm_mode)) ? EXP_CM_LC : EXP_CM_GC; /* always do CYK with QDB filter, only question is local or glocal? */
   fqdb_S = fqdb_E = fqdb_sc = -1.;
   
   if(do_qdb_filter && esl_opt_GetBoolean(go, "--fil-qdb")) { /* determine thresholds, beta for qdb cyk filter */
@@ -1352,7 +1352,7 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
        * 1. CM filter E value that gives default survival fraction 
        * 2. default CM filter bit score
        */
-      if(we_have_gumbels) { /* set CM E-value cutoff as that which gives default predicted survival fraction */
+      if(we_have_exps) { /* set CM E-value cutoff as that which gives default predicted survival fraction */
 	fqdb_ctype = E_CUTOFF;
 	fqdb_S     = esl_opt_GetReal(go, "--fil-S-qdb");
 	fqdb_S     = ESL_MAX(fqdb_S, final_S * 10.); /* final_S must be < 0.09 (enforced above), or else do_qdb_filter was set to FALSE */
@@ -1366,13 +1366,13 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 	  fqdb_E     = ESL_MAX(fqdb_E, 1.0); /* we don't allow filter E cutoffs below 1. */
 	}
       }
-      else { /* no Gumbel stats in CM file, use default bit score cutoff */
+      else { /* no exp tail stats in CM file, use default bit score cutoff */
 	fqdb_ctype = SCORE_CUTOFF;
 	fqdb_sc    = esl_opt_GetReal(go, "--fil-T-qdb");
       }
     }
     else if(! esl_opt_IsDefault(go, "--fil-S-qdb")) {
-      if(!we_have_gumbels) ESL_FAIL(eslEINVAL, errbuf, "--fil-S-qdb requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
+      if(!we_have_exps) ESL_FAIL(eslEINVAL, errbuf, "--fil-S-qdb requires exp tail statistics in <cm file>. Use cmcalibrate to get exp tail stats.");
       fqdb_ctype = E_CUTOFF;
       fqdb_S     = esl_opt_GetReal(go, "--fil-S-qdb");
       fqdb_S     = ESL_MAX(fqdb_S, final_S * 10.); /* final_S must be < 0.09 (enforced above), or else do_qdb_filter was set to FALSE */
@@ -1381,18 +1381,18 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       fqdb_E     = ESL_MAX(fqdb_E, 1.0); /* we don't allow filter E cutoffs below 1. */
     }
     else if(! esl_opt_IsDefault(go, "--fil-T-qdb")) {
-      if(we_have_gumbels) ESL_FAIL(eslEINVAL, errbuf, "--fil-T-qdb is not allowed when <cmfile> has Gumbel statistics, use --fil-S-qdb instead.");
+      if(we_have_exps) ESL_FAIL(eslEINVAL, errbuf, "--fil-T-qdb is not allowed when <cmfile> has exp tail statistics, use --fil-S-qdb instead.");
       fqdb_ctype = SCORE_CUTOFF;
       fqdb_sc    = esl_opt_GetReal(go, "--fil-T-qdb");
     }
     else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No CM filter cutoff selected. This shouldn't happen.");
 
-    if(we_have_gumbels) { 
+    if(we_have_exps) { 
       if(fqdb_ctype == SCORE_CUTOFF) { /* determine max E-value that corresponds to fqdb_sc bit sc cutoff  across all partitions */
-	if((status = Score2E(cm, errbuf, qdb_mode, fqdb_sc, &fqdb_E)) != eslOK) return status;
+	if((status = Score2MaxE(cm, errbuf, qdb_mode, fqdb_sc, &fqdb_E)) != eslOK) return status;
       }
       else if(fqdb_ctype == E_CUTOFF) { /* determine min bit sc that corresponds to fqdb_E E-val cutoff across all partitions */
-	if((status  = E2Score(cm, errbuf, qdb_mode, fqdb_E, &fqdb_sc)) != eslOK) return status;
+	if((status  = E2MinScore(cm, errbuf, qdb_mode, fqdb_E, &fqdb_sc)) != eslOK) return status;
       }
       fqdb_S = E2SurvFract(fqdb_E, cm->W, cfg->avg_hit_len, cfg->dbsize);
 
@@ -1433,7 +1433,7 @@ int print_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *c
   int using_filters;
   int cm_mode;
   int cp9_mode;
-  int gum_mode;             /* index to use for gumbel stats in cm->stats->gumAA[], gum_mode = (stype == SEARCH_WITH_CM) cm_mode : cp9_mode; */
+  int exp_mode;             /* index to use for exp tail stats in cm->stats->gumAA[], exp_mode = (stype == SEARCH_WITH_CM) cm_mode : cp9_mode; */
   int stype;
   int search_opts;
   ScanMatrix_t *smx;
@@ -1475,14 +1475,14 @@ int print_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *c
     hsi         = si->hsi[n];
 
     /* Determine configuration of CM and CP9 based on cm->flags & cm->search_opts */
-    CM2Gumbel_mode(cm, search_opts, &cm_mode, &cp9_mode); 
-    gum_mode = (stype == SEARCH_WITH_CM) ? cm_mode : cp9_mode; 
+    CM2ExpMode(cm, search_opts, &cm_mode, &cp9_mode); 
+    exp_mode = (stype == SEARCH_WITH_CM) ? cm_mode : cp9_mode; 
 
     use_qdb     = (smx == NULL || (smx->dmin == NULL && smx->dmax == NULL)) ? FALSE : TRUE;
     if(use_qdb) { if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, smx->beta_qdb, &cm_ncalcs_per_res, &W))  != eslOK) return status; }
     else        { if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, TRUE,  cm->beta_W,    &cm_ncalcs_per_res, &W))  != eslOK) return status; }
 
-    if(cm->flags & CMH_GUMBEL_STATS) { 
+    if(cm->flags & CMH_EXPTAIL_STATS) { 
       prv_surv_fract = surv_fract;
       surv_fract = E2SurvFract(e_cutoff, W, avg_hit_len, cfg->dbsize);
       Mc_per_res = (stype == SEARCH_WITH_CM) ? cm_ncalcs_per_res : hmm_ncalcs_per_res;
@@ -1499,7 +1499,7 @@ int print_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *c
       else { 
 	fprintf(cfg->ofp, "  %3s  %3s  %3s  %5s", "hmm", ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? "loc" : "glc"), ((search_opts & CM_SEARCH_HMMFORWARD) ? "fwd" : "vit"), "-");
       }
-      if(e_cutoff < -0.1)  if((status = Score2E(cm, errbuf, gum_mode, sc_cutoff, &e_cutoff)) != eslOK) return status;
+      if(e_cutoff < -0.1)  if((status = Score2MaxE(cm, errbuf, exp_mode, sc_cutoff, &e_cutoff)) != eslOK) return status;
       if(e_cutoff < 0.01)  fprintf(cfg->ofp, "  %4.2e", e_cutoff);
       else                 fprintf(cfg->ofp, "  %8.3f", e_cutoff);
 

@@ -526,23 +526,23 @@ extern int cm_digitized_sq_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, 
 extern int cmstats_MPIPackSize(CMStats_t *cmstats, MPI_Comm comm, int *ret_n);
 extern int cmstats_MPIPack(CMStats_t *cmstats, char *buf, int n, int *position, MPI_Comm comm);
 extern int cmstats_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CMStats_t **ret_cmstats);
-extern int gumbel_info_MPIPackSize(GumbelInfo_t *gum, MPI_Comm comm, int *ret_n);
-extern int gumbel_info_MPIPack(GumbelInfo_t *gum, char *buf, int n, int *position, MPI_Comm comm);
-extern int gumbel_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, GumbelInfo_t **ret_gum);
+extern int exp_info_MPIPackSize(ExpInfo_t *exp, MPI_Comm comm, int *ret_n);
+extern int exp_info_MPIPack(ExpInfo_t *exp, char *buf, int n, int *position, MPI_Comm comm);
+extern int exp_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ExpInfo_t **ret_exp);
 extern int hmm_filter_info_MPIPackSize(HMMFilterInfo_t *hfi, MPI_Comm comm, int *ret_n);
 extern int hmm_filter_info_MPIPack(HMMFilterInfo_t *hfi, char *buf, int n, int *position, MPI_Comm comm);
 extern int hmm_filter_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, HMMFilterInfo_t **ret_hfi);
 extern int best_filter_info_MPIPackSize(BestFilterInfo_t *bf, MPI_Comm comm, int *ret_n);
 extern int best_filter_info_MPIPack(BestFilterInfo_t *bf, char *buf, int n, int *position, MPI_Comm comm);
 extern int best_filter_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, BestFilterInfo_t **ret_bf);
-extern int cmcalibrate_gumbel_results_MPIPackSize(float *scA, int nseq, MPI_Comm comm, int *ret_n);
-extern int cmcalibrate_gumbel_results_MPIPack(float *scA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
-extern int cmcalibrate_gumbel_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_scA, int *ret_nseq);
+extern int cmcalibrate_exp_results_MPIPackSize(float *scA, int nseq, MPI_Comm comm, int *ret_n);
+extern int cmcalibrate_exp_results_MPIPack(float *scA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
+extern int cmcalibrate_exp_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_scA, int *ret_nseq);
 extern int cmcalibrate_filter_results_MPIPackSize(int nseq, MPI_Comm comm, int *ret_n);
 extern int cmcalibrate_filter_results_MPIPack(float *cyk_scA, float *ins_scA, float *fwd_scA, int *partA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
 extern int cmcalibrate_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_cyk_scA, float **ret_ins_scA, float **ret_fwd_scA, int **ret_partA, int *ret_nseq);
-extern int comlog_MPIPackSize(ComLog_t *gum, MPI_Comm comm, int *ret_n);
-extern int comlog_MPIPack    (ComLog_t *gum, char *buf, int n, int *position, MPI_Comm comm);
+extern int comlog_MPIPackSize(ComLog_t *comlog, MPI_Comm comm, int *ret_n);
+extern int comlog_MPIPack    (ComLog_t *comlog, char *buf, int n, int *position, MPI_Comm comm);
 extern int comlog_MPIUnpack  (char *buf, int n, int *pos, MPI_Comm comm, ComLog_t **ret_comlog);
 
 #endif
@@ -573,7 +573,7 @@ extern void DumpSearchInfo(SearchInfo_t *si);
 extern void DumpSearchOpts(int search_opts);
 extern void ValidateSearchInfo(CM_t *cm, SearchInfo_t *fi);
 extern void UpdateSearchInfoCutoff(CM_t *cm, int nround, int cutoff_type, float sc_cutoff, float e_cutoff);
-extern void UpdateSearchInfoForGumMode(CM_t *cm, int round, int gum_mode);
+extern void UpdateSearchInfoForExpMode(CM_t *cm, int round, int exp_mode);
 extern void UpdateSearchInfoForNewSMX(CM_t *cm);
 
 extern search_results_t *CreateResults (int size);
@@ -592,7 +592,7 @@ extern int  ScoresFromResults          (search_results_t *results, char *errbuf,
 extern float CountScanDPCalcs          (CM_t *cm, int L, int use_qdb);
 extern BestFilterInfo_t *CreateBestFilterInfo();
 extern int  SetBestFilterInfoHMM(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, int ftype, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs);
-extern int  SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs, HybridScanInfo_t *hsi, int np, GumbelInfo_t **hgumA);
+extern int  SetBestFilterInfoHybrid(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs, HybridScanInfo_t *hsi, int np, ExpInfo_t **hexpA);
 extern void FreeBestFilterInfo(BestFilterInfo_t *bf);
 extern void DumpBestFilterInfo(BestFilterInfo_t *bf);
 extern HMMFilterInfo_t *CreateHMMFilterInfo();
@@ -627,24 +627,23 @@ extern seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET 
 extern CMStats_t *AllocCMStats(int np);
 extern void       FreeCMStats(CMStats_t *cmstats);
 extern int        debug_print_cmstats(CM_t *cm, char *errbuf, CMStats_t *cmstats, int has_fthr);
-extern int        debug_print_gumbelinfo(GumbelInfo_t *evd);
+extern int        debug_print_expinfo(ExpInfo_t *exp);
 extern int        get_gc_comp(ESL_SQ *sq, int start, int stop);
 extern void       GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct);
-extern int        E2Score (CM_t *cm, char *errbuf, int gum_mode, float E,  float *ret_sc);
-extern int        Score2E (CM_t *cm, char *errbuf, int gum_mode, float sc, float *ret_E);
-extern double     RJK_ExtremeValueE (float x, double mu, double lambda);
-extern int        CM2Gumbel_mode(CM_t *cm, int search_opts, int *ret_cm_gum_mode, int *ret_cp9_gum_mode);
+extern int        E2MinScore(CM_t *cm, char *errbuf, int exp_mode, float E,  float *ret_sc);
+extern int        Score2MaxE(CM_t *cm, char *errbuf, int exp_mode, float sc, float *ret_E);
+extern double     Score2E(float x, double mu, double lambda, long eff_dbsize);
+extern int        CM2ExpMode(CM_t *cm, int search_opts, int *ret_cm_exp_mode, int *ret_cp9_exp_mode);
 extern int        CM2FthrMode(CM_t *cm, char *errbuf, int search_opts, int *ret_fthr_mode);
-extern int        GumModeIsLocal(int gum_mode);
-extern int        GumModeIsForCM(int gum_mode);
-extern int        GumModeToFthrMode(int gum_mode);
-extern GumbelInfo_t *CreateGumbelInfo();
-extern void          SetGumbelInfo(GumbelInfo_t *gum, double mu, double lambda, long dbsize, int N);
-extern void          SetExponentialInfo(GumbelInfo_t *gum, double mu, double lambda, long dbsize, int N, float tailfit_p);
-extern GumbelInfo_t *DuplicateGumbelInfo(GumbelInfo_t *src);
-extern char         *DescribeGumMode(int gum_mode);
-extern char         *DescribeFthrMode(int fthr_mode);
-extern int           UpdateGumbelsForDBSize(CM_t *cm, char *errbuf, long dbsize, float avg_hit_len);
+extern int        ExpModeIsLocal(int exp_mode);
+extern int        ExpModeIsForCM(int exp_mode);
+extern int        ExpModeToFthrMode(int exp_mode);
+extern ExpInfo_t *CreateExpInfo();
+extern void       SetExpInfo(ExpInfo_t *exp, double lambda, double mu_orig, long dbsize, int nrandhits, double tailp);
+extern ExpInfo_t *DuplicateExpInfo(ExpInfo_t *src);
+extern char      *DescribeExpMode(int exp_mode);
+extern char      *DescribeFthrMode(int fthr_mode);
+extern int        UpdateExpsForDBSize(CM_t *cm, char *errbuf, long dbsize);
 
 /* from truncyk.c */
 float TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr);

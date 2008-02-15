@@ -302,7 +302,7 @@ cm_justread_MPIUnpack(ESL_ALPHABET **abc, char *buf, int n, int *pos, MPI_Comm c
   /* Unpack the rest of the CM */
   if (MPI_Unpack(buf, n, pos, &(cm->flags),              1,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   /* note cm->flags is how it was immediately after CM is read from file, so the only flags that can possibly be raised are:
-   * CMH_GA, CMH_TC, CMH_NC, CMH_GUMBEL_STATS and CMH_FILTER_STATS, which is okay b/c all that info is transmitted in this func */
+   * CMH_GA, CMH_TC, CMH_NC, CMH_EXPTAIL_STATS and CMH_FILTER_STATS, which is okay b/c all that info is transmitted in this func */
   if (MPI_Unpack(buf, n, pos, &(cm->nseq),               1,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
   if (MPI_Unpack(buf, n, pos, &(cm->clen),               1,   MPI_INT, comm)  != 0)     ESL_EXCEPTION(eslESYS, "mpi unpack failed");
 
@@ -500,7 +500,7 @@ cm_justread_MPIPack(CM_t *cm, char *buf, int n, int *pos, MPI_Comm comm)
 
   if (MPI_Pack(&(cm->flags),              1,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
   /* note cm->flags is how it is immediately after CM is read from file, so the only flags that can possibly be raised are:
-   * CMH_GA, CMH_TC, CMH_NC, CMH_GUMBEL_STATS and CMH_FILTER_STATS, which is okay b/c all the relevant info for those flags
+   * CMH_GA, CMH_TC, CMH_NC, CMH_EXPTAIL_STATS and CMH_FILTER_STATS, which is okay b/c all the relevant info for those flags
    * is transmitted in this func */
 
   if (MPI_Pack(&(cm->nseq),               1,   MPI_INT, buf, n, pos, comm)  != 0)     ESL_EXCEPTION(eslESYS, "pack failed");
@@ -2130,9 +2130,9 @@ cmstats_MPIPackSize(CMStats_t *cmstats, MPI_Comm comm, int *ret_n)
   status = MPI_Pack_size(1, MPI_INT, comm, &sz);  n += sz*GC_SEGMENTS; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   /* gc2p int array */
 
-  for(g = 0; g < GUM_NMODES; g++) { 
-    for(p = 0; p < np; p++) { /* add size of Gumbel for each gum_mode/partition combo */
-      if ((status = gumbel_info_MPIPackSize(cmstats->gumAA[g][p], comm, &sz))  != eslOK) goto ERROR; n += sz;
+  for(g = 0; g < EXP_NMODES; g++) { 
+    for(p = 0; p < np; p++) { /* add size of exp tail for each exp_mode/partition combo */
+      if ((status = exp_info_MPIPackSize(cmstats->expAA[g][p], comm, &sz))  != eslOK) goto ERROR; n += sz;
     }
   }   
   for(f = 0; f < FTHR_NMODES; f++) { /* add size of best filter info for each filter mode */
@@ -2171,9 +2171,9 @@ cmstats_MPIPack(CMStats_t *cmstats, char *buf, int n, int *position, MPI_Comm co
   for(gc = 0; gc < GC_SEGMENTS; gc++) { /* there must be a better way to do this, this is safe, slow route */
     status = MPI_Pack((int *) &(cmstats->gc2p[gc]), 1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   }
-  for(g = 0; g < GUM_NMODES; g++) { 
-    for(p = 0; p < np; p++) { /* pack gumbel for this gum_mode/partition combo */
-      status = gumbel_info_MPIPack(cmstats->gumAA[g][p], buf, n, position, comm);  if (status != eslOK) return status;
+  for(g = 0; g < EXP_NMODES; g++) { 
+    for(p = 0; p < np; p++) { /* pack exp tail for this exp_mode/partition combo */
+      status = exp_info_MPIPack(cmstats->expAA[g][p], buf, n, position, comm);  if (status != eslOK) return status;
     }
   }
   for(f = 0; f < FTHR_NMODES; f++) { 
@@ -2213,11 +2213,11 @@ cmstats_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CMStats_t **ret_cms
     status = MPI_Unpack (buf, n, pos, &(cmstats->gc2p[gc]), 1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   }
 
-  ESL_ALLOC(cmstats->gumAA, sizeof(GumbelInfo_t **) * GUM_NMODES);
-  for(g = 0; g < GUM_NMODES; g++) { 
-    ESL_ALLOC(cmstats->gumAA[g], sizeof(GumbelInfo_t *) * np);
-    for(p = 0; p < np; p++) { /* pack gumbel for this gum_mode/partition combo */
-      status = gumbel_info_MPIUnpack(buf, n, pos, comm, &(cmstats->gumAA[g][p]));  if (status != eslOK) return status;
+  ESL_ALLOC(cmstats->expAA, sizeof(ExpInfo_t **) * EXP_NMODES);
+  for(g = 0; g < EXP_NMODES; g++) { 
+    ESL_ALLOC(cmstats->expAA[g], sizeof(ExpInfo_t *) * np);
+    for(p = 0; p < np; p++) { /* pack exp tail for this exp_mode/partition combo */
+      status = exp_info_MPIUnpack(buf, n, pos, comm, &(cmstats->expAA[g][p]));  if (status != eslOK) return status;
     }
   }
   ESL_ALLOC(cmstats->hfiA, sizeof(HMMFilterInfo_t *) * FTHR_NMODES);
@@ -2233,9 +2233,9 @@ cmstats_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CMStats_t **ret_cms
   return status;
 }
 
-/* Function:  gumbel_info_MPIPackSize()
+/* Function:  exp_info_MPIPackSize()
  * Synopsis:  Calculates number of bytes needed to pack a 
- *            GumbelInfo_t object. Follows 'Purpose' 
+ *            ExpInfo_t object. Follows 'Purpose' 
  *            of other *_MPIPackSize() functions above. 
  *
  * Incept:    EPN, Wed Dec 12 05:00:01 2007
@@ -2245,21 +2245,21 @@ cmstats_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, CMStats_t **ret_cms
  * Throws:    <eslESYS> if an MPI call fails, and <*ret_n> is set to 0. 
  *
  * Note:      The sizing calls here need to stay matched up with
- *            the calls in <gumbel_info_MPIPack()>.
+ *            the calls in <exp_info_MPIPack()>.
  */
 int
-gumbel_info_MPIPackSize(GumbelInfo_t *gum, MPI_Comm comm, int *ret_n)
+exp_info_MPIPackSize(ExpInfo_t *exp, MPI_Comm comm, int *ret_n)
 {
   int status;
   int sz;
   int n = 0;
 
   status = MPI_Pack_size(1, MPI_INT, comm, &sz);    n += 2*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  /* N, is_valid */
-  status = MPI_Pack_size(1, MPI_LONG, comm, &sz);   n += sz;   if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  /* dbsize */
-  status = MPI_Pack_size(1, MPI_DOUBLE, comm, &sz); n += 2*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  /* mu, lambda */
+  /* nrandhits, is_valid */
+  status = MPI_Pack_size(1, MPI_LONG, comm, &sz);   n += 2*sz;  if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  /* dbsize, cur_eff_dbsize */
+  status = MPI_Pack_size(1, MPI_DOUBLE, comm, &sz); n += 4*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  /* mu_orig, mu_extrap, lambda, tailp */
 
   *ret_n = n;
   return eslOK;
@@ -2269,57 +2269,63 @@ gumbel_info_MPIPackSize(GumbelInfo_t *gum, MPI_Comm comm, int *ret_n)
   return status;
 }
 
-/* Function:  gumbel_info_MPIPack()
- * Synopsis:  Packs GumbelInfo_t <gum> into MPI buffer.
+/* Function:  exp_info_MPIPack()
+ * Synopsis:  Packs ExpInfo_t <exp> into MPI buffer.
  *            See 'Purpose','Returns' and 'Throws'
  *            of other *_MPIPack()'s for more info.
  *
  * Incept:    EPN, Wed Dec 12 05:03:40 2007
  */
 int
-gumbel_info_MPIPack(GumbelInfo_t *gum, char *buf, int n, int *position, MPI_Comm comm)
+exp_info_MPIPack(ExpInfo_t *exp, char *buf, int n, int *position, MPI_Comm comm)
 {
   int status;
 
-  ESL_DPRINTF2(("gumbel_info_MPIPack(): ready.\n"));
+  ESL_DPRINTF2(("exp_info_MPIPack(): ready.\n"));
   
-  status = MPI_Pack((int *) &(gum->N),        1, MPI_INT,    buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = MPI_Pack((int *) &(gum->dbsize),   1, MPI_LONG,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = MPI_Pack((double *) &(gum->mu),    1, MPI_DOUBLE, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = MPI_Pack((double *) &(gum->lambda),1, MPI_DOUBLE, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = MPI_Pack((int *) &(gum->is_valid), 1, MPI_INT,    buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
-  ESL_DPRINTF2(("gumbel_info_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
+  status = MPI_Pack((long *)   &(exp->cur_eff_dbsize), 1, MPI_LONG,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((double *) &(exp->lambda),         1, MPI_DOUBLE, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((double *) &(exp->mu_extrap),      1, MPI_DOUBLE, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((double *) &(exp->mu_orig),        1, MPI_DOUBLE, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((long *)   &(exp->dbsize),         1, MPI_LONG,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((int *)    &(exp->nrandhits),      1, MPI_INT,    buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((double *) &(exp->tailp),          1, MPI_DOUBLE, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((int *)    &(exp->is_valid),       1, MPI_INT,    buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  ESL_DPRINTF2(("exp_info_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
 
   if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
   return eslOK;
 }
 
-/* Function:  gumbel_info_MPIUnpack()
- * Synopsis:  Unpacks GumbelInfo_t<gum> from an MPI buffer.
+/* Function:  exp_info_MPIUnpack()
+ * Synopsis:  Unpacks ExpInfo_t <exp> from an MPI buffer.
  *            Follows 'Purpose', 'Returns', 'Throws' of other
  *            *_MPIUnpack() functions above.
  *
  * Incept:    EPN, Wed Dec 12 05:29:19 2007
  */
 int
-gumbel_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, GumbelInfo_t **ret_gum)
+exp_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ExpInfo_t **ret_exp)
 {
   int status;
-  GumbelInfo_t *gum;
+  ExpInfo_t *exp;
 
-  ESL_ALLOC(gum, sizeof(GumbelInfo_t));
-  status = MPI_Unpack (buf, n, pos, &(gum->N),        1, MPI_INT,    comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = MPI_Unpack (buf, n, pos, &(gum->dbsize),   1, MPI_LONG,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = MPI_Unpack (buf, n, pos, &(gum->mu),       1, MPI_DOUBLE, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = MPI_Unpack (buf, n, pos, &(gum->lambda),   1, MPI_DOUBLE, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = MPI_Unpack (buf, n, pos, &(gum->is_valid), 1, MPI_INT,    comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  ESL_ALLOC(exp, sizeof(ExpInfo_t));
+  status = MPI_Unpack (buf, n, pos, &(exp->cur_eff_dbsize),  1, MPI_LONG,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &(exp->lambda),          1, MPI_DOUBLE, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &(exp->mu_extrap),       1, MPI_DOUBLE, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &(exp->mu_orig),         1, MPI_DOUBLE, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &(exp->dbsize),          1, MPI_LONG,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &(exp->nrandhits),       1, MPI_INT,    comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &(exp->tailp),           1, MPI_DOUBLE, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &(exp->is_valid),        1, MPI_INT,    comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
 
-  *ret_gum = gum;
+  *ret_exp = exp;
   return eslOK;
 
  ERROR:
-  if(gum != NULL) free(gum);
-  *ret_gum = NULL;
+  if(exp != NULL) free(exp);
+  *ret_exp = NULL;
   return status;
 }
 
@@ -2451,11 +2457,11 @@ best_filter_info_MPIPackSize(BestFilterInfo_t *bf, MPI_Comm comm, int *ret_n)
   /* cm_M, N, db_size, is_valid, ftype, np */
   status = MPI_Pack_size(1, MPI_FLOAT, comm, &sz);  n += 6*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   /* cm_eval, F, e_cutoff, full_cm_ncalcs, fil_ncalcs, fil_plus_surv_ncalcs */
-  if(is_hybrid) { /* v_isroot and hgumA are valid, we pack them */
+  if(is_hybrid) { /* v_isroot and hexpA are valid, we pack them */
     status = MPI_Pack_size(1, MPI_INT, comm, &sz);  n += bf->np*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
     /* v_isroot array */
-    for(p = 0; p < bf->np; p++) { /* add size of Gumbel for each partition */
-      if ((status = gumbel_info_MPIPackSize(bf->hgumA[p], comm, &sz))  != eslOK) goto ERROR; n += sz;
+    for(p = 0; p < bf->np; p++) { /* add size of exp tail for each partition */
+      if ((status = exp_info_MPIPackSize(bf->hexpA[p], comm, &sz))  != eslOK) goto ERROR; n += sz;
     }
   }    
   *ret_n = n;
@@ -2496,11 +2502,11 @@ best_filter_info_MPIPack(BestFilterInfo_t *bf, char *buf, int n, int *position, 
   status = MPI_Pack((float *) &(bf->fil_plus_surv_ncalcs),1, MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
 
   int is_hybrid = (bf->ftype == FILTER_WITH_HYBRID) ? TRUE : FALSE;
-  if(is_hybrid) { /* get v_isroot and hgumA */
+  if(is_hybrid) { /* get v_isroot and hexpA */
     assert((bf->np > 0));
     status = MPI_Pack(bf->v_isroot, bf->np, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
     for (p = 0; p < bf->np; p++) {
-      status = gumbel_info_MPIPack(bf->hgumA[p], buf, n, position, comm);  if (status != eslOK) return status;
+      status = exp_info_MPIPack(bf->hexpA[p], buf, n, position, comm);  if (status != eslOK) return status;
     }
   }
 
@@ -2538,18 +2544,18 @@ best_filter_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, BestFilter
   status = MPI_Unpack (buf, n, pos, &(bf->fil_plus_surv_ncalcs),1, MPI_FLOAT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
 
   int is_hybrid = (bf->ftype == FILTER_WITH_HYBRID) ? TRUE : FALSE;
-  if(is_hybrid) { /* unpack v_isroot, hgumA */
+  if(is_hybrid) { /* unpack v_isroot, hexpA */
     assert(bf->np > 0);
     ESL_ALLOC(bf->v_isroot, sizeof(int) * bf->np);
-    ESL_ALLOC(bf->hgumA,    sizeof(GumbelInfo_t *) * bf->np);
+    ESL_ALLOC(bf->hexpA,    sizeof(ExpInfo_t *) * bf->np);
     status = MPI_Unpack (buf, n, pos, bf->v_isroot,     bf->np, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
     for(p = 0; p < bf->np; p++) { 
-      status = gumbel_info_MPIUnpack(buf, n, pos, comm, &(bf->hgumA[p]));  if (status != eslOK) return status;
+      status = exp_info_MPIUnpack(buf, n, pos, comm, &(bf->hexpA[p]));  if (status != eslOK) return status;
     }
   }    
-  else { /* not a hybrid, point v_isroot, hgumA to NULL */
+  else { /* not a hybrid, point v_isroot, hexpA to NULL */
     bf->v_isroot = NULL;
-    bf->hgumA = NULL;
+    bf->hexpA = NULL;
   }
 
   *ret_bf = bf;
@@ -2563,13 +2569,13 @@ best_filter_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, BestFilter
 
 
 
-/* Function:  cmcalibrate_gumbel_results_MPIPackSize()
+/* Function:  cmcalibrate_exp_results_MPIPackSize()
  * Synopsis:  Calculates number of bytes needed to pack a 
  *            results for CM scan for cmcalibrate.
  * Incept:    EPN, Thu Dec  6 16:56:27 2007
  *
  * Purpose:   Calculate an upper bound on the number of bytes
- *            that <cmcalibrate_gumbel_results_MPIPack()> will need 
+ *            that <cmcalibrate_exp_results_MPIPack()> will need 
  *            to pack it's results in a packed MPI message in 
  *            communicator <comm>; return that number of bytes 
  *            in <*ret_n>. 
@@ -2582,10 +2588,10 @@ best_filter_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, BestFilter
  * Throws:    <eslESYS> if an MPI call fails, and <*ret_n> is set to 0. 
  *
  * Note:      The sizing calls here need to stay matched up with
- *            the calls in <cmcalibrate_gumbel_results_MPIPack()>.
+ *            the calls in <cmcalibrate_exp_results_MPIPack()>.
  */
 int
-cmcalibrate_gumbel_results_MPIPackSize(float *scA, int nseq, MPI_Comm comm, int *ret_n)
+cmcalibrate_exp_results_MPIPackSize(float *scA, int nseq, MPI_Comm comm, int *ret_n)
 {
   int status;
   int sz;
@@ -2602,7 +2608,7 @@ cmcalibrate_gumbel_results_MPIPackSize(float *scA, int nseq, MPI_Comm comm, int 
   return status;
 }
 
-/* Function:  cmcalibrate_gumbel_results_MPIPack()
+/* Function:  cmcalibrate_exp_results_MPIPack()
  * Synopsis:  Packs CM vscAA scores into MPI buffer.
  * Incept:    EPN, Thu Dec  6 16:56:31 2007
  *
@@ -2627,21 +2633,21 @@ cmcalibrate_gumbel_results_MPIPackSize(float *scA, int nseq, MPI_Comm comm, int 
  *
  */
 int
-cmcalibrate_gumbel_results_MPIPack(float *scA, int nseq, char *buf, int n, int *position, MPI_Comm comm)
+cmcalibrate_exp_results_MPIPack(float *scA, int nseq, char *buf, int n, int *position, MPI_Comm comm)
 {
   int status;
 
-  ESL_DPRINTF2(("cmcalibrate_gumbel_results_MPIPack(): ready.\n"));
+  ESL_DPRINTF2(("cmcalibrate_exp_results_MPIPack(): ready.\n"));
   
   status = MPI_Pack((int *) &(nseq), 1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack(scA,       nseq, MPI_FLOAT, buf, n, position,  comm);     if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
-  ESL_DPRINTF2(("cmcalibrate_gumbel_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
+  ESL_DPRINTF2(("cmcalibrate_exp_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
 
   if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
   return eslOK;
 }
 
-/* Function:  cmcalibrate_gumbel_results_MPIUnpack()
+/* Function:  cmcalibrate_exp_results_MPIUnpack()
  * Synopsis:  Unpacks <scA> from an MPI buffer.
  * Incept:    EPN, Thu Dec  6 16:56:36 2007
  *
@@ -2662,7 +2668,7 @@ cmcalibrate_gumbel_results_MPIPack(float *scA, int nseq, char *buf, int n, int *
  *            and <*pos> is undefined and should be considered to be corrupted.
  */
 int
-cmcalibrate_gumbel_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_scA, int *ret_nseq)
+cmcalibrate_exp_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_scA, int *ret_nseq)
 {
   int status;
   float *scA;

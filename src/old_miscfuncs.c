@@ -9041,3 +9041,125 @@ CPlan9GlobalConfig(CP9_t *hmm)
   CP9Logoddsify(hmm);
 }
 #endif
+/* EPN, Fri Feb 15 12:37:01 2008
+ * Changed fitting gumbels in cmcalibrate to fitting exponential tails. 
+ * Some Gumbel functions are now unused.
+ */
+#if 0
+
+
+/*
+ * Function: RJK_ExtremeValueE
+ * Date:     RJK, Mon Sep 30, 2002 [St. Louis]
+ * Purpose:  Given a score (x), mu, and lambda, calculates 
+ *           E=exp(-1*lambda(x-mu)) using first part of code from Sean's
+ *           ExtremeValueP
+ */
+double RJK_ExtremeValueE (float x, double mu, double lambda) {
+                        /* avoid underflow fp exceptions near P=0.0*/
+  if ((lambda * (x - mu)) >= 2.3 * (double) DBL_MAX_10_EXP) 
+    return 0.0;
+  else 
+    return(exp(-1. * lambda * (x - mu)));
+}
+
+/* fit_histogram()
+ * Create, fill and fit a histogram to a gumbel. Data to fill the histogram
+ * is given as <data>.
+ */
+static int
+fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores,
+	      double *ret_mu, double *ret_lambda)
+{
+  int status;
+  double mu;
+  double lambda;
+  int i;
+  double *xv;         /* raw data from histogram */
+  int     n,z;  
+  float tailfit;
+  double mufix;
+
+  ESL_HISTOGRAM *h = NULL;       /* histogram of scores */
+
+
+  /* Initialize histogram; these numbers are guesses */
+  if((h = esl_histogram_CreateFull(-100., 100., .1)) == NULL) return eslEMEM;    
+
+  /* fill histogram */
+  for(i = 0; i < nscores; i++)
+    if((status = esl_histogram_Add(h, scores[i])) != eslOK) ESL_FAIL(status, errbuf, "fit_histogram(), esl_histogram_Add() call returned non-OK status: %d\n", status);
+
+  /* fit scores to a exp tail */
+  tailfit = esl_opt_GetReal(go, "--exp-tail");
+  esl_histogram_GetTailByMass(h, tailfit, &xv, &n, &z); /* fit to right 'tailfit' fraction, 0.5 by default */
+  esl_exptail_FitCensored(xv, n, z, xv[0], &mu, &lambda);
+  esl_exptail_FitCensoredLoc(xv, n, z, xv[0], 0.693147, &mufix);
+
+  /* print to output files if nec */
+  if(cfg->gumhfp != NULL)
+    esl_histogram_Plot(cfg->gumhfp, h);
+  if(cfg->gumqfp != NULL) {
+      double  params[2];  
+      params[0] = mu;
+      params[1] = lambda;
+      esl_histogram_PlotQQ(cfg->gumqfp, h, &esl_exp_generic_invcdf, params);
+  }
+
+  if (cfg->gumsfp != NULL) {
+    esl_histogram_PlotSurvival(cfg->gumsfp, h);
+    esl_exp_Plot(cfg->gumsfp, mu,    lambda,   esl_exp_surv, h->xmin - 5., h->xmax + 5., 0.1);
+    esl_exp_Plot(cfg->gumsfp, mufix, 0.693147, esl_exp_surv, h->xmin - 5., h->xmax + 5., 0.1);
+  }
+
+  esl_histogram_Destroy(h);
+
+  *ret_mu     = mu;
+  *ret_lambda = lambda;
+  return eslOK;
+}
+
+#endif
+
+#if 0
+
+/* Structure CP9FThresh_t: CP9 HMM filter thresholds, determined empirically
+ * by sampling from the CM
+ */
+typedef struct cp9filterthr_s {
+  int   N;             /* number of CM hits used to get threshold ((N*F) passed)*/
+  float cm_eval;       /* CM E-value threshold, we rejected worse than   */
+  float l_eval;        /*  local CP9 scanning E-value threshold    */
+  float g_eval;        /* glocal CP9 scanning E-value threshold    */
+  float l_F;           /* fraction of empirical CM hits survive filter for l_eval cutoff */
+  float g_F;           /* fraction of empirical CM hits survive filter for g_eval cutoff */
+  int   db_size;       /* db size used to calculate exp tail mu for *_eval calculations */
+  int   was_fast;      /* TRUE if hacky fast method for calcing thresholds was used */
+  int   isvalid;       /* TRUE if values have been set, FALSE if not */
+} CP9FilterThr_t;
+
+
+/* Structure SubFilterInfo_t: Information on possible sub CM filters for a CM.                           
+ * States of a CM are grouped into 'start groups'. There is one start group                              
+ * for each start state of the CM. A 'start group' begins with a start state and ends                    
+ * with a E or B state, and includes all states in between.                                              
+ */                                                                                                      
+typedef struct subfilterinfo_s {
+  int    M;            /* # states in the CM */                                                          
+  int    nstarts;      /* # start states (and start groups) in the CM */                                 
+  int    ncands;       /* number of candidate states, these *could* be sub CM roots */                   
+  double beta;         /* beta used for calculating avglenA */                                           
+  float  minlen;       /* minimum average length (avglen) a candidate state must have */                 
+  int   *iscandA;      /* [0..v..cm->M-1] TRUE if state v is a candidate sub CM root, FALSE otherwise */   
+  float *avglenA;      /* [0..v..cm->M-1] average length of a hit rooted at v (from QDB) */                
+  int   *startA;       /* [0..i..cm->M-1] start group this state belongs to */                               
+  int   *firstA;       /* [0..i..nstarts-1], first state in start state i's group */                     
+  int   *lastA;        /* [0..i..nstarts-1], last state in start state i's group */                      
+  int  **withinAA;     /* [0..i..nstarts-1][0..j..nstarts-1] = TRUE if start state j's group             
+                        * is within start state i's group.                                               
+                        *  emap->startA[cm->nodemap[i]]->lpos < emap->startA[cm->nodemap[j]]->lpos  &&   
+                        *  emap->endA  [cm->nodemap[i]]->rpos > emap->endA  [cm->nodemap[j]]->rpos       
+                        */			
+} SubFilterInfo_t;
+
+#endif
