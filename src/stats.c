@@ -302,11 +302,15 @@ int E2Score (CM_t *cm, char *errbuf, int gum_mode, float E, float *ret_sc)
   if(!(cm->flags & CMH_GUMBEL_STATS))        ESL_FAIL(eslEINCOMPAT, errbuf, "E2Score, CM's CMH_GUMBEL_STATS flag is down.");
   if(ret_sc == NULL)                         ESL_FAIL(eslEINCOMPAT, errbuf, "E2Score, ret_sc is NULL");
 
-  low_sc = cm->stats->gumAA[gum_mode][0]->mu - (log(E) / cm->stats->gumAA[gum_mode][0]->lambda);
+  /* OLD WAY Fri Feb 15 07:09:30 2008 low_sc = cm->stats->gumAA[gum_mode][0]->mu - (log(E) / cm->stats->gumAA[gum_mode][0]->lambda); */
+  /* NEW WAY Fri Feb 15 07:09:30 2008 */
+  low_sc = cm->stats->gumAA[gum_mode][0]->mu + (log(E / cm->stats->gumAA[gum_mode][0]->dbsize) / (-1 * cm->stats->gumAA[gum_mode][0]->lambda));
   if(! cm->stats->gumAA[gum_mode][0]->is_valid) ESL_FAIL(eslEINCOMPAT, errbuf, "E2Score, CM's gumbel stats for mode: %d partition: %d are invalid.", gum_mode, p);
   for(p = 1; p < cm->stats->np; p++) {
     if(! cm->stats->gumAA[gum_mode][p]->is_valid) ESL_FAIL(eslEINCOMPAT, errbuf, "E2Score, CM's gumbel stats for mode: %d partition: %d are invalid.", gum_mode, p);
-    sc = cm->stats->gumAA[gum_mode][p]->mu - (log(E) / cm->stats->gumAA[gum_mode][p]->lambda);
+    /* OLD WAY Fri Feb 15 07:09:17 2008 sc = cm->stats->gumAA[gum_mode][p]->mu - (log(E) / cm->stats->gumAA[gum_mode][p]->lambda); */
+    /* NEW WAY Fri Feb 15 07:09:30 2008 */
+    sc = cm->stats->gumAA[gum_mode][p]->mu + (log(E / cm->stats->gumAA[gum_mode][p]->dbsize) / (-1 * cm->stats->gumAA[gum_mode][p]->lambda));
     low_sc = ESL_MIN(low_sc, sc);
   }
   *ret_sc = low_sc;
@@ -359,10 +363,13 @@ int Score2E (CM_t *cm, char *errbuf, int gum_mode, float sc, float *ret_E)
  */
 double RJK_ExtremeValueE (float x, double mu, double lambda) {
                         /* avoid underflow fp exceptions near P=0.0*/
+  return esl_exp_surv(x, mu, lambda);
+#if 0
   if ((lambda * (x - mu)) >= 2.3 * (double) DBL_MAX_10_EXP) 
     return 0.0;
   else 
     return(exp(-1. * lambda * (x - mu)));
+#endif
 }
 
 /*
@@ -582,6 +589,29 @@ SetGumbelInfo(GumbelInfo_t *gum, double mu, double lambda, long dbsize, int N)
 }  
 
 
+/* Function: SetExponentialInfo()
+ * Date:     EPN, Fri Feb 15 05:10:10 2008
+ *
+ * Purpose:  Set parameters of a gumbel info object and raise it's is_valid 'flag'.
+ *            
+ * Returns:  void
+ */
+void 
+SetExponentialInfo(GumbelInfo_t *gum, double mu, double lambda, long dbsize, int N, float tailfit_p)
+{
+  /* determine mu that gives N * dbsize hits, given exponenial tail of slope lambda */
+  float mu_correction = log(1./tailfit_p) / lambda;
+  mu -= mu_correction;
+
+  gum->N = N;
+  gum->dbsize = dbsize;
+  gum->mu = mu;
+  gum->lambda = lambda;
+  gum->is_valid = TRUE;
+  return;
+}  
+
+
 /* Function: DuplicateGumbelInfo()
  * Date:     EPN, Tue Dec 11 05:28:13 2007
  *
@@ -664,7 +694,7 @@ DescribeFthrMode(int fthr_mode)
  *           violation with informative error message in errbuf.
  */
 int 
-UpdateGumbelsForDBSize(CM_t *cm, char *errbuf, long dbsize)
+UpdateGumbelsForDBSize(CM_t *cm, char *errbuf, long dbsize, float avg_hit_len)
 {
   double tmp_K;     /* for converting mu from cmfile to mu for dbsize */
   int i, p;
@@ -675,11 +705,15 @@ UpdateGumbelsForDBSize(CM_t *cm, char *errbuf, long dbsize)
   /* Determine K from mu, lambda, L, then set CM mu for N */
   for(i = 0; i < GUM_NMODES; i++)
     for(p = 0; p < cm->stats->np; p++) {
+      //cm->stats->gumAA[i][p]->dbsize = dbsize / avg_hit_len; 
+      cm->stats->gumAA[i][p]->dbsize = dbsize; 
+#if 0 
       if(cm->stats->gumAA[i][p]->dbsize != dbsize) { 
 	tmp_K = exp(cm->stats->gumAA[i][p]->mu * cm->stats->gumAA[i][p]->lambda) / cm->stats->gumAA[i][p]->dbsize;
 	cm->stats->gumAA[i][p]->mu = log(tmp_K * ((double) dbsize)) / cm->stats->gumAA[i][p]->lambda;
 	cm->stats->gumAA[i][p]->dbsize = dbsize; /* update dbsize */
       }
+#endif
     }
   return eslOK;
 }  

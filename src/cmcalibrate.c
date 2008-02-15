@@ -1103,7 +1103,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 		/* fill a histogram with the exp_scN scores in exp_scA and fit it to an exponential tail */
 		if((status = fit_histogram_exp(go, cfg, errbuf, exp_scA, exp_scN, &tmp_mu, &tmp_lambda)) != eslOK) cm_Fail(errbuf);
-		SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], tmp_mu, tmp_lambda, expL, expN);
+		//SetGumbelInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], tmp_mu, tmp_lambda, expL, expN);
+		SetExponentialInfo(cfg->cmstatsA[cmi]->gumAA[gum_mode][p], tmp_mu, tmp_lambda, expL, expN, esl_opt_GetReal(go, "--tailfit"));
 
 		for(si = 0; si < expN; si++) {
 		  ESL_DASSERT1((dsq_slist[si] == NULL));

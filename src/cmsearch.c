@@ -409,7 +409,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((  status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len)))      != eslOK) cm_Fail(errbuf);
       if((  status = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
       if(cm->flags & CMH_GUMBEL_STATS) 
-	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->dbsize))            != eslOK) cm_Fail(errbuf);
+	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->dbsize, cfg->avg_hit_len)) != eslOK) cm_Fail(errbuf);
       if((status = set_searchinfo(go, cfg, errbuf, cm))                     != eslOK) cm_Fail(errbuf);
       print_searchinfo(go, cfg, stdout, cm, cfg->dbsize, errbuf);
       using_e_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
@@ -557,7 +557,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status   = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len)))      != eslOK) cm_Fail(errbuf);
       if((status   = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
       if(cm->flags & CMH_GUMBEL_STATS) 
-	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->dbsize))            != eslOK) cm_Fail(errbuf);
+	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->dbsize, cfg->avg_hit_len)) != eslOK) cm_Fail(errbuf);
       if((status = set_searchinfo(go, cfg, errbuf, cm))                     != eslOK) cm_Fail(errbuf);
 
       print_searchinfo(go, cfg, stdout, cm, cfg->dbsize, errbuf);
@@ -776,7 +776,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) goto ERROR;
       if((status   = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len)))      != eslOK) goto ERROR;
       if(cm->flags & CMH_GUMBEL_STATS) 
-	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->dbsize))       != eslOK) goto ERROR;
+	if((status = UpdateGumbelsForDBSize(cm, errbuf, cfg->dbsize, cfg->avg_hit_len)) != eslOK) goto ERROR;
       if((status = set_searchinfo(go, cfg, errbuf, cm))                     != eslOK) goto ERROR;
       
       /* print_searchinfo(go, cfg, stdout, cm, cm_mode, cp9_mode, cfg->dbsize, errbuf); */

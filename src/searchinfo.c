@@ -863,6 +863,7 @@ void PrintResults (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc
   int p;                /* relevant partition */
   int offset;         
   int init_rci;         /* initial strand that's been searched, 0 if do_top, else 1 */
+  double Eval, Pval;    /* E value and P value of a hit */
 
   /* Contract check: we allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
@@ -912,11 +913,9 @@ void PrintResults (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc
       if (do_stats) {
 	p = cm->stats->gc2p[gc_comp];
 	score_for_Eval = results->data[i].score;
-	fprintf(fp, " Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score,
-		RJK_ExtremeValueE(score_for_Eval, gum[p]->mu, 
-				  gum[p]->lambda),
-		esl_gumbel_surv((double) score_for_Eval, gum[p]->mu, 
-				gum[p]->lambda), gc_comp);
+	Pval = esl_exp_surv((double) score_for_Eval, gum[p]->mu, gum[p]->lambda);
+	Eval = Pval * gum[p]->dbsize;
+	fprintf(fp, " Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score, Eval, Pval, gc_comp);
       } 
       else { /* don't print E-value stats */
 	fprintf(fp, " Score = %.2f, GC = %3d\n", results->data[i].score, gc_comp);

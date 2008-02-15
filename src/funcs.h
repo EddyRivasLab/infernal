@@ -640,10 +640,11 @@ extern int        GumModeIsForCM(int gum_mode);
 extern int        GumModeToFthrMode(int gum_mode);
 extern GumbelInfo_t *CreateGumbelInfo();
 extern void          SetGumbelInfo(GumbelInfo_t *gum, double mu, double lambda, long dbsize, int N);
+extern void          SetExponentialInfo(GumbelInfo_t *gum, double mu, double lambda, long dbsize, int N, float tailfit_p);
 extern GumbelInfo_t *DuplicateGumbelInfo(GumbelInfo_t *src);
 extern char         *DescribeGumMode(int gum_mode);
 extern char         *DescribeFthrMode(int fthr_mode);
-extern int           UpdateGumbelsForDBSize(CM_t *cm, char *errbuf, long dbsize);
+extern int           UpdateGumbelsForDBSize(CM_t *cm, char *errbuf, long dbsize, float avg_hit_len);
 
 /* from truncyk.c */
 float TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr);
