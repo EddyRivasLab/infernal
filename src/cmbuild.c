@@ -993,12 +993,11 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
       double etarget; 
       int clen = 0;
       int nd;
-      for(nd = 0; nd < cm->nodes; nd++)
-	{
-	  if(cm->ndtype[nd] == MATP_nd) clen += 2;
-	  else if(cm->ndtype[nd] == MATL_nd) clen += 1;
-	  else if(cm->ndtype[nd] == MATR_nd) clen += 1;
-	}
+      for(nd = 0; nd < cm->nodes; nd++) { 
+	if(cm->ndtype[nd] == MATP_nd) clen += 2;
+	else if(cm->ndtype[nd] == MATL_nd) clen += 1;
+	else if(cm->ndtype[nd] == MATR_nd) clen += 1;
+      }
       if (esl_opt_IsDefault(go, "--ere")) etarget = default_target_relent(cm->abc, clen, esl_opt_GetReal(go, "--eX"));
       else                                etarget = esl_opt_GetReal(go, "--ere");
 

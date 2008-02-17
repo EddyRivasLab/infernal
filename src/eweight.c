@@ -62,6 +62,7 @@ eweight_target_f(double Neff, void *params, double *ret_fx)
   cm_Rescale(p->cm, Neff / (double) p->cm->nseq);
   PriorifyCM(p->cm, p->pri);
   *ret_fx = cm_MeanMatchRelativeEntropy(p->cm) - p->etarget;
+  /* EPN, Sat Feb 16 21:41:07 2008 *ret_fx = cp9_MeanMatchRelativeEntropy(p->cm) - p->etarget) */
   return eslOK;
 }
 
@@ -88,6 +89,7 @@ eweight_target_f(double Neff, void *params, double *ret_fx)
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
+/* EPN, Sat Feb 16 21:43:14 2008 cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double cm_etarget, double cp9_etarget, double *ret_Neff) */
 cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double *ret_Neff)
 {
   int status;

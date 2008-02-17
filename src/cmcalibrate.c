@@ -90,7 +90,7 @@ static ESL_OPTIONS options[] = {
   { "--fil-rfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,"--exp-only", "save CP9 filter threshold information in R format to file <s>", 3},
 /* Other options */
   { "--stall",          eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 4 },  
-  { "--mxsize",         eslARG_REAL,    "256.0",NULL, "x>0.",   NULL,        NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 4 },
+  { "--mxsize",         eslARG_REAL,    "512.0",NULL, "x>0.",   NULL,        NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 4 },
 #ifdef HAVE_MPI
   { "--mpi",            eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "run as an MPI parallel program", 4 },  
 #endif
@@ -2334,10 +2334,10 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
       cm->tau = esl_opt_GetReal(go, "--fil-tau");
       if(esl_opt_GetBoolean(go, "--fil-aln2bands")) cm->search_opts |= CM_SEARCH_HMMALNBANDS;
       if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) return status; 
-      if((status = FastCYKScanHB  (cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, 256., &(cyk_scA[i]))) != eslOK) return status; 
+      if((status = FastCYKScanHB  (cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), &(cyk_scA[i]))) != eslOK) return status; 
 
       cm->search_opts |= CM_SEARCH_INSIDE; 
-      if((status = FastFInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, 256., &(ins_scA[i]))) != eslOK) return status; 
+      if((status = FastFInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), &(ins_scA[i]))) != eslOK) return status; 
     }
     if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL, 
 			     TRUE,   /* yes, we are scanning */
