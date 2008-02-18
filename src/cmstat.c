@@ -288,17 +288,19 @@ main(int argc, char **argv)
 	  }
 	ConfigCM(cm, TRUE); /* TRUE says: calculate W */
 
-	fprintf(ofp, "%6d %-20.20s %8d %8.2f %4d %5d %5d %3d %6.2f %6.2f\n",
-	       ncm,
-	       cm->name,
-	       cm->nseq,
-	       cm->eff_nseq,
-	       cm->clen,
-	       cm->W,
-	       cm->M,
-	       CMCountStatetype(cm, B_st),
-	       cm_MeanMatchRelativeEntropy(cm),
-	       cp9_MeanMatchRelativeEntropy(cm));
+	//fprintf(ofp, "%6d %-20.20s %8d %8.2f %4d %5d %5d %3d %6.2f %6.2f\n",
+	fprintf(ofp, "%6d %-20.20s %8d %8.2f %4d %5d %5d %3d %6.2f %10.5f %10.5f\n",
+		ncm,
+		cm->name,
+		cm->nseq,
+		cm->eff_nseq,
+		cm->clen,
+		cm->W,
+		cm->M,
+		CMCountStatetype(cm, B_st),
+		cm_MeanMatchRelativeEntropy(cm),
+		cp9_MeanMatchRelativeEntropy(cm),
+		cm_MeanMatchRelativeEntropyHMM(cm));
 
 	if(esl_opt_GetBoolean(go, "--search")) { if((status = summarize_search(go, errbuf, cm, r, w, ofp))    != eslOK) cm_Fail(errbuf); }
 	FreeCM(cm);

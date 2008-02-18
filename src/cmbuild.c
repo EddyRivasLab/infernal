@@ -67,7 +67,8 @@ static ESL_OPTIONS options[] = {
 /* Alternate effective sequence weighting strategies */
   { "--eent",    eslARG_NONE,"default",NULL, NULL,    EFFOPTS,    NULL,      NULL, "adjust eff seq # to achieve relative entropy target", 4},
   { "--enone",   eslARG_NONE,  FALSE,  NULL, NULL,    EFFOPTS,    NULL,      NULL, "no effective seq # weighting: just use nseq",         4},
-  { "--ere",     eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set target relative entropy to <x>",      4},
+  { "--ere",     eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set CM  target relative entropy to <x>",   4},
+  { "--ehmmre",  eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set minimum HMM relative entropy to <x>",  4}, 
   { "--eX",      eslARG_REAL,  "6.0",  NULL,"x>0",       NULL, "--eent",  "--ere", "for --eent: set minimum total rel ent param to <x>",  4}, 
 /* Verbose output files */
   { "--cfile",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save count vectors to file <s>", 5 },
@@ -165,7 +166,7 @@ static int    refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
 static int    get_unaln_seqs_from_msa(const ESL_MSA *msa, ESL_SQ ***ret_sq);
 static int    convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa);
 static int    initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
-/*static void   model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq);*/
+/* static void   model_trace_info_dump(FILE *ofp, CM_t *cm, Parsetree_t *tr, char *aseq); */
 /* functions for dividing input MSA into clusters */
 static int    select_node(ESL_TREE *T, double *diff, double mindiff, int **ret_clust, int *ret_nc, int *ret_best, char *errbuf);
 static float  find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_clust, int *ret_nc, float *ret_mindiff, char *errbuf);
@@ -482,7 +483,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       /* if it's unnamed, name the MSA, we require a name (different from 
        * HMMER 3), because it will be used to name the CM. */
       if(name_msa(go, errbuf, msa, cfg->nali) != eslOK) cm_Fail(errbuf);
-      if(msa->name == NULL)                     cm_Fail("Error naming MSA");
+      if(msa->name == NULL)                             cm_Fail("Error naming MSA");
       ncm = 1;     /* default: only build 1 CM for each MSA in alignment file */
 
       if(do_cluster) /* divide input MSA into clusters, and build CM from each cluster */
@@ -979,7 +980,7 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
 {
   int status;
   double neff;
-
+  int used_hmm_etarget = FALSE;
   if(cfg->be_verbose) fprintf(cfg->ofp, "%-40s ... ", "Set effective sequence number");
   fflush(stdout);
 
@@ -991,6 +992,8 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
   else if (esl_opt_GetBoolean(go, "--eent") == TRUE)
     {
       double etarget; 
+      double hmm_etarget; 
+      double hmm_re;
       int clen = 0;
       int nd;
       for(nd = 0; nd < cm->nodes; nd++) { 
@@ -1001,13 +1004,29 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
       if (esl_opt_IsDefault(go, "--ere")) etarget = default_target_relent(cm->abc, clen, esl_opt_GetReal(go, "--eX"));
       else                                etarget = esl_opt_GetReal(go, "--ere");
 
-      status = cm_EntropyWeight(cm, pri, etarget, &neff);
+      status = cm_EntropyWeight(cm, pri, etarget, FALSE, &hmm_re, &neff);
+      /* if --ehmmre <x> enabled, ensure HMM relative entropy per match column is at least <x>, if not,
+       * recalculate neff so HMM relative entropy of <x> is achieved.
+       */
+      if(! esl_opt_IsDefault(go, "--ehmmre")) { 
+	hmm_etarget = esl_opt_GetReal(go, "--ehmmre"); 
+	printf("cm hmm re: %f target: %f\n", hmm_re, hmm_etarget);
+	if(hmm_re < hmm_etarget) { 
+	  status = cm_EntropyWeight(cm, pri, hmm_etarget, TRUE, &hmm_re, &neff); /* TRUE says: pretend model is an HMM for entropy weighting */
+	  if      (status == eslEMEM) ESL_FAIL(status, errbuf, "memory allocation failed");
+	  else if (status != eslOK)   ESL_FAIL(status, errbuf, "internal failure in entropy weighting algorithm");
+	  used_hmm_etarget = TRUE;
+	}
+      }
       if      (status == eslEMEM) ESL_FAIL(status, errbuf, "memory allocation failed");
       else if (status != eslOK)   ESL_FAIL(status, errbuf, "internal failure in entropy weighting algorithm");
-
       cm->eff_nseq = neff;
       cm_Rescale(cm, neff / (float) msa->nseq);
-      if(cfg->be_verbose) fprintf(cfg->ofp, "done. [etarget %.2f bits; neff %.2f]\n", etarget, neff);
+
+      if(cfg->be_verbose) { 
+	if(used_hmm_etarget) fprintf(cfg->ofp, "done. [etarget (hmm) %.2f bits; neff %.2f]\n", hmm_etarget, neff);
+	else                 fprintf(cfg->ofp, "done. [etarget (cm)  %.2f bits; neff %.2f]\n", etarget, neff);
+      }
     }
   return eslOK;
 }

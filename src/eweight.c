@@ -41,16 +41,15 @@ struct ew_param_s {
 };
 
 
-/* Evaluate fx = rel entropy - etarget, which we want to be = 0,
+/* Evaluate fx = cm rel entropy - etarget, which we want to be = 0,
  * for effective sequence number <x>.
  */
 static int
-eweight_target_f(double Neff, void *params, double *ret_fx)
+cm_eweight_target_f(double Neff, void *params, double *ret_fx)
 {
   struct ew_param_s *p = (struct ew_param_s *) params;
   int v, i;
-
-  /* printf("eweight_target_f() Neff: %f\n", Neff); */
+  /*printf("cm_eweight_target_f() Neff: %f\n", Neff);*/
 
   /* copy parameters from CM to p->*_orig arrays */
   for (v = 0; v < p->cm->M; v++) {
@@ -61,8 +60,35 @@ eweight_target_f(double Neff, void *params, double *ret_fx)
   }
   cm_Rescale(p->cm, Neff / (double) p->cm->nseq);
   PriorifyCM(p->cm, p->pri);
-  *ret_fx = cm_MeanMatchRelativeEntropy(p->cm) - p->etarget;
-  /* EPN, Sat Feb 16 21:41:07 2008 *ret_fx = cp9_MeanMatchRelativeEntropy(p->cm) - p->etarget) */
+  *ret_fx = cm_MeanMatchRelativeEntropy(p->cm) - p->etarget; /* only diff with hmm_eweight_target_f */
+  return eslOK;
+}
+
+
+/* Evaluate fx = hmm rel entropy - etarget, which we want to be = 0,
+ * for effective sequence number <x>. Differs from cm_eweight_target_f
+ * in that emissions from MATP_MP pair emitting states are marginalized
+ * out, effectively treating the CM like an HMM. This is done with
+ * a cm_MeanMatchRelativeEntropyHMM() instead of cm_MeanMatchRelativeEntropy().
+ *
+ */
+static int
+hmm_eweight_target_f(double Neff, void *params, double *ret_fx)
+{
+  struct ew_param_s *p = (struct ew_param_s *) params;
+  int v, i;
+  /*printf("hmm_eweight_target_f() Neff: %f\n", Neff); */
+
+  /* copy parameters from CM to p->*_orig arrays */
+  for (v = 0; v < p->cm->M; v++) {
+    for (i = 0; i < MAXCONNECT; i++)                    p->cm->t[v][i] = p->t_orig[v][i];
+    for (i = 0; i < p->cm->abc->K * p->cm->abc->K; i++) p->cm->e[v][i] = p->e_orig[v][i];
+    p->cm->begin[v] = p->begin_orig[v];
+    p->cm->end[v]   = p->end_orig[v];
+  }
+  cm_Rescale(p->cm, Neff / (double) p->cm->nseq);
+  PriorifyCM(p->cm, p->pri);
+  *ret_fx = cm_MeanMatchRelativeEntropyHMM(p->cm) - p->etarget; /* only diff with cm_eweight_target_f */
   return eslOK;
 }
 
@@ -84,19 +110,23 @@ eweight_target_f(double Neff, void *params, double *ret_fx)
  *            <ret_Neff> will range from 0 to the true number of
  *            sequences counted into the model, <hmm->nseq>.
  *
+ *            Note: if pretend_cm_is_hmm is TRUE the CM's MATP_MP pair
+ *            emissions are marginalized, treating pair emitting states
+ *            effectively as a pair of singlet emitting states. 
+ *            
  * Returns:   <eslOK> on success. 
  *
  * Throws:    <eslEMEM> on allocation failure.
  */
 int
-/* EPN, Sat Feb 16 21:43:14 2008 cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double cm_etarget, double cp9_etarget, double *ret_Neff) */
-cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double *ret_Neff)
+cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, int pretend_cm_is_hmm, double *ret_hmm_re, double *ret_Neff)
 {
   int status;
   ESL_ROOTFINDER *R = NULL;
   struct ew_param_s p;
   double Neff;
   double fx;
+  double hmm_re;
   int v, i;
 
   /* Store parameters in the structure we'll pass to the rootfinder
@@ -126,17 +156,22 @@ cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double *ret_Neff)
   p.etarget = etarget;
   
   Neff = (double) cm->nseq;
-  if ((status = eweight_target_f(Neff, &p, &fx)) != eslOK) goto ERROR;
-  if (fx > 0.)
-    {
-      if ((R = esl_rootfinder_Create(eweight_target_f, &p)) == NULL) {status = eslEMEM; goto ERROR;}
-      esl_rootfinder_SetAbsoluteTolerance(R, 1e-3); /* getting Neff to ~3 sig digits is fine */
-      if ((status = esl_root_Bisection(R, 0., (double) cm->nseq, &Neff)) != eslOK) goto ERROR;
+  if(pretend_cm_is_hmm) { if ((status = hmm_eweight_target_f(Neff, &p, &fx)) != eslOK) goto ERROR; } 
+  else                  { if ((status = cm_eweight_target_f(Neff, &p, &fx)) != eslOK) goto ERROR; } 
+  if (fx > 0.) { 
+    if(pretend_cm_is_hmm) { if ((R = esl_rootfinder_Create(hmm_eweight_target_f, &p)) == NULL) {status = eslEMEM; goto ERROR;} }
+    else                  { if ((R = esl_rootfinder_Create(cm_eweight_target_f, &p)) == NULL) {status = eslEMEM; goto ERROR;} }
+    esl_rootfinder_SetAbsoluteTolerance(R, 1e-3); /* getting Neff to ~3 sig digits is fine */
+    if ((status = esl_root_Bisection(R, 0., (double) cm->nseq, &Neff)) != eslOK) goto ERROR;
+    
+    esl_rootfinder_Destroy(R);
+  }
 
-      esl_rootfinder_Destroy(R);
-    }
+  /* we've found Neff, determine the relative entropy of the CM if we marginalize the MP pair emissions,
+   * this is the relative entropy of the CP9 HMM we'll eventually construct from it */
+  hmm_re = cm_MeanMatchRelativeEntropyHMM(p.cm);
 
-  /* we've found Neff, reset CM params to their original values */
+  /* reset CM params to their original values */
   for (v = 0; v < cm->M; v++) {
     for (i = 0; i < MAXCONNECT; i++)              cm->t[v][i] = p.t_orig[v][i];
     for (i = 0; i < cm->abc->K * cm->abc->K; i++) cm->e[v][i] = p.e_orig[v][i];
@@ -151,6 +186,7 @@ cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, double *ret_Neff)
   free(p.begin_orig);
   free(p.end_orig);
 
+  *ret_hmm_re = hmm_re;
   *ret_Neff = Neff;
   return eslOK;
 
@@ -332,13 +368,15 @@ cm_MeanMatchRelativeEntropy(const CM_t *cm)
     for(j = 0; j < cm->abc->K; j++)
       pair_null[(i * cm->abc->K) + j] = cm->null[i] * cm->null[j]; 
   
-  for (v = 0; v < cm->M; v++)
-    if(cm->stid[v] == MATP_MP)
+  for (v = 0; v < cm->M; v++) { 
+    if(cm->stid[v] == MATP_MP) {
       KL += esl_vec_FRelEntropy(cm->e[v], pair_null, (cm->abc->K * cm->abc->K));
+    }
     else if(cm->stid[v] == MATL_ML || 
-	    cm->stid[v] == MATR_MR)
+	    cm->stid[v] == MATR_MR) { 
       KL += esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K);
-  
+    }
+  }  
   free(pair_null);
 
   KL /= (double) cm->clen;
@@ -347,6 +385,157 @@ cm_MeanMatchRelativeEntropy(const CM_t *cm)
  ERROR:
   cm_Fail("Memory allocation error.");
   return 0.; /* NOTREACHED */
+}
+
+
+/* Function:  cm_MeanMatchInfoHMM()
+ * Incept:    EPN, Mon Feb 18 07:43:01 2008
+ *
+ * Purpose:   Calculate the mean information content per match state
+ *            emission distribution, in bits:
+ *            
+ *            \[
+ *              \frac{1}{M} \sum_{k=1}^{M}
+ *                \left[ 
+ *                   - \sum_x p_k(x) \log_2 p_k(x) 
+ *                   + \sum_x f(x) \log_2 f(x)
+ *                \right] 
+ *            \]
+ *            
+ *            where $p_k(x)$ is emission probability for symbol $x$
+ *            from match state $k$, and $f(x)$ is the null model's
+ *            background emission probability for $x$.
+ *
+ *            Differs from cm_MeanMatchInfo() in that base pair emissions
+ *            are marginalized, in effect treating the CM like an HMM that
+ *            can only emit 1 residue at a time.
+ *            
+ */
+double
+cm_MeanMatchInfoHMM(const CM_t *cm)
+{
+  return esl_vec_FEntropy(cm->null, cm->abc->K) - cm_MeanMatchEntropyHMM(cm);
+}
+
+/* Function: cm_MeanMatchEntropyHMM
+ * Incept:   EPN, Mon Feb 18 08:06:20 2008
+ *           Updated to match Sean's analogous p7_MeanMatchEntropy() in 
+ *           HMMER3's hmmstat.c, EPN, Sat Jan  5 14:48:27 2008.
+ * 
+ * Purpose:   Calculate the mean entropy per match state emission
+ *            distribution, in bits:
+ *            
+ *            \[
+ *              \frac{1}{clen} \sum_{v=0}^{M-1} -\sum_x p_v(x) \log_2 p_v(x)
+ *            \]
+ *       
+ *            where $p_v(x)$ is emission probability for symbol $x$
+ *            from MATL\_ML, MATR\_MR or MATP\_MP state $v$. For MATP\_MP
+ *            states symbols $x$ are base pairs.
+ *
+ *            Differs from cm_MeanMatchEntropy() in that base pair emissions
+ *            are marginalized, in effect treating the CM like an HMM that
+ *            can only emit 1 residue at a time.
+ */
+double
+cm_MeanMatchEntropyHMM(const CM_t *cm)
+{
+  int    v;
+  double H = 0.;
+  float left_e[cm->abc->K];
+  float right_e[cm->abc->K];
+  int i,j;
+
+  for (v = 0; v < cm->M; v++) { 
+      if(cm->stid[v] == MATP_MP) { 
+	/* calculate marginals */
+	/* left half */
+	esl_vec_FSet(left_e, cm->abc->K, 0.);
+	for(i = 0; i < cm->abc->K; i++) { 
+	  for(j = (i*cm->abc->K); j < ((i+1)*cm->abc->K); j++) {
+	    left_e[i] += cm->e[v][j];
+	  }
+	  H += esl_vec_FEntropy(left_e, cm->abc->K);
+	}
+	/* right half */
+	esl_vec_FSet(right_e, cm->abc->K, 0.);
+	for(i = 0; i < cm->abc->K; i++) { 
+	  for(j = i; j < cm->abc->K * cm->abc->K; j += cm->abc->K) { 
+	    right_e[i] += cm->e[v][j]; 
+	  }
+	  H += esl_vec_FEntropy(right_e, cm->abc->K);
+	}
+      }
+      else if(cm->stid[v] == MATL_ML || 
+	      cm->stid[v] == MATR_MR) { 
+	H += esl_vec_FEntropy(cm->e[v], cm->abc->K);
+      }
+  }
+  H /= (double) cm->clen;
+  return H;
+}
+
+/* Function:  cm_MeanMatchRelativeEntropyHMM()
+ * Incept:    EPN, Mon Feb 18 08:06:24 2008
+ *
+ * Purpose:   Calculate the mean relative entropy per match state emission
+ *            distribution, in bits:
+ *            
+ *            \[
+ *              \frac{1}{M} \sum_{v=0}^{M-1} \sum_x p_v(x) \log_2 \frac{p_v(x)}{f(x)}
+ *            \]
+ *       
+ *            where $p_v(x)$ is emission probability for symbol $x$
+ *            from MATL\_ML, MATR\_MR, or MATP\_MP state state $v$, 
+ *            and $f(x)$ is the null model's background emission 
+ *            probability for $x$. For MATP\_MP states, $x$ is a 
+ *            base pair.
+ *
+ *            Differs from cm_MeanMatchRelativeEntropy() in that base pair 
+ *            emissions are marginalized, in effect treating the CM like an 
+ *            HMM that can only emit 1 residue at a time.
+ */
+double
+cm_MeanMatchRelativeEntropyHMM(const CM_t *cm)
+{
+  int    v;
+  double KL = 0.;
+  float left_e[cm->abc->K];
+  float right_e[cm->abc->K];
+  int i,j;
+  
+  for (v = 0; v < cm->M; v++) { 
+      if(cm->stid[v] == MATP_MP) { 
+	/* calculate marginals */
+	/* left half */
+	esl_vec_FSet(left_e, cm->abc->K, 0.);
+	for(i = 0; i < cm->abc->K; i++) { 
+	  for(j = (i*cm->abc->K); j < ((i+1)*cm->abc->K); j++) {
+	    left_e[i] += cm->e[v][j];
+	  }
+	}
+	esl_vec_FNorm(left_e, cm->abc->K);
+	KL += esl_vec_FRelEntropy(left_e, cm->null, cm->abc->K);
+	/*printf("cm       L %4d (%4s) v: %5d KL: %10.5f (added: %10.5f)\n", cm->ndidx[v], "MATP", v, KL, esl_vec_FRelEntropy(left_e, cm->null, cm->abc->K));*/
+	/* right half */
+	esl_vec_FSet(right_e, cm->abc->K, 0.);
+	for(i = 0; i < cm->abc->K; i++) { 
+	  for(j = i; j < cm->abc->K * cm->abc->K; j += cm->abc->K) { 
+	    right_e[i] += cm->e[v][j]; 
+	  }
+	}
+	KL += esl_vec_FRelEntropy(right_e, cm->null, cm->abc->K);
+	/*printf("cm       R %4d (%4s) v: %5d KL: %10.5f (added: %10.5f)\n", cm->ndidx[v], "MATP", v, KL, esl_vec_FRelEntropy(right_e, cm->null, cm->abc->K));*/
+      }
+      else if(cm->stid[v] == MATL_ML || 
+	      cm->stid[v] == MATR_MR) { 
+	KL += esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K);
+	/*printf("cm         %4d (%4s) v: %5d KL: %10.5f (added %10.5f)\n", cm->ndidx[v], Nodetype(cm->ndtype[cm->ndidx[v]]), v, KL, esl_vec_FRelEntropy(cm->e[v], cm->null, cm->abc->K));*/
+      }
+  }
+
+  KL /= (double) cm->clen;
+  return KL;
 }
 
 /* Function:  cp9_MeanMatchInfo()
@@ -422,8 +611,10 @@ cp9_MeanMatchRelativeEntropy(const CM_t *cm)
   int    k;
   double KL = 0.;
 
-  for (k = 1; k <= cm->cp9->M; k++)
+  for (k = 1; k <= cm->cp9->M; k++) { 
     KL += esl_vec_FRelEntropy(cm->cp9->mat[k], cm->null, cm->abc->K);
+    /*printf("cp9 cm nd: %4d (%4s) k: %5d KL: %10.5f (added: %10.5f)\n", cm->cp9map->pos2nd[k], Nodetype(cm->ndtype[cm->cp9map->pos2nd[k]]), k, KL, esl_vec_FRelEntropy(cm->cp9->mat[k], cm->null, cm->abc->K));*/
+  }
   KL /= (double) cm->cp9->M;
   return KL;
 }
