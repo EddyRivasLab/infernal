@@ -289,7 +289,7 @@ main(int argc, char **argv)
 	ConfigCM(cm, TRUE); /* TRUE says: calculate W */
 
 	//fprintf(ofp, "%6d %-20.20s %8d %8.2f %4d %5d %5d %3d %6.2f %6.2f\n",
-	fprintf(ofp, "%6d %-20.20s %8d %8.2f %4d %5d %5d %3d %6.2f %10.5f %10.5f\n",
+	fprintf(ofp, "%6d %-20.20s %8d %8.2f %4d %5d %5d %3d %6.2f %10.4f %10.4f\n",
 		ncm,
 		cm->name,
 		cm->nseq,
