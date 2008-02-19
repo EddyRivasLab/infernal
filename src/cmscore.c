@@ -1653,12 +1653,15 @@ get_date(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, char **re
 /* determine_nseq_per_worker()
  * Given a CM, return the number of sequences we think we should send
  * to each worker (we don't know the number of sequences in the file).
- * Currently 5 sequences per proc, could get more fancy.
  */
 static int
 determine_nseq_per_worker(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int *ret_nseq_worker)
 {
-  *ret_nseq_worker = 5;
+  if     (cm->clen <= 200) *ret_nseq_worker = 5;
+  else if(cm->clen <= 400) *ret_nseq_worker = 4;
+  else if(cm->clen <= 600) *ret_nseq_worker = 3;
+  else if(cm->clen <= 800) *ret_nseq_worker = 2;
+  else                     *ret_nseq_worker = 1;
   return eslOK;
 }
 

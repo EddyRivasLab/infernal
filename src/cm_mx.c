@@ -1218,7 +1218,7 @@ UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx,
   int ip, jp;
 
   if(alpha_row == NULL && (!using_hmm_bands)) cm_Fail("UpdateGammaHitMxCM(), alpha_row is NULL, but using_hmm_bands is FALSE.\n");
-  dmin = (using_hmm_bands) ? 1     : dn; /* d can be 0, but we never report hits of length 0, downstream functions assume d != 0 */
+  dmin = (using_hmm_bands) ? 0     : dn; 
   dmax = (using_hmm_bands) ? dx-dn : dx;
 
   /* mode 1: non-greedy  */
@@ -1242,7 +1242,7 @@ UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx,
     }
   }
   /* mode 2: greedy */
-  if(gamma->iamgreedy) { 
+  if(gamma->iamgreedy && dmin <= dmax) { /* if dmin >= dmax, no valid d for this j exists, don't report any hits */
     /* Resolving overlaps greedily (RSEARCH style),  
      * At least one hit is sent back for each j here.
      * However, some hits can already be removed for the greedy overlap

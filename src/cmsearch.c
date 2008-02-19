@@ -71,7 +71,7 @@ static ESL_OPTIONS options[] = {
   { "--nc",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    CUTOPTS2, "use CM Rfam NC noise cutoff as cutoff bit score", 3 },
   /* banded options (for final round of searching) */
   { "--no-qdb",  eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,  HMMONLYOPTS, "do not use QDBs in final round of searching (after >= 0 filters)", 4 },
-  { "--beta",    eslARG_REAL,  "1e-13",NULL, "0<x<1",   NULL,      NULL,  HMMONLYOPTS, "set tail loss prob for QDB calculation to <x>", 4 },
+  { "--beta",    eslARG_REAL,  "1e-15",NULL, "0<x<1",   NULL,      NULL,  HMMONLYOPTS, "set tail loss prob for QDB calculation to <x>", 4 },
   { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  HMMONLYOPTS, "calculate and use HMM bands in final round of CM search", 4 },
   { "--tau",     eslARG_REAL,   "1e-7",NULL, "0<x<1",   NULL,"--hbanded", HMMONLYOPTS, "set tail loss prob for --hbanded to <x>", 4 },
   { "--aln2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL, "--hbanded", HMMONLYOPTS, "w/--hbanded derive HMM bands w/o scanning Forward/Backward", 4 },
@@ -1356,7 +1356,7 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 	fqdb_ctype = E_CUTOFF;
 	fqdb_S     = esl_opt_GetReal(go, "--fil-S-qdb");
 	fqdb_S     = ESL_MAX(fqdb_S, final_S * 10.); /* final_S must be < 0.09 (enforced above), or else do_qdb_filter was set to FALSE */
-	if(do_hmm_filter && fqdb_S > fhmm_S) { 
+	/* TEMP! */if(FALSE && (do_hmm_filter && fqdb_S > fhmm_S)) { 
 	  /* predicted survival fraction from QDB filter is higher than predicted survival fraction from the HMM filter,
 	   * this means HMM should be a better filter, turn OFF QDB filter */
 	  do_qdb_filter = FALSE; 
