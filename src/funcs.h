@@ -85,7 +85,7 @@ extern int        cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avg_hit_len
 extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, 
 			      search_results_t **results, float size_limit, int *ret_flen, float *ret_sc);
 extern int DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
-			      int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r, float size_limit);
+			      int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r, float size_limit, FILE *ofp);
 
 /* from cm_dpalign.c */
 extern int fast_cyk_align_hb (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit,
@@ -411,6 +411,7 @@ extern CMEmitMap_t   *CreateEmitMap(CM_t *cm);
 extern void           DumpEmitMap(FILE *fp, CMEmitMap_t *map, CM_t *cm);
 extern void           FreeEmitMap(CMEmitMap_t *map);
 extern void           FormatTimeString(char *buf, double sec, int do_frac);
+extern int            GetDate(char *errbuf, char **ret_date);
 
 /* from errors.c */
 extern void cm_Die (char *format, ...);

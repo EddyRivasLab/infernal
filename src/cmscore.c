@@ -149,8 +149,7 @@ static int initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cf
 static int initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int i_am_mpi_master, seqs_to_aln_t **ret_seqs_to_aln);
 static int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, float *ret_sc);
-static int get_command(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, char **ret_command);
-static int get_date(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, char **ret_date);
+extern int get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
 static int print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static void print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq);
 static void print_stage_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
@@ -1078,7 +1077,7 @@ process_align_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *err
   if((status = DispatchAlignments(cm, errbuf, seqs_to_aln,
 				  NULL, NULL, 0,  /* we're not aligning search hits */
 				  FALSE, 0, TRUE, NULL, 
-				  esl_opt_GetReal(go, "--mxsize"))) != eslOK) goto ERROR;
+				  esl_opt_GetReal(go, "--mxsize"), cfg->ofp)) != eslOK) goto ERROR;
 
   return eslOK;
   
@@ -1580,8 +1579,8 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
   char *command;
   char *date;
 
-  if((status = get_command(go, cfg, errbuf, &command)) != eslOK) return status;
-  if((status = get_date   (go, cfg, errbuf, &date))    != eslOK) return status;
+  if((status = get_command(go, errbuf, &command)) != eslOK) return status;
+  if((status = GetDate    (errbuf, &date))    != eslOK) return status;
 
   fprintf(cfg->ofp, "%-10s %s\n",  "# command:", command);
   fprintf(cfg->ofp, "%-10s %s\n",  "# date:",    date);
@@ -1597,15 +1596,17 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
   return eslOK;
 }
 
+
 /* Function: get_command
  * Date:     EPN, Fri Jan 25 13:56:10 2008
  *
- * Purpose:  Return the command used to call cmscore in <ret_command>.
+ * Purpose:  Return the command used to call cmscore
+ *           in <ret_command>.
  *
  * Returns:  eslOK on success; eslEMEM on allocation failure.
  */
 int 
-get_command(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, char **ret_command)
+get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command)
 {
   int status;
   int i;
@@ -1622,31 +1623,6 @@ get_command(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, char *
  ERROR:
   ESL_FAIL(status, errbuf, "get_command(): memory allocation error.");
   return status;
-}
-
-/* Function: get_date
- * Date:     EPN, Fri Jan 25 13:59:22 2008
- *
- * Purpose:  Return the a string that gives the date cmscore was called.
- *
- * Returns:  eslOK on success; eslEMEM on allocation failure.
- */
-int 
-get_date(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, char **ret_date)
-{
-  int status;
-  time_t date = time(NULL);
-  char *sdate = NULL;
-
-  if((status = esl_strdup(ctime(&date), -1, &sdate)) != eslOK) goto ERROR;
-  esl_strchop(sdate, -1); /* doesn't return anything but eslOK */
-
-  *ret_date = sdate;
-  return eslOK;
-
- ERROR:
-  ESL_FAIL(status, errbuf, "get_date() error status: %d, probably out of memory.", status);
-  return status; 
 }
 
 #ifdef HAVE_MPI

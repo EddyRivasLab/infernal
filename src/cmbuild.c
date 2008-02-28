@@ -641,7 +641,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       /* initialize/configure CM, we may be doing HMM banded alignment for ex. */
       initialize_cm(go, cfg, errbuf, cm);
       if((status = DispatchAlignments(cm, errbuf, seqs_to_aln, NULL, NULL, 0, 0, 0, (!cfg->be_verbose), cfg->r, 
-				      esl_opt_GetReal(go, "--mxsize"))) != eslOK) cm_Fail(errbuf);
+				      esl_opt_GetReal(go, "--mxsize"), cfg->ofp)) != eslOK) cm_Fail(errbuf);
       
       /* sum parse scores and check for convergence */
       if(cfg->be_verbose) fprintf(cfg->ofp, "iteration: %4d\n", iter);

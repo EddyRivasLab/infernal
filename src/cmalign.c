@@ -109,7 +109,6 @@ struct cfg_s {
   int           fmt;		/* format code for seqfile */
   ESL_ALPHABET *abc;		/* digital alphabet for input */
   int           ncm;            /* number cm we're on */
-  int           be_verbose;	
 
   int           do_mpi;		/* TRUE if we're doing MPI parallelization */
   int           nproc;		/* how many MPI processes, total */
@@ -150,6 +149,15 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
 static int compare_cm_guide_trees(CM_t *cm1, CM_t *cm2);
 static int make_aligned_string(char *aseq, char *gapstring, int alen, char *ss, char **ret_s);
 static int add_withali_pknots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_MSA *newmsa);
+
+static int print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
+static void print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
+static int get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
+/*
+  static void print_stage_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
+  static int print_align_options(const struct cfg_s *cfg, CM_t *cm);
+*/
+
 #ifdef HAVE_MPI
 static int determine_nseq_per_worker(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int *ret_nseq_worker);
 static int add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs, int offset);
@@ -220,8 +228,6 @@ main(int argc, char **argv)
     if(cfg.fmt == eslSQFILE_UNKNOWN) cm_Fail("Can't recognize sequence file format: %s. valid options are: fasta, embl, genbank, ddbj, uniprot, stockholm, or pfam\n", esl_opt_GetString(go, "--informat"));
   }
   cfg.abc        = NULL;	           /* created in init_master_cfg() in masters, or in mpi_worker() in workers */
-  if (esl_opt_GetBoolean(go, "-q")) cfg.be_verbose = FALSE;        
-  else                              cfg.be_verbose = TRUE;        
   if      (esl_opt_GetBoolean(go, "--rna")) cfg.abc_out = esl_alphabet_Create(eslRNA);
   else if (esl_opt_GetBoolean(go, "--dna")) cfg.abc_out = esl_alphabet_Create(eslDNA);
   else    cm_Fail("Can't determine output alphabet");
@@ -241,8 +247,6 @@ main(int argc, char **argv)
   cfg.my_rank    = 0;		           /* this gets reset below, if we init MPI */
   cfg.do_stall   = esl_opt_GetBoolean(go, "--stall");
 
-  if(cfg.be_verbose) cm_banner(stdout, argv[0], banner);
-
 
   /* This is our stall point, if we need to wait until we get a
    * debugger attached to this process for debugging (especially
@@ -260,7 +264,6 @@ main(int argc, char **argv)
   if (esl_opt_GetBoolean(go, "--mpi")) 
     {
       cfg.do_mpi     = TRUE;
-      cfg.be_verbose = FALSE;
 
       MPI_Init(&argc, &argv);
       MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
@@ -269,7 +272,10 @@ main(int argc, char **argv)
       if(cfg.nproc == 1) cm_Fail("ERROR, MPI mode, but only 1 processor running...");
 
       if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
-      else 		    mpi_master(go, &cfg);
+      else { 
+	if(! esl_opt_GetBoolean(go, "-q")) cm_banner(stdout, argv[0], banner);
+	mpi_master(go, &cfg);
+      }
 
       esl_stopwatch_Stop(w);
       esl_stopwatch_MPIReduce(w, 0, MPI_COMM_WORLD);
@@ -278,19 +284,29 @@ main(int argc, char **argv)
   else
 #endif /*HAVE_MPI*/
     {
+      if(! esl_opt_GetBoolean(go, "-q")) cm_banner(stdout, argv[0], banner);
       serial_master(go, &cfg);
       esl_stopwatch_Stop(w);
     }
-  if (cfg.my_rank == 0 && cfg.be_verbose) esl_stopwatch_Display(stdout, w, "# CPU time: ");
+  if (cfg.my_rank == 0 && (! esl_opt_GetBoolean(go, "-q"))) esl_stopwatch_Display(stdout, w, "# CPU time: ");
 
   /* Clean up the shared cfg. 
    */
   if (cfg.my_rank == 0) {
-    if (! esl_opt_IsDefault(go, "-o")) { fclose(cfg.ofp); }
+    if (! esl_opt_IsDefault(go, "-o")) { 
+      printf("# Alignment saved in file %s.\n", esl_opt_GetString(go, "-o"));
+      fclose(cfg.ofp); 
+    }
+    if (cfg.tracefp   != NULL) { 
+      printf("# Parsetrees saved in file %s.\n", esl_opt_GetString(go, "--tfile"));
+      fclose(cfg.tracefp);
+    }
+    if (cfg.regressfp   != NULL) {
+      printf("# Regression data (alignment) saved in file %s.\n", esl_opt_GetString(go, "--regress"));
+      fclose(cfg.regressfp);
+    }
     if (cfg.cmfp      != NULL) CMFileClose(cfg.cmfp);
     if (cfg.sqfp      != NULL) esl_sqfile_Close(cfg.sqfp);
-    if (cfg.tracefp   != NULL) fclose(cfg.tracefp);
-    if (cfg.regressfp != NULL) fclose(cfg.regressfp);
     if (cfg.withalifp != NULL) esl_msafile_Close(cfg.withalifp);
     if (cfg.withmsa   != NULL) esl_msa_Destroy(cfg.withmsa);
     if (cfg.withali_mtr != NULL) FreeParsetree(cfg.withali_mtr);
@@ -406,6 +422,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   /*if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);*/
+  if ((status  = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
   
   while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
     {
@@ -414,6 +431,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* initialize the flags/options/params and configuration of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK)    cm_Fail(errbuf);
+      print_cm_info (go, cfg, errbuf, cm);
+
       /* read in all sequences, this is wasteful, but Parsetrees2Alignment() requires all seqs in memory */
       seqs_to_aln = CreateSeqsToAln(100, FALSE);
       if((status = ReadSeqsToAln(cfg->abc, cfg->sqfp, 0, TRUE, seqs_to_aln, FALSE)) != eslEOF) cm_Fail("Error reading sqfile: %s\n", cfg->sqfile);
@@ -482,6 +501,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   /*if (xstatus == eslOK) { if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) xstatus = status; }*/
   if (xstatus == eslOK) { bn = 4096; if ((buf = malloc(sizeof(char) * bn)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
   if (xstatus == eslOK) { if ((seqidx  = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((status = print_run_info(go, cfg, errbuf)) != eslOK) xstatus = status; }
 
   MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
   if (xstatus != eslOK) cm_Fail(errbuf);
@@ -519,6 +539,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       
       /* initialize the flags/options/params of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
+      print_cm_info (go, cfg, errbuf, cm);
       determine_nseq_per_worker(go, cfg, cm, &nseq_per_worker); /* this func dies internally if there's some error */
       ESL_DPRINTF1(("nseq_per_worker: %d\n", nseq_per_worker));
 
@@ -755,7 +776,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  if((status = include_withali(go, cfg, cm, &(seqs_to_aln->sq), &(seqs_to_aln->tr), &(seqs_to_aln->nseq), errbuf)) != eslOK)
 	    ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have SS_cons annotation compatible with the CM\n", esl_opt_GetString(go, "--withali"));
 	}
-      
+
       if(esl_opt_GetBoolean(go, "--hmmviterbi"))
 	{
 	  ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
@@ -791,6 +812,20 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	      free(apostcode2);                                                         
 	    }                                                                          
 	}                                                                              
+
+      /* if nec, output the scores */
+      if(esl_opt_GetBoolean(go, "--mpi") && (!esl_opt_GetBoolean(go, "-q"))) { 
+	fprintf(stdout, "#\n");
+	fprintf(stdout, "# %8s  %-40s  %6s  %13s\n", "seq idx",  "seq name",                                 "length", (cm->align_opts & CM_ALIGN_OPTACC) ? "avg post prob" : "bit score");
+	fprintf(stdout, "# %8s  %40s  %6s  %13s\n",  "--------", "----------------------------------------", "------", "-------------");
+	for (i = 0; i < seqs_to_aln->nseq; i++) {
+	  fprintf(stdout, "  %8d  %-40.40s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+	  if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %13.3f\n", seqs_to_aln->sc[i]);
+	  else                                 fprintf(stdout, "  %13.2f\n", seqs_to_aln->sc[i]);
+	}
+      }      
+
+      if(! esl_opt_GetBoolean(go, "-q")) printf("\n");
       /* if nec, replace msa->ss_cons with ss_cons from withmsa alignment */
       if(esl_opt_GetBoolean(go, "--withpknots")) {
 	if((status = add_withali_pknots(go, cfg, errbuf, cm, msa)) != eslOK) ESL_FAIL(status, errbuf, "error included consensus structure from --withali alignment."); 
@@ -799,7 +834,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       if      (status == eslEMEM) ESL_FAIL(status, errbuf, "Memory error when outputting alignment\n");
       else if (status != eslOK)   ESL_FAIL(status, errbuf, "Writing alignment file failed with error %d\n", status);
       
-      /* Detailed traces for debugging training set. */
+      /* if nec, output the traces */
       if(cfg->tracefp != NULL)
 	{
 	  if(esl_opt_GetBoolean(go,"--hmmviterbi")) { printf("%-40s ... ", "Saving CP9 HMM traces"); fflush(stdout); }
@@ -848,7 +883,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 		 seqs_to_aln_t *seqs_to_aln)
 {
   int status;
-  int be_quiet = (! cfg->be_verbose);
+  int be_quiet = esl_opt_GetBoolean(go, "-q");
 
 #ifdef HAVE_MPI
   if(esl_opt_GetBoolean(go, "--mpi")) be_quiet = TRUE;
@@ -858,7 +893,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 				  NULL, NULL, 0,  /* we're not aligning search hits */
 				  esl_opt_GetInteger(go, "--banddump"),
 				  esl_opt_GetInteger(go, "--dlev"), be_quiet, NULL,
-				  esl_opt_GetReal(go, "--mxsize"))) != eslOK) goto ERROR;
+				  esl_opt_GetReal(go, "--mxsize"), stdout)) != eslOK) goto ERROR;
   return eslOK;
   
  ERROR:
@@ -1404,6 +1439,92 @@ static int add_withali_pknots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *er
   return status;
 }
 
+/* Function: print_run_info
+ * Date:     EPN, Thu Feb 28 14:26:42 2008
+ *
+ * Purpose:  Print information on this run of cmalign.
+ *           Command used to run it, and execution date.
+ *
+ * Returns:  eslOK on success
+ */
+static int
+print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
+{
+  int status;
+  char *command;
+  char *date;
+
+  if(esl_opt_GetBoolean(go, "-q")) return eslOK;
+
+  if((status = GetCommand(go, errbuf, &command)) != eslOK) return status;
+  if((status = GetDate   (errbuf, &date))        != eslOK) return status;
+
+  fprintf(stdout, "%-10s %s\n",  "# command:", command);
+  fprintf(stdout, "%-10s %s\n",  "# date:",    date);
+  if(cfg->nproc > 1) fprintf(stdout, "# %-8s %d\n", "nproc:", cfg->nproc);
+
+  fprintf(stdout, "#\n");
+  free(command);
+  free(date);
+  return eslOK;
+}
+
+/* Function: print_cm_info
+ * Date:     EPN, Thu Feb 28 14:44:17 2008
+ *
+ * Purpose:  Print per-CM info to output file (stdout unless -o). 
+ */
+static void
+print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
+{
+
+  if(esl_opt_GetBoolean(go, "-q")) return;
+
+  int do_hbanded = (cm->align_opts & CM_ALIGN_HBANDED) ? TRUE : FALSE;
+  int do_qdb     = (cm->align_opts & CM_ALIGN_QDB)     ? TRUE : FALSE;
+
+  fprintf(stdout, "# %-25s  %9s  %6s  %3s  %5s  %6s\n", "cm name",                   "algorithm", "config", "sub", "bands", (do_hbanded) ? "tau" : ((do_qdb) ? "beta" : "")); 
+  fprintf(stdout, "# %-25s  %9s  %6s  %3s  %5s  %6s\n", "-------------------------", "---------", "------", "---", "-----", (do_hbanded || do_qdb) ? "------" : ""); 
+  fprintf(stdout, "# %-25.25s  %9s  %6s  %3s", 
+	  cm->name,
+	  (esl_opt_GetBoolean(go, "--cyk")) ? "cyk" : (esl_opt_GetBoolean(go, "--hmmviterbi") ? "hmm vit" : "opt acc"), 
+	  (esl_opt_GetBoolean(go, "-l")) ? "local" : "global",
+	  (esl_opt_GetBoolean(go, "--sub")) ? "yes" : "no");
+  /* bands and beta/tau */
+  if     (do_hbanded)    fprintf(stdout, "  %5s  %6.0e\n", "hmm", cm->tau);
+  else if(do_qdb)        fprintf(stdout, "  %5s  %6.0e\n", "qdb", cm->beta_qdb);
+  else                   fprintf(stdout, "  %5s  %6s\n", "none", "");
+
+  return;
+}
+
+/* Function: get_command
+ * Date:     EPN, Fri Jan 25 13:56:10 2008
+ *
+ * Purpose:  Return the command used to call cmscore
+ *           in <ret_command>.
+ *
+ * Returns:  eslOK on success; eslEMEM on allocation failure.
+ */
+int 
+get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command)
+{
+  int status;
+  int i;
+  char *command = NULL;
+
+  for (i = 0; i < go->argc; i++) { /* copy all command line options and args */
+    if((status = esl_strcat(&(command),  -1, go->argv[i], -1)) != eslOK) goto ERROR;
+    if(i < (go->argc-1)) if((status = esl_strcat(&(command), -1, " ", 1)) != eslOK) goto ERROR;
+  }
+  *ret_command = command;
+
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "get_command(): memory allocation error.");
+  return status;
+}
 
 #ifdef HAVE_MPI
 /* determine_nseq_per_worker()

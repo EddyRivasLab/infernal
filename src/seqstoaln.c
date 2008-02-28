@@ -388,7 +388,7 @@ seqs_to_aln_t *CMEmitSeqsToAln(ESL_RANDOMNESS *r, CM_t *cm, int ncm, int nseq, i
       if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+1);
       else                 sprintf(name, "%d-%d", ncm, i+1);
       if((status = EmitParsetree(cm, errbuf, r, name, TRUE, NULL, &(seqs_to_aln->sq[i]), &L)) != eslOK) cm_Fail(errbuf);
-      while(L == 0) { 
+      while(L == 0 || L > cm->W) { /* if L > cm->W we skip the seq and sample again, this is a hack, but avoids downstream problems with requiring huge HMM banded matrices b/c we went EL emission crazy in one seq */
 	esl_sq_Destroy(seqs_to_aln->sq[i]); 
 	if((status = EmitParsetree(cm, errbuf, r, name, TRUE, NULL, &(seqs_to_aln->sq[i]), &L)) != eslOK) cm_Fail(errbuf); 
       }

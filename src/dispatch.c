@@ -80,9 +80,6 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
   if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): CMH_BITS flag down.\n");
   if(sround > si->nrounds)             ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): current round %d is greater than cm->si->nrounds: %d\n", sround, si->nrounds);
   if(results[sround] == NULL)          ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): results for current round %d are NULL\n", sround);
-  if(j0 < i0) {
-    printf("whoa\n");
-  }
   if(j0 < i0)                          ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): i0: %d < j0: %d (i0 should always be less than j0)\n", i0, j0);
 
   ESL_DPRINTF1(("In DispatchSearch(), round: %d\n", sround));
@@ -238,7 +235,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       /* copy cur_results to final_results */
       if((status = DispatchAlignments(cm, errbuf, NULL, 
 				      dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
-				      0, 0, 0, NULL, size_limit)) != eslOK) return status;
+				      0, 0, 0, NULL, size_limit, stdout)) != eslOK) return status;
     }
     FreeResults(cur_results);
   }
@@ -278,6 +275,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
  *           silent_mode    - TRUE to not print anything, FALSE to print scores 
  *           r              - source of randomness (NULL unless CM_ALIGN_SAMPLE)
  *           size_limit     - max number of Mb for a DP matrix, if requestd matrix is bigger return eslERANGE 
+ *           ofp            - output file to print scores to as we're aligning
  * 
  * Returns:  eslOK on success;
  *           eslERANGE if required memory for a DP matrix is too big;
@@ -288,7 +286,8 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
  */
 int
 DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
-		   int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r, float size_limit)
+		   int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r, float size_limit,
+		   FILE *ofp)
 {
   int status;
   ESL_STOPWATCH *watch;         /* for timings */
@@ -376,6 +375,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   if((cm->align_opts & CM_ALIGN_POST)      && (cm->align_opts & CM_ALIGN_HMMVITERBI)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), CM_ALIGN_POST and CM_ALIGN_HMMVITERBI options are incompatible.\n");
   if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_HMMVITERBI)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), CM_ALIGN_SCOREONLY and CM_ALIGN_HMMVITERBI options are incompatible.\n");
   if((cm->align_opts & CM_ALIGN_SCOREONLY) && (cm->align_opts & CM_ALIGN_POST))       ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), CM_ALIGN_SCOREONLY and CM_ALIGN_POST options are incompatible.\n");
+  if(sq_mode && !silent_mode && ofp == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), sq_mode, not silent mode, but ofp is NULL\n");
 
   /* determine mode */
   if     (seqs_to_aln != NULL && (dsq == NULL && search_results == NULL))  sq_mode = TRUE;
@@ -504,6 +504,13 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   }
   orig_cm = cm;
   
+  /* if not in silent mode, print the header for the sequence info */
+  if(sq_mode && !silent_mode) { 
+    fprintf(ofp, "#\n");
+    fprintf(ofp, "# %8s  %-40s  %6s  %13s\n", "seq idx",  "seq name",                                 "length", (cm->align_opts & CM_ALIGN_OPTACC) ? "avg post prob" : "bit score");
+    fprintf(ofp, "# %8s  %40s  %6s  %13s\n",  "--------", "----------------------------------------", "------", "-------------");
+  }
+
   /*****************************************************************
    *  Collect parse trees for each sequence
    *****************************************************************/
@@ -525,7 +532,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
     /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
     if(sq_mode && do_hmmonly) {
-      if(sq_mode && !silent_mode) printf("Aligning (to a CP9 HMM w/viterbi) %-20s", seqs_to_aln->sq[i]->name);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-40.40s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
       if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, L, 0., NULL,
 			       FALSE,  /* we are not scanning */
 			       TRUE,   /* we are aligning */
@@ -533,16 +540,16 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 			       NULL, NULL, /* don't return best sc at each posn, or best scoring posn */
 			       &(cp9_tr[i]), /* return the trace */
 			       &sc)) != eslOK) return status;
-      if(sq_mode && !silent_mode) printf(" score: %10.2f bits\n", sc);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %13.2f\n", sc);
       parsesc[i] = sc;
       continue;
     }
     /* Special case, if do_scoreonly, align seq with full CYK inside, just to 
      * get the score. For testing, probably in cmscore. */
     if(sq_mode && do_scoreonly) {
-      if(sq_mode && !silent_mode) printf("Aligning (w/full CYK score only) %-30s", seqs_to_aln->sq[i]->name);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-40.40s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
       sc = CYKInsideScore(cm, cur_dsq, L, 0, 1, L, NULL, NULL); /* don't do QDB mode */
-      if(sq_mode && !silent_mode) printf("    score: %10.2f bits\n", sc);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %13.2f\n", sc);
       parsesc[i] = sc;
       continue;
     }
@@ -616,15 +623,14 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       if((L < cm->dmin[0]) || (L > cm->dmax[0])) { 
 	/* the seq we're aligning is outside the root band, so we expand.*/
 	ExpandBands(cm, L, cm->dmin, cm->dmax);
-	if(sq_mode && debug_level > 0) printf("Expanded bands for seq : %s\n", seqs_to_aln->sq[i]->name);
-	if(bdump_level > 2) { printf("printing expanded bands :\n"); debug_print_bands(stdout, cm, cm->dmin, cm->dmax); }
+	if(sq_mode && debug_level > 0) fprintf(ofp, "Expanded bands for seq : %s\n", seqs_to_aln->sq[i]->name);
+	if(bdump_level > 2) { fprintf(ofp, "printing expanded bands :\n"); debug_print_bands(ofp, cm, cm->dmin, cm->dmax); }
 	expand_flag = TRUE;
       }
     }
 
     if(sq_mode && !silent_mode) { 
-      if(do_sub) printf("Aligning (to a sub CM) %-20s", seqs_to_aln->sq[i]->name);
-      else       printf("Aligning %-30s", seqs_to_aln->sq[i]->name);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-40.40s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
     }
 
     /* beginning of large if() else if() else if() ... statement */
@@ -671,7 +677,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 	    else if (status == eslERANGE) { /* we can still do CYK D&C alignment with QDBs derived from the HMM bands */
 	      hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
 	      ESL_DPRINTF1(("Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i));
-	      printf("Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i); 
+	      fprintf(ofp, "Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i); 
 	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
 	    }
 	    else return status; /* get here (!do_optacc) && FastAlignHB() returned status other than eslOK and eslERANGE */
@@ -680,7 +686,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 	  if(dsq_mode && (! (cm->search_opts & CM_SEARCH_INSIDE))) {
 	    if((!do_optacc) && ((fabs(sc - search_results->data[i].score)) > 0.01)) {
 	      ESL_DPRINTF1(("Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", i, sc, search_results->data[i].score));
-	      printf("Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", i, sc, search_results->data[i].score);
+	      fprintf(ofp, "Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", i, sc, search_results->data[i].score);
 	      FreeParsetree(*cur_tr);
 	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL);
 	    }
@@ -693,11 +699,11 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 	  if(do_post)   ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_POST.\n");
 	  if(do_optacc) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_OPTACC.\n");
 	  tmpsc = sc;
-	  if(!silent_mode) printf("\n%s HMM banded parse had a negative score, realigning with non-banded CYK.\n", seqs_to_aln->sq[i]->name);
+	  if(!silent_mode) fprintf(ofp, "\n%s HMM banded parse had a negative score, realigning with non-banded CYK.\n", seqs_to_aln->sq[i]->name);
 	  FreeParsetree(*cur_tr);
 	  sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
-	  if(!silent_mode && fabs(sc-tmpsc) < 0.01) printf("HMM banded parse was the optimal parse.\n\n");
-	  else if (!silent_mode) printf("HMM banded parse was non-optimal, it was %.2f bits below the optimal.\n\n", (fabs(sc-tmpsc)));
+	  if(!silent_mode && fabs(sc-tmpsc) < 0.01) fprintf(ofp, "HMM banded parse was the optimal parse.\n\n");
+	  else if (!silent_mode) fprintf(ofp, "HMM banded parse was non-optimal, it was %.2f bits below the optimal.\n\n", (fabs(sc-tmpsc)));
 	}
       }
       else { 
@@ -717,9 +723,9 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     if (sc > maxsc) maxsc = sc;
     if (sc < minsc) minsc = sc;
       
-    if(!silent_mode) { 
-      if(!do_optacc) printf("    score: %10.2f bits\n", sc);
-      else           printf("    score: %14.6f average posterior probability\n", sc);
+    if(sq_mode && !silent_mode) { 
+      if(do_optacc)  fprintf(ofp, "  %13.3f\n", sc);
+      else           fprintf(ofp, "  %13.2f\n", sc);
     }
     parsesc[i] = sc;
 
@@ -733,9 +739,9 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
     /* If requested, or if debug level high enough, print out the parse tree */
     if((cm->align_opts & CM_ALIGN_PRINTTREES) || (debug_level > 2)) { 
-      fprintf(stdout, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], cur_dsq, FALSE));;
+      fprintf(ofp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], cur_dsq, FALSE));;
       ParsetreeDump(stdout, tr[i], cm, cur_dsq, NULL, NULL);
-      fprintf(stdout, "//\n");
+      fprintf(ofp, "//\n");
     }
     /* Dump the trace with info on i, j and d bands
      * if bdump_level is high enough */
@@ -751,7 +757,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 	  ESL_FAIL(eslFAIL, errbuf, "DispatchAlignments(), Unable to convert sub CM parsetree to original CM parsetree. This shouldn't happen.");
 	}
 	if(debug_level > 0) { 
-	  printf("\n\nConverted original trace:\n");
+	  fprintf(ofp, "\n\nConverted original trace:\n");
 	  ParsetreeDump(stdout, orig_tr, orig_cm, cur_dsq, NULL, NULL);
 	}
 	/* Replace the sub_cm trace with the converted orig_cm trace. */
@@ -769,8 +775,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     if(beta  != NULL)  { free_vjd_matrix(beta,  cm->M, 1, L); beta = NULL; }
     if(do_timings) { 
       esl_stopwatch_Stop(watch); 
-      esl_stopwatch_Display(stdout, watch, "seq alignment CPU time: ");
-      printf("\n");
+      esl_stopwatch_Display(ofp, watch, "seq alignment CPU time: ");
+      fprintf(ofp, "\n");
     }
   }
   /* done aligning all nalign seqs. */

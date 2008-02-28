@@ -684,7 +684,6 @@ UpdateExpsForDBSize(CM_t *cm, char *errbuf, long dbsize)
   /* contract checks */
   if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateExpsForDBSize(), cm does not have Exp stats.");
 
-  /* Determine K from mu, lambda, L, then set CM mu for N */
   for(i = 0; i < EXP_NMODES; i++) { 
     for(p = 0; p < cm->stats->np; p++) {
       cm->stats->expAA[i][p]->cur_eff_dbsize = (long) ((((double) dbsize / (double) cm->stats->expAA[i][p]->dbsize) * 

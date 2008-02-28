@@ -18,8 +18,10 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
+#include <time.h>
 
 #include "easel.h"
+#include "esl_getopts.h"
 #include "esl_stack.h"
 #include "esl_vectorops.h"
 
@@ -1225,4 +1227,58 @@ FormatTimeString(char *buf, double sec, int do_frac)
   } else {
     sprintf(buf, "%02d:%02d:%02d", h,m,s);
   }
+}
+
+
+/* Function: GetCommand
+ * Date:     EPN, Fri Jan 25 13:56:10 2008
+ *
+ * Purpose:  Return the command used to call an infernal executable
+ *           in <ret_command>.
+ *
+ * Returns:  eslOK on success; eslEMEM on allocation failure.
+ */
+int 
+GetCommand(const ESL_GETOPTS *go, char *errbuf, char **ret_command)
+{
+  int status;
+  int i;
+  char *command = NULL;
+
+  for (i = 0; i < go->argc; i++) { /* copy all command line options and args */
+    if((status = esl_strcat(&(command),  -1, go->argv[i], -1)) != eslOK) goto ERROR;
+    if(i < (go->argc-1)) if((status = esl_strcat(&(command), -1, " ", 1)) != eslOK) goto ERROR;
+  }
+  *ret_command = command;
+
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "GetCommand(): memory allocation error.");
+  return status;
+}
+
+/* Function: GetDate
+ * Date:     EPN, Fri Jan 25 13:59:22 2008
+ *
+ * Purpose:  Return a string that gives the current date.
+ *
+ * Returns:  eslOK on success; eslEMEM on allocation failure.
+ */
+int 
+GetDate(char *errbuf, char **ret_date)
+{
+  int    status;
+  time_t date = time(NULL);
+  char  *sdate = NULL;
+
+  if((status = esl_strdup(ctime(&date), -1, &sdate)) != eslOK) goto ERROR;
+  esl_strchop(sdate, -1); /* doesn't return anything but eslOK */
+
+  *ret_date = sdate;
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "get_date() error status: %d, probably out of memory.", status);
+  return status; 
 }

@@ -223,16 +223,18 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
     if((status = cp9_HMM2ijBands_OLD(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
   }
   else {
-    if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) { 
-      ESL_SQ *tmp;
-      tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq+i0-1, (j0-i0+1), NULL, NULL, NULL);
-      esl_sq_Textize(tmp);
-      printf("HEY! cm: %s\n", cm->name);
-      printf(">irrelevant\n%s\n", tmp->seq);
-      esl_sq_Destroy(tmp);
-      return status; 
+    if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;
+    /* For debugging, uncomment this block:
+       if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) { 
+       ESL_SQ *tmp;
+       tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq+i0-1, (j0-i0+1), NULL, NULL, NULL);
+       esl_sq_Textize(tmp);
+       printf("HEY! cm: %s\n", cm->name);
+       printf(">irrelevant\n%s\n", tmp->seq);
+       esl_sq_Destroy(tmp);
+       return status; 
     }
-    /* ORIG LINE if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) return status;*/
+    */
   }
   
   /* Use the CM bands on i and j to get bands on d, specific to j. */
@@ -2063,8 +2065,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
     }
   }
   /* end of brutal hack */
-#if 1
-  //#if eslDEBUGLEVEL >= 1
+#if eslDEBUGLEVEL >= 1
   /* check for valid CM parse, there should be one */
   if((status = CMBandsCheckValidParse(cm, cp9b, errbuf, i0, j0, doing_search)) != eslOK) return status;
 #endif
@@ -2638,7 +2639,6 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
     }
     /* is the node reachable? (it doesn't matter if we're in local mode) */
     if((!local_begins_ends_on) && (r_mn[k] > r_mx[k]) && (r_dn[k] > r_dx[k])) { 
-      printf("! HMM node %d is unreachable hmm!\n", k); 
       assert(k != 0);
       ESL_DASSERT1((just_filled_gap == FALSE));
       ESL_DPRINTF1(("! HMM node %d is unreachable hmm!\n", k)); 
@@ -2654,7 +2654,6 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
       k -= 2;
     }
     else if(just_filled_gap == TRUE) { 
-      printf("! HMM node %d filled a gap!\n", k);
       ESL_DPRINTF1(("! HMM node %d filled a gap!\n", k));
       if(filled_gap[k] == TRUE) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "HMMBandsEnforceValidParse() node k %d needed a gap filled in second pass! Shouldn't happen (coding error).\n", k);
       filled_gap[k] = TRUE;
@@ -3496,10 +3495,10 @@ ijdBandedTraceInfoDump(CM_t *cm, Parsetree_t *tr, int *imin, int *imax,
 	  if(debug_level > 1)
 	    {
 	      printf("v: %4d NA   %-2s (  NA) | d: %4d | i: %4d | in: NA    | ix: NA   | NA  | NA  |\n", v, Statetype(cm->sttype[v]), d, i);
-	  printf("                                 | j: %4d | jn: NA   | jx: NA  | NA  | NA  |\n", j);
-	  printf("                                 | d: %4d | dn: NA   | dx: NA   | NA  | NA  |\n", d);
-	  
-	  local_used++;
+	      printf("                                 | j: %4d | jn: NA   | jx: NA  | NA  | NA  |\n", j);
+	      printf("                                 | d: %4d | dn: NA   | dx: NA   | NA  | NA  |\n", d);
+	      
+	      local_used++;
 	    }
 	}
       else

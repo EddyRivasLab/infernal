@@ -68,8 +68,8 @@ static ESL_OPTIONS options[] = {
   { "--exp-only",       eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,"--fil-only", "only fit exponential tails, don't calc HMM filter thresholds", 2},
   { "--exp-T",          eslARG_REAL,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "set bit sc cutoff for exp tail fitting to <x> [df: -INFTY]", 2 },
   { "--exp-L",          eslARG_INT,     "100000",NULL, "1000<=n<=1000000",NULL,NULL,      NULL, "set length of random sequences for exp tail fitting to <n>", 2 },
-  { "--exp-cmN",        eslARG_INT,     "10",   NULL, "n<=100",  NULL,       NULL,        NULL, "set number of random seqs for CM exp tail fitting to <n>", 2 },
-  { "--exp-hmmN",       eslARG_INT,     "10",   NULL, "n<=100",  NULL,       NULL,        NULL, "set number of random seqs for HMM exp tail fitting to <n>", 2 },
+  { "--exp-cmN",        eslARG_INT,     "10",   NULL, "n<=1000", NULL,       NULL,        NULL, "set number of random seqs for CM exp tail fitting to <n>", 2 },
+  { "--exp-hmmN",       eslARG_INT,     "10",   NULL, "n<=1000", NULL,       NULL,        NULL, "set number of random seqs for HMM exp tail fitting to <n>", 2 },
   { "--exp-tailp",      eslARG_REAL,    "0.01", NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 2 },
   { "--exp-beta",       eslARG_REAL,    NULL,   NULL, "x>0",    NULL,        NULL,        NULL, "turn QDB on for exp tail fitting, set tail loss prob to <x>", 2 },
   { "--exp-gc",        eslARG_INFILE,  NULL,   NULL, NULL,     NULL,        NULL,"--fil-only", "use GC content distribution from file <f>",  2},
@@ -1747,7 +1747,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
 
   if (cfg->expsfp != NULL) {
     esl_histogram_PlotSurvival(cfg->expsfp, h);
-    esl_exp_Plot(cfg->expsfp, mu,    lambda,   esl_exp_surv, h->xmin - 5., h->xmax + 5., 0.1);
+    /*esl_exp_Plot(cfg->expsfp, mu,    lambda,   esl_exp_surv, h->xmin - 5., h->xmax + 5., 0.1);*/
     esl_exp_Plot(cfg->expsfp, mufix, 0.693147, esl_exp_surv, h->xmin - 5., h->xmax + 5., 0.1);
   }
 
