@@ -45,7 +45,7 @@ static ESL_OPTIONS options[] = {
   { "-n",        eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "name the CM(s) <s>, (only if single aln in file)", 1 },
   { "-A",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "append this CM to <cmfile>",             1 },
   { "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "force; allow overwriting of <cmfile>",   1 },
-  { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "use tabular output summary format, 1 line per CM", 1 },
+  { "-v",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "be verbose with output", 1 },
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
   { "--Wbeta",   eslARG_REAL,   "1E-7",NULL, "x>0.0000000000000001",NULL,NULL,  NULL, "set tail loss prob for calc'ing W (max size of a hit) to <x>", 1 },
 /* Expert model construction options */
@@ -96,12 +96,13 @@ static ESL_OPTIONS options[] = {
   { "--gibbs",   eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, use Gibbs sampling instead of EM", 9 },
   { "-s",        eslARG_INT,     NULL, NULL, "n>0",      NULL,"--gibbs",        NULL, "w/--gibbs, set random number generator seed to <n>",  9 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, align locally w.r.t the model", 9 },
+  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,      NULL,       NULL, "print individual sequence scores during MSA refinement", 1 },
   { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, use sub CM for columns b/t HMM start/end points", 9 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,       NULL,"--refine",       NULL, "do not use bands to accelerate alignment with --refine", 9 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",    NULL,"--refine","--nonbanded", "set tail loss prob for --hbanded to <x>", 9 },
   { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, flush inserts left/right in alignments", 9 },
   { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",     NULL,"--refine",       NULL, "set maximum allowable DP matrix size to <x> Mb", 9 },
-  { "--verbose", eslARG_NONE,    NULL,  NULL, NULL,      NULL,"--refine",   "-1", "w/--refine, be verbose, print intermediate alignments", 9 },
+  { "--rdump",   eslARG_OUTFILE, NULL,  NULL, NULL,      NULL,"--refine",       NULL, "w/--refine, print all intermediate alignments to <f>", 9 },
 /* Selecting the input MSA alphabet rather than autoguessing it */
   { "--rna",     eslARG_NONE,   FALSE, NULL, NULL,   ALPHOPTS,    NULL,     NULL, "input alignment is RNA sequence data", 10},
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,   ALPHOPTS,    NULL,     NULL, "input alignment is DNA sequence data", 10},
@@ -130,18 +131,27 @@ struct cfg_s {
   Prior_t      *pri;		/* mixture Dirichlet prior for the HMM     */
 
   fullmat_t    *fullmat;        /* if --rsearch, the full RIBOSUM matrix */
-  FILE         *cdfp;           /* if --cdump, output file handle for dumping clustered MSAs */
-  FILE         *trfp;           /* if --refine, output file handle for dumping refined MSAs */
 
   int           be_verbose;	/* standard verbose output, as opposed to one-line-per-CM summary */
   int           nali;		/* which # alignment this is in file */
   int           ncm_total;      /* which # CM this is that we're constructing (we may build > 1 per file) */
   ESL_RANDOMNESS *r;            /* source of randomness, only created if --gibbs enabled */
 
-  ComLog_t       *comlog;       /* the comlog, same for all CMs, cfg.comlog serves as template 
+  /* optional output files */
+  FILE         *cfp;            /* for --cfile */
+  FILE         *tblfp;          /* for --cmtbl */
+  FILE         *efp;            /* for --emap */
+  FILE         *gfp;            /* for --gtree */
+  FILE         *gtblfp;         /* for --gtbl */
+  FILE         *tracefp;        /* for --tfile */
+  FILE         *cdfp;           /* if --cdump, output file handle for dumping clustered MSAs */
+  FILE         *refinefp;       /* if --refine, output file handle for dumping refined MSAs */
+  FILE         *rdfp;           /* if --rfile, output file handle for dumping intermediate MSAs during iterative refinement */
+
+  ComLog_t      *comlog;       /* the comlog, same for all CMs, cfg.comlog serves as template 
 				 * for all CMs, and is copied to each CM data structure */
-  int            argc;          /* used to create the comlog */
-  char         **argv;          /* used to create the comlog, be careful not to free this though, it's just a ptr */
+  int           argc;          /* used to create the comlog */
+  char        **argv;          /* used to create the comlog, be careful not to free this though, it's just a ptr */
 };
 
 static char usage[]  = "[-options] <cmfile output> <alignment file>";
@@ -149,20 +159,19 @@ static char banner[] = "build RNA covariance model(s) from alignment";
 
 static int    init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static void   master (const ESL_GETOPTS *go, struct cfg_s *cfg);
-static int    process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t ***ret_msa_tr);
-static int    output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, int cmidx, ESL_MSA *msa, CM_t *cm);
+static int    process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr);
+static int    output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, int cmidx, ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, Parsetree_t **tr);
 static int    check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
 static int    set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa);
-static int    build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t ***ret_msa_tr);
+static int    build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr);
 static int    set_model_name(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    set_model_cutoffs(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm);
 static int    set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm, const Prior_t *pri);
 static int    parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, const Prior_t *prior);
 static int    name_msa(const ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa, int nali);
 static double default_target_relent(const ESL_ALPHABET *abc, int M, double eX);
-static int    save_countvectors(char *cfile, CM_t *cm);
 static void   strip_wuss(char *ss);
-static int    refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *orig_cm, ESL_MSA *input_msa, Parsetree_t **input_msa_tr, CM_t **ret_cm, ESL_MSA **ret_msa, Parsetree_t ***ret_tr, int *ret_niter);
+static int    refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *orig_cm, ESL_MSA *input_msa, Parsetree_t **input_msa_tr, CM_t **ret_cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr, Parsetree_t ***ret_tr, int *ret_niter);
 static int    get_unaln_seqs_from_msa(const ESL_MSA *msa, ESL_SQ ***ret_sq);
 static int    convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa);
 static int    initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
@@ -173,6 +182,10 @@ static float  find_mindiff(ESL_TREE *T, double *diff, int target_nc, int **ret_c
 static int    MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, int target_nc, int do_orig, int *ret_num_msa, ESL_MSA ***ret_cmsa, char *errbuf);
 static int    write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int    flatten_insert_emissions(CM_t *cm);
+static int    print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
+static void   print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
+static void   print_refine_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
+static int    print_countvectors(const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 
 int
 main(int argc, char **argv)
@@ -248,10 +261,18 @@ main(int argc, char **argv)
   cfg.null       = NULL;	           /* created in init_cfg() */
   cfg.pri        = NULL;                   /* created in init_cfg() */
   cfg.fullmat    = NULL;                   /* read (possibly) in init_cfg() */
-  cfg.cdfp       = NULL;	           /* opened (possibly) in init_cfg() */
-  cfg.trfp       = NULL;	           /* opened (possibly) in init_cfg() */
   cfg.r          = NULL;	           /* created (possibly) in init_cfg() */
   cfg.comlog     = NULL;	           /* created in init_cfg() */
+  /* optional output files, opened in init_cfg(), if at all */
+  cfg.cfp        = NULL;
+  cfg.tblfp      = NULL;
+  cfg.efp        = NULL;
+  cfg.gfp        = NULL;
+  cfg.gtblfp     = NULL;
+  cfg.tracefp    = NULL;
+  cfg.cdfp       = NULL;
+  cfg.refinefp   = NULL;
+  cfg.rdfp       = NULL;
 
   /* print the banner */
   cm_banner(stdout, argv[0], banner);
@@ -263,8 +284,7 @@ main(int argc, char **argv)
     if(cfg.fmt != eslMSAFILE_STOCKHOLM && cfg.fmt != eslMSAFILE_PFAM) cm_Fail("Sequence file format: %s is not accepted by cmbuild, valid options are: stockholm or pfam\n", esl_opt_GetString(go, "--informat"));
   }
 
-  if (esl_opt_GetBoolean(go, "-1")) cfg.be_verbose = FALSE;
-  else                              cfg.be_verbose = TRUE;        
+  cfg.be_verbose = esl_opt_GetBoolean(go, "-v");
   cfg.nali       = 0;		           
 
   /* check if cmfile already exists, if it does and -F was not enabled then die */
@@ -275,18 +295,57 @@ main(int argc, char **argv)
   esl_stopwatch_Start(w);
   master(go, &cfg);
   esl_stopwatch_Stop(w);
+  fprintf(cfg.ofp, "#\n");
   esl_stopwatch_Display(cfg.ofp, w, "# CPU time: ");
 
   /* Clean up the cfg. 
    */
-  if (! esl_opt_IsDefault(go, "-o")) { fclose(cfg.ofp); }
+  /* close all output files */
+  if (! esl_opt_IsDefault(go, "-o")) { 
+    printf("# cmbuild output saved in file %s.\n", esl_opt_GetString(go, "-o"));
+    fclose(cfg.ofp); 
+  }
+  if (cfg.cfp != NULL) {
+    printf("# Count vectors saved in file %s.\n", esl_opt_GetString(go, "--cfile"));
+    fclose(cfg.cfp); 
+  }
+  if (cfg.tblfp != NULL) {
+    printf("# CM topology description saved in file %s.\n", esl_opt_GetString(go, "--cmtbl"));
+    fclose(cfg.tblfp); 
+  }
+  if (cfg.efp != NULL) {
+    printf("# CM emit map saved in file %s.\n", esl_opt_GetString(go, "--emap"));
+    fclose(cfg.efp); 
+  }
+  if (cfg.gfp != NULL) {
+    printf("# Guide tree description saved in file %s.\n", esl_opt_GetString(go, "--gtree"));
+    fclose(cfg.gfp); 
+  }
+  if (cfg.gtblfp != NULL) {
+    printf("# Guide tree tabular description saved in file %s.\n", esl_opt_GetString(go, "--gtbl"));
+    fclose(cfg.gtblfp); 
+  }
+  if (cfg.tracefp != NULL) {
+    printf("# Implicit parsetrees of seqs from input alignment saved in file %s.\n", esl_opt_GetString(go, "--tfile"));
+    fclose(cfg.tracefp); 
+  }
+  if (cfg.cdfp != NULL) {
+    printf("# Alignments for each cluster saved in file %s.\n", esl_opt_GetString(go, "--cdump"));
+    fclose(cfg.cdfp); 
+  }
+  if (cfg.refinefp != NULL) {
+    printf("# Refined alignments used to build CMs saved in file %s.\n", esl_opt_GetString(go, "--refine"));
+    fclose(cfg.refinefp); 
+  }
+  if (cfg.rdfp != NULL) {
+    printf("# Intermediate alignments from MSA refinement saved in file %s.\n", esl_opt_GetString(go, "--rdump"));
+    fclose(cfg.rdfp); 
+  }
   if (cfg.afp   != NULL) esl_msafile_Close(cfg.afp);
   if (cfg.abc   != NULL) esl_alphabet_Destroy(cfg.abc);
   if (cfg.cmfp  != NULL) fclose(cfg.cmfp);
   if (cfg.pri   != NULL) Prior_Destroy(cfg.pri);
   if (cfg.null  != NULL) free(cfg.null);
-  if (cfg.cdfp  != NULL) fclose(cfg.cdfp);
-  if (cfg.trfp  != NULL) fclose(cfg.trfp);
   if (cfg.r     != NULL) esl_randomness_Destroy(cfg.r);
   if (cfg.comlog!= NULL) FreeComLog(cfg.comlog);
 
@@ -315,11 +374,7 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
   int status;
 
-  if (esl_opt_GetString(go, "-o") != NULL) {
-    if ((cfg->ofp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) 
-      ESL_FAIL(eslFAIL, errbuf, "Failed to open -o output file %s\n", esl_opt_GetString(go, "-o"));
-  } else cfg->ofp = stdout;
-
+  /* open input alignment file */
   status = esl_msafile_Open(cfg->alifile, cfg->fmt, NULL, &(cfg->afp));
   if      (status == eslENOTFOUND) ESL_FAIL(status, errbuf, "Alignment file %s doesn't exist or is not readable\n", cfg->alifile);
   else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of alignment %s\n", cfg->alifile);
@@ -386,26 +441,11 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       fclose(matfp);
     }
 
-  /* if --cdump enabled, open output file for cluster MSAs */
-  if (esl_opt_GetString(go, "--cdump") != NULL)
-    {
-      /* check to make sure there's a reason for this option, --cmaxid, --ctarget or --call MUST also be enabled */
-      if((esl_opt_IsDefault(go, "--ctarget")) && (esl_opt_IsDefault(go, "--cmaxid")) && (esl_opt_IsDefault(go, "--call")))
-	cm_Fail("--cdump only makes sense in combination with --ctarget, --cmaxid, OR --call");
-      if ((cfg->cdfp = fopen(esl_opt_GetString(go, "--cdump"), "w")) == NULL)
-	cm_Fail("Failed to open output file %s for writing MSAs to", esl_opt_GetString(go, "--cdump"));
-    }
   /* if --corig enabled, make sure either --cmaxid, --ctarget, or --call also enabled */
   if (esl_opt_GetBoolean(go, "--corig"))
     if((esl_opt_IsDefault(go, "--ctarget")) && (esl_opt_IsDefault(go, "--cmaxid")) && (esl_opt_IsDefault(go, "--call")))
       cm_Fail("--corig only makes sense in combination with --ctarget, --cmaxid, OR --call");
 
-  /* if --refine enabled, open output file for refined MSAs */
-  if (esl_opt_GetString(go, "--refine") != NULL)
-    {
-      if ((cfg->trfp = fopen(esl_opt_GetString(go, "--refine"), "w")) == NULL)
-	cm_Fail("Failed to open output file %s for writing MSAs to", esl_opt_GetString(go, "--refine"));
-    }
   /* if --gibbs enabled, open output file for refined MSAs, and seed RNG */
   if(esl_opt_GetBoolean(go, "--gibbs"))
     {
@@ -416,6 +456,61 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       if (cfg->r == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
     }
 
+  /* open output files */
+  if (esl_opt_GetString(go, "-o") != NULL) {
+    if ((cfg->ofp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open -o output file %s\n", esl_opt_GetString(go, "-o"));
+    } else cfg->ofp = stdout;
+  /* optionally, open count vector file */
+  if (esl_opt_GetString(go, "--cfile") != NULL) {
+    if ((cfg->cfp = fopen(esl_opt_GetString(go, "--cfile"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open --cfile output file %s\n", esl_opt_GetString(go, "--cfile"));
+    }
+  /* optionally, open CM tabular file */
+  if (esl_opt_GetString(go, "--cmtbl") != NULL) {
+    if ((cfg->tblfp = fopen(esl_opt_GetString(go, "--cmtbl"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open --cmtbl output file %s\n", esl_opt_GetString(go, "--cmtbl"));
+    }
+  /* optionally, open emit map file */
+  if (esl_opt_GetString(go, "--emap") != NULL) {
+    if ((cfg->efp = fopen(esl_opt_GetString(go, "--emap"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open --emap output file %s\n", esl_opt_GetString(go, "--emap"));
+    }
+  /* optionally, open guide tree file */
+  if (esl_opt_GetString(go, "--gtree") != NULL) {
+    if ((cfg->gfp = fopen(esl_opt_GetString(go, "--gtree"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open --gtree output file %s\n", esl_opt_GetString(go, "--gtree"));
+    }
+  /* optionally, open master tree file */
+  if (esl_opt_GetString(go, "--gtbl") != NULL) {
+    if ((cfg->gtblfp = fopen(esl_opt_GetString(go, "--gtbl"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open --gtbl output file %s\n", esl_opt_GetString(go, "--gtbl"));
+    }
+  /* optionally, open trace file */
+  if (esl_opt_GetString(go, "--tfile") != NULL) {
+    if ((cfg->tracefp = fopen(esl_opt_GetString(go, "--tfile"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open --tfile output file %s\n", esl_opt_GetString(go, "--tfile"));
+    }
+  /* if --refine enabled, open output file for refined MSAs */
+  if (esl_opt_GetString(go, "--refine") != NULL)
+    {
+      if ((cfg->refinefp = fopen(esl_opt_GetString(go, "--refine"), "w")) == NULL)
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open output file %s for writing MSAs from --refine to", esl_opt_GetString(go, "--refine"));
+    }
+  /* optionally, open --rdump output alignment file */
+  if (esl_opt_GetString(go, "--rdump") != NULL) {
+    if ((cfg->rdfp = fopen(esl_opt_GetString(go, "--rdump"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open --rdump output file %s\n", esl_opt_GetString(go, "--rdump"));
+    }
+  /* if --cdump enabled, open output file for cluster MSAs */
+  if (esl_opt_GetString(go, "--cdump") != NULL)
+    {
+      /* check to make sure there's a reason for this option, --cmaxid, --ctarget or --call MUST also be enabled */
+      if((esl_opt_IsDefault(go, "--ctarget")) && (esl_opt_IsDefault(go, "--cmaxid")) && (esl_opt_IsDefault(go, "--call")))
+	cm_Fail("--cdump only makes sense in combination with --ctarget, --cmaxid, OR --call");
+      if ((cfg->cdfp = fopen(esl_opt_GetString(go, "--cdump"), "w")) == NULL)
+	cm_Fail("Failed to open output file %s for writing MSAs to", esl_opt_GetString(go, "--cdump"));
+    }
   /* create the comlog */
   cfg->comlog = CreateComLog();
   if((status = write_cmbuild_info_to_comlog(go, cfg, errbuf)) != eslOK) return status;
@@ -423,9 +518,6 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (cfg->pri    == NULL) ESL_FAIL(eslEINVAL, errbuf, "alphabet initialization failed");
   if (cfg->null   == NULL) ESL_FAIL(eslEINVAL, errbuf, "null model initialization failed");
   if (cfg->comlog == NULL) ESL_FAIL(eslEINVAL, errbuf, "comlog initialization failed");
-
-  /* with msa == NULL, output_result() prints the tabular results header, if needed */
-  if (! cfg->be_verbose) output_result(go, cfg, errbuf, 0, 0, NULL, NULL);
 
   cfg->nali = 0;
   cfg->ncm_total = 0;
@@ -445,10 +537,15 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   char     errbuf[cmERRBUFSIZE];
   ESL_MSA *msa = NULL;
   CM_t    *cm = NULL;
-  CM_t    *new_cm;
+  Parsetree_t  *mtr;
   Parsetree_t **tr;
   int          i = 0;
   int      niter = 0;
+  /* new_* data structures, created in refine_msa() if --refine enabled */
+  CM_t         *new_cm;  
+  Parsetree_t  *new_mtr;
+  Parsetree_t **new_tr;
+  ESL_MSA      *new_msa;
   /* cluster option related variables */
   int          do_cluster; /* TRUE if --ctarget || --cmaxid || --call */
   int          do_ctarget; /* TRUE if --ctarget */
@@ -460,7 +557,8 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int          c   = 0;    /* counter over CMs built for a single MSA */
   ESL_MSA    **cmsa;       /* pointer to cluster MSAs to build CMs from */
 
-  if ((status = init_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+  if ((status = init_cfg(go, cfg, errbuf))         != eslOK) cm_Fail(errbuf);
+  if ((status = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
 
   cfg->nali = 0;
   cfg->ncm_total = 0;
@@ -500,7 +598,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      if(esl_opt_GetString(go, "--cdump") != NULL) esl_msa_Write(cfg->cdfp, msa, cfg->fmt); 
 	  }
 
-	  /* Print some stuff about what we're about to do.
+	  /* if being verbose, print some stuff about what we're about to do.
 	   */
 	  if (cfg->be_verbose) {
 	    fprintf(cfg->ofp, "Alignment:           %s\n",  msa->name);
@@ -513,17 +611,25 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  }
 
 	  /* msa -> cm */
-	  if ((status = process_workunit(go, cfg, errbuf, msa, &cm, &tr)) != eslOK) cm_Fail(errbuf);
-	  /* optionally, iterative over cm -> parsetrees -> msa -> cm ... until convergence, via EM (or Gibbs - not yet, but eventually) */
+	  if ((status = process_workunit(go, cfg, errbuf, msa, &cm, &mtr, &tr)) != eslOK) cm_Fail(errbuf);
+	  /* optionally, iterate over cm -> parsetrees -> msa -> cm ... until convergence, via EM or Gibbs */
 	  if (! esl_opt_IsDefault(go, "--refine")) {
-	    if ((status = refine_msa(go, cfg, errbuf, cm, msa, tr, &new_cm, NULL, NULL, &niter)) != eslOK) cm_Fail(errbuf);
-	    if (niter > 1) { /* if niter == 1, we didn't make a new CM (new_cm == cm), so we don't free it */
+	    fprintf(cfg->ofp, "#\n");
+	    fprintf(cfg->ofp, "# Refining MSA for CM: %s (aln: %4d cm: %6d)\n", cm->name, cfg->nali, cfg->ncm_total);
+	    if ((status = refine_msa(go, cfg, errbuf, cm, msa, tr, &new_cm, &new_msa, &new_mtr, &new_tr, &niter)) != eslOK) cm_Fail(errbuf);
+	    if (niter > 1) { /* if niter == 1, we didn't make a new CM (new_cm == cm) mtr, or tr, so we don't free them */
 	      FreeCM(cm); 
 	      cm = new_cm; 
+	      for(i = 0; i < msa->nseq; i++) FreeParsetree(tr[i]);
+	      tr = new_tr;
+	      FreeParsetree(mtr);
+	      mtr = new_mtr;
+	      esl_msa_Destroy(msa);
+	      msa = new_msa;
 	    } 
 	  }	  
 	  /* output cm */
-	  if ((status = output_result(go, cfg, errbuf, cfg->nali, cfg->ncm_total, msa,  cm)) != eslOK) cm_Fail(errbuf);
+	  if ((status = output_result(go, cfg, errbuf, cfg->nali, cfg->ncm_total, msa,  cm, mtr, tr)) != eslOK) cm_Fail(errbuf);
 	  
 	  if(cfg->be_verbose) { 
 	    fprintf(cfg->ofp, "\n");
@@ -535,11 +641,11 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  fflush(cfg->cmfp);
 
 	  if(tr != NULL) {
-	    for(i = 0; i < msa->nseq; i++)
-	      FreeParsetree(tr[i]);
+	    for(i = 0; i < msa->nseq; i++) FreeParsetree(tr[i]);
 	    free(tr);
-	    tr = NULL;
 	  }
+	  if(mtr != NULL) FreeParsetree(mtr);
+
 	  esl_msa_Destroy(msa);
 	}
     }
@@ -553,18 +659,18 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
  * 
  */
 static int
-process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t ***ret_msa_tr)
+process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr)
 {
   CM_t *cm = NULL;
   int status;
 
-  if ((status =  check_and_clean_msa    (go, cfg, errbuf, msa))                         != eslOK) goto ERROR;
-  if ((status =  set_relative_weights   (go, cfg, errbuf, msa))                         != eslOK) goto ERROR;
-  if ((status =  build_model            (go, cfg, errbuf, msa, &cm, ret_msa_tr))        != eslOK) goto ERROR;
-  if ((status =  set_model_name         (go, cfg, errbuf, msa, cm))                     != eslOK) goto ERROR;
-  if ((status =  set_model_cutoffs      (go, cfg, errbuf, msa, cm))                     != eslOK) goto ERROR;
-  if ((status =  set_effective_seqnumber(go, cfg, errbuf, msa, cm, cfg->pri))           != eslOK) goto ERROR;
-  if ((status =  parameterize           (go, cfg, errbuf, cm, cfg->pri))                != eslOK) goto ERROR;
+  if ((status =  check_and_clean_msa    (go, cfg, errbuf, msa))                           != eslOK) goto ERROR;
+  if ((status =  set_relative_weights   (go, cfg, errbuf, msa))                           != eslOK) goto ERROR;
+  if ((status =  build_model            (go, cfg, errbuf, msa, &cm, ret_mtr, ret_msa_tr)) != eslOK) goto ERROR;
+  if ((status =  set_model_name         (go, cfg, errbuf, msa, cm))                       != eslOK) goto ERROR;
+  if ((status =  set_model_cutoffs      (go, cfg, errbuf, msa, cm))                       != eslOK) goto ERROR;
+  if ((status =  set_effective_seqnumber(go, cfg, errbuf, msa, cm, cfg->pri))             != eslOK) goto ERROR;
+  if ((status =  parameterize           (go, cfg, errbuf, cm, cfg->pri))                  != eslOK) goto ERROR;
   
   *ret_cm = cm;
   return eslOK;
@@ -573,10 +679,14 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
   if(cm != NULL) FreeCM(cm);
   *ret_cm = NULL;
   if (ret_msa_tr != NULL) *ret_msa_tr = NULL;
+  if (ret_mtr    != NULL) { 
+    FreeParsetree(*ret_mtr);
+    *ret_mtr = NULL;
+  }
   return status;
 }
 
-/* refine_msa: 
+/* refine_msa() 
  * Refine the original (input) MSA using Expectation-Maximization or Gibbs sampling
  * by iterating over: build MSA of optimal parses, build CM from MSA,
  * until the summed scores of all parses converges.
@@ -587,7 +697,8 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
  */
 static int
 refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *init_cm, ESL_MSA *input_msa, 
-	   Parsetree_t **input_msa_tr, CM_t **ret_cm, ESL_MSA **ret_msa, Parsetree_t ***ret_tr, int *ret_niter)
+	   Parsetree_t **input_msa_tr, CM_t **ret_cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr, Parsetree_t ***ret_tr, 
+	   int *ret_niter)
 {
   int              status;
   float            threshold   = 0.01;
@@ -603,14 +714,19 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   CM_t            *cm          = NULL;
   seqs_to_aln_t   *seqs_to_aln = NULL; 
   ESL_MSA         *msa         = NULL;
-  int              print_all_alignments = esl_opt_GetBoolean(go, "--verbose");
+  Parsetree_t     *mtr         = NULL;
+  Parsetree_t    **tr          = NULL;
+
   /* check contract */
-  if(input_msa       == NULL) cm_Fail("in refine_msa, input_msa passed in as NULL");
-  if(input_msa->name == NULL) cm_Fail("in refine_msa, input_msa must have a name");
-  if(init_cm         == NULL) cm_Fail("in refine_msa, init_cm passed in as NULL");
+  if(input_msa       == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), input_msa passed in as NULL");
+  if(input_msa->name == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), input_msa must have a name");
+  if(init_cm         == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), init_cm passed in as NULL");
+  if(ret_cm          == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), ret_cm is NULL");
+  if(ret_mtr         == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), ret_mtr is NULL");
+  if(ret_tr          == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "refine_msa(), ret_tr is NULL");
 
   /* copy input MSA's name, we'll copy it to the MSA we create at each iteration */
-  if((status = esl_strdup(input_msa->name, -1, &(msa_name))) != eslOK) cm_Fail("Memory allocation error.");
+  if((status = esl_strdup(input_msa->name, -1, &(msa_name))) != eslOK) ESL_FAIL(eslEINCOMPAT, errbuf, "Memory allocation error.");
 
   ESL_ALLOC(sc, sizeof(float) * nseq);
   esl_vec_FSet(sc, nseq, 0.);
@@ -620,16 +736,17 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
 
   /* determine scores of implicit parsetrees of input MSA seqs to initial CM */
   convert_parsetrees_to_unaln_coords(input_msa_tr, input_msa);
-  if(cfg->be_verbose) fprintf(cfg->ofp, "iteration: %4d\n", iter);
   for(i = 0; i < nseq; i++) sc[i] = ParsetreeScore(init_cm, input_msa_tr[i], sq[i]->dsq, FALSE);
   oldscore = esl_vec_FSum(sc, nseq);
-  if(cfg->be_verbose) fprintf(cfg->ofp, "iter: %4d (input alignment)     sc %10.4f (delta: N/A)\n", iter, oldscore);
 
-  if(print_all_alignments) {
-    fprintf(cfg->ofp, "INITIAL (input msa)\n");
-    if((status = esl_msa_Write(stdout, input_msa, cfg->fmt)) != eslOK) cm_Fail("esl_msa_Write() failed with code: %d\n", status); 
-  }
-     
+  /* print header for tabular output */
+  print_refine_column_headings(go, cfg);
+  fprintf(cfg->ofp, "  %5d %13.2f %10s\n", iter, oldscore, "-");
+
+  /* print initial alignment to --rdump file, if --rdump was enabled */
+  if(cfg->rdfp != NULL) 
+    if((status = esl_msa_Write(cfg->rdfp, input_msa, cfg->fmt)) != eslOK) ESL_FAIL(status, errbuf, "refine_msa(), esl_msa_Write() call failed.");
+  
   while(1)
     {
       iter++;
@@ -640,14 +757,14 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
                                                   /* sq,    tr, cp9_tr, post, sc */ 
       /* initialize/configure CM, we may be doing HMM banded alignment for ex. */
       initialize_cm(go, cfg, errbuf, cm);
-      if((status = DispatchAlignments(cm, errbuf, seqs_to_aln, NULL, NULL, 0, 0, 0, (!cfg->be_verbose), cfg->r, 
-				      esl_opt_GetReal(go, "--mxsize"), cfg->ofp)) != eslOK) cm_Fail(errbuf);
+      if((status = DispatchAlignments(cm, errbuf, seqs_to_aln, NULL, NULL, 0, 0, 0, (! esl_opt_GetBoolean(go, "-a")), cfg->r, 
+				      esl_opt_GetReal(go, "--mxsize"), cfg->ofp)) != eslOK) return status;
       
       /* sum parse scores and check for convergence */
-      if(cfg->be_verbose) fprintf(cfg->ofp, "iteration: %4d\n", iter);
       totscore = esl_vec_FSum(seqs_to_aln->sc, nseq);
       delta    = (totscore - oldscore) / fabs(totscore);
-      if(cfg->be_verbose) fprintf(cfg->ofp, "iter: %4d old sc %10.4f new sc %10.4f (delta: %10.4f)\n", iter, oldscore, totscore, delta);
+      if(esl_opt_GetBoolean(go, "-a")) print_refine_column_headings(go, cfg);
+      fprintf(cfg->ofp, "  %5d %13.2f %10.3f\n", iter, totscore, delta);
       if(delta <= threshold && delta >= 0) break; /* only way out of while(1) loop */
       oldscore = totscore;
 
@@ -655,49 +772,41 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       if( iter > 1) esl_msa_Destroy(msa);
       msa = NULL; /* even if iter == 1; we set msa to NULL, so we don't klobber input_msa */
       if((status = Parsetrees2Alignment(cm, cm->abc, seqs_to_aln->sq, NULL, seqs_to_aln->tr, nseq, FALSE, FALSE, &msa)) != eslOK) 
-	cm_Fail("refine_msa() failed to make new MSA");
-      if((status = esl_strdup(msa_name, -1, &(msa->name))) != eslOK) cm_Fail("esl_strdup call failed, probably out of memory.");
+	ESL_FAIL(status, errbuf, "refine_msa(), Parsetrees2Alignment() call failed.");
+      if((status = esl_strdup(msa_name, -1, &(msa->name))) != eslOK) ESL_FAIL(status, errbuf, "refine_msa(), esl_strdup() call failed.");
       esl_msa_Digitize(msa->abc, msa);
-
-      if(print_all_alignments)
-	if((status = esl_msa_Write(stdout, msa, cfg->fmt)) != eslOK) cm_Fail("esl_msa_Write() failed with code: %d\n", status); 
+      
+      /* print intermediate alignment to --rdump file, if --rdump was enabled */
+      if(cfg->rdfp != NULL) 
+	if((status = esl_msa_Write(cfg->rdfp, msa, cfg->fmt)) != eslOK) ESL_FAIL(status, errbuf, "refine_msa(), esl_msa_Write() call failed.");
 
       /* 3. msa -> cm */
-      if(iter > 1) FreeCM(cm);
+      if(iter > 1) { /* free previous iterations cm, mtr and tr */
+	FreeCM(cm);
+	FreeParsetree(mtr);
+	for(i = 0; i < nseq; i++) FreeParsetree(tr[i]);
+	free(tr);
+      }
       cm = NULL; /* even if iter == 1; we set cm to NULL, so we don't klobber init_cm */
-      if ((status = process_workunit(go, cfg, errbuf, msa, &cm, NULL))  != eslOK) cm_Fail(errbuf);
-
+      mtr= NULL;
+      tr = NULL;
+      if ((status = process_workunit(go, cfg, errbuf, msa, &cm, &mtr, &tr))  != eslOK) cm_Fail(errbuf);
     }
-  if(cfg->be_verbose) {
-    fprintf(cfg->ofp, "FINAL (iter: %d)\n", iter);
-    if((status = esl_msa_Write(stdout, msa, cfg->fmt)) != eslOK) cm_Fail("esl_msa_Write() failed with code: %d\n", status); 
-  }
-  /* write out final alignment to output file */
-  if((status = esl_msa_Write(cfg->trfp, msa, cfg->fmt)) != eslOK) cm_Fail("esl_msa_Write() failed with code: %d\n", status); 
+
+  /* write out final alignment to --refine output file */
+  if((status = esl_msa_Write(cfg->refinefp, msa, cfg->fmt)) != eslOK) ESL_FAIL(status, errbuf, "refine_msa(), esl_msa_Write() call failed.");
 
   /* if CM was in local mode for aligning input MSA seqs, make it global so we can write it out */
-  if((cm->flags & CMH_LOCAL_BEGIN) || (cm->flags & CMH_LOCAL_END))
-    ConfigGlobal(cm);
+  if((cm->flags & CMH_LOCAL_BEGIN) || (cm->flags & CMH_LOCAL_END)) ConfigGlobal(cm);
 
-  /* clean up */
-  if(ret_cm == NULL) cm_Fail("ret_cm is NULL.");
-  *ret_cm = cm;
-
-  if(iter > 1) { /* if iter == 1, msa == init_msa, we don't want to free it, or overwrite it */
-    if(ret_msa == NULL) esl_msa_Destroy(msa); 
-    else *ret_msa = msa;
-  }
-
-  if(ret_tr == NULL) { FreeSeqsToAln(seqs_to_aln); }
-  else { 
-    FreePartialSeqsToAln(seqs_to_aln, TRUE, FALSE, TRUE,   TRUE, TRUE);
-                                   /* sq,   tr,    cp9_tr, post, sc */ 
-    free(seqs_to_aln->tr);
-    free(seqs_to_aln);
-  }
-
+  *ret_cm  = cm;
+  *ret_msa = msa;
+  *ret_tr  = tr;
+  *ret_mtr = mtr;
   *ret_niter = iter;
 
+  /* clean up */
+  FreeSeqsToAln(seqs_to_aln);
   free(sc);
   free(msa_name);
 
@@ -709,36 +818,75 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   return status; /* NEVERREACHED */
 }
 
+
+/* Function: print_column_headings()
+ * Date:     EPN, Fri Feb 29 10:08:25 2008
+ *
+ * Purpose:  Print column headings for tabular output to output file (stdout unless -o). 
+ *
+ * Returns:  eslOK on success
+ */
+static void
+print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg)
+{
+  fprintf(cfg->ofp, "# %-4s %-6s %-20s %8s %8s %6s %5s %13s\n",    "",     "",       "",                     "",         "",         "",     "",      " rel entropy ");
+  fprintf(cfg->ofp, "# %-4s %-6s %-20s %8s %8s %6s %5s %13s\n",    "",     "",       "",                     "",         "",         "",     "",      "-------------");
+  fprintf(cfg->ofp, "# %-4s %-6s %-20s %8s %8s %6s %5s %6s %6s\n", "aln",  "cm idx", "name",                 "nseq",     "eff_nseq", "alen",   "clen",  "CM",     "HMM");
+  fprintf(cfg->ofp, "# %-4s %-6s %-20s %8s %8s %6s %5s %6s %6s\n", "----", "------", "--------------------", "--------", "--------", "------", "-----", "------", "------");
+  return;
+}
+
 static int
-output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, int cmidx, ESL_MSA *msa, CM_t *cm)
+output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int msaidx, int cmidx, ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, Parsetree_t **tr)
 {
   int status;
+  int i;
 
-  /* Special case: output the tabular results header. 
-   * Arranged this way to keep the two fprintf()'s close together in the code,
-   * so we can keep the data and labels properly sync'ed.
-   */
-  if (msa == NULL && ! cfg->be_verbose) 
-    {
-      fprintf(cfg->ofp, "#%4s %6s %-20s %5s %5s %5s\n", "aln",  "cm idx", "name",                 "nseq",  "alen",  "clen");
-      fprintf(cfg->ofp, "#%4s %6s %-20s %5s %5s %5s\n", "----", "------", "--------------------", "-----", "-----", "-----");
-      return eslOK;
-    }
-  
+  if(msaidx == 1 && cmidx == 1) print_column_headings(go, cfg);
+
   /* copy the cmbuild command info to the CM */
   if ((status = CopyComLog(cfg->comlog, cm->comlog)) != eslOK) ESL_FAIL(eslFAIL, errbuf, "Problem copying com log info to CM. Probably out of memory.");
   if ((status = cm_Validate(cm, 0.0001, errbuf))     != eslOK) return status;
   if ((status = CMFileWrite(cfg->cmfp, cm, esl_opt_GetBoolean(go, "--binary"), errbuf)) != eslOK) return status;
+  /* build the HMM, so we can print the CP9 relative entropy */
+  if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslFAIL, errbuf, "Couldn't build a CP9 HMM from the CM.");
   if (! cfg->be_verbose)	/* tabular output */
-    {                /* # aln cm  name nseq alen M */
-      fprintf(cfg->ofp, " %4d %6d %-20s %5d %5d %5d\n",
+    {            /* aln cm  name     nseq effn alen clen  bif */
+      fprintf(cfg->ofp, "%6d %6d %-20.20s %8d %8.2f %6d %5d %6.2f %6.2f\n",
 	      msaidx,
 	      cmidx,
 	      cm->name, 
 	      msa->nseq,
+	      cm->eff_nseq,
 	      msa->alen,
-	      cm->clen);
+	      cm->clen, 
+	      cm_MeanMatchRelativeEntropy(cm),
+	      cp9_MeanMatchRelativeEntropy(cm));
     }
+
+  /* dump optional info to files: */
+  if(cfg->tblfp != NULL) PrintCM(cfg->tblfp, cm); /* tabular description of CM topology */
+  /* emit map */
+  if(cfg->efp != NULL) {
+    CMEmitMap_t *emap;
+    emap = CreateEmitMap(cm);
+    DumpEmitMap(cfg->efp, emap, cm);
+    FreeEmitMap(emap);
+  }
+  /* save tabular description of guide tree topology, if nec */
+  if(cfg->gtblfp != NULL) PrintParsetree(cfg->gtblfp, mtr);  
+  /* save tree description of guide tree topology, if nec */
+  if(cfg->gfp    != NULL) MasterTraceDisplay(cfg->gfp, mtr, cm);
+
+  /* save parsetrees if nec */
+  if(cfg->tracefp != NULL) { 
+    for (i = 0; i < msa->nseq; i++) { 
+      fprintf(cfg->tracefp, "> %s\n", msa->sqname[i]);
+      fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], msa->ax[i], FALSE));
+      ParsetreeDump(cfg->tracefp, tr[i], cm, msa->ax[i], NULL, NULL); /* NULLs are dmin, dmax */
+      fprintf(cfg->tracefp, "//\n");
+    }
+  }
   return eslOK;
 }
 
@@ -806,7 +954,7 @@ set_relative_weights(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbu
  * the <msa> too.
  */
 static int
-build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t ***ret_msa_tr)
+build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t **ret_cm, Parsetree_t **ret_mtr, Parsetree_t ***ret_msa_tr)
 {
   int status;
   Parsetree_t     **tr;
@@ -840,22 +988,13 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
     }
   /* get counts */
   ESL_ALLOC(tr, sizeof(Parsetree_t *) * (msa->nseq));
-  for (idx = 0; idx < msa->nseq; idx++)
-    {
-      ESL_ALLOC(aseq, (msa->alen+1) * sizeof(char));
-      esl_abc_Textize(msa->abc, msa->ax[idx], msa->alen, aseq);
-      tr[idx] = Transmogrify(cm, mtr, msa->ax[idx], aseq, msa->alen);
-      ParsetreeCount(cm, tr[idx], msa->ax[idx], msa->wgt[idx]);
-      free(aseq);
-    }
-  if(ret_msa_tr == NULL) {
-    for(idx = 0; idx < msa->nseq; idx++)
-      FreeParsetree(tr[idx]);
-    free(tr);
-    tr = NULL;
+  for (idx = 0; idx < msa->nseq; idx++) {
+    ESL_ALLOC(aseq, (msa->alen+1) * sizeof(char));
+    esl_abc_Textize(msa->abc, msa->ax[idx], msa->alen, aseq);
+    tr[idx] = Transmogrify(cm, mtr, msa->ax[idx], aseq, msa->alen);
+    ParsetreeCount(cm, tr[idx], msa->ax[idx], msa->wgt[idx]);
+    free(aseq);
   }
-  else *ret_msa_tr = tr;
-
   cm->nseq     = msa->nseq;
   cm->eff_nseq = msa->nseq;
 
@@ -869,30 +1008,32 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
     }
   /* set the EL self transition probability */
   cm->el_selfsc = sreLOG2(esl_opt_GetReal(go, "--elself"));
-  if(cfg->be_verbose) fprintf(cfg->ofp, "done.\n");
 
   /* set the cm->beta_W parameter, which is not used in cmbuild, but is used by cmcalibrate and
    * cmsearch (and possibly others) to set cm->W */
   cm->beta_W = esl_opt_GetReal(go, "--Wbeta");
 
-  cm->el_selfsc = sreLOG2(esl_opt_GetReal(go, "--elself"));
-  if(cfg->be_verbose) fprintf(cfg->ofp, "done.\n");
-  
-  /* Before converting to probabilities, 
-   * save a count vector file, if asked.
+  /* Before converting to probabilities, save a count vector file, if asked.
    * Used primarily for making data files for training priors.
    */
-  if (esl_opt_GetString(go, "--cfile") != NULL) {
-    fprintf(cfg->ofp, "%-40s ... ", "Saving count vector file"); fflush(stdout);
-    if (! save_countvectors(esl_opt_GetString(go, "--cfile"), cm)) fprintf(cfg->ofp, "[FAILED]\n");
-    else                                fprintf(cfg->ofp, "done. [%s]\n", esl_opt_GetString(go, "--cfile"));
+  if (cfg->cfp != NULL) { 
+    if ((status = print_countvectors(cfg, errbuf, cm)) != eslOK) goto ERROR;
   }
-  FreeParsetree(mtr);
-  *ret_cm = cm;
+
+  *ret_cm  = cm;
+  if(ret_mtr == NULL) FreeParsetree(mtr);
+  else *ret_mtr = mtr;
+  if(ret_msa_tr == NULL) {
+    for(idx = 0; idx < msa->nseq; idx++)
+      FreeParsetree(tr[idx]);
+    free(tr);
+    tr = NULL;
+  }
+  else *ret_msa_tr = tr;
+
   return eslOK;
 
  ERROR:
-  if (cfg->be_verbose) fprintf(cfg->ofp, "FAILED.\n");
   return status;
 }
 
@@ -1166,7 +1307,7 @@ name_msa(const ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa, int nali)
   return status;
 }
 
-/* Function: save_countvectors()
+/* Function: print_countvectors()
  * Date:     SRE, Tue May  7 16:21:10 2002 [St. Louis]
  *
  * Purpose:  Save emission count vectors to a file.
@@ -1177,47 +1318,39 @@ name_msa(const ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa, int nali)
  *
  */
 static int
-save_countvectors(char *cfile, CM_t *cm)
+print_countvectors(const struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
-  FILE *fp;
   int   v,x;
 
+  if(cfg->cfp == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "save_countvectors(), but cfg->cfp is NULL, shouldn't happen.");
+
   /* Print emission counts */
-  if ((fp = fopen(cfile, "w")) == NULL) return 0;
-  for (v = 0; v < cm->M; v++)
-    {
-      if (cm->sttype[v] == MP_st || 
-	  cm->sttype[v] == ML_st || 
-	  cm->sttype[v] == MR_st) 
-	{
-	  fprintf(fp, "E\t%-7s ", UniqueStatetype(cm->stid[v]));
-	  if (cm->sttype[v] == MP_st) {
-	    for (x = 0; x < cm->abc->K*cm->abc->K; x++)
-	      fprintf(fp, "%8.3f ", cm->e[v][x]);
-	  } else {
-	    for (x = 0; x < cm->abc->K; x++)
-	      fprintf(fp, "%8.3f ", cm->e[v][x]);
-	  }
-	  fprintf(fp, "\n");
-	}
+  for (v = 0; v < cm->M; v++) {
+    if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == MR_st) { 
+      fprintf(cfg->cfp, "E\t%-7s ", UniqueStatetype(cm->stid[v]));
+      if (cm->sttype[v] == MP_st) {
+	for (x = 0; x < cm->abc->K*cm->abc->K; x++)
+	  fprintf(cfg->cfp, "%8.3f ", cm->e[v][x]);
+      } else {
+	for (x = 0; x < cm->abc->K; x++)
+	  fprintf(cfg->cfp, "%8.3f ", cm->e[v][x]);
+      }
+      fprintf(cfg->cfp, "\n");
     }
+  }
 
   /* Print transition counts */
-  for (v = 0; v < cm->M; v++)
-    {
-      if(cm->sttype[v] != B_st && cm->sttype[v] != E_st)
-	{
-	  fprintf(fp, "T\t%-7s : %-2d", UniqueStatetype(cm->stid[v]), cm->ndtype[(cm->ndidx[v] + 1)]);
-	  for (x = 0; x < cm->cnum[v]; x++)
-	    {
-	      fprintf(fp, "%8.3f ", cm->t[v][x]);
-	    }
-	  fprintf(fp, "\n");
-	}
+  for (v = 0; v < cm->M; v++) {
+    if(cm->sttype[v] != B_st && cm->sttype[v] != E_st) {
+      fprintf(cfg->cfp, "T\t%-7s : %-2d", UniqueStatetype(cm->stid[v]), cm->ndtype[(cm->ndidx[v] + 1)]);
+      for (x = 0; x < cm->cnum[v]; x++) {
+	fprintf(cfg->cfp, "%8.3f ", cm->t[v][x]);
+      }
+      fprintf(cfg->cfp, "\n");
     }
-
-  fclose(fp);
-  return 1;
+  }
+  fprintf(cfg->cfp, "//\n");
+  return eslOK;
 }
 
 /* EPN 08.18.05
@@ -1912,4 +2045,38 @@ flatten_insert_emissions(CM_t *cm)
     }
   }
   return eslOK;
+}
+
+/* Function: print_run_info
+ * Date:     EPN, Fri Feb 29 09:58:21 2008
+ *
+ * Purpose:  Print information on this run of cmbuild.
+ *           Command used to run it, and execution date.
+ *
+ * Returns:  eslOK on success
+ */
+static int
+print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
+{
+  fprintf(cfg->ofp, "%-10s %s\n",  "# command:", cfg->comlog->bcom);
+  fprintf(cfg->ofp, "%-10s %s\n",  "# date:",    cfg->comlog->bdate);
+  fprintf(cfg->ofp, "#\n");
+  return eslOK;
+}
+
+/* Function: print_refine_column_headings()
+ * Date:     EPN, Fri Feb 29 10:36:03 2008
+ *
+ * Purpose:  Print column headings for tabular output of refine_msa() to 
+ *           output file (stdout unless -o). 
+ *
+ * Returns:  eslOK on success
+ */
+static void
+print_refine_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg)
+{
+  fprintf(cfg->ofp, "#\n");
+  fprintf(cfg->ofp, "# %-5s %-13s %10s\n", "iter",  "bit score sum", "fract diff");
+  fprintf(cfg->ofp, "# %-5s %-13s %10s\n", "-----", "-------------", "----------");
+  return;
 }

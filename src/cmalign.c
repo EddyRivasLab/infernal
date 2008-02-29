@@ -813,6 +813,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	    }                                                                          
 	}                                                                              
 
+#ifdef HAVE_MPI
       /* if nec, output the scores */
       if(esl_opt_GetBoolean(go, "--mpi") && (!esl_opt_GetBoolean(go, "-q"))) { 
 	fprintf(stdout, "#\n");
@@ -824,7 +825,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  else                                 fprintf(stdout, "  %13.2f\n", seqs_to_aln->sc[i]);
 	}
       }      
-
+#endif
       if(! esl_opt_GetBoolean(go, "-q")) printf("\n");
       /* if nec, replace msa->ss_cons with ss_cons from withmsa alignment */
       if(esl_opt_GetBoolean(go, "--withpknots")) {
@@ -1456,8 +1457,8 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
 
   if(esl_opt_GetBoolean(go, "-q")) return eslOK;
 
-  if((status = GetCommand(go, errbuf, &command)) != eslOK) return status;
-  if((status = GetDate   (errbuf, &date))        != eslOK) return status;
+  if((status = get_command(go, errbuf, &command)) != eslOK) return status;
+  if((status = GetDate    (errbuf, &date))        != eslOK) return status;
 
   fprintf(stdout, "%-10s %s\n",  "# command:", command);
   fprintf(stdout, "%-10s %s\n",  "# date:",    date);
