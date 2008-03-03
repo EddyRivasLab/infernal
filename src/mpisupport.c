@@ -2823,10 +2823,8 @@ comlog_MPIPackSize(ComLog_t *comlog, MPI_Comm comm, int *ret_n)
 
   status = esl_mpi_PackOptSize(comlog->bcom,  -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   status = esl_mpi_PackOptSize(comlog->bdate, -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  status = esl_mpi_PackOptSize(comlog->ccom1, -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  status = esl_mpi_PackOptSize(comlog->cdate1,-1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  status = esl_mpi_PackOptSize(comlog->ccom2, -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  status = esl_mpi_PackOptSize(comlog->cdate2,-1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = esl_mpi_PackOptSize(comlog->ccom, -1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  status = esl_mpi_PackOptSize(comlog->cdate,-1, MPI_CHAR, comm, &sz); n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
 
   *ret_n = n;
   return eslOK;
@@ -2852,10 +2850,8 @@ comlog_MPIPack(ComLog_t *comlog, char *buf, int n, int *position, MPI_Comm comm)
 
   status = esl_mpi_PackOpt(comlog->bcom,   -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
   status = esl_mpi_PackOpt(comlog->bdate,  -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = esl_mpi_PackOpt(comlog->ccom1,  -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = esl_mpi_PackOpt(comlog->cdate1, -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = esl_mpi_PackOpt(comlog->ccom2,  -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = esl_mpi_PackOpt(comlog->cdate2, -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = esl_mpi_PackOpt(comlog->ccom,  -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = esl_mpi_PackOpt(comlog->cdate, -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) ESL_EXCEPTION(eslESYS, "pack failed");
   ESL_DPRINTF2(("comlog_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
 
   if (*position > n) ESL_EXCEPTION(eslEMEM, "buffer overflow");
@@ -2878,10 +2874,8 @@ comlog_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, ComLog_t **ret_comlo
   ESL_ALLOC(comlog, sizeof(ComLog_t));
   status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->bcom),   NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->bdate),  NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->ccom1),  NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->cdate1), NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->ccom2),  NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->cdate2), NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->ccom),  NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = esl_mpi_UnpackOpt(buf, n, pos, (void**)&(comlog->cdate), NULL, MPI_CHAR, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   *ret_comlog = comlog;
   return eslOK;
 

@@ -46,7 +46,6 @@ static ESL_OPTIONS options[] = {
   { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,   "--small", "append posterior probabilities to alignment", 1 },
   { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress banner and scores, print only the alignment", 1 },
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
-  { "--time",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        "-q", "print run time for each sequence alignment", 1 },
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 1 },
   { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 1 },
   { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local begin prob to <x>", 1 },
@@ -169,6 +168,7 @@ main(int argc, char **argv)
   ESL_GETOPTS     *go = NULL;   /* command line processing                     */
   ESL_STOPWATCH   *w  = esl_stopwatch_Create();
   if(w == NULL) cm_Fail("Memory error, stopwatch not created.\n");
+  esl_stopwatch_Start(w);
   struct cfg_s     cfg;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
@@ -254,9 +254,6 @@ main(int argc, char **argv)
    */
   while (cfg.do_stall); 
 
-  /* Start timing. */
-  esl_stopwatch_Start(w);
-
   /* Figure out who we are, and send control there: 
    * we might be an MPI master, an MPI worker, or a serial program.
    */
@@ -288,8 +285,6 @@ main(int argc, char **argv)
       serial_master(go, &cfg);
       esl_stopwatch_Stop(w);
     }
-  if (cfg.my_rank == 0 && (! esl_opt_GetBoolean(go, "-q"))) esl_stopwatch_Display(stdout, w, "# CPU time: ");
-
   /* Clean up the shared cfg. 
    */
   if (cfg.my_rank == 0) {
@@ -315,6 +310,7 @@ main(int argc, char **argv)
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
   if (cfg.abc_out   != NULL) esl_alphabet_Destroy(cfg.abc_out);
   if (cfg.withali_abc != NULL) esl_alphabet_Destroy(cfg.withali_abc);
+  if (cfg.my_rank == 0 && (! esl_opt_GetBoolean(go, "-q"))) esl_stopwatch_Display(stdout, w, "# CPU time: ");
   esl_getopts_Destroy(go);
   esl_stopwatch_Destroy(w);
   return 0;
@@ -817,10 +813,10 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       /* if nec, output the scores */
       if(esl_opt_GetBoolean(go, "--mpi") && (!esl_opt_GetBoolean(go, "-q"))) { 
 	fprintf(stdout, "#\n");
-	fprintf(stdout, "# %8s  %-40s  %6s  %13s\n", "seq idx",  "seq name",                                 "length", (cm->align_opts & CM_ALIGN_OPTACC) ? "avg post prob" : "bit score");
-	fprintf(stdout, "# %8s  %40s  %6s  %13s\n",  "--------", "----------------------------------------", "------", "-------------");
+	fprintf(stdout, "# %8s  %-30s  %6s  %13s\n", "seq idx",  "seq name",                       "length", (cm->align_opts & CM_ALIGN_OPTACC) ? "avg post prob" : "bit score");
+	fprintf(stdout, "# %8s  %30s  %6s  %13s\n",  "--------", "------------------------------", "------", "-------------");
 	for (i = 0; i < seqs_to_aln->nseq; i++) {
-	  fprintf(stdout, "  %8d  %-40.40s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+	  fprintf(stdout, "  %8d  %-30.30s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
 	  if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %13.3f\n", seqs_to_aln->sc[i]);
 	  else                                 fprintf(stdout, "  %13.2f\n", seqs_to_aln->sc[i]);
 	}
@@ -938,7 +934,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--hmmviterbi"))  cm->align_opts  |= CM_ALIGN_HMMVITERBI;
   if(esl_opt_GetBoolean(go, "--small"))       cm->align_opts  |= CM_ALIGN_SMALL;
   if(esl_opt_GetBoolean(go, "-p"))            cm->align_opts  |= CM_ALIGN_POST;
-  if(esl_opt_GetBoolean(go, "--time"))        cm->align_opts  |= CM_ALIGN_TIME;
   if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
   if(esl_opt_GetBoolean(go, "--fins"))        cm->align_opts  |= CM_ALIGN_FLUSHINSERTS;
   if(esl_opt_GetBoolean(go, "--optacc"))      cm->align_opts  |= CM_ALIGN_OPTACC;

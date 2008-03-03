@@ -5043,7 +5043,6 @@ main(int argc, char **argv)
 
   /* configure CM for HMM banded alignment */
   cm->config_opts |= CM_CONFIG_ZEROINSERTS;
-  cm->align_opts  |= CM_ALIGN_TIME;
   cm->align_opts  |= CM_ALIGN_HBANDED;
   if(esl_opt_GetBoolean(go, "--sums")) cm->align_opts |= CM_ALIGN_SUMS;
 

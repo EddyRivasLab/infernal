@@ -2343,10 +2343,8 @@ CreateComLog()
 
   clog->bcom   = NULL;
   clog->bdate  = NULL;
-  clog->ccom1  = NULL;
-  clog->cdate1 = NULL;
-  clog->ccom2  = NULL;
-  clog->cdate2 = NULL;
+  clog->ccom   = NULL;
+  clog->cdate  = NULL;
 
   return clog;
 
@@ -2366,10 +2364,8 @@ FreeComLog(ComLog_t *clog)
 {
   if(clog->bcom   != NULL) free(clog->bcom);
   if(clog->bdate  != NULL) free(clog->bdate);
-  if(clog->ccom1  != NULL) free(clog->ccom1);
-  if(clog->cdate1 != NULL) free(clog->cdate1);
-  if(clog->ccom2  != NULL) free(clog->ccom2);
-  if(clog->cdate2 != NULL) free(clog->cdate2);
+  if(clog->ccom   != NULL) free(clog->ccom);
+  if(clog->cdate  != NULL) free(clog->cdate);
   free(clog);
   return;
 }
@@ -2389,17 +2385,13 @@ CopyComLog(const ComLog_t *src, ComLog_t *dest)
 
   if(dest->bcom   != NULL)  { free(dest->bcom);  dest->bcom = NULL;    }
   if(dest->bdate  != NULL)  { free(dest->bdate); dest->bdate = NULL;   }
-  if(dest->ccom1  != NULL)  { free(dest->ccom1);  dest->ccom1 = NULL;  }
-  if(dest->cdate1 != NULL)  { free(dest->cdate1); dest->cdate1 = NULL; }
-  if(dest->ccom2  != NULL)  { free(dest->ccom2);  dest->ccom2 = NULL;  }
-  if(dest->cdate2 != NULL)  { free(dest->cdate2); dest->cdate2 = NULL; }
+  if(dest->ccom   != NULL)  { free(dest->ccom);  dest->ccom  = NULL;  }
+  if(dest->cdate  != NULL)  { free(dest->cdate); dest->cdate  = NULL; }
 
   if(src->bcom   != NULL) { if((status = esl_strdup(src->bcom,  -1, &(dest->bcom)))   != eslOK) goto ERROR; }
   if(src->bdate  != NULL) { if((status = esl_strdup(src->bdate, -1, &(dest->bdate)))  != eslOK) goto ERROR; }
-  if(src->ccom1  != NULL) { if((status = esl_strdup(src->ccom1, -1, &(dest->ccom1)))  != eslOK) goto ERROR; }
-  if(src->cdate1 != NULL) { if((status = esl_strdup(src->cdate1,-1, &(dest->cdate1))) != eslOK) goto ERROR; }
-  if(src->ccom2  != NULL) { if((status = esl_strdup(src->ccom2, -1, &(dest->ccom2)))  != eslOK) goto ERROR; }
-  if(src->cdate2 != NULL) { if((status = esl_strdup(src->cdate2,-1, &(dest->ccom2)))  != eslOK) goto ERROR; }
+  if(src->ccom   != NULL) { if((status = esl_strdup(src->ccom, -1, &(dest->ccom)))  != eslOK) goto ERROR; }
+  if(src->cdate  != NULL) { if((status = esl_strdup(src->cdate,-1, &(dest->cdate))) != eslOK) goto ERROR; }
   return eslOK;
 
  ERROR:

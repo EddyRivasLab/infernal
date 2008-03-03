@@ -440,17 +440,16 @@ typedef struct cp9map_s {
 #define CM_ALIGN_HMMVITERBI    (1<<5)  /* use a CP9 HMM only to align, w/viterbi   */
 #define CM_ALIGN_INSIDE        (1<<6)  /* use Inside, not CYK                      */
 #define CM_ALIGN_POST          (1<<7)  /* do inside/outside and append posteriors  */
-#define CM_ALIGN_TIME          (1<<8)  /* print out alignment timings              */
-#define CM_ALIGN_CHECKINOUT    (1<<9)  /* check inside/outside calculations        */
-#define CM_ALIGN_CHECKPARSESC  (1<<10) /* check parsetree score against aln alg sc */
-#define CM_ALIGN_PRINTTREES    (1<<11) /* print parsetrees to stdout               */
-#define CM_ALIGN_HMMSAFE       (1<<12) /* realign seqs w/HMM banded CYK bit sc < 0 */
-#define CM_ALIGN_SCOREONLY     (1<<13) /* do full CYK/inside to get score only     */
-#define CM_ALIGN_SAMPLE        (1<<14) /* sample parsetrees from the inside matrix */
-#define CM_ALIGN_FLUSHINSERTS  (1<<15) /* flush inserts L/R like pre 1.0 infernal  */
-#define CM_ALIGN_CHECKFB       (1<<16) /* check forward/backward CP9 HMM calcs     */
-#define CM_ALIGN_OPTACC        (1<<17) /* no CYK, aln w/Holmes/Durbin opt accuracy */
-#define CM_ALIGN_HMM2IJOLD     (1<<18) /* use old hmm2ij band calculation alg      */
+#define CM_ALIGN_CHECKINOUT    (1<<8)  /* check inside/outside calculations        */
+#define CM_ALIGN_CHECKPARSESC  (1<<9)  /* check parsetree score against aln alg sc */
+#define CM_ALIGN_PRINTTREES    (1<<10) /* print parsetrees to stdout               */
+#define CM_ALIGN_HMMSAFE       (1<<11) /* realign seqs w/HMM banded CYK bit sc < 0 */
+#define CM_ALIGN_SCOREONLY     (1<<12) /* do full CYK/inside to get score only     */
+#define CM_ALIGN_SAMPLE        (1<<13) /* sample parsetrees from the inside matrix */
+#define CM_ALIGN_FLUSHINSERTS  (1<<14) /* flush inserts L/R like pre 1.0 infernal  */
+#define CM_ALIGN_CHECKFB       (1<<15) /* check forward/backward CP9 HMM calcs     */
+#define CM_ALIGN_OPTACC        (1<<16) /* no CYK, aln w/Holmes/Durbin opt accuracy */
+#define CM_ALIGN_HMM2IJOLD     (1<<17) /* use old hmm2ij band calculation alg      */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_NOQDB        (1<<0)  /* DO NOT use QDB to search (QDB is default)*/
@@ -1287,10 +1286,8 @@ typedef struct cmstats_s {
 typedef struct comlog_s {
   char     *bcom;           /* command line used for cmbuild, if --gibbs used w/o --seed, --seed will be artificially appended */
   char     *bdate;          /* date of cmbuild call */
-  char     *ccom1;          /* command line used for first of up to two cmcalibrate calls, if -s not used, -s will be artificially appended */
-  char     *cdate1;         /* date of first of up to two cmcalibrate call */
-  char     *ccom2;          /* command line used for second of up to two cmcalibrate calls, if -s not used, -s will be artificially appended */
-  char     *cdate2;         /* date of second of up to two cmcalibrate call */
+  char     *ccom;           /* command line used for first of up to two cmcalibrate calls, if -s not used, -s will be artificially appended */
+  char     *cdate;          /* date of first of up to two cmcalibrate call */
 } ComLog_t;
 
 /* Structure: CM_t

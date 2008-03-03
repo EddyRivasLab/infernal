@@ -309,6 +309,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   float         minsc;	        /* min score in all seqs */
   float         avgsc;      	/* avg score over all seqs */
   float         tmpsc;          /* temporary score */
+  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
 
   /* variables related to CM Plan 9 HMMs */
   CP9_t       *hmm;             /* constructed CP9 HMM */
@@ -362,7 +363,6 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   int do_scoreonly = FALSE;   /* TRUE to only calculate the score */
   int do_inside    = FALSE;   /* TRUE to do Inside also */
   int do_post      = FALSE;   /* TRUE to calculate posterior probabilities */
-  int do_timings   = FALSE;   /* TRUE to report timings */
   int do_check     = FALSE;   /* TRUE to check posteriors from Inside/Outside */
   int do_sample    = FALSE;   /* TRUE to sample from an Inside matrix */
   int do_optacc    = FALSE;   /* TRUE to find optimally accurate alignment instead of CYK */
@@ -407,7 +407,6 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   if(cm->align_opts  & CM_ALIGN_HMMVITERBI) do_hmmonly   = TRUE;
   if(cm->align_opts  & CM_ALIGN_INSIDE)     do_inside    = TRUE;
   if(cm->align_opts  & CM_ALIGN_POST)       do_post      = TRUE;
-  if(cm->align_opts  & CM_ALIGN_TIME)       do_timings   = TRUE;
   if(cm->align_opts  & CM_ALIGN_CHECKINOUT) do_check     = TRUE;
   if(cm->align_opts  & CM_ALIGN_SCOREONLY)  do_scoreonly = TRUE;
   if(cm->align_opts  & CM_ALIGN_SAMPLE)     do_sample    = TRUE;
@@ -427,7 +426,6 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     printf("do_inside   : %d\n", do_inside);
     printf("do_small    : %d\n", do_small);
     printf("do_post     : %d\n", do_post);
-    printf("do_timings  : %d\n", do_timings);
     printf("do_check    : %d\n", do_check);
     printf("do_scoreonly: %d\n", do_scoreonly);
     printf("do_sample   : %d\n", do_sample);
@@ -507,15 +505,15 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   /* if not in silent mode, print the header for the sequence info */
   if(sq_mode && !silent_mode) { 
     fprintf(ofp, "#\n");
-    fprintf(ofp, "# %8s  %-40s  %6s  %13s\n", "seq idx",  "seq name",                                 "length", (cm->align_opts & CM_ALIGN_OPTACC) ? "avg post prob" : "bit score");
-    fprintf(ofp, "# %8s  %40s  %6s  %13s\n",  "--------", "----------------------------------------", "------", "-------------");
+    fprintf(ofp, "# %8s  %-30s  %6s  %13s  %11s\n", "seq idx",  "seq name",                       "length", (cm->align_opts & CM_ALIGN_OPTACC) ? "avg post prob" : "bit score", "elapsed");
+    fprintf(ofp, "# %8s  %30s  %6s  %13s  %11s\n",  "--------", "------------------------------", "------", "-------------", "-----------");
   }
 
   /*****************************************************************
    *  Collect parse trees for each sequence
    *****************************************************************/
   for (i = 0; i < nalign; i++) {
-    if(do_timings) esl_stopwatch_Start(watch);
+    if(sq_mode && !silent_mode) esl_stopwatch_Start(watch);
     if (sq_mode) { 
       cur_dsq = seqs_to_aln->sq[i]->dsq;
       cur_tr  = &(tr[i]);
@@ -532,7 +530,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
     /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
     if(sq_mode && do_hmmonly) {
-      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-40.40s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-30.30s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
       if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, L, 0., NULL,
 			       FALSE,  /* we are not scanning */
 			       TRUE,   /* we are aligning */
@@ -540,16 +538,16 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 			       NULL, NULL, /* don't return best sc at each posn, or best scoring posn */
 			       &(cp9_tr[i]), /* return the trace */
 			       &sc)) != eslOK) return status;
-      if(sq_mode && !silent_mode) fprintf(ofp, "  %13.2f\n", sc);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %13.2f  ", sc);
       parsesc[i] = sc;
       continue;
     }
     /* Special case, if do_scoreonly, align seq with full CYK inside, just to 
      * get the score. For testing, probably in cmscore. */
     if(sq_mode && do_scoreonly) {
-      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-40.40s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-30.30s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
       sc = CYKInsideScore(cm, cur_dsq, L, 0, 1, L, NULL, NULL); /* don't do QDB mode */
-      if(sq_mode && !silent_mode) fprintf(ofp, "  %13.2f\n", sc);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %13.2f  ", sc);
       parsesc[i] = sc;
       continue;
     }
@@ -630,7 +628,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     }
 
     if(sq_mode && !silent_mode) { 
-      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-40.40s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-30.30s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
     }
 
     /* beginning of large if() else if() else if() ... statement */
@@ -724,8 +722,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     if (sc < minsc) minsc = sc;
       
     if(sq_mode && !silent_mode) { 
-      if(do_optacc)  fprintf(ofp, "  %13.3f\n", sc);
-      else           fprintf(ofp, "  %13.2f\n", sc);
+      if(do_optacc)  fprintf(ofp, "  %13.3f  ", sc);
+      else           fprintf(ofp, "  %13.2f  ", sc);
     }
     parsesc[i] = sc;
 
@@ -773,10 +771,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     /* free alpha and beta, we need to allocate new ones for each seq */
     if(alpha != NULL)  { free_vjd_matrix(alpha, cm->M, 1, L); alpha = NULL; }
     if(beta  != NULL)  { free_vjd_matrix(beta,  cm->M, 1, L); beta = NULL; }
-    if(do_timings) { 
+    if(sq_mode && !silent_mode) { 
       esl_stopwatch_Stop(watch); 
-      esl_stopwatch_Display(ofp, watch, "seq alignment CPU time: ");
-      fprintf(ofp, "\n");
+      FormatTimeString(time_buf, watch->user, TRUE);
+      fprintf(ofp, "%11s\n", time_buf);
     }
   }
   /* done aligning all nalign seqs. */

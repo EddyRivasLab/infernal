@@ -84,14 +84,12 @@ static unsigned int v01swap  = 0xb1b0ede3; /* v0.1 binary, byteswapped         *
 #define CMIO_NC           48
 #define CMIO_BCOM         49
 #define CMIO_BDATE        50
-#define CMIO_CCOM1        51
-#define CMIO_CDATE1       52
-#define CMIO_CCOM2        53
-#define CMIO_CDATE2       54
-#define CMIO_NSEQ         55
-#define CMIO_EFFNSEQ      56
-#define CMIO_CLEN         57
-#define CMIO_WBETA        58
+#define CMIO_CCOM         51
+#define CMIO_CDATE        52
+#define CMIO_NSEQ         53
+#define CMIO_EFFNSEQ      54
+#define CMIO_CLEN         55
+#define CMIO_WBETA        56
 
 static int  write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf);
 static int  read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
@@ -379,10 +377,8 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
   fprintf(fp, "CLEN     %d\n",   cm->clen);
   fprintf(fp, "BCOM     %s\n",   cm->comlog->bcom);
   fprintf(fp, "BDATE    %s\n",   cm->comlog->bdate);
-  if(cm->comlog->ccom1 != NULL) fprintf(fp, "CCOM1    %s\n", cm->comlog->ccom1);
-  if(cm->comlog->cdate1!= NULL) fprintf(fp, "CDATE1   %s\n", cm->comlog->cdate1);
-  if(cm->comlog->ccom2 != NULL) fprintf(fp, "CCOM2    %s\n", cm->comlog->ccom2);
-  if(cm->comlog->cdate2!= NULL) fprintf(fp, "CDATE2   %s\n", cm->comlog->cdate2);
+  if(cm->comlog->ccom != NULL) fprintf(fp, "CCOM    %s\n", cm->comlog->ccom);
+  if(cm->comlog->cdate!= NULL) fprintf(fp, "CDATE   %s\n", cm->comlog->cdate);
   fputs(      "NULL    ", fp);
   for (x = 0; x < cm->abc->K; x++)
     fprintf(fp, "%6s ", prob2ascii(cm->null[x], 1/(float)(cm->abc->K)));
@@ -679,33 +675,19 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  if(cm->comlog->bdate != NULL) free(cm->comlog->bdate);
 	  esl_strdup(tok, toklen, &(cm->comlog->bdate));
 	}
-      else if (strcmp(tok, "CCOM1") == 0) 
+      else if (strcmp(tok, "CCOM") == 0) 
 	{
 	  while(isspace((int) *s)) *s++; /* chew up leading whitespace */
 	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	  if(cm->comlog->ccom1 != NULL) free(cm->comlog->ccom1);
-	  esl_strdup(tok, toklen, &(cm->comlog->ccom1));
+	  if(cm->comlog->ccom != NULL) free(cm->comlog->ccom);
+	  esl_strdup(tok, toklen, &(cm->comlog->ccom));
 	}
-      else if (strcmp(tok, "CDATE1") == 0) 
+      else if (strcmp(tok, "CDATE") == 0) 
 	{
 	  while(isspace((int) *s)) *s++; /* chew up leading whitespace */
 	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	  if(cm->comlog->cdate1 != NULL) free(cm->comlog->cdate1);
-	  esl_strdup(tok, toklen, &(cm->comlog->cdate1));
-	}
-      else if (strcmp(tok, "CCOM2") == 0) 
-	{
-	  while(isspace((int) *s)) *s++; /* chew up leading whitespace */
-	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	  if(cm->comlog->ccom2 != NULL) free(cm->comlog->ccom2);
-	  esl_strdup(tok, toklen, &(cm->comlog->ccom2));
-	}
-      else if (strcmp(tok, "CDATE2") == 0) 
-	{
-	  while(isspace((int) *s)) *s++; /* chew up leading whitespace */
-	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	  if(cm->comlog->cdate2 != NULL) free(cm->comlog->cdate2);
-	  esl_strdup(tok, toklen, &(cm->comlog->cdate2));
+	  if(cm->comlog->cdate != NULL) free(cm->comlog->cdate);
+	  esl_strdup(tok, toklen, &(cm->comlog->cdate));
 	}
       else if (strcmp(tok, "NULL") == 0) 
 	{
@@ -1085,10 +1067,8 @@ write_binary_cm(FILE *fp, CM_t *cm, char *errbuf)
   /* cm->comlog, the creation dates and command lines used to build/calibrate the model */
   tagged_bin_string_write(CMIO_BCOM,   cm->comlog->bcom,  fp);
   tagged_bin_string_write(CMIO_BDATE,  cm->comlog->bdate, fp);
-  tagged_bin_string_write(CMIO_CCOM1,  cm->comlog->ccom1, fp);
-  tagged_bin_string_write(CMIO_CDATE1, cm->comlog->cdate1,fp);
-  tagged_bin_string_write(CMIO_CCOM2,  cm->comlog->ccom2, fp);
-  tagged_bin_string_write(CMIO_CDATE2, cm->comlog->cdate2,fp);
+  tagged_bin_string_write(CMIO_CCOM,   cm->comlog->ccom, fp);
+  tagged_bin_string_write(CMIO_CDATE,  cm->comlog->cdate,fp);
   /* null, background distro */
   tagged_fwrite(CMIO_NULL,         cm->null,       sizeof(float), cm->abc->K, fp);
 
@@ -1235,10 +1215,8 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   /* comlog info */
   if (! tagged_bin_string_read(CMIO_BCOM,   &(cm->comlog->bcom),   fp)) goto FAILURE;
   if (! tagged_bin_string_read(CMIO_BDATE,  &(cm->comlog->bdate),  fp)) goto FAILURE;
-  if (! tagged_bin_string_read(CMIO_CCOM1,  &(cm->comlog->ccom1),  fp)) goto FAILURE;
-  if (! tagged_bin_string_read(CMIO_CDATE1, &(cm->comlog->cdate1), fp)) goto FAILURE;
-  if (! tagged_bin_string_read(CMIO_CCOM2,  &(cm->comlog->ccom2),  fp)) goto FAILURE;
-  if (! tagged_bin_string_read(CMIO_CDATE2, &(cm->comlog->cdate2), fp)) goto FAILURE;
+  if (! tagged_bin_string_read(CMIO_CCOM,   &(cm->comlog->ccom),  fp)) goto FAILURE;
+  if (! tagged_bin_string_read(CMIO_CDATE,  &(cm->comlog->cdate), fp)) goto FAILURE;
 
   /* null distro */
   if (! tagged_fread(CMIO_NULL,         (void *) cm->null,       sizeof(float), cm->abc->K, fp))    goto FAILURE;

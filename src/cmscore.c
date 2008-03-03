@@ -49,6 +49,12 @@ static ESL_OPTIONS options[] = {
   { "-a",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print individual timings & scores, not just a summary", 1 },
   { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL, "-l,--search", "build sub CM for columns b/t HMM predicted start/end points", 1 },
   { "--mxsize",  eslARG_REAL, "512.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 1 },
+  /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
+   * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
+  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 1 },
+  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 1 },
+  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local begin prob to <x>", 1 },
+  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local end prob to <x>", 1 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
 #endif
@@ -106,7 +112,7 @@ struct cfg_s {
   double       *tau;            /* [0..nstages-1] tau  for each stage, NULL if not doing HMM banding */
   float        *s1_sc;          /* [0..cfg->nseq] scores for stage 1 parses, filled in 1st output_result() call*/
   ESL_STOPWATCH *s1_w;          /* stopwatch for timing stage 1 */
-  ESL_STOPWATCH *w;             /* stopwatch for timing stages 2+ */
+  ESL_STOPWATCH *s_w;           /* stopwatch for timing stages 2+ */
   ESL_RANDOMNESS *r;            /* source of randomness for generating sequences */
   int           infmt;		/* format code for input seqfile */
   int           ncm;            /* number CM we're on */
@@ -165,6 +171,9 @@ int
 main(int argc, char **argv)
 {
   ESL_GETOPTS     *go = NULL;   /* command line processing                     */
+  ESL_STOPWATCH   *w  = esl_stopwatch_Create();
+  if(w == NULL) cm_Fail("Memory error, stopwatch not created.\n");
+  esl_stopwatch_Start(w);
   struct cfg_s     cfg;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
@@ -256,7 +265,7 @@ main(int argc, char **argv)
   cfg.tau        = NULL;                   /* alloc'ed and filled in init_master_cfg() in masters, stays NULL in workers */
   cfg.s1_sc      = NULL;                   /* alloc'ed and filled in first call to output_result() in masters, stays NULL in workers */
   cfg.s1_w       = NULL;                   /* created in init_master_cfg in masters, stays NULL in workers */
-  cfg.w          = NULL;                   /* created in init_master_cfg in masters, stays NULL in workers */
+  cfg.s_w        = NULL;                   /* created in init_master_cfg in masters, stays NULL in workers */
   cfg.r          = NULL;                   /* created in init_master_cfg in masters, stays NULL in workers */
 
   cfg.do_mpi     = FALSE;	           /* this gets reset below, if we init MPI */
@@ -290,7 +299,8 @@ main(int argc, char **argv)
 	cm_banner(stdout, argv[0], banner);
 	mpi_master(go, &cfg);
       }
-
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_MPIReduce(w, 0, MPI_COMM_WORLD);
       MPI_Finalize();
     }
   else
@@ -298,6 +308,7 @@ main(int argc, char **argv)
     {
       cm_banner(stdout, argv[0], banner);
       serial_master(go, &cfg);
+      esl_stopwatch_Stop(w);
     }
 
   /* Clean up the shared cfg. 
@@ -317,14 +328,16 @@ main(int argc, char **argv)
       printf("# Sequences scored against the CM saved in file %s.\n", esl_opt_GetString(go, "--outfile"));
       fclose(cfg.sfp);
     }
-    if (cfg.ofp       != NULL) fclose(cfg.ofp);
     if (cfg.s1_sc     != NULL) free(cfg.s1_sc);
+    esl_stopwatch_Display(cfg.ofp, w, "# CPU time: ");
+    esl_stopwatch_Destroy(w);
+    if (cfg.ofp       != NULL) fclose(cfg.ofp);
   }
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
   if (cfg.beta      != NULL) free(cfg.beta);
   if (cfg.tau       != NULL) free(cfg.tau);
   if (cfg.s1_w      != NULL) esl_stopwatch_Destroy(cfg.s1_w);
-  if (cfg.w         != NULL) esl_stopwatch_Destroy(cfg.w);
+  if (cfg.s_w       != NULL) esl_stopwatch_Destroy(cfg.s_w);
   if (cfg.r         != NULL) esl_randomness_Destroy(cfg.r);
   esl_getopts_Destroy(go);
   return 0;
@@ -408,7 +421,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
  *    cfg->nstages
  *    cfg->beta
  *    cfg->tau
- *    cfg->w
+ *    cfg->s_w
  *    cfg->s1_w
  *    
  * Because this is called from an MPI worker, it cannot print; 
@@ -465,10 +478,10 @@ init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 #endif
     }  
   cfg->s1_w  = esl_stopwatch_Create();
-  cfg->w     = esl_stopwatch_Create();
+  cfg->s_w   = esl_stopwatch_Create();
 
   if (cfg->s1_w    == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create stopwatch: probably out of memory");
-  if (cfg->w       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create stopwatch: probably out of memory");
+  if (cfg->s_w     == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create stopwatch: probably out of memory");
 
   return eslOK;
 
@@ -493,7 +506,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
-  if((status  = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
+  if ((status = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
 
   while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
     {
@@ -505,7 +518,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	{
 	  /* start timing */
 	  if(cfg->s == 0) esl_stopwatch_Start(cfg->s1_w);
-	  else            esl_stopwatch_Start(cfg->w);
+	  else            esl_stopwatch_Start(cfg->s_w);
 	  
 	  if(esl_opt_GetBoolean(go, "--search")) {
 	    /* initialize the flags/options/params of the CM for the current stage */
@@ -534,7 +547,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	  /* stop timing, and output result */
 	  if(cfg->s == 0) esl_stopwatch_Stop(cfg->s1_w);
-	  else            esl_stopwatch_Stop(cfg->w);
+	  else            esl_stopwatch_Stop(cfg->s_w);
 	  if ((status = output_result(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
 
 	  /* clean up, free everything in seqs_to_aln but the sqs, which we'll reuse for each stage */
@@ -543,7 +556,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
       FreeSeqsToAln(seqs_to_aln); 
       FreeCM(cm);
-      fprintf(cfg->ofp, "//\n");
     }
 }
 
@@ -647,7 +659,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	  /* Start timing. */
 	  if(cfg->s == 0) esl_stopwatch_Start(cfg->s1_w);
-	  else            esl_stopwatch_Start(cfg->w);
+	  else            esl_stopwatch_Start(cfg->s_w);
 	  
 	  /* initialize the flags/options/params of the CM for current stage */
 	  if(esl_opt_GetBoolean(go, "--search")) { 
@@ -757,8 +769,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    esl_stopwatch_MPIReduce(cfg->s1_w, 0, MPI_COMM_WORLD);
 	  }
 	  else {
-	    esl_stopwatch_Stop(cfg->w);
-	    esl_stopwatch_MPIReduce(cfg->w, 0, MPI_COMM_WORLD);
+	    esl_stopwatch_Stop(cfg->s_w);
+	    esl_stopwatch_MPIReduce(cfg->s_w, 0, MPI_COMM_WORLD);
 	  }
 	  /* if we've got valid results for this stage, output them */
 	  if (xstatus == eslOK) {
@@ -838,7 +850,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	{
 	  /* Start timing. */
 	  if(cfg->s == 0) esl_stopwatch_Start(cfg->s1_w);
-	  else            esl_stopwatch_Start(cfg->w);
+	  else            esl_stopwatch_Start(cfg->s_w);
 
 	  /* initialize the flags/options/params of the CM for current stage */
 	  if(esl_opt_GetBoolean(go, "--search")) { 
@@ -903,8 +915,8 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      esl_stopwatch_MPIReduce(cfg->s1_w, 0, MPI_COMM_WORLD);
 	  }
 	  else {
-	      esl_stopwatch_Stop(cfg->w);
-	      esl_stopwatch_MPIReduce(cfg->w, 0, MPI_COMM_WORLD);
+	      esl_stopwatch_Stop(cfg->s_w);
+	      esl_stopwatch_MPIReduce(cfg->s_w, 0, MPI_COMM_WORLD);
 	  }
 	}
       FreeCM(cm);
@@ -936,8 +948,8 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       esl_stopwatch_MPIReduce(cfg->s1_w, 0, MPI_COMM_WORLD);
     }
     else {
-      esl_stopwatch_Stop(cfg->w);
-      esl_stopwatch_MPIReduce(cfg->w, 0, MPI_COMM_WORLD);
+      esl_stopwatch_Stop(cfg->s_w);
+      esl_stopwatch_MPIReduce(cfg->s_w, 0, MPI_COMM_WORLD);
     }
   }
   status = cm_worker_MPIBcast(0, MPI_COMM_WORLD, &wbuf, &wn, &(cfg->abc), &cm);
@@ -1025,7 +1037,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       double diff_sc = 0.; /* difference in summed parse scores for this stage versus stage 1 */
       int    diff_ct = 0.; /* number of parses different between this stage and stage 1 */
 
-      FormatTimeString(time_buf, cfg->w->user, TRUE);
+      FormatTimeString(time_buf, cfg->s_w->user, TRUE);
       if(esl_opt_GetBoolean(go, "-a")) print_seq_column_headings(go, cfg);
       for(i = 0; i < seqs_to_aln->nseq; i++)
 	{
@@ -1052,7 +1064,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       else                                   print_align_options(cfg, cm);
       fprintf(cfg->ofp, "  %11s  %6.2f  %7d  %7.5f  %6.2f\n", 
 	      time_buf,                                            /* time */
-	      cfg->s1_w->user / cfg->w->user,                      /* speedup versus stage 1 */
+	      cfg->s1_w->user / cfg->s_w->user,                    /* speedup versus stage 1 */
 	      diff_ct,                                             /* number of seqs with different scores */
 	      ((float) diff_ct) / ((float) seqs_to_aln->nseq),     /* fraction that are different */
 	      (diff_ct == 0) ? 0. : (diff_sc / ((float) diff_ct)));/* avg score diff for those that are diff */
@@ -1123,8 +1135,8 @@ static int
 initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   /* Some stuff we do no matter what stage we're on */
-    cm->align_opts  = 0;  /* clear alignment options from previous stage */
-    cm->config_opts = 0;  /* clear configure options from previous stage */
+  cm->align_opts  = 0;  /* clear alignment options from previous stage */
+  cm->config_opts = 0;  /* clear configure options from previous stage */
 
   /* set up params/flags/options of the CM */
   if(cfg->beta != NULL) cm->beta_qdb = cfg->beta[cfg->s];
@@ -1139,6 +1151,36 @@ initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
     cm->config_opts |= CM_CONFIG_HMMLOCAL;
     cm->config_opts |= CM_CONFIG_HMMEL;
   }
+  /* BEGIN (POTENTIALLY) TEMPORARY BLOCK */
+  int nstarts, nexits, nd;
+  /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */
+  cm->pbegin = esl_opt_GetReal(go, "--pbegin");
+  cm->pend   = esl_opt_GetReal(go, "--pend");
+  /* possibly overwrite local begin probs such that all begin points are equiprobable (--pebegin) */
+  if(esl_opt_GetBoolean(go, "--pebegin")) {
+    nstarts = 0;
+    for (nd = 2; nd < cm->nodes; nd++) 
+      if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd) 
+	nstarts++;
+    cm->pbegin = 1.- (1./(1+nstarts));
+  }
+  /* possibly overwrite cm->pend so that local end prob from all legal states is fixed,
+   * this is strange in that cm->pend may be placed as a number greater than 1., this number
+   * is then divided by nexits in ConfigLocalEnds() to get the prob for each v --> EL transition,
+   * this is guaranteed by the way we calculate it to be < 1.,  it's the argument from --pfend */
+  if(! esl_opt_IsDefault(go, "--pfend")) {
+    nexits = 0;
+    for (nd = 1; nd < cm->nodes; nd++) {
+      if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	   cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	   cm->ndtype[nd] == BEGR_nd) && 
+	  cm->ndtype[nd+1] != END_nd)
+	nexits++;
+    }
+    cm->pend = nexits * esl_opt_GetReal(go, "--pfend");
+  }
+  /* END (POTENTIALLY) TEMPORARY BLOCK */
+
   if(esl_opt_GetBoolean(go, "--sub")) {        
     cm->align_opts  |=  CM_ALIGN_SUB;
     cm->align_opts  &= ~CM_ALIGN_CHECKPARSESC; /* parsetree score won't match aln score */
@@ -1212,6 +1254,35 @@ initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
     cm->config_opts |= CM_CONFIG_HMMLOCAL;
     cm->config_opts |= CM_CONFIG_HMMEL;
   }
+  /* BEGIN (POTENTIALLY) TEMPORARY BLOCK */
+  int nstarts, nexits, nd;
+  /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */
+  cm->pbegin = esl_opt_GetReal(go, "--pbegin");
+  cm->pend   = esl_opt_GetReal(go, "--pend");
+  /* possibly overwrite local begin probs such that all begin points are equiprobable (--pebegin) */
+  if(esl_opt_GetBoolean(go, "--pebegin")) {
+    nstarts = 0;
+    for (nd = 2; nd < cm->nodes; nd++) 
+      if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd) 
+	nstarts++;
+    cm->pbegin = 1.- (1./(1+nstarts));
+  }
+  /* possibly overwrite cm->pend so that local end prob from all legal states is fixed,
+   * this is strange in that cm->pend may be placed as a number greater than 1., this number
+   * is then divided by nexits in ConfigLocalEnds() to get the prob for each v --> EL transition,
+   * this is guaranteed by the way we calculate it to be < 1.,  it's the argument from --pfend */
+  if(! esl_opt_IsDefault(go, "--pfend")) {
+    nexits = 0;
+    for (nd = 1; nd < cm->nodes; nd++) {
+      if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	   cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	   cm->ndtype[nd] == BEGR_nd) && 
+	  cm->ndtype[nd+1] != END_nd)
+	nexits++;
+    }
+    cm->pend = nexits * esl_opt_GetReal(go, "--pfend");
+  }
+  /* END (POTENTIALLY) TEMPORARY BLOCK */
   if(esl_opt_GetBoolean(go, "--inside"))      cm->search_opts  |= CM_SEARCH_INSIDE;
   cm->search_opts |= CM_SEARCH_NOQDB;
   cm->search_opts |= CM_SEARCH_NOALIGN;
@@ -1276,9 +1347,9 @@ initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
 int print_align_options(const struct cfg_s *cfg, CM_t *cm)
 {
   /* algorithm */
-  if     (cm->align_opts & CM_ALIGN_HMMVITERBI) fprintf(cfg->ofp, "  %7s", "hmm vit");
-  else if(cm->align_opts & CM_ALIGN_SMALL)      fprintf(cfg->ofp, "  %7s", "cyk d&c");
-  else                                          fprintf(cfg->ofp, "  %7s", "cyk std");
+  if     (cm->align_opts & CM_ALIGN_HMMVITERBI) fprintf(cfg->ofp, "  %7s", "hmm-vit");
+  else if(cm->align_opts & CM_ALIGN_SMALL)      fprintf(cfg->ofp, "  %7s", "cyk-d&c");
+  else                                          fprintf(cfg->ofp, "  %7s", "cyk-std");
   /* bands and beta/tau*/
   if     (cm->align_opts & CM_ALIGN_HBANDED)    fprintf(cfg->ofp, "  %5s  %6.0e", "hmm", cm->tau);
   else if(cm->align_opts & CM_ALIGN_QDB)        fprintf(cfg->ofp, "  %5s  %6.0e", "qdb", cm->beta_qdb);
@@ -1294,8 +1365,8 @@ int print_align_options(const struct cfg_s *cfg, CM_t *cm)
 int print_search_options(const struct cfg_s *cfg, CM_t *cm)
 {
   /* algorithm */
-  if     (cm->search_opts & CM_SEARCH_HMMVITERBI) fprintf(cfg->ofp, "  %7s", "hmm vit");
-  else if(cm->search_opts & CM_SEARCH_HMMVITERBI) fprintf(cfg->ofp, "  %7s", "hmm fwd");
+  if     (cm->search_opts & CM_SEARCH_HMMVITERBI) fprintf(cfg->ofp, "  %7s", "hmm-vit");
+  else if(cm->search_opts & CM_SEARCH_HMMVITERBI) fprintf(cfg->ofp, "  %7s", "hmm-fwd");
   else if(cm->search_opts & CM_SEARCH_INSIDE)     fprintf(cfg->ofp, "  %7s", "inside");
   else                                            fprintf(cfg->ofp, "  %7s", "cyk");
   /* bands and beta/tau*/

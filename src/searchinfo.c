@@ -933,7 +933,7 @@ void PrintResults (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc
 	
 	if(in_revcomp) offset = len - 1;
 	else           offset = 0;
-	PrintFancyAli(stdout, ali,
+	PrintFancyAli(fp, ali,
 		      (COORDINATE(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
 		      in_revcomp, do_noncompensatory);
 	FreeFancyAli(ali);
@@ -1354,16 +1354,10 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   float hmm_E;
 
   /* contract checks */
-  if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfo(), cm does not have Exp Tail stats.");
-  /* When this function is entered, for all i and p, the following should be true:
-   * dbsize == cm->stats->expAA[0..i..EXP_NMODES-1]][0..p..np-1]->N 
-   */
-  for(i = 0; i < EXP_NMODES; i++) { 
-    for(p = 0; p < cm->stats->np; p++) {
-      if(dbsize != cm->stats->expAA[i][p]->dbsize) 
-	ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfo(), cm exp tail dbsize: %ld != dbsize: %ld for exp_mode: %d partition: %d\n", cm->stats->expAA[i][p]->dbsize, dbsize, i, p); 
-    }
-  }
+  if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfo(), cm does not have exp tail stats.");
+
+  /* update the CM's exp tail params for current dbsize, this may have already been done by caller, but we do it again to be safe */
+  if((status = UpdateExpsForDBSize(cm, errbuf, dbsize)) != eslOK) return status;
 
   if(! (hfi->is_valid)) {
     fprintf(fp, "HMMFilterInfo_t not yet valid.\n");
@@ -1374,27 +1368,27 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &hmm_ncalcs_per_res)) != eslOK) return status;
   if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->beta_qdb, &cm_ncalcs_per_res, &W))  != eslOK) return status;
 
-  fprintf(fp, "# %4s  %-15s  %4s  %6s  %7s  %7s  %7s\n", "idx",  "name",            "clen",   "F",      "nseq",    "db (Mb)", "always?");
-  fprintf(fp, "# %4s  %-15s  %4s  %6s  %7s  %7s  %7s\n", "----", "---------------", "-----",  "------", "-------", "-------", "-------");
-  fprintf(fp, "%6d  %-15s  %4d  %6.4f  %7d  %7.1f  %7s\n",
+  fprintf(fp, "# %4s  %-15s  %5s  %6s  %7s  %7s  %7s\n", "idx",  "name",            "clen",   "F",      "nseq",    "db (Mb)", "always?");
+  fprintf(fp, "# %4s  %-15s  %5s  %6s  %7s  %7s  %7s\n", "----", "---------------", "-----",  "------", "-------", "-------", "-------");
+  fprintf(fp, "%6d  %-15.15s  %5d  %6.4f  %7d  %7.1f  %7s\n",
 	 cmi, cm->name, cm->clen, hfi->F, hfi->N, hfi->dbsize / 1000000.,
 	 hfi->always_better_than_Smax ? "yes" : "no");
   fprintf(fp, "#\n");
   fprintf(fp, "#\n");
-  fprintf(fp, "#%11s  %s\n", "", "CM E-value cutoff / HMM Forward E-value filter cutoff pairs:");
-  fprintf(fp, "#%11s  %-4s  %8s  %6s  %8s  %6s  %6s  %7s  %7s\n", "", "idx",  "cm E",     "cm bit", "hmm E",  "hmmbit", "surv",   "xhmm",    "speedup");
-  fprintf(fp, "#%11s  %-4s  %8s  %6s  %8s  %6s  %6s  %7s  %7s\n", "", "----", "--------", "------", "------", "------", "------", "-------", "-------");
+  fprintf(fp, "#%5s  %s\n", "", "CM E-value cutoff / HMM Forward E-value filter cutoff pairs:");
+  fprintf(fp, "#%5s  %-4s  %10s  %6s  %10s  %6s  %6s  %7s  %7s\n", "", "idx",  "cm E",       "cm bit", "hmm E",      "hmmbit", "surv",   "xhmm",    "speedup");
+  fprintf(fp, "#%5s  %-4s  %10s  %6s  %10s  %6s  %6s  %7s  %7s\n", "", "----", "----------", "------", "----------", "------", "------", "-------", "-------");
   for(i = 0; i < hfi->ncut; i++) {
     cm_E  = hfi->cm_E_cut[i]  * ((double) dbsize / (double) hfi->dbsize);
     hmm_E = hfi->fwd_E_cut[i] * ((double) dbsize / (double) hfi->dbsize);
     if((status = E2MinScore(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
     if((status = E2MinScore(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
-    fprintf(fp, "%10s  %6d  ", "", i);
+    fprintf(fp, "%4s  %6d  ", "", (i+1));
     if(cm_E < 0.01)  fprintf(fp, "%4.2e  ", cm_E);
-    else             fprintf(fp, "%8.3f  ", cm_E);
+    else             fprintf(fp, "%10.3f  ", cm_E);
     fprintf(fp, "%6.1f  ", cm_bit_sc);
     if(hmm_E < 0.01) fprintf(fp, "%4.2e  ", hmm_E);
-    else             fprintf(fp, "%8.3f  ", hmm_E);
+    else             fprintf(fp, "%10.3f  ", hmm_E);
     fprintf(fp, "%6.1f  ", hmm_bit_sc);
     fprintf(fp, "%6.4f  %7.1f  %7.1f\n", 
 	   GetHMMFilterS      (hfi, i, W, avg_hit_len),
@@ -1447,15 +1441,9 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
 
   /* contract checks */
   if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfoForCME(), cm does not have Exp Tail stats.");
-  /* When this function is entered, for all i and p, the following should be true:
-   * dbsize == cm->stats->expAA[0..i..EXP_NMODES-1]][0..p..np-1]->N 
-   */
-  for(i = 0; i < EXP_NMODES; i++) { 
-    for(p = 0; p < cm->stats->np; p++) {
-      if(dbsize != cm->stats->expAA[i][p]->dbsize) 
-	ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfoForCME(), cm exp tail dbsize: %ld != dbsize: %ld for exp_mode: %d partition: %d\n", cm->stats->expAA[i][p]->dbsize, dbsize, i, p); 
-    }
-  }
+
+  /* update the CM's exp tail params for current dbsize, this may have already been done by caller, but we do it again to be safe */
+  if((status = UpdateExpsForDBSize(cm, errbuf, dbsize)) != eslOK) return status;
 
   if(! (hfi->is_valid)) {
     fprintf(fp, "HMMFilterInfo_t not yet valid.\n");
@@ -1467,8 +1455,8 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
   if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->beta_qdb, &cm_ncalcs_per_res, &W))  != eslOK) return status;
 
   if(do_header) { 
-    fprintf(fp, "# %4s  %-15s  %4s  %8s  %6s  %6s  %6s  %7s  %7s\n", "idx",  "name",            "clen", "cm E",     "cm bit", "hmmbit", "surv",   "xhmm",    "speedup");
-    fprintf(fp, "# %4s  %-15s  %4s  %8s  %6s  %6s  %6s  %7s  %7s\n", "----", "---------------", "----", "--------", "------", "------", "------", "-------", "-------");
+    fprintf(fp, "# %4s  %-15s  %5s  %8s  %6s  %6s  %6s  %7s  %7s\n", "idx",  "name",            "clen",  "cm E",     "cm bit", "hmmbit", "surv",   "xhmm",    "speedup");
+    fprintf(fp, "# %4s  %-15s  %5s  %8s  %6s  %6s  %6s  %7s  %7s\n", "----", "---------------", "-----", "--------", "------", "------", "------", "-------", "-------");
   }
   fprintf(fp, "%6d  %-15s  %4d  ", cmi, cm->name, cm->clen);
   if((status = GetHMMFilterFwdECutGivenCME(hfi, errbuf, cm_E, dbsize, &i)) != eslOK) return status;
@@ -1578,16 +1566,9 @@ PlotHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
 
   /* contract checks */
   if(mode < 0 || mode >= FTHR_NPLOT) ESL_FAIL(eslEINCOMPAT, errbuf, "PlotHMMFilterInfo(), mode: %d is outside allowed range of [%d-%d]", mode, 0, (FTHR_NPLOT-1));
-  if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "PlotHMMFilterInfo(), cm does not have Exp Tail stats.");
-  /* When this function is entered, for all i and p, the following should be true:
-   * dbsize == cm->stats->expAA[0..i..EXP_NMODES-1]][0..p..np-1]->N 
-   */
-  for(i = 0; i < EXP_NMODES; i++) { 
-    for(p = 0; p < cm->stats->np; p++) {
-      if(dbsize != cm->stats->expAA[i][p]->dbsize) 
-	ESL_FAIL(eslEINCOMPAT, errbuf, "DumpHMMFilterInfo(), cm exp tail dbsize: %ld != dbsize: %ld for exp_mode: %d partition: %d\n", cm->stats->expAA[i][p]->dbsize, dbsize, i, p); 
-    }
-  }
+
+  /* updated the CM's exp tail params for current dbsize, this may have already been done by caller, but we do it again to be safe */
+  if((status = UpdateExpsForDBSize(cm, errbuf, dbsize)) != eslOK) return status;
 
   if(! (hfi->is_valid)) {
     fprintf(fp, "HMMFilterInfo_t not yet valid.\n");

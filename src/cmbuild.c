@@ -67,8 +67,8 @@ static ESL_OPTIONS options[] = {
 /* Alternate effective sequence weighting strategies */
   { "--eent",    eslARG_NONE,"default",NULL, NULL,    EFFOPTS,    NULL,      NULL, "adjust eff seq # to achieve relative entropy target", 4},
   { "--enone",   eslARG_NONE,  FALSE,  NULL, NULL,    EFFOPTS,    NULL,      NULL, "no effective seq # weighting: just use nseq",         4},
-  { "--ere",     eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set CM  target relative entropy to <x>",   4},
-  { "--ehmmre",  eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set minimum HMM relative entropy to <x>",  4}, 
+  { "--ere",     eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set CM target relative entropy to <x>",   4},
+  { "--ehmmre",  eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set minimum HMM relative entropy to <x>", 4}, 
   { "--eX",      eslARG_REAL,  "6.0",  NULL,"x>0",       NULL, "--eent",  "--ere", "for --eent: set minimum total rel ent param to <x>",  4}, 
 /* Verbose output files */
   { "--cfile",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save count vectors to file <s>", 5 },
@@ -96,7 +96,7 @@ static ESL_OPTIONS options[] = {
   { "--gibbs",   eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, use Gibbs sampling instead of EM", 9 },
   { "-s",        eslARG_INT,     NULL, NULL, "n>0",      NULL,"--gibbs",        NULL, "w/--gibbs, set random number generator seed to <n>",  9 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, align locally w.r.t the model", 9 },
-  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,      NULL,       NULL, "print individual sequence scores during MSA refinement", 1 },
+  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,      NULL,       NULL, "print individual sequence scores during MSA refinement", 9 },
   { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, use sub CM for columns b/t HMM start/end points", 9 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,       NULL,"--refine",       NULL, "do not use bands to accelerate alignment with --refine", 9 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",    NULL,"--refine","--nonbanded", "set tail loss prob for --hbanded to <x>", 9 },
@@ -193,6 +193,7 @@ main(int argc, char **argv)
   ESL_GETOPTS     *go = NULL;   /* command line processing                     */
   ESL_STOPWATCH   *w  = esl_stopwatch_Create();
   if(w == NULL) cm_Fail("Memory allocation error, stopwatch could not be created.");
+  esl_stopwatch_Start(w);
   struct cfg_s     cfg;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
@@ -253,10 +254,10 @@ main(int argc, char **argv)
    * We could assume RNA, but this HMMER3 based approach is more general.
    */
   cfg.ofp        = NULL;	           /* opened in init_cfg() */
+  cfg.cmfile     = esl_opt_GetArg(go, 1); 
   cfg.alifile    = esl_opt_GetArg(go, 2);
   cfg.afp        = NULL;	           /* created in init_cfg() */
   cfg.abc        = NULL;	           /* created in init_cfg() */
-  cfg.cmfile     = esl_opt_GetArg(go, 1); 
   cfg.cmfp       = NULL;	           /* opened in init_cfg() */
   cfg.null       = NULL;	           /* created in init_cfg() */
   cfg.pri        = NULL;                   /* created in init_cfg() */
@@ -291,12 +292,8 @@ main(int argc, char **argv)
   if (((! esl_opt_GetBoolean(go, "-F")) && (! esl_opt_GetBoolean(go, "-A"))) && esl_FileExists(cfg.cmfile))
     cm_Fail("CM file %s already exists. Either use -F to overwrite it, rename it, or delete it.", cfg.cmfile); 
 
-  /* Start timing; do work; stop timing.*/
-  esl_stopwatch_Start(w);
+  /* do work */
   master(go, &cfg);
-  esl_stopwatch_Stop(w);
-  fprintf(cfg.ofp, "#\n");
-  esl_stopwatch_Display(cfg.ofp, w, "# CPU time: ");
 
   /* Clean up the cfg. 
    */
@@ -350,6 +347,8 @@ main(int argc, char **argv)
   if (cfg.comlog!= NULL) FreeComLog(cfg.comlog);
 
   esl_getopts_Destroy(go);
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(cfg.ofp, w, "# CPU time: ");
   esl_stopwatch_Destroy(w);
   return 0;
 }

@@ -36,14 +36,13 @@
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
-  { "-o",        eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "save sequences in file <f>", 1 },
   { "-n",        eslARG_INT,    "10",  NULL, "n>0",     NULL,      NULL,        NULL, "generate <n> sequences",  1 },
   { "-u",        eslARG_NONE,"default",NULL, NULL,   OUTOPTS,      NULL,        NULL, "write generated sequences as unaligned FASTA",  1 },
   { "-a",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,        NULL, "write generated sequences as a STOCKHOLM alignment",  1 },
   { "-c",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,        NULL, "generate a single \"consensus\" sequence only",  1 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "local; emit from a locally configured model",  1 },
   { "-s",        eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,        NULL, "set random number generator seed to <n>",  1 },
-  { "-v",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "be verbose; print banner and seed", 1 },
+  { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "be quiet; don't print anything to stdout", 1 },
   /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
    * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 1 },
@@ -83,7 +82,7 @@ struct cfg_s {
   int           ncm;            /* number CM we're at in file */
 };
 
-static char usage[]  = "[-options] <cmfile>";
+static char usage[]  = "[-options] <cmfile> <sequence output file>";
 static char banner[] = "generate sequences from a covariance model";
 
 static int  init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
@@ -96,11 +95,15 @@ static int emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *
 static int emit_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf);
 static int build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf);
 static int truncate_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, char *errbuf);
+static int print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 
 int
 main(int argc, char **argv)
 {
   ESL_GETOPTS     *go = NULL;   /* command line processing                     */
+  ESL_STOPWATCH   *w  = esl_stopwatch_Create();
+  if(w == NULL) cm_Fail("Memory allocation error, stopwatch could not be created.");
+  esl_stopwatch_Start(w);
   struct cfg_s     cfg;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
@@ -134,7 +137,7 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
       exit(0);
     }
-  if (esl_opt_ArgNumber(go) != 1) 
+  if (esl_opt_ArgNumber(go) != 2) 
     {
       puts("Incorrect number of command line arguments.");
       esl_usage(stdout, argv[0], usage);
@@ -157,34 +160,35 @@ main(int argc, char **argv)
    */
   cfg.cmfile     = esl_opt_GetArg(go, 1); 
   cfg.cmfp       = NULL;	           /* opened in init_cfg() */
+  cfg.ofp        = NULL;                   /* opened in init_cfg() */
   cfg.abc        = NULL;	           /* created in init_cfg() */
   cfg.abc_out    = NULL;	           /* created in init_cfg() */
-  cfg.ofp        = NULL;	           /* opened in init_cfg() */
   cfg.pfp        = NULL;	           /* opened in init_cfg() */
   cfg.shmmfp     = NULL;	           /* opened in init_cfg() */
   cfg.ahmmfp     = NULL;	           /* opened in init_cfg() */
   cfg.r          = NULL;	           /* created in init_cfg() */
 
-  if(esl_opt_GetBoolean(go, "-v")) cm_banner(stdout, argv[0], banner);
+  if(! esl_opt_GetBoolean(go, "-q")) cm_banner(stdout, argv[0], banner);
 
   /* do work */
   master(go, &cfg);
 
   /* Clean up the cfg. 
    */
-  if (! esl_opt_IsDefault(go, "-o")) { fclose(cfg.ofp); }
+  fclose(cfg.ofp);
+  printf("# Generated sequences saved to file %s.\n", esl_opt_GetArg(go, 2));
   if (cfg.pfp   != NULL) { 
     fclose(cfg.pfp);
-    printf("Parsetrees saved to file %s.\n", esl_opt_GetString(go, "--tfile"));
+    printf("# Parsetrees saved to file %s.\n", esl_opt_GetString(go, "--tfile"));
   }
   if(cfg.shmmfp != NULL) { 
     fclose(cfg.shmmfp);
-    printf("Sampled global CP9 HMM model parameters saved to file %s.\n", esl_opt_GetString(go, "--shmm"));
+    printf("# Sampled global CP9 HMM model parameters saved to file %s.\n", esl_opt_GetString(go, "--shmm"));
   }
   if(cfg.ahmmfp != NULL) { 
     fclose(cfg.ahmmfp);
-    if(esl_opt_GetBoolean(go, "-l")) printf("Analytically built local CP9 HMM model parameters saved to file %s.\n", esl_opt_GetString(go, "--ahmm"));
-    else                             printf("Analytically built global CP9 HMM model parameters saved to file %s.\n", esl_opt_GetString(go, "--ahmm"));
+    if(esl_opt_GetBoolean(go, "-l")) printf("# Analytically built local CP9 HMM model parameters saved to file %s.\n", esl_opt_GetString(go, "--ahmm"));
+    else                             printf("# Analytically built global CP9 HMM model parameters saved to file %s.\n", esl_opt_GetString(go, "--ahmm"));
   }
   if (cfg.abc   != NULL) { esl_alphabet_Destroy(cfg.abc); cfg.abc = NULL; }
   if (cfg.abc_out != NULL) esl_alphabet_Destroy(cfg.abc_out);
@@ -192,6 +196,9 @@ main(int argc, char **argv)
   if (cfg.r     != NULL) esl_randomness_Destroy(cfg.r);
 
   esl_getopts_Destroy(go);
+  esl_stopwatch_Stop(w);
+  esl_stopwatch_Display(stdout, w, "# CPU time: ");
+  esl_stopwatch_Destroy(w);
   return 0;
 }
 
@@ -201,7 +208,6 @@ main(int argc, char **argv)
  * Sets: 
  *    cfg->cmfp    - open CM file
  *    cfg->abc_out - digital alphabet for output
- *    cfg->ofp     - open output alignment file                
  *    cfg->pfp     - optional output file for parsetrees
  *    cfg->shmmfp  - optional output file for sampled HMM
  *    cfg->ahmmfp  - optional output file for analytically built HMM
@@ -214,15 +220,13 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
     ESL_FAIL(eslFAIL, errbuf, "Failed to open covariance model save file %s\n", cfg->cmfile);
 
+  /* open sequence output file for writing */
+  if ((cfg->ofp = fopen(esl_opt_GetArg(go, 2), "w")) == NULL)
+    ESL_FAIL(eslFAIL, errbuf, "Failed to open output file %s\n", esl_opt_GetArg(go, 2));
+
   /* create output alphabet */
   if      (esl_opt_GetBoolean(go, "--rna"))     cfg->abc_out = esl_alphabet_Create(eslRNA);
   else if (esl_opt_GetBoolean(go, "--dna"))     cfg->abc_out = esl_alphabet_Create(eslDNA);
-
-  /* open output file if necessary */
-  if (esl_opt_GetString(go, "-o") != NULL) {
-    if ((cfg->ofp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) 
-      ESL_FAIL(eslFAIL, errbuf, "Failed to open -o output file %s\n", esl_opt_GetString(go, "-o"));
-  } else cfg->ofp = stdout;
 
   /* open parsetree output file if necessary */
   if (esl_opt_GetString(go, "--tfile") != NULL) {
@@ -247,8 +251,6 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
   else cfg->r = esl_randomness_CreateTimeseeded();
 
-  if (esl_opt_GetBoolean(go, "-v")) printf("Random number generator seed: %ld\n\n", esl_randomness_GetSeed(cfg->r));
-
   if (cfg->abc_out == NULL) ESL_FAIL(eslEINVAL, errbuf, "Output alphabet creation failed.");
   if (cfg->r       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
 
@@ -269,6 +271,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   CM_t    *cm = NULL;
 
   if ((status = init_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+  if(! esl_opt_GetBoolean(go, "-q")) if ((status = print_run_info (go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
 
   cfg->ncm = 0;
 
@@ -763,6 +766,61 @@ truncate_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, char 
   return status;
 }
 
+/* Function: print_run_info
+ * Date:     EPN, Mon Mar  3 06:01:13 2008
+ *
+ * Purpose:  Print information on this run of cmemit.
+ *           Command used to run it, and execution date.
+ *
+ * Returns:  eslOK on success
+ */
+static int
+print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
+{
+  int status;
+  char *command;
+  char *date;
+
+  if((status = get_command(go, errbuf, &command)) != eslOK) return status;
+  if((status = GetDate    (errbuf, &date))        != eslOK) return status;
+
+  fprintf(stdout, "%-10s %s\n",  "# command:", command);
+  fprintf(stdout, "%-10s %s\n",  "# date:",    date);
+  fprintf(stdout, "%-10s %ld\n", "# seed:", esl_randomness_GetSeed(cfg->r));
+
+  fprintf(stdout, "#\n");
+  free(command);
+  free(date);
+  return eslOK;
+}
+
+/* Function: get_command
+ * Date:     EPN, Fri Jan 25 13:56:10 2008
+ *
+ * Purpose:  Return the command used to call cmscore
+ *           in <ret_command>.
+ *
+ * Returns:  eslOK on success; eslEMEM on allocation failure.
+ */
+int 
+get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command)
+{
+  int status;
+  int i;
+  char *command = NULL;
+
+  for (i = 0; i < go->argc; i++) { /* copy all command line options and args */
+    if((status = esl_strcat(&(command),  -1, go->argv[i], -1)) != eslOK) goto ERROR;
+    if(i < (go->argc-1)) if((status = esl_strcat(&(command), -1, " ", 1)) != eslOK) goto ERROR;
+  }
+  *ret_command = command;
+
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "get_command(): memory allocation error.");
+  return status;
+}
 
 
 

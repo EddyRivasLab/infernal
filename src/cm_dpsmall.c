@@ -6353,42 +6353,17 @@ debug_print_bands(FILE *fp, CM_t *cm, int *dmin, int *dmax)
 {
   int status;
   int v;
-  char **sttypes;
-  char **nodetypes;
-
-  ESL_ALLOC(sttypes, (sizeof(char *) * 10));
-  sttypes[0] = "D";
-  sttypes[1] = "MP";
-  sttypes[2] = "ML";
-  sttypes[3] = "MR";
-  sttypes[4] = "IL";
-  sttypes[5] = "IR";
-  sttypes[6] = "S";
-  sttypes[7] = "E";
-  sttypes[8] = "B";
-  sttypes[9] = "EL";
-
-  ESL_ALLOC(nodetypes, (sizeof(char *) * 8));
-  nodetypes[0] = "BIF";
-  nodetypes[1] = "MATP";
-  nodetypes[2] = "MATL";
-  nodetypes[3] = "MATR";
-  nodetypes[4] = "BEGL";
-  nodetypes[5] = "BEGR";
-  nodetypes[6] = "ROOT";
-  nodetypes[7] = "END";
-
-  fprintf(fp, "\n");
+  fprintf(fp, "# CM:       %s\n", cm->name);
+  fprintf(fp, "# clen:     %d\n", cm->clen);
+  fprintf(fp, "# W:        %d\n", cm->W);
+  fprintf(fp, "# beta_W:   %g\n", cm->beta_W);
+  fprintf(fp, "# beta_qdb: %g\n", cm->beta_qdb);
+  fprintf(fp, "# %8s  %8s  %6s  %6s  %7s  %7s  %7s\n", "stidx(v)", "ndidx",    "ndtype", "sttype", "dmin[v]","dmax[v]", "bwidth");
+  fprintf(fp, "# %8s  %8s  %6s  %6s  %7s  %7s  %7s\n", "--------", "--------", "------", "------", "------", "------",  "-------");
   for(v = 0; v < cm->M; v++)
-    fprintf(fp, "band v:%d n:%d %-4s %-2s min:%d max:%d\n", v, cm->ndidx[v], nodetypes[(int) cm->ndtype[cm->ndidx[v]]], sttypes[(int) cm->sttype[v]], dmin[v], dmax[v]);
-  fprintf(fp, "\n");
-
-  free(sttypes);
-  free(nodetypes);
+    fprintf(fp, "  %8d  %8d  %-6s  %-6s  %7d  %7d  %7d\n", v, cm->ndidx[v], Nodetype(cm->ndtype[cm->ndidx[v]]), Statetype(cm->sttype[v]), dmin[v], dmax[v], (dmax[v] - dmin[v] + 1));
+  fprintf(fp, "//\n");
   return;
-
- ERROR:
-  cm_Fail("Memory allocation error.");
 }
 
 /* EPN 05.09.05
