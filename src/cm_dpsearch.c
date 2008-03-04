@@ -5180,17 +5180,22 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
  *           ret_results     - search_results_t to create and fill
  *           mxsize_limit    - maximum size of HMM banded matrix allowed.
  *           my_rank         - rank of processor calling this function, 0 if master (serial or MPI)
- * 
+ *           ret_survfract   - [0..n..cm->si->nrounds], fraction of residues that survived round n
+ *                             after padding W (if i..j is a hit, j-(W-1)..i+(W-1) survives), except
+ *                             for final round, cm->si->nrounds; if NULL, don't return it
  *
  * Returns:  eslOK on succes;
  *           <ret_results> is filled with a newly alloc'ed and filled search_results_t structure, must be freed by caller
  */
 int
-ProcessSearchWorkunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, search_results_t **ret_results, float mxsize_limit, int my_rank)
+ProcessSearchWorkunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, search_results_t **ret_results, float mxsize_limit, int my_rank, 
+		      float **ret_survfractA)
 {
   int status;
   search_results_t **results;
   int n;
+  float *survfractA;
+  int do_collapse, do_pad;
 
   if(cm->si == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm->si is NULL in ProcessSearchWorkunit()\n");
 
@@ -5199,11 +5204,22 @@ ProcessSearchWorkunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, search_result
 
   if((status = DispatchSearch(cm, errbuf, 0, dsq, 1, L, results, mxsize_limit, NULL, NULL)) != eslOK) goto ERROR;
 
+  if(ret_survfractA != NULL) { 
+    ESL_ALLOC(survfractA, sizeof(float) * cm->si->nrounds+1);
+    for(n = 0; n <= cm->si->nrounds; n++) { 
+      do_collapse = (((n+1) == cm->si->nrounds) && (cm->si->search_opts[cm->si->nrounds] & CM_SEARCH_HBANDED)) ? FALSE : TRUE;
+      do_pad      = (n == cm->si->nrounds) ? FALSE : TRUE;
+      if((status = Results2SurvFract(cm, errbuf, 1, L, results[n], do_pad, do_collapse, &(survfractA[n]))) != eslOK) goto ERROR;
+    }
+  }
+
   /* we only care about the final results, that survived all the rounds (all the filtering rounds plus the final round) */
   *ret_results = results[cm->si->nrounds];
   /* free the results describing what survived each round of filtering (if any) */
   for(n = 0; n < cm->si->nrounds; n++) FreeResults(results[n]);
   free(results);
+
+  if(ret_survfractA != NULL) *ret_survfractA = survfractA;
 
   return eslOK;
   

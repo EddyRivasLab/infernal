@@ -245,7 +245,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 	/* initialize all valid cells for state v to IMPOSSIBLE (local ends are impossible for B states) */
 	assert(! (NOT_IMPOSSIBLE(cm->endsc[v])));
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
-	  ESL_DASSERT1((j >= i0 && j <= j0));
+	  ESL_DASSERT1((j >= (i0-1) && j <= j0));
 	  jp_v  = j - jmin[v];
 	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
 	    alpha[v][jp_v][dp_v] = IMPOSSIBLE;
@@ -258,7 +258,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 	/* initialize all valid cells for state v */
 	if(NOT_IMPOSSIBLE(cm->endsc[v])) {
 	  for (j = jmin[v]; j <= jmax[v]; j++) { 
-	    ESL_DASSERT1((j >= i0 && j <= j0));
+	    ESL_DASSERT1((j >= (i0-1) && j <= j0));
 	    jp_v  = j - jmin[v];
 	    for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
 	      alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
@@ -268,7 +268,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 	}
 	else { /* cm->endsc[v] == IMPOSSIBLE */
 	  for (j = jmin[v]; j <= jmax[v]; j++) { 
-	    ESL_DASSERT1((j >= i0 && j <= j0));
+	    ESL_DASSERT1((j >= (i0-1) && j <= j0));
 	    jp_v  = j - jmin[v];
 	    for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
 	      alpha[v][jp_v][dp_v] = IMPOSSIBLE;
@@ -293,7 +293,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
        * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
        * before can start calc'ing for alpha[v][j][d+1] */
       for (j = jmin[v]; j <= jmax[v]; j++) {
-	ESL_DASSERT1((j >= i0 && j <= j0));
+	ESL_DASSERT1((j >= (i0-1) && j <= j0));
 	jp_v = j - jmin[v];
 	yvalid_ct = 0;
 	j_sdr = j - sdr;
@@ -332,7 +332,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
        * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
        * before can start calc'ing for alpha[v][j][d+1] */
       for (j = jmin[v]; j <= jmax[v]; j++) {
-	ESL_DASSERT1((j >= i0 && j <= j0));
+	ESL_DASSERT1((j >= (i0-1) && j <= j0));
 	jp_v = j - jmin[v];
 	yvalid_ct = 0;
 	j_sdr = j - sdr;
@@ -1586,7 +1586,7 @@ FastInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
     /* initialize all valid cells for state v to the local end prob, if they're allowed  */
     if(NOT_IMPOSSIBLE(cm->endsc[v])) {
       for (j = jmin[v]; j <= jmax[v]; j++) { 
-	ESL_DASSERT1((j >= i0 && j <= j0));
+	ESL_DASSERT1((j >= (i0-1) && j <= j0));
 	jp_v  = j - jmin[v];
 	for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) 
 	  alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
@@ -1608,7 +1608,7 @@ FastInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
        * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
        * before can start calc'ing for alpha[v][j][d+1] */
       for (j = jmin[v]; j <= jmax[v]; j++) {
-	ESL_DASSERT1((j >= i0 && j <= j0));
+	ESL_DASSERT1((j >= (i0-1) && j <= j0));
 	jp_v = j - jmin[v];
 	yvalid_ct = 0;
 	j_sdr = j - sdr;
@@ -1643,7 +1643,7 @@ FastInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
        * alpha[v][j][d] cell must be complete (that is we must have looked at all children y) 
        * before can start calc'ing for alpha[v][j][d+1] */
       for (j = jmin[v]; j <= jmax[v]; j++) {
-	ESL_DASSERT1((j >= i0 && j <= j0));
+	ESL_DASSERT1((j >= (i0-1) && j <= j0));
 	jp_v = j - jmin[v];
 	yvalid_ct = 0;
 	j_sdr = j - sdr;
@@ -1733,7 +1733,7 @@ FastInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
       }
       /* ensure all cells are >= IMPOSSIBLE */
       for (j = jmin[v]; j <= jmax[v]; j++) { 
-	ESL_DASSERT1((j >= i0 && j <= j0));
+	ESL_DASSERT1((j >= (i0-1) && j <= j0));
 	jp_v  = j - jmin[v];
 	for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++)
 	  alpha[v][jp_v][dp_v] = ESL_MAX(alpha[v][jp_v][dp_v], IMPOSSIBLE);
@@ -1751,7 +1751,7 @@ FastInsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float si
       jx = (jmax[v] < jmax[z]) ? jmax[v] : jmax[z];
       /* the main j loop */
       for (j = jn; j <= jx; j++) { 
-	ESL_DASSERT1((j >= i0 && j <= j0));
+	ESL_DASSERT1((j >= (i0-1) && j <= j0));
 	jp_v = j - jmin[v];
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
@@ -2253,7 +2253,7 @@ FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
       y = cm->plast[v];	/* the parent bifurcation    */
       z = cm->cnum[y];	/* the other (right) S state */
       for (j = jmax[v]; j >= jmin[v]; j--) {
-	ESL_DASSERT1((j >= i0 && j <= j0));
+	ESL_DASSERT1((j >= (i0-1) && j <= j0));
 	jp_v = j - jmin[v];
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
@@ -2313,7 +2313,7 @@ FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
       jn = ESL_MAX(jmin[v], jmin[y]);
       jx = ESL_MIN(jmax[v], jmax[y]);
       for (j = jx; j >= jn; j--) {
-	ESL_DASSERT1((j >= i0 && j <= j0));
+	ESL_DASSERT1((j >= (i0-1) && j <= j0));
 	jp_v = j - jmin[v];
 	jp_y = j - jmin[y];
 	jp_z = j - jmin[z];
@@ -2365,7 +2365,7 @@ FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
        * for non-self-transitioners, we can do a more efficient nesting order (see below)  
        */
       for (j = jmax[v]; j >= jmin[v]; j--) {
-	ESL_DASSERT1((j >= i0 && j <= j0));
+	ESL_DASSERT1((j >= (i0-1) && j <= j0));
 	jp_v = j - jmin[v];
 	for (d = hdmax[v][jp_v]; d >= hdmin[v][jp_v]; d--) {
 	  i = j-d+1;
@@ -2454,7 +2454,7 @@ FastOutsideAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float s
 	jn = ESL_MAX(jmin[v], jmin[y]-sdr);
 	jx = ESL_MIN(jmax[v], jmax[y]-sdr);
 	for (j = jx; j >= jn; j--) {
-	  ESL_DASSERT1((j >= i0 && j <= j0));
+	  ESL_DASSERT1((j >= (i0-1) && j <= j0));
 	  jp_v = j - jmin[v];
 	  jp_y = j - jmin[y];
 	  ESL_DASSERT1((j+sdr >= jmin[y] && j+sdr <= jmax[y]));
@@ -3058,7 +3058,7 @@ CMPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, float size_limit, CM_HB_MX
   
   for (v = (cm->M-1); v >= 0; v--) {
     for (j = jmin[v]; j <= jmax[v]; j++) {
-      ESL_DASSERT1((j >= i0 && j <= j0));
+      ESL_DASSERT1((j >= (i0-1) && j <= j0));
       jp_v = j - jmin[v];
       for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
 	dp_v = d - hdmin[v][jp_v];

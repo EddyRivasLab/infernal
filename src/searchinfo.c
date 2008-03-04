@@ -1342,7 +1342,7 @@ FreeHMMFilterInfo(HMMFilterInfo_t *hfi)
 int
 DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi)
 {
-  int i, p;
+  int i;
   int status;
   float avg_hit_len;
   float cm_ncalcs_per_res;
@@ -1426,7 +1426,7 @@ int
 DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_E, int do_header, 
 			float *ret_cm_bit_sc, float *ret_hmm_E, float *ret_hmm_bit_sc, float *ret_S, float *ret_xhmm, float *ret_spdup, float *ret_cm_ncalcs_per_res, float *ret_hmm_ncalcs_per_res, int *ret_do_filter)
 {
-  int i, p;
+  int i;
   int status;
   float avg_hit_len;
   float cm_ncalcs_per_res;
@@ -1553,7 +1553,7 @@ DumpHMMFilterInfoForCMBitScore(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_
 int
 PlotHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int mode)
 {
-  int i, p;
+  int i;
   int status;
   float avg_hit_len;
   float cm_ncalcs_per_res;
@@ -1797,8 +1797,78 @@ SurvFract2E(float S, int W, float avg_hit_len, long dbsize)
  *           an E-value cutoff, W, avg_hit_len, and dbsize.
  */
 float 
-E2SurvFract(float E, int W, float avg_hit_len, long dbsize)
+E2SurvFract(float E, int W, float avg_hit_len, long dbsize, int do_pad)
 {
-  float surv_res_per_hit = ((float) 2 * W) - avg_hit_len;
+  float surv_res_per_hit;
+  surv_res_per_hit = (do_pad) ? (((float) 2 * W) - avg_hit_len) : avg_hit_len;
   return((E * surv_res_per_hit) / ((double) dbsize));
+}
+
+
+/* Function: Results2SurvFraction()
+ * Date:     EPN, Mon Mar  3 14:07:59 2008
+ *
+ * Purpose:  Return the survival fraction from a round
+ *           of filtering, after possibly adding a W pad to both sides
+ *           if (do_pad) (i.e. if i..j is a hit, j-(W-1)..i+(W-1) survives)
+ *           and possibly collapsing overlapping hits together (if do_collapse).
+ */
+int
+Results2SurvFract(CM_t *cm, char *errbuf, int i0, int j0, search_results_t *results, int do_pad, int do_collapse, float *ret_survfract)
+{
+  int prev_j, nhits, h, next_j, i, j;
+  int surv_res = 0;
+  float survfract;
+
+  prev_j = j0;
+  nhits  = results->num_results;
+  /* To be safe, we only trust that i..j of our filter-passing hit is within the real hit,
+   * so we add (W-1) to start point i and subtract (W-1) from j, and treat this region j-(W-1)..i+(W-1)
+   * as having survived the filter.
+   */
+  for(h = 0; h < nhits; h++) {
+    if(results->data[h].stop > prev_j) ESL_FAIL(eslEINCOMPAT, errbuf, "Results2SurvFract(): j's not in descending order");
+    prev_j = results->data[h].stop;
+    
+    if(do_pad) { 
+      i = ((results->data[h].stop  - (cm->W-1)) >= 1)    ? (results->data[h].stop  - (cm->W-1)) : 1;
+      j = ((results->data[h].start + (cm->W-1)) <= j0)   ? (results->data[h].start + (cm->W-1)) : j0;
+      
+      if((h+1) < nhits) next_j = ((results->data[h+1].start + (cm->W-1)) <= j0) ? (results->data[h+1].start + (cm->W-1)) : j0;
+      else              next_j = -1;
+      
+      /* possibly collapse multiple overlapping hits together into a single hit. 
+       */
+      if(do_collapse) { 
+	while(((h+1) < nhits) && (next_j >= i)) { /* suck in hit */
+	  h++;
+	  i = ((results->data[h].stop - (cm->W-1)) >= 1) ? (results->data[h].stop - (cm->W-1)) : 1;
+	  if((h+1) < nhits) next_j = ((results->data[h+1].start + (cm->W-1)) <= j0) ? (results->data[h+1].start + (cm->W-1)) : j0;
+	  else              next_j = -1;
+	}
+      }
+    } /* end of if(do_pad) */
+    else { /* do_pad == FALSE */
+      i = results->data[h].start;
+      j = results->data[h].stop;
+      
+      if((h+1) < nhits) next_j = results->data[h+1].stop;
+      else              next_j = -1;
+      
+      /* possibly collapse multiple overlapping hits together into a single hit. 
+       */
+      if(do_collapse) { 
+	while(((h+1) < nhits) && (next_j >= i)) { /* suck in hit */
+	  h++;
+	  i = results->data[h].start;
+	  if((h+1) < nhits) next_j = results->data[h+1].stop;
+	  else              next_j = -1;
+	}
+      }
+    } 
+    surv_res += j-i+1;
+  }
+  survfract = ((float) surv_res) / ((float) (j0-i0+1));
+  *ret_survfract = survfract;
+  return eslOK;
 }

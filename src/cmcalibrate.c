@@ -665,7 +665,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  for(i = 0; i < expN; i++) { 
 	    /* do the work, fit the histogram, update exp tail info in cmstats */
 	    if((status = get_random_dsq        (cfg, errbuf, cm, dnull, expL, &dsq)) != eslOK) cm_Fail(errbuf); 
-	    if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, expL, &results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank)) != eslOK) cm_Fail(errbuf);
+	    if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, expL, &results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, NULL)) != eslOK) cm_Fail(errbuf);
 	    RemoveOverlappingHits(results, 1, expL);
 	    
 	    if(results->num_results > 0) { 
@@ -1390,7 +1390,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  while((status = cm_dsq_MPIRecv(0, 0, MPI_COMM_WORLD, &wbuf, &wn, &exp_dsq, &expL)) == eslOK)
 	    {
 	      ESL_DPRINTF1(("worker %d: has received dsq chunk of length L: %d\n", cfg->my_rank, expL));
-	      if ((status = ProcessSearchWorkunit(cm, errbuf, exp_dsq, expL, &exp_results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank)) != eslOK) goto ERROR;
+	      if ((status = ProcessSearchWorkunit(cm, errbuf, exp_dsq, expL, &exp_results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, NULL)) != eslOK) goto ERROR;
 	      RemoveOverlappingHits(exp_results, 1, expL);
 	      ESL_DPRINTF1(("worker %d: has gathered search results\n", cfg->my_rank));
 

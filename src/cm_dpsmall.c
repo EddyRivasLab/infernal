@@ -6351,7 +6351,6 @@ debug_print_alpha_banded(float ***alpha, CM_t *cm, int L, int *dmin, int *dmax)
 void
 debug_print_bands(FILE *fp, CM_t *cm, int *dmin, int *dmax)
 {
-  int status;
   int v;
   fprintf(fp, "# CM:       %s\n", cm->name);
   fprintf(fp, "# clen:     %d\n", cm->clen);

@@ -96,6 +96,7 @@ static int emit_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *
 static int build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf);
 static int truncate_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, char *errbuf);
 static int print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
+static int get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
 
 int
 main(int argc, char **argv)

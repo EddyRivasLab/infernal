@@ -42,7 +42,6 @@
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
-  { "-o",        eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "direct output to file <f>, not stdout", 1 },
   { "-n",        eslARG_INT,     "10", NULL, "n>0",     NULL,      NULL,  "--infile", "generate <n> sequences",  1 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,     "--sub", "align locally w.r.t. the model",         1 },
   { "-s",        eslARG_INT,     NULL, NULL, "n>0",     NULL,      NULL,  "--infile", "set random number seed to <n>", 1 },
@@ -254,7 +253,7 @@ main(int argc, char **argv)
   cfg.abc        = NULL;	           /* created in init_master_cfg() in masters, or in mpi_worker() in workers */
   cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.sqfp       = NULL;                   /* opened in init_master_cfg() in masters, stays NULL for workers */
-  cfg.ofp        = NULL;                   /* opened in init_master_cfg() in masters, stays NULL for workers */
+  stdout        = NULL;                   /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.sfp        = NULL;                   /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.tracefp    = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.regressfp  = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
@@ -329,9 +328,9 @@ main(int argc, char **argv)
       fclose(cfg.sfp);
     }
     if (cfg.s1_sc     != NULL) free(cfg.s1_sc);
-    esl_stopwatch_Display(cfg.ofp, w, "# CPU time: ");
+    esl_stopwatch_Display(stdout, w, "# CPU time: ");
     esl_stopwatch_Destroy(w);
-    if (cfg.ofp       != NULL) fclose(cfg.ofp);
+    if (stdout       != NULL) fclose(stdout);
   }
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
   if (cfg.beta      != NULL) free(cfg.beta);
@@ -351,7 +350,6 @@ main(int argc, char **argv)
  * Sets: 
  *    cfg->cmfp        - open CM file                
  *    cfg->abc         - digital input alphabet
- *    cfg->ofp         - optional output sequence file
  *    cfg->sqfp        - optional input sequence file
  *    cfg->tracefp     - optional output file
  *    cfg->regressfp   - optional output file
@@ -366,12 +364,6 @@ static int
 init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
   int status;
-
-  /* open output file, or set to stdout if none */
-  if (esl_opt_GetString(go, "-o") != NULL) {
-    if ((cfg->ofp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) 
-      ESL_FAIL(eslFAIL, errbuf, "Failed to open -o output file %s\n", esl_opt_GetString(go, "-o"));
-  } else cfg->ofp = stdout;
 
   /* open CM file */
   if ((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
@@ -789,7 +781,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       FreeSeqsToAln(all_seqs_to_aln); 
       FreeCM(cm);
-      fprintf(cfg->ofp, "//\n");
+      fprintf(stdout, "//\n");
     }
 
   /* On success or recoverable errors:
@@ -1024,10 +1016,10 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       }
       /* Print summary for stage 1 */ 
       print_stage_column_headings(go, cfg);
-      fprintf(cfg->ofp, "  %5d", (cfg->s+1)); /* stage number */
+      fprintf(stdout, "  %5d", (cfg->s+1)); /* stage number */
       if(esl_opt_GetBoolean(go, "--search")) print_search_options(cfg, cm);
       else                                   print_align_options(cfg, cm);
-      fprintf(cfg->ofp, "  %11s  %6s  %7s  %7s  %6s\n", 
+      fprintf(stdout, "  %11s  %6s  %7s  %7s  %6s\n", 
 	      time_buf,                  /* time */
 	      "-", "-", "-", "-");  /* comparisons with stage 1 are all N/A */
     }
@@ -1044,7 +1036,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  /* TO DO: write function that inside DispatchAlignments() takes
 	   * a CP9 parse, and converts it to a CM parsetree */
 	  if(esl_opt_GetBoolean(go, "-a")) 
-	    fprintf(cfg->ofp, "  %-25.25s  %6d  %11.4f  %11.4f  %10.4f\n", seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, cfg->s1_sc[i], seqs_to_aln->sc[i], cfg->s1_sc[i] - seqs_to_aln->sc[i]);
+	    fprintf(stdout, "  %-25.25s  %6d  %11.4f  %11.4f  %10.4f\n", seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, cfg->s1_sc[i], seqs_to_aln->sc[i], cfg->s1_sc[i] - seqs_to_aln->sc[i]);
 	  if(fabs(cfg->s1_sc[i] - seqs_to_aln->sc[i]) > 0.01) {
 	    diff_ct++;
 	    diff_sc += cfg->s1_sc[i] - seqs_to_aln->sc[i]; /* don't take absolute value in case cur stage sc > stage 1 sc, for example with -l --hmmviterbi */
@@ -1059,10 +1051,10 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       if(esl_opt_GetBoolean(go, "-a")) print_stage_column_headings(go, cfg);
 
       /* Print summary for this stage versus stage 1 */ 
-      fprintf(cfg->ofp, "  %5d", (cfg->s+1)); /* stage number */
+      fprintf(stdout, "  %5d", (cfg->s+1)); /* stage number */
       if(esl_opt_GetBoolean(go, "--search")) print_search_options(cfg, cm);
       else                                   print_align_options(cfg, cm);
-      fprintf(cfg->ofp, "  %11s  %6.2f  %7d  %7.5f  %6.2f\n", 
+      fprintf(stdout, "  %11s  %6.2f  %7d  %7.5f  %6.2f\n", 
 	      time_buf,                                            /* time */
 	      cfg->s1_w->user / cfg->s_w->user,                    /* speedup versus stage 1 */
 	      diff_ct,                                             /* number of seqs with different scores */
@@ -1089,7 +1081,7 @@ process_align_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *err
   if((status = DispatchAlignments(cm, errbuf, seqs_to_aln,
 				  NULL, NULL, 0,  /* we're not aligning search hits */
 				  FALSE, 0, TRUE, NULL, 
-				  esl_opt_GetReal(go, "--mxsize"), cfg->ofp)) != eslOK) goto ERROR;
+				  esl_opt_GetReal(go, "--mxsize"), stdout)) != eslOK) goto ERROR;
 
   return eslOK;
   
@@ -1347,13 +1339,13 @@ initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
 int print_align_options(const struct cfg_s *cfg, CM_t *cm)
 {
   /* algorithm */
-  if     (cm->align_opts & CM_ALIGN_HMMVITERBI) fprintf(cfg->ofp, "  %7s", "hmm-vit");
-  else if(cm->align_opts & CM_ALIGN_SMALL)      fprintf(cfg->ofp, "  %7s", "cyk-d&c");
-  else                                          fprintf(cfg->ofp, "  %7s", "cyk-std");
+  if     (cm->align_opts & CM_ALIGN_HMMVITERBI) fprintf(stdout, "  %7s", "hmm-vit");
+  else if(cm->align_opts & CM_ALIGN_SMALL)      fprintf(stdout, "  %7s", "cyk-d&c");
+  else                                          fprintf(stdout, "  %7s", "cyk-std");
   /* bands and beta/tau*/
-  if     (cm->align_opts & CM_ALIGN_HBANDED)    fprintf(cfg->ofp, "  %5s  %6.0e", "hmm", cm->tau);
-  else if(cm->align_opts & CM_ALIGN_QDB)        fprintf(cfg->ofp, "  %5s  %6.0e", "qdb", cm->beta_qdb);
-  else                                          fprintf(cfg->ofp, "  %5s  %6s", "-", "-");
+  if     (cm->align_opts & CM_ALIGN_HBANDED)    fprintf(stdout, "  %5s  %6.0e", "hmm", cm->tau);
+  else if(cm->align_opts & CM_ALIGN_QDB)        fprintf(stdout, "  %5s  %6.0e", "qdb", cm->beta_qdb);
+  else                                          fprintf(stdout, "  %5s  %6s", "-", "-");
 
   return eslOK;
 }
@@ -1365,14 +1357,14 @@ int print_align_options(const struct cfg_s *cfg, CM_t *cm)
 int print_search_options(const struct cfg_s *cfg, CM_t *cm)
 {
   /* algorithm */
-  if     (cm->search_opts & CM_SEARCH_HMMVITERBI) fprintf(cfg->ofp, "  %7s", "hmm-vit");
-  else if(cm->search_opts & CM_SEARCH_HMMVITERBI) fprintf(cfg->ofp, "  %7s", "hmm-fwd");
-  else if(cm->search_opts & CM_SEARCH_INSIDE)     fprintf(cfg->ofp, "  %7s", "inside");
-  else                                            fprintf(cfg->ofp, "  %7s", "cyk");
+  if     (cm->search_opts & CM_SEARCH_HMMVITERBI) fprintf(stdout, "  %7s", "hmm-vit");
+  else if(cm->search_opts & CM_SEARCH_HMMVITERBI) fprintf(stdout, "  %7s", "hmm-fwd");
+  else if(cm->search_opts & CM_SEARCH_INSIDE)     fprintf(stdout, "  %7s", "inside");
+  else                                            fprintf(stdout, "  %7s", "cyk");
   /* bands and beta/tau*/
-  if     (cm->search_opts & CM_SEARCH_HBANDED)    fprintf(cfg->ofp, "  %5s  %6.0e", "hmm", cm->tau);
-  else if(! (cm->search_opts & CM_SEARCH_NOQDB))  fprintf(cfg->ofp, "  %5s  %6.0e", "qdb", cm->beta_qdb);
-  else                                            fprintf(cfg->ofp, "  %5s  %6s", "-", "-");
+  if     (cm->search_opts & CM_SEARCH_HBANDED)    fprintf(stdout, "  %5s  %6.0e", "hmm", cm->tau);
+  else if(! (cm->search_opts & CM_SEARCH_NOQDB))  fprintf(stdout, "  %5s  %6.0e", "qdb", cm->beta_qdb);
+  else                                            fprintf(stdout, "  %5s  %6s", "-", "-");
 
   return eslOK;
 }
@@ -1583,9 +1575,9 @@ int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, in
 static void
 print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq)
 {
-  fprintf(cfg->ofp, "# %4s  %-25s  %6s  %6s  %3s  %6s\n", "idx",  "cm name",                   "strat",  "config", "sub", "nseq"  ); 
-  fprintf(cfg->ofp, "# %4s  %-25s  %6s  %6s  %3s  %6s\n", "----", "-------------------------", "------", "------", "---", "------"); 
-  fprintf(cfg->ofp, "# %4d  %-25.25s  %6s  %6s  %3s  %6d\n", 
+  fprintf(stdout, "# %4s  %-25s  %6s  %6s  %3s  %6s\n", "idx",  "cm name",                   "strat",  "config", "sub", "nseq"  ); 
+  fprintf(stdout, "# %4s  %-25s  %6s  %6s  %3s  %6s\n", "----", "-------------------------", "------", "------", "---", "------"); 
+  fprintf(stdout, "# %4d  %-25.25s  %6s  %6s  %3s  %6d\n", 
 	  cfg->ncm, 
 	  cm->name,
 	  (esl_opt_GetBoolean(go, "--search")) ? "search" : "align", 
@@ -1609,11 +1601,11 @@ print_stage_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg)
 #ifdef HAVE_DEVOPTS 
   if((esl_opt_GetBoolean(go, "--qdb")) || (esl_opt_GetBoolean(go, "--qdbsmall")) || (esl_opt_GetBoolean(go, "--qdbboth")) || (! esl_opt_IsDefault(go, "--betas"))) do_qdb = TRUE;
 #endif
-  fprintf(cfg->ofp, "#\n");
-  fprintf(cfg->ofp, "# %5s  %7s  %5s  %6s  %11s  %32s\n",               "",      "",        "",      "",                         "",            "    comparison with stage 1    ");
-  fprintf(cfg->ofp, "# %5s  %7s  %5s  %6s  %11s  %32s\n",               "",      "",        "",      "",                         "",            "--------------------------------");
-  fprintf(cfg->ofp, "# %5s  %7s  %5s  %6s  %11s  %6s  %7s  %7s  %6s\n", "stage", "alg",     "bands", (do_qdb) ? "beta" : "tau",  "run time",    "spdup",  "num dif", "frc dif", "sc dif");
-  fprintf(cfg->ofp, "# %5s  %7s  %5s  %6s  %11s  %6s  %7s  %7s  %6s\n", "-----", "-------", "-----", "------",                   "-----------", "------", "-------", "-------", "------");
+  fprintf(stdout, "#\n");
+  fprintf(stdout, "# %5s  %7s  %5s  %6s  %11s  %32s\n",               "",      "",        "",      "",                         "",            "    comparison with stage 1    ");
+  fprintf(stdout, "# %5s  %7s  %5s  %6s  %11s  %32s\n",               "",      "",        "",      "",                         "",            "--------------------------------");
+  fprintf(stdout, "# %5s  %7s  %5s  %6s  %11s  %6s  %7s  %7s  %6s\n", "stage", "alg",     "bands", (do_qdb) ? "beta" : "tau",  "run time",    "spdup",  "num dif", "frc dif", "sc dif");
+  fprintf(stdout, "# %5s  %7s  %5s  %6s  %11s  %6s  %7s  %7s  %6s\n", "-----", "-------", "-----", "------",                   "-----------", "------", "-------", "-------", "------");
   return;
 }
 
@@ -1629,9 +1621,9 @@ print_stage_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg)
 static void
 print_seq_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg)
 {
-  fprintf(cfg->ofp, "#\n");
-  fprintf(cfg->ofp, "# %-25s  %6s  %11s  %5s %2d %2s  %10s\n", "seq name",                  "length", "stage 1 sc",  "stage", cfg->s+1, "sc", "sc dif");
-  fprintf(cfg->ofp, "# %25s  %6s  %11s  %11s  %10s\n",        "-------------------------",  "------", "-----------", "-----------",           "----------");
+  fprintf(stdout, "#\n");
+  fprintf(stdout, "# %-25s  %6s  %11s  %5s %2d %2s  %10s\n", "seq name",                  "length", "stage 1 sc",  "stage", cfg->s+1, "sc", "sc dif");
+  fprintf(stdout, "# %25s  %6s  %11s  %11s  %10s\n",        "-------------------------",  "------", "-----------", "-----------",           "----------");
   return;
 }
 
@@ -1653,15 +1645,15 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
   if((status = get_command(go, errbuf, &command)) != eslOK) return status;
   if((status = GetDate    (errbuf, &date))    != eslOK) return status;
 
-  fprintf(cfg->ofp, "%-10s %s\n",  "# command:", command);
-  fprintf(cfg->ofp, "%-10s %s\n",  "# date:",    date);
-  fprintf(cfg->ofp, "%-10s %ld\n", "# seed:",    esl_randomness_GetSeed(cfg->r));
-  if(cfg->nproc > 1) fprintf(cfg->ofp, "# %-8s %d\n", "nproc:", cfg->nproc);
-  if     (! esl_opt_IsDefault(go, "--infile")) fprintf(cfg->ofp, "%-10s input file (%s)\n", "# mode:", esl_opt_GetString(go, "--infile"));
-  else if( esl_opt_GetBoolean(go, "--random")) fprintf(cfg->ofp, "%-10s random\n", "# mode:");
-  else                                         fprintf(cfg->ofp, "%-10s cm emitted\n", "# mode:");
+  fprintf(stdout, "%-10s %s\n",  "# command:", command);
+  fprintf(stdout, "%-10s %s\n",  "# date:",    date);
+  fprintf(stdout, "%-10s %ld\n", "# seed:",    esl_randomness_GetSeed(cfg->r));
+  if(cfg->nproc > 1) fprintf(stdout, "# %-8s %d\n", "nproc:", cfg->nproc);
+  if     (! esl_opt_IsDefault(go, "--infile")) fprintf(stdout, "%-10s input file (%s)\n", "# mode:", esl_opt_GetString(go, "--infile"));
+  else if( esl_opt_GetBoolean(go, "--random")) fprintf(stdout, "%-10s random\n", "# mode:");
+  else                                         fprintf(stdout, "%-10s cm emitted\n", "# mode:");
 
-  fprintf(cfg->ofp, "#\n");
+  fprintf(stdout, "#\n");
   free(command);
   free(date);
   return eslOK;

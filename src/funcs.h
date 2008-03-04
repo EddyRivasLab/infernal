@@ -133,7 +133,7 @@ extern int  rsearch_CYKScan  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float
 extern int  FastCYKScanHB    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx, float size_limit, float *ret_sc);
 extern int  FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx, float size_limit, float *ret_sc);
 extern int  cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W, int correct_for_first_W, float **ret_vcalcs, float *ret_calcs);
-extern int  ProcessSearchWorkunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, search_results_t **ret_results, float mxsize_limit, int my_rank);
+extern int  ProcessSearchWorkunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, search_results_t **ret_results, float mxsize_limit, int my_rank, float **ret_survfractA);
 extern int  DetermineSeqChunksize(int nproc, int L, int W);
 
 /* from cm_dpsmall.c */
@@ -615,7 +615,8 @@ extern float GetHMMFilterSpeedup(HMMFilterInfo_t *hfi, int cut, int W, float avg
 extern int   GetHMMFilterFwdECutGivenCME(HMMFilterInfo_t *hfi, char *errbuf, float cm_E, long dbsize, int *ret_cut_pt);
 extern int   GetHMMFilterFwdECutGivenCMBitScore(HMMFilterInfo_t *hfi, char *errbuf, float cm_bit_sc, long dbsize, int *ret_cut_pt, CM_t *cm, int cm_mode);
 extern float SurvFract2E(float S, int W, float avg_hit_len, long dbsize);
-extern float E2SurvFract(float E, int W, float avg_hit_len, long dbsize);
+extern float E2SurvFract(float E, int W, float avg_hit_len, long dbsize, int do_pad);
+extern int   Results2SurvFract(CM_t *cm, char *errbuf, int i0, int j0, search_results_t *results, int do_pad, int do_collapse, float *ret_survfract);
 
 /* from seqstoaln.c */
 extern seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master);

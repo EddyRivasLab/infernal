@@ -48,6 +48,7 @@ static ESL_OPTIONS options[] = {
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
   { "-o",        eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "direct output to file <f>, not stdout", 1 },
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "configure CM/HMM for glocal alignment [default: local]", 1 },
+  { "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "force; allow search with non-calibrated cmfile",   1 },
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--toponly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the top strand", 1 },
   { "--bottomonly", eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the bottom strand", 1 },
@@ -160,6 +161,7 @@ static int print_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, 
 static int read_next_search_seq(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int do_revcomp, dbseq_t **ret_dbseq);
 static int print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 extern int get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
+extern int print_summary(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *cm, float *cm_survfractA, int cm_nhits);
 
 int
 main(int argc, char **argv)
@@ -291,7 +293,10 @@ main(int argc, char **argv)
   /* Clean up the shared cfg. 
    */
   if (cfg.my_rank == 0) {
-    if (! esl_opt_IsDefault(go, "-o")) { fclose(cfg.ofp); }
+    if (! esl_opt_IsDefault(go, "-o")) { 
+      printf("# Search results saved in file %s.\n", esl_opt_GetString(go, "-o"));
+      fclose(cfg.ofp); 
+    }
     if (cfg.cmfp      != NULL) CMFileClose(cfg.cmfp);
     if (cfg.sqfp      != NULL) esl_sqfile_Close(cfg.sqfp);
   }
@@ -365,7 +370,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int            rci;
   dbseq_t       *dbseq = NULL;
   int            do_top;
-
+  float         *seq_survfractA = NULL; /* 0..n..cm->si->nrounds fraction of db surviving round n for current seq */
+  float         *cm_survfractA  = NULL; /* 0..n..cm->si->nrounds fraction of db surviving round n for current CM */
+  int            cm_nhits = 0;          /* number of hits reported for current CM across all seqs */
+  int            n;
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   /*if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);*/
@@ -376,6 +384,13 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;
+      if(cfg->ncm == 1) { /* check if we have exp stats */
+	if((! (cm->flags & CMH_EXPTAIL_STATS)) && (! esl_opt_GetBoolean(go, "-F"))) { 
+	  cm_Fail("%s has not been calibrated with cmcalibrate.\n       Once calibrated, E-values will be available and HMM filter thresholds\n       will be appropriately set to accelerate the search.\n       To override this warning without calibrating, use -F.", cfg->cmfile);
+	}
+      }
+
+      fprintf(cfg->ofp, "Model: %s\n", cm->name);
 
       /* initialize the flags/options/params and configuration of the CM */
       if((  status = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
@@ -385,6 +400,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if(cm->flags & CMH_EXPTAIL_STATS) 
 	if((status = UpdateExpsForDBSize(cm, errbuf, cfg->dbsize))          != eslOK) cm_Fail(errbuf);
       if((status = set_searchinfo(go, cfg, errbuf, cm))                     != eslOK) cm_Fail(errbuf);
+      ESL_ALLOC(cm_survfractA, sizeof(float) * (cm->si->nrounds+1));
       print_searchinfo(go, cfg, stdout, cm, cfg->dbsize, errbuf);
       using_e_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
 	 
@@ -392,9 +408,12 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	{
 	  for(rci = cfg->init_rci; rci <= cfg->do_rc; rci++) {
 	    /*printf("SEARCHING >%s %d\n", dbseq->sq[reversed]->name, reversed);*/
-	    if ((status = ProcessSearchWorkunit(cm, errbuf, dbseq->sq[rci]->dsq, dbseq->sq[rci]->n, &dbseq->results[rci], esl_opt_GetReal(go, "--mxsize"), cfg->my_rank)) != eslOK) cm_Fail(errbuf);
+	    if ((status = ProcessSearchWorkunit(cm, errbuf, dbseq->sq[rci]->dsq, dbseq->sq[rci]->n, &dbseq->results[rci], esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, &seq_survfractA)) != eslOK) cm_Fail(errbuf);
+	    for(n = 0; n <= cm->si->nrounds; n++) cm_survfractA[n] += (dbseq->sq[rci]->n * seq_survfractA[n]);
+	    free(seq_survfractA);
 	    RemoveOverlappingHits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
 	    if(using_e_cutoff) RemoveHitsOverECutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]); 
+	    cm_nhits += dbseq->results[rci]->num_results;
 	  }
 	  PrintResults (cm, cfg->ofp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
 	  for(rci = 0; rci <= cfg->do_rc; rci++) { /* we can free results for top strand even if cfg->init_rci is 1, due to --bottomonly */
@@ -405,10 +424,20 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	}
       if (status != eslEOF) cm_Fail("Parse failed, line %d, file %s:\n%s", 
 				    cfg->sqfp->linenumber, cfg->sqfp->filename, cfg->sqfp->errbuf);
+      fprintf(cfg->ofp, "//\n");
+      /* convert cm_survfractA[] values from residue counts into fractions */
+      for(n = 0; n <= cm->si->nrounds; n++) cm_survfractA[n] /= (double) (cfg->dbsize);
+      print_summary(go, cfg, stdout, cm, cm_survfractA, cm_nhits);
       FreeCM(cm);
       FreeCMConsensus(cons);
+      free(cm_survfractA);
       esl_sqio_Rewind(cfg->sqfp); /* we may be searching this file again with another CM */
     }
+  return;
+
+ ERROR:
+  cm_Fail("serial_master: memory allocation error.");
+  return; /* NEVERREACHED */
 }
 
 #ifdef HAVE_MPI
@@ -465,6 +494,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int ndbseq = 0;         /* ndbseq is the number of currently active sequences, we can read a new seq IFF ndbseq < (cfg->nproc-1) */
   dbseq_t **dbseqlist= NULL; /* pointers to the dbseq_t objects that hold the actual sequence data, and the results data */
   dbseq_t  *dbseq = NULL;  /* a database sequence */
+  float    *cm_survfractA  = NULL; /* 0..n..cm->si->nrounds fraction of db that survived round n for current CM */
+  int       cm_nhits = 0;          /* number of hits reported for current CM across all seqs */
   
   char     errbuf[cmERRBUFSIZE];
   MPI_Status mpistatus; 
@@ -473,6 +504,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int need_seq = TRUE;
   int chunksize;
   search_results_t *worker_results;
+  float            *worker_survfractA = NULL; /* 0..n..cm->si->nrounds fraction of db surviving round n for current seq */
 
   /* Master initialization: including, figure out the alphabet type.
    * If any failure occurs, delay printing error message until we've shut down workers.
@@ -525,7 +557,15 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     {
       cfg->ncm++;  
       ESL_DPRINTF1(("MPI master read CM number %d\n", cfg->ncm));
+
+      if(cfg->ncm == 1) { /* check if we have exp stats */
+	if((! (cm->flags & CMH_EXPTAIL_STATS)) && (! esl_opt_GetBoolean(go, "-F"))) { 
+	  cm_Fail("%s has not been calibrated with cmcalibrate.\n       Once calibrated, E-values will be available and HMM filter thresholds\n       will be appropriately set to accelerate the search.\n       To override this warning without calibrating, use -F.", cfg->cmfile);
+	}
+      }
+
       if((status = cm_master_MPIBcast(cm, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
+      fprintf(cfg->ofp, "Model: %s\n", cm->name);
       
       /* initialize the flags/options/params of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
@@ -534,9 +574,9 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if(cm->flags & CMH_EXPTAIL_STATS) 
 	if((status = UpdateExpsForDBSize(cm, errbuf, cfg->dbsize))          != eslOK) cm_Fail(errbuf);
       if((status = set_searchinfo(go, cfg, errbuf, cm))                     != eslOK) cm_Fail(errbuf);
-
       print_searchinfo(go, cfg, stdout, cm, cfg->dbsize, errbuf);
       using_e_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
+      ESL_ALLOC(cm_survfractA, sizeof(float) * (cm->si->nrounds+1));
 
       /* reset vars for searching with current CM */
       wi = 1;
@@ -604,7 +644,10 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		    {
 		      si_recv = silist[wi];
 		      ESL_DPRINTF1(("MPI master sees that the result buffer contains search results (si_recv:%d)\n", si_recv));
-		      if ((status = cm_search_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &worker_results)) != eslOK) cm_Fail("search results unpack failed");
+		      /* first unpack the survfractA, that gives survival fractions for each round */
+		      ESL_ALLOC(worker_survfractA, sizeof(float) * (cm->si->nrounds+1));
+		      if (MPI_Unpack(buf, bn, &pos, worker_survfractA, (cm->si->nrounds+1), MPI_FLOAT, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack failed");
+		      if ((status = cm_search_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &worker_results)) != eslOK)    cm_Fail("search results unpack failed");
 		      ESL_DPRINTF1(("MPI master has unpacked search results\n"));
 		      
 		      /* worker_results will be NULL if 0 results (hits) sent back */
@@ -622,6 +665,9 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			 * don't free those (don't use FreeResults(worker_results)) */
 			free(worker_results);
 			worker_results = NULL;
+			/* update cm_survfractA[] which holds number of residues that survived each round of searching/filtering */
+			for(n = 0; n <= cm->si->nrounds; n++) cm_survfractA[n] += (lenlist[wi] * worker_survfractA[n]);
+			free(worker_survfractA);
 		      }
 		      dbseqlist[si_recv]->chunks_sent--;
 		      if(sentlist[si_recv] && dbseqlist[si_recv]->chunks_sent == 0)
@@ -629,6 +675,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
 			    RemoveOverlappingHits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
 			    if(using_e_cutoff) RemoveHitsOverECutoff(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]);
+			    cm_nhits += dbseqlist[si_recv]->results[rci]->num_results;
 			  }					      
 			  PrintResults(cm, cfg->ofp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
@@ -682,6 +729,11 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       ESL_DPRINTF1(("MPI master: done with this CM. Telling all workers\n"));
       for (wi = 1; wi < cfg->nproc; wi++) 
 	if ((status = cm_dsq_MPISend(NULL, 0, wi, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("Shutting down a worker failed.");
+      fprintf(cfg->ofp, "//\n");
+      /* convert cm_survfractA[] values from residue counts into fractions */
+      for(n = 0; n <= cm->si->nrounds; n++) cm_survfractA[n] /= (double) (cfg->dbsize);
+      print_summary(go, cfg, stdout, cm, cm_survfractA, cm_nhits);
+      free(cm_survfractA);
       FreeCM(cm);
       FreeCMConsensus(cons);
       esl_sqio_Rewind(cfg->sqfp); /* we may be searching this file again with another CM */
@@ -720,6 +772,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_DSQ      *dsq = NULL;
   int           L;
   search_results_t *results = NULL;
+  float         *survfractA = NULL; /* 0..n..cm->si->nrounds fraction of db surviving round n for current seq */
 
   /* After master initialization: master broadcasts its status.
    */
@@ -757,11 +810,14 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
       while((status = cm_dsq_MPIRecv(0, 0, MPI_COMM_WORLD, &wbuf, &wn, &dsq, &L)) == eslOK)
 	{
 	  ESL_DPRINTF1(("worker %d: has received search job, length: %d\n", cfg->my_rank, L));
-	  if ((status = ProcessSearchWorkunit(cm, errbuf, dsq, L, &results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank)) != eslOK) goto ERROR;
+	  if ((status = ProcessSearchWorkunit(cm, errbuf, dsq, L, &results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, &survfractA)) != eslOK) goto ERROR;
 	  ESL_DPRINTF1(("worker %d: has gathered search results\n", cfg->my_rank));
 	  
 	  n = 0;
 	  if (MPI_Pack_size(1, MPI_INT, MPI_COMM_WORLD, &sz) != 0) /* room for the status code */
+	    ESL_XFAIL(eslESYS, errbuf, "mpi pack size failed"); 
+	  n += sz;
+	  if (MPI_Pack_size((cm->si->nrounds+1), MPI_FLOAT, MPI_COMM_WORLD, &sz) != 0) /* room for the survfractA array */
 	    ESL_XFAIL(eslESYS, errbuf, "mpi pack size failed"); 
 	  n += sz;
 	  if (cm_search_results_MPIPackSize(results, MPI_COMM_WORLD, &sz) != eslOK)
@@ -779,11 +835,14 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  pos = 0;
 	  if (MPI_Pack(&status, 1, MPI_INT, wbuf, wn, &pos, MPI_COMM_WORLD) != 0) 
 	    ESL_XFAIL(eslESYS, errbuf, "mpi pack failed.");
+	  if (MPI_Pack(survfractA, (cm->si->nrounds+1), MPI_FLOAT, wbuf, wn, &pos, MPI_COMM_WORLD) != 0) 
+	    ESL_XFAIL(eslESYS, errbuf, "mpi pack failed.");
 	  if (cm_search_results_MPIPack(results, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK)
 	    ESL_XFAIL(eslFAIL, errbuf, "cm_search_results_MPIPack() call failed"); 
 	  MPI_Send(wbuf, pos, MPI_PACKED, 0, 0, MPI_COMM_WORLD);
 	  ESL_DPRINTF1(("worker %d: has sent results to master in message of %d bytes\n", cfg->my_rank, pos));
 
+	  free(survfractA);
 	  FreeResults(results);
 	  free(dsq);
 	}
@@ -1185,7 +1244,7 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     else if(final_ctype == E_CUTOFF) { /* determine min bit sc that corresponds to final_E E-val cutoff across all partitions */
       if((status  = E2MinScore(cm, errbuf, hmm_mode, final_E, &final_sc)) != eslOK) return status;
     }
-    final_S = E2SurvFract(final_E, cm->W, cfg->avg_hit_len, cfg->dbsize);
+    final_S = E2SurvFract(final_E, cm->W, cfg->avg_hit_len, cfg->dbsize, FALSE); /* FALSE says don't add a W pad, we're not filtering in final round */
   }
   /* update the search info, which holds the thresholds for final round */
   UpdateSearchInfoCutoff(cm, cm->si->nrounds, final_ctype, final_sc, final_E);   
@@ -1193,7 +1252,6 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* DumpSearchInfo(cm->si); */
 
   if(we_have_exps) { 
-    final_S = E2SurvFract(final_E, cm->W, cfg->avg_hit_len, cfg->dbsize);
     if(final_S >= 0.09) do_qdb_filter = FALSE; /* we want QDB filter to let through 10X survival fraction of final round, so if final round S > 0.09, qdb filter would only filter out 10% of database, so we turn it off */
   }
   else final_S = final_E = -1.;
@@ -1235,7 +1293,7 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 	}
 	if(cut_point != -1) { /* it's worth it to filter */
 	  fhmm_E = hfi_ptr->fwd_E_cut[cut_point] * ((double) cfg->dbsize / (double) hfi_ptr->dbsize); 
-	  fhmm_S = E2SurvFract(fhmm_E, cm->W, cfg->avg_hit_len, cfg->dbsize);
+	  fhmm_S = E2SurvFract(fhmm_E, cm->W, cfg->avg_hit_len, cfg->dbsize, TRUE);
 	  /* check if --fil-Smax-hmm applies */
 	  if(! esl_opt_IsDefault(go, "--fil-Smax-hmm")) { 
 	    if(fhmm_S > esl_opt_GetReal(go, "--fil-Smax-hmm")) { /* predicted survival fraction exceeds maximum allowed, set E cutoff as E value that gives max allowed survival fraction */
@@ -1269,14 +1327,14 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     }
     else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No HMM filter cutoff selected. This shouldn't happen.");
 
-    if(we_have_exps) { 
+    if(do_hmm_filter && we_have_exps) { 
       if(fhmm_ctype == SCORE_CUTOFF) { /* determine max E-value that corresponds to fhmm_sc bit sc cutoff  across all partitions */
 	if((status = Score2MaxE(cm, errbuf, hmm_mode, fhmm_sc, &fhmm_E)) != eslOK) return status;
       }
       else if(fhmm_ctype == E_CUTOFF) { /* determine min bit sc that corresponds to fhmm_E E-val cutoff across all partitions */
 	if((status  = E2MinScore(cm, errbuf, hmm_mode, fhmm_E, &fhmm_sc)) != eslOK) return status;
       }
-      fhmm_S = E2SurvFract(fhmm_E, cm->W, cfg->avg_hit_len, cfg->dbsize);
+      fhmm_S = E2SurvFract(fhmm_E, cm->W, cfg->avg_hit_len, cfg->dbsize, TRUE);
     }
   }
 
@@ -1361,7 +1419,7 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       else if(fqdb_ctype == E_CUTOFF) { /* determine min bit sc that corresponds to fqdb_E E-val cutoff across all partitions */
 	if((status  = E2MinScore(cm, errbuf, qdb_mode, fqdb_E, &fqdb_sc)) != eslOK) return status;
       }
-      fqdb_S = E2SurvFract(fqdb_E, cm->W, cfg->avg_hit_len, cfg->dbsize);
+      fqdb_S = E2SurvFract(fqdb_E, cm->W, cfg->avg_hit_len, cfg->dbsize, TRUE);
 
     }
     if(fqdb_S > 0.9) do_qdb_filter = FALSE; /* turn off QDB filter if predicted survival fraction is crappy */
@@ -1391,7 +1449,7 @@ set_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 int print_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *cm, long N, char *errbuf)
 {
   int status;
-  int p, n;
+  int n;
   float surv_fract = 1.;
   float prv_surv_fract = 1.;
   int cutoff_type;
@@ -1413,31 +1471,28 @@ int print_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *c
   float seconds;            /* predicted number of seconds per round */
   int   use_qdb;            /* are we using qdb for current round? */
   char  time_buf[128];	    /* for printing predicted times */
-
-  /* contract check */
-  if(cm->si == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo(), cm->si is NULL, shouldn't happen.\n");
-  SearchInfo_t *si = cm->si;
+  int   do_pad;             /* TRUE to add W pad onto survival fraction (FALSE only in final round of searching) */
 
   /* Could use ESL_GETOPTS here, but using the CM flags assures we're reporting
    * on how the CM is actually config'ed, not how we want it to be
    */
     
-  using_filters = (si->nrounds > 0) ? TRUE : FALSE;
+  using_filters = (cm->si->nrounds > 0) ? TRUE : FALSE;
 
-  fprintf(cfg->ofp, "# Searching with CM %d: %s\n", cfg->ncm, cm->name);
-  fprintf(cfg->ofp, "#\n");
+  fprintf(stdout, "# Searching with CM %d: %s\n", cfg->ncm, cm->name);
+  fprintf(stdout, "#\n");
 
   if((status = cm_GetAvgHitLen        (cm,      errbuf, &avg_hit_len))        != eslOK) return status;
   if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &hmm_ncalcs_per_res)) != eslOK) return status;
 
-  for(n = 0; n <= si->nrounds; n++) {
-    stype       = si->stype[n];
-    search_opts = si->search_opts[n];
-    cutoff_type = si->cutoff_type[n];
-    sc_cutoff   = si->sc_cutoff[n];
-    e_cutoff    = si->e_cutoff[n];
-    smx         = si->smx[n];
-    hsi         = si->hsi[n];
+  for(n = 0; n <= cm->si->nrounds; n++) {
+    stype       = cm->si->stype[n];
+    search_opts = cm->si->search_opts[n];
+    cutoff_type = cm->si->cutoff_type[n];
+    sc_cutoff   = cm->si->sc_cutoff[n];
+    e_cutoff    = cm->si->e_cutoff[n];
+    smx         = cm->si->smx[n];
+    hsi         = cm->si->hsi[n];
 
     /* Determine configuration of CM and CP9 based on cm->flags & cm->search_opts */
     CM2ExpMode(cm, search_opts, &cm_mode, &cp9_mode); 
@@ -1449,53 +1504,53 @@ int print_searchinfo(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *c
 
     if(cm->flags & CMH_EXPTAIL_STATS) { 
       if(n == 0) { 
-	fprintf(cfg->ofp, "# %3s  %3s  %3s  %3s  %5s  %16s  %19s\n",               ""    , "",    "",    "",    "",      "    cutoffs     ",   "    predictions    ");
-	fprintf(cfg->ofp, "# %3s  %3s  %3s  %3s  %5s  %16s  %19s\n",               "",     "",    "",    "",    "",      "----------------",   "-------------------");
-	fprintf(cfg->ofp, "# %3s  %3s  %3s  %3s  %5s  %8s  %6s  %6s  %11s\n", "rnd",  "mod", "alg", "cfg", "beta",  "E value",  "bit sc", "surv",   "run time");
-	fprintf(cfg->ofp, "# %3s  %3s  %3s  %3s  %5s  %8s  %6s  %6s  %11s\n", "---",  "---", "---", "---", "-----", "--------", "------", "------", "-----------");
+	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %19s  %19s\n",               ""    , "",    "",    "",    "",      "      cutoffs      ",   "    predictions    ");
+	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %19s  %19s\n",               "",     "",    "",    "",    "",      "-------------------",   "-------------------");
+	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %6s  %11s\n", "rnd",  "mod", "alg", "cfg", "beta",  "E value",    "bit sc",      "surv",   "run time");
+	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %6s  %11s\n", "---",  "---", "---", "---", "-----", "----------", "-------",     "------", "-----------");
       }
 
       prv_surv_fract = surv_fract;
-      surv_fract = E2SurvFract(e_cutoff, W, avg_hit_len, cfg->dbsize);
+      do_pad = (n == cm->si->nrounds) ? FALSE : TRUE;
+      surv_fract = E2SurvFract(e_cutoff, W, avg_hit_len, cfg->dbsize, do_pad);
       Mc_per_res = (stype == SEARCH_WITH_CM) ? cm_ncalcs_per_res : hmm_ncalcs_per_res;
       seconds    = prv_surv_fract * cfg->dbsize * Mc_per_res;
       if(stype == SEARCH_WITH_CM) seconds = (search_opts & CM_SEARCH_INSIDE) ?     (seconds /  75.) : (seconds / 275.);  /*  75 Mc/S inside;  275 Mc/S CYK */
       else                        seconds = (search_opts & CM_SEARCH_HMMFORWARD) ? (seconds / 175.) : (seconds / 380.);  /* 175 Mc/S forward; 380 Mc/S viterbi */
       FormatTimeString(time_buf, seconds, TRUE);
 
-      fprintf(cfg->ofp, "  %3d", (n+1));
+      fprintf(stdout, "  %3d", (n+1));
       if(stype == SEARCH_WITH_CM) { 
-	fprintf(cfg->ofp, "  %3s  %3s  %3s  ", "cm", ((search_opts & CM_SEARCH_INSIDE) ? "ins" : "cyk"), ((cm->flags & CMH_LOCAL_BEGIN) ? "loc" : "glc"));
-	if(use_qdb) fprintf(cfg->ofp, "%5g", smx->beta_qdb);
-	else        fprintf(cfg->ofp, "%5s", "-");
+	fprintf(stdout, "  %3s  %3s  %3s  ", "cm", ((search_opts & CM_SEARCH_INSIDE) ? "ins" : "cyk"), ((cm->flags & CMH_LOCAL_BEGIN) ? "loc" : "glc"));
+	if(use_qdb) fprintf(stdout, "%5g", smx->beta_qdb);
+	else        fprintf(stdout, "%5s", "-");
       }
       else { 
-	fprintf(cfg->ofp, "  %3s  %3s  %3s  %5s", "hmm", ((search_opts & CM_SEARCH_HMMFORWARD) ? "fwd" : "vit"), ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? "loc" : "glc"), "-");
+	fprintf(stdout, "  %3s  %3s  %3s  %5s", "hmm", ((search_opts & CM_SEARCH_HMMFORWARD) ? "fwd" : "vit"), ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? "loc" : "glc"), "-");
       }
       if(e_cutoff < -0.1)  if((status = Score2MaxE(cm, errbuf, exp_mode, sc_cutoff, &e_cutoff)) != eslOK) return status;
-      if(e_cutoff < 0.01)  fprintf(cfg->ofp, "  %4.2e", e_cutoff);
-      else                 fprintf(cfg->ofp, "  %8.3f", e_cutoff);
+      if(e_cutoff < 0.01)  fprintf(stdout, "  %6.2e", e_cutoff);
+      else                 fprintf(stdout, "  %10.3f", e_cutoff);
 
-      fprintf(cfg->ofp, "  %6.2f  %6.4f  %11s\n", sc_cutoff, surv_fract, time_buf);
+      fprintf(stdout, "  %7.2f  %6.4f  %11s\n", sc_cutoff, surv_fract, time_buf);
     }
     else { /* CM has not been calibrated with E-values, we can't predict survival fractions or timings */
       if(n == 0) { 
-	fprintf(cfg->ofp, "# %3s  %3s  %3s  %3s  %5s  %10s\n", "rnd",  "mod", "alg", "cfg", "beta",  "bit sc cut");
-	fprintf(cfg->ofp, "# %3s  %3s  %3s  %3s  %5s  %10s\n", "---",  "---", "---", "---", "-----", "----------");
+	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s\n", "rnd",  "mod", "alg", "cfg", "beta",  "bit sc cut");
+	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s\n", "---",  "---", "---", "---", "-----", "----------");
       }
-      fprintf(cfg->ofp, "  %3d", (n+1));
+      fprintf(stdout, "  %3d", (n+1));
       if(stype == SEARCH_WITH_CM) { 
-	fprintf(cfg->ofp, "  %3s  %3s  %3s  ", "cm", ((search_opts & CM_SEARCH_INSIDE) ? "ins" : "cyk"), ((cm->flags & CMH_LOCAL_BEGIN) ? "loc" : "glc"));
-	if(use_qdb) fprintf(cfg->ofp, "%5g", smx->beta_qdb);
-	else        fprintf(cfg->ofp, "%5s", "-");
+	fprintf(stdout, "  %3s  %3s  %3s  ", "cm", ((search_opts & CM_SEARCH_INSIDE) ? "ins" : "cyk"), ((cm->flags & CMH_LOCAL_BEGIN) ? "loc" : "glc"));
+	if(use_qdb) fprintf(stdout, "%5g", smx->beta_qdb);
+	else        fprintf(stdout, "%5s", "-");
       }
       else { 
-	fprintf(cfg->ofp, "  %3s  %3s  %3s  %5s", "hmm", ((search_opts & CM_SEARCH_HMMFORWARD) ? "fwd" : "vit"), ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? "loc" : "glc"), "-");
+	fprintf(stdout, "  %3s  %3s  %3s  %5s", "hmm", ((search_opts & CM_SEARCH_HMMFORWARD) ? "fwd" : "vit"), ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? "loc" : "glc"), "-");
       }
-      fprintf(cfg->ofp, "  %10.2f\n", sc_cutoff);
+      fprintf(stdout, "  %10.2f\n", sc_cutoff);
     } 
   }
-  fprintf(fp, "#\n");
   fflush(fp);
   return eslOK;
 }
@@ -1567,12 +1622,12 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
   if((status = get_command(go, errbuf, &command)) != eslOK) return status;
   if((status = GetDate    (errbuf, &date))    != eslOK) return status;
 
-  fprintf(cfg->ofp, "%-13s %s\n",  "# command:", command);
-  fprintf(cfg->ofp, "%-13s %s\n",  "# date:",    date);
-  if(cfg->nproc > 1) fprintf(cfg->ofp, "# %-8s %d\n", "nproc:", cfg->nproc);
-  fprintf(cfg->ofp, "%-13s %ld\n",  "# dbsize(nt):", cfg->dbsize);
+  fprintf(stdout, "%-13s %s\n",  "# command:", command);
+  fprintf(stdout, "%-13s %s\n",  "# date:",    date);
+  if(cfg->nproc > 1) fprintf(stdout, "# %-13s %d\n", "nproc:", cfg->nproc);
+  fprintf(stdout, "%-13s %ld\n",  "# dbsize(nt):", cfg->dbsize);
 
-  fprintf(cfg->ofp, "#\n");
+  fprintf(stdout, "#\n");
   free(command);
   free(date);
   return eslOK;
@@ -1604,4 +1659,31 @@ get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command)
  ERROR:
   ESL_FAIL(status, errbuf, "get_command(): memory allocation error.");
   return status;
+}
+
+
+/*
+ * Function: print_summary
+ * Date:     EPN, Mon Mar  3 15:10:48 2008
+ * Purpose:  Print summary about current CM's search after it's finished.
+ */
+int print_summary(const ESL_GETOPTS *go, struct cfg_s *cfg, FILE *fp, CM_t *cm, float *cm_survfractA, int cm_nhits)
+{
+  fprintf(stdout, "#\n");
+  fprintf(stdout, "# Summary for CM %d: %s\n", cfg->ncm, cm->name);
+  fprintf(stdout, "#\n");
+  fprintf(fp, "# %9s  %9s", "num hits",   "rnd1 surv");
+  if(cm->si->nrounds > 0) fprintf(fp, "  %9s", "rnd2 surv");
+  if(cm->si->nrounds > 1) fprintf(fp, "  %9s", "rnd3 surv");
+  fprintf(fp, "\n");
+  fprintf(fp, "# %9s  %9s", "---------", "---------");
+  if(cm->si->nrounds > 0) fprintf(fp, "  %9s", "---------");
+  if(cm->si->nrounds > 1) fprintf(fp, "  %9s", "---------");
+  fprintf(fp, "\n");
+  fprintf(fp, "# %9d  %9.4f", cm_nhits, cm_survfractA[0]);
+  if(cm->si->nrounds > 0) fprintf(fp, "  %9.4f", cm_survfractA[1]);
+  if(cm->si->nrounds > 1) fprintf(fp, "  %9.4f", cm_survfractA[2]);
+  fprintf(fp, "\n");
+  fflush(fp);
+  return eslOK;
 }

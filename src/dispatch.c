@@ -94,7 +94,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
   smx             = si->smx[sround]; /* may be NULL */
   hsi             = si->hsi[sround]; /* may be NULL */
   round_results   = results[sround]; /* must not be NULL, contract enforced this */
-  h_existing      = round_results->num_results; /* remember this, b/c we only want rescan survivors found in *this* function call */
+  h_existing      = round_results->num_results; /* remember this, b/c we only want to rescan survivors found in *this* function call */
 
   cur_results = CreateResults(INIT_RESULTS);
 
@@ -195,6 +195,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
   }
 
   if(sround < si->nrounds) { /* we're filtering */
+    AppendResults(cur_results, round_results, 1);
     prev_j = j0;
     nhits  = cur_results->num_results;
     /* To be safe, we only trust that i..j of our filter-passing hit is within the real hit,
