@@ -238,8 +238,8 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 				      dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
 				      0, 0, 0, NULL, size_limit, stdout)) != eslOK) return status;
     }
-    FreeResults(cur_results);
   }
+  FreeResults(cur_results);
   if(ret_sc != NULL) *ret_sc = sc;
   return eslOK;
 }  

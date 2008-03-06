@@ -1458,7 +1458,7 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
     fprintf(fp, "# %4s  %-15s  %5s  %8s  %6s  %6s  %6s  %7s  %7s\n", "idx",  "name",            "clen",  "cm E",     "cm bit", "hmmbit", "surv",   "xhmm",    "speedup");
     fprintf(fp, "# %4s  %-15s  %5s  %8s  %6s  %6s  %6s  %7s  %7s\n", "----", "---------------", "-----", "--------", "------", "------", "------", "-------", "-------");
   }
-  fprintf(fp, "%6d  %-15s  %4d  ", cmi, cm->name, cm->clen);
+  fprintf(fp, "%6d  %-15s  %5d  ", cmi, cm->name, cm->clen);
   if((status = GetHMMFilterFwdECutGivenCME(hfi, errbuf, cm_E, dbsize, &i)) != eslOK) return status;
   if((status = E2MinScore(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
   if(cm_E < 0.01)  fprintf(fp, "%4.2e  ", cm_E);
@@ -1805,7 +1805,7 @@ E2SurvFract(float E, int W, float avg_hit_len, long dbsize, int do_pad)
 }
 
 
-/* Function: Results2SurvFraction()
+/* Function: Results2SurvFract()
  * Date:     EPN, Mon Mar  3 14:07:59 2008
  *
  * Purpose:  Return the survival fraction from a round

@@ -300,7 +300,7 @@ CMFilePositionByKey(CMFILE *cmf, char *key)
   off_t    offset;
   int      status;
 
-  if (cmf->ssi == NULL) ESL_EXCEPTION(eslEINVAL, "Need an open SSI index to call p7_hmmfile_PositionByKey()");
+  if (cmf->ssi == NULL) ESL_EXCEPTION(eslEINVAL, "CMFilePositionByKey(): cmf->ssi is NULL");
   if ((status = esl_ssi_FindName(cmf->ssi, key, &fh, &offset)) != eslOK) return status;
   if (fseeko(cmf->f, offset, SEEK_SET) != 0)    ESL_EXCEPTION(eslESYS, "fseek failed");
   return eslOK;
@@ -312,7 +312,7 @@ CMFilePositionByIndex(CMFILE *cmf, int idx)
   off_t    offset;
   int      status;
 
-  if (cmf->ssi == NULL) ESL_EXCEPTION(eslEINVAL, "Need an open SSI index to call p7_hmmfile_PositionByKey()");
+  if (cmf->ssi == NULL) ESL_EXCEPTION(eslEINVAL, "CMFilePositionByIndex(): cmf->ssi is NULL");
   if ((status = esl_ssi_FindNumber(cmf->ssi, idx, &fh, &offset)) != eslOK) return status;
   if (fseeko(cmf->f, offset, SEEK_SET) != 0)    ESL_EXCEPTION(eslESYS, "fseek failed");
   return eslOK;

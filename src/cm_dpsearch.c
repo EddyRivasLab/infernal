@@ -4280,7 +4280,7 @@ cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W
 	  dn = 1; 
 	  dx = ESL_MIN(j, W); 
 	}
-	vcalcs[0] += (dx - dn + 1);
+	if(NOT_IMPOSSIBLE(cm->beginsc[y])) vcalcs[0] += (dx - dn + 1);
       }
     }
   } /* end loop over end positions j */
@@ -4304,8 +4304,10 @@ cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W
   return eslOK;
 
  ERROR:
-  ESL_FAIL(eslEMEM, errbuf, "count_search_target_calcs(): memory error.");
+  ESL_FAIL(eslEMEM, errbuf, "cm_CountSearchDPCalcs(): memory error.");
+  return status; /* NEVERREACHED */
 }
+
 
 /* 
  * Function: FastCYKScanHB()
@@ -5180,21 +5182,23 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
  *           ret_results     - search_results_t to create and fill
  *           mxsize_limit    - maximum size of HMM banded matrix allowed.
  *           my_rank         - rank of processor calling this function, 0 if master (serial or MPI)
- *           ret_survfract   - [0..n..cm->si->nrounds], fraction of residues that survived round n
+ *           ret_surv_fractA - [0..n..cm->si->nrounds], fraction of residues that survived round n
  *                             after padding W (if i..j is a hit, j-(W-1)..i+(W-1) survives), except
  *                             for final round, cm->si->nrounds; if NULL, don't return it
+ *           ret_nhitsA      - [0..n..cm->si->nrounds], number of hits that survived each round n
  *
  * Returns:  eslOK on succes;
  *           <ret_results> is filled with a newly alloc'ed and filled search_results_t structure, must be freed by caller
  */
 int
 ProcessSearchWorkunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, search_results_t **ret_results, float mxsize_limit, int my_rank, 
-		      float **ret_survfractA)
+		      float **ret_surv_fractA, int **ret_nhitsA)
 {
   int status;
   search_results_t **results;
   int n;
-  float *survfractA;
+  float *surv_fractA;
+  int   *nhitsA;
   int do_collapse, do_pad;
 
   if(cm->si == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm->si is NULL in ProcessSearchWorkunit()\n");
@@ -5202,15 +5206,23 @@ ProcessSearchWorkunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, search_result
   ESL_ALLOC(results, sizeof(search_results_t *) * (cm->si->nrounds+1));
   for(n = 0; n <= cm->si->nrounds; n++) results[n] = CreateResults(INIT_RESULTS);
 
+  /* do the search, DispatchSearch calls itself recursively if we're filtering */
   if((status = DispatchSearch(cm, errbuf, 0, dsq, 1, L, results, mxsize_limit, NULL, NULL)) != eslOK) goto ERROR;
 
-  if(ret_survfractA != NULL) { 
-    ESL_ALLOC(survfractA, sizeof(float) * cm->si->nrounds+1);
+  /* determine survival fraction from each round */
+  if(ret_surv_fractA != NULL) { 
+    ESL_ALLOC(surv_fractA, sizeof(float) * (cm->si->nrounds+1));
+    esl_vec_FSet(surv_fractA, (cm->si->nrounds+1), 0.);
     for(n = 0; n <= cm->si->nrounds; n++) { 
       do_collapse = (((n+1) == cm->si->nrounds) && (cm->si->search_opts[cm->si->nrounds] & CM_SEARCH_HBANDED)) ? FALSE : TRUE;
       do_pad      = (n == cm->si->nrounds) ? FALSE : TRUE;
-      if((status = Results2SurvFract(cm, errbuf, 1, L, results[n], do_pad, do_collapse, &(survfractA[n]))) != eslOK) goto ERROR;
+      if((status = Results2SurvFract(cm, errbuf, 1, L, results[n], do_pad, do_collapse, &(surv_fractA[n]))) != eslOK) goto ERROR;
     }
+  }
+  /* copy the number of hits that survived each round */
+  if(ret_nhitsA != NULL) { 
+    ESL_ALLOC(nhitsA, sizeof(int) * (cm->si->nrounds+1));
+    for(n = 0; n <= cm->si->nrounds; n++) nhitsA[n] = results[n]->num_results;
   }
 
   /* we only care about the final results, that survived all the rounds (all the filtering rounds plus the final round) */
@@ -5219,7 +5231,8 @@ ProcessSearchWorkunit(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, search_result
   for(n = 0; n < cm->si->nrounds; n++) FreeResults(results[n]);
   free(results);
 
-  if(ret_survfractA != NULL) *ret_survfractA = survfractA;
+  if(ret_surv_fractA != NULL) *ret_surv_fractA = surv_fractA;
+  if(ret_nhitsA != NULL)      *ret_nhitsA      = nhitsA;
 
   return eslOK;
   

@@ -116,8 +116,6 @@ static ESL_OPTIONS options[] = {
  * yet exist! 
  */
 struct cfg_s {
-  FILE         *ofp;		/* output file (default is stdout) */
-
   char         *alifile;	/* name of the alignment file we're building CMs from  */
   int           fmt;		/* format code for alifile */
   ESL_MSAFILE  *afp;            /* open alifile  */
@@ -342,6 +340,7 @@ main(int argc, char **argv)
 
   esl_getopts_Destroy(go);
   esl_stopwatch_Stop(w);
+  printf("#\n");
   esl_stopwatch_Display(stdout, w, "# CPU time: ");
   esl_stopwatch_Destroy(w);
   return 0;
@@ -450,10 +449,6 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     }
 
   /* open output files */
-  if (esl_opt_GetString(go, "-o") != NULL) {
-    if ((stdout = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) 
-	ESL_FAIL(eslFAIL, errbuf, "Failed to open -o output file %s\n", esl_opt_GetString(go, "-o"));
-    } else stdout = stdout;
   /* optionally, open count vector file */
   if (esl_opt_GetString(go, "--cfile") != NULL) {
     if ((cfg->cfp = fopen(esl_opt_GetString(go, "--cfile"), "w")) == NULL) 
@@ -843,19 +838,18 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   if ((status = CMFileWrite(cfg->cmfp, cm, esl_opt_GetBoolean(go, "--binary"), errbuf)) != eslOK) return status;
   /* build the HMM, so we can print the CP9 relative entropy */
   if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslFAIL, errbuf, "Couldn't build a CP9 HMM from the CM.");
-  if (! cfg->be_verbose)	/* tabular output */
-    {            /* aln cm  name     nseq effn alen clen  bif */
-      fprintf(stdout, "%6d %6d %-20.20s %8d %8.2f %6d %5d %6.2f %6.2f\n",
-	      msaidx,
-	      cmidx,
-	      cm->name, 
-	      msa->nseq,
-	      cm->eff_nseq,
-	      msa->alen,
-	      cm->clen, 
-	      cm_MeanMatchRelativeEntropy(cm),
-	      cp9_MeanMatchRelativeEntropy(cm));
-    }
+
+  fprintf(stdout, "%6d %6d %-20.20s %8d %8.2f %6d %5d %6.2f %6.2f\n",
+	  msaidx,
+	  cmidx,
+	  cm->name, 
+	  msa->nseq,
+	  cm->eff_nseq,
+	  msa->alen,
+	  cm->clen, 
+	  cm_MeanMatchRelativeEntropy(cm),
+	  cp9_MeanMatchRelativeEntropy(cm));
+
 
   /* dump optional info to files: */
   if(cfg->tblfp != NULL) PrintCM(cfg->tblfp, cm); /* tabular description of CM topology */
@@ -998,6 +992,7 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
       cm_find_and_detach_dual_inserts(cm, 
 				      TRUE,   /* Do check (END_E-1) insert states have 0 counts */
 				      FALSE); /* Don't detach the states yet, wait til CM is priorified */
+      if (cfg->be_verbose) fprintf(stdout, "done.\n");
     }
   /* set the EL self transition probability */
   cm->el_selfsc = sreLOG2(esl_opt_GetReal(go, "--elself"));

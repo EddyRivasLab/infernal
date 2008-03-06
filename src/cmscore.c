@@ -328,6 +328,7 @@ main(int argc, char **argv)
       fclose(cfg.sfp);
     }
     if (cfg.s1_sc     != NULL) free(cfg.s1_sc);
+    printf("#\n");
     esl_stopwatch_Display(stdout, w, "# CPU time: ");
     esl_stopwatch_Destroy(w);
     if (stdout       != NULL) fclose(stdout);

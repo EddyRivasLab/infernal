@@ -198,6 +198,7 @@ main(int argc, char **argv)
 
   esl_getopts_Destroy(go);
   esl_stopwatch_Stop(w);
+  printf("#\n");
   esl_stopwatch_Display(stdout, w, "# CPU time: ");
   esl_stopwatch_Destroy(w);
   return 0;

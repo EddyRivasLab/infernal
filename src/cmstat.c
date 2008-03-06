@@ -485,7 +485,7 @@ main(int argc, char **argv)
       avg_spdup      /= ncm;
       tot_spdup       = tot_cm_ncalcs / tot_cm_surv_plus_fil_calcs;
       tot_xhmm        = tot_cm_surv_plus_fil_calcs / tot_hmm_ncalcs;
-      fprintf(stdout, "# %4s  %-15s  %4s  %8s  %6s  %6s  %6s  %7s  %7s\n", "----", "---------------", "----", "--------", "------", "------", "------", "-------", "-------");
+      fprintf(stdout, "# %4s  %-15s  %5s  %8s  %6s  %6s  %6s  %7s  %7s\n", "----", "---------------", "-----", "--------", "------", "------", "------", "-------", "-------");
       fprintf(stdout, "%6s  %-15s  %4d  ", "-", "*Average*", (int) (avg_clen+0.5));
       if(avg_cm_E < 0.01)  fprintf(stdout, "%4.2e  ", avg_cm_E);
       else                 fprintf(stdout, "%8.3f  ", avg_cm_E);
@@ -495,6 +495,7 @@ main(int argc, char **argv)
     }
   }
   esl_alphabet_Destroy(abc);
+  printf("#\n");
   esl_stopwatch_Destroy(s_w);
   esl_randomness_Destroy(r);
   CMFileClose(cmfp);
@@ -539,8 +540,8 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   float t_f;       /* number of seconds (w->user) for CP9 Forward search */
 
   if(L_cm < cm->W) { L_cm = cm->W; fprintf(stdout, "\tL increased to minimum size of cm->W (%d)\n", L_cm); }
-  ESL_ALLOC(dsq_cm,  sizeof(ESL_DSQ) * L_cm +2);
-  ESL_ALLOC(dsq_cp9, sizeof(ESL_DSQ) * L_cp9+2);
+  ESL_ALLOC(dsq_cm,  sizeof(ESL_DSQ) * (L_cm +2));
+  ESL_ALLOC(dsq_cp9, sizeof(ESL_DSQ) * (L_cp9+2));
   esl_rnd_xfIID(r, cm->null, cm->abc->K, L_cm,  dsq_cm);
   esl_rnd_xfIID(r, cm->null, cm->abc->K, L_cp9, dsq_cp9);
 

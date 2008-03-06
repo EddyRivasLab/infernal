@@ -310,7 +310,10 @@ main(int argc, char **argv)
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
   if (cfg.abc_out   != NULL) esl_alphabet_Destroy(cfg.abc_out);
   if (cfg.withali_abc != NULL) esl_alphabet_Destroy(cfg.withali_abc);
-  if (cfg.my_rank == 0 && (! esl_opt_GetBoolean(go, "-q"))) esl_stopwatch_Display(stdout, w, "# CPU time: ");
+  if (cfg.my_rank == 0 && (! esl_opt_GetBoolean(go, "-q"))) { 
+    printf("#\n");
+    esl_stopwatch_Display(stdout, w, "# CPU time: ");
+  }
   esl_getopts_Destroy(go);
   esl_stopwatch_Destroy(w);
   return 0;
