@@ -870,6 +870,11 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   for(i = 0; i < FTHR_NMODES; i++) {
     if(((have_fthrs && (!fthr_flags[i]))) || ((!have_fthrs) && (fthr_flags[i]))) goto FAILURE;
   }
+  /* if we have exp tail stats we must have filter thresholds stats, 
+   * and if we have filter threshold stats we must have exp tail stats.
+   */
+  if(have_exps  && !have_fthrs) goto FAILURE;
+  if(!have_exps &&  have_fthrs) goto FAILURE;
 
   /* Main model section. 
    */
@@ -1279,6 +1284,11 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	}
       cm->flags |= CMH_FILTER_STATS;
     }
+  /* if we have exp tail stats we must have filter thresholds stats, 
+   * and if we have filter threshold stats we must have exp tail stats.
+   */
+  if(  (cm->flags & CMH_EXPTAIL_STATS)  && (!(cm->flags & CMH_FILTER_STATS))) goto FAILURE;
+  if((!(cm->flags & CMH_EXPTAIL_STATS)) &&   (cm->flags & CMH_FILTER_STATS))  goto FAILURE;
 
   /* Main model section */
   CMZero(cm);

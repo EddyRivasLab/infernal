@@ -634,14 +634,14 @@ char *
 DescribeExpMode(int exp_mode)
 {
   switch (exp_mode) {
-  case EXP_CP9_GV: return "HMM  glc  vit";
-  case EXP_CP9_GF: return "HMM  glc  fwd";
-  case EXP_CM_GC:  return " CM  glc  cyk";
-  case EXP_CM_GI:  return " CM  glc  ins";
-  case EXP_CP9_LV: return "HMM  loc  vit";
-  case EXP_CP9_LF: return "HMM  loc  fwd";
-  case EXP_CM_LC:  return " CM  loc  cyk";
-  case EXP_CM_LI:  return " CM  loc  ins";
+  case EXP_CP9_GV: return "hmm  glc  vit";
+  case EXP_CP9_GF: return "hmm  glc  fwd";
+  case EXP_CM_GC:  return " cm  glc  cyk";
+  case EXP_CM_GI:  return " cm  glc  ins";
+  case EXP_CP9_LV: return "hmm  loc  vit";
+  case EXP_CP9_LF: return "hmm  loc  fwd";
+  case EXP_CM_LC:  return " cm  loc  cyk";
+  case EXP_CM_LI:  return " cm  loc  ins";
   default:     return "?";
   }
 }

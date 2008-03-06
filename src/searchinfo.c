@@ -1384,10 +1384,10 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
     if((status = E2MinScore(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
     if((status = E2MinScore(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
     fprintf(fp, "%4s  %6d  ", "", (i+1));
-    if(cm_E < 0.01)  fprintf(fp, "%4.2e  ", cm_E);
+    if(cm_E < 0.01)  fprintf(fp, "%6.2e  ", cm_E);
     else             fprintf(fp, "%10.3f  ", cm_E);
     fprintf(fp, "%6.1f  ", cm_bit_sc);
-    if(hmm_E < 0.01) fprintf(fp, "%4.2e  ", hmm_E);
+    if(hmm_E < 0.01) fprintf(fp, "%6.2e  ", hmm_E);
     else             fprintf(fp, "%10.3f  ", hmm_E);
     fprintf(fp, "%6.1f  ", hmm_bit_sc);
     fprintf(fp, "%6.4f  %7.1f  %7.1f\n", 
