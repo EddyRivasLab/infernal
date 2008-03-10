@@ -1623,6 +1623,8 @@ MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, i
       clust[i] = nc++;
       csize[i] = 1;
     }
+    printf("# Alignment split into %d clusters; each comprised of exactly 1 sequence\n", nc);
+    printf("#\n");
    }
   else { /* Mode 2 or Mode 3 */ 
     /* Create distance matrix and infer tree by single linkage clustering */
@@ -1660,6 +1662,9 @@ MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, i
       /* Define clusters that are at least mindiff different
        * from each other. */
       if((status = select_node(T, diff, mindiff, &clust, &nc, &best, errbuf)) != eslOK) return status;
+      printf("# Alignment split into %d clusters; each will be used to train a CM.\n", nc);
+      printf("# Maximum identity b/t any 2 seqs in different clusters: %.2f\n", (1.-mindiff));
+      printf("#\n");
     }
     else { /* Mode 3, do_nc == TRUE, mindiff was set to 0.0 above */
       /* Find the minimum fractional difference (mindiff) that 
@@ -1670,7 +1675,9 @@ MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, float mindiff, i
        * to nearest 0.001. */
       if(target_nc > (T->N)) target_nc = T->N; /* max num clusters is num seqs */
       if((status = find_mindiff(T, diff, target_nc, &clust, &nc, &mindiff, errbuf)) != eslOK) return status;
-      /*printf("nc: %d target_nc: %d\n", nc, target_nc);*/
+      printf("# Alignment split into %d clusters; each will be used to train a CM.\n", nc);
+      printf("# Maximum identity b/t any 2 seqs in different clusters: %.2f\n", (1.-mindiff));
+      printf("#\n");
     }
     /* Determine the size of each cluster */
     ESL_ALLOC(csize, (sizeof(int) * (nc)));

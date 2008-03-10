@@ -539,7 +539,11 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 			       NULL, NULL, /* don't return best sc at each posn, or best scoring posn */
 			       &(cp9_tr[i]), /* return the trace */
 			       &sc)) != eslOK) return status;
-      if(sq_mode && !silent_mode) fprintf(ofp, "  %13.2f  ", sc);
+      if(sq_mode && !silent_mode) { 
+	esl_stopwatch_Stop(watch); 
+	FormatTimeString(time_buf, watch->user, TRUE);
+	fprintf(ofp, "  %13.2f  %11s\n", sc, time_buf);
+      }
       parsesc[i] = sc;
       continue;
     }
@@ -583,10 +587,12 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
        * at consensus column 1. */
       if(spos == 0 && spos_state == 1) spos = 1;
       if(epos == 0 && epos_state == 1) epos = 1;
-      /* If most-likely HMM node to emit final position comes BEFORE most-likely HMM node to emit first position,
-       * our HMM alignment is crap, default to using the full CM. */
-      if(epos < spos) { spos = 1; epos = cm->cp9->M; } 
-	  
+      /* If most-likely HMM node to emit final position comes BEFORE or EQUALS the most-likely HMM node to emit first position,
+       * our HMM alignment is crap, default to using the full CM. (note: If EQUALS we could be right, but we can't build a
+       * CM from a single consensus column (see notes in cm_modelmaker.c::cm_from_guide), and I would argue we don't really care about
+       * getting single residue alignments correct anyway. */
+      if(epos <= spos) { spos = 1; epos = cm->cp9->M; } 
+
       /* (3) Build the sub_cm from the original CM. */
       if(!(build_sub_cm(orig_cm, &sub_cm, 
 			spos, epos,         /* first and last col of structure kept in the sub_cm  */
@@ -622,7 +628,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       if((L < cm->dmin[0]) || (L > cm->dmax[0])) { 
 	/* the seq we're aligning is outside the root band, so we expand.*/
 	ExpandBands(cm, L, cm->dmin, cm->dmax);
-	if(sq_mode && debug_level > 0) fprintf(ofp, "Expanded bands for seq : %s\n", seqs_to_aln->sq[i]->name);
+	if(sq_mode && debug_level > 0) fprintf(ofp, "# Expanded bands for seq : %s\n", seqs_to_aln->sq[i]->name);
 	if(bdump_level > 2) { fprintf(ofp, "printing expanded bands :\n"); debug_print_bands(ofp, cm, cm->dmin, cm->dmax); }
 	expand_flag = TRUE;
       }
@@ -675,8 +681,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 	    if(do_optacc) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
 	    else if (status == eslERANGE) { /* we can still do CYK D&C alignment with QDBs derived from the HMM bands */
 	      hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
-	      ESL_DPRINTF1(("Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i));
-	      fprintf(ofp, "Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i); 
+	      ESL_DPRINTF1(("# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i));
+	      fprintf(ofp, "# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i); 
 	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
 	    }
 	    else return status; /* get here (!do_optacc) && FastAlignHB() returned status other than eslOK and eslERANGE */
@@ -684,8 +690,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 	  /* if we're aligning search hits, and we're !do_optacc, we realign if the HMM banded parse was > 0.01 bits less than the search score for this hit */
 	  if(dsq_mode && (! (cm->search_opts & CM_SEARCH_INSIDE))) {
 	    if((!do_optacc) && ((fabs(sc - search_results->data[i].score)) > 0.01)) {
-	      ESL_DPRINTF1(("Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", i, sc, search_results->data[i].score));
-	      fprintf(ofp, "Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", i, sc, search_results->data[i].score);
+	      ESL_DPRINTF1(("# Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", i, sc, search_results->data[i].score));
+	      fprintf(ofp, "# Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", i, sc, search_results->data[i].score);
 	      FreeParsetree(*cur_tr);
 	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL);
 	    }
@@ -698,11 +704,11 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 	  if(do_post)   ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_POST.\n");
 	  if(do_optacc) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_OPTACC.\n");
 	  tmpsc = sc;
-	  if(!silent_mode) fprintf(ofp, "\n%s HMM banded parse had a negative score, realigning with non-banded CYK.\n", seqs_to_aln->sq[i]->name);
+	  if(!silent_mode) fprintf(ofp, "\n# %s HMM banded parse had a negative score, realigning with non-banded CYK.\n", seqs_to_aln->sq[i]->name);
 	  FreeParsetree(*cur_tr);
 	  sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
-	  if(!silent_mode && fabs(sc-tmpsc) < 0.01) fprintf(ofp, "HMM banded parse was the optimal parse.\n\n");
-	  else if (!silent_mode) fprintf(ofp, "HMM banded parse was non-optimal, it was %.2f bits below the optimal.\n\n", (fabs(sc-tmpsc)));
+	  if(!silent_mode && fabs(sc-tmpsc) < 0.01) fprintf(ofp, "# HMM banded parse was the optimal parse.\n\n");
+	  else if (!silent_mode) fprintf(ofp, "# HMM banded parse was non-optimal, it was %.2f bits below the optimal.\n\n", (fabs(sc-tmpsc)));
 	}
       }
       else { 

@@ -1199,10 +1199,10 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   float final_S = -1;         /* predicted survival fraction from final round */
   float fqdb_S = -1;          /* predicted survival fraction from qdb filter round */
   float fhmm_S = -1;          /* predicted survival fraction from HMM filter round */
-  float fhmm_ncalcs_per_res;  /* number of millions of filter HMM DP calcs predicted per residue */
-  float fqdb_ncalcs_per_res;  /* number of millions of filter QDB DP calcs predicted per residue */
-  float final_ncalcs_per_res; /* number of millions of final stage DP calcs predicted per residue */
-  float all_filters_ncalcs_per_res;/* number of millions of DP calcs predicted for all filter rounds */
+  float fhmm_ncalcs_per_res = 0.;  /* number of millions of filter HMM DP calcs predicted per residue */
+  float fqdb_ncalcs_per_res = 0.;  /* number of millions of filter QDB DP calcs predicted per residue */
+  float final_ncalcs_per_res = 0.; /* number of millions of final stage DP calcs predicted per residue */
+  float all_filters_ncalcs_per_res = 0.;/* number of millions of DP calcs predicted for all filter rounds */
   float fhmm_Smin = 0.;       /* minimally useful survival fraction for hmm filter round */
   float fqdb_Smin = 0.;       /* minimally useful survival fraction for qdb filter round */
   float xfil = 0.01;          /* used to set *_Smin values, minimal fraction of filter dp calcs to do in the final round */
@@ -1239,7 +1239,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   CM2ExpMode(cm, search_opts, &cm_mode, &hmm_mode); 
 
   final_S = final_E = final_sc = -1.;
-  if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*cm->smx->W, cm->smx->dmin, cm->smx->dmax, cm->smx->W, TRUE,  NULL, &(final_ncalcs_per_res))) != eslOK) return status;
+  if(!use_hmmonly) { if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*cm->smx->W, cm->smx->dmin, cm->smx->dmax, cm->smx->W, TRUE,  NULL, &(final_ncalcs_per_res))) != eslOK) return status; }
   /* set up final round cutoff, either 0 or 1 of 5 options is enabled. 
    * esl_opt_IsDefault() returns FALSE even if option is enabled with default value.
    */
@@ -2144,6 +2144,7 @@ int estimate_search_time_for_round(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   int    orig_search_opts; /* cm->search_opts when function was entered */
   float  sec_per_res;      /* seconds per residue */
   float  targ_sec = 0.1;   /* target number of seconds our timing expt will take */
+  int    Lmin = 100;       /* minimum number of residues to search to get timing */
 
   ESL_DSQ *dsq;
   ESL_STOPWATCH *w  = esl_stopwatch_Create();
@@ -2159,7 +2160,7 @@ int estimate_search_time_for_round(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
     psec_per_Mc = (search_opts & CM_SEARCH_INSIDE) ? (1. /  75.) : (1. / 275.);  /*  75 Mc/S inside;  275 Mc/S CYK */
     /* determine L that will take about targ_sec seconds */
     L = targ_sec / (psec_per_Mc * Mc_per_res);
-    L = ESL_MAX(L, (int) (((float) cm->W)/5.)); /* we have to search at least (cm->W/5.) residues */
+    L = ESL_MAX(L, Lmin); /* we have to search at least <Lmin> residues */
     /* now determine exactly how many dp calculations we'd do if we search L residues, 
      * this won't be the same as Mc_per_res * L b/c Mc_per_res was passed in from caller
      * and was calculated after correcting for the fact that the first W residues have fewer

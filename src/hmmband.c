@@ -1622,6 +1622,8 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  if(cp9b->jmin[v] != -1) { /* set implicit i bands */
 	    cp9b->imin[v] = r_nn_i[lpos+1]; /* look at band on lpos *+1* b/c we enter MATP_IR AFTER the MATP_MP, MATP_MR, MATP_ML, or MATP_IL insert (if any) */
 	    cp9b->imax[v] = r_nx_i[lpos+1]; /* look at band on lpos *+1* b/c we enter MATP_IR AFTER the MATP_MP, MATP_MR, MATP_ML, or MATP_IL insert (if any) */
+	    ESL_DASSERT1(((lpos+1) <= cm->clen)); /* note: we know lpos+1 <= cm->clen b/c we're in a MATP node, and the ccol the right half of the node maps to 
+						  *       must be to the right of the ccol the left half of the node maps to */
 	    if(cp9b->imin[v] == 0) { cm_Fail("v: %d lpos: %d\n", v, lpos); }
 	  }
 	  else { cp9b->imin[v] = -1; cp9b->imax[v] = -2; }
@@ -1745,7 +1747,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	    cp9b->imax[v] = r_ix[lpos-1]; 
 	    if(cp9b->imin[v-1] != -1 && cp9b->imin[v] != -1) { /* if BEGR_S and BEGR_IL is reachable */
 	      cp9b->imin[v-1] = ESL_MIN(cp9b->imin[v-1], cp9b->imin[v]); /* expand BEGR_S so it can reach BEGR_IL */
-	      cp9b->jmin[v] = cp9b->jmin[v-1];
+	      cp9b->jmin[v] = ESL_MAX(cp9b->jmin[v-1], i0); /* can't get to a BEGR_IL without emitting at least i0 */
 	      cp9b->jmax[v] = cp9b->jmax[v-1];
 	    }
 	    else { 
@@ -1762,8 +1764,8 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	
 	case END_nd:
 	  v = cm->nodemap[nd]; /* v is END_E */
-	  cp9b->imin[v] = r_nn_i[lpos+1];
-	  cp9b->imax[v] = r_nx_i[lpos+1];
+	  cp9b->imin[v] = (lpos != cm->clen) ? r_nn_i[lpos+1] : r_nn_j[lpos];
+	  cp9b->imax[v] = (lpos != cm->clen) ? r_nx_i[lpos+1] : r_nx_j[lpos];
 	  if(r_in[lpos] != -1) { /* we could come from an IR above us (tricky case) */
 	    cp9b->imin[v] = ESL_MIN(cp9b->imin[v], ESL_MAX(r_in[lpos] - 1, i0));
 	    cp9b->imax[v] = ESL_MAX(cp9b->imax[v], ESL_MAX(r_ix[lpos] - 1, i0));
@@ -1791,9 +1793,9 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	  v++; /* v is ROOT_IL */
 	  cp9b->imin[v] = r_in[0]; /* ROOT_IL maps to HMM insert state of HMM node 0 */
 	  cp9b->imax[v] = r_ix[0]; /* ROOT_IL maps to HMM insert state of HMM node 0 */
-	  if(cp9b->imin[v] != -1) { /* ROOT_IL's j bands will be same as ROOT_S's */
-	    cp9b->jmin[v] = r_nn_j[hmm_M]; 
-	    cp9b->jmax[v] = r_nx_j[hmm_M]; 
+	  if(cp9b->imin[v] != -1) { /* ROOT_IL's j bands will be same as ROOT_S's, after ensuring state delta of 1 is respected */
+	    cp9b->jmin[v] = ESL_MAX(r_nn_j[hmm_M], i0); /* can't get to ROOT_IL without emitting at least i0 */
+	    cp9b->jmax[v] = r_nx_j[hmm_M];
 	    if(r_in[hmm_M] != -1) { 
 	      cp9b->jmin[v] = ESL_MIN(cp9b->jmin[v], r_in[hmm_M]);
 	      cp9b->jmax[v] = ESL_MIN(cp9b->jmax[v], r_ix[hmm_M]);
@@ -2698,8 +2700,8 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
     if(r_dx[k]  == INT_MIN) r_dx[k] = -2;
 
     if(!local_begins_ends_on) { 
-      ESL_DASSERT1((r_nn_i[k]  != INT_MAX));
-      ESL_DASSERT1((r_nx_i[k]  != INT_MIN));
+      ESL_DASSERT1((r_nn_i[k]  != INT_MAX || k == 0));
+      ESL_DASSERT1((r_nx_i[k]  != INT_MIN || k == 0));
       ESL_DASSERT1((r_nn_j[k]  != INT_MAX));
       ESL_DASSERT1((r_nx_j[k]  != INT_MIN));
     }

@@ -486,12 +486,12 @@ main(int argc, char **argv)
       tot_spdup       = tot_cm_ncalcs / tot_cm_surv_plus_fil_calcs;
       tot_xhmm        = tot_cm_surv_plus_fil_calcs / tot_hmm_ncalcs;
       fprintf(stdout, "# %4s  %-15s  %5s  %8s  %6s  %6s  %6s  %7s  %7s\n", "----", "---------------", "-----", "--------", "------", "------", "------", "-------", "-------");
-      fprintf(stdout, "%6s  %-15s  %4d  ", "-", "*Average*", (int) (avg_clen+0.5));
+      fprintf(stdout, "%6s  %-15s  %5d  ", "-", "*Average*", (int) (avg_clen+0.5));
       if(avg_cm_E < 0.01)  fprintf(stdout, "%4.2e  ", avg_cm_E);
       else                 fprintf(stdout, "%8.3f  ", avg_cm_E);
       fprintf(stdout, "%6.1f  %6.1f  %6.4f  %7.1f  %7.1f\n", avg_cm_bit_sc, avg_hmm_bit_sc, avg_S, avg_xhmm, avg_spdup);
 
-      fprintf(stdout, "%6s  %-15s  %4s  %8s  %6s  %6s  %6s  %7.1f  %7.1f\n", "-", "*Total*", "-", "-", "-", "-", "-", tot_xhmm, tot_spdup);
+      fprintf(stdout, "%6s  %-15s  %5s  %8s  %6s  %6s  %6s  %7.1f  %7.1f\n", "-", "*Total*", "-", "-", "-", "-", "-", tot_xhmm, tot_spdup);
     }
   }
   esl_alphabet_Destroy(abc);

@@ -67,8 +67,10 @@ static ESL_OPTIONS options[] = {
 
   /* options for exp tail fitting */
   { "--exp-T",          eslARG_REAL,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "set bit sc cutoff for exp tail fitting to <x> [df: -INFTY]", 2 },
-  { "--exp-cmL",        eslARG_REAL,     "1.",  NULL, "0.001<=x<=1000." ,NULL,NULL,       NULL, "set length *in Mb* of random seqs for CM  exp tail fitting to <n>", 2 },
-  { "--exp-hmmL",       eslARG_REAL,    "10.",  NULL, "0.1<=x<=1000."   ,NULL,NULL,       NULL, "set length *in Mb* of random seqs for HMM exp tail fitting to <n>", 2 },
+  { "--exp-cmL",        eslARG_REAL,     "1.",  NULL, "0.001<=x<=1000.",NULL,NULL,        NULL, "set length *in Mb* of random seqs for CM  exp tail fit to <x>", 2 },
+  { "--exp-fract",      eslARG_REAL,    "0.10", NULL, "0.01<=x<=1.0",   NULL,NULL,        NULL, "set min fraction of DP calcs for HMM vs CM calibration to <x>", 2 },
+  { "--exp-hmmLn",      eslARG_REAL,    "10.",  NULL, "1.<=x<=1000.",   NULL,NULL,        NULL, "set min Mb length of random seqs for HMM exp tail fit to <x>", 2 },
+  { "--exp-hmmLx",      eslARG_REAL,    "1000.",NULL, "10.<=x<=1001.",  NULL,NULL,        NULL, "set max Mb length of random seqs for HMM exp tail fit to <x>", 2 },
   { "--exp-tailp",      eslARG_REAL,    "0.01", NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 2 },
   { "--exp-beta",       eslARG_REAL,    NULL,   NULL, "x>0",    NULL,        NULL,        NULL, "turn QDB on for exp tail fitting, set tail loss prob to <x>", 2 },
   { "--exp-gc",         eslARG_INFILE,  NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content distribution from file <f>",  2},
@@ -89,7 +91,7 @@ static ESL_OPTIONS options[] = {
   { "--fil-rfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,        NULL, "save CP9 filter threshold information in R format to file <s>", 3},
 /* Other options */
   { "--stall",          eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 4 },  
-  { "--mxsize",         eslARG_REAL,    "512.0",NULL, "x>0.",   NULL,        NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 4 },
+  { "--mxsize",         eslARG_REAL,    "1024.0",NULL, "x>0.",   NULL,        NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 4 },
 #ifdef HAVE_MPI
   { "--mpi",            eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "run as an MPI parallel program", 4 },  
 #endif
@@ -118,7 +120,7 @@ struct cfg_s {
 
   /* number of sequences and the length of each seq for exp tail fitting, set such that:
    * exp_cmN  * exp_cmL  = esl_opt_GetBoolean(go, "--exp-cmL")  * 1000000; 
-   * exp_hmmN * exp_hmmL = esl_opt_GetBoolean(go, "--exp-hmmL") * 1000000; 
+   * exp_hmmN * exp_hmmL = esl_opt_GetBoolean(go, "--exp-hmmLn") * 1000000; 
    *
    * exp_cmN, exp_hmmN is not necessarily 1 b/c using sequence lengths
    * above 100 Kb for exp tail calibration can yield millions of hits 
@@ -194,7 +196,7 @@ static int  print_fil_line(const ESL_GETOPTS *go, const struct cfg_s *cfg, char 
 static int  print_post_calibration_info (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, FILE *fp, CM_t *cm, double **exp_psecAA, double *fil_psecA, double **exp_asecAA, double *fil_asecA);
 static int  estimate_time_for_exp_round (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int exp_mode, double *ret_sec_per_res);
 static int  estimate_time_for_fil_round (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int exp_mode, double *ret_sec_per_seq);
-
+static int  update_hmm_exp_length(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 /*static int  predict_time_for_exp_stage(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int exp_mode, int cmN, int hmmN, int expL, float *ret_seconds);*/
 /*static int  print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);*/
 
@@ -284,12 +286,12 @@ main(int argc, char **argv)
   /* calculate sequence lengths and quantities for exp tail fitting,
    * max length seq is 100 Kb, see comment in cfg_t definition above for the reason.
    */
-  int cmN_total  = 1000000 * esl_opt_GetReal(go, "--exp-cmL");
-  int hmmN_total = 1000000 * esl_opt_GetReal(go, "--exp-hmmL");
-  cfg.exp_cmN  = (int) (((float) cmN_total  / 100000.) + 0.999999); 
-  cfg.exp_hmmN = (int) (((float) hmmN_total / 100000.) + 0.999999); 
-  cfg.exp_cmL  = cmN_total  / cfg.exp_cmN;
-  cfg.exp_hmmL = hmmN_total / cfg.exp_hmmN;
+  int cmL_total  = 1000000 * esl_opt_GetReal(go, "--exp-cmL");
+  int hmmL_total = 1000000 * esl_opt_GetReal(go, "--exp-hmmLn");
+  cfg.exp_cmN  = (int) (((float) cmL_total  / 100000.) + 0.999999); 
+  cfg.exp_hmmN = (int) (((float) hmmL_total / 100000.) + 0.999999); 
+  cfg.exp_cmL  = cmL_total  / cfg.exp_cmN;
+  cfg.exp_hmmL = hmmL_total / cfg.exp_hmmN;
 
   cfg.cmfp     = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.exphfp   = NULL; /* ALWAYS remains NULL for mpi workers */
@@ -655,6 +657,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = initialize_cmstats(go, cfg, errbuf, cm))          != eslOK) cm_Fail(errbuf);
       if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len))) != eslOK) cm_Fail(errbuf);
       if((status = print_per_cm_column_headings(go, cfg, errbuf, cm))!= eslOK) cm_Fail(errbuf);
+      if((status = update_hmm_exp_length(go, cfg, errbuf, cm))       != eslOK) cm_Fail(errbuf);
       if(esl_opt_IsDefault(go, "--exp-gc")) { /* only setup dnull if --exp-gc NOT enabled */
 	if((status = set_dnull(cm, errbuf, &dnull))                    != eslOK) cm_Fail(errbuf); 
       }
@@ -705,10 +708,15 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	/* determine length of seqs to search for exp tail fitting */
 	ESL_DASSERT1((cfg->np == cfg->cmstatsA[cmi]->np));
 	for (p = 0; p < cfg->np; p++) {
+	  if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
 	  /* estimate time for this round */
-	  if(p == 0) { if((status = estimate_time_for_exp_round(go, cfg, errbuf, cm, exp_mode, &psec)) != eslOK) cm_Fail(errbuf); }
-	  else       { psec = exp_psecAA[exp_mode][0] / (expN * expL); }
-	  psec *= expN * expL;
+	  if(p == 0) { 
+	    if((status = estimate_time_for_exp_round(go, cfg, errbuf, cm, exp_mode, &psec)) != eslOK) cm_Fail(errbuf); 
+	    psec *= expN * expL; /* psec was per residue */
+	    /* with --forecast, take into account parallelization */
+	    if((! esl_opt_IsDefault(go, "--forecast")) && (esl_opt_GetInteger(go, "--forecast") > 1)) psec /= (esl_opt_GetInteger(go, "--forecast") - 1);
+	  }
+	  else psec = exp_psecAA[exp_mode][0];
 	  exp_psecAA[exp_mode][p] = psec;
 	  cm_psec    += psec;
 	  total_psec += psec;
@@ -717,7 +725,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	  esl_stopwatch_Start(cfg->w_stage);
 	  fflush(stdout);
-	  if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
 
 	  ESL_DPRINTF1(("\n\ncalling ProcessSearchWorkunit to fit exp tail for p: %d EXP mode: %d\n", p, exp_mode));
 	  
@@ -760,6 +767,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* estimate time for this round */
 	  if((status = estimate_time_for_fil_round(go, cfg, errbuf, cm, exp_mode, &psec)) != eslOK) cm_Fail(errbuf);
 	  psec *= filN;
+	  /* with --forecast, take into account parallelization */
+	  if((! esl_opt_IsDefault(go, "--forecast")) && (esl_opt_GetInteger(go, "--forecast") > 1)) psec /= (esl_opt_GetInteger(go, "--forecast") - 1);
 	  fil_psecA[exp_mode] = psec;
 	  cm_psec    += psec;
 	  total_psec += psec;
@@ -1010,7 +1019,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = initialize_cm     (go, cfg, errbuf, cm))          != eslOK) cm_Fail(errbuf);
       if((status = initialize_cmstats(go, cfg, errbuf, cm))          != eslOK) cm_Fail(errbuf);
       if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len))) != eslOK) cm_Fail(errbuf);
-      if((status = print_per_cm_column_headings(go, cfg, errbuf, cm))               != eslOK) cm_Fail(errbuf);
+      if((status = print_per_cm_column_headings(go, cfg, errbuf, cm))!= eslOK) cm_Fail(errbuf);
+      if((status = update_hmm_exp_length(go, cfg, errbuf, cm))       != eslOK) cm_Fail(errbuf);
       if(esl_opt_IsDefault(go, "--exp-gc")) { /* only setup dnull if --exp-gc NOT enabled */
 	if((status = set_dnull(cm, errbuf, &dnull))                    != eslOK) cm_Fail(errbuf); 
       }
@@ -1081,18 +1091,21 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	/* fit exponential tails for this exp mode */
 	for (p = 0; p < cfg->np; p++) 
 	  {
+	    if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
 	    ESL_DPRINTF1(("MPI master: CM: %d exp tail mode: %d partition: %d\n", cfg->ncm, exp_mode, p));
 	    /* estimate time for this round, assuming all workers have same processor speed as master */
-	    if(p == 0) { if((status = estimate_time_for_exp_round(go, cfg, errbuf, cm, exp_mode, &psec)) != eslOK) cm_Fail(errbuf); }
-	    else       { psec = exp_psecAA[exp_mode][0] / (expN * expL); }
-	    psec *= expN * expL; /* psec was per residue */
+	    if(p == 0) { 
+	      if((status = estimate_time_for_exp_round(go, cfg, errbuf, cm, exp_mode, &psec)) != eslOK) cm_Fail(errbuf); 
+	      psec *= expN * expL; /* psec was per residue */
+	      if(cfg->nproc > 1) psec /= (cfg->nproc-1); /* parallelization will speed us up */
+	    }
+	    else psec = exp_psecAA[exp_mode][0];
 	    exp_psecAA[exp_mode][p] = psec;
 	    cm_psec    += psec;
 	    total_psec += psec;
 	    print_exp_line(go, cfg, errbuf, exp_mode, expN, expL, p, psec);
 
 	    esl_stopwatch_Start(cfg->w_stage);
-	    if(cfg->gc_freq != NULL) set_partition_gc_freq(cfg, p);
 	    exp_scN  = 0;
 	
 	    if(xstatus == eslOK) have_work     = TRUE;	/* TRUE while work remains  */
@@ -1246,6 +1259,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	if(exp_mode == EXP_CM_GI || exp_mode == EXP_CM_LI) { /* CM Inside mode, only time we do filter threshold calculations, we'll fill in CYK AND Inside thresholds */
 	  if((status = estimate_time_for_fil_round(go, cfg, errbuf, cm, exp_mode, &psec)) != eslOK) cm_Fail(errbuf);
 	  psec *= filN;
+	  if(cfg->nproc > 1) psec /= (cfg->nproc-1); /* parallelization will speed us up */
 	  fil_psecA[exp_mode] = psec;
 	  cm_psec    += psec;
 	  total_psec += psec;
@@ -1833,7 +1847,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
 
   tailp = esl_opt_GetReal(go, "--exp-tailp");
   esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); /* fit to right 'tailfit' fraction, 0.01 by default */
-  if(n <= 1) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram. Increase --exp-cmL or --exp-hmmL.", tailp);
+  if(n <= 1) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram. Increase --exp-cmL or --exp-hmmLn.", tailp);
     
   esl_exp_FitComplete(xv, n, &(params[0]), &(params[1]));
   esl_histogram_SetExpectedTail(h, params[0], tailp, &esl_exp_generic_cdf, &params);
@@ -1841,8 +1855,8 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
   /* printf("# Exponential fit to %.7f%% tail: lambda = %f\n", tailp*100.0, params[1]); */
   mu = params[0];
   lambda = params[1];
-  if(isnan(lambda)) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), exp tail fit lambda is NaN, too few hits in histogram. Increase --exp-cmL or --exp-hmmL.");
-  if(isinf(lambda)) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), exp tail fit lambda is inf, too few hits in histogram. Increase --exp-cmL or --exp-hmmL.");
+  if(isnan(lambda)) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), exp tail fit lambda is NaN, too few hits in histogram. Increase --exp-cmL or --exp-hmmLn.");
+  if(isinf(lambda)) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), exp tail fit lambda is inf, too few hits in histogram. Increase --exp-cmL or --exp-hmmLn.");
   nrandhits = h->n; /* total number of hits in the histogram */
 
   /* print to output files if nec */
@@ -2303,9 +2317,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   int            i;
   int            L;
   ESL_DSQ       *dsq;
-  int            inside_flag_raised = FALSE;
-  int            hbanded_flag_raised = FALSE;
-  int            alnbands_flag_raised = FALSE;
+  int            orig_search_opts; /* we modify cm->search_opts in this function, then reset it at the end */
 
   if(ret_cyk_scA == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "process_filter_workunit(), ret_cyk_scA == NULL.");
   if(ret_ins_scA == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "process_filter_workunit(), ret_ins_scA == NULL.");
@@ -2321,25 +2333,23 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   ESL_ALLOC(ins_scA, sizeof(float) * nseq); /* will hold CM Inside scores */
   ESL_ALLOC(fwd_scA, sizeof(float) * nseq);  /* will hold HMM Forward scores */
 
-  inside_flag_raised = (cm->search_opts & CM_SEARCH_INSIDE) ? TRUE : FALSE;
-  hbanded_flag_raised = (cm->search_opts & CM_SEARCH_HBANDED) ? TRUE : FALSE;
-  alnbands_flag_raised = (cm->search_opts & CM_SEARCH_HMMALNBANDS) ? TRUE : FALSE;
+  orig_search_opts = cm->search_opts;
 
   /* generate dsqs one at a time and collect optimal CM CYK/Inside scores and/or best CP9 Forward score */
   for(i = 0; i < nseq; i++) {
     if((status = get_cmemit_dsq(cfg, errbuf, cm, &L, &p, &dsq)) != eslOK) return status;
     partA[i] = p;
-    /*to print seqs to stdout uncomment this block  
-    ESL_SQ *tmp;
+    /*to print seqs to stdout uncomment this block */
+    /*ESL_SQ *tmp;
     tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq, L, NULL, NULL, NULL);
     esl_sq_Textize(tmp);
     printf(">seq%d\n%s\n", i, tmp->seq);
     esl_sq_Destroy(tmp);
+    fflush(stdout);
     */
 
     /* search dsq thrice, cyk, inside, fwd */
-    /* Note: in mode 2, with FastCYKScan, we use cfg->hsi->smx scan matrix, which may have qdbs calc'ed differently than cm->smx */
-
+    /* for cyk and inside either use HMM bands, or don't */
     if(esl_opt_GetBoolean(go, "--fil-nonbanded")) { 
       cm->search_opts &= ~CM_SEARCH_INSIDE;
       if((status = FastCYKScan    (cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &(cyk_scA[i]))) != eslOK) return status; 
@@ -2353,7 +2363,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
       cm->tau = esl_opt_GetReal(go, "--fil-tau");
       if(esl_opt_GetBoolean(go, "--fil-aln2bands")) cm->search_opts |= CM_SEARCH_HMMALNBANDS;
       if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) return status; 
-      if((status = FastCYKScanHB  (cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), &(cyk_scA[i]))) != eslOK) return status; 
+      if((status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), &(cyk_scA[i]))) != eslOK) return status; 
 
       cm->search_opts |= CM_SEARCH_INSIDE; 
       if((status = FastFInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), &(ins_scA[i]))) != eslOK) return status; 
@@ -2371,11 +2381,9 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   *ret_cyk_scA = cyk_scA;
   *ret_ins_scA = ins_scA;
   *ret_fwd_scA = fwd_scA;
-  *ret_partA = partA;
+  *ret_partA   = partA;
 
-  if(inside_flag_raised) cm->search_opts |= CM_SEARCH_INSIDE;
-  if(! hbanded_flag_raised) cm->search_opts &= ~CM_SEARCH_HBANDED;
-  if(! alnbands_flag_raised) cm->search_opts &= ~CM_SEARCH_HMMALNBANDS;
+  cm->search_opts = orig_search_opts;
 
   return eslOK;
 
@@ -3003,6 +3011,9 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   int    orig_search_opts; /* cm->search_opts when function was entered */
   float  sec_per_res;      /* seconds per residue */
   float  targ_sec = 0.1;   /* target number of seconds our timing expt will take */
+  int    Lmin = 100;       /* minimum number of residues to search to get timing */
+  double *dnull = NULL;
+  int     i;
 
   ESL_DSQ *dsq;
   ESL_STOPWATCH *w  = esl_stopwatch_Create();
@@ -3016,14 +3027,14 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   cm->search_opts  = cm->si->search_opts[0]; /* we'll restore cm->search_opts to orig_search_opts at end of the function */
 
   if(ExpModeIsForCM(exp_mode)) { 
-    if(cm->smx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "estimate_time_for_exp_round(), stype is SEARCH_WITH_CM, but cm->smx is NULL");
+    if(cm->smx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "estimate_time_for_exp_round(), cm->smx is NULL");
     int use_qdb     = (cm->smx->dmin == NULL && cm->smx->dmax == NULL) ? FALSE : TRUE;
     if(use_qdb) { if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->smx->beta_qdb, &Mc_per_res, &irrelevant_W))  != eslOK) return status; }
     else        { if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, TRUE,  cm->beta_W,        &Mc_per_res, &irrelevant_W))  != eslOK) return status; }
     psec_per_Mc = (cm->search_opts & CM_SEARCH_INSIDE) ? (1. /  75.) : (1. / 275.);  /*  75 Mc/S inside;  275 Mc/S CYK */
     /* determine L that will take about <targ_sec> seconds */
     L = targ_sec / (psec_per_Mc * Mc_per_res);
-    L = ESL_MAX(L, (int) (((float) cm->W)/5.)); /* we have to search at least (cm->W/5.) residues */
+    L = ESL_MAX(L, Lmin); /* we have to search at least <Lmin> residues */
     /* now determine exactly how many dp calculations we'd do if we search L residues, 
      * this won't be the same as Mc_per_res * L b/c Mc_per_res was passed in from caller
      * and was calculated after correcting for the fact that the first W residues have fewer
@@ -3043,36 +3054,24 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
     Mc = Mc_per_res * L;
   }
 
-  ESL_ALLOC(dsq,  sizeof(ESL_DSQ) * (L +2));
-  esl_rnd_xfIID(cfg->r, cm->null, cm->abc->K, L, dsq);
-  
+  /* create dnull for generating seqs */
+  if(esl_opt_IsDefault(go, "--exp-gc")) { /* only setup dnull if --exp-gc NOT enabled */
+    ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
+    for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
+    esl_vec_DNorm(dnull, cm->abc->K);    
+  }
+
+  search_results_t *results;
   esl_stopwatch_Start(w);
-  if(ExpModeIsForCM(exp_mode)) { 
-    if(cm->search_opts & CM_SEARCH_INSIDE) { /* inside */
-      if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, NULL)) != eslOK) return status;
-    }
-    else /* cyk */
-      if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, NULL)) != eslOK) return status;
-  }
-  else { /* search with HMM */
-    if(cm->search_opts & CM_SEARCH_HMMFORWARD) { /* forward */
-      if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,
-			       TRUE,   /* we're scanning */
-			       FALSE,  /* we're not ultimately aligning */
-			       TRUE,   /* be memory efficient */
-			       NULL, NULL, NULL)) != eslOK) return status;
-    }
-    else { /* viterbi */
-      if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,
-			       TRUE,   /* we're scanning */
-			       FALSE,  /* we're not ultimately aligning */
-			       TRUE,   /* be memory efficient */
-			       NULL, NULL,
-			       NULL,   /* don't want traces back */
-			       NULL)) != eslOK) return status;
-    }
-  }
+  /* simulate a workunit, generate a sequence, search it, and remove overlaps */
+  printf("exptL: %d\n", L);
+  if((status = get_random_dsq        (cfg, errbuf, cm, dnull, L, &dsq)) != eslOK) return status;
+  if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, L, &results, esl_opt_GetReal(go, "--mxsize"), 0, NULL, NULL)) != eslOK) return status;
+  RemoveOverlappingHits(results, 1, L);
+
   esl_stopwatch_Stop(w);
+  FreeResults(results);
+  if(dnull != NULL) free(dnull);
   free(dsq);
 
   cm->search_opts = orig_search_opts;
@@ -3085,20 +3084,11 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
 
 
   /*printf("L: %d\n", L);
-  printf("w->user: %f\n", w->user);
-  printf("sec_per_res: %f\n", sec_per_res);
-  printf("Mc_per_res: %f\n", Mc_per_res);
-  printf("Mc: %f\n", Mc);
+    printf("w->user: %f\n", w->user);
+    printf("sec_per_res: %f\n", sec_per_res);
+    printf("Mc_per_res: %f\n", Mc_per_res);
+    printf("Mc: %f\n", Mc);
   */
-
-  if(!(ExpModeIsForCM(exp_mode))) { 
-    /* exp_mode is for HMM, the calibration step will do a cp9_ViterbiBackward or cp9_Backward()
-     * run for ALL hits the HMM finds, this is to get actual score of a single i..j parse, 
-     * theoretically this could double run time (or even slightly more) for HMM scans,
-     * so we multiply or predicted time by 2 here.
-     */
-    sec_per_res *= 2.;
-  }
   *ret_sec_per_res = sec_per_res;
   return eslOK;
 
@@ -3124,9 +3114,13 @@ int estimate_time_for_fil_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   float   *tmp_ins_scA = NULL;    
   float   *tmp_fwd_scA = NULL;    
   int     *tmp_partA   = NULL;    
+  int      min_nseq_global = 10;
+  int      min_nseq_local  = 25;
 
   nseq = (int) (((float) targ_len / (float) cm->clen) + 0.5); 
-  nseq = ESL_MAX(nseq, 5); /* we at least have to sample 5 sequences */
+  /* we have to sample at least <min_nseq_{global,local} sequences */
+  if(ExpModeIsLocal(exp_mode)) nseq = ESL_MAX(nseq, min_nseq_local); 
+  else                         nseq = ESL_MAX(nseq, min_nseq_global); 
 
   ESL_STOPWATCH *w  = esl_stopwatch_Create();
 
@@ -3260,4 +3254,71 @@ print_fil_line(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int
   fflush(stdout);
   return eslOK;
 }
+  
+/* Function: update_hmm_exp_length
+ * Date:     EPN, Fri Mar  7 05:12:05 2008
+ * Purpose:  Potentially reset the sequence length used for fitting
+ *           HMM exp tails based on the ratio of HMM to CM DP calculations
+ *           such that the number of calculations with the HMM is
+ *           at least <esl_opt_GetReal(go, "--exp-fract")> 
+ *           the fraction of CM calculations.
+ *           Based on the idea that we're willing to spend at least
+ *           <esl_opt_GetReal(go, "--exp-fract")> the time we spend 
+ *           fitting the CM exp tails on the HMM. <min_frac> is usually 
+ *           small, it's 0.1 by default.
+ */
+int update_hmm_exp_length(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
+{
+  int    status;
+  float  cm_Mc_per_res;    /* millions of dp calcs per residue searching with CM */
+  float  hmm_Mc_per_res;   /* millions of dp calcs per residue searching with HMM */
+  int    irrelevant_W;
+  float  hmmL;
+  int    hmmL_int;
+  /* update search info for round 0 (final round) for exp tail mode */
 
+  if(cm->smx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "update_hmm_exp_length(), cm->smx is NULL");
+  /* estimate millions of CM calcs per residue */
+  int use_qdb  = (cm->smx->dmin == NULL && cm->smx->dmax == NULL) ? FALSE : TRUE;
+  if(use_qdb) { if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->smx->beta_qdb, &cm_Mc_per_res, &irrelevant_W))  != eslOK) return status; }
+  else        { if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, TRUE,  cm->beta_W,        &cm_Mc_per_res, &irrelevant_W))  != eslOK) return status; }
+  /* estimate millions of HMM calcs per residue */
+  if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &hmm_Mc_per_res)) != eslOK) return status;
+
+  /* when calibrating the HMM, the calibration step will do a cp9_ViterbiBackward or cp9_Backward()
+   * run for ALL hits the HMM finds, this is to get actual score of a single i..j parse, 
+   * theoretically this could double number of calcs for HMM calibrations.
+   * so we multiply number of calcs by 2 here.
+   */
+  hmm_Mc_per_res *= 2.;
+
+  hmmL = (cm_Mc_per_res / hmm_Mc_per_res) * esl_opt_GetReal(go, "--exp-fract") * esl_opt_GetReal(go, "--exp-cmL");
+  /*hmmL = ESL_MAX(hmmL, esl_opt_GetReal(go, "--exp-hmmLn"));*/
+  hmmL = ESL_MIN(hmmL, esl_opt_GetReal(go, "--exp-hmmLx"));
+  hmmL *= 1000000.; /* convert to Mb */
+  hmmL_int = (int) hmmL; 
+
+  cfg->exp_hmmN = (int) (((float) hmmL_int / 100000.) + 0.999999); 
+  cfg->exp_hmmL = hmmL_int / cfg->exp_hmmN;
+
+  ESL_DPRINTF1(("cm  ncalcs: %f\n", cm_Mc_per_res));
+  ESL_DPRINTF1(("hmm ncalcs: %f\n", hmm_Mc_per_res));
+  ESL_DPRINTF1(("cm/hmm ratio: %f\n", cm_Mc_per_res / hmm_Mc_per_res));
+  ESL_DPRINTF1(("min hmmL: %f\n", esl_opt_GetReal(go, "--exp-hmmLn")));
+  ESL_DPRINTF1(("hmmL: %f\n", hmmL));
+  ESL_DPRINTF1(("cfg->exp_hmmL: %d\n", cfg->exp_hmmL));
+  ESL_DPRINTF1(("cfg->exp_hmmN: %d\n", cfg->exp_hmmN));
+  ESL_DPRINTF1(("cfg->exp_hmmL * cfg->exp_hmmN in Mb: %f\n", (float) (cfg->exp_hmmL * cfg->exp_hmmN) / 1000000.));
+
+  /*
+  printf("cm  ncalcs: %f\n", cm_Mc_per_res);
+  printf("hmm ncalcs: %f\n", hmm_Mc_per_res);
+  printf("cm/hmm ratio: %f\n", cm_Mc_per_res / hmm_Mc_per_res);
+  printf("min hmmL: %f\n", esl_opt_GetReal(go, "--exp-hmmLn"));
+  printf("hmmL: %f\n", hmmL);
+  printf("cfg->exp_hmmL: %d\n", cfg->exp_hmmL);
+  printf("cfg->exp_hmmN: %d\n", cfg->exp_hmmN);
+  printf("cfg->exp_hmmL * cfg->exp_hmmN in Mb: %f\n", (float) (cfg->exp_hmmL * cfg->exp_hmmN) / 1000000.);
+*/
+  return eslOK;
+}
