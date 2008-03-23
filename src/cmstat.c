@@ -455,7 +455,7 @@ main(int argc, char **argv)
 	  tot_cm_surv_plus_fil_calcs += (cm_ncalcs / spdup);
 	}
 	else { /* --range enabled */
-	  fprintf(stdout, "for all filter cutoffs in CM file\n#\n");
+	  if(!seen_fthr_yet) fprintf(stdout, "for all filter cutoffs in CM file\n#\n");
 	  if((status = DumpHMMFilterInfo(stdout, cm->stats->hfiA[fthr_mode], errbuf, cm, cm_mode, hmm_mode, dbsize, ncm)) != eslOK) cm_Fail(errbuf);
 	}
 	if(efp != NULL) if((status = PlotHMMFilterInfo(efp, cm->stats->hfiA[fthr_mode], errbuf, cm, cm_mode, hmm_mode, dbsize, FTHR_PLOT_CME_HMME)) != eslOK) cm_Fail(errbuf);

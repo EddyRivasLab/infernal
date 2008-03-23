@@ -1368,6 +1368,7 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &hmm_ncalcs_per_res)) != eslOK) return status;
   if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->beta_qdb, &cm_ncalcs_per_res, &W))  != eslOK) return status;
 
+  fprintf(fp, "#\n");
   fprintf(fp, "# %4s  %-15s  %5s  %6s  %7s  %7s  %7s\n", "idx",  "name",            "clen",   "F",      "nseq",    "db (Mb)", "always?");
   fprintf(fp, "# %4s  %-15s  %5s  %6s  %7s  %7s  %7s\n", "----", "---------------", "-----",  "------", "-------", "-------", "-------");
   fprintf(fp, "%6d  %-15.15s  %5d  %6.4f  %7d  %7.1f  %7s\n",
@@ -1375,7 +1376,7 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
 	 hfi->always_better_than_Smax ? "yes" : "no");
   fprintf(fp, "#\n");
   fprintf(fp, "#\n");
-  fprintf(fp, "#%5s  %s\n", "", "CM E-value cutoff / HMM Forward E-value filter cutoff pairs:");
+  fprintf(fp, "#%5s  %s", "", "CM E-value cutoff / HMM Forward E-value filter cutoff pairs:\n#\n");
   fprintf(fp, "#%5s  %-4s  %10s  %6s  %10s  %6s  %6s  %7s  %7s\n", "", "idx",  "cm E",       "cm bit", "hmm E",      "hmmbit", "surv",   "xhmm",    "speedup");
   fprintf(fp, "#%5s  %-4s  %10s  %6s  %10s  %6s  %6s  %7s  %7s\n", "", "----", "----------", "------", "----------", "------", "------", "-------", "-------");
   for(i = 0; i < hfi->ncut; i++) {
@@ -1384,10 +1385,10 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
     if((status = E2MinScore(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
     if((status = E2MinScore(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
     fprintf(fp, "%4s  %6d  ", "", (i+1));
-    if(cm_E < 0.01)  fprintf(fp, "%6.2e  ", cm_E);
+    if(cm_E < 0.01)  fprintf(fp, "%10.2e  ", cm_E);
     else             fprintf(fp, "%10.3f  ", cm_E);
     fprintf(fp, "%6.1f  ", cm_bit_sc);
-    if(hmm_E < 0.01) fprintf(fp, "%6.2e  ", hmm_E);
+    if(hmm_E < 0.01) fprintf(fp, "%10.2e  ", hmm_E);
     else             fprintf(fp, "%10.3f  ", hmm_E);
     fprintf(fp, "%6.1f  ", hmm_bit_sc);
     fprintf(fp, "%6.4f  %7.1f  %7.1f\n", 
@@ -1467,6 +1468,7 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
 
   if(i != -1) { 
     hmm_E = hfi->fwd_E_cut[i] * ((double) dbsize / (double) hfi->dbsize);
+    printf("HMME: %f\n", hmm_E);
     if((status = E2MinScore(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
     fprintf(fp, "%6.1f  ", hmm_bit_sc);
     S     = GetHMMFilterS      (hfi, i, W, avg_hit_len);

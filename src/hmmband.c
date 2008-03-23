@@ -1764,8 +1764,8 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 	
 	case END_nd:
 	  v = cm->nodemap[nd]; /* v is END_E */
-	  cp9b->imin[v] = (lpos != cm->clen) ? r_nn_i[lpos+1] : r_nn_j[lpos];
-	  cp9b->imax[v] = (lpos != cm->clen) ? r_nx_i[lpos+1] : r_nx_j[lpos];
+	  cp9b->imin[v] = r_nn_i[lpos];
+	  cp9b->imax[v] = ESL_MIN(r_nx_i[lpos]+1, j0+1); /* +1 is for StateDelta */
 	  if(r_in[lpos] != -1) { /* we could come from an IR above us (tricky case) */
 	    cp9b->imin[v] = ESL_MIN(cp9b->imin[v], ESL_MAX(r_in[lpos] - 1, i0));
 	    cp9b->imax[v] = ESL_MAX(cp9b->imax[v], ESL_MAX(r_ix[lpos] - 1, i0));
@@ -2689,7 +2689,6 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
   r_nx_i[1]     = ESL_MAX(r_nx_i[1], r_begx);
   r_nn_j[hmm_M] = ESL_MIN(r_nn_j[hmm_M], r_endn);
   r_nx_j[hmm_M] = ESL_MAX(r_nx_j[hmm_M], r_endx);
-
 
   for(k = 0; k <= hmm_M; k++) { 
     if(r_mn[k]  == INT_MAX) r_mn[k] = -1;

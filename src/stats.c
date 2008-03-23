@@ -104,13 +104,13 @@ int debug_print_cmstats(CM_t *cm, char *errbuf, CMStats_t *cmstats, int has_fthr
   for (p = 0; p < cmstats->np; p++)
     {
       printf("Partition %d: start: %d end: %d\n", p, cmstats->ps[p], cmstats->pe[p]);
-      printf("cm_lc exp tail:\t");
+      printf("cm_lc  exp tail:\t");
       debug_print_expinfo(cmstats->expAA[EXP_CM_LC][p]);
-      printf("cm_gc exp tail:\t");
+      printf("cm_gc  exp tail:\t");
       debug_print_expinfo(cmstats->expAA[EXP_CM_GC][p]);
-      printf("cm_li exp tail:\t");
+      printf("cm_li  exp tail:\t");
       debug_print_expinfo(cmstats->expAA[EXP_CM_LI][p]);
-      printf("cm_gi exp tail:\t");
+      printf("cm_gi  exp tail:\t");
       debug_print_expinfo(cmstats->expAA[EXP_CM_GI][p]);
       printf("cp9_lv exp tail:\t");
       debug_print_expinfo(cmstats->expAA[EXP_CP9_LV][p]);
@@ -142,8 +142,9 @@ int debug_print_cmstats(CM_t *cm, char *errbuf, CMStats_t *cmstats, int has_fthr
  */
 int debug_print_expinfo(ExpInfo_t *exp)
 {
-  if(exp->is_valid) printf("cur_eff_dbsize: %ld lambda: %f mu_extrap: %f mu_orig: %f dbsize: %ld nrandhits: %d tailp: %f (valid)", exp->cur_eff_dbsize, exp->lambda, exp->mu_extrap, exp->mu_orig, exp->dbsize, exp->nrandhits, exp->tailp);
+  if(exp->is_valid) printf("cur_eff_dbsize: %ld lambda: %f mu_extrap: %f mu_orig: %f dbsize: %ld nrandhits: %d tailp: %f (valid)\n", exp->cur_eff_dbsize, exp->lambda, exp->mu_extrap, exp->mu_orig, exp->dbsize, exp->nrandhits, exp->tailp);
   else              printf("invalid (not yet set)\n");
+  fflush(stdout);
   return eslOK;
 }
 
@@ -680,7 +681,6 @@ int
 UpdateExpsForDBSize(CM_t *cm, char *errbuf, long dbsize)
 {
   int i, p;
-
   /* contract checks */
   if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateExpsForDBSize(), cm does not have Exp stats.");
 

@@ -67,7 +67,7 @@ static ESL_OPTIONS options[] = {
 
   /* options for exp tail fitting */
   { "--exp-T",          eslARG_REAL,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "set bit sc cutoff for exp tail fitting to <x> [df: -INFTY]", 2 },
-  { "--exp-cmL",        eslARG_REAL,     "1.",  NULL, "0.001<=x<=1000.",NULL,NULL,        NULL, "set length *in Mb* of random seqs for CM  exp tail fit to <x>", 2 },
+  { "--exp-cmL",        eslARG_REAL,     "1.",  NULL, "0.001<=x<=1000.",NULL,NULL,        NULL, "set length *in Mb* of random seqs for CM exp tail fit to <x>", 2 },
   { "--exp-fract",      eslARG_REAL,    "0.10", NULL, "0.01<=x<=1.0",   NULL,NULL,        NULL, "set min fraction of DP calcs for HMM vs CM calibration to <x>", 2 },
   { "--exp-hmmLn",      eslARG_REAL,    "10.",  NULL, "1.<=x<=1000.",   NULL,NULL,        NULL, "set min Mb length of random seqs for HMM exp tail fit to <x>", 2 },
   { "--exp-hmmLx",      eslARG_REAL,    "1000.",NULL, "10.<=x<=1001.",  NULL,NULL,        NULL, "set max Mb length of random seqs for HMM exp tail fit to <x>", 2 },
@@ -2564,7 +2564,13 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
    * fwd_Emin         Smin  = 0.1  * (fil_ncalcs / cm_ncalcs)
    */
   //dbsize           = FTHR_DBSIZE;                          /* FTHR_DBSIZE_MB is 1000000, (1Mb) */
+
   dbsize           = cfg->cmstatsA[cmi]->expAA[cm_mode][0]->dbsize; 
+  /* Update hmm E-value's effective database size as if we're searching a database of size dbsize */
+  for(p = 0; p < cfg->cmstatsA[cmi]->np; p++) {
+    cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][p]->cur_eff_dbsize = (long) ((((double) dbsize / (double) cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][p]->dbsize) * 
+									  ((double) cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][p]->nrandhits)) + 0.5);
+  }
   fil_ncalcs       = cfg->cp9_ncalcs;                      /* fil_ncalcs is millions of DP calcs for HMM Forward scan of 1 residue */
   fil_ncalcs      *= dbsize;                               /* now fil_ncalcs is millions of DP calcs for HMM Forward scan of length 1 Mb */
   cm_ncalcs        = cfg->fil_cm_ncalcs;                   /* total number of millions of DP calculations for full CM scan of 1 residue */
@@ -2620,6 +2626,7 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
     cm_E  = Score2E(cm_scA[i],  cfg->cmstatsA[cmi]->expAA[cm_mode][p]->mu_extrap,      cfg->cmstatsA[cmi]->expAA[cm_mode][p]->lambda, cfg->cmstatsA[cmi]->expAA[cm_mode][p]->cur_eff_dbsize);
     fwd_E = Score2E(fwd_scA[i], cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][p]->mu_extrap, cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][p]->lambda, cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][p]->cur_eff_dbsize);
     /* E-values correspond to expected number of hits in a seq DB of length evalue_L, convert that DB size to dbsize */
+    /* HERE HERE HERE EPN, Tue Mar 11 21:42:18 2008 */
     //cm_E  *= dbsize / evalue_L;
     //fwd_E *= dbsize / evalue_L;
     /* copy E-values to qsortable data structures */
@@ -2941,8 +2948,8 @@ int print_post_calibration_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   fprintf(fp, "#\n");
   fprintf(fp, "# Exponential tail fitting:\n");
   fprintf(fp, "#\n");
-  fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",    "",     "",   "",        "",   "",       "",        "",       "    running time     ");
-  fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",    "",     "",   "",        "",   "",       "",        "",       "---------------------");
+  fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",    "",     "",   "",        "",   "",       "",        "",       "    running time      ");
+  fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",    "",     "",   "",        "",   "",       "",        "",       "----------------------");
   fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %10s %10s\n","mod", "cfg", "alg", "part", "ps", "pe",   "L (Mb)",  "mu",     "lambda",   "nhits", "predicted",     "actual");
   fprintf(fp, "# %3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %10s %10s\n", "---", "---", "---", "----", "---", "---", "-------", "------", "------", "-------", "----------", "----------");
 
@@ -3012,11 +3019,11 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   float  sec_per_res;      /* seconds per residue */
   float  targ_sec = 0.1;   /* target number of seconds our timing expt will take */
   int    Lmin = 100;       /* minimum number of residues to search to get timing */
-  double *dnull = NULL;
-  int     i;
-
-  ESL_DSQ *dsq;
-  ESL_STOPWATCH *w  = esl_stopwatch_Create();
+  int    use_qdb;          /* TRUE if we're using QDB, FALSE if not */
+  double *dnull = NULL;    /* background distro for generating random seqs */
+  int     i;               /* counter */
+  ESL_DSQ *dsq;            /* the random seq we'll create and search to get predicted time */
+  ESL_STOPWATCH *w  = esl_stopwatch_Create(); /* for timings */
 
   if(w == NULL)               ESL_FAIL(status, errbuf, "estimate_time_for_exp_round(): memory error, stopwatch not created.\n");
   if(ret_sec_per_res == NULL) ESL_FAIL(status, errbuf, "estimate_time_for_exp_round(): ret_sec_per_res is NULL");
@@ -3028,7 +3035,7 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
 
   if(ExpModeIsForCM(exp_mode)) { 
     if(cm->smx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "estimate_time_for_exp_round(), cm->smx is NULL");
-    int use_qdb     = (cm->smx->dmin == NULL && cm->smx->dmax == NULL) ? FALSE : TRUE;
+    use_qdb  = (cm->smx->dmin == NULL && cm->smx->dmax == NULL) ? FALSE : TRUE;
     if(use_qdb) { if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->smx->beta_qdb, &Mc_per_res, &irrelevant_W))  != eslOK) return status; }
     else        { if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, TRUE,  cm->beta_W,        &Mc_per_res, &irrelevant_W))  != eslOK) return status; }
     psec_per_Mc = (cm->search_opts & CM_SEARCH_INSIDE) ? (1. /  75.) : (1. / 275.);  /*  75 Mc/S inside;  275 Mc/S CYK */
@@ -3062,14 +3069,24 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   }
 
   search_results_t *results;
-  esl_stopwatch_Start(w);
+  ///ESL_STOPWATCH *w2  = esl_stopwatch_Create(); /* for timings */
+  ///esl_stopwatch_Start(w);
+  ///esl_stopwatch_Start(w2);
   /* simulate a workunit, generate a sequence, search it, and remove overlaps */
-  printf("exptL: %d\n", L);
+  /*printf("exptL: %d\n", L);*/
   if((status = get_random_dsq        (cfg, errbuf, cm, dnull, L, &dsq)) != eslOK) return status;
+  ///esl_stopwatch_Stop(w2);
+  ///esl_stopwatch_Display(stdout, w2, "# 0 CPU time: ");
+  ///esl_stopwatch_Start(w2);
   if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, L, &results, esl_opt_GetReal(go, "--mxsize"), 0, NULL, NULL)) != eslOK) return status;
+  ///esl_stopwatch_Stop(w2);
+  ///esl_stopwatch_Display(stdout, w2, "# 1 CPU time: ");
+  ///esl_stopwatch_Start(w2);
   RemoveOverlappingHits(results, 1, L);
+  ///esl_stopwatch_Stop(w2);
+  ///esl_stopwatch_Display(stdout, w2, "# 2 CPU time: ");
 
-  esl_stopwatch_Stop(w);
+  ///esl_stopwatch_Stop(w);
   FreeResults(results);
   if(dnull != NULL) free(dnull);
   free(dsq);
@@ -3087,8 +3104,8 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
     printf("w->user: %f\n", w->user);
     printf("sec_per_res: %f\n", sec_per_res);
     printf("Mc_per_res: %f\n", Mc_per_res);
-    printf("Mc: %f\n", Mc);
-  */
+    printf("Mc: %f\n", Mc);*/
+  
   *ret_sec_per_res = sec_per_res;
   return eslOK;
 
@@ -3293,7 +3310,7 @@ int update_hmm_exp_length(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
   hmm_Mc_per_res *= 2.;
 
   hmmL = (cm_Mc_per_res / hmm_Mc_per_res) * esl_opt_GetReal(go, "--exp-fract") * esl_opt_GetReal(go, "--exp-cmL");
-  /*hmmL = ESL_MAX(hmmL, esl_opt_GetReal(go, "--exp-hmmLn"));*/
+  hmmL = ESL_MAX(hmmL, esl_opt_GetReal(go, "--exp-hmmLn"));
   hmmL = ESL_MIN(hmmL, esl_opt_GetReal(go, "--exp-hmmLx"));
   hmmL *= 1000000.; /* convert to Mb */
   hmmL_int = (int) hmmL; 
