@@ -252,10 +252,10 @@ Use the entropy weighting strategy to determine the effective sequence
 number that gives a target mean match state relative entropy. This option 
 is the default, and can be turned off with 
 .B --enone.
-The default target mean match state relative entropy is 1.46 bits but can be
+The default target mean match state relative entropy is 1.41 bits but can be
 changed with
 .B --ere.
-The default of 1.46 bits is automatically changed if the total
+The default of 1.41 bits is automatically changed if the total
 relative entropy of the model (summed match state relative entropy)
 is less than a cutoff, which is
 is 6.0 bits by default, but can be changed with the 

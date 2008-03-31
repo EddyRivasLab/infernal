@@ -113,6 +113,20 @@ AC_DEFINE_UNQUOTED(EASEL_VERSION,   "$EASEL_VERSION")
 
 AC_DEFINE(eslLIBRARY)
 
+# Figure out what host we're compiling on.
+# Three GNU scripts must be included in the distro: 
+#       install.sh, config.guess, config.sub
+# This sets four shell variables:
+#       host            example: i686-pc-linux-gnu      
+#       host_cpu        example: i686
+#       host_vendor     example: pc
+#       host_os         example: linux-gnu
+#
+# These are used later in the configure by the ACX_PTHREAD macro to determine
+# system-specific details of threads libraries.
+#
+AC_CANONICAL_HOST
+
 # Check if we're a binary distribution. 
 # Trigger is existence of binaries/, nonexistence of src/.
 # 
@@ -131,7 +145,12 @@ AC_PROG_CC
 if test "$CC" = xlc ; then	# IBM's xlc?
   CFLAGS=$CFLAGS" -O3 -qarch=auto -qtune=auto"
 fi
-AC_PROG_CC_C99
+# Work around a known bug in autoconf's AC_PROG_CC_C99's handling of icc
+if test "$CC" != icc; then 
+  AC_PROG_CC_C99
+else
+  CFLAGS=$CFLAGS" -std=c99"
+fi
 
 ################################################################
 # Process the ./configure command line
@@ -210,6 +229,36 @@ AC_ARG_ENABLE(mpi,
    *)    echo "Ignoring unknown argument to --enable-mpi: $enable_mpi"
 	 ;;
 esac])
+
+# --enable-sse      Force SSE2 SIMD optimization on
+# --disable-sse     Force SSE2 SIMD optimization off
+#                   Default is to have SSE2 on, if it's detected.
+#
+# This sets @SIMD_FLAGS@ output variable, defines HAVE_SSE2, and
+# if SSE is chosen, sets impl_choice to "sse".
+AC_ARG_ENABLE(sse,
+   [AS_HELP_STRING([--enable-sse],  [ enable SSE SIMD parallelization (default)]) ],
+   [
+     if test "x$withval" != xno ; then
+        # icc is going to generate SSE code anyway, and it'll complain about -msse2 flag
+       if test "$CC" != icc; then 
+         AC_DEFINE(HAVE_SSE2, 1)
+         AX_EXT
+       else 
+         impl_choice="sse"
+       fi
+     else
+       AC_DEFINE(HAVE_SSE2, 0)
+     fi
+   ],
+   [
+     AX_EXT
+   ])
+if test "$ax_have_sse2_ext" = yes; then
+  impl_choice="sse"
+else
+  AC_MSG_NOTICE([no SSE detected])
+fi
 
 # --with-gsl        - enable hooks into the GSL (GNU Scientific Library)
 #

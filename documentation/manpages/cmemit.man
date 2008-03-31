@@ -23,7 +23,8 @@ consensus. This can be useful for various application in which one
 needs a simulation of sequences consistent with a sequence family
 consensus. By default,
 .B cmemit 
-generates 10 sequences and outputs them in FASTA (unaligned) format.
+generates 10 sequences and outputs them in FASTA (unaligned) format to 
+.I seqfile.
 
 .SH GENERAL OPTIONS
 

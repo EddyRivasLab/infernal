@@ -89,7 +89,7 @@ WRITE THIS SECTION!
 
 Let's see an example of the filters in action. Then we'll compare the
 results to a search without using the filters. We'll use a calibrated
-CM from the tutorial section, the \prog{purine1p2.c.cm} file, a
+CM from the tutorial section, the \prog{purine.2.c.cm} file, a
 calibrated Purine riboswitch model, and we'll use it to search the
 \emph{Colwellia psycherythraea} genome:
 
@@ -100,7 +100,7 @@ program. In this section we're more interested in the rest of the
 output. Let's look at the ``Pre-search info'' section:
 
 \begin{sreoutput}
-# Pre-search info for CM 1: purine1p2-1
+# Pre-search info for CM 1: purine.2-1
 #
 #                                  cutoffs            predictions     
 #                            -------------------  --------------------
@@ -164,7 +164,7 @@ to the screen (see the tutorial for more on this), and the
 ``Post-search info'' section is printed:
 
 \begin{sreoutput}
-# Post-search info for CM 1: purine1p2-1
+# Post-search info for CM 1: purine.2-1
 #
 #                              number of hits       surv fraction  
 #                            -------------------  -----------------
@@ -218,12 +218,12 @@ answers both of these questions is easy enough to perform, we can run
 \prog{cmsearch} with the filters turned off to get the non-filtered
 running time and to see if anything else is found. To save you the
 time of actually doing this we've saved the output of this search in
-the file \prog{purine2.nofilter.cmsearch}, but feel free to run it
+the file \prog{purine.2.nofilter.cmsearch}, but feel free to run it
 on your own. Take a look at the file. Here is the post-search
 information:
 
 %from
-%/groups/eddy/home/nawrockie/notebook/8_0307_inf_uguide_tutorial/filter_dir/purine1p2.nofilter.cmsearch, 
+%/groups/eddy/home/nawrockie/notebook/8_0307_inf_uguide_tutorial/filter_dir/purine.2.nofilter.cmsearch, 
 % which was run using search.sh in that same dir.
 
 \begin{sreoutput}
@@ -260,7 +260,7 @@ minutes for our filtered search, a speedup of about 80 fold.
 \end{srefaq}
 
 
-\subsubsection{Filter thresholds depend on the final threshold}
+\subsection{Filter thresholds depend on the final threshold}
 I've glossed over an important aspect of filter thresholds;
 \prog{cmsearch} sets them dependent on the final round cutoff you're
 using for your search. To understand why this happens, imagine that
@@ -306,7 +306,6 @@ local Inside, glocal Inside, local CYK and glocal CYK modes
 respectively (by default \prog{cmsearch} uses local Inside as the
 final round search strategy). Here's an example:
 
-\newpage
 \user{cmstat --lfi purine.2.c.cm}
 
 \begin{sreoutput}
@@ -327,7 +326,7 @@ an HMM filter will be for this search. Here's what each column means:
 \begin{wideitem}
 
 \item[\emprog{idx}] simply the index of the model this row pertains to in
-  the CM file. If the input file \prog{purine1p2.c.cm} contained
+  the CM file. If the input file \prog{purine.2.c.cm} contained
   multiple models, there would be multiple rows in this output, one for
   each model.
 
@@ -366,14 +365,14 @@ database, we can do that with the \prog{--seqfile <f>} option to
 \prog{cmstat}. For example to predict the speedup from our previous
 search: 
 
-\user{cmstat --lfi --seqfile C.psychrerythraea.genome.fa purine1p2.c.cm}
+\user{cmstat --lfi --seqfile C.psychrerythraea.genome.fa purine.2.c.cm}
 
 \begin{sreoutput}
 # local Inside filter threshold stats for E-value cutoff of  0.1 per 10.7464 Mb
 #
 #  idx  name              clen      cm E  cm bit  hmmbit    surv     xhmm  speedup
 # ----  ---------------  -----  --------  ------  ------  ------  -------  -------
-     1  purine1p2-1        103     0.100    37.2    12.0  0.0514      4.7     15.3
+     1  purine.2-1         103     0.100    37.2    12.0  0.0514      4.7     15.3
 \end{sreoutput}
 
 Notice the speed-up is significantly more than the 3.4X for the 1Mb
@@ -388,7 +387,7 @@ predicted speedup for the Rfam cutoff values with the \prog{--ga,
 possible speedups for all given CM bit score cutoffs using the
 \prog{--range} option: 
 
-\user{cmstat --lfi --range purine1p2.c.cm}
+\user{cmstat --lfi --range purine.2.c.cm}
 
 \begin{sreoutput}
 # local Inside filter threshold stats for all filter cutoffs in CM file
@@ -396,7 +395,7 @@ possible speedups for all given CM bit score cutoffs using the
 #
 #  idx  name              clen       F     nseq  db (Mb)  always?
 # ----  ---------------  -----  ------  -------  -------  -------
-     1  purine1p2-1        103  0.9900    10000      1.0       no
+     1  purine.2-1         103  0.9900    10000      1.0       no
 #
 #
 #       CM E-value cutoff / HMM Forward E-value filter cutoff pairs:
@@ -484,7 +483,7 @@ cutoffs for each Rfam model. Because these cutoffs are relatively
 strict it is often possible to achieve large speedups of up to
 100-fold or more when using an Rfam cutoff as the final threshold. The
 \prog{cmstat} can print these predicted speedups with the \prog{--ga,
-  --nc} and {--tc} options. Here's an example, using the
+  --nc} and \prog{--tc} options. Here's an example, using the
 \prog{rfam10models.cm} CM file that includes 10 randomly chosen Rfam
 8.1 models, that have been calibrated with default parameters to
 cmcalibrate:
@@ -518,7 +517,7 @@ Notice that we're predict about a 55-fold speedup when searching with
 all 10 of these models, which means our CM search would be only about
 1.6X slower than an HMM search.
 
-\subsubsection{Bypassing calibration by manually setting filter
+\subsection{Bypassing calibration by manually setting filter
   thresholds}
 
 WRITE THIS SECTION AND INCLUDE AN EXAMPLE!

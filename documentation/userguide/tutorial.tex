@@ -1062,10 +1062,6 @@ you find and build a new model, and so on.
 %    this question at all.
 %\end{srefaq}
 
-Let's work through an example of iterative search with a Purine
-riboswitch model. Here's a list of the files we'll use, from the
-\prog{/tutorial} subdirectory of \software{Infernal}:
-
 %I should say up front that this example is basically
 %an ideal case, it was contrived specifically to showcase the power of
 %\software{Infernal} for homology search. However, the sequences are
@@ -1081,26 +1077,32 @@ riboswitch model. Here's a list of the files we'll use, from the
 %each new model. We'd love to be able to reliably calibrate models
 %quicker, and we're working on it. 
 
+\subsection{Files used in the iterative search example}
+
+Let's work through an example of iterative search with a Purine
+riboswitch model. Here's a list of the files we'll use, from the
+\prog{/tutorial} subdirectory of \software{Infernal}:
+
   \begin{sreitems}{}
   \item[\prog{purine.1.sto}] A Stockholm alignment file with a single
        Purine riboswitch sequence and structure. 
   \item[\prog{purine.1.c.cm}] A calibrated version of a model built
-    from \prog{purine1.sto}, included to save time.
-  \item[{T.tengcongensis.genome.fa}]: the 2.5 Mb genome of the bacteria
+    from \prog{purine.1.sto}, included to save time.
+  \item[T.tengcongensis.genome.fa]: the 2.5 Mb genome of the bacteria
     \emph{Thermoanaerobacter tengcongensis}, in
     FASTA format, downloaded from the NCBI CoreNucleotide database
     (accession: NC\_003869). 
-  \item[{C.psychrerythraea.genome.fa}]: the 5 Mb genome of the bacteria
+  \item[C.psychrerythraea.genome.fa]: the 5 Mb genome of the bacteria
     \emph{Colwellia psychrereythraea}, in
     FASTA format, downloaded from the NCBI CoreNucleotide database
     (accession: CP000083). 
-  \item[\prog{purine.thermo.fa}] A putative Purine riboswitch in FASTA format.
+  \item[\prog{purine.teng.fa}] A putative Purine riboswitch in FASTA format.
   \item[\prog{purine.psych.fa}] A different putative Purine riboswitch in FASTA format.
   \end{sreitems}
 
 \subsubsection{Iteration 1, step 1: build and calibrate a model}
 
-Look at the \prog{purine1.sto} stockholm file. It contains exactly
+Look at the \prog{purine.1.sto} stockholm file. It contains exactly
 one sequence and predicted structure of a Purine riboswitch from the
 genome of \emph{Streptococcus pneumoniae}, a member of the Firmicutes
 division of the Bacterial domain. The structure from the
@@ -1220,7 +1222,7 @@ sequence, and output both sequences aligned together using the
 \prog{--withali} option. We'll save the output alignment to
 \prog{purine.2.sto}:
 
-\prog{cmalign -o purine.2.sto --withali purine.1.sto purine.1.cm purine.thermo.fa}
+\prog{cmalign -o purine.2.sto --withali purine.1.sto purine.1.cm purine.teng.fa}
 
 Now we've completed one round of the iterative search strategy listed
 above and we're ready to do another round, armed with an alignment of
@@ -1296,11 +1298,20 @@ for which at least two Watson-Crick or U-G/G-U pairs are present are
 indicated by open circles. Notice that 16 of the 20 base pairs show
 compensatory mutations between at least two of our three sequences. 
 
-\includegraphics[scale=0.5]{Figures/purine3_full}
-\includegraphics[scale=0.5]{Figures/purineC_full}
-
 Now we're ready for another round of iterative search. However, this
 is as far as we'll go with the guided tutorial. 
+
+This example was contrived to showcase the power of CMs to pull out
+homologous structural with very little primary sequence
+conservation. The iterative approach is a powerful one, and we'd love
+to be able to automate it, but we haven't tried. Mainly because we're
+seriously impeded by the incredibly slow calibration step. As E-values
+for CMs are become more rigorously understood, we hope to be able to
+streamline calibration and implement automated iterative search
+routines. 
+
+\includegraphics[scale=0.5]{Figures/purine3_full}
+\includegraphics[scale=0.5]{Figures/purineC_full}
 
 %Now that you've seen some examples of what
 %\software{Infernal} can do, you're ready to do your own RNA sequence

@@ -250,7 +250,7 @@ tails. We explained the difference between local versus glocal
 configuration in the tutorial, and went over partitions briefly above;
 now we'll discuss different search algorithms. 
 
-\subsubsection{In more detail: different search algorithms in \software{Infernal}}
+\subsection{In more detail: different search algorithms in \software{Infernal}}
 \prog{cmsearch} implements four several different search 
 algorithms, Inside and CYK for profile SCFG search with CMs, and
 Forward and Viterbi for profile HMM search with CP9 HMMs.
@@ -311,7 +311,7 @@ of Inside. You can read more about how we use CYK as a filter in
 %accelerate calibration, but currently if we cut out any stages, we get
 %inadequate performance. We're working on it though.
 
-\begin{srefaq}{Why is \prog{cmcalibrate} is so slow?} The
+\begin{srefaq}{Why is \prog{cmcalibrate} so slow?} The
     necessity of doing 24 separate exponential tail fitting stages
     (see above), and the fact that CM search algorithms scale more
     than $LN^2$ with sequence length $L$ and model consensus length

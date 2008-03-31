@@ -1215,7 +1215,6 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   float all_filters_ncalcs_per_res = 0.;/* number of millions of DP calcs predicted for all filter rounds */
   float fhmm_Smin = 0.;       /* minimally useful survival fraction for hmm filter round */
   float fqdb_Smin = 1.;       /* minimally useful survival fraction for qdb filter round */
-  float fqdb_Smax = 0.;       /* maximum allowable survival fraction for qdb filter round */
   float xfil = 0.01;          /* used to set *_Smin values, minimal fraction of filter dp calcs to do in the final round */
   int   do_qdb_filter = TRUE; /* TRUE to add QDB filter, FALSE not to */
   int   do_hmm_filter = TRUE; /* TRUE to add HMM filter, FALSE not to */
