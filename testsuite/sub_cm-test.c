@@ -38,7 +38,7 @@ static ESL_OPTIONS options[] = {
   { "-e",        eslARG_INT,     NULL, NULL, "n>0", NULL,  NULL, "--exhaust", "set sub CM end   consensus (match) column as <n>",         0 },
   { "-t",        eslARG_REAL,   "1E-5",NULL, "x>0.",NULL,  NULL, NULL, "probability threshold for reporting violations",           0 },
   { "--psionly", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "only check that psi values match (don't build HMMs)",      1 },
-  { "--sample",  eslARG_NONE,   FALSE, NULL, "n>0", NULL,  NULL, NULL, "build and check two CP9 HMMs (one an ML HMM via sampling)", 1 },
+  { "--sample",  eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "build and check two CP9 HMMs (one an ML HMM via sampling)", 1 },
   { "--nseq",    eslARG_INT,  "50000", NULL,"n>=10000",NULL,"--sample", NULL, "use <n> samples to build ML HMM for --sample",             1 },
   { "--chi",     eslARG_REAL,   ".01", NULL, "x>0.",NULL,  NULL, NULL, "fail sampling check if any chi-square test < <f>",         1 },
   { "--exhaust", eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "build and check every possible sub CM (all (N^2+N)/2)",    1 },
@@ -118,11 +118,13 @@ main(int argc, char **argv)
   if(! esl_opt_IsDefault (go, "-b")) {
     begin_set = TRUE;
     sstruct   = esl_opt_GetInteger(go, "-b");
+    nmodels   = 1;
   }
   else begin_set = FALSE;
   if(! esl_opt_IsDefault (go, "-e")) {
     end_set = TRUE;
-    estruct   = esl_opt_GetInteger(go, "-b");
+    estruct   = esl_opt_GetInteger(go, "-e");
+    nmodels   = 1;
   }
   else end_set = FALSE;
   do_atest       = (! esl_opt_GetBoolean(go, "--psionly"));
@@ -132,9 +134,9 @@ main(int argc, char **argv)
   do_exhaust     =    esl_opt_GetBoolean(go, "--exhaust");
   print_flag     =    esl_opt_GetBoolean(go, "--debug");
 
-  if(begin_set && nmodels != 1)        cm_Fail("-n does not make sense with -b and -e.\n");
-  if(begin_set && sstruct > estruct)   cm_Fail("For -b <x> and -e <y> y must be >= x.\n");
-  if(begin_set && sstruct > estruct)   cm_Fail("For -b <x> and -e <y> y must be >= x.\n");
+  if(begin_set && !(esl_opt_IsDefault(go, "-n"))) cm_Fail("-n does not make sense with -b and -e.\n");
+  if(begin_set && sstruct > estruct)              cm_Fail("For -b <x> and -e <y> y must be >= x.\n");
+  if(begin_set && sstruct > estruct)              cm_Fail("For -b <x> and -e <y> y must be >= x.\n");
 
   if(do_exhaust && do_stest)           printf("--exhaust and --sample might take a long time...\n");
   npredict_cases = 6;

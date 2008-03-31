@@ -377,8 +377,8 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
   fprintf(fp, "CLEN     %d\n",   cm->clen);
   fprintf(fp, "BCOM     %s\n",   cm->comlog->bcom);
   fprintf(fp, "BDATE    %s\n",   cm->comlog->bdate);
-  if(cm->comlog->ccom != NULL) fprintf(fp, "CCOM    %s\n", cm->comlog->ccom);
-  if(cm->comlog->cdate!= NULL) fprintf(fp, "CDATE   %s\n", cm->comlog->cdate);
+  if(cm->comlog->ccom != NULL) fprintf(fp, "CCOM     %s\n", cm->comlog->ccom);
+  if(cm->comlog->cdate!= NULL) fprintf(fp, "CDATE    %s\n", cm->comlog->cdate);
   fputs(      "NULL    ", fp);
   for (x = 0; x < cm->abc->K; x++)
     fprintf(fp, "%6s ", prob2ascii(cm->null[x], 1/(float)(cm->abc->K)));

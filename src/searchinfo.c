@@ -1468,7 +1468,6 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
 
   if(i != -1) { 
     hmm_E = hfi->fwd_E_cut[i] * ((double) dbsize / (double) hfi->dbsize);
-    printf("HMME: %f\n", hmm_E);
     if((status = E2MinScore(cm, errbuf, hmm_mode, hmm_E, &hmm_bit_sc)) != eslOK) return status;
     fprintf(fp, "%6.1f  ", hmm_bit_sc);
     S     = GetHMMFilterS      (hfi, i, W, avg_hit_len);

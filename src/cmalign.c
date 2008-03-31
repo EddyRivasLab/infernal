@@ -34,7 +34,7 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define ALGOPTS  "--cyk,--optacc,--hmmviterbi"               /* Exclusive choice for scoring algorithms */
+#define ALGOPTS  "--cyk,--optacc,--viterbi"               /* Exclusive choice for scoring algorithms */
 #define ALPHOPTS "--rna,--dna"                               /* Exclusive choice for output alphabet */
 #define ACCOPTS  "--nonbanded,--hbanded"                     /* Exclusive choice for acceleration strategies */
 
@@ -56,7 +56,7 @@ static ESL_OPTIONS options[] = {
   /* Algorithm options */
   { "--cyk",     eslARG_NONE,"default",NULL, NULL,     ALGOPTS,    NULL,        NULL, "align with the CYK algorithm", 2 },
   { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,     ALGOPTS,    NULL,   "--small", "align with the Holmes/Durbin optimal accuracy algorithm", 2 },
-  { "--hmmviterbi",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,    NULL,        "-p", "align to a CM Plan 9 HMM with the Viterbi algorithm",2 },
+  { "--viterbi", eslARG_NONE,   FALSE, NULL, NULL,     ALGOPTS,    NULL,        "-p", "align to a CM Plan 9 HMM with the Viterbi algorithm",2 },
   { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
   { "--small",   eslARG_NONE,   FALSE,  NULL, NULL,     NULL,      NULL, "--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
 #ifdef HAVE_DEVOPTS
@@ -67,7 +67,7 @@ static ESL_OPTIONS options[] = {
   { "--hbanded", eslARG_NONE, "default",  NULL, NULL,   NULL,     NULL,    "--small", "accelerate using CM plan 9 HMM derived bands", 3 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,"--hbanded",    NULL,  "--hbanded", "do not use bands to accelerate aln algorithm", 3 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 3 },
-  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded","--hmmviterbi,-p,--optacc", "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 3 },
+  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded","--viterbi,-p,--optacc", "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 3 },
   { "--mxsize",  eslARG_REAL, "1024.0",NULL, "x>0.",     NULL,      NULL,   "--small", "set maximum allowable DP matrix size to <x> Mb", 3},
 #ifdef HAVE_DEVOPTS
   { "--checkfb", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "check that HMM posteriors for bands were correctly calc'ed", 3},
@@ -83,7 +83,7 @@ static ESL_OPTIONS options[] = {
   { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "flush inserts left/right in output alignment", 4 },
   { "--onepost", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       "-p",       NULL, "with -p, only append single '0-9,*' char as posterior probability", 4 },
   /* Including a preset alignment */
-  { "--withali", eslARG_STRING, NULL,  NULL, NULL,      NULL,    "--cyk",       NULL, "incl. alignment in <f> (must be aln <cm file> was built from)", 5 },
+  { "--withali", eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "incl. alignment in <f> (must be aln <cm file> was built from)", 5 },
   { "--withpknots",eslARG_NONE, NULL,  NULL, NULL,      NULL,"--withali",       NULL, "incl. structure (w/pknots) from <f> from --withali <f>", 5 },
   { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--withali",       NULL, "--rf was originally used with cmbuild", 5 },
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,"--withali",       NULL, "--gapthresh <x> was originally used with cmbuild", 5 },
@@ -766,7 +766,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
   int i, imax;
 
   /* create a new MSA, if we didn't do --inside */
-  if(esl_opt_GetBoolean(go, "--cyk") || (esl_opt_GetBoolean(go, "--hmmviterbi") || (esl_opt_GetBoolean(go, "--optacc"))))
+  if(esl_opt_GetBoolean(go, "--cyk") || (esl_opt_GetBoolean(go, "--viterbi") || (esl_opt_GetBoolean(go, "--optacc"))))
     {
       /* optionally include a fixed alignment provided with --withali,
        * this has already been checked to see it matches the CM structure */
@@ -776,7 +776,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	    ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have SS_cons annotation compatible with the CM\n", esl_opt_GetString(go, "--withali"));
 	}
 
-      if(esl_opt_GetBoolean(go, "--hmmviterbi"))
+      if(esl_opt_GetBoolean(go, "--viterbi"))
 	{
 	  ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
 	  if((status = CP9Traces2Alignment(cm, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->nseq, seqs_to_aln->cp9_tr, 
@@ -837,12 +837,12 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       /* if nec, output the traces */
       if(cfg->tracefp != NULL)
 	{
-	  if(esl_opt_GetBoolean(go,"--hmmviterbi")) { printf("%-40s ... ", "Saving CP9 HMM traces"); fflush(stdout); }
+	  if(esl_opt_GetBoolean(go,"--viterbi")) { printf("%-40s ... ", "Saving CP9 HMM traces"); fflush(stdout); }
 	  else                                      { printf("%-40s ... ", "Saving CM parsetrees");  fflush(stdout); }
 	  for (i = 0; i < msa->nseq; i++) 
 	    {
 	      fprintf(cfg->tracefp, "> %s\n", seqs_to_aln->sq[i]->name);
-	      if(esl_opt_GetBoolean(go,"--hmmviterbi")) 
+	      if(esl_opt_GetBoolean(go,"--viterbi")) 
 		{
 		  fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
 		  CP9PrintTrace(cfg->tracefp, seqs_to_aln->cp9_tr[i], cm->cp9, seqs_to_aln->sq[i]->dsq);
@@ -934,7 +934,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;
   //  if(esl_opt_GetBoolean(go, "--nonbanded"))   cm->align_opts  &= ~CM_ALIGN_HBANDED;
   if(esl_opt_GetBoolean(go, "--sub"))         cm->align_opts  |= CM_ALIGN_SUB;
-  if(esl_opt_GetBoolean(go, "--hmmviterbi"))  cm->align_opts  |= CM_ALIGN_HMMVITERBI;
+  if(esl_opt_GetBoolean(go, "--viterbi"))     cm->align_opts  |= CM_ALIGN_HMMVITERBI;
   if(esl_opt_GetBoolean(go, "--small"))       cm->align_opts  |= CM_ALIGN_SMALL;
   if(esl_opt_GetBoolean(go, "-p"))            cm->align_opts  |= CM_ALIGN_POST;
   if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
@@ -1095,8 +1095,8 @@ static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL
 /* Function: include_withali()
  * EPN, Tue Mar  6 06:25:02 2007
  *
- * Purpose:  Infer the implicit parses of sequences in an
- *           MSA to a CM and append to passed in data structures
+ * Purpose:  Determine the implicit parses of sequences in an
+ *           MSA to a CM and append them to passed in data structures.
  *           We've already checked to make sure the MSA's consensus
  *           structure matches the CM.
  *
@@ -1486,7 +1486,7 @@ print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   fprintf(stdout, "# %-25s  %9s  %6s  %3s  %5s  %6s\n", "-------------------------", "---------", "------", "---", "-----", (do_hbanded || do_qdb) ? "------" : ""); 
   fprintf(stdout, "# %-25.25s  %9s  %6s  %3s", 
 	  cm->name,
-	  (esl_opt_GetBoolean(go, "--cyk")) ? "cyk" : (esl_opt_GetBoolean(go, "--hmmviterbi") ? "hmm vit" : "opt acc"), 
+	  (esl_opt_GetBoolean(go, "--cyk")) ? "cyk" : (esl_opt_GetBoolean(go, "--viterbi") ? "hmm vit" : "opt acc"), 
 	  (esl_opt_GetBoolean(go, "-l")) ? "local" : "global",
 	  (esl_opt_GetBoolean(go, "--sub")) ? "yes" : "no");
   /* bands and beta/tau */

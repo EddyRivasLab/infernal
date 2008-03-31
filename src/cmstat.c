@@ -49,10 +49,10 @@ static ESL_OPTIONS options[] = {
   { "--cmL",     eslARG_INT,    "1000",    NULL, "n>0",     NULL,"--search",        NULL, "length of sequences for CM search stats", 1 },
   { "--hmmL",    eslARG_INT,    "100000",  NULL, "n>0",     NULL,"--search",        NULL, "length of sequences for CP9 HMM search stats", 1 },
   { "--qdbfile", eslARG_OUTFILE, NULL,     NULL, NULL,      NULL,      "-m",        NULL, "save query-dependent bands (QDBs) for each state to file <f>", 1 },
-  { "--lfc",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of  local CYK    filter threshold stats", 2 },
-  { "--gfc",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of glocal CYK    filter threshold stats", 2 },
   { "--lfi",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of  local Inside filter threshold stats", 2 },
   { "--gfi",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of glocal Inside filter threshold stats", 2 },
+  { "--lfc",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of  local CYK    filter threshold stats", 2 },
+  { "--gfc",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of glocal CYK    filter threshold stats", 2 },
   { "-E",        eslARG_REAL,   "0.1",     NULL, "x>0",     NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for cmsearch E cutoff <x>", 2}, 
   { "-T",        eslARG_REAL,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for cmsearch bit cutoff <x>", 2}, 
   { "--ga",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for Rfam GA cutoff", 2}, 
@@ -226,12 +226,12 @@ main(int argc, char **argv)
     /* open input sequence file */
     ESL_SQFILE      *sqfp;             
     status = esl_sqfile_Open(esl_opt_GetString(go, "--seqfile"), eslSQFILE_UNKNOWN, NULL, &sqfp);
-    if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "File %s doesn't exist or is not readable\n", esl_opt_GetString(go, "--seqfile"));
-    else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of sequence file %s\n", esl_opt_GetString(go, "--seqfile"));
-    else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Can’t autodetect stdin or .gz."); 
-    else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
+    if (status == eslENOTFOUND)    cm_Fail("File %s doesn't exist or is not readable\n", esl_opt_GetString(go, "--seqfile"));
+    else if (status == eslEFORMAT) cm_Fail("Couldn't determine format of sequence file %s\n", esl_opt_GetString(go, "--seqfile"));
+    else if (status == eslEINVAL)  cm_Fail("Can’t autodetect stdin or .gz."); 
+    else if (status != eslOK)      cm_Fail("Sequence file open failed with error %d\n", status);
     /* GetDBInfo() reads all sequences, rewinds seq file and returns db size */
-    GetDBInfo(NULL, sqfp, &(dbsize), NULL);  
+    if((status = GetDBInfo(NULL, sqfp, &(dbsize), NULL, errbuf)) != eslOK) cm_Fail(errbuf);
     esl_sqfile_Close(sqfp); 
     if (! esl_opt_GetBoolean(go, "--toponly")) dbsize *= 2;
   }

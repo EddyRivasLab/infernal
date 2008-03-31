@@ -1,0 +1,31 @@
+# STOCKHOLM 1.0
+#=GF ID trna.5-1.1
+
+tRNA5        GGGCACAUGGCGCAGUUGGU-AGCGCGCUUCCCUUGCAAGGAAGAGGUCA
+#=GC SS_cons <<<<<<<..<<<<.........>>>>.<<<<<.......>>>>>.....<
+
+tRNA5        UCGGUUCGAUUCCGGUUGCGUCCA
+#=GC SS_cons <<<<.......>>>>>>>>>>>>.
+//
+# STOCKHOLM 1.0
+#=GF ID trna.5-1.2
+
+tRNA1        GCGGAUUUAGCUCAGUUGGG-AGAGCGCCAGACUGAAGAUCUGGAGGUCC
+tRNA4        GCUCGUAUGGCGCAGU-GGU-AGCGCAGCAGAUUGCAAAUCUGUUGGUCC
+#=GC SS_cons <<<<<<<..<<<<.........>>>>.<<<<<.......>>>>>.....<
+
+tRNA1        UGUGUUCGAUCCACAGAAUUCGCA
+tRNA4        UUAGUUCGAUCCUGAGUGCGAGCU
+#=GC SS_cons <<<<.......>>>>>>>>>>>>.
+//
+# STOCKHOLM 1.0
+#=GF ID trna.5-1.3
+
+tRNA2        UCCGAUAUAGUGUAAC-GGCUAUCACAUCACGCUUUCACCGUGGAGA-CC
+tRNA3        UCCGUGAUAGUUUAAU-GGUCAGAAUGGGCGCUUGUCGCGUGCCAGA-UC
+#=GC SS_cons <<<<<<<..<<<<.........>>>>.<<<<<.......>>>>>.....<
+
+tRNA2        GGGGUUCGACUCCCCGUAUCGGAG
+tRNA3        GGGGUUCAAUUCCCCGUCGCGGAG
+#=GC SS_cons <<<<.......>>>>>>>>>>>>.
+//

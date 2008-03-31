@@ -182,7 +182,7 @@ int get_gc_comp(ESL_SQ *sq, int start, int stop)
   gc /= ((float) (stop-start+1));
   gc *= 100.;
   free(ct);
-  return ((int) gc);
+  return (int) (gc + 0.5);
 
  ERROR:
   cm_Fail("Memory allocation error.");
@@ -203,9 +203,9 @@ int get_gc_comp(ESL_SQ *sq, int start, int stop)
  *           ret_N    - RETURN: total length (residues) or all seqs in seqfile
  *           gc_ct    - RETURN: gc_ct[x] observed 100-nt segments with GC% of x [0..100] 
  *
- * Dies on parse error of sqfile.
+ * Returns:  eslOK on success, other status on failure, errbuf filled with error message.
  */
-void GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct) 
+int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct, char *errbuf) 
 {
   int               status;
   ESL_SQ           *sq;
@@ -233,7 +233,6 @@ void GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double *
 	    {
 	      j = (i+99 <= sq->n) ? i+99 : sq->n;
 	      gc = get_gc_comp(sq, i, j);
-	      /*printf(">%d.raw\n", i);*/
 	      all_ambig_flag = TRUE;
 	      for(jp = 0; jp < 100 && (jp+i) < sq->n; jp++) {
 		if(sq->dsq[i+jp] < abc->K) {
@@ -257,9 +256,7 @@ void GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double *
 	}
       esl_sq_Reuse(sq); 
     } 
-  if (status != eslEOF) 
-    cm_Fail("Parse failed, line %d, file %s:\n%s", 
-	      sqfp->linenumber, sqfp->filename, sqfp->errbuf); 
+  if (status != eslEOF) ESL_FAIL(status, errbuf, "Parse failed, line %d, file %s:\n%s", sqfp->linenumber, sqfp->filename, sqfp->errbuf); 
   esl_sq_Destroy(sq); 
   esl_sqio_Rewind(sqfp);
 
@@ -271,10 +268,10 @@ void GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double *
   if(ret_N != NULL)      *ret_N     = N;
   if(ret_gc_ct != NULL)  *ret_gc_ct = gc_ct;
   else free(gc_ct);
-  return; 
+  return eslOK;
 
  ERROR:
-  cm_Fail("Memory allocation error.");
+  ESL_FAIL(status, errbuf, "GetDBInfo(): memory allocation error.");
 }
 
 /* Function: E2MinScore()

@@ -16,7 +16,9 @@ cmemit - generate sequences from a covariance model
 reads the covariance model(s) (CMs) in
 .I cmfile
 and generates a number of sequences from the CM(s);
-or if the -c option is selected, generates a single majority-rule
+or if the 
+.B -c
+option is selected, generates a single majority-rule
 consensus. This can be useful for various application in which one
 needs a simulation of sequences consistent with a sequence family
 consensus. By default,
@@ -152,7 +154,7 @@ the CM. Must be used in combination with
 and either 
 .B -a 
 or
-.B --hmmbuild.
+.B --shmm.
 
 .TP
 .BI --end " <n>"
@@ -164,16 +166,28 @@ the CM. Must be used in combination with
 and either 
 .B -a 
 or 
-.B --hmmbuild.
+.B --shmm.
 
 .TP
-.B --hmmbuild
+.BI --shmm <f>
 Use the generated sequences to train a CM Plan 9 maximum-likelihood
 HMM without using pseudo-counts. Print the counts and normalized
-probabilities of the HMM. Primarily useful for debugging.
+probabilities of the HMM to file
+.I <f>. 
+Primarily useful for debugging, as the number of samples grows the
+sampled HMM parameters should approach the analytically built CM 
+Plan 9 HMM parameters. The analytically built HMM parameters can be
+obtained using 
+.B --ahmm.
 
-
-
-
+.TP 
+.BI --ahmm <f>
+Analytically build a CM Plan 9 HMM from the CM that is maximally
+similar to the CM and output it's parameters to 
+.I <f>.
+Primarily useful for debugging. The parameters of the analytically
+built CP9 HMM can be compared with the sampled HMM parameters obtained
+using
+.B --shmm.
 
 

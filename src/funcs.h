@@ -634,7 +634,7 @@ extern void       FreeCMStats(CMStats_t *cmstats);
 extern int        debug_print_cmstats(CM_t *cm, char *errbuf, CMStats_t *cmstats, int has_fthr);
 extern int        debug_print_expinfo(ExpInfo_t *exp);
 extern int        get_gc_comp(ESL_SQ *sq, int start, int stop);
-extern void       GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct);
+extern int        GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct, char *errbuf);
 extern int        E2MinScore(CM_t *cm, char *errbuf, int exp_mode, float E,  float *ret_sc);
 extern int        Score2MaxE(CM_t *cm, char *errbuf, int exp_mode, float sc, float *ret_E);
 extern double     Score2E(float x, double mu, double lambda, long eff_dbsize);

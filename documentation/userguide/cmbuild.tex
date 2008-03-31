@@ -365,7 +365,7 @@ augmentations necessary to extend profile HMMs to deal with RNA
 secondary structure.
 
 
-\subsection{The cmbuild program, step by step}
+\subsection{The \prog{cmbuild} program, step by step}
 \addtocontents{faq}{\textbf{Questions about using cmbuild:}}
 
 The \prog{cmbuild} command line syntax is:
@@ -496,10 +496,10 @@ the prior and the data, and affects the information content of the
 model. Entropy weighting reduces the effective sequence number (the
 total sum of the weights) and increases the entropy (degrading the
 information content) of the model until a threshold is reached. The
-default entropy is 1.46 bits per position (roughing 0.54 bits of
+default entropy is 1.41 bits per position (roughly 0.59 bits of
 information, relative to uniform base composition). This threshold can
-be changed with the \prog{--etarget <x>} option. Entropy weighting may
-be turned off entirely with the \prog{--effnone} option.
+be changed with the \prog{--ere <x>} option. Entropy weighting may
+be turned off entirely with the \prog{--enone} option.
 
 
 \subsubsection{Architecture construction}
@@ -554,6 +554,8 @@ extension -- for example, if you build a model from the alignment file
 You can override this and provide your own name with the \prog{-n <s>}
 option, where \verb+<s>+ is any string.
 
+THIS NEEDS TO BE FIXED!!!
+
 Stockholm format also allows more than one alignment per file, and
 \prog{cmbuild} supports this: CM files can contain more than one
 model, and if you say e.g.\ \prog{cmbuild Rfam Rfam.sto} where
@@ -574,7 +576,7 @@ on the command line. By default, a new file is created, and the model
 is saved in a portable ASCII text format.
 
 If the cmfile already exists, the program exits with an error. The
-\prog{--F} option causes the new model to overwrite an existing
-cmfile. The \prog{--A} option causes the new model to be appended to
+\prog{-F} option causes the new model to overwrite an existing
+cmfile. The \prog{-A} option causes the new model to be appended to
 an existing cmfile (creating a growing CM database, perhaps).
 

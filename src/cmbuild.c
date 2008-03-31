@@ -48,7 +48,7 @@ static ESL_OPTIONS options[] = {
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "allow informative insert emissions, do not zero them", 1 },
   { "--Wbeta",   eslARG_REAL,   "1E-7",NULL, "x>0.0000000000000001",NULL,NULL,  NULL, "set tail loss prob for calc'ing W (max size of a hit) to <x>", 1 },
 /* Expert model construction options */
-  { "--rsearch", eslARG_INFILE, NULL,  NULL, NULL,      NULL, "--enone",        NULL,  "use RSEARCH parameterization with RIBOSUM matrix file <s>", 2 }, 
+  { "--rsearch", eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,        NULL,  "use RSEARCH parameterization with RIBOSUM matrix file <s>", 2 }, 
   { "--binary",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "save the model(s) in binary format",     2 },
   { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s> (Stockholm or Pfam)",  2 },
   { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--rsearch", "use reference coordinate annotation to specify consensus", 2 },
@@ -95,7 +95,8 @@ static ESL_OPTIONS options[] = {
   { "--gibbs",   eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, use Gibbs sampling instead of EM", 9 },
   { "-s",        eslARG_INT,     NULL, NULL, "n>0",      NULL,"--gibbs",        NULL, "w/--gibbs, set random number generator seed to <n>",  9 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, align locally w.r.t the model", 9 },
-  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,      NULL,       NULL, "print individual sequence scores during MSA refinement", 9 },
+  { "-a",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "print individual sequence scores during MSA refinement", 9 },
+  { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, align with optimal accuracy algorithm, not CYK", 9 },
   { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, use sub CM for columns b/t HMM start/end points", 9 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,       NULL,"--refine",       NULL, "do not use bands to accelerate alignment with --refine", 9 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",    NULL,"--refine","--nonbanded", "set tail loss prob for --hbanded to <x>", 9 },
@@ -666,11 +667,6 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, E
  ERROR:
   if(cm != NULL) FreeCM(cm);
   *ret_cm = NULL;
-  if (ret_msa_tr != NULL) *ret_msa_tr = NULL;
-  if (ret_mtr    != NULL) { 
-    FreeParsetree(*ret_mtr);
-    *ret_mtr = NULL;
-  }
   return status;
 }
 
@@ -819,7 +815,7 @@ print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg)
 {
   fprintf(stdout, "# %-4s %-6s %-20s %8s %8s %6s %5s %13s\n",    "",     "",       "",                     "",         "",         "",     "",      " rel entropy ");
   fprintf(stdout, "# %-4s %-6s %-20s %8s %8s %6s %5s %13s\n",    "",     "",       "",                     "",         "",         "",     "",      "-------------");
-  fprintf(stdout, "# %-4s %-6s %-20s %8s %8s %6s %5s %6s %6s\n", "aln",  "cm idx", "name",                 "nseq",     "eff_nseq", "alen",   "clen",  "CM",     "HMM");
+  fprintf(stdout, "# %4s %-6s %-20s %8s %8s %6s %5s %6s %6s\n",  "aln",  "cm idx", "name",                 "nseq",     "eff_nseq", "alen",   "clen",  "CM",     "HMM");
   fprintf(stdout, "# %-4s %-6s %-20s %8s %8s %6s %5s %6s %6s\n", "----", "------", "--------------------", "--------", "--------", "------", "-----", "------", "------");
   return;
 }
@@ -1113,7 +1109,7 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
   if(cfg->be_verbose) fprintf(stdout, "%-40s ... ", "Set effective sequence number");
   fflush(stdout);
 
-  if      (esl_opt_GetBoolean(go, "--enone") == TRUE) 
+  if((esl_opt_GetBoolean(go, "--enone")) || (! esl_opt_IsDefault(go, "--rsearch")))
     {
       neff = msa->nseq;
       if(cfg->be_verbose) fprintf(stdout, "done. [--enone: neff=nseq=%d]\n", msa->nseq);
@@ -1506,6 +1502,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
 
   /* update cm->align->opts */
   if(esl_opt_GetBoolean(go, "--gibbs"))       cm->align_opts  |= CM_ALIGN_SAMPLE;
+  if(esl_opt_GetBoolean(go, "--optacc"))      cm->align_opts  |= CM_ALIGN_OPTACC;
   if(esl_opt_GetBoolean(go, "--nonbanded"))   cm->align_opts  |= CM_ALIGN_SMALL; 
   else                                        cm->align_opts  |= CM_ALIGN_HBANDED;
 

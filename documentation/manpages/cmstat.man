@@ -1,0 +1,189 @@
+.TH "cmemit" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
+
+.SH NAME
+.TP 
+cmstat - display summary statistics for CMs
+
+.SH SYNOPSIS
+.B cmstat
+.I [options]
+.I cmfile
+
+.SH DESCRIPTION
+
+.B cmstat
+reads the covariance model(s) (CMs) in
+.I cmfile
+and prints out statistics of those CMs.
+If the 
+.B --search 
+option is enabled,
+.B cmstat 
+performs search experiments to determine the approximate
+speed (residues per second) of the CM and HMM search algorithms 
+used by
+.B cmsearch.
+
+By default, 
+.B cmstat 
+will print model summary statistics as well as E-value
+Gumbel statistics and filter threshold statistics, if they exist in
+.I cmfile.
+.B cmstat
+can be used to only print certain statistics for each CM using the
+options
+.B -m, --locale, --glocale, --localfc, --glocalfc, --localfi, 
+and
+.B --glocalfi. 
+These options potentially make it easier to parse
+.B cmstat
+output (for example, using the easel miniapp
+.B esl-histplot).
+If the
+.B -m
+option is used, only the model summary statistics are printed.  
+If the 
+.B --locale
+or
+.B --glocale
+options are used, only the CM's Gumbel statistics used for E-value
+calculation for local (if
+.B --locale) 
+or glocal (if 
+.B --glocale) 
+search are printed.
+With
+.B --localfc,
+.B --glocalfc, 
+.B --localfi,
+or
+.B --glocalfi,
+.B cmstat 
+will only print the CM's HMM filter threshold statistics for
+local CYK, glocal CYK, local Inside or glocal Inside search
+respectively.
+(Gumbel and HMM filter threshold statistics are added to a 
+.I cmfile
+using the
+.B cmcalibrate
+program).
+
+.SH OPTIONS
+
+.TP
+.B -h
+Print brief help; includes version number and summary of
+all options.
+
+.TP
+.B -g
+Configure the CM for global alignment before calculating the
+window size parameter (W).
+If used in combination with
+.B --search
+perform search timing experiments with CM and HMM in glocal mode. 
+By default, the CM is locally configured. For more on local and global
+configuration see the User's Guide.
+
+.TP
+.B -m
+Only print model summary statistics. Exactly one
+non "#" prefixed comment line will be printed per CM in 
+.I cmfile.
+
+.TP
+.B --locale
+Only print local E-value Gumbel statistics. Exactly one
+non "#" prefixed comment line wil be printed per CM in 
+.I cmfile.
+
+.TP
+.B --glocale
+Only print glocal E-value Gumbel statistics. Exactly one
+non "#" prefixed comment line will be printed per CM in 
+.I cmfile.
+
+.TP
+.B --localfc
+Only print HMM filter threshold statistics for local CM
+search with the CYK algorithm. Exactly one non "#" prefixed comment line will be printed per CM in 
+.I cmfile.
+
+.TP
+.B --glocalfc
+Only print HMM filter threshold statistics for glocal CM
+search with the CYK algorithm. Exactly one non "#" prefixed comment line will be printed per CM in 
+.I cmfile.
+
+.TP
+.B --localfc
+Only print HMM filter threshold statistics for local CM
+search with the Inside algorithm. Exactly one non "#" prefixed comment line will be printed per CM in 
+.I cmfile.
+
+.TP
+.B --glocalfc
+Only print HMM filter threshold statistics for glocal CM
+search with the Inside algorithm. Exactly one non "#" prefixed comment line will be printed per CM in 
+.I cmfile.
+
+
+.TP
+.BI --beta " <x>"
+For window size calculation, set the beta 
+parameter to 
+.I <x>
+where
+.I <x>
+is any positive real number less than 1.0. Beta is the probability
+mass considered negligible during query-dependent band (QDB)
+calculation, which is used to set the window size. The window size
+will decrease as beta increases towards 1.0. The default beta
+is 1E-7. If used in combination with the 
+.B --search 
+option, the specified beta will also be used for QDB calculation prior to
+the CM QDB search experiments.
+
+.TP 
+.B --search
+Perform short search experiments with each CM to determine
+approximate running times for database searches. Random sequences are
+generated and searched using the CYK and Inside CM search algorithms
+and the Viterbi and Forward HMM search algorithms. Six experiments are
+performed, non-banded CM CYK search, non-banded CM Inside search,
+query-dependent banded (QDB) CM CYK search, QDB CM Inside search,
+Viterbi HMM search, and Forward HMM search. The HMM searches are
+performed with a CM Plan 9 HMM that is constructed to be maximally
+similar to the CM. The tabular output
+from these experiments will be printed in tabular format, with the
+following columns. "alg": CM or HMM algorithm, "Mc/kb": millions of
+dynamic programming calculations (not cells) per kilobase of database
+sequence, "Mc/s": millions of dynamic programming calculations per
+second, "kb/s": kilobases of database sequence per second, "beta": is
+the beta parameter used for QDB calculation, if applicable, "qdbXt": the
+theoretical acceleration for the QDB search, if applicable, "qdbXe":
+the empirically observed acceleration for the QDB search, if applicable.
+By default, the
+sequence length for the CM and HMM search experiments is 1000 and 100,000
+residues respectively but these lengths can be changed
+to <n> with the 
+.BI --cmL <n> 
+and
+.BI --hmmL <n>
+options.
+
+.B --cmL <n>
+With 
+.B --search
+set the length of the randomly generated sequence for CM search
+experiments to 
+.I <n>.
+By default the length is 1000 residues. 
+
+.B --hmmL <n>
+With 
+.B --search
+set the length of the randomly generated sequence for HMM search
+experiments to 
+.I <n>.
+By default the length is 100,000 residues.

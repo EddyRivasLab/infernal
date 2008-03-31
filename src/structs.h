@@ -28,7 +28,7 @@
 #define DEFAULT_TAU    0.0000001
 #define DEFAULT_PBEGIN 0.05   /* EPN 06.29.07 (formerly 0.5) */
 #define DEFAULT_PEND   0.05   /* EPN 06.29.07 (formerly 0.5) */
-#define DEFAULT_ETARGET 0.54  /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
+#define DEFAULT_ETARGET 0.59  /* EPN 07.10.07 (formerly (v0.7->v0.8)= 2.-0.54 = 1.46 */
 #define DEFAULT_HS_MINLEN 7.  /* minimum length for a candidate sub CM root for a hybrid scan */
 #define DEFAULT_HS_BETA 1E-15 /* beta for calc'ing average hit length for sub cm roots of a hybrid scan */
 

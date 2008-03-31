@@ -104,7 +104,7 @@ struct cfg_s {
   ESL_RANDOMNESS  *r;
   ESL_ALPHABET    *abc;
   ESL_STOPWATCH   *w_stage;           /* stopwatch for each exp, filter stage */
-  double          *gc_freq;;
+  double          *gc_freq;
   double          *pgc_freq;
   CMStats_t      **cmstatsA;          /* the CM stats data structures, 1 for each CM */
   int              ncm;                /* what number CM we're on */
@@ -197,6 +197,7 @@ static int  print_post_calibration_info (const ESL_GETOPTS *go, struct cfg_s *cf
 static int  estimate_time_for_exp_round (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int exp_mode, double *ret_sec_per_res);
 static int  estimate_time_for_fil_round (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int exp_mode, double *ret_sec_per_seq);
 static int  update_hmm_exp_length(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
+static int hack_overwrite_gcfreq(double *gc_freq);
 /*static int  predict_time_for_exp_stage(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int exp_mode, int cmN, int hmmN, int expL, float *ret_seconds);*/
 /*static int  print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);*/
 
@@ -288,8 +289,17 @@ main(int argc, char **argv)
    */
   int cmL_total  = 1000000 * esl_opt_GetReal(go, "--exp-cmL");
   int hmmL_total = 1000000 * esl_opt_GetReal(go, "--exp-hmmLn");
-  cfg.exp_cmN  = (int) (((float) cmL_total  / 100000.) + 0.999999); 
-  cfg.exp_hmmN = (int) (((float) hmmL_total / 100000.) + 0.999999); 
+
+  /* EPN, Sun Mar 30 15:39:27 2008 HERE HERE HERE TEMP CHANGE! */
+  /* ORIG CODE, 100 KB chunks */
+  ///cfg.exp_cmN  = (int) (((float) cmL_total  / 100000.) + 0.999999); 
+  ///cfg.exp_hmmN = (int) (((float) hmmL_total / 100000.) + 0.999999); 
+
+  /* TEMP CODE, 10 KB chunks */
+  cfg.exp_cmN  = (int) (((float) cmL_total  / 10000.) + 0.999999); 
+  cfg.exp_hmmN = (int) (((float) hmmL_total / 10000.) + 0.999999); 
+
+  /* end temp change */
   cfg.exp_cmL  = cmL_total  / cfg.exp_cmN;
   cfg.exp_hmmL = hmmL_total / cfg.exp_hmmN;
 
@@ -522,13 +532,17 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     tmp_abc = esl_alphabet_Create(eslRNA);
     ESL_SQFILE      *dbfp;             
     status = esl_sqfile_Open(esl_opt_GetString(go, "--exp-gc"), eslSQFILE_UNKNOWN, NULL, &dbfp);
-    if (status == eslENOTFOUND)    cm_Fail("No such file."); 
-    else if (status == eslEFORMAT) cm_Fail("Format unrecognized."); 
-    else if (status == eslEINVAL)  cm_Fail("Can’t autodetect stdin or .gz."); 
-    else if (status != eslOK)      cm_Fail("Failed to open sequence database file, code %d.", status); 
-    GetDBInfo(tmp_abc, dbfp, NULL, &(cfg->gc_freq)); 
+    if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "No such file: %s.", esl_opt_GetString(go, "--exp-gc")); 
+    else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "file: %s format unrecognized.", esl_opt_GetString(go, "--exp-gc")); 
+    else if (status != eslOK)      ESL_FAIL(status, errbuf, "Failed to open sequence database file %s, code %d.", esl_opt_GetString(go, "--exp-gc"), status); 
+    if((status = GetDBInfo(tmp_abc, dbfp, NULL, &(cfg->gc_freq), errbuf)) != eslOK) return status; 
     esl_vec_DNorm(cfg->gc_freq, GC_SEGMENTS);
-    esl_alphabet_Destroy(cfg->abc);
+    /* TEMP BEGIN HERE EPN, Thu Mar 27 15:00:26 2008 
+     * Overwrite the cfg->gc_freq with an experimental distro from many genomes:
+     */
+    hack_overwrite_gcfreq(cfg->gc_freq);
+    /* TEMP END HERE */
+    esl_alphabet_Destroy(tmp_abc);
     esl_sqfile_Close(dbfp); 
    /* allocate pgc_freq, the gc freqs per partition, used to sample seqs for different partitions */
     ESL_ALLOC(cfg->pgc_freq, sizeof(double) * GC_SEGMENTS);
@@ -3069,8 +3083,8 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   }
 
   search_results_t *results;
+  esl_stopwatch_Start(w);
   ///ESL_STOPWATCH *w2  = esl_stopwatch_Create(); /* for timings */
-  ///esl_stopwatch_Start(w);
   ///esl_stopwatch_Start(w2);
   /* simulate a workunit, generate a sequence, search it, and remove overlaps */
   /*printf("exptL: %d\n", L);*/
@@ -3086,7 +3100,7 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   ///esl_stopwatch_Stop(w2);
   ///esl_stopwatch_Display(stdout, w2, "# 2 CPU time: ");
 
-  ///esl_stopwatch_Stop(w);
+  esl_stopwatch_Stop(w);
   FreeResults(results);
   if(dnull != NULL) free(dnull);
   free(dsq);
@@ -3338,4 +3352,226 @@ int update_hmm_exp_length(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
   printf("cfg->exp_hmmL * cfg->exp_hmmN in Mb: %f\n", (float) (cfg->exp_hmmL * cfg->exp_hmmN) / 1000000.);
 */
   return eslOK;
+}
+
+/* Function: hack_overwrite_gcfreq
+ * Date:     EPN, Thu Mar 27 15:01:55 2008
+ * 
+ * Purpose:  Overwrite gcfreq with gc distro. Temporary function.
+ */
+int
+hack_overwrite_gcfreq(double *gc_freq)
+{
+  int i; 
+  /*for(i = 0; i <= 100; i++) printf("0 gc[%3d]: %.7f\n", i, gc_freq[i]);*/
+  
+  /* from ~/notebook/8_0326_inf_default_gc/for_cmcalibrate_dir/arc.bac.euk.norm.gcfile.code */
+  gc_freq[0] = 0.000039000000;
+  gc_freq[1] = 0.000019666667;
+  gc_freq[2] = 0.000026333333;
+  gc_freq[3] = 0.000034666667;
+  gc_freq[4] = 0.000043666667;
+  gc_freq[5] = 0.000058666667;
+  gc_freq[6] = 0.000083000000;
+  gc_freq[7] = 0.000105666667;
+  gc_freq[8] = 0.000137333333;
+  gc_freq[9] = 0.000182000000;
+  gc_freq[10] = 0.000248666667;
+  gc_freq[11] = 0.000319000000;
+  gc_freq[12] = 0.000402333333;
+  gc_freq[13] = 0.000532333333;
+  gc_freq[14] = 0.000662666667;
+  gc_freq[15] = 0.000877000000;
+  gc_freq[16] = 0.001082333333;
+  gc_freq[17] = 0.001479000000;
+  gc_freq[18] = 0.001865000000;
+  gc_freq[19] = 0.002484333333;
+  gc_freq[20] = 0.003200000000;
+  gc_freq[21] = 0.004256000000;
+  gc_freq[22] = 0.005181333333;
+  gc_freq[23] = 0.006625333333;
+  gc_freq[24] = 0.008352000000;
+  gc_freq[25] = 0.009967333333;
+  gc_freq[26] = 0.012103000000;
+  gc_freq[27] = 0.014233000000;
+  gc_freq[28] = 0.016329666667;
+  gc_freq[29] = 0.018835000000;
+  gc_freq[30] = 0.020768000000;
+  gc_freq[31] = 0.022934000000;
+  gc_freq[32] = 0.025195000000;
+  gc_freq[33] = 0.027182000000;
+  gc_freq[34] = 0.028761000000;
+  gc_freq[35] = 0.030231333333;
+  gc_freq[36] = 0.031358666667;
+  gc_freq[37] = 0.031781333333;
+  gc_freq[38] = 0.032192666667;
+  gc_freq[39] = 0.032011000000;
+  gc_freq[40] = 0.031501000000;
+  gc_freq[41] = 0.030773666667;
+  gc_freq[42] = 0.029934000000;
+  gc_freq[43] = 0.028750000000;
+  gc_freq[44] = 0.027394666667;
+  gc_freq[45] = 0.026051000000;
+  gc_freq[46] = 0.024496333333;
+  gc_freq[47] = 0.023815000000;
+  gc_freq[48] = 0.022034000000;
+  gc_freq[49] = 0.021055333333;
+  gc_freq[50] = 0.019652000000;
+  gc_freq[51] = 0.018517333333;
+  gc_freq[52] = 0.017576666667;
+  gc_freq[53] = 0.015954666667;
+  gc_freq[54] = 0.015727333333;
+  gc_freq[55] = 0.015101666667;
+  gc_freq[56] = 0.014613333333;
+  gc_freq[57] = 0.014159666667;
+  gc_freq[58] = 0.013804000000;
+  gc_freq[59] = 0.013788666667;
+  gc_freq[60] = 0.013737000000;
+  gc_freq[61] = 0.013796333333;
+  gc_freq[62] = 0.013740000000;
+  gc_freq[63] = 0.013867000000;
+  gc_freq[64] = 0.013802666667;
+  gc_freq[65] = 0.013442000000;
+  gc_freq[66] = 0.012982333333;
+  gc_freq[67] = 0.012635666667;
+  gc_freq[68] = 0.012114000000;
+  gc_freq[69] = 0.011099000000;
+  gc_freq[70] = 0.009960000000;
+  gc_freq[71] = 0.009165666667;
+  gc_freq[72] = 0.007589333333;
+  gc_freq[73] = 0.006422000000;
+  gc_freq[74] = 0.005256666667;
+  gc_freq[75] = 0.004126666667;
+  gc_freq[76] = 0.003057333333;
+  gc_freq[77] = 0.002285000000;
+  gc_freq[78] = 0.001539333333;
+  gc_freq[79] = 0.001009333333;
+  gc_freq[80] = 0.000585000000;
+  gc_freq[81] = 0.000371000000;
+  gc_freq[82] = 0.000215333333;
+  gc_freq[83] = 0.000102000000;
+  gc_freq[84] = 0.000057000000;
+  gc_freq[85] = 0.000031666667;
+  gc_freq[86] = 0.000021000000;
+  gc_freq[87] = 0.000013000000;
+  gc_freq[88] = 0.000007000000;
+  gc_freq[89] = 0.000004000000;
+  gc_freq[90] = 0.000002666667;
+  gc_freq[91] = 0.000001666667;
+  gc_freq[92] = 0.000001666667;
+  gc_freq[93] = 0.000001000000;
+  gc_freq[94] = 0.000001000000;
+  gc_freq[95] = 0.000000333333;
+  gc_freq[96] = 0.000000333333;
+  gc_freq[97] = 0.000000333333;
+  gc_freq[98] = 0.000000333333;
+  gc_freq[99] = 0.000000333333;
+  gc_freq[100] = 0.000014333333;
+
+  /*for(i = 0; i <= 100; i++) printf("1 gc[%3d]: %.7f\n", i, gc_freq[i]);*/
+  return eslOK;
+
+  /* ~/notebook/8_0326_inf_default_gc/for_cmcalibrate_dir/arc.bac.euk.nonnorm.gcfile.code
+     gc_freq[0] = 0.000108621378;
+     gc_freq[1] = 0.000058762454;
+     gc_freq[2] = 0.000078527911;
+     gc_freq[3] = 0.000100416364;
+     gc_freq[4] = 0.000128912728;
+     gc_freq[5] = 0.000171089506;
+     gc_freq[6] = 0.000217796217;
+     gc_freq[7] = 0.000283310822;
+     gc_freq[8] = 0.000356064502;
+     gc_freq[9] = 0.000448238163;
+     gc_freq[10] = 0.000566272328;
+     gc_freq[11] = 0.000703677387;
+     gc_freq[12] = 0.000850722758;
+     gc_freq[13] = 0.001045531046;
+     gc_freq[14] = 0.001263057861;
+     gc_freq[15] = 0.001519519440;
+     gc_freq[16] = 0.001866515003;
+     gc_freq[17] = 0.002318829094;
+     gc_freq[18] = 0.002900374286;
+     gc_freq[19] = 0.003673797612;
+     gc_freq[20] = 0.004710452232;
+     gc_freq[21] = 0.005998376392;
+     gc_freq[22] = 0.007602820647;
+     gc_freq[23] = 0.009572518038;
+     gc_freq[24] = 0.011866577264;
+     gc_freq[25] = 0.014480544814;
+     gc_freq[26] = 0.017349421276;
+     gc_freq[27] = 0.020060146161;
+     gc_freq[28] = 0.023108949471;
+     gc_freq[29] = 0.026232911654;
+     gc_freq[30] = 0.028681487156;
+     gc_freq[31] = 0.031488515022;
+     gc_freq[32] = 0.033797809423;
+     gc_freq[33] = 0.035829734271;
+     gc_freq[34] = 0.037197760879;
+     gc_freq[35] = 0.038235031542;
+     gc_freq[36] = 0.038862491291;
+     gc_freq[37] = 0.038969892683;
+     gc_freq[38] = 0.038551485914;
+     gc_freq[39] = 0.037642915692;
+     gc_freq[40] = 0.036581270075;
+     gc_freq[41] = 0.035157298684;
+     gc_freq[42] = 0.033671752636;
+     gc_freq[43] = 0.032148569746;
+     gc_freq[44] = 0.030583301391;
+     gc_freq[45] = 0.029082370577;
+     gc_freq[46] = 0.027632627785;
+     gc_freq[47] = 0.026270560476;
+     gc_freq[48] = 0.024893752012;
+     gc_freq[49] = 0.023513581606;
+     gc_freq[50] = 0.022104382545;
+     gc_freq[51] = 0.019965955126;
+     gc_freq[52] = 0.018230844354;
+     gc_freq[53] = 0.015499981664;
+     gc_freq[54] = 0.014315835345;
+     gc_freq[55] = 0.012880108788;
+     gc_freq[56] = 0.011558181922;
+     gc_freq[57] = 0.010286544256;
+     gc_freq[58] = 0.009128126648;
+     gc_freq[59] = 0.007640695600;
+     gc_freq[60] = 0.006614141231;
+     gc_freq[61] = 0.005557571912;
+     gc_freq[62] = 0.004693103599;
+     gc_freq[63] = 0.003984339213;
+     gc_freq[64] = 0.003345497342;
+     gc_freq[65] = 0.002800099487;
+     gc_freq[66] = 0.002332472052;
+     gc_freq[67] = 0.001954682181;
+     gc_freq[68] = 0.001570208323;
+     gc_freq[69] = 0.001283789258;
+     gc_freq[70] = 0.001046994379;
+     gc_freq[71] = 0.000870942803;
+     gc_freq[72] = 0.000703704257;
+     gc_freq[73] = 0.000582336881;
+     gc_freq[74] = 0.000475924111;
+     gc_freq[75] = 0.000402855081;
+     gc_freq[76] = 0.000322784041;
+     gc_freq[77] = 0.000270937636;
+     gc_freq[78] = 0.000227349522;
+     gc_freq[79] = 0.000184810167;
+     gc_freq[80] = 0.000158105397;
+     gc_freq[81] = 0.000125404336;
+     gc_freq[82] = 0.000102071744;
+     gc_freq[83] = 0.000081418632;
+     gc_freq[84] = 0.000059916137;
+     gc_freq[85] = 0.000044850093;
+     gc_freq[86] = 0.000034644571;
+     gc_freq[87] = 0.000022318728;
+     gc_freq[88] = 0.000018060989;
+     gc_freq[89] = 0.000011830310;
+     gc_freq[90] = 0.000008771736;
+     gc_freq[91] = 0.000005862636;
+     gc_freq[92] = 0.000005117360;
+     gc_freq[93] = 0.000003710792;
+     gc_freq[94] = 0.000003191298;
+     gc_freq[95] = 0.000001941533;
+     gc_freq[96] = 0.000001729129;
+     gc_freq[97] = 0.000001506953;
+     gc_freq[98] = 0.000001355734;
+     gc_freq[99] = 0.000001495205;
+     gc_freq[100] = 0.000036204567;
+  */
 }
