@@ -1150,8 +1150,7 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
 
   for (idx = 0; idx < nseq; idx++) 
     {
-      if(! (sq[idx]->flags & eslSQ_DIGITAL))
-	cm_Fail("ERROR in CP9Traces2Alignment(), sq's should be digitized.\n");
+      if(sq[idx]->dsq == NULL) cm_Fail("ERROR in CP9Traces2Alignment(), sq's should be digitized.\n");
 
       for (cpos = 0; cpos <= emap->clen; cpos++)
 	iuse[cpos] = eluse[cpos] = 0;

@@ -246,7 +246,6 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
   int do_sums;
   int do_inside;
   int do_noalign;
-  int do_null2;
   int do_rsearch;
   int do_cmgreedy;
   int do_hmmgreedy;
@@ -260,7 +259,6 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
     do_sums        = (si->search_opts[n] & CM_SEARCH_SUMS)         ? TRUE : FALSE;
     do_inside      = (si->search_opts[n] & CM_SEARCH_INSIDE)       ? TRUE : FALSE;
     do_noalign     = (si->search_opts[n] & CM_SEARCH_NOALIGN)      ? TRUE : FALSE;
-    do_null2       = (si->search_opts[n] & CM_SEARCH_NULL2)        ? TRUE : FALSE;
     do_rsearch     = (si->search_opts[n] & CM_SEARCH_RSEARCH)      ? TRUE : FALSE;
     do_cmgreedy    = (si->search_opts[n] & CM_SEARCH_CMGREEDY)     ? TRUE : FALSE;
     do_hmmgreedy   = (si->search_opts[n] & CM_SEARCH_HMMGREEDY)    ? TRUE : FALSE;
@@ -270,7 +268,7 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
     if(n < si->nrounds) { 
       if(!do_noalign) cm_Fail("ValidateSearchInfo(), round %d has CM_SEARCH_NOALIGN flag down.\n", n);
       if(si->stype[n] == SEARCH_WITH_HMM) {
-	sum = do_noqdb + do_hbanded + do_hmmalnbands + do_sums + do_inside + do_null2 + do_rsearch + do_cmgreedy;
+	sum = do_noqdb + do_hbanded + do_hmmalnbands + do_sums + do_inside + do_rsearch + do_cmgreedy;
 	if(sum != 0 || (do_hmmviterbi + do_hmmforward != 1)) { 
 	  printf("ValidateSearchInfo(), round %d is SEARCH_WITH_HMM but search opts are invalid\n", n);
 	  DumpSearchOpts(si->search_opts[n]);
@@ -284,7 +282,7 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
 	if(si->hsi[n]->smx == NULL) cm_Fail("ValidateSearchInfo(), round %d is SEARCH_WITH_HYBRID but hsi[%d]->smx is NULL\n", n, n);
 	if(si->smx[n] != NULL)      cm_Fail("ValidateSearchInfo(), round %d is SEARCH_WITH_HYBRID but smx[%d] is not NULL\n", n, n);
 	if(si->hsi[n]->v_isroot[0]) cm_Fail("ValidateSearchInfo(), round %d is SEARCH_WITH_HYBRID and hsi->vi_isroot[0] is TRUE, this shouldn't happen, we might as well filter with a SEARCH_WITH_CM filter.");
-	sum = do_hbanded + do_hmmalnbands + do_sums + do_null2 + do_rsearch + do_cmgreedy;	
+	sum = do_hbanded + do_hmmalnbands + do_sums + do_rsearch + do_cmgreedy;	
 	if(sum != 0 || (do_hmmviterbi + do_hmmforward != 1)) { 
 	  printf("ValidateSearchInfo(), round %d is SEARCH_WITH_HYBRID but search opts are invalid\n", n);
 	  DumpSearchOpts(si->search_opts[n]);
@@ -293,7 +291,7 @@ ValidateSearchInfo(CM_t *cm, SearchInfo_t *si)
       }
       else if (si->stype[n] == SEARCH_WITH_CM) {
 	if(si->smx[n] == NULL) cm_Fail("ValidateSearchInfo(), round %d is SEARCH_WITH_CM but smx[%d] is NULL\n", n, n);
-	sum = do_hbanded + do_hmmalnbands + do_sums + do_null2 + do_rsearch + do_hmmviterbi + do_hmmforward;	
+	sum = do_hbanded + do_hmmalnbands + do_sums + do_rsearch + do_hmmviterbi + do_hmmforward;	
 	if(sum != 0) {
 	  printf("ValidateSearchInfo(), round %d is SEARCH_WITH_CM but search opts are invalid\n", n);
 	    DumpSearchOpts(si->search_opts[n]);
@@ -450,7 +448,6 @@ DumpSearchOpts(int search_opts)
   if(search_opts & CM_SEARCH_SUMS)         printf("\tCM_SEARCH_SUMS\n");
   if(search_opts & CM_SEARCH_INSIDE)       printf("\tCM_SEARCH_INSIDE\n");
   if(search_opts & CM_SEARCH_NOALIGN)      printf("\tCM_SEARCH_NOALIGN\n");
-  if(search_opts & CM_SEARCH_NULL2)        printf("\tCM_SEARCH_NULL2\n");
   if(search_opts & CM_SEARCH_RSEARCH)      printf("\tCM_SEARCH_RSEARCH\n");
   if(search_opts & CM_SEARCH_CMGREEDY)     printf("\tCM_SEARCH_CMGREEDY\n");
   if(search_opts & CM_SEARCH_HMMGREEDY)    printf("\tCM_SEARCH_HMMGREEDY\n");
@@ -626,8 +623,62 @@ int CompareResultsByEndPoint (const void *a_void, const void *b_void) {
   else                          return ( 0);
 }
 
-/*
- * Function: RemoveOverlappingHits ()
+/* Function: UpdateHitScoresWithNull2()
+ * Date:     EPN, Tue Apr  1 06:32:34 2008
+ * Purpose:  Update scores for each hit based on NULL2 correction.
+ *           If (do_remove_under_cutoff), remove any hits that are now
+ *           below our score cutoff
+ * 
+ * Args:    
+ *           cm      - the covariance model
+ *           si      - SearchInfo, relevant round is final one, si->nrounds
+ *           results - the hits data structure
+ *           seq     - seq hits lie within, needed to determine gc content
+ *           do_remove_under_cutoff - TRUE to remove hits that are now below our cutoff
+ */
+int UpdateHitScoresWithNull2(CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_SQ *sq, int do_remove_under_cutoff, char *errbuf)
+{
+  int i, x;
+  search_result_node_t swap;
+  float cutoff = IMPOSSIBLE; /* the min score we want to keep */
+
+  /* Check contract */
+  if(sq->dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2(), sequence is not digitized.\n");
+  if(si == NULL)      ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2(), si is NULL\n");
+  if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("UpdateHitScoresWithNull2(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
+
+  if (results == NULL) return eslOK;
+  if(do_remove_under_cutoff) { 
+    ESL_DASSERT1((si->cutoff_type[si->nrounds] == SCORE_CUTOFF));
+    cutoff = si->sc_cutoff[si->nrounds];
+  }
+
+  for (i=0; i<results->num_results; i++) {
+    if(results->data[i].tr == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2(), parsetree for hit i: %d is NULL.\n", i);
+    results->data[i].score -= ParsetreeScoreCorrection(cm, results->data[i].tr, sq->dsq);
+    if(do_remove_under_cutoff && results->data[i].score < cutoff) results->data[i].start = -1;
+  }
+
+  if(do_remove_under_cutoff) { /* remove any hits that are now below our cutoff */
+    for (x=0; x<results->num_results; x++) {
+      while (results->num_results > 0 && 
+	     results->data[results->num_results-1].start == -1)
+	results->num_results--;
+      if (x<results->num_results && results->data[x].start == -1) {
+	swap = results->data[x];
+	results->data[x] = results->data[results->num_results-1];
+	results->data[results->num_results-1] = swap;
+	results->num_results--;
+      }
+    }
+    while (results->num_results > 0 && results->data[results->num_results-1].start == -1)
+      results->num_results--;
+  }
+  SortResultsByScore(results);
+  return eslOK;
+}  
+
+/* Function: RemoveOverlappingHits ()
  * Date:     EPN, Tue Apr  3 14:36:38 2007
  * Plucked verbatim out of RSEARCH.
  * RSEARCH date: RJK, Sun Mar 31, 2002 [LGA Gate D7]
@@ -714,8 +765,7 @@ void RemoveOverlappingHits (search_results_t *results, int i0, int j0)
   cm_Fail("Memory allocation error.");
 }
 
-/*
- * Function: RemoveHitsOverECutoff
+/* Function: RemoveHitsOverECutoff
  * Date:     RJK, Tue Oct 8, 2002 [St. Louis]
  * Purpose:  Given an E-value cutoff, lambdas, mus, a sequence, and
  *           a list of results, calculates GC content for each hit, 
@@ -742,7 +792,7 @@ void RemoveHitsOverECutoff (CM_t *cm, SearchInfo_t *si, search_results_t *result
 
   /* Check contract */
   if(!(cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("remove_hits_over_e_cutoff(), but CM has no exp tail stats\n");
-  if(!(sq->flags & eslSQ_DIGITAL))    cm_Fail("remove_hits_over_e_cutoff(), sequences is not digitized.\n");
+  if(sq->dsq == NULL)                  cm_Fail("remove_hits_over_e_cutoff(), sequences is not digitized.\n");
   if(si == NULL) cm_Fail("remove_hits_over_e_cutoff(), si == NULL.\n");
   if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("remove_hits_over_e_cutoff(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
 
@@ -869,14 +919,14 @@ void PrintResults (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc
    * resulting MSA in, but it has to make sense (see next few lines). */
   if(cm->abc->type == eslRNA) { 
       if(abc->type != eslRNA && abc->type != eslDNA)
-	cm_Fail("print_results(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+	cm_Fail("PrintResults(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
   }
-  else if(cm->abc->K != abc->K) cm_Fail("print_results(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
-  if(si == NULL) cm_Fail("print_results(), si == NULL.\n");
-  if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("print_results(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
-  if((!do_top) && (!do_bottom)) cm_Fail("print_results(), do_top FALSE, and do_bottom FALSE, what's the point?\n");
+  else if(cm->abc->K != abc->K) cm_Fail("PrintResults(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+  if(si == NULL) cm_Fail("PrintResults(), si == NULL.\n");
+  if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("PrintResults(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
+  if((!do_top) && (!do_bottom)) cm_Fail("PrintResults(), do_top FALSE, and do_bottom FALSE, what's the point?\n");
 
-  if((si->cutoff_type[si->nrounds] == E_CUTOFF)  && !(cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("print_results(), stats wanted but CM has no exp tail stats\n");
+  if((si->cutoff_type[si->nrounds] == E_CUTOFF)  && !(cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("PrintResults(), stats wanted but CM has no exp tail stats\n");
   do_stats = (cm->flags & CMH_EXPTAIL_STATS) ? TRUE : FALSE;
 
   if(do_stats) { /* determine exp tail mode to use */
@@ -1372,7 +1422,7 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   fprintf(fp, "# %4s  %-15s  %5s  %6s  %7s  %7s  %7s\n", "idx",  "name",            "clen",   "F",      "nseq",    "db (Mb)", "always?");
   fprintf(fp, "# %4s  %-15s  %5s  %6s  %7s  %7s  %7s\n", "----", "---------------", "-----",  "------", "-------", "-------", "-------");
   fprintf(fp, "%6d  %-15.15s  %5d  %6.4f  %7d  %7.1f  %7s\n",
-	 cmi, cm->name, cm->clen, hfi->F, hfi->N, hfi->dbsize / 1000000.,
+	 cmi, cm->name, cm->clen, hfi->F, hfi->N, (double) dbsize / 1000000.,
 	 hfi->always_better_than_Smax ? "yes" : "no");
   fprintf(fp, "#\n");
   fprintf(fp, "#\n");

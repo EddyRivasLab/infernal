@@ -53,7 +53,7 @@ static ESL_OPTIONS options[] = {
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--toponly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the top strand", 1 },
   { "--bottomonly", eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the bottom strand", 1 },
-  { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, HMMONLYOPTS, "turn on the post hoc second null model", 1 },
+  { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--viterbi,--forward,--noalign", "turn on the post hoc second null model", 1 },
   { "--forecast",eslARG_INT,    NULL,  NULL, NULL,      NULL,      NULL,        NULL, "don't do search, forecast running time with <n> processors", 1 },
   /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
    * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
@@ -77,10 +77,10 @@ static ESL_OPTIONS options[] = {
   { "--beta",    eslARG_REAL,  "1e-15",NULL, "0<x<1",   NULL,      NULL,  HMMONLYOPTS, "set tail loss prob for QDB calculation to <x>", 4 },
   { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  HMMONLYOPTS, "calculate and use HMM bands in final round of CM search", 4 },
   { "--tau",     eslARG_REAL,   "1e-7",NULL, "0<x<1",   NULL,"--hbanded", HMMONLYOPTS, "set tail loss prob for --hbanded to <x>", 4 },
-  { "--aln2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL, "--hbanded", HMMONLYOPTS, "w/--hbanded derive HMM bands w/o scanning Forward/Backward", 4 },
+  { "--aln2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL, "--hbanded", HMMONLYOPTS, "w/--hbanded, derive HMM bands w/o scanning Forward/Backward", 4 },
   /* filtering options, by default do HMM, then CYK filter */
   { "--fil-qdb",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-qdb", "filter with CM QDB (banded) CYK algorithm", 5 },
-  { "--fil-beta",  eslARG_REAL, NULL,      NULL, "x>0", NULL,      NULL,"--fil-no-qdb", "set tail loss prob for filter QDB and W calculation to <x>", 4 },
+  { "--fil-beta",  eslARG_REAL, NULL,      NULL, "x>0", NULL,      NULL,"--fil-no-qdb", "set tail loss prob for filter QDB and W calculation to <x>", 5 },
   { "--fil-no-qdb",eslARG_NONE, FALSE,     NULL, NULL,  "--fil-qdb",NULL,         NULL, "do not filter with CM banded CYK", 5 },
   { "--fil-hmm",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-hmm", "filter with HMM forward algorithm", 5 },
   { "--fil-no-hmm",eslARG_NONE, FALSE,     NULL, NULL,  "--fil-hmm",NULL,         NULL, "do not filter with HMM forward algorithm", 5 },
@@ -390,6 +390,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   CM_t          *cm = NULL;
   CMConsensus_t *cons = NULL;     /* precalculated consensus info for display purposes */
   int            using_e_cutoff;
+  int            using_sc_cutoff;
   int            rci;
   dbseq_t       *dbseq = NULL;
   int            do_top;
@@ -447,7 +448,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       fprintf(cfg->ofp, "CM: %s\n", cm->name);
 
-      using_e_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
+      using_e_cutoff  = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF)     ? TRUE : FALSE;
+      using_sc_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == SCORE_CUTOFF) ? TRUE : FALSE;
 	 
       esl_stopwatch_Start(w);
       while ((status = read_next_search_seq(cfg->abc, cfg->sqfp, cfg->do_rc, &dbseq)) == eslOK)
@@ -462,6 +464,9 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    free(seq_surv_fractA);
 	    free(seq_nhitsA);
 	    RemoveOverlappingHits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
+	    if(esl_opt_GetBoolean(go, "--null2")) { 
+	      if((status = UpdateHitScoresWithNull2(cm, cm->si, dbseq->results[rci], dbseq->sq[rci], using_sc_cutoff, errbuf)) != eslOK) cm_Fail(errbuf); 
+	    }
 	    if(using_e_cutoff) RemoveHitsOverECutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]); 
 	  }
 	  PrintResults (cm, cfg->ofp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
@@ -534,6 +539,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int      bn            = 0;
   int      pos = 1;
   int      using_e_cutoff; 
+  int      using_sc_cutoff; 
   int      wi_error = 0;                /* worker index that sent back an error message, if an error occurs */
 
   CM_t *cm;
@@ -643,7 +649,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       }
       else { if((status = set_searchinfo_for_uncalibrated_cm(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf); }
 
-      using_e_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF) ? TRUE : FALSE;
+      using_e_cutoff  = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF)     ? TRUE : FALSE;
+      using_sc_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == SCORE_CUTOFF) ? TRUE : FALSE;
 
       ESL_ALLOC(cm_surv_fractA, sizeof(float) * (cm->si->nrounds+1));
       ESL_ALLOC(cm_nhitsA,      sizeof(int) * (cm->si->nrounds+1));
@@ -759,6 +766,9 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			{
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
 			    RemoveOverlappingHits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
+			    if(esl_opt_GetBoolean(go, "--null2")) { 
+			      if((status = UpdateHitScoresWithNull2(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci], using_sc_cutoff, errbuf)) != eslOK) cm_Fail(errbuf); 
+			    }
 			    if(using_e_cutoff) RemoveHitsOverECutoff(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]);
 			  }					      
 			  PrintResults(cm, cfg->ofp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
@@ -1011,7 +1021,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(! use_hmmonly) 
     if(  esl_opt_GetBoolean(go, "--inside"))    cm->search_opts |= CM_SEARCH_INSIDE;
   if(  esl_opt_GetBoolean(go, "--noalign"))     cm->search_opts |= CM_SEARCH_NOALIGN;
-  if(  esl_opt_GetBoolean(go, "--null2"))       cm->search_opts |= CM_SEARCH_NULL2;
   if(  esl_opt_GetBoolean(go, "--no-qdb"))      cm->search_opts |= CM_SEARCH_NOQDB;
   if(  esl_opt_GetBoolean(go, "--hbanded"))     cm->search_opts |= CM_SEARCH_HBANDED;
   if(  esl_opt_GetBoolean(go, "--aln2bands"))   cm->search_opts |= CM_SEARCH_HMMALNBANDS;

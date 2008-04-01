@@ -27,7 +27,6 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#if 1 
 /* Function: DispatchSearch()
  * Incept:   EPN, Wed Nov 14 10:43:16 2007
  *
@@ -243,7 +242,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
   if(ret_sc != NULL) *ret_sc = sc;
   return eslOK;
 }  
-#endif
+
 /* 
  * Function: DispatchAlignments
  * Incept:   EPN, Thu Nov 15 11:35:23 2007

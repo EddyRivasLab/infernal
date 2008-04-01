@@ -459,13 +459,12 @@ typedef struct cp9map_s {
 #define CM_SEARCH_SUMS         (1<<3)  /* if using HMM bands, use posterior sums   */
 #define CM_SEARCH_INSIDE       (1<<4)  /* scan with Inside, not CYK                */
 #define CM_SEARCH_NOALIGN      (1<<5)  /* don't align hits, just report locations  */
-#define CM_SEARCH_NULL2        (1<<6)  /* use post hoc second null model           */
-#define CM_SEARCH_RSEARCH      (1<<7)  /* use RSEARCH parameterized CM             */
-#define CM_SEARCH_CMGREEDY     (1<<8)  /* use greedy alg to resolve CM overlaps    */
-#define CM_SEARCH_HMMGREEDY    (1<<9) /* use greedy alg to resolve HMM overlaps   */
-#define CM_SEARCH_HMMVITERBI   (1<<10) /* search with CP9 HMM Viterbi              */
-#define CM_SEARCH_HMMFORWARD   (1<<11) /* search with CP9 HMM Forward              */
-#define CM_SEARCH_HMM2IJOLD    (1<<12) /* use old hmm2ij band calculation alg      */
+#define CM_SEARCH_RSEARCH      (1<<6)  /* use RSEARCH parameterized CM             */
+#define CM_SEARCH_CMGREEDY     (1<<7)  /* use greedy alg to resolve CM overlaps    */
+#define CM_SEARCH_HMMGREEDY    (1<<8)  /* use greedy alg to resolve HMM overlaps   */
+#define CM_SEARCH_HMMVITERBI   (1<<9)  /* search with CP9 HMM Viterbi              */
+#define CM_SEARCH_HMMFORWARD   (1<<10) /* search with CP9 HMM Forward              */
+#define CM_SEARCH_HMM2IJOLD    (1<<11) /* use old hmm2ij band calculation alg      */
 
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]

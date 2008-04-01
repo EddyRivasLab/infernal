@@ -164,8 +164,8 @@ int get_gc_comp(ESL_SQ *sq, int start, int stop)
   float  gc;
 
   /* contract check */
-  if(sq->abc == NULL)               cm_Fail("get_gc_comp expects sq to have a valid alphabet.");
-  if(! (sq->flags & eslSQ_DIGITAL)) cm_Fail("get_gc_comp expects sq to be digitized");
+  if(sq->abc == NULL) cm_Fail("get_gc_comp expects sq to have a valid alphabet.");
+  if(sq->dsq == NULL) cm_Fail("get_gc_comp expects sq to be digitized");
   if(sq->abc->type != eslRNA && sq->abc->type != eslDNA)  cm_Fail("get_gc_comp expects alphabet of RNA or DNA");
 
   if (start > stop) {

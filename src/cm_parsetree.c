@@ -27,6 +27,7 @@
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_random.h"
+#include "esl_sq.h"
 #include "esl_sqio.h"
 #include "esl_stack.h"
 #include "esl_vectorops.h"
@@ -753,8 +754,7 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   for (i = 0; i < nseq; i++)
     {
       /* Contract check */
-      if(! (sq[i]->flags & eslSQ_DIGITAL))
-	cm_Fail("ERROR in Parsetrees2Alignment(), sq %d is not digitized.\n", i);
+      if(sq[i]->dsq == NULL) cm_Fail("ERROR in Parsetrees2Alignment(), sq %d is not digitized.\n", i);
 
       /* Initialize the aseq with all pads '.' (in insert cols) 
        * and deletes '-' (in match cols).
@@ -1715,11 +1715,12 @@ EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digi
 float
 ParsetreeScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq)
 {
-  float p[MAXABET];		/* null2 model distribution */
-  float sc[MAXDEGEN];		/* null model scores       */
-  int   a,b;
-  int   v;                      /* state index counter */
-  int   i, j;                   /* seq posn counter */
+  int status;
+  float *p;		/* null2 model distribution */
+  float *sc;	        /* null2 model scores       */
+  int   a,b;            /* residue index counters */
+  int   v;              /* state index counter */
+  int   i, j;           /* seq posn counter */
   int   tidx;
   float score;
 
@@ -1730,37 +1731,31 @@ ParsetreeScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq)
   /* Set up model: average over the emission distributions of
    * all M, I states that appear in the trace. Ad hoc? Sure, you betcha. 
    */
-		/* trivial preorder traverse, since we're already numbered that way */
-  esl_vec_FSet(p, MAXABET, 0.0);
+  /* trivial preorder traverse, since we're already numbered that way */
+  ESL_ALLOC(p, sizeof(float) * cm->abc->K);
+  esl_vec_FSet(p, cm->abc->K, 0.0);
   for (tidx = 0; tidx < tr->n; tidx++) {
     v = tr->state[tidx];        	/* index of parent state in CM */
-    if(cm->sttype[v] == MP_st)
-      {
-	/* we treat this as two match states. */
-	for(a = 0; a < MAXABET; a++)
-	  {
-	    /* first add contribution to null2 for left half. 
-	       There's probably a simpler (vectorops.c func call) way to do this. */
-	    for(b = (a * MAXABET); b < ((a+1) * MAXABET); b++)
-	      p[a] += cm->e[v][b]; 
-	    /* now add contribution for right half. */
-	    for(b = a; b < (MAXABET * MAXABET); b += MAXABET)
-	      p[a] += cm->e[v][b]; 
-	  }
+    if(cm->sttype[v] == MP_st) { 
+      /* we treat this as two match states. */
+      for(a = 0; a < cm->abc->K; a++) { 
+	/* first add contribution to null2 for left half. */
+	for(b = (a * cm->abc->K); b < ((a+1) * cm->abc->K); b++) p[a] += cm->e[v][b]; 
+	/* now add contribution for right half. */
+	for(b = a; b < (cm->abc->K * cm->abc->K); b += cm->abc->K) p[a] += cm->e[v][b]; 
       }
-    else if(cm->sttype[v] == ML_st || cm->sttype[v] == IL_st ||
-	    cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)
-      esl_vec_FAdd(p, cm->e[v], MAXABET);
+    }
+    else if(cm->sttype[v] == ML_st || cm->sttype[v] == IL_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
+      esl_vec_FAdd(p, cm->e[v], cm->abc->K);
+    }
   }
+  esl_vec_FNorm(p, cm->abc->K);
 
-  esl_vec_FNorm(p, MAXABET);
-
-  for (a = 0; a < MAXABET; a++)
-    sc[a] = sreLOG2(p[a] / cm->null[a]);
-				/* could avoid this chunk if we knew
-				   we didn't need any degenerate char scores */
-  for (a = MAXABET; a < MAXDEGEN; a++)
-    sc[a] = esl_abc_FAvgScore(cm->abc, a, p);  /* not completely sure about this line EPN */
+  ESL_ALLOC(sc,  sizeof(float) * (cm->abc->Kp));
+  /* calculate null2 scores of each possible emission, first the base alphabet */
+  for (a = 0; a < cm->abc->K; a++) sc[a] = sreLOG2(p[a] / cm->null[a]);
+  /* the ambiguities */
+  for (a = cm->abc->K+1; a < cm->abc->Kp-1; a++) sc[a] = esl_abc_FAvgScore(cm->abc, a, sc);  
 
   /* Score all the state emissions that appear in the trace.
    */
@@ -1783,6 +1778,13 @@ ParsetreeScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq)
    score -= 8.;	
 
    /* Return the correction to the bit score. */
-   ESL_DPRINTF1(("ParsetreeScoreCorrection return sc: %f\n", LogSum2(0,score)));
-   return LogSum2(0,score);
+   ESL_DPRINTF1(("ParsetreeScoreCorrection return sc: %f\n", LogSum2(0., score)));
+   free(sc);
+   free(p);
+   return LogSum2(0., score);
+
+ ERROR:
+   cm_Fail("ParsetreeScoreCorrection(): memory allocation error.");
+   return status; /* NEVERREACHED*/
 }
+

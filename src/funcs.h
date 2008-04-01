@@ -590,6 +590,7 @@ extern void SortResultsByScore         (search_results_t *results);
 extern void SortResultsByEndPoint      (search_results_t *results);
 extern void PrintResults               (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory);
 extern void ReportHit                  (int i, int j, int bestr, float score, search_results_t *results);
+extern int  UpdateHitScoresWithNull2   (CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_SQ *sq, int do_remove_under_cutoff, char *errbuf);
 extern void RemoveOverlappingHits      (search_results_t *results, int i0, int j0);
 extern void RemoveHitsOverECutoff      (CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_SQ *sq);
 extern int  ScoresFromResults          (search_results_t *results, char *errbuf, float **ret_scA, int *ret_scN); 

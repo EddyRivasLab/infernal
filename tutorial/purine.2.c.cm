@@ -1,5 +1,5 @@
 INFERNAL-1 [1.0]
-NAME     purine1p2-1
+NAME     purine.2-1
 STATES   318
 NODES    89
 ALPHABET 1
@@ -8,7 +8,7 @@ WBETA    1e-07
 NSEQ     2
 EFFNSEQ  1.275
 CLEN     103
-BCOM     cmbuild purine1p2.cm purine1p2.sto
+BCOM     cmbuild purine.2.cm purine.2.sto
 BDATE    Fri Mar 28 05:49:14 2008
 CCOM    cmcalibrate --mpi --exp-gc /groups/eddy/home/nawrockie/infernal/src/1Mb.fa  -s 1206697935 purine1p2.c.cm
 CDATE   Fri Mar 28 05:52:15 2008

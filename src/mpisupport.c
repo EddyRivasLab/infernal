@@ -1998,7 +1998,7 @@ cm_digitized_sq_MPIPackSize(const ESL_SQ *sq, MPI_Comm comm, int *ret_n)
   int n = 0;
 
   /* contract check */
-  if(! (sq->flags  & eslSQ_DIGITAL)) ESL_XEXCEPTION(eslESYS, "cm_digitized_sq_MPIPackSize, sq not digitized.");
+  if(sq->dsq == NULL) ESL_XEXCEPTION(eslESYS, "cm_digitized_sq_MPIPackSize, sq not digitized.");
 
   /* space for sq->n, sq->name, and sq->dsq only */
   status = MPI_Pack_size(1,     MPI_INT,  comm, &sz);              n += sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
@@ -2040,7 +2040,7 @@ cm_digitized_sq_MPIPack(const ESL_SQ *sq, char *buf, int n, int *position, MPI_C
   int status;
 
   /* contract check */
-  if(! (sq->flags  & eslSQ_DIGITAL)) ESL_EXCEPTION(eslESYS, "cm_digitized_sq_MPIPackSize, sq not digitized.");
+  if(sq->dsq == NULL) ESL_EXCEPTION(eslESYS, "cm_digitized_sq_MPIPackSize, sq not digitized.");
 
   ESL_DPRINTF2(("cm_digitized_sq_MPIPack(): ready.\n"));
   

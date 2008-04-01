@@ -280,16 +280,16 @@ revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq)
     cm_Fail("ERROR in revcomp, comp is NULL.");
   if(sq == NULL)
     cm_Fail("ERROR in revcomp, sq is NULL.");
-  if(    sq->flags & eslSQ_DIGITAL   &&  (! (comp->flags & eslSQ_DIGITAL)))
+  if(sq->dsq != NULL && comp->dsq == NULL)
     cm_Fail("ERROR in revcomp, sq is digital, comp is not.");
-  if((! (sq->flags & eslSQ_DIGITAL)) &&      comp->flags & eslSQ_DIGITAL)
+  if(sq->dsq == NULL && comp->dsq != NULL)
     cm_Fail("ERROR in revcomp, comp is digital, sq is not.");
   if(abc->type != eslRNA && abc->type != eslDNA)
     cm_Fail("ERROR in revcomp, alphabet type must be RNA or DNA.");
   if(comp->n < sq->n)
     cm_Fail("ERROR in revcomp, comp->n is smaller than sq->n.");
 
-  if(sq->flags & eslSQ_DIGITAL) do_digital = TRUE;
+  if(sq->dsq != NULL) do_digital = TRUE;
 
   if(do_digital) {
     if((status = esl_rnd_XReverse(sq->dsq, sq->n, comp->dsq)) != eslOK) 
