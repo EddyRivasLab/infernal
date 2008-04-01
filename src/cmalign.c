@@ -1154,7 +1154,7 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
       /* we need digitized AND text seqs for Transmogrify */
       esl_abc_Textize(cfg->withmsa->abc, cfg->withmsa->ax[i], cfg->withmsa->alen, aseq[i]);
       esl_strdup(aseq[i], -1, &(uaseq[i]));
-      esl_sq_Dealign(uaseq[i], uaseq[i], "-_.", cfg->withmsa->alen);
+      esl_strdealign(uaseq[i], uaseq[i], "-_.", NULL);
     }
   ESL_RALLOC((*ret_tr),  tmp, (sizeof(Parsetree_t *)  * (*ret_nseq + cfg->withmsa->nseq)));
   ESL_RALLOC((*ret_sq),  tmp, (sizeof(ESL_SQ *)       * (*ret_nseq + cfg->withmsa->nseq)));
