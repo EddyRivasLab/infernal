@@ -328,7 +328,7 @@ cm_MeanMatchEntropy(const CM_t *cm)
   for (v = 0; v < cm->M; v++)
     {
       if(cm->stid[v] == MATP_MP)
-       H += esl_vec_FEntropy(cm->e[v], (cm->abc->K * cm->abc->K)) / 2.0;
+       H += esl_vec_FEntropy(cm->e[v], (cm->abc->K * cm->abc->K));
       else if(cm->stid[v] == MATL_ML || 
 	      cm->stid[v] == MATR_MR)
 	H += esl_vec_FEntropy(cm->e[v], cm->abc->K);
@@ -370,7 +370,7 @@ cm_MeanMatchRelativeEntropy(const CM_t *cm)
   
   for (v = 0; v < cm->M; v++) { 
     if(cm->stid[v] == MATP_MP) {
-      KL += esl_vec_FRelEntropy(cm->e[v], pair_null, (cm->abc->K * cm->abc->K)) / 2.0;
+      KL += esl_vec_FRelEntropy(cm->e[v], pair_null, (cm->abc->K * cm->abc->K));
     }
     else if(cm->stid[v] == MATL_ML || 
 	    cm->stid[v] == MATR_MR) { 
