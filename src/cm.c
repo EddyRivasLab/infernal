@@ -331,6 +331,9 @@ FreeCM(CM_t *cm)
   free(cm->nodemap);
   free(cm->ndtype);
 
+  if (cm->lmesc   != NULL) { free(cm->lmesc[0]); free(cm->lmesc); }
+  if (cm->rmesc   != NULL) { free(cm->rmesc[0]); free(cm->rmesc); }
+
   free(cm->t[0]);
   free(cm->t);
   free(cm->e[0]);
