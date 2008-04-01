@@ -9,7 +9,6 @@
  * Robert J. Klein
  * Separate file started May 17, 2002
  */
-
 #include "esl_config.h"
 #include "config.h"
 
@@ -19,13 +18,16 @@
 #include <ctype.h>
 #include <string.h>
 
+
 #include "easel.h"
 #include "esl_exponential.h"
 #include "esl_histogram.h"
 #include "esl_random.h"
+#include "esl_sq.h"
 #include "esl_sqio.h"
 #include "esl_vectorops.h"
 
+#include "cm_dispatch.h"
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 

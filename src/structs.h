@@ -16,6 +16,7 @@
 #include "config.h"
 
 #include "easel.h"
+#include "esl_sq.h"
 #include "esl_dirichlet.h"
 #include "esl_random.h"
 #include "esl_sqio.h"

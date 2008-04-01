@@ -15,10 +15,10 @@
 #include <math.h>
 #include <assert.h>
 
-#include <easel.h>
-#include <esl_dirichlet.h>
-#include <esl_vectorops.h>
-#include <esl_fileparser.h>
+#include "easel.h"
+#include "esl_dirichlet.h"
+#include "esl_vectorops.h"
+#include "esl_fileparser.h"
 
 #include "funcs.h"
 #include "structs.h"
