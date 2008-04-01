@@ -116,6 +116,62 @@ float tr_vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
                   int r_allow_J, int r_allow_L, int r_allow_R,
                   int z_allow_J, int z_allow_L, int z_allow_R);
 
+/* Function: SetMarginalScore()
+ * Author:   DLK
+ *
+ * Purpose:  Given an otherwise initialized CM,
+ *           set marginalized emission score vectors.
+ *           Requires cm->abc and cm->esc.
+ *
+ * Args:     cm
+ *
+ * Returns:  none (cm is modified)
+ */
+void
+SetMarginalScores(CM_t *cm)
+{
+   int i,v;
+
+   cm->lmesc = malloc(sizeof(float *) * (cm->M));
+   cm->rmesc = malloc(sizeof(float *) * (cm->M));
+
+   cm->lmesc[0] = malloc(sizeof(float) * (cm->M*cm->abc->Kp));
+   cm->rmesc[0] = malloc(sizeof(float) * (cm->M*cm->abc->Kp));
+
+   for (v = 0; v < cm->M; v++)
+   {
+      cm->lmesc[v] = cm->lmesc[0] + v*cm->abc->Kp;
+      cm->rmesc[v] = cm->rmesc[0] + v*cm->abc->Kp;
+
+      if (cm->sttype[v] == MP_st)
+         for (i = 0; i < cm->abc->Kp; i++)
+         {
+            cm->lmesc[v][i] =  LeftMarginalScore(cm->abc, cm->esc[v], i);
+            cm->rmesc[v][i] = RightMarginalScore(cm->abc, cm->esc[v], i);
+         }
+       else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)
+         for (i = 0; i < cm->abc->Kp; i++)
+         {
+            cm->lmesc[v][i] = cm->esc[v][i];
+            cm->rmesc[v][i] = 0.0;
+         }
+       else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)
+         for (i = 0; i < cm->abc->Kp; i++)
+         {
+            cm->lmesc[v][i] = 0.0;
+            cm->rmesc[v][i] = cm->esc[v][i];
+         }
+       else
+         for (i = 0; i < cm->abc->Kp; i++)
+         {
+            cm->lmesc[v][i] = 0.0;
+            cm->rmesc[v][i] = 0.0;
+         }
+   }
+  
+   return;
+}
+
 /* Function: TrCYK_DnC()
  * Author:   DLK
  *
@@ -1352,8 +1408,8 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
             R_alpha[v][j][0] = IMPOSSIBLE;
             if ( jp > 0 ) {
                alpha[v][j][1] = IMPOSSIBLE;
-               L_alpha[v][j][1] =  LeftMarginalScore(cm->abc, cm->esc[v],dsq[j]);
-               R_alpha[v][j][1] = RightMarginalScore(cm->abc, cm->esc[v],dsq[j]);
+               L_alpha[v][j][1] = cm->lmesc[v][(int) dsq[j]];
+               R_alpha[v][j][1] = cm->rmesc[v][(int) dsq[j]];
                if ( ret_shadow != NULL ) { ((char **)L_shadow[v])[j][1] = USED_EL; }
                if ( ret_shadow != NULL ) { ((char **)R_shadow[v])[j][1] = USED_EL; }
             }
@@ -1404,8 +1460,8 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
                {  alpha[v][j][d] += cm->esc[v][(int) (dsq[i]*cm->abc->K+dsq[j])]; }
                else
                {  alpha[v][j][d] += DegeneratePairScore(cm->abc, cm->esc[v], dsq[i], dsq[j]); }
-               { L_alpha[v][j][d] +=  LeftMarginalScore(cm->abc, cm->esc[v],dsq[i]); }
-               { R_alpha[v][j][d] += RightMarginalScore(cm->abc, cm->esc[v],dsq[j]); }
+               { L_alpha[v][j][d] += cm->lmesc[v][(int) dsq[i]]; }
+               { R_alpha[v][j][d] += cm->rmesc[v][(int) dsq[j]]; }
 
                if (   alpha[v][j][d] < IMPOSSIBLE ) {   alpha[v][j][d] = IMPOSSIBLE; }
                if ( L_alpha[v][j][d] < IMPOSSIBLE ) { L_alpha[v][j][d] = IMPOSSIBLE; }
@@ -1952,7 +2008,7 @@ tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
                case MP_st:
                   if (j > i0)
                   {
-                     esc = LeftMarginalScore(cm->abc, cm->esc[y], dsq[j-1]);
+                     esc = cm->lmesc[y][(int) dsq[j-1]];
                      if ( (sc = beta->L[y][j-1] + cm->tsc[y][voffset] + esc) > beta->L[v][j] )
                         beta->L[v][j] = sc;
                   }
@@ -1986,7 +2042,7 @@ tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
          {
             if (cm->sttype[v] == MP_st)
             {
-               esc = LeftMarginalScore(cm->abc, cm->esc[v], dsq[j]);
+               esc = cm->lmesc[v][(int) dsq[j]];
             }
             if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st)
             {
@@ -2017,7 +2073,7 @@ tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
                case MP_st:
                   if (j < j0)
                   {
-                     esc = RightMarginalScore(cm->abc, cm->esc[y], dsq[j+1]);
+                     esc = cm->rmesc[y][(int) dsq[j+1]];
                      if ( (sc = beta->R[y][j+1] + cm->tsc[y][voffset] + esc) > beta->R[v][j] )
                         beta->R[v][j] = sc;
                   }
@@ -2051,7 +2107,7 @@ tr_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
          {
             if (cm->sttype[v] == MP_st)
             {
-               esc = RightMarginalScore(cm->abc, cm->esc[v], dsq[j]);
+               esc = cm->rmesc[v][(int) dsq[j]];
             }
             if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st)
             {
@@ -2623,11 +2679,11 @@ tr_vinside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1, 
                }
                if (ip < i1-i0)
                {
-                  alpha->L[v][jp][ip] += LeftMarginalScore(cm->abc, cm->esc[v], dsq[i]);
+                  alpha->L[v][jp][ip] += cm->lmesc[v][(int) dsq[i]];
                }
                if (jp > 0)
                {
-                  alpha->R[v][jp][ip] += RightMarginalScore(cm->abc, cm->esc[v], dsq[j]);
+                  alpha->R[v][jp][ip] += cm->rmesc[v][(int) dsq[j]];
                }
 
                if ( alpha->J[v][jp][ip] < IMPOSSIBLE) alpha->J[v][jp][ip] = IMPOSSIBLE;
@@ -3107,7 +3163,7 @@ tr_voutside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1,
                case MP_st:
                   if (ip > 0)
                   {
-                     esc = LeftMarginalScore(cm->abc, cm->esc[y], dsq[i-1]);
+                     esc = cm->lmesc[y][(int) dsq[i-1]];
                      if ( (sc = beta->L[y][ip-1] + cm->tsc[y][voffset] + esc) > beta->L[v][ip] )
                         beta->L[v][ip] = sc;
                   }
@@ -3155,7 +3211,7 @@ tr_voutside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1,
                case MP_st:
                   if (jp < j0-j1)
                   {
-                     esc = RightMarginalScore(cm->abc, cm->esc[y], dsq[j+1]);
+                     esc = cm->rmesc[y][(int) dsq[j+1]];
                      if ( (sc = beta->R[y][jp+1] + cm->tsc[y][voffset] + esc) > beta->R[v][jp] )
                         beta->R[v][jp] = sc;
                   }

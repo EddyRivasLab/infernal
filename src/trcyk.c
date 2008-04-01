@@ -70,6 +70,7 @@ main(int argc, char **argv)
 
    ConfigCM(cm, TRUE); /* TRUE says: calculate W */
    CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &cons);
+   SetMarginalScores(cm);
 
    seq = esl_sq_Create();
    while ( esl_sqio_Read(sqfp, seq) == eslOK )
@@ -82,12 +83,12 @@ main(int argc, char **argv)
       if (seq->dsq == NULL) 
          esl_sq_Digitize(abc, seq);
       sc = TrCYK_DnC(cm, seq->dsq, seq->n, 0, i0, j0, &tr);
-      fali = CreateFancyAli(tr, cm, cons, seq->dsq, cm->abc);
+      fali = CreateFancyAli(cm->abc, tr, cm, cons, seq->dsq, NULL, NULL);
       FreeParsetree(tr);
 
       revcomp(abc, seq, seq);
       rev_sc = TrCYK_DnC(cm,seq->dsq, seq->n, 0, i0, j0, &tr);
-      rev_fali = CreateFancyAli(tr, cm, cons,seq->dsq, cm->abc);
+      rev_fali = CreateFancyAli(cm->abc, tr, cm, cons,seq->dsq, NULL, NULL);
       FreeParsetree(tr);
 
       if (sc > rev_sc)

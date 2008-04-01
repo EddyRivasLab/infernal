@@ -1353,6 +1353,10 @@ typedef struct cm_s {
   float *beginsc;	/*   Score for ROOT_S -> state v (local alignment) */
   float *endsc;   	/*   Score for state_v -> EL (local alignment)     */
 
+                        /* Parameters used in marginal alignments          */
+  float **lmesc;        /*   Left marginal emission scores (log odds)      */
+  float **rmesc;        /*   Right marginal emission scores (log odds)     */                
+
 			/* Scaled int parameters of the log odds model:    */
   int  **itsc;		/*   Transition score vector, scaled log odds int  */
   int  **iesc;		/*   Emission score vector, scaled log odds int    */
