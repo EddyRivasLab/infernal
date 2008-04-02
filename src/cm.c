@@ -104,6 +104,9 @@ CreateCMShell(void)
   cm->ibeginsc= NULL;
   cm->iendsc  = NULL;
 
+  cm->lmesc   = NULL;
+  cm->rmesc   = NULL;
+
   cm->flags         = 0;
 
   cm->W      = 200;           /* for backwards compatibility */
