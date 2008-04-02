@@ -793,7 +793,7 @@ void RemoveHitsOverECutoff (CM_t *cm, SearchInfo_t *si, search_results_t *result
   /* Check contract */
   if(!(cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("remove_hits_over_e_cutoff(), but CM has no exp tail stats\n");
   if(sq->dsq == NULL)                  cm_Fail("remove_hits_over_e_cutoff(), sequences is not digitized.\n");
-  if(si == NULL) cm_Fail("remove_hits_over_e_cutoff(), si == NULL.\n");
+  if(si == NULL)                       cm_Fail("remove_hits_over_e_cutoff(), si == NULL.\n");
   if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("remove_hits_over_e_cutoff(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
 
   if (results == NULL) return;

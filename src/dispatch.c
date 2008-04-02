@@ -201,6 +201,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
      * so we add (W-1) to start point i and subtract (W-1) from j, and treat this region j-(W-1)..i+(W-1)
      * as having survived the filter.
      */
+    do_collapse = (((sround+1) == si->nrounds) && (si->search_opts[si->nrounds] & CM_SEARCH_HBANDED)) ? FALSE : TRUE;
     for(h = 0; h < nhits; h++) {
       if(cur_results->data[h].stop > prev_j) ESL_EXCEPTION(eslEINCOMPAT, "j's not in descending order");
       prev_j = cur_results->data[h].stop;
@@ -215,7 +216,6 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
        * *Unless* our next round of searching is the final one, and we're going to do HMM banded search,
        * in which case we want to treat each hit separately, so we get more reasonable bands.
        */
-      do_collapse = (((sround+1) == si->nrounds) && (si->search_opts[si->nrounds] & CM_SEARCH_HBANDED)) ? FALSE : TRUE;
       if(do_collapse) { 
 	while(((h+1) < nhits) && (next_j >= i)) { /* suck in hit */
 	  h++;

@@ -49,7 +49,7 @@ static ESL_OPTIONS options[] = {
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
   { "-o",        eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "direct output to file <f>, not stdout", 1 },
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "configure CM/HMM for glocal alignment [default: local]", 1 },
-  { "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "force; allow search with non-calibrated cmfile",   1 },
+  /*{ "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "force; allow search with non-calibrated cmfile",   1 },*/
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--toponly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the top strand", 1 },
   { "--bottomonly", eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the bottom strand", 1 },
@@ -82,8 +82,8 @@ static ESL_OPTIONS options[] = {
   { "--fil-qdb",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-qdb", "filter with CM QDB (banded) CYK algorithm", 5 },
   { "--fil-beta",  eslARG_REAL, NULL,      NULL, "x>0", NULL,      NULL,"--fil-no-qdb", "set tail loss prob for filter QDB and W calculation to <x>", 5 },
   { "--fil-no-qdb",eslARG_NONE, FALSE,     NULL, NULL,  "--fil-qdb",NULL,         NULL, "do not filter with CM banded CYK", 5 },
-  { "--fil-hmm",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-hmm", "filter with HMM forward algorithm", 5 },
-  { "--fil-no-hmm",eslARG_NONE, FALSE,     NULL, NULL,  "--fil-hmm",NULL,         NULL, "do not filter with HMM forward algorithm", 5 },
+  { "--fil-hmm",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-hmm", "filter with HMM Forward algorithm", 5 },
+  { "--fil-no-hmm",eslARG_NONE, FALSE,     NULL, NULL,  "--fil-hmm",NULL,         NULL, "do not filter with HMM Forward algorithm", 5 },
   /* filter cutoff options */
   { "--fil-S-qdb",eslARG_REAL,  "0.02",NULL, "0<x<1.",  NULL,      NULL, "--fil-T-qdb", "set QDB CM filter cutoff to achieve survival fraction <x>", 6 },
   { "--fil-S-hmm",eslARG_REAL,  "0.02",NULL, "0<x<1",   NULL,      NULL, "--fil-T-hmm", "set HMM filter cutoff to achieve survival fraction <x>", 6 },
@@ -415,11 +415,14 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       if((! (cm->flags & CMH_EXPTAIL_STATS)) && (! esl_opt_IsDefault(go, "--forecast"))) cm_Fail("--forecast only works with calibrated CM files. Run cmcalibrate (please)."); 
       cfg->ncm++;
-      if(cfg->ncm == 1) { /* check if we have exp stats */
+      /* check if we have exp stats */
+      /*
+	if(cfg->ncm == 1) { 
 	if((! (cm->flags & CMH_EXPTAIL_STATS)) && (! esl_opt_GetBoolean(go, "-F"))) {
-	  cm_Fail("%s has not been calibrated with cmcalibrate.\n       Once calibrated, E-values will be available and HMM filter thresholds\n       will be appropriately set to accelerate the search.\n       To override this error without calibrating, use -F.", cfg->cmfile);
+	cm_Fail("%s has not been calibrated with cmcalibrate.\n       Once calibrated, E-values will be available and HMM filter thresholds\n       will be appropriately set to accelerate the search.\n       To override this error without calibrating, use -F.", cfg->cmfile);
 	}
-      }
+	}
+      */
 
       /* initialize the flags/options/params and configuration of the CM */
       if((  status = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
@@ -1224,7 +1227,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   float all_filters_ncalcs_per_res = 0.;/* number of millions of DP calcs predicted for all filter rounds */
   float fhmm_Smin = 0.;       /* minimally useful survival fraction for hmm filter round */
   float fqdb_Smin = 1.;       /* minimally useful survival fraction for qdb filter round */
-  float xfil = 0.01;          /* used to set *_Smin values, minimal fraction of filter dp calcs to do in the final round */
+  float xfil = 0.03;          /* used to set *_Smin values, minimal fraction of filter dp calcs to do in the final round */
   int   do_qdb_filter = TRUE; /* TRUE to add QDB filter, FALSE not to */
   int   do_hmm_filter = TRUE; /* TRUE to add HMM filter, FALSE not to */
   double fqdb_beta_qdb;       /* beta for QDBs in QDB filter round */
@@ -1445,17 +1448,13 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
     /* Determine the 'minimally useful' QDB CYK filter round survival fraction. 
      * This is the survival fraction <fqdb_Smin> that we predict would require the 
      * *final* round to perform <xfil> * x millions of DP calcs, where x is the number of
-     * predicted DP calcs predicted for all filter rounds.
+     * predicted DP calcs predicted for all filter rounds. This calculation assumes the 
+     * final round will have to search fqdb_Smin fraction of the database.
      */
     if(do_hmm_filter) all_filters_ncalcs_per_res = fhmm_ncalcs_per_res + (fqdb_ncalcs_per_res * fhmm_S);
     else              all_filters_ncalcs_per_res = fqdb_ncalcs_per_res;
 
     fqdb_Smin = xfil * (all_filters_ncalcs_per_res / final_ncalcs_per_res); 
-
-    /*printf("all_filters_ncalcs_per_res: %f\n", all_filters_ncalcs_per_res);
-      printf("final_ncalcs_per_res:       %f\n", final_ncalcs_per_res);
-      printf("fqdb_Smin = 0.01 *          %f\n", (all_filters_ncalcs_per_res / final_ncalcs_per_res));
-    */
 
     /* if QDB filter survival fraction == fqdb_Smin, total number of DP calcs for the 
      * final round == <xfil> * all_filters_ncalcs_per_res, so we predict the final round will 
@@ -1471,6 +1470,17 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
       fqdb_S = ESL_MAX(fqdb_S, fqdb_Smin);                 /* fqdb_S must match or exceed fqdb_Smin, the survival fraction which makes the final round require 1% the DP calcs of the filter rounds */
       if(do_hmm_filter) fqdb_S = ESL_MIN(fqdb_S, fhmm_S);  /* fqdb_S must not exceed the expected survival fraction from the HMM filter, if it's on */
       fqdb_E = SurvFract2E(fqdb_S, fqdb_smx->W, cfg->avg_hit_len, cfg->dbsize);
+
+      /* TEMP */
+      if(fabs(fqdb_Smin - fqdb_S) < eslSMALLX1) {  
+	printf("fqdb_Smin: %f\n", fqdb_Smin);
+	printf("WHOA Smin used as S!\n");
+      }
+      printf("all_filters_ncalcs_per_res: %f\n", all_filters_ncalcs_per_res);
+      printf("final_ncalcs_per_res:       %f\n", final_ncalcs_per_res);
+      printf("fqdb_Smin =                 %f\n", fqdb_Smin);
+      /* TEMP */
+
     }
     else if(! esl_opt_IsDefault(go, "--fil-S-qdb")) { /* survival fraction for QDB filter set on command line, use that */
       fqdb_ctype = E_CUTOFF;
