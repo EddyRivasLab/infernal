@@ -773,12 +773,13 @@ void RemoveOverlappingHits (search_results_t *results, int i0, int j0)
  * 
  * Args:    
  *           cm      - the covariance model
- *           si      - SearchInfo, relevant round is final one, si->nrounds
+ *           si      - SearchInfo, relevant round is <sround>
+ *           sround  - round of search we're removing hits for
  *           results - the hits data structure
  *           seq     - seq hits lie within, needed to determine gc content
  *           used_HMM- TRUE if hits are to the CM's CP9 HMM, not the CMa
  */
-void RemoveHitsOverECutoff (CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_SQ *sq)
+void RemoveHitsOverECutoff (CM_t *cm, SearchInfo_t *si, int sround, search_results_t *results, ESL_DSQ *dsq)
 {
   int gc_comp;
   int i, x;
@@ -792,21 +793,21 @@ void RemoveHitsOverECutoff (CM_t *cm, SearchInfo_t *si, search_results_t *result
 
   /* Check contract */
   if(!(cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("remove_hits_over_e_cutoff(), but CM has no exp tail stats\n");
-  if(sq->dsq == NULL)                  cm_Fail("remove_hits_over_e_cutoff(), sequences is not digitized.\n");
+  if(dsq == NULL)                      cm_Fail("remove_hits_over_e_cutoff(), dsq == NULL.\n");
   if(si == NULL)                       cm_Fail("remove_hits_over_e_cutoff(), si == NULL.\n");
   if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("remove_hits_over_e_cutoff(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
 
   if (results == NULL) return;
 
   /* Determine exp tail mode to use */
-  CM2ExpMode(cm, si->search_opts[si->nrounds], &cm_exp_mode, &cp9_exp_mode);
-  exp = (si->stype[si->nrounds] == SEARCH_WITH_HMM) ? cm->stats->expAA[cp9_exp_mode] : cm->stats->expAA[cm_exp_mode];
+  CM2ExpMode(cm, si->search_opts[sround], &cm_exp_mode, &cp9_exp_mode);
+  exp = (si->stype[sround] == SEARCH_WITH_HMM) ? cm->stats->expAA[cp9_exp_mode] : cm->stats->expAA[cm_exp_mode];
   
-  ESL_DASSERT1((si->cutoff_type[si->nrounds] == E_CUTOFF));
-  cutoff = si->e_cutoff[si->nrounds];
+  ESL_DASSERT1((si->cutoff_type[sround] == E_CUTOFF));
+  cutoff = si->e_cutoff[sround];
   
   for (i=0; i<results->num_results; i++) {
-    gc_comp = get_gc_comp (sq, results->data[i].start, results->data[i].stop);
+    gc_comp = get_gc_comp (cm->abc, dsq, results->data[i].start, results->data[i].stop);
     p = cm->stats->gc2p[gc_comp];
     score_for_Eval = results->data[i].score;
     if (Score2E(score_for_Eval, exp[p]->mu_extrap, exp[p]->lambda, exp[p]->cur_eff_dbsize) > cutoff)  
@@ -824,9 +825,12 @@ void RemoveHitsOverECutoff (CM_t *cm, SearchInfo_t *si, search_results_t *result
       results->num_results--;
     }
   }
+  int old_num_results = results->num_results;
   while (results->num_results > 0 && results->data[results->num_results-1].start == -1)
     results->num_results--;
-  SortResultsByScore(results);
+  /* only sort if we removed anything */
+  if(results->num_results != old_num_results) SortResultsByScore(results);
+  return;
 }  
 
 /* Function: SortResults()
@@ -951,7 +955,7 @@ void PrintResults (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc
     /*for (i=0; i<results->num_results; i++) 
       printf("hit: %5d start: %5d stop: %5d len: %5d emitl[0]: %5d emitr[0]: %5d score: %9.3f\n", i, results->data[i].start, results->data[i].stop, len, results->data[i].tr->emitl[0], results->data[i].tr->emitr[0], results->data[i].score);*/
     for (i=0; i<results->num_results; i++) {
-      gc_comp = get_gc_comp (dbseq->sq[in_revcomp], 
+      gc_comp = get_gc_comp (cm->abc, dbseq->sq[in_revcomp]->dsq, 
 			     results->data[i].start, results->data[i].stop);
       fprintf(fp, " Query = %d - %d, Target = %d - %d\n", 
 	      (emap->lpos[cm->ndidx[results->data[i].bestr]] + 1 

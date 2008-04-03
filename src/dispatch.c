@@ -192,6 +192,11 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       SortResultsByEndPoint(cur_results);
     }
   }
+  
+  /* remove hits that were below our safe bit score cutoff but are above our E-value cutoff for their given partition */
+  if(cm->si->cutoff_type[sround] == E_CUTOFF) { 
+    RemoveHitsOverECutoff(cm, cm->si, sround, cur_results, dsq);
+  }
 
   if(sround < si->nrounds) { /* we're filtering */
     AppendResults(cur_results, round_results, 1);

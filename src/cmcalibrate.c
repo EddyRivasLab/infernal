@@ -87,8 +87,7 @@ static ESL_OPTIONS options[] = {
   { "--fil-tau",        eslARG_REAL,    "1e-7", NULL, "0<x<1",  NULL,        NULL,"--fil-nonbanded", "set tail loss prob for --fbanded to <x>", 3 },
   { "--fil-aln2bands",  eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,"--fil-nonbanded", "derive HMM bands w/o scanning Forward/Backward", 3 },
   { "--fil-gemit",      eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "when calc'ing filter thresholds, always emit globally from CM",  3},
-  { "--fil-hfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,        NULL, "save CP9 filter threshold histogram(s) to file <s>", 3},
-  { "--fil-rfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,        NULL, "save CP9 filter threshold information in R format to file <s>", 3},
+  { "--fil-dfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,"--exp-pfile", "save filter threshold data (HMM and CM scores) to file <s>", 3},
 /* Other options */
   { "--stall",          eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 4 },  
   { "--mxsize",         eslARG_REAL,    "1024.0",NULL, "x>0.",   NULL,        NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 4 },
@@ -154,8 +153,7 @@ struct cfg_s {
   FILE            *expsfp;            /* optional output for exp tail survival plot */
   FILE            *expqfp;            /* optional output for exp tail QQ file */
   FILE            *exptfitfp;         /* optional output for exp tail fit file */
-  FILE            *filhfp;            /* optional output for filter histograms */
-  FILE            *filrfp;            /* optional output for filter info for R */
+  FILE            *fildfp;            /* optional output for filter scores */
 };
 
 static char usage[]  = "[-options] <cmfile>";
@@ -308,8 +306,7 @@ main(int argc, char **argv)
   cfg.expsfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.expqfp   = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.exptfitfp= NULL; /* ALWAYS remains NULL for mpi workers */
-  cfg.filhfp   = NULL; /* ALWAYS remains NULL for mpi workers */
-  cfg.filrfp   = NULL; /* ALWAYS remains NULL for mpi workers */
+  cfg.fildfp   = NULL; /* ALWAYS remains NULL for mpi workers */
 
   ESL_DASSERT1((EXP_CP9_GV == 0));
   ESL_DASSERT1((EXP_CP9_GF == 1));
@@ -426,13 +423,9 @@ main(int argc, char **argv)
       fclose(cfg.exptfitfp);
       printf("# Exponential tail fit points saved to file %s.\n", esl_opt_GetString(go, "--exp-ffile"));
     }
-    if (cfg.filhfp   != NULL) { 
-      fclose(cfg.filhfp);
-      printf("# Filter histograms saved to file %s.\n", esl_opt_GetString(go, "--fil-hfile"));
-    }
-    if (cfg.filrfp   != NULL) {
-      fclose(cfg.filrfp);
-      printf("# Filter R info saved to file %s.\n", esl_opt_GetString(go, "--fil-rfile"));
+    if (cfg.fildfp   != NULL) { 
+      fclose(cfg.fildfp);
+      printf("# Filter histograms saved to file %s.\n", esl_opt_GetString(go, "--fil-dfile"));
     }
     if (cfg.ccom     != NULL) free(cfg.ccom);
     if (cfg.cdate    != NULL) free(cfg.cdate);
@@ -463,8 +456,7 @@ main(int argc, char **argv)
  *    cfg->exphfp      - optional output file
  *    cfg->expsfp      - optional output file
  *    cfg->expqfp      - optional output file
- *    cfg->filhfp      - optional output file
- *    cfg->filrfp      - optional output file
+ *    cfg->fildfp      - optional output file
  *    cfg->gc_freq     - observed GC freqs (if --exp-gc invoked)
  *    cfg->cmstatsA    - the stats, allocated only
  *    cfg->np          - number of partitions, never changes once set 
@@ -514,16 +506,10 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	ESL_FAIL(eslFAIL, errbuf, "Failed to open exp tail save file %s for writing\n", esl_opt_GetString(go, "--exp-ffile"));
     }
 
-  /* optionally, open filter threshold calc histogram file */
-  if (esl_opt_GetString(go, "--fil-hfile") != NULL) {
-    if ((cfg->filhfp = fopen(esl_opt_GetString(go, "--fil-hfile"), "w")) == NULL) 
-	ESL_FAIL(eslFAIL, errbuf, "Failed to open --fil-hfile output file %s\n", esl_opt_GetString(go, "--fil-hfile"));
-    }
-
-  /* optionally, open filter threshold calc info file */
-  if (esl_opt_GetString(go, "--fil-rfile") != NULL) {
-    if ((cfg->filrfp = fopen(esl_opt_GetString(go, "--fil-rfile"), "w")) == NULL) 
-	ESL_FAIL(eslFAIL, errbuf, "Failed to open --fil-rfile output file %s\n", esl_opt_GetString(go, "--fil-rfile"));
+  /* optionally, open filter threshold data file */
+  if (esl_opt_GetString(go, "--fil-dfile") != NULL) {
+    if ((cfg->fildfp = fopen(esl_opt_GetString(go, "--fil-dfile"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open --fil-dfile output file %s\n", esl_opt_GetString(go, "--fil-dfile"));
     }
 
   /* optionally, get distribution of GC content from an input database (default is use cm->null for GC distro) */
@@ -535,7 +521,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "No such file: %s.", esl_opt_GetString(go, "--exp-gc")); 
     else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "file: %s format unrecognized.", esl_opt_GetString(go, "--exp-gc")); 
     else if (status != eslOK)      ESL_FAIL(status, errbuf, "Failed to open sequence database file %s, code %d.", esl_opt_GetString(go, "--exp-gc"), status); 
-    if((status = GetDBInfo(tmp_abc, dbfp, NULL, &(cfg->gc_freq), errbuf)) != eslOK) return status; 
+    if((status = GetDBInfo(tmp_abc, dbfp, errbuf, NULL, &(cfg->gc_freq))) != eslOK) return status; 
     esl_vec_DNorm(cfg->gc_freq, GC_SEGMENTS);
     /* TEMP BEGIN HERE EPN, Thu Mar 27 15:00:26 2008 
      * Overwrite the cfg->gc_freq with an experimental distro from many genomes:
@@ -557,6 +543,8 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   else { /* setup cfg->np and cfg->pstart in read_partition_file() */
     if((status = read_partition_file(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   }
+
+  if (esl_opt_GetString(go, "--fil-dfile") != NULL) { if(cfg->np != 1) ESL_FAIL(status, errbuf, "--fil-dfile only works with a single partition\n"); }
 
   cfg->be_verbose = FALSE;
 #ifdef HAVE_DEVOPTS
@@ -1966,7 +1954,7 @@ get_cmemit_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, int 
   }
 
   /* determine the partition */
-  p = cfg->cmstatsA[cfg->ncm-1]->gc2p[(get_gc_comp(sq, 1, L))]; /* this is slightly wrong, 1,L for get_gc_comp() should be i and j of best hit */
+  p = cfg->cmstatsA[cfg->ncm-1]->gc2p[(get_gc_comp(cm->abc, sq->dsq, 1, L))]; /* this is slightly wrong, 1,L for get_gc_comp() should be i and j of best hit */
   assert(p < cfg->np);
   ESL_DASSERT1((p < cfg->np));
 
@@ -2406,7 +2394,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
 }
 
 typedef struct fseq_Eval_s {
-  float i;
+  int i;
   float cm_E;
   float fwd_E;
 } fseq_Eval_t;
@@ -2515,7 +2503,6 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   int    status;
   float  fil_ncalcs;              /* number of million dp calcs predicted for the HMM filter scan */
   float  cm_ncalcs;               /* number of million dp calcs predicted for a full (next-step-after-filter) CM scan */
-  //long   evalue_L;                /* database length used for calcing E-values in CP9 exp tails from cfg->cmstats */
   int    i, p;                    /* counters */
   int    cmi   = cfg->ncm-1;      /* CM index we're on */
   float  F     = esl_opt_GetReal   (go, "--fil-F");    /* fraction of CM seqs we require filter to let pass */
@@ -2543,23 +2530,13 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   if(! (cfg->cmstatsA[cmi]->expAA[cm_mode][0]->is_valid))      ESL_FAIL(eslEINCOMPAT, errbuf, "get_hmm_filter_cutoffs(), exp tail stats for CM mode: %d are not valid.\n", cm_mode);
   if(! (cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0]->is_valid)) ESL_FAIL(eslEINCOMPAT, errbuf, "get_hmm_filter_cutoffs(), exp tail stats for HMM fwd mode: %d are not valid.\n", hmm_fwd_mode);
 
-  //evalue_L = cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0]->dbsize;
-  //if(evalue_L != cfg->cmstatsA[cmi]->expAA[cm_mode][0]->dbsize) ESL_FAIL(eslEINCOMPAT, errbuf,     "get_hmm_filter_cutoffs(), E value L used to HMM forward different than for CM mode: %d. This shouldn't happen.", cm_mode);
-
-  /* contract checks specific to case when there is more than 1 partition */
-  //if(cfg->cmstatsA[cfg->ncm-1]->np != 1) { 
-  //for(p = 1; p < cfg->cmstatsA[cfg->ncm-1]->np; p++) {
-  //if(evalue_L != cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][p]->dbsize) ESL_FAIL(eslEINCOMPAT, errbuf, "get_hmm_filter_cutoffs(), partition %d db length (%ld) for Forward exp tail stats differ than from partition 1 Forward db length (%ld).\n", p, cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][p]->dbsize, evalue_L);
-  //}
-  //}
-
   /* Determine our target, min and max E-value cutoffs for the HMM forward scan
    * these are independent of the observed scores. Each of these is calculated
    * based on how it affects <total_calcs>. <total_calcs> is the sum of the
    * number of DP calculations required for the HMM filter <fil_ncalcs>, plus the predicted
    * number of DP calculations required for the CM to search the survival fraction
    * <cm_ncalcs> * survival fract. So if <total_calcs> is <xhmm> * <fil_ncalcs>, the 
-   * required timewe predict to do a HMM filter plus CM scan of survivors is <xhmm> times the
+   * required time we predict to do a HMM filter plus CM scan of survivors is <xhmm> times the
    * time it would take to do an HMM only scan. 
    * 
    * fwd_Etarg:  the target  forward E-value cutoff. If used <total_calcs> = <xhmm> * <fil_ncalcs>
@@ -2577,7 +2554,6 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
    * fwd_Etarg        Starg = xhmm * (fil_ncalcs / cm_ncalcs)
    * fwd_Emin         Smin  = 0.1  * (fil_ncalcs / cm_ncalcs)
    */
-  //dbsize           = FTHR_DBSIZE;                          /* FTHR_DBSIZE_MB is 1000000, (1Mb) */
 
   dbsize           = cfg->cmstatsA[cmi]->expAA[cm_mode][0]->dbsize; 
   /* Update hmm E-value's effective database size as if we're searching a database of size dbsize */
@@ -2623,9 +2599,9 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   fwd_Etarg        = (Starg * (float) dbsize) / surv_res_per_hit;
   fwd_Emin         = (Smin  * (float) dbsize) / surv_res_per_hit;
 
-  assert(fwd_Emax > -0.000001);
-  assert(fwd_Emax > -0.000001);
-  assert(fwd_Emin > -0.000001);
+  assert(fwd_Emax >  -0.000001);
+  assert(fwd_Etarg > -0.000001);
+  assert(fwd_Emin >  -0.000001);
 
   /* Copy bit scores to three separate quicksort-able data structures, 
    * Sort one by CM E-value, one by Inside E-value and one by Forward E-value.
@@ -2636,19 +2612,16 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   ESL_ALLOC(by_fwdA, sizeof(fseq_Eval_t) * filN);
   /* convert bit scores to E-values and copy them to the qsortable structures */
   for(i = 0; i < filN; i++) { 
-    p = partA[i];
+    p     = partA[i];
     cm_E  = Score2E(cm_scA[i],  cfg->cmstatsA[cmi]->expAA[cm_mode][p]->mu_extrap,      cfg->cmstatsA[cmi]->expAA[cm_mode][p]->lambda, cfg->cmstatsA[cmi]->expAA[cm_mode][p]->cur_eff_dbsize);
     fwd_E = Score2E(fwd_scA[i], cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][p]->mu_extrap, cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][p]->lambda, cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][p]->cur_eff_dbsize);
-    /* E-values correspond to expected number of hits in a seq DB of length evalue_L, convert that DB size to dbsize */
-    /* HERE HERE HERE EPN, Tue Mar 11 21:42:18 2008 */
-    //cm_E  *= dbsize / evalue_L;
-    //fwd_E *= dbsize / evalue_L;
     /* copy E-values to qsortable data structures */
     by_cmA[i].i     = by_fwdA[i].i     = i;
     by_cmA[i].cm_E  = by_fwdA[i].cm_E  = cm_E;
     by_cmA[i].fwd_E = by_fwdA[i].fwd_E = fwd_E;
     /*printf("TEMP i: %5d CM sc: %.3f (E: %20.10f) HMM sc: %.3f (E: %20.10f)\n", i, cm_scA[i], cm_E, fwd_scA[i], fwd_E);*/
   }
+
   /* qsort */
   qsort(by_cmA,  filN, sizeof(fseq_Eval_t), compare_fseq_by_cm_Eval);
   qsort(by_fwdA, filN, sizeof(fseq_Eval_t), compare_fseq_by_fwd_Eval);
@@ -2716,7 +2689,7 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   change_fwd_F[0] = FALSE; /* we'll never access this element */
 
   /* The main loop:
-   * step through 3/4 of the CM E-values starting with worst (so we'll stop at the hit with rank imax = (0.75 * filN)),
+   * step through 9/10 of the CM E-values starting with worst (so we'll stop at the hit with rank imax = (0.90 * filN)),
    * so we step through i=0..imax, and for each i, determine fwd_E_F[i], fwd_E_all[i], and fwd_E_cut[i]
    * fwd_E_F[i]:   the forward E-value cutoff that will recognize F fraction of CM hits with E-values better than or equal to by_cmA[i].cm_E
    * fwd_E_all[i]: the forward E-value cutoff that will recognize all           CM hits with E-values better than or equal to by_cmA[i].cm_E
@@ -2724,7 +2697,7 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
    *               because we consider our fwd_Emax, fwd_Etarg, and fwd_Emin values.
    * fwd_E_S[i]:   predicted survival fraction using fwd_E_cut[i], equals (fwd_E_cut[i] * surv_res_per_hit / dbsize).
    */
-  int imax = (int) ((0.750001) * (float) filN); /* .750001 is to avoid unnec rounding down (for ex, if filN == 100, and we used 0.75, we may get 74.99999999 and end up rounding down) */
+  int imax = (int) ((0.900001) * (float) filN); /* .900001 is to avoid unnec rounding down (for ex, if filN == 100, and we used 0.90, we may get 89.99999999 and end up rounding down) */
   float *fwd_E_F; 
   float *fwd_E_all;
   float *fwd_E_cut;
@@ -2809,6 +2782,45 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   ESL_DPRINTF1(("Passed expensive paranoia check\n"));
 #endif
 
+  /* if --fil-dfile option enabled, print bit scores and cutoffs to the file */
+  if(cfg->fildfp != NULL) { 
+    assert(cfg->cmstatsA[cmi]->np == 1);
+    fprintf(cfg->fildfp, "# Printing cmcalibrate HMM filter threshold determination data for CM: %s\n", cm->name);
+    float fwd_bitmax, fwd_bittarg, fwd_bitmin;
+    if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0], errbuf, fwd_Emax,  &fwd_bitmax))  != eslOK)  return status;
+    if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0], errbuf, fwd_Etarg, &fwd_bittarg)) != eslOK)  return status;
+    if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0], errbuf, fwd_Emin,  &fwd_bitmin))  != eslOK)  return status;
+    fprintf(cfg->fildfp, "# Max    bit score: %f\n", fwd_bitmax);
+    fprintf(cfg->fildfp, "# Target bit score: %f\n", fwd_bittarg);
+    fprintf(cfg->fildfp, "# Min    bit score: %f\n", fwd_bitmin);
+    fprintf(cfg->fildfp, "# Number of scores: %d\n", filN);
+    fprintf(cfg->fildfp, "# Format of following %d lines: <x> <y>\n", filN);
+    fprintf(cfg->fildfp, "# Note: points at the beginning may appear unsorted because they all have\n#      the worst possible E-value, which was used to sort\n");
+    if     (hmm_fwd_mode == EXP_CP9_LF) fprintf(cfg->fildfp, "# <x>: HMM local Forward bit scores\n");
+    else if(hmm_fwd_mode == EXP_CP9_GF) fprintf(cfg->fildfp, "# <x>: HMM glocal Forward bit scores\n");
+    if     (cm_mode == EXP_CM_LC)       fprintf(cfg->fildfp, "# <y>: CM local CYK bit scores\n");
+    else if(cm_mode == EXP_CM_LI)       fprintf(cfg->fildfp, "# <y>: CM local Inside bit scores\n");
+    else if(cm_mode == EXP_CM_GC)       fprintf(cfg->fildfp, "# <y>: CM glocal CYK bit scores\n");
+    else if(cm_mode == EXP_CM_GI)       fprintf(cfg->fildfp, "# <y>: CM glocal Inside bit scores\n");
+    for(i = 0; i < filN; i++) fprintf(cfg->fildfp, "%f\t%f\n", fwd_scA[by_fwdA[i].i], cm_scA[by_fwdA[i].i]);
+    fprintf(cfg->fildfp, "&\n");
+
+    fprintf(cfg->fildfp, "# Format of following %d lines: <x> <y>\n", filN);
+    if     (hmm_fwd_mode == EXP_CP9_LF) fprintf(cfg->fildfp, "# <x>: HMM local Forward bit score cutoff (for worst scoring partition)\n");
+    else if(hmm_fwd_mode == EXP_CP9_GF) fprintf(cfg->fildfp, "# <x>: HMM glocal Forward bit score cutoff (for worst scoring partition)\n");
+    if     (cm_mode == EXP_CM_LC)       fprintf(cfg->fildfp, "# <y>: CM local CYK bit score cutoff\n");
+    else if(cm_mode == EXP_CM_LI)       fprintf(cfg->fildfp, "# <y>: CM local Inside bit score cutoff\n");
+    else if(cm_mode == EXP_CM_GC)       fprintf(cfg->fildfp, "# <y>: CM glocal CYK bit score cutoff\n");
+    else if(cm_mode == EXP_CM_GI)       fprintf(cfg->fildfp, "# <y>: CM glocal Inside bit score cutoff\n");
+    float fwd_bitcut;
+    for(i = 0; i < filN; i++) { 
+      if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0], errbuf, fwd_E_cut[i],  &fwd_bitcut))  != eslOK)  return status;
+      fprintf(cfg->fildfp, "%f\t%f\n", fwd_scA[by_fwdA[i].i], fwd_bitcut);
+    }
+    fprintf(cfg->fildfp, "&\n");
+  }
+
+  /* step through all cutoffs, determining and keeping a representative set */
   int ip_min = imax_above_Emax == -1 ? 0    : imax_above_Emax+1;
   int ip_max = imin_at_Emin    == -1 ? imax : imin_at_Emin;
   int ip = ip_min;
@@ -2962,8 +2974,8 @@ int print_post_calibration_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   fprintf(fp, "#\n");
   fprintf(fp, "# Exponential tail fitting:\n");
   fprintf(fp, "#\n");
-  fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",    "",     "",   "",        "",   "",       "",        "",       "    running time      ");
-  fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",    "",     "",   "",        "",   "",       "",        "",       "----------------------");
+  fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",    "",     "",   "",        "",   "",       "",        "",       "     running time      ");
+  fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",    "",     "",   "",        "",   "",       "",        "",       "-----------------------");
   fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %10s %10s\n","mod", "cfg", "alg", "part", "ps", "pe",   "L (Mb)",  "mu",     "lambda",   "nhits", "predicted",     "actual");
   fprintf(fp, "# %3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %10s %10s\n", "---", "---", "---", "----", "---", "---", "-------", "------", "------", "-------", "----------", "----------");
 
@@ -3057,11 +3069,11 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
     L = targ_sec / (psec_per_Mc * Mc_per_res);
     L = ESL_MAX(L, Lmin); /* we have to search at least <Lmin> residues */
     /* now determine exactly how many dp calculations we'd do if we search L residues, 
-     * this won't be the same as Mc_per_res * L b/c Mc_per_res was passed in from caller
-     * and was calculated after correcting for the fact that the first W residues have fewer
+     * this won't be the same as Mc_per_res * L b/c Mc_per_res from cm_GetNCalcsPerResidueGivenBeta
+     * b/c that was calculated after correcting for the fact that the first W residues have fewer
      * DP calcs than all other residues, b/c d < W for first W residues.
      */  
-    if((status = cm_CountSearchDPCalcs(cm, errbuf, L, NULL, NULL, cm->smx->W, FALSE,  NULL, &Mc)) != eslOK) return status;
+    if((status = cm_CountSearchDPCalcs(cm, errbuf, L, cm->smx->dmin, cm->smx->dmax, cm->smx->W, FALSE,  NULL, &Mc)) != eslOK) return status;
     /* FALSE says don't correct for fewer dp calcs for first W residues, we want to know how many total DP calcs
      * there will be in L residues */
     Mc *= L; /* Mc was for 1 residue, multiply by L to get Mc for L residues */
@@ -3199,10 +3211,10 @@ print_per_cm_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, cha
   if(esl_opt_IsDefault(go, "--forecast")) { 
     printf("# Calibrating CM %d: %s\n", cfg->ncm, cm->name);
     printf("#\n");
-    printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %22s\n",           "",      "",    "",    "",      "",   "",    "",           "",       "", "    running time    ");
-    printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %22s\n",           "",      "",    "",    "",      "",   "",    "",           "",       "", "--------------------");
+    printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %22s\n",           "",      "",    "",    "",      "",   "",    "",           "",       "", "     running time    ");
+    printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %22s\n",           "",      "",    "",    "",      "",   "",    "",           "",       "", "----------------------");
     printf("# %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %10s  %10s\n", "stage",    "mod", "cfg", "alg", "part", "ps",  "pe",  "expL (Mb)", "filN",   "predicted", "actual");
-    printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %10s  %10s\n",  "--------", "---", "---", "---", "----", "---", "---", "---------", "------", "---------", "---------");
+    printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %10s  %10s\n",  "--------", "---", "---", "---", "----", "---", "---", "---------", "------", "----------", "----------");
   }
   else { 
     printf("# Forecasting time for %d processor(s) to calibrate CM %d: %s\n", esl_opt_GetInteger(go, "--forecast"), cfg->ncm, cm->name);
@@ -3362,8 +3374,7 @@ int update_hmm_exp_length(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
 int
 hack_overwrite_gcfreq(double *gc_freq)
 {
-  int i; 
-  /*for(i = 0; i <= 100; i++) printf("0 gc[%3d]: %.7f\n", i, gc_freq[i]);*/
+  /*for(int i = 0; i <= 100; i++) printf("0 gc[%3d]: %.7f\n", i, gc_freq[i]);*/
   
   /* from ~/notebook/8_0326_inf_default_gc/for_cmcalibrate_dir/arc.bac.euk.norm.gcfile.code */
   gc_freq[0] = 0.000039000000;

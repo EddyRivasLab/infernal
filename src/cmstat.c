@@ -230,8 +230,8 @@ main(int argc, char **argv)
     else if (status == eslEFORMAT) cm_Fail("Couldn't determine format of sequence file %s\n", esl_opt_GetString(go, "--seqfile"));
     else if (status == eslEINVAL)  cm_Fail("Can’t autodetect stdin or .gz."); 
     else if (status != eslOK)      cm_Fail("Sequence file open failed with error %d\n", status);
-    /* GetDBInfo() reads all sequences, rewinds seq file and returns db size */
-    if((status = GetDBInfo(NULL, sqfp, &(dbsize), NULL, errbuf)) != eslOK) cm_Fail(errbuf);
+    /* GetDBSize() reads all sequences, rewinds seq file and returns db size */
+    if((status = GetDBSize(sqfp, errbuf, &(dbsize))) != eslOK) cm_Fail(errbuf);
     esl_sqfile_Close(sqfp); 
     if (! esl_opt_GetBoolean(go, "--toponly")) dbsize *= 2;
   }

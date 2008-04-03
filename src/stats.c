@@ -156,7 +156,7 @@ int debug_print_expinfo(ExpInfo_t *exp)
  *           integerized GC composition of the region. This Easelfied
  *           version replaces RSEARCH's version.
  */
-int get_gc_comp(ESL_SQ *sq, int start, int stop) 
+int get_gc_comp(const ESL_ALPHABET *abc, ESL_DSQ *dsq, int start, int stop) 
 {
   int status;
   int i;
@@ -164,23 +164,23 @@ int get_gc_comp(ESL_SQ *sq, int start, int stop)
   float  gc;
 
   /* contract check */
-  if(sq->abc == NULL) cm_Fail("get_gc_comp expects sq to have a valid alphabet.");
-  if(sq->dsq == NULL) cm_Fail("get_gc_comp expects sq to be digitized");
-  if(sq->abc->type != eslRNA && sq->abc->type != eslDNA)  cm_Fail("get_gc_comp expects alphabet of RNA or DNA");
+  if(abc == NULL) cm_Fail("get_gc_comp alphabet is NULL.");
+  if(dsq == NULL) cm_Fail("get_gc_comp dsq is NULL.");
+  if(abc->type != eslRNA && abc->type != eslDNA)  cm_Fail("get_gc_comp expects alphabet of RNA or DNA");
 
   if (start > stop) {
     i = start;
     start = stop;
     stop = i;
   }
-  ESL_ALLOC(ct, sizeof(float) * sq->abc->K);
-  esl_vec_FSet(ct, sq->abc->K, 0.);
+  ESL_ALLOC(ct, sizeof(float) * abc->K);
+  esl_vec_FSet(ct, abc->K, 0.);
   for (i = start; i <= stop; i++)
   {
-    if(esl_abc_XIsGap(sq->abc, sq->dsq[i])) cm_Fail("in get_gc_comp, res %d is a gap!\n", i);
-    esl_abc_FCount(sq->abc, ct, sq->dsq[i], 1.);
+    if(esl_abc_XIsGap(abc, dsq[i])) cm_Fail("in get_gc_comp, res %d is a gap!\n", i);
+    esl_abc_FCount(abc, ct, dsq[i], 1.);
   }
-  gc = ct[sq->abc->inmap[(int) 'G']] + ct[sq->abc->inmap[(int) 'C']];
+  gc = ct[abc->inmap[(int) 'G']] + ct[abc->inmap[(int) 'C']];
   gc /= ((float) (stop-start+1));
   gc *= 100.;
   free(ct);
@@ -191,8 +191,39 @@ int get_gc_comp(ESL_SQ *sq, int start, int stop)
   return 0; /* never reached */
 }
 
-/*
- * Function: GetDBInfo()
+/* Function: GetDBSize()
+ *
+ * Date:     EPN, Wed Apr  2 16:33:19 2008
+ *
+ * Purpose:  Given a sequence file name, determine the total size of the
+ *           seqs in the file.
+ *
+ * Args:     sqfp     - open sequence file
+ *           ret_N    - RETURN: total length (residues) or all seqs in seqfile
+ *
+ * Returns:  eslOK on success, other status on failure, errbuf filled with error message.
+ */
+int GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N)
+{
+  int     status;
+  ESL_SQ *sq;
+  long    N = 0;
+
+  sq = esl_sq_Create(); 
+  while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) {
+    N += sq->n;
+    esl_sq_Reuse(sq); 
+  } 
+  if (status != eslEOF) ESL_FAIL(status, errbuf, "Parse failed, line %d, file %s:\n%s", sqfp->linenumber, sqfp->filename, sqfp->errbuf); 
+  esl_sq_Destroy(sq); 
+  esl_sqio_Rewind(sqfp);
+
+  if(ret_N != NULL)      *ret_N     = N;
+  return eslOK;
+}
+
+
+/* Function: GetDBInfo()
  *
  * Date:     Easelification: EPN, Thu Dec  7 06:07:58 2006
  *           (initial - RSEARCH::get_dbinfo()) RJK, Thu Apr 11, 2002 [St. Louis]
@@ -200,14 +231,15 @@ int get_gc_comp(ESL_SQ *sq, int start, int stop)
  * Purpose:  Given a sequence file name, determine the total size of the
  *           seqs in the file (DB) and GC content information.
  *
- * Args:     abc      - alphabet for sq file
- *           sqfp     - open sequence file
- *           ret_N    - RETURN: total length (residues) or all seqs in seqfile
- *           gc_ct    - RETURN: gc_ct[x] observed 100-nt segments with GC% of x [0..100] 
- *
+ * Args:     abc       - alphabet for sq file
+ *           sqfp      - open sequence file
+ *           errbuf    - for error messages
+ *           ret_N     - RETURN: total length (residues) or all seqs in seqfile
+ *           ret_gc_ct - RETURN: gc_ct[x] observed 100-nt segments with GC% of x [0..100] 
+ *           
  * Returns:  eslOK on success, other status on failure, errbuf filled with error message.
  */
-int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double **ret_gc_ct, char *errbuf) 
+int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *ret_N, double **ret_gc_ct)
 {
   int               status;
   ESL_SQ           *sq;
@@ -217,59 +249,50 @@ int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double **
   int               gc;
   int               all_ambig_flag; /* used to check if curr DB chunk is all ambiguous characters 
 				     * usually Ns, if it is, we don't count it towards the GC content info */
-  /*printf("in GetDBInfo\n");*/
+  if (abc       == NULL) ESL_FAIL(status, errbuf, "GetDBInfo(), abc is NULL\n");
+  if (ret_gc_ct == NULL) ESL_FAIL(status, errbuf, "GetDBInfo(), ret_gc_ct is NULL\n");
 
   ESL_ALLOC(gc_ct, sizeof(double) * GC_SEGMENTS);
-  for (i=0; i<GC_SEGMENTS; i++)
-    gc_ct[i] = 0.;
+  for (i=0; i<GC_SEGMENTS; i++) gc_ct[i] = 0.;
 
-  if(ret_gc_ct != NULL) sq = esl_sq_CreateDigital(abc); 
-  else                  sq = esl_sq_Create(); /* allows abc to be NULL if we don't care about gc stats */
-  while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) 
-    { 
+  sq = esl_sq_CreateDigital(abc); 
+  while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) { 
       N += sq->n;
       /*printf("new N: %d\n", N);*/
-      if(ret_gc_ct != NULL) 
-	{
-	  for(i = 1; i <= sq->n; i += 100)
+      if(ret_gc_ct != NULL) { 
+	for(i = 1; i <= sq->n; i += 100) {
+	  j = (i+99 <= sq->n) ? i+99 : sq->n;
+	  gc = get_gc_comp(abc, sq->dsq, i, j);
+	  all_ambig_flag = TRUE;
+	  for(jp = 0; jp < 100 && (jp+i) < sq->n; jp++) {
+	    if(sq->dsq[i+jp] < abc->K) {
+	      all_ambig_flag = FALSE; 
+	      break; 
+	    }
+	  }
+	  /*printf("N: %d i: %d gc: %d\n", N, i, gc);*/
+	  /* scale gc for chunks < 100 nt */
+	  if(j < 100) gc *= 100. / (float) j;
+	  /* don't count GC content of chunks < 20 nt, very hacky;
+	   * don't count GC content of chunks that are all N, this
+	   * will be common in RepeatMasked genomes where poly-Ns could
+	   * skew the base composition stats of the genome */
+	  if(j > 20 && !all_ambig_flag)
 	    {
-	      j = (i+99 <= sq->n) ? i+99 : sq->n;
-	      gc = get_gc_comp(sq, i, j);
-	      all_ambig_flag = TRUE;
-	      for(jp = 0; jp < 100 && (jp+i) < sq->n; jp++) {
-		if(sq->dsq[i+jp] < abc->K) {
-		  all_ambig_flag = FALSE; 
-		  break; 
-		}
-	      }
-	      /*printf("N: %d i: %d gc: %d\n", N, i, gc);*/
-	      /* scale gc for chunks < 100 nt */
-	      if(j < 100) gc *= 100. / (float) j;
-	      /* don't count GC content of chunks < 20 nt, very hacky;
-	       * don't count GC content of chunks that are all N, this
-	       * will be common in RepeatMasked genomes where poly-Ns could
-	       * skew the base composition stats of the genome */
-	      if(j > 20 && !all_ambig_flag)
-		{
-		  /*printf("j: %d i: %d adding 1 to gc_ct[%d]\n", j, i, ((int) gc));*/
-		  gc_ct[(int) gc] += 1.;
-		}
+	      /*printf("j: %d i: %d adding 1 to gc_ct[%d]\n", j, i, ((int) gc));*/
+	      gc_ct[(int) gc] += 1.;
 	    }
 	}
+      }
       esl_sq_Reuse(sq); 
     } 
   if (status != eslEOF) ESL_FAIL(status, errbuf, "Parse failed, line %d, file %s:\n%s", sqfp->linenumber, sqfp->filename, sqfp->errbuf); 
   esl_sq_Destroy(sq); 
   esl_sqio_Rewind(sqfp);
 
-#ifdef PRINT_GC_COUNTS
-  for (i=0; i<GC_SEGMENTS; i++) 
-    printf ("%d\t%.4f\n", i, gc_ct[i]);
-#endif
-
   if(ret_N != NULL)      *ret_N     = N;
-  if(ret_gc_ct != NULL)  *ret_gc_ct = gc_ct;
-  else free(gc_ct);
+  *ret_gc_ct = gc_ct;
+
   return eslOK;
 
  ERROR:
@@ -292,27 +315,40 @@ int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, long *ret_N, double **
  */
 int E2MinScore (CM_t *cm, char *errbuf, int exp_mode, float E, float *ret_sc)
 {
+  int status;
   float low_sc, sc;
   int p;
-  double lambda, mu, H;
 
   /* contract checks */
-  if(!(cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "E2Score, CM's CMH_EXPTAIL_STATS flag is down.");
-  if(ret_sc == NULL)                   ESL_FAIL(eslEINCOMPAT, errbuf, "E2Score, ret_sc is NULL");
+  if(!(cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "E2MinScore, CM's CMH_EXPTAIL_STATS flag is down.");
+  if(ret_sc == NULL)                   ESL_FAIL(eslEINCOMPAT, errbuf, "E2MinScore, ret_sc is NULL");
 
-  H       = (double) cm->stats->expAA[exp_mode][0]->cur_eff_dbsize;
-  lambda  = cm->stats->expAA[exp_mode][0]->lambda;
-  mu      = cm->stats->expAA[exp_mode][0]->mu_extrap;
-  low_sc  = mu + ((log(E/H)) / (-1 * lambda));
+  if((status = E2ScoreGivenExpInfo(cm->stats->expAA[exp_mode][0], errbuf, E, &low_sc)) != eslOK) return status;
   for(p = 1; p < cm->stats->np; p++) {
-    if(! cm->stats->expAA[exp_mode][0]->is_valid) ESL_FAIL(eslEINCOMPAT, errbuf, "E2Score, CM's exp tail stats for mode: %d partition: %d are invalid.", exp_mode, p);
-    H       = (double) cm->stats->expAA[exp_mode][0]->cur_eff_dbsize;
-    lambda  = cm->stats->expAA[exp_mode][0]->lambda;
-    mu      = cm->stats->expAA[exp_mode][0]->mu_extrap;
-    sc  = mu + ((log(E/H)) / (-1 * lambda));
+    if((status = E2ScoreGivenExpInfo(cm->stats->expAA[exp_mode][0], errbuf, E, &sc)) != eslOK) return status;
     low_sc = ESL_MIN(low_sc, sc);
   }
   *ret_sc = low_sc;
+  return eslOK;
+}
+
+/* Function: E2ScoreGivenExpInfo()
+ * Date:     EPN, Thu Apr  3 15:57:34 2008
+ *
+ * Purpose:  Given an E-value <E> and a exp tail stat structure
+ *           determine the bit score that will give an E-value 
+ *           of <E>.
+ *
+ * Returns:  eslOK on success, <ret_sc> filled with bit score
+ *           error code on failure, errbuf filled with message
+ */
+int E2ScoreGivenExpInfo(ExpInfo_t *exp, char *errbuf, float E, float *ret_sc)
+{
+  float sc;
+  /* contract checks */
+  if(ret_sc == NULL)                   ESL_FAIL(eslEINCOMPAT, errbuf, "E2ScoreGivenExpInfo, ret_sc is NULL");
+  sc  = exp->mu_extrap + ((log(E/exp->cur_eff_dbsize)) / (-1 * exp->lambda));
+  *ret_sc = sc;
   return eslOK;
 }
 

@@ -168,7 +168,10 @@ cm_EntropyWeight(CM_t *cm, const Prior_t *pri, double etarget, int pretend_cm_is
   }
 
   /* we've found Neff, determine the relative entropy of the CM if we marginalize the MP pair emissions,
-   * this is the relative entropy of the CP9 HMM we'll eventually construct from it */
+   * this is (ALMOST) the relative entropy of the CP9 HMM we'll eventually construct from it,
+   * (it's only ALMOST b/c the CP9 will have marginalized emissions from the MATP_MP PLUS the MATP_ML
+   * state weighted by the expected number of times each state is visited). 
+   */
   hmm_re = cm_MeanMatchRelativeEntropyHMM(p.cm);
 
   /* reset CM params to their original values */
