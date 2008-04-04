@@ -95,7 +95,7 @@ static ESL_OPTIONS options[] = {
   /* alignment options */
   { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "append posterior probabilities to hit alignments", 7 },
   { "--noalign", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,       NULL, "find start/stop/score only; don't do alignments", 7 },
-  { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "align hits with the Holmes/Durbin optimal accuracy algorithm", 7 },
+  { "--cyk",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "align hits with the CYK algorithm", 7 },
   { "--addx",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "add line to output alnments marking non-compensatory bps with 'x'", 7 },
   /* verbose output files */
   { "--tabfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save hits in tabular format to file <f>", 8 },
@@ -105,7 +105,7 @@ static ESL_OPTIONS options[] = {
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 9 },
   /* Other options */
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb", 10 },  
-  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 10 },
+  { "--mxsize",  eslARG_REAL, "2048.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 10 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program", 10 },  
 #endif
@@ -795,7 +795,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			    }
 			    /* hits over E cutoff removed in dispatch search now if(using_e_cutoff) RemoveHitsOverECutoff(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]); */
 			  }					      
-			  PrintResults(cm, cfg->ofp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
+			  PrintResults(cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
 			    esl_sq_Destroy(dbseqlist[si_recv]->sq[rci]);
 			    FreeResults(dbseqlist[si_recv]->results[rci]);
@@ -1059,7 +1059,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 
   /* align_opts, by default, align with HMM bands */
   cm->align_opts |= CM_ALIGN_HBANDED;
-  if(esl_opt_GetBoolean(go, "--optacc"))       cm->align_opts |= CM_ALIGN_OPTACC;
+  if(! (esl_opt_GetBoolean(go, "--cyk"))   )   cm->align_opts |= CM_ALIGN_OPTACC;
   if(esl_opt_GetBoolean(go, "-p"))             cm->align_opts |= CM_ALIGN_POST;
 
   /* handle special developer's options, not recommend for normal users */
@@ -1465,35 +1465,8 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
       fqdb_Smin = xfil * (all_filters_ncalcs_per_res / final_ncalcs_per_res); 
       fqdb_Emin = SurvFract2E(fqdb_Smin, fqdb_smx->W, cfg->avg_hit_len, cfg->dbsize);
       
-#if 1
-      /* EPN, Thu Apr  3 05:44:38 2008 
-       * OLD WAY */
-      fqdb_S = final_S * 10.; /* fqdb_S must match or exceed 10 * final_S */
-      fqdb_S = ESL_MIN(fqdb_S, final_S * 1000.);           /* fqdb_S must not exceed 1000 * final_S */
-      fqdb_S = ESL_MAX(fqdb_S, (E2SurvFract(1.0, fqdb_smx->W, cfg->avg_hit_len, cfg->dbsize, TRUE))); /* fqdb_S must match or exceed the survival fraction from E-value of 1.0 */
-      fqdb_S = ESL_MAX(fqdb_S, fqdb_Smin);                 /* fqdb_S must match or exceed fqdb_Smin, the survival fraction which makes the final round require 1% the DP calcs of the filter rounds */
-      if(do_hmm_filter) fqdb_S = ESL_MIN(fqdb_S, fhmm_S);  /* fqdb_S must not exceed the expected survival fraction from the HMM filter, if it's on */
-      fqdb_E = SurvFract2E(fqdb_S, fqdb_smx->W, cfg->avg_hit_len, cfg->dbsize);
-      /* END OLD WAY */
-      printf("OLD fqdb_S: %.8f\n", fqdb_S);
-
-      /* TEMP */
-      if(fabs(fqdb_Smin - fqdb_S) < eslSMALLX1) {  
-	printf("fqdb_Smin: %f\n", fqdb_Smin);
-	printf("WHOA Smin used as S!\n");
-      }
-      printf("all_filters_ncalcs_per_res: %f\n", all_filters_ncalcs_per_res);
-      printf("final_ncalcs_per_res:       %f\n", final_ncalcs_per_res);
-      printf("fqdb_Smin =                 %f\n", fqdb_Smin);
-      /* TEMP */
-#endif
-#if 1
-      /* NEW WAY */
       fqdb2final_Efactor = 100.;
       fqdb_E = ESL_MAX(final_E * fqdb2final_Efactor, fqdb_Emin);
-
-#endif
-
     }
     else if(! esl_opt_IsDefault(go, "--fil-E-qdb")) { /* survival fraction for QDB filter set on command line, use that */
       fqdb_ctype = E_CUTOFF;
@@ -1517,16 +1490,6 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
     if(do_hmm_filter && (fqdb_S > fhmm_S)) do_qdb_filter = FALSE;
     /* if fqdb_S > 0.9, turn QDB filter off, it's not worth it */
     if(fqdb_S > 0.9) do_qdb_filter = FALSE;
-
-    /*TEMP*/ printf("NEW fqdb_S: %.8f\n", fqdb_S);
-    /*TEMP*/ if(do_hmm_filter && (fqdb_S > fhmm_S)) printf("!1 TURN OFF QDB FILTER (%.8f > %.8f)\n", fhmm_S, fqdb_S);
-    /*TEMP*/ if(fqdb_S > 0.9) printf("!2 TURN OFF QDB FILTER (%.8f > 0.75)\n", fqdb_S);
-    /* TEMP PRINT */
-    if(!(do_hmm_filter && (fqdb_S > fhmm_S))) {
-	if((final_E * fqdb2final_Efactor) > fqdb_Emin) printf("0 final_E * %.1f WINS (%.8f > %.8f)\n", fqdb2final_Efactor, final_E * fqdb2final_Efactor, fqdb_Emin);
-	else                                           printf("1 fqdb_Emin %.1f WINS (%.8f < %.8f)\n", fqdb2final_Efactor, final_E * fqdb2final_Efactor, fqdb_Emin);
-    }
-    /* END TEMP PRINT */
 
   }
   else do_qdb_filter = FALSE;

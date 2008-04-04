@@ -41,22 +41,28 @@ result in multiple CMs being built from each alignment in
 .I alifile
 as described below.
 
+The default output from 
+.B cmbuild
+is tabular, with a single line printed for each model . Each line has
+eight fields: "aln": the index of the alignment used to build the CM, "cm idx": the
+index of the CM in  .I cmfile, 
+"name": the name of the CM, "nseq": the number of sequences in the
+alignment used to build the CM, "eff_nseq": the effective number of
+sequences used to build the model (see the User Guide); "alen": the
+length of the alignment used to build the CM, and "clen": the
+number of columns from the alignment defined as consensus columns;
+"rel entropy, CM": the total relative entropy of the model divided by
+the number of consensus columns, "rel entropy, HMM": the total
+relative entropy of the CM 
+.I ignoring secondary structure
+divided by the number of consensus columns.
+
 .SH OPTIONS
 
 .TP
 .B -h
 Print brief help; includes version number and summary of
 all options, including expert options.
-
-.TP
-.BI -o " <f>"
-Direct the summary output of 
-.B cmbuild 
-to file 
-.I <f>.
-By default, 
-.B cmbuild
-prints information summarizing the CMs to stdout.
 
 .TP
 .BI -n " <s>"
@@ -96,14 +102,11 @@ or
 option is set.
 
 .TP
-.BI -1
-Reduce the summary output to a single line in tabular format for each
-CM that is built. Each line has six fields, "aln": the index of the
-alignment used to build the CM, "cm idx": the index of the CM in 
-.I cmfile, 
-"name": the name of the CM, "nseq": the number of sequences in the
-alignment used to build the CM, "alen": the length of the alignment
-used to build the CM, and "clen": the consensus length of the CM.
+.BI -v
+Run in verbose output mode instead of using the 
+default single line tabular format. This output format is similar to
+that used by older versions of Infernal.
+
 
 .SH EXPERT OPTIONS
 

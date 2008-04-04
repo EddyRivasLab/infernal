@@ -1,5 +1,5 @@
 \section{Profile SCFG construction: the \texttt{cmbuild} program}
-
+WR
 \software{infernal} builds a model of consensus RNA secondary
 structure using a formalism called a \emph{covariance model} (CM),
 which is a type of \emph{profile stochastic context-free grammar}
@@ -397,7 +397,10 @@ error. If the file does not have consensus secondary structure
 annotation, the program exits with a ``no consensus structure
 annotation'' error. This includes all non-Stockholm alignment files.
 
-\begin{srefaq}{Why does cmbuild have a \prog{--informat} option, if it only
+% EPN, Wed Apr  2 12:47:54 2008, the cat my.sto | cmbuild command
+% in this faq no longer works.
+\begin{comment}
+\begin{srefaq}{Why does \prog{cmbuild} have a \prog{--informat} option, if it only
 accepts Stockholm?} If you don't specify \prog{--informat}, the
 software has to autodetect the file format. Autodetection of file
 formats doesn't work in certain advanced/nonstandard cases, for
@@ -407,6 +410,7 @@ autodetection; e.g. \prog{cat my.sto | cmbuild --informat Stockholm
 my.cm -} is an example of reading the alignment from piped standard
 input.
 \end{srefaq}
+\end{comment}
 
 \subsubsection{Parsing secondary structure annotation}
 
@@ -482,7 +486,7 @@ including the fast $O(N)$ Henikoff position-based weights
 If for some reason you put more than one relative weighting option on
 the command line, the last one you give is used.
 
-\begin{srefaq}{Why is cmbuild taking so much time?} The GSC weighting algorithm
+\begin{srefaq}{Why is \prog{cmbuild} taking so much time?} The GSC weighting algorithm
 scales as $O(N^2)$ with the number of sequences $N$. Weighting may
 become rate-limiting for \prog{cmbuild} if your alignment contains
 many sequences. Model construction itself is fast. You might want to
@@ -547,27 +551,33 @@ Each CM gets a name. Stockholm format allows the alignment to have a
 name, provided in the \verb+#=GF ID+ tag. If this name is provided,
 it is used as the CM name.
 
-If a name is not provided, the name is the input filename, without any
-extension -- for example, if you build a model from the alignment file
-\verb+RNaseP.sto+, the model will be named RNaseP.
-
-You can override this and provide your own name with the \prog{-n <s>}
-option, where \verb+<s>+ is any string.
-
-THIS NEEDS TO BE FIXED!!!
-
-Stockholm format also allows more than one alignment per file, and
+Stockholm format allows more than one alignment per file, and
 \prog{cmbuild} supports this: CM files can contain more than one
 model, and if you say e.g.\ \prog{cmbuild Rfam Rfam.sto} where
 \verb+Rfam.sto+ contains a whole database of alignments,
 \prog{cmbuild} will create a database of CMs in the \verb+Rfam+ file,
-one per alignment. But in this case, obviously you don't want them all
-to have the same name! Therefore when running \prog{cmbuild} on a
-multi-multiple alignment database file, the alignment database file
-\emph{must} provide \verb+#=GF ID+ tags with names for each alignment.
-If any alignment is found to not have one, the program exits at that
-point with an error. Attempting to set the \prog{--n} option for an
-alignment database also results in an error.
+one per alignment. 
+
+If a name or names are not provided in the Stockholm \verb+#=GF ID+
+annotation, the name given to each CM is the input filename plus a ``-''
+character and an integer indicating the position of that alignment
+within the alignment file. For example, if you build a model from a
+single alignment in alignment file \verb+RNaseP.sto+, the model will
+be named RNaseP-1. 
+
+If the \prog{--cmaxid, --ctarget} or \prog{--call} options are used to
+split each input alignment into several alignments (see the
+``Tutorial'' for an example), then an additional extension of ``.''
+plus an integer indicating the order in which the model was
+constructed from the alignment is added to the name. For example, if
+you run \prog{cmbuild --ctarget 3} with from a the alignment file
+\verb+RNaseP.sto+, \prog{cmbuild} will cluster the alignment by
+sequence identity into 3 clusters and build 3 CMs, one from each
+cluster. These CMs will be named: RNaseP-1.1, RNaseP-1.2 and RNaseP-1.3.
+
+If the alignment file only has 1 alignment in it, you can override the
+automatic naming conventions and provide your own name with the \prog{-n <s>}
+option, where \verb+<s>+ is any string. 
 
 \subsubsection{Saving the model}
 

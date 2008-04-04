@@ -50,25 +50,41 @@ option.
 .PP
 By default, 
 .B cmalign
-uses the CYK algorithm to determine the "optimal"
-alignment of each target sequence (actually, the "optimal"
-alignment consistent with the HMM bands, unless 
-.B --nonbanded
-is enabled). This behavior can be changed, as described below and in
+computes the alignment with maximal
+expected accuracy that is consistent with the HMM bands 
+using a banded version of the Durbin/Holmes optimal
+accuracy algorithm.
+This behavior can be changed, as described below and in
 the User's Guide, with
 the 
-.B --optacc
+.B --cyk
 or 
-.B --hmmviterbi 
+.B --viterbi 
 options.
 
 .PP
-It is possible to include the fixed training alignment used to build the CM
-within the output alignment of
+It is possible to include the fixed training alignment used to build
+the CM within the output alignment of
 .B cmalign.
 This is done using the 
 .B --withali 
-option, as desribed below and in the User's Guide.
+option, as described below and in the User's Guide.
+
+The default output from 
+.B cmalign
+is tabular, with a single line printed for each model . Each line has
+eight fields: "aln": the index of the alignment used to build the CM, "cm idx": the
+index of the CM in  .I cmfile, 
+"name": the name of the CM, "nseq": the number of sequences in the
+alignment used to build the CM, "eff_nseq": the effective number of
+sequences used to build the model (see the User Guide); "alen": the
+length of the alignment used to build the CM, and "clen": the
+number of columns from the alignment defined as consensus columns;
+"rel entropy, CM": the total relative entropy of the model divided by
+the number of consensus columns, "rel entropy, HMM": the total
+relative entropy of the CM 
+.I ignoring secondary structure
+divided by the number of consensus columns.
 
 .SH OPTIONS
 
@@ -105,8 +121,7 @@ the residues are unchanged).
 Two characters for each residue are used to annotate the posterior 
 probability that the corresponding residue aligns at the corresponding
 position in the Stockholm alignment. These characters have the Stockholm
-markup tags "#=GR
-<seq name> POSTX." and "#=GR <seq name> POST.X", and can only have the
+markup tags "#=GR <seq name> POSTX." and "#=GR <seq name> POST.X", and can only have the
 values: "0-9", "*" or ".". They indicate the tens and ones
 place for the posterior probability: an "8" for "POSTX." and a "3" for "POST.X"
 indicates that the posterior probability is between 0.83 and 0.84. A
@@ -147,27 +162,6 @@ currently only accepts FASTA format, but
 this may not be true in the future.
 
 .TP
-.B --iins
-Turn off the default 
-behavior of setting all CM insert emission scores to 0.0 bits prior to
-alignment. This default behavior originated in 
-.B cmsearch 
-to avoid high-scoring hits to low complexity sequence favored by high 
-insert state emission scores and is applied to
-.B cmalign
-for consistency. When 
-.B --iins
-is enabled the insert emission scores are read from
-.I cmfile
-that were calculated in 
-.B cmbuild 
-and are unmodified prior to emitting sequences.
-
-.TP
-.B --time
-Print to stdout the time it takes to align each sequence.
-
-.TP
 .BI --mpi
 Run as an MPI parallel program. This option will only be available if
 This option will only be available if @PACKAGE@ has been configured
@@ -176,32 +170,34 @@ and built with the "--enable-mpi" flag (see User's Guide for details).
 .SH EXPERT OPTIONS
 
 .TP
-.B --cyk
-Align sequences using the CYK algorithm. This is default behavior, so
-this option is probably useless. 
-The CYK alignment will be constrained by HMM bands for acceleration
+.B --optacc
+Align sequences using the Durbin/Holmes optimal accuracy
+algorithm. This is default behavior, so this option is probably useless. 
+The optimal accuracy alignment will be constrained by HMM bands for acceleration
 unless the
 .B --nonbanded 
 option is enabled. 
 
 .TP
-.B --optacc
-Do not use CYK to align the sequences, instead use the Durbin/Holmes optimal accuracy
-algorithm. Whereas CYK determines the alignment with the optimal score,
+.B --cyk
+Do not use the Durbin/Holmes optimal accuracy alignment to align the
+sequences, instead use the CYK algorithm which determines the
+optimally scoring alignment of the sequence to the model.
+Whereas CYK determines the alignment with the optimal score,
 the optimal accuracy algorithm determines the alignment that
 maximizes the posterior probabilities of the aligned residues within it.
 The posterior probabilites are determined using (possibly HMM banded)  
 variants of the Inside and Outside algorithms. 
 When 
-.B --optacc 
-is enabled the scores reported are not bit scores but the average posterior
-probability of the aligned residues in the optimally accurate alignment.
+.B --cyk
+is enabled the scores reported are not average posterior probability
+values, but rather bit scores.
 
 .TP
-.B --hmmviterbi
+.B --viterbi
 Do not use the CM CYK algorithm to align the sequences, instead use
 the HMM Viterbi algorithm to align with a CM Plan 9 HMM. This is
-faster than CM alignment, but usually less accurate because the
+faster than CM alignment, but often less accurate because the
 structure of the RNA family is ignored. 
 
 .TP
@@ -227,7 +223,9 @@ allows CM alignment within practical memory limits,
 reducing the memory required for alignment LSU rRNA, the largest known
 RNAs, from 150 Gb to less than 300 Mb.
 This option can only be used in combination with
-.B --nonbanded.
+.B --nonbanded 
+and
+.B --cyk.
 
 .TP
 .B --hbanded
@@ -299,16 +297,14 @@ alignment.
 Based on empirical tests, the fraction of
 HMM banded alignments that are non-optimal and have negative scores is
 much higher than for those with positive scores.
-This option is incompatible with
-.B --optacc
-and
-.B --hmmviterbi.
+This option must be run in combination with
+.B --cyk.
 
 .TP
 .BI --mxsize " <x>"
 Set the maximum allowable DP matrix size to 
 .I <x>
-megabytes. By default this size is 256 Mb. 
+megabytes. By default this size is 2,048 Mb. 
 This should be large enough for the vast majority of alignments, 
 however if it is not 
 .B cmalign 
@@ -470,14 +466,6 @@ is 1, 2 or 3. By default debugging print statements are turned off.
 .BI --dlev " <n>"
 Set verbosity level for alignment related
 debugging print statements
-.I <n>. 
-Where 
-.I <n> 
-is 1, 2 or 3. By default debugging print statements are turned off.
-
-.TP
-.BI --dlev " <n>"
-Set verbosity level for general debugging print statements
 .I <n>. 
 Where 
 .I <n> 

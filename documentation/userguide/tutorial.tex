@@ -183,7 +183,27 @@ employ the HMM filter during search.
 
 If a non-calibrated model is used to search a database, E-values will not
 be calculated, and a default HMM filter will be used at an unknown
-cost to sensitivity. CM calibration takes a long time, but it only has
+cost to sensitivity. There's an example of this in section 6. 
+
+\emph{Importantly, if you're not going to use a model for searching, there
+is no need to calibrate it.} For example, if you are only going to
+build alignments with a model of a large family like small subunit
+ribosomal RNA, do not try to calibrate it. \prog{cmsearch} is the only
+\software{Infernal} program that uses E-values and HMM filters, so if
+you won't use it, don't calibrate your model.
+
+\begin{srefaq}{Do I really have to calibrate my model?} No, but we
+  recommend it in most situations. Importantly, if you're not going to
+  search with your model, then don't calibrate it (see above). If you
+  are going to search with your model, you still are not required to
+  calibrate your model. In this case you'll have to settle for default
+  filter threshold cutoffs which will cost you an unknown amount of
+  sensitivity and possibly not accelerate your search as much as
+  possible, or you tune the thresholds yourself. An example of
+  searching with non-calibrated models is in section 6.
+\end{srefaq}
+
+CM calibration takes a long time, but it only has
 to be done once per model, and can potentially save a lot of time
 during database searches. The amount of time the calibration takes
 varies widely, but depends mainly on the size of the RNA family being
@@ -206,7 +226,7 @@ don't worry about any of it now except the line with ``all'' in the
 ``stage'' column towards the end:
 
 \begin{sreoutput}
-  # all         -    -    -     -   -   -         -      -       01:17:32}
+  # all         -    -    -     -   -   -         -      -       01:17:32
 \end{sreoutput}
 
 This line gives the total predicted time of this run of
@@ -238,9 +258,9 @@ relatively small, we'll just do the search:
 
 \user{cmsearch my.cm tosearch.db}
 
-First, the program will print ``Pre-search info'' to the screen. This
-output is explained in detail later in section 6. For now just notice
-that the expected running time is about 40 seconds.
+First, the program will print a header and ``Pre-search info'' to the
+screen. This output is explained in detail later in section 6, don't
+worry about it right now. 
 
 \begin{comment}
 # cmsearch :: search a sequence database with an RNA CM
@@ -363,6 +383,18 @@ later in section 6.
 # CPU time: 91.42u 0.02s 00:01:31.44 Elapsed: 00:01:32
 \end{comment}
 
+\begin{srefaq}{How come the dbsize reported by \prog{cmsearch} is
+twice the length of my database?} This is because by default
+  \prog{cmsearch} searches both strands of the database, so according
+  to the program, your database is twice the size you might think it
+  is. You may have noticed this in the tutorial example, the 300 Kb
+  database is reported as 600 Kb in the beginning of the
+  \prog{cmsearch} output. You can optionally search only the top
+  strand or the bottom strand of your target database with the
+  \prog{--toponly} and \prog{--bottomonly} options to \prog{cmsearch}
+  respectively. 
+\end{srefaq}
+
 \subsection{Creating new multiple alignments with \prog{cmalign}}
 
 You can also use a model to structurally align any number of new RNA
@@ -455,6 +487,7 @@ First let's look at an example of local alignment in \prog{cmsearch}:
 
 Look at the alignment for the target sequence tRNA8 (the last alignment in the output): 
 
+{\samepage
 \begin{sreoutput}
 >tRNA8
 
@@ -473,6 +506,7 @@ Look at the alignment for the target sequence tRNA8 (the last alignment in the o
            :GCA
         60 CGCA 63      
 \end{sreoutput}
+}
 
 The \verb+*[15]*+ and \verb+*[5]*+ in the query and target,
 respectively, indicate that 15 consensus residues and 5 target
@@ -604,6 +638,7 @@ with either of these options to cause \prog{cmbuild} to dump each
 cluster alignment to the file \prog{<f>}. Let's try the 
 \prog{--cmaxid} option: 
 
+{\samepage
 \user{cmbuild --cmaxid 0.6 --cdump my.cmaxid60.sto my.cmaxid60.cm trna.5.sto}
 \begin{comment}
 # cmbuild :: build RNA covariance model(s) from alignment
@@ -627,6 +662,7 @@ cluster alignment to the file \prog{<f>}. Let's try the
      1      2 trna.5-1.2                  2     1.31     74    73   0.70   0.39
      1      3 trna.5-1.3                  2     1.41     74    72   0.70   0.41
 \end{sreoutput}
+}
 \begin{comment}
 #
 # CPU time: 0.68u 0.00s 00:00:00.68 Elapsed: 00:00:01
@@ -688,7 +724,8 @@ separate model from each sequence in the input alignment file.
 
 Here's an example of building five \prog{rsearch} CMs for tRNA:
 
-\prog{cmbuild -F --rsearch ~/infernal/matrices/RIBOSUM85-60.mat --call my.rsearch.cm trna.5.sto}
+{\samepage
+\user{cmbuild -F --rsearch ~/infernal/matrices/RIBOSUM85-60.mat --call my.rsearch.cm trna.5.sto}
 \begin{comment}
 # cmbuild :: build RNA covariance model(s) from alignment
 # INFERNAL 1.0 (October 2007)
@@ -714,10 +751,10 @@ Here's an example of building five \prog{rsearch} CMs for tRNA:
 #
 # CPU time: 0.06u 0.00s 00:00:00.06 Elapsed: 00:00:00
 \end{sreoutput}
-
-\begin{srefaq}{I used the \prog{--rsearch} option and tested my
+}
+\begin{srefaq}{I used the \prog{cmbuild --rsearch} option and tested my
 results against the \software{rsearch} program, and the scores didn't
-match. What gives?} \software{Infernal} can't build models quite exactly the
+match. Why?} \software{Infernal} can't build models quite exactly the
   same as \software{RSEARCH} does. The main reason is because
   \software uses probabilistic transition scores while
   \software{rsearch} does not. This difference leads to large
@@ -742,6 +779,7 @@ options to \prog{cmbuild} when you built the model, you must use those
 same options to \prog{cmalign}. Here is an example of the
 \prog{--withali <f>} option:
 
+{\samepage
 \user{cmalign --withali trna.5.sto my.cm toalign.3.fa}
 \begin{comment}
 # cmalign :: align sequences to an RNA CM
@@ -790,6 +828,8 @@ tRNA8        UGUGUUCGAUCCACAGAAUUCGCA
 #=GC RF      gggGUUCGAUuCcccGUgucgGca
 //
 \end{sreoutput}
+}
+
 \begin{comment}
 #
 # CPU time: 0.03u 0.00s 00:00:00.03 Elapsed: 00:00:00
@@ -799,7 +839,7 @@ The top five sequences are from the training alignment \prog{trna.5.sto}
 and the bottom three sequence are from \prog{toalign.3.fa}.
 
 \begin{srefaq}{How come my fixed alignment didn't stay fixed in the
-cmalign output?} It is possible for the \prog{--withali} alignment
+\prog{cmalign} output?} It is possible for the \prog{--withali} alignment
 to change slightly when it is output from \prog{cmalign}, but only
 residues that are insertions (i.e. present in non-consensus columns)
 should move around. This is a feature, not a bug, of the program; it is
@@ -809,15 +849,16 @@ information on insertion columns versus consensus columns see the
 \prog{cmbuild} section.
 \end{srefaq}
 
-\begin{srefaq}{I'd like to use the \prog{--withali} option but my training
-    alignment is 1000 sequences deep which makes the cmalign output
-    difficult to read, is there a only include a subset of the
-    training alignment in the output alignment?} Yes.  You can remove
-    as many sequences as you like from the training alignment if it
-    you add {\small\verb+#=GC RF+} annotation that defines the
-    consensus columns the same way they were defined in \prog{cmbuild}
-    using the full alignment. Also, in this case you must specify the
-    \prog{--rf} option to \prog{cmalign}.
+\begin{srefaq}{I'd like to use the \prog{--withali} option to  
+    \prog{cmalign} but my training alignment is 100s of sequences deep
+    which makes the cmalign output difficult to read, is there a way
+    to include a subset of the training alignment in the output
+    alignment?} Yes.  You can remove as many sequences as you like
+    from the training alignment if it you add {\small\verb+#=GC RF+}
+    annotation that defines the consensus columns the same way they
+    were defined in \prog{cmbuild} using the full alignment. Also, in
+    this case you must specify the \prog{--rf} option to
+    \prog{cmalign}.
   \end{srefaq}
 
 \subsubsection{aligning truncated sequences}
@@ -858,6 +899,7 @@ the \prog{--withali} option. If we align the truncated sequence
          1  tRNA6-trunc                         35         -23.97  00:00:00.00
 \end{comment}
 
+{\samepage
 \begin{sreoutput}
 # STOCKHOLM 1.0
 #=GF AU Infernal 1.0
@@ -881,6 +923,7 @@ tRNA6-trunc  ----------U----G----GUUC
 #=GC RF      gggGUUCGAUuCcccGUgucgGca
 //
 \end{sreoutput}
+}
 
 \begin{comment}
 //
@@ -915,6 +958,7 @@ Here's what happens with the \prog{--sub} option turned on:
          1  tRNA6-trunc                         35          15.32  00:00:00.00
 \end{comment}
 
+{\samepage
 \begin{sreoutput}
 # STOCKHOLM 1.0
 #=GF AU Infernal 1.0
@@ -938,6 +982,7 @@ tRNA6-trunc  CUGGUUC-----------------
 #=GC RF      gggGUUCGAUuCcccGUgucgGca
 
 \end{sreoutput}
+}
 \begin{comment}
 //
 #
@@ -977,6 +1022,7 @@ this with alignment of a single sequence:
 
 \end{comment}
 
+{\samepage
 \begin{sreoutput}
 # STOCKHOLM 1.0
 #=GF AU Infernal 1.0
@@ -994,22 +1040,26 @@ tRNA6             UGGUUCGAUCCCAGGGCGGGAUA
 #=GC RF           ggGUUCGAUuCcccGUgucgGca
 //
 \end{sreoutput}
+}
 
 \begin{comment}
 #
 # CPU time: 0.05u 0.00s 00:00:00.03 Elapsed: 00:00:00
 \end{comment}
 
-The \prog{-p} option adds
-{\small\verb+#=GR tRNA6 POSTX.+}  and {\small\verb+#=GR tRNA6 POST.X+}
-markup to the output stockholm alignment. The {\small\verb+POSTX.+}
-row indicates the 'tens' place of the confidence estimate while
-{\small\verb+POST.X+} row indicates the 'ones' place. So the confidence
-estimate for the final \prog{C} in the first row of the alignment to
-two significant digits is 97\%. This means that if you sampled
-alignments from the posterior distribution of all possible alignments
-of this sequence to the model, about 97\% of the time that \prog{C}
-would appear in that position of the alignment.
+The \prog{-p} option adds {\small\verb+#=GR tRNA6 POSTX.+} and
+{\small\verb+#=GR tRNA6 POST.X+} markup to the output stockholm
+alignment. The {\small\verb+POSTX.+} row indicates the 'tens' place of
+the confidence estimate while {\small\verb+POST.X+} row indicates the
+'ones' place. So the confidence estimate for the final \prog{C} in the
+first row of the alignment to two significant digits is 97\%. This
+means that if you sampled alignments from the posterior distribution
+of all possible alignments of this sequence to the model, about 97\%
+of the time that \prog{C} would appear in that position of the
+alignment. One special cases, If the posterior probability is ``very
+nearly'' 100\% (it's difficult to be more precise on the exact
+percentage due to numerical precision issues) the annotated posterior
+values will be ``*'' characters in both the tens and one places.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % BEGIN ITERATIVE SEARCH SECTION
@@ -1077,7 +1127,7 @@ you find and build a new model, and so on.
 %each new model. We'd love to be able to reliably calibrate models
 %quicker, and we're working on it. 
 
-\subsection{Files used in the iterative search example}
+\subsubsection{files used in the iterative search example}
 
 Let's work through an example of iterative search with a Purine
 riboswitch model. Here's a list of the files we'll use, from the
@@ -1100,7 +1150,7 @@ riboswitch model. Here's a list of the files we'll use, from the
   \item[\prog{purine.psych.fa}] A different putative Purine riboswitch in FASTA format.
   \end{sreitems}
 
-\subsubsection{Iteration 1, step 1: build and calibrate a model}
+\subsubsection{iteration 1, step 1: build and calibrate a model}
 
 Look at the \prog{purine.1.sto} stockholm file. It contains exactly
 one sequence and predicted structure of a Purine riboswitch from the
@@ -1111,6 +1161,7 @@ annotation for the sequence is shown on the right.
 (This sequence is part of the Rfam 8.1 Purine RF00167 ``full''
 alignment). 
 
+{\samepage
 \vspace{1em}
 \begin{minipage}{4.7in}
 \begin{sreoutput}
@@ -1130,6 +1181,7 @@ Purine1          CUACAAGGUGCCGGAACACCUAACAAUAAGUAAGUCAGCAGUGAGAU
 \includegraphics[scale=0.37]{Figures/purine1_full}
 \end{minipage}
 \vspace{1em}
+}
 
 First we build the model:
 
@@ -1154,12 +1206,13 @@ sequences. In this case let's search another Firmicutes bacteria,
 \emph{Thermoanerobacteria tengcongensis}, the genome of which is in \newline
 \prog{T.tengcongensis.genome.fa}:
 
-\subsubsection{Iteration 1, step 2: search a genome}
+\subsubsection{iteration 1, step 2: search a genome}
 \user{cmsearch purine.1.cm t.tengcongensis.genome.fa}
 
 It takes about two minutes for \prog{cmsearch} to search the 5 Mb
 genome, and one hit is found:
 
+{\samepage
 \begin{sreoutput}
 >gi|20806542|ref|NC_003869.1|
 
@@ -1178,6 +1231,7 @@ genome, and one hit is found:
            ::: CCG AA  ::::::AC:A::AGU:A    G A   AG  
     586425 ACAaCCGUAAauUGUUCGACUAUGAGUGAAAGUGUACCUAGGG 586467  
 \end{sreoutput}
+}
 
 The E-value of this hit is 0.01145, which means we'd expect about
 0.01 hits of this score in searching a 5 Mb database of random
@@ -1210,7 +1264,7 @@ conservation at the primary sequence level (55\% identity).
 \includegraphics[scale=0.5]{Figures/purine2_full}
 \end{center}
 
-\subsubsection{Iteration 1, step 3: add new homolog to training alignment}
+\subsubsection{iteration 1, step 3: add new homolog to training alignment}
 Let's assume that you've convinced yourself our putative homolog is a real Purine
 riboswitch. Now we can use knowledge of this new homolog to increase
 our power in the search for new ones. First we need to add our new
@@ -1231,7 +1285,7 @@ two examples of the Purine riboswitch. First, we build a new model:
 NOTE: THE FOLLOWING USING THE OPTIMALLY ACCURATE ALIGNMENT, WHICH
 ISN'T WHAT YOU GET FROM DOING THE ABOVE COMMAND, BECAUSE CYK IS DEFAULT.
 
-\subsubsection{Iteration 2, step 1: build and calibrate a new model}
+\subsubsection{iteration 2, step 1: build and calibrate a new model}
 \user{cmbuild purine.2.cm purine.2.sto}
 
 Once again the calibration step is a bottleneck. We've provided a
@@ -1240,7 +1294,7 @@ calibrated file so you can proceed with this tutorial in
 
 \user{cp purine.2.c.cm purine.2.cm}
 
-\subsubsection{Iteration 2, step 2: search a genome}
+\subsubsection{iteration 2, step 2: search a genome}
 
 Now we're at the search stage. In the previous iteration we searched a
 Firmicutes genome mainly because we only had one training sequence, from
@@ -1254,6 +1308,7 @@ Bacterial $\gamma$-proteobacteria division:
 
 A single hit is found:
 
+{\samepage
 \begin{sreoutput}
 >gi|71143482|gb|CP000083.1|
 
@@ -1272,6 +1327,7 @@ A single hit is found:
            A UA:GA::
    1401767 AUUACGAAG 1401775 
 \end{sreoutput}
+}
 
 This hit looks very promising. As before, even with a good E-value
 (this one is 0.0002459), a hit is not necessarily a real homolog, but
@@ -1282,11 +1338,11 @@ compensatory mutations. The figure below on the left shows the
 sequence and structure of the putative homolog. To me (and hopefully to you) this
 hit is convincing. 
 
-\subsubsection{Iteration 2, step 3: add new homolog to training alignment}
+\subsubsection{iteration 2, step 3: add new homolog to training alignment}
 To save time we've extracted this sequence from the genome and saved
 it as \prog{purine.psych.fa}. Let's align it our model:
 
-\prog{cmalign -o purine.3.sto --withali purine.2.sto purine.2.cm purine.psych.fa}
+\user{cmalign -o purine.3.sto --withali purine.2.sto purine.2.cm purine.psych.fa}
 
 This alignment is depicted in the structure on the right
 below. Each column of the alignment is represented by a
@@ -1301,8 +1357,8 @@ compensatory mutations between at least two of our three sequences.
 Now we're ready for another round of iterative search. However, this
 is as far as we'll go with the guided tutorial. 
 
-This example was contrived to showcase the power of CMs to pull out
-homologous structural with very little primary sequence
+This example was contrived to showcase the power of CMs to detect
+homologous structural RNAs with very little primary sequence
 conservation. The iterative approach is a powerful one, and we'd love
 to be able to automate it, but we haven't tried. Mainly because we're
 seriously impeded by the incredibly slow calibration step. As E-values

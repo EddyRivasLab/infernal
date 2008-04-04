@@ -90,7 +90,7 @@ static ESL_OPTIONS options[] = {
   { "--fil-dfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,"--exp-pfile", "save filter threshold data (HMM and CM scores) to file <s>", 3},
 /* Other options */
   { "--stall",          eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 4 },  
-  { "--mxsize",         eslARG_REAL,    "1024.0",NULL, "x>0.",   NULL,        NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 4 },
+  { "--mxsize",         eslARG_REAL,    "2048.0",NULL, "x>0.",   NULL,        NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 4 },
 #ifdef HAVE_MPI
   { "--mpi",            eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "run as an MPI parallel program", 4 },  
 #endif

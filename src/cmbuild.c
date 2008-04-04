@@ -101,7 +101,7 @@ static ESL_OPTIONS options[] = {
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,       NULL,"--refine",       NULL, "do not use bands to accelerate alignment with --refine", 9 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",    NULL,"--refine","--nonbanded", "set tail loss prob for --hbanded to <x>", 9 },
   { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, flush inserts left/right in alignments", 9 },
-  { "--mxsize",  eslARG_REAL, "256.0", NULL, "x>0.",     NULL,"--refine",       NULL, "set maximum allowable DP matrix size to <x> Mb", 9 },
+  { "--mxsize",  eslARG_REAL, "2048.0", NULL, "x>0.",     NULL,"--refine",       NULL, "set maximum allowable DP matrix size to <x> Mb", 9 },
   { "--rdump",   eslARG_OUTFILE, NULL,  NULL, NULL,      NULL,"--refine",       NULL, "w/--refine, print all intermediate alignments to <f>", 9 },
 /* Selecting the input MSA alphabet rather than autoguessing it */
   { "--rna",     eslARG_NONE,   FALSE, NULL, NULL,   ALPHOPTS,    NULL,     NULL, "input alignment is RNA sequence data", 10},
