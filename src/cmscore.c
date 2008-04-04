@@ -253,7 +253,7 @@ main(int argc, char **argv)
   cfg.abc        = NULL;	           /* created in init_master_cfg() in masters, or in mpi_worker() in workers */
   cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.sqfp       = NULL;                   /* opened in init_master_cfg() in masters, stays NULL for workers */
-  stdout        = NULL;                   /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.ofp        = NULL;                   /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.sfp        = NULL;                   /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.tracefp    = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.regressfp  = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
