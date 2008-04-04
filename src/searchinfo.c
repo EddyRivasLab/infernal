@@ -578,7 +578,7 @@ void FreeResults (search_results_t *r) {
 }
 
 
-/* Function: CompareResultsByEndPoint()
+/* Function: CompareResultsByScore()
  * Date:     RJK, Wed Apr 10, 2002 [St. Louis]
  * Purpose:  Compares two search_result_node_ts based on score and returns -1
  *           if first is higher score than second, 0 if equal, 1 if first
@@ -777,9 +777,12 @@ void RemoveOverlappingHits (search_results_t *results, int i0, int j0)
  *           sround  - round of search we're removing hits for
  *           results - the hits data structure
  *           seq     - seq hits lie within, needed to determine gc content
- *           used_HMM- TRUE if hits are to the CM's CP9 HMM, not the CMa
+ *           sort_by_score    - TRUE to sort list by score at the end of the function IFF we remove any hits
+ *           sort_by_endpoint - TRUE to sort list by end point at the end of the function IFF we remove any hits
+ *
+ * Returns: eslOK on success, eslEINCOMPAT on contract violation
  */
-void RemoveHitsOverECutoff (CM_t *cm, SearchInfo_t *si, int sround, search_results_t *results, ESL_DSQ *dsq)
+int RemoveHitsOverECutoff (CM_t *cm, char *errbuf, SearchInfo_t *si, int sround, search_results_t *results, ESL_DSQ *dsq, int sort_by_score, int sort_by_endpoint)
 {
   int gc_comp;
   int i, x;
@@ -790,16 +793,20 @@ void RemoveHitsOverECutoff (CM_t *cm, SearchInfo_t *si, int sround, search_resul
   int p;                /* relevant partition */
   ExpInfo_t **exp;      /* pointer to exp tail to use */
   float cutoff;         /* the max E-value we want to keep */
+  int orig_num_results; /* number of results when function entered */
 
   /* Check contract */
-  if(!(cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("remove_hits_over_e_cutoff(), but CM has no exp tail stats\n");
-  if(dsq == NULL)                      cm_Fail("remove_hits_over_e_cutoff(), dsq == NULL.\n");
-  if(si == NULL)                       cm_Fail("remove_hits_over_e_cutoff(), si == NULL.\n");
-  if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("remove_hits_over_e_cutoff(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
-
-  if (results == NULL) return;
+  if(!(cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "remove_hits_over_e_cutoff(), but CM has no exp tail stats");
+  if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "remove_hits_over_e_cutoff(), dsq == NULL.");
+  if(si == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "remove_hits_over_e_cutoff(), si == NULL.");
+  if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) ESL_FAIL(eslEINCOMPAT, errbuf, "remove_hits_over_e_cutoff(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.");
+  if(sort_by_score == TRUE  && sort_by_endpoint == TRUE)  ESL_FAIL(eslEINCOMPAT, errbuf, "remove_hits_over_e_cutoff(), sort_by_score and sort_by_endpoint both TRUE.");
+  if(sort_by_score == FALSE && sort_by_endpoint == FALSE) ESL_FAIL(eslEINCOMPAT, errbuf, "remove_hits_over_e_cutoff(), sort_by_score and sort_by_endpoint both FALSE (currently disallowed, though shouldn't be a problem to allow).");
+  
+  if (results == NULL) return eslOK;
 
   /* Determine exp tail mode to use */
+  orig_num_results = results->num_results;
   CM2ExpMode(cm, si->search_opts[sround], &cm_exp_mode, &cp9_exp_mode);
   exp = (si->stype[sround] == SEARCH_WITH_HMM) ? cm->stats->expAA[cp9_exp_mode] : cm->stats->expAA[cm_exp_mode];
   
@@ -825,12 +832,14 @@ void RemoveHitsOverECutoff (CM_t *cm, SearchInfo_t *si, int sround, search_resul
       results->num_results--;
     }
   }
-  int old_num_results = results->num_results;
   while (results->num_results > 0 && results->data[results->num_results-1].start == -1)
     results->num_results--;
   /* only sort if we removed anything */
-  if(results->num_results != old_num_results) SortResultsByScore(results);
-  return;
+  if(results->num_results != orig_num_results) { 
+    if(sort_by_score)    SortResultsByScore(results);
+    if(sort_by_endpoint) SortResultsByEndPoint(results);
+  }
+  return eslOK;
 }  
 
 /* Function: SortResults()
@@ -888,6 +897,7 @@ void ReportHit (int i, int j, int bestr, float score, search_results_t *results)
  *
  *           cm                  the model
  *           fp                  open file ptr to print to
+ *           tabfp               open file ptr to print optional tabular output to
  *           si                  SearchInfo, relevant round is final one, si->nrounds
  *           abc                 alphabet to use for output
  *           cons                consensus seq for model (query seq)
@@ -898,7 +908,7 @@ void ReportHit (int i, int j, int bestr, float score, search_results_t *results)
  *           do_bottom           are we doing the minus (bottom) strand?
  *           do_noncompensatory  are we printing the optional non-compensatory line?
  */
-void PrintResults (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory)
+void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory)
 {
   int i;
   char *name;
@@ -952,8 +962,9 @@ void PrintResults (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc
     }
     fprintf(fp, "  %s strand results:\n\n", in_revcomp ? "Minus" : "Plus");
     
-    /*for (i=0; i<results->num_results; i++) 
-      printf("hit: %5d start: %5d stop: %5d len: %5d emitl[0]: %5d emitr[0]: %5d score: %9.3f\n", i, results->data[i].start, results->data[i].stop, len, results->data[i].tr->emitl[0], results->data[i].tr->emitr[0], results->data[i].score);*/
+    /* sort hits by bit score */
+    SortResultsByScore(results);
+
     for (i=0; i<results->num_results; i++) {
       gc_comp = get_gc_comp (cm->abc, dbseq->sq[in_revcomp]->dsq, 
 			     results->data[i].start, results->data[i].stop);
@@ -964,15 +975,32 @@ void PrintResults (CM_t *cm, FILE *fp, SearchInfo_t *si, const ESL_ALPHABET *abc
 	       + StateRightDelta(cm->sttype[results->data[i].bestr])),
 	      COORDINATE(in_revcomp, results->data[i].start, len), 
 	      COORDINATE(in_revcomp, results->data[i].stop, len));
+
+      if(tabfp != NULL) { /* print tabular output also */
+	fprintf(tabfp, "  %-25s %10d %10d %5d %5d %8.2f ", 
+		name, /* target seq name */
+		COORDINATE(in_revcomp, results->data[i].start, len), 
+		COORDINATE(in_revcomp, results->data[i].stop, len),
+		(emap->lpos[cm->ndidx[results->data[i].bestr]] + 1 
+		 - StateLeftDelta(cm->sttype[results->data[i].bestr])),
+		(emap->rpos[cm->ndidx[results->data[i].bestr]] - 1 
+		 + StateRightDelta(cm->sttype[results->data[i].bestr])),
+		results->data[i].score);
+      }
+
       if (do_stats) {
 	p = cm->stats->gc2p[gc_comp];
 	score_for_Eval = results->data[i].score;
 	Pval = esl_exp_surv((double) score_for_Eval, exp[p]->mu_extrap, exp[p]->lambda);
 	Eval = Pval * exp[p]->cur_eff_dbsize;
 	fprintf(fp, " Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score, Eval, Pval, gc_comp);
+	if(tabfp != NULL) { 
+	  fprintf(tabfp, "%4.2e %3d\n", Eval, gc_comp);
+	}
       } 
       else { /* don't print E-value stats */
 	fprintf(fp, " Score = %.2f, GC = %3d\n", results->data[i].score, gc_comp);
+	if(tabfp != NULL) fprintf(tabfp, "%8s %3d\n", "-", gc_comp);
       }
       fprintf(fp, "\n");
       if (results->data[i].tr != NULL) {

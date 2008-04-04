@@ -2436,11 +2436,11 @@ int compare_fseq_by_fwd_Eval(const void *a_void, const void *b_void) {
  *           Inside.
  *           
  *           For the CM scores, the possible CM thresholds are the
- *           E-values for the first 75% (worst scoring 75%) observed
+ *           E-values for the first 90% (worst scoring 90%) observed
  *           CYK/Inside scores in a ranked list of such E-values,
  *           stored in sorted order in by_cmA[], E-value from
- *           i=0..filN-1. The first 75% are the elements i=0..imax,
- *           with imax = 0.75 * filN.
+ *           i=0..filN-1. The first 90% are the elements i=0..imax,
+ *           with imax = 0.90 * filN.
  *
  *           The HMM threshold fwd_E_cut[i] for each i=0..imax is the
  *           HMM Forward E-value that recognizes F fraction of the
@@ -2782,44 +2782,6 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   ESL_DPRINTF1(("Passed expensive paranoia check\n"));
 #endif
 
-  /* if --fil-dfile option enabled, print bit scores and cutoffs to the file */
-  if(cfg->fildfp != NULL) { 
-    assert(cfg->cmstatsA[cmi]->np == 1);
-    fprintf(cfg->fildfp, "# Printing cmcalibrate HMM filter threshold determination data for CM: %s\n", cm->name);
-    float fwd_bitmax, fwd_bittarg, fwd_bitmin;
-    if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0], errbuf, fwd_Emax,  &fwd_bitmax))  != eslOK)  return status;
-    if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0], errbuf, fwd_Etarg, &fwd_bittarg)) != eslOK)  return status;
-    if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0], errbuf, fwd_Emin,  &fwd_bitmin))  != eslOK)  return status;
-    fprintf(cfg->fildfp, "# Max    bit score: %f\n", fwd_bitmax);
-    fprintf(cfg->fildfp, "# Target bit score: %f\n", fwd_bittarg);
-    fprintf(cfg->fildfp, "# Min    bit score: %f\n", fwd_bitmin);
-    fprintf(cfg->fildfp, "# Number of scores: %d\n", filN);
-    fprintf(cfg->fildfp, "# Format of following %d lines: <x> <y>\n", filN);
-    fprintf(cfg->fildfp, "# Note: points at the beginning may appear unsorted because they all have\n#      the worst possible E-value, which was used to sort\n");
-    if     (hmm_fwd_mode == EXP_CP9_LF) fprintf(cfg->fildfp, "# <x>: HMM local Forward bit scores\n");
-    else if(hmm_fwd_mode == EXP_CP9_GF) fprintf(cfg->fildfp, "# <x>: HMM glocal Forward bit scores\n");
-    if     (cm_mode == EXP_CM_LC)       fprintf(cfg->fildfp, "# <y>: CM local CYK bit scores\n");
-    else if(cm_mode == EXP_CM_LI)       fprintf(cfg->fildfp, "# <y>: CM local Inside bit scores\n");
-    else if(cm_mode == EXP_CM_GC)       fprintf(cfg->fildfp, "# <y>: CM glocal CYK bit scores\n");
-    else if(cm_mode == EXP_CM_GI)       fprintf(cfg->fildfp, "# <y>: CM glocal Inside bit scores\n");
-    for(i = 0; i < filN; i++) fprintf(cfg->fildfp, "%f\t%f\n", fwd_scA[by_fwdA[i].i], cm_scA[by_fwdA[i].i]);
-    fprintf(cfg->fildfp, "&\n");
-
-    fprintf(cfg->fildfp, "# Format of following %d lines: <x> <y>\n", filN);
-    if     (hmm_fwd_mode == EXP_CP9_LF) fprintf(cfg->fildfp, "# <x>: HMM local Forward bit score cutoff (for worst scoring partition)\n");
-    else if(hmm_fwd_mode == EXP_CP9_GF) fprintf(cfg->fildfp, "# <x>: HMM glocal Forward bit score cutoff (for worst scoring partition)\n");
-    if     (cm_mode == EXP_CM_LC)       fprintf(cfg->fildfp, "# <y>: CM local CYK bit score cutoff\n");
-    else if(cm_mode == EXP_CM_LI)       fprintf(cfg->fildfp, "# <y>: CM local Inside bit score cutoff\n");
-    else if(cm_mode == EXP_CM_GC)       fprintf(cfg->fildfp, "# <y>: CM glocal CYK bit score cutoff\n");
-    else if(cm_mode == EXP_CM_GI)       fprintf(cfg->fildfp, "# <y>: CM glocal Inside bit score cutoff\n");
-    float fwd_bitcut;
-    for(i = 0; i < filN; i++) { 
-      if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0], errbuf, fwd_E_cut[i],  &fwd_bitcut))  != eslOK)  return status;
-      fprintf(cfg->fildfp, "%f\t%f\n", fwd_scA[by_fwdA[i].i], fwd_bitcut);
-    }
-    fprintf(cfg->fildfp, "&\n");
-  }
-
   /* step through all cutoffs, determining and keeping a representative set */
   int ip_min = imax_above_Emax == -1 ? 0    : imax_above_Emax+1;
   int ip_max = imin_at_Emin    == -1 ? imax : imin_at_Emin;
@@ -2870,9 +2832,64 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
     }
   }
   assert(i == n2save);
-
   always_better_than_Smax = (imax_above_Emax == -1) ? TRUE : FALSE;
   if((status = SetHMMFilterInfoHMM(hfi, errbuf, F, filN, dbsize, n2save, cm_E_cut2save, fwd_E_cut2save, always_better_than_Smax)) != eslOK) return status;
+
+  /* if --fil-dfile option enabled, print bit scores and cutoffs to the file */
+  if(cfg->fildfp != NULL) { 
+    assert(cfg->cmstatsA[cmi]->np == 1);
+    int ncut = i;
+    fprintf(cfg->fildfp, "# Printing cmcalibrate HMM filter threshold determination data for CM: %s\n", cm->name);
+    float fwd_bitmax, fwd_bittarg, fwd_bitmin;
+    if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0], errbuf, fwd_Emax,  &fwd_bitmax))  != eslOK)  return status;
+    if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0], errbuf, fwd_Etarg, &fwd_bittarg)) != eslOK)  return status;
+    if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0], errbuf, fwd_Emin,  &fwd_bitmin))  != eslOK)  return status;
+    fprintf(cfg->fildfp, "# Max    bit score: %f\n", fwd_bitmax);
+    fprintf(cfg->fildfp, "# Target bit score: %f\n", fwd_bittarg);
+    fprintf(cfg->fildfp, "# Min    bit score: %f\n", fwd_bitmin);
+    fprintf(cfg->fildfp, "# Number of scores: %d\n", filN);
+    fprintf(cfg->fildfp, "# HMM/CM bit scores for each sampled sequence are listed next\n");
+    fprintf(cfg->fildfp, "# Format of following %d lines: <x> <y>\n", filN);
+    fprintf(cfg->fildfp, "# Note: points at the beginning may appear unsorted because they all have\n#       the worst possible E-value, which was used to sort\n");
+    if     (hmm_fwd_mode == EXP_CP9_LF) fprintf(cfg->fildfp, "# <x>: HMM local Forward bit scores\n");
+    else if(hmm_fwd_mode == EXP_CP9_GF) fprintf(cfg->fildfp, "# <x>: HMM glocal Forward bit scores\n");
+    if     (cm_mode == EXP_CM_LC)       fprintf(cfg->fildfp, "# <y>: CM local CYK bit scores\n");
+    else if(cm_mode == EXP_CM_LI)       fprintf(cfg->fildfp, "# <y>: CM local Inside bit scores\n");
+    else if(cm_mode == EXP_CM_GC)       fprintf(cfg->fildfp, "# <y>: CM glocal CYK bit scores\n");
+    else if(cm_mode == EXP_CM_GI)       fprintf(cfg->fildfp, "# <y>: CM glocal Inside bit scores\n");
+    for(i = 0; i < filN; i++) fprintf(cfg->fildfp, "%f\t%f\n", fwd_scA[by_fwdA[i].i], cm_scA[by_fwdA[i].i]);
+    fprintf(cfg->fildfp, "&\n");
+
+    fprintf(cfg->fildfp, "# HMM/CM cut points saved to CM file are listed next\n");
+    fprintf(cfg->fildfp, "# Format of following %d lines: <x> <y>\n", ncut);
+    float fwd_bitcut, cm_bitcut;
+    if     (hmm_fwd_mode == EXP_CP9_LF) fprintf(cfg->fildfp, "# <x>: Cut point HMM local Forward bit score cutoff\n");
+    else if(hmm_fwd_mode == EXP_CP9_GF) fprintf(cfg->fildfp, "# <x>: Cut point HMM glocal Forward bit score cutoff\n");
+    if     (cm_mode == EXP_CM_LC)       fprintf(cfg->fildfp, "# <y>: CM local CYK bit score cutoff\n");
+    else if(cm_mode == EXP_CM_LI)       fprintf(cfg->fildfp, "# <y>: CM local Inside bit score cutoff\n");
+    else if(cm_mode == EXP_CM_GC)       fprintf(cfg->fildfp, "# <y>: CM glocal CYK bit score cutoff\n");
+    else if(cm_mode == EXP_CM_GI)       fprintf(cfg->fildfp, "# <y>: CM glocal Inside bit score cutoff\n");
+    for(i = 0; i < ncut; i++) { 
+      if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0], errbuf, fwd_E_cut2save[i], &fwd_bitcut)) != eslOK)  return status;
+      if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[cm_mode][0],      errbuf, cm_E_cut2save[i],  &cm_bitcut))  != eslOK)  return status;
+      fprintf(cfg->fildfp, "%f\t%f\n", fwd_bitcut, cm_bitcut);
+    }
+    fprintf(cfg->fildfp, "&\n");
+
+    fprintf(cfg->fildfp, "# All HMM/CM bit score cutoffs listed next\n");
+    fprintf(cfg->fildfp, "# Format of following %d lines: <x> <y>\n", imax+1);
+    if     (hmm_fwd_mode == EXP_CP9_LF) fprintf(cfg->fildfp, "# <x>: HMM local Forward bit score cutoff\n");
+    else if(hmm_fwd_mode == EXP_CP9_GF) fprintf(cfg->fildfp, "# <x>: HMM glocal Forward bit score cutoff\n");
+    if     (cm_mode == EXP_CM_LC)       fprintf(cfg->fildfp, "# <y>: CM local CYK bit score cutoff\n");
+    else if(cm_mode == EXP_CM_LI)       fprintf(cfg->fildfp, "# <y>: CM local Inside bit score cutoff\n");
+    else if(cm_mode == EXP_CM_GC)       fprintf(cfg->fildfp, "# <y>: CM glocal CYK bit score cutoff\n");
+    else if(cm_mode == EXP_CM_GI)       fprintf(cfg->fildfp, "# <y>: CM glocal Inside bit score cutoff\n");
+    for(i = 0; i <= imax; i++) { 
+      if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0], errbuf, fwd_E_cut[i],  &fwd_bitcut))  != eslOK)  return status;
+      fprintf(cfg->fildfp, "%f\t%f\n", fwd_bitcut, cm_scA[by_cmA[i].i]);
+    }
+    fprintf(cfg->fildfp, "&\n");
+  }
 
   free(by_cmA);
   free(by_fwdA);

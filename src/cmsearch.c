@@ -98,7 +98,7 @@ static ESL_OPTIONS options[] = {
   { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "align hits with the Holmes/Durbin optimal accuracy algorithm", 7 },
   { "--addx",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "add line to output alnments marking non-compensatory bps with 'x'", 7 },
   /* verbose output files */
-  { "--glbf",    eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save hits in simple 'glbf' format to file <f>", 8 },
+  { "--tabfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save hits in tabular format to file <f>", 8 },
   { "--gcfile",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save GC content stats of target sequence file to <f>", 8 },
   /* Setting output alphabet */
   { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 9 },
@@ -136,6 +136,7 @@ struct cfg_s {
   int           init_rci;       /* initial strand to search 0 for top, 1 for bottom (only 1 if --bottomonly enabled) */
   float         avg_hit_len;    /* average CM hit length, calc'ed using QDB calculation algorithm */
   FILE         *gcfp;           /* optional output file for --gcfile */
+  FILE         *tfp;            /* optional output file for --tab */
 
   int           do_mpi;		/* TRUE if we're doing MPI parallelization */
   int           nproc;		/* how many MPI processes, total */
@@ -164,8 +165,8 @@ static int print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *
 extern int get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
 static int set_searchinfo_for_calibrated_cm     (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int set_searchinfo_for_uncalibrated_cm   (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int print_searchinfo_for_calibrated_cm   (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, FILE *fp, CM_t *cm, float *cm_surv_fractA, int *cm_nhitsA, double in_asec, double in_total_psec, double *ret_total_psec);
-static int print_searchinfo_for_uncalibrated_cm (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, FILE *fp, CM_t *cm, float *cm_surv_fractA, int *cm_nhitsA, double in_asec);
+static int print_searchinfo_for_calibrated_cm   (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *cm_surv_fractA, int *cm_nhitsA, double in_asec, double in_total_psec, double *ret_total_psec);
+static int print_searchinfo_for_uncalibrated_cm (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *cm_surv_fractA, int *cm_nhitsA, double in_asec);
 static int estimate_search_time_for_round       (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int stype, int search_opts, ScanMatrix_t *smx, ESL_RANDOMNESS *r, double *ret_sec_per_res);
 static int dump_gc_info                         (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 
@@ -311,6 +312,10 @@ main(int argc, char **argv)
     }
     if (cfg.cmfp      != NULL) CMFileClose(cfg.cmfp);
     if (cfg.sqfp      != NULL) esl_sqfile_Close(cfg.sqfp);
+    if (cfg.tfp       != NULL) { 
+      fclose(cfg.tfp);
+      printf("# Tabular version of hit list saved in file %s.\n", esl_opt_GetString(go, "--tabfile"));
+    }
     if (cfg.gcfp      != NULL) printf("# GC content stats of %s saved in file %s.\n", cfg.sqfile, esl_opt_GetString(go, "--gcfile"));
   }
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
@@ -358,15 +363,22 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
   cfg->fmt = cfg->sqfp->format;
 
-  /* GetDBInfo() reads all sequences, rewinds seq file and returns db size */
+  /* GetDBSize() reads all sequences, rewinds seq file and returns db size */
   if((status = GetDBSize(cfg->sqfp, errbuf, &(cfg->dbsize))) != eslOK) return status;  
   if((! esl_opt_GetBoolean(go, "--toponly")) && (! esl_opt_GetBoolean(go, "--bottomonly"))) cfg->dbsize *= 2;
+
   /* if nec, open output file for --gcfile, and print to it */
   if (! esl_opt_IsDefault(go, "--gcfile")) { 
     if ((cfg->gcfp = fopen(esl_opt_GetString(go, "--gcfile"), "w")) == NULL) 
       ESL_FAIL(eslFAIL, errbuf, "Failed to open --gcfile output file %s\n", esl_opt_GetString(go, "--gcfile"));
     if((status = dump_gc_info(go, cfg, errbuf)) != eslOK) return status;
     fclose(cfg->gcfp);
+  }
+
+  /* if nec, open output file for --tabfile */
+  if (! esl_opt_IsDefault(go, "--tabfile")) { 
+    if ((cfg->tfp = fopen(esl_opt_GetString(go, "--tabfile"), "w")) == NULL) 
+      ESL_FAIL(eslFAIL, errbuf, "Failed to open --tabfile output file %s\n", esl_opt_GetString(go, "--tabfile"));
   }
 
   /* open CM file */
@@ -439,8 +451,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       ESL_ALLOC(cm_nhitsA,      sizeof(int) * (cm->si->nrounds+1));
       esl_vec_FSet(cm_surv_fractA, (cm->si->nrounds+1), 0.);
       esl_vec_ISet(cm_nhitsA,     (cm->si->nrounds+1), 0);
-      if(cm->flags & CMH_EXPTAIL_STATS) { if((status = print_searchinfo_for_calibrated_cm   (go, cfg, errbuf, stdout, cm, NULL, NULL, 0., 0., &cm_psec)) != eslOK) cm_Fail(errbuf); }
-      else                              { if((status = print_searchinfo_for_uncalibrated_cm(go, cfg, errbuf, stdout, cm, NULL, NULL, 0.)) != eslOK) cm_Fail(errbuf); }
+      if(cm->flags & CMH_EXPTAIL_STATS) { if((status = print_searchinfo_for_calibrated_cm  (go, cfg, errbuf, cm, NULL, NULL, 0., 0., &cm_psec)) != eslOK) cm_Fail(errbuf); }
+      else                              { if((status = print_searchinfo_for_uncalibrated_cm(go, cfg, errbuf, cm, NULL, NULL, 0.)) != eslOK) cm_Fail(errbuf); }
 
       if(! esl_opt_IsDefault(go, "--forecast")) { /* special mode, we don't do the search, just print the predicting timings */
 	total_psec += cm_psec;
@@ -449,8 +461,17 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	continue;
       }
 
-      fprintf(cfg->ofp, "CM: %s\n", cm->name);
-
+      fprintf(cfg->ofp, "\nCM: %s\n", cm->name);
+      if(cfg->tfp != NULL) { 
+	fprintf(cfg->tfp, "#\n");
+        fprintf(cfg->tfp, "# CM: %s\n", cm->name);
+	/*fprintf(cfg->tfp, "# Predicted average hit length: %.2f\n", cfg->avg_hit_len);
+	  fprintf(cfg->tfp, "# CM->W: %d (subtract (W-1) from stop and add (W-1) to start, and merge overlapping hits to simulate filter)\n", cm->W);*/
+	fprintf(cfg->tfp, "# %25s %21s %11s %8s %8s %3s\n", "", "target coord", "query coord", "", "", "");
+	fprintf(cfg->tfp, "# %25s %21s %11s %8s %8s %3s\n", "", "---------------------", "-----------", "", "", "");
+	fprintf(cfg->tfp, "# %-25s %10s %10s %5s %5s %8s %8s %3s\n", "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC\%");
+	fprintf(cfg->tfp, "# %-25s %10s %10s %5s %5s %8s %8s %3s\n", "-------------------------", "----------", "----------", "-----", "-----", "--------", "--------", "---");
+      }
       using_e_cutoff  = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF)     ? TRUE : FALSE;
       using_sc_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == SCORE_CUTOFF) ? TRUE : FALSE;
 	 
@@ -472,7 +493,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    }
 	    /* hits over E cutoff removed in dispatch search now if(using_e_cutoff) RemoveHitsOverECutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]);  */
 	  }
-	  PrintResults (cm, cfg->ofp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
+	  PrintResults (cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
 	  for(rci = 0; rci <= cfg->do_rc; rci++) { /* we can free results for top strand even if cfg->init_rci is 1, due to --bottomonly */
 	    FreeResults(dbseq->results[rci]);
 	    esl_sq_Destroy(dbseq->sq[rci]);
@@ -484,8 +505,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 				    cfg->sqfp->linenumber, cfg->sqfp->filename, cfg->sqfp->errbuf);
       /* convert cm_surv_fractA[] values from residue counts into fractions */
       for(n = 0; n <= cm->si->nrounds; n++) cm_surv_fractA[n] /= (double) (cfg->dbsize);
-      if(cm->flags & CMH_EXPTAIL_STATS) { if((status = print_searchinfo_for_calibrated_cm   (go, cfg, errbuf, stdout, cm, cm_surv_fractA, cm_nhitsA, w->elapsed, cm_psec, NULL)) != eslOK) cm_Fail(errbuf); }
-      else                              { if((status = print_searchinfo_for_uncalibrated_cm(go, cfg, errbuf, stdout, cm, cm_surv_fractA, cm_nhitsA, w->elapsed)) != eslOK) cm_Fail(errbuf); }
+      if(cm->flags & CMH_EXPTAIL_STATS) { if((status = print_searchinfo_for_calibrated_cm  (go, cfg, errbuf, cm, cm_surv_fractA, cm_nhitsA, w->elapsed, cm_psec, NULL)) != eslOK) cm_Fail(errbuf); }
+      else                              { if((status = print_searchinfo_for_uncalibrated_cm(go, cfg, errbuf, cm, cm_surv_fractA, cm_nhitsA, w->elapsed)) != eslOK) cm_Fail(errbuf); }
       fprintf(cfg->ofp, "//\n");
       FreeCM(cm);
       FreeCMConsensus(cons);
@@ -659,8 +680,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       ESL_ALLOC(cm_nhitsA,      sizeof(int) * (cm->si->nrounds+1));
       esl_vec_FSet(cm_surv_fractA, (cm->si->nrounds+1), 0.);
       esl_vec_ISet(cm_nhitsA,      (cm->si->nrounds+1), 0);
-      if(cm->flags & CMH_EXPTAIL_STATS) { if((status = print_searchinfo_for_calibrated_cm  (go, cfg, errbuf, stdout, cm, NULL, NULL, 0., 0., &cm_psec)) != eslOK) cm_Fail(errbuf); }
-      else                              { if((status = print_searchinfo_for_uncalibrated_cm(go, cfg, errbuf, stdout, cm, NULL, NULL, 0.)) != eslOK) cm_Fail(errbuf); }
+      if(cm->flags & CMH_EXPTAIL_STATS) { if((status = print_searchinfo_for_calibrated_cm  (go, cfg, errbuf, cm, NULL, NULL, 0., 0., &cm_psec)) != eslOK) cm_Fail(errbuf); }
+      else                              { if((status = print_searchinfo_for_uncalibrated_cm(go, cfg, errbuf, cm, NULL, NULL, 0.)) != eslOK) cm_Fail(errbuf); }
 
       fprintf(cfg->ofp, "CM: %s\n", cm->name);
 
@@ -829,8 +850,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	if ((status = cm_dsq_MPISend(NULL, 0, wi, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("Shutting down a worker failed.");
       /* convert cm_surv_fractA[] values from residue counts into fractions */
       for(n = 0; n <= cm->si->nrounds; n++) cm_surv_fractA[n] /= (double) (cfg->dbsize);
-      if(cm->flags & CMH_EXPTAIL_STATS) { if((status = print_searchinfo_for_calibrated_cm   (go, cfg, errbuf, stdout, cm, cm_surv_fractA, cm_nhitsA, w->elapsed, cm_psec, NULL)) != eslOK) cm_Fail(errbuf); }
-      else                              { if((status = print_searchinfo_for_uncalibrated_cm(go, cfg, errbuf, stdout, cm, cm_surv_fractA, cm_nhitsA, w->elapsed)) != eslOK) cm_Fail(errbuf); }
+      if(cm->flags & CMH_EXPTAIL_STATS) { if((status = print_searchinfo_for_calibrated_cm  (go, cfg, errbuf, cm, cm_surv_fractA, cm_nhitsA, w->elapsed, cm_psec, NULL)) != eslOK) cm_Fail(errbuf); }
+      else                              { if((status = print_searchinfo_for_uncalibrated_cm(go, cfg, errbuf, cm, cm_surv_fractA, cm_nhitsA, w->elapsed)) != eslOK) cm_Fail(errbuf); }
       fprintf(cfg->ofp, "//\n");
       free(cm_surv_fractA);
       free(cm_nhitsA);
@@ -1912,7 +1933,7 @@ get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command)
  *
  *            
  */
-int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, FILE *fp, CM_t *cm, float *cm_surv_fractA, int *cm_nhitsA, double in_asec, double in_total_psec, double *ret_total_psec)
+int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *cm_surv_fractA, int *cm_nhitsA, double in_asec, double in_total_psec, double *ret_total_psec)
 {
   int status;
   int n;
@@ -1938,7 +1959,6 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
   double psec;              /* predicted seconds for current cm, current round */
   double total_psec = 0.;   /* predicted number of seconds for full round */
 
-
   pre_search_mode = (cm_surv_fractA == NULL && cm_nhitsA == NULL) ? TRUE : FALSE;
   if(pre_search_mode && ret_total_psec == NULL) ESL_FAIL(status, errbuf, "print_searchinfo_for_calibrated_cm, pre-search mode, but ret_total_psec is NULL.");
 
@@ -1952,10 +1972,16 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
   if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "print_searchinfo_for_calibrated_cm(): cm: %s does not have exp tail stats.", cm->name);
   using_filters = (cm->si->nrounds > 0) ? TRUE : FALSE;
 
-  if(pre_search_mode) fprintf(stdout, "#\n# Pre-search info for CM %d: %s\n", cfg->ncm, cm->name);
-  else                fprintf(stdout, "#\n# Post-search info for CM %d: %s\n", cfg->ncm, cm->name);
-
+  if(pre_search_mode) { 
+    fprintf(stdout, "#\n# Pre-search info for CM %d: %s\n", cfg->ncm, cm->name);
+    if(cfg->tfp != NULL) fprintf(cfg->tfp, "#\n# Pre-search info for CM %d: %s\n", cfg->ncm, cm->name);
+  }
+  else { 
+    fprintf(stdout, "#\n# Post-search info for CM %d: %s\n", cfg->ncm, cm->name);
+    if(cfg->tfp != NULL) fprintf(cfg->tfp, "#\n# Post-search info for CM %d: %s\n", cfg->ncm, cm->name);
+  }
   fprintf(stdout, "#\n");
+  if(cfg->tfp != NULL) fprintf(cfg->tfp, "#\n");
 
   if((status = cm_GetAvgHitLen        (cm,      errbuf, &avg_hit_len))        != eslOK) return status;
 
@@ -1998,32 +2024,66 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
 	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %19s  %20s\n",               "",     "",    "",    "",    "",  "-------------------",   "--------------------");
 	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "rnd",  "mod", "alg", "cfg", "beta",  "E value",    "bit sc",  "surv",    "run time");
 	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "---",  "---", "---", "---", "-----", "----------", "-------", "-------", "-----------");
+	if(cfg->tfp != NULL) { 
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %19s  %20s\n",               ""    , "",    "",    "",    "",  "      cutoffs      ",   "    predictions     ");
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %19s  %20s\n",               "",     "",    "",    "",    "",  "-------------------",   "--------------------");
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "rnd",  "mod", "alg", "cfg", "beta",  "E value",    "bit sc",  "surv",    "run time");
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "---",  "---", "---", "---", "-----", "----------", "-------", "-------", "-----------");
+	}
       }
       
       fprintf(stdout, "  %3d", (n+1));
+      if(cfg->tfp != NULL) fprintf(cfg->tfp, "# %3d", (n+1)); /* note: only line that's printed differently in tfp and stdout, add a prefix \# */
       if(stype == SEARCH_WITH_CM) { 
 	fprintf(stdout, "  %3s  %3s  %3s  ", "cm", ((search_opts & CM_SEARCH_INSIDE) ? "ins" : "cyk"), ((cm->flags & CMH_LOCAL_BEGIN) ? "loc" : "glc"));
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %3s  %3s  %3s  ", "cm", ((search_opts & CM_SEARCH_INSIDE) ? "ins" : "cyk"), ((cm->flags & CMH_LOCAL_BEGIN) ? "loc" : "glc"));
 	use_qdb  = (smx->dmin == NULL && smx->dmax == NULL) ? FALSE : TRUE;
-	if(use_qdb) fprintf(stdout, "%5g", smx->beta_qdb);
-	else        fprintf(stdout, "%5s", "-");
+	if(use_qdb) { 
+	  fprintf(stdout, "%5g", smx->beta_qdb);
+	  if(cfg->tfp != NULL) fprintf(cfg->tfp, "%5g", smx->beta_qdb);
+	}
+	else {
+	  fprintf(stdout, "%5s", "-");
+	  if(cfg->tfp != NULL) fprintf(cfg->tfp, "%5s", "-");
+	}
       }
       else { 
 	fprintf(stdout, "  %3s  %3s  %3s  %5s", "hmm", ((search_opts & CM_SEARCH_HMMFORWARD) ? "fwd" : "vit"), ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? "loc" : "glc"), "-");
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %3s  %3s  %3s  %5s", "hmm", ((search_opts & CM_SEARCH_HMMFORWARD) ? "fwd" : "vit"), ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? "loc" : "glc"), "-");
       }
       if(e_cutoff < -0.1)  if((status = Score2MaxE(cm, errbuf, exp_mode, sc_cutoff, &e_cutoff)) != eslOK) return status;
-      if(e_cutoff < 0.01)  fprintf(stdout, "  %10.1e", e_cutoff);
-      else                 fprintf(stdout, "  %10.3f", e_cutoff);
+      if(e_cutoff < 0.01)  { 
+	fprintf(stdout, "  %10.1e", e_cutoff);
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %10.1e", e_cutoff);
+      }
+      else {
+	fprintf(stdout, "  %10.3f", e_cutoff);
+  	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %10.3f", e_cutoff);
+      }
       
       fprintf(stdout, "  %7.2f", sc_cutoff);
-      if(surv_fract < 0.0001) fprintf(stdout, "  %7.1e", surv_fract);
-      else                    fprintf(stdout, "  %7.4f", surv_fract);
+      if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %7.2f", sc_cutoff);
+      if(surv_fract < 0.0001) { 
+	fprintf(stdout, "  %7.1e", surv_fract);
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %7.1e", surv_fract); 
+      }
+      else { 
+	fprintf(stdout, "  %7.4f", surv_fract);
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %7.4f", surv_fract);
+      }
       fprintf(stdout, "  %11s\n", time_buf);
+      if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %11s\n", time_buf);
 
       if(n != 0 && n == cm->si->nrounds) { /* print total expected run time */
-	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "---",  "---", "---", "---", "-----", "----------", "-------", "-------", "-----------");
 	FormatTimeString(time_buf, total_psec, TRUE);
+	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "---",  "---", "---", "---", "-----", "----------", "-------", "-------", "-----------");
 	fprintf(stdout, "  %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "all",  "-",   "-",   "-",   "-",     "-",          "-",       "-",       time_buf);
 	fprintf(stdout, "#\n");
+	if(cfg->tfp != NULL) { 
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "---",  "---", "---", "---", "-----", "----------", "-------", "-------", "-----------");
+	  fprintf(cfg->tfp, "  %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "all",  "-",   "-",   "-",   "-",     "-",          "-",       "-",       time_buf);
+	  fprintf(cfg->tfp, "#\n");
+	}
       }
     }
     else { /* search is done */
@@ -2032,47 +2092,88 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
 	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %19s  %17s\n",               "",     "",    "",    "",    "",  "-------------------",   "-----------------");
 	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %8s  %7s\n", "rnd",  "mod", "alg", "cfg", "beta",  "expected",    "actual", "expected", "actual");
 	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %8s  %7s\n", "---",  "---", "---", "---", "-----", "----------", "-------", "--------", "-------");
+	if(cfg->tfp != NULL) { 
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %19s  %17s\n",               ""    , "",    "",    "",    "",  "  number of hits   ",   "  surv fraction  ");
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %19s  %17s\n",               "",     "",    "",    "",    "",  "-------------------",   "-----------------");
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %8s  %7s\n", "rnd",  "mod", "alg", "cfg", "beta",  "expected",    "actual", "expected", "actual");
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %8s  %7s\n", "---",  "---", "---", "---", "-----", "----------", "-------", "--------", "-------");
+	}
       }
       
       fprintf(stdout, "  %3d", (n+1));
+      if(cfg->tfp != NULL) fprintf(cfg->tfp, "# %3d", (n+1)); /* note: only line that's printed differently in tfp and stdout, add a prefix \# */
       if(stype == SEARCH_WITH_CM) { 
 	fprintf(stdout, "  %3s  %3s  %3s  ", "cm", ((search_opts & CM_SEARCH_INSIDE) ? "ins" : "cyk"), ((cm->flags & CMH_LOCAL_BEGIN) ? "loc" : "glc"));
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %3s  %3s  %3s  ", "cm", ((search_opts & CM_SEARCH_INSIDE) ? "ins" : "cyk"), ((cm->flags & CMH_LOCAL_BEGIN) ? "loc" : "glc"));
 	use_qdb  = (smx->dmin == NULL && smx->dmax == NULL) ? FALSE : TRUE;
-	if(use_qdb) fprintf(stdout, "%5g", smx->beta_qdb);
-	else        fprintf(stdout, "%5s", "-");
+	if(use_qdb) { 
+	  fprintf(stdout, "%5g", smx->beta_qdb);
+	  if(cfg->tfp != NULL) fprintf(cfg->tfp, "%5g", smx->beta_qdb);
+	}
+	else {
+	  fprintf(stdout, "%5s", "-");
+	  if(cfg->tfp != NULL) fprintf(cfg->tfp, "%5s", "-");
+	}
       }
       else { 
 	fprintf(stdout, "  %3s  %3s  %3s  %5s", "hmm", ((search_opts & CM_SEARCH_HMMFORWARD) ? "fwd" : "vit"), ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? "loc" : "glc"), "-");
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %3s  %3s  %3s  %5s", "hmm", ((search_opts & CM_SEARCH_HMMFORWARD) ? "fwd" : "vit"), ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? "loc" : "glc"), "-");
       }
       if(e_cutoff < -0.1)  if((status = Score2MaxE(cm, errbuf, exp_mode, sc_cutoff, &e_cutoff)) != eslOK) return status;
-      if(e_cutoff < 0.01)  fprintf(stdout, "  %10.1e", e_cutoff);
-      else                 fprintf(stdout, "  %10.3f", e_cutoff);
+      if(e_cutoff < 0.01)  { 
+	fprintf(stdout, "  %10.1e", e_cutoff);
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %10.1e", e_cutoff);
+      }
+      else {
+	fprintf(stdout, "  %10.3f", e_cutoff);
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %10.3f", e_cutoff);
+      }
       
       fprintf(stdout, "  %7d", cm_nhitsA[n]);
-      if(surv_fract < 0.0001) fprintf(stdout, "  %8.1e", surv_fract);
-      else                    fprintf(stdout, "  %8.4f", surv_fract);
-      if(cm_surv_fractA[n] < 0.0001) fprintf(stdout, "  %7.1e\n", cm_surv_fractA[n]);
-      else                           fprintf(stdout, "  %7.4f\n", cm_surv_fractA[n]);
+      if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %7d", cm_nhitsA[n]);
+      if(surv_fract < 0.0001) { 
+	fprintf(stdout, "  %8.1e", surv_fract);
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %8.1e", surv_fract);
+      }
+      else {
+	fprintf(stdout, "  %8.4f", surv_fract);
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %8.4f", surv_fract);
+      }
+      if(cm_surv_fractA[n] < 0.0001) { 
+	fprintf(stdout, "  %7.1e\n", cm_surv_fractA[n]);
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %7.1e\n", cm_surv_fractA[n]);
+      }
+      else {
+	fprintf(stdout, "  %7.4f\n", cm_surv_fractA[n]);
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %7.4f\n", cm_surv_fractA[n]);
+      }
 
       if(n == cm->si->nrounds) { /* print total expected run time */
 	fprintf(stdout, "#\n");
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "#\n");
 	/*fprintf(stdout, "# %24s\n",       "   total search time    ");*/
 	/*fprintf(stdout, "# %24s\n",       "------------------------");*/
 	fprintf(stdout, "# %13s  %13s\n", "expected time",  "actual time");
 	fprintf(stdout, "# %13s  %13s\n", "-------------",  "-------------");
+	if(cfg->tfp != NULL) { 
+	  fprintf(cfg->tfp, "# %13s  %13s\n", "expected time",  "actual time");
+	  fprintf(cfg->tfp, "# %13s  %13s\n", "-------------",  "-------------");
+	}
 	FormatTimeString(time_buf, in_total_psec, TRUE);
 	fprintf(stdout, "  %13s", time_buf);
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "# %13s", time_buf); /* note: 1 of only 2 line that's printed differently in tfp and stdout, add a prefix \# */
 	FormatTimeString(time_buf, in_asec, TRUE);
 	fprintf(stdout, "  %13s\n", time_buf);
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %13s\n", time_buf);
       }
     }
   }
-  fflush(fp);
+  if(cfg->tfp != NULL) fflush(cfg->tfp);
   esl_randomness_Destroy(r);
-
+  
   if(ret_total_psec != NULL) *ret_total_psec = total_psec;
   return eslOK;
-}
+}  
 
 /* Function: print_searchinfo_for_uncalibrated_cm
  * Date:     EPN, Thu May 17 14:47:36 2007
@@ -2083,7 +2184,7 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
  *           a search is done. We're in mode 1 iff cm_surv_fractA == NULL
  *           and cm_nhitsA == NULL.
  */
-int print_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, FILE *fp, CM_t *cm, float *cm_surv_fractA, int *cm_nhitsA, double in_asec)
+int print_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *cm_surv_fractA, int *cm_nhitsA, double in_asec)
 {
   int n;
   float sc_cutoff;
@@ -2101,9 +2202,16 @@ int print_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cf
 
   if(cm->flags & CMH_EXPTAIL_STATS) ESL_FAIL(eslEINCOMPAT, errbuf, "print_searchinfo_for_uncalibrated_cm(): but cm: %s has exp tail stats.", cm->name);
 
-  if(pre_search_mode) fprintf(stdout, "#\n# Pre-search info for CM %d: %s\n", cfg->ncm, cm->name);
-  else                fprintf(stdout, "#\n# Post-search info for CM %d: %s\n", cfg->ncm, cm->name);
+  if(pre_search_mode) { 
+    fprintf(stdout, "#\n# Pre-search info for CM %d: %s\n", cfg->ncm, cm->name);
+    if(cfg->tfp != NULL) fprintf(cfg->tfp, "#\n# Pre-search info for CM %d: %s\n", cfg->ncm, cm->name);
+  }
+  else {
+    fprintf(stdout, "#\n# Post-search info for CM %d: %s\n", cfg->ncm, cm->name);
+    if(cfg->tfp != NULL) fprintf(cfg->tfp, "#\n# Post-search info for CM %d: %s\n", cfg->ncm, cm->name);
+  }
   fprintf(stdout, "#\n");
+  if(cfg->tfp != NULL) fprintf(cfg->tfp, "#\n");
 
   for(n = 0; n <= cm->si->nrounds; n++) {
     stype       = cm->si->stype[n];
@@ -2117,36 +2225,69 @@ int print_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cf
       if(pre_search_mode) { 
 	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s\n", "rnd",  "mod", "alg", "cfg", "beta",  "bit sc cut");
 	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s\n", "---",  "---", "---", "---", "-----", "----------");
+	if(cfg->tfp != NULL) { 
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s\n", "rnd",  "mod", "alg", "cfg", "beta",  "bit sc cut");
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s\n", "---",  "---", "---", "---", "-----", "----------");
+	}
       }
       else { /* post search */
 	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s  %8s  %10s\n", "rnd",  "mod", "alg", "cfg", "beta",  "bit sc cut", "num hits", "surv fract");
 	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s  %8s  %10s\n", "---",  "---", "---", "---", "-----", "----------", "--------", "----------");
+	if(cfg->tfp != NULL) { 
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s  %8s  %10s\n", "rnd",  "mod", "alg", "cfg", "beta",  "bit sc cut", "num hits", "surv fract");
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s  %8s  %10s\n", "---",  "---", "---", "---", "-----", "----------", "--------", "----------");
+	}
       }
     }
     fprintf(stdout, "  %3d", (n+1));
+    if(cfg->tfp != NULL) fprintf(cfg->tfp, "# %3d", (n+1)); /* note: 1 of only 2 lines that's printed differently in tfp and stdout, add a prefix \# */
     if(stype == SEARCH_WITH_CM) { 
       fprintf(stdout, "  %3s  %3s  %3s  ", "cm", ((search_opts & CM_SEARCH_INSIDE) ? "ins" : "cyk"), ((cm->flags & CMH_LOCAL_BEGIN) ? "loc" : "glc"));
-      if(use_qdb) fprintf(stdout, "%5g", smx->beta_qdb);
-      else        fprintf(stdout, "%5s", "-");
+      if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %3s  %3s  %3s  ", "cm", ((search_opts & CM_SEARCH_INSIDE) ? "ins" : "cyk"), ((cm->flags & CMH_LOCAL_BEGIN) ? "loc" : "glc"));
+      if(use_qdb) { 
+	fprintf(stdout, "%5g", smx->beta_qdb);
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "%5g", smx->beta_qdb);
+      }
+      else {
+	fprintf(stdout, "%5s", "-");
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "%5s", "-");
+      }
     }
     else { 
       fprintf(stdout, "  %3s  %3s  %3s  %5s", "hmm", ((search_opts & CM_SEARCH_HMMFORWARD) ? "fwd" : "vit"), ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? "loc" : "glc"), "-");
+      if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %3s  %3s  %3s  %5s", "hmm", ((search_opts & CM_SEARCH_HMMFORWARD) ? "fwd" : "vit"), ((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? "loc" : "glc"), "-");
     }
     fprintf(stdout, "  %10.2f", sc_cutoff);
-    if(pre_search_mode) fprintf(stdout, "\n");
+    if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %10.2f", sc_cutoff);
+    if(pre_search_mode) { 
+      fprintf(stdout, "\n");
+      if(cfg->tfp != NULL) fprintf(cfg->tfp, "\n");
+    }
     else { /* post search */
-      if(cm_surv_fractA[n] < 0.0001) fprintf(stdout, "  %8d  %10.1e\n", cm_nhitsA[n], cm_surv_fractA[n]);
-      else                           fprintf(stdout, "  %8d  %10.4f\n", cm_nhitsA[n], cm_surv_fractA[n]);
+      if(cm_surv_fractA[n] < 0.0001) { 
+	fprintf(stdout, "  %8d  %10.1e\n", cm_nhitsA[n], cm_surv_fractA[n]);
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %8d  %10.1e\n", cm_nhitsA[n], cm_surv_fractA[n]);
+      }
+      else {
+	fprintf(stdout, "  %8d  %10.4f\n", cm_nhitsA[n], cm_surv_fractA[n]);
+	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %8d  %10.4f\n", cm_nhitsA[n], cm_surv_fractA[n]);
+      }
       if(n == cm->si->nrounds) { 
+	FormatTimeString(time_buf, in_asec, FALSE);
 	fprintf(stdout, "#\n");
 	fprintf(stdout, "# %11s\n", "run time");
 	fprintf(stdout, "# %11s\n", "-----------");
-	FormatTimeString(time_buf, in_asec, FALSE);
 	fprintf(stdout, "  %11s\n", time_buf);
+	if(cfg->tfp != NULL) { 
+	  fprintf(cfg->tfp, "#\n");
+	  fprintf(cfg->tfp, "# %11s\n", "run time");
+	  fprintf(cfg->tfp, "# %11s\n", "-----------");
+	  fprintf(cfg->tfp, "# %11s\n", time_buf); /* note: 1 of only 2 line that's printed differently in tfp and stdout, add a prefix \# */
+	}
       }
     }
   }
-  fflush(fp);
+  if(cfg->tfp != NULL) fflush(cfg->tfp);
   return eslOK;
 }
 

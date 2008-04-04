@@ -71,7 +71,6 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
   int               prev_j;          /* used to collapse hits within same W bubble together when filtering */
   int               nhits;           /* number of hits */
 
-
   /* Contract checks */
   if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), CMH_BITS flag down.\n");
   if(si == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): search info cm->si is NULL.\n");
@@ -195,7 +194,10 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
   
   /* remove hits that were below our safe bit score cutoff but are above our E-value cutoff for their given partition */
   if(cm->si->cutoff_type[sround] == E_CUTOFF) { 
-    RemoveHitsOverECutoff(cm, cm->si, sround, cur_results, dsq);
+    if((status = RemoveHitsOverECutoff(cm, errbuf, cm->si, sround, cur_results, dsq, 
+				       FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
+				       TRUE))  /* sort by end point at the end of the function */
+				       != eslOK) return status;
   }
 
   if(sround < si->nrounds) { /* we're filtering */
@@ -692,7 +694,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 	    else return status; /* get here (!do_optacc) && FastAlignHB() returned status other than eslOK and eslERANGE */
 	  }
 	  /* if we're aligning search hits, and we're !do_optacc, we realign if the HMM banded parse was > 0.01 bits less than the search score for this hit */
-	  if(dsq_mode && (! (cm->search_opts & CM_SEARCH_INSIDE))) {
+	  if((dsq_mode && ((! (cm->search_opts & CM_SEARCH_INSIDE)))) && 
+	     ((! (cm->search_opts & CM_SEARCH_HMMVITERBI)) && (! (cm->search_opts & CM_SEARCH_HMMFORWARD)))) {
 	    if((!do_optacc) && ((fabs(sc - search_results->data[i].score)) > 0.01)) {
 	      ESL_DPRINTF1(("# Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", i, sc, search_results->data[i].score));
 	      fprintf(ofp, "# Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", i, sc, search_results->data[i].score);
