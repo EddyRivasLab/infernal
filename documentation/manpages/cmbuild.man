@@ -44,17 +44,30 @@ as described below.
 The default output from 
 .B cmbuild
 is tabular, with a single line printed for each model . Each line has
-eight fields: "aln": the index of the alignment used to build the CM, "cm idx": the
-index of the CM in  .I cmfile, 
-"name": the name of the CM, "nseq": the number of sequences in the
-alignment used to build the CM, "eff_nseq": the effective number of
-sequences used to build the model (see the User Guide); "alen": the
-length of the alignment used to build the CM, and "clen": the
-number of columns from the alignment defined as consensus columns;
-"rel entropy, CM": the total relative entropy of the model divided by
-the number of consensus columns, "rel entropy, HMM": the total
-relative entropy of the CM 
-.I ignoring secondary structure
+the following fields: 
+.B aln:
+the index of the alignment used to build the CM, 
+.B "cm idx:"
+the index of the CM in the
+.I cmfile; 
+.B name: 
+the name of the CM, 
+.B nseq: 
+the number of sequences in the
+alignment used to build the CM, 
+.B eff_nseq:
+the effective number of
+sequences used to build the model (see the User Guide); 
+.B alen:
+the length of the alignment used to build the CM; 
+.B clen:
+the number of columns from the alignment defined as consensus columns;
+.B "rel entropy, CM:"
+the total relative entropy of the model divided by
+the number of consensus columns;
+.B "rel entropy, HMM:"
+the total relative entropy of the CM 
+.I "ignoring secondary structure"
 divided by the number of consensus columns.
 
 .SH OPTIONS

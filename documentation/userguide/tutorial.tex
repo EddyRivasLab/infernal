@@ -157,10 +157,10 @@ this in a later section.
 In principle, CMs can be trained from unaligned sequences;
 however, this functionality is not yet implemented in \software{Infernal}.  I
 recommend CLUSTALW as an excellent, freely available multiple sequence
-alignment program. The original \prog{cmt} CM training
+alignment program. The original \prog{covet} CM training
 program from COVE, the predecessor of \software{Infernal} is also
-still available, from
-%\htmladdnormallink{ftp://selab.janelia.org/pub/software/cove/cove-2.4.4.tar.Z}
+still available by
+\htmladdnormallink{ftp}{ftp://selab.janelia.org/pub/software/cove/cove-2.4.4.tar.Z}.
 \end{srefaq}
 
 \subsection{Calibrate the model with \prog{cmcalibrate}}
@@ -175,22 +175,23 @@ database hit that scores $x$, an E-value tells you the number of hits
 you would've expected to score $x$ or more just by chance in a
 sequence database of this size. 
 
-For some searches with some models it is possible to use an HMM
-filter to accelerate the search at a very small (theoretical) cost to
-sensitivity. The \prog{cmcalibrate} program determines when this 
-acceleration is possible, and a ``calibrated'' model will automatically
-employ the HMM filter during search.
+Additionally, for some searches with some models it is possible to use
+an HMM filter to accelerate the search at a very small (theoretical)
+cost to sensitivity. Besides calibrating E-values, the
+\prog{cmcalibrate} program determines when this acceleration is
+possible, and a ``calibrated'' model will automatically employ the HMM
+filter during search.
 
 If a non-calibrated model is used to search a database, E-values will not
 be calculated, and a default HMM filter will be used at an unknown
 cost to sensitivity. There's an example of this in section 6. 
 
-\emph{Importantly, if you're not going to use a model for searching, there
-is no need to calibrate it.} For example, if you are only going to
-build alignments with a model of a large family like small subunit
-ribosomal RNA, do not try to calibrate it. \prog{cmsearch} is the only
-\software{Infernal} program that uses E-values and HMM filters, so if
-you won't use it, don't calibrate your model.
+\emph{Importantly, if you're not going to use a model for searching,
+there is no need to calibrate it.} For example, if you are only going
+to build alignments with a model of a large family like small subunit
+ribosomal RNA, don't waste time calibrating it. \prog{cmsearch} is the
+only \software{Infernal} program that uses E-values and HMM filters,
+so if you won't use it, don't calibrate your model.
 
 \begin{srefaq}{Do I really have to calibrate my model?} No, but we
   recommend it in most situations. Importantly, if you're not going to
@@ -319,9 +320,10 @@ target sequence in the target database is given starting with a
 the hits to the top (Watson) strand of \prog{example} are given, in
 this example there is a single hit from position 101 to 173 with a
 score of 78.15 bits. The E-value of this hit is $2.543e-23$, this is
-the number hits we expect to find with a bit score fo 78.15 or better
-if were searching a database of random sequence of length 300,000. 
-Bit scores and E-values are discussed in more detail in section 5.
+the number hits we expect to find with a bit score of 78.15 or better
+if we were searching a database of random sequences of total length
+300,000. Bit scores and E-values are discussed in more detail in
+section 5.
 
 The alignment is shown in a BLAST-like format, augmented by secondary
 structure annotation. 
@@ -329,10 +331,10 @@ structure annotation.
 The top line shows the predicted secondary structure of the target
 sequence. The format is a little fancier and more informative than the
 simple least-common-denominator format we used in the input alignment
-file. It's designed to make it easier to ``see'' the secondary
-structure by eye. The format is described in detail later; for now,
-here's all you need to know. Base pairs in simple stem loops are
-annotated with \verb+<>+ characters. Base pairs enclosing
+file. It's designed to make it easier to see the
+secondary structure by eye. The format is described in detail later;
+for now, here's all you need to know. Base pairs in simple stem loops
+are annotated with \verb+<>+ characters. Base pairs enclosing
 multifurcations (multiple stem loops) are annotated with \verb+()+,
 such as the tRNA acceptor stem in this example. In more complicated
 structures, \verb+[]+ and \verb+{}+ annotations also show up, to
@@ -452,7 +454,6 @@ The {\small\verb+#=GC RF+} line is \emph{reference
 annotation}. Non-gap characters in this line mark consensus columns;
 \prog{cmalign} uses the residues of the consensus sequence here, with
 upper case denoting strongly conserved residues, and lower case
-
 denoting weakly conserved residues. Gap characters (specifically, the
 \verb+.+ pads) mark insertions relative to consensus. As described
 below, \prog{cmbuild} is capable of reading these RF lines, so you can
@@ -475,11 +476,11 @@ only part of the model to match a subsequence of the target. Local
 alignment is useful when a homologous RNA structure has undergone
 enough changes that parts of the its structure cannot be aligned to
 the full consensus model. Empirically, local alignment is often a more
-sensitive search strategy so by default 
-\prog{cmsearch} uses local alignment. Glocal mode can be turn on in
-\prog{cmsearch} using the \prog{-g} option. Conversely, \prog{cmalign} uses
-glocal alignment by default, the local alignment mode can be switched
-on using the the \prog{-l} option. 
+sensitive search strategy so by default \prog{cmsearch} uses local
+alignment. Glocal mode can be turn on in \prog{cmsearch} using the
+\prog{-g} option. Conversely, \prog{cmalign} uses glocal alignment by
+default, and the local alignment mode can be switched on using the the
+\prog{-l} option.
 
 First let's look at an example of local alignment in \prog{cmsearch}:
 
@@ -511,7 +512,7 @@ Look at the alignment for the target sequence tRNA8 (the last alignment in the o
 The \verb+*[15]*+ and \verb+*[5]*+ in the query and target,
 respectively, indicate that 15 consensus residues and 5 target
 residues were left unaligned; the target does not appear to have the
-consensus structure in this region. (No kidding, since I made the
+consensus structure in this region. (Not surprising, since I made the
 tRNA8 example sequence by deleting part of the anticodon stem.)  The
 structure annotation line is marked with \verb+~~~~~~+ to indicate the
 gap in the alignment, and to distinguish local alignment induced gaps
@@ -755,12 +756,12 @@ Here's an example of building five \prog{rsearch} CMs for tRNA:
 \begin{srefaq}{I used the \prog{cmbuild --rsearch} option and tested my
 results against the \software{rsearch} program, and the scores didn't
 match. Why?} \software{Infernal} can't build models quite exactly the
-  same as \software{RSEARCH} does. The main reason is because
-  \software uses probabilistic transition scores while
-  \software{rsearch} does not. This difference leads to large
-  differences in the bit scores from the programs, but the E-values of
-  those scores should be similar (see section 5 for more on bit scores
-  and E values)
+same as \software{RSEARCH} does. The main reason is because
+\software{Infernal} uses probabilistic transition scores while
+\software{rsearch} does not. This difference leads to large
+differences in the bit scores from the programs, but the E-values of
+those scores should be similar (see section 5 for more on bit scores
+and E-values.)
 \end{srefaq}
 
 \newpage
@@ -769,8 +770,8 @@ match. Why?} \software{Infernal} can't build models quite exactly the
 \subsubsection{including a fixed alignment within the output alignment}
 When aligning sequences to a model, \prog{cmalign} allows you to
 include the initial training alignment used to build the model within
-it's output alignment. This could be useful if you're updating
-the training alignment with new homologues, or just to easily see how
+its output alignment. This could be useful if you're updating
+the training alignment with new homologs, or just to easily see how
 new sequences align in the context of the original alignment. To
 turn on this behavior, use the \prog{--withali <f>} option to
 \prog{cmalign}, where \prog{<f>} is the existing fixed alignment to

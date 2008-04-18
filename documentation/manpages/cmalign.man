@@ -164,8 +164,9 @@ this may not be true in the future.
 .TP
 .BI --mpi
 Run as an MPI parallel program. This option will only be available if
-This option will only be available if @PACKAGE@ has been configured
-and built with the "--enable-mpi" flag (see User's Guide for details).
+@PACKAGE@ 
+has been configured and built with the "--enable-mpi" flag (see User's
+Guide for details).
 
 .SH EXPERT OPTIONS
 

@@ -1,9 +1,5 @@
 \section{How \texttt{cmsearch} scores alignments and determines significance}
 
-\emph{Note: Much of this section is very similar to an analagous
-section from the userguide of HMMER version 2
-(http://hmmer.janelia.org).}
-
 The \prog{cmsearch} program give you a ranked list of hits in a
 sequence database.  Which ones are likely to be true homologues and
 which ones are likely to be nonhomologous to your query CM?
@@ -22,8 +18,11 @@ false positives you would have expected to see at or above this bit
 score. Therefore a low E-value is best; an E-value of 0.1, for
 instance, means that there's only a 10\% chance that you would've seen
 a hit this good in a search of nonhomologous sequences. {\em
-Typically, I trust the results of searches at about E=0.1 and
-below, and I examine the hits manually down to E=10 or so.}
+Typically, I trust the results of searches at about E=0.1 and below,
+and I examine the hits manually down to E=10 or so.}  However, be
+alert; \software{Infernal} E-values are most accurate for sequences of
+``normal'' residue composition, and on highly biased (AT- or GC-rich)
+sequence they can be rather inaccurate.
 
 \item \software{Infernal} bit scores are a stricter criterion: they
   reflect whether the sequence is a better match to the profile model
@@ -42,7 +41,9 @@ below, and I examine the hits manually down to E=10 or so.}
   good bit scores -- possibly even negative), but which nonetheless
   have significant E-values, indicating that the bit score, though
   ``bad'', is still better than you would've expected by chance, so it
-  is suggestive of homology.
+  is suggestive of homology. However, as above, be alert; it is
+  possible to get artifactually high bit scores simply because of
+  highly biased residue composition.
 
 \item For Rfam CMs, you can also examine three other numbers that
 represent bit score thresholds: a TC (trusted cutoff) score, a GA
@@ -67,7 +68,7 @@ it is significantly related to the bacterial SRP family (also correct).
 \subsection{In more detail: \software{Infernal} bit scores}
 
 The bit score is a log-odds score in log base two (thus, in units of
-{\em bits}. Specifically, it is:
+{\em bits}). Specifically, it is:
 
 \[
 	S = \log_2 \frac {P( \mbox{seq} | \mbox{CM})} { P (\mbox{seq} |
@@ -385,7 +386,7 @@ three types of score cutoffs on Rfam CM files:
 \begin{wideitem}
 \item[GA (gathering cutoff)]: the score used as cutoff in
 constructing Rfam. All domains that are in a sequence satisfying the
-GA bit score will be included in the Pfam ``full alignment''.
+GA bit score will be included in the Rfam ``full alignment''.
 
 \item[TC (trusted cutoff)]: the scores of the lowest-scoring hit(s)
 that were included as true member(s) of the Rfam family. Hits above
@@ -412,7 +413,7 @@ documentation of Rfam construction. In general, the TC cutoff would
 be a extremely conservative cutoff to use in a database search, more
 conservative than GA. The NC cutoff is less conservative than GA.
 
-Why use GA (or the other cutoffs) instead of the E-value? Pfam
+Why use GA (or the other cutoffs) instead of the E-value? Rfam
 artificially imposes a ``flat'', nonhierarchical structure on RNA
 sequence space.  Rfam asserts that no Rfam family is related to any
 other Rfam family. This is obvious nonsense: many Rfam families are in
@@ -425,12 +426,11 @@ the same structural superfamily.
 
 \begin{srefaq}{Why isn't sequence X included in a Rfam full alignment?
 It has a significant score!} For the reasons above, the sequences in
-Rfam full alignments are harvested using curated GA
-thresholds, rather than using score or E-value
-thresholds. Please don't go writing a
+Rfam full alignments are harvested using curated GA thresholds, rather
+than using score or E-value thresholds. Please don't go writing a
 paper that claims CMs don't detect some similarity until you've done
-the experiment with CMs instead of just looking at curated Rfam
-classifications. 
+the experiment with CMs (and E-values) instead of just looking at
+curated Rfam classifications.
 \end{srefaq}
 
 The mechanism that \software{Infernal} uses to incorporate up these cutoffs is

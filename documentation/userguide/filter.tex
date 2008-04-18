@@ -2,13 +2,13 @@
 
 A major limitation to the practical use of CMs is the slow running
 time of homology search implementations. \prog{cmsearch} has two
-acceleration strategies for alleviating this limitation. In this
-section we'll briefly describe these two strategies and how they're
-employed within \prog{cmsearch}.
+acceleration strategies for alleviating this. In this section we'll
+briefly describe these two strategies and how they're employed within
+\prog{cmsearch}.
 
 The two acceleration strategies are both filtering approaches.  The
 main idea of filtering is to use a fast algorithm to do a first-pass
-scan of the database with a ``wide net'', allowing everything that
+scan of the database with a wide net, allowing everything that
 could possibly be a good hit to survive and eliminating everything
 that is very unlikely to be a good hit. After the filter is run, the
 expensive CM algorithms are run only on the surviving fraction of the
@@ -22,11 +22,11 @@ specific type of HMM architecture, essentially a reimplementation of
 Weinberg and Ruzzo's maximum-likelihood HMMs \cite{WeinbergRuzzo06},
 that we call CM plan 9 HMMs or CP9 HMMs (to distinguish them from the
 plan 7, or p7 HMMs of the \software{HMMER} software package
-http://hmmer.janelia.org). HMMs are unable to model the interactions
-between base-paired columns that a CM can model, which makes them less
-sensitive and specific for RNA sequence analysis, but in exchange they
-are more efficient to compute with, so they're faster than CMs and
-useful for filtering.
+\htmladdnormallink{http://hmmer.janelia.org}{http://hmmer.janelia.org}). HMMs
+are unable to model the interactions between base-paired columns that
+a CM can model, which makes them less sensitive and specific for RNA
+sequence analysis, but in exchange they are more efficient to compute
+with, so they're faster than CMs and useful for filtering.
 
 The second filtering approach is a banded dynamic programming
 technique called query-dependent banding (QDB). QDB precalculates
@@ -77,11 +77,11 @@ RNA homologs of the family we're modelling, then using an HMM filter
 and a cutoff of $x$ will allow 99\% of the real homologs to
 survive. Of course, this is a strong and potentially dangerous
 assumption to make, but it essentially underlies our entire modelling
-approach - we're just assuming our CM is a good 'model' of the family
+approach - we're just assuming our CM is a good model of the family
 we're trying to model!  In other words, if this assumption is wrong,
 we'll get poor performance for a variety of reasons, and an
 inappropriate filter threshold would be a relatively weak concern.  In
-the future, as CMs get 'better' due to better parameterization, etc.,
+the future, as CMs get better due to better parameterization, etc.,
 our assumption will become more true, and this filtering strategy will
 improve as well. 
 
@@ -92,7 +92,7 @@ purposes of \prog{cmcalibrate}, the other is fitting exponential tails
 for E-value calculation as described in section 5).
 
 \subsubsection{how \prog{cmsearch} sets filter thresholds}
-When \prog{cmsearch} sets it's thresholds for each round of the
+When \prog{cmsearch} sets its thresholds for each round of the
 search, it first sets the final round threshold. This is because the
 determination of the filter thresholds depends heavily on the final
 threshold. By default, the final round threshold used for calibrated
@@ -149,8 +149,8 @@ However, condition 2 states that we're also always willing to perform
 at least $3\%$ of our overall number of DP calculations in the final
 round. The number of DP calculations in the final round can be
 predicted based on the size of the model and on the QDB E-value
-cutoff. So given the E-value $x$ that satisifes condition 1, we can
-predict the fraction $f(x)$ of the total number of DP calcs that will
+cutoff. So given the E-value $x$ that satisfies condition 1, we can
+predict the fraction $f(x)$ of the total number of DP calculations that will
 occur in the final round. If $f(x)$ is \emph{less} than $0.03$ we can
 raise our QDB E-value cutoff to the value $y$ that satisfies $f(y) = 0.03$, and
 still meet both of our conditions. In raising the E-value cutoff to
@@ -638,7 +638,7 @@ example of default search with a non-calibrated version of the tRNA model
 from the tutorial. We'll assume here that you've gone through tutorial
 section of the guide and the examples earlier in this section (if not,
 this part may not make sense).  First, build a model from the
-\prog{tRNA.5.sto} stockholm file (from the \prog{/tutorial/}
+\prog{tRNA.5.sto} Stockholm file (from the \prog{/tutorial/}
 subdirectory of \software{Infernal}). We'll use the \prog{-F} option
 which allows us to overwrite the file \prog{my.cm} if it exists.
 
