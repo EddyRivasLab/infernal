@@ -34,7 +34,7 @@
 1  exercise  cmscore/local/trna1  @cmscore@ -l --infile trna-regression.fa %TRNA1.CM% 
 1  exercise  cmscore/local/trna2  @cmscore@ -l --infile trna-regression.fa %TRNA2.CM%
 
-2  prep      rand50               @shuffle@ -i -n 50 -t 90 --dna --seed 42 -o %RAND50%
+2  prep      rand50               @esl-shuffle@ -G -N 50 -L 90 --dna --seed 42 -o %RAND50%
 2  exercise  trna1/rand50         @cmscore@ --infile %RAND50% %TRNA1.CM% 
 2  exercise  trna2/rand50         @cmscore@ --infile %RAND50% %TRNA2.CM%
 2  exercise  trna1/rand50/qdb     @cmscore@ --infile %RAND50% --qdb %TRNA1.CM% 
@@ -56,7 +56,7 @@
 2  exercise  srp/ffs/local        @cmscore@ --infile ffs-ecoli.fa --qdb -l %SRP.CM% 
 2  exercise  srp/ffs/local/qdb    @cmscore@ --infile ffs-ecoli.fa --qdb -l %SRP.CM%
 
-3  prep      rand20               @shuffle@ -i -n 20 -t 100 --dna --seed 42 -o %RAND20%
+3  prep      rand20               @esl-shuffle@ -G -N 20 -L 100 --dna --seed 42 -o %RAND20%
 3  exercise  rnaseP/rand          @cmscore@ --infile %RAND20% %RNASEP.CM% 
 3  exercise  rnaseP/rand/qdb      @cmscore@ --infile %RAND20% --qdb %RNASEP.CM% 
 3  exercise  rnaseP/rand/local    @cmscore@ --infile %RAND20% -l %RNASEP.CM% 

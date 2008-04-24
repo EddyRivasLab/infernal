@@ -26,6 +26,8 @@
 #include "easel.h"
 #include "esl_gumbel.h"
 #include "esl_msa.h"         
+#include "esl_random.h"         
+#include "esl_randomseq.h"         
 #include "esl_stack.h"
 #include "esl_stopwatch.h"   
 
@@ -398,7 +400,7 @@ seqs_to_aln_t *CMEmitSeqsToAln(ESL_RANDOMNESS *r, CM_t *cm, int ncm, int nseq, i
 	if(padL > 0) { 
 	  ESL_ALLOC(randdsq, sizeof(ESL_DSQ)* (padL+2));
 	  ESL_ALLOC(newdsq,  sizeof(ESL_DSQ)* (L+padL+2));
-	  if (esl_rnd_xIID(r, pdist, cm->abc->K, padL, randdsq)   != eslOK) cm_Fail("CMEmitSeqsToAln(): failure creating random sequence.");
+	  if (esl_rsq_xIID(r, pdist, cm->abc->K, padL, randdsq)   != eslOK) cm_Fail("CMEmitSeqsToAln(): failure creating random sequence.");
 	  for(n = 0; n <= half_padL; n++) { 
 	    np = n;
 	    newdsq[np] = randdsq[n];
@@ -475,7 +477,7 @@ seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, d
       sprintf(name, "randseq-%d-%d", extranum, i+1);
       L = esl_rnd_DChoose(r, L_distro, Lmax+1);
       ESL_ALLOC(randdsq, sizeof(ESL_DSQ)* (L+2));
-      if (esl_rnd_xIID(r, pdist, abc->K, L, randdsq)  != eslOK) cm_Fail("RandomEmitSeqsToAln(): failure creating random sequence.");
+      if (esl_rsq_xIID(r, pdist, abc->K, L, randdsq)  != eslOK) cm_Fail("RandomEmitSeqsToAln(): failure creating random sequence.");
       if((seqs_to_aln->sq[i] = esl_sq_CreateDigitalFrom(abc, name, randdsq, L, NULL, NULL, NULL)) == NULL) 
 	 cm_Fail("RandomEmitSeqsToAln() error.");
       free(randdsq);

@@ -38,6 +38,7 @@
 #include "esl_histogram.h"
 #include "esl_mpi.h"
 #include "esl_random.h"
+#include "esl_randomseq.h"
 #include "esl_ratematrix.h"
 #include "esl_stack.h"
 #include "esl_stopwatch.h"
@@ -960,7 +961,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
   for (wi = 0; wi < cfg->nproc; wi++) {
     si_wlist[wi] = seqpos_wlist[wi] = len_wlist[wi] = -1;
-    seed_wlist[wi] = esl_rnd_Choose(cfg->r, 1000000000); /* not sure what to use as max for seed */
+    seed_wlist[wi] = esl_rnd_Roll(cfg->r, 1000000000); /* not sure what to use as max for seed */
     ESL_DPRINTF1(("wi %d seed: %ld\n", wi, seed_wlist[wi]));
   }
   
@@ -1921,7 +1922,7 @@ get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, double *dnull, i
   }
   /* generate sequence */
   ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
-  if ((status = esl_rnd_xIID(cfg->r, distro, cm->abc->K, L, dsq) != eslOK)) return status;
+  if ((status = esl_rsq_xIID(cfg->r, distro, cm->abc->K, L, dsq) != eslOK)) return status;
 
   if (do_free_distro) free(distro);
   *ret_dsq = dsq;

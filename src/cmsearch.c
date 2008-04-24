@@ -28,6 +28,8 @@
 #include "esl_getopts.h"
 #include "esl_mpi.h"
 #include "esl_msa.h"
+#include "esl_random.h"
+#include "esl_randomseq.h"
 #include "esl_sqio.h"
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
@@ -2314,7 +2316,7 @@ int estimate_search_time_for_round(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   cm->search_opts = search_opts; /* we'll restore cm->search_opts to orig_search_opts at end of the function */
 
   ESL_ALLOC(dsq,  sizeof(ESL_DSQ) * (L +2));
-  esl_rnd_xfIID(r, cm->null, cm->abc->K, L, dsq);
+  esl_rsq_xfIID(r, cm->null, cm->abc->K, L, dsq);
 
   esl_stopwatch_Start(w);
   if(stype == SEARCH_WITH_CM) { 

@@ -20,14 +20,15 @@
 #include <time.h>
 
 #include "easel.h"
-#include <esl_getopts.h>
-#include <esl_histogram.h>
-#include <esl_random.h>
-#include <esl_sqio.h>
-#include <esl_stats.h>
-#include <esl_stopwatch.h>
-#include <esl_vectorops.h>
-#include <esl_wuss.h>
+#include "esl_getopts.h"
+#include "esl_histogram.h"
+#include "esl_random.h"
+#include "esl_randomseq.h"
+#include "esl_sqio.h"
+#include "esl_stats.h"
+#include "esl_stopwatch.h"
+#include "esl_vectorops.h"
+#include "esl_wuss.h"
 
 #include "funcs.h"		/* function declarations                */
 #include "structs.h"		/* data structures, macros, #define's   */
@@ -542,8 +543,8 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   if(L_cm < cm->W) { L_cm = cm->W; fprintf(stdout, "\tL increased to minimum size of cm->W (%d)\n", L_cm); }
   ESL_ALLOC(dsq_cm,  sizeof(ESL_DSQ) * (L_cm +2));
   ESL_ALLOC(dsq_cp9, sizeof(ESL_DSQ) * (L_cp9+2));
-  esl_rnd_xfIID(r, cm->null, cm->abc->K, L_cm,  dsq_cm);
-  esl_rnd_xfIID(r, cm->null, cm->abc->K, L_cp9, dsq_cp9);
+  esl_rsq_xfIID(r, cm->null, cm->abc->K, L_cm,  dsq_cm);
+  esl_rsq_xfIID(r, cm->null, cm->abc->K, L_cp9, dsq_cp9);
 
   /* estimate speedup due to QDB */
   dpc    = CountScanDPCalcs(cm, L_cm, FALSE) / 1000000.;

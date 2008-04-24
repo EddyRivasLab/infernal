@@ -2628,14 +2628,15 @@ cp9_CheckTransitionGuarantees(CP9_t *cp9, char *errbuf)
 #include <time.h>
 
 #include "easel.h"
-#include <esl_getopts.h>
-#include <esl_histogram.h>
-#include <esl_random.h>
-#include <esl_sqio.h>
-#include <esl_stats.h>
-#include <esl_stopwatch.h>
-#include <esl_vectorops.h>
-#include <esl_wuss.h>
+#include "esl_getopts.h"
+#include "esl_histogram.h"
+#include "esl_random.h"
+#include "esl_randomseq.h"
+#include "esl_sqio.h"
+#include "esl_stats.h"
+#include "esl_stopwatch.h"
+#include "esl_vectorops.h"
+#include "esl_wuss.h"
 
 #include "funcs.h"		/* function declarations                */
 #include "old_funcs.h"		/* function declarations for 0.81 versions */
@@ -2713,7 +2714,7 @@ main(int argc, char **argv)
 
   for (i = 0; i < N; i++)
     {
-      esl_rnd_xfIID(r, cm->null, abc->K, L, dsq);
+      esl_rsq_xfIID(r, cm->null, abc->K, L, dsq);
 
       esl_stopwatch_Start(w);
       if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,

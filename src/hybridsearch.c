@@ -1491,14 +1491,15 @@ cm_CheckCompatibleWithHybridScanInfo(CM_t *cm, HybridScanInfo_t *hsi, int v_root
 #include <time.h>
 
 #include "easel.h"
-#include <esl_getopts.h>
-#include <esl_histogram.h>
-#include <esl_random.h>
-#include <esl_sqio.h>
-#include <esl_stats.h>
-#include <esl_stopwatch.h>
-#include <esl_vectorops.h>
-#include <esl_wuss.h>
+#include "esl_getopts.h"
+#include "esl_histogram.h"
+#include "esl_random.h"
+#include "esl_randomseq.h"
+#include "esl_sqio.h"
+#include "esl_stats.h"
+#include "esl_stopwatch.h"
+#include "esl_vectorops.h"
+#include "esl_wuss.h"
 
 #include "funcs.h"		/* function declarations                */
 #include "structs.h"		/* data structures, macros, #define's   */
@@ -1578,7 +1579,7 @@ main(int argc, char **argv)
 
 
   for (i = 0; i < N; i++) {
-    esl_rnd_xfIID(r, cm->null, abc->K, L, dsq);
+    esl_rsq_xfIID(r, cm->null, abc->K, L, dsq);
     
     esl_stopwatch_Start(w);
     if((status = cm_cp9_HybridScan(cm, errbuf, cm->cp9_mx, dsq, hsi, 1, L, hsi->W, 0., 

@@ -244,8 +244,8 @@ main(int argc, char **argv)
     for(i = 0; i < nmodels; i++) { /* if begin_set && end_set, nmodels is 1 */
       if(!(begin_set && end_set)) {
 	/* Randomly pick a start and end between 1 and cm->clen, inclusive */
-	sstruct = esl_rnd_Choose(r, (cm->clen)) + 1;
-	estruct = esl_rnd_Choose(r, (cm->clen)) + 1;
+	sstruct = esl_rnd_Roll(r, (cm->clen)) + 1;
+	estruct = esl_rnd_Roll(r, (cm->clen)) + 1;
 	ESL_DASSERT1((sstruct <= cm->clen));
 	ESL_DASSERT1((estruct <= cm->clen));
 	ESL_DASSERT1((sstruct >= 1));

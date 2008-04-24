@@ -18,6 +18,8 @@
 
 #include "easel.h"
 #include "esl_alphabet.h"
+#include "esl_random.h"
+#include "esl_randomseq.h"
 #include "esl_vectorops.h"
 
 #include "funcs.h"
@@ -292,11 +294,11 @@ revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq)
   if(sq->dsq != NULL) do_digital = TRUE;
 
   if(do_digital) {
-    if((status = esl_rnd_XReverse(sq->dsq, sq->n, comp->dsq)) != eslOK) 
+    if((status = esl_rsq_XReverse(sq->dsq, sq->n, comp->dsq)) != eslOK) 
       goto ERROR; 
   }
   else {
-    if((status = esl_rnd_CReverse(sq->seq, comp->seq) != eslOK))
+    if((status = esl_rsq_CReverse(sq->seq, comp->seq) != eslOK))
       goto ERROR; 
   } 
 

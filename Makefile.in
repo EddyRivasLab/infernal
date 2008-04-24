@@ -180,7 +180,7 @@ dist:
 # runs a lot). 
 #
 check:
-	(cd testsuite; ./sqc -p ../easel 4 exercises.sqc . ../src)
+	(cd testsuite; ./sqc -p ../easel/miniapps 4 exercises.sqc . ../src)
 
 # "make install" installs the programs in BINDIR
 #
