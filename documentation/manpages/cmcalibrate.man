@@ -1,27 +1,26 @@
-.TH "cmsearch" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
+.TH "cmcalibrate" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
 
 .SH NAME
 .TP 
-cmsearch - search a sequence database for RNAs homologous to a CM
+cmcalibrate - fit exponential tails for E-values and determine HMM
+	      filter thresholds for a CM
 
 .SH SYNOPSIS
-.B cmsearch
+.B cmcalibrate
 .I [options]
 .I cmfile
-.I seqfile
 
 .SH DESCRIPTION
 
-.B cmsearch
-uses the
-covariance model (CM) in
+.B cmcalibrate
+calibrates E-value statistics and HMM filter thresholds for the 
+covariance models (CMs) in
+.I cmfile. 
+The E-values and HMM filter threshold statistics are added to the 
 .I cmfile
-to search for homologous RNAs in
-.I seqfile,
-and outputs high-scoring alignments.
-
-.PP
-Currently, the sequence file must be in FASTA format.
+and are used by
+.B cmsearch
+for increased sensitivity and acceleration in RNA homology search.
 
 .PP
 CM files are profiles of RNA consensus secondary structure. A
@@ -29,156 +28,82 @@ CM file is produced by the
 .B cmbuild 
 program, from a given RNA sequence alignment of known 
 consensus structure.
-CM files can be calibrated prior to running
-.B cmsearch
-with the 
-.B cmcalibrate 
-program. Searches with calibrated CM files will include
-E-values and will use appropriate filter thresholds for
-faster speed. This is described in more detail below
-and in chapters 5 and 6 of the User Guide.
 
-.PP
-.B cmsearch
-output consists of alignments of all hits in the database 
-sorted by decreasing score per sequence
-and per strand. That is, all hits for the same sequence and the same
-(Watson or Crick) strand are sorted, but hits across sequences or
-strands are not sorted.  
-
-.PP
-The threshold for reporting scores is different depending on whether
-the CM file has been calibrated or not. 
-If the CM file has been calibrated, the default reporting threshold is
-an E-value of 0.1. This is the threshold at which 0.1 hits are
-expected by chance. It is possible to manually set the threshold to
-bit score 
-.I <x>
-using the 
-.BI -T " <x>"
-option as described below, or to E-value 
-.I <x>
-using the 
-.BI -E " <x>" 
-option. The 
-.B -E 
-option will only work if the CM file has been calibrated.
-
-.PP
-RNA homology search with CMs is slow. 
-To speed it up, 
-.B cmsearch 
-by default uses two rounds of filters with faster algorithms to prune the
-database prior to searching with the slow CM algorithm. 
-The first round of filtering is faster but less strict
-than the second round. First, the full database is searched with the
-first round filter, then any hits that survive the first round 
-are searched with the second round
-filter. Finally any hits that survive the first and second round of
-filtering are searched with the final round search strategy.
-During the filter rounds, hits are padded with a short stretch of
-residues on either side prior to searching with the subsequent round. 
-The exact number of residues is dependent on the size of the model
-being searched with.
-
-The first round of filtering is performed with an HMM. If the CM file
-is calibrated the threshold for the HMM filter will be automatically
-chosen as an appropriate one as determined in 
-.B cmcalibrate.
-If the model is not calibrated, the default HMM filter threshold is
-3.0 bits.
-The HMM filter threshold can be manually set to bit score
-.I <x>
-using the 
-.BI --fil-T-hmm " <x>"
-option as described below, or to E-value 
-.I <x>
-using the 
-.BI --fil-E-hmm " <x>" 
-option. The 
-.B --fil-E-hmm
-option will only work if the CM file has been calibrated.
-The HMM filter can be turned off with the 
-.B --fil-no-hmm 
-option.
-
-The second round of filtering is performed with the CM (not an HMM) using
-query-dependent banding (QDB) for acceleration. 
-Briefly, QDB precalculates regions of the dynamic
-programming matrix that have negligible probability based on the query
-CM's transition probabilities. 
-During search, these regions of the
-matrix are ignored to make searches faster. 
-For more information on QDB see 
-(Nawrocki and Eddy, PLoS Computational Biology 3(3): e56). 
-The beta paramater is the amount of
-probability mass considered negligible during band calculation, lower
-values of beta yield greater speedups but also a greater chance of missing
-the optimal alignment. The default beta is 1E-7: determined
-empirically as a good tradeoff between sensitivity and speed, though
-this value can be changed with the
-.BI --fil-beta " <x>" 
-option. 
-If the CM file has been calibrated, the QDB filter threshold will be
-automatic set to an appropriate value using an ad-hoc procedure (see
-the User Guide). If the CM file has not been calibrated, the default
-QDB filter threshold is 0.0 bits.
-The QDB filter threshold can be manually set to bit score
-.I <x>
-using the 
-.BI --fil-T-qdb " <x>"
-option as described below, or to E-value 
-.I <x>
-using the 
-.BI --fil-E-qdb " <x>" 
-option. The 
-.B --fil-E-qdb
-option will only work if the CM file has been calibrated.
-The QDB filter can be turned off with the 
-.B --fil-no-qdb
-option.
-
-Another way to accelerate 
-.B cmsearch
-is to run it in parallel with MPI on multiple computers. 
-To do this, use the 
+.B cmcalibrate
+is very slow. It often takes hours, or tens of hours to calibrate a
+single average sized CM. 
+.B cmcalibrate
+can be run in parallel with MPI.
+To do this, use the
 .B --mpi 
-option and run 
-.B cmsearch 
-inside a MPI wrapper program such as 
+option and run cmsearch inside a MPI wrapper program such as 
 .B mpirun. 
 For example: 
 .B mpirun C
-.B cmsearch
+.B cmcalibrate
 .I --mpi 
 .I [other options]
 .I cmfile
-.I seqfile
 
 The 
-.BI --forecast " <n>"
-option will estimate how long a search will take for your 
-.I cmfile 
-and 
-.I seqfile 
+.BI --forecast " <n>" 
+option can be used to estimate how long the program will take to run
 on 
 .I <n>
 processors. Unless you plan on running
-.B cmsearch 
+.B cmcalibrate
 in MPI mode, 
 .I <n>
  should be set as 1.
 
 .PP
-Another technique for accelerated CM homology search with HMM filters 
-is the construction and use of a "rigorous filter" HMM which was
-developed by Zasha Weinberg and Larry Ruzzo. All hits above
-a certain CM bit score threshold are
-guaranteed to survive the HMM filtering step. Their implementation of
-rigorous filters has been included with @PACKAGE@ but is not available
-as an option to
+.B cmcalibrate
+performs two main tasks. The first is to calibrate E-value
+statistics.  This is done by generating random
+sequences and searching them with the CM and collecting hits. The histogram of the bit
+scores of the hits is fit to an exponential tail, and the parameters
+of the fitted tail are saved to the CM file. The exponential tail is
+used to predict the expected number of hits (E-values) at a given bit score in 
 .B cmsearch.
-For more information see the User's Guide. 
+The second task is to determine appropriate HMM filter
+thresholds for the CM over the possible range of final CM bit score
+thresholds. This is done by sampling 10,000 sequences from the CM
+itself and searching them with the CM and HMM. The appropriate HMM bit
+score threshold for a given CM threshold is set as the HMM threshold that
+will recognize 99% of the hits that score above the CM threshold. This
+HMM threshold is calculated over the range of reasonable CM
+thresholds. 
+
+Both tasks must be performed for each configuration and
+algorithm that 
+.B cmsearch 
+might use. These include HMM Viterbi, HMM Forward, CM CYK and CM
+Inside algorithms for E-value calibration, and CM CYK and CM Inside
+algorithms for HMM filter thresholds. Additionally, for each
+algorithm, each task must be performed twice, once for a locally
+configured model and once for a globally configured model.
+
+The E-values and HMM filter thresholds determined by 
+.B cmcalibrate
+are only used by the
+.B cmsearch 
+program.
+If you are not going to use 
+.B cmsearch,
+do not waste time calibrating your models.
+
+The majority of the options to 
+.B cmcalibrate
+fall into one of two categories, depending on which of the two main
+tasks they're associated with. Options that affect the
+exponential tail E-value fitting are prefixed with 
+.B --exp.
+Options that affect the HMM filter threshold determination are
+prefixed with 
+.B --fil.
+
+ADD SOMETHING HERE ABOUT THE WAY CMCALIBRATE DETERMINES THE LENGTH OF
+RANDOM SEQUENCE FOR CM AND HMMS.
 
 .SH OPTIONS
 
@@ -188,14 +113,146 @@ Print brief help; includes version number and summary of
 all options, including expert options.
 
 .TP
-.BI -o " <f>"
-Save the high-scoring alignments of hits to a file
-.I <f>.
-The default is to write them to standard output.
+.BI -s " <n>"
+Set the random number generator seed to 
+.I <n>, 
+where 
+.I <n> 
+is a positive integer. 
+The default is to use time() to
+generate a different seed for each run, which means that two different
+runs of 
+.B cmcalibrate
+on the same CM will give slightly different
+E-value and HMM filter threshold parameters. You can use this option
+to generate reproducible results.
+
 
 .TP
-.BI -g " <f>"
-Turn on the 'glocal' alignment algorithm, local with respect to the
+.BI --forecast " <n>"
+Predict the running time of the calibration for 
+.I cmfile 
+and provided options
+and exit, DO NOT perform the calibration. 
+The predictions should be used as rough
+estimates. The value 
+.I <n>
+is the number of processors the calibration will be run on, so 
+.I <n>
+equal to 1 is appropriate unless you will run 
+.B cmcalibrate
+in parallel with MPI.
+
+.SH EXPERT OPTIONS
+
+.TP
+.BI --exp-T " <x>"
+Set the bit score cutoff for collecting hits for exponential tail
+fitting to 
+.I <x>.
+By default, the cutoff is negative infinity, so all non-overlapping
+hits are collected. Only use this option if you really know what
+you're doing.
+
+.TP
+.BI --exp-cmL " <x>"
+Set the length of random sequence to search for the CM exponential
+tail fits to 
+.I <x> 
+megabases (Mb). By default, 
+.I <x> is
+1 Mb. Searching more sequences will make the exponential tail fits
+more precise, but will take longer: using 
+.I <x> 
+of 2 instead of the default of 1 will cause the running time of
+.B cmcalibrate 
+to roughly double.
+
+.TP
+.BI --exp-fract " <x>"
+Set the HMM/CM fraction of dynamic programming calculations to 
+.I <x>.
+By default, 
+.I <x>
+is 0.10. 
+Fitting exponential tails for the HMM search algorithms is much
+quicker than for the CM search algorithms so it is possible to search
+longer sequences when fitting the HMM algorithms without significantly
+increasing the overall running time of 
+.B cmcalibrate.
+Searching longer sequences for exponential tail fitting leads to more
+accurate fits. 
+By default, the length of sequence searched for HMM
+algorithms is set as the length that would require 1/10 = 0.10 the number of
+dynamic programming calculations for the HMM relative to the CM.
+This means the HMM tail fit should take roughly 10\% the time that
+the CM tail fit would take. The 
+.B --exp-fract " <x>" 
+option allows the user to change this value to 
+.I <x>.
+
+.TP
+.BI --exp-hmmLn " <x>"
+Set the minimum random sequence length to search when determining HMM
+E-values to 
+.I <x>
+megabases (Mb). By default, 
+.I <x>
+is 10.0.
+
+.TP
+.BI --exp-hmmLx " <x>"
+Set the maximum random sequence length to search when determining HMM
+E-values to  
+.I <x>
+megabases (Mb). By default, 
+.I <x>
+is 1000.0.
+
+.TP
+.BI --exp-hmmLx " <x>"
+Set the maximum random sequence length to search when determining HMM
+E-values to  
+.I <x>
+megabases (Mb). By default, 
+.I <x>
+is 1000.0.
+
+HERE HERE 
+
+
+
+Fitting exponential tails for the HMM search algorithms is much
+quicker than for the CM search algorithms so it is possible to search
+longer sequences when fitting the HMM algorithms without significantly
+increasing the overall running time of 
+.B cmcalibrate.
+Searching longer sequences for exponential tail fitting leads to more
+accurate fits. 
+By default, the length of sequence searched for HMM
+algorithms is set as the length that would require 1/10 = 0.10 the number of
+dynamic programming calculations for the HMM relative to the CM.
+This means the HMM tail fit should take roughly 10\% the time that
+the CM tail fit would take. The 
+.B --exp-fract " <x>" 
+option allows the user to change this value to 
+.I <x>.
+
+
+
+1 Mb. Searching more sequences will make the exponential tail fits
+more precise, but will take longer: using 
+.I <x> 
+of 2 instead of the default of 1 will cause the running time of
+.B cmcalibrate 
+to roughly double.
+
+.I <x>.
+By default, the cutoff is negative infinity, so all non-overlapping
+hits are collected. Only use this option if you really know what
+you're doing.
+
+
 target database, and global with respect to the model. By default, 
 the local alignment algorithm is used which is local with respect to
 both the target sequence and the model. In local mode, the alignment
@@ -223,7 +280,7 @@ of @PACKAGE@.
 .I <s>
 is case-insensitive.
 This option is a bit forward-looking;
-.B cmsearch 
+.B cmcalibrate 
 currently only accepts FASTA format, but
 this may not be true in the future.
 
@@ -257,7 +314,7 @@ target databases (for example 80% AT genomes). The value for
 is the number of processors the search will be run on, so 
 .I <n>
 equal to 1 is appropriate unless you will run 
-.B cmsearch
+.B cmcalibrate
 in parallel with MPI.
 
 .SH EXPERT OPTIONS
@@ -321,13 +378,13 @@ alignment provided to
 then the 
 .B --nc
 option will be available in 
-.B cmsearch.
+.B cmcalibrate.
 If no such line existed when
 .B cmbuild
 was run, then using the
 .B --nc 
 option to 
-.B cmsearch
+.B cmcalibrate
 will cause the program to print an error message and exit.
 
 .TP 
@@ -520,7 +577,7 @@ Create a new output file
 and print tabular results to it.
 The format of the tabular results is given in the User Guide.
 The tabular results can be more easily parsed than the default
-.B cmsearch 
+.B cmcalibrate 
 output. 
 
 .TP 
