@@ -249,8 +249,8 @@ int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *re
   int               gc;
   int               all_ambig_flag; /* used to check if curr DB chunk is all ambiguous characters 
 				     * usually Ns, if it is, we don't count it towards the GC content info */
-  if (abc       == NULL) ESL_FAIL(status, errbuf, "GetDBInfo(), abc is NULL\n");
-  if (ret_gc_ct == NULL) ESL_FAIL(status, errbuf, "GetDBInfo(), ret_gc_ct is NULL\n");
+  if (abc       == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "GetDBInfo(), abc is NULL\n");
+  if (ret_gc_ct == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "GetDBInfo(), ret_gc_ct is NULL\n");
 
   ESL_ALLOC(gc_ct, sizeof(double) * GC_SEGMENTS);
   for (i=0; i<GC_SEGMENTS; i++) gc_ct[i] = 0.;
@@ -259,33 +259,31 @@ int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *re
   while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) { 
       N += sq->n;
       /*printf("new N: %d\n", N);*/
-      if(ret_gc_ct != NULL) { 
-	for(i = 1; i <= sq->n; i += 100) {
-	  j = (i+99 <= sq->n) ? i+99 : sq->n;
-	  gc = get_gc_comp(abc, sq->dsq, i, j);
-	  all_ambig_flag = TRUE;
-	  for(jp = 0; jp < 100 && (jp+i) < sq->n; jp++) {
-	    if(sq->dsq[i+jp] < abc->K) {
-	      all_ambig_flag = FALSE; 
-	      break; 
-	    }
-	  }
-	  /*printf("N: %d i: %d gc: %d\n", N, i, gc);*/
-	  /* scale gc for chunks < 100 nt */
-	  if(j < 100) gc *= 100. / (float) j;
-	  /* don't count GC content of chunks < 20 nt, very hacky;
-	   * don't count GC content of chunks that are all N, this
-	   * will be common in RepeatMasked genomes where poly-Ns could
-	   * skew the base composition stats of the genome */
-	  if(j > 20 && !all_ambig_flag)
-	    {
-	      /*printf("j: %d i: %d adding 1 to gc_ct[%d]\n", j, i, ((int) gc));*/
-	      gc_ct[(int) gc] += 1.;
+      for(i = 1; i <= sq->n; i += 100) {
+	j = (i+99 <= sq->n) ? i+99 : sq->n;
+	gc = get_gc_comp(abc, sq->dsq, i, j);
+	all_ambig_flag = TRUE;
+	for(jp = 0; jp < 100 && (jp+i) < sq->n; jp++) {
+	  if(sq->dsq[i+jp] < abc->K) {
+	    all_ambig_flag = FALSE; 
+	    break; 
 	    }
 	}
+	/*printf("N: %d i: %d gc: %d\n", N, i, gc);*/
+	/* scale gc for chunks < 100 nt */
+	if(j < 100) gc *= 100. / (float) j;
+	/* don't count GC content of chunks < 20 nt, very hacky;
+	 * don't count GC content of chunks that are all N, this
+	 * will be common in RepeatMasked genomes where poly-Ns could
+	 * skew the base composition stats of the genome */
+	if(j > 20 && !all_ambig_flag)
+	  {
+	    /*printf("j: %d i: %d adding 1 to gc_ct[%d]\n", j, i, ((int) gc));*/
+	    gc_ct[(int) gc] += 1.;
+	  }
       }
       esl_sq_Reuse(sq); 
-    } 
+  } 
   if (status != eslEOF) ESL_FAIL(status, errbuf, "Parse failed, line %d, file %s:\n%s", sqfp->linenumber, sqfp->filename, sqfp->errbuf); 
   esl_sq_Destroy(sq); 
   esl_sqio_Rewind(sqfp);

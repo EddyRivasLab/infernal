@@ -256,7 +256,7 @@ extern int          InsertTraceNode(Parsetree_t *tr, int y, int whichway,
 extern int          InsertTraceNodewithMode(Parsetree_t *tr, int y, int whichway, 
 				    int emitl, int emitr, int state, int mode);
 extern void         ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt);
-extern float        ParsetreeScore(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2);
+extern int          ParsetreeScore(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2, float *ret_sc, float *ret_struct_sc);
 extern void         PrintParsetree(FILE *fp, Parsetree_t *tr);
 extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax);
 extern int          ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);
@@ -269,7 +269,7 @@ extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **r
 extern void         rightjustify(const ESL_ALPHABET *abc, char *s, int n);
 extern void         leftjustify(const ESL_ALPHABET *abc, char *s, int n);
 extern int          EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree_t **ret_tr, ESL_SQ **ret_sq, int *ret_N);
-extern float        ParsetreeScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq);
+extern int          ParsetreeScoreCorrection(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, float *ret_sc);
 
 /* from cm_qdband.c */
 extern void     BandExperiment(CM_t *cm);

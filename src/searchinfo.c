@@ -638,9 +638,11 @@ int CompareResultsByEndPoint (const void *a_void, const void *b_void) {
  */
 int UpdateHitScoresWithNull2(CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_SQ *sq, int do_remove_under_cutoff, char *errbuf)
 {
+  int status;
   int i, x;
   search_result_node_t swap;
   float cutoff = IMPOSSIBLE; /* the min score we want to keep */
+  float corr_sc;             /* score correction */
 
   /* Check contract */
   if(sq->dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2(), sequence is not digitized.\n");
@@ -655,7 +657,8 @@ int UpdateHitScoresWithNull2(CM_t *cm, SearchInfo_t *si, search_results_t *resul
 
   for (i=0; i<results->num_results; i++) {
     if(results->data[i].tr == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2(), parsetree for hit i: %d is NULL.\n", i);
-    results->data[i].score -= ParsetreeScoreCorrection(cm, results->data[i].tr, sq->dsq);
+    if((status = ParsetreeScoreCorrection(cm, errbuf, results->data[i].tr, sq->dsq, &corr_sc)) != eslOK) return status;
+    results->data[i].score -= corr_sc;
     if(do_remove_under_cutoff && results->data[i].score < cutoff) results->data[i].start = -1;
   }
 

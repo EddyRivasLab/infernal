@@ -720,7 +720,9 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
 
   /* determine scores of implicit parsetrees of input MSA seqs to initial CM */
   convert_parsetrees_to_unaln_coords(input_msa_tr, input_msa);
-  for(i = 0; i < nseq; i++) sc[i] = ParsetreeScore(init_cm, input_msa_tr[i], sq[i]->dsq, FALSE);
+  for(i = 0; i < nseq; i++) { 
+    if((status = ParsetreeScore(init_cm, errbuf, input_msa_tr[i], sq[i]->dsq, FALSE, &(sc[i]), NULL)) != eslOK) return status;
+  }
   oldscore = esl_vec_FSum(sc, nseq);
 
   /* print header for tabular output */
@@ -825,6 +827,7 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
 {
   int status;
   int i;
+  float sc, struct_sc;
 
   if(msaidx == 1 && cmidx == 1) print_column_headings(go, cfg);
 
@@ -835,7 +838,7 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   /* build the HMM, so we can print the CP9 relative entropy */
   if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslFAIL, errbuf, "Couldn't build a CP9 HMM from the CM.");
 
-  fprintf(stdout, "%6d %6d %-20.20s %8d %8.2f %6d %5d %6.2f %6.2f\n",
+  fprintf(stdout, "%6d %6d %-20.20s %8d %8.2f %6d %5d %6.3f %6.3f\n",
 	  msaidx,
 	  cmidx,
 	  cm->name, 
@@ -865,7 +868,10 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   if(cfg->tracefp != NULL) { 
     for (i = 0; i < msa->nseq; i++) { 
       fprintf(cfg->tracefp, "> %s\n", msa->sqname[i]);
-      fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], msa->ax[i], FALSE));
+
+      if((status = ParsetreeScore(cm, errbuf, tr[i], msa->ax[i], FALSE, &sc, &struct_sc)) != eslOK) return status;
+      fprintf(cfg->tracefp, "  %16s %.2f bits\n", "SCORE:", sc);
+      fprintf(cfg->tracefp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
       ParsetreeDump(cfg->tracefp, tr[i], cm, msa->ax[i], NULL, NULL); /* NULLs are dmin, dmax */
       fprintf(cfg->tracefp, "//\n");
     }

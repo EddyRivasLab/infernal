@@ -1302,6 +1302,7 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
   int          status;
   Parsetree_t *tr;
   float        sc;
+  float        ins_sc; /* inside score */
   int          do_post;
   char        *pcode1;
   char        *pcode2;
@@ -1319,7 +1320,7 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
 
   /* if doing post, fill Inside, Outside, Posterior matrices, in that order */
   if(do_post) { 
-    if((status = FastInsideAlignHB (cm, errbuf, dsq, i0, j0, size_limit, mx, NULL)) != eslOK) return status;
+    if((status = FastInsideAlignHB (cm, errbuf, dsq, i0, j0, size_limit, mx, &ins_sc)) != eslOK) return status;
     if((status = FastOutsideAlignHB(cm, errbuf, dsq, i0, j0, size_limit, post_mx, mx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), NULL)) != eslOK) return status;
     /* Note: we can only check the posteriors in FastOutsideAlignHB() if local begin/ends are off */
     if((status = CMPosteriorHB(cm, errbuf, i0, j0, size_limit, mx, post_mx, post_mx)) != eslOK) return status;   

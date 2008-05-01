@@ -243,23 +243,30 @@ ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt)
  * Date:     SRE, Wed Aug  2 13:54:07 2000 [St. Louis]
  *
  * Purpose:  Calculate the score of a given parse tree for a sequence,
- *           given a CM that's prepared in log-odds form.
+ *           given a CM that's prepared in log-odds form. Also calculate
+ *           the contribution of structure to that score, by subtracting
+ *           marginalized scores from the MP pair emission scores.
+ *
+ * Returns:  eslOK on success
+ *           eslEINCOMPAT on contract violation.
  */
-float
-ParsetreeScore(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2)
+int 
+ParsetreeScore(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2, float *ret_sc, float *ret_struct_sc)
 {
-  /* contract check */
-  if(dsq == NULL)
-    cm_Fail("ERROR in ParsetreeScore(), dsq is NULL.\n");
-
+  int status;                   /* Easel status code */
   int tidx;			/* counter through positions in the parsetree        */
   int v,y;			/* parent, child state index in CM                   */
   ESL_DSQ symi, symj;		/* symbol indices for emissions, 0..cm->abc->Kp-1    */
   float sc;			/* the log-odds score of the parse tree */
   int mode;
+  float struct_sc;              /* contribution of the structure to the score */
+
+  /* contract check */
+  if(dsq    == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "ParsetreeScore(): dsq == NULL.");
+  if(ret_sc == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "ParsetreeScore(): ret_sc == NULL.");
 
 		/* trivial preorder traverse, since we're already numbered that way */
-  sc = 0.;
+  sc = struct_sc = 0.;
   for (tidx = 0; tidx < tr->n; tidx++) {
     v = tr->state[tidx];        	/* index of parent state in CM */
     mode = tr->mode[tidx];
@@ -283,11 +290,17 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2)
 	    symj = dsq[tr->emitr[tidx]];
             if (mode == 3)
               {
-  	        if (symi < cm->abc->K && symj < cm->abc->K)
+  	        if (symi < cm->abc->K && symj < cm->abc->K) { 
 	          sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
-	        else
+		  struct_sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
+		}
+	        else { 
 	          sc += DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
-              }
+		  struct_sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
+		}
+		struct_sc -= LeftMarginalScore(cm->abc, cm->esc[v], symi);  /* subtract left  marginalized score */
+		struct_sc -= RightMarginalScore(cm->abc, cm->esc[v], symj); /* subtract right marginalized score */
+	      }
             else if (mode == 2)
               sc += LeftMarginalScore(cm->abc, cm->esc[v], symi);
             else if (mode == 1)
@@ -308,10 +321,17 @@ ParsetreeScore(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2)
       }
   }
 
-  if(do_null2)
-    sc -= ParsetreeScoreCorrection(cm, tr, dsq);
-
-  return sc;
+  if(do_null2) { 
+    float corr_sc;
+    if((status = ParsetreeScoreCorrection(cm, errbuf, tr, dsq, &corr_sc)) != eslOK) return status;
+    sc -= corr_sc;
+    /* don't subtract corr_sc from struct_sc, b/c we would have subtracted it from 
+     * both the marginalized and non-marginalized MP scores, thus it cancels out for struct_sc 
+     */
+  }
+  if(ret_sc != NULL)        *ret_sc        = sc;
+  if(ret_struct_sc != NULL) *ret_struct_sc = struct_sc;
+  return eslOK;
 }
 
 
@@ -1066,9 +1086,9 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_f
   float max_local_sc;           /* the best local parse score consistent with tr */
   float below_me_sc;            /* score of tr-consistent best local parse under v */
   float tmp_endsc;              /* score of jumping out of v to EL */
-  /* Contract check, CM must be LOCALLY configured, (could demand global, but
+  /* Contract check, CM must be LOCALLY configured, (could config to global, but
    * we assume we'll be calling this function serially for many parses and don't
-   * want to need to switch CM back and forth from local/global */
+   * want to need to switch CM back and forth from local/global) */
   if((!(cm->flags & CMH_LOCAL_BEGIN)) || (!(cm->flags & CMH_LOCAL_END)))
     cm_Fail("ERROR in ParsetreeScore_Global2Local() CM is not in local mode.\n");
   if(dsq == NULL)
@@ -1710,10 +1730,11 @@ EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digi
  *           The null model is constructed /post hoc/ as the
  *           average over all the emission distributions used by the trace.
  *           
- * Return:   the log_2-odds score correction.          
+ * Return:   ret_sc: the log_2-odds score correction.          
+ *           eslEINCOMPAT on contract violation
  */
-float
-ParsetreeScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq)
+int 
+ParsetreeScoreCorrection(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, float *ret_sc)
 {
   int status;
   float *p;		/* null2 model distribution */
@@ -1723,6 +1744,9 @@ ParsetreeScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq)
   int   i, j;           /* seq posn counter */
   int   tidx;
   float score;
+  float struct_score;   /* structure contribution to the score */
+
+  if(ret_sc == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ParsetreeScoreCorrection() ret_sc is NULL.");
 
   /* Rarely, the alignment was totally impossible, and tr is NULL.
    */
@@ -1759,7 +1783,7 @@ ParsetreeScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq)
 
   /* Score all the state emissions that appear in the trace.
    */
-  score = 0;
+  score = struct_score = 0;
   for (tidx = 0; tidx < tr->n; tidx++) {
     v = tr->state[tidx];        	/* index of parent state in CM */
     i = tr->emitl[tidx];
@@ -1781,10 +1805,12 @@ ParsetreeScoreCorrection(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq)
    ESL_DPRINTF1(("ParsetreeScoreCorrection return sc: %f\n", LogSum2(0., score)));
    free(sc);
    free(p);
-   return LogSum2(0., score);
+   score = LogSum2(0., score);
+   *ret_sc = score;
+   return eslOK;
 
  ERROR:
-   cm_Fail("ParsetreeScoreCorrection(): memory allocation error.");
+   ESL_FAIL(status, errbuf, "ParsetreeScoreCorrection(): memory allocation error.");
    return status; /* NEVERREACHED*/
 }
 

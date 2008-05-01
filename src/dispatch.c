@@ -316,6 +316,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   float         minsc;	        /* min score in all seqs */
   float         avgsc;      	/* avg score over all seqs */
   float         tmpsc;          /* temporary score */
+  float         struct_sc;      /* structure component of the score */
   char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
 
   /* variables related to CM Plan 9 HMMs */
@@ -537,7 +538,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
     /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
     if(sq_mode && do_hmmonly) {
-      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-30.30s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-30s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
       if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, L, 0., NULL,
 			       FALSE,  /* we are not scanning */
 			       TRUE,   /* we are aligning */
@@ -556,7 +557,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     /* Special case, if do_scoreonly, align seq with full CYK inside, just to 
      * get the score. For testing, probably in cmscore. */
     if(sq_mode && do_scoreonly) {
-      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-30.30s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-30s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
       sc = CYKInsideScore(cm, cur_dsq, L, 0, 1, L, NULL, NULL); /* don't do QDB mode */
       if(sq_mode && !silent_mode) fprintf(ofp, "  %13.2f  ", sc);
       parsesc[i] = sc;
@@ -641,7 +642,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     }
 
     if(sq_mode && !silent_mode) { 
-      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-30.30s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-30s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
     }
 
     /* beginning of large if() else if() else if() ... statement */
@@ -745,13 +746,16 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     if((cm->align_opts & CM_ALIGN_CHECKPARSESC) && (!(cm->flags & CM_IS_SUB))) { 
       if(do_optacc) 
 	ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), cm->align_opts CM_ALIGN_CHECKPARSESC, is on, but incompatible with another enabled option: CM_ALIGN_OPTACC.\n");
-      if (fabs(sc - ParsetreeScore(cm, tr[i], cur_dsq, FALSE)) >= 0.03)
-	ESL_FAIL(eslFAIL, errbuf, "DispatchAlignments(), seq: %d alignment score %.3f differs from its parse tree's score: %.3f", i, sc, ParsetreeScore(cm, tr[i], cur_dsq, FALSE));
+      if((status = ParsetreeScore(cm, errbuf, tr[i], cur_dsq, FALSE, &tmpsc, NULL)) != eslOK) return status;
+      if (fabs(sc - tmpsc) >= 0.03)
+	ESL_FAIL(eslFAIL, errbuf, "DispatchAlignments(), seq: %d alignment score %.3f differs from its parse tree's score: %.3f", i, sc, tmpsc);
     }
 
     /* If requested, or if debug level high enough, print out the parse tree */
     if((cm->align_opts & CM_ALIGN_PRINTTREES) || (debug_level > 2)) { 
-      fprintf(ofp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, tr[i], cur_dsq, FALSE));;
+      if((status = ParsetreeScore(cm, errbuf, tr[i], cur_dsq, FALSE, &tmpsc, &struct_sc)) != eslOK) return status;
+      fprintf(ofp, "  %16s %.2f bits\n", "SCORE:", tmpsc);
+      fprintf(ofp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
       ParsetreeDump(stdout, tr[i], cm, cur_dsq, NULL, NULL);
       fprintf(ofp, "//\n");
     }
@@ -795,7 +799,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   /* Clean up. */
   if(out_mx != NULL) cm_hb_mx_Destroy(out_mx);
   if(alpha != NULL)  { free_vjd_matrix(alpha, cm->M, 1, L); alpha = NULL; }
-  if(beta  != NULL)  { free_vjd_matrix(beta,  cm->M, 1, L); beta = NULL; }
+  if(beta  != NULL)  { free_vjd_matrix(beta,  cm->M, 1, L); beta = NULL;  }
   if (do_qdb) {
     free(orig_dmin);
     free(orig_dmax);

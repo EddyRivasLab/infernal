@@ -765,6 +765,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
   int status;
   ESL_MSA *msa = NULL;
   int i, imax;
+  float sc, struct_sc;
 
   /* create a new MSA, if we didn't do --inside */
   if(esl_opt_GetBoolean(go, "--cyk") || (esl_opt_GetBoolean(go, "--viterbi") || (esl_opt_GetBoolean(go, "--optacc"))))
@@ -838,8 +839,6 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       /* if nec, output the traces */
       if(cfg->tracefp != NULL)
 	{
-	  if(esl_opt_GetBoolean(go,"--viterbi")) { printf("%-40s ... ", "Saving CP9 HMM traces"); fflush(stdout); }
-	  else                                      { printf("%-40s ... ", "Saving CM parsetrees");  fflush(stdout); }
 	  for (i = 0; i < msa->nseq; i++) 
 	    {
 	      fprintf(cfg->tracefp, "> %s\n", seqs_to_aln->sq[i]->name);
@@ -850,12 +849,13 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 		}
 	      else
 		{
-		  fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", ParsetreeScore(cm, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE));
+		  if((status = ParsetreeScore(cm, errbuf, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE, &sc, &struct_sc)) != eslOK) return status;
+		  fprintf(cfg->tracefp, "  %16s %.2f bits\n", "SCORE:", sc);
+		  fprintf(cfg->tracefp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
 		  ParsetreeDump(cfg->tracefp, seqs_to_aln->tr[i], cm, seqs_to_aln->sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
 		}
 	      fprintf(cfg->tracefp, "//\n");
 	    }
-	  printf("done. [%s]\n", esl_opt_GetString(go, "--tfile"));
 	}
       if (cfg->regressfp != NULL)
 	{
@@ -933,7 +933,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 
   /* update cm->align_opts */
   /* optimal accuracy alignment is default */
-  if(! esl_opt_GetBoolean(go, "--cyk"))       cm->align_opts  |= CM_ALIGN_OPTACC;
+  if(esl_opt_GetBoolean(go, "--optacc"))      cm->align_opts  |= CM_ALIGN_OPTACC;
   if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;
   if(esl_opt_GetBoolean(go, "--nonbanded"))   cm->align_opts  &= ~CM_ALIGN_HBANDED;
   if(esl_opt_GetBoolean(go, "--sub"))         cm->align_opts  |= CM_ALIGN_SUB;
@@ -1483,6 +1483,7 @@ print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
 
   int do_hbanded = (cm->align_opts & CM_ALIGN_HBANDED) ? TRUE : FALSE;
   int do_qdb     = (cm->align_opts & CM_ALIGN_QDB)     ? TRUE : FALSE;
+  if(cm->align_opts & CM_ALIGN_HMMVITERBI) { do_hbanded = do_qdb = FALSE; }
 
   fprintf(stdout, "# %-25s  %9s  %6s  %3s  %5s  %6s\n", "cm name",                   "algorithm", "config", "sub", "bands", (do_hbanded) ? "tau" : ((do_qdb) ? "beta" : "")); 
   fprintf(stdout, "# %-25s  %9s  %6s  %3s  %5s  %6s\n", "-------------------------", "---------", "------", "---", "-----", (do_hbanded || do_qdb) ? "------" : ""); 
