@@ -1286,6 +1286,8 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           ret_sc    - if(!do_optacc): score of the alignment in bits.
  *                       if( do_optacc): average posterior probability of all L aligned residues 
  *                       in optimally accurate alignment
+ *           ret_ins_sc- if(do_optacc || ret_pcode1,2 != NULL): inside score of sequence in bits
+ *                       else: must be NULL (inside will not be run)
  * 
  * Returns: <ret_tr>, <ret_pcode1>, <ret_pcode2>, <ret_sc>, see 'Args' section
  * 
@@ -1297,7 +1299,7 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
 int
 FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_MX *mx, int do_optacc,
-	    CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc)
+	    CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc)
 {
   int          status;
   Parsetree_t *tr;
@@ -1308,15 +1310,15 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
   char        *pcode2;
   int          have_pcodes;
   have_pcodes = (ret_pcode1 != NULL && ret_pcode2 != NULL) ? TRUE : FALSE;
+  do_post = (do_optacc || have_pcodes) ? TRUE : FALSE;
 
   /* Contract check */
-  if(dsq == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), dsq is NULL.\n");
-  if(mx == NULL)                     ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), mx is NULL.\n");
-  if(post_mx == NULL && have_pcodes) ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), post_mx == NULL but ret_pcode{1|2} != NULL.\n");
-  if(do_optacc && post_mx == NULL)   ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), do_optacc is TRUE, but post_mx == NULL.\n");
-
+  if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), dsq is NULL.\n");
+  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), mx is NULL.\n");
+  if(post_mx == NULL && have_pcodes)   ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), post_mx == NULL but ret_pcode{1|2} != NULL.\n");
+  if(do_optacc && post_mx == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), do_optacc is TRUE, but post_mx == NULL.\n");
+  if((!do_post) && ret_ins_sc != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), do_post is FALSE, but ret_ins_sc != NULL.\n");
   /* PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, (j0-i0+1)); */
-  do_post = (do_optacc || have_pcodes) ? TRUE : FALSE;
 
   /* if doing post, fill Inside, Outside, Posterior matrices, in that order */
   if(do_post) { 
@@ -1328,6 +1330,7 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
       if((status = CMCheckPosteriorHB(cm, errbuf, i0, j0, post_mx)) != eslOK) return status;
       printf("\nHMM banded posteriors checked.\n\n");
     }
+    if(ret_ins_sc != NULL) *ret_ins_sc = ins_sc; 
   }
 
   /* Create the parse tree, and initialize. */
@@ -1405,6 +1408,8 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
  *           ret_sc    - if(!do_optacc): score of the alignment in bits.
  *                       if( do_optacc): average posterior probability of all L aligned residues 
  *                       in optimally accurate alignment
+ *           ret_ins_sc- if(do_optacc || ret_pcode1,2 != NULL): inside score of sequence in bits
+ *                       else: must be NULL (inside will not be run)
  * 
  * Returns: <ret_tr>, <ret_pcode1>, <ret_pcode2>, <ret_sc>, see 'Args' section
  * 
@@ -1412,16 +1417,19 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
  */
 int
 FastAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, float ****ret_mx, int do_optacc,
-	  float ****ret_post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc)
+	  float ****ret_post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc)
 {
   int          status;
   Parsetree_t *tr;
   float        sc;
+  float        ins_sc; /* inside score */
   int          do_post;
   char        *pcode1;
   char        *pcode2;
   int          have_pcodes;
   have_pcodes = (ret_pcode1 != NULL && ret_pcode2 != NULL) ? TRUE : FALSE;
+  do_post = (do_optacc || have_pcodes) ? TRUE : FALSE;
+
 
   /* Contract check */
   if(ret_mx == NULL)                     ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlign(), ret_mx == NULL.\n");
@@ -1429,12 +1437,11 @@ FastAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float siz
   if(ret_post_mx == NULL && have_pcodes) ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlign(), post_mx == NULL but ret_pcode{1|2} != NULL.\n");
   if(do_optacc && ret_post_mx == NULL)   ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlign(), do_optacc is TRUE, but post_mx == NULL.\n");
   if(do_optacc && ret_mx == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlign(), do_optacc is TRUE, but ret_mx == NULL.\n");
-
-  do_post = (do_optacc || have_pcodes) ? TRUE : FALSE;
+  if((!do_post) && ret_ins_sc != NULL)   ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlign(), do_post is FALSE, but ret_ins_sc != NULL.\n");
 
   /* if doing post, fill Inside, Outside, Posterior matrices, in that order */
   if(do_post) { 
-    if((status = FastInsideAlign (cm, errbuf, dsq, i0, j0, size_limit, ret_mx,  NULL)) != eslOK) return status;
+    if((status = FastInsideAlign (cm, errbuf, dsq, i0, j0, size_limit, ret_mx,  &ins_sc)) != eslOK) return status;
     if((status = FastOutsideAlign(cm, errbuf, dsq, i0, j0, size_limit, ret_post_mx, *ret_mx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), NULL)) != eslOK) return status;
     /* Note: we can only check the posteriors in FastOutsideAlign() if local begin/ends are off */
     if((status = CMPosterior(cm, errbuf, i0, j0, size_limit, *ret_mx, *ret_post_mx, *ret_post_mx)) != eslOK) return status;   
@@ -1445,6 +1452,7 @@ FastAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float siz
     /* we have to free ret_mx, so we can check it's size, reallocate and refill it in fast_alignT()
      * this is wasteful, but if we were being efficient we'd be using HMM bands anyway... */
     free_vjd_matrix(*ret_mx, cm->M, 1, L);
+    if(ret_ins_sc != NULL) *ret_ins_sc = ins_sc; 
   }
   /* Create the parse tree, and initialize. */
   tr = CreateParsetree(100);
@@ -5096,7 +5104,7 @@ main(int argc, char **argv)
       esl_stopwatch_Display(stdout, w, "CPU time: ");
       
       esl_stopwatch_Start(w);
-      if((status = FastAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, 1, L, size_limit, cm->hbmx, FALSE, NULL, NULL, NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = FastAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, 1, L, size_limit, cm->hbmx, FALSE, NULL, NULL, NULL, NULL, &sc, NULL)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastAlignHB() CYK:", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5134,7 +5142,7 @@ main(int argc, char **argv)
       if(esl_opt_GetBoolean(go, "--optacc")) {
 	esl_stopwatch_Start(w);
 	/* need alpha matrix from Inside to do Outside */
-	if((status = FastAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, 1, L, size_limit, cm->hbmx, TRUE,     fout_mx, NULL,   NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	if((status = FastAlignHB(cm, errbuf, seqs_to_aln->sq[i]->dsq, L, 1, L, size_limit, cm->hbmx, TRUE,     fout_mx, NULL,   NULL, NULL, &sc, NULL)) != eslOK) cm_Fail(errbuf);
 	printf("%4d %-30s %10.4f bits ", (i+1), "FastAlignHB() OA:", sc);
 	esl_stopwatch_Stop(w);
 	esl_stopwatch_Display(stdout, w, " CPU time: ");

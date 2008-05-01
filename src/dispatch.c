@@ -312,6 +312,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   Parsetree_t **tr       = NULL;/* parse trees for the sequences */
   CP9trace_t  **cp9_tr   = NULL;/* CP9 traces for the sequences */
   float         sc;		/* score for one sequence alignment */
+  float         ins_sc;		/* inside score for one sequence */
   float         maxsc;	        /* max score in all seqs */
   float         minsc;	        /* min score in all seqs */
   float         avgsc;      	/* avg score over all seqs */
@@ -512,9 +513,16 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   
   /* if not in silent mode, print the header for the sequence info */
   if(sq_mode && !silent_mode) { 
-    fprintf(ofp, "#\n");
-    fprintf(ofp, "# %8s  %-30s  %6s  %13s  %11s\n", "seq idx",  "seq name",                       "length", (cm->align_opts & CM_ALIGN_OPTACC) ? "avg post prob" : "bit score", "elapsed");
-    fprintf(ofp, "# %8s  %30s  %6s  %13s  %11s\n",  "--------", "------------------------------", "------", "-------------", "-----------");
+    if(cm->align_opts & CM_ALIGN_OPTACC) { 
+      fprintf(ofp, "#\n");
+      fprintf(ofp, "# %8s  %-28s  %5s  %8s  %8s  %11s\n", "seq idx",  "seq name",                     "len",    "bit sc",  "avg prob", "elapsed");
+      fprintf(ofp, "# %8s  %28s  %5s  %8s  %8s  %11s\n",  "--------", "----------------------------", "-----", "--------", "--------", "-----------");
+    }
+    else { 
+      fprintf(ofp, "#\n");
+      fprintf(ofp, "# %8s  %-28s  %5s  %8s  %11s\n", "seq idx",  "seq name",                     "len",     "bit sc",     "elapsed");
+      fprintf(ofp, "# %8s  %28s  %5s  %8s  %11s\n",  "--------", "----------------------------", "-----", "--------", "-----------");
+    }
   }
 
   /*****************************************************************
@@ -538,7 +546,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
     /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
     if(sq_mode && do_hmmonly) {
-      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-30s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-28s  %5d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
       if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, L, 0., NULL,
 			       FALSE,  /* we are not scanning */
 			       TRUE,   /* we are aligning */
@@ -549,7 +557,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       if(sq_mode && !silent_mode) { 
 	esl_stopwatch_Stop(watch); 
 	FormatTimeString(time_buf, watch->user, TRUE);
-	fprintf(ofp, "  %13.2f  %11s\n", sc, time_buf);
+	fprintf(ofp, "  %8.2f  %11s\n", sc, time_buf);
       }
       parsesc[i] = sc;
       continue;
@@ -557,9 +565,9 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     /* Special case, if do_scoreonly, align seq with full CYK inside, just to 
      * get the score. For testing, probably in cmscore. */
     if(sq_mode && do_scoreonly) {
-      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-30s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-28s  %5d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
       sc = CYKInsideScore(cm, cur_dsq, L, 0, 1, L, NULL, NULL); /* don't do QDB mode */
-      if(sq_mode && !silent_mode) fprintf(ofp, "  %13.2f  ", sc);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %8.2f  ", sc);
       parsesc[i] = sc;
       continue;
     }
@@ -642,7 +650,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     }
 
     if(sq_mode && !silent_mode) { 
-      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-30s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-28s  %5d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
     }
 
     /* beginning of large if() else if() else if() ... statement */
@@ -681,32 +689,36 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     else { /* non-small, non-QDB CYK or optimal accuracy alignment */
       if(do_hbanded) { 
 	if(do_post) { /* HMM banded CYK or optimal accuracy, posterior annotated */
-	  if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc)) != eslOK) return status;
+	  if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
 	}
-	else { /* HMM banded CYK or optimal accuracy, no posteriors */
-	  if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, out_mx, cur_tr, NULL, NULL, &sc)) != eslOK) {
-	    if(do_optacc) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
-	    else if (status == eslERANGE) { /* we can still do CYK D&C alignment with QDBs derived from the HMM bands */
-	      hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
-	      ESL_DPRINTF1(("# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i));
-	      fprintf(ofp, "# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i); 
-	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
-	    }
-	    else return status; /* get here (!do_optacc) && FastAlignHB() returned status other than eslOK and eslERANGE */
+	else { 
+	  if(do_optacc) { /* HMM banded optimal accuracy, no posteriors */
+	    if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, out_mx, cur_tr, NULL, NULL, &sc, &ins_sc)) != eslOK) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
 	  }
-	  /* if we're aligning search hits, and we're !do_optacc, we realign if the HMM banded parse was > 0.01 bits less than the search score for this hit */
-	  if((dsq_mode && ((! (cm->search_opts & CM_SEARCH_INSIDE)))) && 
-	     ((! (cm->search_opts & CM_SEARCH_HMMVITERBI)) && (! (cm->search_opts & CM_SEARCH_HMMFORWARD)))) {
-	    if((!do_optacc) && ((fabs(sc - search_results->data[i].score)) > 0.01)) {
-	      ESL_DPRINTF1(("# Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", i, sc, search_results->data[i].score));
-	      fprintf(ofp, "# Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", i, sc, search_results->data[i].score);
-	      FreeParsetree(*cur_tr);
-	      sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL);
+	  else { /* HMM banded CYK */
+	    if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, out_mx, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) {
+	      if (status == eslERANGE) { /* we can still do CYK D&C alignment with QDBs derived from the HMM bands */
+		hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
+		ESL_DPRINTF1(("# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i));
+		fprintf(ofp, "# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i); 
+		sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL); /* we're not in QDB mode */
+	      }
+	      else return status; /* get here (!do_optacc) && FastAlignHB() returned status other than eslOK and eslERANGE */
+	    }
+	    /* if we're aligning search hits, and we're !do_optacc, we realign if the HMM banded parse was > 0.01 bits less than the search score for this hit */
+	    if((dsq_mode && ((! (cm->search_opts & CM_SEARCH_INSIDE)))) && 
+	       ((! (cm->search_opts & CM_SEARCH_HMMVITERBI)) && (! (cm->search_opts & CM_SEARCH_HMMFORWARD)))) {
+	      if((!do_optacc) && ((fabs(sc - search_results->data[i].score)) > 0.01)) {
+		ESL_DPRINTF1(("# Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", i, sc, search_results->data[i].score));
+		fprintf(ofp, "# Realigning hit: %d with D&C b/c HMM banded parse (%.3f bits) too-far-off search score (%.3f bits).\n", i, sc, search_results->data[i].score);
+		FreeParsetree(*cur_tr);
+		sc = CYKDivideAndConquer(cm, cur_dsq, L, 0, 1, L, cur_tr, NULL, NULL);
+	      }
 	    }
 	  }
-	} 
+	}
 	/* if CM_ALIGN_HMMSAFE option is enabled, realign seqs w/HMM banded parses < 0 bits,
-	 * this should never happen in we're doing optimal accuracy or appending posteriors, due to option checking in cmalign, cmscore,
+	 * this should never happen if we're doing optimal accuracy or appending posteriors, due to option checking in cmalign, cmscore,
 	 * but we check here to be safe */
 	if(cm->align_opts & CM_ALIGN_HMMSAFE && sc < 0.) { 
 	  if(do_post)   ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments() cm->align_opts option CM_ALIGN_HMMSAFE is ON at same time as incompatible option CM_ALIGN_POST.\n");
@@ -721,10 +733,13 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       }
       else { 
 	if(do_post) { /* non-banded CYK or optimal accuracy, posterior annotated */
-	  if((status = FastAlign(cm, errbuf, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, &beta, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc)) != eslOK) return status;
+	  if((status = FastAlign(cm, errbuf, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, &beta, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
 	}
-	else { /* non-banded CYK or optimal accuracy, no posteriors */
-	  if((status = FastAlign(cm, errbuf, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, &beta, cur_tr, NULL, NULL, &sc)) != eslOK) return status;
+	else if(do_optacc) { /* non-banded optimal accuracy no posteriors */
+	  if((status = FastAlign(cm, errbuf, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, &beta, cur_tr, NULL, NULL, &sc, &ins_sc)) != eslOK) return status;
+	}
+	else { /* non-banded CYK, no posteriors */
+	  if((status = FastAlign(cm, errbuf, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, &beta, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) return status;
 	}
 	if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level); /* allows you to see where the non-banded parse went outside the bands. */
       } 
@@ -737,8 +752,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     if (sc < minsc) minsc = sc;
       
     if(sq_mode && !silent_mode) { 
-      if(do_optacc)  fprintf(ofp, "  %13.3f  ", sc);
-      else           fprintf(ofp, "  %13.2f  ", sc);
+      if(do_optacc)  fprintf(ofp, "  %8.2f  %8.3f  ", ins_sc, sc);
+      else           fprintf(ofp, "  %8.2f  ", sc);
     }
     parsesc[i] = sc;
 
