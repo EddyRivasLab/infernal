@@ -323,7 +323,7 @@ int E2MinScore (CM_t *cm, char *errbuf, int exp_mode, float E, float *ret_sc)
 
   if((status = E2ScoreGivenExpInfo(cm->stats->expAA[exp_mode][0], errbuf, E, &low_sc)) != eslOK) return status;
   for(p = 1; p < cm->stats->np; p++) {
-    if((status = E2ScoreGivenExpInfo(cm->stats->expAA[exp_mode][0], errbuf, E, &sc)) != eslOK) return status;
+    if((status = E2ScoreGivenExpInfo(cm->stats->expAA[exp_mode][p], errbuf, E, &sc)) != eslOK) return status;
     low_sc = ESL_MIN(low_sc, sc);
   }
   *ret_sc = low_sc;
