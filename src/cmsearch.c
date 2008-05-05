@@ -55,7 +55,8 @@ static ESL_OPTIONS options[] = {
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--toponly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the top strand", 1 },
   { "--bottomonly", eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the bottom strand", 1 },
-  { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--viterbi,--forward,--noalign", "turn on the post hoc second null model", 1 },
+  { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--null3,--viterbi,--forward,--noalign", "turn on the post hoc second null model", 1 },
+  { "--null3",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--null2,--viterbi,--forward,--noalign", "turn on the post hoc third null model", 1 },
   { "--forecast",eslARG_INT,    NULL,  NULL, NULL,      NULL,      NULL,        NULL, "don't do search, forecast running time with <n> processors", 1 },
   /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
    * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
@@ -245,6 +246,7 @@ main(int argc, char **argv)
   cfg.sqfile     = esl_opt_GetArg(go, 2); 
   cfg.ofp        = NULL;
   cfg.gcfp       = NULL;
+  cfg.tfp        = NULL;
   cfg.sqfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   if   (esl_opt_IsDefault(go, "--informat")) cfg.fmt = eslSQFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
   else { 
@@ -490,10 +492,11 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    free(seq_surv_fractA);
 	    free(seq_nhitsA);
 	    RemoveOverlappingHits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
-	    if(esl_opt_GetBoolean(go, "--null2")) { 
-	      if((status = UpdateHitScoresWithNull2(cm, cm->si, dbseq->results[rci], dbseq->sq[rci], using_sc_cutoff, errbuf)) != eslOK) cm_Fail(errbuf); 
+	    if(esl_opt_GetBoolean(go, "--null2") || esl_opt_GetBoolean(go, "--null3")) { 
+	      if((status = UpdateHitScoresWithNull2Or3(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]->dsq, using_sc_cutoff, errbuf, esl_opt_GetBoolean(go, "--null2"), esl_opt_GetBoolean(go, "--null3"))) != eslOK) cm_Fail(errbuf); 
 	    }
-	    /* hits over E cutoff removed in dispatch search now if(using_e_cutoff) RemoveHitsOverECutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]);  */
+	    /* hits over E cutoff were removed in DispatchSearch() if(using_e_cutoff) */
+	    /* OLD LINE: RemoveHitsOverECutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]);  */
 	  }
 	  PrintResults (cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
 	  for(rci = 0; rci <= cfg->do_rc; rci++) { /* we can free results for top strand even if cfg->init_rci is 1, due to --bottomonly */
@@ -792,10 +795,11 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			{
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
 			    RemoveOverlappingHits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
-			    if(esl_opt_GetBoolean(go, "--null2")) { 
-			      if((status = UpdateHitScoresWithNull2(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci], using_sc_cutoff, errbuf)) != eslOK) cm_Fail(errbuf); 
+			    if(esl_opt_GetBoolean(go, "--null2") || esl_opt_GetBoolean(go, "--null3")) { 
+			      if((status = UpdateHitScoresWithNull2Or3(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]->dsq, using_sc_cutoff, errbuf, esl_opt_GetBoolean(go, "--null2"), esl_opt_GetBoolean(go, "--null3"))) != eslOK) cm_Fail(errbuf); 
 			    }
-			    /* hits over E cutoff removed in dispatch search now if(using_e_cutoff) RemoveHitsOverECutoff(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]); */
+			    /* hits over E cutoff were removed in DispatchSearch() if(using_e_cutoff) */
+			    /* OLD LINE: RemoveHitsOverECutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]);  */
 			  }					      
 			  PrintResults(cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {

@@ -238,11 +238,15 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
   }
   else { /* we're done filtering, and we're done searching, get alignments if nec */
     AppendResults(cur_results, round_results, 1);
-    if((cur_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN))) {
+    if((cur_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN)) && (stype == SEARCH_WITH_CM)) {
       /* copy cur_results to final_results */
       if((status = DispatchAlignments(cm, errbuf, NULL, 
 				      dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
 				      0, 0, 0, NULL, size_limit, stdout)) != eslOK) return status;
+      if(cm->search_opts & CM_SEARCH_NULL3 && stype == SEARCH_WITH_CM) { 
+	/* HERE HERE, add a h_existing var to UpdateScoresWithNull2or3 */
+	if((status = UpdateHitScoresWithNull2Or3(cm, cm->si, round_results, dsq, FALSE, errbuf, FALSE, TRUE)) != eslOK) return status;
+      }	  
     }
   }
   FreeResults(cur_results);

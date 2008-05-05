@@ -74,6 +74,7 @@ static ESL_OPTIONS options[] = {
   { "--exp-tailp",      eslARG_REAL,    "0.01", NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 2 },
   { "--exp-beta",       eslARG_REAL,    NULL,   NULL, "x>0",    NULL,        NULL,        NULL, "turn QDB on for exp tail fitting, set tail loss prob to <x>", 2 },
   { "--exp-gc",         eslARG_INFILE,  NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content distribution from file <f>",  2},
+  { "--exp-null3",      eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "turn on the post-hoc NULL3 score correction", 3},
   { "--exp-pfile",      eslARG_INFILE,  NULL,   NULL, NULL,     NULL,  "--exp-gc",        NULL, "read partition info for exp tails from file <f>", 2},
   { "--exp-hfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,        NULL, "save fitted score histogram(s) to file <f>", 2 },
   { "--exp-sfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,        NULL, "save survival plot to file <f>", 2 },
@@ -195,7 +196,7 @@ static int  print_post_calibration_info (const ESL_GETOPTS *go, struct cfg_s *cf
 static int  estimate_time_for_exp_round (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int exp_mode, double *ret_sec_per_res);
 static int  estimate_time_for_fil_round (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int exp_mode, double *ret_sec_per_seq);
 static int  update_hmm_exp_length(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int hack_overwrite_gcfreq(double *gc_freq);
+static int  hack_overwrite_gcfreq(double *gc_freq);
 /*static int  predict_time_for_exp_stage(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int exp_mode, int cmN, int hmmN, int expL, float *ret_seconds);*/
 /*static int  print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);*/
 
@@ -1717,7 +1718,11 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     cm->flags |= CM_EMIT_NO_LOCAL_BEGINS; 
     cm->flags |= CM_EMIT_NO_LOCAL_ENDS;
   }
-  cm->search_opts |= CM_SEARCH_NOALIGN;
+  /* TEMPORARY cm->search_opts |= CM_SEARCH_NOALIGN;*/
+  if(esl_opt_GetBoolean(go, "--exp-null3")) { 
+    cm->search_opts |= CM_SEARCH_NULL3;
+  }
+  else cm->search_opts |= CM_SEARCH_NOALIGN;
 
   /* ALWAYS use the greedy overlap resolution algorithm to return hits for exp calculation
    * it's irrelevant for filter threshold stats, we return best score per seq for that */

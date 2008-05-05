@@ -623,9 +623,9 @@ int CompareResultsByEndPoint (const void *a_void, const void *b_void) {
   else                          return ( 0);
 }
 
-/* Function: UpdateHitScoresWithNull2()
+/* Function: UpdateHitScoresWithNull2Or3()
  * Date:     EPN, Tue Apr  1 06:32:34 2008
- * Purpose:  Update scores for each hit based on NULL2 correction.
+ * Purpose:  Update scores for each hit based on NULL2 or NULL3 correction.
  *           If (do_remove_under_cutoff), remove any hits that are now
  *           below our score cutoff
  * 
@@ -633,10 +633,10 @@ int CompareResultsByEndPoint (const void *a_void, const void *b_void) {
  *           cm      - the covariance model
  *           si      - SearchInfo, relevant round is final one, si->nrounds
  *           results - the hits data structure
- *           seq     - seq hits lie within, needed to determine gc content
+ *           dsq     - digitized seq hits lie within, needed to determine gc content
  *           do_remove_under_cutoff - TRUE to remove hits that are now below our cutoff
  */
-int UpdateHitScoresWithNull2(CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_SQ *sq, int do_remove_under_cutoff, char *errbuf)
+int UpdateHitScoresWithNull2Or3(CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_DSQ *dsq, int do_remove_under_cutoff, char *errbuf, int do_null2, int do_null3)
 {
   int status;
   int i, x;
@@ -645,9 +645,11 @@ int UpdateHitScoresWithNull2(CM_t *cm, SearchInfo_t *si, search_results_t *resul
   float corr_sc;             /* score correction */
 
   /* Check contract */
-  if(sq->dsq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2(), sequence is not digitized.\n");
-  if(si == NULL)      ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2(), si is NULL\n");
-  if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) cm_Fail("UpdateHitScoresWithNull2(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
+  if(dsq == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), dsq is NULL\n");
+  if(si == NULL)      ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), si is NULL\n");
+  if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
+  if(do_null2 && do_null3)    ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), do_null2 is TRUE and do_null3 is TRUE.\n");
+  if(!do_null2 && !do_null3)  ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), do_null2 is FALSE and do_null3 is FALSE.\n");
 
   if (results == NULL) return eslOK;
   if(do_remove_under_cutoff) { 
@@ -656,8 +658,13 @@ int UpdateHitScoresWithNull2(CM_t *cm, SearchInfo_t *si, search_results_t *resul
   }
 
   for (i=0; i<results->num_results; i++) {
-    if(results->data[i].tr == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2(), parsetree for hit i: %d is NULL.\n", i);
-    if((status = ParsetreeScoreCorrection(cm, errbuf, results->data[i].tr, sq->dsq, &corr_sc)) != eslOK) return status;
+    if(results->data[i].tr == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), parsetree for hit i: %d is NULL.\n", i);
+    if(do_null2) { 
+      if((status = ParsetreeScoreCorrection(cm, errbuf, results->data[i].tr, dsq, &corr_sc)) != eslOK) return status;
+    }
+    else if(do_null3) { 
+      if((status = ParsetreeScoreCorrectionTargetNull(cm, errbuf, results->data[i].tr, dsq, &corr_sc)) != eslOK) return status;
+    }
     results->data[i].score -= corr_sc;
     if(do_remove_under_cutoff && results->data[i].score < cutoff) results->data[i].start = -1;
   }
@@ -680,6 +687,7 @@ int UpdateHitScoresWithNull2(CM_t *cm, SearchInfo_t *si, search_results_t *resul
   SortResultsByScore(results);
   return eslOK;
 }  
+
 
 /* Function: RemoveOverlappingHits ()
  * Date:     EPN, Tue Apr  3 14:36:38 2007

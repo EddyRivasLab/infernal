@@ -1814,3 +1814,88 @@ ParsetreeScoreCorrection(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, 
    return status; /* NEVERREACHED*/
 }
 
+  
+/* Function: ParsetreeScoreCorrectionTargetNull()
+ * Incept:   EPN, Sat May  3 15:38:24 2008
+ * 
+ * Purpose:  Calculate a correction (in integer log_2 odds) to be
+ *           applied to a sequence, using a third null model, 
+ *           based on a traceback. All emissions are corrected;
+ *           The null model is constructed /post hoc/ as the
+ *           distribution of the target sequence; if the target
+ *           sequence is 40% A, 5% C, 5% G, 40% U, then the null 
+ *           model is (0.4, 0.05, 0.05, 0.4).
+ *           
+ * Return:   ret_sc: the log_2-odds score correction.          
+ *           eslEINCOMPAT on contract violation
+ */
+int 
+ParsetreeScoreCorrectionTargetNull(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, float *ret_sc)
+{
+  int status;
+  float *p;		/* null2 model distribution */
+  float *sc;	        /* null2 model scores       */
+  int   a,b;            /* residue index counters */
+  int   v;              /* state index counter */
+  int   i, j;           /* seq posn counter */
+  int   tidx;
+  float score;
+  float struct_score;   /* structure contribution to the score */
+
+  if(ret_sc == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "ParsetreeScoreCorrection() ret_sc is NULL.");
+
+  /* Rarely, the alignment was totally impossible, and tr is NULL.
+   */
+  if (tr == NULL) return 0.0;
+  
+  /* Set up model: average over the emission distributions of
+   * all M, I states that appear in the trace. Ad hoc? Sure, you betcha. 
+   */
+  /* trivial preorder traverse, since we're already numbered that way */
+  ESL_ALLOC(p, sizeof(float) * cm->abc->K);
+  esl_vec_FSet(p, cm->abc->K, 0.0);
+  for (tidx = 0; tidx < tr->n; tidx++) {
+    i = tr->emitl[tidx]; 
+    j = tr->emitr[tidx]; 
+    v = tr->state[tidx];
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) p[dsq[i]] += 1.;
+    if(cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) p[dsq[j]] += 1.;
+  }
+  esl_vec_FNorm(p, cm->abc->K);
+
+  ESL_ALLOC(sc,  sizeof(float) * (cm->abc->Kp));
+  /* calculate null2 scores of each possible emission, first the base alphabet */
+  for (a = 0; a < cm->abc->K; a++) sc[a] = sreLOG2(p[a] / cm->null[a]);
+  /* the ambiguities */
+  for (a = cm->abc->K+1; a < cm->abc->Kp-1; a++) sc[a] = esl_abc_FAvgScore(cm->abc, a, sc);  
+
+  /* Score all the state emissions that appear in the trace.
+   */
+  score = struct_score = 0;
+  for (tidx = 0; tidx < tr->n; tidx++) {
+    v = tr->state[tidx];        	/* index of parent state in CM */
+    i = tr->emitl[tidx];
+    j = tr->emitr[tidx];
+    if (cm->sttype[v] == MP_st || cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) score += sc[dsq[i]];
+    if (cm->sttype[v] == MP_st || cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) score += sc[dsq[j]];
+  }
+   /* Apply an ad hoc 8 bit fudge factor penalty;
+    * interpreted as a prior, saying that the third null model is 
+    * 1/2^8 (1/256) as likely as the standard null model
+    */
+  /* TEMPORARILY DISBABLED score -= 8.;	*/
+
+   /* Return the correction to the bit score. */
+   printf("ParsetreeScoreCorrectionTargetNull return sc: %f\n", LogSum2(0., score));
+   ESL_DPRINTF1(("ParsetreeScoreCorrectionTargetNull return sc: %f\n", LogSum2(0., score)));
+   free(sc);
+   free(p);
+   score = LogSum2(0., score);
+   *ret_sc = score;
+   return eslOK;
+
+ ERROR:
+   ESL_FAIL(status, errbuf, "ParsetreeScoreCorrectionTargetNull(): memory allocation error.");
+   return status; /* NEVERREACHED*/
+}
+
