@@ -1835,7 +1835,7 @@ ParsetreeScoreCorrectionTargetNull(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_
   int status;
   float *p;		/* null2 model distribution */
   float *sc;	        /* null2 model scores       */
-  int   a,b;            /* residue index counters */
+  int   a;              /* residue index counters */
   int   v;              /* state index counter */
   int   i, j;           /* seq posn counter */
   int   tidx;
@@ -1886,7 +1886,6 @@ ParsetreeScoreCorrectionTargetNull(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_
   /* TEMPORARILY DISBABLED score -= 8.;	*/
 
    /* Return the correction to the bit score. */
-   printf("ParsetreeScoreCorrectionTargetNull return sc: %f\n", LogSum2(0., score));
    ESL_DPRINTF1(("ParsetreeScoreCorrectionTargetNull return sc: %f\n", LogSum2(0., score)));
    free(sc);
    free(p);

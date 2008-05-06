@@ -1452,6 +1452,7 @@ cm_seqs_to_aln_MPIPackSize(const seqs_to_aln_t *seqs_to_aln, int offset, int nse
   int has_cp9_tr  = TRUE;
   int has_post    = TRUE;  
   int has_sc      = TRUE;  
+  int has_pp      = TRUE;  
 
   /* careful, individual sq, tr, cp9_tr, postcode ptrs may be NULL even if ptr to ptrs is non-NULL,
    * example sq != NULL and sq[i] == NULL is possible. */
@@ -1486,8 +1487,13 @@ cm_seqs_to_aln_MPIPackSize(const seqs_to_aln_t *seqs_to_aln, int offset, int nse
     for (i = offset; i < offset + nseq_to_pack; i++) 
       if(! NOT_IMPOSSIBLE(seqs_to_aln->sc[i])) { has_sc = FALSE; break; }
 
-  status = MPI_Pack_size (1, MPI_INT, comm, &sz); n += 6*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  /* nseq_to_pack, has_sq, has_tr, has_cp9_tr, has_post, has_sc */
+  if(seqs_to_aln->pp == NULL) has_pp = FALSE;
+  else
+    for (i = offset; i < offset + nseq_to_pack; i++) 
+      if(! NOT_IMPOSSIBLE(seqs_to_aln->pp[i])) { has_pp = FALSE; break; }
+
+  status = MPI_Pack_size (1, MPI_INT, comm, &sz); n += 7*sz; if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  /* nseq_to_pack, has_sq, has_tr, has_cp9_tr, has_post, has_sc, has_pp */
 
   if(has_sq) {
     for(i = offset; i < offset + nseq_to_pack; i++) {
@@ -1514,6 +1520,9 @@ cm_seqs_to_aln_MPIPackSize(const seqs_to_aln_t *seqs_to_aln, int offset, int nse
   }
 
   if(has_sc) 
+    if ((status = MPI_Pack_size(nseq_to_pack, MPI_FLOAT, comm, &sz)) != eslOK) goto ERROR; n += sz;
+
+  if(has_pp) 
     if ((status = MPI_Pack_size(nseq_to_pack, MPI_FLOAT, comm, &sz)) != eslOK) goto ERROR; n += sz;
 
   *ret_n = n;
@@ -1560,6 +1569,7 @@ cm_seqs_to_aln_MPIPack(const seqs_to_aln_t *seqs_to_aln, int offset, int nseq_to
   int has_cp9_tr  = TRUE;
   int has_post    = TRUE;  
   int has_sc      = TRUE;  
+  int has_pp      = TRUE;  
   /* careful, individual sq, tr, cp9_tr, postcode ptrs may be NULL even if ptr to ptrs is non-NULL,
    * example sq != NULL and sq[i] == NULL is possible. */
 
@@ -1593,12 +1603,18 @@ cm_seqs_to_aln_MPIPack(const seqs_to_aln_t *seqs_to_aln, int offset, int nseq_to
     for (i = offset; i < offset + nseq_to_pack; i++) 
       if(! NOT_IMPOSSIBLE(seqs_to_aln->sc[i])) { has_sc = FALSE; break; }
 
+  if(seqs_to_aln->pp == NULL) has_pp = FALSE;
+  else
+    for (i = offset; i < offset + nseq_to_pack; i++) 
+      if(! NOT_IMPOSSIBLE(seqs_to_aln->pp[i])) { has_pp = FALSE; break; }
+
   status = MPI_Pack((int *) &(nseq_to_pack), 1, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack((int *) &(has_sq),       1, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack((int *) &(has_tr),       1, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack((int *) &(has_cp9_tr),   1, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack((int *) &(has_post),     1, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack((int *) &(has_sc),       1, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((int *) &(has_pp),       1, MPI_INT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
 
   if(has_sq)
     for (i = offset; i < offset + nseq_to_pack; i++) {
@@ -1624,6 +1640,9 @@ cm_seqs_to_aln_MPIPack(const seqs_to_aln_t *seqs_to_aln, int offset, int nseq_to
 
   if(has_sc)
     status = MPI_Pack((seqs_to_aln->sc + (offset * sizeof(float))), nseq_to_pack, MPI_FLOAT, buf, n, position, comm); if (status != eslOK) return status;
+
+  if(has_pp)
+    status = MPI_Pack((seqs_to_aln->pp + (offset * sizeof(float))), nseq_to_pack, MPI_FLOAT, buf, n, position, comm); if (status != eslOK) return status;
 
   ESL_DPRINTF2(("cm_seqs_to_aln_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
   
@@ -1660,6 +1679,7 @@ cm_seqs_to_aln_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, int *pos, MP
   int         has_cp9_tr;
   int         has_post;
   int         has_sc;
+  int         has_pp;
 
   status = MPI_Unpack (buf, n, pos, &num_seqs_to_aln, 1, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, &has_sq,          1, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
@@ -1667,6 +1687,7 @@ cm_seqs_to_aln_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, int *pos, MP
   status = MPI_Unpack (buf, n, pos, &has_cp9_tr,      1, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, &has_post,        1, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, &has_sc,          1, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &has_pp,          1, MPI_INT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   if(num_seqs_to_aln == 0) { status = eslOK; goto ERROR; }
 
   seqs_to_aln = CreateSeqsToAln(num_seqs_to_aln, FALSE);
@@ -1704,6 +1725,11 @@ cm_seqs_to_aln_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, int *pos, MP
   if(has_sc) {
     ESL_ALLOC(seqs_to_aln->sc, sizeof(float) * num_seqs_to_aln);
     status = MPI_Unpack(buf, n, pos, seqs_to_aln->sc, num_seqs_to_aln, MPI_FLOAT, comm); if (status != eslOK) goto ERROR;;
+  }
+
+  if(has_pp) {
+    ESL_ALLOC(seqs_to_aln->pp, sizeof(float) * num_seqs_to_aln);
+    status = MPI_Unpack(buf, n, pos, seqs_to_aln->pp, num_seqs_to_aln, MPI_FLOAT, comm); if (status != eslOK) goto ERROR;;
   }
 
   seqs_to_aln->nseq = num_seqs_to_aln;

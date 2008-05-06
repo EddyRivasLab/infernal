@@ -739,8 +739,8 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       if(iter == 1) { cm = init_cm; msa = input_msa; }
       
       /* 1. cm -> parsetrees */
-      if(iter > 1) FreePartialSeqsToAln(seqs_to_aln, FALSE, TRUE, TRUE, TRUE, TRUE);
-                                                  /* sq,    tr, cp9_tr, post, sc */ 
+      if(iter > 1) FreePartialSeqsToAln(seqs_to_aln, FALSE, TRUE, TRUE, TRUE, TRUE, TRUE);
+                                                  /* sq,    tr, cp9_tr, post, sc,   pp */ 
       /* initialize/configure CM, we may be doing HMM banded alignment for ex. */
       initialize_cm(go, cfg, errbuf, cm);
       if((status = DispatchAlignments(cm, errbuf, seqs_to_aln, NULL, NULL, 0, 0, 0, (! esl_opt_GetBoolean(go, "-a")), cfg->r, 

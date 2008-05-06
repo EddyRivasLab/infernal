@@ -494,6 +494,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    RemoveOverlappingHits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
 	    if(esl_opt_GetBoolean(go, "--null2") || esl_opt_GetBoolean(go, "--null3")) { 
 	      if((status = UpdateHitScoresWithNull2Or3(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]->dsq, using_sc_cutoff, errbuf, esl_opt_GetBoolean(go, "--null2"), esl_opt_GetBoolean(go, "--null3"))) != eslOK) cm_Fail(errbuf); 
+	      if((status = RemoveHitsOverECutoff(cm, errbuf, cm->si, cm->si->nrounds, dbseq->results[rci], dbseq->sq[rci]->dsq, 
+						 FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
+						 TRUE))  /* sort by end point at the end of the function */
+		 != eslOK) cm_Fail(errbuf);
 	    }
 	    /* hits over E cutoff were removed in DispatchSearch() if(using_e_cutoff) */
 	    /* OLD LINE: RemoveHitsOverECutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]);  */
@@ -797,6 +801,10 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			    RemoveOverlappingHits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
 			    if(esl_opt_GetBoolean(go, "--null2") || esl_opt_GetBoolean(go, "--null3")) { 
 			      if((status = UpdateHitScoresWithNull2Or3(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]->dsq, using_sc_cutoff, errbuf, esl_opt_GetBoolean(go, "--null2"), esl_opt_GetBoolean(go, "--null3"))) != eslOK) cm_Fail(errbuf); 
+			      if((status = RemoveHitsOverECutoff(cm, errbuf, cm->si, cm->si->nrounds, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]->dsq, 
+								 FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
+								 TRUE))  /* sort by end point at the end of the function */
+				 != eslOK) cm_Fail(errbuf);
 			    }
 			    /* hits over E cutoff were removed in DispatchSearch() if(using_e_cutoff) */
 			    /* OLD LINE: RemoveHitsOverECutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]);  */

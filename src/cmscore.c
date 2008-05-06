@@ -544,8 +544,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if ((status = output_result(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
 
 	  /* clean up, free everything in seqs_to_aln but the sqs, which we'll reuse for each stage */
-	  FreePartialSeqsToAln(seqs_to_aln, FALSE, TRUE, TRUE, TRUE, TRUE);
-	                                 /* sq,    tr,  cp9_tr,post, sc  */ 
+	  FreePartialSeqsToAln(seqs_to_aln, FALSE, TRUE, TRUE, TRUE, TRUE, TRUE);
+	                                 /* sq,    tr,  cp9_tr,post, sc,   pp  */ 
 	}
       FreeSeqsToAln(seqs_to_aln); 
       FreeCM(cm);
@@ -872,8 +872,8 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	       * cp9_traces (only if --regress or --tfile enabled though), which we'll pass back to the master */
 	      do_free_tr = do_free_cp9_tr = TRUE;
 	      if((! esl_opt_IsDefault(go, "--regress")) || (! esl_opt_IsDefault(go, "--tfile"))) do_free_tr = do_free_cp9_tr = FALSE;
-	      FreePartialSeqsToAln(seqs_to_aln, TRUE, do_free_tr, do_free_cp9_tr, TRUE, FALSE);
-                                             /* sq,   tr,         cp9_tr,         post, sc   */ 
+	      FreePartialSeqsToAln(seqs_to_aln, TRUE, do_free_tr, do_free_cp9_tr, TRUE, FALSE, TRUE);
+                                             /* sq,   tr,         cp9_tr,         post, sc,    pp   */ 
 
 	      n = 0;
 	      if (MPI_Pack_size(1, MPI_INT, MPI_COMM_WORLD, &sz) != 0) /* room for the status code */

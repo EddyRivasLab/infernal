@@ -364,6 +364,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   CM_HB_MX           *out_mx;         /* outside matrix for HMM banded Outside() */
 
   float             *parsesc; /* parsetree scores of each sequence */
+  float             *parsepp; /* optimal parse posterior probability of each sequence, if any */
 
   /* declare and initialize options */
   int do_small     = FALSE;   /* TRUE to use D&C small alignment algs */
@@ -475,6 +476,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     ESL_ALLOC(postcode1, sizeof(char **) * nalign);
     ESL_ALLOC(postcode2, sizeof(char **) * nalign);
   }
+  if(do_optacc) ESL_ALLOC(parsepp,   sizeof(float) * nalign);
+  else          parsepp = NULL;
   minsc =  FLT_MAX;
   maxsc = -FLT_MAX;
   avgsc = 0;
@@ -751,15 +754,30 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     /* end of large if() else if() else if() else statement */
     /* done alignment for this seq */
 
-    avgsc += sc;
-    if (sc > maxsc) maxsc = sc;
-    if (sc < minsc) minsc = sc;
-      
     if(sq_mode && !silent_mode) { 
       if(do_optacc)  fprintf(ofp, "  %8.2f  %8.3f  ", ins_sc, sc);
       else           fprintf(ofp, "  %8.2f  ", sc);
     }
-    parsesc[i] = sc;
+    /* if we did optimally accurate alignment:
+     *  - <sc> is average posterior probability of optimally accurate parse, 
+     *  - <ins_sc> is the Inside score for the target sequence,
+     * else (non-optimally accurate alignment), for ex, CYK:
+     *  - <sc> is parse score in bits
+     *  - <ins_sc> is irrelevant 
+     */
+    if(do_optacc) { 
+      parsesc[i] = ins_sc; 
+      parsepp[i] = sc; /* sc will be an average posterior probability if do_optacc */
+      avgsc += ins_sc;
+      if (ins_sc > maxsc) maxsc = ins_sc;
+      if (ins_sc < minsc) minsc = ins_sc;
+    }
+    else { 
+      parsesc[i] = sc; /* parsepp == NULL if !do_optacc */
+      avgsc += sc;
+      if (sc > maxsc) maxsc = sc;
+      if (sc < minsc) minsc = sc;
+    }
 
     /* check parsetree score if cm->align_opts & CM_ALIGN_CHECKPARSESC */
     if((cm->align_opts & CM_ALIGN_CHECKPARSESC) && (!(cm->flags & CM_IS_SUB))) { 
@@ -831,6 +849,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     seqs_to_aln->postcode1= postcode1;/* could be NULL */
     seqs_to_aln->postcode2= postcode2;/* could be NULL */
     seqs_to_aln->sc       = parsesc;  /* shouldn't be NULL */
+    seqs_to_aln->pp       = parsepp;  /* could be NULL */
   }
   else { /* dsq mode */
     if(do_post) { 

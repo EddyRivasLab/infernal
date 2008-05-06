@@ -757,6 +757,8 @@ typedef struct _seqs_to_aln_t {
 				  * CP9 trace score (usually if cp9_tr != NULL), but could also be
 				  * score for the sub parsetree (in case of sub CM alignment)
 				  */
+  float *pp;                     /* average posterior probability for each seq, if applicable, IMPOSSIBLE if not */
+
 } seqs_to_aln_t;
 
 struct deckpool_s {

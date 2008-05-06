@@ -985,7 +985,7 @@ void aln_send_results (seqs_to_aln_t *seqs_to_aln, int do_post, int mpi_master_n
   if(do_post)
     for(i = 0; i < seqs_to_aln->nseq; i++)
       {
-	MPI_Pack (&(seqs_to_aln->sq[i]->n), 1                        , MPI_INT,  buf, bufsize, &pos, MPI_COMM_WORLD);
+	MPI_Pack (&(seqs_to_aln->sq[i]->n), 1                          , MPI_INT,  buf, bufsize, &pos, MPI_COMM_WORLD);
 	MPI_Pack (seqs_to_aln->postcode[i],   (seqs_to_aln->sq[i]->n+1), MPI_CHAR, buf, bufsize, &pos, MPI_COMM_WORLD);
       }
   MPI_Send (buf, bufsize, MPI_PACKED, mpi_master_node, ALN_RESULTS_TAG, MPI_COMM_WORLD);

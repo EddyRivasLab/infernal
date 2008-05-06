@@ -61,6 +61,7 @@ seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master)
   seqs_to_aln->postcode1= NULL;
   seqs_to_aln->postcode2= NULL;
   seqs_to_aln->sc       = NULL;
+  seqs_to_aln->pp       = NULL;
   seqs_to_aln->nalloc   = size;
   seqs_to_aln->nseq     = 0;
 
@@ -70,12 +71,14 @@ seqs_to_aln_t *CreateSeqsToAln(int size, int i_am_mpi_master)
     ESL_ALLOC(seqs_to_aln->postcode1,sizeof(char **)       * size);
     ESL_ALLOC(seqs_to_aln->postcode2,sizeof(char **)       * size);
     ESL_ALLOC(seqs_to_aln->sc,       sizeof(float)         * size);
+    ESL_ALLOC(seqs_to_aln->pp,       sizeof(float)         * size);
     for(i = 0; i < size; i++) {
       seqs_to_aln->tr[i]       = NULL;
       seqs_to_aln->cp9_tr[i]   = NULL;
       seqs_to_aln->postcode1[i]= NULL;
       seqs_to_aln->postcode2[i]= NULL;
       seqs_to_aln->sc[i]       = IMPOSSIBLE;
+      seqs_to_aln->pp[i]       = IMPOSSIBLE;
     }
   }
   return seqs_to_aln;
@@ -113,6 +116,7 @@ seqs_to_aln_t *CreateSeqsToAlnFromSq(ESL_SQ **sq, int size, int i_am_mpi_master)
   seqs_to_aln->postcode1= NULL;
   seqs_to_aln->postcode2= NULL;
   seqs_to_aln->sc       = NULL;
+  seqs_to_aln->pp       = NULL;
   seqs_to_aln->nalloc   = size;
   seqs_to_aln->nseq     = size;
 
@@ -122,12 +126,14 @@ seqs_to_aln_t *CreateSeqsToAlnFromSq(ESL_SQ **sq, int size, int i_am_mpi_master)
     ESL_ALLOC(seqs_to_aln->postcode1,sizeof(char **)       * size);
     ESL_ALLOC(seqs_to_aln->postcode2,sizeof(char **)       * size);
     ESL_ALLOC(seqs_to_aln->sc,       sizeof(float)         * size);
+    ESL_ALLOC(seqs_to_aln->pp,       sizeof(float)         * size);
     for(i = 0; i < size; i++) {
       seqs_to_aln->tr[i]       = NULL;
       seqs_to_aln->cp9_tr[i]   = NULL;
       seqs_to_aln->postcode1[i]= NULL;
       seqs_to_aln->postcode2[i]= NULL;
       seqs_to_aln->sc[i]       = IMPOSSIBLE;
+      seqs_to_aln->pp[i]       = IMPOSSIBLE;
     }
   }
   return seqs_to_aln;
@@ -163,12 +169,14 @@ int GrowSeqsToAln(seqs_to_aln_t *seqs_to_aln, int new_alloc, int i_am_mpi_master
     ESL_RALLOC(seqs_to_aln->postcode1,tmp, sizeof(char **)       * (seqs_to_aln->nalloc + new_alloc));
     ESL_RALLOC(seqs_to_aln->postcode2,tmp, sizeof(char **)       * (seqs_to_aln->nalloc + new_alloc));
     ESL_RALLOC(seqs_to_aln->sc,       tmp, sizeof(float)         * (seqs_to_aln->nalloc + new_alloc));
+    ESL_RALLOC(seqs_to_aln->pp,       tmp, sizeof(float)         * (seqs_to_aln->nalloc + new_alloc));
     for(i = seqs_to_aln->nalloc; i < (seqs_to_aln->nalloc + new_alloc); i++) {
       seqs_to_aln->tr[i]       = NULL;
       seqs_to_aln->cp9_tr[i]   = NULL;
       seqs_to_aln->postcode1[i]= NULL;
       seqs_to_aln->postcode2[i]= NULL;
       seqs_to_aln->sc[i]       = IMPOSSIBLE;
+      seqs_to_aln->pp[i]       = IMPOSSIBLE;
     }
   }
   
@@ -226,6 +234,7 @@ void FreeSeqsToAln(seqs_to_aln_t *s)
   }
 
   if(s->sc != NULL) free(s->sc);
+  if(s->pp != NULL) free(s->pp);
   
   free(s);
 }
@@ -240,7 +249,7 @@ void FreeSeqsToAln(seqs_to_aln_t *s)
  * Returns:  void
  *
  */
-void FreePartialSeqsToAln(seqs_to_aln_t *s, int do_free_sq, int do_free_tr, int do_free_cp9_tr, int do_free_post, int do_free_sc) 
+void FreePartialSeqsToAln(seqs_to_aln_t *s, int do_free_sq, int do_free_tr, int do_free_cp9_tr, int do_free_post, int do_free_sc, int do_free_pp) 
 {
   int i;
   
@@ -282,6 +291,11 @@ void FreePartialSeqsToAln(seqs_to_aln_t *s, int do_free_sq, int do_free_tr, int 
   if(do_free_sc && s->sc != NULL) {
     free(s->sc);
     s->sc = NULL;
+  }
+
+  if(do_free_pp && s->pp != NULL) {
+    free(s->pp);
+    s->pp = NULL;
   }
 }
 

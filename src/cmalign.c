@@ -84,7 +84,7 @@ static ESL_OPTIONS options[] = {
   { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "flush inserts left/right in output alignment", 4 },
   { "--onepost", eslARG_NONE,   FALSE, NULL, NULL,      NULL,       "-p",       NULL, "with -p, only append single '0-9,*' char as posterior probability", 4 },
   /* Including a preset alignment */
-  { "--withali", eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "incl. alignment in <f> (must be aln <cm file> was built from)", 5 },
+  { "--withali", eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,  "--viterbi","incl. alignment in <f> (must be aln <cm file> was built from)", 5 },
   { "--withpknots",eslARG_NONE, NULL,  NULL, NULL,      NULL,"--withali",       NULL, "incl. structure (w/pknots) from <f> from --withali <f>", 5 },
   { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--withali",       NULL, "--rf was originally used with cmbuild", 5 },
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,"--withali",       NULL, "--gapthresh <x> was originally used with cmbuild", 5 },
@@ -600,6 +600,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		      if(worker_seqs_to_aln->postcode1!= NULL) free(worker_seqs_to_aln->postcode1);
 		      if(worker_seqs_to_aln->postcode2!= NULL) free(worker_seqs_to_aln->postcode2);
 		      if(worker_seqs_to_aln->sc       != NULL) free(worker_seqs_to_aln->sc);
+		      if(worker_seqs_to_aln->pp       != NULL) free(worker_seqs_to_aln->pp);
 		      free(worker_seqs_to_aln);
 		  
 		    }
@@ -764,8 +765,9 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 {
   int status;
   ESL_MSA *msa = NULL;
-  int i, imax;
+  int i, ip, imin, imax;
   float sc, struct_sc;
+  void *tmp;
 
   /* create a new MSA, if we didn't do --inside */
   if(esl_opt_GetBoolean(go, "--cyk") || (esl_opt_GetBoolean(go, "--viterbi") || (esl_opt_GetBoolean(go, "--optacc"))))
@@ -774,10 +776,13 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
        * this has already been checked to see it matches the CM structure */
       if(esl_opt_GetString(go, "--withali") != NULL)
 	{
+	  /* grow the seqs_to_aln object */
+	  if((seqs_to_aln->nseq + cfg->withmsa->nseq) > seqs_to_aln->nalloc) 
+	    GrowSeqsToAln(seqs_to_aln, (seqs_to_aln->nalloc - (seqs_to_aln->nseq + cfg->withmsa->nseq)), FALSE);
 	  if((status = include_withali(go, cfg, cm, &(seqs_to_aln->sq), &(seqs_to_aln->tr), &(seqs_to_aln->nseq), errbuf)) != eslOK)
 	    ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have SS_cons annotation compatible with the CM\n", esl_opt_GetString(go, "--withali"));
 	}
-
+      
       if(esl_opt_GetBoolean(go, "--viterbi"))
 	{
 	  ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
@@ -799,31 +804,56 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  if(seqs_to_aln->postcode1 == NULL || seqs_to_aln->postcode2 == NULL) 
 	    cm_Fail("-p enabled, but DispatchAlignments() did not return post codes.\n");
 
+	  /* if --withali: we have to allocate space for the pointers to the postal codes for the preset alignment, 
+	   * even though they'll be NULL. 
+	   */
+	  if(cfg->withmsa != NULL) {
+	    ESL_RALLOC(seqs_to_aln->postcode1,tmp, sizeof(char **) * (seqs_to_aln->nseq));
+	    ESL_RALLOC(seqs_to_aln->postcode2,tmp, sizeof(char **) * (seqs_to_aln->nseq));
+	  }
 	  imax = seqs_to_aln->nseq - 1;
 	  if(cfg->withmsa != NULL) imax -= cfg->withmsa->nseq;
 	  for (i = 0; i <= imax; i++)                                                   
 	    {                                                                          
-	      if((status = make_aligned_string(msa->aseq[i], "-_.", msa->alen, seqs_to_aln->postcode1[i], &apostcode1)) != eslOK)
+	      ip = (cfg->withmsa == NULL) ? i : i + cfg->withmsa->nseq;
+	      if((status = make_aligned_string(msa->aseq[ip], "-_.", msa->alen, seqs_to_aln->postcode1[i], &apostcode1)) != eslOK)
 		ESL_FAIL(status, errbuf, "error creating posterior string (1)\n");
-	      if((status = make_aligned_string(msa->aseq[i], "-_.", msa->alen, seqs_to_aln->postcode2[i], &apostcode2)) != eslOK)
+	      if((status = make_aligned_string(msa->aseq[ip], "-_.", msa->alen, seqs_to_aln->postcode2[i], &apostcode2)) != eslOK)
 		ESL_FAIL(status, errbuf, "error creating posterior string (2)\n");
-	      esl_msa_AppendGR(msa, "POSTX.", i, apostcode1);
-	      if(! esl_opt_GetBoolean(go, "--onepost")) esl_msa_AppendGR(msa, "POST.X", i, apostcode2);
+	      esl_msa_AppendGR(msa, "POSTX.", ip, apostcode1);
+	      if(! esl_opt_GetBoolean(go, "--onepost")) esl_msa_AppendGR(msa, "POST.X", ip, apostcode2);
 	      free(apostcode1);                                                         
 	      free(apostcode2);                                                         
-	    }                                                                          
-	}                                                                              
-
+	    }
+	  /* if --withali: we have to allocate space for the pointers to the postal codes for the preset alignment, 
+	   * even though they'll be NULL. 
+	   */
+	  if(cfg->withmsa != NULL) {
+	    for (i = imax+1; i < seqs_to_aln->nseq; i++) 
+	      seqs_to_aln->postcode1[i] = seqs_to_aln->postcode2[i] = NULL;
+	  }
+	}
+     
 #ifdef HAVE_MPI
       /* if nec, output the scores */
       if(esl_opt_GetBoolean(go, "--mpi") && (!esl_opt_GetBoolean(go, "-q"))) { 
-	fprintf(stdout, "#\n");
-	fprintf(stdout, "# %8s  %-30s  %6s  %13s\n", "seq idx",  "seq name",                       "length", (cm->align_opts & CM_ALIGN_OPTACC) ? "avg post prob" : "bit score");
-	fprintf(stdout, "# %8s  %30s  %6s  %13s\n",  "--------", "------------------------------", "------", "-------------");
-	for (i = 0; i < seqs_to_aln->nseq; i++) {
-	  fprintf(stdout, "  %8d  %-30.30s  %6d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
-	  if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %13.3f\n", seqs_to_aln->sc[i]);
-	  else                                 fprintf(stdout, "  %13.2f\n", seqs_to_aln->sc[i]);
+
+	if(cm->align_opts & CM_ALIGN_OPTACC) { 
+	  fprintf(stdout, "#\n");
+	  fprintf(stdout, "# %8s  %-28s  %5s  %8s  %8s\n", "seq idx",  "seq name",                     "len",    "bit sc",  "avg prob");
+	  fprintf(stdout, "# %8s  %28s  %5s  %8s  %8s\n",  "--------", "----------------------------", "-----", "--------", "--------");
+	}
+	else { 
+	  fprintf(stdout, "#\n");
+	  fprintf(stdout, "# %8s  %-28s  %5s  %8s\n", "seq idx",  "seq name",                     "len",     "bit sc");
+	  fprintf(stdout, "# %8s  %28s  %5s  %8s\n",  "--------", "----------------------------", "-----", "--------");
+	}
+	imin = (cfg->withmsa == NULL) ? 0 : cfg->withmsa->nseq;
+	for (i = imin; i < seqs_to_aln->nseq; i++) {
+	  ip = (cfg->withmsa == NULL) ? i : i - cfg->withmsa->nseq;
+	  fprintf(stdout, "  %8d  %-28.28s  %5d", (ip+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+	  if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %8.2f  %8.3f\n", seqs_to_aln->sc[ip], seqs_to_aln->pp[ip]);
+	  else                                 fprintf(stdout, "  %8.2f\n", seqs_to_aln->sc[ip]);
 	}
       }      
 #endif
@@ -857,15 +887,14 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	      fprintf(cfg->tracefp, "//\n");
 	    }
 	}
-      if (cfg->regressfp != NULL)
-	{
-	  /* Must delete author info from msa, because it contains version
-	   * and won't diff clean in regression tests. */
-	  if(msa->au != NULL) free(msa->au); msa->au = NULL;
-	  status = esl_msa_Write(cfg->regressfp, msa, eslMSAFILE_STOCKHOLM);
-	  if (status == eslEMEM)    ESL_FAIL(status, errbuf, "Memory error when outputting regression file\n");
-	  else if (status != eslOK) ESL_FAIL(status, errbuf, "Writing regression file failed with error %d\n", status);
-	}
+      if (cfg->regressfp != NULL) {
+	/* Must delete author info from msa, because it contains version
+	 * and won't diff clean in regression tests. */
+	if(msa->au != NULL) free(msa->au); msa->au = NULL;
+	status = esl_msa_Write(cfg->regressfp, msa, eslMSAFILE_STOCKHOLM);
+	if (status == eslEMEM)    ESL_FAIL(status, errbuf, "Memory error when outputting regression file\n");
+	else if (status != eslOK) ESL_FAIL(status, errbuf, "Writing regression file failed with error %d\n", status);
+      }
     }
   if(msa != NULL) esl_msa_Destroy(msa);
   return eslOK;
@@ -1128,8 +1157,9 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
   int         **map;      /* [0..msa->nseq-1][0..msa->alen] map from aligned
 			   * positions to unaligned (non-gap) positions */
 
+
   /* Contract check */
-  if(cfg->withmsa == NULL) cm_Fail("ERROR in include_withali() withmsa is NULL.\n");
+  if(cfg->withmsa == NULL)                     cm_Fail("ERROR in include_withali() withmsa is NULL.\n");
   if(! (cfg->withmsa->flags & eslMSA_DIGITAL)) cm_Fail("ERROR in include_withali() withmsa is not digitized.\n");
 
   /* For each seq in the MSA, map the aligned sequences coords to 
@@ -1596,6 +1626,16 @@ add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs
     }
   }
 
+  if(worker_seqs->pp != NULL) {
+    if(master_seqs->pp == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned post probs, master->pp is NULL.");
+    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
+      assert(!(NOT_IMPOSSIBLE(master_seqs->pp[x])));
+      master_seqs->pp[x] = worker_seqs->pp[(x-offset)];
+    }
+  }
+
   return eslOK;
 }
 #endif /* of #ifdef HAVE_MPI */
+
+
