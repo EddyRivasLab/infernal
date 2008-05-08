@@ -191,6 +191,46 @@ int get_gc_comp(const ESL_ALPHABET *abc, ESL_DSQ *dsq, int start, int stop)
   return 0; /* never reached */
 }
 
+
+/* Function: get_alphabet_comp
+ * Date:     EPN, Wed May  7 18:39:28 2008
+ * Purpose:  Given a sequence and start and stop coordinates, allocate and fill 
+ *           a abc->K sized vector with frequency of each residue.
+ */
+int get_alphabet_comp(const ESL_ALPHABET *abc, ESL_DSQ *dsq, int start, int stop, float **ret_freq) 
+{
+  int status;
+  int i;
+  float *freq;
+
+  ESL_ALLOC(freq, sizeof(float) * abc->K);
+  esl_vec_FSet(freq, abc->K, 0.0);
+
+  /* contract check */
+  if(abc == NULL) cm_Fail("get_alphabet_comp alphabet is NULL.");
+  if(dsq == NULL) cm_Fail("get_alphabet_comp dsq is NULL.");
+  if(abc->type != eslRNA && abc->type != eslDNA)  cm_Fail("get_alphabet_comp expects alphabet of RNA or DNA");
+  if(ret_freq == NULL) cm_Fail("get_alphabet_comp ret_freq is NULL.");
+
+  if (start > stop) {
+    i = start;
+    start = stop;
+    stop = i;
+  }
+  for (i = start; i <= stop; i++)
+  {
+    if(esl_abc_XIsGap(abc, dsq[i])) cm_Fail("in get_alphabet_comp, res %d is a gap!\n", i);
+    esl_abc_FCount(abc, freq, dsq[i], 1.);
+  }
+  esl_vec_FNorm(freq, abc->K);
+  *ret_freq = freq;
+  return eslOK;
+
+ ERROR:
+  cm_Fail("get_alphabet_comp() memory allocation error.");
+  return 0; /* never reached */
+}
+
 /* Function: GetDBSize()
  *
  * Date:     EPN, Wed Apr  2 16:33:19 2008

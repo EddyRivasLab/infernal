@@ -626,65 +626,77 @@ int CompareResultsByEndPoint (const void *a_void, const void *b_void) {
 /* Function: UpdateHitScoresWithNull2Or3()
  * Date:     EPN, Tue Apr  1 06:32:34 2008
  * Purpose:  Update scores for each hit based on NULL2 or NULL3 correction.
- *           If (do_remove_under_cutoff), remove any hits that are now
- *           below our score cutoff
+ *           Remove any hits that are now below <sc_cutoff>. To not remove
+ *           any hits, pass <sc_cutoff> == IMPOSSIBLE.
  * 
  * Args:    
  *           cm      - the covariance model
+ *           errbuf   - for printing error messages
  *           si      - SearchInfo, relevant round is final one, si->nrounds
  *           results - the hits data structure
  *           dsq     - digitized seq hits lie within, needed to determine gc content
- *           do_remove_under_cutoff - TRUE to remove hits that are now below our cutoff
+ *           first_result   - index of first result in search_results to align (if dsq_mode)
+ *           sc_cutoff - we'll remove hits that have new bit scores < <sc_cutoff> (IMPOSSIBLE => don't remove any hits)
+ *           do_null2 - TRUE to do NULL2 score correction
+ *           do_null3 - TRUE to do NULL3 score correction
+ *           sort_by_score    - TRUE to sort list by score at the end of the function IFF we remove any hits
+ *           sort_by_endpoint - TRUE to sort list by end point at the end of the function IFF we remove any hits
  */
-int UpdateHitScoresWithNull2Or3(CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_DSQ *dsq, int do_remove_under_cutoff, char *errbuf, int do_null2, int do_null3)
+int UpdateHitScoresWithNull2Or3(CM_t *cm, char *errbuf, SearchInfo_t *si, search_results_t *results, ESL_DSQ *dsq, int first_result, float sc_cutoff, int do_null2, int do_null3, int sort_by_score, int sort_by_endpoint)
 {
   int status;
   int i, x;
   search_result_node_t swap;
-  float cutoff = IMPOSSIBLE; /* the min score we want to keep */
   float corr_sc;             /* score correction */
+  int orig_num_results; /* number of results when function entered */
 
   /* Check contract */
   if(dsq == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), dsq is NULL\n");
   if(si == NULL)      ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), si is NULL\n");
   if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.\n");
-  if(do_null2 && do_null3)    ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), do_null2 is TRUE and do_null3 is TRUE.\n");
-  if(!do_null2 && !do_null3)  ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), do_null2 is FALSE and do_null3 is FALSE.\n");
+  if(do_null2 && do_null3)    ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), do_null2 is TRUE and do_null3 is TRUE. (only one should be true)\n");
+  if(!do_null2 && !do_null3)  ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), do_null2 is FALSE and do_null3 is FALSE. (one should be true)\n");
+  if(sort_by_score && sort_by_endpoint)   ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), sort_by_score is TRUE and sort_by_endpoint is TRUE (only one should be true).\n");
+  if(!sort_by_score && !sort_by_endpoint) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), sort_by_score is FALSE and sort_by_endpoint is FALSE (one should be true).\n");
+  if(first_result > results->num_results) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), first_result %d > results->num_results %d\n", first_result, results->num_results);
 
   if (results == NULL) return eslOK;
-  if(do_remove_under_cutoff) { 
-    ESL_DASSERT1((si->cutoff_type[si->nrounds] == SCORE_CUTOFF));
-    cutoff = si->sc_cutoff[si->nrounds];
-  }
 
-  for (i=0; i<results->num_results; i++) {
+  orig_num_results = results->num_results;
+  for (i=first_result; i<results->num_results; i++) {
     if(results->data[i].tr == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), parsetree for hit i: %d is NULL.\n", i);
     if(do_null2) { 
-      if((status = ParsetreeScoreCorrection(cm, errbuf, results->data[i].tr, dsq, &corr_sc)) != eslOK) return status;
+      if((status = ParsetreeScoreCorrectionNull2(cm, errbuf, results->data[i].tr, dsq, results->data[i].start, &corr_sc)) != eslOK) return status;
     }
     else if(do_null3) { 
-      if((status = ParsetreeScoreCorrectionTargetNull(cm, errbuf, results->data[i].tr, dsq, &corr_sc)) != eslOK) return status;
+      /*printf("\norig score: %.3f\n", results->data[i].score);*/
+      if((status = ParsetreeScoreCorrectionNull3(cm, errbuf, results->data[i].tr, dsq, results->data[i].start, &corr_sc)) != eslOK) return status;
     }
     results->data[i].score -= corr_sc;
-    if(do_remove_under_cutoff && results->data[i].score < cutoff) results->data[i].start = -1;
+    /*printf("new  score: %.3f\n", results->data[i].score);*/
+    if(results->data[i].score < sc_cutoff) { 
+      results->data[i].start = -1;
+    }
   }
 
-  if(do_remove_under_cutoff) { /* remove any hits that are now below our cutoff */
-    for (x=0; x<results->num_results; x++) {
-      while (results->num_results > 0 && 
-	     results->data[results->num_results-1].start == -1)
-	results->num_results--;
-      if (x<results->num_results && results->data[x].start == -1) {
-	swap = results->data[x];
-	results->data[x] = results->data[results->num_results-1];
-	results->data[results->num_results-1] = swap;
-	results->num_results--;
-      }
-    }
-    while (results->num_results > 0 && results->data[results->num_results-1].start == -1)
+  for (x=0; x<results->num_results; x++) {
+    while (results->num_results > 0 && 
+	   results->data[results->num_results-1].start == -1)
       results->num_results--;
+    if (x<results->num_results && results->data[x].start == -1) {
+      swap = results->data[x];
+      results->data[x] = results->data[results->num_results-1];
+      results->data[results->num_results-1] = swap;
+      results->num_results--;
+    }
   }
-  SortResultsByScore(results);
+  while (results->num_results > 0 && results->data[results->num_results-1].start == -1)
+    results->num_results--;
+
+  if(results->num_results != orig_num_results) { 
+    if(sort_by_score)    SortResultsByScore(results);
+    if(sort_by_endpoint) SortResultsByEndPoint(results);
+  }
   return eslOK;
 }  
 
@@ -787,13 +799,14 @@ void RemoveOverlappingHits (search_results_t *results, int i0, int j0)
  *           si      - SearchInfo, relevant round is <sround>
  *           sround  - round of search we're removing hits for
  *           results - the hits data structure
- *           seq     - seq hits lie within, needed to determine gc content
+ *           dsq     - seq hits lie within, needed to determine gc content
+ *           first_result   - index of first result in search_results to align (if dsq_mode)
  *           sort_by_score    - TRUE to sort list by score at the end of the function IFF we remove any hits
  *           sort_by_endpoint - TRUE to sort list by end point at the end of the function IFF we remove any hits
  *
  * Returns: eslOK on success, eslEINCOMPAT on contract violation
  */
-int RemoveHitsOverECutoff (CM_t *cm, char *errbuf, SearchInfo_t *si, int sround, search_results_t *results, ESL_DSQ *dsq, int sort_by_score, int sort_by_endpoint)
+int RemoveHitsOverECutoff (CM_t *cm, char *errbuf, SearchInfo_t *si, int sround, search_results_t *results, ESL_DSQ *dsq, int first_result, int sort_by_score, int sort_by_endpoint)
 {
   int gc_comp;
   int i, x;
@@ -813,6 +826,7 @@ int RemoveHitsOverECutoff (CM_t *cm, char *errbuf, SearchInfo_t *si, int sround,
   if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) ESL_FAIL(eslEINCOMPAT, errbuf, "remove_hits_over_e_cutoff(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.");
   if(sort_by_score == TRUE  && sort_by_endpoint == TRUE)  ESL_FAIL(eslEINCOMPAT, errbuf, "remove_hits_over_e_cutoff(), sort_by_score and sort_by_endpoint both TRUE.");
   if(sort_by_score == FALSE && sort_by_endpoint == FALSE) ESL_FAIL(eslEINCOMPAT, errbuf, "remove_hits_over_e_cutoff(), sort_by_score and sort_by_endpoint both FALSE (currently disallowed, though shouldn't be a problem to allow).");
+  if(first_result > results->num_results) ESL_FAIL(eslEINCOMPAT, errbuf, "RemoveHitsOverECutoff(), first_result %d > results->num_results %d\n", first_result, results->num_results);
   
   if (results == NULL) return eslOK;
 
@@ -824,7 +838,7 @@ int RemoveHitsOverECutoff (CM_t *cm, char *errbuf, SearchInfo_t *si, int sround,
   ESL_DASSERT1((si->cutoff_type[sround] == E_CUTOFF));
   cutoff = si->e_cutoff[sround];
   
-  for (i=0; i<results->num_results; i++) {
+  for (i=first_result; i<results->num_results; i++) {
     gc_comp = get_gc_comp (cm->abc, dsq, results->data[i].start, results->data[i].stop);
     p = cm->stats->gc2p[gc_comp];
     score_for_Eval = results->data[i].score;
@@ -1894,8 +1908,11 @@ float
 E2SurvFract(float E, int W, float avg_hit_len, long dbsize, int do_pad)
 {
   float surv_res_per_hit;
+  float surv_fract;
   surv_res_per_hit = (do_pad) ? (((float) 2 * W) - avg_hit_len) : avg_hit_len;
-  return((E * surv_res_per_hit) / ((double) dbsize));
+  surv_fract = (E * surv_res_per_hit) / ((double) dbsize);
+  surv_fract = ESL_MIN(surv_fract, 1.0); /* max survival fraction is 1.0 */
+  return surv_fract;
 }
 
 

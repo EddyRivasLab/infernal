@@ -60,6 +60,8 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
   int               min_i;           /* a start point, used if we're scanning with HMM */
   int               h_existing;      /* number of hits in round_results that exist when this function is entered */
   SearchInfo_t     *si = cm->si;     /* the SearchInfo */
+  int               do_null2;        /* TRUE to use NULL2 score correction in final round */
+  int               do_null3;        /* TRUE to use NULL3 score correction in final round */
 
   /* convenience pointers to cm->si for this 'filter round' of searching */
   float             cutoff;          /* cutoff for this round, HMM or CM, whichever is relevant for this round */
@@ -70,7 +72,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
   search_results_t *cur_results;     /* search_results for *this* call to DispatchSearch, copied to round_results at end of function */
   int               prev_j;          /* used to collapse hits within same W bubble together when filtering */
   int               nhits;           /* number of hits */
-
+  
   /* Contract checks */
   if(!(cm->flags & CMH_BITS))          ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), CMH_BITS flag down.\n");
   if(si == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(): search info cm->si is NULL.\n");
@@ -93,6 +95,8 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
   hsi             = si->hsi[sround]; /* may be NULL */
   round_results   = results[sround]; /* must not be NULL, contract enforced this */
   h_existing      = round_results->num_results; /* remember this, b/c we only want to rescan survivors found in *this* function call */
+  do_null2        = (cm->search_opts & CM_SEARCH_NULL2) ? TRUE : FALSE;
+  do_null3        = (cm->search_opts & CM_SEARCH_NULL3) ? TRUE : FALSE;
 
   cur_results = CreateResults(INIT_RESULTS);
 
@@ -191,10 +195,10 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       SortResultsByEndPoint(cur_results);
     }
   }
-  
+
   /* remove hits that were below our safe bit score cutoff but are above our E-value cutoff for their given partition */
   if(cm->si->cutoff_type[sround] == E_CUTOFF) { 
-    if((status = RemoveHitsOverECutoff(cm, errbuf, cm->si, sround, cur_results, dsq, 
+    if((status = RemoveHitsOverECutoff(cm, errbuf, cm->si, sround, cur_results, dsq, 0,
 				       FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
 				       TRUE))  /* sort by end point at the end of the function */
 				       != eslOK) return status;
@@ -237,15 +241,28 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
     }
   }
   else { /* we're done filtering, and we're done searching, get alignments if nec */
+    /* copy cur_results to final_results */
     AppendResults(cur_results, round_results, 1);
     if((cur_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN)) && (stype == SEARCH_WITH_CM)) {
-      /* copy cur_results to final_results */
       if((status = DispatchAlignments(cm, errbuf, NULL, 
 				      dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
 				      0, 0, 0, NULL, size_limit, stdout)) != eslOK) return status;
-      if(cm->search_opts & CM_SEARCH_NULL3 && stype == SEARCH_WITH_CM) { 
-	/* HERE HERE, add a h_existing var to UpdateScoresWithNull2or3 */
-	if((status = UpdateHitScoresWithNull2Or3(cm, cm->si, round_results, dsq, FALSE, errbuf, FALSE, TRUE)) != eslOK) return status;
+      if(do_null2 || do_null3) { 
+	if(stype == SEARCH_WITH_CM) { /* TEMPORARY! to be removed after HMM null3 implemented */
+	  float tmp_cutoff;
+	  tmp_cutoff = (cm->si->cutoff_type[sround] == SCORE_CUTOFF) ? cm->si->sc_cutoff[sround] : IMPOSSIBLE; /* if cutoff is an E-value don't remove hits inside UpdateHitScoresWithNull2Or3 */
+	  if((status = UpdateHitScoresWithNull2Or3(cm, errbuf, cm->si, round_results, dsq, h_existing, tmp_cutoff, do_null2, do_null3, 
+					       FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
+					       TRUE))  /* sort by end point at the end of the function */
+	     != eslOK) return status;
+	  if(cm->si->cutoff_type[sround] == E_CUTOFF) { 
+	    if((status = RemoveHitsOverECutoff(cm, errbuf, cm->si, sround, round_results, dsq, h_existing,
+					       FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
+					       TRUE))  /* sort by end point at the end of the function */
+	       != eslOK) return status;
+
+	  }
+	}
       }	  
     }
   }
@@ -548,6 +565,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       cur_tr  = &(search_results->data[ip].tr);
       L       = search_results->data[ip].stop - search_results->data[ip].start + 1;
       ESL_DASSERT1((L >= 0));
+      /*printf("i: %d ip: %d L: %d\n", i, ip, L);*/
     }
     if (L == 0) continue; /* silently skip zero length seqs */
 

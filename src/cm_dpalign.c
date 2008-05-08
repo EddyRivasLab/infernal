@@ -3286,7 +3286,7 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
     /* Get a shadow deck to fill in and initialize all valid cells for state v */
     if (cm->sttype[v] != E_st) {
       if (cm->sttype[v] == B_st) {
-	kshad     = alloc_jdbanded_vjd_kshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
+	kshad     = (jmin[v] == -1) ? NULL : alloc_jdbanded_vjd_kshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
 	shadow[v] = (void **) kshad;
 	/* initialize all valid cells for state v to IMPOSSIBLE */
 	ESL_DASSERT1((! (NOT_IMPOSSIBLE(cm->endsc[v]))));

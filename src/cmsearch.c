@@ -101,7 +101,7 @@ static ESL_OPTIONS options[] = {
   { "--alncyk",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "align hits with the CYK algorithm", 7 },
   { "--addx",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "add line to output alnments marking non-compensatory bps with 'x'", 7 },
   /* verbose output files */
-  { "--tabfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save hits in tabular format to file <f>", 8 },
+  { "--tabfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,"--forecast", "save hits in tabular format to file <f>", 8 },
   { "--gcfile",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save GC content stats of target sequence file to <f>", 8 },
   /* Setting output alphabet */
   { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 9 },
@@ -483,7 +483,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       while ((status = read_next_search_seq(cfg->abc, cfg->sqfp, cfg->do_rc, &dbseq)) == eslOK)
 	{
 	  for(rci = cfg->init_rci; rci <= cfg->do_rc; rci++) {
-	    /*printf("SEARCHING >%s %d\n", dbseq->sq[reversed]->name, reversed);*/
+	    /*printf("SEARCHING >%s %d\n", dbseq->sq[rci]->name, rci);*/
 	    if ((status = ProcessSearchWorkunit(cm, errbuf, dbseq->sq[rci]->dsq, dbseq->sq[rci]->n, &dbseq->results[rci], esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, &seq_surv_fractA, &seq_nhitsA)) != eslOK) cm_Fail(errbuf);
 	    for(n = 0; n <= cm->si->nrounds; n++) { 
 	      cm_surv_fractA[n] += (dbseq->sq[rci]->n * seq_surv_fractA[n]);
@@ -492,13 +492,14 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    free(seq_surv_fractA);
 	    free(seq_nhitsA);
 	    RemoveOverlappingHits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
-	    if(esl_opt_GetBoolean(go, "--null2") || esl_opt_GetBoolean(go, "--null3")) { 
-	      if((status = UpdateHitScoresWithNull2Or3(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]->dsq, using_sc_cutoff, errbuf, esl_opt_GetBoolean(go, "--null2"), esl_opt_GetBoolean(go, "--null3"))) != eslOK) cm_Fail(errbuf); 
-	      if((status = RemoveHitsOverECutoff(cm, errbuf, cm->si, cm->si->nrounds, dbseq->results[rci], dbseq->sq[rci]->dsq, 
-						 FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
-						 TRUE))  /* sort by end point at the end of the function */
-		 != eslOK) cm_Fail(errbuf);
-	    }
+	    /* TEMPORARY! Below block should now be handled in DispatchSearch() */
+	    //if(esl_opt_GetBoolean(go, "--null2") || esl_opt_GetBoolean(go, "--null3")) { 
+	    //if((status = UpdateHitScoresWithNull2Or3(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]->dsq, using_sc_cutoff, errbuf, esl_opt_GetBoolean(go, "--null2"), esl_opt_GetBoolean(go, "--null3"))) != eslOK) cm_Fail(errbuf); 
+	    //if((status = RemoveHitsOverECutoff(cm, errbuf, cm->si, cm->si->nrounds, dbseq->results[rci], dbseq->sq[rci]->dsq, 
+	    //FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
+	    //TRUE))  /* sort by end point at the end of the function */
+	    //!= eslOK) cm_Fail(errbuf);
+	    //}
 	    /* hits over E cutoff were removed in DispatchSearch() if(using_e_cutoff) */
 	    /* OLD LINE: RemoveHitsOverECutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]);  */
 	  }
@@ -799,13 +800,16 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			{
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
 			    RemoveOverlappingHits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
-			    if(esl_opt_GetBoolean(go, "--null2") || esl_opt_GetBoolean(go, "--null3")) { 
-			      if((status = UpdateHitScoresWithNull2Or3(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]->dsq, using_sc_cutoff, errbuf, esl_opt_GetBoolean(go, "--null2"), esl_opt_GetBoolean(go, "--null3"))) != eslOK) cm_Fail(errbuf); 
-			      if((status = RemoveHitsOverECutoff(cm, errbuf, cm->si, cm->si->nrounds, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]->dsq, 
-								 FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
-								 TRUE))  /* sort by end point at the end of the function */
-				 != eslOK) cm_Fail(errbuf);
-			    }
+
+			    /* TEMPORARY! Below block should now be handled in DispatchSearch() */
+			    //if(esl_opt_GetBoolean(go, "--null2") || esl_opt_GetBoolean(go, "--null3")) { 
+			    //if((status = UpdateHitScoresWithNull2Or3(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]->dsq, using_sc_cutoff, errbuf, esl_opt_GetBoolean(go, "--null2"), esl_opt_GetBoolean(go, "--null3"))) != eslOK) cm_Fail(errbuf); 
+			    //if((status = RemoveHitsOverECutoff(cm, errbuf, cm->si, cm->si->nrounds, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]->dsq, 
+			    //FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
+			    //TRUE))  /* sort by end point at the end of the function */
+			    //!= eslOK) cm_Fail(errbuf);
+			    //}
+
 			    /* hits over E cutoff were removed in DispatchSearch() if(using_e_cutoff) */
 			    /* OLD LINE: RemoveHitsOverECutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]);  */
 			  }					      
@@ -1062,6 +1066,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(  esl_opt_GetBoolean(go, "--no-qdb"))      cm->search_opts |= CM_SEARCH_NOQDB;
   if(  esl_opt_GetBoolean(go, "--hbanded"))     cm->search_opts |= CM_SEARCH_HBANDED;
   if(  esl_opt_GetBoolean(go, "--aln2bands"))   cm->search_opts |= CM_SEARCH_HMMALNBANDS;
+  if(  esl_opt_GetBoolean(go, "--null2"))       cm->search_opts |= CM_SEARCH_NULL2;
+  if(  esl_opt_GetBoolean(go, "--null3"))       cm->search_opts |= CM_SEARCH_NULL3;
   if(  esl_opt_GetBoolean(go, "--viterbi"))  { 
     cm->search_opts |= CM_SEARCH_HMMVITERBI;
     cm->search_opts |= CM_SEARCH_NOQDB;

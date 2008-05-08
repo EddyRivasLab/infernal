@@ -765,7 +765,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 {
   int status;
   ESL_MSA *msa = NULL;
-  int i, ip, imin, imax;
+  int i, ip, imax;
   float sc, struct_sc;
   void *tmp;
 
@@ -848,6 +848,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  fprintf(stdout, "# %8s  %-28s  %5s  %8s\n", "seq idx",  "seq name",                     "len",     "bit sc");
 	  fprintf(stdout, "# %8s  %28s  %5s  %8s\n",  "--------", "----------------------------", "-----", "--------");
 	}
+	int imin;
 	imin = (cfg->withmsa == NULL) ? 0 : cfg->withmsa->nseq;
 	for (i = imin; i < seqs_to_aln->nseq; i++) {
 	  ip = (cfg->withmsa == NULL) ? i : i - cfg->withmsa->nseq;

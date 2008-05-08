@@ -269,8 +269,8 @@ extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **r
 extern void         rightjustify(const ESL_ALPHABET *abc, char *s, int n);
 extern void         leftjustify(const ESL_ALPHABET *abc, char *s, int n);
 extern int          EmitParsetree(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, char *name, int do_digital, Parsetree_t **ret_tr, ESL_SQ **ret_sq, int *ret_N);
-extern int          ParsetreeScoreCorrection(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, float *ret_sc);
-extern int          ParsetreeScoreCorrectionTargetNull(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, float *ret_sc);
+extern int          ParsetreeScoreCorrectionNull2(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int start, float *ret_sc);
+extern int          ParsetreeScoreCorrectionNull3(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int start, float *ret_sc);
 
 /* from cm_qdband.c */
 extern void     BandExperiment(CM_t *cm);
@@ -591,9 +591,9 @@ extern void SortResultsByScore         (search_results_t *results);
 extern void SortResultsByEndPoint      (search_results_t *results);
 extern void PrintResults               (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory);
 extern void ReportHit                  (int i, int j, int bestr, float score, search_results_t *results);
-extern int  UpdateHitScoresWithNull2Or3(CM_t *cm, SearchInfo_t *si, search_results_t *results, ESL_DSQ *dsq, int do_remove_under_cutoff, char *errbuf, int do_null2, int do_null3);
+extern int  UpdateHitScoresWithNull2Or3(CM_t *cm, char *errbuf, SearchInfo_t *si, search_results_t *results, ESL_DSQ *dsq, int first_result, float sc_cutoff, int do_null2, int do_null3, int sort_by_score, int sort_by_endpoint);
 extern void RemoveOverlappingHits      (search_results_t *results, int i0, int j0);
-extern int  RemoveHitsOverECutoff      (CM_t *cm, char *errbuf, SearchInfo_t *si, int sround, search_results_t *results, ESL_DSQ *dsq, int sort_by_score, int sort_by_endpoint);
+extern int  RemoveHitsOverECutoff      (CM_t *cm, char *errbuf, SearchInfo_t *si, int sround, search_results_t *results, ESL_DSQ *dsq, int first_result, int sort_by_score, int sort_by_endpoint);
 extern int  ScoresFromResults          (search_results_t *results, char *errbuf, float **ret_scA, int *ret_scN); 
 extern float CountScanDPCalcs          (CM_t *cm, int L, int use_qdb);
 extern BestFilterInfo_t *CreateBestFilterInfo();
@@ -636,6 +636,7 @@ extern void       FreeCMStats(CMStats_t *cmstats);
 extern int        debug_print_cmstats(CM_t *cm, char *errbuf, CMStats_t *cmstats, int has_fthr);
 extern int        debug_print_expinfo(ExpInfo_t *exp);
 extern int        get_gc_comp(const ESL_ALPHABET *abc, ESL_DSQ *dsq, int start, int stop);
+extern int        get_alphabet_comp(const ESL_ALPHABET *abc, ESL_DSQ *dsq, int start, int stop, float **ret_freq); 
 extern int        GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N);
 extern int        GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *ret_N, double **ret_gc_ct);
 extern int        E2MinScore(CM_t *cm, char *errbuf, int exp_mode, float E,  float *ret_sc);

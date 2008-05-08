@@ -465,7 +465,8 @@ typedef struct cp9map_s {
 #define CM_SEARCH_HMMVITERBI   (1<<9)  /* search with CP9 HMM Viterbi              */
 #define CM_SEARCH_HMMFORWARD   (1<<10) /* search with CP9 HMM Forward              */
 #define CM_SEARCH_HMM2IJOLD    (1<<11) /* use old hmm2ij band calculation alg      */
-#define CM_SEARCH_NULL3        (1<<12) /* use NULL3 score correction               */
+#define CM_SEARCH_NULL2        (1<<12) /* use NULL2 score correction               */
+#define CM_SEARCH_NULL3        (1<<13) /* use NULL3 score correction               */
 
 /* Structure: CMFILE
  * Incept:    SRE, Tue Aug 13 10:16:39 2002 [St. Louis]
