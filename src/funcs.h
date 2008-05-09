@@ -390,6 +390,7 @@ extern void  CP9ViterbiTrace(CP9_t *hmm, ESL_DSQ *dsq, int i0, int j0,
 extern void  CP9ReverseTrace(CP9trace_t *tr);
 extern int   CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
 				 int nseq, CP9trace_t **tr, int do_full, int do_matchonly, ESL_MSA **ret_msa);
+extern int   CP9TraceScoreCorrectionNull2(CP9_t *hmm, char *errbuf, CP9trace_t *tr, ESL_DSQ *dsq, int start, float *ret_sc);
 
 /* from alphabet.c */
 extern void   PairCount(const ESL_ALPHABET *abc, float *counters, char syml, char symr, float wt);

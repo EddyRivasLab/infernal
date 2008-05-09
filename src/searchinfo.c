@@ -548,8 +548,8 @@ void AppendResults (search_results_t *src_results, search_results_t *dest_result
     {
       ip = dest_results->num_results;
       ReportHit (src_results->data[i].start+i0-1, src_results->data[i].stop+i0-1, 
-		  src_results->data[i].bestr,      src_results->data[i].score,
-		  dest_results);
+		 src_results->data[i].bestr,      src_results->data[i].score,
+		 dest_results);
       if(src_results->data[i].tr != NULL)
 	(*dest_results).data[ip].tr = (*src_results).data[i].tr;
       if(src_results->data[i].pcode1 != NULL)
@@ -631,7 +631,7 @@ int CompareResultsByEndPoint (const void *a_void, const void *b_void) {
  * 
  * Args:    
  *           cm      - the covariance model
- *           errbuf   - for printing error messages
+ *           errbuf  - for printing error messages
  *           si      - SearchInfo, relevant round is final one, si->nrounds
  *           results - the hits data structure
  *           dsq     - digitized seq hits lie within, needed to determine gc content
@@ -649,6 +649,8 @@ int UpdateHitScoresWithNull2Or3(CM_t *cm, char *errbuf, SearchInfo_t *si, search
   search_result_node_t swap;
   float corr_sc;             /* score correction */
   int orig_num_results; /* number of results when function entered */
+
+  /*printf("in UpdateHitScoresWithNull2Or3()\n");*/
 
   /* Check contract */
   if(dsq == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "UpdateHitScoresWithNull2Or3(), dsq is NULL\n");

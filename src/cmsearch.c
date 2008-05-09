@@ -51,13 +51,14 @@ static ESL_OPTIONS options[] = {
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
   { "-o",        eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "direct output to file <f>, not stdout", 1 },
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "configure CM/HMM for glocal alignment [default: local]", 1 },
-  /*{ "-F",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "force; allow search with non-calibrated cmfile",   1 },*/
+  { "-Z",        eslARG_REAL,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "set Z (database size in *Mb*) to <x> for E-value calculations", 1},
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--toponly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the top strand", 1 },
   { "--bottomonly", eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the bottom strand", 1 },
-  { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--null3,--viterbi,--forward,--noalign", "turn on the post hoc second null model", 1 },
-  { "--null3",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--null2,--viterbi,--forward,--noalign", "turn on the post hoc third null model", 1 },
+  { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--null3,--noalign", "turn on the post hoc second null model", 1 },
+  { "--null3",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--null2,--noalign", "turn on the post hoc third null model", 1 },
   { "--forecast",eslARG_INT,    NULL,  NULL, NULL,      NULL,      NULL,        NULL, "don't do search, forecast running time with <n> processors", 1 },
+  { "--lambda",  eslARG_REAL,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "overwrite lambdas in <cmfile> to <x> for E-value calculations", 1}, 
   /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
    * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "-g,--pbegin","set all local begins as equiprobable", 1 },
@@ -162,16 +163,17 @@ static void  serial_master (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
-static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int read_next_search_seq(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int do_revcomp, dbseq_t **ret_dbseq);
-static int print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
-extern int get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
+static int initialize_cm                        (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
+static int read_next_search_seq                 (const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int do_revcomp, dbseq_t **ret_dbseq);
+static int print_run_info                       (const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
+extern int get_command                          (const ESL_GETOPTS *go, char *errbuf, char **ret_command);
 static int set_searchinfo_for_calibrated_cm     (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int set_searchinfo_for_uncalibrated_cm   (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int print_searchinfo_for_calibrated_cm   (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *cm_surv_fractA, int *cm_nhitsA, double in_asec, double in_total_psec, double *ret_total_psec);
 static int print_searchinfo_for_uncalibrated_cm (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, float *cm_surv_fractA, int *cm_nhitsA, double in_asec);
 static int estimate_search_time_for_round       (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int stype, int search_opts, ScanMatrix_t *smx, ESL_RANDOMNESS *r, double *ret_sec_per_res);
 static int dump_gc_info                         (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
+static int overwrite_lambdas                    (const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf);
 
 int
 main(int argc, char **argv)
@@ -367,9 +369,15 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
   cfg->fmt = cfg->sqfp->format;
 
-  /* GetDBSize() reads all sequences, rewinds seq file and returns db size */
-  if((status = GetDBSize(cfg->sqfp, errbuf, &(cfg->dbsize))) != eslOK) return status;  
-  if((! esl_opt_GetBoolean(go, "--toponly")) && (! esl_opt_GetBoolean(go, "--bottomonly"))) cfg->dbsize *= 2;
+  /* get database size, unless specified with -Z */
+  if(esl_opt_IsDefault(go, "-Z")) { 
+    /* GetDBSize() reads all sequences, rewinds seq file and returns db size */
+      if((status = GetDBSize(cfg->sqfp, errbuf, &(cfg->dbsize))) != eslOK) return status;  
+    if((! esl_opt_GetBoolean(go, "--toponly")) && (! esl_opt_GetBoolean(go, "--bottomonly"))) cfg->dbsize *= 2;
+  }
+  else { 
+    cfg->dbsize = (long) (esl_opt_GetReal(go, "-Z") * 1000000.); /* convert to Mb then to a long */
+  }
 
   /* if nec, open output file for --gcfile, and print to it */
   if (! esl_opt_IsDefault(go, "--gcfile")) { 
@@ -430,15 +438,9 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       if((! (cm->flags & CMH_EXPTAIL_STATS)) && (! esl_opt_IsDefault(go, "--forecast"))) cm_Fail("--forecast only works with calibrated CM files. Run cmcalibrate (please)."); 
+      /* potentially overwrite lambdas in cm->stats */
+      if (! esl_opt_IsDefault(go, "--lambda")) if((status = overwrite_lambdas(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
       cfg->ncm++;
-      /* check if we have exp stats */
-      /*
-	if(cfg->ncm == 1) { 
-	if((! (cm->flags & CMH_EXPTAIL_STATS)) && (! esl_opt_GetBoolean(go, "-F"))) {
-	cm_Fail("%s has not been calibrated with cmcalibrate.\n       Once calibrated, E-values will be available and HMM filter thresholds\n       will be appropriately set to accelerate the search.\n       To override this error without calibrating, use -F.", cfg->cmfile);
-	}
-	}
-      */
 
       /* initialize the flags/options/params and configuration of the CM */
       if((  status = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
@@ -663,13 +665,9 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   while (xstatus == eslOK && CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
     {
       cfg->ncm++;  
+      /* potentially overwrite lambdas in cm->stats */
+      if (! esl_opt_IsDefault(go, "--lambda")) if((status = overwrite_lambdas(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
       ESL_DPRINTF1(("MPI master read CM number %d\n", cfg->ncm));
-
-      if(cfg->ncm == 1) { /* check if we have exp stats */
-	if((! (cm->flags & CMH_EXPTAIL_STATS)) && (! esl_opt_GetBoolean(go, "-F"))) { 
-	  cm_Fail("%s has not been calibrated with cmcalibrate.\n       Once calibrated, E-values will be available and HMM filter thresholds\n       will be appropriately set to accelerate the search.\n       To override this warning without calibrating, use -F.", cfg->cmfile);
-	}
-      }
 
       if((status = cm_master_MPIBcast(cm, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
       
@@ -1869,7 +1867,8 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
   fprintf(stdout, "%-13s %s\n",  "# command:", command);
   fprintf(stdout, "%-13s %s\n",  "# date:",    date);
   if(cfg->nproc > 1) fprintf(stdout, "%-13s %d\n", "# nproc:", cfg->nproc);
-  fprintf(stdout, "%-13s %ld\n",  "# dbsize(nt):", cfg->dbsize);
+  /*fprintf(stdout, "%-13s %ld\n",  "# dbsize(nt):", cfg->dbsize);*/
+  fprintf(stdout, "%-13s %.6f\n",  "# dbsize(Mb):", (double) cfg->dbsize / 1000000.);
 
   free(command);
   free(date);
@@ -2414,3 +2413,34 @@ int dump_gc_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   free(gc_freq);
   return eslOK;
 }  
+
+
+/* Function: overwrite_lambdas
+ * Date:     EPN, Fri May  9 09:06:15 2008
+ *
+ * Purpose:  If --lambda <x> was enabled we overwrite the lambdas 
+ *           we read from the CM file as <x>.
+ *
+ * Returns:  eslOK on success
+ */
+static int
+overwrite_lambdas(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf)
+{
+  int status;
+  double lambda;
+  int i, p;
+
+  if(esl_opt_IsDefault(go, "--lambda")) ESL_FAIL(eslEINCOMPAT, errbuf, "overwrite_lambdas(), but --lambda was not enabled, shouldn't happen.\n");
+  if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "--lambda only works with calibrated CM files. Run cmcalibrate (please).");
+  if(cm->stats == NULL)                 ESL_FAIL(eslEINCOMPAT, errbuf, "overwrite_lambdas(), cm->stats is NULL, shouldn't happen.\n");
+
+  lambda = esl_opt_GetReal(go, "--lambda");
+  for(i = 0; i < EXP_NMODES; i++) { 
+    for(p = 0; p < cm->stats->np; p++) { 
+      cm->stats->expAA[i][p]->lambda = lambda;
+      /* mu_extrap, the extrapolated mu value is lambda dependent, so we have to update it */
+      cm->stats->expAA[i][p]->mu_extrap = cm->stats->expAA[i][p]->mu_orig - log(1./cm->stats->expAA[i][p]->tailp) / cm->stats->expAA[i][p]->lambda;
+    }
+  }
+  return eslOK;
+}

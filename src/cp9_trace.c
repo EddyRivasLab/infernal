@@ -1363,3 +1363,73 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   if(msa   != NULL)  esl_msa_Destroy(msa);
   return status;
 }
+
+
+/* Function: CP9TraceScoreCorrectionNull2()
+ * Based on HMMER2's TraceScoreCorrection()
+ * Date:     Sun Dec 21 12:05:47 1997 [StL]
+ * 
+ * Purpose:  Calculate a correction (in integer log_2 odds) to be
+ *           applied to a sequence, using a second null model, 
+ *           based on a traceback. M/I emissions are corrected;
+ *           The null model is constructed /post hoc/ as the
+ *           average over all the M,I distributions used by the trace.
+ *           
+ * Return:   the log_2-odds score correction.          
+ */
+int
+CP9TraceScoreCorrectionNull2(CP9_t *hmm, char *errbuf, CP9trace_t *tr, ESL_DSQ *dsq, int start, float *ret_sc)
+{
+  int status;
+  float *p;		/* null2 model distribution */
+  int *sc;	        /* null2 model scores       */
+  int   a,b;            /* residue index counters */
+  int   v;              /* state index counter */
+  int   i;
+  int   tidx, tpos;
+  int score;
+
+  /* Rarely, the alignment was totally impossible, and tr is NULL.
+   */
+  if (tr == NULL) return 0.0;
+
+  /* Set up model: average over the emission distributions of
+   * all M, I states that appear in the trace. Ad hoc? Sure, you betcha. 
+   */
+  /* trivial preorder traverse, since we're already numbered that way */
+  ESL_ALLOC(p, sizeof(float) * hmm->abc->K);
+  esl_vec_FSet(p, hmm->abc->K, 0.0);
+  for (tpos = 0; tpos < tr->tlen; tpos++) { 
+     if      (tr->statetype[tpos] == CSTM) esl_vec_FAdd(p, hmm->mat[tr->nodeidx[tpos]], hmm->abc->K);
+     else if (tr->statetype[tpos] == CSTI) esl_vec_FAdd(p, hmm->ins[tr->nodeidx[tpos]], hmm->abc->K);
+  }
+  esl_vec_FNorm(p, hmm->abc->K);
+
+  ESL_ALLOC(sc,  sizeof(int) * (hmm->abc->Kp));
+  /* calculate null2 scores of each possible emission, first the base alphabet */
+  for (a = 0; a < hmm->abc->K; a++)     sc[a] = Prob2Score(p[a], hmm->null[a]);
+  /* the ambiguities */
+  for (a = hmm->abc->K+1; a < hmm->abc->Kp-1; a++) sc[a] = esl_abc_IAvgScore(hmm->abc, a, sc);  
+
+  /* Score all the M,I state emissions that appear in the trace.
+   */
+   score = 0;
+   for (tpos = 0; tpos < tr->tlen; tpos++)
+     if (tr->statetype[tpos] == CSTM || tr->statetype[tpos] == CSTI) score += sc[dsq[tr->pos[tpos]]];
+
+   /* Apply an ad hoc 8 bit fudge factor penalty;
+    * interpreted as a prior, saying that the second null model is 
+    * 1/2^8 (1/256) as likely as the standard null model
+    */
+   score -= 8 * INTSCALE;	
+
+   /* Return the correction to the bit score.
+    */
+   printf("CP9TraceScoreCorrectionNull2() returning %d bits\n", Scorify(ILogsum(0, score)));	
+   *ret_sc = Scorify(ILogsum(0, score));	
+   return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "CP9TraceScoreCorrectionNull2(): memory allocation error.");
+  return status; /* NEVERREACHED*/
+}

@@ -244,26 +244,25 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
     /* copy cur_results to final_results */
     AppendResults(cur_results, round_results, 1);
     if((cur_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN)) && (stype == SEARCH_WITH_CM)) {
+      /*if((cur_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN))) {*/
       if((status = DispatchAlignments(cm, errbuf, NULL, 
 				      dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
 				      0, 0, 0, NULL, size_limit, stdout)) != eslOK) return status;
       if(do_null2 || do_null3) { 
-	if(stype == SEARCH_WITH_CM) { /* TEMPORARY! to be removed after HMM null3 implemented */
-	  float tmp_cutoff;
-	  tmp_cutoff = (cm->si->cutoff_type[sround] == SCORE_CUTOFF) ? cm->si->sc_cutoff[sround] : IMPOSSIBLE; /* if cutoff is an E-value don't remove hits inside UpdateHitScoresWithNull2Or3 */
-	  if((status = UpdateHitScoresWithNull2Or3(cm, errbuf, cm->si, round_results, dsq, h_existing, tmp_cutoff, do_null2, do_null3, 
-					       FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
-					       TRUE))  /* sort by end point at the end of the function */
+	float tmp_cutoff;
+	tmp_cutoff = (cm->si->cutoff_type[sround] == SCORE_CUTOFF) ? cm->si->sc_cutoff[sround] : IMPOSSIBLE; /* if cutoff is an E-value don't remove hits inside UpdateHitScoresWithNull2Or3 */
+	if((status = UpdateHitScoresWithNull2Or3(cm, errbuf, cm->si, round_results, dsq, h_existing, tmp_cutoff, do_null2, do_null3, 
+						 FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
+						 TRUE))  /* sort by end point at the end of the function */
+	   != eslOK) return status;
+	if(cm->si->cutoff_type[sround] == E_CUTOFF) { 
+	  if((status = RemoveHitsOverECutoff(cm, errbuf, cm->si, sround, round_results, dsq, h_existing,
+					     FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
+					     TRUE))  /* sort by end point at the end of the function */
 	     != eslOK) return status;
-	  if(cm->si->cutoff_type[sround] == E_CUTOFF) { 
-	    if((status = RemoveHitsOverECutoff(cm, errbuf, cm->si, sround, round_results, dsq, h_existing,
-					       FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
-					       TRUE))  /* sort by end point at the end of the function */
-	       != eslOK) return status;
-
-	  }
+	  
 	}
-      }	  
+      }
     }
   }
   FreeResults(cur_results);

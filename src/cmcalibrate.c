@@ -74,7 +74,7 @@ static ESL_OPTIONS options[] = {
   { "--exp-tailp",      eslARG_REAL,    "0.01", NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 2 },
   { "--exp-beta",       eslARG_REAL,    NULL,   NULL, "x>0",    NULL,        NULL,        NULL, "turn QDB on for exp tail fitting, set tail loss prob to <x>", 2 },
   { "--exp-gc",         eslARG_INFILE,  NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content distribution from file <f>",  2},
-  { "--exp-null3",      eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "turn on the post-hoc NULL3 score correction", 3},
+  { "--exp-null3",      eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "turn on the post-hoc NULL3 score correction", 2},
   { "--exp-pfile",      eslARG_INFILE,  NULL,   NULL, NULL,     NULL,  "--exp-gc",        NULL, "read partition info for exp tails from file <f>", 2},
   { "--exp-hfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,        NULL, "save fitted score histogram(s) to file <f>", 2 },
   { "--exp-sfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,        NULL, "save survival plot to file <f>", 2 },
@@ -174,7 +174,7 @@ static int  initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
 static int  initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 
 static int  set_partition_gc_freq(struct cfg_s *cfg, int p);
-static int  fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, double *ret_mu, double *ret_lambda, int *ret_nrandhits);
+static int  fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, double *ret_mu, double *ret_lambda, int *ret_nrandhits, float *ret_tailp);
 static int  get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, double *dnull, int L, ESL_DSQ **ret_dsq);
 static int  get_cmemit_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, int *ret_p, ESL_DSQ **ret_dsq);
 static int  read_partition_file(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
@@ -631,6 +631,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int               h;                                           /* counter over hits */
   double            tmp_mu, tmp_lambda;                          /* temporary mu and lambda used for setting exp tails */
   int               tmp_nrandhits;                               /* temporary number of rand hits found */
+  float             tmp_tailp;                                   /* temporary tail mass probability fit to an exponential */
 
   /* filter threshold related vars */
   int      filN = esl_opt_GetInteger(go, "--fil-N"); /* number of sequences to search for filter threshold calculation */
@@ -751,8 +752,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    fprintf(cfg->exptfitfp, "# CM: %s\n", cm->name);
 	    fprintf(cfg->exptfitfp, "# mode: %12s\n", DescribeExpMode(exp_mode));
 	  }
-	  if((status = fit_histogram(go, cfg, errbuf, exp_scA, exp_scN, &tmp_mu, &tmp_lambda, &tmp_nrandhits)) != eslOK) cm_Fail(errbuf);
-	  SetExpInfo(cfg->cmstatsA[cmi]->expAA[exp_mode][p], tmp_lambda, tmp_mu, (long) (expL * expN), tmp_nrandhits, esl_opt_GetReal(go, "--exp-tailp"));
+	  if((status = fit_histogram(go, cfg, errbuf, exp_scA, exp_scN, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
+	  SetExpInfo(cfg->cmstatsA[cmi]->expAA[exp_mode][p], tmp_lambda, tmp_mu, (long) (expL * expN), tmp_nrandhits, tmp_tailp);
 	  
 	  esl_stopwatch_Stop(cfg->w_stage);
 	  exp_asecAA[exp_mode][p] = cfg->w_stage->elapsed;
@@ -912,6 +913,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int      chunksize;                                   /* size of chunks for each worker */
   double   tmp_mu, tmp_lambda;                          /* temporary mu and lambda used for setting exp tails */
   int      tmp_nrandhits;                               /* temporary number of rand hits found */
+  float    tmp_tailp;                                   /* temporary tail mass probability fit to an exponential */
   double  *dnull = NULL;                                /* double version of cm->null, for generating random seqs */
   int      need_seq;                                    /* TRUE if we are ready to generate a new seq */
   int      z;                                           /* counter */
@@ -1235,8 +1237,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      fprintf(cfg->exptfitfp, "# CM: %s\n", cm->name);
 	      fprintf(cfg->exptfitfp, "# mode: %12s\n", DescribeExpMode(exp_mode));
 	    }
-	    if((status = fit_histogram(go, cfg, errbuf, exp_scA, exp_scN, &tmp_mu, &tmp_lambda, &tmp_nrandhits)) != eslOK) cm_Fail(errbuf);
-	    SetExpInfo(cfg->cmstatsA[cmi]->expAA[exp_mode][p], tmp_lambda, tmp_mu, (long) (expL * expN), tmp_nrandhits, esl_opt_GetReal(go, "--exp-tailp"));
+	    if((status = fit_histogram(go, cfg, errbuf, exp_scA, exp_scN, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
+	    SetExpInfo(cfg->cmstatsA[cmi]->expAA[exp_mode][p], tmp_lambda, tmp_mu, (long) (expL * expN), tmp_nrandhits, tmp_tailp);
 	
 	    for(si = 0; si < expN; si++) {
 	      ESL_DASSERT1((dsq_slist[si] == NULL));
@@ -1804,7 +1806,7 @@ set_partition_gc_freq(struct cfg_s *cfg, int p)
  */
 static int
 fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores,
-	      double *ret_mu, double *ret_lambda, int *ret_nrandhits)
+	      double *ret_mu, double *ret_lambda, int *ret_nrandhits, float *ret_tailp)
 {
   int status;
   double mu;
@@ -1836,7 +1838,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
     fprintf(cfg->exptfitfp, "# %11s  %10s  %10s  %12s\n", "-----------", "----------", "----------", "------------");
     for(a = 0.; a >= -4.; a -= 0.1) { 
       tailp = pow(10., a);
-      esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); /* fit to right 'tailfit' fraction, 0.5 by default */
+      esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); 
       if(n > 1) { 
 	esl_exp_FitComplete(xv, n, &(params[0]), &(params[1]));
 	esl_histogram_SetExpectedTail(h, params[0], tailp, &esl_exp_generic_cdf, &params);
@@ -1853,6 +1855,10 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
   /* end of if cfg->exptfitfp != NULL) */
 
   tailp = esl_opt_GetReal(go, "--exp-tailp");
+  if(esl_opt_IsDefault(go, "--exp-tailp")) { /* use default min mass of --exp-tailp or mass with 500 points */
+    int nmin = 500;
+    tailp = ESL_MIN(tailp, ((float) nmin / (float) h->n));
+  }
   esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); /* fit to right 'tailfit' fraction, 0.01 by default */
   if(n <= 1) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram. Increase --exp-cmL or --exp-hmmLn.", tailp);
     
@@ -1884,6 +1890,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
   *ret_mu     = mu;
   *ret_lambda = lambda;
   *ret_nrandhits = nrandhits;
+  *ret_tailp = tailp;
   return eslOK;
 }
 
