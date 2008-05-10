@@ -601,8 +601,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		      if(worker_seqs_to_aln->postcode2!= NULL) free(worker_seqs_to_aln->postcode2);
 		      if(worker_seqs_to_aln->sc       != NULL) free(worker_seqs_to_aln->sc);
 		      if(worker_seqs_to_aln->pp       != NULL) free(worker_seqs_to_aln->pp);
+		      if(worker_seqs_to_aln->struct_sc!= NULL) free(worker_seqs_to_aln->struct_sc);
 		      free(worker_seqs_to_aln);
-		  
 		    }
 		  else	/* worker reported an error. Get the errbuf. */
 		    {
@@ -838,23 +838,44 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       /* if nec, output the scores */
       if(esl_opt_GetBoolean(go, "--mpi") && (!esl_opt_GetBoolean(go, "-q"))) { 
 
-	if(cm->align_opts & CM_ALIGN_OPTACC) { 
-	  fprintf(stdout, "#\n");
-	  fprintf(stdout, "# %8s  %-28s  %5s  %8s  %8s\n", "seq idx",  "seq name",                     "len",    "bit sc",  "avg prob");
-	  fprintf(stdout, "# %8s  %28s  %5s  %8s  %8s\n",  "--------", "----------------------------", "-----", "--------", "--------");
+	if(seqs_to_aln->struct_sc == NULL) { 
+	  if(cm->align_opts & CM_ALIGN_OPTACC) { 
+	    fprintf(stdout, "#\n");
+	    fprintf(stdout, "# %7s  %-28s  %5s  %8s  %8s\n", "seq idx",  "seq name",                     "len",    "bit sc",  "avg prob");
+	    fprintf(stdout, "# %7s  %28s  %5s  %8s  %8s\n",  "-------",  "----------------------------", "-----", "--------", "--------");
+	  }
+	  else { 
+	    fprintf(stdout, "#\n");
+	    fprintf(stdout, "# %7s  %-28s  %5s  %8s\n", "seq idx",  "seq name",                     "len",     "bit sc");
+	    fprintf(stdout, "# %7s  %28s  %5s  %8s\n",  "-------",  "----------------------------", "-----", "--------");
+	  }
 	}
-	else { 
-	  fprintf(stdout, "#\n");
-	  fprintf(stdout, "# %8s  %-28s  %5s  %8s\n", "seq idx",  "seq name",                     "len",     "bit sc");
-	  fprintf(stdout, "# %8s  %28s  %5s  %8s\n",  "--------", "----------------------------", "-----", "--------");
+	else { /* we have struct scores */
+	  if(cm->align_opts & CM_ALIGN_OPTACC) { 
+	    fprintf(stdout, "#\n");
+	    fprintf(stdout, "# %7s %-25s %5s %17s %8s\n", "",         "",                             "",       "    bit score    ",   "");
+	    fprintf(stdout, "# %7s %-25s %5s %17s %8s\n", "",         "",                             "",       "-----------------",   "");
+	    fprintf(stdout, "# %7s %-25s %5s %8s %8s %8s\n", "seq idx",  "seq name",                  "len",   "total",    "struct",   "avg prob");
+	    fprintf(stdout, "# %7s %25s %5s %8s %8s %8s\n",  "-------", "-------------------------", "-----", "--------", "--------", "--------");
+	  }
+	  else { 
+	    fprintf(stdout, "#\n");
+	    fprintf(stdout, "# %7s  %-28s  %5s  %8s  %8s\n", "seq idx",  "seq name",                     "len",    "bit sc",  "avg prob");
+	    fprintf(stdout, "# %7s  %28s  %5s  %8s  %8s\n",  "-------",  "----------------------------", "-----", "--------", "--------");
+	  }
 	}
 	int imin;
 	imin = (cfg->withmsa == NULL) ? 0 : cfg->withmsa->nseq;
 	for (i = imin; i < seqs_to_aln->nseq; i++) {
 	  ip = (cfg->withmsa == NULL) ? i : i - cfg->withmsa->nseq;
-	  fprintf(stdout, "  %8d  %-28.28s  %5d", (ip+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
-	  if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %8.2f  %8.3f\n", seqs_to_aln->sc[ip], seqs_to_aln->pp[ip]);
-	  else                                 fprintf(stdout, "  %8.2f\n", seqs_to_aln->sc[ip]);
+	  if(seqs_to_aln->struct_sc == NULL) { 
+	    if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-28s  %5d  %8.2f  %8.3f\n", (ip+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip], seqs_to_aln->pp[ip]);
+	    else                                 fprintf(stdout, "  %7d  %-28s  %5d  %8.2f\n", (ip+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip]);
+	  }
+	  else { /* we have struct scores */
+	    if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d %-25s %5d %8.2f %8.2f %8.3f\n", (ip+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip], seqs_to_aln->struct_sc[ip], seqs_to_aln->pp[ip]);
+	    else                                 fprintf(stdout, "  %7d  %-28s  %5d  %8.2f  %8.2f\n", (ip+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip], seqs_to_aln->struct_sc[ip]);
+	  }
 	}
       }      
 #endif
@@ -1632,6 +1653,14 @@ add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs
     for(x = offset; x < (offset + worker_seqs->nseq); x++) {
       assert(!(NOT_IMPOSSIBLE(master_seqs->pp[x])));
       master_seqs->pp[x] = worker_seqs->pp[(x-offset)];
+    }
+  }
+
+  if(worker_seqs->struct_sc != NULL) {
+    if(master_seqs->struct_sc == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned post probs, master->struct_sc is NULL.");
+    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
+      assert(!(NOT_IMPOSSIBLE(master_seqs->struct_sc[x])));
+      master_seqs->struct_sc[x] = worker_seqs->struct_sc[(x-offset)];
     }
   }
 

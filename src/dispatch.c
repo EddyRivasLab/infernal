@@ -381,6 +381,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
   float             *parsesc; /* parsetree scores of each sequence */
   float             *parsepp; /* optimal parse posterior probability of each sequence, if any */
+  float             *parse_struct_sc; /* contribution of MATP emissions - marginalized emissions to parse score, approximation of 'structural contribution' to score */
+  int have_parsetrees = FALSE; /* TRUE if we'll be creating parsetrees for each seq, TRUE if sq_mode && (!do_hmmonly && !do_scoreonly && !do_inside) */
 
   /* declare and initialize options */
   int do_small     = FALSE;   /* TRUE to use D&C small alignment algs */
@@ -481,8 +483,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   cp9_tr   = NULL;
   postcode1= NULL;
   postcode2= NULL;
+  have_parsetrees = FALSE;
   if(sq_mode) {
-    if(!do_hmmonly && !do_scoreonly && !do_inside)
+    have_parsetrees = (!do_hmmonly && !do_scoreonly && !do_inside) ? TRUE : FALSE;
+    if(have_parsetrees)
       ESL_ALLOC(tr, sizeof(Parsetree_t *) * nalign);
     else if(do_hmmonly) /* do_hmmonly */
       ESL_ALLOC(cp9_tr, sizeof(CP9trace_t *) * nalign);
@@ -494,6 +498,9 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   }
   if(do_optacc) ESL_ALLOC(parsepp,   sizeof(float) * nalign);
   else          parsepp = NULL;
+  if(have_parsetrees) ESL_ALLOC(parse_struct_sc, sizeof(float) * nalign);
+  else          parse_struct_sc = NULL;
+
   minsc =  FLT_MAX;
   maxsc = -FLT_MAX;
   avgsc = 0;
@@ -537,14 +544,32 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   /* if not in silent mode, print the header for the sequence info */
   if(sq_mode && !silent_mode) { 
     if(cm->align_opts & CM_ALIGN_OPTACC) { 
-      fprintf(ofp, "#\n");
-      fprintf(ofp, "# %8s  %-28s  %5s  %8s  %8s  %11s\n", "seq idx",  "seq name",                     "len",    "bit sc",  "avg prob", "elapsed");
-      fprintf(ofp, "# %8s  %28s  %5s  %8s  %8s  %11s\n",  "--------", "----------------------------", "-----", "--------", "--------", "-----------");
+      if(have_parsetrees) { 
+	fprintf(ofp, "#\n");
+	fprintf(ofp, "# %7s %-25s %5s %17s %8s %11s\n", "",         "",                             "",       "    bit score    ",   "",         "");
+	fprintf(ofp, "# %7s %-25s %5s %17s %8s %11s\n", "",         "",                             "",       "-----------------",   "",         "");
+	fprintf(ofp, "# %7s %-25s %5s %8s %8s %8s %11s\n", "seq idx",  "seq name",                  "len",   "total",    "struct",   "avg prob", "elapsed");
+	fprintf(ofp, "# %7s %25s %5s %8s %8s %8s %11s\n",  "-------", "-------------------------", "-----", "--------", "--------", "--------", "-----------");
+      }
+      else { 
+	fprintf(ofp, "#\n");
+	fprintf(ofp, "# %7s  %-28s  %5s  %8s  %8s  %11s\n", "seq idx",  "seq name",                     "len",    "bit sc",  "avg prob", "elapsed");
+	fprintf(ofp, "# %7s  %28s  %5s  %8s  %8s  %11s\n",  "-------", "----------------------------", "-----", "--------", "--------", "-----------");
+      }
     }
     else { 
-      fprintf(ofp, "#\n");
-      fprintf(ofp, "# %8s  %-28s  %5s  %8s  %11s\n", "seq idx",  "seq name",                     "len",     "bit sc",     "elapsed");
-      fprintf(ofp, "# %8s  %28s  %5s  %8s  %11s\n",  "--------", "----------------------------", "-----", "--------", "-----------");
+      if(have_parsetrees) { 
+	fprintf(ofp, "#\n");
+	fprintf(ofp, "# %7s %-25s %5s %17s %11s\n", "",         "",                             "",       "    bit score    ",   "");
+	fprintf(ofp, "# %7s %-25s %5s %17s %11s\n", "",         "",                             "",       "-----------------",   "");
+	fprintf(ofp, "# %7s %-25s %5s %8s %8s %11s\n", "seq idx",  "seq name",                  "len",   "total",    "struct",   "elapsed");
+	fprintf(ofp, "# %7s %25s %5s %8s %8s %11s\n",  "-------", "-------------------------", "-----", "--------", "--------", "-----------");
+      }
+      else { 
+	fprintf(ofp, "#\n");
+	fprintf(ofp, "# %7s  %-28s  %5s  %8s  %11s\n", "seq idx",  "seq name",                     "len",     "bit sc",     "elapsed");
+	fprintf(ofp, "# %7s  %28s  %5s  %8s  %11s\n",  "-------", "----------------------------", "-----", "--------", "-----------");
+      }
     }
   }
 
@@ -674,7 +699,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     }
 
     if(sq_mode && !silent_mode) { 
-      if(sq_mode && !silent_mode) fprintf(ofp, "  %8d  %-28s  %5d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(have_parsetrees) fprintf(ofp, "  %7d %-25s %5d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      else                fprintf(ofp, "  %7d  %-28s  %5d", (i+1), seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
     }
 
     /* beginning of large if() else if() else if() ... statement */
@@ -771,9 +797,21 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     /* end of large if() else if() else if() else statement */
     /* done alignment for this seq */
 
+    struct_sc = IMPOSSIBLE;
+    if(have_parsetrees) { 
+      if(*cur_tr == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments() should have parsetrees, but don't (coding error).");
+      if((status = ParsetreeScore(cm, errbuf, *cur_tr, cur_dsq, FALSE, &tmpsc, &struct_sc)) != eslOK) return status;
+    }
+
     if(sq_mode && !silent_mode) { 
-      if(do_optacc)  fprintf(ofp, "  %8.2f  %8.3f  ", ins_sc, sc);
-      else           fprintf(ofp, "  %8.2f  ", sc);
+      if(have_parsetrees) { 
+	if(do_optacc)  fprintf(ofp, " %8.2f %8.2f %8.3f ", ins_sc, struct_sc, sc);
+	else           fprintf(ofp, " %8.2f %8.2f", sc, struct_sc);
+      }	
+      else { 
+	if(do_optacc)  fprintf(ofp, "  %8.2f  %8.3f ", ins_sc, sc);
+	else           fprintf(ofp, "  %8.2f  ", sc);
+      }
     }
     /* if we did optimally accurate alignment:
      *  - <sc> is average posterior probability of optimally accurate parse, 
@@ -785,17 +823,19 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     if(do_optacc) { 
       parsesc[i] = ins_sc; 
       parsepp[i] = sc; /* sc will be an average posterior probability if do_optacc */
+      if(parse_struct_sc != NULL) parse_struct_sc[i] = struct_sc;
       avgsc += ins_sc;
       if (ins_sc > maxsc) maxsc = ins_sc;
       if (ins_sc < minsc) minsc = ins_sc;
     }
     else { 
       parsesc[i] = sc; /* parsepp == NULL if !do_optacc */
+      if(parse_struct_sc != NULL) parse_struct_sc[i] = struct_sc;
       avgsc += sc;
       if (sc > maxsc) maxsc = sc;
       if (sc < minsc) minsc = sc;
     }
-
+  
     /* check parsetree score if cm->align_opts & CM_ALIGN_CHECKPARSESC */
     if((cm->align_opts & CM_ALIGN_CHECKPARSESC) && (!(cm->flags & CM_IS_SUB))) { 
       if(do_optacc) 
@@ -867,6 +907,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     seqs_to_aln->postcode2= postcode2;/* could be NULL */
     seqs_to_aln->sc       = parsesc;  /* shouldn't be NULL */
     seqs_to_aln->pp       = parsepp;  /* could be NULL */
+    seqs_to_aln->struct_sc= parse_struct_sc; /* could be NULL */
   }
   else { /* dsq mode */
     if(do_post) { 
@@ -879,6 +920,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       free(postcode2);
     }
     free(parsesc);
+    if(parsepp != NULL) free(parsepp);
+    if(parse_struct_sc != NULL) free(parse_struct_sc);
   }
   
   return eslOK;
