@@ -74,8 +74,8 @@
  */
 int
 cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, 
-		search_results_t *results, int do_scan, int doing_align, int be_efficient, int **ret_psc, 
-		int *ret_maxres, CP9trace_t **ret_tr, float *ret_sc)
+	    search_results_t *results, int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, 
+	    int *ret_maxres, CP9trace_t **ret_tr, float *ret_sc)
 {
   int          status;
   GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
@@ -99,6 +99,7 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   int          c;           /* counter for EL states                                        */
   CP9trace_t  *tr;          /* CP9 trace for full seq i0..j0, used if ret_tr != NULL        */
   int          M;           /* cm->cp9->M, query length, number of consensus nodes of model */
+  double     **act;         /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
   /* Contract checks */
   if(cm->cp9 == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Viterbi, cm->cp9 is NULL.\n");
@@ -129,6 +130,16 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   else             nrows = L; /* mx will be L+1 rows */
   if((status = GrowCP9Matrix(mx, errbuf, nrows, M, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
   ESL_DPRINTF2(("cp9_Viterbi(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
+
+  /* if do_null3: allocate and initialize act vectors */
+  if(do_null3) { 
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) { 
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+  }
+  else act = NULL;
 
   /* scA will hold P(seq up to j | Model) in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+2));
@@ -180,6 +191,14 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
 	cur %= 2;
 	prv %= 2;
       }	  
+
+      /* if do_null3 (act != NULL), update act */
+      if(act != NULL) { 
+	esl_vec_DCopy(act[(jp-1)%(W+1)], cm->abc->K, act[jp%(W+1)]);
+	esl_abc_DCount(cm->abc, act[jp%(W+1)], dsq[j], 1.);
+	/*printf("j: %3d jp: %3d jp/W: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", j, jp, jp%(W+1), act[jp%(W+1)][0], act[jp%(W+1)][1], act[jp%(W+1)][2], act[jp%(W+1)][3]);*/
+      }
+
       /* The 1 difference between a Viterbi scanner and the 
        * regular Viterbi. In non-scanner parse must begin in B at
        * position 0 (i0-1), in scanner we can start at any position 
@@ -248,7 +267,7 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
       /* determine safe start point, max of j-W+1 and i0 */
       i = ((j-W+1)> i0) ? (j-W+1) : i0;
       ip = i-i0+1;
-      if(results != NULL) UpdateGammaHitMxCP9Forward(gamma, ip, jp, fsc, results);
+      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
     } /* end loop over end positions j */
   
   /* If recovering hits in a non-greedy manner, do the traceback.
@@ -257,6 +276,10 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
 
   /* clean up and exit */
   if(gamma != NULL) FreeGammaHitMx(gamma);
+  if (act != NULL) { 
+    for(i = 0; i <= W; i++) free(act[i]); 
+    free(act);
+  }
 
   if(doing_align) { /* best_sc is the alignment score */
     best_sc  = Scorify(scA[(j0-i0+1)]); /* L = j0-i0+1 */
@@ -300,8 +323,8 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
  */
 int
 cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-			int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, 
-			CP9trace_t **ret_tr, float *ret_sc)
+		    int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, 
+		    CP9trace_t **ret_tr, float *ret_sc)
 {
   int          status;
   GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
@@ -324,6 +347,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
   int          c;           /* counter for EL states */
   int          M;           /* cm->cp9->M, query length, number of consensus nodes of model */
+  double     **act;         /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
   /* Contract checks */
   if(cm->cp9 == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ViterbiBackward, cm->cp9 is NULL.\n");
@@ -355,6 +379,16 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
   if((status = GrowCP9Matrix(mx, errbuf, nrows, M, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
   ESL_DPRINTF2(("cp9_ViterbiBackward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
 
+  /* if do_null3: allocate and initialize act vectors */
+  if(do_null3) { 
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) { 
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+  }
+  else act = NULL;
+
   /* scA will hold P(seq up to j | Model) in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+2));
 			
@@ -363,6 +397,12 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
   else cur = j0-i0+1; /* L */
   ip = j0-i0+1;  /*L */
   i  = j0;
+
+  /* if do_null3 (act != NULL), update act */
+  if(act != NULL) { 
+    esl_abc_DCount(cm->abc, act[ip%(W+1)], dsq[i], 1.);
+    /*printf("i: %3d ip: %3d ip/W+1: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", i, ip, ip%(W+1), act[ip%(W+1)][0], act[ip%(W+1)][1], act[ip%(W+1)][2], act[ip%(W+1)][3]);*/
+  }
 
   /*******************************************************************
    * 0 Handle EL, looking at EL_k->E for all valid k.
@@ -443,6 +483,14 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
       ip = i-i0+1;		/* ip is relative index in dsq (0 to L-1) */
       if(be_efficient) { cur = (j0-i) % 2;  prv = (j0-i+1) % 2; }
       else             { cur = ip;          prv = ip+1;         }
+
+      /* if do_null3 (act != NULL), update act */
+      if(act != NULL) { 
+	esl_vec_DCopy(act[(ip+1)%(W+1)], cm->abc->K, act[ip%(W+1)]);
+	esl_abc_DCount(cm->abc, act[ip%(W+1)], dsq[i], 1.);
+	/*printf("i: %3d ip: %3d ip/W+1: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", i, ip, ip%(W+1), act[ip%(W+1)][0], act[ip%(W+1)][1], act[ip%(W+1)][2], act[ip%(W+1)][3]);*/
+      }
+
       /* init EL mx to -INFTY */
       for (k = 1; k <= cm->cp9->M; k++) elmx[cur][k] = -INFTY;
       if(ip > 0) {
@@ -615,15 +663,19 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
       j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
       jp = j-i0+1;
 
-      if(results != NULL) UpdateGammaHitMxCP9Backward(gamma, ip, jp, fsc, results);
-    } /* end loop over end positions j */
+      if(results != NULL) if((status = UpdateGammaHitMxCP9Backward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
+    } /* end loop over start positions i */
 
   /* If recovering hits in a non-greedy manner, do the traceback.
-   * If we were greedy, then we've reported hits in UpdateGammaHitMxCP9Forward() for each position j */
+   * If we were greedy, then we've reported hits in UpdateGammaHitMxCP9Backward() for each position j */
   if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxBackward(gamma, results, i0, j0);
 
   /* clean up and exit */
   if(gamma != NULL) FreeGammaHitMx(gamma);
+  if (act != NULL) { 
+    for(i = 0; i <= W; i++) free(act[i]); 
+    free(act);
+  }
 
   if(doing_align) { /* best_sc is the alignment score */
     best_sc  = Scorify(scA[(j0-i0+1)]); /* L = j0-i0+1 */
@@ -707,6 +759,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
  *           doing_align  - TRUE if reason we've called this function is to help get posteriors
  *                          for CM alignment, in which case we can skip the traceback. 
  *           be_efficient- TRUE to keep only 2 rows of DP matrix in memory, FALSE keep whole thing
+ *           do_null3  - TRUE to do NULL3 score correction, FALSE not to
  *           ret_psc   - RETURN: int log odds Forward score for each end point [0..(j0-i0+1)]
  *           ret_maxres- RETURN: start position that gives maximum score max argmax_i sc[i]
  *           ret_sc    - RETURN: see below
@@ -718,7 +771,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
  */
 int
 cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-	    int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc)
+	    int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
   GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
@@ -741,6 +794,7 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   int          nrows = 2;   /* number of rows for the dp matrix                             */
   int          c;           /* counter for EL states                                        */
   int          M;           /* cm->cp9->M, query length, number of consensus nodes of model */
+  double     **act;         /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Forward, cm->cp9 is NULL.\n");
@@ -771,6 +825,16 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
   if((status = GrowCP9Matrix(mx, errbuf, nrows, M, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
   ESL_DPRINTF2(("cp9_Forward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
   ESL_DPRINTF1(("cp9_Forward do_scan: %d\n", do_scan));
+
+  /* if do_null3: allocate and initialize act vectors */
+  if(do_null3) { 
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) { 
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+  }
+  else act = NULL;
 
   /* scA will hold P(seq up to j | Model) in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+2));
@@ -828,6 +892,14 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
 	  cur %= 2;
 	  prv %= 2;
 	}	  
+
+      /* if do_null3 (act != NULL), update act */
+      if(act != NULL) { 
+	esl_vec_DCopy(act[(jp-1)%(W+1)], cm->abc->K, act[jp%(W+1)]);
+	esl_abc_DCount(cm->abc, act[jp%(W+1)], dsq[j], 1.);
+	/*printf("j: %3d jp: %3d jp/W: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", j, jp, jp%(W+1), act[jp%(W+1)][0], act[jp%(W+1)][1], act[jp%(W+1)][2], act[jp%(W+1)][3]);*/
+      }
+
       /* The 1 difference between a Viterbi scanner and the 
        * regular Viterbi. In non-scanner parse must begin in B at
        * position 0 (i0-1), in scanner we can start at any position 
@@ -900,7 +972,7 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
       /* determine safe start point, max of j-W+1 and i0 */
       i = ((j-W+1)> i0) ? (j-W+1) : i0;
       ip = i-i0+1;
-      if(results != NULL) UpdateGammaHitMxCP9Forward(gamma, ip, jp, fsc, results);
+      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
     } /* end loop over end positions j */
   
   /* If recovering hits in a non-greedy manner, do the traceback.
@@ -909,6 +981,10 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
 
   /* clean up and exit */
   if(gamma != NULL) FreeGammaHitMx(gamma);
+  if (act != NULL) { 
+    for(i = 0; i <= W; i++) free(act[i]); 
+    free(act);
+  }
 
   if(doing_align) { /* best_sc is the alignment score */
     best_sc  = Scorify(scA[(j0-i0+1)]); /* L = j0-i0+1 */
@@ -993,6 +1069,7 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
  *                          for CM alignment, in which case we can skip the traceback. 
  *           be_efficient- TRUE to keep only 2 rows of DP matrix in memory, FALSE keep whole thing
  *           be_safe     - TRUE to never use ILogsumNI(sc1,sc2) (which assumes sc1, sc2 != -INFTY)
+ *           do_null3  - TRUE to do NULL3 score correction, FALSE not to
  *           ret_psc   - RETURN: int log odds Forward score for each end point [0..(j0-i0+1)]
  *           ret_maxres- RETURN: start position that gives maximum score max argmax_i sc[i]
  *           ret_sc    - RETURN: see below
@@ -1004,7 +1081,7 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
  */
 int
 cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-		 int do_scan, int doing_align, int be_efficient, int be_safe, int **ret_psc, int *ret_maxres, float *ret_sc)
+		 int do_scan, int doing_align, int be_efficient, int be_safe, int do_null3, int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
   GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
@@ -1029,6 +1106,7 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
   int          M;           /* cm->cp9->M, number of nodes in the model                     */
   int          locality_mode; /* 1 of 4 locality modes, we can optimize (a bit) specifically*
 			       * for each of the 4 modes                                    */
+  double     **act;         /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, cm->cp9 is NULL.\n");
@@ -1068,6 +1146,16 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
   if((status = GrowCP9Matrix(mx, errbuf, nrows, M, &mmx, &imx, &dmx, &elmx, &erow)) != eslOK) return status;
   ESL_DPRINTF2(("cp9_FastForward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
 			
+  /* if do_null3: allocate and initialize act vectors */
+  if(do_null3) { 
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) { 
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+  }
+  else act = NULL;
+
   /* scA will hold P(seq up to j | Model) in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+2));
 
@@ -1110,6 +1198,12 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
   cur = (j-i0+1);
   prv = (j-i0);
   if(be_efficient)  { cur %= 2; prv %= 2; }	  
+  /* if do_null3 (act != NULL), update act */
+  if(act != NULL) { 
+    esl_vec_DCopy(act[(jp-1)%(W+1)], cm->abc->K, act[jp%(W+1)]);
+    esl_abc_DCount(cm->abc, act[jp%(W+1)], dsq[j], 1.);
+    /*printf("j: %3d jp: %3d jp/W: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", j, jp, jp%(W+1), act[jp%(W+1)][0], act[jp%(W+1)][1], act[jp%(W+1)][2], act[jp%(W+1)][3]);*/
+  }
   mmx[cur][0]        = (do_scan == TRUE) ? 0     : -INFTY;
   dmx[cur][0]        = -INFTY;  /*D_0 is non-existent*/
   elmx[cur][0]       = -INFTY;  /*no EL state for node 0 */
@@ -1169,7 +1263,7 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
   /* determine safe start point, max of j-W+1 and i0 */
   i = ((j-W+1)> i0) ? (j-W+1) : i0;
   ip = i-i0+1;
-  if(results != NULL) UpdateGammaHitMxCP9Forward(gamma, ip, jp, fsc, results);
+  if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
 
   /* end of special case position j == i0 */
 
@@ -1190,6 +1284,13 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
       prv = (j-i0);
 
       if(be_efficient) { cur %= 2; prv %= 2; }
+      /* if do_null3 (act != NULL), update act */
+      if(act != NULL) { 
+	esl_vec_DCopy(act[(jp-1)%(W+1)], cm->abc->K, act[jp%(W+1)]);
+	esl_abc_DCount(cm->abc, act[jp%(W+1)], dsq[j], 1.);
+	/*printf("j: %3d jp: %3d jp/W: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", j, jp, jp%(W+1), act[jp%(W+1)][0], act[jp%(W+1)][1], act[jp%(W+1)][2], act[jp%(W+1)][3]);*/
+      }
+
       /* The 1 difference between a Viterbi scanner and the 
        * regular Viterbi. In non-scanner parse must begin in B at
        * position 0 (i0-1), in scanner we can start at any position 
@@ -1671,7 +1772,7 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
       /* determine safe start point, max of j-W+1 and i0 */
       i = ((j-W+1)> i0) ? (j-W+1) : i0;
       ip = i-i0+1;
-      if(results != NULL) UpdateGammaHitMxCP9Forward(gamma, ip, jp, fsc, results);
+      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
     } /* end loop over end positions j */
       
   /* If recovering hits in a non-greedy manner, do the traceback.
@@ -1680,6 +1781,10 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
 
   /* clean up and exit */
   if(gamma != NULL) FreeGammaHitMx(gamma);
+  if (act != NULL) { 
+    for(i = 0; i <= W; i++) free(act[i]); 
+    free(act);
+  }
 
   if(doing_align) { /* best_sc is the alignment score */
     best_sc  = Scorify(scA[(j0-i0+1)]); /* L = j0-i0+1 */
@@ -1803,6 +1908,7 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
  *           doing_align  - TRUE if reason we've called this function is to help get posteriors
  *                          for CM alignment, in which case we can skip the traceback. 
  *           be_efficient- TRUE to keep only 2 rows of DP matrix in memory, FALSE keep whole thing
+ *           do_null3  - TRUE to do NULL3 score correction, FALSE not to
  *           ret_psc   - RETURN: int log odds Backward score for each start point [0..(j0-i0+1)]
  *           ret_maxres- RETURN: start position that gives maximum score max argmax_i sc[i]
  *           ret_sc    - RETURN: see below
@@ -1815,7 +1921,7 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
  */
 int
 cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, int W, float cutoff, search_results_t *results, 
-		  int do_scan, int doing_align, int be_efficient, int **ret_psc, int *ret_maxres, float *ret_sc)
+		  int do_scan, int doing_align, int be_efficient, int do_null3, int **ret_psc, int *ret_maxres, float *ret_sc)
 {
   int          status;
   GammaHitMx_t *gamma;      /* semi-HMM for hit resoultion                                  */
@@ -1838,6 +1944,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
   int          nrows;       /* num rows for DP matrix, 2 or L+1 depending on be_efficient   */
   int          c;           /* counter for EL states */
   int          M;           /* cm->cp9->M */
+  double     **act;         /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_Backward, cm->cp9 is NULL.\n");
@@ -1869,6 +1976,16 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
   ESL_DPRINTF2(("cp9_Backward(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
   ESL_DPRINTF1(("cp9_Backward do_scan: %d\n", do_scan));
 
+  /* if do_null3: allocate and initialize act vectors */
+  if(do_null3) { 
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) { 
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+  }
+  else act = NULL;
+
   /* scA will hold P(seq from i..j0 | Model) for each i in int log odds form */
   ESL_ALLOC(scA, sizeof(int) * (j0-i0+3));
 
@@ -1877,6 +1994,12 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
   else cur = j0-i0+1; /* L */
   ip = j0-i0+1;  /*L */
   i  = j0;
+
+  /* if do_null3 (act != NULL), update act */
+  if(act != NULL) { 
+    esl_abc_DCount(cm->abc, act[ip%(W+1)], dsq[i], 1.);
+    /*printf("i: %3d ip: %3d ip/W+1: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", i, ip, ip%(W+1), act[ip%(W+1)][0], act[ip%(W+1)][1], act[ip%(W+1)][2], act[ip%(W+1)][3]);*/
+  }
 
   /*******************************************************************
    * 0 Handle EL, looking at EL_k->E for all valid k.
@@ -1952,6 +2075,13 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
       ip = i-i0+1;		/* ip is relative index in dsq (0 to L-1) */
       if(be_efficient) { cur = (j0-i)  %2; prv = (j0-i+1)%2; }	  
       else { cur = ip; prv = ip+1; }
+
+      /* if do_null3 (act != NULL), update act */
+      if(act != NULL) { 
+	esl_vec_DCopy(act[(ip+1)%(W+1)], cm->abc->K, act[ip%(W+1)]);
+	esl_abc_DCount(cm->abc, act[ip%(W+1)], dsq[i], 1.);
+	/*printf("i: %3d ip: %3d ip/W+1: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", i, ip, ip%(W+1), act[ip%(W+1)][0], act[ip%(W+1)][1], act[ip%(W+1)][2], act[ip%(W+1)][3]);*/
+      }
 
       /* init EL mx to -INFTY */
       for (k = 0; k <= cm->cp9->M; k++) elmx[cur][k] = -INFTY;
@@ -2115,7 +2245,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
       j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
       jp = j-i0+1;
 
-      if(results != NULL) UpdateGammaHitMxCP9Backward(gamma, ip, jp, fsc, results);
+      if(results != NULL) if((status = UpdateGammaHitMxCP9Backward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
     }
   /*******************************************************************/
   /* Special case: ip == 0, i = i0-1; */
@@ -2128,6 +2258,13 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
     cur = ip;
     prv = ip+1;
   }
+  /* if do_null3 (act != NULL), update act */
+  if(act != NULL) { 
+    esl_vec_DCopy(act[(ip+1)%(W+1)], cm->abc->K, act[ip%(W+1)]);
+    esl_abc_DCount(cm->abc, act[ip%(W+1)], dsq[i], 1.);
+    /*printf("i: %3d ip: %3d ip/W+1: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", i, ip, ip%(W+1), act[ip%(W+1)][0], act[ip%(W+1)][1], act[ip%(W+1)][2], act[ip%(W+1)][3]);*/
+  }
+
   /* init EL mx to -INFTY */
   for (k = 1; k <= cm->cp9->M; k++) elmx[cur][k] = -INFTY;
 
@@ -2180,7 +2317,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
   j = (((i+1)+W-1) < j0) ? ((i+1)+W-1) : j0; /* *off-by-one* */
   jp = j-i0+1;
   
-  if(results != NULL) UpdateGammaHitMxCP9Backward(gamma, ip, jp, fsc, results);
+  if(results != NULL) if((status = UpdateGammaHitMxCP9Backward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
   /* end of special case, ip == 0 */
   /**********************************************************************************/
   /* End of Backward recursion */
@@ -2191,6 +2328,10 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
 
   /* clean up and exit */
   if(gamma != NULL) FreeGammaHitMx(gamma);
+  if (act != NULL) { 
+    for(i = 0; i <= W; i++) free(act[i]); 
+    free(act);
+  }
 
   if(doing_align) { /* best_sc is the alignment score */
     best_sc  = Scorify(scA[0]); 

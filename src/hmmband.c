@@ -192,12 +192,15 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 			   do_scan2bands, /* are we using scanning Forward/Backward */
 			   TRUE,      /* we are going to use posteriors to align */
 			   FALSE,     /* don't be memory efficient */
+			   FALSE,     /* don't do a NULL3 score correction */
 			   NULL, NULL,
 			   &sc)) != eslOK) return status;
+
   if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 0, NULL, 
 			    do_scan2bands, /* are we using scanning Forward/Backward */
 			    TRUE,  /* we are going to use posteriors to align */
 			    FALSE, /* don't be memory efficient */
+			    FALSE, /* don't do a NULL3 score correction */
 			    NULL, NULL,
 			    &sc)) != eslOK) return status;
 
@@ -282,7 +285,6 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
   float sc;
   int do_scan2bands;             /* TRUE to use scanning Forward/Backward to get posteriors
 				  * that we'll use for a CM scan */
-  int be_safe = TRUE;        /* TEMPORARY, pass this in after calcing it once in actually_align_targets() */
 
   /* Contract checks */
   if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors(), dsq is NULL.");
@@ -296,18 +298,19 @@ cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx
   do_scan2bands = ((cm->search_opts & CM_SEARCH_HBANDED) && (!(cm->search_opts & CM_SEARCH_HMMALNBANDS))) ? TRUE : FALSE;
 
   /* Step 1: Get HMM posteriors.*/
-  if((status = cp9_FastForward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 0., NULL,
-			       do_scan2bands, /* are we using scanning Forward/Backward */
-				TRUE,      /* we are going to use posteriors to align */
-			       FALSE,     /* don't be memory efficient */
-			       be_safe,   /* can we accelerate w/ no -INFTY logsum funcs? */
-			       NULL, NULL,
-			       &sc)) != eslOK) return status;
+  if((status = cp9_Forward(cm, errbuf, fmx, dsq, i0, j0, j0-i0+1, 0., NULL,
+			   do_scan2bands, /* are we using scanning Forward/Backward */
+			   TRUE,      /* we are going to use posteriors to align */
+			   FALSE,     /* don't be memory efficient */
+			   FALSE,     /* don't do a NULL3 score correction */
+			   NULL, NULL,
+			   &sc)) != eslOK) return status;
   if(debug_level > 0) printf("CP9 Forward  score : %.4f\n", sc);
   if((status = cp9_Backward(cm, errbuf, bmx, dsq, i0, j0, (j0-i0+1), 0, NULL, 
 			    do_scan2bands, /* are we using scanning Forward/Backward */
 			    TRUE,  /* we are going to use posteriors to align */
 			    FALSE, /* don't be memory efficient */
+			    FALSE, /* don't do a NULL3 score correction */
 			    NULL, NULL,
 			    &sc)) != eslOK) return status;
   if(debug_level > 0) printf("CP9 Backward  score : %.4f\n", sc);

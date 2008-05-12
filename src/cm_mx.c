@@ -1193,7 +1193,9 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
  *
  * Purpose:  Update a gamma semi-HMM for CM hits that end at gamma-relative position <j>.
  *
- * Args:     gamma     - the gamma data structure
+ * Args:     cm        - the model, used only for it's alphabet and null model
+ *           errbuf    - for reporting errors
+ *           gamma     - the gamma data structure
  *           j         - offset j for gamma must be between 0 and gamma->L
  *           alpha_row - row of DP matrix to examine, we look at [dn..dx], NULL if we want to report
  *                       this j is IMPOSSIBLE end point of a hit (only possible if using_hmm_bands == TRUE)
@@ -1202,24 +1204,32 @@ FreeGammaHitMx(GammaHitMx_t *gamma)
  *           using_hmm_bands - if TRUE, alpha_row is offset by dn, so we look at [0..dx-dn]
  *           bestr     - [dn..dx] root state (0 or local entry) corresponding to hit stored in alpha_row
  *           results   - results to add to, only used in this function if gamma->iamgreedy 
+ *           W         - window size, max size of a hit, only used if we're doing a NULL3 correction (act != NULL)
+ *           act       - [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1)
  *
- * Returns:  void;
-
+ * Returns:  eslOK on succes; eslEMEM on memory allocation error;
+ *
  */
-void
-UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, 
-		   int *bestr, search_results_t *results)
+int
+UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, 
+		   int *bestr, search_results_t *results, int W, double **act)
 {
+  int status;
   int i, d;
-  float sc;
   int bestd;
   int r;
   int dmin, dmax;
   int ip, jp;
+  float *comp = NULL;    /* 0..a..cm->abc-K-1, the composition of residue a within the hit being reported */
+  int a;
+  float null3_correction;
+  int do_report_hit;
+  float hit_sc, cumulative_sc;
 
   if(alpha_row == NULL && (!using_hmm_bands)) cm_Fail("UpdateGammaHitMxCM(), alpha_row is NULL, but using_hmm_bands is FALSE.\n");
   dmin = (using_hmm_bands) ? 0     : dn; 
   dmax = (using_hmm_bands) ? dx-dn : dx;
+  if(act != NULL) ESL_ALLOC(comp, sizeof(float) * cm->abc->K);
 
   /* mode 1: non-greedy  */
   if(! gamma->iamgreedy || alpha_row == NULL) { 
@@ -1231,12 +1241,29 @@ UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx,
     if(alpha_row != NULL) { 
       for (d = dmin; d <= dmax; d++) {
 	i = using_hmm_bands ? j-d+1-dn  : j-d+1;
-	sc = gamma->mx[i-1] + alpha_row[d];
-	if (sc > gamma->mx[j]) {
-	  gamma->mx[j]     = sc;
-	  gamma->gback[j]  = i + (gamma->i0-1);
-	  gamma->savesc[j] = alpha_row[d]; 
-	  gamma->saver[j]  = bestr[d]; 
+	hit_sc = alpha_row[d];
+	cumulative_sc = gamma->mx[i-1] + hit_sc;
+	if (cumulative_sc > gamma->mx[j]) {
+	  do_report_hit = TRUE;
+	  if(act != NULL && NOT_IMPOSSIBLE(hit_sc)) { /* do NULL3 score correction */
+	    for(a = 0; a < cm->abc->K; a++) { 
+	      comp[a] = act[j%(W+1)][a] - act[(j-d+1-1)%(W+1)][a]; /* careful, tricky off-by-one: comp[a] is act[j][a] - act[i-1][a], hence the j-d+1-1 (i == j-d+1) */
+	      /*printf("a: %5d j/W: %5d i-1/W: %5d j[a]: %.3f i-1[a]: %.3f c[a]: %.3f\n", a, j%(W+1), (j-d+1-1%W), act[(j%(W+1))][a], act[((j-d+1-1)%(W+1))][a], comp[a]);*/
+	    }
+	    esl_vec_FNorm(comp, cm->abc->K);
+	    /*esl_vec_FDump(stdout, comp, cm->abc->K, NULL);*/
+	    ScoreCorrectionNull3(cm->abc, cm->null, comp, j-i+1, &null3_correction);
+	    hit_sc -= null3_correction;
+	    cumulative_sc -= null3_correction;
+	    /*printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc);*/
+	    do_report_hit = (cumulative_sc > gamma->mx[j]) ? TRUE : FALSE;
+	  }
+	  if(do_report_hit) { 
+	    gamma->mx[j]     = cumulative_sc;
+	    gamma->gback[j]  = i + (gamma->i0-1);
+	    gamma->savesc[j] = hit_sc;
+	    gamma->saver[j]  = bestr[d]; 
+	  }
 	}
       }
     }
@@ -1249,32 +1276,55 @@ UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx,
      * resolution algorithm.  Specifically, at the given j, any hit with a
      * d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
     /* First, report hit with d of dmin (min valid d) if >= cutoff */
-    if (alpha_row[dmin] >= gamma->cutoff && NOT_IMPOSSIBLE(alpha_row[dmin])) {
+    hit_sc = alpha_row[dmin];
+    if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) {
+      do_report_hit = TRUE;
       r = bestr[dmin]; 
       ip = using_hmm_bands ? j-(dmin+dn)+gamma->i0 : j-dmin+gamma->i0;
       jp = j-1+gamma->i0;
       assert(ip >= gamma->i0);
       assert(jp >= gamma->i0);
-      ReportHit (ip, jp, r, alpha_row[dmin], results);
+      if(act != NULL) { /* do NULL3 score correction */
+	for(a = 0; a < cm->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(j-dmin+1)%(W+1)][a];
+	esl_vec_FNorm(comp, cm->abc->K);
+	ScoreCorrectionNull3(cm->abc, cm->null, comp, j-dmin+1, &null3_correction);
+	hit_sc -= null3_correction;
+	do_report_hit = (hit_sc >= gamma->cutoff) ? TRUE : FALSE;
+      }
+      if(do_report_hit) ReportHit (ip, jp, r, hit_sc, results);
     }
     bestd = dmin;
     /* Now, if current score is greater than maximum seen previous, report
        it if >= cutoff and set new max */
     for (d = dmin+1; d <= dmax; d++) {
-      if (alpha_row[d] > alpha_row[bestd]) {
-	if (alpha_row[d] >= gamma->cutoff && NOT_IMPOSSIBLE(alpha_row[d])) { 
+      hit_sc = alpha_row[d];
+      if (hit_sc > alpha_row[bestd]) {
+	if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) { 
+	  do_report_hit = TRUE;
 	  r = bestr[d]; 
 	  ip = using_hmm_bands ? j-(d+dn)+gamma->i0 : j-d+gamma->i0;
 	  jp = j-1+gamma->i0;
 	  assert(ip >= gamma->i0);
 	  assert(jp >= gamma->i0);
-	  ReportHit (ip, jp, r, alpha_row[d], results);
+	  if(act != NULL) { /* do NULL3 score correction */
+	    for(a = 0; a < cm->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(j-d+1)%(W+1)][a];
+	    esl_vec_FNorm(comp, cm->abc->K);
+	    ScoreCorrectionNull3(cm->abc, cm->null, comp, j-d+1, &null3_correction);
+	    hit_sc -= null3_correction;
+	    do_report_hit = (hit_sc >= gamma->cutoff) ? TRUE : FALSE;
+	  }
+	  if(do_report_hit) ReportHit (ip, jp, r, hit_sc, results);
 	}
 	bestd = d;
       }
     }
   }
-  return;
+  if(comp != NULL) free(comp);
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
+  return eslEMEM; /* NEVERREACHED */
 }
 
 
@@ -1283,21 +1333,38 @@ UpdateGammaHitMxCM(GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx,
  *
  * Purpose:  Update a gamma semi-HMM for forward-direction CP9 hits that span i..j.
  *
- * Args:     gamma     - the gamma data structure
+ * Args:     cp9       - the model, used only for it's alphabet and null model
+ *           errbuf    - for reporting errors
+ *           gamma     - the gamma data structure
  *           i         - offset i for gamma must be between 0 and gamma->L, this is usually min(j-W+1, i0)
  *           j         - offset j for gamma must be between 0 and gamma->L
  *           sc        - score of best hit for i..j
  *           results   - results to add to, only used in this function if gamma->iamgreedy 
+ *           W         - window size, max size of a hit, only used if we're doing a NULL3 correction (act != NULL)
+ *           act       - [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1)
  *
- * Returns:  void;
-
+ * Returns:  eslOK on succes; eslEMEM on memory allocation error;
  */
-void
-UpdateGammaHitMxCP9Forward(GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results)
+int
+UpdateGammaHitMxCP9Forward(CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results, int W, double **act)
 {
-  float sc;
+  int status;
+  float cumulative_sc;
+  int a;
   int ip, jp;
+  float *comp = NULL;    /* 0..a..cm->abc-K-1, the composition of residue a within the hit being reported */
+  float null3_correction;
 
+  /* update hit_sc if do_null3 == TRUE (do_null3 == TRUE iff act != NULL) */
+  if(act != NULL) { /* do NULL3 score correction */
+    ESL_ALLOC(comp, sizeof(float) * cp9->abc->K);
+    for(a = 0; a < cp9->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(i-1)%(W+1)][a]; /* comp[a] is act[j][a] - act[i-1][a] */
+    esl_vec_FNorm(comp, cp9->abc->K);
+    /*esl_vec_FDump(stdout, comp, abc->K, NULL);*/
+    ScoreCorrectionNull3(cp9->abc, cp9->null, comp, j-i+1, &null3_correction);
+    hit_sc -= null3_correction;
+  }
+  
   /* mode 1: non-greedy  */
   if(! gamma->iamgreedy) {
     gamma->mx[j]     = gamma->mx[j-1] + 0; 
@@ -1305,15 +1372,14 @@ UpdateGammaHitMxCP9Forward(GammaHitMx_t *gamma, int i, int j, float hit_sc, sear
     gamma->savesc[j] = IMPOSSIBLE;
     gamma->saver[j]  = -1;
 
-    sc = gamma->mx[i-1] + hit_sc;
-    if (sc > gamma->mx[j]) {
-      gamma->mx[j]     = sc;
+    cumulative_sc = gamma->mx[i-1] + hit_sc;
+    if (cumulative_sc > gamma->mx[j]) {
+      gamma->mx[j]     = cumulative_sc;
       gamma->gback[j]  = i + (gamma->i0-1);
       gamma->savesc[j] = hit_sc;
       gamma->saver[j]  = 0; /* saver is invalid for CP9 hits */
     }
   }
-
   /* mode 2: greedy */
   if(gamma->iamgreedy) { 
     /* Return best hit for each j, IFF it's above threshold */
@@ -1323,7 +1389,12 @@ UpdateGammaHitMxCP9Forward(GammaHitMx_t *gamma, int i, int j, float hit_sc, sear
       ReportHit (ip, jp, 0, hit_sc, results); /* 0 is for saver, which is irrelevant for HMM hits */
     }
   }
-  return;
+  if(comp != NULL) free(comp);
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
+  return eslEMEM; /* NEVERREACHED */
 }
 
 
@@ -1352,21 +1423,39 @@ UpdateGammaHitMxCP9Forward(GammaHitMx_t *gamma, int i, int j, float hit_sc, sear
  *          corresponds to i=5 but due to this * off-by-one sc[ip=4]
  *          corresponds to hits that start at i=6
  *
- * Args:     gamma     - the gamma data structure
+ * Args:     cp9       - the model, used only for it's alphabet and null model
+ *           errbuf    - for reporting errors
+ *           gamma     - the gamma data structure
  *           i         - offset i for gamma must be between 0 and gamma->L
  *           j         - offset j for gamma must be between 0 and gamma->L, this is usually i+W-1
  *           sc        - score of best hit for i..j
  *           results   - results to add to, only used in this function if gamma->iamgreedy 
+ *           W         - window size, max size of a hit, only used if we're doing a NULL3 correction (act != NULL)
+ *           act       - [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1)
  *
- * Returns:  void;
+ * Returns:  eslOK on succes; eslEMEM on memory allocation error;
  */
-void
-UpdateGammaHitMxCP9Backward(GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results)
+int
+UpdateGammaHitMxCP9Backward(CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results, int W, double **act)
 {
-  float sc;
+  int status;
+  float cumulative_sc;
+  int a;
   int ip, jp;
+  float *comp = NULL;    /* 0..a..abc-K-1, the composition of residue a within the hit being reported */
+  float null3_correction;
 
   ESL_DASSERT1((i <= j));
+
+  /* update hit_sc if do_null3 == TRUE (do_null3 == TRUE iff act != NULL) */
+  if(act != NULL) { /* do NULL3 score correction */
+    ESL_ALLOC(comp, sizeof(float) * cp9->abc->K);
+    for(a = 0; a < cp9->abc->K; a++) comp[a] = act[i%(W+1)][a] - act[(j+1)%(W+1)][a]; /* we're going backwards: comp[a] is act[i][a] - act[j+1][a] */
+    esl_vec_FNorm(comp, cp9->abc->K);
+    /*esl_vec_FDump(stdout, comp, abc->K, NULL);*/
+    ScoreCorrectionNull3(cp9->abc, cp9->null, comp, j-i+1, &null3_correction);
+    hit_sc -= null3_correction;
+  }
 
   /* mode 1: non-greedy  */
   if(! gamma->iamgreedy) {
@@ -1375,9 +1464,9 @@ UpdateGammaHitMxCP9Backward(GammaHitMx_t *gamma, int i, int j, float hit_sc, sea
     gamma->savesc[i] = IMPOSSIBLE;
     gamma->saver[i]  = -1;
 
-    sc = gamma->mx[j+1-1] + hit_sc; /* *off-by-one */
-    if (sc > gamma->mx[i]) {
-      gamma->mx[i]     = sc;
+    cumulative_sc = gamma->mx[j+1-1] + hit_sc; /* *off-by-one */
+    if (cumulative_sc > gamma->mx[i]) {
+      gamma->mx[i]     = cumulative_sc;
       gamma->gback[i]  = j + (gamma->i0-1);
       gamma->savesc[i] = hit_sc;
       gamma->saver[i]  = 0; /* saver is invalid for CP9 hits */
@@ -1393,7 +1482,12 @@ UpdateGammaHitMxCP9Backward(GammaHitMx_t *gamma, int i, int j, float hit_sc, sea
       ReportHit (ip+1, jp, 0, hit_sc, results); /* 0 is for saver, which is irrelevant for HMM hits */
     }
   }
-  return;
+  if(comp != NULL) free(comp);
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
+  return eslEMEM; /* NEVERREACHED */
 }
 
 
@@ -1493,3 +1587,4 @@ cm_UpdateScanMatrixForCM(CM_t *cm)
   return eslOK;
 }
 #endif
+

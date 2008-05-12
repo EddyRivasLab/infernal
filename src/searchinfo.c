@@ -77,7 +77,7 @@ CreateSearchInfo(CM_t *cm, int cutoff_type, float sc_cutoff, float e_cutoff)
  */
 int
 AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_filter, int forward_filter, int hybrid_filter, 
-		      ScanMatrix_t *smx, HybridScanInfo_t *hsi, int cutoff_type, float sc_cutoff, float e_cutoff)
+		      ScanMatrix_t *smx, HybridScanInfo_t *hsi, int cutoff_type, float sc_cutoff, float e_cutoff, int do_null3)
 {
   int status;
   int n;
@@ -138,6 +138,7 @@ AddFilterToSearchInfo(CM_t *cm, int cyk_filter, int inside_filter, int viterbi_f
     si->smx[0]   = NULL;
     si->hsi[0]   = hsi;
   }
+  if(do_null3) si->search_opts[0] |= CM_SEARCH_NULL3;
        
   /* copy existing information for other rounds from old cm->si */
   for(n = 0; n <= orig_nrounds; n++) { 
@@ -901,6 +902,7 @@ void SortResultsByEndPoint (search_results_t *results)
  */
 void ReportHit (int i, int j, int bestr, float score, search_results_t *results) 
 {
+  /*  printf("ReportHit() n:%5d i:%5d j:%5d r:%5d sc:%8.3f\n", results->num_results, i, j, bestr, score);*/
 
   if(results == NULL) cm_Fail("in ReportHit, but results is NULL\n");
   if (results->num_results == results->num_allocated) 

@@ -55,6 +55,7 @@ static ESL_OPTIONS options[] = {
   { "-h",                eslARG_NONE,   FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "show brief help on version and usage",   1 },
   { "-s",                eslARG_INT,    NULL,   NULL, "n>0",    NULL,        NULL,        NULL, "set random number generator seed to <n>",  1 },
   { "--forecast",        eslARG_INT,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "don't do calibration, forecast running time with <n> processors", 1 },
+  { "--null3",           eslARG_NONE,   NULL,   NULL, NULL,     NULL,        NULL,        NULL, "turn on the post-hoc NULL3 score correction", 1},
 #ifdef HAVE_DEVOPTS 
   { "-v",                eslARG_NONE,   FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "print arguably interesting info",  1},
 #endif
@@ -74,7 +75,6 @@ static ESL_OPTIONS options[] = {
   { "--exp-tailp",      eslARG_REAL,    "0.01", NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 2 },
   { "--exp-beta",       eslARG_REAL,    NULL,   NULL, "x>0",    NULL,        NULL,        NULL, "turn QDB on for exp tail fitting, set tail loss prob to <x>", 2 },
   { "--exp-gc",         eslARG_INFILE,  NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content distribution from file <f>",  2},
-  { "--exp-null3",      eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "turn on the post-hoc NULL3 score correction", 2},
   { "--exp-pfile",      eslARG_INFILE,  NULL,   NULL, NULL,     NULL,  "--exp-gc",        NULL, "read partition info for exp tails from file <f>", 2},
   { "--exp-hfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,        NULL, "save fitted score histogram(s) to file <f>", 2 },
   { "--exp-sfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,        NULL, "save survival plot to file <f>", 2 },
@@ -1720,8 +1720,9 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     cm->flags |= CM_EMIT_NO_LOCAL_BEGINS; 
     cm->flags |= CM_EMIT_NO_LOCAL_ENDS;
   }
-  /* TEMPORARY cm->search_opts |= CM_SEARCH_NOALIGN;*/
-  if(esl_opt_GetBoolean(go, "--exp-null3")) { 
+  cm->search_opts |= CM_SEARCH_NOALIGN;
+
+  if(esl_opt_GetBoolean(go, "--null3")) { 
     cm->search_opts |= CM_SEARCH_NULL3;
   }
   else cm->search_opts |= CM_SEARCH_NOALIGN;
@@ -2332,6 +2333,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   int            L;
   ESL_DSQ       *dsq;
   int            orig_search_opts; /* we modify cm->search_opts in this function, then reset it at the end */
+  int            do_null3;         /* TRUE to do NULL3 score corrections, FALSE not to */
 
   if(ret_cyk_scA == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "process_filter_workunit(), ret_cyk_scA == NULL.");
   if(ret_ins_scA == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "process_filter_workunit(), ret_ins_scA == NULL.");
@@ -2348,6 +2350,7 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   ESL_ALLOC(fwd_scA, sizeof(float) * nseq);  /* will hold HMM Forward scores */
 
   orig_search_opts = cm->search_opts;
+  do_null3 = (cm->search_opts & CM_SEARCH_NULL3) ? TRUE : FALSE;
 
   /* generate dsqs one at a time and collect optimal CM CYK/Inside scores and/or best CP9 Forward score */
   for(i = 0; i < nseq; i++) {
@@ -2366,10 +2369,10 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
     /* for cyk and inside either use HMM bands, or don't */
     if(esl_opt_GetBoolean(go, "--fil-nonbanded")) { 
       cm->search_opts &= ~CM_SEARCH_INSIDE;
-      if((status = FastCYKScan    (cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &(cyk_scA[i]))) != eslOK) return status; 
+      if((status = FastCYKScan    (cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, do_null3, NULL, &(cyk_scA[i]))) != eslOK) return status; 
       
       cm->search_opts |= CM_SEARCH_INSIDE; 
-      if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &(ins_scA[i]))) != eslOK) return status; 
+      if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, do_null3, NULL, &(ins_scA[i]))) != eslOK) return status; 
     }
     else { /* search with HMM bands */
       cm->search_opts &= ~CM_SEARCH_INSIDE;
@@ -2377,15 +2380,16 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
       cm->tau = esl_opt_GetReal(go, "--fil-tau");
       if(esl_opt_GetBoolean(go, "--fil-aln2bands")) cm->search_opts |= CM_SEARCH_HMMALNBANDS;
       if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) return status; 
-      if((status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), &(cyk_scA[i]))) != eslOK) return status; 
+      if((status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, do_null3, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), &(cyk_scA[i]))) != eslOK) return status; 
 
       cm->search_opts |= CM_SEARCH_INSIDE; 
-      if((status = FastFInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), &(ins_scA[i]))) != eslOK) return status; 
+      if((status = FastFInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, do_null3, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), &(ins_scA[i]))) != eslOK) return status; 
     }
     if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL, 
 			     TRUE,   /* yes, we are scanning */
 			     FALSE,  /* no, we are not aligning */
 			     FALSE,  /* don't be memory efficient */
+			     do_null3, 
 			     NULL,   /* don't want best score at each posn back */
 			     NULL,   /* don't want the max scoring posn back */
 			     &(fwd_scA[i]))) != eslOK) return status;

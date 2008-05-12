@@ -1895,3 +1895,44 @@ ParsetreeScoreCorrectionNull3(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *
    return status; /* NEVERREACHED*/
 }
 
+
+  
+/* Function: ScoreCorrectionNull3()
+ * Incept:   EPN, Sat May 10 17:58:03 2008
+ * 
+ * Purpose:  Calculate a correction (in integer log_2 odds) to be
+ *           applied to a sequence, using a third null model, the
+ *           composition of the target sequence. 
+ *           All emissions are corrected;
+ *           The null model is constructed /post hoc/ as the
+ *           distribution of the target sequence; if the target
+ *           sequence is 40% A, 5% C, 5% G, 40% U, then the null 
+ *           model is (0.4, 0.05, 0.05, 0.4).
+ * 
+ *           Note: no trace or parsetree is needed. The bit score correction
+ *           can be derived solely by the nucleotide composition of the hit and
+ *           it's length. 
+ *           
+ * Return:   void, ret_sc: the log_2-odds score correction.          
+ */
+void
+ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len, float *ret_sc)
+{
+  int   a;              /* residue index counters */
+  float score = 0.;
+  
+  for (a = 0; a < abc->K; a++) score += sreLOG2(comp[a] / null0[a]) * comp[a] * len;
+   /* Apply an ad hoc 8 bit fudge factor penalty;
+    * interpreted as a prior, saying that the third null model is 
+    * 1/2^8 (1/256) as likely as the standard null model
+    */
+  /* TEMPORARILY DISBABLED score -= 8.;	*/
+
+  /* Return the correction to the bit score. */
+  /*printf("ScoreCorrectionNull3 return sc: %.3f\n", LogSum2(0., score));*/
+  ESL_DPRINTF1(("ScoreCorrectionNull3 return sc: %f\n", LogSum2(0., score)));
+  score = LogSum2(0., score);
+  *ret_sc = score;
+  return;
+}
+

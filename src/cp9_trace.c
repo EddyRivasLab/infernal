@@ -1383,10 +1383,8 @@ CP9TraceScoreCorrectionNull2(CP9_t *hmm, char *errbuf, CP9trace_t *tr, ESL_DSQ *
   int status;
   float *p;		/* null2 model distribution */
   int *sc;	        /* null2 model scores       */
-  int   a,b;            /* residue index counters */
-  int   v;              /* state index counter */
-  int   i;
-  int   tidx, tpos;
+  int   a;              /* residue index counters */
+  int   tpos;
   int score;
 
   /* Rarely, the alignment was totally impossible, and tr is NULL.
@@ -1425,7 +1423,7 @@ CP9TraceScoreCorrectionNull2(CP9_t *hmm, char *errbuf, CP9trace_t *tr, ESL_DSQ *
 
    /* Return the correction to the bit score.
     */
-   printf("CP9TraceScoreCorrectionNull2() returning %d bits\n", Scorify(ILogsum(0, score)));	
+   printf("CP9TraceScoreCorrectionNull2() returning %.3f bits\n", Scorify(ILogsum(0, score)));	
    *ret_sc = Scorify(ILogsum(0, score));	
    return eslOK;
 

@@ -747,7 +747,8 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
       /* determine safe start point, max of j-W+1 and i0 */
       i = ((j-W+1)> i0) ? (j-W+1) : i0;
       ip = i-i0+1;
-      if(results != NULL) UpdateGammaHitMxCP9Forward(gamma, ip, jp, fsc, results);
+      /* NOTE: this function (cm_cp9_HybridScan() cannot do a NULL3 correction, not nec now as this function is never used, but if you use it, you should update it to take <do_null3> (see cp9_Viterbi()) */
+      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, NULL)) != eslOK) return status;
     } /* end loop over end positions j */
   
   /* If recovering hits in a non-greedy manner, do the traceback.

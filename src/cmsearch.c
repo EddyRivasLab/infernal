@@ -1514,13 +1514,13 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 
   /* C. add QDB filter, if necessary (before HMM filter, filters added like a stack, HMM filter is added last but used first) */
   if(do_qdb_filter) { 
-    AddFilterToSearchInfo(cm, TRUE, FALSE, FALSE, FALSE, FALSE, fqdb_smx, NULL, fqdb_ctype, fqdb_sc, fqdb_E);
+    AddFilterToSearchInfo(cm, TRUE, FALSE, FALSE, FALSE, FALSE, fqdb_smx, NULL, fqdb_ctype, fqdb_sc, fqdb_E, esl_opt_GetBoolean(go, "--null3"));
     /* DumpSearchInfo(cm->si); */
   }
   else if (fqdb_smx != NULL) cm_FreeScanMatrix(cm, fqdb_smx); 
   /* D. add HMM filter, if necessary (after QDB filter, filters added like a stack, HMM filter is added last but used first) */
   if (do_hmm_filter) { 
-    AddFilterToSearchInfo(cm, FALSE, FALSE, FALSE, TRUE, FALSE, NULL, NULL, fhmm_ctype, fhmm_sc, fhmm_E);
+    AddFilterToSearchInfo(cm, FALSE, FALSE, FALSE, TRUE, FALSE, NULL, NULL, fhmm_ctype, fhmm_sc, fhmm_E, esl_opt_GetBoolean(go, "--null3"));
     /* DumpSearchInfo(cm->si); */
   }
   ValidateSearchInfo(cm, cm->si);
@@ -1783,13 +1783,13 @@ set_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
 
   /* C. add QDB filter, if necessary (before HMM filter, filters added like a stack, HMM filter is added last but used first) */
   if(do_qdb_filter) { 
-    AddFilterToSearchInfo(cm, TRUE, FALSE, FALSE, FALSE, FALSE, fqdb_smx, NULL, SCORE_CUTOFF, fqdb_sc, -1.);
+    AddFilterToSearchInfo(cm, TRUE, FALSE, FALSE, FALSE, FALSE, fqdb_smx, NULL, SCORE_CUTOFF, fqdb_sc, -1., esl_opt_GetBoolean(go, "--null3"));
     /* DumpSearchInfo(cm->si); */
   }
   else if (fqdb_smx != NULL) cm_FreeScanMatrix(cm, fqdb_smx); 
   /* D. add HMM filter, if necessary (after QDB filter, filters added like a stack, HMM filter is added last but used first) */
   if (do_hmm_filter) { 
-    AddFilterToSearchInfo(cm, FALSE, FALSE, FALSE, TRUE, FALSE, NULL, NULL, SCORE_CUTOFF, fhmm_sc, -1.);
+    AddFilterToSearchInfo(cm, FALSE, FALSE, FALSE, TRUE, FALSE, NULL, NULL, SCORE_CUTOFF, fhmm_sc, -1., esl_opt_GetBoolean(go, "--null3"));
     /* DumpSearchInfo(cm->si); */
   }
   ValidateSearchInfo(cm, cm->si);
@@ -2338,10 +2338,10 @@ int estimate_search_time_for_round(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   esl_stopwatch_Start(w);
   if(stype == SEARCH_WITH_CM) { 
     if(search_opts & CM_SEARCH_INSIDE) { 
-      if((status = FastIInsideScan(cm, errbuf, smx, dsq, 1, L, 0., NULL, NULL, NULL)) != eslOK) return status;
+      if((status = FastIInsideScan(cm, errbuf, smx, dsq, 1, L, 0., NULL, esl_opt_GetBoolean(go, "--null3"), NULL, NULL)) != eslOK) return status;
     }
     else 
-      if((status = FastCYKScan(cm, errbuf, smx, dsq, 1, L, 0., NULL, NULL, NULL)) != eslOK) return status;
+      if((status = FastCYKScan    (cm, errbuf, smx, dsq, 1, L, 0., NULL, esl_opt_GetBoolean(go, "--null3"), NULL, NULL)) != eslOK) return status;
   }
   else { /* search with HMM */
     if(search_opts & CM_SEARCH_HMMFORWARD) { /* forward */
@@ -2349,16 +2349,18 @@ int estimate_search_time_for_round(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
 			       TRUE,   /* we're scanning */
 			       FALSE,  /* we're not ultimately aligning */
 			       TRUE,   /* be memory efficient */
+			       esl_opt_GetBoolean(go, "--null3"),
 			       NULL, NULL, NULL)) != eslOK) return status;
     }
     else { /* viterbi */
       if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL,
-			     TRUE,   /* we're scanning */
-			     FALSE,  /* we're not ultimately aligning */
-			     TRUE,   /* be memory efficient */
-			     NULL, NULL,
-			     NULL,   /* don't want traces back */
-			     NULL)) != eslOK) return status;
+			       TRUE,   /* we're scanning */
+			       FALSE,  /* we're not ultimately aligning */
+			       TRUE,   /* be memory efficient */
+			       esl_opt_GetBoolean(go, "--null3"),
+			       NULL, NULL,
+			       NULL,   /* don't want traces back */
+			       NULL)) != eslOK) return status;
     }
   }
   esl_stopwatch_Stop(w);

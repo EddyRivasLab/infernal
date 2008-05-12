@@ -63,6 +63,7 @@
  *           j0              - end of target subsequence (L for full seq)
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
+ *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  * 
@@ -75,7 +76,7 @@
  */
 int
 FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
-	    search_results_t *results, float **ret_vsc, float *ret_sc)
+	    search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc)
 {
   int       status;
   GammaHitMx_t *gamma;          /* semi-HMM for hit resoultion */
@@ -102,6 +103,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   float    *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
+  double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScan, CMH_BITS flag is not raised.\n");
@@ -122,8 +124,6 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   float **esc_vAA     = cm->oesc;         /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					   * and all possible emissions a (including ambiguities) */
-
-  /*printf("TEMP in FastCYKScan(): i0: %d j0: %d\n", i0, j0);*/
 
   /* determine if we're doing banded/non-banded */
   if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
@@ -156,18 +156,35 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   /* precalculate the initial scores for all cells */
   init_scAA = FCalcInitDPScores(cm);
 
+  /* if do_null3: allocate and initialize act vector */
+  if(do_null3) { 
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) { 
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+  }
+  else act = NULL;
+
   /* The main loop: scan the sequence from position i0 to j0.
    */
   for (j = i0; j <= j0; j++) 
     {
       float sc;
-      jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
+      jp_g = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (index in gamma* data structures) */
       cur  = j%2;
       prv  = (j-1)%2;
       if(jp_g >= W) { dnA = dnAA[W];     dxA = dxAA[W];    }
       else          { dnA = dnAA[jp_g];  dxA = dxAA[jp_g]; }
       /* precalcuate all possible rolling ptrs into the BEGL deck, so we don't wastefully recalc them inside inner DP loop */
       for(d = 0; d <= W; d++) jp_wA[d] = (j-d)%(W+1);
+
+      /* if do_null3 (act != NULL), update act */
+      if(act != NULL) { 
+	esl_vec_DCopy(act[(jp_g-1)%(W+1)], cm->abc->K, act[jp_g%(W+1)]);
+	esl_abc_DCount(cm->abc, act[jp_g%(W+1)], dsq[j], 1.);
+	/*printf("j: %3d jp_g: %3d jp_g/W: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", j, jp_g, jp_g%(W+1), act[jp_g%(W+1)][0], act[jp_g%(W+1)][1], act[jp_g%(W+1)][2], act[jp_g%(W+1)][3]);*/
+      }
 
       for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
 	{
@@ -541,7 +558,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) UpdateGammaHitMxCM(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, results);
+      if(results != NULL) if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, results, W, act)) != eslOK) return status;
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -553,6 +570,10 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 
   /* clean up and return */
   if(gamma != NULL) FreeGammaHitMx(gamma);
+  if (act != NULL) { 
+    for(i = 0; i <= W; i++) free(act[i]); 
+    free(act);
+  }
   free(jp_wA);
   free(sc_v);
   free(init_scAA[0]);
@@ -560,7 +581,6 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   if (ret_vsc != NULL) *ret_vsc = vsc;
   else free(vsc);
   if (ret_sc != NULL) *ret_sc = vsc_root;
-  
   ESL_DPRINTF1(("FastCYKScan() return score: %10.4f\n", vsc_root)); 
   return eslOK;
   
@@ -587,6 +607,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
  *           j0              - end of target subsequence (L for full seq)
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
+ *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  * 
@@ -600,7 +621,7 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
  */
 int
 FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
-		search_results_t *results, float **ret_vsc, float *ret_sc)
+		search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc)
 {
   int       status;
   GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -628,6 +649,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   int      *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
+  double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
   /*printf("TEMP in FastIInsideScan(): i0: %d j0: %d\n", i0, j0);*/
 
@@ -685,19 +707,35 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   ESL_ALLOC(gamma_row, sizeof(float) * (W+1));
   esl_vec_FSet(gamma_row, (W+1), IMPOSSIBLE);
 
+
+  /* if do_null3: allocate and initialize act vector */
+  if(do_null3) { 
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) { 
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+  }
+  else act = NULL;
+
   /* The main loop: scan the sequence from position i0 to j0.
    */
   for (j = i0; j <= j0; j++) 
     {
       int sc;
-      jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
+      jp_g = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (index in gamma* data structures) */
       cur  = j%2;
       prv  = (j-1)%2;
       if(jp_g >= W) { dnA = dnAA[W];     dxA = dxAA[W];    }
       else          { dnA = dnAA[jp_g];  dxA = dxAA[jp_g]; }
       /* precalcuate all possible rolling ptrs into the BEGL deck, so we don't wastefully recalc them inside inner DP loop */
       for(d = 0; d <= W; d++) jp_wA[d] = (j-d)%(W+1);
-
+      /* if do_null3 (act != NULL), update act */
+      if(act != NULL) { 
+	esl_vec_DCopy(act[(jp_g-1)%(W+1)], cm->abc->K, act[jp_g%(W+1)]);
+	esl_abc_DCount(cm->abc, act[jp_g%(W+1)], dsq[j], 1.);
+	/*printf("j: %3d jp_g: %3d jp_g/W: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", j, jp_g, jp_g%(W+1), act[jp_g%(W+1)][0], act[jp_g%(W+1)][1], act[jp_g%(W+1)][2], act[jp_g%(W+1)][3]);*/
+      }
       for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
 	{
 	  /* printf("dnA[v:%d]: %d\ndxA[v:%d]: %d\n", v, dnA[v], v, dxA[v]); */
@@ -1068,7 +1106,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, results);
+	if(results != NULL) if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, results, W, act)) != eslOK) return status;
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
@@ -1081,6 +1119,10 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 
   /* clean up and return */
   if(gamma != NULL) FreeGammaHitMx(gamma);
+  if (act != NULL) { 
+    for(i = 0; i <= W; i++) free(act[i]); 
+    free(act);
+  }
   free(gamma_row);
   free(jp_wA);
   free(sc_v);
@@ -1115,6 +1157,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
  *           j0              - end of target subsequence (L for full seq)
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
+ *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  * 
@@ -1128,7 +1171,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
  */
 int
 XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
-		search_results_t *results, float **ret_vsc, float *ret_sc)
+		search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc)
 {
   int       status;
   GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -1156,6 +1199,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
   int      *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
+  double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "XFastIInsideScan, CMH_BITS flag is not raised.\n");
@@ -1211,18 +1255,35 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
   ESL_ALLOC(gamma_row, sizeof(float) * W+1);
   esl_vec_FSet(gamma_row, (W+1), IMPOSSIBLE);
 
+  /* if do_null3: allocate and initialize act vector */
+  if(do_null3) { 
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) { 
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+  }
+  else act = NULL;
+
   /* The main loop: scan the sequence from position i0 to j0.
    */
   for (j = i0; j <= j0; j++) 
     {
       int sc;
-      jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
+      jp_g = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (index in gamma* data structures) */
       cur  = j%2;
       prv  = (j-1)%2;
       if(jp_g >= W) { dnA = dnAA[W];     dxA = dxAA[W];    }
       else          { dnA = dnAA[jp_g];  dxA = dxAA[jp_g]; }
       /* precalcuate all possible rolling ptrs into the BEGL deck, so we don't wastefully recalc them inside inner DP loop */
       for(d = 0; d <= W; d++) jp_wA[d] = (j-d)%(W+1);
+
+      /* if do_null3 (act != NULL), update act */
+      if(act != NULL) { 
+	esl_vec_DCopy(act[(jp_g-1)%(W+1)], cm->abc->K, act[jp_g%(W+1)]);
+	esl_abc_DCount(cm->abc, act[jp_g%(W+1)], dsq[j], 1.);
+	/*printf("j: %3d jp_g: %3d jp_g/W: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", j, jp_g, jp_g%(W+1), act[jp_g%(W+1)][0], act[jp_g%(W+1)][1], act[jp_g%(W+1)][2], act[jp_g%(W+1)][3]);*/
+      }
 
       for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
 	{
@@ -1515,7 +1576,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, results);
+	if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, results, W, act)) != eslOK) return status;
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
@@ -1528,6 +1589,10 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
 
   /* clean up and return */
   if(gamma != NULL) FreeGammaHitMx(gamma);
+  if (act != NULL) { 
+    for(i = 0; i <= W; i++) free(act[i]); 
+    free(act);
+  }
   free(jp_wA);
   free(sc_v);
   free(init_scAA[0]);
@@ -1562,6 +1627,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
  *           j0              - end of target subsequence (L for full seq)
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
+ *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  * 
@@ -1575,7 +1641,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
  */
 int
 X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
-		search_results_t *results, float **ret_vsc, float *ret_sc)
+		search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc)
 {
   int       status;
   GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -1603,6 +1669,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
   int      *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
+  double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "X2FastIInsideScan, CMH_BITS flag is not raised.\n");
@@ -1659,18 +1726,35 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
   ESL_ALLOC(gamma_row, sizeof(float) * W+1);
   esl_vec_FSet(gamma_row, (W+1), IMPOSSIBLE);
 
+  /* if do_null3: allocate and initialize act vector */
+  if(do_null3) { 
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) { 
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+  }
+  else act = NULL;
+
   /* The main loop: scan the sequence from position i0 to j0.
    */
   for (j = i0; j <= j0; j++) 
     {
       int sc;
-      jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
+      jp_g = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (index in gamma* data structures) */
       cur  = j%2;
       prv  = (j-1)%2;
       if(jp_g >= W) { dnA = dnAA[W];     dxA = dxAA[W];    }
       else          { dnA = dnAA[jp_g];  dxA = dxAA[jp_g]; }
       /* precalcuate all possible rolling ptrs into the BEGL deck, so we don't wastefully recalc them inside inner DP loop */
       for(d = 0; d <= W; d++) jp_wA[d] = (j-d)%(W+1);
+
+      /* if do_null3 (act != NULL), update act */
+      if(act != NULL) { 
+	esl_vec_DCopy(act[(jp_g-1)%(W+1)], cm->abc->K, act[jp_g%(W+1)]);
+	esl_abc_DCount(cm->abc, act[jp_g%(W+1)], dsq[j], 1.);
+	/*printf("j: %3d jp_g: %3d jp_g/W: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", j, jp_g, jp_g%(W+1), act[jp_g%(W+1)][0], act[jp_g%(W+1)][1], act[jp_g%(W+1)][2], act[jp_g%(W+1)][3]);*/
+      }
 
       for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
 	{
@@ -2044,7 +2128,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, results);
+	if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, results, W, act)) != eslOK) return status;
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
@@ -2057,6 +2141,10 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
 
   /* clean up and return */
   if(gamma != NULL) FreeGammaHitMx(gamma);
+  if (act != NULL) { 
+    for(i = 0; i <= W; i++) free(act[i]); 
+    free(act);
+  }
   free(jp_wA);
   free(sc_v);
   free(init_scAA[0]);
@@ -2091,6 +2179,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
  *           j0              - end of target subsequence (L for full seq)
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
+ *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  * 
@@ -2104,7 +2193,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
  */
 int
 FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
-		search_results_t *results, float **ret_vsc, float *ret_sc)
+		search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc)
 {
   int       status;
   GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -2131,6 +2220,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   float    *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
+  double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScan, CMH_BITS flag is not raised.\n");
@@ -2182,18 +2272,35 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   /* precalculate the initial scores for all cells */
   init_scAA = FCalcInitDPScores(cm);
 
+  /* if do_null3: allocate and initialize act vector */
+  if(do_null3) { 
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) { 
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+  }
+  else act = NULL;
+
   /* The main loop: scan the sequence from position i0 to j0.
    */
   for (j = i0; j <= j0; j++) 
     {
       float sc;
-      jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
+      jp_g = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (index in gamma* data structures) */
       cur  = j%2;
       prv  = (j-1)%2;
       if(jp_g >= W) { dnA = dnAA[W];     dxA = dxAA[W];    }
       else          { dnA = dnAA[jp_g];  dxA = dxAA[jp_g]; }
       /* precalcuate all possible rolling ptrs into the BEGL deck, so we don't wastefully recalc them inside inner DP loop */
       for(d = 0; d <= W; d++) jp_wA[d] = (j-d)%(W+1);
+
+      /* if do_null3 (act != NULL), update act */
+      if(act != NULL) { 
+	esl_vec_DCopy(act[(jp_g-1)%(W+1)], cm->abc->K, act[jp_g%(W+1)]);
+	esl_abc_DCount(cm->abc, act[jp_g%(W+1)], dsq[j], 1.);
+	/*printf("j: %3d jp_g: %3d jp_g/W: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", j, jp_g, jp_g%(W+1), act[jp_g%(W+1)][0], act[jp_g%(W+1)][1], act[jp_g%(W+1)][2], act[jp_g%(W+1)][3]);*/
+      }
 
       for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
 	{
@@ -2563,7 +2670,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) UpdateGammaHitMxCM(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, results);
+      if(results != NULL) if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, results, W, act)) != eslOK) return status;
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -2575,6 +2682,10 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 
   /* clean up and return */
   if(gamma != NULL) FreeGammaHitMx(gamma);
+  if (act != NULL) { 
+    for(i = 0; i <= W; i++) free(act[i]); 
+    free(act);
+  }
   free(jp_wA);
   free(sc_v);
   free(init_scAA[0]);
@@ -2610,6 +2721,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
  *           j0              - end of target subsequence (L for full seq)
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
+ *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
@@ -2623,7 +2735,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
  */
 int
 RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
-	   search_results_t *results, float **ret_vsc, float *ret_sc)
+	   search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc)
 {
   int       status;
   GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -2648,6 +2760,7 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
   int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
+  double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "RefCYKScan, CMH_BITS flag is not raised.\n");
@@ -2696,18 +2809,35 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
   /* precalculate the initial scores for all cells */
   init_scAA = FCalcInitDPScores(cm);
 
+  /* if do_null3: allocate and initialize act vector */
+  if(do_null3) { 
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) { 
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+  }
+  else act = NULL;
+
   /* The main loop: scan the sequence from position i0 to j0.
    */
   for (j = i0; j <= j0; j++) 
     {
       float sc;
-      jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
+      jp_g = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (index in gamma* data structures) */
       cur  = j%2;
       prv  = (j-1)%2;
       if(jp_g >= W) { dnA = dnAA[W];     dxA = dxAA[W];    }
       else          { dnA = dnAA[jp_g];  dxA = dxAA[jp_g]; }
       /* precalcuate all possible rolling ptrs into the BEGL deck, so we don't wastefully recalc them inside inner DP loop */
       for(d = 0; d <= W; d++) jp_wA[d] = (j-d)%(W+1);
+
+      /* if do_null3 (act != NULL), update act */
+      if(act != NULL) { 
+	esl_vec_DCopy(act[(jp_g-1)%(W+1)], cm->abc->K, act[jp_g%(W+1)]);
+	esl_abc_DCount(cm->abc, act[jp_g%(W+1)], dsq[j], 1.);
+	/*printf("j: %3d jp_g: %3d jp_g/W: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", j, jp_g, jp_g%(W+1), act[jp_g%(W+1)][0], act[jp_g%(W+1)][1], act[jp_g%(W+1)][2], act[jp_g%(W+1)][3]);*/
+      }
 
       for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
 	{
@@ -2847,7 +2977,7 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) UpdateGammaHitMxCM(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, results);
+      if(results != NULL) if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, results, W, act)) != eslOK) return status;
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -2859,6 +2989,10 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
 
   /* clean up and return */
   if(gamma != NULL) FreeGammaHitMx(gamma);
+  if (act != NULL) { 
+    for(i = 0; i <= W; i++) free(act[i]); 
+    free(act);
+  }
   free(jp_wA);
   free(init_scAA[0]);
   free(init_scAA);
@@ -2892,6 +3026,7 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
  *           j0              - end of target subsequence (L for full seq)
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
+ *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
@@ -2905,7 +3040,7 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
  */
 int
 RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
-	       search_results_t *results, float **ret_vsc, float *ret_sc)
+	       search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc)
 {
   int       status;
   GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -2931,6 +3066,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
+  double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "RefIInsideScan, CMH_BITS flag is not raised.\n");
@@ -2983,18 +3119,35 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
   ESL_ALLOC(gamma_row, sizeof(float) * W+1);
   esl_vec_FSet(gamma_row, (W+1), IMPOSSIBLE);
 
+  /* if do_null3: allocate and initialize act vector */
+  if(do_null3) { 
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) { 
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+  }
+  else act = NULL;
+
   /* The main loop: scan the sequence from position i0 to j0.
    */
   for (j = i0; j <= j0; j++) 
     {
       int sc;
-      jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
+      jp_g = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (index in gamma* data structures) */
       cur  = j%2;
       prv  = (j-1)%2;
       if(jp_g >= W) { dnA = dnAA[W];     dxA = dxAA[W];    }
       else          { dnA = dnAA[jp_g];  dxA = dxAA[jp_g]; }
       /* precalcuate all possible rolling ptrs into the BEGL deck, so we don't wastefully recalc them inside inner DP loop */
       for(d = 0; d <= W; d++) jp_wA[d] = (j-d)%(W+1);
+
+      /* if do_null3 (act != NULL), update act */
+      if(act != NULL) { 
+	esl_vec_DCopy(act[(jp_g-1)%(W+1)], cm->abc->K, act[jp_g%(W+1)]);
+	esl_abc_DCount(cm->abc, act[jp_g%(W+1)], dsq[j], 1.);
+	/*printf("j: %3d jp_g: %3d jp_g/W: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", j, jp_g, jp_g%(W+1), act[jp_g%(W+1)][0], act[jp_g%(W+1)][1], act[jp_g%(W+1)][2], act[jp_g%(W+1)][3]);*/
+      }
 
       for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
 	{
@@ -3129,7 +3282,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, results);
+	if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, results, W, act)) != eslOK) return status;
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE);*/
     } /* end loop over end positions j */
@@ -3142,6 +3295,10 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
 
   /* clean up and return */
   if(gamma != NULL) FreeGammaHitMx(gamma);
+  if (act != NULL) { 
+    for(i = 0; i <= W; i++) free(act[i]); 
+    free(act);
+  }
   free(jp_wA);
   free(init_scAA[0]);
   free(init_scAA);
@@ -3176,6 +3333,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
  *           j0              - end of target subsequence (L for full seq)
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
+ *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
@@ -3189,7 +3347,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
  */
 int
 XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
-	       search_results_t *results, float **ret_vsc, float *ret_sc)
+	       search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc)
 {
   int       status;
   GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -3216,6 +3374,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   int      *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   int     **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
   float    *gamma_row;          /* holds floatized scores for updating gamma matrix, only really used if results != NULL */
+  double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
   /* Contract check */
   if(! cm->flags & CMH_BITS)                 ESL_FAIL(eslEINCOMPAT, errbuf, "XRefIInsideScan, CMH_BITS flag is not raised.\n");
@@ -3272,18 +3431,35 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
   ESL_ALLOC(gamma_row, sizeof(float) * W+1);
   esl_vec_FSet(gamma_row, (W+1), IMPOSSIBLE);
 
+  /* if do_null3: allocate and initialize act vector */
+  if(do_null3) { 
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) { 
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+  }
+  else act = NULL;
+
   /* The main loop: scan the sequence from position i0 to j0.
    */
   for (j = i0; j <= j0; j++) 
     {
       int sc;
-      jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
+      jp_g = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (index in gamma* data structures) */
       cur  = j%2;
       prv  = (j-1)%2;
       if(jp_g >= W) { dnA = dnAA[W];     dxA = dxAA[W];    }
       else          { dnA = dnAA[jp_g];  dxA = dxAA[jp_g]; }
       /* precalcuate all possible rolling ptrs into the BEGL deck, so we don't wastefully recalc them inside inner DP loop */
       for(d = 0; d <= W; d++) jp_wA[d] = (j-d)%(W+1);
+
+      /* if do_null3 (act != NULL), update act */
+      if(act != NULL) { 
+	esl_vec_DCopy(act[(jp_g-1)%(W+1)], cm->abc->K, act[jp_g%(W+1)]);
+	esl_abc_DCount(cm->abc, act[jp_g%(W+1)], dsq[j], 1.);
+	/*printf("j: %3d jp_g: %3d jp_g/W: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", j, jp_g, jp_g%(W+1), act[jp_g%(W+1)][0], act[jp_g%(W+1)][1], act[jp_g%(W+1)][2], act[jp_g%(W+1)][3]);*/
+      }
 
       for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
 	{
@@ -3432,7 +3608,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) { 
 	for(d = dnA[0]; d <= dxA[0]; d++) { gamma_row[d] = Scorify(alpha[jp_v][0][d]); }
-	UpdateGammaHitMxCM(gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, results);
+	if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, jp_g, gamma_row, dnA[0], dxA[0], FALSE, smx->bestr, results, W, act)) != eslOK) return status;
       }
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE);*/
     } /* end loop over end positions j */
@@ -3445,6 +3621,10 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 
   /* clean up and return */
   if(gamma != NULL) FreeGammaHitMx(gamma);
+  if (act != NULL) { 
+    for(i = 0; i <= W; i++) free(act[i]); 
+    free(act);
+  }
   free(jp_wA);
   free(sc_v);
   free(init_scAA[0]);
@@ -3480,6 +3660,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
  *           j0              - end of target subsequence (L for full seq)
  *           cutoff          - minimum score to report
  *           results         - search_results_t to add to; if NULL, don't add to it
+ *           do_null3        - TRUE to do NULL3 score correction, FALSE not to
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
@@ -3493,7 +3674,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
  */
 int
 RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
-	       search_results_t *results, float **ret_vsc, float *ret_sc)
+	       search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc)
 {
   int       status;
   GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
@@ -3519,6 +3700,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
   float    *sc_v;               /* [0..d..W] temporary score vec for each d for current j & v */
   float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
+  double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
   
   /* Contract check */
   if(! cm->flags & CMH_BITS)                ESL_FAIL(eslEINCOMPAT, errbuf, "RefFInsideScan, CMH_BITS flag is not raised.\n");
@@ -3571,18 +3753,35 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
   /* precalculate the initial scores for all cells */
   init_scAA = FCalcInitDPScores(cm);
 
+  /* if do_null3: allocate and initialize act vector */
+  if(do_null3) { 
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) { 
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+  }
+  else act = NULL;
+
   /* The main loop: scan the sequence from position i0 to j0.
    */
   for (j = i0; j <= j0; j++) 
     {
       float sc;
-      jp_g = j-i0+1; /* j is actual index in j, jp_g is offset j relative to start i0 (index in gamma* data structures) */
+      jp_g = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (index in gamma* data structures) */
       cur  = j%2;
       prv  = (j-1)%2;
       if(jp_g >= W) { dnA = dnAA[W];     dxA = dxAA[W];    }
       else          { dnA = dnAA[jp_g];  dxA = dxAA[jp_g]; }
       /* precalcuate all possible rolling ptrs into the BEGL deck, so we don't wastefully recalc them inside inner DP loop */
       for(d = 0; d <= W; d++) jp_wA[d] = (j-d)%(W+1);
+
+      /* if do_null3 (act != NULL), update act */
+      if(act != NULL) { 
+	esl_vec_DCopy(act[(jp_g-1)%(W+1)], cm->abc->K, act[jp_g%(W+1)]);
+	esl_abc_DCount(cm->abc, act[jp_g%(W+1)], dsq[j], 1.);
+	/*printf("j: %3d jp_g: %3d jp_g/W: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", j, jp_g, jp_g%(W+1), act[jp_g%(W+1)][0], act[jp_g%(W+1)][1], act[jp_g%(W+1)][2], act[jp_g%(W+1)][3]);*/
+      }
 
       for (v = cm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
 	{
@@ -3722,7 +3921,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) UpdateGammaHitMxCM(gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, results);
+      if(results != NULL) if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, results, W, act)) != eslOK) return status;
       /* cm_DumpScanMatrixAlpha(cm, si, j, i0, FALSE); */
     } /* end loop over end positions j */
   if(vsc != NULL) vsc[0] = vsc_root;
@@ -3734,6 +3933,10 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
 
   /* clean up and return */
   if(gamma != NULL) FreeGammaHitMx(gamma);
+  if (act != NULL) { 
+    for(i = 0; i <= W; i++) free(act[i]); 
+    free(act);
+  }
   free(jp_wA);
   free(init_scAA[0]);
   free(init_scAA);
@@ -3782,7 +3985,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
  *           D         - maximum size of hit
  *           results   - search_results_t to fill in; if NULL, nothing
  *                       filled in
- *           ret_sc          - RETURN: score of best overall hit (vsc[0])
+ *           ret_sc    - RETURN: score of best overall hit (vsc[0])
  *
  * Returns: eslOK on success
  *          <ret_sc> is score of best hit overall
@@ -4326,6 +4529,7 @@ cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W
  *           j0        - last position in subseq to align (L, for whole seq)
  *           cutoff    - minimum score to report
  *           results   - search_results_t to add to; if NULL, don't add to it
+ *           do_null3  - TRUE to do NULL3 score correction, FALSE not to
  *           mx        - the dp matrix, only cells within bands in cm->cp9b will 
  *                       be valid. This is usually cm->hbmx.
  *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
@@ -4335,7 +4539,7 @@ cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W
  *          <ret_sc>: score of the best hit.
  */
 int
-FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx, float size_limit, float *ret_sc)
+FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, int do_null3, CM_HB_MX *mx, float size_limit, float *ret_sc)
 {
 
   int      status;
@@ -4366,6 +4570,8 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   int      yvalid_ct;          /* for keeping track of which children are valid */
   float    vsc_root;           /* score of best hit */
   int      W;                  /* max d over all hdmax[v][j] for all valid v, j */
+  double **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
+  int      jp;                 /* j index in act */
 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB(), dsq is NULL.\n");
@@ -4409,6 +4615,23 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
    * This is a little SHMM that finds an optimal scoring parse of multiple nonoverlapping hits. */
   if(results != NULL) gamma = CreateGammaHitMx(j0-i0+1, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
   else                gamma = NULL;
+
+  /* if do_null3: allocate and initialize act vector */
+  if(do_null3) { 
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) { 
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+    /* pre-fill act, different than non-HMM banded scanner b/c our main loop doesn't step j through residues */
+    for(j = jmin[0]; jmax[0]; j++) { 
+      jp = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (j index for act) */
+      esl_vec_DCopy(act[(jp-1)%(W+1)], cm->abc->K, act[jp%(W+1)]);
+      esl_abc_DCount(cm->abc, act[jp%(W+1)], dsq[j], 1.);
+    }
+  }
+  else act = NULL;
+
 
   /* Main recursion */
   for (v = cm->M-1; v >= 0; v--) { /* all the way down to root, different from other scanners */
@@ -4676,9 +4899,9 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   /* first report all hits with j < jmin[0] are impossible, only if we're reporting hits to results */
   if(results != NULL) { 
     for(j = i0; j < jmin[v]; j++) {
-      UpdateGammaHitMxCM(gamma, j-i0+1, 
-			  NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMxCM, this j is can't be a hit end pt */
-			  TRUE, bestr, results);
+      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, 
+				      NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMxCM, this j can't be a hit end pt */
+				      TRUE, bestr, results, W, act)) != eslOK) return status;
     }
   }
     
@@ -4709,15 +4932,15 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
     
     /* report all hits with valid d for this j, only if results != NULL */
     if(results != NULL) { 
-      UpdateGammaHitMxCM(gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, bestr, results);
+      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, bestr, results, W, act)) != eslOK) return status;
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to results */
   if(results != NULL) { 
     for(j = jmax[v]+1; j <= j0; j++) {
-      UpdateGammaHitMxCM(gamma, j-i0+1, 
-			  NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMxCM, this j is can't be a hit end pt */
-			  TRUE, bestr, results);
+      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, 
+				      NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMxCM, this j is can't be a hit end pt */
+				      TRUE, bestr, results, W, act)) != eslOK) return status;
     }
   }
   /* find the best scoring hit */
@@ -4736,6 +4959,10 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   free(el_scA);
   free(yvalidA);
   free(bestr);
+  if (act != NULL) { 
+    for(i = 0; i <= W; i++) free(act[i]); 
+    free(act);
+  }
 
   if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxForward(gamma, results, i0, j0);
 
@@ -4766,6 +4993,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
  *           j0        - last position in subseq to align (L, for whole seq)
  *           cutoff    - minimum score to report
  *           results   - search_results_t to add to; if NULL, don't add to it
+ *           do_null3  - TRUE to do NULL3 score correction, FALSE not to
  *           mx        - the dp matrix, only cells within bands in cm->cp9b will 
  *                       be valid. This is usually cm->hbmx.
  *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
@@ -4775,7 +5003,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
  *          <ret_sc>: score of the best hit.
  */
 int
-FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, CM_HB_MX *mx, float size_limit, float *ret_sc)
+FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff, search_results_t *results, int do_null3, CM_HB_MX *mx, float size_limit, float *ret_sc)
 {
 
   int      status;
@@ -4806,6 +5034,8 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
   int      yvalid_ct;          /* for keeping track of which children are valid */
   float    vsc_root;           /* score of best hit */
   int      W;                  /* max d over all hdmax[v][j] for all valid v, j */
+  double **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
+  int      jp;                 /* j index in act */
 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScanHB(), dsq is NULL.\n");
@@ -4847,6 +5077,22 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
    * This is a little SHMM that finds an optimal scoring parse of multiple nonoverlapping hits. */
   if(results != NULL) gamma = CreateGammaHitMx(j0-i0+1, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
   else                gamma = NULL;
+
+  /* if do_null3: allocate and initialize act vector */
+  if(do_null3) { 
+    ESL_ALLOC(act, sizeof(double *) * (W+1));
+    for(i = 0; i <= W; i++) { 
+      ESL_ALLOC(act[i], sizeof(double) * cm->abc->K);
+      esl_vec_DSet(act[i], cm->abc->K, 0.);
+    }
+    /* pre-fill act, different than non-HMM banded scanner b/c our main loop doesn't step j through residues */
+    for(j = jmin[0]; jmax[0]; j++) { 
+      jp = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (j index for act) */
+      esl_vec_DCopy(act[(jp-1)%(W+1)], cm->abc->K, act[jp%(W+1)]);
+      esl_abc_DCount(cm->abc, act[jp%(W+1)], dsq[j], 1.);
+    }
+  }
+  else act = NULL;
 
   /* Main recursion */
   for (v = cm->M-1; v >= 0; v--) { /* all the way down to root, different from other scanners */
@@ -5093,9 +5339,9 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
   /* first report all hits with j < jmin[0] are impossible, only if we're reporting hits to results */
   if(results != NULL) { 
     for(j = i0; j < jmin[v]; j++) {
-      UpdateGammaHitMxCM(gamma, j-i0+1, 
-			  NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMxCM, this j is can't be a hit end pt */
-			  TRUE, bestr, results);
+      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, 
+				      NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMxCM, this j is can't be a hit end pt */
+				      TRUE, bestr, results, W, act)) != eslOK) return status;
     }
   }
     
@@ -5125,15 +5371,15 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
     
     /* report all hits with valid d for this j, only if results != NULL */
     if(results != NULL) { 
-      UpdateGammaHitMxCM(gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, NULL, results);
+      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, NULL, results, W, act)) != eslOK) return status;
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to results */
   if(results != NULL) { 
     for(j = jmax[v]+1; j <= j0; j++) {
-      UpdateGammaHitMxCM(gamma, j-i0+1, 
-			  NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMxCM, this j is can't be a hit end pt */
-			  TRUE, bestr, results);
+      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, 
+				      NULL, 0, 0,   /* alpha_row is NULL, we're telling UpdateGammaHitMxCM, this j is can't be a hit end pt */
+				      TRUE, bestr, results, W, act)) != eslOK) return status;
     }
   }
   /* find the best scoring hit */
@@ -5152,6 +5398,10 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
   free(el_scA);
   free(yvalidA);
   free(bestr);
+  if (act != NULL) { 
+    for(i = 0; i <= W; i++) free(act[i]); 
+    free(act);
+  }
 
   if(results != NULL && gamma->iamgreedy == FALSE) TBackGammaHitMxForward(gamma, results, i0, j0);
 
@@ -5267,6 +5517,7 @@ DetermineSeqChunksize(int nproc, int L, int W)
   chunksize = ((chunksize / W) + 1) * W;
   chunksize = ESL_MAX(chunksize, W * MPI_MIN_CHUNK_W_MULTIPLIER); 
   chunksize = ESL_MIN(chunksize, MPI_MAX_CHUNK_SIZE);
+  printf("DetermineSeqChunksize(): returning %d\n", chunksize);
   return chunksize;
 }
 
@@ -5415,7 +5666,7 @@ main(int argc, char **argv)
       cm->search_opts  &= ~CM_SEARCH_INSIDE;
 
       esl_stopwatch_Start(w);
-      if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
