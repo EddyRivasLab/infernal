@@ -4624,7 +4624,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
       esl_vec_DSet(act[i], cm->abc->K, 0.);
     }
     /* pre-fill act, different than non-HMM banded scanner b/c our main loop doesn't step j through residues */
-    for(j = jmin[0]; jmax[0]; j++) { 
+    for(j = jmin[0]+1; j <= jmax[0]; j++) { 
       jp = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (j index for act) */
       esl_vec_DCopy(act[(jp-1)%(W+1)], cm->abc->K, act[jp%(W+1)]);
       esl_abc_DCount(cm->abc, act[jp%(W+1)], dsq[j], 1.);
@@ -5086,7 +5086,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
       esl_vec_DSet(act[i], cm->abc->K, 0.);
     }
     /* pre-fill act, different than non-HMM banded scanner b/c our main loop doesn't step j through residues */
-    for(j = jmin[0]; jmax[0]; j++) { 
+    for(j = jmin[0]+1; j <= jmax[0]; j++) { 
       jp = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (j index for act) */
       esl_vec_DCopy(act[(jp-1)%(W+1)], cm->abc->K, act[jp%(W+1)]);
       esl_abc_DCount(cm->abc, act[jp%(W+1)], dsq[j], 1.);
@@ -5371,7 +5371,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
     
     /* report all hits with valid d for this j, only if results != NULL */
     if(results != NULL) { 
-      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, NULL, results, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, bestr, results, W, act)) != eslOK) return status;
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to results */
@@ -5517,7 +5517,7 @@ DetermineSeqChunksize(int nproc, int L, int W)
   chunksize = ((chunksize / W) + 1) * W;
   chunksize = ESL_MAX(chunksize, W * MPI_MIN_CHUNK_W_MULTIPLIER); 
   chunksize = ESL_MIN(chunksize, MPI_MAX_CHUNK_SIZE);
-  printf("DetermineSeqChunksize(): returning %d\n", chunksize);
+  /*printf("DetermineSeqChunksize(): returning %d\n", chunksize);*/
   return chunksize;
 }
 

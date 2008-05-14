@@ -1920,6 +1920,8 @@ ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len
 {
   int   a;              /* residue index counters */
   float score = 0.;
+
+  /*esl_vec_FDump(stdout, comp, abc->K, NULL);*/
   
   for (a = 0; a < abc->K; a++) score += sreLOG2(comp[a] / null0[a]) * comp[a] * len;
    /* Apply an ad hoc 8 bit fudge factor penalty;

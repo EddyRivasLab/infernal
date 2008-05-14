@@ -1450,11 +1450,12 @@ UpdateGammaHitMxCP9Backward(CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i
   /* update hit_sc if do_null3 == TRUE (do_null3 == TRUE iff act != NULL) */
   if(act != NULL) { /* do NULL3 score correction */
     ESL_ALLOC(comp, sizeof(float) * cp9->abc->K);
-    for(a = 0; a < cp9->abc->K; a++) comp[a] = act[i%(W+1)][a] - act[(j+1)%(W+1)][a]; /* we're going backwards: comp[a] is act[i][a] - act[j+1][a] */
+    for(a = 0; a < cp9->abc->K; a++) comp[a] = act[(i+1)%(W+1)][a] - act[(j+1)%(W+1)][a]; /* *off-by-one*  we're going backwards: comp[a] is act[i][a] - act[j+1][a], but there's an off-by-one (see above) */
     esl_vec_FNorm(comp, cp9->abc->K);
-    /*esl_vec_FDump(stdout, comp, abc->K, NULL);*/
-    ScoreCorrectionNull3(cp9->abc, cp9->null, comp, j-i+1, &null3_correction);
+    ScoreCorrectionNull3(cp9->abc, cp9->null, comp, j-(i+1)+1, &null3_correction);
     hit_sc -= null3_correction;
+    /*esl_vec_FDump(stdout, comp, cp9->abc->K, NULL);*/
+    /*printf("%.3f %.3f\n", hit_sc + null3_correction, hit_sc);*/
   }
 
   /* mode 1: non-greedy  */

@@ -527,7 +527,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     /* TEMP BEGIN HERE EPN, Thu Mar 27 15:00:26 2008 
      * Overwrite the cfg->gc_freq with an experimental distro from many genomes:
      */
-    hack_overwrite_gcfreq(cfg->gc_freq);
+    /*hack_overwrite_gcfreq(cfg->gc_freq);*/
     /* TEMP END HERE */
     esl_alphabet_Destroy(tmp_abc);
     esl_sqfile_Close(dbfp); 
@@ -1816,7 +1816,6 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
   double *xv;         /* raw data from histogram */
   int     n,z;  
   float tailp;
-  double mufix;
   double  params[2];
   int     nrandhits; 
   float   a;
@@ -1882,8 +1881,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
 
   if (cfg->expsfp != NULL) {
     esl_histogram_PlotSurvival(cfg->expsfp, h);
-    /*esl_exp_Plot(cfg->expsfp, mu,    lambda,   esl_exp_surv, h->xmin - 5., h->xmax + 5., 0.1);*/
-    esl_exp_Plot(cfg->expsfp, mufix, 0.693147, esl_exp_surv, h->xmin - 5., h->xmax + 5., 0.1);
+    esl_exp_Plot(cfg->expsfp, params[0], 0.693147, esl_exp_surv, h->xmin - 5., h->xmax + 5., 0.1);
   }
 
   esl_histogram_Destroy(h);
@@ -3078,6 +3076,7 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   float  sec_per_res;      /* seconds per residue */
   float  targ_sec = 0.1;   /* target number of seconds our timing expt will take */
   int    Lmin = 100;       /* minimum number of residues to search to get timing */
+  int    Lmax = 10000;     /* maximum number of residues to search to get timing */
   int    use_qdb;          /* TRUE if we're using QDB, FALSE if not */
   double *dnull = NULL;    /* background distro for generating random seqs */
   int     i;               /* counter */
@@ -3101,6 +3100,7 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
     /* determine L that will take about <targ_sec> seconds */
     L = targ_sec / (psec_per_Mc * Mc_per_res);
     L = ESL_MAX(L, Lmin); /* we have to search at least <Lmin> residues */
+    L = ESL_MIN(L, Lmax); /* we want to search at most  <Lmax> residues */
     /* now determine exactly how many dp calculations we'd do if we search L residues, 
      * this won't be the same as Mc_per_res * L b/c Mc_per_res from cm_GetNCalcsPerResidueGivenBeta
      * b/c that was calculated after correcting for the fact that the first W residues have fewer
@@ -3116,6 +3116,8 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
     psec_per_Mc = (cm->search_opts & CM_SEARCH_HMMFORWARD) ? (1. / 175.) : (1. / 380.);  /* 175 Mc/S forward; 380 Mc/S viterbi */
     /* determine L that will take about <targ_sec. seconds */
     L  = targ_sec / (psec_per_Mc * Mc_per_res);
+    L  = ESL_MAX(L, Lmin); /* we have to search at least <Lmin> residues */
+    L  = ESL_MIN(L, Lmax); /* we want to search at most  <Lmax> residues */
     /* how many millions of DP cells will it be? */
     Mc = Mc_per_res * L;
   }

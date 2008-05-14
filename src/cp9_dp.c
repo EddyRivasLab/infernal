@@ -485,7 +485,7 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
       else             { cur = ip;          prv = ip+1;         }
 
       /* if do_null3 (act != NULL), update act */
-      if(act != NULL) { 
+      if(act != NULL && ip > 0) { 
 	esl_vec_DCopy(act[(ip+1)%(W+1)], cm->abc->K, act[ip%(W+1)]);
 	esl_abc_DCount(cm->abc, act[ip%(W+1)], dsq[i], 1.);
 	/*printf("i: %3d ip: %3d ip/W+1: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", i, ip, ip%(W+1), act[ip%(W+1)][0], act[ip%(W+1)][1], act[ip%(W+1)][2], act[ip%(W+1)][3]);*/
@@ -2258,12 +2258,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
     cur = ip;
     prv = ip+1;
   }
-  /* if do_null3 (act != NULL), update act */
-  if(act != NULL) { 
-    esl_vec_DCopy(act[(ip+1)%(W+1)], cm->abc->K, act[ip%(W+1)]);
-    esl_abc_DCount(cm->abc, act[ip%(W+1)], dsq[i], 1.);
-    /*printf("i: %3d ip: %3d ip/W+1: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", i, ip, ip%(W+1), act[ip%(W+1)][0], act[ip%(W+1)][1], act[ip%(W+1)][2], act[ip%(W+1)][3]);*/
-  }
+  /* no need to update act, we've seen the full seq (i now == i0-1), which does not correspond to a residue */
 
   /* init EL mx to -INFTY */
   for (k = 1; k <= cm->cp9->M; k++) elmx[cur][k] = -INFTY;
