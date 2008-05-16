@@ -77,9 +77,5 @@
  */
 #undef cm_DEBUGLEVEL
 
-/* --enable-devopts
- */
-#undef HAVE_DEVOPTS
-
 #endif /* CONFIGH_INCLUDED */
 

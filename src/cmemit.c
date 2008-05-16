@@ -43,12 +43,7 @@ static ESL_OPTIONS options[] = {
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "local; emit from a locally configured model",  1 },
   { "-s",        eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,        NULL, "set random number generator seed to <n>",  1 },
   { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "be quiet; don't print anything to stdout", 1 },
-  /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
-   * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
-  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 1 },
-  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 1 },
-  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local begin prob to <x>", 1 },
-  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local end prob to <x>", 1 },
+  { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
   /* miscellaneous output options */
   { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 2 },
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 2 },
@@ -57,8 +52,17 @@ static ESL_OPTIONS options[] = {
   { "--exp",     eslARG_REAL,   NULL,  NULL, "x>0",     NULL,      NULL,        NULL, "exponentiate CM probabilities by <x> before emitting",  3 },
   { "--begin",   eslARG_INT,    NULL,  NULL, "n>=1",    NULL,    "--end",       NULL, "truncate alignment, begin at match column <n>", 3 },
   { "--end",     eslARG_INT,    NULL,  NULL, "n>=1",    NULL,  "--begin",       NULL, "truncate alignment,   end at match column <n>", 3 },
-  { "--shmm",    eslARG_OUTFILE,NULL,  NULL, NULL,   OUTOPTS,      NULL, "-l,--tfile","build, output a ML CM Plan 9 HMM from generated alignment to <f>", 3 },
-  { "--ahmm",    eslARG_OUTFILE,NULL,  NULL, NULL,   OUTOPTS,      NULL,        NULL, "output parameters of analytically built CM Plan 9 HMM to <f>", 3 },
+  /* --devhelp options
+
+  /* All options below are developer options, only shown if --devhelp invoked */
+  /* Developer options for testing CP9 construction empirically */
+  { "--shmm",    eslARG_OUTFILE,NULL,  NULL, NULL,   OUTOPTS,      NULL, "-l,--tfile","build, output a ML CM Plan 9 HMM from generated alignment to <f>", 101 },
+  { "--ahmm",    eslARG_OUTFILE,NULL,  NULL, NULL,   OUTOPTS,      NULL,        NULL, "output parameters of analytically built CM Plan 9 HMM to <f>", 101 },
+  /* Developer options related to experiment local begin/end modes */
+  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 102 },
+  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 102 },
+  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local begin prob to <x>", 102 },
+  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local end prob to <x>", 102 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -136,6 +140,22 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
       puts("\nexpert options:");
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+      exit(0);
+    }
+  if (esl_opt_GetBoolean(go, "--devhelp") == TRUE) 
+    {
+      cm_banner(stdout, argv[0], banner);
+      esl_usage(stdout, argv[0], usage);
+      puts("\nwhere general options are:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
+      puts("\nmiscellaneous output options are:");
+      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+      puts("\nexpert options:");
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+      puts("\nundocumented developer options for empirically checking CP9 HMM construction:");
+      esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
+      puts("\nundocumented developer options related to experimental local begin/end modes:");
+      esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
       exit(0);
     }
   if (esl_opt_ArgNumber(go) != 2) 

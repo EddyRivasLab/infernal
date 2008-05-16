@@ -55,16 +55,13 @@ static ESL_OPTIONS options[] = {
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--toponly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the top strand", 1 },
   { "--bottomonly", eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the bottom strand", 1 },
-  { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--null3,--noalign", "turn on the post hoc second null model", 1 },
-  { "--null3",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--null2,--noalign", "turn on the post hoc third null model", 1 },
+  { "--null3",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,   "--null2", "turn on the post hoc third null model", 1 },
   { "--forecast",eslARG_INT,    NULL,  NULL, NULL,      NULL,      NULL,        NULL, "don't do search, forecast running time with <n> processors", 1 },
-  { "--lambda",  eslARG_REAL,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "overwrite lambdas in <cmfile> to <x> for E-value calculations", 1}, 
-  /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
-   * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
-  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "-g,--pbegin","set all local begins as equiprobable", 1 },
-  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      NULL, "-g,--pend",  "set all local end probs to <x>", 1 },
-  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local begin prob to <x>", 1 },
-  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local end prob to <x>", 1 },
+  { "--mxsize",  eslARG_REAL, "2048.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 10 },
+  { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
+#ifdef HAVE_MPI
+  { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program", 1 },  
+#endif
   /* options for algorithm for final round of search */
   { "--inside",  eslARG_NONE,  "default",NULL,NULL,    NULL,       NULL,    STRATOPTS1, "use scanning CM Inside algorithm", 2 },
   { "--cyk",     eslARG_NONE,  FALSE, NULL, NULL, "--inside",      NULL,    STRATOPTS1, "use scanning CM CYK algorithm", 2 },
@@ -81,7 +78,6 @@ static ESL_OPTIONS options[] = {
   { "--beta",    eslARG_REAL,  "1e-15",NULL, "0<x<1",   NULL,      NULL,  HMMONLYOPTS, "set tail loss prob for QDB calculation to <x>", 4 },
   { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  HMMONLYOPTS, "calculate and use HMM bands in final round of CM search", 4 },
   { "--tau",     eslARG_REAL,   "1e-7",NULL, "0<x<1",   NULL,"--hbanded", HMMONLYOPTS, "set tail loss prob for --hbanded to <x>", 4 },
-  { "--aln2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL, "--hbanded", HMMONLYOPTS, "w/--hbanded, derive HMM bands w/o scanning Forward/Backward", 4 },
   /* filtering options, by default do HMM, then CYK filter */
   { "--fil-qdb",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-qdb", "filter with CM QDB (banded) CYK algorithm", 5 },
   { "--fil-beta",  eslARG_REAL, NULL,      NULL, "x>0", NULL,      NULL,"--fil-no-qdb", "set tail loss prob for filter QDB and W calculation to <x>", 5 },
@@ -107,17 +103,18 @@ static ESL_OPTIONS options[] = {
   /* Setting output alphabet */
   { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 9 },
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 9 },
-  /* Other options */
-  { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb", 10 },  
-  { "--mxsize",  eslARG_REAL, "2048.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 10 },
-#ifdef HAVE_MPI
-  { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program", 10 },  
-#endif
-  /* Development options */
-#ifdef HAVE_DEVOPTS
-  { "--rtrans",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--viterbi,--forward", "replace CM transition scores from <cmfile> with RSEARCH scores", 11 },
-  { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 11 },
-#endif
+  /* All options below are developer options, only shown if --devhelp invoked */
+  { "--lambda",  eslARG_REAL,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "overwrite lambdas in <cmfile> to <x> for E-value calculations", 101}, 
+  { "--aln2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL, "--hbanded", HMMONLYOPTS, "w/--hbanded, derive HMM bands w/o scanning Forward/Backward", 101 },
+  { "--rtrans",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--viterbi,--forward", "replace CM transition scores from <cmfile> with RSEARCH scores", 101 },
+  { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 101 },
+  { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--null3,--noalign", "turn on the post hoc second null model", 101 },
+  { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb", 101 },  
+  /* Developer options related to experiment local begin/end modes */
+  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "-g,--pbegin","set all local begins as equiprobable", 102 },
+  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      NULL, "-g,--pend",  "set all local end probs to <x>", 102 },
+  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local begin prob to <x>", 102 },
+  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local end prob to <x>", 102 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -225,13 +222,34 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       puts("\noptions for selecting output alphabet:");
       esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
-      puts("\nother options:");
-      esl_opt_DisplayHelp(stdout, go, 10, 2, 80);
-#ifdef HAVE_DEVOPTS
-      puts("\nnon-standard options used only in development:");
-      esl_opt_DisplayHelp(stdout, go, 11, 2, 80);
-#endif 
       exit(0);
+    }
+  if (esl_opt_GetBoolean(go, "--devhelp") == TRUE) 
+    {
+      cm_banner(stdout, argv[0], banner);
+      esl_usage(stdout, argv[0], usage);
+      puts("\nwhere general options are:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
+      puts("\nalgorithm for final round of search (after >= 0 filters): [default: --inside]");
+      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+      puts("\ncutoff options for final round of search (after >= 0 filters):");
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
+      puts("\noptions for banded DP in final round of search:");
+      esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
+      puts("\nfiltering options:");
+      esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
+      puts("\nfilter cutoff options (survival fractions are predicted, not guaranteed):");
+      esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
+      puts("\noptions for returning alignments of search hits:");
+      esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
+      puts("\nverbose output files:");
+      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
+      puts("\noptions for selecting output alphabet:");
+      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
+      puts("\nundocumented developer miscellaneous options:");
+      esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
+      puts("\nundocumented developer options related to experimental local begin/end modes:");
+      esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
     }
   if (esl_opt_ArgNumber(go) != 2) 
     {
@@ -1080,13 +1098,13 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(! (esl_opt_GetBoolean(go, "--alncyk")))   cm->align_opts |= CM_ALIGN_OPTACC;
   if(esl_opt_GetBoolean(go, "-p"))             cm->align_opts |= CM_ALIGN_POST;
 
+  /*******************************
+   * Begin developer options block 
+   *******************************/
   /* handle special developer's options, not recommend for normal users */
-#ifdef HAVE_DEVOPTS
   if(  esl_opt_GetBoolean(go, "--rtrans"))      cm->flags       |= CM_RSEARCHTRANS;
   if(  esl_opt_GetBoolean(go, "--sums"))        cm->search_opts |= CM_SEARCH_SUMS;
-#endif
 
-  /* TEMPORARY BLOCK */
   /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */
   cm->pbegin = esl_opt_GetReal(go, "--pbegin");
   cm->pend   = esl_opt_GetReal(go, "--pend");
@@ -1113,7 +1131,9 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     }
     cm->pend = nexits * esl_opt_GetReal(go, "--pfend");
   }
-  /* END TEMPORARY BLOCK */
+  /*******************************
+   * End developer options block 
+   *******************************/
 
   /* finally, configure the CM for search based on cm->config_opts and cm->align_opts.
    * set local mode, make cp9 HMM, calculate QD bands etc. 

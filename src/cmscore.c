@@ -32,11 +32,7 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#ifdef HAVEDEVOPTS
-#define ALGOPTS  "--nonbanded,--qdb,--qdbsmall,--qdbboth,--hbanded,--hmmviterbi,--hmmforward"  /* Exclusive choice for scoring algorithms ifdef #HAVE_DEVOPTS*/
-#else
-#define ALGOPTS  "--nonbanded,--hbanded,--hmmviterbi,--hmmforward"                             /* Exclusive choice for scoring algorithms */
-#endif
+#define ALGOPTS  "--nonbanded,--qdb,--qdbsmall,--qdbboth,--hbanded,--hmmviterbi,--hmmforward"  /* Exclusive choice for scoring algorithms */
 #define SEQOPTS  "--emit,--random,--infile"                                 /* Exclusive choice for sequence input */
 
 static ESL_OPTIONS options[] = {
@@ -48,12 +44,7 @@ static ESL_OPTIONS options[] = {
   { "-a",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print individual timings & scores, not just a summary", 1 },
   { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL, "-l,--search", "build sub CM for columns b/t HMM predicted start/end points", 1 },
   { "--mxsize",  eslARG_REAL, "512.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 1 },
-  /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
-   * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
-  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 1 },
-  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 1 },
-  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local begin prob to <x>", 1 },
-  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local end prob to <x>", 1 },
+  { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
 #endif
@@ -73,27 +64,37 @@ static ESL_OPTIONS options[] = {
   { "--nonbanded",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,"--search", "compare divide and conquer (d&c) versus standard non-banded CYK", 3 },
   { "--scoreonly",eslARG_NONE,  FALSE, NULL, NULL,      NULL,"--nonbanded","--tfile,--search", "with --nonbanded, do only score, save memory", 3 },
   { "--hmmviterbi",eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,      NULL,       NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm", 3 },
-#ifdef HAVE_DEVOPTS
-  { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare non-banded d&c versus QDB standard CYK", 3 },
-  { "--qdbsmall",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,  "--search", "compare non-banded d&c versus QDB d&c", 3 },
-  { "--qdbboth", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,  "--search", "compare        QDB d&c versus QDB standard CYK", 3 },
-  { "--beta",    eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      NULL,        NULL, "set tail loss prob for QDB to <x>", 3 },
-#endif
+  /* Options for testing search instead of alignment */
+  { "--search",  eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "run algorithms in scanning search mode", 4 },
+  { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--search",        NULL, "with --search, use Inside instead of CYK", 4 },
+  { "--hmmforward",eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,"--search",        NULL, "with --search, use HMM  Forward instead of CYK", 4 },
   /* Options for testing multiple rounds of banded alignment, stage 2->N alignment */
-  { "--taus",    eslARG_INT,  NULL,    NULL, "0<n<=30", NULL,"--hbanded,--taue",NULL,"set initial (stage 2) tail loss prob to 1E-<x> for HMM banding", 4 },
-  { "--taue",    eslARG_INT,  NULL,    NULL, "0<n<=30", NULL,"--hbanded,--taus",NULL,"set final   (stage N) tail loss prob to 1E-<x> for HMM banding", 4 },
-#ifdef HAVE_DEVOPTS
-  { "--betas",   eslARG_INT,  NULL,    NULL, "0<n<=30", NULL, "--betae",       NULL, "set initial (stage 2) tail loss prob to 1E-<x> for QDB", 4 },
-  { "--betae",   eslARG_INT,  NULL,    NULL, "0<n<=30", NULL, "--betas",       NULL, "set final   (stage N) tail loss prob to 1E-<x> for QDB", 4 },
-#endif
+  { "--taus",    eslARG_INT,  NULL,    NULL, "0<n<=30", NULL,"--hbanded,--taue",NULL,"set initial (stage 2) tail loss prob to 1E-<x> for HMM banding", 5 },
+  { "--taue",    eslARG_INT,  NULL,    NULL, "0<n<=30", NULL,"--hbanded,--taus",NULL,"set final   (stage N) tail loss prob to 1E-<x> for HMM banding", 5 },
   /* Verbose output files/debugging */
-  { "--search",  eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "run algorithms in scanning search mode", 5 },
-  { "--hmmforward",eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,"--search",        NULL, "align to a CM Plan 9 HMM with the Forward algorithm", 5 },
-  { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--search",        NULL, "with --search use inside instead of CYK", 5 },
-  { "--old",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use old hmm to cm band calculation algorithm", 5},
-  { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 5 },
-  { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,  "--search", "dump parsetrees to file <f>",  5 },
-  { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb",   5 },  
+  { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,  "--search", "dump parsetrees to file <f>",  6 },
+
+  /* Developer options related to QDB alignment */
+  { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare non-banded d&c versus QDB standard CYK", 101 },
+  { "--qdbsmall",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,  "--search", "compare non-banded d&c versus QDB d&c", 101 },
+  { "--qdbboth", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,  "--search", "compare        QDB d&c versus QDB standard CYK", 101 },
+  { "--beta",    eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      NULL,        NULL, "set tail loss prob for QDB to <x>", 101 },
+  { "--betas",   eslARG_INT,  NULL,    NULL, "0<n<=30", NULL, "--betae",       NULL, "set initial (stage 2) tail loss prob to 1E-<x> for QDB", 101 },
+  { "--betae",   eslARG_INT,  NULL,    NULL, "0<n<=30", NULL, "--betas",       NULL, "set final   (stage N) tail loss prob to 1E-<x> for QDB", 101 },
+
+  /* Developer options for debugging */
+  { "--old",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use old hmm to cm band calculation algorithm", 102},
+  { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 102 },
+  { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb",102 },  
+
+  /* All options below are developer options, only shown if --devhelp invoked */
+  /* Developer options related to experiment local begin/end modes */
+  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 103 },
+  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 103 },
+  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local begin prob to <x>", 103 },
+  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local end prob to <x>", 103 },
+
+
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -204,16 +205,39 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
       puts("\nstage 2 alignment options, to compare to stage 1 (D&C non-banded), are:");
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
-#ifdef HAVE_DEVOPTS
-      puts("\noptions for testing multiple tau/beta values for --hbanded/--qdb:");
-#else
-      puts("\noptions for testing multiple tau values for --hbanded:");
-#endif
+      puts("\noptions for testing search algorithms instead of alignment algorithms:");
       esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
-      puts("\nverbose output files and debugging:");
+      puts("\noptions for testing multiple tau values for --hbanded:");
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80); 
+      puts("\nextra output files:");
+      esl_opt_DisplayHelp(stdout, go, 6, 2, 80); 
       exit(0);
     }
+  if (esl_opt_GetBoolean(go, "--devhelp") == TRUE) 
+    {
+      cm_banner(stdout, argv[0], banner);
+      esl_usage(stdout, argv[0], usage);
+      puts("\nwhere general options are:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
+      puts("\noptions for source of input sequences:");
+      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+      puts("\nstage 2 alignment options, to compare to stage 1 (D&C non-banded), are:");
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+      puts("\noptions for testing search algorithms instead of alignment algorithms:");
+      esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
+      puts("\noptions for testing multiple tau values for --hbanded:");
+      esl_opt_DisplayHelp(stdout, go, 5, 2, 80); 
+      puts("\nextra output files:");
+      esl_opt_DisplayHelp(stdout, go, 6, 2, 80); 
+      puts("\nundocumented developer options for QDB alignment (old):");
+      esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
+      puts("\nundocumented developer verbose output/debugging options:");
+      esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
+      puts("\nundocumented developer options related to experimental local begin/end modes:");
+      esl_opt_DisplayHelp(stdout, go, 103, 2, 80);
+      exit(0);
+    }
+
   if (esl_opt_ArgNumber(go) != 1) 
     {
       puts("Incorrect number of command line arguments.");
@@ -230,7 +254,6 @@ main(int argc, char **argv)
 	printf("Error parsing options, --taus <n> argument must be less than --taue <n> argument.\n");
 	exit(1);
       }
-#ifdef HAVE_DEVOPTS
   /* Can't have --betas and --betae without a --qdb* option */
   if ((! esl_opt_IsDefault(go, "--betas")) && (! esl_opt_IsDefault(go, "--betae")))
     if(! ((esl_opt_GetBoolean(go, "--qdb")) || (esl_opt_GetBoolean(go, "--qdbsmall"))))
@@ -244,7 +267,6 @@ main(int argc, char **argv)
 	printf("Error parsing options, --betas <n> argument must be less than --betae <n> argument.\n");
 	exit(1);
       }
-#endif
 
   /* Initialize what we can in the config structure (without knowing the input alphabet yet).
    */
@@ -439,7 +461,6 @@ init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       for(s = 2; s < cfg->nstages; s++)
 	cfg->tau[s] = cfg->tau[(s-1)] / 10.;
     }
-#ifdef HAVE_DEVOPTS
   else if((! (esl_opt_IsDefault(go, "--betas"))) && (! (esl_opt_IsDefault(go, "--betae"))))
     {
       cfg->nstages = esl_opt_GetInteger(go, "--betae") - esl_opt_GetInteger(go, "--betas") + 2;
@@ -449,7 +470,7 @@ init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       for(s = 2; s < cfg->nstages; s++)
 	cfg->beta[s] = cfg->beta[(s-1)] / 10.;
     }
-#endif
+
   else
     {
       cfg->nstages = 2;
@@ -459,16 +480,12 @@ init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	  cfg->tau[0] = 0.; /* this won't matter b/c stage 1 is non-banded */
 	  cfg->tau[1] = esl_opt_GetReal(go, "--tau");
 	}
-#ifdef HAVE_DEVOPTS
       else if(esl_opt_GetBoolean(go, "--qdb") || esl_opt_GetBoolean(go, "--qdbsmall"))
 	{
 	  ESL_ALLOC(cfg->beta, sizeof(double) * cfg->nstages);
 	  cfg->beta[0] = 0.; /* this won't matter b/c stage 1 is non-QDB */
-	  if(! esl_opt_IsDefault(go, "--beta")) cm->beta_qdb = esl_opt_GetReal(go, "--beta");
-	  /* else cm->beta_qdb will be equal to beta from CM file */
-	  cfg->beta[1] = cm->beta_qdb;
+	  cfg->beta[1] = esl_opt_GetReal(go, "--beta");
 	}
-#endif
     }  
   cfg->s1_w  = esl_stopwatch_Create();
   cfg->s_w   = esl_stopwatch_Create();
@@ -1189,13 +1206,11 @@ initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   /* do stage 1 specific stuff */
   if(cfg->s == 0) { /* set up stage 1 alignment we'll compare all other stages to */
     cm->align_opts |= CM_ALIGN_SMALL;
-#ifdef HAVE_DEVOPTS
     /* only one option allows cmscore NOT to do standard CYK as first stage aln */
     if(esl_opt_GetBoolean(go, "--qdbboth")) { 
       cm->align_opts  |= CM_ALIGN_QDB;
       cm->config_opts |= CM_CONFIG_QDB;
     }
-#endif
     /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
      * set local mode, make cp9 HMM, calculate QD bands etc. 
      */
@@ -1217,16 +1232,14 @@ initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
     if(esl_opt_GetBoolean(go, "--hmmviterbi"))  cm->align_opts  |= CM_ALIGN_HMMVITERBI;
     if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
     if(esl_opt_GetBoolean(go, "--scoreonly"))   cm->align_opts  |= CM_ALIGN_SCOREONLY;
-#ifdef HAVE_DEVOPTS
     if(esl_opt_GetBoolean(go, "--qdb") || esl_opt_GetBoolean(go, "--qdbsmall") || esl_opt_GetBoolean(go, "--qdbboth")) {                    
       cm->align_opts  |= CM_ALIGN_QDB;
       cm->config_opts |= CM_CONFIG_QDB;
       /* calc QDBs for this stage */
-      ConfigQDB(cm);
+      ConfigQDBAndW(cm, TRUE);
     }
     /* only one way stage 2+ alignment will be D&C, if --qdbsmall was enabled */
     if(esl_opt_GetBoolean(go, "--qdbsmall"))  cm->align_opts  |= CM_ALIGN_SMALL;
-#endif
   }
   return eslOK;
 }
@@ -1317,14 +1330,12 @@ initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
       cm->search_opts  |= CM_SEARCH_HMMFORWARD;
       cm->search_opts  &= ~CM_SEARCH_INSIDE;
     }
-#ifdef HAVE_DEVOPTS    
     if(esl_opt_GetBoolean(go, "--qdb")) {
-      cm->search_opts &= ~CM_CONFIG_NOQDB;
+      cm->search_opts &= ~CM_SEARCH_NOQDB;
       cm->config_opts |= CM_CONFIG_QDB;
       /* calc QDBs for this stage */
-      ConfigQDB(cm);
+      ConfigQDBAndW(cm, TRUE);
     }
-#endif
   }
   /* create scan matrix (for all rounds, including first round, round 0) */
   if(cm->flags & CMH_SCANMATRIX) { cm_FreeScanMatrixForCM(cm); cm->smx = NULL; }
@@ -1609,9 +1620,7 @@ static void
 print_stage_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg)
 {
   int do_qdb = FALSE;
-#ifdef HAVE_DEVOPTS 
   if((esl_opt_GetBoolean(go, "--qdb")) || (esl_opt_GetBoolean(go, "--qdbsmall")) || (esl_opt_GetBoolean(go, "--qdbboth")) || (! esl_opt_IsDefault(go, "--betas"))) do_qdb = TRUE;
-#endif
   fprintf(stdout, "#\n");
   fprintf(stdout, "# %5s  %7s  %5s  %6s  %11s  %32s\n",               "",      "",        "",      "",                         "",            "    comparison with stage 1    ");
   fprintf(stdout, "# %5s  %7s  %5s  %6s  %11s  %32s\n",               "",      "",        "",      "",                         "",            "--------------------------------");

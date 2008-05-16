@@ -56,16 +56,10 @@ static ESL_OPTIONS options[] = {
   { "-s",                eslARG_INT,    NULL,   NULL, "n>0",    NULL,        NULL,        NULL, "set random number generator seed to <n>",  1 },
   { "--forecast",        eslARG_INT,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "don't do calibration, forecast running time with <n> processors", 1 },
   { "--null3",           eslARG_NONE,   NULL,   NULL, NULL,     NULL,        NULL,        NULL, "turn on the post-hoc NULL3 score correction", 1},
-#ifdef HAVE_DEVOPTS 
-  { "-v",                eslARG_NONE,   FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "print arguably interesting info",  1},
+  { "--devhelp",         eslARG_NONE,   NULL,   NULL, NULL,     NULL,        NULL,        NULL, "show list of undocumented developer options", 1 },
+#ifdef HAVE_MPI
+  { "--mpi",            eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "run as an MPI parallel program", 1 },  
 #endif
-  /* 4 --p* options below are hopefully temporary b/c if we have E-values for the CM using a certain cm->pbegin, cm->pend,
-   * changing those values in cmsearch invalidates the E-values, so we should pick hard-coded values for cm->pbegin cm->pend */
-  { "--pebegin",         eslARG_NONE,   FALSE,  NULL, NULL,     NULL,        NULL,  "--pbegin","set all local begins as equiprobable", 1 },
-  { "--pfend",           eslARG_REAL,   NULL,   NULL, "0<x<1",  NULL,        NULL,    "--pend", "set all local end probs to <x>", 1 },
-  { "--pbegin",          eslARG_REAL,   "0.05", NULL, "0<x<1",  NULL,        NULL,        NULL, "set aggregate local begin prob to <x>", 1 },
-  { "--pend",            eslARG_REAL,   "0.05", NULL, "0<x<1",  NULL,        NULL,        NULL, "set aggregate local end prob to <x>", 1 },
-
   /* options for exp tail fitting */
   { "--exp-T",          eslARG_REAL,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "set bit sc cutoff for exp tail fitting to <x> [df: -INFTY]", 2 },
   { "--exp-cmL",        eslARG_REAL,     "1.",  NULL, "0.001<=x<=1000.",NULL,NULL,        NULL, "set length *in Mb* of random seqs for CM exp tail fit to <x>", 2 },
@@ -89,13 +83,21 @@ static ESL_OPTIONS options[] = {
   { "--fil-aln2bands",  eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,"--fil-nonbanded", "derive HMM bands w/o scanning Forward/Backward", 3 },
   { "--fil-gemit",      eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "when calc'ing filter thresholds, always emit globally from CM",  3},
   { "--fil-dfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,"--exp-pfile", "save filter threshold data (HMM and CM scores) to file <s>", 3},
-/* Other options */
-  { "--stall",          eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 4 },  
+  /* Other options */
   { "--mxsize",         eslARG_REAL,    "2048.0",NULL, "x>0.",   NULL,        NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 4 },
-#ifdef HAVE_MPI
-  { "--mpi",            eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "run as an MPI parallel program", 4 },  
-#endif
 
+  /* All options below are developer options, only shown if --devhelp invoked */
+  /* Developer option, print extra info */
+  { "-v",                eslARG_NONE,   FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "print arguably interesting info",  101},
+#ifdef HAVE_MPI
+  /* Developer option, for debugging */
+  { "--stall",          eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 101 },  
+#endif
+  /* Developer options related to experiment local begin/end modes */
+  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 102 },
+  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 102 },
+  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local begin prob to <x>", 102 },
+  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local end prob to <x>", 102 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -108,7 +110,7 @@ struct cfg_s {
   double          *pgc_freq;
   CMStats_t      **cmstatsA;          /* the CM stats data structures, 1 for each CM */
   int              ncm;                /* what number CM we're on */
-  int              be_verbose;	       /* print extra info, only can be TRUE if #ifdef HAVE_DEVOPTS */
+  int              be_verbose;	       /* print extra info */
   int              cmalloc;            /* number of cmstats we have allocated */
   char            *tmpfile;            /* tmp file we're writing to */
   char            *mode;               /* write mode, "w" or "wb"                     */
@@ -237,6 +239,24 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
       puts("\nother options:");
       esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
+      exit(0);
+    }
+  if (esl_opt_GetBoolean(go, "--devhelp") == TRUE) 
+    {
+      cm_banner(stdout, argv[0], banner);
+      esl_usage(stdout, argv[0], usage);
+      puts("\nwhere general options are:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
+      puts("\nexponential tail distribution fitting options :");
+      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+      puts("\nHMM filter threshold calculation options :");
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
+      puts("\nother options:");
+      esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
+      puts("\nundocumented developer options for debugging:");
+      esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
+      puts("\nundocumented developer options related to experimental local begin/end modes:");
+      esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
       exit(0);
     }
   if (esl_opt_ArgNumber(go) != 1) 
@@ -464,7 +484,7 @@ main(int argc, char **argv)
  *    cfg->pstart      - array of partition starts 
  *    cfg->r           - source of randomness
  *    cfg->tmpfile     - temp file for rewriting cm file
- *    cfg->be_verbose  - print extra info? (only available #ifdef HAVE_DEVOPTS) 
+ *    cfg->be_verbose  - print extra info? 
  * Errors in the MPI master here are considered to be "recoverable",
  * in the sense that we'll try to delay output of the error message
  * until we've cleanly shut down the worker processes. Therefore
@@ -548,9 +568,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (esl_opt_GetString(go, "--fil-dfile") != NULL) { if(cfg->np != 1) ESL_FAIL(status, errbuf, "--fil-dfile only works with a single partition\n"); }
 
   cfg->be_verbose = FALSE;
-#ifdef HAVE_DEVOPTS
   if (esl_opt_GetBoolean(go, "-v")) cfg->be_verbose = TRUE;        
-#endif
 
   /* seed master's RNG */
   if (! esl_opt_IsDefault(go, "-s")) 
