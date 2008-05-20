@@ -86,7 +86,7 @@ static ESL_OPTIONS options[] = {
   { "--checkfb", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "check that HMM posteriors for bands were correctly calc'ed", 102},
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 102 },
   { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--nonbanded,--hbanded", "use query dependent banded CYK alignment algorithm", 102 },
-  { "--beta",    eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 102 },
+  { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 102 },
   /* developer options related to output files and debugging */
   { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 103 },
   { "--banddump",eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of band info print statements to <n>", 103 },

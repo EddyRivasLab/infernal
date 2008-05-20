@@ -42,6 +42,7 @@ static ESL_OPTIONS options[] = {
   { "-h",        eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
   { "-g",        eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,    NOTMOPTS, "configure CM for glocal alignment [default: local]", 1 },
   { "-m",        eslARG_NONE,"default",    NULL, NULL,      NULL,      NULL, ONELINEOPTS, "only print one line summary of model statistics", 1 },
+  { "-Z",        eslARG_REAL,   FALSE,     NULL, NULL,      NULL,      NULL,        NULL, "set Z (database size in *Mb*) to <x> for E-value calculations", 1},
   { "--all",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "print model, E-value and filter thresholds stats", 1 },
   { "--le",      eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print one line summary of  local E-value statistics", 1 },
   { "--ge",      eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print one line summary of glocal E-value statistics", 1 },
@@ -60,7 +61,7 @@ static ESL_OPTIONS options[] = {
   { "--tc",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for Rfam TC cutoff", 2}, 
   { "--nc",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for Rfam NC cutoff", 2}, 
   { "--range",   eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print full range CM/HMM filter cutoff points", 2}, 
-  { "--seqfile", eslARG_INFILE, FALSE,     NULL, NULL,      NULL,      NULL,        NULL, "compute E-value cutoffs for sequence file <f>", 2 },
+  { "--seqfile", eslARG_INFILE, FALSE,     NULL, NULL,      NULL,      NULL,        "-Z", "compute E-value cutoffs for sequence file <f>", 2 },
   { "--toponly", eslARG_NONE,   FALSE,     NULL, NULL,      NULL,"--seqfile",       NULL, "with --seqfile, only consider top-strand", 2 },
   { "--efile",   eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "output HMM filter E-val cutoff vs CM E-val cutoff plots to <f>", 3},
   { "--bfile",   eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "output HMM filter bit sc cutoff vs CM bit sc cutoff plots to <f>", 3},
@@ -236,6 +237,7 @@ main(int argc, char **argv)
     esl_sqfile_Close(sqfp); 
     if (! esl_opt_GetBoolean(go, "--toponly")) dbsize *= 2;
   }
+  else if (!(esl_opt_IsDefault(go, "-Z"))) { dbsize = (long) (esl_opt_GetReal(go, "-Z") * 1000000.); /* convert to Mb then to a long */ }
   else dbsize = FTHR_DBSIZE; /* 1 Mb */
 
   /* Main body: read CMs one at a time, print stats 
