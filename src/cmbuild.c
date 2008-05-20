@@ -51,7 +51,6 @@ static ESL_OPTIONS options[] = {
 /* Expert model construction options */
   { "--rsearch", eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,        NULL,  "use RSEARCH parameterization with RIBOSUM matrix file <s>", 2 }, 
   { "--binary",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "save the model(s) in binary format",     2 },
-  { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s> (Stockholm or Pfam)",  2 },
   { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  "--rsearch", "use reference coordinate annotation to specify consensus", 2 },
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,      NULL,  "--rsearch", "fraction of gaps to allow in a consensus column [0..1]", 2 },
   { "--ignorant", eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "strip the structural info from input alignment", 2 },
@@ -102,6 +101,7 @@ static ESL_OPTIONS options[] = {
   { "--regress",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test information to file <s>", 101 },  
   { "--nodetach",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "do not 'detach' one of two inserts that model same column", 101 },
   { "--elself",  eslARG_REAL,  "0.94", NULL, "0<=x<=1", NULL,      NULL,        NULL, "set EL self transition prob to <x>", 101 },
+  { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s> (Stockholm or Pfam)",  101 },
 
   /* Developer verbose output options */
   { "--cfile",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save count vectors to file <s>", 102 },
@@ -236,7 +236,7 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
       puts("\nexpert options for refining the input alignment:");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
-      puts("\n options for selecting alphabet rather than guessing it:");
+      puts("\n options for selecting alphabet of input aln rather than guessing it:");
       esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       exit(0);
     }

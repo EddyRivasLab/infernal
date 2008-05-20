@@ -2344,8 +2344,7 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
   ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.");
 }
 
-/*********************************************************************
- * Function: cp9_CheckFB()
+/* Function: cp9_CheckFB()
  * 
  * Purpose:  Debugging function to make sure CP9Forward() and 
  *           CP9Backward are working by checking:
@@ -2389,7 +2388,7 @@ cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0
   max_diff = 0.1;       /* tolerance, must be within .1 bits of original score */
 
   /* In all possible paths through the model, each residue of the sequence must have 
-   * been emitted by exactly 1 insert or match state. */
+   * been emitted by exactly 1 insert, match or EL state. */
   for (ip = 1; ip <= W; ip++) {
     i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
     fb_sum = -INFTY;
@@ -2415,9 +2414,20 @@ cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0
       }
       /*hmm->isc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
       fb_sum = ILogsum(fb_sum, to_add);
-      
+
       /*printf("fmx->imx[ip:%d][k:%d]: %d\n", ip, k, fmx->imx[ip][k]);
-	printf("bmx->imx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->imx[ip][k]-hmm->isc[dsq[i]][k]), fb_sum);
+	printf("bmx->imx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->imx[ip][k]-hmm->msc[dsq[i]][k]), fb_sum);
+      */
+      if     (fmx->elmx[ip][k] == -INFTY) to_add = -INFTY;
+      else if(bmx->elmx[ip][k] == -INFTY) to_add = -INFTY;
+      else  {
+	to_add  = fmx->elmx[ip][k] + bmx->elmx[ip][k]; 
+	/* EL emissions are by definition zero scoring */
+      }
+      fb_sum = ILogsum(fb_sum, to_add);
+      
+      /*printf("fmx->elmx[ip:%d][k:%d]: %d\n", ip, k, fmx->elmx[ip][k]);
+	printf("bmx->elmx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->elmx[ip][k]-hmm->isc[dsq[i]][k]), fb_sum);
       */
     }
     fb_sc  = Scorify(fb_sum);

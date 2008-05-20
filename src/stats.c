@@ -310,8 +310,6 @@ int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *re
 	    }
 	}
 	/*printf("N: %d i: %d gc: %d\n", N, i, gc);*/
-	/* scale gc for chunks < 100 nt */
-	if(j < 100) gc *= 100. / (float) j;
 	/* don't count GC content of chunks < 20 nt, very hacky;
 	 * don't count GC content of chunks that are all N, this
 	 * will be common in RepeatMasked genomes where poly-Ns could

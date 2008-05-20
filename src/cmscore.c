@@ -32,7 +32,7 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define ALGOPTS  "--nonbanded,--qdb,--qdbsmall,--qdbboth,--hbanded,--hmmviterbi,--hmmforward"  /* Exclusive choice for scoring algorithms */
+#define ALGOPTS  "--nonbanded,--qdb,--qdbsmall,--qdbboth,--hbanded,--viterbi,--forward"  /* Exclusive choice for scoring algorithms */
 #define SEQOPTS  "--emit,--random,--infile"                                 /* Exclusive choice for sequence input */
 
 static ESL_OPTIONS options[] = {
@@ -55,7 +55,7 @@ static ESL_OPTIONS options[] = {
   { "--outfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,  "--infile", "save seqs to file <s> in FASTA format", 2 },
   { "--Lmin",    eslARG_INT,    FALSE, NULL,"0<n<=1000000",NULL,"--random,--Lmax", NULL, "with --random, specify minimum length of random sequences as <n>", 2},
   { "--Lmax",    eslARG_INT,    FALSE, NULL,"0<n<=1000000",NULL,"--random,--Lmin", NULL, "with --random, specify maximum length of random sequences as <n>", 2},
-  { "--pad",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--emit,--search", NULL, "with --emit, pad (W-L) residues on each side of emitted sequence", 2},
+  { "--pad",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--emit,--search", NULL, "with --emit, pad (W-L) residues on each side of emitted seqs", 2},
   /* Stage 2 algorithm options */
   { "--hbanded", eslARG_NONE,"default",NULL, NULL,  ALGOPTS,      NULL,        NULL, "compare d&c optimal CYK versus HMM banded CYK", 3 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",      NULL, "set tail loss prob for --hbanded to <x>", 3 },
@@ -63,11 +63,11 @@ static ESL_OPTIONS options[] = {
   { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded","--search", "realign (non-banded) seqs with HMM banded CYK score < 0 bits", 3 },
   { "--nonbanded",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,"--search", "compare divide and conquer (d&c) versus standard non-banded CYK", 3 },
   { "--scoreonly",eslARG_NONE,  FALSE, NULL, NULL,      NULL,"--nonbanded","--tfile,--search", "with --nonbanded, do only score, save memory", 3 },
-  { "--hmmviterbi",eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,      NULL,       NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm", 3 },
+  { "--viterbi",  eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,      NULL,       NULL, "align to a CM Plan 9 HMM with the Viterbi algorithm", 3 },
   /* Options for testing search instead of alignment */
   { "--search",  eslARG_NONE,  FALSE,  NULL, NULL,      NULL,      NULL,        NULL, "run algorithms in scanning search mode", 4 },
   { "--inside",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--search",        NULL, "with --search, use Inside instead of CYK", 4 },
-  { "--hmmforward",eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,"--search",        NULL, "with --search, use HMM  Forward instead of CYK", 4 },
+  { "--forward",eslARG_NONE, FALSE, NULL, NULL,   ALGOPTS,"--search",        NULL, "with --search, use HMM  Forward instead of CYK", 4 },
   /* Options for testing multiple rounds of banded alignment, stage 2->N alignment */
   { "--taus",    eslARG_INT,  NULL,    NULL, "0<n<=30", NULL,"--hbanded,--taue",NULL,"set initial (stage 2) tail loss prob to 1E-<x> for HMM banding", 5 },
   { "--taue",    eslARG_INT,  NULL,    NULL, "0<n<=30", NULL,"--hbanded,--taus",NULL,"set final   (stage N) tail loss prob to 1E-<x> for HMM banding", 5 },
@@ -78,9 +78,9 @@ static ESL_OPTIONS options[] = {
   { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,        NULL, "compare non-banded d&c versus QDB standard CYK", 101 },
   { "--qdbsmall",eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,  "--search", "compare non-banded d&c versus QDB d&c", 101 },
   { "--qdbboth", eslARG_NONE,   FALSE, NULL, NULL,   ALGOPTS,      NULL,  "--search", "compare        QDB d&c versus QDB standard CYK", 101 },
-  { "--beta",    eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      NULL,        NULL, "set tail loss prob for QDB to <x>", 101 },
-  { "--betas",   eslARG_INT,  NULL,    NULL, "0<n<=30", NULL, "--betae",       NULL, "set initial (stage 2) tail loss prob to 1E-<x> for QDB", 101 },
-  { "--betae",   eslARG_INT,  NULL,    NULL, "0<n<=30", NULL, "--betas",       NULL, "set final   (stage N) tail loss prob to 1E-<x> for QDB", 101 },
+  { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,      NULL,        NULL, "set tail loss prob for QDB to <x>", 101 },
+  { "--betas",   eslARG_INT,    NULL,  NULL, "0<n<=30", NULL, "--betae",        NULL, "set initial (stage 2) tail loss prob to 1E-<x> for QDB", 101 },
+  { "--betae",   eslARG_INT,    NULL,  NULL, "0<n<=30", NULL, "--betas",        NULL, "set final   (stage N) tail loss prob to 1E-<x> for QDB", 101 },
 
   /* Developer options for debugging */
   { "--old",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use old hmm to cm band calculation algorithm", 102},
@@ -984,7 +984,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       if (cfg->regressfp != NULL) 
 	{
 	  fprintf(cfg->regressfp, "> %s\n", seqs_to_aln->sq[i]->name);
-	  if(cfg->s > 0 && esl_opt_GetBoolean(go,"--hmmviterbi")) 
+	  if(cfg->s > 0 && esl_opt_GetBoolean(go,"--viterbi")) 
 	    {
 	      ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
 	      fprintf(cfg->regressfp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
@@ -1003,7 +1003,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       if (cfg->tracefp != NULL) 
 	{
 	  fprintf(cfg->tracefp, "> %s\n", seqs_to_aln->sq[i]->name);
-	  if(cfg->s > 0 && esl_opt_GetBoolean(go,"--hmmviterbi")) 
+	  if(cfg->s > 0 && esl_opt_GetBoolean(go,"--viterbi")) 
 	    {
 	      ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
 	      fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
@@ -1064,7 +1064,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	    fprintf(stdout, "  %-25.25s  %6d  %11.4f  %11.4f  %10.4f\n", seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, cfg->s1_sc[i], seqs_to_aln->sc[i], cfg->s1_sc[i] - seqs_to_aln->sc[i]);
 	  if(fabs(cfg->s1_sc[i] - seqs_to_aln->sc[i]) > 0.01) {
 	    diff_ct++;
-	    diff_sc += cfg->s1_sc[i] - seqs_to_aln->sc[i]; /* don't take absolute value in case cur stage sc > stage 1 sc, for example with -l --hmmviterbi */
+	    diff_sc += cfg->s1_sc[i] - seqs_to_aln->sc[i]; /* don't take absolute value in case cur stage sc > stage 1 sc, for example with -l --viterbi */
 	  }
 	  /*////*/if(seqs_to_aln->sc[i] < -10000.) { 
 	    ///cm_Fail("cm: %s seq %d got impossible score: %f\n", cm->name, i, seqs_to_aln->sc[i]); 
@@ -1229,7 +1229,7 @@ initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
 
     if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;
     if(esl_opt_GetBoolean(go, "--old"))         cm->align_opts  |= CM_ALIGN_HMM2IJOLD;
-    if(esl_opt_GetBoolean(go, "--hmmviterbi"))  cm->align_opts  |= CM_ALIGN_HMMVITERBI;
+    if(esl_opt_GetBoolean(go, "--viterbi"))  cm->align_opts  |= CM_ALIGN_HMMVITERBI;
     if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
     if(esl_opt_GetBoolean(go, "--scoreonly"))   cm->align_opts  |= CM_ALIGN_SCOREONLY;
     if(esl_opt_GetBoolean(go, "--qdb") || esl_opt_GetBoolean(go, "--qdbsmall") || esl_opt_GetBoolean(go, "--qdbboth")) {                    
@@ -1322,11 +1322,11 @@ initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
     if(esl_opt_GetBoolean(go, "--hbanded"))     cm->search_opts  |= CM_SEARCH_HBANDED;
     if(esl_opt_GetBoolean(go, "--aln2bands"))   cm->search_opts  |= CM_SEARCH_HMMALNBANDS;
     if(esl_opt_GetBoolean(go, "--old"))         cm->search_opts  |= CM_SEARCH_HMM2IJOLD;
-    if(esl_opt_GetBoolean(go, "--hmmviterbi"))  { 
+    if(esl_opt_GetBoolean(go, "--viterbi"))  { 
       cm->search_opts  |= CM_SEARCH_HMMVITERBI;
       cm->search_opts  &= ~CM_SEARCH_INSIDE;
     }
-    if(esl_opt_GetBoolean(go, "--hmmforward")) {
+    if(esl_opt_GetBoolean(go, "--forward")) {
       cm->search_opts  |= CM_SEARCH_HMMFORWARD;
       cm->search_opts  &= ~CM_SEARCH_INSIDE;
     }

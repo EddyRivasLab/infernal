@@ -43,7 +43,7 @@ static ESL_OPTIONS options[] = {
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "local; emit from a locally configured model",  1 },
   { "-s",        eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,        NULL, "set random number generator seed to <n>",  1 },
   { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "be quiet; don't print anything to stdout", 1 },
-  { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
+  { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of otherwise undocumented developer options", 1 },
   /* miscellaneous output options */
   { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 2 },
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 2 },
@@ -52,8 +52,8 @@ static ESL_OPTIONS options[] = {
   { "--exp",     eslARG_REAL,   NULL,  NULL, "x>0",     NULL,      NULL,        NULL, "exponentiate CM probabilities by <x> before emitting",  3 },
   { "--begin",   eslARG_INT,    NULL,  NULL, "n>=1",    NULL,    "--end",       NULL, "truncate alignment, begin at match column <n>", 3 },
   { "--end",     eslARG_INT,    NULL,  NULL, "n>=1",    NULL,  "--begin",       NULL, "truncate alignment,   end at match column <n>", 3 },
-  /* --devhelp options
 
+  /* --devhelp options
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer options for testing CP9 construction empirically */
   { "--shmm",    eslARG_OUTFILE,NULL,  NULL, NULL,   OUTOPTS,      NULL, "-l,--tfile","build, output a ML CM Plan 9 HMM from generated alignment to <f>", 101 },
@@ -130,18 +130,6 @@ main(int argc, char **argv)
       printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
-  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
-    {
-      cm_banner(stdout, argv[0], banner);
-      esl_usage(stdout, argv[0], usage);
-      puts("\nwhere general options are:");
-      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-      puts("\nmiscellaneous output options are:");
-      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-      puts("\nexpert options:");
-      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
-      exit(0);
-    }
   if (esl_opt_GetBoolean(go, "--devhelp") == TRUE) 
     {
       cm_banner(stdout, argv[0], banner);
@@ -156,6 +144,18 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
       puts("\nundocumented developer options related to experimental local begin/end modes:");
       esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
+      exit(0);
+    }
+  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
+    {
+      cm_banner(stdout, argv[0], banner);
+      esl_usage(stdout, argv[0], usage);
+      puts("\nwhere general options are:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
+      puts("\nmiscellaneous output options are:");
+      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+      puts("\nexpert options:");
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
       exit(0);
     }
   if (esl_opt_ArgNumber(go) != 2) 

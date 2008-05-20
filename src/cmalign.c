@@ -61,7 +61,6 @@ static ESL_OPTIONS options[] = {
   { "--hbanded", eslARG_NONE, "default",  NULL, NULL,   NULL,     NULL,    "--small", "accelerate using CM plan 9 HMM derived bands", 3 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,"--hbanded",    NULL,  "--hbanded", "do not use bands to accelerate aln algorithm", 3 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 3 },
-  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded","--viterbi,-p,--optacc", "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 3 },
   { "--mxsize",  eslARG_REAL, "2048.0",NULL, "x>0.",     NULL,      NULL,   "--small", "set maximum allowable DP matrix size to <x> Mb", 3},
   /* Options that modify how the output alignment is created */
   { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 4},
@@ -83,10 +82,11 @@ static ESL_OPTIONS options[] = {
   { "--inside",   eslARG_NONE,  FALSE, NULL, NULL,      ALGOPTS,   NULL,     ALGOPTS, "don't align; return scores from the Inside algorithm", 101 },
   { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      "-p",        NULL, "check that posteriors are correctly calc'ed", 101 },
   /* developer options related to banded alignment */
-  { "--checkfb", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "check that HMM posteriors for bands were correctly calc'ed", 102},
+  { "--checkfb", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       "-l", "check that HMM posteriors for bands were correctly calc'ed", 102},
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 102 },
   { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--nonbanded,--hbanded", "use query dependent banded CYK alignment algorithm", 102 },
   { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 102 },
+  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded","--viterbi,-p,--optacc", "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 102 },
   /* developer options related to output files and debugging */
   { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 103 },
   { "--banddump",eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of band info print statements to <n>", 103 },
@@ -234,7 +234,7 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
       puts("\nundocumented developer verbose output/debugging options:");
       esl_opt_DisplayHelp(stdout, go, 103, 2, 80);
-      puts("\nundocumented developer options related to experimental local begin/end modes:");
+      puts("\nundocumented developer options for experimental local begin/end modes:");
       esl_opt_DisplayHelp(stdout, go, 104, 2, 80);
       exit(0);
     }
@@ -807,7 +807,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	{
 	  /* grow the seqs_to_aln object */
 	  if((seqs_to_aln->nseq + cfg->withmsa->nseq) > seqs_to_aln->nalloc) 
-	    GrowSeqsToAln(seqs_to_aln, (seqs_to_aln->nalloc - (seqs_to_aln->nseq + cfg->withmsa->nseq)), FALSE);
+	    GrowSeqsToAln(seqs_to_aln, seqs_to_aln->nseq + cfg->withmsa->nseq - seqs_to_aln->nalloc, FALSE);
 	  if((status = include_withali(go, cfg, cm, &(seqs_to_aln->sq), &(seqs_to_aln->tr), &(seqs_to_aln->nseq), errbuf)) != eslOK)
 	    ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have SS_cons annotation compatible with the CM\n", esl_opt_GetString(go, "--withali"));
 	}
@@ -1038,9 +1038,9 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     for (nd = 2; nd < cm->nodes; nd++) 
       if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd || cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd) 
 	nstarts++;
-    printf("nstarts: %d\n", nstarts);
+    /* printf("nstarts: %d\n", nstarts); */
     cm->pbegin = 1.- (1./(1+nstarts));
-    printf("pbegin: %.5f\n", cm->pbegin);
+    /* printf("pbegin: %.5f\n", cm->pbegin); */
   }
   /* possibly overwrite cm->pend so that local end prob from all legal states is fixed,
    * this is strange in that cm->pend may be placed as a number greater than 1., this number
