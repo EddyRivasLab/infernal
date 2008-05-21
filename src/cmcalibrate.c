@@ -68,6 +68,7 @@ static ESL_OPTIONS options[] = {
   { "--exp-hmmLx",      eslARG_REAL,    "1000.",NULL, "10.<=x<=1001.",  NULL,NULL,        NULL, "set max Mb length of random seqs for HMM exp tail fit to <x>", 2 },
   { "--exp-tailp",      eslARG_REAL,    "0.01", NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 2 },
   { "--exp-beta",       eslARG_REAL,    NULL,   NULL, "x>0",    NULL,        NULL,        NULL, "turn QDB on for exp tail fitting, set tail loss prob to <x>", 2 },
+  { "--exp-random",     eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content of random null background model of CM",  2},
   { "--exp-gc",         eslARG_INFILE,  NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content distribution from file <f>",  2},
   { "--exp-pfile",      eslARG_INFILE,  NULL,   NULL, NULL,     NULL,  "--exp-gc",        NULL, "read partition info for exp tails from file <f>", 2},
   { "--exp-hfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,        NULL, "save fitted score histogram(s) to file <f>", 2 },
@@ -199,6 +200,7 @@ static int  estimate_time_for_exp_round (const ESL_GETOPTS *go, struct cfg_s *cf
 static int  estimate_time_for_fil_round (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int exp_mode, double *ret_sec_per_seq);
 static int  update_hmm_exp_length(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int  hack_overwrite_gcfreq(double *gc_freq);
+static int  get_genomic_sequence_from_hmm(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int L, ESL_DSQ **ret_dsq);
 /*static int  predict_time_for_exp_stage(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int exp_mode, int cmN, int hmmN, int expL, float *ret_seconds);*/
 /*static int  print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);*/
 
@@ -301,7 +303,10 @@ main(int argc, char **argv)
   cfg.do_mpi   = FALSE;
   cfg.my_rank  = 0;
   cfg.nproc    = 0;
+  cfg.do_stall = FALSE;
+#ifdef HAVE_MPI
   cfg.do_stall = esl_opt_GetBoolean(go, "--stall");
+#endif
 
   /* calculate sequence lengths and quantities for exp tail fitting,
    * max length seq is 100 Kb, see comment in cfg_t definition above for the reason.
@@ -311,12 +316,12 @@ main(int argc, char **argv)
 
   /* EPN, Sun Mar 30 15:39:27 2008 HERE HERE HERE TEMP CHANGE! */
   /* ORIG CODE, 100 KB chunks */
-  ///cfg.exp_cmN  = (int) (((float) cmL_total  / 100000.) + 0.999999); 
-  ///cfg.exp_hmmN = (int) (((float) hmmL_total / 100000.) + 0.999999); 
+  cfg.exp_cmN  = (int) (((float) cmL_total  / 100000.) + 0.999999); 
+  cfg.exp_hmmN = (int) (((float) hmmL_total / 100000.) + 0.999999); 
 
   /* TEMP CODE, 10 KB chunks */
-  cfg.exp_cmN  = (int) (((float) cmL_total  / 10000.) + 0.999999); 
-  cfg.exp_hmmN = (int) (((float) hmmL_total / 10000.) + 0.999999); 
+  ///cfg.exp_cmN  = (int) (((float) cmL_total  / 10000.) + 0.999999); 
+  ///cfg.exp_hmmN = (int) (((float) hmmL_total / 10000.) + 0.999999); 
 
   /* end temp change */
   cfg.exp_cmL  = cmL_total  / cfg.exp_cmN;
@@ -753,7 +758,13 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  exp_scN  = 0;
 	  for(i = 0; i < expN; i++) { 
 	    /* do the work, fit the histogram, update exp tail info in cmstats */
-	    if((status = get_random_dsq        (cfg, errbuf, cm, dnull, expL, &dsq)) != eslOK) cm_Fail(errbuf); 
+	    /* generate sequence, either randomly from background null or from hard-wired 5 state HMM that emits genome like sequence */
+	    if(esl_opt_GetBoolean(go, "--exp-random")) { 
+	      if((status = get_random_dsq(cfg, errbuf, cm, dnull, expL, &dsq)) != eslOK) cm_Fail(errbuf); 
+	    }
+	    else { 
+	      if((status = get_genomic_sequence_from_hmm(cfg, errbuf, cm, expL, &dsq)) != eslOK) cm_Fail(errbuf); 
+	    }
 	    if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, expL, &results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, NULL, NULL)) != eslOK) cm_Fail(errbuf);
 	    RemoveOverlappingHits(results, 1, expL);
 	    
@@ -1146,15 +1157,23 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		    need_seq = FALSE;
 		    /* generate a new seq */
 		    si++;
-		    if((si < expN) && (status = get_random_dsq(cfg, errbuf, cm, dnull, expL, &(dsq_slist[si])) == eslOK)) 
+		    if(si < expN)
 		      {
+			/* generate sequence, either randomly from background null or from hard-wired 5 state HMM that emits genome like sequence */
+			if(esl_opt_GetBoolean(go, "--exp-random")) { 
+			  if((status = get_random_dsq(cfg, errbuf, cm, dnull, expL, &(dsq_slist[si])) != eslOK) goto ERROR; 
+			}
+			else { 
+			  if((status = get_genomic_sequence_from_hmm(cfg, errbuf, cm, expL, &(dsq_slist[si]))) != eslOK) goto ERROR;
+			}
 			results_slist[si] = CreateResults(INIT_RESULTS);
 			sent_slist[si]    = FALSE;
 			chunks_slist[si]  = 0;
 			seqpos = 1;
 			have_work = TRUE;
+			}
 		      }
-		    else if(si == expN) have_work = FALSE;
+		    else if(si == expN) have_work = FALSE; 
 		    else goto ERROR;
 		  }
 		if ((have_work && nproc_working == cfg->nproc-1) || (!have_work && nproc_working > 0))
@@ -3153,7 +3172,12 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   ///esl_stopwatch_Start(w2);
   /* simulate a workunit, generate a sequence, search it, and remove overlaps */
   /*printf("exptL: %d\n", L);*/
-  if((status = get_random_dsq        (cfg, errbuf, cm, dnull, L, &dsq)) != eslOK) return status;
+  if(esl_opt_GetBoolean(go, "--exp-random")) { 
+    if((status = get_random_dsq(cfg, errbuf, cm, dnull, L, &dsq)) != eslOK) return status;
+  }
+  else { 
+    if((status = get_genomic_sequence_from_hmm(cfg, errbuf, cm, L, &dsq)) != eslOK) return status;
+  }
   ///esl_stopwatch_Stop(w2);
   ///esl_stopwatch_Display(stdout, w2, "# 0 CPU time: ");
   ///esl_stopwatch_Start(w2);
@@ -3639,3 +3663,155 @@ hack_overwrite_gcfreq(double *gc_freq)
      gc_freq[100] = 0.000036204567;
   */
 }
+
+
+/* Function: get_genomic_sequence_from_hmm
+ * Date:     EPN, Tue May 20 17:40:54 2008
+ * 
+ * Purpose:  Emit sequence from a fully connected 
+ *           5 state HMM that was trained by EM 
+ *           from 30 Mb of 100 Kb chunks of real 
+ *           genomes of hand selected GC contents
+ *           (10 Mb each from Archaea, Bacteria,
+ *            Eukarya genomes). See 
+ *           ~nawrockie/notebook/8_0326_inf_default_gc/ 
+ *            for more info. 
+ *           There were larger HMMs that 'performed'
+ *           better, but this 5 state guy was a good
+ *           balance b/t performance and number of 
+ *           parameters. Performance was judged by
+ *           how similar the generated sequence was
+ *           to the training 30 Mb genomic sequence.
+ */
+int
+get_genomic_sequence_from_hmm(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int L, ESL_DSQ **ret_dsq)
+{
+  int      status;
+  ESL_DSQ *dsq = NULL;
+  int      nstates = 5;
+  int      i, si, x;
+
+  /* contract check, make sure we're in a valid mode */
+  if(cm->abc->type != eslRNA && cm->abc->type != eslDNA) ESL_FAIL(eslEINCOMPAT, errbuf, "get_genomic_sequence_from_hmm(), cm->abc is not eslRNA nor eslDNA");
+
+  /* start probabilities */
+  double *sA;
+  ESL_ALLOC(sA, sizeof(double) * nstates);
+
+  sA[0] = 0.157377049180328;
+  sA[1] = 0.39344262295082;
+  sA[2] = 0.265573770491803; 
+  sA[3] = 0.00327868852459016; 
+  sA[4] = 0.180327868852459;
+  esl_vec_DNorm(sA, nstates);
+
+  /* transition probabilities */
+  double **tAA;
+  ESL_ALLOC(tAA, sizeof(double *) * nstates);
+  for(i = 0; i < nstates; i ++) ESL_ALLOC(tAA[i], sizeof(double) * nstates);
+
+  tAA[0][0] = 0.999483637183643;
+  tAA[0][1] = 0.000317942006440604; 
+  tAA[0][2] = 0.000185401071732768; 
+  tAA[0][3] = 2.60394763669618e-07; 
+  tAA[0][4] = 1.27593434198113e-05;
+  esl_vec_DNorm(tAA[0], nstates);
+
+  tAA[1][0] = 9.76333640771184e-05; 
+  tAA[1][1] = 0.99980020511745; 
+  tAA[1][2] = 9.191359010352e-05; 
+  tAA[1][3] = 7.94413051888677e-08; 
+  tAA[1][4] = 1.01684870641751e-05;
+  esl_vec_DNorm(tAA[1], nstates);
+
+  tAA[2][0] = 1.3223694798182e-07; 
+  tAA[2][1] = 0.000155642887774602; 
+  tAA[2][2] = 0.999700615549769; 
+  tAA[2][3] = 9.15079680034191e-05; 
+  tAA[2][4] = 5.21013575048369e-05;
+  esl_vec_DNorm(tAA[2], nstates);
+
+  tAA[3][0] = 0.994252873563218; 
+  tAA[3][1] = 0.0014367816091954; 
+  tAA[3][2] = 0.0014367816091954; 
+  tAA[3][3] = 0.0014367816091954; 
+  tAA[3][4] = 0.0014367816091954;
+  esl_vec_DNorm(tAA[3], nstates);
+
+  tAA[4][0] = 8.32138798088677e-06; 
+  tAA[4][1] = 2.16356087503056e-05; 
+  tAA[4][2] = 6.42411152124459e-05; 
+  tAA[4][3] = 1.66427759617735e-07; 
+  tAA[4][4] = 0.999905635460297;
+  esl_vec_DNorm(tAA[4], nstates);
+
+  /* emission probabilities */
+  double **eAA;
+  ESL_ALLOC(eAA, sizeof(double *) * nstates);
+  for(i = 0; i < nstates; i ++) ESL_ALLOC(eAA[i], sizeof(double) * cm->abc->K);
+
+  eAA[0][0] = 0.370906566523225;
+  eAA[0][1] = 0.129213995153577;
+  eAA[0][2] = 0.130511270043053;
+  eAA[0][3] = 0.369368168280145;
+  esl_vec_DNorm(eAA[0], cm->abc->K);
+
+  eAA[1][0] = 0.305194882571888;
+  eAA[1][1] = 0.194580936415687;
+  eAA[1][2] = 0.192343972160245;
+  eAA[1][3] = 0.307880208852179;
+  esl_vec_DNorm(eAA[1], cm->abc->K);
+
+  eAA[2][0] = 0.238484980800698;
+  eAA[2][1] = 0.261262845707113;
+  eAA[2][2] = 0.261810301531792;
+  eAA[2][3] = 0.238441871960397;
+  esl_vec_DNorm(eAA[2], cm->abc->K);
+
+  eAA[3][0] = 0.699280575539568;
+  eAA[3][1] = 0.00143884892086331;
+  eAA[3][2] = 0.00143884892086331;
+  eAA[3][3] = 0.297841726618705;
+  esl_vec_DNorm(eAA[3], cm->abc->K);
+
+  eAA[4][0] = 0.169064007664923;
+  eAA[4][1] = 0.331718611320207;
+  eAA[4][2] = 0.33045427183482;
+  eAA[4][3] = 0.16876310918005;
+  esl_vec_DNorm(eAA[4], cm->abc->K);
+
+  /* generate sequence */
+  ESL_ALLOC(dsq, sizeof(ESL_DSQ) * (L+2));
+  dsq[0] = dsq[L+1] = eslDSQ_SENTINEL;
+
+  /* pick initial state to emit from */
+  si = esl_rnd_DChoose(cfg->r, sA, nstates);
+  for (x = 1; x <= L; x++) {
+    dsq[x] = esl_rnd_DChoose(cfg->r, eAA[si], cm->abc->K); /* emit residue */
+    si = esl_rnd_DChoose(cfg->r, tAA[si], nstates);        /* make transition */
+  }
+  dsq[x] = '\0';
+
+  for(i = 0; i < nstates; i++) { 
+    free(eAA[i]); 
+    free(tAA[i]); 
+  }
+  free(eAA);
+  free(tAA);
+  free(sA);
+
+  /* TEMPORARY! */
+  /*FILE *fp;
+  fp = fopen("hmm.fa", "a");
+  ESL_SQ *sq;
+  sq = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq, L, NULL, NULL, NULL);
+  esl_sq_Textize(sq);
+  esl_sqio_Write(fp, sq, eslSQFILE_FASTA);
+  fclose(fp);*/
+
+  *ret_dsq = dsq;
+  return eslOK;
+
+ ERROR:
+  return status;
+}  
