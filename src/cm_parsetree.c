@@ -1929,6 +1929,7 @@ ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len
     * 1/2^8 (1/256) as likely as the standard null model
     */
   /* TEMPORARILY DISBABLED score -= 8.;	*/
+  /*score -= 10.;*/
 
   /* Return the correction to the bit score. */
   /*printf("ScoreCorrectionNull3 return sc: %.3f\n", LogSum2(0., score));*/

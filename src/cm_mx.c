@@ -1287,7 +1287,7 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
       if(act != NULL) { /* do NULL3 score correction */
 	for(a = 0; a < cm->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(j-dmin+1)%(W+1)][a];
 	esl_vec_FNorm(comp, cm->abc->K);
-	ScoreCorrectionNull3(cm->abc, cm->null, comp, j-dmin+1, &null3_correction);
+	ScoreCorrectionNull3(cm->abc, cm->null, comp, jp-ip+1, &null3_correction);
 	hit_sc -= null3_correction;
 	do_report_hit = (hit_sc >= gamma->cutoff) ? TRUE : FALSE;
       }
@@ -1309,13 +1309,13 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
 	  if(act != NULL) { /* do NULL3 score correction */
 	    for(a = 0; a < cm->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(j-d+1)%(W+1)][a];
 	    esl_vec_FNorm(comp, cm->abc->K);
-	    ScoreCorrectionNull3(cm->abc, cm->null, comp, j-d+1, &null3_correction);
+	    ScoreCorrectionNull3(cm->abc, cm->null, comp, jp-ip+1, &null3_correction);
 	    hit_sc -= null3_correction;
-	    do_report_hit = (hit_sc >= gamma->cutoff) ? TRUE : FALSE;
+	    do_report_hit = ((hit_sc > alpha_row[bestd]) && (hit_sc >= gamma->cutoff)) ? TRUE : FALSE;
 	  }
 	  if(do_report_hit) ReportHit (ip, jp, r, hit_sc, results);
 	}
-	bestd = d;
+	if(hit_sc > alpha_row[bestd]) bestd = d; /* we need to check again b/c if null3, hit_sc -= null3_correction */
       }
     }
   }

@@ -67,6 +67,7 @@ static ESL_OPTIONS options[] = {
   { "--exp-hmmLn",      eslARG_REAL,    "10.",  NULL, "1.<=x<=1000.",   NULL,NULL,        NULL, "set min Mb length of random seqs for HMM exp tail fit to <x>", 2 },
   { "--exp-hmmLx",      eslARG_REAL,    "1000.",NULL, "10.<=x<=1001.",  NULL,NULL,        NULL, "set max Mb length of random seqs for HMM exp tail fit to <x>", 2 },
   { "--exp-tailp",      eslARG_REAL,    "0.01", NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 2 },
+  { "--exp-tailnhits",  eslARG_INT,     "500",  NULL, "n>=50",  NULL,        NULL,"--exp-tailp","set max number of hits in histogram tail to fit as <n>", 2 },
   { "--exp-beta",       eslARG_REAL,    NULL,   NULL, "x>0",    NULL,        NULL,        NULL, "turn QDB on for exp tail fitting, set tail loss prob to <x>", 2 },
   { "--exp-random",     eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content of random null background model of CM",  2},
   { "--exp-gc",         eslARG_INFILE,  NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content distribution from file <f>",  2},
@@ -1161,7 +1162,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		      {
 			/* generate sequence, either randomly from background null or from hard-wired 5 state HMM that emits genome like sequence */
 			if(esl_opt_GetBoolean(go, "--exp-random")) { 
-			  if((status = get_random_dsq(cfg, errbuf, cm, dnull, expL, &(dsq_slist[si])) != eslOK) goto ERROR; 
+			  if((status = get_random_dsq(cfg, errbuf, cm, dnull, expL, &(dsq_slist[si]))) != eslOK) goto ERROR; 
 			}
 			else { 
 			  if((status = get_genomic_sequence_from_hmm(cfg, errbuf, cm, expL, &(dsq_slist[si]))) != eslOK) goto ERROR;
@@ -1171,7 +1172,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			chunks_slist[si]  = 0;
 			seqpos = 1;
 			have_work = TRUE;
-			}
 		      }
 		    else if(si == expN) have_work = FALSE; 
 		    else goto ERROR;
@@ -1893,8 +1893,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
 
   tailp = esl_opt_GetReal(go, "--exp-tailp");
   if(esl_opt_IsDefault(go, "--exp-tailp")) { /* use default min mass of --exp-tailp or mass with 500 points */
-    int nmin = 500;
-    tailp = ESL_MIN(tailp, ((float) nmin / (float) h->n));
+    tailp = ESL_MIN(tailp, ((float) esl_opt_GetInteger(go, "--exp-tailnhits") / (float) h->n));
   }
   esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); /* fit to right 'tailfit' fraction, 0.01 by default */
   if(n <= 1) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram. Increase --exp-cmL or --exp-hmmLn.", tailp);
