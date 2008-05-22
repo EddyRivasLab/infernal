@@ -1894,8 +1894,6 @@ ParsetreeScoreCorrectionNull3(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *
    ESL_FAIL(status, errbuf, "ParsetreeScoreCorrectionNull3(): memory allocation error.");
    return status; /* NEVERREACHED*/
 }
-
-
   
 /* Function: ScoreCorrectionNull3()
  * Incept:   EPN, Sat May 10 17:58:03 2008
@@ -1913,6 +1911,16 @@ ParsetreeScoreCorrectionNull3(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *
  *           can be derived solely by the nucleotide composition of the hit and
  *           it's length. 
  *           
+ * Args:     abc  - alphabet for hit (only used to get alphabet size, which is size of <comp>)
+ *           null0- the first null model used when building the CM, usually cm->null or cm->cp9->null
+ *           comp - [0..a..abc->K-1] frequency of residue a in the hit we're correcting the score for, 
+ *                  passed in b/c we can efficiently compute this during scanning DP funcs instead of
+ *                  calcing it each time per hit which is wasteful for many, possibly overlapping hits
+ *                  which is the case during model calibration with cmcalibrate.
+ *           len  - length of the hit
+ *           ret_sc- RETURN: the correction to the score, caller subtracts this from hit score to get 
+ *                   corrected score.
+ *
  * Return:   void, ret_sc: the log_2-odds score correction.          
  */
 void
@@ -1924,12 +1932,11 @@ ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len
   /*esl_vec_FDump(stdout, comp, abc->K, NULL);*/
   
   for (a = 0; a < abc->K; a++) score += sreLOG2(comp[a] / null0[a]) * comp[a] * len;
-   /* Apply an ad hoc 8 bit fudge factor penalty;
+   /* Apply an ad hoc 5 bit fudge factor penalty;
     * interpreted as a prior, saying that the third null model is 
-    * 1/2^8 (1/256) as likely as the standard null model
+    * 1/2^5 (1/32) as likely as the standard null model
     */
-  /* TEMPORARILY DISBABLED score -= 8.;	*/
-  /*score -= 10.;*/
+  /*score -= NULL3_PRIOR_BITS;*/
 
   /* Return the correction to the bit score. */
   /*printf("ScoreCorrectionNull3 return sc: %.3f\n", LogSum2(0., score));*/
@@ -1939,3 +1946,62 @@ ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len
   return;
 }
 
+  
+/* Function: ScoreCorrectionNull3CompUnknown()
+ * Incept:   EPN, Thu May 22 13:16:04 2008
+ * 
+ * Purpose:  Calculate a correction (in integer log_2 odds) to be
+ *           applied to a sequence, using a third null model, the
+ *           composition of the target sequence. 
+ *           All emissions are corrected;
+ *           The null model is constructed /post hoc/ as the
+ *           distribution of the target sequence; if the target
+ *           sequence is 40% A, 5% C, 5% G, 40% U, then the null 
+ *           model is (0.4, 0.05, 0.05, 0.4).
+ * 
+ *           Same as ScoreCorrectionNull3() except that no <comp> vector is needed,
+ *           the composition is determined within this function. 
+ *           
+ * Args:     abc  - alphabet for hit (only used to get alphabet size, which is size of <comp>)
+ *           null0- the first null model used when building the CM, usually cm->null or cm->cp9->null
+ *           dsq  - the sequence the hit resides in
+ *           start- start position of hit in dsq
+ *           end  - end   position of hit in dsq
+ *           ret_sc- RETURN: the correction to the score, caller subtracts this from hit score to get 
+ *                   corrected score.
+ * Return:   void, ret_sc: the log_2-odds score correction.          
+ */
+void
+ScoreCorrectionNull3CompUnknown(const ESL_ALPHABET *abc, float *null0, ESL_DSQ *dsq, int start, int stop, float *ret_sc)
+{
+  int   a;              /* residue index counters */
+  float score = 0.;
+  float *comp;		/* null3 model distribution */
+
+  get_alphabet_comp(abc, dsq, start, stop, &comp);
+  ScoreCorrectionNull3(abc, null0, comp, (stop-start+1), &score);
+  free(comp);
+  *ret_sc = score;
+  return;
+}
+
+
+    
+/* Function: ParsetreeCountMPEmissions()
+ * Date:     EPN, Thu May 22 14:11:28 2008
+ *
+ * Purpose:  Given a parsetree, return the number of residues emitted by MP states.
+ *
+ * Returns:  Number of residues emitted by MP states in <tr>.
+ */
+int 
+ParsetreeCountMPEmissions(CM_t *cm, Parsetree_t *tr)
+{
+  int tidx;
+  int nres_by_mp = 0;
+
+  for (tidx = 0; tidx < tr->n; tidx++) {  
+    if(cm->sttype[tr->state[tidx]] == MP_st) nres_by_mp += 2;
+  }
+  return nres_by_mp;
+}

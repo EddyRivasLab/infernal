@@ -132,6 +132,7 @@ struct cfg_s {
   int           fmt;		/* format code for seqfile */
   ESL_ALPHABET *abc;		/* digital alphabet for input */
   long          dbsize;         /* database size in nucleotides (doubled if doing rev comp) */
+  int           namewidth;      /* maximum name length in the database, imperative for obsessively pretty formatting in tab file output */
   int           ncm;            /* number CM we're at in file */
   int           do_rc;          /* should we search reverse complement? (for convenience */
   int           init_rci;       /* initial strand to search 0 for top, 1 for bottom (only 1 if --bottomonly enabled) */
@@ -278,6 +279,7 @@ main(int argc, char **argv)
   else if (esl_opt_GetBoolean(go, "--dna")) cfg.abc_out = esl_alphabet_Create(eslDNA);
   else    cm_Fail("Can't determine output alphabet");
   cfg.dbsize     = 0;                      /* db size  */
+  cfg.namewidth  = 0;                      /* max name length in database */
   cfg.ncm        = 0;                      /* what number CM we're on, updated in masters, stays 0 (irrelevant) for workers */
   cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.do_rc      = (! esl_opt_GetBoolean(go, "--toponly")); 
@@ -390,7 +392,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   /* get database size, unless specified with -Z */
   if(esl_opt_IsDefault(go, "-Z")) { 
     /* GetDBSize() reads all sequences, rewinds seq file and returns db size */
-      if((status = GetDBSize(cfg->sqfp, errbuf, &(cfg->dbsize))) != eslOK) return status;  
+      if((status = GetDBSize(cfg->sqfp, errbuf, &(cfg->dbsize), &(cfg->namewidth))) != eslOK) return status;  
     if((! esl_opt_GetBoolean(go, "--toponly")) && (! esl_opt_GetBoolean(go, "--bottomonly"))) cfg->dbsize *= 2;
   }
   else { 
@@ -452,6 +454,13 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((status = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
   do_top = (cfg->init_rci == 0) ? TRUE : FALSE; 
 
+  /* create namedashes string, only used if --tabfile */
+  char *namedashes;
+  int ni;
+  ESL_ALLOC(namedashes, sizeof(char) * cfg->namewidth+1);
+  namedashes[cfg->namewidth] = '\0';
+  for(ni = 0; ni < cfg->namewidth; ni++) namedashes[ni] = '-';
+
   while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
@@ -491,10 +500,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
         fprintf(cfg->tfp, "# CM: %s\n", cm->name);
 	/*fprintf(cfg->tfp, "# Predicted average hit length: %.2f\n", cfg->avg_hit_len);
 	  fprintf(cfg->tfp, "# CM->W: %d (subtract (W-1) from stop and add (W-1) to start, and merge overlapping hits to simulate filter)\n", cm->W);*/
-	fprintf(cfg->tfp, "# %25s %21s %11s %8s %8s %3s\n", "", "target coord", "query coord", "", "", "");
-	fprintf(cfg->tfp, "# %25s %21s %11s %8s %8s %3s\n", "", "---------------------", "-----------", "", "", "");
-	fprintf(cfg->tfp, "# %-25s %10s %10s %5s %5s %8s %8s %3s\n", "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC\%");
-	fprintf(cfg->tfp, "# %-25s %10s %10s %5s %5s %8s %8s %3s\n", "-------------------------", "----------", "----------", "-----", "-----", "--------", "--------", "---");
+	fprintf(cfg->tfp, "# %-*s  %22s  %12s  %8s  %8s  %3s\n", cfg->namewidth, "", "target coord", "query coord", "", "", "");
+	fprintf(cfg->tfp, "# %-*s  %22s  %12s  %8s  %8s  %3s\n", cfg->namewidth, "", "----------------------", "------------", "", "", "");
+	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s %8s %3s\n", cfg->namewidth, "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC\%");
+	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s %8s %3s\n", cfg->namewidth, namedashes, "----------", "----------", "-----", "-----", "--------", "--------", "---");
       }
       using_e_cutoff  = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF)     ? TRUE : FALSE;
       using_sc_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == SCORE_CUTOFF) ? TRUE : FALSE;
@@ -523,7 +532,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    /* hits over E cutoff were removed in DispatchSearch() if(using_e_cutoff) */
 	    /* OLD LINE: RemoveHitsOverECutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]);  */
 	  }
-	  PrintResults (cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
+	  PrintResults (cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"), cfg->namewidth);
 	  for(rci = 0; rci <= cfg->do_rc; rci++) { /* we can free results for top strand even if cfg->init_rci is 1, due to --bottomonly */
 	    FreeResults(dbseq->results[rci]);
 	    esl_sq_Destroy(dbseq->sq[rci]);
@@ -553,6 +562,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     fprintf(stdout, "  %20s\n", time_buf);
   }
       
+  free(namedashes);
   esl_stopwatch_Destroy(w);
   return;
 
@@ -633,6 +643,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   float            *worker_surv_fractA = NULL; /* 0..n..cm->si->nrounds fraction of db surviving round n for current seq */
   int              *worker_nhitsA      = NULL; /* 0..n..cm->si->nrounds num hits surviving round n for current seq */
 
+
   /* Master initialization: including, figure out the alphabet type.
    * If any failure occurs, delay printing error message until we've shut down workers.
    */
@@ -650,6 +661,13 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
   if (xstatus != eslOK) cm_Fail(errbuf);
   ESL_DPRINTF1(("MPI master is initialized\n"));
+
+  /* create namedashes string, only used if --tabfile */
+  char *namedashes;
+  int ni;
+  ESL_ALLOC(namedashes, sizeof(char) * cfg->namewidth+1);
+  namedashes[cfg->namewidth] = '\0';
+  for(ni = 0; ni < cfg->namewidth; ni++) namedashes[ni] = '-';
 
   for (wi = 0; wi < cfg->nproc; wi++) 
   { 
@@ -710,6 +728,16 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       else                              { if((status = print_searchinfo_for_uncalibrated_cm(go, cfg, errbuf, cm, NULL, NULL, 0.)) != eslOK) cm_Fail(errbuf); }
 
       fprintf(cfg->ofp, "CM: %s\n", cm->name);
+      if(cfg->tfp != NULL) { 
+	fprintf(cfg->tfp, "#\n");
+        fprintf(cfg->tfp, "# CM: %s\n", cm->name);
+	/*fprintf(cfg->tfp, "# Predicted average hit length: %.2f\n", cfg->avg_hit_len);
+	  fprintf(cfg->tfp, "# CM->W: %d (subtract (W-1) from stop and add (W-1) to start, and merge overlapping hits to simulate filter)\n", cm->W);*/
+	fprintf(cfg->tfp, "# %-*s  %22s  %12s  %8s  %8s  %3s\n", cfg->namewidth, "", "target coord", "query coord", "", "", "");
+	fprintf(cfg->tfp, "# %-*s  %22s  %12s  %8s  %8s  %3s\n", cfg->namewidth, "", "----------------------", "------------", "", "", "");
+	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s %8s %3s\n", cfg->namewidth, "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC\%");
+	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s %8s %3s\n", cfg->namewidth, namedashes, "----------", "----------", "-----", "-----", "--------", "--------", "---");
+      }
 
       /* reset vars for searching with current CM */
       wi = 1;
@@ -829,7 +857,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			    /* hits over E cutoff were removed in DispatchSearch() if(using_e_cutoff) */
 			    /* OLD LINE: RemoveHitsOverECutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]);  */
 			  }					      
-			  PrintResults(cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"));
+			  PrintResults(cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"), cfg->namewidth);
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
 			    esl_sq_Destroy(dbseqlist[si_recv]->sq[rci]);
 			    FreeResults(dbseqlist[si_recv]->results[rci]);
@@ -889,6 +917,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       fprintf(cfg->ofp, "//\n");
       free(cm_surv_fractA);
       free(cm_nhitsA);
+      free(namedashes);
       FreeCM(cm);
       FreeCMConsensus(cons);
       esl_sqio_Rewind(cfg->sqfp); /* we may be searching this file again with another CM */

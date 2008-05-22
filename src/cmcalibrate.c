@@ -67,7 +67,7 @@ static ESL_OPTIONS options[] = {
   { "--exp-hmmLn",      eslARG_REAL,    "10.",  NULL, "1.<=x<=1000.",   NULL,NULL,        NULL, "set min Mb length of random seqs for HMM exp tail fit to <x>", 2 },
   { "--exp-hmmLx",      eslARG_REAL,    "1000.",NULL, "10.<=x<=1001.",  NULL,NULL,        NULL, "set max Mb length of random seqs for HMM exp tail fit to <x>", 2 },
   { "--exp-tailp",      eslARG_REAL,    "0.01", NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 2 },
-  { "--exp-tailnhits",  eslARG_INT,     "500",  NULL, "n>=50",  NULL,        NULL,"--exp-tailp","set max number of hits in histogram tail to fit as <n>", 2 },
+  { "--exp-tailn",      eslARG_INT,     "500",  NULL, "n>=50",  NULL,        NULL,"--exp-tailp","set max number of hits in histogram tail to fit as <n>", 2 },
   { "--exp-beta",       eslARG_REAL,    NULL,   NULL, "x>0",    NULL,        NULL,        NULL, "turn QDB on for exp tail fitting, set tail loss prob to <x>", 2 },
   { "--exp-random",     eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content of random null background model of CM",  2},
   { "--exp-gc",         eslARG_INFILE,  NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content distribution from file <f>",  2},
@@ -96,10 +96,10 @@ static ESL_OPTIONS options[] = {
   { "--stall",          eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 101 },  
 #endif
   /* Developer options related to experiment local begin/end modes */
-  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-l",  "--pbegin", "set all local begins as equiprobable", 102 },
-  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      "-l",    "--pend", "set all local end probs to <x>", 102 },
-  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local begin prob to <x>", 102 },
-  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      "-l",        NULL, "set aggregate local end prob to <x>", 102 },
+  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,    NULL,    "--pbegin", "set all local begins as equiprobable", 102 },
+  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,    NULL,    "--pend", "set all local end probs to <x>", 102 },
+  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,    NULL,        NULL, "set aggregate local begin prob to <x>", 102 },
+  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,    NULL,        NULL, "set aggregate local end prob to <x>", 102 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -1893,7 +1893,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
 
   tailp = esl_opt_GetReal(go, "--exp-tailp");
   if(esl_opt_IsDefault(go, "--exp-tailp")) { /* use default min mass of --exp-tailp or mass with 500 points */
-    tailp = ESL_MIN(tailp, ((float) esl_opt_GetInteger(go, "--exp-tailnhits") / (float) h->n));
+    tailp = ESL_MIN(tailp, ((float) esl_opt_GetInteger(go, "--exp-tailn") / (float) h->n));
   }
   esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); /* fit to right 'tailfit' fraction, 0.01 by default */
   if(n <= 1) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram. Increase --exp-cmL or --exp-hmmLn.", tailp);

@@ -243,22 +243,25 @@ int get_alphabet_comp(const ESL_ALPHABET *abc, ESL_DSQ *dsq, int start, int stop
  *
  * Returns:  eslOK on success, other status on failure, errbuf filled with error message.
  */
-int GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N)
+int GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_namewidth)
 {
   int     status;
   ESL_SQ *sq;
   long    N = 0;
+  int     namewidth = 11; /* length of "target name" */
 
   sq = esl_sq_Create(); 
   while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) {
     N += sq->n;
+    namewidth = ESL_MAX(namewidth, strlen(sq->name));
     esl_sq_Reuse(sq); 
   } 
   if (status != eslEOF) ESL_FAIL(status, errbuf, "Parse failed, line %d, file %s:\n%s", sqfp->linenumber, sqfp->filename, sqfp->errbuf); 
   esl_sq_Destroy(sq); 
   esl_sqio_Rewind(sqfp);
 
-  if(ret_N != NULL)      *ret_N     = N;
+  if(ret_N != NULL)          *ret_N         = N;
+  if(ret_namewidth != NULL)  *ret_namewidth = namewidth;
   return eslOK;
 }
 

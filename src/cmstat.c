@@ -233,7 +233,7 @@ main(int argc, char **argv)
     else if (status == eslEINVAL)  cm_Fail("Can’t autodetect stdin or .gz."); 
     else if (status != eslOK)      cm_Fail("Sequence file open failed with error %d\n", status);
     /* GetDBSize() reads all sequences, rewinds seq file and returns db size */
-    if((status = GetDBSize(sqfp, errbuf, &(dbsize))) != eslOK) cm_Fail(errbuf);
+    if((status = GetDBSize(sqfp, errbuf, &(dbsize), NULL)) != eslOK) cm_Fail(errbuf);
     esl_sqfile_Close(sqfp); 
     if (! esl_opt_GetBoolean(go, "--toponly")) dbsize *= 2;
   }

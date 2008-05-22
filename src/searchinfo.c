@@ -936,8 +936,9 @@ void ReportHit (int i, int j, int bestr, float score, search_results_t *results)
  *           do_top              are we doing the plus  (top)    strand?
  *           do_bottom           are we doing the minus (bottom) strand?
  *           do_noncompensatory  are we printing the optional non-compensatory line?
+ *           namewidth           max length of a name in the target file, for pretty formatting 
  */
-void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory)
+void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory, int namewidth)
 {
   int i;
   char *name;
@@ -1006,8 +1007,9 @@ void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_
 	      COORDINATE(in_revcomp, results->data[i].stop, len));
 
       if(tabfp != NULL) { /* print tabular output also */
-	fprintf(tabfp, "  %-25s %10d %10d %5d %5d %8.2f ", 
-		name, /* target seq name */
+	fprintf(tabfp, "  %-*s  %10d  %10d  %5d  %5d  %8.2f  ", 
+		namewidth, /* max length of target seq in file, passed in by caller */
+		name,      /* target seq name */
 		COORDINATE(in_revcomp, results->data[i].start, len), 
 		COORDINATE(in_revcomp, results->data[i].stop, len),
 		(emap->lpos[cm->ndidx[results->data[i].bestr]] + 1 
@@ -1024,7 +1026,7 @@ void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_
 	Eval = Pval * exp[p]->cur_eff_dbsize;
 	fprintf(fp, " Score = %.2f, E = %.4g, P = %.4g, GC = %3d\n", results->data[i].score, Eval, Pval, gc_comp);
 	if(tabfp != NULL) { 
-	  fprintf(tabfp, "%4.2e %3d\n", Eval, gc_comp);
+	  fprintf(tabfp, "%4.2e  %3d\n", Eval, gc_comp);
 	}
       } 
       else { /* don't print E-value stats */
