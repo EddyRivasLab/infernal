@@ -2416,11 +2416,20 @@ int
 IntMaxDigits()
 {
   int big = INT_MAX;
+  return IntDigits(big);
+}
+
+
+/* Function: IntDigits()
+ * Date:     EPN, Fri May 23 06:02:22 2008
+ * 
+ * Returns: The number of digits in <i>.
+ */
+int
+IntDigits(int i)
+{
   int n   = 0;
-  while(big > 0) { 
-    big/=10;
-    n++;
-  }
+  while(i > 0) { i/=10; n++; }
   return n;
 }
 

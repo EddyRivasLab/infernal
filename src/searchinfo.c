@@ -1453,7 +1453,7 @@ FreeHMMFilterInfo(HMMFilterInfo_t *hfi)
  * Returns:  eslOK on success, other Easel status code on some error
  */
 int
-DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi)
+DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, int namewidth, char *namedashes)
 {
   int i;
   int status;
@@ -1482,10 +1482,10 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
   if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->beta_qdb, &cm_ncalcs_per_res, &W))  != eslOK) return status;
 
   fprintf(fp, "#\n");
-  fprintf(fp, "# %4s  %-15s  %5s  %6s  %7s  %7s  %7s\n", "idx",  "name",            "clen",   "F",      "nseq",    "db (Mb)", "always?");
-  fprintf(fp, "# %4s  %-15s  %5s  %6s  %7s  %7s  %7s\n", "----", "---------------", "-----",  "------", "-------", "-------", "-------");
-  fprintf(fp, "%6d  %-15.15s  %5d  %6.4f  %7d  %7.1f  %7s\n",
-	 cmi, cm->name, cm->clen, hfi->F, hfi->N, (double) dbsize / 1000000.,
+  fprintf(fp, "# %4s  %-*s  %5s  %6s  %7s  %7s  %7s\n", "idx",  namewidth, "name",     "clen",   "F",      "nseq",    "db (Mb)", "always?");
+  fprintf(fp, "# %4s  %-*s  %5s  %6s  %7s  %7s  %7s\n", "----", namewidth, namedashes, "-----",  "------", "-------", "-------", "-------");
+  fprintf(fp, "%6d  %-*s  %5d  %6.4f  %7d  %7.1f  %7s\n",
+	 cmi, namewidth, cm->name, cm->clen, hfi->F, hfi->N, (double) dbsize / 1000000.,
 	 hfi->always_better_than_Smax ? "yes" : "no");
   fprintf(fp, "#\n");
   fprintf(fp, "#\n");
@@ -1537,7 +1537,7 @@ DumpHMMFilterInfo(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm
  *           <ret_do_filter>:          TRUE if filtering predicted to save time, FALSE if not
  */
 int
-DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_E, int do_header, 
+DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_E, int do_header, int namewidth, char *namedashes,
 			float *ret_cm_bit_sc, float *ret_hmm_E, float *ret_hmm_bit_sc, float *ret_S, float *ret_xhmm, float *ret_spdup, float *ret_cm_ncalcs_per_res, float *ret_hmm_ncalcs_per_res, int *ret_do_filter)
 {
   int i;
@@ -1569,10 +1569,10 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
   if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, cm->beta_qdb, &cm_ncalcs_per_res, &W))  != eslOK) return status;
 
   if(do_header) { 
-    fprintf(fp, "# %4s  %-15s  %5s  %8s  %6s  %6s  %6s  %7s  %7s\n", "idx",  "name",            "clen",  "cm E",     "cm bit", "hmmbit", "surv",   "xhmm",    "speedup");
-    fprintf(fp, "# %4s  %-15s  %5s  %8s  %6s  %6s  %6s  %7s  %7s\n", "----", "---------------", "-----", "--------", "------", "------", "------", "-------", "-------");
+    fprintf(fp, "# %4s  %-*s  %5s  %8s  %6s  %6s  %6s  %7s  %7s\n", "idx",  namewidth, "name",            "clen",  "cm E",     "cm bit", "hmmbit", "surv",   "xhmm",    "speedup");
+    fprintf(fp, "# %4s  %-*s  %5s  %8s  %6s  %6s  %6s  %7s  %7s\n", "----", namewidth, namedashes,       "-----", "--------", "------", "------", "------", "-------", "-------");
   }
-  fprintf(fp, "%6d  %-15s  %5d  ", cmi, cm->name, cm->clen);
+  fprintf(fp, "%6d  %-*s  %5d  ", cmi, namewidth, cm->name, cm->clen);
   if((status = GetHMMFilterFwdECutGivenCME(hfi, errbuf, cm_E, dbsize, &i)) != eslOK) return status;
   if((status = E2MinScore(cm, errbuf, cm_mode,  cm_E,  &cm_bit_sc))  != eslOK) return status;
   if(cm_E < 0.01)  fprintf(fp, "%4.2e  ", cm_E);
@@ -1629,14 +1629,14 @@ DumpHMMFilterInfoForCME(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, 
  *           <ret_do_filter>:          TRUE if filtering predicted to save time, FALSE if not
  */
 int
-DumpHMMFilterInfoForCMBitScore(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_bit_sc, int do_header, 
+DumpHMMFilterInfoForCMBitScore(FILE *fp, HMMFilterInfo_t *hfi, char *errbuf, CM_t *cm, int cm_mode, int hmm_mode, long dbsize, int cmi, float cm_bit_sc, int do_header, int namewidth, char *namespaces,
 			       float *ret_cm_E, float *ret_hmm_E, float *ret_hmm_bit_sc, float *ret_S, float *ret_xhmm, float *ret_spdup, float *ret_cm_ncalcs_per_res, float *ret_hmm_ncalcs_per_res, int *ret_do_filter)
 {
   int status;
   float cm_E;
 
   if((status = Score2MaxE(cm, errbuf, cm_mode, cm_bit_sc, &cm_E)) != eslOK)  return status;
-  if((status = DumpHMMFilterInfoForCME(fp, hfi, errbuf, cm, cm_mode, hmm_mode, dbsize, cmi, cm_E, do_header,
+  if((status = DumpHMMFilterInfoForCME(fp, hfi, errbuf, cm, cm_mode, hmm_mode, dbsize, cmi, cm_E, do_header, namewidth, namespaces, 
 				       NULL, ret_hmm_E, ret_hmm_bit_sc, ret_S, ret_xhmm, ret_spdup, ret_cm_ncalcs_per_res, ret_hmm_ncalcs_per_res, ret_do_filter)) != eslOK) return status;
 
   if(ret_cm_E != NULL) *ret_cm_E = cm_E;

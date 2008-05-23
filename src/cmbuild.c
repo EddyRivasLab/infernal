@@ -138,6 +138,7 @@ struct cfg_s {
   int           be_verbose;	/* standard verbose output, as opposed to one-line-per-CM summary */
   int           nali;		/* which # alignment this is in file */
   int           ncm_total;      /* which # CM this is that we're constructing (we may build > 1 per file) */
+  int           namewidth;      /* max length of a CM name, nec for pretty tabular formatting */
   ESL_RANDOMNESS *r;            /* source of randomness, only created if --gibbs enabled */
 
   /* optional output files */
@@ -186,9 +187,10 @@ static int    MSADivide(ESL_MSA *mmsa, int do_all, int do_mindiff, int do_nc, fl
 static int    write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 static int    flatten_insert_emissions(CM_t *cm);
 static int    print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
-static void   print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
+static int    print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static void   print_refine_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
 static int    print_countvectors(const struct cfg_s *cfg, char *errbuf, CM_t *cm);
+static int    get_namewidth(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
 
 int
 main(int argc, char **argv)
@@ -289,6 +291,7 @@ main(int argc, char **argv)
   cfg.fullmat    = NULL;                   /* read (possibly) in init_cfg() */
   cfg.r          = NULL;	           /* created (possibly) in init_cfg() */
   cfg.comlog     = NULL;	           /* created in init_cfg() */
+  cfg.namewidth  = 0;
   /* optional output files, opened in init_cfg(), if at all */
   cfg.cfp        = NULL;
   cfg.tblfp      = NULL;
@@ -589,6 +592,9 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   nc      = do_ctarget  ? esl_opt_GetInteger(go, "--ctarget")    : 0;
   mindiff = do_cmindiff ? (1. - esl_opt_GetReal(go, "--cmaxid")) : 0.;
 
+  /* predict maximum length of CM name for pretty formatting */
+  if((status = get_namewidth(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+
   while ((status = esl_msa_Read(cfg->afp, &msa)) != eslEOF)
     {
       if      (status == eslEFORMAT)  cm_Fail("Alignment file parse error, line %d of file %s:\n%s\nOffending line is:\n%s\n", cfg->afp->linenumber, cfg->afp->fname, cfg->afp->errbuf, cfg->afp->buf);
@@ -840,14 +846,27 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
  *
  * Returns:  eslOK on success
  */
-static void
-print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg)
+static int
+print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
 {
-  fprintf(stdout, "# %-4s %-6s %-20s %8s %8s %6s %5s %13s\n",    "",     "",       "",                     "",         "",         "",     "",      " rel entropy ");
-  fprintf(stdout, "# %-4s %-6s %-20s %8s %8s %6s %5s %13s\n",    "",     "",       "",                     "",         "",         "",     "",      "-------------");
-  fprintf(stdout, "# %4s %-6s %-20s %8s %8s %6s %5s %6s %6s\n",  "aln",  "cm idx", "name",                 "nseq",     "eff_nseq", "alen",   "clen",  "CM",     "HMM");
-  fprintf(stdout, "# %-4s %-6s %-20s %8s %8s %6s %5s %6s %6s\n", "----", "------", "--------------------", "--------", "--------", "------", "-----", "------", "------");
-  return;
+  int status;
+  char *namedashes;
+  int ni;
+  ESL_ALLOC(namedashes, sizeof(char) * cfg->namewidth+1);
+  namedashes[cfg->namewidth] = '\0';
+  for(ni = 0; ni < cfg->namewidth; ni++) namedashes[ni] = '-';
+
+  fprintf(stdout, "# %-4s  %-6s  %-*s  %8s  %8s  %6s  %5s  %14s\n",    "",     "", cfg->namewidth, "",                     "",         "",         "",     "",      " rel entropy ");
+  fprintf(stdout, "# %-4s  %-6s  %-*s  %8s  %8s  %6s  %5s  %14s\n",    "",     "", cfg->namewidth, "",                     "",         "",         "",     "",      "--------------");
+  fprintf(stdout, "# %4s  %-6s  %-*s  %8s  %8s  %6s  %5s  %6s  %6s\n",  "aln",  "cm idx", cfg->namewidth, "name",                 "nseq",     "eff_nseq", "alen",   "clen",  "CM",     "HMM");
+  fprintf(stdout, "# %-4s  %-6s  %-*s  %8s  %8s  %6s  %5s  %6s  %6s\n", "----", "------", cfg->namewidth, namedashes,             "--------", "--------", "------", "-----", "------", "------");
+
+  free(namedashes);
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "Memory allocation error in print_column_headings()");
+  return status; /* NEVERREACHED */
 }
 
 static int
@@ -857,7 +876,9 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   int i;
   float sc, struct_sc;
 
-  if(msaidx == 1 && cmidx == 1) print_column_headings(go, cfg);
+  if(msaidx == 1 && cmidx == 1) { 
+    if((status = print_column_headings(go, cfg, errbuf)) != eslOK) return status;
+  }
 
   /* copy the cmbuild command info to the CM */
   if ((status = CopyComLog(cfg->comlog, cm->comlog)) != eslOK) ESL_FAIL(eslFAIL, errbuf, "Problem copying com log info to CM. Probably out of memory.");
@@ -866,9 +887,10 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   /* build the HMM, so we can print the CP9 relative entropy */
   if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslFAIL, errbuf, "Couldn't build a CP9 HMM from the CM.");
 
-  fprintf(stdout, "%6d %6d %-20.20s %8d %8.2f %6d %5d %6.3f %6.3f\n",
+  fprintf(stdout, "%6d  %6d  %-*s  %8d  %8.2f  %6d  %5d  %6.3f  %6.3f\n",
 	  msaidx,
 	  cmidx,
+	  cfg->namewidth,
 	  cm->name, 
 	  msa->nseq,
 	  cm->eff_nseq,
@@ -2105,4 +2127,63 @@ print_refine_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg)
   fprintf(stdout, "# %-5s %-13s %10s\n", "iter",  "bit score sum", "fract diff");
   fprintf(stdout, "# %-5s %-13s %10s\n", "-----", "-------------", "----------");
   return;
+}
+
+/* Function: get_namewidth()
+ * Date:     EPN, Fri May 23 05:45:32 2008
+ *
+ * Purpose:  Determine the maximum length of a CM name we'll create in the current
+ *           cmbuild call from the MSA already opened cfg->afp.
+ *           Sets cfg->namewidth as the max number of characters needed for
+ *           all CM names.
+ *
+ * Returns:  eslOK on success
+ *           eslEFORMAT on parse error of MSA in cfg->afp
+ */
+static int
+get_namewidth(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
+{
+  int status;
+  int nali = 0;
+  int do_cmaxid_or_call;
+  int do_ctarget;
+  int cur_namewidth;
+  ESL_MSA *msa = NULL;
+
+  cfg->namewidth = 6; /* length of "name", plus 2 spaces, just for looks */
+  do_cmaxid_or_call = (! (esl_opt_IsDefault(go, "--cmaxid"))) || (esl_opt_GetBoolean(go, "--call")) ? TRUE : FALSE;
+  do_ctarget        = (! esl_opt_IsDefault(go, "--ctarget")) ? TRUE : FALSE;
+
+  /* if -n <s> enabled, set namewidth as length of <s> */
+  if(!(esl_opt_IsDefault(go, "-n"))) { 
+    cfg->namewidth = ESL_MAX(cfg->namewidth, strlen(esl_opt_GetString(go, "-n"))); 
+    return eslOK;
+  }
+
+  /* else, get MSA names using either (1) stockholm GF ID markup name or (2) cmbuild's rules for naming the msa */
+  while ((status = esl_msa_Read(cfg->afp, &msa)) != eslEOF) { 
+      if      (status == eslEFORMAT)  ESL_FAIL(status, errbuf, "Alignment file parse error, line %d of file %s:\n%s\nOffending line is:\n%s\n", cfg->afp->linenumber, cfg->afp->fname, cfg->afp->errbuf, cfg->afp->buf);
+      else if (status != eslOK)       ESL_FAIL(status, errbuf, "Alignment file read unexpectedly failed with code %d\n", status);
+      nali++;
+
+      /* name the msa, if it already has one from #=GF ID markup, name_msa() returns w/o modifying it */
+      if((status = name_msa(go, errbuf, msa, nali)) != eslOK) return status;
+      cur_namewidth = strlen(msa->name);
+      if(do_cmaxid_or_call) cur_namewidth += 1 + IntDigits(msa->nseq); /* we could create as many as msa->nseq CMs from this msa */
+      if(do_ctarget)        cur_namewidth += 1 + esl_opt_GetInteger(go, "--ctarget"); /* we'll make --ctarget <n> CMs from this msa */
+      cfg->namewidth = ESL_MAX(cfg->namewidth, cur_namewidth);
+      esl_msa_Destroy(msa);
+  }
+  /* close the MSA file and open it again, sloppy */
+  esl_msafile_Close(cfg->afp);
+  if   (esl_opt_IsDefault(go, "--informat")) cfg->fmt = eslMSAFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
+  else cfg->fmt = esl_sqio_FormatCode(esl_opt_GetString(go, "--informat"));
+  status = esl_msafile_Open(cfg->alifile, cfg->fmt, NULL, &(cfg->afp));
+  if      (status == eslENOTFOUND) ESL_FAIL(status, errbuf, "Alignment file %s doesn't exist or is not readable\n", cfg->alifile);
+  else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of alignment %s\n", cfg->alifile);
+  else if (status != eslOK)      ESL_FAIL(status, errbuf, "Alignment file open failed with error %d\n", status);
+  cfg->fmt = cfg->afp->format;
+  esl_msafile_SetDigital(cfg->afp, cfg->abc);
+
+  return eslOK;
 }

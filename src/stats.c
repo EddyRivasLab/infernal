@@ -101,6 +101,12 @@ int debug_print_cmstats(CM_t *cm, char *errbuf, CMStats_t *cmstats, int has_fthr
 {
   int status;
   int p;
+  char *namedashes;
+  int ni;
+  int namewidth = strlen(cm->name); 
+  ESL_ALLOC(namedashes, sizeof(char) * namewidth+1);
+  namedashes[namewidth] = '\0';
+  for(ni = 0; ni < namewidth; ni++) namedashes[ni] = '-';
 
   printf("Num partitions: %d\n", cmstats->np);
   for (p = 0; p < cmstats->np; p++)
@@ -128,16 +134,21 @@ int debug_print_cmstats(CM_t *cm, char *errbuf, CMStats_t *cmstats, int has_fthr
   if(has_fthr)
     {
       printf("Filter CM_LC info:\n");
-      if((status = DumpHMMFilterInfo(stdout, cmstats->hfiA[FTHR_CM_LC], errbuf, cm, EXP_CM_LC, EXP_CP9_LF, cmstats->hfiA[FTHR_CM_LC]->dbsize, 1)) != eslOK) return status;
+      if((status = DumpHMMFilterInfo(stdout, cmstats->hfiA[FTHR_CM_LC], errbuf, cm, EXP_CM_LC, EXP_CP9_LF, cmstats->hfiA[FTHR_CM_LC]->dbsize, 1, namewidth, namedashes)) != eslOK) return status;
       printf("Filter CM_LI info:\n");
-      if((status = DumpHMMFilterInfo(stdout, cmstats->hfiA[FTHR_CM_LI], errbuf, cm, EXP_CM_LI, EXP_CP9_LF, cmstats->hfiA[FTHR_CM_LI]->dbsize, 1)) != eslOK) return status;
+      if((status = DumpHMMFilterInfo(stdout, cmstats->hfiA[FTHR_CM_LI], errbuf, cm, EXP_CM_LI, EXP_CP9_LF, cmstats->hfiA[FTHR_CM_LI]->dbsize, 1, namewidth, namedashes)) != eslOK) return status;
       printf("Filter CM_GC info:\n");
-      if((status = DumpHMMFilterInfo(stdout, cmstats->hfiA[FTHR_CM_GC], errbuf, cm, EXP_CM_GC, EXP_CP9_GF, cmstats->hfiA[FTHR_CM_GC]->dbsize, 1)) != eslOK) return status;
+      if((status = DumpHMMFilterInfo(stdout, cmstats->hfiA[FTHR_CM_GC], errbuf, cm, EXP_CM_GC, EXP_CP9_GF, cmstats->hfiA[FTHR_CM_GC]->dbsize, 1, namewidth, namedashes)) != eslOK) return status;
       printf("Filter CM_GI info:\n");
-      if((status = DumpHMMFilterInfo(stdout, cmstats->hfiA[FTHR_CM_GI], errbuf, cm, EXP_CM_GI, EXP_CP9_GF, cmstats->hfiA[FTHR_CM_GI]->dbsize, 1)) != eslOK) return status;
+      if((status = DumpHMMFilterInfo(stdout, cmstats->hfiA[FTHR_CM_GI], errbuf, cm, EXP_CM_GI, EXP_CP9_GF, cmstats->hfiA[FTHR_CM_GI]->dbsize, 1, namewidth, namedashes)) != eslOK) return status;
       printf("\n\n");
     }
+  free(namedashes);
   return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "Memory allocation error in debug_print_cmstats().");
+  return status; /* NEVERREACHED */
 }
 
 /* Function: debug_print_expinfo
