@@ -432,7 +432,6 @@ typedef struct cp9map_s {
 #define CM_CONFIG_QDB          (1<<3)  /* calculate query dependent bands          */
 
 /* alignment options, cm->align_opts */
-/* alignment options, cm->align_opts */
 #define CM_ALIGN_SMALL         (1<<0)  /* use small CYK D&C                        */
 #define CM_ALIGN_QDB           (1<<1)  /* use QD bands                             */
 #define CM_ALIGN_HBANDED       (1<<2)  /* use HMM bands                            */

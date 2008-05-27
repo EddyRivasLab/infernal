@@ -91,11 +91,11 @@ static ESL_OPTIONS options[] = {
   /*{ "--fil-S-hmm",eslARG_REAL,  "0.02",NULL, "0<x<1",   NULL,      NULL, "--fil-T-hmm", "set HMM filter cutoff to achieve survival fraction <x>", 6 },*/
   { "--fil-Smax-hmm",eslARG_REAL,NULL, NULL, "0<x<1",    NULL,      NULL,"--fil-T-hmm,--fil-E-hmm", "set maximum HMM survival fraction as <x>", 6 },
   /* alignment options */
-  { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "append posterior probabilities to hit alignments", 7 },
   { "--noalign", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,       NULL, "find start/stop/score only; don't do alignments", 7 },
-  { "--aln-optacc",eslARG_NONE, FALSE, NULL, NULL,      NULL,   "--aln-hbanded","--noalign", "align hits with the optimal accuracy algorithm, not CYK", 7 },
-  { "--aln-hbanded",eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "use HMM bands to align hits", 7 },
   { "--addx",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "add line to output alnments marking non-compensatory bps with 'x'", 7 },
+  { "--aln-hbanded",eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "use HMM bands to align hits", 7 },
+  { "--aln-optacc",eslARG_NONE, FALSE, NULL, NULL,      NULL,   "--aln-hbanded","--noalign", "align hits with the optimal accuracy algorithm, not CYK", 7 },
+  { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,   "--aln-hbanded","--noalign", "append posterior probabilities to hit alignments", 7 },
   /* verbose output files */
   { "--tabfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,"--forecast", "save hits in tabular format to file <f>", 8 },
   { "--gcfile",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save GC content stats of target sequence file to <f>", 8 },
@@ -1103,9 +1103,13 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   }
 
   /* align_opts, by default, DO NOT align with HMM bands */
-  if(esl_opt_GetBoolean(go, "--aln-hbanded"))  cm->align_opts |= CM_ALIGN_HBANDED;
-  if(esl_opt_GetBoolean(go, "--aln-optacc"))   cm->align_opts |= CM_ALIGN_OPTACC;
-  if(esl_opt_GetBoolean(go, "-p"))             cm->align_opts |= CM_ALIGN_POST;
+  if(esl_opt_GetBoolean(go, "--aln-hbanded"))  { 
+    cm->align_opts |= CM_ALIGN_HBANDED;
+    /* these guys are only available if --aln-hbanded also enabled */
+    if(esl_opt_GetBoolean(go, "--aln-optacc")) cm->align_opts |= CM_ALIGN_OPTACC;
+    if(esl_opt_GetBoolean(go, "-p"))           cm->align_opts |= CM_ALIGN_POST;
+  }
+  else cm->align_opts |= CM_ALIGN_SMALL;
 
   /*******************************
    * Begin developer options block 
