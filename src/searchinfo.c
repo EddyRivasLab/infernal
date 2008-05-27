@@ -523,7 +523,7 @@ void ExpandResults (search_results_t *results, int additional) {
  *           Originally written to add results returned from 
  *           an MPI worker to a growing 'master' results structure 
  *           in the MPI master. 
-
+ *
  *           The search_results_node_t's (results->data)
  *           must have their start, stop, bestr, and score data
  *           copied because the results->data is not a set 
@@ -1031,7 +1031,7 @@ void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_
       } 
       else { /* don't print E-value stats */
 	fprintf(fp, " Score = %.2f, GC = %3d\n", results->data[i].score, gc_comp);
-	if(tabfp != NULL) fprintf(tabfp, "%8s %3d\n", "-", gc_comp);
+	if(tabfp != NULL) fprintf(tabfp, "%8s  %3d\n", "-", gc_comp);
       }
       fprintf(fp, "\n");
       if (results->data[i].tr != NULL) {

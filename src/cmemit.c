@@ -53,7 +53,7 @@ static ESL_OPTIONS options[] = {
   { "--begin",   eslARG_INT,    NULL,  NULL, "n>=1",    NULL,    "--end",       NULL, "truncate alignment, begin at match column <n>", 3 },
   { "--end",     eslARG_INT,    NULL,  NULL, "n>=1",    NULL,  "--begin",       NULL, "truncate alignment,   end at match column <n>", 3 },
 
-  /* --devhelp options
+  /* --devhelp options */
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer options for testing CP9 construction empirically */
   { "--shmm",    eslARG_OUTFILE,NULL,  NULL, NULL,   OUTOPTS,      NULL, "-l,--tfile","build, output a ML CM Plan 9 HMM from generated alignment to <f>", 101 },

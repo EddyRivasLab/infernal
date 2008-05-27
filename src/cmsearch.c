@@ -52,10 +52,8 @@ static ESL_OPTIONS options[] = {
   { "-o",        eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "direct output to file <f>, not stdout", 1 },
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "configure CM/HMM for glocal alignment [default: local]", 1 },
   { "-Z",        eslARG_REAL,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "set Z (database size in *Mb*) to <x> for E-value calculations", 1},
-  { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--toponly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the top strand", 1 },
   { "--bottomonly", eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the bottom strand", 1 },
-  { "--null3",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,   "--null2", "turn on the post hoc third null model", 1 },
   { "--forecast",eslARG_INT,    NULL,  NULL, NULL,      NULL,      NULL,        NULL, "don't do search, forecast running time with <n> processors", 1 },
   { "--mxsize",  eslARG_REAL, "2048.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 10 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
@@ -68,7 +66,7 @@ static ESL_OPTIONS options[] = {
   { "--viterbi", eslARG_NONE,  FALSE, NULL, NULL, "--fil-hmm,--fil-qdb",     NULL,    STRATOPTS2, "use scanning HMM Viterbi algorithm", 2 },
   { "--forward", eslARG_NONE,  FALSE, NULL, NULL, "--fil-hmm,--fil-qdb",     NULL,    STRATOPTS2, "use scanning HMM Forward algorithm", 2 },
   /* CM cutoff options */
-  { "-E",        eslARG_REAL,   "0.1", NULL, "x>0.",    NULL,      NULL,    CUTOPTS1, "use cutoff E-value of <x> for final round of search", 3 },
+  { "-E",        eslARG_REAL,   "10.0", NULL, "x>0.",   NULL,      NULL,    CUTOPTS1, "use cutoff E-value of <x> for final round of search", 3 },
   { "-T",        eslARG_REAL,   "0.0", NULL, NULL,      NULL,      NULL,    CUTOPTS1, "use cutoff bit score of <x> for final round of search", 3 },
   { "--nc",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    CUTOPTS2, "use CM Rfam NC noise cutoff as cutoff bit score", 3 },
   { "--ga",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    CUTOPTS2, "use CM Rfam GA gathering threshold as cutoff bit score", 3 },
@@ -95,20 +93,23 @@ static ESL_OPTIONS options[] = {
   /* alignment options */
   { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "append posterior probabilities to hit alignments", 7 },
   { "--noalign", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,       NULL, "find start/stop/score only; don't do alignments", 7 },
-  { "--alncyk",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "align hits with the CYK algorithm", 7 },
+  { "--aln-optacc",eslARG_NONE, FALSE, NULL, NULL,      NULL,   "--aln-hbanded","--noalign", "align hits with the optimal accuracy algorithm, not CYK", 7 },
+  { "--aln-hbanded",eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "use HMM bands to align hits", 7 },
   { "--addx",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "add line to output alnments marking non-compensatory bps with 'x'", 7 },
   /* verbose output files */
   { "--tabfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,"--forecast", "save hits in tabular format to file <f>", 8 },
   { "--gcfile",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save GC content stats of target sequence file to <f>", 8 },
   /* Setting output alphabet */
-  { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 9 },
-  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 9 },
+  { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output hit alignments as RNA sequence data", 9 },
+  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output hit alignments as DNA (not RNA) sequence data", 9 },
   /* All options below are developer options, only shown if --devhelp invoked */
   { "--lambda",  eslARG_REAL,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "overwrite lambdas in <cmfile> to <x> for E-value calculations", 101}, 
   { "--aln2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL, "--hbanded", HMMONLYOPTS, "w/--hbanded, derive HMM bands w/o scanning Forward/Backward", 101 },
   { "--rtrans",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--viterbi,--forward", "replace CM transition scores from <cmfile> with RSEARCH scores", 101 },
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 101 },
-  { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--null3,--noalign", "turn on the post hoc second null model", 101 },
+  { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 101 },
+  { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--no-null3", "--noalign", "turn on the post hoc second null model", 101 },
+  { "--no-null3",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "turn OFF the NULL3 post hoc additional null model", 101 },
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb", 101 },  
   /* Developer options related to experiment local begin/end modes */
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "-g,--pbegin","set all local begins as equiprobable", 102 },
@@ -502,8 +503,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  fprintf(cfg->tfp, "# CM->W: %d (subtract (W-1) from stop and add (W-1) to start, and merge overlapping hits to simulate filter)\n", cm->W);*/
 	fprintf(cfg->tfp, "# %-*s  %22s  %12s  %8s  %8s  %3s\n", cfg->namewidth, "", "target coord", "query coord", "", "", "");
 	fprintf(cfg->tfp, "# %-*s  %22s  %12s  %8s  %8s  %3s\n", cfg->namewidth, "", "----------------------", "------------", "", "", "");
-	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s %8s %3s\n", cfg->namewidth, "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC\%");
-	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s %8s %3s\n", cfg->namewidth, namedashes, "----------", "----------", "-----", "-----", "--------", "--------", "---");
+	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cfg->namewidth, "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC\%");
+	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cfg->namewidth, namedashes, "----------", "----------", "-----", "-----", "--------", "--------", "---");
       }
       using_e_cutoff  = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF)     ? TRUE : FALSE;
       using_sc_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == SCORE_CUTOFF) ? TRUE : FALSE;
@@ -521,16 +522,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    free(seq_surv_fractA);
 	    free(seq_nhitsA);
 	    RemoveOverlappingHits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
-	    /* TEMPORARY! Below block should now be handled in DispatchSearch() */
-	    //if(esl_opt_GetBoolean(go, "--null2") || esl_opt_GetBoolean(go, "--null3")) { 
-	    //if((status = UpdateHitScoresWithNull2Or3(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]->dsq, using_sc_cutoff, errbuf, esl_opt_GetBoolean(go, "--null2"), esl_opt_GetBoolean(go, "--null3"))) != eslOK) cm_Fail(errbuf); 
-	    //if((status = RemoveHitsOverECutoff(cm, errbuf, cm->si, cm->si->nrounds, dbseq->results[rci], dbseq->sq[rci]->dsq, 
-	    //FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
-	    //TRUE))  /* sort by end point at the end of the function */
-	    //!= eslOK) cm_Fail(errbuf);
-	    //}
-	    /* hits over E cutoff were removed in DispatchSearch() if(using_e_cutoff) */
-	    /* OLD LINE: RemoveHitsOverECutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]);  */
 	  }
 	  PrintResults (cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"), cfg->namewidth);
 	  for(rci = 0; rci <= cfg->do_rc; rci++) { /* we can free results for top strand even if cfg->init_rci is 1, due to --bottomonly */
@@ -834,8 +825,9 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			  }
 			}
 			AppendResults(worker_results, dbseqlist[si_recv]->results[rclist[wi]], seqposlist[wi]);
-			/* careful, dbseqlist[si_recv]->results[rclist[wi]] now points to the nodes in worker_results->data,
+			/* careful, dbseqlist[si_recv]->results[rclist[wi]] now points to the traces and postal codes in worker_results->data,
 			 * don't free those (don't use FreeResults(worker_results)) */
+			free(worker_results->data);
 			free(worker_results);
 			worker_results = NULL;
 		      }
@@ -844,18 +836,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			{
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
 			    RemoveOverlappingHits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
-
-			    /* TEMPORARY! Below block should now be handled in DispatchSearch() */
-			    //if(esl_opt_GetBoolean(go, "--null2") || esl_opt_GetBoolean(go, "--null3")) { 
-			    //if((status = UpdateHitScoresWithNull2Or3(cm, cm->si, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]->dsq, using_sc_cutoff, errbuf, esl_opt_GetBoolean(go, "--null2"), esl_opt_GetBoolean(go, "--null3"))) != eslOK) cm_Fail(errbuf); 
-			    //if((status = RemoveHitsOverECutoff(cm, errbuf, cm->si, cm->si->nrounds, dbseqlist[si_recv]->results[rci], dbseqlist[si_recv]->sq[rci]->dsq, 
-			    //FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
-			    //TRUE))  /* sort by end point at the end of the function */
-			    //!= eslOK) cm_Fail(errbuf);
-			    //}
-
-			    /* hits over E cutoff were removed in DispatchSearch() if(using_e_cutoff) */
-			    /* OLD LINE: RemoveHitsOverECutoff(cm, cm->si, dbseq->results[rci], dbseq->sq[rci]);  */
 			  }					      
 			  PrintResults(cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"), cfg->namewidth);
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
@@ -917,7 +897,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       fprintf(cfg->ofp, "//\n");
       free(cm_surv_fractA);
       free(cm_nhitsA);
-      free(namedashes);
       FreeCM(cm);
       FreeCMConsensus(cons);
       esl_sqio_Rewind(cfg->sqfp); /* we may be searching this file again with another CM */
@@ -930,6 +909,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if((status = cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
   free(buf);
   
+  free(namedashes);
   esl_stopwatch_Destroy(w);
 
   if (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); cm_Fail(errbuf); }
@@ -1112,7 +1092,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(  esl_opt_GetBoolean(go, "--hbanded"))     cm->search_opts |= CM_SEARCH_HBANDED;
   if(  esl_opt_GetBoolean(go, "--aln2bands"))   cm->search_opts |= CM_SEARCH_HMMALNBANDS;
   if(  esl_opt_GetBoolean(go, "--null2"))       cm->search_opts |= CM_SEARCH_NULL2;
-  if(  esl_opt_GetBoolean(go, "--null3"))       cm->search_opts |= CM_SEARCH_NULL3;
+  if(! esl_opt_GetBoolean(go, "--no-null3"))    cm->search_opts |= CM_SEARCH_NULL3;
   if(  esl_opt_GetBoolean(go, "--viterbi"))  { 
     cm->search_opts |= CM_SEARCH_HMMVITERBI;
     cm->search_opts |= CM_SEARCH_NOQDB;
@@ -1122,9 +1102,9 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     cm->search_opts |= CM_SEARCH_NOQDB;
   }
 
-  /* align_opts, by default, align with HMM bands */
-  cm->align_opts |= CM_ALIGN_HBANDED;
-  if(! (esl_opt_GetBoolean(go, "--alncyk")))   cm->align_opts |= CM_ALIGN_OPTACC;
+  /* align_opts, by default, DO NOT align with HMM bands */
+  if(esl_opt_GetBoolean(go, "--aln-hbanded"))  cm->align_opts |= CM_ALIGN_HBANDED;
+  if(esl_opt_GetBoolean(go, "--aln-optacc"))   cm->align_opts |= CM_ALIGN_OPTACC;
   if(esl_opt_GetBoolean(go, "-p"))             cm->align_opts |= CM_ALIGN_POST;
 
   /*******************************
@@ -1563,13 +1543,13 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 
   /* C. add QDB filter, if necessary (before HMM filter, filters added like a stack, HMM filter is added last but used first) */
   if(do_qdb_filter) { 
-    AddFilterToSearchInfo(cm, TRUE, FALSE, FALSE, FALSE, FALSE, fqdb_smx, NULL, fqdb_ctype, fqdb_sc, fqdb_E, esl_opt_GetBoolean(go, "--null3"));
+    AddFilterToSearchInfo(cm, TRUE, FALSE, FALSE, FALSE, FALSE, fqdb_smx, NULL, fqdb_ctype, fqdb_sc, fqdb_E, (! esl_opt_GetBoolean(go, "--no-null3")));
     /* DumpSearchInfo(cm->si); */
   }
   else if (fqdb_smx != NULL) cm_FreeScanMatrix(cm, fqdb_smx); 
   /* D. add HMM filter, if necessary (after QDB filter, filters added like a stack, HMM filter is added last but used first) */
   if (do_hmm_filter) { 
-    AddFilterToSearchInfo(cm, FALSE, FALSE, FALSE, TRUE, FALSE, NULL, NULL, fhmm_ctype, fhmm_sc, fhmm_E, esl_opt_GetBoolean(go, "--null3"));
+    AddFilterToSearchInfo(cm, FALSE, FALSE, FALSE, TRUE, FALSE, NULL, NULL, fhmm_ctype, fhmm_sc, fhmm_E, (! esl_opt_GetBoolean(go, "--no-null3")));
     /* DumpSearchInfo(cm->si); */
   }
   ValidateSearchInfo(cm, cm->si);
@@ -1832,13 +1812,13 @@ set_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
 
   /* C. add QDB filter, if necessary (before HMM filter, filters added like a stack, HMM filter is added last but used first) */
   if(do_qdb_filter) { 
-    AddFilterToSearchInfo(cm, TRUE, FALSE, FALSE, FALSE, FALSE, fqdb_smx, NULL, SCORE_CUTOFF, fqdb_sc, -1., esl_opt_GetBoolean(go, "--null3"));
+    AddFilterToSearchInfo(cm, TRUE, FALSE, FALSE, FALSE, FALSE, fqdb_smx, NULL, SCORE_CUTOFF, fqdb_sc, -1., (! esl_opt_GetBoolean(go, "--no-null3")));
     /* DumpSearchInfo(cm->si); */
   }
   else if (fqdb_smx != NULL) cm_FreeScanMatrix(cm, fqdb_smx); 
   /* D. add HMM filter, if necessary (after QDB filter, filters added like a stack, HMM filter is added last but used first) */
   if (do_hmm_filter) { 
-    AddFilterToSearchInfo(cm, FALSE, FALSE, FALSE, TRUE, FALSE, NULL, NULL, SCORE_CUTOFF, fhmm_sc, -1., esl_opt_GetBoolean(go, "--null3"));
+    AddFilterToSearchInfo(cm, FALSE, FALSE, FALSE, TRUE, FALSE, NULL, NULL, SCORE_CUTOFF, fhmm_sc, -1., (! esl_opt_GetBoolean(go, "--no-null3")));
     /* DumpSearchInfo(cm->si); */
   }
   ValidateSearchInfo(cm, cm->si);
@@ -2387,10 +2367,10 @@ int estimate_search_time_for_round(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   esl_stopwatch_Start(w);
   if(stype == SEARCH_WITH_CM) { 
     if(search_opts & CM_SEARCH_INSIDE) { 
-      if((status = FastIInsideScan(cm, errbuf, smx, dsq, 1, L, 0., NULL, esl_opt_GetBoolean(go, "--null3"), NULL, NULL)) != eslOK) return status;
+      if((status = FastIInsideScan(cm, errbuf, smx, dsq, 1, L, 0., NULL, (! esl_opt_GetBoolean(go, "--no-null3")), NULL, NULL)) != eslOK) return status;
     }
     else 
-      if((status = FastCYKScan    (cm, errbuf, smx, dsq, 1, L, 0., NULL, esl_opt_GetBoolean(go, "--null3"), NULL, NULL)) != eslOK) return status;
+      if((status = FastCYKScan    (cm, errbuf, smx, dsq, 1, L, 0., NULL, (! esl_opt_GetBoolean(go, "--no-null3")), NULL, NULL)) != eslOK) return status;
   }
   else { /* search with HMM */
     if(search_opts & CM_SEARCH_HMMFORWARD) { /* forward */
@@ -2398,7 +2378,7 @@ int estimate_search_time_for_round(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
 			       TRUE,   /* we're scanning */
 			       FALSE,  /* we're not ultimately aligning */
 			       TRUE,   /* be memory efficient */
-			       esl_opt_GetBoolean(go, "--null3"),
+			       (! esl_opt_GetBoolean(go, "--no-null3")),
 			       NULL, NULL, NULL)) != eslOK) return status;
     }
     else { /* viterbi */
@@ -2406,7 +2386,7 @@ int estimate_search_time_for_round(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
 			       TRUE,   /* we're scanning */
 			       FALSE,  /* we're not ultimately aligning */
 			       TRUE,   /* be memory efficient */
-			       esl_opt_GetBoolean(go, "--null3"),
+			       (! esl_opt_GetBoolean(go, "--no-null3")),
 			       NULL, NULL,
 			       NULL,   /* don't want traces back */
 			       NULL)) != eslOK) return status;
@@ -2477,7 +2457,6 @@ int dump_gc_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 static int
 overwrite_lambdas(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf)
 {
-  int status;
   double lambda;
   int i, p;
 

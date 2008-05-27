@@ -47,9 +47,6 @@ static ESL_OPTIONS options[] = {
   { "--le",      eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print one line summary of  local E-value statistics", 1 },
   { "--ge",      eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print one line summary of glocal E-value statistics", 1 },
   { "--beta",    eslARG_REAL,   "1E-7",    NULL, "0<x<1",   NULL,      NULL,    NOTMOPTS, "set tail loss prob for QDB stats to <x>", 1 },
-  { "--search",  eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,    NOTMOPTS, "do search timing experiments", 1 },
-  { "--cmL",     eslARG_INT,    "1000",    NULL, "n>0",     NULL,"--search",        NULL, "length of sequences for CM search stats", 1 },
-  { "--hmmL",    eslARG_INT,    "100000",  NULL, "n>0",     NULL,"--search",        NULL, "length of sequences for CP9 HMM search stats", 1 },
   { "--qdbfile", eslARG_OUTFILE, NULL,     NULL, NULL,      NULL,      "-m",        NULL, "save query-dependent bands (QDBs) for each state to file <f>", 1 },
   { "--lfi",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of  local Inside filter threshold stats", 2 },
   { "--gfi",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of glocal Inside filter threshold stats", 2 },
@@ -62,12 +59,15 @@ static ESL_OPTIONS options[] = {
   { "--nc",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for Rfam NC cutoff", 2}, 
   { "--seqfile", eslARG_INFILE, FALSE,     NULL, NULL,      NULL,      NULL,        "-Z", "compute E-value cutoffs for sequence file <f>", 2 },
   { "--toponly", eslARG_NONE,   FALSE,     NULL, NULL,      NULL,"--seqfile",       NULL, "with --seqfile, only consider top-strand", 2 },
-  { "--efile",   eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "output HMM filter E-val cutoff vs CM E-val cutoff plots to <f>", 3},
-  { "--bfile",   eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "output HMM filter bit sc cutoff vs CM bit sc cutoff plots to <f>", 3},
-  { "--sfile",   eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "output predicted survival fraction vs CM cutoff plots to <f>", 3},
-  { "--xfile",   eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "output predicted xhmm (calcs * HMM) vs CM cutoff plots to <f>", 3},
-  { "--afile",   eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "output predicted acceleration vs CM cutoff plots to <f>", 3},
-  { "--bits",    eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,        NULL, "with --{s,x,a}file, plot CM bit score cutoffs not E-values", 3},
+  { "--search",  eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,    NOTMOPTS, "do search timing experiments", 3 },
+  { "--cmL",     eslARG_INT,    "1000",    NULL, "n>0",     NULL,"--search",        NULL, "length of sequences for CM search stats", 3 },
+  { "--hmmL",    eslARG_INT,    "100000",  NULL, "n>0",     NULL,"--search",        NULL, "length of sequences for CP9 HMM search stats", 3 },
+  { "--efile",   eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "output HMM filter E-val cutoff vs CM E-val cutoff plots to <f>", 4},
+  { "--bfile",   eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "output HMM filter bit sc cutoff vs CM bit sc cutoff plots to <f>", 4},
+  { "--sfile",   eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "output predicted survival fraction vs CM cutoff plots to <f>", 4},
+  { "--xfile",   eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "output predicted xhmm (calcs * HMM) vs CM cutoff plots to <f>", 4},
+  { "--afile",   eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "output predicted acceleration vs CM cutoff plots to <f>", 4},
+  { "--bits",    eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,        NULL, "with --{s,x,a}file, plot CM bit score cutoffs not E-values", 4},
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -150,8 +150,10 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
       puts("\n  options for printing filter threshold statistics:");
       esl_opt_DisplayHelp(stdout, go, 2, 2, 80);
-      puts("\n  optional xmgrace plots for --lfc, --gfc, --lfi or --gfi:");
+      puts("\n  options for search timing experiments:");
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
+      puts("\n  optional xmgrace plots for --lfc, --gfc, --lfi or --gfi:");
+      esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
       exit(0);
     }
   if (esl_opt_ArgNumber(go) != 1) 

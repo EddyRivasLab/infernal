@@ -1536,7 +1536,7 @@ int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, in
 			       TRUE,   /* we're scanning */
 			       FALSE,  /* we're not ultimately aligning */
 			       TRUE,   /* be memory efficient */
-			       FALSE,  /* don't do NULL3 score correction */
+			       TRUE,   /* do NULL3 score correction */
 			       NULL, NULL, NULL,  /* don't return best score at each posn, best scoring posn, or traces */
 			       &sc)) != eslOK) return status;
     }
@@ -1546,7 +1546,7 @@ int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, in
 			       TRUE,   /* we're scanning */
 			       FALSE,  /* we're not ultimately aligning */
 			       TRUE,   /* be memory efficient */
-			       FALSE,  /* don't do NULL3 score correction */
+			       TRUE,   /* do NULL3 score correction */
 			       NULL,   /* don't return best score at each posn */
 			       &j,     /* return end point j of best scoring hit */
 			       &sc)) != eslOK) return status;
@@ -1554,7 +1554,7 @@ int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, in
 				NULL,   /* don't report hits */
 				TRUE,   /* we're scanning */
 				FALSE,  /* we're not ultimately aligning */
-				FALSE,  /* don't do NULL3 score correction */
+				TRUE,   /* do NULL3 score correction */
 				TRUE,   /* be memory efficient */
 				NULL,   /* don't return best score at each posn */
 				&i,     /* return start point i of best scoring hit, not used actually */
@@ -1574,12 +1574,12 @@ int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, in
 
     if(cm->search_opts & CM_SEARCH_HBANDED) {
       if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, i0, j0, cm->cp9b, TRUE, 0)) != eslOK) return status; 
-      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, NULL, FALSE, cm->hbmx, size_limit, &sc)) != eslOK) return status; }
-      else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, NULL, FALSE, cm->hbmx, size_limit, &sc)) != eslOK) return status; }
+      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastFInsideScanHB(cm, errbuf, dsq, i0, j0, cutoff, NULL, TRUE, cm->hbmx, size_limit, &sc)) != eslOK) return status; }
+      else                                   { if((status = FastCYKScanHB    (cm, errbuf, dsq, i0, j0, cutoff, NULL, TRUE, cm->hbmx, size_limit, &sc)) != eslOK) return status; }
     }
     else { /* don't do HMM banded search */
-      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, smx, dsq, i0, j0, cutoff, NULL, FALSE, NULL, &sc)) != eslOK) return status; }
-      else                                   { if((status = FastCYKScan    (cm, errbuf, smx, dsq, i0, j0, cutoff, NULL, FALSE, NULL, &sc)) != eslOK) return status; }
+      if(cm->search_opts & CM_SEARCH_INSIDE) { if((status = FastIInsideScan(cm, errbuf, smx, dsq, i0, j0, cutoff, NULL, TRUE, NULL, &sc)) != eslOK) return status; }
+      else                                   { if((status = FastCYKScan    (cm, errbuf, smx, dsq, i0, j0, cutoff, NULL, TRUE, NULL, &sc)) != eslOK) return status; }
     }    
     /* now sc is score of best hit found by the relevant CM scanning algorithm */
   }

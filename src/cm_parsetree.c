@@ -1936,7 +1936,7 @@ ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len
     * interpreted as a prior, saying that the third null model is 
     * 1/2^5 (1/32) as likely as the standard null model
     */
-  /*score -= NULL3_PRIOR_BITS;*/
+  score -= 5.;
 
   /* Return the correction to the bit score. */
   /*printf("ScoreCorrectionNull3 return sc: %.3f\n", LogSum2(0., score));*/
@@ -1974,7 +1974,6 @@ ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len
 void
 ScoreCorrectionNull3CompUnknown(const ESL_ALPHABET *abc, float *null0, ESL_DSQ *dsq, int start, int stop, float *ret_sc)
 {
-  int   a;              /* residue index counters */
   float score = 0.;
   float *comp;		/* null3 model distribution */
 

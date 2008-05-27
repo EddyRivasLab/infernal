@@ -571,8 +571,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       }
       else { 
 	fprintf(ofp, "#\n");
-	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %8s  %11s\n", "",         "", namewidth,                  "",       "    bit scores    ",   "");
-	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %8s  %11s\n", "",         "", namewidth,                  "",       "------------------",   "");
+	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %8s  %11s\n", "", namewidth,         "",         "",       "    bit scores    ",   "");
+	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %8s  %11s\n", "", namewidth,         "",         "",       "------------------",   "");
 	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len",  "raw",      "correctd", "avg prob", "elapsed");
 	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "--------", "-----------");
 
@@ -581,15 +581,15 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     else { 
       if(have_parsetrees) { 
 	fprintf(ofp, "#\n");
-	fprintf(ofp, "# %7s  %-*s  %5s  %28s  %11s\n", "",         "",      namewidth,                  "",       "          bit scores        ",   "");
-	fprintf(ofp, "# %7s  %-*s  %5s  %28s  %11s\n", "",         "",      namewidth,                  "",       "----------------------------",   "");
+	fprintf(ofp, "# %7s  %-*s  %5s  %28s  %11s\n", "",         namewidth, "",                  "",       "          bit scores        ",   "");
+	fprintf(ofp, "# %7s  %-*s  %5s  %28s  %11s\n", "",         namewidth, "",                  "",       "----------------------------",   "");
 	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %8s  %11s\n",  "seq idx", namewidth,  "seq name",  "len",  "raw",      "correctd", "struct",   "elapsed");
 	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "--------", "-----------");
       }
       else { 
 	fprintf(ofp, "#\n");
-	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %11s\n", "",         "", namewidth,                  "",       "    bit scores    ",   "");
-	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %11s\n", "",         "", namewidth,                  "",       "------------------",   "");
+	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %11s\n", "",  namewidth, "",                 "",       "    bit scores    ",   "");
+	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %11s\n", "",  namewidth, "",                 "",       "------------------",   "");
 	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %11s\n",  "seq idx", namewidth, "seq name",   "len",  "raw",      "correctd",    "elapsed");
 	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "-----------");
       }
