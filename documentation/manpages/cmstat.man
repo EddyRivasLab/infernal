@@ -1,8 +1,8 @@
-.TH "cmemit" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
+.TH "cmstat" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
 
 .SH NAME
 .TP 
-cmstat - display summary statistics for CMs
+cmstat - display summary statistics for a CM
 
 .SH SYNOPSIS
 .B cmstat
@@ -12,178 +12,662 @@ cmstat - display summary statistics for CMs
 .SH DESCRIPTION
 
 .B cmstat
-reads the covariance model(s) (CMs) in
+calculates and displays various types of statistics describing the 
+covariance models (CMs) in
+.I cmfile. 
+
+.PP
+CM files are profiles of RNA consensus secondary structure. A
+CM file is produced by the 
+.B cmbuild 
+program, from a given RNA sequence alignment of known 
+consensus structure.
+CM files can be calibrated with the 
+.B cmcalibrate 
+program. Searches with calibrated CM files will include
+E-values and will use appropriate filter thresholds for
+faster speed. It is strongly recommended to calibrate your 
+CM files before using 
+.B cmsearch.
+CM calibration is described in more detail below
+and in chapters 5 and 6 of the User Guide.
+.B cmstat
+is useful for determining statistics on calibrated or
+non-calibrated CM files.
+
+By default,
+.B cmstat
+prints general statistics of the model and the alignment it was built
+from. If the model(s) in 
 .I cmfile
-and prints out statistics of those CMs.
-If the 
-.B --search 
-option is enabled,
-.B cmstat 
-performs search experiments to determine the approximate
-speed (residues per second) of the CM and HMM search algorithms 
-used by
+have been calibrated with 
+.B cmcalibrate
+the 
+.B --le
+and
+.B --ge
+options can be used to print statistics on the 
+the exponential tails used for calculating E-values for the various
+possible search modes for locally (
+.B --le
+) and globally configured (
+.B --ge
+) models in
+.B cmsearch.
+If 
+.I cmfile
+is calibrated, HMM filter threshold statistics can be printed for 
+local inside CM search with 
+.B --lfi,
+for glocal inside CM search with
+.B --gfi,
+for local CYK CM search with 
+.B --lfc, 
+and for glocal CYK CM search with 
+.B --gfc.
+
+The
+.B --search
+option causes
+.B cmstat
+performing a timing experiment for homology search. Statistics will be
+printed on how many kilobases can be scanned per second for the
+different possible algorithms in
 .B cmsearch.
 
-By default, 
-.B cmstat 
-will print model summary statistics as well as E-value
-Gumbel statistics and filter threshold statistics, if they exist in
-.I cmfile.
-.B cmstat
-can be used to only print certain statistics for each CM using the
-options
-.B -m, --locale, --glocale, --localfc, --glocalfc, --localfi, 
-and
-.B --glocalfi. 
-These options potentially make it easier to parse
-.B cmstat
-output (for example, using the easel miniapp
-.B esl-histplot).
-If the
-.B -m
-option is used, only the model summary statistics are printed.  
-If the 
-.B --locale
-or
-.B --glocale
-options are used, only the CM's Gumbel statistics used for E-value
-calculation for local (if
-.B --locale) 
-or glocal (if 
-.B --glocale) 
-search are printed.
-With
-.B --localfc,
-.B --glocalfc, 
-.B --localfi,
-or
-.B --glocalfi,
-.B cmstat 
-will only print the CM's HMM filter threshold statistics for
-local CYK, glocal CYK, local Inside or glocal Inside search
-respectively.
-(Gumbel and HMM filter threshold statistics are added to a 
-.I cmfile
-using the
-.B cmcalibrate
-program).
 
 .SH OPTIONS
 
 .TP
 .B -h
 Print brief help; includes version number and summary of
-all options.
+all options, including expert options.
 
 .TP
-.B -g
-Configure the CM for global alignment before calculating the
-window size parameter (W).
-If used in combination with
+.B -g 
+Turn on the 'glocal' alignment algorithm, local with respect to the
+target database, and global with respect to the model. By default, 
+the model is configured for local alignment which is local with respect to
+both the target sequence and the model. 
+
+.TP
+.B -m 
+print general statistics on the models in 
+.I cmfile 
+and the alignment it was built from.
+
+.B --all
+print all available statistics 
+
+.B --le
+print local E-value statistics. This option only works if 
+.I cmfile. 
+has been calibrated with 
+.B cmcalibrate.
+
+.B --ge
+print glocal E-value statistics. This option only works if 
+.I cmfile. 
+has been calibrated with 
+.B cmcalibrate.
+
+.B --ge
+print glocal E-value statistics. This option only works if 
+.I cmfile. 
+has been calibrated with 
+.B cmcalibrate.
+
 .B --search
-perform search timing experiments with CM and HMM in glocal mode. 
-By default, the CM is locally configured. For more on local and global
-configuration see the User's Guide.
-
-.TP
-.B -m
-Only print model summary statistics. Exactly one
-non "#" prefixed comment line will be printed per CM in 
-.I cmfile.
-
-.TP
-.B --locale
-Only print local E-value Gumbel statistics. Exactly one
-non "#" prefixed comment line wil be printed per CM in 
-.I cmfile.
-
-.TP
-.B --glocale
-Only print glocal E-value Gumbel statistics. Exactly one
-non "#" prefixed comment line will be printed per CM in 
-.I cmfile.
-
-.TP
-.B --localfc
-Only print HMM filter threshold statistics for local CM
-search with the CYK algorithm. Exactly one non "#" prefixed comment line will be printed per CM in 
-.I cmfile.
-
-.TP
-.B --glocalfc
-Only print HMM filter threshold statistics for glocal CM
-search with the CYK algorithm. Exactly one non "#" prefixed comment line will be printed per CM in 
-.I cmfile.
-
-.TP
-.B --localfc
-Only print HMM filter threshold statistics for local CM
-search with the Inside algorithm. Exactly one non "#" prefixed comment line will be printed per CM in 
-.I cmfile.
-
-.TP
-.B --glocalfc
-Only print HMM filter threshold statistics for glocal CM
-search with the Inside algorithm. Exactly one non "#" prefixed comment line will be printed per CM in 
-.I cmfile.
-
-
-.TP
-.BI --beta " <x>"
-For window size calculation, set the beta 
-parameter to 
-.I <x>
-where
-.I <x>
-is any positive real number less than 1.0. Beta is the probability
-mass considered negligible during query-dependent band (QDB)
-calculation, which is used to set the window size. The window size
-will decrease as beta increases towards 1.0. The default beta
-is 1E-7. If used in combination with the 
-.B --search 
-option, the specified beta will also be used for QDB calculation prior to
-the CM QDB search experiments.
+perform an experiment to determine how fast the CM(s) can search with
+different search algorithms.
 
 .TP 
-.B --search
-Perform short search experiments with each CM to determine
-approximate running times for database searches. Random sequences are
-generated and searched using the CYK and Inside CM search algorithms
-and the Viterbi and Forward HMM search algorithms. Six experiments are
-performed, non-banded CM CYK search, non-banded CM Inside search,
-query-dependent banded (QDB) CM CYK search, QDB CM Inside search,
-Viterbi HMM search, and Forward HMM search. The HMM searches are
-performed with a CM Plan 9 HMM that is constructed to be maximally
-similar to the CM. The tabular output
-from these experiments will be printed in tabular format, with the
-following columns. "alg": CM or HMM algorithm, "Mc/kb": millions of
-dynamic programming calculations (not cells) per kilobase of database
-sequence, "Mc/s": millions of dynamic programming calculations per
-second, "kb/s": kilobases of database sequence per second, "beta": is
-the beta parameter used for QDB calculation, if applicable, "qdbXt": the
-theoretical acceleration for the QDB search, if applicable, "qdbXe":
-the empirically observed acceleration for the QDB search, if applicable.
-By default, the
-sequence length for the CM and HMM search experiments is 1000 and 100,000
-residues respectively but these lengths can be changed
-to <n> with the 
-.BI --cmL <n> 
-and
-.BI --hmmL <n>
-options.
+.BI --beta " <x>"
+With the 
+.B --search 
+option set the beta parameter for the query-dependent banding
+algorithm stages to  
+.I <x>
+. 
+Beta is the probability
+mass considered negligible during band calculation. 
+The default is 1E-7.
 
-.B --cmL <n>
-With 
-.B --search
-set the length of the randomly generated sequence for CM search
-experiments to 
-.I <n>.
-By default the length is 1000 residues. 
+.TP 
+.BI --cmL " <n>"
+With the 
+.B --search 
+option set the length of sequence to search with CM algorithms as 
+.I <n>
+residues. By default, 
+.I <n>
+is 1000.
 
-.B --hmmL <n>
+.TP 
+.BI --hmmL " <n>"
+With the 
+.B --search 
+option set the length of sequence to search with HMM algorithms as 
+.I <n>
+residues. By default, 
+.I <n> 
+is 100,000.
+
+.TP 
+.BI --qdbfile " <f>"
+With the 
+.B --search 
+option save the query-dependent bands (QDBs) for each state to 
+file 
+.I <f>
+.
+
+.TP 
+.B --lfi
+Print the HMM filter thresholds for the range of relevant CM bit score
+cutoffs for searches with locally configured models using the Inside algorithm.
+
+.TP 
+.B --gfi
+Print the HMM filter thresholds for the range of relevant CM bit score
+cutoffs for searches with globally configured models using the Inside algorithm.
+
+.TP 
+.B --lfc
+Print the HMM filter thresholds for the range of relevant CM bit score
+cutoffs for searches with locally configured models using the CYK algorithm.
+
+.TP 
+.B --gfc
+Print the HMM filter thresholds for the range of relevant CM bit score
+cutoffs for searches with globally configured models using the CYK algorithm.
+
+.TP 
+.BI -E " <x>"
+Print filter threshold statistics for an HMM filter if a final CM E-value
+cutoff of
+.I <x>
+were to be used for a run of 
+.B cmsearch 
+on 1 MB of sequence. (Remember 
+.B cmsearch 
+considers a 500,000 nucleotide
+sequence file as 1 MB of sequence because by default 
+both strands of the sequence are searched).
+The size 1 MB of sequence can be changed to the size of a given
+database in file
+.I <f>
+using the 
+.BI --seqfile " <f>" 
+option.
+
+.TP 
+.BI -T " <x>"
+Print filter threshold statistics for an HMM filter if a final CM bit
+score cutoff of
+.I <x>
+were to be used for a run of 
+.B cmsearch. 
+
+.TP 
+.B --nc
+Print filter threshold statistics for an HMM filter if a CM bit score cutoff
+equal to the Rfam NC cutoff were to be used for a run of 
+.B cmsearch.
+The NC cutoff is defined as 
+.I <x>
+bits in the original
+Stockholm alignment the model was built from 
+with a line:
+.I "#=GF NC <x>"
+positioned before the sequence alignment. If such a line existed in the
+alignment provided to 
+.B cmbuild
+then the 
+.B --nc
+option will be available in 
+.B cmstat
+If no such line existed when
+.B cmbuild
+was run, then using the
+.B --nc 
+option to 
+.B cmstat
+will cause the program to print an error message and exit.
+
+.TP 
+.B --ga
+Print filter threshold statistics for an HMM filter if a CM bit score
+cutoff of Rfam GA cutoff value were to be used for a run of
+.B cmsearch.
+The GA cutoff is defined in a stockholm
+file used to build the model in the same way as the NC cutoff (see above),
+but with a line:
+.I "#=GF GA <x>"
+.
+
+.TP 
+.B --tc
+Print filter threshold statistics for an HMM filter if a CM bit score
+cutoff equal to the Rfam TC cutoff value were to be used for a run of
+.B cmsearch.
+The TC cutoff is defined in a stockholm
+file used to build the model in the same way as the NC cutoff (see above),
+but with a line:
+.I "#=GF TC <x>"
+.
+
+.TP 
+.BI --seqfile " <x>"
+With the 
+.B "-E"
+option, use the database size of the database in
+.I <x> 
+instead of the default database size of 1 MB.
+.
+
+.TP 
+.B --toponly
+In combination with 
+.BI --seqfile " <x>"
+option, only consider the top strand of the database in
+.I <x> 
+instead of both strands.
+
+.TP 
+.BI --efile " <f>"
+Save a plot of 
+.B cmsearch 
+HMM filter E value cutoffs versus CM E value cutoffs in 
+xmgrace format to file
+.I <f>.
+This option must be used in combination with
+.B --lfi, --gfi, --lfc
+or 
+.B --gfc.
+
+.TP 
+.BI --bfile " <f>"
+Save a plot of 
+.B cmsearch 
+HMM bit score cutoffs versus CM bit score cutoffs in 
+xmgrace format to file
+.I <f>.
+This option must be used in combination with 
+.B --lfi, --gfi, --lfc
+or 
+.B --gfc.
+
+.TP 
+.BI --sfile " <f>"
+Save a plot of 
+.B cmsearch 
+predicted survival fraction from the HMM filter versus CM
+E value cutoff in xmgrace format to file
+.I <f>.
+This option must be used in combination with 
+.B --lfi, --gfi, --lfc
+or 
+.B --gfc.
+
+.TP 
+.BI --xfile " <f>"
+Save a plot of 'xhmm' versus CM
+E value cutoff in xmgrace format to file
+.I <f>
+ 'xhmm' is the ratio of the number of dynamic programming calculations
+predicted to be required for the HMM filter and the CM search of the
+filter survivors versus the number of dynamic programming calculations
+for the filter alone. So, an 'xhmm' value of 2.0 means the filter
+stage of a search requires the same number of calculations as the CM search
+of the filter survivors does.
+This option must be used in combination with 
+.B --lfi, --gfi, --lfc
+or 
+.B --gfc.
+
+.TP 
+.BI --afile " <f>"
+Save a plot of the predicted acceleration for an HMM filtered search versus 
+CM E value cutoff in xmgrace format to file
+.I <f>.
+This option must be used in combination with 
+.B --lfi, --gfi, --lfc
+or 
+.B --gfc.
+
+.TP 
+.BI --bits
 With 
-.B --search
-set the length of the randomly generated sequence for HMM search
-experiments to 
+.B --efile, --sfile, --xfile, 
+and 
+.B --afile 
+use CM bit score cutoffs instead of CM E value cutoffs for the x-axis
+values of the plot.
+
+
+
+
+
+Print filter threshold statistics for an HMM filter if a final bit
+score  cutoff of
+.I <x>
+were to be used for a run of 
+.B cmsearch. 
+
+
+. 
+Beta is the probability
+mass considered negligible during band calculation. 
+The default is 1E-7.
+
+.TP
+.BI --forecast " <n>"
+Predict the running time of the calibration for 
+.I cmfile 
+and provided options
+and exit, DO NOT perform the calibration. 
+The predictions should be used as rough
+estimates. The value 
+.I <n>
+is the number of processors the calibration will be run on, so 
+.I <n>
+equal to 1 is appropriate unless you will run 
+.B cmcalibrate
+in parallel with MPI.
+
+.SH EXPERT OPTIONS
+
+.TP
+.BI --exp-T " <x>"
+Set the bit score cutoff for collecting hits for exponential tail
+fitting to 
+.I <x>.
+By default, the cutoff is negative infinity, so all non-overlapping
+hits are collected. Only use this option if you really know what
+you're doing.
+
+.TP
+.BI --exp-cmL " <x>"
+Set the length of random sequence to search for the CM exponential
+tail fits to 
+.I <x> 
+megabases (Mb). By default, 
+.I <x> is
+1 Mb. Searching more sequences will make the exponential tail fits
+more precise, but will take longer: using 
+.I <x> 
+of 2 instead of the default of 1 will cause the running time of
+.B cmcalibrate 
+to roughly double.
+
+.TP
+.BI --exp-fract " <x>"
+Set the HMM/CM fraction of dynamic programming calculations to 
+.I <x>.
+By default, 
+.I <x>
+is 0.10. 
+For more information, see the explanation regarding sequence lengths
+for E-value calibration above before the Options section.
+
+.TP
+.BI --exp-hmmLn " <x>"
+Set the minimum random sequence length to search when determining HMM
+E-values to 
+.I <x>
+megabases (Mb). By default, 
+.I <x>
+is 10.0.
+For more information, see the explanation regarding sequence lengths
+for E-value calibration above before the Options section.
+
+.TP
+.BI --exp-hmmLx " <x>"
+Set the maximum random sequence length to search when determining HMM
+E-values to  
+.I <x>
+megabases (Mb). By default, 
+.I <x>
+is 1000.0.
+For more information, see the explanation regarding sequence lengths
+for E-value calibration above before the Options section.
+
+.TP
+.BI --exp-tailp " <x>"
+During E-value calibration, by default an exponential tail is fit to
+the 0.01 (1\%) right tail of the histogram of scores from random
+sequence. The value of 0.01 can be changed to 
+.I <x>
+with the
+.BI --exp-tailp " <x>"
+option.
+
+.TP
+.BI --exp-beta " <x>"
+During E-value calibration, by default query-dependent banding (QDB)
+is NOT used to accelerate the CM search algorithms. 
+To turn QDB on with a beta tail loss parameter of 
+.I <x>
+use the 
+.BI --exp-beta " <x>"
+option. The beta parameter is the amount of probability mass excluded
+during band calculation, higher values of beta give greater speedups
+but sacrifice more accuracy than lower values. A recommended value is
+1E-7 (0.00001\%).  QDB is explained in more detail in the manual page
+for 
+.B cmsearch 
+and in (Nawrocki and Eddy, PLoS Computational Biology 3(3): e56). 
+
+.TP 
+.BI --exp-gc " <f>"
+During E-value calibration, the random sequences are generated to follow
+a specific GC content distribution. By default, 10 Kb sequences are
+generated, each sequence following a different GC content. The GC
+contents are sampled from a hard-coded distribution of GC percentages
+in 100 nucleotide, non-overlapping windows in real genomic
+sequence. This distribution of GC percentages can be replaced by the
+empirical GC distribution of 100 nucleotide windows present in the
+database in file
+.I " <f>" 
+using the 
+.BI --exp-gc " <f>"
+option. This is a useful option if you want to calibrate your model to
+search only the specific database
+.I " <f>"
+and especially useful if 
+.I " <f>"
+has skewed GC content.
+
+.TP 
+.BI --exp-pfile " <f>"
+Use the GC partitions defined in the file
+.I " <f>"
+during E-value calibration. A different exponential tail will be fit
+for each partition. For more information on this option and
+formatting of the file 
+.I " <f>" 
+see the User Guide. FINISH ME!
+
+.TP 
+.BI --exp-pfile " <f>"
+Use the GC partitions defined in the file
+.I " <f>"
+during E-value calibration. A different exponential tail will be fit
+for each partition. For more information on this option and
+formatting of the file 
+.I " <f>" 
+see the User Guide. FINISH ME!
+
+.TP 
+.BI --exp-hfile " <f>"
+Save the histograms fit for the E-value calibration to file
+.I <f>.
+The format of this file is two tab delimited columns. The first column
+is the x-axis values of bit scores of each bin. The second column is the y-axis
+values of number of hits per bin. Each series is delimited by a line
+with a single character "&". The file will contain one series for each
+exponential tail fit, i.e. one series of empirical data for each line of output from
+.B cmcalibrate
+that begins with "exp tail".
+
+.TP 
+.BI --exp-sfile " <f>"
+Save a survival plot for the E-value calibration to file
+.I <f>.
+The format of this file is two tab delimited columns. The first column
+is the x-axis values of bit scores of each bin. The second column is the y-axis
+values of fraction of hits that meet or exceed the score for each
+bin. Each series is delimited by a line with a single character "&". 
+The file will contain one series of empirical data for each
+exponential tail fit, i.e. one series for each line of output from
+.B cmcalibrate
+that begins with "exp tail".
+
+.TP 
+.BI --exp-qqfile " <f>"
+Save a quantile-quantile plot for the E-value calibration to file
+.I <f>.
+The format of this file is two tab delimited columns. The first column
+is the x-axis values, and the second column is the y-axis
+values. The distance of the points from the identity line (y=x) is a
+measure of how good the exponential tail fit is, the closer the points
+are to the identity line, the better the fit is.
+Each series is delimited by a line with a single character "&". 
+The file will contain one series of empirical data for each
+exponential tail fit, i.e. one series for each line of output from
+.B cmcalibrate
+that begins with "exp tail".
+
+
+.TP 
+.BI --exp-ffile " <f>"
+Save statistics on the exponential tail statistics to file
+.I <f>.
+The file will contain the lambda and mu values for exponential tails 
+fit to tails of different sizes. For example, by default
+.B cmcalibrate 
+fits exponential tails to the rightmost 0.01 (1\%) of the score histogram and
+stores the parameters of that exponential tail to the CM file.
+(The value of 0.01 can be changed to 
+.I <x>
+with the 
+.BI --exp-tailp " <x>"
+option).
+When 
+.BI --exp-ffile " <f>" 
+is used the file
+.I " <f>" 
+will include the exponential tail parameters for fits to various
+fractions of the histogram tail, instead of just to 0.01.
+
+
+.TP 
+.BI --fil-N " <n>"
+Set the number of sequences sampled and searched for the HMM filter
+threshold calibration to 
 .I <n>.
-By default the length is 100,000 residues.
+By default, 
+.I <n>
+is 10,000.
+
+.TP 
+.BI --fil-F " <x>"
+Set the fraction of sample sequences the HMM filter must be able to
+recognize, and allow to survive, to 
+.I <x>,
+where 
+.I <x>
+is a positive real number less than or equal to 1.0.
+By default,
+.I <x>
+is 0.99.
+
+.TP 
+.BI --fil-xhmm " <x>"
+Set the target number of dynamic programming calculations for a HMM
+filtered CM QDB search with beta = 1E-7 to 
+.I <x>
+times the number of calculations required to do an HMM search. 
+By default,
+.I <x>
+is 2.0. 
+
+.TP 
+.BI --fil-nonbanded
+Turn off HMM banding for the HMM filter threshold calibration. By
+default, HMM banding is on. 
+
+.TP 
+.BI --fil-tau " <x>"
+Set the tail loss probability during HMM band calculation for HMM
+filter threshold calibration to 
+.I <x>. 
+This is the amount of probability mass within the HMM posterior
+probabilities that is considered negligible. The default value is 1E-7.
+In general, higher values will result in greater acceleration, but
+increase the chance of missing the optimal alignment due to the HMM
+bands. 
+
+.TP 
+.B --fil-aln2bands
+When calculating HMM bands, use an HMM alignment algorithm instead of
+an HMM search algorithm. In general, using this option will result in
+greater acceleration, but will increase the chance of missing the
+optimal alignment. This is experimental, use at your own risk.
+
+.TP 
+.B --fil-gemit
+During HMM filter calibration, always sample sequences from a globally
+configured CM, even when calibrating local modes. By default,
+sequences are sampled from a globally configured CM when calibrating
+the global search modes, and sampled from a locally configured CM
+when calibrating the local search modes.
+	
+.TP 
+.BI --fil-dfile " <f>"
+Save statistics on filter threshold calibration, including HMM and CM scores for all sampled sequences,
+to file 
+.I <f>.
+This option does not work in combination with the 
+.B --exp-pfile 
+option.
+	
+.TP 
+.BI --fil-dfile " <f>"
+Save statistics on filter threshold calibration to file 
+.I <f>.
+This option does not work in combination with the 
+.B --exp-pfile 
+option.
+	
+.TP
+.BI --stall
+Stall the program immediately after starting up to allow a user
+to attach a debugging tool such as gdb to the process.
+Developed for debugging under MPI parallelization, which is turned on
+with the 
+.B --mpi
+option.  This option will only be available if @PACKAGE@ has been configured
+and built with the "--enable-mpi" flag (see User's Guide for details).
+
+.TP
+.BI --mxsize " <x>"
+Set the maximum allowable DP matrix size to 
+.I <x>
+megabytes. By default this size is 2,048 Mb. 
+This should be large enough for the vast majority of calibrations,
+however if it is not 
+.B cmcalibrate
+will exit prematurely and report an error message that 
+the matrix exceeded it's maximum allowable size. In this case, the
+.B --mxsize 
+can be used to raise the limit.
+
+.TP
+.BI --mpi
+Run as an MPI parallel program. This option will only be available if
+@PACKAGE@ 
+has been configured and built with the "--enable-mpi" flag (see User's
+Guide for details).
+

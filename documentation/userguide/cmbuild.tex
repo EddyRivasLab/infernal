@@ -5,7 +5,7 @@ structure using a formalism called a \emph{covariance model} (CM),
 which is a type of \emph{profile stochastic context-free grammar}
 (profile SCFG) \cite{Eddy94,Durbin98,Eddy02b}.
 
-What follows is a technical description of what CM is, how it
+What follows is a technical description of what a CM is, how it
 corresponds to a known RNA secondary structure, and how it is built
 and parameterized.\footnote{Much of this text is taken from
 \cite{Eddy02b}.}  You certainly don't have to understand the technical
@@ -392,10 +392,11 @@ comparative analysis, as the earlier \software{COVE} suite was capable
 of \cite{Eddy94}. 
 
 If the file does not exist, is not readable, or is not in a recognized
-format, the program exits with a ``could not be opened for reading''
-error. If the file does not have consensus secondary structure
-annotation, the program exits with a ``no consensus structure
-annotation'' error. This includes all non-Stockholm alignment files.
+format, the program exits with a ``Alignment file doesn't exist or is
+not readable'' error. If the file does not have consensus secondary
+structure annotation, the program exits with a ``no consensus
+structure annotation'' error. This includes all non-Stockholm
+alignment files.
 
 % EPN, Wed Apr  2 12:47:54 2008, the cat my.sto | cmbuild command
 % in this faq no longer works.
@@ -427,7 +428,7 @@ mark base pairs and \verb+.+ for single stranded columns.
 If a secondary structure annotation line is in WUSS notation and it
 contains valid pseudoknot annotation (e.g.\ additional non-nested
 stems marked with AAA,aaa or BBB,bbb, etc.), this annotation is
-removed and a warning is printed. \software{infernal} cannot handle
+ignored because \software{infernal} cannot handle
 pseudoknots. Internally, these columns are treated as if they were
 marked with \verb+.+ symbols.
 
@@ -483,17 +484,6 @@ procedure you like; for example, the \prog{weight} utility program in
 including the fast $O(N)$ Henikoff position-based weights
 \cite{Henikoff94b}.
 
-If for some reason you put more than one relative weighting option on
-the command line, the last one you give is used.
-
-\begin{srefaq}{Why is \prog{cmbuild} taking so much time?} The GSC weighting algorithm
-scales as $O(N^2)$ with the number of sequences $N$. Weighting may
-become rate-limiting for \prog{cmbuild} if your alignment contains
-many sequences. Model construction itself is fast. You might want to
-turn weighting off, or pre-calculate the weights by a faster
-algorithm.
-\end{srefaq}
-
 Absolute weights (the ``effective sequence number'') is calculate by
 ``entropy weighting'' \cite{Karplus98}. This sets the balance between
 the prior and the data, and affects the information content of the
@@ -542,7 +532,7 @@ Weighted observed emission and transition counts are then collected
 from the alignment data. These count vectors $c$ are then converted to
 estimated probabilities $p$ using mixture Dirichlet priors. The
 default mixture priors are described in \cite{NawrockiEddy07}. You can
-provide your own prior as a file, using the \prog{--priorfile <f>}
+provide your own prior as a file, using the \prog{--prior <f>}
 option.
 
 \subsubsection{Naming the model}
@@ -553,31 +543,31 @@ it is used as the CM name.
 
 Stockholm format allows more than one alignment per file, and
 \prog{cmbuild} supports this: CM files can contain more than one
-model, and if you say e.g.\ \prog{cmbuild Rfam Rfam.sto} where
+model, and if you say e.g.\ \prog{cmbuild Rfam.cm Rfam.sto} where
 \verb+Rfam.sto+ contains a whole database of alignments,
-\prog{cmbuild} will create a database of CMs in the \verb+Rfam+ file,
+\prog{cmbuild} will create a database of CMs in the \prog{Rfam.cm} file,
 one per alignment. 
 
 If a name or names are not provided in the Stockholm \verb+#=GF ID+
 annotation, the name given to each CM is the input filename plus a ``-''
 character and an integer indicating the position of that alignment
 within the alignment file. For example, if you build a model from a
-single alignment in alignment file \verb+RNaseP.sto+, the model will
+single alignment in alignment file \prog{RNaseP.sto}, the model will
 be named RNaseP-1. 
 
 If the \prog{--cmaxid, --ctarget} or \prog{--call} options are used to
 split each input alignment into several alignments (see the
-``Tutorial'' for an example), then an additional extension of ``.''
+Tutorial for an example), then an additional extension of ``.''
 plus an integer indicating the order in which the model was
 constructed from the alignment is added to the name. For example, if
-you run \prog{cmbuild --ctarget 3} with from a the alignment file
-\verb+RNaseP.sto+, \prog{cmbuild} will cluster the alignment by
+you run \prog{cmbuild --ctarget 3} with the alignment file
+\prog{RNaseP.sto}, \prog{cmbuild} will cluster the alignment by
 sequence identity into 3 clusters and build 3 CMs, one from each
 cluster. These CMs will be named: RNaseP-1.1, RNaseP-1.2 and RNaseP-1.3.
 
 If the alignment file only has 1 alignment in it, you can override the
 automatic naming conventions and provide your own name with the \prog{-n <s>}
-option, where \verb+<s>+ is any string. 
+option, where \prog{<s>} is any string. 
 
 \subsubsection{Saving the model}
 

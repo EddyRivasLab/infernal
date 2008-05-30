@@ -35,7 +35,10 @@ with the
 .B cmcalibrate 
 program. Searches with calibrated CM files will include
 E-values and will use appropriate filter thresholds for
-faster speed. This is described in more detail below
+faster speed. It is strongly recommended to calibrate your 
+CM files before using 
+.B cmsearch.
+CM calibration is described in more detail below
 and in chapters 5 and 6 of the User Guide.
 
 .PP
@@ -311,7 +314,9 @@ Set the bit score cutoff as the NC cutoff value used by Rfam curators
 as the noise cutoff score. This is the highest scoring hit found by
 this model during Rfam curation that the Rfam curators defined as a
 noise (false positive) sequence.
-The NC cutoff is defined as "<x>" bits in the original
+The NC cutoff is defined as 
+.I <x> 
+bits in the original
 Stockholm alignment the model was built from 
 with a line:
 .I "#=GF NC <x>"
@@ -564,18 +569,11 @@ Set the maximum allowable DP matrix size to
 megabytes. By default this size is 2,048 Mb. 
 This should be large enough for the vast majority of alignments, 
 however if it is not 
-.B cmalign 
+.B cmsearch  
 will exit prematurely and report an error message that 
 the matrix exceeded it's maximum allowable size. In this case, the
 .B --mxsize 
 can be used to raise the limit.
-This is most likely to occur when the
-.B --nonbanded
-option is used without the
-.B --small 
-option, but can still occur when
-.B --nonbanded 
-is not used.
 
 .TP
 .BI --mpi

@@ -1,6 +1,6 @@
 \section{How \texttt{cmsearch} scores alignments and determines significance}
 
-The \prog{cmsearch} program give you a ranked list of hits in a
+The \prog{cmsearch} program gives you a ranked list of hits in a
 sequence database.  Which ones are likely to be true homologues and
 which ones are likely to be nonhomologous to your query CM?
 
@@ -17,12 +17,11 @@ The E-value is calculated from the bit score. It tells you how many
 false positives you would have expected to see at or above this bit
 score. Therefore a low E-value is best; an E-value of 0.1, for
 instance, means that there's only a 10\% chance that you would've seen
-a hit this good in a search of nonhomologous sequences. {\em
+a hit this good in a target database of random sequences of the same
+size as the one you're searching. {\em
 Typically, I trust the results of searches at about E=0.1 and below,
 and I examine the hits manually down to E=10 or so.}  However, be
-alert; \software{Infernal} E-values are most accurate for sequences of
-``normal'' residue composition, and on highly biased (AT- or GC-rich)
-sequence they can be rather inaccurate.
+alert; \software{Infernal} E-values are not perfect. MORE HERE.
 
 \item \software{Infernal} bit scores are a stricter criterion: they
   reflect whether the sequence is a better match to the profile model
@@ -215,7 +214,7 @@ Let's go through what each column of the output is telling us:
 
 \item[\emprog{alg}] the search algorithm for this stage. There are two
   algorithms that need to be separately calibrated for each the CM and
-  HMM. These are explained in more detail in section X below.
+  HMM. These are explained in more detail in section 6.
 
 \item[\emprog{part, ps} and \emprog{pe}] which partition of GC
   content this stage is for. ``part'' is the partition index, ``ps''
@@ -228,7 +227,7 @@ Let's go through what each column of the output is telling us:
   by default. For HMM stages, this length is is the minimum
   of 10 Mb and a length $x$, where $x$ is the length that will cause
   this HMM stage to require 10\% as much compute time as a CM
-  calibration stage. The idea behind this is that longer sequence
+  calibration stage. The reasoning behind this is that longer sequence
   lengths tend to result in more accurate E-values.
 %  Mb, but can be more if the program calculates that searching a
 %  longer sequence with the HMM (which will lead to more accurate
@@ -237,7 +236,7 @@ Let's go through what each column of the output is telling us:
 
 \item[\emprog{filN}] the number of random sequences that will be
   searched for the HMM filter threshold calculation. This isn't
-  relevant now; see section X for more on HMM filter threshold
+  relevant now; see section 6 for more on HMM filter threshold
   calculation. 
 
 \item[\emprog{predicted time}] the predicted run time of this stage. 
@@ -248,7 +247,7 @@ As you can see, \prog{cmcalibrate} will fit separate exponential tails
 for each combination of model and algorithm (4 choices), configuration
 (2 choices), and partition (3 choices), that's $4*2*3=24$ exponential
 tails. We explained the difference between local versus glocal
-configuration in the tutorial, and went over partitions briefly above;
+configuration in the tutorial, and described partitions briefly above;
 now we'll discuss different search algorithms. 
 
 \subsection{In more detail: different search algorithms in \software{Infernal}}
@@ -285,12 +284,12 @@ the model.
 
 From a probabilistic inference standpoint, the Inside and Forward
 scores are giving us what we want to know, the log-odds score that the
-(sub)sequence we're looking at is a homolog of the family we're
+sequence we're looking at is a homolog of the family we're
 modelling. The specific alignment $\pi$ to the model is a nuisance
 variable that is appropriately integrated out. Not only are Inside and
 Forward better in theory, but empirically, benchmarks show that
 they're more sensitive than CYK and Viterbi. So, why use CYK and
-Viterbi at all?  Actually, we don't use Viterbi really, it's
+Viterbi at all?  Actually, we rarely use Viterbi really, it's
 only implemented for testing purposes (it's okay; calibrating Viterbi
 E-values takes a very small fraction of the running time of
 \prog{cmcalibrate}, you can see for yourself in the previous
@@ -307,6 +306,16 @@ effectively filter with CYK, and have the speed of CYK and sensitivity
 of Inside. You can read more about how we use CYK as a filter in
 \prog{cmsearch} in section 6.
 
+
+\begin{srefaq}{Why are you talking about HMM algorithms. I thought CMs
+    were more appropriate for structural RNA sequence analysis than
+    HMMs, isn't that the whole reason you've developed \textsc{Infernal}?} 
+  We've implemented HMMs in \textsc{Infernal} to use to accelerate CM
+    algorithms. As described in section 6, HMMs are used as filters to
+    speedup database searches with \prog{cmsearch}. They're also used to develop
+    constraints for CM alignment with \prog{cmalign}.  
+\end{srefaq}
+
 %This is the main reason \prog{cmcalibrate} is taking so
 %long. Trust us, we'd love to be able to cut down on these stages and
 %accelerate calibration, but currently if we cut out any stages, we get
@@ -318,9 +327,10 @@ of Inside. You can read more about how we use CYK as a filter in
     than $LN^2$ with sequence length $L$ and model consensus length
     $N$ make the program excruciatingly slow. Notice that some of the
     24 stages are much faster than others. The 6 Inside stages usually
-    take a large majority of the total run time. You might argue we
-    should get rid of Inside, but it's the most sensitive algorithm we
-    have; and sensitivity trumps speed in our design goals.
+    take a large majority of the total run time. You might argue this
+    means we should get rid of Inside, but it's the most sensitive
+    algorithm we have; and sensitivity trumps speed in our design
+    goals.
 \end{srefaq}
 
 %\subsubsection{Partitions of GC content}

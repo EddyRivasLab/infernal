@@ -30,8 +30,8 @@ program, from a given RNA sequence alignment of known
 consensus structure.
 
 .B cmcalibrate
-is very slow. It often takes hours, or tens of hours to calibrate a
-single average sized CM. 
+is very slow. It takes several hours
+to calibrate a single average sized CM. 
 .B cmcalibrate
 can be run in parallel with MPI.
 To do this, use the
@@ -102,8 +102,55 @@ Options that affect the HMM filter threshold determination are
 prefixed with 
 .B --fil.
 
-ADD SOMETHING HERE ABOUT THE WAY CMCALIBRATE DETERMINES THE LENGTH OF
-RANDOM SEQUENCE FOR CM AND HMMS.
+
+The calibration of E-value statistics takes the majority of the
+running time of
+.B cmcalibrate.
+This is because CM search algorithms are slow, and the random
+sequences that must be searched have to be long enough to include enough
+random hits that can be binned into a histogram to which an
+exponential tail can be reliably fit. By default the random sequence
+length for CM searches is 1.0 megabases (MB), but 1.0 can be changed
+to
+.I <x>
+with the 
+.BI --exp-L " <x>"
+option. Because 
+.B cmsearch 
+uses HMM search algorithms to filter, 
+.B cmcalibrate 
+must also fit exponential tails for HMM search algorithms. HMMs are
+much faster than CMs so it is possible to search much longer random
+sequence than 1.0 MB and not significantly increase the running time
+of
+.B cmcalibrate. 
+The length of sequence searched with the HMM is controlled by the
+.BI --exp-fract " <x>',
+.BI --exp-hmmLn " <x>",
+and the
+.BI --exp-hmmLx " <x>"
+options. 
+By default, the sequence length for HMM calibration is set as the
+length that will require 0.10 times the number of dynamic programming
+calculations as a CM E-value calibration step. (The value 0.10 can be
+changed to 
+.I <x>
+with the 
+.BI --exp-fract " <x>" 
+option).
+If this sequence length is less than a minimum value, which by default is
+10.0 MB, then the minimum value is used. The minimum value can be 
+changed to 
+.I <x>
+with the 
+.BI --exp-hmmLn " <x>" 
+option. Similarily if this value is more than a maximum value, which by default is
+1000.0 MB, then the maximum value is used. The maximum value can be 
+changed to 
+.I <x>
+with the 
+.BI --exp-hmmLx " <x>"
+option.
 
 .SH OPTIONS
 
@@ -175,21 +222,8 @@ Set the HMM/CM fraction of dynamic programming calculations to
 By default, 
 .I <x>
 is 0.10. 
-Fitting exponential tails for the HMM search algorithms is much
-quicker than for the CM search algorithms so it is possible to search
-longer sequences when fitting the HMM algorithms without significantly
-increasing the overall running time of 
-.B cmcalibrate.
-Searching longer sequences for exponential tail fitting leads to more
-accurate fits. 
-By default, the length of sequence searched for HMM
-algorithms is set as the length that would require 1/10 = 0.10 the number of
-dynamic programming calculations for the HMM relative to the CM.
-This means the HMM tail fit should take roughly 10\% the time that
-the CM tail fit would take. The 
-.B --exp-fract " <x>" 
-option allows the user to change this value to 
-.I <x>.
+For more information, see the explanation regarding sequence lengths
+for E-value calibration above before the Options section.
 
 .TP
 .BI --exp-hmmLn " <x>"
@@ -199,6 +233,8 @@ E-values to
 megabases (Mb). By default, 
 .I <x>
 is 10.0.
+For more information, see the explanation regarding sequence lengths
+for E-value calibration above before the Options section.
 
 .TP
 .BI --exp-hmmLx " <x>"
@@ -208,402 +244,217 @@ E-values to
 megabases (Mb). By default, 
 .I <x>
 is 1000.0.
+For more information, see the explanation regarding sequence lengths
+for E-value calibration above before the Options section.
 
 .TP
-.BI --exp-hmmLx " <x>"
-Set the maximum random sequence length to search when determining HMM
-E-values to  
+.BI --exp-tailp " <x>"
+During E-value calibration, by default an exponential tail is fit to
+the 0.01 (1\%) right tail of the histogram of scores from random
+sequence. The value of 0.01 can be changed to 
 .I <x>
-megabases (Mb). By default, 
-.I <x>
-is 1000.0.
-
-HERE HERE 
-
-
-
-Fitting exponential tails for the HMM search algorithms is much
-quicker than for the CM search algorithms so it is possible to search
-longer sequences when fitting the HMM algorithms without significantly
-increasing the overall running time of 
-.B cmcalibrate.
-Searching longer sequences for exponential tail fitting leads to more
-accurate fits. 
-By default, the length of sequence searched for HMM
-algorithms is set as the length that would require 1/10 = 0.10 the number of
-dynamic programming calculations for the HMM relative to the CM.
-This means the HMM tail fit should take roughly 10\% the time that
-the CM tail fit would take. The 
-.B --exp-fract " <x>" 
-option allows the user to change this value to 
-.I <x>.
-
-
-
-1 Mb. Searching more sequences will make the exponential tail fits
-more precise, but will take longer: using 
-.I <x> 
-of 2 instead of the default of 1 will cause the running time of
-.B cmcalibrate 
-to roughly double.
-
-.I <x>.
-By default, the cutoff is negative infinity, so all non-overlapping
-hits are collected. Only use this option if you really know what
-you're doing.
-
-
-target database, and global with respect to the model. By default, 
-the local alignment algorithm is used which is local with respect to
-both the target sequence and the model. In local mode, the alignment
-to span two or more subsequences if necessary (e.g. if the structures
-of the query model and target sequence are only partially shared),
-allowing certain large insertions and deletions in the structure
-to be penalized differently than normal indels.
-Local mode performs better on empirical benchmarks and is 
-significantly more sensitive for remote homology detection.
-Empirically, glocal searches return many fewer hits than
-local searches, so glocal may be desired for some applications.
-
+with the
+.BI --exp-tailp " <x>"
+option.
 
 .TP
-.BI --informat " <s>"
-Assert that the input 
-.I seqfile
-is in format
-.I <s>.
-Do not run Babelfish format autodection. This increases
-the reliability of the program somewhat, because 
-the Babelfish can make mistakes; particularly
-recommended for unattended, high-throughput runs
-of @PACKAGE@. 
-.I <s>
-is case-insensitive.
-This option is a bit forward-looking;
-.B cmcalibrate 
-currently only accepts FASTA format, but
-this may not be true in the future.
+.BI --exp-beta " <x>"
+During E-value calibration, by default query-dependent banding (QDB)
+is NOT used to accelerate the CM search algorithms. 
+To turn QDB on with a beta tail loss parameter of 
+.I <x>
+use the 
+.BI --exp-beta " <x>"
+option. The beta parameter is the amount of probability mass excluded
+during band calculation, higher values of beta give greater speedups
+but sacrifice more accuracy than lower values. A recommended value is
+1E-7 (0.00001\%).  QDB is explained in more detail in the manual page
+for 
+.B cmsearch 
+and in (Nawrocki and Eddy, PLoS Computational Biology 3(3): e56). 
 
 .TP 
-.B --toponly
-Only search the top (Watson) strand of the sequences in
-.I seqfile.
-By default, both strands are searched.
+.BI --exp-gc " <f>"
+During E-value calibration, the random sequences are generated to follow
+a specific GC content distribution. By default, 10 Kb sequences are
+generated, each sequence following a different GC content. The GC
+contents are sampled from a hard-coded distribution of GC percentages
+in 100 nucleotide, non-overlapping windows in real genomic
+sequence. This distribution of GC percentages can be replaced by the
+empirical GC distribution of 100 nucleotide windows present in the
+database in file
+.I " <f>" 
+using the 
+.BI --exp-gc " <f>"
+option. This is a useful option if you want to calibrate your model to
+search only the specific database
+.I " <f>"
+and especially useful if 
+.I " <f>"
+has skewed GC content.
 
 .TP 
-.B --bottomonly
-Only search the bottom (Crick) strand of the sequences in
-.I seqfile.
-By default, both strands are searched.
+.BI --exp-pfile " <f>"
+Use the GC partitions defined in the file
+.I " <f>"
+during E-value calibration. A different exponential tail will be fit
+for each partition. For more information on this option and
+formatting of the file 
+.I " <f>" 
+see the User Guide. FINISH ME!
 
+.TP 
+.BI --exp-pfile " <f>"
+Use the GC partitions defined in the file
+.I " <f>"
+during E-value calibration. A different exponential tail will be fit
+for each partition. For more information on this option and
+formatting of the file 
+.I " <f>" 
+see the User Guide. FINISH ME!
 
-.TP
-.B --null2
-Turn on the post hoc second null model that attempts to deal with
-the potential biased composition of hits. This option has not been
-rigorously tested, use at your own risk.
-
-.TP
-.BI --forecast " <n>"
-Predict the running time of the search with provided files and options
-and exit, DO NOT perform the search. This option is only available
-with calibrated CM files. The predictions should be used as rough
-estimates and can be fairly inaccurate, especially for highly biased
-target databases (for example 80% AT genomes). The value for
-.I <n>
-is the number of processors the search will be run on, so 
-.I <n>
-equal to 1 is appropriate unless you will run 
+.TP 
+.BI --exp-hfile " <f>"
+Save the histograms fit for the E-value calibration to file
+.I <f>.
+The format of this file is two tab delimited columns. The first column
+is the x-axis values of bit scores of each bin. The second column is the y-axis
+values of number of hits per bin. Each series is delimited by a line
+with a single character "&". The file will contain one series for each
+exponential tail fit, i.e. one series of empirical data for each line of output from
 .B cmcalibrate
-in parallel with MPI.
-
-.SH EXPERT OPTIONS
+that begins with "exp tail".
 
 .TP 
-.B --inside
-Use the Inside algorithm for the final round of searching. This is
-true by default.
-
-.TP 
-.B --cyk
-Use the CYK algorithm for the final round of searching. 
-
-.TP 
-.B --viterbi
-Search only with an HMM. This is much faster but less sensitive than a
-CM search. Use the Viterbi algorithm for the HMM search.
-
-.TP 
-.B --forward
-Search only with an HMM. This is much faster but less sensitive than a
-CM search. Use the Forward algorithm for the HMM search.
-
-.TP 
-.BI -E " <x>"
-Set the E-value cutoff for the per-sequence/strand ranked hit list to 
-.I <x>,
-where
-.I <x>
-is a positive real number. Hits with E-values
-better than (less than) or equal to this threshold will be shown. This
-option is only available if the CM file has been calibrated. This
-threshold is relevant only to the final round of searching performed
-after all filters have been used, not to the filter rounds themselves.
-
-.TP 
-.BI -T " <x>"
-Set the bit score cutoff for the per-sequence ranked hit list to
-.I <x>,
-where
-.I <x> 
-is a positive real number.
-Hits with bit scores better than (greater than) this threshold
-will be shown. This
-threshold is relevant only to the final round of searching performed
-after all filters have been used, not to the filter rounds themselves.
-
-.TP 
-.BI --nc
-Set the bit score cutoff as the NC cutoff value used by Rfam curators
-as the noise cutoff score. This is the highest scoring hit found by
-this model during Rfam curation that the Rfam curators defined as a
-noise (false positive) sequence.
-The NC cutoff is defined as "<x>" bits in the original
-Stockholm alignment the model was built from 
-with a line:
-.I "#=GF NC <x>"
-positioned before the sequence alignment. If such a line existed in the
-alignment provided to 
-.B cmbuild
-then the 
-.B --nc
-option will be available in 
-.B cmcalibrate.
-If no such line existed when
-.B cmbuild
-was run, then using the
-.B --nc 
-option to 
+.BI --exp-sfile " <f>"
+Save a survival plot for the E-value calibration to file
+.I <f>.
+The format of this file is two tab delimited columns. The first column
+is the x-axis values of bit scores of each bin. The second column is the y-axis
+values of fraction of hits that meet or exceed the score for each
+bin. Each series is delimited by a line with a single character "&". 
+The file will contain one series of empirical data for each
+exponential tail fit, i.e. one series for each line of output from
 .B cmcalibrate
-will cause the program to print an error message and exit.
+that begins with "exp tail".
 
 .TP 
-.BI --ga
-Set the bit score cutoff as the GA cutoff value used by Rfam curators
-as the gathering threshold. The GA cutoff is defined in a stockholm
-file used to build the model in the same way as the NC cutoff (see above),
-but with a line:
-.I "#=GF GA <x>"
-.
+.BI --exp-qqfile " <f>"
+Save a quantile-quantile plot for the E-value calibration to file
+.I <f>.
+The format of this file is two tab delimited columns. The first column
+is the x-axis values, and the second column is the y-axis
+values. The distance of the points from the identity line (y=x) is a
+measure of how good the exponential tail fit is, the closer the points
+are to the identity line, the better the fit is.
+Each series is delimited by a line with a single character "&". 
+The file will contain one series of empirical data for each
+exponential tail fit, i.e. one series for each line of output from
+.B cmcalibrate
+that begins with "exp tail".
+
 
 .TP 
-.BI --tc
-Set the bit score cutoff as the TC cutoff value used by Rfam curators
-as the trusted cutoff. The TC cutoff is defined in the stockholm file
-used to build the model in the same way as the NC cutoff (see above),
-but with a line:
-.I "#=GF TC <x>"
-.
-
-.TP 
-.B --no-qdb
-Do not use query-dependent banding (QDB) for the final round of
-search. By default, QDB is used in the final round of search, after
-all filtering is finished. 
-
-.TP 
-.BI --beta " <x>"
-For query-dependent banding (QDB) during the final round of search,
-set the beta parameter to 
+.BI --exp-ffile " <f>"
+Save statistics on the exponential tail statistics to file
+.I <f>.
+The file will contain the lambda and mu values for exponential tails 
+fit to tails of different sizes. For example, by default
+.B cmcalibrate 
+fits exponential tails to the rightmost 0.01 (1\%) of the score histogram and
+stores the parameters of that exponential tail to the CM file.
+(The value of 0.01 can be changed to 
 .I <x>
-where
+with the 
+.BI --exp-tailp " <x>"
+option).
+When 
+.BI --exp-ffile " <f>" 
+is used the file
+.I " <f>" 
+will include the exponential tail parameters for fits to various
+fractions of the histogram tail, instead of just to 0.01.
+
+
+.TP 
+.BI --fil-N " <n>"
+Set the number of sequences sampled and searched for the HMM filter
+threshold calibration to 
+.I <n>.
+By default, 
+.I <n>
+is 10,000.
+
+.TP 
+.BI --fil-F " <x>"
+Set the fraction of sample sequences the HMM filter must be able to
+recognize, and allow to survive, to 
+.I <x>,
+where 
 .I <x>
-is any positive real number less than 1.0. Beta is the probability
-mass considered negligible during band calculation. The default beta
-for the final round of search is 1E-15.
+is a positive real number less than or equal to 1.0.
+By default,
+.I <x>
+is 0.99.
 
 .TP 
-.BI --hbanded
-Use HMM bands to accelerate the final round of search. Constraints for
-the CM search are derived from posterior probabilities from an HMM. 
-This is an experimental option and it is not recommended for use 
-unless you know exactly what you're doing. 
+.BI --fil-xhmm " <x>"
+Set the target number of dynamic programming calculations for a HMM
+filtered CM QDB search with beta = 1E-7 to 
+.I <x>
+times the number of calculations required to do an HMM search. 
+By default,
+.I <x>
+is 2.0. 
 
 .TP 
-.BI --tau " <x>"
-Set the tail loss probability during HMM band calculation to 
+.BI --fil-nonbanded
+Turn off HMM banding for the HMM filter threshold calibration. By
+default, HMM banding is on. 
+
+.TP 
+.BI --fil-tau " <x>"
+Set the tail loss probability during HMM band calculation for HMM
+filter threshold calibration to 
 .I <x>. 
 This is the amount of probability mass within the HMM posterior
 probabilities that is considered negligible. The default value is 1E-7.
 In general, higher values will result in greater acceleration, but
 increase the chance of missing the optimal alignment due to the HMM
-bands. This option only makes sense in combination with
-.B --hbanded
-.
+bands. 
 
 .TP 
-.B --aln2bands
+.B --fil-aln2bands
 When calculating HMM bands, use an HMM alignment algorithm instead of
 an HMM search algorithm. In general, using this option will result in
 greater acceleration, but will increase the chance of missing the
-optimal alignment. 
-This option only makes sense in combination with
-.B --hbanded.
+optimal alignment. This is experimental, use at your own risk.
 
 .TP 
-.B --fil-qdb
-Use the accelerated QDB CYK algorithm as a filter. This option is ON
-by default.
-
+.B --fil-gemit
+During HMM filter calibration, always sample sequences from a globally
+configured CM, even when calibrating local modes. By default,
+sequences are sampled from a globally configured CM when calibrating
+the global search modes, and sampled from a locally configured CM
+when calibrating the local search modes.
+	
 .TP 
-.B --fil-beta
-For the QDB filter, 
-set the beta parameter to 
-.I <x>
-where
-.I <x>
-is any positive real number less than 1.0. Beta is the probability
-mass considered negligible during band calculation. The default beta
-for the QDB filter round of search is 1E-7.
-
+.BI --fil-dfile " <f>"
+Save statistics on filter threshold calibration, including HMM and CM scores for all sampled sequences,
+to file 
+.I <f>.
+This option does not work in combination with the 
+.B --exp-pfile 
+option.
+	
 .TP 
-.B --fil-no-qdb
-Turn the QDB filter off. 
-
-.TP 
-.B --fil-hmm
-Filter with a HMM to accelerate search. This filter is on by
-default. If used in combination with a QDB filter, the HMM filter will
-be run first.
-
-.TP 
-.B --fil-no-hmm
-Turn the HMM filter off.
-
-
-.TP 
-.BI --fil-T-qdb " <x>"
-Set the bit score cutoff for the QDB filter round to
-.I <x>,
-where
-.I <x> 
-is a positive real number.
-Hits with bit scores better than (greater than) this threshold
-will survive the QDB filter and be passed to the final round. 
-
-.TP 
-.BI --fil-T-hmm " <x>"
-Set the bit score cutoff for the HMM filter round to
-.I <x>,
-where
-.I <x> 
-is a positive real number.
-Hits with bit scores better than (greater than) this threshold
-will survive the HMM filter and be passed to the next round, either
-a QDB filter round, or if the QDB filter is disabled, to 
-the final round of search.
-
-.TP 
-.BI --fil-E-qdb " <x>"
-Set the E-value cutoff for the QDB filter round.
-.I <x>,
-where
-.I <x>
-is a positive real number. Hits with E-values
-better than (less than) or equal to this threshold will survive and be
-passed to the final round. This
-option is only available if the CM file has been calibrated. 
-
-.TP 
-.BI --fil-E-hmm " <x>"
-Set the E-value cutoff for the HMM filter round.
-.I <x>,
-where
-.I <x>
-is a positive real number. Hits with E-values
-better than (less than) or equal to this threshold will survive and be
-passed to the next round, either a QDB filter round, or if the
-QDB filter is disable, to the final round of search. This
-option is only available if the CM file has been calibrated. 
-
-.TP 
-.BI --fil-Smax-hmm " <x>"
-Set the maximum predicted survival fraction for an HMM filter as 
-.I <x>,
-where
-.I <x> 
-is a positive real number less than 1.0.
-The E-value cutoff for the HMM filter will be set as the value
-.I <y>,
-such that if 
-.I <y>
-hits survived the filter it is predicted that exactly
-.I <x>
-fraction of the residues in the database would survive.
-
-.TP
-.BI -p 
-Append posterior probabilities to alignments of hits. For more
-information on posterior probabilities see the description of the
-.B -p 
-option in the manual page for 
-.B cmalign.
-
-.TP 
-.B --noalign
-Do not calculate and print alignments of each hit, only print locations
-and scores.
-
-.TP 
-.B --alncyk
-Calculate alignments of hits from final round of search using the CYK
-algorithm which computes the highest scoring alignment. By default, an
-optimal accuracy algorithm is used which computes the most accurate
-alignment given the model, which can be different from the highest
-scoring one.
-
-.TP 
-.B --addx
-Annotate non-compensatory basepairs with x's in the alignments of
-hits. The x's appear above the structural annotation in the alignment
-output. Basepairs without x's above them are compensatory with respect
-to the model. Compensatory mutations are good evidence for structural
-homology.
-
-.TP 
-.BI --tabfile " <f>"
-Create a new output file 
-.I <f>
-and print tabular results to it.
-The format of the tabular results is given in the User Guide.
-The tabular results can be more easily parsed than the default
-.B cmcalibrate 
-output. 
-
-.TP 
-.BI --gcfile " <f>"
-Create a new output file 
-.I <f>
-and print statistics of the GC content of the sequences in 
-.I seqfile 
-to it. 
-The sequences are partitioned into 100 nt non-overlapping windows, and
-the GC percentage of each window is calculated. A normalized histogram
-of those GC percentages is then printed to 
-.I <f>
-. 
-The format of 
-.I <f> 
-is explained in the User Guide.
-
-.TP
-.BI --rna
-Output the hit alignments as RNA sequences alignments. This is true by default.
-
-.TP
-.BI --dna
-Output the hit alignments as DNA sequence alignments. 
-
+.BI --fil-dfile " <f>"
+Save statistics on filter threshold calibration to file 
+.I <f>.
+This option does not work in combination with the 
+.B --exp-pfile 
+option.
+	
 .TP
 .BI --stall
 Stall the program immediately after starting up to allow a user
@@ -619,20 +470,13 @@ and built with the "--enable-mpi" flag (see User's Guide for details).
 Set the maximum allowable DP matrix size to 
 .I <x>
 megabytes. By default this size is 2,048 Mb. 
-This should be large enough for the vast majority of alignments, 
+This should be large enough for the vast majority of calibrations,
 however if it is not 
-.B cmalign 
+.B cmcalibrate
 will exit prematurely and report an error message that 
 the matrix exceeded it's maximum allowable size. In this case, the
 .B --mxsize 
 can be used to raise the limit.
-This is most likely to occur when the
-.B --nonbanded
-option is used without the
-.B --small 
-option, but can still occur when
-.B --nonbanded 
-is not used.
 
 .TP
 .BI --mpi
@@ -640,3 +484,4 @@ Run as an MPI parallel program. This option will only be available if
 @PACKAGE@ 
 has been configured and built with the "--enable-mpi" flag (see User's
 Guide for details).
+

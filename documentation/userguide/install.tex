@@ -110,7 +110,7 @@ options that affect \software{Infernal}:
 \begin{tabular}{lll}
 Option                       &   Meaning                       & Default\\ \hline
 \prog{--prefix=PREFIX}       & architecture independent files  & \prog{/usr/local/} \\
-\prog{--exec-prefix=EPREFIX} & architecture dependent files    & PREFIX\\
+\prog{--exec-prefix=EPREFIX} & architecture dependent files    & EPREFIX\\
 \prog{--bindir=DIR}          & programs                        & PREFIX/bin/\\
 \prog{--mandir=DIR}          & man pages                       & PREFIX/man/\\
 \end{tabular}
@@ -174,7 +174,7 @@ in our LAM environment:
 
 \user{mpirun C cmsearch --mpi query.cm target.fa}
 
-Note: other environments besides LAM MPI should work also, but may
+Other environments besides LAM MPI should work also, but may
 require different command syntax.
 
 \subsubsection{installing rigorous filters}

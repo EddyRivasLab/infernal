@@ -47,7 +47,7 @@ are:
        the first sequence from \prog{toalign.3.fa} with some 5' and 3'
        residues removed to demonstrate alignment of truncated
        sequences.
-  \item[\prog{toalign.1.fa}] The first tRNA sequence from toalign.5.fa.
+  \item[\prog{toalign.1.fa}] The first tRNA sequence from toalign.3.fa.
   \item[\prog{trna.5.c.cm}] A calibrated version of a model built from
        \prog{trna.5.sto}, included to save time. 
   \end{sreitems}
@@ -197,10 +197,10 @@ so if you won't use it, don't calibrate your model.
   recommend it in most situations. Importantly, if you're not going to
   search with your model, then don't calibrate it (see above). If you
   are going to search with your model, you still are not required to
-  calibrate your model. In this case you'll have to settle for default
-  filter threshold cutoffs which will cost you an unknown amount of
-  sensitivity and possibly not accelerate your search as much as
-  possible, or you tune the thresholds yourself. An example of
+  calibrate your model. If you choose not to calibrate, you'll have to
+  settle for default filter threshold cutoffs which will compromise
+  sensitivity to an unknown degree and possibly not accelerate your
+  search as much as possible. An example of
   searching with non-calibrated models is in section 6.
 \end{srefaq}
 
@@ -240,19 +240,19 @@ instead of \prog{my.cm}) and then calibrated with:
 
 \user{cmcalibrate my.c.cm}
 
-When \prog{cmcalibrate} finished the \prog{my.c.cm} file had
+When \prog{cmcalibrate} finished, the \prog{my.c.cm} file had
 been updated to include information about E-values and HMM filter
 thresholds. More detail on what \prog{cmcalibrate} does can be found
 in sections 5 and 6. To make things simpler for our tutorial, copy over
 the \prog{my.cm} file you just made with the calibrated version 
-(\prog{cp my.c.cm my.cm}).
+(\user{cp my.c.cm my.cm}).
 
 \subsection{Searching a sequence database with \prog{cmsearch}}
 
 You can use your model to search for new homologues of your RNA
-family. The file \prog{tosearch.300kKb.db} contains an example sequence
+family. The file \prog{tosearch.300Kb.db} contains an example sequence
 ``database'': one 300,000 nt sequence, with yeast tRNA-Phe embedded at
-position 101\ldots173. The \prog{cmsearch} also has the
+position 101\ldots173. The \prog{cmsearch} also has a
 \prog{--forecast} option to predict running times, which is useful if
 you're searching large database files. Since this database is
 relatively small, we'll just do the search:
@@ -283,10 +283,8 @@ worry about it right now.
     2   cm  ins  loc  1e-15       0.100    17.96  1.1e-05  00:00:04.04
 # ---  ---  ---  ---  -----  ----------  -------  -------  -----------
   all    -    -    -      -           -        -        -  00:00:36.16
-\end{comment}
-\begin{sreoutput}
   all    -    -    -      -           -        -        -  00:00:36.16
-\end{sreoutput}
+\end{comment}
 
 \prog{cmsearch} now searches both strands of each sequence in the
 target database, and returns alignments for high scoring hits.  In
@@ -322,8 +320,8 @@ this example there is a single hit from position 101 to 173 with a
 score of 78.15 bits. The E-value of this hit is $2.543e-23$, this is
 the number hits we expect to find with a bit score of 78.15 or better
 if we were searching a database of random sequences of total length
-300,000. Bit scores and E-values are discussed in more detail in
-section 5.
+300,000. So this is a really good hit. Bit scores and E-values are
+discussed in more detail in section 5.
 
 The alignment is shown in a BLAST-like format, augmented by secondary
 structure annotation. 
@@ -388,7 +386,7 @@ later in section 6.
 \begin{srefaq}{How come the dbsize reported by \prog{cmsearch} is
 twice the length of my database?} This is because by default
   \prog{cmsearch} searches both strands of the database, so according
-  to the program, your database is twice the size you might think it
+  to the program your database is twice the size you might think it
   is. You may have noticed this in the tutorial example, the 300 Kb
   database is reported as 600 Kb in the beginning of the
   \prog{cmsearch} output. You can optionally search only the top
@@ -412,7 +410,7 @@ databases.
 An example of three unaligned tRNA sequences are in the file
 \prog{toalign.3.fa}. The first two sequences are real tRNAs. The third
 sequence, tRNA8 was created by deleting some residues out of the middle
-of the tRNA1 sequence from the file \prog{trna.5.sto}. tRNA8 will be used a little later to
+of the tRNA1 sequence from the file \prog{trna.5.sto}. (tRNA8 will be used a little later to
 demonstrate local alignment.)
 
 To align these sequences to the model we made in \prog{my.cm}, do:
@@ -477,7 +475,7 @@ alignment is useful when a homologous RNA structure has undergone
 enough changes that parts of the its structure cannot be aligned to
 the full consensus model. Empirically, local alignment is often a more
 sensitive search strategy so by default \prog{cmsearch} uses local
-alignment. Glocal mode can be turn on in \prog{cmsearch} using the
+alignment. Glocal mode can be turned on in \prog{cmsearch} using the
 \prog{-g} option. Conversely, \prog{cmalign} uses glocal alignment by
 default, and the local alignment mode can be switched on using the the
 \prog{-l} option.
@@ -568,7 +566,7 @@ annotation and the reference (RF) annotation lines.
 Now you have successfully built a CM, calibrated it and used it search
 for and align new sequences using \software{Infernal} programs.
 These programs have some useful options that you haven't seen
-yet, which we discuss and, in some cases, demonstrate next. Before you
+yet, which we discuss and in some cases demonstrate next. Before you
 start using \software{Infernal}, we strongly urge you to at
 least skim this part. 
 
@@ -629,7 +627,7 @@ Performing homology search with these several models
 collectively may be a more sensitive search strategy than a single
 search with one model built from the entire alignment (although it
 will take longer). The most important options affecting this behavior
-are the \prog{--cmaxid <f>} and \prog{ctarget <n>} options. With
+are the \prog{--cmaxid <f>} and \prog{--ctarget <n>} options. With
 \prog{--cmaxid <f>} the clusters are defined such that no two
 sequences in \emph{different} clusters are more than \prog{<f>}
 fractionally identical. With \prog{--ctarget <n>}, a fractional identity
@@ -715,7 +713,7 @@ parameters. Whereas \software{Infernal} uses mean posterior estimates
 \software{rsearch} uses a RIBOSUM scoring matrix to determine
 emission scores. You can build CMs parameterized with
 RIBOSUM scores using the \prog{--rsearch <f>} option where \prog{<f>}
-is the RIBOSUM matrix file to use . The matrix files are in the
+is the RIBOSUM matrix file to use . (The matrix files are in the
 \prog{/matrices} subdirectory of \software{Infernal}). For more on how
 these matrices were created see \cite{KleinEddy03}. Importantly, you
 can only use the \prog{--rsearch} option if the input training
@@ -777,8 +775,7 @@ turn on this behavior, use the \prog{--withali <f>} option to
 \prog{cmalign}, where \prog{<f>} is the existing fixed alignment to
 include. Note, if you used the \prog{--rf} or \prog{--gapthresh <x>}
 options to \prog{cmbuild} when you built the model, you must use those
-same options to \prog{cmalign}. Here is an example of the
-\prog{--withali <f>} option:
+same options to \prog{cmalign}. Here is an example:
 
 {\samepage
 \user{cmalign --withali trna.5.sto my.cm toalign.3.fa}
@@ -851,7 +848,7 @@ information on insertion columns versus consensus columns see the
 \end{srefaq}
 
 \begin{srefaq}{I'd like to use the \prog{--withali} option to  
-    \prog{cmalign} but my training alignment is 100s of sequences deep
+    \prog{cmalign} but my training alignment is hundreds of sequences deep
     which makes the cmalign output difficult to read, is there a way
     to include a subset of the training alignment in the output
     alignment?} Yes.  You can remove as many sequences as you like
@@ -874,8 +871,8 @@ should use the \prog{--sub} option to \prog{cmalign}. Without this
 option, truncated sequences are often terribly misaligned.
 
 Here is an example with a single, artificially truncated tRNA
-sequence. The file \prog{trna.1trunc.fa} includes a truncated
-version the sequence in \prog{trna.1.fa} (residues 1-20 and 57-72
+sequence. The file \prog{toalign.1trunc.fa} includes a truncated
+version the sequence in \prog{toalign.1.fa} (residues 1-20 and 57-72
 were removed) that was aligned as the example above for 
 the \prog{--withali} option. If we align the truncated sequence
 \textbf{without} the \prog{--sub} option: 
@@ -933,9 +930,9 @@ tRNA6-trunc  ----------U----G----GUUC
 \end{comment}
 
 We know the alignment of the truncated sequence
-\prog{tRNA6-truncated} is wrong because we saw the correct alignment
+\prog{tRNA6-trunc} is wrong because we saw the correct alignment
 of the full tRNA6 sequence in the example above. Particularly striking
-is the misalignment of the 3' end (\prog{UGGUUCG}) which you'd think
+is the misalignment of the 3' end (\prog{UGGUUC}) which you'd think
 based on the other sequences would be easily alignable.
 
 Here's what happens with the \prog{--sub} option turned on:
@@ -1057,7 +1054,7 @@ first row of the alignment to two significant digits is 97\%. This
 means that if you sampled alignments from the posterior distribution
 of all possible alignments of this sequence to the model, about 97\%
 of the time that \prog{C} would appear in that position of the
-alignment. One special cases, If the posterior probability is ``very
+alignment. One special case: if the posterior probability is ``very
 nearly'' 100\% (it's difficult to be more precise on the exact
 percentage due to numerical precision issues) the annotated posterior
 values will be ``*'' characters in both the tens and one places.
@@ -1082,7 +1079,7 @@ technique for finding homologs consisting of three main steps:
   Go back to step 1.
 \end{enumerate}
 
-You can iterate over these three steps as long as you'd like or until
+You can iterate over these steps as long as you'd like or until
 until you stop finding new homologs in step 2.  The example we present
 here starts with only 1 training sequence/structure in the first
 iteration. In this case, with few sequences in the training alignment,
@@ -1139,11 +1136,11 @@ riboswitch model. Here's a list of the files we'll use, from the
        Purine riboswitch sequence and structure. 
   \item[\prog{purine.1.c.cm}] A calibrated version of a model built
     from \prog{purine.1.sto}, included to save time.
-  \item[T.tengcongensis.genome.fa]: the 2.5 Mb genome of the bacteria
+  \item[\prog{T.tengcongensis.genome.fa}]: the 2.5 Mb genome of the bacteria
     \emph{Thermoanaerobacter tengcongensis}, in
     FASTA format, downloaded from the NCBI CoreNucleotide database
     (accession: NC\_003869). 
-  \item[C.psychrerythraea.genome.fa]: the 5 Mb genome of the bacteria
+  \item[\prog{C.psychrerythraea.genome.fa}]: the 5 Mb genome of the bacteria
     \emph{Colwellia psychrereythraea}, in
     FASTA format, downloaded from the NCBI CoreNucleotide database
     (accession: CP000083). 
@@ -1246,19 +1243,21 @@ Let's look at the structure more closely and how it relates to our
 initial training sequence.  As we saw earlier in the tutorial, the
 \prog{cmsearch} output is showing us where the high score is coming
 from. Included below is another view of the secondary structures.  The
-figure on the left is the structure is shown below on the left (this
-exact figure is also shown above).  The figure on the right is our
-putative homolog.  Base-paired residues that are different from the
-training sequence are indicated as hollow outlined letters and
-lowercase residues are insertions relative to the consensus model
-(these residues are also lower case in the \prog{cmsearch} alignment
-above). Notice that all the base-paired residues that are different
-between the sequences are putative \emph{compensatory mutations} from
-one Watson-Crick (A-U, U-A, C-G, G-C) or U-G/G-U base-pair to
-another. You can also see this above in the \prog{cmsearch}
-output. This is very strong evidence that these two sequences are
-homologous as they share strong structural similarity despite weak
-conservation at the primary sequence level (55\% identity).
+figure on the left is the structure of the \emph{Streptococcus
+pneumoniae} Purine riboswitch that we built our model from (this exact
+figure is also shown above).  The figure on the right is our putative
+homolog from \emph{Thermoanaerobacter tengcongensis}.  Base-paired
+residues that are different from the training sequence are indicated
+as hollow outlined letters. Insertions relative to the consensus model
+are in lowercase (these residues are also lower case in
+the \prog{cmsearch} alignment above). Notice that all the base-paired
+residues that are different between the sequences are putative
+\emph{compensatory mutations} from one Watson-Crick (A-U, U-A, C-G,
+G-C) or U-G/G-U base-pair to another. You can also see this above in
+the \prog{cmsearch} output. This is very strong evidence that these
+two sequences are homologous as they share strong structural
+similarity despite weak conservation at the primary sequence level
+(55\% identity).
 
 \begin{center}
 \includegraphics[scale=0.5]{Figures/purine1_full}
@@ -1282,9 +1281,6 @@ sequence, and output both sequences aligned together using the
 Now we've completed one round of the iterative search strategy listed
 above and we're ready to do another round, armed with an alignment of
 two examples of the Purine riboswitch. First, we build a new model:
-
-NOTE: THE FOLLOWING USING THE OPTIMALLY ACCURATE ALIGNMENT, WHICH
-ISN'T WHAT YOU GET FROM DOING THE ABOVE COMMAND, BECAUSE CYK IS DEFAULT.
 
 \subsubsection{iteration 2, step 1: build and calibrate a new model}
 \user{cmbuild purine.2.cm purine.2.sto}
@@ -1345,17 +1341,17 @@ it as \prog{purine.psych.fa}. Let's align it our model:
 
 \user{cmalign -o purine.3.sto --withali purine.2.sto purine.2.cm purine.psych.fa}
 
-This alignment is depicted in the structure on the right
-below. Each column of the alignment is represented by a
-residue. Lowercase residues indicate positions where are least one
-sequence is a gap.  For single-stranded residues: Ns denote any
-column that does  not have identical residues in all three sequences,
-and non-Ns indicate all three sequence are identical. Any base-pair
-for which at least two Watson-Crick or U-G/G-U pairs are present are
-indicated by open circles. Notice that 16 of the 20 base pairs show
-compensatory mutations between at least two of our three sequences. 
+This alignment is depicted in the structure on the right below. Each
+column of the alignment is represented by a residue. Lowercase
+residues indicate positions where are least one sequence is a gap.
+For single-stranded residues: Ns denote any column that does not have
+identical residues in all three sequences, and non-Ns indicate all
+three sequence are identical. Any base-pair for which at least two
+distinct Watson-Crick or U-G/G-U pairs are present are indicated by
+open circles. Notice that 16 of the 20 base pairs show compensatory
+mutations between at least two of our three sequences.
 
-Now we're ready for another round of iterative search. However, this
+Now, in theory we're ready for another round of iterative search. However, this
 is as far as we'll go with the guided tutorial. 
 
 This example was contrived to showcase the power of CMs to detect
@@ -1363,7 +1359,7 @@ homologous structural RNAs with very little primary sequence
 conservation. The iterative approach is a powerful one, and we'd love
 to be able to automate it, but we haven't tried. Mainly because we're
 seriously impeded by the incredibly slow calibration step. As E-values
-for CMs are become more rigorously understood, we hope to be able to
+for CMs become more completely understood, we hope to be able to
 streamline calibration and implement automated iterative search
 routines. 
 
@@ -1420,7 +1416,7 @@ Usage: cmemit [-options] <cmfile> <sequence output file>
   -q           : be quiet; don't print anything to stdout
 
 \end{sreoutput}
-To see more help on other available options, do cmemit -h
+To see more help on other available options, do \prog{cmemit -h}
 
 \user{cmemit -h}
 
