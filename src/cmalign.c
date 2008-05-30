@@ -56,7 +56,7 @@ static ESL_OPTIONS options[] = {
   { "--cyk",     eslARG_NONE,   FALSE,  NULL, NULL,     ALGOPTS,    NULL,        NULL, "align with the CYK algorithm", 2 },
   { "--viterbi", eslARG_NONE,   FALSE,  NULL, NULL,     ALGOPTS,    NULL,        "-p", "align to a CM Plan 9 HMM with the Viterbi algorithm",2 },
   { "--sub",     eslARG_NONE,   FALSE,  NULL, NULL,     NULL,       NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
-  { "--small",   eslARG_NONE,   FALSE,  NULL, NULL,     NULL,     "--cyk","--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
+  { "--small",   eslARG_NONE,   FALSE,  NULL, NULL,     NULL,"--cyk,--nonbanded","--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
   /* Banded alignment */
   { "--hbanded", eslARG_NONE, "default",  NULL, NULL,   NULL,     NULL,    "--small", "accelerate using CM plan 9 HMM derived bands", 3 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,"--hbanded",    NULL,  "--hbanded", "do not use bands to accelerate aln algorithm", 3 },
@@ -901,8 +901,8 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  }
 	  else { 
 	    fprintf(stdout, "#\n");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %28s\n", "",         "",      namewidth,                  "",       "          bit scores        ");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %28s\n", "",         "",      namewidth,                  "",       "----------------------------");
+	    fprintf(stdout, "# %7s  %-*s  %5s  %28s\n", "", namewidth,       "",                  "",       "          bit scores        ");
+	    fprintf(stdout, "# %7s  %-*s  %5s  %28s\n", "", namewidth,       "",                  "",       "----------------------------");
 	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s  %8s\n",  "seq idx", namewidth,  "seq name",  "len",  "raw",     "correctd", "struct");
 	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "--------");
 	  }

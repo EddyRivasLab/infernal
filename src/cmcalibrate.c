@@ -63,8 +63,7 @@ static ESL_OPTIONS options[] = {
   { "--exp-T",          eslARG_REAL,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "set bit sc cutoff for exp tail fitting to <x> [df: -INFTY]", 2 },
   { "--exp-cmL",        eslARG_REAL,     "1.",  NULL, "0.001<=x<=1000.",NULL,NULL,        NULL, "set length *in Mb* of random seqs for CM exp tail fit to <x>", 2 },
   { "--exp-fract",      eslARG_REAL,    "0.10", NULL, "0.01<=x<=1.0",   NULL,NULL,        NULL, "set min fraction of DP calcs for HMM vs CM calibration to <x>", 2 },
-  //  { "--exp-hmmLn",      eslARG_REAL,    "10.",  NULL, "1.<=x<=1000.",   NULL,NULL,        NULL, "set min Mb length of random seqs for HMM exp tail fit to <x>", 2 },
-  { "--exp-hmmLn",      eslARG_REAL,    "10.",  NULL, "0.01<=x<=1000.",   NULL,NULL,        NULL, "set min Mb length of random seqs for HMM exp tail fit to <x>", 2 },
+  { "--exp-hmmLn",      eslARG_REAL,    "10.",  NULL, "1.<=x<=1000.",   NULL,NULL,        NULL, "set min Mb length of random seqs for HMM exp tail fit to <x>", 2 },
   { "--exp-hmmLx",      eslARG_REAL,    "1000.",NULL, "10.<=x<=1001.",  NULL,NULL,        NULL, "set max Mb length of random seqs for HMM exp tail fit to <x>", 2 },
   { "--exp-tailp",      eslARG_REAL,    "0.01", NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 2 },
   { "--exp-tailn",      eslARG_INT,     NULL,   NULL, "n>=50",  NULL,        NULL,"--exp-tailp,--exp-tailn","set number of hits in histogram tail to fit as <n>", 2 },
@@ -79,7 +78,7 @@ static ESL_OPTIONS options[] = {
   { "--exp-ffile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,        NULL, "save lambdas for different tail fit probs to file <f>", 2 },
   /* options for HMM filter threshold calculation */
   { "--fil-N",          eslARG_INT,     "10000",NULL, "100<=n<=100000",NULL,  NULL,       NULL, "number of emitted sequences for HMM filter threshold calc",    3 },
-  { "--fil-F",          eslARG_REAL,    "0.99", NULL, "0<x<=1", NULL,        NULL,        NULL, "required fraction of seqs that survive HMM filter", 3},
+  { "--fil-F",          eslARG_REAL,    "0.995",NULL, "0<x<=1", NULL,        NULL,        NULL, "required fraction of seqs that survive HMM filter", 3},
   { "--fil-xhmm",       eslARG_REAL,    "2.0",  NULL, "x>=1.1", NULL,        NULL,        NULL, "set target time for filtered search as <x> times HMM time", 3},
   { "--fil-nonbanded",  eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "do not use HMM banded search for filter calculation", 3},
   { "--fil-tau",        eslARG_REAL,    "1e-7", NULL, "0<x<1",  NULL,        NULL,"--fil-nonbanded", "set tail loss prob for HMM banding <x>", 3 },
