@@ -571,8 +571,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       }
       else { 
 	fprintf(ofp, "#\n");
-	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %8s  %11s\n", "", namewidth,         "",         "",       "    bit scores    ",   "");
-	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %8s  %11s\n", "", namewidth,         "",         "",       "------------------",   "");
+	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %8s  %11s\n", "", namewidth,         "",         "",       "    bit scores    ",   "",  "");
+	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %8s  %11s\n", "", namewidth,         "",         "",       "------------------",   "",  "");
 	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len",  "raw",      "correctd", "avg prob", "elapsed");
 	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "--------", "-----------");
 
@@ -619,7 +619,9 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
     /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
     if(sq_mode && do_hmmonly) {
-      if(sq_mode && !silent_mode) fprintf(ofp, "  %7d  %-*s  %5d", (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(sq_mode && !silent_mode)
+	fprintf(ofp, "  %7d  %-*s  %5" PRId64, 
+		(i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
       if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, L, 0., NULL,
 			       FALSE,  /* we are not scanning */
 			       TRUE,   /* we are aligning */
@@ -639,7 +641,9 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     /* Special case, if do_scoreonly, align seq with full CYK inside, just to 
      * get the score. For testing, probably in cmscore. */
     if(sq_mode && do_scoreonly) {
-      if(sq_mode && !silent_mode) fprintf(ofp, "  %7d  %-*s  %5d", (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(sq_mode && !silent_mode) 
+	fprintf(ofp, "  %7d  %-*s  %5" PRId64, 
+		(i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
       sc = CYKInsideScore(cm, cur_dsq, L, 0, 1, L, NULL, NULL); /* don't do QDB mode */
       if(sq_mode && !silent_mode) fprintf(ofp, "  %8.2f  ", sc);
       parsesc[i] = sc;
@@ -724,8 +728,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     }
 
     if(sq_mode && !silent_mode) { 
-      if(have_parsetrees) fprintf(ofp, "  %7d  %-*s  %5d", (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
-      else                fprintf(ofp, "  %7d  %-*s  %5d", (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(have_parsetrees) fprintf(ofp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      else                fprintf(ofp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
     }
 
     /* beginning of large if() else if() else if() ... statement */

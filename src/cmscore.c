@@ -1061,7 +1061,9 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  /* TO DO: write function that inside DispatchAlignments() takes
 	   * a CP9 parse, and converts it to a CM parsetree */
 	  if(esl_opt_GetBoolean(go, "-a")) 
-	    fprintf(stdout, "  %-25.25s  %6d  %11.4f  %11.4f  %10.4f\n", seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, cfg->s1_sc[i], seqs_to_aln->sc[i], cfg->s1_sc[i] - seqs_to_aln->sc[i]);
+	    fprintf(stdout, "  %-25.25s  %6" PRId64 "  %11.4f  %11.4f  %10.4f\n", 
+		    seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, 
+		    cfg->s1_sc[i], seqs_to_aln->sc[i], cfg->s1_sc[i] - seqs_to_aln->sc[i]);
 	  if(fabs(cfg->s1_sc[i] - seqs_to_aln->sc[i]) > 0.01) {
 	    diff_ct++;
 	    diff_sc += cfg->s1_sc[i] - seqs_to_aln->sc[i]; /* don't take absolute value in case cur stage sc > stage 1 sc, for example with -l --viterbi */
@@ -1452,7 +1454,7 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
       if((status = ReadSeqsToAln(cfg->abc, cfg->sqfp, 0, TRUE, seqs_to_aln, i_am_mpi_master)) != eslEOF) 
 	cm_Fail("Error reading sqfile: %s\n", esl_opt_GetString(go, "--infile"));
       /* rewind the sqfile so we can read the seqs again */
-      esl_sqio_Rewind(cfg->sqfp); /* we may be searching this file again with another CM */
+      esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be searching this file again with another CM */
     }    
   else cm_Fail("get_sequences() error, !do_emit, !do_random and !do_infile.");
 

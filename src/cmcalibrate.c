@@ -1898,7 +1898,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
   tailp = esl_opt_GetReal(go, "--exp-tailp");
   if(!esl_opt_IsDefault(go, "--exp-tailn")) { 
     tailp = ((float) esl_opt_GetInteger(go, "--exp-tailn") / (float) h->n);
-    if(tailp > 1.) ESL_FAIL(eslERANGE, errbuf, "--exp-tailn <n>=%d cannot be used, there's only %d hits in the histogram! Lower <n>.", esl_opt_GetInteger(go, "--exp-tailn"), h->n);
+    if(tailp > 1.) ESL_FAIL(eslERANGE, errbuf, "--exp-tailn <n>=%d cannot be used, there's only %" PRId64 " hits in the histogram! Lower <n>.", esl_opt_GetInteger(go, "--exp-tailn"), h->n);
   }
   else tailp = ESL_MIN(tailp, ((float) esl_opt_GetInteger(go, "--exp-tailxn") / (float) h->n)); /* ensure we don't exceed our max nhits in tail */
 

@@ -542,7 +542,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       FreeCMConsensus(cons);
       free(cm_surv_fractA);
       free(cm_nhitsA);
-      esl_sqio_Rewind(cfg->sqfp); /* we may be searching this file again with another CM */
+      esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be searching this file again with another CM */
     }
 
   if(cfg->ncm > 1 && (! esl_opt_IsDefault(go, "--forecast"))) { 

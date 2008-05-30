@@ -301,7 +301,7 @@ CMFilePositionByKey(CMFILE *cmf, char *key)
   int      status;
 
   if (cmf->ssi == NULL) ESL_EXCEPTION(eslEINVAL, "CMFilePositionByKey(): cmf->ssi is NULL");
-  if ((status = esl_ssi_FindName(cmf->ssi, key, &fh, &offset)) != eslOK) return status;
+  if ((status = esl_ssi_FindName(cmf->ssi, key, &fh, &offset, NULL, NULL)) != eslOK) return status;
   if (fseeko(cmf->f, offset, SEEK_SET) != 0)    ESL_EXCEPTION(eslESYS, "fseek failed");
   return eslOK;
 } 
@@ -313,7 +313,7 @@ CMFilePositionByIndex(CMFILE *cmf, int idx)
   int      status;
 
   if (cmf->ssi == NULL) ESL_EXCEPTION(eslEINVAL, "CMFilePositionByIndex(): cmf->ssi is NULL");
-  if ((status = esl_ssi_FindNumber(cmf->ssi, idx, &fh, &offset)) != eslOK) return status;
+  if ((status = esl_ssi_FindNumber(cmf->ssi, idx, &fh, &offset, NULL, NULL)) != eslOK) return status;
   if (fseeko(cmf->f, offset, SEEK_SET) != 0)    ESL_EXCEPTION(eslESYS, "fseek failed");
   return eslOK;
 }

@@ -262,14 +262,16 @@ int GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_namewidth)
   int     namewidth = 11; /* length of "target name" */
 
   sq = esl_sq_Create(); 
-  while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) {
-    N += sq->n;
+  while ((status = esl_sqio_ReadInfo(sqfp, sq)) == eslOK) {
+    N += sq->L;
     namewidth = ESL_MAX(namewidth, strlen(sq->name));
     esl_sq_Reuse(sq); 
   } 
-  if (status != eslEOF) ESL_FAIL(status, errbuf, "Parse failed, line %d, file %s:\n%s", sqfp->linenumber, sqfp->filename, sqfp->errbuf); 
+  if (status != eslEOF) 
+    ESL_FAIL(status, errbuf, "Parse failed, line %" PRId64 ", file %s:\n%s", 
+	     sqfp->linenumber, sqfp->filename, sqfp->errbuf); 
   esl_sq_Destroy(sq); 
-  esl_sqio_Rewind(sqfp);
+  esl_sqfile_Position(sqfp, (off_t) 0);
 
   if(ret_N != NULL)          *ret_N         = N;
   if(ret_namewidth != NULL)  *ret_namewidth = namewidth;
@@ -336,9 +338,11 @@ int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *re
       }
       esl_sq_Reuse(sq); 
   } 
-  if (status != eslEOF) ESL_FAIL(status, errbuf, "Parse failed, line %d, file %s:\n%s", sqfp->linenumber, sqfp->filename, sqfp->errbuf); 
+  if (status != eslEOF) 
+    ESL_FAIL(status, errbuf, "Parse failed, line %" PRId64 ", file %s:\n%s",
+	     sqfp->linenumber, sqfp->filename, sqfp->errbuf); 
   esl_sq_Destroy(sq); 
-  esl_sqio_Rewind(sqfp);
+  esl_sqfile_Position(sqfp, (off_t) 0);
 
   if(ret_N != NULL)      *ret_N     = N;
   *ret_gc_ct = gc_ct;

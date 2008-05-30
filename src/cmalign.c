@@ -472,7 +472,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       /* clean up */
       FreeSeqsToAln(seqs_to_aln);
       FreeCM(cm);
-      esl_sqio_Rewind(cfg->sqfp); /* we may be searching this file again with another CM */
+      esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be searching this file again with another CM */
     }   
   return;
 }

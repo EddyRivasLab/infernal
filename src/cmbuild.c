@@ -624,9 +624,9 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* if being verbose, print some stuff about what we're about to do.
 	   */
 	  if (cfg->be_verbose) {
-	    fprintf(stdout, "Alignment:           %s\n",  msa->name);
-	    fprintf(stdout, "Number of sequences: %d\n",  msa->nseq);
-	    fprintf(stdout, "Number of columns:   %d\n",  msa->alen);
+	    fprintf(stdout, "Alignment:           %s\n",           msa->name);
+	    fprintf(stdout, "Number of sequences: %d\n",           msa->nseq);
+	    fprintf(stdout, "Number of columns:   %" PRId64 "\n",  msa->alen);
 	    if(esl_opt_GetString(go, "--rsearch") != NULL)
 	      printf ("RIBOSUM Matrix:      %s\n",  cfg->fullmat->name);
 	    fputs("", stdout);
@@ -887,7 +887,7 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   /* build the HMM, so we can print the CP9 relative entropy */
   if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslFAIL, errbuf, "Couldn't build a CP9 HMM from the CM.");
 
-  fprintf(stdout, "%6d  %6d  %-*s  %8d  %8.2f  %6d  %5d  %6.3f  %6.3f\n",
+  fprintf(stdout, "%6d  %6d  %-*s  %8d  %8.2f  %6" PRId64 "  %5d  %6.3f  %6.3f\n",
 	  msaidx,
 	  cmidx,
 	  cfg->namewidth,
