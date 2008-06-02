@@ -856,10 +856,10 @@ print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errb
   namedashes[cfg->namewidth] = '\0';
   for(ni = 0; ni < cfg->namewidth; ni++) namedashes[ni] = '-';
 
-  fprintf(stdout, "# %-4s  %-6s  %-*s  %8s  %8s  %6s  %5s  %14s\n",    "",     "", cfg->namewidth, "",                     "",         "",         "",     "",      " rel entropy ");
-  fprintf(stdout, "# %-4s  %-6s  %-*s  %8s  %8s  %6s  %5s  %14s\n",    "",     "", cfg->namewidth, "",                     "",         "",         "",     "",      "--------------");
-  fprintf(stdout, "# %4s  %-6s  %-*s  %8s  %8s  %6s  %5s  %6s  %6s\n",  "aln",  "cm idx", cfg->namewidth, "name",                 "nseq",     "eff_nseq", "alen",   "clen",  "CM",     "HMM");
-  fprintf(stdout, "# %-4s  %-6s  %-*s  %8s  %8s  %6s  %5s  %6s  %6s\n", "----", "------", cfg->namewidth, namedashes,             "--------", "--------", "------", "-----", "------", "------");
+  fprintf(stdout, "# %-4s  %-6s  %-*s  %8s  %8s  %6s  %5s  %4s  %4s  %12s\n",    "",     "", cfg->namewidth, "",                     "",         "",         "",     "",      "", "", "rel entropy");
+  fprintf(stdout, "# %-4s  %-6s  %-*s  %8s  %8s  %6s  %5s  %4s  %4s  %12s\n",    "",     "", cfg->namewidth, "",                     "",         "",         "",     "",      "", "", "------------");
+  fprintf(stdout, "# %4s  %-6s  %-*s  %8s  %8s  %6s  %5s  %4s  %4s  %5s  %5s\n",  "aln",  "cm idx", cfg->namewidth, "name",                 "nseq",     "eff_nseq", "alen",   "clen",  "bps", "bifs",  "CM",     "HMM");
+  fprintf(stdout, "# %-4s  %-6s  %-*s  %8s  %8s  %6s  %5s  %4s  %4s  %5s  %5s\n", "----", "------", cfg->namewidth, namedashes,             "--------", "--------", "------", "-----", "----", "----", "-----", "-----");
 
   free(namedashes);
   return eslOK;
@@ -887,7 +887,7 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   /* build the HMM, so we can print the CP9 relative entropy */
   if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslFAIL, errbuf, "Couldn't build a CP9 HMM from the CM.");
 
-  fprintf(stdout, "%6d  %6d  %-*s  %8d  %8.2f  %6" PRId64 "  %5d  %6.3f  %6.3f\n",
+  fprintf(stdout, "%6d  %6d  %-*s  %8d  %8.2f  %6" PRId64 "  %5d  %4d  %4d  %5.3f  %5.3f\n",
 	  msaidx,
 	  cmidx,
 	  cfg->namewidth,
@@ -896,6 +896,8 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
 	  cm->eff_nseq,
 	  msa->alen,
 	  cm->clen, 
+	  CMCountStatetype(cm, MP_st), 
+	  CMCountStatetype(cm, B_st), 
 	  cm_MeanMatchRelativeEntropy(cm),
 	  cp9_MeanMatchRelativeEntropy(cm));
 

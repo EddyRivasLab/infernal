@@ -204,7 +204,6 @@ extern void  ConfigLocal_fullsub(CM_t *cm, float p_internal_start,
 				float p_internal_exit, int sstruct_nd,
 				int estruct_nd);
 extern void  ConfigLocal_DisallowELEmissions(CM_t *cm);
-//extern int   ConfigQDB(CM_t *cm);
 extern int   ConfigQDBAndW(CM_t *cm, int do_calc_qdb);
 
 /* from cm_modelmaker.c */
@@ -302,8 +301,8 @@ extern void StripWUSSGivenCC(ESL_MSA *msa, float gapthresh, int first_match, int
 extern int  check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, double threshold, 
 				       int print_flag);
 extern int  check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subinfo, float pthresh, int print_flag);
-extern int check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, CMSubMap_t *submap, CMSubInfo_t *subinfo,
-				    float chi_thresh, int nsamples, int print_flag);
+extern int  check_sub_cm_by_sampling(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, CMSubMap_t *submap, CMSubInfo_t *subinfo,
+				     float chi_thresh, int nsamples, int print_flag);
 extern int  check_sub_cm_by_sampling2(CM_t *orig_cm, CM_t *sub_cm, ESL_RANDOMNESS *r, int spos, int epos, int nseq);
 extern int  sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Parsetree_t *sub_tr, 
 				CMSubMap_t *submap, int print_flag);

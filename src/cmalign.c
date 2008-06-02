@@ -663,7 +663,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       for (wi = 1; wi < cfg->nproc; wi++) 
 	if ((status = cm_seqs_to_aln_MPISend(NULL, 0, 0, wi, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("Shutting down a worker failed.");
       FreeCM(cm);
-      esl_sqio_Rewind(cfg->sqfp); /* we may be aligning this file again with another CM */
+      esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be aligning this file again with another CM */
     }
   
   /* On success or recoverable errors:
@@ -875,36 +875,32 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	ESL_ALLOC(namedashes, sizeof(char) * namewidth+1);
 	namedashes[namewidth] = '\0';
 	for(ni = 0; ni < namewidth; ni++) namedashes[ni] = '-';
-	if(seqs_to_aln->struct_sc == NULL) { 
+	if(seqs_to_aln->struct_sc == NULL || (! NOT_IMPOSSIBLE(seqs_to_aln->struct_sc[0]))) { 
 	  if(cm->align_opts & CM_ALIGN_OPTACC) { 
 	    fprintf(stdout, "#\n");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %18s  %8s\n", "",         "", namewidth,                  "",  "    bit scores    ");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %18s  %8s\n", "",         "", namewidth,                  "",  "------------------");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s  %8s\n", "seq idx",  namewidth, "seq name",   "len",  "raw",      "correctd", "avg prob");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "--------");
+	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n", "seq idx",  namewidth, "seq name",   "len",  "bit sc",   "avg prob");
+	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------");
 	  }
 	  else { 
 	    fprintf(stdout, "#\n");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %18s\n", "",         "", namewidth,                  "",  "    bit scores    ");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %18s\n", "",         "", namewidth,                  "",  "------------------");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n",  "seq idx", namewidth, "seq name",   "len",  "raw",      "correctd");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------");
+	    fprintf(stdout, "# %7s  %-*s  %5s  %8s\n",  "seq idx", namewidth, "seq name",   "len",  "bit sc");
+	    fprintf(stdout, "# %7s  %-*s  %5s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------");
 	  }
 	}
 	else { /* we have struct scores */
 	  if(cm->align_opts & CM_ALIGN_OPTACC) { 
 	    fprintf(stdout, "#\n");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %28s  %8s\n", "",         namewidth, "",                       "",       "          bit scores        ",   "");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %28s  %8s\n", "",         namewidth, "",                       "",       "----------------------------",   "");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s  %8s  %8s\n", "seq idx",  namewidth, "seq name",   "len",  "raw",      "correctd", "struct",   "avg prob");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "--------", "--------");
+	    fprintf(stdout, "# %7s  %-*s  %5s  %18s  %8s\n", "",         namewidth, "",                      "",       "    bit scores    ",   "");
+	    fprintf(stdout, "# %7s  %-*s  %5s  %18s  %8s\n", "",         namewidth, "",                      "",       "------------------",   "");
+	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s  %8s\n", "seq idx",  namewidth, "seq name",   "len", "total",    "struct",   "avg prob");
+	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "--------");
 	  }
 	  else { 
 	    fprintf(stdout, "#\n");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %28s\n", "", namewidth,       "",                  "",       "          bit scores        ");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %28s\n", "", namewidth,       "",                  "",       "----------------------------");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s  %8s\n",  "seq idx", namewidth,  "seq name",  "len",  "raw",     "correctd", "struct");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "--------");
+	    fprintf(stdout, "# %7s  %-*s  %5s  %18s\n", "", namewidth,       "",                  "",       "    bit scores    ");
+	    fprintf(stdout, "# %7s  %-*s  %5s  %18s\n", "", namewidth,       "",                  "",       "------------------");
+	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n",  "seq idx", namewidth,  "seq name",  "len",  "total",   "struct");
+	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------");
 	  }
 	}
 	free(namedashes);
@@ -915,14 +911,14 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	for (i = imin; i < seqs_to_aln->nseq; i++) {
 	  ip = (cfg->withmsa == NULL) ? i : i - cfg->withmsa->nseq;
 	  ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, &null3_correction);
-	  if(seqs_to_aln->struct_sc == NULL) { 
-	    if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-*s  %5d  %8.2f  %8.2f  %8.3f\n", (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip], seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->pp[ip]);
-	    else                                 fprintf(stdout, "  %7d  %-*s  %5d  %8.2f  %8.2f\n",        (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip], seqs_to_aln->sc[ip] - null3_correction);
+	  if(! NOT_IMPOSSIBLE(seqs_to_aln->struct_sc[ip])) { 
+	    if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-*s  %5d  %8.2f  %8.3f\n", (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->pp[ip]);
+	    else                                 fprintf(stdout, "  %7d  %-*s  %5d  %8.2f\n",        (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction);
 	  }
 	  else { /* we have struct scores */
-	    seqs_to_aln->struct_sc[ip] -= ((float) ParsetreeCountMPEmissions(cm, seqs_to_aln->tr[i]) / (float) seqs_to_aln->sq[i]->n) * null3_correction;;
-	    if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-*s  %5d  %8.2f  %8.2f  %8.2f  %8.3f\n", (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip], seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->struct_sc[ip], seqs_to_aln->pp[ip]);
-	    else                                 fprintf(stdout, "  %7d  %-*s  %5d  %8.2f  %8.2f  %8.2f\n",        (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip], seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->struct_sc[ip]);
+	    seqs_to_aln->struct_sc[ip] -= ((float) ParsetreeCountMPEmissions(cm, seqs_to_aln->tr[i]) / (float) seqs_to_aln->sq[i]->n) * null3_correction; /* adjust struct_sc for NULL3 correction, this is inexact */
+	    if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-*s  %5d  %8.2f  %8.2f  %8.3f\n", (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->struct_sc[ip], seqs_to_aln->pp[ip]);
+	    else                                 fprintf(stdout, "  %7d  %-*s  %5d  %8.2f  %8.2f\n",        (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->struct_sc[ip]);
 	  }
 	}
       }      
