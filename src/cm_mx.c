@@ -1255,10 +1255,10 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
 	    ScoreCorrectionNull3(cm->abc, cm->null, comp, j-i+1, &null3_correction);
 	    hit_sc -= null3_correction;
 	    cumulative_sc -= null3_correction;
-	    /*printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc);*/
 	    do_report_hit = (cumulative_sc > gamma->mx[j]) ? TRUE : FALSE;
 	  }
 	  if(do_report_hit) { 
+	    /*printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc);*/
 	    gamma->mx[j]     = cumulative_sc;
 	    gamma->gback[j]  = i + (gamma->i0-1);
 	    gamma->savesc[j] = hit_sc;
@@ -1285,13 +1285,16 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
       assert(ip >= gamma->i0);
       assert(jp >= gamma->i0);
       if(act != NULL) { /* do NULL3 score correction */
-	for(a = 0; a < cm->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(j-dmin+1)%(W+1)][a];
+	for(a = 0; a < cm->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(j-dmin+1-1)%(W+1)][a];
 	esl_vec_FNorm(comp, cm->abc->K);
 	ScoreCorrectionNull3(cm->abc, cm->null, comp, jp-ip+1, &null3_correction);
 	hit_sc -= null3_correction;
 	do_report_hit = (hit_sc >= gamma->cutoff) ? TRUE : FALSE;
       }
-      if(do_report_hit) ReportHit (ip, jp, r, hit_sc, results);
+      if(do_report_hit) { 
+	/*printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc);*/
+	ReportHit (ip, jp, r, hit_sc, results);
+      }
     }
     bestd = dmin;
     /* Now, if current score is greater than maximum seen previous, report
@@ -1307,13 +1310,16 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
 	  assert(ip >= gamma->i0);
 	  assert(jp >= gamma->i0);
 	  if(act != NULL) { /* do NULL3 score correction */
-	    for(a = 0; a < cm->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(j-d+1)%(W+1)][a];
+	    for(a = 0; a < cm->abc->K; a++) comp[a] = act[j%(W+1)][a] - act[(j-d+1-1)%(W+1)][a];
 	    esl_vec_FNorm(comp, cm->abc->K);
 	    ScoreCorrectionNull3(cm->abc, cm->null, comp, jp-ip+1, &null3_correction);
 	    hit_sc -= null3_correction;
 	    do_report_hit = ((hit_sc > alpha_row[bestd]) && (hit_sc >= gamma->cutoff)) ? TRUE : FALSE;
 	  }
-	  if(do_report_hit) ReportHit (ip, jp, r, hit_sc, results);
+	  if(do_report_hit) { 
+	    /*printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc);*/
+	    ReportHit (ip, jp, r, hit_sc, results);
+	  }
 	}
 	if(hit_sc > alpha_row[bestd]) bestd = d; /* we need to check again b/c if null3, hit_sc -= null3_correction */
       }

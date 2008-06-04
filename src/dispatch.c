@@ -251,25 +251,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       /*if((cur_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN))) {*/
       if((status = DispatchAlignments(cm, errbuf, NULL, 
 				      dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
-				      0, 0, 0, NULL, size_limit, stdout)) != eslOK) return status;
-
-#if 0
-      /* EPN, Mon May 12 15:10:34 2008 THIS SHOULD NO LONGER BE NEEDED */
-      if(do_null2 || do_null3) { 
-	float tmp_cutoff;
-	tmp_cutoff = (cm->si->cutoff_type[sround] == SCORE_CUTOFF) ? cm->si->sc_cutoff[sround] : IMPOSSIBLE; /* if cutoff is an E-value don't remove hits inside UpdateHitScoresWithNull2Or3 */
-	if((status = UpdateHitScoresWithNull2Or3(cm, errbuf, cm->si, round_results, dsq, h_existing, tmp_cutoff, do_null2, do_null3, 
-						 FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
-						 TRUE))  /* sort by end point at the end of the function */
-	   != eslOK) return status;
-	if(cm->si->cutoff_type[sround] == E_CUTOFF) { 
-	  if((status = RemoveHitsOverECutoff(cm, errbuf, cm->si, sround, round_results, dsq, h_existing,
-					     FALSE,  /* do not sort by score at the end of the function, we'll do this before printing the results */
-					     TRUE))  /* sort by end point at the end of the function */
-	     != eslOK) return status;
-	}
-      }
-#endif
+				      0, 0, 0, do_null3, NULL, size_limit, stdout)) != eslOK) return status;
     }
   }
   FreeResults(cur_results);
@@ -307,6 +289,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
  *           bdump_level    - verbosity level for band related print statements
  *           debug_level    - verbosity level for debugging print statements
  *           silent_mode    - TRUE to not print anything, FALSE to print scores 
+ *           do_null3       - TRUE to apply null3 correction to scores, FALSE not to
  *           r              - source of randomness (NULL unless CM_ALIGN_SAMPLE)
  *           size_limit     - max number of Mb for a DP matrix, if requestd matrix is bigger return eslERANGE 
  *           ofp            - output file to print scores to as we're aligning
@@ -320,8 +303,8 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
  */
 int
 DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
-		   int first_result, int bdump_level, int debug_level, int silent_mode, ESL_RANDOMNESS *r, float size_limit,
-		   FILE *ofp)
+		   int first_result, int bdump_level, int debug_level, int silent_mode, int do_null3, ESL_RANDOMNESS *r, 
+		   float size_limit, FILE *ofp)
 {
   int status;
   ESL_STOPWATCH *watch;         /* for timings */
@@ -827,11 +810,12 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       if((status = ParsetreeScore(cm, errbuf, *cur_tr, cur_dsq, FALSE, &tmpsc, &struct_sc)) != eslOK) return status;
     }
     /* determine NULL3 score correction, which is independent of the parsetree */
-    ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, cur_dsq, 1, L, &null3_correction);
+    null3_correction = 0.;
+    if(do_null3) ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, cur_dsq, 1, L, &null3_correction);
 
     if(sq_mode && !silent_mode) { 
       if(have_parsetrees) { 
-	struct_sc -= ((float) ParsetreeCountMPEmissions(cm, *cur_tr) / (float) L) * null3_correction; /* adjust struct_sc for NULL3 correction, this is inexact */
+	if(do_null3)   struct_sc -= ((float) ParsetreeCountMPEmissions(cm, *cur_tr) / (float) L) * null3_correction; /* adjust struct_sc for NULL3 correction, this is inexact */
 	if(do_optacc)  fprintf(ofp, "  %8.2f  %8.2f  %8.3f  ", ins_sc - null3_correction, struct_sc, sc);
 	else           fprintf(ofp, "  %8.2f  %8.2f  ", sc - null3_correction, struct_sc);
       }	

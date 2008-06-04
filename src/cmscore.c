@@ -85,6 +85,7 @@ static ESL_OPTIONS options[] = {
   /* Developer options for debugging */
   { "--old",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use old hmm to cm band calculation algorithm", 102},
   { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 102 },
+  { "--no-null3",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "turn OFF the NULL3 post hoc additional null model", 102 },
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb",102 },  
 
   /* All options below are developer options, only shown if --devhelp invoked */
@@ -195,24 +196,6 @@ main(int argc, char **argv)
       printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
-  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
-    {
-      cm_banner(stdout, argv[0], banner);
-      esl_usage(stdout, argv[0], usage);
-      puts("\nwhere general options are:");
-      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-      puts("\noptions for source of input sequences:");
-      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-      puts("\nstage 2 alignment options, to compare to stage 1 (D&C non-banded), are:");
-      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
-      puts("\noptions for testing search algorithms instead of alignment algorithms:");
-      esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
-      puts("\noptions for testing multiple tau values for --hbanded:");
-      esl_opt_DisplayHelp(stdout, go, 5, 2, 80); 
-      puts("\nextra output files:");
-      esl_opt_DisplayHelp(stdout, go, 6, 2, 80); 
-      exit(0);
-    }
   if (esl_opt_GetBoolean(go, "--devhelp") == TRUE) 
     {
       cm_banner(stdout, argv[0], banner);
@@ -235,6 +218,24 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
       puts("\nundocumented developer options related to experimental local begin/end modes:");
       esl_opt_DisplayHelp(stdout, go, 103, 2, 80);
+      exit(0);
+    }
+  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
+    {
+      cm_banner(stdout, argv[0], banner);
+      esl_usage(stdout, argv[0], usage);
+      puts("\nwhere general options are:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
+      puts("\noptions for source of input sequences:");
+      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+      puts("\nstage 2 alignment options, to compare to stage 1 (D&C non-banded), are:");
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+      puts("\noptions for testing search algorithms instead of alignment algorithms:");
+      esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
+      puts("\noptions for testing multiple tau values for --hbanded:");
+      esl_opt_DisplayHelp(stdout, go, 5, 2, 80); 
+      puts("\nextra output files:");
+      esl_opt_DisplayHelp(stdout, go, 6, 2, 80); 
       exit(0);
     }
 
@@ -1107,7 +1108,8 @@ process_align_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *err
 
   if((status = DispatchAlignments(cm, errbuf, seqs_to_aln,
 				  NULL, NULL, 0,  /* we're not aligning search hits */
-				  FALSE, 0, TRUE, NULL, 
+				  FALSE, 0, TRUE, 
+				  (! esl_opt_GetBoolean(go, "--no-null3")), NULL,
 				  esl_opt_GetReal(go, "--mxsize"), stdout)) != eslOK) goto ERROR;
 
   return eslOK;

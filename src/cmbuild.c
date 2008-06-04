@@ -220,28 +220,6 @@ main(int argc, char **argv)
       printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
-  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
-    {
-      cm_banner(stdout, argv[0], banner);
-      esl_usage(stdout, argv[0], usage);
-      puts("\nwhere general options are:");
-      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-      puts("\nexpert model construction options:");
-      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-      puts("\nsequence weighting options [default: GSC weighting]:");
-      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
-      puts("\neffective sequence number related options:");
-      esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
-      puts("\ncustomization of null model and priors:");
-      esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
-      puts("\noptions for building multiple CMs after clustering input MSA:");
-      esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
-      puts("\nexpert options for refining the input alignment:");
-      esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
-      puts("\n options for selecting alphabet of input aln rather than guessing it:");
-      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
-      exit(0);
-    }
   if (esl_opt_GetBoolean(go, "--devhelp") == TRUE) 
     {
       cm_banner(stdout, argv[0], banner);
@@ -266,6 +244,28 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
       puts("\nundocumented developer options for verbose output/debugging:");
       esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
+      exit(0);
+    }
+  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
+    {
+      cm_banner(stdout, argv[0], banner);
+      esl_usage(stdout, argv[0], usage);
+      puts("\nwhere general options are:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
+      puts("\nexpert model construction options:");
+      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+      puts("\nsequence weighting options [default: GSC weighting]:");
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80); 
+      puts("\neffective sequence number related options:");
+      esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
+      puts("\ncustomization of null model and priors:");
+      esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
+      puts("\noptions for building multiple CMs after clustering input MSA:");
+      esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
+      puts("\nexpert options for refining the input alignment:");
+      esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
+      puts("\n options for selecting alphabet of input aln rather than guessing it:");
+      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       exit(0);
     }
 
@@ -777,7 +777,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
                                                   /* sq,    tr, cp9_tr, post, sc,   pp,   struct_sc */ 
       /* initialize/configure CM, we may be doing HMM banded alignment for ex. */
       initialize_cm(go, cfg, errbuf, cm);
-      if((status = DispatchAlignments(cm, errbuf, seqs_to_aln, NULL, NULL, 0, 0, 0, (! esl_opt_GetBoolean(go, "-a")), cfg->r, 
+      if((status = DispatchAlignments(cm, errbuf, seqs_to_aln, NULL, NULL, 0, 0, 0, (! esl_opt_GetBoolean(go, "-a")), TRUE, cfg->r, 
 				      esl_opt_GetReal(go, "--mxsize"), stdout)) != eslOK) return status;
       
       /* sum parse scores and check for convergence */

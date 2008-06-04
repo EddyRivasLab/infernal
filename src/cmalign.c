@@ -81,6 +81,7 @@ static ESL_OPTIONS options[] = {
   /* Developer options related to alignment algorithm */
   { "--inside",   eslARG_NONE,  FALSE, NULL, NULL,      ALGOPTS,   NULL,     ALGOPTS, "don't align; return scores from the Inside algorithm", 101 },
   { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      "-p",        NULL, "check that posteriors are correctly calc'ed", 101 },
+  { "--no-null3",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "turn OFF the NULL3 post hoc additional null model", 101 },
   /* developer options related to banded alignment */
   { "--checkfb", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       "-l", "check that HMM posteriors for bands were correctly calc'ed", 102},
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 102 },
@@ -194,24 +195,6 @@ main(int argc, char **argv)
       printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
-  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
-    {
-      cm_banner(stdout, argv[0], banner);
-      esl_usage(stdout, argv[0], usage);
-      puts("\nwhere general options are:");
-      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-      puts("\nalignment algorithm related options:");
-      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-      puts("\nbanded dynamic programming acceleration options:");
-      esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
-      puts("\noutput options:");
-      esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
-      puts("\noptions for including a fixed alignment within output alignment:");
-      esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
-      puts("\nverbose output files and debugging:");
-      esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
-      exit(0);
-    }
   if (esl_opt_GetBoolean(go, "--devhelp") == TRUE) 
     {
       cm_banner(stdout, argv[0], banner);
@@ -236,6 +219,24 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 103, 2, 80);
       puts("\nundocumented developer options for experimental local begin/end modes:");
       esl_opt_DisplayHelp(stdout, go, 104, 2, 80);
+      exit(0);
+    }
+  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
+    {
+      cm_banner(stdout, argv[0], banner);
+      esl_usage(stdout, argv[0], usage);
+      puts("\nwhere general options are:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
+      puts("\nalignment algorithm related options:");
+      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+      puts("\nbanded dynamic programming acceleration options:");
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
+      puts("\noutput options:");
+      esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
+      puts("\noptions for including a fixed alignment within output alignment:");
+      esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
+      puts("\nverbose output files and debugging:");
+      esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       exit(0);
     }
   if (esl_opt_ArgNumber(go) != 2) 
@@ -906,17 +907,17 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	free(namedashes);
 
 	int imin;
-	float null3_correction;
+	float null3_correction = 0.;
 	imin = (cfg->withmsa == NULL) ? 0 : cfg->withmsa->nseq;
 	for (i = imin; i < seqs_to_aln->nseq; i++) {
 	  ip = (cfg->withmsa == NULL) ? i : i - cfg->withmsa->nseq;
-	  ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, &null3_correction);
+	  if(!(esl_opt_GetBoolean(go, "--no-null3"))) { ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, &null3_correction); }
 	  if(! NOT_IMPOSSIBLE(seqs_to_aln->struct_sc[ip])) { 
 	    if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-*s  %5d  %8.2f  %8.3f\n", (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->pp[ip]);
 	    else                                 fprintf(stdout, "  %7d  %-*s  %5d  %8.2f\n",        (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction);
 	  }
 	  else { /* we have struct scores */
-	    seqs_to_aln->struct_sc[ip] -= ((float) ParsetreeCountMPEmissions(cm, seqs_to_aln->tr[i]) / (float) seqs_to_aln->sq[i]->n) * null3_correction; /* adjust struct_sc for NULL3 correction, this is inexact */
+	    if(!(esl_opt_GetBoolean(go, "--no-null3"))) seqs_to_aln->struct_sc[ip] -= ((float) ParsetreeCountMPEmissions(cm, seqs_to_aln->tr[i]) / (float) seqs_to_aln->sq[i]->n) * null3_correction; /* adjust struct_sc for NULL3 correction, this is inexact */
 	    if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-*s  %5d  %8.2f  %8.2f  %8.3f\n", (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->struct_sc[ip], seqs_to_aln->pp[ip]);
 	    else                                 fprintf(stdout, "  %7d  %-*s  %5d  %8.2f  %8.2f\n",        (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->struct_sc[ip]);
 	  }
@@ -988,7 +989,8 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
   if((status = DispatchAlignments(cm, errbuf, seqs_to_aln,
 				  NULL, NULL, 0,  /* we're not aligning search hits */
 				  esl_opt_GetInteger(go, "--banddump"),
-				  esl_opt_GetInteger(go, "--dlev"), be_quiet, NULL,
+				  esl_opt_GetInteger(go, "--dlev"), be_quiet, 
+				  (! esl_opt_GetBoolean(go, "--no-null3")), NULL,
 				  esl_opt_GetReal(go, "--mxsize"), stdout)) != eslOK) goto ERROR;
   return eslOK;
   

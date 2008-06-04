@@ -51,6 +51,7 @@ static ESL_OPTIONS options[] = {
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
   { "-o",        eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "direct output to file <f>, not stdout", 1 },
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "configure CM/HMM for glocal alignment [default: local]", 1 },
+  { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,   "--aln-hbanded","--noalign", "append posterior probabilities to hit alignments", 1 },
   { "-Z",        eslARG_REAL,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "set Z (database size in *Mb*) to <x> for E-value calculations", 1},
   { "--toponly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the top strand", 1 },
   { "--bottomonly", eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the bottom strand", 1 },
@@ -77,11 +78,11 @@ static ESL_OPTIONS options[] = {
   { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  HMMONLYOPTS, "calculate and use HMM bands in final round of CM search", 4 },
   { "--tau",     eslARG_REAL,   "1e-7",NULL, "0<x<1",   NULL,"--hbanded", HMMONLYOPTS, "set tail loss prob for --hbanded to <x>", 4 },
   /* filtering options, by default do HMM, then CYK filter */
-  { "--fil-qdb",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-qdb", "filter with CM QDB (banded) CYK algorithm", 5 },
-  { "--fil-beta",  eslARG_REAL, NULL,      NULL, "x>0", NULL,      NULL,"--fil-no-qdb", "set tail loss prob for filter QDB and W calculation to <x>", 5 },
-  { "--fil-no-qdb",eslARG_NONE, FALSE,     NULL, NULL,  "--fil-qdb",NULL,         NULL, "do not filter with CM banded CYK", 5 },
-  { "--fil-hmm",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-hmm", "filter with HMM Forward algorithm", 5 },
+  { "--fil-hmm",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-hmm", "filter with HMM Forward algorithm", 201 },
   { "--fil-no-hmm",eslARG_NONE, FALSE,     NULL, NULL,  "--fil-hmm",NULL,         NULL, "do not filter with HMM Forward algorithm", 5 },
+  { "--fil-qdb",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-qdb", "filter with CM QDB (banded) CYK algorithm", 201 },
+  { "--fil-no-qdb",eslARG_NONE, FALSE,     NULL, NULL,  "--fil-qdb",NULL,         NULL, "do not filter with CM banded CYK", 5 },
+  { "--fil-beta",  eslARG_REAL, NULL,      NULL, "x>0", NULL,      NULL,"--fil-no-qdb", "set tail loss prob for QDB filter to <x>", 5 },
   /* filter cutoff options */
   { "--fil-T-qdb",eslARG_REAL,  "0.0", NULL, NULL,      NULL,      NULL, "--fil-E-qdb", "set QDB CM filter cutoff bit score as <x>", 6 },
   { "--fil-T-hmm",eslARG_REAL,  "3.0", NULL, NULL,      NULL,      NULL, "--fil-E-hmm", "set HMM filter cutoff bit score as <x>", 6 },
@@ -92,10 +93,9 @@ static ESL_OPTIONS options[] = {
   { "--fil-Smax-hmm",eslARG_REAL,NULL, NULL, "0<x<1",    NULL,      NULL,"--fil-T-hmm,--fil-E-hmm", "set maximum HMM survival fraction as <x>", 6 },
   /* alignment options */
   { "--noalign", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,       NULL, "find start/stop/score only; don't do alignments", 7 },
-  { "--addx",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "add line to output alnments marking non-compensatory bps with 'x'", 7 },
+  { "--addx",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "annotate non-compensatory bps in output alignments with 'x'", 7 },
   { "--aln-hbanded",eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "use HMM bands to align hits", 7 },
   { "--aln-optacc",eslARG_NONE, FALSE, NULL, NULL,      NULL,   "--aln-hbanded","--noalign", "align hits with the optimal accuracy algorithm, not CYK", 7 },
-  { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,   "--aln-hbanded","--noalign", "append posterior probabilities to hit alignments", 7 },
   /* verbose output files */
   { "--tabfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,"--forecast", "save hits in tabular format to file <f>", 8 },
   { "--gcfile",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save GC content stats of target sequence file to <f>", 8 },
@@ -104,7 +104,7 @@ static ESL_OPTIONS options[] = {
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output hit alignments as DNA (not RNA) sequence data", 9 },
   /* All options below are developer options, only shown if --devhelp invoked */
   { "--lambda",  eslARG_REAL,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "overwrite lambdas in <cmfile> to <x> for E-value calculations", 101}, 
-  { "--aln2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL, "--hbanded", HMMONLYOPTS, "w/--hbanded, derive HMM bands w/o scanning Forward/Backward", 101 },
+  { "--aln2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL, "--hbanded",       HMMONLYOPTS, "w/-hbanded, derive HMM bands w/o scanning Forward/Backward", 101 },
   { "--rtrans",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--viterbi,--forward", "replace CM transition scores from <cmfile> with RSEARCH scores", 101 },
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 101 },
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 101 },
@@ -132,7 +132,7 @@ struct cfg_s {
   FILE         *ofp;            /* output file (default is stdout) */
   int           fmt;		/* format code for seqfile */
   ESL_ALPHABET *abc;		/* digital alphabet for input */
-  long          dbsize;         /* database size in nucleotides (doubled if doing rev comp) */
+  long          dbsize;         /* database size in nucleotides for E values (doubled if doing rev comp) */
   int           namewidth;      /* maximum name length in the database, imperative for obsessively pretty formatting in tab file output */
   int           ncm;            /* number CM we're at in file */
   int           do_rc;          /* should we search reverse complement? (for convenience */
@@ -202,30 +202,6 @@ main(int argc, char **argv)
       printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
-  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
-    {
-      cm_banner(stdout, argv[0], banner);
-      esl_usage(stdout, argv[0], usage);
-      puts("\nwhere general options are:");
-      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-      puts("\nalgorithm for final round of search (after >= 0 filters): [default: --inside]");
-      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-      puts("\ncutoff options for final round of search (after >= 0 filters):");
-      esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
-      puts("\noptions for banded DP in final round of search:");
-      esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
-      puts("\nfiltering options:");
-      esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
-      puts("\nfilter cutoff options (survival fractions are predicted, not guaranteed):");
-      esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
-      puts("\noptions for returning alignments of search hits:");
-      esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
-      puts("\nverbose output files:");
-      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
-      puts("\noptions for selecting output alphabet:");
-      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
-      exit(0);
-    }
   if (esl_opt_GetBoolean(go, "--devhelp") == TRUE) 
     {
       cm_banner(stdout, argv[0], banner);
@@ -252,6 +228,31 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
       puts("\nundocumented developer options related to experimental local begin/end modes:");
       esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
+      exit(0);
+    }
+  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
+    {
+      cm_banner(stdout, argv[0], banner);
+      esl_usage(stdout, argv[0], usage);
+      puts("\nwhere general options are:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
+      puts("\nalgorithm for final round of search (after >= 0 filters): [default: --inside]");
+      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+      puts("\ncutoff options for final round of search (after >= 0 filters):");
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
+      puts("\noptions for banded DP in final round of search:");
+      esl_opt_DisplayHelp(stdout, go, 4, 2, 80); 
+      puts("\nfiltering options:");
+      esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
+      puts("\nfilter cutoff options (survival fractions are predicted, not guaranteed):");
+      esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
+      puts("\noptions for returning alignments of search hits:");
+      esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
+      puts("\nverbose output files:");
+      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
+      puts("\noptions for selecting output alphabet:");
+      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
+      exit(0);
     }
   if (esl_opt_ArgNumber(go) != 2) 
     {
@@ -279,7 +280,7 @@ main(int argc, char **argv)
   if      (esl_opt_GetBoolean(go, "--rna")) cfg.abc_out = esl_alphabet_Create(eslRNA);
   else if (esl_opt_GetBoolean(go, "--dna")) cfg.abc_out = esl_alphabet_Create(eslDNA);
   else    cm_Fail("Can't determine output alphabet");
-  cfg.dbsize     = 0;                      /* db size  */
+  cfg.dbsize     = 0;                      /* db size used for E-values */
   cfg.namewidth  = 0;                      /* max name length in database */
   cfg.ncm        = 0;                      /* what number CM we're on, updated in masters, stays 0 (irrelevant) for workers */
   cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
@@ -390,15 +391,12 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
   cfg->fmt = cfg->sqfp->format;
 
-  /* get database size, unless specified with -Z */
-  if(esl_opt_IsDefault(go, "-Z")) { 
-    /* GetDBSize() reads all sequences, rewinds seq file and returns db size */
-      if((status = GetDBSize(cfg->sqfp, errbuf, &(cfg->dbsize), &(cfg->namewidth))) != eslOK) return status;  
-    if((! esl_opt_GetBoolean(go, "--toponly")) && (! esl_opt_GetBoolean(go, "--bottomonly"))) cfg->dbsize *= 2;
-  }
-  else { 
-    cfg->dbsize = (long) (esl_opt_GetReal(go, "-Z") * 1000000.); /* convert to Mb then to a long */
-  }
+  /* GetDBSize() reads all sequences, rewinds seq file and returns db size */
+  if((status = GetDBSize(cfg->sqfp, errbuf, &(cfg->dbsize), &(cfg->namewidth))) != eslOK) return status;  
+  if((! esl_opt_GetBoolean(go, "--toponly")) && (! esl_opt_GetBoolean(go, "--bottomonly"))) cfg->dbsize *= 2;
+
+  /* overwrite dbsize if -Z enabled */
+  if(! (esl_opt_IsDefault(go, "-Z"))) cfg->dbsize = (long) (esl_opt_GetReal(go, "-Z") * 1000000.); /* convert to Mb then to a long */
 
   /* if nec, open output file for --gcfile, and print to it */
   if (! esl_opt_IsDefault(go, "--gcfile")) { 

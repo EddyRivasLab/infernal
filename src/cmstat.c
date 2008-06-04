@@ -293,10 +293,10 @@ main(int argc, char **argv)
 	if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cmfile);
 	if(ncm == 0 || (esl_opt_GetBoolean(go, "--search"))) { 
 	  fprintf(stdout, "#\n");
-	  fprintf(stdout, "# %-4s  %-*s  %8s  %8s  %4s  %5s  %5s  %4s  %4s  %12s\n",    "",      namewidth, "",                     "",         "",         "",     "",      "",      "", "",    "rel entropy");
-	  fprintf(stdout, "# %-4s  %-*s  %8s  %8s  %4s  %5s  %5s  %4s  %4s  %12s\n",    "",      namewidth, "",                     "",         "",         "",     "",      "",      "", "",    "------------");
-	  fprintf(stdout, "# %-4s  %-*s  %8s  %8s  %4s  %5s  %5s  %4s  %4s  %5s  %5s\n", "idx",  namewidth, "name",                 "nseq",     "eff_nseq", "clen", "W",     "M",     "bps",  "bifs", "CM",     "HMM");
-	  fprintf(stdout, "# %-4s  %-*s  %8s  %8s  %4s  %5s  %5s  %4s  %4s  %5s  %5s\n", "----", namewidth, namedashes,             "--------", "--------", "----", "-----", "-----", "----", "----", "-----", "-----");
+	  fprintf(stdout, "# %-4s  %-*s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %12s\n",    "",      namewidth, "",                     "",         "",         "",     "",      "",      "", "",    "rel entropy");
+	  fprintf(stdout, "# %-4s  %-*s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %12s\n",    "",      namewidth, "",                     "",         "",         "",     "",      "",      "", "",    "------------");
+	  fprintf(stdout, "# %-4s  %-*s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %5s  %5s\n", "idx",  namewidth, "name",                 "nseq",     "eff_nseq", "clen", "bps",   "bifs",  "W",     "M",     "CM",     "HMM");
+	  fprintf(stdout, "# %-4s  %-*s  %8s  %8s  %4s  %4s  %4s  %4s  %5s  %5s  %5s\n", "----", namewidth, namedashes,             "--------", "--------", "----", "----", "----",   "----", "-----", "-----", "-----");
 	}
 	ncm++;
 
@@ -315,17 +315,17 @@ main(int argc, char **argv)
 	/* print qdbs to file if nec */
 	if(qdbfp != NULL) debug_print_bands(qdbfp, cm, cm->dmin, cm->dmax);
 
-	fprintf(stdout, "%6d  %-*s  %8d  %8.2f  %4d  %5d  %5d  %4d  %4d  %5.3f  %5.3f\n",
+	fprintf(stdout, "%6d  %-*s  %8d  %8.2f  %4d  %4d  %4d  %4d  %5d  %5.3f  %5.3f\n",
 		ncm,
 		namewidth,
 		cm->name,
 		cm->nseq,
 		cm->eff_nseq,
 		cm->clen,
-		cm->W,
-		cm->M,
 		CMCountStatetype(cm, MP_st),
 		CMCountStatetype(cm, B_st),
+		cm->W,
+		cm->M,
 		cm_MeanMatchRelativeEntropy(cm),
 		cp9_MeanMatchRelativeEntropy(cm));
 

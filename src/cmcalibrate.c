@@ -60,16 +60,12 @@ static ESL_OPTIONS options[] = {
   { "--mpi",            eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "run as an MPI parallel program", 1 },  
 #endif
   /* options for exp tail fitting */
-  { "--exp-T",          eslARG_REAL,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "set bit sc cutoff for exp tail fitting to <x> [df: -INFTY]", 2 },
-  { "--exp-cmL",        eslARG_REAL,     "1.",  NULL, "0.001<=x<=1000.",NULL,NULL,        NULL, "set length *in Mb* of random seqs for CM exp tail fit to <x>", 2 },
-  { "--exp-fract",      eslARG_REAL,    "0.10", NULL, "0.01<=x<=1.0",   NULL,NULL,        NULL, "set min fraction of DP calcs for HMM vs CM calibration to <x>", 2 },
-  { "--exp-hmmLn",      eslARG_REAL,    "10.",  NULL, "1.<=x<=1000.",   NULL,NULL,        NULL, "set min Mb length of random seqs for HMM exp tail fit to <x>", 2 },
-  { "--exp-hmmLx",      eslARG_REAL,    "1000.",NULL, "10.<=x<=1001.",  NULL,NULL,        NULL, "set max Mb length of random seqs for HMM exp tail fit to <x>", 2 },
-  { "--exp-tailp",      eslARG_REAL,    "0.01", NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 2 },
-  { "--exp-tailn",      eslARG_INT,     NULL,   NULL, "n>=50",  NULL,        NULL,"--exp-tailp,--exp-tailn","set number of hits in histogram tail to fit as <n>", 2 },
-  { "--exp-tailxn",     eslARG_INT,     "500",  NULL, "n>=50",  NULL,        NULL,"--exp-tailp","set max number of hits in histogram tail to fit as <n>", 2 },
-  { "--exp-beta",       eslARG_REAL,    NULL,   NULL, "x>0",    NULL,        NULL,        NULL, "turn QDB on for exp tail fitting, set tail loss prob to <x>", 2 },
-  { "--exp-random",     eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content of random null background model of CM",  2},
+  { "--exp-tailn-glc",  eslARG_INT,     "250",  NULL, "n>=50",  NULL,        NULL,"--exp-tailp,--exp-tailn","fit the top <n> hits in score histogram for  local modes", 2 },
+  { "--exp-tailn-loc",  eslARG_INT,     "750",  NULL, "n>=50",  NULL,        NULL,"--exp-tailp,--exp-tailn","fit the top <n> hits in score histogram for glocal modes", 2 },
+  { "--exp-tailp",      eslARG_REAL,    NULL,   NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 2 },
+  { "--exp-tailxn",     eslARG_INT,     "1000", NULL, "n>=50",  NULL,        NULL,"--exp-tailp", "w/--exp-tailp, set max num hits in tail to fit as <n>", 2 },
+  { "--exp-beta",       eslARG_REAL,    "1E-15",NULL, "x>0",    NULL,        NULL,"--exp-no-qdb","set tail loss prob for QDB to <x>", 2 },
+  { "--exp-no-qdb",     eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "do not use QDBs for calibrating CM search modes", 2 },
   { "--exp-gc",         eslARG_INFILE,  NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content distribution from file <f>",  2},
   { "--exp-pfile",      eslARG_INFILE,  NULL,   NULL, NULL,     NULL,  "--exp-gc",        NULL, "read partition info for exp tails from file <f>", 2},
   { "--exp-hfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,        NULL, "save fitted score histogram(s) to file <f>", 2 },
@@ -95,12 +91,21 @@ static ESL_OPTIONS options[] = {
   /* Developer option, for debugging */
   { "--stall",          eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 101 },  
 #endif
+  /* Developer exponential tail options the average user doesn't need to know about */
+  { "--exp-random",     eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content of random null background model of CM",  102},
+  { "--exp-T",          eslARG_REAL,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "set bit sc cutoff for exp tail fitting to <x> [df: -INFTY]", 102 },
+  { "--exp-cmL-glc",    eslARG_REAL,    "1.5", NULL, "0.1<=x<=1000.", NULL,NULL,         NULL, "set glocal  CM     Mb random seq length to <x>", 102 },
+  { "--exp-cmL-loc",    eslARG_REAL,    "1.5",  NULL, "0.1<=x<=1000.", NULL,NULL,         NULL, "set  local  CM     Mb random seq length to <x>", 102 },
+  { "--exp-hmmLn-glc",  eslARG_REAL,    "15.",  NULL, "1.<=x<=1000.",   NULL,NULL,        NULL, "set glocal HMM min Mb random seq length to <x>", 102 },
+  { "--exp-hmmLn-loc",  eslARG_REAL,    "15.",  NULL, "1.<=x<=1000.",   NULL,NULL,        NULL, "set  local HMM min Mb random seq length to <x>", 102 },
+  { "--exp-hmmLx",      eslARG_REAL,    "1000.",NULL, "10.<=x<=1001.",  NULL,NULL,        NULL, "set        HMM max Mb random seq length to <x>", 102 },
+  { "--exp-fract",      eslARG_REAL,    "0.10", NULL, "0.01<=x<=1.0",   NULL,NULL,        NULL, "set min fraction of HMM vs CM DP calcs to <x>", 102 },
   /* Developer options related to experiment local begin/end modes */
-  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,    NULL,    "--pbegin", "set all local begins as equiprobable", 102 },
-  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,    NULL,    "--pend", "set all local end probs to <x>", 102 },
-  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,    NULL,        NULL, "set aggregate local begin prob to <x>", 102 },
-  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,    NULL,        NULL, "set aggregate local end prob to <x>", 102 },
-  { "--no-null3", eslARG_NONE,   FALSE,  NULL, NULL,      NULL,        NULL,        NULL, "turn OFF the NULL3 post hoc additional null model", 102 },
+  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,    NULL,    "--pbegin", "set all local begins as equiprobable", 103 },
+  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,    NULL,    "--pend", "set all local end probs to <x>", 103 },
+  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,    NULL,        NULL, "set aggregate local begin prob to <x>", 103 },
+  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,    NULL,        NULL, "set aggregate local end prob to <x>", 103 },
+  { "--no-null3", eslARG_NONE,   FALSE,  NULL, NULL,      NULL,        NULL,        NULL, "turn OFF the NULL3 post hoc additional null model", 103 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -124,23 +129,28 @@ struct cfg_s {
   double          *dnull;              /* double version of cm->null, for generating random seqs */
 
   /* number of sequences and the length of each seq for exp tail fitting, set such that:
-   * exp_cmN  * exp_cmL  = esl_opt_GetBoolean(go, "--exp-cmL")  * 1000000; 
-   * exp_hmmN * exp_hmmL = esl_opt_GetBoolean(go, "--exp-hmmLn") * 1000000; 
+   * exp_{cm,hmm}N_{loc,glc} are the number of 100 Kb seqs we'll search for CM/HMM local/glocal
+   * exponential tail fitting:
    *
-   * exp_cmN, exp_hmmN is not necessarily 1 b/c using sequence lengths
+   * exp_cmN_loc  = (esl_opt_GetBoolean(go, "--exp-cmL-loc")  * 1,000,000) / 100,000; 
+   * exp_cmN_glc  = (esl_opt_GetBoolean(go, "--exp-cmL-glc")  * 1,000,000) / 100,000; 
+   * exp_hmmN_loc = (esl_opt_GetBoolean(go, "--exp-hmmL-loc") * 1,000,000) / 100,000; 
+   * exp_hmmN_glc = (esl_opt_GetBoolean(go, "--exp-hmmL-glc") * 1,000,000) / 100,000; 
+   *
+   * We don't search just 1 long sequence (for ex of 1 Mb) b/c using sequence lengths
    * above 100 Kb for exp tail calibration can yield millions of hits 
    * (for CM scans) before overlaps are removed, which requires a lot
    * of memory. 
    */
-  int              exp_cmN;            /* number of seqs for CM exp tail fitting */
-  int              exp_hmmN;           /* number of seqs for HMM exp tail fitting */
-  int              exp_cmL;            /* length of each seq for CM exp tail fitting */   
-  int              exp_hmmL;           /* length of each seq for HMM exp tail fitting */   
+  int              exp_cmN_loc;        /* number of 100 Kb seqs for  local CM exp tail fitting */
+  int              exp_cmN_glc;        /* number of 100 Kb seqs for glocal CM exp tail fitting */
+  int              exp_hmmN_loc;       /* number of 100 Kb seqs for  local HMM exp tail fitting */
+  int              exp_hmmN_glc;       /* number of 100 Kb seqs for glocal HMM exp tail fitting */
+  int              expL;               /* the size of seq chunks to search, set as 100,000 (100 Kb) */
 
   /* info for the comlog we'll add to the cmfiles */
   char            *ccom;               /* command line used in this execution of cmcalibrate */
   char            *cdate;              /* date of this execution of cmcalibrate */
-
 
   /* the following data is modified for each CM, and in some cases for each exp mode for each CM,
    * it is assumed to be 'current' in many functions.
@@ -179,7 +189,7 @@ static int  initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
 static int  initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 
 static int  set_partition_gc_freq(struct cfg_s *cfg, int p);
-static int  fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, double *ret_mu, double *ret_lambda, int *ret_nrandhits, float *ret_tailp);
+static int  fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, int exp_mode_is_local, double *ret_mu, double *ret_lambda, int *ret_nrandhits, float *ret_tailp);
 static int  get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, double *dnull, int L, ESL_DSQ **ret_dsq);
 static int  get_cmemit_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, int *ret_p, ESL_DSQ **ret_dsq);
 static int  read_partition_file(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
@@ -201,7 +211,6 @@ static int  print_post_calibration_info (const ESL_GETOPTS *go, struct cfg_s *cf
 static int  estimate_time_for_exp_round (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int exp_mode, double *ret_sec_per_res);
 static int  estimate_time_for_fil_round (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, int exp_mode, double *ret_sec_per_seq);
 static int  update_hmm_exp_length(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int  hack_overwrite_gcfreq(double *gc_freq);
 static int  get_genomic_sequence_from_hmm(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int L, ESL_DSQ **ret_dsq);
 /*static int  predict_time_for_exp_stage(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int exp_mode, int cmN, int hmmN, int expL, float *ret_seconds);*/
 /*static int  print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);*/
@@ -231,20 +240,6 @@ main(int argc, char **argv)
       printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
-  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
-    {
-      cm_banner(stdout, argv[0], banner);
-      esl_usage(stdout, argv[0], usage);
-      puts("\nwhere general options are:");
-      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
-      puts("\nexponential tail distribution fitting options :");
-      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
-      puts("\nHMM filter threshold calculation options :");
-      esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
-      puts("\nother options:");
-      esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
-      exit(0);
-    }
   if (esl_opt_GetBoolean(go, "--devhelp") == TRUE) 
     {
       cm_banner(stdout, argv[0], banner);
@@ -259,8 +254,24 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
       puts("\nundocumented developer options for debugging:");
       esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
-      puts("\nother undocumented developer options:");
+      puts("\nundocumented exp tail related developer options:");
       esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
+      puts("\nother undocumented developer options:");
+      esl_opt_DisplayHelp(stdout, go, 103, 2, 80);
+      exit(0);
+    }
+  if (esl_opt_GetBoolean(go, "-h") == TRUE) 
+    {
+      cm_banner(stdout, argv[0], banner);
+      esl_usage(stdout, argv[0], usage);
+      puts("\nwhere general options are:");
+      esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
+      puts("\nexponential tail distribution fitting options :");
+      esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
+      puts("\nHMM filter threshold calculation options :");
+      esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
+      puts("\nother options:");
+      esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
       exit(0);
     }
   if (esl_opt_ArgNumber(go) != 1) 
@@ -288,6 +299,7 @@ main(int argc, char **argv)
   cfg.np          = 1;     /* default number of partitions is 1, changed if --exp-pfile */
   cfg.pstart      = NULL;  /* allocated (by default to size 1) in init_master_cfg() */
   cfg.avg_hit_len = 0.;
+  cfg.expL        = 100000; /* 100 Kb chunks are searched */
 
   /* Initial allocations for results per CM;
    * we'll resize these arrays dynamically as we read more CMs.
@@ -313,21 +325,20 @@ main(int argc, char **argv)
   /* calculate sequence lengths and quantities for exp tail fitting,
    * max length seq is 100 Kb, see comment in cfg_t definition above for the reason.
    */
-  int cmL_total  = 1000000 * esl_opt_GetReal(go, "--exp-cmL");
-  int hmmL_total = 1000000 * esl_opt_GetReal(go, "--exp-hmmLn");
+  int cmL_total_loc  = 1000000 * esl_opt_GetReal(go, "--exp-cmL-loc");
+  int cmL_total_glc  = 1000000 * esl_opt_GetReal(go, "--exp-cmL-glc");
+  int hmmL_total_loc = 1000000 * esl_opt_GetReal(go, "--exp-hmmLn-loc");
+  int hmmL_total_glc = 1000000 * esl_opt_GetReal(go, "--exp-hmmLn-glc");
 
-  /* EPN, Sun Mar 30 15:39:27 2008 HERE HERE HERE TEMP CHANGE! */
-  /* ORIG CODE, 100 KB chunks */
-  cfg.exp_cmN  = (int) (((float) cmL_total  / 100000.) + 0.999999); 
-  cfg.exp_hmmN = (int) (((float) hmmL_total / 100000.) + 0.999999); 
-
-  /* TEMP CODE, 10 KB chunks */
-  ///cfg.exp_cmN  = (int) (((float) cmL_total  / 10000.) + 0.999999); 
-  ///cfg.exp_hmmN = (int) (((float) hmmL_total / 10000.) + 0.999999); 
-
-  /* end temp change */
-  cfg.exp_cmL  = cmL_total  / cfg.exp_cmN;
-  cfg.exp_hmmL = hmmL_total / cfg.exp_hmmN;
+  /* determine the number of 100 Kb chunks (cfg.expL = 100000) to search to reach the totals */
+  if(cmL_total_loc  < (cfg.expL + 1)) cm_Fail("with --exp-cmL-loc <x>, <x> must be at least 0.1.");
+  if(cmL_total_glc  < (cfg.expL + 1)) cm_Fail("with --exp-cmL-glc <x>, <x> must be at least 0.1.");
+  if(hmmL_total_loc < (cfg.expL + 1)) cm_Fail("with --exp-cmL-loc <x>, <x> must be at least 0.1.");
+  if(hmmL_total_glc < (cfg.expL + 1)) cm_Fail("with --exp-cmL-glc <x>, <x> must be at least 0.1.");
+  cfg.exp_cmN_loc  = (int) (((float) cmL_total_loc  / (float) cfg.expL) + 0.999999); 
+  cfg.exp_cmN_glc  = (int) (((float) cmL_total_glc  / (float) cfg.expL) + 0.999999); 
+  cfg.exp_hmmN_loc = (int) (((float) hmmL_total_loc / (float) cfg.expL) + 0.999999); 
+  cfg.exp_hmmN_glc = (int) (((float) hmmL_total_glc / (float) cfg.expL) + 0.999999); 
 
   cfg.cmfp     = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.exphfp   = NULL; /* ALWAYS remains NULL for mpi workers */
@@ -552,11 +563,6 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     else if (status != eslOK)      ESL_FAIL(status, errbuf, "Failed to open sequence database file %s, code %d.", esl_opt_GetString(go, "--exp-gc"), status); 
     if((status = GetDBInfo(tmp_abc, dbfp, errbuf, NULL, &(cfg->gc_freq))) != eslOK) return status; 
     esl_vec_DNorm(cfg->gc_freq, GC_SEGMENTS);
-    /* TEMP BEGIN HERE EPN, Thu Mar 27 15:00:26 2008 
-     * Overwrite the cfg->gc_freq with an experimental distro from many genomes:
-     */
-    /*hack_overwrite_gcfreq(cfg->gc_freq);*/
-    /* TEMP END HERE */
     esl_alphabet_Destroy(tmp_abc);
     esl_sqfile_Close(dbfp); 
    /* allocate pgc_freq, the gc freqs per partition, used to sample seqs for different partitions */
@@ -645,7 +651,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
   /* exptail related vars */
   int               expN;                                        /* number of length <expL> sequences to search for exp tail fitting of current exp mode */
-  int               expL;                                        /* lengths of individual sequences to search for exp tail fitting of current exp mode */
   int               exp_cm_cyk_mode;                             /* CYK    exp mode CM is in EXP_CM_LC or EXP_CM_GC */
   int               exp_cm_ins_mode;                             /* Inside exp mode CM is in EXP_CM_LI or EXP_CM_GI */
   int               exp_scN = 0;                                 /* number of hits reported thus far, for all seqs */
@@ -708,8 +713,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       cm_psec = cm_asec = 0.;
 
       for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
-	expN = ExpModeIsForCM(exp_mode) ? cfg->exp_cmN : cfg->exp_hmmN;
-	expL = ExpModeIsForCM(exp_mode) ? cfg->exp_cmL : cfg->exp_hmmL;
+	if(ExpModeIsLocal(exp_mode)) { expN = ExpModeIsForCM(exp_mode) ? cfg->exp_cmN_loc : cfg->exp_hmmN_loc; }
+	else                         { expN = ExpModeIsForCM(exp_mode) ? cfg->exp_cmN_glc : cfg->exp_hmmN_glc; }
 	
 	/* do we need to switch from glocal configuration to local? */
 	if(exp_mode > 0 && (! ExpModeIsLocal(exp_mode-1)) && ExpModeIsLocal(exp_mode)) {
@@ -742,7 +747,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* estimate time for this round */
 	  if(p == 0) { 
 	    if((status = estimate_time_for_exp_round(go, cfg, errbuf, cm, exp_mode, &psec)) != eslOK) cm_Fail(errbuf); 
-	    psec *= expN * expL; /* psec was per residue */
+	    psec *= expN * cfg->expL; /* psec was per residue */
 	    /* with --forecast, take into account parallelization */
 	    if((! esl_opt_IsDefault(go, "--forecast")) && (esl_opt_GetInteger(go, "--forecast") > 1)) psec /= (esl_opt_GetInteger(go, "--forecast") - 1);
 	  }
@@ -750,7 +755,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  exp_psecAA[exp_mode][p] = psec;
 	  cm_psec    += psec;
 	  total_psec += psec;
-	  print_exp_line(go, cfg, errbuf, exp_mode, expN, expL, p, psec);
+	  print_exp_line(go, cfg, errbuf, exp_mode, expN, cfg->expL, p, psec);
 	  if(! esl_opt_IsDefault(go, "--forecast")) continue; /* special mode, we don't do the calibration, just print the predicting timings */
 
 	  esl_stopwatch_Start(cfg->w_stage);
@@ -763,13 +768,13 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    /* do the work, fit the histogram, update exp tail info in cmstats */
 	    /* generate sequence, either randomly from background null or from hard-wired 5 state HMM that emits genome like sequence */
 	    if(esl_opt_GetBoolean(go, "--exp-random")) { 
-	      if((status = get_random_dsq(cfg, errbuf, cm, dnull, expL, &dsq)) != eslOK) cm_Fail(errbuf); 
+	      if((status = get_random_dsq(cfg, errbuf, cm, dnull, cfg->expL, &dsq)) != eslOK) cm_Fail(errbuf); 
 	    }
 	    else { 
-	      if((status = get_genomic_sequence_from_hmm(cfg, errbuf, cm, expL, &dsq)) != eslOK) cm_Fail(errbuf); 
+	      if((status = get_genomic_sequence_from_hmm(cfg, errbuf, cm, cfg->expL, &dsq)) != eslOK) cm_Fail(errbuf); 
 	    }
-	    if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, expL, &results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, NULL, NULL)) != eslOK) cm_Fail(errbuf);
-	    RemoveOverlappingHits(results, 1, expL);
+	    if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, cfg->expL, &results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, NULL, NULL)) != eslOK) cm_Fail(errbuf);
+	    RemoveOverlappingHits(results, 1, cfg->expL);
 	    
 	    if(results->num_results > 0) { 
 	      if(i == 0) ESL_ALLOC (exp_scA, sizeof(float) * (exp_scN + results->num_results));
@@ -784,8 +789,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    fprintf(cfg->exptfitfp, "# CM: %s\n", cm->name);
 	    fprintf(cfg->exptfitfp, "# mode: %12s\n", DescribeExpMode(exp_mode));
 	  }
-	  if((status = fit_histogram(go, cfg, errbuf, exp_scA, exp_scN, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
-	  SetExpInfo(cfg->cmstatsA[cmi]->expAA[exp_mode][p], tmp_lambda, tmp_mu, (long) (expL * expN), tmp_nrandhits, tmp_tailp);
+	  if((status = fit_histogram(go, cfg, errbuf, exp_scA, exp_scN, ExpModeIsLocal(exp_mode), &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
+	  SetExpInfo(cfg->cmstatsA[cmi]->expAA[exp_mode][p], tmp_lambda, tmp_mu, (long) (cfg->expL * expN), tmp_nrandhits, tmp_tailp);
 	  
 	  esl_stopwatch_Stop(cfg->w_stage);
 	  exp_asecAA[exp_mode][p] = cfg->w_stage->elapsed;
@@ -932,8 +937,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   double **exp_psecAA;            /* stores predicted timings for each exp tail fit stage, for each CM, each partition */
   double  *fil_psecA;             /* stores predicted timings for each filter stage for each CM */
   /* exponential tail related vars */
-  int      expN;                                        /* number of length <expL> sequences to search for exp tail fitting of current exp mode */
-  int      expL;                                        /* lengths of individual sequences to search for exp tail fitting of current exp mode */
+  int      expN;                                        /* number of length <cfg->expL> sequences to search for exp tail fitting of current exp mode */
   int      exp_scN = 0;                                 /* number of hits reported thus far, for all seqs */
   float   *exp_scA = NULL;                              /* [0..exp_scN-1] hit scores for all seqs */
   int      exp_cm_cyk_mode;                             /* CYK    exp mode CM is in EXP_CM_LC or EXP_CM_GC */
@@ -1083,8 +1087,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       ESL_ALLOC(fil_partA,   sizeof(int) *   filN);
   
       for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
-	expN = ExpModeIsForCM(exp_mode) ? cfg->exp_cmN : cfg->exp_hmmN;
-	expL = ExpModeIsForCM(exp_mode) ? cfg->exp_cmL : cfg->exp_hmmL;
+	if(ExpModeIsLocal(exp_mode)) { expN = ExpModeIsForCM(exp_mode) ? cfg->exp_cmN_loc : cfg->exp_hmmN_loc; }
+	else                         { expN = ExpModeIsForCM(exp_mode) ? cfg->exp_cmN_glc : cfg->exp_hmmN_glc; }
     
 	/* allocate and initialize sequence lists */
 	ESL_ALLOC(dsq_slist,     sizeof(ESL_DSQ *) * expN);
@@ -1103,7 +1107,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if((status = switch_global_to_local(go, cfg, cm, errbuf))      != eslOK) cm_Fail(errbuf);
 	  if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len))) != eslOK) cm_Fail(errbuf);
 	}
-	chunksize = DetermineSeqChunksize(cfg->nproc, expL, cm->W);
+	chunksize = DetermineSeqChunksize(cfg->nproc, cfg->expL, cm->W);
     
 	/* update search info for round 0 (final round) for exp tail mode */
 	UpdateSearchInfoForExpMode(cm, 0, exp_mode);
@@ -1115,7 +1119,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	 * 2. EXP_CM_GC  and EXP_CM_GI
 	 * 3. EXP_CP9_LV and EXP_CP9_LF
 	 * 4. EXP_CM_LC  and EXP_CM_LI
-	 * Also the first min(--exp--cmN <n>, --exp--hmmN <n>) sequences between 1 and 2, and between 3 and 4,
+	 * Also the first min(--exp-cmN-{loc,glc} <n>, --exp-hmmN-{loc-glc} <n>) sequences between 1 and 2, and between 3 and 4,
 	 * will also be identical.
 	 */
 	seed = esl_randomness_GetSeed(cfg->r);
@@ -1133,14 +1137,14 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    /* estimate time for this round, assuming all workers have same processor speed as master */
 	    if(p == 0) { 
 	      if((status = estimate_time_for_exp_round(go, cfg, errbuf, cm, exp_mode, &psec)) != eslOK) cm_Fail(errbuf); 
-	      psec *= expN * expL; /* psec was per residue */
+	      psec *= expN * cfg->expL; /* psec was per residue */
 	      if(cfg->nproc > 1) psec /= (cfg->nproc-1); /* parallelization will speed us up */
 	    }
 	    else psec = exp_psecAA[exp_mode][0];
 	    exp_psecAA[exp_mode][p] = psec;
 	    cm_psec    += psec;
 	    total_psec += psec;
-	    print_exp_line(go, cfg, errbuf, exp_mode, expN, expL, p, psec);
+	    print_exp_line(go, cfg, errbuf, exp_mode, expN, cfg->expL, p, psec);
 
 	    esl_stopwatch_Start(cfg->w_stage);
 	    exp_scN  = 0;
@@ -1164,10 +1168,10 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		      {
 			/* generate sequence, either randomly from background null or from hard-wired 5 state HMM that emits genome like sequence */
 			if(esl_opt_GetBoolean(go, "--exp-random")) { 
-			  if((status = get_random_dsq(cfg, errbuf, cm, dnull, expL, &(dsq_slist[si]))) != eslOK) goto ERROR; 
+			  if((status = get_random_dsq(cfg, errbuf, cm, dnull, cfg->expL, &(dsq_slist[si]))) != eslOK) goto ERROR; 
 			}
 			else { 
-			  if((status = get_genomic_sequence_from_hmm(cfg, errbuf, cm, expL, &(dsq_slist[si]))) != eslOK) goto ERROR;
+			  if((status = get_genomic_sequence_from_hmm(cfg, errbuf, cm, cfg->expL, &(dsq_slist[si]))) != eslOK) goto ERROR;
 			}
 			results_slist[si] = CreateResults(INIT_RESULTS);
 			sent_slist[si]    = FALSE;
@@ -1222,7 +1226,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			      { /* we're done with sequence si_recv; remove overlapping hits, copy scores of remaining hits, then free data */
 				if(results_slist[si_recv]->num_results > 0) 
 				  { 
-				    RemoveOverlappingHits(results_slist[si_recv], 1, expL);
+				    RemoveOverlappingHits(results_slist[si_recv], 1, cfg->expL);
 				    if(exp_scA == NULL) ESL_ALLOC (exp_scA,      sizeof(float) * (exp_scN + results_slist[si_recv]->num_results));
 				    else                ESL_RALLOC(exp_scA, tmp, sizeof(float) * (exp_scN + results_slist[si_recv]->num_results));
 				    for(h = 0; h < results_slist[si_recv]->num_results; h++) exp_scA[(exp_scN+h)] = results_slist[si_recv]->data[h].score;
@@ -1247,7 +1251,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		if (have_work)
 		  {   
 		    /* send new search job */
-		    len = (chunksize < (expL - seqpos + 1)) ? chunksize : (expL - seqpos + 1);
+		    len = (chunksize < (cfg->expL - seqpos + 1)) ? chunksize : (cfg->expL - seqpos + 1);
 		    ESL_DPRINTF1(("MPI master is sending sequence i0..j0 %d..%d to search to worker %d\n", seqpos, seqpos+len-1, wi));
 		    assert(seqpos > 0);
 		
@@ -1277,8 +1281,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      fprintf(cfg->exptfitfp, "# CM: %s\n", cm->name);
 	      fprintf(cfg->exptfitfp, "# mode: %12s\n", DescribeExpMode(exp_mode));
 	    }
-	    if((status = fit_histogram(go, cfg, errbuf, exp_scA, exp_scN, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
-	    SetExpInfo(cfg->cmstatsA[cmi]->expAA[exp_mode][p], tmp_lambda, tmp_mu, (long) (expL * expN), tmp_nrandhits, tmp_tailp);
+	    if((status = fit_histogram(go, cfg, errbuf, exp_scA, exp_scN, ExpModeIsLocal(exp_mode), &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
+	    SetExpInfo(cfg->cmstatsA[cmi]->expAA[exp_mode][p], tmp_lambda, tmp_mu, (long) (cfg->expL * expN), tmp_nrandhits, tmp_tailp);
 	
 	    for(si = 0; si < expN; si++) {
 	      ESL_DASSERT1((dsq_slist[si] == NULL));
@@ -1721,8 +1725,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   int nstarts, nexits, nd;
   float exp_cutoff;
 
-  /* config QDB? NO!, unless --exp-beta enabled */
-  if(esl_opt_IsDefault(go, "--exp-beta")) { 
+  /* config QDB? yes, unless --exp-no-qdb enabled */
+  if(esl_opt_GetBoolean(go, "--exp-no-qdb")) { 
     cm->search_opts |= CM_SEARCH_NOQDB; /* don't use QDB to search */
     /* cm->beta_qdb == cm->beta_W, both will be set as beta_W read from cmfile */
   }
@@ -1842,12 +1846,11 @@ set_partition_gc_freq(struct cfg_s *cfg, int p)
 
 
 /* fit_histogram()
- * Create, fill and fit a histogram to an exponential tail. Data to fill the histogram
- * is given as <data>.
+ * Create, fill and fit the tail of a histogram to an exponential tail. Data to fill the histogram
+ * is given as <scores>.
  */
 static int
-fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores,
-	      double *ret_mu, double *ret_lambda, int *ret_nrandhits, float *ret_tailp)
+fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, int exp_mode_is_local, double *ret_mu, double *ret_lambda, int *ret_nrandhits, float *ret_tailp)
 {
   int status;
   double mu;
@@ -1868,7 +1871,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
   /* fill histogram */
   for(i = 0; i < nscores; i++) {
     if((status = esl_histogram_Add(h, scores[i])) != eslOK) ESL_FAIL(status, errbuf, "fit_histogram(), esl_histogram_Add() call returned non-OK status: %d\n", status);
-    ///printf("%4d %.3f\n", i, scores[i]);
+    /* printf("%4d %.3f\n", i, scores[i]); */
   }
 
   /* fit scores to an exponential tail */
@@ -1883,27 +1886,35 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
 	esl_exp_FitComplete(xv, n, &(params[0]), &(params[1]));
 	esl_histogram_SetExpectedTail(h, params[0], tailp, &esl_exp_generic_cdf, &params);
 	fprintf(cfg->exptfitfp, "  %.9f  %10.6f  %10.4f  %12d\n", tailp, params[1], params[0], n);
-	//printf("# TEST Exponential fit to fraction %.9f tail: lambda = %f (nsamples: %d)\n", tailp, params[1], n);
       }
       else { 
 	fprintf(cfg->exptfitfp, "  %.9f  %10s  %10s  %12d\n", tailp, "N/A", "N/A", n);
-	//printf("# TEST Exponential fit to fraction %.9f tail: lambda = N/A (nsamples: %d)\n", tailp, n);
       }
     }
     fprintf(cfg->exptfitfp, "//\n");
   }
   /* end of if cfg->exptfitfp != NULL) */
 
-  tailp = esl_opt_GetReal(go, "--exp-tailp");
-  if(!esl_opt_IsDefault(go, "--exp-tailn")) { 
-    tailp = ((float) esl_opt_GetInteger(go, "--exp-tailn") / (float) h->n);
-    if(tailp > 1.) ESL_FAIL(eslERANGE, errbuf, "--exp-tailn <n>=%d cannot be used, there's only %" PRId64 " hits in the histogram! Lower <n>.", esl_opt_GetInteger(go, "--exp-tailn"), h->n);
+  if(!esl_opt_IsDefault(go, "--exp-tailp")) { 
+    tailp = esl_opt_GetReal(go, "--exp-tailp");
+    tailp = ESL_MIN(tailp, ((float) esl_opt_GetInteger(go, "--exp-tailxn") / (float) h->n)); /* ensure we don't exceed our max nhits in tail */
   }
-  else tailp = ESL_MIN(tailp, ((float) esl_opt_GetInteger(go, "--exp-tailxn") / (float) h->n)); /* ensure we don't exceed our max nhits in tail */
+  else { 
+    if(exp_mode_is_local) { 
+      tailp = ((float) esl_opt_GetInteger(go, "--exp-tailn-loc") / (float) h->n);
+      if(tailp > 1.) ESL_FAIL(eslERANGE, errbuf, "--exp-tailn-loc <n>=%d cannot be used, there's only %" PRId64 " hits in the histogram! Lower <n> or use --exp-tailp.", esl_opt_GetInteger(go, "--exp-tailn-loc"), h->n);
+    }
+    else { 
+      tailp = ((float) esl_opt_GetInteger(go, "--exp-tailn-glc") / (float) h->n);
+      if(tailp > 1.) ESL_FAIL(eslERANGE, errbuf, "--exp-tailn-glc <n>=%d cannot be used, there's only %" PRId64 " hits in the histogram! Lower <n> or use --exp-tailp.", esl_opt_GetInteger(go, "--exp-tailn-glc"), h->n);
+    }
+  }
 
   esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); /* fit to right 'tailfit' fraction, 0.01 by default */
-  if(n <= 1) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram. Increase --exp-cmL or --exp-hmmLn.", tailp);
-    
+  if(n <= 1) { 
+    if(exp_mode_is_local) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram. Increase --exp-cmL-loc or --exp-hmmLn-loc.", tailp);
+    else                  ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram. Increase --exp-cmL-glc or --exp-hmmLn-glc.", tailp);
+  }
   esl_exp_FitComplete(xv, n, &(params[0]), &(params[1]));
   esl_histogram_SetExpectedTail(h, params[0], tailp, &esl_exp_generic_cdf, &params);
 
@@ -2201,8 +2212,6 @@ update_dp_calcs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm
     if(safe_windowlen > (cm->clen * 1000))
       cm_Fail("initialize_cm(), safe_windowlen big: %d\n", safe_windowlen);
   }
-  ESL_DASSERT1((dmax[0] == cm->W)); /* cm->W should have been calculated with cm->beta_qdb */
-  assert(dmax[0] == cm->W); 
   if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*cm->W, dmin, dmax, cm->W, TRUE,  NULL, &(cfg->fil_cm_ncalcs))) != eslOK) return status;
   free(dmin);
   free(dmax);
@@ -3034,7 +3043,6 @@ int print_post_calibration_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   double total_psec = 0.;     /* predicted number of seconds for cm, all stages */
   double total_asec = 0.;     /* actual number of seconds for cm, all stages */
   int   expN;                 /* nseq we'll calibrate on */
-  int   expL;                 /* length of seqs we'll calibrate on */
   int   p, ps, pe;            /* partition vars */
   float L_Mb;                 /* total seq length we'll calibrate exp tails on in Mb */
   ExpInfo_t *exp;             /* pointer to current exp tail info, for convenience */
@@ -3053,9 +3061,9 @@ int print_post_calibration_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   fprintf(fp, "# %3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %10s %10s\n", "---", "---", "---", "----", "---", "---", "-------", "------", "------", "-------", "----------", "----------");
 
   for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
-    expN = ExpModeIsForCM(exp_mode) ? cfg->exp_cmN : cfg->exp_hmmN;
-    expL = ExpModeIsForCM(exp_mode) ? cfg->exp_cmL : cfg->exp_hmmL;
-    L_Mb = ((float) expN * (float) expL) / 1000000.;
+    if(ExpModeIsLocal(exp_mode)) { expN = ExpModeIsForCM(exp_mode) ? cfg->exp_cmN_loc : cfg->exp_hmmN_loc; }
+    else                         { expN = ExpModeIsForCM(exp_mode) ? cfg->exp_cmN_glc : cfg->exp_hmmN_glc; }
+    L_Mb = ((float) expN * (float) cfg->expL) / 1000000.;
     for (p = 0; p < cfg->np; p++) {
       total_psec += exp_psecAA[exp_mode][p];
       total_asec += exp_asecAA[exp_mode][p];
@@ -3398,8 +3406,8 @@ int update_hmm_exp_length(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
   float  cm_Mc_per_res;    /* millions of dp calcs per residue searching with CM */
   float  hmm_Mc_per_res;   /* millions of dp calcs per residue searching with HMM */
   int    irrelevant_W;
-  float  hmmL;
-  int    hmmL_int;
+  float  hmmL_loc, hmmL_glc;
+  int    hmmL_loc_int, hmmL_glc_int;
   /* update search info for round 0 (final round) for exp tail mode */
 
   if(cm->smx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "update_hmm_exp_length(), cm->smx is NULL");
@@ -3417,258 +3425,36 @@ int update_hmm_exp_length(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
    */
   hmm_Mc_per_res *= 2.;
 
-  hmmL = (cm_Mc_per_res / hmm_Mc_per_res) * esl_opt_GetReal(go, "--exp-fract") * esl_opt_GetReal(go, "--exp-cmL");
-  hmmL = ESL_MAX(hmmL, esl_opt_GetReal(go, "--exp-hmmLn"));
-  hmmL = ESL_MIN(hmmL, esl_opt_GetReal(go, "--exp-hmmLx"));
-  hmmL *= 1000000.; /* convert to Mb */
-  hmmL_int = (int) hmmL; 
+  /* set seq length to search for local HMM */
+  hmmL_loc = (cm_Mc_per_res / hmm_Mc_per_res) * esl_opt_GetReal(go, "--exp-fract") * esl_opt_GetReal(go, "--exp-cmL-loc");
+  hmmL_loc = ESL_MAX(hmmL_loc, esl_opt_GetReal(go, "--exp-hmmLn-loc"));
+  hmmL_loc = ESL_MIN(hmmL_loc, esl_opt_GetReal(go, "--exp-hmmLx"));
+  hmmL_loc *= 1000000.; /* convert to Mb */
+  hmmL_loc_int = (int) hmmL_loc; 
+  cfg->exp_hmmN_loc = (int) (((float) hmmL_loc_int / (float) cfg->expL) + 0.999999); 
 
-  cfg->exp_hmmN = (int) (((float) hmmL_int / 100000.) + 0.999999); 
-  cfg->exp_hmmL = hmmL_int / cfg->exp_hmmN;
+  /* set seq length to search for gglcal HMM */
+  hmmL_glc = (cm_Mc_per_res / hmm_Mc_per_res) * esl_opt_GetReal(go, "--exp-fract") * esl_opt_GetReal(go, "--exp-cmL-glc");
+  hmmL_glc = ESL_MAX(hmmL_glc, esl_opt_GetReal(go, "--exp-hmmLn-glc"));
+  hmmL_glc = ESL_MIN(hmmL_glc, esl_opt_GetReal(go, "--exp-hmmLx"));
+  hmmL_glc *= 1000000.; /* convert to Mb */
+  hmmL_glc_int = (int) hmmL_glc; 
+  cfg->exp_hmmN_glc = (int) (((float) hmmL_glc_int / (float) cfg->expL) + 0.999999); 
 
   ESL_DPRINTF1(("cm  ncalcs: %f\n", cm_Mc_per_res));
   ESL_DPRINTF1(("hmm ncalcs: %f\n", hmm_Mc_per_res));
   ESL_DPRINTF1(("cm/hmm ratio: %f\n", cm_Mc_per_res / hmm_Mc_per_res));
-  ESL_DPRINTF1(("min hmmL: %f\n", esl_opt_GetReal(go, "--exp-hmmLn")));
-  ESL_DPRINTF1(("hmmL: %f\n", hmmL));
-  ESL_DPRINTF1(("cfg->exp_hmmL: %d\n", cfg->exp_hmmL));
-  ESL_DPRINTF1(("cfg->exp_hmmN: %d\n", cfg->exp_hmmN));
-  ESL_DPRINTF1(("cfg->exp_hmmL * cfg->exp_hmmN in Mb: %f\n", (float) (cfg->exp_hmmL * cfg->exp_hmmN) / 1000000.));
+  ESL_DPRINTF1(("min hmmL_loc: %f\n", esl_opt_GetReal(go, "--exp-hmmLn-loc")));
+  ESL_DPRINTF1(("min hmmL_glc: %f\n", esl_opt_GetReal(go, "--exp-hmmLn-glc")));
+  ESL_DPRINTF1(("hmmL_loc: %f\n", hmmL_loc));
+  ESL_DPRINTF1(("hmmL_loc: %f\n", hmmL_glc));
+  ESL_DPRINTF1(("cfg->exp_hmmN_loc: %d\n", cfg->exp_hmmN_loc));
+  ESL_DPRINTF1(("cfg->exp_hmmN_glc: %d\n", cfg->exp_hmmN_glc));
+  ESL_DPRINTF1(("cfg->exp_hmmL_loc * cfg->exp_hmmN in Mb: %f\n", (float) (cfg->expL * cfg->exp_hmmN_loc) / 1000000.));
+  ESL_DPRINTF1(("cfg->exp_hmmL_glc * cfg->exp_hmmN in Mb: %f\n", (float) (cfg->expL * cfg->exp_hmmN_glc) / 1000000.));
 
-  /*
-  printf("cm  ncalcs: %f\n", cm_Mc_per_res);
-  printf("hmm ncalcs: %f\n", hmm_Mc_per_res);
-  printf("cm/hmm ratio: %f\n", cm_Mc_per_res / hmm_Mc_per_res);
-  printf("min hmmL: %f\n", esl_opt_GetReal(go, "--exp-hmmLn"));
-  printf("hmmL: %f\n", hmmL);
-  printf("cfg->exp_hmmL: %d\n", cfg->exp_hmmL);
-  printf("cfg->exp_hmmN: %d\n", cfg->exp_hmmN);
-  printf("cfg->exp_hmmL * cfg->exp_hmmN in Mb: %f\n", (float) (cfg->exp_hmmL * cfg->exp_hmmN) / 1000000.);
-*/
   return eslOK;
 }
-
-/* Function: hack_overwrite_gcfreq
- * Date:     EPN, Thu Mar 27 15:01:55 2008
- * 
- * Purpose:  Overwrite gcfreq with gc distro. Temporary function.
- */
-int
-hack_overwrite_gcfreq(double *gc_freq)
-{
-  /*for(int i = 0; i <= 100; i++) printf("0 gc[%3d]: %.7f\n", i, gc_freq[i]);*/
-  
-  /* from ~/notebook/8_0326_inf_default_gc/for_cmcalibrate_dir/arc.bac.euk.norm.gcfile.code */
-  gc_freq[0] = 0.000039000000;
-  gc_freq[1] = 0.000019666667;
-  gc_freq[2] = 0.000026333333;
-  gc_freq[3] = 0.000034666667;
-  gc_freq[4] = 0.000043666667;
-  gc_freq[5] = 0.000058666667;
-  gc_freq[6] = 0.000083000000;
-  gc_freq[7] = 0.000105666667;
-  gc_freq[8] = 0.000137333333;
-  gc_freq[9] = 0.000182000000;
-  gc_freq[10] = 0.000248666667;
-  gc_freq[11] = 0.000319000000;
-  gc_freq[12] = 0.000402333333;
-  gc_freq[13] = 0.000532333333;
-  gc_freq[14] = 0.000662666667;
-  gc_freq[15] = 0.000877000000;
-  gc_freq[16] = 0.001082333333;
-  gc_freq[17] = 0.001479000000;
-  gc_freq[18] = 0.001865000000;
-  gc_freq[19] = 0.002484333333;
-  gc_freq[20] = 0.003200000000;
-  gc_freq[21] = 0.004256000000;
-  gc_freq[22] = 0.005181333333;
-  gc_freq[23] = 0.006625333333;
-  gc_freq[24] = 0.008352000000;
-  gc_freq[25] = 0.009967333333;
-  gc_freq[26] = 0.012103000000;
-  gc_freq[27] = 0.014233000000;
-  gc_freq[28] = 0.016329666667;
-  gc_freq[29] = 0.018835000000;
-  gc_freq[30] = 0.020768000000;
-  gc_freq[31] = 0.022934000000;
-  gc_freq[32] = 0.025195000000;
-  gc_freq[33] = 0.027182000000;
-  gc_freq[34] = 0.028761000000;
-  gc_freq[35] = 0.030231333333;
-  gc_freq[36] = 0.031358666667;
-  gc_freq[37] = 0.031781333333;
-  gc_freq[38] = 0.032192666667;
-  gc_freq[39] = 0.032011000000;
-  gc_freq[40] = 0.031501000000;
-  gc_freq[41] = 0.030773666667;
-  gc_freq[42] = 0.029934000000;
-  gc_freq[43] = 0.028750000000;
-  gc_freq[44] = 0.027394666667;
-  gc_freq[45] = 0.026051000000;
-  gc_freq[46] = 0.024496333333;
-  gc_freq[47] = 0.023815000000;
-  gc_freq[48] = 0.022034000000;
-  gc_freq[49] = 0.021055333333;
-  gc_freq[50] = 0.019652000000;
-  gc_freq[51] = 0.018517333333;
-  gc_freq[52] = 0.017576666667;
-  gc_freq[53] = 0.015954666667;
-  gc_freq[54] = 0.015727333333;
-  gc_freq[55] = 0.015101666667;
-  gc_freq[56] = 0.014613333333;
-  gc_freq[57] = 0.014159666667;
-  gc_freq[58] = 0.013804000000;
-  gc_freq[59] = 0.013788666667;
-  gc_freq[60] = 0.013737000000;
-  gc_freq[61] = 0.013796333333;
-  gc_freq[62] = 0.013740000000;
-  gc_freq[63] = 0.013867000000;
-  gc_freq[64] = 0.013802666667;
-  gc_freq[65] = 0.013442000000;
-  gc_freq[66] = 0.012982333333;
-  gc_freq[67] = 0.012635666667;
-  gc_freq[68] = 0.012114000000;
-  gc_freq[69] = 0.011099000000;
-  gc_freq[70] = 0.009960000000;
-  gc_freq[71] = 0.009165666667;
-  gc_freq[72] = 0.007589333333;
-  gc_freq[73] = 0.006422000000;
-  gc_freq[74] = 0.005256666667;
-  gc_freq[75] = 0.004126666667;
-  gc_freq[76] = 0.003057333333;
-  gc_freq[77] = 0.002285000000;
-  gc_freq[78] = 0.001539333333;
-  gc_freq[79] = 0.001009333333;
-  gc_freq[80] = 0.000585000000;
-  gc_freq[81] = 0.000371000000;
-  gc_freq[82] = 0.000215333333;
-  gc_freq[83] = 0.000102000000;
-  gc_freq[84] = 0.000057000000;
-  gc_freq[85] = 0.000031666667;
-  gc_freq[86] = 0.000021000000;
-  gc_freq[87] = 0.000013000000;
-  gc_freq[88] = 0.000007000000;
-  gc_freq[89] = 0.000004000000;
-  gc_freq[90] = 0.000002666667;
-  gc_freq[91] = 0.000001666667;
-  gc_freq[92] = 0.000001666667;
-  gc_freq[93] = 0.000001000000;
-  gc_freq[94] = 0.000001000000;
-  gc_freq[95] = 0.000000333333;
-  gc_freq[96] = 0.000000333333;
-  gc_freq[97] = 0.000000333333;
-  gc_freq[98] = 0.000000333333;
-  gc_freq[99] = 0.000000333333;
-  gc_freq[100] = 0.000014333333;
-
-  /*for(i = 0; i <= 100; i++) printf("1 gc[%3d]: %.7f\n", i, gc_freq[i]);*/
-  return eslOK;
-
-  /* ~/notebook/8_0326_inf_default_gc/for_cmcalibrate_dir/arc.bac.euk.nonnorm.gcfile.code
-     gc_freq[0] = 0.000108621378;
-     gc_freq[1] = 0.000058762454;
-     gc_freq[2] = 0.000078527911;
-     gc_freq[3] = 0.000100416364;
-     gc_freq[4] = 0.000128912728;
-     gc_freq[5] = 0.000171089506;
-     gc_freq[6] = 0.000217796217;
-     gc_freq[7] = 0.000283310822;
-     gc_freq[8] = 0.000356064502;
-     gc_freq[9] = 0.000448238163;
-     gc_freq[10] = 0.000566272328;
-     gc_freq[11] = 0.000703677387;
-     gc_freq[12] = 0.000850722758;
-     gc_freq[13] = 0.001045531046;
-     gc_freq[14] = 0.001263057861;
-     gc_freq[15] = 0.001519519440;
-     gc_freq[16] = 0.001866515003;
-     gc_freq[17] = 0.002318829094;
-     gc_freq[18] = 0.002900374286;
-     gc_freq[19] = 0.003673797612;
-     gc_freq[20] = 0.004710452232;
-     gc_freq[21] = 0.005998376392;
-     gc_freq[22] = 0.007602820647;
-     gc_freq[23] = 0.009572518038;
-     gc_freq[24] = 0.011866577264;
-     gc_freq[25] = 0.014480544814;
-     gc_freq[26] = 0.017349421276;
-     gc_freq[27] = 0.020060146161;
-     gc_freq[28] = 0.023108949471;
-     gc_freq[29] = 0.026232911654;
-     gc_freq[30] = 0.028681487156;
-     gc_freq[31] = 0.031488515022;
-     gc_freq[32] = 0.033797809423;
-     gc_freq[33] = 0.035829734271;
-     gc_freq[34] = 0.037197760879;
-     gc_freq[35] = 0.038235031542;
-     gc_freq[36] = 0.038862491291;
-     gc_freq[37] = 0.038969892683;
-     gc_freq[38] = 0.038551485914;
-     gc_freq[39] = 0.037642915692;
-     gc_freq[40] = 0.036581270075;
-     gc_freq[41] = 0.035157298684;
-     gc_freq[42] = 0.033671752636;
-     gc_freq[43] = 0.032148569746;
-     gc_freq[44] = 0.030583301391;
-     gc_freq[45] = 0.029082370577;
-     gc_freq[46] = 0.027632627785;
-     gc_freq[47] = 0.026270560476;
-     gc_freq[48] = 0.024893752012;
-     gc_freq[49] = 0.023513581606;
-     gc_freq[50] = 0.022104382545;
-     gc_freq[51] = 0.019965955126;
-     gc_freq[52] = 0.018230844354;
-     gc_freq[53] = 0.015499981664;
-     gc_freq[54] = 0.014315835345;
-     gc_freq[55] = 0.012880108788;
-     gc_freq[56] = 0.011558181922;
-     gc_freq[57] = 0.010286544256;
-     gc_freq[58] = 0.009128126648;
-     gc_freq[59] = 0.007640695600;
-     gc_freq[60] = 0.006614141231;
-     gc_freq[61] = 0.005557571912;
-     gc_freq[62] = 0.004693103599;
-     gc_freq[63] = 0.003984339213;
-     gc_freq[64] = 0.003345497342;
-     gc_freq[65] = 0.002800099487;
-     gc_freq[66] = 0.002332472052;
-     gc_freq[67] = 0.001954682181;
-     gc_freq[68] = 0.001570208323;
-     gc_freq[69] = 0.001283789258;
-     gc_freq[70] = 0.001046994379;
-     gc_freq[71] = 0.000870942803;
-     gc_freq[72] = 0.000703704257;
-     gc_freq[73] = 0.000582336881;
-     gc_freq[74] = 0.000475924111;
-     gc_freq[75] = 0.000402855081;
-     gc_freq[76] = 0.000322784041;
-     gc_freq[77] = 0.000270937636;
-     gc_freq[78] = 0.000227349522;
-     gc_freq[79] = 0.000184810167;
-     gc_freq[80] = 0.000158105397;
-     gc_freq[81] = 0.000125404336;
-     gc_freq[82] = 0.000102071744;
-     gc_freq[83] = 0.000081418632;
-     gc_freq[84] = 0.000059916137;
-     gc_freq[85] = 0.000044850093;
-     gc_freq[86] = 0.000034644571;
-     gc_freq[87] = 0.000022318728;
-     gc_freq[88] = 0.000018060989;
-     gc_freq[89] = 0.000011830310;
-     gc_freq[90] = 0.000008771736;
-     gc_freq[91] = 0.000005862636;
-     gc_freq[92] = 0.000005117360;
-     gc_freq[93] = 0.000003710792;
-     gc_freq[94] = 0.000003191298;
-     gc_freq[95] = 0.000001941533;
-     gc_freq[96] = 0.000001729129;
-     gc_freq[97] = 0.000001506953;
-     gc_freq[98] = 0.000001355734;
-     gc_freq[99] = 0.000001495205;
-     gc_freq[100] = 0.000036204567;
-  */
-}
-
 
 /* Function: get_genomic_sequence_from_hmm
  * Date:     EPN, Tue May 20 17:40:54 2008
