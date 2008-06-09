@@ -391,6 +391,23 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
   cfg->fmt = cfg->sqfp->format;
 
+
+  /* Guess the sqfile alphabet, if it's ambiguous, guess RNA,
+   * we'll treat RNA and DNA both as RNA internally.
+   * We can't handle any other alphabets, so this is hardcoded. */
+  int type;
+  status = esl_sqfile_GuessAlphabet(cfg->sqfp, &type);
+  if (status == eslEFORMAT)     ESL_FAIL(status, errbuf, "Sequence file parse error, line %" PRId64 " of file %s:\n%s\nOffending line is:\n%s\n", cfg->sqfp->linenumber, cfg->sqfile, cfg->sqfp->errbuf, cfg->sqfp->buf);
+  if (status == eslENODATA)     ESL_FAIL(status, errbuf, "Sequence file %s appears to be empty.", cfg->sqfile);
+  if (status == eslEAMBIGUOUS)  type = eslRNA; /* guess it's RNA, we'll fail downstream with an error message if it's not */
+  else if (status != eslOK)     ESL_FAIL(status, errbuf, "Sequence file alphabet guess failed with error %d\n", status);
+  /* we can read DNA/RNA but internally we treat it as RNA */
+  if(! (type == eslRNA || type == eslDNA))
+    ESL_FAIL(eslEFORMAT, errbuf, "Alphabet is not DNA/RNA in %s\n", cfg->sqfile);
+  cfg->abc = esl_alphabet_Create(eslRNA);
+  if(cfg->abc == NULL) ESL_FAIL(status, errbuf, "Failed to create alphabet for sequence file");
+  esl_sqfile_SetDigital(cfg->sqfp, cfg->abc);
+
   /* GetDBSize() reads all sequences, rewinds seq file and returns db size */
   if((status = GetDBSize(cfg->sqfp, errbuf, &(cfg->dbsize), &(cfg->namewidth))) != eslOK) return status;  
   if((! esl_opt_GetBoolean(go, "--toponly")) && (! esl_opt_GetBoolean(go, "--bottomonly"))) cfg->dbsize *= 2;
@@ -720,8 +737,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if(cfg->tfp != NULL) { 
 	fprintf(cfg->tfp, "#\n");
         fprintf(cfg->tfp, "# CM: %s\n", cm->name);
-	/*fprintf(cfg->tfp, "# Predicted average hit length: %.2f\n", cfg->avg_hit_len);
-	  fprintf(cfg->tfp, "# CM->W: %d (subtract (W-1) from stop and add (W-1) to start, and merge overlapping hits to simulate filter)\n", cm->W);*/
 	fprintf(cfg->tfp, "# %-*s  %22s  %12s  %8s  %8s  %3s\n", cfg->namewidth, "", "target coord", "query coord", "", "", "");
 	fprintf(cfg->tfp, "# %-*s  %22s  %12s  %8s  %8s  %3s\n", cfg->namewidth, "", "----------------------", "------------", "", "", "");
 	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s %8s %3s\n", cfg->namewidth, "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC\%");

@@ -163,6 +163,14 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       }
       /* this only works if we've saved the matrices, and didn't do scan mode for both Forward and Backward:
        * debug_check_CP9_FB(fmx, bmx, cm->cp9, cur_best_hmm_bsc, i0, j0, dsq); */
+
+      /* If hits were reported greedily, remove overlapping hits, and sort by decreasing end point 
+       * (if not greedy, we'll have 0 overlaps, and already be sorted by end point) */
+      if(cm->search_opts & CM_SEARCH_HMMGREEDY) { /* resolve overlaps by being greedy */
+	ESL_DASSERT1((i0 == 1)); /* EPN, Tue Nov 27 13:59:31 2007 not sure why this is here */
+	RemoveOverlappingHits (cur_results, i0, j0);
+	SortResultsByEndPoint(cur_results);
+      }
       if(bwd_sc > sc) sc = bwd_sc;
     }	  
     FreeResults(fwd_results);

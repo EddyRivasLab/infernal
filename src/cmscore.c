@@ -402,6 +402,23 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
     cfg->infmt = cfg->sqfp->format;
   }
+
+  /* Guess the sqfile alphabet, if it's ambiguous, guess RNA,
+   * we'll treat RNA and DNA both as RNA internally.
+   * We can't handle any other alphabets, so this is hardcoded. */
+  int type;
+  status = esl_sqfile_GuessAlphabet(cfg->sqfp, &type);
+  if (status == eslEFORMAT)     ESL_FAIL(status, errbuf, "Sequence file parse error, line %" PRId64 " of file %s:\n%s\nOffending line is:\n%s\n", cfg->sqfp->linenumber, esl_opt_GetString(go, "--infile"), cfg->sqfp->errbuf, cfg->sqfp->buf);
+  if (status == eslENODATA)     ESL_FAIL(status, errbuf, "Sequence file %s appears to be empty.", esl_opt_GetString(go, "--infile"));
+  if (status == eslEAMBIGUOUS)  type = eslRNA; /* guess it's RNA, we'll fail downstream with an error message if it's not */
+  else if (status != eslOK)     ESL_FAIL(status, errbuf, "Sequence file alphabet guess failed with error %d\n", status);
+  /* we can read DNA/RNA but internally we treat it as RNA */
+  if(! (type == eslRNA || type == eslDNA))
+    ESL_FAIL(eslEFORMAT, errbuf, "Alphabet is not DNA/RNA in %s\n", esl_opt_GetString(go, "--infile"));
+  cfg->abc = esl_alphabet_Create(eslRNA);
+  if(cfg->abc == NULL) ESL_FAIL(status, errbuf, "Failed to create alphabet for sequence file");
+  esl_sqfile_SetDigital(cfg->sqfp, cfg->abc);
+
   /* optionally, open output file */
   if (esl_opt_GetString(go, "--outfile") != NULL) {
     if ((cfg->sfp = fopen(esl_opt_GetString(go, "--outfile"), "w")) == NULL) 

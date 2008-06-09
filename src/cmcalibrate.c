@@ -60,8 +60,10 @@ static ESL_OPTIONS options[] = {
   { "--mpi",            eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "run as an MPI parallel program", 1 },  
 #endif
   /* options for exp tail fitting */
-  { "--exp-tailn-glc",  eslARG_INT,     "250",  NULL, "n>=50",  NULL,        NULL,"--exp-tailp,--exp-tailn","fit the top <n> hits in score histogram for  local modes", 2 },
-  { "--exp-tailn-loc",  eslARG_INT,     "750",  NULL, "n>=50",  NULL,        NULL,"--exp-tailp,--exp-tailn","fit the top <n> hits in score histogram for glocal modes", 2 },
+  { "--exp-tailn-hglc", eslARG_INT,     "25",  NULL, "n>=10",   NULL,        NULL,"--exp-tailp","fit the top <n> hits/Mb in histogram for HMM local modes", 2 },
+  { "--exp-tailn-hloc", eslARG_INT,     "75",  NULL, "n>=10",   NULL,        NULL,"--exp-tailp","fit the top <n> hits/Mb in histogram for HMM glocal modes", 2 },
+  { "--exp-tailn-cglc", eslARG_INT,    "250",  NULL, "n>=100",  NULL,        NULL,"--exp-tailp","fit the top <n> hits/Mb in histogram for  CM local modes", 2 },
+  { "--exp-tailn-cloc", eslARG_INT,    "750",  NULL, "n>=100",  NULL,        NULL,"--exp-tailp","fit the top <n> hits/Mb in histogram for  CM glocal modes", 2 },
   { "--exp-tailp",      eslARG_REAL,    NULL,   NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 2 },
   { "--exp-tailxn",     eslARG_INT,     "1000", NULL, "n>=50",  NULL,        NULL,"--exp-tailp", "w/--exp-tailp, set max num hits in tail to fit as <n>", 2 },
   { "--exp-beta",       eslARG_REAL,    "1E-15",NULL, "x>0",    NULL,        NULL,"--exp-no-qdb","set tail loss prob for QDB to <x>", 2 },
@@ -94,10 +96,10 @@ static ESL_OPTIONS options[] = {
   /* Developer exponential tail options the average user doesn't need to know about */
   { "--exp-random",     eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content of random null background model of CM",  102},
   { "--exp-T",          eslARG_REAL,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "set bit sc cutoff for exp tail fitting to <x> [df: -INFTY]", 102 },
-  { "--exp-cmL-glc",    eslARG_REAL,    "1.5", NULL, "0.1<=x<=1000.", NULL,NULL,         NULL, "set glocal  CM     Mb random seq length to <x>", 102 },
+  { "--exp-cmL-glc",    eslARG_REAL,    "1.5",  NULL, "0.1<=x<=1000.", NULL,NULL,         NULL, "set glocal  CM     Mb random seq length to <x>", 102 },
   { "--exp-cmL-loc",    eslARG_REAL,    "1.5",  NULL, "0.1<=x<=1000.", NULL,NULL,         NULL, "set  local  CM     Mb random seq length to <x>", 102 },
-  { "--exp-hmmLn-glc",  eslARG_REAL,    "15.",  NULL, "1.<=x<=1000.",   NULL,NULL,        NULL, "set glocal HMM min Mb random seq length to <x>", 102 },
-  { "--exp-hmmLn-loc",  eslARG_REAL,    "15.",  NULL, "1.<=x<=1000.",   NULL,NULL,        NULL, "set  local HMM min Mb random seq length to <x>", 102 },
+  { "--exp-hmmLn-glc",  eslARG_REAL,    "15.",  NULL, "2.<=x<=1000.",   NULL,NULL,        NULL, "set glocal HMM min Mb random seq length to <x>", 102 },
+  { "--exp-hmmLn-loc",  eslARG_REAL,    "15.",  NULL, "2.<=x<=1000.",   NULL,NULL,        NULL, "set  local HMM min Mb random seq length to <x>", 102 },
   { "--exp-hmmLx",      eslARG_REAL,    "1000.",NULL, "10.<=x<=1001.",  NULL,NULL,        NULL, "set        HMM max Mb random seq length to <x>", 102 },
   { "--exp-fract",      eslARG_REAL,    "0.10", NULL, "0.01<=x<=1.0",   NULL,NULL,        NULL, "set min fraction of HMM vs CM DP calcs to <x>", 102 },
   /* Developer options related to experiment local begin/end modes */
@@ -129,7 +131,7 @@ struct cfg_s {
   double          *dnull;              /* double version of cm->null, for generating random seqs */
 
   /* number of sequences and the length of each seq for exp tail fitting, set such that:
-   * exp_{cm,hmm}N_{loc,glc} are the number of 100 Kb seqs we'll search for CM/HMM local/glocal
+   * exp_{cm,hmm}N_{loc,glc} are the number of 10 Kb seqs we'll search for CM/HMM local/glocal
    * exponential tail fitting:
    *
    * exp_cmN_loc  = (esl_opt_GetBoolean(go, "--exp-cmL-loc")  * 1,000,000) / 100,000; 
@@ -138,15 +140,15 @@ struct cfg_s {
    * exp_hmmN_glc = (esl_opt_GetBoolean(go, "--exp-hmmL-glc") * 1,000,000) / 100,000; 
    *
    * We don't search just 1 long sequence (for ex of 1 Mb) b/c using sequence lengths
-   * above 100 Kb for exp tail calibration can yield millions of hits 
+   * above 10 Kb for exp tail calibration can yield millions of hits 
    * (for CM scans) before overlaps are removed, which requires a lot
    * of memory. 
    */
-  int              exp_cmN_loc;        /* number of 100 Kb seqs for  local CM exp tail fitting */
-  int              exp_cmN_glc;        /* number of 100 Kb seqs for glocal CM exp tail fitting */
-  int              exp_hmmN_loc;       /* number of 100 Kb seqs for  local HMM exp tail fitting */
-  int              exp_hmmN_glc;       /* number of 100 Kb seqs for glocal HMM exp tail fitting */
-  int              expL;               /* the size of seq chunks to search, set as 100,000 (100 Kb) */
+  int              exp_cmN_loc;        /* number of 10 Kb seqs for  local CM exp tail fitting */
+  int              exp_cmN_glc;        /* number of 10 Kb seqs for glocal CM exp tail fitting */
+  int              exp_hmmN_loc;       /* number of 10 Kb seqs for  local HMM exp tail fitting */
+  int              exp_hmmN_glc;       /* number of 10 Kb seqs for glocal HMM exp tail fitting */
+  int              expL;               /* the size of seq chunks to search, set as 10,000 (10 Kb) */
 
   /* info for the comlog we'll add to the cmfiles */
   char            *ccom;               /* command line used in this execution of cmcalibrate */
@@ -189,7 +191,7 @@ static int  initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
 static int  initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 
 static int  set_partition_gc_freq(struct cfg_s *cfg, int p);
-static int  fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, int exp_mode_is_local, double *ret_mu, double *ret_lambda, int *ret_nrandhits, float *ret_tailp);
+static int  fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, int *ret_nrandhits, float *ret_tailp);
 static int  get_random_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, double *dnull, int L, ESL_DSQ **ret_dsq);
 static int  get_cmemit_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, int *ret_p, ESL_DSQ **ret_dsq);
 static int  read_partition_file(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
@@ -299,7 +301,7 @@ main(int argc, char **argv)
   cfg.np          = 1;     /* default number of partitions is 1, changed if --exp-pfile */
   cfg.pstart      = NULL;  /* allocated (by default to size 1) in init_master_cfg() */
   cfg.avg_hit_len = 0.;
-  cfg.expL        = 100000; /* 100 Kb chunks are searched */
+  cfg.expL        = 10000; /* 10 Kb chunks are searched */
 
   /* Initial allocations for results per CM;
    * we'll resize these arrays dynamically as we read more CMs.
@@ -322,23 +324,21 @@ main(int argc, char **argv)
   cfg.do_stall = esl_opt_GetBoolean(go, "--stall");
 #endif
 
-  /* calculate sequence lengths and quantities for exp tail fitting,
-   * max length seq is 100 Kb, see comment in cfg_t definition above for the reason.
-   */
-  int cmL_total_loc  = 1000000 * esl_opt_GetReal(go, "--exp-cmL-loc");
-  int cmL_total_glc  = 1000000 * esl_opt_GetReal(go, "--exp-cmL-glc");
-  int hmmL_total_loc = 1000000 * esl_opt_GetReal(go, "--exp-hmmLn-loc");
-  int hmmL_total_glc = 1000000 * esl_opt_GetReal(go, "--exp-hmmLn-glc");
+  /* calculate sequence lengths and quantities for exp tail fitting, */
+  int cmL_total_nt_loc  = (int) (1000000. * esl_opt_GetReal(go, "--exp-cmL-loc"));
+  int cmL_total_nt_glc  = (int) (1000000. * esl_opt_GetReal(go, "--exp-cmL-glc"));
+  int hmmL_total_nt_loc = (int) (1000000. * esl_opt_GetReal(go, "--exp-hmmLn-loc"));
+  int hmmL_total_nt_glc = (int) (1000000. * esl_opt_GetReal(go, "--exp-hmmLn-glc"));
 
-  /* determine the number of 100 Kb chunks (cfg.expL = 100000) to search to reach the totals */
-  if(cmL_total_loc  < (cfg.expL + 1)) cm_Fail("with --exp-cmL-loc <x>, <x> must be at least 0.1.");
-  if(cmL_total_glc  < (cfg.expL + 1)) cm_Fail("with --exp-cmL-glc <x>, <x> must be at least 0.1.");
-  if(hmmL_total_loc < (cfg.expL + 1)) cm_Fail("with --exp-cmL-loc <x>, <x> must be at least 0.1.");
-  if(hmmL_total_glc < (cfg.expL + 1)) cm_Fail("with --exp-cmL-glc <x>, <x> must be at least 0.1.");
-  cfg.exp_cmN_loc  = (int) (((float) cmL_total_loc  / (float) cfg.expL) + 0.999999); 
-  cfg.exp_cmN_glc  = (int) (((float) cmL_total_glc  / (float) cfg.expL) + 0.999999); 
-  cfg.exp_hmmN_loc = (int) (((float) hmmL_total_loc / (float) cfg.expL) + 0.999999); 
-  cfg.exp_hmmN_glc = (int) (((float) hmmL_total_glc / (float) cfg.expL) + 0.999999); 
+  /* determine the number of 10 Kb chunks (cfg.expL = 10000) to search to reach the totals */
+  if(cmL_total_nt_loc  < (cfg.expL + 1)) cm_Fail("with --exp-cmL-loc <x>, <x> must be at least %.3f.", cfg.expL / 1000000.);
+  if(cmL_total_nt_glc  < (cfg.expL + 1)) cm_Fail("with --exp-cmL-glc <x>, <x> must be at least %.3f.", cfg.expL / 1000000.);
+  if(hmmL_total_nt_loc < (cfg.expL + 1)) cm_Fail("with --exp-cmL-loc <x>, <x> must be at least %.3f.", cfg.expL / 1000000.);
+  if(hmmL_total_nt_glc < (cfg.expL + 1)) cm_Fail("with --exp-cmL-glc <x>, <x> must be at least %.3f.", cfg.expL / 1000000.);
+  cfg.exp_cmN_loc  = (int) (((float) cmL_total_nt_loc  / (float) cfg.expL) + 0.999999); 
+  cfg.exp_cmN_glc  = (int) (((float) cmL_total_nt_glc  / (float) cfg.expL) + 0.999999); 
+  cfg.exp_hmmN_loc = (int) (((float) hmmL_total_nt_loc / (float) cfg.expL) + 0.999999); 
+  cfg.exp_hmmN_glc = (int) (((float) hmmL_total_nt_glc / (float) cfg.expL) + 0.999999); 
 
   cfg.cmfp     = NULL; /* ALWAYS remains NULL for mpi workers */
   cfg.exphfp   = NULL; /* ALWAYS remains NULL for mpi workers */
@@ -789,7 +789,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    fprintf(cfg->exptfitfp, "# CM: %s\n", cm->name);
 	    fprintf(cfg->exptfitfp, "# mode: %12s\n", DescribeExpMode(exp_mode));
 	  }
-	  if((status = fit_histogram(go, cfg, errbuf, exp_scA, exp_scN, ExpModeIsLocal(exp_mode), &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
+	  if((status = fit_histogram(go, cfg, errbuf, exp_scA, exp_scN, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
 	  SetExpInfo(cfg->cmstatsA[cmi]->expAA[exp_mode][p], tmp_lambda, tmp_mu, (long) (cfg->expL * expN), tmp_nrandhits, tmp_tailp);
 	  
 	  esl_stopwatch_Stop(cfg->w_stage);
@@ -1281,7 +1281,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      fprintf(cfg->exptfitfp, "# CM: %s\n", cm->name);
 	      fprintf(cfg->exptfitfp, "# mode: %12s\n", DescribeExpMode(exp_mode));
 	    }
-	    if((status = fit_histogram(go, cfg, errbuf, exp_scA, exp_scN, ExpModeIsLocal(exp_mode), &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
+	    if((status = fit_histogram(go, cfg, errbuf, exp_scA, exp_scN, exp_mode, &tmp_mu, &tmp_lambda, &tmp_nrandhits, &tmp_tailp)) != eslOK) cm_Fail(errbuf);
 	    SetExpInfo(cfg->cmstatsA[cmi]->expAA[exp_mode][p], tmp_lambda, tmp_mu, (long) (cfg->expL * expN), tmp_nrandhits, tmp_tailp);
 	
 	    for(si = 0; si < expN; si++) {
@@ -1850,7 +1850,7 @@ set_partition_gc_freq(struct cfg_s *cfg, int p)
  * is given as <scores>.
  */
 static int
-fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, int exp_mode_is_local, double *ret_mu, double *ret_lambda, int *ret_nrandhits, float *ret_tailp)
+fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *scores, int nscores, int exp_mode, double *ret_mu, double *ret_lambda, int *ret_nrandhits, float *ret_tailp)
 {
   int status;
   double mu;
@@ -1862,6 +1862,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
   double  params[2];
   int     nrandhits; 
   float   a;
+  float   nhits_to_fit;
 
   ESL_HISTOGRAM *h = NULL;       /* histogram of scores */
 
@@ -1895,25 +1896,42 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
   }
   /* end of if cfg->exptfitfp != NULL) */
 
+  /* determine the fraction of the tail to fit, if --exp-tail-p, it's easy */
   if(!esl_opt_IsDefault(go, "--exp-tailp")) { 
     tailp = esl_opt_GetReal(go, "--exp-tailp");
     tailp = ESL_MIN(tailp, ((float) esl_opt_GetInteger(go, "--exp-tailxn") / (float) h->n)); /* ensure we don't exceed our max nhits in tail */
   }
-  else { 
-    if(exp_mode_is_local) { 
-      tailp = ((float) esl_opt_GetInteger(go, "--exp-tailn-loc") / (float) h->n);
-      if(tailp > 1.) ESL_FAIL(eslERANGE, errbuf, "--exp-tailn-loc <n>=%d cannot be used, there's only %" PRId64 " hits in the histogram! Lower <n> or use --exp-tailp.", esl_opt_GetInteger(go, "--exp-tailn-loc"), h->n);
+  else { /* number of hits is per Mb and specific to local or glocal, CM or HMM fits */
+    if(ExpModeIsLocal(exp_mode)) { 
+      if(ExpModeIsForCM(exp_mode)) { /* local CM mode */
+	nhits_to_fit = (float) esl_opt_GetInteger(go, "--exp-tailn-cloc") * ((cfg->exp_cmN_loc * cfg->expL) / 1000000.);
+	tailp = nhits_to_fit / (float) h->n;
+	if(tailp > 1.) ESL_FAIL(eslERANGE, errbuf, "--exp-tailn-cloc <n>=%d cannot be used, there's only %.3f hits per Mb in the histogram! Lower <n> or use --exp-tailp.", esl_opt_GetInteger(go, "--exp-tailn-cloc"), (h->n / ((float) cfg->exp_cmN_loc * ((float) cfg->expL) / 1000000.)));
+      }
+      else { /* local HMM mode */
+	nhits_to_fit = (float) esl_opt_GetInteger(go, "--exp-tailn-hloc") * ((cfg->exp_hmmN_loc * cfg->expL) / 1000000.);
+	tailp = nhits_to_fit / (float) h->n;
+	if(tailp > 1.) ESL_FAIL(eslERANGE, errbuf, "--exp-tailn-hloc <n>=%d cannot be used, there's only %.3f hits per Mb in the histogram! Lower <n> or use --exp-tailp.", esl_opt_GetInteger(go, "--exp-tailn-hloc"), (h->n / ((float) cfg->exp_hmmN_loc * ((float) cfg->expL) / 1000000.)));
+      }
     }
     else { 
-      tailp = ((float) esl_opt_GetInteger(go, "--exp-tailn-glc") / (float) h->n);
-      if(tailp > 1.) ESL_FAIL(eslERANGE, errbuf, "--exp-tailn-glc <n>=%d cannot be used, there's only %" PRId64 " hits in the histogram! Lower <n> or use --exp-tailp.", esl_opt_GetInteger(go, "--exp-tailn-glc"), h->n);
+      if(ExpModeIsForCM(exp_mode)) { /* glocal CM mode */
+	nhits_to_fit = (float) esl_opt_GetInteger(go, "--exp-tailn-cglc") * ((cfg->exp_cmN_glc * cfg->expL) / 1000000.);
+	tailp = nhits_to_fit / (float) h->n;
+	if(tailp > 1.) ESL_FAIL(eslERANGE, errbuf, "--exp-tailn-cglc <n>=%d cannot be used, there's only %.3f hits per Mb in the histogram! Lower <n> or use --exp-tailp.", esl_opt_GetInteger(go, "--exp-tailn-cglc"), (h->n / ((float) cfg->exp_cmN_glc * ((float) cfg->expL) / 1000000.)));
+      }
+      else { /* glocal HMM mode */
+	nhits_to_fit = (float) esl_opt_GetInteger(go, "--exp-tailn-hglc") * ((cfg->exp_hmmN_glc * cfg->expL) / 1000000.);
+	tailp = nhits_to_fit / (float) h->n;
+	if(tailp > 1.) ESL_FAIL(eslERANGE, errbuf, "--exp-tailn-hglc <n>=%d cannot be used, there's only %.3f hits per Mb in the histogram! Lower <n> or use --exp-tailp.", esl_opt_GetInteger(go, "--exp-tailn-hglc"), (h->n / ((float) cfg->exp_hmmN_glc * ((float) cfg->expL) / 1000000.)));
+      }
     }
   }
 
   esl_histogram_GetTailByMass(h, tailp, &xv, &n, &z); /* fit to right 'tailfit' fraction, 0.01 by default */
   if(n <= 1) { 
-    if(exp_mode_is_local) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram. Increase --exp-cmL-loc or --exp-hmmLn-loc.", tailp);
-    else                  ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram. Increase --exp-cmL-glc or --exp-hmmLn-glc.", tailp);
+    if(ExpModeIsLocal(exp_mode)) ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram. Increase --exp-cmL-loc or --exp-hmmLn-loc.", tailp);
+    else                         ESL_FAIL(eslERANGE, errbuf, "fit_histogram(), too few points in right tailfit: %f fraction of histogram. Increase --exp-cmL-glc or --exp-hmmLn-glc.", tailp);
   }
   esl_exp_FitComplete(xv, n, &(params[0]), &(params[1]));
   esl_histogram_SetExpectedTail(h, params[0], tailp, &esl_exp_generic_cdf, &params);
@@ -1934,7 +1952,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
 
   if (cfg->expsfp != NULL) {
     esl_histogram_PlotSurvival(cfg->expsfp, h);
-    esl_exp_Plot(cfg->expsfp, params[0], 0.693147, esl_exp_surv, h->xmin - 5., h->xmax + 5., 0.1);
+    esl_exp_Plot(cfg->expsfp, (params[0] - log(1./tailp) / params[1]), 0.693147, esl_exp_surv, h->xmin - 5., h->xmax + 5., 0.1); /* extrapolate mu */
   }
 
   esl_histogram_Destroy(h);
@@ -3055,11 +3073,18 @@ int print_post_calibration_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   fprintf(fp, "#\n");
   fprintf(fp, "# Exponential tail fitting:\n");
   fprintf(fp, "#\n");
-  fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",    "",     "",   "",        "",   "",       "",        "",       "     running time      ");
-  fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",    "",     "",   "",        "",   "",       "",        "",       "-----------------------");
-  fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %10s %10s\n","mod", "cfg", "alg", "part", "ps", "pe",   "L (Mb)",  "mu",     "lambda",   "nhits", "predicted",     "actual");
-  fprintf(fp, "# %3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %10s %10s\n", "---", "---", "---", "----", "---", "---", "-------", "------", "------", "-------", "----------", "----------");
-
+  if(cfg->np != 1) { /* --exp-pfile invoked */
+    fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",    "",     "",   "",        "",   "",       "",        "",       "     running time      ");
+    fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",    "",     "",   "",        "",   "",       "",        "",       "-----------------------");
+    fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %10s %10s\n","mod", "cfg", "alg", "part", "ps", "pe",   "L (Mb)",  "mu",     "lambda",   "nhits", "predicted",     "actual");
+    fprintf(fp, "# %3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %10s %10s\n", "---", "---", "---", "----", "---", "---", "-------", "------", "------", "-------", "----------", "----------");
+  }
+  else { 
+    fprintf(fp, "# %-3s  %3s  %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",  "",   "",       "",        "",       "     running time      ");
+    fprintf(fp, "# %-3s  %3s  %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",  "",   "",       "",        "",       "-----------------------");
+    fprintf(fp, "# %-3s  %3s  %3s %7s %6s %6s %7s %10s %10s\n","mod", "cfg", "alg", "L (Mb)",  "mu",     "lambda",   "nhits", "predicted",     "actual");
+    fprintf(fp, "# %3s  %3s  %3s %7s %6s %6s %7s %10s %10s\n", "---", "---", "---", "-------", "------", "------", "-------", "----------", "----------");
+  }
   for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
     if(ExpModeIsLocal(exp_mode)) { expN = ExpModeIsForCM(exp_mode) ? cfg->exp_cmN_loc : cfg->exp_hmmN_loc; }
     else                         { expN = ExpModeIsForCM(exp_mode) ? cfg->exp_cmN_glc : cfg->exp_hmmN_glc; }
@@ -3071,7 +3096,8 @@ int print_post_calibration_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
       pe = (p == (cfg->np-1)) ? 100 : cfg->pstart[p+1]-1;
       FormatTimeString(time_buf, exp_psecAA[exp_mode][p], FALSE);
       exp = cfg->cmstatsA[cfg->ncm-1]->expAA[exp_mode][p];
-      fprintf(fp, "  %-12s %4d %3d %3d %7.2f %6.2f %6.3f %7d %10s", DescribeExpMode(exp_mode), p+1, ps, pe, L_Mb, exp->mu_orig, exp->lambda, exp->nrandhits, time_buf);
+      if(cfg->np != 1) fprintf(fp, "  %-12s %4d %3d %3d %7.2f %6.2f %6.3f %7d %10s", DescribeExpMode(exp_mode), p+1, ps, pe, L_Mb, exp->mu_orig, exp->lambda, exp->nrandhits, time_buf);
+      else             fprintf(fp, "  %-12s %7.2f %6.2f %6.3f %7d %10s", DescribeExpMode(exp_mode), L_Mb, exp->mu_orig, exp->lambda, exp->nrandhits, time_buf);
       FormatTimeString(time_buf, exp_asecAA[exp_mode][p], FALSE);
       fprintf(fp, " %10s\n", time_buf);
     }
@@ -3301,16 +3327,32 @@ print_per_cm_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, cha
   if(esl_opt_IsDefault(go, "--forecast")) { 
     printf("# Calibrating CM %d: %s\n", cfg->ncm, cm->name);
     printf("#\n");
-    printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %22s\n",           "",      "",    "",    "",      "",   "",    "",           "",       "", "     running time    ");
-    printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %22s\n",           "",      "",    "",    "",      "",   "",    "",           "",       "", "----------------------");
-    printf("# %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %10s  %10s\n", "stage",    "mod", "cfg", "alg", "part", "ps",  "pe",  "expL (Mb)", "filN",   "predicted", "actual");
-    printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %10s  %10s\n",  "--------", "---", "---", "---", "----", "---", "---", "---------", "------", "----------", "----------");
+    if(cfg->np != 1) { /* --exp-pfile invoked */
+      printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %22s\n",           "",      "",    "",    "",      "",   "",    "",           "",       "", "     running time    ");
+      printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %22s\n",           "",      "",    "",    "",      "",   "",    "",           "",       "", "----------------------");
+      printf("# %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %10s  %10s\n", "stage",    "mod", "cfg", "alg", "part", "ps",  "pe",  "expL (Mb)", "filN",   "predicted", "actual");
+      printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %10s  %10s\n",  "--------", "---", "---", "---", "----", "---", "---", "---------", "------", "----------", "----------");
+    }
+    else { /* no partitions */
+      printf("# %8s  %3s  %3s  %3s  %9s %6s %22s\n",           "",      "",    "",    "",    "",       "", "     running time    ");
+      printf("# %8s  %3s  %3s  %3s  %9s %6s %22s\n",           "",      "",    "",    "",    "",       "", "----------------------");
+      printf("# %-8s  %3s  %3s  %3s  %9s %6s %10s  %10s\n", "stage",    "mod", "cfg", "alg", "expL (Mb)", "filN",   "predicted", "actual");
+      printf("# %8s  %3s  %3s  %3s  %9s %6s %10s  %10s\n",  "--------", "---", "---", "---", "---------", "------", "----------", "----------");
+    }
   }
   else { 
-    printf("# Forecasting time for %d processor(s) to calibrate CM %d: %s\n", esl_opt_GetInteger(go, "--forecast"), cfg->ncm, cm->name);
-    printf("#\n");
-    printf("# %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %14s\n", "stage",    "mod", "cfg", "alg", "part", "ps",  "pe",  "expL (Mb)", "filN",   "predicted time");
-    printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %14s\n",  "--------", "---", "---", "---", "----", "---", "---", "---------", "------", "--------------");
+    if(cfg->np != 1) { /* --exp-pfile invoked */
+      printf("# Forecasting time for %d processor(s) to calibrate CM %d: %s\n", esl_opt_GetInteger(go, "--forecast"), cfg->ncm, cm->name);
+      printf("#\n");
+      printf("# %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %14s\n", "stage",    "mod", "cfg", "alg", "part", "ps",  "pe",  "expL (Mb)", "filN",   "predicted time");
+      printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %14s\n",  "--------", "---", "---", "---", "----", "---", "---", "---------", "------", "--------------");
+    }
+    else { /* no partitions */
+      printf("# Forecasting time for %d processor(s) to calibrate CM %d: %s\n", esl_opt_GetInteger(go, "--forecast"), cfg->ncm, cm->name);
+      printf("#\n");
+      printf("# %-8s  %3s  %3s  %3s  %9s %6s %14s\n", "stage",    "mod", "cfg", "alg", "expL (Mb)", "filN",   "predicted time");
+      printf("# %8s  %3s  %3s  %3s  %9s %6s %14s\n",  "--------", "---", "---", "---", "---------", "------", "--------------");
+    }
   }
   return eslOK;
 }
@@ -3328,16 +3370,32 @@ print_per_cm_summary(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbu
 {
   char  time_buf[128];	      /* for printing run time */
   if(esl_opt_IsDefault(go, "--forecast")) { 
-    FormatTimeString(time_buf, psec, FALSE);
-    printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %10s  %10s\n", "--------", "---", "---", "---", "----", "---", "---", "---------", "-----", "----------", "----------");
-    printf("# %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %10s",       "all",        "-",   "-",   "-",    "-",   "-",   "-",         "-",     "-",   time_buf);
-    FormatTimeString(time_buf, asec, FALSE);
-    printf("  %10s\n", time_buf);
+    if(cfg->np != 1) { /* --exp-pfile invoked */
+      FormatTimeString(time_buf, psec, FALSE);
+      printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %10s  %10s\n", "--------", "---", "---", "---", "----", "---", "---", "---------", "-----", "----------", "----------");
+      printf("# %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %10s",       "all",        "-",   "-",   "-",    "-",   "-",   "-",         "-",     "-",   time_buf);
+      FormatTimeString(time_buf, asec, FALSE);
+      printf("  %10s\n", time_buf);
+    }
+    else { /* no partitions */
+      FormatTimeString(time_buf, psec, FALSE);
+      printf("# %8s  %3s  %3s  %3s  %9s %6s %10s  %10s\n", "--------", "---", "---", "---", "---------", "-----", "----------", "----------");
+      printf("# %-8s  %3s  %3s  %3s  %9s %6s %10s",       "all",        "-",   "-",   "-",         "-",     "-",   time_buf);
+      FormatTimeString(time_buf, asec, FALSE);
+      printf("  %10s\n", time_buf);
+    }
   }
   else { 
-    FormatTimeString(time_buf, psec, FALSE);
-    printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %14s\n", "--------", "---", "---", "---",  "----", "---", "---", "---------", "-----", "--------------");
-    printf("# %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %14s\n", "all",        "-",   "-",   "-",     "-",   "-",   "-",         "-",     "-",         time_buf);
+    if(cfg->np != 1) { /* --exp-pfile invoked */
+      FormatTimeString(time_buf, psec, FALSE);
+      printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %14s\n", "--------", "---", "---", "---",  "----", "---", "---", "---------", "-----", "--------------");
+      printf("# %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %14s\n", "all",       "-",   "-",   "-",     "-",   "-",   "-",         "-",     "-",         time_buf);
+    }
+    else { /* no partitions */
+      FormatTimeString(time_buf, psec, FALSE);
+      printf("# %8s  %3s  %3s  %3s  %9s %6s %14s\n", "--------", "---", "---", "---",  "---------", "-----", "--------------");
+      printf("# %-8s  %3s  %3s  %3s  %9s %6s %14s\n", "all",        "-",   "-",   "-",         "-",     "-",         time_buf);
+    }
   }
   return eslOK;
 }
@@ -3364,8 +3422,14 @@ print_exp_line(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int
   expL_Mb =  (float) expN * (float) expL; 
   expL_Mb /= 1000000.;
 
-  if(! esl_opt_IsDefault(go, "--forecast")) printf("  %-8s  %-12s  %4d %3d %3d %9.2f %6s %14s\n", "exp tail", DescribeExpMode(exp_mode), p+1, ps, pe, expL_Mb, "-", time_buf);
-  else                                      printf("  %-8s  %-12s  %4d %3d %3d %9.2f %6s %10s",    "exp tail", DescribeExpMode(exp_mode), p+1, ps, pe, expL_Mb, "-", time_buf);
+  if(!esl_opt_IsDefault(go, "--forecast")) { 
+    if(cfg->np != 1) printf("  %-8s  %-12s  %4d %3d %3d %9.2f %6s %14s",  "exp tail", DescribeExpMode(exp_mode), p+1, ps, pe, expL_Mb, "-", time_buf);
+    else             printf("  %-8s  %-12s  %9.2f %6s %14s",              "exp tail", DescribeExpMode(exp_mode), expL_Mb, "-", time_buf);
+  }
+  else { 
+    if(cfg->np != 1) printf("  %-8s  %-12s  %4d %3d %3d %9.2f %6s %10s",  "exp tail", DescribeExpMode(exp_mode), p+1, ps, pe, expL_Mb, "-", time_buf);
+    else             printf("  %-8s  %-12s  %9.2f %6s %10s",              "exp tail", DescribeExpMode(exp_mode), expL_Mb, "-", time_buf);
+  }
   fflush(stdout);
   return eslOK;
 }
@@ -3382,8 +3446,14 @@ print_fil_line(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int
   int   filN = esl_opt_GetInteger(go, "--fil-N"); /* number of sequences to search for filter threshold calculation */
 
   FormatTimeString(time_buf, psec, FALSE);
-  if(! esl_opt_IsDefault(go, "--forecast")) printf("  %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6d %14s\n", "filter", "-", ((exp_mode == EXP_CM_GI) ? "glc" : "loc"), "-", "-", "-", "-", "-", filN, time_buf);
-  else                                      printf("  %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6d %10s",    "filter", "-", ((exp_mode == EXP_CM_GI) ? "glc" : "loc"), "-", "-", "-", "-", "-", filN, time_buf);
+  if(!esl_opt_IsDefault(go, "--forecast")) { 
+    if(cfg->np != 1) printf("  %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6d %14s\n",  "filter", "-", ((exp_mode == EXP_CM_GI) ? "glc" : "loc"), "-", "-", "-", "-", "-", filN, time_buf);
+    else             printf("  %-8s  %3s  %3s  %3s  %9s %6d %14s\n",              "filter", "-", ((exp_mode == EXP_CM_GI) ? "glc" : "loc"), "-", "-", filN, time_buf);
+  }
+  else { 
+    if(cfg->np != 1) printf("  %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6d %10s\n",  "filter", "-", ((exp_mode == EXP_CM_GI) ? "glc" : "loc"), "-", "-", "-", "-", "-", filN, time_buf);
+    else             printf("  %-8s  %3s  %3s  %3s  %9s %6d %10s\n",              "filter", "-", ((exp_mode == EXP_CM_GI) ? "glc" : "loc"), "-", "-", filN, time_buf);
+  }
   fflush(stdout);
   return eslOK;
 }

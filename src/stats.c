@@ -312,6 +312,8 @@ int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *re
   for (i=0; i<GC_SEGMENTS; i++) gc_ct[i] = 0.;
 
   sq = esl_sq_CreateDigital(abc); 
+  esl_sqfile_SetDigital(sqfp, abc);
+  
   while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) { 
       N += sq->n;
       /*printf("new N: %d\n", N);*/

@@ -306,7 +306,7 @@ CMFilePositionByKey(CMFILE *cmf, char *key)
   return eslOK;
 } 
 int 
-CMFilePositionByIndex(CMFILE *cmf, int idx)
+CMFilePositionByIndex(CMFILE *cmf, int64_t idx)
 {				/* idx runs from 0..ncm-1 */
   uint16_t fh;
   off_t    offset;
@@ -395,28 +395,28 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
       fprintf(fp, "\n");
       for(p = 0; p < cm->stats->np; p++)
 	{
-	  fprintf(fp, "E-LC     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.4f\n", 
+	  fprintf(fp, "E-LC     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
 		  p, cm->stats->expAA[EXP_CM_LC][p]->lambda, cm->stats->expAA[EXP_CM_LC][p]->mu_extrap, cm->stats->expAA[EXP_CM_LC][p]->mu_orig, 
 		  cm->stats->expAA[EXP_CM_LC][p]->dbsize, cm->stats->expAA[EXP_CM_LC][p]->nrandhits, cm->stats->expAA[EXP_CM_LC][p]->tailp);
-	  fprintf(fp, "E-GC     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.4f\n", 
+	  fprintf(fp, "E-GC     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
 		  p, cm->stats->expAA[EXP_CM_GC][p]->lambda, cm->stats->expAA[EXP_CM_GC][p]->mu_extrap, cm->stats->expAA[EXP_CM_GC][p]->mu_orig, 
 		  cm->stats->expAA[EXP_CM_GC][p]->dbsize, cm->stats->expAA[EXP_CM_GC][p]->nrandhits, cm->stats->expAA[EXP_CM_GC][p]->tailp);
-	  fprintf(fp, "E-LI     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.4f\n", 
+	  fprintf(fp, "E-LI     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
 		  p, cm->stats->expAA[EXP_CM_LI][p]->lambda, cm->stats->expAA[EXP_CM_LI][p]->mu_extrap, cm->stats->expAA[EXP_CM_LI][p]->mu_orig, 
 		  cm->stats->expAA[EXP_CM_LI][p]->dbsize, cm->stats->expAA[EXP_CM_LI][p]->nrandhits, cm->stats->expAA[EXP_CM_LI][p]->tailp);
-	  fprintf(fp, "E-GI     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.4f\n", 
+	  fprintf(fp, "E-GI     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
 		  p, cm->stats->expAA[EXP_CM_GI][p]->lambda, cm->stats->expAA[EXP_CM_GI][p]->mu_extrap, cm->stats->expAA[EXP_CM_GI][p]->mu_orig, 
 		  cm->stats->expAA[EXP_CM_GI][p]->dbsize, cm->stats->expAA[EXP_CM_GI][p]->nrandhits, cm->stats->expAA[EXP_CM_GI][p]->tailp);
-	  fprintf(fp, "E-LV     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.4f\n", 
+	  fprintf(fp, "E-LV     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
 		  p, cm->stats->expAA[EXP_CP9_LV][p]->lambda, cm->stats->expAA[EXP_CP9_LV][p]->mu_extrap, cm->stats->expAA[EXP_CP9_LV][p]->mu_orig, 
 		  cm->stats->expAA[EXP_CP9_LV][p]->dbsize, cm->stats->expAA[EXP_CP9_LV][p]->nrandhits, cm->stats->expAA[EXP_CP9_LV][p]->tailp);
-	  fprintf(fp, "E-GV     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.4f\n", 
+	  fprintf(fp, "E-GV     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
 		  p, cm->stats->expAA[EXP_CP9_GV][p]->lambda, cm->stats->expAA[EXP_CP9_GV][p]->mu_extrap, cm->stats->expAA[EXP_CP9_GV][p]->mu_orig, 
 		  cm->stats->expAA[EXP_CP9_GV][p]->dbsize, cm->stats->expAA[EXP_CP9_GV][p]->nrandhits, cm->stats->expAA[EXP_CP9_GV][p]->tailp);
-	  fprintf(fp, "E-LF     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.4f\n", 
+	  fprintf(fp, "E-LF     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
 		  p, cm->stats->expAA[EXP_CP9_LF][p]->lambda, cm->stats->expAA[EXP_CP9_LF][p]->mu_extrap, cm->stats->expAA[EXP_CP9_LF][p]->mu_orig, 
 		  cm->stats->expAA[EXP_CP9_LF][p]->dbsize, cm->stats->expAA[EXP_CP9_LF][p]->nrandhits, cm->stats->expAA[EXP_CP9_LF][p]->tailp);
-	  fprintf(fp, "E-GF     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.4f\n", 
+	  fprintf(fp, "E-GF     %-2d  %10.5f  %10.5f  %10.5f  %10ld  %10d  %.6f\n", 
 		  p, cm->stats->expAA[EXP_CP9_GF][p]->lambda, cm->stats->expAA[EXP_CP9_GF][p]->mu_extrap, cm->stats->expAA[EXP_CP9_GF][p]->mu_orig, 
 		  cm->stats->expAA[EXP_CP9_GF][p]->dbsize, cm->stats->expAA[EXP_CP9_GF][p]->nrandhits, cm->stats->expAA[EXP_CP9_GF][p]->tailp);
 	}

@@ -190,7 +190,7 @@ extern CMFILE *CMFileOpen(char *cmfile, char *env);
 extern int     CMFileRead(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
 extern void    CMFileClose(CMFILE *cmf);
 extern void    CMFileRewind(CMFILE *cmf);
-extern int     CMFilePositionByIndex(CMFILE *cmf, int idx);
+extern int     CMFilePositionByIndex(CMFILE *cmf, int64_t idx);
 extern int     CMFilePositionByKey(CMFILE *cmf, char *key);
 extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary, char *errbuf);
 

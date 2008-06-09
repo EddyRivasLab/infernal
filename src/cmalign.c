@@ -36,7 +36,7 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 
 #define ALGOPTS  "--cyk,--optacc,--viterbi"               /* Exclusive choice for scoring algorithms */
-#define ALPHOPTS "--rna,--dna"                            /* Exclusive choice for output alphabet */
+#define OUTALPHOPTS "--rna,--dna"                 /* Exclusive choice for output alphabet */
 #define ACCOPTS  "--nonbanded,--hbanded"                  /* Exclusive choice for acceleration strategies */
 
 static ESL_OPTIONS options[] = {
@@ -63,8 +63,8 @@ static ESL_OPTIONS options[] = {
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 3 },
   { "--mxsize",  eslARG_REAL, "2048.0",NULL, "x>0.",     NULL,      NULL,   "--small", "set maximum allowable DP matrix size to <x> Mb", 3},
   /* Options that modify how the output alignment is created */
-  { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 4},
-  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 4},
+  { "--rna",     eslARG_NONE,"default",NULL, NULL,  OUTALPHOPTS,   NULL,        NULL, "output alignment as RNA sequence data", 4},
+  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  OUTALPHOPTS,   NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 4},
   { "--matchonly",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        "-p", "include only match columns in output alignment", 4 },
   { "--resonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include only match columns with >= 1 residues in output aln", 4 },
   { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "flush inserts left/right in output alignment", 4 },
@@ -111,7 +111,7 @@ struct cfg_s {
   char         *sqfile;	        /* name of sequence file  */ 
   ESL_SQFILE   *sqfp;           /* open sequence input file stream */
   int           fmt;		/* format code for seqfile */
-  ESL_ALPHABET *abc;		/* digital alphabet for input */
+  ESL_ALPHABET *abc;		/* digital alphabet for the CM */
   int           ncm;            /* number cm we're on */
 
   int           do_mpi;		/* TRUE if we're doing MPI parallelization */
@@ -129,7 +129,7 @@ struct cfg_s {
   char         *withss_cons;	/* ss_cons string from withmsa (before knot stripping) */
   Parsetree_t  *withali_mtr;	/* guide tree for MSA from withalifp */
   ESL_ALPHABET *withali_abc;	/* digital alphabet for reading withali MSA */
-  ESL_ALPHABET *abc_out; 	/* digital alphabet for writing */
+  ESL_ALPHABET *abc_out;	/* digital alphabet for output */
 };
 
 static char usage[]  = "[-options] <cmfile> <sequence file>";
@@ -377,6 +377,7 @@ static int
 init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
   int status;
+  int type;
 
   /* open input sequence file */
   status = esl_sqfile_Open(cfg->sqfile, cfg->fmt, NULL, &(cfg->sqfp));
@@ -386,6 +387,21 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
   if(cfg->sqfp->format == eslMSAFILE_STOCKHOLM) ESL_FAIL(eslEFORMAT, errbuf, "cmalign doesn't support Stockholm alignment format. Please reformat to FASTA.\n");
   cfg->fmt = cfg->sqfp->format;
+
+  /* Guess the sqfile alphabet, if it's ambiguous, guess RNA,
+   * we'll treat RNA and DNA both as RNA internally.
+   * We can't handle any other alphabets, so this is hardcoded. */
+  status = esl_sqfile_GuessAlphabet(cfg->sqfp, &type);
+  if (status == eslEFORMAT)     ESL_FAIL(status, errbuf, "Sequence file parse error, line %" PRId64 " of file %s:\n%s\nOffending line is:\n%s\n", cfg->sqfp->linenumber, cfg->sqfile, cfg->sqfp->errbuf, cfg->sqfp->buf);
+  if (status == eslENODATA)     ESL_FAIL(status, errbuf, "Sequence file %s appears to be empty.", cfg->sqfile);
+  if (status == eslEAMBIGUOUS)  type = eslRNA; /* guess it's RNA, we'll fail downstream with an error message if it's not */
+  else if (status != eslOK)     ESL_FAIL(status, errbuf, "Sequence file alphabet guess failed with error %d\n", status);
+  /* we can read DNA/RNA but internally we treat it as RNA */
+  if(! (type == eslRNA || type == eslDNA))
+    ESL_FAIL(eslEFORMAT, errbuf, "Alphabet is not DNA/RNA in %s\n", cfg->sqfile);
+  cfg->abc = esl_alphabet_Create(eslRNA);
+  if(cfg->abc == NULL) ESL_FAIL(status, errbuf, "Failed to create alphabet for sequence file");
+  esl_sqfile_SetDigital(cfg->sqfp, cfg->abc);
 
   /* open CM file */
   if((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
@@ -418,16 +434,17 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of --withali alignment %s\n", 
 					      esl_opt_GetString(go, "--withali"));
       else if (status != eslOK)      ESL_FAIL(status, errbuf, "Alignment file open failed with error %d\n", status);
-      /* guess it's alphabet, then make sure it's RNA or DNA */
-      int type;
+      /* Guess the withali alphabet, if it's ambiguous, guess RNA,
+       * we'll treat RNA and DNA both as RNA internally.
+       * We can't handle any other alphabets, so this is hardcoded. */
       status = esl_msafile_GuessAlphabet(cfg->withalifp, &type);
-      if (status == eslEAMBIGUOUS)    ESL_FAIL(status, errbuf, "Failed to guess the bio alphabet used in %s.\nUse --rna option to specify it.", esl_opt_GetString(go, "--withali"));
+      if (status == eslEAMBIGUOUS)    type = eslRNA; /* guess it's RNA, we'll fail downstream with an error message if it's not */
       else if (status == eslEFORMAT)  ESL_FAIL(status, errbuf, "Alignment file parse failed: %s\n", cfg->withalifp->errbuf);
       else if (status == eslENODATA)  ESL_FAIL(status, errbuf, "Alignment file %s is empty\n", esl_opt_GetString(go, "--withali"));
       else if (status != eslOK)       ESL_FAIL(status, errbuf, "Failed to read alignment file %s\n", esl_opt_GetString(go, "--withali"));
       /* we can read DNA/RNA but internally we treat it as RNA */
       if(! (type == eslRNA || type == eslDNA))
-	ESL_FAIL(status, errbuf, "Alphabet is not DNA/RNA in %s\n", esl_opt_GetString(go, "--withali"));
+	ESL_FAIL(eslEFORMAT, errbuf, "Alphabet is not DNA/RNA in %s\n", esl_opt_GetString(go, "--withali"));
       cfg->withali_abc = esl_alphabet_Create(eslRNA);
       if(cfg->withali_abc == NULL) ESL_FAIL(status, errbuf, "Failed to create alphabet for --withali");
       esl_msafile_SetDigital(cfg->withalifp, cfg->withali_abc);
