@@ -1,0 +1,49 @@
+# Easel's esl-alimanip crash exercises, in sqc command format.
+# EPN, Mon Jun  9 21:06:30 2008
+# SVN $Id: exercises.sqc 2237 2007-12-01 00:14:41Z nawrockie $
+#
+#
+# Exercises of esl-alimanip.
+#
+# non-calibrated searches 
+# trna
+1  prep      model/trna             @cmbuild@ -F --rf %TRNA.CM% trna1415G.sto
+1  prep      cmemit:trna            @cmemit@  -n 100 %TRNA.CM% %100.FA%
+1  prep      cmalign:trna           @cmalign@ -o %TMP.STK% %TRNA.CM% %100.FA%
+1  exercise  esl-alimanip:trna/1        @esl-alimanip@ -o %NEW.STK% %TMP.STK%
+1  exercise  esl-alimanip:trna/2        @esl-alimanip@ -1 -o %NEW.STK% %TMP.STK%
+1  exercise  esl-alimanip:trna/3        @esl-alimanip@ -g -o %NEW.STK% %TMP.STK%
+1  exercise  esl-alimanip:trna/4        @esl-alimanip@ -g --gapthresh 0.01 -o %NEW.STK%  %TMP.STK%
+1  exercise  esl-alimanip:trna/5        @esl-alimanip@ --start-all 5 --end-all 14 -o %NEW.STK% %TMP.STK%
+1  exercise  esl-alimanip:trna/6        @esl-alimanip@ --mask-all 10wide.mask -o %NEW2.STK% %NEW.STK%
+1  exercise  esl-alimanip:trna/7        @esl-alimanip@ --start-rf 5 --end-rf 14 -k -o %NEW.STK% %TMP.STK%
+1  exercise  esl-alimanip:trna/8        @esl-alimanip@ --mask-rf 10wide.mask -o %NEW2.STK% %NEW.STK%
+1  exercise  esl-alimanip:trna/9        @esl-alimanip@ -g --gapthresh 0.5 -r -o %NEW.STK%  %TMP.STK%
+1  exercise  esl-alimanip:trna/10       @esl-alimanip@ -g --gapthresh 0.5 -k -o %NEW.STK%  %TMP.STK%
+1  exercise  esl-alimanip:trna/11       @esl-alimanip@ -k --xmask trna.xmask -o %NEW.STK% %TMP.STK%
+
+1  prep      cmalign:trna/2             @cmalign@ -p -o %TMP.STK% %TRNA.CM% %100.FA%
+1  exercise  esl-alimanip:trna-p/1      @esl-alimanip@ --pfract 0.8 -k -o %NEW.STK% %TMP.STK%
+1  exercise  esl-alimanip:trna-p/2      @esl-alimanip@ --pfract 0.74 --pthresh 0.7 -k -o %NEW.STK%  %TMP.STK%
+1  exercise  esl-alimanip:trna-p/3      @esl-alimanip@ --pfract 0.3 --p-rf --pthresh 0.7 -r -o %NEW.STK%  %TMP.STK%
+
+1  exercise  esl-alimanip:trna-n/1      @esl-alimanip@ --num-rf -o %NEW.STK%  %TMP.STK%
+1  exercise  esl-alimanip:trna-n/2      @esl-alimanip@ --num-all -o %NEW.STK%  %TMP.STK%
+
+1  exercise  esl-alimanip:trna/12       @esl-alimanip@ --tree %NEW.STK%  %TMP.STK%
+1  exercise  esl-alimanip:trna/13       @esl-alimanip@ --lfract 0.9 -o %NEW.STK%  %TMP.STK%
+1  exercise  esl-alimanip:trna/14       @esl-alimanip@ --lmin 70 -o %NEW.STK%  %TMP.STK%
+1  exercise  esl-alimanip:trna/15       @esl-alimanip@ --detrunc 2 -o %NEW.STK%  %TMP.STK%
+1  exercise  esl-alimanip:trna/16       @esl-alimanip@ --seq-r trna.list -o %NEW.STK%  %TMP.STK%
+1  exercise  esl-alimanip:trna/17       @esl-alimanip@ --seq-k trna.list -o %NEW.STK%  %TMP.STK%
+
+1  exercise  esl-alimanip:trna/18       @esl-alimanip@ --pinfo %TRNA.PINFO% --icinfo %TRNA.ICINFO% --iinfo %TRNA.IINFOR% --dinfo %TRNA.DINFO% --rinfo %TRNA.RINFO% --seq-k trna.list -o %NEW.STK%  %TMP.STK%
+
+1  exercise  esl-alimanip:trna/19       @esl-alimanip@ --sindi -o %NEW.STK%  %TMP.STK%
+
+1  prep      model/trna/2           @cmbuild@ --wnone --enone -F --gapthresh 0.95 %TRNA.EN.CM% trna1415G.sto
+1  prep      cmalign:trna/3         @cmalign@ -o %TMP.EN.STK% %TRNA.EN.CM% %100.FA%
+1  exercise  esl-alimanip:trna/20       @esl-alimanip@ --map %TMP.EN.STK% --omap %TMP.MAP% %TMP.STK%
+1  exercise  esl-alimanip:trna/21       @esl-alimanip@ --verbose --map %TMP.EN.STK% --omap %TMP.MAP% %TMP.STK%
+
+1  exercise  esl-alimanip:trna/22       @esl-alimanip@ --omask %TRNA.MASK% %TMP.STK%

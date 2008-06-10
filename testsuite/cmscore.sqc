@@ -1,0 +1,65 @@
+# Infernal's cmscore crash exercises, in sqc command format.
+# EPN, Thu Jan  3 05:20:12 2008
+# SVN $Id: exercises.sqc 2237 2007-12-01 00:14:41Z nawrockie $
+#
+
+# Exercises of cmscore.
+#
+1  prep      model/trna            @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
+1  exercise  cmscore:trna/1        @cmscore@  %TRNA.CM% 
+1  exercise  cmscore:trna/2        @cmscore@  -n 7 %TRNA.CM% 
+1  exercise  cmscore:trna/3        @cmscore@  -s 33 %TRNA.CM% 
+1  exercise  cmscore:trna/4        @cmscore@  -a %TRNA.CM% 
+1  exercise  cmscore:trna/5        @cmscore@  --sub %TRNA.CM% 
+1  exercise  cmscore:trna/6        @cmscore@  --mxsize 333 %TRNA.CM% 
+
+1  exercise  cmscore:trna/7        @cmscore@  --emit %TRNA.CM% 
+1  exercise  cmscore:trna/8        @cmscore@  --random %TRNA.CM% 
+1  exercise  cmscore:trna/9        @cmscore@  --infile 3trnas.fa %TRNA.CM% 
+1  exercise  cmscore:trna/10        @cmscore@  --outfile %TMPOUT% %TRNA.CM% 
+1  exercise  cmscore:trna/11        @cmscore@  --random --Lmin 73 --Lmax 75 %TRNA.CM% 
+1  exercise  cmscore:trna/12        @cmscore@  --emit --pad %TRNA.CM% 
+
+1  exercise  cmscore:trna/13        @cmscore@  --hbanded %TRNA.CM% 
+1  exercise  cmscore:trna/14        @cmscore@  --tau 2E-5 %TRNA.CM% 
+1  exercise  cmscore:trna/15        @cmscore@  --hsafe %TRNA.CM% 
+1  exercise  cmscore:trna/16        @cmscore@  --std %TRNA.CM% 
+1  exercise  cmscore:trna/17        @cmscore@  --hmmviterbi %TRNA.CM% 
+1  exercise  cmscore:trna/18        @cmscore@  --std --scoreonly %TRNA.CM% 
+5  exercise  cmscore:trna/19        @cmscore@  --qdb %TRNA.CM% 
+5  exercise  cmscore:trna/20        @cmscore@  --qdbsmall %TRNA.CM% 
+5  exercise  cmscore:trna/21        @cmscore@  --qdbboth %TRNA.CM% 
+5  exercise  cmscore:trna/22        @cmscore@  --beta 1E-5 --qdbboth %TRNA.CM% 
+1  exercise  cmscore:trna/23        @cmscore@  --taus 4 --taue 10 %TRNA.CM% 
+5  exercise  cmscore:trna/24        @cmscore@  --qdb --betas 4 --betae 10 %TRNA.CM% 
+1  exercise  cmscore:trna/25        @cmscore@  --regress %TMPOUT% %TRNA.CM% 
+1  exercise  cmscore:trna/26        @cmscore@  --tfile %TMPOUT% %TRNA.CM% 
+1  exercise  cmscore:trna/27        @cmscore@  --mxsize 1024 %TRNA.CM% 
+
+# repeat above block with -l enabled 
+1  exercise  cmscore:trna/1        @cmscore@  -l %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l -n 7 %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l -s 33 %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l -i %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l -q %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l --iins %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l --emit %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l --random %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l --infile 3trnas.fa %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l --outfile %TMPOUT% %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l --hbanded %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l --tau 2E-5 %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l --hsafe %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l --std %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l --hmmviterbi %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l --std --scoreonly %TRNA.CM% 
+5  exercise  cmscore:trna/1        @cmscore@  -l --qdb %TRNA.CM% 
+5  exercise  cmscore:trna/1        @cmscore@  -l --qdbsmall %TRNA.CM% 
+5  exercise  cmscore:trna/1        @cmscore@  -l --qdbboth %TRNA.CM% 
+5  exercise  cmscore:trna/1        @cmscore@  -l --beta 1E-5 --qdbboth %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l --taus 4 --taue 10 %TRNA.CM% 
+5  exercise  cmscore:trna/1        @cmscore@  -l --qdb --betas 4 --betae 10 %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l --regress %TMPOUT% %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l --tfile %TMPOUT% %TRNA.CM% 
+1  exercise  cmscore:trna/1        @cmscore@  -l --mxsize 1024 %TRNA.CM% 
+

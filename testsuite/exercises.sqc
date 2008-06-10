@@ -7,14 +7,11 @@
 #
 1  prep      model/trna           @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
 1  exercise  cmalign:trna/1       @cmalign@ %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna/1/qdb   @cmalign@ --qdb %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/2       @cmalign@ -l %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/2/qdb   @cmalign@ --qdb -l %TRNA.CM% 3trnas.fa
 2  prep      model/vault          @cmbuild@ -F --rf %VAULT.CM% vault.sto
 2  exercise  cmalign:vault/1      @cmalign@ %VAULT.CM% vault.fa
-2  exercise  cmalign:vault/1/qdb  @cmalign@ --qdb %VAULT.CM% vault.fa
 2  exercise  cmalign:vault/2      @cmalign@ -l %VAULT.CM% vault.fa
-2  exercise  cmalign:vault/2/qdb  @cmalign@ --qdb -l %VAULT.CM% vault.fa
 
 # Exercises of cmbuild.
 #
@@ -23,7 +20,6 @@
 1  exercise    cmbuild/rf/RNaseP  @cmbuild@ -F --rf  %MODEL% rnaseP-eubact.sto
 1  exercise    cmbuild/RNaseP     @cmbuild@ -F  %MODEL% rnaseP-eubact.sto
 1  exercise    cmbuild/SRP        @cmbuild@ -F  %MODEL% srp-euk.sto
-
 
 # Exercises of cmscore.
 #
@@ -37,8 +33,6 @@
 2  prep      rand50               @esl-shuffle@ -G -N 50 -L 90 --dna --seed 42 -o %RAND50%
 2  exercise  trna1/rand50         @cmscore@ --infile %RAND50% %TRNA1.CM% 
 2  exercise  trna2/rand50         @cmscore@ --infile %RAND50% %TRNA2.CM%
-2  exercise  trna1/rand50/qdb     @cmscore@ --infile %RAND50% --qdb %TRNA1.CM% 
-2  exercise  trna2/rand50/qdb     @cmscore@ --infile %RAND50% --qdb %TRNA2.CM% 
 
 2  exercise  trna1/rand50/local   @cmscore@ --infile %RAND50% -l %TRNA1.CM% 
 2  exercise  trna2/rand50/local   @cmscore@ --infile %RAND50% -l %TRNA2.CM% 
@@ -47,9 +41,9 @@
 
 1  prep      model/rnaseP         @cmbuild@ --rf -F %RNASEP.CM% rnaseP-eubact.sto
 2  prep      model/srp            @cmbuild@ -F %SRP.CM% srp-euk.sto
-1  exercise  rnaseP/bsu           @cmscore@ --scoreonly --infile rnaseP-bsu.fa %RNASEP.CM%
+1  exercise  rnaseP/bsu           @cmscore@ --nonbanded --scoreonly --infile rnaseP-bsu.fa %RNASEP.CM%
 2  exercise  rnaseP/bsu/qdb       @cmscore@ --infile rnaseP-bsu.fa --qdb %RNASEP.CM% 
-1  exercise  rnaseP/bsu/local     @cmscore@ --scoreonly --infile rnaseP-bsu.fa -l %RNASEP.CM% 
+1  exercise  rnaseP/bsu/local     @cmscore@ --nonbanded --scoreonly --infile rnaseP-bsu.fa -l %RNASEP.CM% 
 2  exercise  rnaseP/bsu/local/qdb @cmscore@ --infile rnaseP-bsu.fa --qdb -l %RNASEP.CM% 
 2  exercise  srp/ffs              @cmscore@ --infile ffs-ecoli.fa %SRP.CM% 
 2  exercise  srp/ffs/qdb          @cmscore@ --infile ffs-ecoli.fa %SRP.CM% 
@@ -61,6 +55,21 @@
 3  exercise  rnaseP/rand/qdb      @cmscore@ --infile %RAND20% --qdb %RNASEP.CM% 
 3  exercise  rnaseP/rand/local    @cmscore@ --infile %RAND20% -l %RNASEP.CM% 
 3  exercise  rnaseP/rand/local/q  @cmscore@ --infile %RAND20% --qdb -l %RNASEP.CM% 
+
+# Exercises of cmsearch 
+1  exercise  trna/search          @cmsearch@ %TRNA.CM% 3trnas.fa
+1  exercise  rnaseP/search        @cmsearch@ %RNASEP.CM% 3trnas.fa
+1  exercise  srp/search           @cmsearch@ %SRP.CM% 3trnas.fa
+
+# Exercises of cmemit
+1  exercise  trna/emit            @cmemit@   %TRNA.CM% %TMP.FA%
+1  exercise  rnaseP/emit          @cmemit@   %RNASEP.CM% %TMP.FA%
+1  exercise  srp/emit             @cmemit@   %SRP.CM% %TMP.FA%
+
+# Exercises of cmstat
+1  exercise  trna/stat            @cmstat@   %TRNA.CM% 
+1  exercise  rnaseP/stat          @cmstat@   %RNASEP.CM% 
+1  exercise  srp/stat             @cmstat@   %SRP.CM% 
 
 # Exercises developed for bandcyk.c
 # xref notebook/1015-infernal-bands; xref STL7 p.130.
@@ -95,11 +104,11 @@
 2  exercise  sub/ssu              @sub_cm-test@ %SSU.CM%
 3  exercise  sub/trna2            @sub_cm-test@ --exhaust %TRNA.CM%
 
-# Verify backwards compatibility of CM file formats
+# Infernal 1.0 is not backwards compatible with pre-1.0 CM files
 #
-1  exercise  formats/0.55         @cmsearch@ DicF-0.55.cm 3trnas.fa
-1  exercise  formats/0.6          @cmsearch@ DicF-0.6.cm  3trnas.fa
-1  exercise  formats/0.7          @cmsearch@ DicF-0.7.cm  3trnas.fa
-1  exercise  formats/0.71         @cmsearch@ DicF-0.71.cm 3trnas.fa
-1  exercise  formats/0.72         @cmsearch@ DicF-0.72.cm 3trnas.fa
-1  exercise  formats/0.8          @cmsearch@ DicF-0.8.cm  3trnas.fa
+#1  exercise  formats/0.55         @cmsearch@ DicF-0.55.cm 3trnas.fa
+#1  exercise  formats/0.6          @cmsearch@ DicF-0.6.cm  3trnas.fa
+#1  exercise  formats/0.7          @cmsearch@ DicF-0.7.cm  3trnas.fa
+#1  exercise  formats/0.71         @cmsearch@ DicF-0.71.cm 3trnas.fa
+#1  exercise  formats/0.72         @cmsearch@ DicF-0.72.cm 3trnas.fa
+#1  exercise  formats/0.8          @cmsearch@ DicF-0.8.cm  3trnas.fa

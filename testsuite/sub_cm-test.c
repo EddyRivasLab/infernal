@@ -195,7 +195,7 @@ main(int argc, char **argv)
     
     for(sstruct = 1; sstruct <= cm->clen; sstruct++) {
       printf("\tBuilding models with start pos: %5d (%5d / %5d completed)\n", sstruct, ndone, nmodels);
-      for(estruct = sstruct; estruct <= cm->clen; estruct++) {
+      for(estruct = sstruct+2; estruct <= cm->clen; estruct++) {
 	if(!(build_sub_cm(cm, &sub_cm, sstruct, estruct, &submap, print_flag)))
 	  cm_Fail("Couldn't build a sub_cm from CM with sstruct: %d estruct: %d\n", sstruct, estruct);
 	/* Do the psi test */
@@ -254,7 +254,14 @@ main(int argc, char **argv)
 	  temp = sstruct;
 	  sstruct = estruct;
 	  estruct = temp;
-	}	      
+	}
+	if((estruct - sstruct) < 2) { 
+	  estruct = sstruct + 2;
+	  if(estruct > cm->clen) { 
+	    estruct = cm->clen; 
+	    sstruct = estruct - 2; 
+	  }
+	}
       }
       if(!(build_sub_cm(cm, &sub_cm, sstruct, estruct, &submap, print_flag))) 
 	cm_Fail("Couldn't build a sub_cm from CM with sstruct: %d estruct: %d\n", sstruct, estruct);
