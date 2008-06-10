@@ -79,29 +79,18 @@ runs of
 on the same CM will give different
 results. You can use this option to generate reproducible results.
 
-.TP
-.B -v
-Be verbose. Print the seed used by the random number generator and the
-@PACKAGE@ banner. For convenience 
-.B cmemit 
-prints only sequence data by default.
 
 .TP
-.B --iins
-Turn off the default 
-behavior of setting all CM insert emission scores to 0.0 bits prior to
-emitting sequences. This default behavior originated in 
-.B cmsearch 
-to avoid high-scoring hits to low complexity sequence favored by high 
-insert state emission scores, and is applied to
-.B cmemit
-for consistency. When 
-.B --iins
-is enabled the insert emission scores are read from
-.I cmfile
-that were calculated in 
-.B cmbuild 
-and are unmodified prior to emitting sequences.
+.B --devhelp
+Print help, as with  
+.B "-h",
+but also include undocumented developer options. These options are not
+listed below, are under development or experimental, and are not
+guaranteed to even work correctly. Use developer options at your own
+risk. The only resources for understanding what they actually do are
+the brief one-line description printed when
+.B "--devhelp"
+is enabled, and the source code.
 
 .SH EXPERT OPTIONS
 
@@ -143,7 +132,7 @@ difficult (
 < 1.0) or easy (
 .I <x> 
 > 1.0) for the CM to
-distinguish as homologous from background.
+distinguish as homologous from background, random sequence.
 
 .TP
 .BI --begin " <n>"
@@ -155,7 +144,8 @@ the CM. Must be used in combination with
 and either 
 .B -a 
 or
-.B --shmm.
+.B --shmm
+(a developer option).
 
 .TP
 .BI --end " <n>"
@@ -167,28 +157,8 @@ the CM. Must be used in combination with
 and either 
 .B -a 
 or 
-.B --shmm.
+.B --shmm
+(a developer option).
 
-.TP
-.BI --shmm <f>
-Use the generated sequences to train a CM Plan 9 maximum-likelihood
-HMM without using pseudo-counts. Print the counts and normalized
-probabilities of the HMM to file
-.I <f>. 
-Primarily useful for debugging, as the number of samples grows the
-sampled HMM parameters should approach the analytically built CM 
-Plan 9 HMM parameters. The analytically built HMM parameters can be
-obtained using 
-.B --ahmm.
-
-.TP 
-.BI --ahmm <f>
-Analytically build a CM Plan 9 HMM from the CM that is maximally
-similar to the CM and output it's parameters to 
-.I <f>.
-Primarily useful for debugging. The parameters of the analytically
-built CP9 HMM can be compared with the sampled HMM parameters obtained
-using
-.B --shmm.
 
 

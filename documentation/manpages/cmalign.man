@@ -20,7 +20,7 @@ to the covariance model (CM) in
 and outputs a multiple sequence alignment.
 
 .PP
-Currently, the sequence file must be in FASTA format.
+The sequence file must be in FASTA, EMBL, or Genbank format.
 
 .PP
 CM files are profiles of RNA consensus secondary structure. A
@@ -50,15 +50,15 @@ option.
 .PP
 By default, 
 .B cmalign
-computes the alignment with maximal
-expected accuracy that is consistent with the HMM bands 
-using a banded version of the Durbin/Holmes optimal
-accuracy algorithm.
+computes the alignment with maximum
+expected accuracy that is consistent with constraints (bands) derived
+from an HMM, using a banded version of the Durbin/Holmes optimal accuracy algorithm.
 This behavior can be changed, as described below and in
 the User's Guide, with
 the 
-.B --cyk
-or 
+.B --cyk, 
+.B --sample,
+or
 .B --viterbi 
 options.
 
@@ -70,21 +70,31 @@ This is done using the
 .B --withali 
 option, as described below and in the User's Guide.
 
-The default output from 
+.SH OUTPUT
+
 .B cmalign
-is tabular, with a single line printed for each model . Each line has
-eight fields: "aln": the index of the alignment used to build the CM, "cm idx": the
-index of the CM in  .I cmfile, 
-"name": the name of the CM, "nseq": the number of sequences in the
-alignment used to build the CM, "eff_nseq": the effective number of
-sequences used to build the model (see the User Guide); "alen": the
-length of the alignment used to build the CM, and "clen": the
-number of columns from the alignment defined as consensus columns;
-"rel entropy, CM": the total relative entropy of the model divided by
-the number of consensus columns, "rel entropy, HMM": the total
-relative entropy of the CM 
-.I ignoring secondary structure
-divided by the number of consensus columns.
+first outputs tabular information on the scores of each sequence being
+aligned, then the alignment itself is printed. The alignment can be
+redirected to an output file 
+.I <f>
+with the 
+.BI -o " <f>"
+option. 
+The tabular output section 
+includes one line per sequences and seven fields per line:  "seq idx": 
+the index of the sequence in the input file, "seq name": the
+sequence name, "len": the length of the sequence, "total": the total
+bit score of the sequence, "struct": an approximation of the
+contribution of the secondary structure to the bit score, "avg prob":
+the average posterior probability (confidence estimate) of each
+aligned residue, and "elapsed": the wall time spent aligning the
+sequence. 
+
+The fields can change if different options are selected. For example
+if the 
+.B "--cyk"
+option is enabled, the "avg prob" field disappears because
+posterior probabilities are not calculated by the CYK algorithm.
 
 .SH OPTIONS
 
@@ -154,12 +164,21 @@ the reliability of the program somewhat, because
 the Babelfish can make mistakes; particularly
 recommended for unattended, high-throughput runs
 of @PACKAGE@. 
+Acceptable formats are: FASTA, EMBL, UNIPROT, GENBANK, and DDBJ.
 .I <s>
 is case-insensitive.
-This option is a bit forward-looking;
-.B cmsearch 
-currently only accepts FASTA format, but
-this may not be true in the future.
+
+.TP
+.B --devhelp
+Print help, as with  
+.B "-h",
+but also include undocumented developer options. These options are not
+listed below, are under development or experimental, and are not
+guaranteed to even work correctly. Use developer options at your own
+risk. The only resources for understanding what they actually do are
+the brief one-line description printed when
+.B "--devhelp"
+is enabled, and the source code.
 
 .TP
 .BI --mpi
@@ -178,27 +197,46 @@ The optimal accuracy alignment will be constrained by HMM bands for acceleration
 unless the
 .B --nonbanded 
 option is enabled. 
+The optimal accuracy algorithm determines the alignment that
+maximizes the posterior probabilities of the aligned residues within it.
+The posterior probabilites are determined using (possibly HMM banded)  
+variants of the Inside and Outside algorithms. 
 
 .TP
 .B --cyk
 Do not use the Durbin/Holmes optimal accuracy alignment to align the
 sequences, instead use the CYK algorithm which determines the
-optimally scoring alignment of the sequence to the model.
-Whereas CYK determines the alignment with the optimal score,
-the optimal accuracy algorithm determines the alignment that
-maximizes the posterior probabilities of the aligned residues within it.
-The posterior probabilites are determined using (possibly HMM banded)  
-variants of the Inside and Outside algorithms. 
-When 
-.B --cyk
-is enabled the scores reported are not average posterior probability
-values, but rather bit scores.
+optimally scoring alignment of the sequence to the model. 
+
+.TP
+.B --sample
+Sample an alignment from the posterior distribution of alignments.
+The posterior distribution is determined using an HMM banded (unless 
+.B --nonbanded)  
+variant of the Inside algorithm. 
+
+.TP
+.BI -s " <n>"
+Set the random number generator seed to 
+.I <n>, 
+where 
+.I <n> 
+is a positive integer. This option can only be used in
+combination with 
+.B --sample. 
+The default is to use time() to
+generate a different seed for each run, which means that two different
+runs of 
+.B cmalign --sample
+on the same alignment will give slightly different
+results. You can use this option to generate reproducible results.
 
 .TP
 .B --viterbi
-Do not use the CM CYK algorithm to align the sequences, instead use
-the HMM Viterbi algorithm to align with a CM Plan 9 HMM. This is
-faster than CM alignment, but often less accurate because the
+Do not use the CM to align the sequences, instead use
+the HMM Viterbi algorithm to align with a CM Plan 9 HMM. The HMM is
+automatically constructed to be maximally similar to the CM. 
+This HMM alignment is faster than CM alignment, but can be less accurate because the
 structure of the RNA family is ignored. 
 
 .TP
@@ -215,9 +253,14 @@ Weinberg and Ruzzo.
 .TP
 .B --small
 Use the divide and conquer CYK alignment algorithm described in SR
-Eddy, BMC Bioinformatics 3:18, 2002. This option is recommended whenever
+Eddy, BMC Bioinformatics 3:18, 2002. The 
 .B --nonbanded
-is used because standard CM alignment without HMM banding requires a lot of
+option must be used in combination with this options.
+Also, it is recommended whenever
+.B --nonbanded
+is used that 
+.B --small 
+is also used  because standard CM alignment without HMM banding requires a lot of
 memory, especially for large RNAs.
 .B --small
 allows CM alignment within practical memory limits,
@@ -233,10 +276,10 @@ and
 This option is turned on by default.
 Accelerate alignment by pruning away regions of the CM DP matrix that
 are deemed negligible by an HMM. 
-First, score each sequence with a CM plan 9 HMM derived from the CM 
+First, each sequence is scored with a CM plan 9 HMM derived from the CM 
 using the Forward and Backward HMM algorithms and calculate posterior
-probabilities that each residue aligns to each state of the HMM. Use these
-posterior probabilities to derive constraints (bands) on the CM DP
+probabilities that each residue aligns to each state of the HMM. These 
+posterior probabilities are used to derive constraints (bands) on the CM DP
 matrix. Finally, the target sequence is aligned to the CM using the
 banded DP matrix, during which cells outside the bands are ignored. Usually most
 of the full DP matrix lies outside the bands 
@@ -244,10 +287,9 @@ of the full DP matrix lies outside the bands
 fewer DP calculations are required, and more memory efficient because
 only cells within the bands need be allocated. 
 
-However, HMM banding sacrifices the guarantee of determining the
-optimal alignment, which will be missed if it lies outside the
-bands.
-The tau paramater (analagous to the beta parameter for QDB
+Importantly, HMM banding sacrifices the guarantee of determining the
+optimally accurarte or optimal alignment, which will be missed if it lies outside the
+bands. The tau paramater (analagous to the beta parameter for QDB
 calculation in 
 .B cmsearch
 ) is the amount of probability mass
@@ -270,14 +312,17 @@ option.
 
 .TP
 .B --nonbanded
-Turns off HMM banding. The standard CYK alignment algorithm (or
-optimal accuracy algorithm 
-.B --optacc
-is enabled) is used to determine the guaranteed optimal alignment. The 
+Turns off HMM banding. The returned alignment is guaranteed to be the
+globally optimally accurate one (by default) or the globally optimally
+scoring one (if 
+.B --cyk
+is enabled).
+The 
 .B --small
 option is recommended in combination with this option, because
 standard alignment without HMM banding requires a lot of memory (see
-.B --small).
+.B --small
+).
 
 .TP
 .BI --tau " <x>"
@@ -288,18 +333,6 @@ probabilities that is considered negligible. The default value is 1E-7.
 In general, higher values will result in greater acceleration, but
 increase the chance of missing the optimal alignment due to the HMM
 bands.
-
-.TP
-.B --hsafe
-In HMM banded mode,
-realign any sequences with a negative alignment
-score using non-banded CYK to guarantee finding the optimal
-alignment. 
-Based on empirical tests, the fraction of
-HMM banded alignments that are non-optimal and have negative scores is
-much higher than for those with positive scores.
-This option must be run in combination with
-.B --cyk.
 
 .TP
 .BI --mxsize " <x>"
@@ -442,45 +475,11 @@ when the CM was constructed from the alignment file
 .I <f>.
 
 .TP
-.BI --regress " <f>"
-Save regression test information to a file
-.I <f>. 
-This is part of the automated testing procedure at each release. 
-
-.TP
 .BI --tfile " <f>"
 Dump tabular sequence tracebacks for each individual
 sequence to a file 
 .I <f>.
 Primarily useful for debugging.
-
-.TP
-.BI --banddump " <n>"
-Set verbosity level for debugging print statements related to
-banded alignment to 
-.I <n>. 
-Where 
-.I <n> 
-is 1, 2 or 3. By default debugging print statements are turned off.
-
-.TP
-.BI --dlev " <n>"
-Set verbosity level for alignment related
-debugging print statements
-.I <n>. 
-Where 
-.I <n> 
-is 1, 2 or 3. By default debugging print statements are turned off.
-
-.TP
-.BI --stall
-Stall the program immediately after starting up to allow a user
-to attach a debugging tool such as gdb to the process.
-Developed for debugging under MPI parallelization, which is turned on
-with the 
-.B --mpi
-option.  This option will only be available if @PACKAGE@ has been configured
-and built with the "--enable-mpi" flag (see User's Guide for details).
 
 
 

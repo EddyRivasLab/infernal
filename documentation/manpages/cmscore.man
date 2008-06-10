@@ -26,6 +26,13 @@ It is not intended to be particularly useful in the real world. Documentation
 is provided for completeness, and to aid our own memories.
 
 .PP
+CM files are profiles of RNA consensus secondary structure. A
+CM file is produced by the 
+.B cmbuild 
+program, from a given RNA sequence alignment of known 
+consensus structure.
+
+.PP
 .B cmscore
 aligns the sequence(s) in
 .I seqfile 
@@ -43,7 +50,7 @@ bits), if this is not the case for any sequence
 .B cmscore
 exits and prints an error message. 
 When the
-.B --hmmviterbi 
+.B --viterbi 
 option is enabled D&C CYK is compared with Viterbi alignment to a CM
 Plan 9 HMM constructed to be maximally similar to the CM. 
 
@@ -101,19 +108,24 @@ checks that the scores are within 0.01 bits of each other, but
 does not check that the parse trees are absolutely identical.
 
 .PP
-Currently, the sequence file must be in FASTA format.
+The alignment algorithms can be run in "search" mode within
+.B cmscore
+by using the
+.B --search 
+option.
+When 
+.B --search
+is enabled,
+.B --inside
+specifies that the Inside algorithm be used instead of CYK
+and 
+.B --forward 
+specifies that the HMM Forward algorithm be used instead of CYK.
 
 .PP
 The sequences are treated as single stranded RNAs; that is,
 only the given strand of each sequence is aligned and scored, and
 no reverse complementing is done.
-
-.PP
-CM files are profiles of RNA consensus secondary structure. A
-CM file is produced by the 
-.B cmbuild 
-program, from a given RNA sequence alignment of known 
-consensus structure.
 
 .SH OPTIONS
 
@@ -140,15 +152,6 @@ to be penalized differently than normal indels.
 The default is to globally align the query model to the target
 sequences.
 
-.TP
-.B -l
-Turn on the local alignment algorithm, which allows the alignment
-to span two or more subsequences if necessary (e.g. if the structures
-of the query model and target sequence are only partially shared),
-allowing certain large insertions and deletions in the structure
-to be penalized differently than normal indels.
-The default is to globally align the query model to the target
-sequences.
 
 .TP
 .BI -s " <n>"
@@ -174,23 +177,6 @@ Print individual timings and score comparisons for each sequence in
 By default only summary statistics are printed.
 
 .TP
-.B --iins
-Turn off the default 
-behavior of setting all CM insert emission scores to 0.0 bits prior to
-alignment. This default behavior originated in 
-.B cmsearch 
-to avoid high-scoring hits to low complexity sequence favored by high 
-insert state emission scores and is applied to
-.B cmalign
-for consistency. When 
-.B --iins
-is enabled the insert emission scores are read from
-.I cmfile
-that were calculated in 
-.B cmbuild 
-and are unmodified prior to emitting sequences.
-
-.TP
 .BI --sub
 Turn on the sub model construction and alignment procedure. For each
 sequence, an HMM is first used to predict the model start and end
@@ -212,7 +198,7 @@ parsetree file for each sequence.
 .BI --mxsize " <x>"
 Set the maximum allowable DP matrix size to 
 .I <x>
-megabytes. By default this size is 256 Mb. 
+megabytes. By default this size is 2048 Mb. 
 This should be large enough for the most alignments, 
 however if it is not 
 .B cmscore
@@ -268,10 +254,15 @@ option was used when
 .B cmbuild 
 created the 
 .I cmfile.
-The length of the sequences generated is sampled from the length
+By default, the length of the sequences generated is sampled from the length
 distribution of the CM. The average length of the random sequences 
 will be the consensus length of the RNA family modelled by
 the CM (or very close to it).
+Alternatively, the 
+.BI "--Lmin <n>"
+and 
+.BI "--Lmax <n>" 
+options can be used to specify a length distribution.
 The number of sequences generated is
 10 by default but can be changed with the 
 .B -n
@@ -292,7 +283,6 @@ and
 options are incompatible with
 .B --infile.
 
-
 .TP
 .BI --outfile <f>
 Save generated sequences that are scored to the file
@@ -301,6 +291,37 @@ in FASTA format.
 This option is incompatible with the 
 .B --infile
 option.
+
+.TP
+.BI --Lmin <n1>
+Must be used in combination with 
+.B --random
+and
+.BI --Lmax <n2>.
+The lengths of the random sequences generated and scored will be
+uniform between the range of
+.I <n1>..<n2>.
+
+.TP
+.BI --Lmax <n2>
+Must be used in combination with 
+.B --random
+and
+.BI --Lmin <n1>.
+The lengths of the random sequences generated and scored will be
+uniform between the range of
+.I <n1>..<n2>.
+
+.TP
+.BI --pad
+Must be used in combination with 
+.B --emit 
+and 
+.B --search.
+Add
+.I <n>
+cm->W (max hit length) minus L (sequence <x> length) residues to the 5'
+and 3' end of each  emitted sequence <x>.
 
 .TP 
 .B --hbanded
@@ -320,6 +341,15 @@ probabilities that is considered negligible. The default value is 1E-7.
 In general, higher values will result in greater acceleration, but
 increase the chance of missing the optimal alignment due to the HMM
 bands.
+
+.TP
+.B --aln2bands
+With 
+.B --search,
+when calculating HMM bands, use an HMM alignment algorithm instead of
+an HMM search algorithm. In general, using this option will result in
+greater acceleration, but will increase the chance of missing the
+optimal alignment.
 
 .TP
 .B --hsafe
@@ -351,9 +381,30 @@ during the second stage standard non-banded CYK alignment, use the  "score only"
 of the algorithm to save memory, and don't recover a parse tree. 
 
 .TP
-.B --hmmviterbi
+.B --viterbi
 Specify that the second stage alignment algorithm be Viterbi to a CM
 Plan 9 HMM. 
+.TP
+
+.TP
+.B --search
+Run all algorithms in scanning mode, not alignment mode. This means 
+the highest scoring subsequence within each sequence is returned as
+the score, not necessarily the score of an alignment of the full sequence.
+
+.TP
+.B --inside
+With 
+.B --search
+Compare the non-banded scanning Inside algorithm to the HMM banded
+scanning Inside algorith, instead of using CYK versions.
+
+.TP
+.B --forward
+With 
+.B --search
+Compare the scanning Forward scoring algorithm against CYK.
+
 .TP
 .BI --taus " <n>"
 Specify the first alignment algorithm as non-banded D&C CYK, and
@@ -372,25 +423,9 @@ used.  Must be used in combination with
 
 
 .TP
-.BI --regress " <f>"
-Save regression test information to a file
-.I <f>. 
-This is part of the automated testing procedure at each release. 
-
-.TP
 .BI --tfile " <f>"
 Print the parsetrees for each alignment of each sequence to file
 .I <f>.
-
-.TP
-.BI --stall
-Stall the program immediately after starting up to allow a user
-to attach a debugging tool such as gdb to the process.
-Developed for debugging under MPI parallelization, which is turned on
-with the 
-.B --mpi
-option.  This option will only be available if @PACKAGE@ has been configured
-and built with the "--enable-mpi" flag (see User's Guide for details).
 
 
 

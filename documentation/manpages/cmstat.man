@@ -75,7 +75,6 @@ printed on how many kilobases can be scanned per second for the
 different possible algorithms in
 .B cmsearch.
 
-
 .SH OPTIONS
 
 .TP
@@ -95,6 +94,13 @@ both the target sequence and the model.
 print general statistics on the models in 
 .I cmfile 
 and the alignment it was built from.
+
+.TP
+.BI -Z "<x>"
+Calculate E-values as if the target database size was 
+.I <x> 
+megabases (Mb). Ignore the actual size of the database. This option
+is only valid if the CM file has been calibrated.
 
 .B --all
 print all available statistics 
@@ -117,10 +123,6 @@ print glocal E-value statistics. This option only works if
 has been calibrated with 
 .B cmcalibrate.
 
-.B --search
-perform an experiment to determine how fast the CM(s) can search with
-different search algorithms.
-
 .TP 
 .BI --beta " <x>"
 With the 
@@ -133,34 +135,15 @@ Beta is the probability
 mass considered negligible during band calculation. 
 The default is 1E-7.
 
-.TP 
-.BI --cmL " <n>"
-With the 
-.B --search 
-option set the length of sequence to search with CM algorithms as 
-.I <n>
-residues. By default, 
-.I <n>
-is 1000.
-
-.TP 
-.BI --hmmL " <n>"
-With the 
-.B --search 
-option set the length of sequence to search with HMM algorithms as 
-.I <n>
-residues. By default, 
-.I <n> 
-is 100,000.
 
 .TP 
 .BI --qdbfile " <f>"
-With the 
-.B --search 
-option save the query-dependent bands (QDBs) for each state to 
+Save the query-dependent bands (QDBs) for each state to 
 file 
 .I <f>
 .
+
+.SH EXPERT OPTIONS
 
 .TP 
 .B --lfi
@@ -274,6 +257,31 @@ option, only consider the top strand of the database in
 .I <x> 
 instead of both strands.
 
+
+.B --search
+perform an experiment to determine how fast the CM(s) can search with
+different search algorithms.
+
+.TP 
+.BI --cmL " <n>"
+With the 
+.B --search 
+option set the length of sequence to search with CM algorithms as 
+.I <n>
+residues. By default, 
+.I <n>
+is 1000.
+
+.TP 
+.BI --hmmL " <n>"
+With the 
+.B --search 
+option set the length of sequence to search with HMM algorithms as 
+.I <n>
+residues. By default, 
+.I <n> 
+is 100,000.
+
 .TP 
 .BI --efile " <f>"
 Save a plot of 
@@ -344,330 +352,3 @@ and
 .B --afile 
 use CM bit score cutoffs instead of CM E value cutoffs for the x-axis
 values of the plot.
-
-
-
-
-
-Print filter threshold statistics for an HMM filter if a final bit
-score  cutoff of
-.I <x>
-were to be used for a run of 
-.B cmsearch. 
-
-
-. 
-Beta is the probability
-mass considered negligible during band calculation. 
-The default is 1E-7.
-
-.TP
-.BI --forecast " <n>"
-Predict the running time of the calibration for 
-.I cmfile 
-and provided options
-and exit, DO NOT perform the calibration. 
-The predictions should be used as rough
-estimates. The value 
-.I <n>
-is the number of processors the calibration will be run on, so 
-.I <n>
-equal to 1 is appropriate unless you will run 
-.B cmcalibrate
-in parallel with MPI.
-
-.SH EXPERT OPTIONS
-
-.TP
-.BI --exp-T " <x>"
-Set the bit score cutoff for collecting hits for exponential tail
-fitting to 
-.I <x>.
-By default, the cutoff is negative infinity, so all non-overlapping
-hits are collected. Only use this option if you really know what
-you're doing.
-
-.TP
-.BI --exp-cmL " <x>"
-Set the length of random sequence to search for the CM exponential
-tail fits to 
-.I <x> 
-megabases (Mb). By default, 
-.I <x> is
-1 Mb. Searching more sequences will make the exponential tail fits
-more precise, but will take longer: using 
-.I <x> 
-of 2 instead of the default of 1 will cause the running time of
-.B cmcalibrate 
-to roughly double.
-
-.TP
-.BI --exp-fract " <x>"
-Set the HMM/CM fraction of dynamic programming calculations to 
-.I <x>.
-By default, 
-.I <x>
-is 0.10. 
-For more information, see the explanation regarding sequence lengths
-for E-value calibration above before the Options section.
-
-.TP
-.BI --exp-hmmLn " <x>"
-Set the minimum random sequence length to search when determining HMM
-E-values to 
-.I <x>
-megabases (Mb). By default, 
-.I <x>
-is 10.0.
-For more information, see the explanation regarding sequence lengths
-for E-value calibration above before the Options section.
-
-.TP
-.BI --exp-hmmLx " <x>"
-Set the maximum random sequence length to search when determining HMM
-E-values to  
-.I <x>
-megabases (Mb). By default, 
-.I <x>
-is 1000.0.
-For more information, see the explanation regarding sequence lengths
-for E-value calibration above before the Options section.
-
-.TP
-.BI --exp-tailp " <x>"
-During E-value calibration, by default an exponential tail is fit to
-the 0.01 (1\%) right tail of the histogram of scores from random
-sequence. The value of 0.01 can be changed to 
-.I <x>
-with the
-.BI --exp-tailp " <x>"
-option.
-
-.TP
-.BI --exp-beta " <x>"
-During E-value calibration, by default query-dependent banding (QDB)
-is NOT used to accelerate the CM search algorithms. 
-To turn QDB on with a beta tail loss parameter of 
-.I <x>
-use the 
-.BI --exp-beta " <x>"
-option. The beta parameter is the amount of probability mass excluded
-during band calculation, higher values of beta give greater speedups
-but sacrifice more accuracy than lower values. A recommended value is
-1E-7 (0.00001\%).  QDB is explained in more detail in the manual page
-for 
-.B cmsearch 
-and in (Nawrocki and Eddy, PLoS Computational Biology 3(3): e56). 
-
-.TP 
-.BI --exp-gc " <f>"
-During E-value calibration, the random sequences are generated to follow
-a specific GC content distribution. By default, 10 Kb sequences are
-generated, each sequence following a different GC content. The GC
-contents are sampled from a hard-coded distribution of GC percentages
-in 100 nucleotide, non-overlapping windows in real genomic
-sequence. This distribution of GC percentages can be replaced by the
-empirical GC distribution of 100 nucleotide windows present in the
-database in file
-.I " <f>" 
-using the 
-.BI --exp-gc " <f>"
-option. This is a useful option if you want to calibrate your model to
-search only the specific database
-.I " <f>"
-and especially useful if 
-.I " <f>"
-has skewed GC content.
-
-.TP 
-.BI --exp-pfile " <f>"
-Use the GC partitions defined in the file
-.I " <f>"
-during E-value calibration. A different exponential tail will be fit
-for each partition. For more information on this option and
-formatting of the file 
-.I " <f>" 
-see the User Guide. FINISH ME!
-
-.TP 
-.BI --exp-pfile " <f>"
-Use the GC partitions defined in the file
-.I " <f>"
-during E-value calibration. A different exponential tail will be fit
-for each partition. For more information on this option and
-formatting of the file 
-.I " <f>" 
-see the User Guide. FINISH ME!
-
-.TP 
-.BI --exp-hfile " <f>"
-Save the histograms fit for the E-value calibration to file
-.I <f>.
-The format of this file is two tab delimited columns. The first column
-is the x-axis values of bit scores of each bin. The second column is the y-axis
-values of number of hits per bin. Each series is delimited by a line
-with a single character "&". The file will contain one series for each
-exponential tail fit, i.e. one series of empirical data for each line of output from
-.B cmcalibrate
-that begins with "exp tail".
-
-.TP 
-.BI --exp-sfile " <f>"
-Save a survival plot for the E-value calibration to file
-.I <f>.
-The format of this file is two tab delimited columns. The first column
-is the x-axis values of bit scores of each bin. The second column is the y-axis
-values of fraction of hits that meet or exceed the score for each
-bin. Each series is delimited by a line with a single character "&". 
-The file will contain one series of empirical data for each
-exponential tail fit, i.e. one series for each line of output from
-.B cmcalibrate
-that begins with "exp tail".
-
-.TP 
-.BI --exp-qqfile " <f>"
-Save a quantile-quantile plot for the E-value calibration to file
-.I <f>.
-The format of this file is two tab delimited columns. The first column
-is the x-axis values, and the second column is the y-axis
-values. The distance of the points from the identity line (y=x) is a
-measure of how good the exponential tail fit is, the closer the points
-are to the identity line, the better the fit is.
-Each series is delimited by a line with a single character "&". 
-The file will contain one series of empirical data for each
-exponential tail fit, i.e. one series for each line of output from
-.B cmcalibrate
-that begins with "exp tail".
-
-
-.TP 
-.BI --exp-ffile " <f>"
-Save statistics on the exponential tail statistics to file
-.I <f>.
-The file will contain the lambda and mu values for exponential tails 
-fit to tails of different sizes. For example, by default
-.B cmcalibrate 
-fits exponential tails to the rightmost 0.01 (1\%) of the score histogram and
-stores the parameters of that exponential tail to the CM file.
-(The value of 0.01 can be changed to 
-.I <x>
-with the 
-.BI --exp-tailp " <x>"
-option).
-When 
-.BI --exp-ffile " <f>" 
-is used the file
-.I " <f>" 
-will include the exponential tail parameters for fits to various
-fractions of the histogram tail, instead of just to 0.01.
-
-
-.TP 
-.BI --fil-N " <n>"
-Set the number of sequences sampled and searched for the HMM filter
-threshold calibration to 
-.I <n>.
-By default, 
-.I <n>
-is 10,000.
-
-.TP 
-.BI --fil-F " <x>"
-Set the fraction of sample sequences the HMM filter must be able to
-recognize, and allow to survive, to 
-.I <x>,
-where 
-.I <x>
-is a positive real number less than or equal to 1.0.
-By default,
-.I <x>
-is 0.99.
-
-.TP 
-.BI --fil-xhmm " <x>"
-Set the target number of dynamic programming calculations for a HMM
-filtered CM QDB search with beta = 1E-7 to 
-.I <x>
-times the number of calculations required to do an HMM search. 
-By default,
-.I <x>
-is 2.0. 
-
-.TP 
-.BI --fil-nonbanded
-Turn off HMM banding for the HMM filter threshold calibration. By
-default, HMM banding is on. 
-
-.TP 
-.BI --fil-tau " <x>"
-Set the tail loss probability during HMM band calculation for HMM
-filter threshold calibration to 
-.I <x>. 
-This is the amount of probability mass within the HMM posterior
-probabilities that is considered negligible. The default value is 1E-7.
-In general, higher values will result in greater acceleration, but
-increase the chance of missing the optimal alignment due to the HMM
-bands. 
-
-.TP 
-.B --fil-aln2bands
-When calculating HMM bands, use an HMM alignment algorithm instead of
-an HMM search algorithm. In general, using this option will result in
-greater acceleration, but will increase the chance of missing the
-optimal alignment. This is experimental, use at your own risk.
-
-.TP 
-.B --fil-gemit
-During HMM filter calibration, always sample sequences from a globally
-configured CM, even when calibrating local modes. By default,
-sequences are sampled from a globally configured CM when calibrating
-the global search modes, and sampled from a locally configured CM
-when calibrating the local search modes.
-	
-.TP 
-.BI --fil-dfile " <f>"
-Save statistics on filter threshold calibration, including HMM and CM scores for all sampled sequences,
-to file 
-.I <f>.
-This option does not work in combination with the 
-.B --exp-pfile 
-option.
-	
-.TP 
-.BI --fil-dfile " <f>"
-Save statistics on filter threshold calibration to file 
-.I <f>.
-This option does not work in combination with the 
-.B --exp-pfile 
-option.
-	
-.TP
-.BI --stall
-Stall the program immediately after starting up to allow a user
-to attach a debugging tool such as gdb to the process.
-Developed for debugging under MPI parallelization, which is turned on
-with the 
-.B --mpi
-option.  This option will only be available if @PACKAGE@ has been configured
-and built with the "--enable-mpi" flag (see User's Guide for details).
-
-.TP
-.BI --mxsize " <x>"
-Set the maximum allowable DP matrix size to 
-.I <x>
-megabytes. By default this size is 2,048 Mb. 
-This should be large enough for the vast majority of calibrations,
-however if it is not 
-.B cmcalibrate
-will exit prematurely and report an error message that 
-the matrix exceeded it's maximum allowable size. In this case, the
-.B --mxsize 
-can be used to raise the limit.
-
-.TP
-.BI --mpi
-Run as an MPI parallel program. This option will only be available if
-@PACKAGE@ 
-has been configured and built with the "--enable-mpi" flag (see User's
-Guide for details).
-

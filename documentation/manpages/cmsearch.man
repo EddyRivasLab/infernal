@@ -35,7 +35,7 @@ with the
 .B cmcalibrate 
 program. Searches with calibrated CM files will include
 E-values and will use appropriate filter thresholds for
-faster speed. It is strongly recommended to calibrate your 
+acceleration. It is strongly recommended to calibrate your 
 CM files before using 
 .B cmsearch.
 CM calibration is described in more detail below
@@ -53,7 +53,7 @@ strands are not sorted.
 The threshold for reporting scores is different depending on whether
 the CM file has been calibrated or not. 
 If the CM file has been calibrated, the default reporting threshold is
-an E-value of 0.1. This is the threshold at which 0.1 hits are
+an E-value of 1.0. This is the threshold at which 1 hit is 
 expected by chance. It is possible to manually set the threshold to
 bit score 
 .I <x>
@@ -85,7 +85,7 @@ The exact number of residues is dependent on the size of the model
 being searched with.
 
 The first round of filtering is performed with an HMM. If the CM file
-is calibrated the threshold for the HMM filter will be automatically
+is calibrated, the threshold for the HMM filter will be automatically
 chosen as an appropriate one as determined in 
 .B cmcalibrate.
 If the model is not calibrated, the default HMM filter threshold is
@@ -170,7 +170,7 @@ processors. Unless you plan on running
 .B cmsearch 
 in MPI mode, 
 .I <n>
- should be set as 1.
+should be set as 1.
 
 .PP
 Another technique for accelerated CM homology search with HMM filters 
@@ -182,6 +182,50 @@ rigorous filters has been included with @PACKAGE@ but is not available
 as an option to
 .B cmsearch.
 For more information see the User's Guide. 
+
+.SH OUTPUT
+By default, 
+.B cmsearch
+outputs the alignments of search hits that score above the final search
+round threshold. The format of this output is described in the "Tutorial" 
+section of the User guide. This format has purposefully not
+been changed from the 0.x versions of @PACKAGE@ so as not to break
+existing parsers. However, it can be augmented with a new line of
+output that marks non-compensatory basepairs with an 'x' by
+using the 
+.B --addx
+option. This option was added to facilitate quick analysis of the
+secondary structure of hits by eye.
+Additionally, the
+.B -p
+option can be used to annotate the posterior probability of each
+aligned residue in the hit alignments as described below.
+
+The 
+.BI --tabfile " <f>"
+outputs a tabular representation of the hits found by 
+.B cmsearch
+to the file
+.I <f>.
+Each non-\# prefixed line of this file corresponds to a hit, and each
+such line has 8 fields: "target name" the name of the target sequence
+the hit was found in, "target coord - start": the start position of
+the hit in the target sequence, "target coord - stop": the end position of
+hit in the target sequence, "query coord - start": 
+the start position of the hit in the query model, "query coord - stop": the end position of
+hit in the query sequence, "bit sc":  the bit score of the hit, "E-value": 
+the E-value of the hit (if available, "-" if not), and "GC\%" the
+percentage of G and C residues in the hit within the target sequence.
+
+.B cmsearch 
+.I tabfile
+can be used as input to the Easel miniapp
+.B esl-sfetch
+with the
+.B -Cfi
+options to extract all the hits from the target database file to a new
+FASTA file. This file can then be aligned to a CM with
+.B cmalign.
 
 .SH OPTIONS
 
@@ -211,6 +255,57 @@ significantly more sensitive for remote homology detection.
 Empirically, glocal searches return many fewer hits than
 local searches, so glocal may be desired for some applications.
 
+.TP
+.BI -p 
+Append posterior probabilities to alignments of hits. For more
+information on posterior probabilities see the description of the
+.B -p 
+option in the manual page for 
+.B cmalign.
+
+.TP
+.BI -Z "<x>"
+Calculate E-values as if the target database size was 
+.I <x> 
+megabases (Mb). Ignore the actual size of the database. This option
+is only valid if the CM file has been calibrated.
+
+.TP 
+.B --addx
+Annotate non-compensatory basepairs with x's in the alignments of
+hits. The x's appear above the structural annotation in the alignment
+output. Basepairs without x's above them are compensatory with respect
+to the model. Compensatory mutations are good evidence for structural
+homology.
+
+.TP 
+.B --toponly
+Only search the top (Watson) strand of the sequences in
+.I seqfile.
+By default, both strands are searched.
+
+.TP 
+.B --bottomonly
+Only search the bottom (Crick) strand of the sequences in
+.I seqfile.
+By default, both strands are searched.
+
+.TP
+.BI --forecast " <n>"
+Predict the running time of the search with provided files and options
+and exit, 
+.B DO NOT
+perform the search. This option is only available
+with calibrated CM files. The predictions should be used as rough
+estimates and can be fairly inaccurate, especially for highly biased
+target databases (for example 80% AT genomes). The value for
+.I <n>
+is the number of processors the search will be run on, so 
+.I <n>
+equal to 1 is appropriate unless you will run 
+.B cmsearch
+in parallel with MPI.
+
 
 .TP
 .BI --informat " <s>"
@@ -225,43 +320,41 @@ recommended for unattended, high-throughput runs
 of @PACKAGE@. 
 .I <s>
 is case-insensitive.
-This option is a bit forward-looking;
-.B cmsearch 
-currently only accepts FASTA format, but
-this may not be true in the future.
-
-.TP 
-.B --toponly
-Only search the top (Watson) strand of the sequences in
-.I seqfile.
-By default, both strands are searched.
-
-.TP 
-.B --bottomonly
-Only search the bottom (Crick) strand of the sequences in
-.I seqfile.
-By default, both strands are searched.
-
+Acceptable formats are: FASTA, EMBL, UNIPROT, GENBANK, and DDBJ.
+.I <s>
+is case-insensitive.
 
 .TP
-.B --null2
-Turn on the post hoc second null model that attempts to deal with
-the potential biased composition of hits. This option has not been
-rigorously tested, use at your own risk.
+.BI --mxsize " <x>"
+Set the maximum allowable DP matrix size to 
+.I <x>
+megabytes. By default this size is 2,048 Mb. 
+This should be large enough for the vast majority of alignments, 
+however if it is not 
+.B cmsearch  
+will exit prematurely and report an error message that 
+the matrix exceeded it's maximum allowable size. In this case, the
+.B --mxsize 
+can be used to raise the limit.
 
 .TP
-.BI --forecast " <n>"
-Predict the running time of the search with provided files and options
-and exit, DO NOT perform the search. This option is only available
-with calibrated CM files. The predictions should be used as rough
-estimates and can be fairly inaccurate, especially for highly biased
-target databases (for example 80% AT genomes). The value for
-.I <n>
-is the number of processors the search will be run on, so 
-.I <n>
-equal to 1 is appropriate unless you will run 
-.B cmsearch
-in parallel with MPI.
+.B --devhelp
+Print help, as with  
+.B "-h",
+but also include undocumented developer options. These options are not
+listed below, are under development or experimental, and are not
+guaranteed to even work correctly. Use developer options at your own
+risk. The only resources for understanding what they actually do are
+the brief one-line description printed when
+.B "--devhelp"
+is enabled, and the source code.
+
+.TP
+.BI --mpi
+Run as an MPI parallel program. This option will only be available if
+@PACKAGE@ 
+has been configured and built with the "--enable-mpi" flag (see User's
+Guide for details).
 
 .SH EXPERT OPTIONS
 
@@ -356,8 +449,8 @@ but with a line:
 .TP 
 .B --no-qdb
 Do not use query-dependent banding (QDB) for the final round of
-search. By default, QDB is used in the final round of search, after
-all filtering is finished. 
+search. By default, QDB is used in the final round of search with
+beta = 1E-15, after all filtering is finished. 
 
 .TP 
 .BI --beta " <x>"
@@ -390,18 +483,12 @@ bands. This option only makes sense in combination with
 .
 
 .TP 
-.B --aln2bands
-When calculating HMM bands, use an HMM alignment algorithm instead of
-an HMM search algorithm. In general, using this option will result in
-greater acceleration, but will increase the chance of missing the
-optimal alignment. 
-This option only makes sense in combination with
-.B --hbanded.
+.B --fil-no-hmm
+Turn the HMM filter off.
 
 .TP 
-.B --fil-qdb
-Use the accelerated QDB CYK algorithm as a filter. This option is ON
-by default.
+.B --fil-no-qdb
+Turn the QDB filter off. 
 
 .TP 
 .B --fil-beta
@@ -413,21 +500,6 @@ where
 is any positive real number less than 1.0. Beta is the probability
 mass considered negligible during band calculation. The default beta
 for the QDB filter round of search is 1E-7.
-
-.TP 
-.B --fil-no-qdb
-Turn the QDB filter off. 
-
-.TP 
-.B --fil-hmm
-Filter with a HMM to accelerate search. This filter is on by
-default. If used in combination with a QDB filter, the HMM filter will
-be run first.
-
-.TP 
-.B --fil-no-hmm
-Turn the HMM filter off.
-
 
 .TP 
 .BI --fil-T-qdb " <x>"
@@ -489,42 +561,32 @@ hits survived the filter it is predicted that exactly
 .I <x>
 fraction of the residues in the database would survive.
 
-.TP
-.BI -p 
-Append posterior probabilities to alignments of hits. For more
-information on posterior probabilities see the description of the
-.B -p 
-option in the manual page for 
-.B cmalign.
-
 .TP 
 .B --noalign
 Do not calculate and print alignments of each hit, only print locations
 and scores.
 
 .TP 
-.B --alncyk
-Calculate alignments of hits from final round of search using the CYK
-algorithm which computes the highest scoring alignment. By default, an
-optimal accuracy algorithm is used which computes the most accurate
-alignment given the model, which can be different from the highest
-scoring one.
+.B --aln-hbanded
+Use HMM bands to accelerate alignment during the hit alignment stage.
 
 .TP 
-.B --addx
-Annotate non-compensatory basepairs with x's in the alignments of
-hits. The x's appear above the structural annotation in the alignment
-output. Basepairs without x's above them are compensatory with respect
-to the model. Compensatory mutations are good evidence for structural
-homology.
+.B --aln-optacc
+Calculate alignments of hits from final round of search using the
+optimal accuracy algorithm which computes the alignment that maximizes
+the summed posterior probability of all aligned residues 
+given the model, which can be different from the highest
+scoring one.
 
 .TP 
 .BI --tabfile " <f>"
 Create a new output file 
 .I <f>
 and print tabular results to it.
-The format of the tabular results is given in the User Guide.
-The tabular results can be more easily parsed than the default
+The format of the tabular results is listed in the 
+.B OUTPUT
+section. The tabular results can be more easily parsed by scripts than
+the default 
 .B cmsearch 
 output. 
 
@@ -540,9 +602,11 @@ the GC percentage of each window is calculated. A normalized histogram
 of those GC percentages is then printed to 
 .I <f>
 . 
-The format of 
-.I <f> 
-is explained in the User Guide.
+This file can be generated even if 
+.B cmsearch
+is run with 
+.B --forecast
+and no search is performed.
 
 .TP
 .BI --rna
@@ -552,32 +616,3 @@ Output the hit alignments as RNA sequences alignments. This is true by default.
 .BI --dna
 Output the hit alignments as DNA sequence alignments. 
 
-.TP
-.BI --stall
-Stall the program immediately after starting up to allow a user
-to attach a debugging tool such as gdb to the process.
-Developed for debugging under MPI parallelization, which is turned on
-with the 
-.B --mpi
-option.  This option will only be available if @PACKAGE@ has been configured
-and built with the "--enable-mpi" flag (see User's Guide for details).
-
-.TP
-.BI --mxsize " <x>"
-Set the maximum allowable DP matrix size to 
-.I <x>
-megabytes. By default this size is 2,048 Mb. 
-This should be large enough for the vast majority of alignments, 
-however if it is not 
-.B cmsearch  
-will exit prematurely and report an error message that 
-the matrix exceeded it's maximum allowable size. In this case, the
-.B --mxsize 
-can be used to raise the limit.
-
-.TP
-.BI --mpi
-Run as an MPI parallel program. This option will only be available if
-@PACKAGE@ 
-has been configured and built with the "--enable-mpi" flag (see User's
-Guide for details).

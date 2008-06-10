@@ -41,6 +41,7 @@ result in multiple CMs being built from each alignment in
 .I alifile
 as described below.
 
+.SH OUTPUT
 The default output from 
 .B cmbuild
 is tabular, with a single line printed for each model . Each line has
@@ -66,8 +67,8 @@ the number of columns from the alignment defined as consensus columns;
 the total relative entropy of the model divided by
 the number of consensus columns;
 .B "rel entropy, HMM:"
-the total relative entropy of the CM 
-.I "ignoring secondary structure"
+the total relative entropy of the model 
+.I ignoring secondary structure
 divided by the number of consensus columns.
 
 .SH OPTIONS
@@ -120,6 +121,39 @@ Run in verbose output mode instead of using the
 default single line tabular format. This output format is similar to
 that used by older versions of Infernal.
 
+.TP
+.B --iins
+Allow informative insert emissions for the CM.
+By default, all CM insert emission scores are set to 0.0 bits.
+The motivation for zero bit scores is 
+to avoid high-scoring hits to low complexity sequence favored by high 
+insert state emission scores.
+
+.TP
+.BI --Wbeta "<x>"
+Set the beta tail loss probability for query-dependent banding (QDB) to 
+.I "<x>"
+The QDB algorithm is used to determine the maximium length of a hit to
+the model. For more information on QDB see 
+(Nawrocki and Eddy, PLoS Computational Biology 3(3): e56). 
+The beta paramater is the amount of
+probability mass considered negligible during band calculation, lower
+values of beta will result in shorter maximum hit lengths, which will
+yield faster searches.
+The default beta is 1E-7: determined
+empirically as a good tradeoff between sensitivity, specificity  and speed.
+
+.TP
+.B --devhelp
+Print help, as with  
+.B "-h",
+but also include undocumented developer options. These options are not
+listed below. They are under development or experimental, and are not
+guaranteed to even work correctly. Use developer options at your own
+risk. The only resources for understanding what they actually do are
+the brief one-line description printed when
+.B "--devhelp"
+is enabled, and the source code.
 
 .SH EXPERT OPTIONS
 
@@ -131,8 +165,7 @@ matrix in file
 Actually, the emission scores will not be exactly the RIBOSUM scores,
 because of differences in the modelling strategy in @PACKAGE@ and
 RSEARCH, but they will be as close as @PACKAGE@ can get.
-RIBOSUM matrix files are included with @PACKAGE@ in the 
-"matrices/"
+RIBOSUM matrix files are included with @PACKAGE@ in the "matrices/"
 subdirectory of the top-level @PACKAGE@ directory.
 RIBOSUM matrices are substitution score matrices trained specifically
 for structural RNAs with separate single stranded residue and base pair
@@ -148,29 +181,10 @@ must contain exactly one sequence or the
 .B --call 
 option must also be enabled. 
 
-
 .TP
 .BI --binary 
 Save the model in a compact binary format. The default
 is a more readable ASCII text format.
-
-.TP
-.BI --informat " <s>"
-Assert that the input alignments in 
-.I alifile
-is in format
-.I <s>.
-Do not run Babelfish format autodetection. This increases
-the reliability of the program somewhat, because 
-the Babelfish can make mistakes; particularly
-recommended for unattended, high-throughput runs
-of @PACKAGE@. 
-.I <s>
-is case-insensitive.
-This option is a bit forward-looking;
-.B cmbuild 
-currently only accepts Stockholm format, but
-this may not be true in the future.
 
 .TP
 .B --rf
@@ -193,14 +207,12 @@ above) to
 The default is 0.5.
 
 .TP
-.BI --elself " <x>"
-Set the local end (EL) state self transition probability to 
-.I <x>.
-By default this probability is 0.94 (optimized using an internal
-development benchmark). As this probability decreases from 1.0 towards 0.0,
-the bit score penalty for large insertions increases for locally
-configured CMs. See the User's Guide for more information on locally
-configured CMs.
+.B --ignorant
+Strip all base pair secondary structure information from all input
+alignments in 
+.I alifile
+before building the CM(s). All resulting CM(s) will
+have zero MATP (base pair) nodes, with zero bifurcations.
 
 .TP 
 .B --wgsc
@@ -268,10 +280,10 @@ Use the entropy weighting strategy to determine the effective sequence
 number that gives a target mean match state relative entropy. This option 
 is the default, and can be turned off with 
 .B --enone.
-The default target mean match state relative entropy is 1.41 bits but can be
+The default target mean match state relative entropy is 0.59 bits but can be
 changed with
 .B --ere.
-The default of 1.41 bits is automatically changed if the total
+The default of 0.59 bits is automatically changed if the total
 relative entropy of the model (summed match state relative entropy)
 is less than a cutoff, which is
 is 6.0 bits by default, but can be changed with the 
@@ -299,86 +311,7 @@ By default this value is 6.0 bits because empirically models with
 lower entropy have difficulty distinguishing homologous
 sequences from random background. 
 
-.TP
-.BI --cfile " <f>"
-Save a file containing observed count vectors (both emissions and
-transitions) to a counts file
-.I <f>.
-One use for this file is as the starting point for estimating
-Dirichlet priors from observed RNA structure data.
-
-.TP
-.BI --cmtbl " <f>"
-Save a tabular description of the CM's topology to a file
-.I <f>.
-Primarily useful for debugging CM architecture construction.
-
-.TP
-.BI --emap " <f>"
-Save a consensus emission map to a file 
-.I <f>.
-This file relates the numbering system of states in the CM's tree-like
-directed graph to the linear numbering of consensus columns. 
-Primarily useful for debugging.
-
-.TP
-.BI --gtree " <f>"
-Save an ASCII picture of the high level structure of the CM's
-guide tree to a file 
-.I <f>.
-Primarily useful for debugging.
-
-.TP
-.BI --gtbl " <f>"
-Save a tabular description of the nodes in CM's guide tree to a file
-.I <f>.
-Primarily useful for debugging.
-
-.TP
-.BI --tfile " <f>"
-Dump tabular inferred sequence tracebacks for each individual
-training sequence to a file 
-.I <f>.
-Primarily useful for debugging.
-
-.TP 
-.B --nobalance
-Turn off the architecture "rebalancing" algorithm. The nodes in a CM
-are initially numbered in standard preorder traversal. The rebalancing
-algorithm is an optimizer that reorders the numbering of the CM in
-order to absolutely guarantee certain algorithmic performance
-bounds. However, it is a stylistic riff that has almost no real
-empirical impact on performance, and is a tricky algorithm to get
-right. This option was inserted for debugging purposes. It is
-sometimes also useful to obtain a simple preorder traversal numbering
-system in the CM architecture (for illustrative purposes,
-for example).
-
-.TP
-.BI --regress " <f>"
-Save regression test information to a file
-.I <f>. 
-This is part of the automated testing procedure at each release. 
-
-.TP
-.B --ignorant
-Strip all base pair secondary structure information from all input
-alignments in 
-.I alifile
-before building the CM(s). All resulting CM(s) will
-have zero MATP (base pair) nodes, with zero bifurcations.
-
-.TP
-.BI --nodetach
-Do not detach one of two insert states that model insertions at
-exactly the same position in the model. By default, one of these states is
-detached, making it unreachable in the model. This default behavior
-was adopted to address an ambiguity in the CM grammar due to a design
-flaw. Useful primarily for debugging and regression tests as earlier versions of 
-.B cmbuild 
-did not detach these insert states.
-
-.TP
+.RP 
 .BI --null " <f>"
 Read a null model from 
 .I <f>.
@@ -461,6 +394,16 @@ The CMs are named as described above for
 with the exception of the final CM built from the original alignment
 which is named in the default manner, without an appended integer. 
 
+.TP
+.BI --cdump "<f>"
+Dump the multiple alignments of each cluster to
+.I <f>
+in Stockholm format.
+This option only works in combination with
+.B --ctarget, --cmindiff
+or
+.B --call.
+
 .TP 
 .BI --refine " <f>"
 Attempt to refine the alignment before building the CM using
@@ -538,6 +481,21 @@ The default is to globally align the query model to the target
 sequences.
 
 .TP
+.B -a
+With 
+.B --refine,
+print the scores of each individual sequence alignment.
+
+.TP
+.B --cyk
+With 
+.B --refine,
+align with the CYK algorithm. By default the optimal accuracy
+algorithm is used. There is more information on this in the 
+.B cmalign
+manual page.
+
+.TP
 .BI --sub
 With 
 .B --refine,
@@ -572,21 +530,6 @@ increase the chance of missing the optimal alignment due to the HMM
 bands.
 
 .TP
-.B --iins
-With
-.B --refine,
-turn off the default 
-behavior of setting all CM insert emission scores to 0.0 bits prior to
-aligning sequences. This default behavior originated in 
-.B cmsearch 
-to avoid high-scoring hits to low complexity sequence favored by high 
-insert state emission scores, and is applied to
-.B cmbuild
-here in 
-.B --refine 
-mode for consistency. 
-
-.TP
 .B --fins
 With
 .B --refine,
@@ -608,7 +551,7 @@ With
 .B --refine, 
 set the maximum allowable matrix size for alignment to 
 .I <x>
-megabytes. By default this size is 256 Mb. 
+megabytes. By default this size is 2 Gb. 
 This should be large enough for the vast majority of alignments, 
 however it is possible that when run with
 .B --refine, cmbuild 
@@ -618,41 +561,11 @@ the matrix exceeded it's maximum allowable size. In this case, the
 can be used to raise the limit.
 
 .TP
-.BI --verbose
+.BI --rdump "<x>"
 With 
 .B --refine, 
 output the intermediate alignments at each iteration of the refinement
 procedure (as described above for
-.B --refine).
-The alignments will be printed to stdout, not to the
-.I cmfile, 
-nor the 
-.B --refine 
-output alignment file. 
-
-.TP
-.BI --rna
-Specify that the input alignment file
-.I alifile 
-has RNA sequences. Do not autodetect the alphabet.
-This increases the reliability of the program somewhat, because 
-for very small alignments it may be impossible to 
-distinguish RNA from DNA; particularly
-recommended for unattended, high-throughput runs
-of
-.B cmbuild.
-
-.TP
-.BI --dna
-Specify that the input alignment file
-.I alifile 
-has DNA sequences. Do not autodetect the alphabet.
-This increases the reliability of the program somewhat, because 
-for very small alignments, it may be impossible to 
-distinguish RNA from DNA; particularly
-recommended for unattended, high-throughput runs
-of
-.B cmbuild.
-
-
-
+.B --refine
+) to file
+.I <f>.
