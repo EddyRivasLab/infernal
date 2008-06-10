@@ -417,6 +417,25 @@ tr_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
       {
          for (k = 0; k <= d; k++)
          {
+            /* Attempted bug fix cases  - these cases have priority */
+            if ( v_allow_T && k > 0 && k < d)
+            if ( (sc = alpha->J[w][j-k][d-k] + alpha->L[y][j][k]) > best_sc )
+            {
+               best_sc = sc;
+               best_k  = k;
+               best_j  = j;
+               best_d  = d;
+               v_mode = 0; w_mode = 3; y_mode = 2;
+            }
+            if ( v_allow_T && k > 0 && k < d)
+            if ( (sc = alpha->R[w][j-k][d-k] + alpha->J[y][j][k]) > best_sc )
+            {
+               best_sc = sc;
+               best_k  = k;
+               best_j  = j;
+               best_d  = d;
+               v_mode = 0; w_mode = 1; y_mode = 3;
+            }
             if ( (sc = alpha->J[w][j-k][d-k] + alpha->J[y][j][k] + beta->J[v][j][d]) > best_sc )
             {
                best_sc = sc;
@@ -425,7 +444,7 @@ tr_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
                best_d  = d;
                v_mode = 3; w_mode = 3; y_mode = 3;
             }
-            if ( r_allow_L && k > 0 && j-d+1 > i0)
+            if ( r_allow_L && k > 0 /* && j-d+1 > i0 */ )
             if ( (sc = alpha->J[w][j-k][d-k] + alpha->L[y][j][k] + beta->L[v][j-d+1]) > best_sc )
             {
                best_sc = sc;
@@ -444,7 +463,8 @@ tr_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
                best_d  = d;
                v_mode = 2; w_mode = 3; y_mode = 3;
             }
-            if ( r_allow_R && k < d && j < j0)
+            // j < j0 test causes problems if there are no R emitters between r and v
+            if ( r_allow_R && k < d /* && j < j0*/ )
             if ( (sc = alpha->R[w][j-k][d-k] + alpha->J[y][j][k] + beta->R[v][j]) > best_sc )
             {
                best_sc = sc;
@@ -471,25 +491,6 @@ tr_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
                best_j  = j;
                best_d  = d;
                v_mode = 0; w_mode = 1; y_mode = 2;
-            }
-            /* Attempted bug fix cases */
-            if ( v_allow_T && k > 0 && k < d )
-            if ( (sc = alpha->J[w][j-k][d-k] + alpha->L[y][j][k]) > best_sc )
-            {
-               best_sc = sc;
-               best_k  = k;
-               best_j  = j;
-               best_d  = d;
-               v_mode = 0; w_mode = 3; y_mode = 2;
-            }
-            if ( v_allow_T && k > 0 && k < d )
-            if ( (sc = alpha->R[w][j-k][d-k] + alpha->J[y][j][k]) > best_sc )
-            {
-               best_sc = sc;
-               best_k  = k;
-               best_j  = j;
-               best_d  = d;
-               v_mode = 0; w_mode = 1; y_mode = 3;
             }
          }
 
