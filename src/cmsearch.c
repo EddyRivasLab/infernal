@@ -53,9 +53,11 @@ static ESL_OPTIONS options[] = {
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "configure CM/HMM for glocal alignment [default: local]", 1 },
   { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,   "--aln-hbanded","--noalign", "append posterior probabilities to hit alignments", 1 },
   { "-Z",        eslARG_REAL,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "set Z (database size in *Mb*) to <x> for E-value calculations", 1},
+  { "--addx",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "annotate non-compensatory bps in output alignments with 'x'", 1 },
   { "--toponly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the top strand", 1 },
   { "--bottomonly", eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the bottom strand", 1 },
   { "--forecast",eslARG_INT,    NULL,  NULL, NULL,      NULL,      NULL,        NULL, "don't do search, forecast running time with <n> processors", 1 },
+  { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--mxsize",  eslARG_REAL, "2048.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 10 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI
@@ -93,7 +95,6 @@ static ESL_OPTIONS options[] = {
   { "--fil-Smax-hmm",eslARG_REAL,NULL, NULL, "0<x<1",    NULL,      NULL,"--fil-T-hmm,--fil-E-hmm", "set maximum HMM survival fraction as <x>", 6 },
   /* alignment options */
   { "--noalign", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,       NULL, "find start/stop/score only; don't do alignments", 7 },
-  { "--addx",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "annotate non-compensatory bps in output alignments with 'x'", 7 },
   { "--aln-hbanded",eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "use HMM bands to align hits", 7 },
   { "--aln-optacc",eslARG_NONE, FALSE, NULL, NULL,      NULL,   "--aln-hbanded","--noalign", "align hits with the optimal accuracy algorithm, not CYK", 7 },
   /* verbose output files */
@@ -107,7 +108,6 @@ static ESL_OPTIONS options[] = {
   { "--aln2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL, "--hbanded",       HMMONLYOPTS, "w/-hbanded, derive HMM bands w/o scanning Forward/Backward", 101 },
   { "--rtrans",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--viterbi,--forward", "replace CM transition scores from <cmfile> with RSEARCH scores", 101 },
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 101 },
-  { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 101 },
   { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--no-null3", "--noalign", "turn on the post hoc second null model", 101 },
   { "--no-null3",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "turn OFF the NULL3 post hoc additional null model", 101 },
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb", 101 },  
@@ -134,6 +134,7 @@ struct cfg_s {
   ESL_ALPHABET *abc;		/* digital alphabet for input */
   long          dbsize;         /* database size in nucleotides for E values (doubled if doing rev comp) */
   int           namewidth;      /* maximum name length in the database, imperative for obsessively pretty formatting in tab file output */
+  int           nseq;           /* number of seqs in the target db */
   int           ncm;            /* number CM we're at in file */
   int           do_rc;          /* should we search reverse complement? (for convenience */
   int           init_rci;       /* initial strand to search 0 for top, 1 for bottom (only 1 if --bottomonly enabled) */
@@ -282,6 +283,7 @@ main(int argc, char **argv)
   else    cm_Fail("Can't determine output alphabet");
   cfg.dbsize     = 0;                      /* db size used for E-values */
   cfg.namewidth  = 0;                      /* max name length in database */
+  cfg.nseq       = 0;                      /* number of seqs in database */
   cfg.ncm        = 0;                      /* what number CM we're on, updated in masters, stays 0 (irrelevant) for workers */
   cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.do_rc      = (! esl_opt_GetBoolean(go, "--toponly")); 
@@ -391,25 +393,16 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
   cfg->fmt = cfg->sqfp->format;
 
-
-  /* Guess the sqfile alphabet, if it's ambiguous, guess RNA,
-   * we'll treat RNA and DNA both as RNA internally.
-   * We can't handle any other alphabets, so this is hardcoded. */
-  int type;
-  status = esl_sqfile_GuessAlphabet(cfg->sqfp, &type);
-  if (status == eslEFORMAT)     ESL_FAIL(status, errbuf, "Sequence file parse error, line %" PRId64 " of file %s:\n%s\nOffending line is:\n%s\n", cfg->sqfp->linenumber, cfg->sqfile, cfg->sqfp->errbuf, cfg->sqfp->buf);
-  if (status == eslENODATA)     ESL_FAIL(status, errbuf, "Sequence file %s appears to be empty.", cfg->sqfile);
-  if (status == eslEAMBIGUOUS)  type = eslRNA; /* guess it's RNA, we'll fail downstream with an error message if it's not */
-  else if (status != eslOK)     ESL_FAIL(status, errbuf, "Sequence file alphabet guess failed with error %d\n", status);
-  /* we can read DNA/RNA but internally we treat it as RNA */
-  if(! (type == eslRNA || type == eslDNA))
-    ESL_FAIL(eslEFORMAT, errbuf, "Alphabet is not DNA/RNA in %s\n", cfg->sqfile);
+  /* Set the sqfile alphabet as RNA, if it's DNA we're fine. 
+   * If it's not RNA nor DNA, we can't deal with it anyway,
+   * so we're hardcoded to RNA.
+   */
   cfg->abc = esl_alphabet_Create(eslRNA);
   if(cfg->abc == NULL) ESL_FAIL(status, errbuf, "Failed to create alphabet for sequence file");
   esl_sqfile_SetDigital(cfg->sqfp, cfg->abc);
 
   /* GetDBSize() reads all sequences, rewinds seq file and returns db size */
-  if((status = GetDBSize(cfg->sqfp, errbuf, &(cfg->dbsize), &(cfg->namewidth))) != eslOK) return status;  
+  if((status = GetDBSize(cfg->sqfp, errbuf, &(cfg->dbsize), &(cfg->nseq), &(cfg->namewidth))) != eslOK) return status;  
   if((! esl_opt_GetBoolean(go, "--toponly")) && (! esl_opt_GetBoolean(go, "--bottomonly"))) cfg->dbsize *= 2;
 
   /* overwrite dbsize if -Z enabled */
@@ -1914,6 +1907,7 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
   fprintf(stdout, "%-13s %s\n",  "# date:",    date);
   if(cfg->nproc > 1) fprintf(stdout, "%-13s %d\n", "# nproc:", cfg->nproc);
   /*fprintf(stdout, "%-13s %ld\n",  "# dbsize(nt):", cfg->dbsize);*/
+  fprintf(stdout, "%-13s %d\n",  "# num seqs:",   cfg->nseq);
   fprintf(stdout, "%-13s %.6f\n",  "# dbsize(Mb):", (double) cfg->dbsize / 1000000.);
 
   free(command);
@@ -2441,13 +2435,15 @@ int dump_gc_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   long dbsize;
   int i, j;
   int nbars;
+  int nseq;
 
   tmp_abc = esl_alphabet_Create(eslRNA);
-  if((status = GetDBInfo(tmp_abc, cfg->sqfp, errbuf, &dbsize, &gc_freq)) != eslOK) return status; 
+  if((status = GetDBInfo(tmp_abc, cfg->sqfp, errbuf, &dbsize, &nseq, &gc_freq)) != eslOK) return status; 
   esl_vec_DNorm(gc_freq, GC_SEGMENTS);
   esl_alphabet_Destroy(tmp_abc);
 
   fprintf(cfg->gcfp, "# %-25s %s\n",  "seqfile:", cfg->sqfile);
+  fprintf(cfg->gcfp, "# %-25s %ld\n", "number of sequences:", nseq);
   fprintf(cfg->gcfp, "# %-25s %ld\n", "dbsize (nt, one strand):", dbsize);
   fprintf(cfg->gcfp, "#\n");
   fprintf(cfg->gcfp, "# %10s  %22s\n", "GC percent", "freq of 100 nt windows");

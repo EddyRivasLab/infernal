@@ -26,6 +26,7 @@
 #include "esl_getopts.h"		
 #include "esl_mpi.h"
 #include "esl_msa.h"
+#include "esl_random.h"		
 #include "esl_sq.h"		
 #include "esl_sqio.h"
 #include "esl_stopwatch.h"
@@ -35,9 +36,9 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define ALGOPTS  "--cyk,--optacc,--viterbi"               /* Exclusive choice for scoring algorithms */
-#define OUTALPHOPTS "--rna,--dna"                 /* Exclusive choice for output alphabet */
-#define ACCOPTS  "--nonbanded,--hbanded"                  /* Exclusive choice for acceleration strategies */
+#define ALGOPTS  "--cyk,--optacc,--viterbi,--sample" /* Exclusive choice for algorithm */
+#define OUTALPHOPTS "--rna,--dna"                    /* Exclusive choice for output alphabet */
+#define ACCOPTS  "--nonbanded,--hbanded"             /* Exclusive choice for acceleration strategies */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -54,6 +55,8 @@ static ESL_OPTIONS options[] = {
   /* Algorithm options */
   { "--optacc",  eslARG_NONE,"default", NULL, NULL,     ALGOPTS,    NULL,   "--small", "align with the Holmes/Durbin optimal accuracy algorithm", 2 },
   { "--cyk",     eslARG_NONE,   FALSE,  NULL, NULL,     ALGOPTS,    NULL,        NULL, "align with the CYK algorithm", 2 },
+  { "--sample",  eslARG_NONE,   FALSE,  NULL, NULL,     ALGOPTS,    NULL,   "--small", "sample alignment of each seq from posterior distribution", 2 },
+  { "-s",        eslARG_INT,     NULL, NULL, "n>0",      NULL,"--sample",        NULL, "w/--sample, set random number generator seed to <n>",  2 },
   { "--viterbi", eslARG_NONE,   FALSE,  NULL, NULL,     ALGOPTS,    NULL,        "-p", "align to a CM Plan 9 HMM with the Viterbi algorithm",2 },
   { "--sub",     eslARG_NONE,   FALSE,  NULL, NULL,     NULL,       NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
   { "--small",   eslARG_NONE,   FALSE,  NULL, NULL,     NULL,"--cyk,--nonbanded","--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
@@ -118,6 +121,7 @@ struct cfg_s {
   int           nproc;		/* how many MPI processes, total */
   int           my_rank;	/* who am I, in 0..nproc-1 */
   int           do_stall;	/* TRUE to stall the program until gdb attaches */
+  ESL_RANDOMNESS *r;            /* source of randomness, only created if --sample enabled */
 
   /* Masters only (i/o streams) */
   CMFILE       *cmfp;		/* open input CM file stream       */
@@ -270,8 +274,9 @@ main(int argc, char **argv)
   cfg.withmsa    = NULL;	           /* filled in init_master_cfg() in masters, stays NULL for workers */
   cfg.withss_cons= NULL;	           /* filled in check_withali() in masters, stays NULL for workers */
   cfg.withali_mtr= NULL;	           /* filled in init_master_cfg() in masters, stays NULL for workers */
-  cfg.withali_abc= NULL;	           /* created in init_master_cfg() in masters, stays NULL for workres */
+  cfg.withali_abc= NULL;	           /* created in init_master_cfg() in masters, stays NULL for workers */
   cfg.ncm        = 0;
+  cfg.r          = NULL;	           /* created in init_master_cfg() for masters, mpi_worker() for workers*/
 
   cfg.do_mpi     = FALSE;	           /* this gets reset below, if we init MPI */
   cfg.nproc      = 0;		           /* this gets reset below, if we init MPI */
@@ -338,6 +343,7 @@ main(int argc, char **argv)
     if (cfg.withali_mtr != NULL) FreeParsetree(cfg.withali_mtr);
     if (cfg.withss_cons != NULL) free(cfg.withss_cons);
   }
+  if (cfg.r         != NULL) esl_randomness_Destroy(cfg.r);
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
   if (cfg.abc_out   != NULL) esl_alphabet_Destroy(cfg.abc_out);
   if (cfg.withali_abc != NULL) esl_alphabet_Destroy(cfg.withali_abc);
@@ -367,6 +373,7 @@ main(int argc, char **argv)
  *    cfg->withmsa     - MSA from --withali file 
  *    cfg->withali_mtr - guide tree for MSA from --withali file 
  *    cfg->withali_abc - digital input alphabet for --withali file
+ *    cfg->r           - source of randomness
  *                   
  * Errors in the MPI master here are considered to be "recoverable",
  * in the sense that we'll try to delay output of the error message
@@ -388,17 +395,10 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if(cfg->sqfp->format == eslMSAFILE_STOCKHOLM) ESL_FAIL(eslEFORMAT, errbuf, "cmalign doesn't support Stockholm alignment format. Please reformat to FASTA.\n");
   cfg->fmt = cfg->sqfp->format;
 
-  /* Guess the sqfile alphabet, if it's ambiguous, guess RNA,
-   * we'll treat RNA and DNA both as RNA internally.
-   * We can't handle any other alphabets, so this is hardcoded. */
-  status = esl_sqfile_GuessAlphabet(cfg->sqfp, &type);
-  if (status == eslEFORMAT)     ESL_FAIL(status, errbuf, "Sequence file parse error, line %" PRId64 " of file %s:\n%s\nOffending line is:\n%s\n", cfg->sqfp->linenumber, cfg->sqfile, cfg->sqfp->errbuf, cfg->sqfp->buf);
-  if (status == eslENODATA)     ESL_FAIL(status, errbuf, "Sequence file %s appears to be empty.", cfg->sqfile);
-  if (status == eslEAMBIGUOUS)  type = eslRNA; /* guess it's RNA, we'll fail downstream with an error message if it's not */
-  else if (status != eslOK)     ESL_FAIL(status, errbuf, "Sequence file alphabet guess failed with error %d\n", status);
-  /* we can read DNA/RNA but internally we treat it as RNA */
-  if(! (type == eslRNA || type == eslDNA))
-    ESL_FAIL(eslEFORMAT, errbuf, "Alphabet is not DNA/RNA in %s\n", cfg->sqfile);
+  /* Set the sqfile alphabet as RNA, if it's DNA we're fine. 
+   * If it's not RNA nor DNA, we can't deal with it anyway,
+   * so we're hardcoded to RNA.
+   */
   cfg->abc = esl_alphabet_Create(eslRNA);
   if(cfg->abc == NULL) ESL_FAIL(status, errbuf, "Failed to create alphabet for sequence file");
   esl_sqfile_SetDigital(cfg->sqfp, cfg->abc);
@@ -412,6 +412,11 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     if ((cfg->ofp = fopen(esl_opt_GetString(go, "-o"), "w")) == NULL) 
 	ESL_FAIL(eslFAIL, errbuf, "Failed to open -o output file %s\n", esl_opt_GetString(go, "-o"));
     } else cfg->ofp = stdout;
+
+  /* seed master's RNG, this will only be used if --sample enabled, but we always initialize it for convenience (seeds always get sent to workers) */
+  if (! esl_opt_IsDefault(go, "-s")) 
+    cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
+  else cfg->r = esl_randomness_CreateTimeseeded();
 
   /* optionally, open trace file */
   if (esl_opt_GetString(go, "--tfile") != NULL) {
@@ -450,6 +455,8 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       esl_msafile_SetDigital(cfg->withalifp, cfg->withali_abc);
     }
 
+  if(cfg->r == NULL) cm_Fail("Failed to create master RNG.");
+
   return eslOK;
 }
 
@@ -468,7 +475,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, holds seqs, parsetrees, CP9 traces, postcodes */
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
-  /*if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);*/
   if ((status  = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
   
   while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
@@ -527,7 +533,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int      bn            = 0;
   int      pos = 1;
   int      wi_error = 0;                /* worker index that sent back an error message, if an error occurs */
-
   CM_t *cm;
   int nseq_per_worker;
   int nseq_this_worker;
@@ -536,6 +541,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   seqs_to_aln_t  *all_seqs_to_aln    = NULL;
   seqs_to_aln_t  *worker_seqs_to_aln = NULL;
   int            *seqidx         = NULL;
+  long           *seedlist = NULL;       /* seeds for worker's RNGs, we send these to workers */
   
   char     errbuf[cmERRBUFSIZE];
   MPI_Status mpistatus; 
@@ -545,8 +551,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * If any failure occurs, delay printing error message until we've shut down workers.
    */
   if (xstatus == eslOK) { if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) xstatus = status; }
-  /*if (xstatus == eslOK) { if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) xstatus = status; }*/
   if (xstatus == eslOK) { bn = 4096; if ((buf = malloc(sizeof(char) * bn)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((seedlist  = malloc(sizeof(long) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
   if (xstatus == eslOK) { if ((seqidx  = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
   if (xstatus == eslOK) { if ((status = print_run_info(go, cfg, errbuf)) != eslOK) xstatus = status; }
 
@@ -556,15 +562,23 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
   for (wi = 0; wi < cfg->nproc; wi++) seqidx[wi] = 0;
 
+  for (wi = 0; wi < cfg->nproc; wi++) {
+    seedlist[wi] = esl_rnd_Roll(cfg->r, 1000000000); /* not sure what to use as max for seed */
+    ESL_DPRINTF1(("wi %d seed: %ld\n", wi, seedlist[wi]));
+  }
+
   /* Worker initialization:
    * Because we've already successfully initialized the master before we start
    * initializing the workers, we don't expect worker initialization to fail;
    * so we just receive a quick OK/error code reply from each worker to be sure,
    * and don't worry about an informative message. 
    */
+  for (wi = 1; wi < cfg->nproc; wi++)
+    MPI_Send(&(seedlist[wi]), 1, MPI_LONG, wi, 0, MPI_COMM_WORLD);
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
   if (status != eslOK) cm_Fail("One or more MPI worker processes failed to initialize.");
   ESL_DPRINTF1(("%d workers are initialized\n", cfg->nproc-1));
+  free(seedlist);
 
   /* Main loop: combining load workers, send/receive, clear workers loops;
    * also, catch error states and die later, after clean shutdown of workers.
@@ -708,26 +722,32 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int           pos;
   char          errbuf[cmERRBUFSIZE];
   seqs_to_aln_t *seqs_to_aln = NULL;
+  long           seed;                  /* seed for RNG, rec'd from master */
   int           i;
+  MPI_Status mpistatus;           /* MPI status... */
+
   /* After master initialization: master broadcasts its status.
    */
   MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
   if (xstatus != eslOK) return; /* master saw an error code; workers do an immediate normal shutdown. */
   ESL_DPRINTF1(("worker %d: sees that master has initialized\n", cfg->my_rank));
   
-  /* Workers returns their status post-initialization.
+  /* Master now sends worker initialization information (RNG seed) 
+   * Workers returns their status post-initialization.
    * Initial allocation of wbuf must be large enough to guarantee that
    * we can pack an error result into it, because after initialization,
    * errors will be returned as packed (code, errbuf) messages.
    */
+  if (MPI_Recv(&seed, 1, MPI_LONG, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
+  if (xstatus == eslOK) { if((cfg->r = esl_randomness_Create(seed)) == NULL)          xstatus = eslEMEM; }
   if (xstatus == eslOK) { wn = 4096;  if ((wbuf = malloc(wn * sizeof(char))) == NULL) xstatus = eslEMEM; }
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD); /* everyone sends xstatus back to master */
   if (xstatus != eslOK) {
     if (wbuf != NULL) free(wbuf);
     return; /* shutdown; we passed the error back for the master to deal with. */
   }
-  ESL_DPRINTF1(("worker %d: initialized\n", cfg->my_rank));
-  
+  ESL_DPRINTF1(("worker %d: initialized seed: %ld\n", cfg->my_rank, seed));
+
   /* source = 0 (master); tag = 0 */
   while ((status = cm_worker_MPIBcast(0, MPI_COMM_WORLD, &wbuf, &wn, &(cfg->abc), &cm)) == eslOK)
     {
@@ -817,7 +837,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
   void *tmp;
 
   /* create a new MSA, if we didn't do --inside */
-  if(esl_opt_GetBoolean(go, "--cyk") || (esl_opt_GetBoolean(go, "--viterbi") || (esl_opt_GetBoolean(go, "--optacc"))))
+  if((esl_opt_GetBoolean(go, "--cyk") || esl_opt_GetBoolean(go, "--viterbi")) || (esl_opt_GetBoolean(go, "--optacc") || esl_opt_GetBoolean(go, "--sample")))
     {
       /* optionally include a fixed alignment provided with --withali,
        * this has already been checked to see it matches the CM structure */
@@ -930,13 +950,13 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  ip = (cfg->withmsa == NULL) ? i : i - cfg->withmsa->nseq;
 	  if(!(esl_opt_GetBoolean(go, "--no-null3"))) { ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, &null3_correction); }
 	  if(! NOT_IMPOSSIBLE(seqs_to_aln->struct_sc[ip])) { 
-	    if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-*s  %5d  %8.2f  %8.3f\n", (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->pp[ip]);
-	    else                                 fprintf(stdout, "  %7d  %-*s  %5d  %8.2f\n",        (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction);
+	    if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-*s  %5" PRId64 "  %8.2f  %8.3f\n", (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->pp[ip]);
+	    else                                 fprintf(stdout, "  %7d  %-*s  %5" PRId64 "  %8.2f\n",        (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction);
 	  }
 	  else { /* we have struct scores */
 	    if(!(esl_opt_GetBoolean(go, "--no-null3"))) seqs_to_aln->struct_sc[ip] -= ((float) ParsetreeCountMPEmissions(cm, seqs_to_aln->tr[i]) / (float) seqs_to_aln->sq[i]->n) * null3_correction; /* adjust struct_sc for NULL3 correction, this is inexact */
-	    if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-*s  %5d  %8.2f  %8.2f  %8.3f\n", (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->struct_sc[ip], seqs_to_aln->pp[ip]);
-	    else                                 fprintf(stdout, "  %7d  %-*s  %5d  %8.2f  %8.2f\n",        (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->struct_sc[ip]);
+	    if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-*s  %5" PRId64 "  %8.2f  %8.2f  %8.3f\n", (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->struct_sc[ip], seqs_to_aln->pp[ip]);
+	    else                                 fprintf(stdout, "  %7d  %-*s  %5" PRId64 "  %8.2f  %8.2f\n",        (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->struct_sc[ip]);
 	  }
 	}
       }      
@@ -1007,7 +1027,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 				  NULL, NULL, 0,  /* we're not aligning search hits */
 				  esl_opt_GetInteger(go, "--banddump"),
 				  esl_opt_GetInteger(go, "--dlev"), be_quiet, 
-				  (! esl_opt_GetBoolean(go, "--no-null3")), NULL,
+				  (! esl_opt_GetBoolean(go, "--no-null3")), cfg->r,
 				  esl_opt_GetReal(go, "--mxsize"), stdout)) != eslOK) goto ERROR;
   return eslOK;
   
@@ -1042,6 +1062,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* update cm->align_opts */
   /* optimal accuracy alignment is default */
   if(esl_opt_GetBoolean(go, "--optacc"))      cm->align_opts  |= CM_ALIGN_OPTACC;
+  if(esl_opt_GetBoolean(go, "--sample"))      cm->align_opts  |= CM_ALIGN_SAMPLE;
   if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;
   if(esl_opt_GetBoolean(go, "--nonbanded"))   cm->align_opts  &= ~CM_ALIGN_HBANDED;
   if(esl_opt_GetBoolean(go, "--sub"))         cm->align_opts  |= CM_ALIGN_SUB;
@@ -1570,6 +1591,7 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
   fprintf(stdout, "%-10s %s\n",  "# command:", command);
   fprintf(stdout, "%-10s %s\n",  "# date:",    date);
   if(cfg->nproc > 1) fprintf(stdout, "# %-8s %d\n", "nproc:", cfg->nproc);
+  if(esl_opt_GetBoolean(go, "--sample")) fprintf(stdout, "%-10s %ld\n", "# seed:", esl_randomness_GetSeed(cfg->r));
 
   fprintf(stdout, "#\n");
   free(command);
@@ -1596,7 +1618,7 @@ print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   fprintf(stdout, "# %-25s  %9s  %6s  %3s  %5s  %6s\n", "-------------------------", "---------", "------", "---", "-----", (do_hbanded || do_qdb) ? "------" : ""); 
   fprintf(stdout, "# %-25.25s  %9s  %6s  %3s", 
 	  cm->name,
-	  (esl_opt_GetBoolean(go, "--cyk")) ? "cyk" : (esl_opt_GetBoolean(go, "--viterbi") ? "hmm vit" : "opt acc"), 
+	  ((esl_opt_GetBoolean(go, "--cyk")) ? "cyk" : ((esl_opt_GetBoolean(go, "--sample")) ? "sample" : (esl_opt_GetBoolean(go, "--viterbi") ? "hmm vit" : "opt acc"))), 
 	  (esl_opt_GetBoolean(go, "-l")) ? "local" : "global",
 	  (esl_opt_GetBoolean(go, "--sub")) ? "yes" : "no");
   /* bands and beta/tau */

@@ -1264,7 +1264,7 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *              4. Opt acc   yes     TRUE       !NULL     !NULL
  *
  *           CYK parsetrees are most likely parsetree, 'Opt acc' parsetrees
- *           are Holmes/Durbin optimally accurate parsetrees, the parse the 
+ *           are Holmes/Durbin optimally accurate parsetrees, the parse that
  *           maximizes the expected accuracy of all aligned residues.
  *
  *           Note: if ret_tr is NULL, parsetree is not returned.
@@ -1380,7 +1380,7 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
  *              4. Opt acc   yes     TRUE       !NULL     !NULL
  *
  *           CYK parsetrees are most likely parsetree, 'Opt acc' parsetrees
- *           are Holmes/Durbin optimally accurate parsetrees, the parse the 
+ *           are Holmes/Durbin optimally accurate parsetrees, the parse that
  *           maximizes the expected accuracy of all aligned residues.
  *
  *           QDB: if dmin and dmax are non-NULL, the CYK alignment conditional

@@ -60,16 +60,20 @@ static ESL_OPTIONS options[] = {
   { "--mpi",            eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "run as an MPI parallel program", 1 },  
 #endif
   /* options for exp tail fitting */
-  { "--exp-tailn-hglc", eslARG_INT,     "25",  NULL, "n>=10",   NULL,        NULL,"--exp-tailp","fit the top <n> hits/Mb in histogram for HMM local modes", 2 },
-  { "--exp-tailn-hloc", eslARG_INT,     "75",  NULL, "n>=10",   NULL,        NULL,"--exp-tailp","fit the top <n> hits/Mb in histogram for HMM glocal modes", 2 },
+  { "--exp-cmL-glc",    eslARG_REAL,    "1.5",  NULL, "0.1<=x<=1000.", NULL,NULL,         NULL, "set glocal  CM     Mb random seq length to <x>", 2 },
+  { "--exp-cmL-loc",    eslARG_REAL,    "1.5",  NULL, "0.1<=x<=1000.", NULL,NULL,         NULL, "set  local  CM     Mb random seq length to <x>", 2 },
+  { "--exp-hmmLn-glc",  eslARG_REAL,    "15.",  NULL, "2.<=x<=1000.",   NULL,NULL,        NULL, "set glocal HMM min Mb random seq length to <x>", 2 },
+  { "--exp-hmmLn-loc",  eslARG_REAL,    "15.",  NULL, "2.<=x<=1000.",   NULL,NULL,        NULL, "set  local HMM min Mb random seq length to <x>", 2 },
+  { "--exp-hmmLx",      eslARG_REAL,    "1000.",NULL, "10.<=x<=1001.",  NULL,NULL,        NULL, "set        HMM max Mb random seq length to <x>", 2 },
+  { "--exp-fract",      eslARG_REAL,    "0.10", NULL, "0.01<=x<=1.0",   NULL,NULL,        NULL, "set min fraction of HMM vs CM DP calcs to <x>", 2 },
   { "--exp-tailn-cglc", eslARG_INT,    "250",  NULL, "n>=100",  NULL,        NULL,"--exp-tailp","fit the top <n> hits/Mb in histogram for  CM local modes", 2 },
   { "--exp-tailn-cloc", eslARG_INT,    "750",  NULL, "n>=100",  NULL,        NULL,"--exp-tailp","fit the top <n> hits/Mb in histogram for  CM glocal modes", 2 },
+  { "--exp-tailn-hglc", eslARG_INT,     "25",  NULL, "n>=10",   NULL,        NULL,"--exp-tailp","fit the top <n> hits/Mb in histogram for HMM local modes", 2 },
+  { "--exp-tailn-hloc", eslARG_INT,     "75",  NULL, "n>=10",   NULL,        NULL,"--exp-tailp","fit the top <n> hits/Mb in histogram for HMM glocal modes", 2 },
   { "--exp-tailp",      eslARG_REAL,    NULL,   NULL, "0.0<x<0.6",NULL,      NULL,        NULL, "set fraction of histogram tail to fit to exp tail to <x>", 2 },
   { "--exp-tailxn",     eslARG_INT,     "1000", NULL, "n>=50",  NULL,        NULL,"--exp-tailp", "w/--exp-tailp, set max num hits in tail to fit as <n>", 2 },
   { "--exp-beta",       eslARG_REAL,    "1E-15",NULL, "x>0",    NULL,        NULL,"--exp-no-qdb","set tail loss prob for QDB to <x>", 2 },
   { "--exp-no-qdb",     eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "do not use QDBs for calibrating CM search modes", 2 },
-  { "--exp-gc",         eslARG_INFILE,  NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content distribution from file <f>",  2},
-  { "--exp-pfile",      eslARG_INFILE,  NULL,   NULL, NULL,     NULL,  "--exp-gc",        NULL, "read partition info for exp tails from file <f>", 2},
   { "--exp-hfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,        NULL, "save fitted score histogram(s) to file <f>", 2 },
   { "--exp-sfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,        NULL, "save survival plot to file <f>", 2 },
   { "--exp-qqfile",     eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,        NULL, "save Q-Q plot for score histogram(s) to file <f>", 2 },
@@ -78,14 +82,11 @@ static ESL_OPTIONS options[] = {
   { "--fil-N",          eslARG_INT,     "10000",NULL, "100<=n<=100000",NULL,  NULL,       NULL, "number of emitted sequences for HMM filter threshold calc",    3 },
   { "--fil-F",          eslARG_REAL,    "0.995",NULL, "0<x<=1", NULL,        NULL,        NULL, "required fraction of seqs that survive HMM filter", 3},
   { "--fil-xhmm",       eslARG_REAL,    "2.0",  NULL, "x>=1.1", NULL,        NULL,        NULL, "set target time for filtered search as <x> times HMM time", 3},
-  { "--fil-nonbanded",  eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "do not use HMM banded search for filter calculation", 3},
   { "--fil-tau",        eslARG_REAL,    "1e-7", NULL, "0<x<1",  NULL,        NULL,"--fil-nonbanded", "set tail loss prob for HMM banding <x>", 3 },
-  { "--fil-aln2bands",  eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,"--fil-nonbanded", "derive HMM bands w/o scanning Forward/Backward", 3 },
   { "--fil-gemit",      eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "when calc'ing filter thresholds, always emit globally from CM",  3},
   { "--fil-dfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,"--exp-pfile", "save filter threshold data (HMM and CM scores) to file <s>", 3},
   /* Other options */
   { "--mxsize",         eslARG_REAL,    "2048.0",NULL, "x>0.",  NULL,        NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 4 },
-
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer option, print extra info */
   { "-v",                eslARG_NONE,   FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "print arguably interesting info",  101},
@@ -96,12 +97,11 @@ static ESL_OPTIONS options[] = {
   /* Developer exponential tail options the average user doesn't need to know about */
   { "--exp-random",     eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content of random null background model of CM",  102},
   { "--exp-T",          eslARG_REAL,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "set bit sc cutoff for exp tail fitting to <x> [df: -INFTY]", 102 },
-  { "--exp-cmL-glc",    eslARG_REAL,    "1.5",  NULL, "0.1<=x<=1000.", NULL,NULL,         NULL, "set glocal  CM     Mb random seq length to <x>", 102 },
-  { "--exp-cmL-loc",    eslARG_REAL,    "1.5",  NULL, "0.1<=x<=1000.", NULL,NULL,         NULL, "set  local  CM     Mb random seq length to <x>", 102 },
-  { "--exp-hmmLn-glc",  eslARG_REAL,    "15.",  NULL, "2.<=x<=1000.",   NULL,NULL,        NULL, "set glocal HMM min Mb random seq length to <x>", 102 },
-  { "--exp-hmmLn-loc",  eslARG_REAL,    "15.",  NULL, "2.<=x<=1000.",   NULL,NULL,        NULL, "set  local HMM min Mb random seq length to <x>", 102 },
-  { "--exp-hmmLx",      eslARG_REAL,    "1000.",NULL, "10.<=x<=1001.",  NULL,NULL,        NULL, "set        HMM max Mb random seq length to <x>", 102 },
-  { "--exp-fract",      eslARG_REAL,    "0.10", NULL, "0.01<=x<=1.0",   NULL,NULL,        NULL, "set min fraction of HMM vs CM DP calcs to <x>", 102 },
+  { "--exp-pfile",      eslARG_INFILE,  NULL,   NULL, NULL,     NULL,  "--exp-gc",        NULL, "read partition info for exp tails from file <f>", 102},
+  { "--exp-gc",         eslARG_INFILE,  NULL,   NULL, NULL,     NULL,        NULL,        NULL, "use GC content distribution from file <f>",  102},
+  /* Developer filter threshold options the average user doesn't need to know about */
+  { "--fil-nonbanded",  eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "do not use HMM banded search for filter calculation", 104},
+  { "--fil-aln2bands",  eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,"--fil-nonbanded", "derive HMM bands w/o scanning Forward/Backward", 104 },
   /* Developer options related to experiment local begin/end modes */
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,    NULL,    "--pbegin", "set all local begins as equiprobable", 103 },
   { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,    NULL,    "--pend", "set all local end probs to <x>", 103 },
@@ -258,6 +258,8 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
       puts("\nundocumented exp tail related developer options:");
       esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
+      puts("\nundocumented filter related developer options:");
+      esl_opt_DisplayHelp(stdout, go, 104, 2, 80);
       puts("\nother undocumented developer options:");
       esl_opt_DisplayHelp(stdout, go, 103, 2, 80);
       exit(0);
@@ -278,7 +280,7 @@ main(int argc, char **argv)
     }
   if (esl_opt_ArgNumber(go) != 1) 
     {
-      puts("Incorrect number of command line arexpents.");
+      puts("Incorrect number of command line arguments.");
       esl_usage(stdout, argv[0], usage);
       printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
@@ -288,7 +290,7 @@ main(int argc, char **argv)
    * and workers in this .c file.
    */
   cfg.cmfile  = esl_opt_GetArg(go, 1);
-  if (cfg.cmfile == NULL) cm_Fail("Failed to read <cmfile> arexpent from command line.");
+  if (cfg.cmfile == NULL) cm_Fail("Failed to read <cmfile> argument from command line.");
   cfg.r           = NULL; 
   cfg.abc         = NULL; 
   cfg.w_stage     = NULL; 
@@ -561,7 +563,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "No such file: %s.", esl_opt_GetString(go, "--exp-gc")); 
     else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "file: %s format unrecognized.", esl_opt_GetString(go, "--exp-gc")); 
     else if (status != eslOK)      ESL_FAIL(status, errbuf, "Failed to open sequence database file %s, code %d.", esl_opt_GetString(go, "--exp-gc"), status); 
-    if((status = GetDBInfo(tmp_abc, dbfp, errbuf, NULL, &(cfg->gc_freq))) != eslOK) return status; 
+    if((status = GetDBInfo(tmp_abc, dbfp, errbuf, NULL, NULL, &(cfg->gc_freq))) != eslOK) return status; 
     esl_vec_DNorm(cfg->gc_freq, GC_SEGMENTS);
     esl_alphabet_Destroy(tmp_abc);
     esl_sqfile_Close(dbfp); 
@@ -3423,8 +3425,8 @@ print_exp_line(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int
   expL_Mb /= 1000000.;
 
   if(!esl_opt_IsDefault(go, "--forecast")) { 
-    if(cfg->np != 1) printf("  %-8s  %-12s  %4d %3d %3d %9.2f %6s %14s",  "exp tail", DescribeExpMode(exp_mode), p+1, ps, pe, expL_Mb, "-", time_buf);
-    else             printf("  %-8s  %-12s  %9.2f %6s %14s",              "exp tail", DescribeExpMode(exp_mode), expL_Mb, "-", time_buf);
+    if(cfg->np != 1) printf("  %-8s  %-12s  %4d %3d %3d %9.2f %6s %14s\n",  "exp tail", DescribeExpMode(exp_mode), p+1, ps, pe, expL_Mb, "-", time_buf);
+    else             printf("  %-8s  %-12s  %9.2f %6s %14s\n",              "exp tail", DescribeExpMode(exp_mode), expL_Mb, "-", time_buf);
   }
   else { 
     if(cfg->np != 1) printf("  %-8s  %-12s  %4d %3d %3d %9.2f %6s %10s",  "exp tail", DescribeExpMode(exp_mode), p+1, ps, pe, expL_Mb, "-", time_buf);

@@ -42,7 +42,6 @@ static ESL_OPTIONS options[] = {
   { "-c",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,        NULL, "generate a single \"consensus\" sequence only",  1 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "local; emit from a locally configured model",  1 },
   { "-s",        eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,        NULL, "set random number generator seed to <n>",  1 },
-  { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "be quiet; don't print anything to stdout", 1 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of otherwise undocumented developer options", 1 },
   /* miscellaneous output options */
   { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 2 },
@@ -189,7 +188,7 @@ main(int argc, char **argv)
   cfg.ahmmfp     = NULL;	           /* opened in init_cfg() */
   cfg.r          = NULL;	           /* created in init_cfg() */
 
-  if(! esl_opt_GetBoolean(go, "-q")) cm_banner(stdout, argv[0], banner);
+  cm_banner(stdout, argv[0], banner);
 
   /* do work */
   master(go, &cfg);
@@ -293,7 +292,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   CM_t    *cm = NULL;
 
   if ((status = init_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
-  if(! esl_opt_GetBoolean(go, "-q")) if ((status = print_run_info (go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+  if ((status = print_run_info (go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
 
   cfg->ncm = 0;
 

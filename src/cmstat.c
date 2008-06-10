@@ -52,11 +52,11 @@ static ESL_OPTIONS options[] = {
   { "--gfi",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of glocal Inside filter threshold stats", 2 },
   { "--lfc",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of  local CYK    filter threshold stats", 2 },
   { "--gfc",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of glocal CYK    filter threshold stats", 2 },
-  { "-E",        eslARG_REAL,   "0.1",     NULL, "x>0",     NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for cmsearch E cutoff <x>", 2}, 
+  { "-E",        eslARG_REAL,   "1.0",     NULL, "x>0",     NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for cmsearch E cutoff <x>", 2}, 
   { "-T",        eslARG_REAL,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for cmsearch bit cutoff <x>", 2}, 
+  { "--nc",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for Rfam NC cutoff", 2}, 
   { "--ga",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for Rfam GA cutoff", 2}, 
   { "--tc",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for Rfam TC cutoff", 2}, 
-  { "--nc",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for Rfam NC cutoff", 2}, 
   { "--seqfile", eslARG_INFILE, FALSE,     NULL, NULL,      NULL,      NULL,        "-Z", "compute E-value cutoffs for sequence file <f>", 2 },
   { "--toponly", eslARG_NONE,   FALSE,     NULL, NULL,      NULL,"--seqfile",       NULL, "with --seqfile, only consider top-strand", 2 },
   { "--search",  eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,    NOTMOPTS, "do search timing experiments", 3 },
@@ -234,7 +234,7 @@ main(int argc, char **argv)
     else if (status == eslEINVAL)  cm_Fail("Can’t autodetect stdin or .gz."); 
     else if (status != eslOK)      cm_Fail("Sequence file open failed with error %d\n", status);
     /* GetDBSize() reads all sequences, rewinds seq file and returns db size */
-    if((status = GetDBSize(sqfp, errbuf, &(dbsize), NULL)) != eslOK) cm_Fail(errbuf);
+    if((status = GetDBSize(sqfp, errbuf, &(dbsize), NULL, NULL)) != eslOK) cm_Fail(errbuf);
     esl_sqfile_Close(sqfp); 
     if (! esl_opt_GetBoolean(go, "--toponly")) dbsize *= 2;
   }

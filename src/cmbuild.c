@@ -36,7 +36,6 @@
 
 #define WGTOPTS "--wgsc,--wblosum,--wpb,--wnone,--wgiven"      /* Exclusive options for relative weighting                    */
 #define EFFOPTS "--eent,--enone"               /* Exclusive options for effective sequence number calculation */
-#define ALPHOPTS "--rna,--dna"                 /* Exclusive options for specifiying input MSA alphabet*/
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -84,7 +83,8 @@ static ESL_OPTIONS options[] = {
   { "-s",        eslARG_INT,     NULL, NULL, "n>0",      NULL,"--gibbs",        NULL, "w/--gibbs, set random number generator seed to <n>",  7 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, align locally w.r.t the model", 7 },
   { "-a",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "print individual sequence scores during MSA refinement", 7 },
-  { "--optacc",  eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, align with optimal accuracy algorithm, not CYK", 7 },
+  { "--optacc",  eslARG_NONE,"default",NULL,NULL,        NULL,      NULL,       NULL, "align with the Holmes/Durbin optimal accuracy algorithm", 201 },
+  { "--cyk",     eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine align w/the CYK algorithm, not optimal accuracy", 7 },
   { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, use sub CM for columns b/t HMM start/end points", 7 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,       NULL,"--refine",       NULL, "do not use bands to accelerate alignment with --refine", 7 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",    NULL,"--refine","--nonbanded", "set tail loss prob for --hbanded to <x>", 7 },
@@ -235,8 +235,6 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
       puts("\nexpert options for refining the input alignment:");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
-      puts("\n options for selecting alphabet rather than guessing it:");
-      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       puts("\nundocumented developer options for debugging, experimentation:");
       esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
       puts("\nundocumented developer options for verbose output/debugging:");
@@ -402,18 +400,12 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   else if (status != eslOK)      ESL_FAIL(status, errbuf, "Alignment file open failed with error %d\n", status);
   cfg->fmt = cfg->afp->format;
 
-  /* Guess the withali alphabet, if it's ambiguous, guess RNA,
-   * we'll treat RNA and DNA both as RNA internally.
-   * We can't handle any other alphabets, so this is hardcoded. */
-  int type;
-  status = esl_msafile_GuessAlphabet(cfg->afp, &type);
-  if (status == eslEAMBIGUOUS)    type = eslRNA; /* guess it's RNA, we'll fail downstream with an error message if it's not */
-  else if (status == eslEFORMAT)  ESL_FAIL(status, errbuf, "Alignment file parse failed: %s\n", cfg->afp->errbuf);
-  else if (status == eslENODATA)  ESL_FAIL(status, errbuf, "Alignment file %s is empty\n", cfg->alifile);
-  else if (status != eslOK)       ESL_FAIL(status, errbuf, "Failed to read alignment file %s\n", cfg->alifile);
-  /* We can read DNA/RNA but internally we treat it as RNA */
-  if(! (type == eslRNA || type == eslDNA))              ESL_FAIL(status, errbuf, "Alphabet is not DNA/RNA in %s\n", cfg->alifile);
-  if((cfg->abc = esl_alphabet_Create(eslRNA)) == NULL)  ESL_FAIL(status, errbuf, "Alphabet could not be created.\n");
+  /* Set the msafile alphabet as RNA, if it's DNA we're fine. 
+   * If it's not RNA nor DNA, we can't deal with it anyway,
+   * so we're hardcoded to RNA.
+   */
+  cfg->abc = esl_alphabet_Create(eslRNA);
+  if(cfg->abc == NULL) ESL_FAIL(status, errbuf, "Failed to create alphabet for sequence file");
   esl_msafile_SetDigital(cfg->afp, cfg->abc);
 
   /* open CM file for writing */

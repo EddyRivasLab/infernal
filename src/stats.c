@@ -254,15 +254,17 @@ int get_alphabet_comp(const ESL_ALPHABET *abc, ESL_DSQ *dsq, int start, int stop
  *
  * Returns:  eslOK on success, other status on failure, errbuf filled with error message.
  */
-int GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_namewidth)
+int GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_nseq, int *ret_namewidth)
 {
   int     status;
   ESL_SQ *sq;
   long    N = 0;
   int     namewidth = 11; /* length of "target name" */
+  int     nseq = 0;
 
   sq = esl_sq_Create(); 
   while ((status = esl_sqio_ReadInfo(sqfp, sq)) == eslOK) {
+    nseq++;
     N += sq->L;
     namewidth = ESL_MAX(namewidth, strlen(sq->name));
     esl_sq_Reuse(sq); 
@@ -274,6 +276,7 @@ int GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_namewidth)
   esl_sqfile_Position(sqfp, (off_t) 0);
 
   if(ret_N != NULL)          *ret_N         = N;
+  if(ret_nseq != NULL)       *ret_nseq      = nseq;
   if(ret_namewidth != NULL)  *ret_namewidth = namewidth;
   return eslOK;
 }
@@ -291,11 +294,12 @@ int GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_namewidth)
  *           sqfp      - open sequence file
  *           errbuf    - for error messages
  *           ret_N     - RETURN: total length (residues) or all seqs in seqfile
+ *           ret_nseq  - RETURN: number of seqs in seqfile
  *           ret_gc_ct - RETURN: gc_ct[x] observed 100-nt segments with GC% of x [0..100] 
  *           
  * Returns:  eslOK on success, other status on failure, errbuf filled with error message.
  */
-int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *ret_N, double **ret_gc_ct)
+int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_nseq, double **ret_gc_ct)
 {
   int               status;
   ESL_SQ           *sq;
@@ -303,6 +307,7 @@ int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *re
   long              N = 0;
   double           *gc_ct;
   int               gc;
+  int               nseq = 0;
   int               all_ambig_flag; /* used to check if curr DB chunk is all ambiguous characters 
 				     * usually Ns, if it is, we don't count it towards the GC content info */
   if (abc       == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "GetDBInfo(), abc is NULL\n");
@@ -315,30 +320,31 @@ int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *re
   esl_sqfile_SetDigital(sqfp, abc);
   
   while ((status = esl_sqio_Read(sqfp, sq)) == eslOK) { 
-      N += sq->n;
-      /*printf("new N: %d\n", N);*/
-      for(i = 1; i <= sq->n; i += 100) {
-	j = (i+99 <= sq->n) ? i+99 : sq->n;
-	gc = get_gc_comp(abc, sq->dsq, i, j);
-	all_ambig_flag = TRUE;
-	for(jp = 0; jp < 100 && (jp+i) < sq->n; jp++) {
-	  if(sq->dsq[i+jp] < abc->K) {
-	    all_ambig_flag = FALSE; 
-	    break; 
-	    }
+    nseq++;
+    N += sq->n;
+    /*printf("new N: %d\n", N);*/
+    for(i = 1; i <= sq->n; i += 100) {
+      j = (i+99 <= sq->n) ? i+99 : sq->n;
+      gc = get_gc_comp(abc, sq->dsq, i, j);
+      all_ambig_flag = TRUE;
+      for(jp = 0; jp < 100 && (jp+i) < sq->n; jp++) {
+	if(sq->dsq[i+jp] < abc->K) {
+	  all_ambig_flag = FALSE; 
+	  break; 
 	}
-	/*printf("N: %d i: %d gc: %d\n", N, i, gc);*/
-	/* don't count GC content of chunks < 20 nt, very hacky;
-	 * don't count GC content of chunks that are all N, this
-	 * will be common in RepeatMasked genomes where poly-Ns could
-	 * skew the base composition stats of the genome */
-	if(j > 20 && !all_ambig_flag)
-	  {
-	    /*printf("j: %d i: %d adding 1 to gc_ct[%d]\n", j, i, ((int) gc));*/
-	    gc_ct[(int) gc] += 1.;
-	  }
       }
-      esl_sq_Reuse(sq); 
+      /*printf("N: %d i: %d gc: %d\n", N, i, gc);*/
+      /* don't count GC content of chunks < 20 nt, very hacky;
+       * don't count GC content of chunks that are all N, this
+       * will be common in RepeatMasked genomes where poly-Ns could
+       * skew the base composition stats of the genome */
+      if(j > 20 && !all_ambig_flag)
+	{
+	  /*printf("j: %d i: %d adding 1 to gc_ct[%d]\n", j, i, ((int) gc));*/
+	  gc_ct[(int) gc] += 1.;
+	}
+    }
+    esl_sq_Reuse(sq); 
   } 
   if (status != eslEOF) 
     ESL_FAIL(status, errbuf, "Parse failed, line %" PRId64 ", file %s:\n%s",
@@ -347,6 +353,7 @@ int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *re
   esl_sqfile_Position(sqfp, (off_t) 0);
 
   if(ret_N != NULL)      *ret_N     = N;
+  if(ret_nseq != NULL)   *ret_nseq  = nseq;
   *ret_gc_ct = gc_ct;
 
   return eslOK;

@@ -43,7 +43,7 @@ static ESL_OPTIONS options[] = {
   { "-s",        eslARG_INT,     NULL, NULL, "n>0",     NULL,      NULL,  "--infile", "set random number seed to <n>", 1 },
   { "-a",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print individual timings & scores, not just a summary", 1 },
   { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL, "-l,--search", "build sub CM for columns b/t HMM predicted start/end points", 1 },
-  { "--mxsize",  eslARG_REAL, "512.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 1 },
+  { "--mxsize",  eslARG_REAL, "2048.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 1 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
@@ -401,23 +401,15 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Can$.1Žòùt autodetect stdin or .gz."); 
     else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
     cfg->infmt = cfg->sqfp->format;
-  }
 
-  /* Guess the sqfile alphabet, if it's ambiguous, guess RNA,
-   * we'll treat RNA and DNA both as RNA internally.
-   * We can't handle any other alphabets, so this is hardcoded. */
-  int type;
-  status = esl_sqfile_GuessAlphabet(cfg->sqfp, &type);
-  if (status == eslEFORMAT)     ESL_FAIL(status, errbuf, "Sequence file parse error, line %" PRId64 " of file %s:\n%s\nOffending line is:\n%s\n", cfg->sqfp->linenumber, esl_opt_GetString(go, "--infile"), cfg->sqfp->errbuf, cfg->sqfp->buf);
-  if (status == eslENODATA)     ESL_FAIL(status, errbuf, "Sequence file %s appears to be empty.", esl_opt_GetString(go, "--infile"));
-  if (status == eslEAMBIGUOUS)  type = eslRNA; /* guess it's RNA, we'll fail downstream with an error message if it's not */
-  else if (status != eslOK)     ESL_FAIL(status, errbuf, "Sequence file alphabet guess failed with error %d\n", status);
-  /* we can read DNA/RNA but internally we treat it as RNA */
-  if(! (type == eslRNA || type == eslDNA))
-    ESL_FAIL(eslEFORMAT, errbuf, "Alphabet is not DNA/RNA in %s\n", esl_opt_GetString(go, "--infile"));
-  cfg->abc = esl_alphabet_Create(eslRNA);
-  if(cfg->abc == NULL) ESL_FAIL(status, errbuf, "Failed to create alphabet for sequence file");
-  esl_sqfile_SetDigital(cfg->sqfp, cfg->abc);
+    /* Set the sqfile alphabet as RNA, if it's DNA we're fine. 
+     * If it's not RNA nor DNA, we can't deal with it anyway,
+     * so we're hardcoded to RNA.
+     */
+    cfg->abc = esl_alphabet_Create(eslRNA);
+    if(cfg->abc == NULL) ESL_FAIL(status, errbuf, "Failed to create alphabet for sequence file");
+    esl_sqfile_SetDigital(cfg->sqfp, cfg->abc);
+  }
 
   /* optionally, open output file */
   if (esl_opt_GetString(go, "--outfile") != NULL) {
@@ -1086,9 +1078,8 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	    diff_ct++;
 	    diff_sc += cfg->s1_sc[i] - seqs_to_aln->sc[i]; /* don't take absolute value in case cur stage sc > stage 1 sc, for example with -l --viterbi */
 	  }
-	  /*////*/if(seqs_to_aln->sc[i] < -10000.) { 
-	    ///cm_Fail("cm: %s seq %d got impossible score: %f\n", cm->name, i, seqs_to_aln->sc[i]); 
-	    printf("cm: %s seq %d got impossible score: %f\n", cm->name, i, seqs_to_aln->sc[i]); 
+	  if(seqs_to_aln->sc[i] < -10000.) { 
+	    cm_Fail("cm: %s seq %d got impossible score: %f\n", cm->name, i, seqs_to_aln->sc[i]); 
 	  }
 	  if(esl_opt_GetBoolean(go, "--nonbanded") && (fabs(cfg->s1_sc[i] -  seqs_to_aln->sc[i]) >= 0.01))
 	    cm_Fail("Non-banded standard CYK score (%.3f bits) differs from D&C CYK score (%.3f bits)", cfg->s1_sc[i], seqs_to_aln->sc[i]);
@@ -1250,7 +1241,7 @@ initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
 
     if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;
     if(esl_opt_GetBoolean(go, "--old"))         cm->align_opts  |= CM_ALIGN_HMM2IJOLD;
-    if(esl_opt_GetBoolean(go, "--viterbi"))  cm->align_opts  |= CM_ALIGN_HMMVITERBI;
+    if(esl_opt_GetBoolean(go, "--viterbi"))     cm->align_opts  |= CM_ALIGN_HMMVITERBI;
     if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
     if(esl_opt_GetBoolean(go, "--scoreonly"))   cm->align_opts  |= CM_ALIGN_SCOREONLY;
     if(esl_opt_GetBoolean(go, "--qdb") || esl_opt_GetBoolean(go, "--qdbsmall") || esl_opt_GetBoolean(go, "--qdbboth")) {                    
@@ -1398,7 +1389,7 @@ int print_search_options(const struct cfg_s *cfg, CM_t *cm)
 {
   /* algorithm */
   if     (cm->search_opts & CM_SEARCH_HMMVITERBI) fprintf(stdout, "  %7s", "hmm-vit");
-  else if(cm->search_opts & CM_SEARCH_HMMVITERBI) fprintf(stdout, "  %7s", "hmm-fwd");
+  else if(cm->search_opts & CM_SEARCH_HMMFORWARD) fprintf(stdout, "  %7s", "hmm-fwd");
   else if(cm->search_opts & CM_SEARCH_INSIDE)     fprintf(stdout, "  %7s", "inside");
   else                                            fprintf(stdout, "  %7s", "cyk");
   /* bands and beta/tau*/
