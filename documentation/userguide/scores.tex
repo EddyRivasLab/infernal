@@ -145,54 +145,33 @@ E-value for the hits. \prog{cmsearch} implements different search
 algorithms and allows searching with both local and glocally
 configured models. Importantly, the configuration and algorithm used
 affect the scores reported, so \prog{cmcalibrate} must fit separate
-exponential tails for each.  In addition, separate
-exponential tails are fit for three possible ranges, or partitions of
-the possible GC contents of the target database, 0-39\%, 40-59\% and
-60-100\%.  For example, the scores for the histogram that is fit to an
-exponential tail for the 0-39\% GC region are collected by searching
-random sequence with GC content between 0 and 39\%. In total,
-\prog{cmcalibrate} fits 24 different exponential tail
+exponential tails for each.  In total,
+\prog{cmcalibrate} fits 8 different exponential tail
 distributions. These are listed by the program as it proceeds through
-each of the 24 ``stages''.  Because \prog{cmcalibrate} is so slow, it
+each of the 8 ``stages''.  Because \prog{cmcalibrate} is so slow, it
 has a \prog{--forecast} option which will list each stage and predict
 it's required running time. Let's examine the output with this option
 for the \prog{my.cm} model from the tutorial:
 
-\user{cmcalibrate --exp-gc ~/infernal/src/1Mb.fa --exp-pfile ~/infernal/src/p4060.pfile --forecast 1 my.cm}
+\user{cmcalibrate --forecast 1 my.cm}
 
 \begin{sreoutput}
-# Forecasting time for 1 processor(s) to calibrate CM 1: tobuild-1
+# Forecasting time for 1 processor(s) to calibrate CM 1: trna.5-1
 #
-# stage     mod  cfg  alg  part  ps  pe expL (Mb)   filN predicted time
-# --------  ---  ---  ---  ---- --- --- --------- ------ --------------
-  exp tail  hmm  glc  vit     1   0  39     10.16      -       00:01:17
-  exp tail  hmm  glc  vit     2  40  59     10.16      -       00:01:17
-  exp tail  hmm  glc  vit     3  60 100     10.16      -       00:01:17
-  exp tail  hmm  glc  fwd     1   0  39     10.16      -       00:02:45
-  exp tail  hmm  glc  fwd     2  40  59     10.16      -       00:02:45
-  exp tail  hmm  glc  fwd     3  60 100     10.16      -       00:02:45
-  exp tail   cm  glc  cyk     1   0  39      1.00      -       00:06:07
-  exp tail   cm  glc  cyk     2  40  59      1.00      -       00:06:07
-  exp tail   cm  glc  cyk     3  60 100      1.00      -       00:06:07
-  exp tail   cm  glc  ins     1   0  39      1.00      -       00:21:09
-  exp tail   cm  glc  ins     2  40  59      1.00      -       00:21:09
-  exp tail   cm  glc  ins     3  60 100      1.00      -       00:21:09
-  filter      -  glc    -     -   -   -         -  10000       00:02:51
-  exp tail  hmm  loc  vit     1   0  39     10.16      -       00:01:25
-  exp tail  hmm  loc  vit     2  40  59     10.16      -       00:01:25
-  exp tail  hmm  loc  vit     3  60 100     10.16      -       00:01:25
-  exp tail  hmm  loc  fwd     1   0  39     10.16      -       00:03:25
-  exp tail  hmm  loc  fwd     2  40  59     10.16      -       00:03:25
-  exp tail  hmm  loc  fwd     3  60 100     10.16      -       00:03:25
-  exp tail   cm  loc  cyk     1   0  39      1.00      -       00:06:24
-  exp tail   cm  loc  cyk     2  40  59      1.00      -       00:06:24
-  exp tail   cm  loc  cyk     3  60 100      1.00      -       00:06:24
-  exp tail   cm  loc  ins     1   0  39      1.00      -       00:24:10
-  exp tail   cm  loc  ins     2  40  59      1.00      -       00:24:10
-  exp tail   cm  loc  ins     3  60 100      1.00      -       00:24:10
-  filter      -  loc    -     -   -   -         -  10000       00:06:35
-# --------  ---  ---  ---  ---- --- --- ---------  ----- --------------
-# all         -    -    -     -   -   -         -      -       03:29:47
+# stage     mod  cfg  alg  expL (Mb)   filN predicted time
+# --------  ---  ---  ---  --------- ------ --------------
+  exp tail  hmm  glc  vit      15.00      -       00:02:29
+  exp tail  hmm  glc  fwd      15.00      -       00:04:59
+  exp tail   cm  glc  cyk       1.50      -       00:06:29
+  exp tail   cm  glc  ins       1.50      -       00:23:34
+  filter      -  glc    -          -  10000       00:02:15
+  exp tail  hmm  loc  vit      15.00      -       00:02:45
+  exp tail  hmm  loc  fwd      15.00      -       00:05:59
+  exp tail   cm  loc  cyk       1.50      -       00:05:45
+  exp tail   cm  loc  ins       1.50      -       00:23:32
+  filter      -  loc    -          -  10000       00:07:40
+# --------  ---  ---  ---  ---------  ----- --------------
+# all         -    -    -          -      -       01:25:33
 \end{sreoutput}
 
 Let's go through what each column of the output is telling us:
@@ -216,16 +195,10 @@ Let's go through what each column of the output is telling us:
   algorithms that need to be separately calibrated for each the CM and
   HMM. These are explained in more detail in section 6.
 
-\item[\emprog{part, ps} and \emprog{pe}] which partition of GC
-  content this stage is for. ``part'' is the partition index, ``ps''
-  is the lowest GC content in the partition and ``pe'' is the highest
-  GC content. A different exponential tail is fit for
-  each partition. 
-
 \item[\emprog{expL}] the length of random sequence we'll search for
-  this stage. For CM stages, this length is 1,000,000 residues (1 Mb)
+  this stage. For CM stages, this length is 1,500,000 residues (1.5 Mb)
   by default. For HMM stages, this length is is the minimum
-  of 10 Mb and a length $x$, where $x$ is the length that will cause
+  of 15 Mb and a length $x$, where $x$ is the length that will cause
   this HMM stage to require 10\% as much compute time as a CM
   calibration stage. The reasoning behind this is that longer sequence
   lengths tend to result in more accurate E-values.
@@ -244,11 +217,10 @@ Let's go through what each column of the output is telling us:
 \end{wideitem}
 
 As you can see, \prog{cmcalibrate} will fit separate exponential tails
-for each combination of model and algorithm (4 choices), configuration
-(2 choices), and partition (3 choices), that's $4*2*3=24$ exponential
+for each combination of model and algorithm (4 choices) and configuration
+(2 choices) that's $4*2=8$ exponential
 tails. We explained the difference between local versus glocal
-configuration in the tutorial, and described partitions briefly above;
-now we'll discuss different search algorithms. 
+configuration in the tutorial, now we'll discuss different search algorithms. 
 
 \subsection{In more detail: different search algorithms in \software{Infernal}}
 \prog{cmsearch} implements four several different search 
@@ -322,70 +294,51 @@ of Inside. You can read more about how we use CYK as a filter in
 %inadequate performance. We're working on it though.
 
 \begin{srefaq}{Why is \prog{cmcalibrate} so slow?} The
-    necessity of doing 24 separate exponential tail fitting stages
+    necessity of doing 8 separate exponential tail fitting stages
     (see above), and the fact that CM search algorithms scale more
     than $LN^2$ with sequence length $L$ and model consensus length
     $N$ make the program excruciatingly slow. Notice that some of the
-    24 stages are much faster than others. The 6 Inside stages usually
+    24 stages are much faster than others. The two Inside stages usually
     take a large majority of the total run time. You might argue this
-    means we should get rid of Inside, but it's the most sensitive
+    means we shouldn't use Inside, but it's the most sensitive
     algorithm we have; and sensitivity trumps speed in our design
     goals.
 \end{srefaq}
 
-%\subsubsection{Partitions of GC content}
-%A major problem facing CM homology search is heterogeneity of the
-%target database. Differences in local GC content can have a profound
-%effect on CM bit scores of non-homologous sequences. Imagine a
-%sequence of 80\% A's and U's, the probability of a stem of AU base
-%pairs ``forming'' and getting a high score to a structural RNA model 
-%is increased relative to a 50\% AU sequence, simply because there are 
-%more A's and U's. Empirically, when searching databases, using a
-%single exponential tail for E-value statistics proved inadequate. 
-
+\begin{comment}
 \subsection{Accuracy of E-values}
 
-NEED TO WRITE THIS WHEN FINAL E-VALUE IMPLEMENTATION IS DONE.
+The E-values reported by \prog{cmsearch} are not extremely accurate. 
+This is because CM scores don't fit the exponential tail distribution
+extremely well. Empirically, local alignment scores returned from local searches
+fit exponential tails fairly well, and glocal alignment scores fit
+less well. Exponential tails are used for E-values because there is
+not an obviously better alternative. We will continue to work on
+making E-values more accurate in future versions of \program{Infernal}.
 
-\begin{comment}
-First the good news. The extreme value distribution fitting is done
-with a rather robust and personally satisfying chunk of maximum
-likelihood code (see \prog{histogram.c} in the codebase). The ML
-approach was suggested to me by Stephen Altschul, who directed me to a
-lovely textbook by Lawless \cite{Lawless82}.  A brief technical report
-on \software{Infernal}'s EVD fitting is available at
-\htmladdnormallink{ftp://ftp.genetics.wustl.edu/pub/eddy/papers/evd.pdf}
-{ftp://ftp.genetics.wustl.edu/pub/eddy/papers/evd.pdf}.  Any EVD
-fitting code that is relying on linear regression fits to log-log
-plots is bound to be less accurate, judging from my tests.
-
-However, the down side is that most profile CM scores don't fit the
-extreme value distribution well. Fully local alignments (models built
-with \prog{hmmbuild -f} or \prog{hmmbuild -s} fit the EVD fairly well,
-as expected for Smith/Waterman style alignments, for the same reasons
-that gapped BLAST or FASTA alignment scores have been shown to be
-approximately EVD-distributed. By default, though, \prog{hmmbuild}
-makes models for ``glocal'' alignments which are global with respect
-to the model, and multi-hit-local with respect to the sequence.  Also
-called ``profile scores'' by Waterman, this sort of alignment score is
-known not to be EVD-distributed \cite{GoldsteinWaterman94}.
-
-Nonetheless, empirically, the tail of the distribution around E=1 is
-falling off more or less like an EVD, and this is the region of
-interest. \software{Infernal} does a ``censored EVD fit'' from the peak of the
-distribution down to the right tail, and does not include the data to
-the left of the peak in its fit. This produces a reasonable fit in the
-important region of the scores. Empirically, \software{Infernal} E-values tend to be
-accurate in the critical region (E~1), despite the lack of
-mathematical foundation.
-
-The end of \prog{cmsearch} output shows you the observed histogram,
-and (if the model is calibrated) an expected curve according to the
-EVD fit. You should observe that the relevant tail (around E=1) is
-more or less well fitted. The bulk of the distribution, particularly
-at lower scores, is usually poorly fitted, but this is not the area of
-interest.
-\end{comment}
+One important factor in the accuracy of E-values is the GC content
+of the target database. This is because many CMs are
+biased towards particular GC content (usually low GC), in many cases
+giving A-rich sequence high scores simply because it is
+A-rich. \prog{cmsearch} partially alleviates the problem of
+biased composition using a post-hoc correction called null3 (see ``Biased composition
+filtering: the null3 model below''). However, the problem still
+persists and is particularly evident when the target database being
+searched has a very low (about 25\%) or very high (about 65\%) GC
+content. \prog{cmcalibrate} calibrates the E-value statistics for a
+genome composition of about 46\% GC (based on an average measure from 
+a sampling of genomes from the three domains of life). When a target
+database with GC content lower than 46\% is searched, the effect is
+that there are usually more high scoring hits than the calibrated CM
+expects, and lower E-values for random hits can result (that is you
+might observe 5 hits with an E-value less than 1 for example). Conversely,
+when a target database with GC content above 46\% is searched, the
+effect is the opposite, and higher E-values often result (you might
+observed only 5 hits with an E-value less than 20). These
+effects are the average case, but different models will give different
+results. We consider the E-values in \prog{Infernal} a work in progress,
+so feel free to report examples of particularly bad (or good) performance
+of E-values to us. 
 
 \subsection{In more detail: Rfam TC/NC/GA cutoffs}
 
@@ -464,5 +417,198 @@ when they're used as the final threshold. Section 6 explains this in
 more detail, and shows an example of predicting the running time of
 filtered searches with Rfam cutoffs using the \prog{cmstat} program.
 
+\subsection{Biased composition filtering: the null3 model}
+
+I've lied. \software{Infernal} bit scores are actually calculated as
+log odds scores relative to \emph{two} null hypotheses. The first is the null model
+built into the CM when it was built with \prog{cmbuild}.
+The second, called \emph{null3}, is an \emph{ad hoc} model calculated
+on the fly for each alignment, from the characteristics of that
+alignment. (Why null3? To differentiate it from the null2 model used
+by the \software{HMMER} software package). The purpose of null3 is to
+compensate for false positive hits caused by simple biased composition
+regions in the target sequence.
+
+Common biased composition filters like XNU, DUST, and SEG are
+qualitative filters -- if a region is detected as biased composition,
+it is masked (the residues are converted to X's).  The
+\software{Infernal} composition filter is a quantitative filter, that
+tests whether the sequence is a better match to the CM, the
+null (random composition) model, or a null3 model of biased amino acid
+composition.
+
+This is a Good Thing, but on the other hand, the null3 model is not
+very sophisticated. It is a single-state HMM just like the main null
+model, which means it only captures residue composition, like DUST; no
+attempt is made in \software{Infernal} to filter short-period repetitive sequences
+like the XNU algorithm does. 
+
+The null3 model was motivated by the observation that many
+high-scoring false positive hits in \prog{cmsearch} are to regions of
+the target database with with highly biased residue composition, in
+particular regions with high percentages of A and U residues. The
+first null model used by \software{Infernal} is by default 25\% A, C,
+G, and U (this model can be changed with the \prog{--null} option to
+\prog{cmbuild}. If a model has a bias for a particular residue, for
+example A,  and a target regions is composed of an overrepresentation
+of that residue then it will receive a high score simply because it is
+A-rich. 
+
+
+A different null3 model is calculated for every alignment. The 4
+emission probabilities of the null3 model are calculated as 
+simply their occurence within the region of the hit. For example, if
+the hit is 50 residues long and contains $20$ As, $20$ Us, $5$ Cs and $5$ Gs,
+then the null3 model probabilitiles will be calculated as $(0.4, 0.1,
+0.1, 0.4)$. 
+
+But now we've got \emph{two} null hypotheses. We said we report a bit
+score that's a log-odds ratio of our model likelihood and \emph{one}
+null hypothesis likelihood. How do we calculate a score if we have
+more than one null hypothesis? \software{Infernal} does a bit of algebraic sleight
+of hand here, to arrive at an additive correction to the original
+score that it calls the ``null3 score correction''. 
+
+\subsubsection{derivation of the null3 score correction}
+
+We arrived at the parameters of the null3 model in a very \emph{ad
+hoc} way. However, after that, the way \software{Infernal} arrives at the final bit
+score once the null3 parameters have been determined is clean
+(e.g. derivable) Bayesian probability theory. It is analagous to the
+way \software{Infernal} uses the \emph{null2} score correction.
+
+If we take the Bayesian view, we're interested in the probability of a
+hypothesis $H$ given some observed data $D$:
+
+\[
+   P(H | D) = \frac{P(D | H) P(H)}{\sum_{H_i} P(D | H_i) P(H_i)},
+\]
+
+an equation which forces us to state explicit probabilistic models not
+just for the hypothesis we want to test, but also for the alternative
+hypotheses we want to test against. Up until now, we've considered two
+hypotheses for an observed sequence $D$: either it came from our
+CM (call that model $M$), or it came from our null hypothesis
+for random, unrelated sequences (call that model $N$). If these are
+the only two models we consider, the Bayesian posterior for the model
+$M$ is:
+
+\[
+   P(M | D) = \frac{P(D | M) P(M)}{P(D | M) P(M) + P(D | N) P(N)}
+\]
+
+Recall that the log odds score reported by \software{Infernal}'s alignment
+algorithms is
+
+\[
+  s = \log \frac{P(D | M)}{P(D | N)}.
+\]
+
+Let's assume for simplicity that \emph{a priori}, the profile and the
+null model are equiprobable, so the priors $P(M)$ and $P(N)$
+cancel. Then the log odds score $s$ is related to the Bayesian
+posterior by a sigmoid function,
+
+\[
+  P(M | D) = \frac{e^s}{e^s + 1}.
+\]
+
+(We don't have to assume that the two hypotheses are equiprobable;
+keeping these around would just add an extra $\pi = \log P(M) / P(N)$
+factor to $s$. We'll reintroduce these prior log odds scores $\pi$
+shortly.)
+
+The simple sigmoid relationship between the posterior and the log odds
+score suggests a plausible basis for calculating a score that includes
+contributions of more than one null hypothesis: \textbf{we desire a
+generalized score $S$ such that:}
+
+\[
+  \frac{e^S}{e^S + 1} = P(M | D),
+\]
+
+\textbf{for \emph{any} number of alternative hypotheses under consideration.}
+
+So, let $N_i$ represent any number of alternative null models
+$N_i$. Then, by algebraic rearrangement of Bayes' theorem,
+
+\[
+   S = \log \frac{P(S | M) P(M)}{ \sum_{i} P(S | N_i) P(N_i)}. 
+\]
+
+We saw above that \software{Infernal} internally calculates a log odds score $s$, of
+the model relative to the first null hypothesis. Let's now call that
+$s_M$, the alignment score of the model. \software{Infernal} extends that same
+scoring system to all additional competing hypotheses, calculating a
+log odds score relative to the first null hypothesis for any
+additional null hypotheses $i > 1$:
+
+\[
+  s_i = \log \frac{P(D | N_i)}{P(D | N_1)}
+\]
+
+We can also state prior scores $\pi_i$ for how relatively likely
+each null hypothesis is, relative to the main one:
+
+\[
+  \pi_i = \log \frac{P(N_i)}{P(N_1)}
+\]
+
+(Remember that we assumed $\pi_M = 0$; but we're going to put it back
+in anyway now.)
+
+Now we can express $S$ in terms of the internal scores $s$ and
+prior scores $\pi$:
+
+\[
+   S = \log  \frac{e^{s_M + \pi_M}} { 1 + \sum_{i>1} e^{s_i + \pi_i}},
+\]
+
+which therefore simply amounts to an additive correction of the
+original score, $(s_M + \pi_M)$:
+
+\[
+  S = (s_M + \pi_M) - \log \left( 1 + \sum_{i>1} e^{s_i + \pi_i} \right)
+\]
+
+So, to calculate its reported score, \software{Infernal} uses four quantities:
+
+\begin{enumerate}
+\item [$s_M$] The (simple, uncorrected) log odds score for the model,
+calculated by optimal alignment of the model to the sequence.
+
+\item [$\pi_M$] The log odds of the priors, $\log P(M)/P(N_1)$. \software{Infernal}
+   implicitly assumes this factor to be 0.
+
+\item [$s_2$] The (simple, uncorrected) log odds score
+   for the null3 hypothesis, calculated by rescoring the residues
+   of the alignment under the null3 model.
+
+\item [$\pi_2$] The log odds of the priors, $\log
+P(N_2)/P(N_1)$. \software{Infernal} arbitrarily assumes that the null3 model is
+$\frac{1}{32}$ as likely as the main null model, so this factor
+is -5 bits.
+\end{enumerate}
+
+The code that calculates the null3 correction is in \prog{cm\_parsetree.c:ScoreCorrectionNull3()}.
+
+The null3 correction is usually close to zero, for random sequences,
+but becomes a significant quantitative penalty on biased composition
+sequences.  It gets added to the original alignment score to form
+\software{Infernal}'s final bit score.
+
+The null3 score correction is introduced in version 1.0 and was not
+present in any of the 0.x versions of \software{Infernal}. This can
+lead to large differences in the scores reported by 1.0 and previous
+versions. 
+
+By default, the null3 score correction is used by \prog{cmcalibrate,
+cmsearch} and \prog{cmalign}. It can be turned off in any of these
+programs by using the \prog{--no-null3} option (which can only be seen
+in the list of options if \prog{--devhelp} is invoked)). However, be careful,
+the E-values for models that are calibrated with \prog{--no-null3} are
+only valid when \prog{--no-null3} is also used with
+\prog{cmsearch}. Likewise, if \prog{--no-null3} is \emph{not} used
+during calibration, it should not be used during search.
 
 

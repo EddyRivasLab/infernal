@@ -251,6 +251,14 @@ present), and to every state in the split set of the next node. An IR
 state makes a transition to itself and to every state in the split set
 of the next node.
 
+There is one exception to this arrangement of transitions: insert
+states that are immediately before an END node are effectively
+\emph{detached} from the model by making transitions into them
+impossible. This inelegant solution was imposed on the CM model
+building procedure to fix a design flaw that allowed an ambiguity in
+the determination of a parsetree given a structure. The detachment of
+these special insert states removes this ambiguity.
+
 This arrangement of transitions guarantees that (given the guide tree)
 there is unambiguously one and only one parse tree for any given
 individual structure. This is important. The algorithm will find a
