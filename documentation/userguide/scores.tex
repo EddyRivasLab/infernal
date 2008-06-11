@@ -9,6 +9,7 @@ by: the \software{Infernal} raw score, and an E-value. Additionally,
 Rfam models carry a third set of criteria: three expert-calibrated raw
 score cutoffs that the Rfam database maintainers set. How should you
 interpret all this information?
+
 \subsection{Executive summary}
 
 \begin{itemize}
@@ -43,25 +44,25 @@ alert; \software{Infernal} E-values are not perfect. MORE HERE.
   is suggestive of homology. However, as above, be alert; it is
   possible to get artifactually high bit scores simply because of
   highly biased residue composition.
-
+  
 \item For Rfam CMs, you can also examine three other numbers that
-represent bit score thresholds: a TC (trusted cutoff) score, a GA
+  represent bit score thresholds: a TC (trusted cutoff) score, a GA
 (gathering) score, and a NC (noise cutoff) score. The meaning of
 these numbers is described below.
 \end{itemize}
 
 \begin{srefaq}{What does it mean when I have a negative bit score,
-but a good E-value?} The negative bit score means that the sequence is
-not a good match to the model. The good E-value means that it's still
-a better score than you would've expected from a random sequence. The
-usual interpretation is that the sequence is homologous to the
-sequence family modeled by the CM, but it's not ``within'' the family
-- it's a distant homologue of some sort. This happens most often with
-CMs built from ``tight'' families of high sequence identity, aligned
-to remote homologues outside the family. For example, a bacterial SRP
-CM aligned to a eukaryotic SRP may show this behavior - the bit
-score says the sequence isn't a bacterial SRP (correct) but the E-value says
-it is significantly related to the bacterial SRP family (also correct).
+    but a good E-value?} The negative bit score means that the sequence is
+  not a good match to the model. The good E-value means that it's still
+  a better score than you would've expected from a random sequence. The
+  usual interpretation is that the sequence is homologous to the
+  sequence family modeled by the CM, but it's not ``within'' the family
+  - it's a distant homologue of some sort. This happens most often with
+  CMs built from ``tight'' families of high sequence identity, aligned
+  to remote homologues outside the family. For example, a bacterial SRP
+  CM aligned to a eukaryotic SRP may show this behavior - the bit
+  score says the sequence isn't a bacterial SRP (correct) but the E-value says
+  it is significantly related to the bacterial SRP family (also correct).
 \end{srefaq}
 
 \subsection{In more detail: \software{Infernal} bit scores}
@@ -70,8 +71,8 @@ The bit score is a log-odds score in log base two (thus, in units of
 {\em bits}). Specifically, it is:
 
 \[
-	S = \log_2 \frac {P( \mbox{seq} | \mbox{CM})} { P (\mbox{seq} |
-	\mbox{null})}.
+S = \log_2 \frac {P( \mbox{seq} | \mbox{CM})} { P (\mbox{seq} |
+  \mbox{null})}.
 \]
 
 $P( \mbox{seq} | \mbox{CM})$ is the probability of the target
@@ -113,8 +114,8 @@ positives.
 \begin{srefaq}{Why do I get a different E-value when I search
 against a file containing my sequence, than I got when I searched the
 database?} See above. This behavior is shared with BLAST and FASTA
-P-value and E-values, so it should not be unfamiliar to most users.
-However, it can cause consternation: a related phenomenon is that a
+  P-value and E-values, so it should not be unfamiliar to most users.
+  However, it can cause consternation: a related phenomenon is that a
 hit that is marginally significant this year may no longer be
 significant next year, when the database is twice as large. 
 \end{srefaq}
@@ -156,10 +157,10 @@ for the \prog{my.cm} model from the tutorial:
 \user{cmcalibrate --forecast 1 my.cm}
 
 \begin{sreoutput}
-# Forecasting time for 1 processor(s) to calibrate CM 1: trna.5-1
+  # Forecasting time for 1 processor(s) to calibrate CM 1: trna.5-1
 #
-# stage     mod  cfg  alg  expL (Mb)   filN predicted time
-# --------  ---  ---  ---  --------- ------ --------------
+  # stage     mod  cfg  alg  expL (Mb)   filN predicted time
+  # --------  ---  ---  ---  --------- ------ --------------
   exp tail  hmm  glc  vit      15.00      -       00:02:29
   exp tail  hmm  glc  fwd      15.00      -       00:04:59
   exp tail   cm  glc  cyk       1.50      -       00:06:29
@@ -305,7 +306,6 @@ of Inside. You can read more about how we use CYK as a filter in
     goals.
 \end{srefaq}
 
-\begin{comment}
 \subsection{Accuracy of E-values}
 
 The E-values reported by \prog{cmsearch} are not extremely accurate. 
@@ -314,7 +314,7 @@ extremely well. Empirically, local alignment scores returned from local searches
 fit exponential tails fairly well, and glocal alignment scores fit
 less well. Exponential tails are used for E-values because there is
 not an obviously better alternative. We will continue to work on
-making E-values more accurate in future versions of \program{Infernal}.
+making E-values more accurate in future versions of \software{Infernal}.
 
 One important factor in the accuracy of E-values is the GC content
 of the target database. This is because many CMs are
@@ -584,13 +584,14 @@ calculated by optimal alignment of the model to the sequence.
    for the null3 hypothesis, calculated by rescoring the residues
    of the alignment under the null3 model.
 
-\item [$\pi_2$] The log odds of the priors, $\log
-P(N_2)/P(N_1)$. \software{Infernal} arbitrarily assumes that the null3 model is
+\item [$\pi_2$] The log odds of the priors, $\log P(N_2)/P(N_1)$. 
+\software{Infernal} arbitrarily assumes that the null3 model is
 $\frac{1}{32}$ as likely as the main null model, so this factor
 is -5 bits.
 \end{enumerate}
 
-The code that calculates the null3 correction is in \prog{cm\_parsetree.c:ScoreCorrectionNull3()}.
+The code that calculates the null3 correction is in 
+\prog{cm\_parsetree.c:ScoreCorrectionNull3()}.
 
 The null3 correction is usually close to zero, for random sequences,
 but becomes a significant quantitative penalty on biased composition
