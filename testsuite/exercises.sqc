@@ -8,7 +8,6 @@
 1  prep      model/trna           @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
 1  exercise  cmalign:trna/1       @cmalign@ %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/2       @cmalign@ -l %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna/2/qdb   @cmalign@ --qdb -l %TRNA.CM% 3trnas.fa
 2  prep      model/vault          @cmbuild@ -F --rf %VAULT.CM% vault.sto
 2  exercise  cmalign:vault/1      @cmalign@ %VAULT.CM% vault.fa
 2  exercise  cmalign:vault/2      @cmalign@ -l %VAULT.CM% vault.fa
@@ -36,25 +35,16 @@
 
 2  exercise  trna1/rand50/local   @cmscore@ --infile %RAND50% -l %TRNA1.CM% 
 2  exercise  trna2/rand50/local   @cmscore@ --infile %RAND50% -l %TRNA2.CM% 
-2  exercise  trna1/rand50/local/q @cmscore@ --infile %RAND50% --qdb -l %TRNA1.CM% 
-2  exercise  trna2/rand50/local/q @cmscore@ --infile %RAND50% --qdb -l %TRNA2.CM%
 
 1  prep      model/rnaseP         @cmbuild@ --rf -F %RNASEP.CM% rnaseP-eubact.sto
 2  prep      model/srp            @cmbuild@ -F %SRP.CM% srp-euk.sto
 1  exercise  rnaseP/bsu           @cmscore@ --nonbanded --scoreonly --infile rnaseP-bsu.fa %RNASEP.CM%
-2  exercise  rnaseP/bsu/qdb       @cmscore@ --infile rnaseP-bsu.fa --qdb %RNASEP.CM% 
 1  exercise  rnaseP/bsu/local     @cmscore@ --nonbanded --scoreonly --infile rnaseP-bsu.fa -l %RNASEP.CM% 
-2  exercise  rnaseP/bsu/local/qdb @cmscore@ --infile rnaseP-bsu.fa --qdb -l %RNASEP.CM% 
 2  exercise  srp/ffs              @cmscore@ --infile ffs-ecoli.fa %SRP.CM% 
-2  exercise  srp/ffs/qdb          @cmscore@ --infile ffs-ecoli.fa %SRP.CM% 
-2  exercise  srp/ffs/local        @cmscore@ --infile ffs-ecoli.fa --qdb -l %SRP.CM% 
-2  exercise  srp/ffs/local/qdb    @cmscore@ --infile ffs-ecoli.fa --qdb -l %SRP.CM%
 
 3  prep      rand20               @esl-shuffle@ -G -N 20 -L 100 --dna --seed 42 -o %RAND20%
 3  exercise  rnaseP/rand          @cmscore@ --infile %RAND20% %RNASEP.CM% 
-3  exercise  rnaseP/rand/qdb      @cmscore@ --infile %RAND20% --qdb %RNASEP.CM% 
 3  exercise  rnaseP/rand/local    @cmscore@ --infile %RAND20% -l %RNASEP.CM% 
-3  exercise  rnaseP/rand/local/q  @cmscore@ --infile %RAND20% --qdb -l %RNASEP.CM% 
 
 # Exercises of cmsearch 
 1  exercise  trna/search          @cmsearch@ %TRNA.CM% 3trnas.fa
