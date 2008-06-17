@@ -74,7 +74,7 @@ thresholds for the CM over the possible range of final CM bit score
 thresholds. This is done by sampling 10,000 sequences from the CM
 itself and searching them with the CM and HMM. The appropriate HMM bit
 score threshold for a given CM threshold is set as the HMM threshold that
-will recognize 99% of the hits that score above the CM threshold. This
+will recognize 99.5% of the hits that score above the CM threshold. This
 HMM threshold is calculated over the range of reasonable CM
 thresholds. 
 
@@ -473,7 +473,7 @@ where
 is a positive real number less than or equal to 1.0.
 By default,
 .I <x>
-is 0.99.
+is 0.995.
 
 .TP 
 .BI --fil-xhmm " <x>"
