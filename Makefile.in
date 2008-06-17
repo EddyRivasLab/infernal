@@ -184,10 +184,10 @@ check:
 	(cd testsuite; ./sqc -p ../easel/miniapps 4 exercises.sqc . ../src)
 
 # "make devcheck" runs an additional set of development sqc exercises 
-# in the test suite, at level 5. This will take a long time.
+# in the test suite, at level 4. This will take a long time.
 #
 devcheck:
-	(cd testsuite; ./sqc -p ../easel/miniapps 5 dev-exercises.sqc . ../src)
+	(cd testsuite; ./sqc -p ../easel/miniapps 4 dev-exercises.sqc . ../src)
 
 # "make install" installs the programs in BINDIR
 #
