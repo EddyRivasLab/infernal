@@ -1547,8 +1547,12 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
 
   /* update cm->align->opts */
   if(esl_opt_GetBoolean(go, "--gibbs"))       cm->align_opts  |= CM_ALIGN_SAMPLE;
-  if(esl_opt_GetBoolean(go, "--optacc"))      cm->align_opts  |= CM_ALIGN_OPTACC;
-  if(esl_opt_GetBoolean(go, "--nonbanded"))   cm->align_opts  |= CM_ALIGN_SMALL; 
+  else if(esl_opt_GetBoolean(go, "--optacc")) cm->align_opts  |= CM_ALIGN_OPTACC;
+
+  if(esl_opt_GetBoolean(go, "--nonbanded"))   { 
+    cm->align_opts  |= CM_ALIGN_SMALL; 
+    cm->align_opts &= ~CM_ALIGN_OPTACC; /* turn optimal accuracy OFF */
+  }
   else                                        cm->align_opts  |= CM_ALIGN_HBANDED;
 
   if(esl_opt_GetBoolean(go, "--sub"))         cm->align_opts  |= CM_ALIGN_SUB;

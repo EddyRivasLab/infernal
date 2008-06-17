@@ -1174,7 +1174,7 @@ read_binary_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   cm = NULL;
   fp = cmf->f;
   if (feof(fp)) return eslEOF;
-  if (! fread((char *) &magic, sizeof(unsigned int), 1, fp)) return 0;
+  if (! fread((char *) &magic, sizeof(unsigned int), 1, fp)) return eslEOF;
   if (magic != v01magic) goto FAILURE;
   
   if (! tagged_fread(CMIO_M,     (void *) &M,     sizeof(int), 1, fp)) goto FAILURE;
@@ -1322,7 +1322,7 @@ read_binary_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 
   if (*ret_abc == NULL) *ret_abc = abc;	/* pass our new alphabet back to caller, if caller didn't know it already */
   *ret_cm = cm;
-  return 1;
+  return eslOK;
 
  FAILURE:
   if (cm != NULL) FreeCM(cm);
