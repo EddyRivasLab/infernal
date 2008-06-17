@@ -26,8 +26,8 @@
 1  exercise  cmstat:trna/17         @cmstat@  --ga --lfi trna.calibrated.cm 
 1  exercise  cmstat:trna/18         @cmstat@  --tc --gfi trna.calibrated.cm 
 1  exercise  cmstat:trna/19         @cmstat@  --nc --lfi trna.calibrated.cm 
-1  exercise  cmstat:trna/20         @cmstat@  --seqfile trna1415G.sto --lfi -E 0.001 trna.calibrated.cm 
-1  exercise  cmstat:trna/21         @cmstat@  --toponly --seqfile trna1415G.sto --lfi -E 0.001 trna.calibrated.cm 
+1  exercise  cmstat:trna/20         @cmstat@  --seqfile 3trnas.fa --lfi -E 0.001 trna.calibrated.cm 
+1  exercise  cmstat:trna/21         @cmstat@  --toponly --seqfile 3trnas.fa --lfi -E 0.001 trna.calibrated.cm 
 
 1  exercise  cmstat:trna/22         @cmstat@  --search trna.calibrated.cm 
 1  exercise  cmstat:trna/23         @cmstat@  --search --cmL 100 trna.calibrated.cm 
@@ -63,12 +63,12 @@
 1  exercise  cmstat:3.4.12/17         @cmstat@  --ga --lfi 3.4.12.calibrated.cm 
 1  exercise  cmstat:3.4.12/18         @cmstat@  --tc --gfi 3.4.12.calibrated.cm 
 1  exercise  cmstat:3.4.12/19         @cmstat@  --nc --lfi 3.4.12.calibrated.cm 
-1  exercise  cmstat:3.4.12/20         @cmstat@  --seqfile 3.4.12.stk --lfi -E 0.001 3.4.12.calibrated.cm 
-1  exercise  cmstat:3.4.12/21         @cmstat@  --toponly --seqfile 3.4.12.stk --lfi -E 0.001 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/20         @cmstat@  --seqfile 3trnas.fa --lfi -E 0.001 3.4.12.calibrated.cm 
+1  exercise  cmstat:3.4.12/21         @cmstat@  --toponly --seqfile 3trnas.fa --lfi -E 0.001 3.4.12.calibrated.cm 
 
-1  exercise  cmstat:3.4.12/22         @cmstat@  --search 3.4.12.calibrated.cm 
-1  exercise  cmstat:3.4.12/23         @cmstat@  --search --cmL 100 3.4.12.calibrated.cm 
-1  exercise  cmstat:3.4.12/24         @cmstat@  --search --hmmL 1000 3.4.12.calibrated.cm 
+5  exercise  cmstat:3.4.12/22         @cmstat@  --search 3.4.12.calibrated.cm 
+5  exercise  cmstat:3.4.12/23         @cmstat@  --search --cmL 100 3.4.12.calibrated.cm 
+5  exercise  cmstat:3.4.12/24         @cmstat@  --search --hmmL 1000 3.4.12.calibrated.cm 
 
 1  exercise  cmstat:3.4.12/25         @cmstat@  --efile %TMPFILE% --lfi 3.4.12.calibrated.cm 
 1  exercise  cmstat:3.4.12/26         @cmstat@  --bfile %TMPFILE% --lfi 3.4.12.calibrated.cm 

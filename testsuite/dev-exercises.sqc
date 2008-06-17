@@ -263,6 +263,15 @@
 1  exercise  cmalign:trna-b-l/53       @cmalign@  -l --banddump 3 -p %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-p/1          @cmalign@  -l --pebegin --pfend 0.03 %TRNA.CM% 3trnas.fa
 
+# repeat a few of the above excercises with a multi-CM cmfile, (if it works
+# for one, it 'should work' for all
+#
+1  prep      model/3.4.12            @cmbuild@ -F --wnone --rf %3.4.12.CM% 3.4.12.stk
+1  exercise  cmalign:3.4.12-b-l/2      @cmalign@  -l -o %TMPOUT% %3.4.12.CM% 3trnas.fa
+1  exercise  cmalign:3.4.12-b-l/3      @cmalign@  -l -q %3.4.12.CM% 3trnas.fa
+1  exercise  cmalign:3.4.12-b/7        @cmalign@  --cyk %3.4.12.CM% 3trnas.fa
+1  exercise  cmalign:3.4.12-b/8        @cmalign@  --viterbi %3.4.12.CM% 3trnas.fa
+#
 ##############################################################################
 # Exercises of cmbuild.
 #
@@ -374,7 +383,6 @@
 1  exercise  cmemit:trna/4        @cmemit@  -c %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/5        @cmemit@  -s 33 %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/6        @cmemit@  -n 1000 %TRNA.CM% %TMPOUT%
-1  exercise  cmemit:trna/8        @cmemit@  -q %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/10       @cmemit@  --rna %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/11       @cmemit@  --dna %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/12       @cmemit@  --tfile %TMPTFILE% %TRNA.CM% %TMPOUT%
@@ -390,7 +398,6 @@
 1  exercise  cmemit:trna/20       @cmemit@ -l   -c %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/21       @cmemit@ -l   -s 33 %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/22       @cmemit@ -l   -n 1000 %TRNA.CM% %TMPOUT%
-1  exercise  cmemit:trna/24       @cmemit@ -l   -q %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/26       @cmemit@ -l   --rna %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/27       @cmemit@ -l   --dna %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/28       @cmemit@ -l   --tfile %TMPTFILE% %TRNA.CM% %TMPOUT%
@@ -408,7 +415,6 @@
 1  exercise  cmemit:trna/36       @cmemit@  -c %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/37       @cmemit@  -s 33 %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/38       @cmemit@  -n 1000 %TRNA.CM% %TMPOUT%
-1  exercise  cmemit:trna/40       @cmemit@  -q %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/42       @cmemit@  --rna %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/43       @cmemit@  --dna %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/44       @cmemit@  --tfile %TMPTFILE% %TRNA.CM% %TMPOUT%
@@ -424,7 +430,6 @@
 1  exercise  cmemit:trna/52       @cmemit@ -l   -c %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/53       @cmemit@ -l   -s 33 %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/54       @cmemit@ -l   -n 1000 %TRNA.CM% %TMPOUT%
-1  exercise  cmemit:trna/56       @cmemit@ -l   -q %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/58       @cmemit@ -l   --rna %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/59       @cmemit@ -l   --dna %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/60       @cmemit@ -l   --tfile %TMPTFILE% %TRNA.CM% %TMPOUT%
@@ -443,7 +448,6 @@
 1  exercise  cmemit:3.4.12/4        @cmemit@  -c %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/5        @cmemit@  -s 33 %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/6        @cmemit@  -n 1000 %3.4.12.CM% %TMPOUT%
-1  exercise  cmemit:3.4.12/8        @cmemit@  -q %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/10       @cmemit@  --rna %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/11       @cmemit@  --dna %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/12       @cmemit@  --tfile %TMPTFILE% %3.4.12.CM% %TMPOUT%
@@ -459,7 +463,6 @@
 1  exercise  cmemit:3.4.12/20       @cmemit@ -l   -c %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/21       @cmemit@ -l   -s 33 %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/22       @cmemit@ -l   -n 1000 %3.4.12.CM% %TMPOUT%
-1  exercise  cmemit:3.4.12/24       @cmemit@ -l   -q %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/26       @cmemit@ -l   --rna %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/27       @cmemit@ -l   --dna %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/28       @cmemit@ -l   --tfile %TMPTFILE% %3.4.12.CM% %TMPOUT%
@@ -477,7 +480,6 @@
 1  exercise  cmemit:3.4.12/36       @cmemit@  -c %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/37       @cmemit@  -s 33 %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/38       @cmemit@  -n 1000 %3.4.12.CM% %TMPOUT%
-1  exercise  cmemit:3.4.12/40       @cmemit@  -q %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/42       @cmemit@  --rna %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/43       @cmemit@  --dna %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/44       @cmemit@  --tfile %TMPTFILE% %3.4.12.CM% %TMPOUT%
@@ -493,7 +495,6 @@
 1  exercise  cmemit:3.4.12/52       @cmemit@ -l   -c %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/53       @cmemit@ -l   -s 33 %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/54       @cmemit@ -l   -n 1000 %3.4.12.CM% %TMPOUT%
-1  exercise  cmemit:3.4.12/56       @cmemit@ -l   -q %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/58       @cmemit@ -l   --rna %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/59       @cmemit@ -l   --dna %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/60       @cmemit@ -l   --tfile %TMPTFILE% %3.4.12.CM% %TMPOUT%
@@ -517,16 +518,22 @@
 1  exercise  cmscore:trna/7        @cmscore@  --emit %TRNA.CM% 
 1  exercise  cmscore:trna/8        @cmscore@  --random %TRNA.CM% 
 1  exercise  cmscore:trna/9        @cmscore@  --infile 3trnas.fa %TRNA.CM% 
-1  exercise  cmscore:trna/10        @cmscore@  --outfile %TMPOUT% %TRNA.CM% 
-1  exercise  cmscore:trna/11        @cmscore@  --random --Lmin 73 --Lmax 75 %TRNA.CM% 
-1  exercise  cmscore:trna/12        @cmscore@  --emit --pad %TRNA.CM% 
+1  exercise  cmscore:trna/10       @cmscore@  --outfile %TMPOUT% %TRNA.CM% 
+1  exercise  cmscore:trna/11       @cmscore@  --random --Lmin 73 --Lmax 75 %TRNA.CM% 
+1  exercise  cmscore:trna/12       @cmscore@  --emit --search --pad %TRNA.CM% 
 
 1  exercise  cmscore:trna/13        @cmscore@  --hbanded %TRNA.CM% 
 1  exercise  cmscore:trna/14        @cmscore@  --tau 2E-5 %TRNA.CM% 
+1  exercise  cmscore:trna/14b       @cmscore@  --aln2bands %TRNA.CM% 
 1  exercise  cmscore:trna/15        @cmscore@  --hsafe %TRNA.CM% 
-1  exercise  cmscore:trna/16        @cmscore@  --std %TRNA.CM% 
-1  exercise  cmscore:trna/17        @cmscore@  --hmmviterbi %TRNA.CM% 
-1  exercise  cmscore:trna/18        @cmscore@  --std --scoreonly %TRNA.CM% 
+1  exercise  cmscore:trna/16        @cmscore@  --nonbanded %TRNA.CM% 
+1  exercise  cmscore:trna/17        @cmscore@  --viterbi %TRNA.CM% 
+
+1  exercise  cmscore:trna-s/1       @cmscore@  --search %TRNA.CM% 
+1  exercise  cmscore:trna-s/2       @cmscore@  --search --inside %TRNA.CM% 
+1  exercise  cmscore:trna-s/3       @cmscore@  --search --forward %TRNA.CM% 
+
+1  exercise  cmscore:trna/18        @cmscore@  --nonbanded --scoreonly %TRNA.CM% 
 5  exercise  cmscore:trna/19        @cmscore@  --qdb %TRNA.CM% 
 5  exercise  cmscore:trna/20        @cmscore@  --qdbsmall %TRNA.CM% 
 5  exercise  cmscore:trna/21        @cmscore@  --qdbboth %TRNA.CM% 
@@ -538,31 +545,61 @@
 1  exercise  cmscore:trna/27        @cmscore@  --mxsize 1024 %TRNA.CM% 
 
 # repeat above block with -l enabled 
-1  exercise  cmscore:trna/1        @cmscore@  -l %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l -n 7 %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l -s 33 %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l -i %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l -q %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l --iins %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l --emit %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l --random %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l --infile 3trnas.fa %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l --outfile %TMPOUT% %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l --hbanded %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l --tau 2E-5 %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l --hsafe %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l --std %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l --hmmviterbi %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l --std --scoreonly %TRNA.CM% 
-5  exercise  cmscore:trna/1        @cmscore@  -l --qdb %TRNA.CM% 
-5  exercise  cmscore:trna/1        @cmscore@  -l --qdbsmall %TRNA.CM% 
-5  exercise  cmscore:trna/1        @cmscore@  -l --qdbboth %TRNA.CM% 
-5  exercise  cmscore:trna/1        @cmscore@  -l --beta 1E-5 --qdbboth %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l --taus 4 --taue 10 %TRNA.CM% 
-5  exercise  cmscore:trna/1        @cmscore@  -l --qdb --betas 4 --betae 10 %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l --regress %TMPOUT% %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l --tfile %TMPOUT% %TRNA.CM% 
-1  exercise  cmscore:trna/1        @cmscore@  -l --mxsize 1024 %TRNA.CM% 
+#
+1  prep      model/trna              @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
+1  exercise  cmscore:trna-l/1        @cmscore@ -l %TRNA.CM% 
+1  exercise  cmscore:trna-l/2        @cmscore@ -l -l -n 7 %TRNA.CM% 
+1  exercise  cmscore:trna-l/3        @cmscore@ -l -s 33 %TRNA.CM% 
+1  exercise  cmscore:trna-l/4        @cmscore@ -l -a %TRNA.CM% 
+1  exercise  cmscore:trna-l/5        @cmscore@ -l --sub %TRNA.CM% 
+1  exercise  cmscore:trna-l/6        @cmscore@ -l --mxsize 333 %TRNA.CM% 
+
+1  exercise  cmscore:trna-l/7        @cmscore@ -l --emit %TRNA.CM% 
+1  exercise  cmscore:trna-l/8        @cmscore@ -l --random %TRNA.CM% 
+1  exercise  cmscore:trna-l/9        @cmscore@ -l --infile 3trnas.fa %TRNA.CM% 
+1  exercise  cmscore:trna-l/10       @cmscore@ -l --outfile %TMPOUT% %TRNA.CM% 
+1  exercise  cmscore:trna-l/11       @cmscore@ -l --random --Lmin 73 --Lmax 75 %TRNA.CM% 
+1  exercise  cmscore:trna-l/12       @cmscore@ -l --emit --search --pad %TRNA.CM% 
+
+1  exercise  cmscore:trna-l/13        @cmscore@ -l --hbanded %TRNA.CM% 
+1  exercise  cmscore:trna-l/14        @cmscore@ -l --tau 2E-5 %TRNA.CM% 
+1  exercise  cmscore:trna-l/14b       @cmscore@ -l --aln2bands %TRNA.CM% 
+1  exercise  cmscore:trna-l/15        @cmscore@ -l --hsafe %TRNA.CM% 
+1  exercise  cmscore:trna-l/16        @cmscore@ -l --nonbanded %TRNA.CM% 
+1  exercise  cmscore:trna-l/17        @cmscore@ -l --viterbi %TRNA.CM% 
+
+1  exercise  cmscore:trna-s/1         @cmscore@ -l --search %TRNA.CM% 
+1  exercise  cmscore:trna-s/2         @cmscore@ -l --search --inside %TRNA.CM% 
+1  exercise  cmscore:trna-s/3         @cmscore@ -l --search --forward %TRNA.CM% 
+
+1  exercise  cmscore:trna-l/18        @cmscore@ -l --nonbanded --scoreonly %TRNA.CM% 
+5  exercise  cmscore:trna-l/19        @cmscore@ -l --qdb %TRNA.CM% 
+5  exercise  cmscore:trna-l/20        @cmscore@ -l --qdbsmall %TRNA.CM% 
+5  exercise  cmscore:trna-l/21        @cmscore@ -l --qdbboth %TRNA.CM% 
+5  exercise  cmscore:trna-l/22        @cmscore@ -l --beta 1E-5 --qdbboth %TRNA.CM% 
+1  exercise  cmscore:trna-l/23        @cmscore@ -l --taus 4 --taue 10 %TRNA.CM% 
+5  exercise  cmscore:trna-l/24        @cmscore@ -l --qdb --betas 4 --betae 10 %TRNA.CM% 
+1  exercise  cmscore:trna-l/25        @cmscore@ -l --regress %TMPOUT% %TRNA.CM% 
+1  exercise  cmscore:trna-l/26        @cmscore@ -l --tfile %TMPOUT% %TRNA.CM% 
+1  exercise  cmscore:trna-l/27        @cmscore@ -l --mxsize 1024 %TRNA.CM% 
+
+# repeat a few of the above excercises with a binary CM, (if it works
+# for one, it 'should work' for all
+#
+1  prep      model/trna            @cmbuild@ -F --rf --wnone --binary %TRNA.CM% trna1415G.sto
+1  exercise  cmscore:trna-l/1      @cmscore@  %TRNA.CM% 
+1  exercise  cmscore:trna-l/2      @cmscore@  -n 7 %TRNA.CM% 
+1  exercise  cmscore:trna-l/9        @cmscore@  --infile 3trnas.fa %TRNA.CM% 
+1  exercise  cmscore:trna-l/12       @cmscore@  --emit --search --pad %TRNA.CM% 
+
+# repeat a few of the above excercises with a multi-CM cmfile, (if it works
+# for one, it 'should work' for all
+#
+1  prep      model/3.4.12             @cmbuild@ -F --wnone --rf %3.4.12.CM% 3.4.12.stk
+1  exercise  cmscore:3.4.12-l/1      @cmscore@  %3.4.12.CM% 
+1  exercise  cmscore:3.4.12-l/2      @cmscore@  -n 7 %3.4.12.CM% 
+1  exercise  cmscore:3.4.12-l/12       @cmscore@  --emit --search --pad %3.4.12.CM% 
+
 
 
 ##############################################################################

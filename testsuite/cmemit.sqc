@@ -12,7 +12,6 @@
 1  exercise  cmemit:trna/4        @cmemit@  -c %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/5        @cmemit@  -s 33 %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/6        @cmemit@  -n 1000 %TRNA.CM% %TMPOUT%
-1  exercise  cmemit:trna/8        @cmemit@  -q %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/10       @cmemit@  --rna %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/11       @cmemit@  --dna %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/12       @cmemit@  --tfile %TMPTFILE% %TRNA.CM% %TMPOUT%
@@ -28,7 +27,6 @@
 1  exercise  cmemit:trna/20       @cmemit@ -l   -c %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/21       @cmemit@ -l   -s 33 %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/22       @cmemit@ -l   -n 1000 %TRNA.CM% %TMPOUT%
-1  exercise  cmemit:trna/24       @cmemit@ -l   -q %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/26       @cmemit@ -l   --rna %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/27       @cmemit@ -l   --dna %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/28       @cmemit@ -l   --tfile %TMPTFILE% %TRNA.CM% %TMPOUT%
@@ -46,7 +44,6 @@
 1  exercise  cmemit:trna/36       @cmemit@  -c %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/37       @cmemit@  -s 33 %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/38       @cmemit@  -n 1000 %TRNA.CM% %TMPOUT%
-1  exercise  cmemit:trna/40       @cmemit@  -q %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/42       @cmemit@  --rna %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/43       @cmemit@  --dna %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/44       @cmemit@  --tfile %TMPTFILE% %TRNA.CM% %TMPOUT%
@@ -62,7 +59,6 @@
 1  exercise  cmemit:trna/52       @cmemit@ -l   -c %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/53       @cmemit@ -l   -s 33 %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/54       @cmemit@ -l   -n 1000 %TRNA.CM% %TMPOUT%
-1  exercise  cmemit:trna/56       @cmemit@ -l   -q %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/58       @cmemit@ -l   --rna %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/59       @cmemit@ -l   --dna %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/60       @cmemit@ -l   --tfile %TMPTFILE% %TRNA.CM% %TMPOUT%
@@ -81,7 +77,6 @@
 1  exercise  cmemit:3.4.12/4        @cmemit@  -c %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/5        @cmemit@  -s 33 %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/6        @cmemit@  -n 1000 %3.4.12.CM% %TMPOUT%
-1  exercise  cmemit:3.4.12/8        @cmemit@  -q %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/10       @cmemit@  --rna %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/11       @cmemit@  --dna %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/12       @cmemit@  --tfile %TMPTFILE% %3.4.12.CM% %TMPOUT%
@@ -97,7 +92,6 @@
 1  exercise  cmemit:3.4.12/20       @cmemit@ -l   -c %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/21       @cmemit@ -l   -s 33 %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/22       @cmemit@ -l   -n 1000 %3.4.12.CM% %TMPOUT%
-1  exercise  cmemit:3.4.12/24       @cmemit@ -l   -q %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/26       @cmemit@ -l   --rna %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/27       @cmemit@ -l   --dna %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/28       @cmemit@ -l   --tfile %TMPTFILE% %3.4.12.CM% %TMPOUT%
@@ -115,7 +109,6 @@
 1  exercise  cmemit:3.4.12/36       @cmemit@  -c %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/37       @cmemit@  -s 33 %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/38       @cmemit@  -n 1000 %3.4.12.CM% %TMPOUT%
-1  exercise  cmemit:3.4.12/40       @cmemit@  -q %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/42       @cmemit@  --rna %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/43       @cmemit@  --dna %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/44       @cmemit@  --tfile %TMPTFILE% %3.4.12.CM% %TMPOUT%
@@ -131,7 +124,6 @@
 1  exercise  cmemit:3.4.12/52       @cmemit@ -l   -c %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/53       @cmemit@ -l   -s 33 %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/54       @cmemit@ -l   -n 1000 %3.4.12.CM% %TMPOUT%
-1  exercise  cmemit:3.4.12/56       @cmemit@ -l   -q %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/58       @cmemit@ -l   --rna %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/59       @cmemit@ -l   --dna %3.4.12.CM% %TMPOUT%
 1  exercise  cmemit:3.4.12/60       @cmemit@ -l   --tfile %TMPTFILE% %3.4.12.CM% %TMPOUT%

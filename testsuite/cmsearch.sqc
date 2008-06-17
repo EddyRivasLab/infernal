@@ -16,11 +16,11 @@
 1  exercise  cmsearch:trna/6        @cmsearch@  --devhelp 
 1  exercise  cmsearch:trna-f/1      @cmsearch@  %TRNA.CM% 3trnas.embl
 1  exercise  cmsearch:trna-f/2      @cmsearch@  %TRNA.CM% 3trnas.gb
-1  exercise  cmsearch:trna-f/3      @cmsearch@  --informat fasta #%TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna-f/4      @cmsearch@  --informat dDBj #%TRNA.CM% 3trnas.gb
-1  exercise  cmsearch:trna-f/5      @cmsearch@  --informat GENbank #%TRNA.CM% 3trnas.gb
-1  exercise  cmsearch:trna-f/6      @cmsearch@  --informat uniProt #%TRNA.CM% 3trnas.embl
-1  exercise  cmsearch:trna-f/7      @cmsearch@  --informat embL #%TRNA.CM% 3trnas.embl
+1  exercise  cmsearch:trna-f/3      @cmsearch@  --informat fasta %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna-f/4      @cmsearch@  --informat dDBj %TRNA.CM% 3trnas.gb
+1  exercise  cmsearch:trna-f/5      @cmsearch@  --informat GENbank %TRNA.CM% 3trnas.gb
+1  exercise  cmsearch:trna-f/6      @cmsearch@  --informat uniProt %TRNA.CM% 3trnas.embl
+1  exercise  cmsearch:trna-f/7      @cmsearch@  --informat embL %TRNA.CM% 3trnas.embl
 
 1  exercise  cmsearch:trna/7        @cmsearch@  --inside %TRNA.CM% 1k.fa
 1  exercise  cmsearch:trna/8        @cmsearch@  --cyk %TRNA.CM% 1k.fa
@@ -46,7 +46,7 @@
 1  exercise  cmsearch:trna/23        @cmsearch@  --fil-T-hmm -2 %TRNA.CM% 1k.fa
 
 1  exercise  cmsearch:trna/24        @cmsearch@  --noalign %TRNA.CM% 1k.fa
-1  exercise  cmsearch:trna/25        @cmsearch@  --addx %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/25        @cmsearch@  -x %TRNA.CM% 1k.fa
 1  exercise  cmsearch:trna/26        @cmsearch@  --aln-hbanded %TRNA.CM% 1k.fa
 1  exercise  cmsearch:trna/27        @cmsearch@  --aln-hbanded -p %TRNA.CM% 1k.fa
 1  exercise  cmsearch:trna/28        @cmsearch@  --aln-optacc --aln-hbanded %TRNA.CM% 1k.fa
@@ -89,7 +89,7 @@
 2  exercise  cmsearch:3.4.12/23        @cmsearch@  --fil-T-hmm -2 %3.4.12.CM% 1k.fa
 
 2  exercise  cmsearch:3.4.12/24        @cmsearch@  --noalign %3.4.12.CM% 1k.fa
-2  exercise  cmsearch:3.4.12/25        @cmsearch@  --addx %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/25        @cmsearch@  -x %3.4.12.CM% 1k.fa
 2  exercise  cmsearch:3.4.12/26        @cmsearch@  --aln-hbanded %3.4.12.CM% 1k.fa
 2  exercise  cmsearch:3.4.12/27        @cmsearch@  --aln-hbanded -p %3.4.12.CM% 1k.fa
 2  exercise  cmsearch:3.4.12/28        @cmsearch@  --aln-optacc --aln-hbanded %3.4.12.CM% 1k.fa

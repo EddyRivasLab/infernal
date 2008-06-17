@@ -260,3 +260,11 @@
 1  exercise  cmalign:trna-b-l/53       @cmalign@  -l --banddump 3 -p %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-p/1          @cmalign@  -l --pebegin --pfend 0.03 %TRNA.CM% 3trnas.fa
 
+# repeat a few of the above excercises with a multi-CM cmfile, (if it works
+# for one, it 'should work' for all
+#
+1  prep      model/3.4.12            @cmbuild@ -F --wnone --rf %3.4.12.CM% 3.4.12.stk
+1  exercise  cmalign:3.4.12/1        @cmalign@  -l -o %TMPOUT% %3.4.12.CM% 3trnas.fa
+1  exercise  cmalign:3.4.12/2        @cmalign@  -l -q %3.4.12.CM% 3trnas.fa
+1  exercise  cmalign:3.4.12/3        @cmalign@  --cyk %3.4.12.CM% 3trnas.fa
+1  exercise  cmalign:3.4.12/4        @cmalign@  --viterbi %3.4.12.CM% 3trnas.fa
