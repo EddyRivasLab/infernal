@@ -37,9 +37,11 @@ MANSUFFIX = 1
 #
 CC     = @CC@
 CFLAGS = @CFLAGS@
+SIMDFLAGS = @SIMD_CFLAGS@
 
 # Flags related to conditional install of rigorous filters
 RIGFILTERS = @RIGFILTERS@
+
 
 #######
 ## You should not need to modify below this line.
@@ -174,13 +176,18 @@ dist:
 	(cd ..;	tar cvf ${BASENAME}-${RELEASE}.tar ${BASENAME}-${RELEASE})
 	(cd ..; $(COMPRESS) ${BASENAME}-$(RELEASE).tar)
 
-
 # "make check" runs a set of sqc exercises in the test suite, at level 4.
 # To run faster, reduce the level (level 1 runs a few tests, level 4
 # runs a lot). 
 #
 check:
 	(cd testsuite; ./sqc -p ../easel/miniapps 4 exercises.sqc . ../src)
+
+# "make devcheck" runs an additional set of development sqc exercises 
+# in the test suite, at level 5. This will take a long time.
+#
+devcheck:
+	(cd testsuite; ./sqc -p ../easel/miniapps 5 dev-exercises.sqc . ../src)
 
 # "make install" installs the programs in BINDIR
 #
