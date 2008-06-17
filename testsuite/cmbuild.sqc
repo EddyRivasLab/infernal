@@ -43,8 +43,6 @@
 1  exercise  cmbuild:se/36         @cmbuild@ -F --fins --refine %TMPOUT% %SE.CM% se.stk 
 1  exercise  cmbuild:se/37         @cmbuild@ -F -v --refine %TMPOUT% %SE.CM% se.stk 
 1  exercise  cmbuild:se/38         @cmbuild@ -F --rdump %TMPRDUMP% --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/39         @cmbuild@ -F --rna %SE.CM% se.stk 
-1  exercise  cmbuild:se/40         @cmbuild@ -F --dna %SE.CM% se.dna.stk 
 1  exercise  cmbuild:se/41         @cmbuild@ --nobalance -F %SE.CM% se.stk 
 1  exercise  cmbuild:se/42         @cmbuild@ --regress %TMPOUT% -F %SE.CM% se.stk 
 1  exercise  cmbuild:se/43         @cmbuild@ --nodetach -F %SE.CM% se.stk 
@@ -93,8 +91,6 @@
 1  exercise  cmbuild:3.4.12/36         @cmbuild@ -F --fins --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
 1  exercise  cmbuild:3.4.12/37         @cmbuild@ -F -v --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
 1  exercise  cmbuild:3.4.12/38         @cmbuild@ -F --rdump %TMPRDUMP% --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/39         @cmbuild@ -F --rna %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/40         @cmbuild@ -F --dna %3.4.12.CM% 3.4.12.dna.stk 
 1  exercise  cmbuild:3.4.12/41         @cmbuild@ --nobalance -F %3.4.12.CM% 3.4.12.stk 
 1  exercise  cmbuild:3.4.12/42         @cmbuild@ --regress %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
 1  exercise  cmbuild:3.4.12/43         @cmbuild@ --nodetach -F %3.4.12.CM% 3.4.12.stk 

@@ -90,7 +90,7 @@ main(int argc, char **argv)
    */
 
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
-  if (!(CMFileRead(cmfp, &abc, &cm)))            cm_Fail("Failed to read CM");
+  if ((CMFileRead(cmfp, NULL, &abc, &cm)) != eslOK) cm_Fail("Failed to read CM");
   CMFileClose(cmfp);
 
   /* Do two band calculations with the different W's.

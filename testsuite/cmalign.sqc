@@ -9,21 +9,21 @@
 1  exercise  cmalign:trna/1        @cmalign@  %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/2        @cmalign@  -o %TMPOUT% %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/3        @cmalign@  -q %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna/5        @cmalign@  -p %TRNA.CM% 3trnas.fa
-# INFORMAT ISSUE 1  exercise  cmalign:trna/5        @cmalign@  %TRNA.CM% 3trnas.embl
-# INFORMAT ISSUE 1  exercise  cmalign:trna/5        @cmalign@  %TRNA.CM% 3trnas.gb
-# INFORMAT ISSUE 1  exercise  cmalign:trna/6        @cmalign@  %TRNA.CM% 10trnas.stk
-# INFORMAT ISSUE 1  exercise  cmalign:trna/7        @cmalign@  --informat fastA %TRNA.CM% 3trnas.fa
-# INFORMAT ISSUE 1  exercise  cmalign:trna/5        @cmalign@  --informat embl %TRNA.CM% 3trnas.embl
-# INFORMAT ISSUE 1  exercise  cmalign:trna/5        @cmalign@  --informat unipRot %TRNA.CM% 3trnas.embl
-# INFORMAT ISSUE 1  exercise  cmalign:trna/5        @cmalign@  --informat GENBank %TRNA.CM% 3trnas.gb
-# INFORMAT ISSUE 1  exercise  cmalign:trna/5        @cmalign@  --informat ddbj %TRNA.CM% 3trnas.gb
-# INFORMAT ISSUE 1  exercise  cmalign:trna/5        @cmalign@  --informat stockholm %TRNA.CM% 10trnas.stk
-1  exercise  cmalign:trna/6        @cmalign@  --optacc %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna/7        @cmalign@  --cyk %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna/4        @cmalign@  -p %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna/5        @cmalign@  %TRNA.CM% 3trnas.embl
+1  exercise  cmalign:trna/6        @cmalign@  %TRNA.CM% 3trnas.gb
+
+1  exercise  cmalign:trna-f/1        @cmalign@  --informat fastA %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-f/2        @cmalign@  --informat embl %TRNA.CM% 3trnas.embl
+1  exercise  cmalign:trna-f/3        @cmalign@  --informat unipRot %TRNA.CM% 3trnas.embl
+1  exercise  cmalign:trna-f/4        @cmalign@  --informat GENBank %TRNA.CM% 3trnas.gb
+1  exercise  cmalign:trna-f/5        @cmalign@  --informat ddbj %TRNA.CM% 3trnas.gb
+
+1  exercise  cmalign:trna/6b       @cmalign@  --optacc %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna/7b       @cmalign@  --cyk %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/8        @cmalign@  --viterbi %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/9        @cmalign@  --sub %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna/10       @cmalign@  --small --cyk %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna/10       @cmalign@  --small --nonbanded --cyk %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/11       @cmalign@  --hbanded %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/12       @cmalign@  --nonbanded %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/13       @cmalign@  --nonbanded --cyk %TRNA.CM% 3trnas.fa
@@ -41,7 +41,7 @@
 1  exercise  cmalign:trna/25       @cmalign@  --tau 5E-2 -p %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/26       @cmalign@  --tau 5E-2 -p --onepost %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/27       @cmalign@  --tau 5E-2 --sub %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna/28       @cmalign@  --tau 5E-2 --cyk --small %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna/28       @cmalign@  --tau 5E-2 --sub --cyk %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/29       @cmalign@ --mxsize 333 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/30       @cmalign@ --rna %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/31       @cmalign@ --dna %TRNA.CM% 3trnas.fa
@@ -77,19 +77,19 @@
 1  exercise  cmalign:trna-l/2        @cmalign@  -l -o %TMPOUT% %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/3        @cmalign@  -l -q %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/5        @cmalign@  -l -p %TRNA.CM% 3trnas.fa
-# INFORMAT ISSUE 1  exercise  cmalign:trna-l/5        @cmalign@  -l %TRNA.CM% 3trnas.embl
-# INFORMAT ISSUE 1  exercise  cmalign:trna-l/5        @cmalign@  -l %TRNA.CM% 3trnas.gb
-# INFORMAT ISSUE 1  exercise  cmalign:trna-l/6        @cmalign@  -l %TRNA.CM% 10trnas.stk
-# INFORMAT ISSUE 1  exercise  cmalign:trna-l/7        @cmalign@  -l --informat fastA %TRNA.CM% 3trnas.fa
-# INFORMAT ISSUE 1  exercise  cmalign:trna-l/5        @cmalign@  -l --informat embl %TRNA.CM% 3trnas.embl
-# INFORMAT ISSUE 1  exercise  cmalign:trna-l/5        @cmalign@  -l --informat unipRot %TRNA.CM% 3trnas.embl
-# INFORMAT ISSUE 1  exercise  cmalign:trna-l/5        @cmalign@  -l --informat GENBank %TRNA.CM% 3trnas.gb
-# INFORMAT ISSUE 1  exercise  cmalign:trna-l/5        @cmalign@  -l --informat ddbj %TRNA.CM% 3trnas.gb
-# INFORMAT ISSUE 1  exercise  cmalign:trna-l/5        @cmalign@  -l --informat stockholm %TRNA.CM% 10trnas.stk
-1  exercise  cmalign:trna-l/6        @cmalign@  -l --optacc %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-l/5        @cmalign@  -l %TRNA.CM% 3trnas.embl
+1  exercise  cmalign:trna-l/5        @cmalign@  -l %TRNA.CM% 3trnas.gb
+
+1  exercise  cmalign:trna-f/1        @cmalign@  -l --informat fastA %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-f/2        @cmalign@  -l --informat embl %TRNA.CM% 3trnas.embl
+1  exercise  cmalign:trna-f/3        @cmalign@  -l --informat unipRot %TRNA.CM% 3trnas.embl
+1  exercise  cmalign:trna-f/4        @cmalign@  -l --informat GENBank %TRNA.CM% 3trnas.gb
+1  exercise  cmalign:trna-f/5        @cmalign@  -l --informat ddbj %TRNA.CM% 3trnas.gb
+
+1  exercise  cmalign:trna-l/6b       @cmalign@  -l --optacc %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/7        @cmalign@  -l --cyk %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/8        @cmalign@  -l --viterbi %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-l/10       @cmalign@  -l --small --cyk %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-l/10       @cmalign@  -l --small --cyk --nonbanded %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/11       @cmalign@  -l --hbanded %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/12       @cmalign@  -l --nonbanded %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/13       @cmalign@  -l --nonbanded --cyk %TRNA.CM% 3trnas.fa
@@ -105,7 +105,6 @@
 1  exercise  cmalign:trna-l/24       @cmalign@  -l --tau 5E-2 --viterbi %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/25       @cmalign@  -l --tau 5E-2 -p %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/26       @cmalign@  -l --tau 5E-2 -p --onepost %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-l/28       @cmalign@  -l --tau 5E-2 --cyk --small %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/29       @cmalign@  -l --mxsize 333 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/30       @cmalign@  -l --rna %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/31       @cmalign@  -l --dna %TRNA.CM% 3trnas.fa
@@ -140,20 +139,20 @@
 1  exercise  cmalign:trna-b/2        @cmalign@  -o %TMPOUT% %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/3        @cmalign@  -q %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/5        @cmalign@  -p %TRNA.CM% 3trnas.fa
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b/5        @cmalign@  %TRNA.CM% 3trnas.embl
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b/5        @cmalign@  %TRNA.CM% 3trnas.gb
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b/6        @cmalign@  %TRNA.CM% 10trnas.stk
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b/7        @cmalign@  --informat fastA %TRNA.CM% 3trnas.fa
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b/5        @cmalign@  --informat embl %TRNA.CM% 3trnas.embl
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b/5        @cmalign@  --informat unipRot %TRNA.CM% 3trnas.embl
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b/5        @cmalign@  --informat GENBank %TRNA.CM% 3trnas.gb
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b/5        @cmalign@  --informat ddbj %TRNA.CM% 3trnas.gb
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b/5        @cmalign@  --informat stockholm %TRNA.CM% 10trnas.stk
+
+1  exercise  cmalign:trna-bf/1        @cmalign@  %TRNA.CM% 3trnas.embl
+1  exercise  cmalign:trna-bf/2        @cmalign@  %TRNA.CM% 3trnas.gb
+1  exercise  cmalign:trna-bf/3        @cmalign@  --informat fastA %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-bf/4        @cmalign@  --informat embl %TRNA.CM% 3trnas.embl
+1  exercise  cmalign:trna-bf/5        @cmalign@  --informat unipRot %TRNA.CM% 3trnas.embl
+1  exercise  cmalign:trna-bf/6        @cmalign@  --informat GENBank %TRNA.CM% 3trnas.gb
+1  exercise  cmalign:trna-bf/7        @cmalign@  --informat ddbj %TRNA.CM% 3trnas.gb
+
 1  exercise  cmalign:trna-b/6        @cmalign@  --optacc %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/7        @cmalign@  --cyk %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/8        @cmalign@  --viterbi %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/9        @cmalign@  --sub %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-b/10       @cmalign@  --small --cyk %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b/10       @cmalign@  --small --nonbanded --cyk %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/11       @cmalign@  --hbanded %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/12       @cmalign@  --nonbanded %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/13       @cmalign@  --nonbanded --cyk %TRNA.CM% 3trnas.fa
@@ -162,7 +161,7 @@
 1  exercise  cmalign:trna-b/16       @cmalign@  --nonbanded -p %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/17       @cmalign@  --nonbanded -p --onepost %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/18       @cmalign@  --nonbanded --sub %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-b/19       @cmalign@  --nonbanded --cyk --small %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b/19       @cmalign@  --cyk --small --nonbanded %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/20       @cmalign@  --nonbanded --inside %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/21       @cmalign@  --nonbanded --checkpost -p %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/22       @cmalign@  --tau 5E-2 --cyk %TRNA.CM% 3trnas.fa
@@ -171,7 +170,7 @@
 1  exercise  cmalign:trna-b/25       @cmalign@  --tau 5E-2 -p %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/26       @cmalign@  --tau 5E-2 -p --onepost %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/27       @cmalign@  --tau 5E-2 --sub %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-b/28       @cmalign@  --tau 5E-2 --cyk --small %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b/28       @cmalign@  --tau 5E-2 --cyk --sub %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/29       @cmalign@ --mxsize 333 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/30       @cmalign@ --rna %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/31       @cmalign@ --dna %TRNA.CM% 3trnas.fa
@@ -206,20 +205,20 @@
 1  exercise  cmalign:trna-b-l/1        @cmalign@  -l %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/2        @cmalign@  -l -o %TMPOUT% %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/3        @cmalign@  -l -q %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-b-l/5        @cmalign@  -l -p %TRNA.CM% 3trnas.fa
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b-l/5        @cmalign@  -l %TRNA.CM% 3trnas.embl
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b-l/5        @cmalign@  -l %TRNA.CM% 3trnas.gb
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b-l/6        @cmalign@  -l %TRNA.CM% 10trnas.stk
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b-l/7        @cmalign@  -l --informat fastA %TRNA.CM% 3trnas.fa
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b-l/5        @cmalign@  -l --informat embl %TRNA.CM% 3trnas.embl
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b-l/5        @cmalign@  -l --informat unipRot %TRNA.CM% 3trnas.embl
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b-l/5        @cmalign@  -l --informat GENBank %TRNA.CM% 3trnas.gb
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b-l/5        @cmalign@  -l --informat ddbj %TRNA.CM% 3trnas.gb
-# INFORMAT ISSUE 1  exercise  cmalign:trna-b-l/5        @cmalign@  -l --informat stockholm %TRNA.CM% 10trnas.stk
-1  exercise  cmalign:trna-b-l/6        @cmalign@  -l --optacc %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b-l/4        @cmalign@  -l -p %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b-l/5        @cmalign@  -l %TRNA.CM% 3trnas.embl
+1  exercise  cmalign:trna-b-l/6        @cmalign@  -l %TRNA.CM% 3trnas.gb
+
+1  exercise  cmalign:trna-b-lf/1        @cmalign@  -l --informat fastA %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b-lf/2        @cmalign@  -l --informat embl %TRNA.CM% 3trnas.embl
+1  exercise  cmalign:trna-b-lf/3        @cmalign@  -l --informat unipRot %TRNA.CM% 3trnas.embl
+1  exercise  cmalign:trna-b-lf/4        @cmalign@  -l --informat GENBank %TRNA.CM% 3trnas.gb
+1  exercise  cmalign:trna-b-lf/5        @cmalign@  -l --informat ddbj %TRNA.CM% 3trnas.gb
+
+1  exercise  cmalign:trna-b-l/6b       @cmalign@  -l --optacc %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/7        @cmalign@  -l --cyk %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/8        @cmalign@  -l --viterbi %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-b-l/10       @cmalign@  -l --small --cyk %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b-l/10       @cmalign@  -l --small --nonbanded --cyk %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/11       @cmalign@  -l --hbanded %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/12       @cmalign@  -l --nonbanded %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/13       @cmalign@  -l --nonbanded --cyk %TRNA.CM% 3trnas.fa
@@ -235,7 +234,6 @@
 1  exercise  cmalign:trna-b-l/24       @cmalign@  -l --tau 5E-2 --viterbi %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/25       @cmalign@  -l --tau 5E-2 -p %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/26       @cmalign@  -l --tau 5E-2 -p --onepost %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-b-l/28       @cmalign@  -l --tau 5E-2 --cyk --small %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/29       @cmalign@  -l --mxsize 333 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/30       @cmalign@  -l --rna %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/31       @cmalign@  -l --dna %TRNA.CM% 3trnas.fa

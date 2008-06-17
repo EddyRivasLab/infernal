@@ -14,6 +14,13 @@
 1  exercise  cmsearch:trna/4        @cmsearch@  --toponly %TRNA.CM% 1k.fa
 1  exercise  cmsearch:trna/5        @cmsearch@  --bottomonly %TRNA.CM% 1k.fa
 1  exercise  cmsearch:trna/6        @cmsearch@  --devhelp 
+1  exercise  cmsearch:trna-f/1      @cmsearch@  %TRNA.CM% 3trnas.embl
+1  exercise  cmsearch:trna-f/2      @cmsearch@  %TRNA.CM% 3trnas.gb
+1  exercise  cmsearch:trna-f/3      @cmsearch@  --informat fasta #%TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna-f/4      @cmsearch@  --informat dDBj #%TRNA.CM% 3trnas.gb
+1  exercise  cmsearch:trna-f/5      @cmsearch@  --informat GENbank #%TRNA.CM% 3trnas.gb
+1  exercise  cmsearch:trna-f/6      @cmsearch@  --informat uniProt #%TRNA.CM% 3trnas.embl
+1  exercise  cmsearch:trna-f/7      @cmsearch@  --informat embL #%TRNA.CM% 3trnas.embl
 
 1  exercise  cmsearch:trna/7        @cmsearch@  --inside %TRNA.CM% 1k.fa
 1  exercise  cmsearch:trna/8        @cmsearch@  --cyk %TRNA.CM% 1k.fa
