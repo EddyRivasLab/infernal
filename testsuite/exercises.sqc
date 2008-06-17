@@ -79,8 +79,8 @@
 1  prep      model/trna           @cmbuild@ --rf -F %TRNA.CM% ../intro/trna.sto
 2  prep      model/rp             @cmbuild@ --rf -F %RP.CM%   ../intro/RNaseP.sto
 2  prep      model/ssu            @cmbuild@ --rf -F %SSU.CM%  ../intro/ssu.sto
-1  exercise  cp9/trna             @cp9-test@ %TRNA.CM%
-2  exercise  cp9/trna             @cp9-test@ %TRNA.CM%
+1  exercise  cp9/trna             @cp9-test@ -s 19 %TRNA.CM%
+2  exercise  cp9/trna             @cp9-test@ -s 17 %TRNA.CM%
 2  exercise  cp9/rp               @cp9-test@ --psionly %RP.CM%
 2  exercise  cp9/ssu              @cp9-test@ --psionly %SSU.CM%
 
