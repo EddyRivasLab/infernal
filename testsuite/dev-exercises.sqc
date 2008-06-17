@@ -344,15 +344,15 @@
 1  exercise  cmbuild:3.4.12/25         @cmbuild@ -F --call --enone %3.4.12.CM% 3.4.12.stk 
 1  exercise  cmbuild:3.4.12/26         @cmbuild@ -F --cmaxid 0.7 --cdump %TMPOUT% %3.4.12.CM% 3.4.12.stk 
 1  exercise  cmbuild:3.4.12/27         @cmbuild@ -F --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/28         @cmbuild@ -F --gibbs --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/29         @cmbuild@ -F --tau 1E-2 --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/30         @cmbuild@ -F --gibbs -s 33 --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/31         @cmbuild@ -F --sub --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/32         @cmbuild@ -F -l --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/33         @cmbuild@ -F -a --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/36         @cmbuild@ -F --fins --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/37         @cmbuild@ -F -v --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/38         @cmbuild@ -F --rdump %TMPRDUMP% --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/28         @cmbuild@ -F --gibbs --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/29         @cmbuild@ -F --tau 1E-2 --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/30         @cmbuild@ -F --gibbs -s 33 --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/31         @cmbuild@ -F --sub --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/32         @cmbuild@ -F -l --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/33         @cmbuild@ -F -a --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/36         @cmbuild@ -F --fins --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/37         @cmbuild@ -F -v --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/38         @cmbuild@ -F --rdump %TMPRDUMP% --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
 1  exercise  cmbuild:3.4.12/41         @cmbuild@ --nobalance -F %3.4.12.CM% 3.4.12.stk 
 1  exercise  cmbuild:3.4.12/42         @cmbuild@ --regress %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
 1  exercise  cmbuild:3.4.12/43         @cmbuild@ --nodetach -F %3.4.12.CM% 3.4.12.stk 
