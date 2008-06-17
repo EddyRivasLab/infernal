@@ -317,7 +317,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	  lmid = rmid = '+';
 
 	/* determine ltop, rtop for optional noncompensatory annotation, they are 'x' if lmid, rmid are ' ', and ' ' otherwise */
-	if (lmid == ' ' && rmid == ' ') 
+	if (lmid == ' ' && rmid == ' ')
 	  ltop = rtop = 'x';
       } else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
 	if (lseq == toupper(lcons)) 
@@ -334,7 +334,11 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	else if(esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]) > 0)
 	  rmid = '+';
       }
-
+      if(cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR || cm->stid[v] == MATP_D) { 
+	if(mode == 3) { 
+	  ltop = rtop = 'x'; /* mark non-truncated half base-pairs (MATP_ML or MATP_MR) and deleted base-pairs with 'x' */
+	}
+      }
       /* If we're storing a residue leftwise - just do it.
        * If rightwise - push it onto stack.
        */

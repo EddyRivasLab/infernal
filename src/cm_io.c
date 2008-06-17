@@ -92,9 +92,9 @@ static unsigned int v01swap  = 0xb1b0ede3; /* v0.1 binary, byteswapped         *
 #define CMIO_WBETA        56
 
 static int  write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf);
-static int  read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
+static int  read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
 static int  write_binary_cm(FILE *fp, CM_t *cm, char *errbuf);
-static int  read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
+static int  read_binary_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
 static void tagged_fwrite(int tag, void *ptr, size_t size, size_t nmemb, FILE *fp);
 static int  tagged_fread(int expected_tag, char *s, size_t size, size_t nmemb, FILE *fp);
 static void tagged_bin_string_write(int tag, char *s, FILE *fp);
@@ -250,16 +250,18 @@ or may be a different kind of binary altogether.\n", cmfile);
  *            ret_abc- alphabet (see above)
  *            ret_cm - RETURN: cm, or NULL on any parsing failure
  *
- * Returns:   1 on success; 0 at EOF.
+ * Returns:   eslOK on success; eslEOF at EOF.
+ * Throws:    eslEFORMAT if format of file is incorrect (pre 1.0 cmfile for example)
+ *            errbuf is filled with error message.
  *
  * Xref:      STL6 p.108.
  */
 int
-CMFileRead(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
+CMFileRead(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 {
-  cmf->offset = ftello(cmf->f); /* is this right? */
-  if (cmf->is_binary) return read_binary_cm(cmf, ret_abc, ret_cm);
-  else                return read_ascii_cm(cmf, ret_abc, ret_cm);
+  cmf->offset = ftello(cmf->f); 
+  if (cmf->is_binary) return read_binary_cm(cmf, errbuf, ret_abc, ret_cm);
+  else                return read_ascii_cm(cmf, errbuf, ret_abc, ret_cm);
 }
 
 /* Function:  CMFileClose()
@@ -514,7 +516,7 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
 } 
 
 static int  
-read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
+read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 {
   int     status;
   CM_t   *cm;
@@ -550,9 +552,9 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   for(i = 0; i < EXP_NMODES; i++)  exp_flags[i] = FALSE;
   for(i = 0; i < FTHR_NMODES; i++) fthr_flags[i] = FALSE;
 
-  if (feof(cmf->f) || esl_fgets(&buf, &n, cmf->f) != eslOK) { /* end of file, free buf and return 0 */
+  if (feof(cmf->f) || esl_fgets(&buf, &n, cmf->f) != eslOK) { /* end of file, free buf and return eslEOF */
     if(buf != NULL) free(buf);
-    return 0;
+    return eslEOF;
   }
   
   if (strncmp(buf, "INFERNAL-1", 10) != 0)                 goto FAILURE;
@@ -691,11 +693,7 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	}
       else if (strcmp(tok, "NULL") == 0) 
 	{
-	  if(cm->abc == NULL) 
-	    {
-	      printf("ERROR, cm->abc is not yet set but we're trying to allocate the null model.\n");
-	      goto FAILURE;
-	    }
+	  if(cm->abc == NULL) goto FAILURE;
 	  /* cm-> null already allocated in CreateCMBody() */
 	  for (x = 0; x < abc->K; x++)
 	    {
@@ -995,16 +993,17 @@ read_ascii_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   if (buf != NULL) free(buf);
   if (*ret_abc == NULL) *ret_abc = abc;	/* pass our new alphabet back to caller, if caller didn't know it already */
   *ret_cm = cm;
-  return 1;
+  return eslOK;
 
  FAILURE:
   if (buf != NULL) free(buf);
   *ret_cm = NULL;
-  return 1;
+  ESL_FAIL(eslEFORMAT, errbuf, "Error reading the cmfile. Is it corrupt or built with a pre-1.0 cmbuild?"); 
+  return status; /* NEVERREACHED */
 
  ERROR:
-  cm_Fail("read_ascii_cm(): memory allocation failed.");
-  return 1; /* NEVERREACHED */
+  ESL_FAIL(eslEMEM, errbuf, "Error ran out of memory reading the cmfile.");
+  return status; /* NEVERREACHED */
 }
 
 /* Function: write_binary_cm()
@@ -1155,7 +1154,7 @@ write_binary_cm(FILE *fp, CM_t *cm, char *errbuf)
  * Purpose:  Read a CM from disk.
  */
 static int
-read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
+read_binary_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 {
   FILE         *fp;
   CM_t         *cm;
@@ -1174,7 +1173,7 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 
   cm = NULL;
   fp = cmf->f;
-  if (feof(fp)) return 0;
+  if (feof(fp)) return eslEOF;
   if (! fread((char *) &magic, sizeof(unsigned int), 1, fp)) return 0;
   if (magic != v01magic) goto FAILURE;
   
@@ -1327,12 +1326,12 @@ read_binary_cm(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 
  FAILURE:
   if (cm != NULL) FreeCM(cm);
-  *ret_cm = NULL;
-  return 1;
+  ESL_FAIL(eslEFORMAT, errbuf, "Error reading the cmfile. Is it corrupt or built with a pre-1.0 cmbuild?"); 
+  return status; /* NEVERREACHED */
 
  ERROR: 
-  cm_Fail("read_binary_cm(), memory allocation request failed.\n");
-  return 1; /* NEVER REACHED */
+  ESL_FAIL(eslEMEM, errbuf, "Error ran out of memory reading the cmfile.");
+  return status; /* NEVERREACHED */
 }
 
 static void

@@ -528,7 +528,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   if ((status = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
 
-  while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
+  while ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK)
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;
@@ -577,6 +577,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       FreeSeqsToAln(seqs_to_aln); 
       FreeCM(cm);
     }
+  if(status != eslEOF) cm_Fail(errbuf);
+  return;
 }
 
 #ifdef HAVE_MPI
@@ -663,7 +665,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * Unrecoverable errors just crash us out with cm_Fail().
    */
 
-  while (xstatus == eslOK && CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
+  while (xstatus == eslOK && ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK))
     {
       cfg->ncm++;  
       ESL_DPRINTF1(("MPI master read CM number %d\n", cfg->ncm));
@@ -819,7 +821,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if((status = cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
   free(buf);
   
-  if (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); cm_Fail(errbuf); }
+  if     (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); cm_Fail(errbuf); }
+  else if(status != eslEOF) cm_Fail(errbuf);
   else                  return;
 
 }

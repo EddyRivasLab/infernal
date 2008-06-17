@@ -52,8 +52,8 @@ static ESL_OPTIONS options[] = {
   { "-o",        eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "direct output to file <f>, not stdout", 1 },
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "configure CM/HMM for glocal alignment [default: local]", 1 },
   { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,   "--aln-hbanded","--noalign", "append posterior probabilities to hit alignments", 1 },
+  { "-x",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "annotate non-compensatory bps in output alignments with 'x'", 1 },
   { "-Z",        eslARG_REAL,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "set Z (database size in *Mb*) to <x> for E-value calculations", 1},
-  { "--addx",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "annotate non-compensatory bps in output alignments with 'x'", 1 },
   { "--toponly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the top strand", 1 },
   { "--bottomonly", eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the bottom strand", 1 },
   { "--forecast",eslARG_INT,    NULL,  NULL, NULL,      NULL,      NULL,        NULL, "don't do search, forecast running time with <n> processors", 1 },
@@ -69,7 +69,7 @@ static ESL_OPTIONS options[] = {
   { "--viterbi", eslARG_NONE,  FALSE, NULL, NULL, "--fil-hmm,--fil-qdb",     NULL,    STRATOPTS2, "use scanning HMM Viterbi algorithm", 2 },
   { "--forward", eslARG_NONE,  FALSE, NULL, NULL, "--fil-hmm,--fil-qdb",     NULL,    STRATOPTS2, "use scanning HMM Forward algorithm", 2 },
   /* CM cutoff options */
-  { "-E",        eslARG_REAL,   "10.0", NULL, "x>0.",   NULL,      NULL,    CUTOPTS1, "use cutoff E-value of <x> for final round of search", 3 },
+  { "-E",        eslARG_REAL,   "1.0", NULL, "x>0.",   NULL,      NULL,    CUTOPTS1, "use cutoff E-value of <x> for final round of search", 3 },
   { "-T",        eslARG_REAL,   "0.0", NULL, NULL,      NULL,      NULL,    CUTOPTS1, "use cutoff bit score of <x> for final round of search", 3 },
   { "--nc",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    CUTOPTS2, "use CM Rfam NC noise cutoff as cutoff bit score", 3 },
   { "--ga",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    CUTOPTS2, "use CM Rfam GA gathering threshold as cutoff bit score", 3 },
@@ -470,7 +470,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   namedashes[cfg->namewidth] = '\0';
   for(ni = 0; ni < cfg->namewidth; ni++) namedashes[ni] = '-';
 
-  while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
+  while ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK)
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       if((! (cm->flags & CMH_EXPTAIL_STATS)) && (! esl_opt_IsDefault(go, "--forecast"))) cm_Fail("--forecast only works with calibrated CM files. Run cmcalibrate (please)."); 
@@ -531,7 +531,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    free(seq_nhitsA);
 	    RemoveOverlappingHits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
 	  }
-	  PrintResults (cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"), cfg->namewidth);
+	  PrintResults (cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "-x"), cfg->namewidth);
 	  for(rci = 0; rci <= cfg->do_rc; rci++) { /* we can free results for top strand even if cfg->init_rci is 1, due to --bottomonly */
 	    FreeResults(dbseq->results[rci]);
 	    esl_sq_Destroy(dbseq->sq[rci]);
@@ -552,6 +552,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       free(cm_nhitsA);
       esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be searching this file again with another CM */
     }
+  if(status != eslEOF) cm_Fail(errbuf);
 
   if(cfg->ncm > 1 && (! esl_opt_IsDefault(go, "--forecast"))) { 
     fprintf(stdout, "#\n");
@@ -697,7 +698,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * Unrecoverable errors just crash us out with cm_Fail().
    */
 
-  while (xstatus == eslOK && CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
+  while (xstatus == eslOK && ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK))
     {
       cfg->ncm++;  
       /* potentially overwrite lambdas in cm->stats */
@@ -843,7 +844,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
 			    RemoveOverlappingHits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
 			  }					      
-			  PrintResults(cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "--addx"), cfg->namewidth);
+			  PrintResults(cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "-x"), cfg->namewidth);
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
 			    esl_sq_Destroy(dbseqlist[si_recv]->sq[rci]);
 			    FreeResults(dbseqlist[si_recv]->results[rci]);
@@ -919,6 +920,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   esl_stopwatch_Destroy(w);
 
   if (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); cm_Fail(errbuf); }
+  else if(status != eslEOF) cm_Fail(errbuf);
   else                  return;
 
  ERROR: 
@@ -2415,6 +2417,7 @@ int estimate_search_time_for_round(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   ESL_DPRINTF1(("sec_per_res: %f\n", sec_per_res));
   ESL_DPRINTF1(("Mc_per_res: %f\n", Mc_per_res));
   ESL_DPRINTF1(("Mc: %f\n", Mc));
+  esl_stopwatch_Destroy(w);
 
   return eslOK;
 
@@ -2443,7 +2446,7 @@ int dump_gc_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   esl_alphabet_Destroy(tmp_abc);
 
   fprintf(cfg->gcfp, "# %-25s %s\n",  "seqfile:", cfg->sqfile);
-  fprintf(cfg->gcfp, "# %-25s %ld\n", "number of sequences:", nseq);
+  fprintf(cfg->gcfp, "# %-25s %d\n",  "number of sequences:", nseq);
   fprintf(cfg->gcfp, "# %-25s %ld\n", "dbsize (nt, one strand):", dbsize);
   fprintf(cfg->gcfp, "#\n");
   fprintf(cfg->gcfp, "# %10s  %22s\n", "GC percent", "freq of 100 nt windows");

@@ -187,7 +187,7 @@ extern void debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int 
 
 /* from cm_io.c */
 extern CMFILE *CMFileOpen(char *cmfile, char *env);
-extern int     CMFileRead(CMFILE *cmf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
+extern int     CMFileRead(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm);
 extern void    CMFileClose(CMFILE *cmf);
 extern void    CMFileRewind(CMFILE *cmf);
 extern int     CMFilePositionByIndex(CMFILE *cmf, int64_t idx);
@@ -251,10 +251,8 @@ extern void             TBackGammaHitMxBackward    (GammaHitMx_t *gamma, search_
 extern Parsetree_t *CreateParsetree(int size);
 extern void         GrowParsetree(Parsetree_t *tr);
 extern void         FreeParsetree(Parsetree_t *tr);
-extern int          InsertTraceNode(Parsetree_t *tr, int y, int whichway, 
-				    int emitl, int emitr, int state);
-extern int          InsertTraceNodewithMode(Parsetree_t *tr, int y, int whichway, 
-				    int emitl, int emitr, int state, int mode);
+extern int          InsertTraceNode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int state);
+extern int          InsertTraceNodewithMode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int state, int mode);
 extern void         ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt);
 extern int          ParsetreeScore(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2, float *ret_sc, float *ret_struct_sc);
 extern void         PrintParsetree(FILE *fp, Parsetree_t *tr);

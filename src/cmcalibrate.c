@@ -418,8 +418,8 @@ main(int argc, char **argv)
     if ((outfp = fopen(cfg.tmpfile, cfg.mode)) == NULL) cm_Fail("Ouch. Temporary file %s couldn't be opened for writing.", cfg.tmpfile); 
     
     for (cmi = 0; cmi < cfg.ncm; cmi++) {
-      if (!CMFileRead(cfg.cmfp, &(cfg.abc), &cm)) cm_Fail("Ran out of CMs too early in pass 2");
-      if (cm == NULL)                             cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
+      if ((status = CMFileRead(cfg.cmfp, errbuf, &(cfg.abc), &cm)) != eslOK) cm_Fail("Ran out of CMs too early in pass 2");
+      if (cm == NULL)                                                        cm_Fail("CM file %s was corrupted? Parse failed in pass 2", cfg.cmfile);
 
       /* update the cm->comlog info */
       if((status = update_comlog(go, errbuf, cfg.ccom, cfg.cdate, cm)) != eslOK) cm_Fail(errbuf);
@@ -680,7 +680,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   if ((status = print_run_info (go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   
-  while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
+  while ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK)
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;
@@ -861,6 +861,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       printf("//\n");
       fflush(stdout);
     }
+  if(status != eslEOF) cm_Fail(errbuf);
   
   if(cfg->ncm > 1 && (! esl_opt_IsDefault(go, "--forecast"))) { 
     fprintf(stdout, "#\n");
@@ -1046,7 +1047,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * Unrecoverable errors just crash us out with cm_Fail().
    */
   
-  while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
+  while ((xstatus == eslOK) && ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK)) 
     {
       cfg->ncm++;  
       if(cfg->ncm == cfg->cmalloc) { /* expand our memory */
@@ -1460,7 +1461,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if((status = cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
   free(buf);
   
-  if (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); cm_Fail(errbuf); }
+  if     (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); cm_Fail(errbuf); }
+  else if(status != eslEOF) cm_Fail(errbuf);
   else                  return;
 
  ERROR: 

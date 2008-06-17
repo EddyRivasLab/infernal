@@ -3332,21 +3332,25 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	     * likely transition, but with optimal accuracy, only
 	     * emissions add to the score, so when d == sd, we know
 	     * we'll emit sd residues from v, so the initialization
-	     * will NOT be overwritten. We get around this by
-	     * specially initializing cells for d == sd and v is a
-	     * state with an END_E as a child, as the v->end
-	     * transition. (v->end is always the yoffset == cnum[v]-1
-	     * transition)
+	     * will NOT be overwritten. We get around this for
+	     * cells for which  d == sd and v is a state that has 
+	     * a StateDelta=0 child y (delete or END) by initializing
+	     * that transition to y is most likely.
 	     */
 	    dp_v = 0;
+
 	    for (d = hdmin[v][jp_v]; d <= sd; d++, dp_v++) { 
 	      alpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	      yshad[jp_v][dp_v] = (cm->ndtype[cm->ndidx[v]+1] == END_nd) ? cm->cnum[v] - 1 : USED_EL;
+	      yshad[jp_v][dp_v] = USED_EL;
+	      y = cm->cfirst[v];
+	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+		if(StateDelta(cm->sttype[y+yoffset]) == 0) yshad[jp_v][dp_v] = yoffset;
 	    }
 	    for (d = ESL_MAX(hdmin[v][jp_v], sd+1); d <= hdmax[v][jp_v]; d++, dp_v++) {
 	      alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	      yshad[jp_v][dp_v] = USED_EL; 
 	    }
+
 	  }
 	}
       }
@@ -3766,22 +3770,24 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
 
-	    /* Handle a special initialization case, specific to
-	     * optimal_accuracy alignment. Normally (with CYK for
+	    /* Check for special initialization case, specific to
+	     * optimal_accuracy alignment, normally (with CYK for
 	     * example) we init shadow matrix to USED_EL for all cells
-	     * b/c we know that USED_EL will be overwritten for the most
+	     * b/c we know that will be overwritten for the most
 	     * likely transition, but with optimal accuracy, only
-	     * emissions add to the score, so when d <= sd, we know
+	     * emissions add to the score, so when d == sd, we know
 	     * we'll emit sd residues from v, so the initialization
-	     * will NOT be overwritten. We get around this by
-	     * specially initializing cells for d == sd and v is a
-	     * state with an END_E as a child, as the v->end
-	     * transition. (v->end is always the yoffset == cnum[v]-1
-	     * transition)
+	     * will NOT be overwritten. We get around this for
+	     * cells for which  d == sd and v is a state that has 
+	     * a StateDelta=0 child y (delete or END) by initializing
+	     * that transition to y is most likely.
 	     */
 	    for (d = 0; d <= sd; d++) { 
 	      alpha[v][j][d] = IMPOSSIBLE;
-	      yshad[j][d] = (cm->ndtype[cm->ndidx[v]+1] == END_nd) ? cm->cnum[v] - 1 : USED_EL;
+	      yshad[j][d] = USED_EL;
+	      y = cm->cfirst[v];
+	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
+		if(StateDelta(cm->sttype[y+yoffset]) == 0) yshad[j][d] = yoffset;
 	    }
 	    for (d = sd+1; d <= jp; d++) {
 	      alpha[v][j][d] = IMPOSSIBLE;

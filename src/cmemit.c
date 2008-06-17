@@ -296,7 +296,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
   cfg->ncm = 0;
 
-  while (CMFileRead(cfg->cmfp, &(cfg->abc), &cm))
+  while ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK)
   {
     if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
     cfg->ncm++;
@@ -317,6 +317,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     }
     FreeCM(cm);
   }
+  if(status != eslEOF) cm_Fail(errbuf);
   return;
 }
 

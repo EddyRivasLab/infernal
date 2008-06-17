@@ -279,7 +279,12 @@ main(int argc, char **argv)
   char *namedashes;
   int ni;
   int namewidth = 6; /* length of 'name', plus 2 spaces for looks */
-  while (CMFileRead(cmfp, &abc, &cm)) { namewidth = ESL_MAX(namewidth, strlen(cm->name)); FreeCM(cm); }
+  while ((status = CMFileRead(cmfp, errbuf, &abc, &cm)) == eslOK) { 
+    namewidth = ESL_MAX(namewidth, strlen(cm->name)); 
+    FreeCM(cm); 
+  }
+  if(status != eslEOF) cm_Fail(errbuf);
+
   CMFileRewind(cmfp);
   ESL_ALLOC(namedashes, sizeof(char) * namewidth+1);
   namedashes[namewidth] = '\0';
@@ -288,7 +293,7 @@ main(int argc, char **argv)
   /* print general model stats (default) */
   if(do_model) { 
     ncm = 0;
-    while (CMFileRead(cmfp, &abc, &cm))
+    while ((status = CMFileRead(cmfp, errbuf, &abc, &cm)) == eslOK)
       {
 	if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cmfile);
 	if(ncm == 0 || (esl_opt_GetBoolean(go, "--search"))) { 
@@ -342,7 +347,7 @@ main(int argc, char **argv)
     ncm = 0;
     seen_exps_yet = FALSE;
     CMFileRewind(cmfp);
-    while (CMFileRead(cmfp, &abc, &cm)) {
+    while ((status = CMFileRead(cmfp, errbuf, &abc, &cm)) == eslOK)  {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cmfile);
       ncm++;
       if(cm->flags & CMH_EXPTAIL_STATS) {
@@ -386,6 +391,8 @@ main(int argc, char **argv)
       }
       FreeCM(cm);
     }
+    if(status != eslEOF) cm_Fail(errbuf); /* CMFileRead() returned an error, die. */
+
     if(!seen_exps_yet) {
       if(doing_locale  && esl_opt_GetBoolean(go, "--le"))  cm_Fail("--le option enabled but none of the CMs in %s have exp tail stats.", cmfile);
       if(doing_glocale && esl_opt_GetBoolean(go, "--ge")) cm_Fail("--ge option enabled but none of the CMs in %s have exp tail stats.", cmfile);
@@ -414,7 +421,7 @@ main(int argc, char **argv)
     if(doing_localfc)  { fthr_mode = FTHR_CM_LC; cm_mode = EXP_CM_LC; hmm_mode = EXP_CP9_LF; }
     if(doing_localfi)  { fthr_mode = FTHR_CM_LI; cm_mode = EXP_CM_LI; hmm_mode = EXP_CP9_LF; }
     CMFileRewind(cmfp);
-    while (CMFileRead(cmfp, &abc, &cm)) {
+    while ((status = CMFileRead(cmfp, errbuf, &abc, &cm)) == eslOK) {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cmfile);
       ncm++;
       if(cm->flags & CMH_FILTER_STATS) {
@@ -487,6 +494,8 @@ main(int argc, char **argv)
       }
       FreeCM(cm);
     }
+    if(status != eslEOF) cm_Fail(errbuf); /* CMFileRead() returned an error, die. */
+
     if(!seen_fthr_yet) { 
       if(doing_localfc  && esl_opt_GetBoolean(go, "--lfc"))  cm_Fail("--lfc option enabled but none of the CMs in %s have filter threshold stats.", cmfile);
       if(doing_glocalfc && esl_opt_GetBoolean(go, "--gfc")) cm_Fail("--gfc option enabled but none of the CMs in %s have filter threshold stats.", cmfile);
