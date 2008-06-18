@@ -286,9 +286,10 @@ changed with
 The default of 0.59 bits is automatically changed if the total
 relative entropy of the model (summed match state relative entropy)
 is less than a cutoff, which is
-is 6.0 bits by default, but can be changed with the 
+is 6.0 bits by default, but can be changed with the expert, undocumented
 .B --eX 
-option.
+option. If you really want to play with that option, consult the
+source code.
 
 .TP 
 .B --enone
