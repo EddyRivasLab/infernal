@@ -665,7 +665,7 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
       /* comlog info, careful, we want the full line, so a token becomes a full line */
       else if (strcmp(tok, "BCOM") == 0) 
 	{
-	  while(isspace((int) *s)) *s++; /* chew up leading whitespace */
+	  while(isspace((int) *s)) (*s)++; /* chew up leading whitespace */
 	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  if(cm->comlog->bcom != NULL) free(cm->comlog->bcom);
 	  esl_strdup(tok, toklen, &(cm->comlog->bcom));

@@ -89,7 +89,7 @@ static ESL_OPTIONS options[] = {
   { "--mxsize",         eslARG_REAL,    "2048.0",NULL, "x>0.",  NULL,        NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 4 },
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer option, print extra info */
-  { "-v",                eslARG_NONE,   FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "print arguably interesting info",  101},
+  { "-v",                eslARG_NONE,   FALSE,  NULL, NULL,     NULL,        NULL, "--forecast", "print arguably interesting info",  101},
 #ifdef HAVE_MPI
   /* Developer option, for debugging */
   { "--stall",          eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "arrest after start: for debugging MPI under gdb", 101 },  
@@ -1458,7 +1458,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * Shut down workers cleanly. 
    */
   ESL_DPRINTF1(("MPI master is done. Shutting down all the workers cleanly\n"));
-  if((status = cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
+  if((cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
   free(buf);
   
   if     (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); cm_Fail(errbuf); }

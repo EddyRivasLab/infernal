@@ -3294,7 +3294,7 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	  jp_v  = j - jmin[v];
 	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
 	    alpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	    kshad[jp_v][dp_v] = USED_EL; 
+	    kshad[jp_v][dp_v] = 0; /* don't set to USED_EL, that's invalid for B states during traceback */
 	  }
 	}
       } else { /* ! B_st && ! E_st */
@@ -3346,7 +3346,8 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
 		if(StateDelta(cm->sttype[y+yoffset]) == 0) yshad[jp_v][dp_v] = yoffset;
 	    }
-	    for (d = ESL_MAX(hdmin[v][jp_v], sd+1); d <= hdmax[v][jp_v]; d++, dp_v++) {
+	    d = ESL_MAX(hdmin[v][jp_v], sd+1); 
+	    for (dp_v = d - hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++, dp_v++) {
 	      alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	      yshad[jp_v][dp_v] = USED_EL; 
 	    }
@@ -3745,7 +3746,7 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
 	  j = i0-1+jp;
 	  for (d = 0; d <= jp; d++) {
 	    alpha[v][j][d] = IMPOSSIBLE;
-	    kshad[j][d] = USED_EL; 
+	    kshad[j][d] = 0; /* don't set to USED_EL, that's invalid for B states during traceback */
 	  }
 	}
       } else { /* ! B_st && ! E_st */

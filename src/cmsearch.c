@@ -320,7 +320,6 @@ main(int argc, char **argv)
 	cm_banner(stdout, argv[0], banner);
 	mpi_master(go, &cfg);
       }
-
       esl_stopwatch_Stop(w);
       esl_stopwatch_MPIReduce(w, 0, MPI_COMM_WORLD);
       MPI_Finalize();
@@ -451,7 +450,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   float         *seq_surv_fractA = NULL; /* 0..n..cm->si->nrounds fraction of db surviving round n for current seq */
   int           *cm_nhitsA = NULL;      /* 0..n..cm->si->nrounds number of hits reported for round n for current CM */
   int           *seq_nhitsA = NULL;     /* 0..n..cm->si->nrounds number of hits reported for round n for current seq */
-  int            n;
+  int            n, h;
   double         cm_psec;               /* predicted number of seconds for current CM versus full DB */
   double         total_psec = 0.;       /* predicted number of seconds for all CMs versus full DB */
   char           time_buf[128];	        /* for printing predicted time if --forecast only */
@@ -496,7 +495,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if(cm->flags & CMH_EXPTAIL_STATS) { if((status = print_searchinfo_for_calibrated_cm  (go, cfg, errbuf, cm, NULL, NULL, 0., 0., &cm_psec)) != eslOK) cm_Fail(errbuf); }
       else                              { if((status = print_searchinfo_for_uncalibrated_cm(go, cfg, errbuf, cm, NULL, NULL, 0.)) != eslOK) cm_Fail(errbuf); }
 
-      if(! esl_opt_IsDefault(go, "--forecast")) { /* special mode, we don't do the search, just print the predicting timings */
+      if(! esl_opt_IsDefault(go, "--forecast")) { /* special mode, we don't do the search, just print the predicted timings */
 	total_psec += cm_psec;
 	free(cm_surv_fractA);
 	free(cm_nhitsA);
@@ -523,16 +522,20 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  for(rci = cfg->init_rci; rci <= cfg->do_rc; rci++) {
 	    /*printf("SEARCHING >%s %d\n", dbseq->sq[rci]->name, rci);*/
 	    if ((status = ProcessSearchWorkunit(cm, errbuf, dbseq->sq[rci]->dsq, dbseq->sq[rci]->n, &dbseq->results[rci], esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, &seq_surv_fractA, &seq_nhitsA)) != eslOK) cm_Fail(errbuf);
-	    for(n = 0; n <= cm->si->nrounds; n++) { 
+	    for(n = 0; n < cm->si->nrounds; n++) { 
 	      cm_surv_fractA[n] += (dbseq->sq[rci]->n * seq_surv_fractA[n]);
 	      cm_nhitsA[n]      += seq_nhitsA[n];
 	    }
 	    free(seq_surv_fractA);
 	    free(seq_nhitsA);
 	    RemoveOverlappingHits(dbseq->results[rci], 1, dbseq->sq[rci]->n);
+
+	    /* write the final round nhits and surv_fract with values reflecting what we'll print, after overlaps have been removed */
+	    cm_nhitsA[cm->si->nrounds] += dbseq->results[rci]->num_results;
+	    for(h = 0; h < dbseq->results[rci]->num_results; h++) cm_surv_fractA[cm->si->nrounds] += fabs( (float) (dbseq->results[rci]->data[h].stop - dbseq->results[rci]->data[h].start + 1));
 	  }
 	  PrintResults (cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "-x"), cfg->namewidth);
-	  for(rci = 0; rci <= cfg->do_rc; rci++) { /* we can free results for top strand even if cfg->init_rci is 1, due to --bottomonly */
+	  for(rci = 0; rci <= cfg->do_rc; rci++) { /* we can free results for top strand even if cfg->init_rci is 1 due to --bottomonly */
 	    FreeResults(dbseq->results[rci]);
 	    esl_sq_Destroy(dbseq->sq[rci]);
 	  }
@@ -625,7 +628,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int *sentlist = NULL;   /* [0..si..nproc-1] TRUE if all chunks for sequence index si have been sent, FALSE otherwise */
   int ndbseq = 0;         /* ndbseq is the number of currently active sequences, we can read a new seq IFF ndbseq < (cfg->nproc-1) */
   dbseq_t **dbseqlist= NULL; /* pointers to the dbseq_t objects that hold the actual sequence data, and the results data */
-  dbseq_t  *dbseq = NULL;  /* a database sequence */
+  dbseq_t  *dbseq = NULL;    /* a database sequence */
   double    cm_psec;                /* predicted number of seconds for current CM versus full DB (ON MASTER PROC BUT WE ASSUME
 				     * OTHER PROCS ARE THE SAME SPEED!) */
   float    *cm_surv_fractA = NULL;  /* 0..n..cm->si->nrounds fraction of db that survived round n for current CM */
@@ -635,7 +638,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
   char     errbuf[cmERRBUFSIZE];
   MPI_Status mpistatus; 
-  int      n;
+  int      n, h;
 
   int need_seq = TRUE;
   int chunksize;
@@ -733,8 +736,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
         fprintf(cfg->tfp, "# CM: %s\n", cm->name);
 	fprintf(cfg->tfp, "# %-*s  %22s  %12s  %8s  %8s  %3s\n", cfg->namewidth, "", "target coord", "query coord", "", "", "");
 	fprintf(cfg->tfp, "# %-*s  %22s  %12s  %8s  %8s  %3s\n", cfg->namewidth, "", "----------------------", "------------", "", "", "");
-	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s %8s %3s\n", cfg->namewidth, "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC\%");
-	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s %8s %3s\n", cfg->namewidth, namedashes, "----------", "----------", "-----", "-----", "--------", "--------", "---");
+	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cfg->namewidth, "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC\%");
+	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cfg->namewidth, namedashes, "----------", "----------", "-----", "-----", "--------", "--------", "---");
       }
 
       /* reset vars for searching with current CM */
@@ -771,7 +774,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		  sentlist[si]  = FALSE;
 		  have_work = TRUE;
 		  chunksize = DetermineSeqChunksize(cfg->nproc, dbseq->sq[0]->n, cm->W);
-		  ESL_DPRINTF1(("L: %d chunksize: %d\n", dbseq->sq[0]->n, chunksize));
+		  ESL_DPRINTF1(("L: %ld chunksize: %d\n", dbseq->sq[0]->n, chunksize));
 		}
 	      else if(status == eslEOF) have_work = FALSE;
 	      else goto ERROR;
@@ -814,8 +817,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 		      if ((status = cm_search_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &worker_results)) != eslOK)    cm_Fail("search results unpack failed");
 		      ESL_DPRINTF1(("MPI master has unpacked search results\n"));
 		      
-		      /* update cm_surv_fractA[] and cm_nhitsA[] which holds number of residues and hits that survived each round of searching/filtering */
-		      for(n = 0; n <= cm->si->nrounds; n++) { 
+		      /* update cm_surv_fractA[] and cm_nhitsA[] which holds number of residues and hits that survived each round of searching/filtering, don't update for final round, we do that later */
+		      for(n = 0; n < cm->si->nrounds; n++) { 
 			cm_surv_fractA[n] += (lenlist[wi] * worker_surv_fractA[n]);
 			cm_nhitsA[n]      += worker_nhitsA[n];
 		      }
@@ -843,7 +846,13 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 			{
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
 			    RemoveOverlappingHits(dbseqlist[si_recv]->results[rci], 1, dbseqlist[si_recv]->sq[rci]->n);
-			  }					      
+
+			    /* write the final round nhits and surv_fract with values reflecting what we'll print, after overlaps have been removed, this wasn't done in the earlier filter rounds
+			     * b/c of recursive nature of implementation (each worker searched it's own survivors after filter was applied). THUS DIFFERENCES WILL EXIST BETWEEN MPI AND SERIAL 
+			     * IN SURVIVAL FRACTIONS AND NHITS OF FILTER ROUNDS! */
+			    cm_nhitsA[cm->si->nrounds] += dbseqlist[si_recv]->results[rci]->num_results;
+			    for(h = 0; h < dbseqlist[si_recv]->results[rci]->num_results; h++) cm_surv_fractA[cm->si->nrounds] += fabs( (float) (dbseqlist[si_recv]->results[rci]->data[h].stop - dbseqlist[si_recv]->results[rci]->data[h].start + 1.));
+			  }
 			  PrintResults(cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "-x"), cfg->namewidth);
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
 			    esl_sq_Destroy(dbseqlist[si_recv]->sq[rci]);
@@ -908,20 +917,20 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       FreeCMConsensus(cons);
       esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be searching this file again with another CM */
     }
-  
+
   /* On success or recoverable errors:
    * Shut down workers cleanly. 
    */
   ESL_DPRINTF1(("MPI master is done. Shutting down all the workers cleanly\n"));
-  if((status = cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
+  if((cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
   free(buf);
   
   free(namedashes);
   esl_stopwatch_Destroy(w);
 
-  if (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); cm_Fail(errbuf); }
-  else if(status != eslEOF) cm_Fail(errbuf);
-  else                  return;
+  if     (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); cm_Fail(errbuf); }
+  else if(status != eslEOF) cm_Fail(errbuf);  /* problem reading CM file */
+  else return;
 
  ERROR: 
   cm_Fail("memory allocation error.");
@@ -1562,9 +1571,10 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   /* D. add HMM filter, if necessary (after QDB filter, filters added like a stack, HMM filter is added last but used first) */
   if (do_hmm_filter) { 
     AddFilterToSearchInfo(cm, FALSE, FALSE, FALSE, TRUE, FALSE, NULL, NULL, fhmm_ctype, fhmm_sc, fhmm_E, (! esl_opt_GetBoolean(go, "--no-null3")));
-    /* DumpSearchInfo(cm->si); */
+    /*DumpSearchInfo(cm->si); */
   }
   ValidateSearchInfo(cm, cm->si);
+  /* DumpSearchInfo(cm->si); */
   return eslOK;
 }
 
@@ -1844,7 +1854,7 @@ set_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
  *           easeled: EPN, Fri Dec  8 11:40:20 2006
  *
  * Purpose:  Given a dbfp and whether or not to take the reverse complement,
- *           reads in the next sequence and prepares reverse complement.
+ *           reads in the next sequence and prepares reverse complement if nec.
  *
  * Returns:  eslOK on success; eslEOF if end of file, 
  *           some other status code from esl_sqio_Read() if an error occurs.
@@ -1908,9 +1918,16 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
   fprintf(stdout, "%-13s %s\n",  "# command:", command);
   fprintf(stdout, "%-13s %s\n",  "# date:",    date);
   if(cfg->nproc > 1) fprintf(stdout, "%-13s %d\n", "# nproc:", cfg->nproc);
-  /*fprintf(stdout, "%-13s %ld\n",  "# dbsize(nt):", cfg->dbsize);*/
   fprintf(stdout, "%-13s %d\n",  "# num seqs:",   cfg->nseq);
   fprintf(stdout, "%-13s %.6f\n",  "# dbsize(Mb):", (double) cfg->dbsize / 1000000.);
+
+  if(cfg->tfp != NULL) { 
+    fprintf(cfg->tfp, "%-13s %s\n",  "# command:", command);
+    fprintf(cfg->tfp, "%-13s %s\n",  "# date:",    date);
+    if(cfg->nproc > 1) fprintf(cfg->tfp, "%-13s %d\n", "# nproc:", cfg->nproc);
+    fprintf(cfg->tfp, "%-13s %d\n",  "# num seqs:",   cfg->nseq);
+    fprintf(cfg->tfp, "%-13s %.6f\n",  "# dbsize(Mb):", (double) cfg->dbsize / 1000000.);
+  }
 
   free(command);
   free(date);

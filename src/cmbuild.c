@@ -67,7 +67,6 @@ static ESL_OPTIONS options[] = {
   { "--enone",   eslARG_NONE,  FALSE,  NULL, NULL,    EFFOPTS,    NULL,      NULL, "no effective seq # weighting: just use nseq",         4},
   { "--ere",     eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set CM target relative entropy to <x>",   4},
   { "--ehmmre",  eslARG_REAL,  NULL,   NULL,"x>0",       NULL, "--eent",     NULL, "for --eent: set minimum HMM relative entropy to <x>", 4}, 
-  { "--eX",      eslARG_REAL,  "6.0",  NULL,"x>0",       NULL, "--eent",  "--ere", "for --eent: set minimum total rel ent param to <x>",  4}, 
 /* Customizing null model or priors */
   { "--null",    eslARG_INFILE,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read null (random sequence) model from file <s>", 5 },
   { "--prior",   eslARG_INFILE,  NULL, NULL, NULL,      NULL,      NULL, "--rsearch", "read priors from file <s>", 5 },
@@ -98,6 +97,7 @@ static ESL_OPTIONS options[] = {
   { "--regress",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test information to file <s>", 101 },  
   { "--nodetach",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "do not 'detach' one of two inserts that model same column", 101 },
   { "--elself",  eslARG_REAL,  "0.94", NULL, "0<=x<=1", NULL,      NULL,        NULL, "set EL self transition prob to <x>", 101 },
+  { "--eX",      eslARG_REAL,  "6.0",  NULL,"x>0",      NULL,      "--eent", "--ere", "for --eent: set minimum total rel ent param to <x>",  101}, 
   { "--informat",eslARG_STRING,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "specify input alignment is in format <s> (Stockholm or Pfam)",  101 },
 
   /* Developer verbose output options */

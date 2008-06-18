@@ -704,7 +704,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * Shut down workers cleanly. 
    */
   ESL_DPRINTF1(("MPI master is done. Shutting down all the workers cleanly\n"));
-  if((status = cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
+  if((cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
   free(buf);
   
   if     (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); cm_Fail(errbuf); }

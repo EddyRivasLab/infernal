@@ -233,6 +233,7 @@ main(int argc, char **argv)
     else if (status == eslEFORMAT) cm_Fail("Couldn't determine format of sequence file %s\n", esl_opt_GetString(go, "--seqfile"));
     else if (status == eslEINVAL)  cm_Fail("Can’t autodetect stdin or .gz."); 
     else if (status != eslOK)      cm_Fail("Sequence file open failed with error %d\n", status);
+    if(sqfp->format == eslMSAFILE_STOCKHOLM) cm_Fail("cmstat doesn't support Stockholm alignment format for input sequence data. Please reformat to FASTA.\n");
     /* GetDBSize() reads all sequences, rewinds seq file and returns db size */
     if((status = GetDBSize(sqfp, errbuf, &(dbsize), NULL, NULL)) != eslOK) cm_Fail(errbuf);
     esl_sqfile_Close(sqfp); 

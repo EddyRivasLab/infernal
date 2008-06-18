@@ -974,7 +974,7 @@ void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_
   do_stats = (cm->flags & CMH_EXPTAIL_STATS) ? TRUE : FALSE;
 
   if(do_stats) { /* determine exp tail mode to use */
-    CM2ExpMode(cm, cm->search_opts, &cm_exp_mode, &cp9_exp_mode);
+    CM2ExpMode(cm, si->search_opts[si->nrounds], &cm_exp_mode, &cp9_exp_mode);
     exp = (si->stype[si->nrounds] == SEARCH_WITH_HMM) ? cm->stats->expAA[cp9_exp_mode] : cm->stats->expAA[cm_exp_mode];
   }
   emap = CreateEmitMap(cm);
