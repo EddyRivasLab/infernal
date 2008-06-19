@@ -137,6 +137,23 @@ tail that best fits a histogram of scores calculated on randomly
 generated sequences. You only need to do this calibration once
 for a given CM. All the Rfam CMs come pre-calibrated.
 
+\subsubsection{\textsc{Warning:} Using negative bit score thresholds for local searches}
+If the bit score threshold you use with local searches lower than
+ $-5$,  you may begin to observe some strange
+behavior. At a $-10$ bit threshold, \prog{cmsearch} will start to report
+hits of a single residue in the target, that are clearly not
+homologous sequences. This is because the local
+alignment of a single residue to an average sized CM scores about $-10$
+bits. In general, for local searches the lowest recommended bit score
+cutoff is about $-5$ bits. If you commonly use
+E-value cutoffs for local searches, be sure to check that the bit
+score threshold that corresponds to your E-value cutoff is at least $-5$
+bits. In practice this should only happen if you use a high E-value
+cutoff for a small target database, for example an E-value cutoff of
+$1000$ for a $1000$ nucleotide database. This issue is specific 
+to local searches, and does not apply to glocal searches (enabled with the
+ \prog{-g} option). 
+
 \subsubsection{fitting exponential tails to \software{Infernal} score histograms}
 
 The \prog{cmcalibrate} program fits exponential tails to scores of the
@@ -149,7 +166,7 @@ affect the scores reported, so \prog{cmcalibrate} must fit separate
 exponential tails for each.  In total,
 \prog{cmcalibrate} fits 8 different exponential tail
 distributions. These are listed by the program as it proceeds through
-each of the 8 ``stages''.  Because \prog{cmcalibrate} is so slow, it
+each of the 8 stages.  Because \prog{cmcalibrate} is so slow, it
 has a \prog{--forecast} option which will list each stage and predict
 it's required running time. Let's examine the output with this option
 for the \prog{my.cm} model from the tutorial:
@@ -157,10 +174,10 @@ for the \prog{my.cm} model from the tutorial:
 \user{cmcalibrate --forecast 1 my.cm}
 
 \begin{sreoutput}
-  # Forecasting time for 1 processor(s) to calibrate CM 1: trna.5-1
+# Forecasting time for 1 processor(s) to calibrate CM 1: trna.5-1
 #
-  # stage     mod  cfg  alg  expL (Mb)   filN predicted time
-  # --------  ---  ---  ---  --------- ------ --------------
+# stage     mod  cfg  alg  expL (Mb)   filN predicted time
+# --------  ---  ---  ---  --------- ------ --------------
   exp tail  hmm  glc  vit      15.00      -       00:02:29
   exp tail  hmm  glc  fwd      15.00      -       00:04:59
   exp tail   cm  glc  cyk       1.50      -       00:06:29
@@ -186,7 +203,7 @@ Let's go through what each column of the output is telling us:
 \item[\emprog{mod}] the model we're fitting an exponential tail for,
   either the CM or a CP9 HMM. We use the HMM exponential tails during
   HMM filtering for faster searches.
-
+  
 \item[\emprog{cfg}] the configuration of the model for this stage,
   either ``glc'' for glocal or ``loc'' for local. \prog{cmcalibrate}
   has to calibrate exponential tails \emph{separately} for glocal and
@@ -203,7 +220,7 @@ Let's go through what each column of the output is telling us:
   this HMM stage to require 10\% as much compute time as a CM
   calibration stage. The reasoning behind this is that longer sequence
   lengths tend to result in more accurate E-values.
-%  Mb, but can be more if the program calculates that searching a
+  %  Mb, but can be more if the program calculates that searching a
 %  longer sequence with the HMM (which will lead to more accurate
 %  E-values) will not increase the calibration time of this stage to more
 %  than 10\% the total calibration time.
@@ -298,7 +315,7 @@ of Inside. You can read more about how we use CYK as a filter in
     (see above), and the fact that CM search algorithms scale more
     than $LN^2$ with sequence length $L$ and model consensus length
     $N$ make the program excruciatingly slow. Notice that some of the
-    24 stages are much faster than others. The two Inside stages usually
+    8 stages are much faster than others. The two Inside stages usually
     take a large majority of the total run time. You might argue this
     means we shouldn't use Inside, but it's the most sensitive
     algorithm we have; and sensitivity trumps speed in our design
@@ -601,6 +618,76 @@ The null3 score correction is introduced in version 1.0 and was not
 present in any of the 0.x versions of \software{Infernal}. This can
 lead to large differences in the scores reported by 1.0 and previous
 versions. 
+
+\samepage{
+The following table shows the penalty for a $100$ nucleotide hit with
+varying compositions of A, C, G, and U residues. This table is included to give you
+an idea of how severe the null3 correction is, and can be useful for
+comparing bit scores from \software{infernal} 1.0 to previous
+versions (which did not use the null3 correction). These are just a
+sample of the possible composition of hits you might see. Again, these
+scores are for $100$ nucleotide hits, to determine the correction for
+a hit of length $x$ simply multiply the corresponding correction below
+by $x/100$. For example, a $35$\% A, $15$\% C, $15$\% G, $35$\% U hit
+of length $100$ nt would receive a $6.88$ bit penalty from
+null3 (row 4). A $200$ nt hit of the same composition would
+receive a penalty of $13.76$ bits. A $50$ nt hit of the same
+composition would receive a $3.44$ bit penalty.
+
+\vspace{0.5in}
+
+\begin{center}
+\begin{tabular}{r|rrrr|c}
+      &        &        &        &        & NULL3 \\ 
+  GC\%&    A\% &   C\%  &   G\%  &      U & correction (bits)  \\ \hline
+  0.0 &   50.0 &    0.0 &    0.0 &   50.0 &              95.00 \\
+ 10.0 &   45.0 &    5.0 &    5.0 &   45.0 &              48.10 \\
+ 20.0 &   40.0 &   10.0 &   10.0 &   40.0 &              22.81 \\
+ 30.0 &   35.0 &   15.0 &   15.0 &   35.0 &               6.88 \\
+ 35.0 &   32.5 &   17.5 &   17.5 &   32.5 &               2.01 \\
+ 40.0 &   30.0 &   20.0 &   20.0 &   30.0 &               0.30 \\
+ 45.0 &   27.5 &   22.5 &   22.5 &   27.5 &               0.07 \\
+ 50.0 &   25.0 &   25.0 &   25.0 &   25.0 &               0.04 \\
+ 55.0 &   22.5 &   27.5 &   27.5 &   22.5 &               0.07 \\
+ 60.0 &   20.0 &   30.0 &   30.0 &   20.0 &               0.30 \\
+ 65.0 &   17.5 &   32.5 &   32.5 &   17.5 &               2.01 \\
+ 70.0 &   15.0 &   35.0 &   35.0 &   15.0 &               6.88 \\
+ 80.0 &   10.0 &   40.0 &   40.0 &   10.0 &              22.81 \\
+ 90.0 &    5.0 &   45.0 &   45.0 &    5.0 &              48.10 \\
+100.0 &    0.0 &   50.0 &   50.0 &    0.0 &              95.00 \\
+
+\end{tabular}
+\end{center}
+
+}
+\vspace{0.5in}
+
+
+% obtained using esl-null3 a specialized easel miniapp
+% created basically solely to make this table. 
+% A frozen copy of the version used to make this table
+% (with -l option)  
+% is : /groups/eddy/home/nawrockie/infernal/easel/miniapps/bkups/8_0619-1/esl-null3
+%
+% raw output:
+% > esl-null3 -l 
+%   GC      A      C      G      U  correction (bits)
+%-----  -----  -----  -----  -----  -----------------
+%100.0    0.0   50.0   50.0    0.0              95.00
+% 90.0    5.0   45.0   45.0    5.0              48.10
+% 80.0   10.0   40.0   40.0   10.0              22.81
+% 70.0   15.0   35.0   35.0   15.0               6.88
+% 65.0   17.5   32.5   32.5   17.5               2.01
+% 60.0   20.0   30.0   30.0   20.0               0.30
+% 55.0   22.5   27.5   27.5   22.5               0.07
+% 50.0   25.0   25.0   25.0   25.0               0.04
+% 45.0   27.5   22.5   22.5   27.5               0.07
+% 40.0   30.0   20.0   20.0   30.0               0.30
+% 35.0   32.5   17.5   17.5   32.5               2.01
+% 30.0   35.0   15.0   15.0   35.0               6.88
+% 20.0   40.0   10.0   10.0   40.0              22.81
+% 10.0   45.0    5.0    5.0   45.0              48.10
+%  0.0   50.0    0.0    0.0   50.0              95.00
 
 By default, the null3 score correction is used by \prog{cmcalibrate,
 cmsearch} and \prog{cmalign}. It can be turned off in any of these

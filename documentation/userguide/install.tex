@@ -177,23 +177,23 @@ in our LAM environment:
 Other environments besides LAM MPI should work also, but may
 require different command syntax.
 
-\subsubsection{installing rigorous filters}
+\subsubsection{No longer supported: rigorous filters}
 
-\software{infernal} includes programs by Zasha Weinberg that implement
-rigorous filtering.  This software requires a C++ compiler, and also
-relies on an external library, \software{CFSQP}, that is not included
-in this distribution, but can be obtained by request from
-\htmladdnormallink{http://www.aemdesign.com/}{http://www.aemdesign.com/}.
-To build the executables, include these two options to configure:
-
-\user{./configure --with-rigfilters --with-cfsqp=/path/to/cfsqp}
+Previous versions of \software{infernal} included programs by Zasha
+Weinberg that implement rigorous filtering.  The 1.0 release does not
+include these programs. If you'd like to use them you can either
+download Zasha's own implementation in \textsc{RaveNnA} from
+\htmladdnormallink{http://bliss.biology.yale.edu/~zasha/ravenna/},
+download an older 0.x version of \software{infernal}, or try to modify
+this version to work with rigorous filters (the code is still included in
+\texttt{rigfilters/}).
 
 \subsection{Example configuration}
 
 The Intel GNU/Linux version installed at Janelia Farm is configured as
 follows:
 
-\user{env CFLAGS="-O3" ./configure --enable-mpi --enable-lfs --prefix=/usr/local/infernal-1}
+{\scriptuser{env CFLAGS="-O3" ./configure --enable-mpi --enable-lfs --prefix=/usr/local/infernal-1}}
 
 
 
