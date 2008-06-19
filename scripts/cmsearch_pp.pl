@@ -92,9 +92,9 @@ if($do_extract)
     if(! (-e "$db_file")) { die("ERROR, -X $db_file enabled but $db_file does not exist.\n") };
 }
 
- open(IN, $cmsearch_output);
- $output = join("",<IN>);
- close(IN);
+open(IN, $cmsearch_output);
+$output = join("",<IN>);
+close(IN);
 &infernal::ParseINFERNAL($output);
 
 $orient_char[0] = "+";
