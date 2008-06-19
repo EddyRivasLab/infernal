@@ -127,7 +127,7 @@ long alignments are split into blocks separated by blank lines.
 
 To build a model from this alignment, do:
 
-\user{cmbuild my.cm trna.5.sto}
+\user{cmbuild my.cm trna.5.sto}\\
 
 Almost instantly, \prog{cmbuild} reads in the alignment, constructs a
 model, and saves that model to the new file \prog{my.cm}. It is a
@@ -220,7 +220,7 @@ is 1, but if you're using MPI it could be higher). To estimate the
 time required for calibration of your tRNA
 model, type:
 
-\user{cmcalibrate --forecast 1 my.cm}
+\user{cmcalibrate --forecast 1 my.cm}\\
 
 The program will dump about fifty lines to standard output but 
 don't worry about any of it now except the line with ``all'' in the
@@ -238,14 +238,14 @@ don't have to wait an hour to do this step, we've included the file
 you just performed (except \prog{my.c.cm} was used as the output file
 instead of \prog{my.cm}) and then calibrated with:
 
-\user{cmcalibrate my.c.cm}
+\user{cmcalibrate my.c.cm}\\
 
 When \prog{cmcalibrate} finished, the \prog{my.c.cm} file had
 been updated to include information about E-values and HMM filter
 thresholds. More detail on what \prog{cmcalibrate} does can be found
 in sections 5 and 6. To make things simpler for our tutorial, copy over
 the \prog{my.cm} file you just made with the calibrated version 
-(\user{cp my.c.cm my.cm}).
+(\user{cp my.c.cm my.cm}).\\
 
 \subsection{Searching a sequence database with \prog{cmsearch}}
 
@@ -257,7 +257,7 @@ position 101\ldots173. The \prog{cmsearch} also has a
 you're searching large database files. Since this database is
 relatively small, we'll just do the search:
 
-\user{cmsearch my.cm tosearch.300Kb.db}
+\user{cmsearch my.cm tosearch.300Kb.db}\\
 
 First, the program will print a header and ``Pre-search info'' to the
 screen. This output is explained in detail later in section 6, don't
@@ -416,7 +416,7 @@ demonstrate local alignment.)
 
 To align these sequences to the model we made in \prog{my.cm}, do:
 
-\user{cmalign my.cm toalign.3.fa}
+\user{cmalign my.cm toalign.3.fa}\\
 
 The output of cmalign is described later in detail. For now let's only
 look at the alignment:
@@ -463,7 +463,7 @@ gaps in each column).
 If you want to save the alignment to a file, you can use the \prog{-o}
 option:
 
-\user{cmalign -o my.sto my.cm toalign.3.fa}
+\user{cmalign -o my.sto my.cm toalign.3.fa}\\
 
 \subsection{Local versus glocal alignment in \prog{cmsearch} and \prog{cmalign}}
 
@@ -483,7 +483,7 @@ default, and the local alignment mode can be switched on using the the
 
 First let's look at an example of local alignment in \prog{cmsearch}:
 
-\user{cmsearch my.cm toalign.3.fa}
+\user{cmsearch my.cm toalign.3.fa}\\
 
 Look at the alignment for the target sequence tRNA8 (the last alignment in the output): 
 
@@ -520,7 +520,7 @@ from normal insertions (which are marked with \verb+.+ characters).
 You can activate local alignment in \prog{cmalign} with the \prog{-l}
 option:
 
-\user{cmalign -l my.cm toalign.3.fa}
+\user{cmalign -l my.cm toalign.3.fa}\\
 
 This results in the following alignment:
 \footnote{The discontinuity of structural local alignment presents a
@@ -604,7 +604,7 @@ nnotation, to build a model from it called \prog{second.cm}
 ith architecture dictated by the RF annotation, you
 would do:
 
-\user{cmbuild --rf second.cm trna.5.sto}
+\user{cmbuild --rf second.cm trna.5.sto}\\
 
 Since \prog{cmalign} leaves an RF line on the alignments it generates,
 the \prog{--rf} option allows you to propagate your consensus
@@ -639,7 +639,7 @@ cluster alignment to the file \prog{<f>}. Let's try the
 \prog{--cmaxid} option: 
 
 {\samepage
-\user{cmbuild --cmaxid 0.6 --cdump my.cmaxid60.sto my.cmaxid60.cm trna.5.sto}
+\user{cmbuild --cmaxid 0.6 --cdump my.cmaxid60.sto my.cmaxid60.cm trna.5.sto}\\
 \begin{comment}
 # cmbuild :: build RNA covariance model(s) from alignment
 # INFERNAL 1.0 (June 2008)
@@ -726,7 +726,7 @@ separate model from each sequence in the input alignment file.
 Here's an example of building five \prog{rsearch} CMs for tRNA:
 
 {\samepage
-\user{cmbuild -F --rsearch ~/infernal/matrices/RIBOSUM85-60.mat --call my.rsearch.cm trna.5.sto}
+\user{cmbuild -F --rsearch ~/infernal/matrices/RIBOSUM85-60.mat --call my.rsearch.cm trna.5.sto}\\
 \begin{comment}
 # cmbuild :: build RNA covariance model(s) from alignment
 # INFERNAL 1.0 (June 2008)
@@ -783,7 +783,7 @@ options to \prog{cmbuild} when you built the model, you must use those
 same options to \prog{cmalign}. Here is an example:
 
 {\samepage
-\user{cmalign --withali trna.5.sto my.cm toalign.3.fa}
+\user{cmalign --withali trna.5.sto my.cm toalign.3.fa}\\
 \begin{comment}
 # cmalign :: align sequences to an RNA CM
 # INFERNAL 1.0 (June 2008)
@@ -883,7 +883,7 @@ were removed) that was aligned as the example above for
 the \prog{--withali} option. If we align the truncated sequence
 \textbf{without} the \prog{--sub} option: 
 
-\user{cmalign --withali trna.5.sto my.cm toalign.1trunc.fa}
+\user{cmalign --withali trna.5.sto my.cm toalign.1trunc.fa}\\
 \begin{comment}
 # cmalign :: align sequences to an RNA CM
 # INFERNAL 1.0 (June 2008)
@@ -944,7 +944,7 @@ based on the other sequences would be easily alignable.
 
 Here's what happens with the \prog{--sub} option turned on:
 
-\user{cmalign --sub --withali trna.5.sto my.cm toalign.1trunc.fa }
+\user{cmalign --sub --withali trna.5.sto my.cm toalign.1trunc.fa }\\
 \begin{comment}
 # cmalign :: align sequences to an RNA CM
 # INFERNAL 1.0 (June 2008)
@@ -1009,7 +1009,7 @@ are actually posterior probabilities, which can be added to
 the output alignment using the \prog{-p} option. We'll demonstrate
 this with alignment of a single sequence:
 
-\user{cmalign -p my.cm toalign.1.fa}
+\user{cmalign -p my.cm toalign.1.fa}\\
 \begin{comment}
 # cmalign :: align sequences to an RNA CM
 # INFERNAL 1.0 (June 2008)
@@ -1160,12 +1160,12 @@ Purine1          CUACAAGGUGCCGGAACACCUAACAAUAAGUAAGUCAGCAGUGAGAU
 
 First we build the model:
 
-\user{cmbuild purine.1.cm purine.1.sto}
+\user{cmbuild purine.1.cm purine.1.sto}\\
 
 Now we want to calibrate it. As before, we can use \prog{--forecast}
 to see the predicted running time:
 
-\user{cmcalibrate --forecast 1 purine.1.cm}
+\user{cmcalibrate --forecast 1 purine.1.cm}\\
 
 It should take about two hours. Feel free to calibrate the model yourself if you want
 to, but to save time we've included \prog{purine.1.c.cm} a
@@ -1182,7 +1182,7 @@ sequences. In this case let's search another Firmicutes bacteria,
 \prog{T.tengcongensis.genome.fa}:
 
 \subsubsection{iteration 1, step 2: search a genome}
-\user{cmsearch purine.1.cm T.tengcongensis.genome.fa}
+\user{cmsearch purine.1.cm T.tengcongensis.genome.fa}\\
 
 This will take about twenty minutes for \prog{cmsearch} to search the 5 Mb
 genome. (If you don't want to wait, please continue reading).
@@ -1261,13 +1261,13 @@ above and we're ready to do another round, armed with an alignment of
 two examples of the Purine riboswitch. First, we build a new model:
 
 \subsubsection{iteration 2, step 1: build and calibrate a new model}
-\user{cmbuild purine.2.cm purine.2.sto}
+\user{cmbuild purine.2.cm purine.2.sto}\\
 
 Once again the calibration step is a bottleneck. We've provided a
 calibrated file so you can proceed with this tutorial in
 \prog{purine.2.c.cm}, copy this file over your own model:
 
-\user{cp purine.2.c.cm purine.2.cm}
+\user{cp purine.2.c.cm purine.2.cm}\\
 
 \subsubsection{iteration 2, step 2: search a genome}
 
@@ -1279,7 +1279,7 @@ more ambitious search this time, and look for Purine riboswitch
 homologs in the genome of \emph{Colwellia psychrerythraea}, a member of the
 Bacterial $\gamma$-proteobacteria division:
 
-\user{cmsearch purine.2.cm C.psychrerythraea.genome.fa}
+\user{cmsearch purine.2.cm C.psychrerythraea.genome.fa}\\
 
 This search will take about 50 minutes. Two hits are found. Let's look
 at the first, highest-scoring hit:
@@ -1303,6 +1303,7 @@ at the first, highest-scoring hit:
            A UA:GA::
    1401767 AUUACGAAG 1401775 
 \end{sreoutput}
+}
 
 This hit looks very promising. As before, even with a good E-value
 (this one is 2.291e-06), a hit is not necessarily a real homolog, but
@@ -1317,7 +1318,7 @@ hit is convincing.
 To save time we've extracted this sequence from the genome and saved
 it as \prog{purine.psych.fa}. Let's align it our model:
 
-\user{cmalign -o purine.3.sto --withali purine.2.sto purine.2.cm purine.psych.fa}
+\user{cmalign -o purine.3.sto --withali purine.2.sto purine.2.cm purine.psych.fa}\\
 
 This alignment is depicted in the structure on the right below. Each
 column of the alignment is represented by a residue. Lowercase
@@ -1360,13 +1361,13 @@ These programs must be run using \prog{mpirun}. These MPI programs are
 under current development, and we have only tested them using the LAM
 implementation of MPI. Here are example runs using LAM:  
 
-\user{mpirun C cmsearch --mpi query.cm target.fa}
+\user{mpirun C cmsearch --mpi query.cm target.fa}\\
 
-\user{mpirun C cmcalibrate --mpi query.cm}
+\user{mpirun C cmcalibrate --mpi query.cm}\\
 
-\user{mpirun C cmalign --mpi query.cm target.fa}
+\user{mpirun C cmalign --mpi query.cm target.fa}\\
 
-\user{mpirun C cmscore --mpi query.cm}
+\user{mpirun C cmscore --mpi query.cm}\\
 
 \subsection{Getting more information}
 
@@ -1374,7 +1375,7 @@ For a quick refresher on the command line usage of any program and its
 commonly used options, just type the name of the program with no other
 arguments: e.g.\
 
-\user{cmemit}
+\user{cmemit}\\
 
 and you'll get a brief help:
 
@@ -1397,7 +1398,7 @@ To see more help on other available options, do cmemit -h
 \end{sreoutput}
 To see more help on other available options, do \prog{cmemit -h}
 
-\user{cmemit -h}
+\user{cmemit -h}\\
 
 \begin{sreoutput}
 # cmemit :: generate sequences from a covariance model
@@ -1432,7 +1433,8 @@ More detailed information on usage and command line options is
 available in UNIX manual pages. If they have been installed for your
 system, you can see this information with, e.g.:
 
-\user{man cmalign}
+\user{man cmalign}\\
 
 Copies of the man pages are also provided at the end of this guide.
+
 

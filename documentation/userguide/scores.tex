@@ -171,7 +171,7 @@ has a \prog{--forecast} option which will list each stage and predict
 it's required running time. Let's examine the output with this option
 for the \prog{my.cm} model from the tutorial:
 
-\user{cmcalibrate --forecast 1 my.cm}
+\user{cmcalibrate --forecast 1 my.cm}\\
 
 \begin{sreoutput}
 # Forecasting time for 1 processor(s) to calibrate CM 1: trna.5-1
@@ -192,28 +192,34 @@ for the \prog{my.cm} model from the tutorial:
 # all         -    -    -          -      -       01:25:33
 \end{sreoutput}
 
+
 Let's go through what each column of the output is telling us:
 
 \begin{wideitem}
-\item[\emprog{stage}] what type of stage this row pertains to, either
+\item[\emprog{stage}] 
+  what type of stage this row pertains to, either
   ``exp tail'' for exponential tail fitting, or ``filter'' for filter
   threshold calculation. For now we're just focusing on the exponential tail
   stages. 
 
-\item[\emprog{mod}] the model we're fitting an exponential tail for,
+\item[\emprog{mod}] 
+  the model we're fitting an exponential tail for,
   either the CM or a CP9 HMM. We use the HMM exponential tails during
   HMM filtering for faster searches.
   
-\item[\emprog{cfg}] the configuration of the model for this stage,
+\item[\emprog{cfg}] 
+  the configuration of the model for this stage,
   either ``glc'' for glocal or ``loc'' for local. \prog{cmcalibrate}
   has to calibrate exponential tails \emph{separately} for glocal and
   local modes.
 
-\item[\emprog{alg}] the search algorithm for this stage. There are two
+\item[\emprog{alg}] 
+  the search algorithm for this stage. There are two
   algorithms that need to be separately calibrated for each the CM and
   HMM. These are explained in more detail in section 6.
 
-\item[\emprog{expL}] the length of random sequence we'll search for
+\item[\emprog{expL}] 
+  the length of random sequence we'll search for
   this stage. For CM stages, this length is 1,500,000 residues (1.5 Mb)
   by default. For HMM stages, this length is is the minimum
   of 15 Mb and a length $x$, where $x$ is the length that will cause
@@ -225,13 +231,17 @@ Let's go through what each column of the output is telling us:
 %  E-values) will not increase the calibration time of this stage to more
 %  than 10\% the total calibration time.
 
-\item[\emprog{filN}] the number of random sequences that will be
+\item[\emprog{filN}] 
+  the number of random sequences that will be
   searched for the HMM filter threshold calculation. This isn't
   relevant now; see section 6 for more on HMM filter threshold
   calculation. 
 
-\item[\emprog{predicted time}] the predicted run time of this stage. 
+\item[\emprog{predicted time}] 
+  the predicted run time of this stage. 
+
 \end{wideitem}
+
 
 As you can see, \prog{cmcalibrate} will fit separate exponential tails
 for each combination of model and algorithm (4 choices) and configuration
@@ -619,7 +629,6 @@ present in any of the 0.x versions of \software{Infernal}. This can
 lead to large differences in the scores reported by 1.0 and previous
 versions. 
 
-\samepage{
 The following table shows the penalty for a $100$ nucleotide hit with
 varying compositions of A, C, G, and U residues. This table is included to give you
 an idea of how severe the null3 correction is, and can be useful for
@@ -659,7 +668,6 @@ composition would receive a $3.44$ bit penalty.
 \end{tabular}
 \end{center}
 
-}
 \vspace{0.5in}
 
 

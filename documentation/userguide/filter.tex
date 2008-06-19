@@ -361,7 +361,7 @@ of these questions is easy enough to perform, we can run
 to get the non-filtered running time and to see if anything else
 is found. The command to do that is: 
 
-\user{cmsearch -E 0.001 --fil-no-hmm --fil-no-qdb purine.2.c.cm C.psychrerythraea.genome.fa}.
+\scriptuser{cmsearch -E 0.001 --fil-no-hmm --fil-no-qdb purine.2.c.cm C.psychrerythraea.genome.fa}.
 
 To save you the time of actually doing this we've saved the
 output of this search in the file \prog{purine.2.nofilter.cmsearch},
@@ -589,7 +589,7 @@ strict it is often possible to achieve large speedups of up to
 10 randomly chosen Rfam 8.1 models, that have been calibrated with
 default parameters to cmcalibrate:
 
-\user{cmstat --ga --lfi rfam10.c.cm}
+\user{cmstat --ga --lfi rfam10.c.cm}\\
 
 \begin{sreoutput}
 # local Inside filter threshold stats for Rfam GA gathering cutoff from CM file
@@ -638,13 +638,13 @@ this part may not make sense).  First, build a model from the
 subdirectory of \software{Infernal}). We'll use the \prog{-F} option
 which allows us to overwrite the file \prog{my.cm} if it exists.
 
-\user{cmbuild -F my.cm trna.5.sto}
+\user{cmbuild -F my.cm trna.5.sto}\\
 
 Now, let's redo the search from the tutorial of the 300 Kb database,
 but this time our model is not calibrated. First, let's try to use
 \prog{--forecast} to predict the run time: 
 
-\user{cmsearch --forecast 1 my.cm tosearch.300Kb.db}
+\user{cmsearch --forecast 1 my.cm tosearch.300Kb.db}\\
 
 You'll get an error message saying that you can't use
 \prog{--forecast} for a non-calibrated model. The reason is because
@@ -654,7 +654,7 @@ of $3.0$ bits.
 
 Let's run the actual search:
 
-\user{cmsearch my.cm tosearch.300Kb.db}
+\user{cmsearch my.cm tosearch.300Kb.db}\\
 
 First, the ``Pre-search'' info is printed to the screen, which has
 less information than it would if the model were calibrated (see
@@ -794,7 +794,7 @@ model. First, with a calibrated or non-calibrated model to set the HMM
 filter cutoff to $5.0$ bits, the QDB filter cutoff to $10.0$ bits and the final
 cutoff to $15.0$ bits: 
 
-\user{cmsearch --fil-T-hmm 5 --fil-T-qdb 10 -T 15 my.cm tosearch.300Kb.db} 
+\user{cmsearch --fil-T-hmm 5 --fil-T-qdb 10 -T 15 my.cm tosearch.300Kb.db} \\
 
 If your model is calibrated, you can force the HMM filter to be set to
 achieve a specified (predicted) survival fraction with
@@ -802,7 +802,7 @@ achieve a specified (predicted) survival fraction with
 you can expect roughly a \prog{1 / <x>} speedup relative to a
 non-filtered search. To try it: 
 
-\user{cmsearch --fil-Smax-hmm 0.001 my.c.cm tosearch.300Kb.db}
+\user{cmsearch --fil-Smax-hmm 0.001 my.c.cm tosearch.300Kb.db}\\
 
 \begin{sreoutput}
 # Pre-search info for CM 1: trna.5-1
