@@ -256,19 +256,12 @@ Empirically, glocal searches return many fewer hits than
 local searches, so glocal may be desired for some applications.
 
 .TP
-.BI -p 
+.B -p 
 Append posterior probabilities to alignments of hits. For more
 information on posterior probabilities see the description of the
 .B -p 
 option in the manual page for 
 .B cmalign.
-
-.TP
-.BI -Z "<x>"
-Calculate E-values as if the target database size was 
-.I <x> 
-megabases (Mb). Ignore the actual size of the database. This option
-is only valid if the CM file has been calibrated.
 
 .TP 
 .B -x
@@ -278,6 +271,17 @@ hits. The x's appear above the structural annotation in the alignment
 output. Basepairs without x's above them are compensatory with respect
 to the model. Compensatory mutations are good evidence for structural
 homology.
+
+.TP
+.BI -Z " <x>"
+Calculate E-values as if the target database size was 
+.I <x> 
+megabases (Mb). Ignore the actual size of the database. This option
+is only valid if the CM file has been calibrated. Warning: the
+predictions for timings and survival fractions will be calculated as
+if the database was of size 
+.I <x>
+Mb, which means they will be inaccurate.
 
 .TP 
 .B --toponly
@@ -351,7 +355,7 @@ the brief one-line description printed when
 is enabled, and the source code.
 
 .TP
-.BI --mpi
+.B --mpi
 Run as an MPI parallel program. This option will only be available if
 @PACKAGE@ 
 has been configured and built with the "--enable-mpi" flag (see User's
@@ -403,7 +407,7 @@ threshold is relevant only to the final round of searching performed
 after all filters have been used, not to the filter rounds themselves.
 
 .TP 
-.BI --nc
+.B --nc
 Set the bit score cutoff as the NC cutoff value used by Rfam curators
 as the noise cutoff score. This is the highest scoring hit found by
 this model during Rfam curation that the Rfam curators defined as a
@@ -430,7 +434,7 @@ option to
 will cause the program to print an error message and exit.
 
 .TP 
-.BI --ga
+.B --ga
 Set the bit score cutoff as the GA cutoff value used by Rfam curators
 as the gathering threshold. The GA cutoff is defined in a stockholm
 file used to build the model in the same way as the NC cutoff (see above),
@@ -439,7 +443,7 @@ but with a line:
 .
 
 .TP 
-.BI --tc
+.B --tc
 Set the bit score cutoff as the TC cutoff value used by Rfam curators
 as the trusted cutoff. The TC cutoff is defined in the stockholm file
 used to build the model in the same way as the NC cutoff (see above),
@@ -454,7 +458,7 @@ search. By default, QDB is used in the final round of search with
 beta = 1E-15, after all filtering is finished. 
 
 .TP 
-.BI --beta " <x>"
+.B --beta " <x>"
 For query-dependent banding (QDB) during the final round of search,
 set the beta parameter to 
 .I <x>
@@ -465,7 +469,7 @@ mass considered negligible during band calculation. The default beta
 for the final round of search is 1E-15.
 
 .TP 
-.BI --hbanded
+.B --hbanded
 Use HMM bands to accelerate the final round of search. Constraints for
 the CM search are derived from posterior probabilities from an HMM. 
 This is an experimental option and it is not recommended for use 
@@ -610,10 +614,10 @@ is run with
 and no search is performed.
 
 .TP
-.BI --rna
+.B --rna
 Output the hit alignments as RNA sequences alignments. This is true by default.
 
 .TP
-.BI --dna
+.B --dna
 Output the hit alignments as DNA sequence alignments. 
 

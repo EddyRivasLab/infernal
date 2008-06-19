@@ -305,14 +305,6 @@ empirically determined as optimal in a RFAM based benchmark described
 in (Nawrocki and Eddy, PLoS Computational Biology 3(3): e56, 2007).
 
 .TP 
-.BI --eX " <x>"
-Set the minimum allowed total relative entropy of a CM as
-.I <x>.
-By default this value is 6.0 bits because empirically models with
-lower entropy have difficulty distinguishing homologous
-sequences from random background. 
-
-.RP 
 .BI --null " <f>"
 Read a null model from 
 .I <f>.

@@ -42,7 +42,7 @@ default the two algorithms compared are the divide and conquer (D&C) CYK algorit
 (SR Eddy, BMC Bioinformatics 3:18, 2002), and the HMM banded standard
 CYK algorithm. 
 When the
-.B --std
+.B --nonbanded
 option is enabled D&C CYK is compared with the standard CYK alignment algorithm.
 In this case, because both algorithms should find the optimal
 alignment the parsetree scores should be nearly identical (within 0.01
@@ -94,7 +94,7 @@ printed to stdout.
 .PP
 When comparing the non-banded standard CYK and D&C CYK
 algorithms with the 
-.B --std
+.B --nonbanded
 option, the two parse trees
 should usually be identical for any sequence, because the optimal alignment
 score is guaranteed. However, there can be cases of ties, where two or
@@ -135,7 +135,7 @@ Print brief help; includes version number and summary of
 all options, including expert options.
 
 .TP
-.BI -n <n>
+.BI -n " <n>" 
 Set the number of sequences to generate and align to 
 .I <n>.
 This option is incompatible with the
@@ -177,7 +177,7 @@ Print individual timings and score comparisons for each sequence in
 By default only summary statistics are printed.
 
 .TP
-.BI --sub
+.B --sub
 Turn on the sub model construction and alignment procedure. For each
 sequence, an HMM is first used to predict the model start and end
 consensus columns, and a new sub CM is constructed that only models
@@ -206,20 +206,32 @@ will exit prematurely and report an error message that
 the matrix exceeded it's maximum allowable size. In this case, the
 .B --mxsize 
 can be used to raise the limit, or if
-.B --std 
+.B --nonbanded
 is enabled, the 
 .B --scoreonly 
 option will solve the memory issue.
 This memory error is most likely to occur when the
-.B --std
+.B --nonbanded
 option is used without the
 .B --scoreonly
 option, but can still occur when
-.B --std
+.B --nonbanded
 is not used. 
 
 .TP
-.BI --mpi
+.B --devhelp
+Print help, as with  
+.B "-h",
+but also include undocumented developer options. These options are not
+listed below, are under development or experimental, and are not
+guaranteed to even work correctly. Use developer options at your own
+risk. The only resources for understanding what they actually do are
+the brief one-line description printed when
+.B "--devhelp"
+is enabled, and the source code.
+
+.TP
+.B --mpi
 Run as an MPI parallel program.
 This option will only be available if
 @PACKAGE@ 
@@ -259,9 +271,9 @@ distribution of the CM. The average length of the random sequences
 will be the consensus length of the RNA family modelled by
 the CM (or very close to it).
 Alternatively, the 
-.BI "--Lmin <n>"
+.BI --Lmin " <n>"
 and 
-.BI "--Lmax <n>" 
+.BI --Lmax " <n>" 
 options can be used to specify a length distribution.
 The number of sequences generated is
 10 by default but can be changed with the 
@@ -272,7 +284,7 @@ in FASTA format with the
 option.
 
 .TP
-.BI --infile <f>
+.BI --infile " <f>"
 Sequences to score are read from the file
 .I <f>.
 All the sequences from 
@@ -284,7 +296,7 @@ options are incompatible with
 .B --infile.
 
 .TP
-.BI --outfile <f>
+.BI --outfile " <f>"
 Save generated sequences that are scored to the file
 .I <f>
 in FASTA format.
@@ -293,27 +305,27 @@ This option is incompatible with the
 option.
 
 .TP
-.BI --Lmin <n1>
+.BI --Lmin " <n1>" 
 Must be used in combination with 
 .B --random
 and
-.BI --Lmax <n2>.
+.BI --Lmax " <n2>."
 The lengths of the random sequences generated and scored will be
 uniform between the range of
 .I <n1>..<n2>.
 
 .TP
-.BI --Lmax <n2>
+.BI --Lmax " <n2>" 
 Must be used in combination with 
 .B --random
 and
-.BI --Lmin <n1>.
+.BI --Lmin " <n1>".
 The lengths of the random sequences generated and scored will be
 uniform between the range of
 .I <n1>..<n2>.
 
 .TP
-.BI --pad
+.B --pad
 Must be used in combination with 
 .B --emit 
 and 

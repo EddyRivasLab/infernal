@@ -96,30 +96,27 @@ print general statistics on the models in
 and the alignment it was built from.
 
 .TP
-.BI -Z "<x>"
+.BI -Z " <x>"
 Calculate E-values as if the target database size was 
 .I <x> 
 megabases (Mb). Ignore the actual size of the database. This option
 is only valid if the CM file has been calibrated.
 
+.TP 
 .B --all
 print all available statistics 
 
+.TP 
 .B --le
 print local E-value statistics. This option only works if 
-.I cmfile. 
+.I cmfile 
 has been calibrated with 
 .B cmcalibrate.
 
+.TP 
 .B --ge
 print glocal E-value statistics. This option only works if 
-.I cmfile. 
-has been calibrated with 
-.B cmcalibrate.
-
-.B --ge
-print glocal E-value statistics. This option only works if 
-.I cmfile. 
+.I cmfile 
 has been calibrated with 
 .B cmcalibrate.
 
