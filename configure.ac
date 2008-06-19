@@ -293,108 +293,101 @@ AC_ARG_ENABLE(lfs,
         ;;
 esac])
 
-
-# --enable-devopts        Enable development options, (options that are too fragile for normal users)
+## Rigoroous filters not included as an option in v1.0+
+## Users can use previous versions of Infernal inside which
+## rigfilters did successfully build.
+##
+## Default option for rigfilters is OFF
+#rigfilters=0;
+## --with-rigfilters     install rigorous filters
+#AC_ARG_WITH(rigfilters,
+#[  --with-rigfilters       enable rigorous filters, requires CFSQP package],
+#[case $with_rigfilters in
+#   yes) AC_MSG_NOTICE([Rigorous filters selected])
+#	rigfilters=1
+#	;;
+#   no)  rigfilters=0
+#        ;;
+#    *)  echo "Ignoring unknown argument to --with-rigfilters: $with_rigfilters"
+#        ;;
+#esac])
 #
-AC_ARG_ENABLE(devopts, 
-[  --enable-devopts            enable fragile options still under development],
-[case $enable_devopts in
-   yes) AC_MSG_NOTICE([configured to include optional development options])
-	AC_DEFINE(HAVE_DEVOPTS)
-        ;;
-   no)  ;;
-    *)  echo "Ignoring unknown argument to --enable-devopts: $enable_devopts"
-        ;;
-esac])
-
-# Default option for rigfilters is OFF
-rigfilters=0;
-# --with-rigfilters     install rigorous filters
-AC_ARG_WITH(rigfilters,
-[  --with-rigfilters       enable rigorous filters, requires CFSQP package],
-[case $with_rigfilters in
-   yes) AC_MSG_NOTICE([Rigorous filters selected])
-	rigfilters=1
-	;;
-   no)  rigfilters=0
-        ;;
-    *)  echo "Ignoring unknown argument to --with-rigfilters: $with_rigfilters"
-        ;;
-esac])
-
-# Default location of cfsqp
-cfsqp_path=$PWD/rigfilters/cfsqp;
-# --with-cfsqp             specify location of cfsqp
-AC_ARG_WITH(cfsqp,
-[  --with-cfsqp=PATH       specify the location of CFSQP source files],
-[case $with_cfsqp in
-   /*)  cfsqp_path=$with_cfsqp
-        ;;
-   ~*)  cfsqp_path=`echo $with_cfsqp | sed 's/^~//'`
-        cfsqp_path=$HOME/../$cfsqp_path
-        ;;
-   *)   #NOTE: relative path not normalized
-        cfsqp_path=$PWD/$with_cfsqp
-        ;;
-  esac
-#  if test -d $cfsqp_path; then
-#    AC_MSG_NOTICE([path recognized as directory])
-#  else
-#    AC_MSG_NOTICE([path not recognized as directory!: $cfsqp_path])
+## Default location of cfsqp
+#cfsqp_path=$PWD/rigfilters/cfsqp;
+## --with-cfsqp             specify location of cfsqp
+#AC_ARG_WITH(cfsqp,
+#[  --with-cfsqp=PATH       specify the location of CFSQP source files],
+#[case $with_cfsqp in
+#   /*)  cfsqp_path=$with_cfsqp
+#        ;;
+#   ~*)  cfsqp_path=`echo $with_cfsqp | sed 's/^~//'`
+#        cfsqp_path=$HOME/../$cfsqp_path
+#        ;;
+#   *)   #NOTE: relative path not normalized
+#        cfsqp_path=$PWD/$with_cfsqp
+#        ;;
+#  esac
+##  if test -d $cfsqp_path; then
+##    AC_MSG_NOTICE([path recognized as directory])
+##  else
+##    AC_MSG_NOTICE([path not recognized as directory!: $cfsqp_path])
+##  fi
+#  if test -f $cfsqp_path/cfsqp.c; then
+#    cp $cfsqp_path/cfsqp.c rigfilters/cfsqp/.
 #  fi
-  if test -f $cfsqp_path/cfsqp.c; then
-    cp $cfsqp_path/cfsqp.c rigfilters/cfsqp/.
-  fi
-  if test -f $cfsqp_path/cfsqpusr.h; then
-    cp $cfsqp_path/cfsqpusr.h rigfilters/cfsqp/.
-  fi
-  if test -f $cfsqp_path/qld.c; then
-    cp $cfsqp_path/qld.c rigfilters/cfsqp/.
-  fi
-])
-if test "$rigfilters" = 1; then
-  if test -f rigfilters/cfsqp/cfsqp.c; then
-    :
-  else
-    AC_MSG_NOTICE([CFSQP: Unable to locate cfsqp.c])
-    rigfilters=0;
-  fi
-  if test -f rigfilters/cfsqp/cfsqpusr.h; then
-    :
-  else
-    AC_MSG_NOTICE([CFSQP: Unable to locate cfsqpusr.h])
-    rigfilters=0
-  fi
-  if test -f rigfilters/cfsqp/qld.c; then
-    :
-  else
-    AC_MSG_NOTICE([CFSQP: Unable to locate qld.c])
-    rigfilters=0
-  fi
-  if test "$rigfilters" = 0; then
-    AC_MSG_NOTICE([CFSQP: Source not found; disabling rigorous filters])
-    rigfilters=""
-  else
-    AC_MSG_NOTICE([CFSQP located, including rigfilters package in build])
-    rigfilters="rigfilters"
-  fi
-fi
-AC_SUBST(RIGFILTERS,$rigfilters)
-
-# Default option for rigfilters is OFF
-rigfilters=0;
-# --with-rigfilters     install rigorous filters
-AC_ARG_WITH(rigfilters,
-[  --with-rigfilters       enable rigorous filters, requires CFSQP package],
-[case $with_rigfilters in
-   yes) AC_MSG_NOTICE([Rigorous filters selected])
-	rigfilters=1
-	;;
-   no)  rigfilters=0
-        ;;
-    *)  echo "Ignoring unknown argument to --with-rigfilters: $with_rigfilters"
-        ;;
-esac])
+#  if test -f $cfsqp_path/cfsqpusr.h; then
+#    cp $cfsqp_path/cfsqpusr.h rigfilters/cfsqp/.
+#  fi
+#  if test -f $cfsqp_path/qld.c; then
+#    cp $cfsqp_path/qld.c rigfilters/cfsqp/.
+#  fi
+#])
+#if test "$rigfilters" = 1; then
+#  if test -f rigfilters/cfsqp/cfsqp.c; then
+#    :
+#  else
+#    AC_MSG_NOTICE([CFSQP: Unable to locate cfsqp.c])
+#    rigfilters=0;
+#  fi
+#  if test -f rigfilters/cfsqp/cfsqpusr.h; then
+#    :
+#  else
+#    AC_MSG_NOTICE([CFSQP: Unable to locate cfsqpusr.h])
+#    rigfilters=0
+#  fi
+#  if test -f rigfilters/cfsqp/qld.c; then
+#    :
+#  else
+#    AC_MSG_NOTICE([CFSQP: Unable to locate qld.c])
+#    rigfilters=0
+#  fi
+#  if test "$rigfilters" = 0; then
+#    AC_MSG_NOTICE([CFSQP: Source not found; disabling rigorous filters])
+#    rigfilters=""
+#  else
+#    AC_MSG_NOTICE([CFSQP located, including rigfilters package in build])
+#    rigfilters="rigfilters"
+#  fi
+#fi
+#AC_SUBST(RIGFILTERS,$rigfilters)
+#
+## Default option for rigfilters is OFF
+#rigfilters=0;
+## --with-rigfilters     install rigorous filters
+#AC_ARG_WITH(rigfilters,
+#[  --with-rigfilters       enable rigorous filters, requires CFSQP package],
+#[case $with_rigfilters in
+#   yes) AC_MSG_NOTICE([Rigorous filters selected])
+#	rigfilters=1
+#	;;
+#   no)  rigfilters=0
+#        ;;
+#    *)  echo "Ignoring unknown argument to --with-rigfilters: $with_rigfilters"
+#        ;;
+#esac])
+#
+# end of rigfilters block
+#################################
 
 # end of optionally configured features
 ################################################################
