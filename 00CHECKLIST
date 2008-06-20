@@ -1,18 +1,31 @@
 Checklist for an Infernal release.
-SRE, Mon Oct 31 07:40:36 2005 
+SRE, Fri Jun 20 10:22:03 2008
 -------------------------------------
-
-Infernal has an "unstable trunk" policy. A release goes on a stable
-branch.
 
 When editing this 00CHECKLIST, it is best to edit it only in the
 trunk, not in a release branch. It isn't included in releases anyway.
 
+Subversion repository:  https://svn.janelia.org/eddylab/eddys/src/infernal
+Trunk:                  https://svn.janelia.org/eddylab/eddys/src/infernal/trunk/
 
+Easel follows an 'unstable trunk' policy.
+Each major release goes onto a stable branch.
+Every release (even minor ones) is tagged.
+
+Release types: major releases, minor releases, and snapshots. A major
+release gets its own branch. A minor release puts bug fixes into a
+major branch. A snapshot is from the development trunk.
+
+Version naming:                                        example
+major              <lineage>.<major-release>                      1.0
+minor              <lineage>.<major-release>.<minor-release>      1.0.1
+alpha              <lineage>.<major-release>a<n>                  1.0a1
+beta               <lineage>.<major-release>b<n>                  1.0b1
+release candidate  <lineage>.<major-release>rc<n>                 1.0rc1
+snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap20080325
 
 1. Announce the intent to release to all developers. 
-   All working copies of Infernal and its dependent libraries (ssdk,
-   squid, easel) should be committed. 
+   Commit working copies on all machines (including Easel).
    Example of checking for stray or uncommitted files:
 	 ./configure
          make distclean
@@ -21,41 +34,45 @@ trunk, not in a release branch. It isn't included in releases anyway.
    Clean up any stray files identified by 'svn status'.
    'svn add' and 'svn commit' as needed to commit new or modified files.
 
-2. Test the trunk first. 
+2. For a major release (where we're about to create a new branch):
+   First test the development trunk.
    Compile should be entirely clean when compiled -Wall.
-   'make check' should be clean, and 'make dist' should work.
 
-        ./configure --enable-debugging --enable-lfs --enable-mpi --prefix=/groups/eddy/home/eddys/tmp/infernal
+        ./configure --enable-debugging --enable-mpi --prefix=/groups/eddy/home/eddys/tmp/infernal
         make
+        (cd documentation/userguide; make) 
         make check
-        make dist	
+	make install
+	make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/trunk RELEASE=snapxxx dist
 
-3. If creating a new major release, create a stable release branch for all packages.
+   When trunk is clean,
+        svn commit
+   We're (usually) next going to move out of the trunk to the release branch.
+
+
+3. For a major release, create stable release branches for Infernal and Easel.
    All subsequent bugfix releases will happen in this branch, while trunk keeps moving.
    [Query replace the version # here]
          svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/trunk\
-                 https://svn.janelia.org/eddylab/eddys/src/infernal/branches/0.8\
-                 -m "created 0.8 release branch"          
-         svn copy https://svn.janelia.org/eddylab/eddys/src/squid/trunk\
-                 https://svn.janelia.org/eddylab/eddys/src/squid/branches/infernal/0.8\
-                 -m "created Infernal 0.8 release branch"          
-         svn copy https://svn.janelia.org/eddylab/eddys/src/ssdk/trunk\
-                 https://svn.janelia.org/eddylab/eddys/src/ssdk/branches/infernal/0.8\
-                 -m "created Infernal 0.8 release branch"          
+                 https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0\
+                 -m "created 1.0 release branch"          
          svn copy https://svn.janelia.org/eddylab/eddys/easel/trunk\
-                 https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/0.8\
-                 -m "created Infernal 0.8 release branch"          
+                 https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.0\
+                 -m "created Infernal 1.0 release branch"          
 
-   If you're making minor bugfixes for a stable release branch that already exists,
-   do nothing at this step.
 
-4. Check out a working copy of the release branch.
+4. Move into a working copy of the release branch.
+   For a dev snapshot, this is the normal working copy.
+   For a major or minor release, this is a fresh working copy of the appropriate branch:
+       cd ~/releases
+       svn checkout https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0 infernal
+
    Don't call this working directory infernal-xx, just call it infernal, because
    later "make dist" is going to try to create infernal-xx as its release.
    [Query replace the version # here]
 
          cd ~/releases
-         svn checkout https://svn.janelia.org/eddylab/eddys/src/infernal/branches/release-0.8 infernal
+
          (cd infernal/testsuite/; ln -s ../ssdk/sqc .)
 
    If this is the first time (a new release branch), you also need to update the "svn:externals"

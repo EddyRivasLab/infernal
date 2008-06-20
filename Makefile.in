@@ -92,6 +92,11 @@ core:
 # dist: build a new distribution directory in infernal-$RELEASE
 #
 dist:
+	# Make sure we pointed the make dist to a subversion repository
+	@if test x${REPOSITORY} = 'x'; then\
+	  echo "REPOSITORY isn't set; use make REPOSITORY=... dist";\
+	  exit 1;\
+	fi
 	# Delete old versions of the same release
 	#
 	@if test -d ../${BASENAME}-$(RELEASE);        then rm -rf ../${BASENAME}-$(RELEASE);        fi
@@ -103,32 +108,34 @@ dist:
         # Because we use svn:externals, this automatically exports 
 	# the ssdk, and Easel libraries as well.
 	#
-	svn export ${REPOSITORY}/${BASENAME}/tags/${RELEASE} ../${BASENAME}-${RELEASE}
+	svn export ${REPOSITORY} ../${BASENAME}-${RELEASE}
 	# 
-	# We won't include the ssdk, but we need it temporarily,
-	# for rmanprocess.pl (when making the user guide); we also 
-	# need to put a copy of sqc in testsuite. 
+	# Make the configure scripts from configure.ac
 	#
-	cp ../${BASENAME}-${RELEASE}/ssdk/sqc ../${BASENAME}-${RELEASE}/testsuite/
-	# 
-	# Make the configure scripts from configure.ac's
-	#
-	(cd ../${BASENAME}-${RELEASE};       autoconf)
-	(cd ../${BASENAME}-${RELEASE}/easel; autoconf)
+	(cd ../${BASENAME}-${RELEASE};        autoconf)
+	(cd ../${BASENAME}-${RELEASE}/easel;  autoconf)
 	#
 	# We'll need a basic Makefiles for some steps; later
 	# we'll delete them
 	#
 	(cd ../${BASENAME}-${RELEASE}/; ./configure)
 	#
+	# Make symlinks and set file permissions
+	#
+	(cd ../${BASENAME}-${RELEASE}/testsuite; ln -s ../easel/devkit/sqc .)
+	find ../${BASENAME}-${RELEASE} -type f -exec chmod +r {} \;
+	chmod +x ../${BASENAME}-${RELEASE}/easel/devkit/sqc
+	chmod +x ../${BASENAME}-${RELEASE}/easel/devkit/autodoc
+	#
 	# Attach license stamps on all files that need 'em
 	# (e.g. replace LICENSE keyword everywhere)
 	#
-	find ../${BASENAME}-${RELEASE} -type f -exec ssdk/sedition-pp LICENSE Licenses/$(LICENSETAG) {} \;
-	# 
-	# All other keyword replacements are in the documentation.
+	find ../${BASENAME}-${RELEASE} -type f -exec easel/devkit/sedition-pp LICENSE Licenses/$(LICENSETAG) {} \;
 	#
-	find ../${BASENAME}-${RELEASE}/documentation -type f -exec ssdk/sedition RELEASE ${RELEASE} RELEASEDATE ${RELEASEDATE} PACKAGE ${PACKAGE} COPYRIGHT ${COPYRIGHT} LICENSELINE ${LICENSELINE} {} \;
+	# Other keyword replacements
+	#
+	easel/devkit/sedition RELEASE ${RELEASE} RELEASEDATE ${RELEASEDATE}                        ../${BASENAME}-${RELEASE}/documentation/userguide/titlepage.tex
+	easel/devkit/sedition RELEASE ${RELEASE} RELEASEDATE ${RELEASEDATE} COPYRIGHT ${COPYRIGHT} ../${BASENAME}-${RELEASE}/00README
 	#
 	# Make the User's Guide, and copy to top level. (We'll
 	# destroy the userguide source soon.)
@@ -158,15 +165,8 @@ dist:
 	-rm -rf ../${BASENAME}-${RELEASE}/configure.in
 	-rm -rf ../${BASENAME}-${RELEASE}/Bugs
 	-rm -rf ../${BASENAME}-${RELEASE}/Manuscripts
-	-rm -rf ../${BASENAME}-${RELEASE}/ssdk
-	-rm -rf ../${BASENAME}-${RELEASE}/documentation/userguide
 	(cd ../${BASENAME}-${RELEASE}/easel; make implode)
 	(cd ../${BASENAME}-${RELEASE}/;      make distclean)
-	#
-	# Set file permissions.
-	#
-	find ../${BASENAME}-${RELEASE} -type f -exec chmod +r {} \;
-	chmod +x ../${BASENAME}-${RELEASE}/testsuite/sqc
 	#
 	# Packaging commands
 	#
