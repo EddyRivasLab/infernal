@@ -1,0 +1,174 @@
+# Infernal's cmsearch crash exercises, in sqc command format.
+# EPN, Thu Jan  3 05:20:12 2008
+# SVN $Id: exercises.sqc 2237 2007-12-01 00:14:41Z nawrockie $
+#
+
+# Exercises of cmsearch.
+#
+# non-calibrated searches 
+# trna
+1  prep      model/trna             @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
+1  exercise  cmsearch:trna/1        @cmsearch@  %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/2        @cmsearch@  -o %TMPOUT% %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/3        @cmsearch@  -g %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/4        @cmsearch@  --toponly %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/5        @cmsearch@  --bottomonly %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/6        @cmsearch@  --devhelp 
+1  exercise  cmsearch:trna-f/1      @cmsearch@  %TRNA.CM% 3trnas.embl
+1  exercise  cmsearch:trna-f/2      @cmsearch@  %TRNA.CM% 3trnas.gb
+1  exercise  cmsearch:trna-f/3      @cmsearch@  --informat fasta %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna-f/4      @cmsearch@  --informat dDBj %TRNA.CM% 3trnas.gb
+1  exercise  cmsearch:trna-f/5      @cmsearch@  --informat GENbank %TRNA.CM% 3trnas.gb
+1  exercise  cmsearch:trna-f/6      @cmsearch@  --informat uniProt %TRNA.CM% 3trnas.embl
+1  exercise  cmsearch:trna-f/7      @cmsearch@  --informat embL %TRNA.CM% 3trnas.embl
+
+1  exercise  cmsearch:trna/7        @cmsearch@  --inside %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/8        @cmsearch@  --cyk %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/9        @cmsearch@  --viterbi %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/10       @cmsearch@  --forward %TRNA.CM% 1k.fa
+
+1  exercise  cmsearch:trna/11        @cmsearch@  -T -2 %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/12        @cmsearch@  -T 1 %TRNA.CM% 1k.fa
+
+1  exercise  cmsearch:trna/13        @cmsearch@  --no-qdb %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/14        @cmsearch@  --beta 1E-3 %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/15        @cmsearch@  --hbanded %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/16        @cmsearch@  --hbanded --tau 1E-3 %TRNA.CM% 1k.fa
+
+1  exercise  cmsearch:trna/17        @cmsearch@  --fil-no-hmm %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/18        @cmsearch@  --fil-no-qdb %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/19        @cmsearch@  --fil-beta 1E-2 %TRNA.CM% 1k.fa
+
+
+1  exercise  cmsearch:trna/20        @cmsearch@  --fil-T-qdb 5 %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/21        @cmsearch@  --fil-T-qdb -2 %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/22        @cmsearch@  --fil-T-hmm 5 %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/23        @cmsearch@  --fil-T-hmm -2 %TRNA.CM% 1k.fa
+
+1  exercise  cmsearch:trna/24        @cmsearch@  --noalign %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/25        @cmsearch@  -x %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/26        @cmsearch@  --aln-hbanded %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/27        @cmsearch@  --aln-hbanded -p %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/28        @cmsearch@  --aln-optacc --aln-hbanded %TRNA.CM% 1k.fa
+
+1  exercise  cmsearch:trna/29        @cmsearch@  --tabfile %TAB.TMP% %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/30        @cmsearch@  --gcfile %GC.TMP% %TRNA.CM% 1k.fa
+
+1  exercise  cmsearch:trna/31        @cmsearch@  --rna %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/32        @cmsearch@  --dna %TRNA.CM% 1k.fa
+
+# 3.4.12 (U1, U2, U3)
+2  prep      model/3.4.12             @cmbuild@ -F --wnone --rf %3.4.12.CM% 3.4.12.stk
+2  exercise  cmsearch:3.4.12/1        @cmsearch@  %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/2        @cmsearch@  -o %TMPOUT% %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/3        @cmsearch@  -g %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/4        @cmsearch@  --toponly %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/5        @cmsearch@  --bottomonly %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/6        @cmsearch@  --devhelp 
+
+2  exercise  cmsearch:3.4.12/7        @cmsearch@  --inside %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/8        @cmsearch@  --cyk %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/9        @cmsearch@  --viterbi %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/10       @cmsearch@  --forward %3.4.12.CM% 1k.fa
+
+2  exercise  cmsearch:3.4.12/11        @cmsearch@  -T -2 %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/12        @cmsearch@  -T 1 %3.4.12.CM% 1k.fa
+
+2  exercise  cmsearch:3.4.12/13        @cmsearch@  --no-qdb %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/14        @cmsearch@  --beta 1E-3 %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/15        @cmsearch@  --hbanded %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/16        @cmsearch@  --hbanded --tau 1E-3 %3.4.12.CM% 1k.fa
+
+2  exercise  cmsearch:3.4.12/17        @cmsearch@  --fil-no-hmm %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/18        @cmsearch@  --fil-no-qdb %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/19        @cmsearch@  --fil-beta 1E-2 %3.4.12.CM% 1k.fa
+
+2  exercise  cmsearch:3.4.12/20        @cmsearch@  --fil-T-qdb 5 %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/21        @cmsearch@  --fil-T-qdb -2 %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/22        @cmsearch@  --fil-T-hmm 5 %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/23        @cmsearch@  --fil-T-hmm -2 %3.4.12.CM% 1k.fa
+
+2  exercise  cmsearch:3.4.12/24        @cmsearch@  --noalign %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/25        @cmsearch@  -x %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/26        @cmsearch@  --aln-hbanded %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/27        @cmsearch@  --aln-hbanded -p %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/28        @cmsearch@  --aln-optacc --aln-hbanded %3.4.12.CM% 1k.fa
+
+2  exercise  cmsearch:3.4.12/29        @cmsearch@  --tabfile %TAB.TMP% %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/30        @cmsearch@  --gcfile %GC.TMP% %3.4.12.CM% 1k.fa
+
+2  exercise  cmsearch:3.4.12/31        @cmsearch@  --rna %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/32        @cmsearch@  --dna %3.4.12.CM% 1k.fa
+
+# options requiring a calibrated model
+# trna
+3  exercise  cmsearch:trnac/1        @cmsearch@  --forecast 3 trna.calibrated.cm 1k.fa
+
+3  exercise  cmsearch:trnac/2        @cmsearch@  -E 0.0001 trna.calibrated.cm 1k.fa
+3  exercise  cmsearch:trnac/3        @cmsearch@  -E 100 trna.calibrated.cm 1k.fa
+3  exercise  cmsearch:trnac/4        @cmsearch@  --nc trna.calibrated.cm 1k.fa
+3  exercise  cmsearch:trnac/5        @cmsearch@  --ga trna.calibrated.cm 1k.fa
+3  exercise  cmsearch:trnac/6        @cmsearch@  --tc trna.calibrated.cm 1k.fa
+
+3  exercise  cmsearch:trnac/7        @cmsearch@  --fil-T-qdb 5 trna.calibrated.cm 1k.fa
+3  exercise  cmsearch:trnac/8        @cmsearch@  --fil-T-qdb -2 trna.calibrated.cm 1k.fa
+3  exercise  cmsearch:trnac/9        @cmsearch@  --fil-T-hmm 5 trna.calibrated.cm 1k.fa
+3  exercise  cmsearch:trnac/10        @cmsearch@  --fil-T-hmm -2 trna.calibrated.cm 1k.fa
+3  exercise  cmsearch:trnac/11        @cmsearch@  --fil-Smax-hmm 0.0001 trna.calibrated.cm 1k.fa
+
+3  exercise  cmsearch:trnac/12	      @cmsearch@  --fil-no-hmm trna.calibrated.cm 1k.fa
+3  exercise  cmsearch:trnac/13        @cmsearch@  --fil-no-qdb trna.calibrated.cm 1k.fa
+3  exercise  cmsearch:trnac/14        @cmsearch@  --fil-beta 1E-2 trna.calibrated.cm 1k.fa
+
+# 3.4.12 (U1, U2, U3)
+4  exercise  cmsearch:3.4.12c/1        @cmsearch@  --forecast 3 3.4.12.calibrated.cm 1k.fa
+
+4  exercise  cmsearch:3.4.12c/2        @cmsearch@  -E 0.0001 3.4.12.calibrated.cm 1k.fa
+4  exercise  cmsearch:3.4.12c/3        @cmsearch@  -E 100 3.4.12.calibrated.cm 1k.fa
+4  exercise  cmsearch:3.4.12c/4        @cmsearch@  --nc 3.4.12.calibrated.cm 1k.fa
+4  exercise  cmsearch:3.4.12c/5        @cmsearch@  --ga 3.4.12.calibrated.cm 1k.fa
+4  exercise  cmsearch:3.4.12c/6        @cmsearch@  --tc 3.4.12.calibrated.cm 1k.fa
+
+4  exercise  cmsearch:3.4.12c/7        @cmsearch@  --fil-T-qdb 5 3.4.12.calibrated.cm 1k.fa
+4  exercise  cmsearch:3.4.12c/8        @cmsearch@  --fil-T-qdb -2 3.4.12.calibrated.cm 1k.fa
+4  exercise  cmsearch:3.4.12c/9        @cmsearch@  --fil-T-hmm 5 3.4.12.calibrated.cm 1k.fa
+4  exercise  cmsearch:3.4.12c/10        @cmsearch@  --fil-T-hmm -2 3.4.12.calibrated.cm 1k.fa
+4  exercise  cmsearch:3.4.12c/11        @cmsearch@  --fil-Smax-hmm 0.0001 3.4.12.calibrated.cm 1k.fa
+
+4  exercise  cmsearch:3.4.12c/12	      @cmsearch@  --fil-no-hmm 3.4.12.calibrated.cm 1k.fa
+4  exercise  cmsearch:3.4.12c/13        @cmsearch@  --fil-no-qdb 3.4.12.calibrated.cm 1k.fa
+4  exercise  cmsearch:3.4.12c/14        @cmsearch@  --fil-beta 1E-2 3.4.12.calibrated.cm 1k.fa
+
+#development options
+# with calibrated model (not always necessary to be run with
+# calibrated model)
+# trna
+5  exercise  cmsearch:trnacd/1        @cmsearch@  --lambda 0.6913 trna.calibrated.cm 1k.fa
+5  exercise  cmsearch:trnacd/2	     @cmsearch@  --hbanded --aln2bands trna.calibrated.cm 1k.fa
+5  exercise  cmsearch:trnacd/3        @cmsearch@  --rtrans trna.calibrated.cm 1k.fa
+5  exercise  cmsearch:trnacd/4        @cmsearch@  --hbanded --sums trna.calibrated.cm 1k.fa
+5  exercise  cmsearch:trnacd/5        @cmsearch@  --null2 --no-null3 trna.calibrated.cm 1k.fa
+5  exercise  cmsearch:trnacd/6        @cmsearch@  --no-null3 trna.calibrated.cm 1k.fa
+
+5  exercise  cmsearch:trnacd/7        @cmsearch@  --pebegin trna.calibrated.cm 1k.fa
+5  exercise  cmsearch:trnacd/8        @cmsearch@  --pfend 0.001 trna.calibrated.cm 1k.fa
+5  exercise  cmsearch:trnacd/9        @cmsearch@  --pbegin 0.001 trna.calibrated.cm 1k.fa
+5  exercise  cmsearch:trnacd/10        @cmsearch@  --pbegin 0.99 trna.calibrated.cm 1k.fa
+5  exercise  cmsearch:trnacd/11        @cmsearch@  --pend 0.5 trna.calibrated.cm 1k.fa
+5  exercise  cmsearch:trnacd/12        @cmsearch@  --pend 0.005 trna.calibrated.cm 1k.fa
+
+# 3.4.12
+5  exercise  cmsearch:3.4.12cd/1        @cmsearch@  --lambda 0.6913 3.4.12.calibrated.cm 1k.fa
+5  exercise  cmsearch:3.4.12cd/2	     @cmsearch@  --hbanded --aln2bands 3.4.12.calibrated.cm 1k.fa
+5  exercise  cmsearch:3.4.12cd/3        @cmsearch@  --rtrans 3.4.12.calibrated.cm 1k.fa
+5  exercise  cmsearch:3.4.12cd/4        @cmsearch@  --hbanded --sums 3.4.12.calibrated.cm 1k.fa
+5  exercise  cmsearch:3.4.12cd/5        @cmsearch@  --null2 --no-null3 3.4.12.calibrated.cm 1k.fa
+5  exercise  cmsearch:3.4.12cd/6        @cmsearch@  --no-null3 3.4.12.calibrated.cm 1k.fa
+
+5  exercise  cmsearch:3.4.12cd/7        @cmsearch@  --pebegin 3.4.12.calibrated.cm 1k.fa
+5  exercise  cmsearch:3.4.12cd/8        @cmsearch@  --pfend 0.001 3.4.12.calibrated.cm 1k.fa
+5  exercise  cmsearch:3.4.12cd/9        @cmsearch@  --pbegin 0.001 3.4.12.calibrated.cm 1k.fa
+5  exercise  cmsearch:3.4.12cd/10        @cmsearch@  --pbegin 0.99 3.4.12.calibrated.cm 1k.fa
+5  exercise  cmsearch:3.4.12cd/11        @cmsearch@  --pend 0.5 3.4.12.calibrated.cm 1k.fa
+5  exercise  cmsearch:3.4.12cd/12        @cmsearch@  --pend 0.005 3.4.12.calibrated.cm 1k.fa
+

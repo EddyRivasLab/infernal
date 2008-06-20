@@ -1,0 +1,270 @@
+BUGTRAX - Infernal's bug log
+SRE, Tue Dec 31 12:18:00 2002
+CVS $Id$
+---------------------------------------------------------
+
+ID              i1
+TITLE     	vault; bad SS_cons, lone column bug
+STATUS          closed
+XREF            STL7 p.12
+REPORTED_BY     Robin Dowell
+CLOSED_DATE     SRE, Thu Jan  2 07:07:39 2003  
+DESCRIPTION	
+
+If cmalign was used on a set of sequences that are truncated at their
+5' or 3' ends, such that the column that would contain either the left
+or right pairing partners of a consensus base pair is completely
+missing from the alignment (that is, only one column of a consensus
+base pair appears, because it is aligned to MATP_ML or MATP_MR state),
+the SS_cons line was corrupted; since the consensus annotation was
+directly copied to the alignment, if one of the two columns didn't
+appear, then either the < or > was missing and the SS_cons annotation
+was unbalanced. This situation is now detected properly. A "lone"
+MATP_ML or MATP_MR column gets annotated as a ":" instead of "<" or
+">" in SS_cons.
+//
+ID              i2
+TITLE		cmalign memory leak.
+STATUS		closed
+XREF            STL7 p.15
+REPORTED_BY     Sam Griffiths-Jones
+CLOSED_DATE     SRE, Sun Jan  5 16:50:51 2003
+DESCRIPTION     
+
+cmalign leaks memory. The smallcyk.c routine vinside() needed
+to init a split set around z, which means that more decks can
+be allocated beyond z; but the free_*_matrix routines were only
+freeing r..z. But, we always alloc/init for all M+1 decks of
+an alpha or beta matrix (M decks for shadows); unused decks are
+NULL. So, fix by simplification: all free_*_matrix() routines
+change to free all 0..M (0..M-1) decks, ignoring NULL decks,
+and setting deck[v] to NULL after each free to avoid problems
+w/ double free's of reused decks (e.g. END decks).
+//
+ID              i3
+TITLE           local begins on insert states.
+STATUS          closed
+XREF            STL7 p.43
+REPORTED_BY     Sam Griffiths-Jones
+CLOSED_DATE     SRE, Tue Mar  4 14:10:08 2003
+DESCRIPTION     
+
+CYKScan() was finding hits that root at insert states, which crashes
+outside(). Manifests in local alignment mode when the 0->insert->3
+path is cheaper than the local begin 0->3 path. Fixed w/ two changes:
+First, in scancyk.c, traceback must start at v=0 unless doing
+local_begin; previously, it could start at v=1 or 2 also. (This was
+not relevant to bug i3, though I initially thought it was - was a bug
+nonetheless.)  Second, in modelconfig.c:ConfigLocal(), zero the
+transition p's for state 0; only local begin transitions are
+active. Note that this means we've lost anything we trained for these
+transitions.
+
+//
+ID              i4
+TITLE           test suite fails on 14,15,16,17,22
+STATUS          CLOSED
+XREF            STL8/p4
+REPORTED_BY     Jan Wuyts <jan.wuyts@psb.ugent.be>, 21 Nov 2004;
+		Par Larsson <par.larsson@foi.se>, 23 Jan 2004.
+OPENED_DATE     SRE, Mon Jan 26 10:14:57 2004
+CLOSED_DATE     SRE, Mon Jan 26 10:52:41 2004
+DESCRIPTION     
+
+cmscore fails because optimal parse trees from D&C and normal CYK
+differ, for random sequence targets. These cmscore tests are too
+aggressive. There can be more than one tree tied at the optimal score;
+which one is returned is arbitrary. Looks like I'd already realized
+this was a problem because cmscore has a --stringent option, but this
+option was defaulting to always TRUE, instead of being parsed on the
+cmd line. Made it default to FALSE, and added check on command line.
+//
+ID              i5
+TITLE           weird high-scoring hits with cmsearch --local
+STATUS          
+XREF            STL8/p4; agb email, 9 Jan 2004
+REPORTED_BY     Alex Bateman <agb@sanger.ac.uk>
+OPENED_DATE     SRE, Mon Jan 26 12:22:51 2004
+CLOSED_DATE     
+DESCRIPTION     
+
+Alex sends a hammerhead CM and a sequence (BC050488.1/550-824) which
+has two obviously bogus hits: a hit from 14..6, 31.83 bits, with only
+two nucleotides aligned; and 146..90, 35.42 bits, with a little bit
+more than that aligned but not enough. Does not reproduce on Linux;
+Alex probably used Alpha/Tru64.
+
+Was only initializing d=0 from 0..W-1 for the BEGL_S states; needs to
+be initialized from 0..W. < W becomes <= W at initialization;
+cykscan.c:133.
+
+//
+ID              i6
+TITLE		local ends in D&C alignment 
+STATUS          CLOSED
+XREF            ~nawrockie/notebook/6_1106_inf_bug_local_aln/
+REPORTED_BY     Eric Nawrocki, Mon Nov  6 13:17:22 2006
+CLOSED_DATE     EPN, Tue Nov  7 09:31:40 2006
+DESCRIPTION     
+
+Local D&C alignment has been broken starting with version 0.7. EL self
+transition scores were incorrectly being added in the outside() and
+voutside() functions of smallcyk.c. This at least sometimes resulted
+in the correct CYK score but incorrect parsetree, making it difficult
+to detect without using cmscore (which compares the parsetree score
+with the CYK score). The error was basically an off-by-one (or two in
+the case of MP states) error, and a common example of it would be a EL
+stretch of 2 residues rather than the correct 1 residue in the
+output alignment. The error was also fixed in the outside_b() and
+voutside_b() functions, so banded local D&C alignment should be clear
+of this bug also. SVN revision 1678 has bug, revision 1679 does not.
+
+//
+ID              i7
+TITLE		local aln traceback in banded CYKInside()
+STATUS          CLOSED
+XREF            ~nawrockie/notebook/6_1020_inf_banded_d_and_c_bug/
+REPORTED_BY     Sam Griffiths-Jones, 4 Aug, 2006
+CLOSED_DATE     EPN, Sun Nov  5 15:58:30 2006
+DESCRIPTION     
+
+In smallcyk.c::insideT_b_me() I was treating EL as if it has
+a band. When I would pop from the stack during a traceback in an EL
+state, I would add dmin[v] to it, even though dmin[v] was bogus
+when v is an EL. For an example and more on this bug see
+~nawrockie/notebook/6_1020_inf_banded_d_and_c_bug/00README and
+00LOG. 
+
+Sam's experience with this bug gave him messages like this: 
+Assertion failed: yoffset >= 0 && yoffset <= cm->M, file
+  smallcyk.c, line 7741
+ Abort
+
+I couldn't get this bug to ever crash the program, which is a main
+reason there's no test case in bugs.sqc.
+
+But I was unable to reproduce this, and could only find it with
+valgrind.
+
+//
+ID              i8
+TITLE		local ends in D&C alignment
+STATUS          CLOSED
+XREF            ~nawrockie/notebook/6_1020_inf_banded_d_and_c_bug/
+REPORTED_BY     Sam Griffiths-Jones, 4 Aug, 2006
+CLOSED_DATE     EPN, Sun Nov  5 15:58:30 2006
+DESCRIPTION     
+
+I was incorrectly enforcing bands in the smallcyk.c::outside_b()
+function, as well as in the smallcyk.c::wedge_splitter_b() function. 
+
+In the outside_b() function, there's a special j loop where the 
+code considers v->EL transitions. The loop that enforces dmin and dmax
+is special b/c the code is not directly accessing beta[v][j][d] but
+rather beta[v][j+{0,1}][d+StateDelta(cm->sttype[v])], so we have
+to change the 'for(d=dmin[v]; d<=dmax[v]; d++)' to 
+'for(d=dmin[v]-dv; d<=dmax[v]-dv; d++)'. This is line 4979 or
+revision 1675 of smallcyk.c.
+
+I couldn't get this bug to ever crash the program, which is a main
+reason there's no test case in bugs.sqc.
+
+See ~nawrocki/notebook/6_1020_inf_banded_d_and_c_bug/00README and
+00LOG for more details.
+
+//
+ID              i9
+TITLE		QDB D&C versus non-D&C alignment score discrepancy
+STATUS          CLOSED
+XREF            ~nawrockie/notebook/6_1129_inf_qdb_aln_bug/
+REPORTED_BY     Eric Nawrocki, 28 Nov, 2006
+CLOSED_DATE     EPN, Wed Nov 29 10:36:21 2006
+DESCRIPTION     
+
+The smallcyk::inside_b() function was incorrectly initializing alpha
+cells for v = B states, using the wrong cell from the y deck (the left
+child of v). A one line fix. Do 'svn diff -r 1717:1718' for the code
+change.
+//
+
+ID              i10
+TITLE		QDB search error if W is set at command line
+STATUS          CLOSED
+XREF            ~nawrockie/notebook/6_1215_inf_72_release/bug_cmsearch_segfault_121506/
+REPORTED_BY     Michael Galloway <mgx@ornl.gov> 12.15.06 email to Sean
+CLOSED_DATE     EPN, Tue Dec 19 13:24:45 2006
+DESCRIPTION     
+
+cmsearch sometimes segfaults when -W is invoked at the command
+line. Problem was in version 0.71 (and current development code, rev
+1765) bandcyk.c::BandedCYKScan(), during the scan recursion, the fact
+that d is less than W is not checked, rather d must only be < j and <
+dmax[v]. The segfault occurs when d is < dmax[v] but > W. The code now
+now explicitly checks to make sure d never exceeds W during the DP
+recursion. scaninside::BandedInsideScan(),
+scaninside.c::BandedInsideScan_jd() and hbandcyk::BandedCYKScan_jd() 
+all included the same bug, and were fixed in the same manner.
+
+NOTE: I originally "fixed" this bug with revision 1766, but later
+realized that introduced another bug - so it was really fixed with
+revision 1772. 
+
+//
+
+ID              i11
+TITLE		Incorrect insert state detachment in zero length hairpin loops
+STATUS          CLOSED
+XREF            ~nawrockie/notebook/7_0110_inf_bug_adj_bp_detach_insert/
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Wed Jan 10 17:56:33 2007
+DESCRIPTION     
+
+If two consensus columns are modelled by the left and right half of 
+a single base pair, then the code for checking and detaching so-called
+dual-inserts (the sole source of ambiguity in the CM architecture)
+incorrectly detached the MATP_IL state, instead of the MATP_IR state.
+
+NOTE: A cp9-test run in testsuites/ will likely still fail for 
+      any model with a zero length consensus hairpin b/c they
+      represent a special case of CM architecture where a CP9 HMM just
+      can't achieve the same first order Markov chain characteristics
+      as the CM in the region near the offending 0-length hairpin.
+      cp9-test now checks for zero length hairpins and prints a 
+      warning to the screen.
+//
+
+ID              i12
+TITLE		Mishandling basepair emit scores in *outside* funcs
+STATUS          CLOSED
+XREF            NONE
+REPORTED_BY     Eric Nawrocki
+CLOSED_DATE     EPN, Thu Nov  8 15:43:50 2007
+DESCRIPTION     
+
+The i12 perl script in Infernal's Bugs/ subdirectory has a simple
+example of this bug.
+
+In all *outside* functions when adding the basepair emit probability 
+to a DP cell, the code attempts to check if the residues are both
+non-ambiguous (A|C|G|U) and calls DegeneratePairScore() if they are 
+not. However that check was flawed, here's an example:
+
+ if (dsq[i-1] < cm->abc->K && dsq[j+1] > cm->abc->K)
+   escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
+ else
+   escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
+
+Note the 'dsq[j+1] > cm->abc->K'. It should be 'dsq[j+1] <
+cm->abc->K'.  This bug has been in the Infernal code since the 0.1
+April 2002 release, in which it was only found in outside() and
+voutside(). Version 0.81 included more outside functions in which this
+bug was propogated, for example IOutside() in cm_postprob.c which is
+the instance of the bug that causes the i12 script to fail. I won't
+list them here, do a svn diff -r 2199:2200 for the details. To be
+explicit, this bug exists in svn revision 2199, and is fixed in svn
+revision 2200.
+
+See ~nawrockie/notebook/7_1108_inf_bug_outside_ambig_bps/00LOG
+for a bit more detail.
+//
+

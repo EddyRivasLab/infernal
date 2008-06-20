@@ -1,0 +1,839 @@
+\section{How \texttt{cmsearch} uses filters to accelerate search}
+
+A major limitation to the practical use of CMs is the slow running
+time of homology search implementations. \prog{cmsearch} has two
+acceleration strategies for alleviating this. In this section we'll
+briefly describe these two strategies and how they're employed within
+\prog{cmsearch}.
+
+The two acceleration strategies are both filtering approaches.  The
+main idea of filtering is to use a fast algorithm to do a first-pass
+scan of the database with a wide net, allowing everything that
+could possibly be a good hit to survive and eliminating everything
+that is very unlikely to be a good hit. After the filter is run, the
+expensive CM algorithms are run only on the surviving fraction of the
+database.
+
+The first filtering approach uses an HMM as the fast first-pass
+algorithm. HMM filtering for CM homology search was introduced by
+Weinberg and Ruzzo
+\cite{WeinbergRuzzo04,WeinbergRuzzo04b,WeinbergRuzzo06}. We use a
+specific type of HMM architecture, essentially a reimplementation of
+Weinberg and Ruzzo's maximum-likelihood HMMs \cite{WeinbergRuzzo06},
+that we call CM plan 9 HMMs or CP9 HMMs (to distinguish them from the
+plan 7, or p7 HMMs of the \software{HMMER} software package
+\htmladdnormallink{http://hmmer.janelia.org}{http://hmmer.janelia.org}). HMMs
+are unable to model the interactions between base-paired columns that
+a CM can model, which makes them less sensitive and specific for RNA
+sequence analysis, but in exchange they are more efficient to compute
+with, so they're faster than CMs and useful for filtering.
+
+The second filtering approach is a banded dynamic programming
+technique called query-dependent banding (QDB). QDB precalculates
+regions of the CM dynamic programming matrix that have negligible
+probability and can be skipped to save time
+\cite{NawrockiEddy07}. This calculation is dependent only on the query
+CM itself, it's independent of the database being search, so it only
+has to be done once per model. 
+
+\prog{cmsearch} uses both of these filtering strategies in
+combination. HMM filtering is faster but less specific than QDB
+filtering, so it is used first. Any hit that scores above the HMM
+filter threshold survives the HMM filter and is then searched with the
+QDB filter. Any hit that surives both filters is reevaluated again
+using the Inside algorithm, which is the slowest but most specific
+algorithm we have, which determines the final scores of the hits in
+the database.
+
+The previous section discussed how \prog{cmcalibrate} calibrates
+models, a step which we highly recommend before searching.
+\prog{cmsearch} can be run with non-calibrated models but the 
+filters are employed differently than for calibrated models.  Next,
+we'll discuss how filters are used for searches with calibrated
+models, and then we'll discuss how they're used for searches with
+non-calibrated models.
+
+\subsection{Filtered searches with calibrated models}
+
+\subsubsection{determining appropriate HMM filter score thresholds with \prog{cmcalibrate}}
+A goal of our filtering approach is to sacrifice only a small amount
+of sensitivity for the win in speed. In other words, we want faster
+searches, but only if they won't miss potential homologs that a slow,
+non-filtered search would have found.  Weinberg's rigorous HMM filters
+addressed this very nicely, by guaranteeing that all hits above a
+certain CM threshold will survive the filter
+\cite{WeinbergRuzzo04}. Our approach takes a slightly different tact,
+and relaxes the 100\% guarantee to a 99.5\% probability using a
+empirical sampling technique. That is, we estimate our HMM filter will
+cause us to miss 1\% of the hits that a non-filtered search would have
+found. This sampling technique is performed by \prog{cmcalibrate} and
+takes advantage of the CM as a generative probabilistic model.
+Sequences are generated, or emitted, from the model and searched with
+both an expensive CM algorithm (either CYK or Inside) and the faster
+HMM Forward search algorithm. The HMM scores are ranked and the HMM
+filter threshold is set as $x$, the 99.5\% worst score. If we assume
+the sample of sequences we drew from the HMM is representative of real
+RNA homologs of the family we're modelling, then using an HMM filter
+and a cutoff of $x$ will allow 99.5\% of the real homologs to
+survive. Of course, this is a strong and potentially dangerous
+assumption to make, but it essentially underlies our entire modelling
+approach - we're just assuming our CM is a good model of the family
+we're trying to model!  In other words, if this assumption is wrong,
+we'll get poor performance for a variety of reasons, and an
+inappropriate filter threshold would be a relatively weak concern.  In
+the future, as CMs get better due to improved parameterization, etc.,
+our assumption will become more true, and this filtering strategy will
+improve as well. 
+
+When you calibrate a model with \prog{cmcalibrate} the HMM filter
+thresholds are calculated using the sampling technique and printed to
+the CM file. (HMM filter threshold determination is one of two
+purposes of \prog{cmcalibrate}, the other is fitting exponential tails
+for E-value calculation as described in section 5).
+
+\subsubsection{how \prog{cmsearch} sets filter thresholds}
+When \prog{cmsearch} sets its thresholds for each round of the
+search, it first sets the final round threshold. This is because the
+determination of the filter thresholds depends heavily on the final
+threshold. By default, the final round threshold used for calibrated
+model searches is $E=0.1$ (see ``manually setting filter and final
+thresholds'' for information on how to change this). 
+This E-value is then converted to a bit score based on the database
+size by using the exponential tail fit parameters stored in the CM
+file by \prog{cmcalibrate}. \prog{cmsearch} then sets the HMM filter
+threshold and then the QDB filter threshold based on the final round
+bit score threshold. In general, the more strict the final round
+threshold the more strict the filter thresholds will be. 
+
+\prog{cmcalibrate} automatically determines the appropriate HMM filter
+score threshold as described above by generating sequences from the
+model and scoring them.  During search, the appropriate threshold is
+automatically chosen dependent on the final bit score search threshold
+and set as the HMM filter score threshold for that search.
+%Importantly, the final bit score threshold is dependent on
+%both the final E-value threshold ($0.1$ by default) \emph{and} the
+%database size. 
+In some cases, it is determined that HMM filtering is a
+bad idea because the expected survival fraction is close to $1.0$,
+which mean the filter would save little if any time. In these cases,
+the HMM filter is turned off. This usually happens when searching
+small databases, using low final bit score thresholds (or high final E
+value thresholds), or when searching with a model that has very little
+primary sequence conservation.
+
+\prog{cmsearch} sets the QDB filter threshold based on the final round
+threshold in an \emph{ad hoc} way that seems to work well
+empirically. Our goal with the QDB filter is the same as with the HMM
+filter, we want the filter to accelerate searches as much as possible
+while minimizing sensitivity loss. Our \emph{ad hoc} approach 
+sets the QDB filter threshold so that the following two conditions are
+met:
+
+\begin{enumerate}
+\item
+Our QDB filter will always allow hits with E-values of $100$ times our
+final E-value threshold to survive. 
+\item
+The final round of search will require at least $3\%$ of the total
+predicted number of dynamic programming (DP) calculations for the
+entire search (filters plus final round).
+\end{enumerate}
+
+The reasoning here is that the vast majority of hits that will score
+below our final round threshold should satisfy condition 1, so
+our sensitivity loss from using filter will be small. Empirically we
+observe this to be true on internal benchmarks (data not shown).
+However, condition 2 states that we're also always willing to perform
+at least $3\%$ of our overall number of DP calculations in the final
+round. The number of DP calculations in the final round can be
+predicted based on the size of the model and on the QDB E-value
+cutoff. So given the E-value $x$ that satisfies condition 1, we can
+predict the fraction $f(x)$ of the total number of DP calculations that will
+occur in the final round. If $f(x)$ is \emph{less} than $0.03$ we can
+raise our QDB E-value cutoff to the value $y$ that satisfies $f(y) = 0.03$, and
+still meet both of our conditions. In raising the E-value cutoff to
+$y$, we're making the filter less strict, which can only reduce our
+potential sensitivity loss, but only slowing down the search a small
+amount because we've increased the number of calculations by at most
+$3\%$.  The value $3\%$ was chosen as a good tradeoff between speed
+and sensitivity in our benchmarks. 
+
+One final point: if the predicted survival fraction for the QDB filter
+E-value thresold as calculated above is greater than the predicted
+survival filter for the HMM filter then \prog{cmsearch} will turn off
+the QDB filter mode and use only the HMM filter and the final round
+for searching.
+
+\begin{srefaq}{I ran \prog{cmsearch} with a calibrated model, but HMM
+    filters were not used for accleration. How come?} This is because
+    \prog{cmcalibrate} has determined that it's not ``safe'' to use
+    an HMM filter for the search you're running. This means that with
+    the final threshold you're using, if you used an HMM filter, 
+    to miss no more than 1\% of the hits below your final threshold,
+    the filter would have to let nearly the entire database
+    survive. In this case \prog{cmsearch} judges it's not worth it to
+    use the HMM filter and skips that step of the search. If you
+    really want to use an HMM filter you can either (A) make your
+    final threshold stricter (\prog{cmstat} can help you determine 
+    what effect this will have, see below) or (B) manually set the HMM
+    filter threshold as explained in the ``manually setting filter
+    and final thresholds'' section.
+\end{srefaq}
+
+\begin{srefaq}{I used \prog{cmsearch} twice with the same model and
+    the same E-value cutoff on two different databases, but the filter
+    thresholds were set differently. Why?} The reason is that the
+    databases were different size. The filter thresholds are set based
+    on the bit score cutoff of the final round of the search you're
+    performing. The bit score is dependent on both the E-value and the
+    database size. For example, if you search two databases of size $1$
+    Mb and $100$ Mb respectively and use an E-value cutoff of $0.1$ for both
+    searches, the bit score cutoff for the 1 Mb database may be $20$
+    bits, but it is $27$ bits for the $100$ Mb database. The filters
+    can be more strict for the $100$ Mb search because they only have
+    to allow all hits that might score above $27$ bits to
+    survive instead of all hits that might score above $20$ bits. 
+\end{srefaq}
+
+\subsubsection{filtered versus non-filtered search}
+
+Let's see an example of the filters in action. Then we'll compare the
+results to a search without using the filters. We'll use a calibrated
+CM from the tutorial section, the \prog{purine.2.c.cm} file, a
+calibrated Purine riboswitch model, and we'll use it to search the
+\emph{Colwellia psycherythraea} genome. In contrast to the tutorial,
+we'll use a more strict E-value cutoff of 0.001.
+
+\user{cmsearch -E 0.001 purine2.c.cm C.psychrerythraea.genome.fa}
+
+In the tutorial we were only concerned with the hits reported by the
+program, but in this section we're interested in the rest of the
+output. Let's look at the header and pre-search info section:
+
+\begin{sreoutput}
+# command:    cmsearch -E 0.001 purine.2.c.cm C.psychrerythraea.genome.fa
+# date:       Tue Jun 10 22:58:15 2008
+# num seqs:   1
+# dbsize(Mb): 10.746360
+#
+# Pre-search info for CM 1: purine.2-1
+#
+#                                  cutoffs            predictions     
+#                            -------------------  --------------------
+# rnd  mod  alg  cfg   beta     E value   bit sc     surv     run time
+# ---  ---  ---  ---  -----  ----------  -------  -------  -----------
+    1  hmm  fwd  loc      -    4041.305     6.61   0.0541  00:02:24.21
+    2   cm  cyk  loc  1e-07      93.161     8.91   0.0012  00:02:29.60
+    3   cm  ins  loc  1e-15     1.0e-03    29.33  8.9e-09  00:00:18.23
+# ---  ---  ---  ---  -----  ----------  -------  -------  -----------
+  all    -    -    -      -           -        -        -  00:05:12.05
+\end{sreoutput}
+
+First comes the command used and date of execution. Then the database
+size is printed in number of nucleotides. Remember, by default,
+\prog{cmsearch} searches both strands of the database, so even though
+the sequence in \prog{C.psychrerythraea.genome.fa} is only about 5 Mb
+long, the database size according to \prog{cmsearch} is twice that,
+about 10 Mb. Following that is the number of sequences in the
+database. Then comes the tabular output section summarizing the
+filtering search strategy that \prog{cmsearch} will use in this
+search. Here are descriptions of the different columns:
+
+\begin{wideitem}
+\item[\emprog{rnd}] the round of searching each row pertains
+  to. In this search there's three rounds, two filter rounds plus
+  the final round. The hits reported by \prog{cmsearch} are those that
+  survive both filters and the final round of searching.
+
+\item[\emprog{mod}] the model each round of searching will use. For
+  the first round we'll use a CP9 HMM to filter, for the last two
+  rounds the CM is used.
+
+\item[\emprog{alg}] the search algorithm used by each round. 
+  The HMM filter round always uses the Forward (``fwd'') HMM algorithm. 
+  The QDB filter round always uses the CYK CM algorithm. The final
+  round uses the Inside (``ins'') CM algorithm by default, but the 
+  CYK algorithm can be used instead with the \prog{--cyk} option. 
+
+\item[\emprog{cfg}] the configuration of the model during each
+  round. In this case they are all locally configured. Glocal
+  configuration is enabled with the \prog{-g} option (see the tutorial).
+
+\item[\emprog{beta}] the tail loss probability for the QDB
+  calculation. This is the amount of probability mass allowed outside
+  each band on the DP matrix. For round 2, the QDB filter round, this
+  value is 1e-07, so 99.9999\% of the probability mass is within each
+  band. For the final round of searching, the bands are less strict,
+  with beta values of 1e-15. For more information on this see
+  \cite{NawrockiEddy07}.
+
+\item[\emprog{cutoffs}] the cutoffs used for each round of searching,
+  in \emprog{E value} and in \prog{bit sc}. Notice how the E-values go
+  down and the bit scores go up as you progress through the rounds,
+  this means the cutoffs are getting stricter in each successive
+  round. 
+
+\item[\emprog{predictions}] the predicted survival fraction
+  (\emprog{surv}) and running time (\emprog{run time}) for each
+  round. These are based on the E-value cutoffs, and are just
+  predictions. A survival fraction of 0.0541 means that our E-values
+  predict that 94.59\% of the database will be removed by the HMM
+  filter round. We observe these predictions are often inaccurate by up
+  to five-fold, but they are the best predictions
+  that we can make currently.
+\end{wideitem}
+
+Look at the pre-search info for this search: the final round (round 3)
+E-value cutoff is set as $0.001$ (we manually set it to this) which
+translates to bit score of $29.33$ in a database of this size. (If we
+had not used the \prog{-E} options, the E-value cutoff would have been
+the default value of $1$ used when searching with a calibrated
+model). The HMM filter cutoff is a bit score of $6.61$ bits which has
+an E-value of $4041$.  That seems high, but the \prog{surv} column
+tells us that if $4041$ hits survive the HMM filter, we'll filter out
+about $96\%$ of the database. The QDB CYK filter threshold is
+$8.81$ bits which has an E-value of about $93$. This threshold has
+been set with our \emph{ad hoc} method as a presumably safe bet to
+allow any hit that would exceed our final round threshold of $29.33$
+bits with the Inside algorithm to survive. These thresholds have all
+been set using the default methods in \prog{cmsearch} for calibrated
+models, but if you want, you can change any or all of them using
+command-line options as described below in ``Manually setting filter
+and final thresholds''.
+
+After a couple of minutes the search finishes, a single hit is output
+to the screen (see the tutorial for more on this), and the
+``Post-search info'' section is printed:
+
+\begin{sreoutput}
+# Post-search info for CM 1: purine.2-1
+#
+#                              number of hits       surv fraction  
+#                            -------------------  -----------------
+# rnd  mod  alg  cfg   beta    expected   actual  expected   actual
+# ---  ---  ---  ---  -----  ----------  -------  --------  -------
+    1  hmm  fwd  loc      -    4041.305     2572    0.0541   0.0376
+    2   cm  cyk  loc  1e-07      93.161       22    0.0012   0.0003
+    3   cm  ins  loc  1e-15     1.0e-03        1   8.9e-09  6.2e-06
+#
+# expected time    actual time
+# -------------  -------------
+    00:05:12.05    00:04:02.00
+\end{sreoutput}
+
+Much of this information we already saw in the pre-search info, except
+the columns labelled \emprog{actual}. Our predictions were not very
+accurate, but they are within an order of magnitude for the most
+part. One striking disparity is the number of actual hits to survive
+round 2, the QDB filter round. We predicted that about $93$ hits
+would survive, but only $22$ did. One explanation for this is
+that the calculation of the expected number ignores the fact that the
+HMM filter will be run first, and remove much of the database. In
+reality, the QDB filter was only run on $3.76\%$ of the full
+database, but the $93$ estimate is based on searching the full
+database. (You might think that a better prediction would be to 
+multiply our expected QDB hits of $93$ by $0.0376$, our expected
+survival fraction from round 1, but this is wrong - the fraction that
+survives the HMM filter is not just a random $3.76\%$ of the database,
+it's the $3.76\%$ that scores highest with our HMM, and there's no good
+theory we can come up with for predicting how many hits we'll get in a
+biased fraction of the database like that).
+
+\begin{srefaq}{Why are the \prog{cmsearch} ``run time'' predictions are
+  so inaccurate?} Short answer: our E-values are not perfect. In fact,
+  they're far from perfect. We're working on making E-values in
+  \software{infernal} more accurate and easier to calculate. For now,
+  this is the best we can do. Another reason is that for rounds 2 and
+  3 of \prog{cmsearch} the search is being performed on the biased
+  fraction of the database that has survived all the previous rounds,
+  which makes it harder to predict the actual number of hits that will
+  survive with accuracy (see above).
+\end{srefaq}
+
+So, did our filters do a good job? Well, it's hard to say from what
+we've seen. Using an E-value cutoff of 0.001 they allowed a single hit
+through that looks like a real Purine riboswitch (see the secondary
+structure figure of the tutorial). That's good, but who knows, we may
+have missed 100 others!  And it's impossible to say how much time
+they've saved us. Well in this case, the experiment that answers both
+of these questions is easy enough to perform, we can run
+\prog{cmsearch} with the filters turned off 
+to get the non-filtered running time and to see if anything else
+is found. The command to do that is: 
+
+\scriptuser{cmsearch -E 0.001 --fil-no-hmm --fil-no-qdb purine.2.c.cm C.psychrerythraea.genome.fa}\\
+
+To save you the time of actually doing this we've saved the
+output of this search in the file\\
+ \prog{purine.2.nofilter.cmsearch},
+but feel free to run it on your own. Take a look at the file. Here is
+the post-search information:
+
+
+{\samepage
+\begin{sreoutput}
+# Post-search info for CM 1: purine2-1
+#
+#                              number of hits       surv fraction  
+#                            -------------------  -----------------
+# rnd  mod  alg  cfg   beta    expected   actual  expected   actual
+# ---  ---  ---  ---  -----  ----------  -------  --------  -------
+    1   cm  ins  loc  1e-15       0.100        1   8.9e-07  6.2e-06
+#
+# expected time    actual time
+# -------------  -------------
+    03:13:25.22    03:55:36.00
+\end{sreoutput}
+}
+
+The non-filtered search only finds this one hit below our E-value
+cutoff also. Looks like our filters did a good job in this case!
+Notice the time it took to run, about four hours, compared to about five
+minutes for our filtered search, so our filters give us an
+acceleration of about 50 fold. 
+
+\begin{srefaq}{I just did a search and it took about as long as a
+    non-filtered search. How come I didn't see a significant speedup?}
+  The speedup does vary a lot depending on the model you're using and
+  the size of the database you're searching. \prog{cmcalibrate}
+  estimates a HMM filter score cutoff that will accelerate the search
+  as much as possible with without losing appreciable
+  sensitivity. Sometimes this cutoff is very strict, leading to very
+  effective filters, and sometimes it's not. As you might expect, in
+  general we find that we can use HMM filters effectively for models
+  with regions of high primary sequence similarity, and not so
+  effectively for models lacking such regions. You can determine how
+  how well an HMM can filter for your model \emph{after} you've
+  calibrated it using the \prog{cmstat} program as described below.
+\end{srefaq}
+
+
+\subsubsection{using \prog{cmstat} to get information on HMM filters}
+
+The \prog{cmstat} program can be used to predict how effective an
+HMM filter will be for searches with a calibrated CM file. The
+\prog{--lfi, --gfi, --lfc} and \prog{--gfc} options will display stats on
+HMM filtering for the four different final round search strategies:
+local Inside, glocal Inside, local CYK and glocal CYK modes
+respectively (by default \prog{cmsearch} uses local Inside as the
+final round search strategy). The \prog{--seqfile <f>} option can be
+used to specify the target database you want predictions for. 
+Here's an example:
+
+\user{cmstat --lfi --seqfile C.psychrerythraea.genome.fa purine.2.c.cm}
+
+\begin{sreoutput}
+#  idx  name         clen       F     nseq  db (Mb)  always?
+# ----  ----------  -----  ------  -------  -------  -------
+     1  purine.2-1    103  0.9950    10000     10.7       no
+#
+#
+#       CM E-value cutoff / HMM Forward E-value filter cutoff pairs:
+#
+#       idx         cm E  cm bit       hmm E  hmmbit    surv     xhmm  speedup
+#       ----  ----------  ------  ----------  ------  ------  -------  -------
+           1       0.046    23.1   36629.398     3.4  0.4905     36.4      2.0
+           2       0.040    23.3   29737.326     3.7  0.3982     29.7      2.4
+           3       0.028    23.9   26541.287     3.8  0.3554     26.6      2.7
+           4       0.023    24.3   23640.775     4.0  0.3165     23.8      3.0
+           5       0.021    24.4   20096.482     4.2  0.2691     20.4      3.5
+           6       0.017    24.7   17599.957     4.4  0.2357     18.0      4.0
+           7       0.014    25.1   15361.491     4.6  0.2057     15.8      4.6
+           8       0.011    25.4   13553.667     4.8  0.1815     14.1      5.1
+           9    9.55e-03    25.7   12162.658     5.0  0.1629     12.7      5.7
+          10    7.45e-03    26.1   10565.534     5.2  0.1415     11.2      6.4
+          11    5.26e-03    26.6    8933.020     5.4  0.1196      9.6      7.5
+          12    3.58e-03    27.3    7775.779     5.6  0.1041      8.5      8.5
+          13    2.25e-03    28.0    6791.427     5.8  0.0909      7.6      9.5
+          14    1.48e-03    28.7    5931.661     6.0  0.0794      6.7     10.7
+          15    1.39e-03    28.8    5330.116     6.2  0.0714      6.1     11.7
+          16    1.21e-03    29.0    4725.174     6.4  0.0633      5.6     13.0
+          17    1.15e-03    29.1    4041.305     6.6  0.0541      4.9     14.7
+          18    8.80e-04    29.5    3398.422     6.9  0.0455      4.3     16.8
+          19    7.15e-04    29.9    2962.177     7.1  0.0397      3.9     18.7
+          20    5.19e-04    30.4    2608.278     7.3  0.0349      3.5     20.5
+          21    3.78e-04    30.9    2239.857     7.5  0.0300      3.2     22.8
+          22    3.73e-04    30.9    1985.648     7.7  0.0266      2.9     24.7
+          23    3.41e-04    31.1    1765.061     7.8  0.0236      2.7     26.7
+          24    3.06e-04    31.3    1523.977     8.1  0.0204      2.5     29.2
+          25    2.69e-04    31.5    1352.845     8.2  0.0181      2.3     31.3
+          26    2.48e-04    31.6    1202.553     8.4  0.0161      2.2     33.4
+          27    1.94e-04    32.0    1037.597     8.6  0.0139      2.0     36.0
+          28    1.30e-04    32.7     894.061     8.8  0.0120      1.9     38.7
+          29    8.97e-05    33.3     796.893     9.0  0.0107      1.8     40.8
+          30    6.56e-05    33.8     704.541     9.2  0.0094      1.7     42.9
+          31    4.90e-05    34.2     633.229     9.4  0.0085      1.6     44.8
+          32    1.33e-08    47.6      63.323    12.8  0.0008      1.1     68.0
+\end{sreoutput}
+
+The first non-\# prefixed line includes information about our
+calibrated CM. There are seven columns, here's what each one
+means:
+
+\begin{wideitem}
+
+\item[\emprog{idx}] simply the index of the model this row pertains to in
+  the CM file. In this case we have only 1 CM.
+
+\item[\emprog{name}] name of the model.
+
+\item[\emprog{F}] this is the fraction of hits \prog{cmcalibrate}
+  required the HMM to be able to recognize during filter threshold
+  calculation. By default this number is 0.995 as I mentioned above,
+  but can be changed with the \prog{-F} option to \prog{cmcalibrate}
+  (see the manual page). This means that we expect the HMM filter to miss
+  $0.5\%$ of the hits that a non-filtered search would find.
+
+\item[\emprog{nseq}] this is the number of sequences generated in \prog{cmcalibrate}
+  and searched with the CM and HMM during filter threshold
+  calculation. In this case, 10,000 sequences were generated and
+  searched, and the HMM must have been able to recognize $99.5\%$ of the
+  sequences above any given CM score threshold. 
+
+\item[\emprog{db (Mb)}] the database size in megabases (Mb) the
+  statistics in the next section (see below) pertain to.
+
+\item[\emprog{always?}] \prog{cmcalibrate} determines if it is always
+  possible to use an HMM filter for the model it is calibrating, no
+  matter what the database size and final round CM E value cutoff
+  is. If it is, this column reads ``yes'', if not it reads ``no''.
+
+\end{wideitem}
+
+After the CM information is a section with a heading labelled ``CM 
+E-value cutoff / HMM Forward E-value filter cutoff pairs''. This
+section explains how effective the HMM filter is predicted to be if
+particular CM E-value cutoffs are used for the search in our sequence file
+\prog{C.psychrerythraea.genome.fa}. Here's a description of each column:
+\begin{wideitem}
+
+\item[\emprog{idx}] simply the row number.
+
+\item[\emprog{cm E}] final round CM E-value cutoff this row of stats pertains
+  to.
+
+\item[\emprog{cm bit}] the bit score the E-value corresponds to in a
+  database of this size ($10.7$ Mb in this case).
+
+\item[\emprog{hmm bit}] the HMM filter bit score threshold that would
+  be used for this search.
+
+\item[\emprog{surv}] the \textit{predicted} survival fraction of the database
+  that would survive the HMM filter.
+
+\item[\emprog{xhmm}] the \emph{predicted} ratio of millions of dynamic programming (DP)
+  calculations required for an HMM filtered search using the cutoff
+  given in the ``hmmbit'' column to the millions of DP calcs required
+  by a search with only the HMM. For row 1, this means our filtered search
+  (that's the HMM filter plus the CM Inside scan of the predicted
+  49.05\% surviving fraction of the database) should take
+  roughly 36 times the amount of time an HMM only search would take.
+  
+\item[\emprog{speedup}] the \textit{predicted} speedup of the HMM filtered
+  search versus a non-filtered scan with just the CM Inside algorithm.
+
+\end{wideitem}
+
+There are 32 rows of this data, each row shows the characteristics
+that would be used if a particaular CM E-value cutoff were used when
+searching \prog{C.psychrerythraea.genome.fa}. When searching with an
+Cm E-value cutoff that falls between that of two rows, the HMM filter
+from the bordering row with the lower cutoff is used. For example, we
+just ran a search with a $0.001$ E-value cutoff and our HMM filter was
+predicted to have a survival fraction of $0.0541$. This corresonds to
+row 17 of the data above. 
+
+Using \prog{cmstat} in this way allows the user to see how effective
+an HMM filter is predicted to be over the choice of different E-value
+thresholds. If running time is a primary concern, the CM E-value for
+which the HMM filter that gives an appropriately high speedup can be
+chosen. 
+
+\begin{wideitem}
+
+\item[\emprog{F}] this is the fraction of hits \prog{cmcalibrate}
+  required the HMM to be able to recognize during filter threshold
+  calculation. By default this number is 0.995 as I mentioned above,
+  but can be changed with the \prog{-F} option to \prog{cmcalibrate}
+  (see the manual page).
+
+\item[\emprog{nseq}] this is the number of sequences generated in \prog{cmcalibrate}
+  and searched with the CM and HMM during filter threshold
+  calculation. In this case, 10,000 sequences were generated and
+  searched, and the HMM must have been able to recognize 99.5\% of the
+  sequences above any given CM score threshold. 
+
+\item[\emprog{db (Mb)}] the database size the data in the lower
+  tabular section corresponds to. This is only relevant for the
+  E-values in that second section, the bit scores would stay constant
+  regardless of the database size.
+
+\item[\emprog{always?}] \prog{cmcalibrate} determines if it is always
+  possible to use an HMM filter for the model it is calibrating, no
+  matter what the database size and final round CM E value cutoff
+  is. If it is, this column reads ``yes'', if not it reads ``no''.
+\end{wideitem}
+
+\subsubsection{using \prog{cmstat} to predict running times for
+  filtered searches with Rfam cutoffs}
+%Section X explains how \prog{cmcalibrate} determines HMM filter
+%thresholds to use to accelerate \prog{cmsearch}. These filter
+%thresholds are dependent on the final threshold used in
+%\prog{cmsearch}, in general, the stricter the final threshold the
+%stricter the filter threshold and the greater the acceleration from
+%the filter. 
+Section 5 describes how the Rfam curators set GA, NC and TC bit score
+cutoffs for each Rfam model. Because these cutoffs are relatively
+strict it is often possible to achieve large speedups of up to
+100-fold or more when using an Rfam cutoff as the final threshold. The
+\prog{cmstat} can print these predicted speedups with the \prog{--ga,
+  --nc} and \prog{--tc} options. Here's an example, using the
+\prog{rfam10.c.cm} CM file from the tutorial directory that includes
+10 randomly chosen Rfam 8.1 models, that have been calibrated with
+default parameters to cmcalibrate:
+
+\user{cmstat --ga --lfi rfam10.c.cm}\\
+
+\begin{sreoutput}
+# local Inside filter threshold stats for Rfam GA gathering cutoff from CM file
+#
+#  idx  name              clen      cm E  cm bit  hmmbit    surv     xhmm  speedup
+# ----  ---------------  -----  --------  ------  ------  ------  -------  -------
+     1  Retroviral_psi     118  9.47e-06    27.0     4.9  0.0320      2.9     20.3
+     2  snoR43              73  2.32e-07    40.0    11.9  0.0010      1.1     60.5
+     3  snoMe28S-U3344      82  7.04e-11    50.0    11.8  0.0010      1.1     63.5
+     4  SNORD36             79  4.99e-04    28.0    12.0  0.0009      1.1     65.0
+     5  snoMe18S-Um1356     86  1.02e-09    46.0    11.8  0.0010      1.1     62.0
+     6  SNORND104           70  1.94e-07    35.0    10.4  0.0011      1.1     56.4
+     7  HgcC               130  9.13e-05    24.0    10.1  0.0034      1.8    129.4
+     8  SL1                103  1.69e-04    30.0     7.4  0.0162      2.0     30.5
+     9  sroH               161  7.63e-13    50.0     7.8  0.0091      1.6     39.8
+    10  snoR9              128  3.91e-11    50.0     9.1  0.0007      1.1     80.9
+# ----  ---------------  -----  --------  ------  ------  ------  -------  -------
+     -  *Average*          103  7.69e-05    38.0     9.7  0.0067      1.5     60.8
+     -  *Total*              -         -       -       -       -      1.5     57.0
+\end{sreoutput}
+
+The last two lines that report the average and total statistics are
+new, they appear with the \prog{--lfi, --lfc,   --gfi, --gfc} if the
+CM file you're running  \prog{cmstat} on includes more than 1 model. 
+Notice that we're predict about a 57-fold speedup when searching with
+all 10 of these models, which means our CM search would be only about
+1.5X slower than an HMM search.
+
+\subsection{Filtered searches with non-calibrated models}
+
+It is possible to run \prog{cmsearch} with models that are not
+calibrated. Results from searches with non-calibrated models will not
+include E-values and will not be automatically accelerated with
+appropriate HMM filter thresholds. The tradeoff is that calibration is
+expensive, so skipping it can save you time.  
+
+When using a non-calibrated model \prog{cmsearch} will by default use
+an HMM filter with a cutoff threshold of $3.0$ bits, and a QDB filter
+with a cutoff threshold of $0.0$ bits, although these thresholds can
+be changed using command-line options. Let's walk through a quick
+example of default search with a non-calibrated version of the tRNA model
+from the tutorial. We'll assume here that you've gone through tutorial
+section of the guide and the examples earlier in this section (if not,
+this part may not make sense).  First, build a model from the
+\prog{tRNA.5.sto} Stockholm file (from the \prog{/tutorial/}
+subdirectory of \software{Infernal}). We'll use the \prog{-F} option
+which allows us to overwrite the file \prog{my.cm} if it exists.
+
+\user{cmbuild -F my.cm trna.5.sto}\\
+
+Now, let's redo the search from the tutorial of the 300 Kb database,
+but this time our model is not calibrated. First, let's try to use
+\prog{--forecast} to predict the run time: 
+
+\user{cmsearch --forecast 1 my.cm tosearch.300Kb.db}\\
+
+You'll get an error message saying that you can't use
+\prog{--forecast} for a non-calibrated model. The reason is because
+\prog{cmsearch} has no E-value statistics and thus no good way of
+estimating how many hits will survive the HMM filter with a threshold
+of $3.0$ bits. 
+
+Let's run the actual search:
+
+\user{cmsearch my.cm tosearch.300Kb.db}\\
+
+First, the ``Pre-search'' info is printed to the screen, which has
+less information than it would if the model were calibrated (see
+earlier examples in this section): 
+
+\begin{sreoutput}
+# Pre-search info for CM 1: trna.5-1
+#
+# rnd  mod  alg  cfg   beta  bit sc cut
+# ---  ---  ---  ---  -----  ----------
+    1  hmm  fwd  loc      -        3.00
+    2   cm  cyk  loc  1e-07        0.00
+    3   cm  ins  loc  1e-15        0.00
+\end{sreoutput}
+
+Then about 270 hits are printed to the screen. There's so many because
+our cutoff was set as final cutoff was set as $0.0$ bits. Notice that 
+the top hit is still the real tRNA from $101$ to $173$, and it 
+has the same bit score as in the search with the calibrated model,
+which it must, but there's no E-value reported. In this case, it's
+pretty clear that the sequence is a good hit to the model, both
+because of the high bit score and because of the primary sequence and
+structural similarity apparent in the \prog{cmsearch} alignment. 
+
+After all the hits, the ``Post-search'' information is printed showing
+you how many hits survived each round:
+
+\begin{sreoutput}
+# Post-search info for CM 1: trna.5-1
+#
+# rnd  mod  alg  cfg   beta  bit sc cut  num hits  surv fract
+# ---  ---  ---  ---  -----  ----------  --------  ----------
+    1  hmm  fwd  loc      -        3.00       914      0.1638
+    2   cm  cyk  loc  1e-07        0.00       212      0.0496
+    3   cm  ins  loc  1e-15        0.00       269      0.0159
+#
+#    run time
+# -----------
+     00:00:42
+\end{sreoutput}
+
+\begin{srefaq}{My search results say that more hits were found in the
+final round than in a previous filter round, how is this possible?}
+The reason this can happen is because the filter
+rounds detect hits and then extend the boundaries of the hit to
+include a short stretch of neighboring residues because
+we don't want to rely on the filter's definition of the hit end
+points. Some hits in the filter rounds can overlap following the
+extension, in which case the hits are merged into one single hit. In the
+final round it's possible to find more than one hit in the regions that
+were overlapping and merged, so you can get more than one final hit in a
+region counted as just one hit in a filter round. This is what happens
+in the above example. Notice that even though there's more hits in
+round 3 than round 2, the survival fraction is less in round 3 than
+round 2. Again, this is because hit boundaries are extended in the
+filter round to allow subsequent rounds to refine the endpoints,
+whereas hit boundaries are not extended in the final round.
+\end{srefaq}
+
+You may be thinking that some of these thresholds are
+inappropriate. For example, you may not want to look at all 269 hits
+that have a bit score above $0.0$ bits, because most of them are
+clearly not tRNAs. You're right, and these default thresholds for
+non-calibrated models are usually inappropriate. 
+Without E-values it's difficult to automatically predict appropriate
+thresholds so \prog{cmsearch} doesn't even try. 
+\prog{cmsearch} does have several command-line options that allow
+the user to manipulate the thresholds to their liking. This is
+described next.
+
+\subsection{Manually setting filter and final thresholds}
+We described above how \prog{cmsearch} will automatically pick filter
+and final thresholds differently depending on if the query model is
+calibrated or not. For calibrated models the HMM filter threshold
+that will theoretically maximize speed while maintaining 99.5\% sensitivity
+is chosen (sometimes this means turning HMM filtering off if the
+predicted speedup is insignificant). The QDB threshold is set in
+a more \emph{ad hoc} way, that works well empirically. For
+non-calibrated models, the thresholds are automatically set in a very
+simplistic way with a $3.0$ bit threshold for the HMM filter and $0.0$
+bit threshold for the QDB filter and final round. 
+
+Regardless of whether you're searching with a calibrated or
+non-calibrated model, \prog{cmsearch} offers you several options
+manually overriding these automatic choices of thresholds. Here's a list:
+
+{\samepage
+Final threshold related options:
+
+\begin{tabular}{lll}
+                  &                         &               \\
+                  & sets final round        &               \\
+option            & threshold to            & requirements  \\ \hline
+\prog{-E <x>}     & E-value of \prog{<x>}   & model must be calibrated with \prog{cmcalibrate}\\
+\prog{-T <x>}     & bit score of \prog{<x>} & none \\
+\prog{--ga}       & Rfam GA bit score       & \verb+#=GF GA+ annotation in model training alignment to \prog{cmbuild} \\
+\prog{--tc}       & Rfam TC bit score       & \verb+#=GF TC+ annotation in model training alignment to \prog{cmbuild} \\
+\prog{--nc}       & Rfam NC bit score       & \verb+#=GF NC+ annotation in model training alignment to \prog{cmbuild}  \\ \hline
+                  &                         &               \\
+\end{tabular}
+}
+
+{\samepage
+HMM filter threshold related options: 
+
+\begin{tabular}{lll}
+  &                         &               \\
+option                  & effect                  & requirements  \\ \hline
+\prog{--fil-no-hmm <x>} & turn HMM filter off     & none \\
+\prog{--fil-E-hmm <x>}  & sets threshold as E-value \prog{<x>} & model must be calibrated \\
+\prog{--fil-T-hmm <x>}  & sets threshold as bit score \prog{<x>} & none \\
+\prog{--fil-Smax-hmm <x>}  & sets maximum allowable E-value threshold as & model must be calibrated \\
+                        & that which gives predicted survival fraction of \prog{<x>} &   \\ \hline
+                  &                         &               \\
+\end{tabular}
+}
+
+{\samepage
+QDB filter threshold related options: 
+
+\begin{tabular}{lll}
+                        &                         &               \\
+option                  & effect                  & requirements  \\ \hline
+\prog{--fil-no-qdb <x>} & turn QDB filter off     & none \\
+\prog{--fil-E-qdb <x>}  & sets threshold as E-value \prog{<x>} & model must be calibrated \\
+\prog{--fil-T-qdb <x>}  & sets threshold as bit score \prog{<x>} & none \\ \hline
+                  &                         &               \\
+\end{tabular}
+}
+
+You can use either 0 or 1 of the options from each table in a search. 
+The Rfam \prog{--ga, --tc} and \prog{--nc} options are explained more
+in section 5.
+
+We'll go through two examples of using these options with our tRNA
+model. First, with a calibrated or non-calibrated model to set the HMM
+filter cutoff to $5.0$ bits, the QDB filter cutoff to $10.0$ bits and the final
+cutoff to $15.0$ bits: 
+
+\user{cmsearch --fil-T-hmm 5 --fil-T-qdb 10 -T 15 my.cm tosearch.300Kb.db} \\
+
+If your model is calibrated, you can force the HMM filter to be set to
+achieve a specified (predicted) survival fraction with
+\prog{--fil-Smax-hmm <x>}. With this option for values of \prog{<x> << 1}
+you can expect roughly a \prog{1 / <x>} speedup relative to a
+non-filtered search. To try it: 
+
+\user{cmsearch --fil-Smax-hmm 0.001 my.c.cm tosearch.300Kb.db}\\
+
+\begin{sreoutput}
+# Pre-search info for CM 1: trna.5-1
+#
+#                                  cutoffs            predictions     
+#                            -------------------  --------------------
+# rnd  mod  alg  cfg   beta     E value   bit sc     surv     run time
+# ---  ---  ---  ---  -----  ----------  -------  -------  -----------
+    1  hmm  fwd  loc      -       5.472    11.46   0.0010  00:00:05.62
+    2   cm  ins  loc  1e-15       1.000    11.92   0.0001  00:00:00.55
+# ---  ---  ---  ---  -----  ----------  -------  -------  -----------
+  all    -    -    -      -           -        -        -  00:00:06.18
+\end{sreoutput}
+\begin{comment}
+# Post-search info for CM 1: trna.5-1
+#
+#                              number of hits       surv fraction  
+#                            -------------------  -----------------
+# rnd  mod  alg  cfg   beta    expected   actual  expected   actual
+# ---  ---  ---  ---  -----  ----------  -------  --------  -------
+    1  hmm  fwd  loc      -       5.472        3    0.0010   0.0005
+    2   cm  ins  loc  1e-15       1.000        1    0.0001   0.0001
+#
+# expected time    actual time
+# -------------  -------------
+    00:00:06.18    00:00:06.00
+\end{comment}
+
+Notice that the HMM filter round 1 cutoff was set as the E-value 
+that corresponds to predicted survival fraction of 0.001.
+

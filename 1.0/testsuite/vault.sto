@@ -1,0 +1,51 @@
+# STOCKHOLM 1.0
+#=GF ID    Vault
+#=GF AC    RF00006
+#=GF DE    Vault RNA
+#=GF AU    Bateman A
+#=GF SE    Bateman A
+#=GF BM    cmbuild --rf CM SEED
+#=GF BM    cmsearch -W 150 --local CM SEQDB
+#=GF DR    URL; http://vaults.arc.ucla.edu/sci/sci_home.htm;
+#=GF CC    This family of RNAs are found as part of the enigmatic vault
+#=GF CC    ribonuceoprotein complex. The complex consists of a major
+#=GF CC    vault protein (MVP), two minor vault proteins (VPARP and TEP1),
+#=GF CC    and several small untranslated RNA molecules. It has been
+#=GF CC    suggested that the vault complex is involved in drug
+#=GF CC    resistance.
+#=GF SQ    6
+
+#=GS AF058927/1-92  WT    1.05
+#=GS AF045145/1-88  WT    0.77
+#=GS AF045144/1-88  WT    0.77
+#=GS Z11770/1-94    WT    1.32
+#=GS Z11771/1-141   WT    1.00
+#=GS AY007237/1-141 WT    1.10
+
+AF058927/1-92              GGYCAGCTTYAGCTCAGCGGTTACTTCGACA...................
+AF045145/1-88              GGCTGGCTTTAGCTCAGCGGTTACTTCGCG....................
+AF045144/1-88              GGCTGGCTTTAGCTCAGCGGTTACTTCGAG....................
+Z11770/1-94                GGTCAGCAACAGCTCAGCGGTTACTTCTCGA...................
+Z11771/1-141               GGCCAGCTTTAGCTCAGCGGTTACTTCGACGTGCTCCAGTTTGAGCAGGC
+AY007237/1-141             GGCCAGCTTTAGCTGAGCGGTTACTTTGACA.GTGTTTCAGTTCATTACC
+#=GC SS_cons               <<<<<<.....<<<<.<<<<....<<<<<.....................
+#=GC RF                    xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx....................
+
+AF058927/1-92              ...........GTTCTTTAATTGAAACAAGCAACCT..............
+AF045145/1-88              ....................TGTCATCAAACCACCT..............
+AF045144/1-88              ....................TACATTGTAACCACCT..............
+Z11770/1-94                ..........................AATACCACGGAATTGTAATTCTGA
+Z11771/1-141               TATGTAACGTGGTCGGTTCGAGCAACACAACCAGCCGCTTGCCTATCTGG
+AY007237/1-141             AGCTATTCGTAGCAGGTTCAAATAACACAACCAACCACTTGCCTAACCCA
+#=GC SS_cons               .............................<<<<<<<..............
+#=GC RF                    ..........................xxxxxxxxxx..............
+
+AF058927/1-92              ...GTCTGGGTGGTTCGARACCCGCGGCCGCTMYCTGGC......
+AF045145/1-88              ...CTCTGGGTTGTTCGAGACCCGCGGGCGCTCTCCAGCCCTCTT
+AF045144/1-88              ...CTCTGGGTGGTTCGAGACCCGCGGGTGCTTTCCAGCTCTTTT
+Z11770/1-94                AAACCTTTCGGGGTTCGAAACCCGCGGGCGCCACCTGAC......
+Z11771/1-141               T..GAGTGGTTGGTTCGAGACCCGCGGGCGCTCTCTGGCCCTT..
+AY007237/1-141             T..GAGTGTTTGGTTCGAGACCGGCGGGCGCTCCCTGGCCCTTT.
+#=GC SS_cons               .......>>>>>>>>>>>>..>>>>>>>>.....>>>>>>.....
+#=GC RF                    ...xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.....
+//

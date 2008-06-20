@@ -1,0 +1,26 @@
+
+.SH SEE ALSO
+
+For complete documentation, see the User's Guide (Userguide.pdf) that
+came with the distribution; or see the Infernal web page,
+http://infernal.wustl.edu/.
+
+.SH COPYRIGHT
+
+.nf
+@COPYRIGHT@.
+@LICENSELINE@.
+.fi
+See the file COPYING that came with the source
+for details on redistribution conditions.
+
+.SH AUTHOR
+
+.nf
+Sean Eddy
+HHMI/Dept. of Genetics
+Washington Univ. School of Medicine
+4566 Scott Ave.
+St Louis, MO 63110 USA
+http://www.genetics.wustl.edu/eddy/
+
