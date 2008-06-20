@@ -6074,7 +6074,7 @@ alloc_banded_vjd_deck(int L, int i, int j, int min, int max)
   int     bw; /* width of band, depends on jp, so we need to calculate
 	         this inside the jp loop*/
 
-  //printf("in alloc banded vjd deck, L : %d, i : %d, j : %d, min : %d, max : %d\n", L, i, j, min, max);
+  /*printf("in alloc banded vjd deck, L : %d, i : %d, j : %d, min : %d, max : %d\n", L, i, j, min, max);*/
 
   ESL_DPRINTF3(("alloc_vjd_deck : %.4f\n", size_vjd_deck(L,i,j)));
   ESL_ALLOC(a, sizeof(float *) * (L+1)); /* always alloc 0..L rows, some of which are NULL */
@@ -6089,13 +6089,13 @@ alloc_banded_vjd_deck(int L, int i, int j, int min, int max)
 
       if(bw > 0)
 	{
-	  //printf("\tallocated a[%d]\n", jp+i-1);
+	  /*printf("\tallocated a[%d]\n", jp+i-1);*/
 	  ESL_ALLOC(a[jp+i-1], sizeof(float) * bw);
 	}
       else
 	{
 	  a[jp+i-1] = NULL;
-	  //printf("\tdid not allocate a[%d]\n", jp+i-1);
+	  /*printf("\tdid not allocate a[%d]\n", jp+i-1);*/
 	}
     }
   return a;
@@ -6241,10 +6241,10 @@ debug_print_shadow_banded(void ***shadow, CM_t *cm, int L, int *dmin, int *dmax)
       for(j = 0; j <= L; j++)
 	{
 	  printf("------------------------------------\n");
-	  // there may be a problem with using j and not jp
+	  /* there may be a problem with using j and not jp */
 	  for (d = dmin[v]; d <= dmax[v] && d <= j; d++) 
 	    {
-	    vdp = d - dmin[v]; // d index for state v in alpha w/mem eff bands 
+	      vdp = d - dmin[v]; /* d index for state v in alpha w/mem eff bands */
 	      if(cm->sttype[v] == E_st)
 		{
 		  printf("END state\n");
@@ -6286,10 +6286,10 @@ debug_print_shadow_banded_deck(int v, void ***shadow, CM_t *cm, int L, int *dmin
   for(j = 0; j <= L; j++)
     {
       printf("------------------------------------\n");
-      // there may be a problem with using j and not jp
+      /* there may be a problem with using j and not jp*/
       for (d = dmin[v]; d <= dmax[v] && d <= j; d++) 
 	{
-	  vdp = d - dmin[v]; // d index for state v in alpha w/mem eff bands 
+	  vdp = d - dmin[v]; /* d index for state v in alpha w/mem eff bands */
 
 	  if(cm->sttype[v] == E_st)
 	    {
@@ -6332,7 +6332,7 @@ debug_print_alpha_banded(float ***alpha, CM_t *cm, int L, int *dmin, int *dmax)
 	  printf("------------------------------------\n");
 	  for (d = dmin[v]; d <= dmax[v] && d <= j; d++) 
 	    {
-	      vdp = d - dmin[v]; // d index for state v in alpha w/mem eff bands
+	      vdp = d - dmin[v]; /* d index for state v in alpha w/mem eff bands */
 	      printf("alpha[%2d][%2d][%2d] : %6.2f | d is %d\n", v, j, vdp, alpha[v][j][vdp], d);
 	    }
 	}

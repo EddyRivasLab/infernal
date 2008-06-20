@@ -1080,7 +1080,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	    if(cm->stid[y] == BEGL_S) {
 	      jp_y = jp_wA[0];
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);
+		/*alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);*/
 		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->ibeginsc[y])) {
 		  alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->ibeginsc[y];
 		  bestr[d] = y;
@@ -1090,7 +1090,7 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	    else { /* y != BEGL_S */
 	      jp_y = cur;
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]);
+		/*alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]);*/
 		if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->ibeginsc[y])) {
 		  alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->ibeginsc[y];
 		  bestr[d] = y;
@@ -1550,7 +1550,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
 	    if(cm->stid[y] == BEGL_S) {
 	      jp_y = jp_wA[0];
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);
+		/*alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);*/
 		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->ibeginsc[y])) {
 		  alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->ibeginsc[y];
 		  bestr[d] = y;
@@ -1560,7 +1560,7 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
 	    else { /* y != BEGL_S */
 	      jp_y = cur;
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]);
+		/*alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]);*/
 		if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->ibeginsc[y])) {
 		  alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->ibeginsc[y];
 		  bestr[d] = y;
@@ -2102,7 +2102,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
 	    if(cm->stid[y] == BEGL_S) {
 	      jp_y = jp_wA[0];
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);
+		/*alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);*/
 		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->ibeginsc[y])) {
 		  alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->ibeginsc[y];
 		  bestr[d] = y;
@@ -2112,7 +2112,7 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
 	    else { /* y != BEGL_S */
 	      jp_y = cur;
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]);
+		/*alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]);*/
 		if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->ibeginsc[y])) {
 		  alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->ibeginsc[y];
 		  bestr[d] = y;
@@ -2646,7 +2646,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	    if(cm->stid[y] == BEGL_S) {
 	      jp_y = jp_wA[0];
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->beginsc[y]);
+		/*alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->beginsc[y]);*/
 		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->beginsc[y])) {
 		  alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->beginsc[y];
 		  bestr[d] = y;
@@ -2656,7 +2656,7 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	    else { /* y != BEGL_S */
 	      jp_y = cur;
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		//alpha[jp_v][0][d] = FLogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->beginsc[y]);
+		/*alpha[jp_v][0][d] = FLogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->beginsc[y]);*/
 		if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->beginsc[y])) {
 		  alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->beginsc[y];
 		  bestr[d] = y;
@@ -3256,7 +3256,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
 	    if(cm->stid[y] == BEGL_S) {
 	      jp_y = j % (W+1);
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);
+		/*alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);*/
 		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->ibeginsc[y])) {
 		  alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->ibeginsc[y];
 		  bestr[d] = y;
@@ -3266,7 +3266,7 @@ RefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
 	    else { /* y != BEGL_S */
 	      jp_y = cur;
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]);
+		/*alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]);*/
 		if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->ibeginsc[y])) {
 		  alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->ibeginsc[y];
 		  bestr[d] = y;
@@ -3582,7 +3582,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	    if(cm->stid[y] == BEGL_S) {
 	      jp_y = jp_wA[0];
 	      for (d = dnA[y]; d <= dxA[y]; d++) { 
-		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);
+		/*alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->ibeginsc[y]);*/
 		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->ibeginsc[y])) {
 		  alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->ibeginsc[y];
 		  bestr[d] = y;
@@ -3592,7 +3592,7 @@ XRefIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	    else { /* y != BEGL_S */
 	      jp_y = cur;
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		//alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]); 
+		/*alpha[jp_v][0][d] = ILogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->ibeginsc[y]); */
 		if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->ibeginsc[y])) {
 		  alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->ibeginsc[y];
 		  bestr[d] = y;
@@ -3897,7 +3897,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
 	    if(cm->stid[y] == BEGL_S) {
 	      jp_y = jp_wA[0];
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		//alpha[jp_v][0][d] = FLogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->beginsc[y]);
+		/*alpha[jp_v][0][d] = FLogsum(alpha[jp_v][0][d], alpha_begl[jp_y][y][d] + cm->beginsc[y]);*/
 		if(alpha[jp_v][0][d] < (alpha_begl[jp_y][y][d] + cm->beginsc[y])) {
 		  alpha[jp_v][0][d] = alpha_begl[jp_y][y][d] + cm->beginsc[y];
 		  bestr[d] = y;
@@ -3907,7 +3907,7 @@ RefFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, 
 	    else { /* y != BEGL_S */
 	      jp_y = cur;
 	      for (d = dnA[y]; d <= dxA[y]; d++) {
-		//alpha[jp_v][0][d] = FLogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->beginsc[y]);
+		/*alpha[jp_v][0][d] = FLogsum(alpha[jp_v][0][d], alpha[jp_y][y][d] + cm->beginsc[y]);*/
 		if(alpha[jp_v][0][d] < (alpha[jp_y][y][d] + cm->beginsc[y])) {
 		  alpha[jp_v][0][d] = alpha[jp_y][y][d] + cm->beginsc[y];
 		  bestr[d] = y;
@@ -5358,7 +5358,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
 	  dp_y = dn - hdmin[y][jp_y];
 	  d    = dn;
 	  for (dp_v = dpn; dp_v <= dpx; dp_v++, dp_y++, d++) {
-	    //alpha[0][jp_v][dp_v] = FLogsum(alpha[0][jp_v][dp_v], alpha[y][jp_y][dp_y] + cm->beginsc[y]);
+	    /*alpha[0][jp_v][dp_v] = FLogsum(alpha[0][jp_v][dp_v], alpha[y][jp_y][dp_y] + cm->beginsc[y]);*/
 	    sc = alpha[y][jp_y][dp_y] + cm->beginsc[y];
 	    if(sc > alpha[0][jp_v][dp_v]) {
 	      alpha[0][jp_v][dp_v] = sc;

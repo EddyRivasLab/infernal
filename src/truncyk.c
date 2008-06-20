@@ -463,7 +463,7 @@ tr_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
                best_d  = d;
                v_mode = 2; w_mode = 3; y_mode = 3;
             }
-            // j < j0 test causes problems if there are no R emitters between r and v
+            /* j < j0 test causes problems if there are no R emitters between r and v */
             if ( r_allow_R && k < d /* && j < j0*/ )
             if ( (sc = alpha->R[w][j-k][d-k] + alpha->J[y][j][k] + beta->R[v][j]) > best_sc )
             {
@@ -633,7 +633,7 @@ if (v == -1) cm_Die("2Superbad: passing z = -1!\n");
    else
    {
       InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_d, w, w_mode);
-      //InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_d, cm->M, 3);
+      /*InsertTraceNodewithMode(tr, tr->n-1, TRACE_LEFT_CHILD, best_j - best_d + 1, best_j - best_d, cm->M, 3);*/
    }
 
    if ( y_mode )
@@ -644,7 +644,7 @@ if (v == -1) cm_Die("2Superbad: passing z = -1!\n");
    else 
    {
       InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j + 1, best_j, y, y_mode);
-      //InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j + 1, best_j, cm->M, 3);
+      /*InsertTraceNodewithMode(tr, tv, TRACE_RIGHT_CHILD, best_j + 1, best_j, cm->M, 3);*/
    }
 
    return best_sc;
@@ -871,7 +871,7 @@ tr_v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int 
    float        b_sc;
    int          b_mode, b_v, b_i, b_j;
 
-// Recommend a special handler for the fully marginal cases (linear alg.)
+   /* Recommend a special handler for the fully marginal cases (linear alg.)*/
    /*
    if ( force_LM)
    {
@@ -2567,8 +2567,8 @@ tr_vinside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1, 
 
       if (z == 0)
       {
-         // FIXME
-         // I don't understand what exactly Sean's doing in this block
+	/* FIXME */
+	/* I don't understand what exactly Sean's doing in this block */
          cm_Die("Potentially unhandled case!\n");
       }
    }

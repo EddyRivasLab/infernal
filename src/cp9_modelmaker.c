@@ -2661,7 +2661,6 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
   /* clean up from previous MSA */
   free(matassign);
   free(useme);
-  //  free(name);
   free(tmp_name);
   for (i = 0; i < msa_nseq; i++) {
     CP9FreeTrace(cp9_tr[i]);

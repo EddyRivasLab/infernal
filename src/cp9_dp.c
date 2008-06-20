@@ -215,7 +215,6 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
       for (k = 1; k <= M; k++)
 	{
 	  /*match state*/
-	  //ctr++;
 	  sc = ESL_MAX(    mmx[prv][k-1] + TSC(cp9O_MM,k-1),
 			   imx[prv][k-1] + TSC(cp9O_IM,k-1));
 	  sc = ESL_MAX(sc, dmx[prv][k-1] + TSC(cp9O_DM,k-1));
@@ -547,13 +546,13 @@ cp9_ViterbiBackward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, in
 	  
 	  mmx[cur][cm->cp9->M] = ESL_MAX(mmx[cur][cm->cp9->M], elmx[cur][cm->cp9->M] + TSC(cp9O_MEL,cm->cp9->M));/* M_M<-EL_M<-E, with 0 selfs in EL_M */
 	  mmx[cur][cm->cp9->M] = ESL_MAX(mmx[cur][cm->cp9->M], TSC(cp9O_ME,cm->cp9->M));                              /* M_M<-E ... */
-	  ///mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M]; /* ... + emitted match symbol */
+	  /*///mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M]; *//* ... + emitted match symbol */
 	  /* DO NOT add contribution of emitting i from M, it's been added above */
 	  
 	  imx[cur][cm->cp9->M] = ESL_MAX(imx[cur][cm->cp9->M],
 					 (TSC(cp9O_IM,cm->cp9->M) +            /* I_M<-E + (only in scanner)     */
 					  0));                                        /* all parses end in E, 2^0 = 1.0;*/
-	  ///imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M]; /* ... + emitted insert symbol */  
+	  /*///imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M]; *//* ... + emitted insert symbol */  
 	  /* DO NOT add contribution of emitting i from M, it's been added above */
 	}
 	dmx[cur][cm->cp9->M] =  ESL_MAX(dmx[cur][cm->cp9->M], 
@@ -916,7 +915,6 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
       for (k = 1; k <= M; k++)
 	{
 	  /*match state*/
-	  //ctr++;
 	  sc = ILogsum(ILogsum(mmx[prv][k-1] + TSC(cp9O_MM,k-1),
 			       imx[prv][k-1] + TSC(cp9O_IM,k-1)),
 		       ILogsum(dmx[prv][k-1] + TSC(cp9O_DM,k-1),
@@ -2137,14 +2135,14 @@ cp9_Backward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, i
 	    ILogsum(mmx[cur][cm->cp9->M], 
 		    ILogsum(elmx[cur][cm->cp9->M] + TSC(cp9O_MEL,cm->cp9->M),/* M_M<-EL_M<-E, with 0 selfs in EL_M */
 			    TSC(cp9O_ME,cm->cp9->M)));                             /* M_M<-E ... */
-	  ///mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M]; /* ... + emitted match symbol */
+	  /*///mmx[cur][cm->cp9->M] += cm->cp9->msc[dsq[i]][cm->cp9->M]; *//* ... + emitted match symbol */
 	  /* DO NOT add contribution of emitting i from M, it's been added above */
 	  
 	  imx[cur][cm->cp9->M]  =
 	    ILogsum(imx[cur][cm->cp9->M],
 		    (TSC(cp9O_IM,cm->cp9->M) +            /* I_M<-E + (only in scanner)     */
 		     0));                                        /* all parses end in E, 2^0 = 1.0;*/
-	  ///imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M]; /* ... + emitted insert symbol */  
+	  /*///imx[cur][cm->cp9->M] += cm->cp9->isc[dsq[i]][cm->cp9->M]; *//* ... + emitted insert symbol */  
 	  /* DO NOT add contribution of emitting i from M, it's been added above */
 	  dmx[cur][cm->cp9->M] =  
 	    ILogsum(dmx[cur][cm->cp9->M],
@@ -2579,7 +2577,6 @@ cp9_WorstForward(CM_t *cm, char *errbuf, CP9_MX *mx, int thresh, int doing_scan,
       for (k = 1; k <= M; k++)
 	{
 	  /*match state*/
-	  //ctr++;
 	  sc = ILogsum(ILogsum(mmx[prv][k-1] + TSC(cp9O_MM,k-1),
 			       imx[prv][k-1] + TSC(cp9O_IM,k-1)),
 		       ILogsum(dmx[prv][k-1] + TSC(cp9O_DM,k-1),
@@ -2837,7 +2834,6 @@ main(int argc, char **argv)
   if (!(CMFileRead(cmfp, &abc, &cm)))            cm_Fail("Failed to read CM");
   CMFileClose(cmfp);
 
-  //cm->config_opts |= CM_CONFIG_QDB;
   if(! esl_opt_GetBoolean(go, "-g")) { 
     cm->config_opts |= CM_CONFIG_LOCAL;
     cm->config_opts |= CM_CONFIG_HMMLOCAL;

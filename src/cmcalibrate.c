@@ -3211,8 +3211,6 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
 
   search_results_t *results;
   esl_stopwatch_Start(w);
-  ///ESL_STOPWATCH *w2  = esl_stopwatch_Create(); /* for timings */
-  ///esl_stopwatch_Start(w2);
   /* simulate a workunit, generate a sequence, search it, and remove overlaps */
   /*printf("exptL: %d\n", L);*/
   if(esl_opt_GetBoolean(go, "--exp-random")) { 
@@ -3221,16 +3219,8 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   else { 
     if((status = get_genomic_sequence_from_hmm(cfg, errbuf, cm, L, &dsq)) != eslOK) return status;
   }
-  ///esl_stopwatch_Stop(w2);
-  ///esl_stopwatch_Display(stdout, w2, "# 0 CPU time: ");
-  ///esl_stopwatch_Start(w2);
   if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, L, &results, esl_opt_GetReal(go, "--mxsize"), 0, NULL, NULL)) != eslOK) return status;
-  ///esl_stopwatch_Stop(w2);
-  ///esl_stopwatch_Display(stdout, w2, "# 1 CPU time: ");
-  ///esl_stopwatch_Start(w2);
   RemoveOverlappingHits(results, 1, L);
-  ///esl_stopwatch_Stop(w2);
-  ///esl_stopwatch_Display(stdout, w2, "# 2 CPU time: ");
 
   esl_stopwatch_Stop(w);
   if(w != NULL) esl_stopwatch_Destroy(w);

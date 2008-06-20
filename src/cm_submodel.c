@@ -420,7 +420,7 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig
   int orig_nd;
   int is_insert;
   
-  //printf("\nin helper: orig_v: %d sub_v: %d\n", orig_v, sub_v);
+  /*printf("\nin helper: orig_v: %d sub_v: %d\n", orig_v, sub_v);*/
   
   if(orig_v == -1 || sub_v == -1)
     return 0;
@@ -1036,7 +1036,7 @@ cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int
   int is_left;
   int i, j;
 
-  //printf("\nin cm2sub_cm_emit_probs v_s: %d, v_o1: %d, v_o2: %d\n", v_s, v_o1, v_o2);
+  /*printf("\nin cm2sub_cm_emit_probs v_s: %d, v_o1: %d, v_o2: %d\n", v_s, v_o1, v_o2);*/
 
   if(v_o1 == -1)
     {
@@ -1137,7 +1137,7 @@ cm2sub_cm_trans_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tma
   int yoffset;
   int y_s;
 
-  //printf("in cm2sub_cm_trans_probs: v_s: %d\n", v_s);
+  /*printf("in cm2sub_cm_trans_probs: v_s: %d\n", v_s);*/
 
   if(submap->s2o_id[v_s] == TRUE) /* v_s is identical to submap->s2o_smap[v_s][0] */
     {
@@ -1153,7 +1153,7 @@ cm2sub_cm_trans_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tma
 
   /* start with the first orig_cm state that maps to v_s */
   v_o = submap->s2o_smap[v_s][0];
-  //printf("\tv_o: %d\n", v_o);
+  /*printf("\tv_o: %d\n", v_o);*/
   if(v_o == -1)
     {
       if(sub_cm->sttype[v_s] != S_st &&
@@ -1238,7 +1238,7 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
 
   int orig_il1, orig_il2, orig_ir1, orig_ir2;
 
-  //printf("in cm2sub_cm_trans_probs_S: v_start: %d\n", v_start);
+  /*printf("in cm2sub_cm_trans_probs_S: v_start: %d\n", v_start);*/
 
   sub_nd     = sub_cm->ndidx[v_start];
 
@@ -1254,7 +1254,7 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
 	for(yoffset = 0; yoffset < sub_cm->cnum[v_start]; yoffset++)
 	  {
 	    y_s = sub_cm->cfirst[v_start] + yoffset;
-	    //printf("updating sub_cm->t[%d][%d]\n", v_start, yoffset);
+	    /*printf("updating sub_cm->t[%d][%d]\n", v_start, yoffset);*/
 	    sub_cm->t[v_start][yoffset] = orig_psi[submap->s2o_smap[y_s][0]];
 	    if(submap->s2o_smap[y_s][1] != -1)
 	      sub_cm->t[v_start][yoffset] += orig_psi[submap->s2o_smap[y_s][1]];
@@ -1263,7 +1263,6 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
 
   else if(sub_cm->ndtype[sub_nd] == BEGR_nd)
     {
-      //printf("!!!SETTING TRANSITIONS OUT OF BEGR_S, NOT SURE IF THIS IS IMPLEMENTED CORRECTLY!!!!\n\n");
       /* More complicated than the BEGL case b/c we need to handle the
        * BEGR_S -> BEGR_IL transition as well as BEGR_S -> next node 
        * split set transitions.
@@ -1274,7 +1273,7 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
       v_s_insert = v_start + 1;
       if(sub_cm->ndtype[sub_nd + 1] == BIF_nd)
 	{
-	  //printf("!!!SPECIAL CASE BEGR -> BIF! v_ct\n");
+	  /*printf("!!!SPECIAL CASE BEGR -> BIF! v_ct\n");*/
 
 	  v_o_insert = submap->s2o_smap[v_s_insert][0];
 	  if(submap->s2o_smap[v_s_insert][1] == -1)
@@ -1340,7 +1339,7 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
 	      sub_cm->t[v_start][yoffset] = temp_psi - il_psi * sub_cm->t[v_s_insert][yoffset];
 	      sum += sub_cm->t[v_start][yoffset];
 	    }
-	  //printf("BEGR->NON BIF  SUM: %f\n", sum);
+	  /*printf("BEGR->NON BIF  SUM: %f\n", sum);*/
 	  if(sum < 1.0 && ((1.0 - sum) > 0.001))
 	    cm_Fail("ERROR calculating transitions out of BEGR_S incorrectly\n");
 	  if(sum > 1.0 && ((sum - 1.0) > 0.001))
@@ -1349,13 +1348,13 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
     }
   else if(sub_cm->ndtype[sub_nd] == ROOT_nd)
     {
-      //printf("in cm2sub_cm_trans_probs_S(), ROOT_nd\n");
+      /*printf("in cm2sub_cm_trans_probs_S(), ROOT_nd\n");*/
       /* the only case we have to worry about is if the next node is BIF node,
        * otherwise the transitions out of ROOT_S have already been set.
        */
       if(sub_cm->ndtype[sub_nd + 1] == BIF_nd)
 	{
-	  //printf("!!!SPECIAL CASE ROOT -> BIF!\n");
+	  /*printf("!!!SPECIAL CASE ROOT -> BIF!\n");*/
 	  /* Before we do anything we have to check to see if we need to subtract
 	   * any subpaths from ROOT_S -> ROOT_IR that have been double counted:
 	   */
@@ -1463,7 +1462,7 @@ cm2sub_cm_trans_probs_S(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***t
 	  /* ROOT -> non-BIF node, we have already handled this, so we return. */
 	}
     }
-  //printf("leaving cm2sub_cm_trans_probs_S\n\n");
+  /*printf("leaving cm2sub_cm_trans_probs_S\n\n");*/
   return;
 }
 
@@ -2250,7 +2249,7 @@ check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, doubl
 int
 cm_trans_check(CM_t *cm, int a, int b)
 {
-  //printf("\t**in cm_trans_check a: %d | b: %d\n", a, b);
+  /*printf("\t**in cm_trans_check a: %d | b: %d\n", a, b);*/
   
   if((a == -1 || b == -1) || (a > b))
     return FALSE;
