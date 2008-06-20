@@ -48,7 +48,7 @@ are:
        residues removed to demonstrate alignment of truncated
        sequences.
   \item[\prog{toalign.1.fa}] The first tRNA sequence from toalign.3.fa.
-  \item[\prog{trna.5.c.cm}] A calibrated version of a model built from
+  \item[\prog{my.c.cm}] A calibrated version of a model built from
        \prog{trna.5.sto}, included to save time. 
   \end{sreitems}
 
@@ -244,8 +244,9 @@ When \prog{cmcalibrate} finished, the \prog{my.c.cm} file had
 been updated to include information about E-values and HMM filter
 thresholds. More detail on what \prog{cmcalibrate} does can be found
 in sections 5 and 6. To make things simpler for our tutorial, copy over
-the \prog{my.cm} file you just made with the calibrated version 
-(\user{cp my.c.cm my.cm}).\\
+the \prog{my.cm} file you just made with the calibrated version:
+ 
+\user{cp my.c.cm my.cm}.\\
 
 \subsection{Searching a sequence database with \prog{cmsearch}}
 
@@ -261,7 +262,7 @@ relatively small, we'll just do the search:
 
 First, the program will print a header and ``Pre-search info'' to the
 screen. This output is explained in detail later in section 6, don't
-worry about it right now. 
+worry about it right now. The search should take about 2 minutes.
 
 \begin{comment}
 # cmsearch :: search a sequence database with an RNA CM
@@ -1028,6 +1029,7 @@ this with alignment of a single sequence:
 # seq idx  seq name    len     total    struct  avg prob      elapsed
 # -------  --------  -----  --------  --------  --------  -----------
         1  tRNA6        72     45.48     27.13     0.986  00:00:00.00
+\end{comment}
 
 {\samepage
 \begin{sreoutput}
@@ -1170,8 +1172,9 @@ to see the predicted running time:
 It should take about two hours. Feel free to calibrate the model yourself if you want
 to, but to save time we've included \prog{purine.1.c.cm} a
 calibrated version of the single sequence Purine model. To use our
-calibrated model, copy it over the model you just built with 
-\prog{cp purine.1.c.cm purine.1.cm}.
+calibrated model, copy it over the model you just built with:
+
+\user{cp purine.1.c.cm purine.1.cm}\\
 
 Now we're ready to search genomes. As mentioned earlier, at early
 stages of iterative search if you've built a model from very few
@@ -1182,6 +1185,7 @@ sequences. In this case let's search another Firmicutes bacteria,
 \prog{T.tengcongensis.genome.fa}:
 
 \subsubsection{iteration 1, step 2: search a genome}
+
 \user{cmsearch purine.1.cm T.tengcongensis.genome.fa}\\
 
 This will take about twenty minutes for \prog{cmsearch} to search the 5 Mb

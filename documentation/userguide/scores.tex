@@ -334,37 +334,36 @@ of Inside. You can read more about how we use CYK as a filter in
 
 \subsection{Accuracy of E-values}
 
-The E-values reported by \prog{cmsearch} are not extremely accurate. 
+The E-values reported by \prog{cmsearch} are not extremely accurate.
 This is because CM scores don't fit the exponential tail distribution
-extremely well. Empirically, local alignment scores returned from local searches
-fit exponential tails fairly well, and glocal alignment scores fit
-less well. Exponential tails are used for E-values because there is
-not an obviously better alternative. We will continue to work on
-making E-values more accurate in future versions of \software{Infernal}.
+extremely well. Empirically, local alignment scores returned from
+local searches fit exponential tails fairly well, and glocal alignment
+scores fit less well. We will continue to work on making E-values more
+accurate in future versions of \software{Infernal}.
 
-One important factor in the accuracy of E-values is the GC content
-of the target database. This is because many CMs are
-biased towards particular GC content (usually low GC), in many cases
-giving A-rich sequence high scores simply because it is
-A-rich. \prog{cmsearch} partially alleviates the problem of
-biased composition using a post-hoc correction called null3 (see ``Biased composition
-filtering: the null3 model below''). However, the problem still
-persists and is particularly evident when the target database being
-searched has a very low (about 25\%) or very high (about 65\%) GC
-content. \prog{cmcalibrate} calibrates the E-value statistics for a
-genome composition of about 46\% GC (based on an average measure from 
+One important factor in the accuracy of E-values is the GC content of
+the target database. This is because many CMs are biased towards
+particular GC content (usually low GC), in many cases giving A-rich
+sequence high scores simply due to their high composition of
+As. \prog{cmsearch} partially alleviates the problem of biased
+composition using a post-hoc correction called null3 (see ``Biased
+composition filtering: the null3 model below''). However, the problem
+still persists and is particularly evident when the target database
+being searched has a very low (about 25\%) or very high (about 65\%)
+GC content. \prog{cmcalibrate} calibrates the E-value statistics for a
+genome composition of about 46\% GC (based on an average measure from
 a sampling of genomes from the three domains of life). When a target
 database with GC content lower than 46\% is searched, the effect is
 that there are usually more high scoring hits than the calibrated CM
 expects, and lower E-values for random hits can result (that is you
-might observe 5 hits with an E-value less than 1 for example). Conversely,
-when a target database with GC content above 46\% is searched, the
-effect is the opposite, and higher E-values often result (you might
-observed only 5 hits with an E-value less than 20). These
-effects are the average case, but different models will give different
-results. We consider the E-values in \prog{Infernal} a work in progress,
-so feel free to report examples of particularly bad (or good) performance
-of E-values to us. 
+might observe 5-25 hits with an E-value less than 1 for
+example). Conversely, when a target database with GC content above
+46\% is searched, the effect is the opposite, and higher E-values
+often result (you might observe only 1-5 hits with an E-value less than
+25). These effects are the average case, but different models will
+give different results. We consider the E-values in \prog{Infernal} a
+work in progress, so feel free to report examples of particularly bad
+(or good) performance of E-values to us.
 
 \subsection{In more detail: Rfam TC/NC/GA cutoffs}
 
@@ -648,7 +647,7 @@ composition would receive a $3.44$ bit penalty.
 \begin{center}
 \begin{tabular}{r|rrrr|c}
       &        &        &        &        & NULL3 \\ 
-  GC\%&    A\% &   C\%  &   G\%  &      U & correction (bits)  \\ \hline
+  GC\%&    A\% &   C\%  &   G\%  &    U\% & correction (bits)  \\ \hline
   0.0 &   50.0 &    0.0 &    0.0 &   50.0 &              95.00 \\
  10.0 &   45.0 &    5.0 &    5.0 &   45.0 &              48.10 \\
  20.0 &   40.0 &   10.0 &   10.0 &   40.0 &              22.81 \\

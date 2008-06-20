@@ -361,14 +361,16 @@ of these questions is easy enough to perform, we can run
 to get the non-filtered running time and to see if anything else
 is found. The command to do that is: 
 
-\scriptuser{cmsearch -E 0.001 --fil-no-hmm --fil-no-qdb purine.2.c.cm C.psychrerythraea.genome.fa}.
+\scriptuser{cmsearch -E 0.001 --fil-no-hmm --fil-no-qdb purine.2.c.cm C.psychrerythraea.genome.fa}\\
 
 To save you the time of actually doing this we've saved the
-output of this search in the file \prog{purine.2.nofilter.cmsearch},
+output of this search in the file\\
+ \prog{purine.2.nofilter.cmsearch},
 but feel free to run it on your own. Take a look at the file. Here is
 the post-search information:
 
 
+{\samepage
 \begin{sreoutput}
 # Post-search info for CM 1: purine2-1
 #
@@ -382,6 +384,7 @@ the post-search information:
 # -------------  -------------
     03:13:25.22    03:55:36.00
 \end{sreoutput}
+}
 
 The non-filtered search only finds this one hit below our E-value
 cutoff also. Looks like our filters did a good job in this case!
