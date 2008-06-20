@@ -3455,8 +3455,8 @@ print_fil_line(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int
     else             printf("  %-8s  %3s  %3s  %3s  %9s %6d %14s\n",              "filter", "-", ((exp_mode == EXP_CM_GI) ? "glc" : "loc"), "-", "-", filN, time_buf);
   }
   else { 
-    if(cfg->np != 1) printf("  %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6d %10s\n",  "filter", "-", ((exp_mode == EXP_CM_GI) ? "glc" : "loc"), "-", "-", "-", "-", "-", filN, time_buf);
-    else             printf("  %-8s  %3s  %3s  %3s  %9s %6d %10s\n",              "filter", "-", ((exp_mode == EXP_CM_GI) ? "glc" : "loc"), "-", "-", filN, time_buf);
+    if(cfg->np != 1) printf("  %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6d %10s",  "filter", "-", ((exp_mode == EXP_CM_GI) ? "glc" : "loc"), "-", "-", "-", "-", "-", filN, time_buf);
+    else             printf("  %-8s  %3s  %3s  %3s  %9s %6d %10s",              "filter", "-", ((exp_mode == EXP_CM_GI) ? "glc" : "loc"), "-", "-", filN, time_buf);
   }
   fflush(stdout);
   return eslOK;
