@@ -780,6 +780,7 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
 	      /* x is a parent of v, we're adding contribution 
 	       * of transition from x to v. */
 	      tmap_val = tmap[(int) cm->stid[x]][(int) cm->ndtype[cm->ndidx[v]+is_insert]][(int) cm->stid[v]];
+#if eslDEBUGLEVEL >= 1
 	      if(tmap_val == -1)
 		{
 		  printf("tmap ERROR 1\n");
@@ -788,6 +789,7 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
 		}
 	      /*printf("before: psi[%d]: %f\n", v, psi[v]);
 		printf("x: %d | tmap_val: %d | cm->t[x][tmap_val] : %f\n", x, tmap_val, cm->t[x][tmap_val]);*/
+#endif
 	      psi[v] += psi[x] * cm->t[x][(int) tmap_val];
 	      /*printf("after: psi[%d]: %f\n", v, psi[v]);*/
 	    }
@@ -806,6 +808,7 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
 	       * of transition from x to v. */
 	      tmap_val = tmap[(int) cm->stid[x]][(int) cm->ndtype[cm->ndidx[v]]][(int) cm->stid[v]];
 	      
+#if eslDEBUGLEVEL >= 1
 	      if(tmap_val == -1)
 	      {
 		printf("tmap ERROR 2\n");
@@ -815,6 +818,7 @@ fill_psi(CM_t *cm, double *psi, char ***tmap)
 	      /*printf("before: psi[%d]: %f\n", v, psi[v]);
 		printf("x: %d | y: %d | tmap_val: %d | cm->t[x][tmap_val] : %f\n", x, y, tmap_val, cm->t[x][tmap_val]);
 	      */
+#endif
 	      psi[v] += psi[x] * cm->t[x][(int) tmap_val];
 	      /*printf("after: psi[%d]: %f\n", v, psi[v]);*/
 	    }
@@ -2212,12 +2216,14 @@ cm_sum_subpaths_cp9(CM_t *cm, CP9Map_t *cp9map, int start, int end, char ***tmap
 	      /* x is a parent of v, we're adding contribution 
 	       * of transition from x to v. */
 	      tmap_val = tmap[(int) cm->stid[x]][(int) cm->ndtype[cm->ndidx[v]+is_insert]][(int) cm->stid[v]];
+#if eslDEBUGLEVEL >= 1
 	      if(tmap_val == -1)
 		{
 		  printf("tmap ERROR 1\n");
 		  printf("v: %d | pnum[v]: %d | plast[v]: %d | y: %d | x: %d | d1: %d | d2: %d | d3: %d\n", v, cm->pnum[v], cm->plast[v], y, x, ((int) cm->stid[x]), ((int) (cm->ndtype[cm->ndidx[v]+is_insert])), ((int) cm->stid[v]));
 		  exit(1);
 		}
+#endif
 	      if((x - start) < 0)
 		sub_psi[v-start] += 0.;
 	      else

@@ -1843,7 +1843,7 @@ cm2sub_cm_sum_subpaths(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig
 	      x = orig_cm->plast[v] - y;
 	      /* x is a parent of v, we're adding contribution of a transition from x to v. */
 	      tmap_val = tmap[(int) orig_cm->stid[x]][(int) orig_cm->ndtype[orig_cm->ndidx[v]+is_insert]][(int) orig_cm->stid[v]];
-	      assert(tmap_val != -1);
+	      /* assert(tmap_val != -1); */
 	      if((x - start) < 0) sub_psi[v-start] += 0.;
 	      else sub_psi[v-start] += sub_psi[x-start] * orig_cm->t[x][(int) tmap_val];
 	    }

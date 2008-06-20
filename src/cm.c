@@ -2173,7 +2173,7 @@ char *
 CMNodetype(char nd)
 {
   switch (nd) {
-  case DUMMY_nd:  return "DUMMY";
+    /*case DUMMY_nd:  return "DUMMY";*/
   case BIF_nd:    return "BIF";
   case MATP_nd:   return "MATP";
   case MATL_nd:   return "MATL";
@@ -2195,7 +2195,7 @@ char *
 CMStateid(char st)
 {
   switch (st) {
-  case DUMMY:   return "DUMMY";
+    /*case DUMMY:   return "DUMMY";*/
   case ROOT_S:  return "ROOT_S";
   case ROOT_IL: return "ROOT_IL";
   case ROOT_IR: return "ROOT_IR";

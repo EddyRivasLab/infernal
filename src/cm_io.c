@@ -912,21 +912,21 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 
       /* Process state line.
        */
-      if ((cm->sttype[v] = StateCode(tok)) == -1)           goto FAILURE;
+      cm->sttype[v] = StateCode(tok);
       if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
-      if (! is_integer(tok))                                     goto FAILURE;
-      if (atoi(tok) != v)                                   goto FAILURE;
+      if (! is_integer(tok))                                 goto FAILURE;
+      if (atoi(tok) != v)                                    goto FAILURE;
       if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
-      if (! is_integer(tok))                                     goto FAILURE;
+      if (! is_integer(tok))                                 goto FAILURE;
       cm->plast[v] = atoi(tok);
       if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
-      if (! is_integer(tok))                                     goto FAILURE;
+      if (! is_integer(tok))                                 goto FAILURE;
       cm->pnum[v] = atoi(tok);
       if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
-      if (! is_integer(tok))                                     goto FAILURE;
+      if (! is_integer(tok))                                 goto FAILURE;
       cm->cfirst[v] = atoi(tok);
       if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
-      if (! is_integer(tok))                                     goto FAILURE;
+      if (! is_integer(tok))                                 goto FAILURE;
       cm->cnum[v] = atoi(tok);
 				/* Transition probabilities. */
       if (cm->sttype[v] != B_st) 
