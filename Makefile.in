@@ -52,7 +52,6 @@ RELEASE     = @PACKAGE_VERSION@
 RELEASEDATE = "@PACKAGE_DATE@"
 COPYRIGHT   = "@PACKAGE_COPYRIGHT@"
 LICENSELINE = "@PACKAGE_LICENSE@"
-RELCODE     = @PACKAGE_RELCODE@
 LICENSETAG  = gnu
 COMPRESS    = gzip
 REPOSITORY  = https://svn.janelia.org/eddylab/eddys/src/
@@ -162,9 +161,10 @@ dist:
 	#
 	-rm -rf ../${BASENAME}-${RELEASE}/Licenses
 	-rm -rf ../${BASENAME}-${RELEASE}/00CHECKLIST
-	-rm -rf ../${BASENAME}-${RELEASE}/configure.in
 	-rm -rf ../${BASENAME}-${RELEASE}/Bugs
 	-rm -rf ../${BASENAME}-${RELEASE}/Manuscripts
+	-rm -rf ../${BASENAME}-${RELEASE}/SUBPACKAGES
+	-rm -rf ../${BASENAME}-${RELEASE}/00WISHLIST
 	(cd ../${BASENAME}-${RELEASE}/easel; make implode)
 	(cd ../${BASENAME}-${RELEASE}/;      make distclean)
 	#

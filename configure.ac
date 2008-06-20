@@ -67,7 +67,6 @@ AC_MSG_NOTICE([Configuring Infernal for your system.])
 #
 ################################################################
 
-PACKAGE_RELCODE="infernal1_0"
 PACKAGE_DATE="June 2008"
 PACKAGE_COPYRIGHT="Copyright (C) 2008 HHMI Janelia Farm Research Campus"
 PACKAGE_LICENSE="Freely distributed under the GNU General Public License (GPL)"
@@ -75,12 +74,11 @@ PACKAGE_LICENSETAG=gnu
 PACKAGE_VERSION=$PACKAGE_VERSION
 PACKAGE_URL="http://infernal.janelia.org/"
 
-EASEL_RELCODE="easel-i1_0"
 EASEL_DATE="June 2008"
 EASEL_COPYRIGHT="Copyright (C) 2008 HHMI Janelia Farm Research Campus"
 EASEL_LICENSE="Freely distributed under the Janelia Software License."
 EASEL_LICENSETAG=jsl
-EASEL_VERSION="i1.0"
+EASEL_VERSION="i1.0rc1"
 EASEL_URL="http://easel.janelia.org/"
 
 # Output variables  (AC_OUTPUT replaces @var@ in input files, such as Makefiles)
