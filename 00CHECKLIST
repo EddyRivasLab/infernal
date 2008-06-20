@@ -62,33 +62,25 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 
 
 4. Move into a working copy of the release branch.
+
    For a dev snapshot, this is the normal working copy.
    For a major or minor release, this is a fresh working copy of the appropriate branch:
        cd ~/releases
        svn checkout https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0 infernal
 
-   Don't call this working directory infernal-xx, just call it infernal, because
-   later "make dist" is going to try to create infernal-xx as its release.
-   [Query replace the version # here]
-
-         cd ~/releases
-
-         (cd infernal/testsuite/; ln -s ../ssdk/sqc .)
+   Don't call this working directory infernal-xx, just call it
+   infernal, because later "make dist" is going to try to create
+   infernal-xx as its release.  
 
    If this is the first time (a new release branch), you also need to update the "svn:externals"
-   so the dependent packages are checked out from the appropriate stable branches too.
+   so Easel is checked out from the appropriate stable branch too.
 
-         svn proplist --verbose https://svn.janelia.org/eddylab/eddys/src/infernal/branches/release-0.8
+         svn proplist --verbose https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0
          svn propedit svn:externals infernal
-           squid   https://svn.janelia.org/eddylab/eddys/src/squid/branches/infernal/0.8
-           ssdk    https://svn.janelia.org/eddylab/eddys/src/ssdk/branches/infernal/0.8
-           easel   https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/0.8
+           easel   https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.0
          cd infernal
          svn update
-
-   Now you will switch to working *only* in this release branch working copy.
-   Make no more changes in the trunk (except for this file, 00CHECKLIST) 
-   We'll merge bugfixes back into the trunk once we've stabilized the release.
+	 svn commit
 
    Note the hassle with svn:externals, because it currently only accepts
    absolute URLs. Relative paths are supposed to become available in
@@ -102,8 +94,10 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
    But even so, don't rely solely on the automated exercises and bug tests.
    Run some anecdotal examples by hand too.
 
-    	 autoconf; (cd squid; autoconf); (cd easel; autoconf)
-     	 env CFLAGS="-g -Wall" ./configure --enable-mpi --enable-lfs --prefix=/groups/eddy/home/eddys/tmp/infernal
+    	 autoconf
+         (cd easel; autoconf)
+         (cd testsuite; ln -s ../easel/devkit/sqc .)
+     	 env CFLAGS="-g -Wall" ./configure --enable-mpi --prefix=/groups/eddy/home/eddys/tmp/infernal
          make
          make check
 
@@ -140,43 +134,46 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
    0.72:      1725       1862        139         149
    0.8:       1862       1968        149         174
        0.81 - bugfix release on 0.8 branch
+   1.0rc1     1968       2485        174         272
+   
+   These release notes will be merged back into the trunk later, if
+   we're in a branch.
 
-   Note that we aren't using the release notes anywhere right now!
-   But we will, undoubtedly, someday.
 
 7. Update the copyright, year stamps. 
 	- configure.ac (release, relcode, date)
 	- COPYRIGHT (year only)
 
-
 8. Commit to SVN; include release number in the log message
 	 svn commit
-    Remember to separately commit in Easel, squid, ssdk if any
-    changes were made there.
+    Remember to separately commit in Easel if changes were made there.
 
 9. Tag.
-         svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/branches/0.8\
-                  https://svn.janelia.org/eddylab/eddys/src/infernal/tags/0.81\
-                 -m "tagged Infernal 0.81 release, from 0.8 stable branch"          
-         svn copy https://svn.janelia.org/eddylab/eddys/src/squid/branches/infernal/0.8\
-                  https://svn.janelia.org/eddylab/eddys/src/squid/tags/infernal/0.81\
-                 -m "tagged Infernal 0.81 release, from 0.8 stable branch"          
-         svn copy https://svn.janelia.org/eddylab/eddys/src/ssdk/branches/infernal/0.8\
-                  https://svn.janelia.org/eddylab/eddys/src/ssdk/tags/infernal/0.81\
-                 -m "tagged Infernal 0.81 release, from 0.8 stable branch"          
-         svn copy https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/0.8\
-	          https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/0.81\
-                 -m "tagged Infernal 0.81 release, from 0.8 stable branch"          
+   We don't bother to tag snapshots.
+   For a new major release, or a bugfix minor release,
+   the tags are made from the relevant stable branch:
+      svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0\
+               https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0rc1\
+               -m "tagged Infernal 1.0rc1 release, from 1.0 stable branch"          
+      svn copy https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.0\
+               https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/1.0rc1\
+                 -m "tagged Easel for Infernal 1.0rc1 release, from 1.0 stable branch"          
+
 
 10. Make a distribution tarball.
    (Remaking configure scripts w/ autoconf is needed)
 	 make distclean
-         autoconf; (cd easel; autoconf); (cd squid; autoconf)
+         autoconf
+         (cd easel; autoconf)
 	 ./configure          <-- makes a Makefile (needed for "make dist")
-	 make dist
-          [or: 'make -n dist' and execute commands yourself one at a
-           time, under a Bourne shell like 'bash' so the for loops
-           work.]
+
+    major or minor:
+	 make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0rc1 dist
+    snapshot:
+	 make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/trunk RELEASE=snap20080325 dist
+
+   Alternatively, make -n dist' and execute commands yourself one at a
+   time, under a Bourne shell like 'bash' so the for loops work.
 
    This exports into a infernal-$RELEASE directory, alongside the
    infernal working directory in ~/releases/. The tarball is also
@@ -185,10 +182,9 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
    Go into infernal-$RELEASE and make sure it looks good from the 
    perspective of a new user: start by reading the README's.
 
-11. Build for our system (on login-eddy)
-         ssh login-eddy
+11. Build for our system (on my desktop)
 	 cd releases/infernal-xxx
-	 env CFLAGS="-O3" ./configure --enable-mpi --enable-lfs --prefix=/usr/local/infernal-0.8/
+	 env CFLAGS="-O3" ./configure --enable-mpi --prefix=/usr/local/infernal-1.0/
 	 make
 	 make check
          (cd testsuite; ./sqc -p ../squid/ -r ../../infernal-0.52/src 4 regressions.sqc ../src/)
@@ -202,12 +198,12 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 
 
 12. Put on the FTP site. (on selab)
-          scp 00README                selab:/opt/www/ftp/pub/software/infernal/
-          scp COPYRIGHT               selab:/opt/www/ftp/pub/software/infernal/
-          scp Userguide.pdf           selab:/opt/www/ftp/pub/software/infernal/
-          scp ../infernal-0.81.tar.gz selab:/opt/www/ftp/pub/software/infernal/
+          scp 00README                  selab:/opt/www/ftp/pub/software/infernal/
+          scp COPYRIGHT                 selab:/opt/www/ftp/pub/software/infernal/
+          scp Userguide.pdf             selab:/opt/www/ftp/pub/software/infernal/
+          scp ../infernal-1.0rc1.tar.gz selab:/opt/www/ftp/pub/software/infernal/
           ssh selab  rm -f /opt/www/ftp/pub/software/infernal/infernal.tar.gz
-          ssh selab  "(cd /opt/www/ftp/pub/software/infernal; ln -s infernal-0.81.tar.gz infernal.tar.gz)"
+          ssh selab  "(cd /opt/www/ftp/pub/software/infernal; ln -s infernal-1.0rc1.tar.gz infernal.tar.gz)"
 
 13. Update the web site
 	 cd ~/web/infernal/
@@ -219,8 +215,10 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 14. Clean up. Don't remove the old directory though, we will (should) use it for regression testing 
     at the next release.
 	cd ~/releases
-        mv infernal-0.81.tar.gz ~/Archive/
+        mv infernal-1.0rc1.tar.gz ~/Archive/
         cd infernal
+	make distclean
+        cd ../infernal-1.0rc1
 	make distclean
 
 15. Merge the changes from the "stabilized" release branch back into the trunk.
@@ -237,40 +235,30 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
        svn log --verbose --stop-on-copy      <-- ssdk, squid are the same
        cd easel
        svn log --verbose --stop-on-copy 
-           infernal   squid      ssdk   easel
+           infernal     easel
     0.6:  (r1465; Easel is r72.)
     0.7:  (r1522; Easel is r81.)
     0.71: (r1723; Easel is r139.)
     0.8:   r1966       r1967     r1968   r173
+    1.0rc1 r2485        r272
 
     Go back to working copies of the trunks, and merge the release branches into it.
        cd ~/src/infernal
        svn update
-       svn merge -r 1966:HEAD https://svn.janelia.org/eddylab/eddys/src/infernal/branches/release-0.8
-
-       cd squid
-       svn update
-       svn merge -r 1967:HEAD https://svn.janelia.org/eddylab/eddys/src/squid/branches/infernal/0.8
-
-       cd ../ssdk
-       svn update
-       svn merge -r 1968:HEAD https://svn.janelia.org/eddylab/eddys/src/ssdk/branches/infernal/0.8
+       svn merge -r 2485:HEAD https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0
 
        cd ../easel
        svn update
-       svn merge -r 173:HEAD https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/0.8
+       svn merge -r 272:HEAD https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.0
        
     Now, the merge will always screw up the svn:externals for Infernal. Reset them.
        cd ..
        svn propedit svn:externals .
-          squid   https://svn.janelia.org/eddylab/eddys/src/squid/trunk
-          ssdk    https://svn.janelia.org/eddylab/eddys/src/ssdk/trunk
           easel   https://svn.janelia.org/eddylab/eddys/easel/trunk
+    [didn't screw up on 1.0rc1?]
 
     Commits.
        svn commit 
-       ( cd squid ; svn commit )
-       ( cd ssdk  ; svn commit )
        ( cd easel ; svn commit )
 
 0.3  - SRE, Thu Jul  4 10:27:16 2002

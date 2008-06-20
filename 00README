@@ -53,7 +53,7 @@ http://infernal.janelia.org/
 :: References:
      - EP Nawrocki and SR Eddy, "Query-dependent banding (QDB) for
        faster RNA similarity searches", PLoS Computational Biology,
-       in press (2007).
+       3:e56 (2007).
 
      - SR Eddy, "A memory efficient dynamic programming algorithm for
        optimal structural alignment of a sequence to an RNA secondary
@@ -70,9 +70,8 @@ http://infernal.janelia.org/
 :: Credits:
     The current Infernal developer team at HHMI Janelia Farm:
     Diana Kolbe, Eric Nawrocki, and Sean Eddy.
-    
-    The "rigfilters" code was contributed by Zasha Weinberg and Larry
-    Ruzzo, University of Washington Seattle.
 
+        
+  
 
 
