@@ -119,7 +119,7 @@ main(int argc, char **argv)
   CMHackInsertScores(cm);*/	/* TEMPORARY: FIXME */
 
   if (do_local) cm->config_opts |= CM_CONFIG_LOCAL;
-  ConfigCM(cm, NULL, NULL);
+  ConfigCM(cm, TRUE);
   SetMarginalScores(cm);
 
   /* EPN 11.18.05 Now that know what windowlen is, we need to ensure that
@@ -164,7 +164,8 @@ main(int argc, char **argv)
 	} else {
 	  sc1 = TrCYK_Inside(cm, seq->dsq, seq->n, 0, 1, seq->n, &tr1);  
 	  ParsetreeDump(stdout, tr1, cm, seq->dsq, NULL, NULL);
-          ptsc1 = ParsetreeScore(cm, tr1, seq->dsq, FALSE);
+          //ptsc1 = ParsetreeScore(cm, tr1, seq->dsq, FALSE);
+          ParsetreeScore(cm, NULL, tr1, seq->dsq, FALSE, &ptsc1, NULL);
           ptsc1 += bsc;
 	  printf("%-12s : %.2f  %.2f\n", seq->name, sc1, ptsc1);
 	}
@@ -178,7 +179,8 @@ main(int argc, char **argv)
       esl_stopwatch_Start(watch);
       sc2 = TrCYK_DnC(cm, seq->dsq, seq->n, 0, 1, seq->n, &tr2);  
       ParsetreeDump(stdout, tr2, cm, seq->dsq, NULL, NULL);
-      ptsc2 = ParsetreeScore(cm, tr2, seq->dsq, FALSE);
+      //ptsc2 = ParsetreeScore(cm, tr2, seq->dsq, FALSE);
+      ParsetreeScore(cm, NULL, tr2, seq->dsq, FALSE, &ptsc2, NULL);
       ptsc2 += bsc;
       printf("%-12s : %.2f  %.2f\n", seq->name, sc2, ptsc2);
       esl_stopwatch_Stop(watch);
