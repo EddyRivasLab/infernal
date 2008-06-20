@@ -1,9 +1,10 @@
 Infernal - inference of RNA secondary structural alignments
 
-Copyright (C) 2001-2007 HHMI Janelia Farm Research Campus
-   Portions Copyright (C) 1991-2007      Sean R. Eddy
-   Portions Copyright (C) 2005-2007      Eric P. Nawrocki
-   Portions Copyright (C) 2005-2007      Diana L. Kolbe
+Copyright (C) 2008 HHMI Janelia Farm Research Campus
+
+   Portions Copyright (C) 1991-2008      Sean R. Eddy
+   Portions Copyright (C) 2005-2008      Eric P. Nawrocki
+   Portions Copyright (C) 2005-2008      Diana L. Kolbe
    Portions Copyright (C) 2004           Zasha Weinberg
    Portions Copyright (C) 1990           Don G. Gilbert
    Portions Copyright (C) 1995-2006      Washington University in St. Louis
@@ -13,15 +14,22 @@ Copyright (C) 2001-2007 HHMI Janelia Farm Research Campus
    Portions Copyright (C) 1989-2001      Free Software Foundation
    Portions Copyright (C) 1991           Massachusetts Institute of Technology
 
-Infernal may be freely distributed and modified under the terms of the
-Janelia Farm Software License, version 1.0 [See LICENSE, or
-http://license.janelia.org/license/jfrc_copyright_1_0.html]
+Infernal is distributed under the terms of the GNU General Public
+License version 3 (GPLv3). See the file LICENSE for details.
 
-In brief, you may freely modify, copy, or redistribute this source
-code and its documentation, or any part thereof, so long as you
-preserve all these copyrights and the conditions and disclaimer in the
-License.
 
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+A copy of the GNU General Public License is in the file LICENSE.  You
+may also obtain a copy from <http://www.gnu.org/licenses/>.
 
 
 

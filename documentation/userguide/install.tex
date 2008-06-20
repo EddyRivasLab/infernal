@@ -146,17 +146,6 @@ platform and compiler. The \prog{-g} default generated unoptimized
 code. At a minimum, turn on your compiler's default optimizations with
 \prog{CFLAGS=-O}.
 
-\subsubsection{turning on Large File Support (LFS)}
-
-\software{Infernal} can optionally support Large File System (LFS)
-extensions that allow programs to access files larger than 2 GB. LFS
-is rapidly becoming standard, but not yet standard enough to be our
-default. If you do anything with Genbank files or large genome files
-(like the 3 GB human genome), you will need LFS support.  LFS is
-enabled with the \prog{--enable-lfs} option:
-
-\user{./configure --enable-lfs}
-
 \subsubsection{turning on Message Passing Interface (MPI) support}
 
 \software{Infernal} includes four programs \prog{cmsearch}, \prog{cmcalibrate},
