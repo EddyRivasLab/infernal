@@ -8,7 +8,7 @@
 #   - need a copy of wulogo.gif for putting in HTML directory.
 ###########
 
-MANPAGES   = cmalign cmbuild cmemit cmscore cmsearch 
+MANPAGES   = cmalign cmbuild cmcalibrate cmemit cmscore cmsearch cmstat
 AIFIGURES  = stl9-63
 
 # pdf:

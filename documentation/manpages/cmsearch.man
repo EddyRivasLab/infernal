@@ -216,13 +216,11 @@ the start position of the hit in the query model, "query coord - stop": the end 
 hit in the query sequence, "bit sc":  the bit score of the hit, "E-value": 
 the E-value of the hit (if available, "-" if not), and "GC\%" the
 percentage of G and C residues in the hit within the target sequence.
-
 .B cmsearch 
-.I tabfile
-can be used as input to the Easel miniapp
+tab files can be used as input to the Easel miniapp
 .B esl-sfetch
-with the
-.B -Cfi
+(included in the easel/miniapp/ subdirectory of infernal) with the
+.B -C -f --tabfile 
 options to extract all the hits from the target database file to a new
 FASTA file. This file can then be aligned to a CM with
 .B cmalign.
@@ -593,7 +591,14 @@ The format of the tabular results is listed in the
 section. The tabular results can be more easily parsed by scripts than
 the default 
 .B cmsearch 
-output. 
+output. The 
+.B esl-sfetch
+miniapp included in the easel/miniapps/ subdirectory of infernal has a
+.B --tabfile
+option that allows it to read 
+.B cmsearch 
+tab files and fetch the hits reported within them from the target
+database into a new sequence file.
 
 .TP 
 .BI --gcfile " <f>"
