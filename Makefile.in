@@ -35,13 +35,9 @@ MANSUFFIX = 1
 
 # your compiler and compiler flags
 #
-CC     = @CC@
-CFLAGS = @CFLAGS@
+CC        = @CC@
+CFLAGS    = @CFLAGS@
 SIMDFLAGS = @SIMD_CFLAGS@
-
-# Flags related to conditional install of rigorous filters
-#RIGFILTERS = @RIGFILTERS@
-
 
 #######
 ## You should not need to modify below this line.

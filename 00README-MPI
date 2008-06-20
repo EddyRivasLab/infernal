@@ -5,7 +5,7 @@ If you have an MPI-compliant library installed (LAM, MPICH, OpenMPI)
 and you want to use MPI parallelization, enable MPI with the
 --enable-mpi flag to the configure script:
 
-  % ./configure --with-mpi
+  % ./configure --enable-mpi
   % make
 
 This will build both the usual set of (non-MPI) executables including

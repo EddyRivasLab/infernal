@@ -139,19 +139,6 @@ AC_CANONICAL_HOST
 if ((! test -d binaries) && test -d src); then 
 AC_MSG_NOTICE([Full Infernal source distribution - using full configuration])
 
-# Choose the compiler, and get it in ISO ANSI C (C99) mode.
-#
-AC_PROG_CC
-if test "$CC" = xlc ; then	# IBM's xlc?
-  CFLAGS=$CFLAGS" -O3 -qarch=auto -qtune=auto"
-fi
-# Work around a known bug in autoconf's AC_PROG_CC_C99's handling of icc
-if test "$CC" != icc; then 
-  AC_PROG_CC_C99
-else
-  CFLAGS=$CFLAGS" -std=c99"
-fi
-
 ################################################################
 # Process the ./configure command line
 ################################################################
@@ -193,215 +180,93 @@ AC_ARG_ENABLE(debugging,
          ;;
 esac])
 
-# --enable-gcov      - compile for code coverage testing
-#
-# Replaces CC with "gcc" and CFLAGS with "-g -Wall -fprofile-arcs -ftest-coverage".
-# Running programs (notably the test suite) will then generate .gcda files,
-# which the gcov tool can read.
-#
-AC_ARG_ENABLE(gcov, 
-  [  --enable-gcov           Compile with instrumentation for code coverage testing], 
-  [ 
-    AC_MSG_NOTICE([Compiling with gcov instrumentation.])
-    CC="gcc"
-    CFLAGS="-g -Wall -fprofile-arcs -ftest-coverage"
-  ])
-
-# --enable-mpi       Enable MPI parallelization
-# 
-# Sets MPILIBS output variable
-# Sets CC to appropriate compiler wrapper for MPI (mpicc, usually)
-# Defines HAVE_MPI preprocessor variable.
-#
-AC_ARG_ENABLE(mpi, 
-[AS_HELP_STRING([--enable-mpi], [enable MPI parallelization])],
-[case $enable_mpi in
-   yes) ACX_MPI([
-           AC_MSG_NOTICE([enabled optional MPI parallelization])
-	   AC_DEFINE(HAVE_MPI)
-	   CC=$MPICC
-          ], [
-           AC_MSG_ERROR([MPI library not found])
-          ])
-	 ;;
-   no)   AC_MSG_NOTICE([MPI parallelization disabled])
-         ;;
-   *)    echo "Ignoring unknown argument to --enable-mpi: $enable_mpi"
-	 ;;
-esac])
-
-# --enable-sse      Force SSE2 SIMD optimization on
-# --disable-sse     Force SSE2 SIMD optimization off
-#                   Default is to have SSE2 on, if it's detected.
-#
-# This sets @SIMD_FLAGS@ output variable, defines HAVE_SSE2, and
-# if SSE is chosen, sets impl_choice to "sse".
-AC_ARG_ENABLE(sse,
-   [AS_HELP_STRING([--enable-sse],  [ enable SSE SIMD parallelization (default)]) ],
-   [
-     if test "x$withval" != xno ; then
-        # icc is going to generate SSE code anyway, and it'll complain about -msse2 flag
-       if test "$CC" != icc; then 
-         AC_DEFINE(HAVE_SSE2, 1)
-         AX_EXT
-       else 
-         impl_choice="sse"
-       fi
-     else
-       AC_DEFINE(HAVE_SSE2, 0)
-     fi
-   ],
-   [
-     AX_EXT
-   ])
-if test "$ax_have_sse2_ext" = yes; then
-  impl_choice="sse"
-else
-  AC_MSG_NOTICE([no SSE detected])
-fi
-
-# --with-gsl        - enable hooks into the GSL (GNU Scientific Library)
-#
-# The (action-if-given) is blank: using --with-gsl sets $with_gsl to 'yes',
-# and --without-gsl sets $with_gsl to 'no'. If neither is given,
-# $with_gsl is set to 'check', and we'll try to use GSL anyway if we
-# can find it.
-# 
-# We interpret the $with_gsl setting later, in the "checks for libraries" section.
-AC_ARG_WITH([gsl],
-            [AS_HELP_STRING([--with-gsl],
-                           [use the GSL, GNU Scientific Library (default is no)])],
-            [if test "x$withval" != xno ; then 
-               AC_MSG_NOTICE([Enabling hooks into the GNU Scientific Library (GSL)])
-             fi
-            ],
-	    [with_gsl=no])
-
-# --enable-lfs           Large File Summit (LFS) support for >2GB files
-# See: http://ftp.sas.com/standards/large.file/x_open.20Mar96.html
-#
-AC_ARG_ENABLE(lfs, 
-[  --enable-lfs            enable LFS, Large File Support],
-[case $enable_lfs in
-   yes) AC_MSG_NOTICE([configured for optional LFS, large file support])
-	AC_DEFINE(_LARGEFILE_SOURCE)
-	AC_DEFINE(_LARGEFILE64_SOURCE)
-	AC_DEFINE(_FILE_OFFSET_BITS, 64)
-        ;;
-   no)  ;;
-    *)  echo "Ignoring unknown argument to --enable-lfs: $enable_lfs"
-        ;;
-esac])
-
-## Rigoroous filters not included as an option in v1.0+
-## Users can use previous versions of Infernal inside which
-## rigfilters did successfully build.
-##
-## Default option for rigfilters is OFF
-#rigfilters=0;
-## --with-rigfilters     install rigorous filters
-#AC_ARG_WITH(rigfilters,
-#[  --with-rigfilters       enable rigorous filters, requires CFSQP package],
-#[case $with_rigfilters in
-#   yes) AC_MSG_NOTICE([Rigorous filters selected])
-#	rigfilters=1
-#	;;
-#   no)  rigfilters=0
-#        ;;
-#    *)  echo "Ignoring unknown argument to --with-rigfilters: $with_rigfilters"
-#        ;;
-#esac])
-#
-## Default location of cfsqp
-#cfsqp_path=$PWD/rigfilters/cfsqp;
-## --with-cfsqp             specify location of cfsqp
-#AC_ARG_WITH(cfsqp,
-#[  --with-cfsqp=PATH       specify the location of CFSQP source files],
-#[case $with_cfsqp in
-#   /*)  cfsqp_path=$with_cfsqp
-#        ;;
-#   ~*)  cfsqp_path=`echo $with_cfsqp | sed 's/^~//'`
-#        cfsqp_path=$HOME/../$cfsqp_path
-#        ;;
-#   *)   #NOTE: relative path not normalized
-#        cfsqp_path=$PWD/$with_cfsqp
-#        ;;
-#  esac
-##  if test -d $cfsqp_path; then
-##    AC_MSG_NOTICE([path recognized as directory])
-##  else
-##    AC_MSG_NOTICE([path not recognized as directory!: $cfsqp_path])
-##  fi
-#  if test -f $cfsqp_path/cfsqp.c; then
-#    cp $cfsqp_path/cfsqp.c rigfilters/cfsqp/.
-#  fi
-#  if test -f $cfsqp_path/cfsqpusr.h; then
-#    cp $cfsqp_path/cfsqpusr.h rigfilters/cfsqp/.
-#  fi
-#  if test -f $cfsqp_path/qld.c; then
-#    cp $cfsqp_path/qld.c rigfilters/cfsqp/.
-#  fi
-#])
-#if test "$rigfilters" = 1; then
-#  if test -f rigfilters/cfsqp/cfsqp.c; then
-#    :
-#  else
-#    AC_MSG_NOTICE([CFSQP: Unable to locate cfsqp.c])
-#    rigfilters=0;
-#  fi
-#  if test -f rigfilters/cfsqp/cfsqpusr.h; then
-#    :
-#  else
-#    AC_MSG_NOTICE([CFSQP: Unable to locate cfsqpusr.h])
-#    rigfilters=0
-#  fi
-#  if test -f rigfilters/cfsqp/qld.c; then
-#    :
-#  else
-#    AC_MSG_NOTICE([CFSQP: Unable to locate qld.c])
-#    rigfilters=0
-#  fi
-#  if test "$rigfilters" = 0; then
-#    AC_MSG_NOTICE([CFSQP: Source not found; disabling rigorous filters])
-#    rigfilters=""
-#  else
-#    AC_MSG_NOTICE([CFSQP located, including rigfilters package in build])
-#    rigfilters="rigfilters"
-#  fi
-#fi
-#AC_SUBST(RIGFILTERS,$rigfilters)
-#
-## Default option for rigfilters is OFF
-#rigfilters=0;
-## --with-rigfilters     install rigorous filters
-#AC_ARG_WITH(rigfilters,
-#[  --with-rigfilters       enable rigorous filters, requires CFSQP package],
-#[case $with_rigfilters in
-#   yes) AC_MSG_NOTICE([Rigorous filters selected])
-#	rigfilters=1
-#	;;
-#   no)  rigfilters=0
-#        ;;
-#    *)  echo "Ignoring unknown argument to --with-rigfilters: $with_rigfilters"
-#        ;;
-#esac])
-#
-# end of rigfilters block
-#################################
+AC_ARG_ENABLE(gcov,[AS_HELP_STRING([--enable-gcov],[compile for code coverage testing])], enable_gcov=$enableval,  enable_gcov=no)
+AC_ARG_ENABLE(sse,[AS_HELP_STRING([--enable-sse],[enable SSE optimizations])] ,           enable_sse=$enableval,   enable_sse=check)
+AC_ARG_ENABLE(vmx,[AS_HELP_STRING([--enable-vmx],[enable Altivec/VMX optimizations])],    enable_vmx=$enableval,   enable_vmx=check)
+AC_ARG_WITH(gsl,[AS_HELP_STRING([--with-gsl],[use the GSL, GNU Scientific Library])],     with_gsl=$withval,       with_gsl=no)
+AC_ARG_ENABLE(mpi,[AS_HELP_STRING([--enable-mpi],[enable MPI parallelization])],          enable_mpi=$enableval,   enable_mpi=no)
 
 # end of optionally configured features
 ################################################################
 
-# Set output variable "RANLIB"
+################################################################
+# 4. Checks for programs
+################################################################
+
+AC_PROG_CC
+AC_PROG_CPP
+AX_COMPILER_VENDOR
+#  AC_PROG_CC_STDC wants to append -c99 to icc; icc doesn't like this.
+if test "$ax_cv_c_compiler_vendor" != "intel"; then
+  AC_PROG_CC_STDC
+fi
 AC_PROG_RANLIB
-
-# Set output variable "AR"
 AC_PATH_PROG([AR], [ar], [:], [$PATH:/usr/ccs/bin:/usr/xpg4/bin])
-
-# Set the output variable EXEC_DEPENDENCY according
-# to whether we're using GNU make or a SYSV make.
 CHECK_GNU_MAKE
 
+# Select our default optimization flags in CFLAGS.
+#
+if test "$sre_cflags_env_set" = "no"; then
+if test "$enable_gcov" = "yes"; then
+   # --enable-gcov overrides CC too.
+   CC="gcc"
+   CFLAGS="-g -Wall -fprofile-arcs -ftest-coverage"
+elif test "$enable_debugging" != "no"; then
+   if test "$GCC" = "yes"; then
+      CFLAGS="-g -Wall"
+   fi
+else
+   sre_save_ac_test_cflags="$ac_test_CFLAGS"
+   if test "$sre_cflags_env_set" = "no"; then
+     ac_test_CFLAGS=""
+   fi
+   AX_CC_MAXOPT
+   ac_test_CFLAGS="$sre_save_ac_test_cflags"
+   # That was a workaround. AX_CC_MAXOPT apparently thinks that
+   # $ac_test_CFLAGS only gets set if ${CFLAGS} was set by the
+   # user (in the environment), but that's not so; it gets set
+   # by AC_PROG_CC. Instead of rewriting AX_CC_MAXOPT, we fool
+   # it.
+fi
+fi
+
+# MPI :  set @CC@ to mpicc, sets @MPILIBS@, defines HAVE_MPI. 
+if test "$enable_mpi" = "yes"; then
+   ACX_MPI([CC="$MPICC"],AC_MSG_ERROR([MPI library not found for --enable-mpi]))
+fi
+
+# SSE: figure out our @SIMD_CFLAGS@, define HAVE_SSE2
+if test "$enable_sse" = "check" && test "$enable_vmx" != "yes"; then
+   AC_CHECK_HEADER([emmintrin.h],[enable_sse=yes])
+fi
+if test "$enable_sse" = "yes"; then
+   if test "x$SIMD_CFLAGS" = x; then
+     case $ax_cv_c_compiler_vendor in
+       gnu)   AX_CHECK_COMPILER_FLAGS(-msse2,[SIMD_CFLAGS="-msse2"],[]);;
+       *)     ;;
+     esac   
+   fi
+   AC_DEFINE(HAVE_SSE2,1,[Support SSE2 (Streaming SIMD Extensions 2) instructions])
+fi
+
+# VMX/Altivec (not autodetected yet; must use --enable-vmx to enable)
+if test "$enable_vmx" = "yes"; then
+   if test "x$SIMD_CFLAGS" = x; then
+   if test "$GCC" = "yes"; then
+     AX_CHECK_COMPILER_FLAGS(-faltivec, [SIMD_CFLAGS="-faltivec"],
+       [AX_CHECK_COMPILER_FLAGS(-maltivec -mabi=altivec,
+ 	   [SIMD_CFLAGS="-maltivec -mabi=altivec"],
+           [AX_CHECK_COMPILER_FLAGS(-fvec, [SIMD_CFLAGS="-fvec"],
+		   [AC_MSG_ERROR([Need a version of gcc with -maltivec])])])])
+   elif test "${ax_cv_c_compiler_vendor}" = "ibm"; then
+     AX_CHECK_COMPILER_FLAGS(-qaltivec, [SIMD_CFLAGS="-qaltivec"],[])
+   else
+     AX_CHECK_COMPILER_FLAGS(-faltivec, [SIMD_CFLAGS="-faltivec"],[])
+   fi
+   AC_DEFINE(HAVE_VMX,1,[Support Altivec/VMX vector instructions])
+   fi
+fi
+AC_SUBST(SIMD_CFLAGS)
 
 
 # Checks for libraries
@@ -422,14 +287,27 @@ AS_IF([test "x$with_gsl" != xno],
 
 # Checks for headers
 #
-AC_CHECK_HEADERS([sys/types.h])
-AC_CHECK_HEADERS([unistd.h])
-AC_CHECK_HEADERS([stdint.h])
-AC_CHECK_HEADERS([inttypes.h])
+AC_CHECK_HEADERS([sys/types.h unistd.h stdint.h inttypes.h])
+
+# altivec.h requires the simd cflags
+# For reasons I don't understand, this needs to come after any other CHECK_HEADERS().
+if test "$enable_vmx" = "yes"; then
+   sre_save_CFLAGS="$CFLAGS"
+   sre_save_CPPFLAGS="$CPPFLAGS"
+   CFLAGS="$CFLAGS $SIMD_CFLAGS"
+   CPPFLAGS="$CPPFLAGS $SIMD_CFLAGS"
+   AC_CHECK_HEADERS([altivec.h])
+   CFLAGS="$sre_save_CFLAGS"
+   CPPFLAGS="$sre_save_CPPFLAGS"
+fi
 
 # Checks for types
 #
 AC_C_BIGENDIAN
+AC_TYPE_INT8_T
+AC_TYPE_INT16_T
+AC_TYPE_INT32_T
+AC_TYPE_INT64_T
 AC_TYPE_UINT8_T
 AC_TYPE_UINT16_T
 AC_TYPE_UINT32_T
@@ -443,10 +321,6 @@ AC_CHECK_FUNCS(popen)
 AC_CHECK_FUNCS(strcasecmp)
 AC_CHECK_FUNCS(times)
 AC_FUNC_FSEEKO
-AC_CHECK_FUNCS(ntohs, , AC_CHECK_LIB(socket, ntohs))
-AC_CHECK_FUNCS(ntohl, , AC_CHECK_LIB(socket, ntohl))
-AC_CHECK_FUNCS(htons, , AC_CHECK_LIB(socket, htons))
-AC_CHECK_FUNCS(htonl, , AC_CHECK_LIB(socket, htonl))
 
 #
 # 11. System services
@@ -463,10 +337,6 @@ AC_CONFIG_HEADERS(src/config.h)
 #
 AC_CONFIG_FILES(src/Makefile)
 AC_CONFIG_FILES(testsuite/Makefile)
-AC_CONFIG_FILES(rigfilters/Makefile)
-AC_CONFIG_FILES(rigfilters/cfsqp/Makefile)
-AC_CONFIG_FILES(rigfilters/cm2hmm-1.0/Makefile)
-
 AC_CONFIG_HEADERS([easel/esl_config.h])
 AC_CONFIG_FILES([easel/miniapps/Makefile])
 AC_CONFIG_FILES([easel/testsuite/Makefile])
