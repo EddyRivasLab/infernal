@@ -459,7 +459,7 @@ qualitative filters -- if a region is detected as biased composition,
 it is masked (the residues are converted to X's).  The
 \software{Infernal} composition filter is a quantitative filter, that
 tests whether the sequence is a better match to the CM, the
-null (random composition) model, or a null3 model of biased amino acid
+null (random composition) model, or a null3 model of biased nucleotide
 composition.
 
 This is a Good Thing, but on the other hand, the null3 model is not
@@ -474,7 +474,7 @@ the target database with with highly biased residue composition, in
 particular regions with high percentages of A and U residues. The
 first null model used by \software{Infernal} is by default 25\% A, C,
 G, and U (this model can be changed with the \prog{--null} option to
-\prog{cmbuild}. If a model has a bias for a particular residue, for
+\prog{cmbuild}). If a model has a bias for a particular residue, for
 example A,  and a target regions is composed of an overrepresentation
 of that residue then it will receive a high score simply because it is
 A-rich. 
@@ -483,7 +483,7 @@ A-rich.
 A different null3 model is calculated for every alignment. The 4
 emission probabilities of the null3 model are calculated as 
 simply their occurence within the region of the hit. For example, if
-the hit is 50 residues long and contains $20$ As, $20$ Us, $5$ Cs and $5$ Gs,
+the hit is 50 residues long and contains $20$ As, $5$ Cs, $5$ Gs and $20$ Us,
 then the null3 model probabilitiles will be calculated as $(0.4, 0.1,
 0.1, 0.4)$. 
 
@@ -500,7 +500,7 @@ We arrived at the parameters of the null3 model in a very \emph{ad
 hoc} way. However, after that, the way \software{Infernal} arrives at the final bit
 score once the null3 parameters have been determined is clean
 (e.g. derivable) Bayesian probability theory. It is analagous to the
-way \software{Infernal} uses the \emph{null2} score correction.
+way \software{HMMER} uses the \emph{null2} score correction.
 
 If we take the Bayesian view, we're interested in the probability of a
 hypothesis $H$ given some observed data $D$:
