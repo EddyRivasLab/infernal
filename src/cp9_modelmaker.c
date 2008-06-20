@@ -1756,7 +1756,7 @@ cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *ps
   bp[0] = cp9map->hns2cs[k+1][k_state][0];
   bp[1] = cp9map->hns2cs[k+1][k_state][1];
   hmm_trans_idx = CTMM;
-  ////printf("CTMM: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
+  /*////printf("CTMM: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);*/
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[1], bp[0], k, hmm_trans_idx, psi, tmap);
@@ -1774,7 +1774,7 @@ cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *ps
   k_state = HMMINSERT;
   bp[0] = cp9map->hns2cs[k][k_state][0];
   bp[1] = cp9map->hns2cs[k][k_state][1];
-  ////printf("CTMI: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
+  /*////printf("CTMI: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);*/
   hmm_trans_idx = CTMI;
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
@@ -1792,7 +1792,7 @@ cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *ps
   k_state = HMMDELETE;
   bp[0] = cp9map->hns2cs[k+1][k_state][0];
   bp[1] = cp9map->hns2cs[k+1][k_state][1];
-  ////printf("CTMD: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
+  /*////printf("CTMD: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);*/
   hmm_trans_idx = CTMD;
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
@@ -1810,7 +1810,7 @@ cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *ps
   k_state = HMMMATCH;
   bp[0] = cp9map->hns2cs[k+1][k_state][0];
   bp[1] = cp9map->hns2cs[k+1][k_state][1];
-  ////printf("CTIM: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
+  /*////printf("CTIM: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);*/
   hmm_trans_idx = CTIM;
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
@@ -1828,7 +1828,7 @@ cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *ps
   k_state = HMMINSERT;
   bp[0] = cp9map->hns2cs[k][k_state][0];
   bp[1] = cp9map->hns2cs[k][k_state][1];
-  ////printf("CTII: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
+  /*////printf("CTII: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);*/
 
   hmm_trans_idx = CTII;
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
@@ -1847,7 +1847,7 @@ cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *ps
   k_state = HMMDELETE;
   bp[0] = cp9map->hns2cs[k+1][k_state][0];
   bp[1] = cp9map->hns2cs[k+1][k_state][1];
-  ////printf("CTID: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
+  /*////printf("CTID: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);*/
   hmm_trans_idx = CTID;
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
@@ -1865,7 +1865,7 @@ cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *ps
   k_state = HMMMATCH;
   bp[0] = cp9map->hns2cs[k+1][k_state][0];
   bp[1] = cp9map->hns2cs[k+1][k_state][1];
-  ////printf("CTDM: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
+  /*////printf("CTDM: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);*/
   hmm_trans_idx = CTDM;
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
@@ -1883,7 +1883,7 @@ cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *ps
   k_state = HMMINSERT;
   bp[0] = cp9map->hns2cs[k][k_state][0];
   bp[1] = cp9map->hns2cs[k][k_state][1];
-  ////printf("CTDI: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
+  /*////printf("CTDI: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);*/
   hmm_trans_idx = CTDI;
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);
@@ -1901,7 +1901,7 @@ cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *ps
   k_state = HMMDELETE;
   bp[0] = cp9map->hns2cs[k+1][k_state][0];
   bp[1] = cp9map->hns2cs[k+1][k_state][1];
-  ////printf("CTDD: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);
+  /*////printf("CTDD: k: %4d | n: %4d | ap[0]: %4d ap[1]: %4d | bp[0]: %4d bp[1]: %4d\n", k, cp9map->pos2nd[k], ap[0], ap[1], bp[0], bp[1]);*/
   hmm_trans_idx = CTDD;
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[0], k, hmm_trans_idx, psi, tmap);
   hmm_add_single_trans_cp9(cm, hmm, cp9map, ap[0], bp[1], k, hmm_trans_idx, psi, tmap);

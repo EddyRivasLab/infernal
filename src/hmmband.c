@@ -443,17 +443,9 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
     }
   }
 
-  ///HERE TEMPORARY!
-  ///float tmp = Score2Prob(fmx->erow[0]-sc, 1.);
-  ///printf("ip: %3d esum: %12.10f (added: %12.10f)\n", 0, tmp, tmp);
-
   /* Find minimum position in band for each state (M,I,D) of each node (0..M) */
   for (ip = 1; ip <= L; ip++) /* ip is the relative position in the seq */
     {
-      ///HERE TEMPORARY!
-      ///tmp += Score2Prob(fmx->erow[ip]-sc, 1.);
-      ///printf("ip: %3d esum: %12.10f (added: %12.10f)\n", ip, tmp, Score2Prob(fmx->erow[ip]-sc, 1.));
-
       i = i0+ip-1;		/* e.g. i is actual index in dsq, runs from i0 to j0 */
       k = 0;
       /* new block EPN, Wed Feb 13 11:58:52 2008 */
@@ -1460,10 +1452,11 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
 					 &r_mn, &r_mx, &r_in, &r_ix, &r_dn, &r_dx, &r_nn_i, &r_nx_i, &r_nn_j, &r_nx_j)) != eslOK) return status;
 
   /* debugging printf block */
-  ////for(k = 0; k <= cp9b->hmm_M;k ++) { 
-  ////printf("k: %4d  %4d %4d  %4d %4d  %4d %4d  %4d %4d  %4d  %4d\n", k, r_mn[k], r_mx[k], r_in[k], r_ix[k], r_dn[k], r_dx[k], r_nn_i[k], r_nx_i[k], r_nn_j[k], r_nx_j[k]);
-  ////}
-  ////cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1); 
+  /*////for(k = 0; k <= cp9b->hmm_M;k ++) { 
+    ////printf("k: %4d  %4d %4d  %4d %4d  %4d %4d  %4d %4d  %4d  %4d\n", k, r_mn[k], r_mx[k], r_in[k], r_ix[k], r_dn[k], r_dx[k], r_nn_i[k], r_nx_i[k], r_nn_j[k], r_nx_j[k]);
+    ////}
+    ////cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1); 
+  */
  
   /* Step 2: Traverse the CM from left to right in consensus position coordinates. Fill in the 
    *         i and j bands (imin, imax, jmin, jmax) for all states as we go. The CM is traversed
@@ -1898,7 +1891,7 @@ cp9_HMM2ijBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, CP9Map_t *cp9map, int 
       assert(cp9b->jmin[v] == -1);
       assert(cp9b->jmax[v] == -2);
     } 
-    ////nd = cm->ndidx[v]; printf("nd: %4d v: %4d  %4s %2s (%11d %11d  %11d %11d) (HMM nd: %4d %4d)\n", nd, v, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v]), cp9b->imin[v], cp9b->imax[v], cp9b->jmin[v], cp9b->jmax[v], cp9map->cs2hn[v][0], cp9map->cs2hn[v][1]);
+    /*////nd = cm->ndidx[v]; printf("nd: %4d v: %4d  %4s %2s (%11d %11d  %11d %11d) (HMM nd: %4d %4d)\n", nd, v, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v]), cp9b->imin[v], cp9b->imax[v], cp9b->jmin[v], cp9b->jmax[v], cp9map->cs2hn[v][0], cp9map->cs2hn[v][1]);*/
   }
 #endif
   /* final check, it's possible, but unlikely that some states had valid i bands set, but invalid j bands set, 
@@ -2242,8 +2235,8 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
   esl_vec_ISet(filled_gap, (hmm_M+1), FALSE);
 
   /* debugging printf block */
-  ////cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);
-  ////printf("j0: %d\n", j0); 
+  /*////cp9_DebugPrintHMMBands(stdout, j0, cp9b, cm->tau, 1);*/
+  /*////printf("j0: %d\n", j0); */
 
   /* Note on comment nomenclature: 
    * M_k: match  state of node k
@@ -2447,7 +2440,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	 *       and the CM will be able to find it */
 	r_endn = ESL_MIN(r_endn, n);
 	r_endx = ESL_MAX(r_endx, x);
-	////printf("0 r_endn,x: %d..%d (k: %d) \n", r_endn, r_endx, k);
+	/*////printf("0 r_endn,x: %d..%d (k: %d) \n", r_endn, r_endx, k);*/
 	ESL_DASSERT1((r_endn <= r_endx));
       }
     }
@@ -2459,7 +2452,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	/* note: we don't have to worry about filling gaps here (see more verbose comment above for M_k->E transition) */
 	r_endn = ESL_MIN(r_endn, n);
 	r_endx = ESL_MAX(r_endx, x);
-	////printf("1 r_endn,x: %d..%d\n", r_endn, r_endx);
+	/*////printf("1 r_endn,x: %d..%d\n", r_endn, r_endx);*/
 	ESL_DASSERT1((r_endn <= r_endx));
       }
       if(r_in[k] <= r_ix[k] && cm->cp9->tsc[CTIM][k] != -INFTY) { /* if I_k is reachable and we're allowed to transit to E */
@@ -2469,7 +2462,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	/* note: we don't have to worry about filling gaps here (see more verbose comment above for M_k->E transition) */
 	r_endn = ESL_MIN(r_endn, n);
 	r_endx = ESL_MAX(r_endx, x);
-	////printf("2 r_endn,x: %d..%d\n", r_endn, r_endx);
+	/*////printf("2 r_endn,x: %d..%d\n", r_endn, r_endx);*/
 	ESL_DASSERT1((r_endn <= r_endx));
       }
       /* finally, deal with the possibility that we go to E from an EL state */
@@ -2481,7 +2474,7 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
 	    x = j0; 
 	    r_endn = ESL_MIN(r_endn, n);
 	    r_endx = ESL_MAX(r_endx, x);
-	    ////printf("3 c: %d..%d r_endn: %d\n", c, r_endn, r_endx);
+	    /*////printf("3 c: %d..%d r_endn: %d\n", c, r_endn, r_endx);*/
 	    ESL_DASSERT1((r_endn <= r_endx));
 	  }
 	}
@@ -2734,24 +2727,24 @@ HMMBandsEnforceValidParse(CM_t *cm, CP9Bands_t *cp9b, CP9Map_t *cp9map, char *er
   /* debugging printf block */
   int v, nd;
   for(k = 0; k <= hmm_M; k++) { 
-    ////printf("HMM k:%4d\t\t", k);
+    /*////printf("HMM k:%4d\t\t", k);*/
     v = cp9map->hns2cs[k][HMMMATCH][0];
     nd = cm->ndidx[v];
-    ////if(r_mn[k] != -1) { printf(" %4d  %4d (v: %4d %4d %4s %2s)  ", r_mn[k], r_mx[k], v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }
-    ////else { printf(" %4s  %4s (v: %4d %4d %4s %2s)  ", "", "", v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }
+    /*////if(r_mn[k] != -1) { printf(" %4d  %4d (v: %4d %4d %4s %2s)  ", r_mn[k], r_mx[k], v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }*/
+    /*////else { printf(" %4s  %4s (v: %4d %4d %4s %2s)  ", "", "", v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }*/
 
     v = cp9map->hns2cs[k][HMMINSERT][0];
     nd = cm->ndidx[v];
-    ////if(r_in[k] != -1) { printf(" %4d  %4d (v: %4d %4d %4s %2s)  ", r_in[k], r_ix[k], v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }
-    ////else { printf(" %4s  %4s (v: %4d %4d %4s %2s)  ", "", "", v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }
+    /*////if(r_in[k] != -1) { printf(" %4d  %4d (v: %4d %4d %4s %2s)  ", r_in[k], r_ix[k], v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }*/
+    /*////else { printf(" %4s  %4s (v: %4d %4d %4s %2s)  ", "", "", v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }*/
 
     if(k != 0) { 
       v = cp9map->hns2cs[k][HMMDELETE][0];
       nd = cm->ndidx[v];
-      ////if(r_dn[k] != -1) { printf(" %4d  %4d (v: %4d %4d %4s %2s)\n", r_dn[k], r_dx[k], v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }
-      ////else { printf(" %4s  %4s (v: %4d %4d %4s %2s)\n", "", "", v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }
+      /*////if(r_dn[k] != -1) { printf(" %4d  %4d (v: %4d %4d %4s %2s)\n", r_dn[k], r_dx[k], v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }*/
+      /*////else { printf(" %4s  %4s (v: %4d %4d %4s %2s)\n", "", "", v, nd, Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v])); }*/
       }
-    ////else { printf("\n"); }
+    /*////else { printf("\n"); }*/
     }
 
   return eslOK;
@@ -3155,10 +3148,10 @@ CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0,
 	  }
 	} /* end of else that's entered if v != E_st nor B_st */
       } /* end of if(!StateIsDetached) */	
-	////if(v_is_r[v]) printf("ck v  %4s %2s %4d R %d (%11d %11d  %11d %11d) (HMM nd: %4d %4d)\n", Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v]), v, v_is_r[v], r_imin[v], r_imax[v], r_jmin[v], r_jmax[v], cm->cp9map->cs2hn[v][0], cm->cp9map->cs2hn[v][1]);
+	/*////if(v_is_r[v]) printf("ck v  %4s %2s %4d R %d (%11d %11d  %11d %11d) (HMM nd: %4d %4d)\n", Nodetype(cm->ndtype[nd]), Statetype(cm->sttype[v]), v, v_is_r[v], r_imin[v], r_imax[v], r_jmin[v], r_jmax[v], cm->cp9map->cs2hn[v][0], cm->cp9map->cs2hn[v][1]);*/
     } /* end of for (v) loop */
    
-    ////printf("ck nd %4s    %4d R %d (%11d %11d  %11d %11d)\n\n", Nodetype(cm->ndtype[nd]), nd, nd_is_r[nd], nd_r_imin[nd], nd_r_imax[nd], nd_r_jmin[nd], nd_r_jmax[nd]); 
+    /*////printf("ck nd %4s    %4d R %d (%11d %11d  %11d %11d)\n\n", Nodetype(cm->ndtype[nd]), nd, nd_is_r[nd], nd_r_imin[nd], nd_r_imax[nd], nd_r_jmin[nd], nd_r_jmax[nd]); */
   }
   /* now we know what states are reachable for what i and j,  check if a valid parse exists */
   if(! cm_is_localized) { /* local begins/ends are off, all nodes must be reachable to get a valid parse */
