@@ -1,0 +1,21 @@
+ID   DA0260
+AC   -
+DE   -
+SQ             75 BP
+      GGGCGAAUAG UGUCAGCGGG AGCACACCAG ACUUGCAAUC UGGUAGGGAG
+      GGUUCGAGUC CCUCUUUGUC CACCA
+//
+ID   DA0261
+AC   -
+DE   -
+SQ             75 BP
+      GGGCGAAUAG UGUCAGCGGG AGCACACCAG ACUUGCAAUC UGGUAGGGAG
+      GGUUCGAGUC CCUCUUUGUC CACCA
+//
+ID   tRNA-Tyr
+AC   -
+DE   Ascaris suum mitochondrion, complete genome.
+SQ             56 BP
+      cagtaggtag tttattttta aaatgtagta tttgggttac tgtgaatttt
+      tactga
+//
