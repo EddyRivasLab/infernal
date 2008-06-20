@@ -73,7 +73,7 @@ if(@ARGV != 8)
 ($nprocs, $rmm, $rmk, $seq_dir, $fam_idx, $genome_root, $cm_dir, $out_file_root) = @ARGV;
 $seq_dir = getcwd() . "\/" . $seq_dir;
 $cm_dir  = getcwd() . "\/" . $cm_dir;
-$orig_rmk = $rmk;
+$orig_rmk = getcwd() . "\/" . $rmk;
 
 # Make a new directory where the benchmark will run ($run_dir)
 $run_dir = $out_file_root . "_" . $genome_root . "_out_dir";
