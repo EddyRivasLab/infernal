@@ -918,12 +918,16 @@ FCalcOptimizedEmitScores(CM_t *cm)
       ESL_ALLOC(esc_vAA[v], sizeof(float) * (cm->abc->Kp * cm->abc->Kp));
       /* ALLOCATE SIZE = POWER OF 2? */
       esl_vec_FSet(esc_vAA[v],  (cm->abc->Kp * cm->abc->Kp), IMPOSSIBLE);
-      for(a = 0; a < (cm->abc->Kp-1); a++)
-	for(b = 0; b < (cm->abc->Kp-1); b++)
-	  if(a < cm->abc->K && b < cm->abc->K) 
-	    esc_vAA[v][a * cm->abc->Kp + b]  = cm->esc[v][(a * cm->abc->K) + b];
-	  else
-	    esc_vAA[v][a  * cm->abc->Kp + b]  = DegeneratePairScore(cm->abc, cm->esc[v], a, b);
+      for(a = 0; a < cm->abc->K; a++) { 
+	for(b = 0; b < cm->abc->K; b++) { 
+	  esc_vAA[v][(a * cm->abc->Kp) + b]  = cm->esc[v][(a * cm->abc->K) + b];
+	}
+      }
+      for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) { /* note boundary conditions, gap, missing data symbols stay IMPOSSIBLE */
+	for(b = cm->abc->K+1; b < cm->abc->Kp-1; b++) { /* note boundary conditions, gap, missing data symbols stay IMPOSSIBLE */
+	  esc_vAA[v][(a  * cm->abc->Kp) + b]  = DegeneratePairScore(cm->abc, cm->esc[v], a, b);
+	}
+      }
       break;
     default:
       esc_vAA[v] = NULL;
@@ -975,13 +979,16 @@ ICalcOptimizedEmitScores(CM_t *cm)
       ESL_ALLOC(iesc_vAA[v], sizeof(int) * (cm->abc->Kp * cm->abc->Kp));
       /* ALLOCATE SIZE = POWER OF 2? */
       esl_vec_ISet(iesc_vAA[v], (cm->abc->Kp * cm->abc->Kp), -INFTY);
-      for(a = 0; a < (cm->abc->Kp-1); a++)
-	for(b = 0; b < (cm->abc->Kp-1); b++)
-	  if(a < cm->abc->K && b < cm->abc->K) 
-	    iesc_vAA[v][a * cm->abc->Kp + b] = cm->iesc[v][(a * cm->abc->K) + b];
-	  else 
-	    iesc_vAA[v][a * cm->abc->Kp + b] = iDegeneratePairScore(cm->abc, cm->iesc[v], a, b);
-
+      for(a = 0; a < cm->abc->K; a++) { 
+	for(b = 0; b < cm->abc->K; b++) { 
+	  iesc_vAA[v][(a * cm->abc->Kp) + b]  = cm->iesc[v][(a * cm->abc->K) + b];
+	}
+      }
+      for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) { /* note boundary conditions, gap, missing data symbols stay IMPOSSIBLE */
+	for(b = cm->abc->K+1; b < cm->abc->Kp-1; b++) { /* note boundary conditions, gap, missing data symbols stay IMPOSSIBLE */
+	  iesc_vAA[v][(a  * cm->abc->Kp) + b]  = iDegeneratePairScore(cm->abc, cm->iesc[v], a, b);
+	}
+      }
       break;
     default:
       iesc_vAA[v] = NULL;
