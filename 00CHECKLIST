@@ -261,18 +261,19 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
        svn commit 
        ( cd easel ; svn commit )
 
-0.3  - SRE, Thu Jul  4 10:27:16 2002
-0.5  - SRE, Sun Oct  6 14:22:47 2002
-0.51 - SRE, Wed Oct  9 09:43:50 2002
-0.52 - SRE, Mon Oct 14 2002
-0.53 - SRE, Thu Jan  2 14:24:07 2003
-0.54 - SRE, Sun Jan  5 18:17:55 2003
-0.55 - SRE, Wed Apr  2 18:12:23 2003   r875
-0.6  - SRE, Tue Nov  1 17:13:00 2005   r1477  Easel:r72
-0.7  - SRE, Tue Dec 13 14:54:30 2005   r1534  Easel:r84
-0.71 - SRE, Thu Nov 30 11:43:57 2006   r1730  Easel:r142
-0.72 - SRE, Sat Jan 27 10:44:46 2007   r1862  Easel:r149
-0.8  - SRE, Sun Apr 29 11:55:56 2007   r1984  Easel:r176
-0.81 - SRE, Tue May  1 10:36:10 2007   r1995  Easel:r179
+0.3    - SRE, Thu Jul  4 10:27:16 2002
+0.5    - SRE, Sun Oct  6 14:22:47 2002
+0.51   - SRE, Wed Oct  9 09:43:50 2002
+0.52   - SRE, Mon Oct 14 2002
+0.53   - SRE, Thu Jan  2 14:24:07 2003
+0.54   - SRE, Sun Jan  5 18:17:55 2003
+0.55   - SRE, Wed Apr  2 18:12:23 2003   r875
+0.6    - SRE, Tue Nov  1 17:13:00 2005   r1477  Easel:r72
+0.7    - SRE, Tue Dec 13 14:54:30 2005   r1534  Easel:r84
+0.71   - SRE, Thu Nov 30 11:43:57 2006   r1730  Easel:r142
+0.72   - SRE, Sat Jan 27 10:44:46 2007   r1862  Easel:r149
+0.8    - SRE, Sun Apr 29 11:55:56 2007   r1984  Easel:r176
+0.81   - SRE, Tue May  1 10:36:10 2007   r1995  Easel:r179
+1.0rc1 - SRE, Fri Jun 20 13:38:46 2008   r2492  Easel:r276
 
 
