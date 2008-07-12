@@ -259,8 +259,6 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
       puts("\nexpert options for refining the input alignment:");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
-      puts("\n options for selecting alphabet of input aln rather than guessing it:");
-      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       exit(0);
     }
 

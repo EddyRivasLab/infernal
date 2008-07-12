@@ -41,7 +41,7 @@
 
 
 AC_PREREQ(2.60)
-AC_INIT(Infernal, 1.0rc1, eddys@janelia.hhmi.org, infernal)
+AC_INIT(Infernal, 1.0rc2, eddys@janelia.hhmi.org, infernal)
 AC_MSG_NOTICE([Configuring Infernal for your system.])
 
 
@@ -67,18 +67,18 @@ AC_MSG_NOTICE([Configuring Infernal for your system.])
 #
 ################################################################
 
-PACKAGE_DATE="June 2008"
+PACKAGE_DATE="July 2008"
 PACKAGE_COPYRIGHT="Copyright (C) 2008 HHMI Janelia Farm Research Campus"
 PACKAGE_LICENSE="Freely distributed under the GNU General Public License (GPL)"
 PACKAGE_LICENSETAG=gnu
 PACKAGE_VERSION=$PACKAGE_VERSION
 PACKAGE_URL="http://infernal.janelia.org/"
 
-EASEL_DATE="June 2008"
+EASEL_DATE="July 2008"
 EASEL_COPYRIGHT="Copyright (C) 2008 HHMI Janelia Farm Research Campus"
 EASEL_LICENSE="Freely distributed under the Janelia Software License."
 EASEL_LICENSETAG=jsl
-EASEL_VERSION="i1.0rc1"
+EASEL_VERSION="i1.0rc2"
 EASEL_URL="http://easel.janelia.org/"
 
 # Output variables  (AC_OUTPUT replaces @var@ in input files, such as Makefiles)
@@ -230,7 +230,8 @@ fi
 
 # MPI :  set @CC@ to mpicc, sets @MPILIBS@, defines HAVE_MPI. 
 if test "$enable_mpi" = "yes"; then
-   ACX_MPI([CC="$MPICC"],AC_MSG_ERROR([MPI library not found for --enable-mpi]))
+   ACX_MPI(,AC_MSG_ERROR([MPI library not found for --enable-mpi]))
+   CC=$MPICC
 fi
 
 # SSE: figure out our @SIMD_CFLAGS@, define HAVE_SSE2
