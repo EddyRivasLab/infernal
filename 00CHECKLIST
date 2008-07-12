@@ -87,6 +87,19 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
    Subversion 1.5, which may help.
 
 
+4.5 [For minor bugfix releases, on branches]:
+
+   Figure out what bug fixes need to be merged from the development trunk.
+   For Infernal 1.0rc2, this is r2497,2498; Easel r277
+
+   Then in a working copy of the 1.0 branch, merge from trunk:
+
+   svn update
+   svn merge -r 2496:2498 https://svn.janelia.org/eddylab/eddys/src/infernal/trunk
+   cd easel
+   svn merge -r 276:277 https://svn.janelia.org/eddylab/eddys/easel/trunk
+   
+
 5. Test.
    The infernal testsuite is currently relatively weak. It needs to include
    valgrind tests for memory leaks, for example.
