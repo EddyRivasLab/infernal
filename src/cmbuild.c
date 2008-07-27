@@ -102,6 +102,7 @@ static ESL_OPTIONS options[] = {
 
   /* Developer verbose output options */
   { "--cfile",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save count vectors to file <s>", 102 },
+  { "--efile",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save emission score information to file <s>", 102 },
   { "--cmtbl",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tabular description of CM topology to file <s>", 102 },
   { "--emap",    eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save consensus emit map to file <s>", 102 },
   { "--gtree",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tree description of master tree to file <s>", 102 },
@@ -140,6 +141,7 @@ struct cfg_s {
 
   /* optional output files */
   FILE         *cfp;            /* for --cfile */
+  FILE         *escfp;          /* for --efile */
   FILE         *tblfp;          /* for --cmtbl */
   FILE         *efp;            /* for --emap */
   FILE         *gfp;            /* for --gtree */
@@ -188,6 +190,7 @@ static int    print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *c
 static void   print_refine_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
 static int    print_countvectors(const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int    get_namewidth(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
+static void   dump_basepair_info(FILE *fp, CM_t *cm);
 
 int
 main(int argc, char **argv)
@@ -287,6 +290,7 @@ main(int argc, char **argv)
   cfg.namewidth  = 0;
   /* optional output files, opened in init_cfg(), if at all */
   cfg.cfp        = NULL;
+  cfg.escfp      = NULL;
   cfg.tblfp      = NULL;
   cfg.efp        = NULL;
   cfg.gfp        = NULL;
@@ -322,6 +326,10 @@ main(int argc, char **argv)
   if (cfg.cfp != NULL) {
     printf("# Count vectors saved in file %s.\n", esl_opt_GetString(go, "--cfile"));
     fclose(cfg.cfp); 
+  }
+  if (cfg.escfp != NULL) {
+    printf("# Emission score information saved in file %s.\n", esl_opt_GetString(go, "--efile"));
+    fclose(cfg.escfp); 
   }
   if (cfg.tblfp != NULL) {
     printf("# CM topology description saved in file %s.\n", esl_opt_GetString(go, "--cmtbl"));
@@ -470,6 +478,11 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (esl_opt_GetString(go, "--cfile") != NULL) {
     if ((cfg->cfp = fopen(esl_opt_GetString(go, "--cfile"), "w")) == NULL) 
 	ESL_FAIL(eslFAIL, errbuf, "Failed to open --cfile output file %s\n", esl_opt_GetString(go, "--cfile"));
+    }
+  /* optionally, open base pair info file */
+  if (esl_opt_GetString(go, "--efile") != NULL) {
+    if ((cfg->escfp = fopen(esl_opt_GetString(go, "--efile"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open --efile output file %s\n", esl_opt_GetString(go, "--efile"));
     }
   /* optionally, open CM tabular file */
   if (esl_opt_GetString(go, "--cmtbl") != NULL) {
@@ -900,6 +913,8 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   if(cfg->gtblfp != NULL) PrintParsetree(cfg->gtblfp, mtr);  
   /* save tree description of guide tree topology, if nec */
   if(cfg->gfp    != NULL) MasterTraceDisplay(cfg->gfp, mtr, cm);
+  /* save base pair info, if nec */
+  if(cfg->escfp   != NULL) dump_basepair_info(cfg->escfp, cm);
 
   /* save parsetrees if nec */
   if(cfg->tracefp != NULL) { 
@@ -2177,4 +2192,96 @@ get_namewidth(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   esl_msafile_SetDigital(cfg->afp, cfg->abc);
 
   return eslOK;
+}
+
+  
+
+/* Function: dump_basepair_info()
+ * Date:     EPN, Wed Jul  9 14:47:51 2008
+ *
+ * Purpose:  Dump information on the base pairs in the model.
+ *
+ * Returns:  void
+ */
+static void
+dump_basepair_info(FILE *fp, CM_t *cm)
+{
+  int nd, v;
+  int i = 0;
+  int ab, a, b;
+  float tsc, esc;
+  float bpsc, lsc, rsc;
+  float tlsc, trsc, tbpsc, tdiffsc;
+  CMEmitMap_t *emap;
+  emap = CreateEmitMap(cm);
+  esc  = tsc  = 0.;
+  tlsc = trsc = tbpsc = tdiffsc = 0.;
+
+  fprintf(fp, "# %5s  %3s  %5s  %5s  %5s  %1s  %7s\n", "idx",   "L/R",   "v",     "nd",    "pos",   "a",  "sc");
+  fprintf(fp, "# %5s  %3s  %5s  %5s  %5s  %1s  %7s\n", "-----", "---",   "-----", "-----", "-----", "-",  "-------");
+
+  /* singlet section */
+  for (v = 0; v < cm->M; v++) { 
+    if(cm->stid[v] == MATL_ML) { 
+      i++;
+      nd = cm->ndidx[v];
+      esc = 0.;
+      for(a = 0; a < cm->abc->K; a++) { 
+	esc += cm->e[v][a] * cm->esc[v][a];
+      }
+      a = esl_vec_FArgMax(cm->esc[v], cm->abc->K);
+      fprintf(fp, "  %5d  %3s  %5d  %5d  %5d  %c  %7.3f\n", i, "L", v, nd, emap->lpos[nd], cm->abc->sym[a], esc);
+      tsc += esc;
+    }
+    if(cm->stid[v] == MATR_MR) { 
+      i++;
+      nd = cm->ndidx[v];
+      esc = 0.;
+      for(a = 0; a < cm->abc->K; a++) { 
+	esc += cm->e[v][a] * cm->esc[v][a];
+      }
+      a = esl_vec_FArgMax(cm->esc[v], cm->abc->K);
+      fprintf(fp, "  %5d  %3s  %5d  %5d  %5d  %c  %7.3f\n", i, "R", v, nd, emap->rpos[nd], cm->abc->sym[a], esc);
+      tsc += esc;
+    }
+  }
+  fprintf(fp, "# %5s  %3s  %5s  %5s  %5s  %1s  %7s\n", "-----", "---",   "-----", "-----", "-----", "-",  "-------");
+  fprintf(fp, "# total  %3s  %5s  %5s  %5s  %1s  %7.3f\n", "-",   "-",     "-",    "-",   "-",  tsc);
+  fprintf(fp, "#\n");
+  fprintf(fp, "#\n");
+
+  /* base pair section */
+  fprintf(fp, "# %5s  %5s  %5s  %5s  %5s  %2s  %7s  %7s  %7s  %7s\n", "idx",   "v",     "nd",    "lpos", "rpos",   "ab", "bpsc",    "marglsc", "margrsc", "bpdiff");
+  fprintf(fp, "# %5s  %5s  %5s  %5s  %5s  %2s  %7s  %7s  %7s  %7s\n", "-----", "-----", "-----", "-----", "-----", "--", "-------", "-------", "-------", "-------");
+
+  i = 0;
+  for (v = 0; v < cm->M; v++) { 
+    if(cm->sttype[v] == MP_st) { 
+      i++;
+      nd = cm->ndidx[v];
+      bpsc = lsc = rsc = 0.;
+      for(a = 0; a < cm->abc->K; a++) { 
+	for(b = 0; b < cm->abc->K; b++) { 
+	  ab = (a * cm->abc->K) + b;
+	  bpsc += cm->e[v][ab] * cm->esc[v][ab];
+	  lsc  += cm->e[v][ab] * LeftMarginalScore (cm->abc, cm->esc[v], a);
+	  rsc  += cm->e[v][ab] * RightMarginalScore(cm->abc, cm->esc[v], b);
+	}
+      }
+      ab = esl_vec_FArgMax(cm->esc[v], (cm->abc->K * cm->abc->K));
+      a  = ab / cm->abc->K;
+      b  = ab % cm->abc->K;
+      fprintf(fp, "  %5d  %5d  %5d  %5d  %5d  %c%c  %7.3f  %7.3f  %7.3f  %7.3f\n", i, v, nd, emap->lpos[nd], emap->rpos[nd], cm->abc->sym[a], cm->abc->sym[b], 
+	      bpsc, lsc, rsc, (bpsc - (lsc+rsc)));
+      tlsc += lsc;
+      trsc += rsc;
+      tbpsc += bpsc;
+      tdiffsc += bpsc - (lsc + rsc);
+    }
+  }
+  fprintf(fp, "# %5s  %5s  %5s  %5s  %5s  %2s  %7s  %7s  %7s  %7s\n", "-----", "-----", "-----", "-----", "-----", "--", "-------", "-------", "-------", "-------");
+  fprintf(fp, "# total  %5s  %5s  %5s  %5s  %2s  %7.3f  %7.3f  %7.3f  %7.3f\n", "-", "-", "-", "-", "-", tbpsc, tlsc, trsc, tdiffsc);
+      
+  FreeEmitMap(emap);
+  return;
 }

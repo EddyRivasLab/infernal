@@ -47,6 +47,7 @@ static ESL_OPTIONS options[] = {
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "align locally w.r.t. the model",         1 },
   { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,   "--small", "append posterior probabilities to alignment", 1 },
   { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress banner and scores, print only the alignment", 1 },
+  { "-M",        eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "meta-cm mode: <cmfile> is a meta-cm built from aln in <f>", 1 },
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI
@@ -134,6 +135,12 @@ struct cfg_s {
   Parsetree_t  *withali_mtr;	/* guide tree for MSA from withalifp */
   ESL_ALPHABET *withali_abc;	/* digital alphabet for reading withali MSA */
   ESL_ALPHABET *abc_out;	/* digital alphabet for output */
+
+  ESL_MSAFILE  *malifp;	        /* -M optional input alignment to include */
+  ESL_MSA      **mali_msa;	/* MSAs from withalifp to include */
+  Parsetree_t  **mali_mtr;	/* guide trees for MSAs from malifp */
+  ESL_ALPHABET *mali_abc;	/* digital alphabet for reading mali MSA */
+  int           mali_n;         /* number of alignments in mmsa */
 };
 
 static char usage[]  = "[-options] <cmfile> <sequence file>";
@@ -143,6 +150,7 @@ static int  init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
 /* static int  init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf); */
 
 static void  serial_master (const ESL_GETOPTS *go, struct cfg_s *cfg);
+static void  serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg);
 #ifdef HAVE_MPI
 static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
@@ -154,13 +162,14 @@ static int output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf,
 static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr);
 static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, int *ret_nseq, char *errbuf);
-static int compare_cm_guide_trees(CM_t *cm1, CM_t *cm2);
 static int make_aligned_string(char *aseq, char *gapstring, int alen, char *ss, char **ret_s);
 static int add_withali_pknots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_MSA *newmsa);
 
 static int print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static void print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
+
+static int Alignment2Parsetrees(ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, char *errbuf, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr);
 /*
   static void print_stage_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
   static int print_align_options(const struct cfg_s *cfg, CM_t *cm);
@@ -275,6 +284,13 @@ main(int argc, char **argv)
   cfg.withss_cons= NULL;	           /* filled in check_withali() in masters, stays NULL for workers */
   cfg.withali_mtr= NULL;	           /* filled in init_master_cfg() in masters, stays NULL for workers */
   cfg.withali_abc= NULL;	           /* created in init_master_cfg() in masters, stays NULL for workers */
+  cfg.malifp     = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+
+  cfg.mali_msa   = NULL;	           /* filled in init_master_cfg() in masters, stays NULL for workers */
+  cfg.mali_mtr   = NULL;	           /* filled in init_master_cfg() in masters, stays NULL for workers */
+  cfg.mali_abc   = NULL;	           /* created in init_master_cfg() in masters, stays NULL for workers */
+  cfg.mali_n     = 0;	                   /* filled in serial_master_meta() if nec */
+
   cfg.ncm        = 0;
   cfg.r          = NULL;	           /* created in init_master_cfg() for masters, mpi_worker() for workers*/
 
@@ -318,7 +334,8 @@ main(int argc, char **argv)
 #endif /*HAVE_MPI*/
     {
       if(! esl_opt_GetBoolean(go, "-q")) cm_banner(stdout, argv[0], banner);
-      serial_master(go, &cfg);
+      if(! esl_opt_IsDefault(go, "-M"))  serial_master_meta(go, &cfg);
+      else serial_master(go, &cfg);
       esl_stopwatch_Stop(w);
     }
   /* Clean up the shared cfg. 
@@ -342,11 +359,17 @@ main(int argc, char **argv)
     if (cfg.withmsa   != NULL) esl_msa_Destroy(cfg.withmsa);
     if (cfg.withali_mtr != NULL) FreeParsetree(cfg.withali_mtr);
     if (cfg.withss_cons != NULL) free(cfg.withss_cons);
+
+    int m;
+    if (cfg.malifp != NULL) esl_msafile_Close(cfg.withalifp);
+    if (cfg.mali_msa  != NULL) { for(m = 0; m < cfg.mali_n; m++) esl_msa_Destroy(cfg.mali_msa[m]); } 
+    if (cfg.mali_mtr  != NULL) { for(m = 0; m < cfg.mali_n; m++) FreeParsetree(cfg.mali_mtr[m]); } 
   }
   if (cfg.r         != NULL) esl_randomness_Destroy(cfg.r);
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
   if (cfg.abc_out   != NULL) esl_alphabet_Destroy(cfg.abc_out);
   if (cfg.withali_abc != NULL) esl_alphabet_Destroy(cfg.withali_abc);
+  if (cfg.mali_abc    != NULL) esl_alphabet_Destroy(cfg.mali_abc);
   if (cfg.my_rank == 0 && (! esl_opt_GetBoolean(go, "-q"))) { 
     printf("#\n");
     esl_stopwatch_Display(stdout, w, "# CPU time: ");
@@ -453,6 +476,29 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       cfg->withali_abc = esl_alphabet_Create(eslRNA);
       if(cfg->withali_abc == NULL) ESL_FAIL(status, errbuf, "Failed to create alphabet for --withali");
       esl_msafile_SetDigital(cfg->withalifp, cfg->withali_abc);
+    }
+
+  /* optionally, open meta-cm training alignment file (if -M) */
+  if(esl_opt_GetString(go, "-M") != NULL)
+    {
+      status = esl_msafile_Open(esl_opt_GetString(go, "-M"), eslMSAFILE_UNKNOWN, NULL, &(cfg->malifp));
+      if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "-M alignment file %s doesn't exist or is not readable\n", esl_opt_GetString(go, "-M"));
+      else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of -M alignment %s\n", esl_opt_GetString(go, "-M"));
+      else if (status != eslOK)      ESL_FAIL(status, errbuf, "Alignment file open failed with error %d\n", status);
+      /* Guess the -M alignment alphabet, if it's ambiguous, guess RNA,
+       * we'll treat RNA and DNA both as RNA internally.
+       * We can't handle any other alphabets, so this is hardcoded. */
+      status = esl_msafile_GuessAlphabet(cfg->malifp, &type);
+      if (status == eslEAMBIGUOUS)    type = eslRNA; /* guess it's RNA, we'll fail downstream with an error message if it's not */
+      else if (status == eslEFORMAT)  ESL_FAIL(status, errbuf, "Alignment file parse failed: %s\n", cfg->malifp->errbuf);
+      else if (status == eslENODATA)  ESL_FAIL(status, errbuf, "Alignment file %s is empty\n", esl_opt_GetString(go, "-M"));
+      else if (status != eslOK)       ESL_FAIL(status, errbuf, "Failed to read alignment file %s\n", esl_opt_GetString(go, "-M"));
+      /* we can read DNA/RNA but internally we treat it as RNA */
+      if(! (type == eslRNA || type == eslDNA))
+	ESL_FAIL(eslEFORMAT, errbuf, "Alphabet is not DNA/RNA in %s\n", esl_opt_GetString(go, "-M"));
+      cfg->mali_abc = esl_alphabet_Create(eslRNA);
+      if(cfg->mali_abc == NULL) ESL_FAIL(status, errbuf, "Failed to create alphabet for -M");
+      esl_msafile_SetDigital(cfg->malifp, cfg->mali_abc);
     }
 
   if(cfg->r == NULL) cm_Fail("Failed to create master RNG.");
@@ -1135,26 +1181,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   return eslOK;
 }
 
-/* Function: compare_cm_guide_trees()
- * EPN, Tue Mar  6 08:32:12 2007
- *
- * Purpose:  Given two CMs, cm1 and cm2, compare them, returning TRUE 
- *           iff they have the same guide tree (same node architecture).
- *
- * Args:     cm1          - covariance model number 1
- *           cm2          - covariance model number 2
- * 
- * Returns:  TRUE if CMs have same guide tree, FALSE otherwise
- */
-static int compare_cm_guide_trees(CM_t *cm1, CM_t *cm2)
-{
-  int          nd; 
-  if(cm1->nodes != cm2->nodes) return FALSE;
-  for(nd = 0; nd < cm1->nodes; nd++)
-    if(cm1->ndtype[nd] != cm2->ndtype[nd]) return FALSE;
-  return TRUE;
-}
-
 /* Function: check_withali()
  * EPN, Tue Mar  6 06:25:02 2007
  *
@@ -1177,7 +1203,7 @@ static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL
   /* cfg->withalifp is open */
   status = esl_msa_Read(cfg->withalifp, &msa);
   if (status == eslEFORMAT)  cm_Fail("--withali alignment file parse error, line %d of file %s:\n%s\nOffending line is:\n%s\n", cfg->withalifp->linenumber, cfg->withalifp->fname, cfg->withalifp->errbuf, cfg->withalifp->buf);
-  else if (status != eslOK)       cm_Fail("--withali alignment file read unexpectedly failed with code %d\n", status);
+  else if (status != eslOK)  cm_Fail("--withali alignment file read unexpectedly failed with code %d\n", status);
 
   /* Some input data cleaning. */
   if (esl_opt_GetBoolean(go, "--rf") && msa->rf == NULL) 
@@ -1196,13 +1222,13 @@ static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL
    * have checksums yet.
    */
   HandModelmaker(msa, esl_opt_GetBoolean(go, "--rf"), esl_opt_GetReal(go, "--gapthresh"), &new_cm, &mtr);
-  if(!(compare_cm_guide_trees(cm, new_cm)))
+  if(!(CompareCMGuideTrees(cm, new_cm)))
     {
       CM_t *newer_cm;
       newer_cm = CMRebalance(new_cm);
       FreeCM(new_cm);
       new_cm = NULL;
-      if(!(compare_cm_guide_trees(cm, newer_cm)))
+      if(!(CompareCMGuideTrees(cm, newer_cm)))
 	{
 	  status = eslEINCOMPAT;
 	  goto ERROR;
@@ -1250,70 +1276,24 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
   void         *tmp;      /* for ESL_RALLOC() */
   int           i;	  /* counter over aseqs       */
   int           ip;	  /* offset counter over aseqs */
-  char        **uaseq;    /* unaligned seqs, dealigned from the MSA */
-  char         **aseq;    /*   aligned text seqs */
-  int           apos;     /*   aligned position index */
-  int           uapos;    /* unaligned position index */
-  int           x;        /* counter of parsetree nodes */
-  int         **map;      /* [0..msa->nseq-1][0..msa->alen] map from aligned
-			   * positions to unaligned (non-gap) positions */
 
+  ESL_SQ      **tmp_sq;
+  Parsetree_t **tmp_tr;
+  if((status = Alignment2Parsetrees(cfg->withmsa, cm, cfg->withali_mtr, errbuf, &tmp_sq, &tmp_tr)) != eslOK) return status;
 
-  /* Contract check */
-  if(cfg->withmsa == NULL)                     cm_Fail("ERROR in include_withali() withmsa is NULL.\n");
-  if(! (cfg->withmsa->flags & eslMSA_DIGITAL)) cm_Fail("ERROR in include_withali() withmsa is not digitized.\n");
-
-  /* For each seq in the MSA, map the aligned sequences coords to 
-   * the unaligned coords, we stay in digitized seq coords (1..alen),
-   * we need this for converting parsetrees from Transmogrify (which
-   * have emitl and emitr in aligned coords) to unaligned coords, so 
-   * we can call Parsetrees2Alignment() with them. */
-  ESL_ALLOC(map,   sizeof(int *)  * cfg->withmsa->nseq);
-  ESL_ALLOC(uaseq, sizeof(char *) * cfg->withmsa->nseq);
-  ESL_ALLOC(aseq,  sizeof(char *) * cfg->withmsa->nseq);
-  for (i = 0; i < cfg->withmsa->nseq; i++)
-    {
-      ESL_ALLOC(map[i],   sizeof(int)  * (cfg->withmsa->alen+1));
-      ESL_ALLOC(aseq[i],  sizeof(char) * (cfg->withmsa->alen+1));
-      map[i][0] = -1; /* invalid */
-      uapos = 1;
-      for(apos = 1; apos <= cfg->withmsa->alen; apos++)
-	{
-	  if (!esl_abc_XIsGap(cfg->withmsa->abc, cfg->withmsa->ax[i][apos]))
-	    map[i][apos] = uapos++;
-	  else
-	    map[i][apos] = -1;
-	}
-      /* we need digitized AND text seqs for Transmogrify */
-      esl_abc_Textize(cfg->withmsa->abc, cfg->withmsa->ax[i], cfg->withmsa->alen, aseq[i]);
-      esl_strdup(aseq[i], -1, &(uaseq[i]));
-      esl_strdealign(uaseq[i], uaseq[i], "-_.", NULL);
-    }
   ESL_RALLOC((*ret_tr),  tmp, (sizeof(Parsetree_t *)  * (*ret_nseq + cfg->withmsa->nseq)));
   ESL_RALLOC((*ret_sq),  tmp, (sizeof(ESL_SQ *)       * (*ret_nseq + cfg->withmsa->nseq)));
 
-  /* Transmogrify each aligned seq to get a parsetree */
-  /*for (i = 0; i < cfg->withmsa->nseq; i++)*/
-  for (i = *ret_nseq; i < (*ret_nseq + cfg->withmsa->nseq); i++)
-    {
-      ip = i - *ret_nseq;
-      (*ret_tr)[i] = Transmogrify(cm, cfg->withali_mtr, cfg->withmsa->ax[ip], aseq[ip], cfg->withmsa->alen);
-      /* ret_tr[i] is in alignment coords, convert it to unaligned coords, */
-      for(x = 0; x < (*ret_tr)[i]->n; x++)
-	{
-	  if((*ret_tr)[i]->emitl[x] != -1)
-	    (*ret_tr)[i]->emitl[x] = map[ip][(*ret_tr)[i]->emitl[x]];
-	  if((*ret_tr)[i]->emitr[x] != -1)
-	    (*ret_tr)[i]->emitr[x] = map[ip][(*ret_tr)[i]->emitr[x]];
-	}
-      (*ret_sq)[i]      = esl_sq_CreateFrom(cfg->withmsa->sqname[ip], uaseq[ip], NULL, NULL, NULL);
-      esl_sq_Digitize(cm->abc, (*ret_sq)[i]);
-    }
+  for (i = *ret_nseq; i < (*ret_nseq + cfg->withmsa->nseq); i++) { 
+    ip = i - *ret_nseq;
+    (*ret_tr)[i] = tmp_tr[ip];
+    (*ret_sq)[i] = tmp_sq[ip];
+  }
+  free(tmp_tr);
+  free(tmp_sq);
 
   /* Swap some pointers so the included alignment appears at the top of the output 
    * alignment instead of the bottom. */
-  Parsetree_t **tmp_tr;
-  ESL_SQ      **tmp_sq;
   ESL_ALLOC(tmp_tr, sizeof(Parsetree_t *) * (*ret_nseq + cfg->withmsa->nseq));
   ESL_ALLOC(tmp_sq, sizeof(ESL_SQ *)      * (*ret_nseq + cfg->withmsa->nseq));
   for(i = 0; i < (*ret_nseq + cfg->withmsa->nseq); i++)
@@ -1339,16 +1319,11 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
   /* update *ret_nseq */
   *ret_nseq    += cfg->withmsa->nseq;
 
-  /* Clean up and exit. */
-  esl_Free2D((void **) map,   cfg->withmsa->nseq);
-  esl_Free2D((void **) uaseq, cfg->withmsa->nseq);
-  esl_Free2D((void **) aseq,  cfg->withmsa->nseq);
   return eslOK;
 
  ERROR:
-  esl_Free2D((void **) map,   cfg->withmsa->nseq);
-  esl_Free2D((void **) uaseq, cfg->withmsa->nseq);
-  return status;
+  ESL_FAIL(status, errbuf, "include_withali(), memory allocation error.");
+  return status; /* NEVERREACHED */
 }
 
 /* Function: make_aligned_string() 
@@ -1748,4 +1723,317 @@ add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs
 }
 #endif /* of #ifdef HAVE_MPI */
 
+/* serial_master_meta()
+ * The serial version of cmalign in meta mode (-M enabled)
+ * 1. Read all CMs in CM file
+ * 2. Read all the alignments from the meta-cm training alignment file
+ * 3. Validate the alignments and CMs make up a valid meta-CM
+ * 4. Align all seqs to the master CM (first CM read)
+ * 5. Impose master alignment of each seq onto all other CMs, and determine implicit score
+ * 6. Select winning CM, and realign to that CM.
+ * 
+ * A master can only return if it's successful. All errors are handled immediately and fatally with cm_Fail().
+ */
+static void
+serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
+{
+  int      status;
+  char     errbuf[cmERRBUFSIZE];
+  CM_t     *cm;
+  seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, holds seqs, parsetrees, CP9 traces, postcodes */
+  int m, i, j;
 
+  if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+  if ((status = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
+  
+  /* read all the CMs */
+  cfg->ncm = 0;
+  int nalloc = 1;
+  CM_t **cmlist;
+  void *tmp;
+  ESL_ALLOC(cmlist, sizeof(CM_t *) * nalloc);
+  status = eslOK;
+  while (status == eslOK) { 
+    status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &(cmlist[cfg->ncm]));
+    if(status == eslOK) { 
+      cfg->ncm++;
+      if(cfg->ncm == nalloc) { 
+	nalloc++; /* could be += n==5 or so */
+	ESL_RALLOC(cmlist, tmp, sizeof(CM_t *) * nalloc);
+      }	
+      printf("cm %4d clen: %d\n", cfg->ncm, cmlist[cfg->ncm-1]->clen);
+      if((status   = initialize_cm(go, cfg, errbuf, cmlist[cfg->ncm-1])) != eslOK) cm_Fail(errbuf);
+      print_cm_info (go, cfg, errbuf, cmlist[cfg->ncm-1]);
+    }
+  }
+  if(status != eslEOF) cm_Fail(errbuf);
+
+  /* read all the alignments in the <f> from -M <f> */
+  status = eslOK;
+  ESL_ALLOC(cfg->mali_msa, sizeof(ESL_MSA *) * cfg->ncm);
+  ESL_MSA *tmp_msa;
+  while (status == eslOK) { 
+    status = esl_msa_Read(cfg->malifp, &tmp_msa);
+    if(status == eslOK) { 
+      if(cfg->mali_n >= cfg->ncm) cm_Fail("with -M, read %d CMs, but %s has > %d alignments.", cfg->ncm, esl_opt_GetString(go, "-M"), cfg->ncm);
+      cfg->mali_msa[cfg->mali_n] = tmp_msa;
+      cfg->mali_n++;
+      printf("ali %4d alen: %" PRId64 "\n", cfg->mali_n, cfg->mali_msa[(cfg->mali_n-1)]->alen);
+    }
+    else { esl_msa_Destroy(tmp_msa); } 
+  }
+  if(cfg->mali_n != cfg->ncm) cm_Fail("with -M, read %d CMs, but %s has %d alignments.", cfg->ncm, esl_opt_GetString(go, "-M"), cfg->mali_n);
+
+  /* validate the CMs were built from the alignments in an inelegant way, build CMs from the alignments and
+   * check they're guidetrees match those for the CMs read from <cmfile> */
+  CM_t *tmp_cm = NULL;
+  CM_t *tmp2_cm = NULL;
+  ESL_ALLOC(cfg->mali_mtr, sizeof(Parsetree_t *) * cfg->ncm);
+  for(m = 0; m < cfg->ncm; m++) { 
+    if(cfg->mali_msa[m]->rf == NULL) cm_Fail("with -M, all alignments from %s must have #=GC RF notation, but alignment %d does not.", esl_opt_GetString(go, "-M"), m+1);
+    HandModelmaker(cfg->mali_msa[m], TRUE, 0.5, &tmp_cm, &(cfg->mali_mtr[m]));
+    /*                              !use RF! */
+    if(!(CompareCMGuideTrees(cmlist[m], tmp_cm))) { 
+      tmp2_cm = CMRebalance(tmp_cm);
+      FreeCM(tmp_cm);
+      tmp_cm = NULL;
+      if(!(CompareCMGuideTrees(cmlist[m], tmp2_cm))) cm_Fail("with -M, CM %d could not have been built by aligment %d.", m);
+      FreeCM(tmp2_cm);
+      tmp2_cm = NULL;
+    }
+  }
+  if(tmp_cm != NULL)  FreeCM(tmp_cm);
+  if(tmp2_cm != NULL) FreeCM(tmp2_cm);
+
+  /* Calidate the alignments make up a meta-CM, the first alignment (major) must contain all the sequences in each of
+   * other alignments, no additional sequences can exist in the 2nd->Nth (minor) alignments that are not in the major aln,
+   * They must be in order also. 
+   * Further, all the alignments must be the same length, and the aligned sequences in each of the minor alignments must
+   * exactly match (be the exact same aligned sequence) as the corresponding sequence in the major alignment. 
+   */
+  m = 1;
+  j = 0;
+  for(i = 0; i < cfg->mali_msa[0]->nseq; i++) { 
+    if(j == cfg->mali_msa[m]->nseq) { 
+      /* move to next alignment */
+      m++; 
+      if(m >= cfg->mali_n) cm_Fail("with -M, ran out of alignments, didn't account for all the sequences in the first alignment.");
+      j = 0; 
+      if(cfg->mali_msa[m]->alen != cfg->mali_msa[0]->alen) cm_Fail("with -M, all alignments must have the same number of columns, but alignment 1 %d columns, and alignment %d has %d columns, cfg->mali_msa[0]->alen, m, cfg->mali_msa[m]->alen");
+    }
+    if(strcmp(cfg->mali_msa[0]->sqname[i], cfg->mali_msa[m]->sqname[j]) != 0)
+      cm_Fail("with -M, sequence names for alignment 1 seq %d (%s) and alignment %d seq %d (%s) didn't match.", i+1, cfg->mali_msa[0]->sqname[i], m+1, j+1, cfg->mali_msa[m]->sqname[j]);
+    if (memcmp(cfg->mali_msa[0]->ax[i], cfg->mali_msa[m]->ax[j], sizeof(ESL_DSQ) * (cfg->mali_msa[0]->alen)) != 0) 
+      cm_Fail("with -M, aligned sequence mismatch, alignment 1 seq %d (%s) and alignment %d seq %d (%s) are not identical.", i+1, cfg->mali_msa[0]->sqname[i], m+1, j+1, cfg->mali_msa[m]->sqname[j]);
+    j++;
+  }
+
+  /* Continue to validate, the consensus columns of the major CM must be a superset of the consensus columns of all the minor CMs,
+   * as we check this we create maps from the major to each of the minor guide trees and vice versa, 
+   * We already checked d all the training alignments are the same length so that we can easily map the coordinates */
+  int **maj2min_cmap; /* [0..m..cfg->ncm][0..c..cmlist[0]->clen] = x, consensus column c of cmlist[0] (the major CM) maps to consensus column x of CM cmlist[m], (minor CM) */
+  int **min2maj_cmap; /* [0..m..cfg->ncm][0..c..cmlist[m]->clen] = x, consensus column c of cmlist[m] (a minor CM)   maps to consensus column x of CM cmlist[0], (major CM) */
+  ESL_ALLOC(maj2min_cmap, sizeof(int *) * cfg->ncm);
+  ESL_ALLOC(min2maj_cmap, sizeof(int *) * cfg->ncm);
+  for(m = 0; m < cfg->ncm; m++) { 
+    ESL_ALLOC(maj2min_cmap[m], sizeof(int) * (cmlist[0]->clen+1));
+    ESL_ALLOC(min2maj_cmap[m], sizeof(int) * (cmlist[m]->clen+1));
+    esl_vec_ISet(maj2min_cmap[m], (cmlist[0]->clen+1), -1);
+    esl_vec_ISet(min2maj_cmap[m], (cmlist[m]->clen+1), -1);
+  }    
+  /* maj2min_cmap[0] and min2maj_cmap[0] is a map of the major CM to itself, this is trival, useless, and could just as easily be set to NULL */
+  int cpos, apos;
+  int major_is_consensus;
+  int *maj_a2c_map;
+  ESL_ALLOC(maj_a2c_map, sizeof(int) * (cfg->mali_msa[0]->alen+1));
+  esl_vec_ISet(maj_a2c_map, (cfg->mali_msa[0]->alen+1), -1);
+
+  for(cpos = 1; cpos <= cmlist[0]->clen; cpos++) maj2min_cmap[0][cpos] = min2maj_cmap[0][cpos];
+  
+  /* map major 2 minor build map */
+  int *cposA; /* temporary only, [0..m..cfg->ncm-1] = x, x is current consensus column for CM m */
+  ESL_ALLOC(cposA, sizeof(int) * cfg->ncm);
+  esl_vec_ISet(cposA, cfg->ncm, 0);
+  for(apos = 1; apos <= cfg->mali_msa[0]->alen; apos++) { /* remember all the alignments are the same length, we checked */
+    major_is_consensus = FALSE;
+    for(m = 0; m < cfg->ncm; m++) { 
+      if(! esl_abc_CIsGap(cfg->mali_msa[m]->abc, cfg->mali_msa[m]->rf[(apos-1)])) { 
+	cposA[m]++;
+	if(m == 0) { 
+	  major_is_consensus = TRUE;
+	  maj_a2c_map[apos] = cposA[0];
+	}
+	if(!major_is_consensus) cm_Fail("with -M, alignment %d, position %d is a consensus column %d, but position %d is not consensus in the major (first) alignment from %s.", m, apos, cposA[m], apos, esl_opt_GetString(go, "-M"));
+	maj2min_cmap[m][cposA[0]] = cposA[m];
+	min2maj_cmap[m][cposA[m]] = cposA[0];
+      }
+    }
+  }
+  /* NOTE: NOTE SURE IF MAJ2MIN and MIN2MAJ MAPS REALLY NECESSARY */
+
+  /* initialize the flags/options/params and configuration of the CM */
+  cm = cmlist[0];
+  
+  /* read in all sequences, this is wasteful, but Parsetrees2Alignment() requires all seqs in memory */
+  seqs_to_aln = CreateSeqsToAln(100, FALSE);
+  if((status = ReadSeqsToAln(cfg->abc, cfg->sqfp, 0, TRUE, seqs_to_aln, FALSE)) != eslEOF) cm_Fail("Error reading sqfile: %s\n", cfg->sqfile);
+  /* align all sequences */
+  if ((status = process_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
+  /* convert parsetrees to alignment */
+  ESL_MSA *omsa;
+  if((status = Parsetrees2Alignment(cm, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, seqs_to_aln->nseq, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), &omsa)) != eslOK)
+    cm_Fail("serial_master_meta(), error generating alignment from parsetrees to major CM.");
+
+
+  /* map the consensus positions to alignment positions in omsa */
+  int *c2a_map;
+  ESL_ALLOC(c2a_map, sizeof(int) * (cm->clen+1));
+  c2a_map[0] = -1;
+  cpos = 0;
+  for(apos = 1; apos <= omsa->alen; apos++) 
+    if(! esl_abc_CIsGap(omsa->abc, omsa->rf[(apos-1)])) c2a_map[++cpos] = apos;
+
+  /* convert the guidetree coords for each minor CM to major CM coords for the alignment in omsa */
+  int x;
+  int maj_train_cpos;
+  int min_new_apos;
+  for(m = 1; m < cfg->ncm; m++) { 
+    for(x = 0; x < cfg->mali_mtr[m]->n; x++) { 
+      /*printf("m: %3d x: %3d emitl: %3d emitr: %3d", m, x, cfg->mali_mtr[m]->emitl[x], cfg->mali_mtr[m]->emitr[x]);*/
+      maj_train_cpos = maj_a2c_map[cfg->mali_mtr[m]->emitl[x]];
+      min_new_apos   = c2a_map[maj_train_cpos];
+      cfg->mali_mtr[m]->emitl[x] = min_new_apos;
+
+      maj_train_cpos = maj_a2c_map[cfg->mali_mtr[m]->emitr[x]];
+      min_new_apos   = c2a_map[maj_train_cpos];
+      cfg->mali_mtr[m]->emitr[x] = min_new_apos;
+      /*printf("  newl: %3d newr: %3d\n", cfg->mali_mtr[m]->emitl[x], cfg->mali_mtr[m]->emitr[x]);*/
+    }
+  }
+
+  /* for each minor CM, transmogrify the major CM parsetrees into minor alignments */
+  ESL_SQ **tmp_sq;
+  Parsetree_t **tmp_tr;
+  float sc, ssc;
+  omsa->abc = esl_alphabet_Create(cm->abc->type);
+  if((status = esl_msa_Digitize(omsa->abc, omsa)) != eslOK) cm_Fail("Failure digitizing the master CM alignment of input seqs.");
+  for(m = 1; m < cfg->ncm; m++) { 
+    if((status = Alignment2Parsetrees(omsa, cmlist[m], cfg->mali_mtr[m], errbuf, &tmp_sq, &tmp_tr)) != eslOK) cm_Fail(errbuf);
+    for(i = 0; i < omsa->nseq; i++) { 
+      if((status = ParsetreeScore(cmlist[m], errbuf, tmp_tr[i], tmp_sq[i]->dsq, FALSE, &sc, &ssc)) != eslOK) cm_Fail(errbuf);
+	  printf("CM: %d seq: %d sc: %8.3f ssc: %8.3f\n", m, i, sc, ssc);
+    }
+    printf("\n");
+  }
+  exit(1);
+  
+  /* clean up */
+  FreeSeqsToAln(seqs_to_aln);
+  FreeCM(cm);
+  esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be searching this file again with another CM */
+  return;
+
+ ERROR:
+  cm_Fail("Memory allocation error in serial_master_meta().");
+  return;
+}
+
+
+/* Function: Alignment2Parstrees()
+ * EPN, Fri Jul 11 09:49:50 2008
+ *
+ * Purpose:  Given a MSA <msa>, a CM <cm> and a guidetree <mtr> for <cm>,
+ *           Determine the implicit parsetrees of the sequences in the
+ *           MSA to the CM. Return the parsetrees in <ret_tr> if non-NULL, 
+ *           sequence objects in <ret_sq> if non-null. 
+ *
+ *           Dealign the MSA seqs in <ret_sq> and convert from aligned to
+ *           unaligned coordinates in <ret_tr>, if <do_dealn> == FALSE,
+ *           leave the sequences and parsetree coordinates aligned.
+ *
+ * Args:     msa          - MSA we want to infer parsetrees from
+ *           cm           - CM we're aligning to 
+ *           mtr          - master parsetree, guide tree for CM 
+ *           errbuf       - easel error message
+ *           ret_sq       - Return: dealigned msa seqs in digital form
+ *           ret_tr       - Return: parsetree for seqs in dealigned 
+ * 
+ * Returns:  eslOK on success, eslEINCOMPAT on contract violation, eslEMEM on memory error
+ *           <ret_tr>, <ret_sq>, see 'Purpose'.
+ */
+static int Alignment2Parsetrees(ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, char *errbuf, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr)
+{
+  int           status;
+  int           i;	      /* counter over aseqs       */
+  int           apos;         /*   aligned position index */
+  int           uapos;        /* unaligned position index */
+  int           x;            /* counter of parsetree nodes */
+  int         **map   = NULL; /* [0..msa->nseq-1][0..msa->alen] map from aligned posns to unaligned (non-gap) posns */
+  char        **uaseq = NULL; /* unaligned seqs, dealigned from the MSA */
+  char         **aseq = NULL; /*   aligned text seqs */
+  Parsetree_t **tr    = NULL; 
+  ESL_SQ      **sq    = NULL;
+
+  /* Contract check */
+  if(msa == NULL)                     ESL_FAIL(eslEINCOMPAT, errbuf, "Alignment2Parsetrees(), msa is NULL.\n");
+  if(! (msa->flags & eslMSA_DIGITAL)) ESL_FAIL(eslEINCOMPAT, errbuf, "Alignment2Parsetrees() msa is not digitized.\n");
+  if(ret_tr == NULL && ret_sq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "Alignement2Parsetrees() ret_sq and ret_tr both NULL.");
+
+  /* For each seq in the MSA, map the aligned sequences coords to 
+   * the unaligned coords, we stay in digitized seq coords (1..alen),
+   * we need this for converting parsetrees from Transmogrify (which
+   * have emitl and emitr in aligned coords) to unaligned coords, so 
+   * we can call Parsetrees2Alignment() with them. */
+  ESL_ALLOC(map,   sizeof(int *)  * msa->nseq);
+  ESL_ALLOC(uaseq, sizeof(char *) * msa->nseq);
+  ESL_ALLOC(aseq,  sizeof(char *) * msa->nseq);
+  for (i = 0; i < msa->nseq; i++) { 
+    ESL_ALLOC(map[i],   sizeof(int)  * (msa->alen+1));
+    ESL_ALLOC(aseq[i],  sizeof(char) * (msa->alen+1));
+    map[i][0] = -1; /* invalid */
+    uapos = 1;
+    for(apos = 1; apos <= msa->alen; apos++) { 
+      if (!esl_abc_XIsGap(msa->abc, msa->ax[i][apos])) map[i][apos] = uapos++;
+      else                                             map[i][apos] = -1;
+    }
+    /* we need digitized AND text seqs for Transmogrify */
+    esl_abc_Textize(msa->abc, msa->ax[i], msa->alen, aseq[i]);
+    esl_strdup(aseq[i], -1, &(uaseq[i]));
+    esl_strdealign(uaseq[i], uaseq[i], "-_.~", NULL);
+  }
+
+  /* Transmogrify each aligned seq to get a parsetree */
+  if(ret_tr != NULL) ESL_ALLOC(tr, (sizeof(Parsetree_t *) * msa->nseq));
+  if(ret_sq != NULL) ESL_ALLOC(sq, (sizeof(ESL_SQ *)      * msa->nseq));
+
+  for (i = 0; i < msa->nseq; i++) { 
+    if(ret_tr != NULL) { 
+      tr[i] = Transmogrify(cm, mtr, msa->ax[i], aseq[i], msa->alen);
+      /* tr[i] is in alignment coords, convert it to unaligned coords, */
+      for(x = 0; x < tr[i]->n; x++) { 
+	if(tr[i]->emitl[x] != -1) tr[i]->emitl[x] = map[i][tr[i]->emitl[x]];
+	if(tr[i]->emitr[x] != -1) tr[i]->emitr[x] = map[i][tr[i]->emitr[x]];
+      }
+    }
+    if(ret_sq != NULL) { 
+      sq[i] = esl_sq_CreateFrom(msa->sqname[i], uaseq[i], NULL, NULL, NULL);
+      esl_sq_Digitize(cm->abc, sq[i]);
+    }
+  }
+
+  if(ret_tr != NULL) *ret_tr = tr;
+  if(ret_sq != NULL) *ret_sq = sq;
+
+  /* Clean up and exit. */
+  esl_Free2D((void **) map,   msa->nseq);
+  esl_Free2D((void **) uaseq, msa->nseq);
+  esl_Free2D((void **) aseq,  msa->nseq);
+
+  return eslOK;
+
+ ERROR:
+  if(map != NULL )  esl_Free2D((void **) map,   msa->nseq);
+  if(uaseq != NULL) esl_Free2D((void **) uaseq, msa->nseq);
+  if(aseq != NULL)  esl_Free2D((void **) aseq,  msa->nseq);
+  return status;
+}

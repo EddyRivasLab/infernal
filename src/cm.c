@@ -2460,3 +2460,24 @@ cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avg_hit_len)
 
   return eslOK;
 }
+
+/* Function: CompareCMGuideTrees()
+ * EPN, Tue Mar  6 08:32:12 2007
+ *
+ * Purpose:  Given two CMs, cm1 and cm2, compare them, returning TRUE 
+ *           iff they have the same guide tree (same node architecture).
+ *
+ * Args:     cm1          - covariance model number 1
+ *           cm2          - covariance model number 2
+ * 
+ * Returns:  TRUE if CMs have same guide tree, FALSE otherwise
+ */
+int 
+CompareCMGuideTrees(CM_t *cm1, CM_t *cm2)
+{
+  int          nd; 
+  if(cm1->nodes != cm2->nodes) return FALSE;
+  for(nd = 0; nd < cm1->nodes; nd++)
+    if(cm1->ndtype[nd] != cm2->ndtype[nd]) return FALSE;
+  return TRUE;
+}
