@@ -753,7 +753,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
   /* determine scores of implicit parsetrees of input MSA seqs to initial CM */
   convert_parsetrees_to_unaln_coords(input_msa_tr, input_msa);
   for(i = 0; i < nseq; i++) { 
-    if((status = ParsetreeScore(init_cm, errbuf, input_msa_tr[i], sq[i]->dsq, FALSE, &(sc[i]), NULL)) != eslOK) return status;
+    if((status = ParsetreeScore(init_cm, NULL, errbuf, input_msa_tr[i], sq[i]->dsq, FALSE, &(sc[i]), NULL, NULL, NULL, NULL)) != eslOK) return status;
   }
   oldscore = esl_vec_FSum(sc, nseq);
 
@@ -921,7 +921,7 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
     for (i = 0; i < msa->nseq; i++) { 
       fprintf(cfg->tracefp, "> %s\n", msa->sqname[i]);
 
-      if((status = ParsetreeScore(cm, errbuf, tr[i], msa->ax[i], FALSE, &sc, &struct_sc)) != eslOK) return status;
+      if((status = ParsetreeScore(cm, NULL, errbuf, tr[i], msa->ax[i], FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
       fprintf(cfg->tracefp, "  %16s %.2f bits\n", "SCORE:", sc);
       fprintf(cfg->tracefp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
       ParsetreeDump(cfg->tracefp, tr[i], cm, msa->ax[i], NULL, NULL); /* NULLs are dmin, dmax */

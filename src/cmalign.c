@@ -1032,7 +1032,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 		}
 	      else
 		{
-		  if((status = ParsetreeScore(cm, errbuf, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE, &sc, &struct_sc)) != eslOK) return status;
+		  if((status = ParsetreeScore(cm, NULL, errbuf, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
 		  fprintf(cfg->tracefp, "  %16s %.2f bits\n", "SCORE:", sc);
 		  fprintf(cfg->tracefp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
 		  ParsetreeDump(cfg->tracefp, seqs_to_aln->tr[i], cm, seqs_to_aln->sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
@@ -1920,7 +1920,7 @@ serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
   for(m = 1; m < cfg->ncm; m++) { 
     if((status = Alignment2Parsetrees(omsa, cmlist[m], cfg->mali_mtr[m], errbuf, &tmp_sq, &tmp_tr)) != eslOK) cm_Fail(errbuf);
     for(i = 0; i < omsa->nseq; i++) { 
-      if((status = ParsetreeScore(cmlist[m], errbuf, tmp_tr[i], tmp_sq[i]->dsq, FALSE, &sc, &ssc)) != eslOK) cm_Fail(errbuf);
+      if((status = ParsetreeScore(cmlist[m], NULL, errbuf, tmp_tr[i], tmp_sq[i]->dsq, FALSE, &sc, &ssc, NULL, NULL, NULL)) != eslOK) cm_Fail(errbuf);
 	  printf("CM: %d seq: %d sc: %8.3f ssc: %8.3f\n", m, i, sc, ssc);
     }
     printf("\n");

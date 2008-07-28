@@ -336,8 +336,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   float         avgsc;      	/* avg score over all seqs */
   float         tmpsc;          /* temporary score */
   float         struct_sc;      /* structure component of the score */
+  float         primary_sc;     /* primary sequence component of the score */
   float         null3_correction; /* correction in bits due to NULL3 */
   int           namewidth;      /* for dynamic width of name strings for nice tab delimited formatting */
+  CMEmitMap_t  *emap;           /* for passing to ParsetreeScore() to get spos epos */
   char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
 
   /* variables related to CM Plan 9 HMMs */
@@ -353,7 +355,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   int                spos_state;   /* HMM state type for curr spos 0=match or 1=insert */
   int                epos;         /* HMM node most likely to have emitted posn L of target seq */
   int                epos_state;   /* HMM state type for curr epos 0=match or  1=insert */
-
+  int                cur_spos, cur_epos;
+  
   CMSubMap_t        *submap;
   CM_t              *sub_cm;       /* sub covariance model                      */
   CP9_t             *sub_hmm;      /* constructed CP9 HMM */
@@ -554,10 +557,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     if(cm->align_opts & CM_ALIGN_OPTACC) { 
       if(have_parsetrees) { 
 	fprintf(ofp, "#\n");
-	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %8s  %11s\n", "",         namewidth, "",                       "",       "    bit scores    ",   "",         "");
-	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %8s  %11s\n", "",         namewidth, "",                       "",       "------------------",   "",         "");
-	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len",  "total",   "struct",   "avg prob", "elapsed");
-	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "--------", "-----------");
+	fprintf(ofp, "# %7s  %-*s  %5s  %5s  %5s  %48s  %8s  %11s\n", "",         namewidth, "", "", "",               "",       "                   bit scores                   ",   "",         "");
+	fprintf(ofp, "# %7s  %-*s  %5s  %5s  %5s  %48s  %8s  %11s\n", "",         namewidth, "", "", "",               "",       "------------------------------------------------",   "",         "");
+	fprintf(ofp, "# %7s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len", "spos",  "epos",  "total",    "primary",  "struct",   "trans",    "null3",    "avg prob", "elapsed");
+	fprintf(ofp, "# %7s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "-----", "-----", "--------", "--------", "--------", "--------", "--------", "--------", "-----------");
       }
       else { 
 	fprintf(ofp, "#\n");
@@ -568,10 +571,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     else { 
       if(have_parsetrees) { 
 	fprintf(ofp, "#\n");
-	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %11s\n", "",         namewidth, "",                  "",       "    bit scores    ",   "");
-	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %11s\n", "",         namewidth, "",                  "",       "------------------",   "");
-	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %11s\n",  "seq idx", namewidth,  "seq name",  "len", "total",    "struct",   "elapsed");
-	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "-----------");
+	fprintf(ofp, "# %7s  %-*s  %5s  %5s  %5s  %48s  %11s\n", "",         namewidth, "", "", "",               "",       "                   bit scores                   ",   "");
+	fprintf(ofp, "# %7s  %-*s  %5s  %5s  %5s  %48s  %11s\n", "",         namewidth, "", "", "",               "",       "------------------------------------------------",   "");
+	fprintf(ofp, "# %7s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len", "spos",  "epos",  "total",    "primary",  "struct",   "trans",    "null3",    "elapsed");
+	fprintf(ofp, "# %7s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "-----", "-----", "--------", "--------", "--------", "--------", "--------", "-----------");
       }
       else { 
 	fprintf(ofp, "#\n");
@@ -713,8 +716,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     }
 
     if(sq_mode && !silent_mode) { 
-      if(have_parsetrees) fprintf(ofp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
-      else                fprintf(ofp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      fprintf(ofp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
     }
 
     /* beginning of large if() else if() else if() ... statement */
@@ -814,7 +816,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     struct_sc = IMPOSSIBLE;
     if(have_parsetrees) { 
       if(*cur_tr == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments() should have parsetrees, but don't (coding error).");
-      if((status = ParsetreeScore(cm, errbuf, *cur_tr, cur_dsq, FALSE, &tmpsc, &struct_sc)) != eslOK) return status;
+      emap = CreateEmitMap(cm); /* TEMPORARY!, we don't want to build this separately for each seq, but with sub CMs I'm not sure how to accomplish that */
+      if((status = ParsetreeScore(cm, emap, errbuf, *cur_tr, cur_dsq, FALSE, &tmpsc, &struct_sc, &primary_sc, &cur_spos, &cur_epos)) != eslOK) return status;
+      if(do_sub) { cur_spos += spos; cur_epos += spos; }
+      FreeEmitMap(emap);
     }
     /* determine NULL3 score correction, which is independent of the parsetree */
     null3_correction = 0.;
@@ -822,9 +827,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
     if(sq_mode && !silent_mode) { 
       if(have_parsetrees) { 
-	if(do_null3)   struct_sc -= ((float) ParsetreeCountMPEmissions(cm, *cur_tr) / (float) L) * null3_correction; /* adjust struct_sc for NULL3 correction, this is inexact */
-	if(do_optacc)  fprintf(ofp, "  %8.2f  %8.2f  %8.3f  ", ins_sc - null3_correction, struct_sc, sc);
-	else           fprintf(ofp, "  %8.2f  %8.2f  ", sc - null3_correction, struct_sc);
+	if(do_optacc)  fprintf(ofp, "  %5d  %5d  %8.2f  %8.2f  %8.2f  %8.2f  %8.2f  %8.3f  ", cur_spos, cur_epos, ins_sc - null3_correction, primary_sc, struct_sc, (ins_sc - primary_sc - struct_sc), -1. * null3_correction, sc);
+	else           fprintf(ofp, "  %5d  %5d  %8.2f  %8.2f  %8.2f  %8.2f  %8.2f  ",        cur_spos, cur_epos,     sc - null3_correction, primary_sc, struct_sc, (    sc - primary_sc - struct_sc), -1. * null3_correction);
       }	
       else { 
 	if(do_optacc)  fprintf(ofp, "  %8.2f  %8.3f  ", ins_sc - null3_correction, sc);
@@ -858,16 +862,17 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     if((cm->align_opts & CM_ALIGN_CHECKPARSESC) && (!(cm->flags & CM_IS_SUB))) { 
       if(do_optacc) 
 	ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), cm->align_opts CM_ALIGN_CHECKPARSESC, is on, but incompatible with another enabled option: CM_ALIGN_OPTACC.\n");
-      if((status = ParsetreeScore(cm, errbuf, tr[i], cur_dsq, FALSE, &tmpsc, NULL)) != eslOK) return status;
+      if((status = ParsetreeScore(cm, NULL, errbuf, tr[i], cur_dsq, FALSE, &tmpsc, NULL, NULL, NULL, NULL)) != eslOK) return status;
       if (fabs(sc - tmpsc) >= 0.03)
 	ESL_FAIL(eslFAIL, errbuf, "DispatchAlignments(), seq: %d alignment score %.3f differs from its parse tree's score: %.3f", i, sc, tmpsc);
     }
 
     /* If requested, or if debug level high enough, print out the parse tree */
     if((cm->align_opts & CM_ALIGN_PRINTTREES) || (debug_level > 2)) { 
-      if((status = ParsetreeScore(cm, errbuf, tr[i], cur_dsq, FALSE, &tmpsc, &struct_sc)) != eslOK) return status;
+      if((status = ParsetreeScore(cm, NULL, errbuf, tr[i], cur_dsq, FALSE, &tmpsc, &struct_sc, &primary_sc, NULL, NULL)) != eslOK) return status;
       fprintf(ofp, "  %16s %.2f bits\n", "SCORE:", tmpsc);
       fprintf(ofp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
+      fprintf(ofp, "  %16s %.2f bits\n", "PRIMARY   SCORE:", primary_sc);
       ParsetreeDump(stdout, tr[i], cm, cur_dsq, NULL, NULL);
       fprintf(ofp, "//\n");
     }
