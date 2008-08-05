@@ -428,9 +428,6 @@ PrintParsetree(FILE *fp, Parsetree_t *tr)
  *          tr    - parsetree to examine.
  *          cm    - model that was aligned to dsq to generate the parsetree
  *          dsq   - digitized sequence that was aligned to cm to generate the parsetree
- *          gamma - cumulative subsequence length probability distributions
- *                  used to generate the bands; from BandDistribution(); [0..v..M-1][0..W]
- *          W     - maximum window length W (gamma distributions range up to this)        
  *          dmin  - minimum subseq length for each state; [0..v..M-1] NULL for non-banded output
  *          dmax  - maximum subseq length for each state; [0..v..M-1] NULL for non-banded output
  *
@@ -637,8 +634,7 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
 }
 
 
-/*
- * Function : Parsetrees2Alignment()
+/* Function : Parsetrees2Alignment()
  *
  * Purpose:   Creates a MSA from a set of parsetrees and a CM.
  *

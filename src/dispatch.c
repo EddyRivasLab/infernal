@@ -268,7 +268,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 }  
 
 /* 
- * Function: DispatchAlignments
+ * Function: DispatchAlignments()
  * Incept:   EPN, Thu Nov 15 11:35:23 2007
  *
  * Purpose:  Given a CM and sequences, do preliminaries, call the correct 
@@ -286,7 +286,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
  *          dsq_mode: seqs_to_aln == NULL; dsq != NULL, results != NULL.
  *                    align the search results (hits) in results, which
  *                    are all subsequences of a single sequence (dsq).
- *                    parstrees are stored in seacrh_results.
+ *                    parstrees are stored in search_results.
  *
  * Args:     CM             - the covariance model
  *           errbuf         - char buffer for reporting errors

@@ -190,7 +190,7 @@ static int    print_column_headings(const ESL_GETOPTS *go, const struct cfg_s *c
 static void   print_refine_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
 static int    print_countvectors(const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int    get_namewidth(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
-static void   dump_basepair_info(FILE *fp, CM_t *cm);
+static void   dump_emission_info(FILE *fp, CM_t *cm);
 
 int
 main(int argc, char **argv)
@@ -914,7 +914,7 @@ output_result(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int 
   /* save tree description of guide tree topology, if nec */
   if(cfg->gfp    != NULL) MasterTraceDisplay(cfg->gfp, mtr, cm);
   /* save base pair info, if nec */
-  if(cfg->escfp   != NULL) dump_basepair_info(cfg->escfp, cm);
+  if(cfg->escfp   != NULL) dump_emission_info(cfg->escfp, cm);
 
   /* save parsetrees if nec */
   if(cfg->tracefp != NULL) { 
@@ -1034,6 +1034,7 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
     esl_abc_Textize(msa->abc, msa->ax[idx], msa->alen, aseq);
     tr[idx] = Transmogrify(cm, mtr, msa->ax[idx], aseq, msa->alen);
     ParsetreeCount(cm, tr[idx], msa->ax[idx], msa->wgt[idx]);
+    /*ParsetreeDump(stdout, tr[idx], cm, msa->ax[idx], NULL, NULL); */
     free(aseq);
   }
   cm->nseq     = msa->nseq;
@@ -2196,15 +2197,15 @@ get_namewidth(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
   
 
-/* Function: dump_basepair_info()
+/* Function: dump_emission_info()
  * Date:     EPN, Wed Jul  9 14:47:51 2008
  *
- * Purpose:  Dump information on the base pairs in the model.
+ * Purpose:  Dump information on the emissions (singlets and base pairs) in the model.
  *
  * Returns:  void
  */
 static void
-dump_basepair_info(FILE *fp, CM_t *cm)
+dump_emission_info(FILE *fp, CM_t *cm)
 {
   int nd, v;
   int i = 0;
@@ -2248,6 +2249,7 @@ dump_basepair_info(FILE *fp, CM_t *cm)
   fprintf(fp, "# %5s  %3s  %5s  %5s  %5s  %1s  %7s\n", "-----", "---",   "-----", "-----", "-----", "-",  "-------");
   fprintf(fp, "# total  %3s  %5s  %5s  %5s  %1s  %7.3f\n", "-",   "-",     "-",    "-",   "-",  tsc);
   fprintf(fp, "#\n");
+  fprintf(fp, "//\n");
   fprintf(fp, "#\n");
 
   /* base pair section */
