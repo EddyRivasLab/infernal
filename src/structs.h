@@ -412,7 +412,7 @@ typedef struct cp9map_s {
 #define CMH_LOCAL_BEGIN         (1<<6)  /* Begin distribution is active (local ali) */
 #define CMH_LOCAL_END           (1<<7)  /* End distribution is active (local ali)   */
 #define CMH_EXPTAIL_STATS       (1<<8)  /* exponential tail stats set               */
-#define CMH_FILTER_STATS        (1<<9)  /* 'best' filter threshold stats are set    */
+#define CMH_FILTER_STATS        (1<<9)  /* filter threshold stats are set           */
 #define CMH_QDB                 (1<<10) /* query-dependent bands, QDBs valid        */
 #define CMH_CP9                 (1<<11) /* CP9 HMM is valid in cm->cp9              */
 #define CMH_CP9STATS            (1<<12) /* CP9 HMM has exp tail stats               */

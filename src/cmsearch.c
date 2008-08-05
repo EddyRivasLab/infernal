@@ -53,7 +53,7 @@ static ESL_OPTIONS options[] = {
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "configure CM/HMM for glocal alignment [default: local]", 1 },
   { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,   "--aln-hbanded","--noalign", "append posterior probabilities to hit alignments", 1 },
   { "-x",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "annotate non-compensatory bps in output alignments with 'x'", 1 },
-  { "-Z",        eslARG_REAL,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "set Z (database size in *Mb*) to <x> for E-value calculations", 1},
+  { "-Z",        eslARG_REAL,   NULL, NULL, NULL,      NULL,      NULL,        NULL, "set Z (database size in *Mb*) to <x> for E-value calculations", 1},
   { "--toponly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the top strand", 1 },
   { "--bottomonly", eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the bottom strand", 1 },
   { "--forecast",eslARG_INT,    NULL,  NULL, NULL,      NULL,      NULL,        NULL, "don't do search, forecast running time with <n> processors", 1 },
