@@ -27,6 +27,8 @@
 #include <esl_vectorops.h>
 #include <esl_wuss.h>
 
+#include "hmmer.h"
+
 #include "funcs.h"		/* function declarations                */
 #include "structs.h"		/* data structures, macros, #define's   */
 
@@ -281,6 +283,8 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int      status;
   char     errbuf[cmERRBUFSIZE];
   CM_t    *cm = NULL;
+  P7_HMM    *hmm = NULL;        /* RETURN: new hmm                     */
+  int k;
 
   if ((status = init_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   if ((status = print_run_info (go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
@@ -292,6 +296,16 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
     cfg->ncm++;
     if((status = initialize_cm(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
+
+    if ((hmm    = p7_hmm_Create(cm->clen, cm->abc)) == NULL)  { cm_Fail("Error creating p7 hmm"); }
+    if ((status = p7_hmm_Zero(hmm))           != eslOK) cm_Fail("Error zeroing p7 hmm");
+    for (k = 1; k <= cm->clen; k++) {
+      esl_vec_FCopy(cm->cp9->mat[k], cm->abc->K, hmm->mat[k]);
+    }
+    p7_hmm_SetName(hmm, cm->name);
+    p7_hmm_SetAccession(hmm, cm->acc);
+    p7_hmm_SetDescription(hmm, cm->desc);
+
 
     /* Pick 1 of 4 exclusive output options. Output is handled within each function. */
     if     (esl_opt_GetBoolean(go, "-u")) { 
@@ -307,6 +321,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = build_cp9     (go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
     }
     FreeCM(cm);
+    p7_hmm_Destroy(hmm);
   }
   if(status != eslEOF) cm_Fail(errbuf);
   return;
@@ -329,7 +344,6 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
     cm->config_opts |= CM_CONFIG_HMMEL;
   }
 
-  /* BEGIN (POTENTIALLY) TEMPORARY BLOCK */
   /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */
   cm->pbegin = esl_opt_GetReal(go, "--pbegin");
   cm->pend   = esl_opt_GetReal(go, "--pend");
@@ -356,7 +370,6 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
     }
     cm->pend = nexits * esl_opt_GetReal(go, "--pfend");
   }
-  /* END (POTENTIALLY) TEMPORARY BLOCK */
   
   ConfigCM(cm, FALSE); /* FALSE says don't bother calc'ing W, we won't need it */
 

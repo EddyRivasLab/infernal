@@ -21,6 +21,8 @@
 #include "esl_random.h"
 #include "esl_sqio.h"
 
+#include "hmmer.h"
+
 #define cmERRBUFSIZE 1024
 
 /* various default parameters for CMs and CP9 HMMs */ 
@@ -1414,6 +1416,9 @@ typedef struct cm_s {
 
   /* statistics */
   CMStats_t *stats;      /* holds exponential tail stats and HMM filtering thresholds */
+
+  /* p7 hmm, added 08.05.08 */
+  P7_HMM *p7;            /* the p7 HMM, only match emission scores are relevant/valid */
 
   const  ESL_ALPHABET *abc;     /* ptr to alphabet info (cm->abc->K is alphabet size)*/
 } CM_t;

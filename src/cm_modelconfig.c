@@ -19,6 +19,8 @@
 #include "esl_stack.h"
 #include "esl_vectorops.h"
 
+#include "hmmer.h"
+
 #include "funcs.h"
 #include "structs.h"
 
@@ -42,6 +44,7 @@
 int 
 ConfigCM(CM_t *cm, int always_calc_W)
 {
+  int status;
   float swentry, swexit;
   
   /* Build the CP9 HMM and associated data */
@@ -66,8 +69,13 @@ ConfigCM(CM_t *cm, int always_calc_W)
   cm->cp9_bmx = CreateCP9Matrix(1, cm->cp9->M);
   cm->flags |= CMH_CP9; /* raise the CP9 flag */
   
-  /* Possibly configure the CM for local alignment. */
+  /* build the p7 from the cp9, using ONLY the match emission distributions, they're 
+   * all we'll use anyway
+   */
+  if(cm->p7 != NULL) p7_hmm_Destroy(cm->p7);
+  if((status = BuildP7HMM_MatchEmitsOnly(cm, &(cm->p7))) != eslOK) cm_Fail("Couldn't build a p7 HMM from the CM\n");
 
+  /* Possibly configure the CM for local alignment. */
   if (cm->config_opts & CM_CONFIG_LOCAL)
     { 
       ConfigLocal(cm, cm->pbegin, cm->pend);

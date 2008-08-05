@@ -6,6 +6,8 @@
 #include "esl_sqio.h"
 #include "esl_msa.h"
 
+#include "hmmer.h"
+
 #include "structs.h"
 
 #ifdef HAVE_MPI
@@ -475,6 +477,9 @@ extern void         cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_
 extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level);
 extern void         cp9_IFillPostSums(CP9_MX *post, CP9Bands_t *cp9, int i0, int j0);
 extern double       DScore2Prob(int sc, float null);
+
+/* from p7_modelmaker.c */
+extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7);
 
 /* from hybridsearch.c */
 extern int                cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanInfo_t *hsi, int i0, int j0, int W, 

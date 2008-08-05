@@ -33,9 +33,9 @@ MPILIBS   = @MPILIBS@
 
 # Where the build arena is (module .h and .o files)
 #
-MYLIBS   = -leasel 
-MYLIBDIR = -L../easel 
-MYINCDIR = -I../easel 
+MYLIBS   = -leasel -lhmmer
+MYLIBDIR = -L../easel -L../hmmer/src/
+MYINCDIR = -I../easel -I../hmmer/src/
 
 PROGS = cmalign cmbuild cmcalibrate cmemit cmscore cmsearch cmstat
 
@@ -56,6 +56,7 @@ OBJS  = cm.o\
 	cp9_modelmaker.o\
 	cp9_mx.o\
 	cp9_trace.o\
+	p7_modelmaker.o\
 	alphabet.o\
 	dispatch.o\
 	display.o\
