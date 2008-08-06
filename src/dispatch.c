@@ -406,14 +406,17 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   int do_hmmsafe   = FALSE;   /* TRUE to realign seqs with HMM banded parses < 0. bits (only works if !do_optacc && !do_post && do_hbanded)*/
 
   /* TEMP */
+  P7_GMX          *gx      = NULL;     /* DP matrix                               */
   P7_OMX          *ox      = NULL;     /* optimized DP matrix                     */
   P7_BG *bg;
   ox  = p7_omx_Create(200, 0, 0);       /* ox is a one-row matrix for M=200 */
   bg = p7_bg_Create(cm->abc);
+  gx = p7_gmx_Create(200, 400);	/* initial alloc is for M=200, L=400; will grow as needed */
   p7_ProfileConfig(cm->p7, bg, cm->p7_gm, 100, p7_LOCAL); /* 100 is a dummy length for now; MSVFilter requires local mode */
   p7_oprofile_Convert(cm->p7_gm, cm->p7_om); /* <om> is now p7_LOCAL, multihit */
   p7_omx_GrowTo(ox, cm->p7_om->M, 0, 0); /* expand the one-row omx if needed */
-  float tmp_sc;
+  /*p7_omx_SetDumpMode(stdout, ox, TRUE);*/
+  float usc, nullsc;
   /* TEMP */
 
   /* Contract check */
@@ -606,12 +609,18 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
     esl_stopwatch_Start(watch);    
     p7_oprofile_ReconfigLength(cm->p7_om, seqs_to_aln->sq[i]->n);
-    for(z = 0; z < 5000; z++) { 
-      p7_MSVFilter(seqs_to_aln->sq[i]->dsq, seqs_to_aln->sq[i]->n, cm->p7_om, ox, &tmp_sc);
+    p7_gmx_GrowTo(gx, cm->p7->M, seqs_to_aln->sq[i]->n); /* realloc DP matrices as needed */
+    gx->M = cm->p7->M;
+    gx->L = seqs_to_aln->sq[i]->n;
+    /* Null model score for this sequence.  */
+    p7_bg_SetLength(bg, seqs_to_aln->sq[i]->n);
+    p7_bg_NullOne(bg, seqs_to_aln->sq[i]->dsq, seqs_to_aln->sq[i]->n, &nullsc);
+    for(z = 0; z < 100; z++) { 
+      my_p7_MSVFilter(seqs_to_aln->sq[i]->dsq, seqs_to_aln->sq[i]->n, cm->p7_om, ox, gx, &usc);
     }
     esl_stopwatch_Stop(watch); 
     FormatTimeString(time_buf, watch->user, TRUE);
-    fprintf(ofp, "MSV  %8.2f  %11s\n", (tmp_sc / eslCONST_LOG2), time_buf);
+    fprintf(ofp, "MSV  %8.2f  %11s\n", ((usc -nullsc) / eslCONST_LOG2), time_buf);
 
 
     if(sq_mode && !silent_mode) esl_stopwatch_Start(watch);

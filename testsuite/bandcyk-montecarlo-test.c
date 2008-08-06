@@ -30,6 +30,8 @@
 #include "esl_stats.h"
 #include "esl_vectorops.h"
 
+#include "hmmer.h"
+
 #include "funcs.h"		/* function declarations                */
 #include "structs.h"		/* data structures, macros, #define's   */
 

@@ -19,12 +19,12 @@ CPPFLAGS = @CPPFLAGS@
 LDFLAGS  = @LDFLAGS@
 DEFS     = @DEFS@
 LIBS     = @LIBS@ -lm
-MYLIBS   = -linfernal -leasel
+MYLIBS   = -linfernal -leasel -lhmmer
 
 # Where the build arenas are
 #
-MYLIBDIR = -L../easel/ -L../src
-MYINCDIR = -I../easel/ -I../src 
+MYLIBDIR = -L../easel/ -L../hmmer/src -L../src
+MYINCDIR = -I../easel/ -I../hmmer/src -I../src 
 
 TESTPROGS = \
 	bandcyk-montecarlo-test\

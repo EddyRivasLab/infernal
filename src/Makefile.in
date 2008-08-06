@@ -58,7 +58,7 @@ OBJS  = cm.o\
 	cp9_mx.o\
 	cp9_trace.o\
 	p7_modelmaker.o\
-	msvfilter.o\
+	my_p7_msvfilter.o\
 	alphabet.o\
 	dispatch.o\
 	display.o\
