@@ -69,11 +69,13 @@ ConfigCM(CM_t *cm, int always_calc_W)
   cm->cp9_bmx = CreateCP9Matrix(1, cm->cp9->M);
   cm->flags |= CMH_CP9; /* raise the CP9 flag */
   
-  /* build the p7 from the cp9, using ONLY the match emission distributions, they're 
+  /* build the p7 and profiles from the cp9, using ONLY the match emission distributions, they're 
    * all we'll use anyway
    */
-  if(cm->p7 != NULL) p7_hmm_Destroy(cm->p7);
-  if((status = BuildP7HMM_MatchEmitsOnly(cm, &(cm->p7))) != eslOK) cm_Fail("Couldn't build a p7 HMM from the CM\n");
+  if(cm->p7    != NULL) p7_hmm_Destroy(cm->p7);
+  if(cm->p7_gm != NULL) p7_profile_Destroy(cm->p7_gm);
+  if(cm->p7_om != NULL) p7_oprofile_Destroy(cm->p7_om);
+  if((status = BuildP7HMM_MatchEmitsOnly(cm, &(cm->p7), &(cm->p7_gm), &(cm->p7_om))) != eslOK) cm_Fail("Couldn't build a p7 HMM from the CM\n");
 
   /* Possibly configure the CM for local alignment. */
   if (cm->config_opts & CM_CONFIG_LOCAL)

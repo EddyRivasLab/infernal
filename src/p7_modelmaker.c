@@ -35,6 +35,8 @@
  * 
  * Args:     cm        - the cm
  *           ret_p7    - RETURN: new p7 model 
+ *           ret_gm    - RETURN: new p7 generic profile
+ *           ret_om    - RETURN: new p7 optimized profile
  *           
  * Return:   eslOK   on success
  *
@@ -42,10 +44,12 @@
  *           eslEMEM on memory error
  */
 int
-BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7)
+BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm, P7_OPROFILE **ret_om)
 {
   int        status;
-  P7_HMM    *hmm = NULL;        /* RETURN: new hmm                     */
+  P7_HMM     *hmm = NULL;        /* RETURN: new hmm */
+  P7_PROFILE  *gm = NULL;        /* RETURN: new generic profile */
+  P7_OPROFILE *om = NULL;        /* RETURN: new optimized profile */
   int        k;
 
   if(cm->cp9 == NULL)         return eslEINCOMPAT; 
@@ -86,7 +90,15 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7)
   hmm->eff_nseq = cm->eff_nseq;
   hmm->nseq     = cm->nseq;
   hmm->checksum = 0;
+
+  /* make the profiles */
+  gm = p7_profile_Create (hmm->M, hmm->abc);
+  om = p7_oprofile_Create(hmm->M, hmm->abc);
+
   *ret_p7 = hmm;
+  *ret_gm = gm;
+  *ret_om = om;
+
   return eslOK;
 
  ERROR: 

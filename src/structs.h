@@ -1418,9 +1418,11 @@ typedef struct cm_s {
   CMStats_t *stats;      /* holds exponential tail stats and HMM filtering thresholds */
 
   /* p7 hmm, added 08.05.08 */
-  P7_HMM *p7;            /* the p7 HMM, only match emission scores are relevant/valid */
+  P7_HMM      *p7;       /* the query p7 HMM, only match emission scores are relevant/valid */
+  P7_PROFILE  *p7_gm;    /* profile HMM */
+  P7_OPROFILE *p7_om;    /* optimized profile HMM */
 
-  const  ESL_ALPHABET *abc;     /* ptr to alphabet info (cm->abc->K is alphabet size)*/
+  const  ESL_ALPHABET *abc; /* ptr to alphabet info (cm->abc->K is alphabet size)*/
 } CM_t;
 
 #endif /*STRUCTSH_INCLUDED*/

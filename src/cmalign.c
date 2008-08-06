@@ -9,6 +9,7 @@
  *****************************************************************
  */
 #include "esl_config.h"
+#include "p7_config.h"
 #include "config.h"
 
 #include <stdio.h>
@@ -29,12 +30,16 @@
 #include "esl_random.h"		
 #include "esl_sq.h"		
 #include "esl_sqio.h"
+#include "esl_sse.h"
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 #include "esl_wuss.h"
 
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
+
+#include "hmmer.h"
+#include "impl_sse.h"
 
 #define ALGOPTS  "--cyk,--optacc,--viterbi,--sample" /* Exclusive choice for algorithm */
 #define OUTALPHOPTS "--rna,--dna"                    /* Exclusive choice for output alphabet */

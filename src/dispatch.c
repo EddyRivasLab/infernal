@@ -11,6 +11,7 @@
  */
 
 #include "esl_config.h"
+#include "p7_config.h"
 #include "config.h"
 
 #include <stdio.h>
@@ -22,7 +23,11 @@
 
 #include "easel.h"
 #include "esl_msa.h"         
+#include "esl_sse.h"         
 #include "esl_stopwatch.h"   
+
+#include "hmmer.h"
+#include "impl_sse.h"
 
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
@@ -400,6 +405,17 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   int do_optacc    = FALSE;   /* TRUE to find optimally accurate alignment instead of CYK */
   int do_hmmsafe   = FALSE;   /* TRUE to realign seqs with HMM banded parses < 0. bits (only works if !do_optacc && !do_post && do_hbanded)*/
 
+  /* TEMP */
+  P7_OMX          *ox      = NULL;     /* optimized DP matrix                     */
+  P7_BG *bg;
+  ox  = p7_omx_Create(200, 0, 0);       /* ox is a one-row matrix for M=200 */
+  bg = p7_bg_Create(cm->abc);
+  p7_ProfileConfig(cm->p7, bg, cm->p7_gm, 100, p7_LOCAL); /* 100 is a dummy length for now; MSVFilter requires local mode */
+  p7_oprofile_Convert(cm->p7_gm, cm->p7_om); /* <om> is now p7_LOCAL, multihit */
+  p7_omx_GrowTo(ox, cm->p7_om->M, 0, 0); /* expand the one-row omx if needed */
+  float tmp_sc;
+  /* TEMP */
+
   /* Contract check */
   if(!(cm->flags & CMH_BITS))                            ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), CMH_BITS flag down.\n");
   if(r == NULL && (cm->align_opts & CM_ALIGN_SAMPLE))    ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), no source of randomness, but CM_ALIGN_SAMPLE alignment option on.\n");
@@ -585,7 +601,19 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   /*****************************************************************
    *  Collect parse trees for each sequence
    *****************************************************************/
+  int z;
   for (i = 0; i < nalign; i++) {
+
+    esl_stopwatch_Start(watch);    
+    p7_oprofile_ReconfigLength(cm->p7_om, seqs_to_aln->sq[i]->n);
+    for(z = 0; z < 5000; z++) { 
+      p7_MSVFilter(seqs_to_aln->sq[i]->dsq, seqs_to_aln->sq[i]->n, cm->p7_om, ox, &tmp_sc);
+    }
+    esl_stopwatch_Stop(watch); 
+    FormatTimeString(time_buf, watch->user, TRUE);
+    fprintf(ofp, "MSV  %8.2f  %11s\n", (tmp_sc / eslCONST_LOG2), time_buf);
+
+
     if(sq_mode && !silent_mode) esl_stopwatch_Start(watch);
     if (sq_mode) { 
       cur_dsq = seqs_to_aln->sq[i]->dsq;

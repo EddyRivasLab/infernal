@@ -12,6 +12,7 @@ SHELL  = /bin/sh
 #
 CC     = @CC@
 CFLAGS = @CFLAGS@
+SIMDFLAGS= @SIMD_CFLAGS@
 
 ## other defined flags. 
 #  DEFS contains stuff that autoconf decides on. 
@@ -34,8 +35,8 @@ MPILIBS   = @MPILIBS@
 # Where the build arena is (module .h and .o files)
 #
 MYLIBS   = -leasel -lhmmer
-MYLIBDIR = -L../easel -L../hmmer/src/
-MYINCDIR = -I../easel -I../hmmer/src/
+MYLIBDIR = -L../easel -L../hmmer/src/ 
+MYINCDIR = -I../easel -I../hmmer/src/ 
 
 PROGS = cmalign cmbuild cmcalibrate cmemit cmscore cmsearch cmstat
 
@@ -57,6 +58,7 @@ OBJS  = cm.o\
 	cp9_mx.o\
 	cp9_trace.o\
 	p7_modelmaker.o\
+	msvfilter.o\
 	alphabet.o\
 	dispatch.o\
 	display.o\
@@ -77,7 +79,7 @@ HDRS  = funcs.h\
 	structs.h
 
 .c.o: 
-	$(CC) $(CFLAGS) $(DEFS) $(MYINCDIR) -c $<
+	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) -c $<
 
 #################################################################
 ## Targets defining how to make INFERNAL executables.
@@ -85,7 +87,7 @@ HDRS  = funcs.h\
 all: 	$(PROGS) 
 
 $(PROGS): @EXEC_DEPENDENCY@ $(OBJS) ${HDRS}
-	$(CC) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS) $(MPILIBS)
+	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS) $(MPILIBS)
 
 
 #################################################################

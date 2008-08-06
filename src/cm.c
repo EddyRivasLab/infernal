@@ -132,6 +132,8 @@ CreateCMShell(void)
   cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
   cm->p7           = NULL;          
+  cm->p7_gm        = NULL;          
+  cm->p7_om        = NULL;          
 
   cm->ga       = 0.;  /* only valid if cm->flags & CMH_GA */
   cm->tc       = 0.;  /* only valid if cm->flags & CMH_TC */
@@ -233,6 +235,8 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   cm->cp9b          = NULL;
   cm->cp9map        = NULL;
   cm->p7            = NULL;
+  cm->p7_gm         = NULL;
+  cm->p7_om         = NULL;
 
   /* create HMM banded matrix, it only depends (at first) on num states, M.
    * it is initially empty, but expanded to fit target sequences as needed */
@@ -372,6 +376,8 @@ FreeCM(CM_t *cm)
   if(cm->cp9_bmx    != NULL) FreeCP9Matrix(cm->cp9_bmx);
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
   if(cm->p7         != NULL) p7_hmm_Destroy(cm->p7);
+  if(cm->p7_gm      != NULL) p7_profile_Destroy(cm->p7_gm);
+  if(cm->p7_om      != NULL) p7_oprofile_Destroy(cm->p7_om);
   free(cm);
 }
 
@@ -2228,7 +2234,7 @@ CMStateid(char st)
 
 
 /*****************************************************************
- * Convenience routines for setting fields in an CM. (from p7_cm.c)
+ * Convenience routines for setting fields in an CM. (from p7_hmm.c)
  *****************************************************************/ 
 /* Function: cm_SetName()
  * Incept:   EPN, Fri Jul 27 16:49:49 2007 [Janelia]
