@@ -409,11 +409,21 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   P7_GMX          *gx      = NULL;     /* DP matrix                               */
   P7_OMX          *ox      = NULL;     /* optimized DP matrix                     */
   P7_BG *bg;
+  P7_TRACE *p7_tr;
+  P7_ALIDISPLAY  *ad      = NULL;
+  CMEmitMap_t *emap; 
+  int ipos;
+
+  int *k2i, *i2k, *cm_i2k;
+  int npins, ncorrect;
+  npins = ncorrect = 0;
   ox  = p7_omx_Create(200, 0, 0);       /* ox is a one-row matrix for M=200 */
   bg = p7_bg_Create(cm->abc);
   gx = p7_gmx_Create(200, 400);	/* initial alloc is for M=200, L=400; will grow as needed */
   p7_ProfileConfig(cm->p7, bg, cm->p7_gm, 100, p7_LOCAL); /* 100 is a dummy length for now; MSVFilter requires local mode */
   p7_oprofile_Convert(cm->p7_gm, cm->p7_om); /* <om> is now p7_LOCAL, multihit */
+  if ((p7_tr = p7_trace_Create()) == NULL)  cm_Fail("trace creation failed");
+
   p7_omx_GrowTo(ox, cm->p7_om->M, 0, 0); /* expand the one-row omx if needed */
   /*p7_omx_SetDumpMode(stdout, ox, TRUE);*/
   float usc, nullsc;
@@ -558,6 +568,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     CP9Logoddsify(hmm);
   }
   orig_cm = cm;
+  emap = CreateEmitMap(cm);
   
   /* if not in silent mode, print the header for the sequence info */
   if(sq_mode && !silent_mode) { 
@@ -604,24 +615,72 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   /*****************************************************************
    *  Collect parse trees for each sequence
    *****************************************************************/
-  int z;
   for (i = 0; i < nalign; i++) {
 
-    esl_stopwatch_Start(watch);    
-    p7_oprofile_ReconfigLength(cm->p7_om, seqs_to_aln->sq[i]->n);
-    p7_gmx_GrowTo(gx, cm->p7->M, seqs_to_aln->sq[i]->n); /* realloc DP matrices as needed */
-    gx->M = cm->p7->M;
-    gx->L = seqs_to_aln->sq[i]->n;
-    /* Null model score for this sequence.  */
+    /* setup for all modes */
     p7_bg_SetLength(bg, seqs_to_aln->sq[i]->n);
     p7_bg_NullOne(bg, seqs_to_aln->sq[i]->dsq, seqs_to_aln->sq[i]->n, &nullsc);
-    for(z = 0; z < 100; z++) { 
-      my_p7_MSVFilter(seqs_to_aln->sq[i]->dsq, seqs_to_aln->sq[i]->n, cm->p7_om, ox, gx, &usc);
-    }
+
+    /* generic mode setup */
+    p7_gmx_GrowTo(gx, cm->p7->M, seqs_to_aln->sq[i]->n); 
+    p7_ReconfigLength(cm->p7_gm, seqs_to_aln->sq[i]->n);
+    gx->M = cm->p7->M;
+    gx->L = seqs_to_aln->sq[i]->n;
+
+    /* optimized MSV */
+    /*
+    p7_oprofile_ReconfigLength(cm->p7_om, seqs_to_aln->sq[i]->n);
+    esl_stopwatch_Start(watch);    
+    my_p7_MSVFilter(seqs_to_aln->sq[i]->dsq, seqs_to_aln->sq[i]->n, cm->p7_om, ox, gx, &usc);
+    got    esl_stopwatch_Stop(watch); 
+    FormatTimeString(time_buf, watch->user, TRUE);
+    fprintf(ofp, "OMSV  %8.2f  %11s\n", ((usc -nullsc) / eslCONST_LOG2), time_buf);
+    */
+
+    /* generic gmsv */
+    /*esl_stopwatch_Start(watch);    */
+    p7_GMSV(seqs_to_aln->sq[i]->dsq, seqs_to_aln->sq[i]->n, cm->p7_gm, gx, &usc);
+    /*esl_stopwatch_Stop(watch); 
+    FormatTimeString(time_buf, watch->user, TRUE);
+    fprintf(ofp, "GMSV  %8.2f  %11s\n", ((usc -nullsc) / eslCONST_LOG2), time_buf);*/
+
+    /* traceback generic gmsv */
+    /*esl_stopwatch_Start(watch);    */
+    my_p7_GTraceMSV(seqs_to_aln->sq[i]->dsq, seqs_to_aln->sq[i]->n, cm->p7_gm, gx, p7_tr, &i2k, &k2i);
+    /*esl_stopwatch_Stop(watch); 
+    FormatTimeString(time_buf, watch->user, TRUE);
+    fprintf(ofp, "tMSV            %11s\n", time_buf);*/
+
+    /*int idom = 0;
+    while((ad = p7_alidisplay_Create(p7_tr, idom++, cm->p7_gm, seqs_to_aln->sq[i])) != NULL) { 
+      p7_alidisplay_Print(stdout, ad, 40, 80);
+      p7_alidisplay_Destroy(ad);
+      }*/
+
+    /*int ipos;
+    for(ipos = 1; ipos <= seqs_to_aln->sq[i]->n; ipos++) printf("\t%4d %4d\n", ipos, i2k[ipos]);*/
+
+    /* print gmx in heatmap format */ 
+    /*
+    ESL_DMATRIX *D;
+    double min;
+    double max;
+    FILE *hfp;
+    p7_gmx_Match2DMatrix(gx, TRUE, &D, &min, &max);
+    hfp = fopen("cur.ps", "w");
+    my_dmx_Visualize(hfp, D, 0.01, max, 0.01);
+    fclose(hfp);
+    esl_dmatrix_Destroy(D);
+    */
+
+    /* generic viterbi */
+    /*
+    esl_stopwatch_Start(watch);    
+    p7_GViterbi(seqs_to_aln->sq[i]->dsq, seqs_to_aln->sq[i]->n, cm->p7_gm, gx, &usc);
     esl_stopwatch_Stop(watch); 
     FormatTimeString(time_buf, watch->user, TRUE);
-    fprintf(ofp, "MSV  %8.2f  %11s\n", ((usc -nullsc) / eslCONST_LOG2), time_buf);
-
+    fprintf(ofp, "GVIT  %8.2f  %11s\n", ((usc -nullsc) / eslCONST_LOG2), time_buf);
+    */
 
     if(sq_mode && !silent_mode) esl_stopwatch_Start(watch);
     if (sq_mode) { 
@@ -943,7 +1002,22 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       FormatTimeString(time_buf, watch->user, TRUE);
       fprintf(ofp, "%11s\n", time_buf);
     }
+
+    /* compare parsetree with p7 msv alignment */
+    if((status = Parsetree2i_to_k(cm, emap, seqs_to_aln->sq[i]->n, errbuf, *cur_tr, &cm_i2k)) != eslOK) return status;;
+    for(ipos = 1; ipos <= seqs_to_aln->sq[i]->n; ipos++) { 
+      if(i2k[ipos] != -1) { 
+	/*printf("\t%4d\t%4d\t%4d\t%1s\n", ipos, i2k[ipos], cm_i2k[ipos], ((abs(i2k[ipos]-cm_i2k[ipos])) == 0) ? "+" : "-");*/
+	if(i2k[ipos] == cm_i2k[ipos]) ncorrect++;
+	npins++;
+      }
+    }
+    free(cm_i2k);
+    free(i2k);
+    free(k2i);
   }
+  printf("\n$ %d/%d (%.3f) MSV p7 pins correct.\n", ncorrect, npins, (float) ncorrect / (float) npins);
+
   /* done aligning all nalign seqs. */
   /* Clean up. */
   if(out_mx != NULL) cm_hb_mx_Destroy(out_mx);
@@ -978,6 +1052,12 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     if(parsepp != NULL) free(parsepp);
     if(parse_struct_sc != NULL) free(parse_struct_sc);
   }
+
+  p7_trace_Destroy(p7_tr);
+  p7_bg_Destroy(bg);
+  p7_omx_Destroy(ox);
+  p7_gmx_Destroy(gx);
+  FreeEmitMap(emap);
   
   return eslOK;
   ERROR:

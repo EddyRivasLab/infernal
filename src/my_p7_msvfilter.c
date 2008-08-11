@@ -28,6 +28,7 @@
 
 #include "easel.h"
 #include "esl_sse.h"
+#include "esl_vectorops.h"
 
 #include "hmmer.h"
 #include "impl_sse.h"
@@ -137,14 +138,25 @@ my_p7_MSVFilter(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, P7_OMX *ox, P7
       xC = ESL_MAX(xC,        xE  - om->tec);
       xB = ESL_MAX(om->base,  xC) - om->tjb;
 #if 1
-      p7_omx_CopyMSVRow2gmx(ox, om, gx, i, xE, 0, xC, xB, xC);
+      p7_omx_CopyMSVRow2gmx(ox, om, gx, i, xE, 0, xC, xB, xC); 
 #endif
 #if p7_DEBUGGING
       if (ox->debugging) p7_omx_DumpMSVRow(ox, i, xE, 0, xC, xB, xC);   
 #endif
     } /* end loop over sequence residues 1..L */
 
-  if (ox->debugging) p7_gmx_Dump(stdout, gx);
+  if (ox->debugging) { 
+    p7_gmx_Dump(stdout, gx);
+    ESL_DMATRIX *D;
+    double min;
+    double max;
+    FILE *hfp;
+    p7_gmx_Match2DMatrix(gx, FALSE, &D, &min, &max);
+    hfp = fopen("cur.ps", "w");
+    dmx_Visualize(hfp, D, min, max);
+    fclose(hfp);
+    esl_dmatrix_Destroy(D);
+  }
 
   /* finally C->T, and add our missing precision on the NN,CC,JJ back */
   *ret_sc = ((float) (xC - om->tjb) - (float) om->base);
@@ -210,393 +222,391 @@ ERROR:
 }
 
 
-
-/*****************************************************************
- * 2. Benchmark driver.
- *****************************************************************/
-/* The benchmark driver has some additional non-benchmarking options
- * to facilitate small-scale (by-eye) comparison of MSV scores against
- * other implementations, for debugging purposes.
+/* Function:  p7_gmx_Match2DMatrix()
+ * Synopsis:  Copy the dp match cells of a generic matrix 
+ *            to a ESL_DMATRIX, for visualization with esl_dmx_Visualize()
  * 
- * The -c option compares against p7_GMSV() scores. This allows
- * measuring the error inherent in the SSE implementation's reduced
- * precision (p7_MSVFilter() runs in uint8_t; p7_GMSV() uses floats).
- * 
- * The -x option compares against an emulation that should give
- * exactly the same scores. The emulation is achieved by jiggering the
- * fp scores in a generic profile to disallow gaps, have the same
- * rounding and precision as the uint8_t's MSVFilter() is using, and
- * to make the same post-hoc corrections for the NN, CC, JJ
- * contributions to the final nat score; under these contrived
- * circumstances, p7_GViterbi() gives the same scores as
- * p7_MSVFilter().
- * 
- * For using either -c or -x, you probably also want to limit the
- * number of generated target sequences, using -N10 or -N100 for
- * example.
+ * Incept:    SRE, Fri Jul 13 09:56:04 2007 [Janelia]
+ *
+ * Purpose:   Dump matrix <gx> to stream <fp> for diagnostics.
  */
-#ifdef p7MSVFILTER_BENCHMARK
-/* 
-   gcc -o benchmark-msvfilter -std=gnu99 -g -Wall -msse2 -I.. -L.. -I../../easel -L../../easel -Dp7MSVFILTER_BENCHMARK msvfilter.c -lhmmer -leasel -lm 
-   icc -o benchmark-msvfilter -O3 -static -I.. -L.. -I../../easel -L../../easel -Dp7MSVFILTER_BENCHMARK msvfilter.c -lhmmer -leasel -lm 
-
-   ./benchmark-msvfilter <hmmfile>            runs benchmark 
-   ./benchmark-msvfilter -b <hmmfile>         gets baseline time to subtract: just random seq generation
-   ./benchmark-msvfilter -N100 -c <hmmfile>   compare scores to generic impl
-   ./benchmark-msvfilter -N100 -x <hmmfile>   compare scores to exact emulation
- */
-#include "p7_config.h"
-
-#include "easel.h"
-#include "esl_alphabet.h"
-#include "esl_getopts.h"
-#include "esl_random.h"
-#include "esl_randomseq.h"
-#include "esl_stopwatch.h"
-
-#include "hmmer.h"
-#include "impl_sse.h"
-
-static ESL_OPTIONS options[] = {
-  /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
-  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",             0 },
-  { "-b",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "baseline timing: don't run DP at all",             0 },
-  { "-c",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, "-x", "compare scores to generic implementation (debug)", 0 }, 
-  { "-r",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "set random number seed randomly",                  0 },
-  { "-s",        eslARG_INT,     "42", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                    0 },
-  { "-x",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, "-c", "equate scores to trusted implementation (debug)",  0 },
-  { "-L",        eslARG_INT,    "400", NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs",                     0 },
-  { "-N",        eslARG_INT,  "50000", NULL, "n>0", NULL,  NULL, NULL, "number of random target seqs",                     0 },
-  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-};
-static char usage[]  = "[-options] <hmmfile>";
-static char banner[] = "benchmark driver for MSVFilter() implementation";
-
-int 
-main(int argc, char **argv)
-{
-  ESL_GETOPTS    *go      = esl_getopts_CreateDefaultApp(options, 1, argc, argv, banner, usage);
-  char           *hmmfile = esl_opt_GetArg(go, 1);
-  ESL_STOPWATCH  *w       = esl_stopwatch_Create();
-  ESL_RANDOMNESS *r       = NULL;
-  ESL_ALPHABET   *abc     = NULL;
-  P7_HMMFILE     *hfp     = NULL;
-  P7_HMM         *hmm     = NULL;
-  P7_BG          *bg      = NULL;
-  P7_PROFILE     *gm      = NULL;
-  P7_OPROFILE    *om      = NULL;
-  P7_OMX         *ox      = NULL;
-  P7_GMX         *gx      = NULL;
-  int             L       = esl_opt_GetInteger(go, "-L");
-  int             N       = esl_opt_GetInteger(go, "-N");
-  ESL_DSQ        *dsq     = malloc(sizeof(ESL_DSQ) * (L+2));
-  int             i;
-  float           sc1, sc2;
-
-  if (esl_opt_GetBoolean(go, "-r"))  r = esl_randomness_CreateTimeseeded();
-  else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
-
-  if (p7_hmmfile_Open(hmmfile, NULL, &hfp) != eslOK) p7_Fail("Failed to open HMM file %s", hmmfile);
-  if (p7_hmmfile_Read(hfp, &abc, &hmm)     != eslOK) p7_Fail("Failed to read HMM");
-
-  bg = p7_bg_Create(abc);
-  p7_bg_SetLength(bg, L);
-  gm = p7_profile_Create(hmm->M, abc);
-  p7_ProfileConfig(hmm, bg, gm, L, p7_LOCAL);
-  om = p7_oprofile_Create(gm->M, abc);
-  p7_oprofile_Convert(gm, om);
-  p7_oprofile_ReconfigLength(om, L);
-
-  if (esl_opt_GetBoolean(go, "-x")) p7_oprofile_SameMSV(om, gm);
-
-  ox = p7_omx_Create(gm->M, 0, 0);
-  gx = p7_gmx_Create(gm->M, L);
-
-  esl_stopwatch_Start(w);
-  for (i = 0; i < N; i++)
-    {
-      esl_rsq_xfIID(r, bg->f, abc->K, L, dsq);
-
-      if (! esl_opt_GetBoolean(go, "-b")) 
-	{
-	  p7_MSVFilter    (dsq, L, om, ox, &sc1);   
-
-	  /* -c option: compare generic to fast score */
-	  if (esl_opt_GetBoolean(go, "-c")) 
-	    {
-	      p7_GMSV    (dsq, L, gm, gx, &sc2); 
-	      printf("%.4f %.4f\n", sc1, sc2);  
-	    }
-
-	/* -x option: compare generic to fast score in a way that should give exactly the same result */
-	  if (esl_opt_GetBoolean(go, "-x"))
-	    {
-	      p7_GViterbi(dsq, L, gm, gx, &sc2); 
-	      sc2 /= om->scale;
-	      if (om->mode == p7_UNILOCAL)   sc2 -= 2.0; /* that's ~ L \log \frac{L}{L+2}, for our NN,CC,JJ */
-	      else if (om->mode == p7_LOCAL) sc2 -= 3.0; /* that's ~ L \log \frac{L}{L+3}, for our NN,CC,JJ */
-	      printf("%.4f %.4f\n", sc1, sc2);  
-	    }
-	}
-    }
-  esl_stopwatch_Stop(w);
-  esl_stopwatch_Display(stdout, w, "# CPU time: ");
-  printf("# M    = %d\n",   gm->M);
-
-  free(dsq);
-  p7_omx_Destroy(ox);
-  p7_gmx_Destroy(gx);
-  p7_oprofile_Destroy(om);
-  p7_profile_Destroy(gm);
-  p7_bg_Destroy(bg);
-  p7_hmm_Destroy(hmm);
-  p7_hmmfile_Close(hfp);
-  esl_alphabet_Destroy(abc);
-  esl_stopwatch_Destroy(w);
-  esl_randomness_Destroy(r);
-  esl_getopts_Destroy(go);
-  return 0;
-}
-#endif /*p7MSVFILTER_BENCHMARK*/
-/*------------------ end, benchmark driver ----------------------*/
-
-
-
-
-/*****************************************************************
- * 3. Unit tests
- *****************************************************************/
-#ifdef p7MSVFILTER_TESTDRIVE
-#include "esl_random.h"
-#include "esl_randomseq.h"
-
-/* 
- * We can check that scores are identical (within machine error) to
- * scores of generic DP with scores rounded the same way.  Do this for
- * a random model of length <M>, for <N> test sequences of length <L>.
- * 
- * We assume that we don't accidentally generate a high-scoring random
- * sequence that overflows MSVFilter()'s limited range.
- * 
- */
-static void
-utest_msv_filter(ESL_RANDOMNESS *r, ESL_ALPHABET *abc, P7_BG *bg, int M, int L, int N)
-{
-  P7_HMM      *hmm = NULL;
-  P7_PROFILE  *gm  = NULL;
-  P7_OPROFILE *om  = NULL;
-  ESL_DSQ     *dsq = malloc(sizeof(ESL_DSQ) * (L+2));
-  P7_OMX      *ox  = p7_omx_Create(M, 0, 0);
-  P7_GMX      *gx  = p7_gmx_Create(M, L);
-  float sc1, sc2;
-
-  p7_oprofile_Sample(r, abc, bg, M, L, &hmm, &gm, &om);
-  p7_oprofile_SameMSV(om, gm);
-#if 0
-  p7_oprofile_Dump(stdout, om);              //dumps the optimized profile
-  p7_omx_SetDumpMode(stdout, ox, TRUE);      //makes the fast DP algorithms dump their matrices
-#endif
-
-  while (N--)
-    {
-      esl_rsq_xfIID(r, bg->f, abc->K, L, dsq);
-      p7_MSVFilter(dsq, L, om, ox, &sc1);
-      p7_GViterbi (dsq, L, gm, gx, &sc2);
-#if 0
-      p7_gmx_Dump(stdout, gx);           //dumps a generic DP matrix
-#endif
-
-      sc2 = sc2 / om->scale - 3.0f;
-      if (fabs(sc1-sc2) > 0.001) esl_fatal("msv filter unit test failed: scores differ (%.2f, %.2f)", sc1, sc2);
-    }
-
-  free(dsq);
-  p7_hmm_Destroy(hmm);
-  p7_omx_Destroy(ox);
-  p7_gmx_Destroy(gx);
-  p7_profile_Destroy(gm);
-  p7_oprofile_Destroy(om);
-}
-#endif /*p7MSVFILTER_TESTDRIVE*/
-/*-------------------- end, unit tests --------------------------*/
-
-
-
-
-/*****************************************************************
- * 4. Test driver
- *****************************************************************/
-#ifdef p7MSVFILTER_TESTDRIVE
-/* 
-   gcc -g -Wall -msse2 -std=gnu99 -I.. -L.. -I../../easel -L../../easel -o msvfilter_utest -Dp7MSVFILTER_TESTDRIVE msvfilter.c -lhmmer -leasel -lm
-   ./msvfilter_utest
- */
-#include "p7_config.h"
-
-#include "easel.h"
-#include "esl_alphabet.h"
-#include "esl_getopts.h"
-
-#include "hmmer.h"
-#include "impl_sse.h"
-
-static ESL_OPTIONS options[] = {
-  /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
-  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
-  { "-r",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "set random number seed randomly",                0 },
-  { "-s",        eslARG_INT,     "42", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                  0 },
-  { "-v",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "be verbose",                                     0 },
-  { "-L",        eslARG_INT,    "200", NULL, NULL,  NULL,  NULL, NULL, "size of random sequences to sample",             0 },
-  { "-M",        eslARG_INT,    "145", NULL, NULL,  NULL,  NULL, NULL, "size of random models to sample",                0 },
-  { "-N",        eslARG_INT,    "100", NULL, NULL,  NULL,  NULL, NULL, "number of random sequences to sample",           0 },
-  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-};
-static char usage[]  = "[-options]";
-static char banner[] = "test driver for the SSE MSVFilter() implementation";
-
 int
-main(int argc, char **argv)
+p7_gmx_Match2DMatrix(P7_GMX *gx, int do_diff, ESL_DMATRIX **ret_D, double *ret_min, double *ret_max)
 {
-  ESL_GETOPTS    *go   = esl_getopts_CreateDefaultApp(options, 0, argc, argv, banner, usage);
-  ESL_RANDOMNESS *r    = NULL;
-  ESL_ALPHABET   *abc  = NULL;
-  P7_BG          *bg   = NULL;
-  int             M    = esl_opt_GetInteger(go, "-M");
-  int             L    = esl_opt_GetInteger(go, "-L");
-  int             N    = esl_opt_GetInteger(go, "-N");
+  int i, k;
+  ESL_DMATRIX *D;
+  double min =  eslINFINITY;
+  double max = -eslINFINITY;
+  float sc;
 
-  if (esl_opt_GetBoolean(go, "-r"))  r = esl_randomness_CreateTimeseeded();
-  else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
+  D = esl_dmatrix_Create(gx->M+1, gx->L);
+  /* fill k == 0 row, the X matrix E state (logically, the begin state) scores */
+  for (i = 1; i <= gx->L; i++) { 
+    D->mx[0][(i-1)] = gx->xmx[i * p7G_NXCELLS + 0];
+  }
 
-  /* First round of tests for DNA alphabets.  */
-  if ((abc = esl_alphabet_Create(eslDNA)) == NULL)  esl_fatal("failed to create alphabet");
-  if ((bg = p7_bg_Create(abc))            == NULL)  esl_fatal("failed to create null model");
+  for (i = 1; i <= gx->L; i++) { 
+    for (k = 1; k <= gx->M; k++) { 
+      sc = gx->dp[i][k * p7G_NSCELLS + p7G_M];
+      if(do_diff) { 
+	if((i < 2) || (k < 2)) D->mx[k][(i-1)] = 0.;
+	else                   D->mx[k][(i-1)] = sc - ESL_MAX(D->mx[k][(i-2)], D->mx[0][(i-2)]);
+      }
+      else { 
+	D->mx[k][(i-1)] = sc;
+      }
+      min = ESL_MIN(min, D->mx[k][(i-1)]);
+      max = ESL_MAX(max, D->mx[k][(i-1)]);
+    }
+  }
 
-  if (esl_opt_GetBoolean(go, "-v")) printf("MSVFilter() tests, DNA\n");
-  utest_msv_filter(r, abc, bg, M, L, N);   /* normal sized models */
-  utest_msv_filter(r, abc, bg, 1, L, 10);  /* size 1 models       */
-  utest_msv_filter(r, abc, bg, M, 1, 10);  /* size 1 sequences    */
-
-  esl_alphabet_Destroy(abc);
-  p7_bg_Destroy(bg);
-
-  if ((abc = esl_alphabet_Create(eslAMINO)) == NULL)  esl_fatal("failed to create alphabet");
-  if ((bg = p7_bg_Create(abc))              == NULL)  esl_fatal("failed to create null model");
-
-  if (esl_opt_GetBoolean(go, "-v")) printf("MSVFilter() tests, protein\n");
-  utest_msv_filter(r, abc, bg, M, L, N);   
-  utest_msv_filter(r, abc, bg, 1, L, 10);  
-  utest_msv_filter(r, abc, bg, M, 1, 10);  
-
-  esl_alphabet_Destroy(abc);
-  p7_bg_Destroy(bg);
-
-  esl_getopts_Destroy(go);
-  esl_randomness_Destroy(r);
+  *ret_D = D;
+  *ret_min = min;
+  *ret_max = max;
   return eslOK;
 }
-#endif /*VITFILTER_TESTDRIVE*/
 
-
-
-/*****************************************************************
- * 5. Example
- *****************************************************************/
-
-#ifdef p7MSVFILTER_EXAMPLE
-/* A minimal example.
-   Also useful for debugging on small HMMs and sequences.
-
-   gcc -g -Wall -msse2 -std=gnu99 -I.. -L.. -I../../easel -L../../easel -o example -Dp7MSVFILTER_EXAMPLE msvfilter.c -lhmmer -leasel -lm
-   ./example <hmmfile> <seqfile>
- */ 
-#include "p7_config.h"
-
-#include "easel.h"
-#include "esl_alphabet.h"
-#include "esl_sq.h"
-#include "esl_sqio.h"
-
-#include "hmmer.h"
-#include "impl_sse.h"
-
-int 
-main(int argc, char **argv)
+/****************************************************************
+ * Stolen from hmmer/h3/heatmap.c SVN revision 2171
+ * as dmx_Visualize. Then modified so that the full 
+ * matrix is printed (not half split diagonally).
+ */
+/* my_dmx_Visualize()
+ * Incept:    SRE, Wed Jan 24 11:58:21 2007 [Janelia]
+ *
+ * Purpose:   
+ *            
+ *            Color scheme roughly follows Tufte, Envisioning
+ *            Information, p.91, where he shows a beautiful
+ *            bathymetric chart. The CMYK values conjoin two
+ *            recommendations from ColorBrewer (Cindy Brewer
+ *            and Mark Harrower) 
+ *            [http://www.personal.psu.edu/cab38/ColorBrewer/ColorBrewer.html],
+ *            specifically the 9-class sequential2 Blues and
+ *            9-class sequential YlOrBr.
+ * 
+ *            Might eventually become part of Easel, once mature?
+ *           
+ * Note:      Binning rules basically follow same convention as
+ *            esl_histogram. nb = xmax-xmin/w, so w = xmax-xmin/nb; 
+ *            picking bin is (int) ceil((x - xmin)/w) - 1. (xref
+ *            esl_histogram_Score2Bin()). This makes bin b contain
+ *            values bw+min < x <= (b+1)w+min. (Which means that 
+ *            min itself falls in bin -1, whoops - but we catch
+ *            all bin<0 and bin>=nshades and put them in the extremes.
+ *
+ * Args:      
+ *
+ * Returns:   
+ *
+ * Throws:    (no abnormal error conditions)
+ *
+ * Xref:      
+ */
+int
+my_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fill)
 {
-  char           *hmmfile = argv[1];
-  char           *seqfile = argv[2];
-  ESL_ALPHABET   *abc     = NULL;
-  P7_HMMFILE     *hfp     = NULL;
-  P7_HMM         *hmm     = NULL;
-  P7_BG          *bg      = NULL;
-  P7_PROFILE     *gm      = NULL;
-  P7_OPROFILE    *om      = NULL;
-  P7_OMX         *ox      = NULL;
-  P7_GMX         *gx      = NULL;
-  ESL_SQ         *sq      = NULL;
-  ESL_SQFILE     *sqfp    = NULL;
-  int             format  = eslSQFILE_UNKNOWN;
-  float           sc;
-  int             status;
+   int    nshades   = 18;
+   double cyan[]    = { 1.00, 1.00, 0.90, 0.75, 0.57, 0.38, 0.24, 0.13, 0.03,
+			0.00, 0.00, 0.00, 0.00, 0.00, 0.07, 0.20, 0.40, 0.60};
+   double magenta[] = { 0.55, 0.45, 0.34, 0.22, 0.14, 0.08, 0.06, 0.03, 0.01,
+			0.00, 0.03, 0.11, 0.23, 0.40, 0.55, 0.67, 0.75, 0.80};
+   double yellow[]  = { 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00,
+			0.10, 0.25, 0.40, 0.65, 0.80, 0.90, 1.00, 1.00, 1.00};
+   double black[]   = { 0.30, 0.07, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00,
+			0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00};
+   double w;			
+   int    i,j;
+   int    bin;
+   int    boxsize;		/* box size in points */
+   int    xcoord, ycoord;	/* postscript coords in points */
+   int    leftmargin, rightmargin;
+   int    bottommargin, topmargin;
+   float  fboxsize;		/* box size in fractional points */
 
-  /* Read in one HMM */
-  if (p7_hmmfile_Open(hmmfile, NULL, &hfp) != eslOK) p7_Fail("Failed to open HMM file %s", hmmfile);
-  if (p7_hmmfile_Read(hfp, &abc, &hmm)     != eslOK) p7_Fail("Failed to read HMM");
+   /* Set some defaults that might become arguments later.
+    */
+   leftmargin   = rightmargin = 20;
+   bottommargin = topmargin   = 20;
 
-  /* Read in one sequence */
-  sq     = esl_sq_CreateDigital(abc);
-  status = esl_sqfile_Open(seqfile, format, NULL, &sqfp);
-  if      (status == eslENOTFOUND) p7_Fail("No such file.");
-  else if (status == eslEFORMAT)   p7_Fail("Format unrecognized.");
-  else if (status == eslEINVAL)    p7_Fail("Can't autodetect stdin or .gz.");
-  else if (status != eslOK)        p7_Fail("Open failed, code %d.", status);
-  if  (esl_sqio_Read(sqfp, sq) != eslOK) p7_Fail("Failed to read sequence");
+   /* Determine some working parameters 
+    */
+   w = (max-min) / (double) nshades; /* w = bin size for assigning values->colors*/
+   boxsize = ESL_MAX(1, (ESL_MIN((792 - bottommargin) / D->n, 
+				 (612 - leftmargin)   / D->m)));
+   fboxsize= ESL_MIN( (792. - ((float) bottommargin + topmargin))   / (float) D->n, 
+		      (612. - ((float) leftmargin   + rightmargin)) / (float) D->m);
 
-  /* create default null model, then create and optimize profile */
-  bg = p7_bg_Create(abc);
-  p7_bg_SetLength(bg, sq->n);
-  gm = p7_profile_Create(hmm->M, abc);
-  p7_ProfileConfig(hmm, bg, gm, sq->n, p7_LOCAL);
-  om = p7_oprofile_Create(gm->M, abc);
-  p7_oprofile_Convert(gm, om);
 
-  /* allocate DP matrices, both a generic and an optimized one */
-  ox = p7_omx_Create(gm->M, 0, 0); /* one row version */
-  gx = p7_gmx_Create(gm->M, sq->n);
-
-  /* Useful to place and compile in for debugging: 
-     p7_oprofile_Dump(stdout, om);      dumps the optimized profile
-     p7_omx_SetDumpMode(ox, TRUE);      makes the fast DP algorithms dump their matrices
-     p7_gmx_Dump(stdout, gx);           dumps a generic DP matrix
-     p7_oprofile_SameMSV(om, gm);
-  */
-
-  p7_MSVFilter      (sq->dsq, sq->n, om, ox, &sc);  
-  printf("msv filter score:     %.2f nats\n", sc);
-
-  /* now in a real app, you'd need to convert raw nat scores to final bit
-   * scores, by subtracting the null model score and rescaling.
-   */
-
-  /* cleanup */
-  esl_sq_Destroy(sq);
-  esl_sqfile_Close(sqfp);
-  p7_omx_Destroy(ox);
-  p7_gmx_Destroy(gx);
-  p7_oprofile_Destroy(om);
-  p7_profile_Destroy(gm);
-  p7_bg_Destroy(bg);
-  p7_hmm_Destroy(hmm);
-  p7_hmmfile_Close(hfp);
-  esl_alphabet_Destroy(abc);
-  return 0;
+   fprintf(fp, "%.4f %.4f scale\n", (fboxsize/(float) boxsize), (fboxsize/(float) boxsize));
+   /* printf("n: %d\nm: %d\n", D->n, D->m); */
+   for (i = 0; i < D->n; i++) {
+     /* printf("\n"); */
+     /* for (j = i; j < D->n; j++) */
+     for (j = 0; j < D->m; j++)
+       {
+	 /* printf("i: %4d j: %4d %5.1f\n", i, j, D->mx[i][j]); */
+	 xcoord = j * boxsize + leftmargin;
+	 ycoord = (D->m-(i+1)) * boxsize + bottommargin; /* difference w/heatmap.c: (D->m-i+1) */
+	 
+	 if      (D->mx[i][j]  <  min2fill)    continue;
+	 /* if      ((i > 0) && (j > 0) && (D->mx[i][j] <=  D->mx[i-1][j-1]) && (D->mx[i][j] < min2fill))    continue;*/
+	 else if (D->mx[i][j] == -eslINFINITY) bin = 0;
+	 else if (D->mx[i][j] ==  eslINFINITY) bin = nshades-1;
+	 else {
+	   bin    = (int) ceil((D->mx[i][j] - min) / w) - 1;
+	   if (bin < 0)        bin = 0;
+	   if (bin >= nshades) bin = nshades-1;
+	 }
+	 
+	 printf("%4d %4d %10.3f\n", i, j, D->mx[i][j]);
+	 fprintf(fp, "newpath\n");
+	 fprintf(fp, "  %d %d moveto\n", xcoord, ycoord);
+	 fprintf(fp, "  0  %d rlineto\n", boxsize);
+	 fprintf(fp, "  %d 0  rlineto\n", boxsize);
+	 fprintf(fp, "  0 -%d rlineto\n", boxsize);
+	 fprintf(fp, "  closepath\n");
+	 fprintf(fp, " %.2f %.2f %.2f %.2f setcmykcolor\n",
+		 cyan[bin], magenta[bin], yellow[bin], black[bin]);
+	 fprintf(fp, "  fill\n");
+       }
+   }
+  fprintf(fp, "showpage\n");
+  return eslOK;
 }
-#endif /*p7MSVFILTER_EXAMPLE*/
-/*---------------------- end, example ---------------------------*/
 
 
+/* Function: my_p7_GTraceMSV()
+ * Incept:   EPN, Mon Aug 11 10:01:23 2008
+ * 
+ * Purpose:  Traceback of a MSV matrix: retrieval of optimum alignment.
+ *           
+ *           Based on p7_GTrace().
+ *
+ *           This function is currently implemented as a
+ *           reconstruction traceback, rather than using a shadow
+ *           matrix. Because H3 uses floating point scores, and we
+ *           can't compare floats for equality, we have to compare
+ *           floats for near-equality and therefore, formally, we can
+ *           only guarantee a near-optimal traceback. However, even in
+ *           the unlikely event that a suboptimal is returned, the
+ *           score difference from true optimal will be negligible.
+ *           
+ * Args:     dsq    - digital sequence aligned to, 1..L 
+ *           L      - length of <dsq>
+ *           gm     - profile
+ *           mx     - MSV matrix to trace, L x M
+ *           tr     - storage for the recovered traceback.
+ *           
+ * Return:   <eslOK> on success.
+ *           <eslFAIL> if even the optimal path has zero probability;
+ *           in this case, the trace is set blank (<tr->N = 0>).
+ *
+ * Note:     Care is taken to evaluate the prev+tsc+emission
+ *           calculations in exactly the same order that Viterbi did
+ *           them, lest you get numerical problems with
+ *           a+b+c = d; d-c != a+b because d,c are nearly equal.
+ *           (This bug appeared in dev: xref J1/121.)
+ */
+
+#define MMX(i,k) (dp[(i)][(k) * p7G_NSCELLS + p7G_M])
+#define IMX(i,k) (dp[(i)][(k) * p7G_NSCELLS + p7G_I])
+#define DMX(i,k) (dp[(i)][(k) * p7G_NSCELLS + p7G_D])
+#define XMX(i,s) (xmx[(i) * p7G_NXCELLS + (s)])
+
+#define TSC(s,k) (tsc[(k) * p7P_NTRANS + (s)])
+#define MSC(k)   (rsc[(k) * p7P_NR     + p7P_MSC])
+#define ISC(k)   (rsc[(k) * p7P_NR     + p7P_ISC])
+
+int
+my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i)
+{
+  int     status;
+  int     i;			/* position in seq (1..L) */
+  int     k;			/* position in model (1..M) */
+  int     M   = gm->M;
+  float **dp  = gx->dp;
+  float  *xmx = gx->xmx;
+  float   tol = 1e-5;
+  float   esc = p7_profile_IsLocal(gm) ? 0 : -eslINFINITY;
+  /* new vars */
+  float        tloop = logf((float) L / (float) (L+3));
+  float        tmove = logf(     3.0f / (float) (L+3));
+  float        tbmk  = logf(     2.0f / ((float) gm->M * (float) (gm->M+1)));
+  float        tec   = logf(0.5f);
+
+  int *k2i; /* [0.1..k..gm->M] = i, residue i emitted from node k's match state in MSV trace */
+  int *i2k; /* [0.1..i..L]     = k, residue i emitted from node k's match state in MSV trace */
+
+  ESL_ALLOC(k2i, sizeof(int) * (gm->M+1));
+  ESL_ALLOC(i2k, sizeof(int) * (L+1));
+  esl_vec_ISet(k2i, (gm->M+1), -1);
+  esl_vec_ISet(i2k, (L+1),     -1);
+
+  if ((status = p7_trace_Reuse(tr)) != eslOK) goto ERROR;
+
+  /* Initialization.
+   * (back to front. ReverseTrace() called later.)
+   */
+  if ((status = p7_trace_Append(tr, p7T_T, 0, 0)) != eslOK) goto ERROR;
+  if ((status = p7_trace_Append(tr, p7T_C, 0, 0)) != eslOK) goto ERROR;
+  i    = L;			/* next position to explain in seq */
+
+  /* Traceback
+   */
+  while (tr->st[tr->N-1] != p7T_S) {
+    float const *rsc = gm->rsc[dsq[i]];
+
+    switch (tr->st[tr->N-1]) {
+    case p7T_C:		/* C(i) comes from E(i) */
+      if   (XMX(i,p7G_C) == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible C reached at i=%d", i);
+
+      if (esl_FCompare(XMX(i, p7G_C), XMX(i-1, p7G_C) + tloop, tol) == eslOK) {
+	tr->i[tr->N-1]    = i--;  /* first C doesn't emit: subsequent ones do */
+	status = p7_trace_Append(tr, p7T_C, 0, 0);
+      } else if (esl_FCompare(XMX(i, p7G_C), XMX(i, p7G_E) + tec, tol) == eslOK) 
+	status = p7_trace_Append(tr, p7T_E, 0, 0);
+      else ESL_XEXCEPTION(eslFAIL, "C at i=%d couldn't be traced", i);
+      break;
+
+    case p7T_E:		/* E connects from any M state. k set here */
+      if (XMX(i, p7G_E) == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible E reached at i=%d", i);
+
+      if (esl_FCompare(XMX(i, p7G_E), MMX(i,M), tol) == eslOK) { k = M; status = p7_trace_Append(tr, p7T_M, M, i); }
+      else {
+	for (k = M-1; k >= 1; k--)
+	  if (esl_FCompare(XMX(i, p7G_E), MMX(i,k) + esc, tol) == eslOK)
+	    { status = p7_trace_Append(tr, p7T_M, k, i); break; }
+	if (k < 0) ESL_XEXCEPTION(eslFAIL, "E at i=%d couldn't be traced", i);
+      }
+      break;
+
+    case p7T_M:			/* M connects from i-1,k-1, or B */
+      if (MMX(i,k) == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible M reached at k=%d,i=%d", k,i);
+      if      (esl_FCompare(MMX(i,k), XMX(i-1,p7G_B) + tbmk  + MSC(k), tol) == eslOK) status = p7_trace_Append(tr, p7T_B, 0,   0);
+      else if (esl_FCompare(MMX(i,k), MMX(i-1,k-1)           + MSC(k), tol) == eslOK) { 
+	status = p7_trace_Append(tr, p7T_M, k-1, i-1);
+	if(k2i[(k-1)] != -1) ESL_XEXCEPTION(eslFAIL, "k2i[k-1=%d] != -1 (%d) i-1 = %d\n", k-1, k2i[(k-1)], i-1);
+	if(i2k[(i-1)] != -1) ESL_XEXCEPTION(eslFAIL, "i2k[i-1=%d] != -1 (%d) k-1 = %d\n", i-1, i2k[(i-1)], k-1);
+	k2i[(k-1)] = i-1;
+	i2k[(i-1)] = k-1;
+      }
+      else ESL_XEXCEPTION(eslFAIL, "M at k=%d,i=%d couldn't be traced", k,i);
+
+      if (status != eslOK) goto ERROR;
+      k--; 
+      i--;
+      break;
+
+    case p7T_N:			/* N connects from S, N */
+      if (XMX(i, p7G_N) <= p7_IMPOSSIBLE) ESL_XEXCEPTION(eslFAIL, "impossible N reached at i=%d", i);
+
+      if (i == 0) status = p7_trace_Append(tr, p7T_S, 0, 0);
+      else if (esl_FCompare(XMX(i,p7G_N), XMX(i-1, p7G_N) + tloop, tol) == eslOK)
+	{
+	  tr->i[tr->N-1] = i--;
+	  status = p7_trace_Append(tr, p7T_N, 0, 0);
+	} 
+      else ESL_XEXCEPTION(eslFAIL, "N at i=%d couldn't be traced", i);
+      break;
+
+    case p7T_B:			/* B connects from N, J */
+      if (XMX(i,p7G_B) == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible B reached at i=%d", i);
+
+      if (esl_FCompare(XMX(i,p7G_B), XMX(i, p7G_N) + tmove, tol)  == eslOK)
+	status = p7_trace_Append(tr, p7T_N, 0, 0);
+      else if (esl_FCompare(XMX(i,p7G_B),  XMX(i, p7G_J) + tmove, tol) == eslOK)
+	status = p7_trace_Append(tr, p7T_J, 0, 0);
+      else  ESL_XEXCEPTION(eslFAIL, "B at i=%d couldn't be traced", i);
+      break;
+
+    case p7T_J:			/* J connects from E(i) or J(i-1) */
+      if (XMX(i,p7G_J) == -eslINFINITY) ESL_XEXCEPTION(eslFAIL, "impossible J reached at i=%d", i);
+
+      if (esl_FCompare(XMX(i,p7G_J), XMX(i-1,p7G_J) + tloop, tol) == eslOK) {
+	tr->i[tr->N-1] = i--;
+	status = p7_trace_Append(tr, p7T_J, 0, 0);
+      } else if (esl_FCompare(XMX(i,p7G_J), XMX(i-1,p7G_E) + tec, tol) == eslOK) /* note: XMX(i-1,p7G_E) differs from Viterbi traceback, where it's XMX(i,p7G_E), not sure why */
+	status = p7_trace_Append(tr, p7T_E, 0, 0);
+      else  ESL_XEXCEPTION(eslFAIL, "J at i=%d couldn't be traced", i);
+      break;
+
+    default: ESL_XEXCEPTION(eslFAIL, "bogus state in traceback");
+    } /* end switch over statetype[tpos-1] */
+
+    if (status != eslOK) goto ERROR;
+  } /* end traceback, at S state */
+
+  if ((status = p7_trace_Reverse(tr)) != eslOK) goto ERROR;
+  if (ret_i2k != NULL) { *ret_i2k = i2k; } else free(i2k);
+  if (ret_k2i != NULL) { *ret_k2i = k2i; } else free(k2i);
+  return eslOK;
+
+ ERROR:
+  return status;
+}
 
 
-/*****************************************************************
- * @LICENSE@
- *****************************************************************/
+    
+/* Function: Parsetree2i_to_k()
+ * Date:     EPN, Mon Aug 11 13:41:38 2008
+ *
+ * Purpose:  Given a parsetree, fill a vector i2k[0.1..i..L] = k, saying that
+ *           residue i is emitted into consensus column k. If k <= 0, this implies
+ *           residue i was inserted after consensus column (-1 * k).
+ *
+ * Returns:  eslOK on success
+ *           eslEINCOMPAT on contract violation.
+ */
+int 
+Parsetree2i_to_k(CM_t *cm, CMEmitMap_t *emap, int L, char *errbuf, Parsetree_t *tr, int **ret_i2k)
+{
+  int status;                   /* Easel status code */
+  int tidx;			/* counter through positions in the parsetree        */
+  int v;			/* state index in CM */
+  int nd;
+  int *i2k;
+
+  ESL_ALLOC(i2k, sizeof(int) * (L+1));
+  esl_vec_ISet(i2k, (L+1), -1 * (cm->clen + 1));
+  
+  /* contract check */
+  if(emap   == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "Parsetree2i_to_k(): emap == NULL.");
+
+		/* trivial preorder traverse, since we're already numbered that way */
+  for (tidx = 0; tidx < tr->n; tidx++) {
+    v = tr->state[tidx];        	/* index of parent state in CM */
+    nd = cm->ndidx[v];
+    if (v == cm->M) continue;      	/* special case: v is EL, local alignment end */
+    switch (cm->sttype[v]) { 
+    case MP_st: 
+      i2k[tr->emitl[tidx]] = emap->lpos[nd];
+      i2k[tr->emitr[tidx]] = emap->rpos[nd];
+      break;
+
+    case ML_st:
+      i2k[tr->emitl[tidx]] = emap->lpos[nd];
+      break;
+      
+    case MR_st: 
+      i2k[tr->emitr[tidx]] = emap->rpos[nd];
+      break;
+
+    case IL_st: 
+      i2k[tr->emitl[tidx]] = (-1 * emap->lpos[nd]);
+      break;
+
+    case IR_st: 
+      i2k[tr->emitr[tidx]] = (-1 * (emap->rpos[nd] - 1)); /* IR's emit to before consensus column rpos */
+      break;
+
+    }
+  }
+
+  *ret_i2k = i2k;
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(status, errbuf, "Parsetree2i_to_k(), memory allocation error.");
+  return status; /* NEVERREACHED */
+}

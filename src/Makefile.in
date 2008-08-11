@@ -36,7 +36,7 @@ MPILIBS   = @MPILIBS@
 #
 MYLIBS   = -leasel -lhmmer
 MYLIBDIR = -L../easel -L../hmmer/src/ 
-MYINCDIR = -I../easel -I../hmmer/src/ 
+MYINCDIR = -I../easel -I../hmmer/src/ -I../hmmer/src/impl_sse/
 
 PROGS = cmalign cmbuild cmcalibrate cmemit cmscore cmsearch cmstat
 
