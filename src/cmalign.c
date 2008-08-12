@@ -84,6 +84,15 @@ static ESL_OPTIONS options[] = {
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,"--withali",       NULL, "--gapthresh <x> was originally used with cmbuild", 5 },
   /* Verbose output files */
   { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence parsetrees to file <f>", 7 },
+  /* options for experimental p7 HMM banding */
+  { "--7pad",    eslARG_INT,       "0", NULL, "n>=0",   NULL,      NULL,        NULL, "w/p7 banding set pin pad to <n> residues", 8 },
+  { "--7len",    eslARG_INT,       "4", NULL, "n>0",    NULL,      NULL,        NULL, "w/p7 banding set minimum length pin n-mer to <n>", 8 },
+  { "--7sc",     eslARG_REAL,    "0.5", NULL, "x>-0.0001",NULL,    NULL,        NULL, "w/p7 banding set minimum pin score to <x>", 8 },
+  { "--7end",    eslARG_INT,       "0", NULL, "n>=0",   NULL,      NULL,        NULL, "w/p7 banding remove pins within <n> residues of k-mer termini", 8 },
+  { "--7mprob",  eslARG_REAL,    "0.0", NULL, "x>-0.0001",NULL,    NULL,        NULL, "w/p7 banding set min prob to enter match state pin to <x>", 8 },
+  { "--7mcprob", eslARG_REAL,    "0.0", NULL, "x>-0.0001",NULL,    NULL,        NULL, "w/p7 banding set min cumulative prob to enter match state pin stretch to <x>", 8 },
+  { "--7iprob",  eslARG_REAL,    "1.0", NULL, "x<1.001",NULL,      NULL,        NULL, "w/p7 banding set max prob to enter insert state to <x>", 8 },
+  { "--7ilprob", eslARG_REAL,    "1.0", NULL, "x<1.001",NULL,      NULL,        NULL, "w/p7 banding set max prob to enter left insert state to <x>", 8 },
 
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer options related to alignment algorithm */
@@ -1036,7 +1045,15 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 				  esl_opt_GetInteger(go, "--banddump"),
 				  esl_opt_GetInteger(go, "--dlev"), be_quiet, 
 				  (! esl_opt_GetBoolean(go, "--no-null3")), cfg->r,
-				  esl_opt_GetReal(go, "--mxsize"), stdout)) != eslOK) goto ERROR;
+				  esl_opt_GetReal(go, "--mxsize"), stdout, 
+				  esl_opt_GetInteger(go, "--7pad"), 
+				  esl_opt_GetInteger(go, "--7len"), 
+				  esl_opt_GetReal(go, "--7sc"), 
+				  esl_opt_GetInteger(go, "--7end"), 
+				  esl_opt_GetReal(go, "--7mprob"), 
+				  esl_opt_GetReal(go, "--7mcprob"), 
+				  esl_opt_GetReal(go, "--7iprob"), 
+				  esl_opt_GetReal(go, "--7ilprob"))) != eslOK) goto ERROR;
   return eslOK;
   
  ERROR:

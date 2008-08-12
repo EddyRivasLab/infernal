@@ -88,7 +88,8 @@ extern int        cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avg_hit_len
 extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, 
 			      search_results_t **results, float size_limit, int *ret_flen, float *ret_sc);
 extern int DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
-			      int first_result, int bdump_level, int debug_level, int silent_mode, int do_null3, ESL_RANDOMNESS *r, float size_limit, FILE *ofp);
+			      int first_result, int bdump_level, int debug_level, int silent_mode, int do_null3, ESL_RANDOMNESS *r, float size_limit, FILE *ofp,
+			      int pad7, int len7, float sc7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7);
 
 /* from cm_dpalign.c */
 extern int fast_cyk_align_hb (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit,
@@ -363,7 +364,7 @@ extern int  build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int 
 			  float psi_vs_phi_threshold, int debug_level);
 extern void CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level);
 extern void fill_psi(CM_t *cm, double *psi, char ***tmap);
-extern void fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos);
+extern void fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos, int entered_only);
 extern void map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v);
 extern void make_tmap(char ****ret_tmap);
 extern int  CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS *r, CMSubInfo_t *subinfo, int spos, int epos, 
@@ -486,8 +487,10 @@ extern int          my_p7_MSVFilter(const ESL_DSQ *dsq, int L, const P7_OPROFILE
 extern int          p7_omx_CopyMSVRow2gmx(P7_OMX *ox, const P7_OPROFILE *om, P7_GMX *gx, int rowi, uint8_t xE, uint8_t xN, uint8_t xJ, uint8_t xB, uint8_t xC);
 extern int          p7_gmx_Match2DMatrix(P7_GMX *gx, int do_diff, ESL_DMATRIX **ret_D, double *ret_min, double *ret_max);
 extern int          my_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fill);
-extern int          my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i);
+extern int          my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i, float **ret_sc);
 extern int          Parsetree2i_to_k(CM_t *cm, CMEmitMap_t *emap, int L, char *errbuf, Parsetree_t *tr, int **ret_i2k);
+extern int          prune_i2k(int *i2k, float *isc, int L, double **phi, float min_sc, int min_len, int min_end, float min_mprob, float min_mcprob, float max_iprob, float max_ilprob);
+extern int          p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_imin, int **ret_imax, int *ret_ncells);
 
 /* from hybridsearch.c */
 extern int                cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanInfo_t *hsi, int i0, int j0, int W, 

@@ -277,7 +277,7 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
    * values for the CM states that they map to (psi[v] is the expected number of times
    * state v is entered in the CM). 
    */
-  fill_phi_cp9(hmm, &phi, 1);
+  fill_phi_cp9(hmm, &phi, 1, FALSE);
 
   if(debug_level > 1) 
     debug_print_cp9_params(stdout, hmm, TRUE);
@@ -1955,20 +1955,26 @@ cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *ps
  *                      state 0 = B state, state 1 = N_state, state 2 = NULL
  * int spos           - the first original consensus column this CP9 HMM
  *                      models (only != 1 if we're building a CP9 for a sub CM).
+ * int entered_only   - calculated expected number of times each state is 
+ *                      entered only, ignored insert->insert self transitions
+ * 
  * Notes:
  *                    - phi is allocated here, must be freed by caller.
  * Returns: ret_phi 
  */
 void
-fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos)
+fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos, int entered_only)
 {
   int status;
   int k;
   double **phi;
+  double  *phi_ins = NULL;
 
   ESL_ALLOC(phi, sizeof(double *) * (hmm->M+1));
   for(k = 0; k <= hmm->M; k++)
     ESL_ALLOC(phi[k], sizeof(double) * 3);
+
+  if(entered_only) ESL_ALLOC(phi_ins, sizeof(double) * hmm->M+1);
 
   /* Initialize phi values as all 0.0 */
   for (k = 0; k <= hmm->M; k++)
@@ -1977,6 +1983,7 @@ fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos)
   /* the M_spos-1 is the B state, where all parses start */
   phi[spos-1][HMMMATCH]   = 1.0;
   phi[spos-1][HMMINSERT]  = phi[spos-1][HMMMATCH] * hmm->t[spos-1][CTMI];
+  if(entered_only) phi_ins[spos-1] = phi[spos-1][HMMINSERT];
   phi[spos-1][HMMINSERT] += phi[spos-1][HMMINSERT] * (hmm->t[spos-1][CTII] / 
 						      (1. - hmm->t[spos-1][CTII]));
   phi[spos-1][HMMDELETE]  = 0.;
@@ -2003,6 +2010,7 @@ fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos)
       phi[k][HMMINSERT] += phi[k][HMMMATCH] * hmm->t[k][CTMI];
       phi[k][HMMINSERT] += phi[k][HMMDELETE] * hmm->t[k][CTDI];
       /* self loops are special */
+      if(entered_only) phi_ins[k] = phi[k][HMMINSERT]; /* we'll copy it back at the end */
       phi[k][HMMINSERT] += (phi[k][HMMINSERT] * (hmm->t[k][CTII] / (1-hmm->t[k][CTII])));
 
       /*printf("phi[%d][HMMMATCH]: %f\n", k, phi[k][HMMMATCH]);
@@ -2010,6 +2018,10 @@ fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos)
 	printf("phi[%d][HMMDELETE]: %f\n", k, phi[k][HMMDELETE]);
       */
     }
+  if(entered_only) { /* overwrite phi insert probabilities */
+    for(k = 0; k <= hmm->M; k++) phi[k][HMMINSERT] = phi_ins[k];
+    free(phi_ins);
+  }
   *ret_phi = phi;
   return;
 
@@ -2060,7 +2072,7 @@ hmm_add_single_trans_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int a, int b, i
  * EPN 02.24.06
  * cm_sum_subpaths_cp9()
  *
- * Purpose:  Calculated probability of getting from one state (start) to 
+ * Purpose:  Calculate probability of getting from one state (start) to 
  *           another (end) in a CM, taking special considerations. 
  * 
  *           Sum the probability of all subpaths that start 

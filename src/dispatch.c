@@ -25,6 +25,7 @@
 #include "esl_msa.h"         
 #include "esl_sse.h"         
 #include "esl_stopwatch.h"   
+#include "esl_vectorops.h"
 
 #include "hmmer.h"
 #include "impl_sse.h"
@@ -264,7 +265,8 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       /*if((cur_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN))) {*/
       if((status = DispatchAlignments(cm, errbuf, NULL, 
 				      dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
-				      0, 0, 0, do_null3, NULL, size_limit, stdout)) != eslOK) return status;
+				      0, 0, 0, do_null3, NULL, size_limit, stdout, 
+				      0, 1, 0., 0, 0., 0., 1., 1.)) != eslOK) return status;
     }
   }
   FreeResults(cur_results);
@@ -317,7 +319,9 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 int
 DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
 		   int first_result, int bdump_level, int debug_level, int silent_mode, int do_null3, ESL_RANDOMNESS *r, 
-		   float size_limit, FILE *ofp)
+		   float size_limit, FILE *ofp, 
+		   int pad7, int len7, float sc7, int end7, 
+		   float mprob7, float mcprob7, float iprob7, float ilprob7)
 {
   int status;
   ESL_STOPWATCH *watch;         /* for timings */
@@ -413,10 +417,25 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   P7_ALIDISPLAY  *ad      = NULL;
   CMEmitMap_t *emap; 
   int ipos;
+  double **phi;       /* phi array, phi[k][v] is expected number of times
+			 state v (0 = match, 1 insert, 2 = delete) in 
+			 cp9 hmm node k is visited. Node 0 is special, 
+			 state 0 = B state, state 1 = N_state, state 2 = NULL */
 
   int *k2i, *i2k, *cm_i2k;
+  int cm_k;
+  int *imin, *imax;
+  double ncells_total = 0.;
+  double i_ncells_total = 0.;
+  double ncells_banded = 0.;
+  int i_ncells_banded = 0;
+  float *isc;
   int npins, ncorrect;
+  int i_npins, i_ncorrect;
+  int nodes_n, nodes_ncorrect;
+  int i_nodes_n, i_nodes_ncorrect;
   npins = ncorrect = 0;
+  nodes_n = nodes_ncorrect = 0;
   ox  = p7_omx_Create(200, 0, 0);       /* ox is a one-row matrix for M=200 */
   bg = p7_bg_Create(cm->abc);
   gx = p7_gmx_Create(200, 400);	/* initial alloc is for M=200, L=400; will grow as needed */
@@ -492,6 +511,15 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     printf("do_optacc   : %d\n", do_optacc);
     printf("do_hmmsafe  : %d\n", do_hmmsafe);
   }
+  printf("pad7:      %4d\n", pad7);
+  printf("len7:      %4d\n", len7);
+  printf("sc7:       %.2f\n", sc7);
+  printf("end7:      %4d\n", end7);
+  printf("mprob7:  %.4f\n",  mprob7);
+  printf("mcprob7: %.4f\n",  mcprob7);
+  printf("iprob7:  %.4f\n",  iprob7);
+  printf("ilprob7: %.4f\n",  ilprob7);
+  printf("\n");
 
   /* allocate out_mx, if needed, only if !do_sub, if do_sub each sub CM will need to allocate a new out_mx */
   out_mx = NULL;
@@ -569,6 +597,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   }
   orig_cm = cm;
   emap = CreateEmitMap(cm);
+  fill_phi_cp9(cm->cp9, &phi, 1, TRUE);
   
   /* if not in silent mode, print the header for the sequence info */
   if(sq_mode && !silent_mode) { 
@@ -638,18 +667,27 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     */
 
     /* generic gmsv */
-    /*esl_stopwatch_Start(watch);    */
+    esl_stopwatch_Start(watch);  
     p7_GMSV(seqs_to_aln->sq[i]->dsq, seqs_to_aln->sq[i]->n, cm->p7_gm, gx, &usc);
-    /*esl_stopwatch_Stop(watch); 
+    esl_stopwatch_Stop(watch); 
     FormatTimeString(time_buf, watch->user, TRUE);
-    fprintf(ofp, "GMSV  %8.2f  %11s\n", ((usc -nullsc) / eslCONST_LOG2), time_buf);*/
+    fprintf(ofp, "GMSV  %8.2f  %11s\n", ((usc -nullsc) / eslCONST_LOG2), time_buf);
 
     /* traceback generic gmsv */
-    /*esl_stopwatch_Start(watch);    */
-    my_p7_GTraceMSV(seqs_to_aln->sq[i]->dsq, seqs_to_aln->sq[i]->n, cm->p7_gm, gx, p7_tr, &i2k, &k2i);
-    /*esl_stopwatch_Stop(watch); 
+    esl_stopwatch_Start(watch);
+    status = my_p7_GTraceMSV(seqs_to_aln->sq[i]->dsq, seqs_to_aln->sq[i]->n, cm->p7_gm, gx, p7_tr, &i2k, &k2i, &isc);
+    if(status == eslOK) { /* trace is valid */
+      prune_i2k(i2k, isc, seqs_to_aln->sq[i]->n, phi, sc7, len7, end7, mprob7, mcprob7, iprob7, ilprob7);
+    }
+    else if (status == eslEINCOMPAT) { /* trace was discontiguous, abort! remove all pins */ 
+      esl_vec_ISet(k2i, (cm->p7->M+1), -1);
+      esl_vec_ISet(i2k, (seqs_to_aln->sq[i]->n+1), -1);
+    }
+
+    if((status = p7_pins2bands(i2k, errbuf, seqs_to_aln->sq[i]->n, cm->clen, pad7, &imin, &imax, &i_ncells_banded)) != eslOK) return status;
+    esl_stopwatch_Stop(watch); 
     FormatTimeString(time_buf, watch->user, TRUE);
-    fprintf(ofp, "tMSV            %11s\n", time_buf);*/
+    fprintf(ofp, "tMSV+           %11s\n", time_buf);
 
     /*int idom = 0;
     while((ad = p7_alidisplay_Create(p7_tr, idom++, cm->p7_gm, seqs_to_aln->sq[i])) != NULL) { 
@@ -1005,18 +1043,55 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
     /* compare parsetree with p7 msv alignment */
     if((status = Parsetree2i_to_k(cm, emap, seqs_to_aln->sq[i]->n, errbuf, *cur_tr, &cm_i2k)) != eslOK) return status;;
+    i_ncells_total = (double) (seqs_to_aln->sq[i]->n * cm->clen);
+    ncells_total  += i_ncells_total;
+    ncells_banded += (double) i_ncells_banded;
+
+    i_ncorrect = 0;
+    i_npins = 0;
+    i_nodes_n = i_nodes_ncorrect = 0;
+    float mprob = 1.;
+    int posn = 0;
     for(ipos = 1; ipos <= seqs_to_aln->sq[i]->n; ipos++) { 
       if(i2k[ipos] != -1) { 
 	/*printf("\t%4d\t%4d\t%4d\t%1s\n", ipos, i2k[ipos], cm_i2k[ipos], ((abs(i2k[ipos]-cm_i2k[ipos])) == 0) ? "+" : "-");*/
-	if(i2k[ipos] == cm_i2k[ipos]) ncorrect++;
-	npins++;
+	mprob *= phi[i2k[ipos]][HMMMATCH];
+	posn++;
+	if(i2k[ipos] == cm_i2k[ipos]) { 
+	  i_ncorrect++;
+	  ;/*printf("\t%4d\t%4d\t%4d\t\t%3d\t\t%.3f\t\t%.3f\t%.3f\t%.3f\t\t%.3f\t%.3f\t%.3f\t%1s\n", ipos, i2k[ipos], cm_i2k[ipos], posn, mprob, phi[(ipos-1)][HMMMATCH], phi[(ipos-1)][HMMDELETE], phi[(ipos-1)][HMMINSERT], phi[ipos][HMMMATCH], phi[ipos][HMMDELETE], phi[ipos][HMMINSERT], ((abs(i2k[ipos]-cm_i2k[ipos])) == 0) ? "+" : "-");*/
+	}
+	else { 
+	  ;printf("\t%4d\t%4d\t%4d\t\t%3d\t\t%.3f\t\t%.3f\t%.3f\t%.3f\t\t%.3f\t%.3f\t%.3f\t%1s\n", ipos, i2k[ipos], cm_i2k[ipos], posn, mprob, phi[(ipos-1)][HMMMATCH], phi[(ipos-1)][HMMDELETE], phi[(ipos-1)][HMMINSERT], phi[ipos][HMMMATCH], phi[ipos][HMMDELETE], phi[ipos][HMMINSERT], ((abs(i2k[ipos]-cm_i2k[ipos])) == 0) ? "+" : "-");
+	}
+	i_npins++;
       }
+      else { mprob = 1.; posn = 0; }
+      cm_k = cm_i2k[ipos];
+      if(cm_k < 0) cm_k *= -1;
+      if(imin[cm_k] <= ipos && imax[cm_k] >= ipos) i_nodes_ncorrect++;
+      i_nodes_n++;
     }
+
+    ncorrect += i_ncorrect;
+    npins    += i_npins;
+    nodes_ncorrect += i_nodes_ncorrect;
+    nodes_n        += i_nodes_n;
+
+    printf("> %5d %d/%d (%.3f) MSV p7 pins correct.\n", i, i_ncorrect, i_npins, (float) i_ncorrect / (float) i_npins);
+    printf("> %5d %d/%d (%.3f) MSV p7 nodes potentially correct.\n", i, i_nodes_ncorrect, i_nodes_n, (float) i_nodes_ncorrect / (float) i_nodes_n);
+    printf("> %5d %.0f/%.0f (%.8f) matrix pruned away.\n", i, (float) i_ncells_banded, i_ncells_total, 1. - (i_ncells_banded / i_ncells_total));
+
+    free(imin);
+    free(imax);
     free(cm_i2k);
     free(i2k);
     free(k2i);
   }
-  printf("\n$ %d/%d (%.3f) MSV p7 pins correct.\n", ncorrect, npins, (float) ncorrect / (float) npins);
+  printf("\n");
+  printf("$ TOTAL %d/%d (%.3f) MSV p7 pins correct.\n", ncorrect, npins, (float) ncorrect / (float) npins);
+  printf("$ TOTAL %d/%d (%.3f) consensus nodes potentially correct.\n", nodes_ncorrect, nodes_n, (float) nodes_ncorrect / (float) nodes_n);
+  printf("$ TOTAL %.0f/%.0f (%.8f) matrix pruned away.\n", ncells_banded, ncells_total, 1. - (ncells_banded / ncells_total));
 
   /* done aligning all nalign seqs. */
   /* Clean up. */
@@ -1058,6 +1133,9 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   p7_omx_Destroy(ox);
   p7_gmx_Destroy(gx);
   FreeEmitMap(emap);
+  int k;
+  for(k = 0; k <= cm->cp9->M; k++) free(phi[k]);
+  free(phi);
   
   return eslOK;
   ERROR:

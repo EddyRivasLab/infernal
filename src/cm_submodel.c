@@ -3130,7 +3130,7 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
 
   /* Reconfig the orig_hmm so that it can only start in the spos node, and end from the epos node */
   /* Build the sub CP9 HMM by copying as much of the original cp9_hmm as possible */
-  fill_phi_cp9(orig_hmm, &orig_phi, 1);
+  fill_phi_cp9(orig_hmm, &orig_phi, 1, FALSE);
   CP9_reconfig2sub(orig_hmm, submap->spos, submap->epos, submap->spos, submap->epos, orig_phi);
 
   if(print_flag)

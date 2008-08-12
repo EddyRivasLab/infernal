@@ -401,6 +401,10 @@ my_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fi
  * Return:   <eslOK> on success.
  *           <eslFAIL> if even the optimal path has zero probability;
  *           in this case, the trace is set blank (<tr->N = 0>).
+ *           <eslEINCOMPAT> if the optimal trace is discontiguous wrt
+ *           the sequence, node k > kp emits residue i < ip, while kp
+ *           emits ip. In this case, trace is invalid - caller must 
+ *           know this.
  *
  * Note:     Care is taken to evaluate the prev+tsc+emission
  *           calculations in exactly the same order that Viterbi did
@@ -419,9 +423,9 @@ my_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fi
 #define ISC(k)   (rsc[(k) * p7P_NR     + p7P_ISC])
 
 int
-my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i)
+my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i, float **ret_isc)
 {
-  int     status;
+  int     status = eslOK;
   int     i;			/* position in seq (1..L) */
   int     k;			/* position in model (1..M) */
   int     M   = gm->M;
@@ -437,11 +441,14 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
 
   int *k2i; /* [0.1..k..gm->M] = i, residue i emitted from node k's match state in MSV trace */
   int *i2k; /* [0.1..i..L]     = k, residue i emitted from node k's match state in MSV trace */
+  float *isc; /*[0.1..i..L]    = sc, match emission score for residue i is sc */
 
-  ESL_ALLOC(k2i, sizeof(int) * (gm->M+1));
-  ESL_ALLOC(i2k, sizeof(int) * (L+1));
+  ESL_ALLOC(k2i, sizeof(int)   * (gm->M+1));
+  ESL_ALLOC(i2k, sizeof(int)   * (L+1));
+  ESL_ALLOC(isc, sizeof(float) * (L+1));
   esl_vec_ISet(k2i, (gm->M+1), -1);
   esl_vec_ISet(i2k, (L+1),     -1);
+  esl_vec_FSet(isc, (L+1),     -eslINFINITY);
 
   if ((status = p7_trace_Reuse(tr)) != eslOK) goto ERROR;
 
@@ -486,10 +493,11 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
       if      (esl_FCompare(MMX(i,k), XMX(i-1,p7G_B) + tbmk  + MSC(k), tol) == eslOK) status = p7_trace_Append(tr, p7T_B, 0,   0);
       else if (esl_FCompare(MMX(i,k), MMX(i-1,k-1)           + MSC(k), tol) == eslOK) { 
 	status = p7_trace_Append(tr, p7T_M, k-1, i-1);
-	if(k2i[(k-1)] != -1) ESL_XEXCEPTION(eslFAIL, "k2i[k-1=%d] != -1 (%d) i-1 = %d\n", k-1, k2i[(k-1)], i-1);
-	if(i2k[(i-1)] != -1) ESL_XEXCEPTION(eslFAIL, "i2k[i-1=%d] != -1 (%d) k-1 = %d\n", i-1, i2k[(i-1)], k-1);
+	if(k2i[(k-1)] != -1) { status = eslEINCOMPAT; printf("! discontiguous trace k2i[k-1=%d] != -1 (%d) i-1 = %d\n", k-1, k2i[(k-1)], i-1); goto ERROR;} 
+	if(i2k[(i-1)] != -1) { status = eslEINCOMPAT; printf("! discontiguous trace i2k[i-1=%d] != -1 (%d) k-1 = %d\n", i-1, i2k[(i-1)], k-1); goto ERROR;} 
 	k2i[(k-1)] = i-1;
 	i2k[(i-1)] = k-1;
+	isc[(i-1)] = MSC(k);
       }
       else ESL_XEXCEPTION(eslFAIL, "M at k=%d,i=%d couldn't be traced", k,i);
 
@@ -540,9 +548,13 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
   if ((status = p7_trace_Reverse(tr)) != eslOK) goto ERROR;
   if (ret_i2k != NULL) { *ret_i2k = i2k; } else free(i2k);
   if (ret_k2i != NULL) { *ret_k2i = k2i; } else free(k2i);
+  if (ret_isc != NULL) { *ret_isc = isc; } else free(isc);
   return eslOK;
 
  ERROR:
+  if (ret_i2k != NULL) { *ret_i2k = i2k; } else free(i2k);
+  if (ret_k2i != NULL) { *ret_k2i = k2i; } else free(k2i);
+  if (ret_isc != NULL) { *ret_isc = isc; } else free(isc);
   return status;
 }
 
@@ -610,3 +622,182 @@ Parsetree2i_to_k(CM_t *cm, CMEmitMap_t *emap, int L, char *errbuf, Parsetree_t *
   ESL_FAIL(status, errbuf, "Parsetree2i_to_k(), memory allocation error.");
   return status; /* NEVERREACHED */
 }
+
+/* Function: prune_i2k()
+ * Incept:   EPN, Mon Aug 11 15:02:35 2008
+ * 
+ * Purpose:  Prune an i2k array of pins. Optionally prune by the following
+ *           criteria (in this order):
+ *           o match score of the pin 
+ *           o length (n) of n-mer each pin exists in
+ *           o proximity to end of n-mer 
+ *           
+ * Args:     i2k        - the input pin array, modified (pruned) in place
+ *           isc        - score (match emission) for each pin
+ *           L          - length of current sequence
+ *           phi        - phi array, phi[k][v] is expected number of times (probability)
+ *                        state v (0 = match, 1 insert, 2 = delete) in 
+ *                        node k is *entered*. Node 0 is special, state 0 = B state, state 1 = N_state, state 2 = NULL
+ *                        Calculated *without* taking insert->insert transitions into account.
+ *           min_sc     - minimum score to allow as a pin, 0. to allow any score
+ *           min_len    - min n-mer size, 1 to allow any size
+ *           min_end    - min distance from end to allow, prune away any others, 0 to not prune based on end proximity
+ *           min_mprob  - min match phi probability to allow in a pin 
+ *           min_mcprob - min cumulative match phi probability to allow in a nmer pin
+ *           max_iprob  - max insert phi probability to allow in a pin 
+ *           max_ilprob - max insert phi probability to allow in a state to the left of a pin 
+ *           
+ * Return:   <eslOK> on success.
+ *
+ */
+int
+prune_i2k(int *i2k, float *isc, int L, double **phi, float min_sc, int min_len, int min_end, float min_mprob, float min_mcprob, float max_iprob, float max_ilprob)
+{
+  int     i, j;
+
+  int do_end;
+  int do_sc;
+  int do_len;
+  float   tol = 1e-5;
+  float mcprob = 1.; /* cumulative match probability */
+
+  do_sc   = (esl_FCompare(0., min_sc, tol) == eslOK) ? FALSE : TRUE;
+  do_end  = (min_end == 0)  ? FALSE : TRUE;
+  do_len  = (min_len == 1) ? FALSE : TRUE;
+
+  if(do_sc) { 
+    for(i = 1; i <= L; i++) if((i2k[i] != -1) && (isc[i] < min_sc)) i2k[i] = -1;
+  }
+
+  int n = 0;
+
+  /* first pass, prune on phi values */
+  for(i = 1; i <= L; i++) { 
+    if(i2k[i] != -1) { /* position i is currently pinned */
+       if ((phi[i2k[i]][HMMMATCH]      < min_mprob)   || /* match  prob too low */
+	   (phi[i2k[i]][HMMINSERT]     > max_iprob)   || /* insert to the right prob too high */
+	   (phi[(i2k[i]-1)][HMMINSERT] > max_ilprob)) {  /* insert to the left  prob too high */
+	 /* remove pin */
+	 /*printf("removing pin %4d %.4f\n", i, phi[i2k[i]][HMMMATCH]);*/
+	 i2k[i] = -1;
+       }
+    }
+  }
+
+  /* second pass, prune on nmer length, match score, match phi probability, and distance from end */
+  if(do_len || do_end) { /* determine the size n of the n-mer each residue i is in */
+    for(i = 1; i <= L; i++) { 
+      if((i2k[i] == -1) || /* position i is not pinned */
+	 ((i2k[(i-1)] != -1) && !(i2k[(i-1)] == (i2k[i]-1)))) { /* position i is pinned to k, position i-1 is pinned to kp, but k and kp are not consecutive */
+	/* we just ended an n-mer (n >= 0) */
+	if(n > 0 && n < min_len) { 
+	  for(j = (i - n); j < i; j++) i2k[j] = -1; /* remove the n-mer */
+	  mcprob = 1.;
+	}
+	else if (do_end && n >= min_len) { /* n >= min_len, remove those within do_end of end */
+	  for(j = (i - n);        j < (i - (n+1)) + min_end; j++) i2k[j] = -1; /* remove the part of the n-mer within nend residues of the beginning edge */
+	  for(j = (i - min_end);  j < i;                     j++) i2k[j] = -1; /* remove the part of the n-mer within nend residues of the end edge */
+	} 
+	if(i2k[i] == -1) { /* position i is not pinned */
+	  mcprob = 1.;  
+	  n = 0; 
+	}
+	else { /* position i is pinned to k, position i-1 is pinned to kp, but k and kp are not consecutive */ 
+	  mcprob = phi[(i2k[i])][HMMMATCH]; 
+	  n = 1;
+	  if(mcprob < min_mcprob) { i2k[i] = -1; n = 0; mcprob = 1.; }
+	}
+      }
+      else { 
+	n++; 
+	mcprob *= phi[(i2k[i])][HMMMATCH]; 
+	if(mcprob < min_mcprob) { /* remove the n-mer up to this point */
+	  for(j = (i - n); j < i; j++) i2k[j] = -1; /* remove the n-mer */
+	  mcprob = 1.;
+	  n = 0;
+	}
+      }
+    }
+    /* deal with possibility that last n residues were an n-mer, with n < min_len */
+    if(n > 0 && n < min_len) { for(j = (i - n); j < i; j++) i2k[j] = -1; /* remove the n-mer */}
+  }
+
+  return eslOK;
+}
+
+
+/* Function: p7_pins2bands()
+ * Incept:   EPN, Mon Aug 11 15:41:44 2008
+ * 
+ * Purpose:  Given an i2k pins array, determine the imin and imax bands.
+ *           
+ * Args:     i2k      - the input pin array, modified (pruned) in place
+ *           errbuf   - for error messages
+ *           L        - length of current sequence
+ *           M        - number of nodes in the HMM
+ *           pad      - pad on each side of pin, if pad = 3, we allow +/- 3 residues from pin
+ *           ret_imin - imin bands, to return
+ *           ret_imax - imax bands, to return
+ *           ret_ncells - number of cells within bands, to return
+ *
+ * Return:   <eslOK> on success.
+ *
+ */
+int
+p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_imin, int **ret_imax, int *ret_ncells)
+{
+  int     status;
+
+  int i, k;
+  int in = 1;
+  int ix = L;
+  int *imin;
+  int *imax;
+  int *k2i;
+
+  ESL_ALLOC(imin, sizeof(int) * (M+1));
+  ESL_ALLOC(imax, sizeof(int) * (M+1));
+  ESL_ALLOC(k2i,  sizeof(int) * (M+1));
+  
+  imin[0] = imax[0] = -1;
+  esl_vec_ISet(k2i, (M+1), -1);
+
+  for(i = 1; i <= L; i++) if(i2k[i] != -1) k2i[i2k[i]] = i;
+
+  /* left to right to get imins */
+  for(k = 1; k <= M; k++) { 
+    if(k2i[k] != -1) { 
+      if(k2i[k] != 1 && in >= k2i[k]) ESL_FAIL(eslFAIL, errbuf, "p7_pins2bands() error k: %d, k2i[k]: %d but current in: %d\n", k, k2i[k], in); 
+      in = ESL_MAX(1, k2i[k] - pad);
+    }
+    imin[k] = in;
+  }
+
+  /* right to left to get imaxs */
+  for(k = M; k >= 1; k--) { 
+    if(k2i[k] != L && k2i[k] != -1) { 
+      if(ix <= k2i[k]) ESL_FAIL(eslFAIL, errbuf, "p7_pins2bands() error: k: %d, k2i[k]: %d but current ix: %d\n", k, k2i[k], ix); 
+      ix = ESL_MIN(L, k2i[k] + pad);
+    }
+    imax[k] = ix;
+  }
+
+  free(k2i);
+
+  /* get number of cells if wanted */
+  int ncells;
+  if(ret_ncells != NULL) { 
+    ncells = 0;
+    for(k = 1; k <= M; k++) ncells += imax[k] - imin[k] + 1;
+    *ret_ncells = ncells;
+  }
+
+  if(ret_imin != NULL) { *ret_imin = imin; } else free(imin);
+  if(ret_imax != NULL) { *ret_imax = imax; } else free(imax);
+  return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "p7_pins2bands() memory error.");
+  return status; /* NEVERREACHED */
+}
+
