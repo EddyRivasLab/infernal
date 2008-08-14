@@ -298,11 +298,9 @@ is just the number of sequences in the alignment.
 
 .TP 
 .BI --ere " <x>"
-Set the target mean match state entropy as 
+Set the target mean match state relative entropy as 
 .I <x>.
-By default the target entropy 1.46 bits. This default value was
-empirically determined as optimal in a RFAM based benchmark described
-in (Nawrocki and Eddy, PLoS Computational Biology 3(3): e56, 2007).
+By default the target relative entropy per match position is 0.59 bits.
 
 .TP 
 .BI --null " <f>"
