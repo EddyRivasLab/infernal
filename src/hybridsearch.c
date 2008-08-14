@@ -140,7 +140,7 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
   else                gamma = NULL;
 
   /* Grow DP matrix, if nec, to W+1 rows, it stays M+1 columns */
-  GrowCP9Matrix(mx, NULL, W, M, &mmx, &imx, &dmx, &elmx, &erow); 
+  GrowCP9Matrix(mx, NULL, W, M, NULL, NULL, &mmx, &imx, &dmx, &elmx, &erow); 
   ESL_DPRINTF1(("cm_cp9_HybridScan(): CP9 matrix size: %.8f Mb rows: %d.\n", mx->size_Mb, mx->rows));
 
   /* scA will hold P(seq up to j | Model) in int log odds form */

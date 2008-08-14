@@ -263,12 +263,17 @@ typedef struct cp9_mx_s {
   int *mmx_mem, *imx_mem, *dmx_mem, *elmx_mem;
 
   int    M;             /* number of nodes in HMM this mx corresponds to, never changes */
-  int    rows;          /* generally L+1 or 2, # of DP rows in seq dimension, where L is length of seq,
+  int    rows;          /* generally L or 2, # of DP rows in seq dimension, where L is length of seq,
 			 * == 2 if we're scanning in mem efficient mode, 
 			 * never shrinks, but can increase to 'grow' the matrix
 			 */
   float  size_Mb;       /* current size of matrix in Megabytes */
   
+  /* variables added for HMMER3 p7 HMM banding of CP9 HMM dp algorithms */
+  int *kmin;            /* OPTIONAL (can be null) [0.1..i..rows] = k, minimum node for residue i is k */
+  int *kmax;            /* OPTIONAL (can be null) [0.1..i..rows] = k, maximum node for residue i is k */
+  int  ncells_allocated; /* number of cells allocated in matrix */
+  int  ncells_valid;     /* number of cells currently valid in the matrix */
 
 } CP9_MX;
 

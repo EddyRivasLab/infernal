@@ -424,7 +424,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
   int *k2i, *i2k, *cm_i2k;
   int cm_k;
-  int *imin, *imax;
+  int *kmin, *kmax;
   double ncells_total = 0.;
   double i_ncells_total = 0.;
   double ncells_banded = 0.;
@@ -684,10 +684,19 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       esl_vec_ISet(i2k, (seqs_to_aln->sq[i]->n+1), -1);
     }
 
-    if((status = p7_pins2bands(i2k, errbuf, seqs_to_aln->sq[i]->n, cm->clen, pad7, &imin, &imax, &i_ncells_banded)) != eslOK) return status;
+    if((status = p7_pins2bands(i2k, errbuf, seqs_to_aln->sq[i]->n, cm->clen, pad7, &kmin, &kmax, &i_ncells_banded)) != eslOK) return status;
     esl_stopwatch_Stop(watch); 
     FormatTimeString(time_buf, watch->user, TRUE);
     fprintf(ofp, "tMSV+           %11s\n", time_buf);
+
+    /*DumpP7Bands(stdout, i2k, kmin, kmax, seqs_to_aln->sq[i]->n);*/
+
+    /* TEMP: run p7banded forward */
+    esl_stopwatch_Start(watch);
+    if((status = cp9_ForwardP7B(cm, errbuf, cm->cp9_mx, seqs_to_aln->sq[i]->dsq, seqs_to_aln->sq[i]->n, kmin, kmax, &tmpsc) != eslOK)) return status;
+    esl_stopwatch_Stop(watch); 
+    FormatTimeString(time_buf, watch->user, TRUE);
+    fprintf(ofp, "bCP9F           %11s\n", time_buf);
 
     /*int idom = 0;
     while((ad = p7_alidisplay_Create(p7_tr, idom++, cm->p7_gm, seqs_to_aln->sq[i])) != NULL) { 
@@ -1069,7 +1078,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       else { mprob = 1.; posn = 0; }
       cm_k = cm_i2k[ipos];
       if(cm_k < 0) cm_k *= -1;
-      if(imin[cm_k] <= ipos && imax[cm_k] >= ipos) i_nodes_ncorrect++;
+      if(kmin[ipos] <= cm_k && kmax[ipos] >= cm_k) i_nodes_ncorrect++;
+      else { 
+	;printf("\tNODE OFF %4d\t%4d\t%4d\t\t%4d\t\t%4d\n", ipos, i2k[ipos], cm_i2k[ipos], kmin[ipos], kmax[ipos]);
+      }
       i_nodes_n++;
     }
 
@@ -1082,8 +1094,6 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     printf("> %5d %d/%d (%.3f) MSV p7 nodes potentially correct.\n", i, i_nodes_ncorrect, i_nodes_n, (float) i_nodes_ncorrect / (float) i_nodes_n);
     printf("> %5d %.0f/%.0f (%.8f) matrix pruned away.\n", i, (float) i_ncells_banded, i_ncells_total, 1. - (i_ncells_banded / i_ncells_total));
 
-    free(imin);
-    free(imax);
     free(cm_i2k);
     free(i2k);
     free(k2i);

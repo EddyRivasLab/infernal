@@ -376,7 +376,8 @@ extern int  MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, c
 /* from cp9_mx.c */
 extern CP9_MX *CreateCP9Matrix(int N, int M);
 extern void    FreeCP9Matrix  (CP9_MX *mx);
-extern int     GrowCP9Matrix  (CP9_MX *mx, char *errbuf, int N, int M, int ***mmx, int ***imx, int ***dmx, int ***elmx, int **erow);
+extern int     GrowCP9Matrix  (CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int ***mmx, int ***imx, int ***dmx, int ***elmx, int **erow);
+extern void    InitializeCP9Matrix(CP9_MX *mx);
 
 /* from cp9_trace.c */
 extern void  CP9AllocTrace(int tlen, CP9trace_t **ret_tr);
@@ -491,6 +492,8 @@ extern int          my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE 
 extern int          Parsetree2i_to_k(CM_t *cm, CMEmitMap_t *emap, int L, char *errbuf, Parsetree_t *tr, int **ret_i2k);
 extern int          prune_i2k(int *i2k, float *isc, int L, double **phi, float min_sc, int min_len, int min_end, float min_mprob, float min_mcprob, float max_iprob, float max_ilprob);
 extern int          p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_imin, int **ret_imax, int *ret_ncells);
+extern int          DumpP7Bands(FILE *fp, int *i2k, int *kmin, int *kmax, int L);
+extern int          cp9_ForwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
 
 /* from hybridsearch.c */
 extern int                cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanInfo_t *hsi, int i0, int j0, int W, 

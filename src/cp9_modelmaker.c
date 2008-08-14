@@ -1974,7 +1974,7 @@ fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos, int entered_only)
   for(k = 0; k <= hmm->M; k++)
     ESL_ALLOC(phi[k], sizeof(double) * 3);
 
-  if(entered_only) ESL_ALLOC(phi_ins, sizeof(double) * hmm->M+1);
+  if(entered_only) ESL_ALLOC(phi_ins, sizeof(double) * (hmm->M+1));
 
   /* Initialize phi values as all 0.0 */
   for (k = 0; k <= hmm->M; k++)
