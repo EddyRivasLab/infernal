@@ -684,7 +684,7 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
    *    residue to such a model when it's in local mode. 
    */
   if(cm->nodes == 3) cm_Fail("cm_from_guide(), it's illegal to construct a CM of only 3 nodes.\n"); 
-  if((CMCountNodetype(cm, MATL_nd) == 0) && (CMCountNodetype(cm, MATL_nd) == 0) && (CMCountNodetype(cm,BIF_nd) == 0)) cm_Fail("cm_from_guide(), it's illegal to construct a CM with 0 MATL, MATR and BIF nodes.\n"); 
+  if((CMCountNodetype(cm, MATL_nd) == 0) && (CMCountNodetype(cm, MATR_nd) == 0) && (CMCountNodetype(cm,BIF_nd) == 0)) cm_Fail("cm_from_guide(), it's illegal to construct a CM with 0 MATL, MATR and BIF nodes.\nTo fix this, ensure all stems have at least 1 consensus column in the loop region\n(between enclosing base pairs).\n"); 
   return;
 
  ERROR:
