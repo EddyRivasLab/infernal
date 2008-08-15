@@ -494,6 +494,15 @@ extern int          prune_i2k(int *i2k, float *isc, int L, double **phi, float m
 extern int          p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_imin, int **ret_imax, int *ret_ncells);
 extern int          DumpP7Bands(FILE *fp, int *i2k, int *kmin, int *kmax, int L);
 extern int          cp9_ForwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
+extern int          cp9_ForwardP7B_OLD_WITH_EL(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
+extern int          cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
+extern int          cp9_CheckFBP7B(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq, int *kmin, int *kmax);
+extern int          cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int debug_level);
+extern int          cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, int L, int M, double p_thresh, int did_scan, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level);
+extern int          p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L, 
+				 double **phi, float sc7, int len7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7, int pad7,
+				 int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+
 
 /* from hybridsearch.c */
 extern int                cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanInfo_t *hsi, int i0, int j0, int W, 

@@ -2415,7 +2415,7 @@ cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0
       fb_sum = ILogsum(fb_sum, to_add);
 
       /*printf("fmx->imx[ip:%d][k:%d]: %d\n", ip, k, fmx->imx[ip][k]);
-	printf("bmx->imx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->imx[ip][k]-hmm->msc[dsq[i]][k]), fb_sum);
+	printf("bmx->imx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->imx[ip][k]-hmm->isc[dsq[i]][k]), fb_sum);
       */
       if     (fmx->elmx[ip][k] == -INFTY) to_add = -INFTY;
       else if(bmx->elmx[ip][k] == -INFTY) to_add = -INFTY;
@@ -2426,7 +2426,7 @@ cp9_CheckFB(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0
       fb_sum = ILogsum(fb_sum, to_add);
       
       /*printf("fmx->elmx[ip:%d][k:%d]: %d\n", ip, k, fmx->elmx[ip][k]);
-	printf("bmx->elmx[ip:%d][k:%d]: %d sum: %d\n", ip, k, (bmx->elmx[ip][k]-hmm->isc[dsq[i]][k]), fb_sum);
+	printf("bmx->elmx[ip:%d][k:%d]: %d sum: %d\n", ip, k, bmx->elmx[ip][k], fb_sum);
       */
     }
     fb_sc  = Scorify(fb_sum);

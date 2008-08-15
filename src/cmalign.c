@@ -67,6 +67,7 @@ static ESL_OPTIONS options[] = {
   { "--small",   eslARG_NONE,   FALSE,  NULL, NULL,     NULL,"--cyk,--nonbanded","--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
   /* Banded alignment */
   { "--hbanded", eslARG_NONE, "default",  NULL, NULL,   NULL,     NULL,    "--small", "accelerate using CM plan 9 HMM derived bands", 3 },
+  { "--p7",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",  "--small", "really accelerate using plan 7 HMM derived bands", 3 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,"--hbanded",    NULL,  "--hbanded", "do not use bands to accelerate aln algorithm", 3 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 3 },
   { "--mxsize",  eslARG_REAL, "2048.0",NULL, "x>0.",     NULL,      NULL,   "--small", "set maximum allowable DP matrix size to <x> Mb", 3},
@@ -1089,6 +1090,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--optacc"))      cm->align_opts  |= CM_ALIGN_OPTACC;
   if(esl_opt_GetBoolean(go, "--sample"))      cm->align_opts  |= CM_ALIGN_SAMPLE;
   if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;
+  if(esl_opt_GetBoolean(go, "--p7"))          cm->align_opts  |= CM_ALIGN_P7BANDED;
   if(esl_opt_GetBoolean(go, "--nonbanded"))   cm->align_opts  &= ~CM_ALIGN_HBANDED;
   if(esl_opt_GetBoolean(go, "--sub"))         cm->align_opts  |= CM_ALIGN_SUB;
   if(esl_opt_GetBoolean(go, "--viterbi"))     cm->align_opts  |= CM_ALIGN_HMMVITERBI;
@@ -1107,6 +1109,10 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       cm->align_opts  |= CM_ALIGN_QDB;
       cm->config_opts |= CM_CONFIG_QDB;
     }
+
+  /* TEMP */
+
+
 
   /* BEGIN (POTENTIALLY) TEMPORARY BLOCK */
   /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */

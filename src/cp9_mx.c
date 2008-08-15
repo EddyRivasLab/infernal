@@ -8,6 +8,7 @@
 #include <stdlib.h>
 
 #include "easel.h"
+#include "esl_vectorops.h"
 
 #include "funcs.h"
 #include "structs.h"
@@ -112,8 +113,8 @@ FreeCP9Matrix(CP9_MX *mx)
   free (mx->dmx);
   free (mx->elmx);
   free (mx->erow);
-  if(mx->kmin != NULL) free(mx->kmin);
-  if(mx->kmax != NULL) free(mx->kmax);
+  /* don't free mx->kmin, mx->kmax, they could be used by multiple matrices,
+   * kmin and kmax in this structure are just pointers to those arrays */
   free (mx);
 }
 
@@ -240,10 +241,10 @@ GrowCP9Matrix(CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int 
 void
 InitializeCP9Matrix(CP9_MX *mx)
 {
-  esl_vec_ISet(mx->mmx, mx->ncells_valid, -INFTY);
-  esl_vec_ISet(mx->imx, mx->ncells_valid, -INFTY);
-  esl_vec_ISet(mx->dmx, mx->ncells_valid, -INFTY);
-  esl_vec_ISet(mx->elmx, mx->ncells_valid, -INFTY);
+  esl_vec_ISet(mx->mmx_mem, mx->ncells_valid, -INFTY);
+  esl_vec_ISet(mx->imx_mem, mx->ncells_valid, -INFTY);
+  esl_vec_ISet(mx->dmx_mem, mx->ncells_valid, -INFTY);
+  esl_vec_ISet(mx->elmx_mem, mx->ncells_valid, -INFTY);
   esl_vec_ISet(mx->erow, mx->rows, -INFTY);
   return;
 }

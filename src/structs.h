@@ -457,6 +457,7 @@ typedef struct cp9map_s {
 #define CM_ALIGN_CHECKFB       (1<<15) /* check forward/backward CP9 HMM calcs     */
 #define CM_ALIGN_OPTACC        (1<<16) /* no CYK, aln w/Holmes/Durbin opt accuracy */
 #define CM_ALIGN_HMM2IJOLD     (1<<17) /* use old hmm2ij band calculation alg      */
+#define CM_ALIGN_P7BANDED      (1<<18) /* use p7 HMM bands to band the CP9 HMM     */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_NOQDB        (1<<0)  /* DO NOT use QDB to search (QDB is default)*/
