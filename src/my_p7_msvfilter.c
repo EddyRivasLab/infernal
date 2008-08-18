@@ -424,7 +424,7 @@ my_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fi
 #define TSC(s,k) (tsc[(k) * cp9O_NTRANS + (s)])
 
 int
-my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i, float **ret_isc)
+my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i, float **ret_isc, int **ret_iconflict)
 {
   int     status = eslOK;
   int     i;			/* position in seq (1..L) */
@@ -442,13 +442,16 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
 
   int *k2i; /* [0.1..k..gm->M] = i, residue i emitted from node k's match state in MSV trace */
   int *i2k; /* [0.1..i..L]     = k, residue i emitted from node k's match state in MSV trace */
+  int *iconflict; /* [0.1..i..L] = TRUE | FALSE. TRUE to eventually remove the kmer with pin at i */
   float *isc; /*[0.1..i..L]    = sc, match emission score for residue i is sc */
 
   ESL_ALLOC(k2i, sizeof(int)   * (gm->M+1));
   ESL_ALLOC(i2k, sizeof(int)   * (L+1));
+  ESL_ALLOC(iconflict, sizeof(int)   * (L+1));
   ESL_ALLOC(isc, sizeof(float) * (L+1));
   esl_vec_ISet(k2i, (gm->M+1), -1);
   esl_vec_ISet(i2k, (L+1),     -1);
+  esl_vec_ISet(iconflict, (L+1), FALSE);
   esl_vec_FSet(isc, (L+1),     -eslINFINITY);
 
   if ((status = p7_trace_Reuse(tr)) != eslOK) goto ERROR;
@@ -494,8 +497,12 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
       if      (esl_FCompare(P7MMX(i,k), P7XMX(i-1,p7G_B) + tbmk  + P7MSC(k), tol) == eslOK) status = p7_trace_Append(tr, p7T_B, 0,   0);
       else if (esl_FCompare(P7MMX(i,k), P7MMX(i-1,k-1)           + P7MSC(k), tol) == eslOK) { 
 	status = p7_trace_Append(tr, p7T_M, k-1, i-1);
-	if(k2i[(k-1)] != -1) { status = eslEINCOMPAT; printf("! discontiguous trace k2i[k-1=%d] != -1 (%d) i-1 = %d\n", k-1, k2i[(k-1)], i-1); goto ERROR;} 
-	if(i2k[(i-1)] != -1) { status = eslEINCOMPAT; printf("! discontiguous trace i2k[i-1=%d] != -1 (%d) k-1 = %d\n", i-1, i2k[(i-1)], k-1); goto ERROR;} 
+	/*if(k2i[(k-1)] != -1) { status = eslEINCOMPAT; printf("! discontiguous trace k2i[k-1=%d] != -1 (%d) i-1 = %d\n", k-1, k2i[(k-1)], i-1); goto ERROR;} */
+	/*if(i2k[(i-1)] != -1) { status = eslEINCOMPAT; printf("! discontiguous trace i2k[i-1=%d] != -1 (%d) k-1 = %d\n", i-1, i2k[(i-1)], k-1); goto ERROR;} */
+	if(i2k[(i-1)] != -1 || k2i[(k-1)] != -1) { 
+	  iconflict[(k2i[(k-1)])] = TRUE; /* eventually remove pin kmer that included k we *thought* pinned i-1 */
+	  iconflict[(i-1)]        = TRUE; /* eventually remove pin kmer that includes k we currently think pins i-1 */
+	}
 	k2i[(k-1)] = i-1;
 	i2k[(i-1)] = k-1;
 	isc[(i-1)] = P7MSC(k);
@@ -550,6 +557,7 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
   if (ret_i2k != NULL) { *ret_i2k = i2k; } else free(i2k);
   if (ret_k2i != NULL) { *ret_k2i = k2i; } else free(k2i);
   if (ret_isc != NULL) { *ret_isc = isc; } else free(isc);
+  if (ret_iconflict != NULL) { *ret_iconflict = iconflict; } else free(iconflict);
   return eslOK;
 
  ERROR:
@@ -634,6 +642,7 @@ Parsetree2i_to_k(CM_t *cm, CMEmitMap_t *emap, int L, char *errbuf, Parsetree_t *
  *           o proximity to end of n-mer 
  *           
  * Args:     i2k        - the input pin array, modified (pruned) in place
+ *           iconflict  - [0.1..i..L] TRUE if i:i2k[i] pin is involved in a conflict, remove the whole nmer pin
  *           isc        - score (match emission) for each pin
  *           L          - length of current sequence
  *           phi        - phi array, phi[k][v] is expected number of times (probability)
@@ -652,7 +661,7 @@ Parsetree2i_to_k(CM_t *cm, CMEmitMap_t *emap, int L, char *errbuf, Parsetree_t *
  *
  */
 int
-prune_i2k(int *i2k, float *isc, int L, double **phi, float min_sc, int min_len, int min_end, float min_mprob, float min_mcprob, float max_iprob, float max_ilprob)
+prune_i2k(int *i2k, int *iconflict, float *isc, int L, double **phi, float min_sc, int min_len, int min_end, float min_mprob, float min_mcprob, float max_iprob, float max_ilprob)
 {
   int     i, j;
 
@@ -661,18 +670,30 @@ prune_i2k(int *i2k, float *isc, int L, double **phi, float min_sc, int min_len, 
   int do_len;
   float   tol = 1e-5;
   float mcprob = 1.; /* cumulative match probability */
+  int n = 0;
+  int ip;
 
   do_sc   = (esl_FCompare(0., min_sc, tol) == eslOK) ? FALSE : TRUE;
   do_end  = (min_end == 0)  ? FALSE : TRUE;
   do_len  = (min_len == 1) ? FALSE : TRUE;
 
+  /* pass 1, prune on conflict from trace, this must be first pass */
+  for(i = 1; i <= L; i++) { 
+    if(iconflict[i] == TRUE) {
+      /* remove entire nmer's pins */
+      ip = i;
+      while((ip > 0)  && (i2k[ip] != -1)) i2k[ip--] = -1;
+      ip = i;
+      while((ip <= L) && (i2k[ip] != -1)) i2k[ip++] = -1;
+    }
+  }
+
+  /* pass 2, prune on scores */
   if(do_sc) { 
     for(i = 1; i <= L; i++) if((i2k[i] != -1) && (isc[i] < min_sc)) i2k[i] = -1;
   }
 
-  int n = 0;
-
-  /* first pass, prune on phi values */
+  /* pass 3, prune on phi values */
   for(i = 1; i <= L; i++) { 
     if(i2k[i] != -1) { /* position i is currently pinned */
        if ((phi[i2k[i]][HMMMATCH]      < min_mprob)   || /* match  prob too low */
@@ -685,7 +706,7 @@ prune_i2k(int *i2k, float *isc, int L, double **phi, float min_sc, int min_len, 
     }
   }
 
-  /* second pass, prune on nmer length, match score, match phi probability, and distance from end */
+  /* pass 4, prune on nmer length, match score, match phi probability, and distance from end */
   if(do_len || do_end) { /* determine the size n of the n-mer each residue i is in */
     for(i = 1; i <= L; i++) { 
       if((i2k[i] == -1) || /* position i is not pinned */
@@ -763,7 +784,9 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
   /* traverse residues left to right to get kmins */
   for(i = 0; i <= L; i++) { 
     if(i2k[i] != -1) { 
-      if(kn >= i2k[i] && kn > 1) ESL_FAIL(eslFAIL, errbuf, "p7_pins2bands() error i: %d, i2k[i]: %d but current kn: %d\n", i, i2k[i], kn); 
+      if(kn >= i2k[i] && kn > 1) { 
+	ESL_FAIL(eslFAIL, errbuf, "p7_pins2bands() error i: %d, i2k[i]: %d but current kn: %d\n", i, i2k[i], kn); 
+      }
       kn = ESL_MAX(1, i2k[i] - pad);
     }
     kmin[i] = kn;
@@ -778,9 +801,8 @@ p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_kmin, int
     kmax[i] = kx;
   }
 
-/* M_0 == B state, which must start the parse with i == 0 */
+  /* M_0 == B state, which must start the parse with i == 0 */
   kmin[0] = 0; 
-  kmax[0] = 0; 
 
   /* get number of cells if wanted */
   int ncells;
@@ -939,7 +961,7 @@ cp9_ForwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmi
   if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B, mx->M != cm->clen.\n");
   if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B, cm->clen != cm->cp9->M.\n");
   if(kmin == NULL || kmax == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B, kmin and/or kmax == NULL.\n");
-  if(cm->cp9->flags & CPLAN9_EL)       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B, kmin and/or kmax == NULL.\n");
+  if(cm->cp9->flags & CPLAN9_EL)       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B, cp9 EL flag up.\n");
     
   M = cm->cp9->M;
 
@@ -961,11 +983,11 @@ cp9_ForwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmi
   erow[0]   = -INFTY;   
   
   /* Because there's a D state for every node 1..M, 
-     dmx[0][k] is possible for all k 1..M */
+     dmx[0][k] is possible for all k 1..M (if it's within kmin[0]..kmax[0]) */
   int sc;
   i = 0;
   kn = ESL_MAX(1, kmin[0]);
-  kp = kmin[0] - kn;
+  kp = kn - kmin[0];
   for (k = kn; k <= kmax[0]; k++, kp++) { 
     assert(kp >= 0);
     mmx[0][kp] = imx[0][kp] = elmx[0][kp] = -INFTY;      /* need seq to get here */
@@ -975,7 +997,7 @@ cp9_ForwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmi
 			   imx[0][kp-1] + TSC(cp9O_ID,k-1)),
 		   dmx[0][kp-1] + TSC(cp9O_DD,k-1));
     }
-    dmx[0][k] = sc;
+    dmx[0][kp] = sc;
   }
   /* We can do a full parse through all delete states. */
   erow[0] = -INFTY;
@@ -1165,7 +1187,7 @@ cp9_ForwardP7B_OLD_WITH_EL(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int
   int          c;           /* counter for EL states                                        */
   int          M;           /* cm->cp9->M, query length, number of consensus nodes of model */
 
-  int          kp, kn, kx, kpcur, kpprv, kpprv_el;
+  int          kn, kx, kpcur, kpprv, kpprv_el;
 
   /* Contract checks */
   if(cm->cp9 == NULL)                  ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_ForwardP7B_OLD_WITH_EL, cm->cp9 is NULL.\n");
@@ -1199,18 +1221,15 @@ cp9_ForwardP7B_OLD_WITH_EL(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int
      dmx[0][k] is possible for all k 1..M */
   int sc;
   i = 0;
-  kn = ESL_MAX(1, kmin[0]);
-  kp = kmin[0] - kn;
-  for (k = kn; k <= kmax[0]; k++, kp++) { 
-    assert(kp >= 0);
-    mmx[0][kp] = imx[0][kp] = elmx[0][kp] = -INFTY;      /* need seq to get here */
-    sc = -INFTY;
-    if(kp > 0) { /* if kp == 0, kp-1 is outside the bands */
-      sc = ILogsum(ILogsum(mmx[0][kp-1] + TSC(cp9O_MD,k-1),
-			   imx[0][kp-1] + TSC(cp9O_ID,k-1)),
-		   dmx[0][kp-1] + TSC(cp9O_DD,k-1));
-    }
-    dmx[0][k] = sc;
+  kn    = ESL_MAX(1, kmin[0]+1);
+  kpcur = kn - kmin[0];
+  for (k = kn; k <= kmax[0]; k++, kpcur++) { 
+    assert(kpcur >= 1);
+    mmx[0][kpcur] = imx[0][kpcur] = elmx[0][kpcur] = -INFTY;      /* need seq to get here */
+    sc = ILogsum(ILogsum(mmx[0][kpcur-1] + TSC(cp9O_MD,k-1),
+			 imx[0][kpcur-1] + TSC(cp9O_ID,k-1)),
+		 dmx[0][kpcur-1] + TSC(cp9O_DD,k-1));
+    dmx[0][kpcur] = sc;
   }
   /* We can do a full parse through all delete states. */
   erow[0] = -INFTY;
@@ -1433,7 +1452,7 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
   if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, mx is NULL.\n");
   if(mx->M != cm->clen)                ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, mx->M != cm->clen.\n");
   if(cm->clen != cm->cp9->M)           ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, cm->clen != cm->cp9->M.\n");
-  if(cm->cp9->flags & CPLAN9_EL)       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, kmin and/or kmax == NULL.\n");
+  if(cm->cp9->flags & CPLAN9_EL)       ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_BackwardP7B, cp9 EL flag up!\n");
     
   M = cm->cp9->M;
 
@@ -1625,7 +1644,7 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
 	}
 
       /*********************************************************/
-      /* INSERTIONS: *_k <- M_k+1 transitions FROM a match state*/
+      /* INSERTIONS: *_k <- I_k+1 transitions FROM a insert state*/
       kn = ESL_MAX(kmin[i], kmin[i+1]); /* start at first cell from which we can look ahead to a valid cell at imx[i-1][k] */
       kn = ESL_MAX(kn, 1); /* kn can't go all the way down to 0, that's a special case, handled outside the main loop */
       kx = ESL_MIN(kmax[i], kmax[i+1]);
@@ -1640,7 +1659,7 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
 	}
 
       /*********************************************************/
-      /* DELETIONS: *_k <- M_k+1 transitions FROM a match state*/
+      /* DELETIONS: *_k <- D_k+1 transitions FROM a delete state*/
       kn = ESL_MAX(kmin[i], kmin[i]-1); /* start at first cell from which we can look ahead to a valid cell at imx[i-1][k] */
       kn = ESL_MAX(kn, 1); /* kn can't go all the way down to 0, that's a special case, handled outside the main loop */
       kx = ESL_MIN(kmax[i], kmax[i]-1);
@@ -1681,7 +1700,6 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
 	/* INSERT k=0 */
 	imx[i][kpcur] = -INFTY;
 	/* imx[i][0] is filled same as imx[i][1..k] in the loop above */
-	/* HERE HERE HERE HERE, imx[i==1][k==0] should be higher score I think */
 	if(INBAND(i+1, 1)) { 
 	  if(mmx[i+1][kpprv+1] != -INFTY) 
 	    imx[i][kpcur] = ILogsum(imx[i][kpcur], mmx[i+1][kpprv+1] + TSC(cp9O_IM,0));
@@ -1726,52 +1744,58 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
   /*******************************************************************/
   /* Special case: i == 0 */
      
-  /* init EL mx to -INFTY */
-  i = 0;
-  for (k = kmin[0]; k <= kmax[0]; k++) elmx[i][k-kmin[0]] = -INFTY;
+  /* initialize all match, inserts, deletes and ELs to -INFTY 
+   * deletes and M_0 cells MAY get changed later, inserts and ELs always stay -INFTY
+   * b/c we need at least 1 residue to get to those cells */
 
+  i = 0;
+  kpcur = k - kmin[0];
+  for (kpcur = 0; kpcur <= kmax[0] - kmin[0]; kpcur++) mmx[i][kpcur] = imx[i][kpcur] = dmx[i][kpcur] = elmx[i][kpcur] = -INFTY;
+
+  /* D_M(i == 0) <- I_M(i = 1) */
   if(INBAND(i, M)) { 
     kpcur = M - kmin[i];
     kpprv = M - kmin[i+1];
-    mmx[i][kpcur]  = -INFTY;  /* need seq to get here */
-    imx[i][kpcur]  = -INFTY;  /* need seq to get here */
-    elmx[i][kpcur] = -INFTY;  /* first emitted res can't be from an EL, need to see >= 1 matches */
     if(INBAND(i+1, M)) { 
       dmx[i][kpcur]  = imx[i+1][kpprv] + TSC(cp9O_DI,M); 
     }
-    else dmx[i][kpcur] = -INFTY;
   }
 
+  /* update D_k(i == 0) cells */
+  /* D_k(i == 0) <- M_k+1(i == 1) */
   kn = ESL_MAX(kmin[i], kmin[i+1]-1); /* start at first cell from which we can look back to a valid cell at *mx[i-1][k-1] */
   kn = ESL_MAX(kn, 1); /* kn can't go all the way down to 0, that's a special case, handled outside the main loop */
   kx = ESL_MIN(kmax[i], kmax[i+1]-1);
+  kpcur = kx - kmin[i]; 
+  kpprv = kx - kmin[i+1];
+  for (k = kx; k >= kn; k--, kpcur--, kpprv--)
+    dmx[i][kpcur]  = mmx[i+1][kpprv+1] + TSC(cp9O_DM,k);
   
-  for (kpcur = 0;            kpcur < (kn - kmin[i]);   kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
-  for (kpcur = kx-kmin[i]+1; kpcur <= kmax[i]-kmin[i]; kpcur++) mmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
-  
-  for (kpcur = 0;            kpcur < (kn - kmin[i]);   kpcur++) elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
-  for (kpcur = kx-kmin[i]+1; kpcur <= kmax[i]-kmin[i]; kpcur++) elmx[i][kpcur] = -INFTY; /* impossible to reach these guys */
-  
+  /* D_k(i == 0) <- I_k(i == 1) */
+  kn = ESL_MAX(kmin[i], kmin[i+1]); /* start at first cell from which we can look ahead to a valid cell at imx[i-1][k] */
+  kn = ESL_MAX(kn, 1); /* kn can't go all the way down to 0, that's a special case, handled outside the main loop */
+  kx = ESL_MIN(kmax[i], kmax[i+1]);
   kpcur = kx - kmin[i]; /* unnec, loop above ends with this */
   kpprv = kx - kmin[i+1];
-  for (k = kx; k >= kn; k--, kpcur--, kpprv--) { 
-    mmx[i][kpcur] = -INFTY; /* need seq to get here, unless we come from E in a scanner (below) */
-    imx[i][kpcur] = -INFTY; /* need seq to get here */
-    elmx[i][kpcur]= -INFTY;  /* first emitted res can't be from an EL, need to see >= 1 matches */
-    dmx[i][kpcur]  = ILogsum(ILogsum((mmx[i+1][kpprv+1] + TSC(cp9O_DM,k)),
-				     (imx[i+1][kpprv]   + TSC(cp9O_DI,k))),
-			     (dmx[i][kpcur+1] + TSC(cp9O_DD,k)));
+  for (k = kx; k >= kn; k--, kpcur--, kpprv--)
+    dmx[i][kpcur] = ILogsum(dmx[i][kpcur], imx[i+1][kpprv] + TSC(cp9O_DI,k));
+  
+  /* D_k(i == 0) <- D_k+1(i == 0) */
+  kn = ESL_MAX(kmin[i], kmin[i]-1); /* start at first cell from which we can look ahead to a valid cell at imx[i-1][k] */
+  kn = ESL_MAX(kn, 1); /* kn can't go all the way down to 0, that's a special case, handled outside the main loop */
+  kx = ESL_MIN(kmax[i], kmax[i]-1);
+  kpcur = kx - kmin[i]; /* unnec, loop above ends with this */
+  for (k = kx; k >= kn; k--, kpcur--)
+    dmx[i][kpcur] = ILogsum(dmx[i][kpcur], dmx[i][kpcur+1] + TSC(cp9O_DD,k));
 
     ////printf("mmx[i:%4d][k:%4d(kp:%4d)] %10d\n", i, k, kpcur, mmx[i][kpcur]);
     ////printf("imx[i:%4d][k:%4d(kp:%4d)] %10d\n", i, k, kpcur, imx[i][kpcur]);
     ////printf("dmx[i:%4d][k:%4d(kp:%4d)] %10d\n", i, k, kpcur, dmx[i][kpcur]);
-  }
 
   /* Case when k == 0 (i is still 0) */
   k = 0;
   if(INBAND(i, 0)) { 
     assert(kmin[i]  == 0);
-    assert(kmax[i]  == 0);
     imx[i][0] = -INFTY; /* need seq to get here */
     dmx[i][0]   = -INFTY; /* D_0 does not exist */
     elmx[i][0]  = -INFTY; /* EL_0 does not exist */
@@ -2370,6 +2394,7 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL
   float usc, nullsc;
   int *k2i, *i2k;
   float *isc;
+  int *iconflict;
   char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
   int *kmin, *kmax;
   int ncells;
@@ -2410,11 +2435,11 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL
 
   /* Step 2: traceback MSV */
   esl_stopwatch_Start(watch);
-  status = my_p7_GTraceMSV(dsq, L, cm->p7_gm, gx, p7_tr, &i2k, &k2i, &isc);
+  status = my_p7_GTraceMSV(dsq, L, cm->p7_gm, gx, p7_tr, &i2k, &k2i, &isc, &iconflict);
 
   /* Step 3: prune pins */
   if(status == eslOK) { /* trace is valid */
-    prune_i2k(i2k, isc, L, phi, sc7, len7, end7, mprob7, mcprob7, iprob7, ilprob7);
+    prune_i2k(i2k, iconflict, isc, L, phi, sc7, len7, end7, mprob7, mcprob7, iprob7, ilprob7);
   }
   else if (status == eslEINCOMPAT) { /* trace was discontiguous, abort! remove all pins */ 
     esl_vec_ISet(k2i, (cm->p7->M+1), -1);
@@ -2428,7 +2453,7 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL
   FormatTimeString(time_buf, watch->user, TRUE);
   fprintf(stdout, "tMSV+           %11s\n", time_buf);
 
-  /*DumpP7Bands(stdout, i2k, kmin, kmax, L);*/
+  /*DumpP7Bands(stdout, i2k, kmin, kmax, L); */
 
   /* print gmx in heatmap format */ 
   /*
@@ -2447,6 +2472,9 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL
   *ret_kmin = kmin;
   *ret_kmax = kmax;
   *ret_ncells = ncells;
+
+  free(iconflict);
+  free(isc);
 
   esl_stopwatch_Destroy(watch);
   return eslOK;

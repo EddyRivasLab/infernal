@@ -55,8 +55,7 @@
 #define TDIFF_MI_D 2
 #define nTDIFF 3
 
-/*
- * Function: cp9_Viterbi()
+/* Function: cp9_Viterbi()
  * 
  * Purpose:  Runs the Viterbi dynamic programming algorithm on an
  *           input subsequence (i0-j0). 

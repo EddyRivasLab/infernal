@@ -704,14 +704,11 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     /* Potentially, do HMM calculations. */
     if((!do_sub) && do_hbanded) {
       if(do_p7banded) { 
-	status = p7_Seq2Bands(orig_cm, errbuf, gx, bg, p7_tr, cur_dsq, L, phi, sc7, len7, end7, mprob7, mcprob7, iprob7, ilprob7, pad7, &p7_i2k, &kmin, &kmax, &i_ncells_banded);
-	if(status != eslEINCOMPAT) { 
+	if((status = p7_Seq2Bands(orig_cm, errbuf, gx, bg, p7_tr, cur_dsq, L, phi, sc7, len7, end7, mprob7, mcprob7, iprob7, ilprob7, pad7, &p7_i2k, &kmin, &kmax, &i_ncells_banded)) == eslOK) { 
 	  if((status = cp9_Seq2BandsP7B(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, L, orig_cp9b, kmin, kmax, debug_level)) != eslOK) return status; 
 	  printf("done cp9_Seq2BandsP7B()\n");
 	}
-	else { 
-	  if((status = cp9_Seq2Bands(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) return status; 
-	}
+	else return status;
       }
       else { 
 	if((status = cp9_Seq2Bands(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) return status; 

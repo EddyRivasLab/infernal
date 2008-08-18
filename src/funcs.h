@@ -488,9 +488,9 @@ extern int          my_p7_MSVFilter(const ESL_DSQ *dsq, int L, const P7_OPROFILE
 extern int          p7_omx_CopyMSVRow2gmx(P7_OMX *ox, const P7_OPROFILE *om, P7_GMX *gx, int rowi, uint8_t xE, uint8_t xN, uint8_t xJ, uint8_t xB, uint8_t xC);
 extern int          p7_gmx_Match2DMatrix(P7_GMX *gx, int do_diff, ESL_DMATRIX **ret_D, double *ret_min, double *ret_max);
 extern int          my_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fill);
-extern int          my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i, float **ret_sc);
+extern int          my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i, float **ret_sc, int **ret_iconflict);
 extern int          Parsetree2i_to_k(CM_t *cm, CMEmitMap_t *emap, int L, char *errbuf, Parsetree_t *tr, int **ret_i2k);
-extern int          prune_i2k(int *i2k, float *isc, int L, double **phi, float min_sc, int min_len, int min_end, float min_mprob, float min_mcprob, float max_iprob, float max_ilprob);
+extern int          prune_i2k(int *i2k, int *iconflict, float *isc, int L, double **phi, float min_sc, int min_len, int min_end, float min_mprob, float min_mcprob, float max_iprob, float max_ilprob);
 extern int          p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_imin, int **ret_imax, int *ret_ncells);
 extern int          DumpP7Bands(FILE *fp, int *i2k, int *kmin, int *kmax, int L);
 extern int          cp9_ForwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
