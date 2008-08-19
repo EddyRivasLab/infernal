@@ -999,6 +999,38 @@ typedef struct cm_hb_mx_s {
 			 * it when mx is freed. */
 } CM_HB_MX;
 
+
+/* Declaration of CM dynamic programming matrix structure for 
+ * alignment with float scores in vjd (state idx, aln posn,
+ * subseq len) coordinates. May be banded in j and/or d dimensions.
+ */
+typedef struct cm_hb_shadow_mx_s {
+  int  M;		/* number of states (1st dim ptrs) in current mx */
+  int  L;               /* length of sequence the matrix currently corresponds to */
+
+  int    y_ncells_alloc;  /* current cell allocation limit in yshadow*/
+  int    y_ncells_valid;  /* current number of valid cells in yshadow */
+  int    k_ncells_alloc;  /* current cell allocation limit in kshadow*/
+  int    k_ncells_valid;  /* current number of valid cells in kshadow */
+  float  size_Mb;         /* current size of matrix in Megabytes */
+
+  int   *nrowsA;          /* [0..v..M] current number allocated rows for deck v */
+  int    nbifs;           /* number of B_st's in the cm this mx was created for */
+
+  /* yshadow holds the shadow matrix for all non-BIF_B states, yshadow[v] == NULL if cm->sttype[v] == B_st */
+  char ***yshadow;       /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  char   *yshadow_mem;   /* the actual mem, points to yshadow[0][0][0] */
+
+  /* kshadow holds the shadow matrix for all BIF_B states, kshadow[v] == NULL if cm->sttype[v] != B_st */
+  int ***kshadow;       /*  [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  int   *kshadow_mem;   /* the actual mem, points to kshadow[0][0][0] */
+
+  CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
+			 * matrix, which defines j, d, bands for each
+			 * state, only a reference, so don't free
+			 * it when mx is freed. */
+} CM_HB_SHADOW_MX;
+
 /* Structure ScanMatrix_t: Information used by all CYK/Inside scanning functions,
  * compiled together into one data structure for convenience. 
  */

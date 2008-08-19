@@ -92,19 +92,7 @@ extern int DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln
 			      int pad7, int len7, float sc7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7);
 
 /* from cm_dpalign.c */
-extern int fast_cyk_align_hb (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit,
-			      void ****ret_shadow, int *ret_b, float *ret_bsc, CM_HB_MX *mx, float *ret_sc);
-extern int fast_cyk_align    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit,
-			      void ****ret_shadow, int *ret_b, float *ret_bsc, float ****ret_mx, float *ret_sc);
-extern int optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, void ****ret_shadow,  
-				     int *ret_b, float *ret_bsc, CM_HB_MX *mx, CM_HB_MX *post_mx, float *ret_pp);
-extern int optimal_accuracy_align   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, void ****ret_shadow,  
-				     int *ret_b, float *ret_bsc, float ****ret_mx, float ***post_mx, float *ret_pp);
-extern int fast_alignT_hb    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, 
-			      int allow_begin, CM_HB_MX *mx, int do_optacc, CM_HB_MX *post_mx, float size_limit, float *ret_sc);
-extern int fast_alignT       (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, 
-			        int allow_begin, float ****ret_mx, int do_optacc, float ***post_mx, float size_limit, float *ret_sc);
-extern int FastAlignHB        (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_MX *mx,     int do_optacc, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc);
+extern int FastAlignHB        (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_MX *mx,     CM_HB_SHADOW_MX *shmx, int do_optacc, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc);
 extern int FastAlign          (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, float ****ret_mx, int do_optacc, float ****ret_post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc);
 extern int FastInsideAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_HB_MX *mx,     float *ret_sc);
 extern int FastInsideAlign    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, float ****ret_mx, float *ret_sc);
@@ -227,6 +215,10 @@ extern CM_HB_MX *       cm_hb_mx_Create            (int M);
 extern int              cm_hb_mx_GrowTo            (CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
 extern int              cm_hb_mx_Dump              (FILE *ofp, CM_HB_MX *mx);
 extern void             cm_hb_mx_Destroy           (CM_HB_MX *mx);
+extern CM_HB_SHADOW_MX *cm_hb_shadow_mx_Create     (CM_t *cm, int M);
+extern int              cm_hb_shadow_mx_GrowTo     (CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L);
+extern int              cm_hb_shadow_mx_Dump       (FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx);
+extern void             cm_hb_shadow_mx_Destroy    (CM_HB_SHADOW_MX *mx);
 extern ScanMatrix_t *   cm_CreateScanMatrix        (CM_t *cm, int W, int *dmin, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int);
 extern int              cm_CreateScanMatrixForCM   (CM_t *cm, int do_float, int do_int);           
 extern int              cm_FloatizeScanMatrix      (CM_t *cm, ScanMatrix_t *smx);

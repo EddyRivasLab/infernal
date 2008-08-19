@@ -389,6 +389,9 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   float           ***beta  = NULL;    /* beta DP matrix for non-baned Outside() */
   CM_HB_MX           *out_mx;         /* outside matrix for HMM banded Outside() */
 
+  /* for HMM banded tracebacks */
+  CM_HB_SHADOW_MX    *shmx;           /* HMM banded shadow matrix */
+
   float             *parsesc; /* parsetree scores of each sequence */
   float             *parsepp; /* optimal parse posterior probability of each sequence, if any */
   float             *parse_struct_sc; /* contribution of MATP emissions - marginalized emissions to parse score, approximation of 'structural contribution' to score */
@@ -418,22 +421,25 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   P7_TRACE *p7_tr;
   /*P7_ALIDISPLAY  *ad      = NULL;*/
   CMEmitMap_t *emap; 
-  int ipos;
   double **phi;       /* phi array, phi[k][v] is expected number of times
 			 state v (0 = match, 1 insert, 2 = delete) in 
 			 cp9 hmm node k is visited. Node 0 is special, 
 			 state 0 = B state, state 1 = N_state, state 2 = NULL */
-
-  int cm_k;
   int *kmin, *kmax;
-  double ncells_total = 0.;
+
+#if 0
+  int ipos
+  int cm_k;
   double i_ncells_total = 0.;
   double ncells_banded = 0.;
-  int i_ncells_banded = 0;
-  int npins, ncorrect;
+  double ncells_total = 0.;
   int i_npins, i_ncorrect;
-  int nodes_n, nodes_ncorrect;
   int i_nodes_n, i_nodes_ncorrect;
+  int *cm_i2k;
+#endif
+  int i_ncells_banded = 0;
+  int nodes_n, nodes_ncorrect;
+  int npins, ncorrect;
   npins = ncorrect = 0;
   nodes_n = nodes_ncorrect = 0;
   ox  = p7_omx_Create(200, 0, 0);       /* ox is a one-row matrix for M=200 */
@@ -445,7 +451,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
   p7_omx_GrowTo(ox, cm->p7_om->M, 0, 0); /* expand the one-row omx if needed */
   /*p7_omx_SetDumpMode(stdout, ox, TRUE);*/
-  int *p7_i2k, *cm_i2k;
+  int *p7_i2k;
   /* TEMP */
 
   /* Contract check */
@@ -527,6 +533,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   /* allocate out_mx, if needed, only if !do_sub, if do_sub each sub CM will need to allocate a new out_mx */
   out_mx = NULL;
   if((!do_sub) && (do_hbanded && (do_optacc || (do_post)))) out_mx = cm_hb_mx_Create(cm->M);
+
+  /* allocate/initialize shmx, if needed, only if do_hbanded */
+  shmx = NULL;
+  if(do_hbanded) shmx = cm_hb_shadow_mx_Create(cm, cm->M);
 
   if      (sq_mode)   nalign = seqs_to_aln->nseq;
   else if(dsq_mode) { nalign = search_results->num_results - first_result; silent_mode = TRUE; }
@@ -830,14 +840,14 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     else { /* non-small, non-QDB CYK or optimal accuracy alignment */
       if(do_hbanded) { 
 	if(do_post) { /* HMM banded CYK or optimal accuracy, posterior annotated */
-	  if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
+	  if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
 	}
 	else { 
 	  if(do_optacc) { /* HMM banded optimal accuracy, no posteriors */
-	    if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, out_mx, cur_tr, NULL, NULL, &sc, &ins_sc)) != eslOK) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
+	    if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, out_mx, cur_tr, NULL, NULL, &sc, &ins_sc)) != eslOK) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
 	  }
 	  else { /* HMM banded CYK */
-	    if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, out_mx, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) {
+	    if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, out_mx, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) {
 	      if (status == eslERANGE) { /* we can still do CYK D&C alignment with QDBs derived from the HMM bands */
 		hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
 		ESL_DPRINTF1(("# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i));

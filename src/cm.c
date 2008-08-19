@@ -238,9 +238,9 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   cm->p7_gm         = NULL;
   cm->p7_om         = NULL;
 
-  /* create HMM banded matrix, it only depends (at first) on num states, M.
+  /* create HMM banded dp matrix, this only depends (at first) on num states, M.
    * it is initially empty, but expanded to fit target sequences as needed */
-  cm->hbmx = cm_hb_mx_Create(cm->M);
+  cm->hbmx    = cm_hb_mx_Create(cm->M);
 
   /* we'll allocate the cp9, cp9b, cp9map, cp9_mx and cp9_bmx inside ConfigCM(),
    * we need some more info about the CM besides M and nnodes to build those
