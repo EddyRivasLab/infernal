@@ -444,7 +444,7 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
   int *i2k; /* [0.1..i..L]     = k, residue i emitted from node k's match state in MSV trace */
   int *iconflict; /* [0.1..i..L] = TRUE | FALSE. TRUE to eventually remove the kmer with pin at i */
   float *isc; /*[0.1..i..L]    = sc, match emission score for residue i is sc */
-
+  
   ESL_ALLOC(k2i, sizeof(int)   * (gm->M+1));
   ESL_ALLOC(i2k, sizeof(int)   * (L+1));
   ESL_ALLOC(iconflict, sizeof(int)   * (L+1));
@@ -1488,6 +1488,7 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
    * either way we don't have to modify it */
 
   if(INBAND(i, M)) { /* if i is in k == M's band */
+    printf("i: %4d kmin[i]: %4d kmax[i]: %4d M: %4d\n", i, kmin[i], kmax[i], M);
     assert(M == kmax[i]);
     kpcur = M-kmin[i];
     mmx[i][kpcur]  = 0. + 
@@ -2014,7 +2015,7 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   else {
     esl_stopwatch_Start(watch);  
     if((status = cp9_FB2HMMBandsP7B(cm->cp9, errbuf, dsq, fmx, bmx, pmx, cp9b, L, cp9b->hmm_M,
-				    (1.-cm->tau), FALSE, do_old_hmm2ij, kmin, kmax, debug_level)) != eslOK) return status;
+				    (1.-cm->tau), do_old_hmm2ij, kmin, kmax, debug_level)) != eslOK) return status;
     esl_stopwatch_Stop(watch); 
     FormatTimeString(time_buf, watch->user, TRUE);
     fprintf(stdout, "FB2bands        %11s\n", time_buf);
@@ -2061,6 +2062,174 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   return eslOK;
 }
 
+
+/* Function: cp9_Seq2PosteriorsP7B
+ * Date    : EPN, Tue Aug 19 13:12:12 2008
+ *
+ * Purpose:  Given a CM with precalc'ed CP9 HMM and CP9Map, and HMMER3 plan 7
+ *           HMM bands for the CP9 HMM DP matrices, and a sequence,
+ *           run HMM Forward and Backward algorithms, and return a CP9 posterior
+ *           matrix.
+ *           
+ * Args:     cm           - the covariance model
+ *           errbuf       - char buffer for error messages
+ *           fmx          - CP9 dp matrix for Forward()
+ *           bmx          - CP9 dp matrix for Backward()
+ *           pmx          - CP9 dp matrix to fill with posteriors, can == bmx
+ *           dsq          - sequence in digitized form
+ *           L            - length of the sequence we're aligning (1..L)
+ *           kmin         - P7 dervied band to enforce: [0.i..L] = k, min node k for residue i
+ *           kmax         - P7 derived band to enforce: [0.i..L] = k, min node k for residue i
+ *           debug_level  - verbosity level for debugging printf()s
+ *           
+ * Return:  eslOK on success
+ */
+int
+cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int debug_level)
+{
+  int status;
+  float sc;
+
+  /* TEMP */
+  ESL_STOPWATCH *watch;
+  watch = esl_stopwatch_Create();
+  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
+  /* TEMP */
+
+  /* Contract checks */
+  if(dsq == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors(), dsq is NULL.");
+  if(cm->cp9 == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, but cm->cp9 is NULL.\n");
+  if(cm->cp9map == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, but cm->cp9map is NULL.\n");
+  if((cm->align_opts & CM_ALIGN_HBANDED) && (cm->search_opts & CM_SEARCH_HBANDED)) 
+    ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, CM_ALIGN_HBANDED and CM_SEARCH_HBANDED flags both up, exactly 1 must be up.\n");
+  if((cm->search_opts & CM_SEARCH_HMMALNBANDS) && (! (cm->search_opts & CM_SEARCH_HBANDED))) 
+    ESL_FAIL(eslEINCOMPAT, errbuf, "in cp9_Seq2Posteriors, CM_SEARCH_HMMALNBANDS flag raised, but not CM_SEARCH_HBANDED flag, this doesn't make sense\n");
+
+  /* Step 1: Get HMM posteriors.*/
+  esl_stopwatch_Start(watch);  
+  if((status = cp9_ForwardP7B (cm, errbuf, fmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
+  esl_stopwatch_Stop(watch); 
+  FormatTimeString(time_buf, watch->user, TRUE);
+  if(debug_level >= 0) printf("CP9P7B Forward  score : %.4f\n", sc);
+
+  esl_stopwatch_Start(watch);  
+  if((status = cp9_BackwardP7B(cm, errbuf, bmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
+  esl_stopwatch_Stop(watch); 
+  FormatTimeString(time_buf, watch->user, TRUE);
+  if(debug_level >= 0) printf("CP9 Backward  score : %.4f\n", sc);
+
+  if(cm->align_opts & CM_ALIGN_CHECKFB) {
+    if((status = cp9_CheckFBP7B(fmx, bmx, cm->cp9, errbuf, sc, 1, L, dsq, kmin, kmax)) != eslOK) return status;
+    printf("Forward/Backward matrices checked.\n");
+  }
+
+  /* Get posteriors */
+  if((status = cp9_PosteriorP7B(dsq, errbuf, L, cm->cp9, fmx, bmx, pmx, kmin, kmax)) != eslOK) return status;
+
+  esl_stopwatch_Destroy(watch);
+  return eslOK;
+}
+
+
+/* Function: cp9_PosteriorP7B()
+ * based on Ian Holmes' hmmer/src/postprob.c::P7EmitterPosterior()
+ *
+ * Purpose:  Combines HMMER3 p7 banded Forward and Backward matrices into a 
+ *           posterior probability matrix. For emitters (match and inserts) the 
+ *           entries in row i of this matrix are the logs of the posterior 
+ *           probabilities of each state emitting symbol i of the sequence. 
+ *           For non-emitters the entries in row i of this matrix are the 
+ *           logs of the posterior probabilities of each state being 'visited' 
+ *           when the last emitted residue in the parse was symbol i of the
+ *           sequence.
+ *
+ * Args:     dsq      - sequence in digitized form
+ *           errbuf   - for error messages
+ *           L        - length of target subsequence 1..L
+ *           hmm      - the model
+ *           forward  - pre-calculated forward matrix
+ *           backward - pre-calculated backward matrix
+ *           pm       - pre-allocated dynamic programming matrix for posteriors
+ *           kmin     - P7 derived band to enforce: [0.i..L] = k, min node k for residue i
+ *           kmax     - P7 derived band to enforce: [0.i..L] = k, min node k for residue i
+ *           
+ * Return:   eslOK on success;
+ */
+int
+cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, int *kmin, int *kmax)
+{
+  int i;
+  int k;
+  int sc;
+  int M = hmm->M;
+  int kp, kn, kx; 
+  /*float temp_sc;*/
+
+  if(bmx != pmx) GrowCP9Matrix(pmx, errbuf, L, M, kmin, kmax, NULL, NULL, NULL, NULL, NULL);
+
+  /* parses must start/stop at (i = 1)/(j = L) */
+  sc = bmx->mmx[0][0]; 
+
+  /* note boundary conditions, i = 1 */
+  assert(kmin[0] == 0);
+  pmx->mmx[0][0] = fmx->mmx[0][0] + bmx->mmx[0][0] - sc; /* fmx->mmx[0][0] is 0, bmx->mmx[1][0] is overall score */
+  pmx->imx[0][0] = -INFTY; /*need seq to get here*/
+  pmx->dmx[0][0] = -INFTY; /*D_0 does not exist*/
+  i  = 0;
+  kn = ESL_MAX(kmin[i], 1);
+  kx = kmax[i];
+  kp = kn - kmin[i];
+  for (k = kn; k <= kx; k++, kp++) {
+    pmx->mmx[0][kp] = -INFTY; /*need seq to get here*/
+    pmx->imx[0][kp] = -INFTY; /*need seq to get here*/
+    pmx->dmx[0][kp] = fmx->dmx[0][kp] + bmx->dmx[0][kp] - sc;
+  }
+
+  for (i = 1; i <= L; i++) {
+      k = 0;
+      if(INBAND(i,0)) { 
+	kp = k - kmin[i];
+	assert(kp == 0);
+	pmx->mmx[i][kp] = ESL_MAX(fmx->mmx[i][kp] + bmx->mmx[i][kp] - sc, -INFTY); /* M_0 doesn't emit */
+	pmx->imx[i][kp] = ESL_MAX(fmx->imx[i][kp] + bmx->imx[i][kp] - hmm->isc[dsq[i]][0] - sc, -INFTY);
+	/*hmm->isc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
+	pmx->dmx[i][kp] = -INFTY; /* D_0 doesn't exist */
+      }
+
+      kn = ESL_MAX(kmin[i], 1);
+      kx = kmax[i];
+      kp = kn - kmin[i];
+      for(k = kn; k <= kx; k++, kp++)
+	{
+	  pmx->mmx[i][kp] = ESL_MAX(fmx->mmx[i][kp] + bmx->mmx[i][kp] - hmm->msc[dsq[i]][k] - sc, -INFTY);
+	  /*hmm->msc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
+	  pmx->imx[i][kp] = ESL_MAX(fmx->imx[i][kp] + bmx->imx[i][kp] - hmm->isc[dsq[i]][k] - sc, -INFTY);
+	  /*hmm->isc[dsq[i]][k] will have been counted in both fmx->mmx and bmx->mmx*/
+	  pmx->dmx[i][kp] = ESL_MAX(fmx->dmx[i][kp] + bmx->dmx[i][kp] - sc, -INFTY);
+	}
+    }	  
+
+  /*
+    float temp_sc;
+    for(i = 0; i <= L; i++)
+    {
+    kp = 0;
+    for(k = kmin[i]; k <= kmax[i]; k++, kp++)
+    {
+    temp_sc = Score2Prob(mx->mmx[i][kp], 1.);
+    if(temp_sc > .0001)
+    printf("mx->mmx[%3d][%3d]: %9d | %8f\n", i, k, mx->mmx[i][kp], temp_sc);
+    temp_sc = Score2Prob(mx->imx[i][kp], 1.);
+    if(temp_sc > .0001)
+    printf("mx->imx[%3d][%3d]: %9d | %8f\n", i, k, mx->imx[i][kp], temp_sc);
+    temp_sc = Score2Prob(mx->dmx[i][kp], 1.);
+    if(temp_sc > .0001)
+    printf("mx->dmx[%3d][%3d]: %9d | %8f\n", i, k, mx->dmx[i][kp], temp_sc);
+    }
+    }*/
+  return eslOK;
+}
+
 /* Function: cp9_FB2HMMBandsP7B()
  * Date:     EPN, Fri Aug 15 14:00:59 2008
  *
@@ -2082,7 +2251,6 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
  * int   L          length of target subsequence (1..L)
  * int   M          number of nodes in HMM (num columns of pmx matrix)
  * double p_thresh  the probability mass we're requiring is within each band
- * int did_scan     TRUE if Forward/Backward were run in 'scan mode'
  * int do_old_hmm2ij TRUE if we'll use old cp9_HMM2ijBands_OLD() function downstream
  * int kmin         P7 dervied band to enforce: [0.i..L] = k, min node k for residue i
  * int kmax         P7 derived band to enforce: [0.i..L] = k, min node k for residue i
@@ -2093,7 +2261,7 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
  */
 int
 cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
-		   int L, int M, double p_thresh, int did_scan, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level)
+		   int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level)
 {
   int status;
   int k;                                  /* counter over nodes of the model */
@@ -2143,16 +2311,7 @@ cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *
   esl_vec_ISet(xset_i, M+1, FALSE);
   esl_vec_ISet(xset_d, M+1, FALSE);
 
-  if(did_scan) { /* Forward/Backward run in 'scan mode' which allow parses to start/stop anywhere */
-    printf("DID SCAN!\n");
-    exit(1);
-    sc = -INFTY;
-    for (i = 0; i <= L; i++) {
-      /*printf("bmx->mmx[i:%d][0]: %d\n", i, bmx->mmx[i][0]); */
-      sc = ILogsum(sc, (bmx->mmx[i][0])); 
-    }
-  }
-  else sc = bmx->mmx[0][0]; /* Forward/Backward run in 'align mode' parses must start at 1, end at L */
+  sc = bmx->mmx[0][0]; /* Forward/Backward run in 'align mode' parses must start at 1, end at L */
   /* sc is summed log prob of all possible parses of seq 1..L */
 
   /* note boundary conditions, i = 1 */
@@ -2322,7 +2481,7 @@ cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *
       cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = -1;
       dset = FALSE;
     }
-    if((!hmm_is_localized && !did_scan) && (mset == FALSE && dset == FALSE)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "node: %d match nor delete HMM state bands were set in non-localized, non-scanning HMM, lower tau (should be << 0.5).\n", k);
+    if((!hmm_is_localized) && (mset == FALSE && dset == FALSE)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "node: %d match nor delete HMM state bands were set in non-localized, non-scanning HMM, lower tau (should be << 0.5).\n", k);
   }
   
   cp9b->pn_min_d[0] = -1; /* D_0 doesn't exist */
@@ -2475,7 +2634,116 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL
 
   free(iconflict);
   free(isc);
+  free(k2i);
 
   esl_stopwatch_Destroy(watch);
+  return eslOK;
+}
+
+
+/**************************************************************
+ * Function: CP9NodeForPosnP7B()
+ * Incept:   EPN, Tue Aug 19 14:30:51 2008
+ * 
+ * Purpose:  Given a P7 banded CP9 posterior matrix,
+ *           determine the node of the CP9 HMM that is most likely to 
+ *           have emitted (from either its Match or Insert state)
+ *           a given posn in the target sequence.
+ *
+ * Args:     hmm       - the CM plan 9 HMM
+ *           errbuf    - for error messages
+ *           x         - posn of target subsequence we're interested in
+ *           L         - last position of target sequence 
+ *           post      - the posterior matrix for the hmm
+ *           kn        - min node k for residue x
+ *           kx        - max node k for residue x
+ *           ret_node  - RETURN: index of node with highest probability of emitting x
+ *           ret_type  - RETURN: type of state in ret_node with highest probability 
+ *           print_flag- TRUE to print out info on most likely node 
+ *           
+ *
+ * Returns:  eslOK on success;
+ *           eslEINVAL on contract violation.
+ *           eslEINCOMPAT if kmin[x] >= 
+ */
+int 
+CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *post, 
+		  int kn, int kx, int *ret_node, int *ret_type, int print_flag)
+{
+  /* post->mmx[i][kp]: posterior probability that posn i was emitted from node k's 
+     match state, k = kp + kmin[i] */  
+  int  max_k;    /* node index with highest posterior probability of emitting posn x */
+  int  max_type; /* type of state in max_k node with max probability '0' for match, 
+		    '1' for insert */
+  int  max_sc;   /* score (log probability) from post matrix for max_k node max_type state type */
+  int  k;        /* counter over nodes */
+  int  kp;       /* k': k offset in position x's band */
+    
+  if(kn > kx) ESL_FAIL(eslEINVAL, errbuf, "ERROR in CP9NodeForPosn(), kn (%d) > kx (%d)\n", kn, kx);
+  
+  kp = 0;
+  k  = kn;
+  if(post->mmx[x][0] > post->imx[x][0]) { 
+    max_sc     = post->mmx[x][0];
+    max_type   = 0; /* match */
+  }
+  else {
+    max_sc     = post->imx[x][0];
+    max_type   = 1; /* insert */
+  }
+  max_k = k; 
+
+  /* move left to right through HMM nodes */
+  for(k = kn+1, kp = 1; k <= kx; k++, kp++) {
+    if(post->mmx[x][kp] > max_sc) {
+      max_k  = k;
+      max_sc = post->mmx[x][kp];
+      max_type = 0; /* match */
+    }
+    if(post->imx[x][kp] > max_sc) {
+      max_k  = k;
+      max_sc = post->imx[x][kp];
+      max_type = 1; /* insert */
+    }
+  }
+
+  if(print_flag) { 
+    if(max_type == 0) printf("MATCH  | mx->mmx[%3d][%3d]: %9d | %8f\n", x, max_k, post->mmx[x][max_k-kn],  Score2Prob(post->mmx[x][max_k-kn], 1.));
+    else      	      printf("INSERT | mx->imx[%3d][%3d]: %9d | %8f\n", x, max_k, post->imx[x][max_k-kn], Score2Prob(post->imx[x][max_k-kn], 1.));
+  }
+  *ret_node = max_k;
+  *ret_type = max_type;
+  return eslOK;
+}
+
+/* Function: P7BandsAdjustForSubCM()
+ * Incept:   EPN, Tue Aug 19 14:47:55 2008
+ * 
+ * Purpose:  Correct k bands kmin, kmax built from an original CM for it's sub CM model 
+ *           that models spos..epos.
+ *           
+ * Args:     kmin     - [0.i..L] = k, min node k for residue i
+ *           kmax     - [0.i..L] = k, max node k for residue i
+ *           L        - length of current sequence
+ *           spos     - min k valid in sub CM 
+ *           epos     - max k valid in sub CM 
+ *
+ * Return:   <eslOK> on success.
+ *
+ */
+int
+P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos)
+{
+  int i;
+  int M = epos - spos + 1;
+  for(i = 0; i <= L; i++) { 
+    kmin[i] = ESL_MAX(kmin[i] - (spos-1), 0);
+    kmin[i] = ESL_MIN(kmin[i], M);
+
+    kmax[i] = ESL_MAX(kmax[i] - (spos-1), 0);
+    kmax[i] = ESL_MIN(kmax[i], M);
+  }
+  kmin[0] = 0; /* hard-coded, M_0 is begin state, it must emit full sequence */
+
   return eslOK;
 }

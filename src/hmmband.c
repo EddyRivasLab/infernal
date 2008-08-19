@@ -257,8 +257,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 }
 
 
-/*
- * Function: cp9_Seq2Posteriors
+/* Function: cp9_Seq2Posteriors
  * Date    : EPN, Mon Jan  8 07:27:21 2007
  *
  * Purpose:  Given a CM with precalc'ed CP9 HMM and CP9Map, and a sequence,

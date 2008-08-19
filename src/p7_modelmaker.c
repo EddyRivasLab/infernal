@@ -83,9 +83,12 @@ BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm, P7_OPR
   p7_hmm_SetAccession(hmm, cm->acc);
   p7_hmm_SetDescription(hmm, cm->desc);
   p7_hmm_SetCtime(hmm);
-  ESL_ALLOC(hmm->comlog, sizeof(char)* (strlen(cm->comlog->bcom)+1));
-  *(hmm->comlog) = '\0'; /* need this to make strcat work */
-  strcat(hmm->comlog, cm->comlog->bcom);
+  if(cm->comlog != NULL && cm->comlog->bcom != NULL) { 
+    ESL_ALLOC(hmm->comlog, sizeof(char)* (strlen(cm->comlog->bcom)+1));
+    *(hmm->comlog) = '\0'; /* need this to make strcat work */
+    strcat(hmm->comlog, cm->comlog->bcom);
+  }
+  else hmm->comlog = NULL;
 
   hmm->eff_nseq = cm->eff_nseq;
   hmm->nseq     = cm->nseq;
