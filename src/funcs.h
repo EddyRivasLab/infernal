@@ -186,7 +186,7 @@ extern int     CMFilePositionByKey(CMFILE *cmf, char *key);
 extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary, char *errbuf);
 
 /* from cm_modelconfig.c */
-extern int   ConfigCM(CM_t *cm, int always_calc_W);
+extern int   ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t *mother_map);
 extern void  ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit);
 extern void  ConfigGlobal(CM_t *cm);
 extern void  ConfigNoLocalEnds(CM_t *cm);
@@ -231,6 +231,8 @@ extern void             cm_FreeScanMatrixForCM     (CM_t *cm);
 extern void             cm_DumpScanMatrixAlpha     (CM_t *cm, int j, int i0, int doing_float);
 extern float **         FCalcOptimizedEmitScores   (CM_t *cm);
 extern int **           ICalcOptimizedEmitScores   (CM_t *cm);
+extern int **           ICopyOptimizedEmitScoresFromFloats(CM_t *cm, float **oesc);
+extern void             DumpOptimizedEmitScores    (CM_t *cm, FILE *fp);
 extern void             FreeOptimizedEmitScores    (float **fesc_vAA, int **iesc_vAA, int M);
 extern float **         FCalcInitDPScores          (CM_t *cm);
 extern int **           ICalcInitDPScores          (CM_t *cm);
@@ -304,6 +306,8 @@ extern void         FreeSubMap(CMSubMap_t *submap);
 extern CMSubInfo_t *AllocSubInfo(int clen);
 extern void         FreeSubInfo(CMSubInfo_t *subinfo);
 extern void  debug_print_cm_params(FILE *fp, CM_t *cm);
+extern int   SubCMLogoddsify(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map);
+extern float ** SubFCalcAndCopyOptimizedEmitScoresFromMother(CM_t *cm, CM_t *mother_cm, CMSubMap_t *mother_map);
 
 /* from cp9.c */
 extern CP9_t *AllocCPlan9(int M, const ESL_ALPHABET *abc);
@@ -342,12 +346,11 @@ extern void  CPlan9ELConfig(CM_t *cm);
 extern void  CPlan9NoEL(CM_t *cm);
 extern void  CPlan9InitEL(CM_t *cm, CP9_t *cp9);
 extern void  CPlan9RenormalizeExits(CP9_t *hmm, int spos);
-extern void  CP9_2sub_cp9(CP9_t *orig_hmm, CP9_t **ret_sub_hmm, int spos, int epos, double **orig_phi);
-extern void  CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
 extern int   Prob2Score(float p, float null);
 extern float Score2Prob(int sc, float null);
 extern float Scorify(int sc);
 extern void  CPlan9CMLocalBeginConfig(CM_t *cm);
+extern void  CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
 
 /* from cp9_modelmaker.c */
 extern CP9Map_t *AllocCP9Map(CM_t *cm);
@@ -364,6 +367,8 @@ extern int  CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS *r, CMSub
 extern void debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores);
 extern void debug_print_phi_cp9(CP9_t *hmm, double **phi);
 extern int  MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, char *ss, char **ret_s);
+extern int  sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
+					  float psi_vs_phi_threshold, int debug_level);
 
 /* from cp9_mx.c */
 extern CP9_MX *CreateCP9Matrix(int N, int M);
@@ -392,11 +397,18 @@ extern int   CP9TraceScoreCorrectionNull2(CP9_t *hmm, char *errbuf, CP9trace_t *
 /* from alphabet.c */
 extern void   PairCount(const ESL_ALPHABET *abc, float *counters, char syml, char symr, float wt);
 extern float  DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, char syml, char symr);
-extern int    iDegeneratePairScore(const ESL_ALPHABET *abc, int *esc, char syml, char symr);
+extern int    iDegeneratePairScore(const ESL_ALPHABET *abc, int *iesc, char syml, char symr);
 extern char   resolve_degenerate (ESL_RANDOMNESS *r, char c);
 extern int    revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
 float  LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, int dres);
 float  RightMarginalScore(const ESL_ALPHABET *abc, float *esc, int dres);
+extern float  FastPairScoreBothDegenerate(int K, float *esc, float *left, float *right);
+extern int  iFastPairScoreBothDegenerate(int K, int *esc, float *left, float *right);
+extern float FastPairScoreLeftOnlyDegenerate(int K, float *esc, float *left, ESL_DSQ symr);
+extern int  iFastPairScoreLeftOnlyDegenerate(int K, int *iesc, float *left, ESL_DSQ symr);
+extern float FastPairScoreRightOnlyDegenerate(int K, float *esc, float *right, ESL_DSQ syml);
+extern float iFastPairScoreRightOnlyDegenerate(int K, int *iesc, float *right, ESL_DSQ syml);
+
 
 /* from display.c */
 extern Fancyali_t    *CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, char *pcode1, char *pcode2);

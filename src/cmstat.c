@@ -75,7 +75,7 @@ static char usage[]  = "[-options] <cmfile>";
 static char banner[] = "display summary statistics for CMs";
 
 static int    summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL_STOPWATCH *w, FILE *ofp); 
-static int    initialize_cm   (CM_t *cm, int cm_mode, int hmm_mode);
+static int    initialize_cm   (CM_t *cm, char *errbuf, int cm_mode, int hmm_mode);
 static int    print_run_info(const ESL_GETOPTS *go, char *errbuf, ESL_RANDOMNESS *r);
 extern int    get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
 
@@ -316,7 +316,7 @@ main(int argc, char **argv)
 	    cm->config_opts |= CM_CONFIG_HMMLOCAL;
 	    cm->config_opts |= CM_CONFIG_HMMEL;
 	  }
-	ConfigCM(cm, TRUE); /* TRUE says: calculate W */
+	if((status = ConfigCM(cm, errbuf, TRUE, NULL, NULL)) != eslOK) return status; /* TRUE says: calculate W */
 
 	/* print qdbs to file if nec */
 	if(qdbfp != NULL) debug_print_bands(qdbfp, cm, cm->dmin, cm->dmax);
@@ -431,7 +431,7 @@ main(int argc, char **argv)
 	if((status = UpdateExpsForDBSize(cm, errbuf, dbsize)) != eslOK) cm_Fail(errbuf);
 	
 	/* initialize model and determine average hit length, number of CM DP calcs per residue and number of HMM DP calcs per residue */
-	initialize_cm(cm, cm_mode, hmm_mode);
+	if((status = initialize_cm(cm, errbuf, cm_mode, hmm_mode)) != eslOK) cm_Fail(errbuf);
 	if(!seen_fthr_yet) {
 	  fprintf(stdout, "#\n");
 	  if(doing_localfc)  fprintf(stdout, "# local CYK filter threshold stats ");
@@ -729,15 +729,16 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
  * the CM.
  */
 static int
-initialize_cm(CM_t *cm, int cm_mode, int hmm_mode)
+initialize_cm(CM_t *cm, char *errbuf, int cm_mode, int hmm_mode)
 {
+  int status;
   /* Update cm->config_opts based on exp tail mode */
   if(ExpModeIsLocal(cm_mode))  cm->config_opts |= CM_CONFIG_LOCAL;
   if(ExpModeIsLocal(hmm_mode)) {
     cm->config_opts |= CM_CONFIG_HMMLOCAL;
     cm->config_opts |= CM_CONFIG_HMMEL;
   }
-  ConfigCM(cm, TRUE); /* TRUE says: calculate W */
+  if((status = ConfigCM(cm, errbuf, TRUE, NULL, NULL)) != eslOK) return status; /* TRUE says: calculate W */
 
   return eslOK;
 }

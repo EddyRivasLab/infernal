@@ -17,6 +17,7 @@
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_stack.h"
+#include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
 #include "hmmer.h"
@@ -24,8 +25,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-/*
- * Function: ConfigCM()
+/* Function: ConfigCM()
  * Date:     EPN, Thu Jan  4 06:36:09 2007
  * Purpose:  Configure a CM for alignment or search based on cm->config_opts,
  *           cm->align_opts and cm->search_opts. 
@@ -33,19 +33,48 @@
  *           Calculates query dependent bands (QDBs) if nec.
  *           QDBs can also be passed in. 
  * 
- * Args:     CM           - the covariance model
+ *           If <sub_mother_cm> and <sub_mother_map> are non-NULL, <cm> is 
+ *           a sub CM constructed from <sub_mother_cm>. In this case, we're
+ *           doing alignment and are constructing a new sub CM for each target
+ *           sequence so running time should be minimized. Special functions
+ *           for building the CP9 HMM and for logoddsifying the model are called
+ *           that are faster than the normal versions b/c they can just copy some
+ *           of the parameters of the mother model instead of calc'ing them.
+ *          
+ * Args:     cm            - the covariance model
+ *           errbuf        - for error messages
  *           always_calc_W - TRUE to always calculate W even if we're not calcing
  *                           QDBs, FALSE to only calc W if we're calcing QDBs
+ *           mother_cm     - if non-NULL, <cm> is a sub CM construced from 
+ *                           <mother_cm>. In this case we use <mother_map>
+ *                           to help streamline the two steps that dominate the 
+ *                           running time of this function (b/c speed is an issue):
+ *                           building a the cp9 HMM, and logoddsifying the model.
+ *           mother_map    - must be non-NULL iff <mother_cm> is non-NULL, the 
+ *                           map from <cm> to <mother_cm>.
  *
  * Returns:   <eslOK> on success.
  *            <eslEINVAL> on contract violation.
  *            <eslEMEM> on memory allocation error.
  */
 int 
-ConfigCM(CM_t *cm, int always_calc_W)
+ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t *mother_map)
 {
   int status;
   float swentry, swexit;
+  int have_mother;
+  have_mother = (mother_cm != NULL && mother_map != NULL)  ? TRUE : FALSE;
+
+  /* contract check */
+  if(mother_cm != NULL && mother_map == NULL)  ESL_FAIL(eslEINCOMPAT, errbuf, "ConfigCM(), mother_cm != NULL but mother_map == NULL (both must be NULL or both non-NULL).");
+  if(mother_cm == NULL && mother_map != NULL)  ESL_FAIL(eslEINCOMPAT, errbuf, "ConfigCM(), mother_cm == NULL but mother_map != NULL (both must be NULL or both non-NULL).");
+  if(have_mother && cm->config_opts & CM_CONFIG_LOCAL) ESL_FAIL(eslEINCOMPAT, errbuf, "ConfigCM(), configuring a sub CM, but CM_CONFIG_LOCAL config flag up.");
+
+  /* TEMP */
+  ESL_STOPWATCH *w;
+  w = esl_stopwatch_Create();
+  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
+  /* TEMP */
   
   /* Build the CP9 HMM and associated data */
   /* IMPORTANT: do this before setting up CM for local mode
@@ -58,8 +87,20 @@ ConfigCM(CM_t *cm, int always_calc_W)
   if(cm->cp9        != NULL) FreeCPlan9(cm->cp9);
   if(cm->cp9_mx     != NULL) FreeCP9Matrix(cm->cp9_mx);
   if(cm->cp9_bmx    != NULL) FreeCP9Matrix(cm->cp9_bmx);
+  
+  esl_stopwatch_Start(w);  
+  if(have_mother) { 
+    if(!(sub_build_cp9_hmm_from_mother(cm, errbuf, mother_cm, mother_map, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a CP9 HMM from the sub CM and it's mother\n");
+  }
+  else { 
+    if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a CP9 HMM from the CM\n");
+  }
+  esl_stopwatch_Stop(w); 
+  FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+  fprintf(stdout, "\tcp9 build time        %11s\n", time_buf);
+#endif
 
-  if(!(build_cp9_hmm(cm, &(cm->cp9), &(cm->cp9map), FALSE, 0.0001, 0))) cm_Fail("Couldn't build a CP9 HMM from the CM\n");
   cm->cp9b = AllocCP9Bands(cm, cm->cp9);
   /* create the CP9 matrices, we init to 1 row, which is tiny so it's okay
    * that we have two of them, we only grow them as needed, cp9_bmx is 
@@ -75,7 +116,7 @@ ConfigCM(CM_t *cm, int always_calc_W)
   if(cm->p7    != NULL) p7_hmm_Destroy(cm->p7);
   if(cm->p7_gm != NULL) p7_profile_Destroy(cm->p7_gm);
   if(cm->p7_om != NULL) p7_oprofile_Destroy(cm->p7_om);
-  if((status = BuildP7HMM_MatchEmitsOnly(cm, &(cm->p7), &(cm->p7_gm), &(cm->p7_om))) != eslOK) cm_Fail("Couldn't build a p7 HMM from the CM\n");
+  if((status = BuildP7HMM_MatchEmitsOnly(cm, &(cm->p7), &(cm->p7_gm), &(cm->p7_om))) != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Couldn't build a p7 HMM from the CM\n");
 
   /* Possibly configure the CM for local alignment. */
   if (cm->config_opts & CM_CONFIG_LOCAL)
@@ -133,7 +174,7 @@ ConfigCM(CM_t *cm, int always_calc_W)
    * before QDB calc, then turned off in BandCalculationEngine() then 
    * back on. */
   if(cm->config_opts & CM_CONFIG_QDB) {
-    if(cm->flags & CMH_QDB) cm_Fail("ERROR in ConfigCM() CM already has QDBs\n");
+    if(cm->flags & CMH_QDB) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "ERROR in ConfigCM() CM already has QDBs\n");
     ConfigQDBAndW(cm, TRUE);
   }
   else if(always_calc_W) ConfigQDBAndW(cm, FALSE); /* FALSE says: don't calculate QDBs, W will still be calc'ed and set */
@@ -154,7 +195,15 @@ ConfigCM(CM_t *cm, int always_calc_W)
    * transitions that existed prior to overwriting with RSEARCH
    * transitions. Transitions scores are overwritten in CMLogoddsify() 
    */
-  CMLogoddsify(cm);
+  esl_stopwatch_Start(w);  
+  if(have_mother) { if((status = SubCMLogoddsify(cm, errbuf, mother_cm, mother_map)) != eslOK) return status; }
+  else            CMLogoddsify(cm);
+  esl_stopwatch_Stop(w); 
+  FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+  fprintf(stdout, "\tCM logoddsify       %11s\n", time_buf);
+#endif
+  esl_stopwatch_Destroy(w);
 
   /*debug_print_cm_params(stdout, cm);
     debug_print_cp9_params(stdout, cm->cp9, TRUE);*/

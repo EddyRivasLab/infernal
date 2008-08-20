@@ -1081,6 +1081,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 static int
 initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
+  int status;
   int use_hmmonly;
   int nstarts, nexits, nd;
   
@@ -1168,7 +1169,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* finally, configure the CM for search based on cm->config_opts and cm->align_opts.
    * set local mode, make cp9 HMM, calculate QD bands etc. 
    */
-  ConfigCM(cm, TRUE);  /* TRUE says: calculate W */
+  if((status = ConfigCM(cm, errbuf, TRUE, NULL, NULL)) != eslOK) return status; /* TRUE says: calculate W */
 
   /* Setup ScanMatrix for CYK/Inside scanning functions, we can't 
    * do it in initialize_cm(), b/c it's W dependent; W was just set.
@@ -1197,9 +1198,6 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
  *           do (all rounds but last round are filters), and set the relevant 
  *           info in the SearchInfo_t <cm->si> object, including cutoffs.
  *
- *************************************************************************
- * FIX EVERYTHING BELOW THIS LINE !!!!
- *************************************************************************
  * Filters:
  *
  * User can specify 0 or 1 round of HMM filtering with Forward, followed by 0 or 

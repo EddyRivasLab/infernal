@@ -1167,6 +1167,8 @@ process_cmscore_search_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, 
 static int
 initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
+  int status;
+
   /* Some stuff we do no matter what stage we're on */
   cm->align_opts  = 0;  /* clear alignment options from previous stage */
   cm->config_opts = 0;  /* clear configure options from previous stage */
@@ -1230,7 +1232,7 @@ initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
     /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
      * set local mode, make cp9 HMM, calculate QD bands etc. 
      */
-    ConfigCM(cm, FALSE); /* FALSE says don't bother calc'ing W, we won't need it */
+    if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) return status; /* FALSE says don't calculate W */
   }
   else { /* cfg->s > 0, we're at least on stage 2, 
 	    don't call ConfigCM() again, only info that may change is QDBs, and align_opts */
@@ -1269,6 +1271,8 @@ initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
 static int
 initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
+  int status;
+
   /* Some stuff we do no matter what stage we're on */
     cm->search_opts  = 0;  /* clear alignment options from previous stage */
     cm->config_opts = 0;  /* clear configure options from previous stage */
@@ -1322,7 +1326,7 @@ initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
     /* configure the CM for search based on cm->config_opts and cm->align_opts.
      * set local mode, make cp9 HMM, calculate QD bands etc. 
      */
-    ConfigCM(cm, TRUE); /* TRUE says calculate W */
+    if((status = ConfigCM(cm, errbuf, TRUE, NULL, NULL)) != eslOK) return status; /* TRUE says calculate W */
   }
   else { /* cfg->s > 0, we're at least on stage 2, 
 	    don't call ConfigCM() again, only info that may change is QDBs, and search_opts */

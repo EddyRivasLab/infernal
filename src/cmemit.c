@@ -335,6 +335,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 static int
 initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf)
 {
+  int status;
   int nstarts, nexits, nd;
 
   /* Update cfg->cm->config_opts and cfg->cm->align_opts based on command line options */
@@ -371,7 +372,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
     cm->pend = nexits * esl_opt_GetReal(go, "--pfend");
   }
   
-  ConfigCM(cm, FALSE); /* FALSE says don't bother calc'ing W, we won't need it */
+  if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) return status; /* FALSE says do not calculate W unless nec b/c we're using QDBs */
 
   /* print the CP9 params if nec */
   if(cfg->ahmmfp != NULL) {

@@ -1321,20 +1321,25 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
     if((status = FastInsideAlignHB (cm, errbuf, dsq, i0, j0, size_limit, mx, &ins_sc)) != eslOK) return status;
     esl_stopwatch_Stop(w); 
     FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
     printf("\nFastInsideAlignHB  %11s\n", time_buf);
-
+#endif
     esl_stopwatch_Start(w);  
     if((status = FastOutsideAlignHB(cm, errbuf, dsq, i0, j0, size_limit, post_mx, mx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), NULL)) != eslOK) return status;
     esl_stopwatch_Stop(w); 
     FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
     printf("FastOutsideAlignHB %11s\n", time_buf);
+#endif
 
     /* Note: we can only check the posteriors in FastOutsideAlignHB() if local begin/ends are off */
     esl_stopwatch_Start(w);  
     if((status = CMPosteriorHB(cm, errbuf, i0, j0, size_limit, mx, post_mx, post_mx)) != eslOK) return status;   
     esl_stopwatch_Stop(w); 
     FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
     printf("CMPosteriorHB      %11s\n", time_buf);
+#endif
     if(cm->align_opts & CM_ALIGN_CHECKINOUT) { 
       if((status = CMCheckPosteriorHB(cm, errbuf, i0, j0, post_mx)) != eslOK) return status;
       printf("\nHMM banded posteriors checked.\n\n");
@@ -1352,7 +1357,9 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
   if((status = fast_alignT_hb(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, mx, shmx, do_optacc, post_mx, size_limit, &sc)) != eslOK) return status;
   esl_stopwatch_Stop(w); 
   FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
   printf("fast_alignT_hb()   %11s\n", time_buf);
+#endif
 
   if(have_pcodes) {
     CMPostalCodeHB(cm, L, post_mx, tr, &pcode1, &pcode2);

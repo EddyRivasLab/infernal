@@ -262,3 +262,7 @@ extern double CM_Eweight_RE(CM_t *cm, const Prior_t *pri, float numb_seqs,
 extern double DRelEntropy(double *p, double *f, int n);
 #endif
  
+#if 0
+/* EPN, Wed Aug 20 18:22:22 2008 */
+extern void  CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
+#endif

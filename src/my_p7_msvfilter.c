@@ -1120,7 +1120,6 @@ cp9_ForwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmi
     } /* end loop over end positions i */
   
   *ret_sc = Scorify(erow[L]);
-  printf("cp9_ForwardP7B() return score: %10.4f\n", Scorify(erow[L]));
   ESL_DPRINTF1(("cp9_ForwardP7B() return score: %10.4f\n", Scorify(erow[L])));
 
   return eslOK;
@@ -1382,7 +1381,6 @@ cp9_ForwardP7B_OLD_WITH_EL(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int
     } /* end loop over end positions i */
   
   *ret_sc = Scorify(erow[L]);
-  printf("cp9_ForwardP7B_OLD_WITH_EL() return score: %10.4f\n", Scorify(erow[L]));
   ESL_DPRINTF1(("cp9_ForwardP7B_OLD_WITH_EL() return score: %10.4f\n", Scorify(erow[L])));
 
   return eslOK;
@@ -1488,7 +1486,6 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
    * either way we don't have to modify it */
 
   if(INBAND(i, M)) { /* if i is in k == M's band */
-    printf("i: %4d kmin[i]: %4d kmax[i]: %4d M: %4d\n", i, kmin[i], kmax[i], M);
     assert(M == kmax[i]);
     kpcur = M-kmin[i];
     mmx[i][kpcur]  = 0. + 
@@ -1834,8 +1831,6 @@ cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *km
   /* End of Backward recursion */
   
   ESL_DPRINTF1(("cp9_BackwardP7B() return score: %10.4f\n", fsc));
-  printf("cp9_BackwardP7B() return score: %10.4f\n", fsc);
-
   return eslOK;
 }
 
@@ -1994,13 +1989,16 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
   if((status = cp9_ForwardP7B (cm, errbuf, fmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
   esl_stopwatch_Stop(watch); 
   FormatTimeString(time_buf, watch->user, TRUE);
+#if PRINTNOW
   fprintf(stdout, "Forwp7B         %11s\n", time_buf);
-
+#endif
   esl_stopwatch_Start(watch);  
   if((status = cp9_BackwardP7B(cm, errbuf, bmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
   esl_stopwatch_Stop(watch); 
   FormatTimeString(time_buf, watch->user, TRUE);
+#if PRINTNOW
   fprintf(stdout, "Backp7B         %11s\n", time_buf);
+#endif
 
   if(cm->align_opts & CM_ALIGN_CHECKFB) { 
     if((status = cp9_CheckFBP7B(fmx, bmx, cm->cp9, errbuf, sc, 1, L, dsq, kmin, kmax)) != eslOK) return status;
@@ -2018,7 +2016,9 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
 				    (1.-cm->tau), do_old_hmm2ij, kmin, kmax, debug_level)) != eslOK) return status;
     esl_stopwatch_Stop(watch); 
     FormatTimeString(time_buf, watch->user, TRUE);
+#if PRINTNOW
     fprintf(stdout, "FB2bands        %11s\n", time_buf);
+#endif
   }
   if(debug_level > 0) cp9_DebugPrintHMMBands(stdout, L, cp9b, cm->tau, 1);
 
@@ -2031,7 +2031,9 @@ cp9_Seq2BandsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, 
     if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, 1, L, FALSE, debug_level)) != eslOK) return status;
     esl_stopwatch_Stop(watch); 
     FormatTimeString(time_buf, watch->user, TRUE);
+#if PRINTNOW
     fprintf(stdout, "HMM2ij          %11s\n", time_buf);
+#endif
     /* For debugging, uncomment this block:
        if((status = cp9_HMM2ijBands(cm, errbuf, cm->cp9b, cm->cp9map, i0, j0, doing_search, debug_level)) != eslOK) { 
        ESL_SQ *tmp;
@@ -2110,13 +2112,13 @@ cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *
   if((status = cp9_ForwardP7B (cm, errbuf, fmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
   esl_stopwatch_Stop(watch); 
   FormatTimeString(time_buf, watch->user, TRUE);
-  if(debug_level >= 0) printf("CP9P7B Forward  score : %.4f\n", sc);
+  if(debug_level > 0) printf("CP9P7B Forward  score : %.4f\n", sc);
 
   esl_stopwatch_Start(watch);  
   if((status = cp9_BackwardP7B(cm, errbuf, bmx, dsq, L, kmin, kmax, &sc)) != eslOK) return status;
   esl_stopwatch_Stop(watch); 
   FormatTimeString(time_buf, watch->user, TRUE);
-  if(debug_level >= 0) printf("CP9 Backward  score : %.4f\n", sc);
+  if(debug_level > 0) printf("CP9 Backward  score : %.4f\n", sc);
 
   if(cm->align_opts & CM_ALIGN_CHECKFB) {
     if((status = cp9_CheckFBP7B(fmx, bmx, cm->cp9, errbuf, sc, 1, L, dsq, kmin, kmax)) != eslOK) return status;
@@ -2590,7 +2592,9 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL
   p7_GMSV(dsq, L, cm->p7_gm, gx, &usc);
   esl_stopwatch_Stop(watch); 
   FormatTimeString(time_buf, watch->user, TRUE);
+#if PRINTNOW
   fprintf(stdout, "GMSV  %8.2f  %11s\n", ((usc -nullsc) / eslCONST_LOG2), time_buf);
+#endif
 
   /* Step 2: traceback MSV */
   esl_stopwatch_Start(watch);
@@ -2610,8 +2614,9 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL
   if((status = p7_pins2bands(i2k, errbuf, L, cm->clen, pad7, &kmin, &kmax, &ncells)) != eslOK) return status;
   esl_stopwatch_Stop(watch); 
   FormatTimeString(time_buf, watch->user, TRUE);
+#if PRINTNOW
   fprintf(stdout, "tMSV+           %11s\n", time_buf);
-
+#endif
   /*DumpP7Bands(stdout, i2k, kmin, kmax, L); */
 
   /* print gmx in heatmap format */ 

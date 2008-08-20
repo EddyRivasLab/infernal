@@ -23,6 +23,10 @@
 
 #include "hmmer.h"
 
+/* TEMP EPN, Tue Aug 19 17:40:32 2008 */
+#define PRINTNOW 1
+/* TEMP */
+
 #define cmERRBUFSIZE 1024
 
 /* various default parameters for CMs and CP9 HMMs */ 

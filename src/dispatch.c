@@ -773,14 +773,24 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       if(epos <= spos) { spos = 1; epos = cm->cp9->M; } 
 
       /* (3) Build the sub_cm from the original CM. */
+      esl_stopwatch_Start(watch2);
       if(!(build_sub_cm(orig_cm, &sub_cm, 
 			spos, epos,         /* first and last col of structure kept in the sub_cm  */
 			&submap,            /* maps from the sub_cm to cm and vice versa           */
 			debug_level)))      /* print or don't print debugging info                 */
 	ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), unexpected error building a sub CM for seq %d.", i);
+      esl_stopwatch_Stop(watch2);
+      FormatTimeString(time_buf, watch2->user, TRUE);
+      fprintf(stdout, "build sub cm      %11s\n", time_buf);
+
       /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded), this will also:  */
       /* (4) Build a new CP9 HMM from the sub CM. */
-      ConfigCM(sub_cm, FALSE); /* FALSE says: don't calculate W, we won't need it */
+      esl_stopwatch_Start(watch2);
+      if((status = ConfigCM(sub_cm, errbuf, FALSE, orig_cm, submap)) != eslOK) return status; /* FALSE says: don't calculate W, we won't need it */
+      esl_stopwatch_Stop(watch2);
+      FormatTimeString(time_buf, watch2->user, TRUE);
+      fprintf(stdout, "config sub cm      %11s\n", time_buf);
+
       cm    = sub_cm; /* orig_cm still points to the original CM */
       if(do_hbanded) { /* we're doing HMM banded alignment to the sub_cm */
 	/* Get the HMM bands for the sub_cm */
@@ -1020,7 +1030,9 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     }
     esl_stopwatch_Stop(watch2); 
     FormatTimeString(time_buf, watch2->user, TRUE);
+#if PRINTNOW
     fprintf(stdout, "CM parse        %11s\n", time_buf);
+#endif
 
 #if 0    
     if(do_p7banded) { 

@@ -1541,6 +1541,8 @@ convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa)
 static int
 initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
+  int status;
+
   /* set up params/flags/options of the CM */
   cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
 
@@ -1568,7 +1570,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * this may make a cp9 HMM, for example.
    */
-  ConfigCM(cm, FALSE); /* FALSE says don't calc W */
+  if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) return status; /* FALSE says do not calculate W unless nec b/c we're using QDBs */
 
   return eslOK;
 }

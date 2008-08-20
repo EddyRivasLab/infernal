@@ -25,6 +25,7 @@
 #include "esl_vectorops.h"
 #include "esl_alphabet.h"
 #include "esl_stack.h"
+#include "esl_stopwatch.h"
 
 #include "funcs.h"
 #include "structs.h"
@@ -671,7 +672,14 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 void
 CMLogoddsify(CM_t *cm)
 {
+  printf("HEY IN CMLOGODDSIFY!\n");
   int v, x, y;
+
+  /* TEMP */
+  ESL_STOPWATCH *w;
+  w = esl_stopwatch_Create();
+  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
+  esl_stopwatch_Start(w);
 
   for (v = 0; v < cm->M; v++)
     {
@@ -716,12 +724,30 @@ CMLogoddsify(CM_t *cm)
 	 (sreEXP2(cm->el_selfsc)), cm->iel_selfsc, (Score2Prob(cm->iel_selfsc, 1.0)));
 	 printf("-INFTY: %d prob: %f 2^: %f\n", -INFTY, (Score2Prob(-INFTY, 1.0)), sreEXP2(-INFTY));*/
 
+  esl_stopwatch_Stop(w); 
+  FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+  fprintf(stdout, "\t\t\tCM df params       %11s\n", time_buf);
+#endif
+  esl_stopwatch_Start(w); 
+
   /* Allocate and fill optimized emission scores for this CM.
    * If they already exist, free them and recalculate them, slightly wasteful, oh well.
    */
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
   cm->oesc  = FCalcOptimizedEmitScores(cm);
-  cm->ioesc = ICalcOptimizedEmitScores(cm);
+  /* EPN, Wed Aug 20 15:26:01 2008 
+   * old, slow way: 
+   * cm->ioesc = ICalcOptimizedEmitScores(cm);
+   */
+  cm->ioesc = ICopyOptimizedEmitScoresFromFloats(cm, cm->oesc);
+  
+  esl_stopwatch_Stop(w); 
+  FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+  fprintf(stdout, "\t\t\tCM O  params       %11s\n", time_buf);
+#endif
+  esl_stopwatch_Destroy(w);
 
   /* Potentially, overwrite transitions with non-probabilistic 
    * RSEARCH transitions. Currently only default transition
@@ -787,6 +813,7 @@ CMLogoddsify(CM_t *cm)
   /* raise flag saying we have valid log odds scores */
   cm->flags |= CMH_BITS;
 }
+
 
 
 /* Function: CountStatetype(), CMSubtreeCountStatetype(), CMSegmentCountStatetype
