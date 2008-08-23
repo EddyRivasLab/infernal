@@ -394,13 +394,13 @@ extern int   CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq,
 extern int   CP9TraceScoreCorrectionNull2(CP9_t *hmm, char *errbuf, CP9trace_t *tr, ESL_DSQ *dsq, int start, float *ret_sc);
 
 /* from alphabet.c */
-extern void   PairCount(const ESL_ALPHABET *abc, float *counters, char syml, char symr, float wt);
-extern float  DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, char syml, char symr);
-extern int    iDegeneratePairScore(const ESL_ALPHABET *abc, int *esc, char syml, char symr);
+extern void   PairCount(const ESL_ALPHABET *abc, float *counters, ESL_DSQ syml, ESL_DSQ symr, float wt);
+extern float  DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ syml, ESL_DSQ symr);
+extern int    iDegeneratePairScore(const ESL_ALPHABET *abc, int *esc, ESL_DSQ syml, ESL_DSQ symr);
 extern char   resolve_degenerate (ESL_RANDOMNESS *r, char c);
 extern int    revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
-float  LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, int dres);
-float  RightMarginalScore(const ESL_ALPHABET *abc, float *esc, int dres);
+float  LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres);
+float  RightMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres);
 
 /* from display.c */
 extern Fancyali_t    *CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, char *pcode1, char *pcode2);

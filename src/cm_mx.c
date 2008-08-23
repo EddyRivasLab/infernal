@@ -895,7 +895,7 @@ FCalcOptimizedEmitScores(CM_t *cm)
 {
   int status; 
   float **esc_vAA;
-  int a,b;
+  ESL_DSQ a,b;
   int v;
 
   /* precalculate possible emission scores for each state */
@@ -957,7 +957,7 @@ ICalcOptimizedEmitScores(CM_t *cm)
   int status;
   int **iesc_vAA;
   int v;
-  int a,b;
+  ESL_DSQ a,b;
 
   /* precalculate possible emission scores for each state */
   ESL_ALLOC(iesc_vAA, sizeof(int *)   * (cm->M));
