@@ -401,6 +401,12 @@ extern char   resolve_degenerate (ESL_RANDOMNESS *r, char c);
 extern int    revcomp(const ESL_ALPHABET *abc, ESL_SQ *comp, ESL_SQ *sq);
 float  LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres);
 float  RightMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres);
+extern float  FastPairScoreBothDegenerate(int K, float *esc, float *left, float *right);
+extern int  iFastPairScoreBothDegenerate(int K, int *esc, float *left, float *right);
+extern float FastPairScoreLeftOnlyDegenerate(int K, float *esc, float *left, ESL_DSQ symr);
+extern int  iFastPairScoreLeftOnlyDegenerate(int K, int *iesc, float *left, ESL_DSQ symr);
+extern float FastPairScoreRightOnlyDegenerate(int K, float *esc, float *right, ESL_DSQ syml);
+extern float iFastPairScoreRightOnlyDegenerate(int K, int *iesc, float *right, ESL_DSQ syml);
 
 /* from display.c */
 extern Fancyali_t    *CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, char *pcode1, char *pcode2);
