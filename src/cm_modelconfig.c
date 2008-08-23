@@ -178,6 +178,8 @@ ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit)
     cm_Fail("ERROR in ConfigLocal(), CMH_LOCAL_BEGIN flag already up.\n");
   if(cm->flags & CMH_LOCAL_END)
     cm_Fail("ERROR in ConfigLocal(), CMH_LOCAL_END flag already up.\n");
+  if(cm->flags & CM_IS_SUB)
+    cm_Fail("ERROR in ConfigLocal(), CM is a sub CM, we can't localize it, we could if we first checked if its invalid (see cm_from_guide()).");
 
   if(cm->flags & CMH_SCANMATRIX) had_scanmatrix = TRUE;
   else had_scanmatrix = FALSE;
@@ -395,6 +397,8 @@ ConfigLocalEnds(CM_t *cm, float p_internal_exit)
   /* Contract check */
   if(cm->flags & CMH_LOCAL_END)
     cm_Fail("ERROR in ConfigLocalEnds() CMH_LOCAL_END flag already up.\n");
+  if(cm->flags & CM_IS_SUB)
+    cm_Fail("ERROR in ConfigLocalEnds(), CM is a sub CM, we can't localize it, we could if we first checked if its invalid (see cm_from_guide()).");
 
   /* Count internal nodes MATP, MATL, MATR, BEGL, BEGR that aren't
    * adjacent to END nodes.

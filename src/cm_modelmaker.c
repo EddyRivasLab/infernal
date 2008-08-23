@@ -68,18 +68,17 @@ static int check_for_pknots(char *cs, int alen);
  *           Both rf and cs are provided in the msa structure.
  *           
  * Args:     msa       - multiple alignment to build model from
+ *           errbuf    - for error messages
  *           use_rf    - TRUE to use RF annotation to determine match/insert
  *           gapthresh - fraction of gaps to allow in a match column (if use_rf=FALSE)
  *           ret_cm    - RETURN: new model                      (maybe NULL)
  *           ret_gtr   - RETURN: guide tree for alignment (maybe NULL)
  *           
- * Return:   void
- *           cm is allocated here. FreeCM(*ret_cm).
- *           gtr is allocated here. FreeTrace().
+ * Return:   eslOK on success;
+ *           eslEINCOMPAT on contract violation
  */
-void
-HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh, 
-	       CM_t **ret_cm, Parsetree_t **ret_gtr)
+int
+HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
   int             status;
   CM_t           *cm;		/* new covariance model                       */
@@ -97,12 +96,9 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
   int  nstates;			/* number of states in CM                     */
   int  clen;                    /* consensus length of the model              */
 
-  if (msa->ss_cons == NULL)
-    cm_Fail("No consensus structure annotation available for that alignment.");
-  if (! (msa->flags & eslMSA_DIGITAL))
-    cm_Fail("MSA is not digitized in HandModelMaker().");
-  if (use_rf && msa->rf == NULL) 
-    cm_Fail("No reference annotation available for that alignment.");
+  if (msa->ss_cons == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): No consensus structure annotation available for that alignment.");
+  if (! (msa->flags & eslMSA_DIGITAL)) ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): MSA is not digitized.");
+  if (use_rf && msa->rf == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): No reference annotation available for the alignment.");
 
   /* 1. Determine match/insert assignments
    *    matassign is 1..alen. Values are 1 if a match column, 0 if insert column.
@@ -337,20 +333,19 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
    * using this guide tree.
    */
   cm = CreateCM(nnodes, nstates, msa->abc);
-  cm_from_guide(cm, gtr);
+  if((status = cm_from_guide(cm, errbuf, gtr, FALSE)) != eslOK) return status; /* FALSE says, we're not building a sub CM that will never be localized */
   CMZero(cm);
   cm->clen = clen;
 
   free(matassign);
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
   if (ret_gtr != NULL) *ret_gtr = gtr; else FreeParsetree(gtr);
-  return;
+  return eslOK;
 
  ERROR:
-  cm_Fail("Memory allocation error.");
-  return;
+  ESL_FAIL(eslEMEM, errbuf, "HandModelMaker(): memory allocation error.");
+  return eslEMEM; /* never reached */
 }
-
 
 
 /* Function: cm_from_guide()
@@ -360,12 +355,28 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
  *           fill in all the structural information of the CM.
  *           
  * Args:     cm  - allocated cm to construct
+ *           errbuf - for error messages
  *           gtr - guide tree
+ *           will_never_localize- TRUE if we're building a sub CM that we will never localize.
+ *                                This is only relevant b/c we can allow 'invalid' CMs in this case.
+ *                                An invalid CM is one that, if localized, could not generate all 
+ *                                possible sequences (see comments in code below). 
+ *                                We allow sub CMs to be invalid b/c we don't want cmalign to die
+ *                                when a target seq results in a sub CM that is invalid in the middle
+ *                                of a run. This is a pure hack and relies UNSAFELY on the assumption
+ *                                that the sub CM will never be localized (though in the current
+ *                                implementation sub CMs are only used by cmalign in global mode, thus
+ *                                they never are localized). Still, we don't raise a flag in the 
+ *                                CM to prevent downstream localization, which is dangerous - if the
+ *                                implementation changes to allow sub CMs to become localized. Even then
+ *                                though the risk is small b/c an invalid CM only is a problem if we
+ *                                try to align a single residue sequence to it (again, see comments below
+ *                                for more explanation).
  *
- * Returns:  (void)
+ * Returns:  eslOK on success;
  */
-void
-cm_from_guide(CM_t *cm, Parsetree_t *gtr)
+int
+cm_from_guide(CM_t *cm, char *errbuf, Parsetree_t *gtr, int will_never_localize)
 {
   int         status;
   ESL_STACK  *pda;              /* pushdown stack used for traversing gtr */
@@ -683,13 +694,13 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
    *    a ROOT, a bunch of MATPs and an END, and it is impossible to align a single
    *    residue to such a model when it's in local mode. 
    */
-  if(cm->nodes == 3) cm_Fail("cm_from_guide(), it's illegal to construct a CM of only 3 nodes.\n"); 
-  if((CMCountNodetype(cm, MATL_nd) == 0) && (CMCountNodetype(cm, MATR_nd) == 0) && (CMCountNodetype(cm,BIF_nd) == 0)) cm_Fail("cm_from_guide(), it's illegal to construct a CM with 0 MATL, MATR and BIF nodes.\nTo fix this, ensure all stems have at least 1 consensus column in the loop region\n(between enclosing base pairs).\n"); 
-  return;
+  if(cm->nodes == 3) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_from_guide(), it's illegal to construct a CM of only 3 nodes."); 
+  if((CMCountNodetype(cm, MATL_nd) == 0) && (CMCountNodetype(cm, MATR_nd) == 0) && (CMCountNodetype(cm,BIF_nd) == 0)) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_from_guide(), it's illegal to construct a CM with 0 MATL, MATR and BIF nodes."); 
+  return eslOK;
 
  ERROR:
-  cm_Fail("Memory allocation error.");
-  return; /* NEVERREACHED */
+  ESL_FAIL(eslEMEM, errbuf, "cm_from_guide(): memory allocation error.");
+  return eslEMEM; /* NEVERREACHED */
 }
 
 
@@ -1041,21 +1052,22 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
  *           consensus, and this is the difference b/t this function and
  *           HandModelmaker. Also, this function does not take in a MSA 
  *           data structure. It was originally written for building a 
- *           new CM with less structure (MATPs) than a template CM.
+ *           new CM (a sub CM) that models a contiguous subset of columns
+ *           of it's template (mother) CM.
  *           
  * Args:     abc       - the alphabet
+ *           errbuf    - for error messages
  *           ss_cons   - input consensus structure string 
  *           clen      - length of ss_cons, number of consensus columns
+ *           building_sub_model - TRUE if building a sub CM (usually TRUE)
  *           ret_cm    - RETURN: new model                      (maybe NULL)
  *           ret_gtr   - RETURN: guide tree for alignment (maybe NULL)
  *           
- * Return:   void
- *           cm is allocated here. FreeCM(*ret_cm).
- *           gtr is allocated here. FreeTrace().
+ * Return:   eslOK on success;
+ *           eslEINCOMPAT on contract violation
  */
-void
-ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen, 
-		    CM_t **ret_cm, Parsetree_t **ret_gtr)
+int
+ConsensusModelmaker(const ESL_ALPHABET *abc, char *errbuf, char *ss_cons, int clen, int building_sub_model, CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
   int             status;
   CM_t           *cm;		/* new covariance model                       */
@@ -1070,8 +1082,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
   int  nstates;			/* number of states in CM                     */
   int  obs_clen;                /* observed (MATL+MATR+2*MATP) consensus len  */
 
-  if (ss_cons == NULL)
-    cm_Fail("No consensus structure annotation available in ConsensusModelmaker().");
+  if (ss_cons == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "No consensus structure annotation available in ConsensusModelmaker().");
 
   /* 1. Determine a "ct" array, base-pairing partners for each position.
    *    Disallow/ignore pseudoknots by removing them prior to making the ct array.
@@ -1081,8 +1092,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
    */
   esl_wuss_nopseudo(ss_cons, ss_cons); /* remove pknots in place */
   ESL_ALLOC(ct, (clen+1) * sizeof(int));
-  if (esl_wuss2ct(ss_cons, clen, ct) != eslOK)  
-    cm_Fail("Consensus structure string is inconsistent"); 
+  if ((status = esl_wuss2ct(ss_cons, clen, ct)) != eslOK) ESL_FAIL(status, errbuf, "Consensus string is inconsisent in ConsensusModelMaker().", status);
 
   /* 2. Construct a guide tree. 
    *    This codes is borrowed from HandModelmaker(), where it
@@ -1269,16 +1279,18 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
    * using this guide tree.
    */
   cm = CreateCM(nnodes, nstates, abc);
-  cm_from_guide(cm, gtr);
+  if((status = cm_from_guide(cm, errbuf, gtr, building_sub_model)) != eslOK) return status;
   CMZero(cm);
   cm->clen = clen;
 
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
   if (ret_gtr != NULL) *ret_gtr = gtr; else FreeParsetree(gtr);
-  return;
+  return eslOK;
 
  ERROR:
-  cm_Fail("Memory allocation error.");
+  ESL_FAIL(eslEMEM, errbuf, "ConsensusModelMaker(): memory allocation error.");
+  return eslEMEM; /* never reached */
+
 }
 
 /**************************************************************************
