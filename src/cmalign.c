@@ -1195,7 +1195,7 @@ static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL
    * Another solution would be to use a checksum, but CM files don't 
    * have checksums yet.
    */
-  HandModelmaker(msa, esl_opt_GetBoolean(go, "--rf"), esl_opt_GetReal(go, "--gapthresh"), &new_cm, &mtr);
+  if((status = HandModelmaker(msa, errbuf, esl_opt_GetBoolean(go, "--rf"), esl_opt_GetReal(go, "--gapthresh"), &new_cm, &mtr)) != eslOK) return status;
   if(!(compare_cm_guide_trees(cm, new_cm)))
     {
       CM_t *newer_cm;

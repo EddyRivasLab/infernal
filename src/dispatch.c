@@ -672,11 +672,11 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       if(epos <= spos) { spos = 1; epos = cm->cp9->M; } 
 
       /* (3) Build the sub_cm from the original CM. */
-      if(!(build_sub_cm(orig_cm, &sub_cm, 
-			spos, epos,         /* first and last col of structure kept in the sub_cm  */
-			&submap,            /* maps from the sub_cm to cm and vice versa           */
-			debug_level)))      /* print or don't print debugging info                 */
-	ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), unexpected error building a sub CM for seq %d.", i);
+      if((status = build_sub_cm(orig_cm, errbuf, &sub_cm, 
+				spos, epos,               /* first and last col of structure kept in the sub_cm  */
+				&submap,                  /* maps from the sub_cm to cm and vice versa           */
+				debug_level)) != eslOK)    /* print or don't print debugging info                 */
+	return status;
       /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded), this will also:  */
       /* (4) Build a new CP9 HMM from the sub CM. */
       ConfigCM(sub_cm, FALSE); /* FALSE says: don't calculate W, we won't need it */

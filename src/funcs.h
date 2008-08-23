@@ -207,13 +207,11 @@ extern void  ConfigLocal_DisallowELEmissions(CM_t *cm);
 extern int   ConfigQDBAndW(CM_t *cm, int do_calc_qdb);
 
 /* from cm_modelmaker.c */
-extern void HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh, 
-			   CM_t **ret_cm, Parsetree_t **ret_mtr);
-extern void ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen, CM_t **ret_cm, 
-				Parsetree_t **ret_gtr);
+extern int  HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_mtr);
+extern int  ConsensusModelmaker(const ESL_ALPHABET *abc, char *errbuf, char *ss_cons, int clen, int building_sub_model, CM_t **ret_cm, Parsetree_t **ret_gtr);
 extern Parsetree_t *Transmogrify(CM_t *cm, Parsetree_t *gtr, 
 				 ESL_DSQ *dsq, char *aseq, int alen);
-extern void cm_from_guide(CM_t *cm, Parsetree_t *gtr);
+extern int  cm_from_guide(CM_t *cm, char *errbuf, Parsetree_t *gtr, int will_never_localize);
 extern int  cm_find_and_detach_dual_inserts(CM_t *cm, int do_check, int do_detach);
 extern int  cm_check_before_detaching(CM_t *cm, int insert1, int insert2);
 extern int  cm_detach_state(CM_t *cm, int insert1, int insert2);
@@ -293,7 +291,7 @@ extern void     qdb_trace_info_dump(CM_t *cm, Parsetree_t *tr, int *dmin, int *d
 extern int      cm_GetNCalcsPerResidueForGivenBeta(CM_t *cm, char *errbuf, int no_qdb, double beta, float *ret_cm_ncalcs_per_res, int *ret_W);
 
 /* from cm_submodel.c */
-extern int  build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, int print_flag);
+extern int  build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, int print_flag);
 extern void CP9NodeForPosn(CP9_t *hmm, int i0, int j0, int x, CP9_MX *post, int *ret_node, int *ret_type, float pmass, int is_start, int print_flag);
 extern void StripWUSSGivenCC(ESL_MSA *msa, float gapthresh, int first_match, int last_match);
 extern int  check_orig_psi_vs_sub_psi(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, double threshold, 
