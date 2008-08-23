@@ -5,7 +5,9 @@
  * Stuff having to do with manipulating symbols in the (RNA) alphabet.
  * 
  *****************************************************************
- * @LICENSE@
+ *    This copyrighted source code is freely distributed 
+ *    under the terms of the GNU General Public License. See
+ *    the files COPYRIGHT and LICENSE for details.
  *****************************************************************  
  */
 
@@ -41,7 +43,7 @@
  * Returns:  void
  */
 void
-PairCount(const ESL_ALPHABET *abc, float *counters, char syml, char symr, float wt)
+PairCount(const ESL_ALPHABET *abc, float *counters, ESL_DSQ syml, ESL_DSQ symr, float wt)
 {
   if (syml < abc->K && symr < abc->K) 
     counters[(int) (syml * abc->K + symr)] += wt;
@@ -67,7 +69,7 @@ PairCount(const ESL_ALPHABET *abc, float *counters, char syml, char symr, float 
   return;
 }
 float
-DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, char syml, char symr)
+DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ syml, ESL_DSQ symr)
 {
   float left[MAXABET], right[MAXABET];
   int l,r;
@@ -88,7 +90,7 @@ DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, char syml, char symr)
   return sc;
 }
 int
-iDegeneratePairScore(const ESL_ALPHABET *abc, int *iesc, char syml, char symr)
+iDegeneratePairScore(const ESL_ALPHABET *abc, int *iesc, ESL_DSQ syml, ESL_DSQ symr)
 {
   float left[MAXABET], right[MAXABET];
   int l,r;
@@ -117,7 +119,7 @@ iDegeneratePairScore(const ESL_ALPHABET *abc, int *iesc, char syml, char symr)
  *           a uniform background distribution
  */
 float
-LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, int dres)
+LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
 {
    float left[MAXABET];
    int i;
@@ -152,7 +154,7 @@ LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, int dres)
  *           a uniform background distribution
  */
 float
-RightMarginalScore(const ESL_ALPHABET *abc, float *esc, int dres)
+RightMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
 {
    float right[MAXABET];
    int i,j;
