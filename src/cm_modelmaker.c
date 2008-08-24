@@ -890,11 +890,13 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
 	  }
 
 	state = CalculateStateIndex(cm, node, MATP_IR);
-	for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--)
-	  if (!esl_abc_XIsGap(cm->abc, ax[j])) {
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);	
-	    if (! started) goto FAILURE;
-	  }
+	if (cm->ndtype[gtr->nxtl[node]] != END_nd) { /* MATP_IR's before an END are detached, and transitions are impossible, this is a hack to deal with ambiguity in CM parsetree */
+	  for (j = gtr->emitr[node]-1; j > gtr->emitr[gtr->nxtl[node]]; j--)
+	    if (!esl_abc_XIsGap(cm->abc, ax[j])) {
+	      tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, i, j, state);	
+	      if (! started) goto FAILURE;
+	    }
+	}
 	break;
 
 	/* A MATL node.
@@ -927,12 +929,14 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
 	if (! started) { started = TRUE; nstarts++; }
 
 	state = CalculateStateIndex(cm, node, MATL_IL);
-	for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++)
-	  if (!esl_abc_XIsGap(cm->abc, ax[i])) {
-	    tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
-				   i, gtr->emitr[node], state);
-	    if (! started) goto FAILURE;
-	  }
+	if (cm->ndtype[gtr->nxtl[node]] != END_nd) { /* MATL_IL's before an END are detached, and transitions are impossible, this is a hack to deal with ambiguity in CM parsetree */
+	  for (i = gtr->emitl[node]+1; i < gtr->emitl[gtr->nxtl[node]]; i++)
+	    if (!esl_abc_XIsGap(cm->abc, ax[i])) {
+	      tidx = InsertTraceNode(tr, tidx, TRACE_LEFT_CHILD, 
+				     i, gtr->emitr[node], state);
+	      if (! started) goto FAILURE;
+	    }
+	}
 	break;
 
 	/* MATR node. 

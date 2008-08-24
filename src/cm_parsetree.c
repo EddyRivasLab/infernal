@@ -244,14 +244,18 @@ ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt)
  *
  * Purpose:  Calculate the score of a given parse tree for a sequence,
  *           given a CM that's prepared in log-odds form. Also calculate
- *           the contribution of structure to that score, by subtracting
- *           marginalized scores from the MP pair emission scores.
+ *           the contribution of structure to that score, by summing the 
+ *           difference in MP emissions and the marginalized left and right
+ *           scores. Also calculate the primary sequence score, the sum of
+ *           all singlet emissions, plus marginalized base pair emissions.
+ *           Also determine the first (ret_spos) and last (ret_epos) consensus
+ *           columns occupied in the parsetree.
  *
  * Returns:  eslOK on success
  *           eslEINCOMPAT on contract violation.
  */
 int 
-ParsetreeScore(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2, float *ret_sc, float *ret_struct_sc)
+ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2, float *ret_sc, float *ret_struct_sc, float *ret_primary_sc, int *ret_spos, int *ret_epos)
 {
   int status;                   /* Easel status code */
   int tidx;			/* counter through positions in the parsetree        */
@@ -260,15 +264,23 @@ ParsetreeScore(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int do_nul
   float sc;			/* the log-odds score of the parse tree */
   int mode;
   float struct_sc;              /* contribution of the structure to the score */
+  float primary_sc;             /* contribution of primary sequence emissions to the score */
+  float lsc, rsc;
+  int   nd;
 
   /* contract check */
   if(dsq    == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "ParsetreeScore(): dsq == NULL.");
   if(ret_sc == NULL)    ESL_FAIL(eslEINCOMPAT, errbuf, "ParsetreeScore(): ret_sc == NULL.");
+  if(emap   == NULL && (ret_spos != NULL || ret_epos != NULL)) ESL_FAIL(eslEINCOMPAT, errbuf, "ParsetreeScore(): emap == NULL but ret_spos and ret_epos != NULL.");
+
+  int spos = cm->clen + 1;
+  int epos = 0;
 
 		/* trivial preorder traverse, since we're already numbered that way */
-  sc = struct_sc = 0.;
+  sc = struct_sc = primary_sc = 0.;
   for (tidx = 0; tidx < tr->n; tidx++) {
     v = tr->state[tidx];        	/* index of parent state in CM */
+    nd = cm->ndidx[v];
     mode = tr->mode[tidx];
     if (v == cm->M) continue;      	/* special case: v is EL, local alignment end */
     if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) /* no scores in B,E */
@@ -298,25 +310,45 @@ ParsetreeScore(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int do_nul
 	          sc += DegeneratePairScore(cm->abc, cm->esc[v], symi, symj);
 		  struct_sc += cm->esc[v][(int) (symi*cm->abc->K+symj)];
 		}
-		struct_sc -= LeftMarginalScore(cm->abc, cm->esc[v], symi);  /* subtract left  marginalized score */
-		struct_sc -= RightMarginalScore(cm->abc, cm->esc[v], symj); /* subtract right marginalized score */
+		lsc = LeftMarginalScore(cm->abc, cm->esc[v], symi); 
+		rsc = RightMarginalScore(cm->abc, cm->esc[v], symj); 
+		struct_sc -= lsc;  /* subtract left  marginalized score */
+		struct_sc -= rsc; /* subtract right marginalized score */
+		primary_sc += lsc;
+		primary_sc += rsc;
 	      }
             else if (mode == 2)
               sc += LeftMarginalScore(cm->abc, cm->esc[v], symi);
             else if (mode == 1)
               sc += RightMarginalScore(cm->abc, cm->esc[v], symj);
+	    if(emap != NULL) { 
+	      spos = ESL_MIN(spos, emap->lpos[nd]);
+	      epos = ESL_MAX(epos, emap->rpos[nd]);
+	    }
 	  } 
 	else if ( (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) && (mode == 3 || mode == 2) )
 	  {
 	    symi = dsq[tr->emitl[tidx]];
-	    if (symi < cm->abc->K) sc += cm->esc[v][(int) symi];
-	    else                   sc += esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]);
+	    if (symi < cm->abc->K) lsc = cm->esc[v][(int) symi];
+	    else                   lsc = esl_abc_FAvgScore(cm->abc, symi, cm->esc[v]);
+	    sc += lsc;
+	    primary_sc += lsc;
+	    if(emap != NULL && cm->stid[v] == MATL_ML) { 
+	      spos = ESL_MIN(spos, emap->lpos[nd]);
+	      epos = ESL_MAX(epos, emap->lpos[nd]);
+	    }
 	  } 
 	else if ( (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) && (mode == 3 || mode == 1) )
 	  {
 	    symj = dsq[tr->emitr[tidx]];
-	    if (symj < cm->abc->K) sc += cm->esc[v][(int) symj];
-	    else                   sc += esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]);
+	    if (symj < cm->abc->K) rsc = cm->esc[v][(int) symj];
+	    else                   rsc = esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]);
+	    sc += rsc;
+	    primary_sc += rsc;
+	    if(emap != NULL && cm->stid[v] == MATR_MR) { 
+	      spos = ESL_MIN(spos, emap->rpos[nd]);
+	      epos = ESL_MAX(epos, emap->rpos[nd]);
+	    }
 	  }
       }
   }
@@ -325,12 +357,20 @@ ParsetreeScore(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int do_nul
     float corr_sc;
     if((status = ParsetreeScoreCorrectionNull2(cm, errbuf, tr, dsq, 0, &corr_sc)) != eslOK) return status;
     sc -= corr_sc;
+    primary_sc -= corr_sc;
     /* don't subtract corr_sc from struct_sc, b/c we would have subtracted it from 
      * both the marginalized and non-marginalized MP scores, thus it cancels out for struct_sc 
      */
   }
-  if(ret_sc != NULL)        *ret_sc        = sc;
-  if(ret_struct_sc != NULL) *ret_struct_sc = struct_sc;
+  if(ret_sc != NULL)         *ret_sc        = sc;
+  if(ret_struct_sc != NULL)  *ret_struct_sc = struct_sc;
+  if(ret_primary_sc != NULL) *ret_primary_sc = primary_sc;
+
+  if(spos == cm->clen+1) spos = -1;
+  if(epos == 0)          epos = -1;
+
+  if(ret_spos != NULL)  *ret_spos = spos;
+  if(ret_epos != NULL)  *ret_epos = epos;
   return eslOK;
 }
 
@@ -388,9 +428,6 @@ PrintParsetree(FILE *fp, Parsetree_t *tr)
  *          tr    - parsetree to examine.
  *          cm    - model that was aligned to dsq to generate the parsetree
  *          dsq   - digitized sequence that was aligned to cm to generate the parsetree
- *          gamma - cumulative subsequence length probability distributions
- *                  used to generate the bands; from BandDistribution(); [0..v..M-1][0..W]
- *          W     - maximum window length W (gamma distributions range up to this)        
  *          dmin  - minimum subseq length for each state; [0..v..M-1] NULL for non-banded output
  *          dmax  - maximum subseq length for each state; [0..v..M-1] NULL for non-banded output
  *
@@ -597,8 +634,7 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
 }
 
 
-/*
- * Function : Parsetrees2Alignment()
+/* Function : Parsetrees2Alignment()
  *
  * Purpose:   Creates a MSA from a set of parsetrees and a CM.
  *

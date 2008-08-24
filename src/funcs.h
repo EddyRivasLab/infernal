@@ -81,6 +81,7 @@ extern ComLog_t * CreateComLog();
 extern void       FreeComLog(ComLog_t *clog);
 extern int        CopyComLog(const ComLog_t *src, ComLog_t *dest);
 extern int        cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avg_hit_len);
+extern int        CompareCMGuideTrees(CM_t *cm1, CM_t *cm2);
 
 /* from dispatch.c */
 extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, 
@@ -251,9 +252,9 @@ extern void         GrowParsetree(Parsetree_t *tr);
 extern void         FreeParsetree(Parsetree_t *tr);
 extern int          InsertTraceNode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int state);
 extern int          InsertTraceNodewithMode(Parsetree_t *tr, int y, int whichway, int emitl, int emitr, int state, int mode);
-extern void         ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt);
-extern int          ParsetreeScore(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2, float *ret_sc, float *ret_struct_sc);
 extern void         PrintParsetree(FILE *fp, Parsetree_t *tr);
+extern void         ParsetreeCount(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, float wgt);
+extern int          ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_DSQ *dsq, int do_null2, float *ret_sc, float *ret_struct_sc, float *ret_primary_sc, int *ret_spos, int *ret_epos);
 extern void         ParsetreeDump(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, int *dmin, int *dmax);
 extern int          ParsetreeCompare(Parsetree_t *t1, Parsetree_t *t2);
 extern void         SummarizeMasterTrace(FILE *fp, Parsetree_t *tr);

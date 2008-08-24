@@ -1006,7 +1006,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  else
 	    {
 	      ESL_DASSERT1((seqs_to_aln->tr != NULL));
-	      if((status = ParsetreeScore(cm, errbuf, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE, &sc, &struct_sc)) != eslOK) return status;
+	      if((status = ParsetreeScore(cm, NULL, errbuf, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
 	      fprintf(cfg->regressfp, "  %16s %.2f bits\n", "SCORE:", sc);
 	      fprintf(cfg->regressfp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
 	      ParsetreeDump(cfg->regressfp, seqs_to_aln->tr[i], cm, seqs_to_aln->sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
@@ -1025,7 +1025,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  else
 	    {
 	      ESL_DASSERT1((seqs_to_aln->tr != NULL));
-	      if((status = ParsetreeScore(cm, errbuf, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE, &sc, &struct_sc)) != eslOK) return status;
+	      if((status = ParsetreeScore(cm, NULL, errbuf, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
 	      if(esl_opt_GetBoolean(go, "--sub")) { 
 		fprintf(cfg->tracefp, "  SUB CM PARSE SCORE : %.2f bits", seqs_to_aln->sc[i]);
 		fprintf(cfg->tracefp, "  SUB CM ALIGNMENT MAPPED ONTO ORIG CM PARSE SCORE : %.2f bits\n", sc);
