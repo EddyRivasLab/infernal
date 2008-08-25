@@ -102,6 +102,7 @@ static ESL_OPTIONS options[] = {
 
   /* Developer verbose output options */
   { "--cfile",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save count vectors to file <s>", 102 },
+  { "--efile",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save emission score information to file <s>", 102 },
   { "--cmtbl",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tabular description of CM topology to file <s>", 102 },
   { "--emap",    eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save consensus emit map to file <s>", 102 },
   { "--gtree",   eslARG_OUTFILE,  NULL, NULL, NULL,      NULL,      NULL,        NULL, "save tree description of master tree to file <s>", 102 },
