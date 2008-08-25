@@ -352,7 +352,6 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 }
 
 
-
 /* Function: cm_from_guide()
  * Date:     SRE, Sat Jul 29 09:25:49 2000 [St. Louis]
  *
@@ -691,7 +690,6 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
   cm_Fail("Memory allocation error.");
   return; /* NEVERREACHED */
 }
-
 
 
 

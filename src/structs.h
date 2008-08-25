@@ -24,7 +24,7 @@
 #include "hmmer.h"
 
 /* TEMP EPN, Tue Aug 19 17:40:32 2008 */
-#define PRINTNOW 1
+#define PRINTNOW 0
 /* TEMP */
 
 #define cmERRBUFSIZE 1024

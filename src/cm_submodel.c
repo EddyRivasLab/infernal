@@ -3728,8 +3728,6 @@ SubCMLogoddsify(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map)
 {
   if(!(mother_cm->flags & CMH_BITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "SubCMLogoddsify(), mother_cm's CMH_BITS flag down, it's bit scores are invalid.");
 
-  printf("HEY IN SUBCMLOGODDSIFY!\n");
-
   int v, mv, x, y;
 
   /* TEMP */
