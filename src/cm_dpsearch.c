@@ -45,7 +45,6 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define TSC(s,k)   (tsc[(v) * MAXCONNECT + (s)])
 #define AMX(j,v,d) (alphap[(j * cm->M * (W+1)) + ((v) * (W+1) + d)])
 
 /* Function: FastCYKScan()

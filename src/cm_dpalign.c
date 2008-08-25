@@ -76,9 +76,6 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define TSC(s,k) (tsc[(v) * MAXCONNECT + (s)])
-#define AMX(j,v,d) (alphap[(j * cm->M * (W+1)) + ((v) * (W+1) + d)])
-
 static int fast_cyk_align_hb (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit,
 			      CM_HB_SHADOW_MX *shmx, int *ret_b, float *ret_bsc, CM_HB_MX *mx, float *ret_sc);
 static  int fast_cyk_align    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit,
