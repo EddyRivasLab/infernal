@@ -353,7 +353,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   float         primary_sc;     /* primary sequence component of the score */
   float         null3_correction; /* correction in bits due to NULL3 */
   int           namewidth;      /* for dynamic width of name strings for nice tab delimited formatting */
-  CMEmitMap_t  *emap;           /* for passing to ParsetreeScore() to get spos epos */
+  CMEmitMap_t  *cur_emap;       /* for passing to ParsetreeScore() to get spos epos */
   char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
 
   /* variables related to CM Plan 9 HMMs */
@@ -436,6 +436,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 			 cp9 hmm node k is visited. Node 0 is special, 
 			 state 0 = B state, state 1 = N_state, state 2 = NULL */
   int *kmin, *kmax;
+  CMEmitMap_t  *emap;           
   int k;
 #if 0
   int ipos
@@ -951,9 +952,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     struct_sc = IMPOSSIBLE;
     if(have_parsetrees) { 
       if(*cur_tr == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments() should have parsetrees, but don't (coding error).");
-      emap = CreateEmitMap(cm); /* TEMPORARY!, we don't want to build this separately for each seq, but with sub CMs I'm not sure how to accomplish that */
-      if((status = ParsetreeScore(cm, emap, errbuf, *cur_tr, cur_dsq, FALSE, &tmpsc, &struct_sc, &primary_sc, &cur_spos, &cur_epos)) != eslOK) return status;
+      cur_emap = CreateEmitMap(cm); /* TEMPORARY!, we don't want to build this separately for each seq, but with sub CMs I'm not sure how to accomplish that */
+      if((status = ParsetreeScore(cm, cur_emap, errbuf, *cur_tr, cur_dsq, FALSE, &tmpsc, &struct_sc, &primary_sc, &cur_spos, &cur_epos)) != eslOK) return status;
       if(do_sub) { cur_spos += spos; cur_epos += spos; }
+      FreeEmitMap(cur_emap);
     }
     /* determine NULL3 score correction, which is independent of the parsetree */
     null3_correction = 0.;

@@ -3165,6 +3165,7 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
   CP9Map_t *cp9map;         
   CP9_t  *hmm;       /* CM plan 9 HMM we're going to construct from the sub_cm */
   float d;
+  int i, j;
 
   /* TEMP EPN, Tue Aug 19 18:07:25 2008 */
   ESL_STOPWATCH *w;
@@ -3249,6 +3250,10 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
       }
 
       /* transitions, skip k == 0 and M, we filled them out in cm2hmm_special_trans_cp9() */
+      if(k > 1) { 
+	  hmm->begin[k]   = 0.;
+	  hmm->bsc[k]     = -INFTY;
+      }
       if(k > 0 && k < hmm->M) { 
 	/* careful with transitions out of match, we have to renormalize as 
 	 * we go b/c mother_cm's cp9 has local ends up */
@@ -3261,10 +3266,6 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
 	esl_vec_FCopy(mother_cm->cp9->t[mk] + cp9_TRANS_INSERT_OFFSET, cp9_NTRANS - cp9_TRANS_INSERT_OFFSET,  hmm->t[k] + cp9_TRANS_INSERT_OFFSET);
 	for(x = cp9_TRANS_INSERT_OFFSET; x < cp9_NTRANS; x++) { 
 	  hmm->tsc[x][k] = mother_cm->cp9->tsc[x][mk];
-	}
-	if(k > 1) { 
-	  hmm->begin[k]   = 0.;
-	  hmm->bsc[k]     = -INFTY;
 	}
 	hmm->end[k]     = 0.;
 	hmm->esc[k]     = -INFTY;
@@ -3309,6 +3310,16 @@ sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_
 
   *ret_hmm    = hmm;
   *ret_cp9map = cp9map;
+  
+  for(i = 0; i < UNIQUESTATES; i++) {
+    for(j = 0; j < NODETYPES; j++) {
+      free(tmap[i][j]);
+    }
+    free(tmap[i]);
+  }
+
+  free(tmap);
+  free(psi);
 
   return ret_val;
 

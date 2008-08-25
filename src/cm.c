@@ -679,7 +679,6 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 void
 CMLogoddsify(CM_t *cm)
 {
-  printf("HEY IN CMLOGODDSIFY!\n");
   int v, x, y;
 
   /* TEMP */
