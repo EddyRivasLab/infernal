@@ -1780,7 +1780,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   cm->search_opts |= CM_SEARCH_CMGREEDY;
   cm->search_opts |= CM_SEARCH_HMMGREEDY;
 
-  ConfigCM(cm, TRUE); /* TRUE says: calculate W */
+  if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) return status; /* FALSE says do not calculate W unless nec b/c we're using QDBs */
   
   /* create and initialize scan info for CYK/Inside scanning functions */
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE);

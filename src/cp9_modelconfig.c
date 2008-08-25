@@ -647,99 +647,134 @@ CPlan9RenormalizeExits(CP9_t *hmm, int spos)
   return;
 }
 
-/* Function: CP9_2sub_cp9()
- * EPN 09.24.06
+/* Function:  CP9EnforceHackMatchScores()
+ * Incept:    EPN, Fri Feb  9 11:06:31 2007
+ *
+ * Purpose:   Make all match emissions 0, except those enforce
+ *            a specified subsequence (it's assumed the CP9 
+ *            is already set up for this enforcement). 
+ *
+ * Args:      cp9           - the CP9 HMM 
+ *            enf_start_pos - first posn of enforced subseq
+ *            enf_end_pos   - last  posn of enforced subseq
+ * Returns:   (void)
+ */
+void
+CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos)
+{
+  int k, x;
+  for (k = 1; k < enf_start_pos; k++) /* M_0 is the begin state, it's silent */
+    for (x = 0; x < MAXDEGEN; x++)
+      cp9->msc[x][k] = 0.;
+  for (k = enf_end_pos+1; k <= cp9->M; k++)
+    for (x = 0; x < MAXDEGEN; x++)
+      cp9->msc[x][k] = 0.;
+}
+
+/************************************************************************
+ * Functions stolen from HMMER 2.4 for use with CM plan 9 HMMs.
+ * Eventually, these should go away, replaced with Easel funcs. 
+ * These first 3 were stolen from HMMER:mathsupport.c
  * 
- * Purpose:  Given a template CM Plan 9 HMM, build a sub-model that
- *           models only a subset of the consensus columns of the
- *           original alignment. This requires a bit of care for
- *           the initial and final node of the sub CP9, and 
- *           straightforward copying of parameters for the rest.
- *          
- *           The new CP9 is constructed in Global Needleman/Wunsch
- *           mode. The orig_hmm MUST be in global mode. THIS IS
- *           CHECKED FOR IN A VERY FRAGILE MANNER!
- *       
- *           The approach here is to allocate and fill the new 
- *           sub CP9. There might be a better way - transforming
- *           the original CP9 into the new sub CP9 using a method
- *           involving pointer rearrangement, but I'm not sure
- *           how to do this.
- *             
- * Args:     orig_hmm    - the CP9 model w/ data-dep prob's valid
- *           ret_sub_hmm - the new sub CP9 hmm, allocated here, must
- *                         be freed by caller.
- *           spos        - first consensus column modelled by original
- *                         CP9 HMM the sub CP9 HMM models.
- *           epos        - final consensus column modelled by original
- *                         CP9 HMM the sub CP9 HMM models.
- *           orig_phi    - the 2D phi array for the original CP9 HMM.         
+ * Score2Prob()
+ * Prob2Score()
+ * Scorify()
+ * 
+ * NOTE: ILogSum() (and auxiliary funcs associated with it) used to be here
+ * but moved to logsum.c (EPN, Sat Sep  8 15:49:47 2007)
+ */
+
+/* Function: Prob2Score()
+ * 
+ * Purpose:  Convert a probability to a scaled integer log_2 odds score. 
+ *           Round to nearest integer (i.e. note use of +0.5 and floor())
+ *           Return the score. 
+ */
+int
+Prob2Score(float p, float null)
+{
+  if(esl_FCompare(p, 0., eslSMALLX1) == eslOK) return -INFTY;
+  else                                         return (int) floor(0.5 + INTSCALE * sreLOG2(p/null));
+}
+
+/* Function: Score2Prob()
+ * 
+ * Purpose:  Convert an integer log_2 odds score back to a probability;
+ *           needs the null model probability, if any, to do the conversion.
+ */
+float 
+Score2Prob(int sc, float null)
+{
+  if (sc == -INFTY) return 0.;
+  else              return (null * sreEXP2((float) sc / INTSCALE));
+}
+
+/* Function: Scorify()
+ * 
+ * Purpose:  Convert a scaled integer log-odds score to a floating
+ *           point score for output. (could be a macro but who cares.)
+ */
+float 
+Scorify(int sc)
+{
+  return ((float) sc / INTSCALE);
+}
+
+/* Function: CPlan9CMLocalBeginConfig()
+ * Incept:   EPN, Thu Jun 21 15:43:29 2007
+ * based on SRE's Plan7SWConfig() from HMMER's plan7.c
+ * 
+ * Purpose:  Set up a CM Plan 9 HMM to mimic CM local begins as closely
+ *           as it can. We can't enforce that a begin/end point are chosen
+ *           the same way a CM's are, as the choice of a CM local begin
+ *           (in non-truncated CYK mode) defines both a start and end point,
+ *           and some start/end combinations are impossible. For the CP9
+ *           we allow all possible start/end combos.
+ *           
+ * Args:     cm    - the CM, must have valid cm->cp9, we'll use
+ *                   the CM local begin probs to set the cm->cp9s
+ *                   begin/end probs.
+ *                    
  * Return:   (void)
  *           HMM probabilities are modified.
  */
 void
-CP9_2sub_cp9(CP9_t *orig_hmm, CP9_t **ret_sub_hmm, int spos, int epos, double **orig_phi)
+CPlan9CMLocalBeginConfig(CM_t *cm)
 {
-  CP9_t       *sub_hmm;       
-  int i, x;
-  int orig_pos;
+  CMEmitMap_t *emap;            /* consensus emit map for the CM */
+  int nd;
 
-  sub_hmm = AllocCPlan9((epos-spos+1), orig_hmm->abc);
+  /* Contract checks */
+  if(cm->cp9 == NULL)
+    cm_Fail("ERROR in CPlan9CMLocalBeginConfig, cm->cp9 is NULL.\n");
+  if(cm->cp9map == NULL)
+    cm_Fail("ERROR in CPlan9CMLocalBeginConfig, cm->cp9map is NULL.\n");
+  if(!(cm->flags & CMH_CP9))
+     cm_Fail("ERROR in CPlan9CMLocalBeginConfig, CMH_CP9 flag is down.");
+  if(!(cm->flags & CMH_LOCAL_BEGIN))
+     cm_Fail("ERROR in CPlan9CMLocalBeginConfig, CMH_LOCAL_BEGIN flag is down.");
+  if(!(cm->flags & CMH_LOCAL_END))
+     cm_Fail("ERROR in CPlan9CMLocalBeginConfig, CP9_LOCAL_BEGIN flag is already up.");
+  if(cm->cp9->flags & CPLAN9_LOCAL_END)
+     cm_Fail("ERROR in CPlan9CMLocalBeginConfig, CP9_LOCAL_END flag is already up.");
 
-  for(x = 0; x < MAXABET; x++)
-    {
-      sub_hmm->null[x] = orig_hmm->null[x];
-    }
-  /* No special (*x* states in Plan 7) states in CM Plan 9 */
-
-  /* First we just copy the parameters for spos..epos from the template HMM.
-   * This is *slightly* wasteful, as we'll overwrite a few of these later.
+  /* Configure entry.
+   * To match CM, we enforce the only way out of the B state (M_0)
+   * is through a local begin into a match state 
    */
-  for(i = 0; i <= (epos-spos+1); i++)
-    {
-      orig_pos = i + spos - 1;
-
-      if(i > 0)
-	{
-	  for(x = 0; x < MAXABET; x++)
-	    {
-	      sub_hmm->mat[i][x] = orig_hmm->mat[orig_pos][x];
-	      sub_hmm->msc[x][i] = orig_hmm->msc[x][orig_pos];
-	    }
-
-	  sub_hmm->begin[i]   = orig_hmm->begin[orig_pos];
-	  sub_hmm->end[i]     = orig_hmm->end[orig_pos];
-	  sub_hmm->bsc[i]     = orig_hmm->bsc[orig_pos];
-	  sub_hmm->esc[i]     = orig_hmm->esc[orig_pos];
-	  if((i > 1) && ((0. - sub_hmm->begin[i] > 0.00000001) ||
-			 (sub_hmm->begin[i] - 0. > 0.00000001)))
-	    {
-	      cm_Fail("ERROR in cp9_2sub_cp9() is original CP9 HMM not in global (NW) mode? i: %d\n", i);
-	    }
-	}
-      for(x = 0; x < MAXABET; x++)
-	{
-	  sub_hmm->ins[i][x] = orig_hmm->ins[orig_pos][x];
-	  sub_hmm->isc[x][i] = orig_hmm->isc[x][orig_pos];
-	}
-
-      for(x = 0; x < cp9_NTRANS; x++)
-	{
-	  sub_hmm->t[i][x]   = orig_hmm->t[orig_pos][x];
-	  sub_hmm->tsc[x][i] = orig_hmm->tsc[x][orig_pos];
-	}
-      
+  esl_vec_FSet(cm->cp9->begin, cm->cp9->M, 0.);
+  emap = CreateEmitMap(cm); 
+  for (nd = 1; nd < cm->nodes; nd++) {
+    if(NOT_IMPOSSIBLE(cm->begin[cm->nodemap[nd]])) {
+      cm->cp9->begin[emap->lpos[nd]] += cm->begin[cm->nodemap[nd]]; /* we do += b/c for lpos of BIFs, there's > 1 way to enter there, the BIF and the first MATP or MATL of the left child of the BIF */
     }
+  }
 
-  /* Make the necessary modifications. */
-  CP9_reconfig2sub(sub_hmm, spos, epos, 1, sub_hmm->M, orig_phi);
+  cm->cp9->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
+  cm->cp9->flags       |= CPLAN9_LOCAL_BEGIN; /* local begins now on */
+  cm->cp9->flags       |= CPLAN9_LOCAL_END;   /* local ends now on */
 
-  sub_hmm->el_self   = orig_hmm->el_self;
-  sub_hmm->el_selfsc = orig_hmm->el_selfsc;
-
-  sub_hmm->flags |= CPLAN9_HASBITS;	/* raise the log-odds ready flag */
-  *ret_sub_hmm = sub_hmm;
-  return;
+  CP9Logoddsify(cm->cp9);
 }
 
 /* Function: CP9_reconfig2sub()
@@ -837,141 +872,4 @@ CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd,
   hmm->flags |= CPLAN9_HASBITS;	/* raise the log-odds ready flag */
 
   return;
-}
-
-/* Function:  CP9EnforceHackMatchScores()
- * Incept:    EPN, Fri Feb  9 11:06:31 2007
- *
- * Purpose:   Make all match emissions 0, except those enforce
- *            a specified subsequence (it's assumed the CP9 
- *            is already set up for this enforcement). 
- *
- * Args:      cp9           - the CP9 HMM 
- *            enf_start_pos - first posn of enforced subseq
- *            enf_end_pos   - last  posn of enforced subseq
- * Returns:   (void)
- */
-void
-CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos)
-{
-  int k, x;
-  for (k = 1; k < enf_start_pos; k++) /* M_0 is the begin state, it's silent */
-    for (x = 0; x < MAXDEGEN; x++)
-      cp9->msc[x][k] = 0.;
-  for (k = enf_end_pos+1; k <= cp9->M; k++)
-    for (x = 0; x < MAXDEGEN; x++)
-      cp9->msc[x][k] = 0.;
-}
-
-/************************************************************************
- * Functions stolen from HMMER 2.4 for use with CM plan 9 HMMs.
- * Eventually, these should go away, replaced with Easel funcs. 
- * These first 3 were stolen from HMMER:mathsupport.c
- * 
- * Score2Prob()
- * Prob2Score()
- * Scorify()
- * 
- * NOTE: ILogSum() (and auxiliary funcs associated with it) used to be here
- * but moved to logsum.c (EPN, Sat Sep  8 15:49:47 2007)
- */
-
-/* Function: Prob2Score()
- * 
- * Purpose:  Convert a probability to a scaled integer log_2 odds score. 
- *           Round to nearest integer (i.e. note use of +0.5 and floor())
- *           Return the score. 
- */
-int
-Prob2Score(float p, float null)
-{
-  /*EPN, Fri Feb  8 06:53:02 2008, shouldn't this first line be something like: 
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    if   (fabs(p - 0.) < eslSMALLX1) return -INFTY; LHS is TRUE if p is virtually 0 (eslSMALLX1 is 5e-9) 
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    I didn't change it pre-1.0 release, b/c I was afraid of unforeseen downstream consequences,
-    and it doesn't seem to cause any problems...
-  */
-  if                    (p == 0.0) return -INFTY;
-  else                             return (int) floor(0.5 + INTSCALE * sreLOG2(p/null));
-}
-
-/* Function: Score2Prob()
- * 
- * Purpose:  Convert an integer log_2 odds score back to a probability;
- *           needs the null model probability, if any, to do the conversion.
- */
-float 
-Score2Prob(int sc, float null)
-{
-  if (sc == -INFTY) return 0.;
-  else              return (null * sreEXP2((float) sc / INTSCALE));
-}
-
-/* Function: Scorify()
- * 
- * Purpose:  Convert a scaled integer log-odds score to a floating
- *           point score for output. (could be a macro but who cares.)
- */
-float 
-Scorify(int sc)
-{
-  return ((float) sc / INTSCALE);
-}
-
-/* Function: CPlan9CMLocalBeginConfig()
- * Incept:   EPN, Thu Jun 21 15:43:29 2007
- * based on SRE's Plan7SWConfig() from HMMER's plan7.c
- * 
- * Purpose:  Set up a CM Plan 9 HMM to mimic CM local begins as closely
- *           as it can. We can't enforce that a begin/end point are chosen
- *           the same way a CM's are, as the choice of a CM local begin
- *           (in non-truncated CYK mode) defines both a start and end point,
- *           and some start/end combinations are impossible. For the CP9
- *           we allow all possible start/end combos.
- *           
- * Args:     cm    - the CM, must have valid cm->cp9, we'll use
- *                   the CM local begin probs to set the cm->cp9s
- *                   begin/end probs.
- *                    
- * Return:   (void)
- *           HMM probabilities are modified.
- */
-void
-CPlan9CMLocalBeginConfig(CM_t *cm)
-{
-  CMEmitMap_t *emap;            /* consensus emit map for the CM */
-  int nd;
-
-  /* Contract checks */
-  if(cm->cp9 == NULL)
-    cm_Fail("ERROR in CPlan9CMLocalBeginConfig, cm->cp9 is NULL.\n");
-  if(cm->cp9map == NULL)
-    cm_Fail("ERROR in CPlan9CMLocalBeginConfig, cm->cp9map is NULL.\n");
-  if(!(cm->flags & CMH_CP9))
-     cm_Fail("ERROR in CPlan9CMLocalBeginConfig, CMH_CP9 flag is down.");
-  if(!(cm->flags & CMH_LOCAL_BEGIN))
-     cm_Fail("ERROR in CPlan9CMLocalBeginConfig, CMH_LOCAL_BEGIN flag is down.");
-  if(!(cm->flags & CMH_LOCAL_END))
-     cm_Fail("ERROR in CPlan9CMLocalBeginConfig, CP9_LOCAL_BEGIN flag is already up.");
-  if(cm->cp9->flags & CPLAN9_LOCAL_END)
-     cm_Fail("ERROR in CPlan9CMLocalBeginConfig, CP9_LOCAL_END flag is already up.");
-
-  /* Configure entry.
-   * To match CM, we enforce the only way out of the B state (M_0)
-   * is through a local begin into a match state 
-   */
-  esl_vec_FSet(cm->cp9->begin, cm->cp9->M, 0.);
-  emap = CreateEmitMap(cm); 
-  for (nd = 1; nd < cm->nodes; nd++) {
-    if(NOT_IMPOSSIBLE(cm->begin[cm->nodemap[nd]])) {
-      cm->cp9->begin[emap->lpos[nd]] += cm->begin[cm->nodemap[nd]]; /* we do += b/c for lpos of BIFs, there's > 1 way to enter there, the BIF and the first MATP or MATL of the left child of the BIF */
-    }
-  }
-
-  cm->cp9->flags       &= ~CPLAN9_HASBITS; /* reconfig invalidates log-odds scores */
-  cm->cp9->flags       |= CPLAN9_LOCAL_BEGIN; /* local begins now on */
-  cm->cp9->flags       |= CPLAN9_LOCAL_END;   /* local ends now on */
-
-  CP9Logoddsify(cm->cp9);
 }

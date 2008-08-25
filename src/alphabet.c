@@ -68,6 +68,7 @@ PairCount(const ESL_ALPHABET *abc, float *counters, ESL_DSQ syml, ESL_DSQ symr, 
   }
   return;
 }
+
 float
 DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ syml, ESL_DSQ symr)
 {
@@ -75,8 +76,14 @@ DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ syml, ESL_DSQ s
   int l,r;
   float sc;
 
-  if (syml < abc->K && symr < abc->K) 
+  if (syml < abc->K && symr < abc->K) /* canonical pair */
     return esc[(int) (syml*abc->K+symr)];
+
+  if (syml == abc->K || symr == abc->K)  /* gap, this gets an IMPOSSIBLE sc */
+    return IMPOSSIBLE;
+
+  if (syml == (abc->Kp-1) || symr == (abc->Kp-1))  /* missing data, this gets an IMPOSSIBLE sc */
+    return IMPOSSIBLE;
 
   esl_vec_FSet(left, MAXABET, 0.);
   esl_vec_FSet(right, MAXABET, 0.);
@@ -99,6 +106,12 @@ iDegeneratePairScore(const ESL_ALPHABET *abc, int *iesc, ESL_DSQ syml, ESL_DSQ s
   if (syml < abc->K && symr < abc->K) 
     return iesc[(int) (syml*abc->K+symr)];
 
+  if (syml == abc->K || symr == abc->K)  /* gap, this gets an -INFTY sc */
+    return -INFTY;
+
+  if (syml == (abc->Kp-1) || symr == (abc->Kp-1))  /* missing data, this gets an -INFTY sc */
+    return -INFTY;
+
   esl_vec_FSet(left, MAXABET, 0.);
   esl_vec_FSet(right, MAXABET, 0.);
   esl_abc_FCount(abc, left,  syml, 1.);
@@ -110,7 +123,6 @@ iDegeneratePairScore(const ESL_ALPHABET *abc, int *iesc, ESL_DSQ syml, ESL_DSQ s
       sc += iesc[l*abc->K+r] * left[l] * right[r];
   return (int) sc;
 }
-
 /* EPN, Wed Aug 20 13:44:16 2008
  * FastPairScore*() functions: 
  * Written to calculate base pairs scores involving 1 or 2 canonical 

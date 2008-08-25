@@ -6,6 +6,8 @@
 #include "esl_sqio.h"
 #include "esl_msa.h"
 
+#include "hmmer.h"
+
 #include "structs.h"
 
 #ifdef HAVE_MPI
@@ -87,22 +89,11 @@ extern int        CompareCMGuideTrees(CM_t *cm1, CM_t *cm2);
 extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, 
 			      search_results_t **results, float size_limit, int *ret_flen, float *ret_sc);
 extern int DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *results, 
-			      int first_result, int bdump_level, int debug_level, int silent_mode, int do_null3, ESL_RANDOMNESS *r, float size_limit, FILE *ofp);
+			      int first_result, int bdump_level, int debug_level, int silent_mode, int do_null3, ESL_RANDOMNESS *r, float size_limit, FILE *ofp,
+			      int pad7, int len7, float sc7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7);
 
 /* from cm_dpalign.c */
-extern int fast_cyk_align_hb (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit,
-			      void ****ret_shadow, int *ret_b, float *ret_bsc, CM_HB_MX *mx, float *ret_sc);
-extern int fast_cyk_align    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit,
-			      void ****ret_shadow, int *ret_b, float *ret_bsc, float ****ret_mx, float *ret_sc);
-extern int optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, void ****ret_shadow,  
-				     int *ret_b, float *ret_bsc, CM_HB_MX *mx, CM_HB_MX *post_mx, float *ret_pp);
-extern int optimal_accuracy_align   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, void ****ret_shadow,  
-				     int *ret_b, float *ret_bsc, float ****ret_mx, float ***post_mx, float *ret_pp);
-extern int fast_alignT_hb    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, 
-			      int allow_begin, CM_HB_MX *mx, int do_optacc, CM_HB_MX *post_mx, float size_limit, float *ret_sc);
-extern int fast_alignT       (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, 
-			        int allow_begin, float ****ret_mx, int do_optacc, float ***post_mx, float size_limit, float *ret_sc);
-extern int FastAlignHB        (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_MX *mx,     int do_optacc, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc);
+extern int FastAlignHB        (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_MX *mx,     CM_HB_SHADOW_MX *shmx, int do_optacc, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc);
 extern int FastAlign          (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, float ****ret_mx, int do_optacc, float ****ret_post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc);
 extern int FastInsideAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_HB_MX *mx,     float *ret_sc);
 extern int FastInsideAlign    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, float ****ret_mx, float *ret_sc);
@@ -196,7 +187,7 @@ extern int     CMFilePositionByKey(CMFILE *cmf, char *key);
 extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary, char *errbuf);
 
 /* from cm_modelconfig.c */
-extern int   ConfigCM(CM_t *cm, int always_calc_W);
+extern int   ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t *mother_map);
 extern void  ConfigLocal(CM_t *cm, float p_internal_start, float p_internal_exit);
 extern void  ConfigGlobal(CM_t *cm);
 extern void  ConfigNoLocalEnds(CM_t *cm);
@@ -223,6 +214,10 @@ extern CM_HB_MX *       cm_hb_mx_Create            (int M);
 extern int              cm_hb_mx_GrowTo            (CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, float size_limit);
 extern int              cm_hb_mx_Dump              (FILE *ofp, CM_HB_MX *mx);
 extern void             cm_hb_mx_Destroy           (CM_HB_MX *mx);
+extern CM_HB_SHADOW_MX *cm_hb_shadow_mx_Create     (CM_t *cm, int M);
+extern int              cm_hb_shadow_mx_GrowTo     (CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L);
+extern int              cm_hb_shadow_mx_Dump       (FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx);
+extern void             cm_hb_shadow_mx_Destroy    (CM_HB_SHADOW_MX *mx);
 extern ScanMatrix_t *   cm_CreateScanMatrix        (CM_t *cm, int W, int *dmin, int *dmax, double beta_W, double beta_qdb, int do_banded, int do_float, int do_int);
 extern int              cm_CreateScanMatrixForCM   (CM_t *cm, int do_float, int do_int);           
 extern int              cm_FloatizeScanMatrix      (CM_t *cm, ScanMatrix_t *smx);
@@ -235,6 +230,8 @@ extern void             cm_FreeScanMatrixForCM     (CM_t *cm);
 extern void             cm_DumpScanMatrixAlpha     (CM_t *cm, int j, int i0, int doing_float);
 extern float **         FCalcOptimizedEmitScores   (CM_t *cm);
 extern int **           ICalcOptimizedEmitScores   (CM_t *cm);
+extern int **           ICopyOptimizedEmitScoresFromFloats(CM_t *cm, float **oesc);
+extern void             DumpOptimizedEmitScores    (CM_t *cm, FILE *fp);
 extern void             FreeOptimizedEmitScores    (float **fesc_vAA, int **iesc_vAA, int M);
 extern float **         FCalcInitDPScores          (CM_t *cm);
 extern int **           ICalcInitDPScores          (CM_t *cm);
@@ -308,6 +305,8 @@ extern void         FreeSubMap(CMSubMap_t *submap);
 extern CMSubInfo_t *AllocSubInfo(int clen);
 extern void         FreeSubInfo(CMSubInfo_t *subinfo);
 extern void  debug_print_cm_params(FILE *fp, CM_t *cm);
+extern int   SubCMLogoddsify(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map);
+extern float ** SubFCalcAndCopyOptimizedEmitScoresFromMother(CM_t *cm, CM_t *mother_cm, CMSubMap_t *mother_map);
 
 /* from cp9.c */
 extern CP9_t *AllocCPlan9(int M, const ESL_ALPHABET *abc);
@@ -346,12 +345,11 @@ extern void  CPlan9ELConfig(CM_t *cm);
 extern void  CPlan9NoEL(CM_t *cm);
 extern void  CPlan9InitEL(CM_t *cm, CP9_t *cp9);
 extern void  CPlan9RenormalizeExits(CP9_t *hmm, int spos);
-extern void  CP9_2sub_cp9(CP9_t *orig_hmm, CP9_t **ret_sub_hmm, int spos, int epos, double **orig_phi);
-extern void  CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
 extern int   Prob2Score(float p, float null);
 extern float Score2Prob(int sc, float null);
 extern float Scorify(int sc);
 extern void  CPlan9CMLocalBeginConfig(CM_t *cm);
+extern void  CP9_reconfig2sub(CP9_t *hmm, int spos, int epos, int spos_nd, int epos_nd, double **orig_phi);
 
 /* from cp9_modelmaker.c */
 extern CP9Map_t *AllocCP9Map(CM_t *cm);
@@ -360,7 +358,7 @@ extern int  build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int 
 			  float psi_vs_phi_threshold, int debug_level);
 extern void CP9_map_cm2hmm(CM_t *cm, CP9Map_t *cp9map, int debug_level);
 extern void fill_psi(CM_t *cm, double *psi, char ***tmap);
-extern void fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos);
+extern void fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos, int entered_only);
 extern void map_helper(CM_t *cm, CP9Map_t *cp9map, int k, int ks, int v);
 extern void make_tmap(char ****ret_tmap);
 extern int  CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS *r, CMSubInfo_t *subinfo, int spos, int epos, 
@@ -368,11 +366,14 @@ extern int  CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS *r, CMSub
 extern void debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores);
 extern void debug_print_phi_cp9(CP9_t *hmm, double **phi);
 extern int  MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, char *ss, char **ret_s);
+extern int  sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
+					  float psi_vs_phi_threshold, int debug_level);
 
 /* from cp9_mx.c */
 extern CP9_MX *CreateCP9Matrix(int N, int M);
 extern void    FreeCP9Matrix  (CP9_MX *mx);
-extern int     GrowCP9Matrix  (CP9_MX *mx, char *errbuf, int N, int M, int ***mmx, int ***imx, int ***dmx, int ***elmx, int **erow);
+extern int     GrowCP9Matrix  (CP9_MX *mx, char *errbuf, int N, int M, int *kmin, int *kmax, int ***mmx, int ***imx, int ***dmx, int ***elmx, int **erow);
+extern void    InitializeCP9Matrix(CP9_MX *mx);
 
 /* from cp9_trace.c */
 extern void  CP9AllocTrace(int tlen, CP9trace_t **ret_tr);
@@ -406,6 +407,13 @@ extern float FastPairScoreLeftOnlyDegenerate(int K, float *esc, float *left, ESL
 extern int  iFastPairScoreLeftOnlyDegenerate(int K, int *iesc, float *left, ESL_DSQ symr);
 extern float FastPairScoreRightOnlyDegenerate(int K, float *esc, float *right, ESL_DSQ syml);
 extern float iFastPairScoreRightOnlyDegenerate(int K, int *iesc, float *right, ESL_DSQ syml);
+extern float  FastPairScoreBothDegenerate(int K, float *esc, float *left, float *right);
+extern int  iFastPairScoreBothDegenerate(int K, int *esc, float *left, float *right);
+extern float FastPairScoreLeftOnlyDegenerate(int K, float *esc, float *left, ESL_DSQ symr);
+extern int  iFastPairScoreLeftOnlyDegenerate(int K, int *iesc, float *left, ESL_DSQ symr);
+extern float FastPairScoreRightOnlyDegenerate(int K, float *esc, float *right, ESL_DSQ syml);
+extern float iFastPairScoreRightOnlyDegenerate(int K, int *iesc, float *right, ESL_DSQ syml);
+
 
 /* from display.c */
 extern Fancyali_t    *CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, char *pcode1, char *pcode2);
@@ -445,6 +453,10 @@ extern int          cp9_HMM2ijBands_OLD(CM_t *cm, char *errbuf, CP9Bands_t *cp9b
 extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
 extern void         FreeCP9Bands(CP9Bands_t *cp9bands);
 extern int          cp9_Seq2Bands     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, CP9Bands_t *cp9b, int doing_search, int debug_level);
+extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level);
+extern void         cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *mx, int did_scan);
+extern void         cp9_IFillPostSums(CP9_MX *post, CP9Bands_t *cp9, int i0, int j0);
+extern double       DScore2Prob(int sc, float null);
 extern int          cp9_FB2HMMBands        (CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
 				            int i0, int j0, int M, double p_thresh, int did_scan, int do_old_hmm2ij, int debug_level);
 extern int          cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, 
@@ -475,11 +487,38 @@ extern void         PrintDPCellsSaved_jd(CM_t *cm, int *jmin, int *jmax, int **h
 extern void         debug_print_ij_bands(CM_t *cm);
 extern void         debug_print_parsetree_and_ij_bands(FILE *fp, Parsetree_t *tr, CM_t *cm, ESL_DSQ *dsq, CP9Bands_t *cp9b);
 
-/* from cp9_postprob.c */
-extern void         cp9_Posterior(ESL_DSQ *dsq, int i0, int j0, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *mx, int did_scan);
-extern int          cp9_Seq2Posteriors(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int i0, int j0, int debug_level);
-extern void         cp9_IFillPostSums(CP9_MX *post, CP9Bands_t *cp9, int i0, int j0);
-extern double       DScore2Prob(int sc, float null);
+/* from p7_modelmaker.c */
+#if 0
+extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm, P7_OPROFILE **ret_om);
+#endif
+extern int          BuildP7HMM_MatchEmitsOnly(CM_t *cm, P7_HMM **ret_p7, P7_PROFILE **ret_gm);
+
+/* from my_p7_msvfilter.c */
+#if 0
+extern int          my_p7_MSVFilter(const ESL_DSQ *dsq, int L, const P7_OPROFILE *om, P7_OMX *ox, P7_GMX *gx, float *ret_sc);
+extern int          p7_omx_CopyMSVRow2gmx(P7_OMX *ox, const P7_OPROFILE *om, P7_GMX *gx, int rowi, uint8_t xE, uint8_t xN, uint8_t xJ, uint8_t xB, uint8_t xC);
+#endif
+extern int          p7_gmx_Match2DMatrix(P7_GMX *gx, int do_diff, ESL_DMATRIX **ret_D, double *ret_min, double *ret_max);
+extern int          my_dmx_Visualize(FILE *fp, ESL_DMATRIX *D, double min, double max, double min2fill);
+extern int          my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *gx, P7_TRACE *tr, int **ret_i2k, int **ret_k2i, float **ret_sc, int **ret_iconflict);
+extern int          Parsetree2i_to_k(CM_t *cm, CMEmitMap_t *emap, int L, char *errbuf, Parsetree_t *tr, int **ret_i2k);
+extern int          prune_i2k(int *i2k, int *iconflict, float *isc, int L, double **phi, float min_sc, int min_len, int min_end, float min_mprob, float min_mcprob, float max_iprob, float max_ilprob);
+extern int          p7_pins2bands(int *i2k, char *errbuf, int L, int M, int pad, int **ret_imin, int **ret_imax, int *ret_ncells);
+extern int          DumpP7Bands(FILE *fp, int *i2k, int *kmin, int *kmax, int L);
+extern int          cp9_ForwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
+extern int          cp9_ForwardP7B_OLD_WITH_EL(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
+extern int          cp9_BackwardP7B(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, float *ret_sc);
+extern int          cp9_CheckFBP7B(CP9_MX *fmx, CP9_MX *bmx, CP9_t *hmm, char *errbuf, float sc, int i0, int j0, ESL_DSQ *dsq, int *kmin, int *kmax);
+extern int          cp9_Seq2BandsP7B     (CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, CP9Bands_t *cp9b, int *kmin, int *kmax, int debug_level);
+extern int          cp9_Seq2PosteriorsP7B(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL_DSQ *dsq, int L, int *kmin, int *kmax, int debug_level);
+extern int          cp9_PosteriorP7B(ESL_DSQ *dsq, char *errbuf, int L, CP9_t *hmm, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, int *kmin, int *kmax);
+extern int          cp9_FB2HMMBandsP7B(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, CP9Bands_t *cp9b, int L, int M, double p_thresh, int do_old_hmm2ij, int *kmin, int *kmax, int debug_level);
+extern int          p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL_DSQ *dsq, int L, 
+				 double **phi, float sc7, int len7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7, int pad7,
+				 int **ret_i2k, int **ret_kmin, int **ret_kmax, int *ret_ncells);
+
+extern int          CP9NodeForPosnP7B(CP9_t *hmm, char *errbuf, int x, CP9_MX *post, int kn, int kx, int *ret_node, int *ret_type, int print_flag);
+extern int          P7BandsAdjustForSubCM(int *kmin, int *kmax, int L, int spos, int epos);
 
 /* from hybridsearch.c */
 extern int                cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanInfo_t *hsi, int i0, int j0, int W, 

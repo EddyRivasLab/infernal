@@ -13,6 +13,7 @@
  */
 
 #include "esl_config.h"
+#include "p7_config.h"
 #include "config.h"
 
 #include <stdio.h>
@@ -24,7 +25,14 @@
 
 #include "easel.h"
 #include "esl_msa.h"         
+#include "esl_sse.h"         
 #include "esl_stopwatch.h"   
+#include "esl_vectorops.h"
+
+#include "hmmer.h"
+#if 0
+#include "impl_sse.h"
+#endif
 
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
@@ -261,7 +269,8 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       /*if((cur_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN))) {*/
       if((status = DispatchAlignments(cm, errbuf, NULL, 
 				      dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
-				      0, 0, 0, do_null3, NULL, size_limit, stdout)) != eslOK) return status;
+				      0, 0, 0, do_null3, NULL, size_limit, stdout, 
+				      0, 1, 0., 0, 0., 0., 1., 1.)) != eslOK) return status;
     }
   }
   FreeResults(cur_results);
@@ -314,10 +323,13 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 int
 DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
 		   int first_result, int bdump_level, int debug_level, int silent_mode, int do_null3, ESL_RANDOMNESS *r, 
-		   float size_limit, FILE *ofp)
+		   float size_limit, FILE *ofp, 
+		   int pad7, int len7, float sc7, int end7, 
+		   float mprob7, float mcprob7, float iprob7, float ilprob7)
 {
   int status;
   ESL_STOPWATCH *watch;         /* for timings */
+  ESL_STOPWATCH *watch2;        /* for timings */
   int sq_mode  = FALSE;         /* we're aligning nseq seqs in sq */
   int dsq_mode = FALSE;         /* we're aligning search_results->num_results seqs, all subseqs of dsq */
   int nalign   = 0;             /* number of sequences we're aligning */
@@ -365,12 +377,14 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   CP9Map_t          *sub_cp9map;   /* maps the sub_hmm to the sub_cm and vice versa */
   CP9Bands_t        *sub_cp9b;     /* data structure for hmm bands (bands on the hmm states) 
 				    * and arrays for CM state bands, derived from HMM bands */
+  CM_HB_SHADOW_MX   *sub_shmx;     /* sub CM's shadow matrix, only valid if do_hbanded */
 
   CM_t              *orig_cm;      /* the original, template covariance model the sub CM was built from */
   CP9_t             *orig_hmm;     /* original CP9 HMM built from orig_cm */
   CP9Map_t          *orig_cp9map;  /* original CP9 map */
   CP9Bands_t        *orig_cp9b;    /* original CP9Bands */
   Parsetree_t       *orig_tr;      /* parsetree for the orig_cm; created from the sub_cm parsetree */
+  CM_HB_SHADOW_MX   *orig_shmx;    /* the original shadow matrix for the original CM */
 
   /* variables related to query dependent banding (qdb) */
   int    expand_flag;           /* TRUE if the dmin and dmax vectors have just been 
@@ -383,6 +397,9 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   float           ***alpha = NULL;    /* alpha DP matrix for non-banded Inside() */
   float           ***beta  = NULL;    /* beta DP matrix for non-baned Outside() */
   CM_HB_MX           *out_mx;         /* outside matrix for HMM banded Outside() */
+
+  /* for HMM banded tracebacks */
+  CM_HB_SHADOW_MX    *shmx;           /* HMM banded shadow matrix */
 
   float             *parsesc; /* parsetree scores of each sequence */
   float             *parsepp; /* optimal parse posterior probability of each sequence, if any */
@@ -404,6 +421,54 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   int do_sample    = FALSE;   /* TRUE to sample from an Inside matrix */
   int do_optacc    = FALSE;   /* TRUE to find optimally accurate alignment instead of CYK */
   int do_hmmsafe   = FALSE;   /* TRUE to realign seqs with HMM banded parses < 0. bits (only works if !do_optacc && !do_post && do_hbanded)*/
+  int do_p7banded  = FALSE;   /* TRUE to use a HMMER3 plan 7 HMM to get pins prior to CP9 banding, requires do_hbanded == TRUE */
+
+  /* TEMP */
+  P7_GMX          *gx      = NULL;     /* DP matrix                               */
+#if 0
+  P7_OMX          *ox      = NULL;     /* optimized DP matrix                     */
+#endif
+  P7_BG *bg;
+  P7_TRACE *p7_tr;
+  /*P7_ALIDISPLAY  *ad      = NULL;*/
+  double **phi;       /* phi array, phi[k][v] is expected number of times
+			 state v (0 = match, 1 insert, 2 = delete) in 
+			 cp9 hmm node k is visited. Node 0 is special, 
+			 state 0 = B state, state 1 = N_state, state 2 = NULL */
+  int *kmin, *kmax;
+  int k;
+#if 0
+  int ipos
+  int cm_k;
+  double i_ncells_total = 0.;
+  double ncells_banded = 0.;
+  double ncells_total = 0.;
+  int i_npins, i_ncorrect;
+  int i_nodes_n, i_nodes_ncorrect;
+  int *cm_i2k;
+#endif
+  int i_ncells_banded = 0;
+  int nodes_n, nodes_ncorrect;
+  int npins, ncorrect;
+  npins = ncorrect = 0;
+  nodes_n = nodes_ncorrect = 0;
+#if 0 
+  ox  = p7_omx_Create(200, 0, 0);       /* ox is a one-row matrix for M=200 */
+#endif
+  bg = p7_bg_Create(cm->abc);
+  gx = p7_gmx_Create(200, 400);	/* initial alloc is for M=200, L=400; will grow as needed */
+  p7_ProfileConfig(cm->p7, bg, cm->p7_gm, 100, p7_LOCAL); /* 100 is a dummy length for now; MSVFilter requires local mode */
+#if 0 
+  p7_oprofile_Convert(cm->p7_gm, cm->p7_om); /* <om> is now p7_LOCAL, multihit */
+#endif
+  if ((p7_tr = p7_trace_Create()) == NULL)  cm_Fail("trace creation failed");
+
+#if 0
+   p7_omx_GrowTo(ox, cm->p7_om->M, 0, 0); /* expand the one-row omx if needed */
+#endif
+  /*p7_omx_SetDumpMode(stdout, ox, TRUE);*/
+  int *p7_i2k;
+  /* TEMP */
 
   /* Contract check */
   if(!(cm->flags & CMH_BITS))                            ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), CMH_BITS flag down.\n");
@@ -448,14 +513,17 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   if(cm->align_opts  & CM_ALIGN_SAMPLE)     do_sample    = TRUE;
   if(cm->align_opts  & CM_ALIGN_OPTACC)     do_optacc    = TRUE;
   if(cm->align_opts  & CM_ALIGN_HMMSAFE)    do_hmmsafe   = TRUE;
+  if(cm->align_opts  & CM_ALIGN_P7BANDED)   do_p7banded  = TRUE;
 
   /* another contract check */
   if((do_sample + do_inside + do_post + do_hmmonly + do_scoreonly) > 1) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), exactly 0 or 1 of the following must be TRUE (== 1):\n\tdo_sample = %d\n\tdo_inside = %d\n\t do_post = %d\n\tdo_hmmonly = %d\n\tdo_scoreonly = %d\n", do_sample, do_inside, do_post, do_hmmonly, do_scoreonly);
+  if(do_p7banded && (!do_hbanded)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), do_p7banded is TRUE but do_hbanded is FALSE.");
 
   if(debug_level > 0) {
     printf("do_local    : %d\n", do_local);
     printf("do_qdb      : %d\n", do_qdb);
     printf("do_hbanded  : %d\n", do_hbanded);
+    printf("do_p7banded : %d\n", do_p7banded);
     printf("use_sums    : %d\n", use_sums);
     printf("do_sub      : %d\n", do_sub);
     printf("do_hmmonly  : %d\n", do_hmmonly);
@@ -468,10 +536,25 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     printf("do_optacc   : %d\n", do_optacc);
     printf("do_hmmsafe  : %d\n", do_hmmsafe);
   }
+  printf("pad7:      %4d\n", pad7);
+  printf("len7:      %4d\n", len7);
+  printf("sc7:       %.2f\n", sc7);
+  printf("end7:      %4d\n", end7);
+  printf("mprob7:  %.4f\n",  mprob7);
+  printf("mcprob7: %.4f\n",  mcprob7);
+  printf("iprob7:  %.4f\n",  iprob7);
+  printf("ilprob7: %.4f\n",  ilprob7);
+  printf("\n");
 
   /* allocate out_mx, if needed, only if !do_sub, if do_sub each sub CM will need to allocate a new out_mx */
   out_mx = NULL;
   if((!do_sub) && (do_hbanded && (do_optacc || (do_post)))) out_mx = cm_hb_mx_Create(cm->M);
+
+  /* allocate/initialize shmx, if needed, only if do_hbanded */
+  sub_shmx  = NULL;
+  shmx      = NULL;
+  if(do_hbanded) shmx = cm_hb_shadow_mx_Create(cm, cm->M);
+  orig_shmx = shmx;
 
   if      (sq_mode)   nalign = seqs_to_aln->nseq;
   else if(dsq_mode) { nalign = search_results->num_results - first_result; silent_mode = TRUE; }
@@ -509,6 +592,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   maxsc = -FLT_MAX;
   avgsc = 0;
   if((watch = esl_stopwatch_Create()) == NULL) goto ERROR;
+  if((watch2 = esl_stopwatch_Create()) == NULL) goto ERROR;
 
   if(do_hbanded || do_sub) { /* We need a CP9 HMM to build sub_cms */
     if(cm->cp9 == NULL)                    ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments, trying to use CP9 HMM that is NULL\n");
@@ -544,6 +628,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     CP9Logoddsify(hmm);
   }
   orig_cm = cm;
+  emap = CreateEmitMap(cm);
+  fill_phi_cp9(cm->cp9, &phi, 1, TRUE);
   
   /* if not in silent mode, print the header for the sequence info */
   if(sq_mode && !silent_mode) { 
@@ -591,6 +677,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
    *  Collect parse trees for each sequence
    *****************************************************************/
   for (i = 0; i < nalign; i++) {
+
+
     if(sq_mode && !silent_mode) esl_stopwatch_Start(watch);
     if (sq_mode) { 
       cur_dsq = seqs_to_aln->sq[i]->dsq;
@@ -606,6 +694,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       /*printf("i: %d ip: %d L: %d\n", i, ip, L);*/
     }
     if (L == 0) continue; /* silently skip zero length seqs */
+
 
     /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
     if(sq_mode && do_hmmonly) {
@@ -642,10 +731,17 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
     /* Potentially, do HMM calculations. */
     if((!do_sub) && do_hbanded) {
-      if((status = cp9_Seq2Bands(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) return status; 
+      if(do_p7banded) { 
+	if((status =  p7_Seq2Bands   (orig_cm, errbuf, gx, bg, p7_tr, cur_dsq, L, phi, sc7, len7, end7, mprob7, mcprob7, iprob7, ilprob7, pad7, &p7_i2k, &kmin, &kmax, &i_ncells_banded)) != eslOK) return status;
+	if((status = cp9_Seq2BandsP7B(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, L, orig_cp9b, kmin, kmax, debug_level)) != eslOK) return status; 
+      }
+      else { 
+	if((status = cp9_Seq2Bands(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, 1, L, orig_cp9b, FALSE, debug_level)) != eslOK) return status; 
+      }
     }
     else if(do_sub) { 
       /* If we're in sub mode:
+       * (0) Get p7 bands (only if do_p7banded) 
        * (1) Get HMM posteriors 
        * (2) Infer the start (spos) and end (epos) HMM states by 
        *     looking at the posterior matrix.
@@ -656,14 +752,28 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
        * (5) Do Forward/Backward again, and get HMM bands 
        */
       
-      /* (1) Get HMM posteriors */
-      if((status = cp9_Seq2Posteriors(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, 1, L, debug_level)) != eslOK) return status; 
-      
-      /* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
-       * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
-       */
-      CP9NodeForPosn(orig_hmm, 1, L, 1, orig_cm->cp9_bmx, &spos, &spos_state, 0., TRUE, debug_level);
-      CP9NodeForPosn(orig_hmm, 1, L, L, orig_cm->cp9_bmx, &epos, &epos_state, 0., FALSE, debug_level);
+      if(do_p7banded) { /* use P7 bands to constrain CP9 dp calculations */
+	/* (0) Get p7 bands */
+	if((status = p7_Seq2Bands(orig_cm, errbuf, gx, bg, p7_tr, cur_dsq, L, phi, sc7, len7, end7, mprob7, mcprob7, iprob7, ilprob7, pad7, &p7_i2k, &kmin, &kmax, &i_ncells_banded)) != eslOK) return status;
+	/* (1) Get HMM posteriors */
+	if((status = cp9_Seq2PosteriorsP7B(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, L, kmin, kmax, debug_level)) != eslOK) return status; 
+	/* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
+	 * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
+	 */
+	if((status = CP9NodeForPosnP7B(orig_hmm, errbuf, 1, orig_cm->cp9_bmx, kmin[1], kmax[1], &spos, &spos_state, debug_level)) != eslOK) return status;
+	if((status = CP9NodeForPosnP7B(orig_hmm, errbuf, L, orig_cm->cp9_bmx, kmin[L], kmax[L], &epos, &epos_state, debug_level)) != eslOK) return status;
+      }
+      else { /* ! do_p7banded */ 
+	/* (1) Get HMM posteriors */
+	if((status = cp9_Seq2Posteriors(orig_cm, errbuf, orig_cm->cp9_mx, orig_cm->cp9_bmx, orig_cm->cp9_bmx, cur_dsq, 1, L, debug_level)) != eslOK) return status; 
+	
+	/* (2) infer the start and end HMM nodes (consensus cols) from posterior matrix.
+	 * Remember: we're necessarily in CP9 local mode, the --sub option turns local mode on. 
+	 */
+	CP9NodeForPosn(orig_hmm, 1, L, 1, orig_cm->cp9_bmx, &spos, &spos_state, 0., TRUE, debug_level);
+	CP9NodeForPosn(orig_hmm, 1, L, L, orig_cm->cp9_bmx, &epos, &epos_state, 0., FALSE, debug_level);
+      }
+
       /* Deal with special cases for sub-CM alignment:
        * If the most likely state to have emitted the first or last residue
        * is the insert state in node 0, it only makes sense to start modelling
@@ -677,28 +787,49 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       if(epos <= spos) { spos = 1; epos = cm->cp9->M; } 
 
       /* (3) Build the sub_cm from the original CM. */
+      esl_stopwatch_Start(watch2);
       if((status = build_sub_cm(orig_cm, errbuf, &sub_cm, 
 				spos, epos,               /* first and last col of structure kept in the sub_cm  */
 				&submap,                  /* maps from the sub_cm to cm and vice versa           */
 				debug_level)) != eslOK)    /* print or don't print debugging info                 */
 	return status;
+      esl_stopwatch_Stop(watch2);
+      FormatTimeString(time_buf, watch2->user, TRUE);
+#if PRINTNOW
+      fprintf(stdout, "build sub cm      %11s\n", time_buf);
+#endif
+
       /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded), this will also:  */
       /* (4) Build a new CP9 HMM from the sub CM. */
-      ConfigCM(sub_cm, FALSE); /* FALSE says: don't calculate W, we won't need it */
+      esl_stopwatch_Start(watch2);
+      if((status = ConfigCM(sub_cm, errbuf, FALSE, orig_cm, submap)) != eslOK) return status; /* FALSE says: don't calculate W, we won't need it */
+      esl_stopwatch_Stop(watch2);
+      FormatTimeString(time_buf, watch2->user, TRUE);
+#if PRINTNOW
+      fprintf(stdout, "config sub cm      %11s\n", time_buf);
+#endif
       cm    = sub_cm; /* orig_cm still points to the original CM */
       if(do_hbanded) { /* we're doing HMM banded alignment to the sub_cm */
 	/* Get the HMM bands for the sub_cm */
 	sub_hmm    = sub_cm->cp9;
 	sub_cp9b   = sub_cm->cp9b;
 	sub_cp9map = sub_cm->cp9map;
-	/* (5) Do Forward/Backward again, and get HMM bands */
-	if((status = cp9_Seq2Bands(sub_cm, errbuf, sub_cm->cp9_mx, sub_cm->cp9_bmx, sub_cm->cp9_bmx, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level)) != eslOK) return status;
+	sub_shmx   = cm_hb_shadow_mx_Create(cm, cm->M); /* a new shadow matrix for the sub CM */
+
+	if(do_p7banded) { 
+	  P7BandsAdjustForSubCM(kmin, kmax, L, spos, epos);
+	  if((status = cp9_Seq2BandsP7B(sub_cm, errbuf, sub_cm->cp9_mx, sub_cm->cp9_bmx, sub_cm->cp9_bmx, cur_dsq, L, sub_cp9b, kmin, kmax, debug_level)) != eslOK) return status;
+	}
+	else { /* ! do_p7banded */ 
+	  /* (5) Do Forward/Backward again, and get HMM bands */
+	  if((status = cp9_Seq2Bands(sub_cm, errbuf, sub_cm->cp9_mx, sub_cm->cp9_bmx, sub_cm->cp9_bmx, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level)) != eslOK) return status;
+	}
 	hmm           = sub_hmm;    
 	cp9b          = sub_cp9b;
 	cp9map        = sub_cp9map;
-
 	/* Create the out_mx if needed, cm == sub_cm */
 	if(do_optacc || do_post) out_mx = cm_hb_mx_Create(cm->M);
+	shmx = sub_shmx; /* orig_shmx still points to the original shadow matrix */
       }
     }
 
@@ -720,6 +851,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     if(sq_mode && !silent_mode) { 
       fprintf(ofp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
     }
+
+    esl_stopwatch_Start(watch2);  
 
     /* beginning of large if() else if() else if() ... statement */
     if(do_sample) { 
@@ -757,14 +890,14 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     else { /* non-small, non-QDB CYK or optimal accuracy alignment */
       if(do_hbanded) { 
 	if(do_post) { /* HMM banded CYK or optimal accuracy, posterior annotated */
-	  if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
+	  if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
 	}
 	else { 
 	  if(do_optacc) { /* HMM banded optimal accuracy, no posteriors */
-	    if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, out_mx, cur_tr, NULL, NULL, &sc, &ins_sc)) != eslOK) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
+	    if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, out_mx, cur_tr, NULL, NULL, &sc, &ins_sc)) != eslOK) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
 	  }
 	  else { /* HMM banded CYK */
-	    if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, out_mx, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) {
+	    if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, out_mx, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) {
 	      if (status == eslERANGE) { /* we can still do CYK D&C alignment with QDBs derived from the HMM bands */
 		hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
 		ESL_DPRINTF1(("# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i));
@@ -821,7 +954,6 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       emap = CreateEmitMap(cm); /* TEMPORARY!, we don't want to build this separately for each seq, but with sub CMs I'm not sure how to accomplish that */
       if((status = ParsetreeScore(cm, emap, errbuf, *cur_tr, cur_dsq, FALSE, &tmpsc, &struct_sc, &primary_sc, &cur_spos, &cur_epos)) != eslOK) return status;
       if(do_sub) { cur_spos += spos; cur_epos += spos; }
-      FreeEmitMap(emap);
     }
     /* determine NULL3 score correction, which is independent of the parsetree */
     null3_correction = 0.;
@@ -901,6 +1033,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       }
       /* free sub_cm variables, we build a new sub CM for each seq */
       if(out_mx != NULL) { cm_hb_mx_Destroy(out_mx); out_mx = NULL; }
+      if(shmx   != NULL) { cm_hb_shadow_mx_Destroy(shmx); shmx = NULL; }
 
       FreeSubMap(submap);
       FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
@@ -913,10 +1046,76 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       FormatTimeString(time_buf, watch->user, TRUE);
       fprintf(ofp, "%11s\n", time_buf);
     }
+    esl_stopwatch_Stop(watch2); 
+    FormatTimeString(time_buf, watch2->user, TRUE);
+#if PRINTNOW
+    fprintf(stdout, "CM parse        %11s\n", time_buf);
+#endif
+
+#if 0    
+    if(do_p7banded) { 
+      /* compare parsetree with p7 msv alignment */
+      if((status = Parsetree2i_to_k(cm, emap, seqs_to_aln->sq[i]->n, errbuf, *cur_tr, &cm_i2k)) != eslOK) return status;;
+      i_ncells_total = (double) (seqs_to_aln->sq[i]->n * cm->clen);
+      ncells_total  += i_ncells_total;
+      ncells_banded += (double) i_ncells_banded;
+      
+      i_ncorrect = 0;
+      i_npins = 0;
+      i_nodes_n = i_nodes_ncorrect = 0;
+      float mprob = 1.;
+      int posn = 0;
+      for(ipos = 1; ipos <= seqs_to_aln->sq[i]->n; ipos++) { 
+	if(p7_i2k[ipos] != -1) { 
+	  /*printf("\t%4d\t%4d\t%4d\t%1s\n", ipos, p7_i2k[ipos], cm_i2k[ipos], ((abs(p7_i2k[ipos]-cm_i2k[ipos])) == 0) ? "+" : "-");*/
+	  mprob *= phi[p7_i2k[ipos]][HMMMATCH];
+	  posn++;
+	  if(p7_i2k[ipos] == cm_i2k[ipos]) { 
+	    i_ncorrect++;
+	    ;/*printf("\t%4d\t%4d\t%4d\t\t%3d\t\t%.3f\t\t%.3f\t%.3f\t%.3f\t\t%.3f\t%.3f\t%.3f\t%1s\n", ipos, p7_i2k[ipos], cm_i2k[ipos], posn, mprob, phi[(ipos-1)][HMMMATCH], phi[(ipos-1)][HMMDELETE], phi[(ipos-1)][HMMINSERT], phi[ipos][HMMMATCH], phi[ipos][HMMDELETE], phi[ipos][HMMINSERT], ((abs(p7_i2k[ipos]-cm_i2k[ipos])) == 0) ? "+" : "-");*/
+	  }
+	  else { 
+	    ;printf("\t%4d\t%4d\t%4d\t\t%3d\t\t%.3f\t\t%.3f\t%.3f\t%.3f\t\t%.3f\t%.3f\t%.3f\t%1s\n", ipos, p7_i2k[ipos], cm_i2k[ipos], posn, mprob, phi[(ipos-1)][HMMMATCH], phi[(ipos-1)][HMMDELETE], phi[(ipos-1)][HMMINSERT], phi[ipos][HMMMATCH], phi[ipos][HMMDELETE], phi[ipos][HMMINSERT], ((abs(p7_i2k[ipos]-cm_i2k[ipos])) == 0) ? "+" : "-");
+	  }
+	  i_npins++;
+	}
+	else { mprob = 1.; posn = 0; }
+	cm_k = cm_i2k[ipos];
+	if(cm_k < 0) cm_k *= -1;
+	if(kmin[ipos] <= cm_k && kmax[ipos] >= cm_k) i_nodes_ncorrect++;
+	else { 
+	  ;printf("\tNODE OFF %4d\t%4d\t%4d\t\t%4d\t\t%4d\n", ipos, p7_i2k[ipos], cm_i2k[ipos], kmin[ipos], kmax[ipos]);
+	}
+	i_nodes_n++;
+    }
+      
+      ncorrect += i_ncorrect;
+      npins    += i_npins;
+      nodes_ncorrect += i_nodes_ncorrect;
+      nodes_n        += i_nodes_n;
+      
+      printf("> %5d %d/%d (%.3f) MSV p7 pins correct.\n", i, i_ncorrect, i_npins, (float) i_ncorrect / (float) i_npins);
+      printf("> %5d %d/%d (%.3f) MSV p7 nodes potentially correct.\n", i, i_nodes_ncorrect, i_nodes_n, (float) i_nodes_ncorrect / (float) i_nodes_n);
+      printf("> %5d %.0f/%.0f (%.8f) matrix pruned away.\n", i, (float) i_ncells_banded, i_ncells_total, 1. - (i_ncells_banded / i_ncells_total));
+      free(cm_i2k);
+    }
+    printf("\n");
+    printf("$ TOTAL %d/%d (%.3f) MSV p7 pins correct.\n", ncorrect, npins, (float) ncorrect / (float) npins);
+    printf("$ TOTAL %d/%d (%.3f) consensus nodes potentially correct.\n", nodes_ncorrect, nodes_n, (float) nodes_ncorrect / (float) nodes_n);
+    printf("$ TOTAL %.0f/%.0f (%.8f) matrix pruned away.\n", ncells_banded, ncells_total, 1. - (ncells_banded / ncells_total));
+#endif
+    if(do_p7banded) { 
+      free(p7_i2k);
+      free(kmin);
+      free(kmax);
+    }
   }
+
   /* done aligning all nalign seqs. */
   /* Clean up. */
   if(out_mx != NULL) cm_hb_mx_Destroy(out_mx);
+  if(shmx != NULL)      { cm_hb_shadow_mx_Destroy(shmx); shmx = NULL; }
+  /*  if(orig_shmx != NULL) { cm_hb_shadow_mx_Destroy(orig_shmx); orig_shmx = NULL; }*/
   if(alpha != NULL)  { free_vjd_matrix(alpha, cm->M, 1, L); alpha = NULL; }
   if(beta  != NULL)  { free_vjd_matrix(beta,  cm->M, 1, L); beta = NULL;  }
   if (do_qdb) {
@@ -924,6 +1123,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     free(orig_dmax);
   }
   esl_stopwatch_Destroy(watch);
+  esl_stopwatch_Destroy(watch2);
   
   if(sq_mode) {
     seqs_to_aln->tr       = tr;       /* could be NULL */
@@ -948,7 +1148,19 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     if(parsepp != NULL) free(parsepp);
     if(parse_struct_sc != NULL) free(parse_struct_sc);
   }
-  
+
+  p7_trace_Destroy(p7_tr);
+  p7_bg_Destroy(bg);
+#if 0 
+  p7_omx_Destroy(ox);
+#endif
+  p7_gmx_Destroy(gx);
+  FreeEmitMap(emap);
+  if(phi != NULL) { 
+    for(k = 0; k <= orig_cm->cp9->M; k++) free(phi[k]);
+    free(phi);
+  }
+
   return eslOK;
   ERROR:
   ESL_FAIL(eslEMEM, errbuf, "DispatchAlignments(), Memory allocation error.");

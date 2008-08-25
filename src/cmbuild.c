@@ -775,7 +775,8 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       /* initialize/configure CM, we may be doing HMM banded alignment for ex. */
       initialize_cm(go, cfg, errbuf, cm);
       if((status = DispatchAlignments(cm, errbuf, seqs_to_aln, NULL, NULL, 0, 0, 0, (! esl_opt_GetBoolean(go, "-a")), TRUE, cfg->r, 
-				      esl_opt_GetReal(go, "--mxsize"), stdout)) != eslOK) return status;
+				      esl_opt_GetReal(go, "--mxsize"), stdout, 
+				      0, 1, 0., 0, 0., 0., 1., 1.)) != eslOK) return status;
       
       /* sum parse scores and check for convergence */
       totscore = esl_vec_FSum(seqs_to_aln->sc, nseq);
@@ -1555,6 +1556,8 @@ convert_parsetrees_to_unaln_coords(Parsetree_t **tr, ESL_MSA *msa)
 static int
 initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
+  int status;
+
   /* set up params/flags/options of the CM */
   cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
 
@@ -1582,7 +1585,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * this may make a cp9 HMM, for example.
    */
-  ConfigCM(cm, FALSE); /* FALSE says don't calc W */
+  if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) return status; /* FALSE says do not calculate W unless nec b/c we're using QDBs */
 
   return eslOK;
 }

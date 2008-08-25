@@ -79,6 +79,18 @@
 #define TSC(s,k) (tsc[(v) * MAXCONNECT + (s)])
 #define AMX(j,v,d) (alphap[(j * cm->M * (W+1)) + ((v) * (W+1) + d)])
 
+static int fast_cyk_align_hb (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit,
+			      CM_HB_SHADOW_MX *shmx, int *ret_b, float *ret_bsc, CM_HB_MX *mx, float *ret_sc);
+static  int fast_cyk_align    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit,
+			       void ****ret_shadow, int *ret_b, float *ret_bsc, float ****ret_mx, float *ret_sc);
+static int optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_SHADOW_MX *shmx,
+				     int *ret_b, float *ret_bsc, CM_HB_MX *mx, CM_HB_MX *post_mx, float *ret_pp);
+static int optimal_accuracy_align   (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, void ****ret_shadow,  
+				     int *ret_b, float *ret_bsc, float ****ret_mx, float ***post_mx, float *ret_pp);
+static int fast_alignT_hb    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, int allow_begin,
+			      CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, int do_optacc, CM_HB_MX *post_mx, float size_limit, float *ret_sc);
+static int fast_alignT       (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0, 
+			      int allow_begin, float ****ret_mx, int do_optacc, float ***post_mx, float size_limit, float *ret_sc);
 static float get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
 
 /* 
@@ -127,15 +139,14 @@ static float get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
  *           j0        - last position in subseq to align (L, for whole seq)
  *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           allow_begin-TRUE to allow 0->b local alignment begin transitions. 
- *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
- *                       he intends to do a traceback.
+ *           shmx      - the HMM banded shadow matrix to fill in, only cells within bands are valid
  *           ret_b     - best local begin state, or NULL if unwanted
  *           ret_bsc   - score for using ret_b, or NULL if unwanted                        
  *           mx        - the dp matrix, only cells within bands in cm->cp9b will 
  *                       be valid. 
  *           ret_sc    - score of optimal, CYK parsetree 
  *                       
- * Returns: <ret_sc>, <ret_b>, <ret_bsc>, <ret_shadow>, see 'Args'
+ * Returns: <ret_sc>, <ret_b>, <ret_bsc>, see 'Args'
  * 
  * Throws:  <eslOK> on success.
  *          <eslERANGE> if required CM_HB_MX size exceeds <size_limit>, in
@@ -143,7 +154,7 @@ static float get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j);
  */
 int
 fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int allow_begin, float size_limit,
-		  void ****ret_shadow, int *ret_b, float *ret_bsc, CM_HB_MX *mx, float *ret_sc)
+		  CM_HB_SHADOW_MX *shmx, int *ret_b, float *ret_bsc, CM_HB_MX *mx, float *ret_sc)
 {
   int      status;
   int      v,y,z;	/* indices for states  */
@@ -151,9 +162,6 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
   float    sc;		/* a temporary variable holding a score */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int      W;		/* subsequence length */
-  void  ***shadow;      /* shadow matrix for tracebacks */
-  int    **kshad;       /* a shadow deck for bifurcations */
-  char   **yshad;       /* a shadow deck for every other kind of state */
   int      b;		/* best local begin state */
   float    bsc;		/* score for using the best local begin state */
   int     *yvalidA;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
@@ -191,35 +199,21 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
   int    **hdmax = cp9b->hdmax;
   /* the DP matrix */
   float ***alpha = mx->dp; /* pointer to the alpha DP matrix */
+  char  ***yshadow = shmx->yshadow; /* pointer to the yshadow matrix */
+  int   ***kshadow = shmx->kshadow; /* pointer to the kshadow matrix */
 
   /* Allocations and initializations  */
   b   = -1;
   bsc = IMPOSSIBLE;
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
 				/* if caller didn't give us a deck pool, make one */
-  /* grow the matrix based on the current sequence and bands */
+  /* grow the matrices based on the current sequence and bands */
   if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W, size_limit)) != eslOK) return status;
+  if((status = cm_hb_shadow_mx_GrowTo(cm, shmx, errbuf, cp9b, W))    != eslOK) return status;
 
   /* precalcuate all possible local end scores, for local end emits of 1..W residues */
   ESL_ALLOC(el_scA, sizeof(float) * (W+1));
   for(d = 0; d <= W; d++) el_scA[d] = cm->el_selfsc * d;
-
-  /* The shadow matrix, we always allocate it, so we don't have to 
-   * check if it's null in the depths of the DP recursion.
-   * We do some pointer tricks here to save memory. The shadow matrix
-   * is a void ***. Decks may either be char ** (usually) or
-   * int ** (for bifurcation decks). Watch out for the casts.
-   * For most states we only need
-   * to keep y as traceback info, and y <= 6. For bifurcations,
-   * we need to keep k, and k <= L, and L might be fairly big.
-   * (We could probably limit k to an unsigned short ... anyone
-   * aligning an RNA > 65536 would need a big computer... but
-   * we'll hold off on that for now. We could also pack more
-   * traceback pointers into a smaller space since we only really
-   * need 3 bits, not 8.)
-   */
-  ESL_ALLOC(shadow, sizeof(void **) * cm->M);
-  for (v = 0; v < cm->M; v++) shadow[v] = NULL;
 
   /* yvalidA[0..cnum[v]] will hold TRUE for states y for which a transition is legal 
    * (some transitions are impossible due to the bands) */
@@ -237,11 +231,9 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
     sdr  = StateRightDelta(cm->sttype[v]);
     jn   = jmin[v];
     jx   = jmax[v];
-    /* Get a shadow deck to fill in and initialize all valid cells for state v */
+    /* initialize all valid cells for state v */
     if (cm->sttype[v] != E_st) {
       if (cm->sttype[v] == B_st) {
-	kshad     = (jmin[v] == -1) ? NULL : alloc_jdbanded_vjd_kshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
-	shadow[v] = (void **) kshad;
 	/* initialize all valid cells for state v to IMPOSSIBLE (local ends are impossible for B states) */
 	assert(! (NOT_IMPOSSIBLE(cm->endsc[v])));
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
@@ -249,12 +241,10 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 	  jp_v  = j - jmin[v];
 	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
 	    alpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	    kshad[jp_v][dp_v] = USED_EL; 
+	    kshadow[v][jp_v][dp_v] = USED_EL; 
 	  }
 	}
       } else { /* ! B_st && ! E_st */
-	yshad     = (jmin[v] == -1) ? NULL : alloc_jdbanded_vjd_yshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
-	shadow[v] = (void **) yshad;
 	/* initialize all valid cells for state v */
 	if(NOT_IMPOSSIBLE(cm->endsc[v])) {
 	  for (j = jmin[v]; j <= jmax[v]; j++) { 
@@ -262,7 +252,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 	    jp_v  = j - jmin[v];
 	    for (dp_v = 0, d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; dp_v++, d++) {
 	      alpha[v][jp_v][dp_v] = el_scA[d-sd] + cm->endsc[v];
-	      yshad[jp_v][dp_v] = USED_EL; 
+	      yshadow[v][jp_v][dp_v] = USED_EL; 
 	    }
 	  }
 	}
@@ -272,7 +262,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 	    jp_v  = j - jmin[v];
 	    for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
 	      alpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	      yshad[jp_v][dp_v] = USED_EL; 
+	      yshadow[v][jp_v][dp_v] = USED_EL; 
 	    }
 	  }
 	}
@@ -317,7 +307,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 	      if ((sc = alpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > alpha[v][jp_v][dp_v])
 		{
 		  alpha[v][jp_v][dp_v] = sc; 
-		  yshad[jp_v][dp_v]    = yoffset;
+		  yshadow[v][jp_v][dp_v]    = yoffset;
 		}
 	    }
 	  }
@@ -355,7 +345,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 	      if ((sc = alpha[y][jp_y_sdr][dp_y_sd] + tsc_v[yoffset]) > alpha[v][jp_v][dp_v])
 		{
 		  alpha[v][jp_v][dp_v] = sc; 
-		  yshad[jp_v][dp_v]    = yoffset;
+		  yshadow[v][jp_v][dp_v]    = yoffset;
 		}
 	    }
 	  }
@@ -410,7 +400,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 	    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
 	    if((sc = alpha[y][jp_y_sdr][dp_y_sd] + tsc) > alpha[v][jp_v][dp_v]) {
 	      alpha[v][jp_v][dp_v] = sc;
-	      yshad[jp_v][dp_v]    = yoffset;
+	      yshadow[v][jp_v][dp_v]    = yoffset;
 	    }
 	  }
 	}
@@ -506,7 +496,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 	      if ((sc = alpha[y][jp_y-k][dp_y - k] + alpha[z][jp_z][kp_z]) 
 		  > alpha[v][jp_v][dp_v]) { 
 		alpha[v][jp_v][dp_v] = sc;
-		kshad[jp_v][dp_v] = kp_z;
+		kshadow[v][jp_v][dp_v] = kp_z;
 	      }
 	    }
 	  }
@@ -549,7 +539,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 	  if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v]) { 
 	    if (bsc > alpha[0][jp_v][Wp]) {
 	      alpha[0][jp_v][Wp] = bsc;
-	      yshad[jp_v][Wp] = USED_LOCAL_BEGIN;
+	      yshadow[v][jp_v][Wp] = USED_LOCAL_BEGIN;
 	    }
 	  }
 	}
@@ -563,9 +553,7 @@ fast_cyk_align_hb(CM_t *cm, char *errbuf,  ESL_DSQ *dsq, int L, int vroot, int v
 
   if (ret_b != NULL)      *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
   if (ret_bsc != NULL)    *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */
-  if (ret_shadow != NULL) *ret_shadow = shadow;
   if(ret_sc != NULL)      *ret_sc = sc;
-  else free_vjd_shadow_matrix(shadow, cm, i0, j0);
   free(el_scA);
   free(yvalidA);
 
@@ -914,8 +902,8 @@ fast_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend,
  *
  * Purpose:  Call either fast_cyk_align_hb() (if !<do_optacc>), 
  *           or optimal_accuracy_align_hb()  (if  <do_optacc>),
- *           get vjd shadow matrix; then trace back. Append the trace to a given
- *           traceback, which already has state r at tr->n-1.
+ *           fill banded vjd shadow matrix in <shmx>; then trace back. 
+ *           Append the trace to a given traceback, which already has state r at tr->n-1.
  *        
  *           If (<do_optacc>) then post_mx must != NULL.
  *
@@ -926,15 +914,16 @@ fast_cyk_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int vroot, int vend,
  * Throws:  <eslOK>     on success
  *          <eslERANGE> if required CM_HB_MX exceeds <size_limit>, in 
  *                      this case, alignment has been aborted, tr has not been appended to
+ *          <eslEINCOMPAT> if CM_HB_SHADOW_MX wasn't built for this CM 
  *
  */
 int
 fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
-	       int r, int z, int i0, int j0, 
-	       int allow_begin, CM_HB_MX *mx, int do_optacc, CM_HB_MX *post_mx, float size_limit, float *ret_sc)
+	       int r, int z, int i0, int j0, int allow_begin, 
+	       CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, 
+	       int do_optacc, CM_HB_MX *post_mx, float size_limit, float *ret_sc)
 {
   int status;
-  void   ***shadow;             /* the traceback shadow matrix */
   float     sc;			/* the score of the CYK alignment */
   ESL_STACK *pda;               /* stack that tracks bifurc parent of a right start */
   int       v,j,d,i;		/* indices for state, j, subseq len */
@@ -964,7 +953,7 @@ fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
   if(do_optacc) {
     status = optimal_accuracy_align_hb(cm, errbuf, dsq, L, i0, j0, size_limit,
-				       &shadow,	     /* return a shadow matrix to me. */
+				       shmx,	     /* the banded shadow matrix, to expand and fill-in */
 				       &b, &bsc,     /* if allow_begin is TRUE, gives info on optimal b */
 				       mx,           /* the HMM banded mx to fill-in */
 				       post_mx,      /* pre-calc'ed posterior matrix */
@@ -974,7 +963,7 @@ fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     status = fast_cyk_align_hb(cm, errbuf, dsq, L, r, z, i0, j0, 
 			       allow_begin,  /* TRUE to allow local begins */
 			       size_limit,   /* max size of DP matrix */
-			       &shadow,	     /* return a shadow matrix to me. */
+			       shmx,	     /* the banded shadow matrix, to expand and fill-in */
 			       &b, &bsc,     /* if allow_begin is TRUE, gives info on optimal b */
 			       mx,           /* the HMM banded mx */
 			       &sc);         /* score of CYK parsetree */
@@ -994,7 +983,7 @@ fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     ESL_DASSERT1((!(cm->sttype[v] != EL_st && d > hdmax[v][jp_v])));
     ESL_DASSERT1((!(cm->sttype[v] != EL_st && d < hdmin[v][jp_v])));
     if (cm->sttype[v] == B_st) {
-      kp_z = ((int **) shadow[v])[jp_v][dp_v];   /* kp = offset len of right fragment */
+      kp_z = shmx->kshadow[v][jp_v][dp_v];   /* kp = offset len of right fragment */
       z = cm->cnum[v];
       jp_z = j-jmin[z];
       k = kp_z + hdmin[z][jp_z];  /* k = offset len of right fragment */
@@ -1034,7 +1023,7 @@ fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
       jp_v = j - jmin[v];
       dp_v = d - hdmin[v][jp_v];
     } else {
-      yoffset = ((char **) shadow[v])[jp_v][dp_v];
+      yoffset = shmx->yshadow[v][jp_v][dp_v];
       /*printf("     mx[v:%4d][jp_v:%4d][dp_v:%4d]: %10.5f\n", v, jp_v, dp_v, mx->dp[v][jp_v][dp_v]);
 	if(post_mx != NULL) printf("post_mx[v:%4d][jp_v:%4d][dp_v:%4d]: %10.5f prob: %.5f\n", v, jp_v, dp_v, post_mx->dp[v][jp_v][dp_v], FScore2Prob(post_mx->dp[v][jp_v][dp_v], 1.));*/
       switch (cm->sttype[v]) {
@@ -1074,8 +1063,8 @@ fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     }
   }
   esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
-  free_vjd_shadow_matrix(shadow, cm, i0, j0);
   if(ret_sc != NULL) *ret_sc = sc;
+
   return eslOK;
 
  ERROR:
@@ -1277,6 +1266,7 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           j0        - end of target subsequence (often L, end of dsq)
  *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
  *           mx        - the main dp matrix, only cells within bands in cm->cp9b will be valid. 
+ *           shmx      - the HMM banded shadow matrix to fill in and traceback, same cells as mx are valid.
  *           do_optacc - TRUE to not do CYK alignment, determine the Holmes/Durbin optimally 
  *                       accurate parsetree in ret_tr, requires post_mx != NULL
  *           post_mx   - dp matrix for posterior calculation, can be NULL only if !do_optacc
@@ -1298,8 +1288,8 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  */
 
 int
-FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_MX *mx, int do_optacc,
-	    CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc)
+FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, 
+	    int do_optacc, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc)
 {
   int          status;
   Parsetree_t *tr;
@@ -1312,20 +1302,44 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
   have_pcodes = (ret_pcode1 != NULL && ret_pcode2 != NULL) ? TRUE : FALSE;
   do_post = (do_optacc || have_pcodes) ? TRUE : FALSE;
 
+  ESL_STOPWATCH *w;
+  w = esl_stopwatch_Create();
+  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
+
   /* Contract check */
-  if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), dsq is NULL.\n");
-  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), mx is NULL.\n");
-  if(post_mx == NULL && have_pcodes)   ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), post_mx == NULL but ret_pcode{1|2} != NULL.\n");
-  if(do_optacc && post_mx == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), do_optacc is TRUE, but post_mx == NULL.\n");
-  if((!do_post) && ret_ins_sc != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), do_post is FALSE, but ret_ins_sc != NULL.\n");
+  if(dsq == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), dsq is NULL.");
+  if(mx == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), mx is NULL.");
+  if(post_mx == NULL && have_pcodes)   ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), post_mx == NULL but ret_pcode{1|2} != NULL.");
+  if(do_optacc && post_mx == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), do_optacc is TRUE, but post_mx == NULL.");
+  if((!do_post) && ret_ins_sc != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), do_post is FALSE, but ret_ins_sc != NULL.");
+  if(shmx == NULL)                     ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), shadow matrix shmx == NULL.");
   /* PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, (j0-i0+1)); */
 
   /* if doing post, fill Inside, Outside, Posterior matrices, in that order */
   if(do_post) { 
+    esl_stopwatch_Start(w);  
     if((status = FastInsideAlignHB (cm, errbuf, dsq, i0, j0, size_limit, mx, &ins_sc)) != eslOK) return status;
+    esl_stopwatch_Stop(w); 
+    FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+    printf("\nFastInsideAlignHB  %11s\n", time_buf);
+#endif
+    esl_stopwatch_Start(w);  
     if((status = FastOutsideAlignHB(cm, errbuf, dsq, i0, j0, size_limit, post_mx, mx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), NULL)) != eslOK) return status;
+    esl_stopwatch_Stop(w); 
+    FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+    printf("FastOutsideAlignHB %11s\n", time_buf);
+#endif
+
     /* Note: we can only check the posteriors in FastOutsideAlignHB() if local begin/ends are off */
+    esl_stopwatch_Start(w);  
     if((status = CMPosteriorHB(cm, errbuf, i0, j0, size_limit, mx, post_mx, post_mx)) != eslOK) return status;   
+    esl_stopwatch_Stop(w); 
+    FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+    printf("CMPosteriorHB      %11s\n", time_buf);
+#endif
     if(cm->align_opts & CM_ALIGN_CHECKINOUT) { 
       if((status = CMCheckPosteriorHB(cm, errbuf, i0, j0, post_mx)) != eslOK) return status;
       printf("\nHMM banded posteriors checked.\n\n");
@@ -1339,7 +1353,13 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
   /* Fill in the parsetree (either CYK or optimally accurate (if do_optacc)), 
    * this will overwrite mx if (do_post) caused it to be filled in FastInsideAlignHB 
    */
-  if((status = fast_alignT_hb(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, mx, do_optacc, post_mx, size_limit, &sc)) != eslOK) return status;
+  esl_stopwatch_Start(w);  
+  if((status = fast_alignT_hb(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, mx, shmx, do_optacc, post_mx, size_limit, &sc)) != eslOK) return status;
+  esl_stopwatch_Stop(w); 
+  FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+  printf("fast_alignT_hb()   %11s\n", time_buf);
+#endif
 
   if(have_pcodes) {
     CMPostalCodeHB(cm, L, post_mx, tr, &pcode1, &pcode2);
@@ -1350,6 +1370,7 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
   if (ret_sc != NULL) *ret_sc = sc;
   ESL_DPRINTF1(("returning from FastAlignHB() sc : %f\n", sc)); 
+  esl_stopwatch_Destroy(w);
   return eslOK;
 }
 
@@ -3162,8 +3183,7 @@ CMPosterior(CM_t *cm, char *errbuf, int i0, int j0, float size_limit, float ***i
  *           i0        - first position in subseq to align (1, for whole seq)
  *           j0        - last position in subseq to align (L, for whole seq)
  *           size_limit- max number of Mb for DP matrix, if matrix is bigger return eslERANGE 
- *           ret_shadow- if non-NULL, the caller wants a shadow matrix, because
- *                       he intends to do a traceback.
+ *           shmx      - the HMM banded shadow matrix to fill in, only cells within bands are valid
  *           ret_b     - best local begin state, or NULL if unwanted
  *           ret_bsc   - score for using ret_b, or NULL if unwanted                        
  *           mx        - the dp matrix to fill in, only cells within bands in cm->cp9b will 
@@ -3172,14 +3192,14 @@ CMPosterior(CM_t *cm, char *errbuf, int i0, int j0, float size_limit, float ***i
  *           ret_pp    - average posterior probability of aligned res i0..j0 in optimally accurate
  *                       parse.
  *
- * Returns: <ret_sc>, <ret_b>, <ret_bsc>, <ret_shadow>, see 'Args'
+ * Returns: <ret_sc>, <ret_b>, <ret_bsc>, see 'Args'
  * 
  * Throws:  <eslOK> on success.
  *          <eslERANGE> if required CM_HB_MX size exceeds <size_limit>, in 
  *                      this case, alignment has been aborted, ret_* variables are not valid
  */
 int
-optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, void ****ret_shadow,  
+optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_SHADOW_MX *shmx,
 			  int *ret_b, float *ret_bsc, CM_HB_MX *mx, CM_HB_MX *post_mx, float *ret_pp)
 {
   int      status;
@@ -3188,9 +3208,6 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
   float    sc;		/* a temporary variable holding a score */
   int      yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int      W;		/* subsequence length */
-  void  ***shadow;      /* shadow matrix for tracebacks */
-  int    **kshad;       /* a shadow deck for bifurcations */
-  char   **yshad;       /* a shadow deck for every other kind of state */
   int      b;		/* best local begin state */
   float    bsc;		/* score for using the best local begin state */
   int     *yvalidA;     /* [0..MAXCONNECT-1] TRUE if v->yoffset is legal transition (within bands) */
@@ -3232,14 +3249,17 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
   /* the DP matrices */
   float ***alpha = mx->dp; /* pointer to the alpha DP matrix, we'll store optimal parse in  */
   float ***post  = post_mx->dp; /* pointer to the alpha DP matrix, prefilled posterior values */
+  char  ***yshadow = shmx->yshadow; /* pointer to the yshadow matrix */
+  int   ***kshadow = shmx->kshadow; /* pointer to the kshadow matrix */
 
   /* Allocations and initializations  */
   b   = -1;
   bsc = IMPOSSIBLE;
   W   = j0-i0+1;		/* the length of the sequence -- used in many loops */
 				/* if caller didn't give us a deck pool, make one */
-  /* grow the matrix based on the current sequence and bands */
+  /* grow the matrices based on the current sequence and bands */
   if((status = cm_hb_mx_GrowTo(cm, mx, errbuf, cp9b, W, size_limit)) != eslOK) return status;
+  if((status = cm_hb_shadow_mx_GrowTo(cm, shmx, errbuf, cp9b, W))    != eslOK) return status;
 
   /* initialize the EL deck, if it's valid */
   have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;  
@@ -3252,23 +3272,6 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
       }
     }
   }
-
-  /* The shadow matrix, we always allocate it, so we don't have to 
-   * check if it's null in the depths of the DP recursion.
-   * We do some pointer tricks here to save memory. The shadow matrix
-   * is a void ***. Decks may either be char ** (usually) or
-   * int ** (for bifurcation decks). Watch out for the casts.
-   * For most states we only need
-   * to keep y as traceback info, and y <= 6. For bifurcations,
-   * we need to keep k, and k <= L, and L might be fairly big.
-   * (We could probably limit k to an unsigned short ... anyone
-   * aligning an RNA > 65536 would need a big computer... but
-   * we'll hold off on that for now. We could also pack more
-   * traceback pointers into a smaller space since we only really
-   * need 3 bits, not 8.)
-   */
-  ESL_ALLOC(shadow, sizeof(void **) * cm->M);
-  for (v = 0; v < cm->M; v++) shadow[v] = NULL;
 
   /* yvalidA[0..cnum[v]] will hold TRUE for states y for which a transition is legal 
    * (some transitions are impossible due to the bands) */
@@ -3283,23 +3286,19 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
     jn   = jmin[v];
     jx   = jmax[v];
 
-    /* Get a shadow deck to fill in and initialize all valid cells for state v */
+    /* Fill in and initialize all valid cells for state v */
     if (cm->sttype[v] != E_st) {
       if (cm->sttype[v] == B_st) {
-	kshad     = (jmin[v] == -1) ? NULL : alloc_jdbanded_vjd_kshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
-	shadow[v] = (void **) kshad;
 	/* initialize all valid cells for state v to IMPOSSIBLE */
 	ESL_DASSERT1((! (NOT_IMPOSSIBLE(cm->endsc[v]))));
 	for (j = jmin[v]; j <= jmax[v]; j++) { 
 	  jp_v  = j - jmin[v];
 	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) {
 	    alpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	    kshad[jp_v][dp_v] = 0; /* don't set to USED_EL, that's invalid for B states during traceback */
+	    kshadow[v][jp_v][dp_v] = 0; /* don't set to USED_EL, that's invalid for B states during traceback */
 	  }
 	}
       } else { /* ! B_st && ! E_st */
-	yshad     = (jmin[v] == -1) ? NULL : alloc_jdbanded_vjd_yshadow_deck(L, i0, j0, jmin[v], jmax[v], hdmin[v], hdmax[v]);
-	shadow[v] = (void **) yshad;
 	/* initialize all valid cells for state v */
 	if(have_el && NOT_IMPOSSIBLE(cm->endsc[v])) { 
 	  for (j = jmin[v]; j <= jmax[v]; j++) { 
@@ -3309,7 +3308,7 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	     * note: when d = hdmin[v][jp_v], dp_v is 0
 	     */
 	    alpha[v][jp_v][0] = IMPOSSIBLE;
-	    yshad[jp_v][0] = USED_EL; 
+	    yshadow[v][jp_v][0] = USED_EL; 
 	    for(d = sd+1; d <= hdmin[v][jp_v]; d++) {
 	      alpha[v][jp_v][0] = FLogsum(alpha[v][jp_v][0], post[cm->M][j-sdr][d-sd]);
 	    }
@@ -3317,7 +3316,7 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	    for(d = hdmin[v][jp_v]+1; d <= hdmax[v][jp_v]; d++) {
 	      dp_v = d - hdmin[v][jp_v];
 	      alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v-1], post[cm->M][j-sdr][d-sd]); /* careful, we'll emit sd residues from v and d-sd from EL (i=((j-sdr)-d+1)..(j-sdr)) */
-	      yshad[jp_v][dp_v] = USED_EL; 
+	      yshadow[v][jp_v][dp_v] = USED_EL; 
 	    }
 	  }
 	}
@@ -3341,17 +3340,16 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 
 	    for (d = hdmin[v][jp_v]; d <= sd; d++, dp_v++) { 
 	      alpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	      yshad[jp_v][dp_v] = USED_EL;
+	      yshadow[v][jp_v][dp_v] = USED_EL;
 	      y = cm->cfirst[v];
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		if(StateDelta(cm->sttype[y+yoffset]) == 0) yshad[jp_v][dp_v] = yoffset;
+		if(StateDelta(cm->sttype[y+yoffset]) == 0) yshadow[v][jp_v][dp_v] = yoffset;
 	    }
 	    d = ESL_MAX(hdmin[v][jp_v], sd+1); 
 	    for (dp_v = d - hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++, dp_v++) {
-	      alpha[v][jp_v][dp_v] = IMPOSSIBLE;
-	      yshad[jp_v][dp_v] = USED_EL; 
+	      alpha[v][jp_v][dp_v] = IMPOSSIBLE; 
+	      yshadow[v][jp_v][dp_v] = USED_EL; 
 	    }
-
 	  }
 	}
       }
@@ -3393,7 +3391,7 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	      if ((sc = alpha[y][jp_y_sdr][dp_y_sd]) > alpha[v][jp_v][dp_v])
 		{
 		  alpha[v][jp_v][dp_v] = sc; 
-		  yshad[jp_v][dp_v]    = yoffset;
+		  yshadow[v][jp_v][dp_v]    = yoffset;
 		}
 	    }
 	  }
@@ -3433,7 +3431,7 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	    ESL_DASSERT1((dp_y_sd >= 0 && dp_y_sd  <= (hdmax[y][jp_y_sdr] - hdmin[y][jp_y_sdr])));
 	    if((sc = alpha[y][jp_y_sdr][dp_y_sd]) > alpha[v][jp_v][dp_v]) {
 	      alpha[v][jp_v][dp_v] = sc;
-	      yshad[jp_v][dp_v]    = yoffset;
+	      yshadow[v][jp_v][dp_v]    = yoffset;
 	    }
 	  }
 	}
@@ -3525,7 +3523,7 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	      if ((sc = FLogsum(alpha[y][jp_y-k][dp_y - k], alpha[z][jp_z][kp_z])) 
 		  > alpha[v][jp_v][dp_v]) { 
 		alpha[v][jp_v][dp_v] = sc;
-		kshad[jp_v][dp_v] = kp_z;
+		kshadow[v][jp_v][dp_v] = kp_z;
 		/* note: we take the logsum here, because we're keeping track of the
 		 * log of the summed probability of emitting all residues up to this
 		 * point, (from i..j) from left subtree (i=j-d+1..j-k) and from the 
@@ -3577,7 +3575,7 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	  if(W >= hdmin[v][jp_v] && W <= hdmax[v][jp_v]) { 
 	    if (bsc > alpha[0][jp_v][Wp]) {
 	      alpha[0][jp_v][Wp] = bsc;
-	      yshad[jp_v][Wp] = USED_LOCAL_BEGIN;
+	      yshadow[v][jp_v][Wp] = USED_LOCAL_BEGIN;
 	    }
 	  }
 	}
@@ -3591,8 +3589,6 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 
   if (ret_b != NULL)      *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
   if (ret_bsc != NULL)    *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */
-  if (ret_shadow != NULL) *ret_shadow = shadow;
-  else free_vjd_shadow_matrix(shadow, cm, i0, j0);
   free(yvalidA);
 
   /* convert score, a log probability, into the average posterior probability of all W aligned residues */
@@ -4889,74 +4885,6 @@ CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr, char **ret_p
   return; /* never reached */
 }
 
-
-char  **
-alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax)
-{
-  int    status;
-  char **a;
-  int    jp;
-  int     bw; /* width of band, depends on jp, so we need to calculate
-	         this inside the jp loop*/
-  int     jfirst, jlast;
-
-  if(jmin < (i-1) || jmax > j) { 
-    cm_Fail("called alloc_jdbanded_vjd_yshadow_deck for i-1: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i-1, j, jmin, jmax);
-  }
-  
-  ESL_ALLOC(a, sizeof(float *) * (L+1));  /* always alloc 0..L rows, some of which are NULL */
-  jfirst = ((i-1) > jmin) ? (i-1) : jmin;
-  jlast = (j < jmax) ? j : jmax;
-  for (jp = (jlast-jfirst+1); jp <= L;     jp++) a[jp]     = NULL;
-
-  /* jfirst is the first valid j, jlast is the last */
-  for (jp = jfirst; jp <= jlast; jp++)
-    {
-      /*printf("jp: %d | max : %d\n", jp, (jlast)); */
-      ESL_DASSERT1((hdmax[jp-jmin] <= (jp+1)));
-      /* Based on my current understanding the above line should never be false, if it is means there's a valid d
-       * in the hd band that is invalid because its > j.*/
-      bw = hdmax[jp-jmin] - hdmin[jp-jmin] +1;
-
-      /*printf("\tallocated a[%d]\n", (jp-jfirst));*/
-      ESL_ALLOC(a[jp-jfirst], sizeof(char) * bw);
-    }
-  return a;
- ERROR:
-  cm_Fail("Memory allocation error.");
-  return NULL; /* never reached */
-}
-int** 
-alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax)
-{
-  int   status;
-  int **a;
-  int   jp;
-  int     bw; /* width of band, depends on jp, so we need to calculate
-	         this inside the jp loop*/
-  int     jfirst, jlast;
-
-  if(jmin < (i-1) || jmax > j) { 
-    cm_Fail("ERROR called alloc_jdbanded_vjd_kshadow_deck for i-1: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i-1, j, jmin, jmax);
-  }
-  ESL_ALLOC(a, sizeof(float *) * (L+1));  /* always alloc 0..L rows, some of which are NULL */
-  jfirst = ((i-1) > jmin) ? (i-1) : jmin;
-  jlast = (j < jmax) ? j : jmax;
-  for (jp = (jlast-jfirst+1); jp <= L;     jp++) a[jp]     = NULL;
-
-  /* jfirst is the first valid j, jlast is the last */
-  for (jp = jfirst; jp <= jlast; jp++)
-    {
-      ESL_DASSERT1((hdmax[jp-jmin] <= (jp+1)));
-      bw = hdmax[jp-jmin] - hdmin[jp-jmin] +1;
-      ESL_ALLOC(a[jp-jfirst], sizeof(int) * bw);
-    }
-  return a;
- ERROR:
-  cm_Fail("Memory allocation error.");
-  return NULL; /* never reached */
-}
-
 /*****************************************************************
  * Benchmark driver
  *****************************************************************/
@@ -5232,3 +5160,80 @@ main(int argc, char **argv)
   return 0; /* NEVERREACHED */
 }
 #endif /*IMPL_ALIGN_BENCHMARK*/
+
+#if 0
+/* EPN, Tue Aug 19 10:19:13 2008
+ * hese 2 banded shadow allocation functions are deprecated, replaced by the much more
+ * efficient conventions of CM_HB_SHADOW_MX in cm_mx.c.
+ */
+
+static int   ** alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
+static char  ** alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
+
+char  **
+alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax)
+{
+  int    status;
+  char **a;
+  int    jp;
+  int     bw; /* width of band, depends on jp, so we need to calculate
+	         this inside the jp loop*/
+  int     jfirst, jlast;
+
+  if(jmin < (i-1) || jmax > j) { 
+    cm_Fail("called alloc_jdbanded_vjd_yshadow_deck for i-1: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i-1, j, jmin, jmax);
+  }
+  
+  ESL_ALLOC(a, sizeof(float *) * (L+1));  /* always alloc 0..L rows, some of which are NULL */
+  jfirst = ((i-1) > jmin) ? (i-1) : jmin;
+  jlast = (j < jmax) ? j : jmax;
+  for (jp = (jlast-jfirst+1); jp <= L;     jp++) a[jp]     = NULL;
+
+  /* jfirst is the first valid j, jlast is the last */
+  for (jp = jfirst; jp <= jlast; jp++)
+    {
+      /*printf("jp: %d | max : %d\n", jp, (jlast)); */
+      ESL_DASSERT1((hdmax[jp-jmin] <= (jp+1)));
+      /* Based on my current understanding the above line should never be false, if it is means there's a valid d
+       * in the hd band that is invalid because its > j.*/
+      bw = hdmax[jp-jmin] - hdmin[jp-jmin] +1;
+
+      /*printf("\tallocated a[%d]\n", (jp-jfirst));*/
+      ESL_ALLOC(a[jp-jfirst], sizeof(char) * bw);
+    }
+  return a;
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return NULL; /* never reached */
+}
+int** 
+alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax)
+{
+  int   status;
+  int **a;
+  int   jp;
+  int     bw; /* width of band, depends on jp, so we need to calculate
+	         this inside the jp loop*/
+  int     jfirst, jlast;
+
+  if(jmin < (i-1) || jmax > j) { 
+    cm_Fail("ERROR called alloc_jdbanded_vjd_kshadow_deck for i-1: %d j: %d which is outside the band on j, jmin: %d | jmax: %d\n", i-1, j, jmin, jmax);
+  }
+  ESL_ALLOC(a, sizeof(float *) * (L+1));  /* always alloc 0..L rows, some of which are NULL */
+  jfirst = ((i-1) > jmin) ? (i-1) : jmin;
+  jlast = (j < jmax) ? j : jmax;
+  for (jp = (jlast-jfirst+1); jp <= L;     jp++) a[jp]     = NULL;
+
+  /* jfirst is the first valid j, jlast is the last */
+  for (jp = jfirst; jp <= jlast; jp++)
+    {
+      ESL_DASSERT1((hdmax[jp-jmin] <= (jp+1)));
+      bw = hdmax[jp-jmin] - hdmin[jp-jmin] +1;
+      ESL_ALLOC(a[jp-jfirst], sizeof(int) * bw);
+    }
+  return a;
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return NULL; /* never reached */
+}
+#endif

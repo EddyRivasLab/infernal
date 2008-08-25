@@ -23,11 +23,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include "easel.h"
 #include "esl_alphabet.h"
 #include "esl_random.h"
 #include "esl_stack.h"
+#include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 #include "esl_wuss.h"
 
@@ -774,7 +776,10 @@ build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruc
 
   /* Finally renormalize the CM */
   CMRenormalize(sub_cm);
-  CMLogoddsify(sub_cm);
+  /* DO NOT LOGODDSIFY YET, we'll do this when we call ConfigCM() for this CM, 
+   * the logsoddsification step takes a significant amount of time.
+   * CMLogoddsify(sub_cm);
+   */
 
   if(print_flag)
     {
@@ -1146,7 +1151,6 @@ cm2sub_cm_trans_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, char ***tma
       v_o = submap->s2o_smap[v_s][0]; 
       for(yoffset = 0; yoffset < sub_cm->cnum[v_s]; yoffset++)
 	{
-
 	  /* we can just copy the transitions */
 	  sub_cm->t[v_s][yoffset] = orig_psi[v_o] * orig_cm->t[v_o][yoffset];
 	}
@@ -2587,7 +2591,8 @@ cm2sub_cm_check_id_next_node(CM_t *orig_cm, CM_t *sub_cm, int orig_nd, int sub_n
       while(sub_cm->ndidx[v_s] == sub_nd)
 	{
 	  if(print_flag) printf("setting submap->s2o_id[v_s:%d] to TRUE\n", v_s);
-	  submap->s2o_id[v_s++] = TRUE;
+	  if(sub_cm->sttype[v_s+1] != E_st) submap->s2o_id[v_s] = TRUE; /* if v+1 is an E_st, it's a detached insert don't set s2o_id[v] to TRUE */
+	  v_s++;
 	}
       return TRUE;
     }
@@ -3132,7 +3137,7 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
 
   /* Reconfig the orig_hmm so that it can only start in the spos node, and end from the epos node */
   /* Build the sub CP9 HMM by copying as much of the original cp9_hmm as possible */
-  fill_phi_cp9(orig_hmm, &orig_phi, 1);
+  fill_phi_cp9(orig_hmm, &orig_phi, 1, FALSE);
   CP9_reconfig2sub(orig_hmm, submap->spos, submap->epos, submap->spos, submap->epos, orig_phi);
 
   if(print_flag)
@@ -3709,6 +3714,344 @@ sub_cm2cm_parsetree(CM_t *orig_cm, CM_t *sub_cm, Parsetree_t **ret_orig_tr, Pars
   cm_Fail("Memory allocation error.");
   return 0; /* never reached*/
 }
+
+/* Function: SubCMLogoddsify()
+ * Date:     EPN, Wed Aug 20 08:14:18 2008
+ *
+ * Purpose:  Convert the probabilities in a sub CM built 
+ *           from <mother_cm> to log-odds. Copy the <mother_cm>
+ *           parameters where possible to save time. 
+ *
+ * Returns:  eslOK on success;
+ * Throws:   eslEINCOMPAT on contract violation.
+ */
+int
+SubCMLogoddsify(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map)
+{
+  if(!(mother_cm->flags & CMH_BITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "SubCMLogoddsify(), mother_cm's CMH_BITS flag down, it's bit scores are invalid.");
+
+  int v, mv, x, y;
+
+  /* TEMP */
+  ESL_STOPWATCH *w;
+  w = esl_stopwatch_Create();
+  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
+  esl_stopwatch_Start(w);
+
+  for (v = 0; v < cm->M; v++) { 
+    if (mother_map->s2o_id[v] == TRUE) { /* this state maps identically to a mother_cm state, copy parameters */
+      if (cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
+	mv = mother_map->s2o_smap[v][0];
+	esl_vec_FCopy(mother_cm->tsc[mv],  cm->cnum[v], cm->tsc[v]);
+	esl_vec_ICopy(mother_cm->itsc[mv], cm->cnum[v], cm->itsc[v]);
+#if 0
+	for(x = 0; x < cm->cnum[v]; x++) { 
+	  if(esl_FCompare(mother_cm->t[mv][x], cm->t[v][x], 1E-5) != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "You've got it wrong, mother_cm->t[mv:%d][x:%d] %.3f != cm->t[v:%d][x:%d] %.3f\n", mv, x, mother_cm->t[mv][x], v, x, cm->t[v][x]);
+	}
+#endif
+      }
+      if (cm->sttype[v] == MP_st) { 
+	esl_vec_FCopy(mother_cm->esc[mv],  cm->abc->K * cm->abc->K, cm->esc[v]);
+	esl_vec_ICopy(mother_cm->iesc[mv], cm->abc->K * cm->abc->K, cm->iesc[v]);
+      }
+      if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st ||
+	  cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) { 
+	esl_vec_FCopy(mother_cm->esc[mv],  cm->abc->K, cm->esc[v]);
+	esl_vec_ICopy(mother_cm->iesc[mv], cm->abc->K, cm->iesc[v]);
+      }
+      cm->beginsc[v]  = mother_cm->beginsc[mv];
+      cm->ibeginsc[v] = mother_cm->ibeginsc[mv];
+      
+      cm->endsc[v]    = mother_cm->endsc[mv];
+      cm->iendsc[v]   = mother_cm->iendsc[mv];
+    }
+    else { /* this state does not map identically to a mother_cm state, we have to do the work calculate the parameters */
+      if (cm->sttype[v] != B_st && cm->sttype[v] != E_st) { 
+	for (x = 0; x < cm->cnum[v]; x++) {
+	  cm->tsc[v][x]  = sreLOG2(cm->t[v][x]);
+	  cm->itsc[v][x] = Prob2Score(cm->t[v][x], 1.0);
+	  /*printf("cm->t[%4d][%2d]: %f itsc->e: %f itsc: %d\n", v, x, cm->t[v][x], Score2Prob(cm->itsc[v][x], 1.0), cm->itsc[v][x]);*/
+	}	    
+      }
+      if (cm->sttype[v] == MP_st) { 
+	for (x = 0; x < cm->abc->K; x++) { 
+	  for (y = 0; y < cm->abc->K; y++) { 
+	    cm->esc[v][x*cm->abc->K+y]  = sreLOG2(cm->e[v][x*cm->abc->K+y] / (cm->null[x]*cm->null[y]));
+	    cm->iesc[v][x*cm->abc->K+y] = Prob2Score(cm->e[v][x*cm->abc->K+y], (cm->null[x]*cm->null[y]));
+	    /*printf("cm->e[%4d][%2d]: %f iesc->e: %f iesc: %d\n", v, (x*cm->abc->K+y), cm->e[v][(x*cm->abc->K+y)], Score2Prob(cm->iesc[v][x*cm->abc->K+y], (cm->null[x]*cm->null[y])), cm->iesc[v][(x*cm->abc->K+y)]);*/
+	  }
+	}
+      }
+      if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st ||
+	  cm->sttype[v] == IL_st || cm->sttype[v] == IR_st) { 
+	for (x = 0; x < cm->abc->K; x++) { 
+	  cm->esc[v][x]  = sreLOG2(cm->e[v][x] / cm->null[x]);
+	  cm->iesc[v][x] = Prob2Score(cm->e[v][x], cm->null[x]);
+	  /*printf("cm->e[%4d][%2d]: %f esc: %f null[%d]: %f\n", v, x, cm->e[v][x], cm->esc[v][x], x, cm->null[x]);*/
+	  /*printf("cm->e[%4d][%2d]: %f iesc->e: %f iesc: %d\n", v, x, cm->e[v][x], Score2Prob(cm->iesc[v][x], (cm->null[x])), cm->iesc[v][x]);*/
+	}
+      }
+      /* These work even if begin/end distributions are inactive 0's,
+       * sreLOG2 will set beginsc, endsc to -infinity.
+       */
+      cm->beginsc[v]  = sreLOG2(cm->begin[v]);
+      cm->ibeginsc[v] = Prob2Score(cm->begin[v], 1.0);
+      /*printf("cm->begin[%4d]: %f ibeginsc->e: %f ibeginsc: %d\n", v, cm->begin[v], Score2Prob(cm->ibeginsc[v], 1.0), cm->ibeginsc[v]);*/
+      
+      cm->endsc[v]    = sreLOG2(cm->end[v]);
+      cm->iendsc[v]   = Prob2Score(cm->end[v], 1.0);
+      /*printf("cm->end[%4d]: %f iendsc->e: %f iendsc: %d\n\n", v, cm->end[v], Score2Prob(cm->iendsc[v], 1.0), cm->iendsc[v]);*/
+    }
+  }
+  cm->iel_selfsc = Prob2Score(sreEXP2(cm->el_selfsc), 1.0);
+  /*printf("cm->el_selfsc: %f prob: %f cm->iel_selfsc: %d prob: %f\n", cm->el_selfsc, 
+	 (sreEXP2(cm->el_selfsc)), cm->iel_selfsc, (Score2Prob(cm->iel_selfsc, 1.0)));
+	 printf("-INFTY: %d prob: %f 2^: %f\n", -INFTY, (Score2Prob(-INFTY, 1.0)), sreEXP2(-INFTY));*/
+
+  esl_stopwatch_Stop(w); 
+  FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+  fprintf(stdout, "\t\t\tCM df params       %11s\n", time_buf);
+#endif
+
+  /* Allocate and fill optimized emission scores for this CM.
+   * If they already exist, free them and recalculate them, slightly wasteful, oh well.
+   */
+  if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
+
+  esl_stopwatch_Start(w); 
+
+  cm->oesc  = SubFCalcAndCopyOptimizedEmitScoresFromMother(cm, mother_cm, mother_map);
+
+  esl_stopwatch_Stop(w); 
+  FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+  fprintf(stdout, "\t\t\tCM OF params       %11s\n", time_buf);
+#endif
+  esl_stopwatch_Start(w); 
+
+  /* EPN, Wed Aug 20 15:26:31 2008
+   * old, slow way: 
+   * cm->ioesc = ICalcOptimizedEmitScores(cm);
+   */
+  cm->ioesc = ICopyOptimizedEmitScoresFromFloats(cm, cm->oesc);
+
+  esl_stopwatch_Stop(w); 
+  FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+  fprintf(stdout, "\t\t\tCM OI params       %11s\n", time_buf);
+#endif  
+
+  esl_stopwatch_Destroy(w);
+
+  /* Potentially, overwrite transitions with non-probabilistic 
+   * RSEARCH transitions. Currently only default transition
+   * parameters are allowed, these are defined as DEFAULT_R*
+   * in structs.h 
+   * Note: This is untouched from CMLogoddsify(), we don't try
+   *       to accelerate it, it's unusual that it will be executed.
+   */
+  if(cm->flags & CM_RSEARCHTRANS) { 
+      float           alpha =   DEFAULT_RALPHA; 
+      float           beta =    DEFAULT_RBETA;
+      float           alphap =  DEFAULT_RALPHAP;
+      float           betap =   DEFAULT_RBETAP;
+      float           beginsc = DEFAULT_RBEGINSC;
+      float           endsc =   DEFAULT_RENDSC;
+      int             nd;
+      /* First do the normal transitions */
+      for (v=0; v<cm->M; v++) 
+	{
+	  if (cm->sttype[v] != B_st && cm->sttype[v] != E_st) 
+	    {
+	      for (x=0; x<cm->cnum[v]; x++) 
+		{
+		  cm->tsc[v][x] = -1. * rsearch_calculate_gap_penalty 
+		    (cm->stid[v], cm->stid[cm->cfirst[v]+x], 
+		     cm->ndtype[cm->ndidx[v]], cm->ndtype[cm->ndidx[cm->cfirst[v]+x]],
+		     alpha, beta, alphap, betap);
+		  /* alphas and rbetas were positive -- gap score is a penalty, so
+		     multiply by -1 */
+		  cm->itsc[v][x] = (int) floor(0.5 + INTSCALE * cm->tsc[v][x]);
+		}
+	    }
+	}
+      /* Overwrite local begin and end scores */
+      for (v=cm->M - 1; v>=0; v--) {
+	cm->beginsc[v] = IMPOSSIBLE;
+	cm->endsc[v] = IMPOSSIBLE;
+      }
+      
+      /* beginsc states */
+      for (nd = 2; nd < cm->nodes; nd++) {
+	if (cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	    cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BIF_nd)
+	  {	 
+	    cm->beginsc[cm->nodemap[nd]] = beginsc;
+	    cm->ibeginsc[cm->nodemap[nd]] = INTSCALE * beginsc;
+	  }
+      }
+      
+      /* endsc states */
+      for (nd = 1; nd < cm->nodes; nd++) {
+	if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
+	     cm->ndtype[nd] == MATR_nd || cm->ndtype[nd] == BEGL_nd ||
+	     cm->ndtype[nd] == BEGR_nd) &&
+	    cm->ndtype[nd+1] != END_nd)
+	  {
+	  cm->endsc[cm->nodemap[nd]] = endsc;
+	  cm->iendsc[cm->nodemap[nd]] = INTSCALE * endsc;
+	  }
+      }
+      
+      cm->flags |= CMH_LOCAL_BEGIN;
+      cm->flags |= CMH_LOCAL_END;
+    }
+  /* raise flag saying we have valid log odds scores */
+  cm->flags |= CMH_BITS;
+
+  return eslOK;
+}
+
+/* Function: SubFCalcAndCopyOptimizedEmitScoresFromMother()
+ * Date:     EPN, Wed Aug 20 15:40:23 2008
+ *
+ * Purpose:  Allocate, fill and return an optimized emission score vector
+ *           of float scores for fast search/alignment.
+ *           Fill emission scores by copying them when 
+ *           possible from a 'mother' CM if the current 
+ *           cm is a sub CM of the mother. 
+ *            
+ * Returns:  the 2D float emission score vector on success,
+ *           dies immediately on memory allocation error.
+ */
+float **
+SubFCalcAndCopyOptimizedEmitScoresFromMother(CM_t *cm, CM_t *mother_cm, CMSubMap_t *mother_map)
+{
+  int status; 
+  float **esc_vAA;
+  ESL_DSQ a,b;
+  int v;
+  int cur_cell;
+  int npairs = 0;
+  int nsinglets = 0;
+  float *ptr_to_start; /* points to block allocated to esc_vAA[0], nec b/c esc_vAA[0] gets set to NULL, because v == 0 is non-emitter */
+  float **leftAA;
+  float **rightAA;
+  int mv;
+
+  /* count pairs, singlets */
+  for(v = 0; v < cm->M; v++) {
+    switch(cm->sttype[v]) {
+    case IL_st:
+    case ML_st:
+    case IR_st:
+    case MR_st:
+      nsinglets++;
+      break;
+    case MP_st:
+      npairs++;
+      break;
+    }
+  }
+
+  /* set up our left and right vectors for all possible non-canonical residues,
+   * these are calc'ed once and passed to FastPairScore*() functions to minimize
+   * run time. 
+   */
+  ESL_ALLOC(leftAA,  sizeof(float *) * cm->abc->Kp);
+  ESL_ALLOC(rightAA, sizeof(float *) * cm->abc->Kp);
+  for(a = 0; a <= cm->abc->K; a++) leftAA[a] = rightAA[a] = NULL; /* canonicals and gap, left/right unnec */
+  for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) {
+    ESL_ALLOC(leftAA[a],  sizeof(float) * cm->abc->K);
+    ESL_ALLOC(rightAA[a], sizeof(float) * cm->abc->K);
+    esl_vec_FSet(leftAA[a],  cm->abc->K, 0.);
+    esl_vec_FSet(rightAA[a], cm->abc->K, 0.);
+    esl_abc_FCount(cm->abc, leftAA[a],  a, 1.);
+    esl_abc_FCount(cm->abc, rightAA[a], a, 1.);
+  }
+  leftAA[cm->abc->Kp-1] = rightAA[cm->abc->Kp-1] = NULL; /* missing data, left/right unnec */
+
+  /* precalculate possible emission scores for each state */
+  ESL_ALLOC(esc_vAA,     sizeof(float *) * (cm->M));
+  ESL_ALLOC(esc_vAA[0],  sizeof(float)   * ((cm->abc->Kp * nsinglets) + (cm->abc->Kp * cm->abc->Kp * npairs)));
+  ptr_to_start = esc_vAA[0];
+  cur_cell = 0;
+  for(v = 0; v < cm->M; v++) {
+    switch(cm->sttype[v]) {
+    case IL_st:
+    case ML_st:
+    case IR_st:
+    case MR_st:
+      esc_vAA[v] = ptr_to_start + cur_cell;
+      cur_cell += cm->abc->Kp;
+      if (mother_map->s2o_id[v] == TRUE) { /* this state maps identically to a mother_cm state, copy parameters */
+	mv = mother_map->s2o_smap[v][0];
+	esl_vec_FCopy(mother_cm->oesc[mv], cm->abc->Kp, esc_vAA[v]);
+      }
+      else { 
+	for(a = 0; a < cm->abc->K; a++) /* all canonical residues */
+	  esc_vAA[v][a]  = cm->esc[v][a]; 
+	esc_vAA[v][cm->abc->K] = IMPOSSIBLE; /* gap symbol is impossible */
+	for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) /* all ambiguous residues */
+	  esc_vAA[v][a]  = esl_abc_FAvgScore(cm->abc, a, cm->esc[v]);
+	esc_vAA[v][cm->abc->Kp-1] = IMPOSSIBLE; /* missing data is IMPOSSIBLE */
+      }
+      break;
+    case MP_st:
+      esc_vAA[v] = ptr_to_start + cur_cell;
+      esl_vec_FSet(esc_vAA[v], cm->abc->Kp * cm->abc->Kp, IMPOSSIBLE); /* init all cells to IMPOSSIBLE */
+      cur_cell += cm->abc->Kp * cm->abc->Kp;
+      if (mother_map->s2o_id[v] == TRUE) { /* this state maps identically to a mother_cm state, copy parameters */
+	mv = mother_map->s2o_smap[v][0];
+	esl_vec_FCopy(mother_cm->oesc[mv], cm->abc->Kp * cm->abc->Kp, esc_vAA[v]);
+      }
+      else { 
+	/* a is canonical, b is canonical */
+	for(a = 0; a < cm->abc->K; a++) { 
+	  for(b = 0; b < cm->abc->K; b++) { 
+	    esc_vAA[v][(a * cm->abc->Kp) + b]  = cm->esc[v][(a * cm->abc->K) + b];
+	  }
+	}
+	/* a is not canonical, b is canonical */
+	for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) { 
+	  for(b = 0; b < cm->abc->K; b++) { 
+	    esc_vAA[v][(a * cm->abc->Kp) + b]  = FastPairScoreLeftOnlyDegenerate(cm->abc->K, cm->esc[v], leftAA[a], b);
+	  }
+	}	  
+	/* a is canonical, b is not canonical */
+	for(a = 0; a < cm->abc->K; a++) { 
+	  for(b = cm->abc->K+1; b < cm->abc->Kp-1; b++) { 
+	    esc_vAA[v][(a * cm->abc->Kp) + b]  = FastPairScoreRightOnlyDegenerate(cm->abc->K, cm->esc[v], rightAA[b], a);
+	  }
+	}	  
+	/* a is not canonical, b is not canonical */
+	for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) { 
+	  for(b = cm->abc->K+1; b < cm->abc->Kp-1; b++) { 
+	    esc_vAA[v][(a * cm->abc->Kp) + b]  = FastPairScoreBothDegenerate(cm->abc->K, cm->esc[v], leftAA[a], rightAA[b]);
+	  }
+	}	  
+	/* everything else, when either a or b is gap or missing data, stays IMPOSSIBLE */
+      }
+      break;
+    default:
+      esc_vAA[v] = NULL;
+      break;
+    }
+  }
+  for(a = 0; a < cm->abc->Kp; a++) { 
+    if(leftAA[a] != NULL)  free(leftAA[a]);
+    if(rightAA[a] != NULL) free(rightAA[a]);
+  }
+  free(leftAA);
+  free(rightAA);
+  return esc_vAA;
+
+ ERROR:
+  cm_Fail("memory allocation error.");
+  return NULL; /* NEVERREACHED */
+}
+
 
 #if 0
 /* These two functions are not currently used, but could be useful for debugging 

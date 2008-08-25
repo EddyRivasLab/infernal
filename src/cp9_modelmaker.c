@@ -25,6 +25,7 @@
 #include "esl_msa.h"
 #include "esl_random.h"
 #include "esl_stats.h"
+#include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 
 #include "funcs.h"
@@ -180,6 +181,12 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
   CP9Map_t *cp9map;         
   CP9_t  *hmm;       /* CM plan 9 HMM we're going to construct from the sub_cm */
 
+  /* TEMP EPN, Tue Aug 19 18:07:25 2008 */
+  ESL_STOPWATCH *w;
+  w = esl_stopwatch_Create();
+  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
+  /* TEMP */
+  
   /* Contract check, we can't be in local mode in the CM */
   if(cm->flags & CMH_LOCAL_BEGIN)
     cm_Fail("ERROR in build_cp9_hmm(), CMH_LOCAL_BEGIN flag is up.\n");
@@ -204,10 +211,24 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
       printf("In build_CP9_hmm()\n");
     }
 
-  ESL_ALLOC(psi, sizeof(double) * cm->M);
+  esl_stopwatch_Start(w); 
   make_tmap(&tmap);
+  esl_stopwatch_Stop(w); 
+  FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+  fprintf(stdout, "\t\ttmap  %11s\n", time_buf);
+#endif
+
+  ESL_ALLOC(psi, sizeof(double) * cm->M);
+  esl_stopwatch_Start(w);  
   fill_psi(cm, psi, tmap);
+  esl_stopwatch_Stop(w); 
+  FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+  fprintf(stdout, "\t\tpsi       %11s\n", time_buf);
+#endif
   
+  esl_stopwatch_Start(w);  
   /* Special case 1st insert state maps to state 1 in the CM */
   for(i = 0; i < MAXABET; i++)
     {
@@ -254,12 +275,18 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
 	      cm2hmm_emit_prob(cm, cp9map, ap[1], i, k);
 	}
     }
+  esl_stopwatch_Stop(w); 
+  FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+  fprintf(stdout, "\t\tcp9 emits    %11s\n", time_buf);
+#endif
   
   /* Done with emissions, fill in transitions of HMM (significantly more complex) */
 
   /* Step 1. Fill 'special' transitions, those INTO node 1, the N->N and N->M_1 transitions,
    * as well as transitions OUT of node M.
    */
+  esl_stopwatch_Start(w);  
   cm2hmm_special_trans_cp9(cm, hmm, cp9map, psi, tmap);
 
   for(k = 1; k < hmm->M; k++)
@@ -267,31 +294,42 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
       cm2hmm_trans_probs_cp9(cm, hmm, cp9map, k, psi, tmap);
     }
 
+  esl_stopwatch_Stop(w); 
+  FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+  fprintf(stdout, "\t\tcp9 trans    %11s\n", time_buf);
+#endif
+
   CPlan9Renormalize(hmm);
+
+  esl_stopwatch_Start(w);  
   CP9Logoddsify(hmm);
+  esl_stopwatch_Stop(w); 
+  FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+  fprintf(stdout, "\t\tcp9 logoddsify        %11s\n", time_buf);
+#endif
+  esl_stopwatch_Destroy(w);
 
-
-  /* Fill phi to check to make sure our HMM is "close enough" to our CM.
-   * phi[k][0..2] is the expected number of times HMM node k state 0 (match), 1(insert),
-   * or 2(delete) is entered. These should be *very close* (within 0.00001) to the psi 
-   * values for the CM states that they map to (psi[v] is the expected number of times
-   * state v is entered in the CM). 
-   */
-  fill_phi_cp9(hmm, &phi, 1);
 
   if(debug_level > 1) 
     debug_print_cp9_params(stdout, hmm, TRUE);
-  if(do_psi_test)
+  if(do_psi_test) { 
+    /* Fill phi to check to make sure our HMM is "close enough" to our CM.
+     * phi[k][0..2] is the expected number of times HMM node k state 0 (match), 1(insert),
+     * or 2(delete) is entered. These should be *very close* (within 0.00001) to the psi 
+     * values for the CM states that they map to (psi[v] is the expected number of times
+     * state v is entered in the CM). 
+     */
+    fill_phi_cp9(hmm, &phi, 1, FALSE);
     ret_val = check_psi_vs_phi_cp9(cm, cp9map, psi, phi, (double) psi_vs_phi_threshold, debug_level);
+    for(k = 0; k <= hmm->M; k++) free(phi[k]);
+    free(phi);
+  }
   else
     ret_val = TRUE;
 
   free(ap);
-  for(k = 0; k <= hmm->M; k++)
-    {
-      free(phi[k]);
-    }
-  free(phi);
   free(psi);
   for(i = 0; i < UNIQUESTATES; i++)
     {
@@ -1303,8 +1341,8 @@ cm2hmm_emit_prob(CM_t *cm, CP9Map_t *cp9map, int x, int i, int k)
  * EPN 03.12.06
  * cm2hmm_special_trans_cp9
  *
- * Purpose:  Fill the special transition probabilities (those INTO HMM node 1)
- *           for a CM plan 9 HMM given a CM.
+ * Purpose:  Fill the special transition probabilities (those INTO HMM node 1
+ *           and out of node M) for a CM plan 9 HMM given a CM.
  * 
  * Args:    
  * CM_t *cm          - the CM
@@ -1955,20 +1993,26 @@ cm2hmm_trans_probs_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int k, double *ps
  *                      state 0 = B state, state 1 = N_state, state 2 = NULL
  * int spos           - the first original consensus column this CP9 HMM
  *                      models (only != 1 if we're building a CP9 for a sub CM).
+ * int entered_only   - calculated expected number of times each state is 
+ *                      entered only, ignored insert->insert self transitions
+ * 
  * Notes:
  *                    - phi is allocated here, must be freed by caller.
  * Returns: ret_phi 
  */
 void
-fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos)
+fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos, int entered_only)
 {
   int status;
   int k;
   double **phi;
+  double  *phi_ins = NULL;
 
   ESL_ALLOC(phi, sizeof(double *) * (hmm->M+1));
   for(k = 0; k <= hmm->M; k++)
     ESL_ALLOC(phi[k], sizeof(double) * 3);
+
+  if(entered_only) ESL_ALLOC(phi_ins, sizeof(double) * (hmm->M+1));
 
   /* Initialize phi values as all 0.0 */
   for (k = 0; k <= hmm->M; k++)
@@ -1977,6 +2021,7 @@ fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos)
   /* the M_spos-1 is the B state, where all parses start */
   phi[spos-1][HMMMATCH]   = 1.0;
   phi[spos-1][HMMINSERT]  = phi[spos-1][HMMMATCH] * hmm->t[spos-1][CTMI];
+  if(entered_only) phi_ins[spos-1] = phi[spos-1][HMMINSERT];
   phi[spos-1][HMMINSERT] += phi[spos-1][HMMINSERT] * (hmm->t[spos-1][CTII] / 
 						      (1. - hmm->t[spos-1][CTII]));
   phi[spos-1][HMMDELETE]  = 0.;
@@ -2003,6 +2048,7 @@ fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos)
       phi[k][HMMINSERT] += phi[k][HMMMATCH] * hmm->t[k][CTMI];
       phi[k][HMMINSERT] += phi[k][HMMDELETE] * hmm->t[k][CTDI];
       /* self loops are special */
+      if(entered_only) phi_ins[k] = phi[k][HMMINSERT]; /* we'll copy it back at the end */
       phi[k][HMMINSERT] += (phi[k][HMMINSERT] * (hmm->t[k][CTII] / (1-hmm->t[k][CTII])));
 
       /*printf("phi[%d][HMMMATCH]: %f\n", k, phi[k][HMMMATCH]);
@@ -2010,6 +2056,10 @@ fill_phi_cp9(CP9_t *hmm, double ***ret_phi, int spos)
 	printf("phi[%d][HMMDELETE]: %f\n", k, phi[k][HMMDELETE]);
       */
     }
+  if(entered_only) { /* overwrite phi insert probabilities */
+    for(k = 0; k <= hmm->M; k++) phi[k][HMMINSERT] = phi_ins[k];
+    free(phi_ins);
+  }
   *ret_phi = phi;
   return;
 
@@ -2060,7 +2110,7 @@ hmm_add_single_trans_cp9(CM_t *cm, CP9_t *hmm, CP9Map_t *cp9map, int a, int b, i
  * EPN 02.24.06
  * cm_sum_subpaths_cp9()
  *
- * Purpose:  Calculated probability of getting from one state (start) to 
+ * Purpose:  Calculate probability of getting from one state (start) to 
  *           another (end) in a CM, taking special considerations. 
  * 
  *           Sum the probability of all subpaths that start 
@@ -3068,4 +3118,201 @@ MakeDealignedString(const ESL_ALPHABET *abc, char *aseq, int alen, char *ss, cha
  ERROR:
   cm_Fail("Memory allocation error.");
   return 0; /* never reached */
+}
+
+
+/* Function: sub_build_cp9_hmm_from_mother()
+ * Date:     EPN, Wed Aug 20 16:05:26 2008
+ *
+ * Purpose:  Given a CM, and it's mother (CM is a sub CM of it's mother)
+ *           build a CM Plan 9 HMM that mirrors the CM as closely
+ *           as possible. This HMM is a Weinberg/Ruzzo style ML HMM; i.e. if
+ *           we sampled an 'infinite MSA' from the CM and built a ML HMM from it
+ *           (using no pseudo-counts), it would be the same as the HMM we construct
+ *           here. 
+ *
+ *           Use parameters from the mother CM's cp9 HMM where possible to 
+ *           save time. Sub CM CP9 model construction takes a long time which
+ *           is bad b/c a new sub CM is built for each target sequence in
+ *           cmalign.
+ * 
+ * Args:    
+ * CM_t        *cm         - the CM
+ * char        *errbuf     - for error messages
+ * CM_t        *mother_cm  - mother CM, cm is a sub CM of mother_cm
+ * CMSubMap_t  *mother_map - map from cm to mother_cm and vice versa
+ * cplan9_s   **ret_hmm    - CM Plan 9 HMM to be allocated, filled in and returned
+ * CP9Map_t   **ret_cp9map - map from the CP9 HMM to the CM and vice versa
+ *                           Allocated and returned from here, caller must free.
+ * int          do_psi_test - TRUE to do a psi vs phi test, FALSE not to
+ * float psi_vs_phi_threshold - allowable difference in expected number of times mapping
+ *                              cm and hmm states are entered.
+ * Returns: TRUE if CP9 is constructed and passes the psi vs phi test
+ *          FALSE if we get some error. 
+ *          Its also possible one of the functions called within this function
+ *          will print an error statement and exit.
+ */
+int
+sub_build_cp9_hmm_from_mother(CM_t *cm, char *errbuf, CM_t *mother_cm, CMSubMap_t *mother_map, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
+			      float psi_vs_phi_threshold, int debug_level)
+{
+  int       status;
+  int       k;                 /* counter of consensus columns (HMM nodes)*/
+  int       mk,x;
+  double    *psi;              /* expected num times each state visited in CM */
+  double   **phi;              /* expected num times each state visited in HMM*/
+  int ret_val;                 /* return value */
+  CP9Map_t *cp9map;         
+  CP9_t  *hmm;       /* CM plan 9 HMM we're going to construct from the sub_cm */
+  float d;
+
+  /* TEMP EPN, Tue Aug 19 18:07:25 2008 */
+  ESL_STOPWATCH *w;
+  w = esl_stopwatch_Create();
+  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
+  /* TEMP */
+  
+  /* Contract check, we can't be in local mode in the CM */
+  if(cm->flags & CMH_LOCAL_BEGIN) ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), CMH_LOCAL_BEGIN flag is up.\n");
+  if(cm->flags & CMH_LOCAL_END)   ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), CMH_LOCAL_END flag is up.\n");
+  if(mother_cm->cp9->flags & CPLAN9_EL) ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), mother_cm's cp9 has EL local ends on\n.");
+  if(!(mother_cm->cp9->flags & CPLAN9_LOCAL_BEGIN)) ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), mother_cm's cp9 does not have local begins on\n.");
+  if(!(mother_cm->cp9->flags & CPLAN9_LOCAL_END))   ESL_FAIL(eslEINCOMPAT, errbuf, "sub_build_cp9_hmm_from_mother(), mother_cm's cp9 does not have local ends on\n.");
+
+  /* Allocate and initialize the cp9map */
+  cp9map = AllocCP9Map(cm);
+  /* Map the CM states to CP9 states and nodes and vice versa */
+  CP9_map_cm2hmm(cm, cp9map, debug_level);
+
+  hmm    = AllocCPlan9(cp9map->hmm_M, cm->abc);
+  ZeroCPlan9(hmm);
+  CPlan9SetNullModel(hmm, cm->null, 1.0); /* set p1 = 1.0 which corresponds to the CM */
+  CPlan9InitEL(cm, hmm); /* set up hmm->el_from_ct and hmm->el_from_idx data, which
+			  * explains how the EL states are connected in the HMM. */
+  
+  /* COULD BE TEMP IF WE DON"T DO THE PHI/PSI TEST! */
+  char     ***tmap;
+  make_tmap(&tmap);
+  ESL_ALLOC(psi, sizeof(double) * cm->M);
+  esl_stopwatch_Start(w);  
+  fill_psi(cm, psi, tmap);
+  esl_stopwatch_Stop(w); 
+  FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+  fprintf(stdout, "\t\tpsi       %11s\n", time_buf);
+#endif
+  
+  /* fill in transitions into node 1 and out of node M */
+  cm2hmm_special_trans_cp9(cm, hmm, cp9map, psi, tmap);
+
+  /* renormalize only node 0 and node M transitions */
+  /* node 0 */
+  /* match */
+  d = hmm->begin[1] +  hmm->t[0][CTMI] + hmm->t[0][CTMD] + hmm->t[0][CTMEL];  /* we know that begin[k>1] == 0, we set it as such, so we skip their contribution */
+  hmm->begin[1] /= d;
+  hmm->t[0][CTMI] /= d;
+  hmm->t[0][CTMD] /= d;
+  hmm->t[0][CTMEL] /= d;
+  /* insert */
+  esl_vec_FNorm(hmm->t[0] + cp9_TRANS_INSERT_OFFSET, cp9_TRANS_NINSERT);	        /* transitions out of insert for node 0 (state N)*/
+  /* delete */
+  esl_vec_FSet (hmm->t[0] + cp9_TRANS_DELETE_OFFSET, cp9_TRANS_NDELETE, 0.);            /* D_0 does not exist */
+
+  /* node M */
+  /* match */
+  d = esl_vec_FSum(hmm->t[hmm->M], cp9_TRANS_NMATCH) + hmm->end[hmm->M]; 
+  esl_vec_FScale(hmm->t[hmm->M], cp9_TRANS_NMATCH, 1./d);
+  hmm->end[hmm->M] /= d;
+  /* insert */
+  esl_vec_FNorm(hmm->t[hmm->M] + cp9_TRANS_INSERT_OFFSET, cp9_TRANS_NINSERT);	/* insert */
+  /* delete */
+  esl_vec_FNorm(hmm->t[hmm->M] + cp9_TRANS_DELETE_OFFSET, cp9_TRANS_NDELETE);	/* delete */
+
+  /* logoddsify them */
+  for(x = 0; x < cp9_NTRANS; x++) hmm->tsc[x][0]      = Prob2Score(hmm->t[0][x],      1.0);
+  for(x = 0; x < cp9_NTRANS; x++) hmm->tsc[x][hmm->M] = Prob2Score(hmm->t[hmm->M][x], 1.0);
+  hmm->bsc[1]      = Prob2Score(hmm->begin[1],    1.0);
+  hmm->esc[hmm->M] = Prob2Score(hmm->end[hmm->M], 1.0);
+
+  /* now for 1..M-1, copy the parameters from the mother's template HMM. */
+  for(k = 0; k <= (mother_map->epos-mother_map->spos+1); k++) { 
+    mk = k + mother_map->spos - 1;
+      if(k > 0) { 
+	esl_vec_FCopy(mother_cm->cp9->mat[mk], mother_cm->cp9->abc->K,  hmm->mat[k]);
+	for(x = 0; x < mother_cm->cp9->abc->Kp; x++) {
+	  hmm->msc[x][k] = mother_cm->cp9->msc[x][mk];
+	}
+      }
+      esl_vec_FCopy(mother_cm->cp9->ins[mk], mother_cm->cp9->abc->K,  hmm->ins[k]);
+      for(x = 0; x < mother_cm->cp9->abc->Kp; x++) {
+	hmm->isc[x][k] = mother_cm->cp9->isc[x][mk];
+      }
+
+      /* transitions, skip k == 0 and M, we filled them out in cm2hmm_special_trans_cp9() */
+      if(k > 0 && k < hmm->M) { 
+	/* careful with transitions out of match, we have to renormalize as 
+	 * we go b/c mother_cm's cp9 has local ends up */
+	for(x = cp9_TRANS_MATCH_OFFSET; x < cp9_TRANS_NMATCH; x++) { 
+	  hmm->t[k][x]   = mother_cm->cp9->t[mk][x]   / (1. - mother_cm->cp9->end[mk]);
+	  hmm->tsc[x][k] = Prob2Score(hmm->t[k][x], 1.0);
+	}
+	
+	/* the rest of the probs/scores we can just copy b/c they're unaffected by local begins/ends */
+	esl_vec_FCopy(mother_cm->cp9->t[mk] + cp9_TRANS_INSERT_OFFSET, cp9_NTRANS - cp9_TRANS_INSERT_OFFSET,  hmm->t[k] + cp9_TRANS_INSERT_OFFSET);
+	for(x = cp9_TRANS_INSERT_OFFSET; x < cp9_NTRANS; x++) { 
+	  hmm->tsc[x][k] = mother_cm->cp9->tsc[x][mk];
+	}
+	if(k > 1) { 
+	  hmm->begin[k]   = 0.;
+	  hmm->bsc[k]     = -INFTY;
+	}
+	hmm->end[k]     = 0.;
+	hmm->esc[k]     = -INFTY;
+      }
+  }
+
+  /* Ripped out of cp9Logoddsify(), 
+   * Finally, fill the efficiently reordered transition scores for this HMM. */
+  for (k = 0 ; k <= hmm->M; k++) {
+    int *otsc_k = hmm->otsc + k*cp9O_NTRANS;
+    otsc_k[cp9O_MM] = hmm->tsc[CTMM][k];
+    otsc_k[cp9O_MI] = hmm->tsc[CTMI][k];
+    otsc_k[cp9O_MD] = hmm->tsc[CTMD][k];
+    otsc_k[cp9O_IM] = hmm->tsc[CTIM][k];
+    otsc_k[cp9O_II] = hmm->tsc[CTII][k];
+    otsc_k[cp9O_DM] = hmm->tsc[CTDM][k];
+    otsc_k[cp9O_DD] = hmm->tsc[CTDD][k];
+    otsc_k[cp9O_ID] = hmm->tsc[CTID][k];
+    otsc_k[cp9O_DI] = hmm->tsc[CTDI][k];
+    otsc_k[cp9O_BM] = hmm->bsc[k];
+    otsc_k[cp9O_MEL]= hmm->tsc[CTMEL][k];
+    otsc_k[cp9O_ME] = hmm->esc[k];
+  }
+
+  hmm->flags |= CPLAN9_HASBITS;	/* raise the log-odds ready flag */
+
+  if(debug_level > 1) debug_print_cp9_params(stdout, hmm, TRUE);
+  if(do_psi_test) { 
+    /* Fill phi to check to make sure our HMM is "close enough" to our CM.
+     * phi[k][0..2] is the expected number of times HMM node k state 0 (match), 1(insert),
+     * or 2(delete) is entered. These should be *very close* (within 0.00001) to the psi 
+     * values for the CM states that they map to (psi[v] is the expected number of times
+     * state v is entered in the CM). 
+     */
+    fill_phi_cp9(hmm, &phi, 1, FALSE);
+    ret_val = check_psi_vs_phi_cp9(cm, cp9map, psi, phi, (double) psi_vs_phi_threshold, debug_level);
+    for(k = 0; k <= hmm->M; k++) free(phi[k]);
+    free(phi);
+  }
+  else
+    ret_val = TRUE;
+
+  *ret_hmm    = hmm;
+  *ret_cp9map = cp9map;
+
+  return ret_val;
+
+ ERROR: 
+  ESL_FAIL(eslEMEM, errbuf, "memory allocation error.");
+  return 0; /* NEVERREACHED */
 }

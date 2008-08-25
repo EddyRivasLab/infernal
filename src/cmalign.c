@@ -9,7 +9,11 @@
  *****************************************************************
  */
 #include "esl_config.h"
+#include "p7_config.h"
 #include "config.h"
+
+#include <xmmintrin.h>		/* SSE  */
+#include <emmintrin.h>		/* SSE2 */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,12 +34,18 @@
 #include "esl_sq.h"		
 #include "esl_sqio.h"
 #include "esl_stack.h"
+#include "esl_sse.h"
 #include "esl_stopwatch.h"
 #include "esl_vectorops.h"
 #include "esl_wuss.h"
 
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
+
+#include "hmmer.h"
+#if 0
+#include "impl_sse.h"
+#endif
 
 #define ALGOPTS  "--cyk,--optacc,--viterbi,--sample" /* Exclusive choice for algorithm */
 #define OUTALPHOPTS "--rna,--dna"                    /* Exclusive choice for output alphabet */
@@ -64,6 +74,7 @@ static ESL_OPTIONS options[] = {
   { "--small",   eslARG_NONE,   FALSE,  NULL, NULL,     NULL,"--cyk,--nonbanded","--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
   /* Banded alignment */
   { "--hbanded", eslARG_NONE, "default",  NULL, NULL,   NULL,     NULL,    "--small", "accelerate using CM plan 9 HMM derived bands", 3 },
+  { "--p7",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",  "--small", "really accelerate using plan 7 HMM derived bands", 3 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,"--hbanded",    NULL,  "--hbanded", "do not use bands to accelerate aln algorithm", 3 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 3 },
   { "--mxsize",  eslARG_REAL, "2048.0",NULL, "x>0.",     NULL,      NULL,   "--small", "set maximum allowable DP matrix size to <x> Mb", 3},
@@ -81,6 +92,15 @@ static ESL_OPTIONS options[] = {
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,"--withali",       NULL, "--gapthresh <x> was originally used with cmbuild", 5 },
   /* Verbose output files */
   { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence parsetrees to file <f>", 7 },
+  /* options for experimental p7 HMM banding */
+  { "--7pad",    eslARG_INT,       "0", NULL, "n>=0",   NULL,      NULL,        NULL, "w/p7 banding set pin pad to <n> residues", 8 },
+  { "--7len",    eslARG_INT,       "4", NULL, "n>0",    NULL,      NULL,        NULL, "w/p7 banding set minimum length pin n-mer to <n>", 8 },
+  { "--7sc",     eslARG_REAL,    "0.5", NULL, "x>-0.0001",NULL,    NULL,        NULL, "w/p7 banding set minimum pin score to <x>", 8 },
+  { "--7end",    eslARG_INT,       "0", NULL, "n>=0",   NULL,      NULL,        NULL, "w/p7 banding remove pins within <n> residues of k-mer termini", 8 },
+  { "--7mprob",  eslARG_REAL,    "0.0", NULL, "x>-0.0001",NULL,    NULL,        NULL, "w/p7 banding set min prob to enter match state pin to <x>", 8 },
+  { "--7mcprob", eslARG_REAL,    "0.0", NULL, "x>-0.0001",NULL,    NULL,        NULL, "w/p7 banding set min cumulative prob to enter match state pin stretch to <x>", 8 },
+  { "--7iprob",  eslARG_REAL,    "1.0", NULL, "x<1.001",NULL,      NULL,        NULL, "w/p7 banding set max prob to enter insert state to <x>", 8 },
+  { "--7ilprob", eslARG_REAL,    "1.0", NULL, "x<1.001",NULL,      NULL,        NULL, "w/p7 banding set max prob to enter left insert state to <x>", 8 },
 
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer options related to alignment algorithm */
@@ -1062,7 +1082,15 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 				  esl_opt_GetInteger(go, "--banddump"),
 				  esl_opt_GetInteger(go, "--dlev"), be_quiet, 
 				  (! esl_opt_GetBoolean(go, "--no-null3")), cfg->r,
-				  esl_opt_GetReal(go, "--mxsize"), stdout)) != eslOK) goto ERROR;
+				  esl_opt_GetReal(go, "--mxsize"), stdout, 
+				  esl_opt_GetInteger(go, "--7pad"), 
+				  esl_opt_GetInteger(go, "--7len"), 
+				  esl_opt_GetReal(go, "--7sc"), 
+				  esl_opt_GetInteger(go, "--7end"), 
+				  esl_opt_GetReal(go, "--7mprob"), 
+				  esl_opt_GetReal(go, "--7mcprob"), 
+				  esl_opt_GetReal(go, "--7iprob"), 
+				  esl_opt_GetReal(go, "--7ilprob"))) != eslOK) goto ERROR;
   return eslOK;
   
  ERROR:
@@ -1098,6 +1126,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--optacc"))      cm->align_opts  |= CM_ALIGN_OPTACC;
   if(esl_opt_GetBoolean(go, "--sample"))      cm->align_opts  |= CM_ALIGN_SAMPLE;
   if(esl_opt_GetBoolean(go, "--hbanded"))     cm->align_opts  |= CM_ALIGN_HBANDED;
+  if(esl_opt_GetBoolean(go, "--p7"))          cm->align_opts  |= CM_ALIGN_P7BANDED;
   if(esl_opt_GetBoolean(go, "--nonbanded"))   cm->align_opts  &= ~CM_ALIGN_HBANDED;
   if(esl_opt_GetBoolean(go, "--sub"))         cm->align_opts  |= CM_ALIGN_SUB;
   if(esl_opt_GetBoolean(go, "--viterbi"))     cm->align_opts  |= CM_ALIGN_HMMVITERBI;
@@ -1116,6 +1145,10 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
       cm->align_opts  |= CM_ALIGN_QDB;
       cm->config_opts |= CM_CONFIG_QDB;
     }
+
+  /* TEMP */
+
+
 
   /* BEGIN (POTENTIALLY) TEMPORARY BLOCK */
   /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */
@@ -1152,7 +1185,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* finally, configure the CM for alignment based on cm->config_opts and cm->align_opts.
    * set local mode, make cp9 HMM, calculate QD bands etc. 
    */
-  ConfigCM(cm, FALSE);  /* FALSE says do not calculate W unless nec b/c we're using QDBs */
+  if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) return status; /* FALSE says do not calculate W unless nec b/c we're using QDBs */
 
   /* if(cfg->my_rank == 0) printf("CM %d: %s\n", (cfg->ncm), cm->name); 
    * debug_print_cm_params(stdout, cm);

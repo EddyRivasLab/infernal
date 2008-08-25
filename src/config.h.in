@@ -73,6 +73,10 @@
  */
 #undef HAVE_MPI
 
+/* --enable-sse            SSE parallel implementation 
+ */
+#undef HAVE_SSE2
+
 /* Debugging hooks
  */
 #undef cm_DEBUGLEVEL

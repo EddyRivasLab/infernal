@@ -257,8 +257,7 @@ cp9_Seq2Bands(CM_t *cm, char *errbuf, CP9_MX *fmx, CP9_MX *bmx, CP9_MX *pmx, ESL
 }
 
 
-/*
- * Function: cp9_Seq2Posteriors
+/* Function: cp9_Seq2Posteriors
  * Date    : EPN, Mon Jan  8 07:27:21 2007
  *
  * Purpose:  Given a CM with precalc'ed CP9 HMM and CP9Map, and a sequence,
@@ -384,7 +383,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
   int hmm_is_localized;                   /* TRUE if HMM has local begins, ends or ELs on */
   hmm_is_localized = ((hmm->flags & CPLAN9_LOCAL_BEGIN) || (hmm->flags & CPLAN9_LOCAL_END) || (hmm->flags & CPLAN9_EL)) ? TRUE : FALSE;
 
-  if(bmx != pmx) GrowCP9Matrix(pmx, errbuf, L, M, NULL, NULL, NULL, NULL, NULL);
+  if(bmx != pmx) GrowCP9Matrix(pmx, errbuf, L, M, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
   /* allocations and initializations */
   ESL_ALLOC(nset_m, sizeof(int) * (M+1));
@@ -698,7 +697,7 @@ cp9_FB2HMMBandsWithSums(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9
   int *xset_m, *xset_i, *xset_d;          /* [0..k..hmm->M], has maximum been set for this state? */
   int *mass_m, *mass_i, *mass_d;          /* [0..k..hmm->M], summed log prob of pmx->mx[i][k] from 0..k or k..L */
   
-  if(bmx != pmx) GrowCP9Matrix(pmx, errbuf, L, M, NULL, NULL, NULL, NULL, NULL);
+  if(bmx != pmx) GrowCP9Matrix(pmx, errbuf, L, M, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
   /* allocations and initializations */
   ESL_ALLOC(nset_m, sizeof(int) * (M+1));

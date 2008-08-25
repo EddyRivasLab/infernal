@@ -13,13 +13,26 @@
  */
 
 #include "esl_config.h"
+#include "p7_config.h"
 #include "config.h"
+
+#include <xmmintrin.h>		/* SSE  */
+#include <emmintrin.h>		/* SSE2 */
 
 #include "easel.h"
 #include "esl_sq.h"
 #include "esl_dirichlet.h"
 #include "esl_random.h"
 #include "esl_sqio.h"
+
+#include "hmmer.h"
+#if 0
+#include "impl_sse.h"
+#endif
+
+/* TEMP EPN, Tue Aug 19 17:40:32 2008 */
+#define PRINTNOW 0
+/* TEMP */
 
 #define cmERRBUFSIZE 1024
 
@@ -261,12 +274,17 @@ typedef struct cp9_mx_s {
   int *mmx_mem, *imx_mem, *dmx_mem, *elmx_mem;
 
   int    M;             /* number of nodes in HMM this mx corresponds to, never changes */
-  int    rows;          /* generally L+1 or 2, # of DP rows in seq dimension, where L is length of seq,
+  int    rows;          /* generally L or 2, # of DP rows in seq dimension, where L is length of seq,
 			 * == 2 if we're scanning in mem efficient mode, 
 			 * never shrinks, but can increase to 'grow' the matrix
 			 */
   float  size_Mb;       /* current size of matrix in Megabytes */
   
+  /* variables added for HMMER3 p7 HMM banding of CP9 HMM dp algorithms */
+  int *kmin;            /* OPTIONAL (can be null) [0.1..i..rows] = k, minimum node for residue i is k */
+  int *kmax;            /* OPTIONAL (can be null) [0.1..i..rows] = k, maximum node for residue i is k */
+  int  ncells_allocated; /* number of cells allocated in matrix */
+  int  ncells_valid;     /* number of cells currently valid in the matrix */
 
 } CP9_MX;
 
@@ -450,6 +468,7 @@ typedef struct cp9map_s {
 #define CM_ALIGN_CHECKFB       (1<<15) /* check forward/backward CP9 HMM calcs     */
 #define CM_ALIGN_OPTACC        (1<<16) /* no CYK, aln w/Holmes/Durbin opt accuracy */
 #define CM_ALIGN_HMM2IJOLD     (1<<17) /* use old hmm2ij band calculation alg      */
+#define CM_ALIGN_P7BANDED      (1<<18) /* use p7 HMM bands to band the CP9 HMM     */
 
 /* search options, cm->search_opts */
 #define CM_SEARCH_NOQDB        (1<<0)  /* DO NOT use QDB to search (QDB is default)*/
@@ -991,6 +1010,38 @@ typedef struct cm_hb_mx_s {
 			 * it when mx is freed. */
 } CM_HB_MX;
 
+
+/* Declaration of CM dynamic programming matrix structure for 
+ * alignment with float scores in vjd (state idx, aln posn,
+ * subseq len) coordinates. May be banded in j and/or d dimensions.
+ */
+typedef struct cm_hb_shadow_mx_s {
+  int  M;		/* number of states (1st dim ptrs) in current mx */
+  int  L;               /* length of sequence the matrix currently corresponds to */
+
+  int    y_ncells_alloc;  /* current cell allocation limit in yshadow*/
+  int    y_ncells_valid;  /* current number of valid cells in yshadow */
+  int    k_ncells_alloc;  /* current cell allocation limit in kshadow*/
+  int    k_ncells_valid;  /* current number of valid cells in kshadow */
+  float  size_Mb;         /* current size of matrix in Megabytes */
+
+  int   *nrowsA;          /* [0..v..M] current number allocated rows for deck v */
+  int    nbifs;           /* number of B_st's in the cm this mx was created for */
+
+  /* yshadow holds the shadow matrix for all non-BIF_B states, yshadow[v] == NULL if cm->sttype[v] == B_st */
+  char ***yshadow;       /* [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  char   *yshadow_mem;   /* the actual mem, points to yshadow[0][0][0] */
+
+  /* kshadow holds the shadow matrix for all BIF_B states, kshadow[v] == NULL if cm->sttype[v] != B_st */
+  int ***kshadow;       /*  [0..v..M][0..j..(cp9b->jmax[v]-cp9b->jmin[v])[0..d..cp9b->hdmax[v][j-jmin[v]]-cp9b->hdmin[v][j-jmin[v]]] */
+  int   *kshadow_mem;   /* the actual mem, points to kshadow[0][0][0] */
+
+  CP9Bands_t *cp9b;     /* the CP9Bands_t object associated with this
+			 * matrix, which defines j, d, bands for each
+			 * state, only a reference, so don't free
+			 * it when mx is freed. */
+} CM_HB_SHADOW_MX;
+
 /* Structure ScanMatrix_t: Information used by all CYK/Inside scanning functions,
  * compiled together into one data structure for convenience. 
  */
@@ -1415,7 +1466,13 @@ typedef struct cm_s {
   /* statistics */
   CMStats_t *stats;      /* holds exponential tail stats and HMM filtering thresholds */
 
-  const  ESL_ALPHABET *abc;     /* ptr to alphabet info (cm->abc->K is alphabet size)*/
+  /* p7 hmm, added 08.05.08 */
+  P7_HMM      *p7;       /* the query p7 HMM, only match emission scores are relevant/valid */
+  P7_PROFILE  *p7_gm;    /* profile HMM */
+#if 0
+  P7_OPROFILE *p7_om;    /* optimized profile HMM */
+#endif
+  const  ESL_ALPHABET *abc; /* ptr to alphabet info (cm->abc->K is alphabet size)*/
 } CM_t;
 
 #endif /*STRUCTSH_INCLUDED*/

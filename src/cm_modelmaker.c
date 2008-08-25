@@ -705,7 +705,6 @@ cm_from_guide(CM_t *cm, char *errbuf, Parsetree_t *gtr, int will_never_localize)
 
 
 
-
 /* Function: Transmogrify()
  * Date:     SRE, Thu May 30 15:10:22 2002 [a coffee shop in Madison]
  *

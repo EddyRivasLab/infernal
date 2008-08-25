@@ -19,10 +19,13 @@
 #include <string.h>
 #include <time.h>
 
+#include "hmmer.h"
+
 #include "easel.h"
 #include "esl_vectorops.h"
 #include "esl_alphabet.h"
 #include "esl_stack.h"
+#include "esl_stopwatch.h"
 
 #include "funcs.h"
 #include "structs.h"
@@ -129,6 +132,11 @@ CreateCMShell(void)
   cm->si           = NULL;
   cm->pbegin       = DEFAULT_PBEGIN; /* summed probability of internal local begin */
   cm->pend         = DEFAULT_PEND;   /* summed probability of internal local end */
+  cm->p7           = NULL;          
+  cm->p7_gm        = NULL;          
+#if 0
+  cm->p7_om        = NULL;          
+#endif
 
   cm->ga       = 0.;  /* only valid if cm->flags & CMH_GA */
   cm->tc       = 0.;  /* only valid if cm->flags & CMH_TC */
@@ -229,10 +237,15 @@ CreateCMBody(CM_t *cm, int nnodes, int nstates, const ESL_ALPHABET *abc)
   cm->cp9           = NULL;
   cm->cp9b          = NULL;
   cm->cp9map        = NULL;
+  cm->p7            = NULL;
+  cm->p7_gm         = NULL;
+#if 0
+  cm->p7_om         = NULL;
+#endif
 
-  /* create HMM banded matrix, it only depends (at first) on num states, M.
+  /* create HMM banded dp matrix, this only depends (at first) on num states, M.
    * it is initially empty, but expanded to fit target sequences as needed */
-  cm->hbmx = cm_hb_mx_Create(cm->M);
+  cm->hbmx    = cm_hb_mx_Create(cm->M);
 
   /* we'll allocate the cp9, cp9b, cp9map, cp9_mx and cp9_bmx inside ConfigCM(),
    * we need some more info about the CM besides M and nnodes to build those
@@ -367,6 +380,12 @@ FreeCM(CM_t *cm)
   if(cm->cp9_mx     != NULL) FreeCP9Matrix(cm->cp9_mx);
   if(cm->cp9_bmx    != NULL) FreeCP9Matrix(cm->cp9_bmx);
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
+  if(cm->p7         != NULL) p7_hmm_Destroy(cm->p7);
+  if(cm->p7_gm      != NULL) p7_profile_Destroy(cm->p7_gm);
+#if 0 
+  if(cm->p7_om      != NULL) p7_oprofile_Destroy(cm->p7_om);
+#endif
+
   free(cm);
 }
 
@@ -660,7 +679,14 @@ rsearch_CMProbifyEmissions(CM_t *cm, fullmat_t *fullmat)
 void
 CMLogoddsify(CM_t *cm)
 {
+  printf("HEY IN CMLOGODDSIFY!\n");
   int v, x, y;
+
+  /* TEMP */
+  ESL_STOPWATCH *w;
+  w = esl_stopwatch_Create();
+  char          time_buf[128];  /* string for printing timings (safely holds up to 10^14 years) */
+  esl_stopwatch_Start(w);
 
   for (v = 0; v < cm->M; v++)
     {
@@ -705,12 +731,30 @@ CMLogoddsify(CM_t *cm)
 	 (sreEXP2(cm->el_selfsc)), cm->iel_selfsc, (Score2Prob(cm->iel_selfsc, 1.0)));
 	 printf("-INFTY: %d prob: %f 2^: %f\n", -INFTY, (Score2Prob(-INFTY, 1.0)), sreEXP2(-INFTY));*/
 
+  esl_stopwatch_Stop(w); 
+  FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+  fprintf(stdout, "\t\t\tCM df params       %11s\n", time_buf);
+#endif
+  esl_stopwatch_Start(w); 
+
   /* Allocate and fill optimized emission scores for this CM.
    * If they already exist, free them and recalculate them, slightly wasteful, oh well.
    */
   if(cm->oesc != NULL || cm->ioesc != NULL) FreeOptimizedEmitScores(cm->oesc, cm->ioesc, cm->M);
   cm->oesc  = FCalcOptimizedEmitScores(cm);
-  cm->ioesc = ICalcOptimizedEmitScores(cm);
+  /* EPN, Wed Aug 20 15:26:01 2008 
+   * old, slow way: 
+   * cm->ioesc = ICalcOptimizedEmitScores(cm);
+   */
+  cm->ioesc = ICopyOptimizedEmitScoresFromFloats(cm, cm->oesc);
+  
+  esl_stopwatch_Stop(w); 
+  FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+  fprintf(stdout, "\t\t\tCM O  params       %11s\n", time_buf);
+#endif
+  esl_stopwatch_Destroy(w);
 
   /* Potentially, overwrite transitions with non-probabilistic 
    * RSEARCH transitions. Currently only default transition
@@ -776,6 +820,7 @@ CMLogoddsify(CM_t *cm)
   /* raise flag saying we have valid log odds scores */
   cm->flags |= CMH_BITS;
 }
+
 
 
 /* Function: CountStatetype(), CMSubtreeCountStatetype(), CMSegmentCountStatetype
@@ -2223,7 +2268,7 @@ CMStateid(char st)
 
 
 /*****************************************************************
- * Convenience routines for setting fields in an CM. (from p7_cm.c)
+ * Convenience routines for setting fields in an CM. (from p7_hmm.c)
  *****************************************************************/ 
 /* Function: cm_SetName()
  * Incept:   EPN, Fri Jul 27 16:49:49 2007 [Janelia]
