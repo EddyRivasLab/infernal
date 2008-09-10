@@ -597,8 +597,7 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
 }
 
 
-/*
- * Function : Parsetrees2Alignment()
+/* Function : Parsetrees2Alignment()
  *
  * Purpose:   Creates a MSA from a set of parsetrees and a CM.
  *
@@ -2004,4 +2003,104 @@ ParsetreeCountMPEmissions(CM_t *cm, Parsetree_t *tr)
     if(cm->sttype[tr->state[tidx]] == MP_st) nres_by_mp += 2;
   }
   return nres_by_mp;
+}
+
+/* Function: Alignment2Parsetrees()
+ * EPN, Fri Jul 11 09:49:50 2008
+ *
+ * Purpose:  Given a MSA <msa>, a CM <cm> and a guidetree <mtr> for <cm>,
+ *           Determine the implicit parsetrees of the sequences in the
+ *           MSA to the CM. Return the parsetrees in <ret_tr> if non-NULL, 
+ *           sequence objects in <ret_sq> if non-null. 
+ *
+ *           Dealign the MSA seqs in <ret_sq> and convert from aligned to
+ *           unaligned coordinates in <ret_tr>.
+ *
+ * Args:     msa          - MSA we want to infer parsetrees from
+ *           cm           - CM we're aligning to 
+ *           mtr          - master parsetree, guide tree for CM 
+ *           errbuf       - easel error message
+ *           ret_sq       - Return: dealigned msa seqs in digital form
+ *           ret_tr       - Return: parsetree for seqs in dealigned coords
+ * 
+ * Returns:  eslOK on success, eslEINCOMPAT on contract violation, eslEMEM on memory error
+ *           <ret_tr>, <ret_sq>, see 'Purpose'.
+ */
+int 
+Alignment2Parsetrees(ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, char *errbuf, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr)
+{
+  int           status;
+  int           i;	      /* counter over aseqs       */
+  int           apos;         /*   aligned position index */
+  int           uapos;        /* unaligned position index */
+  int           x;            /* counter of parsetree nodes */
+  int          *map   = NULL; /* for current seq, [0..msa->alen] map from aligned posns to unaligned (non-gap) posns */
+  char         *uaseq = NULL; /* current seq, dealigned from the MSA */
+  char         *aseq  = NULL; /* current seq, aligned text */
+  Parsetree_t **tr    = NULL; /* [0..msa->nseq-1] new parsetrees, one per seq in msa */
+  ESL_SQ      **sq    = NULL; /* [0..msa->nseq-1] new ESL_SQ objects, one per seq in msa */
+
+  /* Contract check */
+  if(msa == NULL)                      ESL_FAIL(eslEINCOMPAT, errbuf, "Alignment2Parsetrees() msa is NULL.\n");
+  if(! (msa->flags & eslMSA_DIGITAL))  ESL_FAIL(eslEINCOMPAT, errbuf, "Alignment2Parsetrees() msa is not digitized.\n");
+  if(ret_tr == NULL && ret_sq == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "Alignment2Parsetrees() ret_sq and ret_tr both NULL.");
+
+  if(ret_tr != NULL) ESL_ALLOC(tr, (sizeof(Parsetree_t *) * msa->nseq));
+  if(ret_sq != NULL) ESL_ALLOC(sq, (sizeof(ESL_SQ *)      * msa->nseq));
+  ESL_ALLOC(aseq,  sizeof(char) * (msa->alen+1));
+  ESL_ALLOC(map,   sizeof(int)  * (msa->alen+1));
+  map[0] = -1; /* invalid */
+
+  for (i = 0; i < msa->nseq; i++) { 
+    uapos = 1;
+    /* map aligned to dealigned coords (digitized coords, 1..alen) for this seq
+     * map is needed b/c we want the parsetree in dealigned coords so we can
+     * call Parsetrees2Alignment with it, but mtr is in aligned coords, and
+     * Transmogrify works in aligned coords, so after calling Transmogrify
+     * we have to convert tr->emitl and tr->emitr to dealigned coords using map.
+     */
+    for(apos = 1; apos <= msa->alen; apos++) 
+      map[apos] = esl_abc_XIsGap(msa->abc, msa->ax[i][apos]) ? -1 : uapos++;
+    /* get text seq, we need digitized AND text seqs for Transmogrify */
+    esl_abc_Textize(msa->abc, msa->ax[i], msa->alen, aseq);
+    esl_strdup(aseq, -1, &uaseq);
+    /* dealign seq */
+    esl_strdealign(uaseq, uaseq, "-_.~", NULL);
+    /* Transmogrify the aligned seq to get a parsetree */
+    if(ret_tr != NULL) { 
+      tr[i] = Transmogrify(cm, mtr, msa->ax[i], aseq, msa->alen);
+      /*ParsetreeDump(stdout, tr[i], cm, msa->ax[i], NULL, NULL);*/
+      /* tr[i] is in alignment coords, convert it to unaligned coords, */
+      for(x = 0; x < tr[i]->n; x++) { 
+	/*printf("i: %d x: %d emitl %d emitr %d\n", i, x, tr[i]->emitl[x], tr[i]->emitr[x]);*/
+	if(tr[i]->emitl[x] != -1) { 
+	  /*printf("\tmapl: %d\n", map[i][tr[i]->emitl[x]]);*/
+	  tr[i]->emitl[x] = map[tr[i]->emitl[x]];
+	}
+	if(tr[i]->emitr[x] != -1) { 
+	  /*printf("\tmapr: %d\n", map[i][tr[i]->emitr[x]]);*/
+	  tr[i]->emitr[x] = map[tr[i]->emitr[x]];
+	}
+      }
+    }
+    if(ret_sq != NULL) { 
+      sq[i] = esl_sq_CreateFrom(msa->sqname[i], uaseq, NULL, NULL, NULL);
+      esl_sq_Digitize(cm->abc, sq[i]);
+    }
+    free(uaseq); /* this gets reallocated and filled per seq in esl_strdup() call above */
+  }
+  free(aseq);
+  free(map);
+
+  /* tr and sq are only allocated if ret_tr and ret_sq were non-null */
+  if(ret_tr != NULL) *ret_tr = tr;
+  if(ret_sq != NULL) *ret_sq = sq;
+
+  return eslOK;
+
+ ERROR:
+  if(map != NULL )  free(map);
+  if(uaseq != NULL) free(uaseq);
+  if(aseq != NULL)  free(aseq);
+  return status;
 }

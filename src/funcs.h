@@ -81,6 +81,7 @@ extern ComLog_t * CreateComLog();
 extern void       FreeComLog(ComLog_t *clog);
 extern int        CopyComLog(const ComLog_t *src, ComLog_t *dest);
 extern int        cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avg_hit_len);
+extern int        CompareCMGuideTrees(CM_t *cm1, CM_t *cm2);
 
 /* from dispatch.c */
 extern int DispatchSearch    (CM_t *cm, char *errbuf, int fround, ESL_DSQ *dsq, int i0, int j0, 
@@ -260,6 +261,7 @@ extern void         SummarizeMasterTrace(FILE *fp, Parsetree_t *tr);
 extern void         MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm);
 extern int          Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
 					 Parsetree_t **tr, int nseq, int do_full, int do_matchonly, ESL_MSA **ret_msa);
+extern int          Alignment2Parsetrees(ESL_MSA *msa, CM_t *cm, Parsetree_t *mtr, char *errbuf, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr);
 extern float        ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_flag);
 extern int          Parsetree2CP9trace(CM_t *cm, Parsetree_t *tr, CP9trace_t **ret_cp9_tr);
 extern void         rightjustify(const ESL_ALPHABET *abc, char *s, int n);
