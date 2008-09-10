@@ -47,12 +47,13 @@ static ESL_OPTIONS options[] = {
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "align locally w.r.t. the model",         1 },
   { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,   "--small", "append posterior probabilities to alignment", 1 },
   { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress banner and scores, print only the alignment", 1 },
-  { "--merge",   eslARG_INFILE, FALSE, NULL, NULL,      NULL,      NULL,        NULL, "<sequence file> is an aln, merge it with alignment in <f>", 1 },
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    "--merge", "run as an MPI parallel program",                    1 },  
 #endif
+  /* --merge: merge two alignments and quit, don't do any new aligning */
+  { "--merge",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "merge two alignments and exit", 8 },
   /* Algorithm options */
   { "--optacc",  eslARG_NONE,"default", NULL, NULL,     ALGOPTS,    NULL,   "--small", "align with the Holmes/Durbin optimal accuracy algorithm", 2 },
   { "--cyk",     eslARG_NONE,   FALSE,  NULL, NULL,     ALGOPTS,    NULL,        NULL, "align with the CYK algorithm", 2 },
@@ -137,7 +138,8 @@ struct cfg_s {
   ESL_ALPHABET *abc_out;	/* digital alphabet for output */
 };
 
-static char usage[]  = "[-options] <cmfile> <sequence file>";
+static char usage1[] = "[-options] <cmfile> <sequence file>";
+static char usage2[] = "[-options] --merge <cmfile> <alignment file 1> <alignment file 2>";
 static char banner[] = "align sequences to an RNA CM";
 
 static int  init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
@@ -200,14 +202,16 @@ main(int argc, char **argv)
       esl_opt_VerifyConfig(go)               != eslOK)
     {
       printf("Failed to parse command line: %s\n", go->errbuf);
-      esl_usage(stdout, argv[0], usage);
+      esl_usage(stdout, argv[0], usage1);
+      esl_usage(stdout, argv[0], usage2);
       printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
   if (esl_opt_GetBoolean(go, "--devhelp") == TRUE) 
     {
       cm_banner(stdout, argv[0], banner);
-      esl_usage(stdout, argv[0], usage);
+      esl_usage(stdout, argv[0], usage1);
+      esl_usage(stdout, argv[0], usage2);
       puts("\nwhere general options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
       puts("\nalignment algorithm related options:");
@@ -216,6 +220,8 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
       puts("\noutput options:");
       esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
+      puts("\nmerge alignments in <alignment file 1> and <alignment file 2>:");
+      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       puts("\noptions for including a fixed alignment within output alignment:");
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
       puts("\nverbose output files and debugging:");
@@ -233,7 +239,8 @@ main(int argc, char **argv)
   if (esl_opt_GetBoolean(go, "-h") == TRUE) 
     {
       cm_banner(stdout, argv[0], banner);
-      esl_usage(stdout, argv[0], usage);
+      esl_usage(stdout, argv[0], usage1);
+      esl_usage(stdout, argv[0], usage2);
       puts("\nwhere general options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
       puts("\nalignment algorithm related options:");
@@ -242,21 +249,33 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
       puts("\noutput options:");
       esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
+      puts("\nmerge alignments in <alignment file 1> and <alignment file 2>:");
+      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       puts("\noptions for including a fixed alignment within output alignment:");
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
       puts("\nverbose output files and debugging:");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       exit(0);
     }
-  if (esl_opt_ArgNumber(go) != 2) 
+  if(((! esl_opt_GetBoolean(go, "--merge")) && (esl_opt_ArgNumber(go) != 2)) ||
+     ((  esl_opt_GetBoolean(go, "--merge")) && (esl_opt_ArgNumber(go) != 3))) 
     {
       puts("Incorrect number of command line arguments.");
-      esl_usage(stdout, argv[0], usage);
+      esl_usage(stdout, argv[0], usage1);
+      esl_usage(stdout, argv[0], usage2);
       puts("\n  where basic options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80);
       printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
+
+  /* if --merge, merge the two alignments and exit, never create cfg structure we won't need it */
+  if(esl_opt_GetBoolean(go, "--merge")) { 
+    serial_merge_alignments_only(go);
+    esl_getopts_Destroy(go);
+    return 0;	
+  }
+
   /* Initialize what we can in the config structure (without knowing the input alphabet yet).
    */
   cfg.cmfile     = esl_opt_GetArg(go, 1); 
@@ -322,17 +341,8 @@ main(int argc, char **argv)
   else
 #endif /*HAVE_MPI*/
     {
-      if(! esl_opt_IsDefault(go, "--merge")) { /* special mode, merge the two alignments, then exit */
-	serial_merge_alignments_only(go);
-	esl_alphabet_Destroy(cfg.abc_out);
-	esl_getopts_Destroy(go);
-	esl_stopwatch_Destroy(w);
-	return 0;	
-      }
-      else { 
-	if(! esl_opt_GetBoolean(go, "-q")) cm_banner(stdout, argv[0], banner);
-	serial_master(go, &cfg);
-      }
+      if(! esl_opt_GetBoolean(go, "-q")) cm_banner(stdout, argv[0], banner);
+      serial_master(go, &cfg);
       esl_stopwatch_Stop(w);
     }
   /* Clean up the shared cfg. 
@@ -1728,8 +1738,8 @@ serial_merge_alignments_only(const ESL_GETOPTS *go)
   esl_msafile_SetDigital(msafp1, abc);
   if((status = esl_msa_Read(msafp1, &msa1)) != eslOK) cm_Fail("No alignments in %s\n", msafile1);
 
-  /* open msa file 2, <f> from --merge <f> */
-  msafile2 = esl_opt_GetString(go, "--merge");
+  /* open msa file 2, argv[3] */
+  msafile2 = esl_opt_GetArg(go, 3);
   status = esl_msafile_Open(msafile2, eslMSAFILE_UNKNOWN, NULL, &msafp2);
   if      (status == eslENOTFOUND) cm_Fail("Alignment file %s doesn't exist or is not readable\n", msafile2);
   else if (status == eslEFORMAT)   cm_Fail("Couldn't determine format of alignment %s\n", msafile2);
