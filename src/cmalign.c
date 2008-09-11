@@ -165,8 +165,16 @@ static int add_withali_pknots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *er
 static int print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static void print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
+static int get_markup_from_msa(ESL_MSA *msa, char *errbuf, char ***ret_comment, int *ret_ncomment, char ***ret_gf_tag, char ***ret_gf, int *ret_ngf, char ***ret_gs_tag, char ****ret_gs, int *ret_ngs, char ***ret_gr_tag, char ****ret_gr, int *ret_ngr);
 static int append_parsetrees(Parsetree_t **tr_to_append, int ntr_to_append, Parsetree_t ***ret_tr, int *ret_ntr, char *errbuf);
 static int append_sequences(ESL_SQ **sq_to_append, int nsq_to_append, ESL_SQ ***ret_sq, int *ret_nsq, char *errbuf);
+static int add_msa_markup(ESL_MSA *merged_msa, char *errbuf, int nseq, int seq_offset,
+			  char **comment, int ncomment,
+			  char **gf_tag, char **gf,  int ngf,
+			  char **gs_tag, char ***gs, int ngs,
+			  char **gr_tag, char ***gr, int ngr);
+extern int gapize_string_to_fit_alignment(char *s, const char *aseq, int alen, char gapchar_to_add, char *aln_gapchars, char *errbuf, char **ret_news);
+			    
 
 /*
   static void print_stage_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
@@ -272,6 +280,7 @@ main(int argc, char **argv)
   /* if --merge, merge the two alignments and exit, never create cfg structure we won't need it */
   if(esl_opt_GetBoolean(go, "--merge")) { 
     serial_merge_alignments_only(go);
+    esl_stopwatch_Destroy(w);
     esl_getopts_Destroy(go);
     return 0;	
   }
@@ -1707,9 +1716,16 @@ serial_merge_alignments_only(const ESL_GETOPTS *go)
   Parsetree_t *mtr1, *mtr2;
   FILE *ofp;
   int nmerged_tr, nmerged_sq;
+  int msa1_nseq, msa2_nseq;
   int i;
   Parsetree_t **tr1, **tr2;
   ESL_SQ **sq1, **sq2;
+  
+  /* markup from msa1 and msa2, we'll add it to the merged_msa */
+  int ncomment1, ncomment2, ngf1, ngf2, ngs1, ngs2, ngr1, ngr2;
+  char **gf_tag1, **gf_tag2, **gs_tag1, **gs_tag2, **gr_tag1, **gr_tag2;
+  char  **comment1, **comment2, **gf1, **gf2;
+  char ***gs1, ***gs2, ***gr1, ***gr2;
 
   /* open output file */
   if (esl_opt_GetString(go, "-o") != NULL) {
@@ -1770,20 +1786,33 @@ serial_merge_alignments_only(const ESL_GETOPTS *go)
   FreeCM(tmp_cm);
   /* now we know msa1 and msa2 both have SS_cons lines that match the first CM we read from cmfile, so they must match each other */
 
-  /* convert alignments to parsetrees */
+  /* store the unparsed stockholm markup from each msa, we'll regurgitate it in the new alignment */
+  if((status = get_markup_from_msa(msa1, errbuf, &comment1, &ncomment1, &gf_tag1, &gf1, &ngf1, &gs_tag1, &gs1, &ngs1, &gr_tag1, &gr1, &ngr1)) != eslOK) cm_Fail(errbuf); 
+  if((status = get_markup_from_msa(msa2, errbuf, &comment2, &ncomment2, &gf_tag2, &gf2, &ngf2, &gs_tag2, &gs2, &ngs2, &gr_tag2, &gr2, &ngr2)) != eslOK) cm_Fail(errbuf); 
+
+  /* convert alignments to parsetrees, and free alignments */
   if((status = Alignment2Parsetrees(msa1, cm, mtr1, errbuf, &sq1, &tr1)) != eslOK) cm_Fail(errbuf);
+  msa1_nseq = msa1->nseq;
+  esl_msa_Destroy(msa1);
+
   if((status = Alignment2Parsetrees(msa2, cm, mtr2, errbuf, &sq2, &tr2)) != eslOK) cm_Fail(errbuf);
+  msa2_nseq = msa2->nseq;
+  esl_msa_Destroy(msa2);
 
   /* merge parsetrees */
-  nmerged_tr = msa1->nseq;
-  nmerged_sq = msa1->nseq;
-  if((status = append_parsetrees(tr2, msa2->nseq, &(tr1), &(nmerged_tr), errbuf)) != eslOK) cm_Fail(errbuf);
+  nmerged_tr = msa1_nseq;
+  if((status = append_parsetrees(tr2, msa2_nseq, &(tr1), &(nmerged_tr), errbuf)) != eslOK) cm_Fail(errbuf);
   /* merge sequences */
-  if((status = append_sequences(sq2, msa2->nseq, &(sq1), &(nmerged_sq), errbuf)) != eslOK) cm_Fail(errbuf);
+  nmerged_sq = msa1_nseq;
+  if((status = append_sequences(sq2, msa2_nseq, &(sq1), &(nmerged_sq), errbuf)) != eslOK) cm_Fail(errbuf);
 
   /* parsetrees to alignment */
-  if((status = Parsetrees2Alignment(cm, abc_out, sq1, NULL, tr1, msa1->nseq + msa2->nseq, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), &merged_msa)) != eslOK)
+  if((status = Parsetrees2Alignment(cm, abc_out, sq1, NULL, tr1, msa1_nseq + msa2_nseq, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), &merged_msa)) != eslOK)
     cm_Fail("Error creating alignment from merged parsetrees.");
+
+  /* add comments, GF, GS and GR (not GC) markup from initial alignments to merged alignment */
+  if((status = add_msa_markup(merged_msa, errbuf, msa1_nseq, 0,         comment1, ncomment1, gf_tag1, gf1, ngf1, gs_tag1, gs1, ngs1, gr_tag1, gr1, ngr1)) != eslOK) cm_Fail(errbuf);
+  if((status = add_msa_markup(merged_msa, errbuf, msa2_nseq, msa1_nseq, comment2, ncomment2, gf_tag2, gf2, ngf2, gs_tag2, gs2, ngs2, gr_tag2, gr2, ngr2)) != eslOK) cm_Fail(errbuf);
 
   /* output alignment */
   status = esl_msa_Write(ofp, merged_msa, eslMSAFILE_STOCKHOLM);
@@ -1801,8 +1830,6 @@ serial_merge_alignments_only(const ESL_GETOPTS *go)
     esl_sq_Destroy(sq1[i]);
   }    
   esl_msa_Destroy(merged_msa);
-  esl_msa_Destroy(msa1);
-  esl_msa_Destroy(msa2);
   free(tr1);
   free(tr2);
   free(sq1);
@@ -1867,6 +1894,239 @@ append_sequences(ESL_SQ **sq_to_append, int nsq_to_append, ESL_SQ ***ret_sq, int
 
  ERROR:
   ESL_FAIL(eslEMEM, errbuf, "Memory reallocation error in append_sequences()");
+  return status; /* NEVERREACHED */
+}
+
+/* get_markup_from_msa
+ *                   
+ * Given an MSA return the markup that is unparsed by the esl_msa module 
+ * (comments, GF, GS, GR, markup), with the exception of GC markup (although
+ * parsed GC markup, RF and SS_cons IS included). The reason we don't include
+ * GC markup is that there is no guarantee all columns of original alignments
+ * will appear in the merged alignment because all gap columns will be removed
+ * (this is due to the Alignment2Parsetrees(), Parsetrees2Alignment() strategy
+ * we use for --merge). Also, it would be a pain to map each column of each
+ * input msa to the merged msa (though doable, it requires looking at each
+ * residue of each sequence). And finally, --merge is meant to merge two alignments
+ * output by cmalign, which should not include any non-parsed #=GC markup,
+ * so this isn't a huge deal.
+ */
+static int
+get_markup_from_msa(ESL_MSA *msa, char *errbuf, char ***ret_comment, int *ret_ncomment, char ***ret_gf_tag, char ***ret_gf, int *ret_ngf, 
+		    char ***ret_gs_tag, char ****ret_gs, int *ret_ngs, char ***ret_gr_tag, char ****ret_gr, int *ret_ngr)
+{
+  int status;
+
+  int ncomment;
+  char **comment;
+
+  int   ngf;
+  char **gf_tag;
+  char **gf;
+
+  int    ngs;
+  char  **gs_tag;
+  char ***gs;
+
+  int    ngr;
+  char  **gr_tag;
+  char ***gr;
+
+  int i,j;
+
+  /* comment */
+  if(msa->ncomment == 0) { 
+    ncomment = 0;
+    comment = NULL;
+  }
+  else { 
+    ncomment = msa->ncomment;
+    ESL_ALLOC(comment, sizeof(char *) * ncomment);
+    for(i = 0; i < ncomment; i++) esl_strdup(msa->comment[i], -1, &(comment[i]));
+  }
+
+  /* gf */
+  if(msa->ngf == 0) { 
+    ngf = 0;
+    gf_tag = NULL;
+    gf     = NULL;
+  }
+  else { 
+    ngf = msa->ngf;
+    ESL_ALLOC(gf_tag, sizeof(char *) * ngf);
+    ESL_ALLOC(gf,     sizeof(char *) * ngf);
+    for(i = 0; i < ngf; i++) { 
+      esl_strdup(msa->gf_tag[i], -1, &(gf_tag[i]));
+      esl_strdup(msa->gf[i],     -1, &(gf[i]));
+    }
+  }
+
+  /* gs */
+  if(msa->ngs == 0) { 
+    ngs = 0;
+    gs_tag = NULL;
+    gs     = NULL;
+  }
+  else { 
+    ngs = msa->ngs;
+    ESL_ALLOC(gs_tag, sizeof(char *)  * ngs);
+    ESL_ALLOC(gs,     sizeof(char **) * ngs);
+    for(i = 0; i < ngs; i++) { 
+      esl_strdup(msa->gs_tag[i], -1, &(gs_tag[i]));
+      ESL_ALLOC(gs[i], sizeof(char *) * msa->nseq);
+      for(j = 0; j < msa->nseq; j++) { 
+	esl_strdup(msa->gs[i][j], -1, &(gs[i][j]));
+      }
+    }
+  }
+
+  /* gr */
+  if(msa->ngr == 0) { 
+    ngr = 0;
+    gr_tag = NULL;
+    gr     = NULL;
+  }
+  else { 
+    ngr = msa->ngr;
+    ESL_ALLOC(gr_tag, sizeof(char *)  * ngr);
+    ESL_ALLOC(gr,     sizeof(char **) * ngr);
+    for(i = 0; i < ngr; i++) { 
+      esl_strdup(msa->gr_tag[i], -1, &(gr_tag[i]));
+      ESL_ALLOC(gr[i], sizeof(char *) * msa->nseq);
+      for(j = 0; j < msa->nseq; j++) { 
+	esl_strdup(msa->gr[i][j], -1, &(gr[i][j]));
+	esl_strdealign(gr[i][j], gr[i][j], "-_.~", NULL);
+      }
+    }
+  }
+
+  *ret_ncomment = ncomment;
+  *ret_comment  = comment;
+
+  *ret_ngf      = ngf;
+  *ret_gf_tag   = gf_tag;
+  *ret_gf       = gf;
+
+  *ret_ngs      = ngs;
+  *ret_gs_tag   = gs_tag;
+  *ret_gs       = gs;
+
+  *ret_ngr      = ngr;
+  *ret_gr_tag   = gr_tag;
+  *ret_gr       = gr;
+
+  return eslOK;
+  
+ ERROR:
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.");
+  return status;
+}
+
+/* add_msa_markup
+ *                   
+ * Add markup to a MSA. Note: we free the
+ * markup as soon as we've added it to the msa, 
+ * because adding it to the msa means duplicating it.
+ */
+static int add_msa_markup(ESL_MSA *merged_msa, char *errbuf, int nseq, int seq_offset,
+			    char **comment, int ncomment,
+			    char **gf_tag, char **gf,  int ngf,
+			    char **gs_tag, char ***gs, int ngs,
+			    char **gr_tag, char ***gr, int ngr)
+{ 
+  int status;
+  int i, m, ip;
+  char *tmp_s;
+
+  /* comments */
+  for(m = 0; m < ncomment; m++) { 
+    esl_msa_AddComment(merged_msa, comment[m]);
+    free(comment[m]);
+  }
+  if(comment != NULL) free(comment);
+
+  /* GF */
+  for(m = 0; m < ngf; m++) { 
+    esl_msa_AddGF(merged_msa, gf_tag[m], gf[m]);
+    free(gf[m]);
+    free(gf_tag[m]);
+  }
+  if(gf_tag != NULL) free(gf_tag);
+  if(gf != NULL)     free(gf);
+
+  /* GS */
+  for(m = 0; m < ngs; m++) { 
+    for(i = 0; i < nseq; i++) { 
+      ip = i + seq_offset;
+      esl_msa_AddGS(merged_msa, gs_tag[m], ip, gs[m][i]);
+      free(gs[m][i]);
+    }
+    free(gs[m]);
+    free(gs_tag[m]);
+  }    
+  if(gs_tag != NULL) free(gs_tag);
+  if(gs != NULL)     free(gs);
+  
+  /* GR */
+  for(m = 0; m < ngr; m++) { 
+    for(i = 0; i < nseq; i++) { 
+      /* add gaps to full length of alignment */
+      ip = i + seq_offset;
+      if((status = gapize_string_to_fit_alignment(gr[m][i], merged_msa->aseq[ip], merged_msa->alen, '.', "-_.~", errbuf, &tmp_s)) != eslOK) return status;
+      free(gr[m][i]);
+      esl_msa_AppendGR(merged_msa, gr_tag[m], ip, tmp_s);
+      free(tmp_s);
+    }
+    free(gr[m]);
+    free(gr_tag[m]);
+  }
+  if(gr_tag != NULL) free(gr_tag);
+  if(gr != NULL)     free(gr);
+
+  return eslOK;
+}
+
+
+/* Function:  gapize_string_to_fit_alignment()
+ * Synopsis:  Align a string so it fits into a msa (has aligned length of the msa)
+ *            according to gaps in a reference aseq.
+ * Incept:    EPN, Thu Sep 11 05:16:35 2008
+ *
+ * Purpose:   Align string <s> in place, by adding gap character <gapchar>
+ *            whereever gaps in <aln_gapchars> appear in <aseq>. Return
+ *            the new sequence in <ret_news>. Caller must free s.
+ *            
+ * Args:      s        - string to align
+ *            aseq     - reference aligned sequence seq
+ *            alen     - length of aseq (required)
+ *            gapchar_to_add - the gap char to add to s
+ *            aln_gapchars   - the possible gap characters in aseq
+ *            errbuf   - for error messages
+ *            ret_news - new string, gapized to alen
+ *
+ * Returns:   <eslOK> on success. <eslEINCOMPAT> if number of non gaps
+ *            in aseq does not equal unaligned length of s.
+ */
+int
+gapize_string_to_fit_alignment(char *s, const char *aseq, int alen, char gapchar_to_add, char *aln_gapchars, char *errbuf, char **ret_news)
+{
+  int status;
+  int64_t uapos = 0;
+  int64_t apos;
+  char *news;
+
+  ESL_ALLOC(news, sizeof(char) * (alen+1));
+  for (apos = 0; apos < alen; apos++)
+    news[apos] = (strchr(aln_gapchars, aseq[apos]) == NULL) ? s[uapos++] : gapchar_to_add;
+
+  if(s[uapos] != '\0') ESL_FAIL(eslEINCOMPAT, errbuf, "gapize_string_to_fit_alignment(), unaligned length of aligned template string (%" PRId64 ") not equal to unaligned string length.", uapos);
+  news[alen] = '\0';
+  *ret_news = news;
+
+  return eslOK;
+
+ ERROR: 
+  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.");
   return status; /* NEVERREACHED */
 }
 
@@ -1957,5 +2217,3 @@ add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs
   return eslOK;
 }
 #endif /* of #ifdef HAVE_MPI */
-
-
