@@ -81,6 +81,7 @@ all: core
 
 core:
 	(cd easel;     make CC="$(CC)" CFLAGS="$(CFLAGS)"; make)
+	(cd hmmer;     ./configure;                        make)
 	(cd src;       make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module)
 	(cd testsuite; make CC="$(CC)" CFLAGS="$(CFLAGS)")
 
@@ -113,6 +114,7 @@ dist:
 	#
 	(cd ../${BASENAME}-${RELEASE};        autoconf)
 	(cd ../${BASENAME}-${RELEASE}/easel;  autoconf)
+	(cd ../${BASENAME}-${RELEASE}/hmmer;  autoconf)
 	#
 	# We'll need a basic Makefiles for some steps; later
 	# we'll delete them
@@ -215,6 +217,7 @@ clean:
 	(if cd documentation/userguide; then make clean; fi)
 	(cd src;                     make clean)
 	(cd easel;                   make clean)
+	(cd hmmer;                   make clean)
 #	(cd rigfilters;              make clean)
 
 # "make distclean" leaves a pristine source distribution.
@@ -227,6 +230,7 @@ distclean:
 	(if cd documentation/userguide; then make distclean; fi)
 	(cd src;                     make distclean)
 	(cd easel;                   make distclean)
+	(cd hmmer;                   make distclean)
 #	(cd rigfilters;              make distclean)
 	-rm Makefile
 
