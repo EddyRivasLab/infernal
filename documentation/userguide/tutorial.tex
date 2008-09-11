@@ -106,7 +106,7 @@ For now, what you need to know about the key features of the input file is:
 common alignment file formats such as \software{clustalw}.
 Lines consist of a name, followed by an aligned sequence;
 long alignments are split into blocks separated by blank lines.
-\item Each sequence must have a unique name. (This is important!)
+\item Each sequence must have a unique name that has zero spaces in it. (This is important!)
 \item For residues, any one-letter IUPAC nucleotide code is accepted,
       including ambiguous nucleotides. Case is ignored; residues
       may be either upper or lower case.
@@ -339,9 +339,9 @@ multifurcations (multiple stem loops) are annotated with \verb+()+,
 such as the tRNA acceptor stem in this example. In more complicated
 structures, \verb+[]+ and \verb+{}+ annotations also show up, to
 reflect deeper nestings of multifurcations. For single stranded
-residues, \_ characters mark hairpin loops; \- characters mark
-interior loops and bulges; , characters mark single-stranded residues
-in multifurcation loops; and : characters mark single stranded
+residues, \verb+_+ characters mark hairpin loops; \verb+-+ characters mark
+interior loops and bulges; \verb+,+ characters mark single-stranded residues
+in multifurcation loops; and \verb+:+ characters mark single stranded
 residues external to any secondary structure. Insertions relative to
 this consensus are annotated by a \verb+.+ character.
 
@@ -601,7 +601,7 @@ column annotation line.  To do this, you use the \prog{--rf} option to
 \prog{cmbuild}.
 
 For example, if \prog{trna.5.sto} had {\small\verb+#=GC RF+}
-nnotation, to build a model from it called \prog{second.cm} 
+annotation, to build a model from it called \prog{second.cm} 
 ith architecture dictated by the RF annotation, you
 would do:
 
@@ -707,7 +707,7 @@ of alignments given the current model.
 \subsubsection{building RSEARCH models}
 The \software{rsearch} program \cite{KleinEddy03} implements a special case of
 homology search with covariance models in which only one training
-sequence/structure is known. \software{rsearch} had forked off of
+sequence/structure is known. \software{rsearch} had forked from
 \software{Infernal} a few years ago, but has been reintegrated.
 The main difference between \software{rsearch}
 and \software{Infernal} is the determination of the model scoring
