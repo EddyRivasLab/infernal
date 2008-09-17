@@ -235,8 +235,20 @@ if test "$enable_mpi" = "yes"; then
 fi
 
 # SSE: figure out our @SIMD_CFLAGS@, define HAVE_SSE2
+# The AC_RUN_IFELSE() is there because it's possible to have 
+# hardware that doesn't support SSE2 instructions, yet the
+# compiler can generate them: example AMD Athlons with gcc.
+# So we need to test that an SSE2 program actually runs without
+# generating an "illegal instruction" error. The program
+# here is sufficient [xref J3/127].
 if test "$enable_sse" = "check" && test "$enable_vmx" != "yes"; then
-   AC_CHECK_HEADER([emmintrin.h],[enable_sse=yes])
+    AC_CHECK_HEADER([emmintrin.h],[
+     AC_MSG_CHECKING([if platform can run SSE/SSE2 instructions])
+     AC_RUN_IFELSE([AC_LANG_PROGRAM( [[#include <emmintrin.h>]],
+		                      [[__m128i v = _mm_set1_epi8(0);]])],
+                   [AC_MSG_RESULT([yes])
+                     enable_sse=yes],
+                   [AC_MSG_RESULT([no])])])
 fi
 if test "$enable_sse" = "yes"; then
    if test "x$SIMD_CFLAGS" = x; then
