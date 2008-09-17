@@ -147,7 +147,8 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
    0.72:      1725       1862        139         149
    0.8:       1862       1968        149         174
        0.81 - bugfix release on 0.8 branch
-   1.0rc1     1968       2485        174         272
+   1.0rc1     1968       2485        174         272    [1.0 branch]
+   1.0rc2     2485       2499        272         278    [1.0 branch] 
    
    These release notes will be merged back into the trunk later, if
    we're in a branch.
@@ -165,13 +166,13 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
    We don't bother to tag snapshots.
    For a new major release, or a bugfix minor release,
    the tags are made from the relevant stable branch:
-      svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0\
-               https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0rc1\
-               -m "tagged Infernal 1.0rc1 release, from 1.0 stable branch"          
-      svn copy https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.0\
-               https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/1.0rc1\
-                 -m "tagged Easel for Infernal 1.0rc1 release, from 1.0 stable branch"          
 
+      svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0\
+               https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0rc2\
+               -m "tagged Infernal 1.0rc2 release, from 1.0 stable branch"          
+      svn copy https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.0\
+               https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/1.0rc2\
+                 -m "tagged Easel for Infernal 1.0rc2 release, from 1.0 stable branch"          
 
 10. Make a distribution tarball.
    (Remaking configure scripts w/ autoconf is needed)
@@ -181,7 +182,7 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 	 ./configure          <-- makes a Makefile (needed for "make dist")
 
     major or minor:
-	 make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0rc1 dist
+	 make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0rc2 dist
     snapshot:
 	 make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/trunk RELEASE=snap20080325 dist
 
@@ -197,7 +198,10 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 
 11. Build for our system (on my desktop)
 	 cd releases/infernal-xxx
-	 env CFLAGS="-O3" ./configure --enable-mpi --prefix=/usr/local/infernal-1.0/
+	 setenv OMPI_MPICC         "icc"
+	 setenv OMPI_MPICC_CFLAGS  "-O3"
+	 setenv OMPI_MPICC_LDFLAGS "-static"
+	 ./configure --enable-mpi --prefix=/usr/local/infernal-1.0/
 	 make
 	 make check
          (cd testsuite; ./sqc -p ../squid/ -r ../../infernal-0.52/src 4 regressions.sqc ../src/)
@@ -214,9 +218,9 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
           scp 00README                  selab:/opt/www/ftp/pub/software/infernal/
           scp COPYRIGHT                 selab:/opt/www/ftp/pub/software/infernal/
           scp Userguide.pdf             selab:/opt/www/ftp/pub/software/infernal/
-          scp ../infernal-1.0rc1.tar.gz selab:/opt/www/ftp/pub/software/infernal/
+          scp ../infernal-1.0rc2.tar.gz selab:/opt/www/ftp/pub/software/infernal/
           ssh selab  rm -f /opt/www/ftp/pub/software/infernal/infernal.tar.gz
-          ssh selab  "(cd /opt/www/ftp/pub/software/infernal; ln -s infernal-1.0rc1.tar.gz infernal.tar.gz)"
+          ssh selab  "(cd /opt/www/ftp/pub/software/infernal; ln -s infernal-1.0rc2.tar.gz infernal.tar.gz)"
 
 13. Update the web site
 	 cd ~/web/infernal/
@@ -288,5 +292,7 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 0.8    - SRE, Sun Apr 29 11:55:56 2007   r1984  Easel:r176
 0.81   - SRE, Tue May  1 10:36:10 2007   r1995  Easel:r179
 1.0rc1 - SRE, Fri Jun 20 13:38:46 2008   r2492  Easel:r276
+1.0rc2 - SRE, Sat Jul 12 09:26:29 2008   r2502  Easel:r280
+
 
 
