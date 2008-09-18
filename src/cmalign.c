@@ -139,7 +139,7 @@ struct cfg_s {
 };
 
 static char usage1[] = "[-options] <cmfile> <sequence file>";
-static char usage2[] = "[-options] --merge <cmfile> <alignment file 1> <alignment file 2>";
+static char usage2[] = "[-options] --merge <cmfile> <msafile1> <msafile2>";
 static char banner[] = "align sequences to an RNA CM";
 
 static int  init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
@@ -212,6 +212,8 @@ main(int argc, char **argv)
       printf("Failed to parse command line: %s\n", go->errbuf);
       esl_usage(stdout, argv[0], usage1);
       esl_usage(stdout, argv[0], usage2);
+      printf("\n  The --merge option merges the two alignments in <msafile1> and <msafile2>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
+      printf("\nWith --merge, <msafile1> and <msafile2> must have been created\n be previous runs of cmalign using <cmfile>.\n");
       printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
@@ -220,6 +222,7 @@ main(int argc, char **argv)
       cm_banner(stdout, argv[0], banner);
       esl_usage(stdout, argv[0], usage1);
       esl_usage(stdout, argv[0], usage2);
+      puts("\n  The --merge option merges the two alignments in <msafile1> and <msafile2>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
       puts("\nwhere general options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
       puts("\nalignment algorithm related options:");
@@ -228,7 +231,7 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
       puts("\noutput options:");
       esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
-      puts("\nmerge alignments in <alignment file 1> and <alignment file 2>:");
+      puts("\nmerge alignments in <msafile1> and <msafile2>:");
       esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       puts("\noptions for including a fixed alignment within output alignment:");
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
@@ -249,6 +252,7 @@ main(int argc, char **argv)
       cm_banner(stdout, argv[0], banner);
       esl_usage(stdout, argv[0], usage1);
       esl_usage(stdout, argv[0], usage2);
+      puts("\n  The --merge option merges the two alignments in <msafile1> and <msafile2>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
       puts("\nwhere general options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
       puts("\nalignment algorithm related options:");
@@ -257,7 +261,7 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
       puts("\noutput options:");
       esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
-      puts("\nmerge alignments in <alignment file 1> and <alignment file 2>:");
+      puts("\nmerge alignments in <msafile1> and <msafile2>:");
       esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       puts("\noptions for including a fixed alignment within output alignment:");
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
@@ -271,6 +275,7 @@ main(int argc, char **argv)
       puts("Incorrect number of command line arguments.");
       esl_usage(stdout, argv[0], usage1);
       esl_usage(stdout, argv[0], usage2);
+      puts("\n  The --merge option merges the two alignments in <msafile1> and <msafile2>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
       puts("\n  where basic options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80);
       printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
@@ -2040,16 +2045,20 @@ static int add_msa_markup(ESL_MSA *merged_msa, char *errbuf, int nseq, int seq_o
 
   /* comments */
   for(m = 0; m < ncomment; m++) { 
-    esl_msa_AddComment(merged_msa, comment[m]);
-    free(comment[m]);
+    if(comment[m] != NULL) { 
+      esl_msa_AddComment(merged_msa, comment[m]);
+      free(comment[m]);
+    }
   }
   if(comment != NULL) free(comment);
 
   /* GF */
   for(m = 0; m < ngf; m++) { 
-    esl_msa_AddGF(merged_msa, gf_tag[m], gf[m]);
-    free(gf[m]);
-    free(gf_tag[m]);
+    if(gf[m] != NULL) { 
+      esl_msa_AddGF(merged_msa, gf_tag[m], gf[m]);
+      free(gf[m]);
+    }
+    if(gf_tag[m] != NULL) free(gf_tag[m]);
   }
   if(gf_tag != NULL) free(gf_tag);
   if(gf != NULL)     free(gf);
@@ -2058,11 +2067,13 @@ static int add_msa_markup(ESL_MSA *merged_msa, char *errbuf, int nseq, int seq_o
   for(m = 0; m < ngs; m++) { 
     for(i = 0; i < nseq; i++) { 
       ip = i + seq_offset;
-      esl_msa_AddGS(merged_msa, gs_tag[m], ip, gs[m][i]);
-      free(gs[m][i]);
+      if(gs[m][i] != NULL) { 
+	esl_msa_AddGS(merged_msa, gs_tag[m], ip, gs[m][i]);
+	free(gs[m][i]);
+      }
     }
-    free(gs[m]);
-    free(gs_tag[m]);
+    if(gs[m] != NULL) free(gs[m]);
+    if(gs_tag[m] != NULL) free(gs_tag[m]);
   }    
   if(gs_tag != NULL) free(gs_tag);
   if(gs != NULL)     free(gs);
@@ -2071,14 +2082,16 @@ static int add_msa_markup(ESL_MSA *merged_msa, char *errbuf, int nseq, int seq_o
   for(m = 0; m < ngr; m++) { 
     for(i = 0; i < nseq; i++) { 
       /* add gaps to full length of alignment */
-      ip = i + seq_offset;
-      if((status = gapize_string_to_fit_alignment(gr[m][i], merged_msa->aseq[ip], merged_msa->alen, '.', "-_.~", errbuf, &tmp_s)) != eslOK) return status;
-      free(gr[m][i]);
-      esl_msa_AppendGR(merged_msa, gr_tag[m], ip, tmp_s);
-      free(tmp_s);
+      if(gr[m][i] != NULL) { 
+	ip = i + seq_offset;
+	if((status = gapize_string_to_fit_alignment(gr[m][i], merged_msa->aseq[ip], merged_msa->alen, '.', "-_.~", errbuf, &tmp_s)) != eslOK) return status;
+	free(gr[m][i]);
+	esl_msa_AppendGR(merged_msa, gr_tag[m], ip, tmp_s);
+	free(tmp_s);
+      }
     }
-    free(gr[m]);
-    free(gr_tag[m]);
+    if(gr[m] != NULL) free(gr[m]);
+    if(gr_tag[m] != NULL) free(gr_tag[m]);
   }
   if(gr_tag != NULL) free(gr_tag);
   if(gr != NULL)     free(gr);
@@ -2114,12 +2127,16 @@ gapize_string_to_fit_alignment(char *s, const char *aseq, int alen, char gapchar
   int64_t uapos = 0;
   int64_t apos;
   char *news;
-
+  int ualen;
+  
+  ualen = strlen(s);
   ESL_ALLOC(news, sizeof(char) * (alen+1));
-  for (apos = 0; apos < alen; apos++)
+  for (apos = 0; apos < alen; apos++) { 
+    if(uapos > ualen) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "gapize_string_to_fit_alignment(), unaligned length of aligned template string (%" PRId64 ") not equal to unaligned string length: %d.", uapos, ualen);
     news[apos] = (strchr(aln_gapchars, aseq[apos]) == NULL) ? s[uapos++] : gapchar_to_add;
+  }
 
-  if(s[uapos] != '\0') ESL_FAIL(eslEINCOMPAT, errbuf, "gapize_string_to_fit_alignment(), unaligned length of aligned template string (%" PRId64 ") not equal to unaligned string length.", uapos);
+  if(s[uapos] != '\0') ESL_FAIL(eslEINCOMPAT, errbuf, "gapize_string_to_fit_alignment(), unaligned length of aligned template string (%" PRId64 ") not equal to unaligned string length: %d.", uapos, ualen);
   news[alen] = '\0';
   *ret_news = news;
 

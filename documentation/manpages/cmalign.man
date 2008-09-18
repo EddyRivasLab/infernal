@@ -5,10 +5,21 @@
 cmalign - use a CM to make a structured RNA multiple alignment
 
 .SH SYNOPSIS
+
+.TP
+Align sequences to a CM:
 .B cmalign
 .I [options]
 .I cmfile
 .I seqfile
+
+.TP
+Merge two alignments:
+.B cmalign --merge
+.I [options]
+.I cmfile
+.I msafile1
+.I msafile2
 
 .SH DESCRIPTION
 
@@ -18,9 +29,24 @@ aligns the RNA sequences in
 to the covariance model (CM) in
 .I cmfile,
 and outputs a multiple sequence alignment.
+Alternatively, with the 
+.B --merge
+option, 
+.B cmalign
+merges the two alignments 
+.I msafile1
+and
+.I msafile2
+created by previous runs of 
+.B cmalign
+with 
+.I cmfile 
+into a single alignment.
 
 .PP
-The sequence file must be in FASTA, EMBL, or Genbank format.
+The sequence file 
+.I seqfile
+must be in FASTA, EMBL, or Genbank format.
 
 .PP
 CM files are profiles of RNA consensus secondary structure. A
@@ -183,7 +209,7 @@ is enabled, and the source code.
 .TP
 .BI --mpi
 Run as an MPI parallel program. This option will only be available if
-@PACKAGE@ 
+@PACKAGE@
 has been configured and built with the "--enable-mpi" flag (see User's
 Guide for details).
 
@@ -401,6 +427,35 @@ posterior probability of each aligned residue. Specifically, only the "#=GR
 <seq name> POSTX." tag is printed to the alignment. An "8" for
 "POSTX." indicates a posterior probability between 0.8 and 0.9 for the
 corresponding residue. 
+
+.TP
+.B --merge
+With 
+.B --merge
+the usage of cmalign changes to 
+.B cmalign --merge
+.I [options]
+.I cmfile
+.I msafile1
+.I msafile2.
+Merge the two alignments in
+.I msafile1
+and
+.I msafile2
+created by previous runs of 
+.B cmalign
+with 
+.I cmfile 
+together into a single alignment and exit.
+.I msafile1
+and
+.I msafile2 
+must only have one alignment per file.
+This option allows the user to split up large sequence files into many
+smaller files, align them independently to 
+.I cmfile
+on different computers to get many small alignments, and then merge them
+into a single large alignment. 
 
 .TP 
 .BI --withali " <f>"
