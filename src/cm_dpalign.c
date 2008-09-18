@@ -4846,25 +4846,7 @@ CMPostalCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t 
 	}
 	
 	/* fill pcode arrays with posterior characters */
-	if (cm->sttype[v] == EL_st) /* special case */ {
-	  for(r = (i-1); r <= (j-1); r++) {
-	    d = j - (r+1) + 1;
-	    p = Fscore2postcode(left_logp);
-	    sump += FScore2Prob(left_logp, 1.);
-	    if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): discretized probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
-	    if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): discretized probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
-	    if(p == 100) { 
-	      pcode1[r] = '*';
-	      pcode2[r] = '*';
-	    }
-	    else {
-	      pcode1[r] = '0' + (char) (p / 10);
-	      pcode2[r] = '0' + (char) (p % 10);
-	    }
-	  /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
-	  }
-      }
-	else if (emits_left) { 
+	if (emits_left) { 
 	  p = Fscore2postcode(left_logp);
 	  sump += FScore2Prob(left_logp, 1.);
 	  if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): discretized probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
@@ -5015,11 +4997,12 @@ CMPostalCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parset
 	  if(emits_left) { /* MATP_MP (only state that emits left and right) 
 			    * add in possibility that MATP_MR emitted this res at same position */
 	    v2 = v+2; /* MATP_MR */
-	    if(j >= jmin[v2] && j <= jmax[v2]) /* assures j is within v2's band */
+	    if(j >= jmin[v2] && j <= jmax[v2]) { /* assures j is within v2's band */
 	      jp_v2 = j - jmin[v2];
-	    for(d2 = hdmin[v2][jp_v2]; d2 <= hdmax[v2][jp_v2]; d2++) { 
-	      dp_v2 = d2 - hdmin[v2][jp_v2];
-	      right_logp = FLogsum(right_logp, (post[v2][jp_v2][dp_v2]));
+	      for(d2 = hdmin[v2][jp_v2]; d2 <= hdmax[v2][jp_v2]; d2++) { 
+		dp_v2 = d2 - hdmin[v2][jp_v2];
+		right_logp = FLogsum(right_logp, (post[v2][jp_v2][dp_v2]));
+	      }
 	    }
 	  }
 	}
