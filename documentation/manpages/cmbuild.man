@@ -162,9 +162,9 @@ is enabled, and the source code.
 Parameterize emission scores a la RSEARCH, using the RIBOSUM
 matrix in file 
 .I <f>.
-Actually, the emission scores will not be exactly the RIBOSUM scores,
-because of differences in the modelling strategy in @PACKAGE@ and
-RSEARCH, but they will be as close as @PACKAGE@ can get.
+(Actually, the emission scores will not be identical to RIBOSUM scores
+due of differences in the modelling strategy between @PACKAGE@ and
+RSEARCH, but they will be as similar as possible.)
 RIBOSUM matrix files are included with @PACKAGE@ in the "matrices/"
 subdirectory of the top-level @PACKAGE@ directory.
 RIBOSUM matrices are substitution score matrices trained specifically

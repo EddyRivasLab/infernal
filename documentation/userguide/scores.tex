@@ -309,7 +309,7 @@ of Inside. You can read more about how we use CYK as a filter in
 \begin{srefaq}{Why are you talking about HMM algorithms. I thought CMs
     were more appropriate for structural RNA sequence analysis than
     HMMs, isn't that the whole reason you've developed \textsc{Infernal}?} 
-  We've implemented HMMs in \textsc{Infernal} to use to accelerate CM
+  We've implemented HMMs in \textsc{Infernal} to help accelerate CM
     algorithms. As described in section 6, HMMs are used as filters to
     speedup database searches with \prog{cmsearch}. They're also used to develop
     constraints for CM alignment with \prog{cmalign}.  
@@ -373,7 +373,7 @@ three types of score cutoffs on Rfam CM files:
 
 \begin{wideitem}
 \item[GA (gathering cutoff)]: the score used as cutoff in
-constructing Rfam. All domains that are in a sequence satisfying the
+constructing Rfam. All database hits that score at or above the 
 GA bit score will be included in the Rfam ``full alignment''.
 
 \item[TC (trusted cutoff)]: the scores of the lowest-scoring hit(s)

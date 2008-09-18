@@ -108,6 +108,7 @@ main(int argc, char **argv)
   CMSubInfo_t *subinfo;
   ESL_RANDOMNESS    *r    = NULL; /* source of randomness */
   ESL_ALPHABET      *abc  = NULL; /* alphabet, for the CM */
+  char     errbuf[cmERRBUFSIZE];
 
   /*********************************************** 
    * Parse command line
@@ -196,7 +197,7 @@ main(int argc, char **argv)
     for(sstruct = 1; sstruct <= cm->clen; sstruct++) {
       printf("\tBuilding models with start pos: %5d (%5d / %5d completed)\n", sstruct, ndone, nmodels);
       for(estruct = sstruct+2; estruct <= cm->clen; estruct++) {
-	if(!(build_sub_cm(cm, NULL, &sub_cm, sstruct, estruct, &submap, print_flag)))
+	if((status = build_sub_cm(cm, errbuf, &sub_cm, sstruct, estruct, &submap, print_flag)) != eslOK)
 	  cm_Fail("Couldn't build a sub_cm from CM with sstruct: %d estruct: %d\n", sstruct, estruct);
 	/* Do the psi test */
 	if(!check_orig_psi_vs_sub_psi(cm, sub_cm, submap, pthresh, print_flag)) {
@@ -263,7 +264,7 @@ main(int argc, char **argv)
 	  }
 	}
       }
-      if(!(build_sub_cm(cm, NULL, &sub_cm, sstruct, estruct, &submap, print_flag))) 
+      if((status = build_sub_cm(cm, errbuf, &sub_cm, sstruct, estruct, &submap, print_flag)) != eslOK) 
 	cm_Fail("Couldn't build a sub_cm from CM with sstruct: %d estruct: %d\n", sstruct, estruct);
 	/* Do the psi test */
       if(!check_orig_psi_vs_sub_psi(cm, sub_cm, submap, pthresh, print_flag)) {

@@ -2505,7 +2505,6 @@ cm_GetAvgHitLen(CM_t *cm, char *errbuf, float *ret_avg_hit_len)
   return eslOK;
 }
 
-
 /* Function: CompareCMGuideTrees()
  * EPN, Tue Mar  6 08:32:12 2007
  *
@@ -2522,7 +2521,9 @@ CompareCMGuideTrees(CM_t *cm1, CM_t *cm2)
 {
   int          nd; 
   if(cm1->nodes != cm2->nodes) return FALSE;
-  for(nd = 0; nd < cm1->nodes; nd++)
+  for(nd = 0; nd < cm1->nodes; nd++) { 
     if(cm1->ndtype[nd] != cm2->ndtype[nd]) return FALSE;
+  }
   return TRUE;
 }
+

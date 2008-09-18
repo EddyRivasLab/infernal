@@ -536,8 +536,8 @@ particular CM E-value cutoffs are used for the search in our sequence file
 
 There are 32 rows of this data, each row shows the characteristics
 that would be used if a particaular CM E-value cutoff were used when
-searching \prog{C.psychrerythraea.genome.fa}. When searching with an
-Cm E-value cutoff that falls between that of two rows, the HMM filter
+searching \prog{C.psychrerythraea.genome.fa}. When searching with a
+CM E-value cutoff that falls between that of two rows, the HMM filter
 from the bordering row with the lower cutoff is used. For example, we
 just ran a search with a $0.001$ E-value cutoff and our HMM filter was
 predicted to have a survival fraction of $0.0541$. This corresonds to
@@ -548,31 +548,6 @@ an HMM filter is predicted to be over the choice of different E-value
 thresholds. If running time is a primary concern, the CM E-value for
 which the HMM filter that gives an appropriately high speedup can be
 chosen. 
-
-\begin{wideitem}
-
-\item[\emprog{F}] this is the fraction of hits \prog{cmcalibrate}
-  required the HMM to be able to recognize during filter threshold
-  calculation. By default this number is 0.995 as I mentioned above,
-  but can be changed with the \prog{-F} option to \prog{cmcalibrate}
-  (see the manual page).
-
-\item[\emprog{nseq}] this is the number of sequences generated in \prog{cmcalibrate}
-  and searched with the CM and HMM during filter threshold
-  calculation. In this case, 10,000 sequences were generated and
-  searched, and the HMM must have been able to recognize 99.5\% of the
-  sequences above any given CM score threshold. 
-
-\item[\emprog{db (Mb)}] the database size the data in the lower
-  tabular section corresponds to. This is only relevant for the
-  E-values in that second section, the bit scores would stay constant
-  regardless of the database size.
-
-\item[\emprog{always?}] \prog{cmcalibrate} determines if it is always
-  possible to use an HMM filter for the model it is calibrating, no
-  matter what the database size and final round CM E value cutoff
-  is. If it is, this column reads ``yes'', if not it reads ``no''.
-\end{wideitem}
 
 \subsubsection{using \prog{cmstat} to predict running times for
   filtered searches with Rfam cutoffs}

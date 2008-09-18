@@ -11,6 +11,12 @@
 #
 
 require "sre.pl";
+use Getopt::Std;
+
+getopts('E:B:');
+# THESE ARE IGNORED!!!! FIX ME
+if (defined $opt_E) { $e_cutoff = $opt_E; }
+if (defined $opt_B) { $b_cutoff = $opt_B; $use_evalues = 0; $use_bitscores = 1; }
 
 $configfile = shift;
 $idxfile    = shift;
@@ -19,6 +25,7 @@ $testfile   = shift;
 $root       = $alifile;
 if(!($root       =~ s/\.ali$//))
 {
+    printf("root: $root\nconfig: $configfile\nidx: $idxfile\nalifile: $alifile\ntestfile: $testfile\n");
     die "Can't determine root based on test file name $testfile.\n";
 }
 

@@ -157,16 +157,26 @@ for($i = 0; $i < scalar(@fam_roots_arr); $i++)
     $cmsearch_name = $run_dir . "\/" . "rm-$fam.cmsearch";
     $out_name = $run_dir . "\/" . "rm-$fam.out";
 
-    if($pre_version1) { $cmsearch_call = "mpirun -l C $cms --noalign $cm $genome_file"; }
-    else              { $cmsearch_call = "mpirun -l C $cms --mpi --noalign $cm $genome_file"; }
+    if($pre_version1) 
+    { 
+	#$cmsearch_call = "mpirun -l C $cms --noalign $cm $genome_file"; 
+	$cmsearch_call = "mpirun -mca btl self,tcp --prefix /usr/local/openmpi -np $nprocs $cms --noalign $cm $genome_file"; 
+    }
+    else 
+    { 
+	#$cmsearch_call = "mpirun -l C $cms --mpi --noalign $cm $genome_file"; 
+	$cmsearch_call = "mpirun -mca btl self,tcp --prefix /usr/local/openmpi -np $nprocs $cms --mpi --noalign $cm $genome_file"; 
+    }
 
     if($use_all_nodes) 
     {
-	$exec_line = "qsub -N $job_name -o $out_name -b y -cwd -V -j y -pe lam-mpi-tight $nprocs \'" . $cmsearch_call . " > $cmsearch_name\'";
+	#$exec_line = "qsub -N $job_name -o $out_name -b y -cwd -V -j y -pe lam-mpi-tight $nprocs \'" . $cmsearch_call . " > $cmsearch_name\'";
+	$exec_line = "qsub -N $job_name -o $out_name -b y -cwd -V -j y -pe openmpi $nprocs \'" . $cmsearch_call . " > $cmsearch_name\'";
     }
     else # only use c05-c14 
     {
-	$exec_line = "qsub -q c05.q,c06.q,c07.q,c08.q,c09.q,c10.q,c11.q,c12.q,c13.q,c14.q -N $job_name -o $out_name -b y -cwd -V -j y -pe lam-mpi-tight $nprocs \'" . $cmsearch_call . " > $cmsearch_name\'";
+	#$exec_line = "qsub -q c05.q,c06.q,c07.q,c08.q,c09.q,c10.q,c11.q,c12.q,c13.q,c14.q -N $job_name -o $out_name -b y -cwd -V -j y -pe lam-mpi-tight $nprocs \'" . $cmsearch_call . " > $cmsearch_name\'";
+	$exec_line = "qsub -q c05.q,c06.q,c07.q,c08.q,c09.q,c10.q,c11.q,c12.q,c13.q,c14.q -N $job_name -o $out_name -b y -cwd -V -j y -pe openmpi $nprocs \'" . $cmsearch_call . " > $cmsearch_name\'";
     }
     push(@exec_lines, $exec_line);
 }
