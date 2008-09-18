@@ -665,28 +665,28 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
       /* comlog info, careful, we want the full line, so a token becomes a full line */
       else if (strcmp(tok, "BCOM") == 0) 
 	{
-	  while(isspace((int) *s)) (*s)++; /* chew up leading whitespace */
+	  while(isspace((int) (*s))) s++; /* chew up leading whitespace */
 	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  if(cm->comlog->bcom != NULL) free(cm->comlog->bcom);
 	  esl_strdup(tok, toklen, &(cm->comlog->bcom));
 	}
       else if (strcmp(tok, "BDATE") == 0) 
 	{
-	  while(isspace((int) *s)) (*s)++; /* chew up leading whitespace */
+	  while(isspace((int) (*s))) s++; /* chew up leading whitespace */
 	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  if(cm->comlog->bdate != NULL) free(cm->comlog->bdate);
 	  esl_strdup(tok, toklen, &(cm->comlog->bdate));
 	}
       else if (strcmp(tok, "CCOM") == 0) 
 	{
-	  while(isspace((int) *s)) (*s)++; /* chew up leading whitespace */
+	  while(isspace((int) (*s))) s++; /* chew up leading whitespace */
 	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  if(cm->comlog->ccom != NULL) free(cm->comlog->ccom);
 	  esl_strdup(tok, toklen, &(cm->comlog->ccom));
 	}
       else if (strcmp(tok, "CDATE") == 0) 
 	{
-	  while(isspace((int) *s)) (*s)++; /* chew up leading whitespace */
+	  while(isspace((int) (*s))) s++; /* chew up leading whitespace */
 	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
 	  if(cm->comlog->cdate != NULL) free(cm->comlog->cdate);
 	  esl_strdup(tok, toklen, &(cm->comlog->cdate));
