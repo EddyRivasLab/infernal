@@ -93,8 +93,8 @@ extern int DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln
 			      int pad7, int len7, float sc7, int end7, float mprob7, float mcprob7, float iprob7, float ilprob7);
 
 /* from cm_dpalign.c */
-extern int FastAlignHB        (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_MX *mx,     CM_HB_SHADOW_MX *shmx, int do_optacc, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc);
-extern int FastAlign          (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, float ****ret_mx, int do_optacc, float ****ret_post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc);
+extern int FastAlignHB        (CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, int do_optacc, int do_sample, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc);
+extern int FastAlign          (CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, float ****ret_mx, int do_optacc, int do_sample, float ****ret_post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc);
 extern int FastInsideAlignHB  (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_HB_MX *mx,     float *ret_sc);
 extern int FastInsideAlign    (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, float ****ret_mx, float *ret_sc);
 extern int FastOutsideAlignHB (CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float size_limit, CM_HB_MX *mx,    CM_HB_MX *ins_mx, int do_check, float *ret_sc);
@@ -103,8 +103,8 @@ extern int SampleFromInsideHB (ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DS
 extern int SampleFromInside   (ESL_RANDOMNESS *r, CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, float ***mx,  Parsetree_t **ret_tr, float *ret_sc);
 extern int   ** alloc_jdbanded_vjd_kshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
 extern char  ** alloc_jdbanded_vjd_yshadow_deck(int L, int i, int j, int jmin, int jmax, int *hdmin, int *hdmax);
-extern void CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2);
-extern void CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2);
+extern int  CMPostalCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t *tr, int do_marginalize, char **ret_pcode1, char **ret_pcode2, float *ret_avgp);
+extern int  CMPostalCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parsetree_t *tr, int do_marginalize, char **ret_pcode1, char **ret_pcode2, float *ret_avgp);
 extern float FScore2Prob(float sc, float null);
 extern int   Fscore2postcode(float sc);
 extern int CMPosteriorHB      (CM_t *cm, char *errbuf, int i0, int j0, float size_limit, CM_HB_MX *ins_mx, CM_HB_MX *out_mx, CM_HB_MX *post_mx);

@@ -1230,7 +1230,7 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           which was based on CYKInside() [SRE, Sun Jun  3 19:48:33 2001 [St. Louis]]
  *
  * Purpose:  Wrapper for the fast_alignT_hb() routine - solve a full
- *           alignment problem using CYK or optimal accuracy and
+ *           alignment problem using CYK, optimal accuracy or sampling and
  *           return the traceback and the score, without dividing &
  *           conquering, but by using bands on the j and d dimensions
  *           of the DP matrix.  Bands derived by HMM Forward/Backward
@@ -1241,22 +1241,27 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           Input arguments allow this function to be run in 4 'modes':
  *
  *           mode      returns                 arguments
- *           ----  ----------------  -----------------------------------
- *                 tr        pcodes  do_optacc  post_mx   ret_pcode{1,2}
- *                 ----------------  -----------------------------------
- *              1. CYK       no      FALSE       NULL      NULL
- *              2. CYK       yes     FALSE      !NULL     !NULL
- *              3. Opt acc   no      TRUE       !NULL      NULL
- *              4. Opt acc   yes     TRUE       !NULL     !NULL
+ *           ----  ----------------  ---------------------------------------------
+ *                 tr        pcodes  do_optacc  do_sample post_mx   ret_pcode{1,2}
+ *                 ----------------  ---------------------------------------------
+ *              1. CYK       no      FALSE      FALSE      NULL      NULL
+ *              2. CYK       yes     FALSE      FALSE     !NULL     !NULL
+ *              3. Opt acc   no      TRUE       FALSE     !NULL      NULL
+ *              4. Opt acc   yes     TRUE       FALSE     !NULL     !NULL
+ *              5. sampled   no      FALSE      TRUE       NULL      NULL
+ *              6. sampled   yes     FALSE      TRUE      !NULL     !NULL
  *
  *           CYK parsetrees are most likely parsetree, 'Opt acc' parsetrees
  *           are Holmes/Durbin optimally accurate parsetrees, the parse that
- *           maximizes the expected accuracy of all aligned residues.
+ *           maximizes the posterior probability that goes through the parses cells
+ *           of the DP matrix. A sampled parsetree is a parsetree sampled from
+ *           an Inside matrix based on it's probability.
  *
  *           Note: if ret_tr is NULL, parsetree is not returned.
  *
  * Args:     cm        - the covariance model
  *           errbuf    - char buffer for reporting errors
+ *           r         - source of randomness, must be non-NULL only if do_sample==TRUE
  *           dsq       - the digitized sequence, 1..L
  *           L         - length of sequence 
  *           i0        - start of target subsequence (often 1, beginning of dsq)
@@ -1266,6 +1271,7 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           shmx      - the HMM banded shadow matrix to fill in and traceback, same cells as mx are valid.
  *           do_optacc - TRUE to not do CYK alignment, determine the Holmes/Durbin optimally 
  *                       accurate parsetree in ret_tr, requires post_mx != NULL
+ *           do_sample - TRUE to sample a parsetree from the Inside matrix
  *           post_mx   - dp matrix for posterior calculation, can be NULL only if !do_optacc
  *           ret_tr    - RETURN: traceback (pass NULL if trace isn't wanted)
  *           ret_pcode1- RETURN: postal code 1, (pass NULL if not wanted, must be NULL if post_mx == NULL)
@@ -1285,8 +1291,8 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  */
 
 int
-FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, 
-	    int do_optacc, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc)
+FastAlignHB(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, 
+	    int do_optacc, int do_sample, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc)
 {
   int          status;
   Parsetree_t *tr;
@@ -1310,10 +1316,15 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
   if(do_optacc && post_mx == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), do_optacc is TRUE, but post_mx == NULL.");
   if((!do_post) && ret_ins_sc != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), do_post is FALSE, but ret_ins_sc != NULL.");
   if(shmx == NULL)                     ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), shadow matrix shmx == NULL.");
+  if(do_optacc && do_sample)           ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), do_optacc and do_sample are both TRUE.");
+  if(do_sample && r == NULL)           ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), do_sample but r is NULL.");
+  if(!do_sample && r != NULL)          ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), do_sample is FALSE, but r is non-NULL.");
+  if(do_sample && i0 != 1)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlignHB(), do_sample but i0!=1.");
   /* PrintDPCellsSaved_jd(cm, cm->cp9b->jmin, cm->cp9b->jmax, cm->cp9b->hdmin, cm->cp9b->hdmax, (j0-i0+1)); */
 
-  /* if doing post, fill Inside, Outside, Posterior matrices, in that order */
-  if(do_post) { 
+  /* if do_post, fill Inside, Outside, Posterior matrices, in that order */
+  /* if do_sample (and !do_post) fill Inside and sample from it */
+  if(do_post || do_sample) { 
     esl_stopwatch_Start(w);  
     if((status = FastInsideAlignHB (cm, errbuf, dsq, i0, j0, size_limit, mx, &ins_sc)) != eslOK) return status;
     esl_stopwatch_Stop(w); 
@@ -1321,47 +1332,56 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
 #if PRINTNOW
     printf("\nFastInsideAlignHB  %11s\n", time_buf);
 #endif
-    esl_stopwatch_Start(w);  
-    if((status = FastOutsideAlignHB(cm, errbuf, dsq, i0, j0, size_limit, post_mx, mx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), NULL)) != eslOK) return status;
-    esl_stopwatch_Stop(w); 
-    FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-    printf("FastOutsideAlignHB %11s\n", time_buf);
-#endif
-
-    /* Note: we can only check the posteriors in FastOutsideAlignHB() if local begin/ends are off */
-    esl_stopwatch_Start(w);  
-    if((status = CMPosteriorHB(cm, errbuf, i0, j0, size_limit, mx, post_mx, post_mx)) != eslOK) return status;   
-    esl_stopwatch_Stop(w); 
-    FormatTimeString(time_buf, w->user, TRUE);
-#if PRINTNOW
-    printf("CMPosteriorHB      %11s\n", time_buf);
-#endif
-    if(cm->align_opts & CM_ALIGN_CHECKINOUT) { 
-      if((status = CMCheckPosteriorHB(cm, errbuf, i0, j0, post_mx)) != eslOK) return status;
-      printf("\nHMM banded posteriors checked.\n\n");
+    if(do_sample) { 
+      if((status = SampleFromInsideHB(r, cm, errbuf, dsq, j0-i0+1, mx, &tr, &sc)) != eslOK) return status; 
     }
-    if(ret_ins_sc != NULL) *ret_ins_sc = ins_sc; 
+    if(do_post) { /* Inside was called above, now do Outside, then Posterior */
+      esl_stopwatch_Start(w);  
+      if((status = FastOutsideAlignHB(cm, errbuf, dsq, i0, j0, size_limit, post_mx, mx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), NULL)) != eslOK) return status;
+      esl_stopwatch_Stop(w); 
+      FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+      printf("FastOutsideAlignHB %11s\n", time_buf);
+#endif
+      /* Note: we can only check the posteriors in FastOutsideAlignHB() if local begin/ends are off */
+      esl_stopwatch_Start(w);  
+      if((status = CMPosteriorHB(cm, errbuf, i0, j0, size_limit, mx, post_mx, post_mx)) != eslOK) return status;   
+      esl_stopwatch_Stop(w); 
+      FormatTimeString(time_buf, w->user, TRUE);
+#if PRINTNOW
+      printf("CMPosteriorHB      %11s\n", time_buf);
+#endif
+      if(cm->align_opts & CM_ALIGN_CHECKINOUT) { 
+	if((status = CMCheckPosteriorHB(cm, errbuf, i0, j0, post_mx)) != eslOK) return status;
+	printf("\nHMM banded posteriors checked.\n\n");
+      }
+      if(ret_ins_sc != NULL) *ret_ins_sc = ins_sc; 
+    }
   }
 
-  /* Create the parse tree, and initialize. */
-  tr = CreateParsetree(100);
-  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
-  /* Fill in the parsetree (either CYK or optimally accurate (if do_optacc)), 
-   * this will overwrite mx if (do_post) caused it to be filled in FastInsideAlignHB 
-   */
-  esl_stopwatch_Start(w);  
-  if((status = fast_alignT_hb(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, mx, shmx, do_optacc, post_mx, size_limit, &sc)) != eslOK) return status;
-  esl_stopwatch_Stop(w); 
-  FormatTimeString(time_buf, w->user, TRUE);
+  if(!do_sample) { /* if do_sample, we already have a parsetree */
+    /* Create the parse tree, and initialize. */
+    tr = CreateParsetree(100);
+    InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
+    /* Fill in the parsetree (either CYK or optimally accurate (if do_optacc)), 
+     * this will overwrite mx if (do_post) caused it to be filled in FastInsideAlignHB 
+     */
+    esl_stopwatch_Start(w);  
+    if((status = fast_alignT_hb(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, mx, shmx, do_optacc, post_mx, size_limit, &sc)) != eslOK) return status;
+    esl_stopwatch_Stop(w); 
+    FormatTimeString(time_buf, w->user, TRUE);
 #if PRINTNOW
-  printf("fast_alignT_hb()   %11s\n", time_buf);
+    printf("fast_alignT_hb()   %11s\n", time_buf);
 #endif
+  }
 
   if(have_pcodes) {
-    CMPostalCodeHB(cm, L, post_mx, tr, &pcode1, &pcode2);
+    if((status = CMPostalCodeHB(cm, errbuf, i0, j0, post_mx, tr, TRUE, &pcode1, &pcode2, (do_optacc ? &sc : NULL))) != eslOK) return status;
     *ret_pcode1 = pcode1;
     *ret_pcode2 = pcode2;
+  }
+  else if(do_optacc) { /* call CMPostalCodeHB() to get the average residue posterior probability label, but not post codes */ 
+    if((status = CMPostalCodeHB(cm, errbuf, i0, j0, post_mx, tr, TRUE, NULL, NULL, &sc)) != eslOK) return status;
   }
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
@@ -1380,36 +1400,16 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
  *           implementation (fast_cyk_align() instead of inside()).
  *
  * Purpose:  Wrapper for the fast_alignT() routine - solve a full
- *           alignment problem either by CYK or using optimal
- *           accuracy, return the traceback and the score, without
- *           dividing & conquering. Optionally return a postal code.
+ *           alignment problem either by CYK, using optimal
+ *           accuracy, or sampling and return the traceback and the score,
+ *           without dividing & conquering. Optionally return a postal code.
  *           
  *           Identical to FastAlignHB() but HMM bands are NOT used here.
- * 
- *           Input arguments allow this function to be run in 4 'modes':
- *
- *           mode      returns                 arguments
- *           ----  ----------------  -----------------------------------
- *                 tr        pcodes   do_optacc  post_mx   ret_pcode{1,2}
- *                 ----------------  -----------------------------------
- *              1. CYK       no      FALSE       NULL      NULL
- *              2. CYK       yes     FALSE      !NULL     !NULL
- *              3. Opt acc   no      TRUE       !NULL      NULL
- *              4. Opt acc   yes     TRUE       !NULL     !NULL
- *
- *           CYK parsetrees are most likely parsetree, 'Opt acc' parsetrees
- *           are Holmes/Durbin optimally accurate parsetrees, the parse that
- *           maximizes the expected accuracy of all aligned residues.
- *
- *           QDB: if dmin and dmax are non-NULL, the CYK alignment conditional
- *           on the bands in dmin dmax can be calculated, but only mode 1
- *           can be run with QDB. The reason is that there is no implementation
- *           of FInside() and FOutside() that use QDBs yet. This is not a big
- *           deal b/c it's better to use HMM bands than query-dependent bands 
- *           (QDB) for alignment anyway.
+ *           See that functions 'Purpose' for more details.
  *
  * Args:     cm        - the covariance model
  *           errbuf    - char buffer for reporting errors
+ *           r         - source of randomness, must be non-NULL only if do_sample==TRUE
  *           dsq       - the digitized sequence, 1..L
  *           L         - length of sequence 
  *           i0        - start of target subsequence (often 1, beginning of dsq)
@@ -1418,6 +1418,7 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
  *           ret_mx    - RETURN: the main dp matrix, we'll allocate and fill it, must be non-NULL
  *           do_optacc - TRUE to not do CYK alignment, determine the Holmes/Durbin optimally 
  *                       accurate parsetree in ret_tr, requires post_mx != NULL
+ *           do_sample - TRUE to sample a parsetree from the Inside matrix
  *           ret_post_mx- dp matrix for posterior calculation, we'll allocate and fill it if nec,
  *                        can be NULL only if !do_optacc
  *           ret_tr    - RETURN: traceback (pass NULL if trace isn't wanted)
@@ -1434,8 +1435,8 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float s
  * Throws:  <eslOK> on success; 
  */
 int
-FastAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, float ****ret_mx, int do_optacc,
-	  float ****ret_post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc)
+FastAlign(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, float ****ret_mx, 
+	  int do_optacc, int do_sample, float ****ret_post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc)
 {
   int          status;
   Parsetree_t *tr;
@@ -1456,37 +1457,55 @@ FastAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float siz
   if(do_optacc && ret_post_mx == NULL)   ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlign(), do_optacc is TRUE, but post_mx == NULL.\n");
   if(do_optacc && ret_mx == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlign(), do_optacc is TRUE, but ret_mx == NULL.\n");
   if((!do_post) && ret_ins_sc != NULL)   ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlign(), do_post is FALSE, but ret_ins_sc != NULL.\n");
+  if(do_optacc && do_sample)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlign(), do_optacc and do_sample are both TRUE.");
+  if(do_sample && r == NULL)             ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlign(), do_sample but r is NULL.");
+  if(!do_sample && r != NULL)            ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlign(), do_sample is FALSE, but r is non-NULL.");
+  if(do_sample && i0 != 1)               ESL_FAIL(eslEINCOMPAT, errbuf, "FastAlign(), do_sample but i0!=1.");
 
-  /* if doing post, fill Inside, Outside, Posterior matrices, in that order */
-  if(do_post) { 
+  /* if do_post, fill Inside, Outside, Posterior matrices, in that order */
+  /* if do_sample (and !do_post) fill Inside and sample from it */
+  if(do_post || do_sample) { 
     if((status = FastInsideAlign (cm, errbuf, dsq, i0, j0, size_limit, ret_mx,  &ins_sc)) != eslOK) return status;
-    if((status = FastOutsideAlign(cm, errbuf, dsq, i0, j0, size_limit, ret_post_mx, *ret_mx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), NULL)) != eslOK) return status;
-    /* Note: we can only check the posteriors in FastOutsideAlign() if local begin/ends are off */
-    if((status = CMPosterior(cm, errbuf, i0, j0, size_limit, *ret_mx, *ret_post_mx, *ret_post_mx)) != eslOK) return status;   
-    if(cm->align_opts & CM_ALIGN_CHECKINOUT) { 
-      if((status = CMCheckPosterior(cm, errbuf, i0, j0, *ret_post_mx)) != eslOK) return status;
-      printf("\nPosteriors checked.\n\n");
+    if(do_sample) { 
+      if((status = SampleFromInside(r, cm, errbuf, dsq, j0-i0+1, *ret_mx, &tr, &sc)) != eslOK) return status; 
     }
-    /* we have to free ret_mx, so we can check it's size, reallocate and refill it in fast_alignT()
-     * this is wasteful, but if we were being efficient we'd be using HMM bands anyway... */
-    free_vjd_matrix(*ret_mx, cm->M, 1, L);
-    if(ret_ins_sc != NULL) *ret_ins_sc = ins_sc; 
+    if(do_post) { /* Inside was called above, now do Outside, then Posterior */
+      if((status = FastOutsideAlign(cm, errbuf, dsq, i0, j0, size_limit, ret_post_mx, *ret_mx, ((cm->align_opts & CM_ALIGN_CHECKINOUT) && (! cm->flags & CMH_LOCAL_END)), NULL)) != eslOK) return status;
+      /* Note: we can only check the posteriors in FastOutsideAlign() if local begin/ends are off */
+      if((status = CMPosterior(cm, errbuf, i0, j0, size_limit, *ret_mx, *ret_post_mx, *ret_post_mx)) != eslOK) return status;   
+      if(cm->align_opts & CM_ALIGN_CHECKINOUT) { 
+	if((status = CMCheckPosterior(cm, errbuf, i0, j0, *ret_post_mx)) != eslOK) return status;
+	printf("\nPosteriors checked.\n\n");
+      }
+    }
+    if(!do_sample) { 
+      /* we have to free ret_mx, so we can check it's size, reallocate and refill it in fast_alignT()
+       * this is wasteful, but if we were being efficient we'd be using HMM bands anyway... */
+      free_vjd_matrix(*ret_mx, cm->M, 1, L);
+      if(ret_ins_sc != NULL) *ret_ins_sc = ins_sc; 
+    }
   }
-  /* Create the parse tree, and initialize. */
-  tr = CreateParsetree(100);
-  InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
-  /* Fill in the parsetree (either CYK or optimally accurate (if do_optacc)) */
-  if(do_optacc) { /* we have to send the filled *ret_post_mx */
-    if((status = fast_alignT(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, ret_mx, do_optacc, *ret_post_mx, size_limit, &sc)) != eslOK) return status;
-  }
-  else { /* don't need to send *ret_post_mx (in fact, it could be NULL) */
-    if((status = fast_alignT(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, ret_mx, do_optacc, NULL, size_limit, &sc)) != eslOK) return status;
+
+  if(!do_sample) { /* if do_sample, we already have a parsetree */
+    /* Create the parse tree, and initialize. */
+    tr = CreateParsetree(100);
+    InsertTraceNode(tr, -1, TRACE_LEFT_CHILD, 1, L, 0); /* init: attach the root S */
+    /* Fill in the parsetree (either CYK or optimally accurate (if do_optacc)) */
+    if(do_optacc) { /* we have to send the filled *ret_post_mx */
+      if((status = fast_alignT(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, ret_mx, do_optacc, *ret_post_mx, size_limit, &sc)) != eslOK) return status;
+    }
+    else { /* don't need to send *ret_post_mx (in fact, it could be NULL) */
+      if((status = fast_alignT(cm, errbuf, dsq, L, tr, 0, cm->M-1, i0, j0, TRUE, ret_mx, do_optacc, NULL, size_limit, &sc)) != eslOK) return status;
+    }
   }
 
   if(have_pcodes) {
-    CMPostalCode(cm, L, *ret_post_mx, tr, &pcode1, &pcode2);
+    if((status = CMPostalCode(cm, errbuf, i0, j0, *ret_post_mx, tr, TRUE, &pcode1, &pcode2, &sc)) != eslOK) return status;
     *ret_pcode1 = pcode1;
     *ret_pcode2 = pcode2;
+  }
+  else if(do_optacc) { /* call CMPostalCode() to get the average residue posterior probability label, but not post codes */ 
+    if((status = CMPostalCode(cm, errbuf, i0, j0, *ret_post_mx, tr, TRUE, NULL, NULL, &sc)) != eslOK) return status;
   }
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
@@ -1495,8 +1514,7 @@ FastAlign(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int j0, float siz
   return eslOK;
 }
 
-/*
- * Function: FastInsideAlignHB()
+/* Function: FastInsideAlignHB()
  * Date:     EPN, Thu Nov  8 18:24:41 2007
  *
  * Purpose:  Run the inside algorithm on a target sequence using bands 
@@ -3168,10 +3186,9 @@ CMPosterior(CM_t *cm, char *errbuf, int i0, int j0, float size_limit, float ***i
  *           second <mx> will be filled with the optimal accuracy
  *           scores, where:
  *
- *           mx[v][j][d] is the log of the sum of the posterior
- *                       probabilities of the residues i=j-d+1..j
- *                       in the subtree rooted at v (in the platonic,
- *                       non-banded matrix).
+ *           mx[v][j][d] is the log of the sum of the probability 
+ *                       mass of the subtree rooted at v spanning i=j-d+1..j. 
+ *                       (in the platonic non-banded matrix coords)
  *
  * Args:     cm        - the model    [0..M-1]
  *           errbuf    - char buffer for reporting errors
@@ -3186,8 +3203,7 @@ CMPosterior(CM_t *cm, char *errbuf, int i0, int j0, float size_limit, float ***i
  *           mx        - the dp matrix to fill in, only cells within bands in cm->cp9b will 
  *                       be valid. 
  *           post_mx   - the pre-filled posterior matrix 
- *           ret_pp    - average posterior probability of aligned res i0..j0 in optimally accurate
- *                       parse.
+ *           ret_pp    - average probability mass that goes through a cell of the optimally accurate parse
  *
  * Returns: <ret_sc>, <ret_b>, <ret_bsc>, see 'Args'
  * 
@@ -3449,8 +3465,10 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	  jp_v  = j - jmin[v];
 	  i     = j - hdmin[v][jp_v] + 1;
 	  for (dp_v = 0; dp_v <= (hdmax[v][jp_v] - hdmin[v][jp_v]); dp_v++) 
-	    alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], FLogsum(post[v][jp_v][dp_v], post[v][jp_v][dp_v]));
-	  /* note: for MP states, we're emitting 2 residues, include 2 * the posterior probability */
+	    alpha[v][jp_v][dp_v] = FLogsum(alpha[v][jp_v][dp_v], post[v][jp_v][dp_v]);
+	  /* note: for MP states, even though we're emitting 2 residues, DO NOT include 2 * the posterior probability,
+	   * the score that is maximized by this optimal accuracy alignment is the summed probability mass that goes through
+	   * each cell of the parsetree. */
 	}
 	break;
       default:
@@ -3615,9 +3633,8 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
  *           second <mx> will be filled with the optimal accuracy
  *           scores, where:
  *
- *           mx[v][j][d] is the log of the sum of the posterior
- *                       probabilities of the residues i=j-d+1..j
- *                       in the subtree rooted at v. 
+ *           mx[v][j][d] is the log of the sum of the probability 
+ *                       mass of the subtree rooted at v spanning i=j-d+1..j. 
  *
  * Args:     cm        - the model    [0..M-1]
  *           errbuf    - char buffer for reporting errors
@@ -3632,8 +3649,7 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
  *           ret_bsc   - score for using ret_b, or NULL if unwanted                        
  *           ret_mx    - the main dp matrix, we'll allocate and fill it
  *           post_mx   - the pre-filled posterior matrix
- *           ret_pp    - average posterior probability of aligned res i0..j0 in optimally accurate
- *                       parse.
+ *           ret_pp    - average probability mass that goes through a cell of the optimally accurate parse
  *
  * Returns: <ret_sc>, <ret_b>, <ret_bsc>, <ret_mx>, <ret_shadow>, see 'Args'
  * 
@@ -3860,8 +3876,10 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
 	  j = i0-1+jp;
 	  i = j - 1;
 	  for (d = sd; d <= jp; d++)
-	    alpha[v][j][d] = FLogsum(alpha[v][j][d], FLogsum(post[v][j][d], post[v][j][d]));
-	  /* note: for MP states, we're emitting 2 residues, include 2 * the posterior probability */
+	    alpha[v][j][d] = FLogsum(alpha[v][j][d], post[v][j][d]);
+	  /* note: for MP states, even though we're emitting 2 residues, DO NOT include 2 * the posterior probability,
+	   * the score that is maximized by this optimal accuracy alignment is the summed probability mass that goes through
+	   * each cell of the parsetree. */
 	}
       default:
 	break;
@@ -4495,15 +4513,14 @@ get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j)
 }
 
 
-/*
- * Function: CMCheckPosteriorHB()
+/* Function: CMCheckPosteriorHB()
  * Date:     EPN, Fri Nov 16 14:35:43 2007      
  *
  * Purpose:  Given a HMM banded posterior probability cube, 
- *           check to make sure that for each residue k of the 
- *           sequence: \sum_v p(v | k emitted from v) = 1.0
+ *           check to make sure that for each residue x of the 
+ *           sequence: \sum_v p(v | x emitted from v) = 1.0
  *           To check this, we have to allow possibility that 
- *           the res at posn k was emitted from a left 
+ *           the res at posn x was emitted from a left 
  *           emitter or a right emitter.
  *           
  * Args:     cm       - the model
@@ -4517,9 +4534,10 @@ get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j)
 int
 CMCheckPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post)
 {
-  int   v, j, d, k;
-  int   jp_v, dp_v, kp_v;
-  float sc;
+  int   status;
+  int   v, j, d, x, i, ip, jp, xp;
+  int   jp_v, dp_v;
+  float *sum;
 
   /* Contract check */
   if (post == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "CMCheckPosteriorHB(), post is NULL.\n");
@@ -4532,59 +4550,60 @@ CMCheckPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post)
   int    **hdmin = cp9b->hdmin;
   int    **hdmax = cp9b->hdmax;
 
-  for (k = i0; k <= j0; k++) {
-    sc = IMPOSSIBLE;
-    for (v = (cm->M - 1); v >= 0; v--) {
-      if((cm->sttype[v] == MP_st) ||
-	 (cm->sttype[v] == ML_st) ||
-	 (cm->sttype[v] == IL_st)) {
-	for (j = k; j <= j0; j++) {
-	  if(j >= jmin[v] && j <= jmax[v]) { 
-	    jp_v = j - jmin[v]; 
-	    d    = j-k+1;
-	    if(d >= hdmin[v][jp_v] && d <= hdmax[v][jp_v]) {
-	      dp_v = d - hdmin[v][jp_v];
-	      sc = FLogsum(sc, (post->dp[v][jp_v][dp_v]));
-	      /*printf("sc: %.4f added L v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", sc, v, (j-d+1), j, d, post->dp[v][jp_v][dp_v]); */
-	    }
-	  }
-	}
-      }
-      if(k >= jmin[v] && k <= jmax[v]) {
-	kp_v = k - jmin[v];
-	if((cm->sttype[v] == MP_st) ||
-	   (cm->sttype[v] == MR_st) ||
-	   (cm->sttype[v] == IR_st)) {
-	  for (d = 1; d <= k; d++) { 
-	    if(d >= hdmin[v][kp_v] && d <= hdmax[v][kp_v]) {
-	      dp_v = d - hdmin[v][kp_v];
-	      sc = FLogsum(sc, (post->dp[v][kp_v][dp_v]));
-	      /*printf("sc: %.4f added R v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", sc, v, (k-d+1), k, d, post->dp[v][kp_v][dp_v]); */
-	    }
-	  }
+  int L = j0-i0+1;
+  ESL_ALLOC(sum, sizeof(float) * (L+1));
+  esl_vec_FSet(sum, L+1, IMPOSSIBLE);
+
+  for(v = 0; v < cm->M; v++) { 
+    if((cm->sttype[v] == MP_st) || (cm->sttype[v] == ML_st) || (cm->sttype[v] == IL_st)) {
+      for(j = jmin[v]; j <= jmax[v]; j++) { 
+	jp_v = j - jmin[v]; 
+	i  = j-hdmin[v][jp_v]+1;
+	ip = i-i0+1;
+	for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++, ip--) { 
+	  dp_v = d - hdmin[v][jp_v];
+	  sum[ip] = FLogsum(sum[ip], (post->dp[v][jp_v][dp_v]));
 	}
       }
     }
-    /* Finally factor in possibility of a local end, i.e. that the EL state
-     * may have "emitted" this residue.
-     */
-    if (cm->flags & CMH_LOCAL_END) {
-      for (j = k; j <= j0; j++) {
-	d = j-k+1;
-	sc = FLogsum(sc, (post->dp[cm->M][j][d]));
-	/*printf("sc: %.4f added EL v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", sc, cm->M, (j-d+1), j, d, post->dp[cm->M][j][d]); */
+    if((cm->sttype[v] == MP_st) || (cm->sttype[v] == MR_st) || (cm->sttype[v] == IR_st)) {
+      for(j = jmin[v]; j <= jmax[v]; j++) { 
+	jp_v = j - jmin[v]; 
+	jp = j-i0+1;
+	for(d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) { 
+	  dp_v = d - hdmin[v][jp_v];
+	  sum[jp] = FLogsum(sum[jp], (post->dp[v][jp_v][dp_v]));
+	}
       }
     }
-    if(((sc - 0.) > 0.01) || ((sc - 0.) < -0.01))
-      ESL_FAIL(eslFAIL, errbuf, "residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
-    /*printf("k: %d | total: %10.2f\n", k, (sreEXP2(sc)));*/
+  }
+  /* factor in contribution of local ends, the EL state may have emitted this residue. */
+  if (cm->flags & CMH_LOCAL_END) {
+    for (j = i0; j <= j0; j++) { 
+      jp = j-i0+1;
+      i = j-1+1;
+      ip = i-i0+1;
+      for (d = 1; d <= jp; d++, ip--) { /* note: d >= 1, b/c EL emits 1 residue */
+	sum[ip] = FLogsum(sum[ip], (post->dp[cm->M][j][d]));
+      }
+    }
+  }
+  for(xp = 1; xp <= L; xp++) { 
+    x = xp+i0-1;
+    if(((sum[xp] - 0.) > 0.01) || ((sum[xp] - 0.) < -0.01))
+      ESL_FAIL(eslFAIL, errbuf, "residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", x, (sreEXP2(sum[xp])), sum[xp]);
+    /*printf("x: %d | total: %10.2f\n", x, (sreEXP2(sc)));*/
   }  
   ESL_DPRINTF1(("CMCheckPosteriorHB() passed, all residues have summed probability of emission of 1.0.\n"));
+  free(sum);
   return eslOK;
+
+ ERROR:
+  ESL_FAIL(eslFAIL, errbuf, "CMCheckPosteriorHB(), memory allocation error.");
+  return status; /* NEVERREACHED */
 }
 
-/*
- * Function: CMCheckPosterior()
+/* Function: CMCheckPosterior()
  * Date:     EPN 05.25.06 
  *
  * Purpose:  Given a posterior probability cube, check to make
@@ -4605,62 +4624,79 @@ CMCheckPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post)
 int 
 CMCheckPosterior(CM_t *cm, char *errbuf, int i0, int j0, float ***post)
 {
+  int status;
   float sc;
-  int   k, v, j, d;
+  int   v, j, d, jp, ip, x, xp;
+  float *sum;
 
   /* contract check */
   if (post == NULL)     ESL_FAIL(eslEINCOMPAT, errbuf, "CMCheckPosterior(), post is NULL.\n");
 
-  for (k = i0; k <= j0; k++) {
-    sc = IMPOSSIBLE;
-    for (v = (cm->M - 1); v >= 0; v--) {
-      {
-	if((cm->sttype[v] == MP_st) ||
-	   (cm->sttype[v] == ML_st) ||
-	   (cm->sttype[v] == IL_st)) {
-	  for (j = k; j <= j0; j++) {
-	    d = j-k+1;
-	    sc = FLogsum(sc, (post[v][j][d]));
-	    /* printf("sc: %.4f added L v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", sc, v, (j-d+1), j, d, post[v][j][d]); */
-	  }
-	}
-	if((cm->sttype[v] == MP_st) ||
-	   (cm->sttype[v] == MR_st) ||
-	   (cm->sttype[v] == IR_st)) {
-	  for (d = i0; d <= k; d++) {
-	    sc = FLogsum(sc, (post[v][k][d]));
-	    /* printf("sc: %.4f added R v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", sc, v, (k-d+1), k, d, post[v][k][d]); */
-	  }
+  int L = j0-i0+1;
+  ESL_ALLOC(sum, sizeof(float) * (L+1));
+  esl_vec_FSet(sum, L+1, IMPOSSIBLE);
+
+  for(v = 0; v < cm->M; v++) { 
+    if((cm->sttype[v] == MP_st) || (cm->sttype[v] == ML_st) || (cm->sttype[v] == IL_st)) {
+      for(j = i0; j <= j0; j++) { 
+	jp = j-i0+1;
+	for(d = StateDelta(cm->sttype[v]); d <= jp; d++) { 
+	  ip = jp-d+1;
+	  sum[ip] = FLogsum(sum[ip], (post[v][j][d]));
 	}
       }
     }
-    /* Finally factor in possibility of a local end, i.e. that the EL state
-     * may have "emitted" this residue.
-     */
-    if (cm->flags & CMH_LOCAL_END) {
-      for (j = k; j <= j0; j++) {
-	d = j-k+1;
-	sc = FLogsum(sc, (post[cm->M][j][d]));
-	/* printf("sc: %.4f added EL v: %d | i: %d | j: %d | d: %d post[v][j][d]: %5.2f\n", sc, cm->M, (j-d+1), j, d, post[cm->M][j][d]); */
+    if((cm->sttype[v] == MP_st) || (cm->sttype[v] == MR_st) || (cm->sttype[v] == IR_st)) {
+      for(j = i0; j <= j0; j++) { 
+	jp = j-i0+1;
+	for(d = StateDelta(cm->sttype[v]); d <= jp; d++) { 
+	  sum[jp] = FLogsum(sum[jp], (post[v][j][d]));
+	}
       }
     }
-    if(((sc - 0.) > 0.01) || ((sc - 0.) < -0.01))
-	ESL_FAIL(eslFAIL, errbuf, "residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", k, (sreEXP2(sc)), sc);
-    /*printf("k: %d | total: %10.2f\n", k, (sreEXP2(sc)));*/
+  }
+  /* factor in contribution of local ends, the EL state may have emitted this residue. */
+  if (cm->flags & CMH_LOCAL_END) {
+    for (j = i0; j <= j0; j++) { 
+      jp = j-i0+1;
+      for (d = 1; d <= jp; d++, ip--) { /* note: d >= 1, b/c EL emits 1 residue */
+	ip = jp-d+1;
+	sum[ip] = FLogsum(sum[ip], (post[cm->M][j][d]));
+      }
+    }
+  }
+  for(xp = 1; xp <= L; xp++) { 
+    x = xp+i0-1;
+    if(((sum[xp] - 0.) > 0.01) || ((sum[xp] - 0.) < -0.01))
+      ESL_FAIL(eslFAIL, errbuf, "CMCheckPosterior() residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", x, (sreEXP2(sum[xp])), sum[xp]);
+    /*printf("x: %d | total: %10.2f\n", x, (sreEXP2(sc)));*/
   }  
-  ESL_DPRINTF1(("CMCheckPosterior() passed, all residues have summed probability of emission of 1.0.\n"));
+  free(sum);
+
   return eslOK;
+
+ ERROR:
+  ESL_FAIL(eslFAIL, errbuf, "CMCheckPosterior(), memory allocation error.");
+  return status; /* NEVERREACHED */
 }
 
 /* Function: CMPostalCode()
  * Date:     EPN 05.25.06 based on SRE's PostalCode() 
  *           from HMMER's postprob.c
  *
- * Purpose:  Given a parse tree and a posterior
- *           probability cube, calculate two strings that
- *           represents the confidence values on each 
+ * Purpose:  Given a parse tree and a posterior probability cube, 
+ *           calculate two strings that represents the confidence values on each 
  *           residue in the sequence. 
  *           
+ *           The posterior cube value [v][j][d] is the summed probability
+ *           mass that goes through cell [v][j][d] which is not the
+ *           posterior probability that residue i and/or j aligns at
+ *           state v's position in the alignment, which is the confidence
+ *           estimate in the alignmen that we want. To get this we
+ *           have to marginalize over all possible ways that residue
+ *           i and/or j can get in state v's emission position in the
+ *           alignment. See the code for details.
+ *
  *           The code strings is 0..L-1  (L = len of target seq),
  *           so it's in the coordinate system of the sequence string;
  *           off by one from dsq; and convertible to the coordinate
@@ -4676,6 +4712,10 @@ CMCheckPosterior(CM_t *cm, char *errbuf, int i0, int j0, float ***post)
  *           the posterior probability, '9' for the 93% example,
  *           and the second string will hold the 'ones' place,
  *           the '3' in the 93% example.
+ *
+ *           CMPostalCodeHB() is nearly the same function with the
+ *           difference that HMM bands were used for the alignment,
+ *           so we have to deal with offset issues.
  *
  * Args:     L    - length of seq
  *           post - posterior prob cube: see CMPosterior()
@@ -4707,15 +4747,21 @@ FScore2Prob(float sc, float null)
   else                       return (null * sreEXP2(sc));
 }
 
-
-void
-CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2)
+int
+CMPostalCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t *tr, int do_marginalize, char **ret_pcode1, char **ret_pcode2, float *ret_avgp)
 {
   int status;
-  int x, v, i, j, d, r;
+  int x, v, i, j, d, r, jp;
+  int v2, j2, d2;
   char *pcode1;
   char *pcode2;
   int p;
+
+  float sump = 0.;
+  int L = j0-i0+1;
+  float left_logp, right_logp;
+  float avgp;
+  int emits_left, emits_right;
 
   ESL_ALLOC(pcode1, (L+1) * sizeof(char)); 
   ESL_ALLOC(pcode2, (L+1) * sizeof(char)); 
@@ -4726,83 +4772,146 @@ CMPostalCode(CM_t *cm, int L, float ***post, Parsetree_t *tr, char **ret_pcode1,
       i = tr->emitl[x];
       j = tr->emitr[x];
       d = j-i+1;
-      /*printf("x: %2d | v: %2d | i: %2d | j: %2d | d: %2d | post[%d][%d][%d]: %f\n", x, v, i, j, d, v, j, d, post[v][j][d]);*/
-      /*
-       * Only P, L, R states have emissions.
-       */
-      if (cm->sttype[v] == MP_st) {
-	p = Fscore2postcode(post[v][j][d]);
-	if(p == 100) { 
-	  pcode1[i-1] = pcode1[j-1] = '*';
-	  pcode2[i-1] = pcode2[j-1] = '*';
-	}
-	else {
-	  pcode1[i-1] = pcode1[j-1] = '0' + (char) (p / 10);
-	  pcode2[i-1] = pcode2[j-1] = '0' + (char) (p % 10);
-	}
-      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
-	p = Fscore2postcode(post[v][j][d]);
-	if(p == 100) { 
-	  pcode1[i-1] = '*';
-	  pcode2[i-1] = '*';
-	}
-	else {
-	  pcode1[i-1] = '0' + (char) (p / 10);
-	  pcode2[i-1] = '0' + (char) (p % 10);
-	}
-      } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
-	p = Fscore2postcode(post[v][j][d]);
-	if(p == 100) { 
-	  pcode1[j-1] = '*';
-	  pcode2[j-1] = '*';
-	}
-	else {
-	  pcode1[j-1] = '0' + (char) (p / 10);
-	  pcode2[j-1] = '0' + (char) (p % 10);
-	}
-      } else if (cm->sttype[v] == EL_st) /*special case*/ {
-	for(r = (i-1); r <= (j-1); r++)
-	  {
-	    d = j - (r+1) + 1;
-	    p = Fscore2postcode(post[v][j][d]);
-	    if(p == 100) { 
-	      pcode1[r] = '*';
-	      pcode2[r] = '*';
-	    }
-	    else {
-	      pcode1[r] = '0' + (char) (p / 10);
-	      pcode2[r] = '0' + (char) (p % 10);
-	    }
-	    /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
+
+      /* Only P, L, R, and EL states have emissions. */
+      emits_left  = (StateLeftDelta (cm->sttype[v]) == 1) ? TRUE : FALSE;
+      emits_right = (StateRightDelta(cm->sttype[v]) == 1) ? TRUE : FALSE;
+
+      if((cm->sttype[v] != EL_st) && (!emits_left) && (!emits_right)) continue; 
+
+      if(cm->sttype[v] == EL_st) { /* EL state, we have to handle this guy special */
+	for(r = i; r <= j; r++) { /* we have to annotate from residues i..j */
+	  left_logp = IMPOSSIBLE;
+	  for (j2 = r; j2 <= j0; j2++) { 
+	    d2 = j2-r+1;
+	    left_logp = FLogsum(left_logp, post[v][j2][d2]);
 	  }
+	  p = Fscore2postcode(left_logp);
+	  sump += FScore2Prob(left_logp, 1.);
+	  if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): discretized probability for EL state v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
+	  if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): discretized probability for EL state v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
+	  if(p == 100) { 
+	    pcode1[(r-1)] = '*';
+	    pcode2[(r-1)] = '*';
+	  }
+	  else {
+	    pcode1[(r-1)] = '0' + (char) (p / 10);
+	    pcode2[(r-1)] = '0' + (char) (p % 10);
+	  }
+	  /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
+	}
+      }
+      else { /* non-EL state */
+	if(do_marginalize) { 
+	  /* sum probability that this residue belongs in this position of the alignment,
+	   * for left  emissions this means marginalizing over all possible j=jp, d=dp for which jp-dp+1 = i for this v 
+	   * for right emissions this means marginalizing over all possible i=ip, d=dp for which ip+dp-1 = j for this v
+	   * for pairs we have to be careful, we emit left and right, so we have to marginalize twice, but separately,
+	   * and we have to consider possibility that MATP_ML emitted left  (as well as MATP_MP) and 
+	   *                                     that MATP_MR emitted right (as well as MATP_MP).
+	   */
+	  left_logp  = IMPOSSIBLE;
+	  right_logp = IMPOSSIBLE;
+	  
+	  if(emits_left) {
+	    for (j2 = i; j2 <= j0; j2++) { 
+	      d2 = j2-i+1;
+	      left_logp = FLogsum(left_logp, post[v][j2][d2]);
+	    }
+	    if(emits_right) { /* MATP_MP (only state that emits left and right)
+			       * add in possibility that MATP_ML emitted this res at same position */
+	      v2 = v+1; /* MATP_ML */
+	      for(j2 = i; j2 <= j0; j2++) { 
+		d2    = j2-i+1; 
+		left_logp  = FLogsum(left_logp, (post[v2][j2][d2]));
+	      }
+	    }
+	  }
+	  if(emits_right) { 
+	    jp = j-i0+1;
+	    for(d2 = 1; d2 <= jp; d2++) { 
+	      right_logp = FLogsum(right_logp, (post[v][j][d2]));
+	    }
+	    if(emits_left) { /* MATP_MP (only state that emits left and right) 
+			      * add in possibility that MATP_MR emitted this res at same position */
+	      for(d2 = 1; d2 <= jp; d2++) { 
+		right_logp = FLogsum(right_logp, (post[v2][j][d2]));
+	      }
+	    }
+	  }
+	}
+	else { /* do not marginalize */
+	  if(emits_left)  left_logp  = post[v][j][d];
+	  if(emits_right) right_logp = post[v][j][d];
+	}
+	
+	/* fill pcode arrays with posterior characters */
+	if (emits_left) { 
+	  p = Fscore2postcode(left_logp);
+	  sump += FScore2Prob(left_logp, 1.);
+	  if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): left emit discretized probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
+	  if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): left emit discretized probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
+	  if(p == 100) { 
+	    pcode1[i-1] = '*';
+	    pcode2[i-1] = '*';
+	  }
+	  else {
+	    pcode1[i-1] = '0' + (char) (p / 10);
+	    pcode2[i-1] = '0' + (char) (p % 10);
+	  }
+	}
+	if (emits_right) { 
+	  p = Fscore2postcode(right_logp);
+	  sump += FScore2Prob(right_logp, 1.);
+	  if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): right emit discretized probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
+	  if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): right emit discretized probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
+	  if(p == 100) { 
+	    pcode1[j-1] = '*';
+	    pcode2[j-1] = '*';
+	  }
+	  else {
+	    pcode1[j-1] = '0' + (char) (p / 10);
+	    pcode2[j-1] = '0' + (char) (p % 10);
+	  }
+	}
       }
     }
   pcode1[L] = '\0';
   pcode2[L] = '\0';
-
-  *ret_pcode1 = pcode1;
-  *ret_pcode2 = pcode2;
-  return;
-
+  if(ret_pcode1 != NULL) *ret_pcode1 = pcode1;
+  else                   free(pcode1);
+  if(ret_pcode2 != NULL) *ret_pcode2 = pcode2;
+  else                   free(pcode2);
+  if(ret_avgp   != NULL) *ret_avgp   = sump / (float) L;
+  return eslOK;
+  
  ERROR:
-  cm_Fail("Memory allocation error.");
-  return; /* never reached */
+  ESL_FAIL(eslEMEM, errbuf, "CMPostalCode(): Memory allocation error.");
+  return status; /* never reached */
 }
 
-void
-CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr, char **ret_pcode1, char **ret_pcode2)
+int
+CMPostalCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parsetree_t *tr, int do_marginalize, char **ret_pcode1, char **ret_pcode2, float *ret_avgp)
 {
   int status;
   int x, v, i, j, d, r, p;
   char *pcode1;
   char *pcode2;
   int jp_v, dp_v;
+  int v2, j2, d2, dp_v2, jp_v2;
+  float sump = 0.;
+  int L = j0-i0+1;
+  float left_logp, right_logp;
+  float avgp;
+  int emits_left, emits_right;
 
   /* variables used for memory efficient bands */
   /* ptrs to cp9b info, for convenience */
   CP9Bands_t *cp9b = cm->cp9b;
   int     *jmin  = cp9b->jmin;  
+  int     *jmax  = cp9b->jmax;  
   int    **hdmin = cp9b->hdmin;
+  int    **hdmax = cp9b->hdmax;
   /* the DP matrix */
   float ***post  = post_mx->dp; /* pointer to the post DP matrix */
 
@@ -4816,27 +4925,99 @@ CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr, char **ret_p
     d = j-i+1;
 
     /* Only P, L, R, and EL states have emissions. */
-    if(v != cm->M) { 
-      jp_v = j - jmin[v];
-      dp_v = d - hdmin[v][jp_v];
-    }
-    else {
-      jp_v = j;
-      dp_v = d;
-    }      
+    emits_left  = (StateLeftDelta (cm->sttype[v]) == 1) ? TRUE : FALSE;
+    emits_right = (StateRightDelta(cm->sttype[v]) == 1) ? TRUE : FALSE;
+    
+    if((cm->sttype[v] != EL_st) && (!emits_left) && (!emits_right)) continue; 
 
-    if (cm->sttype[v] == MP_st) {
-	p = Fscore2postcode(post[v][jp_v][dp_v]);
+    if(cm->sttype[v] == EL_st) { /* EL state, we have to handle this guy special */
+      for(r = i; r <= j; r++) { /* we have to annotate from residues i..j */
+	left_logp = IMPOSSIBLE;
+	for (j2 = r; j2 <= j0; j2++) { 
+	  d2 = j2-r+1;
+	  left_logp = FLogsum(left_logp, post[v][j2][d2]);
+	}
+	p = Fscore2postcode(left_logp);
+	sump += FScore2Prob(left_logp, 1.);
+	if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): discretized probability for EL state v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
+	if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): discretized probability for EL state v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
 	if(p == 100) { 
-	  pcode1[i-1] = pcode1[j-1] = '*';
-	  pcode2[i-1] = pcode2[j-1] = '*';
+	    pcode1[(r-1)] = '*';
+	    pcode2[(r-1)] = '*';
 	}
 	else {
-	  pcode1[i-1] = pcode1[j-1] = '0' + (char) (p / 10);
-	  pcode2[i-1] = pcode2[j-1] = '0' + (char) (p % 10);
+	  pcode1[(r-1)] = '0' + (char) (p / 10);
+	  pcode2[(r-1)] = '0' + (char) (p % 10);
 	}
-      } else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st) {
-	p = Fscore2postcode(post[v][jp_v][dp_v]);
+	/*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
+      }
+    }
+    else { /* non-EL state */
+      left_logp  = IMPOSSIBLE;
+      right_logp = IMPOSSIBLE;
+      
+      jp_v = j - jmin[v];
+      dp_v = d - hdmin[v][jp_v];
+      
+      if(do_marginalize) { 
+	/* sum probability that this residue belongs in this position of the alignment,
+	 * for left  emissions this means marginalizing over all possible j=jp, d=dp for which jp-dp+1 = i for this v 
+	 * for right emissions this means marginalizing over all possible i=ip, d=dp for which ip+dp-1 = j for this v
+	 * for pairs we have to be careful, we emit left and right, so we have to marginalize twice, but separately,
+	 * and we have to consider possibility that MATP_ML emitted left  (as well as MATP_MP) and 
+	 *                                     that MATP_MR emitted right (as well as MATP_MP).
+	 */
+	if(emits_left) {
+	  for(j2 = jmin[v]; j2 <= jmax[v]; j2++) { 
+	    jp_v2 = j2 - jmin[v]; 
+	    d2    = j2-i+1; 
+	    if(d2 >= hdmin[v][jp_v2] && d2 <= hdmax[v][jp_v2]) { 
+	      dp_v2 = d2 - hdmin[v][jp_v2];
+	      left_logp  = FLogsum(left_logp, (post[v][jp_v2][dp_v2]));
+	    }
+	  }
+	  if(emits_right) { /* MATP_MP (only state that emits left and right)
+			     * add in possibility that MATP_ML emitted this res at same position */
+	    v2 = v+1; /* MATP_ML */
+	    for(j2 = jmin[v2]; j2 <= jmax[v2]; j2++) { 
+	      jp_v2 = j2 - jmin[v2]; 
+	      d2    = j2-i+1; 
+	      if(d2 >= hdmin[v2][jp_v2] && d2 <= hdmax[v2][jp_v2]) { 
+		dp_v2 = d2 - hdmin[v2][jp_v2];
+		left_logp  = FLogsum(left_logp, (post[v2][jp_v2][dp_v2]));
+	      }
+	    }
+	  }
+	}
+	if(emits_right) { 
+	  for(d2 = hdmin[v][jp_v]; d2 <= hdmax[v][jp_v]; d2++) { 
+	    dp_v2 = d2 - hdmin[v][jp_v];
+	    right_logp = FLogsum(right_logp, (post[v][jp_v][dp_v2]));
+	  }
+	  if(emits_left) { /* MATP_MP (only state that emits left and right) 
+			    * add in possibility that MATP_MR emitted this res at same position */
+	    v2 = v+2; /* MATP_MR */
+	    if(j >= jmin[v2] && j <= jmax[v2]) { /* assures j is within v2's band */
+	      jp_v2 = j - jmin[v2];
+	      for(d2 = hdmin[v2][jp_v2]; d2 <= hdmax[v2][jp_v2]; d2++) { 
+		dp_v2 = d2 - hdmin[v2][jp_v2];
+		right_logp = FLogsum(right_logp, (post[v2][jp_v2][dp_v2]));
+	      }
+	    }
+	  }
+	}
+      }
+      else { /* do not marginalize */
+	if(emits_left)  left_logp  = post[v][jp_v][dp_v];
+	if(emits_right) right_logp = post[v][jp_v][dp_v];
+      }
+      
+      /* fill pcode arrays with posterior characters */
+      if (emits_left) { 
+	p = Fscore2postcode(left_logp);
+	sump += FScore2Prob(left_logp, 1.);
+	if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): left emit discretized probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
+	if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): left emit discretized probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
 	if(p == 100) { 
 	  pcode1[i-1] = '*';
 	  pcode2[i-1] = '*';
@@ -4845,8 +5026,12 @@ CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr, char **ret_p
 	  pcode1[i-1] = '0' + (char) (p / 10);
 	  pcode2[i-1] = '0' + (char) (p % 10);
 	}
-      } else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st) {
-	p = Fscore2postcode(post[v][jp_v][dp_v]);
+      }
+      if (emits_right) { 
+	p = Fscore2postcode(right_logp);
+	sump += FScore2Prob(right_logp, 1.);
+	if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): right emit discretized probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
+	if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): right emit discretized probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
 	if(p == 100) { 
 	  pcode1[j-1] = '*';
 	  pcode2[j-1] = '*';
@@ -4855,31 +5040,21 @@ CMPostalCodeHB(CM_t *cm, int L, CM_HB_MX *post_mx, Parsetree_t *tr, char **ret_p
 	  pcode1[j-1] = '0' + (char) (p / 10);
 	  pcode2[j-1] = '0' + (char) (p % 10);
 	}
-      } else if (cm->sttype[v] == EL_st) /*special case*/ {
-	for(r = (i-1); r <= (j-1); r++) {
-	  d = j - (r+1) + 1;
-	  p = Fscore2postcode(post[v][j][d]);
-	    if(p == 100) { 
-	      pcode1[r] = '*';
-	      pcode2[r] = '*';
-	    }
-	    else {
-	      pcode1[r] = '0' + (char) (p / 10);
-	      pcode2[r] = '0' + (char) (p % 10);
-	    }
-	    /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
-	  }
       }
     }
+  }
   pcode1[L] = '\0';
   pcode2[L] = '\0';
-  *ret_pcode1 = pcode1;
-  *ret_pcode2 = pcode2;
-  return;
+  if(ret_pcode1 != NULL) *ret_pcode1 = pcode1;
+  else                   free(pcode1);
+  if(ret_pcode2 != NULL) *ret_pcode2 = pcode2;
+  else                   free(pcode2);
+  if(ret_avgp   != NULL) *ret_avgp   = sump / (float) L;
+  return eslOK;
 
  ERROR:
-  cm_Fail("Memory allocation error.");
-  return; /* never reached */
+  ESL_FAIL(eslEMEM, errbuf, "CMPostalCodeHB(): Memory allocation error.");
+  return status; /* never reached */
 }
 
 /*****************************************************************
