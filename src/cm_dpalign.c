@@ -4760,7 +4760,6 @@ CMPostalCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t 
   float sump = 0.;
   int L = j0-i0+1;
   float left_logp, right_logp;
-  float avgp;
   int emits_left, emits_right;
 
   ESL_ALLOC(pcode1, (L+1) * sizeof(char)); 
@@ -4902,7 +4901,6 @@ CMPostalCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parset
   float sump = 0.;
   int L = j0-i0+1;
   float left_logp, right_logp;
-  float avgp;
   int emits_left, emits_right;
 
   /* variables used for memory efficient bands */
