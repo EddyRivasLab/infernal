@@ -1876,9 +1876,9 @@ ParsetreeScoreCorrectionNull3(CM_t *cm, char *errbuf, Parsetree_t *tr, ESL_DSQ *
   }
    /* Apply an ad hoc 8 bit fudge factor penalty;
     * interpreted as a prior, saying that the third null model is 
-    * 1/2^8 (1/256) as likely as the standard null model
+    * 1/2^5 (1/32) as likely as the standard null model
     */
-  /* TEMPORARILY DISBABLED score -= 8.;	*/
+  score -= 5.;
 
   /* Return the correction to the bit score. */
   /*printf("ParsetreeScoreCorrectionNull3 return sc: %f\n", LogSum2(0., score));*/
