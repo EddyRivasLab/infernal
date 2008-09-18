@@ -1,5 +1,7 @@
 /************************************************************
- * @LICENSE@
+ *    This copyrighted source code is freely distributed 
+ *    under the terms of the GNU General Public License. See
+ *    the files COPYRIGHT and LICENSE for details.
  ************************************************************/
 /* dispatch.c
  * 
@@ -140,7 +142,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 
     /* determine start points (i) of the hits based on backward direction (Viterbi or Backward) scan starting at j */
     for(h = 0; h < fwd_results->num_results; h++) {
-      min_i = (fwd_results->data[h].stop - cm->W + 1) >= 1 ? (fwd_results->data[h].stop - cm->W + 1) : 1;
+      min_i = (fwd_results->data[h].stop - cm->W + 1) >= i0 ? (fwd_results->data[h].stop - cm->W + 1) : i0;
       if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
 	if((status = cp9_ViterbiBackward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, cm->W, cutoff, 
 					 cur_results, /* report hits to cur_results */
@@ -229,7 +231,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       if(cur_results->data[h].stop > prev_j) ESL_EXCEPTION(eslEINCOMPAT, "j's not in descending order");
       prev_j = cur_results->data[h].stop;
 
-      i = ((cur_results->data[h].stop  - (cm->W-1)) >= 1)    ? (cur_results->data[h].stop  - (cm->W-1)) : 1;
+      i = ((cur_results->data[h].stop  - (cm->W-1)) >= i0)   ? (cur_results->data[h].stop  - (cm->W-1)) : i0;
       j = ((cur_results->data[h].start + (cm->W-1)) <= j0)   ? (cur_results->data[h].start + (cm->W-1)) : j0;
 
       if((h+1) < nhits) next_j = ((cur_results->data[h+1].start + (cm->W-1)) <= j0) ? (cur_results->data[h+1].start + (cm->W-1)) : j0;
@@ -242,7 +244,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       if(do_collapse) { 
 	while(((h+1) < nhits) && (next_j >= i)) { /* suck in hit */
 	  h++;
-	  i = ((cur_results->data[h].stop - (cm->W-1)) >= 1) ? (cur_results->data[h].stop - (cm->W-1)) : 1;
+	  i = ((cur_results->data[h].stop - (cm->W-1)) >= i0) ? (cur_results->data[h].stop - (cm->W-1)) : i0;
 	  if((h+1) < nhits) next_j = ((cur_results->data[h+1].start + (cm->W-1)) <= j0) ? (cur_results->data[h+1].start + (cm->W-1)) : j0;
 	  else              next_j = -1;
 	  ESL_DPRINTF1(("\tsucked in subseq: hit %d new_i: %d j (still): %d\n", h, i, j));
