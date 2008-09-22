@@ -213,7 +213,6 @@ main(int argc, char **argv)
       esl_usage(stdout, argv[0], usage1);
       esl_usage(stdout, argv[0], usage2);
       printf("\n  The --merge option merges the two alignments in <msafile1> and <msafile2>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
-      printf("\nWith --merge, <msafile1> and <msafile2> must have been created\n be previous runs of cmalign using <cmfile>.\n");
       printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
@@ -276,7 +275,7 @@ main(int argc, char **argv)
       esl_usage(stdout, argv[0], usage1);
       esl_usage(stdout, argv[0], usage2);
       puts("\n  The --merge option merges the two alignments in <msafile1> and <msafile2>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
-      puts("\n  where basic options are:");
+      puts("\nwhere basic options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80);
       printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
       exit(1);
