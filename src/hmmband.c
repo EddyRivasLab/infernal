@@ -424,7 +424,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
   pmx->imx[0][0] = -INFTY; /*need seq to get here*/
   pmx->dmx[0][0] = -INFTY; /*D_0 does not exist*/
   if((mass_m[0] = pmx->mmx[0][0]) > thresh) { 
-    cp9b->pn_min_m[0] = 0; 
+    cp9b->pn_min_m[0] = ESL_MAX(i0-1, 0);
     nset_m[0] = TRUE; 
   }
   mass_i[0] = -INFTY; /* b/c pmx->imx[0][0] is -INFTY, set above */
@@ -437,7 +437,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
     /* mass_m[k] doesn't change b/c pmx->mmx[0][k] is -INFTY */
     /* mass_i[k] doesn't change b/c pmx->imx[0][k] is -INFTY */
     if((mass_d[k] = pmx->dmx[0][k]) > thresh) { 
-      cp9b->pn_min_d[k] = 0;
+      cp9b->pn_min_d[k] = ESL_MAX(i0-1, 0);
       nset_d[k] = TRUE; 
     }
   }
@@ -526,10 +526,12 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
 	  }
 	}
     }	  
+  ip = 0;
+  i  = i0-1;
   /* note boundary conditions, ip = 0, i = i0-1 */
   if(! xset_m[0]) { 
     if((mass_m[0] = ILogsum(mass_m[0], pmx->mmx[0][0])) > thresh) { 
-      cp9b->pn_max_m[0] = 0; 
+      cp9b->pn_max_m[0] = ESL_MAX(i0-1, 0);
       xset_m[0] = TRUE; 
     }
   }
@@ -540,7 +542,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
     /* mass_i[k] doesn't change b/c pmx->mmx[0][k] is -INFTY */
     if(!xset_d[k]) { 
       if((mass_d[k] = ILogsum(mass_d[k], pmx->dmx[0][k])) > thresh) { 
-	cp9b->pn_max_d[k] = 0;
+	cp9b->pn_max_d[k] = ESL_MAX(i0-1, 0);
 	xset_d[k] = TRUE; 
       }
     }
@@ -609,19 +611,19 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
 	if((! nset_m[k]) || (! xset_m[k])) { 
 	  max = pmx->mmx[0][k];
 	  for(ip = 1; ip <= L; ip++)
-	    if(pmx->mmx[ip][k] > max) { pnmax = i; max = pmx->mmx[ip][k]; }
+	    if(pmx->mmx[ip][k] > max) { pnmax = i0+ip-1; max = pmx->mmx[ip][k]; } /* i = i0+ip-1 */
 	  cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = pnmax;
 	}
 	if((! nset_i[k]) || (! xset_i[k])) { 
 	  max = pmx->imx[0][k];
 	  for(ip = 1; ip <= L; ip++)
-	    if(pmx->imx[ip][k] > max) { pnmax = i; max = pmx->imx[ip][k]; }
+	    if(pmx->imx[ip][k] > max) { pnmax = i0+ip-1; max = pmx->imx[ip][k]; } /* i = i0+ip-1 */
 	  cp9b->pn_min_i[k] = cp9b->pn_max_i[k] = pnmax;
 	}
 	if((! nset_d[k]) || (! xset_d[k])) { 
 	  max = pmx->dmx[0][k];
 	  for(ip = 1; ip <= L; ip++)
-	    if(pmx->dmx[ip][k] > max) { pnmax = i; max = pmx->dmx[ip][k]; }
+	    if(pmx->dmx[ip][k] > max) { pnmax = i0+ip-1; max = pmx->dmx[ip][k]; } /* i = i0+ip-1 */
 	  cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = pnmax; 
 	}
       }

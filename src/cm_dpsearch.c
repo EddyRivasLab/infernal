@@ -4569,7 +4569,6 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   int      W;                  /* max d over all hdmax[v][j] for all valid v, j */
   double **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
   int      jp;                 /* j index in act */
-  int      tmp_dn, tmp_dx;     /* temporary min d and max d */
 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB(), dsq is NULL.\n");
@@ -4930,9 +4929,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
     
     /* report all hits with valid d for this j, only if results != NULL */
     if(results != NULL) { 
-      tmp_dn = ESL_MAX(0,      hdmin[0][j-jmin[0]]); /* d can't be < 0 */
-      tmp_dx = ESL_MIN(j-i0+1, hdmax[0][j-jmin[0]]); /* d can't be > j (remember i0 not necessarily 1, so we have to take relative j in gamma mx coords */
-      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], tmp_dn, tmp_dx, TRUE, bestr, results, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmax[0]], TRUE, bestr, results, W, act)) != eslOK) return status;
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to results */
@@ -5036,7 +5033,6 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
   int      W;                  /* max d over all hdmax[v][j] for all valid v, j */
   double **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
   int      jp;                 /* j index in act */
-  int      tmp_dn, tmp_dx;     /* temporary min d and max d */
 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScanHB(), dsq is NULL.\n");
@@ -5372,9 +5368,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
     
     /* report all hits with valid d for this j, only if results != NULL */
     if(results != NULL) { 
-      tmp_dn = ESL_MAX(0,      hdmin[0][j-jmin[0]]); /* d can't be < 0 */
-      tmp_dx = ESL_MIN(j-i0+1, hdmax[0][j-jmin[0]]); /* d can't be > j (remember i0 not necessarily 1, so we have to take relative j in gamma mx coords */
-      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], tmp_dn, tmp_dx, TRUE, bestr, results, W, act)) != eslOK) return status;
+      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, bestr, results, W, act)) != eslOK) return status;
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to results */
