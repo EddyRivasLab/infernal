@@ -425,7 +425,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
   pmx->imx[0][0] = -INFTY; /*need seq to get here*/
   pmx->dmx[0][0] = -INFTY; /*D_0 does not exist*/
   if((mass_m[0] = pmx->mmx[0][0]) > thresh) { 
-    cp9b->pn_min_m[0] = 0; 
+    cp9b->pn_min_m[0] = ESL_MAX(i0-1, 0);
     nset_m[0] = TRUE; 
   }
   mass_i[0] = -INFTY; /* b/c pmx->imx[0][0] is -INFTY, set above */
@@ -438,7 +438,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
     /* mass_m[k] doesn't change b/c pmx->mmx[0][k] is -INFTY */
     /* mass_i[k] doesn't change b/c pmx->imx[0][k] is -INFTY */
     if((mass_d[k] = pmx->dmx[0][k]) > thresh) { 
-      cp9b->pn_min_d[k] = 0;
+      cp9b->pn_min_d[k] = ESL_MAX(i0-1, 0);
       nset_d[k] = TRUE; 
     }
   }
@@ -528,9 +528,11 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
 	}
     }	  
   /* note boundary conditions, ip = 0, i = i0-1 */
+  ip = 0;
+  i  = i0-1;
   if(! xset_m[0]) { 
     if((mass_m[0] = ILogsum(mass_m[0], pmx->mmx[0][0])) > thresh) { 
-      cp9b->pn_max_m[0] = 0; 
+      cp9b->pn_max_m[0] = ESL_MAX(i0-1, 0);
       xset_m[0] = TRUE; 
     }
   }
@@ -541,7 +543,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
     /* mass_i[k] doesn't change b/c pmx->mmx[0][k] is -INFTY */
     if(!xset_d[k]) { 
       if((mass_d[k] = ILogsum(mass_d[k], pmx->dmx[0][k])) > thresh) { 
-	cp9b->pn_max_d[k] = 0;
+	cp9b->pn_max_d[k] = ESL_MAX(i0-1, 0);
 	xset_d[k] = TRUE; 
       }
     }
@@ -551,8 +553,8 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
     /* new way as of EPN, Sun Jan 27 08:48:34 2008 */
     /* Some states may not have had their min/max set. This occurs if the entire
      * state is outside the band (i.e. the summed probablity the state is entered for ANY i
-     * is less than our threshold. Current strategy in this situation is to set the
-     * pn_min_* and pn_max_* values as special flags, (-2) so the function that
+     * is less than our threshold). Current strategy in this situation is to set the
+     * pn_min_* and pn_max_* values as special flags, (-1) so the function that
      * uses them to derive i and j bands knows this is the case and handles it
      * accordingly.
      */
@@ -561,9 +563,6 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
     for(k = 0; k <= M; k++)
       {
 	mset = dset = TRUE;
-	/* theoretically either nset_*[k] and xset_*[k] should be either both TRUE or both
-	 * FALSE, but I'm slightly worried about rare precision issues, so we check if one 
-	 * or the other is unset, and if so, we set both to argmax position */
 	if(((! nset_m[k])) || (! xset_m[k]) || (cp9b->pn_max_m[k] < cp9b->pn_min_m[k])) { 
 	  cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = -1;
 	  mset = FALSE;
@@ -610,19 +609,19 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
 	if((! nset_m[k]) || (! xset_m[k])) { 
 	  max = pmx->mmx[0][k];
 	  for(ip = 1; ip <= L; ip++)
-	    if(pmx->mmx[ip][k] > max) { pnmax = i; max = pmx->mmx[ip][k]; }
+	    if(pmx->mmx[ip][k] > max) { pnmax = i0+ip-1; max = pmx->mmx[ip][k]; } /* i = i0+ip-1 */
 	  cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = pnmax;
 	}
 	if((! nset_i[k]) || (! xset_i[k])) { 
 	  max = pmx->imx[0][k];
 	  for(ip = 1; ip <= L; ip++)
-	    if(pmx->imx[ip][k] > max) { pnmax = i; max = pmx->imx[ip][k]; }
+	    if(pmx->imx[ip][k] > max) { pnmax = i0+ip-1; max = pmx->imx[ip][k]; } /* i = i0+ip-1 */
 	  cp9b->pn_min_i[k] = cp9b->pn_max_i[k] = pnmax;
 	}
 	if((! nset_d[k]) || (! xset_d[k])) { 
 	  max = pmx->dmx[0][k];
 	  for(ip = 1; ip <= L; ip++)
-	    if(pmx->dmx[ip][k] > max) { pnmax = i; max = pmx->dmx[ip][k]; }
+	    if(pmx->dmx[ip][k] > max) { pnmax = i0+ip-1; max = pmx->dmx[ip][k]; } /* i = i0+ip-1 */
 	  cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = pnmax; 
 	}
       }
