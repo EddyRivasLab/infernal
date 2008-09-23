@@ -1734,7 +1734,6 @@ GammaHitMx_t *
 CreateGammaHitMx(int L, int i0, int be_greedy, float cutoff, int do_backward)
 {
   int status;
-
   GammaHitMx_t *gamma;
   ESL_ALLOC(gamma, sizeof(GammaHitMx_t));
 

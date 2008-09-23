@@ -4403,7 +4403,7 @@ int
 cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W, int correct_for_first_W, float **ret_vcalcs, float *ret_calcs)
 {
   int       status;
-  float     *vcalcs;            /* [0..v..cm->M-1] # of calcs for subtree rooted at v */
+  float    *vcalcs;             /* [0..v..cm->M-1] # of millions of calcs for subtree rooted at v */
   int       d;			/* a subsequence length, 0..W */
   int       j;                  /* seq index */
   int       v, w, y;            /* state indices */
@@ -4449,12 +4449,12 @@ cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W
 	    kmax = ESL_MIN(dmax[y], (d-dmin[w]));
 	  }
 	  else { kmin = 0; kmax = d; }
-	  vcalcs[v] += 1 + (kmax - kmin + 1); /* initial '1 +' is for initialization calc */
+	  if(kmax >= kmin) vcalcs[v] += ((float) ((1+(kmax-kmin+1)))) / 1000000.; /* initial '1 +' is for initialization calc */
 	} /* ! B_st */
       }
-      else  { /* if cm->sttype[v] != B_st */
-	vcalcs[v] += 1 + (cm->cnum[v] + 1) * (dx - dn + 1); /* 1 is for initialization calc */
-	if(StateDelta(cm->sttype[v]) > 0) vcalcs[v] += (dx-dn+1);
+      else if(dx >= dn) { /* if cm->sttype[v] != B_st */
+	vcalcs[v] += ((float) (1 + (cm->cnum[v]+1) * (dx-dn+1))) / 1000000.; /* 1 is for initialization calc */
+	if(StateDelta(cm->sttype[v]) > 0) vcalcs[v] += ((float) (dx-dn+1)) / 1000000.;
       } /* end of else (v != B_st) */
     } /*loop over decks v>0 */
     
@@ -4468,13 +4468,13 @@ cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W
       dn = 1; 
       dx = ESL_MIN(j, W); 
     }
-    vcalcs[0] += (cm->cnum[v] + 1) * (dx - dn + 1);
+    if(dx >= dn) vcalcs[0] += ((float) ((cm->cnum[0]+1) * (dx-dn+1))) / 1000000.;
     
     if (cm->flags & CMH_LOCAL_BEGIN) {
       for (y = 1; y < cm->M; y++) {
 	if(do_banded) {
 	  dn = (cm->sttype[y] == MP_st) ? ESL_MAX(dmin[y], 2) : ESL_MAX(dmin[y], 1); 
-	  dn = ESL_MAX(dn, dmin[0]);
+	  dn = ESL_MAX(dn, dmin[y]);
 	  dx = ESL_MIN(j, dmax[y]); 
 	  dx = ESL_MIN(dx, W);
 	}
@@ -4482,18 +4482,16 @@ cm_CountSearchDPCalcs(CM_t *cm, char *errbuf, int L, int *dmin, int *dmax, int W
 	  dn = 1; 
 	  dx = ESL_MIN(j, W); 
 	}
-	if(NOT_IMPOSSIBLE(cm->beginsc[y])) vcalcs[0] += (dx - dn + 1);
+	if((dx >= dn) && (NOT_IMPOSSIBLE(cm->beginsc[y]))) vcalcs[0] += ((float) (dx - dn + 1)) / 1000000.;
       }
     }
   } /* end loop over end positions j */
   
-  /* sum up the cells for all states under each v */
+  /* sum up the megacells for all states under each v */
   for (v = cm->M-1; v >= 0; v--) {
     if     (cm->sttype[v] == B_st) vcalcs[v] += vcalcs[cm->cnum[v]] + vcalcs[cm->cfirst[v]];
     else if(cm->sttype[v] != E_st) vcalcs[v] += vcalcs[v+1];
   }
-  /* convert to millions of calcs */
-  for (v = cm->M-1; v >= 0; v--) vcalcs[v] /= 1000000.;
   /* convert to per residue */
   for (v = cm->M-1; v >= 0; v--) vcalcs[v] /= Leff;
 
@@ -4571,6 +4569,7 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
   int      W;                  /* max d over all hdmax[v][j] for all valid v, j */
   double **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
   int      jp;                 /* j index in act */
+  int      tmp_dn, tmp_dx;     /* temporary min d and max d */
 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastCYKScanHB(), dsq is NULL.\n");
@@ -4931,7 +4930,9 @@ FastCYKScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cutoff
     
     /* report all hits with valid d for this j, only if results != NULL */
     if(results != NULL) { 
-      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, bestr, results, W, act)) != eslOK) return status;
+      tmp_dn = ESL_MAX(0,      hdmin[0][j-jmin[0]]); /* d can't be < 0 */
+      tmp_dx = ESL_MIN(j-i0+1, hdmax[0][j-jmin[0]]); /* d can't be > j (remember i0 not necessarily 1, so we have to take relative j in gamma mx coords */
+      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], tmp_dn, tmp_dx, TRUE, bestr, results, W, act)) != eslOK) return status;
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to results */
@@ -5035,6 +5036,7 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
   int      W;                  /* max d over all hdmax[v][j] for all valid v, j */
   double **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
   int      jp;                 /* j index in act */
+  int      tmp_dn, tmp_dx;     /* temporary min d and max d */
 
   /* Contract check */
   if(dsq == NULL)       ESL_FAIL(eslEINCOMPAT, errbuf, "FastFInsideScanHB(), dsq is NULL.\n");
@@ -5370,7 +5372,9 @@ FastFInsideScanHB(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, int j0, float cu
     
     /* report all hits with valid d for this j, only if results != NULL */
     if(results != NULL) { 
-      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], hdmin[0][j-jmin[0]], hdmax[0][j-jmin[0]], TRUE, bestr, results, W, act)) != eslOK) return status;
+      tmp_dn = ESL_MAX(0,      hdmin[0][j-jmin[0]]); /* d can't be < 0 */
+      tmp_dx = ESL_MIN(j-i0+1, hdmax[0][j-jmin[0]]); /* d can't be > j (remember i0 not necessarily 1, so we have to take relative j in gamma mx coords */
+      if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, j-i0+1, alpha[0][jp_v], tmp_dn, tmp_dx, TRUE, bestr, results, W, act)) != eslOK) return status;
     }
   }
   /* finally report all hits with j > jmax[0] are impossible, only if we're reporting hits to results */

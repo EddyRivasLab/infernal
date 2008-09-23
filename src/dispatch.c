@@ -541,6 +541,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     printf("do_optacc   : %d\n", do_optacc);
     printf("do_hmmsafe  : %d\n", do_hmmsafe);
   }
+#if PRINTNOW
   printf("pad7:      %4d\n", pad7);
   printf("len7:      %4d\n", len7);
   printf("sc7:       %.2f\n", sc7);
@@ -550,6 +551,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   printf("iprob7:  %.4f\n",  iprob7);
   printf("ilprob7: %.4f\n",  ilprob7);
   printf("\n");
+#endif
 
   /* allocate out_mx, if needed, only if !do_sub, if do_sub each sub CM will need to allocate a new out_mx */
   out_mx = NULL;

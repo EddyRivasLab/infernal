@@ -167,7 +167,7 @@ struct cfg_s {
 };
 
 static char usage1[] = "[-options] <cmfile> <sequence file>";
-static char usage2[] = "[-options] --merge <cmfile> <alignment file 1> <alignment file 2>";
+static char usage2[] = "[-options] --merge <cmfile> <msafile1> <msafile2>";
 static char banner[] = "align sequences to an RNA CM";
 
 static int  init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
@@ -249,6 +249,7 @@ main(int argc, char **argv)
       printf("Failed to parse command line: %s\n", go->errbuf);
       esl_usage(stdout, argv[0], usage1);
       esl_usage(stdout, argv[0], usage2);
+      printf("\n  The --merge option merges the two alignments in <msafile1> and <msafile2>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
       printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
@@ -257,6 +258,7 @@ main(int argc, char **argv)
       cm_banner(stdout, argv[0], banner);
       esl_usage(stdout, argv[0], usage1);
       esl_usage(stdout, argv[0], usage2);
+      puts("\n  The --merge option merges the two alignments in <msafile1> and <msafile2>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
       puts("\nwhere general options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
       puts("\nalignment algorithm related options:");
@@ -265,7 +267,7 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
       puts("\noutput options:");
       esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
-      puts("\nmerge alignments in <alignment file 1> and <alignment file 2>:");
+      puts("\nmerge alignments in <msafile1> and <msafile2>:");
       esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       puts("\noptions for including a fixed alignment within output alignment:");
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
@@ -286,6 +288,7 @@ main(int argc, char **argv)
       cm_banner(stdout, argv[0], banner);
       esl_usage(stdout, argv[0], usage1);
       esl_usage(stdout, argv[0], usage2);
+      puts("\n  The --merge option merges the two alignments in <msafile1> and <msafile2>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
       puts("\nwhere general options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
       puts("\nalignment algorithm related options:");
@@ -294,7 +297,7 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
       puts("\noutput options:");
       esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
-      puts("\nmerge alignments in <alignment file 1> and <alignment file 2>:");
+      puts("\nmerge alignments in <msafile1> and <msafile2>:");
       esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       puts("\noptions for including a fixed alignment within output alignment:");
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
@@ -308,7 +311,8 @@ main(int argc, char **argv)
       puts("Incorrect number of command line arguments.");
       esl_usage(stdout, argv[0], usage1);
       esl_usage(stdout, argv[0], usage2);
-      puts("\n  where basic options are:");
+      puts("\n  The --merge option merges the two alignments in <msafile1> and <msafile2>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
+      puts("\nwhere basic options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80);
       printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
       exit(1);
@@ -1804,7 +1808,7 @@ serial_merge_alignments_only(const ESL_GETOPTS *go)
   /* configure the CM, only really nec so we get the appropriate #=GC RF line in the output alignment
    * which is built in Parsetrees2Alignment() using the log-odds emissions scores
    */
-  if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) return status;  /* FALSE says do not calculate W unless nec b/c we're using QDBs */
+  if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) cm_Fail(errbuf);  /* FALSE says do not calculate W unless nec b/c we're using QDBs */
 
   /* open msa file 1, argv[2] */
   msafile1 = esl_opt_GetArg(go, 2); 
