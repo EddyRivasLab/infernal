@@ -1,5 +1,5 @@
-Infernal 1.0rc2
-SRE, Sat Jul 12 09:08:10 2008
+Infernal 1.0rc3
+SRE, Wed Sep 24 13:50:33 2008
 
 Infernal 1.0 is the first non-development release of Infernal. The
 main differences relative to the last development release (0.8/0.81):
@@ -19,14 +19,39 @@ main differences relative to the last development release (0.8/0.81):
   a dependency on a commercial code library.
 
 
-Release candidate 2 (1.0rc2; 12 July 2008) fixes four bugs in the
-initial test release (1.0rc1):
+Release candidate 1 (1.0rc1) was released 20 June 2008.
+
+Release candidate 2 (1.0rc2; 12 July 2008) fixed four bugs:
 
    - rc1 binaries didn't work on 32-bit systems using gcc compilers.
+
    - MPI configuration didn't work because of an error in our 
      autoconf configure script.
+
    - cmemit could erroneously check for a nonexistent --hmmbuild option.
+
    - cmbuild's help list was incorrectly formatted.
+
+Release candidate 3 (1.0rc3; 24 Sept 2008) fixed several bugs, including:
+
+   - fixed a bug in degenerate residue handling in basepairs;
+     previously a pair involving one and only one degenerate residue
+     was receiving an IMPOSSIBLE score.
+
+   - bugs fixed in subCM creating in cmalign --sub
+
+   - bugs fixed in posterior probability labeling reported by cmalign
+
+   - cmalign --merge option added
+
+   - some passages in the user guide improved, based on feedback from
+     Sanger Institute.
+  
+   - configuration script improved to deal with older AMD Athlons;
+     previously would erroneously detect the Athlon as supporting SSE2
+     instructions, but it doesn't.
+
+
 
 For more information, see http://infernal.janelia.org
 
