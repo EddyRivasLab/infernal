@@ -25,9 +25,9 @@ open (OUT, ">i11.1") || die;
 print OUT <<END;
 # STOCKHOLM 1.0
 
-human              CG
-#=GC SS_cons       <>
-#=GC RF            xx
+human              ACG
+#=GC SS_cons       :<>
+#=GC RF            xxx
 //
 END
 close OUT;
@@ -42,11 +42,11 @@ END
 close OUT;
 
 if ($ok) { 
-    system("$cmbuild --rna -F --rf i11.cm i11.1 > /dev/null 2> /dev/null");
+    system("$cmbuild -F --rf i11.cm i11.1 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {
-    system("$cmalign --nosmall --hbanded i11.cm i11.2 > /dev/null 2> /dev/null");
+    system("$cmalign i11.cm i11.2 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 

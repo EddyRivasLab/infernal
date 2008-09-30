@@ -52,7 +52,7 @@ END
 close OUT;
 
 if ($ok) { 
-    system("$cmbuild --rna i1.tmp.1 i1.1 > /dev/null 2> /dev/null");
+    system("$cmbuild i1.tmp.1 i1.1 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {
@@ -60,7 +60,7 @@ if ($ok) {
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {
-    system("$cmbuild -F --rna i1.tmp.1 i1.tmp.2 > /dev/null 2> /dev/null");
+    system("$cmbuild -F i1.tmp.1 i1.tmp.2 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 

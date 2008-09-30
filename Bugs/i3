@@ -70,7 +70,7 @@ END
 close OUT;
 
 if ($ok) { 
-    system("$cmbuild --rna --rf i3.cm i3.1 > /dev/null 2> /dev/null");
+    system("$cmbuild --rf i3.cm i3.1 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {
