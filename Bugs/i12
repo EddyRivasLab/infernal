@@ -47,11 +47,11 @@ END
 close OUT;
 
 if ($ok) { 
-    system("$cmbuild -F --rf --rna i12.cm i12.1 > /dev/null 2> /dev/null");
+    system("$cmbuild -F --rf i12.cm i12.1 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 if ($ok) {
-    system("$cmalign --post i12.cm i12.2 > /dev/null 2> /dev/null");
+    system("$cmalign -p i12.cm i12.2 > /dev/null 2> /dev/null");
     if ($? != 0) { $ok = 0; }
 }
 
