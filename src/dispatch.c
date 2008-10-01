@@ -674,7 +674,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
        * our HMM alignment is crap, default to using the full CM. (note: If EQUALS we could be right, but we can't build a
        * CM from a single consensus column (see notes in cm_modelmaker.c::cm_from_guide), and I would argue we don't really care about
        * getting single residue alignments correct anyway. */
-      if(epos <= spos) { spos = 1; epos = cm->cp9->M; } 
+      if(epos <= spos) { spos = 1; epos = orig_hmm->M; } 
 
       /* (3) Build the sub_cm from the original CM. */
       if((status = build_sub_cm(orig_cm, errbuf, &sub_cm, 
