@@ -310,7 +310,10 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	    rmid = rseq;
 	  }
         else if (mode != 3)
-          ;
+          {
+            if (mode == 2 && lseq == toupper(lcons)) lmid = lseq;
+            if (mode == 1 && rseq == toupper(rcons)) rmid = rseq;
+          }
 	else if (IsCompensatory(cm->abc, cm->e[v], symi, symj)) 
 	    lmid = rmid = ':';
 	else if (DegeneratePairScore(cm->abc, cm->esc[v], symi, symj) >= 0) 
