@@ -263,12 +263,12 @@ option in the manual page for
 
 .TP 
 .B -x
-Annotate non-compensatory basepairs and basepairs that include a gap 
-in the left and/or right half of the pair with x's in the alignments of
-hits. The x's appear above the structural annotation in the alignment
-output. Basepairs without x's above them are compensatory with respect
-to the model. Compensatory mutations are good evidence for structural
-homology.
+Annotate negative scoring basepairs and basepairs that include a gap
+in the left or right half of the pair (but not both) with x's in the
+alignments of hits. The x's appear above the structural annotation in
+the alignment output. Basepairs without x's above them are
+compensatory with respect to the model. Compensatory mutations are
+good evidence for structural homology.
 
 .TP
 .BI -Z " <x>"
