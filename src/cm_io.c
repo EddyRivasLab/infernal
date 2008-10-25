@@ -568,55 +568,55 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
   while (esl_fgets(&buf, &n, cmf->f) != eslEOF) 
     {
       s   = buf;
-      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+      if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL))     != eslOK) goto FAILURE;
       else if (strcmp(tok, "NAME") == 0) 
 	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	  if ((esl_strdup(tok, toklen, &(cm->name)))   != eslOK) goto ERROR;
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) goto FAILURE;
+	  if ((esl_strdup(tok, toklen, &(cm->name)))             != eslOK) goto ERROR;
 	}
       else if (strcmp(tok, "ACC") == 0) 
 	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	  if ((esl_strdup(tok, toklen, &(cm->acc)))    != eslOK) goto ERROR;
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) goto FAILURE;
+	  if ((esl_strdup(tok, toklen, &(cm->acc)))              != eslOK) goto ERROR;
 	}
       else if (strcmp(tok, "DESC") == 0) 
 	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	  esl_strdup(tok, toklen, &(cm->desc));
+	  if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) goto FAILURE;
+	  if ((esl_strdup(tok, toklen, &(cm->desc)))             != eslOK) goto ERROR;
 	}
       else if (strcmp(tok, "GA") == 0) 
 	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
 	  cm->ga = atof(tok);
 	  have_ga = TRUE;
 	}
       else if (strcmp(tok, "TC") == 0) 
 	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
 	  cm->tc = atof(tok);
 	  have_tc = TRUE;
 	}
       else if (strcmp(tok, "NC") == 0) 
 	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
 	  cm->nc = atof(tok);
 	  have_nc = TRUE;
 	}
       else if (strcmp(tok, "STATES") == 0) 
 	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
 	  M = atoi(tok);
 	  read_nstates = TRUE;
 	}
       else if (strcmp(tok, "NODES") == 0) 
 	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
 	  N = atoi(tok);
 	  read_nnodes = TRUE;
 	}
       else if (strcmp(tok, "ALPHABET") == 0) 
 	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
 	  alphabet_type = atoi(tok);
 	  /* Set or verify alphabet. */
 	  if (*ret_abc == NULL)	{	/* still unknown: set it, pass control of it back to caller */
@@ -637,28 +637,28 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	}	    
       else if (strcmp(tok, "ELSELF") == 0) 
 	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
 	  cm->el_selfsc = atof(tok);
 	}
       else if (strcmp(tok, "WBETA") == 0) 
 	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
 	  cm->beta_W = (double) atof(tok);
 	  cm->beta_qdb = cm->beta_W;
 	}
       else if (strcmp(tok, "NSEQ") == 0) 
 	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
 	  cm->nseq = atoi(tok);
 	}
       else if (strcmp(tok, "EFFNSEQ") == 0) 
 	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
 	  cm->eff_nseq = atof(tok);
 	}
       else if (strcmp(tok, "CLEN") == 0) 
 	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
 	  clen = atoi(tok); /* we'll compare this to what we calculate at end of func */
 	  read_clen = TRUE;
 	}
@@ -666,28 +666,28 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
       else if (strcmp(tok, "BCOM") == 0) 
 	{
 	  while(isspace((int) (*s))) s++; /* chew up leading whitespace */
-	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if ((esl_strtok_adv(&s, "\n", &tok, &toklen, NULL)) != eslOK) goto FAILURE;
 	  if(cm->comlog->bcom != NULL) free(cm->comlog->bcom);
 	  esl_strdup(tok, toklen, &(cm->comlog->bcom));
 	}
       else if (strcmp(tok, "BDATE") == 0) 
 	{
 	  while(isspace((int) (*s))) s++; /* chew up leading whitespace */
-	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if ((esl_strtok_adv(&s, "\n", &tok, &toklen, NULL)) != eslOK) goto FAILURE;
 	  if(cm->comlog->bdate != NULL) free(cm->comlog->bdate);
 	  esl_strdup(tok, toklen, &(cm->comlog->bdate));
 	}
       else if (strcmp(tok, "CCOM") == 0) 
 	{
 	  while(isspace((int) (*s))) s++; /* chew up leading whitespace */
-	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if ((esl_strtok_adv(&s, "\n", &tok, &toklen, NULL)) != eslOK) goto FAILURE;
 	  if(cm->comlog->ccom != NULL) free(cm->comlog->ccom);
 	  esl_strdup(tok, toklen, &(cm->comlog->ccom));
 	}
       else if (strcmp(tok, "CDATE") == 0) 
 	{
 	  while(isspace((int) (*s))) s++; /* chew up leading whitespace */
-	  if ((esl_strtok(&s, "\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if ((esl_strtok_adv(&s, "\n", &tok, &toklen, NULL)) != eslOK) goto FAILURE;
 	  if(cm->comlog->cdate != NULL) free(cm->comlog->cdate);
 	  esl_strdup(tok, toklen, &(cm->comlog->cdate));
 	}
@@ -697,14 +697,14 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  /* cm-> null already allocated in CreateCMBody() */
 	  for (x = 0; x < abc->K; x++)
 	    {
-	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	      if ((esl_strtok_adv(&s, " \t\n", &tok, &toklen, NULL)) != eslOK) goto FAILURE;
 	      cm->null[x] = ascii2prob(tok, (1./(float) abc->K));
 	    }
 	}
       /* exp tail distribution information */
       else if (strcmp(tok, "PART") == 0) 
 	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
 	  if (! is_integer(tok))                                      goto FAILURE;
 	  /* First token is num partitions, allocate cmstats object based on this */
 	  cm->stats = AllocCMStats(atoi(tok));
@@ -712,10 +712,10 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	    {
 	      /* there are 2 * cm->stats->np tokens left on this line,
 	       * (ps, pe) pairs for each partition */
-	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	      if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
 	      if (! is_integer(tok))                                      goto FAILURE;
 	      cm->stats->ps[p] = atoi(tok);
-	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
+	      if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
 	      if (! is_integer(tok))                                      goto FAILURE;
 	      cm->stats->pe[p] = atoi(tok);
 	    }
@@ -753,33 +753,33 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	else                                         goto FAILURE;
 
 	/* now we know what exp tail we're reading, read it */
-	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	if (! is_integer(tok))                                 goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                        goto FAILURE;
 	p = atoi(tok);
 	if (p >= cm->stats->np)                                goto FAILURE;
 
-	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	if (! is_real(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                           goto FAILURE;
 	cm->stats->expAA[exp_mode][p]->lambda = atof(tok);
 
-	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	if (! is_real(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                           goto FAILURE;
 	cm->stats->expAA[exp_mode][p]->mu_extrap = atof(tok);
 
-	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	if (! is_real(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                           goto FAILURE;
 	cm->stats->expAA[exp_mode][p]->mu_orig = atof(tok);
 
-	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	if (! is_integer(tok))                                 goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                        goto FAILURE;
 	cm->stats->expAA[exp_mode][p]->dbsize = (long) atoi(tok);
 
-	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	if (! is_integer(tok))                                 goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                        goto FAILURE;
 	cm->stats->expAA[exp_mode][p]->nrandhits = atoi(tok);
 
-	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	if (! is_real(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                           goto FAILURE;
 	cm->stats->expAA[exp_mode][p]->tailp = atof(tok);
 
 	cm->stats->expAA[exp_mode][p]->cur_eff_dbsize = (long) (cm->stats->expAA[exp_mode][p]->nrandhits);
@@ -807,20 +807,20 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	else                                         goto FAILURE;
 
 	/* now we know what mode we're reading, read it */
-	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	if (! is_integer(tok))                                 goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                        goto FAILURE;
 	cm->stats->hfiA[fthr_mode]->ncut = atoi(tok);
-	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	if (! is_real(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                           goto FAILURE;
 	cm->stats->hfiA[fthr_mode]->F = atof(tok);
-	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	if (! is_integer(tok))                                 goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                        goto FAILURE;
 	cm->stats->hfiA[fthr_mode]->N = atoi(tok);
-	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	if (! is_integer(tok))                                 goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_integer(tok))                        goto FAILURE;
 	cm->stats->hfiA[fthr_mode]->dbsize = (long) atoi(tok);
-	if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	if (! is_real(tok))                                    goto FAILURE;
+	if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	if (! is_real(tok))                           goto FAILURE;
 	cm->stats->hfiA[fthr_mode]->always_better_than_Smax = atoi(tok);
 
 	/* alloc for, and read a new line, the CM cut points */
@@ -828,8 +828,8 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	if (esl_fgets(&buf, &n, cmf->f) != eslOK) goto FAILURE;
 	s = buf;
 	for(i = 0; i < cm->stats->hfiA[fthr_mode]->ncut; i++) { 
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	  if (! is_real(tok))                                    goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	  if (! is_real(tok))                           goto FAILURE;
 	  cm->stats->hfiA[fthr_mode]->cm_E_cut[i] = atof(tok);
 	}
 
@@ -837,8 +837,8 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	if (esl_fgets(&buf, &n, cmf->f) != eslOK) goto FAILURE;
 	s = buf;
 	for(i = 0; i < cm->stats->hfiA[fthr_mode]->ncut; i++) { 
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;
-	  if (! is_real(tok))                                    goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;
+	  if (! is_real(tok))                           goto FAILURE;
 	  cm->stats->hfiA[fthr_mode]->fwd_E_cut[i] = atof(tok);
 	}
 	cm->stats->hfiA[fthr_mode]->is_valid = TRUE;
@@ -888,16 +888,16 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
     {
       if (esl_fgets(&buf, &n, cmf->f) != eslOK) goto FAILURE;
       s = buf;
-      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+      if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;      
       
       /* Ah, a node line. Process it and get the following line.
        */
       if (*tok == '[') 
 	{
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
-	  if ((x = NodeCode(tok)) == -1)                        goto FAILURE;
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
-	  if (!is_integer(tok))                                      goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;      
+	  if ((x = NodeCode(tok)) == -1)                goto FAILURE;
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;      
+	  if (!is_integer(tok))                         goto FAILURE;
 	  nd = atoi(tok);
 	  cm->ndtype[nd]  = x;
 	  if(cm->ndtype[nd] == MATP_nd) cm->clen+=2;
@@ -905,36 +905,36 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  else if(cm->ndtype[nd] == MATR_nd) cm->clen++;
 	  cm->nodemap[nd] = v;
 
-	  if (esl_fgets(&buf, &n, cmf->f) != eslOK)              goto FAILURE;
+	  if (esl_fgets(&buf, &n, cmf->f)     != eslOK) goto FAILURE;
 	  s = buf;
-	  if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
+	  if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;      
 	}
 
       /* Process state line.
        */
       cm->sttype[v] = StateCode(tok);
-      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
-      if (! is_integer(tok))                                 goto FAILURE;
-      if (atoi(tok) != v)                                    goto FAILURE;
-      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
-      if (! is_integer(tok))                                 goto FAILURE;
+      if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;      
+      if (! is_integer(tok))                        goto FAILURE;
+      if (atoi(tok) != v)                           goto FAILURE;
+      if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;      
+      if (! is_integer(tok))                        goto FAILURE;
       cm->plast[v] = atoi(tok);
-      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
-      if (! is_integer(tok))                                 goto FAILURE;
+      if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;      
+      if (! is_integer(tok))                        goto FAILURE;
       cm->pnum[v] = atoi(tok);
-      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
-      if (! is_integer(tok))                                 goto FAILURE;
+      if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;      
+      if (! is_integer(tok))                        goto FAILURE;
       cm->cfirst[v] = atoi(tok);
-      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
-      if (! is_integer(tok))                                 goto FAILURE;
+      if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;      
+      if (! is_integer(tok))                        goto FAILURE;
       cm->cnum[v] = atoi(tok);
 				/* Transition probabilities. */
       if (cm->sttype[v] != B_st) 
 	{
 	  for (x = 0; x < cm->cnum[v]; x++)
 	    {
-	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
-	      if (! is_real(tok) && *tok != '*')                      goto FAILURE;
+	      if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;      
+	      if (! is_real(tok) && *tok != '*')            goto FAILURE;
 	      cm->t[v][x] = ascii2prob(tok, 1.);
 	    }
 	}
@@ -944,8 +944,8 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	{
 	  for (x = 0; x < cm->abc->K; x++)
 	    {
-	      if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
-	      if (! is_real(tok) && *tok != '*')                     goto FAILURE;
+	      if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;      
+	      if (! is_real(tok) && *tok != '*')            goto FAILURE;
 	      cm->e[v][x] = ascii2prob(tok, cm->null[x]);
 	    }
 	}
@@ -954,8 +954,8 @@ read_ascii_cm(CMFILE *cmf, char *errbuf, ESL_ALPHABET **ret_abc, CM_t **ret_cm)
 	  for (x = 0; x < cm->abc->K; x++)
 	    for (y = 0; y < cm->abc->K; y++)
 	      {
-		if ((esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto FAILURE;      
-		if (! is_real(tok) && *tok != '*')                     goto FAILURE;
+		if ((esl_strtok(&s, " \t\n", &tok)) != eslOK) goto FAILURE;      
+		if (! is_real(tok) && *tok != '*')            goto FAILURE;
 		cm->e[v][x*cm->abc->K+y] = ascii2prob(tok, cm->null[x]*cm->null[y]);
 	      }
 	} 

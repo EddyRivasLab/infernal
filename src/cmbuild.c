@@ -305,7 +305,7 @@ main(int argc, char **argv)
 
   if   (esl_opt_IsDefault(go, "--informat")) cfg.fmt = eslMSAFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
   else { 
-    cfg.fmt = esl_sqio_FormatCode(esl_opt_GetString(go, "--informat"));
+    cfg.fmt = esl_sqio_EncodeFormat(esl_opt_GetString(go, "--informat"));
     if(cfg.fmt == eslSQFILE_UNKNOWN)                                  cm_Fail("Can't recognize sequence file format: %s. valid options are: stockholm or pfam\n", esl_opt_GetString(go, "--informat"));
     if(cfg.fmt != eslMSAFILE_STOCKHOLM && cfg.fmt != eslMSAFILE_PFAM) cm_Fail("Sequence file format: %s is not accepted by cmbuild, valid options are: stockholm or pfam\n", esl_opt_GetString(go, "--informat"));
   }
@@ -2187,7 +2187,7 @@ get_namewidth(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   /* close the MSA file and open it again, sloppy */
   esl_msafile_Close(cfg->afp);
   if   (esl_opt_IsDefault(go, "--informat")) cfg->fmt = eslMSAFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
-  else cfg->fmt = esl_sqio_FormatCode(esl_opt_GetString(go, "--informat"));
+  else cfg->fmt = esl_sqio_EncodeFormat(esl_opt_GetString(go, "--informat"));
   status = esl_msafile_Open(cfg->alifile, cfg->fmt, NULL, &(cfg->afp));
   if      (status == eslENOTFOUND) ESL_FAIL(status, errbuf, "Alignment file %s doesn't exist or is not readable\n", cfg->alifile);
   else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of alignment %s\n", cfg->alifile);

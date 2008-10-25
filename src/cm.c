@@ -479,7 +479,6 @@ CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null)
   int   n;			/* length of buf */
   int   x;
   char *tok;
-  int   toklen;
   float sum;
 
   ESL_ALLOC(null, sizeof(float) * abc->K);
@@ -499,7 +498,7 @@ CMReadNullModel(const ESL_ALPHABET *abc, char *nullfile, float **ret_null)
   while(x < abc->K) {
     if((status = esl_fgets(&buf, &n, fp)) != eslOK) goto ERROR;
     s   = buf;
-    if((status = esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto ERROR;
+    if((status = esl_strtok(&s, " \t\n", &tok)) != eslOK) goto ERROR;
     if(strcmp(tok, "#") != 0)
       {      
 	null[x] = atof(tok);

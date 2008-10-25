@@ -12,9 +12,10 @@ Easel follows an 'unstable trunk' policy.
 Each major release goes onto a stable branch.
 Every release (even minor ones) is tagged.
 
-Release types: major releases, minor releases, and snapshots. A major
-release gets its own branch. A minor release puts bug fixes into a
-major branch. A snapshot is from the development trunk.
+There's three types of releases: major releases, minor releases, and
+snapshots. A major release gets its own branch. A minor release puts
+bug fixes into a major branch. A snapshot is straight from the
+development trunk.
 
 Version naming:                                        example
 major              <lineage>.<major-release>                      1.0
@@ -131,7 +132,7 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
       make
 
 
-6. Write release notes.
+6. Write (or update) release notes.
    For the first time on a new release branch, it's handy to look
    at the svn log. Replace "1534" below with the last release's SVN rev.
 	 svn log -r 1534:HEAD | more
@@ -149,6 +150,7 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
        0.81 - bugfix release on 0.8 branch
    1.0rc1     1968       2485        174         272    [1.0 branch]
    1.0rc2     2485       2499        272         278    [1.0 branch] 
+   1.0rc3     2499       2594        278         293    [1.0 branch]
    
    These release notes will be merged back into the trunk later, if
    we're in a branch.
@@ -168,11 +170,11 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
    the tags are made from the relevant stable branch:
 
       svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0\
-               https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0rc2\
-               -m "tagged Infernal 1.0rc2 release, from 1.0 stable branch"          
+               https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0rc3\
+               -m "tagged Infernal 1.0rc3 release, from 1.0 stable branch"          
       svn copy https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.0\
-               https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/1.0rc2\
-                 -m "tagged Easel for Infernal 1.0rc2 release, from 1.0 stable branch"          
+               https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/1.0rc3\
+                 -m "tagged Easel for Infernal 1.0rc3 release, from 1.0 stable branch"          
 
 10. Make a distribution tarball.
    (Remaking configure scripts w/ autoconf is needed)
@@ -182,7 +184,7 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 	 ./configure          <-- makes a Makefile (needed for "make dist")
 
     major or minor:
-	 make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0rc2 dist
+	 make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0rc3 dist
     snapshot:
 	 make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/trunk RELEASE=snap20080325 dist
 
@@ -216,11 +218,12 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 
 12. Put on the FTP site. (on selab)
           scp 00README                  selab:/opt/www/ftp/pub/software/infernal/
-          scp COPYRIGHT                 selab:/opt/www/ftp/pub/software/infernal/
+          scp COPYRIGHT                 selab:/opt/www/ftp/pub/software/infernal
+          scp LICENSE                   selab:/opt/www/ftp/pub/software/infernal/
           scp Userguide.pdf             selab:/opt/www/ftp/pub/software/infernal/
-          scp ../infernal-1.0rc2.tar.gz selab:/opt/www/ftp/pub/software/infernal/
+          scp ../infernal-1.0rc3.tar.gz selab:/opt/www/ftp/pub/software/infernal/
           ssh selab  rm -f /opt/www/ftp/pub/software/infernal/infernal.tar.gz
-          ssh selab  "(cd /opt/www/ftp/pub/software/infernal; ln -s infernal-1.0rc2.tar.gz infernal.tar.gz)"
+          ssh selab  "(cd /opt/www/ftp/pub/software/infernal; ln -s infernal-1.0rc3.tar.gz infernal.tar.gz)"
 
 13. Update the web site
 	 cd ~/web/infernal/
@@ -232,10 +235,10 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 14. Clean up. Don't remove the old directory though, we will (should) use it for regression testing 
     at the next release.
 	cd ~/releases
-        mv infernal-1.0rc1.tar.gz ~/Archive/
+        mv infernal-1.0rc3.tar.gz ~/Archive/
         cd infernal
 	make distclean
-        cd ../infernal-1.0rc1
+        cd ../infernal-1.0rc3
 	make distclean
 
 15. Merge the changes from the "stabilized" release branch back into the trunk.
@@ -293,6 +296,7 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 0.81   - SRE, Tue May  1 10:36:10 2007   r1995  Easel:r179
 1.0rc1 - SRE, Fri Jun 20 13:38:46 2008   r2492  Easel:r276
 1.0rc2 - SRE, Sat Jul 12 09:26:29 2008   r2502  Easel:r280
+1.0rc3 - SRE, Wed Sep 24 14:33:59 2008   r2596  Easel:r294
 
 
 

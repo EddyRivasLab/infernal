@@ -7842,8 +7842,8 @@ read_qdb_file(FILE *fp, CM_t *cm, int *dmin, int *dmax)
   if (feof(fp) || (status = esl_fgets(&buf, &n, fp)) != eslOK) goto ERROR;
 
   s   = buf;
-  if ((status = esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto ERROR;
-  if (! is_integer(tok))                                    goto ERROR;
+  if ((status = esl_strtok(&s, " \t\n", &tok)) != eslOK) goto ERROR;
+  if (! is_integer(tok))                                 goto ERROR;
   M = atoi(tok);
   if(M != cm->M) goto ERROR;
 
@@ -7853,17 +7853,17 @@ read_qdb_file(FILE *fp, CM_t *cm, int *dmin, int *dmax)
       if (strncmp(buf, "//", 2) == 0) 
 	break;
       s   = buf;
-      if ((status = esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto ERROR;      
-      if (! is_integer(tok)) { status = eslEINVAL;                    goto ERROR; }
+      if ((status = esl_strtok(&s, " \t\n", &tok)) != eslOK) goto ERROR;      
+      if (! is_integer(tok)) { status = eslEINVAL;           goto ERROR; }
       read_v = atoi(tok);
       if(v != read_v) goto ERROR;
 
-      if ((status = esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto ERROR;      
-      if (! is_integer(tok)) { status = eslEINVAL;                    goto ERROR; }
+      if ((status = esl_strtok(&s, " \t\n", &tok)) != eslOK) goto ERROR;      
+      if (! is_integer(tok)) { status = eslEINVAL;           goto ERROR; }
       dmin[v] = atoi(tok);
 
-      if ((status = esl_strtok(&s, " \t\n", &tok, &toklen)) != eslOK) goto ERROR;      
-      if (! is_integer(tok)) {                                        goto ERROR; }
+      if ((status = esl_strtok(&s, " \t\n", &tok)) != eslOK) goto ERROR;      
+      if (! is_integer(tok)) {                               goto ERROR; }
       dmax[v] = atoi(tok);
 
       v++;

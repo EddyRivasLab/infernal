@@ -137,6 +137,9 @@ dist:
 	#
 	easel/devkit/sedition RELEASE ${RELEASE} RELEASEDATE ${RELEASEDATE}                        ../${BASENAME}-${RELEASE}/documentation/userguide/titlepage.tex
 	easel/devkit/sedition RELEASE ${RELEASE} RELEASEDATE ${RELEASEDATE} COPYRIGHT ${COPYRIGHT} ../${BASENAME}-${RELEASE}/00README
+	for manpage in ../${BASENAME}-${RELEASE}/documentation/manpages/*; do\
+	   easel/devkit/sedition RELEASE ${RELEASE} RELEASEDATE ${RELEASEDATE} COPYRIGHT ${COPYRIGHT} PACKAGE ${PACKAGE} LICENSELINE ${LICENSELINE} $$manpage;\
+	done
 	#
 	# Make the User's Guide, and copy to top level. (We'll
 	# destroy the userguide source soon.)
