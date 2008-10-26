@@ -21,7 +21,8 @@
 #include "esl_random.h"
 #include "esl_sqio.h"
 
-#define cmERRBUFSIZE 1024
+/*#define cmERRBUFSIZE 1024*/
+#define cmERRBUFSIZE 2048
 
 /* various default parameters for CMs and CP9 HMMs */ 
 #define DEFAULT_MIN_CP9_E_CUTOFF 1.0
