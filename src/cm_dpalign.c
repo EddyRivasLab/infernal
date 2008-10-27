@@ -4522,7 +4522,28 @@ get_femission_score(CM_t *cm, ESL_DSQ *dsq, int v, int i, int j)
  *           To check this, we have to allow possibility that 
  *           the res at posn x was emitted from a left 
  *           emitter or a right emitter.
- *           
+ *
+ * Note:     This check is known to fail for some cases with
+ *           parsetrees that contain inserts of 100s of residues from
+ *           the same IL or IR state (that utilize 100s of IL->IL or
+ *           IR->IR self transitions). These cases were looked at in
+ *           detail to determine if they were due to a bug in the DP
+ *           code. This was logged in
+ *           ~nawrockie/notebook/8_1016_inf-1rc3_bug_alignment/00LOG.
+ *           The conclusion was that the failure of the posterior
+ *           check is due completely to lack of precision in the float
+ *           scores (not just in the logsum look-up table but also
+ *           with using real log() and exp() calls). If this function
+ *           returns an error, please check to see if the parsetree
+ *           has a large insertion in it, if so you can expect
+ *           probabilities up to 1.03 due solely to this precision
+ *           issue. See the notebook 00LOG for more, included a check
+ *           I performed to change the relevant IL->IL transition
+ *           probability by very small values (~0.0001) and you can
+ *           observe the posteriors change dramatically which
+ *           demonstrates that precision of floats is the culprit.
+ *           (EPN, Sun Oct 26 14:54:31 2008)
+ * 
  * Args:     cm       - the model
  *           errbuf   - char buffer for returning error messages with ESL_FAIL
  *           i0       - first residue to check
@@ -4551,8 +4572,8 @@ CMCheckPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post)
   int    **hdmax = cp9b->hdmax;
 
   int L = j0-i0+1;
-  ESL_ALLOC(sum, sizeof(float) * (L+1));
-  esl_vec_FSet(sum, L+1, IMPOSSIBLE);
+  ESL_ALLOC(sum, sizeof(float) * (L+2));
+  esl_vec_FSet(sum, L+2, IMPOSSIBLE);
 
   for(v = 0; v < cm->M; v++) { 
     if((cm->sttype[v] == MP_st) || (cm->sttype[v] == ML_st) || (cm->sttype[v] == IL_st)) {
@@ -4591,7 +4612,7 @@ CMCheckPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post)
   for(xp = 1; xp <= L; xp++) { 
     x = xp+i0-1;
     if(((sum[xp] - 0.) > 0.01) || ((sum[xp] - 0.) < -0.01))
-      ESL_FAIL(eslFAIL, errbuf, "residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", x, (sreEXP2(sum[xp])), sum[xp]);
+      ESL_FAIL(eslFAIL, errbuf, "residue %d has summed prob of %5.4f (2^%5.4f). May not be a DP coding bug, see 'Note:' on precision in CMCheckPosteriorHB().\n", x, (sreEXP2(sum[xp])), sum[xp]);
     /*printf("x: %d | total: %10.2f\n", x, (sreEXP2(sc)));*/
   }  
   ESL_DPRINTF1(("CMCheckPosteriorHB() passed, all residues have summed probability of emission of 1.0.\n"));
@@ -4619,6 +4640,27 @@ CMCheckPosteriorHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post)
  *           j0       - last residue to check
  *           post     - pre-filled dynamic programming cube
  *           
+ * Note:     This check is known to fail for some cases with
+ *           parsetrees that contain inserts of 100s of residues from
+ *           the same IL or IR state (that utilize 100s of IL->IL or
+ *           IR->IR self transitions). These cases were looked at in
+ *           detail to determine if they were due to a bug in the DP
+ *           code. This was logged in
+ *           ~nawrockie/notebook/8_1016_inf-1rc3_bug_alignment/00LOG.
+ *           The conclusion was that the failure of the posterior
+ *           check is due completely to lack of precision in the float
+ *           scores (not just in the logsum look-up table but also
+ *           with using real log() and exp() calls). If this function
+ *           returns an error, please check to see if the parsetree
+ *           has a large insertion in it, if so you can expect
+ *           probabilities up to 1.03 due solely to this precision
+ *           issue. See the notebook 00LOG for more, included a check
+ *           I performed to change the relevant IL->IL transition
+ *           probability by very small values (~0.0001) and you can
+ *           observe the posteriors change dramatically which
+ *           demonstrates that precision of floats is the culprit.
+ *           (EPN, Sun Oct 26 14:54:31 2008)
+ * 
  * Return:   eslOK on success, eslFAIL if any residue fails check
  */
 int 
@@ -4668,7 +4710,7 @@ CMCheckPosterior(CM_t *cm, char *errbuf, int i0, int j0, float ***post)
   for(xp = 1; xp <= L; xp++) { 
     x = xp+i0-1;
     if(((sum[xp] - 0.) > 0.01) || ((sum[xp] - 0.) < -0.01))
-      ESL_FAIL(eslFAIL, errbuf, "CMCheckPosterior() residue position %d has summed prob of %5.4f (2^%5.4f) in posterior cube.\n", x, (sreEXP2(sum[xp])), sum[xp]);
+      ESL_FAIL(eslFAIL, errbuf, "residue %d has summed prob of %5.4f (2^%5.4f). May not be a DP coding bug, see 'Note:' on precision in CMCheckPosterior().\n", x, (sreEXP2(sum[xp])), sum[xp]);
     /*printf("x: %d | total: %10.2f\n", x, (sreEXP2(sc)));*/
   }  
   free(sum);
@@ -4753,6 +4795,8 @@ CMPostalCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t 
   int status;
   int x, v, i, j, d, r, jp;
   int v2, j2, d2;
+  int ip;
+  int sd, sdl, sdr;
   char *pcode1;
   char *pcode2;
   int p;
@@ -4766,12 +4810,91 @@ CMPostalCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t 
   ESL_ALLOC(pcode1, (L+1) * sizeof(char)); 
   ESL_ALLOC(pcode2, (L+1) * sizeof(char)); 
 
+  /* First, determine the summed log prob that each residue is emitted by any state.
+   * In a perfect world with machines with infinite precision (or prob if we just implemented doubles)
+   * this would always be 1.0 exactly for all residues, but there are precision errors due
+   * to the logsum lookup table *and* due to floating point precision (that is that
+   * said precision errors still exist using analytical logs and exps) that can 
+   * cause summed probs > 1.0 (I've seen up to 1.03!) This is because the difference
+   * between the Inside and Outside total sequence P(S | M) scores can reach
+   * 0.03 bits. I've only seen this happen for parsetrees with a single IL or IR
+   * state that makes several hundred self transits. 
+   */
+
+  float   *res_logp; /* [1..i..L], log of summed probability of residue i being emitted by any emitting state */
+  int      have_el; /* TRUE if we have local ends */
+  ESL_ALLOC(res_logp, sizeof(float) * (L+2)); /* L+2 b/c d can be 0 with j = L in EL states, so i = L+1, this is a bogus value and should be IMPOSSIBLE,
+						 but instead of checking for the boundary cases, we can treat them normally here and save time */
+  esl_vec_FSet(res_logp, L+2, IMPOSSIBLE);
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;  
+
+  /* If local ends are on, start with the EL state (cm->M), otherwise
+   * M deck is not valid. Note: there are no bands on the EL state */
+  if (have_el) { 
+    /* add contributions of ELs */
+    for (jp = 0; jp <= L; jp++) {
+      j = i0-1+jp;
+      ip = jp;
+      for (d = 1; d <= jp; d++) { 
+	res_logp[ip] = FLogsum(res_logp[ip], post[cm->M][jp][d]);
+	ip--;
+      }
+    }
+  }
+  /* add contributions of all other emitters */
+  for (v = (cm->M-1); v >= 0; v--) {
+    sdr = StateRightDelta(cm->sttype[v]);
+    sdl = StateLeftDelta(cm->sttype[v]);
+    sd  = sdl+sdr;
+    emits_left  = (sdl == 1) ? TRUE : FALSE;
+    emits_right = (sdr == 1) ? TRUE : FALSE;
+    /* check for the 3 possible emission cases, we could reduce the number of lines of code here,
+     * but that would require checking for 'emit_left' 'emit_right' inside for v { for j { for d { } } },
+     * the way it is here is more voluminous but more efficient.
+     */
+    if(emits_left && emits_right) { /* only MATP_MP */
+      ESL_DASSERT1((cm->sttype[v] == MP_st));
+      for (jp = sdr; jp <= L; jp++) {
+	j = i0-1+jp;
+	for (d = sd; d <= jp; d++) { 
+	  i  = j - d + 1;
+	  ip = i-i0+1;
+	  res_logp[ip] = FLogsum(res_logp[ip], post[v][jp][d]);
+	  res_logp[jp] = FLogsum(res_logp[jp], post[v][jp][d]);
+	}  
+      }
+    }
+    else if(emits_left) { 
+      for (jp = sdr; jp <= L; jp++) {
+	j = i0-1+jp;
+	for (d = sd; d <= jp; d++) { 
+	  i  = j - d + 1;
+	  ip = i-i0+1;
+	  res_logp[ip] = FLogsum(res_logp[ip], post[v][jp][d]);
+	}  
+      }
+    }
+    else if(emits_right) { 
+      for (jp = sdr; jp <= L; jp++) {
+	j = i0-1+jp;
+	for (d = sd; d <= jp; d++) { 
+	  res_logp[jp] = FLogsum(res_logp[jp], post[v][jp][d]);
+	}  
+      }
+    }
+  }
+  /*for(i = 0; i <= (L+1); i++) printf("res_logp[%5d] %12f\n", i, res_logp[i]);*/
+  /* finished determining summed log prob of each emitted residue */
+
+  /* go through each node of the parsetree and determine postal code for emissions */
   for (x = 0; x < tr->n; x++)
     {
       v = tr->state[x];
       i = tr->emitl[x];
       j = tr->emitr[x];
       d = j-i+1;
+      jp = j-i0+1;
+      ip = i-i0+1;
 
       /* Only P, L, R, and EL states have emissions. */
       emits_left  = (StateLeftDelta (cm->sttype[v]) == 1) ? TRUE : FALSE;
@@ -4786,8 +4909,8 @@ CMPostalCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t 
 	    d2 = j2-r+1;
 	    left_logp = FLogsum(left_logp, post[v][j2][d2]);
 	  }
-	  p = Fscore2postcode(left_logp);
-	  sump += FScore2Prob(left_logp, 1.);
+	  p = Fscore2postcode(left_logp - res_logp[ip]);
+	  sump += FScore2Prob((left_logp - res_logp[ip]), 1.);
 	  if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): discretized probability for EL state v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
 	  if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): discretized probability for EL state v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
 	  if(p == 100) { 
@@ -4847,8 +4970,8 @@ CMPostalCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t 
 	
 	/* fill pcode arrays with posterior characters */
 	if (emits_left) { 
-	  p = Fscore2postcode(left_logp);
-	  sump += FScore2Prob(left_logp, 1.);
+	  p = Fscore2postcode(left_logp - res_logp[ip]);
+	  sump += FScore2Prob((left_logp - res_logp[ip]), 1.);
 	  if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): left emit discretized probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
 	  if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): left emit discretized probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
 	  if(p == 100) { 
@@ -4861,8 +4984,8 @@ CMPostalCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t 
 	  }
 	}
 	if (emits_right) { 
-	  p = Fscore2postcode(right_logp);
-	  sump += FScore2Prob(right_logp, 1.);
+	  p = Fscore2postcode(right_logp - res_logp[jp]);
+	  sump += FScore2Prob((right_logp - res_logp[jp]), 1.);
 	  if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): right emit discretized probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
 	  if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): right emit discretized probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
 	  if(p == 100) { 
@@ -4878,6 +5001,7 @@ CMPostalCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t 
     }
   pcode1[L] = '\0';
   pcode2[L] = '\0';
+  free(res_logp);
   if(ret_pcode1 != NULL) *ret_pcode1 = pcode1;
   else                   free(pcode1);
   if(ret_pcode2 != NULL) *ret_pcode2 = pcode2;
@@ -4898,6 +5022,7 @@ CMPostalCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parset
   char *pcode1;
   char *pcode2;
   int jp_v, dp_v;
+  int ip, jp;
   int v2, j2, d2, dp_v2, jp_v2;
   float sump = 0.;
   int L = j0-i0+1;
@@ -4918,11 +5043,98 @@ CMPostalCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parset
   ESL_ALLOC(pcode1, (L+1) * sizeof(char)); 
   ESL_ALLOC(pcode2, (L+1) * sizeof(char)); 
 
+  /* First, determine the summed log prob that each residue is emitted by any state.
+   * In a perfect world with machines with infinite precision (or prob if we just implemented doubles)
+   * this would always be 1.0 exactly for all residues, but there are precision errors due
+   * to the logsum lookup table *and* due to floating point precision (that is that
+   * said precision errors still exist using analytical logs and exps) that can 
+   * cause summed probs > 1.0 (I've seen up to 1.03!) This is because the difference
+   * between the Inside and Outside total sequence P(S | M) scores can reach
+   * 0.03 bits. I've only seen this happen for parsetrees with a single IL or IR
+   * state that makes several hundred self transits. 
+   */
+
+  float   *res_logp; /* [1..i..L], log of summed probability of residue i being emitted by any emitting state */
+  int      have_el; /* TRUE if we have local ends */
+  ESL_ALLOC(res_logp, sizeof(float) * (L+2)); /* L+2 b/c d can be 0 with j = L in EL states, so i = L+1, this is a bogus value and should be IMPOSSIBLE,
+						 but instead of checking for the boundary cases, we can treat them normally here and save time */
+  esl_vec_FSet(res_logp, L+2, IMPOSSIBLE);
+  have_el = (cm->flags & CMH_LOCAL_END) ? TRUE : FALSE;  
+
+  /* If local ends are on, start with the EL state (cm->M), otherwise
+   * M deck is not valid. Note: there are no bands on the EL state */
+  if (have_el) { 
+    /* add contributions of ELs */
+    for (jp = 0; jp <= L; jp++) {
+      j = i0-1+jp;
+      ip = jp;
+      for (d = 1; d <= jp; d++) { 
+	res_logp[ip] = FLogsum(res_logp[ip], post[cm->M][jp][d]);
+	ip--;
+      }
+    }
+  }
+  /* add contributions of all other emitters */
+  for (v = (cm->M-1); v >= 0; v--) {
+    emits_left  = (StateLeftDelta(cm->sttype[v])  == 1) ? TRUE : FALSE;
+    emits_right = (StateRightDelta(cm->sttype[v]) == 1) ? TRUE : FALSE;
+    /* check for the 3 possible emission cases, we could reduce the number of lines of code here
+     * but that would require checking for 'emit_left' 'emit_right' inside for v { for j { for d { } } },
+     * the way it is here is more voluminous but more efficient.
+     */
+    if(emits_left && emits_right) { 
+      ESL_DASSERT1((cm->sttype[v] == MP_st));
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+	ESL_DASSERT1((j >= (i0-1) && j <= j0));
+	jp_v = j - jmin[v];
+	i = j - hdmin[v][jp_v] + 1;
+	jp = j-i0+1;
+	ip = i-i0+1;
+	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+	  dp_v = d - hdmin[v][jp_v];
+	  res_logp[ip] = FLogsum(res_logp[ip], post[v][jp_v][dp_v]);
+	  res_logp[jp] = FLogsum(res_logp[jp], post[v][jp_v][dp_v]);
+	  ip--;
+	}  
+      }
+    }
+    else if(emits_left) { 
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+	ESL_DASSERT1((j >= (i0-1) && j <= j0));
+	jp_v = j - jmin[v];
+	i = j - hdmin[v][jp_v] + 1;
+	jp = j-i0+1;
+	ip = i-i0+1;
+	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+	  dp_v = d - hdmin[v][jp_v];
+	  res_logp[ip] = FLogsum(res_logp[ip], post[v][jp_v][dp_v]);
+	  ip--;
+	}  
+      }
+    }
+    else if(emits_right) { 
+      for (j = jmin[v]; j <= jmax[v]; j++) {
+	ESL_DASSERT1((j >= (i0-1) && j <= j0));
+	jp_v = j - jmin[v];
+	jp = j-i0+1;
+	for (d = hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++) {
+	  dp_v = d - hdmin[v][jp_v];
+	  res_logp[jp] = FLogsum(res_logp[jp], post[v][jp_v][dp_v]);
+	}  
+      }
+    }
+  }
+  /*for(i = 0; i <= (L+1); i++) printf("res_logp[%5d] %12f\n", i, res_logp[i]);*/
+  /* finished determining summed log prob of each emitted residue */
+
+  /* go through each node of the parsetree and determine postal code for emissions */
   for (x = 0; x < tr->n; x++) {
     v = tr->state[x];
     i = tr->emitl[x];
     j = tr->emitr[x];
     d = j-i+1;
+    jp = j-i0+1;
+    ip = i-i0+1;
 
     /* Only P, L, R, and EL states have emissions. */
     emits_left  = (StateLeftDelta (cm->sttype[v]) == 1) ? TRUE : FALSE;
@@ -4937,8 +5149,8 @@ CMPostalCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parset
 	  d2 = j2-r+1;
 	  left_logp = FLogsum(left_logp, post[v][j2][d2]);
 	}
-	p = Fscore2postcode(left_logp);
-	sump += FScore2Prob(left_logp, 1.);
+	p = Fscore2postcode(left_logp - res_logp[ip]);
+	sump += FScore2Prob((left_logp - res_logp[ip]), 1.);
 	if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): discretized probability for EL state v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
 	if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): discretized probability for EL state v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
 	if(p == 100) { 
@@ -5014,8 +5226,8 @@ CMPostalCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parset
       
       /* fill pcode arrays with posterior characters */
       if (emits_left) { 
-	p = Fscore2postcode(left_logp);
-	sump += FScore2Prob(left_logp, 1.);
+	p = Fscore2postcode(left_logp - res_logp[ip]);
+	sump += FScore2Prob(left_logp - res_logp[ip], 1.);
 	if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): left emit discretized probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
 	if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): left emit discretized probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
 	if(p == 100) { 
@@ -5028,8 +5240,8 @@ CMPostalCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parset
 	}
       }
       if (emits_right) { 
-	p = Fscore2postcode(right_logp);
-	sump += FScore2Prob(right_logp, 1.);
+	p = Fscore2postcode(right_logp - res_logp[jp]);
+	sump += FScore2Prob((right_logp - res_logp[jp]), 1.);
 	if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): right emit discretized probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
 	if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): right emit discretized probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
 	if(p == 100) { 
@@ -5045,6 +5257,7 @@ CMPostalCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parset
   }
   pcode1[L] = '\0';
   pcode2[L] = '\0';
+  free(res_logp);
   if(ret_pcode1 != NULL) *ret_pcode1 = pcode1;
   else                   free(pcode1);
   if(ret_pcode2 != NULL) *ret_pcode2 = pcode2;

@@ -157,7 +157,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   Mb_needed += ESL_MAX(((float) (sizeof(float) * mx->ncells_alloc)), ((float) (sizeof(float) * ncells))); /* mx->dp_mem */
   Mb_needed *= 0.000001; /* convert to megabytes */
   ESL_DPRINTF2(("HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
-  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "cm_hb_mx_GrowTo(), requested size of HMM banded DP matrix %.2f Mb > %.2f Mb limit.\nSuggestions (may or may not be possible): increase tau with --tau, or change size limit with --mxsize.", Mb_needed, (float) size_limit);
+  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full matrix? or can we get away with just
    * jiggering the pointers, if total required num cells is less

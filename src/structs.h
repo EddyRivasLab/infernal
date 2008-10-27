@@ -29,12 +29,11 @@
 #if 0
 #include "impl_sse.h"
 #endif
+#define cmERRBUFSIZE 1024
 
 /* TEMP EPN, Tue Aug 19 17:40:32 2008 */
 #define PRINTNOW 0
 /* TEMP */
-
-#define cmERRBUFSIZE 1024
 
 /* various default parameters for CMs and CP9 HMMs */ 
 #define DEFAULT_MIN_CP9_E_CUTOFF 1.0
