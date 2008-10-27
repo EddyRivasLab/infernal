@@ -1546,7 +1546,7 @@ int dispatch_search_for_cmscore(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int i0, in
     if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
     if(hsi != NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(), SEARCH_WITH_HMM but hsi != NULL.\n");
     if(! ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD)))
-      ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(), search type for this round is SEARCH_WITH_HMM, but CM_SEARCH_HMMVITERBI and CM_SEARCH_HMMFORWARD flags are both down.");
+      ESL_FAIL(eslEINCOMPAT, errbuf, "dispatch_search_for_cmscore(), round search type = SEARCH_WITH_HMM, but CM_SEARCH_HMMVITERBI & CM_SEARCH_HMMFORWARD flags down.");
 
     /* Scan the (sub)seq in forward direction w/Viterbi or Forward, find score of best hit and it's endpoint j, then if CM_SEARCH_HMMFORWARD, go backwards to get it's start point, and a better guess at it's score */
     if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 

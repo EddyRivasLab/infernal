@@ -1338,7 +1338,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   search_opts = si->search_opts[n];
   use_hmmonly = ((search_opts & CM_SEARCH_HMMVITERBI) || (search_opts & CM_SEARCH_HMMFORWARD));
   if(use_hmmonly) do_hmm_filter = do_qdb_filter = FALSE; /* don't filter if we're searching only with the HMM */
-  if((! use_hmmonly) && (stype != SEARCH_WITH_CM)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo_for_calibrated_cm(), search_opts for final round of search does not have HMMVITERBI or HMMFORWARD flags raised, but is not of type SEARCH_WITH_CM.");
+  if((! use_hmmonly) && (stype != SEARCH_WITH_CM)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo_for_calibrated_cm(), final round search_opts HMMVITERBI or HMMFORWARD flags down, but type != SEARCH_WITH_CM.");
   /* determine configuration of CM and CP9 HMM based on cm->flags & cm->search_opts */
   CM2ExpMode(cm, search_opts, &cm_mode, &hmm_mode); 
 
@@ -1715,7 +1715,8 @@ set_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   search_opts = si->search_opts[n];
   use_hmmonly = ((search_opts & CM_SEARCH_HMMVITERBI) || (search_opts & CM_SEARCH_HMMFORWARD));
   if(use_hmmonly) do_hmm_filter = do_qdb_filter = FALSE; /* don't filter if we're searching only with the HMM */
-  if((! use_hmmonly) && (stype != SEARCH_WITH_CM)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo_for_uncalibrated_cm(), search_opts for final round of search does not have HMMVITERBI or HMMFORWARD flags raised, but is not of type SEARCH_WITH_CM.");
+  if((! use_hmmonly) && (stype != SEARCH_WITH_CM)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo_for_uncalibrated_cm(), final round search_opts HMMVITERBI or HMMFORWARD flags down, but type != SEARCH_WITH_CM.");
+
   /* determine configuration of CM and CP9 HMM based on cm->flags & cm->search_opts */
   CM2ExpMode(cm, search_opts, &cm_mode, &hmm_mode); 
 

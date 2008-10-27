@@ -1099,8 +1099,8 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0)
 	  if(cp9b->hdmin[v][(j-cp9b->jmin[v])] < StateDelta(cm->sttype[v])) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmin[v][jp_v:%d] : %d less than StateDelta for v: %d\n", v, j, (j-cp9b->jmin[v]), cp9b->hdmin[v][(j-cp9b->jmin[v])], StateDelta(cm->sttype[v]));
 	  if(cp9b->hdmax[v][(j-cp9b->jmin[v])] < StateDelta(cm->sttype[v])) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmax[v][jp_v:%d] : %d less than StateDelta for v: %d\n", v, j, (j-cp9b->jmin[v]), cp9b->hdmax[v][(j-cp9b->jmin[v])], StateDelta(cm->sttype[v]));
 	}
-	if(cp9b->jmax[v] > cp9b->jmax[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->jmax[v:%d]: %d greater than cp9b->jmax[0]: %d.", v, cp9b->jmax[v], cp9b->jmax[0]);
-	if(cp9b->imin[v] < cp9b->imin[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->imin[v:%d]: %d less than cp9b->imin[0]: %d, i0:%d j0:%d jmin[v]: %d jmax[v]: %d jmin[0]: %d jmax[0]: %d imax[v]:%d.", v, cp9b->imin[v], cp9b->imin[0], i0, j0, cp9b->jmin[v], cp9b->jmax[v], cp9b->jmin[0], cp9b->jmax[0], cp9b->imax[v]);
+	if(cp9b->jmax[v] > cp9b->jmax[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), jmax[v:%d]:%d > jmax[0]:%d.", v, cp9b->jmax[v], cp9b->jmax[0]);
+	if(cp9b->imin[v] < cp9b->imin[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), imin[v:%d]:%d < imin[0]:%d, i0:%d j0:%d jmin[v]:%d jmax[v]:%d jmin[0]:%d jmax[0]:%d imax[v]:%d", v, cp9b->imin[v], cp9b->imin[0], i0, j0, cp9b->jmin[v], cp9b->jmax[v], cp9b->jmin[0], cp9b->jmax[0], cp9b->imax[v]);
       }
     }
   }
@@ -3163,7 +3163,7 @@ CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0,
 	w = cm->cfirst[v]; /* BEGL_S */
 	y = cm->cnum[v];   /* BEGR_S */
 	if(r_jmax[w] < (r_imin[y]-1)) { 
-	  ESL_FAIL(eslFAIL, errbuf, "CMBandsCheckValidParse(), CM is not locally configured, BEGL_S state w: %d nd: %d and BEGR_S state y: %d nd: %d  bands fail to touch, residues %d to %d cannot be emitted!\n", w, w_nd, y, y_nd, r_jmax[w]+1, r_imin[y]-1);
+	  ESL_FAIL(eslFAIL, errbuf, "CMBandsCheckValidParse(), CM not local, BEGL_S w:%d nd:%d & BEGR_S y:%d nd:%d bands don't touch, res %d..%d unemittable!\n", w, w_nd, y, y_nd, r_jmax[w]+1, r_imin[y]-1);
 	}	     
       }
     }
@@ -3171,7 +3171,7 @@ CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0,
   else if(doing_search && cm_is_localized) { /* we're doing a local search, we have a valid parse if any state from which a local end is possible is reachable */
     v = 0;
     while(v < cm->M && !(v_is_r[v] && NOT_IMPOSSIBLE(cm->endsc[v]))) v++; /* increment v until we come to a state that is reachable and can go to EL, or we run out of states */
-    if(v == cm->M && i0 != j0) ESL_FAIL(eslFAIL, errbuf, "CMBandsCheckValidParse(), doing_search is TRUE and CM is locally configured, i0 != j0, but we can't reach a single CM state v from which an EL is possible.\n");
+    if(v == cm->M && i0 != j0) ESL_FAIL(eslFAIL, errbuf, "CMBandsCheckValidParse(), doing_search=TRUE, CM is local, i0 != j0, but no CM state is reachable from which an EL is possible.\n");
   }
 
   free(v_is_r);

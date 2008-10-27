@@ -828,7 +828,7 @@ int RemoveHitsOverECutoff (CM_t *cm, char *errbuf, SearchInfo_t *si, int sround,
   if(si == NULL)                       ESL_FAIL(eslEINCOMPAT, errbuf, "remove_hits_over_e_cutoff(), si == NULL.");
   if(si->stype[si->nrounds] != SEARCH_WITH_HMM && si->stype[si->nrounds] != SEARCH_WITH_CM) ESL_FAIL(eslEINCOMPAT, errbuf, "remove_hits_over_e_cutoff(), final search round is neither SEARCH_WITH_HMM nor SEARCH_WITH_CM.");
   if(sort_by_score == TRUE  && sort_by_endpoint == TRUE)  ESL_FAIL(eslEINCOMPAT, errbuf, "remove_hits_over_e_cutoff(), sort_by_score and sort_by_endpoint both TRUE.");
-  if(sort_by_score == FALSE && sort_by_endpoint == FALSE) ESL_FAIL(eslEINCOMPAT, errbuf, "remove_hits_over_e_cutoff(), sort_by_score and sort_by_endpoint both FALSE (currently disallowed, though shouldn't be a problem to allow).");
+  if(sort_by_score == FALSE && sort_by_endpoint == FALSE) ESL_FAIL(eslEINCOMPAT, errbuf, "remove_hits_over_e_cutoff(), sort_by_score and sort_by_endpoint both FALSE (disallowed, but shouldn't be a problem to allow).");
   if(first_result > results->num_results) ESL_FAIL(eslEINCOMPAT, errbuf, "RemoveHitsOverECutoff(), first_result %d > results->num_results %d\n", first_result, results->num_results);
   
   if (results == NULL) return eslOK;
@@ -1232,7 +1232,7 @@ int
 SetBestFilterInfoHMM(BestFilterInfo_t *bf, char *errbuf, int cm_M, float cm_eval, float F, int N, int db_size, float full_cm_ncalcs, int ftype, float e_cutoff, float fil_ncalcs, float fil_plus_surv_ncalcs)
 {
   if(ftype != FILTER_WITH_HMM_VITERBI && ftype != FILTER_WITH_HMM_FORWARD) ESL_FAIL(eslEINCOMPAT, errbuf, "SetBestFilterInfoHMM(), ftype is neither FILTER_WITH_HMM_VITERBI nor FILTER_WITH_HMM_FORWARD.\n");
-  if(bf->is_valid) ESL_FAIL(eslEINCOMPAT, errbuf, "SetBestFilterInfoHMM(), bf->is_valid is TRUE (shouldn't happen, only time to set filter as HMM is when initializing BestFilter object.\n");
+  if(bf->is_valid) ESL_FAIL(eslEINCOMPAT, errbuf, "SetBestFilterInfoHMM(), bf->is_valid=TRUE (shouldn't happen, only time to set filter=HMM is when initializing BestFilter.\n");
 
   bf->cm_M      = cm_M;
   bf->cm_eval   = cm_eval;
@@ -1406,7 +1406,7 @@ SetHMMFilterInfoHMM(HMMFilterInfo_t *hfi, char *errbuf, float F, int N, int dbsi
 {
   int status;
   int i;
-  if(hfi->is_valid) ESL_FAIL(eslEINCOMPAT, errbuf, "SetHMMFilterInfoHMM(), hfi->is_valid is TRUE (shouldn't happen, only time to set filter as HMM is when initializing HMMFilter object.\n");
+  if(hfi->is_valid) ESL_FAIL(eslEINCOMPAT, errbuf, "SetHMMFilterInfoHMM(), hfi->is_valid=TRUE (shouldn't happen, only time to set filter=HMM is when initializing HMMFilter.\n");
   hfi->ncut      = ncut;
   hfi->F         = F;
   hfi->N         = N;

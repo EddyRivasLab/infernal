@@ -117,7 +117,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
     if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
     if(hsi != NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round %d, SEARCH_WITH_HMM but hsi != NULL.\n", sround);
     if(! ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD)))
-      ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), search type for this round is SEARCH_WITH_HMM, but CM_SEARCH_HMMVITERBI and CM_SEARCH_HMMFORWARD flags are both down.");
+      ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round search type=SEARCH_WITH_HMM, but CM_SEARCH_HMMVITERBI & CM_SEARCH_HMMFORWARD flags are down.");
 
     search_results_t *fwd_results;
     /* Scan the (sub)seq in forward direction w/Viterbi or Forward, getting j end points of hits above cutoff */
@@ -966,7 +966,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       if(*cur_tr == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments() should have parsetrees, but don't (coding error).");
       cur_emap = CreateEmitMap(cm); /* TEMPORARY!, we don't want to build this separately for each seq, but with sub CMs I'm not sure how to accomplish that */
       if((status = ParsetreeScore(cm, cur_emap, errbuf, *cur_tr, cur_dsq, FALSE, &tmpsc, &struct_sc, &primary_sc, &cur_spos, &cur_epos)) != eslOK) return status;
-      if(do_sub) { cur_spos += spos; cur_epos += spos; }
+      if(do_sub) { cur_spos += (spos-1); cur_epos += (spos-1); }
       FreeEmitMap(cur_emap);
     }
     /* determine NULL3 score correction, which is independent of the parsetree */
@@ -1009,7 +1009,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     /* check parsetree score if cm->align_opts & CM_ALIGN_CHECKPARSESC */
     if((cm->align_opts & CM_ALIGN_CHECKPARSESC) && (!(cm->flags & CM_IS_SUB))) { 
       if(do_optacc) 
-	ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), cm->align_opts CM_ALIGN_CHECKPARSESC, is on, but incompatible with another enabled option: CM_ALIGN_OPTACC.\n");
+	ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), align_opts CM_ALIGN_CHECKPARSESC is on, but incompatible with raised flag CM_ALIGN_OPTACC.\n");
       if((status = ParsetreeScore(cm, NULL, errbuf, tr[i], cur_dsq, FALSE, &tmpsc, NULL, NULL, NULL, NULL)) != eslOK) return status;
       if (fabs(sc - tmpsc) >= 0.03)
 	ESL_FAIL(eslFAIL, errbuf, "DispatchAlignments(), seq: %d alignment score %.3f differs from its parse tree's score: %.3f", i, sc, tmpsc);
