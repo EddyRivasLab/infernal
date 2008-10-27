@@ -18,7 +18,7 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
 
-static char banner[] = "truncyk_check - score RNA covariance model against sequences";
+/*static char banner[] = "truncyk_check - score RNA covariance model against sequences";*/
 
 static ESL_OPTIONS options[] = {
   { "-h",         eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL, "show help",                                             0}, 
@@ -55,12 +55,12 @@ main(int argc, char **argv)
   char *regressfile;		/* name of regression data file to save     */
   FILE *regressfp;              /* open filehandle for writing regressions  */
 
-  char *optname;                /* name of option found by Getopt()        */
-  char *optarg;                 /* argument found by Getopt()              */
-  int   optind;                 /* index in argv[]                         */
+  /*char *optname;*/                /* name of option found by Getopt()        */
+  /*char *optarg;*/                 /* argument found by Getopt()              */
+  /*int   optind;*/                 /* index in argv[]                         */
 
   ESL_GETOPTS *go;
-  char        *arg;
+  /*char        *arg;*/
 
   /*********************************************** 
    * Parse command line
