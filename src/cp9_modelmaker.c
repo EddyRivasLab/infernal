@@ -2686,7 +2686,7 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
 	  /* we misassigned this guy, overwrite */ 
 	}
       }
-      esl_msa_ColumnSubset(msa, useme);
+      if((status = esl_msa_ColumnSubset(msa, errbuf, useme)) != eslOK) cm_Fail(errbuf);
       
       /* Determine match assignment from RF annotation
        */

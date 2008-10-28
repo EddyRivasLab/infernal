@@ -405,6 +405,7 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   char *name;
   int namelen;
   int i, L; 
+  float sc, struct_sc;
 
   namelen = IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
   if(cm->name != NULL) namelen += strlen(cm->name) + 1;
@@ -421,6 +422,9 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       if(cfg->pfp != NULL)
 	{
 	  fprintf(cfg->pfp, "> %s\n", sq->name);
+	  if((status = ParsetreeScore(cm, NULL, errbuf, tr, sq->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
+	  fprintf(cfg->pfp, "  %16s %.2f bits\n", "SCORE:", sc);
+	  fprintf(cfg->pfp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
 	  ParsetreeDump(cfg->pfp, tr, cm, sq->dsq, NULL, NULL);
 	  fprintf(cfg->pfp, "//\n");
 	}
@@ -782,7 +786,7 @@ truncate_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, char 
     printf("useme[%d]: %d\n", apos, useme[apos]);
   */
 
-  esl_msa_ColumnSubset(msa, useme);
+  if((status = esl_msa_ColumnSubset(msa, errbuf, useme)) != eslOK) return status;
   free(useme);
   free(ct);
   return eslOK;

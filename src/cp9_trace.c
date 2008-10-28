@@ -955,6 +955,7 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   int          max_ins_or_el[2];/* for regularizing (splitting) inserts */
   int          pass_offset[2];  /* for regularizing (splitting) inserts */
   int          pass;            /* for regularizing (splitting) inserts */
+  char         errbuf[cmERRBUFSIZE];
 
   /* Contract checks */
   if(cm->cp9 == NULL)
@@ -1331,7 +1332,7 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
       esl_vec_ISet(useme, msa->alen, FALSE);
       for(cpos = 0; cpos <= emap->clen; cpos++)
 	if(matmap[cpos] != -1) useme[matmap[cpos]] = TRUE;
-      esl_msa_ColumnSubset(msa, useme);
+      if((status = esl_msa_ColumnSubset(msa, errbuf, useme)) != eslOK) return status;
       free(useme);
     }
 
