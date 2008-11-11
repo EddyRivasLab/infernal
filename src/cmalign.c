@@ -189,13 +189,11 @@ static int add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *
 int
 main(int argc, char **argv)
 {
-  int              status;      /* easel status */
   ESL_GETOPTS     *go = NULL;   /* command line processing                     */
   ESL_STOPWATCH   *w  = esl_stopwatch_Create();
   if(w == NULL) cm_Fail("Memory error, stopwatch not created.\n");
   esl_stopwatch_Start(w);
   struct cfg_s     cfg;
-  char             errbuf[cmERRBUFSIZE]; /* for error messages in mpi_master() */
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
   FLogsumInit();
@@ -334,6 +332,8 @@ main(int argc, char **argv)
 #ifdef HAVE_MPI
   if (esl_opt_GetBoolean(go, "--mpi")) 
     {
+      int              status;               /* easel status */
+      char             errbuf[cmERRBUFSIZE]; /* for error messages in mpi_master() */
       cfg.do_mpi     = TRUE;
 
       MPI_Init(&argc, &argv);

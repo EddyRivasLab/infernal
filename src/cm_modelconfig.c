@@ -488,7 +488,7 @@ ConfigQDBAndW(CM_t *cm, int do_calc_qdb)
   int *dmin, *dmax;
 
   /* Three possible modes, depending on input args. 
-   * We'll have do the band calculation either:
+   * We'll have to do the band calculation either:
    *
    * 1. one time with beta == cm->beta_W to calculate cm->W.
    * 2. one time with beta == cm->beta_qdb to calculate cm->dmin and
