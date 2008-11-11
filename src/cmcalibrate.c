@@ -220,13 +220,12 @@ static int  get_genomic_sequence_from_hmm(const struct cfg_s *cfg, char *errbuf,
 int
 main(int argc, char **argv)
 {
-  int status;
+  int              status;
   ESL_GETOPTS     *go	   = NULL;     /* command line processing                     */
   ESL_STOPWATCH   *w  = esl_stopwatch_Create();
   if(w == NULL) cm_Fail("Memory allocation error, stopwatch could not be created.");
   esl_stopwatch_Start(w);
   struct cfg_s     cfg;
-  char             errbuf[cmERRBUFSIZE]; /* for error messages in mpi_master() */
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
   FLogsumInit();
@@ -376,6 +375,7 @@ main(int argc, char **argv)
 #ifdef HAVE_MPI
   if (esl_opt_GetBoolean(go, "--mpi")) 
     {
+      char             errbuf[cmERRBUFSIZE]; /* for error messages in mpi_master() */
       if(! esl_opt_IsDefault(go, "--forecast")) cm_Fail("--forecast is incompatible with --mpi.");
       cfg.do_mpi     = TRUE;
       MPI_Init(&argc, &argv);
