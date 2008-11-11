@@ -454,7 +454,7 @@ search. By default, QDB is used in the final round of search with
 beta = 1E-15, after all filtering is finished. 
 
 .TP 
-.B --beta " <x>"
+.BI --beta " <x>"
 For query-dependent banding (QDB) during the final round of search,
 set the beta parameter to 
 .I <x>
@@ -563,7 +563,7 @@ hits survived the filter it is predicted that exactly
 fraction of the residues in the database would survive.
 
 .TP 
-.B --hmm-W " <n>"
+.BI --hmm-W " <n>"
 Set the HMM window size W (maximum size of a hit) to 
 .I <n>.
 This option only works in combination with 
@@ -574,7 +574,7 @@ By default, W is calculated automatically, but this automatic calculation is
 time consuming for large models.
 
 .TP 
-.B --hmm-cW " <x>"
+.BI --hmm-cW " <x>"
 Set the HMM window size W (maximum size of a hit) as
 .I <x> 
 times the consensus length of the CM. The consensus length (clen) of the CM
