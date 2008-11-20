@@ -1447,6 +1447,8 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   do_hmm_filter = esl_opt_GetBoolean(go, "--fil-hmm");
   fhmm_S = fhmm_E = fhmm_sc = -1.;
   if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &fhmm_ncalcs_per_res)) != eslOK) return status;
+  /* reset HMM mode to either EXP_CP9_LF or EXP_CP9_GF for local or glocal HMM forward filtering */
+  hmm_mode = ExpModeIsLocal(cm_mode) ? EXP_CP9_LF : EXP_CP9_GF;
 
   if(do_hmm_filter) { /* determine thresholds for HMM forward filter */
     if(use_hmmonly) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo_for_calibrated_cm(), --fil-hmm enabled, along with --viterbi or --forward, shouldn't happen.");
@@ -1456,8 +1458,6 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
        * FTHR_CM_LI, FTHR_CM_GC, FTHR_CM_GI (can't be an HMM mode b/c --viterbi and --forward toggle --fil-hmm off)
        */
 
-      /* reset HMM mode to either EXP_CP9_LF or EXP_CP9_GF for local or glocal HMM forward filtering */
-      hmm_mode = ExpModeIsLocal(cm_mode) ? EXP_CP9_LF : EXP_CP9_GF;
       /* determine fthr mode */
       if((status = CM2FthrMode(cm, errbuf, cm->search_opts, &fthr_mode)) != eslOK) return status;
       HMMFilterInfo_t *hfi_ptr = cm->stats->hfiA[fthr_mode]; /* for convenience */
@@ -1478,6 +1478,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 	if(! esl_opt_IsDefault(go, "--fil-Smax-hmm")) { 
 	  if(fhmm_S > esl_opt_GetReal(go, "--fil-Smax-hmm")) { /* predicted survival fraction exceeds maximum allowed, set E cutoff as E value that gives max allowed survival fraction */
 	    fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-Smax-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
+
 	  }
 	}
 	if((status  = E2MinScore(cm, errbuf, hmm_mode, fhmm_E, &fhmm_sc)) != eslOK) return status; /* note: use hmm_mode, not fthr_mode */
