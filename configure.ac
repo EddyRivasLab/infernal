@@ -41,7 +41,7 @@
 
 
 AC_PREREQ(2.60)
-AC_INIT(Infernal, 1.0rc3, eddys@janelia.hhmi.org, infernal)
+AC_INIT(Infernal, 1.0rc4, eddys@janelia.hhmi.org, infernal)
 AC_MSG_NOTICE([Configuring Infernal for your system.])
 
 
@@ -67,18 +67,18 @@ AC_MSG_NOTICE([Configuring Infernal for your system.])
 #
 ################################################################
 
-PACKAGE_DATE="September 2008"
+PACKAGE_DATE="November 2008"
 PACKAGE_COPYRIGHT="Copyright (C) 2008 HHMI Janelia Farm Research Campus"
 PACKAGE_LICENSE="Freely distributed under the GNU General Public License (GPLv3)"
 PACKAGE_LICENSETAG=gnu
 PACKAGE_VERSION=$PACKAGE_VERSION
 PACKAGE_URL="http://infernal.janelia.org/"
 
-EASEL_DATE="September 2008"
+EASEL_DATE="November 2008"
 EASEL_COPYRIGHT="Copyright (C) 2008 HHMI Janelia Farm Research Campus"
 EASEL_LICENSE="Freely distributed under the Janelia Software License."
 EASEL_LICENSETAG=jsl
-EASEL_VERSION="i1.0rc3"
+EASEL_VERSION="i1.0rc4"
 EASEL_URL="http://easel.janelia.org/"
 
 # Output variables  (AC_OUTPUT replaces @var@ in input files, such as Makefiles)

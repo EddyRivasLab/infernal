@@ -51,6 +51,54 @@ Release candidate 3 (1.0rc3; 24 Sept 2008) fixed several bugs, including:
      previously would erroneously detect the Athlon as supporting SSE2
      instructions, but it doesn't.
 
+Release candidate 4 (1.0rc4; 24 Nov 2008) bugfixes and changes include:
+
+   - fixed a bug with cmsearch --fil-T-hmm <x> and --fil-E-hmm
+     <x>. With --fil-T-hmm, the HMM filter bit score threshold was
+     properly set and reported in the 'Pre-search info', but the HMM
+     E-value cutoff was incorrectly set and reported. With
+     --fil-E-hmm, the HMM filter E-value cutoff was properly set and
+     reported, but the bit score was incorrectly set and reported.
+
+   - added --hmm-W <n> and --hmm-cW <x> options that can only be used
+     in combination with --viterbi or --forward. --hmm-W <n> sets W
+     for the search as <n>. --hmm-cW <x> sets W as <x> * the consensus
+     length of the model. Both options allow cmsearch to skip the
+     expensive step of defining W with the QDB band definition
+     algorithm.
+
+   - bug fixes in MPI implementation to cleanly exit on errors in
+     initialization.
+
+   - Posterior probabilities are now normalized so that the summed
+     probability that each residue is emitted is exactly 1.0. This
+     'fixes' a problem due to the limitation of float point precision
+     that resulted in posterior probabilities above 1.0 (up to
+     1.03!). This is only known to occur in parsetrees that have a
+     insert of >100 residues, usually near the beginning or end of the
+     model (v close to 0 or v close to cm->M). 
+   
+   - ':' now only appears in cmsearch markup for positively
+     scoring basepairs. ' ' appears for negatively scoring basepairs, and
+     '+' now never appears for base pairs.
+
+   - cmemit --tfile <f> now prints parsetree scores to <f> along with
+     actual parsetrees. 
+
+   - trcyk and truncyk_check added. Infernal 1.0 will be
+     "supplementary material" for the Kolbe & Eddy trCYK paper.
+
+   - small but important fix, in rare case where sub CM predicted start
+     point > predicted end point I was setting epos to cm->cp9->M, which
+     was invalid, I should've set it to orig_hmm->M.
+
+   - Fixed and logged a bug as i13 in infernal/Bugs/BUGTRAX. This was
+     logged in
+     ~/notebook/8_0930_inf_1rc3_sub_illegal_cm/00LOG. Briefly the bug
+     had to do with rare cases of low-scoring sequences with 'cmalign
+     --sub' when using a CM1 that has 0 length consensus loop(s) (two
+     positions i and i+1 that are basepaired to each other).
+   
 
 
 For more information, see http://infernal.janelia.org
