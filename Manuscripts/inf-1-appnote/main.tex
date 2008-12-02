@@ -2,12 +2,15 @@
 \usepackage{times}
 \usepackage{verbatim}
 \usepackage[pdftex]{graphicx}    
-\usepackage[pdftex]{color}  
+%\usepackage[pdftex]{color}  
 \usepackage{fullpage}
 \usepackage{url}
-\usepackage{cite}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{setspace}
+\doublespacing
+\setcounter{secnumdepth}{0}
 
-\bibliographystyle{plos}
+\bibliographystyle{unsrtnat}
 
 % \draftfalse: submission version. Legends,tables at end. No figs included.
 % \drafttrue:   online preprint. Figures and table inline.
@@ -15,14 +18,10 @@
 %\draftfalse
 \drafttrue
 
-\renewcommand{\baselinestretch}{1.5}
-\setcounter{secnumdepth}{0}
-
-
 \begin{document}
 
 \title{Infernal 1.0: inference of RNA alignments}
-\author{Eric P. Nawrocki and Sean R. Eddy\\
+\author{Eric P. Nawrocki, Diana L. Kolbe, and Sean R. Eddy\\
 HHMI Janelia Farm Research Campus\\
 19700 Helix Drive\\
 Ashburn VA 20147\\
@@ -34,86 +33,114 @@ Ashburn VA 20147\\
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+\begin{abstract}
+
+\textbf{Summary:} \textsc{infernal} is a software package for building
+consensus RNA secondary structure profiles called covariance models
+(CMs), and using them to search nucleic acid sequence databases for
+homologous RNAs, or to create new sequence and structure-based
+multiple sequence alignments.
+
+\textbf{Availability:} Source code and documentation downloadable from
+\url{http://infernal.janelia.org}. Freely licensed under the GNU
+General Public License version 3 (GPLv3).
+
+\textbf{Contact:} \url{eddys@janelia.hhmi.org}
+
+\end{abstract}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 \section{Introduction}
 
-\begin{comment}
-\textsc{infernal} is a software package for building consensus RNA
-secondary structure profiles called \emph{covariance models} (CMs),
-and using them to search nucleic acid sequence databases for
-homologous RNAs, or to create new sequence and structure-based
-multiple sequence alignments. 
-\end{comment}
+When searching for homologous RNAs in sequence databases, it is
+desirable to score both primary sequence and RNA secondary structure
+conservation. Several tools have been developed which take different
+approaches to how RNA sequence and secondary structure constraints
+should be integrated and scored. Some tools implement specialized
+rules for a specific RNA family, such as tRNAs
+\citep{LoweEddy97,Laslett04}, snoRNAs \citep{LoweEddy99,Schattner06},
+microRNAs \citep{Lai03,Lim03}, or SRP RNAs \citep{Lai03,Lim03}. Some
+approaches use pattern matching methods and expertly designed query
+patterns \citep{Macke01}. The most general approaches take as input
+any RNA (or RNA multiple alignment), and construct an appropriate
+statistical scoring system that allows quantitative ranking of
+putative homologs in a target sequence database
+\citep{Gautheret01,ZhangBafna05}.  Stochastic context-free grammars
+(SCFGs) provide a natural statistical framework for combining sequence
+and (non-pseudoknotted) secondary structure conservation information
+in a single consistent scoring system
+\citep{Sakakibara94c,Eddy94,Brown00,Durbin98}.
 
-RNAs conserve sequence and structural features that are important for their
-function.  When computationally searching for homologous RNAs in
-genomic sequence it is beneficial to score both types of conservation.
-There have been several tools developed based on this premise.  These
-include programs for finding members of one particular family, such as
-tRNAs \cite{LoweEddy97,Laslett04}, snoRNAs
-\cite{LoweEddy99,Schattner06}, microRNAs \cite{Lai03,Lim03} and SRP
-RNAs \cite{Lai03,Lim03}, as well as pattern matching approaches that
-require expertly designed query patterns \cite{Macke01}. The most
-generally useful tools, however, take as input any RNA (or RNA
-multiple alignment) and construct an appropriate scoring system for
-scanning and ranking putative homologs within a target database
-\cite{Gautheret01,ZhangBafna05}. We describe an implementation of this
-general approach in the sofware package \textsc{infernal}.
-\textsc{infernal} builds consensus RNA secondary structure profiles
-called \emph{covariance models} (CMs), and uses them to search nucleic
-acid sequence databases for homologous RNAs, or to create new sequence
-and structure-based multiple sequence alignments.  \textsc{infernal}
-is used to help annotate RNAs in genomes in conjunction with the
-\textsc{Rfam} database \cite{Griffiths-Jones05}, which contains 603
-RNA families, each represented by a structural alignment and a CM.
-
-CMs are profile probabilistic models that model both the conserved
-primary sequence and well-nested secondary structure of an RNA family.
-(CMs are unable to model pseudoknotted structures or other
-non-well-nested tertiary structural contacts). A CM is built from a
-multiple sequence alignment with consensus structure annotation
-denoting which positions of the alignment are single stranded and
-which are base paired. CMs have position specific scores for all
-possible residues at single stranded positions and all possible base
-pairs at paired positions, as well as position specific scores for
-insertions and deletions. These scores are derived from the observed
-counts of residues, base-pairs, inserts and deletions in the input
-alignment, augmented with prior information derived from large
-structural ribosomal RNA alignments. The construction and
-parameterization of CMs has been described in more detail elsewhere
-\cite{Eddy94,infguide03,Eddy02b,NawrockiEddy07}.
+Here, we announce the 1.0 release of \textsc{infernal}, an
+implementation of a general SCFG-based approach for RNA database
+searches and multiple alignment. \textsc{infernal} builds consensus
+RNA profiles called \emph{covariance models} (CMs), a special case of
+SCFGs designed for modeling RNA consensus sequence and structure. It
+uses CMs to search nucleic acid sequence databases for homologous
+RNAs, or to create new sequence and structure-based multiple sequence
+alignments. One main use of \textsc{infernal} is to annotate RNAs in
+genomes in conjunction with the \textsc{Rfam} database
+\citep{Griffiths-Jones05}, which contains hundreds of RNA families,
+each represented by a structural alignment and a CM. \textsc{Infernal}
+has been in use since 2002, but 1.0 is the first version that we
+consider to be a reasonably complete production tool. It now includes
+E-value estimates for the statistical significance of database hits,
+and heuristic acceleration algorithms for both database searches and
+multiple RNA sequence alignment that allow \textsc{infernal} to be
+deployed in a variety of real RNA analysis tasks with manageable
+(albeit high) computational requirements.
 
 \section{Usage} 
+
+A CM is built from a multiple sequence alignment (or single RNA
+sequence) with consensus secondary structure annotation denoting which
+positions of the alignment are to be scored as single stranded and
+which are to be scored as base paired. CMs assign position specific
+scores for the four possible residues at single stranded positions and
+the sixteen possible base pairs at paired positions, as well as
+position specific scores for insertions and deletions. These scores
+are log-odds scores derived from the observed counts of residues, base
+pairs, insertions and deletions in the input alignment, combined with
+prior information derived from structural ribosomal RNA
+alignments. Construction and parameterization of CMs have been
+described in more detail elsewhere
+\citep{Eddy94,infguide03,Eddy02b,NawrockiEddy07}.
+
 \textsc{infernal} is composed of several programs that are used in
 combination to build models, search databases, and align putative
-homologs by following four basic steps:
+homologs, following four basic steps:
 
 \begin{enumerate}
-\item Build a covariance model file from a training alignment.
+\item Build a CM from an input alignment.
 
 The \emph{cmbuild} program takes as input a structural multiple
-RNA alignment in Stockholm format \cite{infguide03} and creates a CM
+RNA alignment in Stockholm format \citep{infguide03} and creates a CM
 file that is used by other \textsc{infernal} programs.
 
 \item Calibrate the CM file for similarity search.
 
-Prior to searching databases, approximate E-value statistics for a CM
-are estimated using the \emph{cmcalibrate} program. This step is
-optional and computationally expensive (as shown in Table 2), but is
-required to obtain E-values that estimate the statistical significance
-of each hit during similarity search. \emph{cmcalibrate} will also
-determine appropriate HMM filter thresholds to use to accelerate
-searches without an appreciable loss of sensitivity.
+Prior to searching databases, parameters for approximate E-value
+statistics for a CM should be estimated using the \emph{cmcalibrate}
+program. This step is optional and computationally expensive (as shown
+in Table~1), but is required to obtain E-values that estimate the
+statistical significance of each hit in a database similarity
+search. \emph{cmcalibrate} will also determine appropriate HMM filter
+thresholds used to accelerate searches without an appreciable loss of
+sensitivity, as described in more detail below.
 
 \item Search databases for putative homologs.
 
-The \emph{cmsearch} program reads a model from a CM file and searches
-a sequence file for high scoring hits to the model. The output of
+The \emph{cmsearch} program takes a CM file as input and searches a
+sequence file for high scoring hits to the model. The output of
 \emph{cmsearch} includes an alignment of each hit in a BLAST-like
-format augmented with structure annotation.  
+format augmented with structure annotation and (optionally) with
+posterior probabilities indicating the confidence in each aligned
+position.
 
 \item Align putative homologs to the model.
 
-\emph{cmalign} takes as input a CM file and a target sequence file 
+\emph{cmalign} takes a CM file as input and a target sequence file
 containing putative homologs and aligns the full length sequences to
 the model, creating a structurally annotated multiple alignment in
 Stockholm format.
@@ -121,133 +148,144 @@ Stockholm format.
 \end{enumerate}
 
 Some of these steps are unnecessary for some applications. For
-example, a user that wants to only generate alignments of previously
+example, a user that wants only to generate alignments of previously
 defined homologous sequences, such as small subunit ribosomal RNA
 sequences (SSU rRNA), would skip the calibration and search steps. 
 
 For similarity search applications, where the goal is to identify new
-examples of a family, it is reasonable to repeat these four steps
-multiple times.  Finding new homologs in the search step, adding them
-to the training alignment in the alignment step, and building a new
-model from the expanded training alignment in the build step of a new
-iteration, and so on.
+examples of a family, it is reasonable to iterate these steps, adding
+newly found homologs to the alignment and repeating the search as the
+detected range of the family expands. Just as with primary sequence
+profiles, the ability of CMs to detect remote homologs tends to
+increase as the diversity of known sequences in the query alignment
+increases.
 
 \section{Performance}
-An independent benchmark found that \textsc{infernal} and other CM
-based methods are the most sensitive and specific available tools for
-structural RNA homology search \cite{Freyhult07}.  We have previously
-published our own \textsc{Rfam} based benchmark that supports this
-\cite{NawrockiEddy07}. Here, we have updated this benchmark to make it
-more realistic as described in \emph{Methods}. The results in Figure 1
-in the form of an ROC curve show that for this benchmark
-\textsc{infernal} 1.0 is significantly more specific and sensitive
-than a previous version (0.72) and \textsc{BLAST} family pairwise
-search.  
 
-The increased sensitivity comes at a huge cost in compute time
-relative to \textsc{BLAST} because CM search algorithms are
-computationally expensive. To address this, \textsc{infernal} 1.0
-estimates when it is possible to use HMM filters to accelerate search
-without sacrificing appreciable sensitivity, and automatically employs
-them in such cases. (This automatic HMM filter use only applies to CM
-files that have been calibrated with \emph{cmcalibrate}).  The HMMs
-used are a reimplementation of the maximum likelihood HMMs developed
-by Weinberg and Ruzzo \cite{WeinbergRuzzo06}.  The performance of
-\textsc{infernal} with and without filters is shown in Figure 1. The
+A published benchmark (independent of our lab) found that
+\textsc{infernal} and other CM based methods were the most sensitive
+and specific tools for structural RNA homology search among the
+several that were tested \citep{Freyhult07}.  Results on the benchmark
+we use during \textsc{infernal} development have been consistent with
+that conclusion \citep{NawrockiEddy07}. 
+
+Figure~1 shows updated benchmark results comparing \textsc{infernal}
+1.0 to the previous version (0.72) that was benchmarked in
+\citep{Freyhult07}, and also to family-pairwise-search with BLASTN
+\citep{Altschul97,Grundy98b}.  The sensitivity and specificity of
+\textsc{infernal} 1.0 have greatly improved. There have been three
+relevant improvements in the implementation: a biased composition
+correction to the raw log-odds scores, the use of the full Inside
+log-likelihood scores (summed over all alignments) in place of maximum
+likelihood alignment scores, and the introduction of approximate
+E-value estimates for the scores.
+
+The benchmark dataset used in Figure~1 is an improved version of our
+internal Rfam-based benchmark \citep{NawrockiEddy07}. Briefly, this
+benchmark was constructed as follows. The sequences of the seed
+alignments of 503 Rfam (release 7) families were single linkage
+clustered by pairwise sequence identity, and separated into two
+clusters such that no sequence in one cluster is more than 60\%
+identical to any sequence in the other. The larger of the two clusters
+was assigned as the query (preserving their original Rfam alignment
+and structure annotation), and the sequences in the smaller cluster
+were assigned as true positives in a test set. We required a minimum
+of five sequences in the query alignment. 51 Rfam families with 450
+test sequences met these criteria, as described in
+\citep{NawrockiEddy07}. We then embed the 450 test sequences at random
+positions in a 1 Mb ``pseudogenome''. Previously we generated the
+pseudogenome sequence from a uniform residue frequency distribution
+\citep{NawrockiEddy07}. Because base composition biases in the target
+sequence database cause the most serious problems in separating
+significant CM hits from noise, we improved the realism of the
+benchmark by generating the pseudogenome sequence from a 15-state
+fully connected hidden Markov model (HMM) trained by Baum-Welch
+expectation maximization \citep{Durbin98} on genome sequence data from
+a wide variety of species. Each of the 51 query alignments is used to
+build a CM and search the pseudogenome, a single list of all hits for
+all families is collected and ranked, and true and false hits were
+defined (as described in \citep{NawrockiEddy07}) and used to build the
+ROC curves in Figure~1.
+
+CM search algorithms are computationally expensive, and
+\textsc{infernal} searches require a large amount of compute time.  To
+alleviate this, \textsc{infernal} 1.0 implements the HMM filtering
+technique described by Weinberg and Ruzzo \citep{WeinbergRuzzo06}. By
+default, the \emph{cmcalibrate} step will attempt to configure HMM
+filtering thresholds to enable this acceleration (occasionally a model
+with little primary sequence conservation cannot be usefully
+accelerated by a primary sequence based filter).  The benchmark in
+Figure~1 shows results with and without the HMM filters. The default
 filters accelerate similarity search for the benchmark by about
-13-fold overall, while sacrificing a small amount of sensitivity.
-This is a partial, but not complete solution to the problem, as
-\textsc{BLAST} is still more than three orders of magnitude faster
-than \textsc{infernal}. Table 1 shows running times for similarity
-search for six RNA families of various sizes with and without
-filters. The range of speedups from filters vary widely. In general,
-the more primary sequence conservation in a family, the more effective
-an HMM filter will be, although this is not always the case. Further
-acceleration remains a major goal of \textsc{infernal} development.
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\begin{comment}
-For the problem of structural RNA alignment, no benchmarks of profile
-based methods have been published so it is impossible to comment on
-alignment accuracy. 
-\end{comment}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+13-fold overall, while sacrificing a small amount of sensitivity. This
+makes \textsc{infernal} 1.0 substantially faster than 0.72, although
+\textsc{BLAST} is still orders of magnitude faster than
+\textsc{infernal}. Table~1 shows specific examples of running times
+for similarity searches for six RNA families of various sizes with and
+without filters. The range of speedups from filters vary widely. In
+general, the more primary sequence conservation in a family, the more
+effective an HMM filter will be, although this is not always the
+case. Further acceleration remains a major goal of \textsc{infernal}
+development.
 
 The computational cost of CM alignment with the \emph{cmalign} program
 has been a limitation of previous versions of
-\textsc{infernal}. Version 1.0 uses a constrained dynamic programming
-approach first developed by Michael Brown \cite{Brown00} that uses
-sequence specific bands derived from a first-pass HMM alignment. This
-technique offers a dramatic speedup relative to unconstrained
-alignment, especially for large RNAs such as small and large subunit
-(SSU and LSU) ribosomal RNAs, which can now be aligned in roughly 1
-and 3 seconds per sequence, respectively (Table 1), as opposed to 12
-minutes and three hours in previous versions (data not shown).
+\textsc{infernal}. Version 1.0 now uses a constrained dynamic
+programming approach first developed by Michael Brown \citep{Brown00}
+that uses sequence specific bands derived from a first-pass HMM
+alignment. This technique offers a dramatic speedup relative to
+unconstrained alignment, especially for large RNAs such as small and
+large subunit (SSU and LSU) ribosomal RNAs, which can now be aligned
+in roughly 1 and 3 seconds per sequence, respectively (Table 1), as
+opposed to 12 minutes and three hours in previous versions (data not
+shown). We expect this to be particularly useful in applications where
+many large RNA sequences need to be aligned. One of the main ribosomal
+RNA databases, RDP, has recently adopted \textsc{infernal} in its
+pipeline \citep{Cole09}.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\begin{comment}
-\textsc{infernal} can
-optionally annotate output alignments with posterior probabilities,
-which are ``confidence estimates'' that each residue of the alignment
-is correctly aligned \cite{Durbin98}.
-\end{comment}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\section{Limitations}
+\section{Discussion}
+
 The \emph{cmbuild} program requires as input a structurally annotated
-multiple sequence alignment to build a CM. \textsc{infernal}
-\emph{cannot} be used to create such alignments by predicting the
-structure of an existing alignment, or by inferring a structural
-alignment from unaligned sequences \emph{de novo}. (\emph{Should we
-add here a list of programs that can create structural
-alignments?}). Due to the high computational complexity of CM
-algorithms, \textsc{infernal} is compute intensive and using it for
-homology search in large databases requires a large cluster (see
-timings in Table 1).
+multiple sequence alignment. The \textsc{infernal} implementation
+currently does not attempt to predict the consensus structure of a
+sequence alignment, nor does it infer an alignment from unaligned
+sequences \emph{de novo}. It is designed for (and most useful for) the
+seed profile strategies used by databases such as Pfam and Rfam
+\citep{Finn08,Gardner09}, in which a stable, representative,
+well-annotated ``seed'' alignment of a sequence family is curated, and
+a computational profile of that seed alignment (either a
+\textsc{hmmer} profile HMM in the case of Pfam, or an
+\textsc{infernal} CM in the case of Rfam) is used to identify and
+align additional members of the family.
 
-\section{Methods}
-Briefly, the updated \textsc{Rfam} benchmark corresponding to Figure 1
-was constructed as follows. The sequences of the seed alignments of
-503 Rfam (release 7) families were clustered based on sequence
-identity given the alignment using single linkage clustering. Families
-for which two clusters A and B existed such that no sequence in
-cluster A is more than 60\% identical to a sequence in cluster B and
-the larger of A and B had at least five sequences were selected for
-the benchmark. The larger of the clusters was defined as a training
-set, the smaller as a test set. Fifty-one such families meet these
-criteria, yielding 450 test sequences. (These are the same 51 families
-and 450 test sequences from the benchmark in
-\cite{NawrockiEddy07}). To simulate a homology search exercise in
-realistic genomic sequence, the test sequences were randomly embedded
-in a 1 Mb pseudogenome that was generated by a fifteen state fully
-connected hidden Markov model (HMM). The HMM was trained to emit
-sequences with similar statistical properties of real genomic sequence
-by using Baum Welch EM training \cite{Durbin98} on a sampling of real
-genomic segments from all three domains of life.
-%The similarity of nucleotide composition in 100 nt windows between the
-%pseudogenome and the training set of real genomic sequence is shown in
-%Figure 2.
-(The construction of the pseudogenome differs from that described in
-\cite{NawrockiEddy07}, where the pseudogenome was constructed by a
-single state HMM with an equiprobable emission distribution over the
-four possible RNA nucleotides). Each training alignment was used to
-build a CM and search the pseudogenome. A list of all hits for all
-families were collected and ranked. Positives and negatives were
-defined as described in \cite{NawrockiEddy07} and used to determine
-the minimum error rate (MER) \cite{Pearson95} and build the ROC curve
-in Figure 1.
+\textsc{infernal} remains computationally expensive. It generally
+requires the use of a cluster, rather than a single desktop computer,
+for most problems of interest. The most expensive programs
+(\emph{cmcalibrate}, \emph{cmsearch}, and \emph{cmalign}) are
+implemented in coarse-grained parallel MPI versions for use on
+clusters. 
 
-\section{Implementation and parallelization}
 The complete \textsc{infernal} version 1.0 software package, including
-documentation, may be downloaded from
-\url{http://infernal.janelia.org}. It is implemented in C and
-developed on GNU/Linux operating systems but should be portable to any
-POSIX-compliant operating system, including Mac OS/X. It is freely
-licensed under the GNU General Public License. Because
-\textsc{infernal} is compute-intensive we also implemented parallel
-versions of the \emph{cmsearch} and \emph{cmalign} programs under MPI
-(Message Passing Interface) (CITE).
+documentation and ANSI C source code, may be downloaded from
+\url{http://infernal.janelia.org}. It uses a GNU configure system and
+should be portable to any POSIX-compliant operating system, including
+Linux and Mac OS/X. It is freely licensed under the GNU General Public
+License, version 3.
 
+\section{Acknowledgements}
+
+\textsc{infernal} development is supported by Howard Hughes Medical
+Institute. It has also been supported in the past by an NIH NHGRI
+Institutional Training Grant in Genomic Science (T32-HG00045) to EPN,
+an NSF Graduate Fellowship to DLK, and by NIH R01-HG01363 and a
+generous endowment from Alvin Goldfarb. We thank Goran Ceric for his
+peerless skill in managing Janelia Farm's high performance computing
+resources.
+
+\bibliography{master,books,lab,new}
+
+\newpage
 \begin{figure}
 \begin{center}
 \includegraphics[width=6.4in]{figs/roc}
@@ -259,11 +297,13 @@ family-pairwise-searches (FPS) with \textsc{blastn}.}
 \end{center}
 \end{figure}
 
+\newpage
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % The 6RNAs table, running times for various applications for 
 % 6 RNAs
 %\normalfont\ttfamily
-\begin{table}[htb]
+\begin{table}
 \begin{center}
 \begin{tabular}{lrr|r|rr|r|} 
        & consensus & average \% id   & calibration  & \multicolumn{2}{c|}{search (min/Mb)} & alignment \\
@@ -274,9 +314,7 @@ SRP RNA & 304      & 46\%            &      16.3h   &    333.7m &       5.6m&  0
 RNaseP  & 365      & 65\%            &      29.9h   &    408.9m &       1.7m&  0.176s \\
 SSU rRNA& 1545     & 77\%            &      62.2h   &      n.d. &       n.d.&  1.087s \\
 LSU rRNA& 2898     & 82\%            &     134.0h   &      n.d. &       n.d.&  3.072s \\
-
 \end{tabular}
-
 %
 % alignment times (a subset of these will be in final table)
 % 
@@ -314,22 +352,18 @@ LSU rRNA& 2898     & 82\%            &     134.0h   &      n.d. &       n.d.&  3
 \end{center}
 \caption{\textbf{Calibration, search, and alignment running times for
     six known structural RNAs of various sizes.} SSU rRNA and LSU rRNA
-    search times were not determined (n.d.) because faster non-CM
-    methods are well suited for finding these RNAs due to their high
-    level of primary sequence conservation.  . }
+    search times were not determined (n.d.); much faster non-CM
+    methods are well suited for finding these RNAs, due to their high
+    level of primary sequence conservation. CPU times are measured for
+    single execution threads on otherwise unloaded 3.0 GHz Intel Xeon
+    processors with 8 GB RAM, running Red Hat AS4 Linux operating
+    systems.}
 \label{tbl:times}
 \end{table}
 
-\newpage
-%\bibliography{distilled}
-\bibliography{master,books,lab}
-
 \end{document}
 
-\section{Acknowledgements}
 
-\section{Funding}
-EPN and SRE are supported by Howard Hughes Medical Institute.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
