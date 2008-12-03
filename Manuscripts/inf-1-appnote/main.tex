@@ -53,7 +53,7 @@ General Public License version 3 (GPLv3).
 
 \section{Introduction}
 
-When searching for homologous RNAs in sequence databases, it is
+When searching for homologous structural RNAs in sequence databases, it is
 desirable to score both primary sequence and RNA secondary structure
 conservation. Several tools have been developed which take different
 approaches to how RNA sequence and secondary structure constraints
@@ -94,7 +94,7 @@ deployed in a variety of real RNA analysis tasks with manageable
 \section{Usage} 
 
 A CM is built from a multiple sequence alignment (or single RNA
-sequence) with consensus secondary structure annotation denoting which
+sequence) with consensus secondary structure annotation marking which
 positions of the alignment are to be scored as single stranded and
 which are to be scored as base paired. CMs assign position specific
 scores for the four possible residues at single stranded positions and
@@ -165,8 +165,8 @@ increases.
 A published benchmark (independent of our lab) found that
 \textsc{infernal} and other CM based methods were the most sensitive
 and specific tools for structural RNA homology search among the
-several that were tested \citep{Freyhult07}.  Results on the benchmark
-we use during \textsc{infernal} development have been consistent with
+several that were tested \citep{Freyhult07}.  Results our internal
+development benchmark have been consistent with
 that conclusion \citep{NawrockiEddy07}. 
 
 Figure~1 shows updated benchmark results comparing \textsc{infernal}
@@ -190,9 +190,9 @@ identical to any sequence in the other. The larger of the two clusters
 was assigned as the query (preserving their original Rfam alignment
 and structure annotation), and the sequences in the smaller cluster
 were assigned as true positives in a test set. We required a minimum
-of five sequences in the query alignment. 51 Rfam families with 450
-test sequences met these criteria, as described in
-\citep{NawrockiEddy07}. We then embed the 450 test sequences at random
+of five sequences in the query alignment. 51 Rfam families met these
+criteria, yielding 450 test sequences, as described in
+\citep{NawrockiEddy07}. We then embedded the 450 test sequences at random
 positions in a 1 Mb ``pseudogenome''. Previously we generated the
 pseudogenome sequence from a uniform residue frequency distribution
 \citep{NawrockiEddy07}. Because base composition biases in the target
@@ -201,10 +201,10 @@ significant CM hits from noise, we improved the realism of the
 benchmark by generating the pseudogenome sequence from a 15-state
 fully connected hidden Markov model (HMM) trained by Baum-Welch
 expectation maximization \citep{Durbin98} on genome sequence data from
-a wide variety of species. Each of the 51 query alignments is used to
+a wide variety of species. Each of the 51 query alignments was used to
 build a CM and search the pseudogenome, a single list of all hits for
-all families is collected and ranked, and true and false hits were
-defined (as described in \citep{NawrockiEddy07}) and used to build the
+all families were collected and ranked, and true and false hits were
+defined (as described in \citep{NawrockiEddy07}), producing the
 ROC curves in Figure~1.
 
 CM search algorithms are computationally expensive, and
