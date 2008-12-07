@@ -1,0 +1,69 @@
+
+\section{Usage} 
+
+A CM is built from a multiple sequence alignment (or single RNA
+sequence) with consensus secondary structure annotation marking which
+positions of the alignment are to be scored as single stranded and
+which are to be scored as base paired. CMs assign position specific
+scores for the four possible residues at single stranded positions and
+the sixteen possible base pairs at paired positions, as well as
+position specific scores for insertions and deletions. These scores
+are log-odds scores derived from the observed counts of residues, base
+pairs, insertions and deletions in the input alignment, combined with
+prior information derived from structural ribosomal RNA
+alignments. Construction and parameterization of CMs have been
+described in more detail elsewhere
+\citep{Eddy94,infguide03,Eddy02b,NawrockiEddy07}.
+
+\textsc{infernal} is composed of several programs that are used in
+combination to build models, search databases, and align putative
+homologs, following four basic steps:
+
+\begin{enumerate}
+\item Build a CM from an input alignment.
+
+The \emph{cmbuild} program takes as input a structural multiple
+RNA alignment in Stockholm format \citep{infguide03} and creates a CM
+file that is used by other \textsc{infernal} programs.
+
+\item Calibrate the CM file for similarity search.
+
+Prior to searching databases, parameters for approximate E-value
+statistics for a CM should be estimated using the \emph{cmcalibrate}
+program. This step is optional and computationally expensive (as shown
+in Table~1), but is required to obtain E-values that estimate the
+statistical significance of each hit in a database similarity
+search. \emph{cmcalibrate} will also determine appropriate HMM filter
+thresholds used to accelerate searches without an appreciable loss of
+sensitivity, as described in more detail below.
+
+\item Search databases for putative homologs.
+
+The \emph{cmsearch} program takes a CM file as input and searches a
+sequence file for high scoring hits to the model. The output of
+\emph{cmsearch} includes an alignment of each hit in a BLAST-like
+format augmented with structure annotation and (optionally) with
+posterior probabilities indicating the confidence in each aligned
+position.
+
+\item Align putative homologs to the model.
+
+\emph{cmalign} takes a CM file as input and a target sequence file
+containing putative homologs and aligns the full length sequences to
+the model, creating a structurally annotated multiple alignment in
+Stockholm format.
+
+\end{enumerate}
+
+Some of these steps are unnecessary for some applications. For
+example, a user that wants only to generate alignments of previously
+defined homologous sequences, such as small subunit ribosomal RNA
+sequences (SSU rRNA), would skip the calibration and search steps. 
+
+For similarity search applications, where the goal is to identify new
+examples of a family, it is reasonable to iterate these steps, adding
+newly found homologs to the alignment and repeating the search as the
+detected range of the family expands. Just as with primary sequence
+profiles, the ability of CMs to detect remote homologs tends to
+increase as the diversity of known sequences in the query alignment
+increases.

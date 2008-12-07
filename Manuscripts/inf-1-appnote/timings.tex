@@ -1,0 +1,62 @@
+\newpage
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% The 6RNAs table, running times for various applications for 
+% 6 RNAs
+%\normalfont\ttfamily
+\begin{table}
+\begin{center}
+\begin{tabular}{lrr|r|rr|r|} 
+       & consensus & average \% id   & calibration  & \multicolumn{2}{c|}{search (min/Mb)} & alignment \\
+family & length    & in training aln & (hours/model)& no filter & w/filters & (sec/seq) \\ \hline
+tRNA    & 71       & 44\%            &       2.8h   &     47.3m &       8.7m&  0.013s \\
+5S rRNA & 119      & 56\%            &       2.6h   &     58.6m &      10.1m&  0.026s \\
+SRP RNA & 304      & 46\%            &      16.3h   &    333.7m &       5.6m&  0.168s \\
+RNaseP  & 365      & 65\%            &      29.9h   &    408.9m &       1.7m&  0.176s \\
+SSU rRNA& 1545     & 77\%            &      62.2h   &      n.d. &       n.d.&  1.087s \\
+LSU rRNA& 2898     & 82\%            &     134.0h   &      n.d. &       n.d.&  3.072s \\
+\end{tabular}
+%
+% alignment times (a subset of these will be in final table)
+% 
+% Timings from ~/notebook/8_0909_manuscript_inf-1_appnote/00LOG
+% 
+% family          & non-banded CYK & HMM banded CYK & HMM banded optacc (default)
+%
+% tRNA            &       0.049    &         0.0045 &            0.0129
+% 5S rRNA         &       0.2023   &         0.0095 &            0.0256
+% SRP RNA         &       5.4509   &         0.0615 &            0.1680
+% RNase P         &      11.958    &         0.0721 &            0.1759
+% SSU rRNA        &     724.201    &         0.7691 &            1.0870
+% LSU rRNA        &   11819.9      &         2.5347 &            3.1206
+%
+%
+% search times (a subset of these will be in final table)
+% 
+% Timings from ~/notebook/8_0909_manuscript_inf-1_appnote/00LOG
+% times are per Mb (for forward AND reverse strand) on two input
+% seq files: 10Mb.eq.fa   (25% A,C,G,U) = eq
+% seq files: 10Mb.real.fa               = reall
+% 
+%                 ---------------------------------------------------------------------
+% family          &    viterbi   &    forward    &     inside       &     filter      &
+%                 ---------------------------------------------------------------------
+%                 &   eq  & real & eq    & real  &  eq     &  real  &  eq    & real   & 
+%                 ---------------------------------------------------------------------
+% tRNA            &  6.8s & 6.8s & 20.5s & 20.5s &  2817.2s&  2840.7& 517.8s & 522.1s & 
+% 5S rRNA         & 10.1s &10.0s & 32.1s & 32.0s &  3516.3 &  3517.5& 612.9s & 607.5s & 
+% SRP RNA         & 22.6s &22.6s & 77.1s & 77.2s & 20099.3 & 20024.0& 878.9  & 335.3s &
+% RNase P         & 26.9s &26.9s & 94.1s & 94.2s & 24533.3 & 24559.9& 124.1  & 103.3s &
+% SSU rRNA        & 
+% LSU rRNA        & 
+%
+\end{center}
+\caption{\textbf{Calibration, search, and alignment running times for
+    six known structural RNAs of various sizes.} SSU rRNA and LSU rRNA
+    search times were not determined (n.d.); much faster non-CM
+    methods are well suited for finding these RNAs, due to their high
+    level of primary sequence conservation. CPU times are measured for
+    single execution threads on otherwise unloaded 3.0 GHz Intel Xeon
+    processors with 8 GB RAM, running Red Hat AS4 Linux operating
+    systems.}
+\label{tbl:times}
+\end{table}
