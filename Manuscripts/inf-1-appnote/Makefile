@@ -20,5 +20,11 @@ screen:
 	pdflatex "\def\screenoutput{1} \input{main.tex}"
 	pdflatex "\def\screenoutput{1} \input{main.tex}"
 
+bi:
+	pdflatex bi-main
+	bibtex bi-main
+	pdflatex bi-main	
+	pdflatex bi-main
+
 clean:
 	-rm *~ *.aux *.log main.dvi main.out main.toc main.bbl main.blg
