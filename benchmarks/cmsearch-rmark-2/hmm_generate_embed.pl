@@ -828,3 +828,44 @@ sub read_fasta
     #trim_keys_in_hash($seq_hash_ref, DEFAULT_MAX_SEQ_HEADER_LENGTH);
 }
 
+#################################################################
+# subroutine : rev_comp_rna
+# sub class  : sequence
+#
+# EPN 09.13.05
+#
+# purpose : Given a string that is a RNA sequence string, return the
+#           reverse complement.  String may have gaps.
+#
+# args : (1) $seq
+#            seq string to rev comp
+################################################################# 
+sub rev_comp_rna
+{
+    my ($seq) = $_[0];
+
+    my $comp;
+    my @comp_arr = ();
+    my @rev_comp_arr = ();
+    my $rc;
+    my $letter;
+
+    #print("in rc in seq is :\n$seq\n");
+    $comp = $seq;
+    if($comp =~ m/[Tt]/)
+    {
+	die "error in rev_comp_rna, sequence contains Ts!\n";
+    }
+    #$comp =~ tr/AUCGaucg/UAGCuagc/;
+    $comp =~ tr/ACGURYMKSWHDBVacgurymkswhdbv/UGCAYRKMSWDHVBugcayrkmswdhvb/;
+    #leave X's, N's and gaps
+    @comp_arr = split("", $comp);
+    @rev_comp_arr = reverse @comp_arr;
+    $rc = "";
+    foreach $letter (@rev_comp_arr)
+    {
+	$rc .= $letter;
+    }
+    #print("in rc returning rc is :\n$rc\n");
+    return $rc;
+}
