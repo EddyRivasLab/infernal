@@ -12,9 +12,9 @@
 # Author: Eric Nawrocki
 #############################################################################
 use strict;
-use lib "/nfs/wol2/people/nawrocki/src/perl_modules/";
-use M_gen;
-use M_seq;
+use constant FASTA_LINE_LENGTH       => 50;
+use constant SPECIAL_LINE_LENGTH     => 75; 
+use constant DEFAULT_LINE_LENGTH     => 75;   
 
 my $usage ="perl hmm_generate_embed.pl\n\t<params file>\n\t<num output seqs>\n\t<length of output seqs>\n\t<output root>\n\t<index file with names of roots>\n\t<directory with each root.test files with seqs to embed>\n\t<seed for RNG>\n";
 
@@ -511,3 +511,267 @@ sub generate_and_embed
     
 }
 
+
+
+#################################################################
+# subroutine : print_fasta_ordered
+# sub class  : sequence
+# 
+# EPN 04.20.05
+# 
+# purpose : Create a single new file and print all sequences
+#           in the input hash to that file in the order 
+#           specified in the array referenced in $aln_order_arr_ref
+#
+# args : (1) $seq_hash_ref 
+#            reference to hash with sequences as values, and
+#            headers as keys
+#        (2) $out_file_name
+#            name of resulting gapless fasta file
+#        (3) $aln_order_arr_ref
+#            reference to an array with order of seq headers
+#            we want alignment to be printed in
+################################################################# 
+
+sub print_fasta_ordered
+{
+    my ($seq_hash_ref, $out_file_name, $aln_order_arr_ref) = @_;
+    
+    my $header;
+    my $curr_seq;
+
+    #open and close file just so to ensure its empty
+    open(OUT, ">" . $out_file_name);
+    close(OUT);
+    
+    foreach $header (@{$aln_order_arr_ref})
+    {
+	if(!(exists($seq_hash_ref->{$header})))
+	{
+	    die "ERROR in print_fasta_ordered - no sequence with key $header that exists in the alignment order array\n";
+	}
+	$curr_seq = $seq_hash_ref->{$header};
+	print_fasta_single_seq($out_file_name, ">>", $header, $curr_seq);
+    }
+}
+
+
+#################################################################
+# subroutine : print_fasta_single_seq
+# sub class  : sequence
+# 
+# EPN 03.08.05
+# 
+# purpose : Print a single fasta sequence to a specified file
+#           using line lengths of FASTA_LINE_LENGTH (a constant)
+#
+# args : (1) $out_file_name
+#            name of file to open, print to, and close
+#        (2) $output_mode
+#            either ">" or ">>"
+#        (3) $header
+#            sequence header to be placed after ">"
+#        (4) $seq
+#            sequence to print (after breaking up into multiple lines)
+################################################################# 
+
+sub print_fasta_single_seq
+{
+    my ($out_file_name, $output_mode, $header, $seq) = @_;
+    #print("in print fasta seq\n");
+    #print("out file name is $out_file_name\n");
+    #print("output mode is $output_mode\n");
+    #print("header is $header\n");
+    #print("seq is $seq\n");
+    
+    #open file with output mode
+    my $index;
+    my $length;
+    my $substr;
+
+    open(OUT, $output_mode . $out_file_name);
+    if(length($seq) != 0)
+    {
+	
+	print OUT (">" . $header . "\n");
+	
+	$index = 0;
+	$length = length($seq);
+	while($index < $length)
+	{
+	    $substr = substr($seq, $index, 50);
+	    print OUT ($substr . "\n");
+	    $index += FASTA_LINE_LENGTH;
+	}
+	close(OUT);
+    }
+}
+
+
+#################################################################
+# subroutine : print_out_file_notice
+# sub class  : general 
+#
+# EPN 03.03.05
+# 
+# purpose : Print an output file 'notice' to standard output
+#           given the name of the output file and a short message
+#           describing that output file
+# 
+# args : (1) $file_name
+#            name of file
+#        (2) $description
+#            description of file
+#################################################################
+sub print_out_file_notice
+{
+    my ($file_name, $description) = @_;
+
+    my $char = "*";
+    my $spec_line = create_special_line($char, SPECIAL_LINE_LENGTH);
+    print("$spec_line");
+    print(" Output file notice\n");
+    print(" File name   : $file_name\n");
+    
+    my $new_desc = add_newlines_to_string($description, length(" description : "),
+					  length(" description : "));
+    print(" description : $new_desc\n");
+    print("$spec_line");
+}
+
+
+#################################################################
+# subroutine : add_newlines_to_string
+# sub class  : general
+#
+# EPN 03.03.05
+# 
+# purpose : Given a string, create a new string that is identical
+#           but has new lines inserted so that the line doesn't wrap
+#           when printed to the screen
+# 
+# args : (1) $string
+#            string to add new lines to
+#        (2) $indent_len
+#            number of spaces to put in indenting in all rows but first
+#        (3) $first_line_length
+#            length to remove from first line's length
+#        (4) $char_to_start
+#            character to put at beginning of each line 
+#            can be ommitted.
+#################################################################
+sub add_newlines_to_string
+{
+    my ($string, $indent_len, $first_line_length, $char_to_start) = @_;
+    
+    my @string_arr = split(" ", $string);
+    my $line_beg = 1;
+    my $new_string = $char_to_start;
+    my $curr_line_len = $first_line_length;
+    my $indent = "";
+    my $tok_len;
+    my $tok;
+    my $i;
+    for($i = 0; $i < $indent_len; $i++)
+    {
+	$indent .= " ";
+    }
+
+    foreach $tok (@string_arr)
+    {
+	$tok_len = length($tok);
+	if($tok_len > 0)
+	{
+	    
+	    if($tok_len > DEFAULT_LINE_LENGTH)
+	    {
+		if($line_beg)
+		{
+		    $new_string .= $tok . "\n" . $char_to_start . $indent;
+		    $line_beg = 1;
+		    $curr_line_len = $indent_len;
+		}
+		else
+		{
+		    $new_string .= "\n" . $char_to_start . $indent . $tok . "\n" . $char_to_start . $indent;
+		    $line_beg = 1;
+		    $curr_line_len = $indent_len;
+		}
+	    }
+	    elsif(($curr_line_len + $tok_len) > DEFAULT_LINE_LENGTH)
+	    {
+		#print("adding \\n\n");
+		#print("tok is $tok\n");
+		#print("curr line len is $curr_line_len\n");
+		#print("tok len is $tok_len\n");
+		#print("indent_len is $indent_len\n");
+		$new_string .= "\n" . $char_to_start . $indent . $tok . " ";
+		$line_beg = 1;
+		$curr_line_len = $indent_len + $tok_len + 1;
+	    }
+	    else
+	    {
+		#print("tok is $tok\n");
+		$new_string .= $tok . " ";
+		$curr_line_len += ($tok_len + 1);
+		#print("curr_line_len now $curr_line_len\n");
+		$line_beg = 0;
+	    }
+	}
+    }
+    return $new_string;
+}
+
+#################################################################
+# subroutine : create_special_line
+# sub class  : general 
+#
+# EPN 03.03.05
+# 
+# purpose : Given a character, return a line that is simply
+#           that character repeated $length times
+#           followed by a "\n"
+# 
+# args : (1) $char
+#            special character
+#        (2) $length
+#            number of times to repeat (1)
+#################################################################
+sub create_special_line
+{
+    my ($char, $length) = @_;
+    my $i;
+
+    my $spec_line = "";
+    for($i = 0; $i < $length; $i++)
+    {
+	$spec_line .= $char;
+    }
+    $spec_line .= "\n";
+    return $spec_line;
+}
+
+#################################################################
+# subroutine : array_to_scalar
+# sub class  : general
+# 
+# EPN 07.04.05 Driving from Prophetstown, IL --> St. Louis
+# 
+# purpose : Concatentate all the members of an array into a
+#           scalar and return that value.
+#
+# args : (1) $arr_ref 
+#            reference to the array to concatenate
+################################################################# 
+
+sub array_to_scalar
+{
+    my ($arr_ref) = $_[0];
+    my $to_return = "";
+    my $el;
+    foreach $el (@{$arr_ref})
+    {
+	$to_return .= $el;
+    }
+    return $to_return;
+}
