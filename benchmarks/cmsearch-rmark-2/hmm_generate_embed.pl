@@ -775,3 +775,59 @@ sub array_to_scalar
     }
     return $to_return;
 }
+
+
+#################################################################
+# subroutine : read_fasta_careful
+# sub class  : crw and sequence
+# 
+# EPN 01.26.06
+#
+# purpose : Open, read, and store the information in a given
+#           .fa (fasta format) file. CAREFUL because it 
+#           removes everything in the header starting at
+#           the first space.
+#
+# args : (1) $in_file
+#            name of .fa file in current directory
+#        (2) $seq_hash_ref
+#            reference to the hash that will contain the sequence
+#            information.  Fasta description line used as key for
+#            each sequence, sequence is value.
+################################################################# 
+sub read_fasta_careful
+{
+    my ($in_file, $seq_hash_ref) = @_;
+    open(IN, $in_file);
+
+    my $line;
+    my $seq_name;
+
+    #chomp up beginning blank lines
+    $line = <IN>;
+    while(!($line =~ m/^>/))
+    {
+	$line = <IN>;
+    }
+
+    chomp $line;
+    $line =~ s/\s.*//;
+    $seq_name = $line;
+    $seq_name =~ s/^>//;
+    while($line = <IN>)
+    {
+	chomp $line;
+	$seq_hash_ref->{$seq_name} = "";
+	while((!($line =~ m/^>/)) && ($line ne ""))
+	{
+	    $seq_hash_ref->{$seq_name} .= $line;
+	    $line = <IN>;
+	    chomp $line;
+	}
+	chomp $line;
+	$line =~ s/\s.*//;
+	$seq_name = $line;
+	$seq_name =~ s/^>//;
+    }
+    #trim_keys_in_hash($seq_hash_ref, DEFAULT_MAX_SEQ_HEADER_LENGTH);
+}
