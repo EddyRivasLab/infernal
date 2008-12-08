@@ -34,17 +34,17 @@ program. This step is optional and computationally expensive (as shown
 in Table~1), but is required to obtain E-values that estimate the
 statistical significance of each hit in a database similarity
 search. \emph{cmcalibrate} will also determine appropriate HMM filter
-thresholds used to accelerate searches without an appreciable loss of
-sensitivity, as described in more detail below.
+thresholds for accelerating searches without an appreciable loss of
+sensitivity, as described in more detail below. Each model must only
+be calibrated once, and can subsequently be used for multiple database
+searches.
 
 \item Search databases for putative homologs.
 
 The \emph{cmsearch} program takes a CM file as input and searches a
 sequence file for high scoring hits to the model. The output of
 \emph{cmsearch} includes an alignment of each hit in a BLAST-like
-format augmented with structure annotation and (optionally) with
-posterior probabilities indicating the confidence in each aligned
-position.
+format augmented with structure annotation.
 
 \item Align putative homologs to the model.
 
@@ -55,10 +55,10 @@ Stockholm format.
 
 \end{enumerate}
 
-Some of these steps are unnecessary for some applications. For
+Some steps are unnecessary for some applications. For
 example, a user that wants only to generate alignments of previously
-defined homologous sequences, such as small subunit ribosomal RNA
-sequences (SSU rRNA), would skip the calibration and search steps. 
+defined homologous sequences, such as small subunit ribosomal RNA (SSU
+rRNA) sequences, would skip the calibration and search steps. 
 
 For similarity search applications, where the goal is to identify new
 examples of a family, it is reasonable to iterate these steps, adding
