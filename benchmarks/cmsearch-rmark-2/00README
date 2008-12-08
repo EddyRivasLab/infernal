@@ -1,0 +1,430 @@
+rmark-2
+RNA similarity search software benchmark
+Supplementary material for "Infernal 1.0: inference of RNA alignments"
+applicates note in Bioinformatics (Nawrocki, Kolbe, and Eddy 2009).
+Eric Nawrocki
+EPN, Thu Dec  4 16:23:22 2008
+---------------------------------------------------------------------
+
+Example usage: 
+	perl rmark.pl infernal.rmm inf.rmk test_dir/ test.idx test.fa
+	     testrun_out
+	perl rmark_process_glbf.pl infernal.rmm inf.rmk
+	     test_dir/ test.idx test testrun_out.glbf testrun_out
+
+Example output:
+	testrun_out.glbf (from rmark.pl)
+	testrun_out.time (from rmark.pl)
+	testrun_out.fam  (from rmark_process_glbf.pl)
+	testrun_out.all  (from rmark_process_glbf.pl)
+	testrun_out.roc  (from rmark_process_glbf.pl)
+
+There are 4 main sections to this 00README:
+
+(Section 1) Overview of files
+(Section 2) Performing a trial run of rmark
+(Section 3) Preparing an rmark run for a cluster
+(Section 4) Differences between rmark-1 and rmark-2 
+
+These sections describe 'rmark-2' the second version of the rmark
+benchmark, defined by a specific set of sequence files as described
+below. 'rmark-2' is the benchmark used in the Infernal 1.0
+applications note in infernal/Manuscripts/inf-1-appnote/.
+The first version of rmark, 'rmark-1' was used in the QDB paper
+(Nawrocki, Eddy) in infernal/Manuscripts/banded_cyk/. 'rmark-1' can be
+found in infernal/benchmarks/cmsearch-rmark/, and has it's own
+00README in that dir. The similarities and differences of 'rmark-1'
+and 'rmark-2' are discussed in Section 4.
+
+To duplicate the 3 infernal benchmark runs described in the infernal
+1.0 applications note see (Section 3) and the file duplicate_full_bm.sh.
+
+To duplicate the BLASTN benchmark run described in the 1.0 app note
+manuscript see the file duplicate_blast_bm.sh.
+
+=======================================================================
+(Section 1) Overview of files
+=======================================================================
+There are 3 main perl scripts: 
+
+o rmark.pl              - performs a benchmark run
+
+o rmark_process_glbf.pl - converts rmark.pl output into MER and ROC
+                          points based on different scoring schemes.
+                          Can be run on concatenated rmark.pl output
+			  from many 'clusterfied' runs (see
+			  rmark_clusterfy.pl)
+
+o rmark_clusterfy.pl    - splits up a single rmark.pl benchmark run of
+			  X families against Y chromosomes into X*Y
+			  mini-benchmarks and writes a shell script to
+			  combine the results after they're all done.
+
+There are two sets of sequence files relevant to rmark, family
+specific files and pseudo-genome files. rmark-1 is version 1 of rmark
+and is defined by 51 sets of family specific files and a pseudo-genome
+made up of 20 500 Kb chromosomes with the test sequences from the 51
+families embedded within it. The construction of the pseudo-genome 
+and selection of the family specific files from Rfam 7.0 is described
+in the Infernal 1.0 applications note.
+
+The two sets of sequence files in the rmark-2/ subdirectory:
+
+(1) Family specific files:
+
+The rmark-1/ subdirectory contains data files for 51 sequence
+families,including training alignments and a total of 450 remote homologue test
+sequences. For each family, there are four files:
+	.ali  : a multiple alignment for training (STOCKHOLM format)
+	.test : a set of remote homologue test sequences (FASTA format)
+	.raw  : the unaligned training sequences in .ali (FASTA format)
+	.idx  : list of the names of the test sequences
+
+
+(2) pseudo-genome files
+
+The 450 test sequences are embedded with 20 500 Kb randomly generated
+chromosomes on either strand. The relevant files are:
+	rmark-2.fa       : a fasta file with all 20 chromosomes
+	rmark-2.ebd      : specifies where in the pseudo-genome each
+	 	           test sequence is, each line has 6 fields:
+        	           <fam name> <test seq name> <chromosome>
+			   <begin posn> <end posn> <orientation>
+	                   Where <orientation> is 0 for forward
+			   strand, 1 for reverse strand.
+	rmark-2_chrXX.fa : XX=1-20, a fasta file for each chromosome
+	rmark-2_chrXX.ebd: XX=1-20, subset of rmark-2.ebd for each 
+	                   chromosome
+        rmark-2.idx      : a list of the families in the benchmark.
+
+The rmark-2 benchmark has mainly be used to benchmark infernal's
+cmsearch program but the rmark scripts are built in a modular way to
+make it relatively easy to benchmark your own search program. To do
+this you need to create a mymethod.rmm file that takes the output from
+your method and generates glbf format output. See blast.rmm or
+infernal.rmm (which uses infernal.pm and infernal2glbf.pl to help do
+this) for examples.
+
+=======================================================================
+(Section 2) Performing a trial run of rmark
+=======================================================================
+
+This section will lead you step by step through a trial run of the
+benchmark. (Alternatively, the file 'do_rmark-2-test.sh' is a shell
+script that will perform this trial run). This trial benchmark, called
+'rmark-2-test' is a subset of the full 'rmark-2' benchmark.  The
+rmark-2-test benchmark contains exactly 2 of the 51 RNA families in
+rmark-2: SECIS (RF00031) and SSU_rRNA_5 (RF00177, the 5' domain of
+bacterial SSU ribosomal RNA) and exactly 2 rmark-2 pseudo-genome
+chromosomes (numbers 12 and 13). The trial run uses infernal v1.0's
+cmsearch in default mode using calibrated CM files and takes about 15
+minutes (on a computer with a Intel Xeon 3.0 GHz processor).
+
+The relevant files are in infernal/benchmarks/cmsearch-rmark/rmark-2-test/
+
+o RF00031.test & RF00177.test - the unaligned test sequences
+o RF00031.ali  & RF00177.ali  - the query (training) alignments
+o RF00031.raw  & RF00177.raw  - the unaligned query seqs 
+o RF00031.idx  & RF00177.idx  - the names of the test seqs
+
+o rmark-2-test.fa   - part of the rmark-2 pseudo-genome (chr 12 & 13)
+o rmark-2-test.ebd  - info on RF00031 & RF00177 test seqs in chr 12 & 13
+o rmark-2-test.idx  - root name (RF00031 & RF00177) (read by scripts)
+
+Step 1 - run the benchmark via rmark.pl from the directory with rmark.pl:
+IMPORTANT: execute all commands from the directory that includes the
+           the rmark scripts. These instructions assume this directory
+           is infernal/benchmarks/cmsearch-rmark/
+
+- First just to get the usage:
+
+$ perl rmark.pl
+Usage: perl rmark.pl
+	<.rmm rmark module>
+	<.rmk rmark config file>
+	<seq directory with *.ali, *.test, *.idx, *.raw files>
+	<index file with family names; provide path>
+	<genome file; must be in seq dir>
+	<output root, for naming output files>
+
+Options:
+	-E <x> : use E-values [default], set max E-val to keep as <x> [default: 1]
+	-B <x> : use bit scores, set min score to keep as <x>
+	-M <x> : pass -M <x> to .rmm module use, to use CM files in dir <x> instead of building them as needed
+
+- A brief explanation of the command line arguments:
+  <*.rmm rmark module>           
+     - Actually runs the search program see infernal.rmm for an example
+  <*.rmk rmark config file>
+     - Defines options for the *.rmm module, see inf_qdb-72.rmk.
+  <seq directory with...>
+     - the directory with all the sequence files for the benchmark, 
+       in this case it's 'rmark-2-test', for a full rmark-2 benchmark run
+       it's 'rmark-2'
+  <index file with family names>
+     - file with the family names each on a separate line, for this
+       example, 'rmark-2-test/rmark-2-test.idx'; provide path to the file
+  <genome file>
+     - the genome (or chromosome) file we're searching in must
+       exist in the seq dir, along with X.ebd; for this example
+       'rmark-2-test.fa'.
+  <output root>
+     - the script will output <output root>.glbf and 
+       <output root>.time files, described below.
+
+- Execute the rmark.pl script (takes about 6 minutes). 
+
+$ perl rmark.pl infernal.rmm rmk_files/inf_qdb-72.rmk rmark-2-test/
+       rmark-2-test/rmark-2-test.idx rmark-2-test.fa rmark-2-test_out
+
+- 2 new files will be created in the current working dir:
+$ ls -ltr | tail -2
+-rw-r--r--  1 nawrockie eddy  166 Dec  4 16:51 rmark-2-test_out.glbf
+-rw-r--r--  1 nawrockie eddy  124 Dec  4 16:51 rmark-2-test_out.time
+
+- rmark-2-test_out.glbf should have exactly 5 lines (if you're
+  benchmarking infernal version 1.0). The .glbf line describes 
+  the hits returned by cmsearch, it has the following format:
+
+  Each line that begins with ">" marks the beginning of results for a
+  new family. Every other line has exactly 5 fields separated by
+  single space: <seq name> <score> <start posn> <end posn>
+  <orientation> orientation is 0 for a hit on the forward strand, 1
+  for the opposite strand
+
+- rmark-2-test_out.time reports on how long the benchmark took for
+  each family and altogether. This is actual time (wall time), not
+  compute time (though actual and compute time are often very
+  similar).  
+
+Step 2 - Determine the MER score (per family and overall) as well as
+         ROC points by converting the rmark-2-test.glbf file to
+         rmark-2-test.all, rmark-2-test.fam and rmark-2-test.roc files using
+         rmark_process_glbf.pl.
+
+- First, to get the usage:
+
+$ perl rmark_process_glbf.pl 
+Usage: perl rmark_process_glbf.pl
+	<'E' if E-values used (lower score is better), 'B' if higher is better>
+	<.rmm file used>
+	<.rmk file used>
+	<seq directory with *.ali, *.test, *.idx, *.raw files>
+	<index file with family names; provide path>
+	<genome root <X>, <X>.fa and <X>.ebd must be in seq dir>
+	<concatenated *.glbf output from >= 1 rmark.pl runs; in CWD>
+	<output root>
+
+Options: (see code for details)
+	-G     : operate in BRALIBASE3 Genome benchmark mode (not RMARK.pl)
+
+	Hit resolution options:
+	-R hit : [default] each hit is a single positive/negative
+	-R fnt : treat every nucleotide as a separate positive or negative.
+	-R nnt : treat every non-positive nucleotide as separate negative,
+	         and every positive nt as a 1/length(hit) fraction of a hit
+
+	Ignore cross-hits (hits to fam Y while searching with fam X) options:
+	-I both: [default] ignore cross hits on both strands
+	-I none: don't ignore cross hits on either strand
+	-I opp : don't ignore cross hits on opposite strand
+
+- A brief explanation of the command line arguments:
+  Argument 1 tells the script whether lower scores are better (E
+  values) or higher scores are better (bit scores for example). By
+  default rmark.pl uses E-values. 
+  Arguments 2-5 are the same as arguments 1-4 for rmark.pl (see above)
+  <genome root <X> ...>
+     - for this script, the genome file must be named <X>.fa
+       and the embed file <X>.ebd. These two files must be in the seq
+       directory. The .ebd file is described briefly in section 1.
+  <concatenated *.glbf output..> 
+     - .glbf output from rmark.pl can be concatenated together (such
+        as if rmark_clusterfy.pl was used (see below)) and used as
+	input. Or a single .glbf file can be used, as we'll do in this 
+	example.
+  <output root>
+     - the script will output <output root>.all, <output root>.fam
+       and <output root>.roc files, described below.
+
+- For more info on the options see the script's code. For our purposes
+  we want to use the defaults.
+
+- Now actually run the script:
+$ perl rmark_process_glbf.pl E infernal.rmm rmk_files/inf-1p0.rmk
+       rmark-2-test/ rmark-2-test/rmark-2-test.idx rmark-2-test
+       rmark-2-test_out.glbf rmark-2-test_out
+
+- 3 new files will be created in the current working dir:
+$ ls -ltr | tail -3
+-rw-r--r--  1 nawrockie eddy  986 Dec  4 17:13 rmark-2-test_out.fam
+-rw-r--r--  1 nawrockie eddy  585 Dec  4 17:13 rmark-2-test_out.all
+-rw-r--r--  1 nawrockie eddy   46 Dec  4 17:13 rmark-2-test_out.roc
+
+- rmark-2-test.fam has a ranked list of hits sorted by family
+  and MER statistics for each family as well as across families 
+  (the "summary MER" reported in Table 6 of the banded-cyk 
+  manuscript). Positives are indicated with a '+' and negatives 
+  with a '-'. (There are no negatives found in this example search).
+
+- rmark-2-test.all has a single master list of both families mixed
+  together, with summary MER statistics.
+
+- rmark-2-test.roc has points for a ROC curve in the format:
+  (<x>, <y>) derived from the master list in rmark-2-test.all.
+
+=======================================================================
+(Section 3) Performing an rmark run on a cluster
+=======================================================================
+
+As you saw with rmark-2-test, the rmark.pl script can perform a
+benchmark of multiple families against multiple chromosomes. But
+infernal is really slow: the 3 instances of the rmark-2 infernal
+benchmark described in the infernal 1.0 applications note collectively
+take roughly 2500 CPU hours (on a 3.0 GHz Intel Xeon). In these
+situations it's useful to have a cluster. The rmark_clusterfy.pl
+script takes a single rmark benchmark set of X families against Y
+chromosomes and splits it up into X*Y mini-benchmarks. It also creates
+a directory in which these mini-benchmark jobs will be run, and a
+shell script to combine the results of all the jobs after they've
+finished running.
+
+For an example, I'll walk through the steps necessary for duplicating
+the rmark-2 benchmark for infernal version 1.0 in default mode
+described in the Infernal 1.0 applications note (the Infernal v1.0
+default (with filters) line in Figure 1).
+
+To duplicate all the benchmark results in the manuscript
+see the shell script 'duplicate_full_bm.sh'.
+
+Step 1 - run rmark_clusterfy.pl to create 51 families * 20 chromosomes
+         = 1020 mini-benchmarks to run on a cluster
+- Here's the usage of rmark_clusterfy.pl:
+
+$ perl rmark_clusterfy.pl
+Usage: perl rmark_clusterfy.pl
+	<.rmm file name>
+	<.rmk file name>
+	<dir with *.ali *.idx *.test and *.raw files (and *ali.cm if infernal-given-cm.rmm is used)>
+	<index file with family names; provide path>
+	<genome root X, X.chrlist, X.fa, X.ebd must be in seq dir>
+	<output file root>
+
+Options:
+	-E <x> : use E-values [default], set max E-val to keep as <x> [df: 2]
+	-B <x> : use bit scores, set min score to keep as <x>
+	-M <x> : pass -M <x> to .rmm module use, to use CM files in dir <x> instead of building them as needed
+
+
+- A brief explanation of the command line arguments:
+  The first 4 arguments are the same as for rmark.pl (see above)
+  <genome root <X> ...>
+     - for this script, the genome file must be named <X>.fa
+       and the embed file <X>.ebd, and a special chromosome list 
+       file must be named <X>.chrlist. These three files must be in
+       the seq directory. The .ebd file is described briefly in
+       section 1. The <X>.chrlist file simply lists the chromosome
+       files. Each chromosome file must be in the seq directory. For
+       rmark-2 there are 20 chromosome files in the rmark-2 subdir
+       as described in section 1.
+
+  <output root>
+     - the script will create a directory called 
+       <output root>_<genome root>/, copy all necessary files to it
+       for running rmark, and create <output root>.com and 
+       <output root>_pp.script in the new directory, described below.
+
+- Now actually run the script:
+$ perl rmark_clusterfy.pl -M cms-1p0 infernal.rmm rmk_files/inf-1p0.rmk rmark-2/ rmark-2/rmark-2.idx rmark-2 inf-1p0
+- The following output prints to the screen:
+***************************************************************************
+ Output file notice
+ File name   : inf-1p0_rmark-2_out_dir/inf-1p0.com
+ description : Command file with 1020 qsub calls for the cluster.
+***************************************************************************
+***************************************************************************
+ Output file notice
+ File name   : inf-1p0_rmark-2_out_dir/inf-1p0_pp.script
+ description : Shell script to merge and process the collective output
+               after all the cluster jobs are finished.
+***************************************************************************
+
+  $ perl rmark_clusterfy.pl -M cms-1p0 infernal.rmm rmk_files/inf-1p0.rmk rmark-2/ rmark-2/rmark-2.idx rmark-2 inf-1p0
+
+- The script has created the inf-1p0_rmark-2_out_dir and copied a
+  bunch of files there. This is the directory in which the benchmark
+  should be performed on the cluster. 
+
+- The inf-1p0.com file has 1020 'qsub' commands that should work
+  with Sun Grid Engine (SGE) version 6. Each 'qsub' command submits a
+  mini-benchmark run of 1 family versus 1 chromosome to a cluster
+  node. If your cluster uses something besides SGE version 6, you'll
+  have to change the code in rmark_clusterfy.pl to create a different
+  .com file or modify the .com file after it's created. 
+
+ -The inf-1p0_pp.script is a post-processing script ('pp') that
+  should be run after ALL the 1020 jobs are finished. It looks like
+  this:
+
+  $ cat inf-1p0_rmark-2_out_dir/inf-1p0_pp.script 
+  rm merged_inf-1p0*
+  cat *.glbf > inf-1p0_all_glbf.concat
+  cat *.time > inf-1p0_all_time.concat
+  perl ~/src/scripts/rmark/rmark_times.pl *.time > merged_inf-1p0.time
+  perl rmark_process_glbf.pl E infernal.rmm rmk_files/inf-1p0.rmk
+  rmark-2 inf-1p0_all_glbf.concat merged_inf-1p0_hit
+  cp merged_*fam ../
+  cp merged_*all ../
+  cp merged_*time ../
+  cp merged_*roc ../
+
+  The script concatenates the *.glbf files and *.time files from all
+  1020 runs together, and calls rmark_process_glbf.pl and
+  rmark_times.pl on these concatenated files. The rmark_times.pl
+  script is a simple script (not described here, but see the code for
+  details), it will create a merged_inf-1p0_hit.time file with the
+  total time required for the 1020 runs. The rmark_process_glbf.pl
+  script will create the files merged_inf-1p0_hit.fam,
+  merged_inf-1p0_hit.all and merged_inf-1p0_hit.roc. The
+  rmark_process_glbf.pl script is able to treat the concatenated .glbf
+  output as if it were created by a single instance of the benchmark
+  (a single rmark.pl run, like in the 'rmark-2-test' trial run
+  described above). The results will be in the 4 merged* files which
+  get copied up one dir when this script is run.
+
+Step 2 - login to the cluster, submit the jobs, wait for them to
+         finish and post-process the output:
+  
+- After logging into a cluster node that accepts job submissions, you
+  can submit the jobs from the inf-1p0_rmark-2_out_dir/
+
+$ sh inf-1p0.com 
+
+- The longest run takes about ? minutes (on a Intel 3.0 GHz Xeon).
+- After they're all finished, run the inf-1p0_pp.script: 
+
+$ sh inf-1p0_pp.script 
+
+The results are in the merged_* files:
+
+$ tail -10 merged_inf-1p0_hit.fam
+
+MER:        113
+MER_fp:     2
+MER_fn:     111
+MER_thresh: 16.38
+
+MER statistics summed across all 51 families:
+MER    (fam sum):     97
+MER_fp (fam sum):     3
+MER_fn (fam sum):     94
+
+These statistics are reported in Table 6 of the banded-cyk manuscript.
+
+To perform ALL 6 infernal runs described in Table 6, see the
+duplicate_full_bm.sh shell script, which contains 6 rmark_clusterfy.pl
+calls.
+
+-----------------------------------------------------------------------------
+
+
