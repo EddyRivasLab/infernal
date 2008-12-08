@@ -1,7 +1,7 @@
 rmark-2
 RNA similarity search software benchmark
 Supplementary material for "Infernal 1.0: inference of RNA alignments"
-applicates note in Bioinformatics (Nawrocki, Kolbe, and Eddy 2009).
+applications note in Bioinformatics (Nawrocki, Kolbe, and Eddy, 2009).
 Eric Nawrocki
 EPN, Thu Dec  4 16:23:22 2008
 ---------------------------------------------------------------------
@@ -281,13 +281,12 @@ As you saw with rmark-2-test, the rmark.pl script can perform a
 benchmark of multiple families against multiple chromosomes. But
 infernal is really slow: the 3 instances of the rmark-2 infernal
 benchmark described in the infernal 1.0 applications note collectively
-take roughly 2500 CPU hours (on a 3.0 GHz Intel Xeon). In these
-situations it's useful to have a cluster. The rmark_clusterfy.pl
-script takes a single rmark benchmark set of X families against Y
-chromosomes and splits it up into X*Y mini-benchmarks. It also creates
-a directory in which these mini-benchmark jobs will be run, and a
-shell script to combine the results of all the jobs after they've
-finished running.
+take roughly 2500 CPU hours (on a 3.0 GHz Intel Xeon), so it's useful
+to have a cluster. The rmark_clusterfy.pl script takes a single rmark
+benchmark set of X families against Y chromosomes and splits it up
+into X*Y mini-benchmarks. It also creates a directory in which these
+mini-benchmark jobs will be run, and a shell script to combine the
+results of all the jobs after they've finished running.
 
 For an example, I'll walk through the steps necessary for duplicating
 the rmark-2 benchmark for infernal version 1.0 in default mode
