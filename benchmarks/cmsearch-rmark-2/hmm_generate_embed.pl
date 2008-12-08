@@ -796,9 +796,11 @@ sub array_to_scalar
 ################################################################# 
 sub read_fasta
 {
-    ($in_file, $seq_hash_ref) = @_;
+    my ($in_file, $seq_hash_ref) = @_;
     open(IN, $in_file);
-    
+    my $line;
+    my $seq_name;
+
     #chomp up beginning blank lines
     $line = <IN>;
     while(!($line =~ m/^>/))
