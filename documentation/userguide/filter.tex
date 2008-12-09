@@ -65,7 +65,7 @@ certain CM threshold will survive the filter
 \cite{WeinbergRuzzo04}. Our approach takes a slightly different tact,
 and relaxes the 100\% guarantee to a 99.5\% probability using a
 empirical sampling technique. That is, we estimate our HMM filter will
-cause us to miss 1\% of the hits that a non-filtered search would have
+cause us to miss 0.5\% of the hits that a non-filtered search would have
 found. This sampling technique is performed by \prog{cmcalibrate} and
 takes advantage of the CM as a generative probabilistic model.
 Sequences are generated, or emitted, from the model and searched with
@@ -96,7 +96,7 @@ When \prog{cmsearch} sets its thresholds for each round of the
 search, it first sets the final round threshold. This is because the
 determination of the filter thresholds depends heavily on the final
 threshold. By default, the final round threshold used for calibrated
-model searches is $E=0.1$ (see ``manually setting filter and final
+model searches is $E=1$ (see ``manually setting filter and final
 thresholds'' for information on how to change this). 
 This E-value is then converted to a bit score based on the database
 size by using the exponential tail fit parameters stored in the CM
