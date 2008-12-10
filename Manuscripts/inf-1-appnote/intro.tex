@@ -1,11 +1,11 @@
 \section{Introduction}
 
-When searching for homologous structural RNAs in sequence databases, it is
-desirable to score both primary sequence and RNA secondary structure
-conservation. Several tools have been developed which take different
-approaches to how RNA sequence and secondary structure constraints
-should be integrated and scored. Some tools implement specialized
-rules for a specific RNA family, such as tRNAs
+When searching for homologous structural RNAs in sequence databases,
+it is desirable to score both primary sequence and RNA secondary
+structure conservation. Several tools have been developed which take
+different approaches to how RNA sequence and secondary structure
+constraints should be integrated and scored. Some tools implement
+specialized rules for a specific RNA family, such as tRNAs
 \citep{LoweEddy97,Laslett04}, snoRNAs \citep{LoweEddy99,Schattner06},
 microRNAs \citep{Lai03,Lim03}, or SRP RNAs \citep{Lai03,Lim03}. Some
 approaches use pattern matching methods and expertly designed query
@@ -13,10 +13,10 @@ patterns \citep{Macke01}. The most general approaches take as input
 any RNA (or RNA multiple alignment), and construct an appropriate
 statistical scoring system that allows quantitative ranking of
 putative homologs in a target sequence database
-\citep{Gautheret01,ZhangBafna05}.  Stochastic context-free grammars
-(SCFGs) provide a natural statistical framework for combining sequence
-and (non-pseudoknotted) secondary structure conservation information
-in a single consistent scoring system
+\citep{Gautheret01,ZhangBafna05,Huang08}.  Stochastic context-free
+grammars (SCFGs) provide a natural statistical framework for combining
+sequence and (non-pseudoknotted) secondary structure conservation
+information in a single consistent scoring system
 \citep{Sakakibara94c,Eddy94,Brown00,Durbin98}.
 
 Here, we announce the 1.0 release of \textsc{infernal}, an

@@ -4,20 +4,20 @@
 A published benchmark (independent of our lab) found that
 \textsc{infernal} and other CM based methods were the most sensitive
 and specific tools for structural RNA homology search among the
-several that were tested \citep{Freyhult07}.  Results on the benchmark
-we use during \textsc{infernal} development have been consistent with
-that conclusion \citep{NawrockiEddy07}. 
+several that were tested \citep{Freyhult07}.  Results on a separate
+benchmark that we use during \textsc{infernal} development have been
+consistent with that conclusion \citep{NawrockiEddy07}.
 
-Figure~1 shows updated benchmark results comparing \textsc{infernal}
-1.0 to the previous version (0.72) that was benchmarked in
-\citep{Freyhult07}, and also to family-pairwise-search with BLASTN
-\citep{Altschul97,Grundy98b}.  The sensitivity and specificity of
-\textsc{infernal} 1.0 have greatly improved. There have been three
-relevant improvements in the implementation: a biased composition
-correction to the raw log-odds scores, the use of the full Inside
-log-likelihood scores (summed over all alignments) in place of maximum
-likelihood alignment scores, and the introduction of approximate
-E-value estimates for the scores.
+Figure~1 shows updated results of our internal benchmark comparing
+\textsc{infernal} 1.0 to the previous version (0.72) that was
+benchmarked in \citep{Freyhult07}, and also to family-pairwise-search
+with BLASTN \citep{Altschul97,Grundy98b}.  The sensitivity and
+specificity of \textsc{infernal} 1.0 have greatly improved. There have
+been three relevant improvements in the implementation: a biased
+composition correction to the raw log-odds scores, the use of the full
+Inside log-likelihood scores (summed over all alignments) in place of
+maximum likelihood alignment scores, and the introduction of
+approximate E-value estimates for the scores.
 
 The benchmark dataset used in Figure~1 is an improved version of our
 internal Rfam-based benchmark \citep{NawrockiEddy07}. Briefly, this
@@ -46,29 +46,30 @@ all families were collected and ranked, and true and false hits were
 defined (as described in \citep{NawrockiEddy07}), producing the ROC
 curves in Figure~1.
 
-CM search algorithms are computationally expensive, and
-\textsc{infernal} searches require a large amount of compute time.  To
+\textsc{infernal} searches require a large amount of compute time To
 alleviate this, \textsc{infernal} 1.0 implements two rounds of
 filters.  When appropriate, the HMM filtering technique described by
-Weinberg and Ruzzo \citep{WeinbergRuzzo06} is used first with filter
-thresholds configured by \emph{cmcalibrate} (occasionally a model with
-little primary sequence conservation cannot be usefully accelerated by
-a primary sequence based filter).  The query-dependent banded (QDB)
-CYK search algorithm is used as a second filter with relatively tight
-bands ($\beta$=1E-7) \citep{NawrockiEddy07}.  The final,
-post-filtering, stage of search with the Inside algorithm also uses
-QDBs, but with looser bands ($\beta$=1E-15).  The benchmark in
+Weinberg and Ruzzo \citep{WeinbergRuzzo06} is applied first with
+filter thresholds configured by \emph{cmcalibrate} (occasionally a
+model with little primary sequence conservation cannot be usefully
+accelerated by a primary sequence based filter).  The query-dependent
+banded (QDB) CYK search algorithm is used as a second filter with
+relatively tight bands ($\beta$=1E-7) \citep{NawrockiEddy07}.  The
+final, post-filtering, stage of search with the Inside algorithm also
+uses QDBs, but with looser bands ($\beta$=1E-15).  The benchmark in
 Figure~1 shows results with and without the filters. The default
 filters accelerate similarity search for the benchmark by about
 30-fold overall, while sacrificing a small amount of sensitivity. This
 makes \textsc{infernal} 1.0 substantially faster than 0.72, although
 \textsc{BLAST} is still orders of magnitude faster.  Table~1 shows
 specific examples of running times for similarity searches for six RNA
-families of various sizes with and without filters. The range of
-speedups from filters vary widely. In general, the more primary
-sequence conservation in a family, the more effective an HMM filter
-will be, although this is not always the case. Further acceleration
-remains a major goal of \textsc{infernal} development.
+families of various sizes with and without filters. 
+%The acceleration
+%gained from filters varies widely. In general, the more primary
+%sequence conservation in a family, the more effective an HMM filter
+%will be, although this is not always the case. 
+Further acceleration remains a major goal of \textsc{infernal}
+development.
 
 The computational cost of CM alignment with the \emph{cmalign} program
 has been a limitation of previous versions of
