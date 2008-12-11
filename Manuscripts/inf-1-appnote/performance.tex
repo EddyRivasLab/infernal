@@ -1,27 +1,33 @@
 
 \section{Performance}
 
-A published benchmark (independent of our lab) found that
-\textsc{infernal} and other CM based methods were the most sensitive
-and specific tools for structural RNA homology search among the
-several that were tested \citep{Freyhult07}.  Results on a separate
-benchmark that we use during \textsc{infernal} development have been
-consistent with that conclusion \citep{NawrockiEddy07}.
+%A published benchmark (independent of our lab) found that
+%\textsc{infernal} and other CM based methods were the most sensitive
+%and specific tools for structural RNA homology search among the
+%several that were tested \citep{Freyhult07}.  Results on a separate
+%benchmark that we use during \textsc{infernal} development have been
+%consistent with that conclusion \citep{NawrockiEddy07}.
 
-Figure~1 shows updated results of our internal benchmark comparing
-\textsc{infernal} 1.0 to the previous version (0.72) that was
-benchmarked in \citep{Freyhult07}, and also to family-pairwise-search
-with BLASTN \citep{Altschul97,Grundy98b}.  The sensitivity and
-specificity of \textsc{infernal} 1.0 have greatly improved. There have
-been three relevant improvements in the implementation: a biased
+A published benchmark (independent of our lab) \citep{Freyhult07} and
+our own internal benchmark used for \textsc{infernal} development
+\citep{NawrockiEddy07} both find that \textsc{infernal} and other CM
+based methods are the most sensitive and specific tools for structural
+RNA homology search among the several that were tested. Figure~1 shows
+updated results of our internal benchmark comparing \textsc{infernal}
+1.0 to the previous version (0.72) that was benchmarked in
+\citep{Freyhult07}, and also to family-pairwise-search with BLASTN
+\citep{Altschul97,Grundy98b}.  The sensitivity and specificity of
+\textsc{infernal} 1.0 have greatly improved relative to 0.72. There
+have been three relevant improvements in the implementation: a biased
 composition correction to the raw log-odds scores, the use of the full
 Inside log-likelihood scores (summed over all alignments) in place of
-maximum likelihood alignment scores, and the introduction of
+CYK maximum likelihood alignment scores, and the introduction of
 approximate E-value estimates for the scores.
 
-The benchmark dataset used in Figure~1 is an improved version of our
-internal Rfam-based benchmark \citep{NawrockiEddy07}. Briefly, this
-benchmark was constructed as follows. The sequences of the seed
+The benchmark dataset used in Figure~1 
+%is an improved version of our internal Rfam-based benchmark
+%\citep{NawrockiEddy07}. Briefly, this benchmark 
+was constructed as follows. The sequences of the seed
 alignments of 503 Rfam (release 7) families were single linkage
 clustered by pairwise sequence identity, and separated into two
 clusters such that no sequence in one cluster is more than 60\%
@@ -30,46 +36,47 @@ was assigned as the query (preserving their original Rfam alignment
 and structure annotation), and the sequences in the smaller cluster
 were assigned as true positives in a test set. We required a minimum
 of five sequences in the query alignment. 51 Rfam families met these
-criteria, yielding 450 test sequences, as described in
-\citep{NawrockiEddy07}. We then embedded the 450 test sequences at
-random positions in a 10 Mb ``pseudogenome''. Previously we generated
-the pseudogenome sequence from a uniform residue frequency
-distribution \citep{NawrockiEddy07}. Because base composition biases
-in the target sequence database cause the most serious problems in
-separating significant CM hits from noise, we improved the realism of
-the benchmark by generating the pseudogenome sequence from a 15-state
-fully connected hidden Markov model (HMM) trained by Baum-Welch
-expectation maximization \citep{Durbin98} on genome sequence data from
-a wide variety of species. Each of the 51 query alignments was used to
-build a CM and search the pseudogenome, a single list of all hits for
-all families were collected and ranked, and true and false hits were
-defined (as described in \citep{NawrockiEddy07}), producing the ROC
-curves in Figure~1.
+criteria, yielding 450 test sequences which were embedded at random
+positions in a 10 Mb ``pseudogenome''.  Previously we generated the
+pseudogenome sequence from a uniform residue frequency distribution \citep{NawrockiEddy07}.
+%Because base composition biases
+%in the target sequence database cause the most serious problems in
+%separating significant CM hits from noise, 
+Here, we generated a more realistic pseudogenome sequence using a
+15-state fully connected hidden Markov model (HMM) trained by
+Baum-Welch expectation maximization \citep{Durbin98} on genome
+sequence data from a wide variety of species.  Each of the 51 query
+alignments was used to build a CM and search the pseudogenome, a
+single list of all hits for all families were collected and ranked,
+and true and false hits were defined (as described in
+\citep{NawrockiEddy07}), producing the ROC curves in Figure~1.
 
-\textsc{infernal} searches require a large amount of compute time To
-alleviate this, \textsc{infernal} 1.0 implements two rounds of
-filters.  When appropriate, the HMM filtering technique described by
-Weinberg and Ruzzo \citep{WeinbergRuzzo06} is applied first with
-filter thresholds configured by \emph{cmcalibrate} (occasionally a
-model with little primary sequence conservation cannot be usefully
-accelerated by a primary sequence based filter).  The query-dependent
-banded (QDB) CYK search algorithm is used as a second filter with
-relatively tight bands ($\beta$=1E-7) \citep{NawrockiEddy07}.  The
-final, post-filtering, stage of search with the Inside algorithm also
-uses QDBs, but with looser bands ($\beta$=1E-15).  The benchmark in
-Figure~1 shows results with and without the filters. The default
-filters accelerate similarity search for the benchmark by about
-30-fold overall, while sacrificing a small amount of sensitivity. This
-makes \textsc{infernal} 1.0 substantially faster than 0.72, although
-\textsc{BLAST} is still orders of magnitude faster.  Table~1 shows
-specific examples of running times for similarity searches for six RNA
-families of various sizes with and without filters. 
+\textsc{infernal} searches require a large amount of compute time
+(Table~1). To alleviate this, \textsc{infernal} 1.0 implements two
+rounds of filtering.  When appropriate, the HMM filtering technique
+described by Weinberg and Ruzzo \citep{WeinbergRuzzo06} is applied
+first with filter thresholds configured by \emph{cmcalibrate}
+(occasionally a model with little primary sequence conservation cannot
+be usefully accelerated by a primary sequence based filter).  The
+query-dependent banded (QDB) CYK search algorithm is used as a second
+filter with relatively tight bands ($\beta$=1E-7)
+\citep{NawrockiEddy07}.  Any sequence fragments that survive the filters are
+searched a final time with the Inside algorithm (again using QDB, but with looser
+bands ($\beta$=1E-15)).
+%The benchmark in Figure~1 shows results with and without the filters.  
+In our benchmark, the default filters accelerate similarity search by
+about 30-fold overall, while sacrificing a small amount of sensitivity
+(Figure~1). This makes version 1.0 substantially faster than
+0.72. \textsc{BLAST} is still orders of magnitude faster, but
+significantly less sensitive than \textsc{infernal}. Further
+acceleration remains a major goal of \textsc{infernal} development.
+%Table~1 shows specific examples of running times for
+%similarity searches for six RNA families of various sizes with and
+%without filters.
 %The acceleration
 %gained from filters varies widely. In general, the more primary
 %sequence conservation in a family, the more effective an HMM filter
 %will be, although this is not always the case. 
-Further acceleration remains a major goal of \textsc{infernal}
-development.
 
 The computational cost of CM alignment with the \emph{cmalign} program
 has been a limitation of previous versions of

@@ -39,27 +39,24 @@
 \input{performance}
 \input{discussion}
 
-\begin{figure}[!tpb]
-\centerline{\includegraphics[scale=0.33]{figs/roc}}
-\input{roc-caption}
-\label{Fig:01}
-\end{figure}
 
 \begin{table}[!t]
 \processtable{
 \textbf{Calibration, search, and alignment running times for six known
     structural RNAs of various sizes.} 
-    CPU times are measured for single
-    execution threads on otherwise unloaded 3.0 GHz Intel Xeon
-    processors with 8 GB RAM, running Red Hat AS4 Linux operating
-    systems.
     \label{Tab:01}}
 %\input{timings-caption}
-{\input{timings}}{\textbf{*} 
-  Faster non-CM methods, such as Blast or HMMs, are
-  recommended for finding SSU and LSU rRNA sequences due to the
-  high level of primary sequence conservation in those families.}
+{\input{timings}}{CPU times are measured for single
+    execution threads on 3.0 GHz Intel Xeon
+    processors with 8 GB RAM, running Red Hat AS4 Linux operating
+    systems.}
 \end{table}
+
+\begin{figure}[!tpb]
+\centerline{\includegraphics[scale=0.33]{figs/roc}}
+\input{roc-caption}
+\label{Fig:01}
+\end{figure}
 
 \section*{Acknowledgement}
 

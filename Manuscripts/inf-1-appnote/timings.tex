@@ -1,17 +1,34 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % The 6RNAs table, running times for various applications for 
 % 6 RNAs
-\begin{tabular}{lrrr|rr|r}\ifbi \toprule \fi
-       &           & avg \% id& calib-       & \multicolumn{2}{c|}{search}          &           \\
-       &           & in train-& ration       & \multicolumn{2}{c|}{(min/Mb)}        & alignment \\
-family & length    & ing aln  & (hours)      & no filters& w/filters                & (sec/seq) \\\ifbi \midrule \fi \ifnonbi \hline \fi
-tRNA    & 71       & 44\%     &       2.1h   &     23.5m &       4.4m&  0.01s \\
-5S rRNA & 119      & 56\%     &       2.6h   &     29.3m &       5.1m&  0.03s \\
-SRP RNA & 304      & 46\%     &      13.3h   &    166.9m &       2.8m&  0.17s \\
-RNaseP  & 365      & 65\%     &      16.5h   &    204.7m &       0.9m&  0.18s \\
-SSU rRNA& 1545     & 77\%     &     119.0h   &   *776.6m &     *11.2m&  1.09s \\
-LSU rRNA& 2898     & 82\%     &     180.6h   &  *1757.5m &    *370.1m&  3.07s \\ \ifbi \botrule \fi
+
+% Table without average percent id in training alignment
+\begin{tabular}{lrr|rr|r}\ifbi \toprule \fi
+       &           & calibration  & \multicolumn{2}{c|}{search (min/Mb)} & alignment \\
+family & length    & (hours)      & no filters& w/filters                & (sec/seq) \\\ifbi \midrule \fi \ifnonbi \hline \fi
+tRNA    & 71       &       2.1h   &     23.5m &       4.4m&  0.01s \\
+5S rRNA & 119      &       2.6h   &     29.3m &       5.1m&  0.03s \\
+SRP RNA & 304      &      13.3h   &    166.6m &       2.8m&  0.17s \\
+RNaseP  & 365      &      16.5h   &    205.5m &       0.9m&  0.18s \\
+SSU rRNA& 1545     &      64.3h   &    776.6m &      11.2m&  1.09s \\
+LSU rRNA& 2898     &     158.0h   &   1757.5m &     370.1m&  3.07s \\ \ifbi \botrule \fi
 \end{tabular}
+
+
+% Table with average percent id in training alignment
+%\begin{tabular}{lrrr|rr|r}\ifbi \toprule \fi
+%       &           & avg \% id& calib-       & \multicolumn{2}{c|}{search}          &           \\
+%       &           & in train-& ration       & \multicolumn{2}{c|}{(min/Mb)}        & alignment \\
+%family & length    & ing aln  & (hours)      & no filters& w/filters                & (sec/seq) \\\ifbi \midrule \fi \ifnonbi \hline \fi
+%tRNA    & 71       & 44\%     &       2.1h   &     23.5m &       4.4m&  0.01s \\
+%5S rRNA & 119      & 56\%     &       2.6h   &     29.3m &       5.1m&  0.03s \\
+%SRP RNA & 304      & 46\%     &      13.3h   &    166.9m &       2.8m&  0.17s \\
+%RNaseP  & 365      & 65\%     &      16.5h   &    204.7m &       0.9m&  0.18s \\
+%SSU rRNA& 1545     & 77\%     &     119.0h   &   *776.6m &     *11.2m&  1.09s \\
+%LSU rRNA& 2898     & 82\%     &     180.6h   &  *1757.5m &    *370.1m&  3.07s \\ \ifbi \botrule \fi
+%\end{tabular}
+
+
 %
 % alignment times (a subset of these will be in final table)
 % 

@@ -1,13 +1,26 @@
 \section{Discussion}
+%\textsc{infernal} 1.0's heuristic acceleration techniques make
+%important RNA sequence analysis applications feasible without
+%sacrificing the sensitivity of unconstrained CM methods. 
 
-\textsc{infernal} is a sensitive tool for RNA homology search and
-alignment. Up to this point, \textsc{infernal}'s main use has been
-within the Rfam database \cite{Gardner09}, but the heuristic
-acceleration techniques in version 1.0 make other useful applications
-feasible to users with less compute, including RNA annotation of
-prokaryotic genomes, large-scale database searching for an RNA
-family of interest, and megasequence scale alignments of ribosomal
-RNAs.  
+\textsc{infernal} is a sensitive tool for RNA sequence analysis.
+Version 1.0's heuristic acceleration techniques make some important
+applications possible on a single desktop computer in less than
+an hour, such as searching a prokaryotic genome for a particular RNA
+family, or aligning a few thousand SSU rRNA sequences.  But
+\textsc{infernal} remains computationally expensive, and many problems
+of interest require the use of a cluster.  The most expensive programs
+(\emph{cmcalibrate}, \emph{cmsearch}, and \emph{cmalign}) are
+implemented in coarse-grained parallel MPI versions.
+
+%\textsc{infernal} is a sensitive tool for RNA homology search and
+%alignment. Up to this point, \textsc{infernal}'s main use has been
+%within the Rfam database \citep{Gardner09}, but the heuristic
+%acceleration techniques in version 1.0 make other useful applications
+%feasible to users with less compute, including RNA annotation of
+%prokaryotic genomes, large-scale database searching for an RNA
+%family of interest, and megasequence scale alignments of ribosomal
+%RNAs.  
 
 %\textsc{Infernal} is designed for (and most useful for) the
 %seed profile strategies used by databases such as Pfam and Rfam
@@ -36,10 +49,8 @@ RNAs.
 The complete \textsc{infernal} version 1.0 software package, including
 documentation and ANSI C source code, may be downloaded from
 %\href{http://infernal.janelia.org}. It uses a GNU configure system and
-\url{http://infernal.janelia.org}. The most computationally expensive
-programs (\emph{cmcalibrate}, \emph{cmsearch}, and \emph{cmalign}) are
-implemented in coarse-grained parallel MPI versions for use on
-clusters.  \textsc{infernal} uses a GNU configure system and should be
-portable to any POSIX-compliant operating system, including Linux and
-Mac OS/X. It is freely licensed under the GNU General Public License,
-version 3.
+\url{http://infernal.janelia.org}. \textsc{infernal} uses a GNU
+configure system and should be portable to any POSIX-compliant
+operating system, including Linux and Mac OS/X.
+%It is freely licensed under the GNU General Public License,
+%version 3.
