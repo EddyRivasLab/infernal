@@ -15,7 +15,7 @@ based methods are the most sensitive and specific tools for structural
 RNA homology search among the several that were tested. Figure~1 shows
 updated results of our internal benchmark comparing \textsc{infernal}
 1.0 to the previous version (0.72) that was benchmarked in
-\citep{Freyhult07}, and also to family-pairwise-search with BLASTN
+\citet{Freyhult07}, and also to family-pairwise-search with BLASTN
 \citep{Altschul97,Grundy98b}.  The sensitivity and specificity of
 \textsc{infernal} 1.0 have greatly improved relative to 0.72. There
 have been three relevant improvements in the implementation: a biased
@@ -49,20 +49,20 @@ sequence data from a wide variety of species.  Each of the 51 query
 alignments was used to build a CM and search the pseudogenome, a
 single list of all hits for all families were collected and ranked,
 and true and false hits were defined (as described in
-\citep{NawrockiEddy07}), producing the ROC curves in Figure~1.
+\citet{NawrockiEddy07}), producing the ROC curves in Figure~1.
 
 \textsc{infernal} searches require a large amount of compute time
 (Table~1). To alleviate this, \textsc{infernal} 1.0 implements two
 rounds of filtering.  When appropriate, the HMM filtering technique
-described by Weinberg and Ruzzo \citep{WeinbergRuzzo06} is applied
+described by \citet{WeinbergRuzzo06} is applied
 first with filter thresholds configured by \emph{cmcalibrate}
 (occasionally a model with little primary sequence conservation cannot
 be usefully accelerated by a primary sequence based filter).  The
 query-dependent banded (QDB) CYK search algorithm is used as a second
-filter with relatively tight bands ($\beta$=1E-7)
+filter with relatively tight bands ($\beta$= $10^{-7}$)
 \citep{NawrockiEddy07}.  Any sequence fragments that survive the filters are
 searched a final time with the Inside algorithm (again using QDB, but with looser
-bands ($\beta$=1E-15)).
+bands ($\beta$= $10^{-15}$)).
 %The benchmark in Figure~1 shows results with and without the filters.  
 In our benchmark, the default filters accelerate similarity search by
 about 30-fold overall, while sacrificing a small amount of sensitivity
@@ -81,14 +81,14 @@ acceleration remains a major goal of \textsc{infernal} development.
 The computational cost of CM alignment with the \emph{cmalign} program
 has been a limitation of previous versions of
 \textsc{infernal}. Version 1.0 now uses a constrained dynamic
-programming approach first developed by Michael Brown \citep{Brown00}
+programming approach first developed by \citet{Brown00}
 that uses sequence specific bands derived from a first-pass HMM
 alignment. This technique offers a dramatic speedup relative to
 unconstrained alignment, especially for large RNAs such as small and
 large subunit (SSU and LSU) ribosomal RNAs, which can now be aligned
 in roughly 1 and 3 seconds per sequence, respectively (Table 1), as
-opposed to 12 minutes and 3 hours in previous versions (data not
-shown). We expect this to be particularly useful in applications where
+opposed to 12 minutes and 3 hours in previous versions.
+We expect this to be particularly useful in applications where
 many large RNA sequences need to be aligned. One of the main ribosomal
 RNA databases, RDP, has recently adopted \textsc{infernal} in its
 pipeline \citep{Cole09}.

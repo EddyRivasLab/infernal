@@ -24,7 +24,6 @@
 \newif\ifdraft
 %\draftfalse
 \drafttrue
-
 \newif\ifbi
 \bifalse
 
@@ -43,8 +42,10 @@ Ashburn VA 20147\\
 %abstract
 \textbf{Summary:}
 \input{abstract-summary}
+\\
 \textbf{Availability:}
 \input{abstract-availability}
+\\
 \textbf{Contact:} \url{{nawrockie,kolbed,eddys}@janelia.hhmi.org}
 
 \input{intro}
@@ -59,6 +60,8 @@ high performance computing resources.
 \section{Funding}
 \input{funding}
 
+\bibliography{master,books,lab,new}
+
 \begin{figure}
 \begin{center}
 \includegraphics[width=6.4in]{figs/roc}
@@ -66,6 +69,8 @@ high performance computing resources.
 \label{Fig:roc}
 \end{center}
 \end{figure}
+
+\newpage
 
 \begin{table}
 \begin{center}
@@ -75,7 +80,7 @@ high performance computing resources.
 \label{Tab:timings}
 \end{table}
 
-\bibliography{master,books,lab,new}
+
 
 \end{document}
 
