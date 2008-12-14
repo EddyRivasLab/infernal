@@ -1439,7 +1439,7 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
     bestd_sc = hit_sc;
     /* Now, if current score is greater than maximum seen previous, report
      * it if >= cutoff and set new max */
-    for (d = dmin_1; d <= dmax; d++) {
+    for (d = dmin+1; d <= dmax; d++) {
       hit_sc = alpha_row[d];
       if (hit_sc > bestd_sc) {
 	if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) { 
