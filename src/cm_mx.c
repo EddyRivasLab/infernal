@@ -1817,7 +1817,7 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
   int a;
   float null3_correction;
   int do_report_hit;
-  float hit_sc, cumulative_sc;
+  float hit_sc, cumulative_sc, bestd_sc;
 
   if(alpha_row == NULL && (!using_hmm_bands)) cm_Fail("UpdateGammaHitMxCM(), alpha_row is NULL, but using_hmm_bands is FALSE.\n");
   dmin = (using_hmm_bands) ? 0     : dn; 
@@ -1885,16 +1885,17 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
 	do_report_hit = (hit_sc >= gamma->cutoff) ? TRUE : FALSE;
       }
       if(do_report_hit) { 
-	/*printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc);*/
+	/*printf("\t0 %.3f %.3f ip: %d jp: %d r: %d\n", hit_sc+null3_correction, hit_sc, ip, jp, r);*/
 	ReportHit (ip, jp, r, hit_sc, results);
       }
     }
-    bestd = dmin;
+    bestd    = dmin;
+    bestd_sc = hit_sc;
     /* Now, if current score is greater than maximum seen previous, report
-       it if >= cutoff and set new max */
-    for (d = dmin+1; d <= dmax; d++) {
+     * it if >= cutoff and set new max */
+    for (d = dmin_1; d <= dmax; d++) {
       hit_sc = alpha_row[d];
-      if (hit_sc > alpha_row[bestd]) {
+      if (hit_sc > bestd_sc) {
 	if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) { 
 	  do_report_hit = TRUE;
 	  r = bestr[d]; 
@@ -1907,14 +1908,14 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
 	    esl_vec_FNorm(comp, cm->abc->K);
 	    ScoreCorrectionNull3(cm->abc, cm->null, comp, jp-ip+1, &null3_correction);
 	    hit_sc -= null3_correction;
-	    do_report_hit = ((hit_sc > alpha_row[bestd]) && (hit_sc >= gamma->cutoff)) ? TRUE : FALSE;
+	    do_report_hit = ((hit_sc > bestd_sc) && (hit_sc >= gamma->cutoff)) ? TRUE : FALSE;
 	  }
 	  if(do_report_hit) { 
-	    /*printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc);*/
+	    /*printf("\t1 %.3f %.3f ip: %d jp: %d r: %d\n", hit_sc+null3_correction, hit_sc, ip, jp, r);*/
 	    ReportHit (ip, jp, r, hit_sc, results);
 	  }
 	}
-	if(hit_sc > alpha_row[bestd]) bestd = d; /* we need to check again b/c if null3, hit_sc -= null3_correction */
+	if(hit_sc > bestd_sc) { bestd = d; bestd_sc = hit_sc; } /* we need to check again b/c if null3, hit_sc -= null3_correction */
       }
     }
   }
