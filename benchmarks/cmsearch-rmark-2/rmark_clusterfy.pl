@@ -149,9 +149,9 @@ $fam_idx_root =~ s/.+\///;
 #if(! ( -e ("$chrom_list"))) { die("ERROR, $chrom_list must exist in the current directory.") }
 
 # Copy any .prior files we might need.
-if(-e (*.pri*)) { system("cp *.pri* $run_dir"); }
+if(-e ("*.pri*")) { system("cp *.pri* $run_dir"); }
 # Copy any .null files we might need.
-if(-e (*.null*)) { system("cp *.null* $run_dir"); }
+if(-e ("*.null*")) { system("cp *.null* $run_dir"); }
     
 # Read in the roots of the chromosomes and determine the size of the genome from chromosome sizes in chromosome list file
 file_lines_to_arr($chrom_list, \@chrom_files_arr);
