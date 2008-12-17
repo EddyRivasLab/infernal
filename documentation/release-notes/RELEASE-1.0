@@ -99,6 +99,15 @@ Release candidate 4 (1.0rc4; 24 Nov 2008) bugfixes and changes include:
      --sub' when using a CM1 that has 0 length consensus loop(s) (two
      positions i and i+1 that are basepaired to each other).
    
+Release candidate 5 (1.0rc5; 17 Dec 2008) bugfix:
+
+  - Fixed a bug in cm_mx.c:UpdateGammHitMxCM(). When matrix score
+    reporting strategy is greedy (default when reporting threshold is
+    negative), top scoring hits were not being reported correctly.
+    Code was not correctly accounting for null3 score correction when
+    deciding if a given hit should be reported based on previously
+    reported hit scores.
+
 
 
 For more information, see http://infernal.janelia.org
