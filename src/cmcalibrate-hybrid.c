@@ -2787,7 +2787,7 @@ read_partition_file(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   ESL_DASSERT1((MAX_PARTITIONS < GC_SEGMENTS));
   if(esl_opt_IsDefault(go, "--pfile")) ESL_FAIL(eslEINVAL, errbuf, "read_partition_file, but --pfile not invoked!\n");
 
-  if (esl_fileparser_Open(esl_opt_GetString(go, "--pfile"), &efp) != eslOK) ESL_FAIL(eslEINVAL, errbuf, "failed to open %s in read_mask_file\n", esl_opt_GetString(go, "--pfile"));
+  if (esl_fileparser_Open(esl_opt_GetString(go, "--pfile"), NULL, &efp) != eslOK) ESL_FAIL(eslEINVAL, errbuf, "failed to open %s in read_mask_file\n", esl_opt_GetString(go, "--pfile"));
   esl_fileparser_SetCommentChar(efp, '#');
   
   ESL_ALLOC(begin, sizeof(int) * GC_SEGMENTS);
