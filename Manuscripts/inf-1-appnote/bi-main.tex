@@ -42,14 +42,21 @@
 
 \begin{table}[!t]
 \processtable{
-\textbf{Calibration, search, and alignment running times for six known
+\textbf{Calibration, search, and alignment running times for seven known
     structural RNAs of various sizes.} 
     \label{Tab:01}}
 %\input{timings-caption}
-{\input{timings}}{CPU times are measured for single
-    execution threads on 3.0 GHz Intel Xeon
-    processors with 8 GB RAM, running Red Hat AS4 Linux operating
-    systems.}
+{\input{timings}}{CPU times are measured on 3.0 GHz Intel Xeon processors with 8 GB
+RAM, running Red Hat AS4 Linux operating systems. All times were
+single execution threads except for SSU and LSU calibrations and
+searches which were run in parallel using MPI (OpenMPI)
+on 12 CPUs (times reported are actual times multiplied by 12).
+``Length'' is the number of consensus positions (positions that
+contain gaps in fewer than 50\% of the aligned sequences) in the input
+alignment.  Randomly generated sequence of length 20 Mb (for filtered)
+and 2 Mb (for non-filtered) was used for the searches. Alignment
+files, CM files and instructions for reproduction are in the
+supplementary material.}
 \end{table}
 
 \begin{figure}[!tpb]
