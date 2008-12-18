@@ -19,5 +19,5 @@
 # cmsearch is actually twice the database size b/c both strands of
 # each sequence are searched).
 #
-$cms = "cmsearch-1.0 -Z 20 ";
+$cms = "cmsearch -Z 20 ";
 1;
