@@ -41,7 +41,8 @@ There are 4 main sections to this 00README:
 These sections describe 'rmark-2' the second version of the rmark
 benchmark, defined by a specific set of sequence files as described
 below. 'rmark-2' is the benchmark used in the Infernal 1.0
-applications note in infernal/Manuscripts/inf-1-appnote/.
+applications note.
+
 The first version of rmark, 'rmark-1' was used in the QDB paper
 (Nawrocki, Eddy) in infernal/Manuscripts/banded_cyk/. 'rmark-1' can be
 found in infernal/benchmarks/cmsearch-rmark/, and has it's own
@@ -73,7 +74,7 @@ o rmark_clusterfy.pl    - splits up a single rmark.pl benchmark run of
 			  combine the results after they're all done.
 
 There are two sets of sequence files relevant to rmark, family
-specific files and pseudo-genome files. rmark-1 is version 1 of rmark
+specific files and pseudo-genome files. rmark-2 is version 2 of rmark
 and is defined by 51 sets of family specific files and a pseudo-genome
 made up of 20 500 Kb chromosomes with the test sequences from the 51
 families embedded within it. The construction of the pseudo-genome 
@@ -84,7 +85,7 @@ The two sets of sequence files in the rmark-2/ subdirectory:
 
 (1) Family specific files:
 
-The rmark-1/ subdirectory contains data files for 51 sequence
+The rmark-2/ subdirectory contains data files for 51 sequence
 families,including training alignments and a total of 450 remote homologue test
 sequences. For each family, there are four files:
 	.ali  : a multiple alignment for training (STOCKHOLM format)
@@ -366,12 +367,12 @@ $ perl rmark_clusterfy.pl -M cms-1p0 infernal.rmm rmk_files/inf-1p0.rmk rmark-2/
   bunch of files there. This is the directory in which the benchmark
   should be performed on the cluster. 
 
-- The inf-1p0.com file has 1020 'qsub' commands that should work
-  with Sun Grid Engine (SGE) version 6. Each 'qsub' command submits a
+- The inf-1p0.com file has 1020 'qsub' commands that should work with
+  Sun Grid Engine (SGE) version 6.0u8. Each 'qsub' command submits a
   mini-benchmark run of 1 family versus 1 chromosome to a cluster
   node. If your cluster uses something besides SGE version 6, you'll
-  have to change the code in rmark_clusterfy.pl to create a different
-  .com file or modify the .com file after it's created. 
+  probably have to change the code in rmark_clusterfy.pl to create a
+  different .com file or modify the .com file after it's created.
 
  -The inf-1p0_pp.script is a post-processing script ('pp') that
   should be run after ALL the 1020 jobs are finished. It looks like
@@ -411,7 +412,7 @@ Step 2 - login to the cluster, submit the jobs, wait for them to
 
 $ sh inf-1p0.com 
 
-- The longest run takes about ? minutes (on a Intel 3.0 GHz Xeon).
+- The longest run takes about 35 minutes (on a Intel 3.0 GHz Xeon).
 - After they're all finished, run the inf-1p0_pp.script: 
 
 $ sh inf-1p0_pp.script 
@@ -420,20 +421,21 @@ The results are in the merged_* files:
 
 $ tail -10 merged_inf-1p0_hit.fam
 
-MER:        113
-MER_fp:     2
-MER_fn:     111
-MER_thresh: 16.38
+MER:        146
+MER_fp:     7
+MER_fn:     139
+MER_thresh: 0.2122
 
 MER statistics summed across all 51 families:
-MER    (fam sum):     97
-MER_fp (fam sum):     3
-MER_fn (fam sum):     94
+MER    (fam sum):     135
+MER_fp (fam sum):     1
+MER_fn (fam sum):     134
 
-These statistics are reported in Table 6 of the banded-cyk manuscript.
+The MER statistic is described in more detail in the QDB paper
+(Nawrocki, Eddy PLoS Comp Bio 2007).
 
-To perform ALL 6 infernal runs described in Table 6, see the
-duplicate_full_bm.sh shell script, which contains 6 rmark_clusterfy.pl
+To perform ALL 3 infernal runs in the ROC curve, see the
+duplicate_full_bm.sh shell script, which contains 3 rmark_clusterfy.pl
 calls.
 
 -----------------------------------------------------------------------------
@@ -538,17 +540,23 @@ perl hmm_generate_embed.pl
 This script was used to create the rmark-2 pseudogenome with the
 following command:
 
+***CAUTION***: This will overwrite the rmark-2 benchmark, and is only
+provided so the creation of the file could be reproduced. If you want
+to make your own genome, modify the input parameters and use something
+other than 'rmark-2' for the <output root> paramter.
+
 $ perl hmm_generate_embed.pl real.15.hmm 20 500000 rmark-2 rmark-2.idx rfam_files/ 2 
 
 For this to work, you must have a file 'rmark-2.idx' in the current
-directory. This file is in cmsearch-rmark-2/rmark-2/rmark-2.idx. You
-also will need to have a subdirectory in the current directory called
-'rfam_files/' this directory must contain files named <x>.test, where
-<x> is the 'root' of each family you want to embed in the
-pseudogenome. Each 'root' is contained in a single line in the
-'rmark-2.idx' file, for example the first line in that file is
-"RF00002", so 'rfam_files/' must contain the file 'RF00002.test'.
-The '<x>.test' files for rmark-2 are in cmsearch-rmark-2/rmark-2/.
+directory. This file is identical to
+cmsearch-rmark-2/rmark-2/rmark-2.idx. You also will need to have a
+subdirectory in the current directory called 'rfam_files/' this
+directory must contain files named <x>.test, where <x> is the 'root'
+of each family you want to embed in the pseudogenome. Each 'root' is
+contained in a single line in the 'rmark-2.idx' file, for example the
+first line in that file is "RF00002", so 'rfam_files/' must contain
+the file 'RF00002.test'.  The '<x>.test' files for rmark-2 are in
+cmsearch-rmark-2/rmark-2/.
 
 This command will take about 10 minutes to complete. 
 
