@@ -317,7 +317,7 @@ foreach $key (keys(%seq_hash))
 
 # Read the family list
 %fam_hash = ();
-open (INDEX,$idx) || die;
+open (INDEX,$idx) || die "Couldn't open $idx";
 while (<INDEX>) 
 {
     if (/^(\S+)/) {
