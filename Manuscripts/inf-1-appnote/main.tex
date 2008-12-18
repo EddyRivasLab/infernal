@@ -1,13 +1,13 @@
 \documentclass[11pt]{article}
-\usepackage{times}
-\usepackage{verbatim}
-\usepackage[pdftex]{graphicx}    
-%\usepackage[pdftex]{color}  
-\usepackage{fullpage}
 \usepackage{url}
+\usepackage{fullpage}
+\usepackage{times}
+\usepackage[pdftex]{graphicx}    
 \usepackage[numbers,sort&compress]{natbib}
+
 \usepackage{setspace}
 \doublespacing
+
 \setcounter{secnumdepth}{0}
 
 \newif\ifnonbi
@@ -16,8 +16,6 @@
 \nonbifalse
 
 %\newcommand{\href}[2]{#2}
-
-\bibliographystyle{unsrtnat}
 
 % \draftfalse: submission version. Legends,tables at end. No figs included.
 % \drafttrue:   online preprint. Figures and table inline.
@@ -36,7 +34,7 @@ HHMI Janelia Farm Research Campus\\
 Ashburn VA 20147\\
 \url{http://selab.janelia.org/}\\
 }
-%\date{\today}
+\date{\today}
 \maketitle
 
 %abstract
@@ -60,7 +58,10 @@ high performance computing resources.
 \section{Funding}
 \input{funding}
 
+\bibliographystyle{unsrtnat}
 \bibliography{master,books,lab,new}
+
+\newpage
 
 \begin{figure}
 \begin{center}
