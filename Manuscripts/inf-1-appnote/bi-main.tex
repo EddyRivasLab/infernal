@@ -39,6 +39,40 @@
 \input{usage}
 \input{performance}
 \input{discussion}
+
+\section*{Acknowledgement}
+
+We thank Goran Ceric for his peerless skill in managing Janelia Farm's
+high performance computing resources.
+
+\paragraph*{Funding\textcolon} 
+\textsc{Infernal} development is supported by Howard Hughes Medical
+Institute. It has also been supported in the past by an NIH NHGRI
+Institutional Training Grant in Genomic Science (T32-HG000045) to EPN,
+an NSF Graduate Fellowship to DLK, by NIH R01-HG01363 and a
+generous endowment from Alvin Goldfarb. 
+
+
+\begin{figure}[h]
+%\centerline{\includegraphics[scale=0.33]{figs/roc}}
+\centerline{\includegraphics[width=3.1in]{figs/roc-short}}
+\input{roc-caption}
+\label{Fig:01}
+\end{figure}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%     please remove the " % " symbol from \centerline{\includegraphics{fig01.eps}}
+%     as it may ignore the figures.
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%\bibliographystyle{bioinformatics}
+\bibliography{master,books,lab,new}
+
+\end{application}
+\end{document}
+
 \begin{comment}
 \begin{table}[!t]
 \processtable{
@@ -59,35 +93,3 @@ and 2 Mb (for non-filtered) was used for the searches. Alignment files
 are in the supplementary material.}
 \end{table}
 \end{comment}
-
-\begin{figure}[!tpb]
-%\centerline{\includegraphics[scale=0.33]{figs/roc}}
-\centerline{\includegraphics[width=3.5in,height=1.33in]{figs/roc}}
-\input{roc-caption}
-\label{Fig:01}
-\end{figure}
-
-\section*{Acknowledgement}
-
-We thank Goran Ceric for his peerless skill in managing Janelia Farm's
-high performance computing resources.
-
-\paragraph{Funding\textcolon} 
-\textsc{Infernal} development is supported by Howard Hughes Medical
-Institute. It has also been supported in the past by an NIH NHGRI
-Institutional Training Grant in Genomic Science (T32-HG000045) to EPN,
-an NSF Graduate Fellowship to DLK, by NIH R01-HG01363 and a
-generous endowment from Alvin Goldfarb. 
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-%     please remove the " % " symbol from \centerline{\includegraphics{fig01.eps}}
-%     as it may ignore the figures.
-%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%\bibliographystyle{bioinformatics}
-\bibliography{master,books,lab,new}
-
-\end{application}
-\end{document}
