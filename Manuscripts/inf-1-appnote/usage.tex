@@ -12,56 +12,76 @@ for
 insertions and deletions. These scores are log-odds scores derived
 from the observed counts of residues, base pairs, insertions and
 deletions in the input alignment, combined with prior information
-derived from structural ribosomal RNA alignments. Construction and
-parameterization of CMs have been described in more detail elsewhere
-\citep{Eddy94,infguide03,Eddy02b,NawrockiEddy07}.
+derived from structural ribosomal RNA alignments. 
+%Construction and
+%parameterization of CMs have 
+CM parameterization has been described in more detail elsewhere
+\citep{Eddy94,Eddy02b,infguide03,NawrockiEddy07}.
 
 \textsc{infernal} is composed of several programs that are used in
-combination to build models, search databases, and align putative
-homologs, following four basic steps:
-
+combination %for RNA sequence analysis 
+by following four basic steps: 
+%combination to build models, search databases, and align putative
+%homologs, following four basic steps: 
+% one line enumerated:
 \begin{enumerate}
 \item Build a CM from a structural alignment with \emph{cmbuild}.
+\item Calibrate a CM for similarity search with \emph{cmcalibrate}.
+\item Search databases for putative homologs with \emph{cmsearch}.
+\item Align putative homologs to a CM with \emph{cmalign}.
+\end{enumerate}
 
+
+The calibration step is optional and computationally expensive (10
+hours for a CM of a typical RNA family), but is required to obtain
+E-values that estimate the statistical significance of hits in a
+database search. \emph{cmcalibrate} will also determine appropriate
+HMM filter thresholds for accelerating searches without an appreciable
+loss of sensitivity. Each model only needs to be calibrated once.
+
+%enumerated in text
 \begin{comment}
+(1) \textbf{Build} a CM from a structural alignment with \emph{cmbuild}. 
+(2) \textbf{Calibrate} a CM for similarity search with \emph{cmcalibrate}.
+(3) \textbf{Search} databases for putative homologs to a CM with \emph{cmsearch}.
+(4) \textbf{Align} putative homologs to a CM with \emph{cmalign}.
+\end{comment}
+
+% enumerated, with description
+\begin{comment}
+\begin{enumerate}
+\item Build a CM from with \emph{cmbuild}.
+
 \emph{cmbuild} takes as input a structural multiple
 RNA alignment in Stockholm format \citep{infguide03} and creates a CM
 file that is used by other \textsc{infernal} programs.
-\end{comment}
-\begin{comment}
-\emph{cmbuild} creates a CM file for use with other \textsc{infernal}
-programs from an input structural multiple alignment in Stockholm
-format \cite{infguide03}.
-\end{comment}
+
 \item Calibrate a CM for similarity search with \emph{cmcalibrate}.
 
-\item Search databases for putative homologs to a CM with \emph{cmsearch}.
+This step is optional and computationally expensive (10
+hours for a CM of a typical RNA family), but is required to obtain
+E-values that estimate the statistical significance of hits in a
+database search. \emph{cmcalibrate} will also determine appropriate
+HMM filter thresholds for accelerating searches without an appreciable
+loss of sensitivity. Each model only needs to be calibrated once.
 
-\begin{comment}
+\item Search databases for putative homologs with \emph{cmsearch}.
+
 Given a CM file and a target database as input, 
 \emph{cmsearch} searches the target database
 for high scoring hits to the model and outputs alignments
 of each hit in a BLAST-like format augmented with structure
 annotation.
-\end{comment}
 
 \item Align putative homologs to a CM with \emph{cmalign}.
-% to create a structurally annotated multiple alignment in Stockholm format.
 
-\begin{comment}
 \emph{cmalign} takes a CM file and a file of putative homologs, and
 aligns the full length sequences to the model, creating a 
 structurally annotated multiple alignment in Stockholm format.
-\end{comment}
 
 \end{enumerate}
+\end{comment}
 
-The calibration step is optional and computationally expensive (10
-hours for a CM of a typical RNA family), but is required to obtain
-E-values that estimate the statistical significance of each hit in a
-database search. \emph{cmcalibrate} will also determine appropriate
-HMM filter thresholds for accelerating searches without an appreciable
-loss of sensitivity. Each model only needs to be calibrated once.
 
 %Some steps are unnecessary for some applications. For example, a user
 %that wants only to generate alignments of previously defined

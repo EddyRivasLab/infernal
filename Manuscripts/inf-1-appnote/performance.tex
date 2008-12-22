@@ -9,16 +9,16 @@
 %consistent with that conclusion \citep{NawrockiEddy07}.
 
 A published benchmark (independent of our lab) \citep{Freyhult07} and
-our own internal benchmark used for \textsc{infernal} development
+our own internal benchmark used during development
 \citep{NawrockiEddy07} both find that \textsc{infernal} and other CM
 based methods are the most sensitive and specific tools for structural
-RNA homology search among the several that were tested. Figure~1 shows
+RNA homology search among those tested. Figure~1 shows
 updated results of our internal benchmark comparing \textsc{infernal}
 1.0 to the previous version (0.72) that was benchmarked in
 \citet{Freyhult07}, and also to family-pairwise-search with BLASTN
-\citep{Altschul97,Grundy98b}.  The sensitivity and specificity of
-\textsc{infernal} 1.0 have greatly improved relative to 0.72. There
-have been three relevant improvements in the implementation: a biased
+\citep{Altschul97,Grundy98b}.  \textsc{infernal}'s sensitivity and
+specificity of has greatly improved from 0.72 to 1.0, due mainly to 
+three relevant improvements in the implementation: a biased
 composition correction to the raw log-odds scores, the use of the full
 Inside log-likelihood scores (summed over all alignments) in place of
 CYK maximum likelihood alignment scores, and the introduction of
@@ -38,7 +38,9 @@ and structure annotation), and the sequences in the smaller cluster
 were assigned as true positives in a test set. We required a minimum
 of five sequences in the query alignment. 51 Rfam families met these
 criteria, yielding 450 test sequences which were embedded at random
-positions in a 10 Mb ``pseudogenome''.  Previously we generated the
+positions in a 10 Mb ``pseudogenome''.  
+%\end{comment}
+Previously we generated the
 pseudogenome sequence from a uniform residue frequency distribution \citep{NawrockiEddy07}.
 %Because base composition biases
 %in the target sequence database cause the most serious problems in
@@ -51,11 +53,11 @@ alignments was used to build a CM and search the pseudogenome, a
 single list of all hits for all families were collected and ranked,
 and true and false hits were defined (as described in
 \citet{NawrockiEddy07}), producing the ROC curves in Figure~1.
-%\end{comment}
 
 \textsc{infernal} searches require a large amount of compute time
-(Table~1). To alleviate this, \textsc{infernal} 1.0 implements two
-rounds of filtering.  When appropriate, the HMM filtering technique
+(our 10 Mb benchmark search takes about 30 hours per
+model on average, Figure~1). To alleviate this, \textsc{infernal} 1.0 implements
+two rounds of filtering.  When appropriate, the HMM filtering technique
 described by \citet{WeinbergRuzzo06} is applied
 first with filter thresholds configured by \emph{cmcalibrate}
 (occasionally a model with little primary sequence conservation cannot
@@ -90,8 +92,12 @@ unconstrained alignment, especially for large RNAs such as small and
 large subunit (SSU and LSU) ribosomal RNAs, which can now be aligned
 in roughly 1 and 3 seconds per sequence, respectively (Table 1), as
 opposed to 12 minutes and 3 hours in previous versions.
-We expect this to be particularly useful in applications where
-many large RNA sequences need to be aligned. One of the main ribosomal
-RNA databases, RDP, has recently adopted \textsc{infernal} in its
-pipeline \citep{Cole09}.
+%We expect this to be particularly useful in applications where
+%many large RNA sequences need to be aligned. One of the main
+%ribosomal RNA databases, RDP, has recently adopted \textsc{infernal}
+%into it's pipeline \citep{Cole09}.
+This acceleration has facilitated the adoption of \textsc{infernal}
+into the pipeline of RDP, one of the main ribosomal RNA databases
+\citep{Cole09}.
+
 
