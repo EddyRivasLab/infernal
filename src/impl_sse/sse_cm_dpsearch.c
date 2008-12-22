@@ -370,7 +370,6 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
 	{
 	  /* printf("dnA[v:%d]: %d\ndxA[v:%d]: %d\n", v, dnA[v], v, dxA[v]); */
 	  if(cm->sttype[v] == E_st) continue;
-	  float const *esc_v = esc_vAA[v]; 
 	  float const *tsc_v = cm->tsc[v];
 	  int emitmode = Emitmode(cm->sttype[v]);
           __m128 vec_tmp_begl;
@@ -383,10 +382,6 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
 	  cnum = cm->cnum[v];
 	  dn   = dnA[v];
 	  dx   = dxA[v];
-	  /* if we emit right, precalc score of emitting res j from state v */
-	  float esc_j = IMPOSSIBLE;
-	  if(cm->sttype[v] == IR_st || cm->sttype[v] == MR_st)
-	    esc_j = esc_v[dsq[j]];
 
 	  if(cm->sttype[v] == B_st) {
             float *vec_access;
@@ -445,7 +440,8 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
 	  }
 	  else if (cm->stid[v] == BEGL_S) {
 	    y = cm->cfirst[v]; 
-	    for (d = dnA[v]; d <= dxA[v]; d++) {
+            for (d = 0; d < sW; d++) {
+	    //for (d = dnA[v]; d <= dxA[v]; d++) {
 	      tmp.v = vec_init_scAA[v][d]; /* state delta (sd) is 0 for BEGL_S st */
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
                 vec_tsc = _mm_set1_ps(tsc_v[yoffset]);
@@ -587,17 +583,19 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
       esl_sse_hmax_ps(tmp.v, &tmp_esc);		/* overloaded tmp_esc, just need a temporary float */
       vsc_root = ESL_MAX(vsc_root, tmp_esc);
       /* for UpdateGammaHitMxCM to work, these data need to be un-vectorized: alpha[jp_v][0], bestr */
-      for (d = 0; d < sW; d++) {
-        tmp.v = vec_alpha[jp_v][0][d];
-        alpha[jp_v][0][     d] = tmp.x[0];
-        alpha[jp_v][0][  sW+d] = tmp.x[1];
-        alpha[jp_v][0][2*sW+d] = tmp.x[2];
-        alpha[jp_v][0][3*sW+d] = tmp.x[3];
-        tmp.v = vec_bestr[d];
-        bestr[     d] = tmp.x[0];
-        bestr[  sW+d] = tmp.x[1];
-        bestr[2*sW+d] = tmp.x[2];
-        bestr[3*sW+d] = tmp.x[3];
+      if (results != NULL) {
+        for (d = 0; d < sW; d++) {
+          tmp.v = vec_alpha[jp_v][0][d];
+          alpha[jp_v][0][     d] = tmp.x[0];
+          alpha[jp_v][0][  sW+d] = tmp.x[1];
+          alpha[jp_v][0][2*sW+d] = tmp.x[2];
+          alpha[jp_v][0][3*sW+d] = tmp.x[3];
+          tmp.v = vec_bestr[d];
+          bestr[     d] = tmp.x[0];
+          bestr[  sW+d] = tmp.x[1];
+          bestr[2*sW+d] = tmp.x[2];
+          bestr[3*sW+d] = tmp.x[3];
+        }
       }
       /* update gamma, but only if we're reporting hits to results */
       if(results != NULL) if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, results, W, act)) != eslOK) return status;
@@ -642,8 +640,9 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
  * Benchmark driver
  *****************************************************************/
 #ifdef IMPL_SEARCH_BENCHMARK
-/* gcc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
- * gcc -o benchmark-search -g -O2 -I. -L. -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
+/* gcc -o sse-bmark -g -O2 -std=gnu99 -msse2 -mpentiumpro -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c -linfernal -lhmmer -leasel -lm
+
+ * Not updated for this file ...
  * mpicc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
  * mpicc -o benchmark-search -g -O2 -I. -L. -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
  * icc -g -O3 -static -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
@@ -682,17 +681,14 @@ static ESL_OPTIONS options[] = {
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "search in glocal mode [default: local]", 0 },
   { "-L",        eslARG_INT,  "10000", NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs, BUGGED NO EFFECT!",0 },
   { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of random target seqs",                   0 },
-  { "-o",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute old reference CYK scan implementation", 0 },
   { "-w",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute new reference CYK scan implementation", 0 },
   { "-x",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute experimental CYK scan implementation", 0 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute non-banded optimized CYK scan implementation", 0 },
   { "--rsearch", eslARG_NONE,   FALSE, NULL, NULL,  NULL,"--noqdb", NULL, "also execute ported RSEARCH's CYK scan implementation", 0 },
   { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute optimized int inside scan implementation", 0 },
   { "--riins",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute reference int inside scan implementation", 0 },
-  { "--oiins",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute old int inside scan implementation", 0 },
   { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute optimized float inside scan implementation", 0 },
   { "--rfins",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute reference float inside scan implementation", 0 },
-  { "--ofins",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute old float inside scan implementation", 0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -751,7 +747,7 @@ main(int argc, char **argv)
     /* get gamma[0] from the QDB calc alg, which will serve as the length distro for random seqs */
     int safe_windowlen = cm->clen * 2;
     double **gamma = NULL;
-   while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
+    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
       safe_windowlen *= 2;
       if(safe_windowlen > (cm->clen * 1000)) cm_Fail("Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
      }
@@ -782,16 +778,7 @@ main(int argc, char **argv)
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}
-/*
-      if (esl_opt_GetBoolean(go, "-o")) 
-	{ 
-	  esl_stopwatch_Start(w);
-	  sc = CYKScan (cm, dsq, 1, L, cm->W, 0., NULL); 
-	  printf("%4d %-30s %10.4f bits ", (i+1), "CYKBandedScan(): ", sc);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-	}
-*/
+  
       if (esl_opt_GetBoolean(go, "--rsearch")) 
 	{ 
 	  esl_stopwatch_Start(w);
@@ -839,17 +826,7 @@ main(int argc, char **argv)
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}
-/*
-      if (esl_opt_GetBoolean(go, "--oiins")) 
-	{ 
-	  cm->search_opts  |= CM_SEARCH_INSIDE;
-	  esl_stopwatch_Start(w);
-	  sc = iInsideScan(cm, dsq, 1, L, cm->W, 0., NULL);
-	  printf("%4d %-30s %10.4f bits ", (i+1), "iInsideScan() (int no-qdb): ", sc);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-	}
-*/
+  
       /* float inside implementations */
       if (esl_opt_GetBoolean(go, "--fins")) 
 	{ 
@@ -870,17 +847,7 @@ main(int argc, char **argv)
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}
-/*
-      if (esl_opt_GetBoolean(go, "--ofins")) 
-	{ 
-	  cm->search_opts  |= CM_SEARCH_INSIDE;
-	  esl_stopwatch_Start(w);
-	  sc = InsideScan(cm, dsq, 1, L, cm->W, 0., NULL);
-	  printf("%4d %-30s %10.4f bits ", (i+1), "InsideScan() (float no-qdb): ", sc);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-	}
-*/
+  
       printf("\n");
     }
   FreeCM(cm);
