@@ -1,12 +1,4 @@
-
 \section{Performance}
-
-%A published benchmark (independent of our lab) found that
-%\textsc{infernal} and other CM based methods were the most sensitive
-%and specific tools for structural RNA homology search among the
-%several that were tested \citep{Freyhult07}.  Results on a separate
-%benchmark that we use during \textsc{infernal} development have been
-%consistent with that conclusion \citep{NawrockiEddy07}.
 
 A published benchmark (independent of our lab) \citep{Freyhult07} and
 our own internal benchmark used during development
@@ -24,103 +16,51 @@ Inside log-likelihood scores (summed over all alignments) in place of
 CYK maximum likelihood alignment scores, and the introduction of
 approximate E-value estimates for the scores.
 
-
-
 The benchmark dataset used in Figure~1 includes query alignments and
 test sequences from 51 \textsc{Rfam} (release 7) families (details in
-\citep{NawrockiEddy07}. 
-%The benchmark dataset used in Figure~1 is described in detail in
-%\citep{NawrockiEddy07}. It includes query alignments and test
-%sequences from 51 \textsc{Rfam} (release 7) families. 
-No query sequence is more than 60\% identical to a test sequence.
-The 450 total test sequences were embedded at random positions in a 10
-Mb ``pseudogenome''.  Previously we generated the pseudogenome
-sequence from a uniform residue frequency distribution
-\citep{NawrockiEddy07}.  Here, we generated a more realistic
-pseudogenome sequence using a 15-state fully connected hidden Markov
-model (HMM) trained by Baum-Welch expectation maximization
-\citep{Durbin98} on genome sequence data from a wide variety of
-species.  Each of the 51 query alignments was used to build a CM and
-search the pseudogenome, a single list of all hits for all families
-were collected and ranked, and true and false hits were defined (as
-described in \citet{NawrockiEddy07}), producing the ROC curves in
-Figure~1.
+\citep{NawrockiEddy07}.  No query sequence is more than 60\% identical
+to a test sequence.  The 450 total test sequences were embedded at
+random positions in a 10 Mb ``pseudogenome''.  Previously we generated
+the pseudogenome sequence from a uniform residue frequency
+distribution \citep{NawrockiEddy07}.  Here, we generated a more
+realistic pseudogenome sequence using a 15-state fully connected
+hidden Markov model (HMM) trained by Baum-Welch expectation
+maximization \citep{Durbin98} on genome sequence data from a wide
+variety of species.  Each of the 51 query alignments was used to build
+a CM and search the pseudogenome, a single list of all hits for all
+families were collected and ranked, and true and false hits were
+defined (as described in \citet{NawrockiEddy07}), producing the ROC
+curves in Figure~1.
 
-
-\begin{comment}
-  %\begin{comment}
-The benchmark dataset used in Figure~1 
-%is an improved version of our internal Rfam-based benchmark
-%\citep{NawrockiEddy07}. Briefly, this benchmark 
-was constructed as follows. The sequences of the seed
-alignments of 503 Rfam (release 7) families were single linkage
-clustered by pairwise sequence identity, and separated into two
-clusters such that no sequence in one cluster is more than 60\%
-identical to any sequence in the other. The larger of the two clusters
-was assigned as the query (preserving their original Rfam alignment
-and structure annotation), and the sequences in the smaller cluster
-were assigned as true positives in a test set. We required a minimum
-of five sequences in the query alignment. 51 Rfam families met these
-criteria, yielding 450 test sequences which were embedded at random
-positions in a 10 Mb ``pseudogenome''.  
-Previously we generated the
-pseudogenome sequence from a uniform residue frequency distribution \citep{NawrockiEddy07}.
-%Because base composition biases
-%in the target sequence database cause the most serious problems in
-%separating significant CM hits from noise, 
-Here, we generated a more realistic pseudogenome sequence using a
-15-state fully connected hidden Markov model (HMM) trained by
-Baum-Welch expectation maximization \citep{Durbin98} on genome
-sequence data from a wide variety of species.  Each of the 51 query
-alignments was used to build a CM and search the pseudogenome, a
-single list of all hits for all families were collected and ranked,
-and true and false hits were defined (as described in
-\citet{NawrockiEddy07}), producing the ROC curves in Figure~1.
-\end{comment}
-
-\textsc{infernal} searches require a large amount of compute time
-(our 10 Mb benchmark search takes about 30 hours per
-model on average (Figure~1)). To alleviate this, \textsc{infernal} 1.0 implements
-two rounds of filtering.  When appropriate, the HMM filtering technique
-described by \citet{WeinbergRuzzo06} is applied
-first with filter thresholds configured by \emph{cmcalibrate}
-(occasionally a model with little primary sequence conservation cannot
-be usefully accelerated by a primary sequence based filter).  The
-query-dependent banded (QDB) CYK search algorithm is used as a second
-filter with relatively tight bands ($\beta$= $10^{-7}$)
-\citep{NawrockiEddy07}.  Any sequence fragments that survive the filters are
-searched a final time with the Inside algorithm (again using QDB, but with looser
-bands ($\beta$= $10^{-15}$)).
-%The benchmark in Figure~1 shows results with and without the filters.  
-In our benchmark, the default filters accelerate similarity search by
-about 30-fold overall, while sacrificing a small amount of sensitivity
-(Figure~1). This makes version 1.0 substantially faster than
-0.72. \textsc{BLAST} is still orders of magnitude faster, but
-significantly less sensitive than \textsc{infernal}. Further
+\textsc{infernal} searches require a large amount of compute time (our
+10 Mb benchmark search takes about 30 hours per model on average
+(Figure~1)). To alleviate this, \textsc{infernal} 1.0 implements two
+rounds of filtering.  When appropriate, the HMM filtering technique
+described by \citet{WeinbergRuzzo06} is applied first with filter
+thresholds configured by \emph{cmcalibrate} (occasionally a model with
+little primary sequence conservation cannot be usefully accelerated by
+a primary sequence based filter).  The query-dependent banded (QDB)
+CYK search algorithm is used as a second filter with relatively tight
+bands ($\beta$= $10^{-7}$) \citep{NawrockiEddy07}.  Any sequence
+fragments that survive the filters are searched a final time with the
+Inside algorithm (again using QDB, but with looser bands ($\beta$=
+$10^{-15}$)).  In our benchmark, the default filters accelerate
+similarity search by about 30-fold overall, while sacrificing a small
+amount of sensitivity (Figure~1). This makes version 1.0 substantially
+faster than 0.72. \textsc{BLAST} is still orders of magnitude faster,
+but significantly less sensitive than \textsc{infernal}. Further
 acceleration remains a major goal of \textsc{infernal} development.
-%Table~1 shows specific examples of running times for
-%similarity searches for six RNA families of various sizes with and
-%without filters.
-%The acceleration
-%gained from filters varies widely. In general, the more primary
-%sequence conservation in a family, the more effective an HMM filter
-%will be, although this is not always the case. 
 
-The computational cost of CM alignment with \emph{cmalign} 
-has been a limitation of previous versions of
-\textsc{infernal}. Version 1.0 now uses a constrained dynamic
-programming approach first developed by \citet{Brown00}
-that uses sequence specific bands derived from a first-pass HMM
-alignment. This technique offers a dramatic speedup relative to
-unconstrained alignment, especially for large RNAs such as small and
-large subunit (SSU and LSU) ribosomal RNAs, which can now be aligned
-in roughly 1 and 3 seconds per sequence, respectively, as
-opposed to 12 minutes and 3 hours in previous versions.
-%We expect this to be particularly useful in applications where
-%many large RNA sequences need to be aligned. One of the main
-%ribosomal RNA databases, RDP, has recently adopted \textsc{infernal}
-%into it's pipeline \citep{Cole09}.
-This acceleration has facilitated the adoption of \textsc{infernal}
-by RDP, one of the main ribosomal RNA databases \citep{Cole09}.
+The computational cost of CM alignment with \emph{cmalign} has been a
+limitation of previous versions of \textsc{infernal}. Version 1.0 now
+uses a constrained dynamic programming approach first developed by
+\citet{Brown00} that uses sequence specific bands derived from a
+first-pass HMM alignment. This technique offers a dramatic speedup
+relative to unconstrained alignment, especially for large RNAs such as
+small and large subunit (SSU and LSU) ribosomal RNAs, which can now be
+aligned in roughly 1 and 3 seconds per sequence, respectively, as
+opposed to 12 minutes and 3 hours in previous versions.  This
+acceleration has facilitated the adoption of \textsc{infernal} by RDP,
+one of the main ribosomal RNA databases \citep{Cole09}.
 
 

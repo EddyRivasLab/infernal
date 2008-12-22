@@ -1,4 +1,3 @@
-
 \section{Usage} 
 
 A CM is built from a Stockholm format \citep{infguide03} multiple
@@ -7,30 +6,22 @@ structure annotation marking which positions of the alignment are
 single stranded and which are base paired. CMs assign position
 specific scores for the four possible residues at single stranded
 positions, the sixteen possible base pairs at paired positions, and
-for
-%as well as position specific scores for
-insertions and deletions. These scores are log-odds scores derived
+for insertions and deletions. These scores are log-odds scores derived
 from the observed counts of residues, base pairs, insertions and
 deletions in the input alignment, combined with prior information
-derived from structural ribosomal RNA alignments. 
-%Construction and
-%parameterization of CMs have 
-CM parameterization has been described in more detail elsewhere
+derived from structural ribosomal RNA alignments.  CM parameterization
+has been described in more detail elsewhere
 \citep{Eddy94,Eddy02b,infguide03,NawrockiEddy07}.
 
 \textsc{infernal} is composed of several programs that are used in
-combination %for RNA sequence analysis 
-by following four basic steps: 
-%combination to build models, search databases, and align putative
-%homologs, following four basic steps: 
-% one line enumerated:
+combination by following four basic steps: 
+
 \begin{enumerate}
 \item Build a CM from a structural alignment with \emph{cmbuild}.
 \item Calibrate a CM for homology search with \emph{cmcalibrate}.
 \item Search databases for putative homologs with \emph{cmsearch}.
 \item Align putative homologs to a CM with \emph{cmalign}.
 \end{enumerate}
-
 
 The calibration step is optional and computationally expensive (10
 hours for a CM of a typical RNA family), but is required to obtain
@@ -39,59 +30,4 @@ database search. \emph{cmcalibrate} will also determine appropriate
 HMM filter thresholds for accelerating searches without an appreciable
 loss of sensitivity. Each model only needs to be calibrated once.
 
-%enumerated in text
-\begin{comment}
-(1) \textbf{Build} a CM from a structural alignment with \emph{cmbuild}. 
-(2) \textbf{Calibrate} a CM for homology search with \emph{cmcalibrate}.
-(3) \textbf{Search} databases for putative homologs to a CM with \emph{cmsearch}.
-(4) \textbf{Align} putative homologs to a CM with \emph{cmalign}.
-\end{comment}
 
-% enumerated, with description
-\begin{comment}
-\begin{enumerate}
-\item Build a CM from with \emph{cmbuild}.
-
-\emph{cmbuild} takes as input a structural multiple
-RNA alignment in Stockholm format \citep{infguide03} and creates a CM
-file that is used by other \textsc{infernal} programs.
-
-\item Calibrate a CM for similarity search with \emph{cmcalibrate}.
-
-This step is optional and computationally expensive (10
-hours for a CM of a typical RNA family), but is required to obtain
-E-values that estimate the statistical significance of hits in a
-database search. \emph{cmcalibrate} will also determine appropriate
-HMM filter thresholds for accelerating searches without an appreciable
-loss of sensitivity. Each model only needs to be calibrated once.
-
-\item Search databases for putative homologs with \emph{cmsearch}.
-
-Given a CM file and a target database as input, 
-\emph{cmsearch} searches the target database
-for high scoring hits to the model and outputs alignments
-of each hit in a BLAST-like format augmented with structure
-annotation.
-
-\item Align putative homologs to a CM with \emph{cmalign}.
-
-\emph{cmalign} takes a CM file and a file of putative homologs, and
-aligns the full length sequences to the model, creating a 
-structurally annotated multiple alignment in Stockholm format.
-
-\end{enumerate}
-\end{comment}
-
-
-%Some steps are unnecessary for some applications. For example, a user
-%that wants only to generate alignments of previously defined
-%homologous sequences, such as small subunit ribosomal RNA (SSU rRNA)
-%sequences, would skip the calibration and search steps.
-
-%For similarity search applications, where the goal is to identify new
-%examples of a family, it is reasonable to iterate these steps, adding
-%newly found homologs to the alignment and repeating the search as the
-%detected range of the family expands. Just as with primary sequence
-%profiles, the ability of CMs to detect remote homologs tends to
-%increase as the diversity of known sequences in the query alignment
-%increases.
