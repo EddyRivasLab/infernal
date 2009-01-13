@@ -1,0 +1,25 @@
+.TH "trcyk" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
+
+.SH NAME
+.TP 
+trcyk - align sequences to a CM under the TrCYK model
+
+.SH SYNOPSIS
+.B trcyk
+.I cmfile
+.I seqfile
+
+.SH DESCRIPTION
+
+.B trcyk
+reads the covariance model (CM) in
+.I cmfile
+and aligns the sequences in 
+.I seqfile
+to that CM using the TrCYK model for incomplete data.
+
+.PP
+The output gives the name of each aligned sequence,
+the score for the alignment, and the alignment itself.
+The '~' character in the sequence indicates residues
+that have been treated as missing data.
