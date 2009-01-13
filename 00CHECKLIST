@@ -155,6 +155,7 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
    1.0rc3     2499       2594        278         293    [1.0 branch]
    1.0rc4     2594       2633        293         303    [1.0 branch]
    1.0rc5     2633       2670        303         309    [1.0 branch]            
+   1.0        2670       2700        309         314    [1.0 branch]
    
    These release notes will be merged back into the trunk later, if
    we're in a branch.
@@ -174,11 +175,11 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
    the tags are made from the relevant stable branch:
 
       svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0\
-               https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0rc5\
-               -m "tagged Infernal 1.0rc5 release, from 1.0 stable branch"          
+               https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0\
+               -m "tagged Infernal 1.0 release, from 1.0 stable branch"          
       svn copy https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.0\
-               https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/1.0rc5\
-                 -m "tagged Easel for Infernal 1.0rc5 release, from 1.0 stable branch"          
+               https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/1.0\
+                 -m "tagged Easel for Infernal 1.0 release, from 1.0 stable branch"          
 
 10. Make a distribution tarball.
    (Remaking configure scripts w/ autoconf is needed)
@@ -188,7 +189,7 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 	 ./configure          <-- makes a Makefile (needed for "make dist")
 
     major or minor:
-	 make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0rc5 dist
+	 make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0 dist
     snapshot:
 	 make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/trunk RELEASE=snap20080325 dist
 
@@ -225,9 +226,9 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
           scp COPYRIGHT                 selab:/opt/www/ftp/pub/software/infernal
           scp LICENSE                   selab:/opt/www/ftp/pub/software/infernal/
           scp Userguide.pdf             selab:/opt/www/ftp/pub/software/infernal/
-          scp ../infernal-1.0rc5.tar.gz selab:/opt/www/ftp/pub/software/infernal/
+          scp ../infernal-1.0.tar.gz    selab:/opt/www/ftp/pub/software/infernal/
           ssh selab  rm -f /opt/www/ftp/pub/software/infernal/infernal.tar.gz
-          ssh selab  "(cd /opt/www/ftp/pub/software/infernal; ln -s infernal-1.0rc5.tar.gz infernal.tar.gz)"
+          ssh selab  "(cd /opt/www/ftp/pub/software/infernal; ln -s infernal-1.0.tar.gz infernal.tar.gz)"
 
 13. Update the web site
 	 cd ~/web/infernal/
@@ -239,10 +240,10 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 14. Clean up. Don't remove the old directory though, we will (should) use it for regression testing 
     at the next release.
 	cd ~/releases
-        mv infernal-1.0rc5.tar.gz ~/Archives/
+        mv infernal-1.0.tar.gz ~/Archives/
         cd infernal
 	make distclean
-        cd ../infernal-1.0rc5
+        cd ../infernal-1.0
 	make distclean
 
 15. Merge the changes from the "stabilized" release branch back into the trunk.
@@ -282,7 +283,7 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
     [didn't screw up on 1.0rc1?]
 
 
-    1.0rc2-1.0rc5:
+    1.0rc2-1.0rc5,1.0
     For subsequent rc's, the only thing that has changed is the release notes; so:
       cd ~/src/infernal/documentation/release-notes
       cp ~/releases/infernal/documentation/release-notes/RELEASE-1.0 .
@@ -309,5 +310,5 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 1.0rc2 - SRE, Sat Jul 12 09:26:29 2008   r2502  Easel:r280
 1.0rc3 - SRE, Wed Sep 24 14:33:59 2008   r2596  Easel:r294
 1.0rc4 - SRE, Mon Nov 24 17:43:07 2008   r2635  Easel:r304
-1.0rc5 - 
-
+1.0rc5 - SRE, Wed Dec 17 17:59:01 2008   r2673  Easel:r310
+1.0    - SRE, Tue Jan 13 14:33:16 2009   r2703  Easel:r315
