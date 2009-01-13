@@ -1,4 +1,0 @@
-# blast_w7.rmk : use word length of 7 for wublast.
-$options = " -W 7 ";
-#
-1;
