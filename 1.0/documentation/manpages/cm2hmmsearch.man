@@ -1,0 +1,72 @@
+.TH "cmsearch" 1 "@RELEASEDATE@" "@PACKAGE@ @RELEASE@" "@PACKAGE@ Manual"
+
+.SH NAME
+.TP 
+cmsearch - search a sequence database for RNAs homologous to a CM,
+using an HMM as a pre-filtering step to increase speed.
+
+.SH SYNOPSIS
+.B cmsearch
+.I window length
+.I score threshold
+.I cmfile
+.I compact-type HMM
+.I expanded-type HMM
+.I seqfile
+.I runsearch
+
+.SH DESCRIPTION
+
+.B cm2hmmsearch
+uses the
+covariance model (CM) in
+.I cmfile
+to search for homologous RNAs in
+.I seqfile,
+and outputs high-scoring alignments.  A
+.I compact-type HMM
+and/or
+.I expanded-type HMM
+is used as a pre-filtering step, which usually
+increases the overall speed of the search.  HMMs created
+with
+.B cm2hmm
+are rigorous, meaning that no new false negatives are
+introduced by using the filter.
+
+.PP
+The sequence file is assumed to be in FASTA format.
+
+.PP
+CM files are profiles of RNA consensus secondary structure. A
+CM file is produced by the 
+.B cmbuild 
+program, from a given RNA sequence alignment of known 
+consensus structure.
+
+.PP
+HMM files are profiles of RNA consensus primary sequence, produced by
+.B cm2hmm
+from a given CM file.
+
+.SH OPTIONS
+
+.TP
+.B --help
+Print brief help; includes summary of parameters.
+
+.TP
+.B window length
+
+.TP
+.B score threshold
+
+.TP 
+.B runsearch
+Indicate whether cmsearch should actually be run.
+.I 1
+will run the cmsearch and output hits.
+.I 0
+will report on the filtering fraction that was achieved
+with the HMM filters.
+

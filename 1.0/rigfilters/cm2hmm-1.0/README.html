@@ -1,0 +1,443 @@
+<html>
+	<head>
+		<title>README for cm2hmm</title></head>
+	<body>
+		<H1>README for cm2hmm</H1>
+		<P>This program implements the techniques described in&nbsp;Z. Weinberg and W.L. 
+			Ruzzo (2004) "Faster genome annotation of non-coding RNA families without loss 
+			of accuracy", in <EM>Proc. Eighth Annual International Conference on Research in 
+				Computational Molecular Biology (RECOMB),</EM> ACM Press, 243-251.</P>
+		<H2>
+			<H2>Licensing</H2>
+		</H2>
+		<P>The files in the main directory (source code and this README file)&nbsp;is 
+			copyright 2004 by Zasha Weinberg and distributed under the BSD license.&nbsp;
+		</P>
+		<P>The 'NotByZasha' directory contains 3rd-party libraries.&nbsp; CFSQP is 
+			distributed by <A href="http://www.aemdesign.com">www.aemdesign.com</A>.&nbsp; 
+			It is not freely available, but is available on request for free&nbsp;for 
+			academic institutions.&nbsp; lp_solve and Opt++ are distributed under the 
+			lesser GNU public license (LGPL).&nbsp; Infernal is distributed under the GNU 
+			public license (GPL).</P>
+		<H2>Files</H2>
+		<UL>
+			<LI>
+				The root directory contains C++ files and a Makefile for the program specific 
+				to profile HMM rigorous filters.
+				<UL>
+					<LI>
+						The 'data' subdirectory contains data files used as examples or that may be 
+						useful.
+						<UL>
+							<LI>
+							The *.mm files are 0th-order Markov model files that are used by the 
+							infinite-length forward algorithm.
+							<LI>
+								The RF00095* files and AL096836.fna are used as a demo, searching the&nbsp;<EM>Pyrococcus 
+									abyssi</EM> for the <EM>Pyrococccus</EM> C/D snoRNA (Rfam RF00095).&nbsp; 
+								RF00095.cm is from the Rfam Database, version 5.0 (<A href="http://rfam.wustl.edu">http://rfam.wustl.edu</A>).&nbsp; 
+								AL096836 is from GenBank (<A href="http://www.ncbi.nlm.nih.gov">http://www.ncbi.nlm.nih.gov</A>).</LI></UL>
+					<LI>
+						'NotByZasha' contains 3rd-party software
+						<UL>
+							<LI>
+							cfsqp: a non-linear optimization problem solver
+							<LI>
+							infernal: package for CMs
+							<LI>
+							lp_solve: solves linear programs
+							<LI>
+								Opt++: non-linear optimization package</LI></UL>
+					</LI>
+				</UL>
+			</LI>
+		</UL>
+		<H2>Installation</H2>
+		<P>First make the dependencies:</P>
+		<UL>
+			<LI>
+			CFSQP: cd into 'cfsqp', and type 'make'.
+			<LI>
+			infernal: cd into 'infernal-0.55', type './configure' and 'make' (Note this is 
+			slightly different from Infernal version 0.55, in that the library 
+			infernallib.a is created.)
+			<LI>
+			lp_solve: cd into 'lp_solve_4.0' and type 'make'.
+			<LI>
+				Opt++: cd into 'Opt++2.1/zasha' and type 'make'.&nbsp; (This is a subset of 
+				Opt++ selected to make it compile easier.)</LI></UL>
+		<P>
+			Then, in the main directory, and type 'make'.&nbsp; In theory, everything 
+			should be done.&nbsp; There should be two executables in the release directory, 
+			cm2hmm and cm2hmmsearch.</P>
+		<H2>Usage</H2>
+		<P>release/cm2hmm creates a compact- or expanded-type HMM from a given CM.&nbsp; 
+			release/cm2hmmsearch searches a FASTA sequence file using a CM and profile HMM 
+			rigorous filters created using cm2hmm.&nbsp; Both programs display simple usage 
+			instructions when run without any parameters.</P>
+		<P>Here's an example of creating both compact- and expanded-type HMMs for RF00095, 
+			and scanning the <EM>Pyrococcus abyssi</EM> genome.</P>
+		<P>Enter the following commands (which each take a minute or so to complete):</P>
+		<tt>
+			<P>release/cm2hmm data/RF00095.cm data/RF00095_compact.hmm file data/Ecoli_0mm.mm 
+				compact cfsqp 0 1</P>
+			<P>release/cm2hmm data/RF00095.cm data/RF00095_expanded.hmm file 
+				data/Ecoli_0mm.mm&nbsp;expanded cfsqp 0 1</P>
+			<P>release/cm2hmmsearch 150 23.5 data/RF00095.cm data/RF00095_compact.hmm 
+				data/RF00095_expanded.hmm data/AL096836.fna 1</P>
+		</tt>
+		<P>The first two commands create the HMMs given the CM in data/RF00095.cm.&nbsp; 
+			They are both optimized based on a 0th-order Markov model of the <EM>E. coli</EM>
+			K-12 genome.&nbsp; The last command uses these HMMs to accelerate a search of 
+			the <EM>Pyrococcus abyssi</EM>&nbsp;genome (data/AL096836.fna).&nbsp; The 
+			search outputs the family members found in basically the same format as 
+			Infernal.&nbsp; An important new piece of information is the 'frac let thru so 
+			far', which gives the filtering fraction measured on this genome.&nbsp; The 
+			reported filtering fraction is for the 2nd HMM, i.e. the expanded-type 
+			one.&nbsp; (2d-fracLetsThru is a measure of the filtering fraction that 
+			attempts to reflect the fact that the dynamic programming algorithm for CMs has 
+			an extra dimension, so the filtering fraction is a somewhat pessimistic 
+			estimate of the actual speed-up).
+		</P>
+		<P><STRONG><FONT color="#ff3333">Note</FONT></STRONG>: the code for the OptNIPS 
+			solver (using the Opt++ package) isn't working.</P>
+		<H3>What 0th-order Markov model to use?</H3>
+		<P>The choice of Markov model in the infinite-length forward algorithm does not 
+			usually affect the filtering fraction that much, but&nbsp;a&nbsp;good choice 
+			can yield a modest improvement in filtering&nbsp;fraction&nbsp;(typically 
+			around 10%).&nbsp; In general, it's best to use the 0th-order model of the 
+			genome that has the highest (worst) filtering fraction.&nbsp; To estimate this, 
+			create a compact-type HMM from any model, and run it on the <EM>Bordetella</EM>,
+			<EM>E. coli</EM> and <EM>S. aureus</EM>&nbsp;genomes.</P>
+		<H3>Using compact- or expanded-type HMMs, or both</H3>
+		<P>Once you've picked a 0th-order Markov model, the easiest thing to do is to 
+			create both compact- and expanded-type HMMs, and run them on the three 
+			genomes.&nbsp; This yields an estimate of the filtering fraction for the two 
+			HMMs.&nbsp; If the filtering fraction of the compact-type HMMs is above 0.25, 
+			it's probably not worth using it (this is based on a rule of thumb that the 
+			expanded-type HMM runs 30% slower than the compact-type HMM, so if the 
+			compact-type fraction is above 0.25, it's not worth using it).&nbsp; If the 
+			compact-type HMM filtering fraction is low, there's no need to use the 
+			expanded-type HMM, but it can't hurt.</P>
+		<P>The difference in speed between the CM and the HMMs is mainly dependent on the 
+			window length W.&nbsp; The HMM is faster than the CM by a factor of usually a 
+			bit over W.&nbsp; So, if the filtering fraction is significantly below 1/W, 
+			then the search time is dominated by the HMM's search time, and there's no 
+			point in getting a better filtering fraction.</P>
+		<H2>The source code</H2>
+		<P>This section assumes you've read the above RECOMB paper, including the 
+			Appendix.&nbsp; (The terminology used in the source code is more closely 
+			related to the terminology used in the CM literature.)</P>
+		<H3>Brief descriptions of files</H3>
+		<UL>
+			<LI>
+			CM2HMM.*: creates the profile HMM structure given a CM, and determines the 
+			linear inequalities to use.&nbsp; (Basically, sections 4.2 and 4.3 of the 
+			paper)
+			<LI>
+			Cm2HmmMain.cpp: defines the main function for the cm2hmm command.
+			<LI>
+			Cm2HmmOptimize_cfsqp.cpp: wrapper code for the CFSQP solver.
+			<LI>
+			Cm2HmmOptimize.*: overall code for optimizing profile HMM scores.&nbsp; 
+			(Focuses on section 4.4 of the paper).
+			<LI>
+			Cm2HmmOptimize_OptNIPS.cpp: wrapper code for the Opt++ solver.
+			<LI>
+			Cm2HmmSearchMain.cpp: defines the main function for the cm2hmmsearch command.
+			<LI>
+			cmzasha.h: top-level #include file for the project.
+			<LI>
+			cmzashaUtils.cpp: miscellaneous functions and classes.
+			<LI>
+			CommaSepFileReader.*: code to read comma- or tab-delimited files.&nbsp; (Barely 
+			used in this project.)
+			<LI>
+			CovarianceModel.*: a class that wraps the CM type defined in Infernal.
+			<LI>
+			ForwardHmm.cpp: computes the infinite-length forward algorithm score.
+			<LI>
+			HmmType1.*: represents a profile HMM.&nbsp; This organization of data seems to 
+			improve search time (the main thing is the the emission score array, 'esc', is 
+			inverted relative to the representation in Infernal.h).&nbsp; This class is 
+			only used for scanning.
+			<LI>
+			InfernalHmm.*: a class that represents a profile&nbsp;HMM, borrowing heavily 
+			from Infernal's representation of CMs.
+			<LI>
+			Makefile
+			<LI>
+			MarkovModelStats.*: implements Nth order Markov models.&nbsp; Used for the 
+			0th-order models.
+			<LI>
+			MiscExceptions.*: wafer-thin expansion on the std::exception class.
+			<LI>
+			multiDimVector.h: implements a 2-d vector.
+			<LI>
+			NaryCounter.*: counts in base N.&nbsp; (Barely used in this project.)
+			<LI>
+			NoUnderflowDouble.h: defines a numeric type that augments doubles by using an 
+			extra int to store the exponent, thus effectively eliminating underflow and 
+			overflow.&nbsp; Used in the infinite-length forward algorithm to avoid 
+			overflows.
+			<LI>
+			ScanHMM_NonTemplated.cpp: implements the Viterbi scan algorithm for profile 
+			HMMs to do filtering for a CM.
+			<LI>
+			SequenceSet.*: classes that wrap the sequence-reading capabilities of the Squid 
+			library.
+			<LI>
+			stdafx.h: pre-compiled header (for Microsoft Visual C++), contains standard 
+			#include files.
+			<LI>
+			stl_extra.h: slight extensions to the standard template library.&nbsp; (Barely 
+			used in this project.)
+			<LI>
+			SymbolicMath.*: (1) a class to store mathematical expressions over N variables 
+			symbolically, and evaluate them and their partial derivatives, (2) a class that 
+			behaves like a numeric type, but whose operations return symbolic expressions 
+			instead of real numbers.&nbsp; Used to evaluate the infinite-length forward 
+			algorithm symbolically in order to be able to take derivatives.
+			<LI>
+			UseDebugNew.h: uses debugging features of Microsoft Visual C++.
+			<LI>
+				vectorPlus.h: the STL vector class with bounds checking.</LI></UL>
+		<H3>Highlights of the searching code</H3>
+		<P>This section is intended to point out the key parts of the source code relating 
+			to searching with profile HMM rigorous filters, as an aid to understanding the 
+			code.</P>
+		<P>The top-level main function that handles the cm2hmmsearch command is in 
+			Cm2HmmSearchMain.cpp.&nbsp; The key function in this file is the first 
+			'Cm2Hmm_Search' function.&nbsp; Basically, this function just iterates over 
+			sequences ("while (sequenceSet.Next())"), scanning each sequence, like the 
+			analogous function in cmsearch.c in Infernal.</P>
+		<H4>HMMs in all directions</H4>
+		<P>The profile HMM creation code uses a representation of profile HMMs (in 
+			Infernal.h) that is heavily based on Infernal's representation of CMs.&nbsp; In 
+			this representation the start state is 0, the end state is the highest-numbered 
+			state, and the children of a state have higher numbers than their parent.&nbsp; 
+			The direction that child edges point is a hassle for scanning, since we'd like 
+			to start with the start states and work towards the end states.&nbsp; So, I've 
+			created another representation of HMMs (in HmmType1.h) in which the children 
+			are lower-numbered states.&nbsp; This is just a different representation of an 
+			equivalent HMM, but makes the scanning code easier to write.&nbsp; The HmmType1 
+			type also structures the data somewhat differently in memory in order to get a 
+			slight performance boost in scanning.&nbsp; The main difference is that the 
+			emission score array's first dimension is the nucleotide, which promotes better 
+			cache usage.</P>
+		<H4>The data type 'HitList'</H4>
+		<P>A key data structure in the Cm2Hmm_Search function is the 'HitList' data type 
+			(declared in cmzasha.h, and defined in cmzashaUtils.cpp).&nbsp; This data 
+			structure represents the list of ranges of nucleotides that must be searched by 
+			the CM (i.e. the rigorous filter was not able to eliminate).&nbsp; HitList 
+			derives from the STL list type.&nbsp; Each element in the list is an interval 
+			defined by the members 'first' and 'second'.&nbsp; The interval is half-open, 
+			i.e. it includes the nucleotides first, first+1, first+2, ..., second-2, 
+			second-1 but does <STRONG>not</STRONG> include the nucleotide second.&nbsp; 
+			With respect to 'first' and 'second', the first nucleotide position is numbered 
+			0.</P>
+		<P>The function 'ApplyFilters' scans a range of nucleotides with&nbsp;profile HMMs 
+			and returns the HitList of intervals that the CM must scan.</P>
+		<H4>The function 'ScanHmm_HmmType1Float_NonTemplated'</H4>
+		<P>The code contains functions that implement the Viterbi HMM parse algorithm in 
+			order to implement a rigorous filter.&nbsp; These functions are in 
+			ScanHMM_NonTemplated.cpp.&nbsp; The main function is 
+			'ScanHmm_HmmType1Float_NonTemplated'.&nbsp; This function scans a sequence and 
+			returns a HitList of the intervals that the rigorous filter cannot 
+			eliminate.&nbsp; The input sequence is represented by a HitList, which 
+			typically just contains a single interval spanning the entire sequence.&nbsp; 
+			The key loop in the function iterates over all intervals in the input HitList, 
+			and scans that interval.</P>
+		<P>The function 'ScanHmm_HmmType1Float_NonTemplated_Window' scans one interval 
+			("interval" is a synonym of "window"...).&nbsp; This is basically the standard 
+			HMM Viterbi algorithm, which starts by initializing the dynamic 
+			programming&nbsp;table, then updates the table for each position.&nbsp; The 
+			algorithm only stores the partial table at 2 nucleotide positions, which saves 
+			memory (a standard trick); these two positions are represented by prevTable and 
+			currTable.</P>
+		<P>The main difference between this function and the standard HMM Viterbi algorithm 
+			is that the HMM scores are compared to the CM's score threshold; if they exceed 
+			the threshold, an interval is merged into the interval list. (section 4.1 of 
+			the paper).</P>
+		<H4>The filtering fraction</H4>
+		<P>The search code computes the filtering fraction, which is reported to the 
+			user.&nbsp; This is implemented by the 'FracLetsThruCounter' object (declared 
+			in cmzasha.h, defined in cmzashaUtils.cpp).&nbsp; This object counts the number 
+			of nucleotides that the CM must be run on, and the total number of nucleotides; 
+			the ratio of these two numbers is the filtering fraction.&nbsp; (The object is 
+			slightly more complicated in that it also computes (1) the 2-d filtering 
+			fraction, which reflects more the expected speed-up of the CM Viterbi 
+			algorithm, as described above, and (2) can operate on blocks of sequence, 
+			reporting statistics for each block.&nbsp; The latter functionality is not 
+			demonstrated in this code.)</P>
+		<P>To update the counts after a sequence is scanned, the function 'ProcessPruning' 
+			must be called.&nbsp; The number of nucleotides scanned is computed by 
+			inspecting 'inputHmmList', and the number of nucleotides that the CM will be 
+			run on comes from 'outputHmmList'.</P>
+		<H3>Highlights of the profile HMM creation code</H3>
+		<P>The 'main' function for the cm2hmm command is in Cm2HmmMain.cpp.&nbsp; The 
+			functions in this file basically just parse the command line and load data 
+			structures (e.g. the CM), before dispatching to the 'HmmOptimizer_NodeCombiner' 
+			function (in Cm2HmmOptimize.cpp).</P>
+		<H4>HmmOptimizer_NodeCombiner</H4>
+		<P>The 'HmmOptimizer_NodeCombiner' function is the top-level function to implement 
+			the logic to create profile HMMs.&nbsp; It dispatches to other code to create 
+			the structure of the profile HMM (i.e. the grammar, section 4.2 of the paper) 
+			and to determine the linear inequalities (section 4.3 of the paper).&nbsp; The 
+			function is focussed on implementing the iterative procedure in section 4.4.2 
+			of the paper.&nbsp; It cycles through CM nodes, and optimizes the corresponding 
+			HMM nodes using the infinite-length forward algorithm objective function, 
+			holding the scores in all other nodes as fixed.&nbsp; At each CM node it 
+			largely uses other code to implement the actual optimization procedure.&nbsp; 
+			Once the number of iterations are exceeded, or all nodes are optimized without 
+			much improvement, the loop ends; the profile HMM is saved to a file, and the 
+			program exits.</P>
+		<P>For simplicity, the reader should assume that numAdjacentNodesToMerge=1 and 
+			maxNodesAtATime=1.&nbsp; (These parameters were designed to see if the profile 
+			HMMs were any better if more than one node is optimized at a time, instead of 
+			considering each node in isolation; this idea wasn't discussed in the paper, 
+			mainly because it doesn't appear to improve the results.)</P>
+		<P>The variable 'infernalHmm' holds the profile HMM (including scores) as it's 
+			being optimized.&nbsp; To facilitate the optimization problems based on the 
+			infinite-length forward algorithm, the scores in the HMM are mapped onto 
+			variables, numbered starting at 0.&nbsp; These are called 'globalVars' and the 
+			function 'GetGlobalVarsFromInfernalHmm' creates a vector containing the 
+			globalVars, which are set from the scores in 'infernalHmm'.</P>
+		<P>'NodeCombinerForwardInfSymbolicObjectiveFunc' is a class that implements the 
+			infinite-length forward algorithm objective function, with derivatives.&nbsp; 
+			It's implementation is discussed later.&nbsp; In terms of its interface, it has 
+			functions to evaluate the objective function and its derivatives, and to 
+			retrieve the list of linear inequalities.&nbsp; This objective function object 
+			is passed to a solver (e.g.&nbsp;CFSQP)&nbsp;to optimize the node.</P>
+		<P>'problemVars' is the subset of HMM score variables that relate to the current CM 
+			node.&nbsp; The objective function knows which variables are in the current 
+			node-specific problem.</P>
+		<P>Once we find the problemVars vector, we can evaluate the infinite-length forward 
+			algorithm score (i.e. the objective function), and report this to the 
+			user.&nbsp; Then we see if we should stop, i.e. if we've cycled through all CM 
+			nodes and haven't made much improvement in the objective function.</P>
+		<P>If we're supposed to continue, we invoke the solver (via the 'solverWrapper' 
+			object) to solve the optimization problem for this node.&nbsp; Then we map the 
+			optimal problemVars back to globalVars, and set these scores into the 
+			'infernalHmm'.</P>
+		<H4>Creation of HMM structure and linear inequalities</H4>
+		<P>The higher-level function for this is 'Cm2Hmm_WithWeighting_NoCaching' (in 
+			Cm2HMM.cpp).&nbsp; This code does three things:</P>
+		<UL>
+			<LI>
+			Creates the structure of the HMM, i.e. how many states are there, which states 
+			emit, which states are children of which.&nbsp; (Like section 4.2 of the 
+			paper.)
+			<LI>
+			Creates the linear inequalities for each CM node, i.e. which HMM transition and 
+			emission scores are on the left-hand side of the inequality, and what's the 
+			constant on the right-hand side (the constant comes from the CM's 
+			scores).&nbsp; (Like section 4.3 of the paper.)
+			<LI>
+				Assigns scores based on optimizing a linear program for each CM node.&nbsp; The 
+				linear objective function is in lieu of the (non-linear) infinite-length 
+				forward algorithm, and is just the sum of the slack variables used in the 
+				linear inequalities for the node.&nbsp; Honesty: this code is here because it 
+				was the first method to optimize scores that I developed, and the code has 
+				remained for largely historical reasons.&nbsp; The infinite-length forward 
+				algorithm produces much better HMMs than this linear objective function.&nbsp; 
+				However, the simple linear objective function can be optimized quickly, and may 
+				therefore speed up the overall optimization process, versus starting the 
+				infinite-length forward algorithm at a less-optimal starting point.</LI></UL>
+		<P>The structure of the HMM is recursively created by the 'Cm2Hmm_Structurally' 
+			function (the first function with this name in Cm2HMM.cpp).&nbsp; This 
+			basically handles CM bifurcation states, where the profile HMMs for the two 
+			children must be spliced together.</P>
+		<P>The creation of a profile HMM for a CM that is free of bifurcation states is 
+			done by 'Cm2Hmm_Structurally_Block'.&nbsp; This is the place where the 
+			distinction between compact-type and expanded type is made.</P>
+		<P>The function 'SetupTransitionAndEmissionVariables' creates a mapping between 
+			transitions and emissions in the HMM and a set of variables.</P>
+		<P>The process of creating linear inequalities and solving the simple linear 
+			program is done by the function 'Cm2Hmm_SolveScoresForPath', which treats each 
+			CM node independently.&nbsp; The linear inequalities are created by the 
+			function 'Cm2Hmm_MakeInequalitiesForPath', which works by exploring all paths 
+			from each CM state to a CM state that's in the next node (in the paper, this 
+			relates to Appendix section B, the 2nd-last paragraph beginning "In making 
+			constraints...").&nbsp; Every time such a path is found, we have a new 
+			inequality (as it's exploring sub-paths, the function keeps track in the 
+			variable 'inequalitySoFar' of the score of the CM path, and which HMM 
+			transition/emission score variables are used in the corresponding HMM 
+			sub-path).</P>
+		<P>The function 'SolveInequalities' creates the linear objective function and 
+			solves the resulting linear program, using the lp_solve package.</P>
+		<H4>Handling of the infinite-length forward algorithm</H4>
+		<P>At a high level, the infinite-length forward algorithm is implemented by the 
+			'NodeCombinerForwardInfSymbolicObjectiveFunc' object (declared in 
+			Cm2HmmOptimize.h and defined in Cm2HmmOptimize.cpp).&nbsp; This object 
+			implements the 'ObjectiveFunc' interface (declared at the top of 
+			Cm2HmmOptimize.h), which also requires it to know about the linear 
+			inequalities.&nbsp; This object is basically a wrapper of other 
+			functions.&nbsp; Its constructor 
+			('NodeCombinerForwardInfSymbolicObjectiveFunc::NodeCombinerForwardInfSymbolicObjectiveFunc') 
+			is complicated by the fact that the code deals with the possibilities of 
+			optimizing more than one node at the same time, a feature not discussed in the 
+			paper; for simplicity, assume that numAdjacentNodesToMerge=1 and 
+			maxNodesAtATime=1.</P>
+		<P>The handling of the linear inequalities is simpler than it might appear; really, 
+			all the code is doing is looking up the linear inequalities made in Cm2HMM.cpp, 
+			and changing the variable numbers to be problemVars instead of globalVars, i.e. 
+			take the subset of variables that are actually related to the given CM node, 
+			and renumber them consecutively starting at 0.&nbsp; This is for the 
+			convenience of the solver programs, which assume a set of consecutively 
+			numbered variables.</P>
+		<P>The handling of the objective function is somewhat trickier.&nbsp; Recall that 
+			we wish to not only evaluate the infinite-length forward algorithm, but also 
+			take partial derivatives.&nbsp; To do this, we'll create a symbolic expression 
+			of the function, which will make it easier to take derivatives.</P>
+		<P>To create the symbolic expression, the program uses two things: (1) some 
+			function that actually implements the infinite-length forward algorithm and (2) 
+			a mechanism to trick this function into creating a symbolic expression instead 
+			of just returning a number.&nbsp; The function that evaluates the 
+			infinite-length forward algorithm is 
+			'InfiniteLengthForwardAlg_LastStateDoesntEmit_StartWithInfernalHmm' (in 
+			ForwardHmm.cpp).&nbsp;&nbsp; Note that this function is templated on a numeric 
+			type 'Real'; we'll use a symbolic expression object in this template parameter 
+			(instead of a numeric type like 'double') in order to build up the symbolic 
+			expression.</P>
+		<P>The function itself is a lot like the HMM Forward Algorithm.&nbsp; To calculate 
+			emission "probabilities", the nucleotide probabilities are marginalized by the 
+			0th-order Markov model, in the 'CalcExpectedEmitProb_0order' function.&nbsp; 
+			The other different versus the Forward Algorithm is the handling of self-loops; 
+			these must be detected, and an infinite geometric series must be summed.</P>
+		<P>Now, on to the symbolic expression.&nbsp; The code in SymbolicMath.h and 
+			SymbolicMath.cpp implements symbolic expressions.&nbsp; Each operator we might 
+			use (e.g. multiplication, addition, log to the base 2) is implemented by a 
+			different object derived from 'ExpressionNode' (a nested class of 
+			SymbolicMath).&nbsp; Thus, we can build up a directed acyclic graph (DAG) of 
+			these expression nodes to symbolically represent the infinite-length forward 
+			algorithm score.&nbsp;
+		</P>
+		<P>We also need a fake numeric type (to replace 'Real' in the 
+			'InfiniteLengthForwardAlg_LastStateDoesntEmit_StartWithInfernalHmm' function) 
+			that creates these expressions.&nbsp; This is implemented by the 'Expression' 
+			class (a nested class of SymbolicMath).&nbsp;&nbsp;If&nbsp;X and&nbsp;Y are 
+			both variables of type Expression, then the C++ expression X+Y will generate a 
+			symbolic expression with an addition object ('ExpressionNode_Add') whose two 
+			children are X and Y.&nbsp; By feeding this Expression type into the 
+			'InfiniteLengthForwardAlg_LastStateDoesntEmit_StartWithInfernalHmm' function, 
+			the function will generate a symbolic expression.&nbsp; (We also have to define 
+			a fake HMM class that returns Expression objects when you ask it for 
+			transition/emission scores; this is implemented by the 
+			'SymbolicProbVariableMath' object in Cm2HmmOptimize.h,.cpp.)</P>
+		<P>Based on the symbolic expression stored as a DAG, we can evaluate the 
+			infinite-length forward algorithm as needed.&nbsp; One slight complication is 
+			that since it's a DAG (not a tree), we have to be careful about not exploring 
+			nodes multiple times, since that'd require exponential time.&nbsp; To solve 
+			this problem, the&nbsp;'ExpressionNode' base class implements a kind of dynamic 
+			programming, by caching its value when the overall expression is being 
+			evaluated; when we visit a node for the 2nd time, it simply retrieves its 
+			value.</P>
+		<P>Derivatives are handled using rules from introductory calculus.&nbsp; For 
+			example, consider an ExpressionNode_Mult object, which represents 
+			multiplication of two sub-expressions X and Y.&nbsp; Its partial derivative is 
+			given by the product rule: X*(dY) + (dX)*Y.&nbsp; For each ExpressionNode 
+			object, we can find similar formulas for the partial derivative.</P>
+		<P>&nbsp;</P>
+	</body>
+</html>

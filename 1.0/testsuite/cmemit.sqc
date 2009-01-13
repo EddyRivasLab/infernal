@@ -1,0 +1,134 @@
+# Infernal's cmemit crash exercises, in sqc command format.
+# EPN, Fri Dec 28 12:10:55 2007
+# SVN $Id: exercises.sqc 2237 2007-12-01 00:14:41Z nawrockie $
+#
+
+# Exercises of cmemit.
+#
+1  prep      model/trna           @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
+1  exercise  cmemit:trna/1        @cmemit@  %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/2        @cmemit@  -u %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/3        @cmemit@  -a %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/4        @cmemit@  -c %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/5        @cmemit@  -s 33 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/6        @cmemit@  -n 1000 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/10       @cmemit@  --rna %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/11       @cmemit@  --dna %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/12       @cmemit@  --tfile %TMPTFILE% %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/13       @cmemit@  --exp 0.5 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/14       @cmemit@  --exp 1.5 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/15       @cmemit@  -a --begin 10 --end 50 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/16       @cmemit@  --ahmm %TMPAHMMOUT%  %TRNA.CM% %TMPOUT%
+
+# with -l, local turned on
+1  exercise  cmemit:trna/17       @cmemit@ -l   %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/18       @cmemit@ -l   -u %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/19       @cmemit@ -l   -a %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/20       @cmemit@ -l   -c %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/21       @cmemit@ -l   -s 33 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/22       @cmemit@ -l   -n 1000 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/26       @cmemit@ -l   --rna %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/27       @cmemit@ -l   --dna %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/28       @cmemit@ -l   --tfile %TMPTFILE% %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/29       @cmemit@ -l   --exp 0.5 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/30       @cmemit@ -l   --exp 1.5 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/31       @cmemit@ -l   -a --begin 10 --end 50 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna-p/1      @cmemit@ -l --pebegin --pfend 0.01 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna-p/2      @cmemit@ -l --pbegin 0.5 --pend 0.5 %TRNA.CM% %TMPOUT%
+
+# binary versions of 1-31
+1  prep      model/trnabin        @cmbuild@ -F --binary --rf --wnone %TRNA.CM% trna1415G.sto
+1  exercise  cmemit:trna/33       @cmemit@  %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/34       @cmemit@  -u %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/35       @cmemit@  -a %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/36       @cmemit@  -c %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/37       @cmemit@  -s 33 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/38       @cmemit@  -n 1000 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/42       @cmemit@  --rna %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/43       @cmemit@  --dna %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/44       @cmemit@  --tfile %TMPTFILE% %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/45       @cmemit@  --exp 0.5 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/46       @cmemit@  --exp 1.5 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/47       @cmemit@  -a --begin 10 --end 50 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/48       @cmemit@  --ahmm %TMPAHMMOUT%  %TRNA.CM% %TMPOUT%
+
+# with -l, local turned on
+1  exercise  cmemit:trna/49       @cmemit@ -l   %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/50       @cmemit@ -l   -u %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/51       @cmemit@ -l   -a %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/52       @cmemit@ -l   -c %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/53       @cmemit@ -l   -s 33 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/54       @cmemit@ -l   -n 1000 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/58       @cmemit@ -l   --rna %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/59       @cmemit@ -l   --dna %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/60       @cmemit@ -l   --tfile %TMPTFILE% %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/61       @cmemit@ -l   --exp 0.5 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/62       @cmemit@ -l   --exp 1.5 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna/63	  @cmemit@ -l   -a --begin 10 --end 50 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna-p/1      @cmemit@ -l --pebegin --pfend 0.01 %TRNA.CM% %TMPOUT%
+1  exercise  cmemit:trna-p/2      @cmemit@ -l --pbegin 0.5 --pend 0.5 %TRNA.CM% %TMPOUT%
+
+# 3.4.12 tests, a CM file with 3 CMs in it
+
+1  prep      model/3.4.12           @cmbuild@ -F --wnone %3.4.12.CM% 3.4.12.stk
+1  exercise  cmemit:3.4.12/1        @cmemit@  %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/2        @cmemit@  -u %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/3        @cmemit@  -a %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/4        @cmemit@  -c %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/5        @cmemit@  -s 33 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/6        @cmemit@  -n 1000 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/10       @cmemit@  --rna %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/11       @cmemit@  --dna %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/12       @cmemit@  --tfile %TMPTFILE% %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/13       @cmemit@  --exp 0.5 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/14       @cmemit@  --exp 1.5 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/15       @cmemit@  -a --begin 10 --end 50 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/16       @cmemit@  --ahmm %TMPAHMMOUT%  %3.4.12.CM% %TMPOUT%
+
+# with -l, local turned on
+1  exercise  cmemit:3.4.12/17       @cmemit@ -l   %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/18       @cmemit@ -l   -u %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/19       @cmemit@ -l   -a %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/20       @cmemit@ -l   -c %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/21       @cmemit@ -l   -s 33 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/22       @cmemit@ -l   -n 1000 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/26       @cmemit@ -l   --rna %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/27       @cmemit@ -l   --dna %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/28       @cmemit@ -l   --tfile %TMPTFILE% %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/29       @cmemit@ -l   --exp 0.5 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/30       @cmemit@ -l   --exp 1.5 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/31       @cmemit@ -l   -a --begin 10 --end 50 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12-p/1      @cmemit@ -l --pebegin --pfend 0.01 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12-p/2      @cmemit@ -l --pbegin 0.5 --pend 0.5 %3.4.12.CM% %TMPOUT%
+
+# binary versions of 1-32
+1  prep      model/3.4.12bin        @cmbuild@ -F --binary --wnone %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmemit:3.4.12/33       @cmemit@  %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/34       @cmemit@  -u %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/35       @cmemit@  -a %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/36       @cmemit@  -c %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/37       @cmemit@  -s 33 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/38       @cmemit@  -n 1000 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/42       @cmemit@  --rna %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/43       @cmemit@  --dna %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/44       @cmemit@  --tfile %TMPTFILE% %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/45       @cmemit@  --exp 0.5 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/46       @cmemit@  --exp 1.5 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/47       @cmemit@  -a --begin 10 --end 50 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/48       @cmemit@  --ahmm %TMPAHMMOUT%  %3.4.12.CM% %TMPOUT%
+
+# with -l, local turned on
+1  exercise  cmemit:3.4.12/49       @cmemit@ -l   %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/50       @cmemit@ -l   -u %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/51       @cmemit@ -l   -a %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/52       @cmemit@ -l   -c %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/53       @cmemit@ -l   -s 33 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/54       @cmemit@ -l   -n 1000 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/58       @cmemit@ -l   --rna %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/59       @cmemit@ -l   --dna %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/60       @cmemit@ -l   --tfile %TMPTFILE% %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/61       @cmemit@ -l   --exp 0.5 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/62       @cmemit@ -l   --exp 1.5 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12/63	    @cmemit@ -l   -a --begin 10 --end 50 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12-p/1      @cmemit@ -l --pebegin --pfend 0.01 %3.4.12.CM% %TMPOUT%
+1  exercise  cmemit:3.4.12-p/2      @cmemit@ -l --pbegin 0.5 --pend 0.5 %3.4.12.CM% %TMPOUT%
