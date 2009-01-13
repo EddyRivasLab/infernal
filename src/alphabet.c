@@ -5,7 +5,9 @@
  * Stuff having to do with manipulating symbols in the (RNA) alphabet.
  * 
  *****************************************************************
- * @LICENSE@
+ *    This copyrighted source code is freely distributed 
+ *    under the terms of the GNU General Public License. See
+ *    the files COPYRIGHT and LICENSE for details.
  *****************************************************************  
  */
 
@@ -41,7 +43,7 @@
  * Returns:  void
  */
 void
-PairCount(const ESL_ALPHABET *abc, float *counters, char syml, char symr, float wt)
+PairCount(const ESL_ALPHABET *abc, float *counters, ESL_DSQ syml, ESL_DSQ symr, float wt)
 {
   if (syml < abc->K && symr < abc->K) 
     counters[(int) (syml * abc->K + symr)] += wt;
@@ -67,7 +69,7 @@ PairCount(const ESL_ALPHABET *abc, float *counters, char syml, char symr, float 
   return;
 }
 float
-DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, char syml, char symr)
+DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ syml, ESL_DSQ symr)
 {
   float left[MAXABET], right[MAXABET];
   int l,r;
@@ -88,7 +90,7 @@ DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, char syml, char symr)
   return sc;
 }
 int
-iDegeneratePairScore(const ESL_ALPHABET *abc, int *iesc, char syml, char symr)
+iDegeneratePairScore(const ESL_ALPHABET *abc, int *iesc, ESL_DSQ syml, ESL_DSQ symr)
 {
   float left[MAXABET], right[MAXABET];
   int l,r;
@@ -109,6 +111,148 @@ iDegeneratePairScore(const ESL_ALPHABET *abc, int *iesc, char syml, char symr)
   return (int) sc;
 }
 
+/* EPN, Wed Aug 20 13:44:16 2008
+ * FastPairScore*() functions: 
+ * Written to calculate base pairs scores involving 1 or 2 canonical 
+ * residues as efficiently as I know how. 
+ * Calculating 'optimized' emission scores, which calculates all possible
+ * base pair scores (including non-canonicals) in cm_mx.c:{F,I}CalcOptimizedEmitScores()
+ * was a time bottleneck in alignment with P7 and CP9 bands during sub CM construction.
+ * sub CMs are created for each target seq, and optimized scores must be 
+ * calc'ed for each sub CM.
+ */
+
+/* Function:  FastPairScoreBothDegenerate() (float version)
+ *           iFastPairScoreBothDegenerate() (int   version)
+ * Incept:    EPN, Wed Aug 20 13:18:15 2008
+ *
+ * Purpose:   Score a base pair given left and right vectors denoting
+ *            fractional weight of each canonical for left residue 
+ *            and right residue. This function should only be called if 
+ *            at least 2 values in both left and right are non-zero,
+ *            that is, if both left and right correspond to non-canonical
+ *            residues.
+ *
+ *            Example: if we're calculating for left char 'S' (C or G), 
+ *                     and right char 'N' (A,C,G,U), then we'd have:
+ *                     left  = [0.00, 0.50, 0.50, 0.00]
+ *                     right = [0.25, 0.25, 0.25, 0.25]
+ *
+ *            K     - alphabet size, abc->K
+ *            esc   - emission vector, canonical pair scores are used to calc <sc>
+ *            left  - [0..l..K-1] fraction of each canonical residue
+ *            right - [0..r..K-1] fraction of each canonical residue
+ * 
+ * Returns:   <sc> the score of the pair
+ */
+
+float
+FastPairScoreBothDegenerate(int K, float *esc, float *left, float *right)
+{
+  int l,r;
+  float sc;
+
+  sc = 0.;
+  for (l = 0; l < K; l++)
+    for (r = 0; r < K; r++)
+      sc += esc[l*K+r] * left[l] * right[r];
+  return sc;
+}
+int
+iFastPairScoreBothDegenerate(int K, int *iesc, float *left, float *right)
+{
+  int l,r;
+  float sc;
+
+  sc = 0.;
+  for (l = 0; l < K; l++)
+    for (r = 0; r < K; r++)
+      sc += iesc[l*K+r] * left[l] * right[r];
+  return (int) sc;
+}
+/* Function:  FastPairScoreLeftOnlyDegenerate() (float version)
+ *           iFastPairScoreLeftOnlyDegenerate() (int   version)
+ * Incept:    EPN, Wed Aug 20 13:18:15 2008
+ *
+ * Purpose:   Score a base pair with left residue non-canonical and
+ *            right residue canonical, given a <left> vector denoting
+ *            fractional weight of each canonical for left residue. 
+ *            This function should only be called if at least 2 values 
+ *            left are non-zero, that is, if left corresponds to a 
+ *            non-canonical residue.
+ *
+ *            Example: if we're calculating for left char 'S' (C or G), 
+ *                     left  = [0.00, 0.50, 0.50, 0.00]
+ *
+ *            K     - alphabet size, abc->K
+ *            esc   - emission vector, canonical pair scores are used to calc <sc>
+ *            left  - [0..l..K-1] fraction of each canonical residue
+ *            symr  - canonical right residue must be in range 0..K-1
+ * 
+ * Returns:   <sc> the score of the pair
+ */
+float
+FastPairScoreLeftOnlyDegenerate(int K, float *esc, float *left, ESL_DSQ symr)
+{
+  int l;
+  float sc;
+
+  sc = 0.;
+  for (l = 0; l < K; l++) sc += esc[l*K+symr] * left[l];
+  return sc;
+}
+int
+iFastPairScoreLeftOnlyDegenerate(int K, int *iesc, float *left, ESL_DSQ symr)
+{
+  int l;
+  float sc;
+
+  sc = 0.;
+  for (l = 0; l < K; l++) sc += iesc[l*K+symr] * left[l];
+  return (int) sc;
+}
+/* Function:  FastPairScoreRightOnlyDegenerate() (float version)
+ *           iFastPairScoreRightOnlyDegenerate() (int   version)
+ * Incept:    EPN, Wed Aug 20 13:18:15 2008
+ *
+ * Purpose:   Score a base pair with right residue non-canonical and
+ *            right residue canonical, given a <right> vector denoting
+ *            fractional weight of each canonical for right residue. 
+ *            This function should only be called if at least 2 values 
+ *            left are non-zero, that is, if right corresponds to a 
+ *            non-canonical residue.
+ *
+ *            Example: if we're calculating for right char 'M' (A or C),
+ *                     right  = [0.50, 0.50, 0.00, 0.00]
+ *
+ *            K     - alphabet size, abc->K
+ *            esc   - emission vector, canonical pair scores are used to calc <sc>
+ *            right - [0..l..K-1] fraction of each canonical residue
+ *            syml  - canonical left residue, must be in range 0..K-1
+ * 
+ * Returns:   <sc> the score of the pair
+ */
+float
+FastPairScoreRightOnlyDegenerate(int K, float *esc, float *right, ESL_DSQ syml)
+{
+  int r;
+  float sc;
+
+  sc = 0.;
+  for (r = 0; r < K; r++) sc += esc[syml*K+r] * right[r];
+  return sc;
+}
+float
+iFastPairScoreRightOnlyDegenerate(int K, int *iesc, float *right, ESL_DSQ syml)
+{
+  int r;
+  float sc;
+
+  sc = 0.;
+  for (r = 0; r < K; r++) sc += iesc[syml*K+r] * right[r];
+  return (int) sc;
+}
+
 /* Function: LeftMarginalScore()
  * Author:   DLK
  *
@@ -117,7 +261,7 @@ iDegeneratePairScore(const ESL_ALPHABET *abc, int *iesc, char syml, char symr)
  *           a uniform background distribution
  */
 float
-LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, int dres)
+LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
 {
    float left[MAXABET];
    int i;
@@ -152,7 +296,7 @@ LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, int dres)
  *           a uniform background distribution
  */
 float
-RightMarginalScore(const ESL_ALPHABET *abc, float *esc, int dres)
+RightMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
 {
    float right[MAXABET];
    int i,j;

@@ -58,7 +58,7 @@ static ESL_OPTIONS options[] = {
   { "--bottomonly", eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the bottom strand", 1 },
   { "--forecast",eslARG_INT,    NULL,  NULL, NULL,      NULL,      NULL,        NULL, "don't do search, forecast running time with <n> processors", 1 },
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
-  { "--mxsize",  eslARG_REAL, "2048.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 10 },
+  { "--mxsize",  eslARG_REAL, "2048.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 1 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program", 1 },  
@@ -66,8 +66,8 @@ static ESL_OPTIONS options[] = {
   /* options for algorithm for final round of search */
   { "--inside",  eslARG_NONE,  "default",NULL,NULL,    NULL,       NULL,    STRATOPTS1, "use scanning CM Inside algorithm", 2 },
   { "--cyk",     eslARG_NONE,  FALSE, NULL, NULL, "--inside",      NULL,    STRATOPTS1, "use scanning CM CYK algorithm", 2 },
-  { "--viterbi", eslARG_NONE,  FALSE, NULL, NULL, "--fil-hmm,--fil-qdb",     NULL,    STRATOPTS2, "use scanning HMM Viterbi algorithm", 2 },
   { "--forward", eslARG_NONE,  FALSE, NULL, NULL, "--fil-hmm,--fil-qdb",     NULL,    STRATOPTS2, "use scanning HMM Forward algorithm", 2 },
+  { "--viterbi", eslARG_NONE,  FALSE, NULL, NULL, "--fil-hmm,--fil-qdb",     NULL,    STRATOPTS2, "use scanning HMM Viterbi algorithm", 2 },
   /* CM cutoff options */
   { "-E",        eslARG_REAL,   "1.0", NULL, "x>0.",   NULL,      NULL,    CUTOPTS1, "use cutoff E-value of <x> for final round of search", 3 },
   { "-T",        eslARG_REAL,   "0.0", NULL, NULL,      NULL,      NULL,    CUTOPTS1, "use cutoff bit score of <x> for final round of search", 3 },
@@ -93,16 +93,19 @@ static ESL_OPTIONS options[] = {
   /*{ "--fil-S-qdb",eslARG_REAL,  "0.02",NULL, "0<x<1.",  NULL,      NULL, "--fil-T-qdb", "set QDB CM filter cutoff to achieve survival fraction <x>", 6 },*/
   /*{ "--fil-S-hmm",eslARG_REAL,  "0.02",NULL, "0<x<1",   NULL,      NULL, "--fil-T-hmm", "set HMM filter cutoff to achieve survival fraction <x>", 6 },*/
   { "--fil-Smax-hmm",eslARG_REAL,NULL, NULL, "0<x<1",    NULL,      NULL,"--fil-T-hmm,--fil-E-hmm", "set maximum HMM survival fraction as <x>", 6 },
+  /* W definition options (require --viterbi or --forward) */
+  { "--hmm-W",   eslARG_INT,    NULL,  NULL, "n>1",     NULL,      NULL,  "--hmm-cW", "set HMM window size as <n>", 7 },
+  { "--hmm-cW",  eslARG_REAL, NULL,  NULL, "x>0.01",    NULL,      NULL,   "--hmm-W", "set HMM window size as <x> * consensus length", 7 },
   /* alignment options */
-  { "--noalign", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,       NULL, "find start/stop/score only; don't do alignments", 7 },
-  { "--aln-hbanded",eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "use HMM bands to align hits", 7 },
-  { "--aln-optacc",eslARG_NONE, FALSE, NULL, NULL,      NULL,   "--aln-hbanded","--noalign", "align hits with the optimal accuracy algorithm, not CYK", 7 },
+  { "--noalign", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,       NULL, "find start/stop/score only; don't do alignments", 8 },
+  { "--aln-hbanded",eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "use HMM bands to align hits", 8 },
+  { "--aln-optacc",eslARG_NONE, FALSE, NULL, NULL,      NULL,   "--aln-hbanded","--noalign", "align hits with the optimal accuracy algorithm, not CYK", 8 },
   /* verbose output files */
-  { "--tabfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,"--forecast", "save hits in tabular format to file <f>", 8 },
-  { "--gcfile",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save GC content stats of target sequence file to <f>", 8 },
+  { "--tabfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,"--forecast", "save hits in tabular format to file <f>", 9 },
+  { "--gcfile",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save GC content stats of target sequence file to <f>", 9 },
   /* Setting output alphabet */
-  { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output hit alignments as RNA sequence data", 9 },
-  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output hit alignments as DNA (not RNA) sequence data", 9 },
+  { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output hit alignments as RNA sequence data", 10 },
+  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output hit alignments as DNA (not RNA) sequence data", 10 },
   /* All options below are developer options, only shown if --devhelp invoked */
   { "--lambda",  eslARG_REAL,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "overwrite lambdas in <cmfile> to <x> for E-value calculations", 101}, 
   { "--aln2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL, "--hbanded",       HMMONLYOPTS, "w/-hbanded, derive HMM bands w/o scanning Forward/Backward", 101 },
@@ -111,7 +114,7 @@ static ESL_OPTIONS options[] = {
   { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--no-null3", "--noalign", "turn on the post hoc second null model", 101 },
   { "--no-null3",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "turn OFF the NULL3 post hoc additional null model", 101 },
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb", 101 },  
-  /* Developer options related to experiment local begin/end modes */
+  /* Developer options related to experimental local begin/end modes */
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "-g,--pbegin","set all local begins as equiprobable", 102 },
   { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      NULL, "-g,--pend",  "set all local end probs to <x>", 102 },
   { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local begin prob to <x>", 102 },
@@ -160,8 +163,8 @@ static int  init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
 
 static void  serial_master (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #ifdef HAVE_MPI
-static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
-static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
+static int   mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
+static int   mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
 static int initialize_cm                        (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int read_next_search_seq                 (const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int do_revcomp, dbseq_t **ret_dbseq);
@@ -183,7 +186,6 @@ main(int argc, char **argv)
   if(w == NULL) cm_Fail("Memory error, stopwatch not created.\n");
   esl_stopwatch_Start(w);
   struct cfg_s     cfg;
-
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
   FLogsumInit();
@@ -219,12 +221,14 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
       puts("\nfilter cutoff options (survival fractions are predicted, not guaranteed):");
       esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
-      puts("\noptions for returning alignments of search hits:");
+      puts("\ndefining window size (W) for HMM only searches (require --forward or --viterbi):");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
-      puts("\nverbose output files:");
+      puts("\noptions for returning alignments of search hits:");
       esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
-      puts("\noptions for selecting output alphabet:");
+      puts("\nverbose output files:");
       esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
+      puts("\noptions for selecting output alphabet:");
+      esl_opt_DisplayHelp(stdout, go,10, 2, 80);
       puts("\nundocumented developer miscellaneous options:");
       esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
       puts("\nundocumented developer options related to experimental local begin/end modes:");
@@ -247,12 +251,14 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
       puts("\nfilter cutoff options (survival fractions are predicted, not guaranteed):");
       esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
-      puts("\noptions for returning alignments of search hits:");
+      puts("\ndefining window size (W) for HMM only searches (require --forward or --viterbi):");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
-      puts("\nverbose output files:");
-      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
-      puts("\noptions for selecting output alphabet:");
+      puts("\noptions for returning alignments of search hits:");
       esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
+      puts("\nverbose output files:");
+      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
+      puts("\noptions for selecting output alphabet:");
+      esl_opt_DisplayHelp(stdout, go,10, 2, 80);
       exit(0);
     }
   if (esl_opt_ArgNumber(go) != 2) 
@@ -264,6 +270,15 @@ main(int argc, char **argv)
       printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
+  /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
+  if ((! esl_opt_IsDefault(go, "--hmm-W")) && (! ((esl_opt_GetBoolean(go, "--viterbi")) || (esl_opt_GetBoolean(go, "--forward"))))) { 
+    printf("Error parsing options, --hmm-W <n> only makes sense in combination with --forward or --viterbi.\n");
+    exit(1);
+  }
+  if ((! esl_opt_IsDefault(go, "--hmm-cW")) && (! ((esl_opt_GetBoolean(go, "--viterbi")) || (esl_opt_GetBoolean(go, "--forward"))))) { 
+    printf("Error parsing options, --hmm-cW <x> only makes sense in combination with --forward or --viterbi.\n");
+    exit(1);
+  }
   /* Initialize what we can in the config structure (without knowing the input alphabet yet).
    */
   cfg.cmfile     = esl_opt_GetArg(go, 1); 
@@ -307,6 +322,8 @@ main(int argc, char **argv)
 #ifdef HAVE_MPI
   if (esl_opt_GetBoolean(go, "--mpi")) 
     {
+      int              status;
+      char             errbuf[cmERRBUFSIZE];
       if(! esl_opt_IsDefault(go, "--forecast")) cm_Fail("--forecast is incompatible with --mpi.");
       cfg.do_mpi     = TRUE;
       MPI_Init(&argc, &argv);
@@ -315,14 +332,22 @@ main(int argc, char **argv)
 
       if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running... (did you execute mpirun?)");
 
-      if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
+      if (cfg.my_rank > 0)  { status = mpi_worker(go, &cfg); }
       else {
 	cm_banner(stdout, argv[0], banner);
-	mpi_master(go, &cfg);
+	status = mpi_master(go, &cfg, errbuf);
       }
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_MPIReduce(w, 0, MPI_COMM_WORLD);
-      MPI_Finalize();
+      /* check status, if eslOK, we continue, else we exit. either way we call MPI_Finalize() */
+      if(status == eslOK) { 
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_MPIReduce(w, 0, MPI_COMM_WORLD);
+	MPI_Finalize();
+      }
+      else { /* status != eslOK, master has error message in errbuf, worker does not */
+	MPI_Finalize();
+	if(cfg.my_rank == 0) cm_Fail(errbuf); /* master */
+	else                 return 0;        /* worker */
+      }
     }
   else
 #endif /*HAVE_MPI*/
@@ -479,10 +504,9 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
       /* initialize the flags/options/params and configuration of the CM */
       if((  status = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
-
-      if((  status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len)))      != eslOK) cm_Fail(errbuf);
       if((  status = CreateCMConsensus(cm, cfg->abc_out, 3.0, 1.0, &cons))  != eslOK) cm_Fail(errbuf);
       if(cm->flags & CMH_EXPTAIL_STATS) { 
+	if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len)))      != eslOK) cm_Fail(errbuf);
 	if((status = UpdateExpsForDBSize(cm, errbuf, cfg->dbsize))          != eslOK) cm_Fail(errbuf);
 	if((status = set_searchinfo_for_calibrated_cm(go, cfg, errbuf, cm)) != eslOK) cm_Fail(errbuf);
       }
@@ -580,8 +604,11 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
  * Follows standard pattern for a master/worker load-balanced MPI program 
  * (SRE notes J1/78-79).
  * 
- * A master can only return if it's successful. 
+ * A master returns eslOK if it's successful. 
  * Errors in an MPI master come in two classes: recoverable and nonrecoverable.
+ * If a recoverable error occurs, errbuf is filled with an error message
+ * from the master or a worker, and it's sent back while returning a
+ * non-eslOK error code.
  * 
  * Recoverable errors include (hopefully) all worker-side errors, and any
  * master-side error that do not affect MPI communication. Error
@@ -594,8 +621,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
  * cm_Fail()'s, which will cause MPI to shut down the worker processes
  * uncleanly.
  */
-static void
-mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
+static int
+mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
   int      xstatus       = eslOK;	/* changes from OK on recoverable error */
   int      status;
@@ -636,7 +663,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   ESL_STOPWATCH *w  = esl_stopwatch_Create();
   if(w == NULL) cm_Fail("mpi_master(): memory error, stopwatch not created.\n");  
 
-  char     errbuf[cmERRBUFSIZE];
   MPI_Status mpistatus; 
   int      n, h;
 
@@ -646,12 +672,10 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   float            *worker_surv_fractA = NULL; /* 0..n..cm->si->nrounds fraction of db surviving round n for current seq */
   int              *worker_nhitsA      = NULL; /* 0..n..cm->si->nrounds num hits surviving round n for current seq */
 
-
   /* Master initialization: including, figure out the alphabet type.
    * If any failure occurs, delay printing error message until we've shut down workers.
    */
   if (xstatus == eslOK) { if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) xstatus = status; }
-  /*if (xstatus == eslOK) { if ((status = init_shared_cfg(go, cfg, errbuf)) != eslOK) xstatus = status; }*/
   if (xstatus == eslOK) { bn = 4096; if ((buf = malloc(sizeof(char) * bn)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
   if (xstatus == eslOK) { if ((silist     = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
   if (xstatus == eslOK) { if ((rclist     = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
@@ -662,7 +686,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if (xstatus == eslOK) { if ((status = print_run_info(go, cfg, errbuf))  != eslOK) xstatus = status; }
 
   MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  if (xstatus != eslOK) cm_Fail(errbuf);
+  if (xstatus != eslOK) return xstatus; /* errbuf was filled above */
   ESL_DPRINTF1(("MPI master is initialized\n"));
 
   /* create namedashes string, only used if --tabfile */
@@ -928,40 +952,36 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   free(namedashes);
   esl_stopwatch_Destroy(w);
 
-  if     (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); cm_Fail(errbuf); }
-  else if(status != eslEOF) cm_Fail(errbuf);  /* problem reading CM file */
-  else return;
+  if     (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); return xstatus; }
+  else if(status != eslEOF) return status;  /* problem reading CM file */
+  else                      return eslOK;
 
  ERROR: 
-  cm_Fail("memory allocation error.");
-  return; /* NOTREACHED */
+  ESL_FAIL(status, errbuf, "mpi_master() memory allocation error.");
+  return eslOK; /* NOTREACHED */
 }
 
 
-static void
+static int
 mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   int           xstatus = eslOK;
   int           status;
-  /*int           type;*/
   CM_t         *cm  = NULL;
   char         *wbuf = NULL;	/* packed send/recv buffer  */
   int           wn   = 0;	/* allocation size for wbuf */
   int           sz, n;		/* size of a packed message */
   int           pos;
-  char          errbuf[cmERRBUFSIZE];
-  /*float         Smin;*/
-  /*MPI_Status  mpistatus;*/
   ESL_DSQ      *dsq = NULL;
   int           L;
   search_results_t *results = NULL;
   float         *surv_fractA = NULL; /* 0..n..cm->si->nrounds fraction of db surviving round n for current seq */
   int           *nhitsA      = NULL; /* 0..n..cm->si->nrounds number of hits surviving round n for current seq */
-
+  char           errbuf[cmERRBUFSIZE];
   /* After master initialization: master broadcasts its status.
    */
   MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  if (xstatus != eslOK) return; /* master saw an error code; workers do an immediate normal shutdown. */
+  if (xstatus != eslOK) return xstatus; /* master saw an error code; workers do an immediate normal shutdown. */
   ESL_DPRINTF1(("worker %d: sees that master has initialized\n", cfg->my_rank));
   
   /* Master now broadcasts worker initialization information (db size N) 
@@ -975,7 +995,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD); /* everyone sends xstatus back to master */
   if (xstatus != eslOK) {
     if (wbuf != NULL) free(wbuf);
-    return; /* shutdown; we passed the error back for the master to deal with. */
+    return xstatus; /* shutdown; we passed the error back for the master to deal with. */
   }
   ESL_DPRINTF1(("worker %d: initialized N: %ld\n", cfg->my_rank, cfg->dbsize));
   
@@ -1048,7 +1068,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   else ESL_XFAIL(eslFAIL, errbuf, "outside CM loop, unexpected status code: %d received from cm_seqs_to_aln_MPIRecv()\n", status);
   
   if (wbuf != NULL) free(wbuf);
-  return;
+  return eslOK;
 
  ERROR:
   ESL_DPRINTF1(("worker %d: fails, is sending an error message, as follows:\n%s\n", cfg->my_rank, errbuf));
@@ -1068,8 +1088,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   /* status after each of the above calls should be eslEOD, but if it isn't we can't really do anything 
    * about it b/c we've already sent our error message, so in that scenario the MPI will break uncleanly 
    */
-
-  return;
+  return eslFAIL; /* recoverable error, master has error message and will print it */
 }
 #endif /*HAVE_MPI*/
 
@@ -1082,6 +1101,8 @@ static int
 initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   int use_hmmonly;
+  int config_qdb;
+  int hmm_W_set;
   int nstarts, nexits, nd;
   
   /* set up CM parameters that are option-changeable */
@@ -1089,6 +1110,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   cm->tau      = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
 
   use_hmmonly = (esl_opt_GetBoolean(go, "--viterbi") || esl_opt_GetBoolean(go, "--forward")) ? TRUE : FALSE;
+  config_qdb  = (use_hmmonly || esl_opt_GetBoolean(go, "--no-qdb")) ? FALSE : TRUE; 
 
   /* Update cm->config_opts and cm->align_opts based on command line options */
 
@@ -1098,8 +1120,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
     cm->config_opts |= CM_CONFIG_HMMLOCAL;
     cm->config_opts |= CM_CONFIG_HMMEL;
   }
-  /* config QDB for final round of search? yes, unless --no-qdb, otherwise we only use QDB to filter */
-  if(! esl_opt_GetBoolean(go, "--no-qdb")) cm->config_opts |= CM_CONFIG_QDB;
+  /* config QDB for final round of search? yes, unless --no-qdb, --viterbi or --forward */
+  if(config_qdb) cm->config_opts |= CM_CONFIG_QDB;
 
   /* search_opts */
   if(! use_hmmonly) 
@@ -1168,7 +1190,18 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* finally, configure the CM for search based on cm->config_opts and cm->align_opts.
    * set local mode, make cp9 HMM, calculate QD bands etc. 
    */
-  ConfigCM(cm, TRUE);  /* TRUE says: calculate W */
+  /* if --hmm-W <n> or --hmm-cW was set on command line in combination with --viterbi or --forward, 
+   * DO NOT use the QDB band definition alg to calculate W, use <n> from --hmm-W
+   */
+  hmm_W_set = ((!esl_opt_IsDefault(go, "--hmm-W")) || (!esl_opt_IsDefault(go, "--hmm-cW"))) ? TRUE : FALSE;
+  if(use_hmmonly && hmm_W_set) { 
+    ConfigCM(cm, FALSE);  /* FALSE says: DON'T calculate W */
+    if(!esl_opt_IsDefault(go, "--hmm-W")) cm->W = esl_opt_GetInteger(go, "--hmm-W"); 
+    else                                  cm->W = (int) (esl_opt_GetReal(go, "--hmm-cW") * cm->clen); 
+  }
+  else { 
+    ConfigCM(cm, TRUE);  /* TRUE says: calculate W */
+  }
 
   /* Setup ScanMatrix for CYK/Inside scanning functions, we can't 
    * do it in initialize_cm(), b/c it's W dependent; W was just set.
@@ -1340,7 +1373,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   search_opts = si->search_opts[n];
   use_hmmonly = ((search_opts & CM_SEARCH_HMMVITERBI) || (search_opts & CM_SEARCH_HMMFORWARD));
   if(use_hmmonly) do_hmm_filter = do_qdb_filter = FALSE; /* don't filter if we're searching only with the HMM */
-  if((! use_hmmonly) && (stype != SEARCH_WITH_CM)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo_for_calibrated_cm(), search_opts for final round of search does not have HMMVITERBI or HMMFORWARD flags raised, but is not of type SEARCH_WITH_CM.");
+  if((! use_hmmonly) && (stype != SEARCH_WITH_CM)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo_for_calibrated_cm(), final round search_opts HMMVITERBI or HMMFORWARD flags down, but type != SEARCH_WITH_CM.");
   /* determine configuration of CM and CP9 HMM based on cm->flags & cm->search_opts */
   CM2ExpMode(cm, search_opts, &cm_mode, &hmm_mode); 
 
@@ -1414,6 +1447,8 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   do_hmm_filter = esl_opt_GetBoolean(go, "--fil-hmm");
   fhmm_S = fhmm_E = fhmm_sc = -1.;
   if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &fhmm_ncalcs_per_res)) != eslOK) return status;
+  /* reset HMM mode to either EXP_CP9_LF or EXP_CP9_GF for local or glocal HMM forward filtering */
+  hmm_mode = ExpModeIsLocal(cm_mode) ? EXP_CP9_LF : EXP_CP9_GF;
 
   if(do_hmm_filter) { /* determine thresholds for HMM forward filter */
     if(use_hmmonly) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo_for_calibrated_cm(), --fil-hmm enabled, along with --viterbi or --forward, shouldn't happen.");
@@ -1423,8 +1458,6 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
        * FTHR_CM_LI, FTHR_CM_GC, FTHR_CM_GI (can't be an HMM mode b/c --viterbi and --forward toggle --fil-hmm off)
        */
 
-      /* reset HMM mode to either EXP_CP9_LF or EXP_CP9_GF for local or glocal HMM forward filtering */
-      hmm_mode = ExpModeIsLocal(cm_mode) ? EXP_CP9_LF : EXP_CP9_GF;
       /* determine fthr mode */
       if((status = CM2FthrMode(cm, errbuf, cm->search_opts, &fthr_mode)) != eslOK) return status;
       HMMFilterInfo_t *hfi_ptr = cm->stats->hfiA[fthr_mode]; /* for convenience */
@@ -1445,6 +1478,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 	if(! esl_opt_IsDefault(go, "--fil-Smax-hmm")) { 
 	  if(fhmm_S > esl_opt_GetReal(go, "--fil-Smax-hmm")) { /* predicted survival fraction exceeds maximum allowed, set E cutoff as E value that gives max allowed survival fraction */
 	    fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-Smax-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
+
 	  }
 	}
 	if((status  = E2MinScore(cm, errbuf, hmm_mode, fhmm_E, &fhmm_sc)) != eslOK) return status; /* note: use hmm_mode, not fthr_mode */
@@ -1717,7 +1751,8 @@ set_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   search_opts = si->search_opts[n];
   use_hmmonly = ((search_opts & CM_SEARCH_HMMVITERBI) || (search_opts & CM_SEARCH_HMMFORWARD));
   if(use_hmmonly) do_hmm_filter = do_qdb_filter = FALSE; /* don't filter if we're searching only with the HMM */
-  if((! use_hmmonly) && (stype != SEARCH_WITH_CM)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo_for_uncalibrated_cm(), search_opts for final round of search does not have HMMVITERBI or HMMFORWARD flags raised, but is not of type SEARCH_WITH_CM.");
+  if((! use_hmmonly) && (stype != SEARCH_WITH_CM)) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo_for_uncalibrated_cm(), final round search_opts HMMVITERBI or HMMFORWARD flags down, but type != SEARCH_WITH_CM.");
+
   /* determine configuration of CM and CP9 HMM based on cm->flags & cm->search_opts */
   CM2ExpMode(cm, search_opts, &cm_mode, &hmm_mode); 
 
@@ -1991,7 +2026,6 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
   int search_opts;
   ScanMatrix_t *smx;
   HybridScanInfo_t *hsi;
-  float avg_hit_len;        /* average length of a hit, from qdb calculation */
   int   use_qdb;            /* are we using qdb for current round? */
   char  time_buf[128];	    /* for printing predicted times */
   int   do_pad;             /* TRUE to add W pad onto survival fraction (FALSE only in final round of searching) */
@@ -2024,8 +2058,6 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
   fprintf(stdout, "#\n");
   if(cfg->tfp != NULL) fprintf(cfg->tfp, "#\n");
 
-  if((status = cm_GetAvgHitLen        (cm,      errbuf, &avg_hit_len))        != eslOK) return status;
-
   for(n = 0; n <= cm->si->nrounds; n++) {
     stype       = cm->si->stype[n];
     search_opts = cm->si->search_opts[n];
@@ -2041,7 +2073,7 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
 
     prv_surv_fract = surv_fract;
     do_pad = (n == cm->si->nrounds) ? FALSE : TRUE;
-    surv_fract = E2SurvFract(e_cutoff, (stype == SEARCH_WITH_CM) ? smx->W : cm->W, avg_hit_len, cfg->dbsize, do_pad);
+    surv_fract = E2SurvFract(e_cutoff, (stype == SEARCH_WITH_CM) ? smx->W : cm->W, cfg->avg_hit_len, cfg->dbsize, do_pad);
 
     if(pre_search_mode) { 
       if((status = estimate_search_time_for_round(go, cfg, errbuf, cm, stype, search_opts, smx, r, &sec_per_res)) != eslOK) return status;

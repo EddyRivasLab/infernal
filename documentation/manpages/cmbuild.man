@@ -162,9 +162,9 @@ is enabled, and the source code.
 Parameterize emission scores a la RSEARCH, using the RIBOSUM
 matrix in file 
 .I <f>.
-Actually, the emission scores will not be exactly the RIBOSUM scores,
-because of differences in the modelling strategy in @PACKAGE@ and
-RSEARCH, but they will be as close as @PACKAGE@ can get.
+(Actually, the emission scores will not be identical to RIBOSUM scores
+due of differences in the modelling strategy between @PACKAGE@ and
+RSEARCH, but they will be as similar as possible.)
 RIBOSUM matrix files are included with @PACKAGE@ in the "matrices/"
 subdirectory of the top-level @PACKAGE@ directory.
 RIBOSUM matrices are substitution score matrices trained specifically
@@ -298,11 +298,9 @@ is just the number of sequences in the alignment.
 
 .TP 
 .BI --ere " <x>"
-Set the target mean match state entropy as 
+Set the target mean match state relative entropy as 
 .I <x>.
-By default the target entropy 1.46 bits. This default value was
-empirically determined as optimal in a RFAM based benchmark described
-in (Nawrocki and Eddy, PLoS Computational Biology 3(3): e56, 2007).
+By default the target relative entropy per match position is 0.59 bits.
 
 .TP 
 .BI --null " <f>"

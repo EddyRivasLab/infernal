@@ -68,18 +68,17 @@ static int check_for_pknots(char *cs, int alen);
  *           Both rf and cs are provided in the msa structure.
  *           
  * Args:     msa       - multiple alignment to build model from
+ *           errbuf    - for error messages
  *           use_rf    - TRUE to use RF annotation to determine match/insert
  *           gapthresh - fraction of gaps to allow in a match column (if use_rf=FALSE)
  *           ret_cm    - RETURN: new model                      (maybe NULL)
  *           ret_gtr   - RETURN: guide tree for alignment (maybe NULL)
  *           
- * Return:   void
- *           cm is allocated here. FreeCM(*ret_cm).
- *           gtr is allocated here. FreeTrace().
+ * Return:   eslOK on success;
+ *           eslEINCOMPAT on contract violation
  */
-void
-HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh, 
-	       CM_t **ret_cm, Parsetree_t **ret_gtr)
+int
+HandModelmaker(ESL_MSA *msa, char *errbuf, int use_rf, float gapthresh, CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
   int             status;
   CM_t           *cm;		/* new covariance model                       */
@@ -96,13 +95,15 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
   int  nnodes;			/* number of nodes in CM                      */
   int  nstates;			/* number of states in CM                     */
   int  clen;                    /* consensus length of the model              */
+  int *c2a_map;                 /* [1..clen]      map from consensus (match) positions to alignment positions */
+  int *a2c_map;                 /* [1..msa->alen] map from alignment positions to consensus (match) positions, insert alignment positions = 0 */
+  int  cpos;                    /* consensus position counter */
+  int  k_cpos, i_cpos, j_cpos;  /* consensus position that k, i, j (alignment positions) correspond to */
+  int  kp;                      /* k prime, closest alignment position that is consensus to the right of k (that is kp >= k) */
 
-  if (msa->ss_cons == NULL)
-    cm_Fail("No consensus structure annotation available for that alignment.");
-  if (! (msa->flags & eslMSA_DIGITAL))
-    cm_Fail("MSA is not digitized in HandModelMaker().");
-  if (use_rf && msa->rf == NULL) 
-    cm_Fail("No reference annotation available for that alignment.");
+  if (msa->ss_cons == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): No consensus structure annotation available for that alignment.");
+  if (! (msa->flags & eslMSA_DIGITAL)) ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): MSA is not digitized.");
+  if (use_rf && msa->rf == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "HandModelMaker(): No reference annotation available for the alignment.");
 
   /* 1. Determine match/insert assignments
    *    matassign is 1..alen. Values are 1 if a match column, 0 if insert column.
@@ -110,21 +111,18 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
   ESL_ALLOC(matassign, sizeof(int) * (msa->alen+1));
 
   /* Watch for off-by-one. rf is [0..alen-1]; matassign is [1..alen] */
-  if (use_rf)
-    {
-      for (apos = 1; apos <= msa->alen; apos++)
-	matassign[apos] = (esl_abc_CIsGap(msa->abc, msa->rf[apos-1]) ? FALSE : TRUE);
+  if (use_rf) { 
+    for (apos = 1; apos <= msa->alen; apos++)
+      matassign[apos] = (esl_abc_CIsGap(msa->abc, msa->rf[apos-1]) ? FALSE : TRUE);
+  }
+  else { 
+    int gaps;
+    for (apos = 1; apos <= msa->alen; apos++) { 
+      for (gaps = 0, idx = 0; idx < msa->nseq; idx++)
+	if (esl_abc_XIsGap(msa->abc, msa->ax[idx][apos])) gaps++;
+      matassign[apos] = ((double) gaps / (double) msa->nseq > gapthresh) ? 0 : 1;
     }
-  else
-    {
-      int gaps;
-      for (apos = 1; apos <= msa->alen; apos++)
-	{
-	  for (gaps = 0, idx = 0; idx < msa->nseq; idx++)
-	    if (esl_abc_XIsGap(msa->abc, msa->ax[idx][apos])) gaps++;
-	  matassign[apos] = ((double) gaps / (double) msa->nseq > gapthresh) ? 0 : 1;
-	}
-    }
+  }
 
   /* 2. Determine a "ct" array, base-pairing partners for each position.
    *    Disallow/ignore pseudoknots by removing them prior to making the ct array.
@@ -140,14 +138,32 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 
   /* 3. Make sure the consensus structure "ct" is consistent with the match assignments.
    *    Wipe out all structure in insert columns; including the base-paired 
-   *    partner of insert-assigned columns.
+   *    partner of insert-assigned columns. Also create a map from consensus positions
+   *    to alignment positions (c2a_map) and vice versa (a2c_map), we'll use this
+   *    to choose optimal k for bifurcations below. 
    */
-  for (apos = 1; apos <= msa->alen; apos++)
-    if (! matassign[apos])
-      { 
-	if (ct[apos] != 0)  ct[ct[apos]] = 0;
-	ct[apos] = 0;
-      }
+  clen = 1;
+  for (apos = 1; apos <= msa->alen; apos++) { 
+    if (! matassign[apos]) { 
+      if (ct[apos] != 0)  ct[ct[apos]] = 0;
+      ct[apos] = 0;
+    }
+    else clen++; 
+  }
+  /* build c2a_map and a2c_map, we need clen before we can allocate c2a_map, hence the second apos=1..alen loop */
+  ESL_ALLOC(c2a_map, sizeof(int) * (clen+1)); 
+  ESL_ALLOC(a2c_map, sizeof(int) * (msa->alen+1)); 
+  c2a_map[0] = 0; /* invalid */
+  a2c_map[0] = 0; /* invalid */
+  cpos = 1;
+  for (apos = 1; apos <= msa->alen; apos++) { 
+    if(matassign[apos]) { 
+      a2c_map[apos] = cpos; 
+      c2a_map[cpos] = apos;
+      cpos++;
+    }
+    else a2c_map[apos] = 0;
+  }
 
   /* 4. Construct a guide tree.
    *    This code is borrowed from yarn's KHS2Trace().
@@ -301,18 +317,54 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
            * Each stop of the following loop gives a possible midpoint k, which is
            * then evaluated, keeping track of the best split so far.
            */
+	  /* EPN, Tue Sep 9 07:41:28 2008 
+	   * Revised this code block to pick optimal choice of k based
+	   * on split lengths of consensus (match) positions instead
+	   * of alignment positions, this actually yields most
+	   * 'balanced' split as described above because DP operates
+	   * on consensus positions, not alignment positions (which
+	   * are affected by inserts in the input msa). Motivation for
+	   * this revision was to allow merging of two alignments
+	   * created by two runs cmalign to the same CM, which is done
+	   * by converting both alignments to guidetrees, then each
+	   * aligned seq to a parsetree then converting all parsetrees
+	   * from both alignments to a single msa. Prior to the
+	   * revision the specific guidetree built from an alignment
+	   * was subject to the number of inserts in the msas, so we
+	   * couldn't guarantee that both msas would yield the same
+	   * guidetree, which was problematic. In other words, prior
+	   * to this the SS_cons and RF annotation didn't determine
+	   * the guidetree, but rather the SS_cons *and* the number
+	   * and spacing of the inserts determined the guidetree; now
+	   * the SS_cons and RF annotation completely determine the
+	   * guidetree.
+	   */
 	  v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, BIF_nd);
 
-	  bestk    = ct[i]+1;
-	  bestdiff = msa->alen;
+	  i_cpos = a2c_map[i];
+	  j_cpos = a2c_map[j];
+	  bestk = ct[i]+1;
+	  bestdiff = clen;
 	  for (k = ct[i] + 1; k < ct[j]; k = ct[k] + 1) 
 	    {
-	      diff = abs(i+j-2*k); /* = len2-len1-1, where len2 = j-k+1, len1= k-i */
+	      /* set kp as the closest consensus position to k to the
+	       * right (right side was chosen (over left) arbitrarily,
+	       * practically it won't matter, as long as we always
+	       * look the same way (right or left)) b/c what we really want 
+	       * is this choice to be deterministic based on SS_cons alone,
+	       * that is a specific SS_cons yields same guide tree always, 
+	       * regardless of length and placement of inserts. 
+	       */
+	      kp = k; 
+	      while(a2c_map[kp] == 0) kp++;
+	      k_cpos = a2c_map[kp];
+	      diff = abs(i_cpos+j_cpos-2*k_cpos); /* = len2-len1-1, where len2 = j_cpos-k_cpos+1, len1= k_cpos-i_cpos */
+	      /* diff is difference in consensus positions between i..kp and kp..j */
 	      if (diff < bestdiff) {
 		bestdiff = diff; 
 		bestk    = k;
 	      }
-	      while (ct[k] == 0) k++;
+	      while (ct[k] == 0) k++; /* at end of this while, k will be a paired, (and therefore consensus) position */
 	    }
 				/* push the right BEGIN node first */
 	  if((status = esl_stack_IPush(pda, v)) != eslOK) goto ERROR;	
@@ -327,7 +379,6 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
 	  nstates += 1;		/* BIF_nd -> B_st */
 	  nnodes++;
 	}
-
     }	/* while something's on the stack */
   esl_stack_Destroy(pda);
   free(ct);
@@ -337,20 +388,21 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
    * using this guide tree.
    */
   cm = CreateCM(nnodes, nstates, msa->abc);
-  cm_from_guide(cm, gtr);
+  if((status = cm_from_guide(cm, errbuf, gtr, FALSE)) != eslOK) return status; /* FALSE says, we're not building a sub CM that will never be localized */
   CMZero(cm);
   cm->clen = clen;
 
   free(matassign);
+free(c2a_map);
+free(a2c_map);
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
   if (ret_gtr != NULL) *ret_gtr = gtr; else FreeParsetree(gtr);
-  return;
+  return eslOK;
 
  ERROR:
-  cm_Fail("Memory allocation error.");
-  return;
+  ESL_FAIL(eslEMEM, errbuf, "HandModelMaker(): memory allocation error.");
+  return eslEMEM; /* never reached */
 }
-
 
 
 /* Function: cm_from_guide()
@@ -360,12 +412,28 @@ HandModelmaker(ESL_MSA *msa, int use_rf, float gapthresh,
  *           fill in all the structural information of the CM.
  *           
  * Args:     cm  - allocated cm to construct
+ *           errbuf - for error messages
  *           gtr - guide tree
+ *           will_never_localize- TRUE if we're building a sub CM that we will never localize.
+ *                                This is only relevant b/c we can allow 'invalid' CMs in this case.
+ *                                An invalid CM is one that, if localized, could not generate all 
+ *                                possible sequences (see comments in code below). 
+ *                                We allow sub CMs to be invalid b/c we don't want cmalign to die
+ *                                when a target seq results in a sub CM that is invalid in the middle
+ *                                of a run. This is a pure hack and relies UNSAFELY on the assumption
+ *                                that the sub CM will never be localized (though in the current
+ *                                implementation sub CMs are only used by cmalign in global mode, thus
+ *                                they never are localized). Still, we don't raise a flag in the 
+ *                                CM to prevent downstream localization, which is dangerous - if the
+ *                                implementation changes to allow sub CMs to become localized. Even then
+ *                                though the risk is small b/c an invalid CM only is a problem if we
+ *                                try to align a single residue sequence to it (again, see comments below
+ *                                for more explanation).
  *
- * Returns:  (void)
+ * Returns:  eslOK on success;
  */
-void
-cm_from_guide(CM_t *cm, Parsetree_t *gtr)
+int
+cm_from_guide(CM_t *cm, char *errbuf, Parsetree_t *gtr, int will_never_localize)
 {
   int         status;
   ESL_STACK  *pda;              /* pushdown stack used for traversing gtr */
@@ -671,25 +739,28 @@ cm_from_guide(CM_t *cm, Parsetree_t *gtr)
   cm->nodes = node;
   cm->clen  = clen;
 
-  /* A couple of checks to make sure our CM is valid for local alignment/search.
-   * The following is invalid:
-   * 1. CMs with exactly 3 nodes. This must be either {ROOT, MATL, END} or
-   *    {ROOT, MATP, END}. Either way a local end is impossible b/c local ends
-   *    from nodes adjacent to end states are impossible. This is bad. Even
-   *    worse is a {ROOT, MATL, END} model can't emit/align more than a single
-   *    residue in local mode (ROOT_IL, ROOT_IR are unreachable, and so is MATL_IL,
-   *    b/c it was detached to remove an ambiguity with ROOT_IR).
-   * 2. CMs with 0 MATL, MATR and BIF nodes. The reason is because such a CM only has
-   *    a ROOT, a bunch of MATPs and an END, and it is impossible to align a single
-   *    residue to such a model when it's in local mode. 
-   */
-  if(cm->nodes == 3) cm_Fail("cm_from_guide(), it's illegal to construct a CM of only 3 nodes.\n"); 
-  if((CMCountNodetype(cm, MATL_nd) == 0) && (CMCountNodetype(cm, MATL_nd) == 0) && (CMCountNodetype(cm,BIF_nd) == 0)) cm_Fail("cm_from_guide(), it's illegal to construct a CM with 0 MATL, MATR and BIF nodes.\n"); 
-  return;
+  if(!will_never_localize) { /* input arg tells us we may localize this CM, check it's valid,
+			      * if we won't localize it, then we don't check */
+    /* A couple of checks to make sure our CM is valid for local alignment/search.
+     * The following is invalid:
+     * 1. CMs with exactly 3 nodes. This must be either {ROOT, MATL, END} or
+     *    {ROOT, MATP, END}. Either way a local end is impossible b/c local ends
+     *    from nodes adjacent to end states are impossible. This is bad. Even
+     *    worse is a {ROOT, MATL, END} model can't emit/align more than a single
+     *    residue in local mode (ROOT_IL, ROOT_IR are unreachable, and so is MATL_IL,
+     *    b/c it was detached to remove an ambiguity with ROOT_IR).
+     * 2. CMs with 0 MATL, MATR and BIF nodes. The reason is because such a CM only has
+     *    a ROOT, a bunch of MATPs and an END, and it is impossible to align a single
+     *    residue to such a model when it's in local mode. 
+     */
+    if(cm->nodes == 3) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_from_guide(), it's illegal to construct a CM of only 3 nodes."); 
+    if((CMCountNodetype(cm, MATL_nd) == 0) && (CMCountNodetype(cm, MATR_nd) == 0) && (CMCountNodetype(cm,BIF_nd) == 0)) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_from_guide(), it's illegal to construct a CM with 0 MATL, MATR and BIF nodes."); 
+  }
+  return eslOK;
 
  ERROR:
-  cm_Fail("Memory allocation error.");
-  return; /* NEVERREACHED */
+  ESL_FAIL(eslEMEM, errbuf, "cm_from_guide(): memory allocation error.");
+  return eslEMEM; /* NEVERREACHED */
 }
 
 
@@ -1041,21 +1112,22 @@ Transmogrify(CM_t *cm, Parsetree_t *gtr, ESL_DSQ *ax, char *aseq, int alen)
  *           consensus, and this is the difference b/t this function and
  *           HandModelmaker. Also, this function does not take in a MSA 
  *           data structure. It was originally written for building a 
- *           new CM with less structure (MATPs) than a template CM.
+ *           new CM (a sub CM) that models a contiguous subset of columns
+ *           of it's template (mother) CM.
  *           
  * Args:     abc       - the alphabet
+ *           errbuf    - for error messages
  *           ss_cons   - input consensus structure string 
  *           clen      - length of ss_cons, number of consensus columns
+ *           building_sub_model - TRUE if building a sub CM (usually TRUE)
  *           ret_cm    - RETURN: new model                      (maybe NULL)
  *           ret_gtr   - RETURN: guide tree for alignment (maybe NULL)
  *           
- * Return:   void
- *           cm is allocated here. FreeCM(*ret_cm).
- *           gtr is allocated here. FreeTrace().
+ * Return:   eslOK on success;
+ *           eslEINCOMPAT on contract violation
  */
-void
-ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen, 
-		    CM_t **ret_cm, Parsetree_t **ret_gtr)
+int
+ConsensusModelmaker(const ESL_ALPHABET *abc, char *errbuf, char *ss_cons, int clen, int building_sub_model, CM_t **ret_cm, Parsetree_t **ret_gtr)
 {
   int             status;
   CM_t           *cm;		/* new covariance model                       */
@@ -1070,8 +1142,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
   int  nstates;			/* number of states in CM                     */
   int  obs_clen;                /* observed (MATL+MATR+2*MATP) consensus len  */
 
-  if (ss_cons == NULL)
-    cm_Fail("No consensus structure annotation available in ConsensusModelmaker().");
+  if (ss_cons == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "No consensus structure annotation available in ConsensusModelmaker().");
 
   /* 1. Determine a "ct" array, base-pairing partners for each position.
    *    Disallow/ignore pseudoknots by removing them prior to making the ct array.
@@ -1081,8 +1152,7 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
    */
   esl_wuss_nopseudo(ss_cons, ss_cons); /* remove pknots in place */
   ESL_ALLOC(ct, (clen+1) * sizeof(int));
-  if (esl_wuss2ct(ss_cons, clen, ct) != eslOK)  
-    cm_Fail("Consensus structure string is inconsistent"); 
+  if ((status = esl_wuss2ct(ss_cons, clen, ct)) != eslOK) ESL_FAIL(status, errbuf, "Consensus string is inconsisent in ConsensusModelMaker().");
 
   /* 2. Construct a guide tree. 
    *    This codes is borrowed from HandModelmaker(), where it
@@ -1233,6 +1303,14 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
            * Each stop of the following loop gives a possible midpoint k, which is
            * then evaluated, keeping track of the best split so far.
            */
+	  /* EPN, Tue Sep 9 07:41:28 2008 
+	   * Note: HandModelMaker() was revised at precisely this point to chose 
+	   * k based on split lengths of consensus positions (instead of alignment
+	   * positions), but we don't need that revision here b/c all positions
+	   * are consensus so this code was already doing what the revised HandModelMaker()
+	   * code now does. This is why this code block in Hand*() is more complex
+	   * than the one here.
+	   */ 
 	  v = InsertTraceNode(gtr, v, TRACE_LEFT_CHILD, i, j, BIF_nd);
 
 	  bestk    = ct[i]+1;
@@ -1269,16 +1347,18 @@ ConsensusModelmaker(const ESL_ALPHABET *abc, char *ss_cons, int clen,
    * using this guide tree.
    */
   cm = CreateCM(nnodes, nstates, abc);
-  cm_from_guide(cm, gtr);
+  if((status = cm_from_guide(cm, errbuf, gtr, building_sub_model)) != eslOK) return status;
   CMZero(cm);
   cm->clen = clen;
 
   if (ret_cm  != NULL) *ret_cm  = cm;  else FreeCM(cm);
   if (ret_gtr != NULL) *ret_gtr = gtr; else FreeParsetree(gtr);
-  return;
+  return eslOK;
 
  ERROR:
-  cm_Fail("Memory allocation error.");
+  ESL_FAIL(eslEMEM, errbuf, "ConsensusModelMaker(): memory allocation error.");
+  return eslEMEM; /* never reached */
+
 }
 
 /**************************************************************************

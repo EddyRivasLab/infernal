@@ -67,21 +67,19 @@ AC_MSG_NOTICE([Configuring Infernal for your system.])
 #
 ################################################################
 
-PACKAGE_RELCODE="infernal1_0"
-PACKAGE_DATE="June 2008"
-PACKAGE_COPYRIGHT="Copyright (C) 2008 HHMI Janelia Farm Research Campus"
-PACKAGE_LICENSE="Freely distributed under the GNU General Public License (GPL)"
+PACKAGE_DATE="January 2009"
+PACKAGE_COPYRIGHT="Copyright (C) 2009 HHMI Janelia Farm Research Campus"
+PACKAGE_LICENSE="Freely distributed under the GNU General Public License (GPLv3)"
 PACKAGE_LICENSETAG=gnu
 PACKAGE_VERSION=$PACKAGE_VERSION
 PACKAGE_URL="http://infernal.janelia.org/"
 
-EASEL_RELCODE="easel-i1_0"
-EASEL_DATE="June 2008"
-EASEL_COPYRIGHT="Copyright (C) 2008 HHMI Janelia Farm Research Campus"
+EASEL_DATE="January 2009"
+EASEL_COPYRIGHT="Copyright (C) 2009 HHMI Janelia Farm Research Campus"
 EASEL_LICENSE="Freely distributed under the Janelia Software License."
 EASEL_LICENSETAG=jsl
 EASEL_VERSION="i1.0"
-EASEL_URL="http://easel.janelia.org/"
+EASEL_URL="http://bioeasel.org/"
 
 # Output variables  (AC_OUTPUT replaces @var@ in input files, such as Makefiles)
 AC_SUBST(PACKAGE_RELCODE)
@@ -232,12 +230,25 @@ fi
 
 # MPI :  set @CC@ to mpicc, sets @MPILIBS@, defines HAVE_MPI. 
 if test "$enable_mpi" = "yes"; then
-   ACX_MPI([CC="$MPICC"],AC_MSG_ERROR([MPI library not found for --enable-mpi]))
+   ACX_MPI(,AC_MSG_ERROR([MPI library not found for --enable-mpi]))
+   CC=$MPICC
 fi
 
 # SSE: figure out our @SIMD_CFLAGS@, define HAVE_SSE2
+# The AC_RUN_IFELSE() is there because it's possible to have 
+# hardware that doesn't support SSE2 instructions, yet the
+# compiler can generate them: example AMD Athlons with gcc.
+# So we need to test that an SSE2 program actually runs without
+# generating an "illegal instruction" error. The program
+# here is sufficient [xref J3/127].
 if test "$enable_sse" = "check" && test "$enable_vmx" != "yes"; then
-   AC_CHECK_HEADER([emmintrin.h],[enable_sse=yes])
+    AC_CHECK_HEADER([emmintrin.h],[
+     AC_MSG_CHECKING([if platform can run SSE/SSE2 instructions])
+     AC_RUN_IFELSE([AC_LANG_PROGRAM( [[#include <emmintrin.h>]],
+		                      [[__m128i v = _mm_set1_epi8(0);]])],
+                   [AC_MSG_RESULT([yes])
+                     enable_sse=yes],
+                   [AC_MSG_RESULT([no])])])
 fi
 if test "$enable_sse" = "yes"; then
    if test "x$SIMD_CFLAGS" = x; then

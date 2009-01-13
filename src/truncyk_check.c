@@ -18,7 +18,7 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
 
-static char banner[] = "truncyk_check - score RNA covariance model against sequences";
+/*static char banner[] = "truncyk_check - score RNA covariance model against sequences";*/
 
 static ESL_OPTIONS options[] = {
   { "-h",         eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL, "show help",                                             0}, 
@@ -55,12 +55,12 @@ main(int argc, char **argv)
   char *regressfile;		/* name of regression data file to save     */
   FILE *regressfp;              /* open filehandle for writing regressions  */
 
-  char *optname;                /* name of option found by Getopt()        */
-  char *optarg;                 /* argument found by Getopt()              */
-  int   optind;                 /* index in argv[]                         */
+  /*char *optname;*/                /* name of option found by Getopt()        */
+  /*char *optarg;*/                 /* argument found by Getopt()              */
+  /*int   optind;*/                 /* index in argv[]                         */
 
   ESL_GETOPTS *go;
-  char        *arg;
+  /*char        *arg;*/
 
   /*********************************************** 
    * Parse command line
@@ -102,7 +102,7 @@ main(int argc, char **argv)
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
     cm_Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
 
-  if (! CMFileRead(cmfp, &abc, &cm))
+  if (CMFileRead(cmfp, NULL, &abc, &cm) != eslOK)
     cm_Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
   if (cm == NULL) 
     cm_Die("%s empty?\n", cmfile);
@@ -164,7 +164,6 @@ main(int argc, char **argv)
 	} else {
 	  sc1 = TrCYK_Inside(cm, seq->dsq, seq->n, 0, 1, seq->n, &tr1);  
 	  ParsetreeDump(stdout, tr1, cm, seq->dsq, NULL, NULL);
-          //ptsc1 = ParsetreeScore(cm, tr1, seq->dsq, FALSE);
           ParsetreeScore(cm, NULL, tr1, seq->dsq, FALSE, &ptsc1, NULL);
           ptsc1 += bsc;
 	  printf("%-12s : %.2f  %.2f\n", seq->name, sc1, ptsc1);
@@ -179,7 +178,6 @@ main(int argc, char **argv)
       esl_stopwatch_Start(watch);
       sc2 = TrCYK_DnC(cm, seq->dsq, seq->n, 0, 1, seq->n, &tr2);  
       ParsetreeDump(stdout, tr2, cm, seq->dsq, NULL, NULL);
-      //ptsc2 = ParsetreeScore(cm, tr2, seq->dsq, FALSE);
       ParsetreeScore(cm, NULL, tr2, seq->dsq, FALSE, &ptsc2, NULL);
       ptsc2 += bsc;
       printf("%-12s : %.2f  %.2f\n", seq->name, sc2, ptsc2);

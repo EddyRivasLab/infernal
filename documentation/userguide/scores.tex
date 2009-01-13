@@ -22,7 +22,7 @@ a hit this good in a target database of random sequences of the same
 size as the one you're searching. {\em
 Typically, I trust the results of searches at about E=0.1 and below,
 and I examine the hits manually down to E=10 or so.}  However, be
-alert; \software{Infernal} E-values are not perfect. MORE HERE.
+alert; \software{Infernal} E-values are not perfect. 
 
 \item \software{Infernal} bit scores are a stricter criterion: they
   reflect whether the sequence is a better match to the profile model
@@ -91,7 +91,7 @@ probability).
 
 You can specify the E-value or bit score cutoff to the \prog{cmsearch}
 program. By default, for calibrated models (see below) the E-value
-cutoff is set as 0.1, and for non-calibrated models (for which
+cutoff is set as 1.0, and for non-calibrated models (for which
 E-values are not available) the cutoff is set as a bit score of 0.0
 bits. (This is discussed in more detail in section 6). Alternatively,
 for a specific sensible use cutoffs, read about how the Rfam
@@ -309,7 +309,7 @@ of Inside. You can read more about how we use CYK as a filter in
 \begin{srefaq}{Why are you talking about HMM algorithms. I thought CMs
     were more appropriate for structural RNA sequence analysis than
     HMMs, isn't that the whole reason you've developed \textsc{Infernal}?} 
-  We've implemented HMMs in \textsc{Infernal} to use to accelerate CM
+  We've implemented HMMs in \textsc{Infernal} to help accelerate CM
     algorithms. As described in section 6, HMMs are used as filters to
     speedup database searches with \prog{cmsearch}. They're also used to develop
     constraints for CM alignment with \prog{cmalign}.  
@@ -361,7 +361,7 @@ example). Conversely, when a target database with GC content above
 46\% is searched, the effect is the opposite, and higher E-values
 often result (you might observe only 1-5 hits with an E-value less than
 25). These effects are the average case, but different models will
-give different results. We consider the E-values in \prog{Infernal} a
+give different results. We consider the E-values in \software{Infernal} a
 work in progress, so feel free to report examples of particularly bad
 (or good) performance of E-values to us.
 
@@ -373,7 +373,7 @@ three types of score cutoffs on Rfam CM files:
 
 \begin{wideitem}
 \item[GA (gathering cutoff)]: the score used as cutoff in
-constructing Rfam. All domains that are in a sequence satisfying the
+constructing Rfam. All database hits that score at or above the 
 GA bit score will be included in the Rfam ``full alignment''.
 
 \item[TC (trusted cutoff)]: the scores of the lowest-scoring hit(s)

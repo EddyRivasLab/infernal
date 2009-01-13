@@ -155,7 +155,7 @@ cm_hb_mx_GrowTo(CM_t *cm, CM_HB_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L, f
   Mb_needed += ESL_MAX(((float) (sizeof(float) * mx->ncells_alloc)), ((float) (sizeof(float) * ncells))); /* mx->dp_mem */
   Mb_needed *= 0.000001; /* convert to megabytes */
   ESL_DPRINTF2(("HMM banded matrix requested size: %.2f Mb\n", Mb_needed));
-  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "cm_hb_mx_GrowTo(), requested size of HMM banded DP matrix %.2f Mb > %.2f Mb limit.\nSuggestions (may or may not be possible): increase tau with --tau, or change size limit with --mxsize.", Mb_needed, (float) size_limit);
+  if(Mb_needed > size_limit) ESL_FAIL(eslERANGE, errbuf, "requested HMM banded DP mx of %.2f Mb > %.2f Mb limit.\nIncrease limit with --mxsize or tau with --tau.", Mb_needed, (float) size_limit);
 
   /* must we realloc the full matrix? or can we get away with just
    * jiggering the pointers, if total required num cells is less
@@ -895,41 +895,108 @@ FCalcOptimizedEmitScores(CM_t *cm)
 {
   int status; 
   float **esc_vAA;
-  int a,b;
+  ESL_DSQ a,b;
   int v;
+  int cur_cell;
+  int npairs = 0;
+  int nsinglets = 0;
+  float *ptr_to_start; /* points to block allocated to esc_vAA[0], nec b/c esc_vAA[0] gets set to NULL, because v == 0 is non-emitter */
+  float **leftAA;
+  float **rightAA;
 
-  /* precalculate possible emission scores for each state */
-  ESL_ALLOC(esc_vAA,  sizeof(float *) * (cm->M));
+  /* count pairs, singlets */
   for(v = 0; v < cm->M; v++) {
     switch(cm->sttype[v]) {
     case IL_st:
     case ML_st:
     case IR_st:
     case MR_st:
-      ESL_ALLOC(esc_vAA[v],  sizeof(float) * (cm->abc->Kp));
-      /* ALLOCATE SIZE = POWER OF 2? */
-      esl_vec_FSet(esc_vAA[v],  cm->abc->Kp, IMPOSSIBLE);
-      for(a = 0; a < cm->abc->K; a++)
-	esc_vAA[v][a]  = cm->esc[v][a];
-      for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) /* note boundary conditions, gap, missing data symbols stay IMPOSSIBLE */
-	esc_vAA[v][a]  = esl_abc_FAvgScore(cm->abc, a, cm->esc[v]);
+      nsinglets++;
       break;
     case MP_st:
-      ESL_ALLOC(esc_vAA[v], sizeof(float) * (cm->abc->Kp * cm->abc->Kp));
-      /* ALLOCATE SIZE = POWER OF 2? */
-      esl_vec_FSet(esc_vAA[v],  (cm->abc->Kp * cm->abc->Kp), IMPOSSIBLE);
-      for(a = 0; a < (cm->abc->Kp-1); a++)
-	for(b = 0; b < (cm->abc->Kp-1); b++)
-	  if(a < cm->abc->K && b < cm->abc->K) 
-	    esc_vAA[v][a * cm->abc->Kp + b]  = cm->esc[v][(a * cm->abc->K) + b];
-	  else
-	    esc_vAA[v][a  * cm->abc->Kp + b]  = DegeneratePairScore(cm->abc, cm->esc[v], a, b);
+      npairs++;
+      break;
+    }
+  }
+
+  /* set up our left and right vectors for all possible non-canonical residues,
+   * these are calc'ed once and passed to FastPairScore*() functions to minimize
+   * run time. 
+   */
+  ESL_ALLOC(leftAA,  sizeof(float *) * cm->abc->Kp);
+  ESL_ALLOC(rightAA, sizeof(float *) * cm->abc->Kp);
+  for(a = 0; a <= cm->abc->K; a++) leftAA[a] = rightAA[a] = NULL; /* canonicals and gap, left/right unnec */
+  for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) {
+    ESL_ALLOC(leftAA[a],  sizeof(float) * cm->abc->K);
+    ESL_ALLOC(rightAA[a], sizeof(float) * cm->abc->K);
+    esl_vec_FSet(leftAA[a],  cm->abc->K, 0.);
+    esl_vec_FSet(rightAA[a], cm->abc->K, 0.);
+    esl_abc_FCount(cm->abc, leftAA[a],  a, 1.);
+    esl_abc_FCount(cm->abc, rightAA[a], a, 1.);
+  }
+  leftAA[cm->abc->Kp-1] = rightAA[cm->abc->Kp-1] = NULL; /* missing data, left/right unnec */
+
+  /* precalculate possible emission scores for each state */
+  ESL_ALLOC(esc_vAA,     sizeof(float *) * (cm->M));
+  ESL_ALLOC(esc_vAA[0],  sizeof(float)   * ((cm->abc->Kp * nsinglets) + (cm->abc->Kp * cm->abc->Kp * npairs)));
+  ptr_to_start = esc_vAA[0];
+  cur_cell = 0;
+  for(v = 0; v < cm->M; v++) {
+    switch(cm->sttype[v]) {
+    case IL_st:
+    case ML_st:
+    case IR_st:
+    case MR_st:
+      esc_vAA[v] = ptr_to_start + cur_cell;
+      cur_cell += cm->abc->Kp;
+      for(a = 0; a < cm->abc->K; a++) /* all canonical residues */
+	esc_vAA[v][a]  = cm->esc[v][a]; 
+      esc_vAA[v][cm->abc->K] = IMPOSSIBLE; /* gap symbol is impossible */
+      for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) /* all ambiguous residues */
+	esc_vAA[v][a]  = esl_abc_FAvgScore(cm->abc, a, cm->esc[v]);
+      esc_vAA[v][cm->abc->Kp-1] = IMPOSSIBLE; /* missing data is IMPOSSIBLE */
+      break;
+    case MP_st:
+      esc_vAA[v] = ptr_to_start + cur_cell;
+      esl_vec_FSet(esc_vAA[v], cm->abc->Kp * cm->abc->Kp, IMPOSSIBLE); /* init all cells to IMPOSSIBLE */
+      cur_cell += cm->abc->Kp * cm->abc->Kp;
+      /* a is canonical, b is canonical */
+      for(a = 0; a < cm->abc->K; a++) { 
+	for(b = 0; b < cm->abc->K; b++) { 
+	  esc_vAA[v][(a * cm->abc->Kp) + b]  = cm->esc[v][(a * cm->abc->K) + b];
+	}
+      }
+      /* a is not canonical, b is canonical */
+      for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) { 
+	for(b = 0; b < cm->abc->K; b++) { 
+	  esc_vAA[v][(a * cm->abc->Kp) + b]  = FastPairScoreLeftOnlyDegenerate(cm->abc->K, cm->esc[v], leftAA[a], b);
+	}
+      }	  
+      /* a is canonical, b is not canonical */
+      for(a = 0; a < cm->abc->K; a++) { 
+	for(b = cm->abc->K+1; b < cm->abc->Kp-1; b++) { 
+	  esc_vAA[v][(a * cm->abc->Kp) + b]  = FastPairScoreRightOnlyDegenerate(cm->abc->K, cm->esc[v], rightAA[b], a);
+	}
+      }	  
+      /* a is not canonical, b is not canonical */
+      for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) { 
+	for(b = cm->abc->K+1; b < cm->abc->Kp-1; b++) { 
+	  esc_vAA[v][(a * cm->abc->Kp) + b]  = FastPairScoreBothDegenerate(cm->abc->K, cm->esc[v], leftAA[a], rightAA[b]);
+	}
+      }	  
+      /* everything else, when either a or b is gap or missing data, stays IMPOSSIBLE */
       break;
     default:
       esc_vAA[v] = NULL;
       break;
     }
   }
+  for(a = 0; a < cm->abc->Kp; a++) { 
+    if(leftAA[a] != NULL)  free(leftAA[a]);
+    if(rightAA[a] != NULL) free(rightAA[a]);
+  }
+  free(leftAA);
+  free(rightAA);
   return esc_vAA;
 
  ERROR:
@@ -950,44 +1017,110 @@ FCalcOptimizedEmitScores(CM_t *cm)
 int **
 ICalcOptimizedEmitScores(CM_t *cm)
 {
-  int status;
+  int status; 
   int **iesc_vAA;
+  ESL_DSQ a,b;
   int v;
-  int a,b;
+  int cur_cell;
+  int npairs = 0;
+  int nsinglets = 0;
+  int *ptr_to_start; /* points to block allocated to iesc_vAA[0], nec b/c esc_vAA[0] gets set to NULL, because v == 0 is non-emitter */
+  float **leftAA;
+  float **rightAA;
 
-  /* precalculate possible emission scores for each state */
-  ESL_ALLOC(iesc_vAA, sizeof(int *)   * (cm->M));
+  /* count pairs, singlets */
   for(v = 0; v < cm->M; v++) {
     switch(cm->sttype[v]) {
     case IL_st:
     case ML_st:
     case IR_st:
     case MR_st:
-      ESL_ALLOC(iesc_vAA[v], sizeof(int)   * (cm->abc->Kp));
-      /* ALLOCATE SIZE = POWER OF 2? */
-      esl_vec_ISet(iesc_vAA[v], cm->abc->Kp, -INFTY);
-      for(a = 0; a < cm->abc->K; a++) 
-	iesc_vAA[v][a] = cm->iesc[v][a];
-      for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) /* note boundary conditions, gap, missing data symbols stay IMPOSSIBLE */
-	iesc_vAA[v][a] = esl_abc_IAvgScore(cm->abc, a, cm->iesc[v]);
+      nsinglets++;
       break;
     case MP_st:
-      ESL_ALLOC(iesc_vAA[v], sizeof(int) * (cm->abc->Kp * cm->abc->Kp));
-      /* ALLOCATE SIZE = POWER OF 2? */
-      esl_vec_ISet(iesc_vAA[v], (cm->abc->Kp * cm->abc->Kp), -INFTY);
-      for(a = 0; a < (cm->abc->Kp-1); a++)
-	for(b = 0; b < (cm->abc->Kp-1); b++)
-	  if(a < cm->abc->K && b < cm->abc->K) 
-	    iesc_vAA[v][a * cm->abc->Kp + b] = cm->iesc[v][(a * cm->abc->K) + b];
-	  else 
-	    iesc_vAA[v][a * cm->abc->Kp + b] = iDegeneratePairScore(cm->abc, cm->iesc[v], a, b);
+      npairs++;
+      break;
+    }
+  }
 
+  /* set up our left and right vectors for all possible non-canonical residues,
+   * these are calc'ed once and passed to FastPairScore*() functions to minimize
+   * run time. 
+   */
+  ESL_ALLOC(leftAA,  sizeof(float *) * cm->abc->Kp);
+  ESL_ALLOC(rightAA, sizeof(float *) * cm->abc->Kp);
+  for(a = 0; a <= cm->abc->K; a++) leftAA[a] = rightAA[a] = NULL; /* canonicals and gap, left/right unnec */
+  for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) {
+    ESL_ALLOC(leftAA[a],  sizeof(float) * cm->abc->K);
+    ESL_ALLOC(rightAA[a], sizeof(float) * cm->abc->K);
+    esl_vec_FSet(leftAA[a],  cm->abc->K, 0.);
+    esl_vec_FSet(rightAA[a], cm->abc->K, 0.);
+    esl_abc_FCount(cm->abc, leftAA[a],  a, 1.);
+    esl_abc_FCount(cm->abc, rightAA[a], a, 1.);
+  }
+  leftAA[cm->abc->Kp-1] = rightAA[cm->abc->Kp-1] = NULL; /* missing data, left/right unnec */
+
+  /* precalculate possible emission scores for each state */
+  ESL_ALLOC(iesc_vAA,     sizeof(int *) * (cm->M));
+  ESL_ALLOC(iesc_vAA[0],  sizeof(int)   * ((cm->abc->Kp * nsinglets) + (cm->abc->Kp * cm->abc->Kp * npairs)));
+  ptr_to_start = iesc_vAA[0];
+  cur_cell = 0;
+  for(v = 0; v < cm->M; v++) {
+    switch(cm->sttype[v]) {
+    case IL_st:
+    case ML_st:
+    case IR_st:
+    case MR_st:
+      iesc_vAA[v] = ptr_to_start + cur_cell;
+      cur_cell += cm->abc->Kp;
+      for(a = 0; a < cm->abc->K; a++) /* all canonical residues */
+	iesc_vAA[v][a]  = cm->iesc[v][a]; 
+      iesc_vAA[v][cm->abc->K] = -INFTY; /* gap symbol is impossible */
+      for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) /* all ambiguous residues */
+	iesc_vAA[v][a]  = esl_abc_IAvgScore(cm->abc, a, cm->iesc[v]);
+      iesc_vAA[v][cm->abc->Kp-1] = -INFTY; /* missing data is IMPOSSIBLE */
+      break;
+    case MP_st:
+      iesc_vAA[v] = ptr_to_start + cur_cell;
+      esl_vec_ISet(iesc_vAA[v], cm->abc->Kp * cm->abc->Kp, -INFTY); /* init all cells to -INFTY */
+      cur_cell += cm->abc->Kp * cm->abc->Kp;
+      /* a is canonical, b is canonical */
+      for(a = 0; a < cm->abc->K; a++) { 
+	for(b = 0; b < cm->abc->K; b++) { 
+	  iesc_vAA[v][(a * cm->abc->Kp) + b]  = cm->iesc[v][(a * cm->abc->K) + b];
+	}
+      }
+      /* a is not canonical, b is canonical */
+      for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) { 
+	for(b = 0; b < cm->abc->K; b++) { 
+	  iesc_vAA[v][(a * cm->abc->Kp) + b]  = iFastPairScoreLeftOnlyDegenerate(cm->abc->K, cm->iesc[v], leftAA[a], b);
+	}
+      }	  
+      /* a is canonical, b is not canonical */
+      for(a = 0; a < cm->abc->K; a++) { 
+	for(b = cm->abc->K+1; b < cm->abc->Kp-1; b++) { 
+	  iesc_vAA[v][(a * cm->abc->Kp) + b]  = iFastPairScoreRightOnlyDegenerate(cm->abc->K, cm->iesc[v], rightAA[b], a);
+	}
+      }	  
+      /* a is not canonical, b is not canonical */
+      for(a = cm->abc->K+1; a < cm->abc->Kp-1; a++) { 
+	for(b = cm->abc->K+1; b < cm->abc->Kp-1; b++) { 
+	  iesc_vAA[v][(a * cm->abc->Kp) + b]  = iFastPairScoreBothDegenerate(cm->abc->K, cm->iesc[v], leftAA[a], rightAA[b]);
+	}
+      }	  
+      /* everything else, when either a or b is gap or missing data, stays -INFTY */
       break;
     default:
       iesc_vAA[v] = NULL;
       break;
     }
   }
+  for(a = 0; a < cm->abc->Kp; a++) { 
+    if(leftAA[a] != NULL)  free(leftAA[a]);
+    if(rightAA[a] != NULL) free(rightAA[a]);
+  }
+  free(leftAA);
+  free(rightAA);
   return iesc_vAA;
 
  ERROR:
@@ -1006,25 +1139,31 @@ ICalcOptimizedEmitScores(CM_t *cm)
 void
 FreeOptimizedEmitScores(float **fesc_vAA, int **iesc_vAA, int M)
 {
-  int v;
   if(fesc_vAA == NULL && iesc_vAA == NULL) cm_Fail("FreeOptimizedEmitScores() but fesc and iesc are NULL.\n");
 
   if(fesc_vAA != NULL) { 
-    for(v = 0; v < M; v++) 
-      if(fesc_vAA[v] != NULL) free(fesc_vAA[v]);
+    if(fesc_vAA[1] != NULL) { 
+      free(fesc_vAA[1]); /* note: we free [1], but we alloc'ed to [0], why? b/c fesc_vAA[0] is set to NULL after it's
+			  *       used for allocation b/c it's the ROOT_S state, a non-emitter, then fesc_vAA[1] is set
+			  *       to point where it used to point (it's the ROOT_IL state, an emitter).
+			  */
+    }
     free(fesc_vAA);
     fesc_vAA = NULL;
   }
 
   if(iesc_vAA != NULL) { 
-    for(v = 0; v < M; v++) 
-      if(iesc_vAA[v] != NULL) free(iesc_vAA[v]);
+    if(iesc_vAA[1] != NULL) { 
+      free(iesc_vAA[1]); /* note: we free [1], but we alloc'ed to [0], why? b/c iesc_vAA[0] is set to NULL after it's
+			  *       used for allocation b/c it's the ROOT_S state, a non-emitter, then iesc_vAA[1] is set
+			  *       to point where it used to point (it's the ROOT_IL state, an emitter).
+			  */
+    }
     free(iesc_vAA);
     iesc_vAA = NULL;
   }
   return;
 }
-
 
 /* Function: FCalcInitDPScores()
  * Date:     EPN, Fri Nov  9 09:18:07 2007
@@ -1224,7 +1363,7 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
   int a;
   float null3_correction;
   int do_report_hit;
-  float hit_sc, cumulative_sc;
+  float hit_sc, cumulative_sc, bestd_sc;
 
   if(alpha_row == NULL && (!using_hmm_bands)) cm_Fail("UpdateGammaHitMxCM(), alpha_row is NULL, but using_hmm_bands is FALSE.\n");
   dmin = (using_hmm_bands) ? 0     : dn; 
@@ -1292,16 +1431,17 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
 	do_report_hit = (hit_sc >= gamma->cutoff) ? TRUE : FALSE;
       }
       if(do_report_hit) { 
-	/*printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc);*/
+	/*printf("\t0 %.3f %.3f ip: %d jp: %d r: %d\n", hit_sc+null3_correction, hit_sc, ip, jp, r);*/
 	ReportHit (ip, jp, r, hit_sc, results);
       }
     }
-    bestd = dmin;
+    bestd    = dmin;
+    bestd_sc = hit_sc;
     /* Now, if current score is greater than maximum seen previous, report
-       it if >= cutoff and set new max */
+     * it if >= cutoff and set new max */
     for (d = dmin+1; d <= dmax; d++) {
       hit_sc = alpha_row[d];
-      if (hit_sc > alpha_row[bestd]) {
+      if (hit_sc > bestd_sc) {
 	if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) { 
 	  do_report_hit = TRUE;
 	  r = bestr[d]; 
@@ -1314,14 +1454,14 @@ UpdateGammaHitMxCM(CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *al
 	    esl_vec_FNorm(comp, cm->abc->K);
 	    ScoreCorrectionNull3(cm->abc, cm->null, comp, jp-ip+1, &null3_correction);
 	    hit_sc -= null3_correction;
-	    do_report_hit = ((hit_sc > alpha_row[bestd]) && (hit_sc >= gamma->cutoff)) ? TRUE : FALSE;
+	    do_report_hit = ((hit_sc > bestd_sc) && (hit_sc >= gamma->cutoff)) ? TRUE : FALSE;
 	  }
 	  if(do_report_hit) { 
-	    /*printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc);*/
+	    /*printf("\t1 %.3f %.3f ip: %d jp: %d r: %d\n", hit_sc+null3_correction, hit_sc, ip, jp, r);*/
 	    ReportHit (ip, jp, r, hit_sc, results);
 	  }
 	}
-	if(hit_sc > alpha_row[bestd]) bestd = d; /* we need to check again b/c if null3, hit_sc -= null3_correction */
+	if(hit_sc > bestd_sc) { bestd = d; bestd_sc = hit_sc; } /* we need to check again b/c if null3, hit_sc -= null3_correction */
       }
     }
   }

@@ -173,15 +173,13 @@ in MPI mode,
 should be set as 1.
 
 .PP
-Another technique for accelerated CM homology search with HMM filters 
+Another technique for accelerated CM homology search with HMM filters
 is the construction and use of a "rigorous filter" HMM which was
-developed by Zasha Weinberg and Larry Ruzzo. All hits above
-a certain CM bit score threshold are
-guaranteed to survive the HMM filtering step. Their implementation of
-rigorous filters has been included with @PACKAGE@ but is not available
-as an option to
-.B cmsearch.
-For more information see the User's Guide. 
+developed by Zasha Weinberg and Larry Ruzzo. All hits above a certain
+CM bit score threshold are guaranteed to survive the HMM filtering
+step. Their implementation of rigorous filters has been included in
+previous versions of @PACKAGE@, but not in the current version. For
+more information see the User's Guide.
 
 .SH OUTPUT
 By default, 
@@ -263,12 +261,12 @@ option in the manual page for
 
 .TP 
 .B -x
-Annotate non-compensatory basepairs and basepairs that include a gap 
-in the left and/or right half of the pair with x's in the alignments of
-hits. The x's appear above the structural annotation in the alignment
-output. Basepairs without x's above them are compensatory with respect
-to the model. Compensatory mutations are good evidence for structural
-homology.
+Annotate negative scoring basepairs and basepairs that include a gap
+in the left or right half of the pair (but not both) with x's in the
+alignments of hits. The x's appear above the structural annotation in
+the alignment output. Basepairs without x's above them are
+compensatory with respect to the model. Compensatory mutations are
+good evidence for structural homology.
 
 .TP
 .BI -Z " <x>"
@@ -371,14 +369,14 @@ true by default.
 Use the CYK algorithm for the final round of searching. 
 
 .TP 
-.B --viterbi
-Search only with an HMM. This is much faster but less sensitive than a
-CM search. Use the Viterbi algorithm for the HMM search.
-
-.TP 
 .B --forward
 Search only with an HMM. This is much faster but less sensitive than a
 CM search. Use the Forward algorithm for the HMM search.
+
+.TP 
+.B --viterbi
+Search only with an HMM. This is much faster but less sensitive than a
+CM search. Use the Viterbi algorithm for the HMM search.
 
 .TP 
 .BI -E " <x>"
@@ -456,7 +454,7 @@ search. By default, QDB is used in the final round of search with
 beta = 1E-15, after all filtering is finished. 
 
 .TP 
-.B --beta " <x>"
+.BI --beta " <x>"
 For query-dependent banding (QDB) during the final round of search,
 set the beta parameter to 
 .I <x>
@@ -563,6 +561,34 @@ such that if
 hits survived the filter it is predicted that exactly
 .I <x>
 fraction of the residues in the database would survive.
+
+.TP 
+.BI --hmm-W " <n>"
+Set the HMM window size W (maximum size of a hit) to 
+.I <n>.
+This option only works in combination with 
+.B --forward 
+or
+.B --viterbi. 
+By default, W is calculated automatically, but this automatic calculation is
+time consuming for large models.
+
+.TP 
+.BI --hmm-cW " <x>"
+Set the HMM window size W (maximum size of a hit) as
+.I <x> 
+times the consensus length of the CM. The consensus length (clen) of the CM
+can be determined using the 
+.B cmstat
+program.  This option only works in combination with 
+.B --forward 
+or
+.B --viterbi. 
+By default, W is calculated automatically, but this automatic calculation is
+time consuming for large models. To find potential full length hits to
+the model 
+.B <x> 
+should be greater than 1.0, but values above 2.0 are probably wasteful.
 
 .TP 
 .B --noalign

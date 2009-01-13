@@ -259,8 +259,6 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 6, 2, 80);
       puts("\nexpert options for refining the input alignment:");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
-      puts("\n options for selecting alphabet of input aln rather than guessing it:");
-      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       exit(0);
     }
 
@@ -996,7 +994,7 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
     fflush(stdout);
   }
 
-  HandModelmaker(msa, esl_opt_GetBoolean(go, "--rf"), esl_opt_GetReal(go, "--gapthresh"), &cm, &mtr);
+  if((status = HandModelmaker(msa, errbuf, esl_opt_GetBoolean(go, "--rf"), esl_opt_GetReal(go, "--gapthresh"), &cm, &mtr)) != eslOK) return status;
   if(cfg->be_verbose) fprintf(stdout, "done.\n");
   
   /* set the CM's null model, if rsearch mode, use the bg probs used to calc RIBOSUM */

@@ -3,7 +3,7 @@
 
 For complete documentation, see the User's Guide (Userguide.pdf) that
 came with the distribution; or see the Infernal web page,
-http://infernal.wustl.edu/.
+http://infernal.janelia.org/.
 
 .SH COPYRIGHT
 
@@ -17,10 +17,9 @@ for details on redistribution conditions.
 .SH AUTHOR
 
 .nf
-Sean Eddy
-HHMI/Dept. of Genetics
-Washington Univ. School of Medicine
-4566 Scott Ave.
-St Louis, MO 63110 USA
-http://www.genetics.wustl.edu/eddy/
+Eric Nawrocki, Diana Kolbe, and Sean Eddy
+HHMI Janelia Farm Research Campus
+19700 Helix Drive
+Ashburn VA 20147
+http://selab.janelia.org/
 

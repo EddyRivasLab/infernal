@@ -268,3 +268,41 @@ See ~nawrockie/notebook/7_1108_inf_bug_outside_ambig_bps/00LOG
 for a bit more detail.
 //
 
+ID              i13
+TITLE		cmalign sub alignment illegal CM
+STATUS          CLOSED
+XREF            NONE
+REPORTED_BY     Marcus Claesson, Nat'l University of Ireland, Cork
+CLOSED_DATE     EPN, Tue Sep 30 11:15:40 2008
+DESCRIPTION     
+
+The i13 perl script in Infernal's Bugs/ subdirectory has a simple
+example of this bug.
+
+During development between v0.81 to v1.0 it became apparent that CMs
+built with 0 BIF, MATR and MATL nodes (that is just ROOT and MATP
+nodes) are problematic because it is IMPOSSIBLE to align a single
+residue to them in local mode. This is because a local begin MUST
+right into the first MATP_MP state from ROOT_S which necessarily emits
+2 residues. The solution I provided was to disallow the building of
+such CMs, because they are unlikely to be practical anyway (adding a
+single consensus single stranded residue as a loop in between a stem
+sidesteps this issue).
+
+However, with cmalign --sub, if you are using a CM with two adjacent
+consensus positions that are basepaired to each other (i is base
+paired to i+1), you sometimes exit cmalign with an error b/c a sub CM
+with 0 MATL, MATR nodes is attempted to be built. This is undesirable
+and was reported by the RDP guys (who use such a CM) as a bug.  I
+thought I had fixed it between 1.0rc2 and 1.0rc3 but apparently I
+hadn't as it was reported in 1.0rc3 by Marcus Claesson from National
+University of Ireland, Cork.
+
+The fix is in revision 2597 of the infernal-1.0 branch of the infernal
+svn repository. The fix is to only allow such CMs to be built in the
+case when we're building sub CMs, which as currently implemented will
+never be localized and thus never have the problems mentioned above.
+
+See ~/nawrockie/notebook/8_0930_inf_bug_1rc3_sub_illegal_cm/00LOG.
+for log of how it was fixed.
+//

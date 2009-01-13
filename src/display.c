@@ -310,11 +310,12 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	    rmid = rseq;
 	  }
         else if (mode != 3)
-          ;
-	else if (IsCompensatory(cm->abc, cm->e[v], symi, symj)) 
-	    lmid = rmid = ':';
+          {
+            if (mode == 2 && lseq == toupper(lcons)) lmid = lseq;
+            if (mode == 1 && rseq == toupper(rcons)) rmid = rseq;
+          }
 	else if (DegeneratePairScore(cm->abc, cm->esc[v], symi, symj) >= 0) 
-	  lmid = rmid = '+';
+	  lmid = rmid = ':';
 
 	/* determine ltop, rtop for optional noncompensatory annotation, they are 'x' if lmid, rmid are ' ', and ' ' otherwise */
 	if (lmid == ' ' && rmid == ' ')
@@ -334,9 +335,9 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	else if(esl_abc_FAvgScore(cm->abc, symj, cm->esc[v]) > 0)
 	  rmid = '+';
       }
-      if(cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR || cm->stid[v] == MATP_D) { 
+      if(cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR) { 
 	if(mode == 3) { 
-	  ltop = rtop = 'x'; /* mark non-truncated half base-pairs (MATP_ML or MATP_MR) and deleted base-pairs with 'x' */
+	  ltop = rtop = 'x'; /* mark non-truncated half base-pairs (MATP_ML or MATP_MR) with 'x' */
 	}
       }
       /* If we're storing a residue leftwise - just do it.

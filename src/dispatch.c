@@ -1,5 +1,7 @@
 /************************************************************
- * @LICENSE@
+ *    This copyrighted source code is freely distributed 
+ *    under the terms of the GNU General Public License. See
+ *    the files COPYRIGHT and LICENSE for details.
  ************************************************************/
 /* dispatch.c
  * 
@@ -107,7 +109,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
     if(!(cm->cp9->flags & CPLAN9_HASBITS)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), trying to use CP9 HMM with CPLAN9_HASBITS flag down.\n");
     if(hsi != NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round %d, SEARCH_WITH_HMM but hsi != NULL.\n", sround);
     if(! ((cm->search_opts & CM_SEARCH_HMMVITERBI) || (cm->search_opts & CM_SEARCH_HMMFORWARD)))
-      ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), search type for this round is SEARCH_WITH_HMM, but CM_SEARCH_HMMVITERBI and CM_SEARCH_HMMFORWARD flags are both down.");
+      ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchSearch(), round search type=SEARCH_WITH_HMM, but CM_SEARCH_HMMVITERBI & CM_SEARCH_HMMFORWARD flags are down.");
 
     search_results_t *fwd_results;
     /* Scan the (sub)seq in forward direction w/Viterbi or Forward, getting j end points of hits above cutoff */
@@ -140,7 +142,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 
     /* determine start points (i) of the hits based on backward direction (Viterbi or Backward) scan starting at j */
     for(h = 0; h < fwd_results->num_results; h++) {
-      min_i = (fwd_results->data[h].stop - cm->W + 1) >= 1 ? (fwd_results->data[h].stop - cm->W + 1) : 1;
+      min_i = (fwd_results->data[h].stop - cm->W + 1) >= i0 ? (fwd_results->data[h].stop - cm->W + 1) : i0;
       if(cm->search_opts & CM_SEARCH_HMMVITERBI) { 
 	if((status = cp9_ViterbiBackward(cm, errbuf, cm->cp9_mx, dsq, min_i, fwd_results->data[h].stop, cm->W, cutoff, 
 					 cur_results, /* report hits to cur_results */
@@ -229,7 +231,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       if(cur_results->data[h].stop > prev_j) ESL_EXCEPTION(eslEINCOMPAT, "j's not in descending order");
       prev_j = cur_results->data[h].stop;
 
-      i = ((cur_results->data[h].stop  - (cm->W-1)) >= 1)    ? (cur_results->data[h].stop  - (cm->W-1)) : 1;
+      i = ((cur_results->data[h].stop  - (cm->W-1)) >= i0)   ? (cur_results->data[h].stop  - (cm->W-1)) : i0;
       j = ((cur_results->data[h].start + (cm->W-1)) <= j0)   ? (cur_results->data[h].start + (cm->W-1)) : j0;
 
       if((h+1) < nhits) next_j = ((cur_results->data[h+1].start + (cm->W-1)) <= j0) ? (cur_results->data[h+1].start + (cm->W-1)) : j0;
@@ -242,7 +244,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       if(do_collapse) { 
 	while(((h+1) < nhits) && (next_j >= i)) { /* suck in hit */
 	  h++;
-	  i = ((cur_results->data[h].stop - (cm->W-1)) >= 1) ? (cur_results->data[h].stop - (cm->W-1)) : 1;
+	  i = ((cur_results->data[h].stop - (cm->W-1)) >= i0) ? (cur_results->data[h].stop - (cm->W-1)) : i0;
 	  if((h+1) < nhits) next_j = ((cur_results->data[h+1].start + (cm->W-1)) <= j0) ? (cur_results->data[h+1].start + (cm->W-1)) : j0;
 	  else              next_j = -1;
 	  ESL_DPRINTF1(("\tsucked in subseq: hit %d new_i: %d j (still): %d\n", h, i, j));
@@ -445,7 +447,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   if(cm->align_opts  & CM_ALIGN_HMMSAFE)    do_hmmsafe   = TRUE;
 
   /* another contract check */
-  if((do_sample + do_inside + do_post + do_hmmonly + do_scoreonly) > 1) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), exactly 0 or 1 of the following must be TRUE (== 1):\n\tdo_sample = %d\n\tdo_inside = %d\n\t do_post = %d\n\tdo_hmmonly = %d\n\tdo_scoreonly = %d\n", do_sample, do_inside, do_post, do_hmmonly, do_scoreonly);
+  if((do_inside + do_post + do_hmmonly + do_scoreonly) > 1) { 
+    printf("\tdo_inside = %d\n\tdo_post = %d\n\tdo_hmmonly = %d\n\tdo_scoreonly = %d\n", do_inside, do_post, do_hmmonly, do_scoreonly);
+    ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), exactly 0 or 1 of the above must be TRUE (== 1).");
+  }
 
   if(debug_level > 0) {
     printf("do_local    : %d\n", do_local);
@@ -669,14 +674,14 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
        * our HMM alignment is crap, default to using the full CM. (note: If EQUALS we could be right, but we can't build a
        * CM from a single consensus column (see notes in cm_modelmaker.c::cm_from_guide), and I would argue we don't really care about
        * getting single residue alignments correct anyway. */
-      if(epos <= spos) { spos = 1; epos = cm->cp9->M; } 
+      if(epos <= spos) { spos = 1; epos = orig_hmm->M; } 
 
       /* (3) Build the sub_cm from the original CM. */
-      if(!(build_sub_cm(orig_cm, &sub_cm, 
-			spos, epos,         /* first and last col of structure kept in the sub_cm  */
-			&submap,            /* maps from the sub_cm to cm and vice versa           */
-			debug_level)))      /* print or don't print debugging info                 */
-	ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), unexpected error building a sub CM for seq %d.", i);
+      if((status = build_sub_cm(orig_cm, errbuf, &sub_cm, 
+				spos, epos,               /* first and last col of structure kept in the sub_cm  */
+				&submap,                  /* maps from the sub_cm to cm and vice versa           */
+				debug_level)) != eslOK)    /* print or don't print debugging info                 */
+	return status;
       /* Configure the sub_cm, the same as the cm, this will build a CP9 HMM if (do_hbanded), this will also:  */
       /* (4) Build a new CP9 HMM from the sub CM. */
       ConfigCM(sub_cm, FALSE); /* FALSE says: don't calculate W, we won't need it */
@@ -718,17 +723,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     }
 
     /* beginning of large if() else if() else if() ... statement */
-    if(do_sample) { 
-      if(do_hbanded) { /* sampling from inside HMM banded matrix */
-	if((status = FastInsideAlignHB(cm, errbuf, cur_dsq, 1, L, size_limit, cm->hbmx, NULL)) != eslOK) return status; /* errbuf will have been filled by FastInsideAlignHB() */
-	if((status = SampleFromInsideHB(r, cm, errbuf, cur_dsq, L, cm->hbmx, cur_tr, &sc)) != eslOK) return status; /* errbuf will have been filled by SampleFromInsideHB() */
-      }
-      else { /* sampling from inside matrix, but not HMM banded */
-	if((status = FastInsideAlign(cm, errbuf, cur_dsq, 1, L, size_limit, &alpha, NULL)) != eslOK) return status; /* errbuf will have been filled by FastInsideAlign() */
-	if((status = SampleFromInside(r, cm, errbuf, cur_dsq, L, alpha, cur_tr, &sc)) != eslOK) return status; /* errbuf will have been filled by SampleFromInside() */
-      }
-    }
-    else if(do_inside) { 
+    if(do_inside) { 
       if(do_hbanded) { /* HMM banded inside only */
 	if((status = FastInsideAlignHB(cm, errbuf, cur_dsq, 1, L, size_limit, cm->hbmx, &sc)) != eslOK) return status; /* errbuf will have been filled by FastInsideAlignHB() */
       }
@@ -753,14 +748,22 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     else { /* non-small, non-QDB CYK or optimal accuracy alignment */
       if(do_hbanded) { 
 	if(do_post) { /* HMM banded CYK or optimal accuracy, posterior annotated */
-	  if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
+	  if(do_sample) { 
+	    if((status = FastAlignHB(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, do_sample, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
+	  }
+	  else {
+	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, do_sample, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
+	  }
 	}
 	else { 
 	  if(do_optacc) { /* HMM banded optimal accuracy, no posteriors */
-	    if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, out_mx, cur_tr, NULL, NULL, &sc, &ins_sc)) != eslOK) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
+	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, do_sample, out_mx, cur_tr, NULL, NULL, &sc, &ins_sc)) != eslOK) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
+	  }
+	  else if(do_sample) { /* HMM banded sample from Inside, no posteriors */
+	    if((status = FastAlignHB(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, do_sample, out_mx, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) return status; /* we can't handle a memory overload if we're sampling */
 	  }
 	  else { /* HMM banded CYK */
-	    if((status = FastAlignHB(cm, errbuf, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, out_mx, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) {
+	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, do_sample, out_mx, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) {
 	      if (status == eslERANGE) { /* we can still do CYK D&C alignment with QDBs derived from the HMM bands */
 		hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
 		ESL_DPRINTF1(("# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i));
@@ -797,13 +800,19 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       }
       else { 
 	if(do_post) { /* non-banded CYK or optimal accuracy, posterior annotated */
-	  if((status = FastAlign(cm, errbuf, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, &beta, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
+	  if(do_sample) { 
+	    if((status = FastAlign(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
+	  }
+	  if((status = FastAlign(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
 	}
 	else if(do_optacc) { /* non-banded optimal accuracy no posteriors */
-	  if((status = FastAlign(cm, errbuf, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, &beta, cur_tr, NULL, NULL, &sc, &ins_sc)) != eslOK) return status;
+	  if((status = FastAlign(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, NULL, NULL, &sc, &ins_sc)) != eslOK) return status;
+	}
+	else if(do_sample) { /* non-banded optimal accuracy no posteriors */
+	  if((status = FastAlign(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) return status;
 	}
 	else { /* non-banded CYK, no posteriors */
-	  if((status = FastAlign(cm, errbuf, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, &beta, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) return status;
+	  if((status = FastAlign(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) return status;
 	}
 	if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level); /* allows you to see where the non-banded parse went outside the bands. */
       } 
@@ -857,7 +866,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     /* check parsetree score if cm->align_opts & CM_ALIGN_CHECKPARSESC */
     if((cm->align_opts & CM_ALIGN_CHECKPARSESC) && (!(cm->flags & CM_IS_SUB))) { 
       if(do_optacc) 
-	ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), cm->align_opts CM_ALIGN_CHECKPARSESC, is on, but incompatible with another enabled option: CM_ALIGN_OPTACC.\n");
+	ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), align_opts CM_ALIGN_CHECKPARSESC is on, but incompatible with raised flag CM_ALIGN_OPTACC.\n");
       if((status = ParsetreeScore(cm, errbuf, tr[i], cur_dsq, FALSE, &tmpsc, NULL)) != eslOK) return status;
       if (fabs(sc - tmpsc) >= 0.03)
 	ESL_FAIL(eslFAIL, errbuf, "DispatchAlignments(), seq: %d alignment score %.3f differs from its parse tree's score: %.3f", i, sc, tmpsc);

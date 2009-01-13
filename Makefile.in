@@ -52,7 +52,6 @@ RELEASE     = @PACKAGE_VERSION@
 RELEASEDATE = "@PACKAGE_DATE@"
 COPYRIGHT   = "@PACKAGE_COPYRIGHT@"
 LICENSELINE = "@PACKAGE_LICENSE@"
-RELCODE     = @PACKAGE_RELCODE@
 LICENSETAG  = gnu
 COMPRESS    = gzip
 REPOSITORY  = https://svn.janelia.org/eddylab/eddys/src/
@@ -136,6 +135,9 @@ dist:
 	#
 	easel/devkit/sedition RELEASE ${RELEASE} RELEASEDATE ${RELEASEDATE}                        ../${BASENAME}-${RELEASE}/documentation/userguide/titlepage.tex
 	easel/devkit/sedition RELEASE ${RELEASE} RELEASEDATE ${RELEASEDATE} COPYRIGHT ${COPYRIGHT} ../${BASENAME}-${RELEASE}/00README
+	for manpage in ../${BASENAME}-${RELEASE}/documentation/manpages/*; do\
+	   easel/devkit/sedition RELEASE ${RELEASE} RELEASEDATE ${RELEASEDATE} COPYRIGHT ${COPYRIGHT} PACKAGE ${PACKAGE} LICENSELINE ${LICENSELINE} $$manpage;\
+	done
 	#
 	# Make the User's Guide, and copy to top level. (We'll
 	# destroy the userguide source soon.)
@@ -162,9 +164,10 @@ dist:
 	#
 	-rm -rf ../${BASENAME}-${RELEASE}/Licenses
 	-rm -rf ../${BASENAME}-${RELEASE}/00CHECKLIST
-	-rm -rf ../${BASENAME}-${RELEASE}/configure.in
 	-rm -rf ../${BASENAME}-${RELEASE}/Bugs
 	-rm -rf ../${BASENAME}-${RELEASE}/Manuscripts
+	-rm -rf ../${BASENAME}-${RELEASE}/SUBPACKAGES
+	-rm -rf ../${BASENAME}-${RELEASE}/00WISHLIST
 	(cd ../${BASENAME}-${RELEASE}/easel; make implode)
 	(cd ../${BASENAME}-${RELEASE}/;      make distclean)
 	#

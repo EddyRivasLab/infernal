@@ -549,16 +549,19 @@ map_orig2sub_cm_helper(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, int orig
  *
  * Args:      orig_cm      - the original model, which we're going to (potentially)
  *                           remove some structure from
+ *            errbuf       - for error messages
  *            ret_sub_cm   - the new sub_cm built from orig_cm with some structure removed.
  *            sstruct      - the first position (consensus column) we want to model
  *            estruct      - the last position we will model
  *            print_flag   - TRUE to print debugging statements    
  *
- * Returns:   int            TRUE if all checks passed or no checks were performed,
- *                           FALSE otherwise
+ * Returns:   eslOK on success
+ *            eslEINCONCEIVABLE if something inconceivable happens
+ *            eslEINCOMPAT on contract violation
+ *            eslEMEM on memory error
  */
 int 
-build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, int print_flag)
+build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t **ret_submap, int print_flag)
 {
   int              status;
   CM_t            *sub_cm;      /* new covariance model, a submodel of the template */
@@ -581,11 +584,8 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
   CMSubMap_t *submap;
 
   /* check to make sure that we can actually build a sub CM of this model */
-  if((orig_cm->flags & CMH_LOCAL_BEGIN) ||
-     (orig_cm->flags & CMH_LOCAL_END))
-    cm_Fail("ERROR trying to build a sub CM of a CM already in local mode, not yet supported.\n");
-  if(orig_cm->flags & CM_IS_SUB)  
-    cm_Fail("ERROR trying to build a sub CM of a CM that is itself a sub CM.\n");
+  if((orig_cm->flags & CMH_LOCAL_BEGIN) || (orig_cm->flags & CMH_LOCAL_END)) ESL_FAIL(eslEINCOMPAT, errbuf, "build_sub_cm() trying to build a sub CM of a CM already in local mode, not yet supported.\n");
+  if(orig_cm->flags & CM_IS_SUB) ESL_FAIL(eslEINCOMPAT, errbuf, "build_sub_cm(), trying to build a sub CM of a CM that is itself a sub CM.");
 
   /* Much of the code for building and checking sub CMs relies on the fact that every insert
    * state in the sub CM maps exactly 1 insert state in the original CM. This is fine if we
@@ -662,7 +662,9 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
   /* Build the new sub_cm given the new consensus structure. But don't
    * parameterize it yet.
    */
-  ConsensusModelmaker(orig_cm->abc, sub_cstr, (epos-spos+1), &sub_cm, &mtr);
+  if((status = ConsensusModelmaker(orig_cm->abc, errbuf, sub_cstr, (epos-spos+1), TRUE, &sub_cm, &mtr)) != eslOK) return status;
+  /* TRUE in ConsensusModelmaker() call says 'yes, we're building a sub CM, allow invalid CMs in cm_from_guide() (see comments in that function for details)*/
+
   /* Rebalance the CM for optimization of D&C */
   CM_t *new;
   new = CMRebalance(sub_cm);
@@ -740,9 +742,9 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
 
 	  if((submap->s2o_smap[sub_cm->nodemap[n_s] + 4][1] != -1) ||
 	     (submap->s2o_smap[sub_cm->nodemap[n_s] + 5][1] != -1))
-	    cm_Fail("ERROR, MATP_IL or MATP_IR node: %d map to 2 cm states\n", n_s);
+	    ESL_FAIL(eslEINCONCEIVABLE, errbuf, "build_sub_cm(), MATP_IL or MATP_IR node: %d map to 2 cm states\n", n_s);
 	  if(submap->s2o_smap[sub_cm->nodemap[n_s] + 4][0] != (submap->s2o_smap[sub_cm->nodemap[n_s] + 5][0] - 1))
-	    cm_Fail("ERROR, MATP_IL or MATP_IR node: %d don't map to adjacent orig_cm states\n", n_s);
+	    ESL_FAIL(eslEINCONCEIVABLE, errbuf, "build_sub_cm(), MATP_IL or MATP_IR node: %d don't map to adjacent orig_cm states\n", n_s);
 	}
       if(sub_cm->ndtype[n_s] == ROOT_nd && sub_cm->ndtype[n_s+1] != BIF_nd) /* ROOT->BIFs are handled special
 									     * (see next loop) */
@@ -810,10 +812,10 @@ build_sub_cm(CM_t *orig_cm, CM_t **ret_cm, int sstruct, int estruct, CMSubMap_t 
   *ret_cm = sub_cm;
   *ret_submap = submap;
 
-  return TRUE; 
+  return eslOK; 
 
  ERROR:
-  cm_Fail("Memory allocation error.");
+  ESL_FAIL(eslEMEM, errbuf, "build_sub_cm() memory allocation error.");
   return FALSE; /* never reached */
 }
 

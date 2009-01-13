@@ -159,6 +159,9 @@ FLogsum(float s1, float s2)
 {
   const float max = ESL_MAX(s1, s2);
   const float min = ESL_MIN(s1, s2);
+#if 0
+  return (min == -eslINFINITY || (max-min) >= 23.f) ? max : max + sreLOG2(1.0 + sreEXP2(min-max));  /* EPN: While debugging. Replaces logsum table with analytical calculation. Remember to remove! */
+#endif
   return  (min == -eslINFINITY || (max-min) >= 23.f) ? max : max + flogsum_lookup[(int)((max-min)*INTSCALE)];
 } 
 #endif /* USE_NEWLOGSUM*/

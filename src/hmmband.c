@@ -425,7 +425,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
   pmx->imx[0][0] = -INFTY; /*need seq to get here*/
   pmx->dmx[0][0] = -INFTY; /*D_0 does not exist*/
   if((mass_m[0] = pmx->mmx[0][0]) > thresh) { 
-    cp9b->pn_min_m[0] = 0; 
+    cp9b->pn_min_m[0] = ESL_MAX(i0-1, 0);
     nset_m[0] = TRUE; 
   }
   mass_i[0] = -INFTY; /* b/c pmx->imx[0][0] is -INFTY, set above */
@@ -438,7 +438,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
     /* mass_m[k] doesn't change b/c pmx->mmx[0][k] is -INFTY */
     /* mass_i[k] doesn't change b/c pmx->imx[0][k] is -INFTY */
     if((mass_d[k] = pmx->dmx[0][k]) > thresh) { 
-      cp9b->pn_min_d[k] = 0;
+      cp9b->pn_min_d[k] = ESL_MAX(i0-1, 0);
       nset_d[k] = TRUE; 
     }
   }
@@ -528,9 +528,11 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
 	}
     }	  
   /* note boundary conditions, ip = 0, i = i0-1 */
+  ip = 0;
+  i  = i0-1;
   if(! xset_m[0]) { 
     if((mass_m[0] = ILogsum(mass_m[0], pmx->mmx[0][0])) > thresh) { 
-      cp9b->pn_max_m[0] = 0; 
+      cp9b->pn_max_m[0] = ESL_MAX(i0-1, 0);
       xset_m[0] = TRUE; 
     }
   }
@@ -541,7 +543,7 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
     /* mass_i[k] doesn't change b/c pmx->mmx[0][k] is -INFTY */
     if(!xset_d[k]) { 
       if((mass_d[k] = ILogsum(mass_d[k], pmx->dmx[0][k])) > thresh) { 
-	cp9b->pn_max_d[k] = 0;
+	cp9b->pn_max_d[k] = ESL_MAX(i0-1, 0);
 	xset_d[k] = TRUE; 
       }
     }
@@ -551,8 +553,8 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
     /* new way as of EPN, Sun Jan 27 08:48:34 2008 */
     /* Some states may not have had their min/max set. This occurs if the entire
      * state is outside the band (i.e. the summed probablity the state is entered for ANY i
-     * is less than our threshold. Current strategy in this situation is to set the
-     * pn_min_* and pn_max_* values as special flags, (-2) so the function that
+     * is less than our threshold). Current strategy in this situation is to set the
+     * pn_min_* and pn_max_* values as special flags, (-1) so the function that
      * uses them to derive i and j bands knows this is the case and handles it
      * accordingly.
      */
@@ -561,9 +563,6 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
     for(k = 0; k <= M; k++)
       {
 	mset = dset = TRUE;
-	/* theoretically either nset_*[k] and xset_*[k] should be either both TRUE or both
-	 * FALSE, but I'm slightly worried about rare precision issues, so we check if one 
-	 * or the other is unset, and if so, we set both to argmax position */
 	if(((! nset_m[k])) || (! xset_m[k]) || (cp9b->pn_max_m[k] < cp9b->pn_min_m[k])) { 
 	  cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = -1;
 	  mset = FALSE;
@@ -610,19 +609,19 @@ cp9_FB2HMMBands(CP9_t *hmm, char *errbuf, ESL_DSQ *dsq, CP9_MX *fmx, CP9_MX *bmx
 	if((! nset_m[k]) || (! xset_m[k])) { 
 	  max = pmx->mmx[0][k];
 	  for(ip = 1; ip <= L; ip++)
-	    if(pmx->mmx[ip][k] > max) { pnmax = i; max = pmx->mmx[ip][k]; }
+	    if(pmx->mmx[ip][k] > max) { pnmax = i0+ip-1; max = pmx->mmx[ip][k]; } /* i = i0+ip-1 */
 	  cp9b->pn_min_m[k] = cp9b->pn_max_m[k] = pnmax;
 	}
 	if((! nset_i[k]) || (! xset_i[k])) { 
 	  max = pmx->imx[0][k];
 	  for(ip = 1; ip <= L; ip++)
-	    if(pmx->imx[ip][k] > max) { pnmax = i; max = pmx->imx[ip][k]; }
+	    if(pmx->imx[ip][k] > max) { pnmax = i0+ip-1; max = pmx->imx[ip][k]; } /* i = i0+ip-1 */
 	  cp9b->pn_min_i[k] = cp9b->pn_max_i[k] = pnmax;
 	}
 	if((! nset_d[k]) || (! xset_d[k])) { 
 	  max = pmx->dmx[0][k];
 	  for(ip = 1; ip <= L; ip++)
-	    if(pmx->dmx[ip][k] > max) { pnmax = i; max = pmx->dmx[ip][k]; }
+	    if(pmx->dmx[ip][k] > max) { pnmax = i0+ip-1; max = pmx->dmx[ip][k]; } /* i = i0+ip-1 */
 	  cp9b->pn_min_d[k] = cp9b->pn_max_d[k] = pnmax; 
 	}
       }
@@ -1098,8 +1097,8 @@ cp9_ValidateBands(CM_t *cm, char *errbuf, CP9Bands_t *cp9b, int i0, int j0)
 	  if(cp9b->hdmin[v][(j-cp9b->jmin[v])] < StateDelta(cm->sttype[v])) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmin[v][jp_v:%d] : %d less than StateDelta for v: %d\n", v, j, (j-cp9b->jmin[v]), cp9b->hdmin[v][(j-cp9b->jmin[v])], StateDelta(cm->sttype[v]));
 	  if(cp9b->hdmax[v][(j-cp9b->jmin[v])] < StateDelta(cm->sttype[v])) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), v: %d j: %d hdmax[v][jp_v:%d] : %d less than StateDelta for v: %d\n", v, j, (j-cp9b->jmin[v]), cp9b->hdmax[v][(j-cp9b->jmin[v])], StateDelta(cm->sttype[v]));
 	}
-	if(cp9b->jmax[v] > cp9b->jmax[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->jmax[v:%d]: %d greater than cp9b->jmax[0]: %d.", v, cp9b->jmax[v], cp9b->jmax[0]);
-	if(cp9b->imin[v] < cp9b->imin[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), cp9b->imin[v:%d]: %d less than cp9b->imin[0]: %d, i0:%d j0:%d jmin[v]: %d jmax[v]: %d jmin[0]: %d jmax[0]: %d imax[v]:%d.", v, cp9b->imin[v], cp9b->imin[0], i0, j0, cp9b->jmin[v], cp9b->jmax[v], cp9b->jmin[0], cp9b->jmax[0], cp9b->imax[v]);
+	if(cp9b->jmax[v] > cp9b->jmax[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), jmax[v:%d]:%d > jmax[0]:%d.", v, cp9b->jmax[v], cp9b->jmax[0]);
+	if(cp9b->imin[v] < cp9b->imin[0]) ESL_FAIL(eslEINVAL, errbuf, "cp9_ValidateBands(), imin[v:%d]:%d < imin[0]:%d, i0:%d j0:%d jmin[v]:%d jmax[v]:%d jmin[0]:%d jmax[0]:%d imax[v]:%d", v, cp9b->imin[v], cp9b->imin[0], i0, j0, cp9b->jmin[v], cp9b->jmax[v], cp9b->jmin[0], cp9b->jmax[0], cp9b->imax[v]);
       }
     }
   }
@@ -3162,7 +3161,7 @@ CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0,
 	w = cm->cfirst[v]; /* BEGL_S */
 	y = cm->cnum[v];   /* BEGR_S */
 	if(r_jmax[w] < (r_imin[y]-1)) { 
-	  ESL_FAIL(eslFAIL, errbuf, "CMBandsCheckValidParse(), CM is not locally configured, BEGL_S state w: %d nd: %d and BEGR_S state y: %d nd: %d  bands fail to touch, residues %d to %d cannot be emitted!\n", w, w_nd, y, y_nd, r_jmax[w]+1, r_imin[y]-1);
+	  ESL_FAIL(eslFAIL, errbuf, "CMBandsCheckValidParse(), CM not local, BEGL_S w:%d nd:%d & BEGR_S y:%d nd:%d bands don't touch, res %d..%d unemittable!\n", w, w_nd, y, y_nd, r_jmax[w]+1, r_imin[y]-1);
 	}	     
       }
     }
@@ -3170,7 +3169,7 @@ CMBandsCheckValidParse(CM_t *cm, CP9Bands_t *cp9b, char *errbuf, int i0, int j0,
   else if(doing_search && cm_is_localized) { /* we're doing a local search, we have a valid parse if any state from which a local end is possible is reachable */
     v = 0;
     while(v < cm->M && !(v_is_r[v] && NOT_IMPOSSIBLE(cm->endsc[v]))) v++; /* increment v until we come to a state that is reachable and can go to EL, or we run out of states */
-    if(v == cm->M && i0 != j0) ESL_FAIL(eslFAIL, errbuf, "CMBandsCheckValidParse(), doing_search is TRUE and CM is locally configured, i0 != j0, but we can't reach a single CM state v from which an EL is possible.\n");
+    if(v == cm->M && i0 != j0) ESL_FAIL(eslFAIL, errbuf, "CMBandsCheckValidParse(), doing_search=TRUE, CM is local, i0 != j0, but no CM state is reachable from which an EL is possible.\n");
   }
 
   free(v_is_r);

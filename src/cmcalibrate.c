@@ -181,8 +181,8 @@ static int init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbu
 
 static void  serial_master (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #ifdef HAVE_MPI
-static void  mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg);
-static void  mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
+static int   mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
+static int   mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
 
 static int  process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
@@ -220,13 +220,12 @@ static int  get_genomic_sequence_from_hmm(const struct cfg_s *cfg, char *errbuf,
 int
 main(int argc, char **argv)
 {
-  int status;
+  int              status;
   ESL_GETOPTS     *go	   = NULL;     /* command line processing                     */
   ESL_STOPWATCH   *w  = esl_stopwatch_Create();
   if(w == NULL) cm_Fail("Memory allocation error, stopwatch could not be created.");
   esl_stopwatch_Start(w);
   struct cfg_s     cfg;
-
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
   FLogsumInit();
@@ -376,6 +375,7 @@ main(int argc, char **argv)
 #ifdef HAVE_MPI
   if (esl_opt_GetBoolean(go, "--mpi")) 
     {
+      char             errbuf[cmERRBUFSIZE]; /* for error messages in mpi_master() */
       if(! esl_opt_IsDefault(go, "--forecast")) cm_Fail("--forecast is incompatible with --mpi.");
       cfg.do_mpi     = TRUE;
       MPI_Init(&argc, &argv);
@@ -384,15 +384,22 @@ main(int argc, char **argv)
 
       if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running... (did you run mpirun?)");
 
-      if (cfg.my_rank > 0)  mpi_worker(go, &cfg);
+      if (cfg.my_rank > 0)  { status = mpi_worker(go, &cfg); }
       else { 
 	cm_banner(stdout, argv[0], banner);
-	mpi_master(go, &cfg);
+	status = mpi_master(go, &cfg, errbuf);
       }
-
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_MPIReduce(w, 0, MPI_COMM_WORLD);
-      MPI_Finalize();
+      /* check status, if eslOK, we continue, else we exit. either way we call MPI_Finalize() */
+      if(status == eslOK) { 
+	esl_stopwatch_Stop(w);
+	esl_stopwatch_MPIReduce(w, 0, MPI_COMM_WORLD);
+	MPI_Finalize();
+      }
+      else { /* status != eslOK, master has error message in errbuf, worker does not */
+	MPI_Finalize();
+	if(cfg.my_rank == 0) cm_Fail(errbuf); /* master */
+	else                 return 0;        /* worker */
+      }
     }
   else
 #endif /*HAVE_MPI*/
@@ -578,10 +585,10 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     cfg->pstart[0] = 0;
   }
   else { /* setup cfg->np and cfg->pstart in read_partition_file() */
-    if((status = read_partition_file(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+    if((status = read_partition_file(go, cfg, errbuf)) != eslOK) return status;
   }
 
-  if (esl_opt_GetString(go, "--fil-dfile") != NULL) { if(cfg->np != 1) ESL_FAIL(status, errbuf, "--fil-dfile only works with a single partition\n"); }
+  if (esl_opt_GetString(go, "--fil-dfile") != NULL) { if(cfg->np != 1) ESL_FAIL(eslEINVAL, errbuf, "--fil-dfile only works with a single partition\n"); }
 
   cfg->be_verbose = FALSE;
   if (esl_opt_GetBoolean(go, "-v")) cfg->be_verbose = TRUE;        
@@ -608,12 +615,12 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   strcpy(cfg->tmpfile, cfg->cmfile);
   strcat(cfg->tmpfile, ".xxx");	/* could be more inventive here... */
   if (esl_FileExists(cfg->tmpfile))
-    cm_Fail("temporary file %s already exists; please delete it first", cfg->tmpfile);
+    ESL_FAIL(eslFAIL, errbuf, "temporary file %s already exists; please delete it first", cfg->tmpfile);
   if (cfg->cmfp->is_binary) cfg->mode = "wb";
   else                      cfg->mode = "w"; 
 
-  if(cfg->r        == NULL) cm_Fail("Failed to create master RNG.");
-  if(cfg->w_stage  == NULL) cm_Fail("Failed to create stopwatch.");
+  if(cfg->r        == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to create master RNG.");
+  if(cfg->w_stage  == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to create stopwatch.");
 
   /* fill cfg->ccom, and cfg->cdate */
   if((status = get_cmcalibrate_comlog_info(go, cfg, errbuf)) != eslOK) return status;
@@ -621,7 +628,8 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   return eslOK;
 
  ERROR:
-  return status;
+  ESL_FAIL(eslEMEM, errbuf, "init_master_cfg(), memory allocation error."); 
+  return eslEMEM; /* NEVER REACHED */
 }
 
 /* serial_master()
@@ -882,13 +890,16 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
  * Follows standard pattern for a master/worker load-balanced MPI program 
  * (SRE notes J1/78-79).
  * 
- * A master can only return if it's successful. 
+ * A master returns eslOK if it's successful. 
  * Errors in an MPI master come in two classes: recoverable and nonrecoverable.
+ * If a recoverable error occurs, errbuf is filled with an error message
+ * from the master or a worker, and it's sent back while returning a
+ * non-eslOK error code.
  * 
  * Recoverable errors include most worker-side errors, and any
  * master-side error that do not affect MPI communication. Error
  * messages from recoverable messages are delayed until we've cleanly
- * shut down the workers.
+ * shut down the workers. The 
  * 
  * Some worker side errors (such as ESL_ALLOCs) are likely to be 
  * unrecoverable and will almost certainly cause MPI to crash
@@ -901,12 +912,11 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
  * cm_Fail()'s, which will cause MPI to shut down the worker processes
  * uncleanly.
  */
-static void
-mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
+static int 
+mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
   int      xstatus       = eslOK;	/* changes from OK on recoverable error */
   int      status;                /* Easel status */
-  char     errbuf[cmERRBUFSIZE];  /* for printing error messages */
   CM_t    *cm = NULL;             /* the CM */
   int      cmi;                   /* CM index, which model we're working on */
   int      p;                     /* partition index */
@@ -989,15 +999,15 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * If any failure occurs, delay printing error message until we've shut down workers.
    */
   if (xstatus == eslOK) { if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) xstatus = status; }
-  if (xstatus == eslOK) { if ((status = print_run_info(go, cfg, errbuf)) != eslOK) xstatus = status; }
-  if (xstatus == eslOK) { bn = 4096; if ((buf = malloc(sizeof(char) * bn)) == NULL)    { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((si_wlist = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((seqpos_wlist = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((len_wlist = malloc(sizeof(int) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((seed_wlist = malloc(sizeof(long) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((status = print_run_info (go, cfg, errbuf)) != eslOK) xstatus = status; }
+  if (xstatus == eslOK) { bn = 4096; if ((buf = malloc(sizeof(char) * bn)) == NULL)         { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((si_wlist       = malloc(sizeof(int)  * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((seqpos_wlist   = malloc(sizeof(int)  * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((len_wlist      = malloc(sizeof(int)  * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((seed_wlist     = malloc(sizeof(long) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
 
   MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  if (xstatus != eslOK) cm_Fail(errbuf);
+  if (xstatus != eslOK) return xstatus; /* errbuf was filled above */
   ESL_DPRINTF1(("MPI master is initialized\n"));
 
   for (wi = 0; wi < cfg->nproc; wi++) {
@@ -1066,7 +1076,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = print_per_cm_column_headings(go, cfg, errbuf, cm))!= eslOK) cm_Fail(errbuf);
       if((status = update_hmm_exp_length(go, cfg, errbuf, cm))       != eslOK) cm_Fail(errbuf);
       if(esl_opt_IsDefault(go, "--exp-gc")) { /* only setup dnull if --exp-gc NOT enabled */
-	if((status = set_dnull(cm, errbuf, &dnull))                    != eslOK) cm_Fail(errbuf); 
+	if((status = set_dnull(cm, errbuf, &dnull))                  != eslOK) cm_Fail(errbuf); 
       }
       
       /* allocate the exp_{a,p}secAA and fil_{a,p}secA arrays that hold {actual,predicted} times */
@@ -1461,17 +1471,17 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if((cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
   free(buf);
   
-  if     (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); cm_Fail(errbuf); }
-  else if(status != eslEOF) cm_Fail(errbuf);
-  else                  return;
+  if     (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); return xstatus; }
+  else if(status != eslEOF) return status;
+  else                      return eslOK;
 
  ERROR: 
-  cm_Fail("memory allocation error.");
-  return; /* NOTREACHED */
+  ESL_FAIL(status, errbuf, "mpi_master() memory allocation error.");
+  return eslOK; /* NOTREACHED */
 }
 
 
-static void
+static int
 mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 {
   int      status;                /* Easel status */
@@ -1510,7 +1520,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   /* After master initialization: master broadcasts its status.
    */
   MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  if (xstatus != eslOK) return; /* master saw an error code; workers do an immediate normal shutdown. */
+  if (xstatus != eslOK) return xstatus; /* master saw an error code; workers do an immediate normal shutdown. */
   ESL_DPRINTF1(("worker %d: sees that master has initialized\n", cfg->my_rank));
 	   
   /* Master now sends worker initialization information (RNG seed) 
@@ -1525,7 +1535,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD); /* everyone sends xstatus back to master */
   if (xstatus != eslOK) {
     if (wbuf != NULL) free(wbuf);
-    return; /* shutdown; we passed the error back for the master to deal with. */
+    return xstatus; /* shutdown; we passed the error back for the master to deal with. */
   }
   ESL_DPRINTF1(("worker %d: initialized seed: %ld\n", cfg->my_rank, seed));
 
@@ -1685,7 +1695,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   else goto ERROR;
   
   if (wbuf != NULL) free(wbuf);
-  return;
+  return eslOK;
 
  ERROR:
   ESL_DPRINTF1(("worker %d: fails, is sending an error message, as follows:\n%s\n", cfg->my_rank, errbuf));
@@ -1713,7 +1723,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   }
   status = cm_worker_MPIBcast(0, MPI_COMM_WORLD, &wbuf, &wn, &(cfg->abc), &cm);
 
-  return;
+  return eslFAIL; /* recoverable error, master has error message and will print it */
 }
 #endif /*HAVE_MPI*/
 

@@ -49,8 +49,8 @@ static ESL_OPTIONS options[] = {
   { "--tfile",   eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  2 },
   /* expert options */
   { "--exp",     eslARG_REAL,   NULL,  NULL, "x>0",     NULL,      NULL,        NULL, "exponentiate CM probabilities by <x> before emitting",  3 },
-  { "--begin",   eslARG_INT,    NULL,  NULL, "n>=1",    NULL,    "--end",       NULL, "truncate alignment, begin at match column <n>", 3 },
-  { "--end",     eslARG_INT,    NULL,  NULL, "n>=1",    NULL,  "--begin",       NULL, "truncate alignment,   end at match column <n>", 3 },
+  { "--begin",   eslARG_INT,    NULL,  NULL, "n>=1",    NULL,    "--end,-a",    NULL, "truncate alignment, begin at match column <n>", 3 },
+  { "--end",     eslARG_INT,    NULL,  NULL, "n>=1",    NULL,  "--begin,-a",    NULL, "truncate alignment,   end at match column <n>", 3 },
 
   /* --devhelp options */
   /* All options below are developer options, only shown if --devhelp invoked */
@@ -166,15 +166,6 @@ main(int argc, char **argv)
       printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
-  /* a final check on the options that esl_getopts can't do, --begin and --end are only 
-   * valid if -a OR --hmmbuild were selected (but not both). 
-   */
-  if((! esl_opt_IsDefault(go, "--begin")) && (! esl_opt_IsDefault(go, "--end"))) {
-    if((! esl_opt_GetBoolean(go, "-a")) && (! esl_opt_GetBoolean(go, "--hmmbuild"))) {
-      printf("\n--begin and --end only work in combination with -a or --hmmbuild (but not both)\n");
-      exit(1);
-    }
-  }
   /* Initialize what we can in the config structure (without knowing the alphabet yet).
    * We could assume RNA, but this HMMER3 based approach is more general.
    */
@@ -400,6 +391,7 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   char *name;
   int namelen;
   int i, L; 
+  float sc, struct_sc;
 
   namelen = IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
   if(cm->name != NULL) namelen += strlen(cm->name) + 1;
@@ -416,6 +408,9 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       if(cfg->pfp != NULL)
 	{
 	  fprintf(cfg->pfp, "> %s\n", sq->name);
+	  if((status = ParsetreeScore(cm, errbuf, tr, sq->dsq, FALSE, &sc, &struct_sc)) != eslOK) return status;
+	  fprintf(cfg->pfp, "  %16s %.2f bits\n", "SCORE:", sc);
+	  fprintf(cfg->pfp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
 	  ParsetreeDump(cfg->pfp, tr, cm, sq->dsq, NULL, NULL);
 	  fprintf(cfg->pfp, "//\n");
 	}
