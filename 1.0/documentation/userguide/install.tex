@@ -1,0 +1,190 @@
+\section{Installation}
+
+\subsection{Quick installation instructions}
+
+Download the source tarball (\prog{infernal.tar.gz}) from 
+\htmladdnormallink{ftp://selab.janelia.org/pub/software/infernal/}
+                  {ftp://selab.janelia.org/pub/software/infernal/}
+or \\
+\htmladdnormallink{http://infernal.janelia.org}
+                  {http://infernal.janelia.org}
+
+Unpack the software:
+
+\user{tar xvf infernal.tar.gz}
+
+Go into the newly created top-level directory (named either
+\prog{infernal}, or \prog{infernal-xx} where \prog{xx} is a release
+number:
+
+\user{cd infernal}
+
+Configure for your system, and build the programs:
+
+\user{./configure}\\
+\user{make}
+
+Run the automated testsuite. This is optional. All these tests should
+pass:
+
+\user{make check}
+
+The programs are now in the \prog{src/} subdirectory. The user's guide
+(this document) is in the \\ 
+\prog{documentation/userguide}
+subdirectory. The man pages are in the \prog{documentation/manpages}
+subdirectory. You can manually move or copy all of these to
+appropriate locations if you want. You will want the programs to be in
+your \$PATH. 
+
+Optionally, you can install the man pages and programs in system-wide
+directories. If you are happy with the default (programs in
+\prog{/usr/local/bin/} and man pages in \prog{/usr/local/man/man1}),
+do:
+
+\user{make install}
+
+That's all.  More complete instructions follow, including how to
+change the default installation directories for \prog{make install}.
+
+\subsection{More detailed installation notes}
+
+\software{Infernal} is distributed as ANSI C source code.  It is
+designed to be built and used on UNIX platforms. It is developed on
+Intel GNU/Linux systems, and intermittently tested on a variety of
+other UNIX platforms. It is not currently tested on either Microsoft
+Windows or Apple OS/X, but it should work there; it should be possible
+to build it on any platform with an ANSI C compiler. The software
+itself is vanilla POSIX-compliant ANSI C. You may need to work around
+the configuration scripts and Makefiles to get it built on a non-UNIX
+platform.
+
+The GNU configure script that comes with \software{Infernal} has a
+number of options. You can see them all by doing:
+
+\user{./configure --help}
+
+All customizations can and should be done at the \prog{./configure}
+command line, unless you're a guru delving into the details of the
+source code.
+
+\subsubsection{setting installation targets}
+
+The most important options are those that let you set the installation
+directories for \prog{make install} to be appropriate to your system.
+What you need to know is that \software{Infernal} installs only two
+types of files: programs and man pages. It installs the programs in
+\prog{--bindir} (which defaults to \prog{/usr/local/bin}), and the man pages in the
+\prog{man1} subdirectory of \prog{--mandir} (default
+\prog{/usr/local/man}). Thus, say you want \prog{make install} to install programs
+in \prog{/usr/bioprogs/bin/} and man pages in
+\prog{/usr/share/man/man1}; you would configure with:
+
+\user{./configure --mandir=/usr/share/man --bindir=/usr/bioprogs/bin}
+
+That's really all you need to know, since \software{Infernal} installs
+so few files. But just so you know; GNU configure is very flexible,
+and has shortcuts that accomodates several standard conventions for
+where programs get installed. One common strategy is to install all
+files under one directory, like the default \prog{/usr/local}. To
+change this prefix to something else, say \prog{/usr/mylocal/}
+(so that programs go in \prog{/usr/mylocal/bin} and man pages in
+\prog{/usr/mylocal/man/man1}, you can use the \prog{--prefix}
+option:
+
+\user{./configure --prefix=/usr/mylocal}
+
+Another common strategy (especially in multiplatform environments) is
+to put programs in an architecture-specific directory like
+\prog{/usr/share/Linux/bin} while keeping man pages in a shared,
+architecture-independent directory like \prog{/usr/share/man/man1}.
+GNU configure uses \prog{--exec-prefix} to set the path to
+architecture dependent files; normally it defaults to being the same
+as \prog{--prefix}. You could change this, for example, by:
+
+\user{./configure --prefix=/usr/share --exec-prefix=/usr/share/Linux/}\\
+
+In summary, a complete list of the \prog{./configure} installation
+options that affect \software{Infernal}:
+
+\begin{tabular}{lll}
+Option                       &   Meaning                       & Default\\ \hline
+\prog{--prefix=PREFIX}       & architecture independent files  & \prog{/usr/local/} \\
+\prog{--exec-prefix=EPREFIX} & architecture dependent files    & EPREFIX\\
+\prog{--bindir=DIR}          & programs                        & PREFIX/bin/\\
+\prog{--mandir=DIR}          & man pages                       & PREFIX/man/\\
+\end{tabular}
+
+
+\subsubsection{setting compiler and compiler flags}
+
+By default, \prog{configure} searches first for the GNU C compiler
+\prog{gcc}, and if that is not found, for a compiler called \prog{cc}. 
+This can be overridden by specifying your compiler with the \prog{CC}
+environment variable.
+
+By default, the compiler's optimization flags are set to
+\prog{-g -O2} for \prog{gcc}, or \prog{-g} for other compilers.
+This can be overridden by specifying optimization flags with the
+\prog{CFLAGS} environment variable. 
+
+For example, to use an Intel C compiler in
+\prog{/usr/intel/ia32/bin/icc} with 
+optimization flags \prog{-O3 -ipo}, you would do:
+
+\user{env CC=/usr/intel/ia32/bin/icc CFLAGS="-O3 -ipo" ./configure}
+
+which is the one-line shorthand for:
+
+\user{setenv CC     /usr/intel/ia32/bin/icc}\\
+\user{setenv CFLAGS "-O3 -ipo"}\\
+\user{./configure}
+
+If you are using a non-GNU compiler, you will almost certainly want to
+set \prog{CFLAGS} to some sensible optimization flags for your
+platform and compiler. The \prog{-g} default generated unoptimized
+code. At a minimum, turn on your compiler's default optimizations with
+\prog{CFLAGS=-O}.
+
+\subsubsection{turning on Message Passing Interface (MPI) support}
+
+\software{Infernal} includes four programs \prog{cmsearch}, \prog{cmcalibrate},
+\prog{cmalign} and \prog{cmscore} that optionally use MPI
+parallelization by invoking the \prog{--mpi} option. 
+To enable the option to use MPI in these four executables, add 
+\prog{--enable-mpi} to the configuration command:
+
+\user{./configure --enable-mpi}
+
+To run a program in MPI mode, you must run them 
+in an MPI environment with \prog{mpirun} or \prog{mpiexec}, with 
+the \prog{--mpi} option enabled.  For example, 
+in our LAM environment:
+
+\user{mpirun C cmsearch --mpi query.cm target.fa}
+
+Other environments besides LAM MPI should work also, but may
+require different command syntax.
+
+\subsubsection{No longer supported: rigorous filters}
+
+Previous versions of \software{infernal} included programs by Zasha
+Weinberg that implement rigorous filtering.  The 1.0 release does not
+include these programs. If you'd like to use them you can either
+download Zasha's own implementation in \textsc{RaveNnA} from
+\htmladdnormallink{http://bliss.biology.yale.edu/~zasha/ravenna/},
+download an older 0.x version of \software{infernal}, or try to modify
+this version to work with rigorous filters (the code is still included in
+\texttt{rigfilters/}).
+
+\subsection{Example configuration}
+
+The Intel GNU/Linux version installed at Janelia Farm is configured as
+follows:
+
+{\scriptuser{env CFLAGS="-O3" ./configure --enable-mpi --enable-lfs --prefix=/usr/local/infernal-1}}
+
+
+
+
+

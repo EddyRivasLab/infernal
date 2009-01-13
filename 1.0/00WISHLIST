@@ -1,0 +1,115 @@
+==========================
+Infernal Features Wishlist
+==========================
+
+
+-----------------
+|  Small Tweaks |
+-----------------
+
+(1) Search Summary [TAJ]
+------------------
+Wublast has a useful recap at the end of the report. This includes non-default parameters used
+(ie switches), as well as DB statistics such as size and number of records. It's not clear how
+you'd handle the case where the user specifies the DB size as a switch. I think you'd want to 
+report both the size specified (and thus used for E-values), and the actual size. 
+
+Should we have a dump of the command-line options at end of program? [EPN] 
+
+(2) E-value _and_ Score cutoff reported [TAJ]
+DONE [EPN, Wed Dec 19 10:42:55 2007]
+---------------------------------------
+Currently, the E-value cutoff is reported. Now that the debugging table converting bit scores
+to E-values is no longer included, it would be useful to at least report the bit score that
+corresponds to the E-value cutoff. This is most useful if no hits are reported. 
+
+
+(3) Alignment is Broken/Shifted for large coordinate values [TAJ]
+----------------------------------------------------------- 
+When the coordinate values are very large (>99,999,999), the coordinate number ends up
+shifting the target sequence to the right, so it's no longer properly lined up. 
+	Example:
+
+Query = 1 - 65, Target = 155751926 - 155751869
+ Score = 29.06, E = 42.62, P = 1, GC =  48
+
+           <<<<<<-----<<<<<<_~~~~~~>>>>>>------->>>>>>
+         1 gCuGGGUUUUUCCuuGuU*[29]*gCaaGGUUUUUAUCCCaGu 65
+           GCUGG: U U :C:UGUU      GCA:G:UUUUUA :CCAGU
+  155751926 GCUGGACUGUCACCUGUU*[21]*GCAGGUUUUUUAAUCCAGU 155751869
+
+
+
+
+-------------------------
+|  Substantial Changes  |
+-------------------------
+
+(1) Summarize "canonical basepairs" in match [TAJ]
+--------------------------------------------
+I know this would break Eric's current parser. But I'd like to see an additional structure
+line that summarizes and evaluates the model-imposed structure in terms of canonical 
+RNA basepairs. An example, semi-made up, would be as follows:
+
+
+
+MODEL      <<<<<<-----<<<<<<__________________~~~~~~>>>>>>------->>>>>>
+         1 gCuGGGUUUUUCCuuGuUCGCACCGGACACCUCCA*[12]*gCaaGGUUUUUAUCCCaGu 65
+           GCU:::UUUU ::UU :UC  ACCG ACAC U CA      : AA:  UU UAU::: GU
+  73425315 GCUAUUUUUUAUUUUAUUCAUACCGUACACAUACA*[16]*ACAAACAUUGUAUGGUCGU 73425384
+CANONCIAL  <<x<<<-----x<<<<<__________________~~~~~~>>>>>x------->>>x>> (not this one)
+
+---------------------------
+Final solution: Thu Jan  3 18:39:47 2008
+An x is the absence of a colon in the middle line.
+Add a line to user guide saying that this is usually, but not always a
+watson-crick or gu, ug pair.
+
+
+             x        x   x                          x   x          x 
+           <<<<<<-----<<<<<<__________________~~~~~~>>>>>>------->>>>>>
+         1 gCuGGGUUUUUCCuuGuUCGCACCGGACACCUCCA*[12]*gCaaGGUUUUUAUCCCaGu 65
+           GC :::UUUU  :UU :UC  ACCG ACAC U CA      : AA:  UU UAU::: GU
+  73425315 GCUAUUUUUUAUUUUAUUCAUACCGUACACAUACA*[16]*ACAAACAUUGUAUGGUCGU 73425384
+             x        x   x                          x   x          x 
+
+----
+EPN, Fri Jan  4 14:17:51 2008
+This change is in the code as of revision 2283. 
+Here's the svn log for that revision: 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+<[src]> svn log -vr 2283
+------------------------------------------------------------------------
+r2283 | nawrockie | 2008-01-04 08:36:29 -0500 (Fri, 04 Jan 2008) | 23
+lines
+Changed paths:
+   M /infernal/trunk/src/cmsearch.c
+   M /infernal/trunk/src/display.c
+   M /infernal/trunk/src/funcs.h
+   M /infernal/trunk/src/searchinfo.c
+   M /infernal/trunk/src/structs.h
+   M /infernal/trunk/src/trcyk.c
+
+o cmsearch: Added --addx option which modifies the printing of
+  alignments for search hits. With --addx, an extra line appears at
+  the top of the hit alignments, this top line has one character for
+  each position of the alignment, the top line character is 'x' if and
+  only if the aligned residue is to a MP state and is annotated with a
+  ' ' in the middle line (this means it is a non-compensatory base
+  pair). Otherwise the top line character is a ' '. This means high
+  scoring alignments may have all ' ' in this line.  The motivation
+  and idea for this top line came from Tom Jones who wanted an easier
+  way to scan cmsearch results for non-canonical basepairs.
+
+  Here's an example:
+
+ Query = 1 - 24, Target = 7024 - 7049
+ Score = 9.98, GC =  46
+
+              x       x   x        x 
+           ::<<<____>->>-<<-<.___.>>>
+         1 AAgaCUUCGGAucgggCg.AcA.ccc 24      
+           +A: CUUC GA : : C:  +A : :
+      7024 UACUCUUCAGAGGACUCAuCAAgUGG 7049    
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
