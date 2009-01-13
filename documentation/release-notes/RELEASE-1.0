@@ -1,5 +1,5 @@
-Infernal 1.0rc3
-SRE, Wed Sep 24 13:50:33 2008
+Infernal 1.0
+SRE, Tue Jan 13 14:09:59 2009
 
 Infernal 1.0 is the first non-development release of Infernal. The
 main differences relative to the last development release (0.8/0.81):
@@ -108,8 +108,9 @@ Release candidate 5 (1.0rc5; 17 Dec 2008) bugfix:
     deciding if a given hit should be reported based on previously
     reported hit scores.
 
+Release candidate 5 was upgraded to 1.0 status: 13 January 2009.
 
-
+--------------------------
 For more information, see http://infernal.janelia.org
 
 
