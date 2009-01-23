@@ -384,60 +384,48 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
 	  dx   = dxA[v];
 
 	  if(cm->sttype[v] == B_st) {
-            float *vec_access;
-	    w = cm->cfirst[v]; /* BEGL_S */
-	    y = cm->cnum[v];   /* BEGR_S */
-	    for (d = 0; d < sW; d++) {
-	      /* k is the length of the right fragment */
-	      kmin = 0; kmax = 3*sW + d;
+	    float *vec_access;
+            w = cm->cfirst[v]; /* BEGL_S */
+            y = cm->cnum[v];   /* BEGR_S */
 
-	      tmp.v = vec_init_scAA[v][d]; /* state delta (sd) is 0 for B_st */
-	      for (k = 0; k <=        d && k <= j; k++) {
-                vec_tmp_begl = vec_alpha_begl[jp_wA[k]][w][d-k];
-                vec_tmp_begr = _mm_unpacklo_ps(vec_alpha[jp_y][y][k],vec_alpha[jp_y][y][k]);
-                vec_tmp_begr = _mm_movelh_ps(vec_tmp_begr,vec_tmp_begr);
-		tmp.v = _mm_max_ps(tmp.v, _mm_add_ps(vec_tmp_begl, vec_tmp_begr));
+            for (d = 0; d < sW; d++) {
+              vec_alpha[jp_v][v][d] = vec_init_scAA[v][d];
+            }
+ 
+            for (k = 0; k < W && k <=j; k++) {
+              vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
+              vec_tmp_begr = _mm_set1_ps(*vec_access);
+
+              for (d = 0; d < sW; d++) {
+                int dkindex = (4*sW+d-k)%sW;
+                if (k <= d) {
+                  vec_tmp_begl = vec_alpha_begl[jp_wA[k]][w][dkindex];
+                }
+                else if (k <= sW+d) {
+                  vec_tmp_begl = esl_sse_rightshift_ps(vec_alpha_begl[jp_wA[k]][w][dkindex],neginfv);
+                }
+                else if (k <= 2*sW+d) {
+                  vec_tmp_begl = _mm_movelh_ps(neginfv, vec_alpha_begl[jp_wA[k]][w][dkindex]);
+                }
+                else {
+                  vec_tmp_begl = esl_sse_leftshift_ps(neginfv, vec_alpha_begl[jp_wA[k]][w][dkindex]);
+                }
+
+                vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
               }
-	      for (     ; k <=   sW + d && k <= j; k++) {
-                vec_tmp_begl = esl_sse_rightshift_ps(vec_alpha_begl[jp_wA[k]][w][(4*sW+d-k)%sW],neginfv);
-                //vec_tmp_begr = _mm_unpacklo_ps(vec_alpha[jp_y][y][k%sW],vec_alpha[jp_y][y][k%sW]);
-                //vec_tmp_begr = _mm_movehl_ps(vec_tmp_begr,vec_tmp_begr);
-                vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
-                vec_tmp_begr = _mm_set1_ps(*vec_access);
-		//tmp.v = _mm_max_ps(tmp.v, _mm_add_ps(vec_alpha_begl[jp_wA[k]][w][d-k], vec_tmp_begr));
-		tmp.v = _mm_max_ps(tmp.v, _mm_add_ps(vec_tmp_begl, vec_tmp_begr));
-              }
-	      for (     ; k <= 2*sW + d && k <= j; k++) {
-                vec_tmp_begl = _mm_movelh_ps(neginfv, vec_alpha_begl[jp_wA[k]][w][(4*sW+d-k)%sW]);
-                //vec_tmp_begr = _mm_unpackhi_ps(vec_alpha[jp_y][y][k%sW],vec_alpha[jp_y][y][k%sW]);
-                //vec_tmp_begr = _mm_movelh_ps(vec_tmp_begr,vec_tmp_begr);
-                vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
-                vec_tmp_begr = _mm_set1_ps(*vec_access);
-		//tmp.v = _mm_max_ps(tmp.v, _mm_add_ps(vec_alpha_begl[jp_wA[k]][w][d-k], vec_tmp_begr));
-		tmp.v = _mm_max_ps(tmp.v, _mm_add_ps(vec_tmp_begl, vec_tmp_begr));
-              }
-	      for (     ; k <= 3*sW + d && k <= j; k++) {
-                vec_tmp_begl = esl_sse_leftshift_ps(neginfv, vec_alpha_begl[jp_wA[k]][w][(4*sW+d-k)%sW]);
-                //vec_tmp_begr = _mm_unpackhi_ps(vec_alpha[jp_y][y][k%sW],vec_alpha[jp_y][y][k%sW]);
-                //vec_tmp_begr = _mm_movehl_ps(vec_tmp_begr,vec_tmp_begr);
-                vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
-                vec_tmp_begr = _mm_set1_ps(*vec_access);
-		//tmp.v = _mm_max_ps(tmp.v, _mm_add_ps(vec_alpha_begl[jp_wA[k]][w][d-k], vec_tmp_begr));
-		tmp.v = _mm_max_ps(tmp.v, _mm_add_ps(vec_tmp_begl, vec_tmp_begr));
-              }
-	      vec_alpha[jp_v][v][d] = tmp.v;
-	      /* careful: scores for w, the BEGL_S child of v, are in alpha_begl, not alpha */
-	    }
-            vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
-            vec_alpha[jp_v][v][-2] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-2],neginfv);
+            }
+
+           vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
+           vec_alpha[jp_v][v][-2] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-2],neginfv);
+
 //printf("j%2d v%2d ",j,v);
-//for (d = 0; d <= W && d <= j; d++) { 
+//for (d = 0; d <= W && d <= j; d++) {
 //float *access;
 //access = (float *) (&(vec_alpha[jp_v][v][d%sW])) + d/sW;
 //printf("%10.2e ",*access);
 //}
 //printf("\n");
-	  }
+          }
 	  else if (cm->stid[v] == BEGL_S) {
 	    y = cm->cfirst[v]; 
             for (d = 0; d < sW; d++) {
