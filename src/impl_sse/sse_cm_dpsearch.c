@@ -148,7 +148,8 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
   __m128    mask;
   __m128    vec_beginsc;
   union vec_union { __m128 v; float x[4]; } tmp;
-  union vec_union *tmpary;
+  __m128   *tmpary;
+  __m128   *mem_tmpary;
   float     tmp_esc;
 
   L = j0-i0+1;
@@ -207,8 +208,9 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
   ESL_ALLOC(vec_esc[0],         sizeof(__m128  *) * cm->abc->Kp * cm->M);
   ESL_ALLOC(mem_esc,            sizeof(__m128   ) * cm->abc->Kp * cm->M * (sW) + 15);
   ESL_ALLOC(esc_stale,          sizeof(int     *) * cm->abc->Kp);
-  ESL_ALLOC(tmpary,             sizeof(union vec_union) * (W+1));
+  ESL_ALLOC(mem_tmpary,         sizeof(__m128   ) * (W+1) + 15);
 
+  tmpary = (__m128 *) (((unsigned long int) mem_tmpary + 15) & (~0xf));
   vec_init_scAA[0] = (__m128 *) (((unsigned long int) mem_init_scAA + 15) & (~0xf)) + 2;
   vec_alpha[1] = vec_alpha[0] + cm->M;
   vec_alpha[0][0] = (__m128 *) (((unsigned long int) mem_alpha + 15) & (~0xf)) + 2;
@@ -336,31 +338,33 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
         for (v = cm->M-1; v > 0; v--) {
           if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
             for (d = 0; d < delta; d++) {
-              tmpary[d].v = vec_esc[dsq[j]][v][sW-delta+d];
-              tmpary[d].v = _mm_shuffle_ps(tmpary[d].v, tmpary[d].v, _MM_SHUFFLE(2,1,0,0));
+              tmpary[d] = vec_esc[dsq[j]][v][sW-delta+d];
+              tmpary[d] = _mm_shuffle_ps(tmpary[d], tmpary[d], _MM_SHUFFLE(2,1,0,0));
               tmp_esc     = (j^W)|d ? cm->oesc[v][dsq[j-d+1]] : -eslINFINITY;
-              tmpary[d].x[0] = tmp_esc;
+              //tmpary[d].x[0] = tmp_esc;
+              tmpary[d] = _mm_move_ss(tmpary[d],_mm_set1_ps(tmp_esc));
             }
             for (d = sW-1; d >= delta; d--) {
               vec_esc[dsq[j]][v][d] = vec_esc[dsq[j]][v][d-delta];
             }
             z = 0;
             for (d = 0; d < delta; d++)
-              vec_esc[dsq[j]][v][d] = tmpary[z++].v;
+              vec_esc[dsq[j]][v][d] = tmpary[z++];
           }
           else if (cm->sttype[v] == MP_st) {
             for (d = 0; d < delta; d++) {
-              tmpary[d].v = vec_esc[dsq[j]][v][sW-delta+d];
-              tmpary[d].v = _mm_shuffle_ps(tmpary[d].v, tmpary[d].v, _MM_SHUFFLE(2,1,0,0));
+              tmpary[d] = vec_esc[dsq[j]][v][sW-delta+d];
+              tmpary[d] = _mm_shuffle_ps(tmpary[d], tmpary[d], _MM_SHUFFLE(2,1,0,0));
               tmp_esc     = (j^W)|d ? cm->oesc[v][dsq[j-d+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY;
-              tmpary[d].x[0] = tmp_esc;
+              //tmpary[d].x[0] = tmp_esc;
+              tmpary[d] = _mm_move_ss(tmpary[d],_mm_set1_ps(tmp_esc));
             }
             for (d = sW-1; d >= delta; d--) {
               vec_esc[dsq[j]][v][d] = vec_esc[dsq[j]][v][d-delta];
             }
             z = 0;
             for (d = 0; d < delta; d++)
-              vec_esc[dsq[j]][v][d] = tmpary[z++].v;
+              vec_esc[dsq[j]][v][d] = tmpary[z++];
           }
         }
         esc_stale[dsq[j]] = j;
@@ -419,8 +423,8 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
               dkindex--;
             }
 
-           vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
-           vec_alpha[jp_v][v][-2] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-2],neginfv);
+            vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
+            vec_alpha[jp_v][v][-2] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-2],neginfv);
 
 //printf("j%2d v%2d ",j,v);
 //for (d = 0; d <= W && d <= j; d++) {
@@ -456,15 +460,15 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
 // FIXME: There has to be a better way to handle the "delete" path
 // This is correct, but ineffecicient - the inner loop will probably stall on it's
 // sequential operations
-            for (d = 0; d < sW; d++) tmpary[d].v = vec_init_scAA[v][d-sd];
+            for (d = 0; d < sW; d++) tmpary[d] = vec_init_scAA[v][d-sd];
             for (yoffset = cm->cnum[v]-1; yoffset > 0; yoffset--) {
               vec_tsc = _mm_set1_ps(tsc_v[yoffset]);
               for (d = 0; d < sW; d++) {
-                tmpary[d].v = _mm_max_ps(tmpary[d].v, _mm_add_ps(vec_alpha[jp_y][y+yoffset][d - sd], vec_tsc));
+                tmpary[d] = _mm_max_ps(tmpary[d], _mm_add_ps(vec_alpha[jp_y][y+yoffset][d - sd], vec_tsc));
               }
             }
             for (d = 0; d < sW; d++) {
-              vec_alpha[jp_v][v][d] = _mm_add_ps(tmpary[d].v,vec_esc[dsq[j]][v][d]);
+              vec_alpha[jp_v][v][d] = _mm_add_ps(tmpary[d],vec_esc[dsq[j]][v][d]);
             }
             vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
 
@@ -473,8 +477,8 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
             do
               {
                 for (d = 0; d < sW; d++) {
-                  tmpary[d].v = _mm_max_ps(tmpary[d].v, _mm_add_ps(vec_alpha[jp_y][y][d - sd], vec_tsc));
-                  vec_alpha[jp_v][v][d] = _mm_add_ps(tmpary[d].v,vec_esc[dsq[j]][v][d]);
+                  tmpary[d] = _mm_max_ps(tmpary[d], _mm_add_ps(vec_alpha[jp_y][y][d - sd], vec_tsc));
+                  vec_alpha[jp_v][v][d] = _mm_add_ps(tmpary[d],vec_esc[dsq[j]][v][d]);
                 }
               tmp.v = vec_alpha[jp_v][v][-1];
               vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
@@ -491,17 +495,35 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
           } /* end of else (which was entered if ! B_st && ! BEGL_S st) */
 	  else { /* ! B_st, ! BEGL_S st , ! IL_st*/
 	    y = cm->cfirst[v]; 
+            //__m128 *v_access;
+            //__m128 *y_access;
+            //__m128 *x_access;
 
-            for (d = 0; d < sW; d++) tmpary[d].v = vec_init_scAA[v][d-sd];
-            //for (yoffset = cm->cnum[v]-1; yoffset >= 0; yoffset--) {
-            for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+            vec_tsc = _mm_set1_ps(tsc_v[0]);
+            //v_access = &vec_alpha[jp_v][v][0];
+            //y_access = &vec_alpha[jp_y][y][-sd];
+            //x_access = &vec_init_scAA[v][-sd];
+            for (d = 0; d < sW; d++) {
+              vec_alpha[jp_v][v][d] = _mm_max_ps(vec_init_scAA[v][d-sd], _mm_add_ps(vec_alpha[jp_y][y][d - sd], vec_tsc));
+              //v_access[d] = _mm_max_ps(x_access[d], _mm_add_ps(y_access[d], vec_tsc));
+              //v_access++; y_access++; x_access++;
+            }
+            for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) {
               vec_tsc = _mm_set1_ps(tsc_v[yoffset]);
+              //v_access = &vec_alpha[jp_v][v][0];
+              //y_access = &vec_alpha[jp_y][y+yoffset][-sd];
               for (d = 0; d < sW; d++) {
-                tmpary[d].v = _mm_max_ps(tmpary[d].v, _mm_add_ps(vec_alpha[jp_y][y+yoffset][d - sd], vec_tsc));
+                vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_alpha[jp_y][y+yoffset][d - sd], vec_tsc));
+                //v_access[d] = _mm_max_ps(v_access[d], _mm_add_ps(y_access[d], vec_tsc));
+                //v_access++; y_access++;
               }
             }
+            //v_access = &vec_alpha[jp_v][v][0];
+            //x_access = &vec_esc[dsq[j]][v][0];
             for (d = 0; d < sW; d++) {
-              vec_alpha[jp_v][v][d] = _mm_add_ps(tmpary[d].v,vec_esc[dsq[j]][v][d]);
+              vec_alpha[jp_v][v][d] = _mm_add_ps(vec_alpha[jp_v][v][d],vec_esc[dsq[j]][v][d]);
+              //v_access[d] = _mm_add_ps(v_access[d], x_access[d]);
+              //v_access++; x_access++;
             }
 
             vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
@@ -630,7 +652,7 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
   free(vec_esc[0]);        free(vec_esc);        free(mem_esc);
   free(esc_stale);
   free(mem_bestr);
-  free(tmpary);
+  free(mem_tmpary);
   
   ESL_DPRINTF1(("SSERefCYKScan() return score: %10.4f\n", vsc_root)); 
   return eslOK;
