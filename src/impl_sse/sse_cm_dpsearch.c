@@ -392,12 +392,13 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
               vec_alpha[jp_v][v][d] = vec_init_scAA[v][d];
             }
  
+            int dkindex = 0;
             for (k = 0; k < W && k <=j; k++) {
               vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
               vec_tmp_begr = _mm_set1_ps(*vec_access);
 
               for (d = 0; d < sW; d++) {
-                int dkindex = (4*sW+d-k)%sW;
+                if (dkindex >= sW) dkindex -= sW;
                 if (k <= d) {
                   vec_tmp_begl = vec_alpha_begl[jp_wA[k]][w][dkindex];
                 }
@@ -411,8 +412,11 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
                   vec_tmp_begl = esl_sse_leftshift_ps(neginfv, vec_alpha_begl[jp_wA[k]][w][dkindex]);
                 }
 
+                dkindex++;
+
                 vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
               }
+              dkindex--;
             }
 
            vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
@@ -446,49 +450,61 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
 //}
 //printf("\n");
 	  }
-	  else { /* ! B_st, ! BEGL_S st */
+	  else if (cm->sttype[v] == IL_st) { 
 	    y = cm->cfirst[v]; 
-
-// FIXME: this code closely mirrors that in the scalar version, however it is bugged;
-// on IL states, stale (undefined) values from vec_alpha will get into the calculation
-// They would be forced out if the while loop ran enough times, but if the existing
-// (invalid) scores are _better_ than the new scores, the loop will exit.
-//            do
-//              {
-//                for (d = 0; d < sW; d++) {
-//                  tmp.v = vec_init_scAA[v][d-sd];
-//                  for (yoffset = 0; yoffset < cm->cnum[v]; yoffset--) {
-//                    vec_tsc = _mm_set1_ps(tsc_v[yoffset]);
-//                    tmp.v = _mm_max_ps(tmp.v, _mm_add_ps(vec_alpha[jp_y][y+yoffset][d - sd], vec_tsc));
-//                  }
-//
-//                  vec_alpha[jp_v][v][d] = _mm_add_ps(tmp.v,vec_esc[dsq[j]][v][d]);
-//                } /* end of for d loop */
-//                /* v = y delete path (IL state)
-//                 * logical test: v==y AND jp_v == jp_y AND any(rshift(alpha[jp][v][sW-1]) > alpha[jp][v][-1])  */
-//               tmp.v = vec_alpha[jp_v][v][-1];
-//                vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
-//              } while (v==y && jp_v == jp_y && esl_sse_any_gt_ps(vec_alpha[jp_v][v][-1],tmp.v));
 
 // FIXME: There has to be a better way to handle the "delete" path
 // This is correct, but ineffecicient - the inner loop will probably stall on it's
 // sequential operations
             for (d = 0; d < sW; d++) tmpary[d].v = vec_init_scAA[v][d-sd];
-            for (yoffset = cm->cnum[v]-1; yoffset >= 0; yoffset--) {
+            for (yoffset = cm->cnum[v]-1; yoffset > 0; yoffset--) {
               vec_tsc = _mm_set1_ps(tsc_v[yoffset]);
-              do
-                {
-                  for (d = 0; d < sW; d++) {
-                    tmpary[d].v = _mm_max_ps(tmpary[d].v, _mm_add_ps(vec_alpha[jp_y][y+yoffset][d - sd], vec_tsc));
-                    vec_alpha[jp_v][v][d] = _mm_add_ps(tmpary[d].v,vec_esc[dsq[j]][v][d]);
-                  }
-                tmp.v = vec_alpha[jp_v][v][-1];
-                vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
-// FIXME: need to update and check -2 as well, in case of MP
-// FIXME: OR NOT!? in that case v!=y
-              } while (v==(y+yoffset) && jp_v == jp_y && esl_sse_any_gt_ps(vec_alpha[jp_v][v][-1],tmp.v));
+              for (d = 0; d < sW; d++) {
+                tmpary[d].v = _mm_max_ps(tmpary[d].v, _mm_add_ps(vec_alpha[jp_y][y+yoffset][d - sd], vec_tsc));
+              }
+            }
+            for (d = 0; d < sW; d++) {
+              vec_alpha[jp_v][v][d] = _mm_add_ps(tmpary[d].v,vec_esc[dsq[j]][v][d]);
+            }
+            vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
+
+            /* yoffset = 0 */
+            vec_tsc = _mm_set1_ps(tsc_v[0]);
+            do
+              {
+                for (d = 0; d < sW; d++) {
+                  tmpary[d].v = _mm_max_ps(tmpary[d].v, _mm_add_ps(vec_alpha[jp_y][y][d - sd], vec_tsc));
+                  vec_alpha[jp_v][v][d] = _mm_add_ps(tmpary[d].v,vec_esc[dsq[j]][v][d]);
+                }
+              tmp.v = vec_alpha[jp_v][v][-1];
+              vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
+            } while (esl_sse_any_gt_ps(vec_alpha[jp_v][v][-1],tmp.v));
+
+            vec_alpha[jp_v][v][-2] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-2],neginfv);
+//printf("j%2d v%2d ",j,v);
+//for (d = 0; d <= W && d <= j; d++) { 
+//float *access;
+//access = (float *) (&(vec_alpha[jp_v][v][d%sW])) + d/sW;
+//printf("%10.2e ",*access);
+//}
+//printf("\n");
+          } /* end of else (which was entered if ! B_st && ! BEGL_S st) */
+	  else { /* ! B_st, ! BEGL_S st , ! IL_st*/
+	    y = cm->cfirst[v]; 
+
+            for (d = 0; d < sW; d++) tmpary[d].v = vec_init_scAA[v][d-sd];
+            //for (yoffset = cm->cnum[v]-1; yoffset >= 0; yoffset--) {
+            for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+              vec_tsc = _mm_set1_ps(tsc_v[yoffset]);
+              for (d = 0; d < sW; d++) {
+                tmpary[d].v = _mm_max_ps(tmpary[d].v, _mm_add_ps(vec_alpha[jp_y][y+yoffset][d - sd], vec_tsc));
+              }
+            }
+            for (d = 0; d < sW; d++) {
+              vec_alpha[jp_v][v][d] = _mm_add_ps(tmpary[d].v,vec_esc[dsq[j]][v][d]);
             }
 
+            vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
             vec_alpha[jp_v][v][-2] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-2],neginfv);
 //printf("j%2d v%2d ",j,v);
 //for (d = 0; d <= W && d <= j; d++) { 
