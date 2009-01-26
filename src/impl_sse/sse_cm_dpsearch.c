@@ -467,6 +467,9 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
                 tmpary[d] = _mm_max_ps(tmpary[d], _mm_add_ps(vec_alpha[jp_y][y+yoffset][d - sd], vec_tsc));
               }
             }
+// FIXME: I don't think I _should_ be able to pull out the addition of the emission scores
+// Probably only getting away with it because we use uninformative emission scores for
+// insertions (i.e., adding zero)
             for (d = 0; d < sW; d++) {
               vec_alpha[jp_v][v][d] = _mm_add_ps(tmpary[d],vec_esc[dsq[j]][v][d]);
             }
