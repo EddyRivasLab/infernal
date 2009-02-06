@@ -396,7 +396,7 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
               vec_alpha[jp_v][v][d] = vec_init_scAA[v][d];
             }
  
-            int dkindex = 0;
+/*            int dkindex = 0;
             for (k = 0; k < W && k <=j; k++) {
               vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
               vec_tmp_begr = _mm_set1_ps(*vec_access);
@@ -421,6 +421,76 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
                 vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
               }
               dkindex--;
+            }
+*/
+            int dkindex;
+            for (k = 0; k < sW && k <= j; k++) {
+              vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
+              vec_tmp_begr = _mm_set1_ps(*vec_access);
+
+              dkindex = sW - k;
+              for (d = 0; d < k; d++) {
+                vec_tmp_begl = esl_sse_rightshift_ps(vec_alpha_begl[jp_wA[k]][w][dkindex],neginfv);
+                vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
+                dkindex++;
+              }
+
+              dkindex = 0;
+              for (     ; d < sW; d++) {
+                vec_tmp_begl = vec_alpha_begl[jp_wA[k]][w][dkindex];
+                vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
+                dkindex++;
+              }
+            }
+
+            for ( ; k < 2*sW && k <= j; k++) {
+              vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
+              vec_tmp_begr = _mm_set1_ps(*vec_access);
+
+              dkindex = 2*sW - k;
+              for (d = 0; d < k - sW; d++) {
+                vec_tmp_begl = _mm_movelh_ps(neginfv, vec_alpha_begl[jp_wA[k]][w][dkindex]);
+                vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
+                dkindex++;
+              }
+
+              dkindex = 0;
+              for ( ; d < sW; d++) {
+                vec_tmp_begl = esl_sse_rightshift_ps(vec_alpha_begl[jp_wA[k]][w][dkindex],neginfv);
+                vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
+                dkindex++;
+              }
+            }
+
+            for ( ; k < 3*sW && k <=j; k++) {
+              vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
+              vec_tmp_begr = _mm_set1_ps(*vec_access);
+
+              dkindex = 3*sW - k;
+              for (d = 0; d < k - 2*sW; d++) {
+                vec_tmp_begl = esl_sse_leftshift_ps(neginfv, vec_alpha_begl[jp_wA[k]][w][dkindex]);
+                vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
+                dkindex++;
+              }
+
+              dkindex = 0;
+              for ( ; d < sW; d++) {
+                vec_tmp_begl = _mm_movelh_ps(neginfv, vec_alpha_begl[jp_wA[k]][w][dkindex]);
+                vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
+                dkindex++;
+              }
+            }
+
+            for ( ; k < 4*sW && k <=j; k++) {
+              vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
+              vec_tmp_begr = _mm_set1_ps(*vec_access);
+
+              dkindex = 0;
+              for (d = k - 3*sW; d < sW; d++) {
+                vec_tmp_begl = esl_sse_leftshift_ps(neginfv, vec_alpha_begl[jp_wA[k]][w][dkindex]);
+                vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
+                dkindex++;
+              }
             }
 
             vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
@@ -656,8 +726,9 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
   free(esc_stale);
   free(mem_bestr);
   free(mem_tmpary);
-  
+
   ESL_DPRINTF1(("SSERefCYKScan() return score: %10.4f\n", vsc_root)); 
+//printf("i0 %d j0 %d W %d sW %d\n",i0,j0,W,sW);
   return eslOK;
   
  ERROR:
@@ -691,6 +762,7 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
 #include <esl_getopts.h>
 #include <esl_histogram.h>
 #include <esl_random.h>
+#include <esl_randomseq.h>
 #include <esl_sqio.h>
 #include <esl_stats.h>
 #include <esl_stopwatch.h>
@@ -768,7 +840,23 @@ main(int argc, char **argv)
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
 
   /* get sequences */
-  if(do_random) {
+  if(!esl_opt_IsDefault(go, "-L")) {
+     double *dnull;
+     ESL_DSQ *randdsq = NULL;
+     ESL_ALLOC(randdsq, sizeof(ESL_DSQ)* (L+2));
+     ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
+     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
+     esl_vec_DNorm(dnull, cm->abc->K);
+     seqs_to_aln = CreateSeqsToAln(N, FALSE);
+
+     for (i = 0; i < N; i++) {
+       if (esl_rsq_xIID(r, dnull, cm->abc->K, L, randdsq)  != eslOK) cm_Fail("Failure creating random sequence.");
+       if((seqs_to_aln->sq[i] = esl_sq_CreateDigitalFrom(abc, NULL, randdsq, L, NULL, NULL, NULL)) == NULL)
+         cm_Fail("Failure digitizing/copying random sequence.");
+
+     }
+  }
+  else if(do_random) {
     double *dnull;
     ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
