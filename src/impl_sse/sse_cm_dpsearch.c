@@ -568,35 +568,19 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
           } /* end of else (which was entered if ! B_st && ! BEGL_S st) */
 	  else { /* ! B_st, ! BEGL_S st , ! IL_st*/
 	    y = cm->cfirst[v]; 
-            //__m128 *v_access;
-            //__m128 *y_access;
-            //__m128 *x_access;
 
             vec_tsc = _mm_set1_ps(tsc_v[0]);
-            //v_access = &vec_alpha[jp_v][v][0];
-            //y_access = &vec_alpha[jp_y][y][-sd];
-            //x_access = &vec_init_scAA[v][-sd];
             for (d = 0; d < sW; d++) {
               vec_alpha[jp_v][v][d] = _mm_max_ps(vec_init_scAA[v][d-sd], _mm_add_ps(vec_alpha[jp_y][y][d - sd], vec_tsc));
-              //v_access[d] = _mm_max_ps(x_access[d], _mm_add_ps(y_access[d], vec_tsc));
-              //v_access++; y_access++; x_access++;
             }
             for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) {
               vec_tsc = _mm_set1_ps(tsc_v[yoffset]);
-              //v_access = &vec_alpha[jp_v][v][0];
-              //y_access = &vec_alpha[jp_y][y+yoffset][-sd];
               for (d = 0; d < sW; d++) {
                 vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_alpha[jp_y][y+yoffset][d - sd], vec_tsc));
-                //v_access[d] = _mm_max_ps(v_access[d], _mm_add_ps(y_access[d], vec_tsc));
-                //v_access++; y_access++;
               }
             }
-            //v_access = &vec_alpha[jp_v][v][0];
-            //x_access = &vec_esc[dsq[j]][v][0];
             for (d = 0; d < sW; d++) {
               vec_alpha[jp_v][v][d] = _mm_add_ps(vec_alpha[jp_v][v][d],vec_esc[dsq[j]][v][d]);
-              //v_access[d] = _mm_add_ps(v_access[d], x_access[d]);
-              //v_access++; x_access++;
             }
 
             vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
