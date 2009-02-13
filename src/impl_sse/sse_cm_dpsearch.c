@@ -53,7 +53,7 @@
 
 #define AMX(j,v,d) (alphap[(j * cm->M * (W+1)) + ((v) * (W+1) + d)])
 
-/* Function: SSERefCYKScan()
+/* Function: SSECYKScan()
  * Date:     EPN, Wed Sep 12 16:55:28 2007
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
@@ -75,8 +75,8 @@
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
- * Note:     This function is heavily synchronized with RefIInsideScan() and SSERefCYKScan()
- *           any change to this function should be mirrored in those functions. 
+ * Note:     This function is somewhat synchronized with RefIInsideScan() and SSERefCYKScan()
+ *           any change to this function might need to be mirrored in those functions. 
  *
  * Returns:  eslOK on succes;
  *           <ret_sc> is score of best overall hit (vsc[0]). Information on hits added to <results>.
@@ -84,7 +84,7 @@
  *           Dies immediately if some error occurs.
  */
 int
-SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
+SSECYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	   search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc)
 {
   int       status;
@@ -112,13 +112,13 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "SSERefCYKScan, CMH_BITS flag is not raised.\n");
-  if(j0 < i0)                            ESL_FAIL(eslEINCOMPAT, errbuf, "SSERefCYKScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "SSERefCYKScan, dsq is NULL\n");
-  if(smx == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "SSERefCYKScan, smx == NULL\n");
-  if(cm->search_opts & CM_SEARCH_INSIDE) ESL_FAIL(eslEINCOMPAT, errbuf, "SSERefCYKScan, CM_SEARCH_INSIDE flag raised");
-  if(! (cm->smx->flags & cmSMX_HAS_FLOAT)) ESL_FAIL(eslEINCOMPAT, errbuf, "SSERefCYKScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
-  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "SSERefCYKScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
+  if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "SSECYKScan, CMH_BITS flag is not raised.\n");
+  if(j0 < i0)                            ESL_FAIL(eslEINCOMPAT, errbuf, "SSECYKScan, i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "SSECYKScan, dsq is NULL\n");
+  if(smx == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "SSECYKScan, smx == NULL\n");
+  if(cm->search_opts & CM_SEARCH_INSIDE) ESL_FAIL(eslEINCOMPAT, errbuf, "SSECYKScan, CM_SEARCH_INSIDE flag raised");
+  if(! (cm->smx->flags & cmSMX_HAS_FLOAT)) ESL_FAIL(eslEINCOMPAT, errbuf, "SSECYKScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
+  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "SSECYKScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
   float ***alpha      = smx->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -711,7 +711,7 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
   free(mem_bestr);
   free(mem_tmpary);
 
-  ESL_DPRINTF1(("SSERefCYKScan() return score: %10.4f\n", vsc_root)); 
+  ESL_DPRINTF1(("SSECYKScan() return score: %10.4f\n", vsc_root)); 
 //printf("i0 %d j0 %d W %d sW %d\n",i0,j0,W,sW);
   return eslOK;
   
@@ -725,12 +725,11 @@ SSERefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, i
  *****************************************************************/
 #ifdef IMPL_SEARCH_BENCHMARK
 /* gcc -o sse-bmark -g -O2 -std=gnu99 -msse2 -mpentiumpro -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c -linfernal -lhmmer -leasel -lm
+ * icc -o sse-bmark -g -O3 -static -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_SEARCH_BENCHMARK sse_cm_dpsearch.c -linfernal -lhmmer -leasel -lm
 
  * Not updated for this file ...
  * mpicc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
  * mpicc -o benchmark-search -g -O2 -I. -L. -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
- * icc -g -O3 -static -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
- * icc -o benchmark-search -O3 -static -I. -L. -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
  * ./benchmark-search <cmfile>
  */
 
@@ -874,8 +873,8 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "-w")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  if((status = SSERefCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	  printf("%4d %-30s %10.4f bits ", (i+1), "SSERefCYKScan(): ", sc);
+	  if((status = SSECYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  printf("%4d %-30s %10.4f bits ", (i+1), "SSECYKScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}
