@@ -261,9 +261,8 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   }
 
   /* create RNG */
-  if (! esl_opt_IsDefault(go, "-s")) 
-    cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
-  else cfg->r = esl_randomness_CreateTimeseeded();
+  if ( esl_opt_IsOn(go, "-s")) cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
+  else                         cfg->r = esl_randomness_CreateTimeseeded();
 
   if (cfg->abc_out == NULL) ESL_FAIL(eslEINVAL, errbuf, "Output alphabet creation failed.");
   if (cfg->r       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
@@ -317,7 +316,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     else if(esl_opt_GetBoolean(go, "-a")) {
       if((status = emit_alignment(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
     }
-    else if(! esl_opt_IsDefault(go, "--shmm")) {
+    else if(esl_opt_IsOn(go, "--shmm")) {
       if((status = build_cp9     (go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
     }
     FreeCM(cm);
@@ -360,7 +359,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
    * this is strange in that cm->pend may be placed as a number greater than 1., this number
    * is then divided by nexits in ConfigLocalEnds() to get the prob for each v --> EL transition,
    * this is guaranteed by the way we calculate it to be < 1.,  it's the argument from --pfend */
-  if(! esl_opt_IsDefault(go, "--pfend")) {
+  if( esl_opt_IsOn(go, "--pfend")) {
     nexits = 0;
     for (nd = 1; nd < cm->nodes; nd++) {
       if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
@@ -381,7 +380,7 @@ initialize_cm(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *er
     debug_print_cp9_params(cfg->ahmmfp, cm->cp9, TRUE);
   }
 
-  if(! esl_opt_IsDefault(go, "--exp"))        ExponentiateCM(cm, esl_opt_GetReal(go, "--exp"));
+  if(esl_opt_IsOn(go, "--exp"))        ExponentiateCM(cm, esl_opt_GetReal(go, "--exp"));
   
   return eslOK;
 }
@@ -460,7 +459,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   int nseq = esl_opt_GetInteger(go, "-n");
   int do_truncate;
 
-  do_truncate = ((! esl_opt_IsDefault(go, "--begin")) && (! esl_opt_IsDefault(go, "--end"))) ? TRUE : FALSE;
+  do_truncate = (esl_opt_IsOn(go, "--begin") && esl_opt_IsOn(go, "--end")) ? TRUE : FALSE;
 
   namelen = IntMaxDigits() + 1;
   if(cm->name != NULL) namelen += strlen(cm->name) + 1;
@@ -591,7 +590,7 @@ build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf
   
   /* Allocate and zero the new HMM we're going to build by sampling from the CM.
    */
-  if((! esl_opt_IsDefault(go, "--begin")) && (! esl_opt_IsDefault(go, "--end"))) 
+  if( esl_opt_IsOn(go, "--begin") && esl_opt_IsOn(go, "--end")) 
     {
       do_truncate = TRUE;
       bpos = esl_opt_GetInteger(go, "--begin");

@@ -174,8 +174,8 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
    For a new major release, or a bugfix minor release,
    the tags are made from the relevant stable branch:
 
-      svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0\
-               https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0\
+      svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0 \
+               https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0 \
                -m "tagged Infernal 1.0 release, from 1.0 stable branch"          
       svn copy https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.0\
                https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/1.0\
@@ -311,4 +311,4 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 1.0rc3 - SRE, Wed Sep 24 14:33:59 2008   r2596  Easel:r294
 1.0rc4 - SRE, Mon Nov 24 17:43:07 2008   r2635  Easel:r304
 1.0rc5 - SRE, Wed Dec 17 17:59:01 2008   r2673  Easel:r310
-1.0    - SRE, Tue Jan 13 14:33:16 2009   r2703  Easel:r315
+1.0    - SRE, Tue Jan 13 14:33:16 2009   r2710  Easel:r317

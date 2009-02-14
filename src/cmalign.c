@@ -330,11 +330,11 @@ main(int argc, char **argv)
   cfg.cmfile     = esl_opt_GetArg(go, 1); 
   cfg.sqfile     = esl_opt_GetArg(go, 2); 
   cfg.sqfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
-  if   (esl_opt_IsDefault(go, "--informat")) cfg.fmt = eslSQFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
-  else { 
+  if   (esl_opt_IsOn(go, "--informat")) { 
     cfg.fmt = esl_sqio_EncodeFormat(esl_opt_GetString(go, "--informat"));
     if(cfg.fmt == eslSQFILE_UNKNOWN) cm_Fail("Can't recognize sequence file format: %s. valid options are: fasta, embl, genbank, ddbj, uniprot, stockholm, or pfam\n", esl_opt_GetString(go, "--informat"));
-  }
+  } else
+    cfg.fmt = eslSQFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
   cfg.abc        = NULL;	           /* created in init_master_cfg() in masters, or in mpi_worker() in workers */
   if      (esl_opt_GetBoolean(go, "--rna")) cfg.abc_out = esl_alphabet_Create(eslRNA);
   else if (esl_opt_GetBoolean(go, "--dna")) cfg.abc_out = esl_alphabet_Create(eslDNA);
@@ -407,14 +407,14 @@ main(int argc, char **argv)
 #endif /*HAVE_MPI*/
     {
       if(! esl_opt_GetBoolean(go, "-q")) cm_banner(stdout, argv[0], banner);
-      if(! esl_opt_IsDefault(go, "-M"))  serial_master_meta(go, &cfg);
+      if( esl_opt_IsOn(go, "-M"))        serial_master_meta(go, &cfg);
       serial_master(go, &cfg);
       esl_stopwatch_Stop(w);
     }
   /* Clean up the shared cfg. 
    */
   if (cfg.my_rank == 0) {
-    if (! esl_opt_IsDefault(go, "-o")) { 
+    if ( esl_opt_IsOn(go, "-o")) { 
       printf("# Alignment saved in file %s.\n", esl_opt_GetString(go, "-o"));
       fclose(cfg.ofp); 
     }
@@ -508,7 +508,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     } else cfg->ofp = stdout;
 
   /* seed master's RNG, this will only be used if --sample enabled, but we always initialize it for convenience (seeds always get sent to workers) */
-  if (! esl_opt_IsDefault(go, "-s")) 
+  if ( esl_opt_IsOn(go, "-s")) 
     cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
   else cfg->r = esl_randomness_CreateTimeseeded();
 
@@ -1213,7 +1213,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
    * this is strange in that cm->pend may be placed as a number greater than 1., this number
    * is then divided by nexits in ConfigLocalEnds() to get the prob for each v --> EL transition,
    * this is guaranteed by the way we calculate it to be < 1.,  it's the argument from --pfend */
-  if(! esl_opt_IsDefault(go, "--pfend")) {
+  if( esl_opt_IsOn(go, "--pfend")) {
     nexits = 0;
     for (nd = 1; nd < cm->nodes; nd++) {
       if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
@@ -1237,7 +1237,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
    */
 
   /* if we're master and we're trying to include an alignment, make sure it is consistent with CM structure */
-  if(cfg->my_rank == 0 && (! esl_opt_IsDefault(go, "--withali"))) { 
+  if(cfg->my_rank == 0 && (esl_opt_IsOn(go, "--withali"))) { 
     if((status = check_withali(go, cfg, cm, &(cfg->withmsa), &(cfg->withali_mtr))) != eslOK)
       ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have a SS_cons compatible with the CM\n", esl_opt_GetString(go, "--withali"));
     }

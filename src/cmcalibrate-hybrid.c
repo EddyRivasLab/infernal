@@ -256,12 +256,9 @@ main(int argc, char **argv)
       printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
-  if (! esl_opt_IsDefault(go, "--ga"))
-    cm_Fail("--ga not yet implemented, implement it.");
-  if (! esl_opt_IsDefault(go, "--nc"))
-    cm_Fail("--nc not yet implemented, implement it.");
-  if (! esl_opt_IsDefault(go, "--tc"))
-    cm_Fail("--tc not yet implemented, implement it.");
+  if ( esl_opt_IsOn(go, "--ga"))    cm_Fail("--ga not yet implemented, implement it.");
+  if ( esl_opt_IsOn(go, "--nc"))    cm_Fail("--nc not yet implemented, implement it.");
+  if ( esl_opt_IsOn(go, "--tc"))    cm_Fail("--tc not yet implemented, implement it.");
 
   /* Initialize configuration shared across all kinds of masters
    * and workers in this .c file.
@@ -531,13 +528,12 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   }
 
   /* set up the partition data that's used for all CMs */
-  if(esl_opt_IsDefault(go, "--pfile")) { /* by default we have 1 partition 0..100 */
+  if(esl_opt_IsOn(go, "--pfile")) { /* setup cfg->np and cfg->pstart in read_partition_file() */
+    if((status = read_partition_file(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
+  } else { /* by default we have 1 partition 0..100 */
     ESL_ALLOC(cfg->pstart, sizeof(int) * 1);
     cfg->np        = 1;
     cfg->pstart[0] = 0;
-  }
-  else { /* setup cfg->np and cfg->pstart in read_partition_file() */
-    if((status = read_partition_file(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   }
 
   cfg->be_verbose = FALSE;
@@ -553,9 +549,8 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   cfg->ncm      = 0;
 
   /* seed master's RNG */
-  if (! esl_opt_IsDefault(go, "-s")) 
-    cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
-  else cfg->r = esl_randomness_CreateTimeseeded();
+  if ( esl_opt_IsOn(go, "-s")) cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
+  else                         cfg->r = esl_randomness_CreateTimeseeded();
 
   /* create the stopwatch */
   cfg->w_stage = esl_stopwatch_Create();
@@ -738,8 +733,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	if(! (esl_opt_GetBoolean(go, "--filonly"))) {
 	  /* calculate gumbels for this gum mode */
 	  /* determine length of seqs to search for gumbel fitting */
-	  if(esl_opt_IsDefault(go, "--gumL")) L = cm->W*2; 
-	  else                                L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL")); /* minimum L we allow is 2 * cm->W, this is enforced silently (!) */
+	  if(esl_opt_IsOn(go, "--gumL")) L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL")); /* minimum L we allow is 2 * cm->W, this is enforced silently (!) */
+	  else                           L = cm->W*2; 
 
 	  ESL_DASSERT1((cfg->np == cfg->cmstatsA[cmi]->np));
 	  for (p = 0; p < cfg->np; p++) {
@@ -992,16 +987,16 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * in the filter threshold calculation (--db invoked), we need to broadcast 
    * that information to the workers.
    */
-  if(! (esl_opt_IsDefault(go, "--gcfromdb"))) { /* receive gc_freq info from master */
+  if( esl_opt_IsOn(go, "--gcfromdb")) { /* receive gc_freq info from master */
     MPI_Bcast(cfg->gc_freq, GC_SEGMENTS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
   }
-  if(! (esl_opt_IsDefault(go, "--pfile"))) { /* broadcast partition info to workers */
+  if( esl_opt_IsOn(go, "--pfile")) { /* broadcast partition info to workers */
     ESL_DASSERT1((! (esl_opt_GetBoolean(go, "--filonly"))));
     MPI_Bcast(&(cfg->np),  1,       MPI_INT, 0, MPI_COMM_WORLD);
     ESL_DASSERT1((cfg->pstart != NULL));
     MPI_Bcast(cfg->pstart, cfg->np, MPI_INT, 0, MPI_COMM_WORLD);
   }
-  if(! (esl_opt_IsDefault(go, "--db"))) { /* receive cfg->dbsize info from master */
+  if( esl_opt_IsOn(go, "--db")) { /* receive cfg->dbsize info from master */
     MPI_Bcast(&(cfg->dbsize), 1, MPI_LONG, 0, MPI_COMM_WORLD);
   }
 
@@ -1076,8 +1071,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	/* gumbel fitting section */
 	if(! (esl_opt_GetBoolean(go, "--filonly"))) {
-	  if(esl_opt_IsDefault(go, "--gumL")) L = cm->W*2; 
-	  else                                L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL")); /* minimum L we allow is 2 * cm->W, this is enforced silently (!) */
+	  if(esl_opt_IsOn(go, "--gumL")) L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL")); /* minimum L we allow is 2 * cm->W, this is enforced silently (!) */
+	  else                           L = cm->W*2; 
 
 	  for (p = 0; p < cfg->np; p++) {
 	    ESL_DPRINTF1(("MPI master: CM: %d gumbel mode: %d partition: %d\n", cfg->ncm, gum_mode, p));
@@ -1465,14 +1460,14 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * via broadcast from master. Otherwise we need to setup the default partition info
    * (single partition, 0..100 GC content)
    */
-  if(! (esl_opt_IsDefault(go, "--gcfromdb"))) { /* receive gc_freq info from master */
+  if( esl_opt_IsOn(go, "--gcfromdb")) { /* receive gc_freq info from master */
     ESL_DASSERT1((cfg->gc_freq == NULL));
     ESL_ALLOC(cfg->gc_freq,  sizeof(double) * GC_SEGMENTS);
     ESL_ALLOC(cfg->pgc_freq, sizeof(double) * GC_SEGMENTS);
     MPI_Bcast(cfg->gc_freq, GC_SEGMENTS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
   }
   else cfg->gc_freq = NULL; /* default */
-  if(! (esl_opt_IsDefault(go, "--pfile"))) { /* receive partition info from master */
+  if( esl_opt_IsOn(go, "--pfile")) { /* receive partition info from master */
     MPI_Bcast(&(cfg->np),     1, MPI_INT, 0, MPI_COMM_WORLD);
     ESL_DASSERT1((cfg->pstart == NULL));
     ESL_ALLOC(cfg->pstart, sizeof(int) * cfg->np);
@@ -1483,7 +1478,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
     ESL_ALLOC(cfg->pstart, sizeof(int) * cfg->np);
     cfg->pstart[0] = 0;
   }
-  if(! (esl_opt_IsDefault(go, "--db"))) { /* receive dbsize for CM evalue cutoff for filter thr calc from master */
+  if( esl_opt_IsOn(go, "--db")) { /* receive dbsize for CM evalue cutoff for filter thr calc from master */
     MPI_Bcast(&(cfg->dbsize), 1, MPI_LONG, 0, MPI_COMM_WORLD);
   } /* else cfg->dbsize set to default 1 Mb when cfg was created */
 
@@ -1536,8 +1531,8 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	
 	/* gumbel fitting section */
 	if(! (esl_opt_GetBoolean(go, "--filonly"))) {
-	  if(esl_opt_IsDefault(go, "--gumL")) L = cm->W*2; 
-	  else                                L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL")); /* minimum L we allow is 2 * cm->W, this is enforced silently (!) */
+	  if(esl_opt_IsOn(go, "--gumL"))  L = ESL_MAX(cm->W*2, esl_opt_GetInteger(go, "--gumL")); /* minimum L we allow is 2 * cm->W, this is enforced silently (!) */
+	  else                            L = cm->W*2; 
 	  for (p = 0; p < cfg->np; p++) { /* for each partition */
 	    
 	    ESL_DPRINTF1(("worker %d gum_mode: %d partition: %d\n", cfg->my_rank, gum_mode, p));
@@ -2132,7 +2127,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
    * this is strange in that cm->pend may be placed as a number greater than 1., this number
    * is then divided by nexits in ConfigLocalEnds() to get the prob for each v --> EL transition,
    * this is guaranteed by the way we calculate it to be < 1.,  it's the argument from --pfend */
-  if(! esl_opt_IsDefault(go, "--pfend")) {
+  if(esl_opt_IsOn(go, "--pfend")) {
     nexits = 0;
     for (nd = 1; nd < cm->nodes; nd++) {
       if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
@@ -2217,8 +2212,8 @@ initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
      * it'd be a bitch to deal with, b/c cfg->np could change (and we'd have to send that
      * info to the workers for each CM in MPI mode).
      */
-    ESL_DASSERT1((esl_opt_IsDefault(go, "--gcfromdb"))); /* getopts should enforce this */
-    ESL_DASSERT1((esl_opt_IsDefault(go, "--pfile")));  /* getopts should enforce this */
+    ESL_DASSERT1((! esl_opt_IsOn(go, "--gcfromdb"))); /* getopts should enforce this */
+    ESL_DASSERT1((! esl_opt_IsOn(go, "--pfile")));  /* getopts should enforce this */
     if(! (cm->flags & CMH_GUMBEL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "--filonly invoked by CM has no gumbel stats in initialize_cmstats()\n");
     if(cfg->np != cm->stats->np)         ESL_FAIL(eslEINCOMPAT, errbuf, "--filonly invoked and CM file has CMs with different numbers of partitions. We can't deal. Either split CMs into different files, or recalibrate them fully (without --filonly)");    
     /* with --filonly, we're only calc'ing filter thresholds, so we copy the Gumbel stats from cm->stats. */
@@ -2717,7 +2712,7 @@ estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq,
   
   float seconds = 0.;
 
-  if(! esl_opt_IsDefault(go, "--gumL")) L = ESL_MAX(L, esl_opt_GetInteger(go, "--gumL")); /* minimum L we allow is 2 * cm->W (L is sent into this func as 2 * cm->W), this is enforced silently (!) */
+  if( esl_opt_IsOn(go, "--gumL")) L = ESL_MAX(L, esl_opt_GetInteger(go, "--gumL")); /* minimum L we allow is 2 * cm->W (L is sent into this func as 2 * cm->W), this is enforced silently (!) */
 
   switch(gum_mode) { 
   case GUM_CM_LC: 
@@ -2785,7 +2780,7 @@ read_partition_file(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   printf("in read_partition_file, mp: %d gc: %d\n", MAX_PARTITIONS, GC_SEGMENTS);
 
   ESL_DASSERT1((MAX_PARTITIONS < GC_SEGMENTS));
-  if(esl_opt_IsDefault(go, "--pfile")) ESL_FAIL(eslEINVAL, errbuf, "read_partition_file, but --pfile not invoked!\n");
+  if(! esl_opt_IsOn(go, "--pfile")) ESL_FAIL(eslEINVAL, errbuf, "read_partition_file, but --pfile not invoked!\n");
 
   if (esl_fileparser_Open(esl_opt_GetString(go, "--pfile"), NULL, &efp) != eslOK) ESL_FAIL(eslEINVAL, errbuf, "failed to open %s in read_mask_file\n", esl_opt_GetString(go, "--pfile"));
   esl_fileparser_SetCommentChar(efp, '#');
@@ -3374,7 +3369,9 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
   }
   /* if -s NOT enabled, we need to append the seed info also */
   seed = esl_randomness_GetSeed(cfg->r);
-  if(esl_opt_IsDefault(go, "-s")) {
+  if(esl_opt_IsOn(go, "-s")) { /* -s was enabled, we'll do a sanity check */
+    if(seed != (long) esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r's seed is %ld, but -s was enabled with argument: %ld!, this shouldn't happen.", seed, (long) esl_opt_GetInteger(go, "-s"));
+  } else {
     if(cfg->r == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r is NULL but --gibbs enabled, shouldn't happen.");
     temp = seed; 
     seedlen = 1; 
@@ -3383,9 +3380,6 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
     ESL_ALLOC(seedstr, sizeof(char) * (seedlen+1));
     sprintf(seedstr, " -s %ld ", seed);
     esl_strcat((&cfg->ccom), -1, seedstr, seedlen);
-  }
-  else { /* -s was enabled, we'll do a sanity check */
-    if(seed != (long) esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r's seed is %ld, but -s was enabled with argument: %ld!, this shouldn't happen.", seed, (long) esl_opt_GetInteger(go, "-s"));
   }
 
   for (i = go->optind; i < go->argc; i++) { /* copy all command line options, but not the command line args yet, we may need to append '-s ' before the args */

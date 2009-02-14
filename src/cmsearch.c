@@ -271,11 +271,11 @@ main(int argc, char **argv)
       exit(1);
     }
   /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
-  if ((! esl_opt_IsDefault(go, "--hmm-W")) && (! ((esl_opt_GetBoolean(go, "--viterbi")) || (esl_opt_GetBoolean(go, "--forward"))))) { 
+  if ( esl_opt_IsOn(go, "--hmm-W") && (! ((esl_opt_GetBoolean(go, "--viterbi")) || (esl_opt_GetBoolean(go, "--forward"))))) { 
     printf("Error parsing options, --hmm-W <n> only makes sense in combination with --forward or --viterbi.\n");
     exit(1);
   }
-  if ((! esl_opt_IsDefault(go, "--hmm-cW")) && (! ((esl_opt_GetBoolean(go, "--viterbi")) || (esl_opt_GetBoolean(go, "--forward"))))) { 
+  if ( esl_opt_IsOn(go, "--hmm-cW") && (! ((esl_opt_GetBoolean(go, "--viterbi")) || (esl_opt_GetBoolean(go, "--forward"))))) { 
     printf("Error parsing options, --hmm-cW <x> only makes sense in combination with --forward or --viterbi.\n");
     exit(1);
   }
@@ -287,11 +287,13 @@ main(int argc, char **argv)
   cfg.gcfp       = NULL;
   cfg.tfp        = NULL;
   cfg.sqfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
-  if   (esl_opt_IsDefault(go, "--informat")) cfg.fmt = eslSQFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
-  else { 
+
+  if   (esl_opt_IsOn(go, "--informat")) { 
     cfg.fmt = esl_sqio_EncodeFormat(esl_opt_GetString(go, "--informat"));
     if(cfg.fmt == eslSQFILE_UNKNOWN) cm_Fail("Can't recognize sequence file format: %s. valid options are: fasta, embl, genbank, ddbj, uniprot, stockholm, or pfam\n", esl_opt_GetString(go, "--informat"));
-  }
+  } else
+    cfg.fmt = eslSQFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
+
   cfg.abc        = NULL;	           /* created in init_master_cfg() in masters, or in mpi_worker() in workers */
   if      (esl_opt_GetBoolean(go, "--rna")) cfg.abc_out = esl_alphabet_Create(eslRNA);
   else if (esl_opt_GetBoolean(go, "--dna")) cfg.abc_out = esl_alphabet_Create(eslDNA);
@@ -324,7 +326,7 @@ main(int argc, char **argv)
     {
       int              status;
       char             errbuf[cmERRBUFSIZE];
-      if(! esl_opt_IsDefault(go, "--forecast")) cm_Fail("--forecast is incompatible with --mpi.");
+      if( esl_opt_IsOn(go, "--forecast")) cm_Fail("--forecast is incompatible with --mpi.");
       cfg.do_mpi     = TRUE;
       MPI_Init(&argc, &argv);
       MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
@@ -360,7 +362,7 @@ main(int argc, char **argv)
   /* Clean up the shared cfg. 
    */
   if (cfg.my_rank == 0) {
-    if (! esl_opt_IsDefault(go, "-o")) { 
+    if ( esl_opt_IsOn(go, "-o")) { 
       printf("# Search results saved in file %s.\n", esl_opt_GetString(go, "-o"));
       fclose(cfg.ofp); 
     }
@@ -430,10 +432,10 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if((! esl_opt_GetBoolean(go, "--toponly")) && (! esl_opt_GetBoolean(go, "--bottomonly"))) cfg->dbsize *= 2;
 
   /* overwrite dbsize if -Z enabled */
-  if(! (esl_opt_IsDefault(go, "-Z"))) cfg->dbsize = (long) (esl_opt_GetReal(go, "-Z") * 1000000.); /* convert to Mb then to a long */
+  if( esl_opt_IsOn(go, "-Z")) cfg->dbsize = (long) (esl_opt_GetReal(go, "-Z") * 1000000.); /* convert to Mb then to a long */
 
   /* if nec, open output file for --gcfile, and print to it */
-  if (! esl_opt_IsDefault(go, "--gcfile")) { 
+  if ( esl_opt_IsOn(go, "--gcfile")) { 
     if ((cfg->gcfp = fopen(esl_opt_GetString(go, "--gcfile"), "w")) == NULL) 
       ESL_FAIL(eslFAIL, errbuf, "Failed to open --gcfile output file %s\n", esl_opt_GetString(go, "--gcfile"));
     if((status = dump_gc_info(go, cfg, errbuf)) != eslOK) return status;
@@ -441,7 +443,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   }
 
   /* if nec, open output file for --tabfile */
-  if (! esl_opt_IsDefault(go, "--tabfile")) { 
+  if ( esl_opt_IsOn(go, "--tabfile")) { 
     if ((cfg->tfp = fopen(esl_opt_GetString(go, "--tabfile"), "w")) == NULL) 
       ESL_FAIL(eslFAIL, errbuf, "Failed to open --tabfile output file %s\n", esl_opt_GetString(go, "--tabfile"));
   }
@@ -497,9 +499,9 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   while ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK)
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
-      if((! (cm->flags & CMH_EXPTAIL_STATS)) && (! esl_opt_IsDefault(go, "--forecast"))) cm_Fail("--forecast only works with calibrated CM files. Run cmcalibrate (please)."); 
+      if((! (cm->flags & CMH_EXPTAIL_STATS)) && esl_opt_IsOn(go, "--forecast")) cm_Fail("--forecast only works with calibrated CM files. Run cmcalibrate (please)."); 
       /* potentially overwrite lambdas in cm->stats */
-      if (! esl_opt_IsDefault(go, "--lambda")) if((status = overwrite_lambdas(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
+      if ( esl_opt_IsOn(go, "--lambda")) if((status = overwrite_lambdas(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
       cfg->ncm++;
 
       /* initialize the flags/options/params and configuration of the CM */
@@ -519,7 +521,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if(cm->flags & CMH_EXPTAIL_STATS) { if((status = print_searchinfo_for_calibrated_cm  (go, cfg, errbuf, cm, NULL, NULL, 0., 0., &cm_psec)) != eslOK) cm_Fail(errbuf); }
       else                              { if((status = print_searchinfo_for_uncalibrated_cm(go, cfg, errbuf, cm, NULL, NULL, 0.)) != eslOK) cm_Fail(errbuf); }
 
-      if(! esl_opt_IsDefault(go, "--forecast")) { /* special mode, we don't do the search, just print the predicted timings */
+      if( esl_opt_IsOn(go, "--forecast")) { /* special mode, we don't do the search, just print the predicted timings */
 	total_psec += cm_psec;
 	free(cm_surv_fractA);
 	free(cm_nhitsA);
@@ -581,7 +583,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     }
   if(status != eslEOF) cm_Fail(errbuf);
 
-  if(cfg->ncm > 1 && (! esl_opt_IsDefault(go, "--forecast"))) { 
+  if(cfg->ncm > 1 &&  esl_opt_IsOn(go, "--forecast")) { 
     fprintf(stdout, "#\n");
     fprintf(stdout, "# %20s\n", "predicted total time");
     fprintf(stdout, "# %20s\n", "--------------------");
@@ -729,7 +731,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     {
       cfg->ncm++;  
       /* potentially overwrite lambdas in cm->stats */
-      if (! esl_opt_IsDefault(go, "--lambda")) if((status = overwrite_lambdas(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
+      if (esl_opt_IsOn(go, "--lambda")) if((status = overwrite_lambdas(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
       ESL_DPRINTF1(("MPI master read CM number %d\n", cfg->ncm));
 
       if((status = cm_master_MPIBcast(cm, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
@@ -1173,7 +1175,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
    * this is strange in that cm->pend may be placed as a number greater than 1., this number
    * is then divided by nexits in ConfigLocalEnds() to get the prob for each v --> EL transition,
    * this is guaranteed by the way we calculate it to be < 1.,  it's the argument from --pfend */
-  if(! esl_opt_IsDefault(go, "--pfend")) {
+  if( esl_opt_IsOn(go, "--pfend")) {
     nexits = 0;
     for (nd = 1; nd < cm->nodes; nd++) {
       if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
@@ -1194,11 +1196,11 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   /* if --hmm-W <n> or --hmm-cW was set on command line in combination with --viterbi or --forward, 
    * DO NOT use the QDB band definition alg to calculate W, use <n> from --hmm-W
    */
-  hmm_W_set = ((!esl_opt_IsDefault(go, "--hmm-W")) || (!esl_opt_IsDefault(go, "--hmm-cW"))) ? TRUE : FALSE;
+  hmm_W_set = ( esl_opt_IsOn(go, "--hmm-W") || esl_opt_IsOn(go, "--hmm-cW")) ? TRUE : FALSE;
   if(use_hmmonly && hmm_W_set) { 
     if((status = ConfigCM(cm, errbuf, FALSE, NULL, NULL)) != eslOK) return status;  /* FALSE says: DON'T calculate W */
-    if(!esl_opt_IsDefault(go, "--hmm-W")) cm->W = esl_opt_GetInteger(go, "--hmm-W"); 
-    else                                  cm->W = (int) (esl_opt_GetReal(go, "--hmm-cW") * cm->clen); 
+    if(esl_opt_IsOn(go, "--hmm-W")) cm->W = esl_opt_GetInteger(go, "--hmm-W"); 
+    else                            cm->W = (int) (esl_opt_GetReal(go, "--hmm-cW") * cm->clen); 
   }
   else { 
     if((status = ConfigCM(cm, errbuf, TRUE, NULL, NULL)) != eslOK) return status;  /* TRUE says: calculate W */
@@ -1378,40 +1380,39 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   final_S = final_E = final_sc = -1.;
   if(!use_hmmonly) { if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*cm->smx->W, cm->smx->dmin, cm->smx->dmax, cm->smx->W, TRUE,  NULL, &(final_ncalcs_per_res))) != eslOK) return status; }
   /* set up final round cutoff, either 0 or 1 of 5 options is enabled. 
-   * esl_opt_IsDefault() returns FALSE even if option is enabled with default value.
    */
-  if(esl_opt_IsDefault(go, "-E") && 
-     esl_opt_IsDefault(go, "-T") && 
-     esl_opt_IsDefault(go, "--ga") && 
-     esl_opt_IsDefault(go, "--tc") && 
-     esl_opt_IsDefault(go, "--nc")) { 
+  if( (! esl_opt_IsOn(go, "-E"))   && 
+      (! esl_opt_IsOn(go, "-T"))   && 
+      (! esl_opt_IsOn(go, "--ga")) && 
+      (! esl_opt_IsOn(go, "--tc")) && 
+      (! esl_opt_IsOn(go, "--nc"))) { 
     /* No relevant options enabled, cutoff is default E value cutoff */
     final_ctype = E_CUTOFF;
     final_E     = esl_opt_GetReal(go, "-E");
     if((status  = E2MinScore(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_E, &final_sc)) != eslOK) return status;
   }
-  else if(! esl_opt_IsDefault(go, "-E")) { /* -E enabled, use that */
+  else if( esl_opt_IsOn(go, "-E")) { /* -E enabled, use that */
     final_ctype = E_CUTOFF;
     final_E     = esl_opt_GetReal(go, "-E");
     if((status = E2MinScore(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_E, &final_sc)) != eslOK) return status;
   }
-  else if(! esl_opt_IsDefault(go, "-T")) { /* -T enabled, use that */
+  else if ( esl_opt_IsOn(go, "-T")) { /* -T enabled, use that */
     final_ctype = SCORE_CUTOFF;
     final_sc    = esl_opt_GetReal(go, "-T");
   }
-  else if(! esl_opt_IsDefault(go, "--ga")) { /* --ga enabled, use that, if available, else die */
+  else if ( esl_opt_IsOn(go, "--ga")) { /* --ga enabled, use that, if available, else die */
     if(use_hmmonly) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "--ga is incompatible with --viterbi and --forward.");
     if(! (cm->flags & CMH_GA)) ESL_FAIL(eslEINVAL, errbuf, "No GA gathering threshold in CM file, can't use --ga.");
     final_ctype = SCORE_CUTOFF;
     final_sc    = cm->ga;
   }
-  else if(! esl_opt_IsDefault(go, "--tc")) { /* --tc enabled, use that, if available, else die */
+  else if ( esl_opt_IsOn(go, "--tc")) { /* --tc enabled, use that, if available, else die */
     if(use_hmmonly) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "--tc is incompatible with --viterbi and --forward.");
     if(! (cm->flags & CMH_TC)) ESL_FAIL(eslEINVAL, errbuf, "No TC trusted cutoff in CM file, can't use --tc.");
     final_ctype = SCORE_CUTOFF;
     final_sc    = cm->tc;
   }
-  else if(! esl_opt_IsDefault(go, "--nc")) { /* --nc enabled, use that, if available, else die */
+  else if ( esl_opt_IsOn(go, "--nc")) { /* --nc enabled, use that, if available, else die */
     if(use_hmmonly) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "--nc is incompatible with --viterbi and --forward.");
     if(! (cm->flags & CMH_NC)) ESL_FAIL(eslEINVAL, errbuf, "No NC noise cutoff in CM file, can't use --nc.");
     final_ctype = SCORE_CUTOFF;
@@ -1450,7 +1451,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 
   if(do_hmm_filter) { /* determine thresholds for HMM forward filter */
     if(use_hmmonly) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo_for_calibrated_cm(), --fil-hmm enabled, along with --viterbi or --forward, shouldn't happen.");
-    if(esl_opt_IsDefault(go, "--fil-E-hmm") && esl_opt_IsDefault(go, "--fil-T-hmm")) { /* default: use HMM filter threshold stats, if they exist in cmfile, else use default bit score cutoff */
+    if( (! esl_opt_IsOn(go, "--fil-E-hmm")) && (! esl_opt_IsOn(go, "--fil-T-hmm"))) { /* default: use HMM filter threshold stats, if they exist in cmfile, else use default bit score cutoff */
       /* No relevant options selected. Set HMM filter cutoff as appropriate HMM E value cutoff from cmfile */
       /* determine filter threshold mode, the mode of final stage of searching, either FTHR_CM_LC,
        * FTHR_CM_LI, FTHR_CM_GC, FTHR_CM_GI (can't be an HMM mode b/c --viterbi and --forward toggle --fil-hmm off)
@@ -1473,7 +1474,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 	fhmm_E = hfi_ptr->fwd_E_cut[cut_point] * ((double) cfg->dbsize / (double) hfi_ptr->dbsize); 
 	fhmm_S = E2SurvFract(fhmm_E, cm->W, cfg->avg_hit_len, cfg->dbsize, TRUE);
 	/* check if --fil-Smax-hmm applies */
-	if(! esl_opt_IsDefault(go, "--fil-Smax-hmm")) { 
+	if( esl_opt_IsOn(go, "--fil-Smax-hmm")) { 
 	  if(fhmm_S > esl_opt_GetReal(go, "--fil-Smax-hmm")) { /* predicted survival fraction exceeds maximum allowed, set E cutoff as E value that gives max allowed survival fraction */
 	    fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-Smax-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
 
@@ -1483,7 +1484,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
       }
       else { 
 	/* if --fil-Smax-hmm <x> enabled, filter with E value that gives survival fraction of <x> */
-	if(! esl_opt_IsDefault(go, "--fil-Smax-hmm")) { 
+	if( esl_opt_IsOn(go, "--fil-Smax-hmm")) { 
 	  fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-Smax-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
 	}
 	else { 
@@ -1493,13 +1494,13 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 	  ESL_DPRINTF1(("cut_point -1, always_better FALSE\n"));
 	}
       }
-    } /* end of if(esl_opt_IsDefault(go, "--fil-E-hmm") && esl_opt_IsDefault(go, "--fil-T-hmm")) */
-    else if(! esl_opt_IsDefault(go, "--fil-E-hmm")) {
+    } /* end of if( !esl_opt_IsOn(go, "--fil-E-hmm") && !esl_opt_IsOn(go, "--fil-T-hmm")) */
+    else if( esl_opt_IsOn(go, "--fil-E-hmm")) {
       fhmm_ctype = E_CUTOFF;
       fhmm_E     = esl_opt_GetReal(go, "--fil-E-hmm");
       /*fhmm_E     = ESL_MIN(fhmm_E, 1.0);*/ /* we don't allow filter E cutoffs below 1. */
     }
-    else if(! esl_opt_IsDefault(go, "--fil-T-hmm")) {
+    else if( esl_opt_IsOn(go, "--fil-T-hmm")) {
       fhmm_ctype = SCORE_CUTOFF;
       fhmm_sc    = esl_opt_GetReal(go, "--fil-T-hmm");
     }
@@ -1522,7 +1523,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 
   if(do_qdb_filter && esl_opt_GetBoolean(go, "--fil-qdb")) { /* determine thresholds, beta for qdb cyk filter */
     /* build the ScanMatrix_t for the QDB filter round, requires calcing dmin, dmax */
-    if(! esl_opt_IsDefault(go, "--fil-beta")) fqdb_beta_qdb = esl_opt_GetReal(go, "--fil-beta");
+    if( esl_opt_IsOn(go, "--fil-beta")) fqdb_beta_qdb = esl_opt_GetReal(go, "--fil-beta");
     else fqdb_beta_qdb = cm->beta_W; /* use beta used to calc W in CM file by default */
     safe_windowlen = cm->W * 3;
     while(!(BandCalculationEngine(cm, safe_windowlen, fqdb_beta_qdb, FALSE, &fqdb_dmin, &fqdb_dmax, NULL, NULL))) {
@@ -1550,7 +1551,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
     fqdb_smx = cm_CreateScanMatrix(cm, fqdb_W, fqdb_dmin, fqdb_dmax, fqdb_beta_W, fqdb_beta_qdb, TRUE, TRUE, FALSE);
     if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*fqdb_smx->W, fqdb_smx->dmin, fqdb_smx->dmax, fqdb_smx->W, TRUE,  NULL, &(fqdb_ncalcs_per_res))) != eslOK) return status;
 
-    if(esl_opt_IsDefault(go, "--fil-E-qdb") && esl_opt_IsDefault(go, "--fil-T-qdb")) {
+    if( (! esl_opt_IsOn(go, "--fil-E-qdb")) && (! esl_opt_IsOn(go, "--fil-T-qdb"))) {
       /* No relevant options selected, use default method for setting CM QDB filter */
       fqdb_ctype = E_CUTOFF;
 
@@ -1568,11 +1569,11 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
       fqdb2final_Efactor = 100.;
       fqdb_E = ESL_MAX(final_E * fqdb2final_Efactor, fqdb_Emin);
     }
-    else if(! esl_opt_IsDefault(go, "--fil-E-qdb")) { /* survival fraction for QDB filter set on command line, use that */
+    else if (esl_opt_IsOn(go, "--fil-E-qdb")) { /* survival fraction for QDB filter set on command line, use that */
       fqdb_ctype = E_CUTOFF;
       fqdb_E     = esl_opt_GetReal(go, "--fil-E-qdb");
     }
-    else if(! esl_opt_IsDefault(go, "--fil-T-qdb")) {
+    else if (esl_opt_IsOn(go, "--fil-T-qdb")) {
       fqdb_ctype = SCORE_CUTOFF;
       fqdb_sc    = esl_opt_GetReal(go, "--fil-T-qdb");
     }
@@ -1755,33 +1756,32 @@ set_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   CM2ExpMode(cm, search_opts, &cm_mode, &hmm_mode); 
 
   /* set up final round cutoff, either 0 or 1 of 5 options is enabled. 
-   * esl_opt_IsDefault() returns FALSE even if option is enabled with default value.
    */
-  if(esl_opt_IsDefault(go, "-E") && 
-     esl_opt_IsDefault(go, "-T") && 
-     esl_opt_IsDefault(go, "--ga") && 
-     esl_opt_IsDefault(go, "--tc") && 
-     esl_opt_IsDefault(go, "--nc")) { 
+  if( (! esl_opt_IsOn(go, "-E"))   && 
+      (! esl_opt_IsOn(go, "-T"))   && 
+      (! esl_opt_IsOn(go, "--ga")) && 
+      (! esl_opt_IsOn(go, "--tc")) && 
+      (! esl_opt_IsOn(go, "--nc"))) { 
     /* No relevant options enabled, cutoff is default bit score cutoff */
     final_sc    = esl_opt_GetReal(go, "-T");
   }
-  else if(! esl_opt_IsDefault(go, "-E")) { /* -E enabled, error b/c we don't have exp tail stats */
+  else if( esl_opt_IsOn(go, "-E")) { /* -E enabled, error b/c we don't have exp tail stats */
     ESL_FAIL(eslEINVAL, errbuf, "-E requires exp tail statistics in <cm file>. Use cmcalibrate to get exp tail stats.");
   }
-  else if(! esl_opt_IsDefault(go, "-T")) { /* -T enabled, use that */
+  else if( esl_opt_IsOn(go, "-T")) { /* -T enabled, use that */
     final_sc    = esl_opt_GetReal(go, "-T");
   }
-  else if(! esl_opt_IsDefault(go, "--ga")) { /* --ga enabled, use that, if available, else die */
+  else if( esl_opt_IsOn(go, "--ga")) { /* --ga enabled, use that, if available, else die */
     if(use_hmmonly) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "--ga is incompatible with --viterbi and --forward.");
     if(! (cm->flags & CMH_GA)) ESL_FAIL(eslEINVAL, errbuf, "No GA gathering threshold in CM file, can't use --ga.");
     final_sc    = cm->ga;
   }
-  else if(! esl_opt_IsDefault(go, "--tc")) { /* --tc enabled, use that, if available, else die */
+  else if( esl_opt_IsOn(go, "--tc")) { /* --tc enabled, use that, if available, else die */
     if(use_hmmonly) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "--tc is incompatible with --viterbi and --forward.");
     if(! (cm->flags & CMH_TC)) ESL_FAIL(eslEINVAL, errbuf, "No TC trusted cutoff in CM file, can't use --tc.");
     final_sc    = cm->tc;
   }
-  else if(! esl_opt_IsDefault(go, "--nc")) { /* --nc enabled, use that, if available, else die */
+  else if( esl_opt_IsOn(go, "--nc")) { /* --nc enabled, use that, if available, else die */
     if(use_hmmonly) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "--nc is incompatible with --viterbi and --forward.");
     if(! (cm->flags & CMH_NC)) ESL_FAIL(eslEINVAL, errbuf, "No NC noise cutoff in CM file, can't use --nc.");
     final_sc    = cm->nc;
@@ -1806,14 +1806,14 @@ set_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   fhmm_sc = -1.;
   if(do_hmm_filter) { /* determine thresholds for HMM forward filter */
     if(use_hmmonly) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo_for_uncalibrated_cm(), --fil-hmm enabled, along with --viterbi or --forward, shouldn't happen.");
-    if(esl_opt_IsDefault(go, "--fil-E-hmm") && esl_opt_IsDefault(go, "--fil-T-hmm")) { 
+    if( (! esl_opt_IsOn(go, "--fil-E-hmm")) && (! esl_opt_IsOn(go, "--fil-T-hmm"))) { 
       /* No relevant options selected, set cutoff as default HMM filter bit score. */
       fhmm_sc    = esl_opt_GetReal(go, "--fil-T-hmm");
-    } /* end of if(esl_opt_IsDefault(go, "--fil-E-hmm") && esl_opt_IsDefault(go, "--fil-T-hmm")) */
-    else if(! esl_opt_IsDefault(go, "--fil-E-hmm")) { /* can't deal with this b/c we don't have exp tail stats */
+    } /* end of if( !esl_opt_IsOn(go, "--fil-E-hmm") && !esl_opt_IsOn(go, "--fil-T-hmm")) */
+    else if( esl_opt_IsOn(go, "--fil-E-hmm")) { /* can't deal with this b/c we don't have exp tail stats */
       ESL_FAIL(eslEINVAL, errbuf, "--fil-E-hmm requires exp tail statistics in <cm file>. Use cmcalibrate to get exp tail stats.");
     }
-    else if(! esl_opt_IsDefault(go, "--fil-T-hmm")) { /* HMM filter bit score threshold was set on command line, use that */
+    else if( esl_opt_IsOn(go, "--fil-T-hmm")) { /* HMM filter bit score threshold was set on command line, use that */
       fhmm_sc    = esl_opt_GetReal(go, "--fil-T-hmm");
     }
     else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No HMM filter cutoff selected. This shouldn't happen.");
@@ -1824,7 +1824,7 @@ set_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   fqdb_sc = -1.;
   if(do_qdb_filter && esl_opt_GetBoolean(go, "--fil-qdb")) { /* determine thresholds, beta for qdb cyk filter */
     /* build the ScanMatrix_t for the QDB filter round, requires calcing dmin, dmax */
-    if(! esl_opt_IsDefault(go, "--fil-beta")) fqdb_beta_qdb = esl_opt_GetReal(go, "--fil-beta");
+    if( esl_opt_IsOn(go, "--fil-beta")) fqdb_beta_qdb = esl_opt_GetReal(go, "--fil-beta");
     else fqdb_beta_qdb = cm->beta_W; /* use beta used to calc W in CM file by default */
     safe_windowlen = cm->W * 3;
     while(!(BandCalculationEngine(cm, safe_windowlen, fqdb_beta_qdb, FALSE, &fqdb_dmin, &fqdb_dmax, NULL, NULL))) {
@@ -1851,14 +1851,14 @@ set_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
     }
     fqdb_smx = cm_CreateScanMatrix(cm, fqdb_W, fqdb_dmin, fqdb_dmax, fqdb_beta_W, fqdb_beta_qdb, TRUE, TRUE, FALSE);
     
-    if(esl_opt_IsDefault(go, "--fil-E-qdb") && esl_opt_IsDefault(go, "--fil-T-qdb")) {
+    if((!esl_opt_IsOn(go, "--fil-E-qdb")) && (!esl_opt_IsOn(go, "--fil-T-qdb"))) {
       /* No relevant options selected, set CM QDB filter as default bit score. */
       fqdb_sc    = esl_opt_GetReal(go, "--fil-T-qdb");
     }
-    else if(! esl_opt_IsDefault(go, "--fil-E-qdb")) { /* can't deal with this b/c we don't have exp tail stats */
+    else if( esl_opt_IsOn(go, "--fil-E-qdb")) { /* can't deal with this b/c we don't have exp tail stats */
       ESL_FAIL(eslEINVAL, errbuf, "--fil-E-qdb requires exp tail statistics in <cm file>. Use cmcalibrate to get exp tail stats.");
     }
-    else if(! esl_opt_IsDefault(go, "--fil-T-qdb")) { /* CM CYK bit score threshold was set on command line, use that */
+    else if( esl_opt_IsOn(go, "--fil-T-qdb")) { /* CM CYK bit score threshold was set on command line, use that */
       fqdb_sc    = esl_opt_GetReal(go, "--fil-T-qdb");
     }
     else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No CM filter cutoff selected. This shouldn't happen.");
@@ -2082,7 +2082,7 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
     if(esl_opt_GetBoolean(go, "--mpi") && cfg->nproc > 1) psec /= (cfg->nproc-1);
 #endif
     /* if we're only forecasting the time, divide by <n> from --forecast <n>, which is theoretical number of processors */
-    if(! esl_opt_IsDefault(go, "--forecast")) { 
+    if( esl_opt_IsOn(go, "--forecast")) { 
       if(esl_opt_GetInteger(go, "--forecast") > 1) { 
 	psec /= (esl_opt_GetInteger(go, "--forecast") - 1);
       }
@@ -2523,7 +2523,7 @@ overwrite_lambdas(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char
   double lambda;
   int i, p;
 
-  if(esl_opt_IsDefault(go, "--lambda")) ESL_FAIL(eslEINCOMPAT, errbuf, "overwrite_lambdas(), but --lambda was not enabled, shouldn't happen.\n");
+  if(!esl_opt_IsOn(go, "--lambda"))     ESL_FAIL(eslEINCOMPAT, errbuf, "overwrite_lambdas(), but --lambda was not enabled, shouldn't happen.\n");
   if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "--lambda only works with calibrated CM files. Run cmcalibrate (please).");
   if(cm->stats == NULL)                 ESL_FAIL(eslEINCOMPAT, errbuf, "overwrite_lambdas(), cm->stats is NULL, shouldn't happen.\n");
 

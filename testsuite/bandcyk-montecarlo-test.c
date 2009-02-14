@@ -77,9 +77,8 @@ main(int argc, char **argv)
   threshold      = esl_opt_GetReal   (go, "-t");
 
   /* create RNG */
-  if (! esl_opt_IsDefault(go, "-s")) 
-    r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
-  else r = esl_randomness_CreateTimeseeded();
+  if ( esl_opt_IsOn(go, "-s")) r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
+  else                         r = esl_randomness_CreateTimeseeded();
 
   /*********************************************** 
    * Preliminaries: get our CM

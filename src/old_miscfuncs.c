@@ -6733,7 +6733,7 @@ estimate_workunit_time(const ESL_GETOPTS *go, const struct cfg_s *cfg, int nseq,
   
   float seconds = 0.;
 
-  if(! esl_opt_IsDefault(go, "--gum-L")) L = ESL_MAX(L, esl_opt_GetInteger(go, "--gum-L")); /* minimum L we allow is 2 * cm->W (L is sent into this func as 2 * cm->W), this is enforced silently (!) */
+  if( esl_opt_IsOn(go, "--gum-L")) L = ESL_MAX(L, esl_opt_GetInteger(go, "--gum-L")); /* minimum L we allow is 2 * cm->W (L is sent into this func as 2 * cm->W), this is enforced silently (!) */
 
   switch(gum_mode) { 
   case GUM_CM_LC: 
@@ -7491,14 +7491,13 @@ set_searchinfo_OLD(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
   if(! use_hmmonly) {
     if(stype != SEARCH_WITH_CM) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo(), search_opts for final round of search does not have HMMVITERBI or HMMFORWARD flags raised, but is not of type SEARCH_WITH_CM.");
     /* set up CM cutoff, either 0 or 1 of 6 options is enabled. 
-     * esl_opt_IsDefault() returns FALSE even if option is enabled with default value 
      * We will NOT use this if --viterbi
      */
-    if(esl_opt_IsDefault(go, "-E") && 
-       esl_opt_IsDefault(go, "-T") && 
-       esl_opt_IsDefault(go, "--ga") && 
-       esl_opt_IsDefault(go, "--tc") && 
-       esl_opt_IsDefault(go, "--nc")) { 
+    if( (! esl_opt_IsOn(go, "-E")) && 
+	(! esl_opt_IsOn(go, "-T")) && 
+	(! esl_opt_IsOn(go, "--ga")) && 
+	(! esl_opt_IsOn(go, "--tc")) && 
+	(! esl_opt_IsOn(go, "--nc"))) { 
       /* Choose from, in order of priority:
        * 1. default CM E value if CM file has Gumbel stats
        * 3. default CM bit score
@@ -7514,34 +7513,34 @@ set_searchinfo_OLD(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
 	e_cutoff    = -1.; /* invalid, we'll never use it */  
       }
     }
-    else if(! esl_opt_IsDefault(go, "-E")) {
+    else if( esl_opt_IsOn(go, "-E")) {
       if(! (cm->flags & CMH_GUMBEL_STATS))
 	ESL_FAIL(eslEINVAL, errbuf, "-E requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
       cutoff_type = E_CUTOFF;
       e_cutoff    = esl_opt_GetReal(go, "-E");
       if((status = E2Score(cm, errbuf, cm_mode, e_cutoff, &sc_cutoff)) != eslOK) return status;
     }
-    else if(! esl_opt_IsDefault(go, "-T")) {
+    else if( esl_opt_IsOn(go, "-T")) {
       cutoff_type = SCORE_CUTOFF;
       sc_cutoff   = esl_opt_GetReal(go, "-T");
       e_cutoff    = -1.; /* invalid, we'll never use it */  
       if((sc_cutoff < 0.) && (! esl_opt_GetBoolean(go, "--greedy"))) ESL_FAIL(eslEINVAL, errbuf, "with -T <x> option, <x> can only be less than 0. if --greedy also enabled.");
     }
-    else if(! esl_opt_IsDefault(go, "--ga")) {
+    else if( esl_opt_IsOn(go, "--ga")) {
       if(! (cm->flags & CMH_GA))
 	ESL_FAIL(eslEINVAL, errbuf, "No GA gathering threshold in CM file, can't use --ga.");
       cutoff_type = SCORE_CUTOFF;
       sc_cutoff   = cm->ga;
       e_cutoff    = -1.; /* we'll never use it */
     }
-    else if(! esl_opt_IsDefault(go, "--tc")) {
+    else if( esl_opt_IsOn(go, "--tc")) {
       if(! (cm->flags & CMH_TC))
 	ESL_FAIL(eslEINVAL, errbuf, "No TC trusted cutoff in CM file, can't use --tc.");
       cutoff_type = SCORE_CUTOFF;
       sc_cutoff   = cm->tc;
       e_cutoff    = -1.; /* we'll never use it */
     }
-    else if(! esl_opt_IsDefault(go, "--nc")) {
+    else if( esl_opt_IsOn(go, "--nc")) {
       if(! (cm->flags & CMH_NC))
 	ESL_FAIL(eslEINVAL, errbuf, "No NC noise cutoff in CM file, can't use --nc.");
       cutoff_type = SCORE_CUTOFF;
@@ -7553,10 +7552,9 @@ set_searchinfo_OLD(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
   else { 
     if(stype != SEARCH_WITH_HMM) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "search_opts for final round of search has HMMVITERBI or HMMFORWARD flags raised, but is not of type SEARCH_WITH_HMM.");
     /* Set up CP9 HMM cutoff, either 0 or 1 of 2 options is enabled 
-     * esl_opt_IsDefault() returns FALSE even if option is enabled with default value 
      */
-    if(esl_opt_IsDefault(go, "--hmmE") && 
-       esl_opt_IsDefault(go, "--hmmT")) {
+    if( (! esl_opt_IsOn(go, "--hmmE")) && 
+	(! esl_opt_IsOn(go, "--hmmT"))) {
       /* Choose from, in order of priority:
        * 1. default CP9 E value if CM file has Gumbel stats
        * 2. default CP9 bit score
@@ -7572,14 +7570,14 @@ set_searchinfo_OLD(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
 	e_cutoff    = -1; /* we'll never use it */
       }
     }
-    else if(! esl_opt_IsDefault(go, "--hmmE")) {
+    else if( esl_opt_IsOn(go, "--hmmE")) {
       if(! (cm->flags & CMH_GUMBEL_STATS))
 	ESL_FAIL(eslEINVAL, errbuf, "--hmmE requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
       cutoff_type = E_CUTOFF;
       e_cutoff    = esl_opt_GetReal(go, "--hmmE");
       if((status  = E2Score(cm, errbuf, cp9_mode, e_cutoff, &sc_cutoff)) != eslOK) return status; 
     }
-    else if(! esl_opt_IsDefault(go, "--hmmT")) {
+    else if ( esl_opt_IsOn(go, "--hmmT")) {
       cutoff_type = SCORE_CUTOFF;
       sc_cutoff   = esl_opt_GetReal(go, "--hmmT");
       e_cutoff    = -1.; /* we'll never use this */
@@ -7603,10 +7601,9 @@ set_searchinfo_OLD(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
   ESL_DASSERT1((!(add_cyk_filter && add_inside_filter))); /* should be enforced by getopts */
   if(add_cyk_filter || add_inside_filter) { /* determine thresholds for filters */
     /* set up CM filter cutoff, either 0 or 1 of 2 options is enabled. 
-     * esl_opt_IsDefault() returns FALSE even if option is enabled with default value 
      */
-    if(esl_opt_IsDefault(go, "--fE") && 
-       esl_opt_IsDefault(go, "--fT")) {
+    if( (! esl_opt_IsOn(go, "--fE")) && 
+	(! esl_opt_IsOn(go, "--fT"))) {
       /* Choose from, in order of priority:
        * 1. default CM filter E value if CM file has Gumbel stats
        * 3. default CM filter bit score
@@ -7622,14 +7619,14 @@ set_searchinfo_OLD(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
 	e_cutoff    = -1.; /* invalid, we'll never use it */  
       }
     }
-    else if(! esl_opt_IsDefault(go, "--fE")) {
+    else if(esl_opt_IsOn(go, "--fE")) {
       if(! (cm->flags & CMH_GUMBEL_STATS))
 	ESL_FAIL(eslEINVAL, errbuf, "--fE requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
       cutoff_type = E_CUTOFF;
       e_cutoff    = esl_opt_GetReal(go, "--fE");
       if((status  = E2Score(cm, errbuf, cm_mode, e_cutoff, &sc_cutoff)) != eslOK) return status;
     }
-    else if(! esl_opt_IsDefault(go, "--fT")) {
+    else if(esl_opt_IsOn(go, "--fT")) {
       cutoff_type = SCORE_CUTOFF;
       sc_cutoff   = esl_opt_GetReal(go, "--fT");
       if((sc_cutoff < 0.) && (! esl_opt_GetBoolean(go, "--fgreedy"))) ESL_FAIL(eslEINVAL, errbuf, "with --fT <x> option, <x> can only be less than 0. if --fgreedy also enabled.");
@@ -7653,7 +7650,7 @@ set_searchinfo_OLD(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
     ValidateSearchInfo(cm, cm->si);
     /* DumpSearchInfo(cm->si); */
   }
-  else if (! esl_opt_IsDefault(go, "--fbeta")) ESL_FAIL(eslEINCOMPAT, errbuf, "--fbeta has an effect with --fcyk or --finside");
+  else if ( esl_opt_IsOn(go, "--fbeta")) ESL_FAIL(eslEINCOMPAT, errbuf, "--fbeta has no effect with --fcyk or --finside");
 
   /* HMM filter */
   /* if --fgiven was enabled, --fhmmviterbi, --fhmmforward could NOT have been selected, 
@@ -7691,7 +7688,7 @@ set_searchinfo_OLD(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
     if(cut_point != -1) { /* it's worth it to filter */
       e_cutoff = hfi_ptr->fwd_E_cut[cut_point] * ((double) cfg->dbsize / (double) hfi_ptr->dbsize); 
       /* check if --hmmEmax applies */
-      if(! (esl_opt_IsDefault(go, "--hmmEmax"))) {
+      if( esl_opt_IsOn(go, "--hmmEmax")) {
 	e_cutoff = ESL_MIN(e_cutoff, esl_opt_GetReal(go, "--hmmEmax"));
       }
       if((status  = E2Score(cm, errbuf, cm_mode, e_cutoff, &sc_cutoff)) != eslOK) return status; /* note: use cm_mode, not fthr_mode */
@@ -7710,9 +7707,9 @@ set_searchinfo_OLD(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
   else if(add_viterbi_filter || add_forward_filter) { /* determine thresholds for filters */
     /* Set up HMM cutoff, either 0 or 1 of 3 options is enabled */
     ESL_DASSERT1((! use_hmmonly)); /* should be enforced by getopts */
-    if(esl_opt_IsDefault(go, "--hmmcalcthr") && 
-       esl_opt_IsDefault(go, "--hmmE") && 
-       esl_opt_IsDefault(go, "--hmmT")) {
+    if( (! esl_opt_IsOn(go, "--hmmcalcthr")) && 
+	(! esl_opt_IsOn(go, "--hmmE")) && 
+	(! esl_opt_IsOn(go, "--hmmT"))) {
       /* Choose from, in order of priority:
        * 1. default CP9 E value if CM file has Gumbel stats
        * 2. default CP9 bit score
@@ -7728,7 +7725,7 @@ set_searchinfo_OLD(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
 	e_cutoff    = -1.; /* we'll never use this */
       }
     }
-    else if(! esl_opt_IsDefault(go, "--hmmcalcthr")) {
+    else if( esl_opt_IsOn(go, "--hmmcalcthr")) {
       if(! (cm->flags & CMH_GUMBEL_STATS))
 	ESL_FAIL(eslEINVAL, errbuf, "--hmmcalcthr requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
       cutoff_type = E_CUTOFF;
@@ -7736,14 +7733,14 @@ set_searchinfo_OLD(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t 
       e_cutoff = esl_opt_GetReal(go, "--hmmE");
       if((status  = E2Score(cm, errbuf, cp9_mode, e_cutoff, &sc_cutoff)) != eslOK) return status; 
     }
-    else if(! esl_opt_IsDefault(go, "--hmmE")) {
+    else if( esl_opt_IsOn(go, "--hmmE")) {
       if(! (cm->flags & CMH_GUMBEL_STATS))
 	ESL_FAIL(eslEINVAL, errbuf, "--hmmE requires Gumbel statistics in <cm file>. Use cmcalibrate to get Gumbel stats.");
       cutoff_type = E_CUTOFF;
       e_cutoff    = esl_opt_GetReal(go, "--hmmE");
       if((status  = E2Score(cm, errbuf, cp9_mode, e_cutoff, &sc_cutoff)) != eslOK) return status; 
     }
-    else if(! esl_opt_IsDefault(go, "--hmmT")) {
+    else if( esl_opt_IsOn(go, "--hmmT")) {
       cutoff_type = SCORE_CUTOFF;
       sc_cutoff   = esl_opt_GetReal(go, "--hmmT");
       e_cutoff    = -1.; /* we'll never use this */

@@ -69,8 +69,8 @@ main(int argc, char **argv)
   do_psionly     = esl_opt_GetBoolean(go, "--psionly");
   nsamples       = esl_opt_GetInteger(go, "--nseq");
   chi_thresh     = esl_opt_GetReal   (go, "--chi");
-  if(esl_opt_IsDefault(go, "--dlev")) debug_level = 0;
-  else                                debug_level = esl_opt_GetInteger(go, "--dlev");
+  if(esl_opt_IsOn(go, "--dlev")) debug_level = esl_opt_GetInteger(go, "--dlev");
+  else                           debug_level = 0;
  
   /********************************************`*** 
    * Preliminaries: get our CM
@@ -89,9 +89,8 @@ main(int argc, char **argv)
   
   if(!do_psionly) {
     esl_stopwatch_Start(w);
-    if (! esl_opt_IsDefault(go, "-s")) 
-      r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
-    else r = esl_randomness_CreateTimeseeded();
+    if ( esl_opt_IsOn(go, "-s")) r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
+    else                         r = esl_randomness_CreateTimeseeded();
     
     if(!(CP9_check_by_sampling(cm, hmm, r,
 			       NULL,     /* Don't keep track of failures (sub_cm feature) */

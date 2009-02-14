@@ -303,12 +303,12 @@ main(int argc, char **argv)
   /* print the banner */
   cm_banner(stdout, argv[0], banner);
 
-  if   (esl_opt_IsDefault(go, "--informat")) cfg.fmt = eslMSAFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
-  else { 
+  if   (esl_opt_IsOn(go, "--informat")) { 
     cfg.fmt = esl_sqio_EncodeFormat(esl_opt_GetString(go, "--informat"));
     if(cfg.fmt == eslSQFILE_UNKNOWN)                                  cm_Fail("Can't recognize sequence file format: %s. valid options are: stockholm or pfam\n", esl_opt_GetString(go, "--informat"));
     if(cfg.fmt != eslMSAFILE_STOCKHOLM && cfg.fmt != eslMSAFILE_PFAM) cm_Fail("Sequence file format: %s is not accepted by cmbuild, valid options are: stockholm or pfam\n", esl_opt_GetString(go, "--informat"));
-  }
+  } else
+    cfg.fmt = eslMSAFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
 
   cfg.be_verbose = esl_opt_GetBoolean(go, "-v");
   cfg.nali       = 0;		           
@@ -460,16 +460,15 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
   /* if --corig enabled, make sure either --cmaxid, --ctarget, or --call also enabled */
   if (esl_opt_GetBoolean(go, "--corig"))
-    if((esl_opt_IsDefault(go, "--ctarget")) && (esl_opt_IsDefault(go, "--cmaxid")) && (esl_opt_IsDefault(go, "--call")))
+    if((! esl_opt_IsOn(go, "--ctarget")) && (! esl_opt_IsOn(go, "--cmaxid")) && (! esl_opt_IsOn(go, "--call")))
       cm_Fail("--corig only makes sense in combination with --ctarget, --cmaxid, OR --call");
 
   /* if --gibbs enabled, open output file for refined MSAs, and seed RNG */
   if(esl_opt_GetBoolean(go, "--gibbs"))
     {
       /* create RNG */
-      if (! esl_opt_IsDefault(go, "-s")) 
-	cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
-      else cfg->r = esl_randomness_CreateTimeseeded();
+      if (esl_opt_IsOn(go, "-s")) cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
+      else                        cfg->r = esl_randomness_CreateTimeseeded();
       if (cfg->r == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
     }
 
@@ -524,7 +523,7 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (esl_opt_GetString(go, "--cdump") != NULL)
     {
       /* check to make sure there's a reason for this option, --cmaxid, --ctarget or --call MUST also be enabled */
-      if((esl_opt_IsDefault(go, "--ctarget")) && (esl_opt_IsDefault(go, "--cmaxid")) && (esl_opt_IsDefault(go, "--call")))
+      if((! esl_opt_IsOn(go, "--ctarget")) && (!esl_opt_IsOn(go, "--cmaxid")) && (!esl_opt_IsOn(go, "--call")))
 	cm_Fail("--cdump only makes sense in combination with --ctarget, --cmaxid, OR --call");
       if ((cfg->cdfp = fopen(esl_opt_GetString(go, "--cdump"), "w")) == NULL)
 	cm_Fail("Failed to open output file %s for writing MSAs to", esl_opt_GetString(go, "--cdump"));
@@ -581,8 +580,8 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   cfg->nali = 0;
   cfg->ncm_total = 0;
 
-  do_ctarget  = (esl_opt_IsDefault(go, "--ctarget")) ? FALSE : TRUE;
-  do_cmindiff = (esl_opt_IsDefault(go, "--cmaxid"))  ? FALSE : TRUE;
+  do_ctarget  = esl_opt_IsOn(go, "--ctarget");
+  do_cmindiff = esl_opt_IsOn(go, "--cmaxid");
   do_call     = esl_opt_GetBoolean(go, "--call");
   do_cluster = (do_ctarget || do_cmindiff || do_call) ? TRUE : FALSE;
   if((do_ctarget + do_cmindiff + do_call) > TRUE) cm_Fail("More than one of --ctarget, --cmaxid, --call were enabled, shouldn't happen.");
@@ -634,7 +633,7 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  /* msa -> cm */
 	  if ((status = process_workunit(go, cfg, errbuf, msa, &cm, &mtr, &tr)) != eslOK) cm_Fail(errbuf);
 	  /* optionally, iterate over cm -> parsetrees -> msa -> cm ... until convergence, via EM or Gibbs */
-	  if (! esl_opt_IsDefault(go, "--refine")) {
+	  if ( esl_opt_IsOn(go, "--refine")) {
 	    fprintf(stdout, "#\n");
 	    fprintf(stdout, "# Refining MSA for CM: %s (aln: %4d cm: %6d)\n", cm->name, cfg->nali, cfg->ncm_total);
 	    if ((status = refine_msa(go, cfg, errbuf, cm, msa, tr, &new_cm, &new_msa, &new_mtr, &new_tr, &niter)) != eslOK) cm_Fail(errbuf);
@@ -949,7 +948,7 @@ check_and_clean_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf
   if (! clean_cs(msa->ss_cons, msa->alen, (! cfg->be_verbose))) ESL_FAIL(eslFAIL, errbuf, "Failed to parse consensus structure annotation\n");
   if (esl_opt_GetBoolean(go, "--ignorant"))                     strip_wuss(msa->ss_cons); /* --ignorant, remove all bp info */
 
-  if (! esl_opt_IsDefault(go, "--rsearch")) { 
+  if ( esl_opt_IsOn(go, "--rsearch")) { 
     if(msa->nseq != 1) ESL_FAIL(eslEINCOMPAT, errbuf,"with --rsearch option, all of the input alignments must have exactly 1 sequence");
     /* We can't have ambiguous bases in the MSA, only A,C,G,U will do. The reason is that rsearch_CMProbifyEmissions() expects each
      * cm->e prob vector to have exactly 1.0 count for exactly 1 singlet or base pair. If we have ambiguous residues we'll have a 
@@ -1014,7 +1013,7 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
   if(cfg->be_verbose) fprintf(stdout, "done.\n");
   
   /* set the CM's null model, if rsearch mode, use the bg probs used to calc RIBOSUM */
-  if(! esl_opt_IsDefault(go, "--rsearch")) CMSetNullModel(cm, cfg->fullmat->g); 
+  if( esl_opt_IsOn(go, "--rsearch")) CMSetNullModel(cm, cfg->fullmat->g); 
   else CMSetNullModel(cm, cfg->null); 
   
   /* if we're using RSEARCH emissions (--rsearch) set the flag */
@@ -1169,7 +1168,7 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
   if(cfg->be_verbose) fprintf(stdout, "%-40s ... ", "Set effective sequence number");
   fflush(stdout);
 
-  if((esl_opt_GetBoolean(go, "--enone")) || (! esl_opt_IsDefault(go, "--rsearch")))
+  if((esl_opt_GetBoolean(go, "--enone")) || ( esl_opt_IsOn(go, "--rsearch")))
     {
       neff = msa->nseq;
       if(cfg->be_verbose) fprintf(stdout, "done. [--enone: neff=nseq=%d]\n", msa->nseq);
@@ -1186,14 +1185,14 @@ set_effective_seqnumber(const ESL_GETOPTS *go, const struct cfg_s *cfg,
 	else if(cm->ndtype[nd] == MATL_nd) clen += 1;
 	else if(cm->ndtype[nd] == MATR_nd) clen += 1;
       }
-      if (esl_opt_IsDefault(go, "--ere")) etarget = default_target_relent(cm->abc, clen, esl_opt_GetReal(go, "--eX"));
-      else                                etarget = esl_opt_GetReal(go, "--ere");
+      if (esl_opt_IsOn(go, "--ere")) etarget = esl_opt_GetReal(go, "--ere");
+      else                           etarget = default_target_relent(cm->abc, clen, esl_opt_GetReal(go, "--eX"));
 
       status = cm_EntropyWeight(cm, pri, etarget, FALSE, &hmm_re, &neff);
       /* if --ehmmre <x> enabled, ensure HMM relative entropy per match column is at least <x>, if not,
        * recalculate neff so HMM relative entropy of <x> is achieved.
        */
-      if(! esl_opt_IsDefault(go, "--ehmmre")) { 
+      if( esl_opt_IsOn(go, "--ehmmre")) { 
 	hmm_etarget = esl_opt_GetReal(go, "--ehmmre"); 
 	printf("cm hmm re: %f target: %f\n", hmm_re, hmm_etarget);
 	if(hmm_re < hmm_etarget) { 
@@ -1229,7 +1228,7 @@ parameterize(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t 
     fflush(stdout);
   }
   PriorifyCM(cm, prior);
-  if(! (esl_opt_IsDefault(go, "--rsearch"))) {
+  if( esl_opt_IsOn(go, "--rsearch")) {
     rsearch_CMProbifyEmissions(cm, cfg->fullmat); /* use those probs to set CM probs from cts */
     /*debug_print_cm_params(cm);*/
   }
@@ -1318,9 +1317,9 @@ name_msa(const ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa, int nali)
 
   if(msa == NULL) ESL_FAIL(status, errbuf, "name_msa(), msa is NULL.");
 
-  if(esl_opt_IsDefault(go, "-n") && msa->name != NULL) return eslOK; /* keep the msa's existing name */
+  if( (!esl_opt_IsOn(go, "-n")) && msa->name != NULL) return eslOK; /* keep the msa's existing name */
 
-  if(! (esl_opt_IsDefault(go, "-n"))) { /* give the msa the -n name */
+  if( esl_opt_IsOn(go, "-n")) { /* give the msa the -n name */
     if(nali > 1) ESL_FAIL(eslEINCOMPAT, errbuf, "The -n option requires exactly 1 alignment, but the alignment file has > 1 alignments.");
     if((status = esl_strdup(esl_opt_GetString(go, "-n"), -1, &name)) != eslOK) ESL_FAIL(status, errbuf, "name_msa(), esl_strdup, memory allocation error.");
   }
@@ -2036,7 +2035,9 @@ write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *err
   if(esl_opt_GetBoolean(go, "--gibbs")) {
     if(cfg->r == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "write_cmbuild_info_to_comlog(), cfg->r is NULL but --gibbs enabled, shouldn't happen.");
     seed = esl_randomness_GetSeed(cfg->r);
-    if(esl_opt_IsDefault(go, "-s")) {
+    if( esl_opt_IsOn(go, "-s")) { /* -s was enabled with --gibbs, we'll do a sanity check */
+      if(seed != (long) esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "write_cmbuild_info_to_comlog(), cfg->r's seed is %ld, but -s was enabled with argument: %ld!, this shouldn't happen.", seed, (long) esl_opt_GetInteger(go, "-s"));
+    } else {
       temp = seed; 
       seedlen = 1; 
       while(temp > 0) { temp/=10; seedlen++; } /* determine length of stringized version of seed */
@@ -2045,9 +2046,6 @@ write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *err
       ESL_ALLOC(seedstr, sizeof(char) * (seedlen+1));
       sprintf(seedstr, " -s %ld ", seed);
       esl_strcat((&cfg->comlog->bcom), -1, seedstr, seedlen);
-    }
-    else { /* -s was enabled with --gibbs, we'll do a sanity check */
-      if(seed != (long) esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "write_cmbuild_info_to_comlog(), cfg->r's seed is %ld, but -s was enabled with argument: %ld!, this shouldn't happen.", seed, (long) esl_opt_GetInteger(go, "-s"));
     }
   }
 
@@ -2161,11 +2159,11 @@ get_namewidth(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   ESL_MSA *msa = NULL;
 
   cfg->namewidth = 6; /* length of "name", plus 2 spaces, just for looks */
-  do_cmaxid_or_call = (! (esl_opt_IsDefault(go, "--cmaxid"))) || (esl_opt_GetBoolean(go, "--call")) ? TRUE : FALSE;
-  do_ctarget        = (! esl_opt_IsDefault(go, "--ctarget")) ? TRUE : FALSE;
+  do_cmaxid_or_call = ( esl_opt_IsOn(go, "--cmaxid") || esl_opt_GetBoolean(go, "--call")) ? TRUE : FALSE;
+  do_ctarget        = esl_opt_IsOn(go, "--ctarget");
 
   /* if -n <s> enabled, set namewidth as length of <s> */
-  if(!(esl_opt_IsDefault(go, "-n"))) { 
+  if( esl_opt_IsOn(go, "-n")) { 
     cfg->namewidth = ESL_MAX(cfg->namewidth, strlen(esl_opt_GetString(go, "-n"))); 
     return eslOK;
   }
@@ -2186,8 +2184,8 @@ get_namewidth(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   }
   /* close the MSA file and open it again, sloppy */
   esl_msafile_Close(cfg->afp);
-  if   (esl_opt_IsDefault(go, "--informat")) cfg->fmt = eslMSAFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
-  else cfg->fmt = esl_sqio_EncodeFormat(esl_opt_GetString(go, "--informat"));
+  if   (esl_opt_IsOn(go, "--informat")) cfg->fmt = esl_sqio_EncodeFormat(esl_opt_GetString(go, "--informat"));
+  else                                  cfg->fmt = eslMSAFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
   status = esl_msafile_Open(cfg->alifile, cfg->fmt, NULL, &(cfg->afp));
   if      (status == eslENOTFOUND) ESL_FAIL(status, errbuf, "Alignment file %s doesn't exist or is not readable\n", cfg->alifile);
   else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of alignment %s\n", cfg->alifile);

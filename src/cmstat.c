@@ -170,17 +170,17 @@ main(int argc, char **argv)
 
   /* check for incompatible options combos too convoluted for esl_getopts */
   if (esl_opt_GetBoolean(go, "--bits")) { 
-    if((esl_opt_IsDefault(go, "--sfile")) && (esl_opt_IsDefault(go, "--xfile")) && (esl_opt_IsDefault(go, "--afile"))) {
+    if((!esl_opt_IsOn(go, "--sfile")) && (!esl_opt_IsOn(go, "--xfile")) && (!esl_opt_IsOn(go, "--afile"))) {
       cm_Fail("--bits only works with --sfile, --xfile and/or --afile");
     }
   }
-  if((! do_filter_stats) && (! ((esl_opt_IsDefault(go, "--sfile")) && (esl_opt_IsDefault(go, "--xfile")) && (esl_opt_IsDefault(go, "--afile")) && (esl_opt_IsDefault(go, "--efile")) && (esl_opt_IsDefault(go, "--bfile"))))) { 
+  if((! do_filter_stats) && (! ((!esl_opt_IsOn(go, "--sfile")) && (!esl_opt_IsOn(go, "--xfile")) && (!esl_opt_IsOn(go, "--afile")) && (!esl_opt_IsOn(go, "--efile")) && (!esl_opt_IsOn(go, "--bfile"))))) { 
     cm_Fail("--{e,b,s,x,a}file options only work with --lfc, --lfi, --gfc or --gfi");
   }
-  if((! do_filter_stats) && (!(esl_opt_IsDefault(go, "--seqfile")))) {
+  if((! do_filter_stats) && (esl_opt_IsOn(go, "--seqfile"))) {
     cm_Fail("--seqfile only makes sense with one of: --lfc, --lfi, --gfc, or --gfi");
   }
-  if((! do_filter_stats) && (! ((esl_opt_IsDefault(go, "-E")) && (esl_opt_IsDefault(go, "-T")) && (esl_opt_IsDefault(go, "--ga")) && (esl_opt_IsDefault(go, "--nc")) && (esl_opt_IsDefault(go, "--tc"))))) { 
+  if((! do_filter_stats) && ( esl_opt_IsOn(go, "-E") || esl_opt_IsOn(go, "-T") || esl_opt_IsOn(go, "--ga") || esl_opt_IsOn(go, "--nc") || esl_opt_IsOn(go, "--tc"))) {
     cm_Fail("-E,-T,--ga,--nc, --tc options only work with --lfc, --lfi, --gfc or --gfi");
   }
 
@@ -200,32 +200,32 @@ main(int argc, char **argv)
 
   /* open optional output files */
   /* --qdbfile */
-  if (! esl_opt_IsDefault(go, "--qdbfile")) 
+  if ( esl_opt_IsOn(go, "--qdbfile")) 
     if ((qdbfp = fopen(esl_opt_GetString(go, "--qdbfile"), "w")) == NULL) 
       ESL_FAIL(eslFAIL, errbuf, "Failed to open --qdbfile output file %s\n", esl_opt_GetString(go, "--qdbfile"));
   /* --efile */
-  if (! esl_opt_IsDefault(go, "--efile"))
+  if ( esl_opt_IsOn(go, "--efile"))
     if ((efp = fopen(esl_opt_GetString(go, "--efile"), "w")) == NULL) 
       ESL_FAIL(eslFAIL, errbuf, "Failed to open --efile output file %s\n", esl_opt_GetString(go, "--efile"));
   /* --bfile */
-  if (! esl_opt_IsDefault(go, "--bfile"))
+  if ( esl_opt_IsOn(go, "--bfile"))
     if ((bfp = fopen(esl_opt_GetString(go, "--bfile"), "w")) == NULL) 
       ESL_FAIL(eslFAIL, errbuf, "Failed to open --bfile output file %s\n", esl_opt_GetString(go, "--bfile"));
   /* --sfile */
-  if (! esl_opt_IsDefault(go, "--sfile"))
+  if ( esl_opt_IsOn(go, "--sfile"))
     if ((sfp = fopen(esl_opt_GetString(go, "--sfile"), "w")) == NULL) 
       ESL_FAIL(eslFAIL, errbuf, "Failed to open --sfile output file %s\n", esl_opt_GetString(go, "--sfile"));
   /* --xfile */
-  if (! esl_opt_IsDefault(go, "--xfile"))
+  if ( esl_opt_IsOn(go, "--xfile"))
     if ((xfp = fopen(esl_opt_GetString(go, "--xfile"), "w")) == NULL) 
       ESL_FAIL(eslFAIL, errbuf, "Failed to open --xfile output file %s\n", esl_opt_GetString(go, "--xfile"));
   /* --afile */
-  if (! esl_opt_IsDefault(go, "--afile"))
+  if ( esl_opt_IsOn(go, "--afile"))
     if ((afp = fopen(esl_opt_GetString(go, "--afile"), "w")) == NULL) 
       ESL_FAIL(eslFAIL, errbuf, "Failed to open --afile output file %s\n", esl_opt_GetString(go, "--afile"));
 
   /* if --seqfile enabled, read the sequence file to get the database size, else we use 1 Mb as db size */
-  if(!(esl_opt_IsDefault(go, "--seqfile"))) { 
+  if( esl_opt_IsOn(go, "--seqfile")) { 
     /* open input sequence file */
     ESL_SQFILE      *sqfp;             
     status = esl_sqfile_Open(esl_opt_GetString(go, "--seqfile"), eslSQFILE_UNKNOWN, NULL, &sqfp);
@@ -239,7 +239,7 @@ main(int argc, char **argv)
     esl_sqfile_Close(sqfp); 
     if (! esl_opt_GetBoolean(go, "--toponly")) dbsize *= 2;
   }
-  else if (!(esl_opt_IsDefault(go, "-Z"))) { dbsize = (long) (esl_opt_GetReal(go, "-Z") * 1000000.); /* convert to Mb then to a long */ }
+  else if ( esl_opt_IsOn(go, "-Z")) { dbsize = (long) (esl_opt_GetReal(go, "-Z") * 1000000.); /* convert to Mb then to a long */ }
   else dbsize = FTHR_DBSIZE; /* 1 Mb */
 
   /* Main body: read CMs one at a time, print stats 
@@ -268,7 +268,7 @@ main(int argc, char **argv)
   int do_localfi  = esl_opt_GetBoolean(go, "--lfi");
   int do_glocalfi = esl_opt_GetBoolean(go, "--gfi");
   int do_range;
-  do_range = ((! esl_opt_IsDefault(go, "-E")) || (! esl_opt_IsDefault(go, "-T")) || (! esl_opt_IsDefault(go, "--ga")) || (! esl_opt_IsDefault(go, "--nc")) || (! esl_opt_IsDefault(go, "--tc"))) ? FALSE : TRUE;
+  do_range = ( esl_opt_IsOn(go, "-E") ||  esl_opt_IsOn(go, "-T") || esl_opt_IsOn(go, "--ga") ||  esl_opt_IsOn(go, "--nc") || esl_opt_IsOn(go, "--tc")) ? FALSE : TRUE;
 
   /* assert we only have one of our exclusive modes on, getops should've already handled this actually */
   if((do_model + do_locale + do_glocale + do_localfc + do_glocalfc + do_localfi + do_glocalfi) > 1) 
@@ -306,7 +306,7 @@ main(int argc, char **argv)
 	}
 	ncm++;
 
-	if(! esl_opt_IsDefault(go, "--beta")) cm->beta_qdb = esl_opt_GetReal(go, "--beta");
+	if( esl_opt_IsOn(go, "--beta")) cm->beta_qdb = esl_opt_GetReal(go, "--beta");
 	/* else cm->beta_qdb will be set as cm->beta_W read from CM file */
 	cm->config_opts |= CM_CONFIG_QDB;
 	/* update cm->config_opts */
@@ -441,28 +441,28 @@ main(int argc, char **argv)
 	}  
 	if(!do_range) { /* TRUE if one of -E, -T, --ga, --nc, --tc was enabled */
 	  do_avg_stats = TRUE;
-	  if(! esl_opt_IsDefault(go, "-E")) { 
+	  if( esl_opt_IsOn(go, "-E")) { 
 	    cm_E = esl_opt_GetReal(go, "-E");
 	    if(!seen_fthr_yet) fprintf(stdout, "for E-value cutoff of %g per %.4f Mb\n#\n", cm_E, (dbsize / 1000000.));
 	    if((status = DumpHMMFilterInfoForCME(stdout, cm->stats->hfiA[fthr_mode], errbuf, cm, cm_mode, hmm_mode, dbsize, ncm, cm_E, (!seen_fthr_yet), namewidth, namedashes,
 						 &cm_bit_sc, &hmm_E, &hmm_bit_sc, &S, &xhmm, &spdup, &cm_ncalcs, &hmm_ncalcs, &do_filter)) != eslOK) cm_Fail(errbuf);
 	  }
 	  else { /* -T, --ga, --tc, or --nc enabled */
-	    if(! esl_opt_IsDefault(go, "-T")) { 
+	    if( esl_opt_IsOn(go, "-T")) { 
 	      cm_bit_sc = esl_opt_GetReal(go, "-T");
 	      if (!seen_fthr_yet) fprintf(stdout, "for bit score cutoff of %.2f\n#\n", esl_opt_GetReal(go, "-T"));
 	    }
-	    else if(! esl_opt_IsDefault(go, "--ga")) { 
+	    else if( esl_opt_IsOn(go, "--ga")) { 
 	      cm_bit_sc = cm->ga;
 	      if(!seen_fthr_yet) fprintf(stdout, "for Rfam GA gathering cutoff from CM file\n#\n");
 	      if(! (cm->flags & CMH_GA)) ESL_FAIL(eslEINVAL, errbuf, "No GA gathering threshold in CM file for cm: %d, can't use --ga.", ncm);
 	    }
-	    else if(! esl_opt_IsDefault(go, "--tc")) { 
+	    else if( esl_opt_IsOn(go, "--tc")) { 
 	      cm_bit_sc = cm->tc;
 	      if(!seen_fthr_yet) fprintf(stdout, "for Rfam TC gathering cutoff from CM file\n#\n");
 	      if(! (cm->flags & CMH_TC)) ESL_FAIL(eslEINVAL, errbuf, "No TC trusted cutoff in CM file for cm: %d, can't use --tc.", ncm);
 	    }
-	    else if(! esl_opt_IsDefault(go, "--nc")) { 
+	    else if( esl_opt_IsOn(go, "--nc")) { 
 	      cm_bit_sc = cm->nc;
 	      if(!seen_fthr_yet) fprintf(stdout, "for Rfam NC gathering cutoff from CM file\n#\n");
 	      if(! (cm->flags & CMH_NC)) ESL_FAIL(eslEINVAL, errbuf, "No NC gathering threshold in CM file for cm: %d, can't use --nc.", ncm);

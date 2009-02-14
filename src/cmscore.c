@@ -249,20 +249,20 @@ main(int argc, char **argv)
       exit(1);
     }
   /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
-  if ((! esl_opt_IsDefault(go, "--taus")) && (! esl_opt_IsDefault(go, "--taue")))
+  if ( esl_opt_IsOn(go, "--taus") && esl_opt_IsOn(go, "--taue"))
     if((esl_opt_GetInteger(go, "--taus")) > (esl_opt_GetInteger(go, "--taue")))
       {
 	printf("Error parsing options, --taus <n> argument must be less than --taue <n> argument.\n");
 	exit(1);
       }
   /* Can't have --betas and --betae without a --qdb* option */
-  if ((! esl_opt_IsDefault(go, "--betas")) && (! esl_opt_IsDefault(go, "--betae")))
+  if ( esl_opt_IsOn(go, "--betas") && esl_opt_IsOn(go, "--betae"))
     if(! ((esl_opt_GetBoolean(go, "--qdb")) || (esl_opt_GetBoolean(go, "--qdbsmall"))))
     {
 	printf("Error parsing options, --betas and --betae combination requires either --qdb or --qdbsmall.\n");
 	exit(1);
       }
-  if ((! esl_opt_IsDefault(go, "--betas")) && (! esl_opt_IsDefault(go, "--betae")))
+  if ( esl_opt_IsOn(go, "--betas") &&  esl_opt_IsOn(go, "--betae"))
     if((esl_opt_GetInteger(go, "--betas")) > (esl_opt_GetInteger(go, "--betae")))
       {
 	printf("Error parsing options, --betas <n> argument must be less than --betae <n> argument.\n");
@@ -404,7 +404,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     ESL_FAIL(eslFAIL, errbuf, "Failed to open covariance model save file %s\n", cfg->cmfile);
 
   /* optionally, open the input sequence file */
-  if(! esl_opt_IsDefault(go, "--infile")) { 
+  if( esl_opt_IsOn(go, "--infile")) { 
     status = esl_sqfile_Open(esl_opt_GetString(go, "--infile"), cfg->infmt, NULL, &(cfg->sqfp));
     if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "File %s doesn't exist or is not readable\n", esl_opt_GetString(go, "--infile"));
     else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of sequence file %s\n", esl_opt_GetString(go, "--infile"));
@@ -440,9 +440,8 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     }
 
   /* create RNG */
-  if (! esl_opt_IsDefault(go, "-s")) 
-    cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
-  else cfg->r = esl_randomness_CreateTimeseeded();
+  if ( esl_opt_IsOn(go, "-s"))  cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
+  else                          cfg->r = esl_randomness_CreateTimeseeded();
 
   if (cfg->r       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
   return eslOK;
@@ -473,7 +472,7 @@ init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   cfg->beta = NULL;
   cfg->tau  = NULL;
 
-  if((! (esl_opt_IsDefault(go, "--taus"))) && (! (esl_opt_IsDefault(go, "--taue"))))
+  if ( esl_opt_IsOn(go, "--taus") && esl_opt_IsOn(go, "--taue"))
     {
       cfg->nstages = esl_opt_GetInteger(go, "--taue") - esl_opt_GetInteger(go, "--taus") + 2;
       ESL_ALLOC(cfg->tau, sizeof(double) * cfg->nstages);
@@ -481,7 +480,7 @@ init_shared_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       for(s = 2; s < cfg->nstages; s++)
 	cfg->tau[s] = cfg->tau[(s-1)] / 10.;
     }
-  else if((! (esl_opt_IsDefault(go, "--betas"))) && (! (esl_opt_IsDefault(go, "--betae"))))
+  else if (esl_opt_IsOn(go, "--betas") && esl_opt_IsOn(go, "--betae"))
     {
       cfg->nstages = esl_opt_GetInteger(go, "--betae") - esl_opt_GetInteger(go, "--betas") + 2;
       ESL_ALLOC(cfg->beta, sizeof(double) * cfg->nstages);
@@ -913,7 +912,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      /* clean up, free everything in seqs_to_aln but the scores, and maybe the parsetrees or 
 	       * cp9_traces (only if --regress or --tfile enabled though), which we'll pass back to the master */
 	      do_free_tr = do_free_cp9_tr = TRUE;
-	      if((! esl_opt_IsDefault(go, "--regress")) || (! esl_opt_IsDefault(go, "--tfile"))) do_free_tr = do_free_cp9_tr = FALSE;
+	      if( esl_opt_IsOn(go, "--regress") || esl_opt_IsOn(go, "--tfile")) do_free_tr = do_free_cp9_tr = FALSE;
 	      FreePartialSeqsToAln(seqs_to_aln, TRUE, do_free_tr, do_free_cp9_tr, TRUE, FALSE, TRUE, TRUE);
                                              /* sq,   tr,         cp9_tr,         post, sc,    pp,   struct_sc   */ 
 
@@ -1214,7 +1213,7 @@ initialize_cm_for_align(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
    * this is strange in that cm->pend may be placed as a number greater than 1., this number
    * is then divided by nexits in ConfigLocalEnds() to get the prob for each v --> EL transition,
    * this is guaranteed by the way we calculate it to be < 1.,  it's the argument from --pfend */
-  if(! esl_opt_IsDefault(go, "--pfend")) {
+  if(esl_opt_IsOn(go, "--pfend")) {
     nexits = 0;
     for (nd = 1; nd < cm->nodes; nd++) {
       if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
@@ -1315,7 +1314,7 @@ initialize_cm_for_search(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *e
    * this is strange in that cm->pend may be placed as a number greater than 1., this number
    * is then divided by nexits in ConfigLocalEnds() to get the prob for each v --> EL transition,
    * this is guaranteed by the way we calculate it to be < 1.,  it's the argument from --pfend */
-  if(! esl_opt_IsDefault(go, "--pfend")) {
+  if(esl_opt_IsOn(go, "--pfend")) {
     nexits = 0;
     for (nd = 1; nd < cm->nodes; nd++) {
       if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
@@ -1433,7 +1432,7 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   int status = eslOK;
   int do_emit   =    esl_opt_GetBoolean(go, "--emit");
   int do_random =    esl_opt_GetBoolean(go, "--random");
-  int do_infile = (! esl_opt_IsDefault (go, "--infile"));
+  int do_infile =    esl_opt_IsOn      (go, "--infile");
   int nseq      =    esl_opt_GetInteger(go, "-n");
   seqs_to_aln_t *seqs_to_aln = NULL;
   double        *dnull = NULL;
@@ -1454,7 +1453,7 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
     seqs_to_aln = CMEmitSeqsToAln(cfg->r, cm, cfg->ncm, nseq, esl_opt_GetBoolean(go, "--pad"), dnull, i_am_mpi_master);
   }
   else if(do_random) {
-    lengths_specified = (esl_opt_IsDefault(go, "--Lmin") && esl_opt_IsDefault(go, "--Lmax")) ? FALSE : TRUE;
+    lengths_specified = (esl_opt_IsOn(go, "--Lmin") && esl_opt_IsOn(go, "--Lmax")) ? TRUE : FALSE;
     if(!lengths_specified) { /* set random sequence length distribution as length distribution of generative CM, obtained from QDB calc */
       while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
 	safe_windowlen *= 2;
@@ -1651,7 +1650,7 @@ static void
 print_stage_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg)
 {
   int do_qdb = FALSE;
-  if((esl_opt_GetBoolean(go, "--qdb")) || (esl_opt_GetBoolean(go, "--qdbsmall")) || (esl_opt_GetBoolean(go, "--qdbboth")) || (! esl_opt_IsDefault(go, "--betas"))) do_qdb = TRUE;
+  if((esl_opt_GetBoolean(go, "--qdb")) || (esl_opt_GetBoolean(go, "--qdbsmall")) || (esl_opt_GetBoolean(go, "--qdbboth")) || esl_opt_IsOn(go, "--betas")) do_qdb = TRUE;
   fprintf(stdout, "#\n");
   fprintf(stdout, "# %5s  %7s  %5s  %6s  %11s  %32s\n",               "",      "",        "",      "",                         "",            "    comparison with stage 1    ");
   fprintf(stdout, "# %5s  %7s  %5s  %6s  %11s  %32s\n",               "",      "",        "",      "",                         "",            "--------------------------------");
@@ -1700,7 +1699,7 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
   fprintf(stdout, "%-10s %s\n",  "# date:",    date);
   fprintf(stdout, "%-10s %ld\n", "# seed:",    esl_randomness_GetSeed(cfg->r));
   if(cfg->nproc > 1) fprintf(stdout, "# %-8s %d\n", "nproc:", cfg->nproc);
-  if     (! esl_opt_IsDefault(go, "--infile")) fprintf(stdout, "%-10s input file (%s)\n", "# mode:", esl_opt_GetString(go, "--infile"));
+  if     ( esl_opt_IsUsed    (go, "--infile")) fprintf(stdout, "%-10s input file (%s)\n", "# mode:", esl_opt_GetString(go, "--infile"));
   else if( esl_opt_GetBoolean(go, "--random")) fprintf(stdout, "%-10s random\n", "# mode:");
   else                                         fprintf(stdout, "%-10s cm emitted\n", "# mode:");
 

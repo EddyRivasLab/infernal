@@ -376,7 +376,7 @@ main(int argc, char **argv)
   if (esl_opt_GetBoolean(go, "--mpi")) 
     {
       char             errbuf[cmERRBUFSIZE]; /* for error messages in mpi_master() */
-      if(! esl_opt_IsDefault(go, "--forecast")) cm_Fail("--forecast is incompatible with --mpi.");
+      if(esl_opt_IsOn(go, "--forecast")) cm_Fail("--forecast is incompatible with --mpi.");
       cfg.do_mpi     = TRUE;
       MPI_Init(&argc, &argv);
       MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
@@ -409,7 +409,7 @@ main(int argc, char **argv)
       esl_stopwatch_Stop(w);
     }
 
-  if(esl_opt_IsDefault(go, "--forecast") && cfg.my_rank == 0) { /* master, serial or mpi */
+  if(! esl_opt_IsOn(go, "--forecast") && cfg.my_rank == 0) { /* master, serial or mpi */
     /* Rewind the CM file for a second pass.
      * Write a temporary CM file with new stats information in it
      */
@@ -579,13 +579,12 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   }
 
   /* set up the partition data that's used for all CMs */
-  if(esl_opt_IsDefault(go, "--exp-pfile")) { /* by default we have 1 partition 0..100 */
+  if( esl_opt_IsOn(go, "--exp-pfile")) { /* setup cfg->np and cfg->pstart in read_partition_file() */
+    if((status = read_partition_file(go, cfg, errbuf)) != eslOK) return status;
+  } else { /* by default we have 1 partition 0..100 */
     ESL_ALLOC(cfg->pstart, sizeof(int) * 1);
     cfg->np        = 1;
     cfg->pstart[0] = 0;
-  }
-  else { /* setup cfg->np and cfg->pstart in read_partition_file() */
-    if((status = read_partition_file(go, cfg, errbuf)) != eslOK) return status;
   }
 
   if (esl_opt_GetString(go, "--fil-dfile") != NULL) { if(cfg->np != 1) ESL_FAIL(eslEINVAL, errbuf, "--fil-dfile only works with a single partition\n"); }
@@ -594,9 +593,8 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (esl_opt_GetBoolean(go, "-v")) cfg->be_verbose = TRUE;        
 
   /* seed master's RNG */
-  if (! esl_opt_IsDefault(go, "-s")) 
-    cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
-  else cfg->r = esl_randomness_CreateTimeseeded();
+  if (esl_opt_IsOn(go, "-s")) cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
+  else                        cfg->r = esl_randomness_CreateTimeseeded();
 
   /* create the stopwatch */
   cfg->w_stage = esl_stopwatch_Create();
@@ -703,7 +701,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len))) != eslOK) cm_Fail(errbuf);
       if((status = print_per_cm_column_headings(go, cfg, errbuf, cm))!= eslOK) cm_Fail(errbuf);
       if((status = update_hmm_exp_length(go, cfg, errbuf, cm))       != eslOK) cm_Fail(errbuf);
-      if(esl_opt_IsDefault(go, "--exp-gc")) { /* only setup dnull if --exp-gc NOT enabled */
+      if(! esl_opt_IsOn(go, "--exp-gc")) { /* only setup dnull if --exp-gc NOT enabled */
 	if((status = set_dnull(cm, errbuf, &dnull))                    != eslOK) cm_Fail(errbuf); 
       }
       
@@ -759,14 +757,14 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    if((status = estimate_time_for_exp_round(go, cfg, errbuf, cm, exp_mode, &psec)) != eslOK) cm_Fail(errbuf); 
 	    psec *= expN * cfg->expL; /* psec was per residue */
 	    /* with --forecast, take into account parallelization */
-	    if((! esl_opt_IsDefault(go, "--forecast")) && (esl_opt_GetInteger(go, "--forecast") > 1)) psec /= (esl_opt_GetInteger(go, "--forecast") - 1);
+	    if((esl_opt_IsOn(go, "--forecast")) && (esl_opt_GetInteger(go, "--forecast") > 1)) psec /= (esl_opt_GetInteger(go, "--forecast") - 1);
 	  }
 	  else psec = exp_psecAA[exp_mode][0];
 	  exp_psecAA[exp_mode][p] = psec;
 	  cm_psec    += psec;
 	  total_psec += psec;
 	  print_exp_line(go, cfg, errbuf, exp_mode, expN, cfg->expL, p, psec);
-	  if(! esl_opt_IsDefault(go, "--forecast")) continue; /* special mode, we don't do the calibration, just print the predicting timings */
+	  if(esl_opt_IsOn(go, "--forecast")) continue; /* special mode, we don't do the calibration, just print the predicting timings */
 
 	  esl_stopwatch_Start(cfg->w_stage);
 	  fflush(stdout);
@@ -819,12 +817,12 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  if((status = estimate_time_for_fil_round(go, cfg, errbuf, cm, exp_mode, &psec)) != eslOK) cm_Fail(errbuf);
 	  psec *= filN;
 	  /* with --forecast, take into account parallelization */
-	  if((! esl_opt_IsDefault(go, "--forecast")) && (esl_opt_GetInteger(go, "--forecast") > 1)) psec /= (esl_opt_GetInteger(go, "--forecast") - 1);
+	  if((esl_opt_IsOn(go, "--forecast")) && (esl_opt_GetInteger(go, "--forecast") > 1)) psec /= (esl_opt_GetInteger(go, "--forecast") - 1);
 	  fil_psecA[exp_mode] = psec;
 	  cm_psec    += psec;
 	  total_psec += psec;
 	  print_fil_line(go, cfg, errbuf, exp_mode, psec);
-	  if(! esl_opt_IsDefault(go, "--forecast")) continue; /* special mode, we don't do the calibration, just print the predicting timings */
+	  if(esl_opt_IsOn(go, "--forecast")) continue; /* special mode, we don't do the calibration, just print the predicting timings */
 
 	  esl_stopwatch_Start(cfg->w_stage);
 	  fthr_mode = ExpModeToFthrMode(exp_mode);
@@ -855,7 +853,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       } /* end of for(exp_mode = 0; exp_mode < NCMMODES; exp_mode++) */
       if(cfg->be_verbose) if((status = debug_print_cmstats(cm, errbuf, cfg->cmstatsA[cmi], TRUE)) != eslOK) cm_Fail(errbuf);
       print_per_cm_summary(go, cfg, errbuf, cm, cm_psec, cm_asec);
-      if(esl_opt_IsDefault(go, "--forecast")) { if((status = print_post_calibration_info(go, cfg, errbuf, stdout, cm, exp_psecAA, fil_psecA, exp_asecAA, fil_asecA)) != eslOK) cm_Fail(errbuf); }
+      if(!esl_opt_IsOn(go, "--forecast")) { if((status = print_post_calibration_info(go, cfg, errbuf, stdout, cm, exp_psecAA, fil_psecA, exp_asecAA, fil_asecA)) != eslOK) cm_Fail(errbuf); }
       free(dnull);
       for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) { 
 	free(exp_asecAA[exp_mode]); 
@@ -871,7 +869,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     }
   if(status != eslEOF) cm_Fail(errbuf);
   
-  if(cfg->ncm > 1 && (! esl_opt_IsDefault(go, "--forecast"))) { 
+  if(cfg->ncm > 1 && (esl_opt_IsOn(go, "--forecast"))) { 
     fprintf(stdout, "#\n");
     FormatTimeString(time_buf, total_psec, FALSE);
     fprintf(stdout, "# total predicted time for all %d CMs: %s\n", cfg->ncm, time_buf);
@@ -1036,10 +1034,10 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
    * (--exp-pfile invoked), we need to broadcast that information to 
    * the workers. 
    */
-  if(! (esl_opt_IsDefault(go, "--exp-gc"))) { /* receive gc_freq info from master */
+  if( esl_opt_IsOn(go, "--exp-gc")) { /* receive gc_freq info from master */
     MPI_Bcast(cfg->gc_freq, GC_SEGMENTS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
   }
-  if(! (esl_opt_IsDefault(go, "--exp-pfile"))) { /* broadcast partition info to workers */
+  if( esl_opt_IsOn(go, "--exp-pfile")) { /* broadcast partition info to workers */
     MPI_Bcast(&(cfg->np),  1,       MPI_INT, 0, MPI_COMM_WORLD);
     ESL_DASSERT1((cfg->pstart != NULL));
     MPI_Bcast(cfg->pstart, cfg->np, MPI_INT, 0, MPI_COMM_WORLD);
@@ -1075,7 +1073,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len))) != eslOK) cm_Fail(errbuf);
       if((status = print_per_cm_column_headings(go, cfg, errbuf, cm))!= eslOK) cm_Fail(errbuf);
       if((status = update_hmm_exp_length(go, cfg, errbuf, cm))       != eslOK) cm_Fail(errbuf);
-      if(esl_opt_IsDefault(go, "--exp-gc")) { /* only setup dnull if --exp-gc NOT enabled */
+      if(! esl_opt_IsOn(go, "--exp-gc")) { /* only setup dnull if --exp-gc NOT enabled */
 	if((status = set_dnull(cm, errbuf, &dnull))                  != eslOK) cm_Fail(errbuf); 
       }
       
@@ -1443,7 +1441,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       ESL_DPRINTF1(("MPI master: done with this CM.\n"));
       if(xstatus == eslOK) if(cfg->be_verbose) if((status = debug_print_cmstats(cm, errbuf, cfg->cmstatsA[cmi], TRUE)) != eslOK) cm_Fail(errbuf);
       print_per_cm_summary(go, cfg, errbuf, cm, cm_psec, cm_asec);
-      if(esl_opt_IsDefault(go, "--forecast")) { if((status = print_post_calibration_info(go, cfg, errbuf, stdout, cm, exp_psecAA, fil_psecA, exp_asecAA, fil_asecA)) != eslOK) cm_Fail(errbuf); }
+      if(! esl_opt_IsOn(go, "--forecast")) { if((status = print_post_calibration_info(go, cfg, errbuf, stdout, cm, exp_psecAA, fil_psecA, exp_asecAA, fil_asecA)) != eslOK) cm_Fail(errbuf); }
       free(fil_cyk_scA);
       free(fil_ins_scA);
       free(fil_fwd_scA);
@@ -1549,14 +1547,14 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * via broadcast from master. Otherwise we need to setup the default partition info
    * (single partition, 0..100 GC content)
    */
-  if(! (esl_opt_IsDefault(go, "--exp-gc"))) { /* receive gc_freq info from master */
+  if( esl_opt_IsOn(go, "--exp-gc")) { /* receive gc_freq info from master */
     ESL_DASSERT1((cfg->gc_freq == NULL));
     ESL_ALLOC(cfg->gc_freq,  sizeof(double) * GC_SEGMENTS);
     ESL_ALLOC(cfg->pgc_freq, sizeof(double) * GC_SEGMENTS);
     MPI_Bcast(cfg->gc_freq, GC_SEGMENTS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
   }
   else cfg->gc_freq = NULL; /* default */
-  if(! (esl_opt_IsDefault(go, "--exp-pfile"))) { /* receive partition info from master */
+  if( esl_opt_IsOn(go, "--exp-pfile")) { /* receive partition info from master */
     MPI_Bcast(&(cfg->np),     1, MPI_INT, 0, MPI_COMM_WORLD);
     ESL_DASSERT1((cfg->pstart == NULL));
     ESL_ALLOC(cfg->pstart, sizeof(int) * cfg->np);
@@ -1764,7 +1762,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
    * this is strange in that cm->pend may be placed as a number greater than 1., this number
    * is then divided by nexits in ConfigLocalEnds() to get the prob for each v --> EL transition,
    * this is guaranteed by the way we calculate it to be < 1.,  it's the argument from --pfend */
-  if(! esl_opt_IsDefault(go, "--pfend")) {
+  if( esl_opt_IsOn(go, "--pfend")) {
     nexits = 0;
     for (nd = 1; nd < cm->nodes; nd++) {
       if ((cm->ndtype[nd] == MATP_nd || cm->ndtype[nd] == MATL_nd ||
@@ -1797,8 +1795,8 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(cm->smx == NULL) cm_Fail("initialize_cm(), CreateScanMatrixForCM() call failed.");
 
   /* create the search info, which holds the thresholds for final round */
-  if(esl_opt_IsDefault(go, "--exp-T")) exp_cutoff = -eslINFINITY;
-  else exp_cutoff = esl_opt_GetReal(go, "--exp-T");
+  if( esl_opt_IsOn(go, "--exp-T")) exp_cutoff = esl_opt_GetReal(go, "--exp-T");
+  else                             exp_cutoff = -eslINFINITY;
   CreateSearchInfo(cm, SCORE_CUTOFF, exp_cutoff, -1.);
   ValidateSearchInfo(cm, cm->si);
   
@@ -1911,7 +1909,7 @@ fit_histogram(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, float *sco
   /* end of if cfg->exptfitfp != NULL) */
 
   /* determine the fraction of the tail to fit, if --exp-tail-p, it's easy */
-  if(!esl_opt_IsDefault(go, "--exp-tailp")) { 
+  if(esl_opt_IsOn(go, "--exp-tailp")) { 
     tailp = esl_opt_GetReal(go, "--exp-tailp");
     tailp = ESL_MIN(tailp, ((float) esl_opt_GetInteger(go, "--exp-tailxn") / (float) h->n)); /* ensure we don't exceed our max nhits in tail */
   }
@@ -2107,7 +2105,7 @@ read_partition_file(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int             p;
 
   ESL_DASSERT1((MAX_PARTITIONS < GC_SEGMENTS));
-  if(esl_opt_IsDefault(go, "--exp-pfile")) ESL_FAIL(eslEINVAL, errbuf, "read_partition_file, but --exp-pfile not invoked!\n");
+  if(! esl_opt_IsOn(go, "--exp-pfile")) ESL_FAIL(eslEINVAL, errbuf, "read_partition_file, but --exp-pfile not invoked!\n");
 
   if (esl_fileparser_Open(esl_opt_GetString(go, "--exp-pfile"), NULL, &efp) != eslOK) ESL_FAIL(eslEINVAL, errbuf, "failed to open %s in read_mask_file\n", esl_opt_GetString(go, "--exp-pfile"));
   esl_fileparser_SetCommentChar(efp, '#');
@@ -2288,7 +2286,9 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
   }
   /* if -s NOT enabled, we need to append the seed info also */
   seed = esl_randomness_GetSeed(cfg->r);
-  if(esl_opt_IsDefault(go, "-s")) {
+  if(esl_opt_IsOn(go, "-s")) { /* -s was enabled, we'll do a sanity check */
+    if(seed != (long) esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r's seed is %ld, but -s was enabled with argument: %ld!, this shouldn't happen.", seed, (long) esl_opt_GetInteger(go, "-s"));
+  } else {
     temp = seed; 
     seedlen = 1; 
     while(temp > 0) { temp/=10; seedlen++; } /* determine length of stringized version of seed */
@@ -2297,9 +2297,6 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
     sprintf(seedstr, " -s %ld ", seed);
     esl_strcat((&cfg->ccom), -1, seedstr, seedlen);
     free(seedstr);
-  }
-  else { /* -s was enabled, we'll do a sanity check */
-    if(seed != (long) esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r's seed is %ld, but -s was enabled with argument: %ld!, this shouldn't happen.", seed, (long) esl_opt_GetInteger(go, "-s"));
   }
 
   for (i = go->optind; i < go->argc; i++) { /* copy command line args yet */
@@ -3213,7 +3210,7 @@ int estimate_time_for_exp_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   }
 
   /* create dnull for generating seqs */
-  if(esl_opt_IsDefault(go, "--exp-gc")) { /* only setup dnull if --exp-gc NOT enabled */
+  if(! esl_opt_IsOn(go, "--exp-gc")) { /* only setup dnull if --exp-gc NOT enabled */
     ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
     esl_vec_DNorm(dnull, cm->abc->K);    
@@ -3328,7 +3325,7 @@ static int
 print_per_cm_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   printf("#\n");
-  if(esl_opt_IsDefault(go, "--forecast")) { 
+  if(! esl_opt_IsOn(go, "--forecast")) { 
     printf("# Calibrating CM %d: %s\n", cfg->ncm, cm->name);
     printf("#\n");
     if(cfg->np != 1) { /* --exp-pfile invoked */
@@ -3373,7 +3370,7 @@ static int
 print_per_cm_summary(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, double psec, double asec)
 {
   char  time_buf[128];	      /* for printing run time */
-  if(esl_opt_IsDefault(go, "--forecast")) { 
+  if(! esl_opt_IsOn(go, "--forecast")) { 
     if(cfg->np != 1) { /* --exp-pfile invoked */
       FormatTimeString(time_buf, psec, FALSE);
       printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %10s  %10s\n", "--------", "---", "---", "---", "----", "---", "---", "---------", "-----", "----------", "----------");
@@ -3426,7 +3423,7 @@ print_exp_line(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int
   expL_Mb =  (float) expN * (float) expL; 
   expL_Mb /= 1000000.;
 
-  if(!esl_opt_IsDefault(go, "--forecast")) { 
+  if(esl_opt_IsOn(go, "--forecast")) { 
     if(cfg->np != 1) printf("  %-8s  %-12s  %4d %3d %3d %9.2f %6s %14s\n",  "exp tail", DescribeExpMode(exp_mode), p+1, ps, pe, expL_Mb, "-", time_buf);
     else             printf("  %-8s  %-12s  %9.2f %6s %14s\n",              "exp tail", DescribeExpMode(exp_mode), expL_Mb, "-", time_buf);
   }
@@ -3450,7 +3447,7 @@ print_fil_line(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, int
   int   filN = esl_opt_GetInteger(go, "--fil-N"); /* number of sequences to search for filter threshold calculation */
 
   FormatTimeString(time_buf, psec, FALSE);
-  if(!esl_opt_IsDefault(go, "--forecast")) { 
+  if(esl_opt_IsOn(go, "--forecast")) { 
     if(cfg->np != 1) printf("  %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6d %14s\n",  "filter", "-", ((exp_mode == EXP_CM_GI) ? "glc" : "loc"), "-", "-", "-", "-", "-", filN, time_buf);
     else             printf("  %-8s  %3s  %3s  %3s  %9s %6d %14s\n",              "filter", "-", ((exp_mode == EXP_CM_GI) ? "glc" : "loc"), "-", "-", filN, time_buf);
   }

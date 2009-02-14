@@ -5364,8 +5364,8 @@ main(int argc, char **argv)
   CMFileClose(cmfp);
 
   /* determine sequence length */
-  if(esl_opt_IsDefault(go, "-L")) L = cm->clen;      
-  else                            L = esl_opt_GetInteger(go, "-L");
+  if(esl_opt_IsOn(go, "-L")) L = esl_opt_GetInteger(go, "-L");
+  else                       L = cm->clen;      
 
   /* configure CM for HMM banded alignment */
   cm->config_opts |= CM_CONFIG_ZEROINSERTS;

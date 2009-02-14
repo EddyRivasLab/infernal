@@ -116,13 +116,13 @@ main(int argc, char **argv)
 
   nmodels        =    esl_opt_GetInteger(go, "-n");
   pthresh        =    esl_opt_GetReal   (go, "-t");
-  if(! esl_opt_IsDefault (go, "-b")) {
+  if( esl_opt_IsOn (go, "-b")) {
     begin_set = TRUE;
     sstruct   = esl_opt_GetInteger(go, "-b");
     nmodels   = 1;
   }
   else begin_set = FALSE;
-  if(! esl_opt_IsDefault (go, "-e")) {
+  if( esl_opt_IsOn (go, "-e")) {
     end_set = TRUE;
     estruct   = esl_opt_GetInteger(go, "-e");
     nmodels   = 1;
@@ -135,9 +135,9 @@ main(int argc, char **argv)
   do_exhaust     =    esl_opt_GetBoolean(go, "--exhaust");
   print_flag     =    esl_opt_GetBoolean(go, "--debug");
 
-  if(begin_set && !(esl_opt_IsDefault(go, "-n"))) cm_Fail("-n does not make sense with -b and -e.\n");
-  if(begin_set && sstruct > estruct)              cm_Fail("For -b <x> and -e <y> y must be >= x.\n");
-  if(begin_set && sstruct > estruct)              cm_Fail("For -b <x> and -e <y> y must be >= x.\n");
+  if(begin_set && esl_opt_IsOn(go, "-n")) cm_Fail("-n does not make sense with -b and -e.\n");
+  if(begin_set && sstruct > estruct)      cm_Fail("For -b <x> and -e <y> y must be >= x.\n");
+  if(begin_set && sstruct > estruct)      cm_Fail("For -b <x> and -e <y> y must be >= x.\n");
 
   if(do_exhaust && do_stest)           printf("--exhaust and --sample might take a long time...\n");
   npredict_cases = 6;
@@ -150,9 +150,8 @@ main(int argc, char **argv)
   if ((CMFileRead(cmfp, NULL, &abc, &cm)) != eslOK) cm_Fail("Failed to read CM");
   CMFileClose(cmfp);
 
-  if (! esl_opt_IsDefault(go, "-s")) 
-    r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
-  else r = esl_randomness_CreateTimeseeded();
+  if (esl_opt_IsOn(go, "-s"))  r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
+  else                         r = esl_randomness_CreateTimeseeded();
   
   /* Allocate and initialize our *wrong_total_ct arrays */
   ESL_ALLOC(apredict_total_ct, (sizeof(int) * (npredict_cases+1)));
