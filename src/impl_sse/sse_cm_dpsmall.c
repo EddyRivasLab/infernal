@@ -55,12 +55,16 @@
 #include "funcs.h"
 #include "structs.h"
 
+typedef struct sse_deck_s {
+   __m128  *mem;
+   __m128 **vec;
+} sse_deck_t;
+
 struct sse_deckpool_s {
-   __m128  **mem_pool;
-   __m128 ***vec_pool;
-   int       n;
-   int       nalloc;
-   int       block;
+   sse_deck_t **pool;
+   int          n;
+   int          nalloc;
+   int          block;
 };
 
 /* The dividers and conquerors.
@@ -111,10 +115,10 @@ static int   cyk_extra_decks(CM_t *cm);
 /* The memory management routines
  */
 struct  sse_deckpool_s *sse_deckpool_create(void);
-void    sse_deckpool_push(struct sse_deckpool_s *dpool, __m128 *mem, __m128 **vec);
-int     sse_deckpool_pop(struct sse_deckpool_s *d, __m128 **ret_mem, __m128 ***ret_vec);
+void    sse_deckpool_push(struct sse_deckpool_s *dpool, sse_deck_t *deck);
+int     sse_deckpool_pop(struct sse_deckpool_s *d, sse_deck_t **ret_deck);
 void    sse_deckpool_free(struct sse_deckpool_s *d);
-void    sse_alloc_vjd_deck(int L, int i, int j, int x, __m128 **mem, __m128 ***vec);
+sse_deck_t*  sse_alloc_vjd_deck(int L, int i, int j, int x);
 
 /* BE_EFFICIENT and BE_PARANOID are alternative (exclusive) settings
  * for the do_full? argument to the alignment engines.
@@ -1065,7 +1069,6 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
        int allow_begin, int *ret_b, float *ret_bsc)
 {
   int       status;
-  float   **end;	// FIXME: scalar value should be removable once SSE conversion is complete
   int       nends;       /* counter that tracks when we can release end deck to the pool */
   int      *touch;       /* keeps track of how many higher decks still need this deck */
   int       v,y,z;	/* indices for states  */
@@ -1082,8 +1085,7 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
 
   __m128    zerov;
   __m128    neginfv;
-  __m128   *mem_end;
-  __m128  **vec_end;
+  sse_deck_t *end;
 
 if (alpha != NULL || ret_alpha != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently support passing alpha matrices!\n");
 if (dpool != NULL || ret_dpool != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently support passing deck pools!\n");
@@ -1098,13 +1100,13 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
   W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
 				/* if caller didn't give us a deck pool, make one */
   if (dpool == NULL) dpool = sse_deckpool_create();
-  if (! sse_deckpool_pop(dpool, &mem_end, &vec_end))
-    sse_alloc_vjd_deck(L, i0, j0, 4, &mem_end, &vec_end);
+  if (! sse_deckpool_pop(dpool, &end))
+    end = sse_alloc_vjd_deck(L, i0, j0, 4);
   nends = CMSubtreeCountStatetype(cm, vroot, E_st);
   for (jp = 0; jp <= W; jp++) {
     j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
-    vec_end[j][0] = esl_sse_rightshift_ps(neginfv, zerov);
-    for (d = 1; d <= jp/4; d++) vec_end[j][d] = neginfv;
+    end->vec[j][0] = esl_sse_rightshift_ps(neginfv, zerov);
+    for (d = 1; d <= jp/4; d++) end->vec[j][d] = neginfv;
   }
 
 fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
@@ -2935,8 +2937,7 @@ sse_deckpool_create(void)
 
   ESL_ALLOC(dpool, sizeof(struct sse_deckpool_s));
   dpool->block  = 10;		/* configurable if you want */
-  ESL_ALLOC(dpool->mem_pool, sizeof(__m128  *) * dpool->block);
-  ESL_ALLOC(dpool->vec_pool, sizeof(__m128 **) * dpool->block);
+  ESL_ALLOC(dpool->pool, sizeof(sse_deck_t *) * dpool->block);
   dpool->nalloc = dpool->block;;
   dpool->n      = 0;
   return dpool;
@@ -2945,17 +2946,15 @@ sse_deckpool_create(void)
   return NULL; /* never reached */
 }
 void 
-sse_deckpool_push(struct sse_deckpool_s *dpool, __m128 *mem, __m128 **vec)
+sse_deckpool_push(struct sse_deckpool_s *dpool, sse_deck_t *deck)
 {
   int   status;
   void *tmp;
   if (dpool->n == dpool->nalloc) {
     dpool->nalloc += dpool->block;
-    ESL_RALLOC(dpool->mem_pool, tmp, sizeof(__m128  *) * dpool->nalloc);
-    ESL_RALLOC(dpool->vec_pool, tmp, sizeof(__m128 **) * dpool->nalloc);
+    ESL_RALLOC(dpool->pool, tmp, sizeof(sse_deck_t  *) * dpool->nalloc);
   }
-  dpool->mem_pool[dpool->n] = mem;
-  dpool->vec_pool[dpool->n] = vec;
+  dpool->pool[dpool->n] = deck;
   dpool->n++;
   ESL_DPRINTF3(("sse_deckpool_push\n"));
   return;
@@ -2963,20 +2962,18 @@ sse_deckpool_push(struct sse_deckpool_s *dpool, __m128 *mem, __m128 **vec)
   cm_Fail("Memory reallocation error.\n");
 }
 int
-sse_deckpool_pop(struct sse_deckpool_s *d, __m128 **ret_mem, __m128 ***ret_vec)
+sse_deckpool_pop(struct sse_deckpool_s *d, sse_deck_t **ret_deck)
 {
-  if (d->n == 0) { *ret_mem = NULL; *ret_vec = NULL; return 0;}
+  if (d->n == 0) { *ret_deck = NULL; return 0;}
   d->n--;
-  *ret_mem = d->mem_pool[d->n];
-  *ret_vec = d->vec_pool[d->n];
+  *ret_deck = d->pool[d->n];
   ESL_DPRINTF3(("sse_deckpool_pop\n"));
   return 1;
 }
 void
 sse_deckpool_free(struct sse_deckpool_s *d)
 {
-  free(d->mem_pool);
-  free(d->vec_pool);
+  free(d->pool);
   free(d);
 }
 /*================================================================*/
@@ -3016,27 +3013,29 @@ sse_deckpool_free(struct sse_deckpool_s *d)
  * Returns:  mem	direct memory allocation, unaligned
  *           vec	'actual' deck, aligned on 128-bit boundaries
  */
-void
-sse_alloc_vjd_deck(int L, int i, int j, int x, __m128 **mem, __m128 ***vec)
+sse_deck_t*
+sse_alloc_vjd_deck(int L, int i, int j, int x)
 {
   int status;
   int     jp;
   int     sW;
+  sse_deck_t *tmp;
   ESL_DPRINTF3(("alloc_vjd_deck : %.4f\n", size_vjd_deck(L,i,j)));
-  ESL_ALLOC(**vec, sizeof(__m128 *) * (L+1)); /* always alloc 0..L rows, some of which are NULL */
+  ESL_ALLOC(tmp, sizeof(sse_deck_t *));
+  ESL_ALLOC(tmp->vec, sizeof(__m128 *) * (L+1)); /* always alloc 0..L rows, some of which are NULL */
   sW = (j-i+2)/x + 1;	/* integer division on purpose */
-  ESL_ALLOC(*mem , sizeof(__m128  ) * ((j-i+2) * sW + 15));  // FIXME: overallocated by about 2x
-  for (jp = 0;   jp < i-1;    jp++) (*vec)[jp]     = NULL;
-  for (jp = j+1; jp <= L;     jp++) (*vec)[jp]     = NULL;
-  (*vec)[i-1] = (__m128 *) (((unsigned long int) mem + 15) & (~0xf));
+  ESL_ALLOC(tmp->mem , sizeof(__m128  ) * ((j-i+2) * sW + 15));  // FIXME: overallocated by about 2x
+  for (jp = 0;   jp < i-1;    jp++) tmp->vec[jp]     = NULL;
+  for (jp = j+1; jp <= L;     jp++) tmp->vec[jp]     = NULL;
+  tmp->vec[i-1] = (__m128 *) (((unsigned long int) tmp->mem + 15) & (~0xf));
   for (jp = 1;   jp <= j-i+1; jp++) {
     sW = jp/x + 1;
-    (*vec)[jp+i-1] = (*vec)[jp+i-2] + sW;
+    tmp->vec[jp+i-1] = tmp->vec[jp+i-2] + sW;
   }
-  return;
+  return tmp;
  ERROR:
   cm_Fail("Memory allocation error.");
-  return; /* never reached */
+  return NULL; /* never reached */
 }
 float
 sse_size_vjd_deck(int L, int i, int j)
