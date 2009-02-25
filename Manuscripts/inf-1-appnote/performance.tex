@@ -22,15 +22,17 @@ test sequences from 51 \textsc{Rfam} (release 7) families (details in
 to a test sequence.  The 450 total test sequences were embedded at
 random positions in a 10 Mb ``pseudogenome''.  Previously we generated
 the pseudogenome sequence from a uniform residue frequency
-distribution \citep{NawrockiEddy07}.  Here, we generated a more
-realistic pseudogenome sequence using a 15-state fully connected
-hidden Markov model (HMM) trained by Baum-Welch expectation
-maximization \citep{Durbin98} on genome sequence data from a wide
-variety of species.  Each of the 51 query alignments was used to build
-a CM and search the pseudogenome, a single list of all hits for all
-families were collected and ranked, and true and false hits were
-defined (as described in \citet{NawrockiEddy07}), producing the ROC
-curves in Figure~1.
+distribution \citep{NawrockiEddy07}.  Because base composition biases
+in the target sequence database cause the most serious problems in
+separating significant CM hits from noise, we improved the realism of
+the benchmark by generating the pseudogenome sequence from a 15-state
+fully connected first-order hidden Markov model (HMM) trained by
+Baum-Welch expectation maximization \citep{Durbin98} on genome
+sequence data from a wide variety of species.  Each of the 51 query
+alignments was used to build a CM and search the pseudogenome, a
+single list of all hits for all families were collected and ranked,
+and true and false hits were defined (as described in
+\citet{NawrockiEddy07}), producing the ROC curves in Figure~1.
 
 \textsc{infernal} searches require a large amount of compute time (our
 10 Mb benchmark search takes about 30 hours per model on average
@@ -40,15 +42,16 @@ described by \citet{WeinbergRuzzo06} is applied first with filter
 thresholds configured by \emph{cmcalibrate} (occasionally a model with
 little primary sequence conservation cannot be usefully accelerated by
 a primary sequence-based filter).  The query-dependent banded (QDB)
-CYK search algorithm is used as a second filter with relatively tight
-bands ($\beta$= $10^{-7}$) \citep{NawrockiEddy07}.  Any sequence
-fragments that survive the filters are searched a final time with the
-Inside algorithm (again using QDB, but with looser bands ($\beta$=
-$10^{-15}$)).  In our benchmark, the default filters accelerate
-similarity search by about 30-fold overall, while sacrificing a small
-amount of sensitivity (Figure~1). This makes version 1.0 substantially
-faster than 0.72. \textsc{BLAST} is still orders of magnitude faster,
-but significantly less sensitive than \textsc{infernal}. Further
+CYK maximum likelihood search algorithm is used as a second filter
+with relatively tight bands ($\beta$= $10^{-7}$)
+\citep{NawrockiEddy07}.  Any sequence fragments that survive the
+filters are searched a final time with the Inside algorithm (again
+using QDB, but with looser bands ($\beta$= $10^{-15}$)).  In our
+benchmark, the default filters accelerate similarity search by about
+30-fold overall, while sacrificing a small amount of sensitivity
+(Figure~1). This makes version 1.0 substantially faster than
+0.72. \textsc{BLAST} is still orders of magnitude faster, but
+significantly less sensitive than \textsc{infernal}. Further
 acceleration remains a major goal of \textsc{infernal} development.
 
 The computational cost of CM alignment with \emph{cmalign} has been a

@@ -8,4 +8,6 @@ particular RNA family, or aligning a few thousand SSU rRNA sequences.
 Nonetheless, \textsc{infernal} remains computationally expensive, and many
 problems of interest require the use of a cluster.  The most expensive
 programs (\emph{cmcalibrate}, \emph{cmsearch}, and \emph{cmalign}) are
-implemented in coarse-grained parallel MPI versions.
+implemented in coarse-grained parallel MPI versions which divide the
+workload into independent units, each of which is run on a seperate
+processor. 
