@@ -80,9 +80,9 @@ static void  sse_v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  */
 static float sse_inside(CM_t *cm, ESL_DSQ *dsq, int L,
 		    int r, int z, int i0, int j0, int do_full,
-		    float ***alpha, float ****ret_alpha, 
+		    sse_deck_t **alpha, sse_deck_t ***ret_alpha, 
 		    struct sse_deckpool_s *dpool, struct sse_deckpool_s **ret_dpool,
-		    void ****ret_shadow, int allow_begin, int *ret_b, float *ret_bsc);
+		    sse_deck_t ***ret_shadow, int allow_begin, int *ret_b, float *ret_bsc);
 static void  sse_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		     int do_full, float ***beta, float ****ret_beta,
 		     struct deckpool_s *dpool, struct deckpool_s **ret_dpool);
@@ -1063,9 +1063,9 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
  */
 static float 
 sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
-       float ***alpha, float ****ret_alpha, 
+       sse_deck_t **alpha, sse_deck_t ***ret_alpha, 
        struct sse_deckpool_s *dpool, struct sse_deckpool_s **ret_dpool,
-       void ****ret_shadow, 
+       sse_deck_t ***ret_shadow, 
        int allow_begin, int *ret_b, float *ret_bsc)
 {
   int       status;
@@ -1077,15 +1077,22 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
   int       yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int       W;		/* subsequence length */
   int       jp;		/* j': relative position in the subsequence  */
-  void   ***shadow;      /* shadow matrix for tracebacks */
   int     **kshad;       /* a shadow deck for bifurcations */
   char    **yshad;       /* a shadow deck for every other kind of state */
   int       b;		/* best local begin state */
   float     bsc;		/* score for using the best local begin state */
 
-  __m128    zerov;
-  __m128    neginfv;
-  sse_deck_t *end;
+  const int    vecwidth = 4;
+  int          sW;
+  __m128       zerov;
+  __m128       neginfv;
+  __m128       el_self_v;
+  __m128       tscv;
+  __m128       doffset;
+  __m128       tempv;
+  __m128       mask;
+  sse_deck_t  *end;
+  sse_deck_t **shadow;      /* shadow matrix for tracebacks */
 
 if (alpha != NULL || ret_alpha != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently support passing alpha matrices!\n");
 if (dpool != NULL || ret_dpool != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently support passing deck pools!\n");
@@ -1095,13 +1102,15 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
    */
   zerov = _mm_setzero_ps();
   neginfv = _mm_set1_ps(-eslINFINITY);
+  el_self_v = _mm_set1_ps(cm->el_selfsc);
+  doffset = _mm_setr_ps(0.0, 1.0, 2.0, 3.0);
   b   = -1;
   bsc = IMPOSSIBLE;
   W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
 				/* if caller didn't give us a deck pool, make one */
   if (dpool == NULL) dpool = sse_deckpool_create();
   if (! sse_deckpool_pop(dpool, &end))
-    end = sse_alloc_vjd_deck(L, i0, j0, 4);
+    end = sse_alloc_vjd_deck(L, i0, j0, vecwidth);
   nends = CMSubtreeCountStatetype(cm, vroot, E_st);
   for (jp = 0; jp <= W; jp++) {
     j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
@@ -1109,14 +1118,13 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
     for (d = 1; d <= jp/4; d++) end->vec[j][d] = neginfv;
   }
 
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
   /* if caller didn't give us a matrix, make one.
    * It's important to allocate for M+1 decks (deck M is for EL, local
    * alignment) - even though Inside doesn't need EL, Outside does,
    * and we might reuse this memory in a call to Outside.  
    */
   if (alpha == NULL) {
-    ESL_ALLOC(alpha, sizeof(float **) * (cm->M+1));
+    ESL_ALLOC(alpha, sizeof(sse_deck_t *) * (cm->M+1));
     for (v = 0; v <= cm->M; v++) alpha[v] = NULL;
   }
 
@@ -1126,6 +1134,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
   for (v = vend+1;v < cm->M; v++) touch[v] = 0;
 
   /* The shadow matrix, if caller wants a traceback.
+* DEPRECATED COMMENT
    * We do some pointer tricks here to save memory. The shadow matrix
    * is a void ***. Decks may either be char ** (usually) or
    * int ** (for bifurcation decks). Watch out for the casts.
@@ -1137,9 +1146,15 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
    * we'll hold off on that for now. We could also pack more
    * traceback pointers into a smaller space since we only really
    * need 3 bits, not 8.)
+* NEW COMMENT
+   * The vectorized implementation uses much larger memory types
+   * for the shadow matrices, so that they fit in the same vector
+   * width as the main alpha matrix.  In 4x vectors, they'll be
+   * 32-bit wide integer values, stored in the same type of
+   * __m128 decks as the floats.
    */
   if (ret_shadow != NULL) {
-    ESL_ALLOC(shadow, sizeof(void **) * cm->M);
+    ESL_ALLOC(shadow, sizeof(sse_deck_t *) * cm->M);
     for (v = 0; v < cm->M; v++) shadow[v] = NULL;
   }
 
@@ -1155,40 +1170,43 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
       if (cm->sttype[v] == E_st) { 
 	alpha[v] = end; continue; 
       } 
-      if (! deckpool_pop(dpool, &(alpha[v]))) 
-	alpha[v] = alloc_vjd_deck(L, i0, j0);
+      if (! sse_deckpool_pop(dpool, &(alpha[v]))) 
+	alpha[v] = sse_alloc_vjd_deck(L, i0, j0, vecwidth);
 
       if (ret_shadow != NULL) {
-	if (cm->sttype[v] == B_st) {
-	  kshad     = alloc_vjd_kshadow_deck(L, i0, j0); 
-	  shadow[v] = (void **) kshad;
-	} else {
-	  yshad     = alloc_vjd_yshadow_deck(L, i0, j0); 
-	  shadow[v] = (void **) yshad;
-	}
+        shadow[v] = sse_alloc_vjd_deck(L, i0, j0, vecwidth);
       }
 
       if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	{
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
+            sW = jp/4;
 	    for (d = 0; d <= jp; d++)
 	      {
 		y = cm->cfirst[v];
-		alpha[v][j][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+		// alpha[v][j][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+                tempv = _mm_mul_ps(el_self_v, _mm_add_ps(_mm_set1_ps((float) d), doffset));
+		alpha[v]->vec[j][d] = _mm_add_ps(_mm_set1_ps(cm->endsc[v]), tempv);
 		/* treat EL as emitting only on self transition */
-		if (ret_shadow != NULL) yshad[j][d]  = USED_EL; 
-		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
-		  if ((sc = alpha[y+yoffset][j][d] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
-		    alpha[v][j][d] = sc; 
-		    if (ret_shadow != NULL) yshad[j][d] = yoffset;
-		  }
-		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
+		if (ret_shadow != NULL) shadow[v]->vec[j][d]  = (__m128) _mm_set1_epi32(USED_EL); 
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+                  tscv = _mm_set1_ps(cm->tsc[v][yoffset]);
+                  tempv = _mm_add_ps(alpha[y+yoffset]->vec[j][d], tscv);
+                  mask = _mm_cmpgt_ps(tempv, alpha[v]->vec[j][d]);
+                  alpha[v]->vec[j][d] = _mm_max_ps(alpha[v]->vec[j][d], tempv);
+                  if (ret_shadow != NULL) {
+                    shadow[v]->vec[j][d] = esl_sse_select_ps(shadow[v]->vec[j][d], (__m128) _mm_set1_epi32(yoffset), mask);
+                  }
+                }
+                //FIXME: SSE conversion is kind of ignoring the possibilty of underflow... this is bad.
+		//if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
 	  }
 	}
       else if (cm->sttype[v] == B_st)
 	{
+fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
 	    for (d = 0; d <= jp; d++)
