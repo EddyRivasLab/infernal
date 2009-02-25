@@ -39,7 +39,7 @@ rounds of filtering.  When appropriate, the HMM filtering technique
 described by \citet{WeinbergRuzzo06} is applied first with filter
 thresholds configured by \emph{cmcalibrate} (occasionally a model with
 little primary sequence conservation cannot be usefully accelerated by
-a primary sequence based filter).  The query-dependent banded (QDB)
+a primary sequence-based filter).  The query-dependent banded (QDB)
 CYK search algorithm is used as a second filter with relatively tight
 bands ($\beta$= $10^{-7}$) \citep{NawrockiEddy07}.  Any sequence
 fragments that survive the filters are searched a final time with the
@@ -54,7 +54,7 @@ acceleration remains a major goal of \textsc{infernal} development.
 The computational cost of CM alignment with \emph{cmalign} has been a
 limitation of previous versions of \textsc{infernal}. Version 1.0 now
 uses a constrained dynamic programming approach first developed by
-\citet{Brown00} that uses sequence specific bands derived from a
+\citet{Brown00} that uses sequence-specific bands derived from a
 first-pass HMM alignment. This technique offers a dramatic speedup
 relative to unconstrained alignment, especially for large RNAs such as
 small and large subunit (SSU and LSU) ribosomal RNAs, which can now be
