@@ -1107,6 +1107,7 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
   __m128       tscv;
   __m128       doffset;
   __m128       tmpv;
+  __m128       tmpshad;
   __m128       mask;
   sse_deck_t  *end;
   sse_deck_t **shadow;      /* shadow matrix for tracebacks */
@@ -1237,13 +1238,17 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
              * the section below is distinctly not, as I have enumerated the cases
              * of how d-k hits the vector boundaries
              */
+            vec_access = (float *) (&alpha[z]->vec[j][0]);
+            begr_v = _mm_set1_ps(*vec_access);
+            tmpshad = (__m128) _mm_set1_epi32(0);
 	    for (dp = 0; dp <= sW; dp++)
 	      {
-		alpha[v]->vec[j][dp] = _mm_add_ps(alpha[y]->vec[j][dp], alpha[z]->vec[j][0]);
-		if (ret_shadow != NULL) shadow[v]->vec[j][dp] = (__m128) _mm_set1_epi32(0);
+		alpha[v]->vec[j][dp] = _mm_add_ps(alpha[y]->vec[j][dp], begr_v);
+		if (ret_shadow != NULL) shadow[v]->vec[j][dp] = tmpshad;
               }
             for (k = 4; k <=jp; k+=4)
               { 
+                tmpshad = (__m128) _mm_set1_epi32(k);
                 kp = k/vecwidth;
                 vec_access = (float *) (&alpha[z]->vec[j][kp]);
                 begr_v = _mm_set1_ps(*vec_access);
@@ -1254,12 +1259,13 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                     mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][dp]);
                     alpha[v]->vec[j][dp] = _mm_max_ps(alpha[v]->vec[j][dp], tmpv);
                     if (ret_shadow != NULL) {
-                      shadow[v]->vec[j][dp] = esl_sse_select_ps(shadow[v]->vec[j][dp], (__m128) _mm_set1_epi32(k), mask);
+                      shadow[v]->vec[j][dp] = esl_sse_select_ps(shadow[v]->vec[j][dp], tmpshad, mask);
                     }
                   }
               }
             for (k = 1; k <= jp; k+= 4)
               {
+                tmpshad = (__m128) _mm_set1_epi32(k);
                 kp = k/vecwidth;
                 vec_access = (float *) (&alpha[z]->vec[j][kp]) + 1;
                 begr_v = _mm_set1_ps(*vec_access);
@@ -1269,7 +1275,7 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                 mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][kp]);
                 alpha[v]->vec[j][kp] = _mm_max_ps(alpha[v]->vec[j][kp], tmpv);
                 if (ret_shadow != NULL) {
-                  shadow[v]->vec[j][kp] = esl_sse_select_ps(shadow[v]->vec[j][kp], (__m128) _mm_set1_epi32(k), mask);
+                  shadow[v]->vec[j][kp] = esl_sse_select_ps(shadow[v]->vec[j][kp], tmpshad, mask);
                 }
                 for (dp = kp+1; dp <= sW; dp++)
                   {
@@ -1278,12 +1284,13 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                     mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][dp]);
                     alpha[v]->vec[j][dp] = _mm_max_ps(alpha[v]->vec[j][dp], tmpv);
                     if (ret_shadow != NULL) {
-                      shadow[v]->vec[j][dp] = esl_sse_select_ps(shadow[v]->vec[j][dp], (__m128) _mm_set1_epi32(k), mask);
+                      shadow[v]->vec[j][dp] = esl_sse_select_ps(shadow[v]->vec[j][dp], tmpshad, mask);
                     }
                   }
               }
             for (k = 2; k <= jp; k+= 4)
               {
+                tmpshad = (__m128) _mm_set1_epi32(k);
                 kp = k/vecwidth;
                 vec_access = (float *) (&alpha[z]->vec[j][kp]) + 2;
                 begr_v = _mm_set1_ps(*vec_access);
@@ -1293,7 +1300,7 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                 mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][kp]);
                 alpha[v]->vec[j][kp] = _mm_max_ps(alpha[v]->vec[j][kp], tmpv);
                 if (ret_shadow != NULL) {
-                  shadow[v]->vec[j][kp] = esl_sse_select_ps(shadow[v]->vec[j][kp], (__m128) _mm_set1_epi32(k), mask);
+                  shadow[v]->vec[j][kp] = esl_sse_select_ps(shadow[v]->vec[j][kp], tmpshad, mask);
                 }
                 for (dp = kp+1; dp <= sW; dp++)
                   {
@@ -1303,12 +1310,13 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                     mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][dp]);
                     alpha[v]->vec[j][dp] = _mm_max_ps(alpha[v]->vec[j][dp], tmpv);
                     if (ret_shadow != NULL) {
-                      shadow[v]->vec[j][dp] = esl_sse_select_ps(shadow[v]->vec[j][dp], (__m128) _mm_set1_epi32(k), mask);
+                      shadow[v]->vec[j][dp] = esl_sse_select_ps(shadow[v]->vec[j][dp], tmpshad, mask);
                     }
                   }
               }
             for (k = 3; k <= jp; k+= 4)
               {
+                tmpshad = (__m128) _mm_set1_epi32(k);
                 kp = k/vecwidth;
                 vec_access = (float *) (&alpha[z]->vec[j][kp]) + 3;
                 begr_v = _mm_set1_ps(*vec_access);
@@ -1318,7 +1326,7 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                 mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][kp]);
                 alpha[v]->vec[j][kp] = _mm_max_ps(alpha[v]->vec[j][kp], tmpv);
                 if (ret_shadow != NULL) {
-                  shadow[v]->vec[j][kp] = esl_sse_select_ps(shadow[v]->vec[j][kp], (__m128) _mm_set1_epi32(k), mask);
+                  shadow[v]->vec[j][kp] = esl_sse_select_ps(shadow[v]->vec[j][kp], tmpshad, mask);
                 }
                 for (dp = kp+1; dp <= sW; dp++)
                   {
@@ -1327,7 +1335,7 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                     mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][dp]);
                     alpha[v]->vec[j][dp] = _mm_max_ps(alpha[v]->vec[j][dp], tmpv);
                     if (ret_shadow != NULL) {
-                      shadow[v]->vec[j][dp] = esl_sse_select_ps(shadow[v]->vec[j][dp], (__m128) _mm_set1_epi32(k), mask);
+                      shadow[v]->vec[j][dp] = esl_sse_select_ps(shadow[v]->vec[j][dp], tmpshad, mask);
                     }
                   }
               }
