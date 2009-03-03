@@ -4,17 +4,18 @@ A published benchmark (independent of our lab) \citep{Freyhult07} and
 our own internal benchmark used during development
 \citep{NawrockiEddy07} both find that \textsc{infernal} and other CM
 based methods are the most sensitive and specific tools for structural
-RNA homology search among those tested. Figure~1 shows
-updated results of our internal benchmark comparing \textsc{infernal}
-1.0 to the previous version (0.72) that was benchmarked in
-\citet{Freyhult07}, and also to family-pairwise-search with BLASTN
+RNA homology search among those tested. Figure~1 shows updated results
+of our internal benchmark comparing \textsc{infernal} 1.0 to the
+previous version (0.72) that was benchmarked in \citet{Freyhult07},
+and also to family-pairwise-search with BLASTN
 \citep{Altschul97,Grundy98b}.  \textsc{infernal}'s sensitivity and
-specificity have greatly improved, due mainly to 
-three relevant improvements in the implementation: a biased
-composition correction to the raw log-odds scores, the use of the full
-Inside log-likelihood scores (summed over all alignments) in place of
-CYK maximum likelihood alignment scores, and the introduction of
-approximate E-value estimates for the scores.
+specificity have greatly improved, due mainly to three relevant
+improvements in the implementation: a biased composition correction to
+the raw log-odds scores, the use of full Inside log-likelihood scores
+(the summed score of all possible alignments of the target sequence to
+the query model) in place of CYK maximum likelihood alignment scores,
+and the introduction of approximate E-value estimates for the scores
+\citep{infguide03}.
 
 The benchmark dataset used in Figure~1 includes query alignments and
 test sequences from 51 \textsc{Rfam} (release 7) families (details in
@@ -43,16 +44,18 @@ thresholds configured by \emph{cmcalibrate} (occasionally a model with
 little primary sequence conservation cannot be usefully accelerated by
 a primary sequence-based filter).  The query-dependent banded (QDB)
 CYK maximum likelihood search algorithm is used as a second filter
-with relatively tight bands ($\beta$= $10^{-7}$)
-\citep{NawrockiEddy07}.  Any sequence fragments that survive the
-filters are searched a final time with the Inside algorithm (again
-using QDB, but with looser bands ($\beta$= $10^{-15}$)).  In our
-benchmark, the default filters accelerate similarity search by about
-30-fold overall, while sacrificing a small amount of sensitivity
-(Figure~1). This makes version 1.0 substantially faster than
-0.72. \textsc{BLAST} is still orders of magnitude faster, but
-significantly less sensitive than \textsc{infernal}. Further
-acceleration remains a major goal of \textsc{infernal} development.
+with relatively tight bands ($\beta$= $10^{-7}$, the $\beta$ parameter
+is the fraction of subtree length probability mass excluded by
+imposing the bands as explained in \citep{NawrockiEddy07}).  Any
+sequence fragments that survive the filters are searched a final time
+with the Inside algorithm (again using QDB, but with looser bands
+($\beta$= $10^{-15}$)).  In our benchmark, the default filters
+accelerate similarity search by about 30-fold overall, while
+sacrificing a small amount of sensitivity (Figure~1). This makes
+version 1.0 substantially faster than 0.72. \textsc{BLAST} is still
+orders of magnitude faster, but significantly less sensitive than
+\textsc{infernal}. Further acceleration remains a major goal of
+\textsc{infernal} development.
 
 The computational cost of CM alignment with \emph{cmalign} has been a
 limitation of previous versions of \textsc{infernal}. Version 1.0 now
