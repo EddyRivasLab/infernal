@@ -11,7 +11,7 @@ from the observed counts of residues, base pairs, insertions and
 deletions in the input alignment, combined with prior information
 derived from structural ribosomal RNA alignments.  CM parameterization
 has been described in more detail elsewhere
-\citep{Eddy94,Eddy02b,infguide03,NawrockiEddy07}.
+\citep{Eddy94,Eddy02b,KleinEddy03,infguide03,NawrockiEddy07}.
 
 \textsc{infernal} is composed of several programs that are used in
 combination by following four basic steps: 
@@ -23,11 +23,12 @@ combination by following four basic steps:
 \item Align putative homologs to a CM with \emph{cmalign}.
 \end{enumerate}
 
-The calibration step is optional and computationally expensive (10
-hours for a CM of a typical RNA family), but is required to obtain
-E-values that estimate the statistical significance of hits in a
-database search. \emph{cmcalibrate} will also determine appropriate
-HMM filter thresholds for accelerating searches without an appreciable
-loss of sensitivity. Each model only needs to be calibrated once.
+The calibration step is optional and computationally expensive (4
+hours on a 3.0 GHz Intel Xeon for a CM of a typical RNA family of
+length 100 nt), but is required to obtain E-values that estimate
+the statistical significance of hits in a database
+search. \emph{cmcalibrate} will also determine appropriate HMM filter
+thresholds for accelerating searches without an appreciable loss of
+sensitivity. Each model only needs to be calibrated once.
 
 
