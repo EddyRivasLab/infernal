@@ -1528,27 +1528,46 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
 	}
       else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st)
 	{
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
-	    alpha[v][j][0] = IMPOSSIBLE;
-	    for (d = 1; d <= jp; d++)
+            tmpv = _mm_mul_ps(el_self_v, esl_sse_rightshift_ps(doffset, neginfv));
+	    alpha[v]->vec[j][0] = _mm_add_ps(_mm_set1_ps(cm->endsc[v]), tmpv);
+            /* treat EL as emitting only on self transition */
+            if (ret_shadow != NULL) shadow[v]->vec[j][0] = (__m128) _mm_set1_epi32(USED_EL);
+            y = cm->cfirst[v];
+            for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+              tscv = _mm_set1_ps(cm->tsc[v][yoffset]);
+              tmpv = esl_sse_rightshift_ps(alpha[y+yoffset]->vec[j-1][0], neginfv);
+              tmpv = _mm_add_ps(tmpv, tscv);
+              mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][0]);
+              alpha[v]->vec[j][0] = _mm_max_ps(alpha[v]->vec[j][0], tmpv);
+              if (ret_shadow != NULL) {
+                shadow[v]->vec[j][0] = esl_sse_select_ps(shadow[v]->vec[j][0], (__m128) _mm_set1_epi32(yoffset), mask);
+              }
+            }
+            escv = _mm_setr_ps(-eslINFINITY, cm->oesc[v][dsq[j]], cm->oesc[v][dsq[j]], cm->oesc[v][dsq[j]]);
+            alpha[v]->vec[j][0] = _mm_add_ps(alpha[v]->vec[j][0], escv);
+
+            sW = jp/4;
+	    for (dp = 1; dp <= sW; dp++)
 	      {
-		y = cm->cfirst[v];
-		alpha[v][j][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+                tmpv = _mm_mul_ps(el_self_v, _mm_add_ps(_mm_set1_ps((float) dp*vecwidth - 1), doffset));
+		alpha[v]->vec[j][dp] = _mm_add_ps(_mm_set1_ps(cm->endsc[v]), tmpv);
 		/* treat EL as emitting only on self transition */
-		if (ret_shadow != NULL) yshad[j][d] = USED_EL;
-		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
-		  if ((sc = alpha[y+yoffset][j-1][d-1] + cm->tsc[v][yoffset]) > alpha[v][j][d]) {
-		    alpha[v][j][d] = sc;
-		    if (ret_shadow != NULL) yshad[j][d] = yoffset;
-		  }
-		if (dsq[j] < cm->abc->K)
-		  alpha[v][j][d] += cm->esc[v][dsq[j]];
-		else
-		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, dsq[j], cm->esc[v]);
+		if (ret_shadow != NULL) shadow[v]->vec[j][dp] = (__m128) _mm_set1_epi32(USED_EL);
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+                  tscv = _mm_set1_ps(cm->tsc[v][yoffset]);
+                  tmpv = alt_rightshift_ps(alpha[y+yoffset]->vec[j-1][dp], alpha[y+yoffset]->vec[j-1][dp-1]);
+                  tmpv = _mm_add_ps(tmpv, tscv);
+                  mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][dp]);
+                  alpha[v]->vec[j][dp] = _mm_max_ps(alpha[v]->vec[j][dp], tmpv);
+		  if (ret_shadow != NULL) {
+                    shadow[v]->vec[j][dp] = esl_sse_select_ps(shadow[v]->vec[j][dp], (__m128) _mm_set1_epi32(yoffset), mask);
+                  }
+                }
 		
-		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
+                escv = _mm_set1_ps(cm->oesc[v][dsq[j]]);
+                alpha[v]->vec[j][dp] = _mm_add_ps(alpha[v]->vec[j][dp], escv);
 	      }
 	  }
 	}				/* finished calculating deck v. */
@@ -1559,6 +1578,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
        * see a USED_LOCAL_BEGIN flag in the shadow matrix, telling us
        * to jump right to state b; see below)
        */
+fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
       if (allow_begin && alpha[v][j0][W] + cm->beginsc[v] > bsc) 
 	{
 	  b   = v;
