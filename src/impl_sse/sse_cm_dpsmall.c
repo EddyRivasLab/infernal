@@ -1457,34 +1457,78 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
          The other possible transitions for IL_st can be treated normally, however.     */
       else if (cm->sttype[v] == IL_st)
 	{
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
-	    alpha[v][j][0] = IMPOSSIBLE;
-	    for (d = 1; d <= jp; d++)
+            tmpv = _mm_mul_ps(el_self_v, esl_sse_rightshift_ps(doffset, neginfv));
+	    alpha[v]->vec[j][0] = _mm_add_ps(_mm_set1_ps(cm->endsc[v]), tmpv);
+            /* treat EL as emitting only on self transition */
+            if (ret_shadow != NULL) shadow[v]->vec[j][0] = (__m128) _mm_set1_epi32(USED_EL);
+            y = cm->cfirst[v];
+            for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) {
+              tscv = _mm_set1_ps(cm->tsc[v][yoffset]);
+              tmpv = esl_sse_rightshift_ps(alpha[y+yoffset]->vec[j][0], neginfv);
+              tmpv = _mm_add_ps(tmpv, tscv);
+              mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][0]);
+              alpha[v]->vec[j][0] = _mm_max_ps(alpha[v]->vec[j][0], tmpv);
+              if (ret_shadow != NULL) {
+                shadow[v]->vec[j][0] = esl_sse_select_ps(shadow[v]->vec[j][0], (__m128) _mm_set1_epi32(yoffset), mask);
+              }
+            }
+            escv = _mm_setr_ps(-eslINFINITY, cm->oesc[v][dsq[j]], cm->oesc[v][dsq[j-1]], cm->oesc[v][dsq[j-2]]);
+            alpha[v]->vec[j][0] = _mm_add_ps(alpha[v]->vec[j][0], escv);
+            /* handle yoffset = 0, the self-transition case, seaparately */
+            tscv = _mm_set1_ps(cm->tsc[v][0]);
+            for (k = 2; k < vecwidth; k++) {
+              tmpv = esl_sse_rightshift_ps(alpha[y]->vec[j][0], neginfv);
+              tmpv = _mm_add_ps(escv, _mm_add_ps(tscv, tmpv));
+              mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][0]);
+              alpha[v]->vec[j][0] = _mm_max_ps(alpha[v]->vec[j][0], tmpv);
+              if (ret_shadow != NULL) {
+                shadow[v]->vec[j][0] = esl_sse_select_ps(shadow[v]->vec[j][0], (__m128) _mm_set1_epi32(0), mask);
+              }
+              /* could make this a do-while on whether any values in mask are set */
+            }
+
+            sW = jp/4;
+	    for (dp = 1; dp <= sW; dp++)
 	      {
-		y = cm->cfirst[v];
-		alpha[v][j][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+                tmpv = _mm_mul_ps(el_self_v, _mm_add_ps(_mm_set1_ps((float) dp*vecwidth - 1), doffset));
+		alpha[v]->vec[j][dp] = _mm_add_ps(_mm_set1_ps(cm->endsc[v]), tmpv);
 		/* treat EL as emitting only on self transition */
-		if (ret_shadow != NULL) yshad[j][d] = USED_EL;
-		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) 
-		  if ((sc = alpha[y+yoffset][j][d-1] + cm->tsc[v][yoffset]) >  alpha[v][j][d]) {
-		    alpha[v][j][d] = sc;
-		    if (ret_shadow != NULL) yshad[j][d] = yoffset;
-		  } 
+		if (ret_shadow != NULL) shadow[v]->vec[j][dp] = (__m128) _mm_set1_epi32(USED_EL);
+		for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) {
+                  tscv = _mm_set1_ps(cm->tsc[v][yoffset]);
+                  tmpv = alt_rightshift_ps(alpha[y+yoffset]->vec[j][dp], alpha[y+yoffset]->vec[j][dp-1]);
+                  tmpv = _mm_add_ps(tmpv, tscv);
+                  mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][dp]);
+                  alpha[v]->vec[j][dp] = _mm_max_ps(alpha[v]->vec[j][dp], tmpv);
+		  if (ret_shadow != NULL) {
+                    shadow[v]->vec[j][dp] = esl_sse_select_ps(shadow[v]->vec[j][dp], (__m128) _mm_set1_epi32(yoffset), mask);
+                  }
+                }
 		
-		i = j-d+1;
-		if (dsq[i] < cm->abc->K)
-		  alpha[v][j][d] += cm->esc[v][dsq[i]];
-		else
-		  alpha[v][j][d] += esl_abc_FAvgScore(cm->abc, dsq[i], cm->esc[v]);
-		
-		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
+		i = j-dp*vecwidth+1;
+                escv = _mm_setr_ps(cm->oesc[v][dsq[i]], cm->oesc[v][dsq[i-1]], cm->oesc[v][dsq[i-2]], cm->oesc[v][dsq[i-3]]);
+                alpha[v]->vec[j][dp] = _mm_add_ps(alpha[v]->vec[j][dp], escv);
 	      }
+
+            /* handle yoffset = 0, the self-transition case, seaparately */
+            tscv = _mm_set1_ps(cm->tsc[v][dp]);
+            for (k = 0; k < vecwidth; k++) {
+              tmpv = esl_sse_rightshift_ps(alpha[y]->vec[j][dp], alpha[y]->vec[j][dp-1]);
+              tmpv = _mm_add_ps(escv, _mm_add_ps(tscv, tmpv));
+              mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][dp]);
+              alpha[v]->vec[j][dp] = _mm_max_ps(alpha[v]->vec[j][dp], tmpv);
+              if (ret_shadow != NULL) {
+                shadow[v]->vec[j][dp] = esl_sse_select_ps(shadow[v]->vec[j][dp], (__m128) _mm_set1_epi32(0), mask);
+              }
+              /* could make this a do-while on whether any values in mask are set */
+            }
 	  }
 	}
       else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st)
 	{
+fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
 	    alpha[v][j][0] = IMPOSSIBLE;
