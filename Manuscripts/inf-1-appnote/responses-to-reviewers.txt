@@ -1,0 +1,259 @@
+Responses to reviewer's comments
+
+Lines of text from reviewers begin with a '>'.
+
+> Reviewer: 1
+> Comments to the Author
+
+> This application note announces the first official 1.0 release of
+> the Infernal software, which implements covariance models for RNA
+> homology search and alignment to an existing model.
+
+> Infernal is a significant application, as it implements a leading
+> solution to a fundamental problem in RNA bioinformatics.  Although
+> most of my experience is with previous versions, I find Infernal to
+> be well documented both in its use and source code, and to have few
+> bugs.  The paper under review summarizes the features of Infernal,
+> and explain recent improvements that make it more practical.  A
+> conceptually simple, but well-conceived experiment shows that these
+> improvements have led to significant improvements in accuracy over
+> version 0.72, which had the best accuracy of methods tested in 2007
+> by Freyhult et al.  The paper is well written and organized.
+
+> A have a number of minor comments, mostly suggestions that the authors
+> may wish to consider.
+
+
+> MAJOR
+
+> (none)
+
+
+> MINOR
+
+> Is the HMM-constrained cmalign algorithm documented somewhere?  I
+> notice that the Cole paper mentions it, but does not seem to explain
+> the method.  The paper under review implies that, although Infernal's
+> approach is similar in strategy to that of Brown, it's different.
+> While I acknowledge that the algorithm is only one part of a large
+> software package, the authors should explain this algorithm somewhere,
+> even if just in a supplementary (or maybe a forthcoming paper).
+
+We appreciate the reviewer's suggestion and plan to follow it.  The
+HMM banded algorithm will be documented in EPN's PhD thesis which is
+currently being written and should be available via the Eddy Lab
+website (http://selab.janelia.org) by the end of the
+summer. Eventually, we may also attempt a separate publication
+detailing the application of HMM banded alignment to large-scale
+alignment of SSU ribosomal RNAs.
+
+> For the 15-state fully connected HMM used to generate the
+> pseudogenome, am I correct in understanding that there was no a priori
+> expectation set of what features would be important to model in the
+> HMM.  In other words, the training procedure was not constrained or
+> even encouraged to use say 2nd-order information.  Although I can't
+> imagine that the 15-state HMM is worse than a uniform model, I think
+> another sentence or two is needed to be more specific.  It would also
+> be helpful to explain the thinking behind this choice.  For example,
+> it is widely believed that dinucleotide frequencies are important to
+> model in testing RNA-related algorithms, and I would like to be
+> clearer on how to compare the 15-state HMM to this simple baseline
+> model.
+
+The reviewer is correct. We did not constrain the HMM based on any a
+priori expectations. The main property we were trying to make more
+realistic in the pseudogenome was varying levels of GC content.  With
+previous versions of Infernal, high scoring false positives tend to
+have high GC or low GC content. We've updated the text to include a
+brief explanation of our motivation. We've also clarified that the 15
+state HMM is first-order. We have not explored trying to capture
+dinucleotide content, though it's a good idea and we will keep it in
+mind for future benchmarks.
+
+> "occassionally a model with little primary sequence conservation
+> cannot be usefully accelerated by a primary sequence based filter"
+> How is it determined that there's not enough primary sequence
+> conservation?
+
+Infernal's cmcalibrate program runs a large simulation to determine
+the appropriate HMM filter thresholds to use during a search.
+Specifically, 10,000 sequences are sampled from the CM and scored with
+both the CM Inside and HMM Forward algorithms. Then for a given CM bit
+score threshold t, the HMM Forward score threshold f is chosen such
+that 99.5% of the sampled sequences with CM scores above t have HMM
+scores above f. A representative set of these (t,f) score pairs are
+stored in the CM file.  Sometimes f is sufficiently low that an HMM
+filter using f as a cutoff threshold is expected to allow such a large
+fraction of the database to survive (estimated using E-values) that it
+is not useful to use the filter at all. In these cases the filter is
+not used during the search. 
+
+Because this procedure is difficult to concisely summarize we have
+ommitted it's description from the present paper. However, it is
+explained in more detail in the Infernal user's guide and we have
+added another reference to that guide after the sentence in question.
+EPN is preparing a chapter in his thesis explaining this HMM filtering
+strategy in detail, which we may to attempt to publish separately as
+well.
+
+> For the second filter, a banded version of the CYK algorithm is used.
+> This means the Viterbi score, right?  If so, I think "Viterbi" or
+> "maximum likelihood" should ideally be stated.  I assume the authors
+> found that the Inside algorithm was problematic here because the time
+> required to run filter would compromise speed improvements.
+
+We use CYK as a specific name for the SCFG version of the Viterbi
+algorithm, but it is often referred to as the Viterbi algorithm by
+other researchers in the field. For clarity, we have updated the text
+to include the words 'maximum likelihood', as per the reviewers
+suggestion. The reviewer's assumption that Inside is too slow to be
+useful as a filter is correct.
+
+> If Infernal 1.0 works on Cygwin, which I believe is a POSIX-compliant
+> subsystem for Microsoft Windows, it might be worth noting that, as
+> Windows is a major platform.  I am at least able to compile it under
+> Cygwin.
+
+We appreciate the reviewers suggestion but because we have not
+rigorously tested Infernal on Cygwin, we do not want to explicitly
+state it will run under Cygwin.
+
+> The parallelized version of Infernal is described as "coarse
+> grained".  Does this mean that there would be limitations in, say,
+> distributing load on a 100-1000-node cluster, unless the database is
+> very large?  Can searches on a single large chromosome be effectively
+> parallelized?  A sentence or two might be useful here.
+
+We used 'coarse grained' because the implementation is simplistic.
+For example, MPI cmsearch divides the input sequence into independent
+chunks and sends each chunk to a different processor. We've added some
+detail to the text regarding this at the point where MPI is mentioned.
+
+More specifically, the minimal chunk size is that which will cause
+exactly one chunk to be put on each processor, provided that that size
+is as large as the maximum hit size of an RNA from the family being
+modelled (usually about twice the average length of the family).  So
+load distribution becomes a problem for a X node cluster only when the
+database becomes smaller than about 2X times the average RNA
+length. As an extreme example, searching for the longest Rfam family
+on a 1000 node cluster would reach this limit at a database of total
+size about 2 Mb. Because this is smaller than a typical prokaryotic
+genome, we don't think it's significant enough a concern to bring up
+in the text.
+
+> Copyedit suggestions:
+> - "it is desirable to score..." --> "it is expected to improve
+> accuracy if both primary sequence and secondary structure conservation
+> are scored" ("desirable" is somewhat vague)
+> - "and construct an appropriate" --> "and automatically construct..."
+> - "sequence and structure-based" --> "sequence- and structure-based"
+> - "sequence based filter" --> "sequence-based filter"
+> - "sequence specific bands" --> "sequence-specific bands"
+
+We've updated the text based on the reviewer's suggestions for all
+cases except the first, where we found it difficult to be less vague
+without being too wordy in our opinion (we thought the suggested edit
+additionally required "relative to scoring only primary sequence" to
+be clear). 
+
+-------------------------------------------------------------
+
+> Reviewer: 2
+> Comments to the Author
+> General comment
+
+> The paper is in general well written, but there are some sections that
+> can be clarified.
+
+> I find the computation times given a bit unclear, e.g. on what type of
+> computer were the computations done?
+
+All computations were done on single 3.0 GHz Intel Xeon processors. 
+We have added text explaining this to Figure 1's caption and in the
+sentence describing a typical model's calibration time. 
+
+> In some parts of the paper the text assumes that the reader knows more
+> than I believe the general reader do. For example Inside and CYK might
+> need to be explained and the parameter beta that is mentioned in
+> parenthesis is never defined. You have the Infernal user's guide in
+> the reference list, perhaps referring to this a few times more would
+> help the interested reader.
+
+As per the reviewers suggestions, where CYK and Inside are first
+mentioned in the 'Performance' section, we have added text explaining
+CYK (see response to a similar comment by reviewer 1 above) and Inside
+(see response to Minor comment regarding Inside scores below) and
+added a reference to the user's guide.  Also in that section, we have
+added text explaining the beta parameter in a bit more detail and
+listed the most relevant reference for the interested reader (which in
+fact is not the user's guide but our 2007 paper on banding).
+
+> Minor comments
+
+> In the beginning of section 2 USAGE it is mentioned that the CM can be
+> build from an alignment but also from a single RNA sequence. With a
+> single sequence will the result be the same as if you were using
+> Rsearch? If so, you should cite Rsearch.
+
+The result will not be the same. It is possible to build CMs that use
+RSEARCH's RIBOSUM matrices to derive emission scores (using the
+--rsearch flag as explained in the user's guide) but in our internal
+testing RSEARCH parameterization resulted in less sensitivity for
+remote homology detection than did default Infernal parameterization
+(observed single sequence 'counts' plus mixture Dirichlet
+priors). Also, RSEARCH transition scores are arbitrary scores whereas
+single sequence CMs use probabilistic transition scores. We avoided
+discussion of these difference to avoid confusion for new users. More
+detail is available in the Infernal user's guide and so we have
+changed the text to include a reference to the guide at the end of the
+sentence in question. Because Infernal can use RSEARCH's RIBOSUM
+matrices, we've also added a reference to the RSEARCH publication at
+the end of the first paragraph in the 'Usage' section.
+
+> In section 2 USAGE, line 38-39 you state that the calibration step
+> takes 10 hours for a typical RNA family, can you be a bit more
+> specific? Can you mention on what type of computer and what the
+> typical size of an RNA family is.
+
+We agree that this sentence was too vague and we have added details on
+the computer type and RNA family size. The 10 hour estimate was
+actually an overestimate, obtained by rounding to the nearest order of
+magnitude. In reality, a typical sized CM of about 100 residues takes
+about 4 hours to calibrate on a 3.0 GHz Intel Xeon. The text now
+includes this more specific estimate. 
+
+> In the end of column two, page 1. I find "full Inside log-likelihood
+> scores (summed over all alignments)" a bit unclear, what alignments
+> are you referring to? I assume you are referring to every possible
+> alignment, but this is not clear. (Then on the other hand, if the
+> reader is not familiar with the Inside and CYK algorithms the
+> implementation improvements will not be understandable anyway. Perhaps
+> referring to the Infernal user's guide would solve this?)
+
+We've taken the reviewer's advice and added a reference to the user's
+guide near where CYK and Inside are first mentioned. We've also tried
+to clarify the text comparing CYK and Inside.
+
+> Add some more detail in the figure caption. What do the times measure?
+> Total time for all 51 benchmark searches (without calibration)?
+
+We've added the requested detail to the Figure caption. As the
+reviewer suspected, the times do not include calibration time.
+
+-------------------------------------------------------------
+
+> Reviewer: 3
+> Comments to the Author
+> This manuscript introduces version 1.0 of Infernal, a reference
+> program for RNA motif alignment and identification. Previous versions
+> of Infernal have been widely adopted in the RNA community, and there
+> will certainly be a lot of interest for this new version that features
+> improvements in speed and sensitivity. The distribution is
+> comprehensive and includes a tutorial, benchmark files and various
+> utilities. The performances of Infernal 1.0 and previous versions are
+> appropriately compared using ROC curves.  The manuscript is clearly
+> written and needs no correction in my opinion.
+
+We made no additional changes in response to reviewer 3.
+
+----------------------------------------
