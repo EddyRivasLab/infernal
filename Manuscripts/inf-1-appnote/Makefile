@@ -26,5 +26,10 @@ bi:
 	pdflatex bi-main	
 	pdflatex bi-main
 
+submit:
+	latex manuscript
+	latex manuscript
+	dvips -o manuscript.ps manuscript.dvi
+
 clean:
-	-rm *~ *.aux *.log main.dvi main.out main.toc main.bbl main.blg
+	-rm *~ *.aux *.log main.dvi main.out main.toc main.bbl main.blg bi-main.dvi bi-main.out bi-main.toc bi-main.bbl bi-main.blg main.dvi main.out main.toc main.bbl main.blg manuscript.dvi manuscript.out manuscript.toc manuscript.bbl manuscript.blg 
