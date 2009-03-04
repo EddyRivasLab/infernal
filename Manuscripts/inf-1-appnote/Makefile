@@ -31,5 +31,9 @@ submit:
 	latex manuscript
 	dvips -o manuscript.ps manuscript.dvi
 
+pdfsubmit:
+	pdflatex manuscript
+	pdflatex manuscript
+
 clean:
 	-rm *~ *.aux *.log main.dvi main.out main.toc main.bbl main.blg bi-main.dvi bi-main.out bi-main.toc bi-main.bbl bi-main.blg main.dvi main.out main.toc main.bbl main.blg manuscript.dvi manuscript.out manuscript.toc manuscript.bbl manuscript.blg 
