@@ -69,7 +69,8 @@ static ESL_OPTIONS options[] = {
   { "--forward", eslARG_NONE,  FALSE, NULL, NULL, "--fil-hmm,--fil-qdb",     NULL,    STRATOPTS2, "use scanning HMM Forward algorithm", 2 },
   { "--viterbi", eslARG_NONE,  FALSE, NULL, NULL, "--fil-hmm,--fil-qdb",     NULL,    STRATOPTS2, "use scanning HMM Viterbi algorithm", 2 },
   /* CM cutoff options */
-  { "-E",        eslARG_REAL,   "1.0", NULL, "x>0.",   NULL,      NULL,    CUTOPTS1, "use cutoff E-value of <x> for final round of search", 3 },
+  /* IMPORTANT: Default values for -E and -T must remain non-NULL, the option processing logic below depends on it */
+  { "-E",        eslARG_REAL,   "1.0", NULL, "x>0.",    NULL,      NULL,    CUTOPTS1, "use cutoff E-value of <x> for final round of search", 3 },
   { "-T",        eslARG_REAL,   "0.0", NULL, NULL,      NULL,      NULL,    CUTOPTS1, "use cutoff bit score of <x> for final round of search", 3 },
   { "--nc",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    CUTOPTS2, "use CM Rfam NC noise cutoff as cutoff bit score", 3 },
   { "--ga",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    CUTOPTS2, "use CM Rfam GA gathering threshold as cutoff bit score", 3 },
@@ -1380,9 +1381,9 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   final_S = final_E = final_sc = -1.;
   if(!use_hmmonly) { if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*cm->smx->W, cm->smx->dmin, cm->smx->dmax, cm->smx->W, TRUE,  NULL, &(final_ncalcs_per_res))) != eslOK) return status; }
   /* set up final round cutoff, either 0 or 1 of 5 options is enabled. 
-   */
-  if( (! esl_opt_IsOn(go, "-E"))   && 
-      (! esl_opt_IsOn(go, "-T"))   && 
+   * (note, -E and -T use IsUsed() because they are by default 'on') */
+  if( (! esl_opt_IsUsed(go, "-E")) && 
+      (! esl_opt_IsUsed(go, "-T"))   && 
       (! esl_opt_IsOn(go, "--ga")) && 
       (! esl_opt_IsOn(go, "--tc")) && 
       (! esl_opt_IsOn(go, "--nc"))) { 
@@ -1391,12 +1392,12 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
     final_E     = esl_opt_GetReal(go, "-E");
     if((status  = E2MinScore(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_E, &final_sc)) != eslOK) return status;
   }
-  else if( esl_opt_IsOn(go, "-E")) { /* -E enabled, use that */
+  else if( esl_opt_IsUsed(go, "-E")) { /* -E enabled, use that */
     final_ctype = E_CUTOFF;
     final_E     = esl_opt_GetReal(go, "-E");
     if((status = E2MinScore(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_E, &final_sc)) != eslOK) return status;
   }
-  else if ( esl_opt_IsOn(go, "-T")) { /* -T enabled, use that */
+  else if ( esl_opt_IsUsed(go, "-T")) { /* -T enabled, use that */
     final_ctype = SCORE_CUTOFF;
     final_sc    = esl_opt_GetReal(go, "-T");
   }
@@ -1756,19 +1757,19 @@ set_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   CM2ExpMode(cm, search_opts, &cm_mode, &hmm_mode); 
 
   /* set up final round cutoff, either 0 or 1 of 5 options is enabled. 
-   */
-  if( (! esl_opt_IsOn(go, "-E"))   && 
-      (! esl_opt_IsOn(go, "-T"))   && 
+   * (note, -E and -T use IsUsed() because they are by default 'on') */
+  if( (! esl_opt_IsUsed(go, "-E"))   && 
+      (! esl_opt_IsUsed(go, "-T"))   && 
       (! esl_opt_IsOn(go, "--ga")) && 
       (! esl_opt_IsOn(go, "--tc")) && 
       (! esl_opt_IsOn(go, "--nc"))) { 
     /* No relevant options enabled, cutoff is default bit score cutoff */
     final_sc    = esl_opt_GetReal(go, "-T");
   }
-  else if( esl_opt_IsOn(go, "-E")) { /* -E enabled, error b/c we don't have exp tail stats */
+  else if( esl_opt_IsUsed(go, "-E")) { /* -E enabled, error b/c we don't have exp tail stats */
     ESL_FAIL(eslEINVAL, errbuf, "-E requires exp tail statistics in <cm file>. Use cmcalibrate to get exp tail stats.");
   }
-  else if( esl_opt_IsOn(go, "-T")) { /* -T enabled, use that */
+  else if( esl_opt_IsUsed(go, "-T")) { /* -T enabled, use that */
     final_sc    = esl_opt_GetReal(go, "-T");
   }
   else if( esl_opt_IsOn(go, "--ga")) { /* --ga enabled, use that, if available, else die */

@@ -52,7 +52,7 @@ static ESL_OPTIONS options[] = {
   { "--gfi",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of glocal Inside filter threshold stats", 2 },
   { "--lfc",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of  local CYK    filter threshold stats", 2 },
   { "--gfc",     eslARG_NONE,   FALSE,     NULL, NULL,      "-m",      NULL, ONELINEOPTS, "only print summary of glocal CYK    filter threshold stats", 2 },
-  { "-E",        eslARG_REAL,   "1.0",     NULL, "x>0",     NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for cmsearch E cutoff <x>", 2}, 
+  { "-E",        eslARG_REAL,   NULL,      NULL, "x>0",     NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for cmsearch E cutoff <x>", 2}, 
   { "-T",        eslARG_REAL,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for cmsearch bit cutoff <x>", 2}, 
   { "--nc",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for Rfam NC cutoff", 2}, 
   { "--ga",      eslARG_NONE,   NULL,      NULL, NULL,      NULL,      NULL,   CMCUTOPTS, "print HMM filter stats for Rfam GA cutoff", 2}, 
@@ -249,8 +249,8 @@ main(int argc, char **argv)
    * else if --ge:    print glocal exp tail stats
    * else if --lfc:   print  local CYK    filter threshold stats
    * else if --gfc:   print glocal CYK    filter threshold stats
-   * else if --lfc:   print  local Inside filter threshold stats
-   * else if --gfc:   print glocal Inside filter threshold stats
+   * else if --lfi:   print  local Inside filter threshold stats
+   * else if --gfi:   print glocal Inside filter threshold stats
    * else if --all:   print all stat categories, one category at a time 
    */
   /* set 'doing_' flags and 'do_' flags, they are disting, 'doing_' tell us mode we're currently on inside loop */
