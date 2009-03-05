@@ -119,6 +119,7 @@ void    sse_deckpool_push(struct sse_deckpool_s *dpool, sse_deck_t *deck);
 int     sse_deckpool_pop(struct sse_deckpool_s *d, sse_deck_t **ret_deck);
 void    sse_deckpool_free(struct sse_deckpool_s *d);
 sse_deck_t*  sse_alloc_vjd_deck(int L, int i, int j, int x);
+void         sse_free_vjd_deck(sse_deck_t *a, int i, int j);
 
 /* BE_EFFICIENT and BE_PARANOID are alternative (exclusive) settings
  * for the do_full? argument to the alignment engines.
@@ -1102,6 +1103,8 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
   const int    vecwidth = 4;
   int          sW;
   int          dp, kp;
+  float       *vec_access;
+  float        tmp;
   __m128       zerov;
   __m128       neginfv;
   __m128       el_self_v;
@@ -1226,7 +1229,6 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
 	}
       else if (cm->sttype[v] == B_st)
 	{
-          float *vec_access;
           __m128 begr_v;
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
@@ -1578,20 +1580,23 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
        * see a USED_LOCAL_BEGIN flag in the shadow matrix, telling us
        * to jump right to state b; see below)
        */
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
-      if (allow_begin && alpha[v][j0][W] + cm->beginsc[v] > bsc) 
+      vec_access = (float *) (&alpha[v]->vec[j0][W/vecwidth]);
+      tmp = *(vec_access + W%vecwidth);
+      if (allow_begin && tmp + cm->beginsc[v] > bsc) 
 	{
 	  b   = v;
-	  bsc = alpha[v][j0][W] + cm->beginsc[v];
+	  bsc = tmp + cm->beginsc[v];
 	}
 
       /* Check for whether we need to store an optimal local begin score
        * as the optimal overall score, and if we need to put a flag
        * in the shadow matrix telling insideT() to use the b we return.
        */
-      if (allow_begin && v == 0 && bsc > alpha[0][j0][W]) {
-	alpha[0][j0][W] = bsc;
-	if (ret_shadow != NULL) yshad[j0][W] = USED_LOCAL_BEGIN;
+      if (allow_begin && v == 0 && bsc > tmp) {
+	*(vec_access + W%vecwidth) = bsc;
+        vec_access = (float *) (&shadow[v]->vec[j0][W/vecwidth]);
+        vec_access += W%vecwidth;
+	if (ret_shadow != NULL) *vec_access = USED_LOCAL_BEGIN;
       }
 
       /* Now, if we're trying to reuse memory in our normal mode (e.g. ! do_full):
@@ -1601,8 +1606,8 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
       if (! do_full) {
 	if (cm->sttype[v] == B_st) 
 	  { /* we can definitely release the S children of a bifurc. */
-	    y = cm->cfirst[v]; deckpool_push(dpool, alpha[y]); alpha[y] = NULL;
-	    z = cm->cnum[v];   deckpool_push(dpool, alpha[z]); alpha[z] = NULL;
+	    y = cm->cfirst[v]; sse_deckpool_push(dpool, alpha[y]); alpha[y] = NULL;
+	    z = cm->cnum[v];   sse_deckpool_push(dpool, alpha[z]); alpha[z] = NULL;
 	  }
 	else
 	  {
@@ -1613,9 +1618,9 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 		  {
 		    if (cm->sttype[y] == E_st) { 
 		      nends--; 
-		      if (nends == 0) { deckpool_push(dpool, end); end = NULL;}
+		      if (nends == 0) { sse_deckpool_push(dpool, end); end = NULL;}
 		    } else 
-		      deckpool_push(dpool, alpha[y]);
+		      sse_deckpool_push(dpool, alpha[y]);
 		    alpha[y] = NULL;
 		  }
 	      }
@@ -1631,7 +1636,8 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
    * and end is NULL.
    * We could check this status to be sure (and we used to) but now we trust. 
    */
-  sc       = alpha[vroot][j0][W];
+  vec_access = (float *) (&alpha[vroot]->vec[j0][W/vecwidth]);
+  sc = *(vec_access + W%vecwidth);
   if (ret_b != NULL)   *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
   if (ret_bsc != NULL) *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */
 
@@ -1641,10 +1647,10 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
   if (ret_alpha == NULL) {
     for (v = vroot; v <= vend; v++) /* be careful of our reuse of the end deck -- free it only once */
       if (alpha[v] != NULL) { 
-	if (cm->sttype[v] != E_st) { deckpool_push(dpool, alpha[v]); alpha[v] = NULL; }
+	if (cm->sttype[v] != E_st) { sse_deckpool_push(dpool, alpha[v]); alpha[v] = NULL; }
 	else end = alpha[v]; 
       }
-    if (end != NULL) { deckpool_push(dpool, end); end = NULL; }
+    if (end != NULL) { sse_deckpool_push(dpool, end); end = NULL; }
     free(alpha);
   } else *ret_alpha = alpha;
 
@@ -1652,8 +1658,8 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
    * Else, pass it back to him.
    */
   if (ret_dpool == NULL) {
-    while (deckpool_pop(dpool, &end)) free_vjd_deck(end, i0, j0);
-    deckpool_free(dpool);
+    while (sse_deckpool_pop(dpool, &end)) sse_free_vjd_deck(end, i0, j0);
+    sse_deckpool_free(dpool);
   } else {
     *ret_dpool = dpool;
   }
@@ -3334,11 +3340,11 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
   return (Mb / 1000000.);
 }
 void
-sse_free_vjd_deck(float **a, int i, int j)
+sse_free_vjd_deck(sse_deck_t *a, int i, int j)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
   int jp;
-  for (jp = 0; jp <= j-i+1; jp++) if (a[jp+i-1] != NULL) free(a[jp+i-1]);
+  free(a->vec);
+  free(a->mem);
   free(a);
 }
 void
