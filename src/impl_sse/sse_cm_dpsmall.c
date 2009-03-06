@@ -188,7 +188,7 @@ alt_rightshift_ps(__m128 a, __m128 b)
 float
 SSE_CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! SSE_CYKDivideAndConquer has not been converted to SSE!\n");
   Parsetree_t *tr;
   float        sc;
   int          z;
@@ -258,7 +258,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 float
 SSE_CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! SSE_CYKInside has not been converted to SSE!\n");
   Parsetree_t *tr;
   int          z;
   float        sc;
@@ -360,7 +360,7 @@ SSE_CYKInsideScore(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0)
 float
 SSE_CYKDemands(CM_t *cm, int L, int be_quiet)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! SSE_CYKDEmands has not been converted to SSE!\n");
   float Mb_per_deck;    /* megabytes per deck */
   int   bif_decks;	/* bifurcation decks  */
   int   nends;		/* end decks (only need 1, even for multiple E's */
@@ -448,7 +448,7 @@ static float
 sse_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 		 int r, int z, int i0, int j0)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_generic_splitter has not been converted to SSE!\n");
   float ***alpha;
   float ***beta;
   struct deckpool_s *pool;
@@ -668,7 +668,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 static float 
 sse_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_wedge_splitter has not been converted to SSE!\n");
   float ***alpha;
   float ***beta;
   struct deckpool_s *pool;
@@ -849,7 +849,7 @@ sse_v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 	   int r, int z, int i0, int i1, int j1, int j0, 
 	   int useEL)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_v_splitter has not been converted to SSE!\n");
   float ***alpha, ***beta;      /* inside and outside matrices */
   struct deckpool_s *pool;      /* pool for holding alloced decks */
   float sc;			/* tmp variable holding a score */
@@ -1720,7 +1720,7 @@ sse_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	int do_full, float ***beta, float ****ret_beta,
 	struct deckpool_s *dpool, struct deckpool_s **ret_dpool)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_outside has not been converted to SSE!\n");
   int      status;
   int      v,y;			/* indices for states */
   int      j,d,i;		/* indices in sequence dimensions */
@@ -2123,7 +2123,7 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
 	char ****ret_shadow,
 	int allow_begin, int *ret_b, float *ret_bsc)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_vinside has not been converted to SSE!\n");
   int      status;
   char  ***shadow;              /* the shadow matrix -- traceback ptrs -- memory is kept */
   int     v,i,j;
@@ -2514,7 +2514,7 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 	 int do_full, float ***beta, float ****ret_beta,
 	 struct deckpool_s *dpool, struct deckpool_s **ret_dpool)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_voutside has not been converted to SSE!\n");
   int      status;
   int      v,y;			/* indices for states */
   int      i,j;			/* indices in sequence dimensions */
@@ -2836,7 +2836,7 @@ static float
 sse_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 	int r, int z, int i0, int j0, int allow_begin)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_insideT has not been converted to SSE!\n");
 
   int       status;
   void   ***shadow;             /* the traceback shadow matrix */
@@ -2956,7 +2956,7 @@ static float
 sse_vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 	 int r, int z, int i0, int i1, int j1, int j0, int useEL, int allow_begin)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_vinsideT has not been converted to SSE!\n");
   char ***shadow;
   float   sc;
   int     v,y;
@@ -3065,7 +3065,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 float
 sse_insideT_size(CM_t *cm, int L, int r, int z, int i0, int j0)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_insideT_size has not been converted to SSE!\n");
   float Mb;
   int   maxdecks;
   int   nends;
@@ -3331,7 +3331,7 @@ sse_alloc_vjd_deck(int L, int i, int j, int x)
 float
 sse_size_vjd_deck(int L, int i, int j)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_size_vjd_deck has not been converted to SSE!\n");
   float Mb;
   int   jp;
   Mb = (float) (sizeof(float *) * (L+1));
@@ -3350,7 +3350,7 @@ sse_free_vjd_deck(sse_deck_t *a, int i, int j)
 void
 sse_free_vjd_matrix(float ***a, int M, int i, int j)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_free_vjd_matrix has not been converted to SSE!\n");
   int v;
   for (v = 0; v <= M; v++)
     if (a[v] != NULL)		/* protect against double free's of reused decks (ends) */
@@ -3360,7 +3360,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 char **
 sse_alloc_vjd_yshadow_deck(int L, int i, int j)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_alloc_vjd_yshadow_deck has not been converted to SSE!\n");
   int status;
   char **a;
   int    jp;
@@ -3376,7 +3376,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 float
 sse_size_vjd_yshadow_deck(int L, int i, int j)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_size_vjd_yshadow_deck has not been converted to SSE!\n");
   float  Mb;
   int    jp;
   Mb = (float) (sizeof(char *) * (L+1));
@@ -3387,7 +3387,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 void
 sse_free_vjd_yshadow_deck(char **a, int i, int j)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_free_vjd_yshadow_deck has not been converted to SSE!\n");
   int jp;
   for (jp = 0; jp <= j-i+1; jp++) if (a[jp+i-1] != NULL) free(a[jp+i-1]);
   free(a);
@@ -3395,7 +3395,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 int **
 sse_alloc_vjd_kshadow_deck(int L, int i, int j)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_alloc_vjd_kshadow_deck has not been converted to SSE!\n");
   int status;
   int **a;
   int   jp;
@@ -3411,7 +3411,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 float
 sse_size_vjd_kshadow_deck(int L, int i, int j)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_size_vjd_kshadow_deck has not been converted to SSE!\n");
   float Mb;
   int   jp;
   
@@ -3423,7 +3423,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 void
 sse_free_vjd_kshadow_deck(int **a, int i, int j)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_free_vjd_kshadow_deck has not been converted to SSE!\n");
   int jp;
   /*11.14.05 old line: for (jp = 0; jp <= j-i+1; jp++) if (a[jp+i-1] != NULL) free(a[jp]);*/
   for (jp = 0; jp <= j-i+1; jp++) if (a[jp+i-1] != NULL) free(a[jp-i+1]);
@@ -3432,7 +3432,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 void
 sse_free_vjd_shadow_matrix(void ***shadow, CM_t *cm, int i, int j)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_free_vjd_shadow_matrix has not been converted to SSE!\n");
   int v;
   for (v = 0; v < cm->M; v++)
     if (shadow[v] != NULL) {
@@ -3465,7 +3465,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 float **                 /* allocation of a score deck. */
 sse_alloc_vji_deck(int i0, int i1, int j1, int j0)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_alloc_vji_deckhas not been converted to SSE!\n");
   int status; 
   float **a;
   int     jp;
@@ -3481,7 +3481,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 float
 sse_size_vji_deck(int i0, int i1, int j1, int j0)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_size_vji_deck has not been converted to SSE!\n");
   float Mb;
   int   jp;
   Mb = (float)(sizeof(float *) * (j0-j1+1));
@@ -3492,7 +3492,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 void			/* free'ing a score deck */
 sse_free_vji_deck(float **a, int j1, int j0)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_free_vji_deck has not been converted to SSE!\n");
   int jp;
   ESL_DPRINTF3(("free_vji_deck called\n"));
   for (jp = 0; jp <= j0-j1; jp++) 
@@ -3502,7 +3502,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 void
 sse_free_vji_matrix(float ***a, int M, int j1, int j0)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_free_vji_matrix has not been converted to SSE!\n");
   int v;
   /* Free the whole matrix - even if we used only a subset of
    * the decks, all initialization routines init all decks 0..M
@@ -3515,7 +3515,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 char **		        /* allocation of a traceback ptr (shadow matrix) deck */
 sse_alloc_vji_shadow_deck(int i0, int i1, int j1, int j0)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_alloc_vji_shadow_deck has not been converted to SSE!\n");
   int status; 
   char **a;
   int     jp;
@@ -3530,7 +3530,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 float		        /* allocation of a traceback ptr (shadow matrix) deck */
 sse_size_vji_shadow_deck(int i0, int i1, int j1, int j0)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_size_vji_shadow_deck has not been converted to SSE!\n");
   float   Mb;
   int     jp;
   Mb = (float)(sizeof(char *) * (j0-j1+1));
@@ -3541,7 +3541,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 void	                /* free'ing a shadow deck */
 sse_free_vji_shadow_deck(char **a, int j1, int j0)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_free_vji_shadow_deck has not been converted to SSE!\n");
   int jp;
   for (jp = 0; jp <= j0-j1; jp++) 
     if (a[jp] != NULL) free(a[jp]);
@@ -3550,7 +3550,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 void
 sse_free_vji_shadow_matrix(char ***a, int M, int j1, int j0)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_free_vji_shadow_matrix has not been converted to SSE!\n");
   int v;
   for (v = 0; v < M; v++) 
     if (a[v] != NULL) { free_vji_shadow_deck(a[v], j1, j0); a[v] = NULL; }
@@ -3737,7 +3737,7 @@ CYKOutside(CM_t *cm, ESL_DSQ *dsq, int L, float ***alpha)
 void
 sse_debug_print_shadow(void ***shadow, CM_t *cm, int L)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_debug_print_shadow has not been converted to SSE!\n");
   int v, j, d;
   int yoffset;
   
@@ -3784,7 +3784,7 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
 void
 sse_debug_print_alpha(float ***alpha, CM_t *cm, int L)
 {
-fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
+fprintf(stderr,"WARNING! sse_debug_print_alpha has not been converted to SSE!\n");
   int v, j, d, max_v;
 
   printf("\nPrinting alpha matrix :\n");
@@ -3808,4 +3808,150 @@ fprintf(stderr,"WARNING! This function has not been converted to SSE!\n");
     }
   printf("****************\n\n");
 }
+
+
+/********************************************************************************
+ * Test driver
+ ********************************************************************************/
+#ifdef IMPLSSE_SMALL_TEST
+/* gcc -std=gnu99 -msse2 -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src sse_cm_dpsmall.c -linfernal -lhmmer -leasel -lm -g -DIMPLSSE_SMALL_TEST -o sse-cyk
+*/
+
+#include "esl_config.h"
+#include "config.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#include "easel.h"
+#include "esl_getopts.h"
+#include "esl_random.h"
+#include "esl_randomseq.h"
+#include "esl_sqio.h"
+#include "esl_stopwatch.h"
+
+#include "funcs.h"
+#include "structs.h"
+
+static ESL_OPTIONS options[] = {
+  /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
+  { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
+  { "-r",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "set random number seed randomly",                0 },
+  { "-s",        eslARG_INT,     "33", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                  0 },
+  { "-e",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "emit sequences from CM, don't randomly create them", 0 },
+  { "-L",        eslARG_INT,  "10000", NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs",0 },
+  { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of random target seqs",                   0 },
+  { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "execute non-banded optimized CYK scan implementation",0 },
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+};
+
+static char usage[] = "[-options] <cmfile>";
+static char banner[] = "test driver for an SSE implementation of CYK";
+
+int
+main(int argc, char **argv)
+{
+  int             status;
+  ESL_GETOPTS    *go      = esl_getopts_CreateDefaultApp(options, 1, argc, argv, banner, usage);
+  CM_t            *cm;
+  ESL_STOPWATCH  *w       = esl_stopwatch_Create();
+  ESL_RANDOMNESS *r       = NULL;
+  ESL_ALPHABET   *abc     = NULL;
+  int             L       = esl_opt_GetInteger(go, "-L");
+  int             N       = esl_opt_GetInteger(go, "-N");
+  ESL_DSQ        *dsq;
+  int             i;
+  float           sc;
+  char            *cmfile = esl_opt_GetArg(go, 1);
+  CMFILE          *cmfp;        /* open input CM file stream */
+  int             do_random;
+  seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
+  char            errbuf[cmERRBUFSIZE];
+
+  if (esl_opt_GetBoolean(go, "-r"))  r = esl_randomness_CreateTimeseeded();
+  else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
+
+  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
+  if ((status = CMFileRead(cmfp, errbuf, &abc, &cm) != eslOK))            cm_Fail("Failed to read CM");
+  CMFileClose(cmfp);
+
+  do_random = TRUE;
+  if(esl_opt_GetBoolean(go, "-e")) do_random = FALSE;
+  cm->search_opts |= CM_SEARCH_NOQDB;
+  ConfigCM(cm, errbuf, TRUE, NULL, NULL); /* TRUE says: calculate W */
+
+  /* get sequences */
+  if(!esl_opt_IsDefault(go, "-L")) {
+     double *dnull;
+     ESL_DSQ *randdsq = NULL;
+     ESL_ALLOC(randdsq, sizeof(ESL_DSQ)* (L+2));
+     ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
+     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
+     esl_vec_DNorm(dnull, cm->abc->K);
+     seqs_to_aln = CreateSeqsToAln(N, FALSE);
+
+     for (i = 0; i < N; i++) {
+       if (esl_rsq_xIID(r, dnull, cm->abc->K, L, randdsq)  != eslOK) cm_Fail("Failure creating random sequence.");
+       if((seqs_to_aln->sq[i] = esl_sq_CreateDigitalFrom(abc, NULL, randdsq, L, NULL, NULL, NULL)) == NULL)
+         cm_Fail("Failure digitizing/copying random sequence.");
+
+     }
+  }
+  else if(do_random) {
+    double *dnull;
+    ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
+    for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
+    esl_vec_DNorm(dnull, cm->abc->K);
+    /* get gamma[0] from the QDB calc alg, which will serve as the length distro for random seqs */
+    int safe_windowlen = cm->clen * 2;
+    double **gamma = NULL;
+    while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
+      safe_windowlen *= 2;
+      if(safe_windowlen > (cm->clen * 1000)) cm_Fail("Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
+     }
+    seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, gamma[0], safe_windowlen, FALSE);
+    FreeBandDensities(cm, gamma);
+    free(dnull);
+  }
+  else /* don't randomly generate seqs, emit them from the CM */
+    seqs_to_aln = CMEmitSeqsToAln(r, cm, 1, N, FALSE, NULL, FALSE);
+
+  for (i = 0; i < N; i++)
+    {
+      L = seqs_to_aln->sq[i]->n;
+      dsq = seqs_to_aln->sq[i]->dsq;
+      cm->search_opts  &= ~CM_SEARCH_INSIDE;
+
+      esl_stopwatch_Start(w);
+      //if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      sc = CYKInside(cm, dsq, L, 0, 1, L, NULL, NULL, NULL);
+      printf("%4d %-30s %10.4f bits ", (i+1), "CYKInside(): ", sc);
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+      esl_stopwatch_Start(w);
+      //if((status = SSECYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+      // FIXME: diving too far into the engines here - need appropriate wrapper funcs
+      sc = sse_inside(cm, dsq, L, 0, cm->M, 1, L, FALSE, NULL, NULL, NULL, NULL, NULL, FALSE, NULL, NULL);
+      printf("%4d %-30s %10.4f bits ", (i+1), "sse_inside(): ", sc);
+      esl_stopwatch_Stop(w);
+      esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+      printf("\n");
+    }
+  FreeCM(cm);
+  FreeSeqsToAln(seqs_to_aln);
+  esl_alphabet_Destroy(abc);
+  esl_stopwatch_Destroy(w);
+  esl_randomness_Destroy(r);
+  esl_getopts_Destroy(go);
+  return 0;
+
+ ERROR:
+  cm_Fail("memory allocation error");
+  return 0; /* never reached */
+}
+#endif /*IMPLSSE_SMALL_TEST*/
 
