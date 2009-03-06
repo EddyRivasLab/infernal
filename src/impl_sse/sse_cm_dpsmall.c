@@ -1476,6 +1476,8 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                 shadow[v]->vec[j][0] = esl_sse_select_ps(shadow[v]->vec[j][0], (__m128) _mm_set1_epi32(yoffset), mask);
               }
             }
+// FIXME: segfaults on j = 0 (and j=1, probably)
+// this is almost certainly also a problem with all escv calculations below as well
             escv = _mm_setr_ps(-eslINFINITY, cm->oesc[v][dsq[j]], cm->oesc[v][dsq[j-1]], cm->oesc[v][dsq[j-2]]);
             alpha[v]->vec[j][0] = _mm_add_ps(alpha[v]->vec[j][0], escv);
             /* handle yoffset = 0, the self-transition case, seaparately */
@@ -3312,7 +3314,7 @@ sse_alloc_vjd_deck(int L, int i, int j, int x)
   int     sW;
   sse_deck_t *tmp;
   ESL_DPRINTF3(("alloc_vjd_deck : %.4f\n", size_vjd_deck(L,i,j)));
-  ESL_ALLOC(tmp, sizeof(sse_deck_t *));
+  ESL_ALLOC(tmp, sizeof(sse_deck_t));
   ESL_ALLOC(tmp->vec, sizeof(__m128 *) * (L+1)); /* always alloc 0..L rows, some of which are NULL */
   sW = (j-i+2)/x + 1;	/* integer division on purpose */
   ESL_ALLOC(tmp->mem , sizeof(__m128  ) * ((j-i+2) * sW + 15));  // FIXME: overallocated by about 2x
@@ -3934,7 +3936,7 @@ main(int argc, char **argv)
       esl_stopwatch_Start(w);
       //if((status = SSECYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       // FIXME: diving too far into the engines here - need appropriate wrapper funcs
-      sc = sse_inside(cm, dsq, L, 0, cm->M, 1, L, FALSE, NULL, NULL, NULL, NULL, NULL, FALSE, NULL, NULL);
+      sc = sse_inside(cm, dsq, L, 0, cm->M-1, 1, L, FALSE, NULL, NULL, NULL, NULL, NULL, FALSE, NULL, NULL);
       printf("%4d %-30s %10.4f bits ", (i+1), "sse_inside(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
