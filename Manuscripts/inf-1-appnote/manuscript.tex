@@ -1,13 +1,11 @@
 \documentclass{bioinfo}
 \copyrightyear{2008}
 \pubyear{2008}
-\usepackage{url}
-\usepackage{verbatim}
 
-\newif\ifnonbi
-\nonbifalse
-\newif\ifbi
-\bitrue
+%\newif\ifnonbi
+%\nonbifalse
+%\newif\ifbi
+%\bitrue
 
 
 \begin{document}
@@ -35,10 +33,10 @@ sequence databases for homologous RNAs, or to create new sequence- and
 structure-based multiple sequence alignments.
 \section{Availability:}
 Source code, documentation, and benchmark downloadable from
-\url{http://infernal.janelia.org}. \textsc{infernal} is freely
+http://infernal.janelia.org. \textsc{infernal} is freely
 licensed under the GNU GPLv3 and should be portable to any
 POSIX-compliant operating system, including Linux and Mac OS/X.
-\section{Contact:} \url{{nawrockie,kolbed,eddys}@janelia.hhmi.org}
+\section{Contact:} \{nawrockie,kolbed,eddys\}@janelia.hhmi.org
 \end{abstract}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -144,7 +142,7 @@ distribution \citep{NawrockiEddy07}.  Because base composition biases
 in the target sequence database cause the most serious problems in
 separating significant CM hits from noise, we improved the realism of
 the benchmark by generating the pseudogenome sequence from a 15-state
-fully connected first-order hidden Markov model (HMM) trained by
+fully connected hidden Markov model (HMM) trained by
 Baum-Welch expectation maximization \citep{Durbin98} on genome
 sequence data from a wide variety of species.  Each of the 51 query
 alignments was used to build a CM and search the pseudogenome, a
@@ -231,7 +229,7 @@ searches measured for single execution threads on 3.0 GHz Intel Xeon
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\bibliographystyle{natbib}
+%\bibliographystyle{natbib}
 %\bibliography{master,books,lab,new}
 
 \begin{thebibliography}{}
