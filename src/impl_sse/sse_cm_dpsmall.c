@@ -3920,6 +3920,7 @@ main(int argc, char **argv)
     int safe_windowlen = cm->clen * 2;
     double **gamma = NULL;
     while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
+      FreeBandDensities(cm, gamma);
       safe_windowlen *= 2;
       if(safe_windowlen > (cm->clen * 1000)) cm_Fail("Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
      }
