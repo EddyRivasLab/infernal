@@ -1427,7 +1427,7 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                 shadow[v]->vec[j][0] = esl_sse_select_ps(shadow[v]->vec[j][0], (__m128) _mm_set1_epi32(yoffset), mask);
               }
             }
-            escv = _mm_setr_ps(-eslINFINITY, cm->oesc[v][dsq[j]], cm->oesc[v][dsq[j-1]], cm->oesc[v][dsq[j-2]]);
+            escv = _mm_setr_ps(-eslINFINITY, cm->oesc[v][dsq[j]], j>0?cm->oesc[v][dsq[j-1]]:-eslINFINITY, j>1?cm->oesc[v][dsq[j-2]]:-eslINFINITY);
             alpha[v]->vec[j][0] = _mm_add_ps(alpha[v]->vec[j][0], escv);
 
             sW = jp/4;
@@ -1449,7 +1449,7 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                 }
 		
 		i = j-dp*vecwidth+1;
-                escv = _mm_setr_ps(cm->oesc[v][dsq[i]], cm->oesc[v][dsq[i-1]], cm->oesc[v][dsq[i-2]], cm->oesc[v][dsq[i-3]]);
+                escv = _mm_setr_ps(cm->oesc[v][dsq[i]], i>0?cm->oesc[v][dsq[i-1]]:-eslINFINITY, i>1?cm->oesc[v][dsq[i-2]]:-eslINFINITY, i>2?cm->oesc[v][dsq[i-3]]:-eslINFINITY);
                 alpha[v]->vec[j][dp] = _mm_add_ps(alpha[v]->vec[j][dp], escv);
 	      }
 	  }
@@ -1476,9 +1476,11 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                 shadow[v]->vec[j][0] = esl_sse_select_ps(shadow[v]->vec[j][0], (__m128) _mm_set1_epi32(yoffset), mask);
               }
             }
-// FIXME: segfaults on j = 0 (and j=1, probably)
-// this is almost certainly also a problem with all escv calculations below as well
-            escv = _mm_setr_ps(-eslINFINITY, cm->oesc[v][dsq[j]], cm->oesc[v][dsq[j-1]], cm->oesc[v][dsq[j-2]]);
+// Boundary checks here are sloppy and certainly slow
+// same goes for building escv for other state types 
+// probably an argument for moving to pre-calc'd esc vectors ASAP, to avoid always
+// having to check edge conditions
+            escv = _mm_setr_ps(-eslINFINITY, cm->oesc[v][dsq[j]], j>0?cm->oesc[v][dsq[j-1]]:-eslINFINITY, j>1?cm->oesc[v][dsq[j-2]]:-eslINFINITY);
             alpha[v]->vec[j][0] = _mm_add_ps(alpha[v]->vec[j][0], escv);
             /* handle yoffset = 0, the self-transition case, seaparately */
             tscv = _mm_set1_ps(cm->tsc[v][0]);
@@ -1512,12 +1514,12 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                 }
 		
 		i = j-dp*vecwidth+1;
-                escv = _mm_setr_ps(cm->oesc[v][dsq[i]], cm->oesc[v][dsq[i-1]], cm->oesc[v][dsq[i-2]], cm->oesc[v][dsq[i-3]]);
+                escv = _mm_setr_ps(cm->oesc[v][dsq[i]], i>0?cm->oesc[v][dsq[i-1]]:-eslINFINITY, i>1?cm->oesc[v][dsq[i-2]]:-eslINFINITY, i>2?cm->oesc[v][dsq[i-3]]:-eslINFINITY);
                 alpha[v]->vec[j][dp] = _mm_add_ps(alpha[v]->vec[j][dp], escv);
 	      }
 
             /* handle yoffset = 0, the self-transition case, seaparately */
-            tscv = _mm_set1_ps(cm->tsc[v][dp]);
+            tscv = _mm_set1_ps(cm->tsc[v][0]);
             for (k = 0; k < vecwidth; k++) {
               tmpv = esl_sse_rightshift_ps(alpha[y]->vec[j][dp], alpha[y]->vec[j][dp-1]);
               tmpv = _mm_add_ps(escv, _mm_add_ps(tscv, tmpv));
@@ -1541,6 +1543,7 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
             y = cm->cfirst[v];
             for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
               tscv = _mm_set1_ps(cm->tsc[v][yoffset]);
+// FIXME: segfaults on j = 0
               tmpv = esl_sse_rightshift_ps(alpha[y+yoffset]->vec[j-1][0], neginfv);
               tmpv = _mm_add_ps(tmpv, tscv);
               mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][0]);
