@@ -1225,6 +1225,13 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                 //FIXME: SSE conversion is kind of ignoring the possibilty of underflow... this is bad.
 		//if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
+//printf("j%2d v%2d ",j,v);
+//for (d = 0; d <= W && d <= j; d++) {
+//float *access;
+//access = (float *) (&(alpha[v]->vec[j][d/vecwidth])) + d%vecwidth;
+//printf("%10.2e ",*access);
+//}
+//printf("\n");
 	  }
 	}
       else if (cm->sttype[v] == B_st)
@@ -1353,13 +1360,20 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
 */
+//printf("j%2d v%2d ",j,v);
+//for (d = 0; d <= W && d <= j; d++) {
+//float *access;
+//access = (float *) (&(alpha[v]->vec[j][d/vecwidth])) + d%vecwidth;
+//printf("%10.2e ",*access);
+//}
+//printf("\n");
 	  }
 	}
       else if (cm->sttype[v] == MP_st)
 	{
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
-            tmpv = _mm_mul_ps(el_self_v, _mm_movelh_ps(neginfv, doffset));
+            tmpv = _mm_movelh_ps(_mm_mul_ps(el_self_v, doffset), neginfv);
             alpha[v]->vec[j][0] = _mm_add_ps(_mm_set1_ps(cm->endsc[v]), tmpv);
             /* treat EL as emitting only on self transition */
             if (ret_shadow != NULL) shadow[v]->vec[j][0]  = (__m128) _mm_set1_epi32(USED_EL); 
@@ -1407,6 +1421,13 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                                    i>3?cm->oesc[v][dsq[i-3]*cm->abc->Kp+dsq[j]]:-eslINFINITY);
                 alpha[v]->vec[j][dp] = _mm_add_ps(alpha[v]->vec[j][dp], escv);
 	      }
+//printf("j%2d v%2d ",j,v);
+//for (d = 0; d <= W && d <= j; d++) {
+//float *access;
+//access = (float *) (&(alpha[v]->vec[j][d/vecwidth])) + d%vecwidth;
+//printf("%10.2e ",*access);
+//}
+//printf("\n");
 	  }
 	}
       /* Separate out ML_st from IL_st, since only IL_st has to worry abuot self-transitions */
@@ -1414,7 +1435,7 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
 	{
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
-            tmpv = _mm_mul_ps(el_self_v, esl_sse_rightshift_ps(doffset, neginfv));
+            tmpv = esl_sse_rightshift_ps(_mm_mul_ps(el_self_v, doffset), neginfv);
 	    alpha[v]->vec[j][0] = _mm_add_ps(_mm_set1_ps(cm->endsc[v]), tmpv);
             /* treat EL as emitting only on self transition */
             if (ret_shadow != NULL) shadow[v]->vec[j][0] = (__m128) _mm_set1_epi32(USED_EL);
@@ -1429,7 +1450,7 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                 shadow[v]->vec[j][0] = esl_sse_select_ps(shadow[v]->vec[j][0], (__m128) _mm_set1_epi32(yoffset), mask);
               }
             }
-            escv = _mm_setr_ps(-eslINFINITY, cm->oesc[v][dsq[j]], j>0?cm->oesc[v][dsq[j-1]]:-eslINFINITY, j>1?cm->oesc[v][dsq[j-2]]:-eslINFINITY);
+            escv = _mm_setr_ps(-eslINFINITY, j>0?cm->oesc[v][dsq[j]]:-eslINFINITY, j>1?cm->oesc[v][dsq[j-1]]:-eslINFINITY, j>2?cm->oesc[v][dsq[j-2]]:-eslINFINITY);
             alpha[v]->vec[j][0] = _mm_add_ps(alpha[v]->vec[j][0], escv);
 
             sW = jp/4;
@@ -1451,9 +1472,16 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                 }
 		
 		i = j-dp*vecwidth+1;
-                escv = _mm_setr_ps(cm->oesc[v][dsq[i]], i>0?cm->oesc[v][dsq[i-1]]:-eslINFINITY, i>1?cm->oesc[v][dsq[i-2]]:-eslINFINITY, i>2?cm->oesc[v][dsq[i-3]]:-eslINFINITY);
+                escv = _mm_setr_ps(cm->oesc[v][dsq[i]], i>1?cm->oesc[v][dsq[i-1]]:-eslINFINITY, i>2?cm->oesc[v][dsq[i-2]]:-eslINFINITY, i>3?cm->oesc[v][dsq[i-3]]:-eslINFINITY);
                 alpha[v]->vec[j][dp] = _mm_add_ps(alpha[v]->vec[j][dp], escv);
 	      }
+//printf("j%2d v%2d ",j,v);
+//for (d = 0; d <= W && d <= j; d++) {
+//float *access;
+//access = (float *) (&(alpha[v]->vec[j][d/vecwidth])) + d%vecwidth;
+//printf("%10.2e ",*access);
+//}
+//printf("\n");
 	  }
 	}
       /* The self-transition loop on IL_st will need to be completely serialized, since
@@ -1463,7 +1491,8 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
 	{
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
-            tmpv = _mm_mul_ps(el_self_v, esl_sse_rightshift_ps(doffset, neginfv));
+            tmpv = esl_sse_rightshift_ps(_mm_mul_ps(el_self_v, doffset), neginfv);
+            //tmpv = _mm_mul_ps(el_self_v, esl_sse_rightshift_ps(doffset, neginfv));
 	    alpha[v]->vec[j][0] = _mm_add_ps(_mm_set1_ps(cm->endsc[v]), tmpv);
             /* treat EL as emitting only on self transition */
             if (ret_shadow != NULL) shadow[v]->vec[j][0] = (__m128) _mm_set1_epi32(USED_EL);
@@ -1482,7 +1511,7 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
 // same goes for building escv for other state types 
 // probably an argument for moving to pre-calc'd esc vectors ASAP, to avoid always
 // having to check edge conditions
-            escv = _mm_setr_ps(-eslINFINITY, cm->oesc[v][dsq[j]], j>0?cm->oesc[v][dsq[j-1]]:-eslINFINITY, j>1?cm->oesc[v][dsq[j-2]]:-eslINFINITY);
+            escv = _mm_setr_ps(-eslINFINITY, j>0?cm->oesc[v][dsq[j]]:-eslINFINITY, j>1?cm->oesc[v][dsq[j-1]]:-eslINFINITY, j>2?cm->oesc[v][dsq[j-2]]:-eslINFINITY);
             alpha[v]->vec[j][0] = _mm_add_ps(alpha[v]->vec[j][0], escv);
             /* handle yoffset = 0, the self-transition case, seaparately */
             tscv = _mm_set1_ps(cm->tsc[v][0]);
@@ -1516,29 +1545,36 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                 }
 		
 		i = j-dp*vecwidth+1;
-                escv = _mm_setr_ps(cm->oesc[v][dsq[i]], i>0?cm->oesc[v][dsq[i-1]]:-eslINFINITY, i>1?cm->oesc[v][dsq[i-2]]:-eslINFINITY, i>2?cm->oesc[v][dsq[i-3]]:-eslINFINITY);
+                escv = _mm_setr_ps(cm->oesc[v][dsq[i]], i>1?cm->oesc[v][dsq[i-1]]:-eslINFINITY, i>2?cm->oesc[v][dsq[i-2]]:-eslINFINITY, i>3?cm->oesc[v][dsq[i-3]]:-eslINFINITY);
                 alpha[v]->vec[j][dp] = _mm_add_ps(alpha[v]->vec[j][dp], escv);
-	      }
 
-            /* handle yoffset = 0, the self-transition case, seaparately */
-            tscv = _mm_set1_ps(cm->tsc[v][0]);
-            for (k = 0; k < vecwidth; k++) {
-              tmpv = esl_sse_rightshift_ps(alpha[y]->vec[j][dp], alpha[y]->vec[j][dp-1]);
-              tmpv = _mm_add_ps(escv, _mm_add_ps(tscv, tmpv));
-              mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][dp]);
-              alpha[v]->vec[j][dp] = _mm_max_ps(alpha[v]->vec[j][dp], tmpv);
-              if (ret_shadow != NULL) {
-                shadow[v]->vec[j][dp] = esl_sse_select_ps(shadow[v]->vec[j][dp], (__m128) _mm_set1_epi32(0), mask);
-              }
-              /* could make this a do-while on whether any values in mask are set */
-            }
+                /* handle yoffset = 0, the self-transition case, seaparately */
+                tscv = _mm_set1_ps(cm->tsc[v][0]);
+                for (k = 0; k < vecwidth; k++) {
+                  tmpv = alt_rightshift_ps(alpha[y]->vec[j][dp], alpha[y]->vec[j][dp-1]);
+                  tmpv = _mm_add_ps(escv, _mm_add_ps(tscv, tmpv));
+                  mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][dp]);
+                  alpha[v]->vec[j][dp] = _mm_max_ps(alpha[v]->vec[j][dp], tmpv);
+                  if (ret_shadow != NULL) {
+                    shadow[v]->vec[j][dp] = esl_sse_select_ps(shadow[v]->vec[j][dp], (__m128) _mm_set1_epi32(0), mask);
+                  }
+                  /* could make this a do-while on whether any values in mask are set */
+                }
+	      }
+//printf("j%2d v%2d ",j,v);
+//for (d = 0; d <= W && d <= j; d++) {
+//float *access;
+//access = (float *) (&(alpha[v]->vec[j][d/vecwidth])) + d%vecwidth;
+//printf("%10.2e ",*access);
+//}
+//printf("\n");
 	  }
 	}
       else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st)
 	{
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
-            tmpv = _mm_mul_ps(el_self_v, esl_sse_rightshift_ps(doffset, neginfv));
+            tmpv = esl_sse_rightshift_ps(_mm_mul_ps(el_self_v, doffset), neginfv);
 	    alpha[v]->vec[j][0] = _mm_add_ps(_mm_set1_ps(cm->endsc[v]), tmpv);
             /* treat EL as emitting only on self transition */
             if (ret_shadow != NULL) shadow[v]->vec[j][0] = (__m128) _mm_set1_epi32(USED_EL);
@@ -1583,6 +1619,13 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                   escv = _mm_set1_ps(cm->oesc[v][dsq[j]]);
                 alpha[v]->vec[j][dp] = _mm_add_ps(alpha[v]->vec[j][dp], escv);
 	      }
+//printf("j%2d v%2d ",j,v);
+//for (d = 0; d <= W && d <= j; d++) {
+//float *access;
+//access = (float *) (&(alpha[v]->vec[j][d/vecwidth])) + d%vecwidth;
+//printf("%10.2e ",*access);
+//}
+//printf("\n");
 	  }
 	}				/* finished calculating deck v. */
       
