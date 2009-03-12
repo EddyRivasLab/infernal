@@ -2877,6 +2877,9 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
 	      alpha[jp_v][v][d] = sc;
 	      /* careful: scores for w, the BEGL_S child of v, are in alpha_begl, not alpha */
 	    }
+//printf("j%2d v%2d ",j,v);
+//for (d = 0; d <= W && d <= j; d++) { printf("%10.2e ",alpha[jp_v][v][d]); }
+//printf("\n");
 	  }
 	  else if (cm->stid[v] == BEGL_S) {
 	    y = cm->cfirst[v]; 
@@ -2887,6 +2890,9 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
 	      alpha_begl[jp_v][v][d] = sc;
 	      /* careful: y is in alpha (all children of a BEGL_S must be non BEGL_S) */
 	    }
+//printf("j%2d v%2d ",j,v);
+//for (d = 0; d <= W && d <= j; d++) { printf("%10.2e ",alpha_begl[jp_v][v][d]); }
+//printf("\n");
 	  }
 	  else { /* ! B_st, ! BEGL_S st */
 	    y = cm->cfirst[v]; 
@@ -2911,6 +2917,9 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
 		break;
 	      } /* end of switch emitmode */
 	    } /* end of for d loop */
+//printf("j%2d v%2d ",j,v);
+//for (d = 0; d <= W && d <= j; d++) { printf("%10.2e ",alpha[jp_v][v][d]); }
+//printf("\n");
 	  } /* end of else (which was entered if ! B_st && ! BEGL_S st) */
 	  if(vsc != NULL) {
 	    if(cm->stid[v] != BEGL_S) for (d = dn; d <= dx; d++) vsc[v] = ESL_MAX(vsc[v], alpha[jp_v][v][d]);
@@ -2972,6 +2981,9 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
 	  }
 	}
       }
+//printf("j%2d v%2d ",j,v);
+//for (d = 0; d <= W; d++) { printf("%10.2e ",alpha[jp_v][v][d]); }
+//printf("\n");
       /* find the best score */
       for (d = dnA[0]; d <= dxA[0]; d++) 
 	vsc_root = ESL_MAX(vsc_root, alpha[jp_v][0][d]);
@@ -2998,7 +3010,7 @@ RefCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
   if (ret_vsc != NULL) *ret_vsc         = vsc;
   else free(vsc);
   if (ret_sc != NULL) *ret_sc = vsc_root;
-  
+
   ESL_DPRINTF1(("RefCYKScan() return score: %10.4f\n", vsc_root)); 
   return eslOK;
   
@@ -5614,7 +5626,7 @@ main(int argc, char **argv)
   else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
 
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
-  if (!(CMFileRead(cmfp, &abc, &cm)))            cm_Fail("Failed to read CM");
+  if ((status = CMFileRead(cmfp, errbuf, &abc, &cm) != eslOK))            cm_Fail("Failed to read CM");
   CMFileClose(cmfp);
 
   do_random = TRUE;
@@ -5622,12 +5634,13 @@ main(int argc, char **argv)
 
   if(! esl_opt_GetBoolean(go, "-g")) cm->config_opts  |= CM_CONFIG_LOCAL;
   if(  esl_opt_GetBoolean(go, "--sums"))        cm->search_opts |= CM_SEARCH_SUMS;
-  if(  esl_opt_GetBoolean(go, "--aln2bands"))   cm->search_opts |= CM_SEARCH_HMMALNBANDS;
+  //if(  esl_opt_GetBoolean(go, "--aln2bands"))   cm->search_opts |= CM_SEARCH_HMMALNBANDS;
   if(  esl_opt_GetBoolean(go, "--hbanded"))     cm->search_opts |= CM_SEARCH_HBANDED;
   if(  esl_opt_GetBoolean(go, "--ihbanded"))    cm->search_opts |= CM_SEARCH_HBANDED;
   cm->tau    = esl_opt_GetReal(go, "--tau");  /* this will be DEFAULT_TAU unless changed at command line */
-  cm->config_opts |= CM_CONFIG_QDB;
-  ConfigCM(cm, TRUE); /* TRUE says: calculate W */
+  if( esl_opt_GetBoolean(go, "--noqdb"))        cm->search_opts |= CM_SEARCH_NOQDB;
+  else                                          cm->config_opts |= CM_CONFIG_QDB;
+  ConfigCM(cm, errbuf, TRUE, NULL, NULL); /* TRUE says: calculate W */
 
   if (esl_opt_GetBoolean(go, "--noqdb")) { 
     dmin = NULL; dmax = NULL;
@@ -5637,7 +5650,23 @@ main(int argc, char **argv)
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
 
   /* get sequences */
-  if(do_random) {
+  if(!esl_opt_IsDefault(go, "-L")) {
+     double *dnull;
+     ESL_DSQ *randdsq = NULL;
+     ESL_ALLOC(randdsq, sizeof(ESL_DSQ)* (L+2));
+     ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
+     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
+     esl_vec_DNorm(dnull, cm->abc->K);
+     seqs_to_aln = CreateSeqsToAln(N, FALSE);
+
+     for (i = 0; i < N; i++) {
+       if (esl_rsq_xIID(r, dnull, cm->abc->K, L, randdsq)  != eslOK) cm_Fail("Failure creating random sequence.");
+       if((seqs_to_aln->sq[i] = esl_sq_CreateDigitalFrom(abc, NULL, randdsq, L, NULL, NULL, NULL)) == NULL)
+         cm_Fail("Failure digitizing/copying random sequence.");
+
+     }
+  }
+  else if(do_random) {
     double *dnull;
     ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
@@ -5647,6 +5676,10 @@ main(int argc, char **argv)
     double **gamma = NULL;
     while(!(BandCalculationEngine(cm, safe_windowlen, DEFAULT_HS_BETA, TRUE, NULL, NULL, &(gamma), NULL))) {
       safe_windowlen *= 2;
+      /* This is a temporary fix becuase BCE() overwrites gamma, leaking memory
+       * Probably better long-term for BCE() to check whether gamma is already allocated
+       */
+      FreeBandDensities(cm, gamma);
       if(safe_windowlen > (cm->clen * 1000)) cm_Fail("Error trying to get gamma[0], safe_windowlen big: %d\n", safe_windowlen);
     }
     seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, gamma[0], safe_windowlen, FALSE);
@@ -5671,12 +5704,12 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "-w")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  if((status = RefCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = RefCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefCYKScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}
-
+/*
       if (esl_opt_GetBoolean(go, "-o")) 
 	{ 
 	  esl_stopwatch_Start(w);
@@ -5686,7 +5719,7 @@ main(int argc, char **argv)
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}
-
+*/
       if (esl_opt_GetBoolean(go, "--rsearch")) 
 	{ 
 	  esl_stopwatch_Start(w);
@@ -5701,19 +5734,19 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
-	  if((status = XFastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = XFastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "XFastIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
-	  if((status = X2FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);;
+	  if((status = X2FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);;
 	  printf("%4d %-30s %10.4f bits ", (i+1), "X2FastIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5723,18 +5756,18 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  if((status = RefIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = RefIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 
 	  esl_stopwatch_Start(w);
-	  if((status = XRefIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = XRefIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "XRefIInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}
-
+/*
       if (esl_opt_GetBoolean(go, "--oiins")) 
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
@@ -5753,13 +5786,13 @@ main(int argc, char **argv)
 	    esl_stopwatch_Display(stdout, w, " CPU time: ");
 	  }
 	}
-
+*/
       /* float inside implementations */
       if (esl_opt_GetBoolean(go, "--fins")) 
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  if((status = FastFInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = FastFInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastFInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5769,12 +5802,12 @@ main(int argc, char **argv)
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
 	  esl_stopwatch_Start(w);
-	  if((status = RefFInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = RefFInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "RefFInsideScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}
-
+/*
       if (esl_opt_GetBoolean(go, "--ofins")) 
 	{ 
 	  cm->search_opts  |= CM_SEARCH_INSIDE;
@@ -5793,6 +5826,8 @@ main(int argc, char **argv)
 	    esl_stopwatch_Display(stdout, w, " CPU time: ");
 	  }
 	}
+*/
+/*
       if (esl_opt_GetBoolean(go, "--hbanded")) 
 	{ 
 	  esl_stopwatch_Start(w);
@@ -5805,7 +5840,7 @@ main(int argc, char **argv)
 
 	  esl_stopwatch_Start(w);
 	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail(errbuf);
-	  FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, &sc);
+	  FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, cm->hbmx, &sc);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScanHB(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -5822,12 +5857,12 @@ main(int argc, char **argv)
 
 	  esl_stopwatch_Start(w);
 	  if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) cm_Fail(errbuf); 
- 	  if((status = FastFInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, cm->hbmx, &sc)) != eslOK) cm_Fail(errbuf);
+ 	  if((status = FastFInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, FALSE, cm->hbmx, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "FastFInsideScanHB(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}
-
+*/
       printf("\n");
     }
   FreeCM(cm);
