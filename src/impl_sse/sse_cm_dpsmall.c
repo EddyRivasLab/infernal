@@ -1366,7 +1366,9 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
             y = cm->cfirst[v];
             for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
               tscv = _mm_set1_ps(cm->tsc[v][yoffset]);
-              tmpv = _mm_movelh_ps(neginfv, alpha[y+yoffset]->vec[j-1][0]);
+              if (j==0) tmpv = neginfv;
+              else
+                tmpv = _mm_movelh_ps(neginfv, alpha[y+yoffset]->vec[j-1][0]);
               tmpv = _mm_add_ps(tmpv, tscv);
               mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][0]);
               alpha[v]->vec[j][0] = _mm_max_ps(alpha[v]->vec[j][0], tmpv);
@@ -1375,8 +1377,8 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
               }
             }
             escv = _mm_setr_ps(-eslINFINITY, -eslINFINITY,
-                               cm->oesc[v][dsq[j-1]*cm->abc->Kp+dsq[j]],
-                               cm->oesc[v][dsq[j-2]*cm->abc->Kp+dsq[j]]);
+                               j>1?cm->oesc[v][dsq[j-1]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
+                               j>2?cm->oesc[v][dsq[j-2]*cm->abc->Kp+dsq[j]]:-eslINFINITY);
             alpha[v]->vec[j][0] = _mm_add_ps(alpha[v]->vec[j][0], escv);
 
             sW = jp/4;
@@ -1399,10 +1401,10 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                 }
 		
 		i = j-dp*vecwidth+1;
-                escv = _mm_setr_ps(cm->oesc[v][dsq[i  ]*cm->abc->Kp+dsq[j]],
-                                   cm->oesc[v][dsq[i-1]*cm->abc->Kp+dsq[j]],
-                                   cm->oesc[v][dsq[i-2]*cm->abc->Kp+dsq[j]],
-                                   cm->oesc[v][dsq[i-3]*cm->abc->Kp+dsq[j]]);
+                escv = _mm_setr_ps(i>0?cm->oesc[v][dsq[i  ]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
+                                   i>1?cm->oesc[v][dsq[i-1]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
+                                   i>2?cm->oesc[v][dsq[i-2]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
+                                   i>3?cm->oesc[v][dsq[i-3]*cm->abc->Kp+dsq[j]]:-eslINFINITY);
                 alpha[v]->vec[j][dp] = _mm_add_ps(alpha[v]->vec[j][dp], escv);
 	      }
 	  }
@@ -1543,8 +1545,9 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
             y = cm->cfirst[v];
             for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
               tscv = _mm_set1_ps(cm->tsc[v][yoffset]);
-// FIXME: segfaults on j = 0
-              tmpv = esl_sse_rightshift_ps(alpha[y+yoffset]->vec[j-1][0], neginfv);
+              if (j==0) tmpv = neginfv;
+              else
+                tmpv = esl_sse_rightshift_ps(alpha[y+yoffset]->vec[j-1][0], neginfv);
               tmpv = _mm_add_ps(tmpv, tscv);
               mask = _mm_cmpgt_ps(tmpv, alpha[v]->vec[j][0]);
               alpha[v]->vec[j][0] = _mm_max_ps(alpha[v]->vec[j][0], tmpv);
@@ -1552,7 +1555,9 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                 shadow[v]->vec[j][0] = esl_sse_select_ps(shadow[v]->vec[j][0], (__m128) _mm_set1_epi32(yoffset), mask);
               }
             }
-            escv = _mm_setr_ps(-eslINFINITY, cm->oesc[v][dsq[j]], cm->oesc[v][dsq[j]], cm->oesc[v][dsq[j]]);
+            if (j==0) escv = neginfv;
+            else
+              escv = _mm_setr_ps(-eslINFINITY, cm->oesc[v][dsq[j]], cm->oesc[v][dsq[j]], cm->oesc[v][dsq[j]]);
             alpha[v]->vec[j][0] = _mm_add_ps(alpha[v]->vec[j][0], escv);
 
             sW = jp/4;
@@ -1573,7 +1578,9 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                   }
                 }
 		
-                escv = _mm_set1_ps(cm->oesc[v][dsq[j]]);
+                if (j==0) escv = neginfv;
+                else
+                  escv = _mm_set1_ps(cm->oesc[v][dsq[j]]);
                 alpha[v]->vec[j][dp] = _mm_add_ps(alpha[v]->vec[j][dp], escv);
 	      }
 	  }
