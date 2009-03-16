@@ -705,7 +705,7 @@ extern int        UpdateExpsForDBSize(CM_t *cm, char *errbuf, long dbsize);
 /* from truncyk.c */
 void  SetMarginalScores(CM_t *cm);
 float TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr);
-float TrCYK_Inside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr);
+float TrCYK_Inside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int lenCORREX, Parsetree_t **ret_tr);
 /* legacy, avoid use: */
 float trinside (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
                 void ****ret_shadow, void ****ret_L_shadow, void ****ret_R_shadow,

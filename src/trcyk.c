@@ -35,6 +35,9 @@ main(int argc, char **argv)
    /* char *optarg; */
    int   optind;
 
+   int status;
+   char errbuf[cmERRBUFSIZE];
+
    cmfile = seqfile = NULL;
    abc = NULL;
    sqfp = NULL;
@@ -57,7 +60,7 @@ main(int argc, char **argv)
 
    if ( (cmfp = CMFileOpen(cmfile, NULL)) == NULL )
       cm_Die("Failed to open covariance model save file\n");
-   if (! CMFileRead(cmfp, &abc, &cm))
+   if ((status = CMFileRead(cmfp, errbuf, &abc, &cm)) != eslOK)
       cm_Die("Failed to read a CM from cm file\n");
    if (cm == NULL)
       cm_Die("CM file empty?\n");
@@ -68,7 +71,7 @@ main(int argc, char **argv)
 
    if (do_local) cm->config_opts |= CM_CONFIG_LOCAL;
 
-   ConfigCM(cm, TRUE); /* TRUE says: calculate W */
+   ConfigCM(cm, NULL, TRUE, NULL, NULL); /* TRUE says: calculate W */
    CreateCMConsensus(cm, cm->abc, 3.0, 1.0, &cons);
    SetMarginalScores(cm);
 

@@ -102,7 +102,7 @@ main(int argc, char **argv)
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL)
     cm_Die("Failed to open covariance model save file %s\n%s\n", cmfile, usage);
 
-  if (! CMFileRead(cmfp, &abc, &cm))
+  if (CMFileRead(cmfp, NULL, &abc, &cm) != eslOK)
     cm_Die("Failed to read a CM from %s -- file corrupt?\n", cmfile);
   if (cm == NULL) 
     cm_Die("%s empty?\n", cmfile);
@@ -119,7 +119,7 @@ main(int argc, char **argv)
   CMHackInsertScores(cm);*/	/* TEMPORARY: FIXME */
 
   if (do_local) cm->config_opts |= CM_CONFIG_LOCAL;
-  ConfigCM(cm, TRUE);
+  ConfigCM(cm, NULL, TRUE, NULL, NULL);
   SetMarginalScores(cm);
 
   /* EPN 11.18.05 Now that know what windowlen is, we need to ensure that
@@ -159,13 +159,13 @@ main(int argc, char **argv)
 	printf("----------------------\n");
 	esl_stopwatch_Start(watch);
 	if (do_scoreonly) {
-	  sc1 = TrCYK_Inside(cm, seq->dsq, seq->n, 0, 1, seq->n, NULL);
+	  sc1 = TrCYK_Inside(cm, seq->dsq, seq->n, 0, 1, seq->n, FALSE, NULL);
 	  printf("%-12s : %.2f\n", seq->name, sc1);
 	} else {
-	  sc1 = TrCYK_Inside(cm, seq->dsq, seq->n, 0, 1, seq->n, &tr1);  
+	  sc1 = TrCYK_Inside(cm, seq->dsq, seq->n, 0, 1, seq->n, FALSE, &tr1);  
 	  ParsetreeDump(stdout, tr1, cm, seq->dsq, NULL, NULL);
           //ptsc1 = ParsetreeScore(cm, tr1, seq->dsq, FALSE);
-          ParsetreeScore(cm, NULL, tr1, seq->dsq, FALSE, &ptsc1, NULL);
+          ParsetreeScore(cm, NULL, NULL, tr1, seq->dsq, FALSE, &ptsc1, NULL, NULL, NULL, NULL);
           ptsc1 += bsc;
 	  printf("%-12s : %.2f  %.2f\n", seq->name, sc1, ptsc1);
 	}
@@ -180,7 +180,7 @@ main(int argc, char **argv)
       sc2 = TrCYK_DnC(cm, seq->dsq, seq->n, 0, 1, seq->n, &tr2);  
       ParsetreeDump(stdout, tr2, cm, seq->dsq, NULL, NULL);
       //ptsc2 = ParsetreeScore(cm, tr2, seq->dsq, FALSE);
-      ParsetreeScore(cm, NULL, tr2, seq->dsq, FALSE, &ptsc2, NULL);
+      ParsetreeScore(cm, NULL, NULL, tr2, seq->dsq, FALSE, &ptsc2, NULL, NULL, NULL, NULL);
       ptsc2 += bsc;
       printf("%-12s : %.2f  %.2f\n", seq->name, sc2, ptsc2);
       esl_stopwatch_Stop(watch);

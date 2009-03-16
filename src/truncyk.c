@@ -87,7 +87,7 @@ float trinside (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int 
                 void ****ret_T_shadow, void ****ret_Lmode_shadow, void ****ret_Rmode_shadow,
                 int *ret_mode, int *ret_v, int *ret_i, int *ret_j);
 float tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
-                int allow_begin, int r_allow_J, int r_allow_L, int r_allow_R,
+                int allow_begin, int r_allow_J, int r_allow_L, int r_allow_R, int lenCORREX,
                 AlphaMats_t *arg_alpha, AlphaMats_t *ret_alpha, 
                 struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
                 ShadowMats_t *ret_shadow, int *ret_mode, int *ret_v, int *ret_i, int *ret_j);
@@ -110,7 +110,7 @@ void tr_voutside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, in
 
 /* Traceback routine */
 float tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0,
-                 int r_allow_J, int r_allow_L, int r_allow_R);
+                 int r_allow_J, int r_allow_L, int r_allow_R, int lenCORREX);
 float tr_vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, 
                   int i0, int i1, int j1, int j0, int useEL,
                   int r_allow_J, int r_allow_L, int r_allow_R,
@@ -223,6 +223,7 @@ TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **re
       else if ( cm->stid[v] == MATR_MR ) model_len += 1;
    }
    /* 2.0 instead of 2 to force floating point division, not integer division */
+   /* This is the fragment penalty */
    bsc = sreLOG2(2.0/(model_len*(model_len+1)));
 
    sc += bsc;
@@ -252,11 +253,11 @@ TrCYK_DnC(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **re
  * Returns;  score of the alignment in bits
  */
 float
-TrCYK_Inside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
+TrCYK_Inside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, int lenCORREX, Parsetree_t **ret_tr)
 {
    Parsetree_t *tr;
    int          z;
-   float        sc, bsc;
+   float        sc, bsc, rsc, nullsc;
    int          v, model_len;
 
    /* Check input parameters */
@@ -285,7 +286,7 @@ TrCYK_Inside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t *
       }
 
       /* Solve by calling tr_insideT() */
-      sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, TRUE, TRUE, TRUE);
+      sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, TRUE, TRUE, TRUE, lenCORREX);
    }
    else
    {
@@ -299,7 +300,7 @@ TrCYK_Inside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t *
       }
 
       sc = tr_inside(cm, dsq, L, r, z, i0, j0, BE_EFFICIENT,
-                     TRUE, TRUE, TRUE, TRUE,
+                     TRUE, TRUE, TRUE, TRUE, lenCORREX,
                      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
    }
 
@@ -312,6 +313,13 @@ TrCYK_Inside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t *
    }
    /* 2.0 instead of 2 to force floating point division, not integer division */
    bsc = sreLOG2(2.0/(model_len*(model_len+1)));
+   /* null model length correction */
+   if (lenCORREX)
+   {
+      rsc = (float) L/(float) (L+1);
+      nullsc = L*sreLOG2(rsc) + sreLOG2(1 - rsc);
+      sc -= nullsc;
+   }
 
    sc += bsc;
 
@@ -364,7 +372,7 @@ tr_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     * size calculation is heuristic based on size of insideT() */
    if (5*insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT)
    {
-      sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, r_allow_J, r_allow_L, r_allow_R);
+      sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, FALSE);
       return sc;
    }
 
@@ -392,11 +400,11 @@ tr_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    /* Calculate alphas for w and y
     * also pick up best local begins in each subtree */
    b1_sc = tr_inside(cm, dsq, L, w, wend, i0, j0, BE_EFFICIENT,
-                     (r == 0), TRUE, r_allow_L, r_allow_R,
+                     (r == 0), TRUE, r_allow_L, r_allow_R, FALSE,
                      NULL, alpha, NULL, &pool, NULL, &b1_mode, &b1_v, &b1_i, &b1_j);
    if (r != 0) b1_sc = IMPOSSIBLE;
    b2_sc = tr_inside(cm, dsq, L, y, yend, i0, j0, BE_EFFICIENT,
-                     (r == 0), TRUE, r_allow_L, r_allow_R,
+                     (r == 0), TRUE, r_allow_L, r_allow_R, FALSE,
                      alpha, alpha, pool,  NULL, NULL, &b2_mode, &b2_v, &b2_i, &b2_j);
    if (r != 0) b2_sc = IMPOSSIBLE;
 
@@ -683,7 +691,7 @@ tr_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    if ( (cm->ndidx[z] == cm->ndidx[r] + 1) || 
         (5 * insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) )
    {
-      sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, r_allow_J, r_allow_L, r_allow_R);
+      sc = tr_insideT(cm, dsq, L, tr, r, z, i0, j0, r_allow_J, r_allow_L, r_allow_R, FALSE);
       return sc;
    }
 
@@ -697,7 +705,7 @@ tr_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
    /* Get alphas and betas */
    b1_sc = tr_inside(cm, dsq, L, w, z, i0, j0, BE_EFFICIENT,
-                     (r == 0), TRUE, r_allow_L, r_allow_R,
+                     (r == 0), TRUE, r_allow_L, r_allow_R, FALSE,
                      NULL, alpha, NULL, NULL, NULL, &b1_mode, &b1_v, &b1_i, &b1_j);
    if (r != 0) b1_sc = IMPOSSIBLE;
    b2_sc = tr_outside(cm, dsq, L, r, y, i0, j0, BE_EFFICIENT,
@@ -1056,7 +1064,7 @@ trinside (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
    shadow.Rmode = *ret_Rmode_shadow;
 
    sc = tr_inside(cm, dsq, L, vroot, vend, i0, j0, do_full,
-                  TRUE, TRUE, TRUE, TRUE,
+                  TRUE, TRUE, TRUE, TRUE, FALSE,
                   NULL, NULL, NULL, NULL, &shadow,
                   ret_mode, ret_v, ret_i, ret_j);
    *ret_shadow = shadow.J;
@@ -1091,7 +1099,7 @@ trinside (CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
  */
 float
 tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int do_full,
-          int allow_begin, int r_allow_J, int r_allow_L, int r_allow_R,
+          int allow_begin, int r_allow_J, int r_allow_L, int r_allow_R, int lenCORREX,
           AlphaMats_t *arg_alpha, AlphaMats_t *ret_alpha, 
           struct deckpool_s *dpool, struct deckpool_s **ret_dpool,
           ShadowMats_t *ret_shadow, int *ret_mode, int *ret_v, int *ret_i, int *ret_j)
@@ -1115,6 +1123,7 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
    char   **yshad;
    int      r_v, r_i, r_j, r_mode;
    float    r_sc;
+   float    p1, p2, psc;
 
    float ***alpha;
    float ***L_alpha;
@@ -1143,6 +1152,9 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
    r_mode = 3;
    r_sc = IMPOSSIBLE;
    W = j0-i0+1;
+   p1 = (float) L / ((float) L + 2.);
+   p2 = sreLOG2(p1);
+   p1 = 2*sreLOG2(1.-p1);
 
    /* Make a deckpool */
    if ( dpool == NULL ) dpool = deckpool_create();
@@ -1425,6 +1437,8 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
                {
                   /* Shouldn't allow exit from marginal B if one of the children is NULL, sinee that is covered by the */
                   /* root of the other child, and we haven't added anything above the bifurcation */
+                  if (!lenCORREX)
+                  {
                   if ((  alpha[v][j][d] > r_sc) && (allow_J_exit) )
                   { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
                   if ((L_alpha[v][j][d] > r_sc) && (allow_L_exit) )
@@ -1433,6 +1447,19 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
                   { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d]; }
                   if ( T_alpha[v][j][d] > r_sc )
                   { r_mode = 0; r_v = v; r_j = j; r_i = j-d+1; r_sc = T_alpha[v][j][d]; }
+                  }
+                  else
+                  {
+                  psc = p1 + (L-d)*p2;
+                  if ((  alpha[v][j][d] + psc > r_sc) && (allow_J_exit) )
+                  { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d] + psc; }
+                  if ((L_alpha[v][j][d] + psc > r_sc) && (allow_L_exit) )
+                  { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d] + psc; }
+                  if ((R_alpha[v][j][d] + psc > r_sc) && (allow_R_exit) )
+                  { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d] + psc; }
+                  if ( T_alpha[v][j][d] + psc > r_sc )
+                  { r_mode = 0; r_v = v; r_j = j; r_i = j-d+1; r_sc = T_alpha[v][j][d] + psc; }
+                  }
                }
             }
          }
@@ -1512,9 +1539,19 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
             {
                if ( allow_begin )
                {
+                  if (!lenCORREX)
+                  {
                   if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
                   if ( L_alpha[v][j][d] > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d]; }
                   if ( R_alpha[v][j][d] > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d]; }
+                  }
+                  else
+                  {
+                  psc = p1 + (L-d)*p2;
+                  if (   alpha[v][j][d] + psc > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d] + psc; }
+                  if ( L_alpha[v][j][d] + psc > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d] + psc; }
+                  if ( R_alpha[v][j][d] + psc > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d] + psc; }
+                  }
                }
             }
          }
@@ -1592,8 +1629,17 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
             {
                if ( cm->sttype[v] == ML_st && allow_begin )
                {
+                  if (!lenCORREX)
+                  {
                   if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
                   if ( L_alpha[v][j][d] > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d]; }
+                  }
+                  else
+                  {
+                  psc = p1 + (L-d)*p2;
+                  if (   alpha[v][j][d] + psc > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d] + psc; }
+                  if ( L_alpha[v][j][d] + psc > r_sc ) { r_mode = 2; r_v = v; r_j = j; r_i = j-d+1; r_sc = L_alpha[v][j][d] + psc; }
+                  }
                }
             }
          }
@@ -1670,8 +1716,17 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
             {
                if ( cm->sttype[v] == MR_st && allow_begin )
                {
+                  if (!lenCORREX)
+                  {
                   if (   alpha[v][j][d] > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d]; }
                   if ( R_alpha[v][j][d] > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d]; }
+                  }
+                  else
+                  {
+                  psc = p1 + (L-d)*p2;
+                  if (   alpha[v][j][d] + psc > r_sc ) { r_mode = 3; r_v = v; r_j = j; r_i = j-d+1; r_sc =   alpha[v][j][d] + psc; }
+                  if ( R_alpha[v][j][d] + psc > r_sc ) { r_mode = 1; r_v = v; r_j = j; r_i = j-d+1; r_sc = R_alpha[v][j][d] + psc; }
+                  }
                }
             }
          }
@@ -1683,9 +1738,19 @@ tr_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, in
 
       if ( v == vroot )
       {
+         if  (!lenCORREX)
+         {
          if  (   alpha[v][j0][W] > r_sc ) { r_mode = 3; r_v = v; r_j = j0; r_i = j0-W+1; r_sc =   alpha[v][j0][W]; }
          if  ( L_alpha[v][j0][W] > r_sc ) { r_mode = 2; r_v = v; r_j = j0; r_i = j0-W+1; r_sc = L_alpha[v][j0][W]; }
          if  ( R_alpha[v][j0][W] > r_sc ) { r_mode = 1; r_v = v; r_j = j0; r_i = j0-W+1; r_sc = R_alpha[v][j0][W]; }
+         }
+         else
+         {
+         psc = p1 + (L-W)*p2;
+         if  (   alpha[v][j0][W] + psc > r_sc ) { r_mode = 3; r_v = v; r_j = j0; r_i = j0-W+1; r_sc =   alpha[v][j0][W] + psc; }
+         if  ( L_alpha[v][j0][W] + psc > r_sc ) { r_mode = 2; r_v = v; r_j = j0; r_i = j0-W+1; r_sc = L_alpha[v][j0][W] + psc; }
+         if  ( R_alpha[v][j0][W] + psc > r_sc ) { r_mode = 1; r_v = v; r_j = j0; r_i = j0-W+1; r_sc = R_alpha[v][j0][W] + psc; }
+         }
       }
 
       if ( v==0 )
@@ -3489,7 +3554,7 @@ tr_voutside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int z, int i0, int i1, int j1,
  */
 float
 tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
-          int i0, int j0, int r_allow_J, int r_allow_L, int r_allow_R)
+          int i0, int j0, int r_allow_J, int r_allow_L, int r_allow_R, int lenCORREX)
 {
   int         status;           /* easel status code */
    void    ***shadow;		/* standard shadow matrix with state information */
@@ -3519,7 +3584,7 @@ tr_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
  */
 
    sc = tr_inside(cm, dsq, L, r, z, i0, j0, BE_EFFICIENT,
-                  (r == 0), r_allow_J, r_allow_L, r_allow_R,
+                  (r == 0), r_allow_J, r_allow_L, r_allow_R, lenCORREX,
                   NULL, NULL, NULL, NULL, all_shadow,
                   &mode, &v, &i, &j);
    shadow = all_shadow->J;
