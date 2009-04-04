@@ -1112,6 +1112,10 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
   __m128       escv;
   __m128      *mem_Lesc;
   __m128      *vec_Lesc;
+  __m128      *mem_Pesc;
+  __m128     **vec_Pesc;
+  int          delta, x;
+  int         *esc_stale;
   __m128       doffset;
   __m128       tmpv;
   __m128       tmpshad;
@@ -1134,8 +1138,17 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
   W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
 				/* if caller didn't give us a deck pool, make one */
 
-  ESL_ALLOC(mem_Lesc, sizeof(__m128) * (W+1) + 15);
-  vec_Lesc = (__m128 *) (((unsigned long int) mem_Lesc + 15) & (~0xf));
+  ESL_ALLOC(mem_Lesc, sizeof(__m128  ) * (W+1) + 15);
+  ESL_ALLOC(mem_Pesc, sizeof(__m128  ) * cm->abc->Kp * (W+1) + 15);
+  ESL_ALLOC(vec_Pesc, sizeof(__m128 *) * cm->abc->Kp);
+  ESL_ALLOC(esc_stale,sizeof(int    *) * cm->abc->Kp);
+
+  vec_Lesc    = (__m128 *) (((unsigned long int) mem_Lesc + 15) & (~0xf));
+  vec_Pesc[0] = (__m128 *) (((unsigned long int) mem_Pesc + 15) & (~0xf));
+  for (j = 1; j < cm->abc->Kp; j++)
+    {
+      vec_Pesc[j] = vec_Pesc[0] + j*(W+1);
+    }
 
   if (dpool == NULL) dpool = sse_deckpool_create();
   if (! sse_deckpool_pop(dpool, &end))
@@ -1377,8 +1390,45 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
 	}
       else if (cm->sttype[v] == MP_st)
 	{
+          for (x = 0; x < cm->abc->Kp; x++)
+            {
+              esc_stale[x] = 0;
+              for (dp = 0; dp <= W/vecwidth; dp ++) { vec_Pesc[x][dp] = neginfv; }
+              vec_Pesc[x][0] = esl_sse_rightshift_ps(vec_Pesc[x][0], _mm_set1_ps(cm->oesc[v][dsq[1]*cm->abc->Kp+x]));
+            } 
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
+            /* slide esc vec array over */
+            sW = jp/vecwidth;
+            delta = j>0 ? j - esc_stale[dsq[j]] : 0;
+            if (delta == 1) {
+              for (dp = sW; dp > 0; dp--) { vec_Pesc[dsq[j]][dp] = alt_rightshift_ps(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1]); }
+              vec_Pesc[dsq[j]][0] = alt_rightshift_ps(vec_Pesc[dsq[j]][0], (jp<W) ? _mm_set1_ps(cm->oesc[v][dsq[j+1]*cm->abc->Kp+dsq[j]]) : neginfv);
+            }
+            else if (delta == 2) {
+              for (dp = sW; dp > 0; dp--) {
+                tmpv = _mm_movelh_ps(neginfv, vec_Pesc[dsq[j]][dp]);
+                vec_Pesc[dsq[j]][dp] = _mm_movehl_ps(tmpv, vec_Pesc[dsq[j]][dp-1]);
+              }
+              tmpv = _mm_setr_ps(jp<W ? cm->oesc[v][dsq[j+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY, cm->oesc[v][dsq[j]*cm->abc->Kp+dsq[j]], -eslINFINITY, -eslINFINITY);
+              vec_Pesc[dsq[j]][0] = _mm_movelh_ps(tmpv, vec_Pesc[dsq[j]][0]);
+            } 
+            else if (delta == 3) {
+              for (dp = sW; dp > 0; dp--) { vec_Pesc[dsq[j]][dp] = esl_sse_leftshift_ps(vec_Pesc[dsq[j]][dp-1], vec_Pesc[dsq[j]][dp]); }
+              tmpv = _mm_setr_ps(-eslINFINITY, jp<W ? cm->oesc[v][dsq[j+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY,
+                                                      cm->oesc[v][dsq[j  ]*cm->abc->Kp+dsq[j]],
+                                                      cm->oesc[v][dsq[j-1]*cm->abc->Kp+dsq[j]]);
+              vec_Pesc[dsq[j]][0] = esl_sse_leftshift_ps(tmpv, vec_Pesc[dsq[j]][0]);
+            }
+            else if (delta == 4) {
+              for (dp = sW; dp > 0; dp--) { vec_Pesc[dsq[j]][dp] = vec_Pesc[dsq[j]][dp-1]; }
+              vec_Pesc[dsq[j]][0] = _mm_setr_ps(jp<W ? cm->oesc[v][dsq[j+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY,
+                                                       cm->oesc[v][dsq[j  ]*cm->abc->Kp+dsq[j]],
+                                                       cm->oesc[v][dsq[j-1]*cm->abc->Kp+dsq[j]],
+                                                       cm->oesc[v][dsq[j-2]*cm->abc->Kp+dsq[j]]);
+            }
+            if (j>0) esc_stale[dsq[j]] = j; 
+
             tmpv = _mm_movelh_ps(_mm_mul_ps(el_self_v, doffset), neginfv);
             alpha[v]->vec[j][0] = _mm_add_ps(_mm_set1_ps(cm->endsc[v]), tmpv);
             /* treat EL as emitting only on self transition */
@@ -1396,12 +1446,12 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                 shadow[v]->vec[j][0] = esl_sse_select_ps(shadow[v]->vec[j][0], (__m128) _mm_set1_epi32(yoffset), mask);
               }
             }
-            escv = _mm_setr_ps(-eslINFINITY, -eslINFINITY,
+            /*escv = _mm_setr_ps(-eslINFINITY, -eslINFINITY,
                                j>1?cm->oesc[v][dsq[j-1]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
-                               j>2?cm->oesc[v][dsq[j-2]*cm->abc->Kp+dsq[j]]:-eslINFINITY);
+                               j>2?cm->oesc[v][dsq[j-2]*cm->abc->Kp+dsq[j]]:-eslINFINITY); */
+            escv = j>0 ? _mm_movehl_ps(vec_Pesc[dsq[j]][0], neginfv) : neginfv;
             alpha[v]->vec[j][0] = _mm_add_ps(alpha[v]->vec[j][0], escv);
 
-            sW = jp/4;
 	    for (dp = 1; dp <= sW; dp++) 
 	      {
                 tmpv = _mm_mul_ps(el_self_v, _mm_add_ps(_mm_set1_ps((float) dp*vecwidth-2), doffset));
@@ -1421,12 +1471,26 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
                 }
 		
 		i = j-dp*vecwidth+1;
-                escv = _mm_setr_ps(i>0?cm->oesc[v][dsq[i  ]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
+                /*escv = _mm_setr_ps(i>0?cm->oesc[v][dsq[i  ]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
                                    i>1?cm->oesc[v][dsq[i-1]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
                                    i>2?cm->oesc[v][dsq[i-2]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
-                                   i>3?cm->oesc[v][dsq[i-3]*cm->abc->Kp+dsq[j]]:-eslINFINITY);
+                                   i>3?cm->oesc[v][dsq[i-3]*cm->abc->Kp+dsq[j]]:-eslINFINITY);  */
+                escv = vec_Pesc[dsq[j]][dp];
                 alpha[v]->vec[j][dp] = _mm_add_ps(alpha[v]->vec[j][dp], escv);
 	      }
+
+            for (x = 0; x < cm->abc->Kp; x++)
+              {
+                delta = j - esc_stale[x];
+                if (delta == 4) {
+                  for (dp = sW; dp > 0; dp--) { vec_Pesc[x][dp] = vec_Pesc[x][dp-1]; }
+                  vec_Pesc[x][0] = _mm_setr_ps(jp<W ? cm->oesc[v][dsq[j+1]*cm->abc->Kp+x] : -eslINFINITY,
+                                                      cm->oesc[v][dsq[j  ]*cm->abc->Kp+x],
+                                                      cm->oesc[v][dsq[j-1]*cm->abc->Kp+x],
+                                                      cm->oesc[v][dsq[j-2]*cm->abc->Kp+x]);
+                  esc_stale[x] = j;
+                  }
+              } 
 //printf("j%2d v%2d ",j,v);
 //for (d = 0; d <= W && d <= j; d++) {
 //float *access;
@@ -1441,7 +1505,7 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
 	{
           /* initialize esc vec array */
           vec_Lesc[0] = _mm_move_ss(neginfv, _mm_set1_ps(cm->oesc[v][dsq[i0]]));
-          for (dp = 1; dp <= W/4; dp++) { vec_Lesc[dp] = neginfv; }
+          for (dp = 1; dp <= W/vecwidth; dp++) { vec_Lesc[dp] = neginfv; }
 
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
@@ -1463,7 +1527,7 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
             escv = _mm_move_ss(vec_Lesc[0], neginfv);
             alpha[v]->vec[j][0] = _mm_add_ps(alpha[v]->vec[j][0], escv);
 
-            sW = jp/4;
+            sW = jp/vecwidth;
 	    for (dp = 1; dp <= sW; dp++)
 	      {
                 tmpv = _mm_mul_ps(el_self_v, _mm_add_ps(_mm_set1_ps((float) dp*vecwidth - 1), doffset));
@@ -1487,9 +1551,9 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
 	      }
 
             /* slide esc vec array over by one */
-            if (sW < W/4) sW++;
+            if (sW < W/vecwidth) sW++;
             for (dp = sW; dp > 0; dp--) { vec_Lesc[dp] = alt_rightshift_ps(vec_Lesc[dp], vec_Lesc[dp-1]); }
-            vec_Lesc[0] = alt_rightshift_ps(vec_Lesc[0], (jp<W+1) ? _mm_set1_ps(cm->oesc[v][dsq[j+2]]) : neginfv);
+            vec_Lesc[0] = alt_rightshift_ps(vec_Lesc[0], (jp<W-1) ? _mm_set1_ps(cm->oesc[v][dsq[j+2]]) : neginfv);
 //printf("j%2d v%2d ",j,v);
 //for (d = 0; d <= W && d <= j; d++) {
 //float *access;
@@ -1506,7 +1570,7 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
 	{
           /* initialize esc vec array */
           vec_Lesc[0] = _mm_move_ss(neginfv, _mm_set1_ps(cm->oesc[v][dsq[i0]]));
-          for (dp = 1; dp <= W/4; dp++) { vec_Lesc[dp] = neginfv; }
+          for (dp = 1; dp <= W/vecwidth; dp++) { vec_Lesc[dp] = neginfv; }
 
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
@@ -1541,7 +1605,7 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
               /* could make this a do-while on whether any values in mask are set */
             }
 
-            sW = jp/4;
+            sW = jp/vecwidth;
 	    for (dp = 1; dp <= sW; dp++)
 	      {
                 tmpv = _mm_mul_ps(el_self_v, _mm_add_ps(_mm_set1_ps((float) dp*vecwidth - 1), doffset));
@@ -1578,9 +1642,9 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
 	      }
 
             /* slide esc vec array over by one */
-            if (sW < W/4) sW++;
+            if (sW < W/vecwidth) sW++;
             for (dp = sW; dp > 0; dp--) { vec_Lesc[dp] = alt_rightshift_ps(vec_Lesc[dp], vec_Lesc[dp-1]); }
-            vec_Lesc[0] = alt_rightshift_ps(vec_Lesc[0], (jp<W+1) ? _mm_set1_ps(cm->oesc[v][dsq[j+2]]) : neginfv);
+            vec_Lesc[0] = alt_rightshift_ps(vec_Lesc[0], (jp<W-1) ? _mm_set1_ps(cm->oesc[v][dsq[j+2]]) : neginfv);
 //printf("j%2d v%2d ",j,v);
 //for (d = 0; d <= W && d <= j; d++) {
 //float *access;
@@ -1616,7 +1680,7 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
               escv = _mm_setr_ps(-eslINFINITY, cm->oesc[v][dsq[j]], cm->oesc[v][dsq[j]], cm->oesc[v][dsq[j]]);
             alpha[v]->vec[j][0] = _mm_add_ps(alpha[v]->vec[j][0], escv);
 
-            sW = jp/4;
+            sW = jp/vecwidth;
             if (j==0) escv = neginfv;
             else
               escv = _mm_set1_ps(cm->oesc[v][dsq[j]]);
@@ -1738,6 +1802,11 @@ if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently
   } else {
     *ret_dpool = dpool;
   }
+
+  free(esc_stale);
+  free(vec_Pesc);
+  free(mem_Pesc);
+  free(mem_Lesc);
 
   free(touch);
   if (ret_shadow != NULL) *ret_shadow = shadow;
