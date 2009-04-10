@@ -120,6 +120,7 @@ int     sse_deckpool_pop(struct sse_deckpool_s *d, sse_deck_t **ret_deck);
 void    sse_deckpool_free(struct sse_deckpool_s *d);
 sse_deck_t*  sse_alloc_vjd_deck(int L, int i, int j, int x);
 void         sse_free_vjd_deck(sse_deck_t *a, int i, int j);
+void         sse_free_vjd_matrix(sse_deck_t **a, int M, int i, int j);
 
 /* BE_EFFICIENT and BE_PARANOID are alternative (exclusive) settings
  * for the do_full? argument to the alignment engines.
@@ -258,7 +259,6 @@ fprintf(stderr,"WARNING! SSE_CYKDivideAndConquer has not been converted to SSE!\
 float
 SSE_CYKInside(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
 {
-fprintf(stderr,"WARNING! SSE_CYKInside has not been converted to SSE!\n");
   Parsetree_t *tr;
   int          z;
   float        sc;
@@ -2969,21 +2969,24 @@ fprintf(stderr,"WARNING! sse_voutside has not been converted to SSE!\n");
  *   vinsideT - run vinside(), append trace in postorder traversal
  *****************************************************************/
 
-/* Function: insideT()
- * Date:     SRE, Fri Aug 11 12:08:18 2000 [Pittsburgh]
+/* Function: sse_insideT()
+ * Date:     DLK, 2009 Apr 10
  *
  * Purpose:  Call inside, get vjd shadow matrix;
  *           then trace back. Append the trace to a given
  *           traceback, which already has state r at tr->n-1.
+ *
+ * NOTES:    Accepts the vectorized traceback matrix from
+ *           sse_inside(), but is essentially a scalar function
+ *           (by design - don't need to track traceback from cells
+ *           that aren't on the main path)
  */
 static float
 sse_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 	int r, int z, int i0, int j0, int allow_begin)
 {
-fprintf(stderr,"WARNING! sse_insideT has not been converted to SSE!\n");
-
   int       status;
-  void   ***shadow;             /* the traceback shadow matrix */
+  sse_deck_t   **shadow;             /* the traceback shadow matrix */
   float     sc;			/* the score of the CYK alignment */
   ESL_STACK *pda;                /* stack that tracks bifurc parent of a right start */
   int       v,j,d,i;		/* indices for state, j, subseq len */
@@ -2992,6 +2995,7 @@ fprintf(stderr,"WARNING! sse_insideT has not been converted to SSE!\n");
   int       bifparent;
   int       b;
   float     bsc;
+  int       vecwidth = 4;
 
   sc = sse_inside(cm, dsq, L, r, z, i0, j0, 
 	  BE_EFFICIENT,	/* memory-saving mode */
@@ -3011,7 +3015,8 @@ fprintf(stderr,"WARNING! sse_insideT has not been converted to SSE!\n");
   /*printf("Starting traceback in insideT()\n");*/
   while (1) {
     if (cm->sttype[v] == B_st) {
-      k = ((int **) shadow[v])[j][d];   /* k = len of right fragment */
+      //k = ((int **) shadow[v])[j][d];   /* k = len of right fragment */
+      k = *((int *) &(shadow[v]->vec[j][d/vecwidth]) + d%vecwidth);
 
       /* Store info about the right fragment that we'll retrieve later:
        */
@@ -3045,7 +3050,8 @@ fprintf(stderr,"WARNING! sse_insideT has not been converted to SSE!\n");
       InsertTraceNode(tr, bifparent, TRACE_RIGHT_CHILD, i, j, y);
       v = y;
     } else {
-      yoffset = ((char **) shadow[v])[j][d];
+      yoffset = *((int *) &(shadow[v]->vec[j][d/vecwidth]) + d%vecwidth);
+
 
       /*printf("v : %d | r : %d | z : %d | i0 : %d | \n", v, r, z, i0);*/
       /*printf("\tyoffset : %d\n", yoffset);*/
@@ -3080,7 +3086,8 @@ fprintf(stderr,"WARNING! sse_insideT has not been converted to SSE!\n");
     }
   }
   esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
-  free_vjd_shadow_matrix(shadow, cm, i0, j0);
+  //free_vjd_shadow_matrix(shadow, cm, i0, j0);
+  sse_free_vjd_matrix(shadow, cm->M, i0, j0);
   return sc;
 
  ERROR: 
@@ -3492,13 +3499,12 @@ sse_free_vjd_deck(sse_deck_t *a, int i, int j)
   free(a);
 }
 void
-sse_free_vjd_matrix(float ***a, int M, int i, int j)
+sse_free_vjd_matrix(sse_deck_t **a, int M, int i, int j)
 {
-fprintf(stderr,"WARNING! sse_free_vjd_matrix has not been converted to SSE!\n");
   int v;
   for (v = 0; v <= M; v++)
     if (a[v] != NULL)		/* protect against double free's of reused decks (ends) */
-      { free_vjd_deck(a[v], i, j); a[v] = NULL; }
+      { sse_free_vjd_deck(a[v], i, j); a[v] = NULL; }
   free(a);
 }
 char **
@@ -4070,16 +4076,13 @@ main(int argc, char **argv)
       cm->search_opts  &= ~CM_SEARCH_INSIDE;
 
       esl_stopwatch_Start(w);
-      //if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       sc = CYKInside(cm, dsq, L, 0, 1, L, NULL, NULL, NULL);
       printf("%4d %-30s %10.4f bits ", (i+1), "CYKInside(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 
       esl_stopwatch_Start(w);
-      //if((status = SSECYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-      // FIXME: diving too far into the engines here - need appropriate wrapper funcs
-      sc = sse_inside(cm, dsq, L, 0, cm->M-1, 1, L, FALSE, NULL, NULL, NULL, NULL, NULL, FALSE, NULL, NULL);
+      sc = SSE_CYKInsideScore(cm, dsq, L, 0, 1, L);
       printf("%4d %-30s %10.4f bits ", (i+1), "sse_inside(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
