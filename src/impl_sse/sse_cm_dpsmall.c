@@ -1125,7 +1125,6 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
 
 if (alpha != NULL || ret_alpha != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently support passing alpha matrices!\n");
 if (dpool != NULL || ret_dpool != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently support passing deck pools!\n");
-if (ret_shadow != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently support returning shadow matrices!\n");
 
   /* Allocations and initializations
    */
@@ -3087,7 +3086,7 @@ sse_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   }
   esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
   //free_vjd_shadow_matrix(shadow, cm, i0, j0);
-  sse_free_vjd_matrix(shadow, cm->M, i0, j0);
+  sse_free_vjd_matrix(shadow, cm->M-1, i0, j0);
   return sc;
 
  ERROR: 
@@ -3986,14 +3985,17 @@ fprintf(stderr,"WARNING! sse_debug_print_alpha has not been converted to SSE!\n"
 #include "structs.h"
 
 static ESL_OPTIONS options[] = {
-  /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
-  { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
-  { "-r",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "set random number seed randomly",                0 },
-  { "-s",        eslARG_INT,     "33", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                  0 },
-  { "-e",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "emit sequences from CM, don't randomly create them", 0 },
-  { "-L",        eslARG_INT,  "10000", NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs",0 },
-  { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of random target seqs",                   0 },
-  { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "execute non-banded optimized CYK scan implementation",0 },
+  /* name            type       default  env  range toggles reqs incomp  help                                       docgroup*/
+  { "-h",         eslARG_NONE,     NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
+  { "-r",         eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "set random number seed randomly",                0 },
+  { "-s",         eslARG_INT,      "33", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                  0 },
+  { "-e",         eslARG_NONE,    FALSE, NULL, NULL,  "-L",  NULL, NULL, "emit sequences from CM", 0 },
+  { "--Lqdb",     eslARG_NONE,    FALSE, NULL, NULL,  "-L",  NULL, NULL, "use random sequences with lengths chosen from QDB distribution", 0},
+  { "-L",         eslARG_INT,     "100", NULL, "n>0", NULL,  NULL, "-e", "use random sequences of this length [default]",0 },
+  { "-N",         eslARG_INT,       "1", NULL, "n>0", NULL,  NULL, NULL, "number of target seqs",                          0 },
+  { "--scoreonly",eslARG_NONE,"default", NULL, NULL,  NULL,           NULL, NULL, "No traceback, calculate score only",0 },
+  { "--traceback",eslARG_NONE,    FALSE, NULL, NULL,  "--scoreonly",  NULL, NULL, "Determine CYK trace",0 },
+  { "--strict",   eslARG_NONE,    FALSE, NULL, NULL, NULL, "--traceback", NULL, "Compare traces stringently", 0},
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -4009,16 +4011,17 @@ main(int argc, char **argv)
   ESL_STOPWATCH  *w       = esl_stopwatch_Create();
   ESL_RANDOMNESS *r       = NULL;
   ESL_ALPHABET   *abc     = NULL;
-  int             L       = esl_opt_GetInteger(go, "-L");
+  int             L;
   int             N       = esl_opt_GetInteger(go, "-N");
   ESL_DSQ        *dsq;
   int             i;
-  float           sc;
+  float           sc1, sc2, ptsc1, ptsc2;
   char            *cmfile = esl_opt_GetArg(go, 1);
   CMFILE          *cmfp;        /* open input CM file stream */
-  int             do_random;
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
   char            errbuf[cmERRBUFSIZE];
+  Parsetree_t    *tr1, *tr2;
+  double         *dnull = NULL;
 
   if (esl_opt_GetBoolean(go, "-r"))  r = esl_randomness_CreateTimeseeded();
   else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
@@ -4027,14 +4030,12 @@ main(int argc, char **argv)
   if ((status = CMFileRead(cmfp, errbuf, &abc, &cm) != eslOK))            cm_Fail("Failed to read CM");
   CMFileClose(cmfp);
 
-  do_random = TRUE;
-  if(esl_opt_GetBoolean(go, "-e")) do_random = FALSE;
   cm->search_opts |= CM_SEARCH_NOQDB;
   ConfigCM(cm, errbuf, TRUE, NULL, NULL); /* TRUE says: calculate W */
 
   /* get sequences */
-  if(!esl_opt_IsDefault(go, "-L")) {
-     double *dnull;
+  if(esl_opt_IsOn(go, "-L")) {
+     L = esl_opt_GetInteger(go, "-L");
      ESL_DSQ *randdsq = NULL;
      ESL_ALLOC(randdsq, sizeof(ESL_DSQ)* (L+2));
      ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
@@ -4046,11 +4047,12 @@ main(int argc, char **argv)
        if (esl_rsq_xIID(r, dnull, cm->abc->K, L, randdsq)  != eslOK) cm_Fail("Failure creating random sequence.");
        if((seqs_to_aln->sq[i] = esl_sq_CreateDigitalFrom(abc, NULL, randdsq, L, NULL, NULL, NULL)) == NULL)
          cm_Fail("Failure digitizing/copying random sequence.");
-
      }
+     seqs_to_aln->nseq = N;
+
+     free(randdsq);
   }
-  else if(do_random) {
-    double *dnull;
+  else if(esl_opt_IsOn(go, "--Lqdb")) {
     ESL_ALLOC(dnull, sizeof(double) * cm->abc->K);
     for(i = 0; i < cm->abc->K; i++) dnull[i] = (double) cm->null[i];
     esl_vec_DNorm(dnull, cm->abc->K);
@@ -4064,28 +4066,64 @@ main(int argc, char **argv)
      }
     seqs_to_aln = RandomEmitSeqsToAln(r, cm->abc, dnull, 1, N, gamma[0], safe_windowlen, FALSE);
     FreeBandDensities(cm, gamma);
-    free(dnull);
   }
-  else /* don't randomly generate seqs, emit them from the CM */
+  else if(esl_opt_IsOn(go, "-e")) { /* don't randomly generate seqs, emit them from the CM */
     seqs_to_aln = CMEmitSeqsToAln(r, cm, 1, N, FALSE, NULL, FALSE);
+  }
+  else
+    cm_Fail("No sequence generation method is active, aborting.");
 
   for (i = 0; i < N; i++)
     {
       L = seqs_to_aln->sq[i]->n;
       dsq = seqs_to_aln->sq[i]->dsq;
       cm->search_opts  &= ~CM_SEARCH_INSIDE;
+      tr1 = tr2 = NULL;
 
-      esl_stopwatch_Start(w);
-      sc = CYKInside(cm, dsq, L, 0, 1, L, NULL, NULL, NULL);
-      printf("%4d %-30s %10.4f bits ", (i+1), "CYKInside(): ", sc);
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_Display(stdout, w, " CPU time: ");
+      if (esl_opt_GetBoolean(go, "--scoreonly")) {
+        esl_stopwatch_Start(w);
+        sc1 = CYKInside(cm, dsq, L, 0, 1, L, NULL, NULL, NULL);
+        printf("%4d %-30s %10.4f bits ", (i+1), "CYKInside(): ", sc1);
+        esl_stopwatch_Stop(w);
+        esl_stopwatch_Display(stdout, w, " CPU time: ");
 
-      esl_stopwatch_Start(w);
-      sc = SSE_CYKInsideScore(cm, dsq, L, 0, 1, L);
-      printf("%4d %-30s %10.4f bits ", (i+1), "sse_inside(): ", sc);
-      esl_stopwatch_Stop(w);
-      esl_stopwatch_Display(stdout, w, " CPU time: ");
+        esl_stopwatch_Start(w);
+        sc2 = SSE_CYKInsideScore(cm, dsq, L, 0, 1, L);
+        printf("%4d %-30s %10.4f bits ", (i+1), "sse_inside(): ", sc2);
+        esl_stopwatch_Stop(w);
+        esl_stopwatch_Display(stdout, w, " CPU time: ");
+      }
+
+      if (esl_opt_GetBoolean(go, "--traceback")) {
+        esl_stopwatch_Start(w);
+        sc1 = CYKInside(cm, dsq, L, 0, 1, L, &tr1, NULL, NULL);
+        ParsetreeDump(stdout, tr1, cm, dsq, NULL, NULL);
+        ParsetreeScore(cm, NULL, NULL, tr1, dsq, FALSE, &ptsc1, NULL, NULL, NULL, NULL);
+        printf("%4d %-30s %10.4f bits %10.4f bits", (i+1), "CYKInside(): ", sc1, ptsc1);
+        esl_stopwatch_Stop(w);
+        esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+        esl_stopwatch_Start(w);
+        sc2 = SSE_CYKInside(cm, dsq, L, 0, 1, L, &tr2);
+        ParsetreeDump(stdout, tr2, cm, dsq, NULL, NULL);
+        ParsetreeScore(cm, NULL, NULL, tr2, dsq, FALSE, &ptsc2, NULL, NULL, NULL, NULL);
+        printf("%4d %-30s %10.4f bits %10.4f bits", (i+1), "sse_inside(): ", sc2, ptsc2);
+        esl_stopwatch_Stop(w);
+        esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+        if (tr1 != NULL && fabs(sc1 - ptsc1) >= 0.01)
+          cm_Die("CYKInside score differs from its parse tree's score\n");
+        if (tr2 != NULL && fabs(sc2 - ptsc2) >= 0.01)
+          cm_Die("SSE_CYKInside score differs from its parse tree's score\n");
+        if (fabs(sc1 - sc2) >= 0.01)
+          cm_Die("CYKInside score differs from SSE_CYKInside\n");
+        if (tr1 != NULL && tr2 != NULL && esl_opt_GetBoolean(go, "--strict") && !ParsetreeCompare(tr1, tr2))
+          cm_Die("Parse trees for TrCYKInside and TrCYKDivideAndConquer differ\n");
+
+      }
+
+      if (tr1 != NULL) FreeParsetree(tr1);
+      if (tr2 != NULL) FreeParsetree(tr2);
 
       printf("\n");
     }
@@ -4095,6 +4133,9 @@ main(int argc, char **argv)
   esl_stopwatch_Destroy(w);
   esl_randomness_Destroy(r);
   esl_getopts_Destroy(go);
+
+  if (dnull != NULL)      free(dnull);
+
   return 0;
 
  ERROR:
