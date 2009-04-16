@@ -84,8 +84,8 @@ static float sse_inside(CM_t *cm, ESL_DSQ *dsq, int L,
 		    struct sse_deckpool_s *dpool, struct sse_deckpool_s **ret_dpool,
 		    sse_deck_t ***ret_shadow, int allow_begin, int *ret_b, float *ret_bsc);
 static void  sse_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
-		     int do_full, float ***beta, float ****ret_beta,
-		     struct deckpool_s *dpool, struct deckpool_s **ret_dpool);
+		     int do_full, sse_deck_t **beta, sse_deck_t ***ret_beta,
+		     struct sse_deckpool_s *dpool, struct sse_deckpool_s **ret_dpool);
 static float sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
 		     int r, int z, int i0, int i1, int j1, int j0, int useEL,
 		     int do_full, float ***a, float ****ret_a,
@@ -107,8 +107,8 @@ static float sse_vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
 /* The size calculators.
  */
-float sse_insideT_size(CM_t *cm, int L, int r, int z, int i0, int j0);
-float sse_vinsideT_size(CM_t *cm, int r, int z, int i0, int i1, int j1, int j0);
+float sse_insideT_size(CM_t *cm, int L, int r, int z, int i0, int j0, int x);
+float sse_vinsideT_size(CM_t *cm, int r, int z, int i0, int i1, int j1, int j0, int x);
 static int   cyk_deck_count(CM_t *cm, int r, int z);
 static int   cyk_extra_decks(CM_t *cm);
 
@@ -118,6 +118,7 @@ struct  sse_deckpool_s *sse_deckpool_create(void);
 void    sse_deckpool_push(struct sse_deckpool_s *dpool, sse_deck_t *deck);
 int     sse_deckpool_pop(struct sse_deckpool_s *d, sse_deck_t **ret_deck);
 void    sse_deckpool_free(struct sse_deckpool_s *d);
+float        sse_size_vjd_deck(int L, int i, int j, int x);
 sse_deck_t*  sse_alloc_vjd_deck(int L, int i, int j, int x);
 void         sse_free_vjd_deck(sse_deck_t *a, int i, int j);
 void         sse_free_vjd_matrix(sse_deck_t **a, int M, int i, int j);
@@ -448,28 +449,37 @@ static float
 sse_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, 
 		 int r, int z, int i0, int j0)
 {
-fprintf(stderr,"WARNING! sse_generic_splitter has not been converted to SSE!\n");
-  float ***alpha;
-  float ***beta;
-  struct deckpool_s *pool;
+  sse_deck_t **alpha;
+  sse_deck_t **beta;
+  struct sse_deckpool_s *pool;
   int      v,w,y;		/* state indices */
   int      wend, yend;		/* indices for end of subgraphs rooted at w,y */
-  int      jp;			/* j': relative position in subseq, 0..W */
-  int      W;			/* length of subseq i0..j0 */
+  int      jp, dp, kp;		/* j': relative position in subseq, 0..W */
+  int      W, sW;		/* length of subseq i0..j0 */
   float    sc;			/* tmp variable for a score */
   int      j,d,k;		/* sequence indices */
   float    best_sc;		/* optimal score at the optimal split point */
   int      best_k;		/* optimal k for the optimal split */
   int      best_d;		/* optimal d for the optimal split */
   int      best_j;		/* optimal j for the optimal split */
+  __m128   vb_sc, vb_k, vb_d, vb_j; /*vectors of optimal sc, k, d, j */
+  __m128   tmpv, mask;
+  __m128i  doffset;
+  __m128   vec_k, vec_d, vec_j;
+  __m128   begr_v, begl_v;
   int      tv;			/* remember the position of a bifurc in the trace. */
   int      b1,b2;		/* argmax_v for 0->v local begin transitions */
   float    b1_sc, b2_sc;	/* max_v scores for 0->v local begin transitions */
+  float   *vec_access;
+  const int vecwidth = 4;
+  __m128   neginfv;
+
+  neginfv = _mm_set1_ps(-eslINFINITY);
 
   /* 1. If the generic problem is small enough, solve it with inside^T,
    *    and append the trace to tr.
    */
-  if (insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) {
+  if (sse_insideT_size(cm, L, r, z, i0, j0, vecwidth) < RAMLIMIT) {
     ESL_DPRINTF2(("Solving a generic w/ insideT - G%d[%s]..%d[%s], %d..%d\n",
 		  r, UniqueStatetype(cm->stid[r]),
 		  z, UniqueStatetype(cm->stid[z]),
@@ -518,7 +528,6 @@ fprintf(stderr,"WARNING! sse_generic_splitter has not been converted to SSE!\n")
   sse_outside(cm, dsq, L, r, v, i0, j0, BE_EFFICIENT, alpha, &beta, pool, NULL);
 
   /* Find the optimal split at the B.
-   */
   W = j0-i0+1;
   best_sc = IMPOSSIBLE;
   for (jp = 0; jp <= W; jp++) 
@@ -534,38 +543,195 @@ fprintf(stderr,"WARNING! sse_generic_splitter has not been converted to SSE!\n")
 	      best_d  = d;
 	    }
     }
+   */
+
+  W = j0-i0+1;
+  vb_sc = _mm_set1_ps(-eslINFINITY);
+  for (jp = 0; jp <= W; jp++) {
+    j = i0-1+jp;
+    vec_j = (__m128) _mm_set1_epi32(j);
+    sW = jp/vecwidth;
+
+    /* case: k = 0 */
+    doffset = _mm_setr_epi32(0, 1, 2, 3);
+    vec_access = (float *) (&alpha[y]->vec[j][0]);
+    begr_v = _mm_set1_ps(*vec_access);
+    vec_k = (__m128) _mm_set1_epi32(0);
+    for (dp = 0; dp <= sW; dp++)
+      {
+        vec_d = (__m128) _mm_add_epi32(doffset, _mm_set1_epi32(dp*vecwidth));
+        tmpv  = _mm_add_ps(alpha[w]->vec[j][dp], begr_v);
+        tmpv  = _mm_add_ps(tmpv, beta[v]->vec[j][dp]);
+        mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+        vb_sc = _mm_max_ps(tmpv, vb_sc);
+        vb_k  = esl_sse_select_ps(vb_k, vec_k, mask);
+        vb_j  = esl_sse_select_ps(vb_j, vec_j, mask);
+        vb_d  = esl_sse_select_ps(vb_d, vec_d, mask);
+      }
+    /* case: k = 4x */
+    for (k = 4; k <= jp; k+=4)
+      {
+        vec_k = (__m128) _mm_set1_epi32(k);
+        kp = k/vecwidth;
+        vec_access = (float *) (&alpha[y]->vec[j][kp]);
+        begr_v = _mm_set1_ps(*vec_access);
+
+        for (dp = kp; dp <= sW; dp++)
+          {
+            vec_d = (__m128) _mm_add_epi32(doffset, _mm_set1_epi32(dp*vecwidth));
+            tmpv  = _mm_add_ps(alpha[w]->vec[j-k][dp-kp], begr_v);
+            tmpv  = _mm_add_ps(tmpv, beta[v]->vec[j][dp]);
+            mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+            vb_sc = _mm_max_ps(tmpv, vb_sc);
+            vb_k  = esl_sse_select_ps(vb_k, vec_k, mask);
+            vb_j  = esl_sse_select_ps(vb_j, vec_j, mask);
+            vb_d  = esl_sse_select_ps(vb_d, vec_d, mask);
+          }
+      }
+    /* case k = 4x+1 */
+    for (k = 1; k <= jp; k+=4)
+      {
+        vec_k = (__m128) _mm_set1_epi32(k);
+        kp = k/vecwidth;
+        vec_access = (float *) (&alpha[y]->vec[j][kp]) + 1;
+        begr_v = _mm_set1_ps(*vec_access);
+
+        vec_d = (__m128) doffset;
+        tmpv  = esl_sse_rightshift_ps(alpha[w]->vec[j-k][0], neginfv);
+        tmpv  = _mm_add_ps(tmpv, begr_v);
+        tmpv  = _mm_add_ps(tmpv, beta[v]->vec[j][0]);
+        mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+        vb_sc = _mm_max_ps(tmpv, vb_sc);
+        vb_k  = esl_sse_select_ps(vb_k, vec_k, mask);
+        vb_j  = esl_sse_select_ps(vb_j, vec_j, mask);
+        vb_d  = esl_sse_select_ps(vb_d, vec_d, mask);
+
+        for (dp = kp+1; dp <= sW; dp++)
+          {
+            vec_d = (__m128) _mm_add_epi32(doffset, _mm_set1_epi32(dp*vecwidth));
+            tmpv  = alt_rightshift_ps(alpha[w]->vec[j-k][dp-kp], alpha[w]->vec[j-k][dp-kp-1]);
+            tmpv  = _mm_add_ps(tmpv, begr_v);
+            tmpv  = _mm_add_ps(tmpv, beta[v]->vec[j][dp]);
+            mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+            vb_sc = _mm_max_ps(tmpv, vb_sc);
+            vb_k  = esl_sse_select_ps(vb_k, vec_k, mask);
+            vb_j  = esl_sse_select_ps(vb_j, vec_j, mask);
+            vb_d  = esl_sse_select_ps(vb_d, vec_d, mask);
+          }
+      }
+    /* case k = 4x+2 */
+    for (k = 2; k <= jp; k+=4)
+      {
+        vec_k = (__m128) _mm_set1_epi32(k);
+        kp = k/vecwidth;
+        vec_access = (float *) (&alpha[y]->vec[j][kp]) + 2;
+        begr_v = _mm_set1_ps(*vec_access);
+
+        vec_d = (__m128) doffset;
+        tmpv  = _mm_movelh_ps(neginfv, alpha[w]->vec[j-k][0]);
+        tmpv  = _mm_add_ps(tmpv, begr_v);
+        tmpv  = _mm_add_ps(tmpv, beta[v]->vec[j][0]);
+        mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+        vb_sc = _mm_max_ps(tmpv, vb_sc);
+        vb_k  = esl_sse_select_ps(vb_k, vec_k, mask);
+        vb_j  = esl_sse_select_ps(vb_j, vec_j, mask);
+        vb_d  = esl_sse_select_ps(vb_d, vec_d, mask);
+
+        for (dp = kp+1; dp <= sW; dp++)
+          {
+            vec_d = (__m128) _mm_add_epi32(doffset, _mm_set1_epi32(dp*vecwidth));
+            tmpv  = _mm_movelh_ps(neginfv, alpha[w]->vec[j-k][dp-kp]);
+            tmpv  = _mm_movehl_ps(tmpv, alpha[w]->vec[j-k][dp-kp-1]);
+            tmpv  = _mm_add_ps(tmpv, begr_v);
+            tmpv  = _mm_add_ps(tmpv, beta[v]->vec[j][dp]);
+            mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+            vb_sc = _mm_max_ps(tmpv, vb_sc);
+            vb_k  = esl_sse_select_ps(vb_k, vec_k, mask);
+            vb_j  = esl_sse_select_ps(vb_j, vec_j, mask);
+            vb_d  = esl_sse_select_ps(vb_d, vec_d, mask);
+          }
+      }
+    /* case k = 4x+3 */
+    for (k = 3; k <= jp; k+= 4)
+      {
+        vec_k = (__m128) _mm_set1_epi32(k);
+        kp = k/vecwidth;
+        vec_access = (float *) (&alpha[y]->vec[j][kp]) + 3;
+        begr_v = _mm_set1_ps(*vec_access);
+
+        vec_d = (__m128) doffset;
+        tmpv  = esl_sse_leftshift_ps(neginfv, alpha[w]->vec[j-k][0]);
+        tmpv  = _mm_add_ps(tmpv, begr_v);
+        tmpv  = _mm_add_ps(tmpv, beta[v]->vec[j][0]);
+        mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+        vb_sc = _mm_max_ps(tmpv, vb_sc);
+        vb_k  = esl_sse_select_ps(vb_k, vec_k, mask);
+        vb_j  = esl_sse_select_ps(vb_j, vec_j, mask);
+        vb_d  = esl_sse_select_ps(vb_d, vec_d, mask);
+
+        for (dp = kp+1; dp <= sW; dp++)
+          {
+            vec_d = (__m128) _mm_add_epi32(doffset, _mm_set1_epi32(dp*vecwidth));
+            tmpv  = esl_sse_leftshift_ps(alpha[w]->vec[j-k][dp-kp-1], alpha[w]->vec[j-k][dp-kp]);
+            tmpv  = _mm_add_ps(tmpv, begr_v);
+            tmpv  = _mm_add_ps(tmpv, beta[v]->vec[j][dp]);
+            mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+            vb_sc = _mm_max_ps(tmpv, vb_sc);
+            vb_k  = esl_sse_select_ps(vb_k, vec_k, mask);
+            vb_j  = esl_sse_select_ps(vb_j, vec_j, mask);
+            vb_d  = esl_sse_select_ps(vb_d, vec_d, mask);
+          }
+      }
+  }
 
   /* Local alignment only: maybe we're better off in EL?
    */
   if (cm->flags & CMH_LOCAL_END) {
+    vec_k = (__m128) _mm_set1_epi32(-1); /* flag for using EL above v */
     for (jp = 0; jp <= W; jp++) 
       {
 	j = i0-1+jp;
-	for (d = jp; d >= 0; d--)
+        vec_j = (__m128) _mm_set1_epi32(j);
+        sW = jp/vecwidth;
+	/*for (d = jp; d >= 0; d--)
 	  if ((sc = beta[cm->M][j][d]) > best_sc) {
 	    best_sc = sc;
-	    best_k  = -1;	/* special flag for local end, EL. */
+	    best_k  = -1;	
 	    best_j  = j;
 	    best_d  = d;
-	  }
+	  } */
+        for (dp = 0; dp <= sW; dp++) {
+          vec_d = (__m128) _mm_add_epi32(doffset, _mm_set1_epi32(dp*vecwidth));
+          mask  = _mm_cmpgt_ps(beta[cm->M]->vec[j][dp], vb_sc);
+          vb_sc = _mm_max_ps(beta[cm->M]->vec[j][dp], vb_sc);
+          vb_k  = esl_sse_select_ps(vb_k, vec_k, mask);
+          vb_j  = esl_sse_select_ps(vb_j, vec_j, mask);
+          vb_d  = esl_sse_select_ps(vb_d, vec_d, mask);
+        }
       }
   }
 
   /* Local alignment only: maybe we're better off in ROOT?
    */
   if (r == 0 && cm->flags & CMH_LOCAL_BEGIN) {
-    if (b1_sc > best_sc) {
-      best_sc = b1_sc;
-      best_k  = -2;		/* flag for using local begin into left wedge w..wend */
-      best_j  = j0;		
-      best_d  = W;
-    }
-    if (b2_sc > best_sc) {
-      best_sc = b2_sc;
-      best_k  = -3;		/* flag for using local begin into right wedge y..yend */
-      best_j  = j0;		
-      best_d  = W;
-    }
+    vec_j = (__m128) _mm_set1_epi32(j0);
+    vec_d = (__m128) _mm_set1_epi32(W);
+
+    tmpv  = _mm_set1_ps(b1_sc);
+    vec_k = (__m128) _mm_set1_epi32(-2); /* flag for using local begin into left wedge w..wend */
+    mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+    vb_sc = _mm_max_ps(tmpv, vb_sc);
+    vb_k  = esl_sse_select_ps(vb_k, vec_k, mask);
+    vb_j  = esl_sse_select_ps(vb_j, vec_j, mask);
+    vb_d  = esl_sse_select_ps(vb_d, vec_d, mask);
+
+    tmpv  = _mm_set1_ps(b2_sc);
+    vec_k = (__m128) _mm_set1_epi32(-3); /* flag for using local begin into right wedge y..yend */
+    mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+    vb_sc = _mm_max_ps(tmpv, vb_sc);
+    vb_k  = esl_sse_select_ps(vb_k, vec_k, mask);
+    vb_j  = esl_sse_select_ps(vb_j, vec_j, mask);
+    vb_d  = esl_sse_select_ps(vb_d, vec_d, mask);
   }
 
   /* Free now, before recursing.
@@ -574,7 +740,34 @@ fprintf(stderr,"WARNING! sse_generic_splitter has not been converted to SSE!\n")
    * decks in Inside and Outside needed to overlap. 
    * Free 'em all in one call.
    */
-  free_vjd_matrix(alpha, cm->M, i0, j0);
+  sse_free_vjd_matrix(alpha, cm->M, i0, j0);
+
+  /* determine values corresponding to best score out of our 4x vector */
+  /* like esl_sse_hmax(), but re-using the mask from the scores */
+  tmpv  = _mm_shuffle_ps(vb_sc, vb_sc, _MM_SHUFFLE(0, 3, 2, 1));
+  mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+  vb_sc = _mm_max_ps(tmpv, vb_sc);
+  tmpv  = _mm_shuffle_ps(vb_k, vb_k, _MM_SHUFFLE(0, 3, 2, 1));
+  vb_k  = esl_sse_select_ps(vb_k, tmpv, mask);
+  tmpv  = _mm_shuffle_ps(vb_j, vb_j, _MM_SHUFFLE(0, 3, 2, 1));
+  vb_j  = esl_sse_select_ps(vb_j, tmpv, mask);
+  tmpv  = _mm_shuffle_ps(vb_d, vb_d, _MM_SHUFFLE(0, 3, 2, 1));
+  vb_d  = esl_sse_select_ps(vb_d, tmpv, mask);
+
+  tmpv  = _mm_shuffle_ps(vb_sc, vb_sc, _MM_SHUFFLE(1, 0, 3, 2));
+  mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+  vb_sc = _mm_max_ps(tmpv, vb_sc);
+  tmpv  = _mm_shuffle_ps(vb_k, vb_k, _MM_SHUFFLE(1, 0, 3, 2));
+  vb_k  = esl_sse_select_ps(vb_k, tmpv, mask);
+  tmpv  = _mm_shuffle_ps(vb_j, vb_j, _MM_SHUFFLE(1, 0, 3, 2));
+  vb_j  = esl_sse_select_ps(vb_j, tmpv, mask);
+  tmpv  = _mm_shuffle_ps(vb_d, vb_d, _MM_SHUFFLE(1, 0, 3, 2));
+  vb_d  = esl_sse_select_ps(vb_d, tmpv, mask);
+
+  best_sc = *((float *) &vb_sc);
+  best_k  = *((float *) &vb_k );
+  best_j  = *((float *) &vb_j );
+  best_d  = *((float *) &vb_d );
 
   /* If we're in EL, instead of B, the optimal alignment is entirely
    * in a V problem that's still above us. The TRUE flag sets useEL.
@@ -668,19 +861,25 @@ fprintf(stderr,"WARNING! sse_generic_splitter has not been converted to SSE!\n")
 static float 
 sse_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z, int i0, int j0)
 {
-fprintf(stderr,"WARNING! sse_wedge_splitter has not been converted to SSE!\n");
-  float ***alpha;
-  float ***beta;
-  struct deckpool_s *pool;
+  sse_deck_t **alpha;
+  sse_deck_t **beta;
+  struct sse_deckpool_s *pool;
   float sc;
   float best_sc;
   int   v,w,y;
-  int   W;
-  int   d, jp, j;
+  int   W, sW;
+  int   d, dp, jp, j;
   int   best_v, best_d, best_j;
   int   midnode;
   int   b;	/* optimal local begin: b = argmax_v alpha_v(i0,j0) + t_0(v) */
   float bsc;	/* score for optimal local begin      */
+  __m128 tmpv, mask;
+  __m128 vb_sc, vb_v, vb_j, vb_d;
+  __m128 vec_v, vec_j, vec_d;
+  __m128i doffset;
+  const int vecwidth = 4;
+
+  doffset = _mm_setr_epi32(0, 1, 2, 3);
   
   /* 1. If the wedge problem is either a boundary condition,
    *    or small enough, solve it with inside^T and append
@@ -691,7 +890,7 @@ fprintf(stderr,"WARNING! sse_wedge_splitter has not been converted to SSE!\n");
    *    thing to do, so we ignore RAMLIMIT in that case.
    */
   if (cm->ndidx[z] == cm->ndidx[r] + 1 || 
-      insideT_size(cm, L, r, z, i0, j0) < RAMLIMIT) 
+      sse_insideT_size(cm, L, r, z, i0, j0, vecwidth) < RAMLIMIT) 
     {
       ESL_DPRINTF2(("Solving a wedge:   G%d[%s]..%d[%s], %d..%d\n", 
 		r, UniqueStatetype(cm->stid[r]),
@@ -729,52 +928,116 @@ fprintf(stderr,"WARNING! sse_wedge_splitter has not been converted to SSE!\n");
    */
   W = j0-i0+1;
   best_sc = IMPOSSIBLE;
-  for (v = w; v <= y; v++)
+  vb_sc = _mm_set1_ps(-eslINFINITY);
+  for (v = w; v <= y; v++) {
+    vec_v = (__m128) _mm_set1_epi32(v);
     for (jp = 0; jp <= W; jp++) 
       {
 	j = i0-1+jp;
-	for (d = 0; d <= jp; d++) 
+        vec_j = (__m128) _mm_set1_epi32(j);
+        sW = jp/vecwidth;
+	/*for (d = 0; d <= jp; d++) 
 	  if ((sc = alpha[v][j][d] + beta[v][j][d]) > best_sc)
 	    {
 	      best_sc = sc;
 	      best_v  = v;
 	      best_d  = d;
 	      best_j  = j;
-	    }
+	    } */
+        for (dp = 0; dp <= sW; dp++)
+          {
+            vec_d = (__m128) _mm_add_epi32(doffset, _mm_set1_epi32(dp*vecwidth));
+            tmpv = _mm_add_ps(alpha[v]->vec[j][dp], beta[v]->vec[j][dp]);
+            mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+            vb_sc = _mm_max_ps(tmpv, vb_sc);
+            vb_v  = esl_sse_select_ps(vb_v, vec_v, mask);
+            vb_j  = esl_sse_select_ps(vb_j, vec_j, mask);
+            vb_d  = esl_sse_select_ps(vb_d, vec_d, mask);
+          }
       }
+    }
 
   /* Local alignment ends only: maybe we're better off in EL, 
    * not in the split set?
    */
   if (cm->flags & CMH_LOCAL_END) {
+    vec_v = (__m128) _mm_set1_epi32(-1);	/* flag for local alignment */
     for (jp = 0; jp <= W; jp++) 
       {
 	j = i0-1+jp;
-	for (d = 0; d <= jp; d++)
+        vec_j = (__m128) _mm_set1_epi32(j);
+        sW = jp/vecwidth;
+	/*for (d = 0; d <= jp; d++)
 	  if ((sc = beta[cm->M][j][d]) > best_sc) {
 	    best_sc = sc;
-	    best_v  = -1;	/* flag for local alignment. */
+	    best_v  = -1;
 	    best_j  = j;
 	    best_d  = d;
-	  }
+	  } */
+        for (dp = 0; dp <= sW; dp++)
+          {
+            vec_d = (__m128) _mm_add_epi32(doffset, _mm_set1_epi32(dp*vecwidth));
+            tmpv = beta[cm->M]->vec[j][dp];
+            mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+            vb_sc = _mm_max_ps(tmpv, vb_sc);
+            vb_v  = esl_sse_select_ps(vb_v, vec_v, mask);
+            vb_j  = esl_sse_select_ps(vb_j, vec_j, mask);
+            vb_d  = esl_sse_select_ps(vb_d, vec_d, mask);
+          }
       }
   }
 
   /* Local alignment begins only: maybe we're better off in the root.
    */
   if (r==0 && (cm->flags & CMH_LOCAL_BEGIN)) {
-    if (bsc > best_sc) {
+    /*if (bsc > best_sc) {
       best_sc = bsc;
-      best_v  = -2;		/* flag for local alignment */
+      best_v  = -2;	
       best_j  = j0;
       best_d  = W;
-    }
+    } */
+    vec_v = (__m128) _mm_set1_epi32(-2);	/* flag for local alignment */
+    vec_j = (__m128) _mm_set1_epi32(j0);
+    vec_d = (__m128) _mm_set1_epi32(W);
+    tmpv  = _mm_set1_ps(bsc);
+    mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+    vb_sc = _mm_max_ps(tmpv, vb_sc);
+    vb_v  = esl_sse_select_ps(vb_v, vec_v, mask);
+    vb_j  = esl_sse_select_ps(vb_j, vec_j, mask);
+    vb_d  = esl_sse_select_ps(vb_d, vec_d, mask);
   }
 
   /* free now, before recursing!
    */
-  free_vjd_matrix(alpha, cm->M, i0, j0);
-  free_vjd_matrix(beta,  cm->M, i0, j0);
+  sse_free_vjd_matrix(alpha, cm->M, i0, j0);
+  sse_free_vjd_matrix(beta,  cm->M, i0, j0);
+
+  /* determine values corresponding to best score out of our 4x vector */
+  /* like esl_sse_hmax(), but re-using the mask from the scores */
+  tmpv  = _mm_shuffle_ps(vb_sc, vb_sc, _MM_SHUFFLE(0, 3, 2, 1));
+  mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+  vb_sc = _mm_max_ps(tmpv, vb_sc);
+  tmpv  = _mm_shuffle_ps(vb_v, vb_v, _MM_SHUFFLE(0, 3, 2, 1));
+  vb_v  = esl_sse_select_ps(vb_v, tmpv, mask);
+  tmpv  = _mm_shuffle_ps(vb_j, vb_j, _MM_SHUFFLE(0, 3, 2, 1));
+  vb_j  = esl_sse_select_ps(vb_j, tmpv, mask);
+  tmpv  = _mm_shuffle_ps(vb_d, vb_d, _MM_SHUFFLE(0, 3, 2, 1));
+  vb_d  = esl_sse_select_ps(vb_d, tmpv, mask);
+
+  tmpv  = _mm_shuffle_ps(vb_sc, vb_sc, _MM_SHUFFLE(1, 0, 3, 2));
+  mask  = _mm_cmpgt_ps(tmpv, vb_sc);
+  vb_sc = _mm_max_ps(tmpv, vb_sc);
+  tmpv  = _mm_shuffle_ps(vb_v, vb_v, _MM_SHUFFLE(1, 0, 3, 2));
+  vb_v  = esl_sse_select_ps(vb_v, tmpv, mask);
+  tmpv  = _mm_shuffle_ps(vb_j, vb_j, _MM_SHUFFLE(1, 0, 3, 2));
+  vb_j  = esl_sse_select_ps(vb_j, tmpv, mask);
+  tmpv  = _mm_shuffle_ps(vb_d, vb_d, _MM_SHUFFLE(1, 0, 3, 2));
+  vb_d  = esl_sse_select_ps(vb_d, tmpv, mask);
+
+  best_sc = *((float *) &vb_sc);
+  best_v  = *((float *) &vb_v );
+  best_j  = *((float *) &vb_j );
+  best_d  = *((float *) &vb_d );
 
   /* If we're in EL, instead of the split set, the optimal alignment
    * is entirely in a V problem that's still above us. The TRUE
@@ -1860,34 +2123,43 @@ if (dpool != NULL || ret_dpool != NULL) fprintf(stderr,"WARNING! sse_inside() do
  */
 static void
 sse_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
-	int do_full, float ***beta, float ****ret_beta,
-	struct deckpool_s *dpool, struct deckpool_s **ret_dpool)
+	int do_full, sse_deck_t **beta, sse_deck_t ***ret_beta,
+	struct sse_deckpool_s *dpool, struct sse_deckpool_s **ret_dpool)
 {
-fprintf(stderr,"WARNING! sse_outside has not been converted to SSE!\n");
   int      status;
   int      v,y;			/* indices for states */
   int      j,d,i;		/* indices in sequence dimensions */
   float    sc;			/* a temporary variable holding a score */
   int     *touch;               /* keeps track of how many lower decks still need this deck */
   float    escore;		/* an emission score, tmp variable */
-  int      W;			/* subsequence length */
-  int      jp;			/* j': relative position in the subsequence, 0..W */
+  int      W, sW;		/* subsequence length */
+  int      jp, dp;		/* j': relative position in the subsequence, 0..W */
   int      voffset;		/* index of v in t_v(y) transition scores */
   int      w1,w2;		/* bounds of split set */
+  __m128   neginfv;
+  __m128   tmpv;
+  __m128   escv, tscv;
+  __m128   el_self_v, loop_v, doffset;
+  float   *vec_access;
+  const int vecwidth = 4;
+
+  doffset = _mm_setr_ps(0.0, 1.0, 2.0, 3.0);
+  el_self_v = _mm_set1_ps(cm->el_selfsc);
 
   /* Allocations and initializations
    */
+  neginfv = _mm_set1_ps(-eslINFINITY);
   W = j0-i0+1;		/* the length of the subsequence: used in many loops */
 
   			/* if caller didn't give us a deck pool, make one */
-  if (dpool == NULL) dpool = deckpool_create();
+  if (dpool == NULL) dpool = sse_deckpool_create();
 
   /* if caller didn't give us a matrix, make one.
    * Allocate room for M+1 decks because we might need the EL deck (M)
    * if we're doing local alignment.
    */
   if (beta == NULL) {
-    ESL_ALLOC(beta, sizeof(float **) * (cm->M+1));
+    ESL_ALLOC(beta, sizeof(sse_deck_t *) * (cm->M+1));
     for (v = 0; v < cm->M+1; v++) beta[v] = NULL;
   }
 
@@ -1902,27 +2174,31 @@ fprintf(stderr,"WARNING! sse_outside has not been converted to SSE!\n");
     w2 = cm->cfirst[w1]-1;	      /* last state in split set w1<=vroot<=w2 */
 
   for (v = w1; v <= w2; v++) {
-    if (! deckpool_pop(dpool, &(beta[v])))
-      beta[v] = alloc_vjd_deck(L, i0, j0);
+    if (! sse_deckpool_pop(dpool, &(beta[v])))
+      beta[v] = sse_alloc_vjd_deck(L, i0, j0, vecwidth);
     for (jp = 0; jp <= W; jp++) {
       j = i0-1+jp;
-      for (d = 0; d <= jp; d++)
-	beta[v][j][d] = IMPOSSIBLE;
+      sW = jp/vecwidth;
+      for (dp = 0; dp <= sW; dp++)
+	beta[v]->vec[j][dp] = neginfv;
     }
   }
-  beta[vroot][j0][W] = 0;		
+  vec_access = (float *) &(beta[vroot]->vec[j0][W/vecwidth]) + W%vecwidth;
+  *vec_access = 0.0;		
 
   /* Initialize the EL deck at M, if we're doing local alignment w.r.t. ends.
    */
   if (cm->flags & CMH_LOCAL_END) {
-    if (! deckpool_pop(dpool, &(beta[cm->M])))
-      beta[cm->M] = alloc_vjd_deck(L, i0, j0);
+    if (! sse_deckpool_pop(dpool, &(beta[cm->M])))
+      beta[cm->M] = sse_alloc_vjd_deck(L, i0, j0, vecwidth);
     for (jp = 0; jp <= W; jp++) {
       j = i0-1+jp;
-      for (d = 0; d <= jp; d++)
-	beta[cm->M][j][d] = IMPOSSIBLE;
+      sW = jp/vecwidth;
+      for (dp = 0; dp <= sW; dp++)
+	beta[cm->M]->vec[j][dp] = neginfv;
     }
     
+// FIXME: messy scalar access block
     /* We have to worry about vroot -> EL transitions.
      * since we start the main recursion at w2+1. This requires a 
      * laborious partial unroll of the main recursion, grabbing
@@ -1933,44 +2209,40 @@ fprintf(stderr,"WARNING! sse_outside has not been converted to SSE!\n");
       switch (cm->sttype[vroot]) {
       case MP_st:
 	if (W < 2) break;
-	if (dsq[i0] < cm->abc->K && dsq[j0] < cm->abc->K)
-	  escore = cm->esc[vroot][(int) (dsq[i0]*cm->abc->K+dsq[j0])];
-	else
-	  escore = DegeneratePairScore(cm->abc, cm->esc[vroot], dsq[i0], dsq[j0]);
-	beta[cm->M][j0-1][W-2] = cm->endsc[vroot] + 
-	  (cm->el_selfsc * (W-2)) + escore;
+        escore = cm->oesc[vroot][dsq[i0]*cm->abc->Kp+dsq[j0]];
+        vec_access = (float *) &(beta[cm->M]->vec[j0-1][(W-2)/vecwidth]) + (W-2)%vecwidth;
+	*vec_access = cm->endsc[vroot] + (cm->el_selfsc * (W-2)) + escore;
+	//beta[cm->M][j0-1][W-2] = cm->endsc[vroot] + (cm->el_selfsc * (W-2)) + escore;
 
-	if (beta[cm->M][j0-1][W-2] < IMPOSSIBLE) beta[cm->M][j0-1][W-2] = IMPOSSIBLE;
+        // FIXME: the underflow issue again - probably fix with vec = max(vec, impossible_vec)
+	//if (beta[cm->M][j0-1][W-2] < IMPOSSIBLE) beta[cm->M][j0-1][W-2] = IMPOSSIBLE;
 	break;
       case ML_st:
       case IL_st:
 	if (W < 1) break;
-	if (dsq[i0] < cm->abc->K) 
-	  escore = cm->esc[vroot][(int) dsq[i0]];
-	else
-	  escore = esl_abc_FAvgScore(cm->abc, dsq[i0], cm->esc[vroot]);
-	beta[cm->M][j0][W-1] = cm->endsc[vroot] + 
-	  (cm->el_selfsc * (W-1)) + escore;
+        escore = cm->oesc[vroot][dsq[i0]];
+        vec_access = (float *) &(beta[cm->M]->vec[j0][(W-1)/vecwidth]) + (W-1)%vecwidth;
+	*vec_access = cm->endsc[vroot] + (cm->el_selfsc * (W-1)) + escore;
+	//beta[cm->M][j0][W-1] = cm->endsc[vroot] + (cm->el_selfsc * (W-1)) + escore;
 
-	if (beta[cm->M][j0][W-1] < IMPOSSIBLE) beta[cm->M][j0][W-1] = IMPOSSIBLE;
+	//if (beta[cm->M][j0][W-1] < IMPOSSIBLE) beta[cm->M][j0][W-1] = IMPOSSIBLE;
 	break;
       case MR_st:
       case IR_st:
 	if (W < 1) break;
-	if (dsq[j0] < cm->abc->K) 
-	  escore = cm->esc[vroot][(int) dsq[j0]];
-	else
-	  escore = esl_abc_FAvgScore(cm->abc, dsq[j0], cm->esc[vroot]);
-	beta[cm->M][j0-1][W-1] = cm->endsc[vroot] + 
-	  (cm->el_selfsc * (W-1)) + escore;
+        escore = cm->oesc[vroot][dsq[j0]];
+        vec_access = (float *) &(beta[cm->M]->vec[j0-1][(W-1)/vecwidth]) + (W-1)%vecwidth;
+	*vec_access = cm->endsc[vroot] + (cm->el_selfsc * (W-1)) + escore;
+	//beta[cm->M][j0-1][W-1] = cm->endsc[vroot] + (cm->el_selfsc * (W-1)) + escore;
 	
-	if (beta[cm->M][j0-1][W-1] < IMPOSSIBLE) beta[cm->M][j0-1][W-1] = IMPOSSIBLE;
+	//if (beta[cm->M][j0-1][W-1] < IMPOSSIBLE) beta[cm->M][j0-1][W-1] = IMPOSSIBLE;
 	break;
       case S_st:
       case D_st:
-	beta[cm->M][j0][W] = cm->endsc[vroot] + 
-	  (cm->el_selfsc * W);
-	if (beta[cm->M][j0][W] < IMPOSSIBLE) beta[cm->M][j0][W] = IMPOSSIBLE;
+        vec_access = (float *) &(beta[cm->M]->vec[j0][W/vecwidth]) + W%vecwidth;
+	*vec_access = cm->endsc[vroot] + (cm->el_selfsc * W);
+	//beta[cm->M][j0][W] = cm->endsc[vroot] + (cm->el_selfsc * W);
+	//if (beta[cm->M][j0][W] < IMPOSSIBLE) beta[cm->M][j0][W] = IMPOSSIBLE;
 	break;
       case B_st:		/* can't start w/ bifurcation at vroot. */
       default: cm_Fail("bogus parent state %d\n", cm->sttype[vroot]);
@@ -1997,84 +2269,120 @@ fprintf(stderr,"WARNING! sse_outside has not been converted to SSE!\n");
        * we try to reuse a deck but if one's not available we allocate
        * a fresh one.
        */
-      if (! deckpool_pop(dpool, &(beta[v])))
-	beta[v] = alloc_vjd_deck(L, i0, j0);
+      if (! sse_deckpool_pop(dpool, &(beta[v])))
+	beta[v] = sse_alloc_vjd_deck(L, i0, j0, vecwidth);
 
       /* Init the whole deck to IMPOSSIBLE
        */
       for (jp = W; jp >= 0; jp--) {
 	j = i0-1+jp;
-	for (d = jp; d >= 0; d--) 
-	  beta[v][j][d] = IMPOSSIBLE;
+        sW = jp/vecwidth;
+	/* for (d = jp; d >= 0; d--) 
+	  beta[v][j][d] = IMPOSSIBLE; */
+        for (dp = sW; dp >= 0; dp--) beta[v]->vec[j][dp] = neginfv;
       }
 
       /* If we can do a local begin into v, also init with that. 
        * By definition, beta[0][j0][W] == 0.
        */ 
-      if (vroot == 0 && i0 == 1 && j0 == L && (cm->flags & CMH_LOCAL_BEGIN))
-	beta[v][j0][W] = cm->beginsc[v];
+      if (vroot == 0 && i0 == 1 && j0 == L && (cm->flags & CMH_LOCAL_BEGIN)) {
+	/* beta[v][j0][W] = cm->beginsc[v]; */
+        vec_access = (float *) &(beta[v]->vec[j0][W/vecwidth]) + W%vecwidth;
+        *vec_access = cm->beginsc[v];
+      }
 
+// FIXME: probably want to pull dp to the very inside of the loop, since
+// dp == sW needs to be handled differently anyway.  Might also help
+// when switching to pre-calc'd esc vectors, too.
       /* main recursion:
        */
       for (jp = W; jp >= 0; jp--) {
 	j = i0-1+jp;
-	for (d = jp; d >= 0; d--) 
+        sW = jp/vecwidth;
+	for (dp = sW; dp >= 0; dp--) 
 	  {
-	    i = j-d+1;
+	    i = j-dp*vecwidth+1;
 	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
 	      if (y < vroot) continue; /* deal with split sets */
 	      voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
+              tscv = _mm_set1_ps(cm->tsc[y][voffset]);
 
 	      switch(cm->sttype[y]) {
 	      case MP_st: 
-		if (j == j0 || d == jp) continue; /* boundary condition */
+		//if (j == j0 || d == jp) continue; /* boundary condition */
+                if (dp == sW)
+                  tmpv = _mm_movehl_ps(neginfv, beta[y]->vec[j+1][dp]);
+                else {
+                  tmpv = _mm_movelh_ps(neginfv, beta[y]->vec[j+1][dp+1]);
+                  tmpv = _mm_movehl_ps(tmpv, beta[y]->vec[j+1][dp]);
+                }
 
-		if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
-		  escore = cm->esc[y][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
-		else
-		  escore = DegeneratePairScore(cm->abc, cm->esc[y], dsq[i-1], dsq[j+1]);
+                //escore = cm->oesc[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
+                escv = j==j0 ? neginfv : 
+                       _mm_setr_ps(i>1?cm->oesc[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
+                                   i>2?cm->oesc[y][dsq[i-2]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
+                                   i>3?cm->oesc[y][dsq[i-3]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
+                                   i>4?cm->oesc[y][dsq[i-4]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY);
 		
-		if ((sc = beta[y][j+1][d+2] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
-		  beta[v][j][d] = sc;
+                tmpv = _mm_add_ps(tmpv, tscv);
+                tmpv = _mm_add_ps(tmpv, escv);
+                beta[v]->vec[j][dp] = _mm_max_ps(beta[v]->vec[j][dp], tmpv);
+		/*if ((sc = beta[y][j+1][d+2] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
+		  beta[v][j][d] = sc; */
 		break;
 
 	      case ML_st:
 	      case IL_st: 
-		if (d == jp) continue;	/* boundary condition (note when j=0, d=0*/
+		//if (d == jp) continue;	/* boundary condition (note when j=0, d=0*/
+                if (dp == sW)
+                  tmpv = esl_sse_leftshift_ps(beta[y]->vec[j][dp], neginfv);
+                else
+                  tmpv = esl_sse_leftshift_ps(beta[y]->vec[j][dp], beta[y]->vec[j][dp+1]);
 
-		if (dsq[i-1] < cm->abc->K) 
-		  escore = cm->esc[y][(int) dsq[i-1]];
-		else
-		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[y]);
+		//escore = cm->oesc[y][dsq[i-1]];
+                escv = _mm_setr_ps(i>1?cm->oesc[y][dsq[i-1]]:-eslINFINITY,
+                                   i>2?cm->oesc[y][dsq[i-2]]:-eslINFINITY,
+                                   i>3?cm->oesc[y][dsq[i-3]]:-eslINFINITY,
+                                   i>4?cm->oesc[y][dsq[i-4]]:-eslINFINITY);
 		  
-		if ((sc = beta[y][j][d+1] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
-		  beta[v][j][d] = sc;
+                tmpv = _mm_add_ps(tmpv, tscv);
+                tmpv = _mm_add_ps(tmpv, escv);
+                beta[v]->vec[j][dp] = _mm_max_ps(beta[v]->vec[j][dp], tmpv);
+		/*if ((sc = beta[y][j][d+1] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
+		  beta[v][j][d] = sc; */
 		break;
 		  
 	      case MR_st:
 	      case IR_st:
-		if (j == j0) continue;
+		//if (j == j0) continue;
+                if (dp == sW)
+                  tmpv = esl_sse_leftshift_ps(beta[y]->vec[j+1][dp], neginfv);
+                else
+                  tmpv = esl_sse_leftshift_ps(beta[y]->vec[j+1][dp], beta[y]->vec[j+1][dp+1]);
 		  
-		if (dsq[j+1] < cm->abc->K) 
-		  escore = cm->esc[y][(int) dsq[j+1]];
-		else
-		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[y]);
+		//escore = cm->oesc[y][dsq[j+1]];
+		escv = j==j0 ? neginfv : _mm_set1_ps(cm->oesc[y][dsq[j+1]]);
 
-		if ((sc = beta[y][j+1][d+1] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
-		  beta[v][j][d] = sc;
+                tmpv = _mm_add_ps(tmpv, tscv);
+                tmpv = _mm_add_ps(tmpv, escv);
+                beta[v]->vec[j][dp] = _mm_max_ps(beta[v]->vec[j][dp], tmpv);
+		/* if ((sc = beta[y][j+1][d+1] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
+		  beta[v][j][d] = sc; */
 		break;
 		  
 	      case S_st:
 	      case E_st:
 	      case D_st:
-		if ((sc = beta[y][j][d] + cm->tsc[y][voffset]) > beta[v][j][d])
-		  beta[v][j][d] = sc;
+                tmpv = _mm_add_ps(beta[y]->vec[j][dp], tscv);
+                beta[v]->vec[j][dp] = _mm_max_ps(beta[v]->vec[j][dp], tmpv);
+		/* if ((sc = beta[y][j][d] + cm->tsc[y][voffset]) > beta[v][j][d])
+		  beta[v][j][d] = sc; */
 		break;
 
 	      default: cm_Fail("bogus child state %d\n", cm->sttype[y]);
 	      }/* end switch over states*/
 	    } /* ends for loop over parent states. we now know beta[v][j][d] for this d */
-	    if (beta[v][j][d] < IMPOSSIBLE) beta[v][j][d] = IMPOSSIBLE;
+	    //if (beta[v][j][d] < IMPOSSIBLE) beta[v][j][d] = IMPOSSIBLE;
 
 
 	  } /* ends loop over d. We know all beta[v][j][d] in this row j*/
@@ -2087,50 +2395,86 @@ fprintf(stderr,"WARNING! sse_outside has not been converted to SSE!\n");
       if (NOT_IMPOSSIBLE(cm->endsc[v])) {
 	for (jp = 0; jp <= W; jp++) { 
 	  j = i0-1+jp;
-	  for (d = 0; d <= jp; d++) 
+          sW = jp/vecwidth;
+	  for (dp = 0; dp <= sW; dp++) 
 	    {
-	      i = j-d+1;
+	      i = j-dp*vecwidth+1;
+              loop_v = _mm_mul_ps(el_self_v, _mm_add_ps(_mm_set1_ps((float) dp*vecwidth), doffset));
 	      switch (cm->sttype[v]) {
 	      case MP_st: 
-		if (j == j0 || d == jp) continue; /* boundary condition */
-		if (dsq[i-1] < cm->abc->K && dsq[j+1] < cm->abc->K)
-		  escore = cm->esc[v][(int) (dsq[i-1]*cm->abc->K+dsq[j+1])];
-		else
-		  escore = DegeneratePairScore(cm->abc, cm->esc[v], dsq[i-1], dsq[j+1]);
-		if ((sc = beta[v][j+1][d+2] + cm->endsc[v] + 
+		//if (j == j0 || d == jp) continue; /* boundary condition */
+                if (dp == sW)
+                  tmpv = _mm_movehl_ps(neginfv, beta[v]->vec[j+1][dp]);
+                else {
+                  tmpv = _mm_movelh_ps(neginfv, beta[v]->vec[j+1][dp+1]);
+                  tmpv = _mm_movehl_ps(tmpv, beta[v]->vec[j+1][dp]);
+                }
+
+		//escore = cm->oesc[v][dsq[i-1]*cm->abc->K+dsq[j+1]];
+                escv = j==j0 ? neginfv:
+                       _mm_setr_ps(i>1?cm->oesc[v][dsq[i-1]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
+                                   i>2?cm->oesc[v][dsq[i-2]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
+                                   i>3?cm->oesc[v][dsq[i-3]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
+                                   i>4?cm->oesc[v][dsq[i-4]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY);
+
+                tmpv = _mm_add_ps(tmpv, _mm_set1_ps(cm->endsc[v]));
+                tmpv = _mm_add_ps(tmpv, loop_v);
+                tmpv = _mm_add_ps(tmpv, escv);
+                beta[cm->M]->vec[j][dp] = _mm_max_ps(beta[cm->M]->vec[j][dp], tmpv);
+		/*if ((sc = beta[v][j+1][d+2] + cm->endsc[v] + 
 		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
-		  beta[cm->M][j][d] = sc;
+		  beta[cm->M][j][d] = sc; */
 		break;
 	      case ML_st:
 	      case IL_st:
-		if (d == jp) continue;	
-		if (dsq[i-1] < cm->abc->K) 
-		  escore = cm->esc[v][(int) dsq[i-1]];
-		else
-		  escore = esl_abc_FAvgScore(cm->abc, dsq[i-1], cm->esc[v]);
-		if ((sc = beta[v][j][d+1] + cm->endsc[v] + 
+		//if (d == jp) continue;	
+                if (dp == sW)
+                  tmpv = esl_sse_leftshift_ps(beta[v]->vec[j][dp], neginfv);
+                else
+                  tmpv = esl_sse_leftshift_ps(beta[v]->vec[j][dp], beta[v]->vec[j][dp+1]);
+
+		//escore = cm->oesc[v][dsq[i-1]];
+                escv = _mm_setr_ps(i>1?cm->oesc[v][dsq[i-1]]:-eslINFINITY,
+                                   i>2?cm->oesc[v][dsq[i-2]]:-eslINFINITY,
+                                   i>3?cm->oesc[v][dsq[i-3]]:-eslINFINITY,
+                                   i>4?cm->oesc[v][dsq[i-4]]:-eslINFINITY);
+
+                tmpv = _mm_add_ps(tmpv, _mm_set1_ps(cm->endsc[v]));
+                tmpv = _mm_add_ps(tmpv, loop_v);
+                tmpv = _mm_add_ps(tmpv, escv);
+                beta[cm->M]->vec[j][dp] = _mm_max_ps(beta[cm->M]->vec[j][dp], tmpv);
+		/*if ((sc = beta[v][j][d+1] + cm->endsc[v] + 
 		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
-		  /*(cm->el_selfsc * (d+1)) + escore) > beta[cm->M][j][d])*/
-		  beta[cm->M][j][d] = sc;
+		  beta[cm->M][j][d] = sc; */
 		break;
 	      case MR_st:
 	      case IR_st:
-		if (j == j0) continue;
-		if (dsq[j+1] < cm->abc->K) 
-		  escore = cm->esc[v][(int) dsq[j+1]];
-		else
-		  escore = esl_abc_FAvgScore(cm->abc, dsq[j+1], cm->esc[v]);
-		if ((sc = beta[v][j+1][d+1] + cm->endsc[v] + 
+		//if (j == j0) continue;
+                if (dp == sW)
+                  tmpv = esl_sse_leftshift_ps(beta[v]->vec[j+1][dp], neginfv);
+                else
+                  tmpv = esl_sse_leftshift_ps(beta[v]->vec[j+1][dp], beta[v]->vec[j+1][dp+1]);
+
+		//escore = cm->oesc[v][dsq[j+1]];
+                escv = j==j0 ? neginfv : _mm_set1_ps(cm->oesc[v][dsq[j+1]]);
+
+                tmpv = _mm_add_ps(tmpv, _mm_set1_ps(cm->endsc[v]));
+                tmpv = _mm_add_ps(tmpv, loop_v);
+                tmpv = _mm_add_ps(tmpv, escv);
+                beta[cm->M]->vec[j][dp] = _mm_max_ps(beta[cm->M]->vec[j][dp], tmpv);
+		/* if ((sc = beta[v][j+1][d+1] + cm->endsc[v] + 
 		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
-		     /*(cm->el_selfsc * (d+1)) + escore) > beta[cm->M][j][d])*/
-		  beta[cm->M][j][d] = sc;
+		  beta[cm->M][j][d] = sc; */
 		break;
 	      case S_st:
 	      case D_st:
 	      case E_st:
-		if ((sc = beta[v][j][d] + cm->endsc[v] +
+                tmpv = _mm_add_ps(beta[v]->vec[j][dp], _mm_set1_ps(cm->endsc[v]));
+                tmpv = _mm_add_ps(tmpv, loop_v);
+                beta[cm->M]->vec[j][dp] = _mm_max_ps(beta[cm->M]->vec[j][dp], tmpv);
+		/*if ((sc = beta[v][j][d] + cm->endsc[v] +
 		     (cm->el_selfsc * d)) > beta[cm->M][j][d])
-		  beta[cm->M][j][d] = sc;
+		  beta[cm->M][j][d] = sc; */
 		break;
 	      case B_st:  
 	      default: cm_Fail("bogus parent state %d\n", cm->sttype[v]);
@@ -2154,7 +2498,7 @@ fprintf(stderr,"WARNING! sse_outside has not been converted to SSE!\n");
       if (! do_full) {
 	for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
 	  touch[y]--;
-	  if (touch[y] == 0) { deckpool_push(dpool, beta[y]); beta[y] = NULL; }
+	  if (touch[y] == 0) { sse_deckpool_push(dpool, beta[y]); beta[y] = NULL; }
 	}
       }
     } /* end loop over decks v. */
@@ -2181,9 +2525,9 @@ fprintf(stderr,"WARNING! sse_outside has not been converted to SSE!\n");
    */
   if (ret_beta == NULL) {
     for (v = w1; v <= vend; v++) /* start at w1 - top of split set - not vroot */
-      if (beta[v] != NULL) { deckpool_push(dpool, beta[v]); beta[v] = NULL; }
+      if (beta[v] != NULL) { sse_deckpool_push(dpool, beta[v]); beta[v] = NULL; }
     if (cm->flags & CMH_LOCAL_END) {
-      deckpool_push(dpool, beta[cm->M]);
+      sse_deckpool_push(dpool, beta[cm->M]);
       beta[cm->M] = NULL; 
     }
     free(beta);
@@ -2193,9 +2537,9 @@ fprintf(stderr,"WARNING! sse_outside has not been converted to SSE!\n");
    * Else, pass it back to him.
    */
   if (ret_dpool == NULL) {
-    float **a;
-    while (deckpool_pop(dpool, &a)) free_vjd_deck(a, i0, j0);
-    deckpool_free(dpool);
+    sse_deck_t *a;
+    while (sse_deckpool_pop(dpool, &a)) sse_free_vjd_deck(a, i0, j0);
+    sse_deckpool_free(dpool);
   } else {
     *ret_dpool = dpool;
   }
@@ -3213,9 +3557,8 @@ fprintf(stderr,"WARNING! sse_vinsideT has not been converted to SSE!\n");
  *           more divide/conquer.
  */
 float
-sse_insideT_size(CM_t *cm, int L, int r, int z, int i0, int j0)
+sse_insideT_size(CM_t *cm, int L, int r, int z, int i0, int j0, int x)
 {
-fprintf(stderr,"WARNING! sse_insideT_size has not been converted to SSE!\n");
   float Mb;
   int   maxdecks;
   int   nends;
@@ -3225,20 +3568,20 @@ fprintf(stderr,"WARNING! sse_insideT_size has not been converted to SSE!\n");
   nbif  = CMSegmentCountStatetype(cm, r, z, B_st);
   maxdecks = cyk_deck_count(cm, r, z);
 
-  Mb = (float) (sizeof(float **) * cm->M) / 1000000.;  /* the score matrix */
-  Mb += (float) maxdecks * size_vjd_deck(L, i0, j0);
+  Mb  = (float) (sizeof(sse_deck_t *) * cm->M) / 1000000.;  /* the score matrix */
+  Mb += (float) maxdecks * sse_size_vjd_deck(L, i0, j0, x);
   Mb += (float) (sizeof(int) * cm->M) / 1000000.;      /* the touch array */
 
-  Mb += (float) (sizeof(void **) * cm->M) / 1000000.;
-  Mb += (float) (z-r+1-nends-nbif) * size_vjd_yshadow_deck(L, i0, j0);
-  Mb += (float) nbif * size_vjd_kshadow_deck(L, i0, j0);
+  Mb += (float) (sizeof(sse_deck_t *) * cm->M) / 1000000.;
+  Mb += (float) (z-r+1) * sse_size_vjd_deck(L, i0, j0, x);
 
   return Mb;
 }
 
 float
-sse_vinsideT_size(CM_t *cm, int r, int z, int i0, int i1, int j1, int j0)
+sse_vinsideT_size(CM_t *cm, int r, int z, int i0, int i1, int j1, int j0, int x)
 {
+fprintf(stderr,"WARNING! sse_vinsideT_size has not been converted to SSE!\n");
   float Mb;
   int   maxdecks;
 
