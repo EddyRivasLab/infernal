@@ -120,8 +120,12 @@ int     sse_deckpool_pop(struct sse_deckpool_s *d, sse_deck_t **ret_deck);
 void    sse_deckpool_free(struct sse_deckpool_s *d);
 float        sse_size_vjd_deck(int L, int i, int j, int x);
 sse_deck_t*  sse_alloc_vjd_deck(int L, int i, int j, int x);
-void         sse_free_vjd_deck(sse_deck_t *a, int i, int j);
-void         sse_free_vjd_matrix(sse_deck_t **a, int M, int i, int j);
+void         sse_free_vjd_deck(sse_deck_t *a);
+void         sse_free_vjd_matrix(sse_deck_t **a, int M);
+float        sse_size_vji_deck(int i0, int i1, int j1, int j0, int x);
+sse_deck_t*  sse_alloc_vji_deck(int i0, int i1, int j1, int j0, int x);
+void         sse_free_vji_deck(sse_deck_t *a);
+void         sse_free_vji_matrix(sse_deck_t **a, int M);
 
 /* BE_EFFICIENT and BE_PARANOID are alternative (exclusive) settings
  * for the do_full? argument to the alignment engines.
@@ -190,7 +194,6 @@ alt_rightshift_ps(__m128 a, __m128 b)
 float
 SSE_CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0, Parsetree_t **ret_tr)
 {
-fprintf(stderr,"WARNING! SSE_CYKDivideAndConquer has not been converted to SSE!\n");
   Parsetree_t *tr;
   float        sc;
   int          z;
@@ -361,7 +364,6 @@ SSE_CYKInsideScore(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0)
 float
 SSE_CYKDemands(CM_t *cm, int L, int be_quiet)
 {
-fprintf(stderr,"WARNING! SSE_CYKDEmands has not been converted to SSE!\n");
   float Mb_per_deck;    /* megabytes per deck */
   int   bif_decks;	/* bifurcation decks  */
   int   nends;		/* end decks (only need 1, even for multiple E's */
@@ -377,8 +379,9 @@ fprintf(stderr,"WARNING! SSE_CYKDEmands has not been converted to SSE!\n");
   int   j;
   float avg_Mb_per_banded_deck;    /* average megabytes per deck in mem efficient big mode */
   int   v, y, z, d, kmin, kmax; /* for QDB calculations */
+  const int vecwidth = 4;
 
-  Mb_per_deck = size_vjd_deck(L, 1, L);
+  Mb_per_deck = sse_size_vjd_deck(L, 1, L, vecwidth);
   bif_decks   = CMCountStatetype(cm, B_st);
   nends       = CMCountStatetype(cm, E_st);
   maxdecks    = cyk_deck_count(cm, 0, cm->M-1);
@@ -740,7 +743,7 @@ sse_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    * decks in Inside and Outside needed to overlap. 
    * Free 'em all in one call.
    */
-  sse_free_vjd_matrix(alpha, cm->M, i0, j0);
+  sse_free_vjd_matrix(alpha, cm->M);
 
   /* determine values corresponding to best score out of our 4x vector */
   /* like esl_sse_hmax(), but re-using the mask from the scores */
@@ -1009,8 +1012,8 @@ sse_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
 
   /* free now, before recursing!
    */
-  sse_free_vjd_matrix(alpha, cm->M, i0, j0);
-  sse_free_vjd_matrix(beta,  cm->M, i0, j0);
+  sse_free_vjd_matrix(alpha, cm->M);
+  sse_free_vjd_matrix(beta,  cm->M);
 
   /* determine values corresponding to best score out of our 4x vector */
   /* like esl_sse_hmax(), but re-using the mask from the scores */
@@ -2059,7 +2062,7 @@ if (dpool != NULL || ret_dpool != NULL) fprintf(stderr,"WARNING! sse_inside() do
    * Else, pass it back to him.
    */
   if (ret_dpool == NULL) {
-    while (sse_deckpool_pop(dpool, &end)) sse_free_vjd_deck(end, i0, j0);
+    while (sse_deckpool_pop(dpool, &end)) sse_free_vjd_deck(end);
     sse_deckpool_free(dpool);
   } else {
     *ret_dpool = dpool;
@@ -2538,7 +2541,7 @@ sse_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
    */
   if (ret_dpool == NULL) {
     sse_deck_t *a;
-    while (sse_deckpool_pop(dpool, &a)) sse_free_vjd_deck(a, i0, j0);
+    while (sse_deckpool_pop(dpool, &a)) sse_free_vjd_deck(a);
     sse_deckpool_free(dpool);
   } else {
     *ret_dpool = dpool;
@@ -3430,7 +3433,7 @@ sse_insideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   }
   esl_stack_Destroy(pda);  /* it should be empty; we could check; naaah. */
   //free_vjd_shadow_matrix(shadow, cm, i0, j0);
-  sse_free_vjd_matrix(shadow, cm->M-1, i0, j0);
+  sse_free_vjd_matrix(shadow, cm->M-1);
   return sc;
 
  ERROR: 
@@ -3581,14 +3584,13 @@ sse_insideT_size(CM_t *cm, int L, int r, int z, int i0, int j0, int x)
 float
 sse_vinsideT_size(CM_t *cm, int r, int z, int i0, int i1, int j1, int j0, int x)
 {
-fprintf(stderr,"WARNING! sse_vinsideT_size has not been converted to SSE!\n");
   float Mb;
   int   maxdecks;
 
   Mb = (float) (sizeof(float **) * cm->M) / 1000000.;
   maxdecks = cyk_deck_count(cm, r, z);
-  Mb += maxdecks * size_vji_deck(i0,i1,j1,j0);
-  Mb += (float)(z-r) * size_vji_shadow_deck(i0,i1,j1,j0);
+  Mb += maxdecks * sse_size_vji_deck(i0,i1,j1,j0,x);
+  Mb += (float)(z-r) * sse_size_vji_deck(i0,i1,j1,j0,x);
   return Mb;
 }
 
@@ -3837,7 +3839,7 @@ sse_size_vjd_deck(int L, int i, int j, int x)
   return ((Mb+15) / 1000000.);
 }
 void
-sse_free_vjd_deck(sse_deck_t *a, int i, int j)
+sse_free_vjd_deck(sse_deck_t *a)
 {
   int jp;
   free(a->vec);
@@ -3845,12 +3847,12 @@ sse_free_vjd_deck(sse_deck_t *a, int i, int j)
   free(a);
 }
 void
-sse_free_vjd_matrix(sse_deck_t **a, int M, int i, int j)
+sse_free_vjd_matrix(sse_deck_t **a, int M)
 {
   int v;
   for (v = 0; v <= M; v++)
     if (a[v] != NULL)		/* protect against double free's of reused decks (ends) */
-      { sse_free_vjd_deck(a[v], i, j); a[v] = NULL; }
+      { sse_free_vjd_deck(a[v]); a[v] = NULL; }
   free(a);
 }
 char **
@@ -3958,54 +3960,54 @@ fprintf(stderr,"WARNING! sse_free_vjd_shadow_matrix has not been converted to SS
  *           special casting tricks the way the more generally
  *           used vjd system does.
  */
-float **                 /* allocation of a score deck. */
-sse_alloc_vji_deck(int i0, int i1, int j1, int j0)
+sse_deck_t *                 /* allocation of a score deck. */
+sse_alloc_vji_deck(int i0, int i1, int j1, int j0, int x)
 {
-fprintf(stderr,"WARNING! sse_alloc_vji_deckhas not been converted to SSE!\n");
   int status; 
-  float **a;
   int     jp;
+  int     sW;
+  sse_deck_t *tmp;
+  sW = (i1-i0+1)/x + 1;
   ESL_DPRINTF3(("alloc_vji_deck : %.4f\n", size_vji_deck(i0,i1,j1,j0)));
-  ESL_ALLOC(a, sizeof(float *) * (j0-j1+1)); 
-  for (jp = 0; jp <= j0-j1; jp++)
-    ESL_ALLOC(a[jp], sizeof(float)*(i1-i0+1));
-  return a;
+  ESL_ALLOC(tmp, sizeof(sse_deck_t));
+  ESL_ALLOC(tmp->vec, sizeof(__m128 *) * (j0-j1+1)); 
+  ESL_ALLOC(tmp->mem, sizeof(__m128  ) * (j0-j1+1) * sW + 15);
+  tmp->vec[0] = (__m128 *) (((unsigned long int) tmp->mem + 15) & (~0xf));
+  for (jp = 1; jp <= j0-j1; jp++)
+    tmp->vec[jp] = tmp->vec[jp-1] + sW;
+  return tmp;
  ERROR:
   cm_Fail("Memory allocation error.");
   return NULL; /* never reached */
 }
 float
-sse_size_vji_deck(int i0, int i1, int j1, int j0)
+sse_size_vji_deck(int i0, int i1, int j1, int j0, int x)
 {
-fprintf(stderr,"WARNING! sse_size_vji_deck has not been converted to SSE!\n");
   float Mb;
   int   jp;
-  Mb = (float)(sizeof(float *) * (j0-j1+1));
+  Mb = (float)(sizeof(__m128 *) * (j0-j1+1));
   for (jp = 0; jp <= j0-j1; jp++)
-    Mb += (float)(sizeof(float)*(i1-i0+1));
+    Mb += (float)(sizeof(__m128)*(i1-i0+1)/x);
   return Mb / 1000000.;
 }
 void			/* free'ing a score deck */
-sse_free_vji_deck(float **a, int j1, int j0)
+sse_free_vji_deck(sse_deck_t *a)
 {
-fprintf(stderr,"WARNING! sse_free_vji_deck has not been converted to SSE!\n");
-  int jp;
   ESL_DPRINTF3(("free_vji_deck called\n"));
-  for (jp = 0; jp <= j0-j1; jp++) 
-    if (a[jp] != NULL) free(a[jp]);
+  free(a->vec);
+  free(a->mem);
   free(a);
 }
 void
-sse_free_vji_matrix(float ***a, int M, int j1, int j0)
+sse_free_vji_matrix(sse_deck_t **a, int M)
 {
-fprintf(stderr,"WARNING! sse_free_vji_matrix has not been converted to SSE!\n");
   int v;
   /* Free the whole matrix - even if we used only a subset of
    * the decks, all initialization routines init all decks 0..M
    * to NULL, so this is safe. (see bug #i2).
    */                         
   for (v = 0; v <= M; v++) 
-    if (a[v] != NULL) { free_vji_deck(a[v], j1, j0); a[v] = NULL; }
+    if (a[v] != NULL) { sse_free_vji_deck(a[v]); a[v] = NULL; }
   free(a);
 }
 char **		        /* allocation of a traceback ptr (shadow matrix) deck */
