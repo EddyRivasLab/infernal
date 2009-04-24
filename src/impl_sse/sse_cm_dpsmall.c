@@ -38,6 +38,9 @@
  *################################################################
  */  
 
+// FIXME: Assuming 'int' is 32-bit in the context of SSE hardware... 
+// not sure how well that actually holds
+
 #include "esl_config.h"
 #include "config.h"
 
@@ -1038,9 +1041,9 @@ sse_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
   vb_d  = esl_sse_select_ps(vb_d, tmpv, mask);
 
   best_sc = *((float *) &vb_sc);
-  best_v  = *((float *) &vb_v );
-  best_j  = *((float *) &vb_j );
-  best_d  = *((float *) &vb_d );
+  best_v  = *((int *) &vb_v );
+  best_j  = *((int *) &vb_j );
+  best_d  = *((int *) &vb_d );
 
   /* If we're in EL, instead of the split set, the optimal alignment
    * is entirely in a V problem that's still above us. The TRUE
@@ -1275,9 +1278,9 @@ sse_v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   vb_i  = esl_sse_select_ps(vb_i, tmpv, mask);
 
   best_sc = *((float *) &vb_sc);
-  best_v  = *((float *) &vb_v );
-  best_j  = *((float *) &vb_j );
-  best_i  = *((float *) &vb_i );
+  best_v  = *((int *) &vb_v );
+  best_j  = *((int *) &vb_j );
+  best_i  = *((int *) &vb_i );
 
   /* If we're in EL, instead of the split set, the optimal
    * alignment is entirely in a V problem that's still above us.
@@ -1462,8 +1465,8 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
   sse_deck_t  *end;
   sse_deck_t **shadow;      /* shadow matrix for tracebacks */
 
-if (alpha != NULL || ret_alpha != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently support passing alpha matrices!\n");
-if (dpool != NULL || ret_dpool != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently support passing deck pools!\n");
+//if (alpha != NULL || ret_alpha != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently support passing alpha matrices!\n");
+//if (dpool != NULL || ret_dpool != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently support passing deck pools!\n");
 
   /* Allocations and initializations
    */
@@ -2386,6 +2389,7 @@ sse_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	      switch(cm->sttype[y]) {
 	      case MP_st: 
 		//if (j == j0 || d == jp) continue; /* boundary condition */
+		if (j == j0) continue; /* boundary condition */
                 if (dp == sW)
                   tmpv = _mm_movehl_ps(neginfv, beta[y]->vec[j+1][dp]);
                 else {
@@ -2408,19 +2412,18 @@ sse_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		break;
 
 	      case ML_st:
-	      case IL_st: 
-		//if (d == jp) continue;	/* boundary condition (note when j=0, d=0*/
-                if (dp == sW)
-                  tmpv = esl_sse_leftshift_ps(beta[y]->vec[j][dp], neginfv);
-                else
-                  tmpv = esl_sse_leftshift_ps(beta[y]->vec[j][dp], beta[y]->vec[j][dp+1]);
-
 		//escore = cm->oesc[y][dsq[i-1]];
                 escv = _mm_setr_ps(i>1?cm->oesc[y][dsq[i-1]]:-eslINFINITY,
                                    i>2?cm->oesc[y][dsq[i-2]]:-eslINFINITY,
                                    i>3?cm->oesc[y][dsq[i-3]]:-eslINFINITY,
                                    i>4?cm->oesc[y][dsq[i-4]]:-eslINFINITY);
 		  
+		//if (d == jp) continue;	/* boundary condition (note when j=0, d=0*/
+                if (dp == sW)
+                  tmpv = esl_sse_leftshift_ps(beta[y]->vec[j][dp], neginfv);
+                else
+                  tmpv = esl_sse_leftshift_ps(beta[y]->vec[j][dp], beta[y]->vec[j][dp+1]);
+
                 tmpv = _mm_add_ps(tmpv, tscv);
                 tmpv = _mm_add_ps(tmpv, escv);
                 beta[v]->vec[j][dp] = _mm_max_ps(beta[v]->vec[j][dp], tmpv);
@@ -2428,9 +2431,43 @@ sse_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		  beta[v][j][d] = sc; */
 		break;
 		  
+	      case IL_st: 
+		//escore = cm->oesc[y][dsq[i-1]];
+                escv = _mm_setr_ps(i>1?cm->oesc[y][dsq[i-1]]:-eslINFINITY,
+                                   i>2?cm->oesc[y][dsq[i-2]]:-eslINFINITY,
+                                   i>3?cm->oesc[y][dsq[i-3]]:-eslINFINITY,
+                                   i>4?cm->oesc[y][dsq[i-4]]:-eslINFINITY);
+		  
+		//if (d == jp) continue;	/* boundary condition (note when j=0, d=0*/
+                if (y == v) {
+                  for (int k = 0; k < vecwidth; k++) {
+                    if (dp == sW)
+                      tmpv = esl_sse_leftshift_ps(beta[y]->vec[j][dp], neginfv);
+                    else
+                      tmpv = esl_sse_leftshift_ps(beta[y]->vec[j][dp], beta[y]->vec[j][dp+1]);
+
+                    tmpv = _mm_add_ps(tmpv, tscv);
+                    tmpv = _mm_add_ps(tmpv, escv);
+                    beta[v]->vec[j][dp] = _mm_max_ps(beta[v]->vec[j][dp], tmpv);
+                  }
+                }
+                else {
+                  if (dp == sW)
+                    tmpv = esl_sse_leftshift_ps(beta[y]->vec[j][dp], neginfv);
+                  else
+                    tmpv = esl_sse_leftshift_ps(beta[y]->vec[j][dp], beta[y]->vec[j][dp+1]);
+
+                  tmpv = _mm_add_ps(tmpv, tscv);
+                  tmpv = _mm_add_ps(tmpv, escv);
+                  beta[v]->vec[j][dp] = _mm_max_ps(beta[v]->vec[j][dp], tmpv);
+                }
+		/*if ((sc = beta[y][j][d+1] + cm->tsc[y][voffset] + escore) > beta[v][j][d])
+		  beta[v][j][d] = sc; */
+		break;
+		  
 	      case MR_st:
 	      case IR_st:
-		//if (j == j0) continue;
+		if (j == j0) continue;
                 if (dp == sW)
                   tmpv = esl_sse_leftshift_ps(beta[y]->vec[j+1][dp], neginfv);
                 else
@@ -2502,18 +2539,17 @@ sse_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		  beta[cm->M][j][d] = sc; */
 		break;
 	      case ML_st:
-	      case IL_st:
-		//if (d == jp) continue;	
-                if (dp == sW)
-                  tmpv = esl_sse_leftshift_ps(beta[v]->vec[j][dp], neginfv);
-                else
-                  tmpv = esl_sse_leftshift_ps(beta[v]->vec[j][dp], beta[v]->vec[j][dp+1]);
-
 		//escore = cm->oesc[v][dsq[i-1]];
                 escv = _mm_setr_ps(i>1?cm->oesc[v][dsq[i-1]]:-eslINFINITY,
                                    i>2?cm->oesc[v][dsq[i-2]]:-eslINFINITY,
                                    i>3?cm->oesc[v][dsq[i-3]]:-eslINFINITY,
                                    i>4?cm->oesc[v][dsq[i-4]]:-eslINFINITY);
+
+		//if (d == jp) continue;	
+                if (dp == sW)
+                  tmpv = esl_sse_leftshift_ps(beta[v]->vec[j][dp], neginfv);
+                else
+                  tmpv = esl_sse_leftshift_ps(beta[v]->vec[j][dp], beta[v]->vec[j][dp+1]);
 
                 tmpv = _mm_add_ps(tmpv, _mm_set1_ps(cm->endsc[v]));
                 tmpv = _mm_add_ps(tmpv, loop_v);
@@ -2523,9 +2559,46 @@ sse_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
 		  beta[cm->M][j][d] = sc; */
 		break;
+	      case IL_st:
+		//escore = cm->oesc[v][dsq[i-1]];
+                escv = _mm_setr_ps(i>1?cm->oesc[v][dsq[i-1]]:-eslINFINITY,
+                                   i>2?cm->oesc[v][dsq[i-2]]:-eslINFINITY,
+                                   i>3?cm->oesc[v][dsq[i-3]]:-eslINFINITY,
+                                   i>4?cm->oesc[v][dsq[i-4]]:-eslINFINITY);
+
+                if (y == v) {
+                  for (int k = 0; k < vecwidth; k++) {
+  		    //if (d == jp) continue;	
+                    if (dp == sW)
+                      tmpv = esl_sse_leftshift_ps(beta[v]->vec[j][dp], neginfv);
+                    else
+                      tmpv = esl_sse_leftshift_ps(beta[v]->vec[j][dp], beta[v]->vec[j][dp+1]);
+
+                    tmpv = _mm_add_ps(tmpv, _mm_set1_ps(cm->endsc[v]));
+                    tmpv = _mm_add_ps(tmpv, loop_v);
+                    tmpv = _mm_add_ps(tmpv, escv);
+                    beta[cm->M]->vec[j][dp] = _mm_max_ps(beta[cm->M]->vec[j][dp], tmpv);
+                  }
+                }
+                else {
+		  //if (d == jp) continue;	
+                  if (dp == sW)
+                    tmpv = esl_sse_leftshift_ps(beta[v]->vec[j][dp], neginfv);
+                  else
+                    tmpv = esl_sse_leftshift_ps(beta[v]->vec[j][dp], beta[v]->vec[j][dp+1]);
+
+                  tmpv = _mm_add_ps(tmpv, _mm_set1_ps(cm->endsc[v]));
+                  tmpv = _mm_add_ps(tmpv, loop_v);
+                  tmpv = _mm_add_ps(tmpv, escv);
+                  beta[cm->M]->vec[j][dp] = _mm_max_ps(beta[cm->M]->vec[j][dp], tmpv);
+                }
+		/*if ((sc = beta[v][j][d+1] + cm->endsc[v] + 
+		     (cm->el_selfsc * d) + escore) > beta[cm->M][j][d])
+		  beta[cm->M][j][d] = sc; */
+		break;
 	      case MR_st:
 	      case IR_st:
-		//if (j == j0) continue;
+		if (j == j0) continue;
                 if (dp == sW)
                   tmpv = esl_sse_leftshift_ps(beta[v]->vec[j+1][dp], neginfv);
                 else
@@ -2850,7 +2923,7 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
       if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	{
 	  for (jp = 0; jp <= j0-j1; jp++) {
-            sW = i1-i0/vecwidth;
+            sW = (i1-i0)/vecwidth;
 	    //for (ip = i1-i0; ip >= 0; ip--) {
 	    for (ip = sW; ip >= 0; ip--) {
 	      /*printf("D S jp : %d | ip : %d\n", jp, ip);*/
@@ -2877,7 +2950,7 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
                   shadow[v]->vec[jp][ip] = esl_sse_select_ps(shadow[v]->vec[jp][ip], (__m128) _mm_set1_epi32(USED_EL), mask);
                 }
               }
-	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) 
+	      for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) {
 		/* if ((sc = a[y+yoffset][jp][ip] + cm->tsc[v][yoffset]) >  a[v][jp][ip])
 		  { 
 		    a[v][jp][ip] = sc;
@@ -2890,6 +2963,7 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
                   if (ret_shadow != NULL) {
                     shadow[v]->vec[jp][ip] = esl_sse_select_ps(shadow[v]->vec[jp][ip], (__m128) _mm_set1_epi32(yoffset), mask);
                   }
+              }
               //FIXME: there's that underflow again...
 	      //if (a[v][jp][ip] < IMPOSSIBLE) a[v][jp][ip] = IMPOSSIBLE;
 	    }
@@ -2980,7 +3054,8 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
             /* ip = sW case handled separately */
             ip = sW;
             y = cm->cfirst[v];
-	    tmpv = esl_sse_leftshift_ps(a[y]->vec[jp][ip],neginfv); 
+            if (v == y) tmpv = neginfv;
+	    else        tmpv = esl_sse_leftshift_ps(a[y]->vec[jp][ip],neginfv); 
             a[v]->vec[jp][ip] = _mm_add_ps(tmpv, _mm_set1_ps(cm->tsc[v][0]));
             if (ret_shadow != NULL) shadow[v]->vec[jp][ip] = (__m128) _mm_set1_epi32(0);
             if (useEL && NOT_IMPOSSIBLE(cm->endsc[v])) {
@@ -3009,13 +3084,27 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
                                i+2<i1?cm->oesc[v][dsq[i+2]]:-eslINFINITY,
                                i+3<i1?cm->oesc[v][dsq[i+3]]:-eslINFINITY);
             a[v]->vec[jp][ip] = _mm_add_ps(a[v]->vec[jp][ip], escv);
+            /* finish the serial IL->IL path */
+            if (v == y) {
+              for (int k = 1; k < vecwidth; k++) {
+                tmpv = esl_sse_leftshift_ps(a[y]->vec[jp][ip],neginfv);
+                tmpv = _mm_add_ps(tmpv, _mm_set1_ps(cm->tsc[v][0]));
+                tmpv = _mm_add_ps(tmpv, escv);
+                mask = _mm_cmpgt_ps(tmpv, a[v]->vec[jp][ip]);
+                a[v]->vec[jp][ip] = _mm_max_ps(tmpv, a[v]->vec[jp][ip]);
+                if (ret_shadow != NULL) {
+                  shadow[v]->vec[jp][ip] = esl_sse_select_ps(shadow[v]->vec[jp][ip], (__m128) _mm_set1_epi32(0), mask);
+                }
+              }
+            }
 
             /* all other values for ip */
 	    for (ip = sW-1; ip >= 0; ip--) {
 	      /*printf("MP jp : %d | ip : %d\n", jp, ip);*/
 	      i = ip*vecwidth + i0;
 	      y = cm->cfirst[v];
-              tmpv = esl_sse_leftshift_ps(a[y]->vec[jp][ip], a[y]->vec[jp][ip+1]);
+              if (v == y) tmpv = esl_sse_leftshift_ps(neginfv,           a[y]->vec[jp][ip+1]);
+              else        tmpv = esl_sse_leftshift_ps(a[y]->vec[jp][ip], a[y]->vec[jp][ip+1]);
               a[v]->vec[jp][ip] = _mm_add_ps(tmpv, _mm_set1_ps(cm->tsc[v][0]));
 	      /*printf("set a[%d][%d][%d] to %f\n", v, jp, ip, sc);*/
 	      if (ret_shadow != NULL) shadow[v]->vec[jp][ip] = (__m128) _mm_set1_epi32(0);
@@ -3047,6 +3136,19 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
                                  i+2<i1?cm->oesc[v][dsq[i+2]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
                                  i+3<i1?cm->oesc[v][dsq[i+3]*cm->abc->Kp+dsq[j]]:-eslINFINITY);
               a[v]->vec[jp][ip] = _mm_add_ps(a[v]->vec[jp][ip], escv);
+              /* finish the serial IL->IL path */
+              if (v == y) {
+                for (int k = 1; k < vecwidth; k++) {
+                  tmpv = esl_sse_leftshift_ps(a[y]->vec[jp][ip], a[y]->vec[jp][ip+1]);
+                  tmpv = _mm_add_ps(tmpv, _mm_set1_ps(cm->tsc[v][0]));
+                  tmpv = _mm_add_ps(tmpv, escv);
+                  mask = _mm_cmpgt_ps(tmpv, a[v]->vec[jp][ip]);
+                  a[v]->vec[jp][ip] = _mm_max_ps(tmpv, a[v]->vec[jp][ip]);
+                  if (ret_shadow != NULL) {
+                    shadow[v]->vec[jp][ip] = esl_sse_select_ps(shadow[v]->vec[jp][ip], (__m128) _mm_set1_epi32(0), mask);
+                  }
+                }
+              }
 	      //if (a[v][jp][ip] < IMPOSSIBLE) a[v][jp][ip] = IMPOSSIBLE;  
 	    }
 	  }
@@ -3357,10 +3459,49 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 
 	  switch(cm->sttype[y]) {
 	  case MP_st:  /* i == i0 boundary condition true */
+	    if (j == j0) continue; /* boundary condition */
+            escv = _mm_setr_ps(                                                  -eslINFINITY,
+                               i  <i1?cm->oesc[y][dsq[i  ]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
+                               i+1<i1?cm->oesc[y][dsq[i+1]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
+                               i+2<i1?cm->oesc[y][dsq[i+2]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY);
+	
+            tmpv = alt_rightshift_ps(beta[y]->vec[jp+1][ip], neginfv);
+            tmpv = _mm_add_ps(tmpv, tscv);
+            tmpv = _mm_add_ps(tmpv, escv);
+            beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
 	    break;
 
 	  case ML_st:
+            escv = _mm_setr_ps(                             -eslINFINITY,
+                               i  <i1?cm->oesc[y][dsq[i  ]]:-eslINFINITY,
+                               i+1<i1?cm->oesc[y][dsq[i+1]]:-eslINFINITY,
+                               i+2<i1?cm->oesc[y][dsq[i+2]]:-eslINFINITY);
+		  
+            tmpv = alt_rightshift_ps(beta[y]->vec[jp][ip], neginfv);
+            tmpv = _mm_add_ps(tmpv, tscv);
+            tmpv = _mm_add_ps(tmpv, escv);
+            beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
+	    break;
 	  case IL_st: 
+            escv = _mm_setr_ps(                             -eslINFINITY,
+                               i  <i1?cm->oesc[y][dsq[i  ]]:-eslINFINITY,
+                               i+1<i1?cm->oesc[y][dsq[i+1]]:-eslINFINITY,
+                               i+2<i1?cm->oesc[y][dsq[i+2]]:-eslINFINITY);
+  
+            if (y == v) {
+              for (int k = 1; k < vecwidth; k++) {
+                tmpv = alt_rightshift_ps(beta[y]->vec[jp][ip], neginfv);
+                tmpv = _mm_add_ps(tmpv, tscv);
+                tmpv = _mm_add_ps(tmpv, escv);
+                beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
+              }
+            }
+            else {
+              tmpv = alt_rightshift_ps(beta[y]->vec[jp][ip], neginfv);
+              tmpv = _mm_add_ps(tmpv, tscv);
+              tmpv = _mm_add_ps(tmpv, escv);
+              beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
+            }
 	    break;
 		  
 	  case MR_st:
@@ -3409,7 +3550,6 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 		break;
 
 	      case ML_st:
-	      case IL_st: 
 		//escore = cm->oesc[y][dsq[i-1]];
                 escv = _mm_setr_ps(i-1<i1?cm->oesc[y][dsq[i-1]]:-eslINFINITY,
                                    i  <i1?cm->oesc[y][dsq[i  ]]:-eslINFINITY,
@@ -3420,6 +3560,29 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
                 tmpv = _mm_add_ps(tmpv, tscv);
                 tmpv = _mm_add_ps(tmpv, escv);
                 beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
+		break;
+		  
+	      case IL_st: 
+		//escore = cm->oesc[y][dsq[i-1]];
+                escv = _mm_setr_ps(i-1<i1?cm->oesc[y][dsq[i-1]]:-eslINFINITY,
+                                   i  <i1?cm->oesc[y][dsq[i  ]]:-eslINFINITY,
+                                   i+1<i1?cm->oesc[y][dsq[i+1]]:-eslINFINITY,
+                                   i+2<i1?cm->oesc[y][dsq[i+2]]:-eslINFINITY);
+		  
+                if (y == v) {
+                  for (int k = 0; k < vecwidth; k++) {
+                    tmpv = alt_rightshift_ps(beta[y]->vec[jp][ip], beta[y]->vec[jp][ip-1]);
+                    tmpv = _mm_add_ps(tmpv, tscv);
+                    tmpv = _mm_add_ps(tmpv, escv);
+                    beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
+                  }
+                }
+                else {
+                  tmpv = alt_rightshift_ps(beta[y]->vec[jp][ip], beta[y]->vec[jp][ip-1]);
+                  tmpv = _mm_add_ps(tmpv, tscv);
+                  tmpv = _mm_add_ps(tmpv, escv);
+                  beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
+                }
 		break;
 		  
 	      case MR_st:
@@ -3467,10 +3630,29 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 
 	  switch(cm->sttype[y]) {
 	  case MP_st:  /* i == i0 boundary condition true */
+	    if (j == j0) continue; 
+            escv = _mm_setr_ps(                                                  -eslINFINITY,
+                               i  <i1?cm->oesc[y][dsq[i  ]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
+                               i+1<i1?cm->oesc[y][dsq[i+1]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
+                               i+2<i1?cm->oesc[y][dsq[i+2]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY);
+	
+            tmpv = alt_rightshift_ps(beta[y]->vec[jp+1][ip], neginfv);
+            tmpv = _mm_add_ps(tmpv, loop_v);
+            tmpv = _mm_add_ps(tmpv, escv);
+            beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
 	    break;
 
 	  case ML_st:
 	  case IL_st: 
+            escv = _mm_setr_ps(                             -eslINFINITY,
+                               i  <i1?cm->oesc[y][dsq[i  ]]:-eslINFINITY,
+                               i+1<i1?cm->oesc[y][dsq[i+1]]:-eslINFINITY,
+                               i+2<i1?cm->oesc[y][dsq[i+2]]:-eslINFINITY);
+		
+            tmpv = alt_rightshift_ps(beta[y]->vec[jp][ip], neginfv);
+            tmpv = _mm_add_ps(tmpv, loop_v);
+            tmpv = _mm_add_ps(tmpv, escv);
+            beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
 	    break;
 		  
 	  case MR_st:
@@ -3770,10 +3952,10 @@ sse_vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   int     v,y;
   int     j,i;
   int     jp,ip;
-  long int     yoffset;
+  int     yoffset;
   int     b;
   float   bsc;
-  long int *vec_access;
+  int *vec_access;
   const int vecwidth = 4;
 
   /* If we can deduce the traceback unambiguously without
@@ -3807,7 +3989,7 @@ sse_vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     /* 1. figure out the next state (deck) in the shadow matrix.
      */ 
     /*printf("v : %d | jp : %d | ip : %d | i0 : %d | \n", v, jp, ip, i0);*/
-    vec_access = (long int *) &(shadow[v]->vec[jp][ip/vecwidth]) + ip%vecwidth;
+    vec_access = (int *) &(shadow[v]->vec[jp][ip/vecwidth]) + ip%vecwidth;
     yoffset = *vec_access;
     /*printf("\tyoffset : %d\n", yoffset);*/
 
@@ -3855,7 +4037,7 @@ sse_vinsideT(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   /* We're done. Our traceback has just ended. We have just attached
    * state z for i1,j1; it is in the traceback at node tr->n-1.
    */
-  sse_free_vji_matrix(shadow, cm->M);
+  sse_free_vji_matrix(shadow, cm->M-1);
   return sc;
 }
 
@@ -4659,6 +4841,7 @@ static ESL_OPTIONS options[] = {
   { "--scoreonly",eslARG_NONE,"default", NULL, NULL,  NULL,           NULL, NULL, "No traceback, calculate score only",0 },
   { "--traceback",eslARG_NONE,    FALSE, NULL, NULL,  "--scoreonly",  NULL, NULL, "Determine CYK trace",0 },
   { "--strict",   eslARG_NONE,    FALSE, NULL, NULL, NULL, "--traceback", NULL, "Compare traces stringently", 0},
+  { "--DnC",      eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "use Divide and Conquer implementation", 0},
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -4745,13 +4928,19 @@ main(int argc, char **argv)
 
       if (esl_opt_GetBoolean(go, "--scoreonly")) {
         esl_stopwatch_Start(w);
-        sc1 = CYKInside(cm, dsq, L, 0, 1, L, NULL, NULL, NULL);
+        if (esl_opt_GetBoolean(go, "--DnC"))
+          sc1 = CYKDivideAndConquer(cm, dsq, L, 0, 1, L, NULL, NULL, NULL);
+        else
+          sc1 = CYKInside(cm, dsq, L, 0, 1, L, NULL, NULL, NULL);
         printf("%4d %-30s %10.4f bits ", (i+1), "CYKInside(): ", sc1);
         esl_stopwatch_Stop(w);
         esl_stopwatch_Display(stdout, w, " CPU time: ");
 
         esl_stopwatch_Start(w);
-        sc2 = SSE_CYKInsideScore(cm, dsq, L, 0, 1, L);
+        if (esl_opt_GetBoolean(go, "--DnC"))
+          sc2 = SSE_CYKDivideAndConquer(cm, dsq, L, 0, 1, L, NULL);
+        else
+          sc2 = SSE_CYKInsideScore(cm, dsq, L, 0, 1, L);
         printf("%4d %-30s %10.4f bits ", (i+1), "sse_inside(): ", sc2);
         esl_stopwatch_Stop(w);
         esl_stopwatch_Display(stdout, w, " CPU time: ");
@@ -4759,7 +4948,10 @@ main(int argc, char **argv)
 
       if (esl_opt_GetBoolean(go, "--traceback")) {
         esl_stopwatch_Start(w);
-        sc1 = CYKInside(cm, dsq, L, 0, 1, L, &tr1, NULL, NULL);
+        if (esl_opt_GetBoolean(go, "--DnC"))
+          sc1 = CYKDivideAndConquer(cm, dsq, L, 0, 1, L, &tr1, NULL, NULL);
+        else
+          sc1 = CYKInside(cm, dsq, L, 0, 1, L, &tr1, NULL, NULL);
         ParsetreeDump(stdout, tr1, cm, dsq, NULL, NULL);
         ParsetreeScore(cm, NULL, NULL, tr1, dsq, FALSE, &ptsc1, NULL, NULL, NULL, NULL);
         printf("%4d %-30s %10.4f bits %10.4f bits", (i+1), "CYKInside(): ", sc1, ptsc1);
@@ -4767,7 +4959,10 @@ main(int argc, char **argv)
         esl_stopwatch_Display(stdout, w, " CPU time: ");
 
         esl_stopwatch_Start(w);
-        sc2 = SSE_CYKInside(cm, dsq, L, 0, 1, L, &tr2);
+        if (esl_opt_GetBoolean(go, "--DnC"))
+          sc2 = SSE_CYKDivideAndConquer(cm, dsq, L, 0, 1, L, &tr2);
+        else
+          sc2 = SSE_CYKInside(cm, dsq, L, 0, 1, L, &tr2);
         ParsetreeDump(stdout, tr2, cm, dsq, NULL, NULL);
         ParsetreeScore(cm, NULL, NULL, tr2, dsq, FALSE, &ptsc2, NULL, NULL, NULL, NULL);
         printf("%4d %-30s %10.4f bits %10.4f bits", (i+1), "sse_inside(): ", sc2, ptsc2);
@@ -4781,7 +4976,7 @@ main(int argc, char **argv)
         if (fabs(sc1 - sc2) >= 0.01)
           cm_Die("CYKInside score differs from SSE_CYKInside\n");
         if (tr1 != NULL && tr2 != NULL && esl_opt_GetBoolean(go, "--strict") && !ParsetreeCompare(tr1, tr2))
-          cm_Die("Parse trees for TrCYKInside and TrCYKDivideAndConquer differ\n");
+          cm_Die("Parse trees differ\n");
 
       }
 
