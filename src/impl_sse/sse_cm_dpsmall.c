@@ -2381,7 +2381,9 @@ sse_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	for (dp = sW; dp >= 0; dp--) 
 	  {
 	    i = j-dp*vecwidth+1;
-	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	    //for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+            /* Change loop order to make sure IL (if present) is last */
+	    for (y = cm->plast[v]-cm->pnum[v]+1; y <= cm->plast[v]; y++) {
 	      if (y < vroot) continue; /* deal with split sets */
 	      voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
               tscv = _mm_set1_ps(cm->tsc[y][voffset]);
@@ -3131,10 +3133,10 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
               i = ip*vecwidth + i0;
               /* Could drop the <i1 checks here, since they should never be true, but we
                  should be switching to precalculated matrices anyway */
-              escv = _mm_setr_ps(i  <i1?cm->oesc[v][dsq[i  ]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
-                                 i+1<i1?cm->oesc[v][dsq[i+1]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
-                                 i+2<i1?cm->oesc[v][dsq[i+2]*cm->abc->Kp+dsq[j]]:-eslINFINITY,
-                                 i+3<i1?cm->oesc[v][dsq[i+3]*cm->abc->Kp+dsq[j]]:-eslINFINITY);
+              escv = _mm_setr_ps(i  <i1?cm->oesc[v][dsq[i  ]]:-eslINFINITY,
+                                 i+1<i1?cm->oesc[v][dsq[i+1]]:-eslINFINITY,
+                                 i+2<i1?cm->oesc[v][dsq[i+2]]:-eslINFINITY,
+                                 i+3<i1?cm->oesc[v][dsq[i+3]]:-eslINFINITY);
               a[v]->vec[jp][ip] = _mm_add_ps(a[v]->vec[jp][ip], escv);
               /* finish the serial IL->IL path */
               if (v == y) {
@@ -3452,7 +3454,9 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
         /* handle ip = 0 separately */
         ip = 0;
         i = i0;
-	for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	//for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+        /* Change loop order to make sure IL (if present) is last */
+	for (y = cm->plast[v]-cm->pnum[v]+1; y <= cm->plast[v]; y++) {
 	  if (y < r) continue; /* deal with split sets */
 	  voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
           tscv = _mm_set1_ps(cm->tsc[y][voffset]);
@@ -3529,7 +3533,9 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 	  {
 	    i = ip*vecwidth+i0;
 
-	    for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+	    //for (y = cm->plast[v]; y > cm->plast[v]-cm->pnum[v]; y--) {
+            /* Change loop order to make sure IL (if present) is last */
+	    for (y = cm->plast[v]-cm->pnum[v]+1; y <= cm->plast[v]; y++) {
 	      if (y < r) continue; /* deal with split sets */
 	      voffset = v - cm->cfirst[y]; /* gotta calculate the transition score index for t_y(v) */
               tscv = _mm_set1_ps(cm->tsc[y][voffset]);
