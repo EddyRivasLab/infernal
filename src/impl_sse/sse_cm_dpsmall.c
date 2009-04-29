@@ -750,6 +750,7 @@ sse_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
   /* determine values corresponding to best score out of our 4x vector */
   /* like esl_sse_hmax(), but re-using the mask from the scores */
+/*
   tmpv  = _mm_shuffle_ps(vb_sc, vb_sc, _MM_SHUFFLE(0, 3, 2, 1));
   mask  = _mm_cmpgt_ps(tmpv, vb_sc);
   vb_sc = _mm_max_ps(tmpv, vb_sc);
@@ -769,12 +770,21 @@ sse_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   vb_j  = esl_sse_select_ps(vb_j, tmpv, mask);
   tmpv  = _mm_shuffle_ps(vb_d, vb_d, _MM_SHUFFLE(1, 0, 3, 2));
   vb_d  = esl_sse_select_ps(vb_d, tmpv, mask);
+*/
 
   best_sc = *((float *) &vb_sc);
   best_k  = *((int *) &vb_k );
   best_j  = *((int *) &vb_j );
   best_d  = *((int *) &vb_d );
 
+  for (k = 1; k < vecwidth; k++) {
+    if (*((float *) &vb_sc + k) > best_sc) {
+      best_sc = *((float *) &vb_sc + k);
+      best_k  = *((int *) &vb_k + k);
+      best_j  = *((int *) &vb_j + k);
+      best_d  = *((int *) &vb_d + k);
+    }
+  }
   /* If we're in EL, instead of B, the optimal alignment is entirely
    * in a V problem that's still above us. The TRUE flag sets useEL.
    */
@@ -935,6 +945,7 @@ sse_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
   W = j0-i0+1;
   best_sc = IMPOSSIBLE;
   vb_sc = _mm_set1_ps(-eslINFINITY);
+  vb_v = vb_j = vb_d = (__m128) _mm_set1_epi32(-3);
   for (v = w; v <= y; v++) {
     vec_v = (__m128) _mm_set1_epi32(v);
     for (jp = 0; jp <= W; jp++) 
@@ -1018,8 +1029,16 @@ sse_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
   sse_free_vjd_matrix(alpha, cm->M);
   sse_free_vjd_matrix(beta,  cm->M);
 
+/*
+fprintf(stderr,"%f %f %f %f\t",*((float *) &vb_sc),*((float *) &vb_sc+1),*((float *) &vb_sc+2),*((float *) &vb_sc+3));
+fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_v),*((int *) &vb_v+1),*((int *) &vb_v+2),*((int *) &vb_v+3));
+fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_j),*((int *) &vb_j+1),*((int *) &vb_j+2),*((int *) &vb_j+3));
+fprintf(stderr,"%d %d %d %d\n",*((int *) &vb_d),*((int *) &vb_d+1),*((int *) &vb_d+2),*((int *) &vb_d+3));
+*/
+
   /* determine values corresponding to best score out of our 4x vector */
   /* like esl_sse_hmax(), but re-using the mask from the scores */
+/*
   tmpv  = _mm_shuffle_ps(vb_sc, vb_sc, _MM_SHUFFLE(0, 3, 2, 1));
   mask  = _mm_cmpgt_ps(tmpv, vb_sc);
   vb_sc = _mm_max_ps(tmpv, vb_sc);
@@ -1030,6 +1049,11 @@ sse_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
   tmpv  = _mm_shuffle_ps(vb_d, vb_d, _MM_SHUFFLE(0, 3, 2, 1));
   vb_d  = esl_sse_select_ps(vb_d, tmpv, mask);
 
+fprintf(stderr,"%f %f %f %f\t",*((float *) &vb_sc),*((float *) &vb_sc+1),*((float *) &vb_sc+2),*((float *) &vb_sc+3));
+fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_v),*((int *) &vb_v+1),*((int *) &vb_v+2),*((int *) &vb_v+3));
+fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_j),*((int *) &vb_j+1),*((int *) &vb_j+2),*((int *) &vb_j+3));
+fprintf(stderr,"%d %d %d %d\n",*((int *) &vb_d),*((int *) &vb_d+1),*((int *) &vb_d+2),*((int *) &vb_d+3));
+
   tmpv  = _mm_shuffle_ps(vb_sc, vb_sc, _MM_SHUFFLE(1, 0, 3, 2));
   mask  = _mm_cmpgt_ps(tmpv, vb_sc);
   vb_sc = _mm_max_ps(tmpv, vb_sc);
@@ -1039,12 +1063,31 @@ sse_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
   vb_j  = esl_sse_select_ps(vb_j, tmpv, mask);
   tmpv  = _mm_shuffle_ps(vb_d, vb_d, _MM_SHUFFLE(1, 0, 3, 2));
   vb_d  = esl_sse_select_ps(vb_d, tmpv, mask);
+*/
 
   best_sc = *((float *) &vb_sc);
   best_v  = *((int *) &vb_v );
   best_j  = *((int *) &vb_j );
   best_d  = *((int *) &vb_d );
 
+  for (int k = 1; k < vecwidth; k++) {
+    if (*((float *) &vb_sc + k) > best_sc) {
+      best_sc = *((float *) &vb_sc + k);
+      best_v  = *((int *) &vb_v + k);
+      best_j  = *((int *) &vb_j + k);
+      best_d  = *((int *) &vb_d + k);
+    }
+  }
+
+if (best_v == -3) {
+fprintf(stderr,"%f %f %f %f\t",*((float *) &vb_sc),*((float *) &vb_sc+1),*((float *) &vb_sc+2),*((float *) &vb_sc+3));
+fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_v),*((int *) &vb_v+1),*((int *) &vb_v+2),*((int *) &vb_v+3));
+fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_j),*((int *) &vb_j+1),*((int *) &vb_j+2),*((int *) &vb_j+3));
+fprintf(stderr,"%d %d %d %d\n",*((int *) &vb_d),*((int *) &vb_d+1),*((int *) &vb_d+2),*((int *) &vb_d+3));
+
+fprintf(stderr,"%f %d %d %d\n",best_sc, best_v, best_j, best_d);
+cm_Fail("vb_v never got set to anything?\n");
+}
   /* If we're in EL, instead of the split set, the optimal alignment
    * is entirely in a V problem that's still above us. The TRUE
    * flag sets useEL. It doesn't matter which state in the split
@@ -1176,6 +1219,7 @@ sse_v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    */
   best_sc = IMPOSSIBLE;
   vb_sc = _mm_set1_ps(-eslINFINITY);
+  vb_v = vb_v = vb_i = (__m128) _mm_set1_epi32(-3);
   for (v = w; v <= y; v++) {
     vec_v = (__m128) _mm_set1_epi32(v);
     for (jp = 0; jp <= j0-j1; jp++) {
@@ -1257,6 +1301,9 @@ sse_v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
   /* determine values corresponding to best score out of our 4x vector */
   /* like esl_sse_hmax(), but re-using the mask from the scores */
+/* This section should work, by making all four values in the vector
+   be equal to the one corresponding to the highest score, but it
+   fails on gcc -O2 (v. 3.4.5); can be prevented by strategic printfs
   tmpv  = _mm_shuffle_ps(vb_sc, vb_sc, _MM_SHUFFLE(0, 3, 2, 1));
   mask  = _mm_cmpgt_ps(tmpv, vb_sc);
   vb_sc = _mm_max_ps(tmpv, vb_sc);
@@ -1277,11 +1324,35 @@ sse_v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   tmpv  = _mm_shuffle_ps(vb_i, vb_i, _MM_SHUFFLE(1, 0, 3, 2));
   vb_i  = esl_sse_select_ps(vb_i, tmpv, mask);
 
+fprintf(stderr,"%f %f %f %f\t",*((float *) &vb_sc),*((float *) &vb_sc+1),*((float *) &vb_sc+2),*((float *) &vb_sc+3));
+fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_v),*((int *) &vb_v+1),*((int *) &vb_v+2),*((int *) &vb_v+3));
+fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_j),*((int *) &vb_j+1),*((int *) &vb_j+2),*((int *) &vb_j+3));
+fprintf(stderr,"%d %d %d %d\n",*((int *) &vb_i),*((int *) &vb_i+1),*((int *) &vb_i+2),*((int *) &vb_i+3));
+*/
+
   best_sc = *((float *) &vb_sc);
   best_v  = *((int *) &vb_v );
   best_j  = *((int *) &vb_j );
   best_i  = *((int *) &vb_i );
 
+  for (int k = 1; k < vecwidth; k++) {
+    if (*((float *) &vb_sc + k) > best_sc) {
+      best_sc = *((float *) &vb_sc + k);
+      best_v  = *((int *) &vb_v + k);
+      best_j  = *((int *) &vb_j + k);
+      best_i  = *((int *) &vb_i + k);
+    }
+  }
+
+if (best_v == -3) {
+fprintf(stderr,"%f %f %f %f\t",*((float *) &vb_sc),*((float *) &vb_sc+1),*((float *) &vb_sc+2),*((float *) &vb_sc+3));
+fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_v),*((int *) &vb_v+1),*((int *) &vb_v+2),*((int *) &vb_v+3));
+fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_j),*((int *) &vb_j+1),*((int *) &vb_j+2),*((int *) &vb_j+3));
+fprintf(stderr,"%d %d %d %d\n",*((int *) &vb_i),*((int *) &vb_i+1),*((int *) &vb_i+2),*((int *) &vb_i+3));
+
+fprintf(stderr,"%f %d %d %d\n",best_sc, best_v, best_j, best_i);
+cm_Fail("vb_v never got set to anything?\n");
+}
   /* If we're in EL, instead of the split set, the optimal
    * alignment is entirely in a V problem that's still above us.
    * The TRUE flag sets useEL; we propagate allow_begin. 
