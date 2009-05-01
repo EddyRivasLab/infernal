@@ -57,6 +57,7 @@
 
 #include "funcs.h"
 #include "structs.h"
+#include "impl_sse.h"
 
 typedef struct sse_deck_s {
    __m128  *mem;
@@ -144,23 +145,6 @@ void         sse_free_vji_matrix(sse_deck_t **a, int M);
  */
 #define USED_LOCAL_BEGIN 101
 #define USED_EL          102
-
-/* Function:  alt_rightshift_ps()
- * Synopsis:  Shift vector elements to the right.
- * Incept:    SRE, Thu Jul 31 17:13:59 2008 [Janelia]
- * Alt:       DLK, Thu Feb 26 2009
- *
- * Purpose:   Returns a vector containing
- *            <{ b[3] a[0] a[1] a[2] }>:
- *            i.e. shift the values in <a> to the
- *            right, and load the LAST value of 
- *            <b> into the first slot.
- */
-static inline __m128 
-alt_rightshift_ps(__m128 a, __m128 b)
-{
-  return _mm_move_ss(_mm_shuffle_ps(a, a, _MM_SHUFFLE(2, 1, 0, 0)), _mm_shuffle_ps(b, b, _MM_SHUFFLE(3, 3, 3, 3)));
-}
 
 /* Function: CYKDivideAndConquer()
  * Date:     SRE, Sun Jun  3 19:32:14 2001 [St. Louis]
@@ -1548,10 +1532,11 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
   b   = -1;
   bsc = IMPOSSIBLE;
   W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
-				/* if caller didn't give us a deck pool, make one */
+  sW  = W/vecwidth;
 
-  ESL_ALLOC(mem_Lesc, sizeof(__m128  ) * (W+1) + 15);
-  ESL_ALLOC(mem_Pesc, sizeof(__m128  ) * cm->abc->Kp * (W+1) + 15);
+  /* Set up memory for pre-vectorized emission score */
+  ESL_ALLOC(mem_Lesc, sizeof(__m128  ) * (sW+1) + 15);
+  ESL_ALLOC(mem_Pesc, sizeof(__m128  ) * cm->abc->Kp * (sW+1) + 15);
   ESL_ALLOC(vec_Pesc, sizeof(__m128 *) * cm->abc->Kp);
   ESL_ALLOC(esc_stale,sizeof(int    *) * cm->abc->Kp);
 
@@ -1559,9 +1544,10 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
   vec_Pesc[0] = (__m128 *) (((unsigned long int) mem_Pesc + 15) & (~0xf));
   for (j = 1; j < cm->abc->Kp; j++)
     {
-      vec_Pesc[j] = vec_Pesc[0] + j*(W+1);
+      vec_Pesc[j] = vec_Pesc[0] + j*(sW+1);
     }
 
+  /* if caller didn't give us a deck pool, make one */
   if (dpool == NULL) dpool = sse_deckpool_create();
   if (! sse_deckpool_pop(dpool, &end))
     end = sse_alloc_vjd_deck(L, i0, j0, vecwidth);

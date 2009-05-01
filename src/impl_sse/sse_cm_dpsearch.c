@@ -1,33 +1,10 @@
 /* Beginning modifications for a vectorized implementation ... */
 
-/* cm_dpsearch.c
+/* sse_cm_dpsearch.c
  *
- * DP functions for CYK and Inside CM similarity search, includes
- * fast (optimized) and reference versions. 
+ * DP functions for CYK CM similarity search,
+ * 4x single-precision float SSE implementation
  * 
- * All CYK/Inside scanning functions were rewritten between
- * versions 0.81 and 1.0 Here's a list of the 1.0 functions
- * and their 0.81 analogs. All the 1.0 functions listed are in
- * this file (cm_dpsearch.c).
- *
- * 1.0 fast version    1.0 slow version   0.81 version            
- * ----------------    ----------------   -------------
- * FastCYKScan()       SSERefCYKScan()       scancyk.c:CYKScan()
- *                                        bandcyk.c:CYKBandedScan()
- * FastIInsideScan()   RefIInsideScan()   scaninside.c:InsideScan()
- *                                        scaninside.c:InsideBandedScan()
- * FastFInsideScan()   RefFInsideScan()   NONE
- * FastCYKScanHB()     NONE               hbandcyk.c:CYKBandedScan_jd()
- * NONE                NONE               hbandcyk.c:iInsideBandedScan_jd()
- * FastFInsideScanHB() NONE               NONE
- *
- * The 1.0 functions that end in 'HB()' use HMM bands to perform 
- * the search.
- * The 1.0 non-HB functions can be run with QDB on or off, which 
- * is implicit in the cm->smx ScanMatrix_t data structure,
- * which includes min/max d values for each state.
- *
- * EPN, Wed Sep 12 16:53:32 2007
  *****************************************************************
  * @LICENSE@
  *****************************************************************  
@@ -51,17 +28,11 @@
 #include "funcs.h"
 #include "structs.h"
 
-#define AMX(j,v,d) (alphap[(j * cm->M * (W+1)) + ((v) * (W+1) + d)])
-
 /* Function: SSECYKScan()
- * Date:     EPN, Wed Sep 12 16:55:28 2007
+ * Author:   DLK
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
- *           a reference CYK scanning algorithm. Query-dependent 
- *           bands are used or not used as specified in ScanMatrix_t <si>.
- *
- *           This function is slower, but easier to understand than the
- *           FastCYKScan() version.
+ *           a reference CYK scanning algorithm.
  *
  * Args:     cm              - the covariance model
  *           errbuf          - char buffer for reporting errors
@@ -75,7 +46,7 @@
  *           ret_vsc         - RETURN: [0..v..M-1] best score at each state v, NULL if not-wanted
  *           ret_sc          - RETURN: score of best overall hit (vsc[0])
  *
- * Note:     This function is somewhat synchronized with RefIInsideScan() and SSERefCYKScan()
+ * Note:     This function is somewhat synchronized with RefIInsideScan() and RefCYKScan()
  *           any change to this function might need to be mirrored in those functions. 
  *
  * Returns:  eslOK on succes;
@@ -87,6 +58,8 @@ int
 SSECYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	   search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc)
 {
+//FIXME: needs some cleanup from the scalar detritus; should be able
+//FIXME: to drop the ScanMatrix (I think all we need from it is W
   int       status;
   GammaHitMx_t *gamma;       /* semi-HMM for hit resoultion */
   float    *vsc;                /* best score for each state (float) */
