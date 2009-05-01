@@ -1828,7 +1828,7 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
             }
             if (j>0) esc_stale[dsq[j]] = j; 
 
-            tmpv = _mm_movelh_ps(_mm_mul_ps(el_self_v, doffset), neginfv);
+            tmpv = _mm_movelh_ps(neginfv, _mm_mul_ps(el_self_v, doffset));
             alpha[v]->vec[j][0] = _mm_add_ps(_mm_set1_ps(cm->endsc[v]), tmpv);
             /* treat EL as emitting only on self transition */
             if (ret_shadow != NULL) shadow[v]->vec[j][0]  = (__m128) _mm_set1_epi32(USED_EL); 
