@@ -16,6 +16,7 @@
  *****************************************************************/
 
 typedef struct cm_optimized_s {
+  float     scale_w;
   int16_t **tsc;
   int16_t **oesc;
   int16_t  *beginsc;
@@ -25,6 +26,9 @@ typedef struct cm_optimized_s {
 /*****************************************************************
  * 2. Declarations of the external API.
  *****************************************************************/
+
+/* cm_optimized.c */
+int16_t wordify(CM_OPTIMIZED *ocm, float sc);
 
 /* sse_cm_dpsearch.c */
 int SSECYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq,

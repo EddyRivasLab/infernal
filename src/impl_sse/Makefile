@@ -29,7 +29,8 @@ MYINCDIR = -I../ -I../../easel -I../../hmmer/src/
 
 PROGS =
 
-OBJS  = sse_cm_dpsearch.o\
+OBJS  = cm_optimized.o\
+        sse_cm_dpsearch.o\
         sse_cm_dpsmall.o\
         sse_util.o
 
