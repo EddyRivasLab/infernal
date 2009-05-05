@@ -3945,9 +3945,10 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
 
   /* Allocations and initializations
    */
+  cm_optimized_Convert(cm, ocm);
   zerov = _mm_set1_epi16(0);
   neginfv = _mm_set1_epi16(-32768);
-  el_self_v = _mm_set1_epi16(wordify(ocm, cm->el_selfsc));
+  el_self_v = _mm_set1_epi16(ocm->el_selfsc);
   doffset = _mm_setr_epi16(0, 1, 2, 3, 4, 5, 6, 7);
   b   = -1;
   bsc = -32768;

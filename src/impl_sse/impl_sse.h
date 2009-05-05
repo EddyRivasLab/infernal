@@ -16,11 +16,21 @@
  *****************************************************************/
 
 typedef struct cm_optimized_s {
+  /* basic model information */
+  int       M;
+  char     *sttype;
+  int      *cfirst;
+  int      *cnum;
+
+  const ESL_ALPHABET *abc;
+
+  /* epi16-specific information */
   float     scale_w;
   int16_t **tsc;
   int16_t **oesc;
   int16_t  *beginsc;
   int16_t  *endsc;
+  int16_t   el_selfsc;
 } CM_OPTIMIZED;
 
 /*****************************************************************
@@ -28,7 +38,7 @@ typedef struct cm_optimized_s {
  *****************************************************************/
 
 /* cm_optimized.c */
-int16_t wordify(CM_OPTIMIZED *ocm, float sc);
+int cm_optimized_Convert(const CM_t *cm, CM_OPTIMIZED *ocm);
 
 /* sse_cm_dpsearch.c */
 int SSECYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq,
