@@ -4384,6 +4384,9 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
   while (sse_deckpool_pop(dpool, &end)) sse_free_vjd_deck(end);
   sse_deckpool_free(dpool);
 
+  cm_optimized_Free(ocm);
+  free(ocm);
+
   free(esc_stale);
   free(vec_Pesc);
   free(mem_Pesc);

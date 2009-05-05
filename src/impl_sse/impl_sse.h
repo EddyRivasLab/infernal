@@ -39,6 +39,7 @@ typedef struct cm_optimized_s {
 
 /* cm_optimized.c */
 int cm_optimized_Convert(const CM_t *cm, CM_OPTIMIZED *ocm);
+void cm_optimized_Free(CM_OPTIMIZED *ocm);
 
 /* sse_cm_dpsearch.c */
 int SSECYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq,

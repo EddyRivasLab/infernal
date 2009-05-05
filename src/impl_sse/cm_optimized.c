@@ -4,6 +4,7 @@
 
 /* External API 
  * int cm_optimized_Convert(const CM_t *cm, CM_OPTIMIZED *ocm);
+ * void cm_optimized_Free(CM_OPTIMIZED *ocm);
  */
 
 /* Internal funcs */
@@ -65,6 +66,23 @@ cm_optimized_Convert(const CM_t *cm, CM_OPTIMIZED *ocm)
 ERROR: 
   cm_Fail("Memory allocation error.\n");
   return 0; /* never reached */
+}
+
+/* Function:  cm_optimized_Free()
+ * Author:    DLK, Tue May 05 2009
+ */
+void
+cm_optimized_Free(CM_OPTIMIZED *ocm)
+{
+  if (ocm->tsc[0] != NULL) free(ocm->tsc[0]);
+  if (ocm->oesc[0] != NULL) free(ocm->oesc[0]);
+
+  if (ocm->endsc != NULL) free(ocm->endsc);
+  if (ocm->beginsc != NULL) free(ocm->beginsc);
+  if (ocm->oesc != NULL) free(ocm->oesc);
+  if (ocm->tsc != NULL) free(ocm->tsc);
+
+  return;
 }
 
 /* wordify()
