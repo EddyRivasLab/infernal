@@ -59,9 +59,12 @@
 #include "structs.h"
 #include "impl_sse.h"
 
+#define WORDRSHIFTX(a,b,x) (_mm_or_si128(_mm_slli_si128(a,2*x),_mm_srli_si128(b,2*x)))
+
 typedef struct sse_deck_s {
-   __m128  *mem;
-   __m128 **vec;
+   __m128   *mem;
+   __m128  **vec;
+   __m128i **ivec;	/* points to same place as vec, but typed as __m128i */
 } sse_deck_t;
 
 struct sse_deckpool_s {
@@ -1881,7 +1884,7 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
             for (x = 0; x < cm->abc->Kp; x++)
               {
                 delta = j - esc_stale[x];
-                if (delta == 4) {
+                if (delta == vecwidth) {
                   for (dp = sW; dp > 0; dp--) { vec_Pesc[x][dp] = vec_Pesc[x][dp-1]; }
                   vec_Pesc[x][0] = _mm_setr_ps(jp<W ? cm->oesc[v][dsq[j+1]*cm->abc->Kp+x] : -eslINFINITY,
                                                       cm->oesc[v][dsq[j  ]*cm->abc->Kp+x],
@@ -3869,6 +3872,531 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 }
 
 /*****************************************************************
+ * The Filter engines
+ *     sse_CYKFilter_epi16 - inside on scaled 16-bit ints, 8x vector
+ *****************************************************************/
+
+/* Function: sse_CYKFilter_epi16()
+ * Date:     DLK, Fri May  1 2009
+ *
+ * Purpose:  Run memory-efficient CYK on 8x 16-bit integers.
+ *           The normal expectation is that the alignment
+ *           will be calculated for the whole model, although
+ *           local begins and ends are allowed.  We should
+ *           also allow alignment to a subsequence of the 
+ *           input coordinates, in case the bounds aren't precise.
+ *
+ *           No mechanism for traceback, reusing deck pools,
+ *           or returning the alpha matrix is provided.
+ *
+ * Args:     cm        - the model    [0..M-1]
+ *           sq        - the sequence [1..L]   
+ *           vroot     - first start state of subtree (0, for whole model)
+ *           vend      - last end state of subtree (cm->M-1, for whole model)
+ *           i0        - first position in subseq to align (1, for whole seq)
+ *           j0        - last position in subseq to align (L, for whole seq)
+ *           allow_begin- TRUE to allow 0->b local alignment begin transitions. 
+ *           ret_b     - best local begin state, or NULL if unwanted
+ *           ret_bsc   - score for using ret_b, or NULL if unwanted                        
+ *                       
+ *
+ * Returns: Score of the optimal alignment.  
+ */
+static int 
+sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
+       int allow_begin, int *ret_b, int *ret_bsc)
+{
+  int       status;
+  int       nends;       /* counter that tracks when we can release end deck to the pool */
+  int      *touch;       /* keeps track of how many higher decks still need this deck */
+  int       v,y,z;	/* indices for states  */
+  int       j,d,i,k;	/* indices in sequence dimensions */
+  int16_t   sc;		/* a temporary variable holding a score */
+  int       yoffset;	/* y=base+offset -- counter in child states that v can transit to */
+  int       W;		/* subsequence length */
+  int       jp;		/* j': relative position in the subsequence  */
+  int       b;		/* best local begin state */
+  int16_t   bsc;		/* score for using the best local begin state */
+
+  sse_deck_t **alpha;
+  struct sse_deckpool_s *dpool = NULL;
+
+  const int    vecwidth = 8;
+  int          sW;
+  int          dp, kp;
+  int16_t     *vec_access;
+  int16_t      tmp;
+  __m128i      zerov;
+  __m128i      neginfv;
+  __m128i      el_self_v;
+  __m128i      tscv;
+  __m128i      escv;
+  __m128i     *mem_Lesc;
+  __m128i     *vec_Lesc;
+  __m128i     *mem_Pesc;
+  __m128i    **vec_Pesc;
+  int          delta, x;
+  int         *esc_stale;
+  __m128i      doffset;
+  __m128i      tmpv;
+  sse_deck_t  *end;
+
+  CM_OPTIMIZED *ocm;
+
+  /* Allocations and initializations
+   */
+  zerov = _mm_set1_epi16(0);
+  neginfv = _mm_set1_epi16(-32768);
+  el_self_v = _mm_set1_epi16(wordify(ocm, cm->el_selfsc));
+  doffset = _mm_setr_epi16(0, 1, 2, 3, 4, 5, 6, 7);
+  b   = -1;
+  bsc = -32768;
+  W   = j0-i0+1;		/* the length of the subsequence -- used in many loops  */
+  sW  = W/vecwidth;
+
+  /* Set up memory for pre-vectorized emission scores */
+  ESL_ALLOC(mem_Lesc, sizeof(__m128i  ) * (sW+1) + 15);
+  ESL_ALLOC(mem_Pesc, sizeof(__m128i  ) * cm->abc->Kp * (sW+1) + 15);
+  ESL_ALLOC(vec_Pesc, sizeof(__m128i *) * cm->abc->Kp);
+  ESL_ALLOC(esc_stale,sizeof(int     *) * cm->abc->Kp);
+
+  vec_Lesc    = (__m128i *) (((unsigned long int) mem_Lesc + 15) & (~0xf));
+  vec_Pesc[0] = (__m128i *) (((unsigned long int) mem_Pesc + 15) & (~0xf));
+  for (j = 1; j < cm->abc->Kp; j++)
+    {
+      vec_Pesc[j] = vec_Pesc[0] + j*(sW+1);
+    }
+
+  /* Make a deck pool */
+  if (dpool == NULL) dpool = sse_deckpool_create();
+  if (! sse_deckpool_pop(dpool, &end))
+    end = sse_alloc_vjd_deck(L, i0, j0, vecwidth);
+  nends = CMSubtreeCountStatetype(cm, vroot, E_st);
+  for (jp = 0; jp <= W; jp++) {
+    j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
+    end->ivec[j][0] = sse_rightshift_epi16(neginfv, zerov);
+    for (d = 1; d <= jp/vecwidth; d++) end->ivec[j][d] = neginfv;
+  }
+
+  /* Make an alpha matrix.
+   * It's important to allocate for M+1 decks (deck M is for EL, local
+   * alignment) - even though Inside doesn't need EL, Outside does,
+   * and we might reuse this memory in a call to Outside.  
+   */
+  if (alpha == NULL) {
+    ESL_ALLOC(alpha, sizeof(sse_deck_t *) * (cm->M+1));
+    for (v = 0; v <= cm->M; v++) alpha[v] = NULL;
+  }
+
+  ESL_ALLOC(touch, sizeof(int) * (cm->M+1));
+  for (v = 0;     v < vroot; v++) touch[v] = 0;
+  for (v = vroot; v <= vend; v++) touch[v] = cm->pnum[v];
+  for (v = vend+1;v < cm->M; v++) touch[v] = 0;
+
+  /* Main recursion
+   */
+  for (v = vend; v >= vroot; v--) 
+    {
+      /* First we need a deck to fill in.
+       * 1. if we're an E, reuse the end deck (and it's already calculated)
+       * 2. else, see if we can take something from the pool
+       * 3. else, allocate a new deck.
+       */
+      if (cm->sttype[v] == E_st) { 
+	alpha[v] = end; continue; 
+      } 
+      if (! sse_deckpool_pop(dpool, &(alpha[v]))) 
+	alpha[v] = sse_alloc_vjd_deck(L, i0, j0, vecwidth);
+
+      if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
+	{
+	  for (jp = 0; jp <= W; jp++) {
+	    j = i0-1+jp;
+            sW = jp/vecwidth;
+	    for (dp = 0; dp <= sW; dp++)
+	      {
+		y = cm->cfirst[v];
+		// alpha[v][j][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
+//FIXME: probably need to worry about saturating on this multiply
+                tmpv = _mm_mullo_epi16(el_self_v, _mm_adds_epi16(_mm_set1_epi16(dp*vecwidth), doffset));
+		alpha[v]->ivec[j][dp] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
+		/* treat EL as emitting only on self transition */
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+                  tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+                  tmpv = _mm_adds_epi16(alpha[y+yoffset]->ivec[j][dp], tscv);
+                  alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
+                }
+                //FIXME: SSE conversion is kind of ignoring the possibilty of underflow... this is bad.
+		//if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
+	      }
+	  }
+	}
+      else if (cm->sttype[v] == B_st)
+	{
+          __m128i begr_v;
+	  for (jp = 0; jp <= W; jp++) {
+	    j = i0-1+jp;
+            sW = jp/vecwidth;
+            y = cm->cfirst[v];
+            z = cm->cnum[v];
+		  
+            /* IMPORTANT NOTE!
+             * while this function tries to be robust to variations in vecwidth
+             * the section below is distinctly not, as I have enumerated the cases
+             * of how d-k hits the vector boundaries
+             */
+            begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][0],0));
+	    for (dp = 0; dp <= sW; dp++)
+	      {
+		alpha[v]->ivec[j][dp] = _mm_adds_epi16(alpha[y]->ivec[j][dp], begr_v);
+              }
+            for (k = 1; k <= jp; k++)
+              {
+                int kx = k%vecwidth;
+                kp = k/vecwidth;
+                begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],kx));
+
+                /* rightshift by three */
+                tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][0],neginfv,kx);
+                tmpv = _mm_add_epi16(tmpv, begr_v);
+                alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
+                for (dp = kp+1; dp <= sW; dp++)
+                  {
+                    tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][dp-kp], alpha[y]->ivec[j-k][dp-kp-1],kx);
+                    tmpv = _mm_add_epi16(tmpv, begr_v);
+                    alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
+                  }
+              }
+/*
+	    for (d = 0; d <= sW; d++)
+	      {
+		for (k = 1; k < (d+1)*vecwidth; k++)
+		  if ((sc = alpha[y][j-k][d-k] + alpha[z][j][k]) > alpha[v][j][d]) {
+		    alpha[v][j][d] = sc;
+		  }
+		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
+	      }
+*/
+	  }
+	}
+      else if (cm->sttype[v] == MP_st)
+	{
+          for (x = 0; x < cm->abc->Kp; x++)
+            {
+              esc_stale[x] = i0-1;
+              for (dp = 0; dp <= W/vecwidth; dp ++) { vec_Pesc[x][dp] = neginfv; }
+              vec_Pesc[x][0] = sse_rightshift_epi16(vec_Pesc[x][0], _mm_set1_epi16(ocm->oesc[v][dsq[i0]*cm->abc->Kp+x]));
+            } 
+          alpha[v]->ivec[i0-1][0] = neginfv; /* jp = 0 */
+	  for (jp = 1; jp <= W; jp++) {
+	    j = i0-1+jp;
+            /* slide esc vec array over */
+            sW = jp/vecwidth;
+            delta = j>0 ? j - esc_stale[dsq[j]] : 0;
+            tmpv = _mm_setr_epi16(jp<W ? cm->oesc[v][dsq[j+1]*cm->abc->Kp+dsq[j]] : -32768,
+                                  jp>0 ? cm->oesc[v][dsq[j  ]*cm->abc->Kp+dsq[j]] : -32768,
+                                  jp>1 ? cm->oesc[v][dsq[j-1]*cm->abc->Kp+dsq[j]] : -32768,
+                                  jp>2 ? cm->oesc[v][dsq[j-2]*cm->abc->Kp+dsq[j]] : -32768,
+                                  jp>3 ? cm->oesc[v][dsq[j-3]*cm->abc->Kp+dsq[j]] : -32768,
+                                  jp>4 ? cm->oesc[v][dsq[j-4]*cm->abc->Kp+dsq[j]] : -32768,
+                                  jp>5 ? cm->oesc[v][dsq[j-5]*cm->abc->Kp+dsq[j]] : -32768,
+                                  jp>6 ? cm->oesc[v][dsq[j-6]*cm->abc->Kp+dsq[j]] : -32768);
+            if (delta < vecwidth) {
+              for (dp = sW; dp > 0; dp--)
+                { vec_Pesc[dsq[j]][dp] = WORDRSHIFTX(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1],delta); }
+              vec_Pesc[dsq[j]][0] = WORDRSHIFTX(vec_Pesc[dsq[j]][0], tmpv, delta);
+            }
+            else if (delta == vecwidth) {
+              for (dp = sW; dp > 0; dp--) { vec_Pesc[dsq[j]][dp] = vec_Pesc[dsq[j]][dp-1]; }
+              vec_Pesc[dsq[j]][0] = tmpv;
+            }
+            if (j>0) esc_stale[dsq[j]] = j; 
+
+            tmpv = (__m128i) esl_sse_rightshift_ps((__m128) _mm_mullo_epi16(el_self_v, doffset), (__m128) neginfv);
+            alpha[v]->ivec[j][0] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
+            /* treat EL as emitting only on self transition */
+            y = cm->cfirst[v];
+            for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+              tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+              if (j==0) tmpv = neginfv;
+              else
+                tmpv = (__m128i) esl_sse_rightshift_ps((__m128) alpha[y+yoffset]->ivec[j-1][0], (__m128) neginfv);
+              tmpv = _mm_adds_epi16(tmpv, tscv);
+              alpha[v]->ivec[j][0] = _mm_max_epi16(alpha[v]->ivec[j][0], tmpv);
+            }
+            //not sure this logic is correct... and might not be necessary anyway
+            //escv = j>0 ? (__m128i) esl_sse_rightshift_ps((__m128) vec_Pesc[dsq[j]][0], (__m128) neginfv) : neginfv;
+            escv = j>0 ? vec_Pesc[dsq[j]][dp] : neginfv;
+            alpha[v]->ivec[j][0] = _mm_adds_epi16(alpha[v]->ivec[j][0], escv);
+
+	    for (dp = 1; dp <= sW; dp++) 
+	      {
+                tmpv = _mm_mullo_epi16(el_self_v, _mm_adds_epi16(_mm_set1_epi16(dp*vecwidth-2), doffset));
+		alpha[v]->ivec[j][dp] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
+		/* treat EL as emitting only on self transition */
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+                  tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+                  //tmpv = WORDRSHIFTX(alpha[y+yoffset]->ivec[j-1][dp],alpha[y+yoffset]->ivec[j-1][dp-1],2);
+                  tmpv = (__m128i) alt_rightshift_ps((__m128) alpha[y+yoffset]->ivec[j-1][dp], (__m128) alpha[y+yoffset]->ivec[j-1][dp-1]);
+                  tmpv = _mm_adds_epi16(tmpv, tscv);
+                  alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
+                }
+		
+		i = j-dp*vecwidth+1;
+                escv = vec_Pesc[dsq[j]][dp];
+                alpha[v]->ivec[j][dp] = _mm_adds_epi16(alpha[v]->ivec[j][dp], escv);
+	      }
+
+            for (x = 0; x < cm->abc->Kp; x++)
+              {
+                delta = j - esc_stale[x];
+                if (delta == vecwidth) {
+                  for (dp = sW; dp > 0; dp--) { vec_Pesc[x][dp] = vec_Pesc[x][dp-1]; }
+                  vec_Pesc[x][0] = _mm_setr_epi16(jp<W ? cm->oesc[v][dsq[j+1]*cm->abc->Kp+x] : -32768,
+                                                         cm->oesc[v][dsq[j  ]*cm->abc->Kp+x],
+                                                         cm->oesc[v][dsq[j-1]*cm->abc->Kp+x],
+                                                         cm->oesc[v][dsq[j-2]*cm->abc->Kp+x],
+                                                         cm->oesc[v][dsq[j-3]*cm->abc->Kp+x],
+                                                         cm->oesc[v][dsq[j-4]*cm->abc->Kp+x],
+                                                         cm->oesc[v][dsq[j-5]*cm->abc->Kp+x],
+                                                         cm->oesc[v][dsq[j-6]*cm->abc->Kp+x]);
+                  esc_stale[x] = j;
+                  }
+              } 
+	  }
+	}
+      /* Separate out ML_st from IL_st, since only IL_st has to worry abuot self-transitions */
+      else if (cm->sttype[v] == ML_st)
+	{
+          /* initialize esc vec array */
+          vec_Lesc[0] = _mm_insert_epi16(_mm_set1_epi16(ocm->oesc[v][dsq[i0]]),-32768,0);
+          for (dp = 1; dp <= W/vecwidth; dp++) { vec_Lesc[dp] = neginfv; }
+
+	  for (jp = 0; jp <= W; jp++) {
+	    j = i0-1+jp;
+            tmpv = sse_rightshift_epi16(_mm_mullo_epi16(el_self_v, doffset), neginfv);
+	    alpha[v]->ivec[j][0] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
+            /* treat EL as emitting only on self transition */
+            y = cm->cfirst[v];
+            for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+              tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+              tmpv = sse_rightshift_epi16(alpha[y+yoffset]->ivec[j][0], neginfv);
+              tmpv = _mm_adds_epi16(tmpv, tscv);
+              alpha[v]->ivec[j][0] = _mm_max_epi16(alpha[v]->ivec[j][0], tmpv);
+            }
+            escv = _mm_insert_epi16(vec_Lesc[0],-32768,0);
+            alpha[v]->ivec[j][0] = _mm_adds_epi16(alpha[v]->ivec[j][0], escv);
+
+            sW = jp/vecwidth;
+	    for (dp = 1; dp <= sW; dp++)
+	      {
+                tmpv = _mm_mullo_epi16(el_self_v, _mm_adds_epi16(_mm_set1_epi16(dp*vecwidth - 1), doffset));
+		alpha[v]->ivec[j][dp] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
+		/* treat EL as emitting only on self transition */
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+                  tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+                  tmpv = sse_rightshift_epi16(alpha[y+yoffset]->ivec[j][dp], alpha[y+yoffset]->ivec[j][dp-1]);
+                  tmpv = _mm_adds_epi16(tmpv, tscv);
+                  alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
+                }
+		
+		i = j-dp*vecwidth+1;
+                escv = vec_Lesc[dp];
+                alpha[v]->ivec[j][dp] = _mm_adds_epi16(alpha[v]->ivec[j][dp], escv);
+	      }
+
+            /* slide esc vec array over by one */
+            if (sW < W/vecwidth) sW++;
+            for (dp = sW; dp > 0; dp--) { vec_Lesc[dp] = sse_rightshift_epi16(vec_Lesc[dp], vec_Lesc[dp-1]); }
+            vec_Lesc[0] = sse_rightshift_epi16(vec_Lesc[0], (jp<W-1) ? _mm_set1_epi16(ocm->oesc[v][dsq[j+2]]) : neginfv);
+	  }
+	}
+      /* The self-transition loop on IL_st will need to be completely serialized, since
+         v and j remain the same with only d varying in a non-striped implementation.
+         The other possible transitions for IL_st can be treated normally, however.     */
+      else if (cm->sttype[v] == IL_st)
+	{
+          /* initialize esc vec array */
+          vec_Lesc[0] = _mm_insert_epi16(_mm_set1_epi16(ocm->oesc[v][dsq[i0]]),-32768,0);
+          for (dp = 1; dp <= W/vecwidth; dp++) { vec_Lesc[dp] = neginfv; }
+
+	  for (jp = 0; jp <= W; jp++) {
+	    j = i0-1+jp;
+            tmpv = sse_rightshift_epi16(_mm_mullo_epi16(el_self_v, doffset), neginfv);
+	    alpha[v]->ivec[j][0] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
+            /* treat EL as emitting only on self transition */
+            y = cm->cfirst[v];
+            for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) {
+              tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+              tmpv = sse_rightshift_epi16(alpha[y+yoffset]->ivec[j][0], neginfv);
+              tmpv = _mm_adds_epi16(tmpv, tscv);
+              alpha[v]->ivec[j][0] = _mm_max_epi16(alpha[v]->ivec[j][0], tmpv);
+            }
+            escv = _mm_insert_epi16(vec_Lesc[0],-32768,0);
+            alpha[v]->ivec[j][0] = _mm_adds_epi16(alpha[v]->ivec[j][0], escv);
+            /* handle yoffset = 0, the self-transition case, seaparately */
+            tscv = _mm_set1_epi16(ocm->tsc[v][0]);
+            for (k = 2; k < vecwidth; k++) {
+              tmpv = sse_rightshift_epi16(alpha[y]->ivec[j][0], neginfv);
+              tmpv = _mm_adds_epi16(escv, _mm_adds_epi16(tscv, tmpv));
+              alpha[v]->ivec[j][0] = _mm_max_epi16(alpha[v]->ivec[j][0], tmpv);
+              /* could make this a do-while on whether any values changed */
+            }
+
+            sW = jp/vecwidth;
+	    for (dp = 1; dp <= sW; dp++)
+	      {
+                tmpv = _mm_mullo_epi16(el_self_v, _mm_adds_epi16(_mm_set1_epi16(dp*vecwidth - 1), doffset));
+		alpha[v]->ivec[j][dp] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
+		/* treat EL as emitting only on self transition */
+		for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) {
+                  tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+                  tmpv = sse_rightshift_epi16(alpha[y+yoffset]->ivec[j][dp], alpha[y+yoffset]->ivec[j][dp-1]);
+                  tmpv = _mm_adds_epi16(tmpv, tscv);
+                  alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
+                }
+		
+		i = j-dp*vecwidth+1;
+                escv = vec_Lesc[dp];
+                alpha[v]->ivec[j][dp] = _mm_adds_epi16(alpha[v]->ivec[j][dp], escv);
+
+                /* handle yoffset = 0, the self-transition case, seaparately */
+                tscv = _mm_set1_epi16(ocm->tsc[v][0]);
+                for (k = 0; k < vecwidth; k++) {
+                  tmpv = sse_rightshift_epi16(alpha[y]->ivec[j][dp], alpha[y]->ivec[j][dp-1]);
+                  tmpv = _mm_adds_epi16(escv, _mm_adds_epi16(tscv, tmpv));
+                  alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
+                  /* could make this a do-while on whether any values changed */
+                }
+	      }
+
+            /* slide esc vec array over by one */
+            if (sW < W/vecwidth) sW++;
+            for (dp = sW; dp > 0; dp--) { vec_Lesc[dp] = sse_rightshift_epi16(vec_Lesc[dp], vec_Lesc[dp-1]); }
+            vec_Lesc[0] = sse_rightshift_epi16(vec_Lesc[0], (jp<W-1) ? _mm_set1_epi16(ocm->oesc[v][dsq[j+2]]) : neginfv);
+	  }
+	}
+      else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st)
+	{
+          alpha[v]->ivec[i0-1][0] = neginfv; /* jp = 0 */
+	  for (jp = 1; jp <= W; jp++) {
+	    j = i0-1+jp;
+            tmpv = sse_rightshift_epi16(_mm_mullo_epi16(el_self_v, doffset), neginfv);
+	    alpha[v]->ivec[j][0] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
+            /* treat EL as emitting only on self transition */
+            y = cm->cfirst[v];
+            for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+              tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+              if (j==0) tmpv = neginfv;
+              else
+                tmpv = sse_rightshift_epi16(alpha[y+yoffset]->ivec[j-1][0], neginfv);
+              tmpv = _mm_adds_epi16(tmpv, tscv);
+              alpha[v]->ivec[j][0] = _mm_max_epi16(alpha[v]->ivec[j][0], tmpv);
+            }
+            if (j==0) escv = neginfv;
+            else
+              escv = _mm_insert_epi16(_mm_set1_epi16(ocm->oesc[v][dsq[j]]),-32768,0);
+            alpha[v]->ivec[j][0] = _mm_adds_epi16(alpha[v]->ivec[j][0], escv);
+
+            sW = jp/vecwidth;
+            if (j==0) escv = neginfv;
+            else
+              escv = _mm_set1_epi16(ocm->oesc[v][dsq[j]]);
+	    for (dp = 1; dp <= sW; dp++)
+	      {
+                tmpv = _mm_mullo_epi16(el_self_v, _mm_adds_epi16(_mm_set1_epi16(dp*vecwidth - 1), doffset));
+		alpha[v]->ivec[j][dp] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
+		/* treat EL as emitting only on self transition */
+		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
+                  tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+                  tmpv = sse_rightshift_epi16(alpha[y+yoffset]->ivec[j-1][dp], alpha[y+yoffset]->ivec[j-1][dp-1]);
+                  tmpv = _mm_adds_epi16(tmpv, tscv);
+                  alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
+                }
+		
+                alpha[v]->ivec[j][dp] = _mm_adds_epi16(alpha[v]->ivec[j][dp], escv);
+	      }
+	  }
+	}				/* finished calculating deck v. */
+      
+      /* Check for local begin getting us to the root.
+       */
+      vec_access = (int16_t *) (&alpha[v]->ivec[j0][W/vecwidth]);
+      tmp = *(vec_access + W%vecwidth);
+      if (allow_begin && tmp + cm->beginsc[v] > bsc) 
+	{
+	  b   = v;
+	  bsc = tmp + cm->beginsc[v];
+	}
+
+      /* Reuse memory:
+       * Look at our children; if they're fully released, take their deck
+       * into the pool for reuse.
+       */
+      if (cm->sttype[v] == B_st) 
+	{ /* we can definitely release the S children of a bifurc. */
+	  y = cm->cfirst[v]; sse_deckpool_push(dpool, alpha[y]); alpha[y] = NULL;
+	  z = cm->cnum[v];   sse_deckpool_push(dpool, alpha[z]); alpha[z] = NULL;
+	}
+      else
+	{
+	  for (y = cm->cfirst[v]; y < cm->cfirst[v]+cm->cnum[v]; y++)
+	    {
+	      touch[y]--;
+	      if (touch[y] == 0) 
+		{
+		  if (cm->sttype[y] == E_st) { 
+		    nends--; 
+		    if (nends == 0) { sse_deckpool_push(dpool, end); end = NULL;}
+		  } else 
+		    sse_deckpool_push(dpool, alpha[y]);
+		  alpha[y] = NULL;
+		}
+	    }
+	}
+  } /* end loop over all v */
+
+  /* debug_print_alpha(alpha, cm, L);*/
+
+  /* Now we free our memory. 
+   * Only vroot deck is valid now and all others vroot+1..vend are NULL, 
+   * and end is NULL.
+   * We could check this status to be sure (and we used to) but now we trust. 
+   */
+  vec_access = (int16_t *) (&alpha[vroot]->ivec[j0][W/vecwidth]);
+  sc = *(vec_access + W%vecwidth);
+  if (ret_b != NULL)   *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
+  if (ret_bsc != NULL) *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */
+
+  /* Free alpha matrix (saving the decks in the pool)
+   */
+  for (v = vroot; v <= vend; v++) /* be careful of our reuse of the end deck -- free it only once */
+    if (alpha[v] != NULL) { 
+      if (cm->sttype[v] != E_st) { sse_deckpool_push(dpool, alpha[v]); alpha[v] = NULL; }
+      else end = alpha[v]; 
+    }
+  if (end != NULL) { sse_deckpool_push(dpool, end); end = NULL; }
+  free(alpha);
+
+  /* Free deck pool. 
+   */
+  while (sse_deckpool_pop(dpool, &end)) sse_free_vjd_deck(end);
+  sse_deckpool_free(dpool);
+
+  free(esc_stale);
+  free(vec_Pesc);
+  free(mem_Pesc);
+  free(mem_Lesc);
+
+  free(touch);
+  return sc;
+
+ ERROR:
+  cm_Fail("Memory allocation error.\n");
+  return 0.; /* never reached */
+}
+
+/*****************************************************************
  * The traceback routines
  *   insideT  - run inside(), append trace in postorder traversal
  *   vinsideT - run vinside(), append trace in postorder traversal
@@ -4371,6 +4899,7 @@ sse_alloc_vjd_deck(int L, int i, int j, int x)
   ESL_DPRINTF3(("alloc_vjd_deck : %.4f\n", size_vjd_deck(L,i,j)));
   ESL_ALLOC(tmp, sizeof(sse_deck_t));
   ESL_ALLOC(tmp->vec, sizeof(__m128 *) * (L+1)); /* always alloc 0..L rows, some of which are NULL */
+  ESL_ALLOC(tmp->ivec, sizeof(__m128i *) * (L+1)); /* always alloc 0..L rows, some of which are NULL */
   for (jp = 0; jp <= j-i+1; jp++) {
     sW = jp/x + 1;	/* integer division on purpose */
     vecs += sW;
@@ -4383,6 +4912,7 @@ sse_alloc_vjd_deck(int L, int i, int j, int x)
     sW = (jp-1)/x + 1;
     tmp->vec[jp+i-1] = tmp->vec[jp+i-2] + sW;
   }
+  for (jp = 0; jp <=L; jp++) { tmp->ivec[jp] = (__m128i *) &tmp->vec[jp]; }
   return tmp;
  ERROR:
   cm_Fail("Memory allocation error.");
@@ -4395,6 +4925,7 @@ sse_size_vjd_deck(int L, int i, int j, int x)
   int   jp;
   Mb  = (float) (sizeof(sse_deck_t));
   Mb += (float) (sizeof(__m128 *) * (L+1));
+  Mb += (float) (sizeof(__m128i *) * (L+1));
   for (jp = 0; jp <= j-i+1; jp++)
     Mb += (float) (sizeof(__m128) * (jp/x + 1));
   return ((Mb+15) / 1000000.);
@@ -4403,6 +4934,7 @@ void
 sse_free_vjd_deck(sse_deck_t *a)
 {
   int jp;
+  free(a->ivec);
   free(a->vec);
   free(a->mem);
   free(a);
@@ -5066,4 +5598,3 @@ main(int argc, char **argv)
   return 0; /* never reached */
 }
 #endif /*IMPLSSE_SMALL_TEST*/
-
