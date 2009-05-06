@@ -4305,7 +4305,7 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
       else if (cm->sttype[v] == ML_st)
 	{
           /* initialize esc vec array */
-          vec_Lesc[0] = _mm_insert_epi16(_mm_set1_epi16(ocm->oesc[v][dsq[i0]]),-32768,0);
+          vec_Lesc[0] = _mm_insert_epi16(neginfv,ocm->oesc[v][dsq[i0]],0);
           for (dp = 1; dp <= W/vecwidth; dp++) { vec_Lesc[dp] = neginfv; }
 
 	  for (jp = 0; jp <= W; jp++) {
@@ -4353,7 +4353,7 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
       else if (cm->sttype[v] == IL_st)
 	{
           /* initialize esc vec array */
-          vec_Lesc[0] = _mm_insert_epi16(_mm_set1_epi16(ocm->oesc[v][dsq[i0]]),-32768,0);
+          vec_Lesc[0] = _mm_insert_epi16(neginfv,ocm->oesc[v][dsq[i0]],0);
           for (dp = 1; dp <= W/vecwidth; dp++) { vec_Lesc[dp] = neginfv; }
 
 	  for (jp = 0; jp <= W; jp++) {
@@ -4459,7 +4459,6 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
        */
       vec_access = (int16_t *) (&alpha[v]->ivec[j0][W/vecwidth]);
       tmp = *(vec_access + W%vecwidth);
-if (tmp) printf("Catch uninitialized\n");
       if (allow_begin && tmp + ocm->beginsc[v] > bsc) 
 	{
 	  b   = v;

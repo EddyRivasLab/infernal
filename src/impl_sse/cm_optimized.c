@@ -83,9 +83,8 @@ cm_optimized_Convert(const CM_t *cm)
   /* Scale score values */
   ocm->scale_w = SCALE_W;
   for (v = 0; v<ocm->M; v++) {
-    y = ocm->cfirst[v];
-    for (yoffset = 0; y < ocm->cnum[v]; y++) {
-      ocm->tsc[v][y] = wordify(ocm->scale_w, cm->tsc[v][y]);
+    for (yoffset = 0; yoffset < ocm->cnum[v]; yoffset++) {
+      ocm->tsc[v][yoffset] = wordify(ocm->scale_w, cm->tsc[v][yoffset]);
     }
 
     if (ocm->sttype[v] == MP_st) {
