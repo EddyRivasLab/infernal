@@ -11,7 +11,7 @@ SHELL  = /bin/sh
 ## your compiler and compiler flags
 #
 CC     = gcc -std=gnu99
-CFLAGS = -g -O2 -mpentiumpro
+CFLAGS = -g -mpentiumpro
 SIMDFLAGS= -msse2
 
 ## other defined flags. 
@@ -50,7 +50,7 @@ $(PROGS): %: %.o $(OBJS) ${HDRS}
 	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS)
 
 test: $(OBJS) ${HDRS}
-	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o sse-cyk -DIMPLSSE_SMALL_TEST sse_cm_dpsmall.c sse_util.o $(MYLIBS) $(LIBS)
+	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o sse-cyk -DIMPLSSE_SMALL_TEST sse_cm_dpsmall.c sse_util.o cm_optimized.o $(MYLIBS) $(LIBS)
 	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o sse-bmark -DIMPL_SEARCH_BENCHMARK sse_cm_dpsearch.c $(MYLIBS) $(LIBS)
 	
 

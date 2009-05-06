@@ -38,7 +38,7 @@ typedef struct cm_optimized_s {
  *****************************************************************/
 
 /* cm_optimized.c */
-int cm_optimized_Convert(const CM_t *cm, CM_OPTIMIZED *ocm);
+CM_OPTIMIZED* cm_optimized_Convert(const CM_t *cm);
 void cm_optimized_Free(CM_OPTIMIZED *ocm);
 
 /* sse_cm_dpsearch.c */

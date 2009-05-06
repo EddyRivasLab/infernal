@@ -1425,6 +1425,9 @@ inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int d
 		  }
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
+//printf("j%2d v%2d ",j,v);
+//for (d = 0; d <= W && d <= j; d++) { printf("%10.2e ",alpha[v][j][d]); }
+//printf("\n");
 	  }
 	}
       else if (cm->sttype[v] == B_st)
@@ -1445,6 +1448,9 @@ inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int d
 		  }
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
+//printf("j%2d v%2d ",j,v);
+//for (d = 0; d <= W && d <= j; d++) { printf("%10.2e ",alpha[v][j][d]); }
+//printf("\n");
 	  }
 	}
       else if (cm->sttype[v] == MP_st)
@@ -1473,6 +1479,9 @@ inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int d
 
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
+//printf("j%2d v%2d ",j,v);
+//for (d = 0; d <= W && d <= j; d++) { printf("%10.2e ",alpha[v][j][d]); }
+//printf("\n");
 	  }
 	}
       else if (cm->sttype[v] == IL_st || cm->sttype[v] == ML_st)
@@ -1500,6 +1509,9 @@ inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int d
 		
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
+//printf("j%2d v%2d ",j,v);
+//for (d = 0; d <= W && d <= j; d++) { printf("%10.2e ",alpha[v][j][d]); }
+//printf("\n");
 	  }
 	}
       else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st)
@@ -1525,6 +1537,9 @@ inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, int d
 		
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
+//printf("j%2d v%2d ",j,v);
+//for (d = 0; d <= W && d <= j; d++) { printf("%10.2e ",alpha[v][j][d]); }
+//printf("\n");
 	  }
 	}				/* finished calculating deck v. */
       

@@ -13,16 +13,18 @@ static int16_t wordify(float scale_w, float sc);
 /* Fuction:  cm_optimized_Convert()
  * Author:   DLK, Tue May 05 2009
  */
-int
-cm_optimized_Convert(const CM_t *cm, CM_OPTIMIZED *ocm)
+CM_OPTIMIZED*
+cm_optimized_Convert(const CM_t *cm)
 {
   int status;
   int v, y, yoffset;
+  int npairs = 0;
+  int nsinglets = 0;
+  int16_t *oesc_start;
+  int cur_cell;
+  CM_OPTIMIZED *ocm;
 
-  if (ocm == NULL)
-    ESL_ALLOC(ocm, sizeof(ocm));
-  else
-    cm_Fail("Not set up to re-use CM_OPTIMIZED models!\n");
+  ESL_ALLOC(ocm, sizeof(CM_OPTIMIZED));
 
   /* Copy basic information */
   ocm->M = cm->M;
@@ -30,6 +32,21 @@ cm_optimized_Convert(const CM_t *cm, CM_OPTIMIZED *ocm)
   ocm->cfirst = cm->cfirst;
   ocm->cnum   = cm->cnum;
   ocm->abc    = cm->abc;
+
+  /* count pairs, singlets */
+  for(v = 0; v < cm->M; v++) {
+    switch(ocm->sttype[v]) {
+    case IL_st:
+    case ML_st:
+    case IR_st:
+    case MR_st:
+      nsinglets++;
+      break;
+    case MP_st:
+      npairs++;
+      break;
+    }
+  }
   
   /* Allocate memory */
   ESL_ALLOC(ocm->tsc,     sizeof(int16_t *) * ocm->M);
@@ -38,10 +55,29 @@ cm_optimized_Convert(const CM_t *cm, CM_OPTIMIZED *ocm)
   ESL_ALLOC(ocm->endsc,   sizeof(int16_t  ) * ocm->M);
 
   ESL_ALLOC(ocm->tsc[0],  sizeof(int16_t  ) * ocm->M * MAXCONNECT);
-  ESL_ALLOC(ocm->oesc[0], sizeof(int16_t  ) * ocm->M * ocm->abc->Kp);
+  ESL_ALLOC(oesc_start,   sizeof(int16_t  ) * (nsinglets * ocm->abc->Kp + npairs * ocm->abc->Kp * ocm->abc->Kp));
   for (v = 1; v<ocm->M; v++) {
-    ocm->tsc[v]  = ocm->tsc[v-1]  + sizeof(int16_t) * MAXCONNECT;
-    ocm->oesc[v] = ocm->oesc[v-1] + sizeof(int16_t) * ocm->abc->Kp;
+    //ocm->tsc[v]  = ocm->tsc[v-1]  + sizeof(int16_t) * MAXCONNECT;
+    ocm->tsc[v]  = ocm->tsc[v-1]  + MAXCONNECT;
+  }
+  cur_cell = 0;
+  for (v = 0; v<ocm->M; v++) {
+    switch(ocm->sttype[v]) {
+      case ML_st:
+      case IL_st:
+      case MR_st:
+      case IR_st:
+        ocm->oesc[v] = oesc_start + cur_cell;
+        cur_cell += ocm->abc->Kp;
+        break;
+      case MP_st:
+        ocm->oesc[v] = oesc_start + cur_cell;
+        cur_cell += ocm->abc->Kp * ocm->abc->Kp;
+        break;
+      default:
+        ocm->oesc[v] = NULL;
+        break;
+    }
   }
 
   /* Scale score values */
@@ -52,8 +88,16 @@ cm_optimized_Convert(const CM_t *cm, CM_OPTIMIZED *ocm)
       ocm->tsc[v][y] = wordify(ocm->scale_w, cm->tsc[v][y]);
     }
 
-    for (y = 0; y < ocm->abc->Kp; y++) {
-      ocm->oesc[v][y] = wordify(ocm->scale_w, cm->oesc[v][y]);
+    if (ocm->sttype[v] == MP_st) {
+      for (y = 0; y < (ocm->abc->Kp * ocm->abc->Kp); y++) {
+        ocm->oesc[v][y] = wordify(ocm->scale_w, cm->oesc[v][y]);
+      }
+    }
+    else if (ocm->sttype[v] == ML_st || ocm->sttype[v] == IL_st ||
+             ocm->sttype[v] == MR_st || ocm->sttype[v] == IR_st ) {
+      for (y = 0; y < ocm->abc->Kp; y++) {
+        ocm->oesc[v][y] = wordify(ocm->scale_w, cm->oesc[v][y]);
+      }
     }
 
     ocm->beginsc[v] = wordify(ocm->scale_w, cm->beginsc[v]);
@@ -61,7 +105,7 @@ cm_optimized_Convert(const CM_t *cm, CM_OPTIMIZED *ocm)
   }
   ocm->el_selfsc = wordify(ocm->scale_w, cm->el_selfsc);
 
-  return 0;
+  return ocm;
 
 ERROR: 
   cm_Fail("Memory allocation error.\n");
@@ -74,8 +118,11 @@ ERROR:
 void
 cm_optimized_Free(CM_OPTIMIZED *ocm)
 {
+  int v = 0;
+
   if (ocm->tsc[0] != NULL) free(ocm->tsc[0]);
-  if (ocm->oesc[0] != NULL) free(ocm->oesc[0]);
+  while (ocm->oesc[v] == NULL && v < ocm->M) { v++; }
+  if (ocm->oesc[v] != NULL) free(ocm->oesc[v]);
 
   if (ocm->endsc != NULL) free(ocm->endsc);
   if (ocm->beginsc != NULL) free(ocm->beginsc);

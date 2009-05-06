@@ -3918,7 +3918,7 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
   int       b;		/* best local begin state */
   int16_t   bsc;		/* score for using the best local begin state */
 
-  sse_deck_t **alpha;
+  sse_deck_t **alpha = NULL;
   struct sse_deckpool_s *dpool = NULL;
 
   const int    vecwidth = 8;
@@ -3941,11 +3941,11 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
   __m128i      tmpv;
   sse_deck_t  *end;
 
-  CM_OPTIMIZED *ocm;
+  CM_OPTIMIZED *ocm = NULL;
 
   /* Allocations and initializations
    */
-  cm_optimized_Convert(cm, ocm);
+  ocm = cm_optimized_Convert(cm);
   zerov = _mm_set1_epi16(0);
   neginfv = _mm_set1_epi16(-32768);
   el_self_v = _mm_set1_epi16(ocm->el_selfsc);
@@ -4051,19 +4051,123 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
 	      {
 		alpha[v]->ivec[j][dp] = _mm_adds_epi16(alpha[y]->ivec[j][dp], begr_v);
               }
-            for (k = 1; k <= jp; k++)
+            for (k = 8; k <= jp; k += vecwidth)
               {
-                int kx = k%vecwidth;
                 kp = k/vecwidth;
-                begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],kx));
+                begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],0));
 
-                /* rightshift by three */
-                tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][0],neginfv,kx);
+                tmpv = alpha[y]->ivec[j-k][0];
                 tmpv = _mm_add_epi16(tmpv, begr_v);
                 alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
                 for (dp = kp+1; dp <= sW; dp++)
                   {
-                    tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][dp-kp], alpha[y]->ivec[j-k][dp-kp-1],kx);
+                    tmpv = alpha[y]->ivec[j-k][dp-kp];
+                    tmpv = _mm_add_epi16(tmpv, begr_v);
+                    alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
+                  }
+              }
+            /* Expanding all the cases just because the shift argument needs to be an immediate */
+            for (k = 1; k <= jp; k += vecwidth)
+              {
+                kp = k/vecwidth;
+                begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],1));
+
+                tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][0],neginfv,1);
+                tmpv = _mm_add_epi16(tmpv, begr_v);
+                alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
+                for (dp = kp+1; dp <= sW; dp++)
+                  {
+                    tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][dp-kp], alpha[y]->ivec[j-k][dp-kp-1],1);
+                    tmpv = _mm_add_epi16(tmpv, begr_v);
+                    alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
+                  }
+              }
+            for (k = 2; k <= jp; k += vecwidth)
+              {
+                kp = k/vecwidth;
+                begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],2));
+
+                tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][0],neginfv,2);
+                tmpv = _mm_add_epi16(tmpv, begr_v);
+                alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
+                for (dp = kp+1; dp <= sW; dp++)
+                  {
+                    tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][dp-kp], alpha[y]->ivec[j-k][dp-kp-1],2);
+                    tmpv = _mm_add_epi16(tmpv, begr_v);
+                    alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
+                  }
+              }
+            for (k = 3; k <= jp; k += vecwidth)
+              {
+                kp = k/vecwidth;
+                begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],3));
+
+                tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][0],neginfv,3);
+                tmpv = _mm_add_epi16(tmpv, begr_v);
+                alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
+                for (dp = kp+1; dp <= sW; dp++)
+                  {
+                    tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][dp-kp], alpha[y]->ivec[j-k][dp-kp-1],3);
+                    tmpv = _mm_add_epi16(tmpv, begr_v);
+                    alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
+                  }
+              }
+            for (k = 4; k <= jp; k += vecwidth)
+              {
+                kp = k/vecwidth;
+                begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],4));
+
+                tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][0],neginfv,4);
+                tmpv = _mm_add_epi16(tmpv, begr_v);
+                alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
+                for (dp = kp+1; dp <= sW; dp++)
+                  {
+                    tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][dp-kp], alpha[y]->ivec[j-k][dp-kp-1],4);
+                    tmpv = _mm_add_epi16(tmpv, begr_v);
+                    alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
+                  }
+              }
+            for (k = 5; k <= jp; k += vecwidth)
+              {
+                kp = k/vecwidth;
+                begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],5));
+
+                tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][0],neginfv,5);
+                tmpv = _mm_add_epi16(tmpv, begr_v);
+                alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
+                for (dp = kp+1; dp <= sW; dp++)
+                  {
+                    tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][dp-kp], alpha[y]->ivec[j-k][dp-kp-1],5);
+                    tmpv = _mm_add_epi16(tmpv, begr_v);
+                    alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
+                  }
+              }
+            for (k = 6; k <= jp; k += vecwidth)
+              {
+                kp = k/vecwidth;
+                begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],6));
+
+                tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][0],neginfv,6);
+                tmpv = _mm_add_epi16(tmpv, begr_v);
+                alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
+                for (dp = kp+1; dp <= sW; dp++)
+                  {
+                    tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][dp-kp], alpha[y]->ivec[j-k][dp-kp-1],6);
+                    tmpv = _mm_add_epi16(tmpv, begr_v);
+                    alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
+                  }
+              }
+            for (k = 7; k <= jp; k += vecwidth)
+              {
+                kp = k/vecwidth;
+                begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],7));
+
+                tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][0],neginfv,7);
+                tmpv = _mm_add_epi16(tmpv, begr_v);
+                alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
+                for (dp = kp+1; dp <= sW; dp++)
+                  {
+                    tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][dp-kp], alpha[y]->ivec[j-k][dp-kp-1],7);
                     tmpv = _mm_add_epi16(tmpv, begr_v);
                     alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                   }
@@ -4102,10 +4206,41 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
                                   jp>4 ? cm->oesc[v][dsq[j-4]*cm->abc->Kp+dsq[j]] : -32768,
                                   jp>5 ? cm->oesc[v][dsq[j-5]*cm->abc->Kp+dsq[j]] : -32768,
                                   jp>6 ? cm->oesc[v][dsq[j-6]*cm->abc->Kp+dsq[j]] : -32768);
-            if (delta < vecwidth) {
+            /* Expanding all the cases just because the shift argument needs to be an immediate */
+            if (delta == 1) {
               for (dp = sW; dp > 0; dp--)
-                { vec_Pesc[dsq[j]][dp] = WORDRSHIFTX(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1],delta); }
-              vec_Pesc[dsq[j]][0] = WORDRSHIFTX(vec_Pesc[dsq[j]][0], tmpv, delta);
+                { vec_Pesc[dsq[j]][dp] = WORDRSHIFTX(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1],1); }
+              vec_Pesc[dsq[j]][0] = WORDRSHIFTX(vec_Pesc[dsq[j]][0], tmpv, 1);
+            }
+            if (delta == 2) {
+              for (dp = sW; dp > 0; dp--)
+                { vec_Pesc[dsq[j]][dp] = WORDRSHIFTX(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1],2); }
+              vec_Pesc[dsq[j]][0] = WORDRSHIFTX(vec_Pesc[dsq[j]][0], tmpv, 2);
+            }
+            if (delta == 3) {
+              for (dp = sW; dp > 0; dp--)
+                { vec_Pesc[dsq[j]][dp] = WORDRSHIFTX(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1],3); }
+              vec_Pesc[dsq[j]][0] = WORDRSHIFTX(vec_Pesc[dsq[j]][0], tmpv, 3);
+            }
+            if (delta == 4) {
+              for (dp = sW; dp > 0; dp--)
+                { vec_Pesc[dsq[j]][dp] = WORDRSHIFTX(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1],4); }
+              vec_Pesc[dsq[j]][0] = WORDRSHIFTX(vec_Pesc[dsq[j]][0], tmpv, 4);
+            }
+            if (delta == 5) {
+              for (dp = sW; dp > 0; dp--)
+                { vec_Pesc[dsq[j]][dp] = WORDRSHIFTX(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1],5); }
+              vec_Pesc[dsq[j]][0] = WORDRSHIFTX(vec_Pesc[dsq[j]][0], tmpv, 5);
+            }
+            if (delta == 6) {
+              for (dp = sW; dp > 0; dp--)
+                { vec_Pesc[dsq[j]][dp] = WORDRSHIFTX(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1],6); }
+              vec_Pesc[dsq[j]][0] = WORDRSHIFTX(vec_Pesc[dsq[j]][0], tmpv, 6);
+            }
+            if (delta == 7) {
+              for (dp = sW; dp > 0; dp--)
+                { vec_Pesc[dsq[j]][dp] = WORDRSHIFTX(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1],7); }
+              vec_Pesc[dsq[j]][0] = WORDRSHIFTX(vec_Pesc[dsq[j]][0], tmpv, 7);
             }
             else if (delta == vecwidth) {
               for (dp = sW; dp > 0; dp--) { vec_Pesc[dsq[j]][dp] = vec_Pesc[dsq[j]][dp-1]; }
@@ -4324,10 +4459,11 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
        */
       vec_access = (int16_t *) (&alpha[v]->ivec[j0][W/vecwidth]);
       tmp = *(vec_access + W%vecwidth);
-      if (allow_begin && tmp + cm->beginsc[v] > bsc) 
+if (tmp) printf("Catch uninitialized\n");
+      if (allow_begin && tmp + ocm->beginsc[v] > bsc) 
 	{
 	  b   = v;
-	  bsc = tmp + cm->beginsc[v];
+	  bsc = tmp + ocm->beginsc[v];
 	}
 
       /* Reuse memory:
@@ -4916,7 +5052,7 @@ sse_alloc_vjd_deck(int L, int i, int j, int x)
     sW = (jp-1)/x + 1;
     tmp->vec[jp+i-1] = tmp->vec[jp+i-2] + sW;
   }
-  for (jp = 0; jp <=L; jp++) { tmp->ivec[jp] = (__m128i *) &tmp->vec[jp]; }
+  for (jp = 0; jp <=L; jp++) { tmp->ivec[jp] = (__m128i *) tmp->vec[jp]; }
   return tmp;
  ERROR:
   cm_Fail("Memory allocation error.");
@@ -5443,6 +5579,7 @@ static ESL_OPTIONS options[] = {
   { "--traceback",eslARG_NONE,    FALSE, NULL, NULL,  "--scoreonly",  NULL, NULL, "Determine CYK trace",0 },
   { "--strict",   eslARG_NONE,    FALSE, NULL, NULL, NULL, "--traceback", NULL, "Compare traces stringently", 0},
   { "--DnC",      eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "use Divide and Conquer implementation", 0},
+  { "--CYKFilter",eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "Experimental epi16 CYK Filter", 0},
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -5579,6 +5716,14 @@ main(int argc, char **argv)
         if (tr1 != NULL && tr2 != NULL && esl_opt_GetBoolean(go, "--strict") && !ParsetreeCompare(tr1, tr2))
           cm_Die("Parse trees differ\n");
 
+      }
+
+      if (esl_opt_GetBoolean(go, "--CYKFilter")) {
+        esl_stopwatch_Start(w);
+        sc1 = sse_CYKFilter_epi16(cm,dsq,L,0,cm->M-1,1,L,TRUE,NULL,NULL)/500.0;
+        printf("%4d %-30s %10.4f bits ", (i+1), "SSE_CYKFilter(): ", sc1);
+        esl_stopwatch_Stop(w);
+        esl_stopwatch_Display(stdout, w, " CPU time: ");
       }
 
       if (tr1 != NULL) FreeParsetree(tr1);
