@@ -59,7 +59,7 @@
 #include "structs.h"
 #include "impl_sse.h"
 
-#define WORDRSHIFTX(a,b,x) (_mm_or_si128(_mm_slli_si128(a,2*x),_mm_srli_si128(b,2*x)))
+#define WORDRSHIFTX(a,b,x) (_mm_or_si128(_mm_slli_si128(a,2*x),_mm_srli_si128(b,(8-x)*2)))
 
 typedef struct sse_deck_s {
    __m128   *mem;
