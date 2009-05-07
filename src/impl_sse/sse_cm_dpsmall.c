@@ -4057,12 +4057,12 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
                 begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],0));
 
                 tmpv = alpha[y]->ivec[j-k][0];
-                tmpv = _mm_add_epi16(tmpv, begr_v);
+                tmpv = _mm_adds_epi16(tmpv, begr_v);
                 alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
                 for (dp = kp+1; dp <= sW; dp++)
                   {
                     tmpv = alpha[y]->ivec[j-k][dp-kp];
-                    tmpv = _mm_add_epi16(tmpv, begr_v);
+                    tmpv = _mm_adds_epi16(tmpv, begr_v);
                     alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                   }
               }
@@ -4073,12 +4073,12 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
                 begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],1));
 
                 tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][0],neginfv,1);
-                tmpv = _mm_add_epi16(tmpv, begr_v);
+                tmpv = _mm_adds_epi16(tmpv, begr_v);
                 alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
                 for (dp = kp+1; dp <= sW; dp++)
                   {
                     tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][dp-kp], alpha[y]->ivec[j-k][dp-kp-1],1);
-                    tmpv = _mm_add_epi16(tmpv, begr_v);
+                    tmpv = _mm_adds_epi16(tmpv, begr_v);
                     alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                   }
               }
@@ -4088,12 +4088,12 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
                 begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],2));
 
                 tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][0],neginfv,2);
-                tmpv = _mm_add_epi16(tmpv, begr_v);
+                tmpv = _mm_adds_epi16(tmpv, begr_v);
                 alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
                 for (dp = kp+1; dp <= sW; dp++)
                   {
                     tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][dp-kp], alpha[y]->ivec[j-k][dp-kp-1],2);
-                    tmpv = _mm_add_epi16(tmpv, begr_v);
+                    tmpv = _mm_adds_epi16(tmpv, begr_v);
                     alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                   }
               }
@@ -4103,12 +4103,12 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
                 begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],3));
 
                 tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][0],neginfv,3);
-                tmpv = _mm_add_epi16(tmpv, begr_v);
+                tmpv = _mm_adds_epi16(tmpv, begr_v);
                 alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
                 for (dp = kp+1; dp <= sW; dp++)
                   {
                     tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][dp-kp], alpha[y]->ivec[j-k][dp-kp-1],3);
-                    tmpv = _mm_add_epi16(tmpv, begr_v);
+                    tmpv = _mm_adds_epi16(tmpv, begr_v);
                     alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                   }
               }
@@ -4118,12 +4118,12 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
                 begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],4));
 
                 tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][0],neginfv,4);
-                tmpv = _mm_add_epi16(tmpv, begr_v);
+                tmpv = _mm_adds_epi16(tmpv, begr_v);
                 alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
                 for (dp = kp+1; dp <= sW; dp++)
                   {
                     tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][dp-kp], alpha[y]->ivec[j-k][dp-kp-1],4);
-                    tmpv = _mm_add_epi16(tmpv, begr_v);
+                    tmpv = _mm_adds_epi16(tmpv, begr_v);
                     alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                   }
               }
@@ -4133,12 +4133,12 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
                 begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],5));
 
                 tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][0],neginfv,5);
-                tmpv = _mm_add_epi16(tmpv, begr_v);
+                tmpv = _mm_adds_epi16(tmpv, begr_v);
                 alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
                 for (dp = kp+1; dp <= sW; dp++)
                   {
                     tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][dp-kp], alpha[y]->ivec[j-k][dp-kp-1],5);
-                    tmpv = _mm_add_epi16(tmpv, begr_v);
+                    tmpv = _mm_adds_epi16(tmpv, begr_v);
                     alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                   }
               }
@@ -4148,12 +4148,12 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
                 begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],6));
 
                 tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][0],neginfv,6);
-                tmpv = _mm_add_epi16(tmpv, begr_v);
+                tmpv = _mm_adds_epi16(tmpv, begr_v);
                 alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
                 for (dp = kp+1; dp <= sW; dp++)
                   {
                     tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][dp-kp], alpha[y]->ivec[j-k][dp-kp-1],6);
-                    tmpv = _mm_add_epi16(tmpv, begr_v);
+                    tmpv = _mm_adds_epi16(tmpv, begr_v);
                     alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                   }
               }
@@ -4163,12 +4163,12 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
                 begr_v = _mm_set1_epi16(_mm_extract_epi16(alpha[z]->ivec[j][kp],7));
 
                 tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][0],neginfv,7);
-                tmpv = _mm_add_epi16(tmpv, begr_v);
+                tmpv = _mm_adds_epi16(tmpv, begr_v);
                 alpha[v]->ivec[j][kp] = _mm_max_epi16(alpha[v]->ivec[j][kp], tmpv);
                 for (dp = kp+1; dp <= sW; dp++)
                   {
                     tmpv = WORDRSHIFTX(alpha[y]->ivec[j-k][dp-kp], alpha[y]->ivec[j-k][dp-kp-1],7);
-                    tmpv = _mm_add_epi16(tmpv, begr_v);
+                    tmpv = _mm_adds_epi16(tmpv, begr_v);
                     alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                   }
               }
