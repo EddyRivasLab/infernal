@@ -1645,13 +1645,6 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
                 //FIXME: SSE conversion is kind of ignoring the possibilty of underflow... this is bad.
 		//if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
-//printf("j%2d v%2d ",j,v);
-//for (d = 0; d <= W && d <= j; d++) {
-//float *access;
-//access = (float *) (&(alpha[v]->vec[j][d/vecwidth])) + d%vecwidth;
-//printf("%10.2e ",*access);
-//}
-//printf("\n");
 	  }
 	}
       else if (cm->sttype[v] == B_st)
@@ -1780,13 +1773,6 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
 		if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	      }
 */
-//printf("j%2d v%2d ",j,v);
-//for (d = 0; d <= W && d <= j; d++) {
-//float *access;
-//access = (float *) (&(alpha[v]->vec[j][d/vecwidth])) + d%vecwidth;
-//printf("%10.2e ",*access);
-//}
-//printf("\n");
 	  }
 	}
       else if (cm->sttype[v] == MP_st)
@@ -1893,13 +1879,6 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
                   esc_stale[x] = j;
                   }
               } 
-//printf("j%2d v%2d ",j,v);
-//for (d = 0; d <= W && d <= j; d++) {
-//float *access;
-//access = (float *) (&(alpha[v]->vec[j][d/vecwidth])) + d%vecwidth;
-//printf("%10.2e ",*access);
-//}
-//printf("\n");
 	  }
 	}
       /* Separate out ML_st from IL_st, since only IL_st has to worry abuot self-transitions */
@@ -1956,13 +1935,6 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
             if (sW < W/vecwidth) sW++;
             for (dp = sW; dp > 0; dp--) { vec_Lesc[dp] = alt_rightshift_ps(vec_Lesc[dp], vec_Lesc[dp-1]); }
             vec_Lesc[0] = alt_rightshift_ps(vec_Lesc[0], (jp<W-1) ? _mm_set1_ps(cm->oesc[v][dsq[j+2]]) : neginfv);
-//printf("j%2d v%2d ",j,v);
-//for (d = 0; d <= W && d <= j; d++) {
-//float *access;
-//access = (float *) (&(alpha[v]->vec[j][d/vecwidth])) + d%vecwidth;
-//printf("%10.2e ",*access);
-//}
-//printf("\n");
 	  }
 	}
       /* The self-transition loop on IL_st will need to be completely serialized, since
@@ -2047,13 +2019,6 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
             if (sW < W/vecwidth) sW++;
             for (dp = sW; dp > 0; dp--) { vec_Lesc[dp] = alt_rightshift_ps(vec_Lesc[dp], vec_Lesc[dp-1]); }
             vec_Lesc[0] = alt_rightshift_ps(vec_Lesc[0], (jp<W-1) ? _mm_set1_ps(cm->oesc[v][dsq[j+2]]) : neginfv);
-//printf("j%2d v%2d ",j,v);
-//for (d = 0; d <= W && d <= j; d++) {
-//float *access;
-//access = (float *) (&(alpha[v]->vec[j][d/vecwidth])) + d%vecwidth;
-//printf("%10.2e ",*access);
-//}
-//printf("\n");
 	  }
 	}
       else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st)
@@ -2106,15 +2071,16 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
 		
                 alpha[v]->vec[j][dp] = _mm_add_ps(alpha[v]->vec[j][dp], escv);
 	      }
-//printf("j%2d v%2d ",j,v);
-//for (d = 0; d <= W && d <= j; d++) {
-//float *access;
-//access = (float *) (&(alpha[v]->vec[j][d/vecwidth])) + d%vecwidth;
-//printf("%10.2e ",*access);
-//}
-//printf("\n");
 	  }
 	}				/* finished calculating deck v. */
+/*
+for (jp = 1; jp <= W; jp++) {
+j = i0-1+jp;
+fprintf(stderr,"v%3d j%3d   ",v,j);
+for (d=0; d<=jp; d++) fprintf(stderr,"%7.3f ",*((float *) &alpha[v]->ivec[j][d/vecwidth]+d%vecwidth));
+fprintf(stderr,"\n");
+}
+*/
       
       /* Check for local begin getting us to the root.
        * This is "off-shadow": if/when we trace back, we'll handle this
@@ -4198,54 +4164,47 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
             /* slide esc vec array over */
             sW = jp/vecwidth;
             delta = j>0 ? j - esc_stale[dsq[j]] : 0;
-            tmpv = _mm_setr_epi16(jp<W ? cm->oesc[v][dsq[j+1]*cm->abc->Kp+dsq[j]] : -32768,
-                                  jp>0 ? cm->oesc[v][dsq[j  ]*cm->abc->Kp+dsq[j]] : -32768,
-                                  jp>1 ? cm->oesc[v][dsq[j-1]*cm->abc->Kp+dsq[j]] : -32768,
-                                  jp>2 ? cm->oesc[v][dsq[j-2]*cm->abc->Kp+dsq[j]] : -32768,
-                                  jp>3 ? cm->oesc[v][dsq[j-3]*cm->abc->Kp+dsq[j]] : -32768,
-                                  jp>4 ? cm->oesc[v][dsq[j-4]*cm->abc->Kp+dsq[j]] : -32768,
-                                  jp>5 ? cm->oesc[v][dsq[j-5]*cm->abc->Kp+dsq[j]] : -32768,
-                                  jp>6 ? cm->oesc[v][dsq[j-6]*cm->abc->Kp+dsq[j]] : -32768);
+            tmpv = _mm_setr_epi16(jp<W ? ocm->oesc[v][dsq[j+1]*ocm->abc->Kp+dsq[j]] : -32768,
+                                  jp>0 ? ocm->oesc[v][dsq[j  ]*ocm->abc->Kp+dsq[j]] : -32768,
+                                  jp>1 ? ocm->oesc[v][dsq[j-1]*ocm->abc->Kp+dsq[j]] : -32768,
+                                  jp>2 ? ocm->oesc[v][dsq[j-2]*ocm->abc->Kp+dsq[j]] : -32768,
+                                  jp>3 ? ocm->oesc[v][dsq[j-3]*ocm->abc->Kp+dsq[j]] : -32768,
+                                  jp>4 ? ocm->oesc[v][dsq[j-4]*ocm->abc->Kp+dsq[j]] : -32768,
+                                  jp>5 ? ocm->oesc[v][dsq[j-5]*ocm->abc->Kp+dsq[j]] : -32768,
+                                  jp>6 ? ocm->oesc[v][dsq[j-6]*ocm->abc->Kp+dsq[j]] : -32768);
             /* Expanding all the cases just because the shift argument needs to be an immediate */
             if (delta == 1) {
               for (dp = sW; dp > 0; dp--)
                 { vec_Pesc[dsq[j]][dp] = WORDRSHIFTX(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1],1); }
-              vec_Pesc[dsq[j]][0] = WORDRSHIFTX(vec_Pesc[dsq[j]][0], tmpv, 1);
             }
             if (delta == 2) {
               for (dp = sW; dp > 0; dp--)
                 { vec_Pesc[dsq[j]][dp] = WORDRSHIFTX(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1],2); }
-              vec_Pesc[dsq[j]][0] = WORDRSHIFTX(vec_Pesc[dsq[j]][0], tmpv, 2);
             }
             if (delta == 3) {
               for (dp = sW; dp > 0; dp--)
                 { vec_Pesc[dsq[j]][dp] = WORDRSHIFTX(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1],3); }
-              vec_Pesc[dsq[j]][0] = WORDRSHIFTX(vec_Pesc[dsq[j]][0], tmpv, 3);
             }
             if (delta == 4) {
               for (dp = sW; dp > 0; dp--)
                 { vec_Pesc[dsq[j]][dp] = WORDRSHIFTX(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1],4); }
-              vec_Pesc[dsq[j]][0] = WORDRSHIFTX(vec_Pesc[dsq[j]][0], tmpv, 4);
             }
             if (delta == 5) {
               for (dp = sW; dp > 0; dp--)
                 { vec_Pesc[dsq[j]][dp] = WORDRSHIFTX(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1],5); }
-              vec_Pesc[dsq[j]][0] = WORDRSHIFTX(vec_Pesc[dsq[j]][0], tmpv, 5);
             }
             if (delta == 6) {
               for (dp = sW; dp > 0; dp--)
                 { vec_Pesc[dsq[j]][dp] = WORDRSHIFTX(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1],6); }
-              vec_Pesc[dsq[j]][0] = WORDRSHIFTX(vec_Pesc[dsq[j]][0], tmpv, 6);
             }
             if (delta == 7) {
               for (dp = sW; dp > 0; dp--)
                 { vec_Pesc[dsq[j]][dp] = WORDRSHIFTX(vec_Pesc[dsq[j]][dp], vec_Pesc[dsq[j]][dp-1],7); }
-              vec_Pesc[dsq[j]][0] = WORDRSHIFTX(vec_Pesc[dsq[j]][0], tmpv, 7);
             }
             else if (delta == vecwidth) {
               for (dp = sW; dp > 0; dp--) { vec_Pesc[dsq[j]][dp] = vec_Pesc[dsq[j]][dp-1]; }
-              vec_Pesc[dsq[j]][0] = tmpv;
             }
+            vec_Pesc[dsq[j]][0] = tmpv;
             if (j>0) esc_stale[dsq[j]] = j; 
 
             tmpv = (__m128i) esl_sse_rightshift_ps((__m128) _mm_mullo_epi16(el_self_v, doffset), (__m128) neginfv);
@@ -4262,7 +4221,7 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
             }
             //not sure this logic is correct... and might not be necessary anyway
             //escv = j>0 ? (__m128i) esl_sse_rightshift_ps((__m128) vec_Pesc[dsq[j]][0], (__m128) neginfv) : neginfv;
-            escv = j>0 ? vec_Pesc[dsq[j]][dp] : neginfv;
+            escv = j>0 ? vec_Pesc[dsq[j]][0] : neginfv;
             alpha[v]->ivec[j][0] = _mm_adds_epi16(alpha[v]->ivec[j][0], escv);
 
 	    for (dp = 1; dp <= sW; dp++) 
@@ -4454,6 +4413,14 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
 	      }
 	  }
 	}				/* finished calculating deck v. */
+/*
+for (jp = 1; jp <= W; jp++) {
+j = i0-1+jp;
+fprintf(stderr,"v%3d j%3d   ",v,j);
+for (d=0; d<=jp; d++) fprintf(stderr,"%7.3f ",*((int16_t *) &alpha[v]->ivec[j][d/vecwidth]+d%vecwidth)/500.0);
+fprintf(stderr,"\n");
+}
+*/
       
       /* Check for local begin getting us to the root.
        */
