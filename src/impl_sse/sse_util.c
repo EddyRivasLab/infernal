@@ -54,3 +54,24 @@ sse_rightshift_epi16(__m128i a, __m128i b)
   register __m128i v = _mm_slli_si128(a, 2); /* now 0 a[0] a[1] a[2] a[3] a[4] a[5] a[6] */
   return _mm_insert_epi16(v,_mm_extract_epi16(b,7),0);
 }
+
+/* Function:  sse_setlw_neginfv()
+ * Date:      DLK, Tue May 12 2009
+ *
+ * Purpose:   Returns a vector containing
+ *            <{ -32768 a[1] a[2] a[3] a[4] a[5] a[6] a[7] }>
+ *
+ *            This is designed as a limited-use
+ *            replacement for the call:
+ *            _mm_insert_epi16(a, -32768, 0)
+ *            which suffers from a compiler
+ *            bug in gcc 3.4.x
+ */
+inline __m128i
+sse_setlw_neginfv(__m128i a)
+{
+  __m128i mask = _mm_setr_epi16(0x0000,0xffff,0xffff,0xffff,0xffff,0xffff,0xffff,0xffff);
+  __m128i setv = _mm_setr_epi16(-32768,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000);
+
+  return _mm_or_si128(_mm_and_si128(a,mask),setv);
+}

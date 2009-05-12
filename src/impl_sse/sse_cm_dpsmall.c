@@ -363,12 +363,9 @@ SSE_CYKDemands(CM_t *cm, int L, int be_quiet)
   float bigmemory;	/* how much memory a full CYKInside() would take */
   float dpcells;	/* # of dp cells */
   float bifcalcs;	/* # of inner loops executed for bifurcation calculations */
-  float bifcalcs_b;	/* # of inner loops executed for bifurcation calculations in QDB */
   float dpcalcs;	/* # of inner loops executed for non-bif calculations */
-  float dpcalcs_b;	/* # of inner loops executed for bifurcation calculations in QDB */
   int   j;
   float avg_Mb_per_banded_deck;    /* average megabytes per deck in mem efficient big mode */
-  int   v, y, z, d, kmin, kmax; /* for QDB calculations */
   const int vecwidth = 4;
 
   Mb_per_deck = sse_size_vjd_deck(L, 1, L, vecwidth);
@@ -450,7 +447,7 @@ sse_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   int      jp, dp, kp;		/* j': relative position in subseq, 0..W */
   int      W, sW;		/* length of subseq i0..j0 */
   float    sc;			/* tmp variable for a score */
-  int      j,d,k;		/* sequence indices */
+  int      j,k;			/* sequence indices */
   float    best_sc;		/* optimal score at the optimal split point */
   int      best_k;		/* optimal k for the optimal split */
   int      best_d;		/* optimal d for the optimal split */
@@ -459,7 +456,7 @@ sse_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   __m128   tmpv, mask;
   __m128i  doffset;
   __m128   vec_k, vec_d, vec_j;
-  __m128   begr_v, begl_v;
+  __m128   begr_v;
   int      tv;			/* remember the position of a bifurc in the trace. */
   int      b1,b2;		/* argmax_v for 0->v local begin transitions */
   float    b1_sc, b2_sc;	/* max_v scores for 0->v local begin transitions */
@@ -539,6 +536,7 @@ sse_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    */
 
   W = j0-i0+1;
+  doffset = _mm_setr_epi32(0, 1, 2, 3);
   vb_sc = _mm_set1_ps(-eslINFINITY);
   for (jp = 0; jp <= W; jp++) {
     j = i0-1+jp;
@@ -546,7 +544,6 @@ sse_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
     sW = jp/vecwidth;
 
     /* case: k = 0 */
-    doffset = _mm_setr_epi32(0, 1, 2, 3);
     vec_access = (float *) (&alpha[y]->vec[j][0]);
     begr_v = _mm_set1_ps(*vec_access);
     vec_k = (__m128) _mm_set1_epi32(0);
@@ -737,7 +734,6 @@ sse_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
   /* determine values corresponding to best score out of our 4x vector */
   /* like esl_sse_hmax(), but re-using the mask from the scores */
-/*
   tmpv  = _mm_shuffle_ps(vb_sc, vb_sc, _MM_SHUFFLE(0, 3, 2, 1));
   mask  = _mm_cmpgt_ps(tmpv, vb_sc);
   vb_sc = _mm_max_ps(tmpv, vb_sc);
@@ -757,13 +753,18 @@ sse_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   vb_j  = esl_sse_select_ps(vb_j, tmpv, mask);
   tmpv  = _mm_shuffle_ps(vb_d, vb_d, _MM_SHUFFLE(1, 0, 3, 2));
   vb_d  = esl_sse_select_ps(vb_d, tmpv, mask);
-*/
+
+union {
+int i;
+float f;
+} u_tmp;
 
   best_sc = *((float *) &vb_sc);
-  best_k  = *((int *) &vb_k );
-  best_j  = *((int *) &vb_j );
-  best_d  = *((int *) &vb_d );
+  u_tmp.f = *((float *) &vb_k); best_k = u_tmp.i;
+  u_tmp.f = *((float *) &vb_j); best_j = u_tmp.i;
+  u_tmp.f = *((float *) &vb_d); best_d = u_tmp.i;
 
+/*
   for (k = 1; k < vecwidth; k++) {
     if (*((float *) &vb_sc + k) > best_sc) {
       best_sc = *((float *) &vb_sc + k);
@@ -772,6 +773,7 @@ sse_generic_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
       best_d  = *((int *) &vb_d + k);
     }
   }
+*/
   /* If we're in EL, instead of B, the optimal alignment is entirely
    * in a V problem that's still above us. The TRUE flag sets useEL.
    */
@@ -871,7 +873,7 @@ sse_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
   float best_sc;
   int   v,w,y;
   int   W, sW;
-  int   d, dp, jp, j;
+  int   dp, jp, j;
   int   best_v, best_d, best_j;
   int   midnode;
   int   b;	/* optimal local begin: b = argmax_v alpha_v(i0,j0) + t_0(v) */
@@ -1025,7 +1027,6 @@ fprintf(stderr,"%d %d %d %d\n",*((int *) &vb_d),*((int *) &vb_d+1),*((int *) &vb
 
   /* determine values corresponding to best score out of our 4x vector */
   /* like esl_sse_hmax(), but re-using the mask from the scores */
-/*
   tmpv  = _mm_shuffle_ps(vb_sc, vb_sc, _MM_SHUFFLE(0, 3, 2, 1));
   mask  = _mm_cmpgt_ps(tmpv, vb_sc);
   vb_sc = _mm_max_ps(tmpv, vb_sc);
@@ -1036,11 +1037,6 @@ fprintf(stderr,"%d %d %d %d\n",*((int *) &vb_d),*((int *) &vb_d+1),*((int *) &vb
   tmpv  = _mm_shuffle_ps(vb_d, vb_d, _MM_SHUFFLE(0, 3, 2, 1));
   vb_d  = esl_sse_select_ps(vb_d, tmpv, mask);
 
-fprintf(stderr,"%f %f %f %f\t",*((float *) &vb_sc),*((float *) &vb_sc+1),*((float *) &vb_sc+2),*((float *) &vb_sc+3));
-fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_v),*((int *) &vb_v+1),*((int *) &vb_v+2),*((int *) &vb_v+3));
-fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_j),*((int *) &vb_j+1),*((int *) &vb_j+2),*((int *) &vb_j+3));
-fprintf(stderr,"%d %d %d %d\n",*((int *) &vb_d),*((int *) &vb_d+1),*((int *) &vb_d+2),*((int *) &vb_d+3));
-
   tmpv  = _mm_shuffle_ps(vb_sc, vb_sc, _MM_SHUFFLE(1, 0, 3, 2));
   mask  = _mm_cmpgt_ps(tmpv, vb_sc);
   vb_sc = _mm_max_ps(tmpv, vb_sc);
@@ -1050,14 +1046,20 @@ fprintf(stderr,"%d %d %d %d\n",*((int *) &vb_d),*((int *) &vb_d+1),*((int *) &vb
   vb_j  = esl_sse_select_ps(vb_j, tmpv, mask);
   tmpv  = _mm_shuffle_ps(vb_d, vb_d, _MM_SHUFFLE(1, 0, 3, 2));
   vb_d  = esl_sse_select_ps(vb_d, tmpv, mask);
-*/
+
+union {
+int i;
+float f;
+} u_tmp;
 
   best_sc = *((float *) &vb_sc);
-  best_v  = *((int *) &vb_v );
-  best_j  = *((int *) &vb_j );
-  best_d  = *((int *) &vb_d );
+  u_tmp.f = *((float *) &vb_v); best_v = u_tmp.i;
+  u_tmp.f = *((float *) &vb_j); best_j = u_tmp.i;
+  u_tmp.f = *((float *) &vb_d); best_d = u_tmp.i;
 
-  for (int k = 1; k < vecwidth; k++) {
+/*
+  int k;
+  for (k = 1; k < vecwidth; k++) {
     if (*((float *) &vb_sc + k) > best_sc) {
       best_sc = *((float *) &vb_sc + k);
       best_v  = *((int *) &vb_v + k);
@@ -1065,7 +1067,9 @@ fprintf(stderr,"%d %d %d %d\n",*((int *) &vb_d),*((int *) &vb_d+1),*((int *) &vb
       best_d  = *((int *) &vb_d + k);
     }
   }
+*/
 
+/*
 if (best_v == -3) {
 fprintf(stderr,"%f %f %f %f\t",*((float *) &vb_sc),*((float *) &vb_sc+1),*((float *) &vb_sc+2),*((float *) &vb_sc+3));
 fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_v),*((int *) &vb_v+1),*((int *) &vb_v+2),*((int *) &vb_v+3));
@@ -1075,6 +1079,7 @@ fprintf(stderr,"%d %d %d %d\n",*((int *) &vb_d),*((int *) &vb_d+1),*((int *) &vb
 fprintf(stderr,"%f %d %d %d\n",best_sc, best_v, best_j, best_d);
 cm_Fail("vb_v never got set to anything?\n");
 }
+*/
   /* If we're in EL, instead of the split set, the optimal alignment
    * is entirely in a V problem that's still above us. The TRUE
    * flag sets useEL. It doesn't matter which state in the split
@@ -1150,7 +1155,6 @@ sse_v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 {
   sse_deck_t **alpha, **beta;      /* inside and outside matrices */
   struct sse_deckpool_s *pool;      /* pool for holding alloced decks */
-  float sc;			/* tmp variable holding a score */
   int   v,w,y;			/* state indexes */
   int   ip,jp;
   int   best_v;
@@ -1206,7 +1210,7 @@ sse_v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
    */
   best_sc = IMPOSSIBLE;
   vb_sc = _mm_set1_ps(-eslINFINITY);
-  vb_v = vb_v = vb_i = (__m128) _mm_set1_epi32(-3);
+  vb_v = vb_j = vb_i = (__m128) _mm_set1_epi32(-3);
   for (v = w; v <= y; v++) {
     vec_v = (__m128) _mm_set1_epi32(v);
     for (jp = 0; jp <= j0-j1; jp++) {
@@ -1288,9 +1292,6 @@ sse_v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
   /* determine values corresponding to best score out of our 4x vector */
   /* like esl_sse_hmax(), but re-using the mask from the scores */
-/* This section should work, by making all four values in the vector
-   be equal to the one corresponding to the highest score, but it
-   fails on gcc -O2 (v. 3.4.5); can be prevented by strategic printfs
   tmpv  = _mm_shuffle_ps(vb_sc, vb_sc, _MM_SHUFFLE(0, 3, 2, 1));
   mask  = _mm_cmpgt_ps(tmpv, vb_sc);
   vb_sc = _mm_max_ps(tmpv, vb_sc);
@@ -1311,18 +1312,19 @@ sse_v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   tmpv  = _mm_shuffle_ps(vb_i, vb_i, _MM_SHUFFLE(1, 0, 3, 2));
   vb_i  = esl_sse_select_ps(vb_i, tmpv, mask);
 
-fprintf(stderr,"%f %f %f %f\t",*((float *) &vb_sc),*((float *) &vb_sc+1),*((float *) &vb_sc+2),*((float *) &vb_sc+3));
-fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_v),*((int *) &vb_v+1),*((int *) &vb_v+2),*((int *) &vb_v+3));
-fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_j),*((int *) &vb_j+1),*((int *) &vb_j+2),*((int *) &vb_j+3));
-fprintf(stderr,"%d %d %d %d\n",*((int *) &vb_i),*((int *) &vb_i+1),*((int *) &vb_i+2),*((int *) &vb_i+3));
-*/
+union {
+int i;
+float f;
+} u_tmp;
 
   best_sc = *((float *) &vb_sc);
-  best_v  = *((int *) &vb_v );
-  best_j  = *((int *) &vb_j );
-  best_i  = *((int *) &vb_i );
+  u_tmp.f = *((float *) &vb_v); best_v = u_tmp.i;
+  u_tmp.f = *((float *) &vb_j); best_j = u_tmp.i;
+  u_tmp.f = *((float *) &vb_i); best_i = u_tmp.i;
 
-  for (int k = 1; k < vecwidth; k++) {
+/*
+  int k;
+  for (k = 1; k < vecwidth; k++) {
     if (*((float *) &vb_sc + k) > best_sc) {
       best_sc = *((float *) &vb_sc + k);
       best_v  = *((int *) &vb_v + k);
@@ -1340,6 +1342,7 @@ fprintf(stderr,"%d %d %d %d\n",*((int *) &vb_i),*((int *) &vb_i+1),*((int *) &vb
 fprintf(stderr,"%f %d %d %d\n",best_sc, best_v, best_j, best_i);
 cm_Fail("vb_v never got set to anything?\n");
 }
+*/
   /* If we're in EL, instead of the split set, the optimal
    * alignment is entirely in a V problem that's still above us.
    * The TRUE flag sets useEL; we propagate allow_begin. 
@@ -1495,8 +1498,6 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
   int       yoffset;	/* y=base+offset -- counter in child states that v can transit to */
   int       W;		/* subsequence length */
   int       jp;		/* j': relative position in the subsequence  */
-  int     **kshad;       /* a shadow deck for bifurcations */
-  char    **yshad;       /* a shadow deck for every other kind of state */
   int       b;		/* best local begin state */
   float     bsc;		/* score for using the best local begin state */
 
@@ -1520,8 +1521,8 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
   __m128       tmpv;
   __m128       tmpshad;
   __m128       mask;
-  sse_deck_t  *end;
-  sse_deck_t **shadow;      /* shadow matrix for tracebacks */
+  sse_deck_t  *end = NULL;
+  sse_deck_t **shadow = NULL;      /* shadow matrix for tracebacks */
 
 //if (alpha != NULL || ret_alpha != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently support passing alpha matrices!\n");
 //if (dpool != NULL || ret_dpool != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently support passing deck pools!\n");
@@ -2235,14 +2236,14 @@ sse_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 {
   int      status;
   int      v,y;			/* indices for states */
-  int      j,d,i;		/* indices in sequence dimensions */
-  float    sc;			/* a temporary variable holding a score */
+  int      j,i;			/* indices in sequence dimensions */
   int     *touch;               /* keeps track of how many lower decks still need this deck */
   float    escore;		/* an emission score, tmp variable */
   int      W, sW;		/* subsequence length */
   int      jp, dp;		/* j': relative position in the subsequence, 0..W */
   int      voffset;		/* index of v in t_v(y) transition scores */
   int      w1,w2;		/* bounds of split set */
+  int      k;
   __m128   neginfv;
   __m128   tmpv;
   __m128   escv, tscv;
@@ -2470,7 +2471,7 @@ sse_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 		  
 		//if (d == jp) continue;	/* boundary condition (note when j=0, d=0*/
                 if (y == v) {
-                  for (int k = 0; k < vecwidth; k++) {
+                  for (k = 0; k < vecwidth; k++) {
                     if (dp == sW)
                       tmpv = esl_sse_leftshift_ps(beta[y]->vec[j][dp], neginfv);
                     else
@@ -2596,8 +2597,13 @@ sse_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
                                    i>3?cm->oesc[v][dsq[i-3]]:-eslINFINITY,
                                    i>4?cm->oesc[v][dsq[i-4]]:-eslINFINITY);
 
+//FIXME: y is undefined here
+//FIXME: Do we need to worry about IL->IL->EL?  If so, we're not covering that case
+//FIXME: because EL is handled here and we don't check IL->IL again
+//FIXME: is IL->EL even allowed?
                 if (y == v) {
-                  for (int k = 0; k < vecwidth; k++) {
+//FIXME: this k loop doesn't make sense anyway, since no value in beta[v] is changing
+                  for (k = 0; k < vecwidth; k++) {
   		    //if (d == jp) continue;	
                     if (dp == sW)
                       tmpv = esl_sse_leftshift_ps(beta[v]->vec[j][dp], neginfv);
@@ -2790,7 +2796,7 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
 	int allow_begin, int *ret_b, float *ret_bsc)
 {
   int      status;
-  sse_deck_t **shadow;              /* the shadow matrix -- traceback ptrs -- memory is kept */
+  sse_deck_t **shadow = NULL;   /* the shadow matrix -- traceback ptrs -- memory is kept */
   int     v,i,j;
   int     w1,w2;		/* bounds of the split set */
   int     jp, ip;		/* j' and i' -- in the matrix coords */
@@ -2799,6 +2805,7 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
   float   sc;			/* tmp variable holding a score */
   int      b;			/* best local begin state */
   float    bsc;			/* score for using the best local begin state */
+  int      k;
   __m128   neginfv;
   __m128   tmpv, mask;
   __m128   tscv, escv;
@@ -2810,6 +2817,7 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
   neginfv = _mm_set1_ps(-eslINFINITY);
   el_self_v = _mm_set1_ps(cm->el_selfsc);
   ioffset = _mm_setr_ps(0.0, -1.0, -2.0, -3.0);
+  sW = (i1-i0)/vecwidth;
 
   /*printf("***in vinside()****\n");
     printf("\tr  : %d\n", r);
@@ -2840,7 +2848,6 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
     for (jp = 0; jp <= j0-j1; jp++) {
       /* for (ip = 0; ip <= i1-i0; ip++) 
 	a[v][jp][ip] = IMPOSSIBLE; */
-      sW = (i1-i0)/vecwidth;
       for (ip = 0; ip <= sW; ip++) 
 	a[v]->vec[jp][ip] = neginfv;
     }
@@ -2953,7 +2960,6 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
       if (cm->sttype[v] == D_st || cm->sttype[v] == S_st) 
 	{
 	  for (jp = 0; jp <= j0-j1; jp++) {
-            sW = (i1-i0)/vecwidth;
 	    //for (ip = i1-i0; ip >= 0; ip--) {
 	    for (ip = sW; ip >= 0; ip--) {
 	      /*printf("D S jp : %d | ip : %d\n", jp, ip);*/
@@ -2999,7 +3005,6 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
 	    }
           }
 	} else if (cm->sttype[v] == MP_st) {
-          sW = (i1-i0)/vecwidth;
 	  for (ip = sW; ip >= 0; ip--) a[v]->vec[0][ip] = neginfv; /* boundary condition */
 
 	  for (jp = 1; jp <= j0-j1; jp++) { 
@@ -3116,7 +3121,7 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
             a[v]->vec[jp][ip] = _mm_add_ps(a[v]->vec[jp][ip], escv);
             /* finish the serial IL->IL path */
             if (v == y) {
-              for (int k = 1; k < vecwidth; k++) {
+              for (k = 1; k < vecwidth; k++) {
                 tmpv = esl_sse_leftshift_ps(a[y]->vec[jp][ip],neginfv);
                 tmpv = _mm_add_ps(tmpv, _mm_set1_ps(cm->tsc[v][0]));
                 tmpv = _mm_add_ps(tmpv, escv);
@@ -3168,7 +3173,7 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
               a[v]->vec[jp][ip] = _mm_add_ps(a[v]->vec[jp][ip], escv);
               /* finish the serial IL->IL path */
               if (v == y) {
-                for (int k = 1; k < vecwidth; k++) {
+                for (k = 1; k < vecwidth; k++) {
                   tmpv = esl_sse_leftshift_ps(a[y]->vec[jp][ip], a[y]->vec[jp][ip+1]);
                   tmpv = _mm_add_ps(tmpv, _mm_set1_ps(cm->tsc[v][0]));
                   tmpv = _mm_add_ps(tmpv, escv);
@@ -3183,7 +3188,6 @@ sse_vinside(CM_t *cm, ESL_DSQ *dsq, int L,
 	    }
 	  }
 	} else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
-          sW = (i1-i0)/vecwidth;
 	  for (ip = sW; ip >= 0; ip--) a[v]->vec[0][ip] = neginfv; /* boundary condition */
 
 	  for (jp = 1; jp <= j0-j1; jp++) { 
@@ -3348,11 +3352,11 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
   int      v,y;			/* indices for states */
   int      i,j;			/* indices in sequence dimensions */
   int      ip, jp;		/* transformed sequence indices */
-  float    sc;			/* a temporary variable holding a score */
   int     *touch;               /* keeps track of how many lower decks still need this deck */
   float    escore;		/* an emission score, tmp variable */
   int      voffset;		/* index of v in t_v(y) transition scores */
   int      sW;
+  int      k;
   __m128   neginfv;
   __m128   tmpv, tscv, escv;
   __m128   el_self_v, loop_v;
@@ -3521,7 +3525,7 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
                                i+2<i1?cm->oesc[y][dsq[i+2]]:-eslINFINITY);
   
             if (y == v) {
-              for (int k = 1; k < vecwidth; k++) {
+              for (k = 1; k < vecwidth; k++) {
                 tmpv = alt_rightshift_ps(beta[y]->vec[jp][ip], neginfv);
                 tmpv = _mm_add_ps(tmpv, tscv);
                 tmpv = _mm_add_ps(tmpv, escv);
@@ -3604,7 +3608,7 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
                                    i+2<i1?cm->oesc[y][dsq[i+2]]:-eslINFINITY);
 		  
                 if (y == v) {
-                  for (int k = 0; k < vecwidth; k++) {
+                  for (k = 0; k < vecwidth; k++) {
                     tmpv = alt_rightshift_ps(beta[y]->vec[jp][ip], beta[y]->vec[jp][ip-1]);
                     tmpv = _mm_add_ps(tmpv, tscv);
                     tmpv = _mm_add_ps(tmpv, escv);
@@ -3662,15 +3666,15 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
           loop_v = _mm_mul_ps(el_self_v, loop_v);
           loop_v = _mm_add_ps(loop_v, _mm_set1_ps(cm->endsc[v]));
 
-	  switch(cm->sttype[y]) {
+	  switch(cm->sttype[v]) {
 	  case MP_st:  /* i == i0 boundary condition true */
 	    if (j == j0) continue; 
             escv = _mm_setr_ps(                                                  -eslINFINITY,
-                               i  <i1?cm->oesc[y][dsq[i  ]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
-                               i+1<i1?cm->oesc[y][dsq[i+1]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
-                               i+2<i1?cm->oesc[y][dsq[i+2]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY);
+                               i  <i1?cm->oesc[v][dsq[i  ]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
+                               i+1<i1?cm->oesc[v][dsq[i+1]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
+                               i+2<i1?cm->oesc[v][dsq[i+2]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY);
 	
-            tmpv = alt_rightshift_ps(beta[y]->vec[jp+1][ip], neginfv);
+            tmpv = alt_rightshift_ps(beta[v]->vec[jp+1][ip], neginfv);
             tmpv = _mm_add_ps(tmpv, loop_v);
             tmpv = _mm_add_ps(tmpv, escv);
             beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
@@ -3679,11 +3683,11 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 	  case ML_st:
 	  case IL_st: 
             escv = _mm_setr_ps(                             -eslINFINITY,
-                               i  <i1?cm->oesc[y][dsq[i  ]]:-eslINFINITY,
-                               i+1<i1?cm->oesc[y][dsq[i+1]]:-eslINFINITY,
-                               i+2<i1?cm->oesc[y][dsq[i+2]]:-eslINFINITY);
+                               i  <i1?cm->oesc[v][dsq[i  ]]:-eslINFINITY,
+                               i+1<i1?cm->oesc[v][dsq[i+1]]:-eslINFINITY,
+                               i+2<i1?cm->oesc[v][dsq[i+2]]:-eslINFINITY);
 		
-            tmpv = alt_rightshift_ps(beta[y]->vec[jp][ip], neginfv);
+            tmpv = alt_rightshift_ps(beta[v]->vec[jp][ip], neginfv);
             tmpv = _mm_add_ps(tmpv, loop_v);
             tmpv = _mm_add_ps(tmpv, escv);
             beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
@@ -3692,8 +3696,8 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 	  case MR_st:
 	  case IR_st:
 	    if (j == j0) continue;
-	    escv = _mm_set1_ps(cm->oesc[y][dsq[j+1]]);
-            tmpv = _mm_add_ps(beta[y]->vec[jp+1][ip], loop_v);
+	    escv = _mm_set1_ps(cm->oesc[v][dsq[j+1]]);
+            tmpv = _mm_add_ps(beta[v]->vec[jp+1][ip], loop_v);
             tmpv = _mm_add_ps(tmpv, escv);
             beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
 	    break;
@@ -3701,11 +3705,11 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 	  case S_st:
 	  case E_st:
 	  case D_st:
-            tmpv = _mm_add_ps(beta[y]->vec[jp][ip], loop_v);
+            tmpv = _mm_add_ps(beta[v]->vec[jp][ip], loop_v);
             beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
 	    break;
 
-	  default: cm_Fail("bogus parent state %d\n", cm->sttype[y]);
+	  default: cm_Fail("bogus parent state %d\n", cm->sttype[v]);
 	  }/* end switch over states*/
 
 	  for (ip = 1; ip <= sW; ip++) 
@@ -3718,12 +3722,12 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 	      case MP_st:
 		if (j == j0) continue; 
 		//escore = cm->oesc[v][dsq[i-1]*cm->abc->Kp+dsq[j+1]];
-                escv = _mm_setr_ps(i-1<i1?cm->oesc[y][dsq[i-1]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
-                                   i  <i1?cm->oesc[y][dsq[i  ]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
-                                   i+1<i1?cm->oesc[y][dsq[i+1]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
-                                   i+2<i1?cm->oesc[y][dsq[i+2]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY);
+                escv = _mm_setr_ps(i-1<i1?cm->oesc[v][dsq[i-1]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
+                                   i  <i1?cm->oesc[v][dsq[i  ]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
+                                   i+1<i1?cm->oesc[v][dsq[i+1]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY,
+                                   i+2<i1?cm->oesc[v][dsq[i+2]*cm->abc->Kp+dsq[j+1]]:-eslINFINITY);
 		
-                tmpv = alt_rightshift_ps(beta[y]->vec[jp+1][ip], beta[y]->vec[jp+1][ip-1]);
+                tmpv = alt_rightshift_ps(beta[v]->vec[jp+1][ip], beta[v]->vec[jp+1][ip-1]);
                 tmpv = _mm_add_ps(tmpv, loop_v);
                 tmpv = _mm_add_ps(tmpv, escv);
                 beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
@@ -3734,12 +3738,12 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 	      case ML_st:
 	      case IL_st:
 		//escore = cm->oesc[v][dsq[i-1]];
-                escv = _mm_setr_ps(i-1<i1?cm->oesc[y][dsq[i-1]]:-eslINFINITY,
-                                   i  <i1?cm->oesc[y][dsq[i  ]]:-eslINFINITY,
-                                   i+1<i1?cm->oesc[y][dsq[i+1]]:-eslINFINITY,
-                                   i+2<i1?cm->oesc[y][dsq[i+2]]:-eslINFINITY);
+                escv = _mm_setr_ps(i-1<i1?cm->oesc[v][dsq[i-1]]:-eslINFINITY,
+                                   i  <i1?cm->oesc[v][dsq[i  ]]:-eslINFINITY,
+                                   i+1<i1?cm->oesc[v][dsq[i+1]]:-eslINFINITY,
+                                   i+2<i1?cm->oesc[v][dsq[i+2]]:-eslINFINITY);
 		
-                tmpv = alt_rightshift_ps(beta[y]->vec[jp][ip], beta[y]->vec[jp][ip-1]);
+                tmpv = alt_rightshift_ps(beta[v]->vec[jp][ip], beta[v]->vec[jp][ip-1]);
                 tmpv = _mm_add_ps(tmpv, loop_v);
                 tmpv = _mm_add_ps(tmpv, escv);
                 beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
@@ -3753,7 +3757,7 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 		escore = cm->oesc[v][dsq[j+1]];
                 escv = _mm_set1_ps(cm->oesc[v][dsq[j+1]]);
 
-                tmpv = beta[y]->vec[jp+1][ip];
+                tmpv = beta[v]->vec[jp+1][ip];
                 tmpv = _mm_add_ps(tmpv, loop_v);
                 tmpv = _mm_add_ps(tmpv, escv);
                 beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
@@ -3764,14 +3768,14 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 	      case S_st:
 	      case D_st:
 	      case E_st:
-                tmpv = beta[y]->vec[jp][ip];
+                tmpv = beta[v]->vec[jp][ip];
                 tmpv = _mm_add_ps(tmpv, loop_v);
                 beta[v]->vec[jp][ip] = _mm_max_ps(beta[v]->vec[jp][ip], tmpv);
 		/* if ((sc = beta[v][jp][ip] + cm->endsc[v] + 
 		     (cm->el_selfsc * (j-i+1))) > beta[cm->M][jp][ip])
 		    beta[cm->M][jp][ip] = sc; */
 		break;
-	      default:  cm_Fail("bogus parent state %d\n", cm->sttype[y]);
+	      default:  cm_Fail("bogus parent state %d\n", cm->sttype[v]);
 	      } /* end switch over parent v state type */
 	    } /* end loop over ip */
 	} /* end loop over jp */
@@ -3941,7 +3945,7 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
   nends = CMSubtreeCountStatetype(cm, vroot, E_st);
   for (jp = 0; jp <= W; jp++) {
     j = i0+jp-1;		/* e.g. j runs from 0..L on whole seq */
-    end->ivec[j][0] = sse_rightshift_epi16(neginfv, zerov);
+    end->ivec[j][0] = WORDRSHIFTX(neginfv, zerov, 1);
     for (d = 1; d <= jp/vecwidth; d++) end->ivec[j][d] = neginfv;
   }
 
@@ -4156,7 +4160,7 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
             {
               esc_stale[x] = i0-1;
               for (dp = 0; dp <= W/vecwidth; dp ++) { vec_Pesc[x][dp] = neginfv; }
-              vec_Pesc[x][0] = sse_rightshift_epi16(vec_Pesc[x][0], _mm_set1_epi16(ocm->oesc[v][dsq[i0]*cm->abc->Kp+x]));
+              vec_Pesc[x][0] = WORDRSHIFTX(vec_Pesc[x][0], _mm_set1_epi16(ocm->oesc[v][dsq[i0]*cm->abc->Kp+x]), 1);
             } 
           alpha[v]->ivec[i0-1][0] = neginfv; /* jp = 0 */
 	  for (jp = 1; jp <= W; jp++) {
@@ -4264,22 +4268,22 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
       else if (cm->sttype[v] == ML_st)
 	{
           /* initialize esc vec array */
-          vec_Lesc[0] = _mm_insert_epi16(neginfv,ocm->oesc[v][dsq[i0]],0);
+          vec_Lesc[0] = WORDRSHIFTX(neginfv,_mm_set1_epi16(ocm->oesc[v][dsq[i0]]),1);
           for (dp = 1; dp <= W/vecwidth; dp++) { vec_Lesc[dp] = neginfv; }
 
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
-            tmpv = sse_rightshift_epi16(_mm_mullo_epi16(el_self_v, doffset), neginfv);
+            tmpv = WORDRSHIFTX(_mm_mullo_epi16(el_self_v, doffset), neginfv, 1);
 	    alpha[v]->ivec[j][0] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
             /* treat EL as emitting only on self transition */
             y = cm->cfirst[v];
             for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
               tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
-              tmpv = sse_rightshift_epi16(alpha[y+yoffset]->ivec[j][0], neginfv);
+              tmpv = WORDRSHIFTX(alpha[y+yoffset]->ivec[j][0], neginfv, 1);
               tmpv = _mm_adds_epi16(tmpv, tscv);
               alpha[v]->ivec[j][0] = _mm_max_epi16(alpha[v]->ivec[j][0], tmpv);
             }
-            escv = _mm_insert_epi16(vec_Lesc[0],-32768,0);
+            escv = sse_setlw_neginfv(vec_Lesc[0]);
             alpha[v]->ivec[j][0] = _mm_adds_epi16(alpha[v]->ivec[j][0], escv);
 
             sW = jp/vecwidth;
@@ -4290,7 +4294,7 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
 		/* treat EL as emitting only on self transition */
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
                   tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
-                  tmpv = sse_rightshift_epi16(alpha[y+yoffset]->ivec[j][dp], alpha[y+yoffset]->ivec[j][dp-1]);
+                  tmpv = WORDRSHIFTX(alpha[y+yoffset]->ivec[j][dp], alpha[y+yoffset]->ivec[j][dp-1], 1);
                   tmpv = _mm_adds_epi16(tmpv, tscv);
                   alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                 }
@@ -4302,8 +4306,8 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
 
             /* slide esc vec array over by one */
             if (sW < W/vecwidth) sW++;
-            for (dp = sW; dp > 0; dp--) { vec_Lesc[dp] = sse_rightshift_epi16(vec_Lesc[dp], vec_Lesc[dp-1]); }
-            vec_Lesc[0] = sse_rightshift_epi16(vec_Lesc[0], (jp<W-1) ? _mm_set1_epi16(ocm->oesc[v][dsq[j+2]]) : neginfv);
+            for (dp = sW; dp > 0; dp--) { vec_Lesc[dp] = WORDRSHIFTX(vec_Lesc[dp], vec_Lesc[dp-1], 1); }
+            vec_Lesc[0] = WORDRSHIFTX(vec_Lesc[0], (jp<W-1) ? _mm_set1_epi16(ocm->oesc[v][dsq[j+2]]) : neginfv, 1);
 	  }
 	}
       /* The self-transition loop on IL_st will need to be completely serialized, since
@@ -4312,27 +4316,27 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
       else if (cm->sttype[v] == IL_st)
 	{
           /* initialize esc vec array */
-          vec_Lesc[0] = _mm_insert_epi16(neginfv,ocm->oesc[v][dsq[i0]],0);
+          vec_Lesc[0] = WORDRSHIFTX(neginfv,_mm_set1_epi16(ocm->oesc[v][dsq[i0]]),1);
           for (dp = 1; dp <= W/vecwidth; dp++) { vec_Lesc[dp] = neginfv; }
 
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
-            tmpv = sse_rightshift_epi16(_mm_mullo_epi16(el_self_v, doffset), neginfv);
+            tmpv = WORDRSHIFTX(_mm_mullo_epi16(el_self_v, doffset), neginfv, 1);
 	    alpha[v]->ivec[j][0] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
             /* treat EL as emitting only on self transition */
             y = cm->cfirst[v];
             for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) {
               tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
-              tmpv = sse_rightshift_epi16(alpha[y+yoffset]->ivec[j][0], neginfv);
+              tmpv = WORDRSHIFTX(alpha[y+yoffset]->ivec[j][0], neginfv, 1);
               tmpv = _mm_adds_epi16(tmpv, tscv);
               alpha[v]->ivec[j][0] = _mm_max_epi16(alpha[v]->ivec[j][0], tmpv);
             }
-            escv = _mm_insert_epi16(vec_Lesc[0],-32768,0);
+            escv = sse_setlw_neginfv(vec_Lesc[0]);
             alpha[v]->ivec[j][0] = _mm_adds_epi16(alpha[v]->ivec[j][0], escv);
             /* handle yoffset = 0, the self-transition case, seaparately */
             tscv = _mm_set1_epi16(ocm->tsc[v][0]);
             for (k = 2; k < vecwidth; k++) {
-              tmpv = sse_rightshift_epi16(alpha[y]->ivec[j][0], neginfv);
+              tmpv = WORDRSHIFTX(alpha[y]->ivec[j][0], neginfv, 1);
               tmpv = _mm_adds_epi16(escv, _mm_adds_epi16(tscv, tmpv));
               alpha[v]->ivec[j][0] = _mm_max_epi16(alpha[v]->ivec[j][0], tmpv);
               /* could make this a do-while on whether any values changed */
@@ -4346,7 +4350,7 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
 		/* treat EL as emitting only on self transition */
 		for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) {
                   tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
-                  tmpv = sse_rightshift_epi16(alpha[y+yoffset]->ivec[j][dp], alpha[y+yoffset]->ivec[j][dp-1]);
+                  tmpv = WORDRSHIFTX(alpha[y+yoffset]->ivec[j][dp], alpha[y+yoffset]->ivec[j][dp-1], 1);
                   tmpv = _mm_adds_epi16(tmpv, tscv);
                   alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                 }
@@ -4358,7 +4362,7 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
                 /* handle yoffset = 0, the self-transition case, seaparately */
                 tscv = _mm_set1_epi16(ocm->tsc[v][0]);
                 for (k = 0; k < vecwidth; k++) {
-                  tmpv = sse_rightshift_epi16(alpha[y]->ivec[j][dp], alpha[y]->ivec[j][dp-1]);
+                  tmpv = WORDRSHIFTX(alpha[y]->ivec[j][dp], alpha[y]->ivec[j][dp-1], 1);
                   tmpv = _mm_adds_epi16(escv, _mm_adds_epi16(tscv, tmpv));
                   alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                   /* could make this a do-while on whether any values changed */
@@ -4367,8 +4371,8 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
 
             /* slide esc vec array over by one */
             if (sW < W/vecwidth) sW++;
-            for (dp = sW; dp > 0; dp--) { vec_Lesc[dp] = sse_rightshift_epi16(vec_Lesc[dp], vec_Lesc[dp-1]); }
-            vec_Lesc[0] = sse_rightshift_epi16(vec_Lesc[0], (jp<W-1) ? _mm_set1_epi16(ocm->oesc[v][dsq[j+2]]) : neginfv);
+            for (dp = sW; dp > 0; dp--) { vec_Lesc[dp] = WORDRSHIFTX(vec_Lesc[dp], vec_Lesc[dp-1], 1); }
+            vec_Lesc[0] = WORDRSHIFTX(vec_Lesc[0], (jp<W-1) ? _mm_set1_epi16(ocm->oesc[v][dsq[j+2]]) : neginfv, 1);
 	  }
 	}
       else if (cm->sttype[v] == IR_st || cm->sttype[v] == MR_st)
@@ -4376,7 +4380,7 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
           alpha[v]->ivec[i0-1][0] = neginfv; /* jp = 0 */
 	  for (jp = 1; jp <= W; jp++) {
 	    j = i0-1+jp;
-            tmpv = sse_rightshift_epi16(_mm_mullo_epi16(el_self_v, doffset), neginfv);
+            tmpv = WORDRSHIFTX(_mm_mullo_epi16(el_self_v, doffset), neginfv, 1);
 	    alpha[v]->ivec[j][0] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
             /* treat EL as emitting only on self transition */
             y = cm->cfirst[v];
@@ -4384,13 +4388,13 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
               tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
               if (j==0) tmpv = neginfv;
               else
-                tmpv = sse_rightshift_epi16(alpha[y+yoffset]->ivec[j-1][0], neginfv);
+                tmpv = WORDRSHIFTX(alpha[y+yoffset]->ivec[j-1][0], neginfv, 1);
               tmpv = _mm_adds_epi16(tmpv, tscv);
               alpha[v]->ivec[j][0] = _mm_max_epi16(alpha[v]->ivec[j][0], tmpv);
             }
             if (j==0) escv = neginfv;
             else
-              escv = _mm_insert_epi16(_mm_set1_epi16(ocm->oesc[v][dsq[j]]),-32768,0);
+              escv = sse_setlw_neginfv(_mm_set1_epi16(ocm->oesc[v][dsq[j]]));
             alpha[v]->ivec[j][0] = _mm_adds_epi16(alpha[v]->ivec[j][0], escv);
 
             sW = jp/vecwidth;
@@ -4404,7 +4408,7 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
 		/* treat EL as emitting only on self transition */
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
                   tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
-                  tmpv = sse_rightshift_epi16(alpha[y+yoffset]->ivec[j-1][dp], alpha[y+yoffset]->ivec[j-1][dp-1]);
+                  tmpv = WORDRSHIFTX(alpha[y+yoffset]->ivec[j-1][dp], alpha[y+yoffset]->ivec[j-1][dp-1], 1);
                   tmpv = _mm_adds_epi16(tmpv, tscv);
                   alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                 }
@@ -5039,7 +5043,6 @@ sse_size_vjd_deck(int L, int i, int j, int x)
 void
 sse_free_vjd_deck(sse_deck_t *a)
 {
-  int jp;
   free(a->ivec);
   free(a->vec);
   free(a->mem);
@@ -5568,7 +5571,7 @@ main(int argc, char **argv)
   float           sc1, sc2, ptsc1, ptsc2;
   char            *cmfile = esl_opt_GetArg(go, 1);
   CMFILE          *cmfp;        /* open input CM file stream */
-  seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
+  seqs_to_aln_t  *seqs_to_aln = NULL;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
   char            errbuf[cmERRBUFSIZE];
   Parsetree_t    *tr1, *tr2;
   double         *dnull = NULL;

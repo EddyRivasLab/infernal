@@ -11,7 +11,7 @@ SHELL  = /bin/sh
 ## your compiler and compiler flags
 #
 CC     = gcc -std=gnu99
-CFLAGS = -g -mpentiumpro
+CFLAGS = -g -Wall -O2 -mpentiumpro
 SIMDFLAGS= -msse2
 
 ## other defined flags. 

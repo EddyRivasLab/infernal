@@ -58,6 +58,7 @@ float SSE_CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r,
 inline __m128  alt_rightshift_ps(__m128 a, __m128 b);
 inline __m128i sse_leftshift_epi16(__m128i a, __m128i b);
 inline __m128i sse_rightshift_epi16(__m128i a, __m128i b);
+inline __m128i sse_setlw_neginfv(__m128i a);
 
 #endif /* CM_IMPL_SSE_INCLUDED */
 

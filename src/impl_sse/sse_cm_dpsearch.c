@@ -73,7 +73,6 @@ SSECYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
   int       jp_v;  	        /* offset j for state v */
   int       jp_y;  	        /* offset j for state y */
   int       jp_g;               /* offset j for gamma (j-i0+1) */
-  int       kmin, kmax;         /* for B_st's, min/max value consistent with bands*/
   int       L;                  /* length of the subsequence (j0-i0+1) */
   int       W;                  /* max d; max size of a hit, this is min(L, smx->W) */
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
@@ -99,8 +98,6 @@ SSECYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
   int   **dnAA        = smx->dnAA;        /* [0..v..cm->M-1][0..j..W] minimum d for v, j (for j > W use [v][W]) */
   int   **dxAA        = smx->dxAA;        /* [0..v..cm->M-1][0..j..W] maximum d for v, j (for j > W use [v][W]) */
   int    *bestr       = smx->bestr;       /* [0..d..W] best root state (for local begins or 0) for this d */
-  float **esc_vAA     = cm->oesc;        /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
-					  * and all possible emissions a (including ambiguities) */
 
   /* Re-ordered SIMD vectors */
   int sW, z, delta;
@@ -116,7 +113,7 @@ SSECYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
   __m128    zerov;
   __m128    neginfv;
   __m128    vec_tsc;
-  __m128   *mem_bestr;
+  __m128   *mem_bestr = NULL;
   __m128   *vec_bestr;
   __m128    mask;
   __m128    vec_beginsc;
@@ -244,7 +241,6 @@ SSECYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
    */
   for (j = i0; j <= j0; j++) 
     {
-      float sc;
       jp_g = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (index in gamma* data structures) */
       cur  = j%2;
       prv  = (j-1)%2;
@@ -348,7 +344,6 @@ SSECYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
 	  /* printf("dnA[v:%d]: %d\ndxA[v:%d]: %d\n", v, dnA[v], v, dxA[v]); */
 	  if(cm->sttype[v] == E_st) continue;
 	  float const *tsc_v = cm->tsc[v];
-	  int emitmode = Emitmode(cm->sttype[v]);
           __m128 vec_tmp_begl;
           __m128 vec_tmp_begr;
 
