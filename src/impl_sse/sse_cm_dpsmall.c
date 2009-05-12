@@ -2075,10 +2075,15 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
 	  }
 	}				/* finished calculating deck v. */
 /*
+float tmpsc;
 for (jp = 1; jp <= W; jp++) {
 j = i0-1+jp;
 fprintf(stderr,"v%3d j%3d   ",v,j);
-for (d=0; d<=jp; d++) fprintf(stderr,"%7.3f ",*((float *) &alpha[v]->ivec[j][d/vecwidth]+d%vecwidth));
+for (d=0; d<=jp; d++) {
+tmpsc = *((float *) &alpha[v]->ivec[j][d/vecwidth]+d%vecwidth);
+if (tmpsc < IMPROBABLE) tmpsc = -eslINFINITY;
+fprintf(stderr,"%7.2f ",tmpsc);
+}
 fprintf(stderr,"\n");
 }
 */
@@ -4160,7 +4165,7 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
             {
               esc_stale[x] = i0-1;
               for (dp = 0; dp <= W/vecwidth; dp ++) { vec_Pesc[x][dp] = neginfv; }
-              vec_Pesc[x][0] = WORDRSHIFTX(vec_Pesc[x][0], _mm_set1_epi16(ocm->oesc[v][dsq[i0]*cm->abc->Kp+x]), 1);
+              vec_Pesc[x][0] = WORDRSHIFTX(vec_Pesc[x][0], _mm_set1_epi16(ocm->oesc[v][dsq[i0]*ocm->abc->Kp+x]), 1);
             } 
           alpha[v]->ivec[i0-1][0] = neginfv; /* jp = 0 */
 	  for (jp = 1; jp <= W; jp++) {
@@ -4235,8 +4240,8 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
 		/* treat EL as emitting only on self transition */
 		for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
                   tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
-                  //tmpv = WORDRSHIFTX(alpha[y+yoffset]->ivec[j-1][dp],alpha[y+yoffset]->ivec[j-1][dp-1],2);
-                  tmpv = (__m128i) alt_rightshift_ps((__m128) alpha[y+yoffset]->ivec[j-1][dp], (__m128) alpha[y+yoffset]->ivec[j-1][dp-1]);
+                  tmpv = WORDRSHIFTX(alpha[y+yoffset]->ivec[j-1][dp],alpha[y+yoffset]->ivec[j-1][dp-1],2);
+                  //tmpv = (__m128i) alt_rightshift_ps((__m128) alpha[y+yoffset]->ivec[j-1][dp], (__m128) alpha[y+yoffset]->ivec[j-1][dp-1]);
                   tmpv = _mm_adds_epi16(tmpv, tscv);
                   alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                 }
@@ -4246,19 +4251,19 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
                 alpha[v]->ivec[j][dp] = _mm_adds_epi16(alpha[v]->ivec[j][dp], escv);
 	      }
 
-            for (x = 0; x < cm->abc->Kp; x++)
+            for (x = 0; x < ocm->abc->Kp; x++)
               {
                 delta = j - esc_stale[x];
                 if (delta == vecwidth) {
                   for (dp = sW; dp > 0; dp--) { vec_Pesc[x][dp] = vec_Pesc[x][dp-1]; }
-                  vec_Pesc[x][0] = _mm_setr_epi16(jp<W ? cm->oesc[v][dsq[j+1]*cm->abc->Kp+x] : -32768,
-                                                         cm->oesc[v][dsq[j  ]*cm->abc->Kp+x],
-                                                         cm->oesc[v][dsq[j-1]*cm->abc->Kp+x],
-                                                         cm->oesc[v][dsq[j-2]*cm->abc->Kp+x],
-                                                         cm->oesc[v][dsq[j-3]*cm->abc->Kp+x],
-                                                         cm->oesc[v][dsq[j-4]*cm->abc->Kp+x],
-                                                         cm->oesc[v][dsq[j-5]*cm->abc->Kp+x],
-                                                         cm->oesc[v][dsq[j-6]*cm->abc->Kp+x]);
+                  vec_Pesc[x][0] = _mm_setr_epi16(jp<W ? ocm->oesc[v][dsq[j+1]*ocm->abc->Kp+x] : -32768,
+                                                         ocm->oesc[v][dsq[j  ]*ocm->abc->Kp+x],
+                                                         ocm->oesc[v][dsq[j-1]*ocm->abc->Kp+x],
+                                                         ocm->oesc[v][dsq[j-2]*ocm->abc->Kp+x],
+                                                         ocm->oesc[v][dsq[j-3]*ocm->abc->Kp+x],
+                                                         ocm->oesc[v][dsq[j-4]*ocm->abc->Kp+x],
+                                                         ocm->oesc[v][dsq[j-5]*ocm->abc->Kp+x],
+                                                         ocm->oesc[v][dsq[j-6]*ocm->abc->Kp+x]);
                   esc_stale[x] = j;
                   }
               } 
@@ -4418,10 +4423,14 @@ sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
 	  }
 	}				/* finished calculating deck v. */
 /*
+int16_t tmpsc;
 for (jp = 1; jp <= W; jp++) {
 j = i0-1+jp;
 fprintf(stderr,"v%3d j%3d   ",v,j);
-for (d=0; d<=jp; d++) fprintf(stderr,"%7.3f ",*((int16_t *) &alpha[v]->ivec[j][d/vecwidth]+d%vecwidth)/500.0);
+for (d=0; d<=jp; d++) {
+tmpsc = *((int16_t *) &alpha[v]->ivec[j][d/vecwidth]+d%vecwidth);
+tmpsc == -32768 ? fprintf(stderr,"%7.2f ",-eslINFINITY) : fprintf(stderr,"%7.2f ",tmpsc/500.0);
+}
 fprintf(stderr,"\n");
 }
 */
