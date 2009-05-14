@@ -1,4 +1,5 @@
 #include "impl_sse.h"
+#include "esl_stack.h"
 
 #define SCALE_W 500.0	/* set a default scaling factor for 16-bit int scores */
 
@@ -108,7 +109,7 @@ cm_optimized_Convert(const CM_t *cm)
 
 ERROR: 
   cm_Fail("Memory allocation error.\n");
-  return 0; /* never reached */
+  return NULL; /* never reached */
 }
 
 /* Function:  cm_optimized_Free()
@@ -127,6 +128,108 @@ cm_optimized_Free(CM_OPTIMIZED *ocm)
   if (ocm->beginsc != NULL) free(ocm->beginsc);
   if (ocm->oesc != NULL) free(ocm->oesc);
   if (ocm->tsc != NULL) free(ocm->tsc);
+
+  return;
+}
+
+/* Fuction:  cm_consensus_Convert()
+ * Author:   DLK, Thu May 14 2009
+ */
+CM_CONSENSUS*
+cm_consensus_Convert(CM_t *cm)
+{
+  int status;
+  int v, w, x, y;
+  int offset;
+  CM_CONSENSUS *ccm = NULL;
+
+  ESL_STACK *oldstate;
+  ESL_STACK *newstate;
+
+  oldstate = esl_stack_ICreate();
+  newstate = esl_stack_ICreate();
+
+  ESL_ALLOC(ccm, sizeof(CM_CONSENSUS));
+
+  /* Set alphabet */
+  if (cm->abc->type == eslNONSTANDARD) { cm_Fail("Failed to handle nonstandard alphabet\n"); }
+  ccm->abc = esl_alphabet_Create(cm->abc->type);
+
+  /* Set number of consensus states */
+  ccm->M = 0;
+  ccm->M += CMCountStatetype(cm, MP_st);
+  ccm->M += CMCountStatetype(cm, ML_st);
+  ccm->M += CMCountStatetype(cm, MR_st);
+  ccm->M += CMCountStatetype(cm,  S_st);
+  ccm->M += CMCountStatetype(cm,  B_st);
+  ccm->M += CMCountStatetype(cm,  E_st);
+
+  /* Set state connection */
+  ESL_ALLOC(ccm->next,   sizeof(uint8_t) * ccm->M);
+  ESL_ALLOC(ccm->sttype, sizeof(char   ) * ccm->M);
+  x = v = 0;
+
+  while (v != -1) {
+    ccm->sttype[x] = cm->sttype[v];
+    if (cm->sttype[v] == E_st) {
+      /* pop next x and v off stack */
+      if (esl_stack_IPop(oldstate, &v) == eslEOD) { v = -1; }
+      if (esl_stack_IPop(newstate, &x) == eslEOD) { x = -1; }
+    }
+    else if (cm->sttype[v] == B_st) {
+      w = cm->cfirst[v];
+      y = cm->cnum[v];
+
+      offset  = CMSubtreeCountStatetype(cm, w, MP_st);
+      offset += CMSubtreeCountStatetype(cm, w, ML_st);
+      offset += CMSubtreeCountStatetype(cm, w, MR_st);
+      offset += CMSubtreeCountStatetype(cm, w,  S_st);
+      offset += CMSubtreeCountStatetype(cm, w,  B_st);
+      offset += CMSubtreeCountStatetype(cm, w,  E_st);
+
+      ccm->next[x] = x+offset;
+
+    //ccm->oesc[x] = NULL;
+
+      /* push y and x+offset on stacks */
+      esl_stack_IPush(oldstate, y);
+      esl_stack_IPush(newstate, x+offset);
+
+      x++;
+      v = w;
+    }
+    else {
+      y = cm->cfirst[v];
+
+      while (cm->sttype[y] == D_st || cm->sttype[v] == IL_st || cm->sttype[y] == IR_st) { y++; }
+
+      ccm->next[x] = x+1;
+      x++;
+      v = y;
+    }
+
+  }
+
+  esl_stack_Destroy(oldstate);
+  esl_stack_Destroy(newstate);
+
+  return ccm;
+
+ERROR:
+  cm_Fail("Memory allocation error.\n");
+  return NULL;
+}
+
+/* Function:  cm_consensus_Free()
+   Author:    DLK, Thu May 14 2009
+ */
+void
+cm_consensus_Free(CM_CONSENSUS *ccm)
+{
+  if (ccm->next   != NULL) free(ccm->next);
+  if (ccm->sttype != NULL) free(ccm->sttype);
+
+  esl_alphabet_Destroy(ccm->abc);
 
   return;
 }

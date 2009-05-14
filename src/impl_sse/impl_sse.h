@@ -34,12 +34,38 @@ typedef struct cm_optimized_s {
 } CM_OPTIMIZED;
 
 /*****************************************************************
- * 2. Declarations of the external API.
+ * 2. CM_CONSENSUS: a match-only profile
+ *****************************************************************/
+
+typedef struct cm_consensus_s {
+  int       M;
+  char     *sttype;
+  int      *next; /* Overloaded: we'll usually fill this in, even
+                     though next[i] = i+1 for most cases.  For
+                     B_st, next will be the _right_ child (and
+                     the left will always be i+1                */
+
+  ESL_ALPHABET *abc;
+
+  /* floating point scores, if necessary */
+
+  /* Reduced-precision uchar scores */
+  float     scale_b;
+  uint8_t   base_b;
+//uint8_t   bias_b;
+  uint8_t **oesc;
+} CM_CONSENSUS;
+
+/*****************************************************************
+ * 3. Declarations of the external API.
  *****************************************************************/
 
 /* cm_optimized.c */
 CM_OPTIMIZED* cm_optimized_Convert(const CM_t *cm);
 void cm_optimized_Free(CM_OPTIMIZED *ocm);
+
+CM_CONSENSUS* cm_consensus_Convert(CM_t *cm);
+void cm_consensus_Free(CM_CONSENSUS *ccm);
 
 /* sse_cm_dpsearch.c */
 int SSECYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq,
