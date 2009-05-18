@@ -3877,6 +3877,9 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
  *
  * Returns: Score of the optimal alignment.  
  */
+// FIXME: General problem: -inf is not sticky in this function, meaning that
+// FIXME: a sequence can saturate in negative scores for a long time and then
+// FIXME: re-increase to a much higher score later.
 static int 
 sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
        int allow_begin, int *ret_b, int *ret_bsc)
@@ -5553,10 +5556,12 @@ static ESL_OPTIONS options[] = {
   { "--Lqdb",     eslARG_NONE,    FALSE, NULL, NULL,  "-L",  NULL, NULL, "use random sequences with lengths chosen from QDB distribution", 0},
   { "-L",         eslARG_INT,     "100", NULL, "n>0", NULL,  NULL, "-e", "use random sequences of this length [default]",0 },
   { "-N",         eslARG_INT,       "1", NULL, "n>0", NULL,  NULL, NULL, "number of target seqs",                          0 },
-  { "--scoreonly",eslARG_NONE,"default", NULL, NULL,  NULL,           NULL, NULL, "No traceback, calculate score only",0 },
-  { "--traceback",eslARG_NONE,    FALSE, NULL, NULL,  "--scoreonly",  NULL, NULL, "Determine CYK trace",0 },
-  { "--strict",   eslARG_NONE,    FALSE, NULL, NULL, NULL, "--traceback", NULL, "Compare traces stringently", 0},
-  { "--DnC",      eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "use Divide and Conquer implementation", 0},
+  { "--scoreonly",eslARG_NONE,"default", NULL, NULL,  NULL,  NULL, NULL, "Score-only, low memory implementation",0 },
+  { "--full",     eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "Use full Inside implementation", 0},
+  { "--DnC",      eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "Use Divide and Conquer implementation", 0},
+  { "--traceback",eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "Determine CYK trace",0 },
+  { "--strict",   eslARG_NONE,    FALSE, NULL, NULL,  NULL, "--traceback", NULL, "Compare traces stringently", 0},
+  { "--verbose",  eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "Parsetree dump for traceback", 0},
   { "--CYKFilter",eslARG_NONE,    FALSE, NULL, NULL,  NULL,  NULL, NULL, "Experimental epi16 CYK Filter", 0},
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -5644,44 +5649,74 @@ main(int argc, char **argv)
 
       if (esl_opt_GetBoolean(go, "--scoreonly")) {
         esl_stopwatch_Start(w);
-        if (esl_opt_GetBoolean(go, "--DnC"))
-          sc1 = CYKDivideAndConquer(cm, dsq, L, 0, 1, L, NULL, NULL, NULL);
-        else
-          sc1 = CYKInside(cm, dsq, L, 0, 1, L, NULL, NULL, NULL);
+        sc1 = CYKInsideScore(cm, dsq, L, 0, 1, L, NULL, NULL);
+        printf("%4d %-30s %10.4f bits ", (i+1), "CYKInsideScore(): ", sc1);
+        esl_stopwatch_Stop(w);
+        esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+        esl_stopwatch_Start(w);
+        sc2 = SSE_CYKInsideScore(cm, dsq, L, 0, 1, L);
+        printf("%4d %-30s %10.4f bits ", (i+1), "SSE_CYKInsideScore(): ", sc2);
+        esl_stopwatch_Stop(w);
+        esl_stopwatch_Display(stdout, w, " CPU time: ");
+      }
+
+      if (esl_opt_GetBoolean(go, "--full")) {
+        esl_stopwatch_Start(w);
+        sc1 = CYKInside(cm, dsq, L, 0, 1, L, NULL, NULL, NULL);
         printf("%4d %-30s %10.4f bits ", (i+1), "CYKInside(): ", sc1);
         esl_stopwatch_Stop(w);
         esl_stopwatch_Display(stdout, w, " CPU time: ");
 
         esl_stopwatch_Start(w);
-        if (esl_opt_GetBoolean(go, "--DnC"))
-          sc2 = SSE_CYKDivideAndConquer(cm, dsq, L, 0, 1, L, NULL);
-        else
-          sc2 = SSE_CYKInsideScore(cm, dsq, L, 0, 1, L);
-        printf("%4d %-30s %10.4f bits ", (i+1), "sse_inside(): ", sc2);
+        sc2 = SSE_CYKInside(cm, dsq, L, 0, 1, L, NULL);
+        printf("%4d %-30s %10.4f bits ", (i+1), "SSE_CYKInside(): ", sc2);
+        esl_stopwatch_Stop(w);
+        esl_stopwatch_Display(stdout, w, " CPU time: ");
+      }
+
+      if (esl_opt_GetBoolean(go, "--DnC")) {
+        esl_stopwatch_Start(w);
+        sc1 = CYKDivideAndConquer(cm, dsq, L, 0, 1, L, NULL, NULL, NULL);
+        printf("%4d %-30s %10.4f bits ", (i+1), "CYKDivideAndConquer(): ", sc1);
+        esl_stopwatch_Stop(w);
+        esl_stopwatch_Display(stdout, w, " CPU time: ");
+
+        esl_stopwatch_Start(w);
+        sc2 = SSE_CYKDivideAndConquer(cm, dsq, L, 0, 1, L, NULL);
+        printf("%4d %-30s %10.4f bits ", (i+1), "SSE_CYKDivideAndConquer(): ", sc2);
         esl_stopwatch_Stop(w);
         esl_stopwatch_Display(stdout, w, " CPU time: ");
       }
 
       if (esl_opt_GetBoolean(go, "--traceback")) {
         esl_stopwatch_Start(w);
-        if (esl_opt_GetBoolean(go, "--DnC"))
+        if (esl_opt_GetBoolean(go, "--DnC")) {
           sc1 = CYKDivideAndConquer(cm, dsq, L, 0, 1, L, &tr1, NULL, NULL);
-        else
+          if (esl_opt_GetBoolean(go, "--verbose")) ParsetreeDump(stdout, tr1, cm, dsq, NULL, NULL);
+          ParsetreeScore(cm, NULL, NULL, tr1, dsq, FALSE, &ptsc1, NULL, NULL, NULL, NULL);
+          printf("%4d %-30s %10.4f bits %10.4f bits", (i+1), "CYKDivideAndConquer(): ", sc1, ptsc1);
+        } else {
           sc1 = CYKInside(cm, dsq, L, 0, 1, L, &tr1, NULL, NULL);
-        ParsetreeDump(stdout, tr1, cm, dsq, NULL, NULL);
-        ParsetreeScore(cm, NULL, NULL, tr1, dsq, FALSE, &ptsc1, NULL, NULL, NULL, NULL);
-        printf("%4d %-30s %10.4f bits %10.4f bits", (i+1), "CYKInside(): ", sc1, ptsc1);
+          if (esl_opt_GetBoolean(go, "--verbose")) ParsetreeDump(stdout, tr1, cm, dsq, NULL, NULL);
+          ParsetreeScore(cm, NULL, NULL, tr1, dsq, FALSE, &ptsc1, NULL, NULL, NULL, NULL);
+          printf("%4d %-30s %10.4f bits %10.4f bits", (i+1), "CYKInside(): ", sc1, ptsc1);
+        }
         esl_stopwatch_Stop(w);
         esl_stopwatch_Display(stdout, w, " CPU time: ");
 
         esl_stopwatch_Start(w);
-        if (esl_opt_GetBoolean(go, "--DnC"))
+        if (esl_opt_GetBoolean(go, "--DnC")) {
           sc2 = SSE_CYKDivideAndConquer(cm, dsq, L, 0, 1, L, &tr2);
-        else
+          if (esl_opt_GetBoolean(go, "--verbose")) ParsetreeDump(stdout, tr2, cm, dsq, NULL, NULL);
+          ParsetreeScore(cm, NULL, NULL, tr2, dsq, FALSE, &ptsc2, NULL, NULL, NULL, NULL);
+          printf("%4d %-30s %10.4f bits %10.4f bits", (i+1), "SSE_CYKDivideAndConquer(): ", sc2, ptsc2);
+        } else {
           sc2 = SSE_CYKInside(cm, dsq, L, 0, 1, L, &tr2);
-        ParsetreeDump(stdout, tr2, cm, dsq, NULL, NULL);
-        ParsetreeScore(cm, NULL, NULL, tr2, dsq, FALSE, &ptsc2, NULL, NULL, NULL, NULL);
-        printf("%4d %-30s %10.4f bits %10.4f bits", (i+1), "sse_inside(): ", sc2, ptsc2);
+          if (esl_opt_GetBoolean(go, "--verbose")) ParsetreeDump(stdout, tr2, cm, dsq, NULL, NULL);
+          ParsetreeScore(cm, NULL, NULL, tr2, dsq, FALSE, &ptsc2, NULL, NULL, NULL, NULL);
+          printf("%4d %-30s %10.4f bits %10.4f bits", (i+1), "SSE_CYKInside(): ", sc2, ptsc2);
+        }
         esl_stopwatch_Stop(w);
         esl_stopwatch_Display(stdout, w, " CPU time: ");
 
@@ -5699,7 +5734,7 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "--CYKFilter")) {
         esl_stopwatch_Start(w);
         sc1 = sse_CYKFilter_epi16(cm,dsq,L,0,cm->M-1,1,L,TRUE,NULL,NULL)/500.0;
-        printf("%4d %-30s %10.4f bits ", (i+1), "SSE_CYKFilter(): ", sc1);
+        printf("%4d %-30s %10.4f bits ", (i+1), "CYKFilter_epi16(): ", sc1);
         esl_stopwatch_Stop(w);
         esl_stopwatch_Display(stdout, w, " CPU time: ");
       }
