@@ -915,6 +915,7 @@ sse_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
   midnode = cm->ndidx[r] + ((cm->ndidx[z] - cm->ndidx[r]) / 2);
   w = cm->nodemap[midnode];
   y = cm->cfirst[w]-1;
+//fprintf(stderr,"\tw %d y %d\n",w,y);
 
   /* 3. Calculate inside up to w, and outside down to y.
    *    We rely on a side effect of how deallocation works
@@ -935,6 +936,7 @@ sse_wedge_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr, int r, int z,
   best_sc = IMPOSSIBLE;
   vb_sc = _mm_set1_ps(-eslINFINITY);
   vb_v = vb_j = vb_d = (__m128) _mm_set1_epi32(-3);
+
   for (v = w; v <= y; v++) {
     vec_v = (__m128) _mm_set1_epi32(v);
     for (jp = 0; jp <= W; jp++) 
@@ -1069,17 +1071,17 @@ float f;
   }
 */
 
-/*
 if (best_v == -3) {
+/*`
 fprintf(stderr,"%f %f %f %f\t",*((float *) &vb_sc),*((float *) &vb_sc+1),*((float *) &vb_sc+2),*((float *) &vb_sc+3));
 fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_v),*((int *) &vb_v+1),*((int *) &vb_v+2),*((int *) &vb_v+3));
 fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_j),*((int *) &vb_j+1),*((int *) &vb_j+2),*((int *) &vb_j+3));
 fprintf(stderr,"%d %d %d %d\n",*((int *) &vb_d),*((int *) &vb_d+1),*((int *) &vb_d+2),*((int *) &vb_d+3));
+*/
 
 fprintf(stderr,"%f %d %d %d\n",best_sc, best_v, best_j, best_d);
 cm_Fail("vb_v never got set to anything?\n");
 }
-*/
   /* If we're in EL, instead of the split set, the optimal alignment
    * is entirely in a V problem that's still above us. The TRUE
    * flag sets useEL. It doesn't matter which state in the split
@@ -1170,6 +1172,7 @@ sse_v_splitter(CM_t *cm, ESL_DSQ *dsq, int L, Parsetree_t *tr,
   int sW;
   const int vecwidth = 4;
 
+  alpha = NULL; beta = NULL;
   ioffset = _mm_setr_epi32(0, 1, 2, 3);
 
   /* 1. If the V problem is either a boundary condition, or small
@@ -1332,17 +1335,19 @@ float f;
       best_i  = *((int *) &vb_i + k);
     }
   }
+*/
 
 if (best_v == -3) {
+/*
 fprintf(stderr,"%f %f %f %f\t",*((float *) &vb_sc),*((float *) &vb_sc+1),*((float *) &vb_sc+2),*((float *) &vb_sc+3));
 fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_v),*((int *) &vb_v+1),*((int *) &vb_v+2),*((int *) &vb_v+3));
 fprintf(stderr,"%d %d %d %d\t",*((int *) &vb_j),*((int *) &vb_j+1),*((int *) &vb_j+2),*((int *) &vb_j+3));
 fprintf(stderr,"%d %d %d %d\n",*((int *) &vb_i),*((int *) &vb_i+1),*((int *) &vb_i+2),*((int *) &vb_i+3));
+*/
 
 fprintf(stderr,"%f %d %d %d\n",best_sc, best_v, best_j, best_i);
 cm_Fail("vb_v never got set to anything?\n");
 }
-*/
   /* If we're in EL, instead of the split set, the optimal
    * alignment is entirely in a V problem that's still above us.
    * The TRUE flag sets useEL; we propagate allow_begin. 
@@ -1523,9 +1528,6 @@ sse_inside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0, i
   __m128       mask;
   sse_deck_t  *end = NULL;
   sse_deck_t **shadow = NULL;      /* shadow matrix for tracebacks */
-
-//if (alpha != NULL || ret_alpha != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently support passing alpha matrices!\n");
-//if (dpool != NULL || ret_dpool != NULL) fprintf(stderr,"WARNING! sse_inside() does not currently support passing deck pools!\n");
 
   /* Allocations and initializations
    */
@@ -2426,8 +2428,9 @@ sse_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 	      case MP_st: 
 		//if (j == j0 || d == jp) continue; /* boundary condition */
 		if (j == j0) continue; /* boundary condition */
-                if (dp == (jp+1)/vecwidth)
+                if (dp == (jp+1)/vecwidth) {
                   tmpv = _mm_movehl_ps(neginfv, beta[y]->vec[j+1][dp]);
+                }
                 else {
                   tmpv = _mm_movelh_ps(neginfv, beta[y]->vec[j+1][dp+1]);
                   tmpv = _mm_movehl_ps(tmpv, beta[y]->vec[j+1][dp]);
@@ -2536,7 +2539,6 @@ sse_outside(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
 
 	  } /* ends loop over d. We know all beta[v][j][d] in this row j*/
       }/* end loop over jp. We know the beta's for the whole deck.*/
-
 
       /* Deal with local alignment end transitions v->EL
        * (EL = deck at M.)
@@ -3848,10 +3850,10 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 
 /*****************************************************************
  * The Filter engines
- *     sse_CYKFilter_epi16 - inside on scaled 16-bit ints, 8x vector
+ *     SSE_CYKFilter_epi16 - inside on scaled 16-bit ints, 8x vector
  *****************************************************************/
 
-/* Function: sse_CYKFilter_epi16()
+/* Function: SSE_CYKFilter_epi16()
  * Date:     DLK, Fri May  1 2009
  *
  * Purpose:  Run memory-efficient CYK on 8x 16-bit integers.
@@ -3880,8 +3882,8 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 // FIXME: General problem: -inf is not sticky in this function, meaning that
 // FIXME: a sequence can saturate in negative scores for a long time and then
 // FIXME: re-increase to a much higher score later.
-static int 
-sse_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
+int 
+SSE_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
        int allow_begin, int *ret_b, int *ret_bsc)
 {
   int       status;
@@ -5733,7 +5735,7 @@ main(int argc, char **argv)
 
       if (esl_opt_GetBoolean(go, "--CYKFilter")) {
         esl_stopwatch_Start(w);
-        sc1 = sse_CYKFilter_epi16(cm,dsq,L,0,cm->M-1,1,L,TRUE,NULL,NULL)/500.0;
+        sc1 = SSE_CYKFilter_epi16(cm,dsq,L,0,cm->M-1,1,L,TRUE,NULL,NULL)/500.0;
         printf("%4d %-30s %10.4f bits ", (i+1), "CYKFilter_epi16(): ", sc1);
         esl_stopwatch_Stop(w);
         esl_stopwatch_Display(stdout, w, " CPU time: ");

@@ -68,7 +68,7 @@ CM_CONSENSUS* cm_consensus_Convert(CM_t *cm);
 void cm_consensus_Free(CM_CONSENSUS *ccm);
 
 /* sse_cm_dpsearch.c */
-int SSECYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq,
+int SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq,
 	int i0, int j0, float cutoff, search_results_t *results,
 	int do_null3, float **ret_vsc, float *ret_sc);
 
@@ -79,11 +79,12 @@ float SSE_CYKInsideScore(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0);
 float SSE_CYKDemands(CM_t *cm, int L, int be_quiet);
 float SSE_CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r,
 	int i0, int j0, Parsetree_t **ret_tr);
+int SSE_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
+        int allow_begin, int *ret_b, int *ret_bsc);
+
 
 /* sse_util.c */
 inline __m128  alt_rightshift_ps(__m128 a, __m128 b);
-inline __m128i sse_leftshift_epi16(__m128i a, __m128i b);
-inline __m128i sse_rightshift_epi16(__m128i a, __m128i b);
 inline __m128i sse_setlw_neginfv(__m128i a);
 
 #endif /* CM_IMPL_SSE_INCLUDED */

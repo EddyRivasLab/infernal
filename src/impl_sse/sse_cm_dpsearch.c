@@ -28,7 +28,7 @@
 #include "funcs.h"
 #include "structs.h"
 
-/* Function: SSECYKScan()
+/* Function: SSE_CYKScan()
  * Author:   DLK
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
@@ -55,7 +55,7 @@
  *           Dies immediately if some error occurs.
  */
 int
-SSECYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
+SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
 	   search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc)
 {
 //FIXME: needs some cleanup from the scalar detritus; should be able
@@ -84,13 +84,13 @@ SSECYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
   double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
   /* Contract check */
-  if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "SSECYKScan, CMH_BITS flag is not raised.\n");
-  if(j0 < i0)                            ESL_FAIL(eslEINCOMPAT, errbuf, "SSECYKScan, i0: %d j0: %d\n", i0, j0);
-  if(dsq == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "SSECYKScan, dsq is NULL\n");
-  if(smx == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "SSECYKScan, smx == NULL\n");
-  if(cm->search_opts & CM_SEARCH_INSIDE) ESL_FAIL(eslEINCOMPAT, errbuf, "SSECYKScan, CM_SEARCH_INSIDE flag raised");
-  if(! (cm->smx->flags & cmSMX_HAS_FLOAT)) ESL_FAIL(eslEINCOMPAT, errbuf, "SSECYKScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
-  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "SSECYKScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
+  if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "SSE_CYKScan, CMH_BITS flag is not raised.\n");
+  if(j0 < i0)                            ESL_FAIL(eslEINCOMPAT, errbuf, "SSE_CYKScan, i0: %d j0: %d\n", i0, j0);
+  if(dsq == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "SSE_CYKScan, dsq is NULL\n");
+  if(smx == NULL)                        ESL_FAIL(eslEINCOMPAT, errbuf, "SSE_CYKScan, smx == NULL\n");
+  if(cm->search_opts & CM_SEARCH_INSIDE) ESL_FAIL(eslEINCOMPAT, errbuf, "SSE_CYKScan, CM_SEARCH_INSIDE flag raised");
+  if(! (cm->smx->flags & cmSMX_HAS_FLOAT)) ESL_FAIL(eslEINCOMPAT, errbuf, "SSE_CYKScan, ScanMatrix's cmSMX_HAS_FLOAT flag is not raised");
+  if(smx == cm->smx && (! cm->flags & CMH_SCANMATRIX)) ESL_FAIL(eslEINCOMPAT, errbuf, "SSE_CYKScan, smx == cm->smx, and cm->flags & CMH_SCANMATRIX is down, matrix is invalid.");
 
   /* make pointers to the ScanMatrix/CM data for convenience */
   float ***alpha      = smx->falpha;      /* [0..j..1][0..v..cm->M-1][0..d..W] alpha DP matrix, NULL for v == BEGL_S */
@@ -679,7 +679,7 @@ SSECYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int 
   free(mem_bestr);
   free(mem_tmpary);
 
-  ESL_DPRINTF1(("SSECYKScan() return score: %10.4f\n", vsc_root)); 
+  ESL_DPRINTF1(("SSE_CYKScan() return score: %10.4f\n", vsc_root)); 
 //printf("i0 %d j0 %d W %d sW %d\n",i0,j0,W,sW);
   return eslOK;
   
@@ -842,8 +842,8 @@ main(int argc, char **argv)
       if (esl_opt_GetBoolean(go, "-w")) 
 	{ 
 	  esl_stopwatch_Start(w);
-	  if((status = SSECYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	  printf("%4d %-30s %10.4f bits ", (i+1), "SSECYKScan(): ", sc);
+	  if((status = SSE_CYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  printf("%4d %-30s %10.4f bits ", (i+1), "SSE_CYKScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}

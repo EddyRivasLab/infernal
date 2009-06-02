@@ -23,6 +23,7 @@ alt_rightshift_ps(__m128 a, __m128 b)
   return _mm_move_ss(_mm_shuffle_ps(a, a, _MM_SHUFFLE(2, 1, 0, 0)), _mm_shuffle_ps(b, b, _MM_SHUFFLE(3, 3, 3, 3)));
 }
 
+#if 0
 /* Function:  sse_leftshift_epi16()
  * Date:      DLK, Fri May 1 2009
  *
@@ -54,6 +55,7 @@ sse_rightshift_epi16(__m128i a, __m128i b)
   register __m128i v = _mm_slli_si128(a, 2); /* now 0 a[0] a[1] a[2] a[3] a[4] a[5] a[6] */
   return _mm_insert_epi16(v,_mm_extract_epi16(b,7),0);
 }
+#endif
 
 /* Function:  sse_setlw_neginfv()
  * Date:      DLK, Tue May 12 2009
