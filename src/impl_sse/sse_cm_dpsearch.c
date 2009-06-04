@@ -179,7 +179,9 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   ESL_ALLOC(mem_esc,            sizeof(__m128   ) * cm->abc->Kp * cm->M * (sW) + 15);
   ESL_ALLOC(esc_stale,          sizeof(int     *) * cm->abc->Kp);
   ESL_ALLOC(mem_tmpary,         sizeof(__m128   ) * (W+1) + 15);
+  ESL_ALLOC(mem_bestr, sizeof(__m128) * sW + 15);
 
+  vec_bestr = (__m128 *) (((unsigned long int) mem_bestr + 15) & (~0xf));
   tmpary = (__m128 *) (((unsigned long int) mem_tmpary + 15) & (~0xf));
   vec_init_scAA[0] = (__m128 *) (((unsigned long int) mem_init_scAA + 15) & (~0xf)) + 2;
   vec_alpha[1] = vec_alpha[0] + cm->M;
@@ -288,13 +290,15 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
             }
             else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
               for (d = 0; d < sW; d++) {
-                for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= j && ((j^W)|d|z) ) ? cm->oesc[v][dsq[j-(z*sW+d)+1]] : -eslINFINITY;
+                //for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= j && ((j^W)|d|z) ) ? cm->oesc[v][dsq[j-(z*sW+d)+1]] : -eslINFINITY;
+                for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= j && ((j^j0)|d|z) ) ? cm->oesc[v][dsq[j-(z*sW+d)+1]] : -eslINFINITY;
                   vec_esc[dsq[j]][v][d] = tmp.v;
               }
             }
             else if (cm->sttype[v] == MP_st) {
               for (d = 0; d < sW; d++) {
-                for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= j && ((j^W)|d|z) ) ? cm->oesc[v][dsq[j-(z*sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY;
+                //for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= j && ((j^W)|d|z) ) ? cm->oesc[v][dsq[j-(z*sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY;
+                for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= j && ((j^j0)|d|z) ) ? cm->oesc[v][dsq[j-(z*sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY;
                   vec_esc[dsq[j]][v][d] = tmp.v;
               }
             }
@@ -309,7 +313,8 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
             for (d = 0; d < delta; d++) {
               tmpary[d] = vec_esc[dsq[j]][v][sW-delta+d];
               tmpary[d] = _mm_shuffle_ps(tmpary[d], tmpary[d], _MM_SHUFFLE(2,1,0,0));
-              tmp_esc     = (j^W)|d ? cm->oesc[v][dsq[j-d+1]] : -eslINFINITY;
+              //tmp_esc     = (j^W)|d ? cm->oesc[v][dsq[j-d+1]] : -eslINFINITY;
+              tmp_esc     = (j^j0)|d ? cm->oesc[v][dsq[j-d+1]] : -eslINFINITY;
               //tmpary[d].x[0] = tmp_esc;
               tmpary[d] = _mm_move_ss(tmpary[d],_mm_set1_ps(tmp_esc));
             }
@@ -324,7 +329,8 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
             for (d = 0; d < delta; d++) {
               tmpary[d] = vec_esc[dsq[j]][v][sW-delta+d];
               tmpary[d] = _mm_shuffle_ps(tmpary[d], tmpary[d], _MM_SHUFFLE(2,1,0,0));
-              tmp_esc     = (j^W)|d ? cm->oesc[v][dsq[j-d+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY;
+              //tmp_esc     = (j^W)|d ? cm->oesc[v][dsq[j-d+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY;
+              tmp_esc     = (j^j0)|d ? cm->oesc[v][dsq[j-d+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY;
               //tmpary[d].x[0] = tmp_esc;
               tmpary[d] = _mm_move_ss(tmpary[d],_mm_set1_ps(tmp_esc));
             }
@@ -449,7 +455,8 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
               }
             }
 
-            for ( ; k < 4*sW && k <=j; k++) {
+            //for ( ; k < 4*sW && k <=j; k++) {
+            for ( ; k <= W && k <= j; k++) {
               vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
               vec_tmp_begr = _mm_set1_ps(*vec_access);
 
@@ -577,9 +584,6 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
        * by the way local alignment is parameterized (other transitions are
        * -INFTY), which is probably a little too fragile of a method. 
        */
-      ESL_ALLOC(mem_bestr, sizeof(__m128) * sW + 15);
-      vec_bestr = (__m128 *) (((unsigned long int) mem_bestr + 15) & (~0xf));
-
       float const *tsc_v = cm->tsc[0];
       /* determine min/max d we're allowing for the root state and this position j */
       jp_v = cur;
@@ -804,8 +808,10 @@ main(int argc, char **argv)
        if (esl_rsq_xIID(r, dnull, cm->abc->K, L, randdsq)  != eslOK) cm_Fail("Failure creating random sequence.");
        if((seqs_to_aln->sq[i] = esl_sq_CreateDigitalFrom(abc, NULL, randdsq, L, NULL, NULL, NULL)) == NULL)
          cm_Fail("Failure digitizing/copying random sequence.");
-
      }
+     seqs_to_aln->nseq = N;
+     free(dnull);
+     free(randdsq);
   }
   else if(do_random) {
     double *dnull;
