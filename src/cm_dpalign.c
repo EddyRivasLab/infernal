@@ -1021,7 +1021,7 @@ fast_alignT_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
       dp_v = d - hdmin[v][jp_v];
     } else {
       yoffset = shmx->yshadow[v][jp_v][dp_v];
-      /*printf("     mx[v:%4d][jp_v:%4d][dp_v:%4d]: %10.5f\n", v, jp_v, dp_v, mx->dp[v][jp_v][dp_v]);
+      /*printf("     mx[v:%4d][jp_v:%4d][dp_v:%4d]: %10.5f j: %4d d: %4d\n", v, jp_v, dp_v, mx->dp[v][jp_v][dp_v], j, d);
 	if(post_mx != NULL) printf("post_mx[v:%4d][jp_v:%4d][dp_v:%4d]: %10.5f prob: %.5f\n", v, jp_v, dp_v, post_mx->dp[v][jp_v][dp_v], FScore2Prob(post_mx->dp[v][jp_v][dp_v], 1.));*/
       switch (cm->sttype[v]) {
       case D_st:            break;
@@ -3344,19 +3344,33 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	     * likely transition, but with optimal accuracy, only
 	     * emissions add to the score, so when d == sd, we know
 	     * we'll emit sd residues from v, so the initialization
-	     * will NOT be overwritten. We get around this for
+	     * will NOT be overwritten (because after the d==sd residues
+	     * are emitted 0 more residues are emitted in the subtree
+	     * thus the score is fixed). We get around this for
 	     * cells for which  d == sd and v is a state that has 
 	     * a StateDelta=0 child y (delete or END) by initializing
-	     * that transition to y is most likely.
+	     * the transition to that y, BUT only after checking that
+	     * it is a valid cell for y (that is, d==0 is within y's
+	     * d band for the current j), if it's not, then leave it
+	     * as USED_EL, b/c the parse should be IMPOSSIBLE. 
+	     * (Note: NOT checking that the cell is valid for y and j was 
+	     * bug i14, the first BUGTRAX logged bug found and fixed in 
+	     * the final release (rc5) of infernal v1.0 
+	     * (EPN, Fri Jun 12 14:02:58 2009)).
 	     */
 	    dp_v = 0;
 
 	    for (d = hdmin[v][jp_v]; d <= sd; d++, dp_v++) { 
 	      alpha[v][jp_v][dp_v] = IMPOSSIBLE;
 	      yshadow[v][jp_v][dp_v] = USED_EL;
-	      y = cm->cfirst[v];
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++)
-		if(StateDelta(cm->sttype[y+yoffset]) == 0) yshadow[v][jp_v][dp_v] = yoffset;
+	      for (y = cm->cfirst[v]; y < (cm->cfirst[v] + cm->cnum[v]); y++) { 
+		if(StateDelta(cm->sttype[y]) == 0) { 
+		  if(j >= jmin[y] && j <= jmax[y]) { 
+		  if(hdmin[y][j-jmin[y]] == 0) 
+		      yshadow[v][jp_v][dp_v] = y-cm->cfirst[v];
+		  }
+		}
+	      }
 	    }
 	    d = ESL_MAX(hdmin[v][jp_v], sd+1); 
 	    for (dp_v = d - hdmin[v][jp_v]; d <= hdmax[v][jp_v]; d++, dp_v++) {
@@ -4733,7 +4747,7 @@ CMCheckPosterior(CM_t *cm, char *errbuf, int i0, int j0, float ***post)
  *           mass that goes through cell [v][j][d] which is not the
  *           posterior probability that residue i and/or j aligns at
  *           state v's position in the alignment, which is the confidence
- *           estimate in the alignmen that we want. To get this we
+ *           estimate in the alignment that we want. To get this we
  *           have to marginalize over all possible ways that residue
  *           i and/or j can get in state v's emission position in the
  *           alignment. See the code for details.

@@ -306,3 +306,55 @@ never be localized and thus never have the problems mentioned above.
 See ~/nawrockie/notebook/8_0930_inf_bug_1rc3_sub_illegal_cm/00LOG.
 for log of how it was fixed.
 //
+
+ID              i14
+TITLE		cmalign optimal accuracy zero length parsetree bug
+STATUS          CLOSED
+XREF            See ~/nawrockie/notebook/9_0612_inf_bug_cmalign_enone
+REPORTED_BY     Brian Parker, University of Copenhagen
+CLOSED_DATE     EPN, Fri Jun 12 16:47:50 2009
+DESCRIPTION     
+
+The i14 perl script in Infernal's Bugs/ subdirectory has Brian's 
+simple example of this bug.
+
+In rare cases when aligning to a CM using HMM banded optimal accuracy,
+the optimal parse, the parse that maximizes the summed posterior
+labelling of all emitted residues, requires making an illegal
+transition.  Specifically a transition from a v,j,d subtree where d==0
+and j and d are perfectly legal (within the hmm bands) to a y,j,d
+subtree where d = 0 that is ILLEGAL in that j is outside the j band on
+y, or d=0 is outside the d band for y and j.  This caused a seg fault
+in version 1.0 of infernal.
+
+The 'fix' for this is not perfect, but does remove the seg fault
+behavior. Now the alignment forces the illegal parse tree to become
+legal, which does not cause any problems because d=0, that is, no
+residues are emitted from the illegal subtree.
+
+However, it is unnerving that an illegal parse is being allowed and
+manifests itself only in the trace file (--tfile <x>) by showing an
+illegal parse and a EL end in global mode. The specific reason for
+this is due to the way the optimal accuracy algorithm is implemented
+(cells get initialized to EL) and is explained more in
+~nawrockie/notebook/9_0612_inf_bug_cmalign_enone.
+
+It's unclear how to do a proper fix. This is because the optimal
+accuracy function: optimal_accuracy_align_hb() returns the parse
+that maximizes the summed posterior labeling of all residues in the
+target. To achieve this non-emitting states do not contribute at
+all to the score being optimized. However to fix the bug I'd have to
+have deletes contribute in someway, so that I could distinguish an
+illegal parsetree that emits 0 residues from a legal one that emits
+0 residues (currently they each have the some score: 0). If I did
+allow deletes to positively add to the score then the optimal accuracy
+parse would incorrectly contain many deletes, because adding them 
+increases the score but does not account for any emitted residues.
+
+This bug was fixed in the infernal 1.0 release branch as of revision
+2826, which is a post-1.0 svn  revision of the infernal-1.0 branch,
+and in the main infernal trunk as of revision 2828.
+
+See ~/nawrockie/notebook/9_0612_inf_bug_cmalign_enone/00LOG.
+for log of how it was fixed.
+//
