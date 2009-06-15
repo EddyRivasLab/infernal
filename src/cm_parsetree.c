@@ -625,6 +625,8 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
 		     Parsetree_t **tr, int nseq, int do_full, int do_matchonly, 
 		     ESL_MSA **ret_msa)
 {
+  char errbuf[eslERRBUFSIZE];
+
   /* Contract check. We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
   if(cm->abc->type == eslRNA)
@@ -1007,7 +1009,7 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
       esl_vec_ISet(useme, msa->alen, FALSE);
       for(cpos = 0; cpos <= emap->clen; cpos++)
 	if(matmap[cpos] != -1) useme[matmap[cpos]] = TRUE;
-      esl_msa_ColumnSubset(msa, useme);
+      if((status = esl_msa_ColumnSubset(msa, errbuf, useme)) != eslOK) return status;
       free(useme);
     }
 
