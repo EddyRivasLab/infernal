@@ -149,6 +149,21 @@ void         sse_free_vji_matrix(sse_deck_t **a, int M);
 #define USED_LOCAL_BEGIN 101
 #define USED_EL          102
 
+static void vecprint_epi16(CM_OPTIMIZED *ocm, __m128i a)
+{
+  union {
+    __m128i vec;
+    int16_t i[8];
+  } x;
+  float f[8];
+
+  x.vec = a;
+  for (int z = 0; z<8; z++) f[z] = (float) x.i[z]/ocm->scale_w;
+  fprintf(stderr,"%6.2f %6.2f %6.2f %6.2f %6.2f %6.2f %6.2f %6.2f",f[0],f[1],f[2],f[3],f[4],f[5],f[6],f[7]);
+
+  return;
+}
+
 /* Function: CYKDivideAndConquer()
  * Date:     SRE, Sun Jun  3 19:32:14 2001 [St. Louis]
  *
@@ -3920,6 +3935,15 @@ SSE_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
   __m128i      doffset;
   __m128i      tmpv;
   sse_deck_t  *end;
+#ifndef LOBAL_MODE
+  __m128i     *mem_unaligned_sc;
+  __m128i     *vec_unaligned_sc;
+  __m128i      vb_sc;
+  __m128i      mask;
+  __m128i      tmp_j, vb_j;
+  __m128i      tmp_d, vb_d;
+#endif
+
 
   CM_OPTIMIZED *ocm = NULL;
 
@@ -3947,6 +3971,28 @@ SSE_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, 
     {
       vec_Pesc[j] = vec_Pesc[0] + j*(sW+1);
     }
+
+#ifndef LOBAL_MODE
+  vb_sc = neginfv;
+  vb_j  = vb_d  = _mm_set1_epi16(-1);
+
+  ESL_ALLOC(mem_unaligned_sc, sizeof(__m128i) * (sW+1) + 15);
+  vec_unaligned_sc = (__m128i *) (((unsigned long int) mem_unaligned_sc + 15) & (~0xf));
+
+//FIXME: it's somewhat unclear here what to use as the 'sequence length' - whether
+//FIXME: that should be the entire sequence L, or just the (i0,j0) window that's
+//FIXME: actually being considered for alignment.  Using 'len' here for ease of changing it.
+  float len = (float) L;
+  float p = len/(len + 2.);
+  float r = len/(len + 1.);
+  float constpart = 2*sreLOG2(1.-p) + len*sreLOG2(p) - len*sreLOG2(r) - sreLOG2(1.-r);
+  tmp = wordify(ocm->scale_w, constpart);
+  int16_t logp = wordify(ocm->scale_w, sreLOG2(p));
+  for (dp = 0; dp <= sW; dp++) {
+    tmpv = _mm_mullo_epi16(_mm_set1_epi16(logp), _mm_adds_epi16(doffset, _mm_set1_epi16(dp*vecwidth)));
+    vec_unaligned_sc[dp] = _mm_subs_epi16(_mm_set1_epi16(tmp), tmpv);
+  }
+#endif
 
   /* Make a deck pool */
   if (dpool == NULL) dpool = sse_deckpool_create();
@@ -4439,6 +4485,43 @@ tmpsc == -32768 ? fprintf(stderr,"%7.2f ",-eslINFINITY) : fprintf(stderr,"%7.2f 
 fprintf(stderr,"\n");
 }
 */
+#ifndef LOBAL_MODE
+//FIXME: whether you store the (j,d) that corresponds to the best score depends on
+//FIXME: whether you want tight alignment bounds for the next step in the pipeline
+//FIXME: (if so, could also report v, to reduce number of states if it is a small
+//FIXME: portion relative to the overall model
+//FIXME: On the other hand, saturation may counter-indicate this, as later alignments
+//FIXME: comprising larger parts of the model and larger sequence windows will not
+//FIXME: be able to exceed previously seen scores
+      for (jp = 0; jp <= W; jp ++) {
+	j = i0-1+jp;
+//if(v<8 && j==26) fprintf(stderr,"v = %d  j = %d  beginsc %e %f\n",v,j,cm->beginsc[v],(float)ocm->beginsc[v]/ocm->scale_w); 
+        tmp_j = _mm_set1_epi16(j);
+        sW = jp/vecwidth;
+	for (dp = 0; dp <= sW; dp++) {
+          tmp_d = _mm_adds_epi16(_mm_set1_epi16(dp*vecwidth), doffset);
+          tmpv = _mm_adds_epi16(alpha[v]->ivec[j][dp], vec_unaligned_sc[dp]);
+/*
+if(v<8 && j==26) {
+fprintf(stderr,"dp = %d\n",dp);
+fprintf(stderr,"\talpha "); vecprint_epi16(ocm, alpha[v]->ivec[j][dp]); fprintf(stderr,"\n");
+fprintf(stderr,"\tunaln "); vecprint_epi16(ocm,  vec_unaligned_sc[dp]); fprintf(stderr,"\n");
+fprintf(stderr,"\ttmpv1 "); vecprint_epi16(ocm,                  tmpv); fprintf(stderr,"\n");
+}
+//FIXME: broken because cm isn't configured for local
+          tmpv = _mm_adds_epi16(tmpv, _mm_set1_epi16(ocm->beginsc[v]));
+if(v<8 && j==26) {
+fprintf(stderr,"\ttmpv2 "); vecprint_epi16(ocm,                  tmpv); fprintf(stderr,"\n");
+}
+*/
+          mask = _mm_cmpgt_epi16(tmpv, vb_sc);
+          vb_sc = _mm_max_epi16(tmpv, vb_sc);
+          vb_j  = sse_select_si128(vb_j, tmp_j, mask);
+          vb_d  = sse_select_si128(vb_d, tmp_d, mask);
+        }
+      }
+//if(v<8) { fprintf(stderr,"v = %d  ",v); vecprint_epi16(ocm, vb_sc); fprintf(stderr,"\n"); }
+#endif
       
       /* Check for local begin getting us to the root.
        */
@@ -4486,6 +4569,9 @@ fprintf(stderr,"\n");
    */
   vec_access = (int16_t *) (&alpha[vroot]->ivec[j0][W/vecwidth]);
   sc = *(vec_access + W%vecwidth);
+#ifndef LOBAL_MODE
+  sc = sse_hmax_epi16(vb_sc);
+#endif
   if (ret_b != NULL)   *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
   if (ret_bsc != NULL) *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */
 
@@ -4506,6 +4592,10 @@ fprintf(stderr,"\n");
 
   cm_optimized_Free(ocm);
   free(ocm);
+
+#ifndef LOBAL_MODE
+  free(mem_unaligned_sc);
+#endif
 
   free(esc_stale);
   free(vec_Pesc);
