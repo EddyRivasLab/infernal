@@ -61,6 +61,8 @@ typedef struct cm_consensus_s {
  *****************************************************************/
 
 /* cm_optimized.c */
+int16_t wordify(float scale_w, float sc);
+
 CM_OPTIMIZED* cm_optimized_Convert(const CM_t *cm);
 void cm_optimized_Free(CM_OPTIMIZED *ocm);
 
@@ -86,6 +88,9 @@ int SSE_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int 
 /* sse_util.c */
 inline __m128  alt_rightshift_ps(__m128 a, __m128 b);
 inline __m128i sse_setlw_neginfv(__m128i a);
+inline __m128i sse_select_si128(__m128i a, __m128i b, __m128i mask);
+inline int16_t sse_hmax_epi16(__m128i a);
+
 
 #endif /* CM_IMPL_SSE_INCLUDED */
 
