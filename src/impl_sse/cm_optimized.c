@@ -6,10 +6,10 @@
 /* External API 
  * int cm_optimized_Convert(const CM_t *cm, CM_OPTIMIZED *ocm);
  * void cm_optimized_Free(CM_OPTIMIZED *ocm);
+ * int16_t wordify(float scale_w, float sc);
  */
 
 /* Internal funcs */
-static int16_t wordify(float scale_w, float sc);
 
 /* Fuction:  cm_optimized_Convert()
  * Author:   DLK, Tue May 05 2009
@@ -240,7 +240,7 @@ cm_consensus_Free(CM_CONSENSUS *ccm)
  * No bias term needed, because we use signed words. 
  *   e.g. a score of +3.2, with scale 500.0, becomes +1600.
  */
-static int16_t
+int16_t
 wordify(float scale_w, float sc)
 {
   sc  = roundf(scale_w * sc);
