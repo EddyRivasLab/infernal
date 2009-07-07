@@ -118,6 +118,7 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   __m128    mask;
   __m128    vec_beginsc;
   union vec_union { __m128 v; float x[4]; } tmp;
+  __m128    tmpv;
   __m128   *tmpary;
   __m128   *mem_tmpary;
   float     tmp_esc;
@@ -215,20 +216,28 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   for (v = 0; v < cm->M; v++) {
     for (d = 0; d < sW; d++)
       {
-        for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= W) ? init_scAA[v][z*sW+d] : -eslINFINITY;
-        vec_init_scAA[v][d] = tmp.v;
+        vec_init_scAA[v][d] = _mm_setr_ps((     d <= W) ? init_scAA[v][     d] : -eslINFINITY,
+                                          (  sW+d <= W) ? init_scAA[v][  sW+d] : -eslINFINITY,
+                                          (2*sW+d <= W) ? init_scAA[v][2*sW+d] : -eslINFINITY,
+                                          (3*sW+d <= W) ? init_scAA[v][3*sW+d] : -eslINFINITY);
         if (cm->stid[v] == BEGL_S) {
           for (j = 0; j <= W; j++)
             {
-              for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= W) ? alpha_begl[j][v][z*sW+d] : -eslINFINITY;
-              vec_alpha_begl[j][v][d] = tmp.v;
+              vec_alpha_begl[j][v][d] = _mm_setr_ps((    +d <= W) ? alpha_begl[j][v][    +d] : -eslINFINITY,
+                                                    (  sW+d <= W) ? alpha_begl[j][v][  sW+d] : -eslINFINITY,
+                                                    (2*sW+d <= W) ? alpha_begl[j][v][2*sW+d] : -eslINFINITY,
+                                                    (3*sW+d <= W) ? alpha_begl[j][v][3*sW+d] : -eslINFINITY);
             }
           }
         else {
-          for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= W) ? alpha[0][v][z*sW+d] : -eslINFINITY;
-          vec_alpha[0][v][d] = tmp.v;
-          for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= W) ? alpha[1][v][z*sW+d] : -eslINFINITY;
-          vec_alpha[1][v][d] = tmp.v;
+          vec_alpha[0][v][d] = _mm_setr_ps((     d <= W) ? alpha[0][v][    +d] : -eslINFINITY,
+                                           (  sW+d <= W) ? alpha[0][v][  sW+d] : -eslINFINITY,
+                                           (2*sW+d <= W) ? alpha[0][v][2*sW+d] : -eslINFINITY,
+                                           (3*sW+d <= W) ? alpha[0][v][3*sW+d] : -eslINFINITY);
+          vec_alpha[1][v][d] = _mm_setr_ps((     d <= W) ? alpha[1][v][    +d] : -eslINFINITY,
+                                           (  sW+d <= W) ? alpha[1][v][  sW+d] : -eslINFINITY,
+                                           (2*sW+d <= W) ? alpha[1][v][2*sW+d] : -eslINFINITY,
+                                           (3*sW+d <= W) ? alpha[1][v][3*sW+d] : -eslINFINITY);
         }
       }
     vec_init_scAA[v][-1] = esl_sse_rightshift_ps(vec_init_scAA[v][sW-1],neginfv);
@@ -284,22 +293,27 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
             else if (cm->sttype[v] == MR_st || cm->sttype[v] == IR_st) {
               /* esc constant across the row */
                 for (d = 0; d < sW; d++) {
-                  for (z = 0; z < 4; z++) tmp.x[z] = cm->oesc[v][dsq[j]];
-                    vec_esc[dsq[j]][v][d] = tmp.v;
+                  vec_esc[dsq[j]][v][d] = _mm_set1_ps(cm->oesc[v][dsq[j]]);
                 }
             }
             else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
               for (d = 0; d < sW; d++) {
                 //for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= j && ((j^W)|d|z) ) ? cm->oesc[v][dsq[j-(z*sW+d)+1]] : -eslINFINITY;
-                for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= j && ((j^j0)|d|z) ) ? cm->oesc[v][dsq[j-(z*sW+d)+1]] : -eslINFINITY;
-                  vec_esc[dsq[j]][v][d] = tmp.v;
+                //for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= j && ((j^j0)|d|z) ) ? cm->oesc[v][dsq[j-(z*sW+d)+1]] : -eslINFINITY;
+                vec_esc[dsq[j]][v][d] = _mm_setr_ps((     d <= j && ((j^j0)|d|0) ) ? cm->oesc[v][dsq[j-(     d)+1]] : -eslINFINITY,
+                                                    (  sW+d <= j && ((j^j0)|d|1) ) ? cm->oesc[v][dsq[j-(  sW+d)+1]] : -eslINFINITY,
+                                                    (2*sW+d <= j && ((j^j0)|d|2) ) ? cm->oesc[v][dsq[j-(2*sW+d)+1]] : -eslINFINITY,
+                                                    (3*sW+d <= j && ((j^j0)|d|3) ) ? cm->oesc[v][dsq[j-(3*sW+d)+1]] : -eslINFINITY);
               }
             }
             else if (cm->sttype[v] == MP_st) {
               for (d = 0; d < sW; d++) {
                 //for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= j && ((j^W)|d|z) ) ? cm->oesc[v][dsq[j-(z*sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY;
-                for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= j && ((j^j0)|d|z) ) ? cm->oesc[v][dsq[j-(z*sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY;
-                  vec_esc[dsq[j]][v][d] = tmp.v;
+                //for (z = 0; z < 4; z++) tmp.x[z] = (z*sW+d <= j && ((j^j0)|d|z) ) ? cm->oesc[v][dsq[j-(z*sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY;
+                vec_esc[dsq[j]][v][d] = _mm_setr_ps((     d <= j && ((j^j0)|d|0) ) ? cm->oesc[v][dsq[j-(     d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY,
+                                                    (  sW+d <= j && ((j^j0)|d|1) ) ? cm->oesc[v][dsq[j-(  sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY,
+                                                    (2*sW+d <= j && ((j^j0)|d|2) ) ? cm->oesc[v][dsq[j-(2*sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY,
+                                                    (3*sW+d <= j && ((j^j0)|d|3) ) ? cm->oesc[v][dsq[j-(3*sW+d)+1]*cm->abc->Kp+dsq[j]] : -eslINFINITY);
               }
             }
             else
@@ -483,12 +497,12 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	    y = cm->cfirst[v]; 
             for (d = 0; d < sW; d++) {
 	    //for (d = dnA[v]; d <= dxA[v]; d++) {
-	      tmp.v = vec_init_scAA[v][d]; /* state delta (sd) is 0 for BEGL_S st */
+	      tmpv = vec_init_scAA[v][d]; /* state delta (sd) is 0 for BEGL_S st */
 	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
                 vec_tsc = _mm_set1_ps(tsc_v[yoffset]);
-		tmp.v = _mm_max_ps(tmp.v, _mm_add_ps(vec_alpha[jp_y][y+yoffset][d], vec_tsc));
+		tmpv = _mm_max_ps(tmpv, _mm_add_ps(vec_alpha[jp_y][y+yoffset][d], vec_tsc));
               }
-	      vec_alpha_begl[jp_v][v][d] = tmp.v;
+	      vec_alpha_begl[jp_v][v][d] = tmpv;
 	      /* careful: y is in alpha (all children of a BEGL_S must be non BEGL_S) */
 	    }
 //printf("j%2d v%2d ",j,v);
@@ -500,37 +514,35 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 //printf("\n");
 	  }
 	  else if (cm->sttype[v] == IL_st) { 
+            /* sd = 1 */
 	    y = cm->cfirst[v]; 
 
 // FIXME: There has to be a better way to handle the "delete" path
 // This is correct, but ineffecicient - the inner loop will probably stall on it's
 // sequential operations
-            for (d = 0; d < sW; d++) tmpary[d] = vec_init_scAA[v][d-sd];
+            for (d = 0; d < sW; d++) tmpary[d] = vec_init_scAA[v][d-1];
             for (yoffset = cm->cnum[v]-1; yoffset > 0; yoffset--) {
               vec_tsc = _mm_set1_ps(tsc_v[yoffset]);
               for (d = 0; d < sW; d++) {
-                tmpary[d] = _mm_max_ps(tmpary[d], _mm_add_ps(vec_alpha[jp_y][y+yoffset][d - sd], vec_tsc));
+                tmpary[d] = _mm_max_ps(tmpary[d], _mm_add_ps(vec_alpha[jp_y][y+yoffset][d - 1], vec_tsc));
               }
             }
-// FIXME: I don't think I _should_ be able to pull out the addition of the emission scores
-// Probably only getting away with it because we use uninformative emission scores for
-// insertions (i.e., adding zero)
             for (d = 0; d < sW; d++) {
               vec_alpha[jp_v][v][d] = _mm_add_ps(tmpary[d],vec_esc[dsq[j]][v][d]);
             }
             vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
 
-            /* yoffset = 0 */
+            /* yoffset = 0  - self-transition */
             vec_tsc = _mm_set1_ps(tsc_v[0]);
             do
               {
                 for (d = 0; d < sW; d++) {
-                  tmpary[d] = _mm_max_ps(tmpary[d], _mm_add_ps(vec_alpha[jp_y][y][d - sd], vec_tsc));
+                  tmpary[d] = _mm_max_ps(tmpary[d], _mm_add_ps(vec_alpha[jp_y][y][d - 1], vec_tsc));
                   vec_alpha[jp_v][v][d] = _mm_add_ps(tmpary[d],vec_esc[dsq[j]][v][d]);
                 }
-              tmp.v = vec_alpha[jp_v][v][-1];
+              tmpv = vec_alpha[jp_v][v][-1];
               vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
-            } while (esl_sse_any_gt_ps(vec_alpha[jp_v][v][-1],tmp.v));
+            } while (esl_sse_any_gt_ps(vec_alpha[jp_v][v][-1],tmpv));
 
             vec_alpha[jp_v][v][-2] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-2],neginfv);
 //printf("j%2d v%2d ",j,v);
@@ -540,8 +552,8 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 //printf("%10.2e ",*access);
 //}
 //printf("\n");
-          } /* end of else (which was entered if ! B_st && ! BEGL_S st) */
-	  else { /* ! B_st, ! BEGL_S st , ! IL_st*/
+          }
+	  else { /* ! B_st, ! BEGL_S st , ! IL_st; */
 	    y = cm->cfirst[v]; 
 
             vec_tsc = _mm_set1_ps(tsc_v[0]);
@@ -569,9 +581,10 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 //printf("\n");
           } /* end of else (which was entered if ! B_st && ! BEGL_S st) */
 	  if(vsc != NULL) {
-	    if(cm->stid[v] != BEGL_S) for (d = 0; d <= sW; d++) tmp.v = _mm_max_ps(tmp.v, vec_alpha[jp_v][v][d]);
-	    else                      for (d = 0; d <= sW; d++) tmp.v = _mm_max_ps(tmp.v, vec_alpha_begl[jp_v][v][d]);
-            esl_sse_hmax_ps(tmp.v, &vsc[v]);
+            tmpv = neginfv;
+	    if(cm->stid[v] != BEGL_S) for (d = 0; d <= sW; d++) tmpv = _mm_max_ps(tmpv, vec_alpha[jp_v][v][d]);
+	    else                      for (d = 0; d <= sW; d++) tmpv = _mm_max_ps(tmpv, vec_alpha_begl[jp_v][v][d]);
+            esl_sse_hmax_ps(tmpv, &vsc[v]);
 	  }
 	} /*loop over decks v>0 */
       
@@ -606,18 +619,18 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	      {
 		jp_y = j % (W+1);
 		for (d = 0; d < sW; d++) {
-                  tmp.v = _mm_add_ps(vec_alpha_begl[jp_y][y][d], vec_beginsc);
-                  mask  = _mm_cmpgt_ps(tmp.v, vec_alpha[jp_v][0][d]);
-                  vec_alpha[jp_v][0][d] = _mm_max_ps(tmp.v, vec_alpha[jp_v][0][d]);
+                  tmpv = _mm_add_ps(vec_alpha_begl[jp_y][y][d], vec_beginsc);
+                  mask  = _mm_cmpgt_ps(tmpv, vec_alpha[jp_v][0][d]);
+                  vec_alpha[jp_v][0][d] = _mm_max_ps(tmpv, vec_alpha[jp_v][0][d]);
                   vec_bestr[d] = esl_sse_select_ps(_mm_set1_ps((float) y), vec_bestr[d], mask);
 		}
 	      }
 	    else { /* y != BEGL_S */
 	      jp_y = cur;
 	      for (d = 0; d < sW; d++) {
-                  tmp.v = _mm_add_ps(vec_alpha[jp_y][y][d], vec_beginsc);
-                  mask  = _mm_cmpgt_ps(tmp.v, vec_alpha[jp_v][0][d]);
-                  vec_alpha[jp_v][0][d] = _mm_max_ps(tmp.v, vec_alpha[jp_v][0][d]);
+                  tmpv = _mm_add_ps(vec_alpha[jp_y][y][d], vec_beginsc);
+                  mask  = _mm_cmpgt_ps(tmpv, vec_alpha[jp_v][0][d]);
+                  vec_alpha[jp_v][0][d] = _mm_max_ps(tmpv, vec_alpha[jp_v][0][d]);
                   vec_bestr[d] = esl_sse_select_ps(_mm_set1_ps((float) y), vec_bestr[d], mask);
 	        }
 	      }
@@ -632,10 +645,10 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 //}
 //printf("\n");
       /* find the best score */
-      tmp.v = neginfv;
+      tmpv = neginfv;
       for (d = 0; d < sW; d++) 
-	tmp.v = _mm_max_ps(tmp.v, vec_alpha[jp_v][0][d]);
-      esl_sse_hmax_ps(tmp.v, &tmp_esc);		/* overloaded tmp_esc, just need a temporary float */
+	tmpv = _mm_max_ps(tmpv, vec_alpha[jp_v][0][d]);
+      esl_sse_hmax_ps(tmpv, &tmp_esc);		/* overloaded tmp_esc, just need a temporary float */
       vsc_root = ESL_MAX(vsc_root, tmp_esc);
       /* for UpdateGammaHitMxCM to work, these data need to be un-vectorized: alpha[jp_v][0], bestr */
       if (results != NULL) {
