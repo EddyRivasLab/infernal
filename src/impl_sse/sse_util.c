@@ -23,6 +23,20 @@ alt_rightshift_ps(__m128 a, __m128 b)
   return _mm_move_ss(_mm_shuffle_ps(a, a, _MM_SHUFFLE(2, 1, 0, 0)), _mm_shuffle_ps(b, b, _MM_SHUFFLE(3, 3, 3, 3)));
 }
 
+void vecprint_ps(__m128 a)
+{
+  union {
+    __m128 vec;
+    float f[4];
+  } x;
+
+  x.vec = a;
+  fprintf(stderr,"%10.2e %10.2e %10.2e %10.2e",x.f[0],x.f[1],x.f[2],x.f[3]);
+
+  return;
+}
+
+
 #if 0
 /* Function:  sse_leftshift_epi16()
  * Date:      DLK, Fri May 1 2009
