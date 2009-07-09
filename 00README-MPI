@@ -8,12 +8,13 @@ and you want to use MPI parallelization, enable MPI with the
   % ./configure --enable-mpi
   % make
 
-This will build both the usual set of (non-MPI) executables including
-cmsearch and cmalign, and two MPI executables, mpi-cmsearch and
-mpi-cmalign.
+This will build the normal seven Infernal executables and four of
+these executables (cmalign, cmcalibrate, cmscore and cmsearch) will be
+MPI programs that can either be run in serial mode or in MPI mode by
+using the --mpi option and running with an MPI-compliant library.
 
-Notes on running mpi-cmsearch in MPI mode on the cluster
---------------------------------------------------------
+Notes on running cmsearch in MPI mode on a cluster
+--------------------------------------------------
 
 The following is an example from our configuration. We use LAM MPI, on
 a cluster that uses the Sun Grid Engine (SGE) as its queueing manager.
@@ -21,13 +22,13 @@ Your mileage may vary: you may need to consult your local MPI or
 cluster guru if you're running a different MPI package or a different
 queue manager.
 
-Make sure 'mpi-cmsearch' is in your $PATH.
+Make sure 'cmsearch' is in your $PATH.
 
 To run the CM foo.cm against the database genome.fa on 100 CPUs
 execute the following on the head node (login-eddy.int.janelia.org):
 
-$ qsub -N foo -o foo.out -b y -cwd -V -j y -pe lam-mpi-tight 100 'mpirun C mpi-cmsearch -E 50 --local foo.cm genome.fa > cmsearch.out'
+$ qsub -N foo -o foo.out -b y -cwd -V -j y -pe lam-mpi-tight 100 'mpirun C cmsearch --mpi -E 50 foo.cm genome.fa > cmsearch.out'
  
 This submits a single SGE job named 'foo' to the cluster. This job
-will run mpi-cmsearch in local mode and report all hits with E-values
-above 50.
+will run cmsearch in parallel mode on 100 processors and report all
+hits with E-values below 50 to cmsearch.out.
