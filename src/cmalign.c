@@ -38,7 +38,7 @@
 
 #define ALGOPTS  "--cyk,--optacc,--viterbi,--sample" /* Exclusive choice for algorithm */
 #define OUTALPHOPTS "--rna,--dna"                    /* Exclusive choice for output alphabet */
-#define ACCOPTS  "--nonbanded,--hbanded"             /* Exclusive choice for acceleration strategies */
+#define ACCOPTS  "--nonbanded,--hbanded,--qdb"       /* Exclusive choice for acceleration strategies */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -61,7 +61,7 @@ static ESL_OPTIONS options[] = {
   { "-s",        eslARG_INT,     NULL, NULL, "n>0",      NULL,"--sample",        NULL, "w/--sample, set random number generator seed to <n>",  2 },
   { "--viterbi", eslARG_NONE,   FALSE,  NULL, NULL,     ALGOPTS,    NULL,        "-p", "align to a CM Plan 9 HMM with the Viterbi algorithm",2 },
   { "--sub",     eslARG_NONE,   FALSE,  NULL, NULL,     NULL,       NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
-  { "--small",   eslARG_NONE,   FALSE,  NULL, NULL,     NULL,"--cyk,--nonbanded","--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
+  { "--small",   eslARG_NONE,   FALSE,  NULL, NULL,     NULL,"--cyk",     "--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
   /* Banded alignment */
   { "--hbanded", eslARG_NONE, "default",  NULL, NULL,   NULL,     NULL,    "--small", "accelerate using CM plan 9 HMM derived bands", 3 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,"--hbanded",    NULL,  "--hbanded", "do not use bands to accelerate aln algorithm", 3 },
@@ -90,7 +90,7 @@ static ESL_OPTIONS options[] = {
   /* developer options related to banded alignment */
   { "--checkfb", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       "-l", "check that HMM posteriors for bands were correctly calc'ed", 102},
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 102 },
-  { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--nonbanded,--hbanded", "use query dependent banded CYK alignment algorithm", 102 },
+  { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,     ACCOPTS, "use query dependent banded CYK alignment algorithm", 102 },
   { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 102 },
   { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded","--viterbi,-p,--optacc", "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 102 },
   /* developer options related to output files and debugging */
@@ -279,6 +279,13 @@ main(int argc, char **argv)
       printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
+
+  /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
+  /* --small requires EITHER --nonbanded or --qdb */
+  if ((esl_opt_GetBoolean(go, "--small")) && (! ((esl_opt_GetBoolean(go, "--nonbanded")) || (esl_opt_GetBoolean(go, "--qdb"))))) { 
+    printf("Error parsing options, --small is only allowed in combination with --nonbanded or --qdb.\n");
+    exit(1);
+  }
 
   /* if --merge, merge the two alignments and exit, never create cfg structure we won't need it */
   if(esl_opt_GetBoolean(go, "--merge")) { 
