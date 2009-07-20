@@ -272,6 +272,8 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
       puts("\nverbose output files and debugging:");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
+      puts("\nexperimental options for plan7 banding using HMMER3 code:");
+      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
       puts("\nundocumented developer algorithm options:");
       esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
       puts("\nundocumented developer banded alignment options:");
