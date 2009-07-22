@@ -55,18 +55,18 @@ static ESL_OPTIONS options[] = {
   /* --merge: merge two alignments and quit, don't do any new aligning */
   { "--merge",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "merge two alignments and exit", 8 },
   /* Algorithm options */
-  { "--optacc",  eslARG_NONE,"default", NULL, NULL,     ALGOPTS,    NULL,   "--small", "align with the Holmes/Durbin optimal accuracy algorithm", 2 },
+  { "--optacc",  eslARG_NONE,"default", NULL, NULL,     ALGOPTS,    NULL,"--small,--qdb", "align with the Holmes/Durbin optimal accuracy algorithm", 2 },
   { "--cyk",     eslARG_NONE,   FALSE,  NULL, NULL,     ALGOPTS,    NULL,        NULL, "align with the CYK algorithm", 2 },
-  { "--sample",  eslARG_NONE,   FALSE,  NULL, NULL,     ALGOPTS,    NULL,   "--small", "sample alignment of each seq from posterior distribution", 2 },
+  { "--sample",  eslARG_NONE,   FALSE,  NULL, NULL,     ALGOPTS,    NULL,"--small,--qdb", "sample alignment of each seq from posterior distribution", 2 },
   { "-s",        eslARG_INT,     NULL, NULL, "n>0",      NULL,"--sample",        NULL, "w/--sample, set random number generator seed to <n>",  2 },
   { "--viterbi", eslARG_NONE,   FALSE,  NULL, NULL,     ALGOPTS,    NULL,        "-p", "align to a CM Plan 9 HMM with the Viterbi algorithm",2 },
   { "--sub",     eslARG_NONE,   FALSE,  NULL, NULL,     NULL,       NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
   { "--small",   eslARG_NONE,   FALSE,  NULL, NULL,     NULL,"--cyk",     "--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
   /* Banded alignment */
-  { "--hbanded", eslARG_NONE, "default",  NULL, NULL,   NULL,     NULL,    "--small", "accelerate using CM plan 9 HMM derived bands", 3 },
+  { "--hbanded", eslARG_NONE, "default",  NULL, NULL,   NULL,     NULL,      ACCOPTS, "accelerate using CM plan 9 HMM derived bands", 3 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,"--hbanded",    NULL,  "--hbanded", "do not use bands to accelerate aln algorithm", 3 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 3 },
-  { "--mxsize",  eslARG_REAL, "2048.0",NULL, "x>0.",     NULL,      NULL,   "--small", "set maximum allowable DP matrix size to <x> Mb", 3},
+  { "--mxsize",  eslARG_REAL, "2048.0",NULL, "x>0.",     NULL,      NULL,"--small,--qdb", "set maximum allowable DP matrix size to <x> Mb", 3},
   /* Options that modify how the output alignment is created */
   { "--rna",     eslARG_NONE,"default",NULL, NULL,  OUTALPHOPTS,   NULL,        NULL, "output alignment as RNA sequence data", 4},
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  OUTALPHOPTS,   NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 4},
@@ -90,7 +90,7 @@ static ESL_OPTIONS options[] = {
   /* developer options related to banded alignment */
   { "--checkfb", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       "-l", "check that HMM posteriors for bands were correctly calc'ed", 102},
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 102 },
-  { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,     ACCOPTS, "use query dependent banded CYK alignment algorithm", 102 },
+  { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,"--hbanded",     NULL,     ACCOPTS, "use query dependent banded CYK alignment algorithm", 102 },
   { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 102 },
   { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded","--viterbi,-p,--optacc", "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 102 },
   /* developer options related to output files and debugging */
