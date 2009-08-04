@@ -262,7 +262,7 @@ main(int argc, char **argv)
       puts("\ndefining window size (W) for HMM only searches (require --forward or --viterbi):");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       puts("\noptions for returning alignments of search hits:");
-      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
+      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       puts("\nverbose output files:");
       esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
       puts("\noptions for selecting output alphabet:");
