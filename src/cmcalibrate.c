@@ -2839,8 +2839,8 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   ESL_DPRINTF1(("fwd_Emin: %f\n", fwd_Emin));
 
   ESL_DPRINTF1(("Smin:  %g\n", Smin));
-  ESL_DPRINTF(("Starg: %g\n", Starg));
-  ESL_DPRINTF(("Smax:  %g\n", Smax));
+  ESL_DPRINTF1(("Starg: %g\n", Starg));
+  ESL_DPRINTF1(("Smax:  %g\n", Smax));
 
   for(i = 0; i <= imax; i++) { /* the main loop */
     fwd_E_all[i] = by_fwdA[fwd_all].fwd_E; /* by_fwdA[fwd_all] is HMM threshold that recognizes ALL curN CM hits w/E value <= by_cmA[i].cm_E */
