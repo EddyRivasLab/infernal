@@ -46,6 +46,7 @@
 
 #define MPI_FINISHED_EXP    -1 /* message to send to workers */
 #define MPI_FINISHED_FILTER -2 /* message to send to workers */
+#define REALLYSMALLX        1e-20
 
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"
@@ -81,9 +82,13 @@ static ESL_OPTIONS options[] = {
   /* options for HMM filter threshold calculation */
   { "--fil-N",          eslARG_INT,     "10000",NULL, "100<=n<=100000",NULL,  NULL,       NULL, "number of emitted sequences for HMM filter threshold calc",    3 },
   { "--fil-F",          eslARG_REAL,    "0.995",NULL, "0<x<=1", NULL,        NULL,        NULL, "required fraction of seqs that survive HMM filter", 3},
-  { "--fil-xhmm",       eslARG_REAL,    "2.0",  NULL, "x>=1.1", NULL,        NULL,        NULL, "set target time for filtered search as <x> times HMM time", 3},
-  { "--fil-tau",        eslARG_REAL,    "1e-7", NULL, "0<x<1",  NULL,        NULL,"--fil-nonbanded", "set tail loss prob for HMM banding <x>", 3 },
-  { "--fil-gemit",      eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "when calc'ing filter thresholds, always emit globally from CM",  3},
+  { "--fil-Xtarg-hmm",  eslARG_REAL,    "2.0",  NULL, "x>=1.00001", NULL,    NULL,        NULL, "target time for filtered search as <x> times HMM time", 3},
+  { "--fil-Xmin-hmm",   eslARG_REAL,    "1.1",  NULL, "x>=1.00001",NULL,     NULL,        NULL, "minimum time for filtered search as <x> times HMM time", 3},
+  { "--fil-Starg-hmm",  eslARG_REAL,    NULL,   NULL, "0.<x<1.01",    NULL,        NULL,        NULL, "target survival fraction for filtered search is <x>", 3},
+  { "--fil-Smin-hmm",   eslARG_REAL,    NULL,   NULL, "0.<x<1.01",    NULL,        NULL,        NULL, "minimum survival fraction for filtered search is <x>", 3},
+  { "--fil-Smax-hmm",   eslARG_REAL,    "1.0",  NULL, "0.<x<1.01",    NULL,        NULL,        NULL, "maximum survival fraction for filtered search is <x>", 3},
+  { "--fil-tau",        eslARG_REAL,    "1e-7", NULL, "0.<x<1.01",  NULL,        NULL,"--fil-nonbanded", "set tail loss prob for HMM banding <x>", 3 },
+  { "--fil-gemit",      eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "during filter thresholding, always emit globally from CM",  3},
   { "--fil-dfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,"--exp-pfile", "save filter threshold data (HMM and CM scores) to file <s>", 3},
   /* Other options */
   { "--mxsize",         eslARG_REAL,    "2048.0",NULL, "x>0.",  NULL,        NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 4 },
@@ -284,6 +289,33 @@ main(int argc, char **argv)
       printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
+  /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
+  if (((esl_opt_GetReal(go, "--fil-Xmin-hmm")) - (esl_opt_GetReal(go, "--fil-Xtarg-hmm"))) > REALLYSMALLX) { 
+    printf("Error parsing options, --fil-Xmin-hmm <x> (%f) must be less than --fil-Xtarg-hmm <x> (%f).\n", esl_opt_GetReal(go, "--fil-Xmin-hmm"), esl_opt_GetReal(go, "--fil-Xtarg-hmm"));
+    exit(1);
+  }
+  if (! esl_opt_IsDefault(go, "--fil-Starg-hmm")) { 
+    if (! esl_opt_IsDefault(go, "--fil-Smax-hmm")) { 
+      if(((esl_opt_GetReal(go, "--fil-Starg-hmm")) - (esl_opt_GetReal(go, "--fil-Smax-hmm"))) > REALLYSMALLX) { 
+	printf("Error parsing options, --fil-Starg-hmm <x> (%f) must be less than --fil-Smax-hmm <x> (%f).\n", esl_opt_GetReal(go, "--fil-Starg-hmm"), esl_opt_GetReal(go, "--fil-Smax-hmm"));
+	exit(1);
+      }
+    }
+    if (! esl_opt_IsDefault(go, "--fil-Smin-hmm")) { 
+      if(((esl_opt_GetReal(go, "--fil-Smin-hmm")) - (esl_opt_GetReal(go, "--fil-Starg-hmm"))) > REALLYSMALLX) { 
+	printf("Error parsing options, --fil-Smin-hmm <x> (%f) must be less than --fil-Starg-hmm <x> (%f).\n", esl_opt_GetReal(go, "--fil-Smin-hmm"), esl_opt_GetReal(go, "--fil-Starg-hmm"));
+	exit(1);
+      }
+    }
+  }
+  if (! esl_opt_IsDefault(go, "--fil-Smin-hmm")) { 
+    if (! esl_opt_IsDefault(go, "--fil-Smax-hmm")) { 
+      if(((esl_opt_GetReal(go, "--fil-Smin-hmm")) - (esl_opt_GetReal(go, "--fil-Smax-hmm"))) > REALLYSMALLX) { 
+	printf("Error parsing options, --fil-Smin-hmm <x> (%f) must be less than --fil-Smax-hmm <x> (%f).\n", esl_opt_GetReal(go, "--fil-Smin-hmm"), esl_opt_GetReal(go, "--fil-Smax-hmm"));
+	exit(1);
+      }
+    }
+  }
 
   /* Initialize configuration shared across all kinds of masters
    * and workers in this .c file.
@@ -2217,44 +2249,29 @@ int
 update_dp_calcs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
 {
   int  status;
-  int *dmin; /* potentially used to calculate temporary d bands */
-  int *dmax; /* potentially used to calculate temporary d bands */
-  int  safe_windowlen; /* potentially used to calculate temporary d bands */
+  int fil_W; /* W used by filter, unused, nec only b/c cm_GetNCalcsPerResidueForGivenBeta() must return it */
 
   /* Count number of DP calcs, these counts are used to determine target, minimum and maximum survival
    * fractions for HMM filter thresholds in get_hmm_filter_cutoffs() (see that code for details).
    * Our predicted running times for searches in get_hmm_filter_cutoffs() are calculated based
    * on cfg->fil_cm_calcs and cfg->fil_cp9_calcs. cfg->fil_cm_calcs is calculated assuming we'll
-   * use a QDB filter with beta == cm->beta_qdb. 
+   * use a QDB filter with beta == 1E-7, which is the default second filter in cmsearch.
    *
-   * We want to set for global mode:
-   * cfg->fil_cm_ncalcs:  millions of calcs for full CM scan of 1 residue, with QDBs using beta = cm->beta_qdb from cmfile
+   * We want to set:
+   * cfg->fil_cm_ncalcs:  millions of calcs for full CM scan of 1 residue, with QDBs using beta = 1E-7
    * cfg->cp9_ncalcs:     millions of calcs for CP9 HMM scan of 1 residue
    *
    * This function is called twice. Once for global mode and then for local mode when models get localized.
    */
 
-  /* get cfg->fil_cm_ncalcs, we ALWAYS assume that QDB CYK will be used as a second filter after HMM filtering
+  /* get cfg->fil_cm_ncalcs, we ALWAYS assume that QDB CYK with beta=1E-7 will be used as a second filter after HMM filtering
    * in cmsearch, so we determine target survival fractions based on DP counts for QDB searches, not non-QDB searches */
-  safe_windowlen = cm->clen * 2;
-  while(!(BandCalculationEngine(cm, safe_windowlen, cm->beta_qdb, FALSE, &(dmin), &(dmax), NULL, NULL))) {
-    free(dmin);
-    free(dmax);
-    safe_windowlen *= 2;
-    if(safe_windowlen > (cm->clen * 1000))
-      cm_Fail("initialize_cm(), safe_windowlen big: %d\n", safe_windowlen);
-  }
-  if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*cm->W, dmin, dmax, cm->W, TRUE,  NULL, &(cfg->fil_cm_ncalcs))) != eslOK) return status;
-  free(dmin);
-  free(dmax);
-    
+
+  if((status = cm_GetNCalcsPerResidueForGivenBeta(cm, errbuf, FALSE, 1E-7, &(cfg->fil_cm_ncalcs), &fil_W)) != eslOK) return status;
+
   /* get cfg->cp9_ncalcs, used to determine efficiency of CP9 filters, at first it's global mode, then
    * when switch_global_to_local() is called, cfg->full_cp9_ncalcs is updated to ncalcs in local mode */
-  int cp9_ntrans = NHMMSTATETYPES * NHMMSTATETYPES; /* 3*3 = 9 transitions in global mode */
-  if(cm->cp9->flags & CPLAN9_LOCAL_BEGIN) cp9_ntrans++; 
-  if(cm->cp9->flags & CPLAN9_LOCAL_END)   cp9_ntrans++; 
-  if(cm->cp9->flags & CPLAN9_EL)          cp9_ntrans++; 
-  cfg->cp9_ncalcs = (cp9_ntrans * cm->cp9->M) / 1000000.; /* convert to millions of calcs per residue */
+  if((status = cp9_GetNCalcsPerResidue(cm->cp9, errbuf, &(cfg->cp9_ncalcs))) != eslOK) return status;
 
   return eslOK;
 }
@@ -2604,11 +2621,12 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   int    cmi   = cfg->ncm-1;      /* CM index we're on */
   float  F     = esl_opt_GetReal   (go, "--fil-F");    /* fraction of CM seqs we require filter to let pass */
   int    filN  = esl_opt_GetInteger(go, "--fil-N"); /* number of sequences we emitted from CM for filter test */
-  float  xhmm  = esl_opt_GetReal   (go, "--fil-xhmm"); /* number of sequences we emitted from CM for filter test */
+  float  targ_xhmm  = esl_opt_GetReal(go, "--fil-Xtarg-hmm"); /* target search time multiplier of HMM search time */
+  float  min_xhmm  = esl_opt_GetReal(go, "--fil-Xmin-hmm");   /* minimum search time multiplier of HMM search time */
   int    Fidx;                    /* index in sorted scores that threshold will be set at (1-F) * N */
   float  surv_res_per_hit;        /* expected number of residues to survive filter from DB for each hit 2*W-avg_hit_len, twice W minus the average lenght of a hit from QDB calc */
-  float  Smax;                    /* maximally useful survival fraction, close to 0.5 */
-  float  Starg;                   /* our target survival fraction, if we achieve this fraction the search should take xhmm times longer than a HMM only search */
+  float  Smax;                    /* maximally useful survival fraction, from fil-Smax-hmm <x> */
+  float  Starg;                   /* our target survival fraction, if we achieve this fraction the search should take targ_xhmm times longer than a HMM only search */
   float  Smin;                    /* minimally useful survival fraction, any less than this and our filter would be (predicted to be) doing more than 10X the work of the CM */
   float  fwd_Emax;                /* fwd E-value that gives Smax survival fraction */
   float  fwd_Etarg;               /* fwd E-value that gives Starg survival fraction */
@@ -2632,24 +2650,25 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
    * based on how it affects <total_calcs>. <total_calcs> is the sum of the
    * number of DP calculations required for the HMM filter <fil_ncalcs>, plus the predicted
    * number of DP calculations required for the CM to search the survival fraction
-   * <cm_ncalcs> * survival fract. So if <total_calcs> is <xhmm> * <fil_ncalcs>, the 
-   * required time we predict to do a HMM filter plus CM scan of survivors is <xhmm> times the
+   * <cm_ncalcs> * survival fract. So if <total_calcs> is <targ_xhmm> * <fil_ncalcs>, the 
+   * required time we predict to do a HMM filter plus CM scan of survivors is <targ_xhmm> times the
    * time it would take to do an HMM only scan. 
    * 
-   * fwd_Etarg:  the target  forward E-value cutoff. If used <total_calcs> = <xhmm> * <fil_ncalcs>
-   *             <xhmm> is obtained from the --fil-xhmm, by default it is 2.0.
+   * fwd_Etarg:  the target  forward E-value cutoff. If used <total_calcs> = <targ_xhmm> * <fil_ncalcs>
+   *             <targ_xhmm> is obtained from the --fil-Xtarg-hmm, by default it is 2.0.
    * fwd_Emin:   the minimal forward E-value cutoff, anything less than this is overkill. 
-   *             If used <total_calcs> = 1.1 * fil_ncalcs.
+   *             If used <total_calcs> = <min_xhmm> * fil_ncalcs.
+   *             <min_xhmm> is obtained from the --fil-Xmin-hmm, by default it is 1.1.
    * fwd_Emax:   the maximum forward E-value cutoff we'll accept as useful. If used 
-   *             <total_calcs> = 0.5 * <cm_ncalcs> (we expect HMM filter to give us 
+   *             <total_calcs> = <Smax> * <cm_ncalcs> (we expect HMM filter to give us 
    *                                                   2X speedup versus full CM)
    *
    * forward filter   predicted 
    * E-value cutoff   survival fraction
    * --------------   -----------------
-   * fwd_Emax         Smax  = 0.5 -  (fil_ncalcs / cm_ncalcs)
-   * fwd_Etarg        Starg = xhmm * (fil_ncalcs / cm_ncalcs)
-   * fwd_Emin         Smin  = 0.1  * (fil_ncalcs / cm_ncalcs)
+   * fwd_Emax         Smax  = <x> from --fil-Smax-hmm
+   * fwd_Etarg        Starg = targ_xhmm * (fil_ncalcs / cm_ncalcs)
+   * fwd_Emin         Smin  = min_xhmm  * (fil_ncalcs / cm_ncalcs)
    */
 
   dbsize           = cfg->cmstatsA[cmi]->expAA[cm_mode][0]->dbsize; 
@@ -2663,12 +2682,19 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   cm_ncalcs        = cfg->fil_cm_ncalcs;                   /* total number of millions of DP calculations for full CM scan of 1 residue */
   cm_ncalcs       *= dbsize;                               /* now cm_ncalcs corresponds to dbsize (1 Mb)*/
   surv_res_per_hit = (2. * cm->W - (cfg->avg_hit_len));    /* avg length of surviving fraction of db from a single hit (cfg->avg_hit_len is avg subseq len in subtree rooted at v==0, from QDB calculation) */
-  Smin             =  0.1      * (fil_ncalcs / cm_ncalcs); /* if survival fraction == Smin, total number of DP calcs (filter + survivors) == (1.1) * fil_ncalcs, so a HMM + CM search will take only 10% longer than HMM only */
-  Starg            = (xhmm-1.) * (fil_ncalcs / cm_ncalcs); /* if survival fraction == Starg, the total number DP calcs (filter + survivors) == (1 + xhmm) * fil_ncalcs,
-							    * so if xhmm = 2 (which is default), our target is for the HMM filter + CM search of survivors (with QDB possibly) 
+  Smin             = (min_xhmm-1.)  * (fil_ncalcs / cm_ncalcs); /* if survival fraction == Smin, total number of DP calcs (filter + survivors) == (1 + min_xhmm) * fil_ncalcs, so a HMM + CM search will take only min_xhmm/1. fraction longer than HMM only */
+  Starg            = (targ_xhmm-1.) * (fil_ncalcs / cm_ncalcs); /* if survival fraction == Starg, the total number DP calcs (filter + survivors) == (1 + targ_xhmm) * fil_ncalcs,
+							    * so if targ_xhmm = 2 (which is default), our target is for the HMM filter + CM search of survivors (with QDB possibly) 
 							    * to take 2 times long as only the HMM filter would take. */ 
+  Smax             = esl_opt_GetReal(go, "--fil-Smax-hmm");
+#if 0
   Smax             = 0.5 -  (fil_ncalcs / cm_ncalcs);      /* if survival fraction == Smax, total number of DP calcs (filter+survivors) == 1/2 * cm_ncalcs, so our predicted speedup
 							    * by using the filter is 2 fold */
+#endif
+  if(!(esl_opt_IsDefault(go, "--fil-Smin-hmm")))  { Smin  = esl_opt_GetReal(go, "--fil-Smin-hmm"); }
+  if(!(esl_opt_IsDefault(go, "--fil-Starg-hmm"))) { Starg = esl_opt_GetReal(go, "--fil-Starg-hmm"); }
+  if(Starg < Smin) { Starg = Smin; }
+
   if(Smin > Smax) { /* rare case, happens only if fil_ncalcs >= 5/11 * cm_ncalcs, in this case we don't filter */
     /* this will probably never happen, but if it does, we set 1 cut point, set the CM E-value to 0.0 and set
      * always_better_than_Smax to FALSE, then in cmsearch no matter what CM E-value cutoff <E> is used, a filter will
@@ -2686,10 +2712,10 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
     free(fwd_E_cut);
     return eslOK; 
   }
-  if(Starg < Smin) { /* another rare case min value for --fil-xhmm is 0.1, so if Starg < Smin it's just because of precision issues, nevertheless we have to deal */
+  if(Starg < Smin) { /* another rare case min value for --fil-Xtarg-hmm is 0.1, so if Starg < Smin it's just because of precision issues, nevertheless we have to deal */
     Starg = Smin;
   }
-  if(Starg > Smax) { /* yet another rare case, happens only if fil_ncalcs >= (0.5 * cm_ncalcs) / (xhmm+1), when xhmm = 1, this is when fil_ncalcs <= cm_ncalcs / 4 */
+  if(Starg > Smax) { /* yet another rare case, happens only if fil_ncalcs >= (0.5 * cm_ncalcs) / (targ_xhmm+1), when targ_xhmm = 1, this is when fil_ncalcs <= cm_ncalcs / 4 */
     Starg = Smax;
   }
   fwd_Emax         = (Smax  * (float) dbsize) / surv_res_per_hit;
@@ -2750,7 +2776,7 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   Fidx = (int) ((1. - F) * (float) filN);
   /* deal with a precision issue */
   if(Fidx < ((1. - F) * (float) filN)) { /* we rounded down */
-    if (((Fidx - ((1. - F) * (float) filN)) - 1.) < eslSMALLX1) Fidx++; /* due to precision issues we unnecessarily rounded down */
+    if (((Fidx - ((1. - F) * (float) filN)) - 1.) < REALLYSMALLX) Fidx++; /* due to precision issues we unnecessarily rounded down */
   }
 
   /* Setup fwd_useme array: fwd_useme[i] is TRUE if element with rank i in by_fwdA array is 'in use', 
@@ -2777,7 +2803,7 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   for(i = filN-1; i >= 0; i--) { 
     cur_Fidx = (int) ((1. - F) * (float) i);
     if(cur_Fidx < ((1. - F) * (float) i)) { /* we rounded down */
-      if (((cur_Fidx - ((1. - F) * (float) i)) - 1.) < eslSMALLX1) cur_Fidx++; /* due to precision issues we unnecessarily rounded down */
+      if (((cur_Fidx - ((1. - F) * (float) i)) - 1.) < REALLYSMALLX) cur_Fidx++; /* due to precision issues we unnecessarily rounded down */
     }
     if(prv_Fidx == cur_Fidx) change_fwd_F[i+1] = TRUE;
     else                     change_fwd_F[i+1] = FALSE;
@@ -2812,6 +2838,10 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   ESL_DPRINTF1(("fwd_Etarg: %f\n", fwd_Etarg));
   ESL_DPRINTF1(("fwd_Emin: %f\n", fwd_Emin));
 
+  ESL_DPRINTF1(("Smin:  %g\n", Smin));
+  ESL_DPRINTF(("Starg: %g\n", Starg));
+  ESL_DPRINTF(("Smax:  %g\n", Smax));
+
   for(i = 0; i <= imax; i++) { /* the main loop */
     fwd_E_all[i] = by_fwdA[fwd_all].fwd_E; /* by_fwdA[fwd_all] is HMM threshold that recognizes ALL curN CM hits w/E value <= by_cmA[i].cm_E */
     fwd_E_F[i]   = by_fwdA[fwd_F].fwd_E;   /* by_fwdA[fwd_F]   is HMM threshold that recognizes F fraction of curN CM hits w/E value <= by_cmA[i].cm_E */
@@ -2825,11 +2855,12 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
     fwd_E_S[i] = (fwd_E_cut[i] * (float) surv_res_per_hit) / (float) dbsize;
 
     ESL_DPRINTF1(("i: %3d N: %5d cm: %g fwd_E_all: %g fwd_E_F: %g cut: %g S: %g\n", i, curN, by_cmA[i].cm_E, fwd_E_all[i], fwd_E_F[i], fwd_E_cut[i], fwd_E_S[i])); 
+    /*printf("i: %3d N: %5d cm: %g fwd_E_all: %g fwd_E_F: %g cut: %g S: %g\n", i, curN, by_cmA[i].cm_E, fwd_E_all[i], fwd_E_F[i], fwd_E_cut[i], fwd_E_S[i]); */
 
     if(fwd_E_cut[i]  > fwd_Emax) imax_above_Emax++; /* we didn't even achieve our maximum allowed survival fraction */
-    if(imin_at_Emin  == -1 && (fabs(fwd_E_cut[i] - fwd_Emin)  < eslSMALLX1)) { ESL_DPRINTF1(("\tAchieved Smin\n"));   imin_at_Emin  = i;   }
-    if(imin_at_Etarg == -1 && (fabs(fwd_E_cut[i] - fwd_Etarg) < eslSMALLX1)) { ESL_DPRINTF1(("\tAchieved Starg\n"));  imin_at_Etarg = i;   }
-    if(             imin_at_Etarg != -1 && imax_at_Etarg == -1 && (fabs(fwd_E_cut[i] - fwd_Etarg) > eslSMALLX1)) { ESL_DPRINTF1(("\tDone with Starg\n")); imax_at_Etarg = i-1; }
+    if(imin_at_Emin  == -1 && (fabs(fwd_E_cut[i] - fwd_Emin)  < REALLYSMALLX)) { ESL_DPRINTF1(("\tAchieved Smin\n"));   imin_at_Emin  = i;   }
+    if(imin_at_Etarg == -1 && (fabs(fwd_E_cut[i] - fwd_Etarg) < REALLYSMALLX)) { ESL_DPRINTF1(("\tAchieved Starg\n"));  imin_at_Etarg = i;   }
+    if(             imin_at_Etarg != -1 && imax_at_Etarg == -1 && (fabs(fwd_E_cut[i] - fwd_Etarg) > REALLYSMALLX)) { ESL_DPRINTF1(("\tDone with Starg\n")); imax_at_Etarg = i-1; }
     if(i == imax && imin_at_Etarg != -1 && imax_at_Etarg == -1)                                                  { ESL_DPRINTF1(("\tBoundary case, final point is at Starg\n")); imax_at_Etarg = imax; }
 
     /* Now manipulate our lists for next step */
@@ -2890,16 +2921,18 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   ESL_ALLOC(saveme, sizeof(int) * (ip_max + 1));
   esl_vec_ISet(saveme, (ip_max+1), FALSE);
   i = 0;
+  /*printf("\n\nip_min: %d\nip_max: %d\n", ip_min, ip_max);*/
   ESL_DPRINTF1(("ip_min: %d\nip_max: %d\n", ip_min, ip_max));
   while(ip <= ip_max) {
     saveme[ip] = TRUE;
     max_next_E_cut    = fwd_E_cut[ip] * 0.9; /* we'll skip all subsequenct E-value cutoffs that are within 10% of the one we've just added */
     prev_E_cut        = fwd_E_cut[ip];
 
+    /*printf("i: %5d fwd_E_cut[ip: %5d]: %12g CM_cut: %12g S: %12g max_next: %12g ", i, ip, fwd_E_cut[ip], by_cmA[ip].cm_E, fwd_E_S[ip], max_next_E_cut); */
     ESL_DPRINTF1(("i: %5d fwd_E_cut[ip: %5d]: %12g CM_cut: %12g S: %12g max_next: %12g ", i, ip, fwd_E_cut[ip], by_cmA[ip].cm_E, fwd_E_S[ip], max_next_E_cut)); 
-    if     (fabs(fwd_E_cut[ip] - fwd_Emin)  < eslSMALLX1) ESL_DPRINTF1((" [Emin]\n"));
-    else if(fabs(fwd_E_cut[ip] - fwd_Etarg) < eslSMALLX1) ESL_DPRINTF1((" [Etarg]\n"));
-    else if(fabs(fwd_E_cut[ip] - fwd_Emax)  < eslSMALLX1) ESL_DPRINTF1((" [Emax]\n"));
+    if     (fabs(fwd_E_cut[ip] - fwd_Emin)  < REALLYSMALLX) ESL_DPRINTF1((" [Emin]\n"));
+    else if(fabs(fwd_E_cut[ip] - fwd_Etarg) < REALLYSMALLX) ESL_DPRINTF1((" [Etarg]\n"));
+    else if(fabs(fwd_E_cut[ip] - fwd_Emax)  < REALLYSMALLX) ESL_DPRINTF1((" [Emax]\n"));
     else ESL_DPRINTF1(("\n"));
 
     i++;
