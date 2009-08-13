@@ -31,8 +31,6 @@ extern int   DegenerateSymbolScore(float *p, float *null, int ambig);
 #ifndef CPLAN9_INCLUDED
 #define CPLAN9_INCLUDED
 
-#define CP9MAXABET 4 /* should be same as MAXABET in structs.h */
-
 /* Structure: cm_plan9_s
  * 
  * 03.10.06 EPN: Original intended use of CM plan 9 structure is to read a CM
@@ -140,7 +138,7 @@ typedef struct cplan9_s {
 
   /* The null model probabilities.
    */
-  float  null[CP9MAXABET];         /* "random sequence" emission prob's     +*/
+  float *null;         /* "random sequence" emission prob's     +*/
   float  p1;                       /* null model loop probability           +*/
   float  el_self;                  /* EL transition self loop probability    */
   int    el_selfsc;                /* EL transition self loop score          */
