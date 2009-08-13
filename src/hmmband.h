@@ -25,7 +25,6 @@
 #include "esl_stopwatch.h" 
 
 #include "structs.h"		/* data structures, macros, #define's   */
-#include "cplan9.h"
 
 extern CP9Bands_t * AllocCP9Bands(CM_t *cm, CP9_t *hmm);
 extern void         FreeCP9Bands(CP9Bands_t *cp9bands);

@@ -709,7 +709,7 @@ build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruc
   for(v_s = 0; v_s < sub_cm->M; v_s++)
     {
       if(sub_cm->sttype[(v_s+1)] == E_st) /* detached insert */
-	esl_vec_FNorm(sub_cm->e[v_s], MAXABET);   /* equiprobable, but irrelevant, this state will never be reached */
+	esl_vec_FNorm(sub_cm->e[v_s], orig_cm->abc->K);   /* equiprobable, but irrelevant, this state will never be reached */
       else if(sub_cm->sttype[v_s] != S_st &&
 	      sub_cm->sttype[v_s] != D_st &&
 	      sub_cm->sttype[v_s] != B_st &&
@@ -1052,7 +1052,7 @@ cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int
 
   if(sub_cm->sttype[v_s] == MP_st)
     {
-      for(i = 0; i < (MAXABET*MAXABET); i++)
+      for(i = 0; i < (orig_cm->abc->K*orig_cm->abc->K); i++)
 	sub_cm->e[v_s][i] = orig_cm->e[v_o1][i];
       return;
     }
@@ -1060,7 +1060,7 @@ cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int
   if(submap->s2o_id[v_s] == TRUE)
     {
       /* must be a singlet emitter */
-      for(i = 0; i < MAXABET; i++)
+      for(i = 0; i < orig_cm->abc->K; i++)
 	sub_cm->e[v_s][i] = orig_cm->e[v_o1][i];
       /* No FNorm's necessary (assuming the orig_cm is normalized), since we're
        * building a new CM for each sequence in --sub mode, we skip it for speed.
@@ -1084,27 +1084,27 @@ cm2sub_cm_emit_probs(CM_t *orig_cm, CM_t *sub_cm, double *orig_psi, int v_s, int
       else
 	cm_Fail("ERROR v_s: %d maps to a MP_st and another non-ML and non-MR state\n");
 
-      for(i = 0; i < MAXABET; i++)
+      for(i = 0; i < orig_cm->abc->K; i++)
 	if(is_left)
-	  for(j = (i*MAXABET); j < ((i+1)*MAXABET); j++)
+	  for(j = (i*orig_cm->abc->K); j < ((i+1)*orig_cm->abc->K); j++)
 	    sub_cm->e[v_s][i] += orig_psi[v_o1] * orig_cm->e[v_o1][j];
 	else
-	  for(j = i; j < (MAXABET*MAXABET); j+=MAXABET)
+	  for(j = i; j < (orig_cm->abc->K*orig_cm->abc->K); j+=orig_cm->abc->K)
 	    sub_cm->e[v_s][i] += orig_psi[v_o1] * orig_cm->e[v_o1][j];
       if(orig_cm->sttype[v_o2] == MP_st)
 	cm_Fail("ERROR sub_cm state: %d maps to two MATP_MP states\n", v_s);
 
       /*v_o2 must be ML or MR, which can all be handled identically */
-      for(i = 0; i < MAXABET; i++)
+      for(i = 0; i < orig_cm->abc->K; i++)
 	sub_cm->e[v_s][i] += orig_psi[v_o2] * orig_cm->e[v_o2][i];
-      esl_vec_FNorm(sub_cm->e[v_s], MAXABET);
+      esl_vec_FNorm(sub_cm->e[v_s], orig_cm->abc->K);
       return;
     }
   else if(v_o2 != -1)
     cm_Fail("ERROR sub_cm state: %d maps to two states (%d and %d), but neither is a MATP_MP\n", v_s, v_o1, v_o2);
 
   /* If we get here, v_s maps to a single singlet emitter in orig_cm, v_o1 */
-  for(i = 0; i < MAXABET; i++)
+  for(i = 0; i < orig_cm->abc->K; i++)
     sub_cm->e[v_s][i] = orig_cm->e[v_o1][i];
 
   return;
@@ -1969,7 +1969,7 @@ debug_print_cm_params(FILE *fp, CM_t *cm)
       if(cm->sttype[v] == MP_st)
 	{
 	  fprintf(fp, "\tE: ");
-	  for(i = 0; i < MAXABET*MAXABET; i++)
+	  for(i = 0; i < cm->abc->K*cm->abc->K; i++)
 	    fprintf(fp, "%0.3f (%.3f %6d) ", cm->e[v][i], cm->esc[v][i], cm->iesc[v][i]);
 	  fprintf(fp, "\n");
 	}
@@ -1979,7 +1979,7 @@ debug_print_cm_params(FILE *fp, CM_t *cm)
 	      cm->sttype[v] == IR_st)
 	{	   
 	  fprintf(fp, "\tE: ");
-	  for(i = 0; i < MAXABET; i++)
+	  for(i = 0; i < cm->abc->K; i++)
 	    fprintf(fp, "%0.3f (%0.3f %10d) ", cm->e[v][i], cm->esc[v][i], cm->iesc[v][i]);
 	  fprintf(fp, "\n");
 	}
@@ -3164,7 +3164,7 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
       if(print_flag) printf("Node: %d\n", k);
       if(k > 0)
 	{
-	  for(i = 0; i < MAXABET; i++)
+	  for(i = 0; i < orig_cm->abc->K; i++)
 	    {
 	      diff = orig_hmm->mat[(submap->spos+k-1)][i] - sub_hmm->mat[k][i];
 	      if(print_flag) printf("mat[%d][%d] = %8.5f | %8.5f | (%8.5f)\n", 0, i, orig_hmm->mat[(submap->spos+k-1)][i], sub_hmm->mat[k][i], diff);
@@ -3174,7 +3174,7 @@ check_sub_cm(CM_t *orig_cm, CM_t *sub_cm, CMSubMap_t *submap, CMSubInfo_t *subin
 		}
 	    }
 	}
-      for(i = 0; i < MAXABET; i++)
+      for(i = 0; i < orig_cm->abc->K; i++)
 	{
 	  diff = orig_hmm->ins[(submap->spos+k-1)][i] - sub_hmm->ins[k][i];
 	  if(print_flag) printf("ins[%d][%d] = %8.5f | %8.5f | (%8.5f)\n", 0, i, orig_hmm->ins[(submap->spos+k-1)][i], sub_hmm->ins[k][i], diff);

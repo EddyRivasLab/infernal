@@ -412,7 +412,9 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
             }
 */
             int dkindex;
-            for (k = 0; k < sW && k <= j; k++) {
+            int kmax = j < sW - 1 ? j : sW - 1;
+            //for (k = 0; k < sW && k <= j; k++) {
+            for (k = 0; k <= kmax; k++) {
               vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
               vec_tmp_begr = _mm_set1_ps(*vec_access);
 
@@ -431,7 +433,8 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
               }
             }
 
-            for ( ; k < 2*sW && k <= j; k++) {
+            kmax = j < 2*sW - 1 ? j : 2*sW - 1;
+            for ( ; k <= kmax; k++) {
               vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
               vec_tmp_begr = _mm_set1_ps(*vec_access);
 
@@ -450,7 +453,8 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
               }
             }
 
-            for ( ; k < 3*sW && k <=j; k++) {
+            kmax = j < 3*sW - 1 ? j : 3*sW - 1;
+            for ( ; k <= kmax; k++) {
               vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
               vec_tmp_begr = _mm_set1_ps(*vec_access);
 
@@ -470,7 +474,8 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
             }
 
             //for ( ; k < 4*sW && k <=j; k++) {
-            for ( ; k <= W && k <= j; k++) {
+            kmax = j < W ? j : W;
+            for ( ; k <= kmax; k++) {
               vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
               vec_tmp_begr = _mm_set1_ps(*vec_access);
 
@@ -495,16 +500,18 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
           }
 	  else if (cm->stid[v] == BEGL_S) {
 	    y = cm->cfirst[v]; 
+
+            vec_tsc = _mm_set1_ps(tsc_v[0]);
             for (d = 0; d < sW; d++) {
-	    //for (d = dnA[v]; d <= dxA[v]; d++) {
-	      tmpv = vec_init_scAA[v][d]; /* state delta (sd) is 0 for BEGL_S st */
-	      for (yoffset = 0; yoffset < cm->cnum[v]; yoffset++) {
-                vec_tsc = _mm_set1_ps(tsc_v[yoffset]);
-		tmpv = _mm_max_ps(tmpv, _mm_add_ps(vec_alpha[jp_y][y+yoffset][d], vec_tsc));
+              vec_alpha_begl[jp_v][v][d] = _mm_max_ps(vec_init_scAA[v][d], _mm_add_ps(vec_alpha[jp_y][y][d], vec_tsc));
+            }
+	    for (yoffset = 1; yoffset < cm->cnum[v]; yoffset++) {
+              vec_tsc = _mm_set1_ps(tsc_v[yoffset]);
+              for (d = 0; d < sW; d++) {
+	        vec_alpha_begl[jp_v][v][d] = _mm_max_ps(vec_alpha_begl[jp_v][v][d], _mm_add_ps(vec_alpha[jp_y][y+yoffset][d], vec_tsc));
               }
-	      vec_alpha_begl[jp_v][v][d] = tmpv;
-	      /* careful: y is in alpha (all children of a BEGL_S must be non BEGL_S) */
-	    }
+            }
+	    /* careful: y is in alpha (all children of a BEGL_S must be non BEGL_S) */
 //printf("j%2d v%2d ",j,v);
 //for (d = 0; d <= W && d <= j; d++) { 
 //float *access;

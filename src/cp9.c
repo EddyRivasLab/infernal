@@ -98,15 +98,15 @@ AllocCPlan9Body(CP9_t *hmm, int M, const ESL_ALPHABET *abc)
   ESL_ALLOC(hmm->mat, (M+1) *           sizeof(float *));
   ESL_ALLOC(hmm->ins, (M+1) *           sizeof(float *));
   ESL_ALLOC(hmm->t[0],(cp9_NTRANS*(M+1))     *  sizeof(float));
-  ESL_ALLOC(hmm->mat[0],(MAXABET*(M+1)) * sizeof(float));
-  ESL_ALLOC(hmm->ins[0],(MAXABET*(M+1)) * sizeof(float));
+  ESL_ALLOC(hmm->mat[0],(abc->K*(M+1)) * sizeof(float));
+  ESL_ALLOC(hmm->ins[0],(abc->K*(M+1)) * sizeof(float));
 
   ESL_ALLOC(hmm->tsc, cp9_NTRANS *       sizeof(int *));
-  ESL_ALLOC(hmm->msc, MAXDEGEN   *       sizeof(int *));
-  ESL_ALLOC(hmm->isc, MAXDEGEN   *       sizeof(int *)); 
+  ESL_ALLOC(hmm->msc, hmm->abc->Kp   *   sizeof(int *));
+  ESL_ALLOC(hmm->isc, hmm->abc->Kp   *   sizeof(int *)); 
   ESL_ALLOC(hmm->tsc_mem,(cp9_NTRANS*(M+1))     *       sizeof(int));
-  ESL_ALLOC(hmm->msc_mem,(MAXDEGEN*(M+1)) * sizeof(int));
-  ESL_ALLOC(hmm->isc_mem,(MAXDEGEN*(M+1)) *     sizeof(int));
+  ESL_ALLOC(hmm->msc_mem,(hmm->abc->Kp*(M+1)) * sizeof(int));
+  ESL_ALLOC(hmm->isc_mem,(hmm->abc->Kp*(M+1)) * sizeof(int));
 
   hmm->tsc[0] = hmm->tsc_mem;
   hmm->msc[0] = hmm->msc_mem;
@@ -119,11 +119,11 @@ AllocCPlan9Body(CP9_t *hmm, int M, const ESL_ALPHABET *abc)
    * to keep locality as much as possible, cache efficiency etc.
    */
   for (k = 1; k <= M; k++) {
-    hmm->mat[k] = hmm->mat[0] + k * MAXABET;
-    hmm->ins[k] = hmm->ins[0] + k * MAXABET;
+    hmm->mat[k] = hmm->mat[0] + k * abc->K;
+    hmm->ins[k] = hmm->ins[0] + k * abc->K;
     hmm->t[k]   = hmm->t[0]   + k * cp9_NTRANS;
   }
-  for (x = 1; x < MAXDEGEN; x++) {
+  for (x = 1; x < hmm->abc->Kp; x++) {
     hmm->msc[x] = hmm->msc[0] + x * (M+1);
     hmm->isc[x] = hmm->isc[0] + x * (M+1);
   }
@@ -141,6 +141,8 @@ AllocCPlan9Body(CP9_t *hmm, int M, const ESL_ALPHABET *abc)
 
   ESL_ALLOC(hmm->bsc_mem, (M+1) * sizeof(int));
   ESL_ALLOC(hmm->esc_mem, (M+1) * sizeof(int));
+
+  ESL_ALLOC(hmm->null, abc->K);
 
   hmm->bsc = hmm->bsc_mem;
   hmm->esc = hmm->esc_mem;
@@ -165,6 +167,7 @@ void
 FreeCPlan9(CP9_t *hmm)
 {
   int k;
+  if (hmm->null       != NULL) free(hmm->null);
   if (hmm->bsc_mem    != NULL) free(hmm->bsc_mem);
   if (hmm->begin      != NULL) free(hmm->begin);
   if (hmm->esc_mem    != NULL) free(hmm->esc_mem);
@@ -248,9 +251,11 @@ ZeroCPlan9(CP9_t *hmm)
  * 
  * Purpose:  Set the null model section of an HMM.
  *           Convenience function.
+ *
+ *            Assumes null* is allocated to hmm->abc->K
  */
 void
-CPlan9SetNullModel(CP9_t *hmm, float null[MAXABET], float p1)
+CPlan9SetNullModel(CP9_t *hmm, float *null, float p1)
 {
   int x;
   for (x = 0; x < hmm->abc->K; x++)

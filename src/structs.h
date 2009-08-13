@@ -61,12 +61,6 @@
 #define SCORE_CUTOFF 0
 #define E_CUTOFF     1
 
-/* Alphabet information is declared here, and defined in globals.c.
- */
-#define MAXABET     4
-#define CP9MAXABET  4 /* should be same as MAXABET */
-#define MAXDEGEN   17
-
 /* We're moderately paranoid about underflow and overflow errors, so
  * we do some checking on the magnitude of the scores.
  * 
@@ -200,8 +194,8 @@ typedef struct cplan9_s {
    * CPLAN9_HASBITS flag is up when these scores are valid.
    */
   int  **tsc;                   /* transition scores     [0.9][0.M]       +*/
-  int  **msc;                   /* match emission scores [0.MAXDEGEN-1][1.M] +*/
-  int  **isc;                   /* ins emission scores   [0.MAXDEGEN-1][0.M] +*/
+  int  **msc;                   /* match emission scores [0.Kp-1][1.M] +*/
+  int  **isc;                   /* ins emission scores   [0.Kp-1][0.M] +*/
   int   *bsc;                   /* begin transitions     [1.M]              +*/
   int   *esc;			/* end transitions       [1.M]              +*/
   int   *tsc_mem, *msc_mem, *isc_mem, *bsc_mem, *esc_mem;
@@ -209,7 +203,7 @@ typedef struct cplan9_s {
 
   /* The null model probabilities.
    */
-  float  null[CP9MAXABET];         /* "random sequence" emission prob's     +*/
+  float  *null;                    /* "random sequence" emission prob's     +*/
   float  p1;                       /* null model loop probability           +*/
   /* local end, EL state parameters */
   float  el_self;                  /* EL transition self loop probability    */

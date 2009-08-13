@@ -180,7 +180,7 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
   /* Now we broadcast the rest of the model using many calls to MPI_Bcast.  
      This is inefficient, but is probably negligible compared to the actual 
      searches */
-  MPI_Bcast ((*cm)->null,   Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->null,   (*cm)->abc->K, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->sttype, nstates,       MPI_CHAR,  mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->ndidx,  nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->stid,   nstates,       MPI_CHAR,  mpi_master_rank, MPI_COMM_WORLD);
@@ -203,11 +203,11 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
      memory chunk at x[0] (where x is float **) and then fill in x[1]..x[n] with the appropriate offsets into
      this chunk of memory */
   MPI_Bcast ((*cm)->t[0], nstates*MAXCONNECT, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->e[0], nstates*Alphabet_size*Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->e[0], nstates*(*cm)->abc->K*(*cm)->abc->K, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->tsc[0], nstates*MAXCONNECT, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->esc[0], nstates*Alphabet_size*Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->esc[0], nstates*(*cm)->abc->K*(*cm)->abc->K, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->itsc[0], nstates*MAXCONNECT, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->iesc[0], nstates*Alphabet_size*Alphabet_size, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->iesc[0], nstates*(*cm)->abc->K*(*cm)->abc->K, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
 
   /* Broadcast the enf_seq, if it's NULL (enf_start == 0) we don't */
   if((*cm)->enf_start != 0)
@@ -1754,7 +1754,7 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
   /* Now we broadcast the rest of the model using many calls to MPI_Bcast.  
      This is inefficient, but is probably negligible compared to the actual 
      searches */
-  MPI_Bcast ((*cm)->null,   Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->null,   (*cm)->abc->K, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->sttype, nstates,       MPI_CHAR,  mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->ndidx,  nstates,       MPI_INT,   mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->stid,   nstates,       MPI_CHAR,  mpi_master_rank, MPI_COMM_WORLD);
@@ -1777,11 +1777,11 @@ void broadcast_cm (CM_t **cm, int mpi_my_rank, int mpi_master_rank)
      memory chunk at x[0] (where x is float **) and then fill in x[1]..x[n] with the appropriate offsets into
      this chunk of memory */
   MPI_Bcast ((*cm)->t[0], nstates*MAXCONNECT, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->e[0], nstates*Alphabet_size*Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->e[0], nstates*(*cm)->abc->K*(*cm)->abc->K, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->tsc[0], nstates*MAXCONNECT, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->esc[0], nstates*Alphabet_size*Alphabet_size, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->esc[0], nstates*(*cm)->abc->K*(*cm)->abc->K, MPI_FLOAT, mpi_master_rank, MPI_COMM_WORLD);
   MPI_Bcast ((*cm)->itsc[0], nstates*MAXCONNECT, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
-  MPI_Bcast ((*cm)->iesc[0], nstates*Alphabet_size*Alphabet_size, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
+  MPI_Bcast ((*cm)->iesc[0], nstates*(*cm)->abc->K*(*cm)->abc->K, MPI_INT, mpi_master_rank, MPI_COMM_WORLD);
 
   /* Broadcast the enf_seq, if it's NULL (enf_start == 0) we don't */
   if((*cm)->enf_start != 0)

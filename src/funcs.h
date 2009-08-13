@@ -315,7 +315,7 @@ extern CP9_t *AllocCPlan9Shell(void);
 extern void   AllocCPlan9Body(CP9_t *hmm, int M, const ESL_ALPHABET *abc);
 extern void   FreeCPlan9(CP9_t *hmm);
 extern void   ZeroCPlan9(CP9_t *hmm);
-extern void   CPlan9SetNullModel(CP9_t *hmm, float null[MAXABET], float p1);
+extern void   CPlan9SetNullModel(CP9_t *hmm, float *null, float p1);
 extern void   DuplicateCP9(CM_t *src_cm, CM_t *dest_cm);
 extern int    cp9_GetNCalcsPerResidue(CP9_t *cp9, char *errbuf, float *ret_cp9_ncalcs_per_res);
 

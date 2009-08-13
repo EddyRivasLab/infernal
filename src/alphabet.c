@@ -48,31 +48,41 @@ PairCount(const ESL_ALPHABET *abc, float *counters, ESL_DSQ syml, ESL_DSQ symr, 
   if (syml < abc->K && symr < abc->K) 
     counters[(int) (syml * abc->K + symr)] += wt;
   else {
-    /*    float left = NULL;
-	  float right = NULL;
-	  ESL_ALLOC(left,  sizeof(float) * esl->abc->K);
-	  ESL_ALLOC(right, sizeof(float) * esl->abc->K);*/
-    float left[MAXABET];
-    float right[MAXABET];
+    float *left = NULL;
+    float *right = NULL;
+    int status;
+    ESL_ALLOC(left,  (sizeof(float) * abc->K));
+    ESL_ALLOC(right, (sizeof(float) * abc->K));
 
     int   l,r;
     
-    esl_vec_FSet(left, MAXABET, 0.);
-    esl_vec_FSet(right, MAXABET, 0.);
+    esl_vec_FSet(left, abc->K, 0.);
+    esl_vec_FSet(right, abc->K, 0.);
     esl_abc_FCount(abc, left,  syml, wt);
     esl_abc_FCount(abc, right, symr, wt);
 
     for (l = 0; l < abc->K; l++)
       for (r = 0; r < abc->K; r++)
 	counters[l*abc->K +r] += left[l] * right[r];
+
+    free(left);
+    free(right);
   }
   return;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return; /* never reached */
 }
 
 float
 DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ syml, ESL_DSQ symr)
 {
-  float left[MAXABET], right[MAXABET];
+  float *left = NULL;
+  float *right = NULL;
+  int status;
+  ESL_ALLOC(left,  (sizeof(float) * abc->K));
+  ESL_ALLOC(right, (sizeof(float) * abc->K));
   int l,r;
   float sc;
 
@@ -85,8 +95,8 @@ DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ syml, ESL_DSQ s
   if (syml == (abc->Kp-1) || symr == (abc->Kp-1))  /* missing data, this gets an IMPOSSIBLE sc */
     return IMPOSSIBLE;
 
-  esl_vec_FSet(left, MAXABET, 0.);
-  esl_vec_FSet(right, MAXABET, 0.);
+  esl_vec_FSet(left, abc->K, 0.);
+  esl_vec_FSet(right, abc->K, 0.);
   esl_abc_FCount(abc, left,  syml, 1.);
   esl_abc_FCount(abc, right, symr, 1.);
   
@@ -94,12 +104,24 @@ DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ syml, ESL_DSQ s
   for (l = 0; l < abc->K; l++)
     for (r = 0; r < abc->K; r++)
       sc += esc[l*abc->K+r] * left[l] * right[r];
+
+  free(left);
+  free(right);
+
   return sc;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return 0.0; /* never reached */
 }
 int
 iDegeneratePairScore(const ESL_ALPHABET *abc, int *iesc, ESL_DSQ syml, ESL_DSQ symr)
 {
-  float left[MAXABET], right[MAXABET];
+  float *left = NULL;
+  float *right = NULL;
+  int status;
+  ESL_ALLOC(left,  (sizeof(float) * abc->K));
+  ESL_ALLOC(right, (sizeof(float) * abc->K));
   int l,r;
   float sc;
 
@@ -112,16 +134,24 @@ iDegeneratePairScore(const ESL_ALPHABET *abc, int *iesc, ESL_DSQ syml, ESL_DSQ s
   if (syml == (abc->Kp-1) || symr == (abc->Kp-1))  /* missing data, this gets an -INFTY sc */
     return -INFTY;
 
-  esl_vec_FSet(left, MAXABET, 0.);
-  esl_vec_FSet(right, MAXABET, 0.);
+  esl_vec_FSet(left, abc->K, 0.);
+  esl_vec_FSet(right, abc->K, 0.);
   esl_abc_FCount(abc, left,  syml, 1.);
   esl_abc_FCount(abc, right, symr, 1.);
 
   sc = 0.;
-  for (l = 0; l < MAXABET; l++)
-    for (r = 0; r < MAXABET; r++)
+  for (l = 0; l < abc->K; l++)
+    for (r = 0; r < abc->K; r++)
       sc += iesc[l*abc->K+r] * left[l] * right[r];
+
+  free(left);
+  free(right);
+
   return (int) sc;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return status; /* never reached */
 }
 /* EPN, Wed Aug 20 13:44:16 2008
  * FastPairScore*() functions: 
@@ -275,7 +305,9 @@ iFastPairScoreRightOnlyDegenerate(int K, int *iesc, float *right, ESL_DSQ syml)
 float
 LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
 {
-   float left[MAXABET];
+   float *left = NULL;
+   int status;
+   ESL_ALLOC(left,  (sizeof(float) * abc->K));
    int i;
    float sc;
 
@@ -286,18 +318,24 @@ LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
    }
    else /* degenerate */
    {
-      esl_vec_FSet(left, MAXABET, 0.);
+      esl_vec_FSet(left, abc->K, 0.);
       esl_abc_FCount(abc, left, dres, 1.);
 
       sc = 0.;
-      for (i = 0; i < MAXABET; i++)
+      for (i = 0; i < abc->K; i++)
       {
          sc += esl_vec_FLogSum(&(esc[i*abc->K]),abc->K)*left[i];
          sc -= sreLOG2(abc->K)*left[i];
       }
    }
 
+   free(left);
+
    return sc;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return 0.0; /* never reached */
 }
 
 /* Function: RightMarginalScore()
@@ -310,10 +348,12 @@ LeftMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
 float
 RightMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
 {
-   float right[MAXABET];
+   float *right = NULL;
+   int status;
    int i,j;
    float sc;
    float row[abc->K];
+   ESL_ALLOC(right, (sizeof(float) * abc->K));
 
    if (dres < abc->K)
    {
@@ -324,11 +364,11 @@ RightMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
    }
    else /* degenerate */
    {
-      esl_vec_FSet(right, MAXABET, 0.);
+      esl_vec_FSet(right, abc->K, 0.);
       esl_abc_FCount(abc, right, dres, 1.);
 
       sc = 0.;
-      for (i=0; i < MAXABET; i++)
+      for (i=0; i < abc->K; i++)
       {
          for (j=0; j<abc->K; j++)
             row[j] = esc[j*abc->K+dres];
@@ -337,7 +377,13 @@ RightMarginalScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ dres)
       }
    }
 
+   free(right);
+
    return sc;
+
+ ERROR:
+  cm_Fail("Memory allocation error.");
+  return 0.0; /* never reached */
 }
 
 /* Following funcs from RSEARCH, only used by RSEARCH code */

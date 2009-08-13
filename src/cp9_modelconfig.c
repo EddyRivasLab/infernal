@@ -49,7 +49,10 @@ CP9Logoddsify(CP9_t *hmm)
 {
   int k;			/* counter for model position */
   int x;			/* counter for symbols        */
-  int sc[MAXDEGEN];             /* 17, NEED TO INCREASE FOR BIGGER ALPHABETS! */
+  int *sc;
+  int status;
+
+  ESL_ALLOC(sc, hmm->abc->Kp * sizeof(int));
 
   if (hmm->flags & CPLAN9_HASBITS) return;
 
@@ -58,6 +61,7 @@ CP9Logoddsify(CP9_t *hmm)
 
   sc[hmm->abc->K]     = -INFTY; /* gap character */
   sc[hmm->abc->Kp-1]  = -INFTY; /* missing data character */
+  sc[hmm->abc->Kp-2]  = -INFTY; /* non-residue data character */
 
   /* Insert emission scores, relies on sc[K, Kp-1] initialization to -inf above */
   for (k = 0; k <= hmm->M; k++) {
@@ -128,6 +132,12 @@ CP9Logoddsify(CP9_t *hmm)
   }
 
   hmm->flags |= CPLAN9_HASBITS;	/* raise the log-odds ready flag */
+
+  return;
+
+ ERROR:
+  cm_Fail("Memory allocation error.\n");
+  return; /* never reached */
 }
 
 /* Function: CPlan9Renormalize()
@@ -664,10 +674,10 @@ CP9EnforceHackMatchScores(CP9_t *cp9, int enf_start_pos, int enf_end_pos)
 {
   int k, x;
   for (k = 1; k < enf_start_pos; k++) /* M_0 is the begin state, it's silent */
-    for (x = 0; x < MAXDEGEN; x++)
+    for (x = 0; x < cp9->abc->Kp; x++)
       cp9->msc[x][k] = 0.;
   for (k = enf_end_pos+1; k <= cp9->M; k++)
-    for (x = 0; x < MAXDEGEN; x++)
+    for (x = 0; x < cp9->abc->Kp; x++)
       cp9->msc[x][k] = 0.;
 }
 

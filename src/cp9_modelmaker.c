@@ -230,13 +230,13 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
   
   esl_stopwatch_Start(w);  
   /* Special case 1st insert state maps to state 1 in the CM */
-  for(i = 0; i < MAXABET; i++)
+  for(i = 0; i < cm->abc->K; i++)
     {
       hmm->ins[0][i] = cm->e[1][i];
     }
   for(k = 1; k <= hmm->M; k++)
     {      
-      for(i = 0; i < MAXABET; i++)
+      for(i = 0; i < cm->abc->K; i++)
 	{
 	  hmm->mat[k][i] = 0.0;
 	  hmm->ins[k][i] = 0.0;
@@ -250,7 +250,7 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
          (ex. if node k maps to the left half of a MATP node), and potentially = -1
          if no other state maps to hmm node k's match state.*/
       /* psi[ap[0]] is the expected number of times cm state ap[0] is entered. */
-      for(i = 0; i < MAXABET; i++)
+      for(i = 0; i < cm->abc->K; i++)
 	{
 	  hmm->mat[k][i] += psi[ap[0]] * 
 	    cm2hmm_emit_prob(cm, cp9map, ap[0], i, k);
@@ -266,7 +266,7 @@ build_cp9_hmm(CM_t *cm, CP9_t **ret_hmm, CP9Map_t **ret_cp9map, int do_psi_test,
       /* ap[0] is the only CM state that maps to HMM node k's insert state */
       /* ap[1] should be -1 unless k = hmm->M. */
       /* psi[ap[0]] is the expected number of times cm state ap[0] is entered. */
-      for(i = 0; i < MAXABET; i++)
+      for(i = 0; i < cm->abc->K; i++)
 	{
 	  hmm->ins[k][i] += psi[ap[0]] *
 	    cm2hmm_emit_prob(cm, cp9map, ap[0], i, k);
@@ -1326,10 +1326,10 @@ cm2hmm_emit_prob(CM_t *cm, CP9Map_t *cp9map, int x, int i, int k)
     {
       /* determine which of the 16 indices to use */
       if(is_left)
-	for(j = (i*MAXABET); j < ((i+1)*MAXABET); j++)
+	for(j = (i*cm->abc->K); j < ((i+1)*cm->abc->K); j++)
 	  ret_eprob += cm->e[x][j];
       else
-	for(j = i; j < (MAXABET*MAXABET); j+=MAXABET)
+	for(j = i; j < (cm->abc->K*cm->abc->K); j+=cm->abc->K)
 	  ret_eprob += cm->e[x][j];
     }
   return ret_eprob;
@@ -2469,7 +2469,7 @@ debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores)
 
   fprintf(fp, "Consensus Length: %d\n", hmm->M);
   fprintf(fp, "Node: 0\n");
-  for(i = 0; i < MAXABET; i++)
+  for(i = 0; i < hmm->abc->K; i++)
     {
       if(print_scores) fprintf(fp, "ins[%3d][%3d] = %.3f | %10d\n", 0, i, hmm->ins[0][i], hmm->isc[i][0]);
       else             fprintf(fp, "ins[%3d][%3d] = %.3f\n", 0, i, hmm->ins[0][i]);
@@ -2504,14 +2504,14 @@ debug_print_cp9_params(FILE *fp, CP9_t *hmm, int print_scores)
   for(k = 1; k <= hmm->M; k++)
     {      
       fprintf(fp, "Node: %d\n", k);
-      for(i = 0; i < MAXABET; i++)
+      for(i = 0; i < hmm->abc->K; i++)
 	{
 	  if(print_scores) 
 	    fprintf(fp, "mat[%3d][%3d] = %.3f | %10d\n", k, i, hmm->mat[k][i], hmm->msc[i][k]);
 	  else
 	    fprintf(fp, "mat[%3d][%3d] = %.3f\n", k, i, hmm->mat[k][i]);
 	}
-      for(i = 0; i < MAXABET; i++)
+      for(i = 0; i < hmm->abc->K; i++)
 	{
 	  if(print_scores)
 	    fprintf(fp, "ins[%3d][%3d] = %.3f | %10d\n", k, i, hmm->ins[k][i], hmm->isc[i][k]);
@@ -2888,11 +2888,11 @@ CP9_node_chi_squared(CP9_t *ahmm, CP9_t *shmm, int nd, float threshold, int prin
 
   if(nd != 0) {
     check_m_nseq = 0.;
-    for (x = 0; x < MAXABET; x++) check_m_nseq += shmm->mat[nd][x];
+    for (x = 0; x < ahmm->abc->K; x++) check_m_nseq += shmm->mat[nd][x];
     if(fabs(check_m_nseq - m_nseq) > 0.0001) cm_Fail("ERROR: node: %d has different number of sampled match emissions and transitions.\n");
   }
   check_i_nseq = 0.;
-  for (x = 0; x < MAXABET; x++) check_i_nseq += shmm->ins[nd][x];
+  for (x = 0; x < ahmm->abc->K; x++) check_i_nseq += shmm->ins[nd][x];
   if((check_i_nseq >= i_nseq && ((check_i_nseq - i_nseq) > 0.0001)) ||
      (check_i_nseq  < i_nseq && ((i_nseq - check_i_nseq) > 0.0001)))     
     cm_Fail("ERROR: node: %d has different number of sampled insert emissions and transitions.\n");
@@ -2901,16 +2901,16 @@ CP9_node_chi_squared(CP9_t *ahmm, CP9_t *shmm, int nd, float threshold, int prin
    * infernal/testsuite/bandcyk-montecarlo-test.c */
   /* Check match emissions */
   if(nd != 0) {
-    esl_vec_FScale(ahmm->mat[nd], MAXABET, esl_vec_FSum(shmm->mat[nd], MAXABET)); /* convert to #'s */
-    p = FChiSquareFit(ahmm->mat[nd], shmm->mat[nd], MAXABET);	    /* compare #'s    */
+    esl_vec_FScale(ahmm->mat[nd], ahmm->abc->K, esl_vec_FSum(shmm->mat[nd], ahmm->abc->K)); /* convert to #'s */
+    p = FChiSquareFit(ahmm->mat[nd], shmm->mat[nd], ahmm->abc->K);	    /* compare #'s    */
     if (p < threshold) {
       printf("Rejected match emission distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
       ret_val = FALSE;
     }
   }
   /* check insert emissions */
-  esl_vec_FScale(ahmm->ins[nd], MAXABET, esl_vec_FSum(shmm->ins[nd], MAXABET)); /* convert to #'s */
-  p = FChiSquareFit(ahmm->ins[nd], shmm->ins[nd], MAXABET);	/* compare #'s    */
+  esl_vec_FScale(ahmm->ins[nd], ahmm->abc->K, esl_vec_FSum(shmm->ins[nd], ahmm->abc->K)); /* convert to #'s */
+  p = FChiSquareFit(ahmm->ins[nd], shmm->ins[nd], ahmm->abc->K);	/* compare #'s    */
   if (p < threshold) {
     printf("Rejected insert emission distribution for CP9 node %d: chi-squared p = %f\n", nd, p);
     ret_val = FALSE;

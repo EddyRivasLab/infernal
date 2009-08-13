@@ -228,14 +228,14 @@ cm_Rescale(CM_t *cm, float scale)
       /* Scale emission counts vectors */
       if (cm->sttype[v] == MP_st)
 	{       /* Consensus base pairs */
-	  esl_vec_FScale(cm->e[v], (MAXABET*MAXABET), scale);
+	  esl_vec_FScale(cm->e[v], (cm->abc->K*cm->abc->K), scale);
 	}
       else if ((cm->sttype[v] == ML_st) ||
 	       (cm->sttype[v] == MR_st) ||
 	       (cm->sttype[v] == IL_st) ||
 	       (cm->sttype[v] == IR_st))
 	{      /* singlets (some consensus, some not)*/
-	  esl_vec_FScale(cm->e[v], MAXABET, scale);
+	  esl_vec_FScale(cm->e[v], cm->abc->K, scale);
 	}
     }/* end loop over states v */
 

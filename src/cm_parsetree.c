@@ -1110,7 +1110,7 @@ ParsetreeScore_Global2Local(CM_t *cm, Parsetree_t *tr, ESL_DSQ *dsq, int print_f
   int   status;
   int tidx;			/* counter through positions in the parsetree        */
   int v,y;			/* parent, child state index in CM                   */
-  ESL_DSQ symi, symj;		/* symbol indices for emissions, 0..Alphabet_iupac-1 */
+  ESL_DSQ symi, symj;		/* symbol indices for emissions, 0..Kp-1             */
   int mode;
   int    tp;                    /* trace index offset, for v's with > tidx (IL or IR)*/
   float *tr_esc;                /* [0..tr->n-1] score of emissions from each trace node */

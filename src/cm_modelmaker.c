@@ -1636,7 +1636,7 @@ cm_check_before_detaching(CM_t *cm, int insert1, int insert2)
   /* check to make sure we have 0.0 counts in to_detach */
   if(ret_val)
     {
-      for(i = 0; i < MAXABET; i++)
+      for(i = 0; i < cm->abc->K; i++)
 	{
 	  if(cm->e[to_detach][i] >= 0.)
 	    diff = cm->e[to_detach][i] - 0.;

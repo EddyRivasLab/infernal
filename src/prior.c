@@ -234,39 +234,39 @@ PriorifyCM(CM_t *cm, const Prior_t *pri)
 	   */
 	  if (cm->sttype[v] == MP_st)
 	    {       /* Consensus base pairs */
-	      for (i = 0; i < MAXABET*MAXABET; i++)
+	      for (i = 0; i < cm->abc->K*cm->abc->K; i++)
 		counts[i] = (double) cm->e[v][i];
 	      
-	      esl_mixdchlet_MPParameters(counts, MAXABET*MAXABET,
+	      esl_mixdchlet_MPParameters(counts, cm->abc->K*cm->abc->K,
 					 pri->mbp,
 					 mixq, probs);
 	      
-	      for (i = 0; i < MAXABET*MAXABET; i++)
+	      for (i = 0; i < cm->abc->K*cm->abc->K; i++)
 		cm->e[v][i] = (float) probs[i];
 	    }
 	  else if (cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR)
 	    {      /* Consensus singlets */
-	      for (i = 0; i < MAXABET; i++)
+	      for (i = 0; i < cm->abc->K; i++)
 		counts[i] = (double) cm->e[v][i];
 	      
-	      esl_mixdchlet_MPParameters(counts, MAXABET,
+	      esl_mixdchlet_MPParameters(counts, cm->abc->K,
 					 pri->mnt,
 					 mixq, probs);
 	      
-	      for (i = 0; i < MAXABET; i++)
+	      for (i = 0; i < cm->abc->K; i++)
 		cm->e[v][i] = (float) probs[i];
 	    }
 	  else if (cm->sttype[v] == IL_st || cm->sttype[v] == IR_st ||
 		   cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR)
 	    {	/* nonconsensus singlets */
-	      for (i = 0; i < MAXABET; i++)
+	      for (i = 0; i < cm->abc->K; i++)
 		counts[i] = (double) cm->e[v][i];
 	      
-	      esl_mixdchlet_MPParameters(counts, MAXABET,
+	      esl_mixdchlet_MPParameters(counts, cm->abc->K,
 					 pri->i,
 					 mixq, probs);
 	      
-	      for (i = 0; i < MAXABET; i++)
+	      for (i = 0; i < cm->abc->K; i++)
 		cm->e[v][i] = (float) probs[i];
 	    }
 	}
