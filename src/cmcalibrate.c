@@ -81,12 +81,7 @@ static ESL_OPTIONS options[] = {
   { "--exp-ffile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,        NULL, "save lambdas for different tail fit probs to file <f>", 2 },
   /* options for HMM filter threshold calculation */
   { "--fil-N",          eslARG_INT,     "10000",NULL, "100<=n<=100000",NULL,  NULL,       NULL, "number of emitted sequences for HMM filter threshold calc",    3 },
-  { "--fil-F",          eslARG_REAL,    "0.995",NULL, "0<x<=1", NULL,        NULL,        NULL, "required fraction of seqs that survive HMM filter", 3},
-  { "--fil-Xtarg-hmm",  eslARG_REAL,    "2.0",  NULL, "x>=1.00001", NULL,    NULL,        NULL, "target time for filtered search as <x> times HMM time", 3},
-  { "--fil-Xmin-hmm",   eslARG_REAL,    "1.1",  NULL, "x>=1.00001",NULL,     NULL,        NULL, "minimum time for filtered search as <x> times HMM time", 3},
-  { "--fil-Starg-hmm",  eslARG_REAL,    NULL,   NULL, "0.<x<1.01",    NULL,        NULL,        NULL, "target survival fraction for filtered search is <x>", 3},
-  { "--fil-Smin-hmm",   eslARG_REAL,    NULL,   NULL, "0.<x<1.01",    NULL,        NULL,        NULL, "minimum survival fraction for filtered search is <x>", 3},
-  { "--fil-Smax-hmm",   eslARG_REAL,    "1.0",  NULL, "0.<x<1.01",    NULL,        NULL,        NULL, "maximum survival fraction for filtered search is <x>", 3},
+  { "--fil-F",          eslARG_REAL,    "0.993",NULL, "0<x<=1", NULL,        NULL,        NULL, "required fraction of seqs that survive HMM filter", 3},
   { "--fil-tau",        eslARG_REAL,    "1e-7", NULL, "0.<x<1.01",  NULL,        NULL,"--fil-nonbanded", "set tail loss prob for HMM banding <x>", 3 },
   { "--fil-gemit",      eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "during filter thresholding, always emit globally from CM",  3},
   { "--fil-dfile",      eslARG_OUTFILE, NULL,   NULL, NULL,     NULL,        NULL,"--exp-pfile", "save filter threshold data (HMM and CM scores) to file <s>", 3},
@@ -107,6 +102,11 @@ static ESL_OPTIONS options[] = {
   /* Developer filter threshold options the average user doesn't need to know about */
   { "--fil-nonbanded",  eslARG_NONE,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "do not use HMM banded search for filter calculation", 104},
   { "--fil-aln2bands",  eslARG_NONE,    FALSE,  NULL, NULL,     NULL,        NULL,"--fil-nonbanded", "derive HMM bands w/o scanning Forward/Backward", 104 },
+  { "--fil-Xtarg-hmm",  eslARG_REAL,    "2.0",  NULL, "x>=1.00001", NULL,    NULL,        NULL, "target time for filtered search as <x> times HMM time", 104},
+  { "--fil-Xmin-hmm",   eslARG_REAL,    "1.1",  NULL, "x>=1.00001",NULL,     NULL,        NULL, "minimum time for filtered search as <x> times HMM time", 104},
+  { "--fil-Starg-hmm",  eslARG_REAL,    NULL,   NULL, "0.<x<1.01",    NULL,        NULL,        NULL, "target survival fraction for filtered search is <x>", 104},
+  { "--fil-Smin-hmm",   eslARG_REAL,    NULL,   NULL, "0.<x<1.01",    NULL,        NULL,        NULL, "minimum survival fraction for filtered search is <x>", 104},
+  { "--fil-Smax-hmm",   eslARG_REAL,    "1.0",  NULL, "0.<x<1.01",    NULL,        NULL,        NULL, "maximum survival fraction for filtered search is <x>", 104},
   /* Developer options related to experiment local begin/end modes */
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,    NULL,    "--pbegin", "set all local begins as equiprobable", 103 },
   { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,    NULL,    "--pend", "set all local end probs to <x>", 103 },
