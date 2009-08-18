@@ -49,7 +49,7 @@ The sequence file
 must be in FASTA, EMBL, or Genbank format.
 
 .PP
-CM files are profiles of RNA consensus secondary structure. A
+CMs are profiles of RNA consensus sequence and secondary structure. A
 CM file is produced by the 
 .B cmbuild 
 program, from a given RNA sequence alignment of known 

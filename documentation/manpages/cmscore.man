@@ -26,7 +26,7 @@ It is not intended to be particularly useful in the real world. Documentation
 is provided for completeness, and to aid our own memories.
 
 .PP
-CM files are profiles of RNA consensus secondary structure. A
+CMs are profiles of RNA consensus sequence and secondary structure. A
 CM file is produced by the 
 .B cmbuild 
 program, from a given RNA sequence alignment of known 
