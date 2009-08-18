@@ -84,7 +84,7 @@ static ESL_OPTIONS options[] = {
   { "--fil-no-hmm",eslARG_NONE, FALSE,     NULL, NULL,  "--fil-hmm",NULL,         NULL, "do not filter with HMM Forward algorithm", 5 },
   { "--fil-qdb",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-qdb", "filter with CM QDB (banded) CYK algorithm", 201 },
   { "--fil-no-qdb",eslARG_NONE, FALSE,     NULL, NULL,  "--fil-qdb",NULL,         NULL, "do not filter with CM banded CYK", 5 },
-  { "--fil-beta",  eslARG_REAL, NULL,      NULL, "x>0", NULL,      NULL,"--fil-no-qdb", "set tail loss prob for QDB filter to <x>", 5 },
+  { "--fil-beta",  eslARG_REAL, "1e-10",   NULL, "x>0", NULL,      NULL,"--fil-no-qdb", "set tail loss prob for QDB filter to <x>", 5 },
   /* filter cutoff options */
   { "--fil-T-qdb",eslARG_REAL,  "0.0", NULL, NULL,      NULL,      NULL, "--fil-E-qdb", "set QDB CM filter cutoff bit score as <x>", 6 },
   { "--fil-T-hmm",eslARG_REAL,  "3.0", NULL, NULL,      NULL,      NULL, "--fil-E-hmm,--fil-S-hmm", "set HMM filter cutoff bit score as <x>", 6 },
@@ -93,14 +93,14 @@ static ESL_OPTIONS options[] = {
   { "--fil-S-hmm",eslARG_REAL,  NULL,  NULL, "0<x<=1.00000001", NULL,      NULL, "--fil-E-hmm,--fil-T-hmm", "set HMM filter predicted surv fract as <x>", 6 }, 
   /*{ "--fil-S-qdb",eslARG_REAL,  "0.02",NULL, "0<x<1.",  NULL,      NULL, "--fil-T-qdb", "set QDB CM filter cutoff to achieve survival fraction <x>", 6 },*/
   /*{ "--fil-S-hmm",eslARG_REAL,  "0.02",NULL, "0<x<1",   NULL,      NULL, "--fil-T-hmm", "set HMM filter cutoff to achieve survival fraction <x>", 6 },*/
-  { "--fil-Xmin-hmm",eslARG_REAL,NULL, NULL, "x>1.0999", NULL,      NULL,"--fil-T-hmm,--fil-E-hmm,--fil-S-hmm", "set minimum HMM survival fraction as <x>", 6 },
+  { "--fil-Xmin-hmm",eslARG_REAL,NULL, NULL, "x>1.0999", NULL,      NULL,"--fil-T-hmm,--fil-E-hmm,--fil-S-hmm", "set minimum HMM survival fraction as <x>", 106 },
   { "--fil-Smax-hmm",eslARG_REAL,"0.5",NULL, "0<x<=1.00000001",   NULL,      NULL,"--fil-T-hmm,--fil-E-hmm,--fil-S-hmm", "set maximum HMM survival fraction as <x>", 6 },
-  { "--fil-Smin-hmm",eslARG_REAL,"0.01",NULL, "0<x<=1.00000001",  NULL,      NULL,"--fil-T-hmm,--fil-E-hmm,--fil-S-hmm", "set minimum HMM survival fraction as <x>", 6 },
+  { "--fil-Smin-hmm",eslARG_REAL,"0.02",NULL, "0<x<=1.00000001",  NULL,      NULL,"--fil-T-hmm,--fil-E-hmm,--fil-S-hmm", "set minimum HMM survival fraction as <x>", 6 },
   { "--fil-A-hmm", eslARG_NONE,FALSE,NULL, NULL,         NULL,      NULL,"--fil-no-hmm", "always filter w/HMM w/surv fract <= <x> from --fil-Smax-hmm", 6 },
-  { "--fil-finE-hmm",eslARG_REAL,  NULL,  NULL, "x>0.",    NULL,      NULL,"--fil-finT-hmm", "pretend final E cutoff=<x> for HMM filter cutoff calc", 6 }, 
-  { "--fil-finT-hmm",eslARG_REAL,  NULL,  NULL, NULL,      NULL,      NULL,"--fil-finE-hmm", "pretend final bit sc cutoff=<x> for HMM filter cutoff calc", 6 }, 
-  { "--fil-finE-qdb",eslARG_REAL,  NULL,  NULL, "x>0.",    NULL,      NULL,"--fil-finT-qdb", "pretend final E cutoff=<x> for QDB filter cutoff calc", 6 }, 
-  { "--fil-finT-qdb",eslARG_REAL,  NULL,  NULL, NULL,      NULL,      NULL,"--fil-finE-qdb", "pretend final bit sc cutoff=<x> for QDB filter cutoff calc", 6 }, 
+  { "--fil-finE-hmm",eslARG_REAL,  NULL,  NULL, "x>0.",    NULL,      NULL,"--fil-finT-hmm", "pretend final E cutoff=<x> for HMM filter cutoff calc", 106 }, 
+  { "--fil-finT-hmm",eslARG_REAL,  NULL,  NULL, NULL,      NULL,      NULL,"--fil-finE-hmm", "pretend final bit sc cutoff=<x> for HMM filter cutoff calc", 106 }, 
+  { "--fil-finE-qdb",eslARG_REAL,  NULL,  NULL, "x>0.",    NULL,      NULL,"--fil-finT-qdb", "pretend final E cutoff=<x> for QDB filter cutoff calc", 106 }, 
+  { "--fil-finT-qdb",eslARG_REAL,  NULL,  NULL, NULL,      NULL,      NULL,"--fil-finE-qdb", "pretend final bit sc cutoff=<x> for QDB filter cutoff calc", 106 }, 
   /* W definition options (require --viterbi or --forward) */
   { "--hmm-W",   eslARG_INT,    NULL,  NULL, "n>1",     NULL,      NULL,  "--hmm-cW", "set HMM window size as <n>", 7 },
   { "--hmm-cW",  eslARG_REAL, NULL,  NULL, "x>0.01",    NULL,      NULL,   "--hmm-W", "set HMM window size as <x> * consensus length", 7 },
@@ -241,6 +241,8 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
       puts("\nundocumented developer options related to experimental local begin/end modes:");
       esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
+      puts("\nundocumented developer options related to filtering:");
+      esl_opt_DisplayHelp(stdout, go, 106, 2, 80);
       exit(0);
     }
   if (esl_opt_GetBoolean(go, "-h") == TRUE) 
@@ -1258,7 +1260,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
  *                  exp tail &
  *                  filter thr 
  *   options        in cmfile?    filter/don't filter and cutoff determination
- *   -------       ----------    ------------------------------------------------
+ *   -------       -----------    ------------------------------------------------
  * 1. none                 yes    filter (usually). automatically determine appropriate HMM 
  *                                filter cutoff for final round cutoff using cmfile's filter 
  *                                threshold info from cmcalibrate. Sometimes this info may
@@ -1284,7 +1286,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
  * 8. --fil-Smax-hmm <x>    no    die. we can't deal with this combo, tell the user.
  *
  * 
- * CM filtering: 
+ * QDBY CYK  filtering: 
  * ('none' below means none of --fil-no-qdb, --fil-T-qdb, --fil-E-qdb) 
  *                               
  *                                final 
@@ -1310,10 +1312,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
  *
  * ('none' below means none of --fil-no-qdb, --fil-T-qdb, --fil-E-qdb) 
  * 
- * beta, the tail loss probability for the QDB calculation is determined as follows:
- * If --fil-beta <x> is not enabled, cm->beta_qdb is set as cm->beta_W as read in the cmfile
- *               and initially set by cmbuild.
- * If --fil-beta <x> is enabled, <x> is used as cm->beta_qdb
+ * beta, the tail loss probability for the QDB calculation is set as <x> from --fil-beta <x>.
  *
  * Final round related options (after all filtering is complete):
  *
@@ -1590,8 +1589,15 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 
   if(do_qdb_filter && esl_opt_GetBoolean(go, "--fil-qdb")) { /* determine thresholds, beta for qdb cyk filter */
     /* build the ScanMatrix_t for the QDB filter round, requires calcing dmin, dmax */
-    if(! esl_opt_IsDefault(go, "--fil-beta")) fqdb_beta_qdb = esl_opt_GetReal(go, "--fil-beta");
-    else fqdb_beta_qdb = cm->beta_W; /* use beta used to calc W in CM file by default */
+
+    /* EPN, Tue Aug  4 11:53:14 2009 
+     * Infernal 1.0 code below (in which --fil-beta's default value was NULL):
+     * if(! esl_opt_IsDefault(go, "--fil-beta")) fqdb_beta_qdb = esl_opt_GetReal(go, "--fil-beta");
+     * else fqdb_beta_qdb = cm->beta_W; use beta used to calc W in CM file by default 
+     */
+    /* above block replaced by following line as of v1.01 */
+    fqdb_beta_qdb = esl_opt_GetReal(go, "--fil-beta");
+
     safe_windowlen = cm->W * 3;
     while(!(BandCalculationEngine(cm, safe_windowlen, fqdb_beta_qdb, FALSE, &fqdb_dmin, &fqdb_dmax, NULL, NULL))) {
       free(fqdb_dmin);
@@ -1678,7 +1684,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   return eslOK;
 }
 
-/* Function: set_searchinfo_for_uncalibrated_cm)
+/* Function: set_searchinfo_for_uncalibrated_cm()
  * Date:     EPN, Thu Mar  6 05:29:16 2008
  * 
  * Purpose:  For a CM WITHOUT exponential tail and filter thresholds statistics 
@@ -1760,10 +1766,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
  *
  * ('none' below means none of --fil-no-qdb, --fil-T-qdb, --fil-E-qdb) 
  * 
- * beta, the tail loss probability for the QDB calculation is determined as follows:
- * If --fil-beta <x> is not enabled, cm->beta_qdb is set as cm->beta_W as read in the cmfile
- *               and initially set by cmbuild.
- * If --fil-beta <x> is enabled, <x> is used as cm->beta_qdb
+ * beta, the tail loss probability for the QDB calculation is set as <x> from --fil-beta <x>.
  *
  * Final round related options (after all filtering is complete):
  *
@@ -1914,8 +1917,15 @@ set_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   fqdb_sc = -1.;
   if(do_qdb_filter && esl_opt_GetBoolean(go, "--fil-qdb")) { /* determine thresholds, beta for qdb cyk filter */
     /* build the ScanMatrix_t for the QDB filter round, requires calcing dmin, dmax */
-    if(! esl_opt_IsDefault(go, "--fil-beta")) fqdb_beta_qdb = esl_opt_GetReal(go, "--fil-beta");
-    else fqdb_beta_qdb = cm->beta_W; /* use beta used to calc W in CM file by default */
+
+    /* EPN, Tue Aug  4 11:57:10 2009 
+     * Infernal 1.0 code below (in which --fil-beta's default value was NULL):
+     * if(! esl_opt_IsDefault(go, "--fil-beta")) fqdb_beta_qdb = esl_opt_GetReal(go, "--fil-beta");
+     * else fqdb_beta_qdb = cm->beta_W; use beta used to calc W in CM file by default 
+     */
+    /* above block replaced by following line as of v1.01 */
+    fqdb_beta_qdb = esl_opt_GetReal(go, "--fil-beta");
+
     safe_windowlen = cm->W * 3;
     while(!(BandCalculationEngine(cm, safe_windowlen, fqdb_beta_qdb, FALSE, &fqdb_dmin, &fqdb_dmax, NULL, NULL))) {
       free(fqdb_dmin);
