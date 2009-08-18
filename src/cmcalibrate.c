@@ -106,7 +106,7 @@ static ESL_OPTIONS options[] = {
   { "--fil-Xmin-hmm",   eslARG_REAL,    "1.1",  NULL, "x>=1.00001",NULL,     NULL,        NULL, "minimum time for filtered search as <x> times HMM time", 104},
   { "--fil-Starg-hmm",  eslARG_REAL,    NULL,   NULL, "0.<x<1.01",    NULL,        NULL,        NULL, "target survival fraction for filtered search is <x>", 104},
   { "--fil-Smin-hmm",   eslARG_REAL,    NULL,   NULL, "0.<x<1.01",    NULL,        NULL,        NULL, "minimum survival fraction for filtered search is <x>", 104},
-  { "--fil-Smax-hmm",   eslARG_REAL,    "1.0",  NULL, "0.<x<1.01",    NULL,        NULL,        NULL, "maximum survival fraction for filtered search is <x>", 104},
+  { "--fil-Smax-hmm",   eslARG_REAL,    "0.95",  NULL, "0.<x<1.01",    NULL,        NULL,        NULL, "maximum survival fraction for filtered search is <x>", 104},
   /* Developer options related to experiment local begin/end modes */
   { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,    NULL,    "--pbegin", "set all local begins as equiprobable", 103 },
   { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,    NULL,    "--pend", "set all local end probs to <x>", 103 },
