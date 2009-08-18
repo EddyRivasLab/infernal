@@ -49,7 +49,7 @@ change the default installation directories for \prog{make install}.
 
 \subsection{More detailed installation notes}
 
-\software{Infernal} is distributed as ANSI C source code.  It is
+\software{infernal} is distributed as ANSI C source code.  It is
 designed to be built and used on UNIX platforms. It is developed on
 Intel GNU/Linux systems, and intermittently tested on a variety of
 other UNIX platforms. It is not currently tested on either Microsoft
@@ -59,7 +59,7 @@ itself is vanilla POSIX-compliant ANSI C. You may need to work around
 the configuration scripts and Makefiles to get it built on a non-UNIX
 platform.
 
-The GNU configure script that comes with \software{Infernal} has a
+The GNU configure script that comes with \software{infernal} has a
 number of options. You can see them all by doing:
 
 \user{./configure --help}
@@ -72,7 +72,7 @@ source code.
 
 The most important options are those that let you set the installation
 directories for \prog{make install} to be appropriate to your system.
-What you need to know is that \software{Infernal} installs only two
+What you need to know is that \software{infernal} installs only two
 types of files: programs and man pages. It installs the programs in
 \prog{--bindir} (which defaults to \prog{/usr/local/bin}), and the man pages in the
 \prog{man1} subdirectory of \prog{--mandir} (default
@@ -82,7 +82,7 @@ in \prog{/usr/bioprogs/bin/} and man pages in
 
 \user{./configure --mandir=/usr/share/man --bindir=/usr/bioprogs/bin}
 
-That's really all you need to know, since \software{Infernal} installs
+That's really all you need to know, since \software{infernal} installs
 so few files. But just so you know; GNU configure is very flexible,
 and has shortcuts that accomodates several standard conventions for
 where programs get installed. One common strategy is to install all
@@ -105,7 +105,7 @@ as \prog{--prefix}. You could change this, for example, by:
 \user{./configure --prefix=/usr/share --exec-prefix=/usr/share/Linux/}\\
 
 In summary, a complete list of the \prog{./configure} installation
-options that affect \software{Infernal}:
+options that affect \software{infernal}:
 
 \begin{tabular}{lll}
 Option                       &   Meaning                       & Default\\ \hline
@@ -148,7 +148,7 @@ code. At a minimum, turn on your compiler's default optimizations with
 
 \subsubsection{turning on Message Passing Interface (MPI) support}
 
-\software{Infernal} includes four programs \prog{cmsearch}, \prog{cmcalibrate},
+\software{infernal} includes four programs \prog{cmsearch}, \prog{cmcalibrate},
 \prog{cmalign} and \prog{cmscore} that optionally use MPI
 parallelization by invoking the \prog{--mpi} option. 
 To enable the option to use MPI in these four executables, add 

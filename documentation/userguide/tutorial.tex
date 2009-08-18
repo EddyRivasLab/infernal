@@ -1,13 +1,13 @@
 \section{Tutorial}
 
 Here's a tutorial walk-through of some small projects with
-\software{Infernal}. This section should be sufficient to get 
+\software{infernal}. This section should be sufficient to get 
 you started on work of your own, and you can (at least temporarily)
 skip the rest of the Guide.
 
 \subsection {The programs in INFERNAL}
 
-There are seven programs supported in the \software{Infernal} 1.0 package:
+There are seven programs supported in the \software{infernal} 1.0 package:
 
 \begin{wideitem}
 \item[\emprog{cmalign}] Align sequences to an existing model.
@@ -24,18 +24,18 @@ There are seven programs supported in the \software{Infernal} 1.0 package:
 
 \subsection{Files used in the tutorial}
 
-The subdirectory \prog{/tutorial} in the \software{Infernal} distribution contains the
+The subdirectory \prog{/tutorial} in the \software{infernal} distribution contains the
 files used in the tutorial, as well as a number of examples of various
-file formats that \software{Infernal} reads. The important files for the tutorial
+file formats that \software{infernal} reads. The important files for the tutorial
 are:
 
   \begin{sreitems}{}
   \item[\prog{trna.5.sto}] A multiple alignment of five tRNA
        sequences. This file is a simple example of \emph{Stockholm
-       format} that \software{Infernal} uses for structurally-annotated alignments.
+       format} that \software{infernal} uses for structurally-annotated alignments.
   \item[\prog{tosearch.300Kb.db}]  A 300,000 nt sequence ``database''
        that contains a tRNA. The file is
-       in FASTA format, which \software{Infernal} uses for unaligned sequence
+       in FASTA format, which \software{infernal} uses for unaligned sequence
        data.
   \item[\prog{toalign.3.fa}] Three tRNA sequences
     %, two are authentic 
@@ -54,7 +54,7 @@ are:
 
 Create a new directory that you can work in, and copy all the files in
 \prog{tutorial} there. I'll assume for the following examples that you've
-installed the \software{Infernal} programs in your path; if not, you'll need to give
+installed the \software{infernal} programs in your path; if not, you'll need to give
 a complete path name to the programs (e.g. something like 
 \newline
 \prog{/usr/people/nawrocki/infernal-1/src/cmbuild} 
@@ -63,7 +63,7 @@ instead of just \prog{cmbuild}).
 \subsection{Format of a simple input RNA alignment file}
 
 Look at the alignment file \prog{trna.5.sto} in the \prog{intro/}
-subdirectory of the \software{Infernal} distribution. It is shown
+subdirectory of the \software{infernal} distribution. It is shown
 below, with a secondary structure of the first sequence shown to the
 right for reference (yeast Phe tRNA, labeled as ``tRNA1'' in the
 file):
@@ -97,7 +97,7 @@ tRNA5             UCGGUUCGAUUCCGGUUGCGUCCA
 This is a simple example of a multiple RNA sequence alignment with
 secondary structure annotation, in \emph{Stockholm format}. Stockholm
 format, the native alignment format used by \software{hmmer} and
-\software{Infernal} and the \database{Pfam} and \database{Rfam}
+\software{infernal} and the \database{Pfam} and \database{Rfam}
 databases, is documented in detail later in the guide.
 
 For now, what you need to know about the key features of the input file is:
@@ -133,7 +133,7 @@ Almost instantly, \prog{cmbuild} reads in the alignment, constructs a
 model, and saves that model to the new file \prog{my.cm}. It is a
 convention to use the \prog{.cm} suffix for model files; CM stands for
 ``covariance model'', another name for the profile SCFG architecture
-used by \software{Infernal} \cite{Eddy94}.
+used by \software{infernal} \cite{Eddy94}.
 
 The output from \prog{cmbuild} contains information about the size of your
 input alignment (in aligned columns and \# of sequences), and some statistics
@@ -148,17 +148,17 @@ compiled models of your RNA alignment.
 
 \begin{srefaq}{Can I build a model from a single sequence?}
 Yes. But a structure for the sequence must still be supplied.
-With single sequences, you can also build a RSEARCH \cite{KleinEddy03} CM 
+With single sequences, you can also build a \software{rsearch} \cite{KleinEddy03} CM 
 using the \prog{--rsearch} option to \prog{cmbuild}. There's more on
 this in a later section.
 \end{srefaq}
 
 \begin{srefaq}{Can I build a model from unaligned sequences?}
 In principle, CMs can be trained from unaligned sequences;
-however, this functionality is not yet implemented in \software{Infernal}.  I
+however, this functionality is not yet implemented in \software{infernal}.  I
 recommend CLUSTALW as an excellent, freely available multiple sequence
 alignment program. The original \prog{covet} CM training
-program from COVE, the predecessor of \software{Infernal} is also
+program from COVE, the predecessor of \software{infernal} is also
 still available by
 \htmladdnormallink{ftp}{ftp://selab.janelia.org/pub/software/cove/cove-2.4.4.tar.Z}.
 \end{srefaq}
@@ -190,7 +190,7 @@ cost to sensitivity. There's an example of this in section 6.
 there is no need to calibrate it.} For example, if you are only going
 to build alignments with a model of a large family like small subunit
 ribosomal RNA, don't waste time calibrating it. \prog{cmsearch} is the
-only \software{Infernal} program that uses E-values and HMM filters,
+only \software{infernal} program that uses E-values and HMM filters,
 so if you won't use it, don't calibrate your model.
 
 \begin{srefaq}{Do I really have to calibrate my model?} No, but we
@@ -227,7 +227,7 @@ don't worry about any of it now except the line with ``all'' in the
 ``stage'' column towards the end:
 
 \begin{sreoutput}
-# all         -    -    -          -      -       01:24:22
+# all         -    -    -          -      -       01:22:01
 \end{sreoutput}
 
 This line gives the total predicted time of this run of
@@ -266,12 +266,12 @@ worry about it right now. The search should take about 2 minutes.
 
 \begin{comment}
 # cmsearch :: search a sequence database with an RNA CM
-# INFERNAL 1.0 (June 2008)
-# Copyright (C) 2001-2008 HHMI Janelia Farm Research Campus
-# Freely distributed under the GNU General Public License (GPL)
+# INFERNAL 1.0 (January 2009)
+# Copyright (C) 2009 HHMI Janelia Farm Research Campus
+# Freely distributed under the GNU General Public License (GPLv3)
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# command:    cmsearch my.cm tosearch.300Kb.db
-# date:       Tue Jun 10 14:39:33 2008
+# command:    ../wd-1p0-branch/src/cmsearch my.cm tosearch.300Kb.db
+# date:       Tue Aug 18 18:24:25 2009
 # num seqs:   1
 # dbsize(Mb): 0.600000
 #
@@ -281,10 +281,10 @@ worry about it right now. The search should take about 2 minutes.
 #                            -------------------  --------------------
 # rnd  mod  alg  cfg   beta     E value   bit sc     surv     run time
 # ---  ---  ---  ---  -----  ----------  -------  -------  -----------
-    1   cm  cyk  loc  1e-07     100.011     3.84   0.0183  00:01:35.38
-    2   cm  ins  loc  1e-15       1.000    11.92   0.0001  00:00:10.10
+    1   cm  cyk  loc  1e-10     129.125     3.52   0.0236  00:01:36.26
+    2   cm  ins  loc  1e-15       1.000    12.29   0.0001  00:00:13.45
 # ---  ---  ---  ---  -----  ----------  -------  -------  -----------
-  all    -    -    -      -           -        -        -  00:01:45.49
+  all    -    -    -      -           -        -        -  00:01:49.71
 #
 \end{comment}
 
@@ -295,19 +295,17 @@ this case 3 hits are returned. Look at the first hit:
 CM: trna.5-1
 >example
 
-  Plus strand results:
-
  Query = 1 - 72, Target = 101 - 173
- Score = 78.06, E = 3.133e-21, P = 2.906e-26, GC =  53
+ Score = 78.06, E = 3.079e-20, P = 2.967e-25, GC =  53
 
            (((((((,,<<<<___.____>>>>,<<<<<_______>>>>>,,,,,<<<<<_______
          1 gCcgacAUaGcgcAgU.GGuAgcgCgccagccUgucAagcuggAGgUCCgggGUUCGAUu 59      
-           GC:+A::UAGC:CAGU GG AG:GCGCCAG:CUG+++A:CUGGAGGUCC:G:GUUCGAU 
+           GC::A::UAGC:CAGU GG AG:GCGCCAG:CUG+++A:CUGGAGGUCC:G:GUUCGAU 
        101 GCGGAUUUAGCUCAGUuGGGAGAGCGCCAGACUGAAGAUCUGGAGGUCCUGUGUUCGAUC 160     
 
            >>>>>))))))):
         60 CcccGUgucgGca 72      
-           C:C:G::U+:GCA
+           C:C:G::U::GCA
        161 CACAGAAUUCGCA 173     
 
 \end{sreoutput}
@@ -374,15 +372,15 @@ later in section 6.
 #                            -------------------  -----------------
 # rnd  mod  alg  cfg   beta    expected   actual  expected   actual
 # ---  ---  ---  ---  -----  ----------  -------  --------  -------
-    1   cm  cyk  loc  1e-07     100.011       70    0.0183   0.0152
+    1   cm  cyk  loc  1e-10     129.125      122    0.0236   0.0275
     2   cm  ins  loc  1e-15       1.000        3    0.0001   0.0003
 #
 # expected time    actual time
 # -------------  -------------
-    00:01:45.49    00:01:36.00
+    00:01:49.71    00:01:48.00
 //
 #
-# CPU time: 96.45u 0.01s 00:01:36.46 Elapsed: 00:01:36
+# CPU time: 108.33u 0.02s 00:01:48.35 Elapsed: 00:01:49
 \end{comment}
 
 \begin{srefaq}{How come the dbsize reported by \prog{cmsearch} is
@@ -428,7 +426,7 @@ look at the alignment:
 #=GF AU Infernal 1.0
 
 tRNA6        GUCCCGCUGGUGUAAU.GGAuAGCAUACGAUCCUUCUAAGUUUGCGG-UC
-tRNA7        ACUUUUAAAGGAUAGU.AGUuUAUCCGUUGGUCUUAGGAACCAAAAA--A
+tRNA7        ACUUUUAAAGGAUAGU.AGUuUAUCCGUUGGUCUUAGGAACCAAAAAA--
 tRNA8        GCGGAUUUAGCUCAGUuGGG.AGAGCGC------CAGAC----GAGGUCC
 #=GC SS_cons (((((((,,<<<<___.___._>>>>,<<<<<_______>>>>>,,,,,<
 #=GC RF      gCcgacAUaGcgcAgU.GGu.AgcgCgccagccUgucAagcuggAGgUCC
@@ -495,11 +493,11 @@ Look at the alignment for the target sequence tRNA8 (the last alignment in the o
   Plus strand results:
 
  Query = 1 - 72, Target = 1 - 63
- Score = 54.39, E = 4.664e-17, P = 6.303e-19, GC =  56
+ Score = 54.39, E = 2.209e-16, P = 3.112e-18, GC =  56
 
            (((((((,,<<<<___.____>>>>,<~~~~~~>,,,,,<<<<<_______>>>>>))))
          1 gCcgacAUaGcgcAgU.GGuAgcgCgc*[15]*gAGgUCCgggGUUCGAUuCcccGUguc 68      
-           GC:+A::UAGC:CAGU GG AG:GCGC      GAGGUCC:G:GUUCGAU C:C:G::U+
+           GC::A::UAGC:CAGU GG AG:GCGC      GAGGUCC:G:GUUCGAU C:C:G::U:
          1 GCGGAUUUAGCUCAGUuGGGAGAGCGC*[ 5]*GAGGUCCUGUGUUCGAUCCACAGAAUU 59      
 
            ))):
@@ -551,7 +549,7 @@ tRNA8        GCGGAUUUAGCUCAGUuGGG.AGAGCGC-----------cagac----GA
 #=GC RF      gCcgacAUaGcgcAgU.GGu.AgcgCgccagccUgucAa~~~~~gcuggA
 
 tRNA6        GG-UCCUGGUUCGAUCCCAGGGCGGGAUA
-tRNA7        AA--AUUGGUGCAACUCCAAAUAAAAGUA
+tRNA7        AAA--UUGGUGCAACUCCAAAUAAAAGUA
 tRNA8        GGUCCUGUGUUCGAUCCACAGAAUUCGCA
 #=GC SS_cons ,,,,<<<<<_______>>>>>))))))):
 #=GC RF      GgUCCgggGUUCGAUuCcccGUgucgGca
@@ -566,10 +564,10 @@ marked with \verb+~+ characters in the consensus secondary structure
 annotation and the reference (RF) annotation lines.
 
 Now you have successfully built a CM, calibrated it and used it search
-for and align new sequences using \software{Infernal} programs.
+for and align new sequences using \software{infernal} programs.
 These programs have some useful options that you haven't seen
 yet, which we discuss and in some cases demonstrate next. Before you
-start using \software{Infernal}, we strongly urge you to at
+start using \software{infernal}, we strongly urge you to at
 least skim this part. 
 
 \subsection{Important options to \prog{cmbuild}}
@@ -708,16 +706,16 @@ of alignments given the current model.
 The \software{rsearch} program \cite{KleinEddy03} implements a special case of
 homology search with covariance models in which only one training
 sequence/structure is known. \software{rsearch} had forked from
-\software{Infernal} a few years ago, but has been reintegrated.
+\software{infernal} a few years ago, but has been reintegrated.
 The main difference between \software{rsearch}
-and \software{Infernal} is the determination of the model scoring
-parameters. Whereas \software{Infernal} uses mean posterior estimates
+and \software{infernal} is the determination of the model scoring
+parameters. Whereas \software{infernal} uses mean posterior estimates
 (see the ``parameterization'' subsection of section 4),
 \software{rsearch} uses a RIBOSUM scoring matrix to determine
 emission scores. You can build CMs parameterized with
 RIBOSUM scores using the \prog{--rsearch <f>} option where \prog{<f>}
 is the RIBOSUM matrix file to use . (The matrix files are in the
-\prog{/matrices} subdirectory of \software{Infernal}). For more on how
+\prog{/matrices} subdirectory of \software{infernal}). For more on how
 these matrices were created see \cite{KleinEddy03}. Importantly, you
 can only use the \prog{--rsearch} option if the input training
 alignment has only 1 sequence, or if you use it in combination with
@@ -759,9 +757,9 @@ Here's an example of building five \prog{rsearch} CMs for tRNA:
 
 \begin{srefaq}{I used the \prog{cmbuild --rsearch} option and tested my
 results against the \software{rsearch} program, and the scores didn't
-match. Why?} \software{Infernal} can't build models quite exactly the
-same as \software{RSEARCH} does. The main reason is because
-\software{Infernal} uses probabilistic transition scores while
+match. Why?} \software{infernal} can't build models quite exactly the
+same as \software{rsearch} does. The main reason is because
+\software{infernal} uses probabilistic transition scores while
 \software{rsearch} does not. This difference leads to large
 differences in the bit scores from the programs, but the E-values of
 those scores should be similar (see section 5 for more on bit scores
@@ -808,6 +806,7 @@ same options to \prog{cmalign}. Here is an example:
 
 \end{comment}
 \begin{sreoutput}
+
 # STOCKHOLM 1.0
 #=GF AU Infernal 1.0
 
@@ -817,7 +816,7 @@ tRNA3        UCCGUGAUAGUUUAAU.GGUcAGAAUGGGCGCUUGUCGCGUGCCAGA-UC
 tRNA4        GCUCGUAUGGCGCAGU.GGU.AGCGCAGCAGAUUGCAAAUCUGUUGGUCC
 tRNA5        GGGCACAUGGCGCAGUuGGU.AGCGCGCUUCCCUUGCAAGGAAGAGGUCA
 tRNA6        GUCCCGCUGGUGUAAU.GGAuAGCAUACGAUCCUUCUAAGUUUGCGG-UC
-tRNA7        ACUUUUAAAGGAUAGU.AGUuUAUCCGUUGGUCUUAGGAACCAAAAA--A
+tRNA7        ACUUUUAAAGGAUAGU.AGUuUAUCCGUUGGUCUUAGGAACCAAAAAA--
 tRNA8        GCGGAUUUAGCUCAGUuGGG.AGAGCGC------CAGAC----GAGGUCC
 #=GC SS_cons (((((((,,<<<<___.___._>>>>,<<<<<_______>>>>>,,,,,<
 #=GC RF      gCcgacAUaGcgcAgU.GGu.AgcgCgccagccUgucAagcuggAGgUCC
@@ -887,12 +886,12 @@ the \prog{--withali} option. If we align the truncated sequence
 \user{cmalign --withali trna.5.sto my.cm toalign.1trunc.fa}\\
 \begin{comment}
 # cmalign :: align sequences to an RNA CM
-# INFERNAL 1.0 (June 2008)
-# Copyright (C) 2001-2008 HHMI Janelia Farm Research Campus
-# Freely distributed under the GNU General Public License (GPL)
+# INFERNAL 1.0 (January 2009)
+# Copyright (C) 2009 HHMI Janelia Farm Research Campus
+# Freely distributed under the GNU General Public License (GPLv3)
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# command: cmalign --withali trna.5.sto my.cm toalign.1trunc.fa
-# date:    Tue Jun 10 14:51:30 2008
+# command: ../wd-1p0-branch/src/cmalign --withali trna.5.sto my.cm toalign.1trunc.fa
+# date:    Tue Aug 18 18:41:14 2009
 #
 # cm name                    algorithm  config  sub  bands     tau
 # -------------------------  ---------  ------  ---  -----  ------
@@ -902,8 +901,7 @@ the \prog{--withali} option. If we align the truncated sequence
 #                              ------------------                       
 # seq idx  seq name       len     total    struct  avg prob      elapsed
 # -------  -----------  -----  --------  --------  --------  -----------
-        1  tRNA6-trunc     35    -19.29      8.84     0.672  00:00:00.02
-
+        1  tRNA6-trunc     35    -19.29      7.33     0.777  00:00:00.02
 \end{comment}
 
 {\samepage
@@ -916,7 +914,7 @@ tRNA2        UCCGAUAUAGUGUAAC.GGCuAUCACAUCACGCUUUCACCGUGGAGA-CC
 tRNA3        UCCGUGAUAGUUUAAU.GGUcAGAAUGGGCGCUUGUCGCGUGCCAGA-UC
 tRNA4        GCUCGUAUGGCGCAGU.GGU.AGCGCAGCAGAUUGCAAAUCUGUUGGUCC
 tRNA5        GGGCACAUGGCGCAGUuGGU.AGCGCGCUUCCCUUGCAAGGAAGAGGUCA
-tRNA6-trunc  AG--------------.--C.A---UACGAUCCUUCUAAGUUUGCGGUCC
+tRNA6-trunc  A---------------.-GC.A---UACGAUCCUUCUAAGUUUGCGGUCC
 #=GC SS_cons (((((((,,<<<<___.___._>>>>,<<<<<_______>>>>>,,,,,<
 #=GC RF      gCcgacAUaGcgcAgU.GGu.AgcgCgccagccUgucAagcuggAGgUCC
 
@@ -925,7 +923,7 @@ tRNA2        GGGGUUCGACUCCCCGUAUCGGAG
 tRNA3        GGGGUUCAAUUCCCCGUCGCGGAG
 tRNA4        UUAGUUCGAUCCUGAGUGCGAGCU
 tRNA5        UCGGUUCGAUUCCGGUUGCGUCCA
-tRNA6-trunc  U-------------GG-----UUC
+tRNA6-trunc  ----------U---GG-----UUC
 #=GC SS_cons <<<<_______>>>>>))))))):
 #=GC RF      gggGUUCGAUuCcccGUgucgGca
 //
@@ -934,7 +932,7 @@ tRNA6-trunc  U-------------GG-----UUC
 
 \begin{comment}
 #
-# CPU time: 0.04u 0.00s 00:00:00.04 Elapsed: 00:00:00
+# CPU time: 0.03u 0.00s 00:00:00.03 Elapsed: 00:00:00
 \end{comment}
 
 We know the alignment of the truncated sequence
@@ -948,12 +946,12 @@ Here's what happens with the \prog{--sub} option turned on:
 \user{cmalign --sub --withali trna.5.sto my.cm toalign.1trunc.fa }\\
 \begin{comment}
 # cmalign :: align sequences to an RNA CM
-# INFERNAL 1.0 (June 2008)
-# Copyright (C) 2001-2008 HHMI Janelia Farm Research Campus
-# Freely distributed under the GNU General Public License (GPL)
+# INFERNAL 1.0 (January 2009)
+# Copyright (C) 2009 HHMI Janelia Farm Research Campus
+# Freely distributed under the GNU General Public License (GPLv3)
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# command: cmalign --sub --withali trna.5.sto my.cm toalign.1trunc.fa
-# date:    Tue Jun 10 14:52:50 2008
+# command: ../wd-1p0-branch/src/cmalign --sub --withali trna.5.sto my.cm toalign.1trunc.fa
+# date:    Tue Aug 18 18:42:17 2009
 #
 # cm name                    algorithm  config  sub  bands     tau
 # -------------------------  ---------  ------  ---  -----  ------
@@ -994,7 +992,7 @@ tRNA6-trunc  CUGGUUC-----------------
 }
 \begin{comment}
 #
-# CPU time: 0.03u 0.00s 00:00:00.03 Elapsed: 00:00:00
+# CPU time: 0.02u 0.00s 00:00:00.02 Elapsed: 00:00:00
 \end{comment}
 
 This is much better. Briefly, the \prog{--sub} option uses an HMM to
@@ -1013,12 +1011,12 @@ this with alignment of a single sequence:
 \user{cmalign -p my.cm toalign.1.fa}\\
 \begin{comment}
 # cmalign :: align sequences to an RNA CM
-# INFERNAL 1.0 (June 2008)
-# Copyright (C) 2001-2008 HHMI Janelia Farm Research Campus
-# Freely distributed under the GNU General Public License (GPL)
+# INFERNAL 1.0 (January 2009)
+# Copyright (C) 2009 HHMI Janelia Farm Research Campus
+# Freely distributed under the GNU General Public License (GPLv3)
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# command: cmalign -p my.cm toalign.1.fa
-# date:    Tue Jun 10 14:53:52 2008
+# command: ../wd-1p0-branch/src/cmalign -p my.cm toalign.1.fa
+# date:    Tue Aug 18 18:43:10 2009
 #
 # cm name                    algorithm  config  sub  bands     tau
 # -------------------------  ---------  ------  ---  -----  ------
@@ -1028,7 +1026,7 @@ this with alignment of a single sequence:
 #                           ------------------                       
 # seq idx  seq name    len     total    struct  avg prob      elapsed
 # -------  --------  -----  --------  --------  --------  -----------
-        1  tRNA6        72     45.48     27.13     0.986  00:00:00.00
+        1  tRNA6        72     45.48     27.13     0.986  00:00:00.01
 \end{comment}
 
 {\samepage
@@ -1108,7 +1106,7 @@ you find and build a new model, and so on.
 
 Let's work through an example of iterative search with a Purine
 riboswitch model. Here's a list of the files we'll use, from the
-\prog{/tutorial} subdirectory of \software{Infernal}:
+\prog{/tutorial} subdirectory of \software{infernal}:
 
   \begin{sreitems}{}
   \item[\prog{purine.1.sto}] A Stockholm alignment file with a single
@@ -1199,7 +1197,7 @@ Let's look at the first hit:
   Plus strand results:
 
  Query = 1 - 97, Target = 586366 - 586467
- Score = 35.67, E = 3.979e-06, P = 3.121e-12, GC =  40
+ Score = 35.67, E = 2.223e-05, P = 1.851e-11, GC =  40
 
            :::::::::::::::::((((((((,,,<<<<<<.______..>>>>>>,,,,,,,,<<<
          1 AAAAUUGAAUAUCGUUUuaCuuguuUAUGuCGuG.AAUUGG..CaCGaCGUUUCUACaaG 57      
@@ -1213,8 +1211,8 @@ Let's look at the first hit:
 \end{sreoutput}
 }
 
-The E-value of this hit is 3.979e-06, which means we'd expect about
-0.000003979 hits of this score in searching a 5 Mb database of random
+The E-value of this hit is 2.223e-05, which means we'd expect about
+0.00002223 hits of this score in searching a 5 Mb database of random
 sequence. Obviously an E-value by itself doesn't prove this is a
 homologous sequence, but this is a good hit, and it warrants closer
 scrutiny. 
@@ -1295,7 +1293,7 @@ at the first, highest-scoring hit:
   Plus strand results:
 
  Query = 19 - 87, Target = 1401709 - 1401775
- Score = 39.23, E = 2.291e-06, P = 8.005e-13, GC =  45
+ Score = 39.23, E = 2.515e-06, P = 9.544e-13, GC =  45
 
            (((((((,,,<<<-<<<_______>>>->>>,,,,,,,,<<<<<<_________>>>>>>
         19 ACucauaUAagcCcGaGAAUAUGGCuCgGgcGUuUCUACcgggcgACCGuAAAucgcccg 78      
@@ -1310,7 +1308,7 @@ at the first, highest-scoring hit:
 }
 
 This hit looks very promising. As before, even with a good E-value
-(this one is 2.291e-06), a hit is not necessarily a real homolog, but
+(this one is 2.515e-06), a hit is not necessarily a real homolog, but
 this hit is definitely worth looking at more closely. The
 \prog{cmsearch} alignment is showing us that the loop regions have
 high primary sequence conservation and the stems exhibit
@@ -1334,8 +1332,9 @@ distinct Watson-Crick or U-G/G-U pairs are present are indicated by
 open circles. Notice that 16 of the 20 base pairs show compensatory
 mutations between at least two of our three sequences.
 
-Now, in theory we're ready for another round of iterative search. However, this
-is as far as we'll go with the guided tutorial. 
+Now that we've added a new homolog, we're ready for another round of
+iterative search. However, this is as far as we'll go with the guided
+tutorial. 
 
 This example was contrived to showcase the power of CMs to detect
 homologous structural RNAs with very little primary sequence
@@ -1350,7 +1349,7 @@ routines.
 \includegraphics[scale=0.5]{Figures/purineC_full}
 
 %Now that you've seen some examples of what
-%\software{Infernal} can do, you're ready to do your own RNA sequence
+%\software{infernal} can do, you're ready to do your own RNA sequence
 %analysis with CMs.
 
 % END ITERATIVE SEARCH SECTION
@@ -1359,7 +1358,7 @@ routines.
 \subsection{Parallelizing search, alignment and calibration with Message Passing
   Interface (MPI)}
 As mentioned in the Installation section, four of
-the seven \software{Infernal} programs can be run in parallel using
+the seven \software{infernal} programs can be run in parallel using
 MPI: \prog{cmalign}, \prog{cmcalibrate}, \prog{cmscore} and \prog{cmsearch}.
 These programs must be run using \prog{mpirun}. These MPI programs are
 under current development, and we have only tested them using the LAM
@@ -1406,9 +1405,9 @@ To see more help on other available options, do \prog{cmemit -h}
 
 \begin{sreoutput}
 # cmemit :: generate sequences from a covariance model
-# INFERNAL 1.0 (June 2008)
-# Copyright (C) 2001-2008 HHMI Janelia Farm Research Campus
-# Freely distributed under the GNU General Public License (GPL)
+# INFERNAL 1.0 (January 2009)
+# Copyright (C) 2009 HHMI Janelia Farm Research Campus
+# Freely distributed under the GNU General Public License (GPLv3)
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 Usage: cmemit [-options] <cmfile> <sequence output file>
 
@@ -1438,6 +1437,11 @@ available in UNIX manual pages. If they have been installed for your
 system, you can see this information with, e.g.:
 
 \user{man cmalign}\\
+
+If they have not been installed, you can open them by specifying the
+full path to the manual page files, for example:
+
+\user{man ../infernal-1.0/documentation/manpages/cmalign.man}\\
 
 Copies of the man pages are also provided at the end of this guide.
 

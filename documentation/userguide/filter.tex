@@ -8,7 +8,7 @@ briefly describe these two strategies and how they're employed within
 
 The two acceleration strategies are both filtering approaches.  The
 main idea of filtering is to use a fast algorithm to do a first-pass
-scan of the database with a wide net, allowing everything that
+scan of the database that hopefully allows everything that
 could possibly be a good hit to survive and eliminating everything
 that is very unlikely to be a good hit. After the filter is run, the
 expensive CM algorithms are run only on the surviving fraction of the
@@ -62,27 +62,28 @@ searches, but only if they won't miss potential homologs that a slow,
 non-filtered search would have found.  Weinberg's rigorous HMM filters
 addressed this very nicely, by guaranteeing that all hits above a
 certain CM threshold will survive the filter
-\cite{WeinbergRuzzo04}. Our approach takes a slightly different tact,
-and relaxes the 100\% guarantee to a 99.5\% probability using a
+\cite{WeinbergRuzzo04}. Our approach takes a slightly different tack,
+and relaxes the 100\% guarantee to a predicted 99.3\% probability using a
 empirical sampling technique. That is, we estimate our HMM filter will
-cause us to miss 0.5\% of the hits that a non-filtered search would have
+cause us to miss 0.7\% of the hits that a non-filtered search would have
 found. This sampling technique is performed by \prog{cmcalibrate} and
 takes advantage of the CM as a generative probabilistic model.
 Sequences are generated, or emitted, from the model and searched with
 both an expensive CM algorithm (either CYK or Inside) and the faster
 HMM Forward search algorithm. The HMM scores are ranked and the HMM
-filter threshold is set as $x$, the 99.5\% worst score. If we assume
+filter threshold is set as $x$, the 99.3\% worst score. If we assume
 the sample of sequences we drew from the HMM is representative of real
-RNA homologs of the family we're modelling, then using an HMM filter
-and a cutoff of $x$ will allow 99.5\% of the real homologs to
-survive. Of course, this is a strong and potentially dangerous
-assumption to make, but it essentially underlies our entire modelling
-approach - we're just assuming our CM is a good model of the family
-we're trying to model!  In other words, if this assumption is wrong,
+RNA homologs of the family we're modeling, then using an HMM filter
+and a cutoff of $x$ will allow 99.3\% of the real homologs to
+survive. 
+Of course, this is a strong and potentially dangerous
+assumption to make, but it essentially underlies our entire modeling
+approach - we are assuming our CM is a good model of the family
+we're trying to model.  In other words, if this assumption is wrong,
 we'll get poor performance for a variety of reasons, and an
 inappropriate filter threshold would be a relatively weak concern.  In
 the future, as CMs get better due to improved parameterization, etc.,
-our assumption will become more true, and this filtering strategy will
+the assumption will become more true, and this filtering strategy will
 improve as well. 
 
 When you calibrate a model with \prog{cmcalibrate} the HMM filter
@@ -113,10 +114,21 @@ and set as the HMM filter score threshold for that search.
 %Importantly, the final bit score threshold is dependent on
 %both the final E-value threshold ($0.1$ by default) \emph{and} the
 %database size. 
+If using this automatically determined threshold is predicted to allow
+less than a minimum fraction of $0.02$ of the database to survive, then the
+threshold that is predicted to allow exactly $0.02$ of the database to
+survive is used instead. This is done because using a stricter
+threshold will only accelerate the search by a small amount, so it is
+not really worth the potential loss of sensitivity. 
+The default value of $0.02$ can be changed to \prog{<x>} using the 
+\prog{--fil-Smin-hmm <x>} option.
 In some cases, it is determined that HMM filtering is a
 bad idea because the expected survival fraction is close to $1.0$,
 which mean the filter would save little if any time. In these cases,
-the HMM filter is turned off. This usually happens when searching
+the HMM filter is turned off. (By default the HMM filter is turned off
+if the expected survival fraction is above $0.5$, though this value
+can be changed to \prog{<x>} using \prog{--fil-Smax-hmm <x>}.)
+This usually happens when searching
 small databases, using low final bit score thresholds (or high final E
 value thresholds), or when searching with a model that has very little
 primary sequence conservation.
@@ -212,7 +224,7 @@ output. Let's look at the header and pre-search info section:
 
 \begin{sreoutput}
 # command:    cmsearch -E 0.001 purine.2.c.cm C.psychrerythraea.genome.fa
-# date:       Tue Jun 10 22:58:15 2008
+# date:       Tue Aug 18 14:54:12 2009
 # num seqs:   1
 # dbsize(Mb): 10.746360
 #
@@ -222,11 +234,11 @@ output. Let's look at the header and pre-search info section:
 #                            -------------------  --------------------
 # rnd  mod  alg  cfg   beta     E value   bit sc     surv     run time
 # ---  ---  ---  ---  -----  ----------  -------  -------  -----------
-    1  hmm  fwd  loc      -    4041.305     6.61   0.0541  00:02:24.21
-    2   cm  cyk  loc  1e-07      93.161     8.91   0.0012  00:02:29.60
-    3   cm  ins  loc  1e-15     1.0e-03    29.33  8.9e-09  00:00:18.23
+    1  hmm  fwd  loc      -    4041.305     6.61   0.0541  00:02:31.80
+    2   cm  cyk  loc  1e-10     113.651     8.58   0.0015  00:02:44.99
+    3   cm  ins  loc  1e-15     1.0e-03    29.33  8.9e-09  00:00:23.66
 # ---  ---  ---  ---  -----  ----------  -------  -------  -----------
-  all    -    -    -      -           -        -        -  00:05:12.05
+  all    -    -    -      -           -        -        -  00:05:40.46
 \end{sreoutput}
 
 First comes the command used and date of execution. Then the database
@@ -262,7 +274,7 @@ search. Here are descriptions of the different columns:
 \item[\emprog{beta}] the tail loss probability for the QDB
   calculation. This is the amount of probability mass allowed outside
   each band on the DP matrix. For round 2, the QDB filter round, this
-  value is 1e-07, so 99.9999\% of the probability mass is within each
+  value is 1e-10, so 99.9999999\% of the probability mass is within each
   band. For the final round of searching, the bands are less strict,
   with beta values of 1e-15. For more information on this see
   \cite{NawrockiEddy07}.
@@ -613,7 +625,7 @@ from the tutorial. We'll assume here that you've gone through tutorial
 section of the guide and the examples earlier in this section (if not,
 this part may not make sense).  First, build a model from the
 \prog{tRNA.5.sto} Stockholm file (from the \prog{/tutorial/}
-subdirectory of \software{Infernal}). We'll use the \prog{-F} option
+subdirectory of \software{infernal}). We'll use the \prog{-F} option
 which allows us to overwrite the file \prog{my.cm} if it exists.
 
 \user{cmbuild -F my.cm trna.5.sto}\\

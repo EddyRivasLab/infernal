@@ -4,8 +4,8 @@ The \prog{cmsearch} program gives you a ranked list of hits in a
 sequence database.  Which ones are likely to be true homologues and
 which ones are likely to be nonhomologous to your query CM?
 
-\software{Infernal} gives you at least two scoring criteria to judge
-by: the \software{Infernal} raw score, and an E-value. Additionally,
+\software{infernal} gives you at least two scoring criteria to judge
+by: the \software{infernal} raw score, and an E-value. Additionally,
 Rfam models carry a third set of criteria: three expert-calibrated raw
 score cutoffs that the Rfam database maintainers set. How should you
 interpret all this information?
@@ -22,9 +22,9 @@ a hit this good in a target database of random sequences of the same
 size as the one you're searching. {\em
 Typically, I trust the results of searches at about E=0.1 and below,
 and I examine the hits manually down to E=10 or so.}  However, be
-alert; \software{Infernal} E-values are not perfect. 
+alert; \software{infernal} E-values are not perfect. 
 
-\item \software{Infernal} bit scores are a stricter criterion: they
+\item \software{infernal} bit scores are a stricter criterion: they
   reflect whether the sequence is a better match to the profile model
   (positive score) or to the null model of nonhomologous sequences
   (negative score).  A bit score above $\log_2$ of the size of the
@@ -65,7 +65,7 @@ these numbers is described below.
   it is significantly related to the bacterial SRP family (also correct).
 \end{srefaq}
 
-\subsection{In more detail: \software{Infernal} bit scores}
+\subsection{In more detail: \software{infernal} bit scores}
 
 The bit score is a log-odds score in log base two (thus, in units of
 {\em bits}). Specifically, it is:
@@ -78,7 +78,7 @@ S = \log_2 \frac {P( \mbox{seq} | \mbox{CM})} { P (\mbox{seq} |
 $P( \mbox{seq} | \mbox{CM})$ is the probability of the target
 sequence according to your CM. $ P (\mbox{seq} | \mbox{null}) $ is
 the probability of the target sequence given a ``null hypothesis''
-model of the statistics of random sequence. In \software{Infernal}, this null model
+model of the statistics of random sequence. In \software{infernal}, this null model
 is a simple one-state CM that says that random sequences are i.i.d.
 sequences with a specific residue composition, which by default is
 equiprobable across the four RNA nucleotides ($P(A) = P(C) = P(G) =
@@ -97,7 +97,7 @@ bits. (This is discussed in more detail in section 6). Alternatively,
 for a specific sensible use cutoffs, read about how the Rfam
 TC/NC/GA cutoffs are set and used (below).
 
-\subsection{In more detail: \software{Infernal} E-values}
+\subsection{In more detail: \software{infernal} E-values}
 
 The E-value is the expected number of false positives with scores at
 least as high as your hit.
@@ -154,7 +154,7 @@ $1000$ for a $1000$ nucleotide database. This issue is specific
 to local searches, and does not apply to glocal searches (enabled with the
  \prog{-g} option). 
 
-\subsubsection{fitting exponential tails to \software{Infernal} score histograms}
+\subsubsection{fitting exponential tails to \software{infernal} score histograms}
 
 The \prog{cmcalibrate} program fits exponential tails to scores of the
 model against random sequences. When \prog{cmsearch} is run and hits
@@ -249,13 +249,13 @@ for each combination of model and algorithm (4 choices) and configuration
 tails. We explained the difference between local versus glocal
 configuration in the tutorial, now we'll discuss different search algorithms. 
 
-\subsection{In more detail: different search algorithms in \software{Infernal}}
+\subsection{In more detail: different search algorithms in \software{infernal}}
 \prog{cmsearch} implements four several different search 
 algorithms, Inside and CYK for profile SCFG search with CMs, and
 Forward and Viterbi for profile HMM search with CP9 HMMs.
 These algorithms
 differ in the meaning of the score that they calculate. Above we
-oversimplified an \software{Infernal} bit score as:
+oversimplified an \software{infernal} bit score as:
 \[
 	S = \log_2 \frac {P( \mbox{seq} | \mbox{CM})} { P (\mbox{seq} |
 	\mbox{null})}.
@@ -295,7 +295,7 @@ E-values takes a very small fraction of the running time of
 example). CYK \emph{is} used, but mainly as a filter in
 \prog{cmsearch}. CYK makes a good filter for two reasons. First, it can be
 more efficiently implemented than the Inside
-algorithm. \software{Infernal}'s current implementation of CYK is
+algorithm. \software{infernal}'s current implementation of CYK is
 about three times faster than Inside (you can see this in the
 predicted run times in the \prog{--forecast} example). Secondly,
 high scoring CYK hits, the ones where interested in, tend to have a
@@ -339,7 +339,7 @@ This is because CM scores don't fit the exponential tail distribution
 extremely well. Empirically, local alignment scores returned from
 local searches fit exponential tails fairly well, and glocal alignment
 scores fit less well. We will continue to work on making E-values more
-accurate in future versions of \software{Infernal}.
+accurate in future versions of \software{infernal}.
 
 One important factor in the accuracy of E-values is the GC content of
 the target database. This is because many CMs are biased towards
@@ -361,7 +361,7 @@ example). Conversely, when a target database with GC content above
 46\% is searched, the effect is the opposite, and higher E-values
 often result (you might observe only 1-5 hits with an E-value less than
 25). These effects are the average case, but different models will
-give different results. We consider the E-values in \software{Infernal} a
+give different results. We consider the E-values in \software{infernal} a
 work in progress, so feel free to report examples of particularly bad
 (or good) performance of E-values to us.
 
@@ -406,7 +406,7 @@ artificially imposes a ``flat'', nonhierarchical structure on RNA
 sequence space.  Rfam asserts that no Rfam family is related to any
 other Rfam family. This is obvious nonsense: many Rfam families are in
 fact homologous.  The different SRP families are one example; the
-different RNaseP families are another. \software{Infernal} often
+different RNaseP families are another. \software{infernal} often
 detect significant relationships between families that Rfam chooses to
 suppress. In these cases, the Rfam GA cutoff will be elevated to
 artifically separate two homologous but distantly related subgroups of
@@ -421,7 +421,7 @@ the experiment with CMs (and E-values) instead of just looking at
 curated Rfam classifications.
 \end{srefaq}
 
-The mechanism that \software{Infernal} uses to incorporate up these cutoffs is
+The mechanism that \software{infernal} uses to incorporate up these cutoffs is
 general: Stockholm format multiple sequence alignments can carry
 appropriate TC, NC, and GA markup lines. This means that you can use a
 Rfam-like cutoff system if you like, just by adding the appropriate
@@ -444,7 +444,7 @@ filtered searches with Rfam cutoffs using the \prog{cmstat} program.
 
 \subsection{Biased composition filtering: the null3 model}
 
-I've lied. \software{Infernal} bit scores are actually calculated as
+I've lied. \software{infernal} bit scores are actually calculated as
 log odds scores relative to \emph{two} null hypotheses. The first is the null model
 built into the CM when it was built with \prog{cmbuild}.
 The second, called \emph{null3}, is an \emph{ad hoc} model calculated
@@ -457,7 +457,7 @@ regions in the target sequence.
 Common biased composition filters like XNU, DUST, and SEG are
 qualitative filters -- if a region is detected as biased composition,
 it is masked (the residues are converted to X's).  The
-\software{Infernal} composition filter is a quantitative filter, that
+\software{infernal} composition filter is a quantitative filter, that
 tests whether the sequence is a better match to the CM, the
 null (random composition) model, or a null3 model of biased nucleotide
 composition.
@@ -465,14 +465,14 @@ composition.
 This is a Good Thing, but on the other hand, the null3 model is not
 very sophisticated. It is a single-state HMM just like the main null
 model, which means it only captures residue composition, like DUST; no
-attempt is made in \software{Infernal} to filter short-period repetitive sequences
+attempt is made in \software{infernal} to filter short-period repetitive sequences
 like the XNU algorithm does. 
 
 The null3 model was motivated by the observation that many
 high-scoring false positive hits in \prog{cmsearch} are to regions of
 the target database with with highly biased residue composition, in
 particular regions with high percentages of A and U residues. The
-first null model used by \software{Infernal} is by default 25\% A, C,
+first null model used by \software{infernal} is by default 25\% A, C,
 G, and U (this model can be changed with the \prog{--null} option to
 \prog{cmbuild}). If a model has a bias for a particular residue, for
 example A,  and a target regions is composed of an overrepresentation
@@ -490,14 +490,14 @@ then the null3 model probabilitiles will be calculated as $(0.4, 0.1,
 But now we've got \emph{two} null hypotheses. We said we report a bit
 score that's a log-odds ratio of our model likelihood and \emph{one}
 null hypothesis likelihood. How do we calculate a score if we have
-more than one null hypothesis? \software{Infernal} does a bit of algebraic sleight
+more than one null hypothesis? \software{infernal} does a bit of algebraic sleight
 of hand here, to arrive at an additive correction to the original
 score that it calls the ``null3 score correction''. 
 
 \subsubsection{derivation of the null3 score correction}
 
 We arrived at the parameters of the null3 model in a very \emph{ad
-hoc} way. However, after that, the way \software{Infernal} arrives at the final bit
+hoc} way. However, after that, the way \software{infernal} arrives at the final bit
 score once the null3 parameters have been determined is clean
 (e.g. derivable) Bayesian probability theory. It is analagous to the
 way \software{HMMER} uses the \emph{null2} score correction.
@@ -522,7 +522,7 @@ $M$ is:
    P(M | D) = \frac{P(D | M) P(M)}{P(D | M) P(M) + P(D | N) P(N)}
 \]
 
-Recall that the log odds score reported by \software{Infernal}'s alignment
+Recall that the log odds score reported by \software{infernal}'s alignment
 algorithms is
 
 \[
@@ -561,9 +561,9 @@ $N_i$. Then, by algebraic rearrangement of Bayes' theorem,
    S = \log \frac{P(S | M) P(M)}{ \sum_{i} P(S | N_i) P(N_i)}. 
 \]
 
-We saw above that \software{Infernal} internally calculates a log odds score $s$, of
+We saw above that \software{infernal} internally calculates a log odds score $s$, of
 the model relative to the first null hypothesis. Let's now call that
-$s_M$, the alignment score of the model. \software{Infernal} extends that same
+$s_M$, the alignment score of the model. \software{infernal} extends that same
 scoring system to all additional competing hypotheses, calculating a
 log odds score relative to the first null hypothesis for any
 additional null hypotheses $i > 1$:
@@ -596,13 +596,13 @@ original score, $(s_M + \pi_M)$:
   S = (s_M + \pi_M) - \log \left( 1 + \sum_{i>1} e^{s_i + \pi_i} \right)
 \]
 
-So, to calculate its reported score, \software{Infernal} uses four quantities:
+So, to calculate its reported score, \software{infernal} uses four quantities:
 
 \begin{enumerate}
 \item [$s_M$] The (simple, uncorrected) log odds score for the model,
 calculated by optimal alignment of the model to the sequence.
 
-\item [$\pi_M$] The log odds of the priors, $\log P(M)/P(N_1)$. \software{Infernal}
+\item [$\pi_M$] The log odds of the priors, $\log P(M)/P(N_1)$. \software{infernal}
    implicitly assumes this factor to be 0.
 
 \item [$s_2$] The (simple, uncorrected) log odds score
@@ -610,7 +610,7 @@ calculated by optimal alignment of the model to the sequence.
    of the alignment under the null3 model.
 
 \item [$\pi_2$] The log odds of the priors, $\log P(N_2)/P(N_1)$. 
-\software{Infernal} arbitrarily assumes that the null3 model is
+\software{infernal} arbitrarily assumes that the null3 model is
 $\frac{1}{32}$ as likely as the main null model, so this factor
 is -5 bits.
 \end{enumerate}
@@ -621,10 +621,10 @@ The code that calculates the null3 correction is in
 The null3 correction is usually close to zero, for random sequences,
 but becomes a significant quantitative penalty on biased composition
 sequences.  It gets added to the original alignment score to form
-\software{Infernal}'s final bit score.
+\software{infernal}'s final bit score.
 
 The null3 score correction is introduced in version 1.0 and was not
-present in any of the 0.x versions of \software{Infernal}. This can
+present in any of the 0.x versions of \software{infernal}. This can
 lead to large differences in the scores reported by 1.0 and previous
 versions. 
 
