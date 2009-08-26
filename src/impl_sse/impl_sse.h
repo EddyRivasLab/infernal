@@ -52,7 +52,7 @@ typedef struct cm_consensus_s {
   /* Reduced-precision uchar scores */
   float     scale_b;
   uint8_t   base_b;
-//uint8_t   bias_b;
+  uint8_t   bias_b;
   uint8_t **oesc;
 } CM_CONSENSUS;
 
@@ -62,6 +62,8 @@ typedef struct cm_consensus_s {
 
 /* cm_optimized.c */
 int16_t wordify(float scale_w, float sc);
+uint8_t biased_byteify(CM_CONSENSUS *ccm, float sc);
+uint8_t unbiased_byteify(CM_CONSENSUS *ccm, float sc);
 
 CM_OPTIMIZED* cm_optimized_Convert(const CM_t *cm);
 void cm_optimized_Free(CM_OPTIMIZED *ocm);

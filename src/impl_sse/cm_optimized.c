@@ -139,8 +139,10 @@ CM_CONSENSUS*
 cm_consensus_Convert(CM_t *cm)
 {
   int status;
-  int v, w, x, y;
+  int v, w, x, y, z;
   int offset;
+  int pairs, singlets;
+  uint8_t *oesc_next;
   CM_CONSENSUS *ccm = NULL;
 
   ESL_STACK *oldstate;
@@ -156,10 +158,15 @@ cm_consensus_Convert(CM_t *cm)
   ccm->abc = esl_alphabet_Create(cm->abc->type);
 
   /* Set number of consensus states */
-  ccm->M = 0;
+  pairs   = CMCountStatetype(cm, MP_st);
+  singlets= CMCountStatetype(cm, ML_st) + CMCountStatetype(cm, MR_st);
+  /*
+  ccm->M  = 0;
   ccm->M += CMCountStatetype(cm, MP_st);
   ccm->M += CMCountStatetype(cm, ML_st);
   ccm->M += CMCountStatetype(cm, MR_st);
+  */
+  ccm->M  = pairs + singlets;
   ccm->M += CMCountStatetype(cm,  S_st);
   ccm->M += CMCountStatetype(cm,  B_st);
   ccm->M += CMCountStatetype(cm,  E_st);
@@ -169,9 +176,17 @@ cm_consensus_Convert(CM_t *cm)
   ESL_ALLOC(ccm->sttype, sizeof(char   ) * ccm->M);
   x = v = 0;
 
+  /* Setup emissions */
+  ESL_ALLOC(ccm->oesc,    sizeof(uint8_t *) * ccm->M);
+  ESL_ALLOC(ccm->oesc[0], sizeof(uint8_t  ) * (singlets * ccm->abc->Kp + pairs * ccm->abc->Kp * ccm->abc->Kp));
+  oesc_next = ccm->oesc[0];
+
   while (v != -1) {
     ccm->sttype[x] = cm->sttype[v];
     if (cm->sttype[v] == E_st) {
+      ccm->next[x] = -1;
+      ccm->oesc[x] = NULL;
+
       /* pop next x and v off stack */
       if (esl_stack_IPop(oldstate, &v) == eslEOD) { v = -1; }
       if (esl_stack_IPop(newstate, &x) == eslEOD) { x = -1; }
@@ -188,8 +203,7 @@ cm_consensus_Convert(CM_t *cm)
       offset += CMSubtreeCountStatetype(cm, w,  E_st);
 
       ccm->next[x] = x+offset;
-
-    //ccm->oesc[x] = NULL;
+      ccm->oesc[x] = NULL;
 
       /* push y and x+offset on stacks */
       esl_stack_IPush(oldstate, y);
@@ -204,6 +218,19 @@ cm_consensus_Convert(CM_t *cm)
       while (cm->sttype[y] == D_st || cm->sttype[v] == IL_st || cm->sttype[y] == IR_st) { y++; }
 
       ccm->next[x] = x+1;
+      ccm->oesc[x] = oesc_next;
+      if (cm->sttype[v] == MP_st) {
+        for (z = 0; z < (ccm->abc->Kp * ccm->abc->Kp); z++) {
+          ccm->oesc[v][z] = biased_byteify(ccm, cm->oesc[v][z]);
+        }
+        oesc_next += ccm->abc->Kp * ccm->abc->Kp;
+      }
+      else if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st) {
+        for (z = 0; z < ccm->abc->Kp; z++) {
+          ccm->oesc[v][z] = biased_byteify(ccm, cm->oesc[v][z]);
+        }
+        oesc_next += ccm->abc->Kp;
+      }
       x++;
       v = y;
     }
@@ -226,8 +253,10 @@ ERROR:
 void
 cm_consensus_Free(CM_CONSENSUS *ccm)
 {
-  if (ccm->next   != NULL) free(ccm->next);
-  if (ccm->sttype != NULL) free(ccm->sttype);
+  if (ccm->next    != NULL) free(ccm->next);
+  if (ccm->sttype  != NULL) free(ccm->sttype);
+  if (ccm->oesc[0] != NULL) free(ccm->oesc[0]);
+  if (ccm->oesc    != NULL) free(ccm->oesc);
 
   esl_alphabet_Destroy(ccm->abc);
 
@@ -249,3 +278,36 @@ wordify(float scale_w, float sc)
   else return (int16_t) sc;
 }
 
+/* biased_byteify()
+ * Converts original log-odds residue score to a rounded biased uchar cost.
+ * e.g. a score of +3.2, with scale 3.0 and bias 12, becomes 2.
+ *    3.2*3 = 9.6; rounded = 10; bias-10 = 2.
+ * When used, we add the bias, then subtract this cost.
+ * (A cost of +255 is our -infinity "prohibited event")
+ */
+uint8_t
+biased_byteify(CM_CONSENSUS *ccm, float sc)
+{
+  uint8_t b;
+
+  sc  = -1.0f * roundf(ccm->scale_b * sc);                          /* ugh. sc is now an integer cost represented in a float...
+    */
+  b   = (sc > 255 - ccm->bias_b) ? 255 : (uint8_t) sc + ccm->bias_b; /* and now we cast, saturate, and bias it to an unsigned char cost
+... */
+  return b;
+}
+
+/* unbiased_byteify()
+ * Convert original transition score to a rounded uchar cost
+ * e.g. a score of -2.1, with scale 3.0, becomes a cost of 6.
+ * (A cost of +255 is our -infinity "prohibited event")
+ */
+uint8_t
+unbiased_byteify(CM_CONSENSUS *ccm, float sc)
+{
+  uint8_t b;
+
+  sc  = -1.0f * roundf(ccm->scale_b * sc);       /* ugh. sc is now an integer cost represented in a float...    */
+  b   = (sc > 255.) ? 255 : (uint8_t) sc;       /* and now we cast and saturate it to an unsigned char cost... */
+  return b;
+}
