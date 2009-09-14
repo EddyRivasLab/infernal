@@ -75,15 +75,11 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
   int       v, w, y;            /* state indices */
   int       jp_v;  	        /* offset j for state v */
   int       jp_y;  	        /* offset j for state y */
-  int       jp_S;               /* offset j for non-terminal S */
+  int       jp_Sv, jp_Sy;       /* offset j for non-terminal S */
 //  int       jp_g;               /* offset j for gamma (j-i0+1) */
   int       L;                  /* length of the subsequence (j0-i0+1) */
   int       sd;                 /* StateDelta(cm->sttype[v]), # emissions from v */
-//  int      *dnA, *dxA;          /* tmp ptr to 1 row of dnAA, dxAA */
-//  int       dn,   dx;           /* minimum/maximum valid d for current state */
-//  int       cnum;               /* number of children for current state */
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
-//  float   **init_scAA;          /* [0..v..cm->M-1][0..d..W] initial score for each v, d for all j */
 //  double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
   /* Contract check */
@@ -105,8 +101,6 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
   /* Re-ordered SIMD vectors */
   int sW, z, delta;
   int *esc_stale;
-//  __m128   *mem_init_scAA;
-//  __m128  **vec_init_scAA;
   __m128i   *mem_ntM_v;
   __m128i ***vec_ntM_v;
   __m128i   *mem_ntM_all;
@@ -150,10 +144,7 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 //
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
   ESL_ALLOC(jp_wA, sizeof(float) * (W+1));
-//
-  /* precalculate the initial scores for all cells */
-//  init_scAA = FCalcInitDPScores(cm);
-//
+
   /* if do_null3: allocate and initialize act vector */
 //  if(do_null3) { 
 //    ESL_ALLOC(act, sizeof(double *) * (W+1));
@@ -174,36 +165,33 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
   sW = W/16 + 1; 
 //  zerov = _mm_setzero_ps();
   neginfv = _mm_set1_epi8(BADVAL);
-//  ESL_ALLOC(vec_init_scAA,      sizeof(__m128 *) * cm->M);
-//  ESL_ALLOC(mem_init_scAA,      sizeof(__m128  ) * cm->M * (sW+2) + 15);
   ESL_ALLOC(vec_ntM_v,        sizeof(__m128i**) * 2);
   ESL_ALLOC(vec_ntM_v[0],     sizeof(__m128i *) * 2 * ccm->M);
   ESL_ALLOC(mem_ntM_v,        sizeof(__m128i  ) * 2 * ccm->M * (sW+2) + 15);
   ESL_ALLOC(vec_ntM_all,      sizeof(__m128i *) * 2);
   ESL_ALLOC(mem_ntM_all,      sizeof(__m128i  ) * 2 * (sW+2) + 15);
   ESL_ALLOC(vec_ntS,          sizeof(__m128i *) * (W+1));
-  ESL_ALLOC(mem_ntS,          sizeof(__m128i  ) * (W+1) * (sW) + 15);
+  ESL_ALLOC(mem_ntS,          sizeof(__m128i  ) * (W+1) * (sW+2) + 15);
   ESL_ALLOC(vec_esc,          sizeof(__m128i**) * ccm->abc->Kp);
   ESL_ALLOC(vec_esc[0],       sizeof(__m128i *) * ccm->abc->Kp * ccm->M);
   ESL_ALLOC(mem_esc,          sizeof(__m128i  ) * ccm->abc->Kp * ccm->M * (sW) + 15);
   ESL_ALLOC(esc_stale,        sizeof(int     *) * ccm->abc->Kp);
   ESL_ALLOC(mem_tmpary,       sizeof(__m128i  ) * (W+1) + 15);
 //  ESL_ALLOC(mem_bestr, sizeof(__m128) * sW + 15);
-//
+
 //  vec_bestr = (__m128 *) (((unsigned long int) mem_bestr + 15) & (~0xf));
   tmpary = (__m128i *) (((unsigned long int) mem_tmpary + 15) & (~0xf));
-//  vec_init_scAA[0] = (__m128 *) (((unsigned long int) mem_init_scAA + 15) & (~0xf)) + 2;
   vec_ntM_v[1] = vec_ntM_v[0] + ccm->M;
   vec_ntM_v[0][0] = (__m128i *) (((unsigned long int) mem_ntM_v + 15) & (~0xf)) + 2;
   vec_ntM_v[1][0] = vec_ntM_v[0][0] + ccm->M * (sW+2);
   vec_ntM_all[0] = (__m128i *) (((unsigned long int) mem_ntM_all + 15) & (~0xf)) + 2;
   vec_ntM_all[1] = vec_ntM_all[0] + (sW+2);
-  vec_ntS[0] = (__m128i *) (((unsigned long int) mem_ntS + 15) & (~0xf));
+  vec_ntS[0] = (__m128i *) (((unsigned long int) mem_ntS + 15) & (~0xf)) + 2;
   vec_esc[0][0] = (__m128i *) (((unsigned long int) mem_esc + 15) & (~0xf));
   esc_stale[0] = -1;
   for (j = 1; j <= W; j++)
     {
-      vec_ntS[j] = vec_ntS[0] + j*(sW);
+      vec_ntS[j] = vec_ntS[0] + j*(sW+2);
     }
   for (z = 1; z < ccm->abc->Kp; z++)
     {
@@ -213,20 +201,15 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
     }
   for (v = 1; v < ccm->M; v++)
     {
-//      vec_init_scAA[v] = vec_init_scAA[0] + v*(sW+2);
       vec_ntM_v[0][v] = vec_ntM_v[0][0] + v*(sW+2);
       vec_ntM_v[1][v] = vec_ntM_v[1][0] + v*(sW+2);
       for (z = 0; z < ccm->abc->Kp; z++)
         vec_esc[z][v] = vec_esc[z][0] + v*(sW);
     }
-//
+
 //  for (v = 0; v < cm->M; v++) {
 //    for (d = 0; d < sW; d++)
 //      {
-//        vec_init_scAA[v][d] = _mm_setr_ps((     d <= W) ? init_scAA[v][     d] : -eslINFINITY,
-//                                          (  sW+d <= W) ? init_scAA[v][  sW+d] : -eslINFINITY,
-//                                          (2*sW+d <= W) ? init_scAA[v][2*sW+d] : -eslINFINITY,
-//                                          (3*sW+d <= W) ? init_scAA[v][3*sW+d] : -eslINFINITY);
 //        if (cm->stid[v] == BEGL_S) {
 //          for (j = 0; j <= W; j++)
 //            {
@@ -247,14 +230,12 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 //                                           (3*sW+d <= W) ? alpha[1][v][3*sW+d] : -eslINFINITY);
 //        }
 //      }
-//    vec_init_scAA[v][-1] = esl_sse_rightshift_ps(vec_init_scAA[v][sW-1],neginfv);
-//    vec_init_scAA[v][-2] = esl_sse_rightshift_ps(vec_init_scAA[v][sW-2],neginfv);
 //    vec_alpha[0][v][-1]  = esl_sse_rightshift_ps( vec_alpha[0][v][sW-1],neginfv);
 //    vec_alpha[0][v][-2]  = esl_sse_rightshift_ps( vec_alpha[0][v][sW-2],neginfv);
 //    vec_alpha[1][v][-1]  = esl_sse_rightshift_ps( vec_alpha[1][v][sW-1],neginfv);
 //    vec_alpha[1][v][-2]  = esl_sse_rightshift_ps( vec_alpha[1][v][sW-2],neginfv);
 //    }
-//
+
   /* The main loop: scan the sequence from position i0 to j0.
    */
   for (j = i0; j <= j0; j++) 
@@ -262,18 +243,16 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 //      jp_g = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (index in gamma* data structures) */
       cur  = j%2;
       prv  = (j-1)%2;
-//      if(jp_g >= W) { dnA = dnAA[W];     dxA = dxAA[W];    }
-//      else          { dnA = dnAA[jp_g];  dxA = dxAA[jp_g]; }
-//      /* precalcuate all possible rolling ptrs into the BEGL deck, so we don't wastefully recalc them inside inner DP loop */
+      /* precalcuate all possible rolling ptrs into the BEGL deck, so we don't wastefully recalc them inside inner DP loop */
       for(d = 0; d <= W; d++) jp_wA[d] = (j-d)%(W+1);
-//
+
 //      /* if do_null3 (act != NULL), update act */
 //      if(act != NULL) { 
 //	esl_vec_DCopy(act[(jp_g-1)%(W+1)], cm->abc->K, act[jp_g%(W+1)]);
 //	esl_abc_DCount(cm->abc, act[jp_g%(W+1)], dsq[j], 1.);
 //	/*printf("j: %3d jp_g: %3d jp_g/W: %3d act[0]: %.3f act[1]: %.3f act[2]: %.3f act[3]: %.3f\n", j, jp_g, jp_g%(W+1), act[jp_g%(W+1)][0], act[jp_g%(W+1)][1], act[jp_g%(W+1)][2], act[jp_g%(W+1)][3]);*/
 //      }
-//
+
       /* Build/increment pre-calc'd 3D matrix for esc  */
       /* 1st dim: dsq[j] (1..abc->Kp)              */
       /* 2nd dim: v      (0..cm->M-1)              */
@@ -379,142 +358,29 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
         esc_stale[dsq[j]] = j;
       }
 
-      jp_S = j % (W+1);
+      /* Start updating matrix values */
+      jp_Sv = j % (W+1);
 
+      /* Rule: S -> Sa */
+      for (d = 0; d < sW; d++) {
+        vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], vec_ntS[jp_Sv-1][d-1]);
+      }
+      vec_ntS[jp_Sv][-1] = BYTERSHIFT1(vec_ntS[jp_Sv][sW-1]);
+      vec_ntS[jp_Sv][-2] = BYTERSHIFT1(vec_ntS[jp_Sv][sW-2]);
+
+      /* Rule: M -> x_m S y_n */
       for (v = ccm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
 	{
-//	  float const *tsc_v = cm->tsc[v];
-          __m128i vec_tmp_bifl;
-          __m128i vec_tmp_bifr;
+	  jp_v  = cur;
+	  jp_y  = (ccm->sttype[v] == ML_st) ? cur : prv;
+	  jp_Sy = (ccm->sttype[v] == ML_st) ? jp_Sv : jp_Sv-1;
+          sd    = StateDelta(ccm->sttype[v]);
 
-//	  /* float sc; */
-	  jp_v = cur;
-	  jp_y = (ccm->sttype[v] == ML_st) ? cur : prv;
-	  sd   = StateDelta(ccm->sttype[v]);
-
-	    uint8_t *vec_access;
-//            for (d = 0; d < sW; d++) {
-//              vec_alpha[jp_v][v][d] = vec_init_scAA[v][d];
-//            }
-// 
-            int dkindex = 0;
-            for (k = 0; k < W && k <=j; k++) {
-              vec_access = (uint8_t *) (&vec_ntM_all[jp_y][k%sW])+k/sW;
-              vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
-
-              for (d = 0; d < sW; d++) {
-                if (dkindex >= sW) dkindex -= sW;
-                if      (k <=       d) { vec_tmp_bifl =             vec_ntS[jp_wA[k]][dkindex]; }
-                //else { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,(k-d-1)%sW+1); }
-                else if (k <=  1*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 1); }
-                else if (k <=  2*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 2); }
-                else if (k <=  3*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 3); }
-                else if (k <=  4*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 4); }
-                else if (k <=  5*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 5); }
-                else if (k <=  6*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 6); }
-                else if (k <=  7*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 7); }
-                else if (k <=  8*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 8); }
-                else if (k <=  9*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 9); }
-                else if (k <= 10*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,10); }
-                else if (k <= 11*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,11); }
-                else if (k <= 12*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,12); }
-                else if (k <= 13*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,13); }
-                else if (k <= 14*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,14); }
-                else                   { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,15); }
-
-                dkindex++;
-
-                vec_ntS[jp_S][d] = _mm_max_epu8(vec_ntS[jp_S][d], _mm_adds_epu8(vec_tmp_bifl,vec_tmp_bifr));
-              }
-              dkindex--;
-            }
-
-//            int dkindex;
-//            int kmax = j < sW - 1 ? j : sW - 1;
-//            //for (k = 0; k < sW && k <= j; k++) {
-//            for (k = 0; k <= kmax; k++) {
-//              vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
-//              vec_tmp_begr = _mm_set1_ps(*vec_access);
-//
-//              dkindex = sW - k;
-//              for (d = 0; d < k; d++) {
-//                vec_tmp_begl = esl_sse_rightshift_ps(vec_alpha_begl[jp_wA[k]][w][dkindex],neginfv);
-//                vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
-//                dkindex++;
-//              }
-//
-//              dkindex = 0;
-//              for (     ; d < sW; d++) {
-//                vec_tmp_begl = vec_alpha_begl[jp_wA[k]][w][dkindex];
-//                vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
-//                dkindex++;
-//              }
-//            }
-//
-//            kmax = j < 2*sW - 1 ? j : 2*sW - 1;
-//            for ( ; k <= kmax; k++) {
-//              vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
-//              vec_tmp_begr = _mm_set1_ps(*vec_access);
-//
-//              dkindex = 2*sW - k;
-//              for (d = 0; d < k - sW; d++) {
-//                vec_tmp_begl = _mm_movelh_ps(neginfv, vec_alpha_begl[jp_wA[k]][w][dkindex]);
-//                vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
-//                dkindex++;
-//              }
-//
-//              dkindex = 0;
-//              for ( ; d < sW; d++) {
-//                vec_tmp_begl = esl_sse_rightshift_ps(vec_alpha_begl[jp_wA[k]][w][dkindex],neginfv);
-//                vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
-//                dkindex++;
-//              }
-//            }
-//
-//            kmax = j < 3*sW - 1 ? j : 3*sW - 1;
-//            for ( ; k <= kmax; k++) {
-//              vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
-//              vec_tmp_begr = _mm_set1_ps(*vec_access);
-//
-//              dkindex = 3*sW - k;
-//              for (d = 0; d < k - 2*sW; d++) {
-//                vec_tmp_begl = esl_sse_leftshift_ps(neginfv, vec_alpha_begl[jp_wA[k]][w][dkindex]);
-//                vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
-//                dkindex++;
-//              }
-//
-//              dkindex = 0;
-//              for ( ; d < sW; d++) {
-//                vec_tmp_begl = _mm_movelh_ps(neginfv, vec_alpha_begl[jp_wA[k]][w][dkindex]);
-//                vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
-//                dkindex++;
-//              }
-//            }
-//
-//            //for ( ; k < 4*sW && k <=j; k++) {
-//            kmax = j < W ? j : W;
-//            for ( ; k <= kmax; k++) {
-//              vec_access = (float *) (&vec_alpha[jp_y][y][k%sW])+k/sW;
-//              vec_tmp_begr = _mm_set1_ps(*vec_access);
-//
-//              dkindex = 0;
-//              for (d = k - 3*sW; d < sW; d++) {
-//                vec_tmp_begl = esl_sse_leftshift_ps(neginfv, vec_alpha_begl[jp_wA[k]][w][dkindex]);
-//                vec_alpha[jp_v][v][d] = _mm_max_ps(vec_alpha[jp_v][v][d], _mm_add_ps(vec_tmp_begl,vec_tmp_begr));
-//                dkindex++;
-//              }
-//            }
-//
-//            vec_alpha[jp_v][v][-1] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-1],neginfv);
-//            vec_alpha[jp_v][v][-2] = esl_sse_rightshift_ps(vec_alpha[jp_v][v][sW-2],neginfv);
-//
-//          }
           if (ccm->sttype[v] == MP_st || ccm->sttype[v] == ML_st || ccm->sttype[v] == MR_st) {
 	    y = ccm->next[v]; 
 
             for (d = 0; d < sW; d++) {
-//FIXME FIXME FIXME can't use jp_y coord on ntS - need equiv to jp_S for old j
-              vec_ntM_v[jp_v][v][d] = _mm_max_epu8( vec_ntS[jp_y][d-sd], vec_ntM_v[jp_y][y][d - sd]);
+              vec_ntM_v[jp_v][v][d] = _mm_max_epu8( vec_ntS[jp_Sy][d-sd], vec_ntM_v[jp_y][y][d - sd]);
               vec_ntM_v[jp_v][v][d] = _mm_adds_epu8(vec_ntM_v[jp_v][v][d], biasv);
               vec_ntM_v[jp_v][v][d] = _mm_subs_epu8(vec_ntM_v[jp_v][v][d], vec_esc[dsq[j]][v][d]);
 
@@ -535,6 +401,43 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 //	  }
 	} /*loop over decks v>0 */
       
+        /* Rule: S -> SM */
+        __m128i vec_tmp_bifl;
+        __m128i vec_tmp_bifr;
+
+        uint8_t *vec_access;
+        int dkindex = 0;
+        for (k = 0; k < W && k <=j; k++) {
+          vec_access = (uint8_t *) (&vec_ntM_all[jp_y][k%sW])+k/sW;
+          vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+
+          for (d = 0; d < sW; d++) {
+            if (dkindex >= sW) dkindex -= sW;
+            if      (k <=       d) { vec_tmp_bifl =             vec_ntS[jp_wA[k]][dkindex]; }
+            //else { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,(k-d-1)%sW+1); }
+            else if (k <=  1*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 1); }
+            else if (k <=  2*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 2); }
+            else if (k <=  3*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 3); }
+            else if (k <=  4*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 4); }
+            else if (k <=  5*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 5); }
+            else if (k <=  6*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 6); }
+            else if (k <=  7*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 7); }
+            else if (k <=  8*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 8); }
+            else if (k <=  9*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 9); }
+            else if (k <= 10*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,10); }
+            else if (k <= 11*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,11); }
+            else if (k <= 12*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,12); }
+            else if (k <= 13*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,13); }
+            else if (k <= 14*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,14); }
+            else                   { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,15); }
+
+            dkindex++;
+
+            vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], _mm_adds_epu8(vec_tmp_bifl,vec_tmp_bifr));
+          }
+          dkindex--;
+        }
+
       /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
        * 
        * If local begins are off, the hit must be rooted at v=0.
@@ -622,17 +525,14 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 //    for(i = 0; i <= W; i++) free(act[i]); 
 //    free(act);
 //  }
-//  free(jp_wA);
-//  free(init_scAA[0]);
-//  free(init_scAA);
+  free(jp_wA);
 //  if (ret_vsc != NULL) *ret_vsc         = vsc;
 //  else free(vsc);
 //  if (ret_sc != NULL) *ret_sc = vsc_root;
-//  free(vec_init_scAA);     free(mem_init_scAA);
   free(vec_ntM_v[0]);      free(vec_ntM_v);      free(mem_ntM_v);
   free(vec_ntM_all);    free(mem_ntM_all);
   free(vec_ntS);        free(mem_ntS);
-//  free(vec_esc[0]);        free(vec_esc);        free(mem_esc);
+  free(vec_esc[0]);        free(vec_esc);        free(mem_esc);
 //  free(esc_stale);
 //  free(mem_bestr);
 //  free(mem_tmpary);
