@@ -32,6 +32,7 @@ PROGS =
 OBJS  = cm_optimized.o\
         sse_cm_dpsearch.o\
         sse_cm_dpsmall.o\
+        sse_cmcons_mscyk.o\
         sse_util.o
 
 HDRS  = ../funcs.h\
