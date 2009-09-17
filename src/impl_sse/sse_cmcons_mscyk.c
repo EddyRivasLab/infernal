@@ -165,6 +165,7 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
   sW = W/16 + 1; 
 //  zerov = _mm_setzero_ps();
   neginfv = _mm_set1_epi8(BADVAL);
+  biasv   = _mm_set1_epi8(ccm->bias_b);
   ESL_ALLOC(vec_ntM_v,        sizeof(__m128i**) * 2);
   ESL_ALLOC(vec_ntM_v[0],     sizeof(__m128i *) * 2 * ccm->M);
   ESL_ALLOC(mem_ntM_v,        sizeof(__m128i  ) * 2 * ccm->M * (sW+2) + 15);
@@ -207,34 +208,17 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
         vec_esc[z][v] = vec_esc[z][0] + v*(sW);
     }
 
-//  for (v = 0; v < cm->M; v++) {
-//    for (d = 0; d < sW; d++)
-//      {
-//        if (cm->stid[v] == BEGL_S) {
-//          for (j = 0; j <= W; j++)
-//            {
-//              vec_ntS[j][v][d] = _mm_setr_ps((    +d <= W) ? ntS[j][v][    +d] : -eslINFINITY,
-//                                                    (  sW+d <= W) ? ntS[j][v][  sW+d] : -eslINFINITY,
-//                                                    (2*sW+d <= W) ? ntS[j][v][2*sW+d] : -eslINFINITY,
-//                                                    (3*sW+d <= W) ? ntS[j][v][3*sW+d] : -eslINFINITY);
-//            }
-//          }
-//        else {
-//          vec_alpha[0][v][d] = _mm_setr_ps((     d <= W) ? alpha[0][v][    +d] : -eslINFINITY,
-//                                           (  sW+d <= W) ? alpha[0][v][  sW+d] : -eslINFINITY,
-//                                           (2*sW+d <= W) ? alpha[0][v][2*sW+d] : -eslINFINITY,
-//                                           (3*sW+d <= W) ? alpha[0][v][3*sW+d] : -eslINFINITY);
-//          vec_alpha[1][v][d] = _mm_setr_ps((     d <= W) ? alpha[1][v][    +d] : -eslINFINITY,
-//                                           (  sW+d <= W) ? alpha[1][v][  sW+d] : -eslINFINITY,
-//                                           (2*sW+d <= W) ? alpha[1][v][2*sW+d] : -eslINFINITY,
-//                                           (3*sW+d <= W) ? alpha[1][v][3*sW+d] : -eslINFINITY);
-//        }
-//      }
-//    vec_alpha[0][v][-1]  = esl_sse_rightshift_ps( vec_alpha[0][v][sW-1],neginfv);
-//    vec_alpha[0][v][-2]  = esl_sse_rightshift_ps( vec_alpha[0][v][sW-2],neginfv);
-//    vec_alpha[1][v][-1]  = esl_sse_rightshift_ps( vec_alpha[1][v][sW-1],neginfv);
-//    vec_alpha[1][v][-2]  = esl_sse_rightshift_ps( vec_alpha[1][v][sW-2],neginfv);
-//    }
+  for (jp_v = 0; jp_v <= W; jp_v++)
+    {
+      vec_ntS[jp_v][0] = _mm_setr_epi8(ccm->bias_b,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,
+                                            BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL);
+      for (d = 1; d < sW; d++)
+        {
+          vec_ntS[jp_v][d] = neginfv;
+        }
+      vec_ntS[jp_v][-1] = neginfv;
+      vec_ntS[jp_v][-2] = neginfv;
+    }
 
   /* The main loop: scan the sequence from position i0 to j0.
    */
@@ -392,6 +376,11 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 
             vec_ntM_all[jp_v][-1] = _mm_max_epu8(vec_ntM_all[jp_v][-1], vec_ntM_v[jp_v][v][-1]);
             vec_ntM_all[jp_v][-2] = _mm_max_epu8(vec_ntM_all[jp_v][-2], vec_ntM_v[jp_v][v][-2]);
+          }
+          else { // FIXME really ought to pull this outside the DP, or eliminate these states from CM_CONS altogether
+            for (d = -2; d < sW; d++) {
+              vec_ntM_v[jp_v][v][d] = neginfv;
+            }
           }
 //	  if(vsc != NULL) {
 //            tmpv = neginfv;
