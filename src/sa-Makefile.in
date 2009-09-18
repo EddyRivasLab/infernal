@@ -110,3 +110,15 @@ distclean:
 TAGS:
 	etags -t *.c *.h Makefile.in
 
+
+#################################################################
+## For building as a library with an SSU-ALIGN distribution.
+##
+ssu: module 
+	mv cmalign ssu-cmalign	
+	mv cmbuild ssu-cmbuild
+	mv cmcalibrate ssu-cmcalibrate
+	mv cmemit ssu-cmemit
+	mv cmscore ssu-cmscore
+	mv cmsearch ssu-cmsearch
+	mv cmstat ssu-cmstat
