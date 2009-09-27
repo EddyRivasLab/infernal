@@ -80,8 +80,8 @@ RFPROGS = cm2hmm cm2hmmsearch
 all: core 
 
 core:
-	cd easel;     make CC="$(CC)" CFLAGS="$(CFLAGS)"; make
-	cd hmmer;     ./configure CC="$(CC)";             make
+	cd easel;     make CC="$(CC)" CFLAGS="$(CFLAGS)"; 
+	cd hmmer;     ./configure CC="$(CC)" CFLAGS="$(CFLAGS)"; make          
 	cd src;       make CC="$(CC)" CFLAGS="$(CFLAGS)"; make module
 	cd testsuite; make CC="$(CC)" CFLAGS="$(CFLAGS)"
 

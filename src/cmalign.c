@@ -1293,8 +1293,10 @@ static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL
 
   /* cfg->withalifp is open */
   status = esl_msa_Read(cfg->withalifp, &msa);
-  if (status == eslEFORMAT)  cm_Fail("--withali alignment file parse error, line %d of file %s:\n%s\nOffending line is:\n%s\n", cfg->withalifp->linenumber, cfg->withalifp->fname, cfg->withalifp->errbuf, cfg->withalifp->buf);
-  else if (status != eslOK)       cm_Fail("--withali alignment file read unexpectedly failed with code %d\n", status);
+  if      (status == eslEFORMAT) cm_Fail("--withali alignment file parse error:\n%s\n", cfg->withalifp->errbuf);
+  else if (status == eslEINVAL)  cm_Fail("--withali alignment file parse error:\n%s\n", cfg->withalifp->errbuf);
+  else if (status == eslEOF)     cm_Fail("--withali alignment file %s empty?\n",        cfg->withalifp->fname);
+  else if (status != eslOK)      cm_Fail("--withali alignment file read failed with error code %d\n", status);
 
   /* Some input data cleaning. */
   if (esl_opt_GetBoolean(go, "--rf") && msa->rf == NULL) 
@@ -3194,7 +3196,7 @@ major_alignment2minor_parsetrees(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   }
   ESL_ALLOC(n3scA,  sizeof(float) * maj_target_msa->nseq);
 
-  if((status = esl_msa_Digitize(cmlist[0]->abc, maj_target_msa)) != eslOK) ESL_FAIL(eslEINCOMPAT, errbuf, "Failure digitizing the major target CM alignment.");
+  if((status = esl_msa_Digitize(cmlist[0]->abc, maj_target_msa, NULL)) != eslOK) ESL_FAIL(eslEINCOMPAT, errbuf, "Failure digitizing the major target CM alignment.");
   for(m = 0; m < cfg->ncm; m++) { 
     if((status = Alignment2Parsetrees(maj_target_msa, cmlist[m], cfg->mali_mtr[m], errbuf, &tmp_sq, &tmp_tr)) != eslOK) return status;
     for(i = 0; i < maj_target_msa->nseq; i++) { 
@@ -3288,7 +3290,7 @@ majorfied_alignment2major_parsetrees(const ESL_GETOPTS *go, struct cfg_s *cfg, c
   int  majed_min_clen;     /* number of consensus columns parsed in majed_min_msa, this better = maj_cm->clen */
   Parsetree_t **majed_tr;  /* major parsetrees */
     
-  if((status = esl_msa_Digitize(maj_cm->abc, majed_min_msa)) != eslOK) ESL_FAIL(eslEINCOMPAT, errbuf, "Failure digitizing the minor CM alignment for CM %d of winning seqs.", m);
+  if((status = esl_msa_Digitize(maj_cm->abc, majed_min_msa, NULL)) != eslOK) ESL_FAIL(eslEINCOMPAT, errbuf, "Failure digitizing the minor CM alignment for CM %d of winning seqs.", m);
   if((status = map_cpos_to_apos(majed_min_msa, &majed_min_c2a_map, &majed_min_clen))  != eslOK) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "Problem mapping consensus positions to alignment positions for majorfied minor alignment %d.", m);
   if(majed_min_clen != maj_cm->clen) ESL_FAIL(eslEINCOMPAT, errbuf, "Majorfied minor alignment has clen != major clen: %d\n", maj_cm->clen);
 

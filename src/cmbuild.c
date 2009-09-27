@@ -594,8 +594,9 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
   while ((status = esl_msa_Read(cfg->afp, &msa)) != eslEOF)
     {
-      if      (status == eslEFORMAT)  cm_Fail("Alignment file parse error, line %d of file %s:\n%s\nOffending line is:\n%s\n", cfg->afp->linenumber, cfg->afp->fname, cfg->afp->errbuf, cfg->afp->buf);
-      else if (status != eslOK)       cm_Fail("Alignment file read unexpectedly failed with code %d\n", status);
+      if      (status == eslEFORMAT) cm_Fail("Alignment file parse error:\n%s\n", cfg->afp->errbuf);
+      else if (status == eslEINVAL)  cm_Fail("Alignment file parse error:\n%s\n", cfg->afp->errbuf);
+      else if (status != eslOK)      cm_Fail("Alignment file read failed with error code %d\n", status);
       cfg->nali++;  
 
       /* if it's unnamed, name the MSA, we require a name (different from 
@@ -792,7 +793,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       if((status = Parsetrees2Alignment(cm, cm->abc, seqs_to_aln->sq, NULL, seqs_to_aln->tr, nseq, FALSE, FALSE, &msa)) != eslOK) 
 	ESL_FAIL(status, errbuf, "refine_msa(), Parsetrees2Alignment() call failed.");
       if((status = esl_strdup(msa_name, -1, &(msa->name))) != eslOK) ESL_FAIL(status, errbuf, "refine_msa(), esl_strdup() call failed.");
-      esl_msa_Digitize(msa->abc, msa);
+      esl_msa_Digitize(msa->abc, msa, NULL);
       
       /* print intermediate alignment to --rdump file, if --rdump was enabled */
       if(cfg->rdfp != NULL) 
@@ -2170,9 +2171,10 @@ get_namewidth(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
   /* else, get MSA names using either (1) stockholm GF ID markup name or (2) cmbuild's rules for naming the msa */
   while ((status = esl_msa_Read(cfg->afp, &msa)) != eslEOF) { 
-      if      (status == eslEFORMAT)  ESL_FAIL(status, errbuf, "Alignment file parse error, line %d of file %s:\n%s\nOffending line is:\n%s\n", cfg->afp->linenumber, cfg->afp->fname, cfg->afp->errbuf, cfg->afp->buf);
-      else if (status != eslOK)       ESL_FAIL(status, errbuf, "Alignment file read unexpectedly failed with code %d\n", status);
-      nali++;
+    if      (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Alignment file parse error:\n%s\n", cfg->afp->errbuf);
+    else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Alignment file parse error:\n%s\n", cfg->afp->errbuf);
+    else if (status != eslOK)      ESL_FAIL(status, errbuf, "Alignment file read failed with error code %d\n", status);
+    nali++;
 
       /* name the msa, if it already has one from #=GF ID markup, name_msa() returns w/o modifying it */
       if((status = name_msa(go, errbuf, msa, nali)) != eslOK) return status;

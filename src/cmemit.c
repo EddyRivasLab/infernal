@@ -655,7 +655,7 @@ build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf
 
       /* Add the counts to the growing counts-based HMM */
       /* make fake tracebacks for each seq, first we need to digitize the MSA */
-      esl_msa_Digitize(msa->abc, msa);
+      esl_msa_Digitize(msa->abc, msa, NULL);
       CP9_fake_tracebacks(msa, matassign, &cp9_tr);
 	  
       /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */

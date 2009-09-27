@@ -2698,7 +2698,7 @@ CP9_check_by_sampling(CM_t *cm, CP9_t *hmm, ESL_RANDOMNESS  *r, CMSubInfo_t *sub
 	  matassign[apos+1] = 1;
       }
       /* make fake tracebacks for each seq */
-      if((status = esl_msa_Digitize(msa->abc, msa)) == eslEINVAL) cm_Fail("In CP9_check_by_sampling(), esl_msa_Digitize() returned eslEINVAL, some characters must be invalid in msa.");
+      if((status = esl_msa_Digitize(msa->abc, msa, NULL)) == eslEINVAL) cm_Fail("In CP9_check_by_sampling(), esl_msa_Digitize() returned eslEINVAL, some characters must be invalid in msa.");
       CP9_fake_tracebacks(msa, matassign, &cp9_tr);
       
       /* build model from tracebacks (code from HMMER's modelmakers.c::matassign2hmm() */

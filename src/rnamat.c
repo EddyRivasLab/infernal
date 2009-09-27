@@ -1071,7 +1071,7 @@ int ribosum_MSA_resolve_degeneracies(fullmat_t *fullmat, ESL_MSA *msa)
     if(cp == NULL) ESL_XEXCEPTION(eslEINVAL, "ribosum_MSA_resolve_degeneracies(), second pass check character %d (%c) is still ambiguous!\n", apos, c);
   }
 
-  if((status = esl_msa_Digitize(msa_abc, msa)) != eslOK) goto ERROR;
+  if((status = esl_msa_Digitize(msa_abc, msa, NULL)) != eslOK) goto ERROR;
   free(unpaired_marginals);
   free(paired_marginals);
   free(cur_unpaired_marginals);
