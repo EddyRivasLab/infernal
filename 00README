@@ -4,7 +4,7 @@ http://infernal.janelia.org/
 
 :: About this software:
 
-     Infernal is an implementation of "covariance models" (CMs), which
+     Infernal is an implementation of covariance models (CMs), which
      are statistical models of RNA secondary structure and sequence
      consensus.
 
