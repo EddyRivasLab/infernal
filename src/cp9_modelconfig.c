@@ -133,6 +133,8 @@ CP9Logoddsify(CP9_t *hmm)
 
   hmm->flags |= CPLAN9_HASBITS;	/* raise the log-odds ready flag */
 
+  free(sc);
+
   return;
 
  ERROR:
