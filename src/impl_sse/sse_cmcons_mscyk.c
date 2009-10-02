@@ -58,7 +58,7 @@
  *           Dies immediately if some error occurs.
  */
 int
-SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, float cutoff, 
+SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, uint8_t cutoff, 
 	   search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc)
 {
 //FIXME: needs some cleanup from the scalar detritus; should be able
@@ -196,7 +196,7 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
     }
   for (z = 1; z < ccm->abc->Kp; z++)
     {
-      vec_esc[z] = vec_esc[z] + z*(ccm->M);
+      vec_esc[z] = vec_esc[0] + z*(ccm->M);
       vec_esc[z][0] = vec_esc[0][0] + z * ccm->M * (sW);
       esc_stale[z] = -1;
     }
@@ -522,9 +522,9 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
   free(vec_ntM_all);    free(mem_ntM_all);
   free(vec_ntS);        free(mem_ntS);
   free(vec_esc[0]);        free(vec_esc);        free(mem_esc);
-//  free(esc_stale);
+  free(esc_stale);
 //  free(mem_bestr);
-//  free(mem_tmpary);
+  free(mem_tmpary);
 //
 //  ESL_DPRINTF1(("SSE_CYKScan() return score: %10.4f\n", vsc_root)); 
 //printf("i0 %d j0 %d W %d sW %d\n",i0,j0,W,sW);
@@ -538,14 +538,10 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 /*****************************************************************
  * Benchmark driver
  *****************************************************************/
-#ifdef IMPL_SEARCH_BENCHMARK
-/* gcc -o sse-bmark -g -O2 -std=gnu99 -msse2 -mpentiumpro -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c -linfernal -lhmmer -leasel -lm
- * icc -o sse-bmark -g -O3 -static -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_SEARCH_BENCHMARK sse_cm_dpsearch.c -linfernal -lhmmer -leasel -lm
+#ifdef IMPL_MSCYK_TEST
+/* gcc -o sse-bmark -g -O2 -std=gnu99 -msse2 -mpentiumpro -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_MSCYK_TEST cm_dpsearch.c -linfernal -lhmmer -leasel -lm
+ * icc -o sse-bmark -g -O3 -static -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_MSCYK_TEST sse_cm_dpsearch.c -linfernal -lhmmer -leasel -lm
 
- * Not updated for this file ...
- * mpicc -g -O2 -DHAVE_CONFIG_H -I../easel  -c old_cm_dpsearch.c 
- * mpicc -o benchmark-search -g -O2 -I. -L. -I../easel -L../easel -DIMPL_SEARCH_BENCHMARK cm_dpsearch.c old_cm_dpsearch.o -linfernal -leasel -lm
- * ./benchmark-search <cmfile>
  */
 
 #include "esl_config.h"
@@ -580,14 +576,9 @@ static ESL_OPTIONS options[] = {
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "search in glocal mode [default: local]", 0 },
   { "-L",        eslARG_INT,  "10000", NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs",0 },
   { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of random target seqs",                   0 },
-  { "-w",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute new reference CYK scan implementation", 0 },
-  { "-x",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute experimental CYK scan implementation", 0 },
+  { "-w",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute new SSE 4x CYK scan implementation", 0 },
+  { "--mscyk",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute new SSE 16x MSCYK scan implementation", 0 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute non-banded optimized CYK scan implementation", 0 },
-  { "--rsearch", eslARG_NONE,   FALSE, NULL, NULL,  NULL,"--noqdb", NULL, "also execute ported RSEARCH's CYK scan implementation", 0 },
-  { "--iins",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute optimized int inside scan implementation", 0 },
-  { "--riins",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute reference int inside scan implementation", 0 },
-  { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute optimized float inside scan implementation", 0 },
-  { "--rfins",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL,  "also execute reference float inside scan implementation", 0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -614,6 +605,7 @@ main(int argc, char **argv)
   int             do_random;
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
   char            errbuf[cmERRBUFSIZE];
+  CM_CONSENSUS   *ccm;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
@@ -633,6 +625,11 @@ main(int argc, char **argv)
   cm->search_opts |= CM_SEARCH_NOQDB;
   ConfigCM(cm, errbuf, TRUE, NULL, NULL); /* TRUE says: calculate W */
 
+  if (esl_opt_GetBoolean(go, "--mscyk"))
+    {
+      ccm = cm_consensus_Convert(cm);
+    }
+  
   dmin = NULL; dmax = NULL;
 
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
@@ -696,78 +693,20 @@ main(int argc, char **argv)
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
 	}
-  
-      if (esl_opt_GetBoolean(go, "--rsearch")) 
-	{ 
-	  esl_stopwatch_Start(w);
-	  if((status = rsearch_CYKScan (cm, errbuf, dsq, L, 0., cm->W, NULL, &sc)) != eslOK) cm_Fail(errbuf); 
-	  printf("%4d %-30s %10.4f bits ", (i+1), "rsearch_CYKScan(): ", sc);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-	}
 
-      /* integer inside implementations */
-      if (esl_opt_GetBoolean(go, "--iins")) 
-	{ 
-	  cm->search_opts  |= CM_SEARCH_INSIDE;
+      if (esl_opt_GetBoolean(go, "--mscyk"))
+        {
 	  esl_stopwatch_Start(w);
-	  if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	  printf("%4d %-30s %10.4f bits ", (i+1), "FastIInsideScan(): ", sc);
+	  if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, dsq, 1, L, 0, NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  //printf("%4d %-30s %10.4f bits ", (i+1), "SSE_CYKScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-
-	  esl_stopwatch_Start(w);
-	  if((status = XFastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	  printf("%4d %-30s %10.4f bits ", (i+1), "XFastIInsideScan(): ", sc);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-
-	  esl_stopwatch_Start(w);
-	  if((status = X2FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);;
-	  printf("%4d %-30s %10.4f bits ", (i+1), "X2FastIInsideScan(): ", sc);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-	}
-
-      if (esl_opt_GetBoolean(go, "--riins")) 
-	{ 
-	  cm->search_opts  |= CM_SEARCH_INSIDE;
-	  esl_stopwatch_Start(w);
-	  if((status = RefIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	  printf("%4d %-30s %10.4f bits ", (i+1), "RefIInsideScan(): ", sc);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-
-	  esl_stopwatch_Start(w);
-	  if((status = XRefIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	  printf("%4d %-30s %10.4f bits ", (i+1), "XRefIInsideScan(): ", sc);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-	}
-  
-      /* float inside implementations */
-      if (esl_opt_GetBoolean(go, "--fins")) 
-	{ 
-	  cm->search_opts  |= CM_SEARCH_INSIDE;
-	  esl_stopwatch_Start(w);
-	  if((status = FastFInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	  printf("%4d %-30s %10.4f bits ", (i+1), "FastFInsideScan(): ", sc);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-	}
-
-      if (esl_opt_GetBoolean(go, "--rfins")) 
-	{ 
-	  cm->search_opts  |= CM_SEARCH_INSIDE;
-	  esl_stopwatch_Start(w);
-	  if((status = RefFInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	  printf("%4d %-30s %10.4f bits ", (i+1), "RefFInsideScan(): ", sc);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-	}
+        }
   
       printf("\n");
     }
+
+  if (ccm != NULL) cm_consensus_Free(ccm);
   FreeCM(cm);
   FreeSeqsToAln(seqs_to_aln);
   esl_alphabet_Destroy(abc);
@@ -780,5 +719,5 @@ main(int argc, char **argv)
   cm_Fail("memory allocation error");
   return 0; /* never reached */
 }
-#endif /*IMPL_SEARCH_BENCHMARK*/
+#endif /*IMPL_MSCYK_TEST*/
 

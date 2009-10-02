@@ -1,5 +1,6 @@
 #include "impl_sse.h"
 #include "esl_stack.h"
+#include "esl_vectorops.h"
 
 #define SCALE_W 500.0	/* set a default scaling factor for 16-bit int scores */
 
@@ -143,6 +144,7 @@ cm_consensus_Convert(CM_t *cm)
   int offset;
   int pairs, singlets;
   uint8_t *oesc_next;
+  float max = 0.0;
   CM_CONSENSUS *ccm = NULL;
 
   ESL_STACK *oldstate;
@@ -158,8 +160,12 @@ cm_consensus_Convert(CM_t *cm)
   ccm->abc = esl_alphabet_Create(cm->abc->type);
 
   /* Set number of consensus states */
+  pairs   = CMCountNodetype(cm, MATP_nd);
+  singlets= CMCountNodetype(cm, MATL_nd) + CMCountNodetype(cm, MATR_nd);
+  /*
   pairs   = CMCountStatetype(cm, MP_st);
   singlets= CMCountStatetype(cm, ML_st) + CMCountStatetype(cm, MR_st);
+  */
   /*
   ccm->M  = 0;
   ccm->M += CMCountStatetype(cm, MP_st);
@@ -171,9 +177,27 @@ cm_consensus_Convert(CM_t *cm)
   ccm->M += CMCountStatetype(cm,  B_st);
   ccm->M += CMCountStatetype(cm,  E_st);
 
+  //FIXME - taking these defaults directly from HMMER - need to be checked!!!
+  for (v = 0; v < cm->M; v++) {
+    switch(cm->sttype[v]) {
+      case ML_st:
+      case MR_st:
+        max = ESL_MAX(max, esl_vec_FMax(cm->oesc[v], cm->abc->Kp));
+        break;
+      case MP_st:
+        max = ESL_MAX(max, esl_vec_FMax(cm->oesc[v], cm->abc->Kp*cm->abc->Kp));
+        break;
+      default:
+        break;
+    }
+  }
+  ccm->scale_b = 3.0 / eslCONST_LOG2;
+  ccm->base_b  = 195;
+  ccm->bias_b  = -1 * unbiased_byteify(ccm, max);
+
   /* Set state connection */
-  ESL_ALLOC(ccm->next,   sizeof(uint8_t) * ccm->M);
-  ESL_ALLOC(ccm->sttype, sizeof(char   ) * ccm->M);
+  ESL_ALLOC(ccm->next,   sizeof(int ) * ccm->M);
+  ESL_ALLOC(ccm->sttype, sizeof(char) * ccm->M);
   x = v = 0;
 
   /* Setup emissions */
@@ -196,18 +220,18 @@ cm_consensus_Convert(CM_t *cm)
       y = cm->cnum[v];
 
       offset  = CMSubtreeCountStatetype(cm, w, MP_st);
-      offset += CMSubtreeCountStatetype(cm, w, ML_st);
-      offset += CMSubtreeCountStatetype(cm, w, MR_st);
+      offset += CMSubtreeCountNodetype(cm, w, MATL_ML);
+      offset += CMSubtreeCountNodetype(cm, w, MATR_MR);
       offset += CMSubtreeCountStatetype(cm, w,  S_st);
       offset += CMSubtreeCountStatetype(cm, w,  B_st);
       offset += CMSubtreeCountStatetype(cm, w,  E_st);
 
-      ccm->next[x] = x+offset;
+      ccm->next[x] = x+offset+1;
       ccm->oesc[x] = NULL;
 
       /* push y and x+offset on stacks */
       esl_stack_IPush(oldstate, y);
-      esl_stack_IPush(newstate, x+offset);
+      esl_stack_IPush(newstate, x+offset+1);
 
       x++;
       v = w;
@@ -215,19 +239,20 @@ cm_consensus_Convert(CM_t *cm)
     else {
       y = cm->cfirst[v];
 
-      while (cm->sttype[y] == D_st || cm->sttype[v] == IL_st || cm->sttype[y] == IR_st) { y++; }
+      while (y<cm->M && (cm->sttype[y] == D_st || cm->sttype[y] == IL_st || cm->sttype[y] == IR_st || cm->stid[y] == MATP_ML || cm->stid[y] == MATP_MR)) { y++; }
+      //if (y == cm->M) y = -1;
 
       ccm->next[x] = x+1;
       ccm->oesc[x] = oesc_next;
       if (cm->sttype[v] == MP_st) {
         for (z = 0; z < (ccm->abc->Kp * ccm->abc->Kp); z++) {
-          ccm->oesc[v][z] = biased_byteify(ccm, cm->oesc[v][z]);
+          ccm->oesc[x][z] = biased_byteify(ccm, cm->oesc[v][z]);
         }
         oesc_next += ccm->abc->Kp * ccm->abc->Kp;
       }
-      else if (cm->sttype[v] == ML_st || cm->sttype[v] == MR_st) {
+      else if (cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR) {
         for (z = 0; z < ccm->abc->Kp; z++) {
-          ccm->oesc[v][z] = biased_byteify(ccm, cm->oesc[v][z]);
+          ccm->oesc[x][z] = biased_byteify(ccm, cm->oesc[v][z]);
         }
         oesc_next += ccm->abc->Kp;
       }
@@ -259,6 +284,8 @@ cm_consensus_Free(CM_CONSENSUS *ccm)
   if (ccm->oesc    != NULL) free(ccm->oesc);
 
   esl_alphabet_Destroy(ccm->abc);
+
+  free(ccm); ccm = NULL;
 
   return;
 }
