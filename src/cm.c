@@ -888,6 +888,20 @@ CMCountNodetype(CM_t *cm, char type)
   }
   return count;
 }
+int
+CMSubtreeCountNodetype(CM_t *cm, int v, char type)
+{
+  int unsatisfied_starts = 1;
+  int count = 0;
+
+  while (unsatisfied_starts) {
+    if (cm->sttype[v] == B_st) unsatisfied_starts++;
+    if (cm->sttype[v] == E_st) unsatisfied_starts--; 
+    if (cm->stid[v]   == type) count++;
+    v++;
+  }
+  return count;
+}
 
 /* Function: CalculateStateIndex()
  * Date:     SRE, Mon Jul 31 15:37:55 2000 [St. Louis]

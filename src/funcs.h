@@ -31,6 +31,7 @@ extern int   CMCountStatetype(CM_t *cm, char type);
 extern int   CMCountNodetype(CM_t *cm, char type);
 extern int   CMSegmentCountStatetype(CM_t *cm, int r, int z, char type);
 extern int   CMSubtreeCountStatetype(CM_t *cm, int v, char type);
+extern int   CMSubtreeCountNodetype(CM_t *cm, int v, char type);
 extern int   CMSubtreeFindEnd(CM_t *cm, int v);
 extern int   CalculateStateIndex(CM_t *cm, int node, char utype);
 extern int   TotalStatesInNode(int ndtype);
