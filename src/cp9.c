@@ -142,7 +142,7 @@ AllocCPlan9Body(CP9_t *hmm, int M, const ESL_ALPHABET *abc)
   ESL_ALLOC(hmm->bsc_mem, (M+1) * sizeof(int));
   ESL_ALLOC(hmm->esc_mem, (M+1) * sizeof(int));
 
-  ESL_ALLOC(hmm->null, abc->K);
+  ESL_ALLOC(hmm->null, (abc->K) * sizeof(float));
 
   hmm->bsc = hmm->bsc_mem;
   hmm->esc = hmm->esc_mem;
