@@ -57,7 +57,25 @@ typedef struct cm_consensus_s {
 } CM_CONSENSUS;
 
 /*****************************************************************
- * 3. Declarations of the external API.
+ * 3. GammaHitMx_epu8: hit collection for 8-bit scanning models
+ *****************************************************************/
+
+/* Structure GammaHitMx_epu8: gamma semi-HMM used for optimal hit resolution
+ * of a CM_CONSENSUS scan.
+ */
+typedef struct gammahitmx_epu8_s {
+  int       L;                  /* length of sequence */
+  uint8_t  *mx;                 /* [0..L] SHMM DP matrix for optimum nonoverlap resolution */
+  int      *gback;              /* [0..L] traceback pointers for SHMM */
+  uint8_t  *savesc;             /* [0..L] saves score of hit added to best parse at j */
+  uint8_t   cutoff;             /* minimum score to report */
+  int       i0;                 /* position of first residue in sequence (gamma->mx[0] corresponds to this residue) */
+  int       iamgreedy;          /* TRUE to use RSEARCH's greedy overlap resolution alg, FALSE to use optimal alg */
+} GammaHitMx_epu8;
+
+
+/*****************************************************************
+ * 4. Declarations of the external API.
  *****************************************************************/
 
 /* cm_optimized.c */
@@ -70,6 +88,14 @@ void cm_optimized_Free(CM_OPTIMIZED *ocm);
 
 CM_CONSENSUS* cm_consensus_Convert(CM_t *cm);
 void cm_consensus_Free(CM_CONSENSUS *ccm);
+
+/* sse_cmcons_hitmx.c */
+GammaHitMx_epu8 *CreateGammaHitMx_epu8(int L, int i0, int be_greedy, uint8_t cutoff, int do_backward);
+void FreeGammaHitMx_epu8(GammaHitMx_epu8 *gamma);
+int  UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma, int j, __m128i *alpha_row, search_results_t *results, int W);
+void TBackGammaHitMxForward_epu8 (GammaHitMx_epu8 *gamma, search_results_t *results, int i0, int j0);
+void TBackGammaHitMxBackward_epu8(GammaHitMx_epu8 *gamma, search_results_t *results, int i0, int j0);
+
 
 /* sse_cm_dpsearch.c */
 int SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq,
