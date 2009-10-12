@@ -23,7 +23,7 @@ and are used by
 for increased sensitivity and acceleration in RNA homology search.
 
 .PP
-CM files are profiles of RNA consensus secondary structure. A
+CMs are profiles of RNA consensus sequence and secondary structure. A
 CM file is produced by the 
 .B cmbuild 
 program, from a given RNA sequence alignment of known 
@@ -43,7 +43,13 @@ For example:
 .B cmcalibrate
 .I --mpi 
 .I [other options]
-.I cmfile
+.I cmfile.
+Note that 
+.B cmcalibrate
+must have been compiled in MPI mode to use the
+.I --mpi
+option. See the Installation seciton of the user's guide for
+instructions on how to compile in MPI mode.
 
 The 
 .BI --forecast " <n>" 
@@ -474,17 +480,7 @@ where
 is a positive real number less than or equal to 1.0.
 By default,
 .I <x>
-is 0.995.
-
-.TP 
-.BI --fil-xhmm " <x>"
-Set the target number of dynamic programming calculations for a HMM
-filtered CM QDB search with beta = 1E-7 to 
-.I <x>
-times the number of calculations required to do an HMM search. 
-By default,
-.I <x>
-is 2.0. 
+is 0.993.
 
 .TP 
 .BI --fil-tau " <x>"

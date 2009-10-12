@@ -85,15 +85,23 @@ static ESL_OPTIONS options[] = {
   { "--fil-no-hmm",eslARG_NONE, FALSE,     NULL, NULL,  "--fil-hmm",NULL,         NULL, "do not filter with HMM Forward algorithm", 5 },
   { "--fil-qdb",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-qdb", "filter with CM QDB (banded) CYK algorithm", 201 },
   { "--fil-no-qdb",eslARG_NONE, FALSE,     NULL, NULL,  "--fil-qdb",NULL,         NULL, "do not filter with CM banded CYK", 5 },
-  { "--fil-beta",  eslARG_REAL, NULL,      NULL, "x>0", NULL,      NULL,"--fil-no-qdb", "set tail loss prob for QDB filter to <x>", 5 },
+  { "--fil-beta",  eslARG_REAL, "1e-10",   NULL, "x>0", NULL,      NULL,"--fil-no-qdb", "set tail loss prob for QDB filter to <x>", 5 },
   /* filter cutoff options */
   { "--fil-T-qdb",eslARG_REAL,  "0.0", NULL, NULL,      NULL,      NULL, "--fil-E-qdb", "set QDB CM filter cutoff bit score as <x>", 6 },
-  { "--fil-T-hmm",eslARG_REAL,  "3.0", NULL, NULL,      NULL,      NULL, "--fil-E-hmm", "set HMM filter cutoff bit score as <x>", 6 },
+  { "--fil-T-hmm",eslARG_REAL,  "3.0", NULL, NULL,      NULL,      NULL, "--fil-E-hmm,--fil-S-hmm", "set HMM filter cutoff bit score as <x>", 6 },
   { "--fil-E-qdb",eslARG_REAL,  NULL,  NULL, "x>0.999", NULL,      NULL, "--fil-T-qdb", "set QDB CM filter cutoff E-value as <x>", 6 },
-  { "--fil-E-hmm",eslARG_REAL,  NULL,  NULL, "x>0.999", NULL,      NULL, "--fil-T-hmm", "set HMM filter cutoff E-value as <x>", 6 }, 
+  { "--fil-E-hmm",eslARG_REAL,  NULL,  NULL, "x>0.999", NULL,      NULL, "--fil-T-hmm,--fil-S-hmm", "set HMM filter cutoff E-value as <x>", 6 }, 
+  { "--fil-S-hmm",eslARG_REAL,  NULL,  NULL, "0<x<=1.00000001", NULL,      NULL, "--fil-E-hmm,--fil-T-hmm", "set HMM filter predicted surv fract as <x>", 6 }, 
   /*{ "--fil-S-qdb",eslARG_REAL,  "0.02",NULL, "0<x<1.",  NULL,      NULL, "--fil-T-qdb", "set QDB CM filter cutoff to achieve survival fraction <x>", 6 },*/
   /*{ "--fil-S-hmm",eslARG_REAL,  "0.02",NULL, "0<x<1",   NULL,      NULL, "--fil-T-hmm", "set HMM filter cutoff to achieve survival fraction <x>", 6 },*/
-  { "--fil-Smax-hmm",eslARG_REAL,NULL, NULL, "0<x<1",    NULL,      NULL,"--fil-T-hmm,--fil-E-hmm", "set maximum HMM survival fraction as <x>", 6 },
+  { "--fil-Xmin-hmm",eslARG_REAL,NULL, NULL, "x>1.0999", NULL,      NULL,"--fil-T-hmm,--fil-E-hmm,--fil-S-hmm", "set minimum HMM survival fraction as <x>", 106 },
+  { "--fil-Smax-hmm",eslARG_REAL,"0.5",NULL, "0<x<=1.00000001",   NULL,      NULL,"--fil-T-hmm,--fil-E-hmm,--fil-S-hmm", "set maximum HMM survival fraction as <x>", 6 },
+  { "--fil-Smin-hmm",eslARG_REAL,"0.02",NULL, "0<x<=1.00000001",  NULL,      NULL,"--fil-T-hmm,--fil-E-hmm,--fil-S-hmm", "set minimum HMM survival fraction as <x>", 6 },
+  { "--fil-A-hmm", eslARG_NONE,FALSE,NULL, NULL,         NULL,      NULL,"--fil-no-hmm", "always filter w/HMM w/surv fract <= <x> from --fil-Smax-hmm", 6 },
+  { "--fil-finE-hmm",eslARG_REAL,  NULL,  NULL, "x>0.",    NULL,      NULL,"--fil-finT-hmm", "pretend final E cutoff=<x> for HMM filter cutoff calc", 106 }, 
+  { "--fil-finT-hmm",eslARG_REAL,  NULL,  NULL, NULL,      NULL,      NULL,"--fil-finE-hmm", "pretend final bit sc cutoff=<x> for HMM filter cutoff calc", 106 }, 
+  { "--fil-finE-qdb",eslARG_REAL,  NULL,  NULL, "x>0.",    NULL,      NULL,"--fil-finT-qdb", "pretend final E cutoff=<x> for QDB filter cutoff calc", 106 }, 
+  { "--fil-finT-qdb",eslARG_REAL,  NULL,  NULL, NULL,      NULL,      NULL,"--fil-finE-qdb", "pretend final bit sc cutoff=<x> for QDB filter cutoff calc", 106 }, 
   /* W definition options (require --viterbi or --forward) */
   { "--hmm-W",   eslARG_INT,    NULL,  NULL, "n>1",     NULL,      NULL,  "--hmm-cW", "set HMM window size as <n>", 7 },
   { "--hmm-cW",  eslARG_REAL, NULL,  NULL, "x>0.01",    NULL,      NULL,   "--hmm-W", "set HMM window size as <x> * consensus length", 7 },
@@ -234,6 +242,8 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
       puts("\nundocumented developer options related to experimental local begin/end modes:");
       esl_opt_DisplayHelp(stdout, go, 102, 2, 80);
+      puts("\nundocumented developer options related to filtering:");
+      esl_opt_DisplayHelp(stdout, go, 106, 2, 80);
       exit(0);
     }
   if (esl_opt_GetBoolean(go, "-h") == TRUE) 
@@ -255,7 +265,7 @@ main(int argc, char **argv)
       puts("\ndefining window size (W) for HMM only searches (require --forward or --viterbi):");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       puts("\noptions for returning alignments of search hits:");
-      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
+      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       puts("\nverbose output files:");
       esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
       puts("\noptions for selecting output alphabet:");
@@ -279,6 +289,12 @@ main(int argc, char **argv)
   if ( esl_opt_IsOn(go, "--hmm-cW") && (! ((esl_opt_GetBoolean(go, "--viterbi")) || (esl_opt_GetBoolean(go, "--forward"))))) { 
     printf("Error parsing options, --hmm-cW <x> only makes sense in combination with --forward or --viterbi.\n");
     exit(1);
+  }
+  if ((esl_opt_IsUsed(go, "--fil-Smin-hmm")) && (esl_opt_IsUsed(go, "--fil-Smax-hmm"))) { 
+    if (((esl_opt_GetReal(go, "--fil-Smin-hmm")) - (esl_opt_GetReal(go, "--fil-Smax-hmm"))) > eslSMALLX1) { 
+      printf("Error parsing options, --fil-Smin-hmm <x> (%f) must be less than --fil-Smax-hmm <x> (%f).\n", esl_opt_GetReal(go, "--fil-Smin-hmm"), esl_opt_GetReal(go, "--fil-Smax-hmm"));
+      exit(1);
+    }
   }
   /* Initialize what we can in the config structure (without knowing the input alphabet yet).
    */
@@ -1245,7 +1261,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
  *                  exp tail &
  *                  filter thr 
  *   options        in cmfile?    filter/don't filter and cutoff determination
- *   -------       ----------    ------------------------------------------------
+ *   -------       -----------    ------------------------------------------------
  * 1. none                 yes    filter (usually). automatically determine appropriate HMM 
  *                                filter cutoff for final round cutoff using cmfile's filter 
  *                                threshold info from cmcalibrate. Sometimes this info may
@@ -1271,7 +1287,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
  * 8. --fil-Smax-hmm <x>    no    die. we can't deal with this combo, tell the user.
  *
  * 
- * CM filtering: 
+ * QDBY CYK  filtering: 
  * ('none' below means none of --fil-no-qdb, --fil-T-qdb, --fil-E-qdb) 
  *                               
  *                                final 
@@ -1297,10 +1313,7 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
  *
  * ('none' below means none of --fil-no-qdb, --fil-T-qdb, --fil-E-qdb) 
  * 
- * beta, the tail loss probability for the QDB calculation is determined as follows:
- * If --fil-beta <x> is not enabled, cm->beta_qdb is set as cm->beta_W as read in the cmfile
- *               and initially set by cmbuild.
- * If --fil-beta <x> is enabled, <x> is used as cm->beta_qdb
+ * beta, the tail loss probability for the QDB calculation is set as <x> from --fil-beta <x>.
  *
  * Final round related options (after all filtering is complete):
  *
@@ -1357,6 +1370,11 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   int cm_mode, hmm_mode;      /* CM exp tail mode and CP9 HMM exp tail mode for E-value statistics */
   int qdb_mode;               /* CM exp tail mode during QDB filter round */
   int cut_point;              /* HMM forward E-value cut point from filter threshold stats */
+  float xhmm;                 /* for filtered search, multiplier of QDB ncalcs times predicted HMM dp calcs */
+  float final_sc_acc2hmmfil = -1.; /* final round bit score cutoff according to HMM filter, used to calc filter thresholds */
+  float final_E_acc2hmmfil  = -1.; /* final round bit score cutoff according to HMM filter, used to calc filter thresholds */
+  float final_sc_acc2qdbfil = -1.; /* final round bit score cutoff according to QDB filter, used to calc filter thresholds */
+  float final_E_acc2qdbfil  = -1.; /* final round bit score cutoff according to QDB filter, used to calc filter thresholds */
 
   if(cm->si != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo_for_calibrated_cm(), cm->si is not NULL, shouldn't happen.\n");
   if(! (cm->flags & CMH_EXPTAIL_STATS)) ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo_for_calibrated_cm(): but cm: %s has no exp tail stats.", cm->name);
@@ -1433,6 +1451,38 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   /* update the search info, which holds the thresholds for final round */
   UpdateSearchInfoCutoff(cm, cm->si->nrounds, final_ctype, final_sc, final_E);   
   ValidateSearchInfo(cm, cm->si);
+
+  /* Handle case where --fil-finE-hmm <x> or --fil-finT-hmm <x> was set on command line, if this is the case, 
+   * we pretend <x> is final E/final T cutoff for purposes of setting HMM filter threshold.
+   */
+  if(esl_opt_IsOn(go, "--fil-finE-hmm")) { 
+    final_E_acc2hmmfil = esl_opt_GetReal(go, "--fil-finE-hmm");
+    if((status  = E2MinScore(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_E_acc2hmmfil, &final_sc_acc2hmmfil)) != eslOK) return status;
+  }
+  else if (esl_opt_IsOn(go, "--fil-finT-hmm")) { 
+    final_sc_acc2hmmfil = esl_opt_GetReal(go, "--fil-finT-hmm");
+    if((status = Score2MaxE(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_sc_acc2hmmfil, &final_E_acc2hmmfil)) != eslOK) return status;
+  }
+  else { /* neither --fil-finE-hmm nor --fil-finT-hmm were set on command line */
+    final_sc_acc2hmmfil = final_sc;
+    final_E_acc2hmmfil  = final_E;
+  }
+  /* Handle case where --fil-finE-qdb <x> or --fil-finT-qdb <x> was set on command line, if this is the case, 
+   * we pretend <x> is final E/final T cutoff for purposes of setting QDB filter threshold.
+   */
+  if(esl_opt_IsOn(go, "--fil-finE-qdb")) { 
+    final_E_acc2qdbfil = esl_opt_GetReal(go, "--fil-finE-qdb");
+    if((status  = E2MinScore(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_E_acc2qdbfil, &final_sc_acc2qdbfil)) != eslOK) return status;
+  }
+  else if (esl_opt_IsOn(go, "--fil-finT-qdb")) { 
+    final_sc_acc2qdbfil = esl_opt_GetReal(go, "--fil-finT-qdb");
+    if((status = Score2MaxE(cm, errbuf, (use_hmmonly ? hmm_mode : cm_mode), final_sc_acc2qdbfil, &final_E_acc2qdbfil)) != eslOK) return status;
+  }
+  else { /* neither --fil-finE-qdb nor --fil-finT-qdb were set on command line */
+    final_sc_acc2qdbfil = final_sc;
+    final_E_acc2qdbfil  = final_E;
+  }
+
   /* DumpSearchInfo(cm->si); */
   /* done with threshold for final round */
 
@@ -1452,7 +1502,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 
   if(do_hmm_filter) { /* determine thresholds for HMM forward filter */
     if(use_hmmonly) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo_for_calibrated_cm(), --fil-hmm enabled, along with --viterbi or --forward, shouldn't happen.");
-    if( (! esl_opt_IsOn(go, "--fil-E-hmm")) && (! esl_opt_IsOn(go, "--fil-T-hmm"))) { /* default: use HMM filter threshold stats, if they exist in cmfile, else use default bit score cutoff */
+    if( (! esl_opt_IsUsed(go, "--fil-E-hmm")) && (! esl_opt_IsUsed(go, "--fil-T-hmm")) && (! esl_opt_IsUsed(go, "--fil-S-hmm"))) { /* default: use HMM filter threshold stats, if they exist in cmfile, else use default bit score cutoff */
       /* No relevant options selected. Set HMM filter cutoff as appropriate HMM E value cutoff from cmfile */
       /* determine filter threshold mode, the mode of final stage of searching, either FTHR_CM_LC,
        * FTHR_CM_LI, FTHR_CM_GC, FTHR_CM_GI (can't be an HMM mode b/c --viterbi and --forward toggle --fil-hmm off)
@@ -1466,26 +1516,37 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
       /* determine the appropriate filter cut point <cut_point> to use, for details
        * see comments in function: searchinfo.c:GetHMMFilterFwdECutGivenCME() for details */
       if(final_ctype == SCORE_CUTOFF) { /* final round has bit score cutoff */
-	if((status = GetHMMFilterFwdECutGivenCMBitScore(hfi_ptr, errbuf, final_sc, cfg->dbsize, &cut_point, cm, cm_mode)) != eslOK) return status; 
+	if((status = GetHMMFilterFwdECutGivenCMBitScore(hfi_ptr, errbuf, final_sc_acc2hmmfil, cfg->dbsize, &cut_point, cm, cm_mode)) != eslOK) return status; 
       }
       else { /* final round has E-value cutoff */
-	if((status = GetHMMFilterFwdECutGivenCME(hfi_ptr, errbuf, final_E, cfg->dbsize, &cut_point)) != eslOK) return status; 
+	if((status = GetHMMFilterFwdECutGivenCME(hfi_ptr, errbuf, final_E_acc2hmmfil, cfg->dbsize, &cut_point)) != eslOK) return status; 
       }
-      if(cut_point != -1) { /* it's worth it to filter */
+      if(cut_point != -1 ) { /* it's worth it to filter */
 	fhmm_E = hfi_ptr->fwd_E_cut[cut_point] * ((double) cfg->dbsize / (double) hfi_ptr->dbsize); 
 	fhmm_S = E2SurvFract(fhmm_E, cm->W, cfg->avg_hit_len, cfg->dbsize, TRUE);
-	/* check if --fil-Smax-hmm applies */
-	if( esl_opt_IsOn(go, "--fil-Smax-hmm")) { 
-	  if(fhmm_S > esl_opt_GetReal(go, "--fil-Smax-hmm")) { /* predicted survival fraction exceeds maximum allowed, set E cutoff as E value that gives max allowed survival fraction */
-	    fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-Smax-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
-
+	/* check if --fil-Xmin-hmm applies */
+	if(esl_opt_IsOn(go, "--fil-Xmin-hmm")) { 
+	  xhmm = GetHMMFilterXHMM(hfi_ptr, cut_point, cm->W, cfg->avg_hit_len, final_ncalcs_per_res, fhmm_ncalcs_per_res);
+	  while((xhmm < esl_opt_GetReal(go, "--fil-Xmin-hmm")) && (cut_point >= 0)) { 
+	    cut_point--;
+	    xhmm = GetHMMFilterXHMM(hfi_ptr, cut_point, cm->W, cfg->avg_hit_len, final_ncalcs_per_res, fhmm_ncalcs_per_res);
+	    fhmm_E = hfi_ptr->fwd_E_cut[cut_point] * ((double) cfg->dbsize / (double) hfi_ptr->dbsize); 
+	    fhmm_S = E2SurvFract(fhmm_E, cm->W, cfg->avg_hit_len, cfg->dbsize, TRUE);
 	  }
+	}
+	/* check if --fil-Smax-hmm applies */
+	if(fhmm_S > esl_opt_GetReal(go, "--fil-Smax-hmm")) { /* predicted survival fraction exceeds maximum allowed, set E cutoff as E value that gives max allowed survival fraction */
+	  fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-Smax-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
+	}
+	/* check if --fil-Smin-hmm applies */
+	if((esl_opt_IsOn(go, "--fil-Smin-hmm")) && (fhmm_S < esl_opt_GetReal(go, "--fil-Smin-hmm"))) { /* predicted survival fraction is below minimum allowed, set E cutoff as E value that gives min allowed survival fraction */
+	  fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-Smin-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
 	}
 	if((status  = E2MinScore(cm, errbuf, hmm_mode, fhmm_E, &fhmm_sc)) != eslOK) return status; /* note: use hmm_mode, not fthr_mode */
       }
       else { 
 	/* if --fil-Smax-hmm <x> enabled, filter with E value that gives survival fraction of <x> */
-	if( esl_opt_IsOn(go, "--fil-Smax-hmm")) { 
+	if(esl_opt_GetBoolean(go, "--fil-A-hmm")) { 
 	  fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-Smax-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
 	}
 	else { 
@@ -1495,15 +1556,19 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 	  ESL_DPRINTF1(("cut_point -1, always_better FALSE\n"));
 	}
       }
-    } /* end of if( !esl_opt_IsOn(go, "--fil-E-hmm") && !esl_opt_IsOn(go, "--fil-T-hmm")) */
-    else if( esl_opt_IsOn(go, "--fil-E-hmm")) {
+    } /* end of if( !esl_opt_IsUsed(go, "--fil-E-hmm") && !esl_opt_IsUsed(go, "--fil-T-hmm") && !esl_opt_IsUsed(go, "--fil-S-hmm")) */
+    else if( esl_opt_IsUsed(go, "--fil-E-hmm")) {
       fhmm_ctype = E_CUTOFF;
       fhmm_E     = esl_opt_GetReal(go, "--fil-E-hmm");
       /*fhmm_E     = ESL_MIN(fhmm_E, 1.0);*/ /* we don't allow filter E cutoffs below 1. */
     }
-    else if( esl_opt_IsOn(go, "--fil-T-hmm")) {
+    else if( esl_opt_IsUsed(go, "--fil-T-hmm")) {
       fhmm_ctype = SCORE_CUTOFF;
       fhmm_sc    = esl_opt_GetReal(go, "--fil-T-hmm");
+    }
+    else if(esl_opt_IsUsed(go, "--fil-S-hmm")) {
+      fhmm_ctype = E_CUTOFF;
+      fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-S-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
     }
     else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No HMM filter cutoff selected. This shouldn't happen.");
 
@@ -1524,8 +1589,9 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 
   if(do_qdb_filter && esl_opt_GetBoolean(go, "--fil-qdb")) { /* determine thresholds, beta for qdb cyk filter */
     /* build the ScanMatrix_t for the QDB filter round, requires calcing dmin, dmax */
-    if( esl_opt_IsOn(go, "--fil-beta")) fqdb_beta_qdb = esl_opt_GetReal(go, "--fil-beta");
-    else fqdb_beta_qdb = cm->beta_W; /* use beta used to calc W in CM file by default */
+
+    fqdb_beta_qdb = esl_opt_GetReal(go, "--fil-beta");
+
     safe_windowlen = cm->W * 3;
     while(!(BandCalculationEngine(cm, safe_windowlen, fqdb_beta_qdb, FALSE, &fqdb_dmin, &fqdb_dmax, NULL, NULL))) {
       free(fqdb_dmin);
@@ -1552,7 +1618,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
     fqdb_smx = cm_CreateScanMatrix(cm, fqdb_W, fqdb_dmin, fqdb_dmax, fqdb_beta_W, fqdb_beta_qdb, TRUE, TRUE, FALSE);
     if((status = cm_CountSearchDPCalcs(cm, errbuf, 10*fqdb_smx->W, fqdb_smx->dmin, fqdb_smx->dmax, fqdb_smx->W, TRUE,  NULL, &(fqdb_ncalcs_per_res))) != eslOK) return status;
 
-    if( (! esl_opt_IsOn(go, "--fil-E-qdb")) && (! esl_opt_IsOn(go, "--fil-T-qdb"))) {
+    if( (! esl_opt_IsOn(go, "--fil-E-qdb")) && (! esl_opt_IsUsed(go, "--fil-T-qdb"))) {
       /* No relevant options selected, use default method for setting CM QDB filter */
       fqdb_ctype = E_CUTOFF;
 
@@ -1568,13 +1634,13 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
       fqdb_Emin = SurvFract2E(fqdb_Smin, fqdb_smx->W, cfg->avg_hit_len, cfg->dbsize);
       
       fqdb2final_Efactor = 100.;
-      fqdb_E = ESL_MAX(final_E * fqdb2final_Efactor, fqdb_Emin);
+      fqdb_E = ESL_MAX(final_E_acc2qdbfil * fqdb2final_Efactor, fqdb_Emin);
     }
-    else if (esl_opt_IsOn(go, "--fil-E-qdb")) { /* survival fraction for QDB filter set on command line, use that */
+    else if (esl_opt_IsUsed(go, "--fil-E-qdb")) { /* survival fraction for QDB filter set on command line, use that */
       fqdb_ctype = E_CUTOFF;
       fqdb_E     = esl_opt_GetReal(go, "--fil-E-qdb");
     }
-    else if (esl_opt_IsOn(go, "--fil-T-qdb")) {
+    else if (esl_opt_IsUsed(go, "--fil-T-qdb")) {
       fqdb_ctype = SCORE_CUTOFF;
       fqdb_sc    = esl_opt_GetReal(go, "--fil-T-qdb");
     }
@@ -1612,7 +1678,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   return eslOK;
 }
 
-/* Function: set_searchinfo_for_uncalibrated_cm)
+/* Function: set_searchinfo_for_uncalibrated_cm()
  * Date:     EPN, Thu Mar  6 05:29:16 2008
  * 
  * Purpose:  For a CM WITHOUT exponential tail and filter thresholds statistics 
@@ -1694,10 +1760,7 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
  *
  * ('none' below means none of --fil-no-qdb, --fil-T-qdb, --fil-E-qdb) 
  * 
- * beta, the tail loss probability for the QDB calculation is determined as follows:
- * If --fil-beta <x> is not enabled, cm->beta_qdb is set as cm->beta_W as read in the cmfile
- *               and initially set by cmbuild.
- * If --fil-beta <x> is enabled, <x> is used as cm->beta_qdb
+ * beta, the tail loss probability for the QDB calculation is set as <x> from --fil-beta <x>.
  *
  * Final round related options (after all filtering is complete):
  *
@@ -1738,6 +1801,19 @@ set_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   if(cm->si != NULL)                ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo_for_uncalibrated_cm(), cm->si is not NULL, shouldn't happen.\n");
   if(cm->flags & CMH_EXPTAIL_STATS) ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo_for_uncalibrated_cm(): but cm: %s has exp tail stats.", cm->name);
   if(cm->flags & CMH_FILTER_STATS)  ESL_FAIL(eslEINCOMPAT, errbuf, "set_searchinfo_for_uncalibrated_cm(): but cm: %s has filter stats.", cm->name);
+
+  if(esl_opt_IsUsed(go, "--fil-finE-hmm")) { /* can't deal with this b/c we don't have exp tail stats */
+    ESL_FAIL(eslEINVAL, errbuf, "--fil-finE-hmm requires exp tail statistics in <cm file>. Use cmcalibrate to get exp tail stats.");
+  }
+  if(esl_opt_IsUsed(go, "--fil-finT-hmm")) { /* can't deal with this b/c we don't have exp tail stats */
+    ESL_FAIL(eslEINVAL, errbuf, "--fil-finT-hmm requires exp tail statistics in <cm file>. Use cmcalibrate to get exp tail stats.");
+  }
+  if(esl_opt_IsUsed(go, "--fil-finE-qdb")) { /* can't deal with this b/c we don't have exp tail stats */
+    ESL_FAIL(eslEINVAL, errbuf, "--fil-finE-qdb requires exp tail statistics in <cm file>. Use cmcalibrate to get exp tail stats.");
+  }
+  if(esl_opt_IsUsed(go, "--fil-finT-qdb")) { /* can't deal with this b/c we don't have exp tail stats */
+    ESL_FAIL(eslEINVAL, errbuf, "--fil-finT-qdb requires exp tail statistics in <cm file>. Use cmcalibrate to get exp tail stats.");
+  }
 
   /* Create SearchInfo, specifying no filtering, we change the threshold below */
   CreateSearchInfo(cm, SCORE_CUTOFF, 0., -1.);
@@ -1807,17 +1883,26 @@ set_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   fhmm_sc = -1.;
   if(do_hmm_filter) { /* determine thresholds for HMM forward filter */
     if(use_hmmonly) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "set_searchinfo_for_uncalibrated_cm(), --fil-hmm enabled, along with --viterbi or --forward, shouldn't happen.");
-    if( (! esl_opt_IsOn(go, "--fil-E-hmm")) && (! esl_opt_IsOn(go, "--fil-T-hmm"))) { 
+    if( (! esl_opt_IsUsed(go, "--fil-E-hmm")) && (! esl_opt_IsUsed(go, "--fil-T-hmm"))) { 
       /* No relevant options selected, set cutoff as default HMM filter bit score. */
       fhmm_sc    = esl_opt_GetReal(go, "--fil-T-hmm");
-    } /* end of if( !esl_opt_IsOn(go, "--fil-E-hmm") && !esl_opt_IsOn(go, "--fil-T-hmm")) */
-    else if( esl_opt_IsOn(go, "--fil-E-hmm")) { /* can't deal with this b/c we don't have exp tail stats */
+    } /* end of if( !esl_opt_IsUsed(go, "--fil-E-hmm") && !esl_opt_IsUsed(go, "--fil-T-hmm")) */
+    else if(esl_opt_IsUsed(go, "--fil-E-hmm")) { /* can't deal with this b/c we don't have exp tail stats */
       ESL_FAIL(eslEINVAL, errbuf, "--fil-E-hmm requires exp tail statistics in <cm file>. Use cmcalibrate to get exp tail stats.");
     }
-    else if( esl_opt_IsOn(go, "--fil-T-hmm")) { /* HMM filter bit score threshold was set on command line, use that */
-      fhmm_sc    = esl_opt_GetReal(go, "--fil-T-hmm");
+    else if(esl_opt_IsUsed(go, "--fil-S-hmm")) { /* can't deal with this b/c we don't have exp tail stats */
+      ESL_FAIL(eslEINVAL, errbuf, "--fil-S-hmm requires exp tail statistics in <cm file>. Use cmcalibrate to get exp tail stats.");
+    }
+    else if(esl_opt_IsUsed(go, "--fil-T-hmm")) { /* HMM filter bit score threshold was set on command line, use that */
+      fhmm_sc = esl_opt_GetReal(go, "--fil-T-hmm");
     }
     else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No HMM filter cutoff selected. This shouldn't happen.");
+  }
+  if(esl_opt_IsUsed(go, "--fil-Smin-hmm")) { /* can't deal with this b/c we don't have exp tail stats */
+      ESL_FAIL(eslEINVAL, errbuf, "--fil-Smin-hmm requires exp tail statistics in <cm file>. Use cmcalibrate to get exp tail stats.");
+  }
+  if(esl_opt_IsUsed(go, "--fil-Smax-hmm")) { /* can't deal with this b/c we don't have exp tail stats */
+      ESL_FAIL(eslEINVAL, errbuf, "--fil-Smax-hmm requires exp tail statistics in <cm file>. Use cmcalibrate to get exp tail stats.");
   }
 
   /* B. determine thresholds/stats for CM QDB filter to add */
@@ -1825,8 +1910,8 @@ set_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   fqdb_sc = -1.;
   if(do_qdb_filter && esl_opt_GetBoolean(go, "--fil-qdb")) { /* determine thresholds, beta for qdb cyk filter */
     /* build the ScanMatrix_t for the QDB filter round, requires calcing dmin, dmax */
-    if( esl_opt_IsOn(go, "--fil-beta")) fqdb_beta_qdb = esl_opt_GetReal(go, "--fil-beta");
-    else fqdb_beta_qdb = cm->beta_W; /* use beta used to calc W in CM file by default */
+    fqdb_beta_qdb = esl_opt_GetReal(go, "--fil-beta");
+
     safe_windowlen = cm->W * 3;
     while(!(BandCalculationEngine(cm, safe_windowlen, fqdb_beta_qdb, FALSE, &fqdb_dmin, &fqdb_dmax, NULL, NULL))) {
       free(fqdb_dmin);
@@ -1852,14 +1937,14 @@ set_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
     }
     fqdb_smx = cm_CreateScanMatrix(cm, fqdb_W, fqdb_dmin, fqdb_dmax, fqdb_beta_W, fqdb_beta_qdb, TRUE, TRUE, FALSE);
     
-    if((!esl_opt_IsOn(go, "--fil-E-qdb")) && (!esl_opt_IsOn(go, "--fil-T-qdb"))) {
+    if((!esl_opt_IsUsed(go, "--fil-E-qdb")) && (!esl_opt_IsUsed(go, "--fil-T-qdb"))) {
       /* No relevant options selected, set CM QDB filter as default bit score. */
       fqdb_sc    = esl_opt_GetReal(go, "--fil-T-qdb");
     }
-    else if( esl_opt_IsOn(go, "--fil-E-qdb")) { /* can't deal with this b/c we don't have exp tail stats */
+    else if( esl_opt_IsUsed(go, "--fil-E-qdb")) { /* can't deal with this b/c we don't have exp tail stats */
       ESL_FAIL(eslEINVAL, errbuf, "--fil-E-qdb requires exp tail statistics in <cm file>. Use cmcalibrate to get exp tail stats.");
     }
-    else if( esl_opt_IsOn(go, "--fil-T-qdb")) { /* CM CYK bit score threshold was set on command line, use that */
+    else if( esl_opt_IsUsed(go, "--fil-T-qdb")) { /* CM CYK bit score threshold was set on command line, use that */
       fqdb_sc    = esl_opt_GetReal(go, "--fil-T-qdb");
     }
     else ESL_FAIL(eslEINCONCEIVABLE, errbuf, "No CM filter cutoff selected. This shouldn't happen.");

@@ -24,7 +24,7 @@ and outputs high-scoring alignments.
 Currently, the sequence file must be in FASTA format.
 
 .PP
-CM files are profiles of RNA consensus secondary structure. A
+CMs are profiles of RNA consensus sequence and secondary structure. A
 CM file is produced by the 
 .B cmbuild 
 program, from a given RNA sequence alignment of known 
@@ -39,7 +39,7 @@ acceleration. It is strongly recommended to calibrate your
 CM files before using 
 .B cmsearch.
 CM calibration is described in more detail below
-and in chapters 5 and 6 of the User Guide.
+and in chapters 5 and 6 of the User's Guide.
 
 .PP
 .B cmsearch
@@ -88,9 +88,27 @@ The first round of filtering is performed with an HMM. If the CM file
 is calibrated, the threshold for the HMM filter will be automatically
 chosen as an appropriate one as determined in 
 .B cmcalibrate.
+The minimum threshold that will automatically be chosen is the threshold
+that will allow a predicted fraction (0.02 by default, changeable to 
+.I <x> 
+with
+.BI --fil-Smin-hmm " <x>"
+) of the database to survive the filter. 
+The maximum threshold that will automatically be chosen is the
+threshold that will allow a predicted fraction (0.5 by default,
+changeable to 
+.I <x> 
+with 
+.BI --fil-Smax-hmm " <x>" 
+) of the database to survive the filter. If the threshold from
+.B cmcalibrate
+is greater than this maximum fraction, the HMM filter will be turned off and not used.
+To ensure that the HMM filter is never turned off and
+always uses a threshold that gives this maximum fraction you must use the
+.B --fil-A-hmm
+option.
 If the model is not calibrated, the default HMM filter threshold is
-3.0 bits.
-The HMM filter threshold can be manually set to bit score
+3.0 bits. The HMM filter threshold can be manually set to bit score
 .I <x>
 using the 
 .BI --fil-T-hmm " <x>"
@@ -98,15 +116,21 @@ option as described below, or to E-value
 .I <x>
 using the 
 .BI --fil-E-hmm " <x>" 
+option, or to the bit score that will allow a predicted database fraction of 
+.I <x>
+to survive the filter using the 
+.BI --fil-S-hmm " <x>" 
 option. The 
 .B --fil-E-hmm
-option will only work if the CM file has been calibrated.
+and
+.B --fil-S-hmm
+options will only work if the CM file has been calibrated.
 The HMM filter can be turned off with the 
 .B --fil-no-hmm 
 option.
 
-The second round of filtering is performed with the CM (not an HMM) using
-query-dependent banding (QDB) for acceleration. 
+The second round of filtering is performed with the CM CYK algorithm
+(not an HMM) using query-dependent banding (QDB) for acceleration. 
 Briefly, QDB precalculates regions of the dynamic
 programming matrix that have negligible probability based on the query
 CM's transition probabilities. 
@@ -117,14 +141,14 @@ For more information on QDB see
 The beta paramater is the amount of
 probability mass considered negligible during band calculation, lower
 values of beta yield greater speedups but also a greater chance of missing
-the optimal alignment. The default beta is 1E-7: determined
+the optimal alignment. The default beta is 1E-10: determined
 empirically as a good tradeoff between sensitivity and speed, though
 this value can be changed with the
 .BI --fil-beta " <x>" 
 option. 
 If the CM file has been calibrated, the QDB filter threshold will be
 automatic set to an appropriate value using an ad-hoc procedure (see
-the User Guide). If the CM file has not been calibrated, the default
+the User's Guide). If the CM file has not been calibrated, the default
 QDB filter threshold is 0.0 bits.
 The QDB filter threshold can be manually set to bit score
 .I <x>
@@ -156,7 +180,11 @@ For example:
 .I --mpi 
 .I [other options]
 .I cmfile
-.I seqfile
+.I seqfile.
+The 
+.B cmsearch
+program must have been compiled in MPI mode for this to work.
+See the Installation section of the User's Guide for more information.
 
 The 
 .BI --forecast " <n>"
@@ -186,7 +214,7 @@ By default,
 .B cmsearch
 outputs the alignments of search hits that score above the final search
 round threshold. The format of this output is described in the "Tutorial" 
-section of the User guide. This format has purposefully not
+section of the User's Guide. This format has purposefully not
 been changed from the 0.x versions of @PACKAGE@ so as not to break
 existing parsers. However, it can be augmented with a new line of
 output that marks non-compensatory basepairs with an 'x' by
@@ -500,7 +528,7 @@ where
 .I <x>
 is any positive real number less than 1.0. Beta is the probability
 mass considered negligible during band calculation. The default beta
-for the QDB filter round of search is 1E-7.
+for the QDB filter round of search is 1E-10.
 
 .TP 
 .BI --fil-T-qdb " <x>"
@@ -547,20 +575,62 @@ passed to the next round, either a QDB filter round, or if the
 QDB filter is disable, to the final round of search. This
 option is only available if the CM file has been calibrated. 
 
+
+.TP 
+.BI --fil-S-hmm " <x>"
+Set the bit score cutoff for the HMM filter round as the score that
+will allow a predicted
+.I <x>
+fraction of the database to survive the HMM filter round, 
+where
+.I <x>
+is a positive real number between 0 and 1.
+
 .TP 
 .BI --fil-Smax-hmm " <x>"
-Set the maximum predicted survival fraction for an HMM filter as 
-.I <x>,
-where
-.I <x> 
-is a positive real number less than 1.0.
-The E-value cutoff for the HMM filter will be set as the value
-.I <y>,
-such that if 
-.I <y>
-hits survived the filter it is predicted that exactly
+When using automatically calibrated HMM thresholds for a CM file
+calibrated with 
+.B cmcalibrate,
+set the maximum HMM filter threshold as the score that will allow a
+predicted 
 .I <x>
-fraction of the residues in the database would survive.
+fraction of the database to survive the filter. If the automatic
+threshold from 
+.B cmcalibrate
+exceeds this value, turn the HMM filter off and do not use it for the
+search. By default, this option is ON with the default value of 0.5
+used for 
+.I <x>.
+To modify the behavior of this
+option so it does not turn off the HMM filter if exceeded use the
+.B --fil-A-hmm
+option described below.
+
+.TP 
+.BI --fil-Smin-hmm " <x>"
+When using automatically calibrated HMM thresholds for a CM file
+calibrated with 
+.B cmcalibrate,
+set the minimum HMM filter threshold as the score that will allow a
+predicted 
+.I <x>
+fraction of the database to survive the filter. By default, this
+option is ON with the default value of 0.02 used for
+.I <x>.
+Setting 
+.I <x> lower will only accelerate the majority of
+searches by a small amount.
+
+.TP 
+.B --fil-A-hmm
+Always enforce the maximum HMM filter threshold of
+.I <x>
+from 
+.BI --fil-Smax-hmm " <x>".
+That is, never turn off the HMM filter, or set its threshold above the
+score that will allow a predicted
+.I <x>
+fraction of the database to survive. This option is OFF by default.
 
 .TP 
 .BI --hmm-W " <n>"

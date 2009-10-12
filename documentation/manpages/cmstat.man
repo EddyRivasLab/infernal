@@ -17,7 +17,7 @@ covariance models (CMs) in
 .I cmfile. 
 
 .PP
-CM files are profiles of RNA consensus secondary structure. A
+CMs are profiles of RNA consensus sequence and secondary structure. A
 CM file is produced by the 
 .B cmbuild 
 program, from a given RNA sequence alignment of known 
@@ -30,7 +30,7 @@ faster speed. It is strongly recommended to calibrate your
 CM files before using 
 .B cmsearch.
 CM calibration is described in more detail below
-and in chapters 5 and 6 of the User Guide.
+and in chapters 5 and 6 of the User's Guide.
 .B cmstat
 is useful for determining statistics on calibrated or
 non-calibrated CM files.

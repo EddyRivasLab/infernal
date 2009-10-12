@@ -1,7 +1,7 @@
 #################################################################
 # Infernal
 # src Makefile
-# SVN $Id$
+# SVN $Id: Makefile.in 2603 2008-10-05 19:21:32Z kolbed $
 #################################################################
 # @LICENSE@
 #################################################################
@@ -12,7 +12,6 @@ SHELL  = /bin/sh
 #
 CC     = @CC@
 CFLAGS = @CFLAGS@
-SIMDFLAGS= @SIMD_CFLAGS@
 
 ## other defined flags. 
 #  DEFS contains stuff that autoconf decides on. 
@@ -34,9 +33,9 @@ MPILIBS   = @MPILIBS@
 
 # Where the build arena is (module .h and .o files)
 #
-MYLIBS   = -leasel -lhmmer
-MYLIBDIR = -L../easel -L../hmmer/src/ 
-MYINCDIR = -I../easel -I../hmmer/src/ 
+MYLIBS   = -leasel 
+MYLIBDIR = -L../../easel 
+MYINCDIR = -I../../easel 
 
 PROGS = cmalign cmbuild cmcalibrate cmemit cmscore cmsearch cmstat trcyk truncyk_check
 
@@ -57,8 +56,6 @@ OBJS  = cm.o\
 	cp9_modelmaker.o\
 	cp9_mx.o\
 	cp9_trace.o\
-	p7_modelmaker.o\
-	my_p7_msvfilter.o\
 	alphabet.o\
 	dispatch.o\
 	display.o\
@@ -79,7 +76,7 @@ HDRS  = funcs.h\
 	structs.h
 
 .c.o: 
-	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) -c $<
+	$(CC) $(CFLAGS) $(DEFS) $(MYINCDIR) -c $<
 
 #################################################################
 ## Targets defining how to make INFERNAL executables.
@@ -87,7 +84,7 @@ HDRS  = funcs.h\
 all: 	$(PROGS) 
 
 $(PROGS): @EXEC_DEPENDENCY@ $(OBJS) ${HDRS}
-	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS) $(MPILIBS)
+	$(CC) $(CFLAGS) $(DEFS) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS) $(MPILIBS)
 
 
 #################################################################
@@ -99,7 +96,6 @@ libinfernal.a: $(OBJS) ${HDRS}
 	$(AR) libinfernal.a $(OBJS) 
 	$(RANLIB) libinfernal.a
 	chmod 644 libinfernal.a
-
 
 #################################################################
 ## Miscellaneous targets.

@@ -74,7 +74,6 @@ static ESL_OPTIONS options[] = {
   { "--viterbi", eslARG_NONE,   FALSE,  NULL, NULL,     ALGOPTS,    NULL,        "-p", "align to a CM Plan 9 HMM with the Viterbi algorithm",2 },
   { "--sub",     eslARG_NONE,   FALSE,  NULL, NULL,     NULL,       NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
   { "--small",   eslARG_NONE,   FALSE,  NULL, NULL,     NULL,    "--cyk", "--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
-  /* Banded alignment */
   { "--hbanded", eslARG_NONE, "default",  NULL, NULL,   NULL,     NULL,      ACCOPTS, "accelerate using CM plan 9 HMM derived bands", 3 },
   { "--p7",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",    ACCOPTS, "really accelerate using plan 7 HMM derived bands", 3 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,"--hbanded",    NULL,  "--hbanded", "do not use bands to accelerate aln algorithm", 3 },
