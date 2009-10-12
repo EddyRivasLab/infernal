@@ -169,7 +169,7 @@ Options:
   <*.rmm rmark module>           
      - Actually runs the search program see infernal.rmm for an example
   <*.rmk rmark config file>
-     - Defines options for the *.rmm module, see inf_qdb-72.rmk.
+     - Defines options for the *.rmm module, see inf-1p0.rmk.
   <seq directory with...>
      - the directory with all the sequence files for the benchmark, 
        in this case it's 'rmark-2-test', for a full rmark-2 benchmark run
@@ -187,8 +187,9 @@ Options:
 
 - Execute the rmark.pl script (takes about 10 minutes). 
 
-$ perl rmark.pl infernal.rmm rmk_files/inf_qdb-72.rmk rmark-2-test/
-       rmark-2-test/rmark-2-test.idx rmark-2-test.fa rmark-2-test_out
+# perl rmark.pl -M rmark-2-test infernal.rmm rmk_files/inf-1p0.rmk 
+  rmark-2-test/ rmark-2-test/rmark-2-test.idx rmark-2-test.fa
+  rmark-2-test_out
 
 - 2 new files will be created in the current working dir:
 $ ls -ltr | tail -2
