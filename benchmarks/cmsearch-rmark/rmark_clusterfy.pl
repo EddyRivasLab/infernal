@@ -188,7 +188,7 @@ for($i = 0; $i < scalar(@fam_roots_arr); $i++)
 	# Create a command the cluster will make to run rmark.pl
 	# IMPORTANT 1: this is a version 6 SGE qsub command - works at Janelia Farm; 
 	#              not sure about elsewhere...
-	$exec_line = "qsub -N $job_name -o /dev/null -b y -cwd -V -j y perl " . $rmark_call;
+	$exec_line = "qsub -q c05.q,c06.q,c07.q,c08.q,c09.q,c10.q,c11.q,c12.q,c13.q,c14.q -N $job_name -o /dev/null -b y -cwd -V -j y \'perl " . $rmark_call . "\'";
 	push(@exec_lines, $exec_line);
     }
 }	

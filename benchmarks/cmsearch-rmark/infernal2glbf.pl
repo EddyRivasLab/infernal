@@ -88,7 +88,7 @@ if(!($sort_scores))
 		}
 		if($use_evalues)
 		{
-		    printf("%-24s %-6f %d %d %d\n", $infernal::targname_byhit[$c][$i], $infernal::hitevalue[$c][$i], $infernal::hitsqfrom[$c][$i], $infernal::hitsqto[$c][$i], $orient); 
+		    printf("%-24s %g %d %d %d\n", $infernal::targname_byhit[$c][$i], $infernal::hitevalue[$c][$i], $infernal::hitsqfrom[$c][$i], $infernal::hitsqto[$c][$i], $orient); 
 		}
 		else
 		{
@@ -141,7 +141,7 @@ else # sort scores
 		}
 		if($use_evalues)
 		{
-		    printf("%-24s %-6f %d %d %d\n", $infernal::targname_byhit[$c][$i], $infernal::hitevalue[$c][$i], $infernal::hitsqfrom[$c][$i], $infernal::hitsqto[$c][$i], $orient); 
+		    printf("%-24s %g %d %d %d\n", $infernal::targname_byhit[$c][$i], $infernal::hitevalue[$c][$i], $infernal::hitsqfrom[$c][$i], $infernal::hitsqto[$c][$i], $orient); 
 		}
 		else
 		{

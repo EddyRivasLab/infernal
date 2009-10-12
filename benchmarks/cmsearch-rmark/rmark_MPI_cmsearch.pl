@@ -18,7 +18,7 @@
 # Options:
 #        -E <x> : use E-values [default], set max E-val to keep as <x> [df: 100]
 #        -B <x> : use bit scores, set min score to keep as <x>
-#        -O <x> : using old, version 0.x Infernal [default: using 1.x Infernal]
+#        -O     : using old, version 0.x Infernal [default: using 1.x Infernal]
 #        -A     : use all nodes of cluster
 
 # Example:  perl rmark_MPI_cmsearch.pl 100 infernal.rmm inf-71.rmk rmark-test/ rmark-test 
@@ -50,7 +50,7 @@ $use_bitscores = 0;
 $pre_version1 = 0;
 $use_all_nodes = 0;
 
-getopts('E:B:O:A');
+getopts('E:B:OA');
 if (defined $opt_E) { $e_cutoff = $opt_E; }
 if (defined $opt_B) { $b_cutoff = $opt_B; $use_evalues = 0; $use_bitscores = 1; }
 if (defined $opt_O) { $pre_version1 = 1; }
@@ -60,7 +60,7 @@ $usage = "Usage: perl rmark_MPI_cmsearch.pl\n\t<num processors to use>\n\t<.rmm 
 $options_usage  = "\nOptions:\n\t";
 $options_usage .= "-E <x> : use E-values [default], set max E-val to keep as <x> [df: 2]\n\t";
 $options_usage .= "-B <x> : use bit scores, set min score to keep as <x>\n\t";
-$options_usage .= "-O <x> : using old, version 0.x Infernal [default: using 1.x Infernal]\n\n";
+$options_usage .= "-O     : using old, version 0.x Infernal [default: using 1.x Infernal]\n\n";
 $options_usage .= "-A     : use all nodes of cluster\n\n";
 
 if(@ARGV != 8)
