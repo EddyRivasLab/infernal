@@ -153,6 +153,11 @@ Quiet; suppress the verbose banner, and only print the resulting
 alignment to stdout. This allows piping the alignment to the input 
 of other programs, for example.
 
+.TP 
+.B -1
+Output the alignment in pfam format, a non-interleaved Stockholm
+format in which each sequence is on a single line.
+
 .TP
 .BI --informat " <s>"
 Assert that the input 
