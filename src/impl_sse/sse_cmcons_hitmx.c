@@ -128,12 +128,8 @@ UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma,
   int status;
   int i, d;
   int bestd;
-  int r;
-  int dmin, dmax;
   int ip, jp;
-  float *comp = NULL;    /* 0..a..cm->abc-K-1, the composition of residue a within the hit being reported */
   int a;
-  float null3_correction;
   int do_report_hit;
   uint8_t hit_sc, cumulative_sc, bestd_sc;
 
@@ -144,9 +140,9 @@ UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma,
     gamma->savesc[j] = 0; // IMPOSSIBLE;
 
     if(alpha_row != NULL) { 
-      for (d = dmin; d <= dmax; d++) {
+      for (d = 0; d <= W; d++) {
 	i = j-d+1;
-	hit_sc = alpha_row[d];
+	hit_sc = *(((uint8_t *) &alpha_row[d%16])+d/16);
 	cumulative_sc = gamma->mx[i-1] + hit_sc;
 	if (cumulative_sc > gamma->mx[j]) {
 	  do_report_hit = TRUE;
@@ -161,31 +157,31 @@ UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma,
     }
   }
   /* mode 2: greedy */
-  if(gamma->iamgreedy && dmin <= dmax) { /* if dmin >= dmax, no valid d for this j exists, don't report any hits */
+  if(gamma->iamgreedy) {
     /* Resolving overlaps greedily (RSEARCH style),  
      * At least one hit is sent back for each j here.
      * However, some hits can already be removed for the greedy overlap
      * resolution algorithm.  Specifically, at the given j, any hit with a
      * d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
     /* First, report hit with d of dmin (min valid d) if >= cutoff */
-    hit_sc = alpha_row[dmin];
+    hit_sc = *((uint8_t *) &alpha_row[0]);
     if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) {
       do_report_hit = TRUE;
-      ip = j-dmin+gamma->i0;
+      ip = j  +gamma->i0;
       jp = j-1+gamma->i0;
       assert(ip >= gamma->i0);
       assert(jp >= gamma->i0);
       if(do_report_hit) { 
 	/*printf("\t0 %.3f %.3f ip: %d jp: %d r: %d\n", hit_sc+null3_correction, hit_sc, ip, jp, r);*/
-	ReportHit (ip, jp, r, hit_sc, results);
+	ReportHit (ip, jp, 0, hit_sc, results);
       }
     }
-    bestd    = dmin;
+    bestd    = 0;
     bestd_sc = hit_sc;
     /* Now, if current score is greater than maximum seen previous, report
      * it if >= cutoff and set new max */
-    for (d = dmin+1; d <= dmax; d++) {
-      hit_sc = alpha_row[d];
+    for (d = 1; d <= W; d++) {
+      hit_sc = *(((uint8_t *) &alpha_row[d%16]) + d/16);
       if (hit_sc > bestd_sc) {
 	if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) { 
 	  do_report_hit = TRUE;
@@ -195,14 +191,13 @@ UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma,
 	  assert(jp >= gamma->i0);
 	  if(do_report_hit) { 
 	    /*printf("\t1 %.3f %.3f ip: %d jp: %d r: %d\n", hit_sc+null3_correction, hit_sc, ip, jp, r);*/
-	    ReportHit (ip, jp, r, hit_sc, results);
+	    ReportHit (ip, jp, 0, hit_sc, results);
 	  }
 	}
 	if(hit_sc > bestd_sc) { bestd = d; bestd_sc = hit_sc; } /* we need to check again b/c if null3, hit_sc -= null3_correction */
       }
     }
   }
-  if(comp != NULL) free(comp);
   return eslOK;
 
  ERROR: 

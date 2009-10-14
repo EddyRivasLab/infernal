@@ -64,7 +64,7 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 //FIXME: needs some cleanup from the scalar detritus; should be able
 //FIXME: to drop the ScanMatrix (I think all we need from it is W
   int       status;
-//  GammaHitMx_t *gamma;          /* semi-HMM for hit resoultion */
+  GammaHitMx_epu8 *gamma;       /* semi-HMM for hit resoultion */
 //  float    *vsc;                /* best score for each state (float) */
 //  float     vsc_root;           /* best overall score (score at ROOT_S) */
 //  int       yoffset;		/* offset to a child state */
@@ -498,7 +498,7 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 //        }
 //      }
       /* update gamma, but only if we're reporting hits to results */
-//      if(results != NULL) if((status = UpdateGammaHitMxCM(cm, errbuf, gamma, jp_g, alpha[jp_v][0], dnA[0], dxA[0], FALSE, smx->bestr, results, W, act)) != eslOK) return status;
+      if(results != NULL) if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, jp_Sv, vec_ntS[jp_Sv], results, W)) != eslOK) return status;
 //      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
 //  if(vsc != NULL) vsc[0] = vsc_root;
