@@ -41,9 +41,4 @@
 
 1  exercise  esl-alimanip:trna/19       @esl-alimanip@ --sindi -o %NEW.STK%  %TMP.STK%
 
-1  prep      model/trna/2           @cmbuild@ --wnone --enone -F --gapthresh 0.95 %TRNA.EN.CM% trna1415G.sto
-1  prep      cmalign:trna/3         @cmalign@ -o %TMP.EN.STK% %TRNA.EN.CM% %100.FA%
-1  exercise  esl-alimanip:trna/20       @esl-alimanip@ --map %TMP.EN.STK% --omap %TMP.MAP% %TMP.STK%
-1  exercise  esl-alimanip:trna/21       @esl-alimanip@ --verbose --map %TMP.EN.STK% --omap %TMP.MAP% %TMP.STK%
-
-1  exercise  esl-alimanip:trna/22       @esl-alimanip@ --omask %TRNA.MASK% %TMP.STK%
+1  exercise  esl-alimanip:trna/20       @esl-alimanip@ --omask %TRNA.MASK% %TMP.STK%
