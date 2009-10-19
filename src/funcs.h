@@ -418,8 +418,8 @@ extern float iFastPairScoreRightOnlyDegenerate(int K, int *iesc, float *right, E
 
 
 /* from display.c */
-extern Fancyali_t    *CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, char *pcode1, char *pcode2);
-extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp, int do_noncompensatory);
+extern Fancyali_t    *CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, int do_noncanonical, char *pcode1, char *pcode2);
+extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp, int do_top);
 extern void           FreeFancyAli(Fancyali_t *ali);
 extern int            CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthresh, CMConsensus_t **ret_cons);
 extern void           FreeCMConsensus(CMConsensus_t *con);
@@ -637,7 +637,7 @@ extern int  CompareResultsByScore      (const void *a_void, const void *b_void);
 extern int  CompareResultsByEndPoint   (const void *a_void, const void *b_void);
 extern void SortResultsByScore         (search_results_t *results);
 extern void SortResultsByEndPoint      (search_results_t *results);
-extern void PrintResults               (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory, int namewidth);
+extern void PrintResults               (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory, int do_noncanonical, int namewidth);
 extern void ReportHit                  (int i, int j, int bestr, float score, search_results_t *results);
 extern int  UpdateHitScoresWithNull2Or3(CM_t *cm, char *errbuf, SearchInfo_t *si, search_results_t *results, ESL_DSQ *dsq, int first_result, float sc_cutoff, int do_null2, int do_null3, int sort_by_score, int sort_by_endpoint);
 extern void RemoveOverlappingHits      (search_results_t *results, int i0, int j0);

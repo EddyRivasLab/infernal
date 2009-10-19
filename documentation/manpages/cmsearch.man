@@ -216,13 +216,15 @@ outputs the alignments of search hits that score above the final search
 round threshold. The format of this output is described in the "Tutorial" 
 section of the User's Guide. This format has purposefully not
 been changed from the 0.x versions of @PACKAGE@ so as not to break
-existing parsers. However, it can be augmented with a new line of
-output that marks non-compensatory basepairs with an 'x' by
-using the 
+existing parsers. However, it can be augmented with a line of
+output that marks non-compensatory (negative scoring) basepairs with
+an 'x' by using the 
 .B -x
-option. This option was added to facilitate quick analysis of the
-secondary structure of hits by eye.
-Additionally, the
+option. Alternatively, only negative scoring non-canonical basepairs
+(those other than A:U, U:A, C:G, G:C, U:G, and G:U) are marked if the 
+.B -v
+option is enabled. These two options were added to facilitate quick
+analysis of the secondary structure of hits by eye.  Additionally, the
 .B -p
 option can be used to annotate the posterior probability of each
 aligned residue in the hit alignments as described below.
@@ -295,6 +297,12 @@ alignments of hits. The x's appear above the structural annotation in
 the alignment output. Basepairs without x's above them are
 compensatory with respect to the model. Compensatory mutations are
 good evidence for structural homology.
+
+.TP 
+.B -v
+Very similar to -x, but only mark negative scoring basepairs that are
+non-canonical basepairs (not an A:U, U:A, C:G, G:C, G:U or U:G), and
+mark them with a 'v' instead of an 'x' in the output.
 
 .TP
 .BI -Z " <x>"

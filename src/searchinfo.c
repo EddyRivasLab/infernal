@@ -935,10 +935,12 @@ void ReportHit (int i, int j, int bestr, float score, search_results_t *results)
  *           len                 length of the sequence
  *           do_top              are we doing the plus  (top)    strand?
  *           do_bottom           are we doing the minus (bottom) strand?
- *           do_noncompensatory  are we printing the optional non-compensatory line?
+ *           do_noncompensatory  are we printing the top line that marks all negative scoring and half bps?
+ *           do_noncanonical     are we printing the top line that marks all negative scoring non-canonical and half bps?
  *           namewidth           max length of a name in the target file, for pretty formatting 
  */
-void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, int do_top, int do_bottom, int do_noncompensatory, int namewidth)
+void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_ALPHABET *abc, CMConsensus_t *cons, dbseq_t *dbseq, 
+		   int do_top, int do_bottom, int do_noncompensatory, int do_noncanonical, int namewidth)
 {
   int i;
   char *name;
@@ -972,6 +974,10 @@ void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_
 
   if((si->cutoff_type[si->nrounds] == E_CUTOFF)  && !(cm->flags & CMH_EXPTAIL_STATS)) cm_Fail("PrintResults(), stats wanted but CM has no exp tail stats\n");
   do_stats = (cm->flags & CMH_EXPTAIL_STATS) ? TRUE : FALSE;
+
+  if(do_noncompensatory && do_noncanonical) { 
+    cm_Fail("PrintResults(), incompatible flags do_noncompensatory and do_noncanonical both set as TRUE, caller should pick one only.\n");
+  }
 
   if(do_stats) { /* determine exp tail mode to use */
     CM2ExpMode(cm, si->search_opts[si->nrounds], &cm_exp_mode, &cp9_exp_mode);
@@ -1041,14 +1047,14 @@ void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_
 	 */
 	ali = CreateFancyAli (abc, results->data[i].tr, cm, cons, 
 			      dbseq->sq[in_revcomp]->dsq + 
-			      (results->data[i].start-1), 
+			      (results->data[i].start-1), do_noncanonical,
 			      results->data[i].pcode1, results->data[i].pcode2);
 	
 	if(in_revcomp) offset = len - 1;
 	else           offset = 0;
 	PrintFancyAli(fp, ali,
 		      (COORDINATE(in_revcomp, results->data[i].start, len)-1), /* offset in sq index */
-		      in_revcomp, do_noncompensatory);
+		      in_revcomp, (do_noncanonical || do_noncompensatory));
 	FreeFancyAli(ali);
 	fprintf(fp, "\n");
       }

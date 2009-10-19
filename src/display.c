@@ -29,6 +29,7 @@
 #include "structs.h"
 
 static int *createMultifurcationOrderChart(CM_t *cm);
+static int  bp_is_canonical(char lseq, char rseq);
 static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
 
 /* Function:  CreateFancyAli()
@@ -43,6 +44,8 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  *            cm    - model
  *            cons  - consensus information for cm; see CreateCMConsensus()
  *            dsq   - digitized sequence
+ *            do_noncanonical - mark half-bps and negative scoring bps that are non-canonicals in top line with 'v'
+ *                              (by default, all negative scoring and half-bps are marked with 'x')
  *            pcode1- posteriors, 'tens' place, '9' in '93', NULL if none
  *            pcode2- posteriors, 'ones' place, '3' in '93', NULL if none
  *
@@ -52,7 +55,7 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  * Xref:      STL6 p.58
  */
 Fancyali_t *
-CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, char *pcode1, char *pcode2)
+CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, int do_noncanonical, char *pcode1, char *pcode2)
 {
   int         status;
   Fancyali_t *ali;              /* alignment structure we're building        */
@@ -73,6 +76,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
   int         lcons, rcons;	/* chars in consensus line; left, right      */
   int         lmid, rmid;	/* chars in ali quality line; left, right    */
   int         ltop, rtop;	/* chars in optional noncompensatory line; left, right */
+  int         lnegnc, rnegnc;	/* chars in optional noncanonical line; left, right */
   int         lseq, rseq;	/* chars in aligned target line; left, right */
   int         lpost1, rpost1;	/* chars in aligned posteriors, left, right  */
   int         lpost2, rpost2;	/* chars in aligned posteriors, left, right  */
@@ -303,6 +307,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
        */
       lmid = rmid = ' ';
       ltop = rtop = ' ';
+      lnegnc = rnegnc = ' ';
       if (cm->sttype[v] == MP_st) {
 	if (lseq == toupper(lcons) && rseq == toupper(rcons))
 	  {
@@ -320,6 +325,11 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	/* determine ltop, rtop for optional noncompensatory annotation, they are 'x' if lmid, rmid are ' ', and ' ' otherwise */
 	if (lmid == ' ' && rmid == ' ')
 	  ltop = rtop = 'x';
+
+	/* determine lnegnc, rnegnc for optional negative scoring non-canonical annotation, they are 'v' if lseq and rseq are a negative scoring non-canonical (not a AU,UA,GC,CG,GU,UG) pair */
+	if ((mode == 3) && (DegeneratePairScore(cm->abc, cm->esc[v], symi, symj) < 0) && (! bp_is_canonical(lseq, rseq))) {
+	  lnegnc = rnegnc = 'v';
+	}
       } else if (cm->sttype[v] == ML_st || cm->sttype[v] == IL_st) {
 	if (lseq == toupper(lcons)) 
 	  lmid = lseq;
@@ -337,7 +347,8 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
       }
       if(cm->stid[v] == MATP_ML || cm->stid[v] == MATP_MR) { 
 	if(mode == 3) { 
-	  ltop = rtop = 'x'; /* mark non-truncated half base-pairs (MATP_ML or MATP_MR) with 'x' */
+	  ltop = rtop = 'x';     /* mark non-truncated half base-pairs (MATP_ML or MATP_MR) with 'x' */
+	  lnegnc = rnegnc = 'v'; /* mark non-truncated half base-pairs (MATP_ML or MATP_MR) with 'v' */
 	}
       }
       /* If we're storing a residue leftwise - just do it.
@@ -348,7 +359,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	ali->cstr[pos]   = lstr;
 	ali->cseq[pos]   = lcons;
 	ali->mid[pos]    = lmid;
-	ali->top[pos]    = ltop;
+	ali->top[pos]    = (do_noncanonical) ? lnegnc : ltop;
 	ali->aseq[pos]   = lseq;
 	if(have_pcodes) {
 	  ali->pcode1[pos] = lpost1;
@@ -366,7 +377,8 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	  if ((status = esl_stack_IPush(pda, (int) rpost1)) != eslOK) goto ERROR;
 	}
 	if ((status = esl_stack_IPush(pda, (int) rseq)) != eslOK) goto ERROR;
-	if ((status = esl_stack_IPush(pda, (int) rtop)) != eslOK) goto ERROR;
+	if (do_noncanonical) { if ((status = esl_stack_IPush(pda, (int) rnegnc)) != eslOK) goto ERROR; }
+	else                 { if ((status = esl_stack_IPush(pda, (int) rtop))   != eslOK) goto ERROR; }
 	if ((status = esl_stack_IPush(pda, (int) rmid)) != eslOK) goto ERROR;
 	if ((status = esl_stack_IPush(pda, (int) rcons)) != eslOK) goto ERROR;
 	if ((status = esl_stack_IPush(pda, (int) rstr)) != eslOK) goto ERROR;
@@ -456,12 +468,15 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
  *                   to ease MPI search, all target hits start at posn 1
  *           in_revcomp- TRUE if hit we're printing an alignment for a
  *                       cmsearch hit on reverse complement strand.
- *           do_noncompensatory - TRUE to print special non-compensatory
- *                                annotation at top of alignment, FALSE not to.
+ *           do_top  - TRUE to turn on optional 'top-line' annotation.
+ *                     This was set in CreateFancyAli() as marking either:
+ *                     - negative scoring (non-compensatories) and half-bps: 
+ *                     - negative scoring *non-canonical* bps and half bps
+ *                       (in this 2nd case negative scoring canonicals are unmarked)
  * Returns:  (void)
  */
 void
-PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp, int do_noncompensatory)
+PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp, int do_top)
 {
   int   status;
   char *buf;
@@ -511,7 +526,7 @@ PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp, int do_nonc
 	strncpy(buf, ali->annote+pos, linelength);
 	fprintf(fp, "  %8s %s\n", " ", buf);
       }
-      if (do_noncompensatory && ali->top != NULL) {
+      if (do_top && ali->top != NULL) {
 	strncpy(buf, ali->top+pos, linelength);  
 	fprintf(fp, "  %8s %s\n", " ", buf);
       }
@@ -1287,3 +1302,72 @@ GetDate(char *errbuf, char **ret_date)
   ESL_FAIL(status, errbuf, "get_date() error status: %d, probably out of memory.", status);
   return status; 
 }
+
+
+/* Function: bp_is_canonical
+ * Date:     EPN, Wed Oct 14 06:17:27 2009
+ *
+ * Purpose:  Determine if two residues form a canonical base pair or not.
+ *           Works for RNA or DNA (because for some reason cmsearch allows
+ *           the user to format output as DNA (with --dna)).
+ *
+ * Returns:  TRUE if:
+ *           lseq  rseq
+ *           ----  ----
+ *            A     U
+ *            U     A
+ *            C     G
+ *            G     C
+ *            G     U
+ *            U     G
+ *            A     T
+ *            T     A
+ *            G     T
+ *            T     G
+ *            Else, return FALSE.
+ */
+int 
+bp_is_canonical(char lseq, char rseq)
+{
+  switch (toupper(lseq)) { 
+  case 'A':
+    switch (toupper(rseq)) { 
+    case 'U': return TRUE; break;
+    case 'T': return TRUE; break;
+    default: break;
+    }
+    break;
+  case 'C':
+    switch (toupper(rseq)) { 
+    case 'G': return TRUE; break;
+    default: break;
+    }
+    break;
+  case 'G':
+    switch (toupper(rseq)) { 
+    case 'C': return TRUE; break;
+    case 'U': return TRUE; break;
+    case 'T': return TRUE; break;
+    default: break;
+    }
+    break;
+  case 'U':
+    switch (toupper(rseq)) { 
+    case 'A': return TRUE; break;
+    case 'G': return TRUE; break;
+    default: break;
+    }
+    break;
+  case 'T':
+    switch (toupper(rseq)) { 
+    case 'A': return TRUE; break;
+    case 'G': return TRUE; break;
+    default: break;
+    }
+    break;
+  default: break;
+  }
+
+  return FALSE;
+}
+
