@@ -56,6 +56,7 @@
 
 1  exercise  cmsearch:trna/31        @cmsearch@  --rna %TRNA.CM% 1k.fa
 1  exercise  cmsearch:trna/32        @cmsearch@  --dna %TRNA.CM% 1k.fa
+1  exercise  cmsearch:trna/33        @cmsearch@  -T 0 -v %TRNA.CM% 1k.fa
 
 # 3.4.12 (U1, U2, U3)
 2  prep      model/3.4.12             @cmbuild@ -F --wnone --rf %3.4.12.CM% 3.4.12.stk
@@ -99,6 +100,7 @@
 
 2  exercise  cmsearch:3.4.12/31        @cmsearch@  --rna %3.4.12.CM% 1k.fa
 2  exercise  cmsearch:3.4.12/32        @cmsearch@  --dna %3.4.12.CM% 1k.fa
+2  exercise  cmsearch:3.4.12/33        @cmsearch@  -T 0 -v %3.4.12.CM% 1k.fa
 
 # options requiring a calibrated model
 # trna
@@ -120,6 +122,11 @@
 3  exercise  cmsearch:trnac/13        @cmsearch@  --fil-no-qdb trna.calibrated.cm 1k.fa
 3  exercise  cmsearch:trnac/14        @cmsearch@  --fil-beta 1E-2 trna.calibrated.cm 1k.fa
 
+3  exercise  cmsearch:trnac/15        @cmsearch@  --fil-S-hmm 0.04 trna.calibrated.cm 1k.fa
+3  exercise  cmsearch:trnac/16        @cmsearch@  --fil-Smin-hmm 0.001 trna.calibrated.cm 1k.fa
+3  exercise  cmsearch:trnac/17        @cmsearch@  --fil-Smax-hmm 0.25 --fil-A-hmm trna.calibrated.cm 1k.fa
+3  exercise  cmsearch:trnac/18        @cmsearch@  --fil-Smin-hmm 0.03 --fil-Smax-hmm 0.25 --fil-A-hmm trna.calibrated.cm 1k.fa
+
 # 3.4.12 (U1, U2, U3)
 4  exercise  cmsearch:3.4.12c/1        @cmsearch@  --forecast 3 3.4.12.calibrated.cm 1k.fa
 
@@ -135,9 +142,14 @@
 4  exercise  cmsearch:3.4.12c/10        @cmsearch@  --fil-T-hmm -2 3.4.12.calibrated.cm 1k.fa
 4  exercise  cmsearch:3.4.12c/11        @cmsearch@  --fil-Smax-hmm 0.0001 3.4.12.calibrated.cm 1k.fa
 
-4  exercise  cmsearch:3.4.12c/12	      @cmsearch@  --fil-no-hmm 3.4.12.calibrated.cm 1k.fa
+4  exercise  cmsearch:3.4.12c/12	@cmsearch@  --fil-no-hmm 3.4.12.calibrated.cm 1k.fa
 4  exercise  cmsearch:3.4.12c/13        @cmsearch@  --fil-no-qdb 3.4.12.calibrated.cm 1k.fa
 4  exercise  cmsearch:3.4.12c/14        @cmsearch@  --fil-beta 1E-2 3.4.12.calibrated.cm 1k.fa
+
+4  exercise  cmsearch:3.4.12c/15        @cmsearch@  --fil-S-hmm 0.04 3.4.12.calibrated.cm 1k.fa
+4  exercise  cmsearch:3.4.12c/16        @cmsearch@  --fil-Smin-hmm 0.001 3.4.12.calibrated.cm 1k.fa
+4  exercise  cmsearch:3.4.12c/17        @cmsearch@  --fil-Smax-hmm 0.25 --fil-A-hmm 3.4.12.calibrated.cm 1k.fa
+4  exercise  cmsearch:3.4.12c/18        @cmsearch@  --fil-Smin-hmm 0.03 --fil-Smax-hmm 0.25 --fil-A-hmm 3.4.12.calibrated.cm 1k.fa
 
 #development options
 # with calibrated model (not always necessary to be run with

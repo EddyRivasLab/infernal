@@ -52,7 +52,8 @@ static ESL_OPTIONS options[] = {
   { "-o",        eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "direct output to file <f>, not stdout", 1 },
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "configure CM/HMM for glocal alignment [default: local]", 1 },
   { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,   "--aln-hbanded","--noalign", "append posterior probabilities to hit alignments", 1 },
-  { "-x",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "annotate non-compensatory bps in output alignments with 'x'", 1 },
+  { "-x",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign,-v","annotate non-compensatory bps in output alignments with 'x'", 1 },
+  { "-v",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign,-x","annotate negative scoring non-canonical bps with 'v'", 1 },
   { "-Z",        eslARG_REAL,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "set Z (database size in *Mb*) to <x> for E-value calculations", 1},
   { "--toponly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the top strand", 1 },
   { "--bottomonly", eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the bottom strand", 1 },
@@ -574,7 +575,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    cm_nhitsA[cm->si->nrounds] += dbseq->results[rci]->num_results;
 	    for(h = 0; h < dbseq->results[rci]->num_results; h++) cm_surv_fractA[cm->si->nrounds] += fabs( (float) (dbseq->results[rci]->data[h].stop - dbseq->results[rci]->data[h].start + 1));
 	  }
-	  PrintResults (cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "-x"), cfg->namewidth);
+	  PrintResults (cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseq, do_top, cfg->do_rc, esl_opt_GetBoolean(go, "-x"), esl_opt_GetBoolean(go, "-v"), cfg->namewidth);
 	  for(rci = 0; rci <= cfg->do_rc; rci++) { /* we can free results for top strand even if cfg->init_rci is 1 due to --bottomonly */
 	    FreeResults(dbseq->results[rci]);
 	    esl_sq_Destroy(dbseq->sq[rci]);
@@ -893,7 +894,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 			    cm_nhitsA[cm->si->nrounds] += dbseqlist[si_recv]->results[rci]->num_results;
 			    for(h = 0; h < dbseqlist[si_recv]->results[rci]->num_results; h++) cm_surv_fractA[cm->si->nrounds] += fabs( (float) (dbseqlist[si_recv]->results[rci]->data[h].stop - dbseqlist[si_recv]->results[rci]->data[h].start + 1.));
 			  }
-			  PrintResults(cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "-x"), cfg->namewidth);
+			  PrintResults(cm, cfg->ofp, cfg->tfp, cm->si, cfg->abc_out, cons, dbseqlist[si_recv], TRUE, cfg->do_rc, esl_opt_GetBoolean(go, "-x"), esl_opt_GetBoolean(go, "-v"), cfg->namewidth);
 			  for(rci = 0; rci <= cfg->do_rc; rci++) {
 			    esl_sq_Destroy(dbseqlist[si_recv]->sq[rci]);
 			    FreeResults(dbseqlist[si_recv]->results[rci]);

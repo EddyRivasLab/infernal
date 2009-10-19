@@ -86,12 +86,12 @@ main(int argc, char **argv)
       if (seq->dsq == NULL) 
          esl_sq_Digitize(abc, seq);
       sc = TrCYK_DnC(cm, seq->dsq, seq->n, 0, i0, j0, &tr);
-      fali = CreateFancyAli(cm->abc, tr, cm, cons, seq->dsq, NULL, NULL);
+      fali = CreateFancyAli(cm->abc, tr, cm, cons, seq->dsq, FALSE, NULL, NULL);
       FreeParsetree(tr);
 
       revcomp(abc, seq, seq);
       rev_sc = TrCYK_DnC(cm,seq->dsq, seq->n, 0, i0, j0, &tr);
-      rev_fali = CreateFancyAli(cm->abc, tr, cm, cons,seq->dsq, NULL, NULL);
+      rev_fali = CreateFancyAli(cm->abc, tr, cm, cons,seq->dsq, FALSE, NULL, NULL);
       FreeParsetree(tr);
 
       if (sc > rev_sc)

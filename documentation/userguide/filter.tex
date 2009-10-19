@@ -222,6 +222,8 @@ In the tutorial we were only concerned with the hits reported by the
 program, but in this section we're interested in the rest of the
 output. Let's look at the header and pre-search info section:
 
+\newpage
+
 \begin{sreoutput}
 # command:    cmsearch -E 0.001 purine.2.c.cm C.psychrerythraea.genome.fa
 # date:       Tue Aug 18 14:54:12 2009
@@ -499,7 +501,7 @@ means:
 \item[\emprog{nseq}] this is the number of sequences generated in \prog{cmcalibrate}
   and searched with the CM and HMM during filter threshold
   calculation. In this case, 10,000 sequences were generated and
-  searched, and the HMM must have been able to recognize $99.5\%$ of the
+  searched, and the HMM must have been able to recognize $99.3\%$ of the
   sequences above any given CM score threshold. 
 
 \item[\emprog{db (Mb)}] the database size in megabases (Mb) the
@@ -578,6 +580,8 @@ strict it is often possible to achieve large speedups of up to
 \prog{rfam10.c.cm} CM file from the tutorial directory that includes
 10 randomly chosen Rfam 8.1 models, that have been calibrated with
 default parameters to cmcalibrate:
+
+\newpage 
 
 \user{cmstat --ga --lfi rfam10.c.cm}\\
 
@@ -719,7 +723,7 @@ described next.
 We described above how \prog{cmsearch} will automatically pick filter
 and final thresholds differently depending on if the query model is
 calibrated or not. For calibrated models the HMM filter threshold
-that will theoretically maximize speed while maintaining 99.5\% sensitivity
+that will theoretically maximize speed while maintaining 99.3\% sensitivity
 is chosen (sometimes this means turning HMM filtering off if the
 predicted speedup is insignificant). The QDB threshold is set in
 a more \emph{ad hoc} way, that works well empirically. For
@@ -791,6 +795,8 @@ achieve a specified (predicted) survival fraction with
 \prog{--fil-Smax-hmm <x>}. With this option for values of \prog{<x> << 1}
 you can expect roughly a \prog{1 / <x>} speedup relative to a
 non-filtered search. To try it: 
+
+\newpage
 
 \user{cmsearch --fil-Smax-hmm 0.001 my.c.cm tosearch.300Kb.db}\\
 
