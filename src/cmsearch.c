@@ -497,6 +497,11 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   double         total_psec = 0.;       /* predicted number of seconds for all CMs versus full DB */
   char           time_buf[128];	        /* for printing predicted time if --forecast only */
   ESL_STOPWATCH *w  = esl_stopwatch_Create();
+  int            cm_namewidth;          /* length for printing model name field to tab file */
+  char          *namedashes = NULL;     /* string of dashes for underlining 'target name' column in tab output */
+  char          *cm_namedashes = NULL;  /* string of dashes for underlining 'model name' column in tab output */
+  int            ni;                    /* index for filling dashes strings */
+
   if(w == NULL) cm_Fail("serial_master(): memory error, stopwatch not created.\n");
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
@@ -505,9 +510,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   do_top = (cfg->init_rci == 0) ? TRUE : FALSE; 
 
   /* create namedashes string, only used if --tabfile */
-  char *namedashes;
-  int ni;
-  ESL_ALLOC(namedashes, sizeof(char) * cfg->namewidth+1);
+  ESL_ALLOC(namedashes, sizeof(char) * (cfg->namewidth+1));
   namedashes[cfg->namewidth] = '\0';
   for(ni = 0; ni < cfg->namewidth; ni++) namedashes[ni] = '-';
 
@@ -518,6 +521,13 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       /* potentially overwrite lambdas in cm->stats */
       if (! esl_opt_IsDefault(go, "--lambda")) if((status = overwrite_lambdas(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
       cfg->ncm++;
+
+      /* create cm_namedashes string, only used if --tabfile */
+      cm_namewidth = ESL_MAX(strlen(cm->name), strlen("model name"));
+      if(cm_namedashes != NULL) free(cm_namedashes); 
+      ESL_ALLOC(cm_namedashes, sizeof(char) * (cm_namewidth+1));
+      cm_namedashes[cm_namewidth] = '\0';
+      for(ni = 0; ni < cm_namewidth; ni++) cm_namedashes[ni] = '-';
 
       /* initialize the flags/options/params and configuration of the CM */
       if((  status = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
@@ -549,10 +559,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
         fprintf(cfg->tfp, "# CM: %s\n", cm->name);
 	/*fprintf(cfg->tfp, "# Predicted average hit length: %.2f\n", cfg->avg_hit_len);
 	  fprintf(cfg->tfp, "# CM->W: %d (subtract (W-1) from stop and add (W-1) to start, and merge overlapping hits to simulate filter)\n", cm->W);*/
-	fprintf(cfg->tfp, "# %-*s  %22s  %12s  %8s  %8s  %3s\n", cfg->namewidth, "", "target coord", "query coord", "", "", "");
-	fprintf(cfg->tfp, "# %-*s  %22s  %12s  %8s  %8s  %3s\n", cfg->namewidth, "", "----------------------", "------------", "", "", "");
-	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cfg->namewidth, "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC\%");
-	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cfg->namewidth, namedashes, "----------", "----------", "-----", "-----", "--------", "--------", "---");
+	fprintf(cfg->tfp, "# %-*s  %-*s  %22s  %12s  %8s  %8s  %3s\n", cm_namewidth, "", cfg->namewidth, "", "target coord", "query coord", "", "", "");
+	fprintf(cfg->tfp, "# %-*s  %-*s  %22s  %12s  %8s  %8s  %3s\n", cm_namewidth, "", cfg->namewidth, "", "----------------------", "------------", "", "", "");
+	fprintf(cfg->tfp, "# %-*s  %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cm_namewidth, "model name", cfg->namewidth, "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC\%");
+	fprintf(cfg->tfp, "# %-*s  %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cm_namewidth, cm_namedashes, cfg->namewidth, namedashes, "----------", "----------", "-----", "-----", "--------", "--------", "---");
       }
       using_e_cutoff  = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF)     ? TRUE : FALSE;
       using_sc_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == SCORE_CUTOFF) ? TRUE : FALSE;
@@ -606,7 +616,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     fprintf(stdout, "  %20s\n", time_buf);
   }
       
-  free(namedashes);
+  if(namedashes != NULL)    free(namedashes);
+  if(cm_namedashes != NULL) free(cm_namedashes);
   esl_stopwatch_Destroy(w);
   return;
 
@@ -677,6 +688,11 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 				     * OTHER PROCS ARE THE SAME SPEED!) */
   float    *cm_surv_fractA = NULL;  /* 0..n..cm->si->nrounds fraction of db that survived round n for current CM */
   int      *cm_nhitsA = NULL;       /* 0..n..cm->si->nrounds number of hits reported for round n for current CM */
+  int       cm_namewidth;           /* length for printing model name field to tab file */
+  char     *namedashes = NULL;      /* string of dashes for underlining 'target name' column in tab output */
+  char     *cm_namedashes = NULL;   /* string of dashes for underlining 'model name' column in tab output */
+  int       ni;                     /* index for filling dashes strings */
+
   ESL_STOPWATCH *w  = esl_stopwatch_Create();
   if(w == NULL) cm_Fail("mpi_master(): memory error, stopwatch not created.\n");  
 
@@ -707,9 +723,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   ESL_DPRINTF1(("MPI master is initialized\n"));
 
   /* create namedashes string, only used if --tabfile */
-  char *namedashes;
-  int ni;
-  ESL_ALLOC(namedashes, sizeof(char) * cfg->namewidth+1);
+  ESL_ALLOC(namedashes, sizeof(char) * (cfg->namewidth+1));
   namedashes[cfg->namewidth] = '\0';
   for(ni = 0; ni < cfg->namewidth; ni++) namedashes[ni] = '-';
 
@@ -750,6 +764,13 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       ESL_DPRINTF1(("MPI master read CM number %d\n", cfg->ncm));
 
       if((status = cm_master_MPIBcast(cm, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
+
+      /* create cm_namedashes string, only used if --tabfile */
+      cm_namewidth = ESL_MAX(strlen(cm->name), strlen("model name"));
+      if(cm_namedashes != NULL) free(cm_namedashes); 
+      ESL_ALLOC(cm_namedashes, sizeof(char) * (cm_namewidth+1));
+      cm_namedashes[cm_namewidth] = '\0';
+      for(ni = 0; ni < cm_namewidth; ni++) cm_namedashes[ni] = '-';
       
       /* initialize the flags/options/params of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK) cm_Fail(errbuf);
@@ -775,10 +796,10 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       if(cfg->tfp != NULL) { 
 	fprintf(cfg->tfp, "#\n");
         fprintf(cfg->tfp, "# CM: %s\n", cm->name);
-	fprintf(cfg->tfp, "# %-*s  %22s  %12s  %8s  %8s  %3s\n", cfg->namewidth, "", "target coord", "query coord", "", "", "");
-	fprintf(cfg->tfp, "# %-*s  %22s  %12s  %8s  %8s  %3s\n", cfg->namewidth, "", "----------------------", "------------", "", "", "");
-	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cfg->namewidth, "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC\%");
-	fprintf(cfg->tfp, "# %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cfg->namewidth, namedashes, "----------", "----------", "-----", "-----", "--------", "--------", "---");
+	fprintf(cfg->tfp, "# %-*s  %-*s  %22s  %12s  %8s  %8s  %3s\n", cm_namewidth, "", cfg->namewidth, "", "target coord", "query coord", "", "", "");
+	fprintf(cfg->tfp, "# %-*s  %-*s  %22s  %12s  %8s  %8s  %3s\n", cm_namewidth, "", cfg->namewidth, "", "----------------------", "------------", "", "", "");
+	fprintf(cfg->tfp, "# %-*s  %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cm_namewidth, "model name", cfg->namewidth, "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC\%");
+	fprintf(cfg->tfp, "# %-*s  %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cm_namewidth, cm_namedashes, cfg->namewidth, namedashes, "----------", "----------", "-----", "-----", "--------", "--------", "---");
       }
 
       /* reset vars for searching with current CM */
@@ -966,7 +987,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if((cm_master_MPIBcast(NULL, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
   free(buf);
   
-  free(namedashes);
+  if(namedashes != NULL)    free(namedashes);
+  if(cm_namedashes != NULL) free(cm_namedashes);
   esl_stopwatch_Destroy(w);
 
   if     (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); return xstatus; }

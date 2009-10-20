@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "easel.h"
 #include "esl_exponential.h"
@@ -960,6 +961,7 @@ void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_
   int offset;         
   int init_rci;         /* initial strand that's been searched, 0 if do_top, else 1 */
   double Eval, Pval;    /* E value and P value of a hit */
+  int cm_namewidth;     /* length for printing model name field to tab file */
 
   /* Contract check: we allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
@@ -1001,6 +1003,8 @@ void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_
     /* sort hits by bit score */
     SortResultsByScore(results);
 
+    cm_namewidth = ESL_MAX(strlen(cm->name), strlen("model name"));
+  
     for (i=0; i<results->num_results; i++) {
       gc_comp = get_gc_comp (cm->abc, dbseq->sq[in_revcomp]->dsq, 
 			     results->data[i].start, results->data[i].stop);
@@ -1013,9 +1017,11 @@ void PrintResults (CM_t *cm, FILE *fp, FILE *tabfp, SearchInfo_t *si, const ESL_
 	      COORDINATE(in_revcomp, results->data[i].stop, len));
 
       if(tabfp != NULL) { /* print tabular output also */
-	fprintf(tabfp, "  %-*s  %10d  %10d  %5d  %5d  %8.2f  ", 
-		namewidth, /* max length of target seq in file, passed in by caller */
-		name,      /* target seq name */
+	fprintf(tabfp, "  %-*s  %-*s  %10d  %10d  %5d  %5d  %8.2f  ", 
+		cm_namewidth, /* max(length of "model name", length(cm->name)) */
+		cm->name,     /* model name */
+		namewidth,    /* max length of target seq in file, passed in by caller */
+		name,         /* target seq name */
 		COORDINATE(in_revcomp, results->data[i].start, len), 
 		COORDINATE(in_revcomp, results->data[i].stop, len),
 		(emap->lpos[cm->ndidx[results->data[i].bestr]] + 1 
