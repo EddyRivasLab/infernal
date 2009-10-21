@@ -87,15 +87,15 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
   __m128i   tmpv, tmpv2;
 
   /* FIXME: arbitrary, ad hoc transitions! */
-  tsc_S_Sa = sreLOG2(0.90);
-  tsc_S_SM = sreLOG2(0.05);
-  tsc_S_e  = sreLOG2(0.05);
-  tsc_M_M  = sreLOG2(0.50);
-  tsc_M_S  = sreLOG2(0.50);
-  tsv_S_Sa = _mm_set1_epi8(biased_byteify(ccm, tsc_S_Sa));
-  tsv_S_SM = _mm_set1_epi8(biased_byteify(ccm, tsc_S_SM));
-  tsv_M_M  = _mm_set1_epi8(biased_byteify(ccm, tsc_M_M ));
-  tsv_M_S  = _mm_set1_epi8(biased_byteify(ccm, tsc_M_S ));
+  tsc_S_Sa = -sreLOG2(0.90);
+  tsc_S_SM = -sreLOG2(0.05);
+  tsc_S_e  = -sreLOG2(0.05);
+  tsc_M_M  = -sreLOG2(0.50);
+  tsc_M_S  = -sreLOG2(0.50);
+  tsv_S_Sa = _mm_set1_epi8(unbiased_byteify(ccm, tsc_S_Sa));
+  tsv_S_SM = _mm_set1_epi8(unbiased_byteify(ccm, tsc_S_SM));
+  tsv_M_M  = _mm_set1_epi8(unbiased_byteify(ccm, tsc_M_M ));
+  tsv_M_S  = _mm_set1_epi8(unbiased_byteify(ccm, tsc_M_S ));
 
   /* Contract check */
 //  if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "SSE_CYKScan, CMH_BITS flag is not raised.\n");
