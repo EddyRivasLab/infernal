@@ -35,6 +35,7 @@ http://infernal.janelia.org/
 
 
 :: Installation:
+
      See the Userguide.pdf for complete instructions. In brief:
         % ./configure
         % make
@@ -46,11 +47,22 @@ http://infernal.janelia.org/
 
 
 :: Getting started:
+
      For documentation, including installation instructions and a
      tutorial, see the Infernal User's Guide: Userguide.pdf.
 
 
-:: References:
+:: Reference:
+
+     - EP Nawrocki, DL Kolbe, and SR Eddy, "Infernal 1.0: inference of
+       RNA alignments" Bioinformatics 25:1335-1337 (2009).
+
+
+:: Other references:
+
+     - DL Kolbe and SR Eddy, "Local RNA structure alignment with 
+       incomplete sequence", Bioinformatics 25:1236-1243 (2009).
+
      - EP Nawrocki and SR Eddy, "Query-dependent banding (QDB) for
        faster RNA similarity searches", PLoS Computational Biology,
        3:e56 (2007).
