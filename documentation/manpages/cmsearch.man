@@ -236,7 +236,8 @@ outputs a tabular representation of the hits found by
 to the file
 .I <f>.
 Each non-\# prefixed line of this file corresponds to a hit, and each
-such line has 8 fields: "target name" the name of the target sequence
+such line has 9 fields: "model name" the name of the CM used for the
+search, "target name" the name of the target sequence
 the hit was found in, "target coord - start": the start position of
 the hit in the target sequence, "target coord - stop": the end position of
 hit in the target sequence, "query coord - start": 
