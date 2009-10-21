@@ -361,8 +361,9 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
       jp_Sv = j % (W+1);
 
       /* Rule: S -> Sa */
+      jp_Sy = (jp_Sv == 0) ? W : jp_Sv-1;
       for (d = 0; d < sW; d++) {
-        tmpv = _mm_subs_epu8(vec_ntS[jp_Sv-1][d-1], tsv_S_Sa);
+        tmpv = _mm_subs_epu8(vec_ntS[jp_Sy][d-1], tsv_S_Sa);
         vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
       }
       vec_ntS[jp_Sv][-1] = BYTERSHIFT1(vec_ntS[jp_Sv][sW-1]);
@@ -374,6 +375,7 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 	  jp_v  = cur;
 	  jp_y  = (ccm->sttype[v] == ML_st) ? cur : prv;
 	  jp_Sy = (ccm->sttype[v] == ML_st) ? jp_Sv : jp_Sv-1;
+          if (jp_Sy == -1) jp_Sy = W;
           sd    = StateDelta(ccm->sttype[v]);
 
           if (ccm->sttype[v] == MP_st || ccm->sttype[v] == ML_st || ccm->sttype[v] == MR_st) {
