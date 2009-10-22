@@ -46,89 +46,87 @@
 #define HMMONLYOPTS "--viterbi,--forward"                              /* with these options, there are no filters, use only HMM */
 								     
 static ESL_OPTIONS options[] = {
-  /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
+  /* name             type            default     env  range               toggles       reqs       incomp  help                                      docgroup*/
   /* basic options */
-  { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
-  { "-o",        eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "direct output to file <f>, not stdout", 1 },
-  { "-g",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "configure CM/HMM for glocal alignment [default: local]", 1 },
-  { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,   "--aln-hbanded","--noalign", "append posterior probabilities to hit alignments", 1 },
-  { "-x",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign,-v","annotate non-compensatory bps in output alignments with 'x'", 1 },
-  { "-v",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,"--noalign,-x","annotate negative scoring non-canonical bps with 'v'", 1 },
-  { "-Z",        eslARG_REAL,   NULL, NULL, NULL,      NULL,      NULL,        NULL, "set Z (database size in *Mb*) to <x> for E-value calculations", 1},
-  { "--toponly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the top strand", 1 },
-  { "--bottomonly", eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,        NULL, "only search the bottom strand", 1 },
-  { "--forecast",eslARG_INT,    NULL,  NULL, NULL,      NULL,      NULL,        NULL, "don't do search, forecast running time with <n> processors", 1 },
-  { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
-  { "--mxsize",  eslARG_REAL, "2048.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 1 },
-  { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
+  { "-h",             eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
+  { "-o",             eslARG_OUTFILE, NULL,      NULL, NULL,                  NULL,      NULL,        NULL, "direct output to file <f>, not stdout", 1 },
+  { "-g",             eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,        NULL, "configure CM/HMM for glocal alignment [default: local]", 1 },
+  { "-p",             eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,"--aln-hbanded", "--noalign", "append posterior probabilities to hit alignments", 1 },
+  { "-x",             eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,"--noalign,-v","annotate non-compensatory bps in output alignments with 'x'", 1 },
+  { "-v",             eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,"--noalign,-x","annotate negative scoring non-canonical bps with 'v'", 1 },
+  { "-Z",             eslARG_REAL,    FALSE,     NULL, NULL,                  NULL,      NULL,        NULL, "set Z (database size in *Mb*) to <x> for E-value calculations", 1},
+  { "--toponly",      eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,        NULL, "only search the top strand", 1 },
+  { "--bottomonly",   eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,        NULL, "only search the bottom strand", 1 },
+  { "--forecast",     eslARG_INT,     NULL,      NULL, NULL,                  NULL,      NULL,        NULL, "don't do search, forecast running time with <n> processors", 1 },
+  { "--informat",     eslARG_STRING,  NULL,      NULL, NULL,                  NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
+  { "--mxsize",       eslARG_REAL,    "2048.0",  NULL, "x>0.",                NULL,      NULL,        NULL, "set maximum allowable HMM banded DP matrix size to <x> Mb", 1 },
+  { "--devhelp",      eslARG_NONE,    NULL,      NULL, NULL,                  NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI
-  { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program", 1 },  
+  { "--mpi",          eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,        NULL, "run as an MPI parallel program", 1 },  
 #endif
   /* options for algorithm for final round of search */
-  { "--inside",  eslARG_NONE,  "default",NULL,NULL,    NULL,       NULL,    STRATOPTS1, "use scanning CM Inside algorithm", 2 },
-  { "--cyk",     eslARG_NONE,  FALSE, NULL, NULL, "--inside",      NULL,    STRATOPTS1, "use scanning CM CYK algorithm", 2 },
-  { "--forward", eslARG_NONE,  FALSE, NULL, NULL, "--fil-hmm,--fil-qdb",     NULL,    STRATOPTS2, "use scanning HMM Forward algorithm", 2 },
-  { "--viterbi", eslARG_NONE,  FALSE, NULL, NULL, "--fil-hmm,--fil-qdb",     NULL,    STRATOPTS2, "use scanning HMM Viterbi algorithm", 2 },
+  { "--inside",       eslARG_NONE,    "default", NULL, NULL,                  NULL,      NULL,    STRATOPTS1, "use scanning CM Inside algorithm", 2 },
+  { "--cyk",          eslARG_NONE,    FALSE,     NULL, NULL,            "--inside",      NULL,    STRATOPTS1, "use scanning CM CYK algorithm", 2 },
+  { "--forward",      eslARG_NONE,    FALSE,     NULL, NULL, "--fil-hmm,--fil-qdb",      NULL,    STRATOPTS2, "use scanning HMM Forward algorithm", 2 },
+  { "--viterbi",      eslARG_NONE,    FALSE,     NULL, NULL, "--fil-hmm,--fil-qdb",      NULL,    STRATOPTS2, "use scanning HMM Viterbi algorithm", 2 },
   /* CM cutoff options */
   /* IMPORTANT: Default values for -E and -T must remain non-NULL, the option processing logic below depends on it */
-  { "-E",        eslARG_REAL,   "1.0", NULL, "x>0.",    NULL,      NULL,    CUTOPTS1, "use cutoff E-value of <x> for final round of search", 3 },
-  { "-T",        eslARG_REAL,   "0.0", NULL, NULL,      NULL,      NULL,    CUTOPTS1, "use cutoff bit score of <x> for final round of search", 3 },
-  { "--nc",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    CUTOPTS2, "use CM Rfam NC noise cutoff as cutoff bit score", 3 },
-  { "--ga",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    CUTOPTS2, "use CM Rfam GA gathering threshold as cutoff bit score", 3 },
-  { "--tc",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    CUTOPTS2, "use CM Rfam TC trusted cutoff as cutoff bit score", 3 },
+  { "-E",             eslARG_REAL,    "1.0",     NULL, "x>0.",                NULL,      NULL,    CUTOPTS1, "use cutoff E-value of <x> for final round of search", 3 },
+  { "-T",             eslARG_REAL,    "0.0",     NULL, NULL,                  NULL,      NULL,    CUTOPTS1, "use cutoff bit score of <x> for final round of search", 3 },
+  { "--nc",           eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,    CUTOPTS2, "use CM Rfam NC noise cutoff as cutoff bit score", 3 },
+  { "--ga",           eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,    CUTOPTS2, "use CM Rfam GA gathering threshold as cutoff bit score", 3 },
+  { "--tc",           eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,    CUTOPTS2, "use CM Rfam TC trusted cutoff as cutoff bit score", 3 },
   /* banded options (for final round of searching) */
-  { "--no-qdb",  eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,  HMMONLYOPTS, "do not use QDBs in final round of searching", 4 },
-  { "--beta",    eslARG_REAL,  "1e-15",NULL, "0<x<1",   NULL,      NULL,  HMMONLYOPTS, "set tail loss prob for QDB calculation to <x>", 4 },
-  { "--hbanded", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,  HMMONLYOPTS, "calculate and use HMM bands in final round of CM search", 4 },
-  { "--tau",     eslARG_REAL,   "1e-7",NULL, "0<x<1",   NULL,"--hbanded", HMMONLYOPTS, "set tail loss prob for --hbanded to <x>", 4 },
+  { "--no-qdb",       eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,  HMMONLYOPTS, "do not use QDBs in final round of searching", 4 },
+  { "--beta",         eslARG_REAL,    "1e-15",   NULL, "0<x<1",               NULL,      NULL,  HMMONLYOPTS, "set tail loss prob for QDB calculation to <x>", 4 },
+  { "--hbanded",      eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,  HMMONLYOPTS, "calculate and use HMM bands in final round of CM search", 4 },
+  { "--tau",          eslARG_REAL,    "1e-7",    NULL, "0<x<1",               NULL,"--hbanded", HMMONLYOPTS, "set tail loss prob for --hbanded to <x>", 4 },
   /* filtering options, by default do HMM, then CYK filter */
-  { "--fil-hmm",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-hmm", "filter with HMM Forward algorithm", 201 },
-  { "--fil-no-hmm",eslARG_NONE, FALSE,     NULL, NULL,  "--fil-hmm",NULL,         NULL, "do not filter with HMM Forward algorithm", 5 },
-  { "--fil-qdb",   eslARG_NONE, "default", NULL, NULL,  NULL,      NULL,"--fil-no-qdb", "filter with CM QDB (banded) CYK algorithm", 201 },
-  { "--fil-no-qdb",eslARG_NONE, FALSE,     NULL, NULL,  "--fil-qdb",NULL,         NULL, "do not filter with CM banded CYK", 5 },
-  { "--fil-beta",  eslARG_REAL, "1e-10",   NULL, "x>0", NULL,      NULL,"--fil-no-qdb", "set tail loss prob for QDB filter to <x>", 5 },
+  { "--fil-hmm",      eslARG_NONE,    "default", NULL, NULL,                  NULL,      NULL,"--fil-no-hmm", "filter with HMM Forward algorithm", 201 },
+  { "--fil-no-hmm",   eslARG_NONE,    FALSE,     NULL, NULL,           "--fil-hmm",      NULL,          NULL, "do not filter with HMM Forward algorithm", 5 },
+  { "--fil-qdb",      eslARG_NONE,    "default", NULL, NULL,                  NULL,      NULL,"--fil-no-qdb", "filter with CM QDB (banded) CYK algorithm", 201 },
+  { "--fil-no-qdb",   eslARG_NONE,    FALSE,     NULL, NULL,           "--fil-qdb",      NULL,          NULL, "do not filter with CM banded CYK", 5 },
+  { "--fil-beta",     eslARG_REAL,    "1e-10",   NULL, "x>0",                 NULL,      NULL,"--fil-no-qdb", "set tail loss prob for QDB filter to <x>", 5 },
   /* filter cutoff options */
-  { "--fil-T-qdb",eslARG_REAL,  "0.0", NULL, NULL,      NULL,      NULL, "--fil-E-qdb", "set QDB CM filter cutoff bit score as <x>", 6 },
-  { "--fil-T-hmm",eslARG_REAL,  "3.0", NULL, NULL,      NULL,      NULL, "--fil-E-hmm,--fil-S-hmm", "set HMM filter cutoff bit score as <x>", 6 },
-  { "--fil-E-qdb",eslARG_REAL,  NULL,  NULL, "x>0.999", NULL,      NULL, "--fil-T-qdb", "set QDB CM filter cutoff E-value as <x>", 6 },
-  { "--fil-E-hmm",eslARG_REAL,  NULL,  NULL, "x>0.999", NULL,      NULL, "--fil-T-hmm,--fil-S-hmm", "set HMM filter cutoff E-value as <x>", 6 }, 
-  { "--fil-S-hmm",eslARG_REAL,  NULL,  NULL, "0<x<=1.00000001", NULL,      NULL, "--fil-E-hmm,--fil-T-hmm", "set HMM filter predicted surv fract as <x>", 6 }, 
-  /*{ "--fil-S-qdb",eslARG_REAL,  "0.02",NULL, "0<x<1.",  NULL,      NULL, "--fil-T-qdb", "set QDB CM filter cutoff to achieve survival fraction <x>", 6 },*/
-  /*{ "--fil-S-hmm",eslARG_REAL,  "0.02",NULL, "0<x<1",   NULL,      NULL, "--fil-T-hmm", "set HMM filter cutoff to achieve survival fraction <x>", 6 },*/
-  { "--fil-Xmin-hmm",eslARG_REAL,NULL, NULL, "x>1.0999", NULL,      NULL,"--fil-T-hmm,--fil-E-hmm,--fil-S-hmm", "set minimum HMM survival fraction as <x>", 106 },
-  { "--fil-Smax-hmm",eslARG_REAL,"0.5",NULL, "0<x<=1.00000001",   NULL,      NULL,"--fil-T-hmm,--fil-E-hmm,--fil-S-hmm", "set maximum HMM survival fraction as <x>", 6 },
-  { "--fil-Smin-hmm",eslARG_REAL,"0.02",NULL, "0<x<=1.00000001",  NULL,      NULL,"--fil-T-hmm,--fil-E-hmm,--fil-S-hmm", "set minimum HMM survival fraction as <x>", 6 },
-  { "--fil-A-hmm", eslARG_NONE,FALSE,NULL, NULL,         NULL,      NULL,"--fil-no-hmm", "always filter w/HMM w/surv fract <= <x> from --fil-Smax-hmm", 6 },
-  { "--fil-finE-hmm",eslARG_REAL,  NULL,  NULL, "x>0.",    NULL,      NULL,"--fil-finT-hmm", "pretend final E cutoff=<x> for HMM filter cutoff calc", 106 }, 
-  { "--fil-finT-hmm",eslARG_REAL,  NULL,  NULL, NULL,      NULL,      NULL,"--fil-finE-hmm", "pretend final bit sc cutoff=<x> for HMM filter cutoff calc", 106 }, 
-  { "--fil-finE-qdb",eslARG_REAL,  NULL,  NULL, "x>0.",    NULL,      NULL,"--fil-finT-qdb", "pretend final E cutoff=<x> for QDB filter cutoff calc", 106 }, 
-  { "--fil-finT-qdb",eslARG_REAL,  NULL,  NULL, NULL,      NULL,      NULL,"--fil-finE-qdb", "pretend final bit sc cutoff=<x> for QDB filter cutoff calc", 106 }, 
+  { "--fil-T-qdb",    eslARG_REAL,    "0.0",     NULL, NULL,                  NULL,      NULL, "--fil-E-qdb,--fil-no-qdb",           "set QDB CM filter cutoff bit score as <x>", 6 },
+  { "--fil-T-hmm",    eslARG_REAL,    "3.0",     NULL, NULL,                  NULL,      NULL, "--fil-E-hmm,--fil-S-hmm,--fil-no-hmm","set HMM filter cutoff bit score as <x>", 6 },
+  { "--fil-E-qdb",    eslARG_REAL,    NULL,      NULL, "x>0.999",             NULL,      NULL, "--fil-T-qdb,--fil-no-qdb",            "set QDB CM filter cutoff E-value as <x>", 6 },
+  { "--fil-E-hmm",    eslARG_REAL,    NULL,      NULL, "x>0.999",             NULL,      NULL, "--fil-T-hmm,--fil-S-hmm,--fil-no-hmm","set HMM filter cutoff E-value as <x>", 6 }, 
+  { "--fil-S-hmm",    eslARG_REAL,    NULL,      NULL, "0<x<1.001",           NULL,      NULL, "--fil-E-hmm,--fil-T-hmm,--fil-no-hmm","set HMM filter predicted surv fract as <x>", 6 }, 
+  { "--fil-Xmin-hmm", eslARG_REAL,    NULL,      NULL, "x>1.0999",            NULL,      NULL, "--fil-no-hmm",                        "set minimum HMM survival fraction as that which yields timing of <x> times an HMM", 106 },
+  { "--fil-Smax-hmm", eslARG_REAL,    "0.5",     NULL, "0<x<1.001",           NULL,      NULL, "--fil-T-hmm,--fil-E-hmm,--fil-S-hmm,--fil-no-hmm", "set maximum HMM survival fraction as <x>", 6 },
+  { "--fil-Smin-hmm", eslARG_REAL,    "0.02",    NULL, "0<x<1.001",           NULL,      NULL," --fil-T-hmm,--fil-E-hmm,--fil-S-hmm,--fil-no-hmm", "set minimum HMM survival fraction as <x>", 6 },
+  { "--fil-A-hmm",    eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL, "--fil-no-hmm",                        "always filter w/HMM w/surv fract <= <x> from --fil-Smax-hmm", 6 },
+  { "--fil-finE-hmm", eslARG_REAL,    NULL,      NULL, "x>0.",                NULL,      NULL, "--fil-finT-hmm",                      "pretend final E cutoff=<x> for HMM filter cutoff calc", 106 }, 
+  { "--fil-finT-hmm", eslARG_REAL,    NULL,      NULL, NULL,                  NULL,      NULL, "--fil-finE-hmm",                      "pretend final bit sc cutoff=<x> for HMM filter cutoff calc", 106 }, 
+  { "--fil-finE-qdb", eslARG_REAL,    NULL,      NULL, "x>0.",                NULL,      NULL," --fil-finT-qdb",                      "pretend final E cutoff=<x> for QDB filter cutoff calc", 106 }, 
+  { "--fil-finT-qdb", eslARG_REAL,    NULL,      NULL, NULL,                  NULL,      NULL, "--fil-finE-qdb",                      "pretend final bit sc cutoff=<x> for QDB filter cutoff calc", 106 }, 
   /* W definition options (require --viterbi or --forward) */
-  { "--hmm-W",   eslARG_INT,    NULL,  NULL, "n>1",     NULL,      NULL,  "--hmm-cW", "set HMM window size as <n>", 7 },
-  { "--hmm-cW",  eslARG_REAL, NULL,  NULL, "x>0.01",    NULL,      NULL,   "--hmm-W", "set HMM window size as <x> * consensus length", 7 },
+  { "--hmm-W",        eslARG_INT,     NULL,      NULL, "n>1",                 NULL,      NULL,  "--hmm-cW", "set HMM window size as <n>", 7 },
+  { "--hmm-cW",       eslARG_REAL,    NULL,      NULL, "x>0.01",              NULL,      NULL,   "--hmm-W", "set HMM window size as <x> * consensus length", 7 },
   /* alignment options */
-  { "--noalign", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,       NULL, "find start/stop/score only; don't do alignments", 8 },
-  { "--aln-hbanded",eslARG_NONE,FALSE, NULL, NULL,      NULL,      NULL,"--noalign", "use HMM bands to align hits", 8 },
-  { "--aln-optacc",eslARG_NONE, FALSE, NULL, NULL,      NULL,   "--aln-hbanded","--noalign", "align hits with the optimal accuracy algorithm, not CYK", 8 },
+  { "--noalign",      eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,       NULL,        "find start/stop/score only; don't do alignments", 8 },
+  { "--aln-hbanded",  eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,"--noalign",        "use HMM bands to align hits", 8 },
+  { "--aln-optacc",   eslARG_NONE,    FALSE,     NULL, NULL,                  NULL, "--aln-hbanded", "--noalign", "align hits with the optimal accuracy algorithm, not CYK", 8 },
   /* verbose output files */
-  { "--tabfile", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,"--forecast", "save hits in tabular format to file <f>", 9 },
-  { "--gcfile",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save GC content stats of target sequence file to <f>", 9 },
+  { "--tabfile",      eslARG_OUTFILE, NULL,      NULL, NULL,                 NULL,      NULL,"--forecast", "save hits in tabular format to file <f>", 9 },
+  { "--gcfile",       eslARG_OUTFILE, NULL,      NULL, NULL,                 NULL,      NULL,        NULL, "save GC content stats of target sequence file to <f>", 9 },
   /* Setting output alphabet */
-  { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output hit alignments as RNA sequence data", 10 },
-  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output hit alignments as DNA (not RNA) sequence data", 10 },
+  { "--rna",          eslARG_NONE,"default",     NULL, NULL,             ALPHOPTS,      NULL,        NULL, "output hit alignments as RNA sequence data", 10 },
+  { "--dna",          eslARG_NONE,   FALSE,      NULL, NULL,             ALPHOPTS,      NULL,        NULL, "output hit alignments as DNA (not RNA) sequence data", 10 },
   /* All options below are developer options, only shown if --devhelp invoked */
-  { "--lambda",  eslARG_REAL,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "overwrite lambdas in <cmfile> to <x> for E-value calculations", 101}, 
-  { "--aln2bands",eslARG_NONE, FALSE, NULL, NULL,      NULL, "--hbanded",       HMMONLYOPTS, "w/-hbanded, derive HMM bands w/o scanning Forward/Backward", 101 },
-  { "--rtrans",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "--viterbi,--forward", "replace CM transition scores from <cmfile> with RSEARCH scores", 101 },
-  { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 101 },
-  { "--null2",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--no-null3", "--noalign", "turn on the post hoc second null model", 101 },
-  { "--no-null3",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "turn OFF the NULL3 post hoc additional null model", 101 },
-  { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb", 101 },  
+  { "--lambda",       eslARG_REAL,   NULL,       NULL, NULL,                 NULL,      NULL,          NULL,         "overwrite lambdas in <cmfile> to <x> for E-value calculations", 101}, 
+  { "--aln2bands",    eslARG_NONE,   FALSE,      NULL, NULL,                 NULL, "--hbanded",   HMMONLYOPTS,       "w/-hbanded, derive HMM bands w/o scanning Forward/Backward", 101 },
+  { "--rtrans",       eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,      NULL, "--viterbi,--forward", "replace CM transition scores from <cmfile> with RSEARCH scores", 101 },
+  { "--sums",         eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,"--hbanded",       NULL,           "use posterior sums during HMM band calculation (widens bands)", 101 },
+  { "--null2",        eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,"--no-null3", "--noalign",         "turn on the post hoc second null model", 101 },
+  { "--no-null3",     eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,      NULL,        NULL,           "turn OFF the NULL3 post hoc additional null model", 101 },
+  { "--stall",        eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,      NULL,        NULL,           "arrest after start: for debugging MPI under gdb", 101 },  
   /* Developer options related to experimental local begin/end modes */
-  { "--pebegin", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, "-g,--pbegin","set all local begins as equiprobable", 102 },
-  { "--pfend",   eslARG_REAL,   NULL,  NULL, "0<x<1",   NULL,      NULL, "-g,--pend",  "set all local end probs to <x>", 102 },
-  { "--pbegin",  eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local begin prob to <x>", 102 },
-  { "--pend",    eslARG_REAL,  "0.05",NULL,  "0<x<1",   NULL,      NULL,        "-g", "set aggregate local end prob to <x>", 102 },
+  { "--pebegin",      eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,      NULL, "-g,--pbegin","set all local begins as equiprobable", 102 },
+  { "--pfend",        eslARG_REAL,   NULL,       NULL, "0<x<1",              NULL,      NULL, "-g,--pend",  "set all local end probs to <x>", 102 },
+  { "--pbegin",       eslARG_REAL,   "0.05",     NULL, "0<x<1",              NULL,      NULL,        "-g",  "set aggregate local begin prob to <x>", 102 },
+  { "--pend",         eslARG_REAL,   "0.05",     NULL, "0<x<1",              NULL,      NULL,        "-g",  "set aggregate local end prob to <x>", 102 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 
@@ -1265,87 +1263,105 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   return eslOK;
 }
 
-/* Function: set_searchinfo_for_calibrated_cm)
+/* Function: set_searchinfo_for_calibrated_cm()
  * Date:     EPN, Mon Jan 21 08:56:04 2008 (updated)
  * 
- * Purpose:  For a CM WITH exponential tail and filter thresholds statistics 
+ * Purpose:  For a CM with exponential tail and filter thresholds statistics 
  *           from cmcalibrate: determine how many rounds of searching we will 
  *           do (all rounds but last round are filters), and set the relevant 
  *           info in the SearchInfo_t <cm->si> object, including cutoffs.
  *
- * Filters:
+ *           We only enter this function if the CM file has exponential tail
+ *           and filter stats. If we don't we enter 
+ *           set_searchinfo_for_uncalibrated_cm().
+ * 
+ * ------------------------------------------------------------------------------------
+ * How HMM filters thresholds are set for calibrated CMs based on command line options:
+ * ------------------------------------------------------------------------------------
+ * Note that --fil-no-hmm, --fil-T-hmm, --fil-S-hmm, fil-E-hmm are mutually 
+ * exclusive (enforced by esl_getopts).
+ * 
+ * if --fil-no-hmm:     don't filter with an HMM.
+ * if --fil-T-hmm <x>:  set HMM filter bit score cutoff as <x>.
+ * if --fil-S-hmm <x>:  set HMM filter bit score/E-value cutoff as that which gives
+ *                      predicted survival fraction of <x>              
+ * if --fil-E-hmm <x>:  set HMM filter E-value cutoff as <x>
+ * 
+ * If none of these options are selected, default thresholding occurs as follows:
+ * The appropriate HMM filter threshold cutoff (that will achieve a predicted
+ * sensitivity of F (0.993 by default) as determined by an empirical simulation
+ * in cmcalibrate) for the given final CM threshold is chosen from the CM file.
+ * 
+ * The following options supplement those above and get printed with -h:
+ * --fil-Smax-hmm <x>:  if predicted survival fraction (for HMM threshold as set 
+ *                      following rules above) is > <x> turn HMM filter off, unless 
+ *                      --fil-A-hmm (see below).
+ * 
+ * --fil-Smin-hmm <x>:  if predicted survival fraction (for HMM threshold as set 
+ *                      following rules above) is < <x> reset HMM threshold as that
+ *                      which gives predicted survival fraction of <x>.
+ * 
+ * --fil-A-hmm:         always use an HMM filter. If the predicted survival fraction
+ *                      (for HMM threshold as set following rules above) is > <x>
+ *                      from --fil-Smax-hmm <x>, reset HMM threshold as that which
+ *                      gives predicted survival fraction of <x>.
  *
- * User can specify 0 or 1 round of HMM filtering with Forward, followed by 0 or 
- * 1 round of CM filtering with QDB CYK. This is determined as described below. 
+ * Expert options (only printed with a --devhelp)
+ * --fil-Xmin-hmm <x>:  set minimum HMM filter threshold as that which will yield a total
+ *                      run time of <x> times the predicted time an HMM only scan would
+ *                      take (calc'ed based on number of DP calcs). If the HMM threshold is 
+ *                      less than this, then reset it to the threshold that achieves <x>.
  * 
- * HMM filtering:
- * ('none' below means none of --fil-no-hmm, --fil-T-hmm, --fil-E-hmm, --fil-Smax-hmm) 
- * 
- *                  exp tail &
- *                  filter thr 
- *   options        in cmfile?    filter/don't filter and cutoff determination
- *   -------       -----------    ------------------------------------------------
- * 1. none                 yes    filter (usually). automatically determine appropriate HMM 
- *                                filter cutoff for final round cutoff using cmfile's filter 
- *                                threshold info from cmcalibrate. Sometimes this info may
- *                                tell us it's inappropriate to use an HMM filter, in which
- *                                case, don't filter.
- * 
- * 2. none                  no    filter. set filter bit score cutoff to default value <x> for 
- *                                --fil-T-hmm (3.0 bits)
- *                               
- * 3. --fil-no-hmm      yes/no    don't filter.
- * 
- * 4. --fil-T-hmm <x>   yes/no    filter. set filter bit score cutoff as <x>
- * 
- * 5. --fil-E-hmm <x>      yes    filter. set E-value filter cutoff to <x>
- * 
- * 6. --fil-E-hmm <x>       no    die. we can't deal with this combo, tell the user.
- * 
- * 7. --fil-Smax-hmm <x>   yes    filter, same as in case 1 above, but if the 'appropriate'
- *                                CM E-value cutoff gives a predicted survival fraction > <x>,
- *                                reset it as the E-value cutoff that gives <x> (even if 
- *                                cmfile told us to turn filtering off).
- * 
- * 8. --fil-Smax-hmm <x>    no    die. we can't deal with this combo, tell the user.
+ * --fil-finE-hmm <x>:  for the HMM filter threshold calculation pretend the final E-value 
+ *                      calculation is <x>. For ex: with 'cmsearch -E 100 --fil-finE-hmm 1'
+ *                      the filter is set as if the final E-value threhsold is 1, but the
+ *                      program will report any final hit with E-value < 100.
  *
- * 
- * QDBY CYK  filtering: 
- * ('none' below means none of --fil-no-qdb, --fil-T-qdb, --fil-E-qdb) 
- *                               
- *                                final 
- *                  exp tail &    round 
- *                  filter thr    cutoff
- *   options        in cmfile?    type    filter/don't filter and cutoff determination
- *   -------       -----------    ------  -----------------------------------------
- * 1. none                 yes    E val   filter. set E-value filter cutoff to E-value that gives
- *                                        predicted survival fraction of <x>. NOTE: larger models,
- *                                        with larger Ws, will have smaller E-value cutoffs for
- *                                        same <x> (a somewhat unsettling behavior).
- * 
- * 2. none                  no    filter. set filter bit score cutoff to default value <x> for 
- *                                --fil-T-qdb (0.0 bits)
- *                               
- * 3. --fil-no-qdb      yes/no    don't filter. 
- * 
- * 4. --fil-T-qdb <x>   yes/no    filter. set filter bit score cutoff as <x>
- * 
- * 5. --fil-E-qdb <x>      yes    filter. set E-value filter cutoff to E-value <x>
- * 
- * 6. --fil-E-qdb <x>       no    die. we can't deal with this combo, tell the user.
+ * --fil-finT-hmm <x>:  same as --fil-finE-hmm, but <x> is a bit score.
+ *                     
  *
- * ('none' below means none of --fil-no-qdb, --fil-T-qdb, --fil-E-qdb) 
+ * ---------------------------------------------------------------------------------------
+ * How QDB CYK filter thresholds are set for calibrated CMs based on command line options:
+ * ---------------------------------------------------------------------------------------
+ * Note that --fil-no-qdb, --fil-T-qdb, and --fil-E-qdb are mutually 
+ * exclusive (enforced by esl_getopts).
+ * 
+ * if --fil-no-qdb:     don't filter with QDB CYK.
+ * if --fil-T-qdb <x>:  set QDB CYK filter bit score cutoff as <x>.
+ * if --fil-E-qdb <x>:  set QDB CYK filter E-value cutoff as <x>
+ * 
+ * If none of these options are selected, default threhsolding occurs as follows:
+ * The QDB threshold E-value is set as that which is 100 times the final algorithm E-value
+ * threshold. If this threshold results in the CYK filter requiring less than a 
+ * predicted 3\% of the total DP calculations in the full search, then the CYK
+ * E-value threshold is raised (made less strict) such that the predicted number
+ * of CYK filter DP calcs is exactly 3\% the total number of DP calcs for the full
+ * search.
+ * 
+ * Expert QDB CYK filter options (only printed with a --devhelp)
+ * --fil-finE-qdb <x>:  for the QDB filter threshold calculation pretend the final E-value 
+ *                      calculation is <x>. For ex: with 'cmsearch -E 100 --fil-finE-qdb 1'
+ *                      the filter is set as if the final E-value threhsold is 1, but the
+ *                      program will report any final hit with E-value < 100.
+ *
+ * --fil-finT-qdb <x>:  same as --fil-finE-qdb, but <x> is a bit score.
  * 
  * beta, the tail loss probability for the QDB calculation is set as <x> from --fil-beta <x>.
  *
- * Final round related options (after all filtering is complete):
  *
+ * ------------------------------------------------------------------------------
+ * How final thresholds are set for calibrated CMs based on command line options:
+ * ------------------------------------------------------------------------------
+ *
+ * How final algorithm is set:
  * --inside:     search with CM inside (TRUE by default)
  * --cyk:        search with CM CYK 
  * --forward:    search with HMM Forward
  * --viterbi:    search with HMM Viterbi
- * -T:           CM/HMM bit score threshold
- * -E:           CM/HMM E-value threshold (requires exp tail info in CM file)
+ * 
+ * How final algorithm threshold is set:
+ * -T <x>:       set final algorithm threshold as bit score <x>
+ * -E <x>:       set final algorithm threshold as E-value <x>
  * --ga:         use Rfam gathering threshold (bit sc) from CM file 
  * --tc:         use Rfam trusted cutoff      (bit sc) from CM file
  * --nc:         use Rfam noise cutoff        (bit sc) from CM file
@@ -1559,10 +1575,10 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 	}
 	/* check if --fil-Smax-hmm applies */
 	if(fhmm_S > esl_opt_GetReal(go, "--fil-Smax-hmm")) { /* predicted survival fraction exceeds maximum allowed, turn filter off, unless --fil-A-hmm enabled */
-	  if(esl_opt_GetBoolean(go, "--fil-A-hmm")) { 
+	  if(esl_opt_GetBoolean(go, "--fil-A-hmm")) { /* we always filter, set threshold as that which gives predicted surv fract of <x> from --fil-Smax-hmm <x> */
 	    fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-Smax-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
 	  }
-	  else { 
+	  else { /* --fil-A-hmm not enabled */
 	    /* it's not worth it to filter, our HMM filter cutoff would be so low, 
 	     * letting so much of the db survive, the filter is a waste of time */
 	    do_hmm_filter = FALSE;
@@ -1574,11 +1590,11 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 	  fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-Smin-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
 	}
       }
-      else { /* cut_point is -1, CM file told us it's not worth it to filter */
+      else { /* cut_point is -1, CM file told us it's not worth it to filter, we only filter if --fil-A-hmm is enabled */
 	if(esl_opt_GetBoolean(go, "--fil-A-hmm")) { 
 	  fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-Smax-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
 	}
-	else { 
+	else { /* --fil-A-hmm not enabled and CM file told us it's not worth it to filter */
 	  do_hmm_filter = FALSE;
 	  /* it's not worth it to filter, our HMM filter cutoff would be so low, 
 	   * letting so much of the db survive, the filter is a waste of time */
@@ -1715,90 +1731,53 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
  *           do (all rounds but last round are filters), and set the relevant 
  *           info in the SearchInfo_t <cm->si> object, including cutoffs.
  *
- *************************************************************************
- * FIX EVERYTHING BELOW THIS LINE !!!!
- *************************************************************************
- * Filters:
- *
- * User can specify 0 or 1 round of HMM filtering with Forward, followed by 0 or 
- * 1 round of CM filtering with QDB CYK. This is determined as described below. 
- * The default behavior depends on whether or not the CM file has exp tail and 
- * filter threshold information from cmcalibrate.
  * 
- * HMM filtering:
- * ('none' below means none of --fil-no-hmm, --fil-T-hmm, --fil-E-hmm, --fil-Smax-hmm) 
+ * --------------------------------------------------------------------------------------
+ * How HMM filters thresholds are set for UNcalibrated CMs based on command line options:
+ * --------------------------------------------------------------------------------------
+ * Note that --fil-no-hmm, --fil-T-hmm, --fil-S-hmm, fil-E-hmm are mutually 
+ * exclusive (enforced by esl_getopts).
  * 
- *                  exp tail &
- *                  filter thr 
- *   options        in cmfile?    filter/don't filter and cutoff determination
- *   -------       ----------    ------------------------------------------------
- * 1. none                 yes    filter (usually). automatically determine appropriate HMM 
- *                                filter cutoff for final round cutoff using cmfile's filter 
- *                                threshold info from cmcalibrate. Sometimes this info may
- *                                tell us it's inappropriate to use an HMM filter, in which
- *                                case, don't filter.
+ * if --fil-no-hmm:     don't filter with an HMM.
+ * if --fil-T-hmm <x>:  set HMM filter bit score cutoff as <x>.
+ * if --fil-S-hmm <x>:  ERROR, requires calibration; esl_getopts detects and exits
+ * if --fil-E-hmm <x>:  ERROR, requires calibration; esl_getopts detects and exits
  * 
- * 2. none                  no    filter. set filter bit score cutoff to default value <x> for 
- *                                --fil-T-hmm (3.0 bits)
- *                               
- * 3. --fil-no-hmm      yes/no    don't filter.
+ * If none of these options are selected, default thresholding occurs as follows:
+ * HMM filter threshold is set as 3.0 bits.
  * 
- * 4. --fil-T-hmm <x>   yes/no    filter. set filter bit score cutoff as <x>
+ * -----------------------------------------------------------------------------------------
+ * How QDB CYK filter thresholds are set for UNcalibrated CMs based on command line options:
+ * -----------------------------------------------------------------------------------------
+ * Note that --fil-no-qdb, --fil-T-qdb, and --fil-E-qdb are mutually 
+ * exclusive (enforced by esl_getopts).
  * 
- * 5. --fil-E-hmm <x>      yes    filter. set E-value filter cutoff to E-value that gives
- *                                predicted survival fraction of <x>. NOTE: larger models,
- *                                with larger Ws, will have smaller E-value cutoffs for
- *                                same <x> (a somewhat unsettling behavior).
+ * if --fil-no-qdb:     don't filter with QDB CYK.
+ * if --fil-T-qdb <x>:  set QDB CYK filter bit score cutoff as <x>.
+ * if --fil-E-qdb <x>:  ERROR, requires calibration; esl_getopts detects and exits
  * 
- * 6. --fil-E-hmm <x>       no    die. we can't deal with this combo, tell the user.
+ * If none of these options are selected, default threhsolding occurs as follows:
+ * QDB filter threshold is set as 0.0 bits.
  * 
- * 7. --fil-Smax-hmm <x>   yes    filter, same as in case 1 above, but if the 'appropriate'
- *                                CM E-value cutoff gives a predicted survival fraction > <x>,
- *                                reset it as the E-value cutoff that gives <x> (even if 
- *                                cmfile told us to turn filtering off).
- * 
- * 8. --fil-Smax-hmm <x>    no    die. we can't deal with this combo, tell the user.
- *
- * 
- * CM filtering: 
- * ('none' below means none of --fil-no-qdb, --fil-T-qdb, --fil-E-qdb) 
- *                               
- *                                final 
- *                  exp tail &    round 
- *                  filter thr    cutoff
- *   options        in cmfile?    type    filter/don't filter and cutoff determination
- *   -------       -----------    ------  -----------------------------------------
- * 1. none                 yes    E val   filter. set E-value filter cutoff to E-value that gives
- *                                        predicted survival fraction of <x>. NOTE: larger models,
- *                                        with larger Ws, will have smaller E-value cutoffs for
- *                                        same <x> (a somewhat unsettling behavior).
- * 
- * 2. none                  no    filter. set filter bit score cutoff to default value <x> for 
- *                                --fil-T-qdb (0.0 bits)
- *                               
- * 3. --fil-no-qdb      yes/no    don't filter. 
- * 
- * 4. --fil-T-qdb <x>   yes/no    filter. set filter bit score cutoff as <x>
- * 
- * 5. --fil-E-qdb <x>      yes    filter. set E-value filter cutoff to E-value that gives
- *                                predicted survival fraction of <x>. NOTE: larger models,
- *                                with larger Ws, will have smaller E-value cutoffs for
- *                                same <x> (a somewhat unsettling behavior).
- * 
- * 6. --fil-E-qdb <x>       no    die. we can't deal with this combo, tell the user.
- *
- * ('none' below means none of --fil-no-qdb, --fil-T-qdb, --fil-E-qdb) 
+ * Expert QDB CYK filter options (only printed with a --devhelp)
+ * --fil-finE-qdb <x>:  ERROR, requires calibration; esl_getopts detects and exits
+ * --fil-finT-qdb <x>:  ERROR, requires calibration; esl_getopts detects and exits
  * 
  * beta, the tail loss probability for the QDB calculation is set as <x> from --fil-beta <x>.
  *
- * Final round related options (after all filtering is complete):
+ * --------------------------------------------------------------------------------
+ * How final thresholds are set for UNcalibrated CMs based on command line options:
+ * --------------------------------------------------------------------------------
  *
+ * How final algorithm is set:
  * --inside:     search with CM inside (TRUE by default)
  * --cyk:        search with CM CYK 
  * --forward:    search with HMM Forward
  * --viterbi:    search with HMM Viterbi
- * -T:           CM/HMM bit score threshold
- * -E:           CM/HMM E-value threshold (requires exp tail info in CM file)
+ * 
+ * How final algorithm threshold is set:
+ * -T <x>:       set final algorithm threshold as bit score <x>
+ * -E <x>:       ERROR, esl_getopts detects this and exits
  * --ga:         use Rfam gathering threshold (bit sc) from CM file 
  * --tc:         use Rfam trusted cutoff      (bit sc) from CM file
  * --nc:         use Rfam noise cutoff        (bit sc) from CM file
