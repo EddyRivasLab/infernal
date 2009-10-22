@@ -602,6 +602,8 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   dpc_v /= 1000000.;
 
   /* First create scan info for non-QDB runs */
+  tmp_dmin = cm->dmin;
+  tmp_dmax = cm->dmax;
   cm->dmin = NULL;
   cm->dmax = NULL;
   cm->search_opts |= CM_SEARCH_NOQDB;
