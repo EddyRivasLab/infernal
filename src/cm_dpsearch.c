@@ -123,7 +123,6 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
   int    *dmax        = smx->dmax;        /* [0..v..cm->M-1] maximum d allowed for this state */
   float **esc_vAA     = cm->oesc;         /* [0..v..cm->M-1][0..a..(cm->abc->Kp | cm->abc->Kp**2)] optimized emission scores for v 
 					   * and all possible emissions a (including ambiguities) */
-
   /* determine if we're doing banded/non-banded */
   if(smx->dmin != NULL && smx->dmax != NULL) do_banded = TRUE;
 
@@ -256,9 +255,9 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 
 	    switch (cnum) {
 	    case 3: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = ESL_MAX(arow2[dp_y] + tsc_v[2],
 			     arow1[dp_y] + tsc_v[1]);		
@@ -278,12 +277,12 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	      break;
 
 	    case 6: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-	      arow4 = (float * const) alpha[jp_y][y+4];
-	      arow5 = (float * const) alpha[jp_y][y+5];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
+	      arow5 = alpha[jp_y][y+5];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = ESL_MAX(arow5[dp_y] + tsc_v[5],
 			      init_scAA[v][dp_y]);
@@ -306,10 +305,10 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	      break;
 
 	    case 4: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = ESL_MAX(arow3[dp_y] + tsc_v[3],
 			     arow2[dp_y] + tsc_v[2]);		
@@ -330,11 +329,11 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	      break;
 
 	    case 5: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-	      arow4 = (float * const) alpha[jp_y][y+4];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = ESL_MAX(arow4[dp_y] + tsc_v[4],
 			     arow3[dp_y] + tsc_v[3]);		
@@ -357,8 +356,8 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	      break;
 
 	    case 2: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = ESL_MAX(arow1[dp_y] + tsc_v[1],
 			     init_scAA[v][dp_y]);
@@ -399,9 +398,9 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 
 	    switch (cnum) {
 	    case 3: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = ESL_MAX(arow2[dp_y] + tsc_v[2],
 				  arow1[dp_y] + tsc_v[1]);		
@@ -411,12 +410,12 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	      break;
 
 	    case 6: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-	      arow4 = (float * const) alpha[jp_y][y+4];
-	      arow5 = (float * const) alpha[jp_y][y+5];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
+	      arow5 = alpha[jp_y][y+5];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = ESL_MAX(arow5[dp_y] + tsc_v[5],
 				  init_scAA[v][dp_y]);
@@ -429,10 +428,10 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	      break;
 
 	    case 4: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = ESL_MAX(arow3[dp_y] + tsc_v[3],
 			     arow2[dp_y] + tsc_v[2]);		
@@ -443,11 +442,11 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	      break;
 
 	    case 5: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-	      arow4 = (float * const) alpha[jp_y][y+4];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = ESL_MAX(arow4[dp_y] + tsc_v[4],
 			     arow3[dp_y] + tsc_v[3]);		
@@ -459,8 +458,8 @@ FastCYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
 	      break;
 
 	    case 2: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = ESL_MAX(arow1[dp_y] + tsc_v[1],
 			     init_scAA[v][dp_y]);
@@ -806,9 +805,9 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 
 	    switch (cnum) {
 	    case 3: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = ILogsum(arow2[dp_y] + tsc_v[2],
 			     arow1[dp_y] + tsc_v[1]);		
@@ -829,12 +828,12 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	      break;
 
 	    case 6: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
-	      arow3 = (int * const) alpha[jp_y][y+3];
-	      arow4 = (int * const) alpha[jp_y][y+4];
-	      arow5 = (int * const) alpha[jp_y][y+5];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
+	      arow5 = alpha[jp_y][y+5];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = ILogsum(arow5[dp_y] + tsc_v[5],
 			     init_scAA[v][dp_y]);
@@ -857,10 +856,10 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	      break;
 
 	    case 4: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
-	      arow3 = (int * const) alpha[jp_y][y+3];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = ILogsum(arow3[dp_y] + tsc_v[3],
 			     arow2[dp_y] + tsc_v[2]);		
@@ -882,11 +881,11 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	      break;
 
 	    case 5: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
-	      arow3 = (int * const) alpha[jp_y][y+3];
-	      arow4 = (int * const) alpha[jp_y][y+4];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = ILogsum(arow4[dp_y] + tsc_v[4],
 			     arow3[dp_y] + tsc_v[3]);		
@@ -910,8 +909,8 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	      break;
 
 	    case 2: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = ILogsum(arow1[dp_y] + tsc_v[1],
 			     init_scAA[v][dp_y]);
@@ -952,9 +951,9 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 
 	    switch (cnum) {
 	    case 3: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = ILogsum(arow2[dp_y] + tsc_v[2],
 			     arow1[dp_y] + tsc_v[1]);		
@@ -964,12 +963,12 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	      break;
 
 	    case 6: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
-	      arow3 = (int * const) alpha[jp_y][y+3];
-	      arow4 = (int * const) alpha[jp_y][y+4];
-	      arow5 = (int * const) alpha[jp_y][y+5];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
+	      arow5 = alpha[jp_y][y+5];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = ILogsum(arow5[dp_y] + tsc_v[5],
 			      init_scAA[v][dp_y]);
@@ -982,10 +981,10 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	      break;
 
 	    case 4: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
-	      arow3 = (int * const) alpha[jp_y][y+3];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = ILogsum(arow3[dp_y] + tsc_v[3],
 			     arow2[dp_y] + tsc_v[2]);		
@@ -996,11 +995,11 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	      break;
 
 	    case 5: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
-	      arow3 = (int * const) alpha[jp_y][y+3];
-	      arow4 = (int * const) alpha[jp_y][y+4];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = ILogsum(arow4[dp_y] + tsc_v[4],
 			     arow3[dp_y] + tsc_v[3]);		
@@ -1012,8 +1011,8 @@ FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	      break;
 
 	    case 2: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = ILogsum(arow1[dp_y] + tsc_v[1],
 			     init_scAA[v][dp_y]);
@@ -1355,9 +1354,9 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
 
 	    switch (cnum) {
 	    case 3: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = ILogsum(init_scAA[v][dp_y], 
 			     arow0[dp_y] + tsc_v[0]);		
@@ -1378,12 +1377,12 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
 	      break;
 
 	    case 6: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
-	      arow3 = (int * const) alpha[jp_y][y+3];
-	      arow4 = (int * const) alpha[jp_y][y+4];
-	      arow5 = (int * const) alpha[jp_y][y+5];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
+	      arow5 = alpha[jp_y][y+5];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = ILogsum(arow5[dp_y] + tsc_v[5],
 			      init_scAA[v][dp_y]);
@@ -1406,10 +1405,10 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
 	      break;
 
 	    case 4: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
-	      arow3 = (int * const) alpha[jp_y][y+3];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = ILogsum(arow3[dp_y] + tsc_v[3],
 			     arow2[dp_y] + tsc_v[2]);		
@@ -1431,11 +1430,11 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
 	      break;
 
 	    case 5: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
-	      arow3 = (int * const) alpha[jp_y][y+3];
-	      arow4 = (int * const) alpha[jp_y][y+4];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = ILogsum(arow4[dp_y] + tsc_v[4],
 			     arow3[dp_y] + tsc_v[3]);		
@@ -1459,8 +1458,8 @@ XFastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0
 	      break;
 
 	    case 2: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = ILogsum(arow1[dp_y] + tsc_v[1],
 			     init_scAA[v][dp_y]);
@@ -1826,8 +1825,8 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
 
 	    switch (cnum) {
 	    case 2: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = init_scAA[v][dp_y];
 		sc = ILogsum(sc, arow0[dp_y] + tsc_v[0]);		
@@ -1847,9 +1846,9 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
 	      break;
 
 	    case 3: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = init_scAA[v][dp_y];
 		sc = ILogsum(sc, arow0[dp_y] + tsc_v[0]);		
@@ -1870,10 +1869,10 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
 	      break;
 
 	    case 4: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
-	      arow3 = (int * const) alpha[jp_y][y+3];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = init_scAA[v][dp_y];
 		sc = ILogsum(sc, arow0[dp_y] + tsc_v[0]);		
@@ -1895,11 +1894,11 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
 	      break;
 
 	    case 5: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
-	      arow3 = (int * const) alpha[jp_y][y+3];
-	      arow4 = (int * const) alpha[jp_y][y+4];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = init_scAA[v][dp_y];
 		sc = ILogsum(sc, arow0[dp_y] + tsc_v[0]);		
@@ -1922,12 +1921,12 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
 	      break;
 
 	    case 6: 
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
-	      arow3 = (int * const) alpha[jp_y][y+3];
-	      arow4 = (int * const) alpha[jp_y][y+4];
-	      arow5 = (int * const) alpha[jp_y][y+5];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
+	      arow5 = alpha[jp_y][y+5];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = init_scAA[v][dp_y];
 		sc = ILogsum(sc, arow0[dp_y] + tsc_v[0]);		
@@ -1974,8 +1973,8 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
 
 	    switch (cnum) {
 	    case 2:
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = init_scAA[v][dp_y];
 		sc_v[d] = ILogsum(sc_v[d], arow0[dp_y] + tsc_v[0]);		
@@ -1984,9 +1983,9 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
 	      break;
 
 	    case 3:
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = init_scAA[v][dp_y];
 		sc_v[d] = ILogsum(sc_v[d], arow0[dp_y] + tsc_v[0]);		
@@ -1996,10 +1995,10 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
 	      break;
 
 	    case 4:
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
-	      arow3 = (int * const) alpha[jp_y][y+3];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = init_scAA[v][dp_y];
 		sc_v[d] = ILogsum(sc_v[d], arow0[dp_y] + tsc_v[0]);		
@@ -2010,11 +2009,11 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
 	      break;
 
 	    case 5:
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
-	      arow3 = (int * const) alpha[jp_y][y+3];
-	      arow4 = (int * const) alpha[jp_y][y+4];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = init_scAA[v][dp_y];
 		sc_v[d] = ILogsum(sc_v[d], arow0[dp_y] + tsc_v[0]);		
@@ -2026,12 +2025,12 @@ X2FastIInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i
 	      break;
 
 	    case 6:
-	      arow0 = (int * const) alpha[jp_y][y];
-	      arow1 = (int * const) alpha[jp_y][y+1];
-	      arow2 = (int * const) alpha[jp_y][y+2];
-	      arow3 = (int * const) alpha[jp_y][y+3];
-	      arow4 = (int * const) alpha[jp_y][y+4];
-	      arow5 = (int * const) alpha[jp_y][y+5];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
+	      arow5 = alpha[jp_y][y+5];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = init_scAA[v][dp_y];
 		sc_v[d] = ILogsum(sc_v[d], arow0[dp_y] + tsc_v[0]);		
@@ -2372,9 +2371,9 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 
 	    switch (cnum) {
 	    case 3: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = FLogsum(arow2[dp_y] + tsc_v[2],
 			     arow1[dp_y] + tsc_v[1]);		
@@ -2395,12 +2394,12 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	      break;
 
 	    case 6: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-	      arow4 = (float * const) alpha[jp_y][y+4];
-	      arow5 = (float * const) alpha[jp_y][y+5];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
+	      arow5 = alpha[jp_y][y+5];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = FLogsum(arow5[dp_y] + tsc_v[5],
 			      init_scAA[v][dp_y]);
@@ -2423,10 +2422,10 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	      break;
 
 	    case 4: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = FLogsum(arow3[dp_y] + tsc_v[3],
 			     arow2[dp_y] + tsc_v[2]);		
@@ -2448,11 +2447,11 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	      break;
 
 	    case 5: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-	      arow4 = (float * const) alpha[jp_y][y+4];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = FLogsum(arow4[dp_y] + tsc_v[4],
 			     arow3[dp_y] + tsc_v[3]);		
@@ -2476,8 +2475,8 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	      break;
 
 	    case 2: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc = FLogsum(arow1[dp_y] + tsc_v[1],
 			     init_scAA[v][dp_y]);
@@ -2518,9 +2517,9 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 
 	    switch (cnum) {
 	    case 3: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = FLogsum(arow2[dp_y] + tsc_v[2],
 			     arow1[dp_y] + tsc_v[1]);		
@@ -2530,12 +2529,12 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	      break;
 
 	    case 6: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-	      arow4 = (float * const) alpha[jp_y][y+4];
-	      arow5 = (float * const) alpha[jp_y][y+5];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
+	      arow5 = alpha[jp_y][y+5];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = FLogsum(arow5[dp_y] + tsc_v[5],
 			      init_scAA[v][dp_y]);
@@ -2548,10 +2547,10 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	      break;
 
 	    case 4: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = FLogsum(arow3[dp_y] + tsc_v[3],
 			     arow2[dp_y] + tsc_v[2]);		
@@ -2562,11 +2561,11 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	      break;
 
 	    case 5: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
-	      arow2 = (float * const) alpha[jp_y][y+2];
-	      arow3 = (float * const) alpha[jp_y][y+3];
-	      arow4 = (float * const) alpha[jp_y][y+4];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
+	      arow2 = alpha[jp_y][y+2];
+	      arow3 = alpha[jp_y][y+3];
+	      arow4 = alpha[jp_y][y+4];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = FLogsum(arow4[dp_y] + tsc_v[4],
 			     arow3[dp_y] + tsc_v[3]);		
@@ -2578,8 +2577,8 @@ FastFInsideScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0,
 	      break;
 
 	    case 2: 
-	      arow0 = (float * const) alpha[jp_y][y];
-	      arow1 = (float * const) alpha[jp_y][y+1];
+	      arow0 = alpha[jp_y][y];
+	      arow1 = alpha[jp_y][y+1];
 	      for (d = dn; d <= dx; d++, dp_y++) {
 		sc_v[d] = FLogsum(arow1[dp_y] + tsc_v[1],
 			     init_scAA[v][dp_y]);
