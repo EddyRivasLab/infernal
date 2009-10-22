@@ -2679,10 +2679,6 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   float *cm_E_cut2save;
   int n2save;
 
-  /* these are only used if eslDEBUGLEVEL >= 1, for an expensive check of our results */
-  int error_flag;
-  int nmissed;
-
   /* these are only used if --fil-dfile enabled */
   int ncut;
   float fwd_bitmax, fwd_bittarg, fwd_bitmin;
@@ -2927,8 +2923,8 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
 
 #if eslDEBUGLEVEL >= 1
   /* paranoid, expensive check */
-  error_flag = FALSE;
-  nmissed = 0;
+  int error_flag = FALSE;
+  int nmissed = 0;
   for(i = 0; i <= imax; i++) {
     nmissed = 0;
     for(j = i; j < filN; j++) { 
