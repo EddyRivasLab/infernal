@@ -2575,6 +2575,7 @@ best_filter_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, BestFilter
   int status;
   BestFilterInfo_t *bf;
   int p;
+  int is_hybrid;
 
   ESL_ALLOC(bf, sizeof(BestFilterInfo_t));
   status = MPI_Unpack (buf, n, pos, &(bf->cm_M),                1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
@@ -2591,7 +2592,7 @@ best_filter_info_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, BestFilter
   status = MPI_Unpack (buf, n, pos, &(bf->fil_ncalcs),          1, MPI_FLOAT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, &(bf->fil_plus_surv_ncalcs),1, MPI_FLOAT, comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
 
-  int is_hybrid = (bf->ftype == FILTER_WITH_HYBRID) ? TRUE : FALSE;
+  is_hybrid = (bf->ftype == FILTER_WITH_HYBRID) ? TRUE : FALSE;
   if(is_hybrid) { /* unpack v_isroot, hexpA */
     assert(bf->np > 0);
     ESL_ALLOC(bf->v_isroot, sizeof(int) * bf->np);
