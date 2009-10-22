@@ -231,6 +231,12 @@ main(int argc, char **argv)
   if(w == NULL) cm_Fail("Memory allocation error, stopwatch could not be created.");
   esl_stopwatch_Start(w);
   struct cfg_s     cfg;
+
+  int cmL_total_nt_loc;
+  int cmL_total_nt_glc;
+  int hmmL_total_nt_loc;
+  int hmmL_total_nt_glc;
+
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
   FLogsumInit();
@@ -358,10 +364,10 @@ main(int argc, char **argv)
 #endif
 
   /* calculate sequence lengths and quantities for exp tail fitting, */
-  int cmL_total_nt_loc  = (int) (1000000. * esl_opt_GetReal(go, "--exp-cmL-loc"));
-  int cmL_total_nt_glc  = (int) (1000000. * esl_opt_GetReal(go, "--exp-cmL-glc"));
-  int hmmL_total_nt_loc = (int) (1000000. * esl_opt_GetReal(go, "--exp-hmmLn-loc"));
-  int hmmL_total_nt_glc = (int) (1000000. * esl_opt_GetReal(go, "--exp-hmmLn-glc"));
+  cmL_total_nt_loc  = (int) (1000000. * esl_opt_GetReal(go, "--exp-cmL-loc"));
+  cmL_total_nt_glc  = (int) (1000000. * esl_opt_GetReal(go, "--exp-cmL-glc"));
+  hmmL_total_nt_loc = (int) (1000000. * esl_opt_GetReal(go, "--exp-hmmLn-loc"));
+  hmmL_total_nt_glc = (int) (1000000. * esl_opt_GetReal(go, "--exp-hmmLn-glc"));
 
   /* determine the number of 10 Kb chunks (cfg.expL = 10000) to search to reach the totals */
   if(cmL_total_nt_loc  < (cfg.expL + 1)) cm_Fail("with --exp-cmL-loc <x>, <x> must be at least %.3f.", cfg.expL / 1000000.);
@@ -2291,6 +2297,7 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
   long temp;
   int  seedlen;
   char *seedstr;
+  time_t date = time(NULL);
 
   if(cfg->ccom  != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "get_cmcalibrate_comlog_info(), cfg->ccom  is non-NULL.");
   if(cfg->cdate != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "get_cmcalibrate_comlog_info(), cfg->cdate is non-NULL.");
@@ -2322,7 +2329,6 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
   }
   
   /* Set the cmcalibrate call date, the cfg->cdate string */
-  time_t date = time(NULL);
   if((status = esl_strdup(ctime(&date), -1, &(cfg->cdate))) != eslOK) goto ERROR;
   esl_strchop(cfg->cdate, -1); /* doesn't return anything but eslOK */
 
@@ -2638,6 +2644,47 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   float        cm_E, fwd_E;       /* a CM E-value and Forward E-value */
   int          hmm_fwd_mode = (cm->cp9->flags & CPLAN9_LOCAL_BEGIN) ? EXP_CP9_LF : EXP_CP9_GF;
 
+  int *fwd_useme;      /* [0..i..filN] TRUE if element with rank i in by_fwd array is 'in use', meaning it corresponds to a sequence with CM score better than current threshold */
+  int fwd_all;         /* the index in by_fwdA of the worst ranked  (highest) forward E-value of all elements in use (fwd_useme[i] == TRUE) */
+  int fwd_F;           /* the index in by_fwdA of the sequence with forward E-value worse than F fraction of all elements in use (fwd_useme[i] == TRUE) */
+
+  int curN;
+  int *change_fwd_F;
+  int prv_Fidx;
+  int cur_Fidx;
+  int imax_above_Emax; /* at end of loop, imax_above_Emax is max i for which fwd_E_cut[i] >  fwd_Emax,  if -1, fwd_E_cut[i] < fwd_Emax  for all i=0..imax */
+  int imin_at_Etarg;   /* at end of loop, imin_at_Etarg   is min i for which fwd_E_cut[i] == fwd_Etarg, if -1, fwd_E_cut[i] > fwd_Etarg for all i=0..imax */
+  int imax_at_Etarg;   /* at end of loop, imax_at_Etarg   is max i for which fwd_E_cut[i] == fwd_Etarg, if -1, fwd_E_cut[i] > fwd_Etarg for all i=0..imax */
+  int imin_at_Emin;    /* at end of loop, imin_at_Emin    is min i for which fwd_E_cut[i] == fwd_Emin,  if -1, fwd_E_cut[i] > fwd_Emin  for all i=0..imax */
+
+  /* these variables are used in the "main loop" (to find it, search for "The main loop:" below) */
+  int imax;
+  float *fwd_E_F; 
+  float *fwd_E_all;
+  float *fwd_E_cut;
+  float *fwd_E_S;  
+
+  /* these variables are used in the "step through" section, to define representative cutoffs (to find this section, search for "step through all cutoffs" below) */
+  int ip_min;
+  int ip_max;
+  int ip;
+  float max_next_E_cut;
+  float prev_E_cut;
+  int *saveme;
+  int keep_going;
+  float *fwd_E_cut2save;
+  float *cm_E_cut2save;
+  int n2save;
+
+  /* these are only used if eslDEBUGLEVEL >= 1, for an expensive check of our results */
+  int error_flag;
+  int nmissed;
+
+  /* these are only used if --fil-dfile enabled */
+  int ncut;
+  float fwd_bitmax, fwd_bittarg, fwd_bitmin;
+  float fwd_bitcut, cm_bitcut;
+
   /* contract checks */
   if(! (cfg->cmstatsA[cmi]->expAA[cm_mode][0]->is_valid))      ESL_FAIL(eslEINCOMPAT, errbuf, "get_hmm_filter_cutoffs(), exp tail stats for CM mode: %d are not valid.\n", cm_mode);
   if(! (cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0]->is_valid)) ESL_FAIL(eslEINCOMPAT, errbuf, "get_hmm_filter_cutoffs(), exp tail stats for HMM fwd mode: %d are not valid.\n", hmm_fwd_mode);
@@ -2778,11 +2825,10 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
 
   /* Setup fwd_useme array: fwd_useme[i] is TRUE if element with rank i in by_fwdA array is 'in use', 
    * meaning it corresponds to a sequence with CM score better than current threshold */
-  int *fwd_useme;      /* [0..i..filN] TRUE if element with rank i in by_fwd array is 'in use', meaning it corresponds to a sequence with CM score better than current threshold */
+  fwd_all = 0;     /* the index in by_fwdA of the worst ranked  (highest) forward E-value of all elements in use (fwd_useme[i] == TRUE) */
+  fwd_F   = Fidx;  /* the index in by_fwdA of the sequence with forward E-value worse than F fraction of all elements in use (fwd_useme[i] == TRUE) */
   ESL_ALLOC(fwd_useme, sizeof(int) * filN);
   esl_vec_ISet(fwd_useme, filN, TRUE);
-  int fwd_all = 0;     /* the index in by_fwdA of the worst ranked  (highest) forward E-value of all elements in use (fwd_useme[i] == TRUE) */
-  int fwd_F   = Fidx;  /* the index in by_fwdA of the sequence with forward E-value worse than F fraction of all elements in use (fwd_useme[i] == TRUE) */
 
   /* Precalculate the i values for which we have to change fwd_F, as step through the i=0..imax loop.
    * when i == 0, curN == filN-i+1 == filN, and fwd_F == Fidx because we want to find F fraction of the filN hits
@@ -2791,10 +2837,7 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
    * it's non-trivial, and worth precalculating to avoid putting the messy code that does
    * it in the loop below. 
    */
-  int curN = filN;
-  int *change_fwd_F;
-  int prv_Fidx;
-  int cur_Fidx;
+  curN = filN;
   ESL_ALLOC(change_fwd_F, sizeof(int) * (filN+1));
   prv_Fidx = Fidx;
   for(i = filN-1; i >= 0; i--) { 
@@ -2817,19 +2860,15 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
    *               because we consider our fwd_Emax, fwd_Etarg, and fwd_Emin values.
    * fwd_E_S[i]:   predicted survival fraction using fwd_E_cut[i], equals (fwd_E_cut[i] * surv_res_per_hit / dbsize).
    */
-  int imax = (int) ((0.900001) * (float) filN); /* .900001 is to avoid unnec rounding down (for ex, if filN == 100, and we used 0.90, we may get 89.99999999 and end up rounding down) */
-  float *fwd_E_F; 
-  float *fwd_E_all;
-  float *fwd_E_cut;
-  float *fwd_E_S;  
+  imax = (int) ((0.900001) * (float) filN); /* .900001 is to avoid unnec rounding down (for ex, if filN == 100, and we used 0.90, we may get 89.99999999 and end up rounding down) */
   ESL_ALLOC(fwd_E_F,    sizeof(float) * (imax+1));
   ESL_ALLOC(fwd_E_all,  sizeof(float) * (imax+1));
   ESL_ALLOC(fwd_E_cut,  sizeof(float) * (imax+1));
   ESL_ALLOC(fwd_E_S,    sizeof(float) * (imax+1));
-  int imax_above_Emax  = -1; /* at end of loop, imax_above_Emax is max i for which fwd_E_cut[i] >  fwd_Emax,  if -1, fwd_E_cut[i] < fwd_Emax  for all i=0..imax */
-  int imin_at_Etarg    = -1; /* at end of loop, imin_at_Etarg   is min i for which fwd_E_cut[i] == fwd_Etarg, if -1, fwd_E_cut[i] > fwd_Etarg for all i=0..imax */
-  int imax_at_Etarg    = -1; /* at end of loop, imax_at_Etarg   is max i for which fwd_E_cut[i] == fwd_Etarg, if -1, fwd_E_cut[i] > fwd_Etarg for all i=0..imax */
-  int imin_at_Emin     = -1; /* at end of loop, imin_at_Emin    is min i for which fwd_E_cut[i] == fwd_Emin,  if -1, fwd_E_cut[i] > fwd_Emin  for all i=0..imax */
+  imax_above_Emax  = -1; /* at end of loop, imax_above_Emax is max i for which fwd_E_cut[i] >  fwd_Emax,  if -1, fwd_E_cut[i] < fwd_Emax  for all i=0..imax */
+  imin_at_Etarg    = -1; /* at end of loop, imin_at_Etarg   is min i for which fwd_E_cut[i] == fwd_Etarg, if -1, fwd_E_cut[i] > fwd_Etarg for all i=0..imax */
+  imax_at_Etarg    = -1; /* at end of loop, imax_at_Etarg   is max i for which fwd_E_cut[i] == fwd_Etarg, if -1, fwd_E_cut[i] > fwd_Etarg for all i=0..imax */
+  imin_at_Emin     = -1; /* at end of loop, imin_at_Emin    is min i for which fwd_E_cut[i] == fwd_Emin,  if -1, fwd_E_cut[i] > fwd_Emin  for all i=0..imax */
 
   ESL_DPRINTF1(("fwd_Emax:  %f\n", fwd_Emax));
   ESL_DPRINTF1(("fwd_Etarg: %f\n", fwd_Etarg));
@@ -2885,8 +2924,8 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
 
 #if eslDEBUGLEVEL >= 1
   /* paranoid, expensive check */
-  int error_flag = FALSE;
-  int nmissed = 0;
+  error_flag = FALSE;
+  nmissed = 0;
   for(i = 0; i <= imax; i++) {
     nmissed = 0;
     for(j = i; j < filN; j++) { 
@@ -2908,13 +2947,9 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
 #endif
 
   /* step through all cutoffs, determining and keeping a representative set */
-  int ip_min = imax_above_Emax == -1 ? 0    : imax_above_Emax+1;
-  int ip_max = imin_at_Emin    == -1 ? imax : imin_at_Emin;
-  int ip = ip_min;
-  float max_next_E_cut;
-  float prev_E_cut;
-  int *saveme;
-  int keep_going;
+  ip_min = imax_above_Emax == -1 ? 0    : imax_above_Emax+1;
+  ip_max = imin_at_Emin    == -1 ? imax : imin_at_Emin;
+  ip = ip_min;
   ESL_ALLOC(saveme, sizeof(int) * (ip_max + 1));
   esl_vec_ISet(saveme, (ip_max+1), FALSE);
   i = 0;
@@ -2945,9 +2980,7 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
     }
   }
 
-  float *fwd_E_cut2save;
-  float *cm_E_cut2save;
-  int n2save = i;
+  n2save = i;
   ESL_ALLOC(fwd_E_cut2save, sizeof(float) * n2save);
   ESL_ALLOC(cm_E_cut2save,  sizeof(float) * n2save);
   i = 0;
@@ -2965,9 +2998,8 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
   /* if --fil-dfile option enabled, print bit scores and cutoffs to the file */
   if(cfg->fildfp != NULL) { 
     assert(cfg->cmstatsA[cmi]->np == 1);
-    int ncut = i;
+    ncut = i;
     fprintf(cfg->fildfp, "# Printing cmcalibrate HMM filter threshold determination data for CM: %s\n", cm->name);
-    float fwd_bitmax, fwd_bittarg, fwd_bitmin;
     if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0], errbuf, fwd_Emax,  &fwd_bitmax))  != eslOK)  return status;
     if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0], errbuf, fwd_Etarg, &fwd_bittarg)) != eslOK)  return status;
     if((status = E2ScoreGivenExpInfo(cfg->cmstatsA[cmi]->expAA[hmm_fwd_mode][0], errbuf, fwd_Emin,  &fwd_bitmin))  != eslOK)  return status;
@@ -2989,7 +3021,6 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
 
     fprintf(cfg->fildfp, "# HMM/CM cut points saved to CM file are listed next\n");
     fprintf(cfg->fildfp, "# Format of following %d lines: <x> <y>\n", ncut);
-    float fwd_bitcut, cm_bitcut;
     if     (hmm_fwd_mode == EXP_CP9_LF) fprintf(cfg->fildfp, "# <x>: Cut point HMM local Forward bit score cutoff\n");
     else if(hmm_fwd_mode == EXP_CP9_GF) fprintf(cfg->fildfp, "# <x>: Cut point HMM glocal Forward bit score cutoff\n");
     if     (cm_mode == EXP_CM_LC)       fprintf(cfg->fildfp, "# <y>: CM local CYK bit score cutoff\n");

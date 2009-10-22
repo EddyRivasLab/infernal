@@ -408,7 +408,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     status = esl_sqfile_Open(esl_opt_GetString(go, "--infile"), cfg->infmt, NULL, &(cfg->sqfp));
     if (status == eslENOTFOUND)    ESL_FAIL(status, errbuf, "File %s doesn't exist or is not readable\n", esl_opt_GetString(go, "--infile"));
     else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of sequence file %s\n", esl_opt_GetString(go, "--infile"));
-    else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Can$.1Žòùt autodetect stdin or .gz."); 
+    else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Can$.1Žòùt autodetect stdin or .gz.");
     else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
     cfg->infmt = cfg->sqfp->format;
 

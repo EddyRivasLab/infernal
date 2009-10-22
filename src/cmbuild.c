@@ -2023,6 +2023,7 @@ write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *err
   long temp;
   int  seedlen;
   char *seedstr = NULL;
+  time_t date = time(NULL);
 
   if(cfg->comlog->bcom != NULL)  ESL_FAIL(eslEINCOMPAT, errbuf, "write_cmbuild_info_to_comlog(), cfg->comlog->bcom is non-NULL.");
   if(cfg->comlog->bdate != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "write_cmbuild_info_to_comlog(), cfg->comlog->bcom is non-NULL.");
@@ -2056,7 +2057,6 @@ write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *err
   }
 
   /* Set the cmbuild creation date, the cfg->comlog->bdate string */
-  time_t date = time(NULL);
   if((status = esl_strdup(ctime(&date), -1, &(cfg->comlog->bdate))) != eslOK) goto ERROR;
   esl_strchop(cfg->comlog->bdate, -1); /* doesn't return anything but eslOK */
 

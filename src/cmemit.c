@@ -733,11 +733,11 @@ truncate_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, ESL_MSA *msa, char 
   int bpos = esl_opt_GetInteger(go, "--begin");
   int epos = esl_opt_GetInteger(go, "--end");
   int cc = 0;
+  int clen = 0;
 
   ESL_ALLOC(useme, sizeof(int) * (msa->alen+1));
   ESL_ALLOC(ct,    sizeof(int) * (msa->alen+1));
 
-  int clen = 0;
   for (apos = 0, cc = 0; apos < msa->alen; apos++)
     if (!esl_abc_CIsGap(msa->abc, msa->rf[apos])) clen++;
   if(epos > clen)

@@ -1114,7 +1114,11 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
   if((cm->cp9->flags & CPLAN9_LOCAL_BEGIN) && (! (cm->cp9->flags & CPLAN9_LOCAL_BEGIN))) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, CPLAN9_LOCAL_BEGIN flag up, but CPLAN9_LOCAL_END flag down, this shouldn't happen.");
   if((! (cm->cp9->flags & CPLAN9_LOCAL_BEGIN)) && (cm->cp9->flags & CPLAN9_LOCAL_BEGIN)) ESL_FAIL(eslEINCOMPAT, errbuf, "cp9_FastForward, CPLAN9_LOCAL_BEGIN flag down, but CPLAN9_LOCAL_END flag up, this shouldn't happen.");
 
-  int const *tsc = cm->cp9->otsc; /* ptr to efficiently ordered transition scores           */
+  int const *tsc;
+  int const *isc;
+  int const *msc;
+  int endsc;
+  int el_selfsc;
 
   best_sc     = IMPOSSIBLE;
   best_pos    = -1;
@@ -1186,10 +1190,8 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
   /*****************************************************************************
    * special position: j = i0                                                  */
   j  = i0;
-  int const *isc = cm->cp9->isc[dsq[j]];
-  int const *msc = cm->cp9->msc[dsq[j]];
-  int endsc     = -INFTY;
-  int el_selfsc = cm->cp9->el_selfsc;
+  isc = cm->cp9->isc[dsq[j]];
+  msc = cm->cp9->msc[dsq[j]];
   jp = j-i0+1;     /* jp is relative position in the sequence 1..L */
   cur = (j-i0+1);
   prv = (j-i0);

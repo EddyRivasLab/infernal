@@ -52,6 +52,8 @@ cm_hb_mx_Create(int M)
   int     status;
   CM_HB_MX *mx = NULL;
   int     v;
+  int allocL = 1;
+  int allocW = 1;
 
   /* level 1: the structure itself */
   ESL_ALLOC(mx, sizeof(CM_HB_MX));
@@ -66,8 +68,6 @@ cm_hb_mx_Create(int M)
   ESL_ALLOC(mx->dp,  sizeof(float **) * (M+1));
  
   /* level 3: dp cell memory, when creating only allocate 1 cell per state, for j = 0, d = 0 */
-  int allocL = 1;
-  int allocW = 1;
   ESL_ALLOC(mx->dp_mem,  sizeof(float) * (M+1) * (allocL) * (allocW));
   ESL_ALLOC(mx->nrowsA, sizeof(int)      * (M+1));
   for (v = 0; v <= M; v++) {

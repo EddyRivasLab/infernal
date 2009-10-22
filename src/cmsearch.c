@@ -564,7 +564,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  fprintf(cfg->tfp, "# CM->W: %d (subtract (W-1) from stop and add (W-1) to start, and merge overlapping hits to simulate filter)\n", cm->W);*/
 	fprintf(cfg->tfp, "# %-*s  %-*s  %22s  %12s  %8s  %8s  %3s\n", cm_namewidth, "", cfg->namewidth, "", "target coord", "query coord", "", "", "");
 	fprintf(cfg->tfp, "# %-*s  %-*s  %22s  %12s  %8s  %8s  %3s\n", cm_namewidth, "", cfg->namewidth, "", "----------------------", "------------", "", "", "");
-	fprintf(cfg->tfp, "# %-*s  %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cm_namewidth, "model name", cfg->namewidth, "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC\%");
+	fprintf(cfg->tfp, "# %-*s  %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cm_namewidth, "model name", cfg->namewidth, "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC%");
 	fprintf(cfg->tfp, "# %-*s  %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cm_namewidth, cm_namedashes, cfg->namewidth, namedashes, "----------", "----------", "-----", "-----", "--------", "--------", "---");
       }
       using_e_cutoff  = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF)     ? TRUE : FALSE;
@@ -801,7 +801,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
         fprintf(cfg->tfp, "# CM: %s\n", cm->name);
 	fprintf(cfg->tfp, "# %-*s  %-*s  %22s  %12s  %8s  %8s  %3s\n", cm_namewidth, "", cfg->namewidth, "", "target coord", "query coord", "", "", "");
 	fprintf(cfg->tfp, "# %-*s  %-*s  %22s  %12s  %8s  %8s  %3s\n", cm_namewidth, "", cfg->namewidth, "", "----------------------", "------------", "", "", "");
-	fprintf(cfg->tfp, "# %-*s  %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cm_namewidth, "model name", cfg->namewidth, "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC\%");
+	fprintf(cfg->tfp, "# %-*s  %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cm_namewidth, "model name", cfg->namewidth, "target name", "start", "stop", "start", "stop", "bit sc", "E-value", "GC%");
 	fprintf(cfg->tfp, "# %-*s  %-*s  %10s  %10s  %5s  %5s  %8s  %8s  %3s\n", cm_namewidth, cm_namedashes, cfg->namewidth, namedashes, "----------", "----------", "-----", "-----", "--------", "--------", "---");
       }
 
