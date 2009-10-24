@@ -265,7 +265,7 @@ cp9_Viterbi(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
       /* determine safe start point, max of j-W+1 and i0 */
       i = ((j-W+1)> i0) ? (j-W+1) : i0;
       ip = i-i0+1;
-      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
+      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act, cm->clen)) != eslOK) return status;
     } /* end loop over end positions j */
   
   /* If recovering hits in a non-greedy manner, do the traceback.
@@ -968,7 +968,7 @@ cp9_Forward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0, in
       /* determine safe start point, max of j-W+1 and i0 */
       i = ((j-W+1)> i0) ? (j-W+1) : i0;
       ip = i-i0+1;
-      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
+      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act, cm->clen)) != eslOK) return status;
     } /* end loop over end positions j */
   
   /* If recovering hits in a non-greedy manner, do the traceback.
@@ -1261,7 +1261,7 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
   /* determine safe start point, max of j-W+1 and i0 */
   i = ((j-W+1)> i0) ? (j-W+1) : i0;
   ip = i-i0+1;
-  if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
+  if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act, cm->clen)) != eslOK) return status;
 
   /* end of special case position j == i0 */
 
@@ -1770,7 +1770,7 @@ cp9_FastForward(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, int i0, int j0
       /* determine safe start point, max of j-W+1 and i0 */
       i = ((j-W+1)> i0) ? (j-W+1) : i0;
       ip = i-i0+1;
-      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act)) != eslOK) return status;
+      if(results != NULL) if((status = UpdateGammaHitMxCP9Forward(cm->cp9, errbuf, gamma, ip, jp, fsc, results, W, act, cm->clen)) != eslOK) return status;
     } /* end loop over end positions j */
       
   /* If recovering hits in a non-greedy manner, do the traceback.

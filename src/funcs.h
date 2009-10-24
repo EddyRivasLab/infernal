@@ -239,7 +239,7 @@ extern int **           ICalcInitDPScores          (CM_t *cm);
 extern GammaHitMx_t    *CreateGammaHitMx           (int L, int i0, int be_greedy, float cutoff, int do_backward);
 extern void             FreeGammaHitMx             (GammaHitMx_t *gamma);
 extern int              UpdateGammaHitMxCM         (CM_t *cm, char *errbuf, GammaHitMx_t *gamma, int j, float *alpha_row, int dn, int dx, int using_hmm_bands, int *bestr, search_results_t *results, int W, double **act);
-extern int              UpdateGammaHitMxCP9Forward (CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results, int W, double **act);
+extern int              UpdateGammaHitMxCP9Forward (CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results, int W, double **act, int clen);
 extern int              UpdateGammaHitMxCP9Backward(CP9_t *cp9, char *errbuf, GammaHitMx_t *gamma, int i, int j, float hit_sc, search_results_t *results, int W, double **act);
 extern void             TBackGammaHitMxForward     (GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
 extern void             TBackGammaHitMxBackward    (GammaHitMx_t *gamma, search_results_t *results, int i0, int j0);
