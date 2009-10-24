@@ -179,17 +179,17 @@ for the \prog{my.cm} model from the tutorial:
 # stage     mod  cfg  alg  expL (Mb)   filN predicted time
 # --------  ---  ---  ---  --------- ------ --------------
   exp tail  hmm  glc  vit      15.00      -       00:02:29
-  exp tail  hmm  glc  fwd      15.00      -       00:04:59
-  exp tail   cm  glc  cyk       1.50      -       00:06:29
+  exp tail  hmm  glc  fwd      15.00      -       00:04:44
+  exp tail   cm  glc  cyk       1.50      -       00:07:25
   exp tail   cm  glc  ins       1.50      -       00:23:34
-  filter      -  glc    -          -  10000       00:02:15
+  filter      -  glc    -          -  10000       00:02:22
   exp tail  hmm  loc  vit      15.00      -       00:02:45
-  exp tail  hmm  loc  fwd      15.00      -       00:05:59
-  exp tail   cm  loc  cyk       1.50      -       00:05:45
+  exp tail  hmm  loc  fwd      15.00      -       00:05:44
+  exp tail   cm  loc  cyk       1.50      -       00:06:43
   exp tail   cm  loc  ins       1.50      -       00:23:32
-  filter      -  loc    -          -  10000       00:07:40
+  filter      -  loc    -          -  10000       00:06:24
 # --------  ---  ---  ---  ---------  ----- --------------
-# all         -    -    -          -      -       01:25:33
+# all         -    -    -          -      -       01:25:47
 \end{sreoutput}
 
 
@@ -308,8 +308,8 @@ of Inside. You can read more about how we use CYK as a filter in
 
 \begin{srefaq}{Why are you talking about HMM algorithms. I thought CMs
     were more appropriate for structural RNA sequence analysis than
-    HMMs, isn't that the whole reason you've developed \textsc{Infernal}?} 
-  We've implemented HMMs in \textsc{Infernal} to help accelerate CM
+    HMMs, isn't that the whole reason you've developed \textsc{infernal}?} 
+  We've implemented HMMs in \textsc{infernal} to help accelerate CM
     algorithms. As described in section 6, HMMs are used as filters to
     speedup database searches with \prog{cmsearch}. They're also used to develop
     constraints for CM alignment with \prog{cmalign}.  
