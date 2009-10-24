@@ -574,6 +574,18 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   float t_v;       /* number of seconds (w->user) for CP9 Viterbi search */
   float t_f;       /* number of seconds (w->user) for CP9 Forward search */
 
+  int *tmp_dmin;
+  int *tmp_dmax;
+
+  float mc_s; /* million calcs / second */
+  float kb_s; /* kilobases / second */
+  float emp_acc; /* empirical acceleration from QDB */
+  float L_cm_kb;
+  float L_cp9_kb;
+  float dpc_kb;
+  float dpc_q_kb;
+  float dpc_v_kb;
+
   if(L_cm < cm->W) { L_cm = cm->W; fprintf(stdout, "\tL increased to minimum size of cm->W (%d)\n", L_cm); }
   ESL_ALLOC(dsq_cm,  sizeof(ESL_DSQ) * (L_cm +2));
   ESL_ALLOC(dsq_cp9, sizeof(ESL_DSQ) * (L_cp9+2));
@@ -590,8 +602,8 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   dpc_v /= 1000000.;
 
   /* First create scan info for non-QDB runs */
-  int *tmp_dmin = cm->dmin;
-  int *tmp_dmax = cm->dmax;
+  tmp_dmin = cm->dmin;
+  tmp_dmax = cm->dmax;
   cm->dmin = NULL;
   cm->dmax = NULL;
   cm->search_opts |= CM_SEARCH_NOQDB;
@@ -681,24 +693,21 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
    */
 
   /* print results */
-  float mc_s; /* million calcs / second */
-  float kb_s; /* kilobases / second */
-  float emp_acc; /* empirical acceleration from QDB */
-  float L_cm_kb  = (float) L_cm / 1000.;
-  float L_cp9_kb = (float) L_cp9 / 1000.;
+  L_cm_kb  = (float) L_cm / 1000.;
+  L_cp9_kb = (float) L_cp9 / 1000.;
   fprintf(stdout, "#\n");
   fprintf(stdout, "#\t\t\t search statistics:\n");
   fprintf(stdout, "#\t\t\t %7s %7s %6s %8s   %5s %5s %5s\n",           "alg",     "Mc/kb",   "Mc/s",   "kb/s",     "beta",   "qdbXt", "qdbXe");
   fprintf(stdout, "#\t\t\t %7s %7s %6s %8s   %5s %5s %5s\n",           "-------", "-------", "------", "--------", "-----",  "-----", "-----");
   /* cyk non-banded */
-  float dpc_kb = dpc * (1000. / (float) L_cm); /* convert to cells per KB */
+  dpc_kb = dpc * (1000. / (float) L_cm); /* convert to cells per KB */
   mc_s = dpc / t_c; 
   kb_s = ((float) L_cm_kb) / t_c; 
   fprintf(stdout, " \t\t\t %7s %7.1f %6.1f %8.2f   %5s %5s %5s\n", "cyk",     dpc_kb, mc_s, kb_s, "-", "-", "-");
   mc_s = dpc / t_i; 
   kb_s = ((float) L_cm_kb) / t_i; 
   fprintf(stdout, " \t\t\t %7s %7.1f %6.1f %8.2f   %5s %5s %5s\n", "inside",  dpc_kb, mc_s, kb_s, "-", "-", "-");
-  float dpc_q_kb = dpc_q * (1000. / (float) L_cm); /* convert to cells per KB */
+  dpc_q_kb = dpc_q * (1000. / (float) L_cm); /* convert to cells per KB */
   mc_s = dpc_q / t_cq; 
   kb_s = ((float) L_cm_kb) / t_cq; 
   emp_acc = t_c / t_cq; 
@@ -709,7 +718,7 @@ summarize_search(ESL_GETOPTS *go, char *errbuf, CM_t *cm, ESL_RANDOMNESS *r, ESL
   fprintf(stdout, " \t\t\t %7s %7.1f %6.1f %8.2f   %5g %5.1f %5.1f\n", "inside",  dpc_q_kb, mc_s, kb_s, cm->beta_qdb, th_acc, emp_acc);
   mc_s = dpc_v / t_v; 
   kb_s = ((float) L_cp9_kb) / t_v; 
-  float dpc_v_kb = dpc_v * (1000. / (float) L_cp9); /* convert to cells per KB */
+  dpc_v_kb = dpc_v * (1000. / (float) L_cp9); /* convert to cells per KB */
   fprintf(stdout, " \t\t\t %7s %7.1f %6.1f %8.2f   %5s %5s %5s\n", "viterbi",  dpc_v_kb, mc_s, kb_s, "-", "-", "-");
   mc_s = dpc_v / t_f; 
   kb_s = ((float) L_cp9_kb) / t_f; 

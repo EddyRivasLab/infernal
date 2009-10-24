@@ -270,9 +270,9 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
 	
 	  switch (cnum) {
 	  case 3: 
-	    arow0 = (int * const) alpha[jp_y][y];
-	    arow1 = (int * const) alpha[jp_y][y+1];
-	    arow2 = (int * const) alpha[jp_y][y+2];
+	    arow0 = alpha[jp_y][y];
+	    arow1 = alpha[jp_y][y+1];
+	    arow2 = alpha[jp_y][y+2];
 	    for (d = dn; d <= dx; d++, dp_y++) {
 	      sc = ESL_MAX(arow2[dp_y] + tsc_v[2],
 			   arow1[dp_y] + tsc_v[1]);		
@@ -292,12 +292,12 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
 	    break;
 	  
 	  case 6: /* necessarily 2 inserts */
-	    arow0 = (int * const) alpha[jp_y][y];
-	    arow1 = (int * const) alpha[jp_y][y+1];
-	    arow2 = (int * const) alpha[jp_y][y+2];
-	    arow3 = (int * const) alpha[jp_y][y+3];
-	    arow4 = (int * const) alpha[jp_y][y+4];
-	    arow5 = (int * const) alpha[jp_y][y+5];
+	    arow0 = alpha[jp_y][y];
+	    arow1 = alpha[jp_y][y+1];
+	    arow2 = alpha[jp_y][y+2];
+	    arow3 = alpha[jp_y][y+3];
+	    arow4 = alpha[jp_y][y+4];
+	    arow5 = alpha[jp_y][y+5];
 	    for (d = dn; d <= dx; d++, dp_y++) {
 	      sc = ESL_MAX(arow5[dp_y] + tsc_v[5],
 			   init_scAA[v][dp_y]);
@@ -320,10 +320,10 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
 	    break;
 
 	  case 4: 
-	    arow0 = (int * const) alpha[jp_y][y];
-	    arow1 = (int * const) alpha[jp_y][y+1];
-	    arow2 = (int * const) alpha[jp_y][y+2];
-	    arow3 = (int * const) alpha[jp_y][y+3];
+	    arow0 = alpha[jp_y][y];
+	    arow1 = alpha[jp_y][y+1];
+	    arow2 = alpha[jp_y][y+2];
+	    arow3 = alpha[jp_y][y+3];
 	    for (d = dn; d <= dx; d++, dp_y++) {
 	      sc = ESL_MAX(arow3[dp_y] + tsc_v[3],
 			   arow2[dp_y] + tsc_v[2]);		
@@ -344,11 +344,11 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
 	    break;
 
 	  case 5: 
-	    arow0 = (int * const) alpha[jp_y][y];
-	    arow1 = (int * const) alpha[jp_y][y+1];
-	    arow2 = (int * const) alpha[jp_y][y+2];
-	    arow3 = (int * const) alpha[jp_y][y+3];
-	    arow4 = (int * const) alpha[jp_y][y+4];
+	    arow0 = alpha[jp_y][y];
+	    arow1 = alpha[jp_y][y+1];
+	    arow2 = alpha[jp_y][y+2];
+	    arow3 = alpha[jp_y][y+3];
+	    arow4 = alpha[jp_y][y+4];
 	    for (d = dn; d <= dx; d++, dp_y++) {
 	      sc = ESL_MAX(arow4[dp_y] + tsc_v[4],
 			   arow3[dp_y] + tsc_v[3]);		
@@ -371,8 +371,8 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
 	    break;
 
 	  case 2: 
-	    arow0 = (int * const) alpha[jp_y][y];
-	    arow1 = (int * const) alpha[jp_y][y+1];
+	    arow0 = alpha[jp_y][y];
+	    arow1 = alpha[jp_y][y+1];
 	    for (d = dn; d <= dx; d++, dp_y++) {
 	      sc = ESL_MAX(arow1[dp_y] + tsc_v[1],
 			   init_scAA[v][dp_y]);
@@ -413,9 +413,9 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
 
 	  switch (cnum) {
 	  case 3: 
-	    arow0 = (int * const) alpha[jp_y][y];
-	    arow1 = (int * const) alpha[jp_y][y+1];
-	    arow2 = (int * const) alpha[jp_y][y+2];
+	    arow0 = alpha[jp_y][y];
+	    arow1 = alpha[jp_y][y+1];
+	    arow2 = alpha[jp_y][y+2];
 	    for (d = dn; d <= dx; d++, dp_y++) {
 	      sc_v[d] = ESL_MAX(arow2[dp_y] + tsc_v[2],
 				arow1[dp_y] + tsc_v[1]);		
@@ -425,12 +425,12 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
 	    break;
 
 	  case 6: /* necessarily 2 inserts */
-	    arow0 = (int * const) alpha[jp_y][y];
-	    arow1 = (int * const) alpha[jp_y][y+1];
-	    arow2 = (int * const) alpha[jp_y][y+2];
-	    arow3 = (int * const) alpha[jp_y][y+3];
-	    arow4 = (int * const) alpha[jp_y][y+4];
-	    arow5 = (int * const) alpha[jp_y][y+5];
+	    arow0 = alpha[jp_y][y];
+	    arow1 = alpha[jp_y][y+1];
+	    arow2 = alpha[jp_y][y+2];
+	    arow3 = alpha[jp_y][y+3];
+	    arow4 = alpha[jp_y][y+4];
+	    arow5 = alpha[jp_y][y+5];
 	    for (d = dn; d <= dx; d++, dp_y++) {
 	      sc_v[d] = ESL_MAX(arow5[dp_y] + tsc_v[5],
 				init_scAA[v][dp_y]);
@@ -443,10 +443,10 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
 	    break;
 
 	  case 4: 
-	    arow0 = (int * const) alpha[jp_y][y];
-	    arow1 = (int * const) alpha[jp_y][y+1];
-	    arow2 = (int * const) alpha[jp_y][y+2];
-	    arow3 = (int * const) alpha[jp_y][y+3];
+	    arow0 = alpha[jp_y][y];
+	    arow1 = alpha[jp_y][y+1];
+	    arow2 = alpha[jp_y][y+2];
+	    arow3 = alpha[jp_y][y+3];
 	    for (d = dn; d <= dx; d++, dp_y++) {
 	      sc_v[d] = ESL_MAX(arow3[dp_y] + tsc_v[3],
 				arow2[dp_y] + tsc_v[2]);		
@@ -457,11 +457,11 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
 	    break;
 
 	  case 5: 
-	    arow0 = (int * const) alpha[jp_y][y];
-	    arow1 = (int * const) alpha[jp_y][y+1];
-	    arow2 = (int * const) alpha[jp_y][y+2];
-	    arow3 = (int * const) alpha[jp_y][y+3];
-	    arow4 = (int * const) alpha[jp_y][y+4];
+	    arow0 = alpha[jp_y][y];
+	    arow1 = alpha[jp_y][y+1];
+	    arow2 = alpha[jp_y][y+2];
+	    arow3 = alpha[jp_y][y+3];
+	    arow4 = alpha[jp_y][y+4];
 	    for (d = dn; d <= dx; d++, dp_y++) {
 	      sc_v[d] = ESL_MAX(arow4[dp_y] + tsc_v[4],
 				arow3[dp_y] + tsc_v[3]);		
@@ -473,8 +473,8 @@ cm_cp9_HybridScan(CM_t *cm, char *errbuf, CP9_MX *mx, ESL_DSQ *dsq, HybridScanIn
 	    break;
 
 	  case 2: 
-	    arow0 = (int * const) alpha[jp_y][y];
-	    arow1 = (int * const) alpha[jp_y][y+1];
+	    arow0 = alpha[jp_y][y];
+	    arow1 = alpha[jp_y][y+1];
 	    for (d = dn; d <= dx; d++, dp_y++) {
 	      sc_v[d] = ESL_MAX(arow1[dp_y] + tsc_v[1],
 				init_scAA[v][dp_y]);
