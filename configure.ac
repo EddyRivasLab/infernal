@@ -78,8 +78,8 @@ EASEL_DATE="June 2008"
 EASEL_COPYRIGHT="Copyright (C) 2008 HHMI Janelia Farm Research Campus"
 EASEL_LICENSE="Freely distributed under the Janelia Software License."
 EASEL_LICENSETAG=jsl
-EASEL_VERSION="i1.0rc1"
-EASEL_URL="http://easel.janelia.org/"
+EASEL_VERSION="i$PACKAGE_VERSION"
+EASEL_URL="http://bioeasel.org/"
 
 # Output variables  (AC_OUTPUT replaces @var@ in input files, such as Makefiles)
 AC_SUBST(PACKAGE_RELCODE)
@@ -147,38 +147,43 @@ AC_MSG_NOTICE([Full Infernal source distribution - using full configuration])
 # Sets the p7_DEBUGLEVEL preprocessor symbol to <x>
 #
 AC_ARG_ENABLE(debugging,
-[  --enable-debugging      set CFLAGS for debugging
-  --enable-debugging=x    also set diagnostics level to <x> (1-3) (3 = most verbose)],
-[ case $enable_debugging in
-   yes)  AC_MSG_NOTICE([enabled debugging diagnostics level 0 (CFLAGS only, no verbosity)])
-         CFLAGS="-g -Wall"
-         AC_DEFINE(cm_DEBUGLEVEL, 0)
-	 AC_DEFINE(eslDEBUGLEVEL, 0)
-         ;;
-     1)  AC_MSG_NOTICE([enabled debugging diagnostics level 1 (low verbosity)])
-         CFLAGS="-g -Wall"
-         AC_DEFINE(cm_DEBUGLEVEL, 1)
-	 AC_DEFINE(eslDEBUGLEVEL, 1)
-         ;;
-     2)  AC_MSG_NOTICE([enabled debugging diagnostics level 2 (moderate verbosity)])
-         CFLAGS="-g -Wall"
-         AC_DEFINE(cm_DEBUGLEVEL, 2)
-	 AC_DEFINE(eslDEBUGLEVEL, 2)
-         ;;
-     3)  AC_MSG_NOTICE([enabled debugging diagnostics level 3 (high verbosity)])
-         CFLAGS="-g -Wall"
-         AC_DEFINE(cm_DEBUGLEVEL, 3)
-	 AC_DEFINE(eslDEBUGLEVEL, 3)
-         ;;
-    no)  AC_MSG_NOTICE([debugging diagnostics disabled])
-         AC_DEFINE(cm_DEBUGLEVEL, 0)
-	 AC_DEFINE(eslDEBUGLEVEL, 0)
-         ;;
-     *)  echo "Ignoring unknown argument to --enable-debugging: $enable_debugging"
-         ;;
-esac])
+[AS_HELP_STRING([--enable-debugging],[include debugging code])
+AS_HELP_STRING([--enable-debugging=x],[also set diagnostics verbosity level to <x> (1-3)])],
+enable_debugging=$enableval, enable_debugging=no)
 
-AC_ARG_ENABLE(gcov,[AS_HELP_STRING([--enable-gcov],[compile for code coverage testing])], enable_gcov=$enableval,  enable_gcov=no)
+case $enable_debugging in
+   yes)  AC_DEFINE(cm_DEBUGLEVEL, 0)
+         AC_DEFINE(eslDEBUGLEVEL, 0)
+	 ;;
+     1)  AC_DEFINE(cm_DEBUGLEVEL, 1)
+         AC_DEFINE(eslDEBUGLEVEL, 1)
+	 ;;
+     2)  AC_DEFINE(cm_DEBUGLEVEL, 2)
+         AC_DEFINE(eslDEBUGLEVEL, 2)
+	 ;;
+     3)  AC_DEFINE(cm_DEBUGLEVEL, 3)
+         AC_DEFINE(eslDEBUGLEVEL, 3)
+	 ;;
+    no)  AC_DEFINE(cm_DEBUGLEVEL, 0)
+         AC_DEFINE(eslDEBUGLEVEL, 0)
+	 ;;
+     *)  AC_MSG_ERROR([Unknown argument to --enable-debugging: $enable_debugging]);;
+esac
+
+# --enable-gcov      - compile for code coverage testing
+#
+# Replaces CC with "gcc" and CFLAGS with "-g -Wall -fprofile-arcs -ftest-coverage".
+# Running programs (notably the test suite) will then generate .gcda files,
+# which the gcov tool can read.
+#
+AC_ARG_ENABLE(gcov,[AS_HELP_STRING([--enable-gcov],[compile for code coverage testing])], ok=$enableval, ok=no)
+if test "$ok" = "yes"; then
+  AC_MSG_NOTICE([Compiling with gcov instrumentation.])
+  CC="gcc"
+  CFLAGS="-g -Wall -fprofile-arcs -ftest-coverage"
+  sre_cflags_env_set=yes
+fi
+
 AC_ARG_ENABLE(sse,[AS_HELP_STRING([--enable-sse],[enable SSE optimizations])] ,           enable_sse=$enableval,   enable_sse=yes)
 AC_ARG_ENABLE(vmx,[AS_HELP_STRING([--enable-vmx],[enable Altivec/VMX optimizations])],    enable_vmx=$enableval,   enable_vmx=check)
 AC_ARG_WITH(gsl,[AS_HELP_STRING([--with-gsl],[use the GSL, GNU Scientific Library])],     with_gsl=$withval,       with_gsl=no)
@@ -192,6 +197,11 @@ AC_ARG_ENABLE(mpi,[AS_HELP_STRING([--enable-mpi],[enable MPI parallelization])],
 ################################################################
 
 AC_PROG_CC
+# MPI :  set @CC@ to mpicc, sets @MPILIBS@, defines HAVE_MPI. 
+if test "$enable_mpi" = "yes"; then
+   ACX_MPI(,AC_MSG_ERROR([MPI library not found for --enable-mpi]))
+   CC=$MPICC
+fi
 AC_PROG_CPP
 AX_COMPILER_VENDOR
 #  AC_PROG_CC_STDC wants to append -c99 to icc; icc doesn't like this.
@@ -202,15 +212,9 @@ AC_PROG_RANLIB
 AC_PATH_PROG([AR], [ar], [:], [$PATH:/usr/ccs/bin:/usr/xpg4/bin])
 CHECK_GNU_MAKE
 
-# Select our default optimization flags in CFLAGS.
-#
-if test "$sre_cflags_env_set" = "no"; then
-if test "$enable_gcov" = "yes"; then
-   # --enable-gcov overrides CC too.
-   CC="gcc"
-   CFLAGS="-g -Wall -fprofile-arcs -ftest-coverage"
-elif test "$enable_debugging" != "no"; then
-   if test "$GCC" = "yes"; then
+# Select our optimization level in CFLAGS.
+if test "$enable_debugging" != "no"; then
+   if test "$GCC" = "yes" && test "$sre_cflags_env_set" = "no"; then
       CFLAGS="-g -Wall"
    fi
 else
@@ -226,13 +230,7 @@ else
    # by AC_PROG_CC. Instead of rewriting AX_CC_MAXOPT, we fool
    # it.
 fi
-fi
 
-# MPI :  set @CC@ to mpicc, sets @MPILIBS@, defines HAVE_MPI. 
-if test "$enable_mpi" = "yes"; then
-   ACX_MPI(,AC_MSG_ERROR([MPI library not found for --enable-mpi]))
-   CC=$MPICC
-fi
 
 # SSE: figure out our @SIMD_CFLAGS@, define HAVE_SSE2
 # The AC_RUN_IFELSE() is there because it's possible to have 

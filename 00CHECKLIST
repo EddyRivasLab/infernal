@@ -38,7 +38,10 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 2. For a major release (where we're about to create a new branch):
    First test the development trunk.
    Compile should be entirely clean when compiled -Wall.
+   [MPI builds require being on login-eddy]
+   
 
+        ssh login-eddy
         ./configure --enable-debugging --enable-mpi --prefix=/groups/eddy/home/eddys/tmp/infernal
         make
         (cd documentation/userguide; make) 
@@ -67,11 +70,12 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
    For a dev snapshot, this is the normal working copy.
    For a major or minor release, this is a fresh working copy of the appropriate branch:
        cd ~/releases
-       svn checkout https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0 infernal
+       svn checkout https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0 infernal-release
 
-   Don't call this working directory infernal-xx, just call it
-   infernal, because later "make dist" is going to try to create
-   infernal-xx as its release.  
+   Don't call this working directory infernal-xx, nor infernal! Call it
+   infernal-release, because later "make dist" is going to try to create
+   infernal-xx as its release, and because you want to recognize that
+   it's different from src/infernal.  
 
    If this is the first time (a new release branch), you also need to update the "svn:externals"
    so Easel is checked out from the appropriate stable branch too.
@@ -138,6 +142,8 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
    For the first time on a new release branch, it's handy to look
    at the svn log. Replace "1534" below with the last release's SVN rev.
 	 svn log -r 1534:HEAD | more
+         cd easel
+         svn log -r 314:HEAD | more
          emacs documentation/release-notes/RELEASE-${RELEASE}
 	 svn add documentation/release-notes/RELEASE-${RELEASE}
 
@@ -156,6 +162,7 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
    1.0rc4     2594       2633        293         303    [1.0 branch]
    1.0rc5     2633       2670        303         309    [1.0 branch]            
    1.0        2670       2700        309         314    [1.0 branch]
+   1.0.1      2700       2995        314         420    [1.0 branch]
    
    These release notes will be merged back into the trunk later, if
    we're in a branch.
@@ -175,11 +182,18 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
    the tags are made from the relevant stable branch:
 
       svn copy https://svn.janelia.org/eddylab/eddys/src/infernal/branches/1.0 \
-               https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0 \
-               -m "tagged Infernal 1.0 release, from 1.0 stable branch"          
+               https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0.1 \
+               -m "tagged Infernal 1.0.1 release, from 1.0 stable branch"          
       svn copy https://svn.janelia.org/eddylab/eddys/easel/branches/infernal/1.0\
-               https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/1.0\
-                 -m "tagged Easel for Infernal 1.0 release, from 1.0 stable branch"          
+               https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/1.0.1\
+                 -m "tagged Easel for Infernal 1.0.1 release, from 1.0 stable branch"          
+
+   Note: if you screw up somewhere below, and need to come back and
+   re-tag, you must delete the previous tagged versions first:
+     svn delete https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0.1 \
+               -m "needed to make more changes; deleted tag; new tag coming"
+     svn delete https://svn.janelia.org/eddylab/eddys/easel/tags/infernal/1.0.1\
+               -m "needed to make more changes; deleted tag; new tag coming"
 
 10. Make a distribution tarball.
    (Remaking configure scripts w/ autoconf is needed)
@@ -189,7 +203,7 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 	 ./configure          <-- makes a Makefile (needed for "make dist")
 
     major or minor:
-	 make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0 dist
+	 make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/tags/1.0.1 dist
     snapshot:
 	 make REPOSITORY=https://svn.janelia.org/eddylab/eddys/src/infernal/trunk RELEASE=snap20080325 dist
 
@@ -205,9 +219,8 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 
 11. Build for our system (on login-eddy)
 	 cd releases/infernal-xxx
-	 setenv OMPI_MPICC         "icc"
-	 setenv OMPI_MPICC_CFLAGS  "-O3"
-	 setenv OMPI_MPICC_LDFLAGS "-static"
+	 setenv OMPI_CC      "icc"
+	 setenv OMPI_CFLAGS  "-O3"
 	 ./configure --enable-mpi --prefix=/usr/local/infernal-1.0/
 	 make
 	 make check
@@ -226,7 +239,7 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
           scp COPYRIGHT                 selab:/opt/www/ftp/pub/software/infernal
           scp LICENSE                   selab:/opt/www/ftp/pub/software/infernal/
           scp Userguide.pdf             selab:/opt/www/ftp/pub/software/infernal/
-          scp ../infernal-1.0.tar.gz    selab:/opt/www/ftp/pub/software/infernal/
+          scp ../infernal-1.0.1.tar.gz  selab:/opt/www/ftp/pub/software/infernal/
           ssh selab  rm -f /opt/www/ftp/pub/software/infernal/infernal.tar.gz
           ssh selab  "(cd /opt/www/ftp/pub/software/infernal; ln -s infernal-1.0.tar.gz infernal.tar.gz)"
 
@@ -240,10 +253,10 @@ snapshot           <lineage>.<major-release>.snap<yyyymmdd>       1.0.snap200803
 14. Clean up. Don't remove the old directory though, we will (should) use it for regression testing 
     at the next release.
 	cd ~/releases
-        mv infernal-1.0.tar.gz ~/Archives/
-        cd infernal
+        mv infernal-1.0.1.tar.gz ~/Archives/
+        cd infernal-release
 	make distclean
-        cd ../infernal-1.0
+        cd ../infernal-1.0.1
 	make distclean
 
 15. Merge the changes from the "stabilized" release branch back into the trunk.
