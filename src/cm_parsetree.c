@@ -1942,7 +1942,7 @@ ScoreCorrectionNull3(const ESL_ALPHABET *abc, float *null0, float *comp, int len
 
   /* Return the correction to the bit score. */
   /*printf("ScoreCorrectionNull3 return sc: %.3f\n", LogSum2(0., score));*/
-  ESL_DPRINTF1(("ScoreCorrectionNull3 return sc: %f\n", LogSum2(0., score)));
+  ESL_DPRINTF3(("ScoreCorrectionNull3 return sc: %f\n", LogSum2(0., score)));
   score = LogSum2(0., score);
   *ret_sc = score;
   return;
