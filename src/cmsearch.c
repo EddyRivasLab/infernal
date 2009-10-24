@@ -1571,17 +1571,23 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
 	  }
 	}
 	/* check if --fil-Smax-hmm applies */
-	if(fhmm_S > esl_opt_GetReal(go, "--fil-Smax-hmm")) { /* predicted survival fraction exceeds maximum allowed, set E cutoff as E value that gives max allowed survival fraction */
-	  fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-Smax-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
+	if(fhmm_S > esl_opt_GetReal(go, "--fil-Smax-hmm")) { /* predicted survival fraction exceeds maximum allowed, turn filter off, unless --fil-A-hmm enabled */
+	  if(esl_opt_GetBoolean(go, "--fil-A-hmm")) { /* we always filter, set threshold as that which gives predicted surv fract of <x> from --fil-Smax-hmm <x> */
+	    fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-Smax-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
+	  }
+	  else { /* --fil-A-hmm not enabled */
+	    /* it's not worth it to filter, our HMM filter cutoff would be so low, 
+	     * letting so much of the db survive, the filter is a waste of time */
+	    do_hmm_filter = FALSE;
+	    ESL_DPRINTF1(("cut_point not -1, fhmm_S exceeds max allowed by --fil_Smax-hmm\n"));
+	  }
 	}
 	/* check if --fil-Smin-hmm applies */
 	if(fhmm_S < esl_opt_GetReal(go, "--fil-Smin-hmm")) { /* predicted survival fraction is below minimum allowed, set E cutoff as E value that gives min allowed survival fraction */
 	  fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-Smin-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
 	}
-	if((status  = E2MinScore(cm, errbuf, hmm_mode, fhmm_E, &fhmm_sc)) != eslOK) return status; /* note: use hmm_mode, not fthr_mode */
       }
-      else { 
-	/* if --fil-Smax-hmm <x> enabled, filter with E value that gives survival fraction of <x> */
+      else { /* cut_point is -1, CM file told us it's not worth it to filter, we only filter if --fil-A-hmm is enabled */
 	if(esl_opt_GetBoolean(go, "--fil-A-hmm")) { 
 	  fhmm_E = SurvFract2E(esl_opt_GetReal(go, "--fil-Smax-hmm"), cm->W, cfg->avg_hit_len, cfg->dbsize);
 	}
