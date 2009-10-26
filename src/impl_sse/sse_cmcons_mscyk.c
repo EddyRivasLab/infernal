@@ -136,6 +136,7 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
   __m128i   *tmpary;
   __m128i   *mem_tmpary;
   uint8_t    tmp_esc;
+  uint8_t   *vec_access;
 
   char BADVAL = 0; /* Our local equivalent of -eslINFINITY */
   __m128i LB_NEG_INF = _mm_setr_epi8(BADVAL,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
@@ -154,8 +155,9 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
   /* gamma allocation and initialization.
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits. */
-//  if(results != NULL) gamma = CreateGammaHitMx(L, i0, (cm->search_opts & CM_SEARCH_CMGREEDY), cutoff, FALSE);
-//  else                gamma = NULL;
+  // FIXME: greedy T/F should be set-able
+  if(results != NULL) gamma = CreateGammaHitMx_epu8(L, i0, TRUE, cutoff, FALSE);
+  else                gamma = NULL;
 //
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
   ESL_ALLOC(jp_wA, sizeof(float) * (W+1));
@@ -234,6 +236,17 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
       vec_ntS[jp_v][-1] = neginfv;
       vec_ntS[jp_v][-2] = neginfv;
     }
+
+  for (v = 0; v < ccm->M; v++) {
+    for (d = -2; d < sW; d++) {
+      vec_ntM_v[0][v][d] = neginfv;
+      vec_ntM_v[1][v][d] = neginfv;
+    }
+  }
+  for (d = -2; d < sW; d++) {
+    vec_ntM_all[0][d] = neginfv;
+    vec_ntM_all[1][d] = neginfv;
+  }
 
   /* The main loop: scan the sequence from position i0 to j0.
    */
@@ -357,6 +370,16 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
         esc_stale[dsq[j]] = j;
       }
 
+      /* Initialize vec_ntM_all and vec_ntM_v */
+      for (d = -2; d < sW; d++) {
+        vec_ntM_all[cur][d] = neginfv;
+      }
+      for (v = 0; v < ccm->M; v++) {
+        for (d = -2; d < sW; d++) {
+          vec_ntM_v[cur][v][d] = neginfv;
+        }
+      }
+
       /* Start updating matrix values */
       jp_Sv = j % (W+1);
 
@@ -414,7 +437,6 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
         __m128i vec_tmp_bifl;
         __m128i vec_tmp_bifr;
 
-        uint8_t *vec_access;
         int dkindex = 0;
         for (k = 0; k < W && k <=j; k++) {
           vec_access = (uint8_t *) (&vec_ntM_all[jp_y][k%sW])+k/sW;
@@ -530,7 +552,7 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 //    TBackGammaHitMxForward(gamma, results, i0, j0);
 
   /* clean up and return */
-//  if(gamma != NULL) FreeGammaHitMx(gamma);
+  if(gamma != NULL) FreeGammaHitMx_epu8(gamma);
 //  if (act != NULL) { 
 //    for(i = 0; i <= W; i++) free(act[i]); 
 //    free(act);
@@ -627,6 +649,8 @@ main(int argc, char **argv)
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
   char            errbuf[cmERRBUFSIZE];
   CM_CONSENSUS   *ccm;
+  uint8_t         cutoff;
+  search_results_t *results = NULL;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
@@ -649,6 +673,7 @@ main(int argc, char **argv)
   if (esl_opt_GetBoolean(go, "--mscyk"))
     {
       ccm = cm_consensus_Convert(cm);
+      cutoff = biased_byteify(ccm,0);
     }
   
   dmin = NULL; dmax = NULL;
@@ -717,11 +742,13 @@ main(int argc, char **argv)
 
       if (esl_opt_GetBoolean(go, "--mscyk"))
         {
+          results = CreateResults(INIT_RESULTS);
 	  esl_stopwatch_Start(w);
-	  if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, dsq, 1, L, 0, NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, dsq, 1, L, cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  //printf("%4d %-30s %10.4f bits ", (i+1), "SSE_CYKScan(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
+          FreeResults(results);
         }
   
       printf("\n");
