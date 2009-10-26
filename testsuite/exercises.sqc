@@ -24,6 +24,14 @@
 1  exercise    cmbuild/RNaseP     @cmbuild@ -F  %MODEL% rnaseP-eubact.sto
 1  exercise    cmbuild/SRP        @cmbuild@ -F  %MODEL% srp-euk.sto
 
+
+# Exercises of cmcalibrate 
+#
+1  exercise    cmcalibrate:help/1     @cmcalibrate@ -h
+1  exercise    cmcalibrate:help/2     @cmcalibrate@ --devhelp
+1  prep        model/trna             @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
+1  exercise    cmcalibrate:trna       @cmcalibrate@ --forecast 1 %TRNA.CM%
+
 # Exercises of cmscore.
 #
 1  exercise  cmscore:help/1       @cmscore@ -h
@@ -68,7 +76,6 @@
 
 # Exercises of cmstat
 1  exercise  cmstat:help/1        @cmstat@ -h
-1  exercise  cmstat:help/2        @cmstat@ --devhelp
 1  exercise  trna/stat            @cmstat@   %TRNA.CM% 
 1  exercise  rnaseP/stat          @cmstat@   %RNASEP.CM% 
 1  exercise  srp/stat             @cmstat@   %SRP.CM% 
