@@ -5,6 +5,9 @@
 #
 # Exercises of esl-alimanip.
 #
+1  exercise  esl-alimanip:help/1        @esl-alimanip@  -h
+1  exercise  esl-alimanip:help/2        @esl-alimanip@  --devhelp
+
 # non-calibrated searches 
 # trna
 1  prep      model/trna             @cmbuild@ -F --rf %TRNA.CM% trna1415G.sto

@@ -59,7 +59,7 @@ static ESL_OPTIONS options[] = {
   { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,   "--small", "append posterior probabilities to alignment", 1 },
   { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress banner and scores, print only the alignment", 1 },
   { "-M",        eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "meta-cm mode: <cmfile> is a meta-cm built from aln in <f>", 1 },
-  { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "output alignment in non-interleaved, 1 line/seq Stockholm format",  1 },
+  { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "output alnment in non-interleaved, 1 line/seq Stockholm format",  1 },
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI

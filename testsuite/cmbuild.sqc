@@ -4,6 +4,9 @@
 
 # Exercises of cmbuild.
 #
+1  exercise  cmbuild:help/1        @cmbuild@  -h
+1  exercise  cmbuild:help/2        @cmbuild@  --devhelp
+
 1  exercise  cmbuild:se/1          @cmbuild@ -F %SE.CM% se.stk 
 1  exercise  cmbuild:se/2          @cmbuild@ -F -n mine %SE.CM% se.stk 
 1  exercise  cmbuild:se/3          @cmbuild@ -A %SE.CM% se.stk 
