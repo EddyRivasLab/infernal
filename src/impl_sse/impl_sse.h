@@ -92,7 +92,7 @@ void cm_consensus_Free(CM_CONSENSUS *ccm);
 /* sse_cmcons_hitmx.c */
 GammaHitMx_epu8 *CreateGammaHitMx_epu8(int L, int i0, int be_greedy, uint8_t cutoff, int do_backward);
 void FreeGammaHitMx_epu8(GammaHitMx_epu8 *gamma);
-int  UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma, int j, __m128i *alpha_row, search_results_t *results, int W);
+int  UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma, int j, __m128i *alpha_row, search_results_t *results, int W, int sW);
 void TBackGammaHitMxForward_epu8 (GammaHitMx_epu8 *gamma, search_results_t *results, int i0, int j0);
 void TBackGammaHitMxBackward_epu8(GammaHitMx_epu8 *gamma, search_results_t *results, int i0, int j0);
 

@@ -541,7 +541,16 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 //        }
 //      }
       /* update gamma, but only if we're reporting hits to results */
-      if(results != NULL) if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, jp_Sv, vec_ntS[jp_Sv], results, W)) != eslOK) return status;
+/*
+fprintf(stderr,"W %d sW %d\n",W,sW);
+for (d = 0; d < sW; d++) {
+  for (int x = 0; x < 16; x++) {
+    vec_access = ((uint8_t *) &(vec_ntS[jp_Sv][d])) + x;
+    if (*vec_access > 250) { fprintf(stderr,"testing for uninitialized value...\n"); }
+  }
+}
+*/
+      if(results != NULL) if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, jp_Sv, vec_ntS[jp_Sv], results, W, sW)) != eslOK) return status;
 //      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
 //  if(vsc != NULL) vsc[0] = vsc_root;

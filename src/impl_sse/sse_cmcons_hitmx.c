@@ -123,7 +123,7 @@ FreeGammaHitMx_epu8(GammaHitMx_epu8 *gamma)
  */
 int
 UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma, int j, __m128i *alpha_row,
-		         search_results_t *results, int W)
+		         search_results_t *results, int W, int sW)
 {
   int status;
   int i, d;
@@ -142,7 +142,7 @@ UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma,
     if(alpha_row != NULL) { 
       for (d = 0; d <= W; d++) {
 	i = j-d+1;
-	hit_sc = *(((uint8_t *) &alpha_row[d%16])+d/16);
+	hit_sc = *(((uint8_t *) &alpha_row[d%sW])+d/sW);
 	cumulative_sc = gamma->mx[i-1] + hit_sc;
 	if (cumulative_sc > gamma->mx[j]) {
 	  do_report_hit = TRUE;
@@ -181,7 +181,7 @@ UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma,
     /* Now, if current score is greater than maximum seen previous, report
      * it if >= cutoff and set new max */
     for (d = 1; d <= W; d++) {
-      hit_sc = *(((uint8_t *) &alpha_row[d%16]) + d/16);
+      hit_sc = *(((uint8_t *) &alpha_row[d%sW]) + d/sW);
       if (hit_sc > bestd_sc) {
 	if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) { 
 	  do_report_hit = TRUE;
