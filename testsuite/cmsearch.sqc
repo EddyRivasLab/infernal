@@ -5,6 +5,9 @@
 
 # Exercises of cmsearch.
 #
+1  exercise  cmsearch:help/1        @cmsearch@  -h
+1  exercise  cmsearch:help/2        @cmsearch@  --devhelp
+
 # non-calibrated searches 
 # trna
 1  prep      model/trna             @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto

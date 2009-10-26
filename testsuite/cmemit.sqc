@@ -5,6 +5,9 @@
 
 # Exercises of cmemit.
 #
+1  exercise  cmemit:help/1        @cmemit@  -h
+1  exercise  cmemit:help/2        @cmemit@  --devhelp
+
 1  prep      model/trna           @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
 1  exercise  cmemit:trna/1        @cmemit@  %TRNA.CM% %TMPOUT%
 1  exercise  cmemit:trna/2        @cmemit@  -u %TRNA.CM% %TMPOUT%

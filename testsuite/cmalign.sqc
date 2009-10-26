@@ -5,6 +5,9 @@
 
 # Exercises of cmalign.
 #
+1  exercise  cmalign:help/1          @cmalign@  -h
+1  exercise  cmalign:help/2          @cmalign@  --devhelp
+
 1  prep      model/trna            @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
 1  exercise  cmalign:trna/1        @cmalign@  %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/2        @cmalign@  -o %TMPOUT% %TRNA.CM% 3trnas.fa

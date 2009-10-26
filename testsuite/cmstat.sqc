@@ -1,11 +1,13 @@
 # Infernal's cmstat crash exercises, in sqc command format.
 # EPN, Fri May 23 11:07:09 2008
 #
-
 # Exercises of cmstat.
 # requires trna.calibrated.cm, a calibrated CM file that would take
 # too long to calibrate within the sqc test.
 #
+1  exercise  cmstat:help/1         @cmstat@  -h
+1  exercise  cmstat:help/2         @cmstat@  --devhelp
+
 1  exercise  cmstat:trna/1         @cmstat@  trna.calibrated.cm 
 1  exercise  cmstat:trna/2         @cmstat@  -g trna.calibrated.cm 
 1  exercise  cmstat:trna/3         @cmstat@  -m trna.calibrated.cm 

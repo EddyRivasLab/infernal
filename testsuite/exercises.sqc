@@ -5,6 +5,8 @@
 
 # Exercises of cmalign.
 #
+1  exercise  cmalign:help/1       @cmalign@ -h
+1  exercise  cmalign:help/2       @cmalign@ --devhelp
 1  prep      model/trna           @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
 1  exercise  cmalign:trna/1       @cmalign@ %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/2       @cmalign@ -l %TRNA.CM% 3trnas.fa
@@ -14,6 +16,8 @@
 
 # Exercises of cmbuild.
 #
+1  exercise    cmbuild:help/1     @cmbuild@ -h
+1  exercise    cmbuild:help/2     @cmbuild@ --devhelp
 1  exercise    cmbuild/rf/trna    @cmbuild@ -F --rf --wnone %MODEL% trna1415G.sto
 1  exercise    cmbuild/trna       @cmbuild@ -F  %MODEL% trna1415G.sto
 1  exercise    cmbuild/rf/RNaseP  @cmbuild@ -F --rf  %MODEL% rnaseP-eubact.sto
@@ -22,6 +26,8 @@
 
 # Exercises of cmscore.
 #
+1  exercise  cmscore:help/1       @cmscore@ -h
+1  exercise  cmscore:help/2       @cmscore@ --devhelp
 1  prep      model/trna1          @cmbuild@ -F --wnone %TRNA1.CM% trna1415G.sto
 1  prep      model/trna2          @cmbuild@ --wnone --rf -F %TRNA2.CM% trna1415G.sto
 1  exercise  cmscore/trna1        @cmscore@ --infile trna-regression.fa %TRNA1.CM% 
@@ -47,16 +53,22 @@
 3  exercise  rnaseP/rand/local    @cmscore@ --infile %RAND20% -l %RNASEP.CM% 
 
 # Exercises of cmsearch 
+1  exercise  cmsearch:help/1      @cmsearch@ -h
+1  exercise  cmsearch:help/2      @cmsearch@ --devhelp
 1  exercise  trna/search          @cmsearch@ %TRNA.CM% 3trnas.fa
 1  exercise  rnaseP/search        @cmsearch@ %RNASEP.CM% 3trnas.fa
 1  exercise  srp/search           @cmsearch@ %SRP.CM% 3trnas.fa
 
 # Exercises of cmemit
+1  exercise  cmemit:help/1        @cmemit@ -h
+1  exercise  cmemit:help/2        @cmemit@ --devhelp
 1  exercise  trna/emit            @cmemit@   %TRNA.CM% %TMP.FA%
 1  exercise  rnaseP/emit          @cmemit@   %RNASEP.CM% %TMP.FA%
 1  exercise  srp/emit             @cmemit@   %SRP.CM% %TMP.FA%
 
 # Exercises of cmstat
+1  exercise  cmstat:help/1        @cmstat@ -h
+1  exercise  cmstat:help/2        @cmstat@ --devhelp
 1  exercise  trna/stat            @cmstat@   %TRNA.CM% 
 1  exercise  rnaseP/stat          @cmstat@   %RNASEP.CM% 
 1  exercise  srp/stat             @cmstat@   %SRP.CM% 
