@@ -1902,7 +1902,7 @@ serial_merge_alignments_only(const ESL_GETOPTS *go)
   if((status = add_msa_markup(merged_msa, errbuf, msa2_nseq, msa1_nseq, comment2, ncomment2, gf_tag2, gf2, ngf2, gs_tag2, gs2, ngs2, gr_tag2, gr2, ngr2)) != eslOK) cm_Fail(errbuf);
 
   /* output alignment */
-  status = esl_msa_Write(ofp, merged_msa, eslMSAFILE_STOCKHOLM);
+  status = esl_msa_Write(ofp, merged_msa, (esl_opt_GetBoolean(go, "-1") ? eslMSAFILE_PFAM : eslMSAFILE_STOCKHOLM));
   if      (status == eslEMEM) cm_Fail("Memory error when outputting alignment\n");
   else if (status != eslOK)   cm_Fail("Writing alignment file failed with error %d\n", status);
 
