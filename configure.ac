@@ -41,7 +41,7 @@
 
 
 AC_PREREQ(2.60)
-AC_INIT(Infernal, 1.0rc1, eddys@janelia.hhmi.org, infernal)
+AC_INIT(Infernal, 1.0.2, eddys@janelia.hhmi.org, infernal)
 AC_MSG_NOTICE([Configuring Infernal for your system.])
 
 
