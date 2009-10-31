@@ -33,7 +33,7 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 
 #define ALPHOPTS "--rna,--dna"                         /* Exclusive options for alphabet choice */
-#define OUTOPTS  "-u,-c,-a,--ahmm,--shmm"                     /* Exclusive options for output */
+#define OUTOPTS  "-u,-c,-a,--ahmm,--shmm"              /* Exclusive options for output */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -43,6 +43,7 @@ static ESL_OPTIONS options[] = {
   { "-a",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,        NULL, "write generated sequences as a STOCKHOLM alignment",  1 },
   { "-c",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,        NULL, "generate a single \"consensus\" sequence only",  1 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "local; emit from a locally configured model",  1 },
+  { "-i",        eslARG_INT,    "1",   NULL, "n>0",     NULL,      NULL,        NULL, "start sequence numbering at <n>",  1 },
   { "-s",        eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,        NULL, "set random number generator seed to <n>",  1 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of otherwise undocumented developer options", 1 },
   /* miscellaneous output options */
@@ -405,6 +406,7 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   int namelen;
   int i, L; 
   float sc, struct_sc;
+  int offset = esl_opt_GetInteger(go, "-i");
 
   namelen = IntMaxDigits() + 1;  /* IntMaxDigits() returns number of digits in INT_MAX */
   if(cm->name != NULL) namelen += strlen(cm->name) + 1;
@@ -412,8 +414,8 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
 
   for(i = 0; i < esl_opt_GetInteger(go, "-n"); i++)
     {
-      if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+1);
-      else                 sprintf(name, "%d-%d", cfg->ncm, i+1);
+      if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+offset);
+      else                 sprintf(name, "%d-%d", cfg->ncm, i+offset);
       if((status = EmitParsetree(cm, errbuf, cfg->r, name, TRUE, &tr, &sq, &L)) != eslOK) return status;
       sq->abc = cfg->abc_out;
       if((esl_sqio_Write(cfg->ofp, sq, eslSQFILE_FASTA)) != eslOK) 
@@ -458,6 +460,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   ESL_MSA *msa = NULL;      /* the MSA we're building */
   int nseq = esl_opt_GetInteger(go, "-n");
   int do_truncate;
+  int offset = esl_opt_GetInteger(go, "-i");;
 
   do_truncate = (esl_opt_IsOn(go, "--begin") && esl_opt_IsOn(go, "--end")) ? TRUE : FALSE;
 
@@ -470,8 +473,8 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
 
   for(i = 0; i < nseq; i++)
     {
-      if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+1);
-      else                 sprintf(name, "%d-%d", cfg->ncm, i+1);
+      if(cm->name != NULL) sprintf(name, "%s-%d", cm->name, i+offset);
+      else                 sprintf(name, "%d-%d", cfg->ncm, i+offset);
       if((status = EmitParsetree(cm, errbuf, cfg->r, name, TRUE, &(tr[i]), &(sq[i]), &L)) != eslOK) return status;
       sq[i]->abc = cfg->abc_out;
       if(cfg->pfp != NULL)
