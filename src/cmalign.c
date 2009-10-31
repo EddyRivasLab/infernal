@@ -36,9 +36,10 @@
 #include "funcs.h"		/* external functions                   */
 #include "structs.h"		/* data structures, macros, #define's   */
 
-#define ALGOPTS  "--cyk,--optacc,--viterbi,--sample" /* Exclusive choice for algorithm */
-#define OUTALPHOPTS "--rna,--dna"                    /* Exclusive choice for output alphabet */
-#define ACCOPTS  "--nonbanded,--hbanded,--qdb"       /* Exclusive choice for acceleration strategies */
+#define ALGOPTS     "--cyk,--optacc,--viterbi,--sample" /* Exclusive choice for algorithm */
+#define OUTALPHOPTS "--rna,--dna"                       /* Exclusive choice for output alphabet */
+#define ACCOPTS     "--nonbanded,--hbanded,--qdb"       /* Exclusive choice for acceleration strategies */
+#define MERGEOPTS   "--merge,--list-merge"              /* Exclusive choice for merging alignments */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -51,10 +52,11 @@ static ESL_OPTIONS options[] = {
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI
-  { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,    "--merge", "run as an MPI parallel program",                    1 },  
+  { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,   MERGEOPTS, "run as an MPI parallel program",                    1 },  
 #endif
   /* --merge: merge two alignments and quit, don't do any new aligning */
-  { "--merge",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "merge two alignments and exit", 8 },
+  { "--merge",     eslARG_NONE, FALSE, NULL, NULL,      NULL,      NULL,   MERGEOPTS, "merge two alignments and exit", 11 },
+  { "--list-merge",eslARG_NONE, FALSE, NULL, NULL,      NULL,      NULL,   MERGEOPTS, "merge all alignments listed in <msalistfile> and exit", 11 },
   /* Algorithm options */
   { "--optacc",  eslARG_NONE,"default", NULL, NULL,     ALGOPTS,    NULL,"--small,--qdb", "align with the Holmes/Durbin optimal accuracy algorithm", 2 },
   { "--cyk",     eslARG_NONE,   FALSE,  NULL, NULL,     ALGOPTS,    NULL,        NULL, "align with the CYK algorithm", 2 },
@@ -143,6 +145,7 @@ struct cfg_s {
 
 static char usage1[] = "[-options] <cmfile> <sequence file>";
 static char usage2[] = "[-options] --merge <cmfile> <msafile1> <msafile2>";
+static char usage3[] = "[-options] --list-merge <cmfile> <msalistfile>";
 static char banner[] = "align sequences to an RNA CM";
 
 static int  init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf);
@@ -169,6 +172,7 @@ static int print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *
 static void print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
 static int get_markup_from_msa(ESL_MSA *msa, char *errbuf, char ***ret_comment, int *ret_ncomment, char ***ret_gf_tag, char ***ret_gf, int *ret_ngf, char ***ret_gs_tag, char ****ret_gs, int *ret_ngs, char ***ret_gr_tag, char ****ret_gr, int *ret_ngr);
+static int read_msa_list_file(char *filename, char *errbuf, char ***ret_msalist, int *ret_msalist_n);
 static int append_parsetrees(Parsetree_t **tr_to_append, int ntr_to_append, Parsetree_t ***ret_tr, int *ret_ntr, char *errbuf);
 static int append_sequences(ESL_SQ **sq_to_append, int nsq_to_append, ESL_SQ ***ret_sq, int *ret_nsq, char *errbuf);
 static int add_msa_markup(ESL_MSA *merged_msa, char *errbuf, int nseq, int seq_offset,
@@ -192,6 +196,7 @@ static int add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *
 int
 main(int argc, char **argv)
 {
+  int status;
   ESL_GETOPTS     *go = NULL;   /* command line processing                     */
   ESL_STOPWATCH   *w  = esl_stopwatch_Create();
   if(w == NULL) cm_Fail("Memory error, stopwatch not created.\n");
@@ -200,7 +205,7 @@ main(int argc, char **argv)
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
   FLogsumInit();
-
+  
   /*********************************************** 
    * Parse command line
    ***********************************************/
@@ -214,7 +219,9 @@ main(int argc, char **argv)
       printf("Failed to parse command line: %s\n", go->errbuf);
       esl_usage(stdout, argv[0], usage1);
       esl_usage(stdout, argv[0], usage2);
+      esl_usage(stdout, argv[0], usage3);
       printf("\n  The --merge option merges the two alignments in <msafile1> and <msafile2>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
+      printf("\n  The --list-merge option merges all the alignments listed in <msalistfile>\n created by previous runs of cmalign with <cmfile> into a single alignment.");
       printf("\nTo see more help on available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
@@ -223,8 +230,10 @@ main(int argc, char **argv)
       cm_banner(stdout, argv[0], banner);
       esl_usage(stdout, argv[0], usage1);
       esl_usage(stdout, argv[0], usage2);
+      esl_usage(stdout, argv[0], usage3);
       puts("\n  The --merge option merges the two alignments in <msafile1> and <msafile2>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
-      puts("\nwhere general options are:");
+      puts("\n  The --list-merge option merges all the alignments listed in <msalistfile>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
+      puts("\nwhere basic options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
       puts("\nalignment algorithm related options:");
       esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
@@ -232,8 +241,6 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
       puts("\noutput options:");
       esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
-      puts("\nmerge alignments in <msafile1> and <msafile2>:");
-      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       puts("\noptions for including a fixed alignment within output alignment:");
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
       puts("\nverbose output files and debugging:");
@@ -255,8 +262,10 @@ main(int argc, char **argv)
       cm_banner(stdout, argv[0], banner);
       esl_usage(stdout, argv[0], usage1);
       esl_usage(stdout, argv[0], usage2);
+      esl_usage(stdout, argv[0], usage3);
       puts("\n  The --merge option merges the two alignments in <msafile1> and <msafile2>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
-      puts("\nwhere general options are:");
+      puts("\n  The --list-merge option merges all the alignments listed in <msalistfile>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
+      puts("\nwhere basic options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80); /* 1=docgroup, 2 = indentation; 80=textwidth*/
       puts("\nalignment algorithm related options:");
       esl_opt_DisplayHelp(stdout, go, 2, 2, 80); 
@@ -264,8 +273,6 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 3, 2, 80);
       puts("\noutput options:");
       esl_opt_DisplayHelp(stdout, go, 4, 2, 80);
-      puts("\nmerge alignments in <msafile1> and <msafile2>:");
-      esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       puts("\noptions for including a fixed alignment within output alignment:");
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
       puts("\nverbose output files and debugging:");
@@ -275,12 +282,14 @@ main(int argc, char **argv)
       exit(0);
     }
   if(((! esl_opt_GetBoolean(go, "--merge")) && (esl_opt_ArgNumber(go) != 2)) ||
-     ((  esl_opt_GetBoolean(go, "--merge")) && (esl_opt_ArgNumber(go) != 3))) 
+     ((  esl_opt_GetBoolean(go, "--merge"))      && (esl_opt_ArgNumber(go) != 3))) 
     {
       puts("Incorrect number of command line arguments.");
       esl_usage(stdout, argv[0], usage1);
       esl_usage(stdout, argv[0], usage2);
+      esl_usage(stdout, argv[0], usage3);
       puts("\n  The --merge option merges the two alignments in <msafile1> and <msafile2>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
+      puts("\n  The --list-merge option merges all the alignments listed in <msalistfile>\n  created by previous runs of cmalign with <cmfile> into a single alignment.");
       puts("\nwhere basic options are:");
       esl_opt_DisplayHelp(stdout, go, 1, 2, 80);
       printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
@@ -293,9 +302,9 @@ main(int argc, char **argv)
     printf("Error parsing options, --small is only allowed in combination with --nonbanded or --qdb.\n");
     exit(1);
   }
-
-  /* if --merge, merge the two alignments and exit, never create cfg structure we won't need it */
-  if(esl_opt_GetBoolean(go, "--merge")) { 
+  
+  /* if --merge or --list-merge, merge alignments and exit, never create cfg structure we won't need it */
+  if((esl_opt_GetBoolean(go, "--merge")) || (esl_opt_GetBoolean(go, "--list-merge"))) { 
     serial_merge_alignments_only(go);
     esl_stopwatch_Destroy(w);
     esl_getopts_Destroy(go);
@@ -1738,47 +1747,86 @@ get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command)
 
 /* serial_merge_alignments_only()
  *
- * A special mode of cmalign invoked with --merge <f>. In this case
- * we do not align sequences to a CM, rather we only merge two alignments
- * created by previous runs of cmalign (to the same CM) together. 
- * We output the alignment to either stdout or file <of> of -o <of> 
- * and return, the program will then skip serial_master() and exit.
+ * A special mode of cmalign invoked with --merge or --list-merge. 
+ * In this case we do not align sequences to a CM, rather we only 
+ * merge >= 2 alignments created by previous runs of cmalign to 
+ * the same CM together. The alignments are output to either stdout 
+ * or file <of> of -o <f> and the function returns, the program 
+ * will then skip serial_master() and exit.
+ * 
  * If we run into any problem here we cm_Fail() with an informative
- * error message. --merge is incompatible with --mpi, so we don't have to
- * worry about MPI mode with --merge.
+ * error message. --merge and --list-merge are incompatible with 
+ * --mpi, so we don't have to worry about MPI mode.
  */
 static void
 serial_merge_alignments_only(const ESL_GETOPTS *go)
 {
   int status;
-  char errbuf[cmERRBUFSIZE];
-  CMFILE       *cmfp;		/* open input CM file stream       */
-  ESL_MSAFILE  *msafp1;         /* open alifile 1 (argv[2]) */
-  ESL_MSAFILE  *msafp2;         /* open alifile 2 (from --merge <f>) */
-  char *cmfile;
-  char *msafile1;
-  char *msafile2;
-  ESL_MSA *msa1;
-  ESL_MSA *msa2;
-  ESL_MSA *merged_msa;
-  CM_t *cm, *tmp_cm;
-  ESL_ALPHABET *abc, *abc_out;
-  abc = NULL;
-  Parsetree_t *mtr1, *mtr2;
-  FILE *ofp;
-  int nmerged_tr, nmerged_sq;
-  int msa1_nseq, msa2_nseq;
-  int i;
-  Parsetree_t **tr1, **tr2;
-  ESL_SQ **sq1, **sq2;
-  int keep_reading_cms = TRUE; /* TRUE to continue to read CMs from cmfile, this allows --cm-idx and --cm-name to work */
-  int ncm = 0; /* number of CMs we've read */
+  CMFILE       *cmfp;       	  	 /* open input CM file stream */
+  ESL_MSAFILE  *cur_msafp;               /* open alifile */
+  char         *cmfile;                  /* the name of the CM file */
+  CM_t         *cm;                      /* CM read from CM file */
+  char        **msafilelist;             /* [0..nmsafile-1]: names of msa files to merge */
+  int           nmsafile;                /* number of msa files */
+  ESL_MSA      *cur_msa;                 /* current msa */
+  CM_t         *cur_cm;                  /* CM built from current msa */
+  ESL_MSA      *merged_msa;              /* final, merged msa */
+  ESL_ALPHABET *abc = NULL;              /* set when reading CM file */
+  ESL_ALPHABET *abc_out = NULL;          /* for output, set based on getopts (default:RNA) */
+  Parsetree_t  *cur_mtr;                 /* master tree for current msa */
+  FILE         *ofp;                     /* for outputting the alignment */
+  int           i;                       /* generic index */
+  int           fi;                      /* index of msa file */
+  int           msai = 0;                /* index of msa */
+  int           nmsa = 0;                /* number of total msas */
+  int           cur_msai = 0;            /* index of msa in current msa file*/
+  Parsetree_t **all_tr;                  /* all of the parsetrees */
+  ESL_SQ      **all_sq;                  /* all of the sequences */
+  int           nall_tr = 0;             /* number of total parsetrees, currently */
+  int           nall_sq = 0;             /* number of total sequences, currently */
+  Parsetree_t **cur_tr;                  /* parsetrees from current msa */
+  ESL_SQ      **cur_sq;                  /* sequences from current msa */
+  int          *msa_nseq_A;              /* number of sequences in each msa */
+  int           ncur_sq;                 /* number of sequences in current msa */
+  int           keep_reading_cms = TRUE; /* TRUE to continue to read CMs from cmfile, this allows --cm-idx and --cm-name to work */
+  int           ncm = 0;                 /* number of CMs we've read */
+  char          errbuf[cmERRBUFSIZE];    /* buffer for error messages */
+  void         *tmp;                     /* void ptr for reallocations */
+  int           seq_offset;              /* sequence offset used when adding markup to merged msa */
 
-  /* markup from msa1 and msa2, we'll add it to the merged_msa */
-  int ncomment1, ncomment2, ngf1, ngf2, ngs1, ngs2, ngr1, ngr2;
-  char **gf_tag1, **gf_tag2, **gs_tag1, **gs_tag2, **gr_tag1, **gr_tag2;
-  char  **comment1, **comment2, **gf1, **gf2;
-  char ***gs1, ***gs2, ***gr1, ***gr2;
+  /* Markup from the msas we'll need to add to the merged_msa,
+   * We have to store it all, then once we've created the merged_msa, we add it all back 
+   * The first dimension of each of these is the msa idx it was read from */
+  int     *ncomment_A, *ngf_A, *ngs_A, *ngr_A;
+  char  ***gf_tag_A, ***gs_tag_A, ***gr_tag_A;
+  char  ***comment_A, ***gf_A;
+  char ****gs_A, ****gr_A;
+  int nalloc = 10;
+  int chunksize = 10;
+  
+/* initialize the markup data */
+  ESL_ALLOC(msa_nseq_A, sizeof(int)      * nalloc); 
+  ESL_ALLOC(ncomment_A, sizeof(int)      * nalloc); 
+  ESL_ALLOC(ngf_A,      sizeof(int)      * nalloc); 
+  ESL_ALLOC(ngs_A,      sizeof(int)      * nalloc); 
+  ESL_ALLOC(ngr_A,      sizeof(int)      * nalloc); 
+  ESL_ALLOC(comment_A,  sizeof(char **)  * nalloc); 
+  ESL_ALLOC(gf_tag_A,   sizeof(char **)  * nalloc); 
+  ESL_ALLOC(gs_tag_A,   sizeof(char **)  * nalloc); 
+  ESL_ALLOC(gr_tag_A,   sizeof(char **)  * nalloc); 
+  ESL_ALLOC(gf_A,       sizeof(char **)  * nalloc); 
+  ESL_ALLOC(gs_A,       sizeof(char ***) * nalloc); 
+  ESL_ALLOC(gr_A,       sizeof(char ***) * nalloc); 
+  for(i = 0; i < nalloc; i++) { 
+    msa_nseq_A[i] = ncomment_A[i] = ngf_A[i] = ngs_A[i] = ngr_A[i] = 0;
+    comment_A[i] = NULL;
+    gf_tag_A[i]  = NULL;
+    gs_tag_A[i]  = NULL;
+    gr_tag_A[i]  = NULL;
+    gf_A[i]      = NULL;
+    gs_A[i]      = NULL;
+    gr_A[i]      = NULL;
+  }
 
   /* open output file */
   if (esl_opt_GetString(go, "-o") != NULL) {
@@ -1791,7 +1839,6 @@ serial_merge_alignments_only(const ESL_GETOPTS *go)
   if((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
   if      (esl_opt_GetBoolean(go, "--rna")) abc_out = esl_alphabet_Create(eslRNA);
   else if (esl_opt_GetBoolean(go, "--dna")) abc_out = esl_alphabet_Create(eslDNA);
-
   while(keep_reading_cms) { 
     status = CMFileRead(cmfp, errbuf, &abc, &cm);
     if(status == eslEOF) { 
@@ -1799,7 +1846,6 @@ serial_merge_alignments_only(const ESL_GETOPTS *go)
       if(! esl_opt_IsDefault(go, "--cm-name")) { cm_Fail("--cm-name %s enabled, but no CM named %s exists in the cmfile.\n", esl_opt_GetString(go, "--cm-name"), esl_opt_GetString(go, "--cm-name")); }
     }
     else if (status != eslOK) { cm_Fail(errbuf); } 
-
     ncm++;
     keep_reading_cms = FALSE;
     if(! esl_opt_IsDefault(go, "--cm-idx")) { 
@@ -1815,97 +1861,111 @@ serial_merge_alignments_only(const ESL_GETOPTS *go)
       }	
     }
   }
-
   /* configure the CM, only really nec so we get the appropriate #=GC RF line in the output alignment
    * which is built in Parsetrees2Alignment() using the log-odds emissions scores
    */
   ConfigCM(cm, FALSE);  /* FALSE says do not calculate W unless nec b/c we're using QDBs */
 
-  /* open msa file 1, argv[2] */
-  msafile1 = esl_opt_GetArg(go, 2); 
-  status = esl_msafile_Open(msafile1, eslMSAFILE_UNKNOWN, NULL, &msafp1);
-  if      (status == eslENOTFOUND) cm_Fail("Alignment file %s doesn't exist or is not readable\n", msafile1);
-  else if (status == eslEFORMAT)   cm_Fail("Couldn't determine format of alignment %s\n", msafile1);
-  else if (status != eslOK)        cm_Fail("Alignment file %s open failed with error %d\n", msafile1, status);
-  /* read first alignment from msa file 1 */
-  esl_msafile_SetDigital(msafp1, abc);
-  if((status = esl_msa_Read(msafp1, &msa1)) != eslOK) cm_Fail("No alignments in %s\n", msafile1);
-
-  /* open msa file 2, argv[3] */
-  msafile2 = esl_opt_GetArg(go, 3);
-  status = esl_msafile_Open(msafile2, eslMSAFILE_UNKNOWN, NULL, &msafp2);
-  if      (status == eslENOTFOUND) cm_Fail("Alignment file %s doesn't exist or is not readable\n", msafile2);
-  else if (status == eslEFORMAT)   cm_Fail("Couldn't determine format of alignment %s\n", msafile2);
-  else if (status != eslOK)        cm_Fail("Alignment file %s open failed with error %d\n", msafile2, status);
-  /* read first alignment from msa file 2 */
-  esl_msafile_SetDigital(msafp2, cm->abc);
-  if((status = esl_msa_Read(msafp2, &msa2)) != eslOK) cm_Fail("No alignments in %s\n", msafile2);
-
-  /* validation: Build CMs from both MSAs, the guidetrees should match the guidetree for the CM we read from the cmfile */
-  if((status = HandModelmaker(msa1, errbuf, TRUE, 0.5, &tmp_cm, &(mtr1))) != eslOK) cm_Fail(errbuf);
-  /*                                        !use RF! */
-  if(!(CompareCMGuideTrees(cm, tmp_cm))) { 
-    /* no need to try rebalancing, that doesn't change the guidetree (seriously this is from cm.c::CMRebalance():
-     * for (x = 0; x < new->nodes; x++) new->ndtype[x]  = cm->ndtype[x];
-     */
-    if(! esl_opt_IsDefault(go, "--cm-idx"))  { 
-      cm_Fail("with --merge, alignment in %s could not have been created using CM number %d in %s.", msafile1, esl_opt_GetInteger(go, "--cm-idx"), cmfile);
-    }
-    if(! esl_opt_IsDefault(go, "--cm-name")) { 
-      cm_Fail("with --merge, alignment in %s could not have been created using CM %s in %s.", msafile1, esl_opt_GetString(go, "--cm-name"), cmfile);
-    }
-    else { 
-      cm_Fail("with --merge, alignment in %s could not have been created using the first CM in %s.", msafile1, cmfile);
-    }
+  if(esl_opt_GetBoolean(go, "--merge")) { 
+    ESL_ALLOC(msafilelist, sizeof(char *) * 2);
+    msafilelist[0] = esl_opt_GetArg(go, 2);
+    msafilelist[1] = esl_opt_GetArg(go, 3);
+    nmsafile = 2;
   }
-  FreeCM(tmp_cm);
-
-  if((status = HandModelmaker(msa2, errbuf, TRUE, 0.5, &tmp_cm, &(mtr2))) != eslOK) cm_Fail(errbuf);
-  /*                                        !use RF! */
-  if(!(CompareCMGuideTrees(cm, tmp_cm))) { 
-    /* no need to try rebalancing, that doesn't change the guidetree (seriously this is from cm.c::CMRebalance():
-     * for (x = 0; x < new->nodes; x++) new->ndtype[x]  = cm->ndtype[x];
-     */
-    if(! esl_opt_IsDefault(go, "--cm-idx"))  { 
-      cm_Fail("with --merge, alignment in %s could not have been created using CM number %d in %s.", msafile2, esl_opt_GetInteger(go, "--cm-idx"), cmfile);
-    }
-    if(! esl_opt_IsDefault(go, "--cm-name")) { 
-      cm_Fail("with --merge, alignment in %s could not have been created using CM %s in %s.", msafile2, esl_opt_GetString(go, "--cm-name"), cmfile);
-    }
-    else { 
-      cm_Fail("with --merge, alignment in %s could not have been created using the first CM in %s.", msafile2, cmfile);
-    }
+  else if(esl_opt_GetBoolean(go, "--list-merge")) { 
+    if((status = read_msa_list_file(esl_opt_GetArg(go, 2), errbuf, &msafilelist, &nmsafile)));
   }
-  FreeCM(tmp_cm);
-  /* now we know msa1 and msa2 both have SS_cons lines that match the first CM we read from cmfile, so they must match each other */
+  if(nmsafile == 0) { cm_Fail("Failed to read a single alignment file name from %s\n", esl_opt_GetArg(go, 2)); }
 
-  /* store the unparsed stockholm markup from each msa, we'll regurgitate it in the new alignment */
-  if((status = get_markup_from_msa(msa1, errbuf, &comment1, &ncomment1, &gf_tag1, &gf1, &ngf1, &gs_tag1, &gs1, &ngs1, &gr_tag1, &gr1, &ngr1)) != eslOK) cm_Fail(errbuf); 
-  if((status = get_markup_from_msa(msa2, errbuf, &comment2, &ncomment2, &gf_tag2, &gf2, &ngf2, &gs_tag2, &gs2, &ngs2, &gr_tag2, &gr2, &ngr2)) != eslOK) cm_Fail(errbuf); 
+  /* Go through each msa file and collect its information */
+  for(fi = 0; fi < nmsafile; fi++) { 
+    status = esl_msafile_Open(msafilelist[fi], eslMSAFILE_UNKNOWN, NULL, &cur_msafp);
+    if      (status == eslENOTFOUND) cm_Fail("Alignment file %s doesn't exist or is not readable\n", msafilelist[fi]);
+    else if (status == eslEFORMAT)   cm_Fail("Couldn't determine format of alignment %s\n", msafilelist[fi]);
+    else if (status != eslOK)        cm_Fail("Alignment file %s open failed with error %d\n", msafilelist[fi], status);
+    /* read first alignment from msa file 2 */
+    esl_msafile_SetDigital(cur_msafp, cm->abc);
 
-  /* convert alignments to parsetrees, and free alignments */
-  if((status = Alignment2Parsetrees(msa1, cm, mtr1, errbuf, &sq1, &tr1)) != eslOK) cm_Fail(errbuf);
-  msa1_nseq = msa1->nseq;
-  esl_msa_Destroy(msa1);
+    cur_msai = 0;
+    while((status = esl_msa_Read(cur_msafp, &cur_msa)) == eslOK) { 
+      /* validation: build a CM from the MSA we just read, the guidetree should match the guidetree for the CM we read from the cmfile */
+      if((status = HandModelmaker(cur_msa, errbuf, TRUE, 0.5, &cur_cm, &(cur_mtr))) != eslOK) cm_Fail(errbuf);
+      /*                                           !use RF! */
+      if(!(CompareCMGuideTrees(cm, cur_cm))) { 
+	/* no need to try rebalancing, that doesn't change the guidetree (seriously this is from cm.c::CMRebalance():
+	 * for (x = 0; x < new->nodes; x++) new->ndtype[x]  = cm->ndtype[x];
+	 */
+	if(! esl_opt_IsDefault(go, "--cm-idx"))  { cm_Fail("with --merge, alignment in %s could not have been created using CM number %d in %s.", msafilelist[fi], esl_opt_GetInteger(go, "--cm-idx"), cmfile); }
+	if(! esl_opt_IsDefault(go, "--cm-name")) { cm_Fail("with --merge, alignment in %s could not have been created using CM %s in %s.", msafilelist[fi], esl_opt_GetString(go, "--cm-name"), cmfile); }
+	else                                     { cm_Fail("with --merge, alignment in %s could not have been created using the first CM in %s.", msafilelist[fi], cmfile); }
+      }
+      FreeCM(cur_cm);
+      /* now we know cur_msa has an SS_cons line that matches the CM we read from cmfile */
+      
+      /* store the unparsed stockholm markup from this msa, we'll regurgitate it in the new alignment */
+      if(msai == nalloc) { 
+	nalloc += chunksize; 
+	ESL_RALLOC(msa_nseq_A, tmp, sizeof(int)      * nalloc); 
+	ESL_RALLOC(ncomment_A, tmp, sizeof(int)      * nalloc); 
+	ESL_RALLOC(ngf_A,      tmp, sizeof(int)      * nalloc); 
+	ESL_RALLOC(ngs_A,      tmp, sizeof(int)      * nalloc); 
+	ESL_RALLOC(ngr_A,      tmp, sizeof(int)      * nalloc); 
+	ESL_RALLOC(comment_A,  tmp, sizeof(char **)  * nalloc); 
+	ESL_RALLOC(gf_tag_A,   tmp, sizeof(char **)  * nalloc); 
+	ESL_RALLOC(gs_tag_A,   tmp, sizeof(char **)  * nalloc); 
+	ESL_RALLOC(gr_tag_A,   tmp, sizeof(char **)  * nalloc); 
+	ESL_RALLOC(gf_A,       tmp, sizeof(char **)  * nalloc); 
+	ESL_RALLOC(gs_A,       tmp, sizeof(char ***) * nalloc); 
+	ESL_RALLOC(gr_A,       tmp, sizeof(char ***) * nalloc); 
+	for(i = nalloc-chunksize; i < nalloc; i++) { 
+	  msa_nseq_A[i] = ncomment_A[i] = ngf_A[i] = ngs_A[i] = ngr_A[i] = 0;
+	  comment_A[i] = NULL;
+	  gf_tag_A[i]  = NULL;
+	  gs_tag_A[i]  = NULL;
+	  gr_tag_A[i]  = NULL;
+	  gf_A[i]      = NULL;
+	  gs_A[i]      = NULL;
+	  gr_A[i]      = NULL;
+	}
+      }
+      if((status = get_markup_from_msa(cur_msa, errbuf, &(comment_A[msai]), &(ncomment_A[msai]), &(gf_tag_A[msai]), &(gf_A[msai]), &(ngf_A[msai]), 
+				       &(gs_tag_A[msai]), &(gs_A[msai]), &(ngs_A[msai]), &(gr_tag_A[msai]), &(gr_A[msai]), &(ngr_A[msai]))) != eslOK) {
+	cm_Fail(errbuf); 
+      }      
 
-  if((status = Alignment2Parsetrees(msa2, cm, mtr2, errbuf, &sq2, &tr2)) != eslOK) cm_Fail(errbuf);
-  msa2_nseq = msa2->nseq;
-  esl_msa_Destroy(msa2);
+      /* convert alignment to parsetrees, and free alignment */
+      if((status = Alignment2Parsetrees(cur_msa, cm, cur_mtr, errbuf, &cur_sq, &cur_tr)) != eslOK) cm_Fail(errbuf);
+      FreeParsetree(cur_mtr);
+      msa_nseq_A[msai] = cur_msa->nseq;
+      esl_msa_Destroy(cur_msa);
+      
+      /* merge parsetrees */
+      if((status = append_parsetrees(cur_tr, msa_nseq_A[msai], &(all_tr), &(nall_tr), errbuf)) != eslOK) cm_Fail(errbuf);
+      free(cur_tr);  /* only free top-level pointer, actual sq data is pointed to by all_tr */
+      /* merge sequences */
+      if((status = append_sequences(cur_sq, msa_nseq_A[msai], &(all_sq), &(nall_sq), errbuf)) != eslOK) cm_Fail(errbuf);
+      free(cur_sq);  /* only free top-level pointer, actual sq data is pointed to by all_sq */
 
-  /* merge parsetrees */
-  nmerged_tr = msa1_nseq;
-  if((status = append_parsetrees(tr2, msa2_nseq, &(tr1), &(nmerged_tr), errbuf)) != eslOK) cm_Fail(errbuf);
-  /* merge sequences */
-  nmerged_sq = msa1_nseq;
-  if((status = append_sequences(sq2, msa2_nseq, &(sq1), &(nmerged_sq), errbuf)) != eslOK) cm_Fail(errbuf);
+      cur_msai++;
+      msai++;
+    }  /* end of while esl_msa_Read() loop */
+    if(cur_msai == 0)     cm_Fail("Failed to read any msas from file %s\n", msafilelist[fi]);
+    if(status != eslEOF)  cm_Fail("Error reading msa file %s, status code %d\n", msafilelist[fi], status);
+    esl_msafile_Close(cur_msafp);
+  }
+  nmsa = msai;
 
   /* parsetrees to alignment */
-  if((status = Parsetrees2Alignment(cm, abc_out, sq1, NULL, tr1, msa1_nseq + msa2_nseq, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), &merged_msa)) != eslOK)
+  if((status = Parsetrees2Alignment(cm, abc_out, all_sq, NULL, all_tr, nall_sq, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), &merged_msa)) != eslOK)
     cm_Fail("Error creating alignment from merged parsetrees.");
 
   /* add comments, GF, GS and GR (not GC) markup from initial alignments to merged alignment */
-  if((status = add_msa_markup(merged_msa, errbuf, msa1_nseq, 0,         comment1, ncomment1, gf_tag1, gf1, ngf1, gs_tag1, gs1, ngs1, gr_tag1, gr1, ngr1)) != eslOK) cm_Fail(errbuf);
-  if((status = add_msa_markup(merged_msa, errbuf, msa2_nseq, msa1_nseq, comment2, ncomment2, gf_tag2, gf2, ngf2, gs_tag2, gs2, ngs2, gr_tag2, gr2, ngr2)) != eslOK) cm_Fail(errbuf);
+  seq_offset = 0;
+  for(msai = 0; msai < nmsa; msai++) { 
+    if((status = add_msa_markup(merged_msa, errbuf, msa_nseq_A[msai], seq_offset, comment_A[msai], ncomment_A[msai], gf_tag_A[msai], gf_A[msai], ngf_A[msai], 
+				gs_tag_A[msai], gs_A[msai], ngs_A[msai], gr_tag_A[msai], gr_A[msai], ngr_A[msai])) != eslOK) cm_Fail(errbuf);
+    seq_offset += msa_nseq_A[msai];
+  }
 
   /* output alignment */
   status = esl_msa_Write(ofp, merged_msa, (esl_opt_GetBoolean(go, "-1") ? eslMSAFILE_PFAM : eslMSAFILE_STOCKHOLM));
@@ -1914,23 +1974,82 @@ serial_merge_alignments_only(const ESL_GETOPTS *go)
 
   /* clean up */
   CMFileClose(cmfp);
-  esl_msafile_Close(msafp1);
-  esl_msafile_Close(msafp2);
-  FreeParsetree(mtr1);
-  FreeParsetree(mtr2);
-  for(i = 0; i < nmerged_tr; i++) { 
-    FreeParsetree(tr1[i]);
-    esl_sq_Destroy(sq1[i]);
+  if (esl_opt_GetString(go, "-o") != NULL) { fclose(ofp); }
+  for(i = 0; i < nall_sq; i++) { 
+    FreeParsetree(all_tr[i]);
+    esl_sq_Destroy(all_sq[i]);
   }    
   esl_msa_Destroy(merged_msa);
-  free(tr1);
-  free(tr2);
-  free(sq1);
-  free(sq2);
+  free(all_tr);
+  free(all_sq);
+  free(msa_nseq_A);
+  free(ncomment_A);
+  free(ngf_A);
+  free(ngs_A);
+  free(ngr_A);
+  free(comment_A);
+  free(gf_tag_A);
+  free(gs_tag_A);
+  free(gr_tag_A);
+  free(gf_A);
+  free(gs_A);
+  free(gr_A);
   FreeCM(cm);
+  if(! esl_opt_GetBoolean(go, "--merge")) { /* else msafilelist[0] and msafilelist[1] point to argv in esl_getopts, which will be freed later */
+    for(fi = 0; fi < nmsafile; fi++) free(msafilelist[fi]);
+  }
+  free(msafilelist); 
   esl_alphabet_Destroy(abc);
   esl_alphabet_Destroy(abc_out);
   return;
+
+ ERROR:
+  cm_Fail("Memory error while merging alignments.");
+  return;
+}
+
+/* Function: read_msa_list_file
+ * Date:     EPN, Wed Oct 28 10:03:39 2009
+ * 
+ * Read a file listing MSA file names to merge.
+ * Store sequences in *ret_msalist and return it.
+ * Each white-space delimited token is considered a 
+ * different msa file name.
+ * 
+ * Returns eslOK on success.
+ */
+int
+read_msa_list_file(char *filename, char *errbuf, char ***ret_msalist, int *ret_msalist_n)
+{
+  int             status;
+  ESL_FILEPARSER *efp;
+  char           *tok;
+  int             toklen;
+  int nalloc     = 10;
+  int chunksize  = 10;
+  char **msalist = NULL;
+  int n = 0;
+  int i;
+  void *tmp;
+
+  ESL_ALLOC(msalist, sizeof(char *) * nalloc);
+  if (esl_fileparser_Open(filename, &efp) != eslOK) ESL_FAIL(eslEINVAL, errbuf, "failed to open %s in read_seq_name_file\n", filename);
+  
+  while((status = esl_fileparser_GetToken(efp, &tok, &toklen)) != eslEOF) {
+    if(n == nalloc) { nalloc += chunksize; ESL_RALLOC(msalist, tmp, sizeof(char *) * nalloc); }
+    if((status = esl_strdup(tok, -1, &(msalist[n++]))) != eslOK) ESL_FAIL(status, errbuf, "read_msa_list_file: esl_strdup error.");
+  }
+  esl_fileparser_Close(efp);
+  *ret_msalist = msalist;
+  *ret_msalist_n = n;
+  return eslOK;
+
+ ERROR:
+  if(msalist != NULL) {
+    for(i = 0; i < n; i++) free(msalist[i]); 
+    free(msalist);
+  }
+  return status;
 }
 
 /* append_parsetrees()
@@ -1948,8 +2067,12 @@ append_parsetrees(Parsetree_t **tr_to_append, int ntr_to_append, Parsetree_t ***
   ntr_existing = *ret_ntr;
   ntr = ntr_existing + ntr_to_append;
   
-  
-  ESL_RALLOC((*ret_tr), tmp, sizeof(Parsetree_t *) * ntr);
+  if(ntr_existing == 0) { 
+    ESL_ALLOC((*ret_tr), sizeof(Parsetree_t *) * ntr);
+  }
+  else { 
+    ESL_RALLOC((*ret_tr), tmp, sizeof(Parsetree_t *) * ntr);
+  }
   for(i = ntr_existing; i < ntr; i++) { 
     ip = i - ntr_existing;
     (*ret_tr)[i] = tr_to_append[ip];
@@ -1977,7 +2100,12 @@ append_sequences(ESL_SQ **sq_to_append, int nsq_to_append, ESL_SQ ***ret_sq, int
   nsq_existing = *ret_nsq;
   nsq = nsq_existing + nsq_to_append;
 
-  ESL_RALLOC((*ret_sq), tmp, sizeof(ESL_SQ *) * nsq);
+  if(nsq_existing == 0) { 
+    ESL_ALLOC((*ret_sq), sizeof(ESL_SQ *) * nsq);
+  }
+  else { 
+    ESL_RALLOC((*ret_sq), tmp, sizeof(ESL_SQ *) * nsq);
+  }
   for(i = nsq_existing; i < nsq; i++) { 
     ip = i - nsq_existing;
     (*ret_sq)[i] = sq_to_append[ip];
@@ -2220,7 +2348,7 @@ gapize_string_to_fit_alignment(char *s, const char *aseq, int alen, char gapchar
   ualen = strlen(s);
   ESL_ALLOC(news, sizeof(char) * (alen+1));
   for (apos = 0; apos < alen; apos++) { 
-    if(uapos > ualen) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "gapize_string_to_fit_alignment(), unaligned length of aligned template string (%" PRId64 ") not equal to unaligned string length: %d.", uapos, ualen);
+    ESL_DASSERT1((uapos <= ualen));
     news[apos] = (strchr(aln_gapchars, aseq[apos]) == NULL) ? s[uapos++] : gapchar_to_add;
   }
 

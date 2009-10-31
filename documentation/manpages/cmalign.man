@@ -21,6 +21,13 @@ Merge two alignments:
 .I msafile1
 .I msafile2
 
+.TP
+Merge all alignments listed in a file:
+.B cmalign --list-merge
+.I [options]
+.I cmfile
+.I msalistfile
+
 .SH DESCRIPTION
 
 .B cmalign
@@ -31,17 +38,16 @@ to the covariance model (CM) in
 and outputs a multiple sequence alignment.
 Alternatively, with the 
 .B --merge
-option, 
+or
+.B --list-merge 
+options, 
 .B cmalign
-merges the two alignments 
-.I msafile1
-and
-.I msafile2
-created by previous runs of 
+merges alignments created by previous runs of 
 .B cmalign
 with 
 .I cmfile 
-into a single alignment.
+into a single alignment (see descriptions of those options below for
+more details).
 
 .PP
 The sequence file 
@@ -437,7 +443,9 @@ corresponding residue.
 .B --merge
 With 
 .B --merge
-the usage of cmalign changes to 
+the usage of 
+.B cmalign 
+changes to 
 .B cmalign --merge
 .I [options]
 .I cmfile
@@ -452,15 +460,36 @@ created by previous runs of
 with 
 .I cmfile 
 together into a single alignment and exit.
-.I msafile1
-and
-.I msafile2 
-must only have one alignment per file.
 This option allows the user to split up large sequence files into many
 smaller files, align them independently to 
 .I cmfile
 on different computers to get many small alignments, and then merge them
 into a single large alignment. 
+
+.TP
+.B --list-merge
+Same idea as 
+.B --merge,
+except that more than two alignment files can be merged.
+With
+.B --list-merge,
+the usage of
+.B cmalign
+changes to 
+.B cmalign --list-merge
+.I [options]
+.I cmfile
+.I msalistfile.
+All of the alignment files listed in 
+.I msalistfile 
+will be merged into a single alignment.
+As with
+.B --merge,
+all alignments to be merged must have been created using
+previous runs of 
+.B cmalign
+with 
+.I cmfile. 
 
 .TP 
 .BI --withali " <f>"
@@ -540,7 +569,10 @@ If
 .I cmfile
 contains more than 1 CM, specify that only CM number 
 .I <n>
-be used for alignment (or merging alignments in --merge).
+be used for alignment (or merging alignments with 
+.B --merge
+or
+.B --list-merge).
 
 .TP 
 .BI --cm-name " <s>"
@@ -548,7 +580,10 @@ If
 .I cmfile
 contains more than 1 CM, specify that only the CM named
 .I <s>
-be used for alignment (or merging alignments in --merge).
+be used for alignment (or merging alignments with
+.B --merge
+or
+.B --list-merge).
 
 .TP
 .BI --tfile " <f>"

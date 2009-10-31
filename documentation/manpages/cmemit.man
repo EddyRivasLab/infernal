@@ -69,6 +69,13 @@ Configure the CMs into local mode before emitting sequences. See the
 User's Guide for more information on locally configured CMs.
 
 .TP
+.BI -i " <n>"
+Begin the numbering for sequence names at
+.I <n>.
+The default value is
+.I 1.
+
+.TP
 .BI -s " <n>"
 Set the random seed to 
 .I <n>, 
