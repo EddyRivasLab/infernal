@@ -92,6 +92,9 @@ static ESL_OPTIONS options[] = {
   { "--withpknots",eslARG_NONE, NULL,  NULL, NULL,      NULL,"--withali",       NULL, "incl. structure (w/pknots) from <f> from --withali <f>", 5 },
   { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--withali",       NULL, "--rf was originally used with cmbuild", 5 },
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,"--withali",       NULL, "--gapthresh <x> was originally used with cmbuild", 5 },
+  /* Using only a single CM from a multi-CM file */
+  { "--cm-idx",   eslARG_INT,   NULL, NULL,  "n>0",     NULL,      NULL, "--cm-name", "only align or merge seqs with CM number <n>    in the CM file",  10 },  
+  { "--cm-name",  eslARG_STRING,NULL, NULL,  NULL,      NULL,      NULL,  "--cm-idx", "only align or merge seqs with the CM named <s> in the CM file",  10 },
   /* Verbose output files */
   { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence parsetrees to file <f>", 7 },
   /* options for experimental p7 HMM banding */
@@ -272,6 +275,8 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
       puts("\nverbose output files and debugging:");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
+      puts("\nusing a single CM from a multi-CM file:");
+      esl_opt_DisplayHelp(stdout, go, 10, 2, 80);
       puts("\nexperimental options for plan7 banding using HMMER3 code:");
       esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
       puts("\nundocumented developer algorithm options:");
@@ -304,6 +309,8 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
       puts("\nverbose output files and debugging:");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
+      puts("\nusing a single CM from a multi-CM file:");
+      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
       exit(0);
     }
   if(((! esl_opt_GetBoolean(go, "--merge")) && (esl_opt_ArgNumber(go) != 2)) ||
@@ -393,7 +400,7 @@ main(int argc, char **argv)
       MPI_Comm_rank(MPI_COMM_WORLD, &(cfg.my_rank));
       MPI_Comm_size(MPI_COMM_WORLD, &(cfg.nproc));
 
-      if(cfg.nproc == 1) cm_Fail("ERROR, MPI mode, but only 1 processor running...");
+      if(cfg.nproc == 1) cm_Fail("MPI mode, but only 1 processor running...");
 
       if (cfg.my_rank > 0) { status = mpi_worker(go, &cfg); }
       else { 
@@ -559,7 +566,6 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     }
 
   if(cfg->r == NULL) ESL_FAIL(eslEMEM, errbuf, "Failed to create master RNG.");
-
   return eslOK;
 }
 
@@ -576,6 +582,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   char     errbuf[cmERRBUFSIZE];
   CM_t     *cm;
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, holds seqs, parsetrees, CP9 traces, postcodes */
+  int       used_at_least_one_cm = FALSE; 
 
   if ((status  = init_master_cfg(go, cfg, errbuf)) != eslOK)  cm_Fail(errbuf);
   if ((status  = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
@@ -584,6 +591,14 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;
+
+      if(! esl_opt_IsDefault(go, "--cm-idx")) { 
+	if(cfg->ncm != esl_opt_GetInteger(go, "--cm-idx")) { FreeCM(cm); continue; }
+      }	
+      if(! esl_opt_IsDefault(go, "--cm-name")) { 
+	if(strcmp(cm->name, esl_opt_GetString(go, "--cm-name")) != 0) { FreeCM(cm); continue; }
+      }	
+      used_at_least_one_cm = TRUE;
 
       /* initialize the flags/options/params and configuration of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK)    cm_Fail(errbuf);
@@ -599,9 +614,13 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       /* clean up */
       FreeSeqsToAln(seqs_to_aln);
       FreeCM(cm);
-      esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be searching this file again with another CM */
+      esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be aligning the seqs in this file again with another CM */
     }
   if(status != eslEOF) cm_Fail(errbuf);
+  if(! used_at_least_one_cm) { 
+    if(! esl_opt_IsDefault(go, "--cm-idx"))  { cm_Fail("--cm-idx %d enabled, but only %d CMs in the cmfile.\n", esl_opt_GetInteger(go, "--cm-idx"), cfg->ncm); }
+    if(! esl_opt_IsDefault(go, "--cm-name")) { cm_Fail("--cm-name %s enabled, but no CM named %s exists in the cmfile.\n", esl_opt_GetString(go, "--cm-name"), esl_opt_GetString(go, "--cm-name")); }
+  }
   return;
 }
 
@@ -641,6 +660,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int      pos = 1;
   int      wi_error = 0;                /* worker index that sent back an error message, if an error occurs */
   CM_t *cm;
+  int used_at_least_one_cm = FALSE; 
   int nseq_per_worker;
   int nseq_this_worker;
   int nseq_prev;
@@ -703,6 +723,15 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;  
       ESL_DPRINTF1(("MPI master read CM number %d\n", cfg->ncm));
+
+      if(! esl_opt_IsDefault(go, "--cm-idx")) { 
+	if(cfg->ncm != esl_opt_GetInteger(go, "--cm-idx")) { FreeCM(cm); continue; }
+      }	
+      if(! esl_opt_IsDefault(go, "--cm-name")) { 
+	if(strcmp(cm->name, esl_opt_GetString(go, "--cm-name")) != 0) { FreeCM(cm); continue; }
+      }	
+      used_at_least_one_cm = TRUE;
+
       if((status = cm_master_MPIBcast(cm, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
       
       /* initialize the flags/options/params of the CM */
@@ -813,9 +842,10 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   free(buf);
   
   if     (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); return xstatus; }
+  else if((! used_at_least_one_cm) && (! esl_opt_IsDefault(go, "--cm-idx")))  { ESL_FAIL(eslEINVAL, errbuf, "--cm-idx %d enabled, but only %d CMs in the cmfile.\n", esl_opt_GetInteger(go, "--cm-idx"), cfg->ncm); }
+  else if((! used_at_least_one_cm) && (! esl_opt_IsDefault(go, "--cm-name"))) { ESL_FAIL(eslEINVAL, errbuf, "--cm-name %s enabled, but no CM named %s exists in the cmfile.\n", esl_opt_GetString(go, "--cm-name"), esl_opt_GetString(go, "--cm-name")); }
   else if(status != eslEOF) return status;
   else                      return eslOK; 
-
 }
 
 static int
@@ -1807,7 +1837,9 @@ serial_merge_alignments_only(const ESL_GETOPTS *go)
   int i;
   Parsetree_t **tr1, **tr2;
   ESL_SQ **sq1, **sq2;
-  
+  int keep_reading_cms = TRUE; /* TRUE to continue to read CMs from cmfile, this allows --cm-idx and --cm-name to work */
+  int ncm = 0; /* number of CMs we've read */
+
   /* markup from msa1 and msa2, we'll add it to the merged_msa */
   int ncomment1, ncomment2, ngf1, ngf2, ngs1, ngs2, ngr1, ngr2;
   char **gf_tag1, **gf_tag2, **gs_tag1, **gs_tag2, **gr_tag1, **gr_tag2;
@@ -1820,12 +1852,36 @@ serial_merge_alignments_only(const ESL_GETOPTS *go)
       cm_Fail("Failed to open -o output file %s\n", esl_opt_GetString(go, "-o"));
   } else ofp = stdout;
 
-  /* open CM file, read first CM */
+  /* open CM file, read CM  (the <n>th CM if --cm-idx <n> enabled, CM with name <s> if --cm-name <s> enabled, or 1st CM if neither are enabled */
   cmfile = esl_opt_GetArg(go, 1); 
   if((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
   if      (esl_opt_GetBoolean(go, "--rna")) abc_out = esl_alphabet_Create(eslRNA);
   else if (esl_opt_GetBoolean(go, "--dna")) abc_out = esl_alphabet_Create(eslDNA);
-  if((status = CMFileRead(cmfp, errbuf, &abc, &cm)) != eslOK) cm_Fail(errbuf);
+
+  while(keep_reading_cms) { 
+    status = CMFileRead(cmfp, errbuf, &abc, &cm);
+    if(status == eslEOF) { 
+      if(! esl_opt_IsDefault(go, "--cm-idx"))  { cm_Fail("--cm-idx %d enabled, but only %d CMs in the cmfile.\n", esl_opt_GetInteger(go, "--cm-idx"), ncm); }
+      if(! esl_opt_IsDefault(go, "--cm-name")) { cm_Fail("--cm-name %s enabled, but no CM named %s exists in the cmfile.\n", esl_opt_GetString(go, "--cm-name"), esl_opt_GetString(go, "--cm-name")); }
+    }
+    else if (status != eslOK) { cm_Fail(errbuf); } 
+
+    ncm++;
+    keep_reading_cms = FALSE;
+    if(! esl_opt_IsDefault(go, "--cm-idx")) { 
+      if(ncm != esl_opt_GetInteger(go, "--cm-idx")) { 
+	keep_reading_cms = TRUE; 
+	FreeCM(cm);
+      }
+    }	
+    if(! esl_opt_IsDefault(go, "--cm-name")) { 
+      if(strcmp(cm->name, esl_opt_GetString(go, "--cm-name")) != 0) {
+	keep_reading_cms = TRUE; 
+	FreeCM(cm);
+      }	
+    }
+  }
+
   /* configure the CM, only really nec so we get the appropriate #=GC RF line in the output alignment
    * which is built in Parsetrees2Alignment() using the log-odds emissions scores
    */
@@ -1858,7 +1914,15 @@ serial_merge_alignments_only(const ESL_GETOPTS *go)
     /* no need to try rebalancing, that doesn't change the guidetree (seriously this is from cm.c::CMRebalance():
      * for (x = 0; x < new->nodes; x++) new->ndtype[x]  = cm->ndtype[x];
      */
-    cm_Fail("with --merge, alignment in %s could not have been created using the first CM in %s.", msafile1, cmfile);
+    if(! esl_opt_IsDefault(go, "--cm-idx"))  { 
+      cm_Fail("with --merge, alignment in %s could not have been created using CM number %d in %s.", msafile1, esl_opt_GetInteger(go, "--cm-idx"), cmfile);
+    }
+    if(! esl_opt_IsDefault(go, "--cm-name")) { 
+      cm_Fail("with --merge, alignment in %s could not have been created using CM %s in %s.", msafile1, esl_opt_GetString(go, "--cm-name"), cmfile);
+    }
+    else { 
+      cm_Fail("with --merge, alignment in %s could not have been created using the first CM in %s.", msafile1, cmfile);
+    }
   }
   FreeCM(tmp_cm);
 
@@ -1868,7 +1932,15 @@ serial_merge_alignments_only(const ESL_GETOPTS *go)
     /* no need to try rebalancing, that doesn't change the guidetree (seriously this is from cm.c::CMRebalance():
      * for (x = 0; x < new->nodes; x++) new->ndtype[x]  = cm->ndtype[x];
      */
-    cm_Fail("with --merge, alignment in %s could not have been created using the first CM in %s.", msafile2, cmfile);
+    if(! esl_opt_IsDefault(go, "--cm-idx"))  { 
+      cm_Fail("with --merge, alignment in %s could not have been created using CM number %d in %s.", msafile2, esl_opt_GetInteger(go, "--cm-idx"), cmfile);
+    }
+    if(! esl_opt_IsDefault(go, "--cm-name")) { 
+      cm_Fail("with --merge, alignment in %s could not have been created using CM %s in %s.", msafile2, esl_opt_GetString(go, "--cm-name"), cmfile);
+    }
+    else { 
+      cm_Fail("with --merge, alignment in %s could not have been created using the first CM in %s.", msafile2, cmfile);
+    }
   }
   FreeCM(tmp_cm);
   /* now we know msa1 and msa2 both have SS_cons lines that match the first CM we read from cmfile, so they must match each other */

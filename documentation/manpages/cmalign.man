@@ -479,6 +479,22 @@ option was supplied to
 when the CM was constructed from the alignment file
 .I <f>.
 
+.TP 
+.BI --cm-idx " <n>"
+If 
+.I cmfile
+contains more than 1 CM, specify that only CM number 
+.I <n>
+be used for alignment (or merging alignments in --merge).
+
+.TP 
+.BI --cm-name " <s>"
+If 
+.I cmfile
+contains more than 1 CM, specify that only the CM named
+.I <s>
+be used for alignment (or merging alignments in --merge).
+
 .TP
 .BI --tfile " <f>"
 Dump tabular sequence tracebacks for each individual

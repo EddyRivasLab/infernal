@@ -271,3 +271,7 @@
 1  exercise  cmalign:3.4.12/2        @cmalign@  -l -q %3.4.12.CM% 3trnas.fa
 1  exercise  cmalign:3.4.12/3        @cmalign@  --cyk %3.4.12.CM% 3trnas.fa
 1  exercise  cmalign:3.4.12/4        @cmalign@  --viterbi %3.4.12.CM% 3trnas.fa
+# test the two options that are only relevant with multi-CM files (and
+# thus weren't tested for tRNA)
+1  exercise  cmalign:3.4.12/5        @cmalign@  --cm-idx 2 %3.4.12.CM% 3trnas.fa
+1  exercise  cmalign:3.4.12/6        @cmalign@  --cm-name U3 %3.4.12.CM% 3trnas.fa
