@@ -87,11 +87,11 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
   __m128i   tmpv, tmpv2;
 
   /* FIXME: arbitrary, ad hoc transitions! */
-  tsc_S_Sa = -sreLOG2(0.90);
-  tsc_S_SM = -sreLOG2(0.05);
-  tsc_S_e  = -sreLOG2(0.05);
-  tsc_M_M  = -sreLOG2(0.50);
-  tsc_M_S  = -sreLOG2(0.50);
+  tsc_S_Sa = sreLOG2(0.90);
+  tsc_S_SM = sreLOG2(0.05);
+  tsc_S_e  = sreLOG2(0.05);
+  tsc_M_M  = sreLOG2(0.50);
+  tsc_M_S  = sreLOG2(0.50);
   tsv_S_Sa = _mm_set1_epi8(unbiased_byteify(ccm, tsc_S_Sa));
   tsv_S_SM = _mm_set1_epi8(unbiased_byteify(ccm, tsc_S_SM));
   tsv_M_M  = _mm_set1_epi8(unbiased_byteify(ccm, tsc_M_M ));
@@ -741,7 +741,7 @@ main(int argc, char **argv)
       esl_stopwatch_Display(stdout, w, " CPU time: ");
 
       if (esl_opt_GetBoolean(go, "-w")) 
-	{ 
+	{
 	  esl_stopwatch_Start(w);
 	  if((status = SSE_CYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 	  printf("%4d %-30s %10.4f bits ", (i+1), "SSE_CYKScan(): ", sc);
@@ -778,3 +778,116 @@ main(int argc, char **argv)
 }
 #endif /*IMPL_MSCYK_TEST*/
 
+
+#ifdef IMPL_MSCYK_TEST2
+/* gcc -o sse-bmark -g -O2 -std=gnu99 -msse2 -mpentiumpro -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_MSCYK_TEST cm_dpsearch.c -linfernal -lhmmer -leasel -lm
+ * icc -o sse-bmark -g -O3 -static -I../ -L../ -I../../easel -L../../easel -I../../hmmer/src -L../../hmmer/src -DIMPL_MSCYK_TEST sse_cm_dpsearch.c -linfernal -lhmmer -leasel -lm
+
+ */
+
+#include "esl_config.h"
+#include "config.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#include "easel.h"
+#include <esl_getopts.h>
+#include <esl_histogram.h>
+#include <esl_random.h>
+#include <esl_randomseq.h>
+#include <esl_sqio.h>
+#include <esl_stats.h>
+#include <esl_stopwatch.h>
+#include <esl_vectorops.h>
+#include <esl_wuss.h>
+
+#include "funcs.h"		/* function declarations                */
+/*     #include "old_funcs.h"	*/	/* function declarations for 0.81 versions */
+#include "structs.h"		/* data structures, macros, #define's   */
+
+static ESL_OPTIONS options[] = {
+  /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
+  { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
+  { "--cutoff",  eslARG_INT,     "10", NULL, NULL,  NULL,  NULL, NULL, "set cutoff to <n> (0..255)",                     0 },
+  {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+};
+static char usage[]  = "[-options] <cmfile> <seqfile>";
+static char banner[] = "test driver for MSCYK implementation";
+
+int 
+main(int argc, char **argv)
+{
+  int             status;
+  ESL_GETOPTS    *go      = esl_getopts_CreateDefaultApp(options, 2, argc, argv, banner, usage);
+  CM_t            *cm;
+  ESL_ALPHABET   *abc     = NULL;
+  int             i;
+  float           sc;
+  char           *cmfile = esl_opt_GetArg(go, 1);
+  char           *seqfile= esl_opt_GetArg(go, 2);
+  CMFILE         *cmfp;	/* open input CM file stream */
+  ESL_SQFILE     *sqfp;
+  ESL_SQ         *seq;
+  char            errbuf[cmERRBUFSIZE];
+  CM_CONSENSUS   *ccm;
+  uint8_t         cutoff;
+  int             i_cutoff;
+  int             format = eslSQFILE_UNKNOWN;
+  search_results_t *results = NULL;
+
+  if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
+  if ((status = CMFileRead(cmfp, errbuf, &abc, &cm) != eslOK))            cm_Fail("Failed to read CM");
+  CMFileClose(cmfp);
+
+  if (esl_sqfile_Open(seqfile, format, NULL, &sqfp) != eslOK) cm_Fail("Failed to open sequence database file\n");
+
+  cm->config_opts |= CM_CONFIG_LOCAL;
+  cm->search_opts |= CM_SEARCH_NOQDB;
+  ConfigCM(cm, errbuf, TRUE, NULL, NULL); /* TRUE says: calculate W */
+  cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
+  ccm = cm_consensus_Convert(cm);
+fprintf(stderr,"scale %f base %d bias %d \n",ccm->scale_b,ccm->base_b,ccm->bias_b);
+
+  i_cutoff = esl_opt_GetInteger(go, "--cutoff");
+  /* Need to scale and offset, but not change sign -> switch sign ahead of time */
+  cutoff = biased_byteify(ccm,-i_cutoff);
+fprintf(stderr,"cutoff = %d\n",cutoff);
+
+  seq = esl_sq_Create();
+  while ( esl_sqio_Read(sqfp, seq) == eslOK)
+  {
+    if (seq->n == 0) continue;
+    if (seq->dsq == NULL) esl_sq_Digitize(abc, seq);
+  
+    results = CreateResults(INIT_RESULTS);
+    if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, seq->n, cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+
+    /* Rudimentary output of results */
+    for (i = 0; i < results->num_results; i++) {
+      fprintf(stderr,"%d\t%d\t%f\n",results->data[i].start,results->data[i].stop,results->data[i].score);
+    }
+
+    FreeResults(results);
+
+    esl_sq_Destroy(seq);
+    seq = esl_sq_Create();
+  }
+  esl_sq_Destroy(seq);
+
+
+  if (ccm != NULL) cm_consensus_Free(ccm);
+  FreeCM(cm);
+  esl_alphabet_Destroy(abc);
+  esl_sqfile_Close(sqfp);
+  esl_getopts_Destroy(go);
+
+  return 0;
+
+ ERROR:
+  cm_Fail("memory allocation error");
+  return 0;
+}
+#endif

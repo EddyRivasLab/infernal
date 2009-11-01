@@ -173,7 +173,7 @@ UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma,
       assert(jp >= gamma->i0);
       if(do_report_hit) { 
 	/*printf("\t0 %.3f %.3f ip: %d jp: %d r: %d\n", hit_sc+null3_correction, hit_sc, ip, jp, r);*/
-	ReportHit (ip, jp, 0, hit_sc, results);
+	ReportHit (ip, jp, 0, (float) hit_sc, results);
       }
     }
     bestd    = 0;
@@ -191,7 +191,7 @@ UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma,
 	  assert(jp >= gamma->i0);
 	  if(do_report_hit) { 
 	    /*printf("\t1 %.3f %.3f ip: %d jp: %d r: %d\n", hit_sc+null3_correction, hit_sc, ip, jp, r);*/
-	    ReportHit (ip, jp, 0, hit_sc, results);
+	    ReportHit (ip, jp, 0, (float) hit_sc, results);
 	  }
 	}
 	if(hit_sc > bestd_sc) { bestd = d; bestd_sc = hit_sc; } /* we need to check again b/c if null3, hit_sc -= null3_correction */
