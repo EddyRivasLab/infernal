@@ -139,6 +139,7 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
   uint8_t   *vec_access;
 
   char BADVAL = 0; /* Our local equivalent of -eslINFINITY */
+  char escBADVAL = biased_byteify(ccm, -eslINFINITY); /* -inf as a cost for non-permitted esc */
   __m128i LB_NEG_INF = _mm_setr_epi8(BADVAL,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
 
   L = j0-i0+1;
@@ -233,6 +234,8 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
         {
           vec_ntS[jp_v][d] = neginfv;
         }
+
+// FIXME use rotated W-1, W-2 instead
       vec_ntS[jp_v][-1] = neginfv;
       vec_ntS[jp_v][-2] = neginfv;
     }
@@ -252,6 +255,7 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
    */
   for (j = i0; j <= j0; j++) 
     {
+fprintf(stderr,"j = %d\n",j);
 //      jp_g = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (index in gamma* data structures) */
       cur  = j%2;
       prv  = (j-1)%2;
@@ -295,42 +299,42 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
             }
             else if (ccm->sttype[v] == ML_st) {
               for (d = 0; d < sW; d++) {
-                vec_esc[dsq[j]][v][d] = _mm_setr_epi8((d <= j && ((j^j0)|d) ) ? ccm->oesc[v][dsq[j-(      d)+1]] : BADVAL,
-                                                (   sW+d <= j               ) ? ccm->oesc[v][dsq[j-(   sW+d)+1]] : BADVAL,
-                                                ( 2*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 2*sW+d)+1]] : BADVAL,
-                                                ( 3*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 3*sW+d)+1]] : BADVAL,
-                                                ( 4*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 4*sW+d)+1]] : BADVAL,
-                                                ( 5*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 5*sW+d)+1]] : BADVAL,
-                                                ( 6*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 6*sW+d)+1]] : BADVAL,
-                                                ( 7*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 7*sW+d)+1]] : BADVAL,
-                                                ( 8*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 8*sW+d)+1]] : BADVAL,
-                                                ( 9*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 9*sW+d)+1]] : BADVAL,
-                                                (10*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(10*sW+d)+1]] : BADVAL,
-                                                (11*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(11*sW+d)+1]] : BADVAL,
-                                                (12*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(12*sW+d)+1]] : BADVAL,
-                                                (13*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(13*sW+d)+1]] : BADVAL,
-                                                (14*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(14*sW+d)+1]] : BADVAL,
-                                                (15*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(15*sW+d)+1]] : BADVAL);
+                vec_esc[dsq[j]][v][d] = _mm_setr_epi8((d <= j && ((j^j0)|d) ) ? ccm->oesc[v][dsq[j-(      d)+1]] : escBADVAL,
+                                                (   sW+d <= j               ) ? ccm->oesc[v][dsq[j-(   sW+d)+1]] : escBADVAL,
+                                                ( 2*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 2*sW+d)+1]] : escBADVAL,
+                                                ( 3*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 3*sW+d)+1]] : escBADVAL,
+                                                ( 4*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 4*sW+d)+1]] : escBADVAL,
+                                                ( 5*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 5*sW+d)+1]] : escBADVAL,
+                                                ( 6*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 6*sW+d)+1]] : escBADVAL,
+                                                ( 7*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 7*sW+d)+1]] : escBADVAL,
+                                                ( 8*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 8*sW+d)+1]] : escBADVAL,
+                                                ( 9*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 9*sW+d)+1]] : escBADVAL,
+                                                (10*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(10*sW+d)+1]] : escBADVAL,
+                                                (11*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(11*sW+d)+1]] : escBADVAL,
+                                                (12*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(12*sW+d)+1]] : escBADVAL,
+                                                (13*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(13*sW+d)+1]] : escBADVAL,
+                                                (14*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(14*sW+d)+1]] : escBADVAL,
+                                                (15*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(15*sW+d)+1]] : escBADVAL);
               }
             }
             else if (ccm->sttype[v] == MP_st) {
               for (d = 0; d < sW; d++) {
-                vec_esc[dsq[j]][v][d] = _mm_setr_epi8((d <= j && ((j^j0)|d) ) ? ccm->oesc[v][dsq[j-(      d)+1]*ccm->abc->Kp+dsq[j]] : BADVAL,
-                                                (   sW+d <= j               ) ? ccm->oesc[v][dsq[j-(   sW+d)+1]*ccm->abc->Kp+dsq[j]] : BADVAL,
-                                                ( 2*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 2*sW+d)+1]*ccm->abc->Kp+dsq[j]] : BADVAL,
-                                                ( 3*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 3*sW+d)+1]*ccm->abc->Kp+dsq[j]] : BADVAL,
-                                                ( 4*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 4*sW+d)+1]*ccm->abc->Kp+dsq[j]] : BADVAL,
-                                                ( 5*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 5*sW+d)+1]*ccm->abc->Kp+dsq[j]] : BADVAL,
-                                                ( 6*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 6*sW+d)+1]*ccm->abc->Kp+dsq[j]] : BADVAL,
-                                                ( 7*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 7*sW+d)+1]*ccm->abc->Kp+dsq[j]] : BADVAL,
-                                                ( 8*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 8*sW+d)+1]*ccm->abc->Kp+dsq[j]] : BADVAL,
-                                                ( 9*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 9*sW+d)+1]*ccm->abc->Kp+dsq[j]] : BADVAL,
-                                                (10*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(10*sW+d)+1]*ccm->abc->Kp+dsq[j]] : BADVAL,
-                                                (11*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(11*sW+d)+1]*ccm->abc->Kp+dsq[j]] : BADVAL,
-                                                (12*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(12*sW+d)+1]*ccm->abc->Kp+dsq[j]] : BADVAL,
-                                                (13*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(13*sW+d)+1]*ccm->abc->Kp+dsq[j]] : BADVAL,
-                                                (14*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(14*sW+d)+1]*ccm->abc->Kp+dsq[j]] : BADVAL,
-                                                (15*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(15*sW+d)+1]*ccm->abc->Kp+dsq[j]] : BADVAL);
+                vec_esc[dsq[j]][v][d] = _mm_setr_epi8((d <= j && ((j^j0)|d) ) ? ccm->oesc[v][dsq[j-(      d)+1]*ccm->abc->Kp+dsq[j]] : escBADVAL,
+                                                (   sW+d <= j               ) ? ccm->oesc[v][dsq[j-(   sW+d)+1]*ccm->abc->Kp+dsq[j]] : escBADVAL,
+                                                ( 2*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 2*sW+d)+1]*ccm->abc->Kp+dsq[j]] : escBADVAL,
+                                                ( 3*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 3*sW+d)+1]*ccm->abc->Kp+dsq[j]] : escBADVAL,
+                                                ( 4*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 4*sW+d)+1]*ccm->abc->Kp+dsq[j]] : escBADVAL,
+                                                ( 5*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 5*sW+d)+1]*ccm->abc->Kp+dsq[j]] : escBADVAL,
+                                                ( 6*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 6*sW+d)+1]*ccm->abc->Kp+dsq[j]] : escBADVAL,
+                                                ( 7*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 7*sW+d)+1]*ccm->abc->Kp+dsq[j]] : escBADVAL,
+                                                ( 8*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 8*sW+d)+1]*ccm->abc->Kp+dsq[j]] : escBADVAL,
+                                                ( 9*sW+d <= j               ) ? ccm->oesc[v][dsq[j-( 9*sW+d)+1]*ccm->abc->Kp+dsq[j]] : escBADVAL,
+                                                (10*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(10*sW+d)+1]*ccm->abc->Kp+dsq[j]] : escBADVAL,
+                                                (11*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(11*sW+d)+1]*ccm->abc->Kp+dsq[j]] : escBADVAL,
+                                                (12*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(12*sW+d)+1]*ccm->abc->Kp+dsq[j]] : escBADVAL,
+                                                (13*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(13*sW+d)+1]*ccm->abc->Kp+dsq[j]] : escBADVAL,
+                                                (14*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(14*sW+d)+1]*ccm->abc->Kp+dsq[j]] : escBADVAL,
+                                                (15*sW+d <= j               ) ? ccm->oesc[v][dsq[j-(15*sW+d)+1]*ccm->abc->Kp+dsq[j]] : escBADVAL);
               }
             }
             else
@@ -343,7 +347,7 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
           if (ccm->sttype[v] == ML_st) {
             for (d = 0; d < delta; d++) {
               tmpary[d] = vec_esc[dsq[j]][v][sW-delta+d];
-              tmp_esc     = (j^j0)|d ? ccm->oesc[v][dsq[j-d+1]] : BADVAL;
+              tmp_esc     = (j^j0)|d ? ccm->oesc[v][dsq[j-d+1]] : escBADVAL;
               tmpary[d] = BYTERSHIFT2(tmpary[d],_mm_set1_epi8(tmp_esc));
             }
             for (d = sW-1; d >= delta; d--) {
@@ -383,6 +387,15 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
       /* Start updating matrix values */
       jp_Sv = j % (W+1);
 
+fprintf(stderr,"\tW %d sW %d\n",W,sW);
+fprintf(stderr,"\t1 ntS: ");
+for (d = 0; d <= W; d++) {
+  int x = d/sW;
+  vec_access = ((uint8_t *) &(vec_ntS[jp_Sv][d%sW])) + x;
+  fprintf(stderr,"%5d",*vec_access);
+}
+fprintf(stderr,"\n");
+
       /* Rule: S -> Sa */
       jp_Sy = (jp_Sv == 0) ? W : jp_Sv-1;
       for (d = 0; d < sW; d++) {
@@ -391,6 +404,14 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
       }
       vec_ntS[jp_Sv][-1] = BYTERSHIFT1(vec_ntS[jp_Sv][sW-1]);
       vec_ntS[jp_Sv][-2] = BYTERSHIFT1(vec_ntS[jp_Sv][sW-2]);
+
+fprintf(stderr,"\t2 ntS: ");
+for (d = 0; d <= W; d++) {
+  int x = d/sW;
+  vec_access = ((uint8_t *) &(vec_ntS[jp_Sv][d%sW])) + x;
+  fprintf(stderr,"%5d",*vec_access);
+}
+fprintf(stderr,"\n");
 
       /* Rule: M -> x_m S y_n */
       for (v = ccm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
@@ -433,6 +454,14 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 //	  }
 	} /*loop over decks v>0 */
       
+fprintf(stderr,"\t3 ntMa:");
+for (d = 0; d <= W; d++) {
+  int x = d/sW;
+  vec_access = ((uint8_t *) &(vec_ntM_all[jp_v][d%sW])) + x;
+  fprintf(stderr,"%5d",*vec_access);
+}
+fprintf(stderr,"\n");
+
         /* Rule: S -> SM */
         __m128i vec_tmp_bifl;
         __m128i vec_tmp_bifr;
@@ -541,15 +570,13 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 //        }
 //      }
       /* update gamma, but only if we're reporting hits to results */
-/*
-fprintf(stderr,"W %d sW %d\n",W,sW);
-for (d = 0; d < sW; d++) {
-  for (int x = 0; x < 16; x++) {
-    vec_access = ((uint8_t *) &(vec_ntS[jp_Sv][d])) + x;
-    if (*vec_access > 250) { fprintf(stderr,"testing for uninitialized value...\n"); }
-  }
+fprintf(stderr,"\t4 ntS: ");
+for (d = 0; d <= W; d++) {
+  int x = d/sW;
+  vec_access = ((uint8_t *) &(vec_ntS[jp_Sv][d%sW])) + x;
+  fprintf(stderr,"%5d",*vec_access);
 }
-*/
+fprintf(stderr,"\n");
       if(results != NULL) if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, jp_Sv, vec_ntS[jp_Sv], results, W, sW)) != eslOK) return status;
 //      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
