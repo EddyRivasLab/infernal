@@ -235,9 +235,8 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
           vec_ntS[jp_v][d] = neginfv;
         }
 
-// FIXME use rotated W-1, W-2 instead
-      vec_ntS[jp_v][-1] = neginfv;
-      vec_ntS[jp_v][-2] = neginfv;
+      vec_ntS[jp_v][-1] = BYTERSHIFT1(vec_ntS[jp_v][sW-1]);
+      vec_ntS[jp_v][-2] = BYTERSHIFT1(vec_ntS[jp_v][sW-2]);
     }
 
   for (v = 0; v < ccm->M; v++) {
@@ -494,6 +493,7 @@ fprintf(stderr,"\n");
             dkindex++;
 
             tmpv = _mm_subs_epu8(_mm_adds_epu8(vec_tmp_bifl,vec_tmp_bifr), tsv_S_SM);
+            tmpv = _mm_subs_epu8(tmpv, biasv); /* both the L and R bif values were already biased */
             vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
           }
           dkindex--;
