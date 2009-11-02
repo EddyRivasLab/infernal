@@ -467,7 +467,7 @@ fprintf(stderr,"\n");
 
         int dkindex = 0;
         for (k = 0; k < W && k <=j; k++) {
-          vec_access = (uint8_t *) (&vec_ntM_all[jp_y][k%sW])+k/sW;
+          vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
           vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
 
           for (d = 0; d < sW; d++) {
