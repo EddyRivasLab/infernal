@@ -254,7 +254,7 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
    */
   for (j = i0; j <= j0; j++) 
     {
-fprintf(stderr,"j = %d\n",j);
+// fprintf(stderr,"j = %d\n",j);
 //      jp_g = j-i0+1; /* j is actual index in dsq, jp_g is offset j relative to start i0 (index in gamma* data structures) */
       cur  = j%2;
       prv  = (j-1)%2;
@@ -386,6 +386,7 @@ fprintf(stderr,"j = %d\n",j);
       /* Start updating matrix values */
       jp_Sv = j % (W+1);
 
+/*
 fprintf(stderr,"\tW %d sW %d\n",W,sW);
 fprintf(stderr,"\t1 ntS: ");
 for (d = 0; d <= W; d++) {
@@ -394,6 +395,7 @@ for (d = 0; d <= W; d++) {
   fprintf(stderr,"%5d",*vec_access);
 }
 fprintf(stderr,"\n");
+*/
 
       /* Rule: S -> Sa */
       jp_Sy = (jp_Sv == 0) ? W : jp_Sv-1;
@@ -404,6 +406,7 @@ fprintf(stderr,"\n");
       vec_ntS[jp_Sv][-1] = BYTERSHIFT1(vec_ntS[jp_Sv][sW-1]);
       vec_ntS[jp_Sv][-2] = BYTERSHIFT1(vec_ntS[jp_Sv][sW-2]);
 
+/*
 fprintf(stderr,"\t2 ntS: ");
 for (d = 0; d <= W; d++) {
   int x = d/sW;
@@ -411,6 +414,7 @@ for (d = 0; d <= W; d++) {
   fprintf(stderr,"%5d",*vec_access);
 }
 fprintf(stderr,"\n");
+*/
 
       /* Rule: M -> x_m S y_n */
       for (v = ccm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
@@ -453,6 +457,7 @@ fprintf(stderr,"\n");
 //	  }
 	} /*loop over decks v>0 */
       
+/*
 fprintf(stderr,"\t3 ntMa:");
 for (d = 0; d <= W; d++) {
   int x = d/sW;
@@ -460,13 +465,14 @@ for (d = 0; d <= W; d++) {
   fprintf(stderr,"%5d",*vec_access);
 }
 fprintf(stderr,"\n");
+*/
 
         /* Rule: S -> SM */
         __m128i vec_tmp_bifl;
         __m128i vec_tmp_bifr;
 
         int dkindex = 0;
-        for (k = 0; k < W && k <=j; k++) {
+        for (k = 0; k <= W && k <=j; k++) {
           vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
           vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
 
@@ -570,6 +576,7 @@ fprintf(stderr,"\n");
 //        }
 //      }
       /* update gamma, but only if we're reporting hits to results */
+/*
 fprintf(stderr,"\t4 ntS: ");
 for (d = 0; d <= W; d++) {
   int x = d/sW;
@@ -577,7 +584,8 @@ for (d = 0; d <= W; d++) {
   fprintf(stderr,"%5d",*vec_access);
 }
 fprintf(stderr,"\n");
-      if(results != NULL) if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, jp_Sv, vec_ntS[jp_Sv], results, W, sW)) != eslOK) return status;
+*/
+      if(results != NULL) if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, j, vec_ntS[jp_Sv], results, W, sW)) != eslOK) return status;
 //      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
 //  if(vsc != NULL) vsc[0] = vsc_root;
@@ -893,9 +901,12 @@ fprintf(stderr,"cutoff = %d\n",cutoff);
     if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, seq->n, cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 
     /* Rudimentary output of results */
+    fprintf(stderr,"%s\n",seq->name);
     for (i = 0; i < results->num_results; i++) {
       fprintf(stderr,"%d\t%d\t%f\n",results->data[i].start,results->data[i].stop,results->data[i].score);
     }
+    fprintf(stderr,"\n");
+    fflush(stderr);
 
     FreeResults(results);
 
