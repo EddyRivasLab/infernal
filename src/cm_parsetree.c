@@ -678,6 +678,7 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   ESL_MSA     *msa   = NULL; /* multiple sequence alignment */
   CMEmitMap_t *emap  = NULL; /* consensus emit map for the CM */
   int          i;            /* counter over traces */
+  int          j;            /* other counter */
   int          v, nd;        /* state, node indices */
   int          cpos;         /* counter over consensus positions (0)1..clen */
   int         *matuse= NULL; /* TRUE if we need a cpos in mult alignment */
@@ -978,13 +979,16 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   ESL_ALLOC(msa->au, sizeof(char) * (strlen(PACKAGE_VERSION)+10));
   sprintf(msa->au, "Infernal %s", PACKAGE_VERSION);
 
+  /* per-seq info */
   for (i = 0; i < nseq; i++)
     {
-      if((status = esl_strdup(sq[i]->name, -1, &(msa->sqname[i]))) != eslOK) goto ERROR;
-      /* TODO: individual SS annotations
-       */
+      esl_msa_SetSeqName(msa, i, sq[i]->name);
+      if (sq[i]->acc[0]  != '\0') esl_msa_SetSeqAccession  (msa, i, sq[i]->acc);
+      if (sq[i]->desc[0] != '\0') esl_msa_SetSeqDescription(msa, i, sq[i]->desc);
+      if (msa->sqlen != NULL) msa->sqlen[i] = sq[i]->n;
       if (wgt == NULL) msa->wgt[i] = 1.0;
       else             msa->wgt[i] = wgt[i];
+      /* TODO: individual SS annotations */
     }
 
   /* Construct the secondary structure consensus line, msa->ss_cons:
