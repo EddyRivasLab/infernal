@@ -135,6 +135,8 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 //  __m128    tmpv;
   __m128i   *tmpary;
   __m128i   *mem_tmpary;
+  __m128i   *maskarray;
+  __m128i   *mem_maskarray;
   uint8_t    tmp_esc;
   uint8_t   *vec_access;
 
@@ -196,10 +198,12 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
   ESL_ALLOC(mem_esc,          sizeof(__m128i  ) * ccm->abc->Kp * ccm->M * (sW) + 15);
   ESL_ALLOC(esc_stale,        sizeof(int     *) * ccm->abc->Kp);
   ESL_ALLOC(mem_tmpary,       sizeof(__m128i  ) * (W+1) + 15);
+  ESL_ALLOC(mem_maskarray,    sizeof(__m128i  ) * (sW) + 15);
 //  ESL_ALLOC(mem_bestr, sizeof(__m128) * sW + 15);
 
 //  vec_bestr = (__m128 *) (((unsigned long int) mem_bestr + 15) & (~0xf));
   tmpary = (__m128i *) (((unsigned long int) mem_tmpary + 15) & (~0xf));
+  maskarray = (__m128i *) (((unsigned long int) mem_maskarray + 15) & (~0xf));
   vec_ntM_v[1] = vec_ntM_v[0] + ccm->M;
   vec_ntM_v[0][0] = (__m128i *) (((unsigned long int) mem_ntM_v + 15) & (~0xf)) + 2;
   vec_ntM_v[1][0] = vec_ntM_v[0][0] + ccm->M * (sW+2);
@@ -249,6 +253,10 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
     vec_ntM_all[0][d] = neginfv;
     vec_ntM_all[1][d] = neginfv;
   }
+  maskarray[0] = _mm_setr_epi8(0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00);
+  for (d = 1; d < sW; d++) {
+    maskarray[d] = _mm_set1_epi8(0x00);
+  }
 
   /* The main loop: scan the sequence from position i0 to j0.
    */
@@ -260,6 +268,12 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
       prv  = (j-1)%2;
       /* precalcuate all possible rolling ptrs into the BEGL deck, so we don't wastefully recalc them inside inner DP loop */
       for(d = 0; d <= W; d++) jp_wA[d] = (j-d)%(W+1);
+
+      tmpv = maskarray[sW-1];
+      for (d = sW-1; d > 0; d--) {
+        maskarray[d] = maskarray[d-1];
+      }
+      maskarray[0] = BYTERSHIFT2(tmpv, _mm_set1_epi8(0xff));
 
 //      /* if do_null3 (act != NULL), update act */
 //      if(act != NULL) { 
@@ -505,6 +519,10 @@ fprintf(stderr,"\n");
           dkindex--;
         }
 
+      for (d = 0; d < sW; d++) {
+        vec_ntS[jp_Sv][d] = _mm_and_si128(vec_ntS[jp_Sv][d],maskarray[d]);
+      }
+
       /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
        * 
        * If local begins are off, the hit must be rooted at v=0.
@@ -612,6 +630,7 @@ fprintf(stderr,"\n");
   free(esc_stale);
 //  free(mem_bestr);
   free(mem_tmpary);
+  free(mem_maskarray);
 //
 //  ESL_DPRINTF1(("SSE_CYKScan() return score: %10.4f\n", vsc_root)); 
 //printf("i0 %d j0 %d W %d sW %d\n",i0,j0,W,sW);
@@ -786,6 +805,11 @@ main(int argc, char **argv)
 
       if (esl_opt_GetBoolean(go, "--mscyk"))
         {
+	  esl_stopwatch_Start(w);
+	  if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, dsq, 1, L, cutoff,    NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+	  esl_stopwatch_Stop(w);
+	  esl_stopwatch_Display(stdout, w, " CPU time: ");
+
           results = CreateResults(INIT_RESULTS);
 	  esl_stopwatch_Start(w);
 	  if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, dsq, 1, L, cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
@@ -903,7 +927,7 @@ fprintf(stderr,"cutoff = %d\n",cutoff);
     /* Rudimentary output of results */
     fprintf(stderr,"%s\n",seq->name);
     for (i = 0; i < results->num_results; i++) {
-      fprintf(stderr,"%d\t%d\t%f\n",results->data[i].start,results->data[i].stop,results->data[i].score);
+      fprintf(stderr,"%d\t%d\t%d\n",results->data[i].start,results->data[i].stop,(int)results->data[i].score);
     }
     fprintf(stderr,"\n");
     fflush(stderr);

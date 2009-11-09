@@ -151,6 +151,7 @@ void         sse_free_vji_matrix(sse_deck_t **a, int M);
 
 static void vecprint_epi16(CM_OPTIMIZED *ocm, __m128i a)
 {
+  int z;
   union {
     __m128i vec;
     int16_t i[8];
@@ -158,7 +159,7 @@ static void vecprint_epi16(CM_OPTIMIZED *ocm, __m128i a)
   float f[8];
 
   x.vec = a;
-  for (int z = 0; z<8; z++) f[z] = (float) x.i[z]/ocm->scale_w;
+  for (z = 0; z<8; z++) f[z] = (float) x.i[z]/ocm->scale_w;
   fprintf(stderr,"%6.2f %6.2f %6.2f %6.2f %6.2f %6.2f %6.2f %6.2f",f[0],f[1],f[2],f[3],f[4],f[5],f[6],f[7]);
 
   return;

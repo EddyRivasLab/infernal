@@ -11,7 +11,7 @@ SHELL  = /bin/sh
 ## your compiler and compiler flags
 #
 CC     = gcc -std=gnu99
-CFLAGS = -g -O0 -mpentiumpro -Wall
+CFLAGS = -g 
 SIMDFLAGS= -msse2
 
 ## other defined flags. 
@@ -63,7 +63,7 @@ test: $(OBJS) ${HDRS}
 ##
 clean:
 	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out libinfernal.a
-	-rm -f sse-bmark sse-cyk sse-mscyk
+	-rm -f sse-bmark sse-cyk sse-mscyk mscyk-test
 
 distclean:
 	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out libinfernal.a
