@@ -87,15 +87,21 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
   __m128i   tmpv, tmpv2;
 
   /* FIXME: arbitrary, ad hoc transitions! */
-  tsc_S_Sa = sreLOG2(0.90);
-  tsc_S_SM = sreLOG2(0.05);
-  tsc_S_e  = sreLOG2(0.05);
+  tsc_S_Sa = sreLOG2(0.80);
+  tsc_S_SM = sreLOG2(0.10);
+  tsc_S_e  = sreLOG2(0.10);
   tsc_M_M  = sreLOG2(0.50);
   tsc_M_S  = sreLOG2(0.50);
   tsv_S_Sa = _mm_set1_epi8(unbiased_byteify(ccm, tsc_S_Sa));
   tsv_S_SM = _mm_set1_epi8(unbiased_byteify(ccm, tsc_S_SM));
   tsv_M_M  = _mm_set1_epi8(unbiased_byteify(ccm, tsc_M_M ));
   tsv_M_S  = _mm_set1_epi8(unbiased_byteify(ccm, tsc_M_S ));
+/*
+fprintf(stderr,"S -> Sa: %d\t", unbiased_byteify(ccm,tsc_S_Sa));
+fprintf(stderr,"S -> SM: %d\t", unbiased_byteify(ccm,tsc_S_SM));
+fprintf(stderr,"M ->  M: %d\t", unbiased_byteify(ccm,tsc_M_M ));
+fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
+*/
 
   /* Contract check */
 //  if(! cm->flags & CMH_BITS)             ESL_FAIL(eslEINCOMPAT, errbuf, "SSE_CYKScan, CMH_BITS flag is not raised.\n");
@@ -135,8 +141,7 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 //  __m128    tmpv;
   __m128i   *tmpary;
   __m128i   *mem_tmpary;
-  __m128i   *maskarray;
-  __m128i   *mem_maskarray;
+  __m128i mask;
   uint8_t    tmp_esc;
   uint8_t   *vec_access;
 
@@ -198,12 +203,10 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
   ESL_ALLOC(mem_esc,          sizeof(__m128i  ) * ccm->abc->Kp * ccm->M * (sW) + 15);
   ESL_ALLOC(esc_stale,        sizeof(int     *) * ccm->abc->Kp);
   ESL_ALLOC(mem_tmpary,       sizeof(__m128i  ) * (W+1) + 15);
-  ESL_ALLOC(mem_maskarray,    sizeof(__m128i  ) * (sW) + 15);
 //  ESL_ALLOC(mem_bestr, sizeof(__m128) * sW + 15);
 
 //  vec_bestr = (__m128 *) (((unsigned long int) mem_bestr + 15) & (~0xf));
   tmpary = (__m128i *) (((unsigned long int) mem_tmpary + 15) & (~0xf));
-  maskarray = (__m128i *) (((unsigned long int) mem_maskarray + 15) & (~0xf));
   vec_ntM_v[1] = vec_ntM_v[0] + ccm->M;
   vec_ntM_v[0][0] = (__m128i *) (((unsigned long int) mem_ntM_v + 15) & (~0xf)) + 2;
   vec_ntM_v[1][0] = vec_ntM_v[0][0] + ccm->M * (sW+2);
@@ -232,8 +235,10 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
 
   for (jp_v = 0; jp_v <= W; jp_v++)
     {
-      vec_ntS[jp_v][0] = _mm_setr_epi8(biased_byteify(ccm, tsc_S_e),BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,
-                                                             BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL);
+      vec_ntS[jp_v][0] = _mm_setr_epi8(ccm->bias_b,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,
+                                            BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL);
+      vec_ntS[jp_v][0] = _mm_subs_epu8(vec_ntS[jp_v][0], _mm_set1_epi8(unbiased_byteify(ccm, tsc_S_e)));
+
       for (d = 1; d < sW; d++)
         {
           vec_ntS[jp_v][d] = neginfv;
@@ -253,10 +258,6 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
     vec_ntM_all[0][d] = neginfv;
     vec_ntM_all[1][d] = neginfv;
   }
-  maskarray[0] = _mm_setr_epi8(0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00);
-  for (d = 1; d < sW; d++) {
-    maskarray[d] = _mm_set1_epi8(0x00);
-  }
 
   /* The main loop: scan the sequence from position i0 to j0.
    */
@@ -268,12 +269,6 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
       prv  = (j-1)%2;
       /* precalcuate all possible rolling ptrs into the BEGL deck, so we don't wastefully recalc them inside inner DP loop */
       for(d = 0; d <= W; d++) jp_wA[d] = (j-d)%(W+1);
-
-      tmpv = maskarray[sW-1];
-      for (d = sW-1; d > 0; d--) {
-        maskarray[d] = maskarray[d-1];
-      }
-      maskarray[0] = BYTERSHIFT2(tmpv, _mm_set1_epi8(0xff));
 
 //      /* if do_null3 (act != NULL), update act */
 //      if(act != NULL) { 
@@ -481,47 +476,47 @@ for (d = 0; d <= W; d++) {
 fprintf(stderr,"\n");
 */
 
-        /* Rule: S -> SM */
-        __m128i vec_tmp_bifl;
-        __m128i vec_tmp_bifr;
+      /* Rule: S -> SM */
+      __m128i vec_tmp_bifl;
+      __m128i vec_tmp_bifr;
 
-        int dkindex = 0;
-        for (k = 0; k <= W && k <=j; k++) {
-          vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
-          vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      int dkindex = 0;
+      for (k = 0; k <= W && k <=j; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
 
-          for (d = 0; d < sW; d++) {
-            if (dkindex >= sW) dkindex -= sW;
-            if      (k <=       d) { vec_tmp_bifl =             vec_ntS[jp_wA[k]][dkindex]; }
-            //else { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,(k-d-1)%sW+1); }
-            else if (k <=  1*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 1); }
-            else if (k <=  2*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 2); }
-            else if (k <=  3*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 3); }
-            else if (k <=  4*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 4); }
-            else if (k <=  5*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 5); }
-            else if (k <=  6*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 6); }
-            else if (k <=  7*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 7); }
-            else if (k <=  8*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 8); }
-            else if (k <=  9*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 9); }
-            else if (k <= 10*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,10); }
-            else if (k <= 11*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,11); }
-            else if (k <= 12*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,12); }
-            else if (k <= 13*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,13); }
-            else if (k <= 14*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,14); }
-            else                   { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,15); }
+        for (d = 0; d < sW; d++) {
+          if (dkindex >= sW) dkindex -= sW;
+          if      (k <=       d) { vec_tmp_bifl =             vec_ntS[jp_wA[k]][dkindex]; }
+          //else { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,(k-d-1)%sW+1); }
+          else if (k <=  1*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 1); }
+          else if (k <=  2*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 2); }
+          else if (k <=  3*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 3); }
+          else if (k <=  4*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 4); }
+          else if (k <=  5*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 5); }
+          else if (k <=  6*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 6); }
+          else if (k <=  7*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 7); }
+          else if (k <=  8*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 8); }
+          else if (k <=  9*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 9); }
+          else if (k <= 10*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,10); }
+          else if (k <= 11*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,11); }
+          else if (k <= 12*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,12); }
+          else if (k <= 13*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,13); }
+          else if (k <= 14*sW+d) { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,14); }
+          else                   { vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,15); }
 
-            dkindex++;
+          dkindex++;
 
-            tmpv = _mm_subs_epu8(_mm_adds_epu8(vec_tmp_bifl,vec_tmp_bifr), tsv_S_SM);
-            tmpv = _mm_subs_epu8(tmpv, biasv); /* both the L and R bif values were already biased */
-            vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
-          }
-          dkindex--;
+          mask = _mm_xor_si128(_mm_or_si128(_mm_cmpeq_epi8(vec_tmp_bifl,neginfv),_mm_cmpeq_epi8(vec_tmp_bifr,neginfv)),_mm_set1_epi8(0xff));
+          tmpv = _mm_subs_epu8(_mm_adds_epu8(vec_tmp_bifl,vec_tmp_bifr), tsv_S_SM);
+          tmpv = _mm_subs_epu8(tmpv, biasv); /* both the L and R bif values were already biased */
+          tmpv = _mm_and_si128(tmpv,mask);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
         }
-
-      for (d = 0; d < sW; d++) {
-        vec_ntS[jp_Sv][d] = _mm_and_si128(vec_ntS[jp_Sv][d],maskarray[d]);
+        dkindex--;
       }
+      vec_ntS[jp_Sv][-1] = BYTERSHIFT1(vec_ntS[jp_Sv][sW-1]);
+      vec_ntS[jp_Sv][-2] = BYTERSHIFT1(vec_ntS[jp_Sv][sW-2]);
 
       /* Finish up with the ROOT_S, state v=0; and deal w/ local begins.
        * 
@@ -630,7 +625,6 @@ fprintf(stderr,"\n");
   free(esc_stale);
 //  free(mem_bestr);
   free(mem_tmpary);
-  free(mem_maskarray);
 //
 //  ESL_DPRINTF1(("SSE_CYKScan() return score: %10.4f\n", vsc_root)); 
 //printf("i0 %d j0 %d W %d sW %d\n",i0,j0,W,sW);
