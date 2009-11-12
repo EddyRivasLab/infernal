@@ -107,6 +107,9 @@ static ESL_OPTIONS options[] = {
   { "--noalign",      eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,       NULL,        "find start/stop/score only; don't do alignments", 8 },
   { "--aln-hbanded",  eslARG_NONE,    FALSE,     NULL, NULL,                  NULL,      NULL,"--noalign",        "use HMM bands to align hits", 8 },
   { "--aln-optacc",   eslARG_NONE,    FALSE,     NULL, NULL,                  NULL, "--aln-hbanded", "--noalign", "align hits with the optimal accuracy algorithm, not CYK", 8 },
+  /* Using only a single CM from a multi-CM file */
+  { "--cm-idx",       eslARG_INT,     NULL,      NULL,"n>0",                 NULL,      NULL, "--cm-name", "only search with CM number <n>    in the CM file",  11 },
+  { "--cm-name",      eslARG_STRING,  NULL,      NULL, NULL,                 NULL,      NULL,  "--cm-idx", "only search with the CM named <s> in the CM file",  11 },
   /* verbose output files */
   { "--tabfile",      eslARG_OUTFILE, NULL,      NULL, NULL,                 NULL,      NULL,"--forecast", "save hits in tabular format to file <f>", 9 },
   { "--gcfile",       eslARG_OUTFILE, NULL,      NULL, NULL,                 NULL,      NULL,        NULL, "save GC content stats of target sequence file to <f>", 9 },
@@ -232,6 +235,8 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       puts("\noptions for returning alignments of search hits:");
       esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
+      puts("\nusing a single CM from a multi-CM file:");
+      esl_opt_DisplayHelp(stdout, go, 11, 2, 80);
       puts("\nverbose output files:");
       esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
       puts("\noptions for selecting output alphabet:");
@@ -264,6 +269,8 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       puts("\noptions for returning alignments of search hits:");
       esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
+      puts("\nusing a single CM from a multi-CM file:");
+      esl_opt_DisplayHelp(stdout, go, 11, 2, 80);
       puts("\nverbose output files:");
       esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
       puts("\noptions for selecting output alphabet:");
@@ -499,6 +506,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   char          *namedashes = NULL;     /* string of dashes for underlining 'target name' column in tab output */
   char          *cm_namedashes = NULL;  /* string of dashes for underlining 'model name' column in tab output */
   int            ni;                    /* index for filling dashes strings */
+  int            used_at_least_one_cm = FALSE; /* only used if --cm-idx and --cm-name options are enabled */
 
   if(w == NULL) cm_Fail("serial_master(): memory error, stopwatch not created.\n");
 
@@ -519,6 +527,14 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       /* potentially overwrite lambdas in cm->stats */
       if (! esl_opt_IsDefault(go, "--lambda")) if((status = overwrite_lambdas(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
       cfg->ncm++;
+
+      if(! esl_opt_IsDefault(go, "--cm-idx")) { 
+	if(cfg->ncm != esl_opt_GetInteger(go, "--cm-idx")) { FreeCM(cm); continue; }
+      }	
+      if(! esl_opt_IsDefault(go, "--cm-name")) { 
+	if(strcmp(cm->name, esl_opt_GetString(go, "--cm-name")) != 0) { FreeCM(cm); continue; }
+      }	
+      used_at_least_one_cm = TRUE;
 
       /* create cm_namedashes string, only used if --tabfile */
       cm_namewidth = ESL_MAX(strlen(cm->name), strlen("model name"));
@@ -605,6 +621,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be searching this file again with another CM */
     }
   if(status != eslEOF) cm_Fail(errbuf);
+  if(! used_at_least_one_cm) { 
+    if(! esl_opt_IsDefault(go, "--cm-idx"))  { cm_Fail("--cm-idx %d enabled, but only %d CMs in the cmfile.\n", esl_opt_GetInteger(go, "--cm-idx"), cfg->ncm); }
+    if(! esl_opt_IsDefault(go, "--cm-name")) { cm_Fail("--cm-name %s enabled, but no CM named %s exists in the cmfile.\n", esl_opt_GetString(go, "--cm-name"), esl_opt_GetString(go, "--cm-name")); }
+  }
 
   if(cfg->ncm > 1 && (! esl_opt_IsDefault(go, "--forecast"))) { 
     fprintf(stdout, "#\n");
@@ -756,10 +776,20 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
   while (xstatus == eslOK && ((status = CMFileRead(cfg->cmfp, errbuf, &(cfg->abc), &cm)) == eslOK))
     {
+      if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
+
       cfg->ncm++;  
+      ESL_DPRINTF1(("MPI master read CM number %d\n", cfg->ncm));
+      if(! esl_opt_IsDefault(go, "--cm-idx")) { 
+	if(cfg->ncm != esl_opt_GetInteger(go, "--cm-idx")) { FreeCM(cm); continue; }
+      }	
+      if(! esl_opt_IsDefault(go, "--cm-name")) { 
+	if(strcmp(cm->name, esl_opt_GetString(go, "--cm-name")) != 0) { FreeCM(cm); continue; }
+      }	
+      used_at_least_one_cm = TRUE;
+
       /* potentially overwrite lambdas in cm->stats */
       if (! esl_opt_IsDefault(go, "--lambda")) if((status = overwrite_lambdas(go, cfg, cm, errbuf)) != eslOK) cm_Fail(errbuf);
-      ESL_DPRINTF1(("MPI master read CM number %d\n", cfg->ncm));
 
       if((status = cm_master_MPIBcast(cm, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
 
@@ -990,6 +1020,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   esl_stopwatch_Destroy(w);
 
   if     (xstatus != eslOK) { fprintf(stderr, "Worker: %d had a problem.\n", wi_error); return xstatus; }
+  else if((! used_at_least_one_cm) && (! esl_opt_IsDefault(go, "--cm-idx")))  { ESL_FAIL(eslEINVAL, errbuf, "--cm-idx %d enabled, but only %d CMs in the cmfile.\n", esl_opt_GetInteger(go, "--cm-idx"), cfg->ncm); }
+  else if((! used_at_least_one_cm) && (! esl_opt_IsDefault(go, "--cm-name"))) { ESL_FAIL(eslEINVAL, errbuf, "--cm-name %s enabled, but no CM named %s exists in the cmfile.\n", esl_opt_GetString(go, "--cm-name"), esl_opt_GetString(go, "--cm-name")); }
   else if(status != eslEOF) return status;  /* problem reading CM file */
   else                      return eslOK;
 

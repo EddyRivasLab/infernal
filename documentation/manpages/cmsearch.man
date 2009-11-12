@@ -687,6 +687,22 @@ given the model, which can be different from the highest
 scoring one.
 
 .TP 
+.BI --cm-idx " <n>"
+If 
+.I cmfile
+contains more than 1 CM, specify that only CM number 
+.I <n>
+be used for searching.
+
+.TP 
+.BI --cm-name " <s>"
+If 
+.I cmfile
+contains more than 1 CM, specify that only the CM named
+.I <s>
+be used for searching.
+
+.TP 
 .BI --tabfile " <f>"
 Create a new output file 
 .I <f>
@@ -730,4 +746,5 @@ Output the hit alignments as RNA sequences alignments. This is true by default.
 .TP
 .B --dna
 Output the hit alignments as DNA sequence alignments. 
+
 

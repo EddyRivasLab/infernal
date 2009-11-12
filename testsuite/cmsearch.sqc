@@ -105,6 +105,11 @@
 2  exercise  cmsearch:3.4.12/32        @cmsearch@  --dna %3.4.12.CM% 1k.fa
 2  exercise  cmsearch:3.4.12/33        @cmsearch@  -T 0 -v %3.4.12.CM% 1k.fa
 
+# test the two options that are only relevant with multi-CM files (and
+# thus weren't tested for tRNA)
+1  exercise  cmsearch:3.4.12/34        @cmsearch@  --cm-idx 2 %3.4.12.CM% 1k.fa
+1  exercise  cmsearch:3.4.12/35        @cmsearch@ --cm-name U3 %3.4.12.CM% 1k.fa
+
 # options requiring a calibrated model
 # trna
 3  exercise  cmsearch:trnac/1        @cmsearch@  --forecast 3 trna.calibrated.cm 1k.fa
@@ -153,6 +158,11 @@
 4  exercise  cmsearch:3.4.12c/16        @cmsearch@  --fil-Smin-hmm 0.001 3.4.12.calibrated.cm 1k.fa
 4  exercise  cmsearch:3.4.12c/17        @cmsearch@  --fil-Smax-hmm 0.25 --fil-A-hmm 3.4.12.calibrated.cm 1k.fa
 4  exercise  cmsearch:3.4.12c/18        @cmsearch@  --fil-Smin-hmm 0.03 --fil-Smax-hmm 0.25 --fil-A-hmm 3.4.12.calibrated.cm 1k.fa
+
+# test the two options that are only relevant with multi-CM files (and
+# thus weren't tested for tRNA)
+1  exercise  cmsearch:3.4.12c/19        @cmsearch@  --cm-idx 2 3.4.12.calibrated.cm 1k.fa
+1  exercise  cmsearch:3.4.12c/20        @cmsearch@ --cm-name U3 3.4.12.calibrated.cm 1k.fa
 
 #development options
 # with calibrated model (not always necessary to be run with
