@@ -131,6 +131,7 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
   __m128i   *mem_esc;
   __m128i ***vec_esc;
   __m128i    biasv;
+  __m128i    basev;
 //  __m128    zerov;
   __m128i    neginfv;
 //  __m128   *mem_bestr = NULL;
@@ -141,7 +142,8 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
 //  __m128    tmpv;
   __m128i   *tmpary;
   __m128i   *mem_tmpary;
-  __m128i mask;
+  __m128i    omask, umask;	/* overflow mask, underflow mask */
+  __m128i    ocx;		/* overflow correction term for BIF */
   uint8_t    tmp_esc;
   uint8_t   *vec_access;
 
@@ -191,6 +193,7 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
 //  zerov = _mm_setzero_ps();
   neginfv = _mm_set1_epi8(BADVAL);
   biasv   = _mm_set1_epi8(ccm->bias_b);
+  basev   = _mm_set1_epi8(ccm->base_b);
   ESL_ALLOC(vec_ntM_v,        sizeof(__m128i**) * 2);
   ESL_ALLOC(vec_ntM_v[0],     sizeof(__m128i *) * 2 * ccm->M);
   ESL_ALLOC(mem_ntM_v,        sizeof(__m128i  ) * 2 * ccm->M * (sW+2) + 15);
@@ -235,7 +238,7 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
 
   for (jp_v = 0; jp_v <= W; jp_v++)
     {
-      vec_ntS[jp_v][0] = _mm_setr_epi8(ccm->bias_b,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,
+      vec_ntS[jp_v][0] = _mm_setr_epi8(ccm->base_b,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,
                                             BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL);
       vec_ntS[jp_v][0] = _mm_subs_epu8(vec_ntS[jp_v][0], _mm_set1_epi8(unbiased_byteify(ccm, tsc_S_e)));
 
@@ -507,10 +510,16 @@ fprintf(stderr,"\n");
 
           dkindex++;
 
-          mask = _mm_xor_si128(_mm_or_si128(_mm_cmpeq_epi8(vec_tmp_bifl,neginfv),_mm_cmpeq_epi8(vec_tmp_bifr,neginfv)),_mm_set1_epi8(0xff));
-          tmpv = _mm_subs_epu8(_mm_adds_epu8(vec_tmp_bifl,vec_tmp_bifr), tsv_S_SM);
-          tmpv = _mm_subs_epu8(tmpv, biasv); /* both the L and R bif values were already biased */
-          tmpv = _mm_and_si128(tmpv,mask);
+          umask= _mm_xor_si128(_mm_or_si128(_mm_cmpeq_epi8(vec_tmp_bifl,neginfv),_mm_cmpeq_epi8(vec_tmp_bifr,neginfv)),_mm_set1_epi8(0xff));
+          tmpv = _mm_adds_epu8(vec_tmp_bifl,vec_tmp_bifr);
+          omask= _mm_cmpeq_epi8(tmpv,_mm_set1_epi8(0xff));
+          tmpv = _mm_subs_epu8(tmpv, tsv_S_SM);
+          tmpv = _mm_subs_epu8(tmpv, basev); /* both the L and R bif values already include base offset */
+          ocx  = _mm_add_epi8(_mm_add_epi8(vec_tmp_bifl,vec_tmp_bifr),_mm_set1_epi8(1)); /* Unsaturated math, purposefully overflow */
+          ocx  = _mm_adds_epi8(ocx, tmpv); /* add overflowed remainder, saturate if necessary */
+          ocx  = _mm_and_si128(ocx, omask); /* zero values that didn't overflow */
+          tmpv = _mm_max_epu8(tmpv, ocx); /* max should select correct larger values for cases that overflowed */
+          tmpv = _mm_and_si128(tmpv, umask); /* underflow mask zeroes sum if an operand was zero (0 = -infty) */
           vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
         }
         dkindex--;
@@ -906,7 +915,7 @@ fprintf(stderr,"scale %f base %d bias %d \n",ccm->scale_b,ccm->base_b,ccm->bias_
 
   i_cutoff = esl_opt_GetInteger(go, "--cutoff");
   /* Need to scale and offset, but not change sign -> switch sign ahead of time */
-  cutoff = biased_byteify(ccm,-i_cutoff);
+  cutoff = ccm->base_b + unbiased_byteify(ccm,-i_cutoff);
 fprintf(stderr,"cutoff = %d\n",cutoff);
 
   seq = esl_sq_Create();
