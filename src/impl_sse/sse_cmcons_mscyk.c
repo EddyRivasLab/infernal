@@ -82,20 +82,14 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
 //  double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
-  float     tsc_S_Sa, tsc_S_SM, tsc_S_e, tsc_M_M, tsc_M_S;
-  __m128i   tsv_S_Sa, tsv_S_SM,          tsv_M_M, tsv_M_S;
+  __m128i   tsv_S_Sa, tsv_S_SM, tsv_S_e, tsv_M_M, tsv_M_S;
   __m128i   tmpv, tmpv2;
 
-  /* FIXME: arbitrary, ad hoc transitions! */
-  tsc_S_Sa = sreLOG2(0.80);
-  tsc_S_SM = sreLOG2(0.10);
-  tsc_S_e  = sreLOG2(0.10);
-  tsc_M_M  = sreLOG2(0.50);
-  tsc_M_S  = sreLOG2(0.50);
-  tsv_S_Sa = _mm_set1_epi8(unbiased_byteify(ccm, tsc_S_Sa));
-  tsv_S_SM = _mm_set1_epi8(unbiased_byteify(ccm, tsc_S_SM));
-  tsv_M_M  = _mm_set1_epi8(unbiased_byteify(ccm, tsc_M_M ));
-  tsv_M_S  = _mm_set1_epi8(unbiased_byteify(ccm, tsc_M_S ));
+  tsv_S_Sa = _mm_set1_epi8(ccm->tsb_S_Sa);
+  tsv_S_SM = _mm_set1_epi8(ccm->tsb_S_SM);
+  tsv_S_e  = _mm_set1_epi8(ccm->tsb_S_e );
+  tsv_M_M  = _mm_set1_epi8(ccm->tsb_M_M );
+  tsv_M_S  = _mm_set1_epi8(ccm->tsb_M_S );
 /*
 fprintf(stderr,"S -> Sa: %d\t", unbiased_byteify(ccm,tsc_S_Sa));
 fprintf(stderr,"S -> SM: %d\t", unbiased_byteify(ccm,tsc_S_SM));
@@ -240,7 +234,7 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
     {
       vec_ntS[jp_v][0] = _mm_setr_epi8(ccm->base_b,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,
                                             BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL);
-      vec_ntS[jp_v][0] = _mm_subs_epu8(vec_ntS[jp_v][0], _mm_set1_epi8(unbiased_byteify(ccm, tsc_S_e)));
+      vec_ntS[jp_v][0] = _mm_subs_epu8(vec_ntS[jp_v][0], tsv_S_e);
 
       for (d = 1; d < sW; d++)
         {
@@ -687,6 +681,12 @@ static ESL_OPTIONS options[] = {
   { "-w",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute new SSE 4x CYK scan implementation", 0 },
   { "--mscyk",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute new SSE 16x MSCYK scan implementation", 0 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute non-banded optimized CYK scan implementation", 0 },
+  { "--cutoff",  eslARG_REAL,   "0.0", NULL, NULL,  NULL,  NULL, NULL, "set bitscore cutoff to <x>",                     0 },
+  { "--S_Sa",    eslARG_REAL,  "0.60", NULL, NULL,  NULL,  NULL, NULL, "S emit single residue probability <x>",          0 },
+  { "--S_SM",    eslARG_REAL,  "0.20", NULL, NULL,  NULL,  NULL, NULL, "S add model segment probability <x>",            0 },
+  { "--S_e",     eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "S end probability (unsettable, 1-S_Sa-S_SM)",    0 },
+  { "--M_M",     eslARG_REAL,  "0.75", NULL, NULL,  NULL,  NULL, NULL, "M continue model segment probability <x>",       0 },
+  { "--M_S",     eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "M end model segment probability (unsettable, 1-M_M)", 0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -715,6 +715,8 @@ main(int argc, char **argv)
   char            errbuf[cmERRBUFSIZE];
   CM_CONSENSUS   *ccm;
   uint8_t         cutoff;
+  float           f_cutoff;
+  float           f_S_Sa, f_S_SM, f_S_e, f_M_M, f_M_S;
   search_results_t *results = NULL;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
@@ -738,7 +740,25 @@ main(int argc, char **argv)
   if (esl_opt_GetBoolean(go, "--mscyk"))
     {
       ccm = cm_consensus_Convert(cm);
-      cutoff = biased_byteify(ccm,0);
+      f_cutoff = esl_opt_GetReal(go, "--cutoff");
+      /* Need to scale and offset, but not change sign -> switch sign ahead of time */
+      cutoff = ccm->base_b + unbiased_byteify(ccm,-f_cutoff);
+
+      /* Set meta-model parameters */
+      f_S_Sa = esl_opt_GetReal(go, "--S_Sa");
+      if (f_S_Sa <= 0 || f_S_Sa >= 1) cm_Fail("S->Sa must be between zero and 1\n");
+      f_S_SM = esl_opt_GetReal(go, "--S_SM");
+      if (f_S_SM <= 0 || f_S_SM >= 1) cm_Fail("S->SM must be between zero and 1\n");
+      f_S_e = 1. - f_S_Sa - f_S_SM;
+      if (f_S_e <= 0) cm_Fail("Error: S->e out of range\n");
+      f_M_M = esl_opt_GetReal(go, "--M_M");
+      if (f_M_M <= 0 || f_M_M >= 1) cm_Fail("M->M must be between zero and 1\n");
+      f_M_S = 1. - f_M_M;
+      ccm->tsb_S_Sa = unbiased_byteify(ccm,sreLOG2(f_S_Sa));
+      ccm->tsb_S_SM = unbiased_byteify(ccm,sreLOG2(f_S_SM));
+      ccm->tsb_S_e  = unbiased_byteify(ccm,sreLOG2(f_S_e ));
+      ccm->tsb_M_M  = unbiased_byteify(ccm,sreLOG2(f_M_M ));
+      ccm->tsb_M_S  = unbiased_byteify(ccm,sreLOG2(f_M_S ));
     }
   
   dmin = NULL; dmax = NULL;
@@ -872,7 +892,12 @@ main(int argc, char **argv)
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
   { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
-  { "--cutoff",  eslARG_INT,     "10", NULL, NULL,  NULL,  NULL, NULL, "set cutoff to <n> (0..255)",                     0 },
+  { "--cutoff",  eslARG_REAL,   "0.0", NULL, NULL,  NULL,  NULL, NULL, "set bitscore cutoff to <x>",                     0 },
+  { "--S_Sa",    eslARG_REAL,  "0.60", NULL, NULL,  NULL,  NULL, NULL, "S emit single residue probability <x>",          0 },
+  { "--S_SM",    eslARG_REAL,  "0.20", NULL, NULL,  NULL,  NULL, NULL, "S add model segment probability <x>",            0 },
+  { "--S_e",     eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "S end probability (unsettable, 1-S_Sa-S_SM)",    0 },
+  { "--M_M",     eslARG_REAL,  "0.75", NULL, NULL,  NULL,  NULL, NULL, "M continue model segment probability <x>",       0 },
+  { "--M_S",     eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "M end model segment probability (unsettable, 1-M_M)", 0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile> <seqfile>";
@@ -895,7 +920,8 @@ main(int argc, char **argv)
   char            errbuf[cmERRBUFSIZE];
   CM_CONSENSUS   *ccm;
   uint8_t         cutoff;
-  int             i_cutoff;
+  float           f_cutoff;
+  float           f_S_Sa, f_S_SM, f_S_e, f_M_M, f_M_S;
   int             format = eslSQFILE_UNKNOWN;
   search_results_t *results = NULL;
 
@@ -910,12 +936,26 @@ main(int argc, char **argv)
   ConfigCM(cm, errbuf, TRUE, NULL, NULL); /* TRUE says: calculate W */
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
   ccm = cm_consensus_Convert(cm);
-fprintf(stderr,"scale %f base %d bias %d \n",ccm->scale_b,ccm->base_b,ccm->bias_b);
 
-  i_cutoff = esl_opt_GetInteger(go, "--cutoff");
+  /* Set meta-model parameters */
+  f_S_Sa = esl_opt_GetReal(go, "--S_Sa");
+  if (f_S_Sa <= 0 || f_S_Sa >= 1) cm_Fail("S->Sa must be between zero and 1\n");
+  f_S_SM = esl_opt_GetReal(go, "--S_SM");
+  if (f_S_SM <= 0 || f_S_SM >= 1) cm_Fail("S->SM must be between zero and 1\n");
+  f_S_e = 1. - f_S_Sa - f_S_SM;
+  if (f_S_e <= 0) cm_Fail("Error: S->e out of range\n");
+  f_M_M = esl_opt_GetReal(go, "--M_M");
+  if (f_M_M <= 0 || f_M_M >= 1) cm_Fail("M->M must be between zero and 1\n");
+  f_M_S = 1. - f_M_M;
+  ccm->tsb_S_Sa = unbiased_byteify(ccm,sreLOG2(f_S_Sa));
+  ccm->tsb_S_SM = unbiased_byteify(ccm,sreLOG2(f_S_SM));
+  ccm->tsb_S_e  = unbiased_byteify(ccm,sreLOG2(f_S_e ));
+  ccm->tsb_M_M  = unbiased_byteify(ccm,sreLOG2(f_M_M ));
+  ccm->tsb_M_S  = unbiased_byteify(ccm,sreLOG2(f_M_S ));
+
+  f_cutoff = esl_opt_GetReal(go, "--cutoff");
   /* Need to scale and offset, but not change sign -> switch sign ahead of time */
-  cutoff = ccm->base_b + unbiased_byteify(ccm,-i_cutoff);
-fprintf(stderr,"cutoff = %d\n",cutoff);
+  cutoff = ccm->base_b + unbiased_byteify(ccm,-f_cutoff);
 
   seq = esl_sq_Create();
   while ( esl_sqio_Read(sqfp, seq) == eslOK)
