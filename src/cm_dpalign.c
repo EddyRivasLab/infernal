@@ -3576,8 +3576,8 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 		       * Bug fix post infernal-1.0.2 release.
 		       * Addition of 2-line if statement beginning
 		       * "if(((d == k...)"  This is i15 in BUGTRAX,
-		       * fixed as of svn revision 3055 in infernal 1.0
-		       * release branch, and revision 3056 in infernal
+		       * fixed as of svn revision 3056 in infernal 1.0
+		       * release branch, and revision 3057 in infernal
 		       * trunk.  
 		       * Bug description: In very rare cases (1 case
 		       * in the 1.1 million SSU sequences in release
@@ -3977,8 +3977,8 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
 		     * Bug fix post infernal-1.0.2 release in
 		     * "if(((sc = FLogsum..."  statement above. 
 		     * This is i15 in BUGTRAX, fixed as of svn revision
-		     * 3055 in infernal 1.0 release branch, and revision
-		     * 3056 in infernal trunk. 
+		     * 3056 in infernal 1.0 release branch, and revision
+		     * 3057 in infernal trunk. 
 		     * Bug description:
 		     * See analogous section and comment in
 		     * optimal_accuracy_align_hb() above. In that
