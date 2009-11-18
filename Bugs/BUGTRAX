@@ -358,3 +358,61 @@ and in the main infernal trunk as of revision 2828.
 See ~/nawrockie/notebook/9_0612_inf_bug_cmalign_enone/00LOG.
 for log of how it was fixed.
 //
+
+ID              i15
+TITLE		cmalign optimal accuracy bifurcation with impossible child
+STATUS          CLOSED
+XREF            See ~/nawrockie/notebook/9_1116_inf_cmalign_bug
+REPORTED_BY     EPN
+CLOSED_DATE     EPN, Tue Nov 17 18:05:21 2009
+DESCRIPTION    
+
+This bug is due to another unforeseen pitfall of my optimal accuracy
+alignment implementation, that does not occur in CYK or Inside
+implementations. In the function
+cm_dpalign.c::optimal_accuracy_align_hb(), when the DP cell
+alpha[v][j][d] for a B state is being filled in with the max
+FLogsum(alpha[y][j-k][d-k], alpha[z][j][k]) for left child BEGL_S (y)
+and right child BEGR_S (z) and choice of right fragment length k, it
+is possible that either alpha[y][j-k][d-k] and alpha[z][j][k] have
+score equal to IMPOSSIBLE *AND* imply a non-zero length parse subtree
+(i.e either d-k or k is non-zero), and the score of the non-IMPOSSIBLE
+child is sufficiently high to make the combination of it and
+IMPOSSIBLE in FLogsum(IMPOSSIBLE, alpha[z][j][k]) be the max score for
+all possible choices of k.  The FLogsum is used in this instance b/c
+the optimal accuracy alpha matrix is storing the log of the summed
+probability of emitting all residues from i..j from left subtree
+(i=j-d+1..j-k) and from right subtree (j-k+1..j).
+
+When the above case occurs, alpha[z][j][k] implies an impossible
+parsetree b/c either the right or left subtree has an IMPOSSIBLE score
+yet must emit some residues, which must have greater than zero
+probability (IMPOSSIBLE implies zero probability), and it can result
+in a downstream segmentation fault during traceback of the OA alpha
+matrix. This is extremely rare. I only encountered it late in
+pre-testing the v0.1 release of SSU-ALIGN.  The bug occured and caused
+a seg fault for a single sequence out of the 1.1 million SSU sequences
+of release 10.15 of RDP.
+
+I fixed the bug by adding code to explicity check to make sure that
+neither (alpha[y][j-k][d-k] == IMPOSSIBLE && d-k != 0), nor
+(alpha[z][j][k] == IMPOSSIBLE and k != 0) before updating
+alpha[v][j][d] and the shadow matrix value. I also made the analogous
+change in the non-banded version of the function
+cm_dpalign.c::optimal_accuracy_align(), even though I'm pretty sure
+the bug could never actually occur when bands are not used. I figured
+it was better safe than sorry in this case and the extra running time
+is not a big concern b/c if speed is desired, the non-banded function
+would not be used anyhow.
+
+This bug was fixed in the infernal 1.0 release branch as of revision
+3055, which is a post-1.0.2 svn revision of the infernal-1.0 branch,
+and in the main infernal trunk as of revision 3056.
+
+See ~/nawrockie/notebook/9_1116_inf_cmalign_bug/00LOG.
+for more information on this bug and how it was fixed.
+
+
+
+
+

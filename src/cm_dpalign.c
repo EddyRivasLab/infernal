@@ -3239,6 +3239,8 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
   int      dp_y_sd;            /* dp_y - sd */
   int      dpn, dpx;           /* minimum/maximum dp_v */
   int      kp_z;               /* k (in the d dim) index for state z in alpha w/mem eff bands */
+  int      jp_y_minus_k;       /* jp_y - k, used in one loop, stored to avoid calc'ing twice */
+  int      dp_y_minus_k;       /* dp_y - k, used in one loop, stored to avoid calc'ing twice */
   int      kn, kx;             /* current minimum/maximum k value */
   int      Wp;                 /* W oalso changes depending on state */
   float    tsc;                /* a transition score */
@@ -3548,17 +3550,55 @@ optimal_accuracy_align_hb(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, i
 	       */
 	      kp_z = k-hdmin[z][jp_z];
 	      dp_y = d-hdmin[y][jp_y-k];
-	      
-	      if ((sc = FLogsum(alpha[y][jp_y-k][dp_y - k], alpha[z][jp_z][kp_z])) 
-		  > alpha[v][jp_v][dp_v]) { 
-		alpha[v][jp_v][dp_v] = sc;
-		kshadow[v][jp_v][dp_v] = kp_z;
-		/* note: we take the logsum here, because we're keeping track of the
-		 * log of the summed probability of emitting all residues up to this
-		 * point, (from i..j) from left subtree (i=j-d+1..j-k) and from the 
-		 * right subtree. (j-k+1..j)
-		 */
-	      }
+	      jp_y_minus_k = jp_y-k;
+	      dp_y_minus_k = dp_y-k;
+
+	      if((sc = FLogsum(alpha[y][jp_y_minus_k][dp_y_minus_k], alpha[z][jp_z][kp_z])) > alpha[v][jp_v][dp_v]) 
+		{
+		  if(((d == k) || (NOT_IMPOSSIBLE(alpha[y][jp_y_minus_k][dp_y_minus_k]))) && /* left subtree can only be IMPOSSIBLE if it has length 0 (in which case d==k, and d-k=0) */
+		     ((k == 0) || (NOT_IMPOSSIBLE(alpha[z][jp_z][kp_z]))))                   /* right subtree can only be IMPOSSIBLE if it has length 0 (in which case k==0) */
+		    { 
+		      alpha[v][jp_v][dp_v] = sc;
+		      kshadow[v][jp_v][dp_v] = kp_z;
+		      /* Note: we take the logsum here, because we're
+		       * keeping track of the log of the summed probability
+		       * of emitting all residues up to this point, (from
+		       * i..j) from left subtree (i=j-d+1..j-k) and from the
+		       * right subtree. (j-k+1..j).  
+		       * 
+		       * EPN, Tue Nov 17 09:57:59 2009: 
+		       * Bug fix post infernal-1.0.2 release.
+		       * Addition of 2-line if statement beginning
+		       * "if(((d == k...)"  This is i15 in BUGTRAX,
+		       * fixed as of svn revision 3056 in infernal 1.0
+		       * release branch, and revision 3057 in infernal
+		       * trunk.  
+		       * Bug description: In very rare cases (1 case
+		       * in the 1.1 million SSU sequences in release
+		       * 10_15 of RDP), this step will add two alpha
+		       * values (alpha[y][jp_y_minus_k][dp_y_minus_k]
+		       * for left subtree, and alpha[z][jp_z][kp_z]
+		       * for right subtree) where one of them is
+		       * IMPOSSIBLE and the corresponding subtree
+		       * length ('d-k' in left subtree, or 'k' if right
+		       * subtree) is non-zero, yet their FLogsum
+		       * (which equals the value of the non-IMPOSSIBLE
+		       * cell) is sufficiently high to be part of the
+		       * optimally accurate traceback. This will
+		       * probably cause a seg fault later b/c it
+		       * implies a left or right subtree that is
+		       * IMPOSSIBLE. It is okay if an IMPOSSIBLE
+		       * scoring subtree has length 0 b/c 0 residues
+		       * will contribute nothing to the summed log
+		       * probability (nothing corresponds to a score
+		       * of IMPOSSIBLE). We handle this case here by
+		       * explicitly checking if either left or right
+		       * subtree cell is IMPOSSIBLE with non-zero
+		       * length before reassigning
+		       * alpha[v][jp_v][dp_v].
+		       */
+		    }
+		}
 	    }
 	  }
 	}
@@ -3913,21 +3953,65 @@ optimal_accuracy_align(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, int i0, int 
 	j = i0-1+jp;
 	for (d = 0; d <= jp; d++) {
 	  for (k = 0; k <= d; k++) {
-	    if ((sc = FLogsum(alpha[y][j-k][d-k], alpha[z][j][k])) > alpha[v][j][d]) { 
-	      alpha[v][j][d] = sc;
-	      kshad[j][d]    = k;
-	      /* note: we take the logsum here, because we're keeping track of the
-	       * log of the summed probability of emitting all residues up to this
-	       * point, (from i..j) from left subtree (i=j-d+1..j-k) and from the 
-	       * right subtree. (j-k+1..j)
-	       */
-	    }
+	    if ((sc = FLogsum(alpha[y][j-k][d-k], alpha[z][j][k])) > alpha[v][j][d])
+	      {
+		if(((d == k) || (NOT_IMPOSSIBLE(alpha[y][j-k][d-k]))) && /* left subtree can only be IMPOSSIBLE if it has length 0 (in which case d==k, and d-k=0) */
+		   ((k == 0) || (NOT_IMPOSSIBLE(alpha[z][j][k]))))       /* right subtree can only be IMPOSSIBLE if it has length 0 (in which case k==0) */
+		  {
+		    alpha[v][j][d] = sc;
+		    kshad[j][d]    = k;
+		    /* Note: we take the logsum here, because we're keeping track of the
+		     * log of the summed probability of emitting all residues up to this
+		     * point, (from i..j) from left subtree (i=j-d+1..j-k) and from the 
+		     * right subtree. (j-k+1..j)
+		     * 
+		     * EPN, Tue Nov 17 10:53:13 2009 
+		     * Bug fix post infernal-1.0.2 release in
+		     * "if(((sc = FLogsum..."  statement above. 
+		     * This is i15 in BUGTRAX, fixed as of svn revision
+		     * 3056 in infernal 1.0 release branch, and revision
+		     * 3057 in infernal trunk. 
+		     * Bug description:
+		     * See analogous section and comment in
+		     * optimal_accuracy_align_hb() above. In that
+		     * function, in very rare cases (1 case in the 1.1
+		     * million SSU sequences in release 10_15 of RDP),
+		     * this step will add two alpha values
+		     * (alpha[y][j-k][d-k] for left subtree, and
+		     * alpha[z][j][k] for right subtree) where one of
+		     * them is IMPOSSIBLE and the corresponding
+		     * subtree length ('d-k' in left subtree, or 'k'
+		     * if right subtree) is non-zero, yet their
+		     * FLogsum (which equals the value of the
+		     * non-IMPOSSIBLE cell) is sufficiently high to be
+		     * part of the optimally accurate traceback. This
+		     * will probably cause a seg fault later b/c it
+		     * implies a left or right subtree that is
+		     * IMPOSSIBLE. It is okay if an IMPOSSIBLE scoring
+		     * subtree has length 0 b/c 0 residues will
+		     * contribute nothing to the summed log
+		     * probability (nothing corresponds to a score of
+		     * IMPOSSIBLE). We handle this case here by
+		     * explicitly checking if either left or right
+		     * subtree cell is IMPOSSIBLE with non-zero length
+		     * before reassigning alpha[v][j][d].  I'm not
+		     * sure if this is even possible in the non-banded
+		     * function (this function), but I included the
+		     * analogous fix here (the NOT_IMPOSSIBLE() calls)
+		     * in case it was ever possible. This will slow
+		     * down the implementation, but I'd rather err on
+		     * the side of caution here, since we don't care
+		     * so much about speed in the non-banded function,
+		     * and b/c finding this bug again if the
+		     * non-banded function can have the bug would be a
+		     * pain in the ass.
+		     */		 
+		  }
+	      }
 	  }
 	}
       }
-    }
-				/* finished calculating deck v. */
-      
+    } 			/* finished calculating deck v. */
     if(cm->flags & CMH_LOCAL_BEGIN) {
       if (alpha[v][j0][W] > bsc) {
 	b   = v;
