@@ -41,3 +41,9 @@
 # i13 - cmalign sub alignment illegal CM
 2 exercise   i13/cmalign-sub-cm ./i13 @cmbuild@ @cmalign@
 
+# i14 - cmalign optimal accuracy zero length parsetree
+2 exercise   i14/cmalign-oa-zero ./i14 @cmbuild@ @cmalign@
+
+# i15 - cmalign optimal accuracy bif with impossible children
+2 exercise   i15/cmalign-bif-impossible-child ./i15 @cmbuild@ @cmalign@
+
