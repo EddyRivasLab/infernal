@@ -516,9 +516,8 @@ fprintf(stderr,"\n");
           tmpv = _mm_subs_epu8(tmpv, tsv_S_SM);
           tmpv = _mm_subs_epu8(tmpv, basev); /* both the L and R bif values already include base offset */
           ocx  = _mm_add_epi8(_mm_add_epi8(vec_tmp_bifl,vec_tmp_bifr),_mm_set1_epi8(1)); /* Unsaturated math, purposefully overflow */
-          ocx  = _mm_adds_epi8(ocx, tmpv); /* add overflowed remainder, saturate if necessary */
           ocx  = _mm_and_si128(ocx, omask); /* zero values that didn't overflow */
-          tmpv = _mm_max_epu8(tmpv, ocx); /* max should select correct larger values for cases that overflowed */
+          tmpv = _mm_adds_epu8(tmpv, ocx); /* saturated add of overflow amount */
           tmpv = _mm_and_si128(tmpv, umask); /* underflow mask zeroes sum if an operand was zero (0 = -infty) */
           vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
         }
