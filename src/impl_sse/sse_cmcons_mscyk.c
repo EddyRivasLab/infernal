@@ -603,6 +603,7 @@ fprintf(stderr,"\n");
       if(results != NULL) if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, j, vec_ntS[jp_Sv], results, W, sW)) != eslOK) return status;
 //      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
+//fprintf(stdout,"%4d %4d %4d\t",j0-W+1,j0,*(((uint8_t *) &(vec_ntS[j0 % (W+1)][W%sW]))+W/sW));
 //  if(vsc != NULL) vsc[0] = vsc_root;
 //
   /* If recovering hits in a non-greedy manner, do the traceback.
@@ -619,7 +620,13 @@ fprintf(stderr,"\n");
   free(jp_wA);
 //  if (ret_vsc != NULL) *ret_vsc         = vsc;
 //  else free(vsc);
-//  if (ret_sc != NULL) *ret_sc = vsc_root;
+  if (ret_sc != NULL) {
+    int max = 0;
+    for (i = 0; i < results->num_results; i++) {
+      if ((int)results->data[i].score > max) { max = results->data[i].score; }
+    }
+    *ret_sc = (max-ccm->base_b)/ccm->scale_b;
+  }
   free(vec_ntM_v[0]);      free(vec_ntM_v);      free(mem_ntM_v);
   free(vec_ntM_all);    free(mem_ntM_all);
   free(vec_ntS);        free(mem_ntS);
@@ -810,11 +817,13 @@ main(int argc, char **argv)
       dsq = seqs_to_aln->sq[i]->dsq;
       cm->search_opts  &= ~CM_SEARCH_INSIDE;
 
+/*
       esl_stopwatch_Start(w);
       if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
+*/
 
       if (esl_opt_GetBoolean(go, "-w")) 
 	{
@@ -827,15 +836,10 @@ main(int argc, char **argv)
 
       if (esl_opt_GetBoolean(go, "--mscyk"))
         {
-	  esl_stopwatch_Start(w);
-	  if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, dsq, 1, L, cutoff,    NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	  esl_stopwatch_Stop(w);
-	  esl_stopwatch_Display(stdout, w, " CPU time: ");
-
           results = CreateResults(INIT_RESULTS);
 	  esl_stopwatch_Start(w);
 	  if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, dsq, 1, L, cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
-	  //printf("%4d %-30s %10.4f bits ", (i+1), "SSE_CYKScan(): ", sc);
+	  printf("%4d %-30s %10.4f bits ", (i+1), "SSE_MSCYK(): ", sc);
 	  esl_stopwatch_Stop(w);
 	  esl_stopwatch_Display(stdout, w, " CPU time: ");
           FreeResults(results);
@@ -923,6 +927,7 @@ main(int argc, char **argv)
   float           f_cutoff;
   float           f_S_Sa, f_S_SM, f_S_e, f_M_M, f_M_S;
   int             format = eslSQFILE_UNKNOWN;
+  int             max, imax, jmax;
   search_results_t *results = NULL;
 
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
@@ -936,6 +941,9 @@ main(int argc, char **argv)
   ConfigCM(cm, errbuf, TRUE, NULL, NULL); /* TRUE says: calculate W */
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
   ccm = cm_consensus_Convert(cm);
+
+if(ccm == NULL) cm_Fail("ccm NULL!\n");
+if(ccm->oesc == NULL) cm_Fail("oesc NULL!\n");
 
   /* Set meta-model parameters */
   f_S_Sa = esl_opt_GetReal(go, "--S_Sa");
@@ -962,17 +970,22 @@ main(int argc, char **argv)
   {
     if (seq->n == 0) continue;
     if (seq->dsq == NULL) esl_sq_Digitize(abc, seq);
+    fprintf(stdout,"%s\t",seq->name);
   
     results = CreateResults(INIT_RESULTS);
     if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, seq->n, cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 
     /* Rudimentary output of results */
-    fprintf(stderr,"%s\n",seq->name);
+    max = 0;
     for (i = 0; i < results->num_results; i++) {
-      fprintf(stderr,"%d\t%d\t%d\n",results->data[i].start,results->data[i].stop,(int)results->data[i].score);
+      if ((int)results->data[i].score > max) {
+        max = results->data[i].score;
+        imax= results->data[i].start;
+        jmax= results->data[i].stop;
+      }
     }
-    fprintf(stderr,"\n");
-    fflush(stderr);
+    fprintf(stdout,"%4d %4d %4d\n",imax,jmax,max);
+    fflush(stdout);
 
     FreeResults(results);
 
