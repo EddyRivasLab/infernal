@@ -48,6 +48,8 @@ typedef struct cm_consensus_s {
   ESL_ALPHABET *abc;
 
   /* floating point scores, if necessary */
+  float     e_fraglen; /* expected length (bases) of model fragments */
+  float     sc_frag;   /* log prob for each fragment - LOG(1/#frags) */
 
   /* Reduced-precision uchar scores */
   uint8_t tsb_S_Sa, tsb_S_SM, tsb_S_e, tsb_M_M, tsb_M_S;

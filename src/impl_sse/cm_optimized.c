@@ -143,6 +143,8 @@ cm_consensus_Convert(CM_t *cm)
   int v, w, x, y, z;
   int offset;
   int pairs, singlets;
+  int nstates, nfrags, total_frags;
+  int ebases, q;
   uint8_t *oesc_next;
   float max = 0.0;
   CM_CONSENSUS *ccm = NULL;
@@ -205,11 +207,20 @@ cm_consensus_Convert(CM_t *cm)
   ESL_ALLOC(ccm->oesc[0], sizeof(uint8_t  ) * (singlets * ccm->abc->Kp + pairs * ccm->abc->Kp * ccm->abc->Kp));
   oesc_next = ccm->oesc[0];
 
+  nstates = nfrags = total_frags = 0;
+  ebases = 0;
   while (v != -1) {
     ccm->sttype[x] = cm->sttype[v];
     if (cm->sttype[v] == E_st) {
       ccm->next[x] = -1;
       ccm->oesc[x] = NULL;
+
+      nfrags = nstates*(nstates+1)/2;
+      total_frags += nfrags;
+      nstates = 0;
+      for (q = 1; q <= nstates; q++) {
+        ebases += q*(nstates-q+1)*StateDelta(ccm->sttype[x-q]);
+      }
 
       /* pop next x and v off stack */
       if (esl_stack_IPop(oldstate, &v) == eslEOD) { v = -1; }
@@ -229,6 +240,13 @@ cm_consensus_Convert(CM_t *cm)
       ccm->next[x] = x+offset+1;
       ccm->oesc[x] = NULL;
 
+      nfrags = nstates*(nstates+1)/2;
+      total_frags += nfrags;
+      nstates = 0;
+      for (q = 1; q <= nstates; q++) {
+        ebases += q*(nstates-q+1)*StateDelta(ccm->sttype[x-q]);
+      }
+
       /* push y and x+offset on stacks */
       esl_stack_IPush(oldstate, y);
       esl_stack_IPush(newstate, x+offset+1);
@@ -245,12 +263,14 @@ cm_consensus_Convert(CM_t *cm)
       ccm->next[x] = x+1;
       ccm->oesc[x] = oesc_next;
       if (cm->sttype[v] == MP_st) {
+        nstates++;
         for (z = 0; z < (ccm->abc->Kp * ccm->abc->Kp); z++) {
           ccm->oesc[x][z] = biased_byteify(ccm, cm->oesc[v][z]);
         }
         oesc_next += ccm->abc->Kp * ccm->abc->Kp;
       }
       else if (cm->stid[v] == MATL_ML || cm->stid[v] == MATR_MR) {
+        nstates++;
         for (z = 0; z < ccm->abc->Kp; z++) {
           ccm->oesc[x][z] = biased_byteify(ccm, cm->oesc[v][z]);
         }
@@ -261,6 +281,9 @@ cm_consensus_Convert(CM_t *cm)
     }
 
   }
+
+  ccm->sc_frag = sreLOG2(1./total_frags);
+  ccm->e_fraglen = ((float) ebases)/total_frags;
 
   esl_stack_Destroy(oldstate);
   esl_stack_Destroy(newstate);

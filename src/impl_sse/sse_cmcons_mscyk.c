@@ -766,6 +766,11 @@ main(int argc, char **argv)
       ccm->tsb_S_e  = unbiased_byteify(ccm,sreLOG2(f_S_e ));
       ccm->tsb_M_M  = unbiased_byteify(ccm,sreLOG2(f_M_M ));
       ccm->tsb_M_S  = unbiased_byteify(ccm,sreLOG2(f_M_S ));
+
+//FIXME: experimental fragment length distribution
+//FIXME: If we keep this version, can eliminate M_M term in recursion;
+ccm->tsb_M_M = 0;
+ccm->tsb_M_S = unbiased_byteify(ccm,ccm->sc_frag);
     }
   
   dmin = NULL; dmax = NULL;
@@ -960,6 +965,11 @@ if(ccm->oesc == NULL) cm_Fail("oesc NULL!\n");
   ccm->tsb_S_e  = unbiased_byteify(ccm,sreLOG2(f_S_e ));
   ccm->tsb_M_M  = unbiased_byteify(ccm,sreLOG2(f_M_M ));
   ccm->tsb_M_S  = unbiased_byteify(ccm,sreLOG2(f_M_S ));
+
+//FIXME: experimental fragment length distribution
+//FIXME: If we keep this version, can eliminate M_M term in recursion;
+ccm->tsb_M_M = 0;
+ccm->tsb_M_S = unbiased_byteify(ccm,ccm->sc_frag);
 
   f_cutoff = esl_opt_GetReal(go, "--cutoff");
   /* Need to scale and offset, but not change sign -> switch sign ahead of time */
