@@ -52,7 +52,7 @@ typedef struct cm_consensus_s {
   float     sc_frag;   /* log prob for each fragment - LOG(1/#frags) */
 
   /* Reduced-precision uchar scores */
-  uint8_t tsb_S_Sa, tsb_S_SM, tsb_S_e, tsb_M_M, tsb_M_S;
+  uint8_t tsb_S_Sa, tsb_S_SM, tsb_S_e, tsb_M_S;
   float     scale_b;
   uint8_t   base_b;
   uint8_t   bias_b;

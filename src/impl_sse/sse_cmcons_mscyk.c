@@ -82,18 +82,16 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
   int      *jp_wA;              /* rolling pointer index for B states, gets precalc'ed */
 //  double  **act;                /* [0..j..W-1][0..a..abc->K-1], alphabet count, count of residue a in dsq from 1..jp where j = jp%(W+1) */
 
-  __m128i   tsv_S_Sa, tsv_S_SM, tsv_S_e, tsv_M_M, tsv_M_S;
+  __m128i   tsv_S_Sa, tsv_S_SM, tsv_S_e, tsv_M_S;
   __m128i   tmpv, tmpv2;
 
   tsv_S_Sa = _mm_set1_epi8(ccm->tsb_S_Sa);
   tsv_S_SM = _mm_set1_epi8(ccm->tsb_S_SM);
   tsv_S_e  = _mm_set1_epi8(ccm->tsb_S_e );
-  tsv_M_M  = _mm_set1_epi8(ccm->tsb_M_M );
   tsv_M_S  = _mm_set1_epi8(ccm->tsb_M_S );
 /*
 fprintf(stderr,"S -> Sa: %d\t", unbiased_byteify(ccm,tsc_S_Sa));
 fprintf(stderr,"S -> SM: %d\t", unbiased_byteify(ccm,tsc_S_SM));
-fprintf(stderr,"M ->  M: %d\t", unbiased_byteify(ccm,tsc_M_M ));
 fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
 */
 
@@ -436,7 +434,7 @@ fprintf(stderr,"\n");
 
             for (d = 0; d < sW; d++) {
               tmpv = _mm_subs_epu8(vec_ntS[jp_Sy][d-sd], tsv_M_S);
-              tmpv2= _mm_subs_epu8(vec_ntM_v[jp_y][y][d-sd], tsv_M_M);
+              tmpv2= vec_ntM_v[jp_y][y][d-sd];
               vec_ntM_v[jp_v][v][d] = _mm_max_epu8(tmpv, tmpv2);
               vec_ntM_v[jp_v][v][d] = _mm_adds_epu8(vec_ntM_v[jp_v][v][d], biasv);
               vec_ntM_v[jp_v][v][d] = _mm_subs_epu8(vec_ntM_v[jp_v][v][d], vec_esc[dsq[j]][v][d]);
@@ -692,8 +690,6 @@ static ESL_OPTIONS options[] = {
   { "--S_Sa",    eslARG_REAL,  "0.60", NULL, NULL,  NULL,  NULL, NULL, "S emit single residue probability <x>",          0 },
   { "--S_SM",    eslARG_REAL,  "0.20", NULL, NULL,  NULL,  NULL, NULL, "S add model segment probability <x>",            0 },
   { "--S_e",     eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "S end probability (unsettable, 1-S_Sa-S_SM)",    0 },
-  { "--M_M",     eslARG_REAL,  "0.75", NULL, NULL,  NULL,  NULL, NULL, "M continue model segment probability <x>",       0 },
-  { "--M_S",     eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "M end model segment probability (unsettable, 1-M_M)", 0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile>";
@@ -723,7 +719,7 @@ main(int argc, char **argv)
   CM_CONSENSUS   *ccm;
   uint8_t         cutoff;
   float           f_cutoff;
-  float           f_S_Sa, f_S_SM, f_S_e, f_M_M, f_M_S;
+  float           f_S_Sa, f_S_SM, f_S_e, f_M_S;
   search_results_t *results = NULL;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
@@ -758,19 +754,10 @@ main(int argc, char **argv)
       if (f_S_SM <= 0 || f_S_SM >= 1) cm_Fail("S->SM must be between zero and 1\n");
       f_S_e = 1. - f_S_Sa - f_S_SM;
       if (f_S_e <= 0) cm_Fail("Error: S->e out of range\n");
-      f_M_M = esl_opt_GetReal(go, "--M_M");
-      if (f_M_M <= 0 || f_M_M >= 1) cm_Fail("M->M must be between zero and 1\n");
-      f_M_S = 1. - f_M_M;
       ccm->tsb_S_Sa = unbiased_byteify(ccm,sreLOG2(f_S_Sa));
       ccm->tsb_S_SM = unbiased_byteify(ccm,sreLOG2(f_S_SM));
       ccm->tsb_S_e  = unbiased_byteify(ccm,sreLOG2(f_S_e ));
-      ccm->tsb_M_M  = unbiased_byteify(ccm,sreLOG2(f_M_M ));
-      ccm->tsb_M_S  = unbiased_byteify(ccm,sreLOG2(f_M_S ));
-
-//FIXME: experimental fragment length distribution
-//FIXME: If we keep this version, can eliminate M_M term in recursion;
-ccm->tsb_M_M = 0;
-ccm->tsb_M_S = unbiased_byteify(ccm,ccm->sc_frag);
+      ccm->tsb_M_S  = unbiased_byteify(ccm,ccm->sc_frag);
     }
   
   dmin = NULL; dmax = NULL;
@@ -905,8 +892,6 @@ static ESL_OPTIONS options[] = {
   { "--S_Sa",    eslARG_REAL,  "0.60", NULL, NULL,  NULL,  NULL, NULL, "S emit single residue probability <x>",          0 },
   { "--S_SM",    eslARG_REAL,  "0.20", NULL, NULL,  NULL,  NULL, NULL, "S add model segment probability <x>",            0 },
   { "--S_e",     eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "S end probability (unsettable, 1-S_Sa-S_SM)",    0 },
-  { "--M_M",     eslARG_REAL,  "0.75", NULL, NULL,  NULL,  NULL, NULL, "M continue model segment probability <x>",       0 },
-  { "--M_S",     eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "M end model segment probability (unsettable, 1-M_M)", 0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile> <seqfile>";
@@ -930,7 +915,7 @@ main(int argc, char **argv)
   CM_CONSENSUS   *ccm;
   uint8_t         cutoff;
   float           f_cutoff;
-  float           f_S_Sa, f_S_SM, f_S_e, f_M_M, f_M_S;
+  float           f_S_Sa, f_S_SM, f_S_e, f_M_S;
   int             format = eslSQFILE_UNKNOWN;
   int             max, imax, jmax;
   search_results_t *results = NULL;
@@ -957,19 +942,10 @@ if(ccm->oesc == NULL) cm_Fail("oesc NULL!\n");
   if (f_S_SM <= 0 || f_S_SM >= 1) cm_Fail("S->SM must be between zero and 1\n");
   f_S_e = 1. - f_S_Sa - f_S_SM;
   if (f_S_e <= 0) cm_Fail("Error: S->e out of range\n");
-  f_M_M = esl_opt_GetReal(go, "--M_M");
-  if (f_M_M <= 0 || f_M_M >= 1) cm_Fail("M->M must be between zero and 1\n");
-  f_M_S = 1. - f_M_M;
   ccm->tsb_S_Sa = unbiased_byteify(ccm,sreLOG2(f_S_Sa));
   ccm->tsb_S_SM = unbiased_byteify(ccm,sreLOG2(f_S_SM));
   ccm->tsb_S_e  = unbiased_byteify(ccm,sreLOG2(f_S_e ));
-  ccm->tsb_M_M  = unbiased_byteify(ccm,sreLOG2(f_M_M ));
-  ccm->tsb_M_S  = unbiased_byteify(ccm,sreLOG2(f_M_S ));
-
-//FIXME: experimental fragment length distribution
-//FIXME: If we keep this version, can eliminate M_M term in recursion;
-ccm->tsb_M_M = 0;
-ccm->tsb_M_S = unbiased_byteify(ccm,ccm->sc_frag);
+  ccm->tsb_M_S  = unbiased_byteify(ccm,ccm->sc_frag);
 
   f_cutoff = esl_opt_GetReal(go, "--cutoff");
   /* Need to scale and offset, but not change sign -> switch sign ahead of time */
