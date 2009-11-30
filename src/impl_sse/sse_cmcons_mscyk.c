@@ -34,7 +34,33 @@
 #define BYTERSHIFT2(a,b)   (_mm_or_si128(_mm_slli_si128(a,1), _mm_srli_si128(b,15)))
 #define BYTERSHIFT3(a,b,c) (_mm_or_si128(_mm_slli_si128(a,c), _mm_srli_si128(b,16-c)))
 
-/* Function: SSE_CYKScan()
+/* Function: MSCYK_explen()
+   Author:   DLK
+
+   Purpose:  Calculate the expected lenght of hits under the MSCYK model,
+             given a particular (consensus) CM
+
+   Args:     fraglen         - expected length of hits in consensus CM (usually ccm->e_fraglen)
+             t1              - probability of S->Sa transition
+             t2              - probability of S->SM transition
+             t3              - probability of S->null transition
+*/
+float
+MSCYK_explen(float fraglen, float t1, float t2, float t3)
+{
+  float elen;
+
+  elen = (t1+fraglen*t2)/(t3-t2); /* Reference NBpg63, 24 Nov 2009 */
+
+  if (elen < 0) {
+    fprintf(stderr,"Warning: non-terminating grammar parameters.  Expected hit length infinite\n");
+    elen = eslINFINITY;
+  }
+
+  return elen;
+}
+
+/* Function: SSE_MSCYK()
  * Author:   DLK
  *
  * Purpose:  Scan a sequence for matches to a covariance model, using
@@ -742,6 +768,7 @@ main(int argc, char **argv)
 
   if (esl_opt_GetBoolean(go, "--mscyk"))
     {
+      float nullL, rself;
       ccm = cm_consensus_Convert(cm);
       f_cutoff = esl_opt_GetReal(go, "--cutoff");
       /* Need to scale and offset, but not change sign -> switch sign ahead of time */
@@ -758,6 +785,10 @@ main(int argc, char **argv)
       ccm->tsb_S_SM = unbiased_byteify(ccm,sreLOG2(f_S_SM));
       ccm->tsb_S_e  = unbiased_byteify(ccm,sreLOG2(f_S_e ));
       ccm->tsb_M_S  = unbiased_byteify(ccm,ccm->sc_frag);
+
+      nullL = MSCYK_explen(ccm->e_fraglen,f_S_Sa,f_S_SM,f_S_e);
+      rself = nullL/(nullL+1.);
+fprintf(stderr,"nullL %f r %f r_b %d\n",nullL,rself,unbiased_byteify(ccm,sreLOG2(rself)));
     }
   
   dmin = NULL; dmax = NULL;

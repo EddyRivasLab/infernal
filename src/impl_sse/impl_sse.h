@@ -99,6 +99,8 @@ int  UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *g
 void TBackGammaHitMxForward_epu8 (GammaHitMx_epu8 *gamma, search_results_t *results, int i0, int j0);
 void TBackGammaHitMxBackward_epu8(GammaHitMx_epu8 *gamma, search_results_t *results, int i0, int j0);
 
+/* sse_cmcons_mscyk.c */
+float MSCYK_explen(float fraglen, float t1, float t2, float t3);
 
 /* sse_cm_dpsearch.c */
 int SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq,
