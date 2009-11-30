@@ -217,10 +217,10 @@ cm_consensus_Convert(CM_t *cm)
 
       nfrags = nstates*(nstates+1)/2;
       total_frags += nfrags;
-      nstates = 0;
       for (q = 1; q <= nstates; q++) {
         ebases += q*(nstates-q+1)*StateDelta(ccm->sttype[x-q]);
       }
+      nstates = 0;
 
       /* pop next x and v off stack */
       if (esl_stack_IPop(oldstate, &v) == eslEOD) { v = -1; }
@@ -242,10 +242,10 @@ cm_consensus_Convert(CM_t *cm)
 
       nfrags = nstates*(nstates+1)/2;
       total_frags += nfrags;
-      nstates = 0;
       for (q = 1; q <= nstates; q++) {
         ebases += q*(nstates-q+1)*StateDelta(ccm->sttype[x-q]);
       }
+      nstates = 0;
 
       /* push y and x+offset on stacks */
       esl_stack_IPush(oldstate, y);
