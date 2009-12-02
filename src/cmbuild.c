@@ -790,7 +790,7 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       /* 2. parsetrees -> msa */
       if( iter > 1) esl_msa_Destroy(msa);
       msa = NULL; /* even if iter == 1; we set msa to NULL, so we don't klobber input_msa */
-      if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, seqs_to_aln->sq, NULL, seqs_to_aln->tr, NULL, NULL, nseq, FALSE, FALSE, &msa)) != eslOK) 
+      if((status = Parsetrees2Alignment(cm, errbuf, cm->abc, seqs_to_aln->sq, NULL, seqs_to_aln->tr, NULL, NULL, nseq, NULL, NULL, FALSE, FALSE, &msa)) != eslOK) 
 	ESL_FAIL(status, errbuf, "refine_msa(), Parsetrees2Alignment() call failed.");
       if((status = esl_strdup(msa_name, -1, &(msa->name))) != eslOK) ESL_FAIL(status, errbuf, "refine_msa(), esl_strdup() call failed.");
       esl_msa_Digitize(msa->abc, msa, NULL);

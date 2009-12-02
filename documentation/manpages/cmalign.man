@@ -382,7 +382,10 @@ Output the alignments as DNA sequence alignments.
 .TP
 .B --matchonly
 Only include match columns in the output alignment, do not include
-any insertions relative to the consensus model. 
+any insertions relative to the consensus model. This option may
+be useful when creating very large alignments that require a lot of
+RAM and disk space, most of which is necessary only to deal with insert
+columns that are mainly gaps in most sequences.
 
 .TP
 .B --resonly
@@ -504,6 +507,29 @@ sequence to a file
 .I <f>.
 Primarily useful for debugging.
 
+.TP
+.BI --ifile " <f>"
+Dump per-sequence insert information to file
+.I <f>.
+The format of the file is described by "#"-prefixed comment lines
+included at the top of the file
+.I <f>.
+The insert information is valid even when the 
+.B --matchonly 
+option is used.
+
+.TP
+.BI --elfile " <f>"
+Must be used in combination with 
+.B -l. 
+Dump per-sequence EL state (local end) insert information to file
+.I <f>.
+The format of the file is described by "#"-prefixed comment lines
+included at the top of the file
+.I <f>.
+The EL insert information is valid even when the 
+.B --matchonly 
+option is used.
 
 
 

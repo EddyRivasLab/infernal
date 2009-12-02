@@ -94,6 +94,8 @@ static ESL_OPTIONS options[] = {
   { "--cm-name",  eslARG_STRING,NULL, NULL,  NULL,      NULL,      NULL,  "--cm-idx", "only align seqs with the CM named <s> in the CM file",  10 },
   /* Verbose output files */
   { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence parsetrees to file <f>", 7 },
+  { "--ifile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump information on per-sequence inserts to file <f>", 7 },
+  { "--elfile",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      "-l",        NULL, "dump information on per-sequence EL inserts to file <f>", 7 },
   /* options for experimental p7 HMM banding */
   { "--7pad",    eslARG_INT,       "0", NULL, "n>=0",   NULL,      NULL,        NULL, "w/p7 banding set pin pad to <n> residues", 9 },
   { "--7len",    eslARG_INT,       "4", NULL, "n>0",    NULL,      NULL,        NULL, "w/p7 banding set minimum length pin n-mer to <n>", 9 },
@@ -103,7 +105,6 @@ static ESL_OPTIONS options[] = {
   { "--7mcprob", eslARG_REAL,    "0.0", NULL, "x>-0.0001",NULL,    NULL,        NULL, "w/p7 banding set min cumulative prob to enter match state to <x>", 9 },
   { "--7iprob",  eslARG_REAL,    "1.0", NULL, "x<1.001",NULL,      NULL,        NULL, "w/p7 banding set max prob to enter insert state to <x>", 9 },
   { "--7ilprob", eslARG_REAL,    "1.0", NULL, "x<1.001",NULL,      NULL,        NULL, "w/p7 banding set max prob to enter left insert state to <x>", 9 },
-
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer options related to alignment algorithm */
   { "--inside",   eslARG_NONE,  FALSE, NULL, NULL,      ALGOPTS,   NULL,     ALGOPTS, "don't align; return scores from the Inside algorithm", 101 },
@@ -151,6 +152,8 @@ struct cfg_s {
   CMFILE       *cmfp;		/* open input CM file stream       */
   FILE         *ofp;		/* output file (default is stdout) */
   FILE         *tracefp;	/* optional output for parsetrees  */
+  FILE         *insertfp;	/* optional output for insert info */
+  FILE         *elfp;	        /* optional output for EL insert info */
   FILE         *regressfp;	/* optional output for regression test  */
   ESL_MSAFILE  *withalifp;	/* optional input alignment to include */
   ESL_MSA      *withmsa;	/* MSA from withalifp to include */
@@ -321,6 +324,8 @@ main(int argc, char **argv)
   cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.ofp        = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.tracefp    = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.insertfp   = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.elfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.regressfp  = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.withalifp  = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.withmsa    = NULL;	           /* filled in init_master_cfg() in masters, stays NULL for workers */
@@ -401,6 +406,14 @@ main(int argc, char **argv)
       printf("# Parsetrees saved in file %s.\n", esl_opt_GetString(go, "--tfile"));
       fclose(cfg.tracefp);
     }
+    if (cfg.insertfp   != NULL) { 
+      printf("# Per-sequence insert information saved in file %s.\n", esl_opt_GetString(go, "--ifile"));
+      fclose(cfg.insertfp);
+    }
+    if (cfg.elfp   != NULL) { 
+      printf("# Per-sequence EL insert information saved in file %s.\n", esl_opt_GetString(go, "--elfile"));
+      fclose(cfg.elfp);
+    }
     if (cfg.regressfp   != NULL) {
       printf("# Regression data (alignment) saved in file %s.\n", esl_opt_GetString(go, "--regress"));
       fclose(cfg.regressfp);
@@ -441,6 +454,8 @@ main(int argc, char **argv)
  *    cfg->cmfp        - open CM file                
  *    cfg->abc         - digital input alphabet
  *    cfg->tracefp     - optional output file
+ *    cfg->insertfp    - optional output file
+ *    cfg->elfp        - optional output file
  *    cfg->regressfp   - optional output file
  *    cfg->withalifp   - optional input alignment file to include
  *    cfg->withmsa     - MSA from --withali file 
@@ -496,6 +511,38 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     if ((cfg->tracefp = fopen(esl_opt_GetString(go, "--tfile"), "w")) == NULL) 
 	ESL_FAIL(eslFAIL, errbuf, "Failed to open --tfile output file %s\n", esl_opt_GetString(go, "--tfile"));
     }
+
+  /* optionally, open insert info file */
+  if (esl_opt_GetString(go, "--ifile") != NULL) {
+    if ((cfg->insertfp = fopen(esl_opt_GetString(go, "--ifile"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open --ifile output file %s\n", esl_opt_GetString(go, "--ifile"));
+    fprintf(cfg->insertfp, "# Insert information file created by cmalign.\n");
+    fprintf(cfg->insertfp, "# This file includes one non-# pre-fixed line per sequence in the target file\n");
+    fprintf(cfg->insertfp, "# with (1+2*n) whitespace delimited tokens per line.\n");
+    fprintf(cfg->insertfp, "# Format per line:\n");
+    fprintf(cfg->insertfp, "# <seqname> <c_1> <i_1> <c_2> <i_2> .... <c_x> <i_x> .... <c_n> <i_n>\n");
+    fprintf(cfg->insertfp, "# indicating <seqname> has >= 1 inserted residues after <n> different consensus positions,\n");
+    fprintf(cfg->insertfp, "#   <c_x> is a consensus position and\n");
+    fprintf(cfg->insertfp, "#   <i_x> is the number of inserted residues after position <c_x> for <seqname>\n");
+    fprintf(cfg->insertfp, "# Lines for sequences with 0 inserted residues will include only <seqname>\n");
+    fprintf(cfg->insertfp, "#\n");
+  }
+
+  /* optionally, open EL insert info file */
+  if (esl_opt_GetString(go, "--elfile") != NULL) {
+    if ((cfg->elfp = fopen(esl_opt_GetString(go, "--elfile"), "w")) == NULL) 
+	ESL_FAIL(eslFAIL, errbuf, "Failed to open --elfile output file %s\n", esl_opt_GetString(go, "--elfile"));
+    fprintf(cfg->elfp, "# EL state (local end) insert information file created by cmalign.\n");
+    fprintf(cfg->elfp, "# This file includes one non-# pre-fixed line per sequence in the target file\n");
+    fprintf(cfg->elfp, "# with (1+2*n) whitespace delimited tokens per line.\n");
+    fprintf(cfg->elfp, "# Format per line:\n");
+    fprintf(cfg->elfp, "# <seqname> <c_1> <i_1> <c_2> <i_2> .... <c_x> <i_x> .... <c_n> <i_n>\n");
+    fprintf(cfg->elfp, "# indicating <seqname> has >= 1 EL inserted residues after <n> different consensus positions,\n");
+    fprintf(cfg->elfp, "#   <c_x> is a consensus position and\n");
+    fprintf(cfg->elfp, "#   <i_x> is the number of EL inserted residues after position <c_x> for <seqname>\n");
+    fprintf(cfg->elfp, "# Lines for sequences with 0 EL inserted residues will include only <seqname>\n");
+    fprintf(cfg->elfp, "#\n");
+  }
 
   /* optionally, open regression file */
   if (esl_opt_GetString(go, "--regress") != NULL) {
@@ -962,7 +1009,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	{
 	  assert(seqs_to_aln->tr != NULL);
 	  if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, seqs_to_aln->postcode1, seqs_to_aln->postcode2, 
-					    seqs_to_aln->nseq, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), &msa)) != eslOK)
+					    seqs_to_aln->nseq, cfg->insertfp, cfg->elfp, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), &msa)) != eslOK)
 	    esl_fatal("Error creating the alignment: %s", errbuf);
 	}
 #ifdef HAVE_MPI
@@ -1915,7 +1962,7 @@ serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((status = process_workunit(go, cfg, errbuf, cmlist[0], seqs_to_aln)) != eslOK) cm_Fail(errbuf);
   /* convert parsetrees to alignment */
   ESL_MSA *maj_target_msa;
-  if((status = Parsetrees2Alignment(cmlist[0], errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, NULL, NULL, seqs_to_aln->nseq, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), &maj_target_msa)) != eslOK)
+  if((status = Parsetrees2Alignment(cmlist[0], errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, NULL, NULL, seqs_to_aln->nseq, NULL, NULL, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), &maj_target_msa)) != eslOK)
     cm_Fail("serial_master_meta(), error generating major alignment from parsetrees.");
   /* printf("\n"); status = esl_msa_Write(stdout, maj_target_msa, eslMSAFILE_STOCKHOLM); printf("\n"); */
 

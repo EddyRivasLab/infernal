@@ -71,6 +71,8 @@
 1  exercise  cmalign:trna/52       @cmalign@ --dlev 3 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/53       @cmalign@ --banddump 3 -p %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/54       @cmalign@ -p --matchonly %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna/55       @cmalign@ --ifile %TMPOUT1% %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna/56       @cmalign@ --ifile %TMPOUT1% --matchonly %TRNA.CM% 3trnas.fa
 
 # local alignment with -l
 1  prep      model/trna            @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
@@ -128,6 +130,10 @@
 1  exercise  cmalign:trna-l/52       @cmalign@  -l --dlev 3 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/53       @cmalign@  -l --banddump 3 -p %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/54       @cmalign@  -l -p --matchonly %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-l/55       @cmalign@ -l --ifile %TMPOUT1% %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-l/56       @cmalign@ -l --ifile %TMPOUT1% --matchonly %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-l/57       @cmalign@ -l --elfile %TMPOUT1% %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-l/58       @cmalign@ -l --elfile %TMPOUT1% --matchonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-p/1        @cmalign@  -l --pebegin --pfend 0.03 %TRNA.CM% 3trnas.fa
 
 
@@ -196,6 +202,8 @@
 1  exercise  cmalign:trna-b/52       @cmalign@ --dlev 3 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/53       @cmalign@ --banddump 3 -p %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/54       @cmalign@  --matchonly -p %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b/55       @cmalign@ --ifile %TMPOUT1% %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b/56       @cmalign@ --ifile %TMPOUT1% --matchonly %TRNA.CM% 3trnas.fa
 
 # local alignment with -l
 1  prep      model/trna            @cmbuild@ --binary -F --rf --wnone %TRNA.CM% trna1415G.sto
@@ -253,6 +261,10 @@
 1  exercise  cmalign:trna-b-l/52       @cmalign@  -l --dlev 3 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/53       @cmalign@  -l --banddump 3 -p %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/54       @cmalign@  -l -p --matchonly %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b-l/55       @cmalign@  -l --ifile %TMPOUT1% %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b-l/56       @cmalign@  -l --ifile %TMPOUT1% --matchonly %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b-l/57       @cmalign@  -l --elfile %TMPOUT1% %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b-l/58       @cmalign@  -l --elfile %TMPOUT1% --matchonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-p/1          @cmalign@  -l --pebegin --pfend 0.03 %TRNA.CM% 3trnas.fa
 
 # repeat a few of the above excercises with a multi-CM cmfile, (if it works
