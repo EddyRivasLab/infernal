@@ -2565,7 +2565,7 @@ serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((status = process_workunit(go, cfg, errbuf, cmlist[0], seqs_to_aln)) != eslOK) cm_Fail(errbuf);
   /* convert parsetrees to alignment */
   ESL_MSA *maj_target_msa;
-  if((status = Parsetrees2Alignment(cmlist[0], cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, seqs_to_aln->nseq, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), &maj_target_msa)) != eslOK)
+  if((status = Parsetrees2Alignment(cmlist[0], errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, NULL, NULL, seqs_to_aln->nseq, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), &maj_target_msa)) != eslOK)
     cm_Fail("serial_master_meta(), error generating major alignment from parsetrees.");
   /* printf("\n"); status = esl_msa_Write(stdout, maj_target_msa, eslMSAFILE_STOCKHOLM); printf("\n"); */
 

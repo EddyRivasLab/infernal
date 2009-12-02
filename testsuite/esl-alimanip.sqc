@@ -34,7 +34,7 @@
 1  exercise  esl-alimanip:trna-n/2      @esl-alimanip@ --num-all -o %NEW.STK%  %TMP.STK%
 
 1  exercise  esl-alimanip:trna/12       @esl-alimanip@ --tree %NEW.STK%  %TMP.STK%
-1  exercise  esl-alimanip:trna/13       @esl-alimanip@ --lfract 0.9 -o %NEW.STK%  %TMP.STK%
+1  exercise  esl-alimanip:trna/13       @esl-alimanip@ --lnfract 0.9 -o %NEW.STK%  %TMP.STK%
 1  exercise  esl-alimanip:trna/14       @esl-alimanip@ --lmin 70 -o %NEW.STK%  %TMP.STK%
 1  exercise  esl-alimanip:trna/15       @esl-alimanip@ --detrunc 2 -o %NEW.STK%  %TMP.STK%
 1  exercise  esl-alimanip:trna/16       @esl-alimanip@ --seq-r trna.list -o %NEW.STK%  %TMP.STK%
