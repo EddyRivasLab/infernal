@@ -48,6 +48,8 @@ typedef struct cm_consensus_s {
   ESL_ALPHABET *abc;
 
   /* floating point scores, if necessary */
+  float     r;         /* self transition for geometric null model, with same expected length */
+                       /* calculated by MSCYK_explen(), from e_fraglen and S->Sa|SM|e transition probabilities */
   float     e_fraglen; /* expected length (bases) of model fragments */
   float     sc_frag;   /* log prob for each fragment - LOG(1/#frags) */
 

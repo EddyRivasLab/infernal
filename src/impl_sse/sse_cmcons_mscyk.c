@@ -165,6 +165,9 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
   uint8_t    tmp_esc;
   uint8_t   *vec_access;
 
+  __m128i   *mem_nmlc;
+  __m128i   *vec_nmlc;		/* null model length correction */
+
   char BADVAL = 0; /* Our local equivalent of -eslINFINITY */
   char escBADVAL = biased_byteify(ccm, -eslINFINITY); /* -inf as a cost for non-permitted esc */
   __m128i LB_NEG_INF = _mm_setr_epi8(BADVAL,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
@@ -224,9 +227,11 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
   ESL_ALLOC(mem_esc,          sizeof(__m128i  ) * ccm->abc->Kp * ccm->M * (sW) + 15);
   ESL_ALLOC(esc_stale,        sizeof(int     *) * ccm->abc->Kp);
   ESL_ALLOC(mem_tmpary,       sizeof(__m128i  ) * (W+1) + 15);
+  ESL_ALLOC(mem_nmlc,         sizeof(__m128i  ) * (W+1) + 15);
 //  ESL_ALLOC(mem_bestr, sizeof(__m128) * sW + 15);
 
 //  vec_bestr = (__m128 *) (((unsigned long int) mem_bestr + 15) & (~0xf));
+  vec_nmlc = (__m128i *) (((unsigned long int) mem_nmlc + 15) & (~0xf));
   tmpary = (__m128i *) (((unsigned long int) mem_tmpary + 15) & (~0xf));
   vec_ntM_v[1] = vec_ntM_v[0] + ccm->M;
   vec_ntM_v[0][0] = (__m128i *) (((unsigned long int) mem_ntM_v + 15) & (~0xf)) + 2;
@@ -278,6 +283,19 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
   for (d = -2; d < sW; d++) {
     vec_ntM_all[0][d] = neginfv;
     vec_ntM_all[1][d] = neginfv;
+  }
+
+  /* Set null model length correction */
+  for (d = 0; d <= W; d++) {
+    vec_access = ((uint8_t *) &vec_nmlc[d%sW]) + d/sW;
+    *vec_access = unbiased_byteify(ccm,d*sreLOG2(ccm->r)/*+sreLOG2(1.-ccm->r)*/);
+    /* Technically, we might want to include the 1-r term for the null model.
+       However, with r set such that the expected length is about 320, this term
+       has large enough magnitude that it raises overall scores by ~8 bits,
+       moving scores for random seqence from about -2 to about 6 - which is
+       halfway to the current saturation ceiling (13.8 bits).  Becuase this
+       term is constant per model and does not depend on d, I am leaving it
+       out of the calculation.                                               */
   }
 
   /* The main loop: scan the sequence from position i0 to j0.
@@ -624,7 +642,11 @@ for (d = 0; d <= W; d++) {
 }
 fprintf(stderr,"\n");
 */
-      if(results != NULL) if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, j, vec_ntS[jp_Sv], results, W, sW)) != eslOK) return status;
+      //if(results != NULL) if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, j, vec_ntS[jp_Sv], results, W, sW)) != eslOK) return status;
+      for (d = 0; d < sW; d++) {
+        tmpary[d] = _mm_adds_epu8(vec_ntS[jp_Sv][d],vec_nmlc[d]);
+      }
+      if(results != NULL) if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, j, tmpary, results, W, sW)) != eslOK) return status;
 //      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
 //fprintf(stdout,"%4d %4d %4d\t",j0-W+1,j0,*(((uint8_t *) &(vec_ntS[j0 % (W+1)][W%sW]))+W/sW));
@@ -658,6 +680,7 @@ fprintf(stderr,"\n");
   free(esc_stale);
 //  free(mem_bestr);
   free(mem_tmpary);
+  free(mem_nmlc);
 //
 //  ESL_DPRINTF1(("SSE_CYKScan() return score: %10.4f\n", vsc_root)); 
 //printf("i0 %d j0 %d W %d sW %d\n",i0,j0,W,sW);
@@ -768,7 +791,7 @@ main(int argc, char **argv)
 
   if (esl_opt_GetBoolean(go, "--mscyk"))
     {
-      float nullL, rself;
+      float nullL;
       ccm = cm_consensus_Convert(cm);
       f_cutoff = esl_opt_GetReal(go, "--cutoff");
       /* Need to scale and offset, but not change sign -> switch sign ahead of time */
@@ -787,8 +810,8 @@ main(int argc, char **argv)
       ccm->tsb_M_S  = unbiased_byteify(ccm,ccm->sc_frag);
 
       nullL = MSCYK_explen(ccm->e_fraglen,f_S_Sa,f_S_SM,f_S_e);
-      rself = nullL/(nullL+1.);
-fprintf(stderr,"nullL %f r %f r_b %d\n",nullL,rself,unbiased_byteify(ccm,sreLOG2(rself)));
+      ccm->r = nullL/(nullL+1.);
+fprintf(stderr,"nullL %f r %f r_b %d\n",nullL,ccm->r,unbiased_byteify(ccm,sreLOG2(ccm->r)));
     }
   
   dmin = NULL; dmax = NULL;
