@@ -33,7 +33,6 @@
 1  exercise  cmalign:trna/14       @cmalign@  --nonbanded --optacc %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/15       @cmalign@  --nonbanded --viterbi %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/16       @cmalign@  --nonbanded -p %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna/17       @cmalign@  --nonbanded -p --onepost %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/18       @cmalign@  --nonbanded --sub %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/19       @cmalign@  --nonbanded --cyk --small %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/20       @cmalign@  --nonbanded --inside %TRNA.CM% 3trnas.fa
@@ -42,7 +41,6 @@
 1  exercise  cmalign:trna/23       @cmalign@  --tau 5E-2 --optacc %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/24       @cmalign@  --tau 5E-2 --viterbi %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/25       @cmalign@  --tau 5E-2 -p %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna/26       @cmalign@  --tau 5E-2 -p --onepost %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/27       @cmalign@  --tau 5E-2 --sub %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/28       @cmalign@  --tau 5E-2 --sub --cyk %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/29       @cmalign@ --mxsize 333 %TRNA.CM% 3trnas.fa
@@ -51,7 +49,6 @@
 1  exercise  cmalign:trna/32       @cmalign@  --matchonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/33       @cmalign@  --resonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/34       @cmalign@  --fins %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna/35       @cmalign@  -p --onepost %TRNA.CM% 3trnas.fa
 1  prep      model/trna2           @cmbuild@ -F --wnone %TMP.CM% trna1415G.sto
 1  exercise  cmalign:trna/36       @cmalign@ --withali trna1415G.sto %TMP.CM% 3trnas.fa 
 1  prep      model/trna3           @cmbuild@ -F --rf --wnone %TMP.CM% trna1415G.sto
@@ -73,6 +70,7 @@
 1  exercise  cmalign:trna/51       @cmalign@ --banddump 3 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/52       @cmalign@ --dlev 3 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/53       @cmalign@ --banddump 3 -p %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna/54       @cmalign@ -p --matchonly %TRNA.CM% 3trnas.fa
 
 # local alignment with -l
 1  prep      model/trna            @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
@@ -99,7 +97,6 @@
 1  exercise  cmalign:trna-l/14       @cmalign@  -l --nonbanded --optacc %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/15       @cmalign@  -l --nonbanded --viterbi %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/16       @cmalign@  -l --nonbanded -p %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-l/17       @cmalign@  -l --nonbanded -p --onepost %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/19       @cmalign@  -l --nonbanded --cyk --small %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/20       @cmalign@  -l --nonbanded --inside %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/21       @cmalign@  -l --nonbanded --checkpost -p %TRNA.CM% 3trnas.fa
@@ -107,14 +104,12 @@
 1  exercise  cmalign:trna-l/23       @cmalign@  -l --tau 5E-2 --optacc %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/24       @cmalign@  -l --tau 5E-2 --viterbi %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/25       @cmalign@  -l --tau 5E-2 -p %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-l/26       @cmalign@  -l --tau 5E-2 -p --onepost %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/29       @cmalign@  -l --mxsize 333 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/30       @cmalign@  -l --rna %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/31       @cmalign@  -l --dna %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/32       @cmalign@  -l --matchonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/33       @cmalign@  -l --resonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/34       @cmalign@  -l --fins %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-l/35       @cmalign@  -l -p --onepost %TRNA.CM% 3trnas.fa
 1  prep      model/trna2           @cmbuild@ -F --wnone %TMP.CM% trna1415G.sto
 1  exercise  cmalign:trna-l/36       @cmalign@  -l --withali trna1415G.sto %TMP.CM% 3trnas.fa 
 1  prep      model/trna3           @cmbuild@ -F --rf --wnone %TMP.CM% trna1415G.sto
@@ -132,6 +127,7 @@
 1  exercise  cmalign:trna-l/51       @cmalign@  -l --banddump 3 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/52       @cmalign@  -l --dlev 3 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/53       @cmalign@  -l --banddump 3 -p %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-l/54       @cmalign@  -l -p --matchonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-p/1        @cmalign@  -l --pebegin --pfend 0.03 %TRNA.CM% 3trnas.fa
 
 
@@ -162,7 +158,6 @@
 1  exercise  cmalign:trna-b/14       @cmalign@  --nonbanded --optacc %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/15       @cmalign@  --nonbanded --viterbi %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/16       @cmalign@  --nonbanded -p %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-b/17       @cmalign@  --nonbanded -p --onepost %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/18       @cmalign@  --nonbanded --sub %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/19       @cmalign@  --cyk --small --nonbanded %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/20       @cmalign@  --nonbanded --inside %TRNA.CM% 3trnas.fa
@@ -171,7 +166,6 @@
 1  exercise  cmalign:trna-b/23       @cmalign@  --tau 5E-2 --optacc %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/24       @cmalign@  --tau 5E-2 --viterbi %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/25       @cmalign@  --tau 5E-2 -p %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-b/26       @cmalign@  --tau 5E-2 -p --onepost %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/27       @cmalign@  --tau 5E-2 --sub %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/28       @cmalign@  --tau 5E-2 --cyk --sub %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/29       @cmalign@ --mxsize 333 %TRNA.CM% 3trnas.fa
@@ -180,7 +174,6 @@
 1  exercise  cmalign:trna-b/32       @cmalign@  --matchonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/33       @cmalign@  --resonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/34       @cmalign@  --fins %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-b/35       @cmalign@  -p --onepost %TRNA.CM% 3trnas.fa
 1  prep      model/trna2           @cmbuild@ --binary -F --wnone %TMP.CM% trna1415G.sto
 1  exercise  cmalign:trna-b/36       @cmalign@ --withali trna1415G.sto %TMP.CM% 3trnas.fa 
 1  prep      model/trna3           @cmbuild@ --binary -F --rf --wnone %TMP.CM% trna1415G.sto
@@ -202,6 +195,7 @@
 1  exercise  cmalign:trna-b/51       @cmalign@ --banddump 3 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/52       @cmalign@ --dlev 3 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/53       @cmalign@ --banddump 3 -p %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b/54       @cmalign@  --matchonly -p %TRNA.CM% 3trnas.fa
 
 # local alignment with -l
 1  prep      model/trna            @cmbuild@ --binary -F --rf --wnone %TRNA.CM% trna1415G.sto
@@ -228,7 +222,6 @@
 1  exercise  cmalign:trna-b-l/14       @cmalign@  -l --nonbanded --optacc %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/15       @cmalign@  -l --nonbanded --viterbi %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/16       @cmalign@  -l --nonbanded -p %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-b-l/17       @cmalign@  -l --nonbanded -p --onepost %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/19       @cmalign@  -l --nonbanded --cyk --small %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/20       @cmalign@  -l --nonbanded --inside %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/21       @cmalign@  -l --nonbanded --checkpost -p %TRNA.CM% 3trnas.fa
@@ -236,14 +229,12 @@
 1  exercise  cmalign:trna-b-l/23       @cmalign@  -l --tau 5E-2 --optacc %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/24       @cmalign@  -l --tau 5E-2 --viterbi %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/25       @cmalign@  -l --tau 5E-2 -p %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-b-l/26       @cmalign@  -l --tau 5E-2 -p --onepost %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/29       @cmalign@  -l --mxsize 333 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/30       @cmalign@  -l --rna %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/31       @cmalign@  -l --dna %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/32       @cmalign@  -l --matchonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/33       @cmalign@  -l --resonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/34       @cmalign@  -l --fins %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-b-l/35       @cmalign@  -l -p --onepost %TRNA.CM% 3trnas.fa
 1  prep      model/trna2           @cmbuild@ --binary -F --wnone %TMP.CM% trna1415G.sto
 1  exercise  cmalign:trna-b-l/36       @cmalign@  -l --withali trna1415G.sto %TMP.CM% 3trnas.fa 
 1  prep      model/trna3           @cmbuild@ --binary -F --rf --wnone %TMP.CM% trna1415G.sto
@@ -261,6 +252,7 @@
 1  exercise  cmalign:trna-b-l/51       @cmalign@  -l --banddump 3 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/52       @cmalign@  -l --dlev 3 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/53       @cmalign@  -l --banddump 3 -p %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b-l/54       @cmalign@  -l -p --matchonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-p/1          @cmalign@  -l --pebegin --pfend 0.03 %TRNA.CM% 3trnas.fa
 
 # repeat a few of the above excercises with a multi-CM cmfile, (if it works

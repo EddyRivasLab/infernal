@@ -430,16 +430,6 @@ replicates the default behavior of previous versions of
 .B cmalign.
 
 .TP
-.B --onepost
-Modifies behavior of the 
-.B -p
-option. Use only one character instead of two to annotate the
-posterior probability of each aligned residue. Specifically, only the "#=GR
-<seq name> POSTX." tag is printed to the alignment. An "8" for
-"POSTX." indicates a posterior probability between 0.8 and 0.9 for the
-corresponding residue. 
-
-.TP
 .B --merge
 With 
 .B --merge

@@ -471,7 +471,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
 	  fprintf(cfg->pfp, "//\n");
 	}
     }
-  if((status = Parsetrees2Alignment(cm, cfg->abc_out, sq, NULL, tr, nseq,
+  if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, sq, NULL, tr, NULL, NULL, nseq,
 				    TRUE,  /* we want all match columns */
 				    FALSE, /* we don't want ONLY match columns */
 				    &msa) != eslOK))
@@ -626,7 +626,7 @@ build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf
 	  sq[i]->abc = cfg->abc_out;
 	}
       /* Build a new MSA from these parsetrees */
-      if((status = Parsetrees2Alignment(cm, cfg->abc_out, sq, NULL, tr, nseq,
+      if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, sq, NULL, tr, NULL, NULL, nseq,
 					TRUE,  /* we want all match columns */
 					FALSE, /* we don't want ONLY match columns */
 					&msa) != eslOK))
