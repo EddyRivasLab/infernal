@@ -13,7 +13,7 @@ cmbuild - construct a CM from an RNA multiple sequence alignment
 .SH DESCRIPTION
 
 .B cmbuild
-read an RNA multiple sequence alignment from
+reads an RNA multiple sequence alignment from
 .I alifile,
 constructs a covariance model (CM),
 and saves the CM to

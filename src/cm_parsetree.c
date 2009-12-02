@@ -636,49 +636,40 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
 
 /* Function : Parsetrees2Alignment()
  *
- * Purpose:   Creates a MSA from a set of parsetrees and a CM.
- *
+ * Purpose:   Creates a MSA from a set of parsetrees and a CM. If (do_matchonly)
+ *            the MSA will only include consensus columns. If (do_resonly) only
+ *            columns including at least 1 residue are included (by default, all
+ *            consensus columns are included even if 0 seqs have a residue in them).
  * 
  * Args:     cm         - the CM the CP9 was built from, needed to get emitmap,
  *                        so we know where to put EL transitions
+ *           errbuf     - for error messages.
  *           abc        - alphabet to use to create the return MSA
  *           sq         - sequences, must be digitized (we check for it)
  *           wgt        - weights for seqs, NULL for none
- *           nseq       - number of sequences
  *           tr         - array of tracebacks
+ *           postcode1  - 'tens' ('9' in '93') place postal code (NULL for none)
+ *           postcode2  - 'ones' ('3' in '93') place postal code (NULL for none)
+ *           nseq       - number of sequences
  *           do_full    - TRUE to always include all match columns in alignment
  *           do_matchonly - TRUE to ONLY include match columns
  *           ret_msa    - MSA, alloc'ed/created here
  *
- * Return:   eslOK on succes, eslEMEM on memory error.
- *           MSA structure in ret_msa, caller responsible for freeing.
- *
- * Returns:   eslOK on success, eslEMEM on memory error, 
+ * Returns:   eslOK on success, eslEMEM on memory error, eslEINVALID on contract violation.
  *            Also ret_msa is filled with a new MSA.
  *
  */
 int
-Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
-		     Parsetree_t **tr, int nseq, int do_full, int do_matchonly, 
-		     ESL_MSA **ret_msa)
+Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
+		     Parsetree_t **tr, char **postcode1, char **postcode2, int nseq,
+		     int do_full, int do_matchonly, ESL_MSA **ret_msa)
 {
-  char errbuf[eslERRBUFSIZE];
-
-  /* Contract check. We allow the caller to specify the alphabet they want the 
-   * resulting MSA in, but it has to make sense (see next few lines). */
-  if(cm->abc->type == eslRNA)
-    { 
-      if(abc->type != eslRNA && abc->type != eslDNA)
-	cm_Fail("ERROR in Parsetrees2Alignment(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
-    }
-  else if(cm->abc->K != abc->K)
-    cm_Fail("ERROR in Parsetrees2Alignment(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
-
   int          status;       /* easel status flag */
   ESL_MSA     *msa   = NULL; /* multiple sequence alignment */
   CMEmitMap_t *emap  = NULL; /* consensus emit map for the CM */
   int          i;            /* counter over traces */
   int          j;            /* other counter */
+  int          a;            /* yet another counter */
   int          v, nd;        /* state, node indices */
   int          cpos;         /* counter over consensus positions (0)1..clen */
   int         *matuse= NULL; /* TRUE if we need a cpos in mult alignment */
@@ -699,7 +690,24 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   int          el_len;	     /* length of an EL insertion in residues */
   CMConsensus_t *con = NULL; /* consensus information for the CM */
   int          prvnd;	     /* keeps track of previous node for EL */
-  int          nins;          /* insert counter used for splitting inserts */
+  int          nins;         /* insert counter used for splitting inserts */
+  int          do_post;      /* TRUE if postcode1 != NULL && postcode2 != NULL (we should write at least 1 sequence's posteriors) */
+  int          do_cur_post;  /* TRUE if we're writing posteriors for the current sequence inside a loop */
+  char        *tmp_apc1 = NULL; /* will hold aligned postcode1 characters for current sequence */
+  char        *tmp_apc2 = NULL; /* will hold aligned postcode2 characters for current sequence */
+
+  /* Contract check. We allow the caller to specify the alphabet they want the 
+   * resulting MSA in, but it has to make sense (see next few lines). */
+  if(cm->abc->type == eslRNA) {  
+      if(abc->type != eslRNA && abc->type != eslDNA)
+	ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), cm alphabet is RNA, but requested output alphabet is neither DNA nor RNA.");
+  }
+  else if(cm->abc->K != abc->K) {
+    ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
+  }
+  if(postcode1 != NULL && postcode2 == NULL) ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), postcode1 != NULL, but postcode2 == NULL"); 
+  if(postcode1 == NULL && postcode2 != NULL) ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), postcode2 != NULL, but postcode1 == NULL"); 
+  do_post = (postcode1 != NULL && postcode2 !=NULL) ? TRUE : FALSE;
 
   emap = CreateEmitMap(cm);
 
@@ -796,9 +804,13 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
       } else 
 	matmap[cpos] = -1;
 
-      ilmap[cpos] = alen; alen += maxil[cpos];
-      elmap[cpos] = alen; alen += maxel[cpos];
-      alen += maxir[cpos]; irmap[cpos] = alen-1; 
+      ilmap[cpos] = alen; 
+      if(! do_matchonly) alen += maxil[cpos];
+      elmap[cpos] = alen; 
+      if(! do_matchonly) alen += maxel[cpos];
+      if(! do_matchonly) alen += maxir[cpos]; 
+      irmap[cpos] = alen-1; 
+      /* note: if do_matchonly, no inserts are printed, ilmap, elmap, irmap are irrelevant */
     }
 
   /* We're getting closer.
@@ -810,22 +822,52 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   msa->alen = alen;
   msa->abc  = (ESL_ALPHABET *) abc;
 
+  if(do_post) { /* these will be reused for each sequence (the aligned postcode arrays are all the same length) */
+    ESL_ALLOC(tmp_apc1, sizeof(char) * (msa->alen+1));
+    ESL_ALLOC(tmp_apc2, sizeof(char) * (msa->alen+1));
+  }
+
   for (i = 0; i < nseq; i++)
     {
       /* Contract check */
-      if(sq[i]->dsq == NULL) cm_Fail("ERROR in Parsetrees2Alignment(), sq %d is not digitized.\n", i);
+      if(sq[i]->dsq == NULL) ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), sq %d is not digitized.\n", i);
+      do_cur_post = FALSE;
+      if(do_post) { 
+	if(postcode1[i] != NULL && postcode2[i] == NULL) ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), postcode1[%d] != NULL, but postcode2[%d] == NULL", i, i);
+	if(postcode1[i] == NULL && postcode2[i] != NULL) ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), postcode1[%d] == NULL, but postcode2[%d] != NULL", i, i);
+	do_cur_post = (postcode1[i] != NULL && postcode2[i] != NULL) ? TRUE : FALSE;
+      }
 
       /* Initialize the aseq with all pads '.' (in insert cols) 
        * and deletes '-' (in match cols).
        */
-      for (apos = 0; apos < alen; apos++)
-	msa->aseq[i][apos] = '.';
-      for (cpos = 0; cpos <= emap->clen; cpos++)
-	if (matmap[cpos] != -1) msa->aseq[i][matmap[cpos]] = '-';
+      if(! do_matchonly) { /* if do_matchonly, we'll have no insert columns */
+	for (apos = 0; apos < alen; apos++) { 
+	  msa->aseq[i][apos] = '.';
+	}
+	if(do_cur_post) { 
+	  for (apos = 0; apos < alen; apos++) { 
+	    tmp_apc1[apos] = tmp_apc2[apos] = '.';
+	  }
+	}
+      }
+      for (cpos = 0; cpos <= emap->clen; cpos++) {
+	if (matmap[cpos] != -1) { 
+	  msa->aseq[i][matmap[cpos]] = '-';
+	}
+      }
+      if(do_cur_post) { 
+	for (cpos = 0; cpos <= emap->clen; cpos++) {
+	  if (matmap[cpos] != -1) { 
+	    tmp_apc1[matmap[cpos]] = tmp_apc2[matmap[cpos]] = '-';
+	  }
+	}
+      }
       msa->aseq[i][alen] = '\0';
+      if(do_cur_post) tmp_apc1[alen] = tmp_apc2[alen] = '\0';
 
       /* Traverse this guy's trace, and place all his
-       * emitted residues.
+       * emitted residues and posteriors.
        */
       for (cpos = 0; cpos <= emap->clen; cpos++)
 	iluse[cpos] = iruse[cpos] = 0;
@@ -842,11 +884,19 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
 	    apos = matmap[cpos];
 	    rpos = tr[i]->emitl[tpos];
 	    msa->aseq[i][apos] = abc->sym[sq[i]->dsq[rpos]];
+	    if(do_cur_post) { 
+	      tmp_apc1[apos] = postcode1[i][rpos-1];
+	      tmp_apc2[apos] = postcode2[i][rpos-1];
+	    }
 
 	    cpos = emap->rpos[nd];
 	    apos = matmap[cpos];
 	    rpos = tr[i]->emitr[tpos];
 	    msa->aseq[i][apos] = abc->sym[sq[i]->dsq[rpos]];
+	    if(do_cur_post) { 
+	      tmp_apc1[apos] = postcode1[i][rpos-1];
+	      tmp_apc2[apos] = postcode2[i][rpos-1];
+	    }
 	    break;
 	    
 	  case ML_st:
@@ -854,6 +904,10 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
 	    apos = matmap[cpos];
 	    rpos = tr[i]->emitl[tpos];
 	    msa->aseq[i][apos] = abc->sym[sq[i]->dsq[rpos]];
+	    if(do_cur_post) { 
+	      tmp_apc1[apos] = postcode1[i][rpos-1];
+	      tmp_apc2[apos] = postcode2[i][rpos-1];
+	    }
 	    break;
 
 	  case MR_st:
@@ -861,13 +915,22 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
 	    apos = matmap[cpos];
 	    rpos = tr[i]->emitr[tpos];
 	    msa->aseq[i][apos] = abc->sym[sq[i]->dsq[rpos]];
+	    if(do_cur_post) { 
+	      tmp_apc1[apos] = postcode1[i][rpos-1];
+	      tmp_apc2[apos] = postcode2[i][rpos-1];
+	    }
 	    break;
 
 	  case IL_st:
+	    if(do_matchonly) break;
 	    cpos = emap->lpos[nd];
 	    apos = ilmap[cpos] + iluse[cpos];
 	    rpos = tr[i]->emitl[tpos];
 	    msa->aseq[i][apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
+	    if(do_cur_post) { 
+	      tmp_apc1[apos] = postcode1[i][rpos-1];
+	      tmp_apc2[apos] = postcode2[i][rpos-1];
+	    }
 	    iluse[cpos]++;
 	    break;
 
@@ -877,20 +940,30 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
              * cpos. If we ever decide to regularize (split) insertions,
              * though, we'll want to calculate eluse in the rpos loop.
              */
+	    if(do_matchonly) break;
 	    cpos = emap->epos[nd]; 
 	    apos = elmap[cpos]; 
 	    for (rpos = tr[i]->emitl[tpos]; rpos <= tr[i]->emitr[tpos]; rpos++)
 	      {
 		msa->aseq[i][apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
+		if(do_cur_post) { 
+		  tmp_apc1[apos] = postcode1[i][rpos-1];
+		  tmp_apc2[apos] = postcode2[i][rpos-1];
+		}
 		apos++;
 	      }
 	    break;
 
 	  case IR_st: 
+	    if(do_matchonly) break;
 	    cpos = emap->rpos[nd]-1;  /* -1 converts to "following this one" */
 	    apos = irmap[cpos] - iruse[cpos];  /* writing backwards, 3'->5' */
 	    rpos = tr[i]->emitr[tpos];
 	    msa->aseq[i][apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
+	    if(do_cur_post) { 
+	      tmp_apc1[apos] = postcode1[i][rpos-1];
+	      tmp_apc2[apos] = postcode2[i][rpos-1];
+	    }
 	    iruse[cpos]++;
 	    break;
 
@@ -913,60 +986,87 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
 	  prvnd = nd;
 	} /* end traversal over trace i. */
 
-      /* IL/EL Insertions are currently flush-left and IR insertions are currently flush-right.
-       * This is pre-1.0 Infernal behavior. If(cm->align_opts & CM_ALIGN_FLUSHINSERTS) we leave them all alone,
-       * otherwise we regularize (split) the internal inserts, we flush the 5' inserts right and the 3'
-       * inserts left (note: pre 1.0 behavior does the opposite, flushes 5' left (assuming they're ROOT_ILs)
-       * and flushes 3' right (assuming they're ROOT_IRs).
-       *
-       * We have to be careful about EL's. We don't want to group IL/IR's and EL's together and then split them
-       * because we need to annotate IL/IR's as '.'s in the consensus structure and EL's as '~'. So we split
-       * each group separately. There should only be either IL or IR's at any position (b/c assuming we've
-       * detached the CM grammar ambiguity (which is default in cmbuild)). But we don't count on it here.
-       */
-      if(! (cm->align_opts & CM_ALIGN_FLUSHINSERTS)) /* default behavior, split insert in half */
-	{
-	  /* Deal with inserts before first consensus position, ILs, then ELs, then IRs
-	   * IL's are flush left, we want flush right */
-	  rightjustify(msa->abc, msa->aseq[i], maxil[0]);
-	  /* EL's are flush left, we want flush right I think these are impossible, but just in case... */
-	  rightjustify(msa->abc, msa->aseq[i]+maxil[0], maxel[0]);
-	  /* IR's are flush right, we want flush right, do nothing */
+      /* add tmp_apc1 and tmp_apc2 posterior probabilities to msa, if nec */
+      if(do_cur_post) { 
+	esl_msa_AppendGR(msa, "POSTX.", i, tmp_apc1);
+	esl_msa_AppendGR(msa, "POST.X", i, tmp_apc2);
+      }
 
-	  /* split all internal insertions */
-	  for (cpos = 1; cpos < emap->clen; cpos++) 
-	    {
-	      if(maxil[cpos] > 1) /* we're flush LEFT, want to split */
-		{
-		  apos = matmap[cpos]+1;
-		  for (nins = 0; islower((int) (msa->aseq[i][apos])); apos++)
-		    nins++;
-		  nins /= 2;		/* split the insertion in half */
-		  rightjustify(msa->abc, msa->aseq[i]+matmap[cpos]+1+nins, maxil[cpos]-nins);
-		}
-	      if(maxel[cpos] > 1) /* we're flush LEFT, want to split */
-		{
-		  apos = matmap[cpos]+1 + maxil[cpos];
-		  for (nins = 0; islower((int) (msa->aseq[i][apos])); apos++)
-		    nins++;
-		  nins /= 2;		/* split the insertion in half */
-		  rightjustify(msa->abc, msa->aseq[i]+matmap[cpos]+1+maxil[cpos]+nins, maxel[cpos]-nins);
-		}
-	      if(maxir[cpos] > 1) /* we're flush RIGHT, want to split */
-		{
-		  apos = matmap[cpos+1]-1;
-		  for (nins = 0; islower((int) (msa->aseq[i][apos])); apos--)
-		    nins++;
-		  nins ++; nins /= 2;		/* split the insertion in half (++ makes it same behavior as IL/EL */
-		  leftjustify(msa->abc, msa->aseq[i]+matmap[cpos]+1 + maxil[cpos] + maxel[cpos], maxir[cpos]-nins);
-		}
+      /* rejustify inserts and associated GR annotation (possibly postcodes) */
+      if(! do_matchonly) { 
+	/* IL/EL Insertions are currently flush-left and IR insertions are currently flush-right.
+	 * This is pre-1.0 Infernal behavior. If(cm->align_opts & CM_ALIGN_FLUSHINSERTS) we leave them all alone,
+	 * otherwise we regularize (split) the internal inserts, we flush the 5' inserts right and the 3'
+	 * inserts left (note: pre 1.0 behavior does the opposite, flushes 5' left (assuming they're ROOT_ILs)
+	 * and flushes 3' right (assuming they're ROOT_IRs).
+	 *
+	 * We have to be careful about EL's. We don't want to group IL/IR's and EL's together and then split them
+	 * because we need to annotate IL/IR's as '.'s in the consensus structure and EL's as '~'. So we split
+	 * each group separately. There should only be either IL or IR's at any position (b/c assuming we've
+	 * detached the CM grammar ambiguity (which is default in cmbuild)). But we don't count on it here.
+	 */
+	if(! (cm->align_opts & CM_ALIGN_FLUSHINSERTS)) /* default behavior, split insert in half */
+	  {
+	    /* Deal with inserts before first consensus position, ILs, then ELs, then IRs
+	     * IL's are flush left, we want flush right */
+	    rightjustify(msa->abc, msa->aseq[i], maxil[0]);
+	    for(a = 0; a < msa->ngr; a++) { 
+	      if(msa->gr[a][i] != NULL) rightjustify(msa->abc, msa->gr[a][i], maxil[0]);
 	    }
-	  /* Deal with inserts after final consensus position, IL's then EL's, then IR's
-	   * IL's are flush left, we want flush left, do nothing 
-	   * EL's are flush left, we want flush left, do nothing 
-	   * IR's are flush right, we want flush left */
-	  leftjustify(msa->abc, msa->aseq[i]+matmap[emap->clen]+1 + maxil[emap->clen] + maxel[emap->clen], maxir[emap->clen]);
-	}
+	    /* EL's are flush left, we want flush right I think these are impossible, but just in case... */
+	    rightjustify(msa->abc, msa->aseq[i]+maxil[0], maxel[0]);
+	    for(a = 0; a < msa->ngr; a++) { 
+	      if(msa->gr[a][i] != NULL) rightjustify(msa->abc, msa->aseq[i]+maxil[0], maxel[0]);
+	    }
+	    /* IR's are flush right, we want flush right, do nothing */
+	    
+	    /* split all internal insertions */
+	    for (cpos = 1; cpos < emap->clen; cpos++) 
+	      {
+		if(maxil[cpos] > 1) /* we're flush LEFT, want to split */
+		  {
+		    apos = matmap[cpos]+1;
+		    for (nins = 0; islower((int) (msa->aseq[i][apos])); apos++)
+		      nins++;
+		    nins /= 2;		/* split the insertion in half */
+		    rightjustify(msa->abc, msa->aseq[i]+matmap[cpos]+1+nins, maxil[cpos]-nins);
+		    for(a = 0; a < msa->ngr; a++) { 
+		      if(msa->gr[a][i] != NULL) rightjustify(msa->abc, msa->gr[a][i]+matmap[cpos]+1+nins, maxil[cpos]-nins);
+		    }
+		  }
+		if(maxel[cpos] > 1) /* we're flush LEFT, want to split */
+		  {
+		    apos = matmap[cpos]+1 + maxil[cpos];
+		    for (nins = 0; islower((int) (msa->aseq[i][apos])); apos++)
+		      nins++;
+		    nins /= 2;		/* split the insertion in half */
+		    rightjustify(msa->abc, msa->aseq[i]+matmap[cpos]+1+maxil[cpos]+nins, maxel[cpos]-nins);
+		    for(a = 0; a < msa->ngr; a++) { 
+		      if(msa->gr[a][i] != NULL) rightjustify(msa->abc, msa->gr[a][i]+matmap[cpos]+1+maxil[cpos]+nins, maxel[cpos]-nins);
+		    }
+		  }
+		if(maxir[cpos] > 1) /* we're flush RIGHT, want to split */
+		  {
+		    apos = matmap[cpos+1]-1;
+		    for (nins = 0; islower((int) (msa->aseq[i][apos])); apos--)
+		      nins++;
+		    nins ++; nins /= 2;		/* split the insertion in half (++ makes it same behavior as IL/EL */
+		    leftjustify(msa->abc, msa->aseq[i]+matmap[cpos]+1 + maxil[cpos] + maxel[cpos], maxir[cpos]-nins);
+		    for(a = 0; a < msa->ngr; a++) { 
+		      if(msa->gr[a][i] != NULL) leftjustify(msa->abc, msa->gr[a][i]+matmap[cpos]+1 + maxil[cpos] + maxel[cpos], maxir[cpos]-nins);
+		    }
+		  }
+	      }
+	    /* Deal with inserts after final consensus position, IL's then EL's, then IR's
+	     * IL's are flush left, we want flush left, do nothing 
+	     * EL's are flush left, we want flush left, do nothing 
+	     * IR's are flush right, we want flush left */
+	    leftjustify(msa->abc, msa->aseq[i]+matmap[emap->clen]+1 + maxil[emap->clen] + maxel[emap->clen], maxir[emap->clen]);
+	    for(a = 0; a < msa->ngr; a++) { 
+	      if(msa->gr[a][i] != NULL) leftjustify(msa->abc, msa->gr[a][i]+matmap[emap->clen]+1 + maxil[emap->clen] + maxel[emap->clen], maxir[emap->clen]);
+	    }
+	  }
+      }
     } /* end loop over all parsetrees */
 
 
@@ -1016,19 +1116,19 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
 	    msa->rf[matmap[cpos]]      = con->cseq[cpos-1];
 	  }
 	}
-      if (maxil[cpos] > 0) 
+      if ((maxil[cpos] > 0) && (! do_matchonly)) 
 	for (apos = ilmap[cpos]; apos < ilmap[cpos] + maxil[cpos]; apos++)
 	  {
 	    msa->ss_cons[apos] = '.';
 	    msa->rf[apos] = '.';
 	  }
-      if (maxel[cpos] > 0)
+      if ((maxel[cpos] > 0) && (! do_matchonly))
 	for (apos = elmap[cpos]; apos < elmap[cpos] + maxel[cpos]; apos++)
 	  {
 	    msa->ss_cons[apos] = '~';
 	    msa->rf[apos] = '~';
 	  }
-      if (maxir[cpos] > 0)	/* remember to write backwards */
+      if ((maxir[cpos] > 0) && (! do_matchonly)) /* remember to write backwards */
 	for (apos = irmap[cpos]; apos > irmap[cpos] - maxir[cpos]; apos--)
 	  {
 	    msa->ss_cons[apos] = '.';
@@ -1038,6 +1138,7 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   msa->ss_cons[alen] = '\0';
   msa->rf[alen] = '\0';
 
+#if 0
   /* If we only want the match columns, shorten the alignment
    * by getting rid of the inserts. (Alternatively we could probably
    * simplify the building of the alignment, but all that pretty code
@@ -1053,7 +1154,10 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
       if((status = esl_msa_ColumnSubset(msa, errbuf, useme)) != eslOK) return status;
       free(useme);
     }
+#endif
 
+  if(tmp_apc1 != NULL) free(tmp_apc1);
+  if(tmp_apc2 != NULL) free(tmp_apc2);
   FreeCMConsensus(con);
   FreeEmitMap(emap);
   free(matuse);
@@ -1071,6 +1175,8 @@ Parsetrees2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
   return eslOK;
 
  ERROR:
+  if(tmp_apc1 != NULL) free(tmp_apc1);
+  if(tmp_apc2 != NULL) free(tmp_apc2);
   if(con   != NULL)  FreeCMConsensus(con);
   if(emap  != NULL)  FreeEmitMap(emap);
   if(matuse!= NULL)  free(matuse);
