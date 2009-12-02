@@ -614,6 +614,8 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
  *           postcode1  - 'tens' ('9' in '93') place postal code (NULL for none)
  *           postcode2  - 'ones' ('3' in '93') place postal code (NULL for none)
  *           nseq       - number of sequences
+ *           insertfp   - file to print per-seq insert information to (NULL if none)
+ *           elfp       - file to print per-seq EL insert information to (NULL if none)
  *           do_full    - TRUE to always include all match columns in alignment
  *           do_matchonly - TRUE to ONLY include match columns
  *           ret_msa    - MSA, alloc'ed/created here
@@ -625,7 +627,7 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
 int
 Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
 		     Parsetree_t **tr, char **postcode1, char **postcode2, int nseq,
-		     int do_full, int do_matchonly, ESL_MSA **ret_msa)
+		     FILE *insertfp, FILE *elfp, int do_full, int do_matchonly, ESL_MSA **ret_msa)
 {
   int          status;       /* easel status flag */
   ESL_MSA     *msa   = NULL; /* multiple sequence alignment */
@@ -743,12 +745,23 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	  prvnd = nd;
 	} /* end looking at trace i */
 
+      if(insertfp != NULL) { fprintf(insertfp, "%s", sq[i]->name); }
+      if(elfp != NULL)     { fprintf(elfp,     "%s", sq[i]->name); }
       for (cpos = 0; cpos <= emap->clen; cpos++) 
 	{
 	  if (iluse[cpos] > maxil[cpos]) maxil[cpos] = iluse[cpos];
 	  if (eluse[cpos] > maxel[cpos]) maxel[cpos] = eluse[cpos];
 	  if (iruse[cpos] > maxir[cpos]) maxir[cpos] = iruse[cpos];
+	  if((insertfp != NULL) && ((iluse[cpos] + iruse[cpos]) > 0)) { 
+	    fprintf(insertfp, " %d %d", cpos, (iluse[cpos] + iruse[cpos])); 
+	    /* Note: only 1 of iluse[cpos] or iruse[cpos] should be != 0 (I think) */
+	  }
+	  if((elfp != NULL) && (eluse[cpos] > 0)) { 
+	    fprintf(elfp, " %d %d", cpos, eluse[cpos]);
+	  }
 	}
+      if(insertfp != NULL) { fprintf(insertfp, "\n"); }
+      if(elfp != NULL)     { fprintf(elfp,     "\n"); }
     } /* end calculating lengths used by all traces */
   
 
