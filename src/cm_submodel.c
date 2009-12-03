@@ -774,7 +774,10 @@ build_sub_cm(CM_t *orig_cm, char *errbuf, CM_t **ret_cm, int sstruct, int estruc
 
   /* Finally renormalize the CM */
   CMRenormalize(sub_cm);
-  CMLogoddsify(sub_cm);
+  /* DO NOT LOGODDSIFY YET, we'll do this when we call ConfigCM() for this CM, 
+   * the logsoddsification step takes a significant amount of time.
+   * CMLogoddsify(sub_cm);
+   */
 
   if(print_flag)
     {

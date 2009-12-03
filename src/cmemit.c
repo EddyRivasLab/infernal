@@ -475,6 +475,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
 				    NULL, NULL, /* we're not printing to insert, EL info files */
 				    TRUE,  /* we want all match columns */
 				    FALSE, /* we don't want ONLY match columns */
+				    TRUE,  /* be memory efficient, free tr's */
 				    &msa) != eslOK))
     ESL_XFAIL(eslFAIL, errbuf, "Error generating alignment from parsetrees.");
   if(cm->name != NULL) 
@@ -491,13 +492,18 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   if      (status == eslEMEM) ESL_XFAIL(status, errbuf, "Memory error when outputting alignment\n");
   else if (status != eslOK)   ESL_XFAIL(status, errbuf, "Writing alignment file failed with error %d\n", status);
 
-  for(i = 0; i < nseq; i++)
-    {
-      esl_sq_Destroy(sq[i]);
-      FreeParsetree(tr[i]);
+  if(sq != NULL) { 
+    for(i = 0; i < nseq; i++) { 
+      if(sq[i] != NULL) esl_sq_Destroy(sq[i]);
     }
-  free(sq);
-  free(tr);
+    free(sq);
+  }
+  if(tr != NULL) { 
+    for(i = 0; i < nseq; i++) { 
+      if(tr[i] != NULL) FreeParsetree(tr[i]);
+    }
+    free(tr);
+  }
   free(name);
   esl_msa_Destroy(msa);
   return eslOK;
@@ -631,6 +637,7 @@ build_cp9(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *errbuf
 					NULL, NULL, /* we're not printing to insert, EL info files */
 					TRUE,  /* we want all match columns */
 					FALSE, /* we don't want ONLY match columns */
+					FALSE, /* don't worry about memory efficiency */
 					&msa) != eslOK))
 	ESL_XFAIL(eslFAIL, errbuf, "Error generating alignment from parsetrees during HMM construction.");
 

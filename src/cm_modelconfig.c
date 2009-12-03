@@ -31,7 +31,7 @@
  *           Calculates query dependent bands (QDBs) if nec.
  *           QDBs can also be passed in. 
  * 
- * Args:     CM           - the covariance model
+ * Args:     CM            - the covariance model
  *           always_calc_W - TRUE to always calculate W even if we're not calcing
  *                           QDBs, FALSE to only calc W if we're calcing QDBs
  *

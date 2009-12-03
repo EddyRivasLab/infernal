@@ -110,6 +110,25 @@ FreeParsetree(Parsetree_t *tr)
   free(tr);
 }
 
+/* Function: SizeofParsetree()
+ * Incept:   EPN, Wed Dec  2 17:26:45 2009
+ * 
+ * Purpose:  Return the allocated size of a parsetree in Mb.
+ */
+float
+SizeofParsetree(Parsetree_t *tr)
+{
+  float Mb;
+  
+  Mb = 0.;
+  Mb += 3 * sizeof(int); /* n, nalloc, memblock */
+  Mb += tr->nalloc * (sizeof(int)) * 7; 
+  Mb /= 1000000.;
+  /* 7 = emitl,emitr,state,mode,nxtl,nxtr,prv */
+
+  return Mb;
+}
+
 /* Function: InsertTraceNodewithMode()
  * Incept:   SRE 1 March 2000 [Seattle]
  * 
@@ -618,6 +637,7 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
  *           elfp       - file to print per-seq EL insert information to (NULL if none)
  *           do_full    - TRUE to always include all match columns in alignment
  *           do_matchonly - TRUE to ONLY include match columns
+ *           be_efficient - TRUE to free a parsetree as soon as we've created an aligned seq
  *           ret_msa    - MSA, alloc'ed/created here
  *
  * Returns:   eslOK on success, eslEMEM on memory error, eslEINVALID on contract violation.
@@ -627,7 +647,7 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
 int
 Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
 		     Parsetree_t **tr, char **postcode1, char **postcode2, int nseq,
-		     FILE *insertfp, FILE *elfp, int do_full, int do_matchonly, ESL_MSA **ret_msa)
+		     FILE *insertfp, FILE *elfp, int do_full, int do_matchonly, int be_efficient, ESL_MSA **ret_msa)
 {
   int          status;       /* easel status flag */
   ESL_MSA     *msa   = NULL; /* multiple sequence alignment */
@@ -658,6 +678,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   int          nins;         /* insert counter used for splitting inserts */
   int          do_post;      /* TRUE if postcode1 != NULL && postcode2 != NULL (we should write at least 1 sequence's posteriors) */
   int          do_cur_post;  /* TRUE if we're writing posteriors for the current sequence inside a loop */
+  char        *tmp_aseq = NULL; /* will hold aligned sequence for current sequence */
   char        *tmp_apc1 = NULL; /* will hold aligned postcode1 characters for current sequence */
   char        *tmp_apc2 = NULL; /* will hold aligned postcode2 characters for current sequence */
 
@@ -790,14 +811,18 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
     }
 
   /* We're getting closer.
-   * Now we can allocate for the MSA.
+   * Now we know the size of the MSA, but we only allocate a chunk of seqs
+   * at a time, so that if <be_efficient>, we can free each parsetree as 
+   * we create an aligned seq, to save memory.
    */
-  msa = esl_msa_Create(nseq, alen);
+  msa = esl_msa_Create(nseq, -1);
   if(msa == NULL) goto ERROR;
   msa->nseq = nseq;
   msa->alen = alen;
   msa->abc  = (ESL_ALPHABET *) abc;
 
+  /* we reuse aseq, copying it to the msa after its completed for each seq */
+  ESL_ALLOC(tmp_aseq, sizeof(char) * (msa->alen+1));
   if(do_post) { /* these will be reused for each sequence (the aligned postcode arrays are all the same length) */
     ESL_ALLOC(tmp_apc1, sizeof(char) * (msa->alen+1));
     ESL_ALLOC(tmp_apc2, sizeof(char) * (msa->alen+1));
@@ -819,7 +844,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
        */
       if(! do_matchonly) { /* if do_matchonly, we'll have no insert columns */
 	for (apos = 0; apos < alen; apos++) { 
-	  msa->aseq[i][apos] = '.';
+	  tmp_aseq[apos] = '.';
 	}
 	if(do_cur_post) { 
 	  for (apos = 0; apos < alen; apos++) { 
@@ -829,7 +854,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
       }
       for (cpos = 0; cpos <= emap->clen; cpos++) {
 	if (matmap[cpos] != -1) { 
-	  msa->aseq[i][matmap[cpos]] = '-';
+	  tmp_aseq[matmap[cpos]] = '-';
 	}
       }
       if(do_cur_post) { 
@@ -839,7 +864,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	  }
 	}
       }
-      msa->aseq[i][alen] = '\0';
+      tmp_aseq[alen] = '\0';
       if(do_cur_post) tmp_apc1[alen] = tmp_apc2[alen] = '\0';
 
       /* Traverse this guy's trace, and place all his
@@ -859,7 +884,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    cpos = emap->lpos[nd];
 	    apos = matmap[cpos];
 	    rpos = tr[i]->emitl[tpos];
-	    msa->aseq[i][apos] = abc->sym[sq[i]->dsq[rpos]];
+	    tmp_aseq[apos] = abc->sym[sq[i]->dsq[rpos]];
 	    if(do_cur_post) { 
 	      tmp_apc1[apos] = postcode1[i][rpos-1];
 	      tmp_apc2[apos] = postcode2[i][rpos-1];
@@ -868,7 +893,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    cpos = emap->rpos[nd];
 	    apos = matmap[cpos];
 	    rpos = tr[i]->emitr[tpos];
-	    msa->aseq[i][apos] = abc->sym[sq[i]->dsq[rpos]];
+	    tmp_aseq[apos] = abc->sym[sq[i]->dsq[rpos]];
 	    if(do_cur_post) { 
 	      tmp_apc1[apos] = postcode1[i][rpos-1];
 	      tmp_apc2[apos] = postcode2[i][rpos-1];
@@ -879,7 +904,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    cpos = emap->lpos[nd];
 	    apos = matmap[cpos];
 	    rpos = tr[i]->emitl[tpos];
-	    msa->aseq[i][apos] = abc->sym[sq[i]->dsq[rpos]];
+	    tmp_aseq[apos] = abc->sym[sq[i]->dsq[rpos]];
 	    if(do_cur_post) { 
 	      tmp_apc1[apos] = postcode1[i][rpos-1];
 	      tmp_apc2[apos] = postcode2[i][rpos-1];
@@ -890,7 +915,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    cpos = emap->rpos[nd];
 	    apos = matmap[cpos];
 	    rpos = tr[i]->emitr[tpos];
-	    msa->aseq[i][apos] = abc->sym[sq[i]->dsq[rpos]];
+	    tmp_aseq[apos] = abc->sym[sq[i]->dsq[rpos]];
 	    if(do_cur_post) { 
 	      tmp_apc1[apos] = postcode1[i][rpos-1];
 	      tmp_apc2[apos] = postcode2[i][rpos-1];
@@ -902,7 +927,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    cpos = emap->lpos[nd];
 	    apos = ilmap[cpos] + iluse[cpos];
 	    rpos = tr[i]->emitl[tpos];
-	    msa->aseq[i][apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
+	    tmp_aseq[apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 	    if(do_cur_post) { 
 	      tmp_apc1[apos] = postcode1[i][rpos-1];
 	      tmp_apc2[apos] = postcode2[i][rpos-1];
@@ -921,7 +946,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    apos = elmap[cpos]; 
 	    for (rpos = tr[i]->emitl[tpos]; rpos <= tr[i]->emitr[tpos]; rpos++)
 	      {
-		msa->aseq[i][apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
+		tmp_aseq[apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 		if(do_cur_post) { 
 		  tmp_apc1[apos] = postcode1[i][rpos-1];
 		  tmp_apc2[apos] = postcode2[i][rpos-1];
@@ -935,7 +960,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    cpos = emap->rpos[nd]-1;  /* -1 converts to "following this one" */
 	    apos = irmap[cpos] - iruse[cpos];  /* writing backwards, 3'->5' */
 	    rpos = tr[i]->emitr[tpos];
-	    msa->aseq[i][apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
+	    tmp_aseq[apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 	    if(do_cur_post) { 
 	      tmp_apc1[apos] = postcode1[i][rpos-1];
 	      tmp_apc2[apos] = postcode2[i][rpos-1];
@@ -947,12 +972,12 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    if (cm->stid[v] == MATP_D || cm->stid[v] == MATL_D) 
 	      {
 		cpos = emap->lpos[nd];
-		if (matuse[cpos]) msa->aseq[i][matmap[cpos]] = '-';
+		if (matuse[cpos]) tmp_aseq[matmap[cpos]] = '-';
 	      }
 	    if (cm->stid[v] == MATP_D || cm->stid[v] == MATR_D) 
 	      {
 		cpos = emap->rpos[nd];
-		if (matuse[cpos]) msa->aseq[i][matmap[cpos]] = '-';
+		if (matuse[cpos]) tmp_aseq[matmap[cpos]] = '-';
 	      }
 	    break;
 
@@ -961,6 +986,14 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 
 	  prvnd = nd;
 	} /* end traversal over trace i. */
+
+      /* copy tmp_aseq to the msa */
+      if((status = esl_strdup(tmp_aseq, msa->alen, &(msa->aseq[i]))) != eslOK) goto ERROR;
+      /* if be_efficient, free tr[i], we're done with it */
+      if(be_efficient) { 
+	FreeParsetree(tr[i]);
+	tr[i] = NULL; 
+      }
 
       /* add tmp_apc1 and tmp_apc2 posterior probabilities to msa, if nec */
       if(do_cur_post) { 
@@ -1044,7 +1077,10 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	  }
       }
     } /* end loop over all parsetrees */
-
+  if(be_efficient) { 
+    free(tr);
+    *(&tr) = NULL;
+  }
 
   /* Gee, wasn't that easy?
    * Add the rest of the ("optional") information to the MSA.
@@ -1126,24 +1162,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   msa->ss_cons[alen] = '\0';
   msa->rf[alen] = '\0';
 
-#if 0
-  /* If we only want the match columns, shorten the alignment
-   * by getting rid of the inserts. (Alternatively we could probably
-   * simplify the building of the alignment, but all that pretty code
-   * above already existed, so we do this post-msa-building shortening).
-   */
-  if(do_matchonly)
-    {
-      int *useme;
-      ESL_ALLOC(useme, sizeof(int) * (msa->alen));
-      esl_vec_ISet(useme, msa->alen, FALSE);
-      for(cpos = 0; cpos <= emap->clen; cpos++)
-	if(matmap[cpos] != -1) useme[matmap[cpos]] = TRUE;
-      if((status = esl_msa_ColumnSubset(msa, errbuf, useme)) != eslOK) return status;
-      free(useme);
-    }
-#endif
-
+  if(tmp_aseq != NULL) free(tmp_aseq);
   if(tmp_apc1 != NULL) free(tmp_apc1);
   if(tmp_apc2 != NULL) free(tmp_apc2);
   FreeCMConsensus(con);
