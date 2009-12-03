@@ -362,12 +362,14 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   CP9Map_t          *sub_cp9map;   /* maps the sub_hmm to the sub_cm and vice versa */
   CP9Bands_t        *sub_cp9b;     /* data structure for hmm bands (bands on the hmm states) 
 				    * and arrays for CM state bands, derived from HMM bands */
+  CM_HB_SHADOW_MX   *sub_shmx;     /* sub CM's shadow matrix, only valid if do_hbanded */
 
   CM_t              *orig_cm;      /* the original, template covariance model the sub CM was built from */
   CP9_t             *orig_hmm;     /* original CP9 HMM built from orig_cm */
   CP9Map_t          *orig_cp9map;  /* original CP9 map */
   CP9Bands_t        *orig_cp9b;    /* original CP9Bands */
   Parsetree_t       *orig_tr;      /* parsetree for the orig_cm; created from the sub_cm parsetree */
+  CM_HB_SHADOW_MX   *orig_shmx;    /* the original shadow matrix for the original CM */
 
   /* variables related to query dependent banding (qdb) */
   int    expand_flag;           /* TRUE if the dmin and dmax vectors have just been 
@@ -477,8 +479,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   if((!do_sub) && (do_hbanded && (do_optacc || (do_post)))) out_mx = cm_hb_mx_Create(cm->M);
 
   /* allocate/initialize shmx, if needed, only if do_hbanded */
-  shmx = NULL;
+  sub_shmx  = NULL;
+  shmx      = NULL;
   if(do_hbanded) shmx = cm_hb_shadow_mx_Create(cm, cm->M);
+  orig_shmx = shmx;
 
   if      (sq_mode)   nalign = seqs_to_aln->nseq;
   else if(dsq_mode) { nalign = search_results->num_results - first_result; silent_mode = TRUE; }
@@ -671,6 +675,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
        */
       CP9NodeForPosn(orig_hmm, 1, L, 1, orig_cm->cp9_bmx, &spos, &spos_state, 0., TRUE, debug_level);
       CP9NodeForPosn(orig_hmm, 1, L, L, orig_cm->cp9_bmx, &epos, &epos_state, 0., FALSE, debug_level);
+
       /* Deal with special cases for sub-CM alignment:
        * If the most likely state to have emitted the first or last residue
        * is the insert state in node 0, it only makes sense to start modelling
@@ -698,14 +703,16 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 	sub_hmm    = sub_cm->cp9;
 	sub_cp9b   = sub_cm->cp9b;
 	sub_cp9map = sub_cm->cp9map;
+	sub_shmx   = cm_hb_shadow_mx_Create(cm, cm->M); /* a new shadow matrix for the sub CM */
+
 	/* (5) Do Forward/Backward again, and get HMM bands */
 	if((status = cp9_Seq2Bands(sub_cm, errbuf, sub_cm->cp9_mx, sub_cm->cp9_bmx, sub_cm->cp9_bmx, cur_dsq, 1, L, sub_cp9b, FALSE, debug_level)) != eslOK) return status;
 	hmm           = sub_hmm;    
 	cp9b          = sub_cp9b;
 	cp9map        = sub_cp9map;
-
 	/* Create the out_mx if needed, cm == sub_cm */
 	if(do_optacc || do_post) out_mx = cm_hb_mx_Create(cm->M);
+	shmx = sub_shmx; /* orig_shmx still points to the original shadow matrix */
       }
     }
 
@@ -910,6 +917,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       }
       /* free sub_cm variables, we build a new sub CM for each seq */
       if(out_mx != NULL) { cm_hb_mx_Destroy(out_mx); out_mx = NULL; }
+      if(shmx   != NULL) { cm_hb_shadow_mx_Destroy(shmx); shmx = NULL; }
 
       FreeSubMap(submap);
       FreeCM(sub_cm); /* cm and sub_cm now point to NULL */
@@ -926,6 +934,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   /* done aligning all nalign seqs. */
   /* Clean up. */
   if(out_mx != NULL) cm_hb_mx_Destroy(out_mx);
+  if(shmx != NULL)      { cm_hb_shadow_mx_Destroy(shmx); shmx = NULL; }
+  /*  if(orig_shmx != NULL) { cm_hb_shadow_mx_Destroy(orig_shmx); orig_shmx = NULL; }*/
   if(alpha != NULL)  { free_vjd_matrix(alpha, cm->M, 1, L); alpha = NULL; }
   if(beta  != NULL)  { free_vjd_matrix(beta,  cm->M, 1, L); beta = NULL;  }
   if (do_qdb) {
@@ -957,7 +967,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     if(parsepp != NULL) free(parsepp);
     if(parse_struct_sc != NULL) free(parse_struct_sc);
   }
-  
+
   return eslOK;
   ERROR:
   ESL_FAIL(eslEMEM, errbuf, "DispatchAlignments(), Memory allocation error.");
