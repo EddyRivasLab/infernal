@@ -982,10 +982,86 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
   ESL_MSA *msa = NULL;
   int i, imax;
   float sc, struct_sc;
+  float tr_Mb = 0.;
 
-  /* create a new MSA, if we didn't do --inside */
+#ifdef HAVE_MPI
+  /* if --mpi and ! -q, output the scores */
+  if(esl_opt_GetBoolean(go, "--mpi") && (!esl_opt_GetBoolean(go, "-q"))) { 
+    char *namedashes;
+    int ni;
+    int namewidth = 8; /* length of 'seq name' */
+    /* determine the longest name in seqs_to_aln */
+    for(ni = 0; ni < seqs_to_aln->nseq; ni++) namewidth = ESL_MAX(namewidth, strlen(seqs_to_aln->sq[ni]->name));
+    ESL_ALLOC(namedashes, sizeof(char) * namewidth+1);
+    namedashes[namewidth] = '\0';
+    for(ni = 0; ni < namewidth; ni++) namedashes[ni] = '-';
+    if(seqs_to_aln->struct_sc == NULL || (! NOT_IMPOSSIBLE(seqs_to_aln->struct_sc[0]))) { 
+      if(cm->align_opts & CM_ALIGN_OPTACC) { 
+	fprintf(stdout, "#\n");
+	fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n", "seq idx",  namewidth, "seq name",   "len",  "bit sc",   "avg prob");
+	fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------");
+      }
+      else { 
+	fprintf(stdout, "#\n");
+	fprintf(stdout, "# %7s  %-*s  %5s  %8s\n",  "seq idx", namewidth, "seq name",   "len",  "bit sc");
+	fprintf(stdout, "# %7s  %-*s  %5s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------");
+      }
+    }
+    else { /* we have struct scores */
+      if(cm->align_opts & CM_ALIGN_OPTACC) { 
+	fprintf(stdout, "#\n");
+	fprintf(stdout, "# %7s  %-*s  %5s  %18s  %8s\n", "",         namewidth, "",                      "",       "    bit scores    ",   "");
+	fprintf(stdout, "# %7s  %-*s  %5s  %18s  %8s\n", "",         namewidth, "",                      "",       "------------------",   "");
+	fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s  %8s\n", "seq idx",  namewidth, "seq name",   "len", "total",    "struct",   "avg prob");
+	fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "--------");
+      }
+      else { 
+	fprintf(stdout, "#\n");
+	fprintf(stdout, "# %7s  %-*s  %5s  %18s\n", "", namewidth,       "",                  "",       "    bit scores    ");
+	fprintf(stdout, "# %7s  %-*s  %5s  %18s\n", "", namewidth,       "",                  "",       "------------------");
+	fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n",  "seq idx", namewidth,  "seq name",  "len",  "total",   "struct");
+	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------");
+      }
+    }
+    free(namedashes);
+    
+    int imin;
+    float null3_correction = 0.;
+    for (i = 0; i < seqs_to_aln->nseq; i++) {
+      if(!(esl_opt_GetBoolean(go, "--no-null3"))) { ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, &null3_correction); }
+      if(! NOT_IMPOSSIBLE(seqs_to_aln->struct_sc[i])) { 
+	if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-*s  %5" PRId64 "  %8.2f  %8.3f\n", (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->pp[ip]);
+	else                                 fprintf(stdout, "  %7d  %-*s  %5" PRId64 "  %8.2f\n",        (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction);
+      }
+      else { /* we have struct scores */
+	if(!(esl_opt_GetBoolean(go, "--no-null3"))) seqs_to_aln->struct_sc[i] -= ((float) ParsetreeCountMPEmissions(cm, seqs_to_aln->tr[i]) / (float) seqs_to_aln->sq[i]->n) * null3_correction; /* adjust struct_sc for NULL3 correction, this is inexact */
+	if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-*s  %5" PRId64 "  %8.2f  %8.2f  %8.3f\n", (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->struct_sc[i], seqs_to_aln->pp[ip]);
+	else                                 fprintf(stdout, "  %7d  %-*s  %5" PRId64 "  %8.2f  %8.2f\n",        (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->struct_sc[i]);
+      }
+    }
+  }
+#endif
+
+  /* create a new msa if we have traces (i.e. if --inside wasn't enabled) */
   if((esl_opt_GetBoolean(go, "--cyk") || esl_opt_GetBoolean(go, "--viterbi")) || (esl_opt_GetBoolean(go, "--optacc") || esl_opt_GetBoolean(go, "--sample")))
     {
+      /* if nec, output the traces */
+      if(cfg->tracefp != NULL) { 
+	for (i = 0; i < seqs_to_aln->nseq; i++) { 
+	  fprintf(cfg->tracefp, "> %s\n", seqs_to_aln->sq[i]->name);
+	  if(esl_opt_GetBoolean(go,"--viterbi")) { 
+	    fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
+	    CP9PrintTrace(cfg->tracefp, seqs_to_aln->cp9_tr[i], cm->cp9, seqs_to_aln->sq[i]->dsq);
+	  }
+	  else { 
+	    if((status = ParsetreeScore(cm, errbuf, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE, &sc, &struct_sc)) != eslOK) return status;
+	    fprintf(cfg->tracefp, "  %16s %.2f bits\n", "SCORE:", sc);
+	    fprintf(cfg->tracefp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
+	    ParsetreeDump(cfg->tracefp, seqs_to_aln->tr[i], cm, seqs_to_aln->sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
+	  }
+	  fprintf(cfg->tracefp, "//\n");
+	}
+      }
       /* optionally include a fixed alignment provided with --withali,
        * this has already been checked to see it matches the CM structure */
       if(esl_opt_GetString(go, "--withali") != NULL)
@@ -997,7 +1073,8 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  if((status = include_withali(go, cfg, cm, &(seqs_to_aln->sq), &(seqs_to_aln->tr), &(seqs_to_aln->postcode1), &(seqs_to_aln->postcode2), &(seqs_to_aln->nseq), errbuf)) != eslOK)
 	    ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have SS_cons annotation compatible with the CM\n", esl_opt_GetString(go, "--withali"));
 	}
-      
+
+      /* create the msa, we free a parsetrees (or cp9 trace) as soon as we create each aligned sequence, to save memory */
       if(esl_opt_GetBoolean(go, "--viterbi"))
 	{
 	  ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
@@ -1008,71 +1085,17 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       else
 	{
 	  assert(seqs_to_aln->tr != NULL);
+	  for(i = 0; i < seqs_to_aln->nseq; i++) { tr_Mb += SizeofParsetree(seqs_to_aln->tr[i]); }
+	  printf("sizeof(int) %.6f\n", ((float) sizeof(int)) / 1000000.);
+	  printf("All %d parsetrees are total size: %.6f Mb\n", seqs_to_aln->nseq, tr_Mb);
 	  if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, seqs_to_aln->postcode1, seqs_to_aln->postcode2, 
-					    seqs_to_aln->nseq, cfg->insertfp, cfg->elfp, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), &msa)) != eslOK)
+					    seqs_to_aln->nseq, cfg->insertfp, cfg->elfp, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), TRUE, &msa)) != eslOK)
 	    esl_fatal("Error creating the alignment: %s", errbuf);
+	  seqs_to_aln->tr = NULL; /* these were freed by Parsetrees2Alignment() */
 	}
-#ifdef HAVE_MPI
-      /* if nec, output the scores */
-      if(esl_opt_GetBoolean(go, "--mpi") && (!esl_opt_GetBoolean(go, "-q"))) { 
-
-	char *namedashes;
-	int ni;
-	int namewidth = 8; /* length of 'seq name' */
-	/* determine the longest name in seqs_to_aln */
-	for(ni = 0; ni < seqs_to_aln->nseq; ni++) namewidth = ESL_MAX(namewidth, strlen(seqs_to_aln->sq[ni]->name));
-	ESL_ALLOC(namedashes, sizeof(char) * namewidth+1);
-	namedashes[namewidth] = '\0';
-	for(ni = 0; ni < namewidth; ni++) namedashes[ni] = '-';
-	if(seqs_to_aln->struct_sc == NULL || (! NOT_IMPOSSIBLE(seqs_to_aln->struct_sc[0]))) { 
-	  if(cm->align_opts & CM_ALIGN_OPTACC) { 
-	    fprintf(stdout, "#\n");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n", "seq idx",  namewidth, "seq name",   "len",  "bit sc",   "avg prob");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------");
-	  }
-	  else { 
-	    fprintf(stdout, "#\n");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s\n",  "seq idx", namewidth, "seq name",   "len",  "bit sc");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------");
-	  }
-	}
-	else { /* we have struct scores */
-	  if(cm->align_opts & CM_ALIGN_OPTACC) { 
-	    fprintf(stdout, "#\n");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %18s  %8s\n", "",         namewidth, "",                      "",       "    bit scores    ",   "");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %18s  %8s\n", "",         namewidth, "",                      "",       "------------------",   "");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s  %8s\n", "seq idx",  namewidth, "seq name",   "len", "total",    "struct",   "avg prob");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "--------");
-	  }
-	  else { 
-	    fprintf(stdout, "#\n");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %18s\n", "", namewidth,       "",                  "",       "    bit scores    ");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %18s\n", "", namewidth,       "",                  "",       "------------------");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n",  "seq idx", namewidth,  "seq name",  "len",  "total",   "struct");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------");
-	  }
-	}
-	free(namedashes);
-
-	int imin;
-	float null3_correction = 0.;
-	imin = (cfg->withmsa == NULL) ? 0 : cfg->withmsa->nseq;
-	for (i = imin; i < seqs_to_aln->nseq; i++) {
-	  ip = (cfg->withmsa == NULL) ? i : i - cfg->withmsa->nseq;
-	  if(!(esl_opt_GetBoolean(go, "--no-null3"))) { ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, &null3_correction); }
-	  if(! NOT_IMPOSSIBLE(seqs_to_aln->struct_sc[ip])) { 
-	    if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-*s  %5" PRId64 "  %8.2f  %8.3f\n", (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->pp[ip]);
-	    else                                 fprintf(stdout, "  %7d  %-*s  %5" PRId64 "  %8.2f\n",        (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction);
-	  }
-	  else { /* we have struct scores */
-	    if(!(esl_opt_GetBoolean(go, "--no-null3"))) seqs_to_aln->struct_sc[ip] -= ((float) ParsetreeCountMPEmissions(cm, seqs_to_aln->tr[i]) / (float) seqs_to_aln->sq[i]->n) * null3_correction; /* adjust struct_sc for NULL3 correction, this is inexact */
-	    if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-*s  %5" PRId64 "  %8.2f  %8.2f  %8.3f\n", (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->struct_sc[ip], seqs_to_aln->pp[ip]);
-	    else                                 fprintf(stdout, "  %7d  %-*s  %5" PRId64 "  %8.2f  %8.2f\n",        (ip+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[ip] - null3_correction, seqs_to_aln->struct_sc[ip]);
-	  }
-	}
-      }      
-#endif
+  
       if(! esl_opt_GetBoolean(go, "-q")) printf("\n");
+      
       /* if nec, replace msa->ss_cons with ss_cons from withmsa alignment */
       if(esl_opt_GetBoolean(go, "--withpknots")) {
 	if((status = add_withali_pknots(go, cfg, errbuf, cm, msa)) != eslOK) return status;
@@ -1080,28 +1103,8 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       status = esl_msa_Write(cfg->ofp, msa, (esl_opt_GetBoolean(go, "-1") ? eslMSAFILE_PFAM : eslMSAFILE_STOCKHOLM));
       if      (status == eslEMEM) ESL_FAIL(status, errbuf, "Memory error when outputting alignment\n");
       else if (status != eslOK)   ESL_FAIL(status, errbuf, "Writing alignment file failed with error %d\n", status);
-      
-      /* if nec, output the traces */
-      if(cfg->tracefp != NULL)
-	{
-	  for (i = 0; i < msa->nseq; i++) 
-	    {
-	      fprintf(cfg->tracefp, "> %s\n", seqs_to_aln->sq[i]->name);
-	      if(esl_opt_GetBoolean(go,"--viterbi")) 
-		{
-		  fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
-		  CP9PrintTrace(cfg->tracefp, seqs_to_aln->cp9_tr[i], cm->cp9, seqs_to_aln->sq[i]->dsq);
-		}
-	      else
-		{
-		  if((status = ParsetreeScore(cm, NULL, errbuf, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
-		  fprintf(cfg->tracefp, "  %16s %.2f bits\n", "SCORE:", sc);
-		  fprintf(cfg->tracefp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
-		  ParsetreeDump(cfg->tracefp, seqs_to_aln->tr[i], cm, seqs_to_aln->sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
-		}
-	      fprintf(cfg->tracefp, "//\n");
-	    }
-	}
+
+      /* if nec, output the alignment to the regression file */
       if (cfg->regressfp != NULL) {
 	/* Must delete author info from msa, because it contains version
 	 * and won't diff clean in regression tests. */
@@ -1674,7 +1677,6 @@ static int add_withali_pknots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *er
    */
   int *new_c2a_map;
   ESL_ALLOC(new_c2a_map, sizeof(int) * (cm->clen + 1));
-  new_c2a_map[0] = -1;
   new_c2a_map[0] = -1;
   cpos = 0;
   for(apos = 1; apos <= newmsa->alen; apos++) 
