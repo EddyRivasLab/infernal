@@ -381,6 +381,9 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   float           ***beta  = NULL;    /* beta DP matrix for non-baned Outside() */
   CM_HB_MX           *out_mx;         /* outside matrix for HMM banded Outside() */
 
+  /* for HMM banded tracebacks */
+  CM_HB_SHADOW_MX    *shmx;           /* HMM banded shadow matrix */
+
   float             *parsesc; /* parsetree scores of each sequence */
   float             *parsepp; /* optimal parse posterior probability of each sequence, if any */
   float             *parse_struct_sc; /* contribution of MATP emissions - marginalized emissions to parse score, approximation of 'structural contribution' to score */
@@ -472,6 +475,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   /* allocate out_mx, if needed, only if !do_sub, if do_sub each sub CM will need to allocate a new out_mx */
   out_mx = NULL;
   if((!do_sub) && (do_hbanded && (do_optacc || (do_post)))) out_mx = cm_hb_mx_Create(cm->M);
+
+  /* allocate/initialize shmx, if needed, only if do_hbanded */
+  shmx = NULL;
+  if(do_hbanded) shmx = cm_hb_shadow_mx_Create(cm, cm->M);
 
   if      (sq_mode)   nalign = seqs_to_aln->nseq;
   else if(dsq_mode) { nalign = search_results->num_results - first_result; silent_mode = TRUE; }
@@ -749,21 +756,21 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       if(do_hbanded) { 
 	if(do_post) { /* HMM banded CYK or optimal accuracy, posterior annotated */
 	  if(do_sample) { 
-	    if((status = FastAlignHB(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, do_sample, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
+	    if((status = FastAlignHB(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
 	  }
 	  else {
-	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, do_sample, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
+	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
 	  }
 	}
 	else { 
 	  if(do_optacc) { /* HMM banded optimal accuracy, no posteriors */
-	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, do_sample, out_mx, cur_tr, NULL, NULL, &sc, &ins_sc)) != eslOK) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
+	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, NULL, &sc, &ins_sc)) != eslOK) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
 	  }
 	  else if(do_sample) { /* HMM banded sample from Inside, no posteriors */
-	    if((status = FastAlignHB(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, do_sample, out_mx, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) return status; /* we can't handle a memory overload if we're sampling */
+	    if((status = FastAlignHB(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) return status; /* we can't handle a memory overload if we're sampling */
 	  }
 	  else { /* HMM banded CYK */
-	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, do_optacc, do_sample, out_mx, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) {
+	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) {
 	      if (status == eslERANGE) { /* we can still do CYK D&C alignment with QDBs derived from the HMM bands */
 		hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
 		ESL_DPRINTF1(("# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i));

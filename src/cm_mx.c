@@ -6,10 +6,12 @@
  * Table of contents:
  *   1. CM_HB_MX data structure functions,
  *      matrix of float scores for HMM banded CM alignment/search
- *   2. ScanMatrix_t data structure functions,
+ *   2. CM_HB_SHADOW_MX data structure functions
+ *      HMM banded shadow matrix for tracing back HMM banded CM parses
+ *   3. ScanMatrix_t data structure functions,
  *      auxiliary info and matrix of float and/or int scores for 
  *      query dependent banded or non-banded CM DP search functions
- *   3. GammaHitMx_t data structure functions,
+ *   4. GammaHitMx_t data structure functions,
  *      semi-HMM data structure for optimal resolution of overlapping
  *      hits for CM and CP9 DP search functions
  *
@@ -279,7 +281,319 @@ cm_hb_mx_Dump(FILE *ofp, CM_HB_MX *mx)
 }
 
 /*****************************************************************
- *   2. ScanMatrix_t data structure functions,
+ *   2. CM_HB_SHADOOW_MX data structure functions,
+ *      HMM banded shadow matrix for tracing back HMM banded CM parses
+ *****************************************************************/
+
+/* Function:  cm_hb_shadow_mx_Create()
+ * Incept:    EPN, Fri Oct 26 05:05:07 2007
+ *
+ * Purpose:   Allocate a reusable, resizeable <CM_HB_SHADOW_MX> for a CM <cm>
+ *            given a CP9Bands_t object that defines the bands. The CM
+ *            is needed so we know which decks need to be int's (BIF_B states)
+ *            and which need to be char's (all other states).
+ *            
+ *            We've set this up so it should be easy to allocate
+ *            aligned memory, though we're not doing this yet.
+ *
+ * Returns:   a pointer to the new <CM_HB_SHADOW_MX>.
+ *
+ * Throws:    <NULL> on allocation error.
+ */
+CM_HB_SHADOW_MX *
+cm_hb_shadow_mx_Create(CM_t *cm, int M)
+{
+  int     status;
+  CM_HB_SHADOW_MX *mx = NULL;
+  int     v;
+  int     nbifs, nb;
+
+  /* level 1: the structure itself */
+  ESL_ALLOC(mx, sizeof(CM_HB_SHADOW_MX));
+  mx->yshadow     = NULL;
+  mx->yshadow_mem = NULL;
+  mx->kshadow     = NULL;
+  mx->kshadow_mem = NULL;
+  mx->cp9b        = NULL;
+
+  /* level 2: deck (state) pointers, 0.1..M-1, M (EL deck) is irrelevant for the
+   *          shadow matrix.
+   */
+  ESL_ALLOC(mx->yshadow,  sizeof(char **) * M);
+  ESL_ALLOC(mx->kshadow,  sizeof(int **)  * M);
+ 
+  /* level 3: matrix cell memory, when creating only allocate 1 cell per state, for j = 0, d = 0 */
+  int allocL = 1;
+  int allocW = 1;
+  nbifs = CMCountStatetype(cm, B_st);
+
+  ESL_ALLOC(mx->nrowsA, sizeof(int)      * M);
+  ESL_ALLOC(mx->yshadow_mem, (sizeof(char) * (M-nbifs)));
+  ESL_ALLOC(mx->kshadow_mem, (sizeof(int)  * (nbifs)));
+
+  nb = 0;
+  for (v = 0; v < M; v++) {
+    if(cm->sttype[v] == B_st) { 
+      ESL_ALLOC(mx->kshadow[v], sizeof(int *) * (allocL));
+      mx->kshadow[v][0] = mx->kshadow_mem + nb * (allocL) * (allocW);
+      mx->yshadow[v] = NULL;
+      nb++;
+    }
+    else { 
+      ESL_ALLOC(mx->yshadow[v], sizeof(char *) * (allocL));
+      mx->yshadow[v][0] = mx->yshadow_mem + (v-nb) * (allocL) * (allocW);
+      mx->kshadow[v] = NULL;
+    }
+    mx->nrowsA[v] = allocL;
+  }
+  mx->M            = M;
+  mx->nbifs        = nbifs;
+  mx->y_ncells_alloc = (M-nbifs)*(allocL)*(allocW);
+  mx->y_ncells_valid = 0;
+  mx->k_ncells_alloc = (nbifs)*(allocL)*(allocW);
+  mx->k_ncells_valid = 0;
+  mx->L            = allocL; /* allocL = 1 */
+
+  mx->size_Mb = 
+    (float) (mx->M) * (float) sizeof(int *) +    /* nrowsA ptrs */
+    (float) (mx->M - nbifs) * (float) sizeof(char **) + /* mx->yshadow[] ptrs */
+    (float) (mx->M - nbifs) * (float) sizeof(char *) +  /* mx->yshadow[v][] ptrs */
+    (float) (nbifs)         * (float) sizeof(int **) + /* mx->yshadow[] ptrs */
+    (float) (nbifs)         * (float) sizeof(int *) +  /* mx->yshadow[v][] ptrs */
+    (float) mx->y_ncells_alloc * (float) sizeof(char) + /* mx->yshadow_mem */
+    (float) mx->k_ncells_alloc * (float) sizeof(int);  /* mx->kshadow_mem */
+  mx->size_Mb *= 0.000001; /* convert to Mb */
+
+  return mx;
+
+ ERROR:
+  if (mx != NULL) cm_hb_shadow_mx_Destroy(mx);
+  return NULL;
+}
+
+/* Function:  cm_hb_shadow_mx_GrowTo()
+ * Incept:    EPN, Fri Oct 26 05:19:49 2007
+ *
+ * Purpose:   Assures that a shadow matrix <mx> is allocated
+ *            for a model of exactly <mx->M> states and required number of 
+ *            total cells. Determines new required size from 
+ *            the CP9Bands_t object passed in, and reallocates if 
+ *            necessary.
+ *            
+ *            Checks that the matrix has been created for the current CM.
+ *            Check is that  mx->yshadow[v] == NULL when v is a B_st and
+ *                           mx->kshadow[v] != NULL when v is a B_st.
+ *
+ *            DOES NOT check size of desired matrix, because an
+ *            actual DP matrix should be much bigger (dp mx is floats,
+ *            whereas a shadow mx is mostly chars with some ints).
+ *
+ * Args:      cm     - the CM the matrix is for
+ *            mx     - the matrix to grow
+ *            errbuf - char buffer for reporting errors
+ *            cp9b   - the bands for the current target sequence
+ *            L      - the length of the current target sequence we're aligning
+ *
+ * Returns:   <eslOK> on success, and <mx> may be reallocated upon
+ *            return; any data that may have been in <mx> must be 
+ *            assumed to be invalidated.
+ *
+ * Throws:    <eslEINCOMPAT> if mx does not appeared to be created for this cm
+ *                           This should be caught and appropriately handled by caller. 
+ *            <eslEINCOMPAT> on contract violation
+ *            <eslEMEM> on memory allocation error.
+ */
+int
+cm_hb_shadow_mx_GrowTo(CM_t *cm, CM_HB_SHADOW_MX *mx, char *errbuf, CP9Bands_t *cp9b, int L)
+{
+  int     status;
+  void   *p;
+  int     v, jp;
+  int     y_cur_size, k_cur_size = 0;
+  size_t  y_ncells, k_ncells;
+  int     jbw;
+  double  Mb_needed;
+  /* contract check, number of states (M) is something we don't change
+   * so check this matrix has same number of 1st dim state ptrs that
+   * cp9b has */
+  if(cp9b == NULL)        ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() entered with cp9b == NULL.\n");
+  if(cp9b->cm_M != mx->M) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() entered with mx->M: (%d) != cp9b->M (%d)\n", mx->M, cp9b->cm_M);
+  
+  y_ncells = k_ncells = 0;
+  Mb_needed = ((float) (sizeof(int *)) * ((float) mx->M + 1)) + /* nrowsA ptrs */
+    (float) (sizeof(char **)) * (float) (mx->M-mx->nbifs) +     /* mx->yshadow[] ptrs */
+    (float) (sizeof(int  **)) * (float) (mx->nbifs);            /* mx->kshadow[] ptrs */
+  for(v = 0; v < mx->M; v++) { 
+    jbw = cp9b->jmax[v] - cp9b->jmin[v]; 
+    if(cm->sttype[v] == B_st) { 
+      if(mx->kshadow[v] == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() v is a B st %d, but mx->kshadow[v] == NULL.\n", v);
+      if(mx->yshadow[v] != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() v is a B st %d, but mx->yshadow[v] != NULL.\n", v);
+      Mb_needed += (float) (sizeof(int *) * (jbw+1)); /* mx->kshadow[v][] ptrs */
+      for(jp = 0; jp <= jbw; jp++) 
+	k_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+    }
+    else { 
+      if(mx->kshadow[v] != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() v is not a B st %d, but mx->kshadow[v] != NULL.\n", v);
+      if(mx->yshadow[v] == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "cm_hb_shadow_mx_GrowTo() v is not a B st %d, but mx->kshadow[v] == NULL.\n", v);
+      Mb_needed += (float) (sizeof(char *) * (jbw+1)); /* mx->yshadow[v][] ptrs */
+      for(jp = 0; jp <= jbw; jp++) 
+	y_ncells += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+    }
+  }
+  Mb_needed += ESL_MAX(((float) (sizeof(char) * mx->y_ncells_alloc)), ((float) (sizeof(char) * y_ncells))); /* mx->yshadow_mem */
+  Mb_needed += ESL_MAX(((float) (sizeof(char) * mx->k_ncells_alloc)), ((float) (sizeof(char) * k_ncells))); /* mx->kshadow_mem */
+  Mb_needed *= 0.000001; /* convert to megabytes */
+
+  /* must we realloc the full yshadow and kshadow matrices? 
+   * or can we get away with just jiggering the pointers, if 
+   * total required num cells is less than or equal to what 
+   * we already have alloc'ed?
+   */
+
+  /* handle yshadow */
+  if (y_ncells > mx->y_ncells_alloc) {
+      ESL_RALLOC(mx->yshadow_mem, p, sizeof(char) * y_ncells);
+      mx->y_ncells_alloc = y_ncells;
+  }
+  mx->y_ncells_valid = y_ncells;
+
+  /* handle kshadow */
+  if (k_ncells > mx->k_ncells_alloc) {
+      ESL_RALLOC(mx->kshadow_mem, p, sizeof(int) * k_ncells);
+      mx->k_ncells_alloc = k_ncells;
+  }
+  mx->k_ncells_valid = k_ncells;
+
+  /* make sure each row is big enough */
+  for(v = 0; v < mx->M; v++) {
+    jbw = cp9b->jmax[v] - cp9b->jmin[v] + 1;
+    if(jbw > mx->nrowsA[v]) {
+      if(cm->sttype[v] == B_st) { 
+	ESL_RALLOC(mx->kshadow[v], p, sizeof(int *) * jbw);
+	mx->nrowsA[v] = jbw;
+      }
+      else { 
+	ESL_RALLOC(mx->yshadow[v], p, sizeof(char *) * jbw);
+	mx->nrowsA[v] = jbw;
+      }
+    }
+  }
+
+  /* reset the pointers, we keep a tally of number of cells
+   * we've seen in each matrix (y_cur_size and k_cur_size) as we go,
+   * we could precalc it and store it for each v,j, but that 
+   * would be wasteful, as we'll only use the matrix configured
+   * this way once, in a banded CYK run.
+   */
+  y_cur_size = k_cur_size = 0;
+  for(v = 0; v < mx->M; v++) { 
+    if(cm->sttype[v] == B_st) { 
+      for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
+	mx->kshadow[v][jp] = mx->kshadow_mem + k_cur_size;
+	k_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+      }
+    }
+    else { 
+      for(jp = 0; jp <= (cp9b->jmax[v] - cp9b->jmin[v]); jp++) { 
+	mx->yshadow[v][jp] = mx->yshadow_mem + y_cur_size;
+	y_cur_size        += cp9b->hdmax[v][jp] - cp9b->hdmin[v][jp] + 1;
+      }
+    }
+  }
+  /* TEMP */
+  assert(mx->y_ncells_valid == y_cur_size);
+  assert(mx->k_ncells_valid == k_cur_size);
+  ESL_DASSERT1((y_cur_size == mx->y_ncells_valid));
+  ESL_DASSERT1((k_cur_size == mx->k_ncells_valid));
+
+  mx->cp9b = cp9b; /* just a reference */
+  
+  /* now update L and size_Mb */
+  mx->L       = L;    /* length of current seq we're valid for */
+  mx->size_Mb = Mb_needed;
+  
+  return eslOK;
+
+ ERROR:
+  return status;
+}
+
+/* Function:  cm_hb_shadow_mx_Destroy()
+ * Synopsis:  Frees a DP matrix.
+ * Incept:    EPN, Fri Oct 26 09:04:04 2007
+ *
+ * Purpose:   Frees a <CM_HB_SHADOW_MX>.
+ *
+ * Returns:   (void)
+ */
+void
+cm_hb_shadow_mx_Destroy(CM_HB_SHADOW_MX *mx)
+{
+  if (mx == NULL) return;
+  int v;
+
+  if (mx->yshadow      != NULL) { 
+    for (v = 0; v < mx->M; v++) 
+      if(mx->yshadow[v] != NULL) free(mx->yshadow[v]);  
+  }
+  free(mx->yshadow);
+
+  if (mx->kshadow      != NULL) { 
+    for (v = 0; v < mx->M; v++) 
+      if(mx->kshadow[v] != NULL) free(mx->kshadow[v]);  
+  }
+  free(mx->kshadow);
+
+  if (mx->nrowsA  != NULL)       free(mx->nrowsA);
+  if (mx->yshadow_mem  != NULL)  free(mx->yshadow_mem);
+  if (mx->kshadow_mem  != NULL)  free(mx->kshadow_mem);
+  free(mx);
+  return;
+}
+
+/* Function:  cm_hb_shadow_mx_Dump()
+ * Synopsis:  Dump a DP matrix to a stream, for diagnostics.
+ * Incept:    EPN, Fri Oct 26 09:04:46 2007
+ *
+ * Purpose:   Dump matrix <mx> to stream <fp> for diagnostics.
+ */
+int
+cm_hb_shadow_mx_Dump(FILE *ofp, CM_t *cm, CM_HB_SHADOW_MX *mx)
+{
+  int v, jp, j, dp, d;
+
+  fprintf(ofp, "M: %d\nnbifs: %d\nL: %d\ny_ncells_alloc: %d\ny_ncells_valid: %d\nk_ncells_alloc: %d\nk_ncells_valid: %d\n", mx->M, mx->nbifs, mx->L, mx->y_ncells_alloc, mx->y_ncells_valid, mx->k_ncells_alloc, mx->k_ncells_valid);
+  
+  /* yshadow/kshadow matrix data */
+  for (v = 0; v < mx->M; v++) {
+    if(cm->sttype[v] == B_st) { 
+      for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
+	j = jp + mx->cp9b->jmin[v];
+	for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
+	  d = dp + mx->cp9b->hdmin[v][jp];
+	  fprintf(ofp, "kshad[v:%5d][j:%5d][d:%5d] %8d\n", v, j, d, mx->kshadow[v][jp][dp]);
+	}
+	fprintf(ofp, "\n");
+      }
+      fprintf(ofp, "\n\n");
+    }
+    else { 
+      for(jp = 0; jp <= mx->cp9b->jmax[v] - mx->cp9b->jmin[v]; jp++) {
+	j = jp + mx->cp9b->jmin[v];
+	for(dp = 0; dp <= mx->cp9b->hdmax[v][jp] - mx->cp9b->hdmin[v][jp]; dp++) {
+	  d = dp + mx->cp9b->hdmin[v][jp];
+	  fprintf(ofp, "kshad[v:%5d][j:%5d][d:%5d] %8c\n", v, j, d, mx->yshadow[v][jp][dp]);
+	}
+	fprintf(ofp, "\n");
+      }
+      fprintf(ofp, "\n\n");
+    }
+  }
+  return eslOK;
+}
+
+/*****************************************************************
+ *   3. ScanMatrix_t data structure functions,
  *      auxiliary info and matrix of float and/or int scores for 
  *      query dependent banded or non-banded CM DP search functions
  *****************************************************************/
@@ -1260,7 +1574,7 @@ ICalcInitDPScores(CM_t *cm)
 
 
 /*****************************************************************
- *   3. GammaHitMx_t data structure functions,
+ *   4. GammaHitMx_t data structure functions,
  *      Semi HMM data structure for optimal resolution of overlapping
  *      hits for CM DP search functions.
  *****************************************************************/
