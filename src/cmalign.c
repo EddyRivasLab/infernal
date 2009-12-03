@@ -1054,7 +1054,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	    CP9PrintTrace(cfg->tracefp, seqs_to_aln->cp9_tr[i], cm->cp9, seqs_to_aln->sq[i]->dsq);
 	  }
 	  else { 
-	    if((status = ParsetreeScore(cm, errbuf, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE, &sc, &struct_sc)) != eslOK) return status;
+	    if((status = ParsetreeScore(cm, NULL, errbuf, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
 	    fprintf(cfg->tracefp, "  %16s %.2f bits\n", "SCORE:", sc);
 	    fprintf(cfg->tracefp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
 	    ParsetreeDump(cfg->tracefp, seqs_to_aln->tr[i], cm, seqs_to_aln->sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
@@ -1085,9 +1085,8 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       else
 	{
 	  assert(seqs_to_aln->tr != NULL);
-	  for(i = 0; i < seqs_to_aln->nseq; i++) { tr_Mb += SizeofParsetree(seqs_to_aln->tr[i]); }
-	  printf("sizeof(int) %.6f\n", ((float) sizeof(int)) / 1000000.);
-	  printf("All %d parsetrees are total size: %.6f Mb\n", seqs_to_aln->nseq, tr_Mb);
+	  /*for(i = 0; i < seqs_to_aln->nseq; i++) { tr_Mb += SizeofParsetree(seqs_to_aln->tr[i]); }
+	    printf("All %d parsetrees are total size: %.6f Mb\n", seqs_to_aln->nseq, tr_Mb);*/
 	  if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, seqs_to_aln->postcode1, seqs_to_aln->postcode2, 
 					    seqs_to_aln->nseq, cfg->insertfp, cfg->elfp, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), TRUE, &msa)) != eslOK)
 	    esl_fatal("Error creating the alignment: %s", errbuf);
@@ -1964,7 +1963,7 @@ serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((status = process_workunit(go, cfg, errbuf, cmlist[0], seqs_to_aln)) != eslOK) cm_Fail(errbuf);
   /* convert parsetrees to alignment */
   ESL_MSA *maj_target_msa;
-  if((status = Parsetrees2Alignment(cmlist[0], errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, NULL, NULL, seqs_to_aln->nseq, NULL, NULL, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), &maj_target_msa)) != eslOK)
+  if((status = Parsetrees2Alignment(cmlist[0], errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, NULL, NULL, seqs_to_aln->nseq, NULL, NULL, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), FALSE, &maj_target_msa)) != eslOK)
     cm_Fail("serial_master_meta(), error generating major alignment from parsetrees.");
   /* printf("\n"); status = esl_msa_Write(stdout, maj_target_msa, eslMSAFILE_STOCKHOLM); printf("\n"); */
 
