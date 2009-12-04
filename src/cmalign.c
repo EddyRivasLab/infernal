@@ -154,18 +154,19 @@ static int   mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
 static int   mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
 
-static int process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
-static int output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
+static int  process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
+static int  output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
 
-static int initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr);
-static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, char ***ret_postcode1, char ***ret_postcode2, int *ret_nseq, char *errbuf);
-static int compare_cm_guide_trees(CM_t *cm1, CM_t *cm2);
-static int add_withali_pknots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_MSA *newmsa);
+static int  initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
+static int  check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr);
+static int  include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, char ***ret_postcode1, char ***ret_postcode2, int *ret_nseq, char *errbuf);
+static int  compare_cm_guide_trees(CM_t *cm1, CM_t *cm2);
+static int  add_withali_pknots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_MSA *newmsa);
 
-static int print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
+static int  print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf);
 static void print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
-static int get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
+static int  get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
+static void print_info_file_header(FILE *fp, char *firstline, char *elstring);
 
 /*
   static void print_stage_column_headings(const ESL_GETOPTS *go, const struct cfg_s *cfg);
@@ -465,32 +466,14 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (esl_opt_GetString(go, "--ifile") != NULL) {
     if ((cfg->insertfp = fopen(esl_opt_GetString(go, "--ifile"), "w")) == NULL) 
 	ESL_FAIL(eslFAIL, errbuf, "Failed to open --ifile output file %s\n", esl_opt_GetString(go, "--ifile"));
-    fprintf(cfg->insertfp, "# Insert information file created by cmalign.\n");
-    fprintf(cfg->insertfp, "# This file includes one non-# pre-fixed line per sequence in the target file\n");
-    fprintf(cfg->insertfp, "# with (1+2*n) whitespace delimited tokens per line.\n");
-    fprintf(cfg->insertfp, "# Format per line:\n");
-    fprintf(cfg->insertfp, "# <seqname> <c_1> <i_1> <c_2> <i_2> .... <c_x> <i_x> .... <c_n> <i_n>\n");
-    fprintf(cfg->insertfp, "# indicating <seqname> has >= 1 inserted residues after <n> different consensus positions,\n");
-    fprintf(cfg->insertfp, "#   <c_x> is a consensus position and\n");
-    fprintf(cfg->insertfp, "#   <i_x> is the number of inserted residues after position <c_x> for <seqname>\n");
-    fprintf(cfg->insertfp, "# Lines for sequences with 0 inserted residues will include only <seqname>\n");
-    fprintf(cfg->insertfp, "#\n");
+    print_info_file_header(cfg->insertfp, "Insert information file created by cmalign.", "");
   }
 
   /* optionally, open EL insert info file */
   if (esl_opt_GetString(go, "--elfile") != NULL) {
     if ((cfg->elfp = fopen(esl_opt_GetString(go, "--elfile"), "w")) == NULL) 
 	ESL_FAIL(eslFAIL, errbuf, "Failed to open --elfile output file %s\n", esl_opt_GetString(go, "--elfile"));
-    fprintf(cfg->elfp, "# EL state (local end) insert information file created by cmalign.\n");
-    fprintf(cfg->elfp, "# This file includes one non-# pre-fixed line per sequence in the target file\n");
-    fprintf(cfg->elfp, "# with (1+2*n) whitespace delimited tokens per line.\n");
-    fprintf(cfg->elfp, "# Format per line:\n");
-    fprintf(cfg->elfp, "# <seqname> <c_1> <i_1> <c_2> <i_2> .... <c_x> <i_x> .... <c_n> <i_n>\n");
-    fprintf(cfg->elfp, "# indicating <seqname> has >= 1 EL inserted residues after <n> different consensus positions,\n");
-    fprintf(cfg->elfp, "#   <c_x> is a consensus position and\n");
-    fprintf(cfg->elfp, "#   <i_x> is the number of EL inserted residues after position <c_x> for <seqname>\n");
-    fprintf(cfg->elfp, "# Lines for sequences with 0 EL inserted residues will include only <seqname>\n");
-    fprintf(cfg->elfp, "#\n");
+    print_info_file_header(cfg->elfp, "EL state (local end) insert information file created by cmalign.", "EL ");
   }
 
   /* optionally, open regression file */
@@ -933,6 +916,10 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
   float sc, struct_sc;
   float tr_Mb = 0.;
 
+  /* print per-CM info to insertfp and elfp, if nec */
+  if(cfg->insertfp != NULL) { fprintf(cfg->insertfp, "%s %d\n", cm->name, cm->clen); } 
+  if(cfg->elfp != NULL)     { fprintf(cfg->elfp,     "%s %d\n", cm->name, cm->clen); } 
+
 #ifdef HAVE_MPI
   /* if --mpi and ! -q, output the scores */
   if(esl_opt_GetBoolean(go, "--mpi") && (!esl_opt_GetBoolean(go, "-q"))) { 
@@ -1063,6 +1050,9 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	else if (status != eslOK) ESL_FAIL(status, errbuf, "Writing regression file failed with error %d\n", status);
       }
     }
+  if(cfg->insertfp != NULL) { fprintf(cfg->insertfp, "//\n", cm->name, cm->clen); } 
+  if(cfg->elfp != NULL)     { fprintf(cfg->elfp,     "//\n", cm->name, cm->clen); } 
+
   if(msa != NULL) esl_msa_Destroy(msa);
   return eslOK;
 
@@ -1721,6 +1711,35 @@ get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command)
  ERROR:
   ESL_FAIL(status, errbuf, "get_command(): memory allocation error.");
   return status;
+}
+
+/* Function: print_info_file_header
+ * Date:     EPN, Fri Dec  4 08:15:31 2009
+ *
+ * Purpose:  Print the header section of an insert or EL insert
+ *           (--ifile, --elfile) information file.
+ *
+ * Returns:  void
+ */
+void
+print_info_file_header(FILE *fp, char *firstline, char *elstring)
+{
+  fprintf(fp, "# %s\n", firstline);
+  fprintf(fp, "# This file includes 2+<nseq> non-'#' pre-fixed lines per model used for alignment,\n");
+  fprintf(fp, "# where <nseq> is the number of sequences in the target file.\n");
+  fprintf(fp, "# The first non-'#' prefixed line per model includes 2 tokens, each separated by a single space (' '):\n");
+  fprintf(fp, "# The first token is the model name and the second is the consensus length of the model (<clen>).\n");
+  fprintf(fp, "# The following <nseq> lines include (1+2*<n>) whitespace delimited tokens per line.\n");
+  fprintf(fp, "# The format for theese <nseq> lines is:\n");
+  fprintf(fp, "#   <seqname> <c_1> <i_1> <c_2> <i_2> .... <c_x> <i_x> .... <c_n> <i_n>\n");
+  fprintf(fp, "#   indicating <seqname> has >= 1 %sinserted residues after <n> different consensus positions,\n", elstring);
+  fprintf(fp, "#   <c_x> is a consensus position and\n");
+  fprintf(fp, "#   <i_x> is the number of %sinserted residues after position <c_x> for <seqname>.\n", elstring);
+  fprintf(fp, "# Lines for sequences with 0 %sinserted residues will include only <seqname>.\n", elstring);
+  fprintf(fp, "# The final non-'#' prefixed line per model includes only '//', indicating the end of info for a model.\n");
+  fprintf(fp, "#\n");
+
+  return;
 }
 
 #ifdef HAVE_MPI
