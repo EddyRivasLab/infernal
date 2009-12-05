@@ -586,8 +586,7 @@ typedef struct fancyali_s {
   char *mid;		/* alignment identity middle line              */
   char *top;		/* optional, non-compensatory 'x' top line     */
   char *aseq;		/* aligned target sequence                     */
-  char *pcode1;         /* aligned posteriors 'ones' place (9 in 93)   */
-  char *pcode2;         /* aligned posteriors 'tens' place (3 in 93)   */
+  char *pcode;          /* aligned posteriors 'ones' place (9 in 93)   */
   int  *scoord;		/* coords 1..L for aligned dsq chars           */
   int  *ccoord;		/* coords 1..clen for aligned consensus chars  */
   int   len;		/* len of the strings above                    */
@@ -737,8 +736,7 @@ typedef struct _search_result_node_t {
   int bestr;   /* Best root state */
   float score;
   Parsetree_t *tr;
-  char *pcode1;           /* postal code, tens place, ('9' for 93) left NULL unless cm->search_opts & CM_SEARCH_POST */
-  char *pcode2;           /* postal code, ones place, ('3' for 93) left NULL unless cm->search_opts & CM_SEARCH_POST */
+  char *pcode;           /* posterior code string, left NULL unless cm->search_opts & CM_SEARCH_POST */
 } search_result_node_t;
 
 typedef struct _search_results_t {
@@ -763,8 +761,7 @@ typedef struct _seqs_to_aln_t {
   int nalloc;                    /* number of sequences alloc'ed */
   Parsetree_t **tr;              /* parsetrees */
   CP9trace_t **cp9_tr;           /* CP9 traces, usually NULL unless tr is NULL */
-  char **postcode1;              /* postal code, tens place, ('9' for 93) left NULL unless do_post */
-  char **postcode2;              /* postal code, ones place, ('3' for 93) left NULL unless do_post */
+  char **postcode;               /* posterior code string, sometimes NULL */
   float *sc;                     /* score for each seq, can be parsetree score (usually if tr != NULL),
 				  * CP9 trace score (usually if cp9_tr != NULL), but could also be
 				  * score for the sub parsetree (in case of sub CM alignment)

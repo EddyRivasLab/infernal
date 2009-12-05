@@ -667,8 +667,7 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
  *           sq         - sequences, must be digitized (we check for it)
  *           wgt        - weights for seqs, NULL for none
  *           tr         - array of tracebacks
- *           postcode1  - 'tens' ('9' in '93') place postal code (NULL for none)
- *           postcode2  - 'ones' ('3' in '93') place postal code (NULL for none)
+ *           postcode   - posterior code string (NULL for none)
  *           nseq       - number of sequences
  *           insertfp   - file to print per-seq insert information to (NULL if none)
  *           elfp       - file to print per-seq EL insert information to (NULL if none)
@@ -683,7 +682,7 @@ MasterTraceDisplay(FILE *fp, Parsetree_t *mtr, CM_t *cm)
  */
 int
 Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt, 
-		     Parsetree_t **tr, char **postcode1, char **postcode2, int nseq,
+		     Parsetree_t **tr, char **postcode, int nseq,
 		     FILE *insertfp, FILE *elfp, int do_full, int do_matchonly, int be_efficient, ESL_MSA **ret_msa)
 {
   int          status;       /* easel status flag */
@@ -713,11 +712,10 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   CMConsensus_t *con = NULL; /* consensus information for the CM */
   int          prvnd;	     /* keeps track of previous node for EL */
   int          nins;         /* insert counter used for splitting inserts */
-  int          do_post;      /* TRUE if postcode1 != NULL && postcode2 != NULL (we should write at least 1 sequence's posteriors) */
+  int          do_post;      /* TRUE if postcode != NULL (we should write at least 1 sequence's posteriors) */
   int          do_cur_post;  /* TRUE if we're writing posteriors for the current sequence inside a loop */
   char        *tmp_aseq = NULL; /* will hold aligned sequence for current sequence */
-  char        *tmp_apc1 = NULL; /* will hold aligned postcode1 characters for current sequence */
-  char        *tmp_apc2 = NULL; /* will hold aligned postcode2 characters for current sequence */
+  char        *tmp_apc  = NULL; /* will hold aligned postcode characters for current sequence */
 
   /* Contract check. We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
@@ -728,9 +726,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   else if(cm->abc->K != abc->K) {
     ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
   }
-  if(postcode1 != NULL && postcode2 == NULL) ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), postcode1 != NULL, but postcode2 == NULL"); 
-  if(postcode1 == NULL && postcode2 != NULL) ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), postcode2 != NULL, but postcode1 == NULL"); 
-  do_post = (postcode1 != NULL && postcode2 !=NULL) ? TRUE : FALSE;
+  do_post = (postcode != NULL) ? TRUE : FALSE;
 
   emap = CreateEmitMap(cm);
 
@@ -857,12 +853,14 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   msa->nseq = nseq;
   msa->alen = alen;
   msa->abc  = (ESL_ALPHABET *) abc;
+  if(do_post) { 
+    ESL_ALLOC(msa->pp, sizeof(char *) * msa->nseq);
+  }
 
   /* we reuse aseq, copying it to the msa after its completed for each seq */
   ESL_ALLOC(tmp_aseq, sizeof(char) * (msa->alen+1));
   if(do_post) { /* these will be reused for each sequence (the aligned postcode arrays are all the same length) */
-    ESL_ALLOC(tmp_apc1, sizeof(char) * (msa->alen+1));
-    ESL_ALLOC(tmp_apc2, sizeof(char) * (msa->alen+1));
+    ESL_ALLOC(tmp_apc, sizeof(char) * (msa->alen+1));
   }
 
   for (i = 0; i < nseq; i++)
@@ -871,9 +869,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
       if(sq[i]->dsq == NULL) ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), sq %d is not digitized.\n", i);
       do_cur_post = FALSE;
       if(do_post) { 
-	if(postcode1[i] != NULL && postcode2[i] == NULL) ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), postcode1[%d] != NULL, but postcode2[%d] == NULL", i, i);
-	if(postcode1[i] == NULL && postcode2[i] != NULL) ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), postcode1[%d] == NULL, but postcode2[%d] != NULL", i, i);
-	do_cur_post = (postcode1[i] != NULL && postcode2[i] != NULL) ? TRUE : FALSE;
+	do_cur_post = (postcode[i] != NULL) ? TRUE : FALSE;
       }
 
       /* Initialize the aseq with all pads '.' (in insert cols) 
@@ -885,7 +881,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	}
 	if(do_cur_post) { 
 	  for (apos = 0; apos < alen; apos++) { 
-	    tmp_apc1[apos] = tmp_apc2[apos] = '.';
+	    tmp_apc[apos] = '.';
 	  }
 	}
       }
@@ -897,12 +893,12 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
       if(do_cur_post) { 
 	for (cpos = 0; cpos <= emap->clen; cpos++) {
 	  if (matmap[cpos] != -1) { 
-	    tmp_apc1[matmap[cpos]] = tmp_apc2[matmap[cpos]] = '-';
+	    tmp_apc[matmap[cpos]] = '-';
 	  }
 	}
       }
       tmp_aseq[alen] = '\0';
-      if(do_cur_post) tmp_apc1[alen] = tmp_apc2[alen] = '\0';
+      if(do_cur_post) tmp_apc[alen] = '\0';
 
       /* Traverse this guy's trace, and place all his
        * emitted residues and posteriors.
@@ -923,8 +919,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    rpos = tr[i]->emitl[tpos];
 	    tmp_aseq[apos] = abc->sym[sq[i]->dsq[rpos]];
 	    if(do_cur_post) { 
-	      tmp_apc1[apos] = postcode1[i][rpos-1];
-	      tmp_apc2[apos] = postcode2[i][rpos-1];
+	      tmp_apc[apos] = postcode[i][rpos-1];
 	    }
 
 	    cpos = emap->rpos[nd];
@@ -932,8 +927,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    rpos = tr[i]->emitr[tpos];
 	    tmp_aseq[apos] = abc->sym[sq[i]->dsq[rpos]];
 	    if(do_cur_post) { 
-	      tmp_apc1[apos] = postcode1[i][rpos-1];
-	      tmp_apc2[apos] = postcode2[i][rpos-1];
+	      tmp_apc[apos] = postcode[i][rpos-1];
 	    }
 	    break;
 	    
@@ -943,8 +937,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    rpos = tr[i]->emitl[tpos];
 	    tmp_aseq[apos] = abc->sym[sq[i]->dsq[rpos]];
 	    if(do_cur_post) { 
-	      tmp_apc1[apos] = postcode1[i][rpos-1];
-	      tmp_apc2[apos] = postcode2[i][rpos-1];
+	      tmp_apc[apos] = postcode[i][rpos-1];
 	    }
 	    break;
 
@@ -954,8 +947,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    rpos = tr[i]->emitr[tpos];
 	    tmp_aseq[apos] = abc->sym[sq[i]->dsq[rpos]];
 	    if(do_cur_post) { 
-	      tmp_apc1[apos] = postcode1[i][rpos-1];
-	      tmp_apc2[apos] = postcode2[i][rpos-1];
+	      tmp_apc[apos] = postcode[i][rpos-1];
 	    }
 	    break;
 
@@ -966,8 +958,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    rpos = tr[i]->emitl[tpos];
 	    tmp_aseq[apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 	    if(do_cur_post) { 
-	      tmp_apc1[apos] = postcode1[i][rpos-1];
-	      tmp_apc2[apos] = postcode2[i][rpos-1];
+	      tmp_apc[apos] = postcode[i][rpos-1];
 	    }
 	    iluse[cpos]++;
 	    break;
@@ -985,8 +976,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	      {
 		tmp_aseq[apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 		if(do_cur_post) { 
-		  tmp_apc1[apos] = postcode1[i][rpos-1];
-		  tmp_apc2[apos] = postcode2[i][rpos-1];
+		  tmp_apc[apos] = postcode[i][rpos-1];
 		}
 		apos++;
 	      }
@@ -999,8 +989,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    rpos = tr[i]->emitr[tpos];
 	    tmp_aseq[apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 	    if(do_cur_post) { 
-	      tmp_apc1[apos] = postcode1[i][rpos-1];
-	      tmp_apc2[apos] = postcode2[i][rpos-1];
+	      tmp_apc[apos] = postcode[i][rpos-1];
 	    }
 	    iruse[cpos]++;
 	    break;
@@ -1032,11 +1021,11 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	tr[i] = NULL; 
       }
 
-      /* add tmp_apc1 and tmp_apc2 posterior probabilities to msa, if nec */
+      /* add tmp_apc posterior probabilities to msa, if nec */
       if(do_cur_post) { 
-	esl_msa_AppendGR(msa, "POSTX.", i, tmp_apc1);
-	esl_msa_AppendGR(msa, "POST.X", i, tmp_apc2);
+	if((status = esl_strdup(tmp_apc, msa->alen, &(msa->pp[i]))) != eslOK) goto ERROR;
       }
+      else if (do_post) { msa->pp[i] = NULL; }
 
       /* rejustify inserts and associated GR annotation (possibly postcodes) */
       if(! do_matchonly) { 
@@ -1188,8 +1177,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   msa->rf[alen] = '\0';
 
   if(tmp_aseq != NULL) free(tmp_aseq);
-  if(tmp_apc1 != NULL) free(tmp_apc1);
-  if(tmp_apc2 != NULL) free(tmp_apc2);
+  if(tmp_apc  != NULL) free(tmp_apc);
   FreeCMConsensus(con);
   FreeEmitMap(emap);
   free(matuse);
@@ -1207,8 +1195,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   return eslOK;
 
  ERROR:
-  if(tmp_apc1 != NULL) free(tmp_apc1);
-  if(tmp_apc2 != NULL) free(tmp_apc2);
+  if(tmp_apc != NULL) free(tmp_apc);
   if(con   != NULL)  FreeCMConsensus(con);
   if(emap  != NULL)  FreeEmitMap(emap);
   if(matuse!= NULL)  free(matuse);

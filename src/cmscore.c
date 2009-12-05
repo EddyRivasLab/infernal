@@ -766,8 +766,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 			  if(worker_seqs_to_aln->sq       != NULL) free(worker_seqs_to_aln->sq);
 			  if(worker_seqs_to_aln->tr       != NULL) free(worker_seqs_to_aln->tr);
 			  if(worker_seqs_to_aln->cp9_tr   != NULL) free(worker_seqs_to_aln->cp9_tr);
-			  if(worker_seqs_to_aln->postcode1!= NULL) free(worker_seqs_to_aln->postcode1);
-			  if(worker_seqs_to_aln->postcode2!= NULL) free(worker_seqs_to_aln->postcode2);
+			  if(worker_seqs_to_aln->postcode != NULL) free(worker_seqs_to_aln->postcode);
 			  if(worker_seqs_to_aln->sc       != NULL) free(worker_seqs_to_aln->sc);
 			  free(worker_seqs_to_aln);
 			}
@@ -814,9 +813,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
 	  /* clean up, free everything in all_seqs_to_aln but the sqs, which we'll reuse for each stage */
 	  if(all_seqs_to_aln->tr       != NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->tr[i] != NULL)       { FreeParsetree(all_seqs_to_aln->tr[i]);  all_seqs_to_aln->tr[i] = NULL; } }
-	  if(all_seqs_to_aln->cp9_tr   != NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->cp9_tr[i] != NULL)   { CP9FreeTrace(all_seqs_to_aln->cp9_tr[i]); all_seqs_to_aln->tr[i] = NULL; } }
-	  if(all_seqs_to_aln->postcode1!= NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->postcode1[i] != NULL) { free(all_seqs_to_aln->postcode1[i]); all_seqs_to_aln->tr[i] = NULL; } }
-	  if(all_seqs_to_aln->postcode2!= NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->postcode2[i] != NULL) { free(all_seqs_to_aln->postcode2[i]); all_seqs_to_aln->tr[i] = NULL; } }
+	  if(all_seqs_to_aln->cp9_tr   != NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->cp9_tr[i] != NULL)   { CP9FreeTrace(all_seqs_to_aln->cp9_tr[i]); all_seqs_to_aln->cp9_tr[i] = NULL; } }
+	  if(all_seqs_to_aln->postcode != NULL) { for (i=0; i < all_seqs_to_aln->nseq; i++) if(all_seqs_to_aln->postcode[i] != NULL) { free(all_seqs_to_aln->postcode[i]); all_seqs_to_aln->postcode[i] = NULL; } }
 	  for (i=0; i < all_seqs_to_aln->nseq; i++) all_seqs_to_aln->sc[i] = IMPOSSIBLE;
 	}
       ESL_DPRINTF1(("MPI master: done with this CM.\n"));
@@ -1117,7 +1115,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 }
 
 /* An alignment work unit consists a seqs_to_aln_t object which contains sequences to align, 
- * and space for their parsetrees, or CP9 traces, and postal codes.
+ * and space for their parsetrees, or CP9 traces, and posterior codes.
  * The job is to align the sequences and collect alignment scores and possibly
  * create parsetrees or cp9 traces.
  */
@@ -1143,7 +1141,7 @@ process_align_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *err
 }
 
 /* A search work unit consists a seqs_to_aln_t object which contains sequences to search, 
- * and space for their parsetrees, or CP9 traces, and postal codes, but all we care about
+ * and space for their parsetrees, or CP9 traces, and posterior codes, but all we care about
  * is the score of the best hit in each sequence.
  * The job is to search the sequences and return the scores.
  */
@@ -1782,19 +1780,11 @@ add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs
     }
   }
 
-  if(worker_seqs->postcode1 != NULL) {
-    if(master_seqs->postcode1 == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned postcodes, master->postcode1 is NULL.");
+  if(worker_seqs->postcode != NULL) {
+    if(master_seqs->postcode == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned postcodes, master->postcode is NULL.");
     for(x = offset; x < (offset + worker_seqs->nseq); x++) {
-      assert(master_seqs->postcode1[x] == NULL); 
-      master_seqs->postcode1[x] = worker_seqs->postcode1[(x-offset)];
-    }
-  }
-
-  if(worker_seqs->postcode2 != NULL) {
-    if(master_seqs->postcode2 == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned postcodes, master->postcode2 is NULL.");
-    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
-      assert(master_seqs->postcode2[x] == NULL); 
-      master_seqs->postcode2[x] = worker_seqs->postcode2[(x-offset)];
+      assert(master_seqs->postcode[x] == NULL); 
+      master_seqs->postcode[x] = worker_seqs->postcode[(x-offset)];
     }
   }
 

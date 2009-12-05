@@ -1132,11 +1132,8 @@ cm_search_result_node_MPIPackSize(const search_result_node_t *rnode, MPI_Comm co
   if(rnode->tr != NULL) {
     if ((status = cm_parsetree_MPIPackSize(rnode->tr, comm, &sz))  != eslOK) goto ERROR; n += sz;
   }
-  if(rnode->pcode1 != NULL) { 
-    if ((status = esl_mpi_PackOptSize(rnode->pcode1, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; n += sz;
-  }
-  if(rnode->pcode2 != NULL) { 
-    if ((status = esl_mpi_PackOptSize(rnode->pcode2, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; n += sz;
+  if(rnode->pcode != NULL) { 
+    if ((status = esl_mpi_PackOptSize(rnode->pcode, -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; n += sz;
   }
 
   *ret_n = n;
@@ -1183,7 +1180,7 @@ cm_search_result_node_MPIPack(const search_result_node_t *rnode, char *buf, int 
   status = MPI_Pack((int *) &(rnode->score),   1, MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
 
   has_tr     = (rnode->tr != NULL) ? TRUE : FALSE;
-  has_pcodes = (rnode->pcode1 != NULL && rnode->pcode2 != NULL) ? TRUE : FALSE;
+  has_pcodes = (rnode->pcode != NULL) ? TRUE : FALSE;
   status = MPI_Pack(&has_tr,                 1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
   status = MPI_Pack(&has_pcodes,             1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
 
@@ -1191,9 +1188,8 @@ cm_search_result_node_MPIPack(const search_result_node_t *rnode, char *buf, int 
     status = cm_parsetree_MPIPack((Parsetree_t *) rnode->tr, buf, n, position, comm);  if (status != eslOK) return status;
   }
   if(has_pcodes) {
-    /* we call PackOpt, even though we know we should have valid postal codes */
-    status = esl_mpi_PackOpt(rnode->pcode1, -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) return status;
-    status = esl_mpi_PackOpt(rnode->pcode2, -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) return status;
+    /* we call PackOpt, even though we know we should have valid posterior codes */
+    status = esl_mpi_PackOpt(rnode->pcode, -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) return status;
   }
 
   ESL_DPRINTF2(("cm_search_result_node_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
@@ -1229,8 +1225,7 @@ cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, searc
   int has_tr = FALSE;
   int has_pcodes = FALSE;
   Parsetree_t *tr = NULL;
-  char *pcode1 = NULL;
-  char *pcode2 = NULL;
+  char *pcode = NULL;
 
   status = MPI_Unpack (buf, n, pos, &start, 1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   status = MPI_Unpack (buf, n, pos, &stop,  1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
@@ -1244,8 +1239,7 @@ cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, searc
   rnode.bestr = bestr;
   rnode.score = score;
   rnode.tr    = NULL;
-  rnode.pcode1= NULL;
-  rnode.pcode2= NULL;
+  rnode.pcode = NULL;
 
   /* optionally, unpack a parsetree */
   if(has_tr) {
@@ -1253,10 +1247,8 @@ cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, searc
     rnode.tr = tr;
   }
   if(has_pcodes) {
-    status = esl_mpi_UnpackOpt(buf, n, pos, (void **) &(pcode1), NULL, MPI_CHAR, comm); if (status != eslOK) goto ERROR;;
-    status = esl_mpi_UnpackOpt(buf, n, pos, (void **) &(pcode2), NULL, MPI_CHAR, comm); if (status != eslOK) goto ERROR;;
-    rnode.pcode1 = pcode1;
-    rnode.pcode2 = pcode2;
+    status = esl_mpi_UnpackOpt(buf, n, pos, (void **) &(pcode), NULL, MPI_CHAR, comm); if (status != eslOK) goto ERROR;;
+    rnode.pcode = pcode;
   }
   
   *ret_rnode = rnode;
@@ -1264,8 +1256,7 @@ cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, searc
   
  ERROR:
   if(tr != NULL) FreeParsetree(tr);
-  if(pcode1 != NULL) free(pcode1);
-  if(pcode2 != NULL) free(pcode2);
+  if(pcode != NULL) free(pcode);
   ret_rnode = NULL;
   return status;
 }
@@ -1473,15 +1464,10 @@ cm_seqs_to_aln_MPIPackSize(const seqs_to_aln_t *seqs_to_aln, int offset, int nse
     for (i = offset; i < offset + nseq_to_pack; i++) 
       if(seqs_to_aln->cp9_tr[i] == NULL) { has_cp9_tr = FALSE; break; }
 
-  if(seqs_to_aln->postcode1 == NULL) has_post = FALSE;
+  if(seqs_to_aln->postcode == NULL) has_post = FALSE;
   else
     for (i = offset; i < offset + nseq_to_pack; i++) 
-      if(seqs_to_aln->postcode1[i] == NULL) { has_post = FALSE; break; }
-
-  if(seqs_to_aln->postcode2 == NULL) has_post = FALSE;
-  else
-    for (i = offset; i < offset + nseq_to_pack; i++) 
-      if(seqs_to_aln->postcode2[i] == NULL) { has_post = FALSE; break; }
+      if(seqs_to_aln->postcode[i] == NULL) { has_post = FALSE; break; }
 
   if(seqs_to_aln->sc == NULL) has_sc = FALSE;
   else
@@ -1518,8 +1504,7 @@ cm_seqs_to_aln_MPIPackSize(const seqs_to_aln_t *seqs_to_aln, int offset, int nse
   }
   if(has_post) {
     for(i = offset; i < offset + nseq_to_pack; i++) {
-      if ((status = esl_mpi_PackOptSize(seqs_to_aln->postcode1[i], -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; n += sz;
-      if ((status = esl_mpi_PackOptSize(seqs_to_aln->postcode2[i], -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; n += sz;
+      if ((status = esl_mpi_PackOptSize(seqs_to_aln->postcode[i], -1, MPI_CHAR, comm, &sz)) != eslOK) goto ERROR; n += sz;
     }
   }
   if(has_sc) 
@@ -1593,15 +1578,10 @@ cm_seqs_to_aln_MPIPack(const seqs_to_aln_t *seqs_to_aln, int offset, int nseq_to
     for (i = offset; i < offset + nseq_to_pack; i++) 
       if(seqs_to_aln->cp9_tr[i] == NULL) { has_cp9_tr = FALSE; break; }
 
-  if(seqs_to_aln->postcode1 == NULL) has_post = FALSE;
+  if(seqs_to_aln->postcode == NULL) has_post = FALSE;
   else
     for (i = offset; i < offset + nseq_to_pack; i++) 
-      if(seqs_to_aln->postcode1[i] == NULL) { has_post = FALSE; break; }
-
-  if(seqs_to_aln->postcode2 == NULL) has_post = FALSE;
-  else
-    for (i = offset; i < offset + nseq_to_pack; i++) 
-      if(seqs_to_aln->postcode2[i] == NULL) { has_post = FALSE; break; }
+      if(seqs_to_aln->postcode[i] == NULL) { has_post = FALSE; break; }
 
   if(seqs_to_aln->sc == NULL) has_sc = FALSE;
   else
@@ -1645,9 +1625,8 @@ cm_seqs_to_aln_MPIPack(const seqs_to_aln_t *seqs_to_aln, int offset, int nseq_to
 
   if(has_post)
     for (i = offset; i < offset + nseq_to_pack; i++) {
-      /* we call PackOpt, even though we know we should have valid postal codes */
-      status = esl_mpi_PackOpt(seqs_to_aln->postcode1[i], -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) return status;
-      status = esl_mpi_PackOpt(seqs_to_aln->postcode2[i], -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) return status;
+      /* we call PackOpt, even though we know we should have valid posterior codes */
+      status = esl_mpi_PackOpt(seqs_to_aln->postcode[i], -1, MPI_CHAR, buf, n, position,  comm); if (status != eslOK) return status;
     }
 
   if(has_sc)
@@ -1731,11 +1710,9 @@ cm_seqs_to_aln_MPIUnpack(const ESL_ALPHABET *abc, char *buf, int n, int *pos, MP
   }
 
   if(has_post) {
-    ESL_ALLOC(seqs_to_aln->postcode1, sizeof(char *) * num_seqs_to_aln);
-    ESL_ALLOC(seqs_to_aln->postcode2, sizeof(char *) * num_seqs_to_aln);
+    ESL_ALLOC(seqs_to_aln->postcode, sizeof(char *) * num_seqs_to_aln);
     for (i = 0; i < num_seqs_to_aln; i++) {
-      status = esl_mpi_UnpackOpt(buf, n, pos, (void **) &(seqs_to_aln->postcode1[i]), NULL, MPI_CHAR, comm); if (status != eslOK) goto ERROR;;
-      status = esl_mpi_UnpackOpt(buf, n, pos, (void **) &(seqs_to_aln->postcode2[i]), NULL, MPI_CHAR, comm); if (status != eslOK) goto ERROR;;
+      status = esl_mpi_UnpackOpt(buf, n, pos, (void **) &(seqs_to_aln->postcode[i]), NULL, MPI_CHAR, comm); if (status != eslOK) goto ERROR;;
     }
   }
 

@@ -188,7 +188,7 @@ static int  output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf
 
 static int  initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int  check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr);
-static int  include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, char ***ret_postcode1, char ***ret_postcode2, int *ret_nseq, char *errbuf);
+static int  include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, char ***ret_postcode, int *ret_nseq, char *errbuf);
 static int  compare_cm_guide_trees(CM_t *cm1, CM_t *cm2);
 static int  add_withali_pknots(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_MSA *newmsa);
 
@@ -787,8 +787,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 		      if(worker_seqs_to_aln->sq       != NULL) free(worker_seqs_to_aln->sq);
 		      if(worker_seqs_to_aln->tr       != NULL) free(worker_seqs_to_aln->tr);
 		      if(worker_seqs_to_aln->cp9_tr   != NULL) free(worker_seqs_to_aln->cp9_tr);
-		      if(worker_seqs_to_aln->postcode1!= NULL) free(worker_seqs_to_aln->postcode1);
-		      if(worker_seqs_to_aln->postcode2!= NULL) free(worker_seqs_to_aln->postcode2);
+		      if(worker_seqs_to_aln->postcode != NULL) free(worker_seqs_to_aln->postcode);
 		      if(worker_seqs_to_aln->sc       != NULL) free(worker_seqs_to_aln->sc);
 		      if(worker_seqs_to_aln->pp       != NULL) free(worker_seqs_to_aln->pp);
 		      if(worker_seqs_to_aln->struct_sc!= NULL) free(worker_seqs_to_aln->struct_sc);
@@ -1057,7 +1056,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  imax = seqs_to_aln->nseq;
 	  if((seqs_to_aln->nseq + cfg->withmsa->nseq) > seqs_to_aln->nalloc) 
 	    GrowSeqsToAln(seqs_to_aln, seqs_to_aln->nseq + cfg->withmsa->nseq - seqs_to_aln->nalloc, FALSE);
-	  if((status = include_withali(go, cfg, cm, &(seqs_to_aln->sq), &(seqs_to_aln->tr), &(seqs_to_aln->postcode1), &(seqs_to_aln->postcode2), &(seqs_to_aln->nseq), errbuf)) != eslOK)
+	  if((status = include_withali(go, cfg, cm, &(seqs_to_aln->sq), &(seqs_to_aln->tr), &(seqs_to_aln->postcode), &(seqs_to_aln->nseq), errbuf)) != eslOK)
 	    ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have SS_cons annotation compatible with the CM\n", esl_opt_GetString(go, "--withali"));
 	}
 
@@ -1074,7 +1073,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	  assert(seqs_to_aln->tr != NULL);
 	  /*for(i = 0; i < seqs_to_aln->nseq; i++) { tr_Mb += SizeofParsetree(seqs_to_aln->tr[i]); }
 	    printf("All %d parsetrees are total size: %.6f Mb\n", seqs_to_aln->nseq, tr_Mb);*/
-	  if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, seqs_to_aln->postcode1, seqs_to_aln->postcode2, 
+	  if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, seqs_to_aln->postcode, 
 					    seqs_to_aln->nseq, cfg->insertfp, cfg->elfp, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), TRUE, &msa)) != eslOK)
 	    esl_fatal("Error creating the alignment: %s", errbuf);
 	  seqs_to_aln->tr = NULL; /* these were freed by Parsetrees2Alignment() */
@@ -1112,8 +1111,8 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 }
 
 /* An alignment work unit consists a seqs_to_aln_t object which contains sequences to align, 
- * and space for their parsetrees, or CP9 traces, and possibly postal codes.
- * The job is to align the sequences and create parsetrees or cp9 traces and maybe postal codes.
+ * and space for their parsetrees, or CP9 traces, and possibly posterior code strings.
+ * The job is to align the sequences and create parsetrees or cp9 traces and maybe posterior code strings.
  */
 static int
 process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
@@ -1344,8 +1343,7 @@ static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL
  *           cm           - CM we're aligning to 
  *           ret_sq       - pre-existing sequences, to append msa seqs to
  *           ret_tr       - pre-existing parsetrees, to append to
- *           ret_postcode1- pre-existing posterior codes (tens place '9' in '93'), to append to
- *           ret_postcode2- pre-existing posterior codes (ones place '3' in '93'), to append to
+ *           ret_postcode - pre-existing posterior codes, to append to
  *           ret_nseq     - number of exisiting seqs, updated at end of function
  *           errbuf       - easel error message
  * 
@@ -1353,7 +1351,7 @@ static int check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL
  *           Also new, realloc'ed arrays for sq, tr in ret_seq, ret_tr; 
  *           *ret_nseq is increased by number of seqs in cfg->withmsa.
 */
-static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, char ***ret_postcode1, char ***ret_postcode2, int *ret_nseq, char *errbuf)
+static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_SQ ***ret_sq, Parsetree_t ***ret_tr, char ***ret_postcode, int *ret_nseq, char *errbuf)
 {
   int           status;
   void         *tmp;      /* for ESL_RALLOC() */
@@ -1373,15 +1371,12 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
   /* for swapping pts at end of func so seqs from withali appear at top of aln */
   Parsetree_t **tmp_tr = NULL;  
   ESL_SQ      **tmp_sq = NULL;
-  char        **tmp_postcode1 = NULL;
-  char        **tmp_postcode2 = NULL;
+  char        **tmp_postcode = NULL;
 
   /* Contract check */
   if(cfg->withmsa == NULL)                     ESL_XFAIL(eslEINVAL, errbuf, "Error in include_withali() withmsa is NULL.\n");
   if(! (cfg->withmsa->flags & eslMSA_DIGITAL)) ESL_XFAIL(eslEINVAL, errbuf, "Error in include_withali() withmsa is not digitized.\n");
-  if(*ret_postcode1 != NULL && *ret_postcode2 == NULL)   ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), postcode1 != NULL, but postcode2 == NULL"); 
-  if(*ret_postcode1 == NULL && *ret_postcode2 != NULL)   ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), postcode2 != NULL, but postcode1 == NULL"); 
-  do_post = (*ret_postcode1 != NULL && *ret_postcode2 != NULL) ? TRUE : FALSE;
+  do_post = (*ret_postcode != NULL) ? TRUE : FALSE;
 
   /* For each seq in the MSA, map the aligned sequences coords to 
    * the unaligned coords, we stay in digitized seq coords (1..alen),
@@ -1412,14 +1407,13 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
   ESL_RALLOC((*ret_tr),  tmp, (sizeof(Parsetree_t *)  * (*ret_nseq + cfg->withmsa->nseq)));
   ESL_RALLOC((*ret_sq),  tmp, (sizeof(ESL_SQ *)       * (*ret_nseq + cfg->withmsa->nseq)));
   if(do_post) { 
-    ESL_RALLOC((*ret_postcode1),  tmp, (sizeof(char *) * (*ret_nseq + cfg->withmsa->nseq)));
-    ESL_RALLOC((*ret_postcode2),  tmp, (sizeof(char *) * (*ret_nseq + cfg->withmsa->nseq)));
+    ESL_RALLOC((*ret_postcode),  tmp, (sizeof(char *) * (*ret_nseq + cfg->withmsa->nseq)));
   }
 
   /* if do_post, check to see if withmsa has posterior annotation, if so, store it */
   if(do_post) { 
     for (i = *ret_nseq; i < (*ret_nseq + cfg->withmsa->nseq); i++) { 
-      (*ret_postcode1)[i] = (*ret_postcode2)[i] = NULL; 
+      (*ret_postcode)[i] = NULL;
     }
     ridx1 = ridx2 = -1;
     for (r = 0; r < cfg->withmsa->ngr; r++) { 
@@ -1430,10 +1424,8 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
       for (i = *ret_nseq; i < (*ret_nseq + cfg->withmsa->nseq); i++) { 
 	ip = i - *ret_nseq;
 	if(cfg->withmsa->gr[ridx1][ip] != NULL && cfg->withmsa->gr[ridx2][ip] != NULL) { 
-	  esl_strdup(cfg->withmsa->gr[ridx1][ip], -1, &((*ret_postcode1)[i]));
-	  esl_strdealign((*ret_postcode1)[i], aseq[ip], "-_.~", NULL);
-	  esl_strdup(cfg->withmsa->gr[ridx2][ip], -1, &((*ret_postcode2)[i]));
-	  esl_strdealign((*ret_postcode2)[i], aseq[ip], "-_.~", NULL);
+	  esl_strdup(cfg->withmsa->gr[ridx1][ip], -1, &((*ret_postcode)[i]));
+	  esl_strdealign((*ret_postcode)[i], aseq[ip], "-_.~", NULL);
 	}
       }
     }
@@ -1461,16 +1453,14 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
   ESL_ALLOC(tmp_tr, sizeof(Parsetree_t *) * (*ret_nseq + cfg->withmsa->nseq));
   ESL_ALLOC(tmp_sq, sizeof(ESL_SQ *)      * (*ret_nseq + cfg->withmsa->nseq));
   if(do_post) { 
-    ESL_ALLOC(tmp_postcode1, sizeof(char *) * (*ret_nseq + cfg->withmsa->nseq));
-    ESL_ALLOC(tmp_postcode2, sizeof(char *) * (*ret_nseq + cfg->withmsa->nseq));
+    ESL_ALLOC(tmp_postcode, sizeof(char *) * (*ret_nseq + cfg->withmsa->nseq));
   }
   for(i = 0; i < (*ret_nseq + cfg->withmsa->nseq); i++)
     {
       tmp_tr[i] = (*ret_tr)[i];
       tmp_sq[i] = (*ret_sq)[i];
       if(do_post) { 
-	tmp_postcode1[i] = (*ret_postcode1)[i];
-	tmp_postcode2[i] = (*ret_postcode2)[i];
+	tmp_postcode[i] = (*ret_postcode)[i];
       }
     }
   for(i = 0; i < *ret_nseq; i++)
@@ -1479,8 +1469,7 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
       (*ret_tr)[ip] = tmp_tr[i];
       (*ret_sq)[ip] = tmp_sq[i];
       if(do_post) { 
-	(*ret_postcode1)[ip] = tmp_postcode1[i];
-	(*ret_postcode2)[ip] = tmp_postcode2[i];
+	(*ret_postcode)[ip] = tmp_postcode[i];
       }
     }
   for(i = *ret_nseq; i < (*ret_nseq + cfg->withmsa->nseq); i++)
@@ -1489,8 +1478,7 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
       (*ret_tr)[ip] = tmp_tr[i];
       (*ret_sq)[ip] = tmp_sq[i];
       if(do_post) { 
-	(*ret_postcode1)[ip] = tmp_postcode1[i];
-	(*ret_postcode2)[ip] = tmp_postcode2[i];
+	(*ret_postcode)[ip] = tmp_postcode[i];
       }
     }
   /* update *ret_nseq */
@@ -1503,8 +1491,7 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
   free(tmp_tr);
   free(tmp_sq);
   if(do_post) { 
-    free(tmp_postcode1);
-    free(tmp_postcode2);
+    free(tmp_postcode);
   }
   return eslOK;
 
@@ -1514,8 +1501,7 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
   if(tmp_sq != NULL) free(tmp_sq);
   if(tmp_tr != NULL) free(tmp_tr);
   if(tmp_tr != NULL) free(tmp_tr);
-  if(tmp_postcode1 != NULL) free(tmp_postcode1);
-  if(tmp_postcode2 != NULL) free(tmp_postcode2);
+  if(tmp_postcode != NULL) free(tmp_postcode);
 
   return status;
 }
@@ -1851,19 +1837,11 @@ add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs
     }
   }
 
-  if(worker_seqs->postcode1 != NULL) {
-    if(master_seqs->postcode1 == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned postcodes, master->postcode1 is NULL.");
+  if(worker_seqs->postcode != NULL) {
+    if(master_seqs->postcode == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned postcodes, master->postcode is NULL.");
     for(x = offset; x < (offset + worker_seqs->nseq); x++) {
-      assert(master_seqs->postcode1[x] == NULL); 
-      master_seqs->postcode1[x] = worker_seqs->postcode1[(x-offset)];
-    }
-  }
-
-  if(worker_seqs->postcode2 != NULL) {
-    if(master_seqs->postcode2 == NULL) cm_Fail("add_worker_seqs_to_master(), worker returned postcodes, master->postcode2 is NULL.");
-    for(x = offset; x < (offset + worker_seqs->nseq); x++) {
-      assert(master_seqs->postcode2[x] == NULL); 
-      master_seqs->postcode2[x] = worker_seqs->postcode2[(x-offset)];
+      assert(master_seqs->postcode[x] == NULL); 
+      master_seqs->postcode[x] = worker_seqs->postcode[(x-offset)];
     }
   }
 
@@ -1982,7 +1960,7 @@ serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((status = process_workunit(go, cfg, errbuf, cmlist[0], seqs_to_aln)) != eslOK) cm_Fail(errbuf);
   /* convert parsetrees to alignment */
   ESL_MSA *maj_target_msa;
-  if((status = Parsetrees2Alignment(cmlist[0], errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, NULL, NULL, seqs_to_aln->nseq, NULL, NULL, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), FALSE, &maj_target_msa)) != eslOK)
+  if((status = Parsetrees2Alignment(cmlist[0], errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, NULL, seqs_to_aln->nseq, NULL, NULL, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), FALSE, &maj_target_msa)) != eslOK)
     cm_Fail("serial_master_meta(), error generating major alignment from parsetrees.");
   /* printf("\n"); status = esl_msa_Write(stdout, maj_target_msa, eslMSAFILE_STOCKHOLM); printf("\n"); */
 

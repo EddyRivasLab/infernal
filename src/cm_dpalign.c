@@ -1234,7 +1234,7 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           return the traceback and the score, without dividing &
  *           conquering, but by using bands on the j and d dimensions
  *           of the DP matrix.  Bands derived by HMM Forward/Backward
- *           runs. Optionally return a postal code.
+ *           runs. Optionally return a posterior code string.
  *           
  *           Identical to FastAlign() but HMM bands are used here.
  * 
@@ -1274,15 +1274,14 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           do_sample - TRUE to sample a parsetree from the Inside matrix
  *           post_mx   - dp matrix for posterior calculation, can be NULL only if !do_optacc
  *           ret_tr    - RETURN: traceback (pass NULL if trace isn't wanted)
- *           ret_pcode1- RETURN: postal code 1, (pass NULL if not wanted, must be NULL if post_mx == NULL)
- *           ret_pcode2- RETURN: postal code 2, (pass NULL if not wanted, must be NULL if post_mx == NULL)
+ *           ret_pcode - RETURN: posterior code, (pass NULL if not wanted, must be NULL if post_mx == NULL)
  *           ret_sc    - if(!do_optacc): score of the alignment in bits.
  *                       if( do_optacc): average posterior probability of all L aligned residues 
  *                       in optimally accurate alignment
- *           ret_ins_sc- if(do_optacc || ret_pcode1,2 != NULL): inside score of sequence in bits
+ *           ret_ins_sc- if(do_optacc || ret_pcode != NULL): inside score of sequence in bits
  *                       else: must be NULL (inside will not be run)
  * 
- * Returns: <ret_tr>, <ret_pcode1>, <ret_pcode2>, <ret_sc>, see 'Args' section
+ * Returns: <ret_tr>, <ret_pcode>, <ret_sc>, see 'Args' section
  * 
  * Throws:  <eslOK> on success; 
  *          <eslERANGE> if required CM_HB_MX for FastInsideAlignHB(), FastOutsideAlignHB() or
@@ -1292,17 +1291,16 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
 
 int
 FastAlignHB(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, CM_HB_MX *mx, CM_HB_SHADOW_MX *shmx, 
-	    int do_optacc, int do_sample, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc)
+	    int do_optacc, int do_sample, CM_HB_MX *post_mx, Parsetree_t **ret_tr, char **ret_pcode, float *ret_sc, float *ret_ins_sc)
 {
   int          status;
   Parsetree_t *tr;
   float        sc;
   float        ins_sc; /* inside score */
   int          do_post;
-  char        *pcode1;
-  char        *pcode2;
+  char        *pcode;
   int          have_pcodes;
-  have_pcodes = (ret_pcode1 != NULL && ret_pcode2 != NULL) ? TRUE : FALSE;
+  have_pcodes = (ret_pcode != NULL) ? TRUE : FALSE;
   do_post = (do_optacc || have_pcodes) ? TRUE : FALSE;
 
   ESL_STOPWATCH *w;
@@ -1376,12 +1374,11 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int 
   }
 
   if(have_pcodes) {
-    if((status = CMPostalCodeHB(cm, errbuf, i0, j0, post_mx, tr, TRUE, &pcode1, &pcode2, (do_optacc ? &sc : NULL))) != eslOK) return status;
-    *ret_pcode1 = pcode1;
-    *ret_pcode2 = pcode2;
+    if((status = CMPostCodeHB(cm, errbuf, i0, j0, post_mx, tr, TRUE, &pcode, (do_optacc ? &sc : NULL))) != eslOK) return status;
+    *ret_pcode = pcode;
   }
-  else if(do_optacc) { /* call CMPostalCodeHB() to get the average residue posterior probability label, but not post codes */ 
-    if((status = CMPostalCodeHB(cm, errbuf, i0, j0, post_mx, tr, TRUE, NULL, NULL, &sc)) != eslOK) return status;
+  else if(do_optacc) { /* call CMPostCodeHB() to get the average residue posterior probability label, but not post codes */ 
+    if((status = CMPostCodeHB(cm, errbuf, i0, j0, post_mx, tr, TRUE, NULL, &sc)) != eslOK) return status;
   }
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
@@ -1402,7 +1399,8 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int 
  * Purpose:  Wrapper for the fast_alignT() routine - solve a full
  *           alignment problem either by CYK, using optimal
  *           accuracy, or sampling and return the traceback and the score,
- *           without dividing & conquering. Optionally return a postal code.
+ *           without dividing & conquering. Optionally return a posterior 
+ *           code string.
  *           
  *           Identical to FastAlignHB() but HMM bands are NOT used here.
  *           See that functions 'Purpose' for more details.
@@ -1422,31 +1420,29 @@ FastAlignHB(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int 
  *           ret_post_mx- dp matrix for posterior calculation, we'll allocate and fill it if nec,
  *                        can be NULL only if !do_optacc
  *           ret_tr    - RETURN: traceback (pass NULL if trace isn't wanted)
- *           ret_pcode1- RETURN: postal code 1, (pass NULL if not wanted, must be NULL if post_mx == NULL)
- *           ret_pcode2- RETURN: postal code 2, (pass NULL if not wanted, must be NULL if post_mx == NULL)
+ *           ret_pcode - RETURN: posterior code 1, (pass NULL if not wanted, must be NULL if post_mx == NULL)
  *           ret_sc    - if(!do_optacc): score of the alignment in bits.
  *                       if( do_optacc): average posterior probability of all L aligned residues 
  *                       in optimally accurate alignment
- *           ret_ins_sc- if(do_optacc || ret_pcode1,2 != NULL): inside score of sequence in bits
+ *           ret_ins_sc- if(do_optacc || ret_pcode != NULL): inside score of sequence in bits
  *                       else: must be NULL (inside will not be run)
  * 
- * Returns: <ret_tr>, <ret_pcode1>, <ret_pcode2>, <ret_sc>, see 'Args' section
+ * Returns: <ret_tr>, <ret_pcode>, <ret_sc>, see 'Args' section
  * 
  * Throws:  <eslOK> on success; 
  */
 int
 FastAlign(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int i0, int j0, float size_limit, float ****ret_mx, 
-	  int do_optacc, int do_sample, float ****ret_post_mx, Parsetree_t **ret_tr, char **ret_pcode1, char **ret_pcode2, float *ret_sc, float *ret_ins_sc)
+	  int do_optacc, int do_sample, float ****ret_post_mx, Parsetree_t **ret_tr, char **ret_pcode, float *ret_sc, float *ret_ins_sc)
 {
   int          status;
   Parsetree_t *tr;
   float        sc;
   float        ins_sc; /* inside score */
   int          do_post;
-  char        *pcode1;
-  char        *pcode2;
+  char        *pcode;
   int          have_pcodes;
-  have_pcodes = (ret_pcode1 != NULL && ret_pcode2 != NULL) ? TRUE : FALSE;
+  have_pcodes = (ret_pcode != NULL) ? TRUE : FALSE;
   do_post = (do_optacc || have_pcodes) ? TRUE : FALSE;
 
 
@@ -1500,12 +1496,11 @@ FastAlign(CM_t *cm, char *errbuf, ESL_RANDOMNESS *r, ESL_DSQ *dsq, int L, int i0
   }
 
   if(have_pcodes) {
-    if((status = CMPostalCode(cm, errbuf, i0, j0, *ret_post_mx, tr, TRUE, &pcode1, &pcode2, &sc)) != eslOK) return status;
-    *ret_pcode1 = pcode1;
-    *ret_pcode2 = pcode2;
+    if((status = CMPostCode(cm, errbuf, i0, j0, *ret_post_mx, tr, TRUE, &pcode, &sc)) != eslOK) return status;
+    *ret_pcode = pcode;
   }
-  else if(do_optacc) { /* call CMPostalCode() to get the average residue posterior probability label, but not post codes */ 
-    if((status = CMPostalCode(cm, errbuf, i0, j0, *ret_post_mx, tr, TRUE, NULL, NULL, &sc)) != eslOK) return status;
+  else if(do_optacc) { /* call CMPostCode() to get the average residue posterior probability label, but not post codes */ 
+    if((status = CMPostCode(cm, errbuf, i0, j0, *ret_post_mx, tr, TRUE, NULL, &sc)) != eslOK) return status;
   }
 
   if (ret_tr != NULL) *ret_tr = tr; else FreeParsetree(tr);
@@ -4819,8 +4814,8 @@ CMCheckPosterior(CM_t *cm, char *errbuf, int i0, int j0, float ***post)
   return status; /* NEVERREACHED */
 }
 
-/* Function: CMPostalCode()
- * Date:     EPN 05.25.06 based on SRE's PostalCode() 
+/* Function: CMPostCode()
+ * Date:     EPN 05.25.06 based on SRE's Postcode() 
  *           from HMMER's postprob.c
  *
  * Purpose:  Given a parse tree and a posterior probability cube, 
@@ -4841,36 +4836,35 @@ CMCheckPosterior(CM_t *cm, char *errbuf, int i0, int j0, float ***post)
  *           off by one from dsq; and convertible to the coordinate
  *           system of aseq using MakeAlignedString().
  *           
- *           Values are 00-99,**  
- *           for example, 93 means with >=93% posterior probabiility,
- *           residue i is aligned to the state k that it
- *           is assigned to in the given trace.
+ *           Values are 0,1,2,3,4,5,6,7,8,9,*:
+ *           '0' = [0.00-0.05)
+ *           '1' = [0.05-0.15)
+ *           '2' = [0.15-0.25)
+ *           '3' = [0.25-0.35)
+ *           '4' = [0.35-0.45)
+ *           '5' = [0.45-0.55)
+ *           '6' = [0.55-0.65)
+ *           '7' = [0.65-0.75)
+ *           '8' = [0.75-0.85)
+ *           '9' = [0.85-0.95)
+ *           '*' = [0.95-1.00)
  *
- *           Because we have 2 digit precision, we need two
- *           strings, the first will be the 'tens' place of
- *           the posterior probability, '9' for the 93% example,
- *           and the second string will hold the 'ones' place,
- *           the '3' in the 93% example.
- *
- *           CMPostalCodeHB() is nearly the same function with the
+ *           CMPostCodeHB() is nearly the same function with the
  *           difference that HMM bands were used for the alignment,
  *           so we have to deal with offset issues.
  *
  * Args:     L    - length of seq
  *           post - posterior prob cube: see CMPosterior()
- *           *tr  - parsetree to get a Postal code string for.   
- *           ret_pcode1 - 'tens' place postal code string ('9' for 93)
- *           ret_pcode2 - 'ones' place postal code string ('3' for 93)
+ *           *tr  - parsetree to get a posterior code string for.   
+ *           ret_pcode - posterior string
  * Returns:  void
  *
  */
-int
+char
 Fscore2postcode(float sc)
 {
-  int i;
-  i = (int) (FScore2Prob(sc, 1.) * 100.);
-  ESL_DASSERT1((i >= 0 && i <= 100)); 
-  return i;
+  float p = FScore2Prob(sc, 1.);
+  return (p + 0.05 >= 1.0) ? '*' :  (char) ((p + 0.05) * 10.0) + '0';
 }
 
 /* Function: FScore2Prob()
@@ -4887,24 +4881,22 @@ FScore2Prob(float sc, float null)
 }
 
 int
-CMPostalCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t *tr, int do_marginalize, char **ret_pcode1, char **ret_pcode2, float *ret_avgp)
+CMPostCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t *tr, int do_marginalize, char **ret_pcode, float *ret_avgp)
 {
   int status;
   int x, v, i, j, d, r, jp;
   int v2, j2, d2;
   int ip;
   int sd, sdl, sdr;
-  char *pcode1;
-  char *pcode2;
-  int p;
+  char *pcode;
+  float p;
 
   float sump = 0.;
   int L = j0-i0+1;
   float left_logp, right_logp;
   int emits_left, emits_right;
 
-  ESL_ALLOC(pcode1, (L+1) * sizeof(char)); 
-  ESL_ALLOC(pcode2, (L+1) * sizeof(char)); 
+  ESL_ALLOC(pcode, (L+1) * sizeof(char)); 
 
   /* First, determine the summed log prob that each residue is emitted by any state.
    * In a perfect world with machines with infinite precision (or prob if we just implemented doubles)
@@ -4982,7 +4974,7 @@ CMPostalCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t 
   /*for(i = 0; i <= (L+1); i++) printf("res_logp[%5d] %12f\n", i, res_logp[i]);*/
   /* finished determining summed log prob of each emitted residue */
 
-  /* go through each node of the parsetree and determine postal code for emissions */
+  /* go through each node of the parsetree and determine post code for emissions */
   for (x = 0; x < tr->n; x++)
     {
       v = tr->state[x];
@@ -5005,18 +4997,11 @@ CMPostalCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t 
 	    d2 = j2-r+1;
 	    left_logp = FLogsum(left_logp, post[v][j2][d2]);
 	  }
-	  p = Fscore2postcode(left_logp - res_logp[ip]);
-	  sump += FScore2Prob((left_logp - res_logp[ip]), 1.);
-	  if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): discretized probability for EL state v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
-	  if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): discretized probability for EL state v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
-	  if(p == 100) { 
-	    pcode1[(r-1)] = '*';
-	    pcode2[(r-1)] = '*';
-	  }
-	  else {
-	    pcode1[(r-1)] = '0' + (char) (p / 10);
-	    pcode2[(r-1)] = '0' + (char) (p % 10);
-	  }
+	  pcode[r-1] = Fscore2postcode(left_logp - res_logp[ip]);
+	  p = FScore2Prob((left_logp - res_logp[ip]), 1.);
+	  sump += p;
+	  if(p >  1.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostCode(): probability for EL state v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, p);
+	  if(p < -0.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostCode(): probability for EL state v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, p);
 	  /*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
 	}
       }
@@ -5066,57 +5051,40 @@ CMPostalCode(CM_t *cm, char *errbuf, int i0, int j0, float ***post, Parsetree_t 
 	
 	/* fill pcode arrays with posterior characters */
 	if (emits_left) { 
-	  p = Fscore2postcode(left_logp - res_logp[ip]);
-	  sump += FScore2Prob((left_logp - res_logp[ip]), 1.);
-	  if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): left emit discretized probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
-	  if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): left emit discretized probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
-	  if(p == 100) { 
-	    pcode1[i-1] = '*';
-	    pcode2[i-1] = '*';
-	  }
-	  else {
-	    pcode1[i-1] = '0' + (char) (p / 10);
-	    pcode2[i-1] = '0' + (char) (p % 10);
-	  }
+	  pcode[i-1] = Fscore2postcode(left_logp - res_logp[ip]);
+	  p = FScore2Prob((left_logp - res_logp[ip]), 1.);
+	  sump += p;
+	  if(p >  1.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostCode(): left emit probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, p);
+	  if(p < -0.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostCode(): left emit probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, p);
 	}
 	if (emits_right) { 
-	  p = Fscore2postcode(right_logp - res_logp[jp]);
-	  sump += FScore2Prob((right_logp - res_logp[jp]), 1.);
-	  if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): right emit discretized probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
-	  if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCode(): right emit discretized probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
-	  if(p == 100) { 
-	    pcode1[j-1] = '*';
-	    pcode2[j-1] = '*';
-	  }
-	  else {
-	    pcode1[j-1] = '0' + (char) (p / 10);
-	    pcode2[j-1] = '0' + (char) (p % 10);
-	  }
+	  pcode[j-1] = Fscore2postcode(right_logp - res_logp[jp]);
+	  p = FScore2Prob((right_logp - res_logp[jp]), 1.);
+	  sump += p;
+	  if(p >  1.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostCode(): right emit probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, p);
+	  if(p < -0.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostCode(): right emit probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, p);
 	}
       }
     }
-  pcode1[L] = '\0';
-  pcode2[L] = '\0';
+  pcode[L] = '\0';
   free(res_logp);
-  if(ret_pcode1 != NULL) *ret_pcode1 = pcode1;
-  else                   free(pcode1);
-  if(ret_pcode2 != NULL) *ret_pcode2 = pcode2;
-  else                   free(pcode2);
+  if(ret_pcode != NULL) *ret_pcode = pcode;
+  else                   free(pcode);
   if(ret_avgp   != NULL) *ret_avgp   = sump / (float) L;
   return eslOK;
   
  ERROR:
-  ESL_FAIL(eslEMEM, errbuf, "CMPostalCode(): Memory allocation error.");
+  ESL_FAIL(eslEMEM, errbuf, "CMPostcode(): Memory allocation error.");
   return status; /* never reached */
 }
 
 int
-CMPostalCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parsetree_t *tr, int do_marginalize, char **ret_pcode1, char **ret_pcode2, float *ret_avgp)
+CMPostCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parsetree_t *tr, int do_marginalize, char **ret_pcode, float *ret_avgp)
 {
   int status;
-  int x, v, i, j, d, r, p;
-  char *pcode1;
-  char *pcode2;
+  int x, v, i, j, d, r;
+  float p;
+  char *pcode;
   int jp_v, dp_v;
   int ip, jp;
   int v2, j2, d2, dp_v2, jp_v2;
@@ -5135,8 +5103,7 @@ CMPostalCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parset
   /* the DP matrix */
   float ***post  = post_mx->dp; /* pointer to the post DP matrix */
 
-  ESL_ALLOC(pcode1, (L+1) * sizeof(char)); 
-  ESL_ALLOC(pcode2, (L+1) * sizeof(char)); 
+  ESL_ALLOC(pcode, (L+1) * sizeof(char)); 
 
   /* First, determine the summed log prob that each residue is emitted by any state.
    * In a perfect world with machines with infinite precision (or prob if we just implemented doubles)
@@ -5222,7 +5189,7 @@ CMPostalCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parset
   /*for(i = 0; i <= (L+1); i++) printf("res_logp[%5d] %12f\n", i, res_logp[i]);*/
   /* finished determining summed log prob of each emitted residue */
 
-  /* go through each node of the parsetree and determine postal code for emissions */
+  /* go through each node of the parsetree and determine posterior code for emissions */
   for (x = 0; x < tr->n; x++) {
     v = tr->state[x];
     i = tr->emitl[x];
@@ -5244,18 +5211,11 @@ CMPostalCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parset
 	  d2 = j2-r+1;
 	  left_logp = FLogsum(left_logp, post[v][j2][d2]);
 	}
-	p = Fscore2postcode(left_logp - res_logp[ip]);
-	sump += FScore2Prob((left_logp - res_logp[ip]), 1.);
-	if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): discretized probability for EL state v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
-	if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): discretized probability for EL state v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
-	if(p == 100) { 
-	    pcode1[(r-1)] = '*';
-	    pcode2[(r-1)] = '*';
-	}
-	else {
-	  pcode1[(r-1)] = '0' + (char) (p / 10);
-	  pcode2[(r-1)] = '0' + (char) (p % 10);
-	}
+	pcode[r-1] = Fscore2postcode(left_logp - res_logp[ip]);
+	p = FScore2Prob((left_logp - res_logp[ip]), 1.);
+	sump += p;
+	if(p >  1.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostCodeHB(): probability for EL state v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, p);
+	if(p < -0.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostCodeHB(): probability for EL state v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, p);
 	/*printf("r: %d | post[%d][%d][%d]: %f | sc: %c\n", r, v, j, d, post[v][j][d], postcode[r]);*/
       }
     }
@@ -5321,47 +5281,30 @@ CMPostalCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parset
       
       /* fill pcode arrays with posterior characters */
       if (emits_left) { 
-	p = Fscore2postcode(left_logp - res_logp[ip]);
-	sump += FScore2Prob(left_logp - res_logp[ip], 1.);
-	if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): left emit discretized probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
-	if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): left emit discretized probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
-	if(p == 100) { 
-	  pcode1[i-1] = '*';
-	  pcode2[i-1] = '*';
-	}
-	else {
-	  pcode1[i-1] = '0' + (char) (p / 10);
-	  pcode2[i-1] = '0' + (char) (p % 10);
-	}
+	pcode[i-1] = Fscore2postcode(left_logp - res_logp[ip]);
+	p = FScore2Prob(left_logp - res_logp[ip], 1.);
+	sump += p;
+	if(p >  1.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostCode(): left emit probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, p);
+	if(p < -0.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostCode(): left emit probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, p);
       }
       if (emits_right) { 
-	p = Fscore2postcode(right_logp - res_logp[jp]);
-	sump += FScore2Prob((right_logp - res_logp[jp]), 1.);
-	if(p > 100) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): right emit discretized probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, (float) p / 100.);
-	if(p <   0) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostalCodeHB(): right emit discretized probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, (float) p / 100.);
-	if(p == 100) { 
-	  pcode1[j-1] = '*';
-	  pcode2[j-1] = '*';
-	}
-	else {
-	  pcode1[j-1] = '0' + (char) (p / 10);
-	  pcode2[j-1] = '0' + (char) (p % 10);
-	}
+	pcode[j-1] = Fscore2postcode(right_logp - res_logp[jp]);
+	p = FScore2Prob((right_logp - res_logp[jp]), 1.);
+	sump += p;
+	if(p >  1.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostCode(): right emit probability for v: %d j: %d d: %d > 1.00 (%.2f)", v, j, d, p);
+	if(p < -0.01) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "CMPostCode(): right emit probability for v: %d j: %d d: %d < 0.00 (%.2f)", v, j, d, p);
       }
     }
   }
-  pcode1[L] = '\0';
-  pcode2[L] = '\0';
+  pcode[L] = '\0';
   free(res_logp);
-  if(ret_pcode1 != NULL) *ret_pcode1 = pcode1;
-  else                   free(pcode1);
-  if(ret_pcode2 != NULL) *ret_pcode2 = pcode2;
-  else                   free(pcode2);
+  if(ret_pcode != NULL) *ret_pcode = pcode;
+  else                  free(pcode);
   if(ret_avgp   != NULL) *ret_avgp   = sump / (float) L;
   return eslOK;
 
  ERROR:
-  ESL_FAIL(eslEMEM, errbuf, "CMPostalCodeHB(): Memory allocation error.");
+  ESL_FAIL(eslEMEM, errbuf, "CMPostCodeHB(): Memory allocation error.");
   return status; /* never reached */
 }
 

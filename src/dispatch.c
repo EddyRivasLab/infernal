@@ -283,15 +283,15 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
  * Incept:   EPN, Thu Nov 15 11:35:23 2007
  *
  * Purpose:  Given a CM and sequences, do preliminaries, call the correct 
- *           alignment function and return parsetrees and optionally postal codes 
- *           (if cm->align_opts & CM_ALIGN_POST).
+ *           alignment function and return parsetrees and optionally posterior code
+ *           strings (if cm->align_opts & CM_ALIGN_POST).
  *
  *           Two different modes are possible dependent on input args. Mode
  *           is checked for during contract enforcement.
  *
  *           sq_mode: seqs_to_aln != NULL; dsq == NULL; results == NULL.
  *                    align the seqs_to_aln->nseq ESL_SQ sq sequences store
- *                    parsetrees or CP9 traces and/or postal codes in
+ *                    parsetrees or CP9 traces and/or posterior codes in
  *                    seqs_to_aln.
  *
  *          dsq_mode: seqs_to_aln == NULL; dsq != NULL, results != NULL.
@@ -339,8 +339,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   int i;                        /* counter over sequences */
   int ip;                       /* offset index in search_results */
   int v;                        /* state counter */
-  char        **postcode1 = NULL;/* posterior decode array of strings, tens place ('9' for 93) */
-  char        **postcode2 = NULL;/* posterior decode array of strings, ones place ('3' for 93) */
+  char        **postcode = NULL;/* posterior decode array of strings */
   Parsetree_t **tr       = NULL;/* parse trees for the sequences */
   CP9trace_t  **cp9_tr   = NULL;/* CP9 traces for the sequences */
   float         sc;		/* score for one sequence alignment */
@@ -487,8 +486,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   if( sq_mode && (seqs_to_aln->sq        == NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in sq_mode, seqs_to_aln->sq is NULL.\n");
   if( sq_mode && (seqs_to_aln->tr        != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in sq_mode, seqs_to_aln->tr is non-NULL.\n");
   if( sq_mode && (seqs_to_aln->cp9_tr    != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in sq_mode, seqs_to_aln->cp9_tr is non-NULL.\n");
-  if( sq_mode && (seqs_to_aln->postcode1 != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in sq_mode, seqs_to_aln->postcode1 is non-NULL.\n");
-  if( sq_mode && (seqs_to_aln->postcode2 != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in sq_mode, seqs_to_aln->postcode2 is non-NULL.\n");
+  if( sq_mode && (seqs_to_aln->postcode  != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in sq_mode, seqs_to_aln->postcode is non-NULL.\n");
   if( sq_mode && (seqs_to_aln->sc        != NULL))  ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in sq_mode, seqs_to_aln->sc is non-NULL.\n");
   
   if(dsq_mode && (cm->align_opts & CM_ALIGN_HMMVITERBI)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), in dsq_mode, CM_ALIGN_HMMVITERBI option on.\n");
@@ -567,16 +565,15 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   else if(dsq_mode) { nalign = search_results->num_results - first_result; silent_mode = TRUE; }
 
   /* If sqmode: potentially allocate tr, cp9_tr, and postcodes. We'll set
-   * seqs_to_aln->tr, seqs_to_aln->cp9_tr, seqs_to_aln->postcode1, 
-   * and seqs_to_aln->postcode2 to these guys at end of function.
+   * seqs_to_aln->tr, seqs_to_aln->cp9_tr, seqs_to_aln->postcode, 
+   * to these guys at end of function.
    * 
    * If dsqmode: do not allocate parsetree pointers, they already exist 
    * in search_results.
    */
   tr       = NULL;
   cp9_tr   = NULL;
-  postcode1= NULL;
-  postcode2= NULL;
+  postcode = NULL;
   have_parsetrees = FALSE;
   if(sq_mode) {
     have_parsetrees = (!do_hmmonly && !do_scoreonly && !do_inside) ? TRUE : FALSE;
@@ -587,8 +584,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   }   
   ESL_ALLOC(parsesc, sizeof(float) * nalign);
   if(do_post) {
-    ESL_ALLOC(postcode1, sizeof(char **) * nalign);
-    ESL_ALLOC(postcode2, sizeof(char **) * nalign);
+    ESL_ALLOC(postcode, sizeof(char **) * nalign);
   }
   if(do_optacc) ESL_ALLOC(parsepp,   sizeof(float) * nalign);
   else          parsepp = NULL;
@@ -888,21 +884,21 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       if(do_hbanded) { 
 	if(do_post) { /* HMM banded CYK or optimal accuracy or sample, posterior annotated */
 	  if(do_sample) { 
-	    if((status = FastAlignHB(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
+	    if((status = FastAlignHB(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, &(postcode[i]), &sc, &ins_sc)) != eslOK) return status;
 	  }
 	  else {
-	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
+	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, &(postcode[i]), &sc, &ins_sc)) != eslOK) return status;
 	  }
 	}
 	else { 
 	  if(do_optacc) { /* HMM banded optimal accuracy, no posteriors */
-	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, NULL, &sc, &ins_sc)) != eslOK) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
+	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, &sc, &ins_sc)) != eslOK) return status; /* we can't handle a memory overload if we're trying to do optimal accuracy */
 	  }
 	  else if(do_sample) { /* HMM banded sample from Inside, no posteriors */
-	    if((status = FastAlignHB(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) return status; /* we can't handle a memory overload if we're sampling */
+	    if((status = FastAlignHB(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, &sc, NULL)) != eslOK) return status; /* we can't handle a memory overload if we're sampling */
 	  }
 	  else { /* HMM banded CYK */
-	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) {
+	    if((status = FastAlignHB(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, cm->hbmx, shmx, do_optacc, do_sample, out_mx, cur_tr, NULL, &sc, NULL)) != eslOK) {
 	      if (status == eslERANGE) { /* we can still do CYK D&C alignment with QDBs derived from the HMM bands */
 		hd2safe_hd_bands(cm->M, cp9b->jmin, cp9b->jmax, cp9b->hdmin, cp9b->hdmax, cp9b->safe_hdmin, cp9b->safe_hdmax);
 		ESL_DPRINTF1(("# Doing D&C because HMM banded parse of seq %d was too memory intensive.\n", i));
@@ -940,20 +936,20 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       else { 
 	if(do_post) { /* non-banded CYK or optimal accuracy or sample an alignment from inside matrix, posterior annotated */
 	  if(do_sample) { 
-	    if((status = FastAlign(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
+	    if((status = FastAlign(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, &(postcode[i]), &sc, &ins_sc)) != eslOK) return status;
 	  }
 	  else { 
-	    if((status = FastAlign(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, &(postcode1[i]), &(postcode2[i]), &sc, &ins_sc)) != eslOK) return status;
+	    if((status = FastAlign(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, &(postcode[i]), &sc, &ins_sc)) != eslOK) return status;
 	  }
 	}
 	else if(do_optacc) { /* non-banded optimal accuracy no posteriors */
-	  if((status = FastAlign(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, NULL, NULL, &sc, &ins_sc)) != eslOK) return status;
+	  if((status = FastAlign(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, NULL, &sc, &ins_sc)) != eslOK) return status;
 	}
 	else if(do_sample) { /* non-banded optimal accuracy no posteriors */
-	  if((status = FastAlign(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) return status;
+	  if((status = FastAlign(cm, errbuf, r, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, NULL, &sc, NULL)) != eslOK) return status;
 	}
 	else { /* non-banded CYK, no posteriors */
-	  if((status = FastAlign(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, NULL, NULL, &sc, NULL)) != eslOK) return status;
+	  if((status = FastAlign(cm, errbuf, NULL, cur_dsq, L, 1, L, size_limit, &alpha, do_optacc, do_sample, &beta, cur_tr, NULL, &sc, NULL)) != eslOK) return status;
 	}
 	if(bdump_level > 0) qdb_trace_info_dump(cm, tr[i], cm->dmin, cm->dmax, bdump_level); /* allows you to see where the non-banded parse went outside the bands. */
       } 
@@ -1142,8 +1138,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   if(sq_mode) {
     seqs_to_aln->tr       = tr;       /* could be NULL */
     seqs_to_aln->cp9_tr   = cp9_tr;   /* could be NULL */
-    seqs_to_aln->postcode1= postcode1;/* could be NULL */
-    seqs_to_aln->postcode2= postcode2;/* could be NULL */
+    seqs_to_aln->postcode = postcode; /* could be NULL */
     seqs_to_aln->sc       = parsesc;  /* shouldn't be NULL */
     seqs_to_aln->pp       = parsepp;  /* could be NULL */
     seqs_to_aln->struct_sc= parse_struct_sc; /* could be NULL */
@@ -1151,12 +1146,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
   else { /* dsq mode */
     if(do_post) { 
       for (i = 0; i < nalign; i++) {
-	search_results->data[i].pcode1 = postcode1[i];
-	search_results->data[i].pcode2 = postcode2[i];
+	search_results->data[i].pcode = postcode[i];
       }
       /* we've copied the 1D postcode ptrs, free the 2D, ptr to the ptrs */
-      free(postcode1);
-      free(postcode2);
+      free(postcode);
     }
     free(parsesc);
     if(parsepp != NULL) free(parsepp);

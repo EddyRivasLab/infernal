@@ -928,7 +928,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 			  }
 			}
 			AppendResults(worker_results, dbseqlist[si_recv]->results[rclist[wi]], seqposlist[wi]);
-			/* careful, dbseqlist[si_recv]->results[rclist[wi]] now points to the traces and postal codes in worker_results->data,
+			/* careful, dbseqlist[si_recv]->results[rclist[wi]] now points to the traces and posterior code strings in worker_results->data,
 			 * don't free those (don't use FreeResults(worker_results)) */
 			free(worker_results->data);
 			free(worker_results);

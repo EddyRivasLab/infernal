@@ -46,8 +46,7 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  *            dsq   - digitized sequence
  *            do_noncanonical - mark half-bps and negative scoring bps that are non-canonicals in top line with 'v'
  *                              (by default, all negative scoring and half-bps are marked with 'x')
- *            pcode1- posteriors, 'tens' place, '9' in '93', NULL if none
- *            pcode2- posteriors, 'ones' place, '3' in '93', NULL if none
+ *            pcode - posterior code
  *
  * Returns:   fancy alignment structure.
  *            Caller frees, with FreeFancyAli(ali).
@@ -55,7 +54,7 @@ static void createFaceCharts(CM_t *cm, int **ret_inface, int **ret_outface);
  * Xref:      STL6 p.58
  */
 Fancyali_t *
-CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, int do_noncanonical, char *pcode1, char *pcode2)
+CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t *cons, ESL_DSQ *dsq, int do_noncanonical, char *pcode)
 {
   int         status;
   Fancyali_t *ali;              /* alignment structure we're building        */
@@ -78,8 +77,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
   int         ltop, rtop;	/* chars in optional noncompensatory line; left, right */
   int         lnegnc, rnegnc;	/* chars in optional noncanonical line; left, right */
   int         lseq, rseq;	/* chars in aligned target line; left, right */
-  int         lpost1, rpost1;	/* chars in aligned posteriors, left, right  */
-  int         lpost2, rpost2;	/* chars in aligned posteriors, left, right  */
+  int         lpost, rpost;	/* chars in aligned posteriors, left, right  */
   int         do_left, do_right;/* flags to generate left, right             */
   int cpos_l, cpos_r;   	/* positions in consensus (1..clen)          */
   int spos_l, spos_r;		/* positions in dsq (1..L)                   */
@@ -96,7 +94,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
     cm_Fail("ERROR in CreateFancyAli(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
 
   ESL_ALLOC(ali, sizeof(Fancyali_t));
-  have_pcodes = (pcode1 != NULL && pcode2 != NULL) ? TRUE : FALSE;
+  have_pcodes = (pcode != NULL) ? TRUE : FALSE;
   
   /* Calculate length of the alignment display.
    *   MATP node        : +2
@@ -152,12 +150,10 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
   ESL_ALLOC(ali->top,  sizeof(char) * (ali->len+1));
   ESL_ALLOC(ali->aseq, sizeof(char) * (ali->len+1));
   if(have_pcodes) { 
-    ESL_ALLOC(ali->pcode1, sizeof(char) * (ali->len+1));
-    ESL_ALLOC(ali->pcode2, sizeof(char) * (ali->len+1));
+    ESL_ALLOC(ali->pcode, sizeof(char) * (ali->len+1));
   }
   else {
-    ali->pcode1 = NULL;
-    ali->pcode2 = NULL;
+    ali->pcode = NULL;
   }
   ESL_ALLOC(ali->scoord, sizeof(int)  * ali->len);
   ESL_ALLOC(ali->ccoord, sizeof(int)  * ali->len);
@@ -169,8 +165,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
   memset(ali->top,  ' ', ali->len);
   memset(ali->aseq, ' ', ali->len);
   if(have_pcodes) { 
-    memset(ali->pcode1, ' ', ali->len);
-    memset(ali->pcode2, ' ', ali->len);
+    memset(ali->pcode, ' ', ali->len);
   }
   for (pos = 0; pos < ali->len; pos++) 
     ali->ccoord[pos] = ali->scoord[pos] = 0;
@@ -195,8 +190,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	esl_stack_IPop(pda, &rtop);	  ali->top[pos]    = rtop;
 	esl_stack_IPop(pda, &rseq);       ali->aseq[pos]   = rseq;
 	if(have_pcodes) {
-	  esl_stack_IPop(pda, &rpost1);    ali->pcode1[pos] = rpost1;
-	  esl_stack_IPop(pda, &rpost2);    ali->pcode2[pos] = rpost2;
+	  esl_stack_IPop(pda, &rpost);    ali->pcode[pos] = rpost;
 	}
 	esl_stack_IPop(pda, &cpos_r);     ali->ccoord[pos] = cpos_r;
 	esl_stack_IPop(pda, &spos_r);     ali->scoord[pos] = spos_r;
@@ -236,11 +230,9 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
       rc   = cons->rpos[nd];
       symi = dsq[tr->emitl[ti]];  /* residue indices that node is aligned to */
       symj = dsq[tr->emitr[ti]];
-      if(have_pcodes) { /* postal codes are indexed 0..alen-1, off-by-one w.r.t dsq */
-	lpost1 = pcode1[tr->emitl[ti]-1];
-	lpost2 = pcode2[tr->emitl[ti]-1];
-	rpost1 = pcode1[tr->emitr[ti]-1];
-	rpost2 = pcode2[tr->emitr[ti]-1];
+      if(have_pcodes) { /* posterior codes are indexed 0..alen-1, off-by-one w.r.t dsq */
+	lpost = pcode[tr->emitl[ti]-1];
+	rpost = pcode[tr->emitr[ti]-1];
       }
       d = tr->emitr[ti] - tr->emitl[ti] + 1;
       mode = tr->mode[ti];
@@ -362,8 +354,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	ali->top[pos]    = (do_noncanonical) ? lnegnc : ltop;
 	ali->aseq[pos]   = lseq;
 	if(have_pcodes) {
-	  ali->pcode1[pos] = lpost1;
-	  ali->pcode2[pos] = lpost2;
+	  ali->pcode[pos] = lpost;
 	}
 	ali->ccoord[pos] = cpos_l;
 	ali->scoord[pos] = spos_l;
@@ -373,8 +364,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
 	if ((status = esl_stack_IPush(pda, spos_r)) != eslOK) goto ERROR;
 	if ((status = esl_stack_IPush(pda, cpos_r)) != eslOK) goto ERROR;
 	if(have_pcodes) {
-	  if ((status = esl_stack_IPush(pda, (int) rpost2)) != eslOK) goto ERROR;
-	  if ((status = esl_stack_IPush(pda, (int) rpost1)) != eslOK) goto ERROR;
+	  if ((status = esl_stack_IPush(pda, (int) rpost)) != eslOK) goto ERROR;
 	}
 	if ((status = esl_stack_IPush(pda, (int) rseq)) != eslOK) goto ERROR;
 	if (do_noncanonical) { if ((status = esl_stack_IPush(pda, (int) rnegnc)) != eslOK) goto ERROR; }
@@ -422,8 +412,7 @@ CreateFancyAli(const ESL_ALPHABET *abc, Parsetree_t *tr, CM_t *cm, CMConsensus_t
   ali->top[ali->len]  = '\0';
   ali->aseq[ali->len] = '\0';
   if(have_pcodes) { 
-    ali->pcode1[ali->len] = '\0';
-    ali->pcode2[ali->len] = '\0';
+    ali->pcode[ali->len] = '\0';
   }    
   /* Laboriously determine the maximum bounds.
    */
@@ -486,9 +475,9 @@ PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp, int do_top)
   int   sqi, sqj;		/* positions in target seq 1..L      */
   int   i;
   int   i2print, j2print; /* i,j indices we'll print, used to deal with case of reverse complement */
-  int   have_pcodes;      /* TRUE if postal codes are valid */
+  int   have_pcodes;      /* TRUE if posterior codes are valid */
 
-  have_pcodes = (ali->pcode1 != NULL && ali->pcode2 != NULL) ? TRUE : FALSE;
+  have_pcodes = (ali->pcode != NULL) ? TRUE : FALSE;
   linelength = 60;
   ESL_ALLOC(buf, sizeof(char) * (linelength + 1));
   buf[linelength] = '\0';
@@ -562,13 +551,9 @@ PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int in_revcomp, int do_top)
 	  fprintf(fp, "  %8s %s %-8s\n", "-", buf, "-");
 	}
       }
-      if (have_pcodes && ali->pcode1 != NULL) {
-	strncpy(buf, ali->pcode1+pos, linelength);  
-	fprintf(fp, "  %8s %s\n", "POSTX.", buf);
-      }
-      if (have_pcodes && ali->pcode2 != NULL) {
-	strncpy(buf, ali->pcode2+pos, linelength);  
-	fprintf(fp, "  %8s %s\n", "POST.X", buf);
+      if (have_pcodes && ali->pcode != NULL) {
+	strncpy(buf, ali->pcode+pos, linelength);  
+	fprintf(fp, "  %8s %s\n", "PP", buf);
       }
       fprintf(fp, "\n");
     }
@@ -593,8 +578,7 @@ FreeFancyAli(Fancyali_t *ali)
   if (ali->mid    != NULL) free(ali->mid);
   if (ali->top    != NULL) free(ali->top);
   if (ali->aseq   != NULL) free(ali->aseq);
-  if (ali->pcode1 != NULL) free(ali->pcode1);
-  if (ali->pcode2 != NULL) free(ali->pcode2);
+  if (ali->pcode  != NULL) free(ali->pcode);
   if (ali->ccoord != NULL) free(ali->ccoord);
   if (ali->scoord != NULL) free(ali->scoord);
   free(ali);
