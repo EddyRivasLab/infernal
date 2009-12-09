@@ -110,6 +110,13 @@ Specify that the emitted sequences be output as RNA sequences. This is true by d
 Specify that the emitted sequences be output as DNA sequences. By default,
 the output alphabet is RNA. 
 
+.TP 
+.B --ileaved
+With 
+.B -a,
+output the alignment in interleaved Stockholm format of a fixed width
+that may be more convenient for reading. 
+
 .TP
 .BI --tfile " <f>"
 Dump tabular sequence parsetrees (tracebacks) for each 

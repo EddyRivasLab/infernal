@@ -13,7 +13,7 @@ cmbuild - construct a CM from an RNA multiple sequence alignment
 .SH DESCRIPTION
 
 .B cmbuild
-reads an RNA multiple sequence alignment from
+read an RNA multiple sequence alignment from
 .I alifile,
 constructs a covariance model (CM),
 and saves the CM to
@@ -552,7 +552,7 @@ the matrix exceeded it's maximum allowable size. In this case, the
 can be used to raise the limit.
 
 .TP
-.BI --rdump "<x>"
+.BI --rdump "<f>"
 With 
 .B --refine, 
 output the intermediate alignments at each iteration of the refinement
@@ -560,3 +560,13 @@ procedure (as described above for
 .B --refine
 ) to file
 .I <f>.
+
+.TP 
+.B --ileaved
+Output the alignment in interleaved Stockholm format of a fixed width
+that may be more convenient for reading. This option only makes sense
+if used in combination with
+.B --rdump
+or
+.B --cdump.
+

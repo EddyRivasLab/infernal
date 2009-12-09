@@ -1241,9 +1241,9 @@ fast_alignT(CM_t *cm, char *errbuf, ESL_DSQ *dsq, int L, Parsetree_t *tr,
  *           Input arguments allow this function to be run in 4 'modes':
  *
  *           mode      returns                 arguments
- *           ----  ----------------  ---------------------------------------------
- *                 tr        pcodes  do_optacc  do_sample post_mx   ret_pcode{1,2}
- *                 ----------------  ---------------------------------------------
+ *           ----  ----------------  ----------------------------------------
+ *                 tr        pcodes  do_optacc  do_sample post_mx   ret_pcode
+ *                 ----------------  ----------------------------------------
  *              1. CYK       no      FALSE      FALSE      NULL      NULL
  *              2. CYK       yes     FALSE      FALSE     !NULL     !NULL
  *              3. Opt acc   no      TRUE       FALSE     !NULL      NULL

@@ -47,45 +47,46 @@
 #include "impl_sse.h"
 #endif
 
-#define ALGOPTS  "--cyk,--optacc,--viterbi,--sample" /* Exclusive choice for algorithm */
-#define OUTALPHOPTS "--rna,--dna"                    /* Exclusive choice for output alphabet */
-#define ACCOPTS  "--nonbanded,--hbanded,--qdb"       /* Exclusive choice for acceleration strategies */
+#define ALGOPTS      "--cyk,--optacc,--viterbi,--sample,--inside"         /* Exclusive choice for algorithm */
+#define BIGALGOPTS   "--cyk,--optacc,--viterbi,--sample,--inside,--small" /* Incompatible with --optacc,--sample (except their selves) */
+#define ACCOPTS      "--nonbanded,--hbanded,--qdb"                        /* Exclusive choice for acceleration strategies */
+#define OUTALPHOPTS  "--rna,--dna"                                        /* Exclusive choice for output alphabet */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
   { "-o",        eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "output the alignment to file <f>, not stdout", 1 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "align locally w.r.t. the model",         1 },
-  { "-p",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,   "--small", "append posterior probabilities to alignment", 1 },
   { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress banner and scores, print only the alignment", 1 },
   { "-M",        eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "meta-cm mode: <cmfile> is a meta-cm built from aln in <f>", 1 },
-  { "-1",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "output alnment in non-interleaved, 1 line/seq Stockholm format",  1 },
+  { "--ileaved", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "output alnment in interleaved Stockholm format (not 1 line/seq)",  1 },
+  { "--no-prob", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "do not append posterior probabilities to alignment", 1 },
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
 #endif
   /* Algorithm options */
-  { "--optacc",  eslARG_NONE,"default", NULL, NULL,     ALGOPTS,    NULL,"--small,--qdb", "align with the Holmes/Durbin optimal accuracy algorithm", 2 },
-  { "--cyk",     eslARG_NONE,   FALSE,  NULL, NULL,     ALGOPTS,    NULL,        NULL, "align with the CYK algorithm", 2 },
-  { "--sample",  eslARG_NONE,   FALSE,  NULL, NULL,     ALGOPTS,    NULL,"--small,--qdb", "sample alignment of each seq from posterior distribution", 2 },
-  { "-s",        eslARG_INT,     NULL, NULL, "n>0",      NULL,"--sample",        NULL, "w/--sample, set random number generator seed to <n>",  2 },
-  { "--viterbi", eslARG_NONE,   FALSE,  NULL, NULL,     ALGOPTS,    NULL,        "-p", "align to a CM Plan 9 HMM with the Viterbi algorithm",2 },
-  { "--sub",     eslARG_NONE,   FALSE,  NULL, NULL,     NULL,       NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
-  { "--small",   eslARG_NONE,   FALSE,  NULL, NULL,     NULL,    "--cyk", "--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
-  { "--hbanded", eslARG_NONE, "default",  NULL, NULL,   NULL,     NULL,      ACCOPTS, "accelerate using CM plan 9 HMM derived bands", 3 },
-  { "--p7",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",    ACCOPTS, "really accelerate using plan 7 HMM derived bands", 3 },
-  { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,"--hbanded",    NULL,  "--hbanded", "do not use bands to accelerate aln algorithm", 3 },
-  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 3 },
-  { "--mxsize",  eslARG_REAL, "2048.0",NULL, "x>0.",     NULL,      NULL,"--small,--qdb", "set maximum allowable DP matrix size to <x> Mb", 3},
+  { "--optacc",  eslARG_NONE,"default",NULL, NULL,     NULL,      NULL,  BIGALGOPTS, "align with the Holmes/Durbin optimal accuracy algorithm", 2 },
+  { "--cyk",     eslARG_NONE,   FALSE, NULL, NULL,"--optacc",     NULL,     ALGOPTS, "align with the CYK algorithm", 2 },
+  { "--sample",  eslARG_NONE,   FALSE, NULL, NULL,"--optacc",     NULL,  BIGALGOPTS, "sample alignment of each seq from posterior distribution", 2 },
+  { "-s",        eslARG_INT,     NULL, NULL, "n>0",    NULL,"--sample",        NULL, "w/--sample, set random number generator seed to <n>",  2 },
+  { "--viterbi", eslARG_NONE,   FALSE, NULL, NULL,"--optacc","--no-prob",   ALGOPTS, "align to a CM Plan 9 HMM with the Viterbi algorithm",2 },
+  { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,     NULL,      NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
+  { "--small",   eslARG_NONE,   FALSE, NULL, NULL,     NULL,"--cyk,--no-prob", "--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
+  { "--hbanded", eslARG_NONE,"default",NULL, NULL,     NULL,      NULL,     ACCOPTS, "accelerate using CM plan 9 HMM derived bands", 3 },
+  { "--p7",      eslARG_NONE,   FALSE, NULL, NULL,     NULL,"--hbanded",    ACCOPTS, "really accelerate using plan 7 HMM derived bands", 3 },
+  { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,"--hbanded",    NULL,     ACCOPTS, "do not use bands to accelerate aln algorithm", 3 },
+  { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",  NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 3 },
+  { "--mxsize",  eslARG_REAL, "2048.0",NULL, "x>0.",   NULL,      NULL,"--small,--qdb", "set maximum allowable DP matrix size to <x> Mb", 3},
   /* Options that modify how the output alignment is created */
-  { "--rna",     eslARG_NONE,"default",NULL, NULL,  OUTALPHOPTS,   NULL,        NULL, "output alignment as RNA sequence data", 4},
-  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  OUTALPHOPTS,   NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 4},
+  { "--rna",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, OUTALPHOPTS, "output alignment as RNA sequence data", 4},
+  { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, OUTALPHOPTS, "output alignment as DNA (not RNA) sequence data", 4},
   { "--matchonly",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include only match columns in output alignment", 4 },
   { "--resonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include only match columns with >= 1 residues in output aln", 4 },
   { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "flush inserts left/right in output alignment", 4 },
   /* Including a preset alignment */
-  { "--withali", eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,  "--viterbi","incl. alignment in <f> (must be aln <cm file> was built from)", 5 },
+  { "--withali", eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,"--viterbi","incl. alignment in <f> (must be aln <cm file> was built from)", 5 },
   { "--withpknots",eslARG_NONE, NULL,  NULL, NULL,      NULL,"--withali",       NULL, "incl. structure (w/pknots) from <f> from --withali <f>", 5 },
   { "--rf",      eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--withali",       NULL, "--rf was originally used with cmbuild", 5 },
   { "--gapthresh",eslARG_REAL,  "0.5", NULL, "0<=x<=1", NULL,"--withali",       NULL, "--gapthresh <x> was originally used with cmbuild", 5 },
@@ -107,15 +108,15 @@ static ESL_OPTIONS options[] = {
   { "--7ilprob", eslARG_REAL,    "1.0", NULL, "x<1.001",NULL,      NULL,        NULL, "w/p7 banding set max prob to enter left insert state to <x>", 9 },
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer options related to alignment algorithm */
-  { "--inside",   eslARG_NONE,  FALSE, NULL, NULL,      ALGOPTS,   NULL,     ALGOPTS, "don't align; return scores from the Inside algorithm", 101 },
-  { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      "-p",        NULL, "check that posteriors are correctly calc'ed", 101 },
+  { "--inside",   eslARG_NONE,  FALSE, NULL, NULL,"--optacc","--no-prob", BIGALGOPTS, "don't align; return scores from the Inside algorithm", 101 },
+  { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL, "--no-prob", "check that posteriors are correctly calc'ed", 101 },
   { "--no-null3",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "turn OFF the NULL3 post hoc additional null model", 101 },
   /* developer options related to banded alignment */
   { "--checkfb", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       "-l", "check that HMM posteriors for bands were correctly calc'ed", 102},
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 102 },
-  { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,"--hbanded",     NULL,     ACCOPTS, "use query dependent banded CYK alignment algorithm", 102 },
+  { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,"--hbanded","--no-prob",   ACCOPTS, "use query dependent banded CYK alignment algorithm", 102 },
   { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 102 },
-  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded","--viterbi,-p,--optacc", "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 102 },
+  { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded,--no-prob","--viterbi,--optacc", "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 102 },
   /* developer options related to output files and debugging */
   { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 103 },
   { "--banddump",eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of band info print statements to <n>", 103 },
@@ -304,8 +305,11 @@ main(int argc, char **argv)
   /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
   /* --small requires EITHER --nonbanded or --qdb */
   if ((esl_opt_GetBoolean(go, "--small")) && (! ((esl_opt_GetBoolean(go, "--nonbanded")) || (esl_opt_GetBoolean(go, "--qdb"))))) { 
-    printf("Error parsing options, --small is only allowed in combination with --nonbanded or --qdb.\n");
-    exit(1);
+    esl_fatal("Error parsing options, --small is only allowed in combination with --nonbanded or --qdb.\n");
+  }
+  /* --qdb requires EITHER --cyk or --inside */
+  if ((esl_opt_GetBoolean(go, "--qdb")) && (! (esl_opt_GetBoolean(go, "--cyk"))) && (! esl_opt_GetBoolean(go, "--inside"))) { 
+    esl_fatal("Error parsing options, --qdb is only allowed in combination with --cyk or --inside.\n");
   }
   
   /* Initialize what we can in the config structure (without knowing the input alphabet yet).
@@ -319,9 +323,9 @@ main(int argc, char **argv)
   } else
     cfg.fmt = eslSQFILE_UNKNOWN; /* autodetect sequence file format by default. */ 
   cfg.abc        = NULL;	           /* created in init_master_cfg() in masters, or in mpi_worker() in workers */
-  if      (esl_opt_GetBoolean(go, "--rna")) cfg.abc_out = esl_alphabet_Create(eslRNA);
-  else if (esl_opt_GetBoolean(go, "--dna")) cfg.abc_out = esl_alphabet_Create(eslDNA);
-  else    cm_Fail("Can't determine output alphabet");
+  if   (esl_opt_GetBoolean(go, "--dna")) cfg.abc_out = esl_alphabet_Create(eslDNA);
+  else cfg.abc_out = esl_alphabet_Create(eslRNA); /* RNA. As it should be. */
+
   cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.ofp        = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.tracefp    = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
@@ -1085,7 +1089,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
       if(esl_opt_GetBoolean(go, "--withpknots")) {
 	if((status = add_withali_pknots(go, cfg, errbuf, cm, msa)) != eslOK) return status;
       }
-      status = esl_msa_Write(cfg->ofp, msa, (esl_opt_GetBoolean(go, "-1") ? eslMSAFILE_PFAM : eslMSAFILE_STOCKHOLM));
+      status = esl_msa_Write(cfg->ofp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM));
       if      (status == eslEMEM) ESL_FAIL(status, errbuf, "Memory error when outputting alignment\n");
       else if (status != eslOK)   ESL_FAIL(status, errbuf, "Writing alignment file failed with error %d\n", status);
 
@@ -1094,7 +1098,7 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
 	/* Must delete author info from msa, because it contains version
 	 * and won't diff clean in regression tests. */
 	if(msa->au != NULL) free(msa->au); msa->au = NULL;
-	status = esl_msa_Write(cfg->regressfp, msa, eslMSAFILE_STOCKHOLM);
+	status = esl_msa_Write(cfg->regressfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM));
 	if (status == eslEMEM)    ESL_FAIL(status, errbuf, "Memory error when outputting regression file\n");
 	else if (status != eslOK) ESL_FAIL(status, errbuf, "Writing regression file failed with error %d\n", status);
       }
@@ -1179,24 +1183,31 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--sub"))         cm->align_opts  |= CM_ALIGN_SUB;
   if(esl_opt_GetBoolean(go, "--viterbi"))     cm->align_opts  |= CM_ALIGN_HMMVITERBI;
   if(esl_opt_GetBoolean(go, "--small"))       cm->align_opts  |= CM_ALIGN_SMALL;
-  if(esl_opt_GetBoolean(go, "-p"))            cm->align_opts  |= CM_ALIGN_POST;
   if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
   if(esl_opt_GetBoolean(go, "--fins"))        cm->align_opts  |= CM_ALIGN_FLUSHINSERTS;
-
   if(esl_opt_GetBoolean(go, "--inside"))      cm->align_opts  |= CM_ALIGN_INSIDE;
   if(esl_opt_GetBoolean(go, "--checkpost"))   cm->align_opts  |= CM_ALIGN_CHECKINOUT;
   if(esl_opt_GetBoolean(go, "--checkfb"))     cm->align_opts  |= CM_ALIGN_CHECKFB;
   if(esl_opt_GetBoolean(go, "--sums"))        cm->align_opts  |= CM_ALIGN_SUMS;
+  /* We can only do posteriors if we're not doing D&C (--small), --viterbi, --inside, 
+   * nor --hsafe (which falls over to D&C if score is too low). Currently, these 
+   * are all already enforced by ESL_GETOPTS, by having --small, --viterbi, --inside,
+   * and --hsafe all requiring --no-prob. This is a second line of defense in case 
+   * the ESL_GETOPTS ever changes to remove one of those requirements. 
+  */
+  if((! esl_opt_GetBoolean(go, "--no-prob")) &&
+     (! esl_opt_GetBoolean(go, "--small")) &&
+     (! esl_opt_GetBoolean(go, "--viterbi")) &&
+     (! esl_opt_GetBoolean(go, "--inside")) &&
+     (! esl_opt_GetBoolean(go, "--hsafe"))) { 
+    cm->align_opts  |= CM_ALIGN_POST;
+  }
   /* config QDB? */
   if(esl_opt_GetBoolean(go, "--qdb"))          
     { 
       cm->align_opts  |= CM_ALIGN_QDB;
       cm->config_opts |= CM_CONFIG_QDB;
     }
-
-  /* TEMP */
-
-
 
   /* BEGIN (POTENTIALLY) TEMPORARY BLOCK */
   /* set aggregate local begin/end probs, set with --pbegin, --pend, defaults are DEFAULT_PBEGIN, DEFAULT_PEND */

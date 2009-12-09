@@ -49,6 +49,7 @@ static ESL_OPTIONS options[] = {
   /* miscellaneous output options */
   { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 2 },
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as DNA (not RNA) sequence data", 2 },
+  { "--ileaved", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      "-a",        NULL, "with -a, output alnment in interleaved Stockholm format",  2 },
   { "--tfile",   eslARG_OUTFILE,NULL,  NULL, NULL,      NULL,      NULL,        NULL, "dump parsetrees to file <f>",  2 },
   /* expert options */
   { "--exp",     eslARG_REAL,   NULL,  NULL, "x>0",     NULL,      NULL,        NULL, "exponentiate CM probabilities by <x> before emitting",  3 },
@@ -502,7 +503,7 @@ emit_alignment(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
     if((status = truncate_msa(go, cfg, msa, errbuf)) != eslOK) cm_Fail(errbuf);
 
   /* Output the alignment */
-  status = esl_msa_Write(cfg->ofp, msa, eslMSAFILE_STOCKHOLM);
+  status = esl_msa_Write(cfg->ofp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM));
   if      (status == eslEMEM) ESL_XFAIL(status, errbuf, "Memory error when outputting alignment\n");
   else if (status != eslOK)   ESL_XFAIL(status, errbuf, "Writing alignment file failed with error %d\n", status);
 

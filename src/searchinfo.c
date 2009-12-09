@@ -745,9 +745,6 @@ void RemoveOverlappingHits (search_results_t *results, int i0, int j0)
     for (y=results->data[x].start; y<=results->data[x].stop && !covered; y++) {
       {
 	yp = y-i0+1; 
-	if(yp <= 0 || yp > L) { 
-	  printf("whoa\n");
-	}
 	assert(yp > 0 && yp <= L);
 	if (covered_yet[yp] != 0) {
 	  covered = 1;

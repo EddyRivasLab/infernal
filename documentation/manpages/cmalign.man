@@ -5,6 +5,8 @@
 cmalign - use a CM to make a structured RNA multiple alignment
 
 .SH SYNOPSIS
+
+.TP
 .B cmalign
 .I [options]
 .I cmfile
@@ -20,7 +22,9 @@ to the covariance model (CM) in
 and outputs a multiple sequence alignment.
 
 .PP
-The sequence file must be in FASTA, EMBL, or Genbank format.
+The sequence file 
+.I seqfile
+must be in FASTA, EMBL, or Genbank format.
 
 .PP
 CMs are profiles of RNA consensus sequence and secondary structure. A
@@ -32,11 +36,15 @@ consensus structure.
 .PP
 The alignment that 
 .B cmalign
-makes is written in Stockholm format.
-It can be redirected to a file
+makes is written in Pfam Stockholm format in which each sequence
+appears on a single line. It can be redirected to a file
 using the
 .B -o
-option.
+option. Interleaved Stockholm format (which was created by earlier
+versions of 
+.B cmalign
+) can be created with 
+.B --ileaved.
 
 .PP
 .B cmalign 
@@ -92,21 +100,51 @@ redirected to an output file
 with the 
 .BI -o " <f>"
 option. 
-The tabular output section 
-includes one line per sequences and seven fields per line:  "seq idx": 
-the index of the sequence in the input file, "seq name": the
-sequence name, "len": the length of the sequence, "total": the total
-bit score of the sequence, "struct": an approximation of the
-contribution of the secondary structure to the bit score, "avg prob":
-the average posterior probability (confidence estimate) of each
-aligned residue, and "elapsed": the wall time spent aligning the
-sequence. 
+
+
+The tabular output section includes one line per sequences and seven
+fields per line: "seq idx": the index of the sequence in the input
+file, "seq name": the sequence name, "len": the length of the
+sequence, "total": the total bit score of the sequence, "struct": an
+approximation of the contribution of the secondary structure to the
+bit score, "avg prob": the average posterior probability (confidence
+estimate) of each aligned residue, and "elapsed": the wall time spent
+aligning the sequence.
 
 The fields can change if different options are selected. For example
 if the 
 .B "--cyk"
 option is enabled, the "avg prob" field disappears because
 posterior probabilities are not calculated by the CYK algorithm.
+
+The output alignment will be annotated with posterior probabilities
+which estimate the confidence level of each aligned residue.  This
+annotation appears as lines beginning with "#=GR <seq name> PP", one
+per sequence, each immediately below the corresponding aligned
+sequence "<seq name>". Characters in PP lines have 12 possible values:
+"0-9", "*", or ".". If ".", the position corresponds to a gap in the
+sequence. A value of "0" indicates a posterior probability of between
+0.0 and 0.05, "1" indicates between 0.05 and 0.15, "2" indicates between 0.15
+and 0.25 and so on up to "9" which indicates between 0.85 and 0.95. A
+value of "*" indicates a posterior probability of between 0.95 and
+1.0. Higher posterior probabilities correspond to greater confidence
+that the aligned residue belongs where it appears in the alignment.
+With
+.B --nonbanded, 
+the calculation of the posterior probabilities
+considers all possible alignments of the target sequence to the
+CM. Without 
+.B --nonbanded
+(in HMM banded mode), the calculation considers only possible
+alignments within the HMM bands. The posterior annotation can be
+turned off with the 
+.B --no-prob 
+option. If 
+.B --small
+or 
+.B --viterbi 
+is enabled, posterior annotation must also be turned off using
+.B --no-prob.
 
 .SH OPTIONS
 
@@ -132,43 +170,21 @@ The default is to globally align the query model to the target
 sequences.
 
 .TP
-.BI -p
-Annotate the alignment with posterior probabilities calculated using
-the Inside and Outside algorithms. 
-The
-.B -p 
-option causes additional annotation to appear in the output alignment,
-but does not modify the alignment itself (that is, the relative positions of
-the residues are unchanged).
-Two characters for each residue are used to annotate the posterior 
-probability that the corresponding residue aligns at the corresponding
-position in the Stockholm alignment. These characters have the Stockholm
-markup tags "#=GR <seq name> POSTX." and "#=GR <seq name> POST.X", and can only have the
-values: "0-9", "*" or ".". They indicate the tens and ones
-place for the posterior probability: an "8" for "POSTX." and a "3" for "POST.X"
-indicates that the posterior probability is between 0.83 and 0.84. A
-"*" for both "POSTX." and "POST.X" indicates that the confidence
-estimate is "very nearly" 1.0 (it's hard to be exact here due to
-numerical precision issues) A "." 
-in both "POSTX." and "POST.X" indicates that that column aligns to
-a gap. When used in combination with 
-.B --nonbanded,
-the calculation of the posterior probabilities considers all possible
-alignments of the target sequence to the CM. Without
-.B --nonbanded
-(in HMM banded mode), the calculation considers only possible
-alignments within the HMM bands. 
-
-.TP
 .B -q
 Quiet; suppress the verbose banner, and only print the resulting
 alignment to stdout. This allows piping the alignment to the input 
 of other programs, for example.
 
 .TP 
-.B -1
-Output the alignment in pfam format, a non-interleaved Stockholm
-format in which each sequence is on a single line.
+.B --ileaved
+Output the alignment in interleaved Stockholm format of a fixed width
+that may be more convenient for reading. This was the default output
+alignment format of previous versions of 
+.B cmalign.
+
+.TP
+.BI -no-prob
+Do not annotate the output alignment with posterior probabilities.
 
 .TP
 .BI --informat " <s>"
@@ -200,7 +216,7 @@ is enabled, and the source code.
 .TP
 .BI --mpi
 Run as an MPI parallel program. This option will only be available if
-@PACKAGE@ 
+@PACKAGE@
 has been configured and built with the "--enable-mpi" flag (see User's
 Guide for details).
 

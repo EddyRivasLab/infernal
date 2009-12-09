@@ -520,6 +520,14 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     printf("\tdo_inside = %d\n\tdo_post = %d\n\tdo_hmmonly = %d\n\tdo_scoreonly = %d\n", do_inside, do_post, do_hmmonly, do_scoreonly);
     ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), exactly 0 or 1 of the above must be TRUE (== 1).");
   }
+  if((do_qdb + do_optacc) > 1) { 
+    printf("\tdo_qdb = %d\n\tdo_optacc = %d\n", do_qdb, do_optacc);
+    ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), exactly 0 or 1 of the above must be TRUE (== 1).");
+  }
+  if((do_qdb + do_post) > 1) { 
+    printf("\tdo_qdb = %d\n\tdo_post = %d\n", do_qdb, do_post);
+    ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), exactly 0 or 1 of the above must be TRUE (== 1).");
+  }
   if(do_p7banded && (!do_hbanded)) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments(), do_p7banded is TRUE but do_hbanded is FALSE.");
 
   if(debug_level > 0) {
@@ -932,7 +940,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 	  if(!silent_mode && fabs(sc-tmpsc) < 0.01) fprintf(ofp, "# HMM banded parse was the optimal parse.\n\n");
 	  else if (!silent_mode) fprintf(ofp, "# HMM banded parse was non-optimal, it was %.2f bits below the optimal.\n\n", (fabs(sc-tmpsc)));
 	}
-      }
+      } /* end of if(do_hbanded) */
       else { 
 	if(do_post) { /* non-banded CYK or optimal accuracy or sample an alignment from inside matrix, posterior annotated */
 	  if(do_sample) { 

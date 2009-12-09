@@ -299,9 +299,9 @@ ParsetreeScore(CM_t *cm, CMEmitMap_t *emap, char *errbuf, Parsetree_t *tr, ESL_D
   sc = struct_sc = primary_sc = 0.;
   for (tidx = 0; tidx < tr->n; tidx++) {
     v = tr->state[tidx];        	/* index of parent state in CM */
-    nd = cm->ndidx[v];
     mode = tr->mode[tidx];
     if (v == cm->M) continue;      	/* special case: v is EL, local alignment end */
+    nd = cm->ndidx[v];
     if (cm->sttype[v] != E_st && cm->sttype[v] != B_st) /* no scores in B,E */
       {
 	y = tr->state[tr->nxtl[tidx]];      /* index of child state in CM  */
@@ -893,7 +893,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
       if(do_cur_post) { 
 	for (cpos = 0; cpos <= emap->clen; cpos++) {
 	  if (matmap[cpos] != -1) { 
-	    tmp_apc[matmap[cpos]] = '-';
+	    tmp_apc[matmap[cpos]] = '.';
 	  }
 	}
       }

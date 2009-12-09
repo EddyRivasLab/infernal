@@ -10,7 +10,7 @@
 
 # non-calibrated searches 
 # trna
-1  prep      model/trna             @cmbuild@ -F --rf %TRNA.CM% trna1415G.sto
+1  prep      model/trna             @cmbuild@ --wnone --enone -F --rf %TRNA.CM% trna1415G.sto
 1  prep      cmemit:trna            @cmemit@  -n 100 %TRNA.CM% %100.FA%
 1  prep      cmalign:trna           @cmalign@ -o %TMP.STK% %TRNA.CM% %100.FA%
 1  exercise  esl-alimanip:trna/1        @esl-alimanip@ -o %NEW.STK% %TMP.STK%
@@ -25,7 +25,7 @@
 1  exercise  esl-alimanip:trna/10       @esl-alimanip@ -g --gapthresh 0.5 -k -o %NEW.STK%  %TMP.STK%
 1  exercise  esl-alimanip:trna/11       @esl-alimanip@ -k --xmask trna.xmask -o %NEW.STK% %TMP.STK%
 
-1  prep      cmalign:trna/2             @cmalign@ -p -o %TMP.STK% %TRNA.CM% %100.FA%
+1  prep      cmalign:trna/2             @cmalign@ -o %TMP.STK% %TRNA.CM% %100.FA%
 1  exercise  esl-alimanip:trna-p/1      @esl-alimanip@ --pfract 0.8 -k -o %NEW.STK% %TMP.STK%
 1  exercise  esl-alimanip:trna-p/2      @esl-alimanip@ --pfract 0.74 --pthresh 0.7 -k -o %NEW.STK%  %TMP.STK%
 1  exercise  esl-alimanip:trna-p/3      @esl-alimanip@ --pfract 0.3 --p-rf --pthresh 0.7 -r -o %NEW.STK%  %TMP.STK%

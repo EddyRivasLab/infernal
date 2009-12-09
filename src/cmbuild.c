@@ -88,8 +88,9 @@ static ESL_OPTIONS options[] = {
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,       NULL,"--refine",       NULL, "do not use bands to accelerate alignment with --refine", 7 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",    NULL,"--refine","--nonbanded", "set tail loss prob for --hbanded to <x>", 7 },
   { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, flush inserts left/right in alignments", 7 },
-  { "--mxsize",  eslARG_REAL, "2048.0", NULL, "x>0.",    NULL,"--refine",       NULL, "set maximum allowable DP matrix size to <x> Mb", 7 },
-  { "--rdump",   eslARG_OUTFILE, NULL,  NULL, NULL,      NULL,"--refine",       NULL, "w/--refine, print all intermediate alignments to <f>", 7 },
+  { "--mxsize",  eslARG_REAL, "2048.0",NULL, "x>0.",     NULL,"--refine",       NULL, "set maximum allowable DP matrix size to <x> Mb", 7 },
+  { "--rdump",   eslARG_OUTFILE, NULL, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, print all intermediate alignments to <f>", 7 },
+  { "--ileaved", eslARG_NONE,   FALSE, NULL, NULL,       NULL,     NULL,        NULL, "w/--refine,--cdump, output alnment as interleaved Stockholm", 7 },
 
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer debugging/experimentation */
@@ -274,6 +275,14 @@ main(int argc, char **argv)
       printf("\nTo see more help on other available options, do %s -h\n\n", argv[0]);
       exit(1);
     }
+
+  /* Check for incompatible option combinations I don't know how to disallow with esl_getopts */
+  /* --ileaved requires EITHER --cdump or --rdump */
+  if ((esl_opt_GetBoolean(go, "--ileaved")) && ((esl_opt_IsOn(go, "--cdump")) || (esl_opt_IsOn(go, "--rdump")))) { 
+    printf("Error parsing options, --ileaved only makes sense in combination with --cdump or --rdump.\n");
+    exit(1);
+  }
+
   /* Initialize what we can in the config structure (without knowing the alphabet yet).
    * We could assume RNA, but this HMMER3 based approach is more general.
    */
@@ -616,7 +625,10 @@ master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  cfg->ncm_total++;  
 	  if(do_cluster) {
 	      msa = cmsa[c];
-	      if(esl_opt_GetString(go, "--cdump") != NULL) esl_msa_Write(cfg->cdfp, msa, cfg->fmt); 
+	      if(esl_opt_GetString(go, "--cdump") != NULL) { 
+		if((status = esl_msa_Write(cfg->cdfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK)
+		  cm_Fail("--cdump related esl_msa_Write() call failed.");
+	      }
 	  }
 
 	  /* if being verbose, print some stuff about what we're about to do.
@@ -763,8 +775,8 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
 
   /* print initial alignment to --rdump file, if --rdump was enabled */
   if(cfg->rdfp != NULL) 
-    if((status = esl_msa_Write(cfg->rdfp, input_msa, cfg->fmt)) != eslOK) ESL_FAIL(status, errbuf, "refine_msa(), esl_msa_Write() call failed.");
-  
+    if((status = esl_msa_Write(cfg->rdfp, input_msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK) 
+      ESL_FAIL(status, errbuf, "refine_msa(), esl_msa_Write() call failed.");
   while(1)
     {
       iter++;
@@ -796,9 +808,10 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
       esl_msa_Digitize(msa->abc, msa, NULL);
       
       /* print intermediate alignment to --rdump file, if --rdump was enabled */
-      if(cfg->rdfp != NULL) 
-	if((status = esl_msa_Write(cfg->rdfp, msa, cfg->fmt)) != eslOK) ESL_FAIL(status, errbuf, "refine_msa(), esl_msa_Write() call failed.");
-
+      if(cfg->rdfp != NULL) {
+	if((status = esl_msa_Write(cfg->rdfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK) 
+	  ESL_FAIL(status, errbuf, "refine_msa(), esl_msa_Write() call failed.");
+      }
       /* 3. msa -> cm */
       if(iter > 1) { /* free previous iterations cm, mtr and tr */
 	FreeCM(cm);
@@ -813,7 +826,8 @@ refine_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *i
     }
 
   /* write out final alignment to --refine output file */
-  if((status = esl_msa_Write(cfg->refinefp, msa, cfg->fmt)) != eslOK) ESL_FAIL(status, errbuf, "refine_msa(), esl_msa_Write() call failed.");
+  if((status = esl_msa_Write(cfg->refinefp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM))) != eslOK) 
+    ESL_FAIL(status, errbuf, "refine_msa(), esl_msa_Write() call failed.");
 
   /* if CM was in local mode for aligning input MSA seqs, make it global so we can write it out */
   if((cm->flags & CMH_LOCAL_BEGIN) || (cm->flags & CMH_LOCAL_END)) ConfigGlobal(cm);
