@@ -1027,7 +1027,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
       }
       else if (do_post) { msa->pp[i] = NULL; }
 
-      /* rejustify inserts and associated GR annotation (possibly postcodes) */
+      /* rejustify inserts and posteriors (if nec) */
       if(! do_matchonly) { 
 	/* IL/EL Insertions are currently flush-left and IR insertions are currently flush-right.
 	 * This is pre-1.0 Infernal behavior. If(cm->align_opts & CM_ALIGN_FLUSHINSERTS) we leave them all alone,
@@ -1045,14 +1045,11 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    /* Deal with inserts before first consensus position, ILs, then ELs, then IRs
 	     * IL's are flush left, we want flush right */
 	    rightjustify(msa->abc, msa->aseq[i], maxil[0]);
-	    for(a = 0; a < msa->ngr; a++) { 
-	      if(msa->gr[a][i] != NULL) rightjustify(msa->abc, msa->gr[a][i], maxil[0]);
-	    }
+	    if(do_cur_post) rightjustify(msa->abc, msa->pp[i], maxil[0]);
+
 	    /* EL's are flush left, we want flush right I think these are impossible, but just in case... */
 	    rightjustify(msa->abc, msa->aseq[i]+maxil[0], maxel[0]);
-	    for(a = 0; a < msa->ngr; a++) { 
-	      if(msa->gr[a][i] != NULL) rightjustify(msa->abc, msa->aseq[i]+maxil[0], maxel[0]);
-	    }
+	    if(do_cur_post) rightjustify(msa->abc, msa->pp[i]+maxil[0], maxel[0]);
 	    /* IR's are flush right, we want flush right, do nothing */
 	    
 	    /* split all internal insertions */
@@ -1065,9 +1062,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 		      nins++;
 		    nins /= 2;		/* split the insertion in half */
 		    rightjustify(msa->abc, msa->aseq[i]+matmap[cpos]+1+nins, maxil[cpos]-nins);
-		    for(a = 0; a < msa->ngr; a++) { 
-		      if(msa->gr[a][i] != NULL) rightjustify(msa->abc, msa->gr[a][i]+matmap[cpos]+1+nins, maxil[cpos]-nins);
-		    }
+		    if(do_cur_post) rightjustify(msa->abc, msa->pp[i]+matmap[cpos]+1+nins, maxil[cpos]-nins);
 		  }
 		if(maxel[cpos] > 1) /* we're flush LEFT, want to split */
 		  {
@@ -1076,9 +1071,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 		      nins++;
 		    nins /= 2;		/* split the insertion in half */
 		    rightjustify(msa->abc, msa->aseq[i]+matmap[cpos]+1+maxil[cpos]+nins, maxel[cpos]-nins);
-		    for(a = 0; a < msa->ngr; a++) { 
-		      if(msa->gr[a][i] != NULL) rightjustify(msa->abc, msa->gr[a][i]+matmap[cpos]+1+maxil[cpos]+nins, maxel[cpos]-nins);
-		    }
+		    if(do_cur_post) rightjustify(msa->abc, msa->pp[i]+matmap[cpos]+1+maxil[cpos]+nins, maxel[cpos]-nins);
 		  }
 		if(maxir[cpos] > 1) /* we're flush RIGHT, want to split */
 		  {
@@ -1087,9 +1080,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 		      nins++;
 		    nins ++; nins /= 2;		/* split the insertion in half (++ makes it same behavior as IL/EL */
 		    leftjustify(msa->abc, msa->aseq[i]+matmap[cpos]+1 + maxil[cpos] + maxel[cpos], maxir[cpos]-nins);
-		    for(a = 0; a < msa->ngr; a++) { 
-		      if(msa->gr[a][i] != NULL) leftjustify(msa->abc, msa->gr[a][i]+matmap[cpos]+1 + maxil[cpos] + maxel[cpos], maxir[cpos]-nins);
-		    }
+		    if(do_cur_post) leftjustify(msa->abc, msa->pp[i]+matmap[cpos]+1 + maxil[cpos] + maxel[cpos], maxir[cpos]-nins);
 		  }
 	      }
 	    /* Deal with inserts after final consensus position, IL's then EL's, then IR's
@@ -1097,9 +1088,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	     * EL's are flush left, we want flush left, do nothing 
 	     * IR's are flush right, we want flush left */
 	    leftjustify(msa->abc, msa->aseq[i]+matmap[emap->clen]+1 + maxil[emap->clen] + maxel[emap->clen], maxir[emap->clen]);
-	    for(a = 0; a < msa->ngr; a++) { 
-	      if(msa->gr[a][i] != NULL) leftjustify(msa->abc, msa->gr[a][i]+matmap[emap->clen]+1 + maxil[emap->clen] + maxel[emap->clen], maxir[emap->clen]);
-	    }
+	    if(do_cur_post) leftjustify(msa->abc, msa->pp[i]+matmap[emap->clen]+1 + maxil[emap->clen] + maxel[emap->clen], maxir[emap->clen]);
 	  }
       }
     } /* end loop over all parsetrees */
