@@ -40,6 +40,8 @@
 #include "funcs.h"
 #include "structs.h"
 
+#define  p7_IMPOSSIBLE -987654321
+
 /* EPN, Mon Aug 25 09:00:10 2008
  * Had difficulty compiling infernal with hmmer as a subdir and with
  * impl_sse. Because I currently don't need OPROFILEs I #if 0ed out the code
@@ -2599,7 +2601,7 @@ p7_Seq2Bands(CM_t *cm, char *errbuf, P7_GMX *gx, P7_BG *bg, P7_TRACE *p7_tr, ESL
   */
 
   esl_stopwatch_Start(watch);  
-  p7_GMSV(dsq, L, cm->p7_gm, gx, &usc);
+  p7_GMSV(dsq, L, cm->p7_gm, gx, 2.0, &usc);
   esl_stopwatch_Stop(watch); 
   FormatTimeString(time_buf, watch->user, TRUE);
 #if PRINTNOW

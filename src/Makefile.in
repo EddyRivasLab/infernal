@@ -34,7 +34,7 @@ MPILIBS   = @MPILIBS@
 
 # Where the build arena is (module .h and .o files)
 #
-MYLIBS   = -leasel -lhmmer
+MYLIBS   = -lhmmer -leasel
 MYLIBDIR = -L../easel -L../hmmer/src/ 
 MYINCDIR = -I../easel -I../hmmer/src/ 
 
