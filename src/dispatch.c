@@ -269,7 +269,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       /*if((cur_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN))) {*/
       if((status = DispatchAlignments(cm, errbuf, NULL, 
 				      dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
-				      0, 0, 0, do_null3, NULL, size_limit, stdout, 
+				      0, 0, 0, do_null3, NULL, size_limit, stdout, NULL,
 				      0, 1, 0., 0, 0., 0., 1., 1.)) != eslOK) return status;
     }
   }
@@ -312,6 +312,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
  *           r              - source of randomness (NULL unless CM_ALIGN_SAMPLE)
  *           size_limit     - max number of Mb for a DP matrix, if requestd matrix is bigger return eslERANGE 
  *           ofp            - output file to print scores to as we're aligning
+ *           sfp            - special output file to print extra score information to, NULL if none 
  * 
  * Returns:  eslOK on success;
  *           eslERANGE if required memory for a DP matrix is too big;
@@ -323,7 +324,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 int
 DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
 		   int first_result, int bdump_level, int debug_level, int silent_mode, int do_null3, ESL_RANDOMNESS *r, 
-		   float size_limit, FILE *ofp, 
+		   float size_limit, FILE *ofp, FILE *sfp,
 		   int pad7, int len7, float sc7, int end7, 
 		   float mprob7, float mcprob7, float iprob7, float ilprob7)
 {
@@ -656,40 +657,62 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     if(cm->align_opts & CM_ALIGN_OPTACC) { 
       if(have_parsetrees) { 
 	fprintf(ofp, "#\n");
-	fprintf(ofp, "# %7s  %-*s  %5s  %5s  %5s  %48s  %8s  %11s\n", "",         namewidth, "", "", "",               "",       "                   bit scores                   ",   "",         "");
-	fprintf(ofp, "# %7s  %-*s  %5s  %5s  %5s  %48s  %8s  %11s\n", "",         namewidth, "", "", "",               "",       "------------------------------------------------",   "",         "");
-	fprintf(ofp, "# %7s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len", "spos",  "epos",  "total",    "primary",  "struct",   "trans",    "null3",    "avg prob", "elapsed");
-	fprintf(ofp, "# %7s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "-----", "-----", "--------", "--------", "--------", "--------", "--------", "--------", "-----------");
+	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %8s  %11s\n", "",         namewidth, "", "",                  "   bit scores     ",   "",         "");
+	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %8s  %11s\n", "",         namewidth, "", "",                  "------------------",   "",         "");
+	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len", "total",    "struct",   "avg prob", "elapsed");
+	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "--------", "-----------");
+	if(sfp != NULL) { 
+	  fprintf(sfp, "#\n");
+	  fprintf(sfp, "# %7s  %-*s  %5s  %5s  %5s  %48s  %8s  %11s\n", "",         namewidth, "", "", "",               "",       "                   bit scores                   ",   "",         "");
+	  fprintf(sfp, "# %7s  %-*s  %5s  %5s  %5s  %48s  %8s  %11s\n", "",         namewidth, "", "", "",               "",       "------------------------------------------------",   "",         "");
+	  fprintf(sfp, "# %7s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len", "spos",  "epos",  "total",    "primary",  "struct",   "trans",    "null3",    "avg prob", "elapsed");
+	  fprintf(sfp, "# %7s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "-----", "-----", "--------", "--------", "--------", "--------", "--------", "--------", "-----------");
+	}
       }
       else { 
 	fprintf(ofp, "#\n");
 	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len",  "bit sc",   "avg prob", "elapsed");
 	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "-----------");
+	if(sfp != NULL) { 
+	  fprintf(sfp, "#\n");
+	  fprintf(sfp, "# %7s  %-*s  %5s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len",  "bit sc",   "avg prob", "elapsed");
+	  fprintf(sfp, "# %7s  %-*s  %5s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "-----------");
+	}
       }
     }
     else { 
       if(have_parsetrees) { 
 	fprintf(ofp, "#\n");
-	fprintf(ofp, "# %7s  %-*s  %5s  %5s  %5s  %48s  %11s\n", "",         namewidth, "", "", "",               "",       "                   bit scores                   ",   "");
-	fprintf(ofp, "# %7s  %-*s  %5s  %5s  %5s  %48s  %11s\n", "",         namewidth, "", "", "",               "",       "------------------------------------------------",   "");
-	fprintf(ofp, "# %7s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len", "spos",  "epos",  "total",    "primary",  "struct",   "trans",    "null3",    "elapsed");
-	fprintf(ofp, "# %7s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "-----", "-----", "--------", "--------", "--------", "--------", "--------", "-----------");
+	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %11s\n", "",         namewidth, "", "",                  "   bit scores     ",   "");
+	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %11s\n", "",         namewidth, "", "",                  "------------------",   "");
+	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len", "total",    "struct",   "elapsed");
+	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "-----------");
+	if(sfp != NULL) { 
+	  fprintf(sfp, "#\n");
+	  fprintf(sfp, "# %7s  %-*s  %5s  %5s  %5s  %48s  %11s\n", "",         namewidth, "", "", "",               "",       "                   bit scores                   ",   "");
+	  fprintf(sfp, "# %7s  %-*s  %5s  %5s  %5s  %48s  %11s\n", "",         namewidth, "", "", "",               "",       "------------------------------------------------",   "");
+	  fprintf(sfp, "# %7s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len", "spos",  "epos",  "total",    "primary",  "struct",   "trans",    "null3",    "elapsed");
+	  fprintf(sfp, "# %7s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "-----", "-----", "--------", "--------", "--------", "--------", "--------", "-----------");
+	}
       }
       else { 
 	fprintf(ofp, "#\n");
 	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %11s\n",  "seq idx", namewidth, "seq name",   "len", "bit sc",    "elapsed");
 	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "-----------");
+	if(sfp != NULL) { 
+	  fprintf(sfp, "#\n");
+	  fprintf(sfp, "# %7s  %-*s  %5s  %8s  %11s\n",  "seq idx", namewidth, "seq name",   "len", "bit sc",    "elapsed");
+	  fprintf(sfp, "# %7s  %-*s  %5s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "-----------");
+	}
       }
     }
     free(namedashes);
   }
-
+  
   /*****************************************************************
    *  Collect parse trees for each sequence
    *****************************************************************/
   for (i = 0; i < nalign; i++) {
-
-
     if(sq_mode && !silent_mode) esl_stopwatch_Start(watch);
     if (sq_mode) { 
       cur_dsq = seqs_to_aln->sq[i]->dsq;
@@ -709,9 +732,10 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
     /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
     if(sq_mode && do_hmmonly) {
-      if(sq_mode && !silent_mode)
-	fprintf(ofp, "  %7d  %-*s  %5" PRId64, 
-		(i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(sq_mode && !silent_mode) {
+	fprintf(ofp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+	if(sfp != NULL) fprintf(sfp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      }
       if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, L, 0., NULL,
 			       FALSE,  /* we are not scanning */
 			       TRUE,   /* we are aligning */
@@ -731,9 +755,12 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     /* Special case, if do_scoreonly, align seq with full CYK inside, just to 
      * get the score. For testing, probably in cmscore. */
     if(sq_mode && do_scoreonly) {
-      if(sq_mode && !silent_mode) 
-	fprintf(ofp, "  %7d  %-*s  %5" PRId64, 
-		(i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(sq_mode && !silent_mode) {
+	fprintf(ofp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+	if(sfp != NULL) { 
+	  fprintf(ofp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+	}
+      }
       sc = CYKInsideScore(cm, cur_dsq, L, 0, 1, L, NULL, NULL); /* don't do QDB mode */
       if(sq_mode && !silent_mode) fprintf(ofp, "  %8.2f  ", sc);
       parsesc[i] = sc;
@@ -861,6 +888,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
     if(sq_mode && !silent_mode) { 
       fprintf(ofp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(sfp != NULL) fprintf(sfp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
     }
 
     esl_stopwatch_Start(watch2);  
@@ -970,7 +998,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       if(*cur_tr == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "DispatchAlignments() should have parsetrees, but don't (coding error).");
       cur_emap = CreateEmitMap(cm); /* TEMPORARY!, we don't want to build this separately for each seq, but with sub CMs I'm not sure how to accomplish that */
       if((status = ParsetreeScore(cm, cur_emap, errbuf, *cur_tr, cur_dsq, FALSE, &tmpsc, &struct_sc, &primary_sc, &cur_spos, &cur_epos)) != eslOK) return status;
-      if(do_sub) { cur_spos += (spos-1); cur_epos += (spos-1); }
+      /* if(do_sub) { cur_spos += (spos-1); cur_epos += (spos-1); } */
+      /* currently primary_sc, cur_spos, cur_epos are not output, but they may be someday */
       FreeEmitMap(cur_emap);
     }
     /* determine NULL3 score correction, which is independent of the parsetree */
@@ -979,12 +1008,20 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
 
     if(sq_mode && !silent_mode) { 
       if(have_parsetrees) { 
-	if(do_optacc)  fprintf(ofp, "  %5d  %5d  %8.2f  %8.2f  %8.2f  %8.2f  %8.2f  %8.3f  ", cur_spos, cur_epos, ins_sc - null3_correction, primary_sc, struct_sc, (ins_sc - primary_sc - struct_sc), -1. * null3_correction, sc);
-	else           fprintf(ofp, "  %5d  %5d  %8.2f  %8.2f  %8.2f  %8.2f  %8.2f  ",        cur_spos, cur_epos,     sc - null3_correction, primary_sc, struct_sc, (    sc - primary_sc - struct_sc), -1. * null3_correction);
+	if(do_optacc)  fprintf(ofp, "  %8.2f  %8.2f  %8.3f  ", ins_sc - null3_correction, struct_sc, sc);
+	else           fprintf(ofp, "  %8.2f  %8.2f  ",            sc - null3_correction, struct_sc);
+	if(sfp != NULL) { 
+	  if(do_optacc)  fprintf(sfp, "  %5d  %5d  %8.2f  %8.2f  %8.2f  %8.2f  %8.2f  %8.3f  ", cur_spos, cur_epos, ins_sc - null3_correction, primary_sc, struct_sc, (ins_sc - primary_sc - struct_sc), -1. * null3_correction, sc);
+	  else           fprintf(sfp, "  %5d  %5d  %8.2f  %8.2f  %8.2f  %8.2f  %8.2f  ",        cur_spos, cur_epos,     sc - null3_correction, primary_sc, struct_sc, (    sc - primary_sc - struct_sc), -1. * null3_correction);
+	}
       }	
       else { 
 	if(do_optacc)  fprintf(ofp, "  %8.2f  %8.3f  ", ins_sc - null3_correction, sc);
 	else           fprintf(ofp, "  %8.2f  ", sc - null3_correction);
+	if(sfp != NULL) { 
+	  if(do_optacc)  fprintf(sfp, "  %8.2f  %8.3f  ", ins_sc - null3_correction, sc);
+	  else           fprintf(sfp, "  %8.2f  ", sc - null3_correction);
+	}
       }
     }
     /* if we did optimally accurate alignment:
@@ -1063,6 +1100,7 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
       esl_stopwatch_Stop(watch); 
       FormatTimeString(time_buf, watch->user, TRUE);
       fprintf(ofp, "%11s\n", time_buf);
+      if(sfp != NULL) fprintf(sfp, "%11s\n", time_buf);
     }
     esl_stopwatch_Stop(watch2); 
     FormatTimeString(time_buf, watch2->user, TRUE);

@@ -767,8 +767,7 @@ typedef struct _seqs_to_aln_t {
 				  * score for the sub parsetree (in case of sub CM alignment)
 				  */
   float *pp;                     /* average posterior probability for each seq, if applicable, IMPOSSIBLE if not */
-  float *struct_sc;              /* contribution of MATP emission scores - marginalized scores for each tr */ 
-
+  float *struct_sc;              /* contribution of (MATP emission scores minus marginalized scores) for each tr */ 
 } seqs_to_aln_t;
 
 struct deckpool_s {

@@ -64,7 +64,7 @@ static ESL_OPTIONS options[] = {
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI
-  { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "run as an MPI parallel program",                    1 },  
+  { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,   "--sfile", "run as an MPI parallel program",                    1 },  
 #endif
   /* Algorithm options */
   { "--optacc",  eslARG_NONE,"default",NULL, NULL,     NULL,      NULL,  BIGALGOPTS, "align with the Holmes/Durbin optimal accuracy algorithm", 2 },
@@ -97,6 +97,7 @@ static ESL_OPTIONS options[] = {
   { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence parsetrees to file <f>", 7 },
   { "--ifile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump information on per-sequence inserts to file <f>", 7 },
   { "--elfile",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      "-l",        NULL, "dump information on per-sequence EL inserts to file <f>", 7 },
+  { "--sfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump alignment score information to file <f>", 7 },
   /* options for experimental p7 HMM banding */
   { "--7pad",    eslARG_INT,       "0", NULL, "n>=0",   NULL,      NULL,        NULL, "w/p7 banding set pin pad to <n> residues", 9 },
   { "--7len",    eslARG_INT,       "4", NULL, "n>0",    NULL,      NULL,        NULL, "w/p7 banding set minimum length pin n-mer to <n>", 9 },
@@ -155,6 +156,7 @@ struct cfg_s {
   FILE         *tracefp;	/* optional output for parsetrees  */
   FILE         *insertfp;	/* optional output for insert info */
   FILE         *elfp;	        /* optional output for EL insert info */
+  FILE         *scorefp;        /* optional output for alnment scores */
   FILE         *regressfp;	/* optional output for regression test  */
   ESL_MSAFILE  *withalifp;	/* optional input alignment to include */
   ESL_MSA      *withmsa;	/* MSA from withalifp to include */
@@ -331,6 +333,7 @@ main(int argc, char **argv)
   cfg.tracefp    = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.insertfp   = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.elfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.scorefp    = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.regressfp  = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.withalifp  = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.withmsa    = NULL;	           /* filled in init_master_cfg() in masters, stays NULL for workers */
@@ -419,6 +422,10 @@ main(int argc, char **argv)
       printf("# Per-sequence EL insert information saved in file %s.\n", esl_opt_GetString(go, "--elfile"));
       fclose(cfg.elfp);
     }
+    if (cfg.scorefp   != NULL) { 
+      printf("# Alignment scores saved in file %s.\n", esl_opt_GetString(go, "--sfile"));
+      fclose(cfg.scorefp);
+    }
     if (cfg.regressfp   != NULL) {
       printf("# Regression data (alignment) saved in file %s.\n", esl_opt_GetString(go, "--regress"));
       fclose(cfg.regressfp);
@@ -461,6 +468,7 @@ main(int argc, char **argv)
  *    cfg->tracefp     - optional output file
  *    cfg->insertfp    - optional output file
  *    cfg->elfp        - optional output file
+ *    cfg->scorefp     - optional output file
  *    cfg->regressfp   - optional output file
  *    cfg->withalifp   - optional input alignment file to include
  *    cfg->withmsa     - MSA from --withali file 
@@ -529,6 +537,12 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     if ((cfg->elfp = fopen(esl_opt_GetString(go, "--elfile"), "w")) == NULL) 
 	ESL_FAIL(eslFAIL, errbuf, "Failed to open --elfile output file %s\n", esl_opt_GetString(go, "--elfile"));
     print_info_file_header(cfg->elfp, "EL state (local end) insert information file created by cmalign.", "EL ");
+  }
+
+  /* optionally, open score info file */
+  if (esl_opt_GetString(go, "--sfile") != NULL) {
+    if ((cfg->scorefp = fopen(esl_opt_GetString(go, "--sfile"), "w")) == NULL) 
+      ESL_FAIL(eslFAIL, errbuf, "Failed to open --sfile output file %s\n", esl_opt_GetString(go, "--file"));
   }
 
   /* optionally, open regression file */
@@ -1134,7 +1148,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 				  esl_opt_GetInteger(go, "--banddump"),
 				  esl_opt_GetInteger(go, "--dlev"), be_quiet, 
 				  (! esl_opt_GetBoolean(go, "--no-null3")), cfg->r,
-				  esl_opt_GetReal(go, "--mxsize"), stdout, 
+				  esl_opt_GetReal(go, "--mxsize"), stdout, cfg->scorefp,
 				  esl_opt_GetInteger(go, "--7pad"), 
 				  esl_opt_GetInteger(go, "--7len"), 
 				  esl_opt_GetReal(go, "--7sc"), 
@@ -1710,8 +1724,16 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
   fprintf(stdout, "%-10s %s\n",  "# date:",    date);
   if(cfg->nproc > 1) fprintf(stdout, "# %-8s %d\n", "nproc:", cfg->nproc);
   if(esl_opt_GetBoolean(go, "--sample")) fprintf(stdout, "%-10s %ld\n", "# seed:", esl_randomness_GetSeed(cfg->r));
-
   fprintf(stdout, "#\n");
+
+  if(cfg->scorefp != NULL) { 
+    fprintf(cfg->scorefp, "%-10s %s\n",  "# command:", command);
+    fprintf(cfg->scorefp, "%-10s %s\n",  "# date:",    date);
+    if(cfg->nproc > 1) fprintf(cfg->scorefp, "# %-8s %d\n", "nproc:", cfg->nproc);
+    if(esl_opt_GetBoolean(go, "--sample")) fprintf(cfg->scorefp, "%-10s %ld\n", "# seed:", esl_randomness_GetSeed(cfg->r));
+    fprintf(cfg->scorefp, "#\n");
+  }
+
   free(command);
   free(date);
   return eslOK;
@@ -1744,6 +1766,19 @@ print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   else if(do_qdb)        fprintf(stdout, "  %5s  %6.0e\n", "qdb", cm->beta_qdb);
   else                   fprintf(stdout, "  %5s  %6s\n", "none", "");
 
+  if(cfg->scorefp != NULL) { 
+    fprintf(cfg->scorefp, "# %-25s  %9s  %6s  %3s  %5s  %6s\n", "cm name",                   "algorithm", "config", "sub", "bands", (do_hbanded) ? "tau" : ((do_qdb) ? "beta" : "")); 
+    fprintf(cfg->scorefp, "# %-25s  %9s  %6s  %3s  %5s  %6s\n", "-------------------------", "---------", "------", "---", "-----", (do_hbanded || do_qdb) ? "------" : ""); 
+    fprintf(cfg->scorefp, "# %-25.25s  %9s  %6s  %3s", 
+	    cm->name,
+	    ((esl_opt_GetBoolean(go, "--cyk")) ? "cyk" : ((esl_opt_GetBoolean(go, "--sample")) ? "sample" : (esl_opt_GetBoolean(go, "--viterbi") ? "hmm vit" : "opt acc"))), 
+	    (esl_opt_GetBoolean(go, "-l")) ? "local" : "global",
+	    (esl_opt_GetBoolean(go, "--sub")) ? "yes" : "no");
+    /* bands and beta/tau */
+    if     (do_hbanded)    fprintf(cfg->scorefp, "  %5s  %6.0e\n", "hmm", cm->tau);
+    else if(do_qdb)        fprintf(cfg->scorefp, "  %5s  %6.0e\n", "qdb", cm->beta_qdb);
+    else                   fprintf(cfg->scorefp, "  %5s  %6s\n", "none", "");
+  }
   return;
 }
 

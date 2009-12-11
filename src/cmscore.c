@@ -1129,7 +1129,7 @@ process_align_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *err
 				  NULL, NULL, 0,  /* we're not aligning search hits */
 				  FALSE, 0, TRUE, 
 				  (! esl_opt_GetBoolean(go, "--no-null3")), NULL,
-				  esl_opt_GetReal(go, "--mxsize"), stdout,
+				  esl_opt_GetReal(go, "--mxsize"), stdout, NULL,
 				  0, 1, 0., 0, 0., 0., 1., 1.)) != eslOK) goto ERROR;
 
   return eslOK;
