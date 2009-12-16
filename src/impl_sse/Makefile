@@ -11,7 +11,7 @@ SHELL  = /bin/sh
 ## your compiler and compiler flags
 #
 CC     = gcc -std=gnu99
-CFLAGS = -g 
+CFLAGS = -g -O2
 SIMDFLAGS= -msse2
 
 ## other defined flags. 
@@ -27,7 +27,7 @@ MYLIBS   = -linfernal -lhmmer -leasel
 MYLIBDIR = -L../ -L../../easel -L../../hmmer/src/ 
 MYINCDIR = -I../ -I../../easel -I../../hmmer/src/
 
-PROGS =
+PROGS = sse_cmsearch
 
 OBJS  = cm_optimized.o\
         sse_cm_dpsearch.o\
@@ -46,27 +46,28 @@ HDRS  = ../funcs.h\
 #################################################################
 ## Targets defining how to make INFERNAL executables.
 ##
-all: 	$(OBJS) 
+all: 	$(PROGS) 
 
 $(PROGS): %: %.o $(OBJS) ${HDRS}
 	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS)
 
 test: $(OBJS) ${HDRS}
-	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o sse-cyk -DIMPLSSE_SMALL_TEST sse_cm_dpsmall.c sse_util.o cm_optimized.o $(MYLIBS) $(LIBS)
+	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o sse-cyk -DIMPLSSE_SMALL_TEST sse_cm_dpsmall.c $(OBJS) $(MYLIBS) $(LIBS)
 	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o sse-bmark -DIMPL_SEARCH_BENCHMARK sse_cm_dpsearch.c $(MYLIBS) $(LIBS)
-	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o sse-mscyk -DIMPL_MSCYK_TEST sse_cmcons_mscyk.c sse_cmcons_hitmx.o sse_cm_dpsearch.o cm_optimized.o $(MYLIBS) $(LIBS)
-	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o mscyk-test -DIMPL_MSCYK_TEST2 sse_cmcons_mscyk.c sse_cmcons_hitmx.o sse_cm_dpsearch.o cm_optimized.o $(MYLIBS) $(LIBS)
+	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o sse-mscyk -DIMPL_MSCYK_TEST sse_cmcons_mscyk.c $(OBJS) $(MYLIBS) $(LIBS)
+	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o mscyk-test -DIMPL_MSCYK_TEST2 sse_cmcons_mscyk.c $(OBJS) $(MYLIBS) $(LIBS)
 	
 
 #################################################################
 ## Miscellaneous targets.
 ##
 clean:
-	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out libinfernal.a
+	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out
 	-rm -f sse-bmark sse-cyk sse-mscyk mscyk-test
 
 distclean:
-	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out libinfernal.a
+	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out
+	-rm -f sse-bmark sse-cyk sse-mscyk mscyk-test
 	-rm -f Makefile config.h
 
 TAGS:

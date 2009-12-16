@@ -736,8 +736,8 @@ static ESL_OPTIONS options[] = {
   { "--mscyk",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute new SSE 16x MSCYK scan implementation", 0 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute non-banded optimized CYK scan implementation", 0 },
   { "--cutoff",  eslARG_REAL,   "0.0", NULL, NULL,  NULL,  NULL, NULL, "set bitscore cutoff to <x>",                     0 },
-  { "--S_Sa",    eslARG_REAL,  "0.60", NULL, NULL,  NULL,  NULL, NULL, "S emit single residue probability <x>",          0 },
-  { "--S_SM",    eslARG_REAL,  "0.20", NULL, NULL,  NULL,  NULL, NULL, "S add model segment probability <x>",            0 },
+  { "--S_Sa",    eslARG_REAL,  "0.50", NULL, NULL,  NULL,  NULL, NULL, "S emit single residue probability <x>",          0 },
+  { "--S_SM",    eslARG_REAL,  "0.24", NULL, NULL,  NULL,  NULL, NULL, "S add model segment probability <x>",            0 },
   { "--S_e",     eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "S end probability (unsettable, 1-S_Sa-S_SM)",    0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -801,6 +801,7 @@ main(int argc, char **argv)
       f_S_Sa = esl_opt_GetReal(go, "--S_Sa");
       if (f_S_Sa <= 0 || f_S_Sa >= 1) cm_Fail("S->Sa must be between zero and 1\n");
       f_S_SM = esl_opt_GetReal(go, "--S_SM");
+f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/(2*cm->clen + ccm->e_fraglen);
       if (f_S_SM <= 0 || f_S_SM >= 1) cm_Fail("S->SM must be between zero and 1\n");
       f_S_e = 1. - f_S_Sa - f_S_SM;
       if (f_S_e <= 0) cm_Fail("Error: S->e out of range\n");
@@ -811,7 +812,7 @@ main(int argc, char **argv)
 
       nullL = MSCYK_explen(ccm->e_fraglen,f_S_Sa,f_S_SM,f_S_e);
       ccm->r = nullL/(nullL+1.);
-fprintf(stderr,"nullL %f r %f r_b %d\n",nullL,ccm->r,unbiased_byteify(ccm,sreLOG2(ccm->r)));
+//fprintf(stderr,"nullL %f r %f r_b %d\n",nullL,ccm->r,unbiased_byteify(ccm,sreLOG2(ccm->r)));
     }
   
   dmin = NULL; dmax = NULL;
@@ -860,16 +861,15 @@ fprintf(stderr,"nullL %f r %f r_b %d\n",nullL,ccm->r,unbiased_byteify(ccm,sreLOG
   for (i = 0; i < N; i++)
     {
       L = seqs_to_aln->sq[i]->n;
+      printf("%4d L = %5d\n", (i+1), L);
       dsq = seqs_to_aln->sq[i]->dsq;
       cm->search_opts  &= ~CM_SEARCH_INSIDE;
 
-/*
       esl_stopwatch_Start(w);
       if((status = FastCYKScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
       printf("%4d %-30s %10.4f bits ", (i+1), "FastCYKScan(): ", sc);
       esl_stopwatch_Stop(w);
       esl_stopwatch_Display(stdout, w, " CPU time: ");
-*/
 
       if (esl_opt_GetBoolean(go, "-w")) 
 	{
@@ -943,7 +943,7 @@ static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
   { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
   { "--cutoff",  eslARG_REAL,   "0.0", NULL, NULL,  NULL,  NULL, NULL, "set bitscore cutoff to <x>",                     0 },
-  { "--S_Sa",    eslARG_REAL,  "0.60", NULL, NULL,  NULL,  NULL, NULL, "S emit single residue probability <x>",          0 },
+  { "--S_Sa",    eslARG_REAL,  "0.50", NULL, NULL,  NULL,  NULL, NULL, "S emit single residue probability <x>",          0 },
   { "--S_SM",    eslARG_REAL,  "0.20", NULL, NULL,  NULL,  NULL, NULL, "S add model segment probability <x>",            0 },
   { "--S_e",     eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "S end probability (unsettable, 1-S_Sa-S_SM)",    0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -993,6 +993,7 @@ if(ccm->oesc == NULL) cm_Fail("oesc NULL!\n");
   f_S_Sa = esl_opt_GetReal(go, "--S_Sa");
   if (f_S_Sa <= 0 || f_S_Sa >= 1) cm_Fail("S->Sa must be between zero and 1\n");
   f_S_SM = esl_opt_GetReal(go, "--S_SM");
+f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/(2*cm->clen + ccm->e_fraglen);
   if (f_S_SM <= 0 || f_S_SM >= 1) cm_Fail("S->SM must be between zero and 1\n");
   f_S_e = 1. - f_S_Sa - f_S_SM;
   if (f_S_e <= 0) cm_Fail("Error: S->e out of range\n");
@@ -1024,7 +1025,7 @@ if(ccm->oesc == NULL) cm_Fail("oesc NULL!\n");
         jmax= results->data[i].stop;
       }
     }
-    fprintf(stdout,"%4d %4d %4d\n",imax,jmax,max);
+    fprintf(stdout,"%4d %4d %4d %6f\n",imax,jmax,max,sc);
     fflush(stdout);
 
     FreeResults(results);

@@ -103,6 +103,8 @@ void TBackGammaHitMxBackward_epu8(GammaHitMx_epu8 *gamma, search_results_t *resu
 
 /* sse_cmcons_mscyk.c */
 float MSCYK_explen(float fraglen, float t1, float t2, float t3);
+int SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, uint8_t cutoff,
+           search_results_t *results, int do_null3, float **ret_vsc, float *ret_sc);
 
 /* sse_cm_dpsearch.c */
 int SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq,
