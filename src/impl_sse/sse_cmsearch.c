@@ -24,15 +24,25 @@
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
-  { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
-  { "--cutoff",  eslARG_REAL,   "0.0", NULL, NULL,  NULL,  NULL, NULL, "set bitscore cutoff to <x>",                     0 },
-  { "--S_Sa",    eslARG_REAL,  "0.50", NULL, NULL,  NULL,  NULL, NULL, "S emit single residue probability <x>",          0 },
-  { "--S_SM",    eslARG_REAL,  "0.20", NULL, NULL,  NULL,  NULL, NULL, "S add model segment probability <x>",            0 },
-  { "--S_e",     eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "S end probability (unsettable, 1-S_Sa-S_SM)",    0 },
+  /* Basic options */
+  { "-h",       eslARG_NONE,  NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           1 },
+  /* Cutoff level options */
+  { "--s1-T",eslARG_REAL,  NULL, NULL,   NULL,  NULL,  NULL, "--s1-E", "set stage 1 cutoff to bitscore <x>",             2 },
+  { "--s1-E",eslARG_REAL, "0.1", NULL,"0<x<1",  NULL,  NULL, "--s1-T", "set stage 1 cutoff to probability <x> per kb",   2 },
+  { "--s2-T",eslARG_REAL,  NULL, NULL,   NULL,  NULL,  NULL, "--s2-E", "set stage 2 cutoff to bitscore <x>",             2 },
+  { "--s2-E",eslARG_REAL,"1e-3", NULL,"0<x<1",  NULL,  NULL, "--s2-T", "set stage 2 cutoff to probability <x>",          2 },
+  { "--s3-T",eslARG_REAL,  NULL, NULL,   NULL,  NULL,  NULL, "--s3-E", "set stage 3 cutoff to bitscore <x>",             2 },
+  { "--s3-E",eslARG_REAL,"1e-5", NULL,"0<x<1",  NULL,  NULL, "--s3-T", "set stage 3 cutoff to probability <x>",          2 },
+  /* Meta-model parameters */
+  { "--mmp_auto",eslARG_NONE,"default",NULL, NULL, "--mmp_manual",NULL,NULL,"automatic determination of MSCYK model parameters",3},
+  { "--mmp_manual",eslARG_NONE,  FALSE,NULL, NULL, "--mmp_auto",  NULL,NULL,"manual determination of MSCYK model parameters",3},
+  { "--S_Sa",    eslARG_REAL,  "0.50", NULL, NULL,  NULL,"--mmp_manual","--mmp_auto", "S emit single residue probability <x>",          3 },
+  { "--S_SM",    eslARG_REAL,    NULL, NULL, NULL,  NULL,"--mmp_manual","--mmp_auto", "S add model segment probability <x>",            3 },
+  { "--S_e",     eslARG_NONE,    NULL, NULL, NULL,  NULL,"--mmp_manual","--mmp_auto", "S end probability (unsettable, 1-S_Sa-S_SM)",    3 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile> <seqfile>";
-static char banner[] = "test driver for MSCYK implementation";
+static char banner[] = "multistage SSE pipeline for sequence database search with an RNA CM";
 
 int 
 main(int argc, char **argv)
@@ -50,7 +60,7 @@ main(int argc, char **argv)
   ESL_SQ         *seq;
   char            errbuf[cmERRBUFSIZE];
   CM_CONSENSUS   *ccm;
-  uint8_t         cutoff;
+  uint8_t         s1_cutoff;
   float           f_cutoff;
   float           f_S_Sa, f_S_SM, f_S_e, f_M_S;
   int             format = eslSQFILE_UNKNOWN;
@@ -69,14 +79,15 @@ main(int argc, char **argv)
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
   ccm = cm_consensus_Convert(cm);
 
-if(ccm == NULL) cm_Fail("ccm NULL!\n");
-if(ccm->oesc == NULL) cm_Fail("oesc NULL!\n");
+  if(ccm == NULL) cm_Fail("ccm NULL!\n");
+  if(ccm->oesc == NULL) cm_Fail("oesc NULL!\n");
 
   /* Set meta-model parameters */
   f_S_Sa = esl_opt_GetReal(go, "--S_Sa");
   if (f_S_Sa <= 0 || f_S_Sa >= 1) cm_Fail("S->Sa must be between zero and 1\n");
   f_S_SM = esl_opt_GetReal(go, "--S_SM");
-f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/(2*cm->clen + ccm->e_fraglen);
+  if (!f_S_SM) f_S_SM = 0.24;
+  f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/(2*cm->clen + ccm->e_fraglen);
   if (f_S_SM <= 0 || f_S_SM >= 1) cm_Fail("S->SM must be between zero and 1\n");
   f_S_e = 1. - f_S_Sa - f_S_SM;
   if (f_S_e <= 0) cm_Fail("Error: S->e out of range\n");
@@ -85,9 +96,9 @@ f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/(2*cm->clen + ccm->e_fraglen);
   ccm->tsb_S_e  = unbiased_byteify(ccm,sreLOG2(f_S_e ));
   ccm->tsb_M_S  = unbiased_byteify(ccm,ccm->sc_frag);
 
-  f_cutoff = esl_opt_GetReal(go, "--cutoff");
+  f_cutoff = esl_opt_GetReal(go, "--s1-T");
   /* Need to scale and offset, but not change sign -> switch sign ahead of time */
-  cutoff = ccm->base_b + unbiased_byteify(ccm,-f_cutoff);
+  s1_cutoff = ccm->base_b + unbiased_byteify(ccm,-f_cutoff);
 
   seq = esl_sq_Create();
   while ( esl_sqio_Read(sqfp, seq) == eslOK)
@@ -97,7 +108,7 @@ f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/(2*cm->clen + ccm->e_fraglen);
     fprintf(stdout,"%s\t",seq->name);
   
     results = CreateResults(INIT_RESULTS);
-    if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, seq->n, cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+    if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, seq->n, s1_cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 
     /* Rudimentary output of results */
     max = 0;
