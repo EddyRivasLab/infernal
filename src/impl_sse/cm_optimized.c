@@ -33,6 +33,8 @@ cm_optimized_Convert(const CM_t *cm)
   ocm->sttype = cm->sttype;	/* careful, these point at the external resource */
   ocm->cfirst = cm->cfirst;
   ocm->cnum   = cm->cnum;
+  ocm->plast  = cm->plast;
+  ocm->pnum   = cm->pnum;
   ocm->abc    = cm->abc;
 
   /* count pairs, singlets */

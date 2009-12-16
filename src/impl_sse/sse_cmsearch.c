@@ -59,8 +59,11 @@ main(int argc, char **argv)
   ESL_SQFILE     *sqfp;
   ESL_SQ         *seq;
   char            errbuf[cmERRBUFSIZE];
-  CM_CONSENSUS   *ccm;
+  CM_CONSENSUS   *ccm = NULL;
+  CM_OPTIMIZED   *ocm = NULL;
   uint8_t         s1_cutoff;
+  int16_t         s2_cutoff;
+  float           s3_cutoff;
   float           f_cutoff;
   float           f_S_Sa, f_S_SM, f_S_e, f_M_S;
   int             format = eslSQFILE_UNKNOWN;
@@ -78,6 +81,7 @@ main(int argc, char **argv)
   ConfigCM(cm, errbuf, TRUE, NULL, NULL); /* TRUE says: calculate W */
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
   ccm = cm_consensus_Convert(cm);
+  ocm = cm_optimized_Convert(cm);
 
   if(ccm == NULL) cm_Fail("ccm NULL!\n");
   if(ccm->oesc == NULL) cm_Fail("oesc NULL!\n");
@@ -96,9 +100,29 @@ main(int argc, char **argv)
   ccm->tsb_S_e  = unbiased_byteify(ccm,sreLOG2(f_S_e ));
   ccm->tsb_M_S  = unbiased_byteify(ccm,ccm->sc_frag);
 
-  f_cutoff = esl_opt_GetReal(go, "--s1-T");
+  /* Set filtering cutoff parameters */
+  if (esl_opt_IsOn(go, "--s1-T")) f_cutoff = esl_opt_GetReal(go, "--s1-T");
+  else {
+    f_cutoff = 0.0;
+    fprintf(stderr,"WARNING: P-value cutoffs not implemented, setting stage 1 bitscore cutoff to %.1f\n",f_cutoff);
+  }
   /* Need to scale and offset, but not change sign -> switch sign ahead of time */
   s1_cutoff = ccm->base_b + unbiased_byteify(ccm,-f_cutoff);
+
+  if (esl_opt_IsOn(go, "--s2-T")) f_cutoff = esl_opt_GetReal(go, "--s2-T");
+  else {
+    f_cutoff = 0.0;
+    fprintf(stderr,"WARNING: P-value cutoffs not implemented, setting stage 2 bitscore cutoff to %.1f\n",f_cutoff);
+  }
+  /* Need to scale */
+  s2_cutoff = wordify(ocm->scale_w, f_cutoff);
+
+  if (esl_opt_IsOn(go, "--s3-T")) f_cutoff = esl_opt_GetReal(go, "--s3-T");
+  else {
+    f_cutoff = 0.0;
+    fprintf(stderr,"WARNING: P-value cutoffs not implemented, setting stage 3 bitscore cutoff to %.1f\n",f_cutoff);
+  }
+  s2_cutoff = f_cutoff;
 
   seq = esl_sq_Create();
   while ( esl_sqio_Read(sqfp, seq) == eslOK)
@@ -131,6 +155,7 @@ main(int argc, char **argv)
 
 
   if (ccm != NULL) cm_consensus_Free(ccm);
+  if (ocm != NULL) cm_optimized_Free(ocm); free(ocm);
   FreeCM(cm);
   esl_alphabet_Destroy(abc);
   esl_sqfile_Close(sqfp);

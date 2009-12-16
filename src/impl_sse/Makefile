@@ -52,10 +52,10 @@ $(PROGS): %: %.o $(OBJS) ${HDRS}
 	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS)
 
 test: $(OBJS) ${HDRS}
-	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o sse-cyk -DIMPLSSE_SMALL_TEST sse_cm_dpsmall.c $(OBJS) $(MYLIBS) $(LIBS)
+	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o sse-cyk -DIMPLSSE_SMALL_TEST sse_cm_dpsmall.c sse_util.o cm_optimized.o $(MYLIBS) $(LIBS)
 	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o sse-bmark -DIMPL_SEARCH_BENCHMARK sse_cm_dpsearch.c $(MYLIBS) $(LIBS)
-	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o sse-mscyk -DIMPL_MSCYK_TEST sse_cmcons_mscyk.c $(OBJS) $(MYLIBS) $(LIBS)
-	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o mscyk-test -DIMPL_MSCYK_TEST2 sse_cmcons_mscyk.c $(OBJS) $(MYLIBS) $(LIBS)
+	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o sse-mscyk -DIMPL_MSCYK_TEST sse_cmcons_mscyk.c sse_cmcons_hitmx.o sse_cm_dpsearch.o cm_optimized.o $(MYLIBS) $(LIBS)
+	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIR) $(MYLIBDIR) -o mscyk-test -DIMPL_MSCYK_TEST2 sse_cmcons_mscyk.c sse_cmcons_hitmx.o sse_cm_dpsearch.o cm_optimized.o $(MYLIBS) $(LIBS)
 	
 
 #################################################################

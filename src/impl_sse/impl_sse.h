@@ -21,6 +21,8 @@ typedef struct cm_optimized_s {
   char     *sttype;
   int      *cfirst;
   int      *cnum;
+  int      *plast;
+  int      *pnum;
 
   const ESL_ALPHABET *abc;
 
@@ -118,7 +120,7 @@ float SSE_CYKInsideScore(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0);
 float SSE_CYKDemands(CM_t *cm, int L, int be_quiet);
 float SSE_CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r,
 	int i0, int j0, Parsetree_t **ret_tr);
-int SSE_CYKFilter_epi16(CM_t *cm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
+int SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
         int allow_begin, int *ret_b, int *ret_bsc);
 
 
