@@ -1118,12 +1118,12 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, int do_output_to_tmp, ch
     for (i = 0; i < seqs_to_aln->nseq; i++) {
       if(!(esl_opt_GetBoolean(go, "--no-null3"))) { ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, &null3_correction); }
       if(! NOT_IMPOSSIBLE(seqs_to_aln->struct_sc[i])) { 
-	if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f  %8.3f\n", (cfg->nseq+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->pp[ip]);
+	if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f  %8.3f\n", (cfg->nseq+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->pp[i]);
 	else                                 fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f\n",        (cfg->nseq+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction);
       }
       else { /* we have struct scores */
 	if(!(esl_opt_GetBoolean(go, "--no-null3"))) seqs_to_aln->struct_sc[i] -= ((float) ParsetreeCountMPEmissions(cm, seqs_to_aln->tr[i]) / (float) seqs_to_aln->sq[i]->n) * null3_correction; /* adjust struct_sc for NULL3 correction, this is inexact */
-	if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f  %8.2f  %8.3f\n", (cfg->nseq+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->struct_sc[i], seqs_to_aln->pp[ip]);
+	if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f  %8.2f  %8.3f\n", (cfg->nseq+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->struct_sc[i], seqs_to_aln->pp[i]);
 	else                                 fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f  %8.2f\n",        (cfg->nseq+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->struct_sc[i]);
       }
     }

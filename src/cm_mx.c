@@ -307,6 +307,8 @@ cm_hb_shadow_mx_Create(CM_t *cm, int M)
   CM_HB_SHADOW_MX *mx = NULL;
   int     v;
   int     nbifs, nb;
+  int allocL = 1;
+  int allocW = 1;
 
   /* level 1: the structure itself */
   ESL_ALLOC(mx, sizeof(CM_HB_SHADOW_MX));
@@ -323,8 +325,6 @@ cm_hb_shadow_mx_Create(CM_t *cm, int M)
   ESL_ALLOC(mx->kshadow,  sizeof(int **)  * M);
  
   /* level 3: matrix cell memory, when creating only allocate 1 cell per state, for j = 0, d = 0 */
-  int allocL = 1;
-  int allocW = 1;
   nbifs = CMCountStatetype(cm, B_st);
 
   ESL_ALLOC(mx->nrowsA, sizeof(int)      * M);

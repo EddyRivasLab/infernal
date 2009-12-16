@@ -713,6 +713,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   char     *namedashes = NULL;      /* string of dashes for underlining 'target name' column in tab output */
   char     *cm_namedashes = NULL;   /* string of dashes for underlining 'model name' column in tab output */
   int       ni;                     /* index for filling dashes strings */
+  int       used_at_least_one_cm = FALSE; /* only used if --cm-idx and --cm-name options are enabled */
 
   ESL_STOPWATCH *w  = esl_stopwatch_Create();
   if(w == NULL) cm_Fail("mpi_master(): memory error, stopwatch not created.\n");  

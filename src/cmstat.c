@@ -772,7 +772,7 @@ print_run_info(const ESL_GETOPTS *go, char *errbuf, ESL_RANDOMNESS *r)
 
   fprintf(stdout, "%-10s %s\n",  "# command:", command);
   fprintf(stdout, "%-10s %s\n",  "# date:",    date);
-  if(esl_opt_GetBoolean(go, "--search")) fprintf(stdout, "%-10s %ld\n", "# seed:",    esl_randomness_GetSeed(r));
+  if(esl_opt_GetBoolean(go, "--search")) fprintf(stdout, "%-10s %d\n", "# seed:",    esl_randomness_GetSeed(r));
 
   free(command);
   free(date);

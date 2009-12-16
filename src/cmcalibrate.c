@@ -631,7 +631,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (esl_opt_GetBoolean(go, "-v")) cfg->be_verbose = TRUE;        
 
   /* seed master's RNG */
-  if (esl_opt_IsOn(go, "-s")) cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
+  if (esl_opt_IsOn(go, "-s")) cfg->r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
   else                        cfg->r = esl_randomness_CreateTimeseeded();
 
   /* create the stopwatch */
@@ -683,7 +683,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int      p;                     /* partition index */
   char     time_buf[128];	  /* string for printing elapsed time (safely holds up to 10^14 years) */
   void    *tmp;                   /* ptr for ESL_RALLOC */ 
-  long     seed;                  /* RNG seed */
+  int      seed;                  /* RNG seed */
   int      exp_mode;              /* ctr over exp tail modes */
   double   cm_psec;               /* predicted number of seconds for calibrating current CM */
   double   cm_asec;               /* predicted number of seconds for calibrating current CM */
@@ -974,7 +974,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int      msg;                   /* holds integer telling workers we've finished current stage */
   int      exp_mode;              /* ctr over exp tail modes */
   int      h;                     /* ctr over hits */
-  long     seed;                  /* for seeding the master's RNG */
+  int      seed;                  /* for seeding the master's RNG */
   /* variables for predicted and actual timings */
   double   psec;                  /* predicted number of seconds */
   double   cm_psec;               /* predicted number of seconds for calibrating current CM */
@@ -1019,7 +1019,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int      fil_cm_cyk_mode;       /* CYK    fthr mode CM is in FTHR_CM_LC or FTHR_CM_GC */
   int      fil_cm_ins_mode;       /* Inside fthr mode CM is in FTHR_CM_LI or FTHR_CM_GI */
   int      fil_nseq_per_worker  = (filN / (cfg->nproc-1)); /* when calcing filters, number of seqs to tell each worker to work on */
-  long    *seed_wlist = NULL;      /* [0..wi..nproc-1] seeds for worker's RNGs, we send these to workers */
+  int     *seed_wlist = NULL;      /* [0..wi..nproc-1] seeds for worker's RNGs, we send these to workers */
   /* full arrays of CYK, Inside, Fwd scores, [0..filN-1] */
   float   *fil_cyk_scA = NULL;    /* [0..filN-1] best cm cyk score for each emitted seq */
   float   *fil_ins_scA = NULL;    /* [0..filN-1] best cm insidei score for each emitted seq */
@@ -1040,7 +1040,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (xstatus == eslOK) { if ((si_wlist       = malloc(sizeof(int)  * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
   if (xstatus == eslOK) { if ((seqpos_wlist   = malloc(sizeof(int)  * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
   if (xstatus == eslOK) { if ((len_wlist      = malloc(sizeof(int)  * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((seed_wlist     = malloc(sizeof(long) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((seed_wlist     = malloc(sizeof(int)  * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
 
   MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
   if (xstatus != eslOK) return xstatus; /* errbuf was filled above */
@@ -1049,7 +1049,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   for (wi = 0; wi < cfg->nproc; wi++) {
     si_wlist[wi] = seqpos_wlist[wi] = len_wlist[wi] = -1;
     seed_wlist[wi] = esl_rnd_Roll(cfg->r, 1000000000); /* not sure what to use as max for seed */
-    ESL_DPRINTF1(("wi %d seed: %ld\n", wi, seed_wlist[wi]));
+    ESL_DPRINTF1(("wi %d seed: %d\n", wi, seed_wlist[wi]));
   }
   
   /* Worker initialization:
@@ -1059,7 +1059,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
    * and don't worry about an informative message. 
    */
   for (wi = 1; wi < cfg->nproc; wi++)
-    MPI_Send(&(seed_wlist[wi]), 1, MPI_LONG, wi, 0, MPI_COMM_WORLD);
+    MPI_Send(&(seed_wlist[wi]), 1, MPI_INT, wi, 0, MPI_COMM_WORLD);
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
   if (status != eslOK) cm_Fail("One or more MPI worker processes failed to initialize.");
   ESL_DPRINTF1(("%d workers are initialized\n", cfg->nproc-1));
@@ -1530,7 +1530,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int      wn   = 0;	          /* allocation size for wbuf */
   int      sz, n;		  /* size of a packed message */
   int      pos;                   /* posn in wbuf */
-  long     seed;                  /* seed for RNG, rec'd from master */
+  int      seed;                  /* seed for RNG, rec'd from master */
   int      nseq;                  /* number of seqs to emit/search for current job */
   void    *tmp;                   /* ptr for ESL_RALLOC */ 
   MPI_Status mpistatus;           /* MPI status... */
@@ -1565,7 +1565,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * we can pack an error result into it, because after initialization,
    * errors will be returned as packed (code, errbuf) messages.
    */
-  if (MPI_Recv(&seed, 1, MPI_LONG, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
+  if (MPI_Recv(&seed, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
   if (xstatus == eslOK) { if((cfg->r = esl_randomness_Create(seed)) == NULL)          xstatus = eslEMEM; }
   if (xstatus == eslOK) { wn = 4096;  if ((wbuf = malloc(wn * sizeof(char))) == NULL) xstatus = eslEMEM; }
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD); /* everyone sends xstatus back to master */
@@ -1573,7 +1573,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
     if (wbuf != NULL) free(wbuf);
     return xstatus; /* shutdown; we passed the error back for the master to deal with. */
   }
-  ESL_DPRINTF1(("worker %d: initialized seed: %ld\n", cfg->my_rank, seed));
+  ESL_DPRINTF1(("worker %d: initialized seed: %d\n", cfg->my_rank, seed));
 
   /* 2 special (annoying) cases: 
    * case 1: if we've used the --exp-gc option, we read in a seq file to fill
@@ -2293,8 +2293,8 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
 {
   int status;
   int i;
-  long seed;
-  long temp;
+  int  seed;
+  int  temp;
   int  seedlen;
   char *seedstr;
   time_t date = time(NULL);
@@ -2311,14 +2311,14 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
   /* if -s NOT enabled, we need to append the seed info also */
   seed = esl_randomness_GetSeed(cfg->r);
   if(esl_opt_IsOn(go, "-s")) { /* -s was enabled, we'll do a sanity check */
-    if(seed != (long) esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r's seed is %ld, but -s was enabled with argument: %ld!, this shouldn't happen.", seed, (long) esl_opt_GetInteger(go, "-s"));
+    if(seed != esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r's seed is %d, but -s was enabled with argument: %d!, this shouldn't happen.", seed, esl_opt_GetInteger(go, "-s"));
   } else {
     temp = seed; 
     seedlen = 1; 
     while(temp > 0) { temp/=10; seedlen++; } /* determine length of stringized version of seed */
     seedlen += 4; /* strlen(' -s ') */
     ESL_ALLOC(seedstr, sizeof(char) * (seedlen+1));
-    sprintf(seedstr, " -s %ld ", seed);
+    sprintf(seedstr, " -s %d ", seed);
     esl_strcat((&cfg->ccom), -1, seedstr, seedlen);
     free(seedstr);
   }
@@ -3084,7 +3084,7 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
 
   fprintf(stdout, "%-10s %s\n",  "# command:", command);
   fprintf(stdout, "%-10s %s\n",  "# date:",    date);
-  fprintf(stdout, "%-10s %ld\n", "# seed:", esl_randomness_GetSeed(cfg->r));
+  fprintf(stdout, "%-10s %d\n", "# seed:", esl_randomness_GetSeed(cfg->r));
   if(cfg->nproc > 1) fprintf(stdout, "# %-8s %d\n", "nproc:", cfg->nproc);
 
   free(command);
