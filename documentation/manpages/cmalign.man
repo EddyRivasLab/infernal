@@ -24,7 +24,7 @@ and outputs a multiple sequence alignment.
 .PP
 The sequence file 
 .I seqfile
-must be in FASTA, EMBL, or Genbank format.
+must be in FASTA or Genbank format.
 
 .PP
 CMs are profiles of RNA consensus sequence and secondary structure. A
@@ -44,7 +44,12 @@ option. Interleaved Stockholm format (which was created by earlier
 versions of 
 .B cmalign
 ) can be created with 
-.B --ileaved.
+.B --ileaved,
+but note that 
+.B cmalign 
+often requires more RAM when this option is used, so it is discouraged
+if you're creating very large alignments (tens or hundreds of thousands of
+sequences of a large RNA family with consensus length more than 1000). 
 
 .PP
 .B cmalign 
@@ -181,9 +186,14 @@ Output the alignment in interleaved Stockholm format of a fixed width
 that may be more convenient for reading. This was the default output
 alignment format of previous versions of 
 .B cmalign.
+Note that 
+.B cmalign 
+often requires more RAM when this option is used, so it is discouraged
+if you're creating very large alignments (tens or hundreds of thousands of
+sequences of a large RNA family with consensus length more than 1000). 
 
 .TP
-.BI -no-prob
+.BI --no-prob
 Do not annotate the output alignment with posterior probabilities.
 
 .TP
@@ -197,9 +207,36 @@ the reliability of the program somewhat, because
 the Babelfish can make mistakes; particularly
 recommended for unattended, high-throughput runs
 of @PACKAGE@. 
-Acceptable formats are: FASTA, EMBL, UNIPROT, GENBANK, and DDBJ.
+Acceptable formats are: FASTA, GENBANK, and DDBJ.
 .I <s>
 is case-insensitive.
+
+.TP
+.BI --chunk " <n>"
+Specify number of sequences for each temporary alignment as
+.I <n>. 
+By default,
+.I <n>
+is 1000. If the target sequence file contains more than 
+.I <n>
+sequences, it will be split up into chunks of 
+.I <n>
+sequences, each chunk will be aligned, the alignment will be written to a
+temporary file, and the alignment data will be freed. When all
+sequences from the target file have been aligned. 
+.B cmalign
+reads the temporary alignment file, merges all alignments into one and
+outputs it. This saves memory and allows
+.B cmalign 
+to be used to create very large alignments. If there are fewer
+than 
+.I <n>
+sequences in the target sequence file, this memory saving mode is
+disabled and no temporary file is created. The memory saving mode
+cannot be used with 
+.B --ileaved,
+so this option cannot be used together with
+.B --ileaved.
 
 .TP
 .B --devhelp
@@ -402,31 +439,6 @@ any insertions relative to the consensus model. This option may
 be useful when creating very large alignments that require a lot of
 RAM and disk space, most of which is necessary only to deal with insert
 columns that are mainly gaps in most sequences.
-
-.TP
-.B --resonly
-Only include match columns in the output alignment that 
-have at least 1 residue (non-gap character) in them. By default all match columns are
-printed to the alignment, even those that are 100% gaps. 
-.B --resonly
-replicates the default behavior of previous versions of
-.B cmalign.
-
-.TP
-.B --fins
-Change the 
-behavior of how insert emissions are placed in the alignment. 
-By default, all contiguous blocks of inserts are split in half, and
-half the residues are flushed left against the nearest consensus
-column to the left, and half are flushed right against the nearest
-consensus column on the right. With
-.B --fins
-inserts are not split in half, instead all inserted residues from IL
-states are flushed left, and all inserted residues from IR states are
-flushed right. 
-.B --fins 
-replicates the default behavior of previous versions of
-.B cmalign.
 
 .TP 
 .BI --withali " <f>"

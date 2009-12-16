@@ -857,7 +857,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
     ESL_ALLOC(msa->pp, sizeof(char *) * msa->nseq);
   }
 
-  /* we reuse aseq, copying it to the msa after its completed for each seq */
+  /* we reuse aseq, copying it to the msa after it's completed for each seq */
   ESL_ALLOC(tmp_aseq, sizeof(char) * (msa->alen+1));
   if(do_post) { /* these will be reused for each sequence (the aligned postcode arrays are all the same length) */
     ESL_ALLOC(tmp_apc, sizeof(char) * (msa->alen+1));

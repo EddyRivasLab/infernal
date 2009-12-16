@@ -47,10 +47,10 @@
 #include "impl_sse.h"
 #endif
 
-#define ALGOPTS      "--cyk,--optacc,--viterbi,--sample,--inside"         /* Exclusive choice for algorithm */
-#define BIGALGOPTS   "--cyk,--optacc,--viterbi,--sample,--inside,--small" /* Incompatible with --optacc,--sample (except their selves) */
-#define ACCOPTS      "--nonbanded,--hbanded,--qdb"                        /* Exclusive choice for acceleration strategies */
-#define OUTALPHOPTS  "--rna,--dna"                                        /* Exclusive choice for output alphabet */
+#define ALGOPTS      "--cyk,--optacc,--viterbi,--sample"         /* Exclusive choice for algorithm */
+#define BIGALGOPTS   "--cyk,--optacc,--viterbi,--sample,--small" /* Incompatible with --optacc,--sample (except their selves) */
+#define ACCOPTS      "--nonbanded,--hbanded,--qdb"               /* Exclusive choice for acceleration strategies */
+#define OUTALPHOPTS  "--rna,--dna"                               /* Exclusive choice for output alphabet */
 
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range     toggles      reqs       incomp  help  docgroup*/
@@ -59,9 +59,10 @@ static ESL_OPTIONS options[] = {
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "align locally w.r.t. the model",         1 },
   { "-q",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "quiet; suppress banner and scores, print only the alignment", 1 },
   { "-M",        eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "meta-cm mode: <cmfile> is a meta-cm built from aln in <f>", 1 },
-  { "--ileaved", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "output alnment in interleaved Stockholm format (not 1 line/seq)",  1 },
+  { "--ileaved", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,   "--chunk", "output alnment in interleaved Stockholm format (not 1 line/seq)",  1 },
   { "--no-prob", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "do not append posterior probabilities to alignment", 1 },
   { "--informat",eslARG_STRING, NULL,  NULL, NULL,      NULL,      NULL,        NULL, "specify the input file is in format <x>, not FASTA", 1 },
+  { "--chunk",   eslARG_INT,  "1000",  NULL, NULL,      NULL,      NULL,        NULL, "num seqs for each temp alnment, for saving memory", 1 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,   "--sfile", "run as an MPI parallel program",                    1 },  
@@ -83,8 +84,8 @@ static ESL_OPTIONS options[] = {
   { "--rna",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, OUTALPHOPTS, "output alignment as RNA sequence data", 4},
   { "--dna",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL, OUTALPHOPTS, "output alignment as DNA (not RNA) sequence data", 4},
   { "--matchonly",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include only match columns in output alignment", 4 },
-  { "--resonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include only match columns with >= 1 residues in output aln", 4 },
-  { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "flush inserts left/right in output alignment", 4 },
+  /*  { "--resonly", eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "include only match columns with >= 1 residues in output aln", 4 },*/
+  /*  { "--fins",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "flush inserts left/right in output alignment", 4 }, */
   /* Including a preset alignment */
   { "--withali", eslARG_INFILE, NULL,  NULL, NULL,      NULL,      NULL,"--viterbi","incl. alignment in <f> (must be aln <cm file> was built from)", 5 },
   { "--withpknots",eslARG_NONE, NULL,  NULL, NULL,      NULL,"--withali",       NULL, "incl. structure (w/pknots) from <f> from --withali <f>", 5 },
@@ -99,23 +100,22 @@ static ESL_OPTIONS options[] = {
   { "--elfile",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      "-l",        NULL, "dump information on per-sequence EL inserts to file <f>", 7 },
   { "--sfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump alignment score information to file <f>", 7 },
   /* options for experimental p7 HMM banding */
-  { "--7pad",    eslARG_INT,       "0", NULL, "n>=0",   NULL,      NULL,        NULL, "w/p7 banding set pin pad to <n> residues", 9 },
-  { "--7len",    eslARG_INT,       "4", NULL, "n>0",    NULL,      NULL,        NULL, "w/p7 banding set minimum length pin n-mer to <n>", 9 },
-  { "--7sc",     eslARG_REAL,    "0.5", NULL, "x>-0.0001",NULL,    NULL,        NULL, "w/p7 banding set minimum pin score to <x>", 9 },
-  { "--7end",    eslARG_INT,       "0", NULL, "n>=0",   NULL,      NULL,        NULL, "w/p7 banding remove pins within <n> residues of k-mer termini", 9 },
-  { "--7mprob",  eslARG_REAL,    "0.0", NULL, "x>-0.0001",NULL,    NULL,        NULL, "w/p7 banding set min prob to enter match state pin to <x>", 9 },
-  { "--7mcprob", eslARG_REAL,    "0.0", NULL, "x>-0.0001",NULL,    NULL,        NULL, "w/p7 banding set min cumulative prob to enter match state to <x>", 9 },
-  { "--7iprob",  eslARG_REAL,    "1.0", NULL, "x<1.001",NULL,      NULL,        NULL, "w/p7 banding set max prob to enter insert state to <x>", 9 },
-  { "--7ilprob", eslARG_REAL,    "1.0", NULL, "x<1.001",NULL,      NULL,        NULL, "w/p7 banding set max prob to enter left insert state to <x>", 9 },
+  { "--7pad",    eslARG_INT,       "0", NULL, "n>=0",   NULL,      NULL,        NULL, "w/p7 banding set pin pad to <n> residues", 99 },
+  { "--7len",    eslARG_INT,       "4", NULL, "n>0",    NULL,      NULL,        NULL, "w/p7 banding set minimum length pin n-mer to <n>", 99 },
+  { "--7sc",     eslARG_REAL,    "0.5", NULL, "x>-0.0001",NULL,    NULL,        NULL, "w/p7 banding set minimum pin score to <x>", 99 },
+  { "--7end",    eslARG_INT,       "0", NULL, "n>=0",   NULL,      NULL,        NULL, "w/p7 banding remove pins within <n> residues of k-mer termini", 99 },
+  { "--7mprob",  eslARG_REAL,    "0.0", NULL, "x>-0.0001",NULL,    NULL,        NULL, "w/p7 banding set min prob to enter match state pin to <x>", 99 },
+  { "--7mcprob", eslARG_REAL,    "0.0", NULL, "x>-0.0001",NULL,    NULL,        NULL, "w/p7 banding set min cumulative prob to enter match state to <x>", 99 },
+  { "--7iprob",  eslARG_REAL,    "1.0", NULL, "x<1.001",NULL,      NULL,        NULL, "w/p7 banding set max prob to enter insert state to <x>", 99 },
+  { "--7ilprob", eslARG_REAL,    "1.0", NULL, "x<1.001",NULL,      NULL,        NULL, "w/p7 banding set max prob to enter left insert state to <x>", 99 },
   /* All options below are developer options, only shown if --devhelp invoked */
   /* Developer options related to alignment algorithm */
-  { "--inside",   eslARG_NONE,  FALSE, NULL, NULL,"--optacc","--no-prob", BIGALGOPTS, "don't align; return scores from the Inside algorithm", 101 },
   { "--checkpost",eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL, "--no-prob", "check that posteriors are correctly calc'ed", 101 },
   { "--no-null3",eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "turn OFF the NULL3 post hoc additional null model", 101 },
   /* developer options related to banded alignment */
   { "--checkfb", eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       "-l", "check that HMM posteriors for bands were correctly calc'ed", 102},
   { "--sums",    eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded",       NULL, "use posterior sums during HMM band calculation (widens bands)", 102 },
-  { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,"--hbanded","--no-prob",   ACCOPTS, "use query dependent banded CYK alignment algorithm", 102 },
+  { "--qdb",     eslARG_NONE,   FALSE, NULL, NULL,"--hbanded","--no-prob,--cyk",ACCOPTS, "use query dependent banded CYK alignment algorithm", 102 },
   { "--beta",    eslARG_REAL,   "1E-7",NULL, "0<x<1",   NULL,   "--qdb",        NULL, "set tail loss prob for --qdb to <x>", 102 },
   { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded,--no-prob","--viterbi,--optacc", "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 102 },
   /* developer options related to output files and debugging */
@@ -143,16 +143,19 @@ struct cfg_s {
   int           fmt;		/* format code for seqfile */
   ESL_ALPHABET *abc;		/* digital alphabet for the CM */
   int           ncm;            /* number cm we're on */
-
   int           do_mpi;		/* TRUE if we're doing MPI parallelization */
   int           nproc;		/* how many MPI processes, total */
   int           my_rank;	/* who am I, in 0..nproc-1 */
   int           do_stall;	/* TRUE to stall the program until gdb attaches */
   ESL_RANDOMNESS *r;            /* source of randomness, only created if --sample enabled */
+  int           nali;           /* number temporary alignment we're on */
+  int           nseq;           /* number of sequences we've aligned thus far */
 
   /* Masters only (i/o streams) */
   CMFILE       *cmfp;		/* open input CM file stream       */
-  FILE         *ofp;		/* output file (default is stdout) */
+  FILE         *tmpfp;		/* the temporary output file where alignments are initially written */
+  char         *tmpfile;        /* the name of the temparory file */
+  FILE         *ofp;		/* output file where alignments are ultimately written (default is stdout) */
   FILE         *tracefp;	/* optional output for parsetrees  */
   FILE         *insertfp;	/* optional output for insert info */
   FILE         *elfp;	        /* optional output for EL insert info */
@@ -187,7 +190,7 @@ static int   mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
 
 static int  process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
-static int  output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
+static int  output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, int do_output_to_tmp, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln);
 
 static int  initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int  check_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, ESL_MSA **ret_msa, Parsetree_t **ret_mtr);
@@ -199,6 +202,14 @@ static int  print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char 
 static void print_cm_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int  get_command(const ESL_GETOPTS *go, char *errbuf, char **ret_command);
 static void print_info_file_header(FILE *fp, char *firstline, char *elstring);
+
+/* Functions that enable memory efficiency by not storing all 
+ * seqs/parsetrees from target file in memory at once.
+ */
+static int  create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE *ofp, char *errbuf, CM_t *cm);
+static void update_maxins_and_maxel(ESL_MSA *msa, int clen, int64_t alen, int *maxins, int *maxel);
+static int  determine_gap_columns_to_add(ESL_MSA *msa, int *maxins, int *maxel, int clen, int **ret_ngap_insA, int **ret_ngap_elA, int **ret_ngap_eitherA, char *errbuf);
+static void inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_elA, char **ret_ss_cons2print, char **ret_rf2print);
 
 /* meta-CM alignment functions, only used if -M enabled */
 static int map_cpos_to_apos(ESL_MSA *msa, int **ret_c2a_map, int *ret_clen);
@@ -226,6 +237,7 @@ main(int argc, char **argv)
   if(w == NULL) cm_Fail("Memory error, stopwatch not created.\n");
   esl_stopwatch_Start(w);
   struct cfg_s     cfg;
+  int              m;           /* counter for cleaning up */
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
   init_ilogsum();
   FLogsumInit();
@@ -264,7 +276,7 @@ main(int argc, char **argv)
       puts("\nusing a single CM from a multi-CM file:");
       esl_opt_DisplayHelp(stdout, go, 10, 2, 80);
       puts("\nexperimental options for plan7 banding using HMMER3 code:");
-      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
+      esl_opt_DisplayHelp(stdout, go, 99, 2, 80);
       puts("\nundocumented developer algorithm options:");
       esl_opt_DisplayHelp(stdout, go, 101, 2, 80);
       puts("\nundocumented developer banded alignment options:");
@@ -292,7 +304,7 @@ main(int argc, char **argv)
       puts("\nverbose output files and debugging:");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       puts("\nusing a single CM from a multi-CM file:");
-      esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
+      esl_opt_DisplayHelp(stdout, go, 10, 2, 80);
       exit(0);
     }
   if(esl_opt_ArgNumber(go) != 2) { 
@@ -308,10 +320,6 @@ main(int argc, char **argv)
   /* --small requires EITHER --nonbanded or --qdb */
   if ((esl_opt_GetBoolean(go, "--small")) && (! ((esl_opt_GetBoolean(go, "--nonbanded")) || (esl_opt_GetBoolean(go, "--qdb"))))) { 
     esl_fatal("Error parsing options, --small is only allowed in combination with --nonbanded or --qdb.\n");
-  }
-  /* --qdb requires EITHER --cyk or --inside */
-  if ((esl_opt_GetBoolean(go, "--qdb")) && (! (esl_opt_GetBoolean(go, "--cyk"))) && (! esl_opt_GetBoolean(go, "--inside"))) { 
-    esl_fatal("Error parsing options, --qdb is only allowed in combination with --cyk or --inside.\n");
   }
   
   /* Initialize what we can in the config structure (without knowing the input alphabet yet).
@@ -329,6 +337,8 @@ main(int argc, char **argv)
   else cfg.abc_out = esl_alphabet_Create(eslRNA); /* RNA. As it should be. */
 
   cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.tmpfp      = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
+  cfg.tmpfile    = NULL;	           /* set in init_master_cfg() in masters, stays NULL for workers */
   cfg.ofp        = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.tracefp    = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.insertfp   = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
@@ -348,6 +358,8 @@ main(int argc, char **argv)
   cfg.mali_n     = 0;	                   /* filled in serial_master_meta() if nec */
 
   cfg.ncm        = 0;
+  cfg.nali       = 0;
+  cfg.nseq       = 0;
   cfg.r          = NULL;	           /* created in init_master_cfg() for masters, mpi_worker() for workers*/
 
   cfg.do_mpi     = FALSE;	           /* this gets reset below, if we init MPI */
@@ -406,6 +418,9 @@ main(int argc, char **argv)
   /* Clean up the shared cfg. 
    */
   if (cfg.my_rank == 0) {
+    if(cfg.tmpfp != NULL) { 
+      fclose(cfg.tmpfp); 
+    }
     if ( esl_opt_IsOn(go, "-o")) { 
       printf("# Alignment saved in file %s.\n", esl_opt_GetString(go, "-o"));
       fclose(cfg.ofp); 
@@ -436,7 +451,6 @@ main(int argc, char **argv)
     if (cfg.withmsa   != NULL) esl_msa_Destroy(cfg.withmsa);
     if (cfg.withali_mtr != NULL) FreeParsetree(cfg.withali_mtr);
     if (cfg.withss_cons != NULL) free(cfg.withss_cons);
-    int m;
     if (cfg.malifp != NULL) esl_msafile_Close(cfg.malifp);
     if (cfg.mali_msa  != NULL) { for(m = 0; m < cfg.mali_n; m++) { esl_msa_Destroy(cfg.mali_msa[m]); } free(cfg.mali_msa); } 
     if (cfg.mali_mtr  != NULL) { for(m = 0; m < cfg.mali_n; m++) { FreeParsetree(cfg.mali_mtr[m]); }   free(cfg.mali_mtr); } 
@@ -445,6 +459,7 @@ main(int argc, char **argv)
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
   if (cfg.abc_out   != NULL) esl_alphabet_Destroy(cfg.abc_out);
   if (cfg.withali_abc != NULL) esl_alphabet_Destroy(cfg.withali_abc);
+  if (cfg.tmpfile   != NULL) free(cfg.tmpfile);
   if (cfg.my_rank == 0 && (! esl_opt_GetBoolean(go, "-q"))) { 
     printf("#\n");
     esl_stopwatch_Display(stdout, w, "# CPU time: ");
@@ -462,7 +477,9 @@ main(int argc, char **argv)
  *    cfg->fmt         - format of output file
  * Sets: 
  *    cfg->sqfp        - open sequence file                
- *    cfg->ofp         - output file (stdout by default)
+ *    cfg->tmpfp       - initial output file (temporary file)
+ *    cfg->tmpfile     - name of temp file 
+ *    cfg->ofp         - ultimate output file (stdout by default)
  *    cfg->cmfp        - open CM file                
  *    cfg->abc         - digital input alphabet
  *    cfg->tracefp     - optional output file
@@ -484,8 +501,8 @@ main(int argc, char **argv)
 static int
 init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 {
-  int status;
-  int type;
+  int  status;
+  int  type;
 
   /* open input sequence file */
   status = esl_sqfile_Open(cfg->sqfile, cfg->fmt, NULL, &(cfg->sqfp));
@@ -493,7 +510,6 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   else if (status == eslEFORMAT) ESL_FAIL(status, errbuf, "Couldn't determine format of sequence file %s\n", cfg->sqfile);
   else if (status == eslEINVAL)  ESL_FAIL(status, errbuf, "Can’t autodetect stdin or .gz."); 
   else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
-  if(cfg->sqfp->format == eslMSAFILE_STOCKHOLM) ESL_FAIL(eslEFORMAT, errbuf, "cmalign doesn't support Stockholm alignment format. Please reformat to FASTA.\n");
   cfg->fmt = cfg->sqfp->format;
 
   /* Set the sqfile alphabet as RNA, if it's DNA we're fine. 
@@ -507,6 +523,10 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   /* open CM file */
   if((cfg->cmfp = CMFileOpen(cfg->cmfile, NULL)) == NULL)
    ESL_FAIL(eslFAIL, errbuf, "Failed to open covariance model save file %s\n", cfg->cmfile);
+
+  /* note, we don't open temporary output file, where we store intermediate alignments yet,
+   * we do that in serial_master and mpi_master, because it needs to be rewritten for each
+   * CM we align to (b/c we can align to more than one CM, though its probably uncommon) */
 
   /* open output file */
   if (esl_opt_GetString(go, "-o") != NULL) {
@@ -594,6 +614,11 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   CM_t     *cm;
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, holds seqs, parsetrees, CP9 traces, postcodes */
   int       used_at_least_one_cm = FALSE; 
+  int       chunksize;
+  int       keep_reading = TRUE;
+  int       do_output_to_tmp = TRUE; /* should we output to cfg->tmpfp (and then merge at end) or to cfg->ofp directly */
+
+  chunksize = esl_opt_GetInteger(go, "--chunk");
 
   if ((status  = init_master_cfg(go, cfg, errbuf)) != eslOK)  cm_Fail(errbuf);
   if ((status  = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
@@ -602,6 +627,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;
+      cfg->nali = 0;
 
       if(! esl_opt_IsDefault(go, "--cm-idx")) { 
 	if(cfg->ncm != esl_opt_GetInteger(go, "--cm-idx")) { FreeCM(cm); continue; }
@@ -611,20 +637,75 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       }	
       used_at_least_one_cm = TRUE;
 
+      if ((status = esl_strdup("esltmpXXXXXX", 16, &(cfg->tmpfile))) != eslOK) cm_Fail("Error setting temp file name");
+      if (esl_tmpfile_named(cfg->tmpfile, &(cfg->tmpfp)) != eslOK) cm_Fail("Failed to open temporary output file for cm %d", cfg->ncm);
+
       /* initialize the flags/options/params and configuration of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK)    cm_Fail(errbuf);
       print_cm_info (go, cfg, errbuf, cm);
-
-      /* read in all sequences, this is wasteful, but Parsetrees2Alignment() requires all seqs in memory */
-      seqs_to_aln = CreateSeqsToAln(100, FALSE);
-      if((status = ReadSeqsToAln(cfg->abc, cfg->sqfp, 0, TRUE, seqs_to_aln, FALSE)) != eslEOF) cm_Fail("Error reading sqfile: %s\n", cfg->sqfile);
-      /* align all sequences */
-      if ((status = process_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
-      if ((status = output_result   (go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
       
+      /* read in chunksize seqs at a time, align each of them and output the result */
+      keep_reading = TRUE;
+      do_output_to_tmp = TRUE; /* until proven otherwise */
+      while(keep_reading) { 
+	seqs_to_aln = CreateSeqsToAln(chunksize, FALSE);
+	/* read seqs from input file, either <chunksize> seqs, or all of them (if --ileaved, in this case we can't be memory efficient) */
+	status = ReadSeqsToAln(cfg->abc, cfg->sqfp, 
+			       esl_opt_GetBoolean(go, "--ileaved") ? 0    : chunksize, /* nseq to read, '0' is okay due to TRUE for next arg */
+			       esl_opt_GetBoolean(go, "--ileaved") ? TRUE : FALSE,     /* read all seqs? */
+			       seqs_to_aln, FALSE);
+	if(seqs_to_aln->nseq > 0) { 
+	  if(status == eslEOF) { 
+	    keep_reading = FALSE;
+	    if(cfg->nali == 0) { 
+	      /* If we get here, first alignment will be the full alignment b/c either n < chunksize 
+	       * seqs in target file or --ileaved enabled, either way we don't write to tmpfile, 
+	       * instead we output directly to final output file. 
+	       */
+	      do_output_to_tmp = FALSE; /* note, this only occurs if keep_reading was set to FALSE */
+	    }
+	  }
+	  if (do_output_to_tmp && cfg->nali == 0) { 
+	    /* first aln for temporary output file, open the file */
+	    if ((status = esl_strdup("esltmpXXXXXX", 16, &(cfg->tmpfile))) != eslOK) cm_Fail("Error setting temp file name");
+	    if (esl_tmpfile_named(cfg->tmpfile, &(cfg->tmpfp)) != eslOK) cm_Fail("Failed to open temporary output file for cm %d", cfg->ncm);
+	  }
+	  /* align current sequences */
+	  if ((status = process_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
+	  if ((status = output_result   (go, cfg, do_output_to_tmp, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
+	  cfg->nali++;
+	  cfg->nseq += seqs_to_aln->nseq;
+	} /* end of if(seqs_to_aln->nseq > 0) */
+	else { 
+	  keep_reading = FALSE;
+	  if(status != eslEOF) cm_Fail("Error reading sequence file."); 
+	}
+	FreeSeqsToAln(seqs_to_aln);
+      } /* end of while(keep_reading) */
+
+      if(do_output_to_tmp) { 
+	fclose(cfg->tmpfp); /* we're done writing to tmpfp */
+	cfg->tmpfp = NULL;
+	/* merge all temporary alignments now in cfg->tmpfp, and output merged alignment */
+	if((status = create_and_output_final_msa(go, cfg, cfg->ofp, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	/* if --regress, output alignment again, this time to ofp->regressfp */
+	if(cfg->regressfp != NULL) { 
+	  if((status = create_and_output_final_msa(go, cfg, cfg->regressfp, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	}
+      }
+      /* else (! do_output_to_tmp): we outputted alignment directly to ofp (and possibly also to regressfp) in output_result()) */
+
+      /* finish insert and el files */
+      if(cfg->insertfp != NULL) { fprintf(cfg->insertfp, "//\n"); }
+      if(cfg->elfp != NULL)     { fprintf(cfg->elfp,     "//\n"); }
+	
       /* clean up */
-      FreeSeqsToAln(seqs_to_aln);
       FreeCM(cm);
+      if(cfg->tmpfile != NULL) { 
+	remove(cfg->tmpfile);
+	free(cfg->tmpfile);
+	cfg->tmpfile = NULL;
+      }
       esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be aligning the seqs in this file again with another CM */
     }
   if(status != eslEOF) cm_Fail(errbuf);
@@ -834,7 +915,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	}
       /* if we've got valid results, output them */
       if (xstatus == eslOK) { 
-	if ((status = output_result(go, cfg, errbuf, cm, all_seqs_to_aln)) != eslOK) cm_Fail(errbuf);
+	if ((status = output_result(go, cfg, FALSE, errbuf, cm, all_seqs_to_aln)) != eslOK) cm_Fail(errbuf);
       }
       ESL_DPRINTF1(("MPI master: done with this CM. Telling all workers\n"));
       /* send workers the message that we're done with this CM */
@@ -976,13 +1057,16 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 #endif /*HAVE_MPI*/
 
 static int
-output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln)
+output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, int do_output_to_tmp, char *errbuf, CM_t *cm, seqs_to_aln_t *seqs_to_aln)
 {
   int status;
   ESL_MSA *msa = NULL;
   int i, imax;
   float sc, struct_sc;
-  float tr_Mb = 0.;
+
+  /* contract check */
+  if((do_output_to_tmp) && (esl_opt_GetBoolean(go, "--ileaved"))) ESL_FAIL(eslEINVAL, errbuf, "--ileaved enabled, but trying to output to temporary alignment file. This shouldn't happen.");
+  if((! do_output_to_tmp) && (cfg->nali != 0)) ESL_FAIL(eslEINVAL, errbuf, "in output_result(), not outputting to tmp file but also not on first alignment. This shouldn't happen.");
 
   /* print per-CM info to insertfp and elfp, if nec */
   if(cfg->insertfp != NULL) { fprintf(cfg->insertfp, "%s %d\n", cm->name, cm->clen); } 
@@ -1002,29 +1086,29 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
     if(seqs_to_aln->struct_sc == NULL || (! NOT_IMPOSSIBLE(seqs_to_aln->struct_sc[0]))) { 
       if(cm->align_opts & CM_ALIGN_OPTACC) { 
 	fprintf(stdout, "#\n");
-	fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n", "seq idx",  namewidth, "seq name",   "len",  "bit sc",   "avg prob");
-	fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------");
+	fprintf(stdout, "# %9s  %-*s  %5s  %8s  %8s\n", "seq idx",  namewidth, "seq name",   "len",  "bit sc",   "avg prob");
+	fprintf(stdout, "# %9s  %-*s  %5s  %8s  %8s\n",  "---------", namewidth, namedashes, "-----", "--------", "--------");
       }
       else { 
 	fprintf(stdout, "#\n");
-	fprintf(stdout, "# %7s  %-*s  %5s  %8s\n",  "seq idx", namewidth, "seq name",   "len",  "bit sc");
-	fprintf(stdout, "# %7s  %-*s  %5s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------");
+	fprintf(stdout, "# %9s  %-*s  %5s  %8s\n",  "seq idx", namewidth, "seq name",   "len",  "bit sc");
+	fprintf(stdout, "# %9s  %-*s  %5s  %8s\n",  "---------", namewidth, namedashes, "-----", "--------");
       }
     }
     else { /* we have struct scores */
       if(cm->align_opts & CM_ALIGN_OPTACC) { 
 	fprintf(stdout, "#\n");
-	fprintf(stdout, "# %7s  %-*s  %5s  %18s  %8s\n", "",         namewidth, "",                      "",       "    bit scores    ",   "");
-	fprintf(stdout, "# %7s  %-*s  %5s  %18s  %8s\n", "",         namewidth, "",                      "",       "------------------",   "");
-	fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s  %8s\n", "seq idx",  namewidth, "seq name",   "len", "total",    "struct",   "avg prob");
-	fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "--------");
+	fprintf(stdout, "# %9s  %-*s  %5s  %18s  %8s\n", "",         namewidth, "",                      "",       "    bit scores    ",   "");
+	fprintf(stdout, "# %9s  %-*s  %5s  %18s  %8s\n", "",         namewidth, "",                      "",       "------------------",   "");
+	fprintf(stdout, "# %9s  %-*s  %5s  %8s  %8s  %8s\n", "seq idx",  namewidth, "seq name",   "len", "total",    "struct",   "avg prob");
+	fprintf(stdout, "# %9s  %-*s  %5s  %8s  %8s  %8s\n",  "---------", namewidth, namedashes, "-----", "--------", "--------", "--------");
       }
       else { 
 	fprintf(stdout, "#\n");
-	fprintf(stdout, "# %7s  %-*s  %5s  %18s\n", "", namewidth,       "",                  "",       "    bit scores    ");
-	fprintf(stdout, "# %7s  %-*s  %5s  %18s\n", "", namewidth,       "",                  "",       "------------------");
-	fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n",  "seq idx", namewidth,  "seq name",  "len",  "total",   "struct");
-	    fprintf(stdout, "# %7s  %-*s  %5s  %8s  %8s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------");
+	fprintf(stdout, "# %9s  %-*s  %5s  %18s\n", "", namewidth,       "",                  "",       "    bit scores    ");
+	fprintf(stdout, "# %9s  %-*s  %5s  %18s\n", "", namewidth,       "",                  "",       "------------------");
+	fprintf(stdout, "# %9s  %-*s  %5s  %8s  %8s\n",  "seq idx", namewidth,  "seq name",  "len",  "total",   "struct");
+	    fprintf(stdout, "# %9s  %-*s  %5s  %8s  %8s\n",  "---------", namewidth, namedashes, "-----", "--------", "--------");
       }
     }
     free(namedashes);
@@ -1034,92 +1118,92 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm, 
     for (i = 0; i < seqs_to_aln->nseq; i++) {
       if(!(esl_opt_GetBoolean(go, "--no-null3"))) { ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, &null3_correction); }
       if(! NOT_IMPOSSIBLE(seqs_to_aln->struct_sc[i])) { 
-	if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-*s  %5" PRId64 "  %8.2f  %8.3f\n", (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->pp[ip]);
-	else                                 fprintf(stdout, "  %7d  %-*s  %5" PRId64 "  %8.2f\n",        (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction);
+	if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f  %8.3f\n", (cfg->nseq+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->pp[ip]);
+	else                                 fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f\n",        (cfg->nseq+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction);
       }
       else { /* we have struct scores */
 	if(!(esl_opt_GetBoolean(go, "--no-null3"))) seqs_to_aln->struct_sc[i] -= ((float) ParsetreeCountMPEmissions(cm, seqs_to_aln->tr[i]) / (float) seqs_to_aln->sq[i]->n) * null3_correction; /* adjust struct_sc for NULL3 correction, this is inexact */
-	if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %7d  %-*s  %5" PRId64 "  %8.2f  %8.2f  %8.3f\n", (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->struct_sc[i], seqs_to_aln->pp[ip]);
-	else                                 fprintf(stdout, "  %7d  %-*s  %5" PRId64 "  %8.2f  %8.2f\n",        (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->struct_sc[i]);
+	if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f  %8.2f  %8.3f\n", (cfg->nseq+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->struct_sc[i], seqs_to_aln->pp[ip]);
+	else                                 fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f  %8.2f\n",        (cfg->nseq+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->struct_sc[i]);
       }
     }
   }
 #endif
 
-  /* create a new msa if we have traces (i.e. if --inside wasn't enabled) */
-  if((esl_opt_GetBoolean(go, "--cyk") || esl_opt_GetBoolean(go, "--viterbi")) || (esl_opt_GetBoolean(go, "--optacc") || esl_opt_GetBoolean(go, "--sample")))
-    {
-      /* if nec, output the traces */
-      if(cfg->tracefp != NULL) { 
-	for (i = 0; i < seqs_to_aln->nseq; i++) { 
-	  fprintf(cfg->tracefp, "> %s\n", seqs_to_aln->sq[i]->name);
-	  if(esl_opt_GetBoolean(go,"--viterbi")) { 
-	    fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
-	    CP9PrintTrace(cfg->tracefp, seqs_to_aln->cp9_tr[i], cm->cp9, seqs_to_aln->sq[i]->dsq);
-	  }
-	  else { 
-	    if((status = ParsetreeScore(cm, NULL, errbuf, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
-	    fprintf(cfg->tracefp, "  %16s %.2f bits\n", "SCORE:", sc);
-	    fprintf(cfg->tracefp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
-	    ParsetreeDump(cfg->tracefp, seqs_to_aln->tr[i], cm, seqs_to_aln->sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
-	  }
-	  fprintf(cfg->tracefp, "//\n");
-	}
+  /* if nec, output the traces */
+  if(cfg->tracefp != NULL) { 
+    for (i = 0; i < seqs_to_aln->nseq; i++) { 
+      fprintf(cfg->tracefp, "> %s\n", seqs_to_aln->sq[i]->name);
+      if(esl_opt_GetBoolean(go,"--viterbi")) { 
+	fprintf(cfg->tracefp, "  SCORE : %.2f bits\n", CP9TraceScore(cm->cp9, seqs_to_aln->sq[i]->dsq, seqs_to_aln->cp9_tr[i]));
+	CP9PrintTrace(cfg->tracefp, seqs_to_aln->cp9_tr[i], cm->cp9, seqs_to_aln->sq[i]->dsq);
       }
-      /* optionally include a fixed alignment provided with --withali,
-       * this has already been checked to see it matches the CM structure */
-      if(esl_opt_GetString(go, "--withali") != NULL)
-	{
-	  /* grow the seqs_to_aln object */
-	  imax = seqs_to_aln->nseq;
-	  if((seqs_to_aln->nseq + cfg->withmsa->nseq) > seqs_to_aln->nalloc) 
-	    GrowSeqsToAln(seqs_to_aln, seqs_to_aln->nseq + cfg->withmsa->nseq - seqs_to_aln->nalloc, FALSE);
-	  if((status = include_withali(go, cfg, cm, &(seqs_to_aln->sq), &(seqs_to_aln->tr), &(seqs_to_aln->postcode), &(seqs_to_aln->nseq), errbuf)) != eslOK)
-	    ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have SS_cons annotation compatible with the CM\n", esl_opt_GetString(go, "--withali"));
-	}
-
-      /* create the msa, we free a parsetrees (or cp9 trace) as soon as we create each aligned sequence, to save memory */
-      if(esl_opt_GetBoolean(go, "--viterbi"))
-	{
-	  ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
-	  if((status = CP9Traces2Alignment(cm, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->nseq, seqs_to_aln->cp9_tr, 
-					   (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), &msa)) != eslOK)
-	    goto ERROR;
-	}
-      else
-	{
-	  assert(seqs_to_aln->tr != NULL);
-	  /*for(i = 0; i < seqs_to_aln->nseq; i++) { tr_Mb += SizeofParsetree(seqs_to_aln->tr[i]); }
-	    printf("All %d parsetrees are total size: %.6f Mb\n", seqs_to_aln->nseq, tr_Mb);*/
-	  if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, seqs_to_aln->postcode, 
-					    seqs_to_aln->nseq, cfg->insertfp, cfg->elfp, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), TRUE, &msa)) != eslOK)
-	    esl_fatal("Error creating the alignment: %s", errbuf);
-	  seqs_to_aln->tr = NULL; /* these were freed by Parsetrees2Alignment() */
-	}
-  
-      if(! esl_opt_GetBoolean(go, "-q")) printf("\n");
-      
-      /* if nec, replace msa->ss_cons with ss_cons from withmsa alignment */
-      if(esl_opt_GetBoolean(go, "--withpknots")) {
-	if((status = add_withali_pknots(go, cfg, errbuf, cm, msa)) != eslOK) return status;
+      else { 
+	if((status = ParsetreeScore(cm, NULL, errbuf, seqs_to_aln->tr[i], seqs_to_aln->sq[i]->dsq, FALSE, &sc, &struct_sc, NULL, NULL, NULL)) != eslOK) return status;
+	fprintf(cfg->tracefp, "  %16s %.2f bits\n", "SCORE:", sc);
+	fprintf(cfg->tracefp, "  %16s %.2f bits\n", "STRUCTURE SCORE:", struct_sc);
+	ParsetreeDump(cfg->tracefp, seqs_to_aln->tr[i], cm, seqs_to_aln->sq[i]->dsq, NULL, NULL); /* NULLs are dmin, dmax */
       }
-      status = esl_msa_Write(cfg->ofp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM));
-      if      (status == eslEMEM) ESL_FAIL(status, errbuf, "Memory error when outputting alignment\n");
-      else if (status != eslOK)   ESL_FAIL(status, errbuf, "Writing alignment file failed with error %d\n", status);
-
-      /* if nec, output the alignment to the regression file */
-      if (cfg->regressfp != NULL) {
-	/* Must delete author info from msa, because it contains version
-	 * and won't diff clean in regression tests. */
-	if(msa->au != NULL) free(msa->au); msa->au = NULL;
-	status = esl_msa_Write(cfg->regressfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM));
-	if (status == eslEMEM)    ESL_FAIL(status, errbuf, "Memory error when outputting regression file\n");
-	else if (status != eslOK) ESL_FAIL(status, errbuf, "Writing regression file failed with error %d\n", status);
-      }
+      fprintf(cfg->tracefp, "//\n");
     }
-  if(cfg->insertfp != NULL) { fprintf(cfg->insertfp, "//\n", cm->name, cm->clen); } 
-  if(cfg->elfp != NULL)     { fprintf(cfg->elfp,     "//\n", cm->name, cm->clen); } 
+  }
+  /* Optionally include a fixed alignment provided with --withali,
+   * this has already been checked to see it matches the CM structure.
+   * Note, we only do this if cfg->nali is 0, which means this is the 
+   * first temporary alignment we're creating. (All temporary alignments
+   * are merged at the end of cmalign's run). 
+   */
+  if((cfg->nali == 0) && (esl_opt_GetString(go, "--withali") != NULL))
+    {
+      /* grow the seqs_to_aln object */
+      imax = seqs_to_aln->nseq;
+      if((seqs_to_aln->nseq + cfg->withmsa->nseq) > seqs_to_aln->nalloc) 
+	GrowSeqsToAln(seqs_to_aln, seqs_to_aln->nseq + cfg->withmsa->nseq - seqs_to_aln->nalloc, FALSE);
+      if((status = include_withali(go, cfg, cm, &(seqs_to_aln->sq), &(seqs_to_aln->tr), &(seqs_to_aln->postcode), &(seqs_to_aln->nseq), errbuf)) != eslOK)
+	ESL_FAIL(status, errbuf, "--withali alignment file %s doesn't have SS_cons annotation compatible with the CM\n", esl_opt_GetString(go, "--withali"));
+    }
+  
+  /* create the msa, we free a parsetrees (or cp9 trace) as soon as we create each aligned sequence, to save memory */
+  if(esl_opt_GetBoolean(go, "--viterbi"))
+    {
+      ESL_DASSERT1((seqs_to_aln->cp9_tr != NULL));
+      if((status = CP9Traces2Alignment(cm, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->nseq, seqs_to_aln->cp9_tr, 
+				       TRUE, esl_opt_GetBoolean(go, "--matchonly"), &msa)) != eslOK)
+	goto ERROR;
+    }
+  else
+    {
+      assert(seqs_to_aln->tr != NULL);
+      /*for(i = 0; i < seqs_to_aln->nseq; i++) { tr_Mb += SizeofParsetree(seqs_to_aln->tr[i]); }
+	printf("All %d parsetrees are total size: %.6f Mb\n", seqs_to_aln->nseq, tr_Mb);*/
+      if((status = Parsetrees2Alignment(cm, errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, seqs_to_aln->postcode, 
+					seqs_to_aln->nseq, cfg->insertfp, cfg->elfp, TRUE, esl_opt_GetBoolean(go, "--matchonly"), TRUE, &msa)) != eslOK)
+	esl_fatal("Error creating the alignment: %s", errbuf);
+      seqs_to_aln->tr = NULL; /* these were freed by Parsetrees2Alignment() */
+    }
+  
+  if(! esl_opt_GetBoolean(go, "-q")) printf("\n");
+  
+  /* if nec, replace msa->ss_cons with ss_cons from withmsa alignment */
+  if((cfg->nali == 0) && esl_opt_GetBoolean(go, "--withpknots")) {
+    if((status = add_withali_pknots(go, cfg, errbuf, cm, msa)) != eslOK) return status;
+  }
+  status = esl_msa_Write(do_output_to_tmp ? cfg->tmpfp : cfg->ofp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM));
+  /* note that the contract asserted that if --ileaved then do_output_to_tmp must be FALSE */
+  if      (status == eslEMEM) ESL_FAIL(status, errbuf, "Memory error when outputting alignment\n");
+  else if (status != eslOK)   ESL_FAIL(status, errbuf, "Writing alignment file failed with error %d\n", status);
 
+  /* if nec and (!do_output_to_tmp), then output the alignment to the regression file
+   * (if do_output_to_tmp), we'll handle this in serial_master */
+  if ((! do_output_to_tmp) && cfg->regressfp != NULL) {
+    /* Must delete author info from msa, because it contains version
+     * and won't diff clean in regression tests. */
+    if(msa->au != NULL) free(msa->au); msa->au = NULL;
+    status = esl_msa_Write(cfg->regressfp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM));
+    if (status == eslEMEM)    ESL_FAIL(status, errbuf, "Memory error when outputting regression file\n");
+    else if (status != eslOK) ESL_FAIL(status, errbuf, "Writing regression file failed with error %d\n", status);
+  }
+  
   if(msa != NULL) esl_msa_Destroy(msa);
   return eslOK;
 
@@ -1148,7 +1232,7 @@ process_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, C
 				  esl_opt_GetInteger(go, "--banddump"),
 				  esl_opt_GetInteger(go, "--dlev"), be_quiet, 
 				  (! esl_opt_GetBoolean(go, "--no-null3")), cfg->r,
-				  esl_opt_GetReal(go, "--mxsize"), stdout, cfg->scorefp,
+				  esl_opt_GetReal(go, "--mxsize"), stdout, cfg->scorefp, cfg->nseq+1,
 				  esl_opt_GetInteger(go, "--7pad"), 
 				  esl_opt_GetInteger(go, "--7len"), 
 				  esl_opt_GetReal(go, "--7sc"), 
@@ -1198,21 +1282,21 @@ initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm)
   if(esl_opt_GetBoolean(go, "--viterbi"))     cm->align_opts  |= CM_ALIGN_HMMVITERBI;
   if(esl_opt_GetBoolean(go, "--small"))       cm->align_opts  |= CM_ALIGN_SMALL;
   if(esl_opt_GetBoolean(go, "--hsafe"))       cm->align_opts  |= CM_ALIGN_HMMSAFE;
-  if(esl_opt_GetBoolean(go, "--fins"))        cm->align_opts  |= CM_ALIGN_FLUSHINSERTS;
-  if(esl_opt_GetBoolean(go, "--inside"))      cm->align_opts  |= CM_ALIGN_INSIDE;
   if(esl_opt_GetBoolean(go, "--checkpost"))   cm->align_opts  |= CM_ALIGN_CHECKINOUT;
   if(esl_opt_GetBoolean(go, "--checkfb"))     cm->align_opts  |= CM_ALIGN_CHECKFB;
   if(esl_opt_GetBoolean(go, "--sums"))        cm->align_opts  |= CM_ALIGN_SUMS;
-  /* We can only do posteriors if we're not doing D&C (--small), --viterbi, --inside, 
+  /* EPN, Mon Dec 14 18:22:18 2009 Deprecated --fins, it doesn't work with new memory efficiency 
+   * if(esl_opt_GetBoolean(go, "--fins"))        cm->align_opts  |= CM_ALIGN_FLUSHINSERTS; */
+
+  /* We can only do posteriors if we're not doing D&C (--small), --viterbi, 
    * nor --hsafe (which falls over to D&C if score is too low). Currently, these 
-   * are all already enforced by ESL_GETOPTS, by having --small, --viterbi, --inside,
+   * are all already enforced by ESL_GETOPTS, by having --small, --viterbi, 
    * and --hsafe all requiring --no-prob. This is a second line of defense in case 
    * the ESL_GETOPTS ever changes to remove one of those requirements. 
   */
   if((! esl_opt_GetBoolean(go, "--no-prob")) &&
      (! esl_opt_GetBoolean(go, "--small")) &&
      (! esl_opt_GetBoolean(go, "--viterbi")) &&
-     (! esl_opt_GetBoolean(go, "--inside")) &&
      (! esl_opt_GetBoolean(go, "--hsafe"))) { 
     cm->align_opts  |= CM_ALIGN_POST;
   }
@@ -1390,9 +1474,6 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
   int         **map;      /* [0..msa->nseq-1][0..msa->alen] map from aligned
 			   * positions to unaligned (non-gap) positions */
   int           do_post;  /* TRUE if we need to worry about post codes */
-  int           ridx1;    /* idx of "POSTX." in withali's GR annotation, -1 for none */
-  int           ridx2;    /* idx of "POST.X" in withali's GR annotation, -1 for none */
-  int           r;        /* counter of GR tags */
   /* for swapping pts at end of func so seqs from withali appear at top of aln */
   Parsetree_t **tmp_tr = NULL;  
   ESL_SQ      **tmp_sq = NULL;
@@ -1431,27 +1512,17 @@ static int include_withali(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, E
     }
   ESL_RALLOC((*ret_tr),  tmp, (sizeof(Parsetree_t *)  * (*ret_nseq + cfg->withmsa->nseq)));
   ESL_RALLOC((*ret_sq),  tmp, (sizeof(ESL_SQ *)       * (*ret_nseq + cfg->withmsa->nseq)));
-  if(do_post) { 
-    ESL_RALLOC((*ret_postcode),  tmp, (sizeof(char *) * (*ret_nseq + cfg->withmsa->nseq)));
-  }
-
   /* if do_post, check to see if withmsa has posterior annotation, if so, store it */
   if(do_post) { 
+    ESL_RALLOC((*ret_postcode),  tmp, (sizeof(char *) * (*ret_nseq + cfg->withmsa->nseq)));
     for (i = *ret_nseq; i < (*ret_nseq + cfg->withmsa->nseq); i++) { 
       (*ret_postcode)[i] = NULL;
     }
-    ridx1 = ridx2 = -1;
-    for (r = 0; r < cfg->withmsa->ngr; r++) { 
-      if (strcmp(cfg->withmsa->gr_tag[r], "POSTX.") == 0) { ridx1 = r; } 
-      if (strcmp(cfg->withmsa->gr_tag[r], "POST.X") == 0) { ridx2 = r; } 
-    }
-    if(ridx1 != -1 && ridx2 != -1) { /* we have post codes for at least 1 sequence */
-      for (i = *ret_nseq; i < (*ret_nseq + cfg->withmsa->nseq); i++) { 
-	ip = i - *ret_nseq;
-	if(cfg->withmsa->gr[ridx1][ip] != NULL && cfg->withmsa->gr[ridx2][ip] != NULL) { 
-	  esl_strdup(cfg->withmsa->gr[ridx1][ip], -1, &((*ret_postcode)[i]));
-	  esl_strdealign((*ret_postcode)[i], aseq[ip], "-_.~", NULL);
-	}
+    if(cfg->withmsa->pp != NULL) { 
+      ip = i - *ret_nseq;
+      if(cfg->withmsa->pp[ip] != NULL) { 
+	esl_strdup(cfg->withmsa->pp[ip], -1, &((*ret_postcode)[i]));
+	esl_strdealign((*ret_postcode)[i], aseq[ip], "-_.~", NULL);
       }
     }
   }
@@ -1723,14 +1794,14 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
   fprintf(stdout, "%-10s %s\n",  "# command:", command);
   fprintf(stdout, "%-10s %s\n",  "# date:",    date);
   if(cfg->nproc > 1) fprintf(stdout, "# %-8s %d\n", "nproc:", cfg->nproc);
-  if(esl_opt_GetBoolean(go, "--sample")) fprintf(stdout, "%-10s %ld\n", "# seed:", esl_randomness_GetSeed(cfg->r));
+  if(esl_opt_GetBoolean(go, "--sample")) fprintf(stdout, "%-10s %d\n", "# seed:", esl_randomness_GetSeed(cfg->r));
   fprintf(stdout, "#\n");
 
   if(cfg->scorefp != NULL) { 
     fprintf(cfg->scorefp, "%-10s %s\n",  "# command:", command);
     fprintf(cfg->scorefp, "%-10s %s\n",  "# date:",    date);
     if(cfg->nproc > 1) fprintf(cfg->scorefp, "# %-8s %d\n", "nproc:", cfg->nproc);
-    if(esl_opt_GetBoolean(go, "--sample")) fprintf(cfg->scorefp, "%-10s %ld\n", "# seed:", esl_randomness_GetSeed(cfg->r));
+    if(esl_opt_GetBoolean(go, "--sample")) fprintf(cfg->scorefp, "%-10s %d\n", "# seed:", esl_randomness_GetSeed(cfg->r));
     fprintf(cfg->scorefp, "#\n");
   }
 
@@ -1839,6 +1910,583 @@ print_info_file_header(FILE *fp, char *firstline, char *elstring)
   return;
 }
 
+
+/* Function: create_and_output_final_msa
+ * Incept:   EPN, Mon Dec 14 05:35:51 2009
+ *
+ * Purpose:  Read the >=1 MSAs that were written to a temporary file,
+ *           merge them and output the merged MSA to a file without
+ *           storing any of the full MSAs (incl. the final one) in
+ *           memory.  To accomplish this a first pass of reading is
+ *           done to determine how many gap columns must be added to
+ *           each MSA to create the merged MSA during which only non
+ *           per-sequence information is stored. After this pass, with
+ *           the size of the merged alignment known, a second pass
+ *           occurs during which only GS annotation is regurgitated
+ *           (if any exists in at least 1 aln). Then a final pass
+ *           occurs during which all other per-sequence data (PPs,
+ *           aligned seqs) are regurgitated, taking care to add gap
+ *           columns as necessary to make each input alignment the
+ *           correct width of the merged alignment.
+ *
+ * Args:     go  - options
+ *           cfg - cmalign config
+ *           ofp - file to write to, this is usually cfg->ofp, but
+ *                 can be cfg->regressfp (if --regress)
+ *           errbuf - for error messages
+ *           cm  - CM used for alignment, useful for cm->clen
+ *
+ * Returns:   <eslOK> on success. 
+ *            Returns <eslEOF> if there are no more alignments in <afp>.
+ *            <eslEFORMAT> if parse fails because of a file format problem,
+ *            in which case afp->errbuf is set to contain a formatted message 
+ *            that indicates the cause of the problem. <eslEMEM> on allocation
+ *            error.
+ *
+ * Xref:      /groups/eddy/home/nawrockie/notebook/9_1211_inf_cmalign_memeff/
+ */
+int 
+create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE *ofp, char *errbuf, CM_t *cm) 
+{
+  int           status;
+  int           ai;                            /* counters over alignments */
+  int           nseq_tot;                      /* number of sequences in all alignments */
+  int           nseq_cur;                      /* number of sequences in current alignment */
+  int64_t       alen_cur;                      /* length of current alignment */
+  int64_t      *alenA = NULL;                  /* [0..nali_tot-1] alignment length of input msas (even after 
+						* potentially removingeinserts (--rfonly)) */
+  ESL_MSA     **msaA = NULL;                   /* [0..nali_tot-1] all msas read from all files */
+  int          *maxins = NULL;                 /* [0..cpos..cm->clen+1] max number of inserts 
+						* before each consensus position in all alignments */
+  int          *maxel = NULL;                  /* [0..cpos..cm->clen+1] max number of EL inserts ('~' missing data symbols) 
+						* before each consensus position in all alignments */
+  int           cur_clen;                      /* consensus length (non-gap #=GC RF length) of current alignment */
+  int           apos;                          /* alignment position */
+  ESL_MSA      *fmsa = NULL;                   /* the merged alignment created by merging all alignments in msaA */
+  int           alen_fmsa;                     /* number of columns in merged MSA */
+  int          *ngap_insA = NULL;               /* [0..alen] number of insert gap columns to add after each alignment column when merging */
+  int          *ngap_elA = NULL;                /* [0..alen] number of missing data ('~') gap columns to add after each alignment column when merging */
+  int          *ngap_eitherA = NULL;            /* [0..apos..alen] = ngap_insA[apos] + ngap_elA[apos] */
+  char         *rf2print = NULL;                /* #=GC RF annotation for final alignment */
+  char         *ss_cons2print = NULL;           /* #=GC SS_cons annotation for final alignment */
+
+  /* variables only used in small mode (--savemem) */
+  int           ngs_cur;                       /* number of GS lines in current alignment (only used if do_small) */
+  int           gs_exists = FALSE;             /* set to TRUE if do_small and any input aln has >= 1 GS line */
+  int           maxname, maxgf, maxgc, maxgr;  /* max length of seqname, GF tag, GC tag, GR tag in all input alignments */
+  int           maxname_cur, maxgf_cur, maxgc_cur, maxgr_cur; /* max length of seqname, GF tag, GC tag, GR tag in current input alignment */
+  int           margin = 0;                    /* total margin length for output msa */
+  int           regurg_header = FALSE;         /* set to TRUE if we're printing out header */
+  int           regurg_gf     = FALSE;         /* set to TRUE if we're printing out GF (we won't if ofp == cfg->regressfp (i.e. we're printing to regress file */
+  ESL_MSAFILE  *afp;
+
+  /* Allocate and initialize */
+  ESL_ALLOC(msaA,   sizeof(ESL_MSA *) * cfg->nali);
+  ESL_ALLOC(alenA,  sizeof(int64_t) * cfg->nali);
+
+  /****************************************************************************
+   * Read alignments one at a time, storing all non-sequence info, separately *
+   ****************************************************************************/
+  if((status = esl_msafile_Open(cfg->tmpfile, eslMSAFILE_PFAM, NULL, &afp)) != eslOK) cm_Fail("unable to open temp file %s for reading", cfg->tmpfile);
+
+  ai = 0;
+  nseq_tot = 0;
+  maxname = maxgf = maxgc = maxgr = 0;
+
+  /* allocate maxins */
+  ESL_ALLOC(maxins, sizeof(int) * (cm->clen+1)); 
+  esl_vec_ISet(maxins, (cm->clen+1), 0);
+  /* allocate maxel */
+  ESL_ALLOC(maxel, sizeof(int) * (cm->clen+1)); 
+  esl_vec_ISet(maxel, (cm->clen+1), 0); /* these will all stay 0 unless we see '~' in the alignments */
+
+  /* read all alignments, there should be cfg->nali of them */
+  for(ai = 0; ai < cfg->nali; ai++) { 
+    status = esl_msa_ReadNonSeqInfoPfam(afp, &(msaA[ai]), &nseq_cur, &alen_cur, &ngs_cur, &maxname_cur, &maxgf_cur, &maxgc_cur, &maxgr_cur);
+    if      (status == eslEFORMAT) cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
+    else if (status == eslEINVAL)  cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
+    else if (status != eslOK)      cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
+
+    msaA[ai]->abc = cfg->abc; 
+    if(msaA[ai]->rf == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "When rereading alignment %d for merging, no RF annotation found.", ai+1);
+    cur_clen = 0;
+    for(apos = 0; apos < (int) alen_cur; apos++) { 
+      if((! esl_abc_CIsGap(msaA[ai]->abc, msaA[ai]->rf[apos])) && (! esl_abc_CIsMissing(msaA[ai]->abc, msaA[ai]->rf[apos]))) cur_clen++;
+    }
+    if(cur_clen != cm->clen) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "When rereading alignment %d for merging, consensus length wrong (%d, when %d was expected)", ai, cur_clen, cm->clen);
+    maxname = ESL_MAX(maxname, maxname_cur); 
+    maxgf   = ESL_MAX(maxgf, maxgf_cur); 
+    maxgc   = ESL_MAX(maxgc, maxgc_cur); 
+    maxgr   = ESL_MAX(maxgr, maxgr_cur); 
+    msaA[ai]->alen = alen_cur;
+    alenA[ai]      = alen_cur; /* to remember total width of aln to expect in second pass */
+    nseq_tot += nseq_cur;
+    if(ngs_cur > 0) gs_exists = TRUE; 
+      
+    /* determine max number inserts and ELs between each position */
+    update_maxins_and_maxel(msaA[ai], cm->clen, msaA[ai]->alen, maxins, maxel);
+  }
+  /* final check, make sure we've read all msas from the file, we should have, we only printed cfg->nali */
+  status = esl_msa_ReadNonSeqInfoPfam(afp, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+  if(status != eslEOF) ESL_FAIL(status, errbuf, "More alignments in temp file than expected.");
+  esl_msafile_Close(afp);
+  
+  /*********************************************
+   *  Merge all alignments into the merged MSA *
+   *********************************************/
+
+  /* We allocate space for all sequences, but leave sequences as NULL
+   * (nseq = -1).  We didn't store the sequences on the first pass
+   * through the alignment files, and we'll never allocate space for
+   * the sequences in fmsa, we'll just output them as we reread them
+   * on another pass through the individual alignments. If we read >=
+   * 1 GS line in any of the temporary alignments, we need to do an
+   * additional pass through them, outputting only GS data. Then, in a
+   * final (3rd) pass we'll output aligned data.
+   */     
+  fmsa = esl_msa_Create(nseq_tot, -1); 
+  alen_fmsa = cm->clen + esl_vec_ISum(maxins, (cm->clen+1)); 
+
+  /* if there was any GS annotation in any of the individual alignments,
+   * do second pass through alignment files, outputting GS annotation as we go. */
+  if(gs_exists) { 
+    if((status = esl_msafile_Open(cfg->tmpfile, eslMSAFILE_PFAM, NULL, &afp)) != eslOK) cm_Fail("unable to open temp file %s for reading on second pass", cfg->tmpfile);
+    for(ai = 0; ai < cfg->nali; ai++) { 
+      regurg_header = (ai == 0) ? TRUE : FALSE;
+      regurg_gf     = ((ofp != cfg->regressfp) && (ai == 0)) ? TRUE : FALSE;
+      status = esl_msa_RegurgitatePfam(afp, ofp, 
+				       maxname, maxgf, maxgc, maxgr, /* max width of a seq name, gf tag, gc tag, gr tag */
+				       regurg_header, /* regurgitate stockholm header ? */
+				       FALSE,         /* regurgitate // trailer ? */
+				       regurg_header, /* regurgitate blank lines */
+				       regurg_header, /* regurgitate comments */
+				       regurg_gf,     /* regurgitate GF ? */
+				       TRUE,          /* regurgitate GS ? */
+				       FALSE,         /* regurgitate GC ? */
+				       FALSE,         /* regurgitate GR ? */
+				       FALSE,         /* regurgitate aseq ? */
+				       NULL,                 
+				       NULL, 
+				       alenA[ai], /* alignment length, as we read it in first pass (inserts may have been removed since then) */
+				       '.');
+      if(status == eslEOF) cm_Fail("Second pass, error out of temp alignments too soon, when trying to read aln %d", ai);
+      if(status != eslOK)  cm_Fail("Second pass, error reading temp alignment %d %s", ai, afp->errbuf); 
+      fflush(ofp);
+    }
+    esl_msafile_Close(afp);
+    fprintf(ofp, "\n"); /* a single blank line to separate GS annotation from aligned data */
+  }
+  /* do another (either second or third) pass through alignment files, outputting aligned sequence data (and GR) as we go */
+
+  if((status = esl_msafile_Open(cfg->tmpfile, eslMSAFILE_PFAM, NULL, &afp)) != eslOK) cm_Fail("unable to open temp file %s for reading on second (or third) pass", cfg->tmpfile);
+
+  for(ai = 0; ai < cfg->nali; ai++) { 
+    /* determine how many all gap columns to insert after each alignment position
+     * of the temporary msa when copying it to the merged msa */
+    if((status = determine_gap_columns_to_add(msaA[ai], maxins, maxel, cm->clen, &(ngap_insA), &(ngap_elA), &(ngap_eitherA), errbuf)) != eslOK) 
+      cm_Fail("error determining number of all gap columns to add to temp alignment %d", ai);
+    regurg_header = ((! gs_exists) && (ai == 0)) ? TRUE : FALSE;
+    regurg_gf     = ((ofp != cfg->regressfp) && (! gs_exists) && (ai == 0)) ? TRUE : FALSE;
+
+    status = esl_msa_RegurgitatePfam(afp, ofp,
+				     maxname, maxgf, maxgc, maxgr, /* max width of a seq name, gf tag, gc tag, gr tag */
+				     regurg_header,  /* regurgitate stockholm header ? */
+				     FALSE,          /* regurgitate // trailer ? */
+				     regurg_header,  /* regurgitate blank lines */
+				     regurg_header,  /* regurgitate comments */
+				     regurg_gf,      /* regurgitate GF ? */
+				     FALSE,          /* regurgitate GS ? */
+				     FALSE,          /* regurgitate GC ? */
+				     TRUE,           /* regurgitate GR ? */
+				     TRUE,           /* regurgitate aseq ? */
+				     NULL, 
+				     ngap_eitherA,   /* number of all gap columns to add after each apos */
+				     alenA[ai],      /* alignment length, as we read it in first pass, not strictly necessary */
+				     '.');
+    if(status == eslEOF) cm_Fail("Second pass, error out of alignments too soon, when trying to read temp aln %d", ai);
+    if(status != eslOK)  cm_Fail("Second pass, error reading temp alignment %d: %s", ai, afp->errbuf); 
+    if(ai == 0) { 
+      /* create the GC SS_cons and GC RF to print from the first alignment,
+       * we use the first alignment b/c this is the one potentially with rewritten pknots
+       * from --withpknots.
+       */
+      inflate_gc_with_gaps_and_els(ofp, msaA[ai], ngap_insA, ngap_elA, &ss_cons2print, &rf2print);
+    }
+    free(ngap_insA);
+    free(ngap_elA);
+    free(ngap_eitherA);
+    
+    esl_msa_Destroy(msaA[ai]);
+    msaA[ai] = NULL;
+    fflush(ofp);
+  }
+  /* output SS_cons and RF */
+  margin = maxname+1;
+  if (maxgc > 0 && maxgc+6         > margin) margin = maxgc+6;
+  if (maxgr > 0 && maxname+maxgr+7 > margin) margin = maxname+maxgr+7; 
+  fprintf(ofp, "#=GC %-*s %s\n", margin-6, "SS_cons", ss_cons2print);
+  fprintf(ofp, "#=GC %-*s %s\n", margin-6, "RF", rf2print);
+  fprintf(ofp, "//\n");
+
+  esl_msafile_Close(afp);
+
+  if(ss_cons2print != NULL) free(ss_cons2print);
+  if(rf2print != NULL) free(rf2print);
+  if(alenA != NULL)  free(alenA);
+  if(msaA != NULL)   free(msaA);
+  if(maxins != NULL) free(maxins);
+  if(maxel != NULL)  free(maxel);
+  if(fmsa != NULL)   esl_msa_Destroy(fmsa);
+  return eslOK;
+
+ ERROR: 
+  esl_fatal("Out of memory. Reformat to Pfam with esl-reformat and try esl-alimerge --savemem.");
+  return eslEMEM; /*NEVERREACHED*/
+}
+
+/* Function: update_maxins_and_maxel
+ * Date:     EPN, Sun Nov 22 09:40:48 2009
+ * 
+ * Update maxins[] and maxel[], arrays that keeps track of the
+ * max number of inserted ('.' gap #=GC RF) columns and inserted EL
+ * emissions ('~' gap #=GC RF) columns before each cpos (consensus
+ * (non-gap #=GC RF) column)
+ *
+ * Consensus columns are index [0..cpos..clen].
+ * 
+ * max{ins,el}[0]      is number of {IL/IR inserts, EL inserts} before 1st cpos.
+ * max{ins,el}[clen-1] is number of {IL/IR inserts, EL inserts} before final cpos.
+ * max{ins,el}[clen]   is number of {IL/IR inserts, EL inserts} after  final cpos.
+ * 
+ * Caller has already checked that msa->rf != NULL
+ * and its non-gap length is clen. If we find either
+ * of these is not true, we die (but this shouldn't happen).
+ * 
+ * Returns: void.
+ */
+void
+update_maxins_and_maxel(ESL_MSA *msa, int clen, int64_t alen, int *maxins, int *maxel) 
+{
+  int apos;
+  int cpos = 0;
+  int nins = 0;
+  int nel = 0;
+
+  for(apos = 0; apos < alen; apos++) { 
+    if(esl_abc_CIsGap(msa->abc, msa->rf[apos])) { 
+      nins++;
+    }
+    else if (esl_abc_CIsMissing(msa->abc, msa->rf[apos])) { 
+      nel++;
+    }
+    else {
+      maxins[cpos] = ESL_MAX(maxins[cpos], nins);
+      maxel[cpos]  = ESL_MAX(maxel[cpos], nel);
+      cpos++;
+      nins = 0;
+      nel = 0;
+    }
+  }
+      
+  /* update final value, max{ins,el}[clen+1], the number of inserts
+   * after the final consensus position */
+  maxins[cpos] = ESL_MAX(maxins[cpos], nins);
+  maxel[cpos]  = ESL_MAX(maxel[cpos], nel);
+  if(cpos != clen) cm_Fail("Unexpected error in update_maxins_and_maxel(), expected clen (%d) not equal to actual clen (%d).\n", clen, cpos);
+
+  return;
+}
+
+/* determine_gap_columns_to_add
+ *                   
+ * Given <maxins> and <maxel>, two arrays of the number of gap RF
+ * (inserts) positions and '~' RF (EL inserts) after each non-gap RF 
+ * (consensus) position in the eventual final merged alignment, 
+ * calculate how many inserts and missing data inserts
+ * we need to add at each position of <msa> to expand it out to the 
+ * appropriate size of the eventual merged alignment.
+ * 
+ * max{ins,el}[0]      is number of inserts,ELs before 1st cpos in merged aln
+ * max{ins,el}[cpos]   is number of inserts,ELs after  final cpos in merged aln
+ *                             for cpos = 1..clen 
+ * clen is the number of non-gap RF positions in msa (and in eventual merged msa).             
+ * 
+ * We allocate fill and return ret_ngap_insA[0..msa->alen], ret_ngap_elA[0..msa->alen], 
+ * and ret_ngap_eitherA[0..msa->alen] here.
+ *
+ * ret_n{ins,el}gapA[0]      is number of inserts,ELs to add before 1st position of msa 
+ * ret_n{ins,el}gapA[apos]   is number of inserts,ELs to add after alignment position apos
+ *                             for apos = 1..msa->alen
+ * 
+ * ret_ngap_eitherA[apos] = ngap_insA[apos] + ngap_elA[apos]
+ * 
+ * This is similar to the esl_msa.c helper function of the same name,
+ * but that function does not bother with missing data '~'.
+ * 
+ * Returns eslOK on success.
+ *         eslEMEM on memory alloaction error 
+ *         eslERANGE if a value exceeds what we expected (based on earlier
+ *                   checks before this function was entered).
+ *         if !eslOK, errbuf if filled.
+ */
+int
+determine_gap_columns_to_add(ESL_MSA *msa, int *maxins, int *maxel, int clen, int **ret_ngap_insA, int **ret_ngap_elA, int **ret_ngap_eitherA, char *errbuf)
+{
+  int status;
+  int apos;
+  int prv_cpos = 0;  /* alignment position corresponding to consensus position cpos-1 */
+  int cpos = 0;
+  int nins = 0;
+  int nel = 0;
+  int *ngap_insA = NULL;
+  int *ngap_elA = NULL;
+  int *ngap_eitherA = NULL;
+  int insert_before_el_flag = FALSE; /* set to TRUE for a cpos if we observe an insert column 5' of a missing data column between cpos-1 and cpos */
+  int el_before_insert_flag = FALSE; /* set to TRUE for a cpos if we observe a missing data column 5' of an insert column between cpos-1 and cpos */
+
+  /* contract check */
+  if(maxel[0] != 0) ESL_FAIL(eslEINVAL, errbuf, "missing characters exist prior to first cpos, this shouldn't happen.\n");
+  if(msa->ss_cons == NULL) ESL_FAIL(eslEINVAL, errbuf, "MSA's SS_cons is null in determine_gap_columns_to_add.\n");
+
+  ESL_ALLOC(ngap_insA, sizeof(int) * (msa->alen+1));
+  ESL_ALLOC(ngap_elA, sizeof(int) * (msa->alen+1));
+  ESL_ALLOC(ngap_eitherA, sizeof(int) * (msa->alen+1));
+  esl_vec_ISet(ngap_insA, (msa->alen+1), 0);
+  esl_vec_ISet(ngap_elA, (msa->alen+1), 0);
+  esl_vec_ISet(ngap_eitherA, (msa->alen+1), 0);
+  
+  for(apos = 0; apos < msa->alen; apos++) { 
+    if(esl_abc_CIsMissing(msa->abc, msa->rf[apos])) { 
+      nel++;
+      if(nins > 0) insert_before_el_flag = TRUE;
+    }
+    else if(esl_abc_CIsGap(msa->abc, msa->rf[apos])) { 
+      nins++;
+      if(nel > 0) el_before_insert_flag = TRUE;
+    }
+    else { /* a consensus position */
+      /* a few sanity checks */
+      if(nins  > maxins[cpos])  ESL_FAIL(eslEINCONCEIVABLE, errbuf, "%d inserts before cpos %d greater than max expected (%d).\n", nins, cpos, maxins[cpos]); 
+      if(nel > maxel[cpos]) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "%d EL inserts before cpos %d greater than max expected (%d).\n", nel, cpos, maxel[cpos]); 
+      if(insert_before_el_flag && el_before_insert_flag) ESL_XFAIL(eslEINVAL, errbuf, "found inserts then missing chars '~' then inserts in RF before cpos %d.\n", cpos);
+
+      if (cpos == 0) { 
+	if(nel != 0) ESL_FAIL(eslEINVAL, errbuf, "found missing chars prior to first cpos, shouldn't happen\n");
+	ngap_insA[prv_cpos]  = maxins[cpos] - nins; /* inserts before first position: flush right (so add all-gap columns after leftmost column) */
+	/* we already checked that maxel[0] is 0 during contract check above */
+      }
+      else {
+	/* Determine where to place inserts and/or missing data.
+	 * Handle each of 4 possibilities separately, note that if 
+	 * maxins[cpos] == 0 then nins == 0, and if maxel[cpos] == 0 then nel == 0 (see sanity check above). 
+	 */
+	if(maxins[cpos] >  0 && maxel[cpos] == 0) { /* most common case */
+	  ngap_insA[prv_cpos + 1 + (nins/2)] = maxins[cpos] - nins; /* internal cpos: split */
+	}
+	else if(maxins[cpos] == 0 && maxel[cpos] > 0) { 
+	  ngap_elA[prv_cpos + 1 + (nel/2)] = maxel[cpos] - nel; /* internal cpos: split */
+	}
+	else if(maxins[cpos] >  0 && maxel[cpos] > 0) { 
+	  /* We have to determine 5'->3' order: it could be inserts 5'
+	   * (before) missing data or missing data 5' (before)
+	   * inserts.  Rule for this is convoluted but we can
+	   * determine which order based on the consensus structure:
+	   * ff cpos-1 and cpos form a base pair (SS_cons[cpos-1] ==
+	   * '<' && SS_cons[cpos] == '>'), then we do inserts 5' of
+	   * missing data, else we do missing data 5' of inserts.  
+	   * 
+	   * The reason is b/c all ELs (missing data) occur at the end
+	   * of a stem (prior to END_nd's left consensus position).
+	   * Inserts emitted by states immediately prior to an END_nd
+	   * are involved in the lone case of ambiguity in the CM
+	   * grammar because it indicates an insert position to which
+	   * two insert states (one IL and one IR) emit. This
+	   * ambiguity is dealt with by 'detaching' (see
+	   * cm_modelmaker.c:cm_find_and_detach_dual_inserts()) insert
+	   * states with index equal to the state index of an END_E
+	   * state *minus 1*. These detached states are always IL
+	   * states that would emit inserts 5' of any ELs (missing
+	   * data) (e.g. a MATL_IL just before an END_E) *except* when
+	   * a MATP_nd is immediately prior to an END_E node, in which
+	   * case the detached state is an IR state (always MATP_IR
+	   * just before END_E). Because these states are detached we
+	   * know that the *other* state that inserts at that position
+	   * must be used.  Either an IR (ROOT_IR, MATR_IR or MATP_IR)
+	   * in the former case or a MATP_IL in the latter. The IR
+	   * will insert 3' of an EL, and the MATP_IL will insert 5'
+	   * of an EL. We can determine the MATP_IL cases by asking if
+	   * cpos-1 and cpos form a basepair in the SS_cons, b/c
+	   * that's the only case in which a MATP node exists
+	   * immediately before an END_nd. Note that this basepair
+	   * will always be a '<' '>' basepair (as opposed to a '('
+	   * ')' or '{' '}' for example) b/c it is the lowest nesting
+	   * order (enclosing basepair of stem. (Told you it was
+	   * convoluted.)
+	   */
+	  if((msa->ss_cons[prv_cpos] == '<') && (msa->ss_cons[apos] == '>')) { /* special case */
+	    /* inserts should be 5' of missing data (ELs) */
+	    ngap_insA[prv_cpos + 1        + (nins/2)] = maxins[cpos] - nins; /* internal cpos: split */
+	    ngap_elA[prv_cpos  + 1 + nins + (nel/2)] = maxel[cpos] - nel; /* internal cpos: split */
+	  }
+	  else { 
+	    /* missing data (ELs) should be 5' of inserts */
+	    ngap_elA[prv_cpos + 1 + (nel/2)] = maxel[cpos] - nel; /* internal cpos: split */
+	    ngap_insA[prv_cpos + 1 + nel + (nins/2)] = maxins[cpos] - nins; /* internal cpos: split */
+	  }
+	}
+	/* final case is if (maxins[cpos] == 0 && maxel[cpos] == 0) 
+	 * in this case we do nothing. 
+	 */
+      }
+
+      cpos++;
+      prv_cpos = apos;
+      nins = 0;
+      nel = 0;
+      el_before_insert_flag = FALSE;
+      insert_before_el_flag = FALSE;
+    }
+  }
+  cpos = clen;
+  apos = msa->alen;
+  /* deal with inserts after final consensus position, we could have both inserts and missing data, but only in case where 
+   * CM has 0 bps (model is ROOT, MATL, MATL, ..., MATL, END) so we know that MATL_IL has been detached, ROOT_IR emits inserts
+   * after final cpos, and thus missing data (ELs) should be 5' of inserts 
+   */
+  if(maxins[cpos] > 0 && maxel[cpos] == 0) { /* most common case */
+    ngap_insA[apos] = maxins[cpos] - nins; /* flush left inserts (no ELs) */
+  }
+  else if(maxins[cpos] == 0 && maxel[cpos] > 0) { 
+    ngap_elA[apos] = maxel[cpos] - nel; /* flush left ELs (no inserts) */
+  }
+  else if(maxins[cpos] > 0 && maxel[cpos] > 0) { 
+    if((msa->ss_cons[prv_cpos] == '<') && (msa->ss_cons[apos] == '>')) ESL_FAIL(eslEINVAL, errbuf, "final position needs ELs and inserts after it, and is right half of a base pair, this shouldn't happen");
+    /* missing data (ELs) should be 5' of inserts */
+    ngap_elA[apos]      = maxel[cpos] - nel; /* flush left */
+    ngap_insA[apos+nel] = maxins[cpos] - nins; /* flush left, after ELs */
+  }
+
+  /* determine ngap_eitherA[], the number of gaps due to either inserts or missing data after each apos */
+  for(apos = 0; apos <= msa->alen; apos++) { 
+    ngap_eitherA[apos] = ngap_insA[apos] + ngap_elA[apos];
+  }
+
+  /* validate that clen is what it should be */
+  if(cpos != clen) { 
+    if(ngap_insA != NULL) free(ngap_insA);
+    if(ngap_elA != NULL) free(ngap_elA);
+    if(ngap_eitherA != NULL) free(ngap_eitherA);
+    ESL_FAIL(eslEINCONCEIVABLE, errbuf, "consensus length (%d) is not the expected length (%d).", cpos, clen);
+  }
+
+  *ret_ngap_insA  = ngap_insA;
+  *ret_ngap_elA = ngap_elA;
+  *ret_ngap_eitherA = ngap_eitherA;
+
+  return eslOK;
+
+ ERROR: 
+  if(ngap_insA  != NULL) free(ngap_insA);
+  if(ngap_elA != NULL) free(ngap_elA);
+  if(ngap_eitherA != NULL) free(ngap_eitherA);
+  ESL_FAIL(status, errbuf, "Memory allocation error.");
+  return status; /*NEVERREACHED*/
+}
+
+/* inflate_gc_with_gaps_and_els
+ *                   
+ * Given an MSA and two arrays specifying the number of inserts '.'
+ * and EL inserts '~' to add after each position, create the 
+ * SS_cons and RF strings to output for the merged alignment
+ * after adding the gaps and missing data symbols ('~') and
+ * return them in ret_ss_cons2print and ret_rf2print. Caller
+ * is responsible for freeing them.
+ *
+ * Returns void. If something unexpected occurs, including an 
+ * allocation error, we die here and print error message.
+ */
+void
+inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_elA, char **ret_ss_cons2print, char **ret_rf2print) 
+{
+  int status;
+  int apos  = 0;
+  int apos2print  = 0;
+  int i, j;
+  int el_before_ins = FALSE;
+  int prv_cpos = -1;
+  int alen2print = 0;
+  char *rf2print;
+  char *ss_cons2print;
+
+  alen2print = msa->alen + esl_vec_ISum(ngap_insA, msa->alen+1) + esl_vec_ISum(ngap_elA, msa->alen+1);
+  ESL_ALLOC(rf2print,      sizeof(char) * (alen2print+1));
+  ESL_ALLOC(ss_cons2print, sizeof(char) * (alen2print+1));
+  rf2print[alen2print] = '\0';
+  ss_cons2print[alen2print] = '\0';
+
+  if(msa->ss_cons == NULL) cm_Fail("Error trying to add inserts to SS_cons, but unexpectedly it doesn't exist.");
+  if(msa->rf      == NULL) cm_Fail("Error trying to add inserts to SS_cons, but unexpectedly it doesn't exist.");
+  for(apos = 0; apos <= msa->alen; apos++) { 
+    el_before_ins = TRUE; /* until proven otherwise */
+    if(ngap_insA[apos] > 0 && ngap_elA[apos] > 0) { 
+      /* Rare case: we need to add at least one '.' and '~'. We need
+       * to determine which to add first. The only possible way we do
+       * '.'s and then '~'s is if we're inserting between the two
+       * match positions of a MATP node and the following node is an
+       * END (search for 'convoluted' in comments in
+       * determine_gap_columns_to_add() for explanation of why).
+       * This will only occur if previously seen consensus SS_cons 
+       * char was a '<' and next consensus SS_cons char is a '>'.
+       * First, check if prev consensus SS_cons char is '<',
+       * if it is check if following one is a '>' by searching for
+       * it. This is inefficient but should be rare so it's okay 
+       * (we'll only do this at most once per END node in model).
+       */
+      if((prv_cpos == -1) || (msa->ss_cons[prv_cpos] != '<')) el_before_ins = TRUE; /* normal case */
+      else { /* prv_cpos is '<', check if next one is a '>' */
+	j = i+1; 
+	while(j < msa->alen && msa->ss_cons[j] == '.') j++;
+	if((j < msa->alen) && (msa->ss_cons[j] == '>')) el_before_ins = FALSE;
+      }
+    }
+    if(el_before_ins) { 
+      for(i = 0; i < ngap_elA[apos]; i++) { 
+	rf2print[apos2print] = '~';
+	ss_cons2print[apos2print++] = '~';
+      }
+      for(i = 0; i < ngap_insA[apos]; i++) { 
+	rf2print[apos2print] = '.';
+	ss_cons2print[apos2print++] = '.';
+      }
+    } 
+    else { /* insert before els, rare, only occurs if el_before_ins set to FALSE above */
+      for(i = 0; i < ngap_insA[apos]; i++) { 
+	rf2print[apos2print] = '.';
+	ss_cons2print[apos2print++] = '.';
+      }
+      for(i = 0; i < ngap_elA[apos]; i++) { 
+	rf2print[apos2print] = '~';
+	ss_cons2print[apos2print++] = '~';
+      }
+    }
+    if(apos < msa->alen) { 
+      rf2print[apos2print]        = msa->rf[apos];
+      ss_cons2print[apos2print++] = msa->ss_cons[apos];
+      if(! esl_abc_CIsGap(msa->abc, msa->rf[apos])) prv_cpos = apos;
+    }	
+  }    
+
+  *ret_ss_cons2print = ss_cons2print;
+  *ret_rf2print = rf2print;
+
+  return;
+
+ ERROR:
+  cm_Fail("Allocation error when creating final alignment RF and SS_cons.");
+  return; /* NEVERREACHED */
+}
+
+
 #ifdef HAVE_MPI
 /* determine_nseq_per_worker()
  * Given a CM, return the number of sequences we think we should send
@@ -1919,7 +2567,6 @@ add_worker_seqs_to_master(seqs_to_aln_t *master_seqs, seqs_to_aln_t *worker_seqs
 }
 #endif /* of #ifdef HAVE_MPI */
 
-
 /* serial_master_meta()
  * The serial version of cmalign in meta mode (-M enabled)
  * 1. Read all CMs in CM file
@@ -1941,10 +2588,10 @@ serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int    nalloc = 1;  /* number of CMs we've allocated */
   CM_t **cmlist;      /* [0..m..cfg->ncm-1] CM read from cmfile */
   void *tmp;          /* for ESL_RALLOC */
-  int **toadd2min;    /* [0..m..cfg->ncm][0..c..cmlist[m]->clen] = x, when morphing minor parsetrees to a major alignment, add x major consensus columns after minor consensus column c of CM m, 
-		       *                                              these x major consensus columns DO NOT MAP to a consensus column in minor CM m */
-  int *maj_train_a2c_map;   /* [0..a..cfg->mali_msa[0]->alen] = x, alignment column a from the first training alignment (cfg->mali_msa[0]) maps to major consensus column x */
-  ESL_MSA *majed_min_msa; /* temporary majorfied (inferred major) alignment from minor CM parsetrees */
+  int **toadd2min = NULL;/* [0..m..cfg->ncm][0..c..cmlist[m]->clen] = x, when morphing minor parsetrees to a major alignment, add x major consensus columns after minor consensus column c of CM m, 
+		          *                                              these x major consensus columns DO NOT MAP to a consensus column in minor CM m */
+  int *maj_train_a2c_map = NULL; /* [0..a..cfg->mali_msa[0]->alen] = x, alignment column a from the first training alignment (cfg->mali_msa[0]) maps to major consensus column x */
+  ESL_MSA *majed_min_msa = NULL; /* temporary majorfied (inferred major) alignment from minor CM parsetrees */
   int *wcm;           /* [0..i..seqs_to_aln->nseq-1] = m, cmlist[m] is 'winning' (highest scoring) CM for seq i */
   int *maj_train_emitl; /* saved major alignment guidetree's emitl vector */
   int *maj_train_emitr; /* saved major alignment guidetree's emitr vector */
@@ -1952,7 +2599,7 @@ serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int mct;                        /* number of winning seqs to align to each minor CM */
   int min_i, maj_i;               /* seq indices in min_seqs_to_aln and seqs_to_aln respectively */
   CMEmitMap_t *maj_emap;          /* emitmap for the major CM */
-  Parsetree_t **majed_tr;         /* majorfied parsetrees */
+  Parsetree_t **majed_tr = NULL;  /* majorfied parsetrees */
 
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   if ((status = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
@@ -2006,7 +2653,7 @@ serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if ((status = process_workunit(go, cfg, errbuf, cmlist[0], seqs_to_aln)) != eslOK) cm_Fail(errbuf);
   /* convert parsetrees to alignment */
   ESL_MSA *maj_target_msa;
-  if((status = Parsetrees2Alignment(cmlist[0], errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, NULL, seqs_to_aln->nseq, NULL, NULL, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), FALSE, &maj_target_msa)) != eslOK)
+  if((status = Parsetrees2Alignment(cmlist[0], errbuf, cfg->abc_out, seqs_to_aln->sq, NULL, seqs_to_aln->tr, NULL, seqs_to_aln->nseq, NULL, NULL, TRUE, esl_opt_GetBoolean(go, "--matchonly"), FALSE, &maj_target_msa)) != eslOK)
     cm_Fail("serial_master_meta(), error generating major alignment from parsetrees.");
   /* printf("\n"); status = esl_msa_Write(stdout, maj_target_msa, eslMSAFILE_STOCKHOLM); printf("\n"); */
 
@@ -2035,7 +2682,7 @@ serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
     /* align the sequences to the minor CM to get minor parsetrees */
     if ((status = process_workunit(go, cfg, errbuf, cmlist[m], min_seqs_to_aln)) != eslOK) cm_Fail(errbuf);
     /* minor parsetrees -> implicit major alignment (majorfied alignment) */
-    if((status = Parsetrees2Alignment_Minor2Major(cmlist[m], cfg->abc_out, min_seqs_to_aln->sq, NULL, min_seqs_to_aln->tr, min_seqs_to_aln->nseq, (! esl_opt_GetBoolean(go, "--resonly")), esl_opt_GetBoolean(go, "--matchonly"), toadd2min[m], &majed_min_msa)) != eslOK)
+    if((status = Parsetrees2Alignment_Minor2Major(cmlist[m], cfg->abc_out, min_seqs_to_aln->sq, NULL, min_seqs_to_aln->tr, min_seqs_to_aln->nseq, TRUE, esl_opt_GetBoolean(go, "--matchonly"), toadd2min[m], &majed_min_msa)) != eslOK)
       cm_Fail("serial_master_meta(), error generating alignment from parsetrees to major CM.");
     /* status = esl_msa_Write(stdout, majed_min_msa, eslMSAFILE_STOCKHOLM); 
        DumpEmitMap(stdout, maj_emap, cmlist[0]);
@@ -2058,7 +2705,7 @@ serial_master_meta(const ESL_GETOPTS *go, struct cfg_s *cfg)
     free(min_seqs_to_aln);
   }
   /* output the alignment to the master CM */
-  if ((status = output_result(go, cfg, errbuf, cmlist[0], seqs_to_aln)) != eslOK) cm_Fail(errbuf);
+  if ((status = output_result(go, cfg, FALSE, errbuf, cmlist[0], seqs_to_aln)) != eslOK) cm_Fail(errbuf);
 
   /* clean up */
   FreeSeqsToAln(seqs_to_aln);
@@ -2157,7 +2804,7 @@ Parsetrees2Alignment_Minor2Major(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq,
   else if(cm->abc->K != abc->K)
     cm_Fail("ERROR in Parsetrees2Alignment_Minor2Major(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
 
-  int          status;       /* easel status flag */
+  int          status = eslOK;/* easel status flag */
   ESL_MSA     *msa   = NULL; /* multiple sequence alignment */
   CMEmitMap_t *emap  = NULL; /* consensus emit map for the CM */
   int          i;            /* counter over traces */
@@ -2181,8 +2828,8 @@ Parsetrees2Alignment_Minor2Major(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq,
   int          tpos;         /* position in a parsetree */
   int          el_len;	     /* length of an EL insertion in residues */
   CMConsensus_t *con = NULL; /* consensus information for the CM */
-  int          prvnd;	     /* keeps track of previous node for EL */
-  int          nins;          /* insert counter used for splitting inserts */
+  int          prvnd = -1;   /* keeps track of previous node for EL */
+  int          nins;         /* insert counter used for splitting inserts */
 
   emap = CreateEmitMap(cm);
 
@@ -2605,6 +3252,14 @@ validate_meta(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t **cml
   CM_t *tmp_cm = NULL;
   CM_t *tmp2_cm = NULL;
   int m, j, i;
+  int **maj2min_cmap; /* [0..m..cfg->ncm][0..c..cmlist[0]->clen] = x, consensus column c of cmlist[0] (the major CM) maps to consensus column x of CM cmlist[m], (minor CM) */
+  int **min2maj_cmap; /* [0..m..cfg->ncm][0..c..cmlist[m]->clen] = x, consensus column c of cmlist[m] (a minor CM)   maps to consensus column x of CM cmlist[0], (major CM) */
+  int **toadd2min;    /* [0..m..cfg->ncm][0..c..cmlist[m]->clen] = x, when morphing minor parsetrees to a major alignment, add x major consensus columns after minor consensus column c of CM m, 
+		       *                                              these x major consensus columns DO NOT MAP to a consensus column in minor CM m */
+  int *maj_train_a2c_map;   /* [0..a..cfg->mali_msa[0]->alen] = x, alignment column a from the first training alignment (cfg->mali_msa[0]) maps to major consensus column x */
+  int cpos, apos;
+  int major_is_consensus;
+  int *cposA; /* temporary only, [0..m..cfg->ncm-1] = x, x is current consensus column for CM m */
 
   /* Validation 1: Build CMs from each alignment, the guidetree should match the corresponding CM guidetree we read from the file */
   ESL_ALLOC(cfg->mali_mtr, sizeof(Parsetree_t *) * cfg->ncm);
@@ -2657,14 +3312,6 @@ validate_meta(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t **cml
    *               columns that do not exist in the minor consensus that should appear after each minor consensus column.
    *               and (2) maj_train_a2c_map which maps the columns of the major CM training alignment onto major consensus columns.
    */
-  int **maj2min_cmap; /* [0..m..cfg->ncm][0..c..cmlist[0]->clen] = x, consensus column c of cmlist[0] (the major CM) maps to consensus column x of CM cmlist[m], (minor CM) */
-  int **min2maj_cmap; /* [0..m..cfg->ncm][0..c..cmlist[m]->clen] = x, consensus column c of cmlist[m] (a minor CM)   maps to consensus column x of CM cmlist[0], (major CM) */
-  int **toadd2min;    /* [0..m..cfg->ncm][0..c..cmlist[m]->clen] = x, when morphing minor parsetrees to a major alignment, add x major consensus columns after minor consensus column c of CM m, 
-		       *                                              these x major consensus columns DO NOT MAP to a consensus column in minor CM m */
-  int *maj_train_a2c_map;   /* [0..a..cfg->mali_msa[0]->alen] = x, alignment column a from the first training alignment (cfg->mali_msa[0]) maps to major consensus column x */
-  int cpos, apos;
-  int major_is_consensus;
-  int *cposA; /* temporary only, [0..m..cfg->ncm-1] = x, x is current consensus column for CM m */
 
   ESL_ALLOC(cposA, sizeof(int) * cfg->ncm);
   esl_vec_ISet(cposA, cfg->ncm, 0);
@@ -2899,7 +3546,8 @@ int
 majorfied_alignment2major_parsetrees(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *maj_cm, ESL_MSA *majed_min_msa, CMEmitMap_t *maj_emap, Parsetree_t ***ret_majed_tr)
 {
   int          status;
-  int           m,x;       /* counters */
+  int           m = 0;     /* counter */
+  int           x = 0;     /* counter */
   int *majed_min_c2a_map;  /* [0..c..maj_clen] = a, consensus position c of majed_min_msa is alignment position a */
   int  majed_min_clen;     /* number of consensus columns parsed in majed_min_msa, this better = maj_cm->clen */
   Parsetree_t **majed_tr;  /* major parsetrees */

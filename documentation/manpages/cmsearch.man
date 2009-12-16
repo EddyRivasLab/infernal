@@ -358,7 +358,7 @@ recommended for unattended, high-throughput runs
 of @PACKAGE@. 
 .I <s>
 is case-insensitive.
-Acceptable formats are: FASTA, EMBL, UNIPROT, GENBANK, and DDBJ.
+Acceptable formats are: FASTA, GENBANK, and DDBJ.
 .I <s>
 is case-insensitive.
 

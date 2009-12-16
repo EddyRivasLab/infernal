@@ -269,7 +269,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
       /*if((cur_results->num_results > 0) && (! (cm->search_opts & CM_SEARCH_NOALIGN))) {*/
       if((status = DispatchAlignments(cm, errbuf, NULL, 
 				      dsq, round_results, h_existing,     /* put function into dsq_mode, designed for aligning search hits */
-				      0, 0, 0, do_null3, NULL, size_limit, stdout, NULL,
+				      0, 0, 0, do_null3, NULL, size_limit, stdout, NULL, 1,
 				      0, 1, 0., 0, 0., 0., 1., 1.)) != eslOK) return status;
     }
   }
@@ -313,6 +313,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
  *           size_limit     - max number of Mb for a DP matrix, if requestd matrix is bigger return eslERANGE 
  *           ofp            - output file to print scores to as we're aligning
  *           sfp            - special output file to print extra score information to, NULL if none 
+ *           iidx           - initial index to use for descriptive output lines (often '1')
  * 
  * Returns:  eslOK on success;
  *           eslERANGE if required memory for a DP matrix is too big;
@@ -324,7 +325,7 @@ int DispatchSearch(CM_t *cm, char *errbuf, int sround, ESL_DSQ *dsq, int i0, int
 int
 DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *dsq, search_results_t *search_results,
 		   int first_result, int bdump_level, int debug_level, int silent_mode, int do_null3, ESL_RANDOMNESS *r, 
-		   float size_limit, FILE *ofp, FILE *sfp,
+		   float size_limit, FILE *ofp, FILE *sfp, int iidx,
 		   int pad7, int len7, float sc7, int end7, 
 		   float mprob7, float mcprob7, float iprob7, float ilprob7)
 {
@@ -657,52 +658,52 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     if(cm->align_opts & CM_ALIGN_OPTACC) { 
       if(have_parsetrees) { 
 	fprintf(ofp, "#\n");
-	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %8s  %11s\n", "",         namewidth, "", "",                  "   bit scores     ",   "",         "");
-	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %8s  %11s\n", "",         namewidth, "", "",                  "------------------",   "",         "");
-	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len", "total",    "struct",   "avg prob", "elapsed");
-	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "--------", "-----------");
+	fprintf(ofp, "# %9s  %-*s  %5s  %18s  %8s  %11s\n", "",         namewidth, "", "",                  "   bit scores     ",   "",         "");
+	fprintf(ofp, "# %9s  %-*s  %5s  %18s  %8s  %11s\n", "",         namewidth, "", "",                  "------------------",   "",         "");
+	fprintf(ofp, "# %9s  %-*s  %5s  %8s  %8s  %8s  %11s\n", "seq idx",    namewidth, "seq name",   "len", "total",    "struct",   "avg prob", "elapsed");
+	fprintf(ofp, "# %9s  %-*s  %5s  %8s  %8s  %8s  %11s\n",  "---------", namewidth, namedashes, "-----", "--------", "--------", "--------", "-----------");
 	if(sfp != NULL) { 
 	  fprintf(sfp, "#\n");
-	  fprintf(sfp, "# %7s  %-*s  %5s  %5s  %5s  %48s  %8s  %11s\n", "",         namewidth, "", "", "",               "",       "                   bit scores                   ",   "",         "");
-	  fprintf(sfp, "# %7s  %-*s  %5s  %5s  %5s  %48s  %8s  %11s\n", "",         namewidth, "", "", "",               "",       "------------------------------------------------",   "",         "");
-	  fprintf(sfp, "# %7s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len", "spos",  "epos",  "total",    "primary",  "struct",   "trans",    "null3",    "avg prob", "elapsed");
-	  fprintf(sfp, "# %7s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "-----", "-----", "--------", "--------", "--------", "--------", "--------", "--------", "-----------");
+	  fprintf(sfp, "# %9s  %-*s  %5s  %5s  %5s  %48s  %8s  %11s\n", "",         namewidth, "", "", "",               "",       "                   bit scores                   ",   "",         "");
+	  fprintf(sfp, "# %9s  %-*s  %5s  %5s  %5s  %48s  %8s  %11s\n", "",         namewidth, "", "", "",               "",       "------------------------------------------------",   "",         "");
+	  fprintf(sfp, "# %9s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %8s  %11s\n", "seq idx",    namewidth, "seq name",   "len", "spos",  "epos",  "total",    "primary",  "struct",   "trans",    "null3",    "avg prob", "elapsed");
+	  fprintf(sfp, "# %9s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %8s  %11s\n",  "---------", namewidth, namedashes, "-----", "-----", "-----", "--------", "--------", "--------", "--------", "--------", "--------", "-----------");
 	}
       }
       else { 
 	fprintf(ofp, "#\n");
-	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len",  "bit sc",   "avg prob", "elapsed");
-	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "-----------");
+	fprintf(ofp, "# %9s  %-*s  %5s  %8s  %8s  %11s\n", "seq idx",    namewidth, "seq name",   "len",  "bit sc",   "avg prob", "elapsed");
+	fprintf(ofp, "# %9s  %-*s  %5s  %8s  %8s  %11s\n",  "---------", namewidth, namedashes, "-----", "--------", "--------", "-----------");
 	if(sfp != NULL) { 
 	  fprintf(sfp, "#\n");
-	  fprintf(sfp, "# %7s  %-*s  %5s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len",  "bit sc",   "avg prob", "elapsed");
-	  fprintf(sfp, "# %7s  %-*s  %5s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "-----------");
+	  fprintf(sfp, "# %9s  %-*s  %5s  %8s  %8s  %11s\n", "seq idx",    namewidth, "seq name",   "len",  "bit sc",   "avg prob", "elapsed");
+	  fprintf(sfp, "# %9s  %-*s  %5s  %8s  %8s  %11s\n",  "---------", namewidth, namedashes, "-----", "--------", "--------", "-----------");
 	}
       }
     }
     else { 
       if(have_parsetrees) { 
 	fprintf(ofp, "#\n");
-	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %11s\n", "",         namewidth, "", "",                  "   bit scores     ",   "");
-	fprintf(ofp, "# %7s  %-*s  %5s  %18s  %11s\n", "",         namewidth, "", "",                  "------------------",   "");
-	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len", "total",    "struct",   "elapsed");
-	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "--------", "-----------");
+	fprintf(ofp, "# %9s  %-*s  %5s  %18s  %11s\n", "",         namewidth, "", "",                  "   bit scores     ",   "");
+	fprintf(ofp, "# %9s  %-*s  %5s  %18s  %11s\n", "",         namewidth, "", "",                  "------------------",   "");
+	fprintf(ofp, "# %9s  %-*s  %5s  %8s  %8s  %11s\n", "seq idx",    namewidth, "seq name",   "len", "total",    "struct",   "elapsed");
+	fprintf(ofp, "# %9s  %-*s  %5s  %8s  %8s  %11s\n",  "---------", namewidth, namedashes, "-----", "--------", "--------", "-----------");
 	if(sfp != NULL) { 
 	  fprintf(sfp, "#\n");
-	  fprintf(sfp, "# %7s  %-*s  %5s  %5s  %5s  %48s  %11s\n", "",         namewidth, "", "", "",               "",       "                   bit scores                   ",   "");
-	  fprintf(sfp, "# %7s  %-*s  %5s  %5s  %5s  %48s  %11s\n", "",         namewidth, "", "", "",               "",       "------------------------------------------------",   "");
-	  fprintf(sfp, "# %7s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %11s\n", "seq idx",  namewidth, "seq name",   "len", "spos",  "epos",  "total",    "primary",  "struct",   "trans",    "null3",    "elapsed");
-	  fprintf(sfp, "# %7s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "-----", "-----", "--------", "--------", "--------", "--------", "--------", "-----------");
+	  fprintf(sfp, "# %9s  %-*s  %5s  %5s  %5s  %48s  %11s\n", "",         namewidth, "", "", "",               "",       "                   bit scores                   ",   "");
+	  fprintf(sfp, "# %9s  %-*s  %5s  %5s  %5s  %48s  %11s\n", "",         namewidth, "", "", "",               "",       "------------------------------------------------",   "");
+	  fprintf(sfp, "# %9s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %11s\n", "seq idx",    namewidth, "seq name",   "len", "spos",  "epos",  "total",    "primary",  "struct",   "trans",    "null3",    "elapsed");
+	  fprintf(sfp, "# %9s  %-*s  %5s  %5s  %5s  %8s  %8s  %8s  %8s  %8s  %11s\n",  "---------", namewidth, namedashes, "-----", "-----", "-----", "--------", "--------", "--------", "--------", "--------", "-----------");
 	}
       }
       else { 
 	fprintf(ofp, "#\n");
-	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %11s\n",  "seq idx", namewidth, "seq name",   "len", "bit sc",    "elapsed");
-	fprintf(ofp, "# %7s  %-*s  %5s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "-----------");
+	fprintf(ofp, "# %9s  %-*s  %5s  %8s  %11s\n",  "seq idx",   namewidth, "seq name",   "len", "bit sc",    "elapsed");
+	fprintf(ofp, "# %9s  %-*s  %5s  %8s  %11s\n",  "---------", namewidth, namedashes, "-----", "--------", "-----------");
 	if(sfp != NULL) { 
 	  fprintf(sfp, "#\n");
-	  fprintf(sfp, "# %7s  %-*s  %5s  %8s  %11s\n",  "seq idx", namewidth, "seq name",   "len", "bit sc",    "elapsed");
-	  fprintf(sfp, "# %7s  %-*s  %5s  %8s  %11s\n",  "-------", namewidth, namedashes, "-----", "--------", "-----------");
+	  fprintf(sfp, "# %9s  %-*s  %5s  %8s  %11s\n",  "seq idx",   namewidth, "seq name",   "len", "bit sc",    "elapsed");
+	  fprintf(sfp, "# %9s  %-*s  %5s  %8s  %11s\n",  "---------", namewidth, namedashes, "-----", "--------", "-----------");
 	}
       }
     }
@@ -733,8 +734,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     /* Special case, if do_hmmonly, align seq with Viterbi, print score and move on to next seq */
     if(sq_mode && do_hmmonly) {
       if(sq_mode && !silent_mode) {
-	fprintf(ofp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
-	if(sfp != NULL) fprintf(sfp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+	fprintf(ofp, "  %9d  %-*s  %5" PRId64, (iidx+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+	if(sfp != NULL) fprintf(sfp, "  %9d  %-*s  %5" PRId64, (iidx+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
       }
       if((status = cp9_Viterbi(cm, errbuf, cm->cp9_mx, cur_dsq, 1, L, L, 0., NULL,
 			       FALSE,  /* we are not scanning */
@@ -756,9 +757,9 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
      * get the score. For testing, probably in cmscore. */
     if(sq_mode && do_scoreonly) {
       if(sq_mode && !silent_mode) {
-	fprintf(ofp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+	fprintf(ofp, "  %9d  %-*s  %5" PRId64, (iidx+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
 	if(sfp != NULL) { 
-	  fprintf(ofp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+	  fprintf(ofp, "  %9d  %-*s  %5" PRId64, (iidx+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
 	}
       }
       sc = CYKInsideScore(cm, cur_dsq, L, 0, 1, L, NULL, NULL); /* don't do QDB mode */
@@ -887,8 +888,8 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     }
 
     if(sq_mode && !silent_mode) { 
-      fprintf(ofp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
-      if(sfp != NULL) fprintf(sfp, "  %7d  %-*s  %5" PRId64, (i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      fprintf(ofp, "  %9d  %-*s  %5" PRId64, (iidx+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
+      if(sfp != NULL) fprintf(sfp, "  %9d  %-*s  %5" PRId64, (iidx+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n);
     }
 
     esl_stopwatch_Start(watch2);  
