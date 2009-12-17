@@ -73,6 +73,7 @@
 1  exercise  cmalign:trna/54       @cmalign@ --no-prob --matchonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/55       @cmalign@ --ifile %TMPOUT1% %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/56       @cmalign@ --ifile %TMPOUT1% --matchonly %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna/57       @cmalign@ --chunk 2 %TRNA.CM% 3trnas.fa
 
 # local alignment with -l
 1  prep      model/trna              @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
@@ -132,6 +133,7 @@
 1  exercise  cmalign:trna-l/57       @cmalign@ -l --elfile %TMPOUT1% %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/58       @cmalign@ -l --elfile %TMPOUT1% --matchonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-p/1        @cmalign@  -l --pebegin --pfend 0.03 %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-l/59       @cmalign@ -l --chunk 2 %TRNA.CM% 3trnas.fa
 
 
 #######################
@@ -198,6 +200,7 @@
 1  exercise  cmalign:trna-b/54       @cmalign@  --matchonly --no-prob %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/55       @cmalign@ --ifile %TMPOUT1% %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/56       @cmalign@ --ifile %TMPOUT1% --matchonly %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b/57       @cmalign@ --chunk 2 %TRNA.CM% 3trnas.fa
 
 # local alignment with -l
 1  prep      model/trna                @cmbuild@ --binary -F --rf --wnone %TRNA.CM% trna1415G.sto
@@ -257,6 +260,7 @@
 1  exercise  cmalign:trna-b-l/57       @cmalign@  -l --elfile %TMPOUT1% %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/58       @cmalign@  -l --elfile %TMPOUT1% --matchonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-p/1          @cmalign@  -l --pebegin --pfend 0.03 %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b-l/59       @cmalign@ -l --chunk 2 %TRNA.CM% 3trnas.fa
 
 # repeat a few of the above excercises with a multi-CM cmfile, (if it works
 # for one, it 'should work' for all
@@ -268,6 +272,7 @@
 1  exercise  cmalign:3.4.12/4        @cmalign@  --no-prob --viterbi %3.4.12.CM% 3trnas.fa
 1  exercise  cmalign:3.4.12/5        @cmalign@  --no-prob %3.4.12.CM% 3trnas.fa
 1  exercise  cmalign:3.4.12/6        @cmalign@  --ileaved %3.4.12.CM% 3trnas.fa
+1  exercise  cmalign:3.4.12/7        @cmalign@  --chunk 2 %3.4.12.CM% 3trnas.fa
 # test the two options that are only relevant with multi-CM files (and
 # thus weren't tested for tRNA)
 1  exercise  cmalign:3.4.12/7        @cmalign@  --cm-idx 2 %3.4.12.CM% 3trnas.fa

@@ -1006,9 +1006,20 @@ DispatchAlignments(CM_t *cm, char *errbuf, seqs_to_aln_t *seqs_to_aln, ESL_DSQ *
     /* determine NULL3 score correction, which is independent of the parsetree */
     null3_correction = 0.;
     if(do_null3) ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, cur_dsq, 1, L, &null3_correction);
-
+    /* EPN, Thu Dec 17 14:07:04 2009
+     * Following code would correct for null3 in struct_sc and primary_sc,
+     * I'm undecided as to whether that's a good idea. 
+     * Currently no correction is performed, but this code is left here for reference.
+     *
+     * nbp_emits   = (float) ParsetreeCountMPEmissions(cm, *cur_tr);
+     * adjust struct_sc  for null3 (this is inexact) 
+     * struct_sc  -= (nbp_emits / float (L)) * null3_correction;                
+     * adjust primary_sc  for null3 (this is inexact) 
+     * primary_sc -= (((float) L - nbp_emits) / float (L)) * null3_correction;
+     */
     if(sq_mode && !silent_mode) { 
       if(have_parsetrees) { 
+ 
 	if(do_optacc)  fprintf(ofp, "  %8.2f  %8.2f  %8.3f  ", ins_sc - null3_correction, struct_sc, sc);
 	else           fprintf(ofp, "  %8.2f  %8.2f  ",            sc - null3_correction, struct_sc);
 	if(sfp != NULL) { 

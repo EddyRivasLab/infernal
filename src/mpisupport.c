@@ -1277,11 +1277,13 @@ cm_search_result_node_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, searc
  *            <eslEOD> code, which <cm_seqs_to_aln_MPIRecv()> knows how
  *            to interpret.
  *
- * Args:      seqs_to_aln - seqs_to_aln_t object to send
- *            dest   - MPI destination (0..nproc-1)
- *            tag    - MPI tag
- *            buf    - pointer to a working buffer 
- *            nalloc - current allocated size of <*buf>, in characters
+ * Args:      seqs_to_aln  - seqs_to_aln_t object to send
+ *            offset       - index of first to send (send seqs_to_aln[offset] first)
+ *            nseq_to_send - number to send
+ *            dest         - MPI destination (0..nproc-1)
+ *            tag          - MPI tag
+ *            buf          - pointer to a working buffer 
+ *            nalloc       - current allocated size of <*buf>, in characters
  *
  * Returns:   <eslOK> on success; <*buf> may have been reallocated and
  *            <*nalloc> may have been increased.

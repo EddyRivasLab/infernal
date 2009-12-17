@@ -726,7 +726,20 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   else if(cm->abc->K != abc->K) {
     ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), cm alphabet size is %d, but requested output alphabet size is %d.", cm->abc->K, abc->K);
   }
-  do_post = (postcode != NULL) ? TRUE : FALSE;
+
+  /* Determine if we are doing posteriors. We should just be able to 
+   * check if postcode array is NULL, but sometimes it is non-NULL
+   * yet all postcode[] els are NULL (e.g. for cmalign --mpi --no-prob).
+   */
+  do_post = FALSE;
+  if(postcode != NULL) { 
+    for(i = 0; i < nseq; i++) {
+      if(postcode[i] != NULL) { 
+	do_post = TRUE;
+	break;
+      }
+    }
+  }
 
   emap = CreateEmitMap(cm);
 

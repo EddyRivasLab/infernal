@@ -1695,7 +1695,7 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
 
   fprintf(stdout, "%-10s %s\n",  "# command:", command);
   fprintf(stdout, "%-10s %s\n",  "# date:",    date);
-  fprintf(stdout, "%-10s %ld\n", "# seed:",    esl_randomness_GetSeed(cfg->r));
+  fprintf(stdout, "%-10s %d\n", "# seed:",    esl_randomness_GetSeed(cfg->r));
   if(cfg->nproc > 1) fprintf(stdout, "# %-8s %d\n", "nproc:", cfg->nproc);
   if     ( esl_opt_IsUsed    (go, "--infile")) fprintf(stdout, "%-10s input file (%s)\n", "# mode:", esl_opt_GetString(go, "--infile"));
   else if( esl_opt_GetBoolean(go, "--random")) fprintf(stdout, "%-10s random\n", "# mode:");

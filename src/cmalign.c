@@ -66,6 +66,7 @@ static ESL_OPTIONS options[] = {
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI
   { "--mpi",     eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,   "--sfile", "run as an MPI parallel program",                    1 },  
+  { "--nseq-mpi",eslARG_INT,      "1", NULL, NULL,      NULL,   "--mpi",        NULL, "in MPI mode, num seqs in a workunit", 1 },  
 #endif
   /* Algorithm options */
   { "--optacc",  eslARG_NONE,"default",NULL, NULL,     NULL,      NULL,  BIGALGOPTS, "align with the Holmes/Durbin optimal accuracy algorithm", 2 },
@@ -120,6 +121,7 @@ static ESL_OPTIONS options[] = {
   { "--hsafe",   eslARG_NONE,   FALSE, NULL, NULL,      NULL,"--hbanded,--no-prob","--viterbi,--optacc", "realign (w/o bands) seqs with HMM banded CYK score < 0 bits", 102 },
   /* developer options related to output files and debugging */
   { "--regress", eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "save regression test data to file <f>", 103 },
+  { "--bigmem",  eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "turn off memory saving mode, keep all seqs/parsetrees in memory", 103 },
   { "--banddump",eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of band info print statements to <n>", 103 },
   { "--dlev",    eslARG_INT,    "0",   NULL, "0<=n<=3", NULL,      NULL,        NULL, "set verbosity of debugging print statements to <n>", 103 },
   { "--stall",   eslARG_NONE,  FALSE, NULL, NULL,       NULL,      NULL,        NULL, "arrest after start: for debugging MPI under gdb", 103 },  
@@ -614,11 +616,13 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   CM_t     *cm;
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, holds seqs, parsetrees, CP9 traces, postcodes */
   int       used_at_least_one_cm = FALSE; 
-  int       chunksize;
+  int       chunksize;               /* number of seqs/parsetrees to hold in memory at once, size of temp alignments */
+  int       do_small;                /* TRUE to try to save memory by outputting temp alignments, then merging */
   int       keep_reading = TRUE;
   int       do_output_to_tmp = TRUE; /* should we output to cfg->tmpfp (and then merge at end) or to cfg->ofp directly */
 
   chunksize = esl_opt_GetInteger(go, "--chunk");
+  do_small =  ((esl_opt_GetBoolean(go, "--ileaved")) || (esl_opt_GetBoolean(go, "--bigmem"))) ? FALSE : TRUE;
 
   if ((status  = init_master_cfg(go, cfg, errbuf)) != eslOK)  cm_Fail(errbuf);
   if ((status  = print_run_info (go, cfg, errbuf))  != eslOK) cm_Fail(errbuf);
@@ -651,9 +655,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	seqs_to_aln = CreateSeqsToAln(chunksize, FALSE);
 	/* read seqs from input file, either <chunksize> seqs, or all of them (if --ileaved, in this case we can't be memory efficient) */
 	status = ReadSeqsToAln(cfg->abc, cfg->sqfp, 
-			       esl_opt_GetBoolean(go, "--ileaved") ? 0    : chunksize, /* nseq to read, '0' is okay due to TRUE for next arg */
-			       esl_opt_GetBoolean(go, "--ileaved") ? TRUE : FALSE,     /* read all seqs? */
-			       seqs_to_aln, FALSE);
+			       (do_small) ? chunksize : 0,    /* nseq to read, '0' is okay due to TRUE for next arg */
+			       (do_small) ? FALSE     : TRUE, /* read all seqs? */
+			       seqs_to_aln, 
+			       FALSE); /* i'm not an mpi master */
 	if(seqs_to_aln->nseq > 0) { 
 	  if(status == eslEOF) { 
 	    keep_reading = FALSE;
@@ -687,6 +692,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	fclose(cfg->tmpfp); /* we're done writing to tmpfp */
 	cfg->tmpfp = NULL;
 	/* merge all temporary alignments now in cfg->tmpfp, and output merged alignment */
+	if((cfg->ofp == stdout) && (! esl_opt_GetBoolean(go, "-q"))) fprintf(cfg->ofp, "\n"); /* blank line to separate scores from aln if printing aln to stdout */
 	if((status = create_and_output_final_msa(go, cfg, cfg->ofp, errbuf, cm)) != eslOK) cm_Fail(errbuf);
 	/* if --regress, output alignment again, this time to ofp->regressfp */
 	if(cfg->regressfp != NULL) { 
@@ -751,11 +757,16 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int      bn            = 0;
   int      pos = 1;
   int      wi_error = 0;                /* worker index that sent back an error message, if an error occurs */
-  CM_t *cm;
+  CM_t    *cm;
   int used_at_least_one_cm = FALSE; 
-  int nseq_per_worker;
-  int nseq_this_worker;
-  int nseq_prev;
+  int nseq_per_worker  = 0;
+  int nseq_this_worker = 0;
+  int nseq_remaining   = 0;
+  int nseq_sent        = 0;
+  int do_small;                /* TRUE to try to save memory by outputting temp alignments, then merging */
+  int chunksize;               /* number of seqs/parsetrees to hold in memory at once, size of temp alignments */
+  int keep_reading = TRUE;
+  int do_output_to_tmp = TRUE; /* should we output to cfg->tmpfp (and then merge at end) or to cfg->ofp directly */
 
   seqs_to_aln_t  *all_seqs_to_aln    = NULL;
   seqs_to_aln_t  *worker_seqs_to_aln = NULL;
@@ -765,9 +776,13 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   MPI_Status mpistatus; 
   int      n;
 
+  chunksize = esl_opt_GetInteger(go, "--chunk");
+  do_small =  ((esl_opt_GetBoolean(go, "--ileaved")) || (esl_opt_GetBoolean(go, "--bigmem"))) ? FALSE : TRUE;
+
   /* Master initialization: including, figure out the alphabet type.
    * If any failure occurs, delay printing error message until we've shut down workers.
    */
+
   if (xstatus == eslOK) { if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) xstatus = status; }
   if (xstatus == eslOK) { bn = 4096; if ((buf = malloc(sizeof(char) * bn))         == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
   if (xstatus == eslOK) { if ((seedlist       = malloc(sizeof(long) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
@@ -814,6 +829,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     {
       if (cm == NULL) cm_Fail("Failed to read CM from %s -- file corrupt?\n", cfg->cmfile);
       cfg->ncm++;  
+      cfg->nali = 0;
       ESL_DPRINTF1(("MPI master read CM number %d\n", cfg->ncm));
 
       if(! esl_opt_IsDefault(go, "--cm-idx")) { 
@@ -832,96 +848,163 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       determine_nseq_per_worker(go, cfg, cm, &nseq_per_worker); /* this func dies internally if there's some error */
       ESL_DPRINTF1(("nseq_per_worker: %d\n", nseq_per_worker));
 
-      wi = 1;
-      all_seqs_to_aln = CreateSeqsToAln(100, TRUE);
-      while (have_work || nproc_working)
-	{
-	  if (have_work) 
-	    {
-	      nseq_prev = all_seqs_to_aln->nseq;
-	      if((status = ReadSeqsToAln(cfg->abc, cfg->sqfp, nseq_per_worker, FALSE, all_seqs_to_aln, TRUE)) == eslOK)
-		{
-		  nseq_this_worker = all_seqs_to_aln->nseq - nseq_prev;
-		  ESL_DPRINTF1(("MPI master read %d seqs\n", all_seqs_to_aln->nseq));
-		}
-	      else 
-		{
-		  have_work = FALSE;
-		  if (status != eslEOF) cm_Fail("Sequence file read unexpectedly failed with code %d\n", status); 
-		  ESL_DPRINTF1(("MPI master has run out of sequences to read (having read %d)\n", 0));
-		} 
-	    }
-	
-	  if ((have_work && nproc_working == cfg->nproc-1) || (!have_work && nproc_working > 0))
-	    {
-	      if (MPI_Probe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &mpistatus) != 0) cm_Fail("mpi probe failed");
-	      if (MPI_Get_count(&mpistatus, MPI_PACKED, &n)                != 0) cm_Fail("mpi get count failed");
-	      wi = mpistatus.MPI_SOURCE;
-	      ESL_DPRINTF1(("MPI master sees a result of %d bytes from worker %d\n", n, wi));
-	      
-	      if (n > bn) {
-		if ((buf = realloc(buf, sizeof(char) * n)) == NULL) cm_Fail("reallocation failed");
-		bn = n; 
-	      }
-	      if (MPI_Recv(buf, bn, MPI_PACKED, wi, 0, MPI_COMM_WORLD, &mpistatus) != 0) cm_Fail("mpi recv failed");
-	      
-	      /* If we're in a recoverable error state, we're only clearing worker results;
-	       * just receive them, don't unpack them or print them.
-	       * But if our xstatus is OK, go ahead and process the result buffer.
+
+      /* Read in chunksize seqs at a time from target file.
+       * For each chunk, we send <nseq_per_worker> seqs to each worker,
+       * once a chunk is completed by all workers, we create the alignment 
+       * of the chunk and output it to a temp file.
+       */
+      keep_reading     = TRUE;
+      do_output_to_tmp = TRUE; /* until proven otherwise */
+      while(keep_reading) { 
+	have_work = TRUE;
+	wi = 1;
+	all_seqs_to_aln = CreateSeqsToAln(chunksize, TRUE);
+	status = ReadSeqsToAln(cfg->abc, cfg->sqfp, 
+			       (do_small) ? chunksize : 0,    /* nseq to read, '0' is okay due to TRUE for next arg */
+			       (do_small) ? FALSE     : TRUE, /* read all seqs? */
+			       all_seqs_to_aln, 
+			       TRUE); /* i am an mpi master */
+	if(all_seqs_to_aln->nseq > 0) { 
+	  nseq_remaining = all_seqs_to_aln->nseq;
+	  nseq_sent = 0;
+	  if(status == eslEOF) { 
+	    keep_reading = FALSE;
+	    if(cfg->nali == 0) { 
+	      /* If we get here, first alignment will be the full alignment b/c either n < chunksize 
+	       * seqs in target file or --ileaved enabled, either way we don't write to tmpfile, 
+	       * instead we output directly to final output file. 
 	       */
-	      if (xstatus == eslOK) /* worker reported success. Get the result. */
-		{
-		  pos = 0;
-		  if (MPI_Unpack(buf, bn, &pos, &xstatus, 1, MPI_INT, MPI_COMM_WORLD)     != 0)     cm_Fail("mpi unpack failed");
-		  if (xstatus == eslOK) /* worker reported success. Get the results. */
-		    {
-		      ESL_DPRINTF1(("MPI master sees that the result buffer contains aligned sequences (seqidx: %d)\n", seqidx[wi]));
-		      if ((status = cm_seqs_to_aln_MPIUnpack(cfg->abc, buf, bn, &pos, MPI_COMM_WORLD, &worker_seqs_to_aln)) != eslOK) cm_Fail("search results unpack failed");
-		      ESL_DPRINTF1(("MPI master has unpacked search results\n"));
-		      if ((status = add_worker_seqs_to_master(all_seqs_to_aln, worker_seqs_to_aln, seqidx[wi])) != eslOK) cm_Fail("adding worker results to master results failed");
-		      /* careful not to free data from worker_seqs_to_aln we've
-		       * just added to all_seqs_to_aln. we didn't copy it, we just
-		       * had pointers in all_seqs_to_aln point to it. We can 
-		       * free the worker's pointers to those pointers though */
-		      if(worker_seqs_to_aln->sq       != NULL) free(worker_seqs_to_aln->sq);
-		      if(worker_seqs_to_aln->tr       != NULL) free(worker_seqs_to_aln->tr);
-		      if(worker_seqs_to_aln->cp9_tr   != NULL) free(worker_seqs_to_aln->cp9_tr);
-		      if(worker_seqs_to_aln->postcode != NULL) free(worker_seqs_to_aln->postcode);
-		      if(worker_seqs_to_aln->sc       != NULL) free(worker_seqs_to_aln->sc);
-		      if(worker_seqs_to_aln->pp       != NULL) free(worker_seqs_to_aln->pp);
-		      if(worker_seqs_to_aln->struct_sc!= NULL) free(worker_seqs_to_aln->struct_sc);
-		      free(worker_seqs_to_aln);
-		    }
-		  else	/* worker reported an error. Get the errbuf. */
-		    {
-		      if (MPI_Unpack(buf, bn, &pos, errbuf, cmERRBUFSIZE, MPI_CHAR, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack of errbuf failed");
-		      ESL_DPRINTF1(("MPI master sees that the result buffer contains an error message\n"));
-		      have_work = FALSE;
-		      wi_error  = wi;
-		    }
-		}
-	      nproc_working--;
+	      do_output_to_tmp = FALSE; /* note, this only occurs if keep_reading was set to FALSE */
 	    }
+	  }
+	  if (do_output_to_tmp && cfg->nali == 0) { 
+	    /* first aln for temporary output file, open the file */
+	    if ((status = esl_strdup("esltmpXXXXXX", 16, &(cfg->tmpfile))) != eslOK) cm_Fail("Error setting temp file name");
+	    if (esl_tmpfile_named(cfg->tmpfile, &(cfg->tmpfp)) != eslOK) cm_Fail("Failed to open temporary output file for cm %d", cfg->ncm);
+	  }
 	  
-	  if (have_work)
-	    {   
-	      /* send new alignment job */
-	      ESL_DPRINTF1(("MPI master is sending sequence to search to worker %d\n", wi));
-	      if ((status = cm_seqs_to_aln_MPISend(all_seqs_to_aln, all_seqs_to_aln->nseq - nseq_this_worker, nseq_this_worker, wi, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI search job send failed");
-	      seqidx[wi] = all_seqs_to_aln->nseq - nseq_this_worker;
-	      wi++;
-	      nproc_working++;
+	  /* Main send/receive loop: where we send <nseq_per_worker> sequences to workers and receive parsetrees back. 
+	   * This loop is entered once for each chunk of seqs we read in the ReadSeqsToAln() call above. 
+	   */
+	  while (have_work || nproc_working)
+	    {
+	      if (have_work) 
+		{
+		  if(nseq_sent == all_seqs_to_aln->nseq) { 
+		    have_work = FALSE;
+		    ESL_DPRINTF1(("MPI master has sent all %d of its sequences (%d)\n", all_seqs_to_aln->nseq));
+		  }
+		  else { 
+		    nseq_this_worker = ESL_MAX(nseq_per_worker, (all_seqs_to_aln->nseq - nseq_sent));
+		  }
+		}
+	      
+	      if ((have_work && nproc_working == cfg->nproc-1) || (!have_work && nproc_working > 0))
+		{
+		  if (MPI_Probe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &mpistatus) != 0) cm_Fail("mpi probe failed");
+		  if (MPI_Get_count(&mpistatus, MPI_PACKED, &n)                != 0) cm_Fail("mpi get count failed");
+		  wi = mpistatus.MPI_SOURCE;
+		  ESL_DPRINTF1(("MPI master sees a result of %d bytes from worker %d\n", n, wi));
+		  
+		  if (n > bn) {
+		    if ((buf = realloc(buf, sizeof(char) * n)) == NULL) cm_Fail("reallocation failed");
+		    bn = n; 
+		  }
+		  if (MPI_Recv(buf, bn, MPI_PACKED, wi, 0, MPI_COMM_WORLD, &mpistatus) != 0) cm_Fail("mpi recv failed");
+		  
+		  /* If we're in a recoverable error state, we're only clearing worker results;
+		   * just receive them, don't unpack them or print them.
+		   * But if our xstatus is OK, go ahead and process the result buffer.
+		   */
+		  if (xstatus == eslOK) /* worker reported success. Get the result. */
+		    {
+		      pos = 0;
+		      if (MPI_Unpack(buf, bn, &pos, &xstatus, 1, MPI_INT, MPI_COMM_WORLD)     != 0)     cm_Fail("mpi unpack failed");
+		      if (xstatus == eslOK) /* worker reported success. Get the results. */
+			{
+			  ESL_DPRINTF1(("MPI master sees that the result buffer contains aligned sequences (seqidx: %d)\n", seqidx[wi]));
+			  if ((status = cm_seqs_to_aln_MPIUnpack(cfg->abc, buf, bn, &pos, MPI_COMM_WORLD, &worker_seqs_to_aln)) != eslOK) cm_Fail("search results unpack failed");
+			  ESL_DPRINTF1(("MPI master has unpacked search results\n"));
+			  if ((status = add_worker_seqs_to_master(all_seqs_to_aln, worker_seqs_to_aln, seqidx[wi])) != eslOK) cm_Fail("adding worker results to master results failed");
+			  /* careful not to free data from worker_seqs_to_aln we've
+			   * just added to all_seqs_to_aln. we didn't copy it, we just
+			   * had pointers in all_seqs_to_aln point to it. We can 
+			   * free the worker's pointers to those pointers though */
+			  if(worker_seqs_to_aln->sq       != NULL) free(worker_seqs_to_aln->sq);
+			  if(worker_seqs_to_aln->tr       != NULL) free(worker_seqs_to_aln->tr);
+			  if(worker_seqs_to_aln->cp9_tr   != NULL) free(worker_seqs_to_aln->cp9_tr);
+			  if(worker_seqs_to_aln->postcode != NULL) free(worker_seqs_to_aln->postcode);
+			  if(worker_seqs_to_aln->sc       != NULL) free(worker_seqs_to_aln->sc);
+			  if(worker_seqs_to_aln->pp       != NULL) free(worker_seqs_to_aln->pp);
+			  if(worker_seqs_to_aln->struct_sc!= NULL) free(worker_seqs_to_aln->struct_sc);
+			  free(worker_seqs_to_aln);
+			}
+		      else	/* worker reported an error. Get the errbuf. */
+			{
+			  if (MPI_Unpack(buf, bn, &pos, errbuf, cmERRBUFSIZE, MPI_CHAR, MPI_COMM_WORLD) != 0) cm_Fail("mpi unpack of errbuf failed");
+			  ESL_DPRINTF1(("MPI master sees that the result buffer contains an error message\n"));
+			  have_work = FALSE;
+			  wi_error  = wi;
+			}
+		    }
+		  nproc_working--;
+		}
+	      
+	      if (have_work)
+		{   
+		  /* send new alignment job */
+		  ESL_DPRINTF1(("MPI master is sending sequence to search to worker %d\n", wi));
+		  if ((status = cm_seqs_to_aln_MPISend(all_seqs_to_aln, nseq_sent, nseq_this_worker, wi, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI search job send failed");
+		  seqidx[wi] = nseq_sent;
+		  nseq_sent += nseq_this_worker;
+		  wi++;
+		  nproc_working++;
+		}
 	    }
+	  /* if we've got valid results, output them */
+	  if (xstatus == eslOK) { 
+	    if ((status = output_result(go, cfg, do_output_to_tmp, errbuf, cm, all_seqs_to_aln)) != eslOK) cm_Fail(errbuf);
+	  }
+	  cfg->nali++;
+	  cfg->nseq += all_seqs_to_aln->nseq;
+	} /* end of if(all_seqs_to_aln->nseq > 0) */
+	else { 
+	  keep_reading = FALSE;
+	  if(status != eslEOF) cm_Fail("Error reading sequence file."); 
 	}
-      /* if we've got valid results, output them */
-      if (xstatus == eslOK) { 
-	if ((status = output_result(go, cfg, FALSE, errbuf, cm, all_seqs_to_aln)) != eslOK) cm_Fail(errbuf);
-      }
+	FreeSeqsToAln(all_seqs_to_aln);
+      } /* end of while(keep_reading) */
+
+
       ESL_DPRINTF1(("MPI master: done with this CM. Telling all workers\n"));
       /* send workers the message that we're done with this CM */
       for (wi = 1; wi < cfg->nproc; wi++) 
 	if ((status = cm_seqs_to_aln_MPISend(NULL, 0, 0, wi, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("Shutting down a worker failed.");
+
+      if(do_output_to_tmp) { 
+	fclose(cfg->tmpfp); /* we're done writing to tmpfp */
+	cfg->tmpfp = NULL;
+	/* merge all temporary alignments now in cfg->tmpfp, and output merged alignment */
+	if((cfg->ofp == stdout) && (! esl_opt_GetBoolean(go, "-q"))) fprintf(cfg->ofp, "\n"); /* blank line to separate scores from aln if printing aln to stdout */
+	if((status = create_and_output_final_msa(go, cfg, cfg->ofp, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	/* if --regress, output alignment again, this time to ofp->regressfp */
+	if(cfg->regressfp != NULL) { 
+	  if((status = create_and_output_final_msa(go, cfg, cfg->regressfp, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	}
+      }
+      /* else (! do_output_to_tmp): we outputted alignment directly to ofp (and possibly also to regressfp) in output_result()) */
+
+      /* finish insert and el files */
+      if(cfg->insertfp != NULL) { fprintf(cfg->insertfp, "//\n"); }
+      if(cfg->elfp != NULL)     { fprintf(cfg->elfp,     "//\n"); }
+
       FreeCM(cm);
+      if(cfg->tmpfile != NULL) { 
+	remove(cfg->tmpfile);
+	free(cfg->tmpfile);
+	cfg->tmpfile = NULL;
+      }
       esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be aligning this file again with another CM */
     }
 
@@ -1118,15 +1201,23 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, int do_output_to_tmp, ch
     for (i = 0; i < seqs_to_aln->nseq; i++) {
       if(!(esl_opt_GetBoolean(go, "--no-null3"))) { ScoreCorrectionNull3CompUnknown(cm->abc, cm->null, seqs_to_aln->sq[i]->dsq, 1, seqs_to_aln->sq[i]->n, &null3_correction); }
       if(! NOT_IMPOSSIBLE(seqs_to_aln->struct_sc[i])) { 
-	if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f  %8.3f\n", (cfg->nseq+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->pp[i]);
-	else                                 fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f\n",        (cfg->nseq+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction);
+	if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f  %8.3f\n", (cfg->nseq+i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->pp[i]);
+	else                                 fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f\n",        (cfg->nseq+i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction);
       }
       else { /* we have struct scores */
-	if(!(esl_opt_GetBoolean(go, "--no-null3"))) seqs_to_aln->struct_sc[i] -= ((float) ParsetreeCountMPEmissions(cm, seqs_to_aln->tr[i]) / (float) seqs_to_aln->sq[i]->n) * null3_correction; /* adjust struct_sc for NULL3 correction, this is inexact */
-	if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f  %8.2f  %8.3f\n", (cfg->nseq+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->struct_sc[i], seqs_to_aln->pp[i]);
-	else                                 fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f  %8.2f\n",        (cfg->nseq+i), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->struct_sc[i]);
+	/* EPN, Thu Dec 17 14:08:20 2009 
+	 * Following line would correct struct_sc for null3 penalty in an inexact way.
+	 * I'm not sure if this is a good idea. For now its not done, but this line is 
+	 * left here, commented out, for reference.
+	 *
+	 * adjust struct_sc for NULL3 correction, this is inexact 
+	 * if(!(esl_opt_GetBoolean(go, "--no-null3"))) seqs_to_aln->struct_sc[i] -= ((float) ParsetreeCountMPEmissions(cm, seqs_to_aln->tr[i]) / (float) seqs_to_aln->sq[i]->n) * null3_correction; 
+	 */ 
+	if(cm->align_opts & CM_ALIGN_OPTACC) fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f  %8.2f  %8.3f\n", (cfg->nseq+i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->struct_sc[i], seqs_to_aln->pp[i]);
+	else                                 fprintf(stdout, "  %9d  %-*s  %5" PRId64 "  %8.2f  %8.2f\n",        (cfg->nseq+i+1), namewidth, seqs_to_aln->sq[i]->name, seqs_to_aln->sq[i]->n, seqs_to_aln->sc[i] - null3_correction, seqs_to_aln->struct_sc[i]);
       }
     }
+    fflush(stdout);
   }
 #endif
 
@@ -1182,12 +1273,13 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, int do_output_to_tmp, ch
       seqs_to_aln->tr = NULL; /* these were freed by Parsetrees2Alignment() */
     }
   
-  if(! esl_opt_GetBoolean(go, "-q")) printf("\n");
+  if((! do_output_to_tmp) && (cfg->ofp == stdout) && (! esl_opt_GetBoolean(go, "-q"))) fprintf(cfg->ofp, "\n"); /* blank line to separate scores from aln if printing aln to stdout */
   
   /* if nec, replace msa->ss_cons with ss_cons from withmsa alignment */
   if((cfg->nali == 0) && esl_opt_GetBoolean(go, "--withpknots")) {
     if((status = add_withali_pknots(go, cfg, errbuf, cm, msa)) != eslOK) return status;
   }
+
   status = esl_msa_Write(do_output_to_tmp ? cfg->tmpfp : cfg->ofp, msa, (esl_opt_GetBoolean(go, "--ileaved") ? eslMSAFILE_STOCKHOLM : eslMSAFILE_PFAM));
   /* note that the contract asserted that if --ileaved then do_output_to_tmp must be FALSE */
   if      (status == eslEMEM) ESL_FAIL(status, errbuf, "Memory error when outputting alignment\n");
@@ -2498,8 +2590,7 @@ inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_
 static int
 determine_nseq_per_worker(const ESL_GETOPTS *go, struct cfg_s *cfg, CM_t *cm, int *ret_nseq_worker)
 {
-  /**ret_nseq_worker = 5;*/
-  *ret_nseq_worker = 1;
+  *ret_nseq_worker = esl_opt_GetInteger(go, "--nseq-mpi");
   return eslOK;
 }
 
