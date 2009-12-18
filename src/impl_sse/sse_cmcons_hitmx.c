@@ -129,7 +129,6 @@ UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma,
   int i, d;
   int bestd;
   int ip, jp;
-  int a;
   int do_report_hit;
   uint8_t hit_sc, cumulative_sc, bestd_sc;
 
@@ -199,10 +198,6 @@ UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma,
     }
   }
   return eslOK;
-
- ERROR: 
-  ESL_FAIL(eslEMEM, errbuf, "Memory allocation error.\n");
-  return eslEMEM; /* NEVERREACHED */
 }
 
 

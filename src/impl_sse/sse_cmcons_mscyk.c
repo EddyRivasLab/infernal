@@ -98,7 +98,7 @@ SSE_MSCYK(CM_CONSENSUS *ccm, char *errbuf, int W, ESL_DSQ *dsq, int i0, int j0, 
   int       d;			/* a subsequence length, 0..W */
   int       k;			/* used in bifurc calculations: length of right subseq */
   int       prv, cur;		/* previous, current j row (0 or 1) */
-  int       v, w, y;            /* state indices */
+  int       v, y;               /* state indices */
   int       jp_v;  	        /* offset j for state v */
   int       jp_y;  	        /* offset j for state y */
   int       jp_Sv, jp_Sy;       /* offset j for non-terminal S */
@@ -164,6 +164,7 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
   __m128i    ocx;		/* overflow correction term for BIF */
   uint8_t    tmp_esc;
   uint8_t   *vec_access;
+  uint8_t    rsc = 0;
 
   __m128i   *mem_nmlc;
   __m128i   *vec_nmlc;		/* null model length correction */
@@ -646,7 +647,12 @@ fprintf(stderr,"\n");
       for (d = 0; d < sW; d++) {
         tmpary[d] = _mm_adds_epu8(vec_ntS[jp_Sv][d],vec_nmlc[d]);
       }
-      if(results != NULL) if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, j, tmpary, results, W, sW)) != eslOK) return status;
+      if(results != NULL) { if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, j, tmpary, results, W, sW)) != eslOK) return status; }
+      else                { 
+        for (d = 0; d < sW; d++) {
+          if (sse_hmax_epu8(tmpary[d]) > rsc) { rsc = esl_sse_hmax_epu8(tmpary[d]); }
+        }
+      }
 //      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
 //fprintf(stdout,"%4d %4d %4d\t",j0-W+1,j0,*(((uint8_t *) &(vec_ntS[j0 % (W+1)][W%sW]))+W/sW));
@@ -667,11 +673,13 @@ fprintf(stderr,"\n");
 //  if (ret_vsc != NULL) *ret_vsc         = vsc;
 //  else free(vsc);
   if (ret_sc != NULL) {
-    int max = 0;
-    for (i = 0; i < results->num_results; i++) {
-      if ((int)results->data[i].score > max) { max = results->data[i].score; }
+    if (results != NULL) {
+      rsc = 0;
+      for (i = 0; i < results->num_results; i++) {
+        if ((int)results->data[i].score > rsc) { rsc = results->data[i].score; }
+      }
     }
-    *ret_sc = (max-ccm->base_b)/ccm->scale_b;
+    *ret_sc = ((float) rsc-ccm->base_b)/ccm->scale_b;
   }
   free(vec_ntM_v[0]);      free(vec_ntM_v);      free(mem_ntM_v);
   free(vec_ntM_all);    free(mem_ntM_all);
@@ -765,10 +773,10 @@ main(int argc, char **argv)
   int             do_random;
   seqs_to_aln_t  *seqs_to_aln;  /* sequences to align, either randomly created, or emitted from CM (if -e) */
   char            errbuf[cmERRBUFSIZE];
-  CM_CONSENSUS   *ccm;
+  CM_CONSENSUS   *ccm = NULL;
   uint8_t         cutoff;
   float           f_cutoff;
-  float           f_S_Sa, f_S_SM, f_S_e, f_M_S;
+  float           f_S_Sa, f_S_SM, f_S_e;
   search_results_t *results = NULL;
 
   /* setup logsum lookups (could do this only if nec based on options, but this is safer) */
@@ -966,10 +974,10 @@ main(int argc, char **argv)
   ESL_SQFILE     *sqfp;
   ESL_SQ         *seq;
   char            errbuf[cmERRBUFSIZE];
-  CM_CONSENSUS   *ccm;
+  CM_CONSENSUS   *ccm = NULL;
   uint8_t         cutoff;
   float           f_cutoff;
-  float           f_S_Sa, f_S_SM, f_S_e, f_M_S;
+  float           f_S_Sa, f_S_SM, f_S_e;
   int             format = eslSQFILE_UNKNOWN;
   int             max, imax, jmax;
   search_results_t *results = NULL;
@@ -994,6 +1002,7 @@ if(ccm->oesc == NULL) cm_Fail("oesc NULL!\n");
   if (f_S_Sa <= 0 || f_S_Sa >= 1) cm_Fail("S->Sa must be between zero and 1\n");
   f_S_SM = esl_opt_GetReal(go, "--S_SM");
 f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/(2*cm->clen + ccm->e_fraglen);
+ccm->r = ((float) cm->clen)/(cm->clen+1.);
   if (f_S_SM <= 0 || f_S_SM >= 1) cm_Fail("S->SM must be between zero and 1\n");
   f_S_e = 1. - f_S_Sa - f_S_SM;
   if (f_S_e <= 0) cm_Fail("Error: S->e out of range\n");
@@ -1017,7 +1026,7 @@ f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/(2*cm->clen + ccm->e_fraglen);
     if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, seq->n, cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 
     /* Rudimentary output of results */
-    max = 0;
+    max = 0; imax = -1; jmax = -1;
     for (i = 0; i < results->num_results; i++) {
       if ((int)results->data[i].score > max) {
         max = results->data[i].score;
