@@ -650,7 +650,7 @@ fprintf(stderr,"\n");
       if(results != NULL) { if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, j, tmpary, results, W, sW)) != eslOK) return status; }
       else                { 
         for (d = 0; d < sW; d++) {
-          if (sse_hmax_epu8(tmpary[d]) > rsc) { rsc = esl_sse_hmax_epu8(tmpary[d]); }
+          if (esl_sse_hmax_epu8(tmpary[d]) > rsc) { rsc = esl_sse_hmax_epu8(tmpary[d]); }
         }
       }
 //      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */

@@ -66,7 +66,7 @@ main(int argc, char **argv)
   uint8_t         s1_cutoff;
   int16_t         s2_cutoff;
   float           s3_cutoff;
-  float           f_cutoff;
+  float           e_cutoff, f_cutoff;
   float           f_S_Sa, f_S_SM, f_S_e;
   int             format = eslSQFILE_UNKNOWN;
   int             max, imax, jmax;
@@ -140,21 +140,21 @@ main(int argc, char **argv)
       if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, L, -45, NULL, FALSE, NULL, &(x[k]))) != eslOK) cm_Fail(errbuf);
       esl_histogram_Add(hist, x[k]);
     }
-    esl_histogram_GetTailByMass(hist, 0.02, &xv, &n, NULL);
+    esl_histogram_GetTailByMass(hist, 0.1, &xv, &n, NULL);
     esl_exp_FitComplete(xv, n, &ccm_mu, &ccm_lambda);
-param[0] = ccm_mu; param[1] = ccm_lambda;
-esl_histogram_SetExpectedTail(hist, ccm_mu, 0.02, &esl_gumbel_generic_cdf, &param);
-esl_histogram_PlotSurvival(stdout, hist);
-printf("ccm_mu = %7.3f\t ccm_lambda = %7.3f\t",ccm_mu,ccm_lambda);
+    param[0] = ccm_mu; param[1] = ccm_lambda;
+    esl_histogram_SetExpectedTail(hist, ccm_mu, 0.1, &esl_exp_generic_cdf, &param);
+    esl_histogram_PlotSurvival(stdout, hist);
+    printf("ccm_mu = %7.3f\t ccm_lambda = %7.3f\n",ccm_mu,ccm_lambda);
+/*
 esl_histogram_GetRank(hist, 10, &score);
-eval  = esl_gumbel_surv(score, ccm_mu, ccm_lambda);
+eval  = esl_exp_surv(score, ccm_mu, ccm_lambda);
 printf("E-val at rank 10 = %1.3e\t",eval);
-eval  = esl_gumbel_surv(score, ccm_mu, 0.693);
-printf("E-val at rank 10 with forced lambda = %1.3e\n",eval);
+*/
 
-
-    f_cutoff = 0.0;
-    fprintf(stderr,"WARNING: P-value cutoffs not implemented, setting stage 1 bitscore cutoff to %.1f\n",f_cutoff);
+    e_cutoff = esl_opt_GetReal(go,"--s1-E");
+    f_cutoff = esl_exp_invcdf(e_cutoff,ccm_mu,ccm_lambda);
+    fprintf(stderr,"Stage 1: P-value cutoff %.2e per kb -> score cutoff %.2f\n",e_cutoff,f_cutoff);
     free(x);
     esl_randomness_Destroy(r);
     esl_sq_Destroy(seq);
@@ -173,8 +173,14 @@ printf("E-val at rank 10 with forced lambda = %1.3e\n",eval);
 
   if (esl_opt_IsOn(go, "--s3-T")) f_cutoff = esl_opt_GetReal(go, "--s3-T");
   else {
-    f_cutoff = 0.0;
-    fprintf(stderr,"WARNING: P-value cutoffs not implemented, setting stage 3 bitscore cutoff to %.1f\n",f_cutoff);
+    e_cutoff = esl_opt_GetReal(go,"--s3-E");
+//FIXME!!  Always picking the first partition, here, which probably isn't what we want.
+//FIXME!!  We don't necessarily know how %GC space was divided for calibration.
+//FIXME!!  Also, need to actually check that the cm has been calibrated before we start pulling data from cm->stats
+    //f_cutoff = esl_gumbel_invcdf(e_cutoff,cm->stats->expAA[EXP_CM_LC][0]->mu_extrap,cm->stats->expAA[EXP_CM_LC][0]->lambda);
+    E2MinScore(cm,errbuf,EXP_CM_LC,e_cutoff,&f_cutoff);
+    //fprintf(stderr,"WARNING: P-value cutoffs not implemented, setting stage 3 bitscore cutoff to %.1f\n",f_cutoff);
+    fprintf(stderr,"Stage 3: P-value cutoff %.2e -> score cutoff %.2f\n",e_cutoff,f_cutoff);
   }
   s3_cutoff = f_cutoff;
 
