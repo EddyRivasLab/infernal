@@ -699,6 +699,43 @@ fprintf(stderr,"\n");
   return 0.; /* NEVERREACHED */
 }
 
+inline int
+Overlap(int i, int j, int h, int k) {
+  return (h<=j && k>=i);
+}
+
+/* Function:  ResolveMSCYK
+   Purpose:   Expand and merge initial hits from MSCYK to windows
+              for later pipeline stages
+ */
+search_results_t*
+ResolveMSCYK(search_results_t *initial, int i0, int j0, int W) {
+  int x, y, i, j;
+  search_results_t *merged   = NULL;
+  
+  merged = CreateResults(INIT_RESULTS);
+  for (x = 0; x < initial->num_results; x++) {
+    i = initial->data[x].stop - W;
+    if (i < i0) i = i0;
+    j = initial->data[x].start + W;
+    if (j > j0) j = j0;
+
+    /* This is a naive merging procedure.  It could fail if it
+       received first two hits that didn't touch each other, and
+       then one that spanned both of them.  However, we know that
+       the hits returned by MSCYK will be sorted by increasing j,
+       so that case should never arise.                          */
+    for (y = 0; y < merged->num_results; y++) {
+      if (Overlap(i,j,merged->data[y].start,merged->data[y].stop)) {
+        if (i < merged->data[y].start) { merged->data[y].start = i; }
+        if (j > merged->data[y].stop ) { merged->data[y].stop  = j; }
+      }
+    }
+  }
+
+  return merged;
+}
+
 /*****************************************************************
  * Benchmark driver
  *****************************************************************/

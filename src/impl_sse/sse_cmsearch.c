@@ -54,7 +54,8 @@ main(int argc, char **argv)
   CM_t            *cm;
   ESL_ALPHABET   *abc     = NULL;
   int             i;
-  float           sc;
+  float           sc, sc3;
+  int             sc2, br2, bsc2;
   char           *cmfile = esl_opt_GetArg(go, 1);
   char           *seqfile= esl_opt_GetArg(go, 2);
   CMFILE         *cmfp;	/* open input CM file stream */
@@ -84,7 +85,8 @@ main(int argc, char **argv)
   double background[4] = {0.25, 0.25, 0.25, 0.25};
   ESL_HISTOGRAM *hist;
     
-  search_results_t *results = NULL;
+  search_results_t *results = NULL; /* First stage results from MSCYK */
+  search_results_t *windows = NULL; /* Expanded and merged hit candidate windows after first stage */
 
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
   if ((status = CMFileRead(cmfp, errbuf, &abc, &cm) != eslOK))            cm_Fail("Failed to read CM");
@@ -191,6 +193,7 @@ printf("E-val at rank 10 = %1.3e\t",eval);
     if (seq->dsq == NULL) esl_sq_Digitize(abc, seq);
     fprintf(stdout,"%s\t",seq->name);
   
+    /* Stage 1: MSCYK */
     results = CreateResults(INIT_RESULTS);
     if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, seq->n, s1_cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 
@@ -206,7 +209,19 @@ printf("E-val at rank 10 = %1.3e\t",eval);
     fprintf(stdout,"%4d %4d %4d %6f\n",imax,jmax,max,sc);
     fflush(stdout);
 
+    /* Convert hits to windows for next stage */
+    windows = ResolveMSCYK(results, 1, seq->n, cm->smx->W);
     FreeResults(results);
+
+    for (i = 0; i < windows->num_results; i++) {
+      /* Stage 2: medium-precision CYK */
+      sc2 = SSE_CYKFilter_epi16(ocm, seq->dsq, seq->n, 0, ocm->M, windows->data[i].start, windows->data[i].stop, TRUE, &br2, &bsc2);
+
+      if (sc2 > s2_cutoff) {
+        /* Stage 3: full-precision CYK */
+        sc3 = SSE_CYKInsideScore(cm, seq->dsq, seq->n, 0, windows->data[i].start, windows->data[i].stop);
+      }
+    }
 
     esl_sq_Destroy(seq);
     seq = esl_sq_Create();
