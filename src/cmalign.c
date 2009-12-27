@@ -2094,7 +2094,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
 
   /* read all alignments, there should be cfg->nali of them */
   for(ai = 0; ai < cfg->nali; ai++) { 
-    status = esl_msa_ReadNonSeqInfoPfam(afp, &(msaA[ai]), &nseq_cur, &alen_cur, &ngs_cur, &maxname_cur, &maxgf_cur, &maxgc_cur, &maxgr_cur);
+    status = esl_msa_ReadNonSeqInfoPfam(afp, NULL, &(msaA[ai]), &nseq_cur, &alen_cur, &ngs_cur, &maxname_cur, &maxgf_cur, &maxgc_cur, &maxgr_cur, NULL, NULL, NULL, NULL);
     if      (status == eslEFORMAT) cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
     else if (status == eslEINVAL)  cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
     else if (status != eslOK)      cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
@@ -2119,7 +2119,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
     update_maxins_and_maxel(msaA[ai], cm->clen, msaA[ai]->alen, maxins, maxel);
   }
   /* final check, make sure we've read all msas from the file, we should have, we only printed cfg->nali */
-  status = esl_msa_ReadNonSeqInfoPfam(afp, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+  status = esl_msa_ReadNonSeqInfoPfam(afp, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
   if(status != eslEOF) ESL_FAIL(status, errbuf, "More alignments in temp file than expected.");
   esl_msafile_Close(afp);
   
