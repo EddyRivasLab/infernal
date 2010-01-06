@@ -77,15 +77,17 @@ The default value is
 
 .TP
 .BI -s " <n>"
-Set the random seed to 
-.I <n>, 
-where <n> is a positive integer. The default is to use time() to
-generate a different seed for each run, which means that two different
-runs of 
-.B cmemit 
-on the same CM will give different
-results. You can use this option to generate reproducible results.
-
+Seed the random number generator with
+.I <n>,
+an integer >= 0. If 
+.I <n> 
+is nonzero, stochastic sampling of sequences will be reproducible; the same
+command will give the same results.
+If 
+.I <n>
+is 0, the random number generator is seeded arbitrarily, and
+stochastic samplings will vary from run to run of the same command.
+The default seed is 0.
 
 .TP
 .B --devhelp

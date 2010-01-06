@@ -72,7 +72,7 @@ static ESL_OPTIONS options[] = {
   { "--optacc",  eslARG_NONE,"default",NULL, NULL,     NULL,      NULL,  BIGALGOPTS, "align with the Holmes/Durbin optimal accuracy algorithm", 2 },
   { "--cyk",     eslARG_NONE,   FALSE, NULL, NULL,"--optacc",     NULL,     ALGOPTS, "align with the CYK algorithm", 2 },
   { "--sample",  eslARG_NONE,   FALSE, NULL, NULL,"--optacc",     NULL,  BIGALGOPTS, "sample alignment of each seq from posterior distribution", 2 },
-  { "-s",        eslARG_INT,     NULL, NULL, "n>0",    NULL,"--sample",        NULL, "w/--sample, set random number generator seed to <n>",  2 },
+  { "-s",        eslARG_INT,    "181", NULL, "n>=0",   NULL,"--sample",        NULL, "w/--sample, set RNG seed to <n> (if 0: one-time arbitrary seed)", 2 },
   { "--viterbi", eslARG_NONE,   FALSE, NULL, NULL,"--optacc","--no-prob",   ALGOPTS, "align to a CM Plan 9 HMM with the Viterbi algorithm",2 },
   { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,     NULL,      NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
   { "--small",   eslARG_NONE,   FALSE, NULL, NULL,     NULL,"--cyk,--no-prob", "--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
@@ -537,9 +537,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     } else cfg->ofp = stdout;
 
   /* seed master's RNG, this will only be used if --sample enabled, but we always initialize it for convenience (seeds always get sent to workers) */
-  if ( esl_opt_IsOn(go, "-s")) 
-    cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
-  else cfg->r = esl_randomness_CreateTimeseeded();
+  cfg->r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
 
   /* optionally, open trace file */
   if (esl_opt_GetString(go, "--tfile") != NULL) {
@@ -771,7 +769,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   seqs_to_aln_t  *all_seqs_to_aln    = NULL;
   seqs_to_aln_t  *worker_seqs_to_aln = NULL;
   int            *seqidx         = NULL;
-  long           *seedlist = NULL;       /* seeds for worker's RNGs, we send these to workers */
+  uint32_t       *seedlist = NULL;       /* seeds for worker's RNGs, we send these to workers */
   
   MPI_Status mpistatus; 
   int      n;
@@ -784,9 +782,9 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
    */
 
   if (xstatus == eslOK) { if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) xstatus = status; }
-  if (xstatus == eslOK) { bn = 4096; if ((buf = malloc(sizeof(char) * bn))         == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((seedlist       = malloc(sizeof(long) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((seqidx         = malloc(sizeof(int)  * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { bn = 4096; if ((buf = malloc(sizeof(char) * bn))             == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((seedlist       = malloc(sizeof(uint32_t) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((seqidx         = malloc(sizeof(int)  * cfg->nproc))     == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
   if (xstatus == eslOK) { if ((status         = print_run_info(go, cfg, errbuf)) != eslOK) xstatus = status; }
 
   MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -807,7 +805,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
    * and don't worry about an informative message. 
    */
   for (wi = 1; wi < cfg->nproc; wi++)
-    MPI_Send(&(seedlist[wi]), 1, MPI_LONG, wi, 0, MPI_COMM_WORLD);
+    MPI_Send(&(seedlist[wi]), 1, MPI_UNSIGNED_LONG, wi, 0, MPI_COMM_WORLD);
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
   if (status != eslOK) cm_Fail("One or more MPI worker processes failed to initialize.");
   ESL_DPRINTF1(("%d workers are initialized\n", cfg->nproc-1));
@@ -1034,7 +1032,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int           pos;
   char          errbuf[cmERRBUFSIZE];
   seqs_to_aln_t *seqs_to_aln = NULL;
-  long           seed;                  /* seed for RNG, rec'd from master */
+  uint32_t       seed;                  /* seed for RNG, rec'd from master */
   int           i;
   MPI_Status mpistatus;           /* MPI status... */
 
@@ -1050,7 +1048,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * we can pack an error result into it, because after initialization,
    * errors will be returned as packed (code, errbuf) messages.
    */
-  if (MPI_Recv(&seed, 1, MPI_LONG, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
+  if (MPI_Recv(&seed, 1, MPI_UNSIGNED_LONG, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
   if (xstatus == eslOK) { if((cfg->r = esl_randomness_Create(seed)) == NULL)          xstatus = eslEMEM; }
   if (xstatus == eslOK) { wn = 4096;  if ((wbuf = malloc(wn * sizeof(char))) == NULL) xstatus = eslEMEM; }
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD); /* everyone sends xstatus back to master */
@@ -1886,14 +1884,14 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
   fprintf(stdout, "%-10s %s\n",  "# command:", command);
   fprintf(stdout, "%-10s %s\n",  "# date:",    date);
   if(cfg->nproc > 1) fprintf(stdout, "# %-8s %d\n", "nproc:", cfg->nproc);
-  if(esl_opt_GetBoolean(go, "--sample")) fprintf(stdout, "%-10s %d\n", "# seed:", esl_randomness_GetSeed(cfg->r));
+  if(esl_opt_GetBoolean(go, "--sample")) fprintf(stdout, "%-10s %" PRIu32 "\n", "# seed:", esl_randomness_GetSeed(cfg->r));
   fprintf(stdout, "#\n");
 
   if(cfg->scorefp != NULL) { 
     fprintf(cfg->scorefp, "%-10s %s\n",  "# command:", command);
     fprintf(cfg->scorefp, "%-10s %s\n",  "# date:",    date);
     if(cfg->nproc > 1) fprintf(cfg->scorefp, "# %-8s %d\n", "nproc:", cfg->nproc);
-    if(esl_opt_GetBoolean(go, "--sample")) fprintf(cfg->scorefp, "%-10s %d\n", "# seed:", esl_randomness_GetSeed(cfg->r));
+    if(esl_opt_GetBoolean(go, "--sample")) fprintf(cfg->scorefp, "%-10s %" PRIu32 "\n", "# seed:", esl_randomness_GetSeed(cfg->r));
     fprintf(cfg->scorefp, "#\n");
   }
 

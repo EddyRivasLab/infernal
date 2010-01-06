@@ -54,7 +54,7 @@
 static ESL_OPTIONS options[] = {
   /* name                type           default env   range     toggles      reqs       incomp  help  docgroup*/
   { "-h",                eslARG_NONE,   FALSE,  NULL, NULL,     NULL,        NULL,        NULL, "show brief help on version and usage",   1 },
-  { "-s",                eslARG_INT,    NULL,   NULL, "n>0",    NULL,        NULL,        NULL, "set random number generator seed to <n>",  1 },
+  { "-s",                eslARG_INT,    "181",  NULL, "n>=0",   NULL,        NULL,        NULL, "set RNG seed to <n> (if 0: one-time arbitrary seed)", 1 },
   { "--forecast",        eslARG_INT,    NULL,   NULL, NULL,     NULL,        NULL,        NULL, "don't do calibration, forecast running time with <n> processors", 1 },
   { "--devhelp",         eslARG_NONE,   NULL,   NULL, NULL,     NULL,        NULL,        NULL, "show list of undocumented developer options", 1 },
 #ifdef HAVE_MPI
@@ -631,8 +631,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (esl_opt_GetBoolean(go, "-v")) cfg->be_verbose = TRUE;        
 
   /* seed master's RNG */
-  if (esl_opt_IsOn(go, "-s")) cfg->r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
-  else                        cfg->r = esl_randomness_CreateTimeseeded();
+  cfg->r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
 
   /* create the stopwatch */
   cfg->w_stage = esl_stopwatch_Create();
@@ -683,7 +682,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int      p;                     /* partition index */
   char     time_buf[128];	  /* string for printing elapsed time (safely holds up to 10^14 years) */
   void    *tmp;                   /* ptr for ESL_RALLOC */ 
-  int      seed;                  /* RNG seed */
+  uint32_t seed;                  /* RNG seed */
   int      exp_mode;              /* ctr over exp tail modes */
   double   cm_psec;               /* predicted number of seconds for calibrating current CM */
   double   cm_asec;               /* predicted number of seconds for calibrating current CM */
@@ -974,7 +973,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int      msg;                   /* holds integer telling workers we've finished current stage */
   int      exp_mode;              /* ctr over exp tail modes */
   int      h;                     /* ctr over hits */
-  int      seed;                  /* for seeding the master's RNG */
+  uint32_t seed;                  /* for seeding the master's RNG */
   /* variables for predicted and actual timings */
   double   psec;                  /* predicted number of seconds */
   double   cm_psec;               /* predicted number of seconds for calibrating current CM */
@@ -1019,7 +1018,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int      fil_cm_cyk_mode;       /* CYK    fthr mode CM is in FTHR_CM_LC or FTHR_CM_GC */
   int      fil_cm_ins_mode;       /* Inside fthr mode CM is in FTHR_CM_LI or FTHR_CM_GI */
   int      fil_nseq_per_worker  = (filN / (cfg->nproc-1)); /* when calcing filters, number of seqs to tell each worker to work on */
-  int     *seed_wlist = NULL;      /* [0..wi..nproc-1] seeds for worker's RNGs, we send these to workers */
+  uint32_t *seed_wlist = NULL;    /* [0..wi..nproc-1] seeds for worker's RNGs, we send these to workers */
   /* full arrays of CYK, Inside, Fwd scores, [0..filN-1] */
   float   *fil_cyk_scA = NULL;    /* [0..filN-1] best cm cyk score for each emitted seq */
   float   *fil_ins_scA = NULL;    /* [0..filN-1] best cm insidei score for each emitted seq */
@@ -1036,11 +1035,11 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
    */
   if (xstatus == eslOK) { if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) xstatus = status; }
   if (xstatus == eslOK) { if ((status = print_run_info (go, cfg, errbuf)) != eslOK) xstatus = status; }
-  if (xstatus == eslOK) { bn = 4096; if ((buf = malloc(sizeof(char) * bn)) == NULL)         { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((si_wlist       = malloc(sizeof(int)  * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((seqpos_wlist   = malloc(sizeof(int)  * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((len_wlist      = malloc(sizeof(int)  * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((seed_wlist     = malloc(sizeof(int)  * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { bn = 4096; if ((buf = malloc(sizeof(char) * bn))             == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((si_wlist       = malloc(sizeof(int)  * cfg->nproc))     == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((seqpos_wlist   = malloc(sizeof(int)  * cfg->nproc))     == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((len_wlist      = malloc(sizeof(int)  * cfg->nproc))     == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
+  if (xstatus == eslOK) { if ((seed_wlist     = malloc(sizeof(uint32_t) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
 
   MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
   if (xstatus != eslOK) return xstatus; /* errbuf was filled above */
@@ -1049,7 +1048,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   for (wi = 0; wi < cfg->nproc; wi++) {
     si_wlist[wi] = seqpos_wlist[wi] = len_wlist[wi] = -1;
     seed_wlist[wi] = esl_rnd_Roll(cfg->r, 1000000000); /* not sure what to use as max for seed */
-    ESL_DPRINTF1(("wi %d seed: %d\n", wi, seed_wlist[wi]));
+    ESL_DPRINTF1(("wi %d seed: %" PRIu32 "\n", wi, seed_wlist[wi]));
   }
   
   /* Worker initialization:
@@ -1059,7 +1058,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
    * and don't worry about an informative message. 
    */
   for (wi = 1; wi < cfg->nproc; wi++)
-    MPI_Send(&(seed_wlist[wi]), 1, MPI_INT, wi, 0, MPI_COMM_WORLD);
+    MPI_Send(&(seed_wlist[wi]), 1, MPI_UNSIGNED_LONG, wi, 0, MPI_COMM_WORLD);
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
   if (status != eslOK) cm_Fail("One or more MPI worker processes failed to initialize.");
   ESL_DPRINTF1(("%d workers are initialized\n", cfg->nproc-1));
@@ -1530,7 +1529,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int      wn   = 0;	          /* allocation size for wbuf */
   int      sz, n;		  /* size of a packed message */
   int      pos;                   /* posn in wbuf */
-  int      seed;                  /* seed for RNG, rec'd from master */
+  uint32_t seed;                  /* seed for RNG, rec'd from master */
   int      nseq;                  /* number of seqs to emit/search for current job */
   void    *tmp;                   /* ptr for ESL_RALLOC */ 
   MPI_Status mpistatus;           /* MPI status... */
@@ -1565,7 +1564,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
    * we can pack an error result into it, because after initialization,
    * errors will be returned as packed (code, errbuf) messages.
    */
-  if (MPI_Recv(&seed, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
+  if (MPI_Recv(&seed, 1, MPI_UNSIGNED_LONG, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
   if (xstatus == eslOK) { if((cfg->r = esl_randomness_Create(seed)) == NULL)          xstatus = eslEMEM; }
   if (xstatus == eslOK) { wn = 4096;  if ((wbuf = malloc(wn * sizeof(char))) == NULL) xstatus = eslEMEM; }
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD); /* everyone sends xstatus back to master */
@@ -2293,7 +2292,7 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
 {
   int status;
   int i;
-  int  seed;
+  uint32_t seed;
   int  temp;
   int  seedlen;
   char *seedstr;
@@ -2302,7 +2301,6 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
   if(cfg->ccom  != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "get_cmcalibrate_comlog_info(), cfg->ccom  is non-NULL.");
   if(cfg->cdate != NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "get_cmcalibrate_comlog_info(), cfg->cdate is non-NULL.");
   
-  
   /* Set the cmcalibrate command info, the cfg->ccom string */
   for (i = 0; i < go->optind; i++) { /* copy all command line options, but not the command line args yet, we may need to append '-s ' before the args */
     esl_strcat(&(cfg->ccom),  -1, go->argv[i], -1);
@@ -2310,15 +2308,15 @@ get_cmcalibrate_comlog_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
   }
   /* if -s NOT enabled, we need to append the seed info also */
   seed = esl_randomness_GetSeed(cfg->r);
-  if(esl_opt_IsOn(go, "-s")) { /* -s was enabled, we'll do a sanity check */
-    if(seed != esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r's seed is %d, but -s was enabled with argument: %d!, this shouldn't happen.", seed, esl_opt_GetInteger(go, "-s"));
+  if(esl_opt_IsUsed(go, "-s")) { /* -s was used on command line, we'll do a sanity check */
+    if(seed != esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "get_cmcalibrate_comlog_info(), cfg->r's seed is %" PRIu32 ", but -s was enabled with argument: %" PRIu32 "!, this shouldn't happen.", seed, esl_opt_GetInteger(go, "-s"));
   } else {
     temp = seed; 
     seedlen = 1; 
     while(temp > 0) { temp/=10; seedlen++; } /* determine length of stringized version of seed */
     seedlen += 4; /* strlen(' -s ') */
     ESL_ALLOC(seedstr, sizeof(char) * (seedlen+1));
-    sprintf(seedstr, " -s %d ", seed);
+    sprintf(seedstr, " -s %" PRIu32 " ", seed);
     esl_strcat((&cfg->ccom), -1, seedstr, seedlen);
     free(seedstr);
   }
@@ -3084,7 +3082,7 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
 
   fprintf(stdout, "%-10s %s\n",  "# command:", command);
   fprintf(stdout, "%-10s %s\n",  "# date:",    date);
-  fprintf(stdout, "%-10s %d\n", "# seed:", esl_randomness_GetSeed(cfg->r));
+  fprintf(stdout, "%-10s %" PRIu32 "\n", "# seed:", esl_randomness_GetSeed(cfg->r));
   if(cfg->nproc > 1) fprintf(stdout, "# %-8s %d\n", "nproc:", cfg->nproc);
 
   free(command);
@@ -3145,14 +3143,14 @@ int print_post_calibration_info(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   fprintf(fp, "# Exponential tail fitting:\n");
   fprintf(fp, "#\n");
   if(cfg->np != 1) { /* --exp-pfile invoked */
-    fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",    "",     "",   "",        "",   "",       "",        "",       "     running time      ");
-    fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",    "",     "",   "",        "",   "",       "",        "",       "-----------------------");
+    fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",    "",     "",   "",        "",   "",       "",        "",       "    running time     ");
+    fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",    "",     "",   "",        "",   "",       "",        "",       "---------------------");
     fprintf(fp, "# %-3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %10s %10s\n","mod", "cfg", "alg", "part", "ps", "pe",   "L (Mb)",  "mu",     "lambda",   "nhits", "predicted",     "actual");
     fprintf(fp, "# %3s  %3s  %3s %4s %3s %3s %7s %6s %6s %7s %10s %10s\n", "---", "---", "---", "----", "---", "---", "-------", "------", "------", "-------", "----------", "----------");
   }
   else { 
-    fprintf(fp, "# %-3s  %3s  %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",  "",   "",       "",        "",       "     running time      ");
-    fprintf(fp, "# %-3s  %3s  %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",  "",   "",       "",        "",       "-----------------------");
+    fprintf(fp, "# %-3s  %3s  %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",  "",   "",       "",        "",            "    running time     ");
+    fprintf(fp, "# %-3s  %3s  %3s %7s %6s %6s %7s %21s\n",       "",    "",    "",  "",   "",       "",        "",            "---------------------");
     fprintf(fp, "# %-3s  %3s  %3s %7s %6s %6s %7s %10s %10s\n","mod", "cfg", "alg", "L (Mb)",  "mu",     "lambda",   "nhits", "predicted",     "actual");
     fprintf(fp, "# %3s  %3s  %3s %7s %6s %6s %7s %10s %10s\n", "---", "---", "---", "-------", "------", "------", "-------", "----------", "----------");
   }

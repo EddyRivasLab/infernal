@@ -60,6 +60,7 @@ static ESL_OPTIONS options[] = {
   { "--seqfile", eslARG_INFILE, FALSE,     NULL, NULL,      NULL,      NULL,        "-Z", "compute E-value cutoffs for sequence file <f>", 2 },
   { "--toponly", eslARG_NONE,   FALSE,     NULL, NULL,      NULL,"--seqfile",       NULL, "with --seqfile, only consider top-strand", 2 },
   { "--search",  eslARG_NONE,   FALSE,     NULL, NULL,      NULL,      NULL,    NOTMOPTS, "do search timing experiments", 3 },
+  { "-s",        eslARG_INT,    "181",     NULL, "n>=0",    NULL,"--search",        NULL, "w/--search, set RNG seed to <n> (if 0: one-time arbitrary seed)", 3 },
   { "--cmL",     eslARG_INT,    "1000",    NULL, "n>0",     NULL,"--search",        NULL, "length of sequences for CM search stats", 3 },
   { "--hmmL",    eslARG_INT,    "100000",  NULL, "n>0",     NULL,"--search",        NULL, "length of sequences for CP9 HMM search stats", 3 },
   { "--efile",   eslARG_OUTFILE,NULL,      NULL, NULL,      NULL,      NULL,        NULL, "output HMM filter E-val cutoff vs CM E-val cutoff plots to <f>", 4},
@@ -186,7 +187,7 @@ main(int argc, char **argv)
 
   cm_banner(stdout, argv[0], banner);
   cmfile     = esl_opt_GetArg(go, 1); 
-  r = esl_randomness_CreateTimeseeded();
+  r   = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
   s_w = esl_stopwatch_Create();
   if(r   == NULL) cm_Fail("Failed to create RNG, probably out of memory.\n");
   if(s_w == NULL) cm_Fail("Failed to create stopwatch, probably out of memory.\n");

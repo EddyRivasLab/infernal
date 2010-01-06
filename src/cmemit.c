@@ -44,7 +44,7 @@ static ESL_OPTIONS options[] = {
   { "-c",        eslARG_NONE,   FALSE, NULL, NULL,   OUTOPTS,      NULL,        NULL, "generate a single \"consensus\" sequence only",  1 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "local; emit from a locally configured model",  1 },
   { "-i",        eslARG_INT,    "1",   NULL, "n>0",     NULL,      NULL,        NULL, "start sequence numbering at <n>",  1 },
-  { "-s",        eslARG_INT,    NULL,  NULL, "n>0",     NULL,      NULL,        NULL, "set random number generator seed to <n>",  1 },
+  { "-s",        eslARG_INT,    "0",   NULL, "n>=0",    NULL,      NULL,        NULL, "set random number generator seed to <n>",  1 },
   { "--devhelp", eslARG_NONE,   NULL,  NULL, NULL,      NULL,      NULL,        NULL, "show list of otherwise undocumented developer options", 1 },
   /* miscellaneous output options */
   { "--rna",     eslARG_NONE,"default",NULL, NULL,  ALPHOPTS,      NULL,        NULL, "output alignment as RNA sequence data", 2 },
@@ -263,8 +263,7 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   }
 
   /* create RNG */
-  if ( esl_opt_IsOn(go, "-s")) cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
-  else                         cfg->r = esl_randomness_CreateTimeseeded();
+  cfg->r = esl_randomness_CreateFast(esl_opt_GetInteger(go, "-s"));
 
   if (cfg->abc_out == NULL) ESL_FAIL(eslEINVAL, errbuf, "Output alphabet creation failed.");
   if (cfg->r       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
@@ -830,7 +829,7 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
 
   fprintf(stdout, "%-10s %s\n",  "# command:", command);
   fprintf(stdout, "%-10s %s\n",  "# date:",    date);
-  fprintf(stdout, "%-10s %d\n", "# seed:", esl_randomness_GetSeed(cfg->r));
+  fprintf(stdout, "%-10s %" PRIu32 "\n", "# seed:", esl_randomness_GetSeed(cfg->r));
 
   fprintf(stdout, "#\n");
   free(command);

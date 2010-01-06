@@ -79,7 +79,7 @@ static ESL_OPTIONS options[] = {
 /* Refining the seed alignment */
   { "--refine",  eslARG_OUTFILE, NULL, NULL, NULL,       NULL,   NULL,          NULL, "refine input aln w/Expectation-Maximization, save to <s>", 7 },
   { "--gibbs",   eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, use Gibbs sampling instead of EM", 7 },
-  { "-s",        eslARG_INT,     NULL, NULL, "n>0",      NULL,"--gibbs",        NULL, "w/--gibbs, set random number generator seed to <n>",  7 },
+  { "-s",        eslARG_INT,      "0", NULL, "n>=0",     NULL,"--gibbs",        NULL, "w/--gibbs, set RNG seed to <n> (if 0: one-time arbitrary seed)", 7 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "w/--refine, align locally w.r.t the model", 7 },
   { "-a",        eslARG_NONE,   FALSE, NULL, NULL,       NULL,"--refine",       NULL, "print individual sequence scores during MSA refinement", 7 },
   { "--optacc",  eslARG_NONE,"default",NULL,NULL,        NULL,      NULL,       NULL, "align with the Holmes/Durbin optimal accuracy algorithm", 201 },
@@ -476,8 +476,7 @@ init_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if(esl_opt_GetBoolean(go, "--gibbs"))
     {
       /* create RNG */
-      if (esl_opt_IsOn(go, "-s")) cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
-      else                        cfg->r = esl_randomness_CreateTimeseeded();
+      cfg->r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
       if (cfg->r == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
     }
 
@@ -1112,14 +1111,14 @@ build_model(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MS
 static int
 set_model_name(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, ESL_MSA *msa, CM_t *cm)
 {
-  int status;
+  int status = eslOK;
 
   if (cfg->be_verbose) {
     fprintf(stdout, "%-40s ... ", "Set model name");
     fflush(stdout);
   }
 
-  if(cm_SetName(cm, msa->name) != eslOK) goto ERROR;
+  if ((status = cm_SetName(cm, msa->name)) != eslOK) goto ERROR;
   if (cfg->be_verbose) fprintf(stdout, "done. [%s]\n", cm->name);
   return eslOK;
 
@@ -1330,7 +1329,7 @@ name_msa(const ESL_GETOPTS *go, char *errbuf, ESL_MSA *msa, int nali)
   int n;
   int maxintlen;
 
-  if(msa == NULL) ESL_FAIL(status, errbuf, "name_msa(), msa is NULL.");
+  if(msa == NULL) ESL_FAIL(eslFAIL, errbuf, "name_msa(), msa is NULL.");
 
   if( (!esl_opt_IsOn(go, "-n")) && msa->name != NULL) return eslOK; /* keep the msa's existing name */
 
@@ -2033,8 +2032,8 @@ write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *err
 {
   int status;
   int i;
-  long seed;
-  long temp;
+  uint32_t seed;
+  uint32_t temp;
   int  seedlen;
   char *seedstr = NULL;
   time_t date = time(NULL);
@@ -2051,20 +2050,19 @@ write_cmbuild_info_to_comlog(const ESL_GETOPTS *go, struct cfg_s *cfg, char *err
   if(esl_opt_GetBoolean(go, "--gibbs")) {
     if(cfg->r == NULL) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "write_cmbuild_info_to_comlog(), cfg->r is NULL but --gibbs enabled, shouldn't happen.");
     seed = esl_randomness_GetSeed(cfg->r);
-    if( esl_opt_IsOn(go, "-s")) { /* -s was enabled with --gibbs, we'll do a sanity check */
-      if(seed != (long) esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "write_cmbuild_info_to_comlog(), cfg->r's seed is %ld, but -s was enabled with argument: %ld!, this shouldn't happen.", seed, (long) esl_opt_GetInteger(go, "-s"));
+    if( esl_opt_IsUsed(go, "-s")) { /* -s was enabled with --gibbs, we'll do a sanity check */
+      if(seed != esl_opt_GetInteger(go, "-s")) ESL_FAIL(eslEINCONCEIVABLE, errbuf, "write_cmbuild_info_to_comlog(), cfg->r's seed is %" PRIu32 ", but -s was enabled with argument: %" PRIu32 "!, this shouldn't happen.", seed, esl_opt_GetInteger(go, "-s"));
     } else {
       temp = seed; 
       seedlen = 1; 
       while(temp > 0) { temp/=10; seedlen++; } /* determine length of stringized version of seed */
       seedlen += 4; /* strlen(' -s ') */
-
+      
       ESL_ALLOC(seedstr, sizeof(char) * (seedlen+1));
-      sprintf(seedstr, " -s %ld ", seed);
+      sprintf(seedstr, " -s %" PRIu32 " ", seed);
       esl_strcat((&cfg->comlog->bcom), -1, seedstr, seedlen);
     }
   }
-
   for (i = go->optind; i < go->argc; i++) { /* copy all command line options, but not the command line args yet, we may need to append '-s ' before the args */
     esl_strcat(&(cfg->comlog->bcom), -1, go->argv[i], -1);
     if(i < (go->argc-1)) esl_strcat(&(cfg->comlog->bcom), -1, " ", 1);

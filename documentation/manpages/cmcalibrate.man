@@ -179,18 +179,18 @@ all options, including expert options.
 
 .TP
 .BI -s " <n>"
-Set the random number generator seed to 
-.I <n>, 
-where 
+Seed the random number generator with
+.I <n>,
+an integer >= 0. 
+If 
 .I <n> 
-is a positive integer. 
-The default is to use time() to
-generate a different seed for each run, which means that two different
-runs of 
-.B cmcalibrate
-on the same CM will give slightly different
-E-value and HMM filter threshold parameters. You can use this option
-to generate reproducible results.
+is nonzero, stochastic simulations will be reproducible; the same
+command will give the same results.
+If 
+.I <n>
+is 0, the random number generator is seeded arbitrarily, and
+stochastic simulations will vary from run to run of the same command.
+The default seed is 181.
 
 .TP
 .BI --forecast " <n>"

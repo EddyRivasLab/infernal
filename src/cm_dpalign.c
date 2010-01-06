@@ -5346,8 +5346,7 @@ CMPostCodeHB(CM_t *cm, char *errbuf, int i0, int j0, CM_HB_MX *post_mx, Parsetre
 static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
   { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
-  { "-r",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "set random number seed randomly",                0 },
-  { "-s",        eslARG_INT,     "33", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                  0 },
+  { "-s",        eslARG_INT,    "181", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n> ('0' for one-time arbitrary)", 0 },
   { "-e",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "emit sequences from CM, don't randomly create them", 0 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "configure CM/HMM for local alignment", 0 },
   { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of target seqs",                          0 },
@@ -5394,8 +5393,7 @@ main(int argc, char **argv)
   float           ***ofalpha;    
   float              size_limit = esl_opt_GetReal(go, "--mxsize");
 
-  if (esl_opt_GetBoolean(go, "-r"))  r = esl_randomness_CreateTimeseeded();
-  else                               r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
+  r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
 
   do_random = TRUE;
   if(esl_opt_GetBoolean(go, "-e")) do_random = FALSE; 

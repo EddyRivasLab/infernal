@@ -155,16 +155,18 @@ sequences.
 
 .TP
 .BI -s " <n>"
-Set the random seed to 
-.I <n>, 
-where <n> is a positive integer. The default is to use time() to
-generate a different seed for each run, which means that two different
-runs of 
-.B cmscore
-on the same CM will give different
-results. You can use this option to generate reproducible results.
-The random number generator is used to generate sequences to score,
-so 
+Seed the random number generator with
+.I <n>,
+an integer >= 0. 
+If 
+.I <n> 
+is nonzero, stochastic sampling of sequences will be reproducible; the same
+command will give the same results (and roughly the same timings). If 
+.I <n>
+is 0, the random number generator is seeded arbitrarily, and
+stochastic samplings will vary from run to run of the same command.
+The default seed is 181.
+The random number generator is used to generate sequences to score, so 
 .B -s
 is incompatible with the
 .B --infile 

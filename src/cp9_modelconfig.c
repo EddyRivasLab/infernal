@@ -52,9 +52,9 @@ CP9Logoddsify(CP9_t *hmm)
   int *sc;
   int status;
 
-  ESL_ALLOC(sc, hmm->abc->Kp * sizeof(int));
-
   if (hmm->flags & CPLAN9_HASBITS) return;
+
+  ESL_ALLOC(sc, hmm->abc->Kp * sizeof(int));
 
   /* Symbol emission scores
    */

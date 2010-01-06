@@ -40,7 +40,7 @@ static ESL_OPTIONS options[] = {
   { "-h",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "show brief help on version and usage",   1 },
   { "-n",        eslARG_INT,     "10", NULL, "n>0",     NULL,      NULL,  "--infile", "generate <n> sequences",  1 },
   { "-l",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,     "--sub", "align locally w.r.t. the model",         1 },
-  { "-s",        eslARG_INT,     NULL, NULL, "n>0",     NULL,      NULL,  "--infile", "set random number seed to <n>", 1 },
+  { "-s",        eslARG_INT,    "181", NULL, "n>=0",    NULL,      NULL,  "--infile", "set RNG seed to <n> (if 0: one-time arbitrary seed)", 1 },
   { "-a",        eslARG_NONE,   FALSE, NULL, NULL,      NULL,      NULL,        NULL, "print individual timings & scores, not just a summary", 1 },
   { "--sub",      eslARG_NONE,  FALSE, NULL, NULL,      NULL,      NULL, "-l,--search", "build sub CM for columns b/t HMM predicted start/end points", 1 },
   { "--mxsize",  eslARG_REAL, "2048.0", NULL, "x>0.",    NULL,      NULL,        NULL, "set maximum allowable DP matrix size to <x> Mb", 1 },
@@ -440,10 +440,9 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
     }
 
   /* create RNG */
-  if ( esl_opt_IsOn(go, "-s"))  cfg->r = esl_randomness_Create((long) esl_opt_GetInteger(go, "-s"));
-  else                          cfg->r = esl_randomness_CreateTimeseeded();
-
+  cfg->r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
   if (cfg->r       == NULL) ESL_FAIL(eslEINVAL, errbuf, "Failed to create random number generator: probably out of memory");
+
   return eslOK;
 }
 
@@ -1695,7 +1694,7 @@ print_run_info(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf)
 
   fprintf(stdout, "%-10s %s\n",  "# command:", command);
   fprintf(stdout, "%-10s %s\n",  "# date:",    date);
-  fprintf(stdout, "%-10s %d\n", "# seed:",    esl_randomness_GetSeed(cfg->r));
+  fprintf(stdout, "%-10s %" PRIu32 "\n", "# seed:",    esl_randomness_GetSeed(cfg->r));
   if(cfg->nproc > 1) fprintf(stdout, "# %-8s %d\n", "nproc:", cfg->nproc);
   if     ( esl_opt_IsUsed    (go, "--infile")) fprintf(stdout, "%-10s input file (%s)\n", "# mode:", esl_opt_GetString(go, "--infile"));
   else if( esl_opt_GetBoolean(go, "--random")) fprintf(stdout, "%-10s random\n", "# mode:");

@@ -255,9 +255,27 @@ option, only consider the top strand of the database in
 instead of both strands.
 
 
+.TP 
 .B --search
 perform an experiment to determine how fast the CM(s) can search with
 different search algorithms.
+
+.TP
+.BI -s " <n>"
+Seed the random number generator with
+.I <n>,
+an integer >= 0. 
+This option can only be used in combination with 
+.B --search. 
+If 
+.I <n> 
+is nonzero, stochastic sampling of sequences for the search experiment will be reproducible; the same
+command should yield roughly the same timings.
+If 
+.I <n>
+is 0, the random number generator is seeded arbitrarily, and
+stochastic samplings will vary from run to run of the same command.
+The default seed is 181.
 
 .TP 
 .BI --cmL " <n>"

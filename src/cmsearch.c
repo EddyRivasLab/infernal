@@ -124,6 +124,7 @@ static ESL_OPTIONS options[] = {
   { "--sums",         eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,"--hbanded",       NULL,           "use posterior sums during HMM band calculation (widens bands)", 101 },
   { "--null2",        eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,"--no-null3", "--noalign",         "turn on the post hoc second null model", 101 },
   { "--no-null3",     eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,      NULL,        NULL,           "turn OFF the NULL3 post hoc additional null model", 101 },
+  { "-s",             eslARG_INT,    "181",      NULL, "n>=0",               NULL,      NULL,          NULL,         "set RNG seed to <n> (if 0: one-time arbitrary seed)", 101 },
   { "--stall",        eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,      NULL,        NULL,           "arrest after start: for debugging MPI under gdb", 101 },  
   /* Developer options related to experimental local begin/end modes */
   { "--pebegin",      eslARG_NONE,   FALSE,      NULL, NULL,                 NULL,      NULL, "-g,--pbegin","set all local begins as equiprobable", 102 },
@@ -1417,9 +1418,9 @@ set_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char 
   float final_sc = -1.;       /* final round bit score cutoff */
   float fqdb_sc  = -1.;       /* QDB filter round bit score cutoff */
   float fhmm_sc  = -1.;       /* HMM filter round bit score cutoff */
-  int   final_ctype;          /* final round cutoff type, SCORE_CUTOFF or E_CUTOFF */
-  int   fqdb_ctype;           /* QDB filter round cutoff type, SCORE_CUTOFF or E_CUTOFF */
-  int   fhmm_ctype;           /* HMM filter round cutoff type, SCORE_CUTOFF or E_CUTOFF */
+  int   final_ctype = E_CUTOFF;/* final round cutoff type, SCORE_CUTOFF or E_CUTOFF, init'ed only to silence compiler warnings */
+  int   fqdb_ctype = E_CUTOFF;/* QDB filter round cutoff type, SCORE_CUTOFF or E_CUTOFF, init'ed only to silence compiler warnings */
+  int   fhmm_ctype = E_CUTOFF;/* HMM filter round cutoff type, SCORE_CUTOFF or E_CUTOFF, init'ed only to silence compiler warnings */
   float final_S = -1;         /* predicted survival fraction from final round */
   float fqdb_S = -1;          /* predicted survival fraction from qdb filter round */
   float fhmm_S = -1;          /* predicted survival fraction from HMM filter round */
@@ -2158,12 +2159,13 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
   double sec_per_res;        /* seconds required to search 1 residue with current model, current round of searching */
   double psec;              /* predicted seconds for current cm, current round */
   double total_psec = 0.;   /* predicted number of seconds for full round */
+  ESL_RANDOMNESS *r = NULL; 
 
   pre_search_mode = (cm_surv_fractA == NULL && cm_nhitsA == NULL) ? TRUE : FALSE;
-  if(pre_search_mode && ret_total_psec == NULL) ESL_FAIL(status, errbuf, "print_searchinfo_for_calibrated_cm, pre-search mode, but ret_total_psec is NULL.");
+  if(pre_search_mode && ret_total_psec == NULL) ESL_FAIL(eslEINVAL, errbuf, "print_searchinfo_for_calibrated_cm, pre-search mode, but ret_total_psec is NULL.");
 
-  ESL_RANDOMNESS *r = esl_randomness_Create((long) 33);
-  if(r == NULL) ESL_FAIL(status, errbuf, "print_searchinfo_for_calibrated_cm, memory error, couldn't create randomness object.");
+  r = esl_randomness_Create(esl_opt_GetInteger(go, "-s"));
+  if(r == NULL) ESL_FAIL(eslEMEM, errbuf, "print_searchinfo_for_calibrated_cm, memory error, couldn't create randomness object.");
 
   /* Could use ESL_GETOPTS here, but using the CM flags assures we're reporting
    * on how the CM is actually config'ed, not how we want it to be
@@ -2513,8 +2515,8 @@ int estimate_search_time_for_round(const ESL_GETOPTS *go, struct cfg_s *cfg, cha
   ESL_DSQ *dsq;
   ESL_STOPWATCH *w  = esl_stopwatch_Create();
 
-  if(w == NULL)               ESL_FAIL(status, errbuf, "estimate_search_time_for_round(): memory error, stopwatch not created.\n");
-  if(ret_sec_per_res == NULL) ESL_FAIL(status, errbuf, "estimate_search_time_for_round(): ret_sec_per_res is NULL");
+  if(w == NULL)               ESL_FAIL(eslEMEM,   errbuf, "estimate_search_time_for_round(): memory error, stopwatch not created.\n");
+  if(ret_sec_per_res == NULL) ESL_FAIL(eslEINVAL, errbuf, "estimate_search_time_for_round(): ret_sec_per_res is NULL");
 
   if(stype == SEARCH_WITH_CM) {
     if(smx == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "estimate_search_time_for_round(), stype is SEARCH_WITH_CM, but smx is NULL");

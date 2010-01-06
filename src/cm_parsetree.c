@@ -689,8 +689,6 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   ESL_MSA     *msa   = NULL; /* multiple sequence alignment */
   CMEmitMap_t *emap  = NULL; /* consensus emit map for the CM */
   int          i;            /* counter over traces */
-  int          j;            /* other counter */
-  int          a;            /* yet another counter */
   int          v, nd;        /* state, node indices */
   int          cpos;         /* counter over consensus positions (0)1..clen */
   int         *matuse= NULL; /* TRUE if we need a cpos in mult alignment */
