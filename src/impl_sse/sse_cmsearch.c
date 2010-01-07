@@ -38,9 +38,11 @@ static ESL_OPTIONS options[] = {
   /* Meta-model parameters */
   { "--mmp_auto",eslARG_NONE,"default",NULL, NULL, "--mmp_manual",NULL,NULL,"automatic determination of MSCYK model parameters",3},
   { "--mmp_manual",eslARG_NONE,  FALSE,NULL, NULL, "--mmp_auto",  NULL,NULL,"manual determination of MSCYK model parameters",3},
-  { "--S_Sa",    eslARG_REAL,  "0.50", NULL, NULL,  NULL,"--mmp_manual","--mmp_auto", "S emit single residue probability <x>",          3 },
+  { "--S_Sa",    eslARG_REAL,  "0.50", NULL, NULL,  NULL,          NULL,        NULL, "S emit single residue probability <x>",          3 },
   { "--S_SM",    eslARG_REAL,    NULL, NULL, NULL,  NULL,"--mmp_manual","--mmp_auto", "S add model segment probability <x>",            3 },
   { "--S_e",     eslARG_NONE,    NULL, NULL, NULL,  NULL,"--mmp_manual","--mmp_auto", "S end probability (unsettable, 1-S_Sa-S_SM)",    3 },
+  /* Output options */
+  { "--glbf",eslARG_INT,"0",NULL, "n<4", NULL, NULL, NULL, "GLBF-style output for RMark at stage <x>, 0 for none",      4 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile> <seqfile>";
@@ -71,6 +73,7 @@ main(int argc, char **argv)
   float           f_S_Sa, f_S_SM, f_S_e;
   int             format = eslSQFILE_UNKNOWN;
   int             max, imax, jmax;
+  int             o_glbf;
 
   /* vars for MSCYK score distribution fitting */
   int L = 1000;	/* P-values will be per-kb, so simulate 1 kb at a time */
@@ -87,6 +90,8 @@ main(int argc, char **argv)
     
   search_results_t *results = NULL; /* First stage results from MSCYK */
   search_results_t *windows = NULL; /* Expanded and merged hit candidate windows after first stage */
+
+  o_glbf = esl_opt_GetInteger(go, "--glbf");
 
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
   if ((status = CMFileRead(cmfp, errbuf, &abc, &cm) != eslOK))            cm_Fail("Failed to read CM");
@@ -147,7 +152,7 @@ main(int argc, char **argv)
     param[0] = ccm_mu; param[1] = ccm_lambda;
     esl_histogram_SetExpectedTail(hist, ccm_mu, 0.1, &esl_exp_generic_cdf, &param);
     esl_histogram_PlotSurvival(stdout, hist);
-    printf("ccm_mu = %7.3f\t ccm_lambda = %7.3f\n",ccm_mu,ccm_lambda);
+    fprintf(stderr,"ccm_mu = %7.3f\t ccm_lambda = %7.3f\n",ccm_mu,ccm_lambda);
 /*
 esl_histogram_GetRank(hist, 10, &score);
 eval  = esl_exp_surv(score, ccm_mu, ccm_lambda);
@@ -191,35 +196,54 @@ printf("E-val at rank 10 = %1.3e\t",eval);
   {
     if (seq->n == 0) continue;
     if (seq->dsq == NULL) esl_sq_Digitize(abc, seq);
-    fprintf(stdout,"%s\t",seq->name);
+    if (o_glbf == 0) { fprintf(stdout,"%s\t",seq->name); }
   
     /* Stage 1: MSCYK */
     results = CreateResults(INIT_RESULTS);
     if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, seq->n, s1_cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 
-    /* Rudimentary output of results */
-    max = 0; imax = -1; jmax = -1;
-    for (i = 0; i < results->num_results; i++) {
-      if ((int)results->data[i].score > max) {
-        max = results->data[i].score;
-        imax= results->data[i].start;
-        jmax= results->data[i].stop;
-      }
-    }
-    fprintf(stdout,"%4d %4d %4d %6f\n",imax,jmax,max,sc);
-    fflush(stdout);
+/* Rudimentary output of results */
+if (o_glbf == 0) {
+max = 0; imax = -1; jmax = -1;
+for (i = 0; i < results->num_results; i++) {
+if ((int)results->data[i].score > max) {
+max = results->data[i].score;
+imax= results->data[i].start;
+jmax= results->data[i].stop;
+}
+}
+fprintf(stdout,"%4d %4d %4d %6f\n",imax,jmax,max,sc);
+fflush(stdout);
+}
 
     /* Convert hits to windows for next stage */
     windows = ResolveMSCYK(results, 1, seq->n, cm->smx->W);
     FreeResults(results);
 
+    //FIXME We're not even checking the reverse strand, which is why orientation is always 0...
+    //FIXME The joined and expanded windows don't have any particular score, so set them to the cutoff value
+    if (o_glbf == 1) {
+      for (i = 0; i < windows->num_results; i++) {
+        printf("%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, windows->data[i].start, windows->data[i].stop, 0);
+      }
+    }
+
     for (i = 0; i < windows->num_results; i++) {
       /* Stage 2: medium-precision CYK */
-      sc2 = SSE_CYKFilter_epi16(ocm, seq->dsq, seq->n, 0, ocm->M, windows->data[i].start, windows->data[i].stop, TRUE, &br2, &bsc2);
+      sc2 = SSE_CYKFilter_epi16(ocm, seq->dsq, seq->n, 0, ocm->M-1, windows->data[i].start, windows->data[i].stop, TRUE, &br2, &bsc2);
 
       if (sc2 > s2_cutoff) {
         /* Stage 3: full-precision CYK */
+        //FIXME: still using the large padded window from MSCYK here (if the score passed); could
+        //FIXME: probably trim that down based on the coordinates from the CYKFilter stage, if we
+        //FIXME: returned that information.  Also, need to consider what information we want to
+        //FIXME: capture from the final stage - right now this is just the score, but we might want
+        //FIXME: coordinates, or possibly alignment (i.e., parsetrees).
         sc3 = SSE_CYKInsideScore(cm, seq->dsq, seq->n, 0, windows->data[i].start, windows->data[i].stop);
+
+        if (sc3 >= s3_cutoff) {
+          /* Report hit */
+        }
       }
     }
 
