@@ -2125,10 +2125,12 @@ fprintf(stderr,"\n");
        * in the shadow matrix telling insideT() to use the b we return.
        */
       if (allow_begin && v == 0 && bsc > tmp) {
-	*(vec_access + W%vecwidth) = bsc;
-        vec_access = (float *) (&shadow[v]->vec[j0][W/vecwidth]);
-        vec_access += W%vecwidth;
-	if (ret_shadow != NULL) *vec_access = USED_LOCAL_BEGIN;
+	tmp = bsc;
+	if (ret_shadow != NULL) {
+          vec_access = (float *) (&shadow[v]->vec[j0][W/vecwidth]);
+          vec_access += W%vecwidth;
+	  *vec_access = USED_LOCAL_BEGIN;
+        }
       }
 
       /* Now, if we're trying to reuse memory in our normal mode (e.g. ! do_full):
