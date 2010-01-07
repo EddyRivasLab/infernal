@@ -139,7 +139,7 @@ UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma,
     gamma->savesc[j] = 0; // IMPOSSIBLE;
 
     if(alpha_row != NULL) { 
-      for (d = 0; d <= W; d++) {
+      for (d = 1; d <= W; d++) {
 	i = j-d+1;
 	hit_sc = *(((uint8_t *) &alpha_row[d%sW])+d/sW);
 	cumulative_sc = gamma->mx[i-1] + hit_sc;
@@ -163,10 +163,11 @@ UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma,
      * resolution algorithm.  Specifically, at the given j, any hit with a
      * d of d1 is guaranteed to mask any hit of lesser score with a d > d1 */
     /* First, report hit with d of dmin (min valid d) if >= cutoff */
-    hit_sc = *((uint8_t *) &alpha_row[0]);
+    d = 1;
+    hit_sc = *((uint8_t *) &alpha_row[d%sW] + d/sW);
     if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) {
       do_report_hit = TRUE;
-      ip = j  +gamma->i0;
+      ip = j-d+gamma->i0;
       jp = j-1+gamma->i0;
       assert(ip >= gamma->i0);
       assert(jp >= gamma->i0);
@@ -179,7 +180,7 @@ UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma,
     bestd_sc = hit_sc;
     /* Now, if current score is greater than maximum seen previous, report
      * it if >= cutoff and set new max */
-    for (d = 1; d <= W; d++) {
+    for (d = 2; d <= W; d++) {
       hit_sc = *(((uint8_t *) &alpha_row[d%sW]) + d/sW);
       if (hit_sc > bestd_sc) {
 	if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) { 

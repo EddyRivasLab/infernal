@@ -217,7 +217,11 @@ cm_consensus_Convert(CM_t *cm)
       ccm->next[x] = -1;
       ccm->oesc[x] = NULL;
 
+      nstates++; //FIXME: Part of a test: if we're treating stem-loops which extend to
+                 //FIXME: E separately from those that stop at last emittine state, need
+                 //FIXME: to increase total number of possible fragments accordingly.
       nfrags = nstates*(nstates+1)/2;
+      nfrags--;  //FIXME: Part of the test; subtract single E state fragment (not allowed)
       total_frags += nfrags;
       for (q = 1; q <= nstates; q++) {
         ebases += q*(nstates-q+1)*StateDelta(ccm->sttype[x-q]);

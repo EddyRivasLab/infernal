@@ -434,9 +434,20 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
 
       /* Start updating matrix values */
       jp_Sv = j % (W+1);
+      vec_ntS[jp_Sv][0] = _mm_setr_epi8(ccm->base_b,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,
+                                            BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL);
+      vec_ntS[jp_Sv][0] = _mm_subs_epu8(vec_ntS[jp_Sv][0], tsv_S_e);
 
-/*
-fprintf(stderr,"\tW %d sW %d\n",W,sW);
+      for (d = 1; d < sW; d++)
+        {
+          vec_ntS[jp_Sv][d] = neginfv;
+        }
+
+      vec_ntS[jp_Sv][-1] = BYTERSHIFT1(vec_ntS[jp_Sv][sW-1]);
+      vec_ntS[jp_Sv][-2] = BYTERSHIFT1(vec_ntS[jp_Sv][sW-2]);
+
+#ifdef DEBUG_0
+fprintf(stderr,"\tj %d\tW %d sW %d\n",j,W,sW);
 fprintf(stderr,"\t1 ntS: ");
 for (d = 0; d <= W; d++) {
   int x = d/sW;
@@ -444,7 +455,7 @@ for (d = 0; d <= W; d++) {
   fprintf(stderr,"%5d",*vec_access);
 }
 fprintf(stderr,"\n");
-*/
+#endif
 
       /* Rule: S -> Sa */
       jp_Sy = (jp_Sv == 0) ? W : jp_Sv-1;
@@ -455,7 +466,7 @@ fprintf(stderr,"\n");
       vec_ntS[jp_Sv][-1] = BYTERSHIFT1(vec_ntS[jp_Sv][sW-1]);
       vec_ntS[jp_Sv][-2] = BYTERSHIFT1(vec_ntS[jp_Sv][sW-2]);
 
-/*
+#ifdef DEBUG_0
 fprintf(stderr,"\t2 ntS: ");
 for (d = 0; d <= W; d++) {
   int x = d/sW;
@@ -463,7 +474,7 @@ for (d = 0; d <= W; d++) {
   fprintf(stderr,"%5d",*vec_access);
 }
 fprintf(stderr,"\n");
-*/
+#endif
 
       /* Rule: M -> x_m S y_n */
       for (v = ccm->M-1; v > 0; v--) /* ...almost to ROOT; we handle ROOT specially... */
@@ -481,8 +492,8 @@ fprintf(stderr,"\n");
               tmpv = _mm_subs_epu8(vec_ntS[jp_Sy][d-sd], tsv_M_S);
               tmpv2= vec_ntM_v[jp_y][y][d-sd];
               vec_ntM_v[jp_v][v][d] = _mm_max_epu8(tmpv, tmpv2);
-              vec_ntM_v[jp_v][v][d] = _mm_adds_epu8(vec_ntM_v[jp_v][v][d], biasv);
               vec_ntM_v[jp_v][v][d] = _mm_subs_epu8(vec_ntM_v[jp_v][v][d], vec_esc[dsq[j]][v][d]);
+              vec_ntM_v[jp_v][v][d] = _mm_adds_epu8(vec_ntM_v[jp_v][v][d], biasv);
 
               vec_ntM_all[jp_v][d] = _mm_max_epu8(vec_ntM_all[jp_v][d], vec_ntM_v[jp_v][v][d]);
             }
@@ -492,6 +503,22 @@ fprintf(stderr,"\n");
 
             vec_ntM_all[jp_v][-1] = _mm_max_epu8(vec_ntM_all[jp_v][-1], vec_ntM_v[jp_v][v][-1]);
             vec_ntM_all[jp_v][-2] = _mm_max_epu8(vec_ntM_all[jp_v][-2], vec_ntM_v[jp_v][v][-2]);
+          }
+          else if (ccm->sttype[v] == E_st) {
+            //FIXME: This is test; expected to improve scores of stem loops which match consensus
+            //FIXME: with no intervening unaligned residues.  Need to double-check the math, but
+            //FIXME: I believe the per-fragment penalty is counting fragments which stop at the 
+            //FIXME: last emitting state and fragments which extend to E separately, and thus
+            //FIXME: fragments which extend to E could be treated as not then recursing to the S
+            //FIXME: state in the meta-grammar
+            tmpv = _mm_setr_epi8(ccm->base_b,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,
+                                      BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL);
+            vec_ntM_v[jp_v][v][0] = _mm_subs_epu8(tmpv,tsv_M_S);
+            for (d = 1; d < sW; d++) {
+              vec_ntM_v[jp_v][v][d] = neginfv;
+            }
+            vec_ntM_v[jp_v][v][-1] = BYTERSHIFT1(vec_ntM_v[jp_v][v][sW-1]);
+            vec_ntM_v[jp_v][v][-2] = BYTERSHIFT1(vec_ntM_v[jp_v][v][sW-2]);
           }
           else { // FIXME really ought to pull this outside the DP, or eliminate these states from CM_CONS altogether
             for (d = -2; d < sW; d++) {
@@ -506,7 +533,7 @@ fprintf(stderr,"\n");
 //	  }
 	} /*loop over decks v>0 */
       
-/*
+#ifdef DEBUG_0
 fprintf(stderr,"\t3 ntMa:");
 for (d = 0; d <= W; d++) {
   int x = d/sW;
@@ -514,7 +541,7 @@ for (d = 0; d <= W; d++) {
   fprintf(stderr,"%5d",*vec_access);
 }
 fprintf(stderr,"\n");
-*/
+#endif
 
       /* Rule: S -> SM */
       __m128i vec_tmp_bifl;
@@ -634,7 +661,7 @@ fprintf(stderr,"\n");
 //        }
 //      }
       /* update gamma, but only if we're reporting hits to results */
-/*
+#ifdef DEBUG_0
 fprintf(stderr,"\t4 ntS: ");
 for (d = 0; d <= W; d++) {
   int x = d/sW;
@@ -642,7 +669,7 @@ for (d = 0; d <= W; d++) {
   fprintf(stderr,"%5d",*vec_access);
 }
 fprintf(stderr,"\n");
-*/
+#endif
       //if(results != NULL) if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, j, vec_ntS[jp_Sv], results, W, sW)) != eslOK) return status;
       for (d = 0; d < sW; d++) {
         tmpary[d] = _mm_adds_epu8(vec_ntS[jp_Sv][d],vec_nmlc[d]);
@@ -655,6 +682,15 @@ fprintf(stderr,"\n");
       }
 //      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
+#ifdef DEBUG_0
+fprintf(stderr,"\t5 nmlc:");
+for (d = 0; d <= W; d++) {
+  int x = d/sW;
+  vec_access = ((uint8_t *) &(vec_nmlc[d%sW])) + x;
+  fprintf(stderr,"%5d",*vec_access);
+}
+fprintf(stderr,"\n");
+#endif
 //fprintf(stdout,"%4d %4d %4d\t",j0-W+1,j0,*(((uint8_t *) &(vec_ntS[j0 % (W+1)][W%sW]))+W/sW));
 //  if(vsc != NULL) vsc[0] = vsc_root;
 //
@@ -701,7 +737,7 @@ fprintf(stderr,"\n");
 
 inline int
 Overlap(int i, int j, int h, int k) {
-  return (h<=j && k>=i);
+  return ((h<=j) && (k>=i));
 }
 
 /* Function:  ResolveMSCYK
@@ -711,26 +747,40 @@ Overlap(int i, int j, int h, int k) {
 search_results_t*
 ResolveMSCYK(search_results_t *initial, int i0, int j0, int W) {
   int x, y, i, j;
+  int included;
   search_results_t *merged   = NULL;
   
   merged = CreateResults(INIT_RESULTS);
   for (x = 0; x < initial->num_results; x++) {
-    i = initial->data[x].stop - W;
-    if (i < i0) i = i0;
-    j = initial->data[x].start + W;
-    if (j > j0) j = j0;
+    i = initial->data[x].start;
+    j = initial->data[x].stop;
+    included = 0;
 
     /* This is a naive merging procedure.  It could fail if it
        received first two hits that didn't touch each other, and
        then one that spanned both of them.  However, we know that
        the hits returned by MSCYK will be sorted by increasing j,
        so that case should never arise.                          */
-    for (y = 0; y < merged->num_results; y++) {
+    for (y = 0; !included && (y < merged->num_results); y++) {
       if (Overlap(i,j,merged->data[y].start,merged->data[y].stop)) {
         if (i < merged->data[y].start) { merged->data[y].start = i; }
         if (j > merged->data[y].stop ) { merged->data[y].stop  = j; }
+        included = 1;
       }
     }
+    if (!included) {
+      ReportHit(i,j,0,0,merged);
+    }
+  }
+
+  for (y = 0; y < merged->num_results; y++) {
+    i = merged->data[y].stop - W;
+    if (i < i0) { i = i0; }
+    j = merged->data[y].start + W;
+    if (j > j0) { j = j0; }
+
+    if (i < merged->data[y].start) { merged->data[y].start = i; }
+    if (j > merged->data[y].stop ) { merged->data[y].stop  = j; }
   }
 
   return merged;
@@ -1047,6 +1097,9 @@ ccm->r = ((float) cm->clen)/(cm->clen+1.);
   ccm->tsb_S_SM = unbiased_byteify(ccm,sreLOG2(f_S_SM));
   ccm->tsb_S_e  = unbiased_byteify(ccm,sreLOG2(f_S_e ));
   ccm->tsb_M_S  = unbiased_byteify(ccm,ccm->sc_frag);
+#ifdef DEBUG_0
+fprintf(stderr,"S->Sa %d S->SM %d S->e %d M->S %d\n",ccm->tsb_S_Sa,ccm->tsb_S_SM,ccm->tsb_S_e,ccm->tsb_M_S);
+#endif
 
   f_cutoff = esl_opt_GetReal(go, "--cutoff");
   /* Need to scale and offset, but not change sign -> switch sign ahead of time */
