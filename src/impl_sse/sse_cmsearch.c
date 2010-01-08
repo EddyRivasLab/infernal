@@ -28,6 +28,7 @@ static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
   /* Basic options */
   { "-h",       eslARG_NONE,  NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           1 },
+  { "--toponly",eslARG_NONE,  NULL, NULL, NULL,  NULL,  NULL, NULL, "search only the top strand, not reverse complement", 1 },
   /* Cutoff level options */
   { "--s1-T",eslARG_REAL,  NULL, NULL,   NULL,  NULL,  NULL, "--s1-E", "set stage 1 cutoff to bitscore <x>",             2 },
   { "--s1-E",eslARG_REAL, "0.1", NULL,"0<x<1",  NULL,  NULL, "--s1-T", "set stage 1 cutoff to probability <x> per kb",   2 },
@@ -38,10 +39,11 @@ static ESL_OPTIONS options[] = {
   /* Meta-model parameters */
   { "--mmp_auto",eslARG_NONE,"default",NULL, NULL, "--mmp_manual",NULL,NULL,"automatic determination of MSCYK model parameters",3},
   { "--mmp_manual",eslARG_NONE,  FALSE,NULL, NULL, "--mmp_auto",  NULL,NULL,"manual determination of MSCYK model parameters",3},
-  { "--S_Sa",    eslARG_REAL,  "0.50", NULL, NULL,  NULL,          NULL,        NULL, "S emit single residue probability <x>",          3 },
+  { "--S_Sa",    eslARG_REAL,  "0.25", NULL, NULL,  NULL,          NULL,        NULL, "S emit single residue probability <x>",          3 },
   { "--S_SM",    eslARG_REAL,    NULL, NULL, NULL,  NULL,"--mmp_manual","--mmp_auto", "S add model segment probability <x>",            3 },
   { "--S_e",     eslARG_NONE,    NULL, NULL, NULL,  NULL,"--mmp_manual","--mmp_auto", "S end probability (unsettable, 1-S_Sa-S_SM)",    3 },
   /* Output options */
+  { "--evd1",eslARG_NONE,NULL,NULL,NULL, NULL, NULL, NULL, "Output score survival plot data for MSCYK EVD",             4 },
   { "--glbf",eslARG_INT,"0",NULL, "n<4", NULL, NULL, NULL, "GLBF-style output for RMark at stage <x>, 0 for none",      4 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -74,6 +76,7 @@ main(int argc, char **argv)
   int             format = eslSQFILE_UNKNOWN;
   int             max, imax, jmax;
   int             o_glbf;
+  int             do_reverse, is_reversed;
 
   /* vars for MSCYK score distribution fitting */
   int L = 1000;	/* P-values will be per-kb, so simulate 1 kb at a time */
@@ -91,7 +94,11 @@ main(int argc, char **argv)
   search_results_t *results = NULL; /* First stage results from MSCYK */
   search_results_t *windows = NULL; /* Expanded and merged hit candidate windows after first stage */
 
+  ESL_STOPWATCH  *w = esl_stopwatch_Create();
+
   o_glbf = esl_opt_GetInteger(go, "--glbf");
+  if (esl_opt_GetBoolean(go, "--toponly")) do_reverse = 0;
+  else                                     do_reverse = 1;
 
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
   if ((status = CMFileRead(cmfp, errbuf, &abc, &cm) != eslOK))            cm_Fail("Failed to read CM");
@@ -134,9 +141,13 @@ main(int argc, char **argv)
   ccm->tsb_M_S  = unbiased_byteify(ccm,ccm->sc_frag);
 
   /* Set filtering cutoff parameters */
-  if (esl_opt_IsOn(go, "--s1-T")) f_cutoff = esl_opt_GetReal(go, "--s1-T");
+  if (esl_opt_IsOn(go, "--s1-T")) {
+    f_cutoff = esl_opt_GetReal(go, "--s1-T");
+    fprintf(stderr,"Stage 1: score cutoff %.2f\n",f_cutoff);
+  }
   else {
     /* Simulation to determine score distribution tail for MSCYK/CM combined model */
+    esl_stopwatch_Start(w);
     hist = esl_histogram_CreateFull(-50., 50., 0.5);
     seq = esl_sq_Create();
     r = esl_randomness_CreateTimeseeded();
@@ -151,8 +162,10 @@ main(int argc, char **argv)
     esl_exp_FitComplete(xv, n, &ccm_mu, &ccm_lambda);
     param[0] = ccm_mu; param[1] = ccm_lambda;
     esl_histogram_SetExpectedTail(hist, ccm_mu, 0.1, &esl_exp_generic_cdf, &param);
-    esl_histogram_PlotSurvival(stdout, hist);
-    fprintf(stderr,"ccm_mu = %7.3f\t ccm_lambda = %7.3f\n",ccm_mu,ccm_lambda);
+    esl_stopwatch_Stop(w);
+    if (esl_opt_IsOn(go, "--evd1")) esl_histogram_PlotSurvival(stdout, hist);
+    fprintf(stderr,"Stage 1: EVD parameters mu = %7.3f\t lambda = %7.3f; ",ccm_mu,ccm_lambda);
+    esl_stopwatch_Display(stderr, w, " CPU time: ");
 /*
 esl_histogram_GetRank(hist, 10, &score);
 eval  = esl_exp_surv(score, ccm_mu, ccm_lambda);
@@ -170,7 +183,10 @@ printf("E-val at rank 10 = %1.3e\t",eval);
   /* Need to scale and offset, but not change sign -> switch sign ahead of time */
   s1_cutoff = ccm->base_b + unbiased_byteify(ccm,-f_cutoff);
 
-  if (esl_opt_IsOn(go, "--s2-T")) f_cutoff = esl_opt_GetReal(go, "--s2-T");
+  if (esl_opt_IsOn(go, "--s2-T")) {
+    f_cutoff = esl_opt_GetReal(go, "--s2-T");
+    fprintf(stderr,"Stage 2: score cutoff %.2f\n",f_cutoff);
+  }
   else {
     f_cutoff = 0.0;
     fprintf(stderr,"WARNING: P-value cutoffs not implemented, setting stage 2 bitscore cutoff to %.1f\n",f_cutoff);
@@ -178,7 +194,10 @@ printf("E-val at rank 10 = %1.3e\t",eval);
   /* Need to scale */
   s2_cutoff = wordify(ocm->scale_w, f_cutoff);
 
-  if (esl_opt_IsOn(go, "--s3-T")) f_cutoff = esl_opt_GetReal(go, "--s3-T");
+  if (esl_opt_IsOn(go, "--s3-T")) {
+    f_cutoff = esl_opt_GetReal(go, "--s3-T");
+    fprintf(stderr,"Stage 3: score cutoff %.2f\n",f_cutoff);
+  }
   else {
     e_cutoff = esl_opt_GetReal(go,"--s3-E");
 //FIXME!!  Always picking the first partition, here, which probably isn't what we want.
@@ -194,13 +213,19 @@ printf("E-val at rank 10 = %1.3e\t",eval);
   seq = esl_sq_Create();
   while ( esl_sqio_Read(sqfp, seq) == eslOK)
   {
+    is_reversed = 0;
     if (seq->n == 0) continue;
     if (seq->dsq == NULL) esl_sq_Digitize(abc, seq);
-    if (o_glbf == 0) { fprintf(stdout,"%s\t",seq->name); }
+    if (o_glbf == 0) { fprintf(stdout,"%s %s\t",seq->name,is_reversed?"(reverse complement)":""); }
   
+PIPELINE:
     /* Stage 1: MSCYK */
     results = CreateResults(INIT_RESULTS);
+    esl_stopwatch_Start(w);
     if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, seq->n, s1_cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+    esl_stopwatch_Stop(w);
+    fprintf(stderr,"Stage 1: %-24s %-22s",seq->name,is_reversed?"(reverse complement)":"");
+    esl_stopwatch_Display(stderr, w, " CPU time: ");
 
 /* Rudimentary output of results */
 if (o_glbf == 0) {
@@ -220,11 +245,13 @@ fflush(stdout);
     windows = ResolveMSCYK(results, 1, seq->n, cm->smx->W);
     FreeResults(results);
 
-    //FIXME We're not even checking the reverse strand, which is why orientation is always 0...
     //FIXME The joined and expanded windows don't have any particular score, so set them to the cutoff value
     if (o_glbf == 1) {
       for (i = 0; i < windows->num_results; i++) {
-        printf("%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, windows->data[i].start, windows->data[i].stop, 0);
+        if (!is_reversed)
+          printf("%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, windows->data[i].start, windows->data[i].stop, 0);
+        else
+          printf("%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, seq->n - windows->data[i].stop, seq->n - windows->data[i].start, 1);
       }
     }
 
@@ -233,6 +260,12 @@ fflush(stdout);
       sc2 = SSE_CYKFilter_epi16(ocm, seq->dsq, seq->n, 0, ocm->M-1, windows->data[i].start, windows->data[i].stop, TRUE, &br2, &bsc2);
 
       if (sc2 > s2_cutoff) {
+        if (o_glbf == 2) {
+          if (!is_reversed) 
+            printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, windows->data[i].start, windows->data[i].stop, 0);
+          else
+            printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, seq->n - windows->data[i].stop, seq->n - windows->data[i].start, 1);
+        }
         /* Stage 3: full-precision CYK */
         //FIXME: still using the large padded window from MSCYK here (if the score passed); could
         //FIXME: probably trim that down based on the coordinates from the CYKFilter stage, if we
@@ -243,8 +276,22 @@ fflush(stdout);
 
         if (sc3 >= s3_cutoff) {
           /* Report hit */
+          if (o_glbf == 3) {
+            if (!is_reversed)
+              printf("%-24s %-6f %d %d %d\n", seq->name, sc3, windows->data[i].start, windows->data[i].stop, 0);
+            else
+              printf("%-24s %-6f %d %d %d\n", seq->name, sc3, seq->n - windows->data[i].stop, seq->n - windows->data[i].start, 1);
+          }
         }
       }
+    }
+
+    FreeResults(windows);
+
+    if (do_reverse && !is_reversed) {
+      revcomp(seq->abc, seq, seq);
+      is_reversed = 1;
+      goto PIPELINE;
     }
 
     esl_sq_Destroy(seq);
@@ -252,13 +299,13 @@ fflush(stdout);
   }
   esl_sq_Destroy(seq);
 
-
   if (ccm != NULL) cm_consensus_Free(ccm);
   if (ocm != NULL) cm_optimized_Free(ocm); free(ocm);
   FreeCM(cm);
   esl_alphabet_Destroy(abc);
   esl_sqfile_Close(sqfp);
   esl_getopts_Destroy(go);
+  esl_stopwatch_Destroy(w);
 
   return 0;
 
