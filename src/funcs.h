@@ -594,8 +594,8 @@ extern int cmcalibrate_exp_results_MPIPackSize(float *scA, int nseq, MPI_Comm co
 extern int cmcalibrate_exp_results_MPIPack(float *scA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
 extern int cmcalibrate_exp_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_scA, int *ret_nseq);
 extern int cmcalibrate_filter_results_MPIPackSize(int nseq, MPI_Comm comm, int *ret_n);
-extern int cmcalibrate_filter_results_MPIPack(float *cyk_scA, float *ins_scA, float *fwd_scA, int *partA, int nseq, char *buf, int n, int *position, MPI_Comm comm);
-extern int cmcalibrate_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_cyk_scA, float **ret_ins_scA, float **ret_fwd_scA, int **ret_partA, int *ret_nseq);
+extern int cmcalibrate_filter_results_MPIPack(float *cyk_scA, float *ins_scA, float *fwd_scA, int nseq, int seq_offset, char *buf, int n, int *position, MPI_Comm comm);
+extern int cmcalibrate_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_cyk_scA, float **ret_ins_scA, float **ret_fwd_scA, int *ret_nseq, int *ret_seq_offset);
 extern int comlog_MPIPackSize(ComLog_t *comlog, MPI_Comm comm, int *ret_n);
 extern int comlog_MPIPack    (ComLog_t *comlog, char *buf, int n, int *position, MPI_Comm comm);
 extern int comlog_MPIUnpack  (char *buf, int n, int *pos, MPI_Comm comm, ComLog_t **ret_comlog);

@@ -2737,14 +2737,14 @@ cmcalibrate_filter_results_MPIPackSize(int nseq, MPI_Comm comm, int *ret_n)
 
   status = MPI_Pack_size(1, MPI_INT, comm, &sz);        n += sz;  if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   /* for nseq */
+  status = MPI_Pack_size(1, MPI_INT, comm, &sz);        n += sz;  if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
+  /* for seq_offset */
   status = MPI_Pack_size(nseq, MPI_FLOAT, comm, &sz);   n += sz;  if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   /* for cyk_scA */
   status = MPI_Pack_size(nseq, MPI_FLOAT, comm, &sz);   n += sz;  if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   /* for ins_scA */
   status = MPI_Pack_size(nseq, MPI_FLOAT, comm, &sz);   n += sz;  if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
   /* for fwd_scA */
-  status = MPI_Pack_size(nseq, MPI_INT,   comm, &sz);   n += sz;  if (status != 0) ESL_XEXCEPTION(eslESYS, "pack size failed");
-  /* for partA */
 
   *ret_n = n;
   return eslOK;
@@ -2763,17 +2763,17 @@ cmcalibrate_filter_results_MPIPackSize(int nseq, MPI_Comm comm, int *ret_n)
  *
  */
 int
-cmcalibrate_filter_results_MPIPack(float *cyk_scA, float *ins_scA, float *fwd_scA, int *partA, int nseq, char *buf, int n, int *position, MPI_Comm comm)
+cmcalibrate_filter_results_MPIPack(float *cyk_scA, float *ins_scA, float *fwd_scA, int nseq, int seq_offset, char *buf, int n, int *position, MPI_Comm comm)
 {
   int status;
 
   ESL_DPRINTF2(("cmcalibrate_filter_results_MPIPack(): ready.\n"));
 
-  status = MPI_Pack((int *) &(nseq), 1,        MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = MPI_Pack(cyk_scA,         nseq,     MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = MPI_Pack(ins_scA,         nseq,     MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = MPI_Pack(fwd_scA,         nseq,     MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
-  status = MPI_Pack(partA,           nseq,     MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((int *) &(nseq),       1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack((int *) &(seq_offset), 1, MPI_INT,   buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(cyk_scA,            nseq, MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(ins_scA,            nseq, MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
+  status = MPI_Pack(fwd_scA,            nseq, MPI_FLOAT, buf, n, position,  comm); if (status != 0) ESL_EXCEPTION(eslESYS, "pack failed");
 
   ESL_DPRINTF2(("cmcalibrate_filter_results_MPIPack(): done. Packed %d bytes into buffer of size %d\n", *position, n));
 
@@ -2790,16 +2790,17 @@ cmcalibrate_filter_results_MPIPack(float *cyk_scA, float *ins_scA, float *fwd_sc
  *
  */
 int
-cmcalibrate_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_cyk_scA, float **ret_ins_scA, float **ret_fwd_scA, int **ret_partA, int *ret_nseq)
+cmcalibrate_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, float **ret_cyk_scA, float **ret_ins_scA, float **ret_fwd_scA, int *ret_nseq, int *ret_seq_offset)
 {
   int status;
   float  *cyk_scA  = NULL;
   float  *ins_scA  = NULL;
   float  *fwd_scA  = NULL;
-  int    *partA    = NULL;
   int nseq = 0;
+  int seq_offset = 0;
 
   status = MPI_Unpack (buf, n, pos, &nseq,        1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
+  status = MPI_Unpack (buf, n, pos, &seq_offset,  1, MPI_INT,   comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
 
   ESL_ALLOC(cyk_scA, sizeof(float) * nseq);
   status = MPI_Unpack (buf, n, pos, cyk_scA, nseq, MPI_FLOAT,  comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
@@ -2807,14 +2808,12 @@ cmcalibrate_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, 
   status = MPI_Unpack (buf, n, pos, ins_scA, nseq, MPI_FLOAT,  comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
   ESL_ALLOC(fwd_scA, sizeof(float) * nseq);
   status = MPI_Unpack (buf, n, pos, fwd_scA, nseq, MPI_FLOAT,  comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
-  ESL_ALLOC(partA,      sizeof(int) * nseq);
-  status = MPI_Unpack (buf, n, pos, partA, nseq,   MPI_INT,    comm); if (status != 0) ESL_XEXCEPTION(eslESYS, "mpi unpack failed");
 
-  *ret_cyk_scA = cyk_scA;
-  *ret_ins_scA = ins_scA;
-  *ret_fwd_scA = fwd_scA;
-  *ret_partA   = partA;
-  *ret_nseq    = nseq;
+  *ret_cyk_scA    = cyk_scA;
+  *ret_ins_scA    = ins_scA;
+  *ret_fwd_scA    = fwd_scA;
+  *ret_nseq       = nseq;
+  *ret_seq_offset = seq_offset;
   return eslOK;
 
   ESL_DPRINTF1(("cmcalibrate_filter_results_MPIUnpack() done.\n"));
@@ -2823,8 +2822,8 @@ cmcalibrate_filter_results_MPIUnpack(char *buf, int n, int *pos, MPI_Comm comm, 
   if(cyk_scA != NULL) free(cyk_scA);
   if(ins_scA != NULL) free(ins_scA);
   if(fwd_scA != NULL) free(fwd_scA);
-  if(partA   != NULL) free(partA);
   *ret_nseq = 0;
+  *ret_seq_offset = 0;
   return status;
 }
 

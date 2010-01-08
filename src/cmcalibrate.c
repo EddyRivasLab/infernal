@@ -190,8 +190,8 @@ static int   mpi_master    (const ESL_GETOPTS *go, struct cfg_s *cfg, char *errb
 static int   mpi_worker    (const ESL_GETOPTS *go, struct cfg_s *cfg);
 #endif
 
-static int  process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
-				   float **ret_cyk_scA, float **ret_ins_scA, float **ret_fwd_scA, int **ret_partA);
+static int  process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, ESL_DSQ **dsqA, int *L_A, int nseq,
+				   float **ret_cyk_scA, float **ret_ins_scA, float **ret_fwd_scA);
 static int  initialize_cm(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 static int  initialize_cmstats(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, CM_t *cm);
 
@@ -710,16 +710,17 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   float             tmp_tailp;                                   /* temporary tail mass probability fit to an exponential */
 
   /* filter threshold related vars */
-  int      filN = esl_opt_GetInteger(go, "--fil-N"); /* number of sequences to search for filter threshold calculation */
-  int      fthr_mode = 0;         /* CM mode for filter threshold calculation, FTHR_CM_GC, FTHR_CM_GI, FTHR_CM_LC, FTHR_CM_LI */
-  float   *fil_cyk_scA = NULL;    /* [0..filN-1] best cm cyk score for each emitted seq */
-  float   *fil_ins_scA = NULL;    /* [0..filN-1] best cm insidei score for each emitted seq */
-  float   *fil_fwd_scA = NULL;    /* [0..filN-1] best cp9 Forward score for each emitted seq */
-  int     *fil_partA   = NULL;    /* [0..filN-1] partition of CM emitted seq */
-  int      fil_cm_cyk_mode;       /* CYK    fthr mode CM is in FTHR_CM_LC or FTHR_CM_GC */
-  int      fil_cm_ins_mode;       /* Inside fthr mode CM is in FTHR_CM_LI or FTHR_CM_GI */
+  int       filN = esl_opt_GetInteger(go, "--fil-N"); /* number of sequences to search for filter threshold calculation */
+  int       fthr_mode = 0;         /* CM mode for filter threshold calculation, FTHR_CM_GC, FTHR_CM_GI, FTHR_CM_LC, FTHR_CM_LI */
+  float    *fil_cyk_scA = NULL;    /* [0..filN-1] best cm cyk score for each emitted seq */
+  float    *fil_ins_scA = NULL;    /* [0..filN-1] best cm insidei score for each emitted seq */
+  float    *fil_fwd_scA = NULL;    /* [0..filN-1] best cp9 Forward score for each emitted seq */
+  int      *fil_partA   = NULL;    /* [0..filN-1] partition of CM emitted seq */
+  int       fil_cm_cyk_mode;       /* CYK    fthr mode CM is in FTHR_CM_LC or FTHR_CM_GC */
+  int       fil_cm_ins_mode;       /* Inside fthr mode CM is in FTHR_CM_LI or FTHR_CM_GI */
+  ESL_DSQ **fil_dsqA;              /* [0..filN-1] the emitted sequences to score */
+  int      *fil_L_A;                /* [0..filN-1] lengths of the emitted sequences */
   
-
   if ((status = init_master_cfg(go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   if ((status = print_run_info (go, cfg, errbuf)) != eslOK) cm_Fail(errbuf);
   
@@ -818,15 +819,35 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    else { 
 	      if((status = get_genomic_sequence_from_hmm(cfg, errbuf, cm, cfg->expL, &dsq)) != eslOK) cm_Fail(errbuf); 
 	    }
+
+	    /* TEMP */
+	    /*to print seqs to stdout uncomment this block */
+	    ESL_SQ *mytmpdsq;
+	    mytmpdsq = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq, cfg->expL, NULL, NULL, NULL);
+	    esl_sq_Textize(mytmpdsq);
+	    printf(">seq%d\n%s\n", i, mytmpdsq->seq);
+	    esl_sq_Destroy(mytmpdsq);
+	    fflush(stdout);
+	    /* TEMP */
+
 	    if((status = ProcessSearchWorkunit (cm,  errbuf, dsq, cfg->expL, &results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, NULL, NULL)) != eslOK) cm_Fail(errbuf);
+	    /* TEMP */ printf("# mode: %12s\n", DescribeExpMode(exp_mode));
+	    /* TEMP */printf("serial i: %4d before nresults: %8d\n", i, results->num_results);
+	    int zz;
+	    for(zz = 0; zz < results->num_results; zz++) 
+	      printf("%5d  %5d  %10.3f\n", results->data[zz].start, results->data[zz].stop, results->data[zz].score);
 	    RemoveOverlappingHits(results, 1, cfg->expL);
-	    
 	    if(results->num_results > 0) { 
 	      if(i == 0) ESL_ALLOC (exp_scA, sizeof(float) * (exp_scN + results->num_results));
 	      else       ESL_RALLOC(exp_scA, tmp, sizeof(float) * (exp_scN + results->num_results));
 	      for(h = 0; h < results->num_results; h++) exp_scA[(exp_scN+h)] = results->data[h].score;
 	      exp_scN += results->num_results;
 	    }
+	    /* TEMP */ printf("after nresults: %8d\n", results->num_results);
+	    for(zz = 0; zz < results->num_results; zz++) 
+	      printf("%5d  %5d  %10.3f\n", results->data[zz].start, results->data[zz].stop, results->data[zz].score);
+	    fflush(stdout);
+
 	    FreeResults(results);
 	    free(dsq);
 	  }
@@ -843,6 +864,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  total_asec += cfg->w_stage->elapsed;
 	  FormatTimeString(time_buf, cfg->w_stage->elapsed, FALSE);
 	  printf("  %10s\n", time_buf);
+	  fflush(stdout);
 	  free(exp_scA);
 	} /* end of for loop over partitions */
       
@@ -863,10 +885,28 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	  esl_stopwatch_Start(cfg->w_stage);
 	  fthr_mode = ExpModeToFthrMode(exp_mode);
+
+	  /* generate sequences for filter thresold calibration */
+	  ESL_ALLOC(fil_dsqA,  sizeof(ESL_DSQ *) * filN);
+	  ESL_ALLOC(fil_L_A,   sizeof(int) * filN);
+	  ESL_ALLOC(fil_partA, sizeof(int) * filN);
+	  for(i = 0; i < filN; i++) { 
+	    if((status = get_cmemit_dsq(cfg, errbuf, cm, &fil_L_A[i], &fil_partA[i], &fil_dsqA[i])) != eslOK) cm_Fail(errbuf);
+	    /* TEMP */
+	    /*to print seqs to stdout uncomment this block */
+	    ESL_SQ *tmp;
+	    tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", fil_dsqA[i], fil_L_A[i], NULL, NULL, NULL);
+	    esl_sq_Textize(tmp);
+	    printf(">seq%d\n%s\n", i, tmp->seq);
+	    esl_sq_Destroy(tmp);
+	    fflush(stdout);
+	    /* TEMP */
+	  }
+
 	  /* search emitted sequences to get filter thresholds for HMM and each candidate sub CM root state */
 	  ESL_DPRINTF1(("\n\ncalling process_filter_workunit to get HMM filter thresholds for p: %d mode: %d\n", p, exp_mode));
 	  
-	  if((status = process_filter_workunit (go, cfg, errbuf, cm, filN, &fil_cyk_scA, &fil_ins_scA, &fil_fwd_scA, &fil_partA)) != eslOK) cm_Fail(errbuf);
+	  if((status = process_filter_workunit (go, cfg, errbuf, cm, fil_dsqA, fil_L_A, filN, &fil_cyk_scA, &fil_ins_scA, &fil_fwd_scA)) != eslOK) cm_Fail(errbuf);
 	  
 	  exp_cm_cyk_mode  = (cm->flags & CMH_LOCAL_BEGIN) ? EXP_CM_LC  : EXP_CM_GC;
 	  exp_cm_ins_mode  = (cm->flags & CMH_LOCAL_BEGIN) ? EXP_CM_LI  : EXP_CM_GI;
@@ -879,13 +919,17 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  free(fil_ins_scA);
 	  free(fil_fwd_scA);
 	  free(fil_partA);
-	  
+	  free(fil_L_A);
+	  for(i = 0; i < filN; i++) free(fil_dsqA[i]);
+	  free(fil_dsqA);
+
 	  esl_stopwatch_Stop(cfg->w_stage);
 	  fil_asecA[exp_mode] = cfg->w_stage->elapsed;
 	  cm_asec += cfg->w_stage->elapsed;
 	  total_asec += cfg->w_stage->elapsed;
 	  FormatTimeString(time_buf, cfg->w_stage->elapsed, FALSE);
 	  printf("  %10s\n", time_buf);
+	  fflush(stdout);
 	}
       } /* end of for(exp_mode = 0; exp_mode < NCMMODES; exp_mode++) */
       if(cfg->be_verbose) if((status = debug_print_cmstats(cm, errbuf, cfg->cmstatsA[cmi], TRUE)) != eslOK) cm_Fail(errbuf);
@@ -969,6 +1013,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int      nseq_this_worker = 0;  /* number of seqs to tell current worker to work on */
   int      nseq_just_recv   = 0;  /* number of seqs we just received scores for from a worker */
   int      nseq_recv        = 0;  /* number of seqs we've received thus far this round from workers */
+  int      seq_offset       = 0;  /* offset in master's list of sequences, rec'd then sent back, unchanged */
   MPI_Status mpistatus;           /* MPI status... */
   int      msg;                   /* holds integer telling workers we've finished current stage */
   int      exp_mode;              /* ctr over exp tail modes */
@@ -1013,22 +1058,22 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int *len_wlist = NULL;                                /* [0..wi..nproc-1] length of chunk worker wi is searching */
 
   /* filter threshold related vars */
-  int      filN = esl_opt_GetInteger(go, "--fil-N"); /* number of sequences to search for filter threshold calculation */
-  int      fthr_mode = 0;         /* CM mode for filter threshold calculation, FTHR_CM_GC, FTHR_CM_GI, FTHR_CM_LC, FTHR_CM_LI */
-  int      fil_cm_cyk_mode;       /* CYK    fthr mode CM is in FTHR_CM_LC or FTHR_CM_GC */
-  int      fil_cm_ins_mode;       /* Inside fthr mode CM is in FTHR_CM_LI or FTHR_CM_GI */
-  int      fil_nseq_per_worker  = (filN / (cfg->nproc-1)); /* when calcing filters, number of seqs to tell each worker to work on */
-  uint32_t *seed_wlist = NULL;    /* [0..wi..nproc-1] seeds for worker's RNGs, we send these to workers */
+  int       filN = esl_opt_GetInteger(go, "--fil-N"); /* number of sequences to search for filter threshold calculation */
+  int       fthr_mode = 0;         /* CM mode for filter threshold calculation, FTHR_CM_GC, FTHR_CM_GI, FTHR_CM_LC, FTHR_CM_LI */
+  int       fil_cm_cyk_mode;       /* CYK    fthr mode CM is in FTHR_CM_LC or FTHR_CM_GC */
+  int       fil_cm_ins_mode;       /* Inside fthr mode CM is in FTHR_CM_LI or FTHR_CM_GI */
+  int       fil_nseq_per_worker  = (filN / (cfg->nproc-1)); /* when calcing filters, number of seqs to tell each worker to work on */
   /* full arrays of CYK, Inside, Fwd scores, [0..filN-1] */
-  float   *fil_cyk_scA = NULL;    /* [0..filN-1] best cm cyk score for each emitted seq */
-  float   *fil_ins_scA = NULL;    /* [0..filN-1] best cm insidei score for each emitted seq */
-  float   *fil_fwd_scA = NULL;    /* [0..filN-1] best cp9 Forward score for each emitted seq */
-  int     *fil_partA   = NULL;    /* [0..filN-1] partition of CM emitted seq */
+  float    *fil_cyk_scA = NULL;    /* [0..filN-1] best cm cyk score for each emitted seq */
+  float    *fil_ins_scA = NULL;    /* [0..filN-1] best cm insidei score for each emitted seq */
+  float    *fil_fwd_scA = NULL;    /* [0..filN-1] best cp9 Forward score for each emitted seq */
+  int      *fil_partA   = NULL;    /* [0..filN-1] partition of CM emitted seq */
+  ESL_DSQ **fil_dsqA    = NULL;    /* [0..filN-1] CM emitted seq */
+  int      *fil_L_A     = NULL;    /* [0..filN-1] length of emitted seq */
   /* worker's arrays of CYK, Inside, Fwd scores, [0..nseq_per_worker-1], rec'd from workers, copied to full arrays (ex: fil_cyk_scA) */
-  float   *wkr_fil_cyk_scA = NULL;/* rec'd from worker: best cm cyk score for each emitted seq */
-  float   *wkr_fil_ins_scA = NULL;/* rec'd from worker: best cm insidei score for each emitted seq */
-  float   *wkr_fil_fwd_scA = NULL;/* rec'd from worker: best cp9 Forward score for each emitted seq */
-  int     *wkr_fil_partA = NULL;  /* rec'd from worker: partition for seq i */
+  float    *wkr_fil_cyk_scA = NULL;/* rec'd from worker: best cm cyk score for each emitted seq */
+  float    *wkr_fil_ins_scA = NULL;/* rec'd from worker: best cm insidei score for each emitted seq */
+  float    *wkr_fil_fwd_scA = NULL;/* rec'd from worker: best cp9 Forward score for each emitted seq */
   
   /* Master initialization: including, figure out the alphabet type.
    * If any failure occurs, delay printing error message until we've shut down workers.
@@ -1039,7 +1084,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   if (xstatus == eslOK) { if ((si_wlist       = malloc(sizeof(int)  * cfg->nproc))     == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
   if (xstatus == eslOK) { if ((seqpos_wlist   = malloc(sizeof(int)  * cfg->nproc))     == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
   if (xstatus == eslOK) { if ((len_wlist      = malloc(sizeof(int)  * cfg->nproc))     == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
-  if (xstatus == eslOK) { if ((seed_wlist     = malloc(sizeof(uint32_t) * cfg->nproc)) == NULL) { sprintf(errbuf, "allocation failed"); xstatus = eslEMEM; } }
 
   MPI_Bcast(&xstatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
   if (xstatus != eslOK) return xstatus; /* errbuf was filled above */
@@ -1047,8 +1091,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
   for (wi = 0; wi < cfg->nproc; wi++) {
     si_wlist[wi] = seqpos_wlist[wi] = len_wlist[wi] = -1;
-    seed_wlist[wi] = esl_rnd_Roll(cfg->r, 1000000000); /* not sure what to use as max for seed */
-    ESL_DPRINTF1(("wi %d seed: %" PRIu32 "\n", wi, seed_wlist[wi]));
   }
   
   /* Worker initialization:
@@ -1057,8 +1099,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
    * so we just receive a quick OK/error code reply from each worker to be sure,
    * and don't worry about an informative message. 
    */
-  for (wi = 1; wi < cfg->nproc; wi++)
-    MPI_Send(&(seed_wlist[wi]), 1, MPI_UNSIGNED_LONG, wi, 0, MPI_COMM_WORLD);
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
   if (status != eslOK) cm_Fail("One or more MPI worker processes failed to initialize.");
   ESL_DPRINTF1(("%d workers are initialized\n", cfg->nproc-1));
@@ -1133,6 +1173,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       ESL_ALLOC(fil_ins_scA, sizeof(float) * filN);
       ESL_ALLOC(fil_fwd_scA, sizeof(float) * filN);
       ESL_ALLOC(fil_partA,   sizeof(int) *   filN);
+      ESL_ALLOC(fil_L_A,     sizeof(int) *   filN);
+      ESL_ALLOC(fil_dsqA,    sizeof(ESL_DSQ *) *   filN);
   
       for(exp_mode = 0; exp_mode < EXP_NMODES; exp_mode++) {
 	if(ExpModeIsLocal(exp_mode)) { expN = ExpModeIsForCM(exp_mode) ? cfg->exp_cmN_loc : cfg->exp_hmmN_loc; }
@@ -1156,7 +1198,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	  if((status = cm_GetAvgHitLen(cm, errbuf, &(cfg->avg_hit_len))) != eslOK) cm_Fail(errbuf);
 	}
 	chunksize = DetermineSeqChunksize(cfg->nproc, cfg->expL, cm->W);
-    
+	/* TEMP */ printf("HEY! chunksize: %d (W: %d)\n", chunksize, cm->W);
+
 	/* update search info for round 0 (final round) for exp tail mode */
 	UpdateSearchInfoForExpMode(cm, 0, exp_mode);
     
@@ -1221,6 +1264,15 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 			else { 
 			  if((status = get_genomic_sequence_from_hmm(cfg, errbuf, cm, cfg->expL, &(dsq_slist[si]))) != eslOK) goto ERROR;
 			}
+			/* TEMP */
+			ESL_SQ *tmp;
+			tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq_slist[si], cfg->expL, NULL, NULL, NULL);
+			esl_sq_Textize(tmp);
+			printf(">seq%d\n%s\n", si, tmp->seq);
+			esl_sq_Destroy(tmp);
+			fflush(stdout);
+			/* TEMP */
+
 			results_slist[si] = CreateResults(INIT_RESULTS);
 			sent_slist[si]    = FALSE;
 			chunks_slist[si]  = 0;
@@ -1274,11 +1326,20 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 			      { /* we're done with sequence si_recv; remove overlapping hits, copy scores of remaining hits, then free data */
 				if(results_slist[si_recv]->num_results > 0) 
 				  { 
+				    /* TEMP */ printf("# mode: %12s\n", DescribeExpMode(exp_mode));
+				    /* TEMP */ printf("si_recv: %4d expL: %d before nresults: %8d\n", si_recv, cfg->expL, results_slist[si_recv]->num_results);
+				    int zz;
+				    for(zz = 0; zz < results_slist[si_recv]->num_results; zz++) 
+				      printf("%5d  %5d  %10.3f\n", results_slist[si_recv]->data[zz].start, results_slist[si_recv]->data[zz].stop, results_slist[si_recv]->data[zz].score);
 				    RemoveOverlappingHits(results_slist[si_recv], 1, cfg->expL);
 				    if(exp_scA == NULL) ESL_ALLOC (exp_scA,      sizeof(float) * (exp_scN + results_slist[si_recv]->num_results));
 				    else                ESL_RALLOC(exp_scA, tmp, sizeof(float) * (exp_scN + results_slist[si_recv]->num_results));
 				    for(h = 0; h < results_slist[si_recv]->num_results; h++) exp_scA[(exp_scN+h)] = results_slist[si_recv]->data[h].score;
 				    exp_scN += results_slist[si_recv]->num_results;
+				    /* TEMP */ printf("after nresults: %8d\n", results_slist[si_recv]->num_results);
+				    for(zz = 0; zz < results_slist[si_recv]->num_results; zz++) 
+				      printf("%5d  %5d  %10.3f\n", results_slist[si_recv]->data[zz].start, results_slist[si_recv]->data[zz].stop, results_slist[si_recv]->data[zz].score);
+				    fflush(stdout);
 				  }
 				free(dsq_slist[si_recv]);
 				FreeResults(results_slist[si_recv]);
@@ -1309,6 +1370,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 		    seqpos_wlist[wi] = seqpos;
 		    len_wlist[wi]    = len;
 		    chunks_slist[si]++;
+
+		    /* TEMP */ printf("sending chunk of seq: %4d of len: %5d to wi: %4d seqpos: %4d\n", si, len, wi, seqpos);
 		
 		    wi++;
 		    nproc_working++;
@@ -1344,6 +1407,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	    total_asec += cfg->w_stage->elapsed;
 	    FormatTimeString(time_buf, cfg->w_stage->elapsed, FALSE);
 	    printf("  %10s\n", time_buf);
+	    fflush(stdout);
 
 	    free(exp_scA); 
 	    exp_scA = NULL;
@@ -1368,6 +1432,24 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	  esl_stopwatch_Start(cfg->w_stage);
 	  fthr_mode = ExpModeToFthrMode(exp_mode);
 	  ESL_DPRINTF1(("MPI master: CM: %d fthr mode: %d\n", cfg->ncm, fthr_mode));
+
+	  /* generate all filN sequences before sending any */
+	  ESL_ALLOC(fil_dsqA,  sizeof(ESL_DSQ *) * filN);
+	  ESL_ALLOC(fil_L_A,   sizeof(int) * filN);
+	  ESL_ALLOC(fil_partA, sizeof(int) * filN);
+	  for(i = 0; i < filN; i++) { 
+	    if((status = get_cmemit_dsq(cfg, errbuf, cm, &fil_L_A[i], &fil_partA[i], &fil_dsqA[i])) != eslOK) cm_Fail(errbuf);
+	  }
+	  for(i = 0; i < filN; i++) { 
+	    if((status = get_cmemit_dsq(cfg, errbuf, cm, &fil_L_A[i], &fil_partA[i], &fil_dsqA[i])) != eslOK) cm_Fail(errbuf);
+	    /*to print seqs to stdout uncomment this block */
+	    ESL_SQ *tmp;
+	    tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", fil_dsqA[i], fil_L_A[i], NULL, NULL, NULL);
+	    esl_sq_Textize(tmp);
+	    printf(">seq%d\n%s\n", i, tmp->seq);
+	    esl_sq_Destroy(tmp);
+	    fflush(stdout);
+	  }
       
 	  if(xstatus == eslOK) have_work = TRUE;  /* TRUE while work remains  */
 	  else                 have_work = FALSE; /* we've seen an error and are trying to finish cleanly */
@@ -1413,19 +1495,16 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 		    if (xstatus == eslOK) /* worker reported success. Get the results. */
 		      {
 			ESL_DPRINTF1(("MPI master sees that the result buffer contains HMM filter results\n"));
-			if ((status = cmcalibrate_filter_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &wkr_fil_cyk_scA, &wkr_fil_ins_scA, &wkr_fil_fwd_scA, &wkr_fil_partA, &nseq_just_recv)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
+			if ((status = cmcalibrate_filter_results_MPIUnpack(buf, bn, &pos, MPI_COMM_WORLD, &wkr_fil_cyk_scA, &wkr_fil_ins_scA, &wkr_fil_fwd_scA, &nseq_just_recv, &seq_offset)) != eslOK) cm_Fail("cmcalibrate results unpack failed");
 			ESL_DPRINTF1(("MPI master has unpacked HMM filter results\n"));
 			for(i = 0; i < nseq_just_recv; i++) {
-			  fil_cyk_scA[nseq_recv+i] = wkr_fil_cyk_scA[i];
-			  fil_ins_scA[nseq_recv+i] = wkr_fil_ins_scA[i];
-			  fil_fwd_scA[nseq_recv+i] = wkr_fil_fwd_scA[i];
-			  fil_partA[nseq_recv+i]   = wkr_fil_partA[i];
-			  ESL_DASSERT1((fil_partA[nseq_recv+i] < cfg->np));
+			  fil_cyk_scA[seq_offset+i] = wkr_fil_cyk_scA[i];
+			  fil_ins_scA[seq_offset+i] = wkr_fil_ins_scA[i];
+			  fil_fwd_scA[seq_offset+i] = wkr_fil_fwd_scA[i];
 			}
 			free(wkr_fil_cyk_scA);
 			free(wkr_fil_ins_scA);
 			free(wkr_fil_fwd_scA);
-			free(wkr_fil_partA);
 			nseq_recv += nseq_just_recv;
 		      }
 		    else	/* worker reported an error. Get the errbuf. */
@@ -1441,9 +1520,14 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 
 	      if (have_work)
 		{   
-		  /* send new search job */
-		  ESL_DPRINTF1(("MPI master is sending HMM filter nseq %d to worker %d\n", nseq_this_worker, wi));
+		  /* send number of sequences, then seq offset, then sequences */
 		  MPI_Send(&(nseq_this_worker), 1, MPI_INT, wi, 0, MPI_COMM_WORLD);
+		  MPI_Send(&(nseq_sent),        1, MPI_INT, wi, 0, MPI_COMM_WORLD);
+		  for(i = nseq_sent; i < (nseq_sent + nseq_this_worker); i++) { 
+		    ESL_DPRINTF1(("MPI master is sending HMM filter seq %d to worker %d\n", i, wi));
+		    if ((status = cm_dsq_MPISend(fil_dsqA[i], fil_L_A[i], wi, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI filter job send failed");
+		    free(fil_dsqA[i]);
+		  }
 	      
 		  wi++;
 		  nproc_working++;
@@ -1472,6 +1556,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	  total_asec += cfg->w_stage->elapsed;
 	  FormatTimeString(time_buf, cfg->w_stage->elapsed, FALSE);
 	  printf("  %10s\n", time_buf);
+	  fflush(stdout);
 	}
 	ESL_DPRINTF1(("MPI master: done with exp tail mode %d for this CM.\n", exp_mode));
       }
@@ -1487,6 +1572,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	free(exp_asecAA[exp_mode]); 
 	free(exp_psecAA[exp_mode]); 
       }
+      free(fil_dsqA);
+      free(fil_L_A);
       free(exp_asecAA);
       free(exp_psecAA);
       free(fil_asecA); 
@@ -1495,7 +1582,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       printf("//\n");
       fflush(stdout);
     }
-  free(seed_wlist);
   free(si_wlist);
   free(seqpos_wlist);
   free(len_wlist);
@@ -1525,11 +1611,11 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   CM_t    *cm = NULL;             /* the CM */
   int      cmi;                   /* CM index, which model we're working on */
   int      p;                     /* partition index */
+  int      i;                     /* counter over seqs */
   char    *wbuf = NULL;	          /* packed send/recv buffer  */
   int      wn   = 0;	          /* allocation size for wbuf */
   int      sz, n;		  /* size of a packed message */
   int      pos;                   /* posn in wbuf */
-  uint32_t seed;                  /* seed for RNG, rec'd from master */
   int      nseq;                  /* number of seqs to emit/search for current job */
   void    *tmp;                   /* ptr for ESL_RALLOC */ 
   MPI_Status mpistatus;           /* MPI status... */
@@ -1541,12 +1627,14 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int               exp_mode  = 0;
 
   /* filter threshold related vars */
-  int      fthr_mode = 0;         /* CM mode for filter threshold calculation, FTHR_CM_GC, FTHR_CM_GI, FTHR_CM_LC, FTHR_CM_LI */
-  float   *fil_cyk_scA = NULL;    /* [0..nseq-1] best cm cyk score for each emitted seq */
-  float   *fil_ins_scA = NULL;    /* [0..nseq-1] best cm insidei score for each emitted seq */
-  float   *fil_fwd_scA = NULL;    /* [0..nseq-1] best cp9 Forward score for each emitted seq */
-  int     *fil_partA   = NULL;    /* [0..nseq-1] partition of CM emitted seq */
-  int      in_fil_section_flag = FALSE; /* set to TRUE while we're in the filter threshold calculation
+  int       fthr_mode = 0;         /* CM mode for filter threshold calculation, FTHR_CM_GC, FTHR_CM_GI, FTHR_CM_LC, FTHR_CM_LI */
+  float    *fil_cyk_scA = NULL;    /* [0..nseq-1] best cm cyk score for each emitted seq */
+  float    *fil_ins_scA = NULL;    /* [0..nseq-1] best cm insidei score for each emitted seq */
+  float    *fil_fwd_scA = NULL;    /* [0..nseq-1] best cp9 Forward score for each emitted seq */
+  ESL_DSQ **fil_dsqA    = NULL;    /* [0..nseq-1] CM emitted seqs, rec'd from master */
+  int      *fil_L_A     = NULL;    /* [0..nseq-1] lengths of seqs, rec'd from master */
+  int       seq_offset;            /* sent by master, we send back so master knows where to store worker's results */
+  int       in_fil_section_flag = FALSE;/* set to TRUE while we're in the filter threshold calculation
 					 * section, we need to know this when we goto ERROR, b/c we have
 					 * to know how many more MPI_Recv() calls to make to match up
 					 * with the Master's sends before we can shut down.
@@ -1558,21 +1646,17 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
   if (xstatus != eslOK) return xstatus; /* master saw an error code; workers do an immediate normal shutdown. */
   ESL_DPRINTF1(("worker %d: sees that master has initialized\n", cfg->my_rank));
 	   
-  /* Master now sends worker initialization information (RNG seed) 
-   * Workers returns their status post-initialization.
+  /* Workers returns their status post-initialization.
    * Initial allocation of wbuf must be large enough to guarantee that
    * we can pack an error result into it, because after initialization,
    * errors will be returned as packed (code, errbuf) messages.
    */
-  if (MPI_Recv(&seed, 1, MPI_UNSIGNED_LONG, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XEXCEPTION(eslESYS, "mpi recv failed");
-  if (xstatus == eslOK) { if((cfg->r = esl_randomness_Create(seed)) == NULL)          xstatus = eslEMEM; }
   if (xstatus == eslOK) { wn = 4096;  if ((wbuf = malloc(wn * sizeof(char))) == NULL) xstatus = eslEMEM; }
   MPI_Reduce(&xstatus, &status, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD); /* everyone sends xstatus back to master */
   if (xstatus != eslOK) {
     if (wbuf != NULL) free(wbuf);
     return xstatus; /* shutdown; we passed the error back for the master to deal with. */
   }
-  ESL_DPRINTF1(("worker %d: initialized seed: %d\n", cfg->my_rank, seed));
 
   /* 2 special (annoying) cases: 
    * case 1: if we've used the --exp-gc option, we read in a seq file to fill
@@ -1639,7 +1723,7 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    {
 	      ESL_DPRINTF1(("worker %d: has received dsq chunk of length L: %d\n", cfg->my_rank, expL));
 	      if ((status = ProcessSearchWorkunit(cm, errbuf, exp_dsq, expL, &exp_results, esl_opt_GetReal(go, "--mxsize"), cfg->my_rank, NULL, NULL)) != eslOK) goto ERROR;
-	      RemoveOverlappingHits(exp_results, 1, expL);
+	      /*RemoveOverlappingHits(exp_results, 1, expL);*/
 	      ESL_DPRINTF1(("worker %d: has gathered search results\n", cfg->my_rank));
 
 	      n = 0;
@@ -1664,7 +1748,8 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	      if (cm_search_results_MPIPack(exp_results, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK)
 		ESL_XFAIL(eslFAIL, errbuf, "cm_search_results_MPIPack() call failed"); 
 	      MPI_Send(wbuf, pos, MPI_PACKED, 0, 0, MPI_COMM_WORLD);
-	      ESL_DPRINTF1(("worker %d: has sent results to master in message of %d bytes\n", cfg->my_rank, pos));
+	      ESL_DPRINTF1(("worker %d: has sent results (%d hits) to master in message of %d bytes\n", cfg->my_rank, exp_results->num_results, pos));
+	      printf("worker %d: has sent results (%d hits) to master in message of %d bytes\n", cfg->my_rank, exp_results->num_results, pos);
 		
 	      FreeResults(exp_results);
 	      free(exp_dsq);
@@ -1686,7 +1771,16 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  while(nseq != MPI_FINISHED_FILTER) {
 	    ESL_DPRINTF1(("worker %d: has received hmm filter nseq: %d\n", cfg->my_rank, nseq));
 	    
-	    if((status = process_filter_workunit (go, cfg, errbuf, cm, nseq, &fil_cyk_scA, &fil_ins_scA, &fil_fwd_scA, &fil_partA)) != eslOK) cm_Fail(errbuf);
+	    if(MPI_Recv(&seq_offset, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &mpistatus) != 0) ESL_XFAIL(eslESYS, errbuf, "mpi recv failed");
+
+	    /* allocate for the sequences */
+	    ESL_ALLOC(fil_dsqA,  sizeof(ESL_DSQ *) * nseq);
+	    ESL_ALLOC(fil_L_A,   sizeof(int) * nseq);
+	    for(i = 0; i < nseq; i++) { 
+	      if((status = cm_dsq_MPIRecv(0, 0, MPI_COMM_WORLD, &wbuf, &wn, &fil_dsqA[i], &fil_L_A[i])) != eslOK) return status;
+	    }
+	      
+	    if((status = process_filter_workunit (go, cfg, errbuf, cm, fil_dsqA, fil_L_A, nseq, &fil_cyk_scA, &fil_ins_scA, &fil_fwd_scA)) != eslOK) return status;
 	    ESL_DPRINTF1(("worker %d: has gathered HMM filter results\n", cfg->my_rank));
 	    n = 0;
 
@@ -1706,12 +1800,14 @@ mpi_worker(const ESL_GETOPTS *go, struct cfg_s *cfg)
 
 	    if (MPI_Pack(&status, 1, MPI_INT, wbuf, wn, &pos, MPI_COMM_WORLD) != 0) 
 	      ESL_XFAIL(eslESYS, errbuf, "mpi pack failed.");
-	      if (cmcalibrate_filter_results_MPIPack(fil_cyk_scA, fil_ins_scA, fil_fwd_scA, fil_partA, nseq, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK)
+	    if (cmcalibrate_filter_results_MPIPack(fil_cyk_scA, fil_ins_scA, fil_fwd_scA, nseq, seq_offset, wbuf, wn, &pos, MPI_COMM_WORLD) != eslOK)
 		ESL_XFAIL(eslFAIL, errbuf, "cmcalibrate_cp9_filter_results_MPIPack() call failed"); 
 	    free(fil_cyk_scA);
 	    free(fil_ins_scA);
 	    free(fil_fwd_scA);
-	    free(fil_partA);
+	    for(i = 0; i < nseq; i++) free(fil_dsqA[i]);
+	    free(fil_dsqA);
+	    free(fil_L_A);
 
 	    MPI_Send(wbuf, pos, MPI_PACKED, 0, 0, MPI_COMM_WORLD);
 	    ESL_DPRINTF1(("worker %d: has sent CP9 filter results to master in message of %d bytes\n", cfg->my_rank, pos));
@@ -2089,6 +2185,11 @@ get_cmemit_dsq(const struct cfg_s *cfg, char *errbuf, CM_t *cm, int *ret_L, int 
   assert(p < cfg->np);
   ESL_DASSERT1((p < cfg->np));
 
+  /* TEMP */
+  printf("DSQ length: %d\n", L);
+  fflush(stdout);
+  /* TEMP */
+
   /* free everything allocated by a esl_sqio.c:esl_sq_CreateFrom() call, but the dsq */
   dsq = sq->dsq;
   free(sq->name);
@@ -2400,50 +2501,45 @@ set_dnull(CM_t *cm, char *errbuf, double **ret_dnull)
 /* Function: process_filter_workunit()
  * Date:     EPN, Fri Jan 11 11:34:46 2008
  *
- * Purpose:  A filter work unit consists of a CM, an int specifying a 
- *           number of sequences <nseq>. The job is to generate <nseq> sequences 
- *           from the CM and search them first with the CM, both CYK and Inside
- *           and then with the HMM (Forward).
+ * Purpose:  A filter work unit consists of a CM and arrays of digitized sequences
+ *           <dsqA> and their corresponding lengths <L_A>, and partitions <partA>,
+ *           as well as an int specifying the size of those arrays (number of 
+ *           sequences <nseq>). The job is to search each sequence first with the 
+ *           CM, both CYK and Inside and then with the HMM (Forward).
  *           Scores will eventually be used for calc'ing HMM filter thresolds.
  *
  * Args:     go             - getopts
  *           cfg            - cmcalibrate's configuration
  *           errbuf         - for writing out error messages
  *           cm             - the CM (already configured as we want it)
+ *           dsqA           - [0..nseq-1]: the digitized sequences
+ *           L_A            - [0..nseq-1]: lengths of the sequences
  *           nseq           - number of seqs to generate
  *           ret_cyk_scA    - RETURN: [0..nseq-1] best CM CYK score for each seq
  *           ret_ins_scA    - RETURN: [0..nseq-1] best CM Inside score for each seq
  *           ret_fwd_scA    - RETURN: [0..nseq-1] best CP9 Forward score for each seq
- *           ret_partA      - RETURN: [0..nseq-1] partition of each seq 
  *
  * Returns:  eslOK on success; dies immediately if some error occurs.
  */
 static int
-process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, int nseq,
-			float **ret_cyk_scA, float **ret_ins_scA, float **ret_fwd_scA, int **ret_partA)
+process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t *cm, 
+			ESL_DSQ **dsqA, int *L_A, int nseq, float **ret_cyk_scA, float **ret_ins_scA, float **ret_fwd_scA)
 {
   int            status;
   float         *cyk_scA  = NULL;  /* [0..i..nseq-1] best CM CYK score for each state, each seq */
   float         *ins_scA  = NULL;  /* [0..i..nseq-1] best CM Inside score for each state, each seq */
   float         *fwd_scA = NULL;   /* [0..i..nseq-1] best CP9 Viterbi score for each seq */
-  int           *partA  = NULL;    /* [0..i..nseq-1] partitions of each seq */
-  int            p;                /* what partition we're in */
   int            i;
-  int            L;
-  ESL_DSQ       *dsq;
   int            orig_search_opts; /* we modify cm->search_opts in this function, then reset it at the end */
   int            do_null3;         /* TRUE to do NULL3 score corrections, FALSE not to */
 
   if(ret_cyk_scA == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "process_filter_workunit(), ret_cyk_scA == NULL.");
   if(ret_ins_scA == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "process_filter_workunit(), ret_ins_scA == NULL.");
   if(ret_fwd_scA == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "process_filter_workunit(), ret_fwd_scA == NULL.");
-  if(ret_partA   == NULL) ESL_FAIL(eslEINCOMPAT, errbuf, "process_filter_workunit(), ret_partA == NULL.");
 
   ESL_DPRINTF1(("in process_filter_workunit nseq: %d\n", nseq));
 
-  /* determine algs we'll use and allocate the score arrays we'll pass back */
-  ESL_ALLOC(partA, sizeof(int) * nseq); /* will hold partitions */
-
+  /* allocate the score arrays we'll pass back */
   ESL_ALLOC(cyk_scA, sizeof(float) * nseq); /* will hold CM CYK scores */
   ESL_ALLOC(ins_scA, sizeof(float) * nseq); /* will hold CM Inside scores */
   ESL_ALLOC(fwd_scA, sizeof(float) * nseq);  /* will hold HMM Forward scores */
@@ -2451,40 +2547,29 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
   orig_search_opts = cm->search_opts;
   do_null3 = (cm->search_opts & CM_SEARCH_NULL3) ? TRUE : FALSE;
 
-  /* generate dsqs one at a time and collect optimal CM CYK/Inside scores and/or best CP9 Forward score */
+  /* for each seq,  collect optimal CM CYK/Inside scores and/or best CP9 Forward score */
   for(i = 0; i < nseq; i++) {
-    if((status = get_cmemit_dsq(cfg, errbuf, cm, &L, &p, &dsq)) != eslOK) return status;
-    partA[i] = p;
-    /*to print seqs to stdout uncomment this block */
-    /*ESL_SQ *tmp;
-    tmp = esl_sq_CreateDigitalFrom(cm->abc, "irrelevant", dsq, L, NULL, NULL, NULL);
-    esl_sq_Textize(tmp);
-    printf(">seq%d\n%s\n", i, tmp->seq);
-    esl_sq_Destroy(tmp);
-    fflush(stdout);
-    */
-
     /* search dsq thrice, cyk, inside, fwd */
     /* for cyk and inside either use HMM bands, or don't */
     if(esl_opt_GetBoolean(go, "--fil-nonbanded")) { 
       cm->search_opts &= ~CM_SEARCH_INSIDE;
-      if((status = FastCYKScan    (cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, do_null3, NULL, &(cyk_scA[i]))) != eslOK) return status; 
+      if((status = FastCYKScan    (cm, errbuf, cm->smx, dsqA[i], 1, L_A[i], 0., NULL, do_null3, NULL, &(cyk_scA[i]))) != eslOK) return status; 
       
       cm->search_opts |= CM_SEARCH_INSIDE; 
-      if((status = FastIInsideScan(cm, errbuf, cm->smx, dsq, 1, L, 0., NULL, do_null3, NULL, &(ins_scA[i]))) != eslOK) return status; 
+      if((status = FastIInsideScan(cm, errbuf, cm->smx, dsqA[i], 1, L_A[i], 0., NULL, do_null3, NULL, &(ins_scA[i]))) != eslOK) return status; 
     }
     else { /* search with HMM bands */
       cm->search_opts &= ~CM_SEARCH_INSIDE;
       cm->search_opts |= CM_SEARCH_HBANDED;
       cm->tau = esl_opt_GetReal(go, "--fil-tau");
       if(esl_opt_GetBoolean(go, "--fil-aln2bands")) cm->search_opts |= CM_SEARCH_HMMALNBANDS;
-      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsq, 1, L, cm->cp9b, TRUE, 0)) != eslOK) return status; 
-      if((status = FastCYKScanHB(cm, errbuf, dsq, 1, L, 0., NULL, do_null3, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), &(cyk_scA[i]))) != eslOK) return status; 
+      if((status = cp9_Seq2Bands(cm, errbuf, cm->cp9_mx, cm->cp9_bmx, cm->cp9_bmx, dsqA[i], 1, L_A[i], cm->cp9b, TRUE, 0)) != eslOK) return status; 
+      if((status = FastCYKScanHB(cm, errbuf, dsqA[i], 1, L_A[i], 0., NULL, do_null3, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), &(cyk_scA[i]))) != eslOK) return status; 
 
       cm->search_opts |= CM_SEARCH_INSIDE; 
-      if((status = FastFInsideScanHB(cm, errbuf, dsq, 1, L, 0., NULL, do_null3, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), &(ins_scA[i]))) != eslOK) return status; 
+      if((status = FastFInsideScanHB(cm, errbuf, dsqA[i], 1, L_A[i], 0., NULL, do_null3, cm->hbmx, esl_opt_GetReal(go, "--mxsize"), &(ins_scA[i]))) != eslOK) return status; 
     }
-    if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsq, 1, L, cm->W, 0., NULL, 
+    if((status = cp9_Forward(cm, errbuf, cm->cp9_mx, dsqA[i], 1, L_A[i], cm->W, 0., NULL, 
 			     TRUE,   /* yes, we are scanning */
 			     FALSE,  /* no, we are not aligning */
 			     FALSE,  /* don't be memory efficient */
@@ -2492,13 +2577,11 @@ process_filter_workunit(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *er
 			     NULL,   /* don't want best score at each posn back */
 			     NULL,   /* don't want the max scoring posn back */
 			     &(fwd_scA[i]))) != eslOK) return status;
-    free(dsq);
   }
   /* contract enforced these are all non-NULL */
   *ret_cyk_scA = cyk_scA;
   *ret_ins_scA = ins_scA;
   *ret_fwd_scA = fwd_scA;
-  *ret_partA   = partA;
 
   cm->search_opts = orig_search_opts;
 
@@ -2780,7 +2863,7 @@ get_hmm_filter_cutoffs(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf, C
     by_cmA[i].i     = by_fwdA[i].i     = i;
     by_cmA[i].cm_E  = by_fwdA[i].cm_E  = cm_E;
     by_cmA[i].fwd_E = by_fwdA[i].fwd_E = fwd_E;
-    /*printf("TEMP i: %5d CM sc: %.3f (E: %20.10f) HMM sc: %.3f (E: %20.10f)\n", i, cm_scA[i], cm_E, fwd_scA[i], fwd_E);*/
+    printf("TEMP i: %5d CM sc: %.3f (E: %20.10f) HMM sc: %.3f (E: %20.10f)\n", i, cm_scA[i], cm_E, fwd_scA[i], fwd_E);
   }
 
   /* qsort */
@@ -3328,12 +3411,15 @@ int estimate_time_for_fil_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   int    targ_len = 1000;
   int    nseq;             /* number of sequences to sample and search for our expt */
   /* score arrays for our nseq sample seqs, irrelevant really, only nec to avoid contract violations to process_filter_workunit() */
-  float   *tmp_cyk_scA = NULL;    
-  float   *tmp_ins_scA = NULL;    
-  float   *tmp_fwd_scA = NULL;    
-  int     *tmp_partA   = NULL;    
-  int      min_nseq_global = 10;
-  int      min_nseq_local  = 25;
+  float    *tmp_cyk_scA = NULL;    
+  float    *tmp_ins_scA = NULL;    
+  float    *tmp_fwd_scA = NULL;    
+  int      *tmp_partA   = NULL;    
+  ESL_DSQ **tmp_dsqA    = NULL;    
+  int      *tmp_L_A     = NULL;    
+  int       min_nseq_global = 10;
+  int       min_nseq_local  = 25;
+  int       i;
 
   nseq = (int) (((float) targ_len / (float) cm->clen) + 0.5); 
   /* we have to sample at least <min_nseq_{global,local} sequences */
@@ -3350,14 +3436,25 @@ int estimate_time_for_fil_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   if(w == NULL)               ESL_FAIL(status, errbuf, "estimate_time_for_fil_round(): memory error, stopwatch not created.\n");
   if(ret_sec_per_seq == NULL) ESL_FAIL(status, errbuf, "estimate_time_for_fil_round(): ret_sec_per_res is NULL");
 
+  /* generate and score sequences */
+  ESL_ALLOC(tmp_dsqA,  sizeof(ESL_DSQ *) * nseq);
+  ESL_ALLOC(tmp_L_A,   sizeof(int) * nseq);
+  ESL_ALLOC(tmp_partA, sizeof(int) * nseq);
+
   esl_stopwatch_Start(w);
-  if((status = process_filter_workunit (go, cfg, errbuf, cm, nseq, &tmp_cyk_scA, &tmp_ins_scA, &tmp_fwd_scA, &tmp_partA)) != eslOK) return status;
+  for(i = 0; i < nseq; i++) { 
+    if((status = get_cmemit_dsq(cfg, errbuf, cm, &tmp_L_A[i], &tmp_partA[i], &tmp_dsqA[i])) != eslOK) return status;
+  }
+  if((status = process_filter_workunit (go, cfg, errbuf, cm, tmp_dsqA, tmp_L_A, nseq, &tmp_cyk_scA, &tmp_ins_scA, &tmp_fwd_scA)) != eslOK) return status;
   esl_stopwatch_Stop(w);
 
   free(tmp_cyk_scA);
   free(tmp_ins_scA);
   free(tmp_fwd_scA);
   free(tmp_partA);
+  for(i = 0; i < nseq; i++) free(tmp_dsqA[i]);
+  free(tmp_dsqA);
+  free(tmp_L_A);
 
   cm->search_opts = orig_search_opts;
   sec_per_seq = w->user / (float) nseq;
@@ -3369,6 +3466,10 @@ int estimate_time_for_fil_round(const ESL_GETOPTS *go, struct cfg_s *cfg, char *
   esl_stopwatch_Destroy(w);
   *ret_sec_per_seq = sec_per_seq;
   return eslOK;
+
+ ERROR:
+  ESL_FAIL(status, errbuf, "Out of memory");
+  return status; /* NEVERREACHED */
 }
 
 
