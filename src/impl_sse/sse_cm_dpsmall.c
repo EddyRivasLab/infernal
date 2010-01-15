@@ -3981,7 +3981,7 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
 //FIXME: it's somewhat unclear here what to use as the 'sequence length' - whether
 //FIXME: that should be the entire sequence L, or just the (i0,j0) window that's
 //FIXME: actually being considered for alignment.  Using 'len' here for ease of changing it.
-  float len = (float) L;
+  float len = (float) j0-i0+1;
   float p = len/(len + 2.);
   float r = len/(len + 1.);
   float constpart = 2*sreLOG2(1.-p) + len*sreLOG2(p) - len*sreLOG2(r) - sreLOG2(1.-r);

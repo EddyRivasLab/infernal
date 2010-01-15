@@ -48,6 +48,7 @@
 float
 MSCYK_explen(float fraglen, float t1, float t2, float t3)
 {
+  fprintf(stderr,"Warning, MSCYK_explen(): using non-E_terminating expected length calculation\n"); //FIXME
   float elen;
 
   elen = (t1+fraglen*t2)/(t3-t2); /* Reference NBpg63, 24 Nov 2009 */
@@ -505,12 +506,8 @@ fprintf(stderr,"\n");
             vec_ntM_all[jp_v][-2] = _mm_max_epu8(vec_ntM_all[jp_v][-2], vec_ntM_v[jp_v][v][-2]);
           }
           else if (ccm->sttype[v] == E_st) {
-            //FIXME: This is test; expected to improve scores of stem loops which match consensus
-            //FIXME: with no intervening unaligned residues.  Need to double-check the math, but
-            //FIXME: I believe the per-fragment penalty is counting fragments which stop at the 
-            //FIXME: last emitting state and fragments which extend to E separately, and thus
-            //FIXME: fragments which extend to E could be treated as not then recursing to the S
-            //FIXME: state in the meta-grammar
+            /* Part of modified E-state treatment, set d = 0 value to base - frag penalty,
+               all other values to -inf                                                     */
             tmpv = _mm_setr_epi8(ccm->base_b,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,
                                       BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL,BADVAL);
             vec_ntM_v[jp_v][v][0] = _mm_subs_epu8(tmpv,tsv_M_S);
@@ -675,7 +672,7 @@ fprintf(stderr,"\n");
         tmpary[d] = _mm_adds_epu8(vec_ntS[jp_Sv][d],vec_nmlc[d]);
       }
       if(results != NULL) { if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, j, tmpary, results, W, sW)) != eslOK) return status; }
-      else                { 
+      else { 
         for (d = 0; d < sW; d++) {
           if (esl_sse_hmax_epu8(tmpary[d]) > rsc) { rsc = esl_sse_hmax_epu8(tmpary[d]); }
         }
@@ -831,8 +828,8 @@ static ESL_OPTIONS options[] = {
   { "--mscyk",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute new SSE 16x MSCYK scan implementation", 0 },
   { "--noqdb",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute non-banded optimized CYK scan implementation", 0 },
   { "--cutoff",  eslARG_REAL,   "0.0", NULL, NULL,  NULL,  NULL, NULL, "set bitscore cutoff to <x>",                     0 },
-  { "--S_Sa",    eslARG_REAL,  "0.50", NULL, NULL,  NULL,  NULL, NULL, "S emit single residue probability <x>",          0 },
-  { "--S_SM",    eslARG_REAL,  "0.24", NULL, NULL,  NULL,  NULL, NULL, "S add model segment probability <x>",            0 },
+  { "--S_Sa",    eslARG_REAL,  "0.25", NULL, NULL,  NULL,  NULL, NULL, "S emit single residue probability <x>",          0 },
+  { "--S_SM",    eslARG_REAL,  "0.35", NULL, NULL,  NULL,  NULL, NULL, "S add model segment probability <x>",            0 },
   { "--S_e",     eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "S end probability (unsettable, 1-S_Sa-S_SM)",    0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -896,7 +893,7 @@ main(int argc, char **argv)
       f_S_Sa = esl_opt_GetReal(go, "--S_Sa");
       if (f_S_Sa <= 0 || f_S_Sa >= 1) cm_Fail("S->Sa must be between zero and 1\n");
       f_S_SM = esl_opt_GetReal(go, "--S_SM");
-f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/(2*cm->clen + ccm->e_fraglen);
+f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/((1+ccm->p_rfrag)*cm->clen + ccm->e_fraglen);
       if (f_S_SM <= 0 || f_S_SM >= 1) cm_Fail("S->SM must be between zero and 1\n");
       f_S_e = 1. - f_S_Sa - f_S_SM;
       if (f_S_e <= 0) cm_Fail("Error: S->e out of range\n");
@@ -905,7 +902,8 @@ f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/(2*cm->clen + ccm->e_fraglen);
       ccm->tsb_S_e  = unbiased_byteify(ccm,sreLOG2(f_S_e ));
       ccm->tsb_M_S  = unbiased_byteify(ccm,ccm->sc_frag);
 
-      nullL = MSCYK_explen(ccm->e_fraglen,f_S_Sa,f_S_SM,f_S_e);
+nullL = cm->clen;
+      //nullL = MSCYK_explen(ccm->e_fraglen,f_S_Sa,f_S_SM,f_S_e);
       ccm->r = nullL/(nullL+1.);
 //fprintf(stderr,"nullL %f r %f r_b %d\n",nullL,ccm->r,unbiased_byteify(ccm,sreLOG2(ccm->r)));
     }
@@ -1038,8 +1036,8 @@ static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
   { "-h",        eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           0 },
   { "--cutoff",  eslARG_REAL,   "0.0", NULL, NULL,  NULL,  NULL, NULL, "set bitscore cutoff to <x>",                     0 },
-  { "--S_Sa",    eslARG_REAL,  "0.50", NULL, NULL,  NULL,  NULL, NULL, "S emit single residue probability <x>",          0 },
-  { "--S_SM",    eslARG_REAL,  "0.20", NULL, NULL,  NULL,  NULL, NULL, "S add model segment probability <x>",            0 },
+  { "--S_Sa",    eslARG_REAL,  "0.25", NULL, NULL,  NULL,  NULL, NULL, "S emit single residue probability <x>",          0 },
+  { "--S_SM",    eslARG_REAL,  "0.35", NULL, NULL,  NULL,  NULL, NULL, "S add model segment probability <x>",            0 },
   { "--S_e",     eslARG_NONE,    NULL, NULL, NULL,  NULL,  NULL, NULL, "S end probability (unsettable, 1-S_Sa-S_SM)",    0 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
@@ -1088,7 +1086,7 @@ if(ccm->oesc == NULL) cm_Fail("oesc NULL!\n");
   f_S_Sa = esl_opt_GetReal(go, "--S_Sa");
   if (f_S_Sa <= 0 || f_S_Sa >= 1) cm_Fail("S->Sa must be between zero and 1\n");
   f_S_SM = esl_opt_GetReal(go, "--S_SM");
-f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/(2*cm->clen + ccm->e_fraglen);
+f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/((1+ccm->p_rfrag)*cm->clen + ccm->e_fraglen);
 ccm->r = ((float) cm->clen)/(cm->clen+1.);
   if (f_S_SM <= 0 || f_S_SM >= 1) cm_Fail("S->SM must be between zero and 1\n");
   f_S_e = 1. - f_S_Sa - f_S_SM;

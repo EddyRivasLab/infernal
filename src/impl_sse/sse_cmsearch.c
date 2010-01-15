@@ -44,7 +44,8 @@ static ESL_OPTIONS options[] = {
   { "--S_e",     eslARG_NONE,    NULL, NULL, NULL,  NULL,"--mmp_manual","--mmp_auto", "S end probability (unsettable, 1-S_Sa-S_SM)",    3 },
   /* Output options */
   { "--evd1",eslARG_NONE,NULL,NULL,NULL, NULL, NULL, NULL, "Output score survival plot data for MSCYK EVD",             4 },
-  { "--glbf",eslARG_INT,"0",NULL, "n<4", NULL, NULL, NULL, "GLBF-style output for RMark at stage <x>, 0 for none",      4 },
+  { "--glbf",eslARG_INT,"0",NULL, "n<4", NULL, NULL, NULL, "GLBF-style output for RMark at stage <n>, 0 for none",      4 },
+  { "--glbf_all",eslARG_NONE,FALSE,NULL, NULL, NULL, NULL, NULL, "GLBF-style output for RMark at all stages, to separate files",      4 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile> <seqfile>";
@@ -75,8 +76,9 @@ main(int argc, char **argv)
   float           f_S_Sa, f_S_SM, f_S_e;
   int             format = eslSQFILE_UNKNOWN;
   int             max, imax, jmax;
-  int             o_glbf;
+  int             o_glbf, o_glbf_all;
   int             do_reverse, is_reversed;
+  FILE            *S1_OFILE, *S2_OFILE, *S3_OFILE;
 
   /* vars for MSCYK score distribution fitting */
   int L = 1000;	/* P-values will be per-kb, so simulate 1 kb at a time */
@@ -97,6 +99,7 @@ main(int argc, char **argv)
   ESL_STOPWATCH  *w = esl_stopwatch_Create();
 
   o_glbf = esl_opt_GetInteger(go, "--glbf");
+  o_glbf_all = esl_opt_GetBoolean(go, "--glbf_all");
   if (esl_opt_GetBoolean(go, "--toponly")) do_reverse = 0;
   else                                     do_reverse = 1;
 
@@ -119,7 +122,7 @@ main(int argc, char **argv)
   /* Set meta-model parameters */
   if (esl_opt_IsOn(go, "--mmp_auto")) {
     f_S_Sa = esl_opt_GetReal(go, "--S_Sa");
-    f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/(2*cm->clen + ccm->e_fraglen);
+    f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/((1+ccm->p_rfrag)*cm->clen + ccm->e_fraglen);
     ccm->r = ((float) cm->clen)/(cm->clen+1.);
     f_S_e = 1. - f_S_Sa - f_S_SM;
   }
@@ -140,10 +143,31 @@ main(int argc, char **argv)
   ccm->tsb_S_e  = unbiased_byteify(ccm,sreLOG2(f_S_e ));
   ccm->tsb_M_S  = unbiased_byteify(ccm,ccm->sc_frag);
 
+  /* Set output files */
+  if (o_glbf_all) {
+    int length = 16;
+    char *fname;
+    ESL_ALLOC(fname, 25*sizeof(char));
+    if (strlen(cmfile) - 3 < length) length = strlen(cmfile) - 3;
+    strncpy(fname,cmfile,length);
+    if ((S1_OFILE = fopen(strcat(fname,".s1.glbf"),"w")) == NULL) { cm_Fail("Couldn't open stage 1 glbf file for writing!"); }
+    fname[length] = '\0';
+    if ((S2_OFILE = fopen(strcat(fname,".s2.glbf"),"w")) == NULL) { cm_Fail("Couldn't open stage 2 glbf file for writing!"); }
+    fname[length] = '\0';
+    if ((S3_OFILE = fopen(strcat(fname,".s3.glbf"),"w")) == NULL) { cm_Fail("Couldn't open stage 3 glbf file for writing!"); }
+  }
+
   /* Set filtering cutoff parameters */
   if (esl_opt_IsOn(go, "--s1-T")) {
     f_cutoff = esl_opt_GetReal(go, "--s1-T");
     fprintf(stderr,"Stage 1: score cutoff %.2f\n",f_cutoff);
+    /* Need to scale and offset, but not change sign -> switch sign ahead of time */
+    s1_cutoff = ccm->base_b + unbiased_byteify(ccm,-f_cutoff);
+    if (s1_cutoff == BYTEMAX) {
+      s1_cutoff--;
+      f_cutoff = (s1_cutoff - ccm->base_b)/ccm->scale_b;
+      fprintf(stderr,"Stage 1: Warning - score cutoff out of range, setting to max of %.2f\n",f_cutoff);
+    }
   }
   else {
     /* Simulation to determine score distribution tail for MSCYK/CM combined model */
@@ -175,24 +199,45 @@ printf("E-val at rank 10 = %1.3e\t",eval);
     e_cutoff = esl_opt_GetReal(go,"--s1-E");
     f_cutoff = esl_exp_invcdf(e_cutoff,ccm_mu,ccm_lambda);
     fprintf(stderr,"Stage 1: P-value cutoff %.2e per kb -> score cutoff %.2f\n",e_cutoff,f_cutoff);
+    /* Need to scale and offset, but not change sign -> switch sign ahead of time */
+    s1_cutoff = ccm->base_b + unbiased_byteify(ccm,-f_cutoff);
+    if (s1_cutoff == BYTEMAX) {
+      s1_cutoff--;
+      f_cutoff = (s1_cutoff - ccm->base_b)/ccm->scale_b;
+      fprintf(stderr,"Stage 1: Warning - score cutoff out of range, setting to max of %.2f\n",f_cutoff);
+      e_cutoff = esl_exp_cdf(f_cutoff,ccm_mu,ccm_lambda);
+      fprintf(stderr,"Stage 1: Warning - equivalent max p-value of %.2e\n",e_cutoff);
+    }
     free(x);
     esl_randomness_Destroy(r);
     esl_sq_Destroy(seq);
     esl_histogram_Destroy(hist);
   }
-  /* Need to scale and offset, but not change sign -> switch sign ahead of time */
-  s1_cutoff = ccm->base_b + unbiased_byteify(ccm,-f_cutoff);
 
   if (esl_opt_IsOn(go, "--s2-T")) {
     f_cutoff = esl_opt_GetReal(go, "--s2-T");
     fprintf(stderr,"Stage 2: score cutoff %.2f\n",f_cutoff);
+    s2_cutoff = wordify(ocm->scale_w, f_cutoff);
+    if (s2_cutoff == WORDMAX) {
+      s2_cutoff--;
+      f_cutoff = s2_cutoff/ocm->scale_w;
+      fprintf(stderr,"Stage 2: Warning - score cutoff out of range, setting to max of %.2f\n",f_cutoff);
+    }
   }
   else {
-    f_cutoff = 0.0;
-    fprintf(stderr,"WARNING: P-value cutoffs not implemented, setting stage 2 bitscore cutoff to %.1f\n",f_cutoff);
+    e_cutoff = esl_opt_GetReal(go,"--s2-E");
+    E2MinScore(cm,errbuf,EXP_CM_LC,e_cutoff,&f_cutoff);
+    //fprintf(stderr,"WARNING: P-value cutoffs not implemented, setting stage 3 bitscore cutoff to %.1f\n",f_cutoff);
+    fprintf(stderr,"Stage 2: P-value cutoff %.2e -> score cutoff %.2f\n",e_cutoff,f_cutoff);
+    s2_cutoff = wordify(ocm->scale_w, f_cutoff);
+    if (s2_cutoff == WORDMAX) {
+      s2_cutoff--;
+      f_cutoff = s2_cutoff/ocm->scale_w;
+      fprintf(stderr,"Stage 2: Warning - score cutoff out of range, setting to max of %.2f\n",f_cutoff);
+      //FIXME: equivalent p-value?
+    }
   }
   /* Need to scale */
-  s2_cutoff = wordify(ocm->scale_w, f_cutoff);
 
   if (esl_opt_IsOn(go, "--s3-T")) {
     f_cutoff = esl_opt_GetReal(go, "--s3-T");
@@ -237,7 +282,8 @@ imax= results->data[i].start;
 jmax= results->data[i].stop;
 }
 }
-fprintf(stdout,"%4d %4d %4d %6f\n",imax,jmax,max,sc);
+if (jmax > -1) fprintf(stdout,"%4d %4d %4d %6f\n",imax,jmax,max,sc);
+else           fprintf(stdout,"(no hits)\n");
 fflush(stdout);
 }
 
@@ -254,6 +300,14 @@ fflush(stdout);
           printf("%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, seq->n - windows->data[i].stop, seq->n - windows->data[i].start, 1);
       }
     }
+    else if (o_glbf_all) {
+      for (i = 0; i < windows->num_results; i++) {
+        if (!is_reversed)
+          fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, windows->data[i].start, windows->data[i].stop, 0);
+        else
+          fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, seq->n - windows->data[i].stop, seq->n - windows->data[i].start, 1);
+      }
+    }
 
     for (i = 0; i < windows->num_results; i++) {
       /* Stage 2: medium-precision CYK */
@@ -265,6 +319,12 @@ fflush(stdout);
             printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, windows->data[i].start, windows->data[i].stop, 0);
           else
             printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, seq->n - windows->data[i].stop, seq->n - windows->data[i].start, 1);
+        }
+        else if (o_glbf_all) {
+          if (!is_reversed) 
+            fprintf(S2_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, windows->data[i].start, windows->data[i].stop, 0);
+          else
+            fprintf(S2_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, seq->n - windows->data[i].stop, seq->n - windows->data[i].start, 1);
         }
         /* Stage 3: full-precision CYK */
         //FIXME: still using the large padded window from MSCYK here (if the score passed); could
@@ -282,6 +342,12 @@ fflush(stdout);
             else
               printf("%-24s %-6f %d %d %d\n", seq->name, sc3, seq->n - windows->data[i].stop, seq->n - windows->data[i].start, 1);
           }
+          else if (o_glbf_all) {
+            if (!is_reversed)
+              fprintf(S3_OFILE,"%-24s %-6f %d %d %d\n", seq->name, sc3, windows->data[i].start, windows->data[i].stop, 0);
+            else
+              fprintf(S3_OFILE,"%-24s %-6f %d %d %d\n", seq->name, sc3, seq->n - windows->data[i].stop, seq->n - windows->data[i].start, 1);
+          }
         }
       }
     }
@@ -298,6 +364,12 @@ fflush(stdout);
     seq = esl_sq_Create();
   }
   esl_sq_Destroy(seq);
+
+  if (o_glbf_all) {
+    fclose(S1_OFILE);
+    fclose(S2_OFILE);
+    fclose(S3_OFILE);
+  }
 
   if (ccm != NULL) cm_consensus_Free(ccm);
   if (ocm != NULL) cm_optimized_Free(ocm); free(ocm);

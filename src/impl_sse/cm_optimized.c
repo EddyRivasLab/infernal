@@ -87,8 +87,18 @@ cm_optimized_Convert(const CM_t *cm)
   /* Scale score values */
   ocm->scale_w = SCALE_W;
   for (v = 0; v<ocm->M; v++) {
-    for (yoffset = 0; yoffset < ocm->cnum[v]; yoffset++) {
-      ocm->tsc[v][yoffset] = wordify(ocm->scale_w, cm->tsc[v][yoffset]);
+    if (ocm->sttype[v] == B_st) {
+      for (yoffset = 0; yoffset < MAXCONNECT; yoffset++) {
+        ocm->tsc[v][yoffset] = wordify(ocm->scale_w, -eslINFINITY);
+      }
+    }
+    else {
+      for (yoffset = 0; yoffset < ocm->cnum[v]; yoffset++) {
+        ocm->tsc[v][yoffset] = wordify(ocm->scale_w, cm->tsc[v][yoffset]);
+      }
+      for (           ; yoffset < MAXCONNECT; yoffset++) {
+        ocm->tsc[v][yoffset] = wordify(ocm->scale_w, -eslINFINITY);
+      }
     }
 
     if (ocm->sttype[v] == MP_st) {
@@ -146,6 +156,7 @@ cm_consensus_Convert(CM_t *cm)
   int offset;
   int pairs, singlets;
   int nstates, nfrags, total_frags;
+  int rec_frags, tot_rec_frags; /* Recursive fragments (those not ending in E_st */
   int ebases, q;
   uint8_t *oesc_next;
   float max = 0.0;
@@ -210,6 +221,7 @@ cm_consensus_Convert(CM_t *cm)
   oesc_next = ccm->oesc[0];
 
   nstates = nfrags = total_frags = 0;
+  rec_frags = tot_rec_frags = 0;
   ebases = 0;
   while (v != -1) {
     ccm->sttype[x] = cm->sttype[v];
@@ -217,13 +229,15 @@ cm_consensus_Convert(CM_t *cm)
       ccm->next[x] = -1;
       ccm->oesc[x] = NULL;
 
-      nstates++; //FIXME: Part of a test: if we're treating stem-loops which extend to
-                 //FIXME: E separately from those that stop at last emittine state, need
-                 //FIXME: to increase total number of possible fragments accordingly.
+      rec_frags = nstates*(nstates+1)/2;
+      tot_rec_frags += rec_frags;
+      nstates++; /* Part of modified E-state treatment, add E to state count */
       nfrags = nstates*(nstates+1)/2;
-      nfrags--;  //FIXME: Part of the test; subtract single E state fragment (not allowed)
+      nfrags--;  /* Part of modified E-state treatment, subtract E-E fragment (not allowed) */
       total_frags += nfrags;
-      for (q = 1; q <= nstates; q++) {
+      for (q = 0; q < nstates; q++) {
+        /* Part of modified E-state treatment, old loop was q=1 to q <= nstates
+           although nstates was one smaller and thus stopped at the same range */
         ebases += q*(nstates-q+1)*StateDelta(ccm->sttype[x-q]);
       }
       nstates = 0;
@@ -248,6 +262,7 @@ cm_consensus_Convert(CM_t *cm)
 
       nfrags = nstates*(nstates+1)/2;
       total_frags += nfrags;
+      tot_rec_frags += nfrags;
       for (q = 1; q <= nstates; q++) {
         ebases += q*(nstates-q+1)*StateDelta(ccm->sttype[x-q]);
       }
@@ -288,6 +303,7 @@ cm_consensus_Convert(CM_t *cm)
 
   }
 
+  ccm->p_rfrag = ((float) tot_rec_frags)/total_frags;
   ccm->sc_frag = sreLOG2(1./total_frags);
   ccm->e_fraglen = ((float) ebases)/total_frags;
 
