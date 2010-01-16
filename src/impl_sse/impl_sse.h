@@ -84,9 +84,19 @@ typedef struct gammahitmx_epu8_s {
   int       iamgreedy;          /* TRUE to use RSEARCH's greedy overlap resolution alg, FALSE to use optimal alg */
 } GammaHitMx_epu8;
 
+/*****************************************************************
+ * 4. Structure for returning hit coordinates for 16-bit models
+ *****************************************************************/
+
+typedef struct hitcoord_epi16_s {
+   int16_t score;
+   int16_t v;
+   int     j;
+   int16_t d;
+} HitCoord_epi16;
 
 /*****************************************************************
- * 4. Declarations of the external API.
+ * 5. Declarations of the external API.
  *****************************************************************/
 
 /* cm_optimized.c */
@@ -126,7 +136,7 @@ float SSE_CYKDemands(CM_t *cm, int L, int be_quiet);
 float SSE_CYKDivideAndConquer(CM_t *cm, ESL_DSQ *dsq, int L, int r,
 	int i0, int j0, Parsetree_t **ret_tr);
 int SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
-        int allow_begin, int *ret_b, int *ret_bsc);
+        int allow_begin, int *ret_b, int *ret_bsc, HitCoord_epi16 *ret_coord);
 
 
 /* sse_util.c */
@@ -134,7 +144,6 @@ inline __m128  alt_rightshift_ps(__m128 a, __m128 b);
 void vecprint_ps(__m128 a);
 inline __m128i sse_setlw_neginfv(__m128i a);
 inline __m128i sse_select_si128(__m128i a, __m128i b, __m128i mask);
-inline int16_t sse_hmax_epi16(__m128i a);
 
 
 #endif /* CM_IMPL_SSE_INCLUDED */

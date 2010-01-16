@@ -101,21 +101,6 @@ inline __m128i
 sse_select_si128(__m128i a, __m128i b, __m128i mask)
 {
   b = _mm_and_si128(b, mask);
-  a = _mm_andnot_si128(a, mask);
+  a = _mm_andnot_si128(mask, a);
   return _mm_or_si128(a, b);
 }
-
-/* Function:  sse_hmax_epi16()
- * Date:      DLK, Tue June 9 2009
- *
- * Purposes:  Returns maximum value of 8 elements in epi16 vector
- */
-inline int16_t
-sse_hmax_epi16(__m128i a)
-{
-  a = _mm_max_epi16(a, _mm_srli_si128(a, 8));
-  a = _mm_max_epi16(a, _mm_srli_si128(a, 4));
-  a = _mm_max_epi16(a, _mm_srli_si128(a, 2));
-  return _mm_extract_epi16(a, 0);
-}
-

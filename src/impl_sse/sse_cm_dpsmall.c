@@ -336,6 +336,8 @@ SSE_CYKInsideScore(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0)
 {
   int    z;
   float  sc;
+  int b;
+  float bsc;
 
   z           = cm->M-1;
   sc          = 0.;
@@ -348,7 +350,8 @@ SSE_CYKInsideScore(CM_t *cm, ESL_DSQ *dsq, int L, int r, int i0, int j0)
 
   sc +=  sse_inside(cm, dsq, L, r, z, i0, j0, FALSE, 
 		  NULL, NULL, NULL, NULL, NULL,
-		  (r==0), NULL, NULL);
+		  (r==0), &b, &bsc);
+  if (bsc > sc) sc = bsc;
 
   return sc;
 }
@@ -3902,7 +3905,7 @@ sse_voutside(CM_t *cm, ESL_DSQ *dsq, int L,
 // FIXME: re-increase to a much higher score later.
 int 
 SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend, int i0, int j0,
-       int allow_begin, int *ret_b, int *ret_bsc)
+       int allow_begin, int *ret_b, int *ret_bsc, HitCoord_epi16 *ret_coord)
 {
   int       status;
   int       nends;       /* counter that tracks when we can release end deck to the pool */
@@ -3945,6 +3948,7 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
   __m128i      mask;
   __m128i      tmp_j, vb_j;
   __m128i      tmp_d, vb_d;
+  __m128i      tmp_v, vb_v;
 #endif
 
   /* Allocations and initializations
@@ -3973,7 +3977,7 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
 
 #ifndef LOBAL_MODE
   vb_sc = neginfv;
-  vb_j  = vb_d  = _mm_set1_epi16(-1);
+  vb_v = vb_j  = vb_d  = _mm_set1_epi16(-1);
 
   ESL_ALLOC(mem_unaligned_sc, sizeof(__m128i) * (sW+1) + 15);
   vec_unaligned_sc = (__m128i *) (((unsigned long int) mem_unaligned_sc + 15) & (~0xf));
@@ -4493,13 +4497,14 @@ fprintf(stderr,"\n");
 //FIXME: On the other hand, saturation may counter-indicate this, as later alignments
 //FIXME: comprising larger parts of the model and larger sequence windows will not
 //FIXME: be able to exceed previously seen scores
+      tmp_v = _mm_set1_epi16((int16_t)v);
       for (jp = 0; jp <= W; jp ++) {
 	j = i0-1+jp;
 //if(v<8 && j==26) fprintf(stderr,"v = %d  j = %d  beginsc %e %f\n",v,j,cm->beginsc[v],(float)ocm->beginsc[v]/ocm->scale_w); 
-        tmp_j = _mm_set1_epi16(j);
+        tmp_j = _mm_set1_epi16((int16_t)jp);
         sW = jp/vecwidth;
 	for (dp = 0; dp <= sW; dp++) {
-          tmp_d = _mm_adds_epi16(_mm_set1_epi16(dp*vecwidth), doffset);
+          tmp_d = _mm_adds_epi16(_mm_set1_epi16((int16_t)dp*vecwidth), doffset);
           tmpv = _mm_adds_epi16(alpha[v]->ivec[j][dp], vec_unaligned_sc[dp]);
 /*
 if(v<8 && j==26) {
@@ -4508,16 +4513,18 @@ fprintf(stderr,"\talpha "); vecprint_epi16(ocm, alpha[v]->ivec[j][dp]); fprintf(
 fprintf(stderr,"\tunaln "); vecprint_epi16(ocm,  vec_unaligned_sc[dp]); fprintf(stderr,"\n");
 fprintf(stderr,"\ttmpv1 "); vecprint_epi16(ocm,                  tmpv); fprintf(stderr,"\n");
 }
-//FIXME: broken because cm isn't configured for local
-          tmpv = _mm_adds_epi16(tmpv, _mm_set1_epi16(ocm->beginsc[v]));
 if(v<8 && j==26) {
 fprintf(stderr,"\ttmpv2 "); vecprint_epi16(ocm,                  tmpv); fprintf(stderr,"\n");
 }
 */
-          mask = _mm_cmpgt_epi16(tmpv, vb_sc);
+          //FIXME: what is ocm->beginsc[0] set to - does this cover our
+          //FIXME: root deck, or do we need to handle that separately?
+          //tmpv = _mm_adds_epi16(tmpv, _mm_set1_epi16(ocm->beginsc[v]));
+          mask  = _mm_cmpgt_epi16(tmpv, vb_sc);
           vb_sc = _mm_max_epi16(tmpv, vb_sc);
           vb_j  = sse_select_si128(vb_j, tmp_j, mask);
           vb_d  = sse_select_si128(vb_d, tmp_d, mask);
+          vb_v  = sse_select_si128(vb_v, tmp_v, mask);
         }
       }
 //if(v<8) { fprintf(stderr,"v = %d  ",v); vecprint_epi16(ocm, vb_sc); fprintf(stderr,"\n"); }
@@ -4570,7 +4577,29 @@ fprintf(stderr,"\ttmpv2 "); vecprint_epi16(ocm,                  tmpv); fprintf(
   vec_access = (int16_t *) (&alpha[vroot]->ivec[j0][W/vecwidth]);
   sc = *(vec_access + W%vecwidth);
 #ifndef LOBAL_MODE
-  sc = sse_hmax_epi16(vb_sc);
+  sc = esl_sse_hmax_epi16(vb_sc);
+  if (ret_coord != NULL) {
+    /* Narrow return coordinates to those that match highest score */
+    ret_coord->score = sc;
+    mask = _mm_cmpeq_epi16(_mm_set1_epi16(sc),vb_sc);
+    vb_d = _mm_and_si128(vb_d,mask);
+    vb_j = _mm_and_si128(vb_j,mask);
+    vb_v = _mm_and_si128(vb_v,mask);
+
+    /* Break ties in favor of longer segments */
+    ret_coord->d = esl_sse_hmax_epi16(vb_d);
+    mask = _mm_cmpeq_epi16(_mm_set1_epi16(ret_coord->d),vb_d);
+    vb_j = _mm_and_si128(vb_j,mask);
+    vb_v = _mm_and_si128(vb_v,mask);
+
+    /* Break ties in favor of larger v (smaller model segments) */
+    ret_coord->v = esl_sse_hmax_epi16(vb_v);
+    mask = _mm_cmpeq_epi16(_mm_set1_epi16(ret_coord->v),vb_v);
+    vb_j = _mm_and_si128(vb_j,mask);
+
+    /* Break (remaining?!) ties in favor of larger j */
+    ret_coord->j = i0-1+esl_sse_hmax_epi16(vb_j);
+  }
 #endif
   if (ret_b != NULL)   *ret_b   = b;    /* b is -1 if allow_begin is FALSE. */
   if (ret_bsc != NULL) *ret_bsc = bsc;  /* bsc is IMPOSSIBLE if allow_begin is FALSE */

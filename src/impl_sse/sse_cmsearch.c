@@ -79,6 +79,7 @@ main(int argc, char **argv)
   int             o_glbf, o_glbf_all;
   int             do_reverse, is_reversed;
   FILE            *S1_OFILE, *S2_OFILE, *S3_OFILE;
+  HitCoord_epi16  *s2_coord = NULL;
 
   /* vars for MSCYK score distribution fitting */
   int L = 1000;	/* P-values will be per-kb, so simulate 1 kb at a time */
@@ -95,6 +96,7 @@ main(int argc, char **argv)
     
   search_results_t *results = NULL; /* First stage results from MSCYK */
   search_results_t *windows = NULL; /* Expanded and merged hit candidate windows after first stage */
+  ESL_ALLOC(s2_coord, sizeof(HitCoord_epi16));
 
   ESL_STOPWATCH  *w = esl_stopwatch_Create();
 
@@ -261,7 +263,6 @@ printf("E-val at rank 10 = %1.3e\t",eval);
     is_reversed = 0;
     if (seq->n == 0) continue;
     if (seq->dsq == NULL) esl_sq_Digitize(abc, seq);
-    if (o_glbf == 0) { fprintf(stdout,"%s %s\t",seq->name,is_reversed?"(reverse complement)":""); }
   
 PIPELINE:
     /* Stage 1: MSCYK */
@@ -271,21 +272,6 @@ PIPELINE:
     esl_stopwatch_Stop(w);
     fprintf(stderr,"Stage 1: %-24s %-22s",seq->name,is_reversed?"(reverse complement)":"");
     esl_stopwatch_Display(stderr, w, " CPU time: ");
-
-/* Rudimentary output of results */
-if (o_glbf == 0) {
-max = 0; imax = -1; jmax = -1;
-for (i = 0; i < results->num_results; i++) {
-if ((int)results->data[i].score > max) {
-max = results->data[i].score;
-imax= results->data[i].start;
-jmax= results->data[i].stop;
-}
-}
-if (jmax > -1) fprintf(stdout,"%4d %4d %4d %6f\n",imax,jmax,max,sc);
-else           fprintf(stdout,"(no hits)\n");
-fflush(stdout);
-}
 
     /* Convert hits to windows for next stage */
     windows = ResolveMSCYK(results, 1, seq->n, cm->smx->W);
@@ -297,7 +283,7 @@ fflush(stdout);
         if (!is_reversed)
           printf("%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, windows->data[i].start, windows->data[i].stop, 0);
         else
-          printf("%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, seq->n - windows->data[i].stop, seq->n - windows->data[i].start, 1);
+          printf("%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, (int) seq->n - windows->data[i].stop, (int) seq->n - windows->data[i].start, 1);
       }
     }
     else if (o_glbf_all) {
@@ -305,48 +291,47 @@ fflush(stdout);
         if (!is_reversed)
           fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, windows->data[i].start, windows->data[i].stop, 0);
         else
-          fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, seq->n - windows->data[i].stop, seq->n - windows->data[i].start, 1);
+          fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, (int) seq->n - windows->data[i].stop, (int) seq->n - windows->data[i].start, 1);
       }
     }
 
     for (i = 0; i < windows->num_results; i++) {
+      int start, stop;
+      s2_coord->j = -1; s2_coord->d = 0; 
       /* Stage 2: medium-precision CYK */
-      sc2 = SSE_CYKFilter_epi16(ocm, seq->dsq, seq->n, 0, ocm->M-1, windows->data[i].start, windows->data[i].stop, TRUE, &br2, &bsc2);
+      sc2 = SSE_CYKFilter_epi16(ocm, seq->dsq, seq->n, 0, ocm->M-1, windows->data[i].start, windows->data[i].stop, TRUE, &br2, &bsc2, s2_coord);
+      stop = s2_coord->j;
+      start = stop - s2_coord->d + 1;
 
       if (sc2 > s2_cutoff) {
         if (o_glbf == 2) {
           if (!is_reversed) 
-            printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, windows->data[i].start, windows->data[i].stop, 0);
+            printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, start, stop, 0);
           else
-            printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, seq->n - windows->data[i].stop, seq->n - windows->data[i].start, 1);
+            printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, (int) seq->n - stop, (int) seq->n - start, 1);
         }
         else if (o_glbf_all) {
           if (!is_reversed) 
-            fprintf(S2_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, windows->data[i].start, windows->data[i].stop, 0);
+            fprintf(S2_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, start, stop, 0);
           else
-            fprintf(S2_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, seq->n - windows->data[i].stop, seq->n - windows->data[i].start, 1);
+            fprintf(S2_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, (int) seq->n - stop, (int) seq->n - start, 1);
         }
         /* Stage 3: full-precision CYK */
-        //FIXME: still using the large padded window from MSCYK here (if the score passed); could
-        //FIXME: probably trim that down based on the coordinates from the CYKFilter stage, if we
-        //FIXME: returned that information.  Also, need to consider what information we want to
-        //FIXME: capture from the final stage - right now this is just the score, but we might want
-        //FIXME: coordinates, or possibly alignment (i.e., parsetrees).
-        sc3 = SSE_CYKInsideScore(cm, seq->dsq, seq->n, 0, windows->data[i].start, windows->data[i].stop);
+        sc3 = SSE_CYKInsideScore(cm, seq->dsq, seq->n, 0, start, stop);
 
         if (sc3 >= s3_cutoff) {
           /* Report hit */
           if (o_glbf == 3) {
             if (!is_reversed)
-              printf("%-24s %-6f %d %d %d\n", seq->name, sc3, windows->data[i].start, windows->data[i].stop, 0);
+              printf("%-24s %-6f %d %d %d\n", seq->name, sc3, start, stop, 0);
             else
-              printf("%-24s %-6f %d %d %d\n", seq->name, sc3, seq->n - windows->data[i].stop, seq->n - windows->data[i].start, 1);
+              printf("%-24s %-6f %d %d %d\n", seq->name, sc3, (int) seq->n - stop, (int) seq->n - start, 1);
           }
           else if (o_glbf_all) {
             if (!is_reversed)
-              fprintf(S3_OFILE,"%-24s %-6f %d %d %d\n", seq->name, sc3, windows->data[i].start, windows->data[i].stop, 0);
+              fprintf(S3_OFILE,"%-24s %-6f %d %d %d\n", seq->name, sc3, start, stop, 0);
             else
-              fprintf(S3_OFILE,"%-24s %-6f %d %d %d\n", seq->name, sc3, seq->n - windows->data[i].stop, seq->n - windows->data[i].start, 1);
+              fprintf(S3_OFILE,"%-24s %-6f %d %d %d\n", seq->name, sc3, (int) seq->n - stop, (int) seq->n - start, 1);
           }
         }
       }
@@ -371,6 +356,7 @@ fflush(stdout);
     fclose(S3_OFILE);
   }
 
+  free(s2_coord);
   if (ccm != NULL) cm_consensus_Free(ccm);
   if (ocm != NULL) cm_optimized_Free(ocm); free(ocm);
   FreeCM(cm);
