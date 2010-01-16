@@ -4519,7 +4519,7 @@ fprintf(stderr,"\ttmpv2 "); vecprint_epi16(ocm,                  tmpv); fprintf(
 */
           //FIXME: what is ocm->beginsc[0] set to - does this cover our
           //FIXME: root deck, or do we need to handle that separately?
-          //tmpv = _mm_adds_epi16(tmpv, _mm_set1_epi16(ocm->beginsc[v]));
+          tmpv = _mm_adds_epi16(tmpv, _mm_set1_epi16(ocm->beginsc[v]));
           mask  = _mm_cmpgt_epi16(tmpv, vb_sc);
           vb_sc = _mm_max_epi16(tmpv, vb_sc);
           vb_j  = sse_select_si128(vb_j, tmp_j, mask);
