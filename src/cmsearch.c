@@ -2220,15 +2220,15 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
 
     FormatTimeString(time_buf, psec, TRUE);
       if(n == 0) { 
-	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %19s  %20s\n",               ""    , "",    "",    "",    "",  "      cutoffs      ",   "    predictions     ");
-	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %19s  %20s\n",               "",     "",    "",    "",    "",  "-------------------",   "--------------------");
-	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "rnd",  "mod", "alg", "cfg", "beta",  "E value",    "bit sc",  "surv",    "run time");
-	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "---",  "---", "---", "---", "-----", "----------", "-------", "-------", "-----------");
+	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %19s  %26s\n",               ""    , "",    "",    "",    "",  "      cutoffs      ",   "       predictions        ");
+	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %19s  %26s\n",               "",     "",    "",    "",    "",  "-------------------",   "--------------------------");
+	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %17s\n", "rnd",  "mod", "alg", "cfg", "beta",  "E value",    "bit sc",  "surv",    "time (hr:min:sec)");
+	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %17s\n", "---",  "---", "---", "---", "-----", "----------", "-------", "-------", "-----------------");
 	if(cfg->tfp != NULL) { 
-	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %19s  %20s\n",               ""    , "",    "",    "",    "",  "      cutoffs      ",   "    predictions     ");
-	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %19s  %20s\n",               "",     "",    "",    "",    "",  "-------------------",   "--------------------");
-	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "rnd",  "mod", "alg", "cfg", "beta",  "E value",    "bit sc",  "surv",    "run time");
-	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "---",  "---", "---", "---", "-----", "----------", "-------", "-------", "-----------");
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %19s  %26s\n",               ""    , "",    "",    "",    "",  "      cutoffs      ",   "       predictions        ");
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %19s  %26s\n",               "",     "",    "",    "",    "",  "-------------------",   "--------------------------");
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %17s\n", "rnd",  "mod", "alg", "cfg", "beta",  "E value",    "bit sc",  "surv",    "time (hr:min:sec)");
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %17s\n", "---",  "---", "---", "---", "-----", "----------", "-------", "-------", "-----------------");
 	}
       }
       
@@ -2271,17 +2271,17 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
 	fprintf(stdout, "  %7.4f", surv_fract);
 	if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %7.4f", surv_fract);
       }
-      fprintf(stdout, "  %11s\n", time_buf);
-      if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %11s\n", time_buf);
+      fprintf(stdout, "  %17s\n", time_buf);
+      if(cfg->tfp != NULL) fprintf(cfg->tfp, "  %17s\n", time_buf);
 
       if(n != 0 && n == cm->si->nrounds) { /* print total expected run time */
 	FormatTimeString(time_buf, total_psec, TRUE);
-	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "---",  "---", "---", "---", "-----", "----------", "-------", "-------", "-----------");
-	fprintf(stdout, "  %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "all",  "-",   "-",   "-",   "-",     "-",          "-",       "-",       time_buf);
+	fprintf(stdout, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %17s\n", "---",  "---", "---", "---", "-----", "----------", "-------", "-------", "-----------------");
+	fprintf(stdout, "  %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %17s\n", "all",  "-",   "-",   "-",   "-",     "-",          "-",       "-",       time_buf);
 	fprintf(stdout, "#\n");
 	if(cfg->tfp != NULL) { 
-	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "---",  "---", "---", "---", "-----", "----------", "-------", "-------", "-----------");
-	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %11s\n", "all",  "-",   "-",   "-",   "-",     "-",          "-",       "-",       time_buf);
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %17s\n", "---",  "---", "---", "---", "-----", "----------", "-------", "-------", "-----------------");
+	  fprintf(cfg->tfp, "# %3s  %3s  %3s  %3s  %5s  %10s  %7s  %7s  %17s\n", "all",  "-",   "-",   "-",   "-",     "-",          "-",       "-",       time_buf);
 	  fprintf(cfg->tfp, "#\n");
 	}
       }
@@ -2353,10 +2353,10 @@ int print_searchinfo_for_calibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cfg,
 	if(cfg->tfp != NULL) fprintf(cfg->tfp, "#\n");
 	/*fprintf(stdout, "# %24s\n",       "   total search time    ");*/
 	/*fprintf(stdout, "# %24s\n",       "------------------------");*/
-	fprintf(stdout, "# %13s  %13s\n", "expected time",  "actual time");
+	fprintf(stdout, "# %13s  %13s  (hr:min:sec)\n", "expected time",  "actual time");
 	fprintf(stdout, "# %13s  %13s\n", "-------------",  "-------------");
 	if(cfg->tfp != NULL) { 
-	  fprintf(cfg->tfp, "# %13s  %13s\n", "expected time",  "actual time");
+	  fprintf(cfg->tfp, "# %13s  %13s  (hr:min:sec)\n", "expected time",  "actual time");
 	  fprintf(cfg->tfp, "# %13s  %13s\n", "-------------",  "-------------");
 	}
 	FormatTimeString(time_buf, in_total_psec, TRUE);
@@ -2475,12 +2475,12 @@ int print_searchinfo_for_uncalibrated_cm(const ESL_GETOPTS *go, struct cfg_s *cf
       if(n == cm->si->nrounds) { 
 	FormatTimeString(time_buf, in_asec, FALSE);
 	fprintf(stdout, "#\n");
-	fprintf(stdout, "# %11s\n", "run time");
+	fprintf(stdout, "# %11s  (hr:min:sec)\n", "run time");
 	fprintf(stdout, "# %11s\n", "-----------");
 	fprintf(stdout, "  %11s\n", time_buf);
 	if(cfg->tfp != NULL) { 
 	  fprintf(cfg->tfp, "#\n");
-	  fprintf(cfg->tfp, "# %11s\n", "run time");
+	  fprintf(cfg->tfp, "# %11s  (hr:min:sec)\n", "run time");
 	  fprintf(cfg->tfp, "# %11s\n", "-----------");
 	  fprintf(cfg->tfp, "# %11s\n", time_buf); /* note: 1 of only 2 line that's printed differently in tfp and stdout, add a prefix \# */
 	}

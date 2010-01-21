@@ -3537,26 +3537,26 @@ print_per_cm_summary(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbu
       printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %10s  %10s\n", "--------", "---", "---", "---", "----", "---", "---", "---------", "-----", "----------", "----------");
       printf("# %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %10s",       "all",        "-",   "-",   "-",    "-",   "-",   "-",         "-",     "-",   time_buf);
       FormatTimeString(time_buf, asec, FALSE);
-      printf("  %10s\n", time_buf);
+      printf("  %10s  (hr:min:sec)\n", time_buf);
     }
     else { /* no partitions */
       FormatTimeString(time_buf, psec, FALSE);
       printf("# %8s  %3s  %3s  %3s  %9s %6s %10s  %10s\n", "--------", "---", "---", "---", "---------", "-----", "----------", "----------");
       printf("# %-8s  %3s  %3s  %3s  %9s %6s %10s",       "all",        "-",   "-",   "-",         "-",     "-",   time_buf);
       FormatTimeString(time_buf, asec, FALSE);
-      printf("  %10s\n", time_buf);
+      printf("  %10s  (hr:min:sec)\n", time_buf);
     }
   }
   else { 
     if(cfg->np != 1) { /* --exp-pfile invoked */
       FormatTimeString(time_buf, psec, FALSE);
       printf("# %8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %14s\n", "--------", "---", "---", "---",  "----", "---", "---", "---------", "-----", "--------------");
-      printf("# %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %14s\n", "all",       "-",   "-",   "-",     "-",   "-",   "-",         "-",     "-",         time_buf);
+      printf("# %-8s  %3s  %3s  %3s  %4s %3s %3s %9s %6s %14s  (hr:min:sec)\n", "all",       "-",   "-",   "-",     "-",   "-",   "-",         "-",     "-",         time_buf);
     }
     else { /* no partitions */
       FormatTimeString(time_buf, psec, FALSE);
       printf("# %8s  %3s  %3s  %3s  %9s %6s %14s\n", "--------", "---", "---", "---",  "---------", "-----", "--------------");
-      printf("# %-8s  %3s  %3s  %3s  %9s %6s %14s\n", "all",        "-",   "-",   "-",         "-",     "-",         time_buf);
+      printf("# %-8s  %3s  %3s  %3s  %9s %6s %14s  (hr:min:sec)\n", "all",        "-",   "-",   "-",         "-",     "-",         time_buf);
     }
   }
   return eslOK;
