@@ -156,7 +156,6 @@ struct cfg_s {
   /* Masters only (i/o streams) */
   CMFILE       *cmfp;		/* open input CM file stream       */
   FILE         *tmpfp;		/* the temporary output file where alignments are initially written */
-  char         *tmpfile;        /* the name of the temparory file */
   FILE         *ofp;		/* output file where alignments are ultimately written (default is stdout) */
   FILE         *tracefp;	/* optional output for parsetrees  */
   FILE         *insertfp;	/* optional output for insert info */
@@ -208,7 +207,7 @@ static void print_info_file_header(FILE *fp, char *firstline, char *elstring);
 /* Functions that enable memory efficiency by not storing all 
  * seqs/parsetrees from target file in memory at once.
  */
-static int  create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE *ofp, char *errbuf, CM_t *cm);
+static int  create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE *ofp, char *errbuf, CM_t *cm, char *tmpfile);
 static void update_maxins_and_maxel(ESL_MSA *msa, int clen, int64_t alen, int *maxins, int *maxel);
 static int  determine_gap_columns_to_add(ESL_MSA *msa, int *maxins, int *maxel, int clen, int **ret_ngap_insA, int **ret_ngap_elA, int **ret_ngap_eitherA, char *errbuf);
 static void inflate_gc_with_gaps_and_els(FILE *ofp, ESL_MSA *msa, int *ngap_insA, int *ngap_elA, char **ret_ss_cons2print, char **ret_rf2print);
@@ -340,7 +339,6 @@ main(int argc, char **argv)
 
   cfg.cmfp       = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.tmpfp      = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
-  cfg.tmpfile    = NULL;	           /* set in init_master_cfg() in masters, stays NULL for workers */
   cfg.ofp        = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.tracefp    = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
   cfg.insertfp   = NULL;	           /* opened in init_master_cfg() in masters, stays NULL for workers */
@@ -461,7 +459,6 @@ main(int argc, char **argv)
   if (cfg.abc       != NULL) esl_alphabet_Destroy(cfg.abc);
   if (cfg.abc_out   != NULL) esl_alphabet_Destroy(cfg.abc_out);
   if (cfg.withali_abc != NULL) esl_alphabet_Destroy(cfg.withali_abc);
-  if (cfg.tmpfile   != NULL) free(cfg.tmpfile);
   if (cfg.my_rank == 0 && (! esl_opt_GetBoolean(go, "-q"))) { 
     printf("#\n");
     esl_stopwatch_Display(stdout, w, "# CPU time: ");
@@ -480,7 +477,6 @@ main(int argc, char **argv)
  * Sets: 
  *    cfg->sqfp        - open sequence file                
  *    cfg->tmpfp       - initial output file (temporary file)
- *    cfg->tmpfile     - name of temp file 
  *    cfg->ofp         - ultimate output file (stdout by default)
  *    cfg->cmfp        - open CM file                
  *    cfg->abc         - digital input alphabet
@@ -618,6 +614,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int       do_small;                /* TRUE to try to save memory by outputting temp alignments, then merging */
   int       keep_reading = TRUE;
   int       do_output_to_tmp = TRUE; /* should we output to cfg->tmpfp (and then merge at end) or to cfg->ofp directly */
+  char      tmpfile[32] = "esltmpXXXXXX"; /* name of the tmpfile */
+  int       created_tmpfile = FALSE;      /* set to TRUE if we need and open the tmpfile */
 
   chunksize = esl_opt_GetInteger(go, "--chunk");
   do_small =  ((esl_opt_GetBoolean(go, "--ileaved")) || (esl_opt_GetBoolean(go, "--bigmem"))) ? FALSE : TRUE;
@@ -638,9 +636,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	if(strcmp(cm->name, esl_opt_GetString(go, "--cm-name")) != 0) { FreeCM(cm); continue; }
       }	
       used_at_least_one_cm = TRUE;
-
-      if ((status = esl_strdup("esltmpXXXXXX", 16, &(cfg->tmpfile))) != eslOK) cm_Fail("Error setting temp file name");
-      if (esl_tmpfile_named(cfg->tmpfile, &(cfg->tmpfp)) != eslOK) cm_Fail("Failed to open temporary output file for cm %d", cfg->ncm);
 
       /* initialize the flags/options/params and configuration of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK)    cm_Fail(errbuf);
@@ -670,8 +665,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  }
 	  if (do_output_to_tmp && cfg->nali == 0) { 
 	    /* first aln for temporary output file, open the file */
-	    if ((status = esl_strdup("esltmpXXXXXX", 16, &(cfg->tmpfile))) != eslOK) cm_Fail("Error setting temp file name");
-	    if (esl_tmpfile_named(cfg->tmpfile, &(cfg->tmpfp)) != eslOK) cm_Fail("Failed to open temporary output file for cm %d", cfg->ncm);
+	    if (esl_tmpfile_named(tmpfile, &(cfg->tmpfp)) != eslOK) cm_Fail("Failed to open temporary output file for cm %d", cfg->ncm);
+	    created_tmpfile = TRUE;
 	  }
 	  /* align current sequences */
 	  if ((status = process_workunit(go, cfg, errbuf, cm, seqs_to_aln)) != eslOK) cm_Fail(errbuf);
@@ -691,10 +686,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	cfg->tmpfp = NULL;
 	/* merge all temporary alignments now in cfg->tmpfp, and output merged alignment */
 	if((cfg->ofp == stdout) && (! esl_opt_GetBoolean(go, "-q"))) fprintf(cfg->ofp, "\n"); /* blank line to separate scores from aln if printing aln to stdout */
-	if((status = create_and_output_final_msa(go, cfg, cfg->ofp, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	if((status = create_and_output_final_msa(go, cfg, cfg->ofp, errbuf, cm, tmpfile)) != eslOK) cm_Fail(errbuf);
 	/* if --regress, output alignment again, this time to ofp->regressfp */
 	if(cfg->regressfp != NULL) { 
-	  if((status = create_and_output_final_msa(go, cfg, cfg->regressfp, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	  if((status = create_and_output_final_msa(go, cfg, cfg->regressfp, errbuf, cm, tmpfile)) != eslOK) cm_Fail(errbuf);
 	}
       }
       /* else (! do_output_to_tmp): we outputted alignment directly to ofp (and possibly also to regressfp) in output_result()) */
@@ -705,11 +700,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	
       /* clean up */
       FreeCM(cm);
-      if(cfg->tmpfile != NULL) { 
-	remove(cfg->tmpfile);
-	free(cfg->tmpfile);
-	cfg->tmpfile = NULL;
-      }
+      if(created_tmpfile) remove(tmpfile); 
       esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be aligning the seqs in this file again with another CM */
     }
   if(status != eslEOF) cm_Fail(errbuf);
@@ -765,6 +756,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int chunksize;               /* number of seqs/parsetrees to hold in memory at once, size of temp alignments */
   int keep_reading = TRUE;
   int do_output_to_tmp = TRUE; /* should we output to cfg->tmpfp (and then merge at end) or to cfg->ofp directly */
+  char tmpfile[32] = "esltmpXXXXXX"; /* name of the tmpfile */
+  int  created_tmpfile = FALSE;      /* set to TRUE if we need and open the tmpfile */
 
   seqs_to_aln_t  *all_seqs_to_aln    = NULL;
   seqs_to_aln_t  *worker_seqs_to_aln = NULL;
@@ -878,8 +871,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	  }
 	  if (do_output_to_tmp && cfg->nali == 0) { 
 	    /* first aln for temporary output file, open the file */
-	    if ((status = esl_strdup("esltmpXXXXXX", 16, &(cfg->tmpfile))) != eslOK) cm_Fail("Error setting temp file name");
-	    if (esl_tmpfile_named(cfg->tmpfile, &(cfg->tmpfp)) != eslOK) cm_Fail("Failed to open temporary output file for cm %d", cfg->ncm);
+	    if (esl_tmpfile_named(tmpfile, &(cfg->tmpfp)) != eslOK) cm_Fail("Failed to open temporary output file for cm %d", cfg->ncm);
 	  }
 	  
 	  /* Main send/receive loop: where we send <nseq_per_worker> sequences to workers and receive parsetrees back. 
@@ -985,10 +977,10 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	cfg->tmpfp = NULL;
 	/* merge all temporary alignments now in cfg->tmpfp, and output merged alignment */
 	if((cfg->ofp == stdout) && (! esl_opt_GetBoolean(go, "-q"))) fprintf(cfg->ofp, "\n"); /* blank line to separate scores from aln if printing aln to stdout */
-	if((status = create_and_output_final_msa(go, cfg, cfg->ofp, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	if((status = create_and_output_final_msa(go, cfg, cfg->ofp, errbuf, cm, tmpfile)) != eslOK) cm_Fail(errbuf);
 	/* if --regress, output alignment again, this time to ofp->regressfp */
 	if(cfg->regressfp != NULL) { 
-	  if((status = create_and_output_final_msa(go, cfg, cfg->regressfp, errbuf, cm)) != eslOK) cm_Fail(errbuf);
+	  if((status = create_and_output_final_msa(go, cfg, cfg->regressfp, errbuf, cm, tmpfile)) != eslOK) cm_Fail(errbuf);
 	}
       }
       /* else (! do_output_to_tmp): we outputted alignment directly to ofp (and possibly also to regressfp) in output_result()) */
@@ -998,11 +990,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       if(cfg->elfp != NULL)     { fprintf(cfg->elfp,     "//\n"); }
 
       FreeCM(cm);
-      if(cfg->tmpfile != NULL) { 
-	remove(cfg->tmpfile);
-	free(cfg->tmpfile);
-	cfg->tmpfile = NULL;
-      }
+      if(created_tmpfile) remove(tmpfile);
       esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be aligning this file again with another CM */
     }
 
@@ -2025,7 +2013,8 @@ print_info_file_header(FILE *fp, char *firstline, char *elstring)
  *                 can be cfg->regressfp (if --regress)
  *           errbuf - for error messages
  *           cm  - CM used for alignment, useful for cm->clen
- *
+ *           tmpfile - name of temporary file with alignments to merge
+ * 
  * Returns:   <eslOK> on success. 
  *            Returns <eslEOF> if there are no more alignments in <afp>.
  *            <eslEFORMAT> if parse fails because of a file format problem,
@@ -2036,7 +2025,7 @@ print_info_file_header(FILE *fp, char *firstline, char *elstring)
  * Xref:      /groups/eddy/home/nawrockie/notebook/9_1211_inf_cmalign_memeff/
  */
 int 
-create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE *ofp, char *errbuf, CM_t *cm) 
+create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE *ofp, char *errbuf, CM_t *cm, char *tmpfile) 
 {
   int           status;
   int           ai;                            /* counters over alignments */
@@ -2077,7 +2066,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
   /****************************************************************************
    * Read alignments one at a time, storing all non-sequence info, separately *
    ****************************************************************************/
-  if((status = esl_msafile_Open(cfg->tmpfile, eslMSAFILE_PFAM, NULL, &afp)) != eslOK) cm_Fail("unable to open temp file %s for reading", cfg->tmpfile);
+  if((status = esl_msafile_Open(tmpfile, eslMSAFILE_PFAM, NULL, &afp)) != eslOK) cm_Fail("unable to open temp file %s for reading", tmpfile);
 
   ai = 0;
   nseq_tot = 0;
@@ -2140,7 +2129,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
   /* if there was any GS annotation in any of the individual alignments,
    * do second pass through alignment files, outputting GS annotation as we go. */
   if(gs_exists) { 
-    if((status = esl_msafile_Open(cfg->tmpfile, eslMSAFILE_PFAM, NULL, &afp)) != eslOK) cm_Fail("unable to open temp file %s for reading on second pass", cfg->tmpfile);
+    if((status = esl_msafile_Open(tmpfile, eslMSAFILE_PFAM, NULL, &afp)) != eslOK) cm_Fail("unable to open temp file %s for reading on second pass", tmpfile);
     for(ai = 0; ai < cfg->nali; ai++) { 
       regurg_header = (ai == 0) ? TRUE : FALSE;
       regurg_gf     = ((ofp != cfg->regressfp) && (ai == 0)) ? TRUE : FALSE;
@@ -2168,7 +2157,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
   }
   /* do another (either second or third) pass through alignment files, outputting aligned sequence data (and GR) as we go */
 
-  if((status = esl_msafile_Open(cfg->tmpfile, eslMSAFILE_PFAM, NULL, &afp)) != eslOK) cm_Fail("unable to open temp file %s for reading on second (or third) pass", cfg->tmpfile);
+  if((status = esl_msafile_Open(tmpfile, eslMSAFILE_PFAM, NULL, &afp)) != eslOK) cm_Fail("unable to open temp file %s for reading on second (or third) pass", tmpfile);
 
   for(ai = 0; ai < cfg->nali; ai++) { 
     /* determine how many all gap columns to insert after each alignment position
