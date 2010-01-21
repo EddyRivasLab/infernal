@@ -270,8 +270,9 @@ int GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_nseq, int *
     esl_sq_Reuse(sq); 
   } 
   if (status != eslEOF) 
-    ESL_FAIL(status, errbuf, "Parse failed, line %" PRId64 ", file %s:\n%s", 
-	     sqfp->linenumber, sqfp->filename, sqfp->errbuf); 
+    ESL_FAIL(status, errbuf, "Parse failed, file %s:\n%s", 
+	     sqfp->filename, esl_sqfile_GetErrorBuf(sqfp));
+
   esl_sq_Destroy(sq); 
   esl_sqfile_Position(sqfp, (off_t) 0);
 
@@ -347,8 +348,8 @@ int GetDBInfo (const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *re
     esl_sq_Reuse(sq); 
   } 
   if (status != eslEOF) 
-    ESL_FAIL(status, errbuf, "Parse failed, line %" PRId64 ", file %s:\n%s",
-	     sqfp->linenumber, sqfp->filename, sqfp->errbuf); 
+    ESL_FAIL(status, errbuf, "Parse failed, file %s:\n%s",
+	     sqfp->filename, esl_sqfile_GetErrorBuf(sqfp));
   esl_sq_Destroy(sq); 
   esl_sqfile_Position(sqfp, (off_t) 0);
 

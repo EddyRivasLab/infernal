@@ -418,7 +418,7 @@ emit_unaligned(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
       else                 sprintf(name, "%d-%d", cfg->ncm, i+offset);
       if((status = EmitParsetree(cm, errbuf, cfg->r, name, TRUE, &tr, &sq, &L)) != eslOK) return status;
       sq->abc = cfg->abc_out;
-      if((esl_sqio_Write(cfg->ofp, sq, eslSQFILE_FASTA)) != eslOK) 
+      if((esl_sqio_Write(cfg->ofp, sq, eslSQFILE_FASTA, FALSE)) != eslOK) 
 	ESL_FAIL(eslFAIL, errbuf, "Error writing unaligned sequences.");
       if(cfg->pfp != NULL)
 	{
@@ -555,7 +555,7 @@ emit_consensus(const ESL_GETOPTS *go, const struct cfg_s *cfg, CM_t *cm, char *e
   if((status = esl_strdup(cm->name, -1, &cseqname)) != eslOK) goto ERROR;
   if((status = esl_strcat(&cseqname, -1, " CM generated consensus sequence [cmemit]", -1)) != eslOK) goto ERROR;
   if((csq = esl_sq_CreateFrom(cseqname, con->cseq, NULL, NULL, NULL)) == NULL) { status = eslEMEM; goto ERROR; }
-  if((esl_sqio_Write(cfg->ofp, csq, eslSQFILE_FASTA)) != eslOK) ESL_FAIL(status, errbuf, "Error writing consensus sequence.");
+  if((esl_sqio_Write(cfg->ofp, csq, eslSQFILE_FASTA, FALSE)) != eslOK) ESL_FAIL(status, errbuf, "Error writing consensus sequence.");
 
   esl_sq_Destroy(csq);
   FreeCMConsensus(con);

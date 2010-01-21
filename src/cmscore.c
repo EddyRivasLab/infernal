@@ -1486,7 +1486,7 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   /* optionally, print out the sequences to outfile */
   if(cfg->sfp != NULL) {
     for(i = 0; i < seqs_to_aln->nseq; i++)
-      if((esl_sqio_Write(cfg->sfp, seqs_to_aln->sq[i], eslSQFILE_FASTA)) != eslOK) cm_Fail("Error writing unaligned sequences to %s.", esl_opt_GetString(go, "--outfile"));
+      if((esl_sqio_Write(cfg->sfp, seqs_to_aln->sq[i], eslSQFILE_FASTA, FALSE)) != eslOK) cm_Fail("Error writing unaligned sequences to %s.", esl_opt_GetString(go, "--outfile"));
   }
 
   free(dnull);

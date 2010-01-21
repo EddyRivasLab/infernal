@@ -339,8 +339,8 @@ int ReadSeqsToAln(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int do_r
   esl_sq_Destroy(seqs_to_aln->sq[i]);
   if ((  do_read_all && status  != eslEOF) || 
       (! do_read_all && (status != eslEOF && status != eslOK)))
-    cm_Fail("Parse failed, line %d, file %s:\n%s", 
-	    seqfp->linenumber, seqfp->filename, seqfp->errbuf);
+    cm_Fail("Parse failed, file %s:\n%s", 
+	    seqfp->filename, esl_sqfile_GetErrorBuf(seqfp));
 
   seqs_to_aln->nseq = i;
   return status;

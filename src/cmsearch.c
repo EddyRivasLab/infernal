@@ -611,8 +611,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	  free(dbseq);
 	}
       esl_stopwatch_Stop(w);
-      if (status != eslEOF) cm_Fail("Parse failed, line %d, file %s:\n%s", 
-				    cfg->sqfp->linenumber, cfg->sqfp->filename, cfg->sqfp->errbuf);
+      if (status != eslEOF) cm_Fail("Parse failed, file %s:\n%s", 
+				    cfg->sqfp->filename, esl_sqfile_GetErrorBuf(cfg->sqfp));
       /* convert cm_surv_fractA[] values from residue counts into fractions */
       for(n = 0; n <= cm->si->nrounds; n++) cm_surv_fractA[n] /= (double) (cfg->dbsize);
       if(cm->flags & CMH_EXPTAIL_STATS) { if((status = print_searchinfo_for_calibrated_cm  (go, cfg, errbuf, cm, cm_surv_fractA, cm_nhitsA, w->elapsed, cm_psec, NULL)) != eslOK) cm_Fail(errbuf); }
