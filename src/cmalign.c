@@ -1973,10 +1973,10 @@ print_info_file_header(FILE *fp, char *firstline, char *elstring)
   fprintf(fp, "# %s\n", firstline);
   fprintf(fp, "# This file includes 2+<nseq> non-'#' pre-fixed lines per model used for alignment,\n");
   fprintf(fp, "# where <nseq> is the number of sequences in the target file.\n");
-  fprintf(fp, "# The first non-'#' prefixed line per model includes 2 tokens, each separated by a single space (' '):\n");
+  fprintf(fp, "# The first non-'#' prefixed line per model includes 2 tokens, separated by a single space (' '):\n");
   fprintf(fp, "# The first token is the model name and the second is the consensus length of the model (<clen>).\n");
   fprintf(fp, "# The following <nseq> lines include (1+2*<n>) whitespace delimited tokens per line.\n");
-  fprintf(fp, "# The format for theese <nseq> lines is:\n");
+  fprintf(fp, "# The format for these <nseq> lines is:\n");
   fprintf(fp, "#   <seqname> <c_1> <i_1> <c_2> <i_2> .... <c_x> <i_x> .... <c_n> <i_n>\n");
   fprintf(fp, "#   indicating <seqname> has >= 1 %sinserted residues after <n> different consensus positions,\n", elstring);
   fprintf(fp, "#   <c_x> is a consensus position and\n");
@@ -2081,7 +2081,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
 
   /* read all alignments, there should be cfg->nali of them */
   for(ai = 0; ai < cfg->nali; ai++) { 
-    status = esl_msa_ReadNonSeqInfoPfam(afp, NULL, &(msaA[ai]), &nseq_cur, &alen_cur, &ngs_cur, &maxname_cur, &maxgf_cur, &maxgc_cur, &maxgr_cur, NULL, NULL, NULL, NULL);
+    status = esl_msa_ReadNonSeqInfoPfam(afp, cfg->abc, -1, NULL, NULL, &(msaA[ai]), &nseq_cur, &alen_cur, &ngs_cur, &maxname_cur, &maxgf_cur, &maxgc_cur, &maxgr_cur, NULL, NULL, NULL, NULL, NULL);
     if      (status == eslEFORMAT) cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
     else if (status == eslEINVAL)  cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
     else if (status != eslOK)      cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
@@ -2106,7 +2106,9 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
     update_maxins_and_maxel(msaA[ai], cm->clen, msaA[ai]->alen, maxins, maxel);
   }
   /* final check, make sure we've read all msas from the file, we should have, we only printed cfg->nali */
-  status = esl_msa_ReadNonSeqInfoPfam(afp, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+  status = esl_msa_ReadNonSeqInfoPfam(afp, cfg->abc, -1, NULL, NULL, NULL, 
+				      NULL, NULL, NULL, NULL, NULL, NULL, NULL, 
+				      NULL, NULL, NULL, NULL, NULL);
   if(status != eslEOF) ESL_FAIL(status, errbuf, "More alignments in temp file than expected.");
   esl_msafile_Close(afp);
   
@@ -2144,8 +2146,9 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
 				       FALSE,         /* regurgitate GC ? */
 				       FALSE,         /* regurgitate GR ? */
 				       FALSE,         /* regurgitate aseq ? */
-				       NULL,                 
-				       NULL, 
+				       NULL,          /* output all seqs, not just those stored in a keyhash */
+				       NULL,          /* useme,  irrelevant, we're only outputting GS */
+				       NULL,          /* add2me, irrelevant, we're only outputting GS */
 				       alenA[ai], /* alignment length, as we read it in first pass (inserts may have been removed since then) */
 				       '.');
       if(status == eslEOF) cm_Fail("Second pass, error out of temp alignments too soon, when trying to read aln %d", ai);
@@ -2178,7 +2181,8 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
 				     FALSE,          /* regurgitate GC ? */
 				     TRUE,           /* regurgitate GR ? */
 				     TRUE,           /* regurgitate aseq ? */
-				     NULL, 
+				     NULL,           /* output all seqs, not just those stored in a keyhash */
+				     NULL,           /* useme, not nec b/c we want to keep all columns */
 				     ngap_eitherA,   /* number of all gap columns to add after each apos */
 				     alenA[ai],      /* alignment length, as we read it in first pass, not strictly necessary */
 				     '.');
