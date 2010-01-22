@@ -685,33 +685,35 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 		     Parsetree_t **tr, char **postcode, int nseq,
 		     FILE *insertfp, FILE *elfp, int do_full, int do_matchonly, int be_efficient, ESL_MSA **ret_msa)
 {
-  int          status;       /* easel status flag */
-  ESL_MSA     *msa   = NULL; /* multiple sequence alignment */
-  CMEmitMap_t *emap  = NULL; /* consensus emit map for the CM */
-  int          i;            /* counter over traces */
-  int          v, nd;        /* state, node indices */
-  int          cpos;         /* counter over consensus positions (0)1..clen */
-  int         *matuse= NULL; /* TRUE if we need a cpos in mult alignment */
-  int         *iluse = NULL; /* # of IL insertions after a cpos for 1 trace */
-  int         *eluse = NULL; /* # of EL insertions after a cpos for 1 trace */
-  int         *iruse = NULL; /* # of IR insertions after a cpos for 1 trace */
-  int         *maxil = NULL; /* max # of IL insertions after a cpos */
-  int         *maxel = NULL; /* max # of EL insertions after a cpos */
-  int         *maxir = NULL; /* max # of IR insertions after a cpos */
-  int	      *matmap= NULL; /* apos corresponding to a cpos */
-  int         *ilmap = NULL; /* first apos for an IL following a cpos */
-  int         *elmap = NULL; /* first apos for an EL following a cpos */
-  int         *irmap = NULL; /* first apos for an IR following a cpos */
-  int          alen;	     /* length of msa in columns */
-  int          apos;	     /* position in an aligned sequence in MSA */
-  int          rpos;	     /* position in an unaligned sequence in dsq */
-  int          tpos;         /* position in a parsetree */
-  int          el_len;	     /* length of an EL insertion in residues */
-  CMConsensus_t *con = NULL; /* consensus information for the CM */
-  int          prvnd;	     /* keeps track of previous node for EL */
-  int          nins;         /* insert counter used for splitting inserts */
-  int          do_post;      /* TRUE if postcode != NULL (we should write at least 1 sequence's posteriors) */
-  int          do_cur_post;  /* TRUE if we're writing posteriors for the current sequence inside a loop */
+  int          status;          /* easel status flag */
+  ESL_MSA     *msa   = NULL;    /* multiple sequence alignment */
+  CMEmitMap_t *emap  = NULL;    /* consensus emit map for the CM */
+  int          i;               /* counter over traces */
+  int          v, nd;           /* state, node indices */
+  int          cpos;            /* counter over consensus positions (0)1..clen */
+  int         *matuse= NULL;    /* TRUE if we need a cpos in mult alignment */
+  int         *iluse = NULL;    /* # of IL insertions after a cpos for 1 trace */
+  int         *eluse = NULL;    /* # of EL insertions after a cpos for 1 trace */
+  int         *iruse = NULL;    /* # of IR insertions after a cpos for 1 trace */
+  int         *maxil = NULL;    /* max # of IL insertions after a cpos */
+  int         *maxel = NULL;    /* max # of EL insertions after a cpos */
+  int         *maxir = NULL;    /* max # of IR insertions after a cpos */
+  int	      *matmap= NULL;    /* apos corresponding to a cpos */
+  int         *ilmap = NULL;    /* first apos for an IL following a cpos */
+  int         *elmap = NULL;    /* first apos for an EL following a cpos */
+  int         *irmap = NULL;    /* first apos for an IR following a cpos */
+  int          alen;	        /* length of msa in columns */
+  int          apos;	        /* position in an aligned sequence in MSA */
+  int          rpos;	        /* position in an unaligned sequence in dsq */
+  int         *ifirst = NULL;   /* first uapos (unaligned position) for an insert following a cpos in cur seq */
+  int         *elfirst = NULL;  /* first uapos (unaligned position) for an EL following a cpos in cur seq */
+  int          tpos;            /* position in a parsetree */
+  int          el_len;	        /* length of an EL insertion in residues */
+  CMConsensus_t *con = NULL;    /* consensus information for the CM */
+  int          prvnd;	        /* keeps track of previous node for EL */
+  int          nins;            /* insert counter used for splitting inserts */
+  int          do_post;         /* TRUE if postcode != NULL (we should write at least 1 sequence's posteriors) */
+  int          do_cur_post;     /* TRUE if we're writing posteriors for the current sequence inside a loop */
   char        *tmp_aseq = NULL; /* will hold aligned sequence for current sequence */
   char        *tmp_apc  = NULL; /* will hold aligned postcode characters for current sequence */
 
@@ -741,17 +743,19 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 
   emap = CreateEmitMap(cm);
 
-  ESL_ALLOC(matuse, sizeof(int)*(emap->clen+1));   
-  ESL_ALLOC(iluse,  sizeof(int)*(emap->clen+1));   
-  ESL_ALLOC(eluse,  sizeof(int)*(emap->clen+1));   
-  ESL_ALLOC(iruse,  sizeof(int)*(emap->clen+1));   
-  ESL_ALLOC(maxil,  sizeof(int)*(emap->clen+1));   
-  ESL_ALLOC(maxel,  sizeof(int)*(emap->clen+1));   
-  ESL_ALLOC(maxir,  sizeof(int)*(emap->clen+1));   
-  ESL_ALLOC(matmap, sizeof(int)*(emap->clen+1));   
-  ESL_ALLOC(ilmap,  sizeof(int)*(emap->clen+1));   
-  ESL_ALLOC(elmap,  sizeof(int)*(emap->clen+1));   
-  ESL_ALLOC(irmap,  sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(matuse,  sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(iluse,   sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(eluse,   sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(iruse,   sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(maxil,   sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(maxel,   sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(maxir,   sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(matmap,  sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(ilmap,   sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(elmap,   sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(irmap,   sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(ifirst,  sizeof(int)*(emap->clen+1));   
+  ESL_ALLOC(elfirst, sizeof(int)*(emap->clen+1));   
   
   for (cpos = 0; cpos <= emap->clen; cpos++) 
     {
@@ -810,25 +814,13 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	  prvnd = nd;
 	} /* end looking at trace i */
 
-      if(insertfp != NULL) { fprintf(insertfp, "%s", sq[i]->name); }
-      if(elfp != NULL)     { fprintf(elfp,     "%s", sq[i]->name); }
       for (cpos = 0; cpos <= emap->clen; cpos++) 
 	{
 	  if (iluse[cpos] > maxil[cpos]) maxil[cpos] = iluse[cpos];
 	  if (eluse[cpos] > maxel[cpos]) maxel[cpos] = eluse[cpos];
 	  if (iruse[cpos] > maxir[cpos]) maxir[cpos] = iruse[cpos];
-	  if((insertfp != NULL) && ((iluse[cpos] + iruse[cpos]) > 0)) { 
-	    fprintf(insertfp, " %d %d", cpos, (iluse[cpos] + iruse[cpos])); 
-	    /* Note: only 1 of iluse[cpos] or iruse[cpos] should be != 0 (I think) */
-	  }
-	  if((elfp != NULL) && (eluse[cpos] > 0)) { 
-	    fprintf(elfp, " %d %d", cpos, eluse[cpos]);
-	  }
 	}
-      if(insertfp != NULL) { fprintf(insertfp, "\n"); }
-      if(elfp != NULL)     { fprintf(elfp,     "\n"); }
     } /* end calculating lengths used by all traces */
-  
 
   /* Now we can calculate the total length of the multiple alignment, alen;
    * and the maps ilmap, elmap, and irmap that turn a cpos into an apos
@@ -914,8 +906,10 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
       /* Traverse this guy's trace, and place all his
        * emitted residues and posteriors.
        */
-      for (cpos = 0; cpos <= emap->clen; cpos++)
-	iluse[cpos] = iruse[cpos] = 0;
+      for (cpos = 0; cpos <= emap->clen; cpos++) { 
+	iluse[cpos] = iruse[cpos] = eluse[cpos] = 0;
+	ifirst[cpos] = elfirst[cpos] = -1;
+      }
 
       for (tpos = 0; tpos < tr[i]->n; tpos++) 
 	{
@@ -967,6 +961,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    cpos = emap->lpos[nd];
 	    apos = ilmap[cpos] + iluse[cpos];
 	    rpos = tr[i]->emitl[tpos];
+	    if(iluse[cpos] == 0) ifirst[cpos] = rpos; /* only update ifirst if this is the first insert for this IL */
 	    tmp_aseq[apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 	    if(do_cur_post) { 
 	      tmp_apc[apos] = postcode[i][rpos-1];
@@ -983,6 +978,8 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    if(do_matchonly) break;
 	    cpos = emap->epos[nd]; 
 	    apos = elmap[cpos]; 
+	    eluse[cpos] = tr[i]->emitr[tpos] - tr[i]->emitl[tpos] + 1;
+	    elfirst[cpos] = tr[i]->emitl[tpos];
 	    for (rpos = tr[i]->emitl[tpos]; rpos <= tr[i]->emitr[tpos]; rpos++)
 	      {
 		tmp_aseq[apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
@@ -998,6 +995,7 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    cpos = emap->rpos[nd]-1;  /* -1 converts to "following this one" */
 	    apos = irmap[cpos] - iruse[cpos];  /* writing backwards, 3'->5' */
 	    rpos = tr[i]->emitr[tpos];
+	    ifirst[cpos] = rpos; /* by overwriting each time we will end up with min rpos used by this IR */
 	    tmp_aseq[apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 	    if(do_cur_post) { 
 	      tmp_apc[apos] = postcode[i][rpos-1];
@@ -1102,6 +1100,24 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    if(do_cur_post) leftjustify(msa->abc, msa->pp[i]+matmap[emap->clen]+1 + maxil[emap->clen] + maxel[emap->clen], maxir[emap->clen]);
 	  }
       }
+
+      /* output insert and/or EL info to the insertfp and elfp output files, if nec */
+      if(insertfp != NULL || elfp != NULL) { 
+	if(insertfp != NULL) { fprintf(insertfp, "%s", sq[i]->name); }
+	if(elfp != NULL)     { fprintf(elfp,     "%s", sq[i]->name); }
+	for (cpos = 0; cpos <= emap->clen; cpos++) 
+	  {
+	    if((insertfp != NULL) && ((iluse[cpos] + iruse[cpos]) > 0)) { 
+	      fprintf(insertfp, " %d %d %d", cpos, ifirst[cpos], (iluse[cpos] + iruse[cpos])); 
+	      /* Note: only 1 of iluse[cpos] or iruse[cpos] should be != 0 (I think) */
+	    }
+	    if((elfp != NULL) && (eluse[cpos] > 0)) { 
+	      fprintf(elfp, " %d %d %d", cpos, elfirst[cpos], eluse[cpos]);
+	    }
+	  }
+	if(insertfp != NULL) { fprintf(insertfp, "\n"); }
+	if(elfp != NULL)     { fprintf(elfp,     "\n"); }
+      }
     } /* end loop over all parsetrees */
   if(be_efficient) { 
     free(tr);
@@ -1191,6 +1207,8 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   free(ilmap);
   free(elmap);
   free(irmap);
+  free(ifirst);
+  free(elfirst);
   *ret_msa = msa;
   return eslOK;
 
