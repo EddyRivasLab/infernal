@@ -957,16 +957,16 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    break;
 
 	  case IL_st:
-	    if(do_matchonly) break;
 	    cpos = emap->lpos[nd];
 	    apos = ilmap[cpos] + iluse[cpos];
 	    rpos = tr[i]->emitl[tpos];
 	    if(iluse[cpos] == 0) ifirst[cpos] = rpos; /* only update ifirst if this is the first insert for this IL */
+	    iluse[cpos]++;
+	    if(do_matchonly) break; /* we don't break until this point in case we're writing to insertfp, in which case we need ifirst[] and iluse[] */
 	    tmp_aseq[apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 	    if(do_cur_post) { 
 	      tmp_apc[apos] = postcode[i][rpos-1];
 	    }
-	    iluse[cpos]++;
 	    break;
 
 	  case EL_st: 
@@ -975,11 +975,11 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
              * cpos. If we ever decide to regularize (split) insertions,
              * though, we'll want to calculate eluse in the rpos loop.
              */
-	    if(do_matchonly) break;
 	    cpos = emap->epos[nd]; 
 	    apos = elmap[cpos]; 
 	    eluse[cpos] = tr[i]->emitr[tpos] - tr[i]->emitl[tpos] + 1;
 	    elfirst[cpos] = tr[i]->emitl[tpos];
+	    if(do_matchonly) break; /* we don't break until this point in case we're writing to elfp, in which case we need elfirst[] and eluse[] */
 	    for (rpos = tr[i]->emitl[tpos]; rpos <= tr[i]->emitr[tpos]; rpos++)
 	      {
 		tmp_aseq[apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
@@ -991,16 +991,16 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    break;
 
 	  case IR_st: 
-	    if(do_matchonly) break;
 	    cpos = emap->rpos[nd]-1;  /* -1 converts to "following this one" */
 	    apos = irmap[cpos] - iruse[cpos];  /* writing backwards, 3'->5' */
 	    rpos = tr[i]->emitr[tpos];
 	    ifirst[cpos] = rpos; /* by overwriting each time we will end up with min rpos used by this IR */
+	    iruse[cpos]++;
+	    if(do_matchonly) break; /* we don't break until this point in case we're writing to elfp, in which case we need ifirst[] and iruse[] */
 	    tmp_aseq[apos] = tolower((int) abc->sym[sq[i]->dsq[rpos]]);
 	    if(do_cur_post) { 
 	      tmp_apc[apos] = postcode[i][rpos-1];
 	    }
-	    iruse[cpos]++;
 	    break;
 
 	  case D_st:
