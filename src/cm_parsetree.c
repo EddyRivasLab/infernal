@@ -1108,11 +1108,11 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	for (cpos = 0; cpos <= emap->clen; cpos++) 
 	  {
 	    if((insertfp != NULL) && ((iluse[cpos] + iruse[cpos]) > 0)) { 
-	      fprintf(insertfp, " %d %d %d", cpos, ifirst[cpos], (iluse[cpos] + iruse[cpos])); 
+	      fprintf(insertfp, "  %d %d %d", cpos, ifirst[cpos], (iluse[cpos] + iruse[cpos])); 
 	      /* Note: only 1 of iluse[cpos] or iruse[cpos] should be != 0 (I think) */
 	    }
 	    if((elfp != NULL) && (eluse[cpos] > 0)) { 
-	      fprintf(elfp, " %d %d %d", cpos, elfirst[cpos], eluse[cpos]);
+	      fprintf(elfp, "  %d %d %d", cpos, elfirst[cpos], eluse[cpos]);
 	    }
 	  }
 	if(insertfp != NULL) { fprintf(insertfp, "\n"); }
