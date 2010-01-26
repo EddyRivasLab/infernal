@@ -5857,7 +5857,7 @@ main(int argc, char **argv)
 
       if (esl_opt_GetBoolean(go, "--CYKFilter")) {
         esl_stopwatch_Start(w);
-        sc1 = SSE_CYKFilter_epi16(ocm,dsq,L,0,cm->M-1,1,L,TRUE,NULL,NULL)/500.0;
+        sc1 = SSE_CYKFilter_epi16(ocm,dsq,L,0,cm->M-1,1,L,TRUE,NULL,NULL,NULL)/500.0;
         printf("%4d %-30s %10.4f bits ", (i+1), "CYKFilter_epi16(): ", sc1);
         esl_stopwatch_Stop(w);
         esl_stopwatch_Display(stdout, w, " CPU time: ");

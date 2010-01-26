@@ -30,8 +30,9 @@ static ESL_OPTIONS options[] = {
   { "-h",       eslARG_NONE,  NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           1 },
   { "--toponly",eslARG_NONE,  NULL, NULL, NULL,  NULL,  NULL, NULL, "search only the top strand, not reverse complement", 1 },
   /* Cutoff level options */
+  { "--s1-F",eslARG_REAL,"0.01", NULL,   NULL,  NULL,  NULL, "--s1-E", "set stage 1 cutoff to estimated filter pass rate <x>", 2 },
   { "--s1-T",eslARG_REAL,  NULL, NULL,   NULL,  NULL,  NULL, "--s1-E", "set stage 1 cutoff to bitscore <x>",             2 },
-  { "--s1-E",eslARG_REAL, "0.1", NULL,"0<x<1",  NULL,  NULL, "--s1-T", "set stage 1 cutoff to probability <x> per kb",   2 },
+  { "--s1-E",eslARG_REAL,  NULL, NULL,"0<x<1",  NULL,  NULL, "--s1-T", "set stage 1 cutoff to probability <x> per kb",   2 },
   { "--s2-T",eslARG_REAL,  NULL, NULL,   NULL,  NULL,  NULL, "--s2-E", "set stage 2 cutoff to bitscore <x>",             2 },
   { "--s2-E",eslARG_REAL,"1e-3", NULL,"0<x<1",  NULL,  NULL, "--s2-T", "set stage 2 cutoff to probability <x>",          2 },
   { "--s3-T",eslARG_REAL,  NULL, NULL,   NULL,  NULL,  NULL, "--s3-E", "set stage 3 cutoff to bitscore <x>",             2 },
@@ -192,15 +193,24 @@ main(int argc, char **argv)
     if (esl_opt_IsOn(go, "--evd1")) esl_histogram_PlotSurvival(stdout, hist);
     fprintf(stderr,"Stage 1: EVD parameters mu = %7.3f\t lambda = %7.3f; ",ccm_mu,ccm_lambda);
     esl_stopwatch_Display(stderr, w, " CPU time: ");
+//fprintf(stdout,"CM parameters at .50 GC mu = %7.3f\t lambda = %7.3f\n", cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap, cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda); cm_Fail("run for EVD parameters only, aborting");
 /*
 esl_histogram_GetRank(hist, 10, &score);
 eval  = esl_exp_surv(score, ccm_mu, ccm_lambda);
 printf("E-val at rank 10 = %1.3e\t",eval);
 */
 
-    e_cutoff = esl_opt_GetReal(go,"--s1-E");
-    f_cutoff = esl_exp_invcdf(e_cutoff,ccm_mu,ccm_lambda);
-    fprintf(stderr,"Stage 1: P-value cutoff %.2e per kb -> score cutoff %.2f\n",e_cutoff,f_cutoff);
+    if (esl_opt_IsOn(go, "--s1-F")) {
+      e_cutoff = esl_opt_GetReal(go,"--s1-F")*500/cm->smx->W;
+      f_cutoff = esl_exp_invcdf(e_cutoff,ccm_mu,ccm_lambda);
+      fprintf(stderr,"Stage 1: Filter pass rate %f -> P-value cutoff %.2e per kb -> score cutoff %.2f\n",esl_opt_GetReal(go,"--s1-F"),e_cutoff,f_cutoff);
+    }
+    else if (esl_opt_IsOn(go, "--s1-E")) {
+      e_cutoff = esl_opt_GetReal(go,"--s1-E");
+      f_cutoff = esl_exp_invcdf(e_cutoff,ccm_mu,ccm_lambda);
+      fprintf(stderr,"Stage 1: P-value cutoff %.2e per kb -> score cutoff %.2f\n",e_cutoff,f_cutoff);
+    }
+
     /* Need to scale and offset, but not change sign -> switch sign ahead of time */
     s1_cutoff = ccm->base_b + unbiased_byteify(ccm,-f_cutoff);
     if (s1_cutoff == BYTEMAX) {

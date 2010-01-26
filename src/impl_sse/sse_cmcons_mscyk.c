@@ -822,7 +822,7 @@ static ESL_OPTIONS options[] = {
   { "-s",        eslARG_INT,     "33", NULL, NULL,  NULL,  NULL, NULL, "set random number seed to <n>",                  0 },
   { "-e",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "emit sequences from CM, don't randomly create them", 0 },
   { "-g",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "search in glocal mode [default: local]", 0 },
-  { "-L",        eslARG_INT,  "10000", NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs",0 },
+  { "-L",        eslARG_INT,     NULL, NULL, "n>0", NULL,  NULL, NULL, "length of random target seqs",0 },
   { "-N",        eslARG_INT,      "1", NULL, "n>0", NULL,  NULL, NULL, "number of random target seqs",                   0 },
   { "-w",        eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute new SSE 4x CYK scan implementation", 0 },
   { "--mscyk",   eslARG_NONE,   FALSE, NULL, NULL,  NULL,  NULL, NULL, "also execute new SSE 16x MSCYK scan implementation", 0 },
@@ -845,7 +845,7 @@ main(int argc, char **argv)
   ESL_STOPWATCH  *w       = esl_stopwatch_Create();
   ESL_RANDOMNESS *r       = NULL;
   ESL_ALPHABET   *abc     = NULL;
-  int             L       = esl_opt_GetInteger(go, "-L");
+  int             L;
   int             N       = esl_opt_GetInteger(go, "-N");
   ESL_DSQ        *dsq;
   int             i;
@@ -913,7 +913,8 @@ nullL = cm->clen;
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
 
   /* get sequences */
-  if(!esl_opt_IsDefault(go, "-L")) {
+  if(esl_opt_IsOn(go, "-L")) {
+     L = esl_opt_GetInteger(go, "-L");
      double *dnull;
      ESL_DSQ *randdsq = NULL;
      ESL_ALLOC(randdsq, sizeof(ESL_DSQ)* (L+2));
@@ -954,7 +955,7 @@ nullL = cm->clen;
   for (i = 0; i < N; i++)
     {
       L = seqs_to_aln->sq[i]->n;
-      printf("%4d L = %5d\n", (i+1), L);
+      printf("%4d L = %5d\tN = %5d\tNB = %5d\tW = %5d\n", (i+1), L,cm->M,CMCountStatetype(cm, B_st),cm->smx->W);
       dsq = seqs_to_aln->sq[i]->dsq;
       cm->search_opts  &= ~CM_SEARCH_INSIDE;
 
