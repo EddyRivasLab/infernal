@@ -182,13 +182,13 @@ main(int argc, char **argv)
     ESL_ALLOC(seq->dsq, sizeof(ESL_DSQ) * (L+2));
     for (int k = 0; k < samples; k++) {
       esl_rsq_xIID(r, background, 4, L, seq->dsq);
-      if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, L, -45, NULL, FALSE, NULL, &(x[k]))) != eslOK) cm_Fail(errbuf);
+      if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, L, 0x00, NULL, FALSE, NULL, &(x[k]))) != eslOK) cm_Fail(errbuf);
       esl_histogram_Add(hist, x[k]);
     }
-    esl_histogram_GetTailByMass(hist, 0.1, &xv, &n, NULL);
+    esl_histogram_GetTailByMass(hist, 0.2, &xv, &n, NULL);
     esl_exp_FitComplete(xv, n, &ccm_mu, &ccm_lambda);
     param[0] = ccm_mu; param[1] = ccm_lambda;
-    esl_histogram_SetExpectedTail(hist, ccm_mu, 0.1, &esl_exp_generic_cdf, &param);
+    esl_histogram_SetExpectedTail(hist, ccm_mu, 0.2, &esl_exp_generic_cdf, &param);
     esl_stopwatch_Stop(w);
     if (esl_opt_IsOn(go, "--evd1")) esl_histogram_PlotSurvival(stdout, hist);
     fprintf(stderr,"Stage 1: EVD parameters mu = %7.3f\t lambda = %7.3f; ",ccm_mu,ccm_lambda);
@@ -200,14 +200,15 @@ eval  = esl_exp_surv(score, ccm_mu, ccm_lambda);
 printf("E-val at rank 10 = %1.3e\t",eval);
 */
 
+    float ccm_mu_extrap = ccm_mu + (log(0.2) / ccm_lambda);
     if (esl_opt_IsOn(go, "--s1-F")) {
       e_cutoff = esl_opt_GetReal(go,"--s1-F")*500/cm->smx->W;
-      f_cutoff = esl_exp_invcdf(e_cutoff,ccm_mu,ccm_lambda);
+      f_cutoff = ccm_mu_extrap + (log(e_cutoff) / (-1*ccm_lambda));
       fprintf(stderr,"Stage 1: Filter pass rate %f -> P-value cutoff %.2e per kb -> score cutoff %.2f\n",esl_opt_GetReal(go,"--s1-F"),e_cutoff,f_cutoff);
     }
     else if (esl_opt_IsOn(go, "--s1-E")) {
       e_cutoff = esl_opt_GetReal(go,"--s1-E");
-      f_cutoff = esl_exp_invcdf(e_cutoff,ccm_mu,ccm_lambda);
+      f_cutoff = ccm_mu_extrap + (log(e_cutoff) / (-1*ccm_lambda));
       fprintf(stderr,"Stage 1: P-value cutoff %.2e per kb -> score cutoff %.2f\n",e_cutoff,f_cutoff);
     }
 
@@ -293,7 +294,7 @@ PIPELINE:
         if (!is_reversed)
           printf("%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, windows->data[i].start, windows->data[i].stop, 0);
         else
-          printf("%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, (int) seq->n - windows->data[i].stop, (int) seq->n - windows->data[i].start, 1);
+          printf("%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, (int) seq->n-windows->data[i].stop+1, (int) seq->n-windows->data[i].start+1, 1);
       }
     }
     else if (o_glbf_all) {
@@ -301,7 +302,7 @@ PIPELINE:
         if (!is_reversed)
           fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, windows->data[i].start, windows->data[i].stop, 0);
         else
-          fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, (int) seq->n - windows->data[i].stop, (int) seq->n - windows->data[i].start, 1);
+          fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, (int) seq->n-windows->data[i].stop+1, (int) seq->n-windows->data[i].start+1, 1);
       }
     }
 
@@ -318,13 +319,13 @@ PIPELINE:
           if (!is_reversed) 
             printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, start, stop, 0);
           else
-            printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, (int) seq->n - stop, (int) seq->n - start, 1);
+            printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
         }
         else if (o_glbf_all) {
           if (!is_reversed) 
             fprintf(S2_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, start, stop, 0);
           else
-            fprintf(S2_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, (int) seq->n - stop, (int) seq->n - start, 1);
+            fprintf(S2_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
         }
         /* Stage 3: full-precision CYK */
         sc3 = SSE_CYKInsideScore(cm, seq->dsq, seq->n, 0, start, stop);
@@ -335,13 +336,13 @@ PIPELINE:
             if (!is_reversed)
               printf("%-24s %-6f %d %d %d\n", seq->name, sc3, start, stop, 0);
             else
-              printf("%-24s %-6f %d %d %d\n", seq->name, sc3, (int) seq->n - stop, (int) seq->n - start, 1);
+              printf("%-24s %-6f %d %d %d\n", seq->name, sc3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
           }
           else if (o_glbf_all) {
             if (!is_reversed)
               fprintf(S3_OFILE,"%-24s %-6f %d %d %d\n", seq->name, sc3, start, stop, 0);
             else
-              fprintf(S3_OFILE,"%-24s %-6f %d %d %d\n", seq->name, sc3, (int) seq->n - stop, (int) seq->n - start, 1);
+              fprintf(S3_OFILE,"%-24s %-6f %d %d %d\n", seq->name, sc3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
           }
         }
       }
