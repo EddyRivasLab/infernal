@@ -61,6 +61,8 @@ main(int argc, char **argv)
   ESL_ALPHABET   *abc     = NULL;
   int             i;
   float           sc, sc3;
+  float           p2, p3;
+  float           filtersc, nullsc;
   int             sc2, br2, bsc2;
   char           *cmfile = esl_opt_GetArg(go, 1);
   char           *seqfile= esl_opt_GetArg(go, 2);
@@ -73,13 +75,20 @@ main(int argc, char **argv)
   uint8_t         s1_cutoff;
   int16_t         s2_cutoff;
   float           s3_cutoff;
+  float           s1_fcut = 0.;
+  float           s2_pcut = 0;
+  float           s3_pcut = 0;
   float           e_cutoff, f_cutoff;
   float           f_S_Sa, f_S_SM, f_S_e;
+  float           nullL;
   int             format = eslSQFILE_UNKNOWN;
   int             max, imax, jmax;
   int             o_glbf, o_glbf_all;
   int             do_reverse, is_reversed;
-  FILE            *S1_OFILE, *S2_OFILE, *S3_OFILE;
+  FILE            *S0_OFILE = NULL;
+  FILE            *S1_OFILE = NULL;
+  FILE            *S2_OFILE = NULL;
+  FILE            *S3_OFILE = NULL;
   HitCoord_epi16  *s2_coord = NULL;
 
   /* vars for MSCYK score distribution fitting */
@@ -94,6 +103,9 @@ main(int argc, char **argv)
   ESL_RANDOMNESS *r;
   double background[4] = {0.25, 0.25, 0.25, 0.25};
   ESL_HISTOGRAM *hist;
+
+  /* post-MSCYK bias filter */
+  int do_biasfilter  = TRUE;
     
   search_results_t *results = NULL; /* First stage results from MSCYK */
   search_results_t *windows = NULL; /* Expanded and merged hit candidate windows after first stage */
@@ -126,18 +138,17 @@ main(int argc, char **argv)
   if (esl_opt_IsOn(go, "--mmp_auto")) {
     f_S_Sa = esl_opt_GetReal(go, "--S_Sa");
     f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/((1+ccm->p_rfrag)*cm->clen + ccm->e_fraglen);
-    ccm->r = ((float) cm->clen)/(cm->clen+1.);
     f_S_e = 1. - f_S_Sa - f_S_SM;
+    nullL = (float) cm->clen;
   }
   else {
-    float nullL;
     f_S_Sa = esl_opt_GetReal(go, "--S_Sa");
     if (esl_opt_IsOn(go, "--S_SM")) f_S_SM = esl_opt_GetReal(go, "--S_SM");
     else                            f_S_SM = 0.24;
     f_S_e = 1. - f_S_Sa - f_S_SM;
-    nullL = MSCYK_explen(ccm->e_fraglen,f_S_Sa,f_S_SM,f_S_e);
-    ccm->r = nullL/(nullL+1.);
+    nullL = ccm_explen(ccm,f_S_Sa,f_S_SM,f_S_e);
   }
+  ccm->bg->p1 = nullL/(nullL+1.);
   if (f_S_Sa <= 0 || f_S_Sa >= 1) cm_Fail("S->Sa must be between zero and 1\n");
   if (f_S_SM <= 0 || f_S_SM >= 1) cm_Fail("S->SM must be between zero and 1\n");
   if (f_S_e <= 0)                 cm_Fail("Error: S->e out of range\n");
@@ -146,6 +157,12 @@ main(int argc, char **argv)
   ccm->tsb_S_e  = unbiased_byteify(ccm,sreLOG2(f_S_e ));
   ccm->tsb_M_S  = unbiased_byteify(ccm,ccm->sc_frag);
 
+  /* Set bg model */
+  if (do_biasfilter) {
+    ccm_SetCompo(ccm, f_S_Sa, f_S_SM, f_S_e);
+    ccm_bg_SetFilter(ccm, nullL, 2.*cm->smx->W);
+  }
+
   /* Set output files */
   if (o_glbf_all) {
     int length = 16;
@@ -153,6 +170,8 @@ main(int argc, char **argv)
     ESL_ALLOC(fname, 25*sizeof(char));
     if (strlen(cmfile) - 3 < length) length = strlen(cmfile) - 3;
     strncpy(fname,cmfile,length);
+    if ((S0_OFILE = fopen(strcat(fname,".s0.glbf"),"w")) == NULL) { cm_Fail("Couldn't open stage 0 glbf file for writing!"); }
+    fname[length] = '\0';
     if ((S1_OFILE = fopen(strcat(fname,".s1.glbf"),"w")) == NULL) { cm_Fail("Couldn't open stage 1 glbf file for writing!"); }
     fname[length] = '\0';
     if ((S2_OFILE = fopen(strcat(fname,".s2.glbf"),"w")) == NULL) { cm_Fail("Couldn't open stage 2 glbf file for writing!"); }
@@ -165,6 +184,7 @@ main(int argc, char **argv)
     f_cutoff = esl_opt_GetReal(go, "--s1-T");
     fprintf(stderr,"Stage 1: score cutoff %.2f\n",f_cutoff);
     /* Need to scale and offset, but not change sign -> switch sign ahead of time */
+    s1_fcut = f_cutoff;
     s1_cutoff = ccm->base_b + unbiased_byteify(ccm,-f_cutoff);
     if (s1_cutoff == BYTEMAX) {
       s1_cutoff--;
@@ -201,17 +221,18 @@ printf("E-val at rank 10 = %1.3e\t",eval);
 */
 
     float ccm_mu_extrap = ccm_mu + (log(0.2) / ccm_lambda);
-    if (esl_opt_IsOn(go, "--s1-F")) {
-      e_cutoff = esl_opt_GetReal(go,"--s1-F")*500/cm->smx->W;
-      f_cutoff = ccm_mu_extrap + (log(e_cutoff) / (-1*ccm_lambda));
-      fprintf(stderr,"Stage 1: Filter pass rate %f -> P-value cutoff %.2e per kb -> score cutoff %.2f\n",esl_opt_GetReal(go,"--s1-F"),e_cutoff,f_cutoff);
-    }
-    else if (esl_opt_IsOn(go, "--s1-E")) {
+    if (esl_opt_IsOn(go, "--s1-E")) {
       e_cutoff = esl_opt_GetReal(go,"--s1-E");
-      f_cutoff = ccm_mu_extrap + (log(e_cutoff) / (-1*ccm_lambda));
+      f_cutoff = esl_exp_invcdf(1.-e_cutoff,ccm_mu_extrap,ccm_lambda);
       fprintf(stderr,"Stage 1: P-value cutoff %.2e per kb -> score cutoff %.2f\n",e_cutoff,f_cutoff);
     }
+    else /*if (esl_opt_IsOn(go, "--s1-F"))*/ {
+      e_cutoff = esl_opt_GetReal(go,"--s1-F")*500/cm->smx->W;
+      f_cutoff = esl_exp_invcdf(1.-e_cutoff,ccm_mu_extrap,ccm_lambda);
+      fprintf(stderr,"Stage 1: Filter pass rate %f -> P-value cutoff %.2e per kb -> score cutoff %.2f\n",esl_opt_GetReal(go,"--s1-F"),e_cutoff,f_cutoff);
+    }
 
+    s1_fcut = f_cutoff;
     /* Need to scale and offset, but not change sign -> switch sign ahead of time */
     s1_cutoff = ccm->base_b + unbiased_byteify(ccm,-f_cutoff);
     if (s1_cutoff == BYTEMAX) {
@@ -239,15 +260,15 @@ printf("E-val at rank 10 = %1.3e\t",eval);
   }
   else {
     e_cutoff = esl_opt_GetReal(go,"--s2-E");
-    E2MinScore(cm,errbuf,EXP_CM_LC,e_cutoff,&f_cutoff);
-    //fprintf(stderr,"WARNING: P-value cutoffs not implemented, setting stage 3 bitscore cutoff to %.1f\n",f_cutoff);
-    fprintf(stderr,"Stage 2: P-value cutoff %.2e -> score cutoff %.2f\n",e_cutoff,f_cutoff);
+    f_cutoff = esl_exp_invcdf(1.-e_cutoff,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
+    fprintf(stderr,"Stage 2: P-value cutoff %.2e\n",e_cutoff);
+    s2_pcut   = e_cutoff;
     s2_cutoff = wordify(ocm->scale_w, f_cutoff);
     if (s2_cutoff == WORDMAX) {
       s2_cutoff--;
       f_cutoff = s2_cutoff/ocm->scale_w;
-      fprintf(stderr,"Stage 2: Warning - score cutoff out of range, setting to max of %.2f\n",f_cutoff);
-      //FIXME: equivalent p-value?
+      s2_pcut = esl_exp_surv(f_cutoff,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
+      fprintf(stderr,"Stage 2: Warning - score cutoff out of range, setting to max of %.2e\n",s2_pcut);
     }
   }
   /* Need to scale */
@@ -258,13 +279,12 @@ printf("E-val at rank 10 = %1.3e\t",eval);
   }
   else {
     e_cutoff = esl_opt_GetReal(go,"--s3-E");
-//FIXME!!  Always picking the first partition, here, which probably isn't what we want.
-//FIXME!!  We don't necessarily know how %GC space was divided for calibration.
-//FIXME!!  Also, need to actually check that the cm has been calibrated before we start pulling data from cm->stats
-    //f_cutoff = esl_gumbel_invcdf(e_cutoff,cm->stats->expAA[EXP_CM_LC][0]->mu_extrap,cm->stats->expAA[EXP_CM_LC][0]->lambda);
-    E2MinScore(cm,errbuf,EXP_CM_LC,e_cutoff,&f_cutoff);
+//FIXME!!  Need to actually check that the cm has been calibrated before we start pulling data from cm->stats
+    //E2MinScore(cm,errbuf,EXP_CM_LC,e_cutoff,&f_cutoff);
+    f_cutoff = esl_exp_invcdf(1.-e_cutoff,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
     //fprintf(stderr,"WARNING: P-value cutoffs not implemented, setting stage 3 bitscore cutoff to %.1f\n",f_cutoff);
-    fprintf(stderr,"Stage 3: P-value cutoff %.2e -> score cutoff %.2f\n",e_cutoff,f_cutoff);
+    fprintf(stderr,"Stage 3: P-value cutoff %.2e\n",e_cutoff);
+    s3_pcut = e_cutoff;
   }
   s3_cutoff = f_cutoff;
 
@@ -284,29 +304,45 @@ PIPELINE:
     fprintf(stderr,"Stage 1: %-24s %-22s",seq->name,is_reversed?"(reverse complement)":"");
     esl_stopwatch_Display(stderr, w, " CPU time: ");
 
+    if (o_glbf_all) {
+      for (i = 0; i < results->num_results; i++) {
+        if (!is_reversed) fprintf(S0_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) results->data[i].score, results->data[i].start, results->data[i].stop, 0);
+        else fprintf(S0_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) results->data[i].score, (int) seq->n-results->data[i].stop+1, (int) seq->n-results->data[i].start+1, 1);
+      }
+    }
+
+    if (do_biasfilter) {
+      for (i = 0; i < results->num_results; i++) {
+        ccm_bg_FilterScore(ccm->bg, seq->dsq+results->data[i].start-1, results->data[i].stop-results->data[i].start+1, &filtersc);
+        results->data[i].score -= filtersc/eslCONST_LOG2;
+        ccm_bg_NullOne(ccm->bg, results->data[i].stop-results->data[i].start+1, &nullsc);
+        results->data[i].score += nullsc/eslCONST_LOG2;
+      }
+    }
+
     /* Convert hits to windows for next stage */
-    windows = ResolveMSCYK(results, 1, seq->n, cm->smx->W);
+    windows = ResolveMSCYK(results, 1, seq->n, cm->smx->W, s1_fcut);
     FreeResults(results);
 
-    //FIXME The joined and expanded windows don't have any particular score, so set them to the cutoff value
     if (o_glbf == 1) {
       for (i = 0; i < windows->num_results; i++) {
         if (!is_reversed)
-          printf("%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, windows->data[i].start, windows->data[i].stop, 0);
+          printf("%-24s %-6f %d %d %d\n", seq->name, (float) windows->data[i].score, windows->data[i].start, windows->data[i].stop, 0);
         else
-          printf("%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, (int) seq->n-windows->data[i].stop+1, (int) seq->n-windows->data[i].start+1, 1);
+          printf("%-24s %-6f %d %d %d\n", seq->name, (float) windows->data[i].score, (int) seq->n-windows->data[i].stop+1, (int) seq->n-windows->data[i].start+1, 1);
       }
     }
     else if (o_glbf_all) {
       for (i = 0; i < windows->num_results; i++) {
         if (!is_reversed)
-          fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, windows->data[i].start, windows->data[i].stop, 0);
+          fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) windows->data[i].score, windows->data[i].start, windows->data[i].stop, 0);
         else
-          fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) (s1_cutoff-ccm->base_b)/ccm->scale_b, (int) seq->n-windows->data[i].stop+1, (int) seq->n-windows->data[i].start+1, 1);
+          fprintf(S1_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float) windows->data[i].score, (int) seq->n-windows->data[i].stop+1, (int) seq->n-windows->data[i].start+1, 1);
       }
     }
 
     for (i = 0; i < windows->num_results; i++) {
+      int gc = get_gc_comp(ccm->abc,seq->dsq,windows->data[i].start,windows->data[i].stop);
       int start, stop;
       s2_coord->j = -1; s2_coord->d = 0; 
       /* Stage 2: medium-precision CYK */
@@ -314,7 +350,8 @@ PIPELINE:
       stop = s2_coord->j;
       start = stop - s2_coord->d + 1;
 
-      if (sc2 > s2_cutoff) {
+      p2 = esl_exp_surv((float)sc2/ocm->scale_w,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->lambda);
+      if ((esl_opt_IsOn(go,"--s2-T") && (sc2 > s2_cutoff)) || (p2 < s2_pcut)) {
         if (o_glbf == 2) {
           if (!is_reversed) 
             printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, start, stop, 0);
@@ -330,19 +367,20 @@ PIPELINE:
         /* Stage 3: full-precision CYK */
         sc3 = SSE_CYKInsideScore(cm, seq->dsq, seq->n, 0, start, stop);
 
-        if (sc3 >= s3_cutoff) {
+        p3 = esl_exp_surv((float)sc3,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->lambda);
+        if ((esl_opt_IsOn(go,"--s3-T") && (sc3 >= s3_cutoff)) || (p3 < s3_pcut)) {
           /* Report hit */
           if (o_glbf == 3) {
             if (!is_reversed)
-              printf("%-24s %-6f %d %d %d\n", seq->name, sc3, start, stop, 0);
+              printf("%-24s %-6e %d %d %d\n", seq->name, p3, start, stop, 0);
             else
-              printf("%-24s %-6f %d %d %d\n", seq->name, sc3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
+              printf("%-24s %-6e %d %d %d\n", seq->name, p3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
           }
           else if (o_glbf_all) {
             if (!is_reversed)
-              fprintf(S3_OFILE,"%-24s %-6f %d %d %d\n", seq->name, sc3, start, stop, 0);
+              fprintf(S3_OFILE,"%-24s %-6e %d %d %d\n", seq->name, p3, start, stop, 0);
             else
-              fprintf(S3_OFILE,"%-24s %-6f %d %d %d\n", seq->name, sc3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
+              fprintf(S3_OFILE,"%-24s %-6e %d %d %d\n", seq->name, p3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
           }
         }
       }
@@ -362,6 +400,7 @@ PIPELINE:
   esl_sq_Destroy(seq);
 
   if (o_glbf_all) {
+    fclose(S0_OFILE);
     fclose(S1_OFILE);
     fclose(S2_OFILE);
     fclose(S3_OFILE);

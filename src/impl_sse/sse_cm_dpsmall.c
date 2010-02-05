@@ -4505,7 +4505,9 @@ fprintf(stderr,"\n");
         sW = jp/vecwidth;
 	for (dp = 0; dp <= sW; dp++) {
           tmp_d = _mm_adds_epi16(_mm_set1_epi16((int16_t)dp*vecwidth), doffset);
-          tmpv = _mm_adds_epi16(alpha[v]->ivec[j][dp], vec_unaligned_sc[dp]);
+          //tmpv = _mm_adds_epi16(alpha[v]->ivec[j][dp], vec_unaligned_sc[dp]);
+//FIXME: Testing whether skipping unaligned_sc helps with coordinates returned here
+tmpv = alpha[v]->ivec[j][dp];
 /*
 if(v<8 && j==26) {
 fprintf(stderr,"dp = %d\n",dp);
@@ -4521,6 +4523,7 @@ fprintf(stderr,"\ttmpv2 "); vecprint_epi16(ocm,                  tmpv); fprintf(
           //FIXME: root deck, or do we need to handle that separately?
           tmpv = _mm_adds_epi16(tmpv, _mm_set1_epi16(ocm->beginsc[v]));
           mask  = _mm_cmpgt_epi16(tmpv, vb_sc);
+mask = _mm_or_si128(mask,_mm_cmpeq_epi16(tmpv,vb_sc));	//FIXME: Test - break ties in favor of new values
           vb_sc = _mm_max_epi16(tmpv, vb_sc);
           vb_j  = sse_select_si128(vb_j, tmp_j, mask);
           vb_d  = sse_select_si128(vb_d, tmp_d, mask);

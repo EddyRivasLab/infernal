@@ -51,7 +51,7 @@
  * Returns:  Newly allocated GammaHitMx_t object:
  */
 GammaHitMx_epu8 *
-CreateGammaHitMx_epu8(int L, int i0, int be_greedy, uint8_t cutoff, int do_backward)
+CreateGammaHitMx_epu8(int L, int i0, int be_greedy, float cutoff, int do_backward)
 {
   int status;
   GammaHitMx_epu8 *gamma;
@@ -62,9 +62,9 @@ CreateGammaHitMx_epu8(int L, int i0, int be_greedy, uint8_t cutoff, int do_backw
   gamma->iamgreedy = be_greedy;
   gamma->cutoff    = cutoff;
   /* allocate/initialize for CYK/Inside */
-  ESL_ALLOC(gamma->mx,     sizeof(uint8_t) * (L+1));
+  ESL_ALLOC(gamma->mx,     sizeof(int)     * (L+1));
   ESL_ALLOC(gamma->gback,  sizeof(int)     * (L+1));
-  ESL_ALLOC(gamma->savesc, sizeof(uint8_t) * (L+1));
+  ESL_ALLOC(gamma->savesc, sizeof(float)   * (L+1));
     
   if(do_backward) { 
     gamma->mx[L]    = 0;
@@ -130,26 +130,29 @@ UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma,
   int bestd;
   int ip, jp;
   int do_report_hit;
-  uint8_t hit_sc, cumulative_sc, bestd_sc;
+  uint8_t hit_sc, bestd_sc;
+  float  fhit_sc;
+  int cumulative_sc;
 
   /* mode 1: non-greedy  */
   if(! gamma->iamgreedy || alpha_row == NULL) { 
     gamma->mx[j]     = gamma->mx[j-1] + 0; 
     gamma->gback[j]  = -1;
-    gamma->savesc[j] = 0; // IMPOSSIBLE;
+    gamma->savesc[j] = -eslINFINITY; // IMPOSSIBLE;
 
     if(alpha_row != NULL) { 
-      for (d = 1; d <= W; d++) {
+      for (d = 1; d <= W && d <= j; d++) {
 	i = j-d+1;
 	hit_sc = *(((uint8_t *) &alpha_row[d%sW])+d/sW);
-	cumulative_sc = gamma->mx[i-1] + hit_sc;
-	if (cumulative_sc > gamma->mx[j]) {
+        fhit_sc = ((float) (hit_sc - ccm->base_b))/ccm->scale_b;
+	cumulative_sc = gamma->mx[i-1] + hit_sc - ccm->base_b;
+        if (cumulative_sc < 0) cumulative_sc = 0;
+	if (cumulative_sc >= gamma->mx[j]) { /* Break ties in favor of larger d */
 	  do_report_hit = TRUE;
 	  if(do_report_hit) { 
-	    /*printf("\t%.3f %.3f\n", hit_sc+null3_correction, hit_sc);*/
 	    gamma->mx[j]     = cumulative_sc;
 	    gamma->gback[j]  = i + (gamma->i0-1);
-	    gamma->savesc[j] = hit_sc;
+	    gamma->savesc[j] = fhit_sc;
 	  }
 	}
       }
@@ -165,15 +168,15 @@ UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma,
     /* First, report hit with d of dmin (min valid d) if >= cutoff */
     d = 1;
     hit_sc = *((uint8_t *) &alpha_row[d%sW] + d/sW);
-    if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) {
+    fhit_sc = ((float) (hit_sc - ccm->base_b))/ccm->scale_b;
+    if (fhit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) {
       do_report_hit = TRUE;
       ip = j-d+gamma->i0;
       jp = j-1+gamma->i0;
       assert(ip >= gamma->i0);
       assert(jp >= gamma->i0);
       if(do_report_hit) { 
-	/*printf("\t0 %.3f %.3f ip: %d jp: %d r: %d\n", hit_sc+null3_correction, hit_sc, ip, jp, r);*/
-	ReportHit (ip, jp, 0, (float) hit_sc, results);
+	ReportHit (ip, jp, -1, fhit_sc, results);
       }
     }
     bestd    = 0;
@@ -182,19 +185,20 @@ UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma,
      * it if >= cutoff and set new max */
     for (d = 2; d <= W; d++) {
       hit_sc = *(((uint8_t *) &alpha_row[d%sW]) + d/sW);
+      fhit_sc = ((float) (hit_sc - ccm->base_b))/ccm->scale_b;
       if (hit_sc > bestd_sc) {
-	if (hit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) { 
+	if (fhit_sc >= gamma->cutoff && NOT_IMPOSSIBLE(hit_sc)) { 
 	  do_report_hit = TRUE;
 	  ip = j-d+gamma->i0;
 	  jp = j-1+gamma->i0;
 	  assert(ip >= gamma->i0);
 	  assert(jp >= gamma->i0);
 	  if(do_report_hit) { 
-	    /*printf("\t1 %.3f %.3f ip: %d jp: %d r: %d\n", hit_sc+null3_correction, hit_sc, ip, jp, r);*/
-	    ReportHit (ip, jp, 0, (float) hit_sc, results);
+	    ReportHit (ip, jp, -1, fhit_sc, results);
 	  }
 	}
-	if(hit_sc > bestd_sc) { bestd = d; bestd_sc = hit_sc; } /* we need to check again b/c if null3, hit_sc -= null3_correction */
+	bestd = d;
+        bestd_sc = hit_sc; 
       }
     }
   }

@@ -34,33 +34,6 @@
 #define BYTERSHIFT2(a,b)   (_mm_or_si128(_mm_slli_si128(a,1), _mm_srli_si128(b,15)))
 #define BYTERSHIFT3(a,b,c) (_mm_or_si128(_mm_slli_si128(a,c), _mm_srli_si128(b,16-c)))
 
-/* Function: MSCYK_explen()
-   Author:   DLK
-
-   Purpose:  Calculate the expected lenght of hits under the MSCYK model,
-             given a particular (consensus) CM
-
-   Args:     fraglen         - expected length of hits in consensus CM (usually ccm->e_fraglen)
-             t1              - probability of S->Sa transition
-             t2              - probability of S->SM transition
-             t3              - probability of S->null transition
-*/
-float
-MSCYK_explen(float fraglen, float t1, float t2, float t3)
-{
-  fprintf(stderr,"Warning, MSCYK_explen(): using non-E_terminating expected length calculation\n"); //FIXME
-  float elen;
-
-  elen = (t1+fraglen*t2)/(t3-t2); /* Reference NBpg63, 24 Nov 2009 */
-
-  if (elen < 0) {
-    fprintf(stderr,"Warning: non-terminating grammar parameters.  Expected hit length infinite\n");
-    elen = eslINFINITY;
-  }
-
-  return elen;
-}
-
 /* Function: SSE_MSCYK()
  * Author:   DLK
  *
@@ -189,7 +162,7 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits. */
   // FIXME: greedy T/F should be set-able
-  if(results != NULL) gamma = CreateGammaHitMx_epu8(L, i0, TRUE, cutoff, FALSE);
+  if(results != NULL) gamma = CreateGammaHitMx_epu8(L, i0, FALSE, ((float) (cutoff-ccm->base_b))/ccm->scale_b, FALSE);
   else                gamma = NULL;
 //
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
@@ -290,7 +263,7 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
   /* Set null model length correction */
   for (d = 0; d <= W; d++) {
     vec_access = ((uint8_t *) &vec_nmlc[d%sW]) + d/sW;
-    *vec_access = unbiased_byteify(ccm,d*sreLOG2(ccm->r)/*+sreLOG2(1.-ccm->r)*/);
+    *vec_access = unbiased_byteify(ccm,d*sreLOG2(ccm->bg->p1)/*+sreLOG2(1.-ccm->bg->p1)*/);
     /* Technically, we might want to include the 1-r term for the null model.
        However, with r set such that the expected length is about 320, this term
        has large enough magnitude that it raises overall scores by ~8 bits,
@@ -693,8 +666,8 @@ fprintf(stderr,"\n");
 //
   /* If recovering hits in a non-greedy manner, do the traceback.
    * If we were greedy, they were reported in UpdateGammaHitMxCM() for each position j */
-//  if(results != NULL && gamma->iamgreedy == FALSE) 
-//    TBackGammaHitMxForward(gamma, results, i0, j0);
+  if(results != NULL && gamma->iamgreedy == FALSE) 
+    TBackGammaHitMxForward_epu8(gamma, results, i0, j0);
 
   /* clean up and return */
   if(gamma != NULL) FreeGammaHitMx_epu8(gamma);
@@ -740,33 +713,31 @@ Overlap(int i, int j, int h, int k) {
 /* Function:  ResolveMSCYK
    Purpose:   Expand and merge initial hits from MSCYK to windows
               for later pipeline stages
+ *            IMPORTANT: assumes non-overlapping hits
+ *            from non-greedy traceback option
  */
 search_results_t*
-ResolveMSCYK(search_results_t *initial, int i0, int j0, int W) {
+ResolveMSCYK(search_results_t *initial, int i0, int j0, int W, float cutoff) {
   int x, y, i, j;
   int included;
   search_results_t *merged   = NULL;
   
   merged = CreateResults(INIT_RESULTS);
-  for (x = 0; x < initial->num_results; x++) {
+  for (x = initial->num_results-1; x >= 0; x--) {
     i = initial->data[x].start;
     j = initial->data[x].stop;
     included = 0;
+    if (initial->data[x].score < cutoff) continue;
 
-    /* This is a naive merging procedure.  It could fail if it
-       received first two hits that didn't touch each other, and
-       then one that spanned both of them.  However, we know that
-       the hits returned by MSCYK will be sorted by increasing j,
-       so that case should never arise.                          */
     for (y = 0; !included && (y < merged->num_results); y++) {
-      if (Overlap(i,j,merged->data[y].start,merged->data[y].stop)) {
+      if (Overlap(i,j,merged->data[y].stop-W,merged->data[y].stop)) {
         if (i < merged->data[y].start) { merged->data[y].start = i; }
         if (j > merged->data[y].stop ) { merged->data[y].stop  = j; }
         included = 1;
       }
     }
     if (!included) {
-      ReportHit(i,j,0,0,merged);
+      ReportHit(i,j,0,initial->data[x].score,merged);
     }
   }
 
@@ -904,8 +875,7 @@ f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/((1+ccm->p_rfrag)*cm->clen + ccm->e_
 
 nullL = cm->clen;
       //nullL = MSCYK_explen(ccm->e_fraglen,f_S_Sa,f_S_SM,f_S_e);
-      ccm->r = nullL/(nullL+1.);
-//fprintf(stderr,"nullL %f r %f r_b %d\n",nullL,ccm->r,unbiased_byteify(ccm,sreLOG2(ccm->r)));
+      ccm->bg->p1 = nullL/(nullL+1.);
     }
   
   dmin = NULL; dmax = NULL;
@@ -1088,7 +1058,7 @@ if(ccm->oesc == NULL) cm_Fail("oesc NULL!\n");
   if (f_S_Sa <= 0 || f_S_Sa >= 1) cm_Fail("S->Sa must be between zero and 1\n");
   f_S_SM = esl_opt_GetReal(go, "--S_SM");
 f_S_SM = (cm->clen - f_S_Sa*(cm->clen + 1))/((1+ccm->p_rfrag)*cm->clen + ccm->e_fraglen);
-ccm->r = ((float) cm->clen)/(cm->clen+1.);
+ccm->bg->p1 = ((float) cm->clen)/(cm->clen+1.);
   if (f_S_SM <= 0 || f_S_SM >= 1) cm_Fail("S->SM must be between zero and 1\n");
   f_S_e = 1. - f_S_Sa - f_S_SM;
   if (f_S_e <= 0) cm_Fail("Error: S->e out of range\n");
