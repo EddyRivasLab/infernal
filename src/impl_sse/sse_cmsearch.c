@@ -61,7 +61,7 @@ main(int argc, char **argv)
   ESL_ALPHABET   *abc     = NULL;
   int             i;
   float           sc, sc3;
-  float           p2, p3;
+  float           p2, p2min, p3;
   float           filtersc, nullsc;
   int             sc2, br2, bsc2;
   char           *cmfile = esl_opt_GetArg(go, 1);
@@ -351,7 +351,8 @@ PIPELINE:
       start = stop - s2_coord->d + 1;
 
       p2 = esl_exp_surv((float)sc2/ocm->scale_w,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->lambda);
-      if ((esl_opt_IsOn(go,"--s2-T") && (sc2 > s2_cutoff)) || (p2 < s2_pcut)) {
+      p2min = esl_exp_surv((float)WORDMAX/ocm->scale_w,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->lambda);
+      if ((esl_opt_IsOn(go,"--s2-T") && (sc2 > s2_cutoff)) || (p2 < s2_pcut) || (p2 < p2min*10)) {
         if (o_glbf == 2) {
           if (!is_reversed) 
             printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, start, stop, 0);
