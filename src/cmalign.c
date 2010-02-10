@@ -2148,6 +2148,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
 				       FALSE,         /* regurgitate GR ? */
 				       FALSE,         /* regurgitate aseq ? */
 				       NULL,          /* output all seqs, not just those stored in a keyhash */
+				       NULL,          /* output all seqs, don't skip those listed in a keyhash */
 				       NULL,          /* useme,  irrelevant, we're only outputting GS */
 				       NULL,          /* add2me, irrelevant, we're only outputting GS */
 				       alenA[ai], /* alignment length, as we read it in first pass (inserts may have been removed since then) */
@@ -2183,6 +2184,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
 				     TRUE,           /* regurgitate GR ? */
 				     TRUE,           /* regurgitate aseq ? */
 				     NULL,           /* output all seqs, not just those stored in a keyhash */
+				     NULL,           /* output all seqs, don't skip those stored in a keyhash */
 				     NULL,           /* useme, not nec b/c we want to keep all columns */
 				     ngap_eitherA,   /* number of all gap columns to add after each apos */
 				     alenA[ai],      /* alignment length, as we read it in first pass, not strictly necessary */
