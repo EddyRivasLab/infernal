@@ -4,105 +4,105 @@
 
 # Exercises of cmbuild.
 #
-1  exercise  cmbuild:help/1        @cmbuild@  -h
-1  exercise  cmbuild:help/2        @cmbuild@  --devhelp
+1  exercise  cmbuild:help/1        @src/cmbuild@  -h
+1  exercise  cmbuild:help/2        @src/cmbuild@  --devhelp
 
-1  exercise  cmbuild:se/1          @cmbuild@ -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/2          @cmbuild@ -F -n mine %SE.CM% se.stk 
-1  exercise  cmbuild:se/3          @cmbuild@ -A %SE.CM% se.stk 
-1  exercise  cmbuild:se/4          @cmbuild@ -v -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/5          @cmbuild@ --iins -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/6          @cmbuild@ --Wbeta 1E-12 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/7          @cmbuild@ --ignorant -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/8          @cmbuild@ -F --binary %SE.CM% se.stk 
-1  exercise  cmbuild:se/9          @cmbuild@ --rf -F %SE.CM% se.rf.stk 
-1  exercise  cmbuild:se/10         @cmbuild@ --gapthresh 0.1 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/11         @cmbuild@ --enone --rsearch RIBOSUM85-60.mat -F %SE.CM% se.1.stk 
-1  exercise  cmbuild:se/12         @cmbuild@ --wgsc -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/13         @cmbuild@ --wblosum -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/14         @cmbuild@ --wnone -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/15         @cmbuild@ --pbswitch 1 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/16         @cmbuild@ --wblosum --wid 0.6 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/17         @cmbuild@ --eent -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/18         @cmbuild@ --enone -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/19         @cmbuild@ --ere 0.8 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/19         @cmbuild@ --ehmmre 0.6 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/20         @cmbuild@ --eX 3.0 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/21         @cmbuild@ -F --null at4.null %SE.CM% se.stk 
-1  exercise  cmbuild:se/22         @cmbuild@ -F --prior plus1.prior %SE.CM% se.stk 
-1  exercise  cmbuild:se/23         @cmbuild@ -F --ctarget 2 %SE.CM% se.stk 
-1  exercise  cmbuild:se/24         @cmbuild@ -F --cmaxid 0.8 %SE.CM% se.stk 
-1  exercise  cmbuild:se/25         @cmbuild@ -F --call %SE.CM% se.stk 
-1  exercise  cmbuild:se/26         @cmbuild@ -F --call --cdump %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/27         @cmbuild@ -F --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/28         @cmbuild@ -F --gibbs --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/29         @cmbuild@ -F --tau 1E-2 --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/30         @cmbuild@ -F --gibbs -s 33 --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/31         @cmbuild@ -F --sub --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/32         @cmbuild@ -F -l --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/33         @cmbuild@ -F -a --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/34         @cmbuild@ -F --nonbanded --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/35         @cmbuild@ -F --mxsize 512 --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/36         @cmbuild@ -F --fins --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/37         @cmbuild@ -F -v --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/38         @cmbuild@ -F --rdump %TMPRDUMP% --refine %TMPOUT% %SE.CM% se.stk 
-1  exercise  cmbuild:se/41         @cmbuild@ --nobalance -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/42         @cmbuild@ --regress %TMPOUT% -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/43         @cmbuild@ --nodetach -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/44         @cmbuild@ --elself 0.5 -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/45         @cmbuild@ --cfile %TMPOUT% -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/46         @cmbuild@ --cmtbl %TMPOUT% -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/47         @cmbuild@ --emap %TMPOUT% -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/48         @cmbuild@ --gtree %TMPOUT% -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/49         @cmbuild@ --gtbl %TMPOUT% -F %SE.CM% se.stk 
-1  exercise  cmbuild:se/50         @cmbuild@ --tfile %TMPOUT% -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/1          @src/cmbuild@ -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/2          @src/cmbuild@ -F -n mine %SE.CM% se.stk 
+1  exercise  cmbuild:se/3          @src/cmbuild@ -A %SE.CM% se.stk 
+1  exercise  cmbuild:se/4          @src/cmbuild@ -v -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/5          @src/cmbuild@ --iins -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/6          @src/cmbuild@ --Wbeta 1E-12 -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/7          @src/cmbuild@ --ignorant -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/8          @src/cmbuild@ -F --binary %SE.CM% se.stk 
+1  exercise  cmbuild:se/9          @src/cmbuild@ --rf -F %SE.CM% se.rf.stk 
+1  exercise  cmbuild:se/10         @src/cmbuild@ --gapthresh 0.1 -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/11         @src/cmbuild@ --enone --rsearch RIBOSUM85-60.mat -F %SE.CM% se.1.stk 
+1  exercise  cmbuild:se/12         @src/cmbuild@ --wgsc -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/13         @src/cmbuild@ --wblosum -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/14         @src/cmbuild@ --wnone -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/15         @src/cmbuild@ --pbswitch 1 -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/16         @src/cmbuild@ --wblosum --wid 0.6 -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/17         @src/cmbuild@ --eent -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/18         @src/cmbuild@ --enone -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/19         @src/cmbuild@ --ere 0.8 -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/19         @src/cmbuild@ --ehmmre 0.6 -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/20         @src/cmbuild@ --eX 3.0 -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/21         @src/cmbuild@ -F --null at4.null %SE.CM% se.stk 
+1  exercise  cmbuild:se/22         @src/cmbuild@ -F --prior plus1.prior %SE.CM% se.stk 
+1  exercise  cmbuild:se/23         @src/cmbuild@ -F --ctarget 2 %SE.CM% se.stk 
+1  exercise  cmbuild:se/24         @src/cmbuild@ -F --cmaxid 0.8 %SE.CM% se.stk 
+1  exercise  cmbuild:se/25         @src/cmbuild@ -F --call %SE.CM% se.stk 
+1  exercise  cmbuild:se/26         @src/cmbuild@ -F --call --cdump %TMPOUT% %SE.CM% se.stk 
+1  exercise  cmbuild:se/27         @src/cmbuild@ -F --refine %TMPOUT% %SE.CM% se.stk 
+1  exercise  cmbuild:se/28         @src/cmbuild@ -F --gibbs --refine %TMPOUT% %SE.CM% se.stk 
+1  exercise  cmbuild:se/29         @src/cmbuild@ -F --tau 1E-2 --refine %TMPOUT% %SE.CM% se.stk 
+1  exercise  cmbuild:se/30         @src/cmbuild@ -F --gibbs -s 33 --refine %TMPOUT% %SE.CM% se.stk 
+1  exercise  cmbuild:se/31         @src/cmbuild@ -F --sub --refine %TMPOUT% %SE.CM% se.stk 
+1  exercise  cmbuild:se/32         @src/cmbuild@ -F -l --refine %TMPOUT% %SE.CM% se.stk 
+1  exercise  cmbuild:se/33         @src/cmbuild@ -F -a --refine %TMPOUT% %SE.CM% se.stk 
+1  exercise  cmbuild:se/34         @src/cmbuild@ -F --nonbanded --refine %TMPOUT% %SE.CM% se.stk 
+1  exercise  cmbuild:se/35         @src/cmbuild@ -F --mxsize 512 --refine %TMPOUT% %SE.CM% se.stk 
+1  exercise  cmbuild:se/36         @src/cmbuild@ -F --fins --refine %TMPOUT% %SE.CM% se.stk 
+1  exercise  cmbuild:se/37         @src/cmbuild@ -F -v --refine %TMPOUT% %SE.CM% se.stk 
+1  exercise  cmbuild:se/38         @src/cmbuild@ -F --rdump %TMPRDUMP% --refine %TMPOUT% %SE.CM% se.stk 
+1  exercise  cmbuild:se/41         @src/cmbuild@ --nobalance -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/42         @src/cmbuild@ --regress %TMPOUT% -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/43         @src/cmbuild@ --nodetach -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/44         @src/cmbuild@ --elself 0.5 -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/45         @src/cmbuild@ --cfile %TMPOUT% -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/46         @src/cmbuild@ --cmtbl %TMPOUT% -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/47         @src/cmbuild@ --emap %TMPOUT% -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/48         @src/cmbuild@ --gtree %TMPOUT% -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/49         @src/cmbuild@ --gtbl %TMPOUT% -F %SE.CM% se.stk 
+1  exercise  cmbuild:se/50         @src/cmbuild@ --tfile %TMPOUT% -F %SE.CM% se.stk 
 
 #
-1  exercise  cmbuild:3.4.12/1          @cmbuild@ -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/3          @cmbuild@ -A %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/4          @cmbuild@ -v -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/5          @cmbuild@ --iins -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/6          @cmbuild@ --Wbeta 1E-12 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/7          @cmbuild@ --ignorant -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/8          @cmbuild@ -F --binary %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/9          @cmbuild@ --rf -F %3.4.12.CM% 3.4.12.rf.stk 
-1  exercise  cmbuild:3.4.12/10         @cmbuild@ --gapthresh 0.1 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/11         @cmbuild@ --enone --call --rsearch RIBOSUM85-60.mat -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/12         @cmbuild@ --wgsc -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/13         @cmbuild@ --wblosum -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/14         @cmbuild@ --wnone -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/15         @cmbuild@ --pbswitch 1 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/16         @cmbuild@ --wblosum --wid 0.6 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/17         @cmbuild@ --eent -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/18         @cmbuild@ --enone -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/19         @cmbuild@ --ere 0.8 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/19         @cmbuild@ --ehmmre 0.6 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/20         @cmbuild@ --eX 3.0 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/21         @cmbuild@ -F --null at4.null %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/22         @cmbuild@ -F --prior plus1.prior %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/23         @cmbuild@ -F --ctarget 2 %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/24         @cmbuild@ -F --cmaxid 0.8 %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/25         @cmbuild@ -F --call --enone %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/26         @cmbuild@ -F --cmaxid 0.7 --cdump %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/27         @cmbuild@ -F --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/28         @cmbuild@ -F --gibbs --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/29         @cmbuild@ -F --tau 1E-2 --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/30         @cmbuild@ -F --gibbs -s 33 --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/31         @cmbuild@ -F --sub --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/32         @cmbuild@ -F -l --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/33         @cmbuild@ -F -a --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/36         @cmbuild@ -F --fins --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/37         @cmbuild@ -F -v --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-5  exercise  cmbuild:3.4.12/38         @cmbuild@ -F --rdump %TMPRDUMP% --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/41         @cmbuild@ --nobalance -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/42         @cmbuild@ --regress %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/43         @cmbuild@ --nodetach -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/44         @cmbuild@ --elself 0.5 -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/45         @cmbuild@ --cfile %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/46         @cmbuild@ --cmtbl %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/47         @cmbuild@ --emap %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/48         @cmbuild@ --gtree %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/49         @cmbuild@ --gtbl %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
-1  exercise  cmbuild:3.4.12/50         @cmbuild@ --tfile %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/1          @src/cmbuild@ -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/3          @src/cmbuild@ -A %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/4          @src/cmbuild@ -v -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/5          @src/cmbuild@ --iins -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/6          @src/cmbuild@ --Wbeta 1E-12 -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/7          @src/cmbuild@ --ignorant -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/8          @src/cmbuild@ -F --binary %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/9          @src/cmbuild@ --rf -F %3.4.12.CM% 3.4.12.rf.stk 
+1  exercise  cmbuild:3.4.12/10         @src/cmbuild@ --gapthresh 0.1 -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/11         @src/cmbuild@ --enone --call --rsearch RIBOSUM85-60.mat -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/12         @src/cmbuild@ --wgsc -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/13         @src/cmbuild@ --wblosum -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/14         @src/cmbuild@ --wnone -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/15         @src/cmbuild@ --pbswitch 1 -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/16         @src/cmbuild@ --wblosum --wid 0.6 -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/17         @src/cmbuild@ --eent -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/18         @src/cmbuild@ --enone -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/19         @src/cmbuild@ --ere 0.8 -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/19         @src/cmbuild@ --ehmmre 0.6 -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/20         @src/cmbuild@ --eX 3.0 -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/21         @src/cmbuild@ -F --null at4.null %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/22         @src/cmbuild@ -F --prior plus1.prior %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/23         @src/cmbuild@ -F --ctarget 2 %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/24         @src/cmbuild@ -F --cmaxid 0.8 %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/25         @src/cmbuild@ -F --call --enone %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/26         @src/cmbuild@ -F --cmaxid 0.7 --cdump %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/27         @src/cmbuild@ -F --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/28         @src/cmbuild@ -F --gibbs --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/29         @src/cmbuild@ -F --tau 1E-2 --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/30         @src/cmbuild@ -F --gibbs -s 33 --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/31         @src/cmbuild@ -F --sub --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/32         @src/cmbuild@ -F -l --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/33         @src/cmbuild@ -F -a --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/36         @src/cmbuild@ -F --fins --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/37         @src/cmbuild@ -F -v --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+5  exercise  cmbuild:3.4.12/38         @src/cmbuild@ -F --rdump %TMPRDUMP% --refine %TMPOUT% %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/41         @src/cmbuild@ --nobalance -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/42         @src/cmbuild@ --regress %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/43         @src/cmbuild@ --nodetach -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/44         @src/cmbuild@ --elself 0.5 -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/45         @src/cmbuild@ --cfile %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/46         @src/cmbuild@ --cmtbl %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/47         @src/cmbuild@ --emap %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/48         @src/cmbuild@ --gtree %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/49         @src/cmbuild@ --gtbl %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
+1  exercise  cmbuild:3.4.12/50         @src/cmbuild@ --tfile %TMPOUT% -F %3.4.12.CM% 3.4.12.stk 
 
 
