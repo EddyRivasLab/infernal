@@ -8,48 +8,48 @@
 # Options that would not have any affect on a --forecast run (such as
 # output files and --exp-tail* options) are omitted here. 
 
-1  exercise  cmcalibrate:help/1        @cmcalibrate@  -h
-1  exercise  cmcalibrate:help/2        @cmcalibrate@  --devhelp
+1  exercise  cmcalibrate:help/1        @src/cmcalibrate@  -h
+1  exercise  cmcalibrate:help/2        @src/cmcalibrate@  --devhelp
 
-1  prep        model/trna             @cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
-1  exercise    cmcalibrate:trna/1     @cmcalibrate@ --forecast 1 %TRNA.CM%
-1  exercise    cmcalibrate:trna/2     @cmcalibrate@ --forecast 1 -s 367 %TRNA.CM%
-1  exercise    cmcalibrate:trna/3     @cmcalibrate@ --forecast 367 -s 1 %TRNA.CM%
-1  exercise    cmcalibrate:trna/4     @cmcalibrate@ --forecast 1 --exp-cmL-glc 0.367 %TRNA.CM%
-1  exercise    cmcalibrate:trna/5     @cmcalibrate@ --forecast 1 --exp-cmL-loc 3.67 %TRNA.CM%
-1  exercise    cmcalibrate:trna/6     @cmcalibrate@ --forecast 1 --exp-hmmLn-glc 2.13 %TRNA.CM%
-1  exercise    cmcalibrate:trna/7     @cmcalibrate@ --forecast 1 --exp-hmmLn-loc 100.0 %TRNA.CM%
-1  exercise    cmcalibrate:trna/8     @cmcalibrate@ --forecast 1 --exp-fract 0.33 %TRNA.CM%
-1  exercise    cmcalibrate:trna/9     @cmcalibrate@ --forecast 1 --exp-beta 1E-7 %TRNA.CM%
-1  exercise    cmcalibrate:trna/10    @cmcalibrate@ --forecast 1 --exp-no-qdb %TRNA.CM%
-1  exercise    cmcalibrate:trna/11    @cmcalibrate@ --forecast 1 --fil-N 3333 %TRNA.CM%
-1  exercise    cmcalibrate:trna/12    @cmcalibrate@ --forecast 1 --fil-F 0.99 %TRNA.CM%
-1  exercise    cmcalibrate:trna/13    @cmcalibrate@ --forecast 1 --fil-tau 1E-15 %TRNA.CM%
-1  exercise    cmcalibrate:trna/14    @cmcalibrate@ --forecast 1 --fil-gemit %TRNA.CM%
-1  exercise    cmcalibrate:trna/15    @cmcalibrate@ --forecast 1 --mxsize 4096 %TRNA.CM%
+1  prep        model/trna             @src/cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
+1  exercise    cmcalibrate:trna/1     @src/cmcalibrate@ --forecast 1 %TRNA.CM%
+1  exercise    cmcalibrate:trna/2     @src/cmcalibrate@ --forecast 1 -s 367 %TRNA.CM%
+1  exercise    cmcalibrate:trna/3     @src/cmcalibrate@ --forecast 367 -s 1 %TRNA.CM%
+1  exercise    cmcalibrate:trna/4     @src/cmcalibrate@ --forecast 1 --exp-cmL-glc 0.367 %TRNA.CM%
+1  exercise    cmcalibrate:trna/5     @src/cmcalibrate@ --forecast 1 --exp-cmL-loc 3.67 %TRNA.CM%
+1  exercise    cmcalibrate:trna/6     @src/cmcalibrate@ --forecast 1 --exp-hmmLn-glc 2.13 %TRNA.CM%
+1  exercise    cmcalibrate:trna/7     @src/cmcalibrate@ --forecast 1 --exp-hmmLn-loc 100.0 %TRNA.CM%
+1  exercise    cmcalibrate:trna/8     @src/cmcalibrate@ --forecast 1 --exp-fract 0.33 %TRNA.CM%
+1  exercise    cmcalibrate:trna/9     @src/cmcalibrate@ --forecast 1 --exp-beta 1E-7 %TRNA.CM%
+1  exercise    cmcalibrate:trna/10    @src/cmcalibrate@ --forecast 1 --exp-no-qdb %TRNA.CM%
+1  exercise    cmcalibrate:trna/11    @src/cmcalibrate@ --forecast 1 --fil-N 3333 %TRNA.CM%
+1  exercise    cmcalibrate:trna/12    @src/cmcalibrate@ --forecast 1 --fil-F 0.99 %TRNA.CM%
+1  exercise    cmcalibrate:trna/13    @src/cmcalibrate@ --forecast 1 --fil-tau 1E-15 %TRNA.CM%
+1  exercise    cmcalibrate:trna/14    @src/cmcalibrate@ --forecast 1 --fil-gemit %TRNA.CM%
+1  exercise    cmcalibrate:trna/15    @src/cmcalibrate@ --forecast 1 --mxsize 4096 %TRNA.CM%
 
 # developer options (listed with --devhelp only)
-2  exercise    cmcalibrate:trna/16    @cmcalibrate@ --forecast 1 --exp-random %TRNA.CM%
-2  exercise    cmcalibrate:trna/17    @cmcalibrate@ --forecast 1 --exp-T -10 %TRNA.CM%
-2  exercise    cmcalibrate:trna/18    @cmcalibrate@ --forecast 1 --fil-nonbanded %TRNA.CM%
-2  exercise    cmcalibrate:trna/19    @cmcalibrate@ --forecast 1 --fil-aln2bands %TRNA.CM%
-2  exercise    cmcalibrate:trna/20    @cmcalibrate@ --forecast 1 --fil-Xtarg-hmm 1.5 %TRNA.CM%
-2  exercise    cmcalibrate:trna/21    @cmcalibrate@ --forecast 1 --fil-Xmin-hmm 1.05 %TRNA.CM%
-2  exercise    cmcalibrate:trna/22    @cmcalibrate@ --forecast 1 --fil-Starg-hmm 0.01 %TRNA.CM%
-2  exercise    cmcalibrate:trna/23    @cmcalibrate@ --forecast 1 --fil-Smin-hmm 0.0001 %TRNA.CM%
-2  exercise    cmcalibrate:trna/24    @cmcalibrate@ --forecast 1 --fil-Smax-hmm 0.9 %TRNA.CM%
-2  exercise    cmcalibrate:trna/25    @cmcalibrate@ --forecast 1 --pebegin %TRNA.CM%
-2  exercise    cmcalibrate:trna/26    @cmcalibrate@ --forecast 1 --pfend 0.02 %TRNA.CM%
-2  exercise    cmcalibrate:trna/27    @cmcalibrate@ --forecast 1 --pbegin 0.5 %TRNA.CM%
-2  exercise    cmcalibrate:trna/28    @cmcalibrate@ --forecast 1 --pend 0.5 %TRNA.CM%
-2  exercise    cmcalibrate:trna/29    @cmcalibrate@ --forecast 1 --no-null3 %TRNA.CM%
+2  exercise    cmcalibrate:trna/16    @src/cmcalibrate@ --forecast 1 --exp-random %TRNA.CM%
+2  exercise    cmcalibrate:trna/17    @src/cmcalibrate@ --forecast 1 --exp-T -10 %TRNA.CM%
+2  exercise    cmcalibrate:trna/18    @src/cmcalibrate@ --forecast 1 --fil-nonbanded %TRNA.CM%
+2  exercise    cmcalibrate:trna/19    @src/cmcalibrate@ --forecast 1 --fil-aln2bands %TRNA.CM%
+2  exercise    cmcalibrate:trna/20    @src/cmcalibrate@ --forecast 1 --fil-Xtarg-hmm 1.5 %TRNA.CM%
+2  exercise    cmcalibrate:trna/21    @src/cmcalibrate@ --forecast 1 --fil-Xmin-hmm 1.05 %TRNA.CM%
+2  exercise    cmcalibrate:trna/22    @src/cmcalibrate@ --forecast 1 --fil-Starg-hmm 0.01 %TRNA.CM%
+2  exercise    cmcalibrate:trna/23    @src/cmcalibrate@ --forecast 1 --fil-Smin-hmm 0.0001 %TRNA.CM%
+2  exercise    cmcalibrate:trna/24    @src/cmcalibrate@ --forecast 1 --fil-Smax-hmm 0.9 %TRNA.CM%
+2  exercise    cmcalibrate:trna/25    @src/cmcalibrate@ --forecast 1 --pebegin %TRNA.CM%
+2  exercise    cmcalibrate:trna/26    @src/cmcalibrate@ --forecast 1 --pfend 0.02 %TRNA.CM%
+2  exercise    cmcalibrate:trna/27    @src/cmcalibrate@ --forecast 1 --pbegin 0.5 %TRNA.CM%
+2  exercise    cmcalibrate:trna/28    @src/cmcalibrate@ --forecast 1 --pend 0.5 %TRNA.CM%
+2  exercise    cmcalibrate:trna/29    @src/cmcalibrate@ --forecast 1 --no-null3 %TRNA.CM%
 
 # Repeat a random set of the above runs with a multi-cm file. 
 
-3  prep      model/3.4.12            @cmbuild@ -F --wnone --rf %3.4.12.CM% 3.4.12.stk
-3  exercise    cmcalibrate:3.4.12/1     @cmcalibrate@ --forecast 1 %3.4.12.CM%
-3  exercise    cmcalibrate:3.4.12/4     @cmcalibrate@ --forecast 1 --exp-cmL-glc 0.367 %3.4.12.CM%
-3  exercise    cmcalibrate:3.4.12/7     @cmcalibrate@ --forecast 1 --exp-hmmLn-loc 100.0 %3.4.12.CM%
-3  exercise    cmcalibrate:3.4.12/19    @cmcalibrate@ --forecast 1 --fil-aln2bands %3.4.12.CM%
-3  exercise    cmcalibrate:3.4.12/25    @cmcalibrate@ --forecast 1 --pebegin %3.4.12.CM%
+3  prep      model/3.4.12            @src/cmbuild@ -F --wnone --rf %3.4.12.CM% 3.4.12.stk
+3  exercise    cmcalibrate:3.4.12/1     @src/cmcalibrate@ --forecast 1 %3.4.12.CM%
+3  exercise    cmcalibrate:3.4.12/4     @src/cmcalibrate@ --forecast 1 --exp-cmL-glc 0.367 %3.4.12.CM%
+3  exercise    cmcalibrate:3.4.12/7     @src/cmcalibrate@ --forecast 1 --exp-hmmLn-loc 100.0 %3.4.12.CM%
+3  exercise    cmcalibrate:3.4.12/19    @src/cmcalibrate@ --forecast 1 --fil-aln2bands %3.4.12.CM%
+3  exercise    cmcalibrate:3.4.12/25    @src/cmcalibrate@ --forecast 1 --pebegin %3.4.12.CM%
 

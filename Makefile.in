@@ -192,13 +192,13 @@ check:
 #
 devcheck:
 	(cd testsuite;\
-	 ./sqc 4 cmalign.sqc      .. ../src)
-	 ./sqc 4 cmbuild.sqc      .. ../src)
-	 ./sqc 4 cmcalibrate.sqc  .. ../src)
-	 ./sqc 4 cmemit.sqc       .. ../src)
-	 ./sqc 4 cmscore.sqc      .. ../src)
-	 ./sqc 4 cmsearch.sqc     .. ../src)
-	 ./sqc 4 cmstat.sqc       .. ../src)
+	 ./sqc 4 cmalign.sqc      .. ../src;\
+	 ./sqc 4 cmbuild.sqc      .. ../src;\
+	 ./sqc 4 cmcalibrate.sqc  .. ../src;\
+	 ./sqc 4 cmemit.sqc       .. ../src;\
+	 ./sqc 4 cmscore.sqc      .. ../src;\
+	 ./sqc 4 cmsearch.sqc     .. ../src;\
+	 ./sqc 4 cmstat.sqc       .. ../src;)
 
 # "make install" installs the programs in BINDIR
 #

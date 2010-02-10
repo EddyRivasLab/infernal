@@ -614,7 +614,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int       do_small;                /* TRUE to try to save memory by outputting temp alignments, then merging */
   int       keep_reading = TRUE;
   int       do_output_to_tmp = TRUE; /* should we output to cfg->tmpfp (and then merge at end) or to cfg->ofp directly */
-  char      tmpfile[32] = "esltmpXXXXXX"; /* name of the tmpfile */
   int       created_tmpfile = FALSE;      /* set to TRUE if we need and open the tmpfile */
 
   chunksize = esl_opt_GetInteger(go, "--chunk");
@@ -636,6 +635,8 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	if(strcmp(cm->name, esl_opt_GetString(go, "--cm-name")) != 0) { FreeCM(cm); continue; }
       }	
       used_at_least_one_cm = TRUE;
+
+      char tmpfile[32] = "esltmpXXXXXX"; /* name of the tmpfile, needs to be here, so it's reset for each CM, else esl_tmpfile_named will fail on second CM */
 
       /* initialize the flags/options/params and configuration of the CM */
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK)    cm_Fail(errbuf);
@@ -664,8 +665,10 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    }
 	  }
 	  if (do_output_to_tmp && cfg->nali == 0) { 
-	    /* first aln for temporary output file, open the file */
-	    if (esl_tmpfile_named(tmpfile, &(cfg->tmpfp)) != eslOK) cm_Fail("Failed to open temporary output file for cm %d", cfg->ncm);
+	    /* first aln for temporary output file, open the file */	
+	    if ((status = esl_tmpfile_named(tmpfile, &(cfg->tmpfp))) != eslOK) { 
+	      cm_Fail("Failed to open temporary output file for cm %d (status %d)", cfg->ncm, status);
+	    }
 	    created_tmpfile = TRUE;
 	  }
 	  /* align current sequences */
@@ -682,6 +685,7 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       } /* end of while(keep_reading) */
 
       if(do_output_to_tmp) { 
+	printf("closing cfg->tmpfp\n");
 	fclose(cfg->tmpfp); /* we're done writing to tmpfp */
 	cfg->tmpfp = NULL;
 	/* merge all temporary alignments now in cfg->tmpfp, and output merged alignment */
@@ -756,7 +760,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int chunksize;               /* number of seqs/parsetrees to hold in memory at once, size of temp alignments */
   int keep_reading = TRUE;
   int do_output_to_tmp = TRUE; /* should we output to cfg->tmpfp (and then merge at end) or to cfg->ofp directly */
-  char tmpfile[32] = "esltmpXXXXXX"; /* name of the tmpfile */
   int  created_tmpfile = FALSE;      /* set to TRUE if we need and open the tmpfile */
 
   seqs_to_aln_t  *all_seqs_to_aln    = NULL;
@@ -831,6 +834,8 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       }	
       used_at_least_one_cm = TRUE;
 
+      char tmpfile[32] = "esltmpXXXXXX"; /* name of the tmpfile, needs to be here, so it's reset for each CM, else esl_tmpfile_named will fail on second CM */
+
       if((status = cm_master_MPIBcast(cm, 0, MPI_COMM_WORLD, &buf, &bn)) != eslOK) cm_Fail("MPI broadcast CM failed.");
       
       /* initialize the flags/options/params of the CM */
@@ -871,7 +876,9 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	  }
 	  if (do_output_to_tmp && cfg->nali == 0) { 
 	    /* first aln for temporary output file, open the file */
-	    if (esl_tmpfile_named(tmpfile, &(cfg->tmpfp)) != eslOK) cm_Fail("Failed to open temporary output file for cm %d", cfg->ncm);
+	    if ((status = esl_tmpfile_named(tmpfile, &(cfg->tmpfp))) != eslOK) { 
+	      cm_Fail("Failed to open temporary output file for cm %d (status %d)", cfg->ncm, status);
+	    }
 	  }
 	  
 	  /* Main send/receive loop: where we send <nseq_per_worker> sequences to workers and receive parsetrees back. 
