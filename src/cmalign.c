@@ -2089,7 +2089,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
 
   /* read all alignments, there should be cfg->nali of them */
   for(ai = 0; ai < cfg->nali; ai++) { 
-    status = esl_msa_ReadNonSeqInfoPfam(afp, cfg->abc, -1, NULL, NULL, &(msaA[ai]), &nseq_cur, &alen_cur, &ngs_cur, &maxname_cur, &maxgf_cur, &maxgc_cur, &maxgr_cur, NULL, NULL, NULL, NULL, NULL);
+    status = esl_msa_ReadNonSeqInfoPfam(afp, NULL, cfg->abc, -1, NULL, NULL, &(msaA[ai]), &nseq_cur, &alen_cur, &ngs_cur, &maxname_cur, &maxgf_cur, &maxgc_cur, &maxgr_cur, NULL, NULL, NULL, NULL, NULL);
     if      (status == eslEFORMAT) cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
     else if (status == eslEINVAL)  cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
     else if (status != eslOK)      cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
@@ -2114,7 +2114,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
     update_maxins_and_maxel(msaA[ai], cm->clen, msaA[ai]->alen, maxins, maxel);
   }
   /* final check, make sure we've read all msas from the file, we should have, we only printed cfg->nali */
-  status = esl_msa_ReadNonSeqInfoPfam(afp, cfg->abc, -1, NULL, NULL, NULL, 
+  status = esl_msa_ReadNonSeqInfoPfam(afp, NULL, cfg->abc, -1, NULL, NULL, NULL, 
 				      NULL, NULL, NULL, NULL, NULL, NULL, NULL, 
 				      NULL, NULL, NULL, NULL, NULL);
   if(status != eslEOF) ESL_FAIL(status, errbuf, "More alignments in temp file than expected.");
@@ -2159,7 +2159,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
 				       NULL,          /* useme,  irrelevant, we're only outputting GS */
 				       NULL,          /* add2me, irrelevant, we're only outputting GS */
 				       alenA[ai], /* alignment length, as we read it in first pass (inserts may have been removed since then) */
-				       '.');
+				       '.', NULL, NULL);
       if(status == eslEOF) cm_Fail("Second pass, error out of temp alignments too soon, when trying to read aln %d", ai);
       if(status != eslOK)  cm_Fail("Second pass, error reading temp alignment %d %s", ai, afp->errbuf); 
       fflush(ofp);
@@ -2195,7 +2195,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
 				     NULL,           /* useme, not nec b/c we want to keep all columns */
 				     ngap_eitherA,   /* number of all gap columns to add after each apos */
 				     alenA[ai],      /* alignment length, as we read it in first pass, not strictly necessary */
-				     '.');
+				     '.', NULL, NULL);
     if(status == eslEOF) cm_Fail("Second pass, error out of alignments too soon, when trying to read temp aln %d", ai);
     if(status != eslOK)  cm_Fail("Second pass, error reading temp alignment %d: %s", ai, afp->errbuf); 
     if(ai == 0) { 
