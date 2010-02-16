@@ -3993,6 +3993,9 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
   int16_t logp = wordify(ocm->scale_w, sreLOG2(p));
   for (dp = 0; dp <= sW; dp++) {
     tmpv = _mm_mullo_epi16(_mm_set1_epi16(logp), _mm_adds_epi16(doffset, _mm_set1_epi16(dp*vecwidth)));
+    mask = _mm_cmpgt_epi16(zerov,tmpv);
+    tmpv = _mm_and_si128(tmpv,mask);
+    tmpv = _mm_or_si128(tmpv,_mm_andnot_si128(mask,_mm_set1_epi16(0x8000)));
     vec_unaligned_sc[dp] = _mm_subs_epi16(_mm_set1_epi16(tmp), tmpv);
   }
 #endif
@@ -4048,8 +4051,10 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
 	      {
 		y = ocm->cfirst[v];
 		// alpha[v][j][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
-//FIXME: probably need to worry about saturating on this multiply
                 tmpv = _mm_mullo_epi16(el_self_v, _mm_adds_epi16(_mm_set1_epi16(dp*vecwidth), doffset));
+                mask = _mm_cmpgt_epi16(zerov,tmpv);
+                tmpv = _mm_and_si128(tmpv,mask);
+                tmpv = _mm_or_si128(tmpv,_mm_andnot_si128(mask,_mm_set1_epi16(0x8000)));
 		alpha[v]->ivec[j][dp] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
 		/* treat EL as emitting only on self transition */
 		for (yoffset = 0; yoffset < ocm->cnum[v]; yoffset++) {
@@ -4291,6 +4296,9 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
 	    for (dp = 1; dp <= sW; dp++) 
 	      {
                 tmpv = _mm_mullo_epi16(el_self_v, _mm_adds_epi16(_mm_set1_epi16(dp*vecwidth-2), doffset));
+                mask = _mm_cmpgt_epi16(zerov,tmpv);
+                tmpv = _mm_and_si128(tmpv,mask);
+                tmpv = _mm_or_si128(tmpv,_mm_andnot_si128(mask,_mm_set1_epi16(0x8000)));
 		alpha[v]->ivec[j][dp] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
 		/* treat EL as emitting only on self transition */
 		for (yoffset = 0; yoffset < ocm->cnum[v]; yoffset++) {
@@ -4350,6 +4358,9 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
 	    for (dp = 1; dp <= sW; dp++)
 	      {
                 tmpv = _mm_mullo_epi16(el_self_v, _mm_adds_epi16(_mm_set1_epi16(dp*vecwidth - 1), doffset));
+                mask = _mm_cmpgt_epi16(zerov,tmpv);
+                tmpv = _mm_and_si128(tmpv,mask);
+                tmpv = _mm_or_si128(tmpv,_mm_andnot_si128(mask,_mm_set1_epi16(0x8000)));
 		alpha[v]->ivec[j][dp] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
 		/* treat EL as emitting only on self transition */
 		for (yoffset = 0; yoffset < ocm->cnum[v]; yoffset++) {
@@ -4406,6 +4417,9 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
 	    for (dp = 1; dp <= sW; dp++)
 	      {
                 tmpv = _mm_mullo_epi16(el_self_v, _mm_adds_epi16(_mm_set1_epi16(dp*vecwidth - 1), doffset));
+                mask = _mm_cmpgt_epi16(zerov,tmpv);
+                tmpv = _mm_and_si128(tmpv,mask);
+                tmpv = _mm_or_si128(tmpv,_mm_andnot_si128(mask,_mm_set1_epi16(0x8000)));
 		alpha[v]->ivec[j][dp] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
 		/* treat EL as emitting only on self transition */
 		for (yoffset = 1; yoffset < ocm->cnum[v]; yoffset++) {
@@ -4464,6 +4478,9 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
 	    for (dp = 1; dp <= sW; dp++)
 	      {
                 tmpv = _mm_mullo_epi16(el_self_v, _mm_adds_epi16(_mm_set1_epi16(dp*vecwidth - 1), doffset));
+                mask = _mm_cmpgt_epi16(zerov,tmpv);
+                tmpv = _mm_and_si128(tmpv,mask);
+                tmpv = _mm_or_si128(tmpv,_mm_andnot_si128(mask,_mm_set1_epi16(0x8000)));
 		alpha[v]->ivec[j][dp] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
 		/* treat EL as emitting only on self transition */
 		for (yoffset = 0; yoffset < ocm->cnum[v]; yoffset++) {
@@ -4498,7 +4515,7 @@ fprintf(stderr,"\n");
 //FIXME: comprising larger parts of the model and larger sequence windows will not
 //FIXME: be able to exceed previously seen scores
       tmp_v = _mm_set1_epi16((int16_t)v);
-      for (jp = 0; jp <= W; jp ++) {
+      for (jp = 0; jp <= W; jp++) {
 	j = i0-1+jp;
 //if(v<8 && j==26) fprintf(stderr,"v = %d  j = %d  beginsc %e %f\n",v,j,cm->beginsc[v],(float)ocm->beginsc[v]/ocm->scale_w); 
         tmp_j = _mm_set1_epi16((int16_t)jp);
@@ -4523,7 +4540,7 @@ fprintf(stderr,"\ttmpv2 "); vecprint_epi16(ocm,                  tmpv); fprintf(
           //FIXME: root deck, or do we need to handle that separately?
           tmpv = _mm_adds_epi16(tmpv, _mm_set1_epi16(ocm->beginsc[v]));
           mask  = _mm_cmpgt_epi16(tmpv, vb_sc);
-mask = _mm_or_si128(mask,_mm_cmpeq_epi16(tmpv,vb_sc));	//FIXME: Test - break ties in favor of new values
+//mask = _mm_or_si128(mask,_mm_cmpeq_epi16(tmpv,vb_sc));	//FIXME: Test - break ties in favor of new values
           vb_sc = _mm_max_epi16(tmpv, vb_sc);
           vb_j  = sse_select_si128(vb_j, tmp_j, mask);
           vb_d  = sse_select_si128(vb_d, tmp_d, mask);
