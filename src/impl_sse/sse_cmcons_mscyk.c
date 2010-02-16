@@ -138,12 +138,12 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
   __m128i    ocx;		/* overflow correction term for BIF */
   uint8_t    tmp_esc;
   uint8_t   *vec_access;
-  uint8_t    rsc = 0;
+  float      rsc = -eslINFINITY;
 
   __m128i   *mem_nmlc;
   __m128i   *vec_nmlc;		/* null model length correction */
 
-  char BADVAL = 0; /* Our local equivalent of -eslINFINITY */
+  char BADVAL = 0x00; /* Our local equivalent of -eslINFINITY */
   char escBADVAL = biased_byteify(ccm, -eslINFINITY); /* -inf as a cost for non-permitted esc */
   __m128i LB_NEG_INF = _mm_setr_epi8(BADVAL,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
 
@@ -264,6 +264,7 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
   for (d = 0; d <= W; d++) {
     vec_access = ((uint8_t *) &vec_nmlc[d%sW]) + d/sW;
     *vec_access = unbiased_byteify(ccm,d*sreLOG2(ccm->bg->p1)/*+sreLOG2(1.-ccm->bg->p1)*/);
+//FIXME
     /* Technically, we might want to include the 1-r term for the null model.
        However, with r set such that the expected length is about 320, this term
        has large enough magnitude that it raises overall scores by ~8 bits,
@@ -467,7 +468,9 @@ fprintf(stderr,"\n");
               tmpv2= vec_ntM_v[jp_y][y][d-sd];
               vec_ntM_v[jp_v][v][d] = _mm_max_epu8(tmpv, tmpv2);
               vec_ntM_v[jp_v][v][d] = _mm_subs_epu8(vec_ntM_v[jp_v][v][d], vec_esc[dsq[j]][v][d]);
+              umask= _mm_xor_si128(_mm_cmpeq_epi8(vec_ntM_v[jp_v][v][d],neginfv),_mm_set1_epi8(0xff));
               vec_ntM_v[jp_v][v][d] = _mm_adds_epu8(vec_ntM_v[jp_v][v][d], biasv);
+              vec_ntM_v[jp_v][v][d] = _mm_and_si128(vec_ntM_v[jp_v][v][d], umask);
 
               vec_ntM_all[jp_v][d] = _mm_max_epu8(vec_ntM_all[jp_v][d], vec_ntM_v[jp_v][v][d]);
             }
@@ -501,6 +504,17 @@ fprintf(stderr,"\n");
 //	    else                      for (d = 0; d <= sW; d++) tmpv = _mm_max_ps(tmpv, vec_alpha_begl[jp_v][v][d]);
 //            esl_sse_hmax_ps(tmpv, &vsc[v]);
 //	  }
+#ifdef DEBUG_0
+/*
+fprintf(stderr,"\t\t3b ntMa, v = %d:",v);
+for (d = 0; d <= W; d++) {
+  int x = d/sW;
+  vec_access = ((uint8_t *) &(vec_ntM_all[jp_v][d%sW])) + x;
+  fprintf(stderr,"%5d",*vec_access);
+}
+fprintf(stderr,"\n");
+*/
+#endif
 	} /*loop over decks v>0 */
       
 #ifdef DEBUG_0
@@ -680,12 +694,15 @@ fprintf(stderr,"\n");
 //  else free(vsc);
   if (ret_sc != NULL) {
     if (results != NULL) {
-      rsc = 0;
+      rsc = -eslINFINITY;
       for (i = 0; i < results->num_results; i++) {
-        if ((int)results->data[i].score > rsc) { rsc = results->data[i].score; }
+        if (results->data[i].score > rsc) { rsc = results->data[i].score; }
       }
     }
-    *ret_sc = ((float) rsc-ccm->base_b)/ccm->scale_b;
+    else {
+      rsc = ((float) (rsc - ccm->base_b))/ccm->scale_b;
+    }
+    *ret_sc = rsc;
   }
   free(vec_ntM_v[0]);      free(vec_ntM_v);      free(mem_ntM_v);
   free(vec_ntM_all);    free(mem_ntM_all);
@@ -723,16 +740,17 @@ ResolveMSCYK(search_results_t *initial, int i0, int j0, int W, float cutoff) {
   search_results_t *merged   = NULL;
   
   merged = CreateResults(INIT_RESULTS);
-  for (x = initial->num_results-1; x >= 0; x--) {
+  for (x = 0; x < initial->num_results; x++) {
     i = initial->data[x].start;
     j = initial->data[x].stop;
     included = 0;
     if (initial->data[x].score < cutoff) continue;
 
     for (y = 0; !included && (y < merged->num_results); y++) {
-      if (Overlap(i,j,merged->data[y].stop-W,merged->data[y].stop)) {
+      if (Overlap(j-W,j,merged->data[y].stop-W,merged->data[y].stop)) {
         if (i < merged->data[y].start) { merged->data[y].start = i; }
         if (j > merged->data[y].stop ) { merged->data[y].stop  = j; }
+        if (initial->data[x].score > merged->data[y].score) { merged->data[y].score = initial->data[x].score; }
         included = 1;
       }
     }
@@ -1035,7 +1053,8 @@ main(int argc, char **argv)
   float           f_cutoff;
   float           f_S_Sa, f_S_SM, f_S_e;
   int             format = eslSQFILE_UNKNOWN;
-  int             max, imax, jmax;
+  int             imax, jmax;
+  float           max;
   search_results_t *results = NULL;
 
   if ((cmfp = CMFileOpen(cmfile, NULL)) == NULL) cm_Fail("Failed to open covariance model save file %s\n", cmfile);
@@ -1085,15 +1104,16 @@ fprintf(stderr,"S->Sa %d S->SM %d S->e %d M->S %d\n",ccm->tsb_S_Sa,ccm->tsb_S_SM
     if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, seq->n, cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
 
     /* Rudimentary output of results */
-    max = 0; imax = -1; jmax = -1;
+    max = -eslINFINITY; imax = -1; jmax = -1;
     for (i = 0; i < results->num_results; i++) {
-      if ((int)results->data[i].score > max) {
+      if (results->data[i].score > max) {
         max = results->data[i].score;
         imax= results->data[i].start;
         jmax= results->data[i].stop;
       }
+//fprintf(stdout,"\t%4d %4d %6f\n",results->data[i].start,results->data[i].stop,results->data[i].score);
     }
-    fprintf(stdout,"%4d %4d %4d %6f\n",imax,jmax,max,sc);
+    fprintf(stdout,"%4d %4d %4f %6f\n",imax,jmax,max,sc);
     fflush(stdout);
 
     FreeResults(results);
