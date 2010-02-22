@@ -1982,14 +1982,17 @@ print_info_file_header(FILE *fp, char *firstline, char *elstring)
   fprintf(fp, "# where <nseq> is the number of sequences in the target file.\n");
   fprintf(fp, "# The first non-'#' prefixed line per model includes 2 tokens, separated by a single space (' '):\n");
   fprintf(fp, "# The first token is the model name and the second is the consensus length of the model (<clen>).\n");
-  fprintf(fp, "# The following <nseq> lines include (1+3*<n>) whitespace delimited tokens per line.\n");
+  fprintf(fp, "# The following <nseq> lines include (2+3*<n>) whitespace delimited tokens per line.\n");
   fprintf(fp, "# The format for these <nseq> lines is:\n");
-  fprintf(fp, "#   <seqname> <c_1> <u_1> <i_1> <c_2> <u_2> <i_2> .... <c_x> <u_x> <i_x> .... <c_n> <u_n> <i_n>\n");
+  fprintf(fp, "#   <seqname> <seqlen> <c_1> <u_1> <i_1> <c_2> <u_2> <i_2> .... <c_x> <u_x> <i_x> .... <c_n> <u_n> <i_n>\n");
   fprintf(fp, "#   indicating <seqname> has >= 1 %sinserted residues after <n> different consensus positions,\n", elstring);
+  fprintf(fp, "#   <seqname> is the name of the sequence\n");
+  fprintf(fp, "#   <seqlen>  is the unaligned length of the sequence\n");
+  fprintf(fp, "#   <u_x> is the *unaligned* position in <seqname> of the first %sinserted residue after <c_x>.\n", elstring);
   fprintf(fp, "#   <c_x> is a consensus position and\n");
   fprintf(fp, "#   <u_x> is the *unaligned* position in <seqname> of the first %sinserted residue after <c_x>.\n", elstring);
   fprintf(fp, "#   <i_x> is the number of %sinserted residues after position <c_x> for <seqname>.\n", elstring);
-  fprintf(fp, "# Lines for sequences with 0 %sinserted residues will include only <seqname>.\n", elstring);
+  fprintf(fp, "# Lines for sequences with 0 %sinserted residues will include only <seqname> <seqlen>.\n", elstring);
   fprintf(fp, "# The final non-'#' prefixed line per model includes only '//', indicating the end of info for a model.\n");
   fprintf(fp, "#\n");
 
