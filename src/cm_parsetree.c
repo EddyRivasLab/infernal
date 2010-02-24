@@ -716,6 +716,11 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   int          do_cur_post;     /* TRUE if we're writing posteriors for the current sequence inside a loop */
   char        *tmp_aseq = NULL; /* will hold aligned sequence for current sequence */
   char        *tmp_apc  = NULL; /* will hold aligned postcode characters for current sequence */
+  /* s_cposA and e_cposA are only alloc'ed and filled if insertfp || elfp != NULL, b/c they're only purpose is to be written to those files */
+  int         *s_cposA = NULL;  /* [0..nseq-1] the first consensus position filled by a nongap for seq i */
+  int         *e_cposA = NULL;  /* [0..nseq-1] the final consensus position filled by a nongap for seq i */
+  int          s_cpos;          /* first consensus position filled by a nongap for current seq */
+  int          e_cpos;          /* final consensus position filled by a nongap for current seq */
 
   /* Contract check. We allow the caller to specify the alphabet they want the 
    * resulting MSA in, but it has to make sense (see next few lines). */
@@ -756,7 +761,14 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   ESL_ALLOC(irmap,   sizeof(int)*(emap->clen+1));   
   ESL_ALLOC(ifirst,  sizeof(int)*(emap->clen+1));   
   ESL_ALLOC(elfirst, sizeof(int)*(emap->clen+1));   
-  
+
+  if(insertfp != NULL || elfp != NULL) { 
+    ESL_ALLOC(s_cposA,  sizeof(int)*nseq);
+    ESL_ALLOC(e_cposA,  sizeof(int)*nseq);
+    esl_vec_ISet(s_cposA, nseq, 0); /* all nseq values will be overwritten, actually this initialization is unnec */
+    esl_vec_ISet(e_cposA, nseq, 0); /* all nseq values will be overwritten, actually this initialization is unnec */
+  }
+
   for (cpos = 0; cpos <= emap->clen; cpos++) 
     {
       if(!do_full || cpos == 0)
@@ -868,6 +880,9 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 
   for (i = 0; i < nseq; i++)
     {
+      s_cpos = emap->clen+1; /* an ESL_MIN with any cpos <= clen will replace this */
+      e_cpos = 0;            /* an ESL_MAX with any cpos  > 0 will replace this */
+
       /* Contract check */
       if(sq[i]->dsq == NULL) ESL_XFAIL(eslEINVAL, errbuf, "Error in Parsetrees2Alignment(), sq %d is not digitized.\n", i);
       do_cur_post = FALSE;
@@ -926,6 +941,8 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    if(do_cur_post) { 
 	      tmp_apc[apos] = postcode[i][rpos-1];
 	    }
+	    s_cpos = ESL_MIN(s_cpos, cpos);
+	    e_cpos = ESL_MAX(e_cpos, cpos);
 
 	    cpos = emap->rpos[nd];
 	    apos = matmap[cpos];
@@ -934,6 +951,8 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    if(do_cur_post) { 
 	      tmp_apc[apos] = postcode[i][rpos-1];
 	    }
+	    s_cpos = ESL_MIN(s_cpos, cpos);
+	    e_cpos = ESL_MAX(e_cpos, cpos);
 	    break;
 	    
 	  case ML_st:
@@ -944,6 +963,8 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    if(do_cur_post) { 
 	      tmp_apc[apos] = postcode[i][rpos-1];
 	    }
+	    s_cpos = ESL_MIN(s_cpos, cpos);
+	    e_cpos = ESL_MAX(e_cpos, cpos);
 	    break;
 
 	  case MR_st:
@@ -954,6 +975,8 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    if(do_cur_post) { 
 	      tmp_apc[apos] = postcode[i][rpos-1];
 	    }
+	    s_cpos = ESL_MIN(s_cpos, cpos);
+	    e_cpos = ESL_MAX(e_cpos, cpos);
 	    break;
 
 	  case IL_st:
@@ -1020,6 +1043,11 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 
 
 	  prvnd = nd;
+	  /* we only set s_cposA[i] and e_cposA[i] if we'll output them to an insertfp or elfp */
+	  if(insertfp != NULL || elfp != NULL) { 
+	    s_cposA[i] = (s_cpos == (emap->clen+1)) ? -1 : s_cpos;
+	    e_cposA[i] = (e_cpos == 0)              ? -1 : e_cpos;
+	  }
 	} /* end traversal over trace i. */
 
       /* copy tmp_aseq to the msa */
@@ -1100,19 +1128,19 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 	    if(do_cur_post) leftjustify(msa->abc, msa->pp[i]+matmap[emap->clen]+1 + maxil[emap->clen] + maxel[emap->clen], maxir[emap->clen]);
 	  }
       }
-
+    
       /* output insert and/or EL info to the insertfp and elfp output files, if nec */
       if(insertfp != NULL || elfp != NULL) { 
-	if(insertfp != NULL) { fprintf(insertfp, "%s %d", sq[i]->name, sq[i]->n); }
-	if(elfp != NULL)     { fprintf(elfp,     "%s %d", sq[i]->name, sq[i]->n); }
+	if(insertfp != NULL) { fprintf(insertfp, "%s %d %d %d", sq[i]->name, sq[i]->n, s_cposA[i], e_cposA[i]); }
+	if(elfp != NULL)     { fprintf(elfp,     "%s %d %d %d", sq[i]->name, sq[i]->n, s_cposA[i], e_cposA[i]); }
 	for (cpos = 0; cpos <= emap->clen; cpos++) 
 	  {
 	    if((insertfp != NULL) && ((iluse[cpos] + iruse[cpos]) > 0)) { 
-	      fprintf(insertfp, "  %d %d %d", cpos, ifirst[cpos], (iluse[cpos] + iruse[cpos])); 
+	      fprintf(insertfp, "  %d %d %d", cpos, ifirst[cpos], (iluse[cpos] + iruse[cpos])); /* note cpos+1 puts cpos from 1..clen, ifirst[] is already 1..sq->n */
 	      /* Note: only 1 of iluse[cpos] or iruse[cpos] should be != 0 (I think) */
 	    }
 	    if((elfp != NULL) && (eluse[cpos] > 0)) { 
-	      fprintf(elfp, "  %d %d %d", cpos, elfirst[cpos], eluse[cpos]);
+	      fprintf(elfp, "  %d %d %d", cpos, elfirst[cpos], eluse[cpos]); /* note cpos+1 puts cpos from 1..clen, ifirst[] is already 1..sq->n */
 	    }
 	  }
 	if(insertfp != NULL) { fprintf(insertfp, "\n"); }
@@ -1194,6 +1222,8 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
 
   if(tmp_aseq != NULL) free(tmp_aseq);
   if(tmp_apc  != NULL) free(tmp_apc);
+  if(s_cposA  != NULL) free(s_cposA);
+  if(e_cposA  != NULL) free(e_cposA);
   FreeCMConsensus(con);
   FreeEmitMap(emap);
   free(matuse);
