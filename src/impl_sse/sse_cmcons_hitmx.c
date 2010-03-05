@@ -51,7 +51,7 @@
  * Returns:  Newly allocated GammaHitMx_t object:
  */
 GammaHitMx_epu8 *
-CreateGammaHitMx_epu8(int L, int i0, int be_greedy, float cutoff, int do_backward)
+CreateGammaHitMx_epu8(int L, int i0, int be_greedy, int offset_zero, float cutoff, int do_backward)
 {
   int status;
   GammaHitMx_epu8 *gamma;
@@ -67,11 +67,11 @@ CreateGammaHitMx_epu8(int L, int i0, int be_greedy, float cutoff, int do_backwar
   ESL_ALLOC(gamma->savesc, sizeof(float)   * (L+1));
     
   if(do_backward) { 
-    gamma->mx[L]    = 0;
+    gamma->mx[L]    = offset_zero;
     gamma->gback[L] = -1;
   } 
   else { 
-    gamma->mx[0]    = 0;
+    gamma->mx[0]    = offset_zero;
     gamma->gback[0] = -1;
   }
   return gamma;
