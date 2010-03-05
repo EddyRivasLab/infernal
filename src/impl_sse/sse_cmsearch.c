@@ -61,8 +61,10 @@ main(int argc, char **argv)
   ESL_ALPHABET   *abc     = NULL;
   int             i;
   float           sc, sc3;
-  float           p2, p2min, p3;
+  float           p2, p3;
+  float           e3;
   float           filtersc, nullsc;
+  float           null3_correction;
   int             sc2, br2, bsc2;
   char           *cmfile = esl_opt_GetArg(go, 1);
   char           *seqfile= esl_opt_GetArg(go, 2);
@@ -81,6 +83,7 @@ main(int argc, char **argv)
   float           e_cutoff, f_cutoff;
   float           f_S_Sa, f_S_SM, f_S_e;
   float           nullL;
+  int             realW;
   int             format = eslSQFILE_UNKNOWN;
   int             max, imax, jmax;
   int             o_glbf, o_glbf_all;
@@ -126,8 +129,14 @@ main(int argc, char **argv)
 
   cm->config_opts |= CM_CONFIG_LOCAL;
   cm->search_opts |= CM_SEARCH_NOQDB;
+  cm->search_opts |= CM_SEARCH_NULL3;
+//cm->align_opts |= CM_ALIGN_INSIDE;
   ConfigCM(cm, errbuf, TRUE, NULL, NULL); /* TRUE says: calculate W */
+//realW = cm->W;
+//cm->W = 2*cm->W;
+//cm->beta_W = 2*cm->beta_W;
   cm_CreateScanMatrixForCM(cm, TRUE, TRUE); /* impt to do this after QDBs set up in ConfigCM() */
+realW = cm->smx->W;
   ccm = cm_consensus_Convert(cm);
   ocm = cm_optimized_Convert(cm);
 
@@ -160,7 +169,7 @@ main(int argc, char **argv)
   /* Set bg model */
   if (do_biasfilter) {
     ccm_SetCompo(ccm, f_S_Sa, f_S_SM, f_S_e);
-    ccm_bg_SetFilter(ccm, nullL, 2.*cm->smx->W);
+    ccm_bg_SetFilter(ccm, nullL, realW);
   }
 
   /* Set output files */
@@ -188,7 +197,7 @@ main(int argc, char **argv)
     s1_cutoff = ccm->base_b + unbiased_byteify(ccm,-f_cutoff);
     if (s1_cutoff == BYTEMAX) {
       s1_cutoff--;
-      f_cutoff = (s1_cutoff - ccm->base_b)/ccm->scale_b;
+      f_cutoff = (s1_cutoff - (float) ccm->base_b)/ccm->scale_b;
       fprintf(stderr,"Stage 1: Warning - score cutoff out of range, setting to max of %.2f\n",f_cutoff);
     }
   }
@@ -202,7 +211,7 @@ main(int argc, char **argv)
     ESL_ALLOC(seq->dsq, sizeof(ESL_DSQ) * (L+2));
     for (int k = 0; k < samples; k++) {
       esl_rsq_xIID(r, background, 4, L, seq->dsq);
-      if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, L, 0x00, NULL, FALSE, NULL, &(x[k]))) != eslOK) cm_Fail(errbuf);
+      if((status = SSE_MSCYK(ccm, errbuf, realW, seq->dsq, 1, L, 0x00, NULL, FALSE, NULL, &(x[k]))) != eslOK) cm_Fail(errbuf);
       esl_histogram_Add(hist, x[k]);
     }
     esl_histogram_GetTailByMass(hist, 0.2, &xv, &n, NULL);
@@ -227,7 +236,7 @@ printf("E-val at rank 10 = %1.3e\t",eval);
       fprintf(stderr,"Stage 1: P-value cutoff %.2e per kb -> score cutoff %.2f\n",e_cutoff,f_cutoff);
     }
     else /*if (esl_opt_IsOn(go, "--s1-F"))*/ {
-      e_cutoff = esl_opt_GetReal(go,"--s1-F")*500/cm->smx->W;
+      e_cutoff = esl_opt_GetReal(go,"--s1-F")*500/realW;
       f_cutoff = esl_exp_invcdf(1.-e_cutoff,ccm_mu_extrap,ccm_lambda);
       fprintf(stderr,"Stage 1: Filter pass rate %f -> P-value cutoff %.2e per kb -> score cutoff %.2f\n",esl_opt_GetReal(go,"--s1-F"),e_cutoff,f_cutoff);
     }
@@ -235,9 +244,10 @@ printf("E-val at rank 10 = %1.3e\t",eval);
     s1_fcut = f_cutoff;
     /* Need to scale and offset, but not change sign -> switch sign ahead of time */
     s1_cutoff = ccm->base_b + unbiased_byteify(ccm,-f_cutoff);
-    if (s1_cutoff == BYTEMAX) {
+    if (s1_cutoff >= BYTEMAX) {
+      s1_cutoff = BYTEMAX;
       s1_cutoff--;
-      f_cutoff = (s1_cutoff - ccm->base_b)/ccm->scale_b;
+      f_cutoff = ((float) (s1_cutoff - ccm->base_b))/ccm->scale_b;
       fprintf(stderr,"Stage 1: Warning - score cutoff out of range, setting to max of %.2f\n",f_cutoff);
       e_cutoff = esl_exp_cdf(f_cutoff,ccm_mu,ccm_lambda);
       fprintf(stderr,"Stage 1: Warning - equivalent max p-value of %.2e\n",e_cutoff);
@@ -280,9 +290,7 @@ printf("E-val at rank 10 = %1.3e\t",eval);
   else {
     e_cutoff = esl_opt_GetReal(go,"--s3-E");
 //FIXME!!  Need to actually check that the cm has been calibrated before we start pulling data from cm->stats
-    //E2MinScore(cm,errbuf,EXP_CM_LC,e_cutoff,&f_cutoff);
     f_cutoff = esl_exp_invcdf(1.-e_cutoff,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
-    //fprintf(stderr,"WARNING: P-value cutoffs not implemented, setting stage 3 bitscore cutoff to %.1f\n",f_cutoff);
     fprintf(stderr,"Stage 3: P-value cutoff %.2e\n",e_cutoff);
     s3_pcut = e_cutoff;
   }
@@ -299,7 +307,7 @@ PIPELINE:
     /* Stage 1: MSCYK */
     results = CreateResults(INIT_RESULTS);
     esl_stopwatch_Start(w);
-    if((status = SSE_MSCYK(ccm, errbuf, cm->smx->W, seq->dsq, 1, seq->n, s1_cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
+    if((status = SSE_MSCYK(ccm, errbuf, realW, seq->dsq, 1, seq->n, s1_cutoff, results, FALSE, NULL, &sc)) != eslOK) cm_Fail(errbuf);
     esl_stopwatch_Stop(w);
     fprintf(stderr,"Stage 1: %-24s %-22s",seq->name,is_reversed?"(reverse complement)":"");
     esl_stopwatch_Display(stderr, w, " CPU time: ");
@@ -321,7 +329,7 @@ PIPELINE:
     }
 
     /* Convert hits to windows for next stage */
-    windows = ResolveMSCYK(results, 1, seq->n, cm->smx->W, s1_fcut);
+    windows = ResolveMSCYK(results, 1, seq->n, realW, s1_fcut);
     FreeResults(results);
 
     if (o_glbf == 1) {
@@ -350,9 +358,9 @@ PIPELINE:
       stop = s2_coord->j;
       start = stop - s2_coord->d + 1;
 
-      p2 = esl_exp_surv((float)sc2/ocm->scale_w,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->lambda);
-      p2min = esl_exp_surv((float)WORDMAX/ocm->scale_w,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->lambda);
-      if ((esl_opt_IsOn(go,"--s2-T") && (sc2 > s2_cutoff)) || (p2 < s2_pcut) || (p2 < p2min*10)) {
+      ScoreCorrectionNull3CompUnknown(cm->abc,cm->null,seq->dsq,start,stop,&null3_correction);
+      p2 = esl_exp_surv((float)sc2/ocm->scale_w-null3_correction,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
+      if ((esl_opt_IsOn(go,"--s2-T") && (sc2 > s2_cutoff)) || (p2 < s2_pcut) || (sc2 > (WORDMAX/ocm->scale_w)-10)) {
         if (o_glbf == 2) {
           if (!is_reversed) 
             printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, start, stop, 0);
@@ -365,25 +373,42 @@ PIPELINE:
           else
             fprintf(S2_OFILE,"%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
         }
-        /* Stage 3: full-precision CYK */
-        sc3 = SSE_CYKInsideScore(cm, seq->dsq, seq->n, 0, start, stop);
 
-        p3 = esl_exp_surv((float)sc3,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->lambda);
-        if ((esl_opt_IsOn(go,"--s3-T") && (sc3 >= s3_cutoff)) || (p3 < s3_pcut)) {
-          /* Report hit */
-          if (o_glbf == 3) {
-            if (!is_reversed)
-              printf("%-24s %-6e %d %d %d\n", seq->name, p3, start, stop, 0);
-            else
-              printf("%-24s %-6e %d %d %d\n", seq->name, p3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
-          }
-          else if (o_glbf_all) {
-            if (!is_reversed)
-              fprintf(S3_OFILE,"%-24s %-6e %d %d %d\n", seq->name, p3, start, stop, 0);
-            else
-              fprintf(S3_OFILE,"%-24s %-6e %d %d %d\n", seq->name, p3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
+        /* Stage 3: full-precision CYK */
+        //sc3 = SSE_CYKInsideScore(cm, seq->dsq, seq->n, 0, start, stop);
+        results = CreateResults(INIT_RESULTS);
+        if (cm->si == NULL) { CreateSearchInfo(cm, E_CUTOFF, s3_cutoff, s3_pcut); }
+        else { UpdateSearchInfoCutoff(cm, cm->si->nrounds, E_CUTOFF, s3_cutoff, s3_pcut); }
+        ValidateSearchInfo(cm, cm->si);
+        DispatchSearch(cm, errbuf, cm->si->nrounds, seq->dsq, windows->data[i].start, windows->data[i].stop, &results, 1000, NULL, &sc3);
+
+        for (int hitloop = 0; hitloop < results->num_results; hitloop++) {
+          sc3   = results->data[hitloop].score;
+          start = results->data[hitloop].start;
+          stop  = results->data[hitloop].stop;
+          //ScoreCorrectionNull3CompUnknown(cm->abc,cm->null,seq->dsq,start,stop,&null3_correction);
+          null3_correction = 0; /* DispatchSearch already applies null3 */
+          p3 = esl_exp_surv((float)sc3-null3_correction,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->lambda);
+          e3 = p3 * cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->cur_eff_dbsize;
+          if ((esl_opt_IsOn(go,"--s3-T") && (sc3 >= s3_cutoff)) || /*(p3 < s3_pcut) ||*/ (e3 < 1.)) {
+            /* Report hit */
+            if (o_glbf == 3) {
+              if (!is_reversed)
+                //printf("%-24s %-6e %d %d %d\n", seq->name, p3, start, stop, 0);
+                printf("%-24s %-6e %d %d %d\n", seq->name, e3, start, stop, 0);
+              else
+                //printf("%-24s %-6e %d %d %d\n", seq->name, p3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
+                printf("%-24s %-6e %d %d %d\n", seq->name, e3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
+            }
+            else if (o_glbf_all) {
+              if (!is_reversed)
+                fprintf(S3_OFILE,"%-24s %-6e %d %d %d\n", seq->name, e3, start, stop, 0);
+              else
+                fprintf(S3_OFILE,"%-24s %-6e %d %d %d\n", seq->name, e3, (int) seq->n-stop+1, (int) seq->n-start+1, 1);
+            }
           }
         }
+        FreeResults(results);
       }
     }
 
