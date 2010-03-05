@@ -134,7 +134,7 @@ int ccm_bg_SetFilter(CM_CONSENSUS *ccm, float mL, float sL);
 int ccm_bg_FilterScore(CCM_BG *bg, ESL_DSQ *dsq, int L, float *ret_sc);
 
 /* sse_cmcons_hitmx.c */
-GammaHitMx_epu8 *CreateGammaHitMx_epu8(int L, int i0, int be_greedy, float cutoff, int do_backward);
+GammaHitMx_epu8 *CreateGammaHitMx_epu8(int L, int i0, int be_greedy, int offset_zero, float cutoff, int do_backward);
 void FreeGammaHitMx_epu8(GammaHitMx_epu8 *gamma);
 int  UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma, int j, __m128i *alpha_row, search_results_t *results, int W, int sW);
 void TBackGammaHitMxForward_epu8 (GammaHitMx_epu8 *gamma, search_results_t *results, int i0, int j0);
