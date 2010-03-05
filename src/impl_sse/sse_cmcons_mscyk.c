@@ -34,6 +34,29 @@
 #define BYTERSHIFT2(a,b)   (_mm_or_si128(_mm_slli_si128(a,1), _mm_srli_si128(b,15)))
 #define BYTERSHIFT3(a,b,c) (_mm_or_si128(_mm_slli_si128(a,c), _mm_srli_si128(b,16-c)))
 
+static __m128i MSCYK_add_BIF(__m128i bifl, __m128i bifr, __m128i tsv, __m128i base)
+{
+   __m128i ret_v;	/* return value */
+   __m128i umask;	/* underflow mask */
+   __m128i omask;	/* overflow mask */
+   __m128i ocx;		/* overflow correction term */
+   __m128i neginfv = _mm_set1_epi8(0x00);
+   __m128i allonev = _mm_set1_epi8(0xff);
+
+   umask = _mm_xor_si128(_mm_or_si128(_mm_cmpeq_epi8(bifl,neginfv),_mm_cmpeq_epi8(bifr,neginfv)),allonev);
+						/* Check and mask any element where either vector had a 0 value */
+   ret_v = _mm_adds_epu8(bifl,bifr);		/* Normal, saturated addition */
+   omask = _mm_cmpeq_epi8(ret_v,allonev);	/* Check for overflow */
+   ret_v = _mm_subs_epu8(ret_v, tsv);		/* Subtract transition cost */
+   ret_v = _mm_subs_epu8(ret_v, base);		/* both the L and R bif values already include base offset, so subtract base once */
+   ocx   = _mm_add_epi8(_mm_add_epi8(bifl,bifr),_mm_set1_epi8(1)); /* Unsaturated math, purposefully overflow */
+   ocx   = _mm_and_si128(ocx, omask);		/* zero values that didn't overflow */
+   ret_v = _mm_adds_epu8(ret_v, ocx);		/* saturated add of overflow amount */
+   ret_v = _mm_and_si128(ret_v, umask);		/* underflow mask zeroes sum if an operand was zero (0 = -infty) */
+
+   return ret_v;
+}
+
 /* Function: SSE_MSCYK()
  * Author:   DLK
  *
@@ -134,8 +157,7 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
 //  __m128    tmpv;
   __m128i   *tmpary;
   __m128i   *mem_tmpary;
-  __m128i    omask, umask;	/* overflow mask, underflow mask */
-  __m128i    ocx;		/* overflow correction term for BIF */
+  __m128i    umask;		/* underflow mask */
   uint8_t    tmp_esc;
   uint8_t   *vec_access;
   float      rsc = -eslINFINITY;
@@ -162,7 +184,14 @@ fprintf(stderr,"M ->  S: %d\n", unbiased_byteify(ccm,tsc_M_S ));
    * This is a little SHMM that finds an optimal scoring parse
    * of multiple nonoverlapping hits. */
   // FIXME: greedy T/F should be set-able
-  if(results != NULL) gamma = CreateGammaHitMx_epu8(L, i0, FALSE, ((float) (cutoff-ccm->base_b))/ccm->scale_b, FALSE);
+  // FIXME: There's a subtle side-effect here: greedy hit mode
+  // FIXME: allows and will return MSCYK hits with score less
+  // FIXME: than zero, if the cutoff allows it.  However, non-greedy
+  // FIXME: traceback mode requires all hits to score greater than
+  // FIXME: zero (otherwise they wouldn't improve the SHMM score),
+  // FIXME: and setting the MSCYK threshold to a very negative number
+  // FIXME: has no effect.
+  if(results != NULL) gamma = CreateGammaHitMx_epu8(L, i0, FALSE, ccm->base_b, ((float) (cutoff-ccm->base_b))/ccm->scale_b, FALSE);
   else                gamma = NULL;
 //
   /* allocate array for precalc'ed rolling ptrs into BEGL deck, filled inside 'for(j...' loop */
@@ -532,6 +561,7 @@ fprintf(stderr,"\n");
       __m128i vec_tmp_bifr;
 
       int dkindex = 0;
+#ifdef _DONT_UNROLL_BIF
       for (k = 0; k <= W && k <=j; k++) {
         vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
         vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
@@ -559,18 +589,375 @@ fprintf(stderr,"\n");
           dkindex++;
 
           umask= _mm_xor_si128(_mm_or_si128(_mm_cmpeq_epi8(vec_tmp_bifl,neginfv),_mm_cmpeq_epi8(vec_tmp_bifr,neginfv)),_mm_set1_epi8(0xff));
-          tmpv = _mm_adds_epu8(vec_tmp_bifl,vec_tmp_bifr);
-          omask= _mm_cmpeq_epi8(tmpv,_mm_set1_epi8(0xff));
-          tmpv = _mm_subs_epu8(tmpv, tsv_S_SM);
-          tmpv = _mm_subs_epu8(tmpv, basev); /* both the L and R bif values already include base offset */
-          ocx  = _mm_add_epi8(_mm_add_epi8(vec_tmp_bifl,vec_tmp_bifr),_mm_set1_epi8(1)); /* Unsaturated math, purposefully overflow */
-          ocx  = _mm_and_si128(ocx, omask); /* zero values that didn't overflow */
-          tmpv = _mm_adds_epu8(tmpv, ocx); /* saturated add of overflow amount */
-          tmpv = _mm_and_si128(tmpv, umask); /* underflow mask zeroes sum if an operand was zero (0 = -infty) */
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
           vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
         }
         dkindex--;
       }
+#else	/* i.e., DO unroll BIF; default condition */
+      /* This is a massive loop unroll and re-ordering; it should calculate
+         exactly the same values as the not-unrolled version in the other
+         half of the ifdef switch above.  For a simpler case, the same unroll
+         technique is used in sse_cm_dpsearch.c for 4x 32-bit float vectors   */
+      int kmax = j < sW ? j : sW - 1;
+      kmax = W < kmax ? W : kmax;;
+      for (k = 0; k <= kmax; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      
+        dkindex = sW - k;
+        for (d = 0; d < k; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 1);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+
+        dkindex = 0;
+        for (     ; d < sW; d++) {
+          vec_tmp_bifl =             vec_ntS[jp_wA[k]][dkindex];
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+      }
+
+      kmax = j < 2*sW ? j : 2*sW - 1;
+      kmax = W < kmax ? W : kmax;;
+      for ( ; k <= kmax; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      
+        dkindex = 2*sW - k;
+        for (d = 0; d < k - sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 2);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+
+        dkindex = 0;
+        for (     ; d < sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 1);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+      }
+
+      kmax = j < 3*sW ? j : 3*sW - 1;
+      kmax = W < kmax ? W : kmax;;
+      for ( ; k <= kmax; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      
+        dkindex = 3*sW - k;
+        for (d = 0; d < k - 2*sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 3);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+
+        dkindex = 0;
+        for (     ; d < sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 2);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+      }
+
+      kmax = j < 4*sW ? j : 4*sW - 1;
+      kmax = W < kmax ? W : kmax;;
+      for ( ; k <= kmax; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      
+        dkindex = 4*sW - k;
+        for (d = 0; d < k - 3*sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 4);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+
+        dkindex = 0;
+        for (     ; d < sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 3);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+      }
+
+      kmax = j < 5*sW ? j : 5*sW - 1;
+      kmax = W < kmax ? W : kmax;;
+      for ( ; k <= kmax; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      
+        dkindex = 5*sW - k;
+        for (d = 0; d < k - 4*sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 5);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+
+        dkindex = 0;
+        for (     ; d < sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 4);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+      }
+
+      kmax = j < 6*sW ? j : 6*sW - 1;
+      kmax = W < kmax ? W : kmax;;
+      for ( ; k <= kmax; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      
+        dkindex = 6*sW - k;
+        for (d = 0; d < k - 5*sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 6);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+
+        dkindex = 0;
+        for (     ; d < sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 5);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+      }
+
+      kmax = j < 7*sW ? j : 7*sW - 1;
+      kmax = W < kmax ? W : kmax;;
+      for ( ; k <= kmax; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      
+        dkindex = 7*sW - k;
+        for (d = 0; d < k - 6*sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 7);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+
+        dkindex = 0;
+        for (     ; d < sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 6);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+      }
+
+      kmax = j < 8*sW ? j : 8*sW - 1;
+      kmax = W < kmax ? W : kmax;;
+      for ( ; k <= kmax; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      
+        dkindex = 8*sW - k;
+        for (d = 0; d < k - 7*sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 8);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+
+        dkindex = 0;
+        for (     ; d < sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 7);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+      }
+
+      kmax = j < 9*sW ? j : 9*sW - 1;
+      kmax = W < kmax ? W : kmax;;
+      for ( ; k <= kmax; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      
+        dkindex = 9*sW - k;
+        for (d = 0; d < k - 8*sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 9);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+
+        dkindex = 0;
+        for (     ; d < sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 8);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+      }
+
+      kmax = j < 10*sW ? j : 10*sW - 1;
+      kmax = W < kmax ? W : kmax;;
+      for ( ; k <= kmax; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      
+        dkindex = 10*sW - k;
+        for (d = 0; d < k - 9*sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,10);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+
+        dkindex = 0;
+        for (     ; d < sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv, 9);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+      }
+
+      kmax = j < 11*sW ? j : 11*sW - 1;
+      kmax = W < kmax ? W : kmax;;
+      for ( ; k <= kmax; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      
+        dkindex = 11*sW - k;
+        for (d = 0; d < k - 10*sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,11);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+
+        dkindex = 0;
+        for (     ; d < sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,10);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+      }
+
+      kmax = j < 12*sW ? j : 12*sW - 1;
+      kmax = W < kmax ? W : kmax;;
+      for ( ; k <= kmax; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      
+        dkindex = 12*sW - k;
+        for (d = 0; d < k - 11*sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,12);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+
+        dkindex = 0;
+        for (     ; d < sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,11);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+      }
+
+      kmax = j < 13*sW ? j : 13*sW - 1;
+      kmax = W < kmax ? W : kmax;;
+      for ( ; k <= kmax; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      
+        dkindex = 13*sW - k;
+        for (d = 0; d < k - 12*sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,13);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+
+        dkindex = 0;
+        for (     ; d < sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,12);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+      }
+
+      kmax = j < 14*sW ? j : 14*sW - 1;
+      kmax = W < kmax ? W : kmax;;
+      for ( ; k <= kmax; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      
+        dkindex = 14*sW - k;
+        for (d = 0; d < k - 13*sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,14);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+
+        dkindex = 0;
+        for (     ; d < sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,13);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+      }
+
+      kmax = j < 15*sW ? j : 15*sW - 1;
+      kmax = W < kmax ? W : kmax;;
+      for ( ; k <= kmax; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      
+        dkindex = 15*sW - k;
+        for (d = 0; d < k - 14*sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,15);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+
+        dkindex = 0;
+        for (     ; d < sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,14);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+      }
+
+      kmax = j < W ? j : W;
+      for ( ; k <= kmax && k <= W; k++) {
+        vec_access = (uint8_t *) (&vec_ntM_all[cur][k%sW])+k/sW;
+        vec_tmp_bifr = _mm_set1_epi8((char) *vec_access);
+      
+        dkindex = 0;
+        for (     ; d < sW; d++) {
+          vec_tmp_bifl = BYTERSHIFT3(vec_ntS[jp_wA[k]][dkindex],neginfv,15);
+          tmpv = MSCYK_add_BIF(vec_tmp_bifl, vec_tmp_bifr, tsv_S_SM, basev);
+          vec_ntS[jp_Sv][d] = _mm_max_epu8(vec_ntS[jp_Sv][d], tmpv);
+          dkindex++;
+        }
+      }
+#endif	/* end of do/don't unroll BIF switch */
       vec_ntS[jp_Sv][-1] = BYTERSHIFT1(vec_ntS[jp_Sv][sW-1]);
       vec_ntS[jp_Sv][-2] = BYTERSHIFT1(vec_ntS[jp_Sv][sW-2]);
 
@@ -661,9 +1048,18 @@ fprintf(stderr,"\n");
       if(results != NULL) { if((status = UpdateGammaHitMxCM_epu8(ccm, errbuf, gamma, j, tmpary, results, W, sW)) != eslOK) return status; }
       else { 
         for (d = 0; d < sW; d++) {
-          if (esl_sse_hmax_epu8(tmpary[d]) > rsc) { rsc = esl_sse_hmax_epu8(tmpary[d]); }
+          if (esl_sse_hmax_epu8(tmpary[d]) > rsc) { rsc = (float) esl_sse_hmax_epu8(tmpary[d]); }
         }
       }
+#ifdef DEBUG_0
+fprintf(stderr,"\t4atmp: ");
+for (d = 0; d <= W; d++) {
+  int x = d/sW;
+  vec_access = ((uint8_t *) &(tmpary[d%sW])) + x;
+  fprintf(stderr,"%5d",*vec_access);
+}
+fprintf(stderr,"\n");
+#endif
 //      /* cm_DumpScanMatrixAlpha(cm, si, j, i0, TRUE); */
     } /* end loop over end positions j */
 #ifdef DEBUG_0
