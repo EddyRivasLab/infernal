@@ -139,25 +139,25 @@ binary index file.
 
 
 
-.SH COPYRIGHT
+.\".SH COPYRIGHT
 
-.nf
-@CMER_COPYRIGHT@
-@CMER_LICENSE@
-.fi
+.\".nf
+.\"@INFERNAL_COPYRIGHT@
+.\"@INFERNAL_LICENSE@
+.\".fi
 
-For additional information on copyright and licensing, see the file
-called COPYRIGHT in your CMER source distribution, or see the CMER
-web page 
-(@CMER_URL@).
+.\"For additional information on copyright and licensing, see the file
+.\"called COPYRIGHT in your CMER source distribution, or see the CMER
+.\"web page 
+.\"(@CMER_URL@).
 
 
-.SH AUTHOR
+.\".SH AUTHOR
 
-.nf
-Eddy/Rivas Laboratory
-Janelia Farm Research Campus
-19700 Helix Drive
-Ashburn VA 20147 USA
-http://eddylab.org
-.fi
+.\".nf
+.\"Eddy/Rivas Laboratory
+.\"Janelia Farm Research Campus
+.\"19700 Helix Drive
+.\"Ashburn VA 20147 USA
+.\"http://eddylab.org
+.\".fi
