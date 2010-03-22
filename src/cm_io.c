@@ -152,12 +152,12 @@ CMFileOpen(char *cmfile, char *env)
    */
   if ((cmf->f = fopen(cmfile, "r")) != NULL) 
     {
-      if ((status = esl_FileNewSuffix(cmfile, "ssi", &ssifile)) != eslOK) goto ERROR;
+      esl_sprintf(&ssifile, "%s.ssi", cmfile);
       if ((status = esl_strdup(cmfile, n, &(cmf->fname)))       != eslOK) goto ERROR;
     }
   else if (esl_FileEnvOpen(cmfile, env, &(cmf->f), &envfile) == eslOK)
     {
-      if ((status = esl_FileNewSuffix(envfile, "ssi", &ssifile)) != eslOK) goto ERROR;
+      esl_sprintf(&ssifile, "%s.ssi", envfile);
       if ((status = esl_strdup(envfile, -1, &(cmf->fname)))      != eslOK) goto ERROR;
     }
   else

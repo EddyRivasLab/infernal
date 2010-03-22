@@ -38,7 +38,7 @@ MYLIBS   = -lhmmer -leasel
 MYLIBDIR = -L../easel -L../hmmer/src/ 
 MYINCDIR = -I../easel -I../hmmer/src/ 
 
-PROGS = cmalign cmbuild cmcalibrate cmemit cmscore cmsearch cmstat trcyk truncyk_check
+PROGS = cmalign cmbuild cmcalibrate cmemit cmfetch cmscore cmsearch cmstat trcyk truncyk_check
 
 OBJS  = cm.o\
 	cm_dpalign.o\

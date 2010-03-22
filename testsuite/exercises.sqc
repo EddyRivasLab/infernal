@@ -32,6 +32,16 @@
 1  prep        model/trna             @src/cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
 1  exercise    cmcalibrate:trna       @src/cmcalibrate@ --forecast 1 %TRNA.CM%
 
+# Exercises of cmfetch
+#
+1  prep      model/3.4.12            @src/cmbuild@ -F --wnone %3.4.12.CM% !../testsuite/3.4.12.stk!
+1  exercise  cmfetch:3.4.12/i0       @src/cmfetch@ --index %3.4.12.CM% 
+1  exercise  cmfetch:3.4.12/i1       @src/cmfetch@ -f %3.4.12.CM% !../testsuite/12.3.list!
+1  exercise  cmfetch:3.4.12/i2       @src/cmfetch@ -o %TMP.CM% %3.4.12.CM% U2
+# clean up
+1  prep      cleanup/3.4.12/c0       rm %3.4.12.CM%.ssi 
+1  prep      cleanup/3.4.12/c1       rm U2
+
 # Exercises of cmscore.
 #
 1  exercise  cmscore:help/1       @src/cmscore@ -h
