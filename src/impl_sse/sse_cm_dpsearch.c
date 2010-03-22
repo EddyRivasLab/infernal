@@ -664,12 +664,12 @@ SSE_CYKScan(CM_t *cm, char *errbuf, ScanMatrix_t *smx, ESL_DSQ *dsq, int i0, int
           alpha[jp_v][0][     d] = tmp.x[0];
           alpha[jp_v][0][  sW+d] = tmp.x[1];
           alpha[jp_v][0][2*sW+d] = tmp.x[2];
-          alpha[jp_v][0][3*sW+d] = tmp.x[3];
+          if (3*sW+d <= W) alpha[jp_v][0][3*sW+d] = tmp.x[3];
           tmp.v = vec_bestr[d];
           bestr[     d] = tmp.x[0];
           bestr[  sW+d] = tmp.x[1];
           bestr[2*sW+d] = tmp.x[2];
-          bestr[3*sW+d] = tmp.x[3];
+          if (3*sW+d <= W) bestr[3*sW+d] = tmp.x[3];
         }
       }
       /* update gamma, but only if we're reporting hits to results */
