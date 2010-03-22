@@ -270,14 +270,18 @@ printf("E-val at rank 10 = %1.3e\t",eval);
   }
   else {
     e_cutoff = esl_opt_GetReal(go,"--s2-E");
+    // FIXME FIXME FIXME  1.-e_cutoff rounds to 1 in the range of 1e-18 -> f_cutoff = inf, even though the
+    // FIXME FIXME FIXME  effective possible range goes as far as about 1e-24 (for RF00037 at least)
     f_cutoff = esl_exp_invcdf(1.-e_cutoff,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
     fprintf(stderr,"Stage 2: P-value cutoff %.2e\n",e_cutoff);
     s2_pcut   = e_cutoff;
     s2_cutoff = wordify(ocm->scale_w, f_cutoff);
+//fprintf(stderr,"s2 %e %f %e %d\n",e_cutoff,f_cutoff,s2_pcut,s2_cutoff);
     if (s2_cutoff == WORDMAX) {
       s2_cutoff--;
       f_cutoff = s2_cutoff/ocm->scale_w;
       s2_pcut = esl_exp_surv(f_cutoff,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
+//fprintf(stderr,"s2 %e %f %e %d\n",e_cutoff,f_cutoff,s2_pcut,s2_cutoff);
       fprintf(stderr,"Stage 2: Warning - score cutoff out of range, setting to max of %.2e\n",s2_pcut);
     }
   }
@@ -360,7 +364,7 @@ PIPELINE:
 
       ScoreCorrectionNull3CompUnknown(cm->abc,cm->null,seq->dsq,start,stop,&null3_correction);
       p2 = esl_exp_surv((float)sc2/ocm->scale_w-null3_correction,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
-      if ((esl_opt_IsOn(go,"--s2-T") && (sc2 > s2_cutoff)) || (p2 < s2_pcut) || (sc2 > (WORDMAX/ocm->scale_w)-10)) {
+      if ((esl_opt_IsOn(go,"--s2-T") && (sc2 > s2_cutoff)) || (p2 < s2_pcut) || (sc2 > WORDMAX-10*ocm->scale_w)) {
         if (o_glbf == 2) {
           if (!is_reversed) 
             printf("%-24s %-6f %d %d %d\n", seq->name, (float)sc2/ocm->scale_w, start, stop, 0);
@@ -380,14 +384,15 @@ PIPELINE:
         if (cm->si == NULL) { CreateSearchInfo(cm, E_CUTOFF, s3_cutoff, s3_pcut); }
         else { UpdateSearchInfoCutoff(cm, cm->si->nrounds, E_CUTOFF, s3_cutoff, s3_pcut); }
         ValidateSearchInfo(cm, cm->si);
-        DispatchSearch(cm, errbuf, cm->si->nrounds, seq->dsq, windows->data[i].start, windows->data[i].stop, &results, 1000, NULL, &sc3);
+        //DispatchSearch(cm, errbuf, cm->si->nrounds, seq->dsq, windows->data[i].start, windows->data[i].stop, &results, 1000, NULL, &sc3);
+        SSE_CYKScan(cm, errbuf, cm->smx, seq->dsq, windows->data[i].start, windows->data[i].stop, s3_cutoff, results, TRUE, NULL, &sc3);
 
         for (int hitloop = 0; hitloop < results->num_results; hitloop++) {
           sc3   = results->data[hitloop].score;
           start = results->data[hitloop].start;
           stop  = results->data[hitloop].stop;
           //ScoreCorrectionNull3CompUnknown(cm->abc,cm->null,seq->dsq,start,stop,&null3_correction);
-          null3_correction = 0; /* DispatchSearch already applies null3 */
+          null3_correction = 0.; /* Hit resolution in CYKSCan already applies null3 */
           p3 = esl_exp_surv((float)sc3-null3_correction,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->lambda);
           e3 = p3 * cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->cur_eff_dbsize;
           if ((esl_opt_IsOn(go,"--s3-T") && (sc3 >= s3_cutoff)) || /*(p3 < s3_pcut) ||*/ (e3 < 1.)) {
