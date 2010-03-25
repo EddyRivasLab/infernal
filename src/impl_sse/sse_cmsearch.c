@@ -28,6 +28,7 @@ static ESL_OPTIONS options[] = {
   /* name           type      default  env  range toggles reqs incomp  help                                       docgroup*/
   /* Basic options */
   { "-h",       eslARG_NONE,  NULL, NULL, NULL,  NULL,  NULL, NULL, "show brief help on version and usage",           1 },
+  { "-Z",       eslARG_REAL,  NULL, NULL, NULL,  NULL,  NULL, NULL, "set Z (database size in *Mb*) to <x> for E-value calculations", 1},
   { "--toponly",eslARG_NONE,  NULL, NULL, NULL,  NULL,  NULL, NULL, "search only the top strand, not reverse complement", 1 },
   /* Cutoff level options */
   { "--s1-F",eslARG_REAL,"0.01", NULL,   NULL,  NULL,  NULL, "--s1-E", "set stage 1 cutoff to estimated filter pass rate <x>", 2 },
@@ -59,6 +60,7 @@ main(int argc, char **argv)
   ESL_GETOPTS    *go      = esl_getopts_CreateDefaultApp(options, 2, argc, argv, banner, usage);
   CM_t            *cm;
   ESL_ALPHABET   *abc     = NULL;
+  long            dbsize;
   int             i;
   float           sc, sc3;
   float           p2, p3;
@@ -126,6 +128,19 @@ main(int argc, char **argv)
   CMFileClose(cmfp);
 
   if (esl_sqfile_Open(seqfile, format, NULL, &sqfp) != eslOK) cm_Fail("Failed to open sequence database file\n");
+  if ((status = GetDBSize(sqfp, errbuf, &dbsize, NULL, NULL)) != eslOK) return status;
+  if (! esl_opt_GetBoolean(go, "--toponly")) dbsize *= 2;
+
+  /* overwrite dbsize if -Z enabled */
+  if( esl_opt_IsOn(go, "-Z")) dbsize = (long) (esl_opt_GetReal(go, "-Z") * 1000000.); /* convert Mb to bases then to a long */
+
+  /* Update dbsize in cm config */
+  if (cm->flags & CMH_EXPTAIL_STATS) {
+    if ((status = UpdateExpsForDBSize(cm, errbuf, dbsize)) != eslOK) cm_Fail(errbuf);
+  }
+  else {
+    cm_Fail("SIMD filters require calibration; please run cmcalibrate before continuing.");
+  }
 
   cm->config_opts |= CM_CONFIG_LOCAL;
   cm->search_opts |= CM_SEARCH_NOQDB;
