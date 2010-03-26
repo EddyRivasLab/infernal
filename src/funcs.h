@@ -186,6 +186,7 @@ extern void    CMFileRewind(CMFILE *cmf);
 extern int     CMFilePositionByIndex(CMFILE *cmf, int64_t idx);
 extern int     CMFilePositionByKey(CMFILE *cmf, char *key);
 extern int     CMFileWrite(FILE *fp, CM_t *cm, int do_binary, char *errbuf);
+extern int     PositionSqFileByNumber(ESL_SQFILE *sqfp, int sseq, char *errbuf);
 
 /* from cm_modelconfig.c */
 extern int   ConfigCM(CM_t *cm, char *errbuf, int always_calc_W, CM_t *mother_cm, CMSubMap_t *mother_map);
@@ -676,7 +677,7 @@ extern seqs_to_aln_t *CreateSeqsToAlnFromSq(ESL_SQ **sq, int size, int i_am_mpi_
 extern int            GrowSeqsToAln(seqs_to_aln_t *seqs_to_aln, int new_alloc, int i_am_mpi_master); 
 extern void           FreeSeqsToAln(seqs_to_aln_t *seqs_to_aln);
 extern void           FreePartialSeqsToAln(seqs_to_aln_t *s, int do_free_sq, int do_free_tr, int do_free_cp9_tr, int do_free_post, int do_free_sc, int do_free_pp, int do_free_struct_sc);
-extern int            ReadSeqsToAln(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int do_read_all, seqs_to_aln_t *seqs_to_aln, int i_am_mpi_master); 
+extern int            ReadSeqsToAln(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, seqs_to_aln_t *seqs_to_aln, int i_am_mpi_master); 
 extern seqs_to_aln_t *CMEmitSeqsToAln(ESL_RANDOMNESS *r, CM_t *cm, int ncm, int nseq, int padW, double *pdist, int i_am_mpi_master);
 extern seqs_to_aln_t *RandomEmitSeqsToAln(ESL_RANDOMNESS *r, const ESL_ALPHABET *abc, double *pdist, int extranum, int nseq, double *L_distro, int Lmax, int i_am_mpi_master); 
 
@@ -687,7 +688,7 @@ extern int        debug_print_cmstats(CM_t *cm, char *errbuf, CMStats_t *cmstats
 extern int        debug_print_expinfo(ExpInfo_t *exp);
 extern int        get_gc_comp(const ESL_ALPHABET *abc, ESL_DSQ *dsq, int start, int stop);
 extern int        get_alphabet_comp(const ESL_ALPHABET *abc, ESL_DSQ *dsq, int start, int stop, float **ret_freq); 
-extern int        GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_nseq, int *ret_namewidth);
+extern int        GetDBSize (ESL_SQFILE *sqfp, char *errbuf, int sseq, int eseq, long *ret_N, int *ret_nseq, int *ret_namewidth);
 extern int        GetDBInfo(const ESL_ALPHABET *abc, ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_nseq, double **ret_gc_ct);
 extern int        E2MinScore(CM_t *cm, char *errbuf, int exp_mode, float E,  float *ret_sc);
 extern int        E2ScoreGivenExpInfo(ExpInfo_t *exp, char *errbuf, float E, float *ret_sc);

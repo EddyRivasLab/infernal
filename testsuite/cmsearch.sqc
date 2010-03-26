@@ -61,6 +61,10 @@
 1  exercise  cmsearch:trna/32        @src/cmsearch@  --dna %TRNA.CM% 1k.fa
 1  exercise  cmsearch:trna/33        @src/cmsearch@  -T 0 -v %TRNA.CM% 1k.fa
 
+1  exercise  cmsearch:trna/34        @src/cmsearch@  --sseq 2 %TRNA.CM% 3trnas.fa
+1  exercise  cmsearch:trna/35        @src/cmsearch@  --eseq 2 %TRNA.CM% 3trnas.fa
+1  exercise  cmsearch:trna/36        @src/cmsearch@  --sseq 2 --eseq 2 %TRNA.CM% 3trnas.fa
+
 # 3.4.12 (U1, U2, U3)
 2  prep      model/3.4.12             @src/cmbuild@ -F --wnone --rf %3.4.12.CM% 3.4.12.stk
 2  exercise  cmsearch:3.4.12/1        @src/cmsearch@  %3.4.12.CM% 1k.fa
@@ -104,6 +108,10 @@
 2  exercise  cmsearch:3.4.12/31        @src/cmsearch@  --rna %3.4.12.CM% 1k.fa
 2  exercise  cmsearch:3.4.12/32        @src/cmsearch@  --dna %3.4.12.CM% 1k.fa
 2  exercise  cmsearch:3.4.12/33        @src/cmsearch@  -T 0 -v %3.4.12.CM% 1k.fa
+
+2  exercise  cmsearch:3.4.12/34        @src/cmsearch@  --sseq 2 %3.4.12.CM% 3trnas.fa
+2  exercise  cmsearch:3.4.12/35        @src/cmsearch@  --eseq 2 %3.4.12.CM% 3trnas.fa
+2  exercise  cmsearch:3.4.12/36        @src/cmsearch@  --sseq 2 --eseq 2 %3.4.12.CM% 3trnas.fa
 
 # test the two options that are only relevant with multi-CM files (and
 # thus weren't tested for tRNA)
@@ -184,7 +192,7 @@
 
 # 3.4.12
 5  exercise  cmsearch:3.4.12cd/1        @src/cmsearch@  --lambda 0.6913 3.4.12.calibrated.cm 1k.fa
-5  exercise  cmsearch:3.4.12cd/2	     @src/cmsearch@  --hbanded --aln2bands 3.4.12.calibrated.cm 1k.fa
+5  exercise  cmsearch:3.4.12cd/2        @src/cmsearch@  --hbanded --aln2bands 3.4.12.calibrated.cm 1k.fa
 5  exercise  cmsearch:3.4.12cd/3        @src/cmsearch@  --rtrans 3.4.12.calibrated.cm 1k.fa
 5  exercise  cmsearch:3.4.12cd/4        @src/cmsearch@  --hbanded --sums 3.4.12.calibrated.cm 1k.fa
 5  exercise  cmsearch:3.4.12cd/5        @src/cmsearch@  --null2 --no-null3 3.4.12.calibrated.cm 1k.fa

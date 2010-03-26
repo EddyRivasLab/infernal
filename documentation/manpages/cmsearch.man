@@ -703,11 +703,31 @@ contains more than 1 CM, specify that only the CM named
 be used for searching.
 
 .TP 
+.BI --sseq " <n>"
+Specify that the first sequence to search in
+.I seqfile
+is sequence number
+.I <n>.
+The first 
+.I <n>
+minus 1 sequences will not be searched.
+
+.TP 
+.BI --eseq " <n>"
+Specify that the final sequence to search in
+.I seqfile
+is sequence number
+.I <n>.
+All sequences occuring after sequence
+.I <n>
+will not be searched.
+
+.TP 
 .BI --tabfile " <f>"
 Create a new output file 
 .I <f>
 and print tabular results to it.
-The format of the tabular results is listed in the 
+The format of the tabular results is described in the 
 .B OUTPUT
 section. The tabular results can be more easily parsed by scripts than
 the default 

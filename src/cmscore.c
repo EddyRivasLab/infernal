@@ -1476,7 +1476,7 @@ get_sequences(const ESL_GETOPTS *go, const struct cfg_s *cfg, char *errbuf, CM_t
   else if(do_infile)
     {
       seqs_to_aln = CreateSeqsToAln(100, i_am_mpi_master);
-      if((status = ReadSeqsToAln(cfg->abc, cfg->sqfp, 0, TRUE, seqs_to_aln, i_am_mpi_master)) != eslEOF) 
+      if((status = ReadSeqsToAln(cfg->abc, cfg->sqfp, 0, seqs_to_aln, i_am_mpi_master)) != eslEOF) 
 	cm_Fail("Error reading sqfile: %s\n", esl_opt_GetString(go, "--infile"));
       /* rewind the sqfile so we can read the seqs again */
       esl_sqfile_Position(cfg->sqfp, (off_t) 0); /* we may be searching this file again with another CM */

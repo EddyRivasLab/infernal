@@ -1131,8 +1131,8 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
     
       /* output insert and/or EL info to the insertfp and elfp output files, if nec */
       if(insertfp != NULL || elfp != NULL) { 
-	if(insertfp != NULL) { fprintf(insertfp, "%s %d %d %d", sq[i]->name, sq[i]->n, s_cposA[i], e_cposA[i]); }
-	if(elfp != NULL)     { fprintf(elfp,     "%s %d %d %d", sq[i]->name, sq[i]->n, s_cposA[i], e_cposA[i]); }
+	if(insertfp != NULL) { fprintf(insertfp, "%s %" PRId64 " %d %d", sq[i]->name, sq[i]->n, s_cposA[i], e_cposA[i]); }
+	if(elfp != NULL)     { fprintf(elfp,     "%s %" PRId64 " %d %d", sq[i]->name, sq[i]->n, s_cposA[i], e_cposA[i]); }
 	for (cpos = 0; cpos <= emap->clen; cpos++) 
 	  {
 	    if((insertfp != NULL) && ((iluse[cpos] + iruse[cpos]) > 0)) { 

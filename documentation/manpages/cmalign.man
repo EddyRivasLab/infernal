@@ -529,6 +529,27 @@ contains more than 1 CM, specify that only the CM named
 .I <s>
 be used for alignment.
 
+
+.TP 
+.BI --sseq " <n>"
+Specify that the first sequence to align from
+.I seqfile
+is sequence number
+.I <n>.
+The first 
+.I <n>
+minus 1 sequences will not be aligned.
+
+.TP 
+.BI --eseq " <n>"
+Specify that the final sequence to align from
+.I seqfile
+is sequence number
+.I <n>.
+All sequences occuring after sequence
+.I <n>
+will not be aligned.
+
 .TP
 .BI --tfile " <f>"
 Dump tabular sequence tracebacks for each individual
@@ -559,6 +580,12 @@ included at the top of the file
 The EL insert information is valid even when the 
 .B --matchonly 
 option is used.
+
+.TP
+.BI --sfile " <f>"
+Dump per-sequence alignment score information to file
+.I <f>.
+
 
 
 

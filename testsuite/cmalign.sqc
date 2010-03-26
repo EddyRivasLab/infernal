@@ -74,6 +74,9 @@
 1  exercise  cmalign:trna/55       @src/cmalign@ --ifile %TMPOUT1% %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/56       @src/cmalign@ --ifile %TMPOUT1% --matchonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna/57       @src/cmalign@ --chunk 2 %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:tRNA/58       @src/cmalign@  --sseq 2 %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:tRNA/59       @src/cmalign@  --eseq 2 %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:tRNA/60       @src/cmalign@  --sseq 2 --eseq 2 %TRNA.CM% 3trnas.fa
 
 # local alignment with -l
 1  prep      model/trna              @src/cmbuild@ -F --rf --wnone %TRNA.CM% trna1415G.sto
@@ -132,9 +135,11 @@
 1  exercise  cmalign:trna-l/56       @src/cmalign@ -l --ifile %TMPOUT1% --matchonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/57       @src/cmalign@ -l --elfile %TMPOUT1% %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/58       @src/cmalign@ -l --elfile %TMPOUT1% --matchonly %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-p/1        @src/cmalign@  -l --pebegin --pfend 0.03 %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-p/1        @src/cmalign@ -l --pebegin --pfend 0.03 %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-l/59       @src/cmalign@ -l --chunk 2 %TRNA.CM% 3trnas.fa
-
+1  exercise  cmalign:tRNA-l/60       @src/cmalign@ -l --sseq 2 %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:tRNA-l/61       @src/cmalign@ -l --eseq 2 %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:tRNA-l/62       @src/cmalign@ -l --sseq 2 --eseq 2 %TRNA.CM% 3trnas.fa
 
 #######################
 # with binary cm files
@@ -201,6 +206,9 @@
 1  exercise  cmalign:trna-b/55       @src/cmalign@ --ifile %TMPOUT1% %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/56       @src/cmalign@ --ifile %TMPOUT1% --matchonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b/57       @src/cmalign@ --chunk 2 %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b/58       @src/cmalign@ --sseq 2 %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b/59       @src/cmalign@ --eseq 2 %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b/60       @src/cmalign@ --sseq 2 --eseq 2 %TRNA.CM% 3trnas.fa
 
 # local alignment with -l
 1  prep      model/trna                @src/cmbuild@ --binary -F --rf --wnone %TRNA.CM% trna1415G.sto
@@ -260,7 +268,11 @@
 1  exercise  cmalign:trna-b-l/57       @src/cmalign@  -l --elfile %TMPOUT1% %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-b-l/58       @src/cmalign@  -l --elfile %TMPOUT1% --matchonly %TRNA.CM% 3trnas.fa
 1  exercise  cmalign:trna-p/1          @src/cmalign@  -l --pebegin --pfend 0.03 %TRNA.CM% 3trnas.fa
-1  exercise  cmalign:trna-b-l/59       @src/cmalign@ -l --chunk 2 %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:trna-b-l/59       @src/cmalign@  -l --chunk 2 %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:tRNA-b-l/60       @src/cmalign@  -l --sseq 2 %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:tRNA-b-l/61       @src/cmalign@  -l --eseq 2 %TRNA.CM% 3trnas.fa
+1  exercise  cmalign:tRNA-b-l/62       @src/cmalign@  -l --sseq 2 --eseq 2 %TRNA.CM% 3trnas.fa
+
 
 # repeat a few of the above excercises with a multi-CM cmfile, (if it works
 # for one, it 'should work' for all
@@ -273,7 +285,10 @@
 1  exercise  cmalign:3.4.12/5        @src/cmalign@  --no-prob %3.4.12.CM% 3trnas.fa
 1  exercise  cmalign:3.4.12/6        @src/cmalign@  --ileaved %3.4.12.CM% 3trnas.fa
 1  exercise  cmalign:3.4.12/7        @src/cmalign@  --chunk 2 %3.4.12.CM% 3trnas.fa
+1  exercise  cmalign:3.4.12/8        @src/cmalign@  --sseq 2 %3.4.12.CM% 3trnas.fa
+1  exercise  cmalign:3.4.12/9        @src/cmalign@  --eseq 2 %3.4.12.CM% 3trnas.fa
+1  exercise  cmalign:3.4.12/10       @src/cmalign@  --sseq 2 --eseq 2 %3.4.12.CM% 3trnas.fa
 # test the two options that are only relevant with multi-CM files (and
 # thus weren't tested for tRNA)
-1  exercise  cmalign:3.4.12/7        @src/cmalign@  --cm-idx 2 %3.4.12.CM% 3trnas.fa
-1  exercise  cmalign:3.4.12/8        @src/cmalign@  --cm-name U3 %3.4.12.CM% 3trnas.fa
+1  exercise  cmalign:3.4.12/11        @src/cmalign@  --cm-idx 2 %3.4.12.CM% 3trnas.fa
+1  exercise  cmalign:3.4.12/12        @src/cmalign@  --cm-name U3 %3.4.12.CM% 3trnas.fa

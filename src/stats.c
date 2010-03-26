@@ -25,6 +25,7 @@
 #include "esl_random.h"
 #include "esl_sq.h"
 #include "esl_sqio.h"
+#include "esl_ssi.h"
 #include "esl_vectorops.h"
 
 #include "cm_dispatch.h"
@@ -246,35 +247,56 @@ int get_alphabet_comp(const ESL_ALPHABET *abc, ESL_DSQ *dsq, int start, int stop
  *
  * Date:     EPN, Wed Apr  2 16:33:19 2008
  *
- * Purpose:  Given a sequence file name, determine the total size of the
- *           seqs in the file.
+ * Purpose:  Given a sequence file ptr, determine the number, and summed 
+ *           size of the seqs in the file. If sseq != -1, start at seq
+ *           number sseq, if eseq != -1 end at seq number eseq.
  *
- * Args:     sqfp     - open sequence file
- *           ret_N    - RETURN: total length (residues) or all seqs in seqfile
+ * Args:     sqfp          - open sequence file
+ *           errbuf        - for writing error messages
+ *           sseq          - first seq to consider, ranging 0..nseq-1 (-1 is same as 1)
+ *           eseq          - final seq to consider, ranging 0..nseq-1 (-1 is same as nseq)
+ *           ret_N         - RETURN: total length (residues) or all seqs in sqfp
+ *           ret_nseq      - RETURN: number of seqs in sqfp
+ *           ret_namewidth - RETURN: max length of name in sqfp
  *
  * Returns:  eslOK on success, other status on failure, errbuf filled with error message.
  */
-int GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_nseq, int *ret_namewidth)
+int GetDBSize (ESL_SQFILE *sqfp, char *errbuf, int sseq, int eseq, long *ret_N, int *ret_nseq, int *ret_namewidth)
 {
   int     status;
   ESL_SQ *sq;
   long    N = 0;
   int     namewidth = 11; /* length of "target name" */
   int     nseq = 0;
+  int     seqidx = 0;
 
   sq = esl_sq_Create(); 
+
+  /* If nec, position the file to the first seq specified by --sseq */
+  if(sseq != -1) { 
+    if((status = PositionSqFileByNumber(sqfp, sseq, errbuf)) != eslOK) return status;
+  }
+  seqidx = sseq;
+
   while ((status = esl_sqio_ReadInfo(sqfp, sq)) == eslOK) {
-    nseq++;
     N += sq->L;
     namewidth = ESL_MAX(namewidth, strlen(sq->name));
     esl_sq_Reuse(sq); 
+    nseq++;
+    seqidx++;
+    if(eseq != -1 && seqidx == (eseq+1)) break;
   } 
-  if (status != eslEOF) 
+  if (eseq >= seqidx) { /* we wanted to stop at sequence eseq, but we didn't read enough seqs, this is an error */
+    ESL_FAIL(eslERANGE, errbuf, "Ran out of seqs before getting to final seq %d!", 
+	     eseq+1);
+  }
+  if ((eseq == -1 && status != eslEOF) || 
+      (eseq != -1 && status != eslOK)) {
     ESL_FAIL(status, errbuf, "Parse failed, file %s:\n%s", 
 	     sqfp->filename, esl_sqfile_GetErrorBuf(sqfp));
-
+  }
   esl_sq_Destroy(sq); 
-  esl_sqfile_Position(sqfp, (off_t) 0);
+  esl_sqfile_Position(sqfp, (off_t) 0); /* rewind sequence file to beginning */
 
   if(ret_N != NULL)          *ret_N         = N;
   if(ret_nseq != NULL)       *ret_nseq      = nseq;

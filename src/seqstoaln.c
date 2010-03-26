@@ -297,7 +297,7 @@ void FreePartialSeqsToAln(seqs_to_aln_t *s, int do_free_sq, int do_free_tr, int 
  *
  * Purpose:  Given a pointer to a seq file we're reading seqs to align
  *           from, read in nseq seqs from the seq file, or 
- *           if nseq == 0 && do_real_all == TRUE, read all the seqs.
+ *           if nseq == 0, read all the seqs.
  *           Add the sequences to a growing seqs_to_aln_t object,
  *           a pointer to which is passed in.
  *
@@ -310,16 +310,14 @@ void FreePartialSeqsToAln(seqs_to_aln_t *s, int do_free_sq, int do_free_tr, int 
  *           seqs to align, *ret_seqs_to_aln_t->nseq gives number of seqs.
  *           Dies immediately on failure with informative error message.
  */
-int ReadSeqsToAln(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int do_read_all, seqs_to_aln_t *seqs_to_aln, int i_am_mpi_master) 
+int ReadSeqsToAln(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, seqs_to_aln_t *seqs_to_aln, int i_am_mpi_master) 
 {
   int status;
   int keep_reading = TRUE;
   int i;
   int nseq_orig;
 
-  /* contract check */
-  if(  do_read_all && nseq != 0) cm_Fail("if do_read_all is TRUE,  nseq must be zero.");
-  if(! do_read_all && nseq <= 0) cm_Fail("if do_read_all is FALSE, nseq must be at least 1.");
+  if(nseq < 0) cm_Fail("ReadSeqsToAln(), nseq must be at least 0.");
 
   nseq_orig = seqs_to_aln->nseq;
   i         = seqs_to_aln->nseq;
@@ -331,17 +329,17 @@ int ReadSeqsToAln(const ESL_ALPHABET *abc, ESL_SQFILE *seqfp, int nseq, int do_r
     if(seqs_to_aln->sq[i]->n == 0) { esl_sq_Reuse(seqs_to_aln->sq[i]); continue; }
     i++;
     if(i == seqs_to_aln->nalloc) GrowSeqsToAln(seqs_to_aln, 100, i_am_mpi_master);
-    if(! do_read_all && (i - nseq_orig) == nseq)   keep_reading = FALSE; 
+    if((nseq > 0) && (i - nseq_orig) == nseq)   keep_reading = FALSE; 
     seqs_to_aln->sq[i] = esl_sq_CreateDigital(abc);
     if(seqs_to_aln->sq[i] == NULL) cm_Fail("Memory allocation error.");
   }
   /* destroy the last sequence that was alloc'ed but not filled */
   esl_sq_Destroy(seqs_to_aln->sq[i]);
-  if ((  do_read_all && status  != eslEOF) || 
-      (! do_read_all && (status != eslEOF && status != eslOK)))
+  if (((nseq == 0) && status  != eslEOF) || 
+      ((nseq >  0) && (status != eslEOF && status != eslOK)))
     cm_Fail("Parse failed, file %s:\n%s", 
 	    seqfp->filename, esl_sqfile_GetErrorBuf(seqfp));
-
+  
   seqs_to_aln->nseq = i;
   return status;
 

@@ -347,6 +347,73 @@ CMFileWrite(FILE *fp, CM_t *cm, int do_binary, char *errbuf)
 }
 		   
 
+/* Function:  PositionSqFileByNumber()
+ * Incept:    EPN, Thu Mar 25 08:48:27 2010
+ *
+ * Purpose:   Position a sequence file to start at the beginning
+ *            of sequence number <sseq> (0..nseq-1). Uses SSI if 
+ *            it is available, otherwise, manually reads whole 
+ *            file until reaching seq number <sseq>. Fills
+ *            errbuf upon non-eslOK return status.
+ * 
+ *            Note: this function would be unnecessary if 
+ *            esl_sqfile_PositionByNumber() were able to 
+ *            handle the case that sqfp->ssi == NULL, whic
+ *            it can't currently.
+ *
+ * Args:    sqfp   - ESL_SQFILE ptr
+ *          sseq   - seq index to position sqfp to, must be >= 0
+ *                   first seq is seq 0
+ *          errbuf - for error messages
+ *
+ * Returns: eslOK on success.
+ *          eslEFORMAT if problem with file format.
+ *          eslEOF     if sqfile doesn't have <sseq> sequences
+ *          eslEINCOMPAT on contract violation (<sseq> < 1)
+ *          
+ *          
+ */
+int 
+PositionSqFileByNumber(ESL_SQFILE *sqfp, int sseq, char *errbuf)
+{
+  int status;
+  ESL_SQ *tmpsq = NULL;
+  int seqidx;
+
+  /* contract check */
+  if (sseq < 0) ESL_FAIL(eslEINCOMPAT, errbuf, "trying to position seqfile to seq index %d, index must be >= 0.", sseq+1);
+
+  /* Rewind file to beginning */
+  esl_sqfile_Position(sqfp, (off_t) 0); 
+
+  if (sqfp->data.ascii.ssi != NULL) { /* use SSI if we have it */
+    status = esl_sqfile_PositionByNumber(sqfp, sseq);
+    if     (status == eslENOTFOUND) ESL_FAIL(status, errbuf, "trying to position seqfile to seq %d, but only %" PRId64 " exist.", 
+					     sseq+1, sqfp->data.ascii.ssi->nprimary);
+    else if(status == eslEFORMAT)   ESL_FAIL(status, errbuf, "trying to position seqfile to seq %d, failed to parse SSI file.", 
+					     sseq+1);
+    else if(status != eslOK)        ESL_FAIL(status, errbuf, "trying to position seqfile to seq %d, unexpected error %d.", 
+					     sseq+1, status);
+  }
+  else { /* we don't have SSI, we have to read the whole file til we get to seq number <sseq> */
+    seqidx = 0;
+    tmpsq = esl_sq_Create();
+    while(seqidx < sseq) { 
+      status = esl_sqio_ReadInfo(sqfp, tmpsq);
+      if (status == eslEFORMAT)  ESL_FAIL(status, errbuf, "Parse failed (sequence file %s):\n%s\n", 
+							   sqfp->filename, esl_sqfile_GetErrorBuf(sqfp));
+      else if (status == eslEOF) ESL_FAIL(status, errbuf, "trying to position seqfile to seq %d, but only %d exist", 
+					  sseq+1, seqidx);
+      else if (status != eslOK)  ESL_FAIL(status, errbuf, "Unexpected error %d reading sequence file %s", 
+					  status, sqfp->filename);
+      seqidx++;
+      esl_sq_Reuse(tmpsq);
+    }
+    esl_sq_Destroy(tmpsq);
+  }
+  return eslOK;
+}
+		   
 /* Function:  write_ascii_cm()
  * Incept:    SRE, Tue Aug 13 11:45:43 2002 [St. Louis]
  *

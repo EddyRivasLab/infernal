@@ -236,7 +236,7 @@ main(int argc, char **argv)
     else if (status != eslOK)      cm_Fail("Sequence file open failed with error %d\n", status);
     if(sqfp->format == eslMSAFILE_STOCKHOLM) cm_Fail("cmstat doesn't support Stockholm alignment format for input sequence data. Please reformat to FASTA.\n");
     /* GetDBSize() reads all sequences, rewinds seq file and returns db size */
-    if((status = GetDBSize(sqfp, errbuf, &(dbsize), NULL, NULL)) != eslOK) cm_Fail(errbuf);
+    if((status = GetDBSize(sqfp, errbuf, -1, -1, &(dbsize), NULL, NULL)) != eslOK) cm_Fail(errbuf);
     esl_sqfile_Close(sqfp); 
     if (! esl_opt_GetBoolean(go, "--toponly")) dbsize *= 2;
   }
