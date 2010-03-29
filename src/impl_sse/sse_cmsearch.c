@@ -31,7 +31,7 @@ static ESL_OPTIONS options[] = {
   { "-Z",       eslARG_REAL,  NULL, NULL, NULL,  NULL,  NULL, NULL, "set Z (database size in *Mb*) to <x> for E-value calculations", 1},
   { "--toponly",eslARG_NONE,  NULL, NULL, NULL,  NULL,  NULL, NULL, "search only the top strand, not reverse complement", 1 },
   /* Cutoff level options */
-  { "--s1-F",eslARG_REAL,"0.01", NULL,   NULL,  NULL,  NULL, "--s1-E", "set stage 1 cutoff to estimated filter pass rate <x>", 2 },
+  { "--s1-F",eslARG_REAL,"0.02", NULL,   NULL,  NULL,  NULL, "--s1-E", "set stage 1 cutoff to estimated filter pass rate <x>", 2 },
   { "--s1-T",eslARG_REAL,  NULL, NULL,   NULL,  NULL,  NULL, "--s1-E", "set stage 1 cutoff to bitscore <x>",             2 },
   { "--s1-E",eslARG_REAL,  NULL, NULL,"0<x<1",  NULL,  NULL, "--s1-T", "set stage 1 cutoff to probability <x> per kb",   2 },
   { "--s2-T",eslARG_REAL,  NULL, NULL,   NULL,  NULL,  NULL, "--s2-E", "set stage 2 cutoff to bitscore <x>",             2 },
@@ -189,11 +189,12 @@ realW = cm->smx->W;
 
   /* Set output files */
   if (o_glbf_all) {
-    int length = 16;
+    int length = 7;
     char *fname;
     ESL_ALLOC(fname, 25*sizeof(char));
     if (strlen(cmfile) - 3 < length) length = strlen(cmfile) - 3;
-    strncpy(fname,cmfile,length);
+    strncpy(fname,&cmfile[strlen(cmfile)-(length+4)],length);
+    fname[length] = '\0';
     if ((S0_OFILE = fopen(strcat(fname,".s0.glbf"),"w")) == NULL) { cm_Fail("Couldn't open stage 0 glbf file for writing!"); }
     fname[length] = '\0';
     if ((S1_OFILE = fopen(strcat(fname,".s1.glbf"),"w")) == NULL) { cm_Fail("Couldn't open stage 1 glbf file for writing!"); }
