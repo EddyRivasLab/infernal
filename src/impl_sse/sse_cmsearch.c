@@ -33,11 +33,11 @@ static ESL_OPTIONS options[] = {
   /* Cutoff level options */
   { "--s1-F",eslARG_REAL,"0.02", NULL,   NULL,  NULL,  NULL, "--s1-E", "set stage 1 cutoff to estimated filter pass rate <x>", 2 },
   { "--s1-T",eslARG_REAL,  NULL, NULL,   NULL,  NULL,  NULL, "--s1-E", "set stage 1 cutoff to bitscore <x>",             2 },
-  { "--s1-E",eslARG_REAL,  NULL, NULL,"0<x<1",  NULL,  NULL, "--s1-T", "set stage 1 cutoff to probability <x> per kb",   2 },
-  { "--s2-T",eslARG_REAL,  NULL, NULL,   NULL,  NULL,  NULL, "--s2-E", "set stage 2 cutoff to bitscore <x>",             2 },
-  { "--s2-E",eslARG_REAL,"1e-3", NULL,"0<x<1",  NULL,  NULL, "--s2-T", "set stage 2 cutoff to probability <x>",          2 },
+  { "--s1-E",eslARG_REAL,  NULL, NULL,"0<x<1",  NULL,  NULL, "--s1-T", "set stage 1 cutoff to e-value <x> per kb",       2 },
+  { "--s2-T",eslARG_REAL,  NULL, NULL,   NULL,  NULL,  NULL, "--s2-P", "set stage 2 cutoff to bitscore <x>",             2 },
+  { "--s2-P",eslARG_REAL,"1e-5", NULL,"0<x<1",  NULL,  NULL, "--s2-T", "set stage 2 cutoff to probability <x>",          2 },
   { "--s3-T",eslARG_REAL,  NULL, NULL,   NULL,  NULL,  NULL, "--s3-E", "set stage 3 cutoff to bitscore <x>",             2 },
-  { "--s3-E",eslARG_REAL,"1e-5", NULL,"0<x<1",  NULL,  NULL, "--s3-T", "set stage 3 cutoff to probability <x>",          2 },
+  { "--s3-E",eslARG_REAL,   "1", NULL,   NULL,  NULL,  NULL, "--s3-T", "set stage 3 cutoff to e-value <x>",              2 },
   /* Meta-model parameters */
   { "--mmp_auto",eslARG_NONE,"default",NULL, NULL, "--mmp_manual",NULL,NULL,"automatic determination of MSCYK model parameters",3},
   { "--mmp_manual",eslARG_NONE,  FALSE,NULL, NULL, "--mmp_auto",  NULL,NULL,"manual determination of MSCYK model parameters",3},
@@ -82,6 +82,7 @@ main(int argc, char **argv)
   float           s1_fcut = 0.;
   float           s2_pcut = 0;
   float           s3_pcut = 0;
+  float           s3_ecut = 1;
   float           e_cutoff, f_cutoff;
   float           f_S_Sa, f_S_SM, f_S_e;
   float           nullL;
@@ -139,7 +140,7 @@ main(int argc, char **argv)
     if ((status = UpdateExpsForDBSize(cm, errbuf, dbsize)) != eslOK) cm_Fail(errbuf);
   }
   else {
-    cm_Fail("SIMD filters require calibration; please run cmcalibrate before continuing.");
+    cm_Fail("Filters require calibration; please run cmcalibrate before continuing.");
   }
 
   cm->config_opts |= CM_CONFIG_LOCAL;
@@ -249,12 +250,12 @@ printf("E-val at rank 10 = %1.3e\t",eval);
     if (esl_opt_IsOn(go, "--s1-E")) {
       e_cutoff = esl_opt_GetReal(go,"--s1-E");
       f_cutoff = esl_exp_invcdf(1.-e_cutoff,ccm_mu_extrap,ccm_lambda);
-      fprintf(stderr,"Stage 1: P-value cutoff %.2e per kb -> score cutoff %.2f\n",e_cutoff,f_cutoff);
+      fprintf(stderr,"Stage 1: E-value cutoff %.2e per kb -> score cutoff %.2f\n",e_cutoff,f_cutoff);
     }
     else /*if (esl_opt_IsOn(go, "--s1-F"))*/ {
       e_cutoff = esl_opt_GetReal(go,"--s1-F")*500/realW;
       f_cutoff = esl_exp_invcdf(1.-e_cutoff,ccm_mu_extrap,ccm_lambda);
-      fprintf(stderr,"Stage 1: Filter pass rate %f -> P-value cutoff %.2e per kb -> score cutoff %.2f\n",esl_opt_GetReal(go,"--s1-F"),e_cutoff,f_cutoff);
+      fprintf(stderr,"Stage 1: Filter pass rate %f -> E-value cutoff %.2e per kb -> score cutoff %.2f\n",esl_opt_GetReal(go,"--s1-F"),e_cutoff,f_cutoff);
     }
 
     s1_fcut = f_cutoff;
@@ -285,12 +286,11 @@ printf("E-val at rank 10 = %1.3e\t",eval);
     }
   }
   else {
-    e_cutoff = esl_opt_GetReal(go,"--s2-E");
-    // FIXME FIXME FIXME  1.-e_cutoff rounds to 1 in the range of 1e-18 -> f_cutoff = inf, even though the
+    s2_pcut = esl_opt_GetReal(go,"--s2-P");
+    // FIXME FIXME FIXME  1.-p_cutoff rounds to 1 in the range of 1e-18 -> f_cutoff = inf, even though the
     // FIXME FIXME FIXME  effective possible range goes as far as about 1e-24 (for RF00037 at least)
-    f_cutoff = esl_exp_invcdf(1.-e_cutoff,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
+    f_cutoff = esl_exp_invcdf(1.-s2_pcut,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
     fprintf(stderr,"Stage 2: P-value cutoff %.2e\n",e_cutoff);
-    s2_pcut   = e_cutoff;
     s2_cutoff = wordify(ocm->scale_w, f_cutoff);
 //fprintf(stderr,"s2 %e %f %e %d\n",e_cutoff,f_cutoff,s2_pcut,s2_cutoff);
     if (s2_cutoff == WORDMAX) {
@@ -309,10 +309,11 @@ printf("E-val at rank 10 = %1.3e\t",eval);
   }
   else {
     e_cutoff = esl_opt_GetReal(go,"--s3-E");
+    s3_ecut = e_cutoff;
+    s3_pcut = e_cutoff/cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->cur_eff_dbsize;
 //FIXME!!  Need to actually check that the cm has been calibrated before we start pulling data from cm->stats
-    f_cutoff = esl_exp_invcdf(1.-e_cutoff,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
-    fprintf(stderr,"Stage 3: P-value cutoff %.2e\n",e_cutoff);
-    s3_pcut = e_cutoff;
+    f_cutoff = esl_exp_invcdf(1.-s3_pcut,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[50]]->lambda);
+    fprintf(stderr,"Stage 3: E-value cutoff %.2e\n",e_cutoff);
   }
   s3_cutoff = f_cutoff;
 
@@ -397,10 +398,12 @@ PIPELINE:
         /* Stage 3: full-precision CYK */
         //sc3 = SSE_CYKInsideScore(cm, seq->dsq, seq->n, 0, start, stop);
         results = CreateResults(INIT_RESULTS);
+/*
         if (cm->si == NULL) { CreateSearchInfo(cm, E_CUTOFF, s3_cutoff, s3_pcut); }
         else { UpdateSearchInfoCutoff(cm, cm->si->nrounds, E_CUTOFF, s3_cutoff, s3_pcut); }
         ValidateSearchInfo(cm, cm->si);
-        //DispatchSearch(cm, errbuf, cm->si->nrounds, seq->dsq, windows->data[i].start, windows->data[i].stop, &results, 1000, NULL, &sc3);
+        DispatchSearch(cm, errbuf, cm->si->nrounds, seq->dsq, windows->data[i].start, windows->data[i].stop, &results, 1000, NULL, &sc3);
+*/
         SSE_CYKScan(cm, errbuf, cm->smx, seq->dsq, windows->data[i].start, windows->data[i].stop, s3_cutoff, results, TRUE, NULL, &sc3);
 
         for (int hitloop = 0; hitloop < results->num_results; hitloop++) {
@@ -411,7 +414,7 @@ PIPELINE:
           null3_correction = 0.; /* Hit resolution in CYKSCan already applies null3 */
           p3 = esl_exp_surv((float)sc3-null3_correction,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->mu_extrap,cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->lambda);
           e3 = p3 * cm->stats->expAA[EXP_CM_LC][cm->stats->gc2p[gc]]->cur_eff_dbsize;
-          if ((esl_opt_IsOn(go,"--s3-T") && (sc3 >= s3_cutoff)) || /*(p3 < s3_pcut) ||*/ (e3 < 1.)) {
+          if ((esl_opt_IsOn(go,"--s3-T") && (sc3 >= s3_cutoff)) || (e3 < s3_ecut)) {
             /* Report hit */
             if (o_glbf == 3) {
               if (!is_reversed)
