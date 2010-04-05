@@ -95,9 +95,6 @@ static ESL_OPTIONS options[] = {
   /* Using only a single CM from a multi-CM file */
   { "--cm-idx",   eslARG_INT,   NULL, NULL,  "n>0",     NULL,      NULL, "--cm-name", "only align seqs with CM number <n>    in the CM file",  10 },
   { "--cm-name",  eslARG_STRING,NULL, NULL,  NULL,      NULL,      NULL,  "--cm-idx", "only align seqs with the CM named <s> in the CM file",  10 },
-  /* Specifying a range of sequences to align, instead of the entire sequence file */
-  { "--sseq",     eslARG_INT,    NULL, NULL,"n>0",      NULL,      NULL,        NULL, "first seq to align in <seqfile> is seq number <n>",  11 },
-  { "--eseq",     eslARG_INT,    NULL, NULL,"n>0",      NULL,      NULL,        NULL, "final seq to align in <seqfile> is seq number <n>",  11 },
   /* Verbose output files */
   { "--tfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump individual sequence parsetrees to file <f>", 7 },
   { "--ifile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump information on per-sequence inserts to file <f>", 7 },
@@ -277,8 +274,6 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
       puts("\nusing a single CM from a multi-CM file:");
       esl_opt_DisplayHelp(stdout, go, 10, 2, 80);
-      puts("\nspecifying a range of sequences to search, instead of the full target file:");
-      esl_opt_DisplayHelp(stdout, go, 11, 2, 80);
       puts("\nverbose output files and debugging:");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       puts("\nexperimental options for plan7 banding using HMMER3 code:");
@@ -309,8 +304,6 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 5, 2, 80);
       puts("\nusing a single CM from a multi-CM file:");
       esl_opt_DisplayHelp(stdout, go, 10, 2, 80);
-      puts("\nspecifying a range of sequences to search, instead of the full target file:");
-      esl_opt_DisplayHelp(stdout, go, 11, 2, 80);
       puts("\nverbose output files and debugging:");
       esl_opt_DisplayHelp(stdout, go, 7, 2, 80);
       exit(0);
@@ -329,12 +322,6 @@ main(int argc, char **argv)
   if ((esl_opt_GetBoolean(go, "--small")) && (! ((esl_opt_GetBoolean(go, "--nonbanded")) || (esl_opt_GetBoolean(go, "--qdb"))))) { 
     esl_fatal("Error parsing options, --small is only allowed in combination with --nonbanded or --qdb.\n");
   }
-  if ((esl_opt_IsOn(go, "--sseq")) && (esl_opt_IsOn(go, "--eseq"))) { 
-    if((esl_opt_GetInteger(go, "--sseq")) > (esl_opt_GetInteger(go, "--eseq"))) { 
-      printf("Error parsing options, both --sseq <x> and --eseq <y> are used, but <x> > <y>\n");
-      exit(1);
-    }
-  }      
   
   /* Initialize what we can in the config structure (without knowing the input alphabet yet).
    */
@@ -628,7 +615,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int       keep_reading = TRUE;
   int       do_output_to_tmp = TRUE; /* should we output to cfg->tmpfp (and then merge at end) or to cfg->ofp directly */
   int       created_tmpfile = FALSE; /* set to TRUE if we needed and opened the tmpfile */
-  int       seqpos = 0;              /* index of current sequence in the sequence file (not nec number of seqs we've aligned (if --sseq)) */
   int       nseq_to_read;            /* number of sequences to read from sqfp for current chunk */
   int       do_read_all;             /* TRUE to read all seqs from current chunk, FALSE not to */
 
@@ -658,13 +644,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       if((status   = initialize_cm(go, cfg, errbuf, cm))                    != eslOK)    cm_Fail(errbuf);
       print_cm_info (go, cfg, errbuf, cm);
       
-      seqpos = 0;
-      /* If nec, position the file to the first seq specified by --sseq */
-      if(esl_opt_IsOn(go, "--sseq")) { 
-	if((status = PositionSqFileByNumber(cfg->sqfp, esl_opt_GetInteger(go, "--sseq")-1, errbuf)) != eslOK) cm_Fail(errbuf);
-	seqpos = esl_opt_GetInteger(go, "--sseq")-1;
-      }
-
       /* read in chunksize seqs at a time, align each of them and output the result */
       keep_reading = TRUE;
       do_output_to_tmp = TRUE; /* until proven otherwise */
@@ -672,50 +651,26 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	seqs_to_aln = CreateSeqsToAln(chunksize, FALSE);
 
 	/* determine the number of sequences to read from the input file: 
-	 * if --eseq not enabled { 
-	 *    if   do_small : read <chunksize> seqs
+	 *    if   do_small                       : read <chunksize> seqs
 	 *    else (--ileaved or --bigmem enabled): read all seqs
-	 * }
-	 * else if --eseq <n> enabled {
-	 *    if   do_small : read MIN(<chunksize>, <n>-seqpos) seqs
-	 *    else: (--ileaved or --bigmem enabled): read <n> seqs
-	 * }
-	 * if --eseq <n> is not enabled, <eseq> == -1
-	 * else eseq == <n>.
 	 */
-	if(! esl_opt_IsOn(go, "--eseq")) { 
-	  nseq_to_read = (do_small) ? chunksize : 0; /* 0 is a flag for 'read all seqs' in ReadSeqsToAln() */
-	}
-	else { /* --eseq enabled */
-	  nseq_to_read = (do_small) ? ESL_MIN(chunksize, esl_opt_GetInteger(go, "--eseq") - seqpos) : esl_opt_GetInteger(go, "--eseq"); 
-	}
+	nseq_to_read = (do_small) ? chunksize : 0; /* 0 is a flag for 'read all seqs' in ReadSeqsToAln() */
 
 	status = ReadSeqsToAln(cfg->abc, cfg->sqfp, nseq_to_read, seqs_to_aln, 
 			       FALSE); /* i'm not an mpi master */
-	seqpos += seqs_to_aln->nseq;
 
 	if(seqs_to_aln->nseq > 0) { 
 	  /* determine if we're finished aligning all seqs we need to align (either all seqs or <n> from --eseq <n>) */ 
-	  if((status == eslEOF) || 
-	     (esl_opt_IsOn(go, "--eseq") && (seqpos == esl_opt_GetInteger(go, "--eseq")))) 
-	    {
-	      keep_reading = FALSE;
-	      if(cfg->nali == 0) { 
-		/* If we get here, first alignment will be the full alignment b/c either n < chunksize 
-		 * seqs in target file or --ileaved enabled, either way we don't write to tmpfile, 
-		 * instead we output directly to final output file. 
-		 */
-		do_output_to_tmp = FALSE; /* note, this only occurs if keep_reading was set to FALSE */
-	      }
-	      if(esl_opt_IsOn(go, "--eseq")) { 
-		if(seqpos != esl_opt_GetInteger(go, "--eseq")) { 
-		  cm_Fail("Ran out of seqs before getting to final seq %d (from --eseq)", esl_opt_GetInteger(go, "--eseq"));
-		}
-		else if (status != eslOK) { 
-		  cm_Fail("Error reading sequence file."); 
-		}
-	      }
+	  if(status == eslEOF) {
+	    keep_reading = FALSE;
+	    if(cfg->nali == 0) { 
+	      /* If we get here, first alignment will be the full alignment b/c either n < chunksize 
+	       * seqs in target file or --ileaved enabled, either way we don't write to tmpfile, 
+	       * instead we output directly to final output file. 
+	       */
+	      do_output_to_tmp = FALSE; /* note, this only occurs if keep_reading was set to FALSE */
 	    }
+	  }
 	  if (do_output_to_tmp && cfg->nali == 0) { 
 	    /* first aln for temporary output file, open the file */	
 	    if ((status = esl_tmpfile_named(tmpfile, &(cfg->tmpfp))) != eslOK) { 
@@ -895,21 +850,12 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       determine_nseq_per_worker(go, cfg, cm, &nseq_per_worker); /* this func dies internally if there's some error */
       ESL_DPRINTF1(("nseq_per_worker: %d\n", nseq_per_worker));
 
-      seqpos = 0;
-      /* If nec, position the file to the first seq specified by --sseq */
-      if(esl_opt_IsOn(go, "--sseq")) { 
-	if((status = PositionSqFileByNumber(cfg->sqfp, esl_opt_GetInteger(go, "--sseq")-1, errbuf)) != eslOK) cm_Fail(errbuf);
-	seqpos = esl_opt_GetInteger(go, "--sseq")-1;
-      }
-
       /* Read in chunksize seqs at a time from target file.
        * For each chunk, we send <nseq_per_worker> seqs to each worker,
        * once a chunk is completed by all workers, we create the alignment 
        * of the chunk and output it to a temp file.
-       * Two special cases:
-       * if do_small (either --ileaved or --bigmem enabled), read all seqs (first chunk is only chunk, contains all seqs)
-       * if --eseq <n> enabled: we only align up to sequence number <n>, so
-       *                        we have to take care to stop reading at <n>.
+       * A special case:
+       * if (!do_small) (either --ileaved or --bigmem enabled), read all seqs (first chunk is only chunk, contains all seqs)
        */
       keep_reading     = TRUE;
       do_output_to_tmp = TRUE; /* until proven otherwise */
@@ -919,52 +865,28 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	all_seqs_to_aln = CreateSeqsToAln(chunksize, TRUE);
 
 	/* determine the number of sequences to read from the input file: 
-	 * if --eseq not enabled { 
-	 *    if   do_small : read <chunksize> seqs
+	 *    if   do_small                       : read <chunksize> seqs
 	 *    else (--ileaved or --bigmem enabled): read all seqs
-	 * }
-	 * else if --eseq <n> enabled {
-	 *    if   do_small : read MIN(<chunksize>, <n>-seqpos) seqs
-	 *    else: (--ileaved or --bigmem enabled): read <n> seqs
-	 * }
-	 * if --eseq <n> is not enabled, <eseq> == -1
-	 * else eseq == <n>.
 	 */
-	if(! esl_opt_IsOn(go, "--eseq")) { 
-	  nseq_to_read = (do_small) ? chunksize : 0; /* 0 is a flag for 'read all seqs' in ReadSeqsToAln() */
-	}
-	else { /* --eseq enabled */
-	  nseq_to_read = (do_small) ? ESL_MIN(chunksize, esl_opt_GetInteger(go, "--eseq") - seqpos) : esl_opt_GetInteger(go, "--eseq"); 
-	}
+	nseq_to_read = (do_small) ? chunksize : 0; /* 0 is a flag for 'read all seqs' in ReadSeqsToAln() */
 
 	status = ReadSeqsToAln(cfg->abc, cfg->sqfp, nseq_to_read, all_seqs_to_aln,
 			       TRUE); /* i am an mpi master */
-	seqpos += all_seqs_to_aln->nseq;
 
 	if(all_seqs_to_aln->nseq > 0) { 
 	  nseq_remaining = all_seqs_to_aln->nseq;
 	  nseq_sent = 0;
 
-	  if((status == eslEOF) || 
-	     (esl_opt_IsOn(go, "--eseq") && (seqpos == esl_opt_GetInteger(go, "--eseq")))) 
-	    {
-	      keep_reading = FALSE;
-	      if(cfg->nali == 0) { 
-		/* If we get here, first alignment will be the full alignment b/c either n < chunksize 
-		 * seqs in target file or --ileaved enabled, either way we don't write to tmpfile, 
-		 * instead we output directly to final output file. 
-		 */
-		do_output_to_tmp = FALSE; /* note, this only occurs if keep_reading was set to FALSE */
-	      }
-	      if(esl_opt_IsOn(go, "--eseq")) { 
-		if(seqpos != esl_opt_GetInteger(go, "--eseq")) { 
-		  cm_Fail("Ran out of seqs before getting to final seq %d (from --eseq)", esl_opt_GetInteger(go, "--eseq"));
-		}
-		else if (status != eslOK) { 
-		  cm_Fail("Error reading sequence file."); 
-		}
-	      }
+	  if(status == eslEOF) { 
+	    keep_reading = FALSE;
+	    if(cfg->nali == 0) { 
+	      /* If we get here, first alignment will be the full alignment b/c either n < chunksize 
+	       * seqs in target file or --ileaved enabled, either way we don't write to tmpfile, 
+	       * instead we output directly to final output file. 
+	       */
+	      do_output_to_tmp = FALSE; /* note, this only occurs if keep_reading was set to FALSE */
 	    }
+	  }
 	  if (do_output_to_tmp && cfg->nali == 0) { 
 	    /* first aln for temporary output file, open the file */
 	    if ((status = esl_tmpfile_named(tmpfile, &(cfg->tmpfp))) != eslOK) { 
@@ -2185,7 +2107,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
 
   /* read all alignments, there should be cfg->nali of them */
   for(ai = 0; ai < cfg->nali; ai++) { 
-    status = esl_msa_ReadNonSeqInfoPfam(afp, NULL, cfg->abc, -1, NULL, NULL, &(msaA[ai]), &nseq_cur, &alen_cur, &ngs_cur, &maxname_cur, &maxgf_cur, &maxgc_cur, &maxgr_cur, NULL, NULL, NULL, NULL, NULL);
+    status = esl_msa_ReadInfoPfam(afp, NULL, cfg->abc, -1, NULL, NULL, &(msaA[ai]), &nseq_cur, &alen_cur, &ngs_cur, &maxname_cur, &maxgf_cur, &maxgc_cur, &maxgr_cur, NULL, NULL, NULL, NULL, NULL);
     if      (status == eslEFORMAT) cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
     else if (status == eslEINVAL)  cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
     else if (status != eslOK)      cm_Fail("Rereading alignment %d for merging, parse error:\n%s\n", ai+1, afp->errbuf);
@@ -2210,7 +2132,7 @@ create_and_output_final_msa(const ESL_GETOPTS *go, const struct cfg_s *cfg, FILE
     update_maxins_and_maxel(msaA[ai], cm->clen, msaA[ai]->alen, maxins, maxel);
   }
   /* final check, make sure we've read all msas from the file, we should have, we only printed cfg->nali */
-  status = esl_msa_ReadNonSeqInfoPfam(afp, NULL, cfg->abc, -1, NULL, NULL, NULL, 
+  status = esl_msa_ReadInfoPfam(afp, NULL, cfg->abc, -1, NULL, NULL, NULL, 
 				      NULL, NULL, NULL, NULL, NULL, NULL, NULL, 
 				      NULL, NULL, NULL, NULL, NULL);
   if(status != eslEOF) ESL_FAIL(status, errbuf, "More alignments in temp file than expected.");

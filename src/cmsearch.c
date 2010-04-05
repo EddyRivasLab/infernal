@@ -113,12 +113,9 @@ static ESL_OPTIONS options[] = {
   /* Using only a single CM from a multi-CM file */
   { "--cm-idx",       eslARG_INT,     NULL,      NULL, "n>0",                 NULL,      NULL, "--cm-name", "only search with CM number <n>    in the CM file",  11 },
   { "--cm-name",      eslARG_STRING,  NULL,      NULL, NULL,                 NULL,      NULL,  "--cm-idx", "only search with the CM named <s> in the CM file",  11 },
-  /* Specifying a range of sequences to search, instead of the entire sequence file */
-  { "--sseq",         eslARG_INT,     NULL,      NULL,"n>0",                 NULL,      NULL,       NULL, "first seq to search in <seqfile> is seq number <n>",  12 },
-  { "--eseq",         eslARG_INT,     NULL,      NULL,"n>0",                 NULL,      NULL,       NULL, "final seq to search in <seqfile> is seq number <n>",  12 },
   /* verbose output files */
   { "--tabfile",      eslARG_OUTFILE, NULL,      NULL, NULL,                 NULL,      NULL,"--forecast", "save hits in tabular format to file <f>", 9 },
-  { "--gcfile",       eslARG_OUTFILE, NULL,      NULL, NULL,                 NULL,      NULL,"--sseq,--eseq", "save GC content stats of target sequence file to <f>", 9 },
+  { "--gcfile",       eslARG_OUTFILE, NULL,      NULL, NULL,                 NULL,      NULL,        NULL, "save GC content stats of target sequence file to <f>", 9 },
   /* Setting output alphabet */
   { "--rna",          eslARG_NONE,"default",     NULL, NULL,             ALPHOPTS,      NULL,        NULL, "output hit alignments as RNA sequence data", 10 },
   { "--dna",          eslARG_NONE,   FALSE,      NULL, NULL,             ALPHOPTS,      NULL,        NULL, "output hit alignments as DNA (not RNA) sequence data", 10 },
@@ -244,8 +241,6 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       puts("\nusing a single CM from a multi-CM file:");
       esl_opt_DisplayHelp(stdout, go, 11, 2, 80);
-      puts("\nspecifying a range of sequences to search, instead of the full target file:");
-      esl_opt_DisplayHelp(stdout, go, 12, 2, 80);
       puts("\nverbose output files:");
       esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
       puts("\noptions for selecting output alphabet:");
@@ -280,8 +275,6 @@ main(int argc, char **argv)
       esl_opt_DisplayHelp(stdout, go, 8, 2, 80);
       puts("\nusing a single CM from a multi-CM file:");
       esl_opt_DisplayHelp(stdout, go, 11, 2, 80);
-      puts("\nspecifying a range of sequences to search, instead of the full target file:");
-      esl_opt_DisplayHelp(stdout, go, 12, 2, 80);
       puts("\nverbose output files:");
       esl_opt_DisplayHelp(stdout, go, 9, 2, 80);
       puts("\noptions for selecting output alphabet:");
@@ -312,12 +305,6 @@ main(int argc, char **argv)
       exit(1);
     }
   }
-  if ((esl_opt_IsOn(go, "--sseq")) && (esl_opt_IsOn(go, "--eseq"))) { 
-    if((esl_opt_GetInteger(go, "--sseq")) > (esl_opt_GetInteger(go, "--eseq"))) { 
-      printf("Error parsing options, both --sseq <x> and --eseq <y> are used, but <x> > <y>\n");
-      exit(1);
-    }
-  }      
   
   /* Initialize what we can in the config structure (without knowing the input alphabet yet).
    */
@@ -459,17 +446,6 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   else if (status != eslOK)      ESL_FAIL(status, errbuf, "Sequence file open failed with error %d\n", status);
   cfg->fmt = cfg->sqfp->format;
 
-  /* if we need to, open the SSI index, if it exists */
-  if(esl_opt_IsOn(go, "--sseq") || esl_opt_IsOn(go, "--eseq")) { 
-    status = esl_sqfile_OpenSSI(cfg->sqfp, NULL);
-    if(status != eslOK) { 
-      if      (status == eslEFORMAT)   ESL_FAIL(status, errbuf, "SSI index is in incorrect format\n");
-      else if (status == eslERANGE)    ESL_FAIL(status, errbuf, "SSI index is in 64-bit format and we can't read it\n");
-      else if (status != eslENOTFOUND) ESL_FAIL(status, errbuf, "Failed to open existing SSI index\n");
-    }
-    /* we don't die if <seqfile>.ssi does not exist (in which case eslENOTFOUND is returned) */
-  }
-
   /* Set the sqfile alphabet as RNA, if it's DNA we're fine. 
    * If it's not RNA nor DNA, we can't deal with it anyway,
    * so we're hardcoded to RNA.
@@ -479,10 +455,7 @@ init_master_cfg(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   esl_sqfile_SetDigital(cfg->sqfp, cfg->abc);
 
   /* GetDBSize() reads all sequences, rewinds seq file and returns db size */
-  if((status = GetDBSize(cfg->sqfp, errbuf, 
-			 (esl_opt_IsOn(go, "--sseq")) ? esl_opt_GetInteger(go, "--sseq")-1 : -1,
-			 (esl_opt_IsOn(go, "--eseq")) ? esl_opt_GetInteger(go, "--eseq")-1 : -1,
-			 &(cfg->dbsize), &(cfg->nseq), &(cfg->namewidth))) != eslOK) return status;  
+  if((status = GetDBSize(cfg->sqfp, errbuf, &(cfg->dbsize), &(cfg->nseq), &(cfg->namewidth))) != eslOK) return status;  
   if((! esl_opt_GetBoolean(go, "--toponly")) && (! esl_opt_GetBoolean(go, "--bottomonly"))) cfg->dbsize *= 2;
 
   /* overwrite dbsize if -Z enabled */
@@ -542,7 +515,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   char          *cm_namedashes = NULL;  /* string of dashes for underlining 'model name' column in tab output */
   int            ni;                    /* index for filling dashes strings */
   int            used_at_least_one_cm = FALSE; /* only used if --cm-idx and --cm-name options are enabled */
-  int            seqidx = 0;            /* index of current sequence in the sequence file (not nec number of seqs we've searched (if --sseq)) */
   
   if(w == NULL) cm_Fail("serial_master(): memory error, stopwatch not created.\n");
 
@@ -617,13 +589,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
       using_e_cutoff  = (cm->si->cutoff_type[cm->si->nrounds] == E_CUTOFF)     ? TRUE : FALSE;
       using_sc_cutoff = (cm->si->cutoff_type[cm->si->nrounds] == SCORE_CUTOFF) ? TRUE : FALSE;
 
-      seqidx = 0;
-      /* If nec, position the file to the first seq specified by --sseq */
-      if(esl_opt_IsOn(go, "--sseq")) { 
-	if((status = PositionSqFileByNumber(cfg->sqfp, esl_opt_GetInteger(go, "--sseq")-1, errbuf)) != eslOK) cm_Fail(errbuf);
-	seqidx = esl_opt_GetInteger(go, "--sseq")-1;
-      }
-	 
       esl_stopwatch_Start(w);
       while ((status2 = read_next_search_seq(cfg->abc, cfg->sqfp, cfg->do_rc, &dbseq)) == eslOK)
 	{
@@ -648,16 +613,11 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
 	    esl_sq_Destroy(dbseq->sq[rci]);
 	  }
 	  free(dbseq);
-	  seqidx++;
-	  if((esl_opt_IsOn(go, "--eseq")) && (seqidx == esl_opt_GetInteger(go, "--eseq"))) break; /* other way out of the loop */
  	}
       esl_stopwatch_Stop(w);
-      if ((esl_opt_IsOn(go, "--eseq")) && (status2 != eslOK)) { /* we ran out of seqs too early, we never got to --eseq */
-	cm_Fail("Ran out of seqs before getting to final seq %d (from --eseq)", esl_opt_GetInteger(go, "--eseq"));
-      }
-      else if ((! esl_opt_IsOn(go, "--eseq")) && status2 != eslEOF) cm_Fail("Parse failed!, file %s:\n%s", 
-									    cfg->sqfp->filename, esl_sqfile_GetErrorBuf(cfg->sqfp));
-
+      if (status2 != eslEOF) cm_Fail("Parse failed!, file %s:\n%s", 
+				     cfg->sqfp->filename, esl_sqfile_GetErrorBuf(cfg->sqfp));
+      
       /* convert cm_surv_fractA[] values from residue counts into fractions */
       for(n = 0; n <= cm->si->nrounds; n++) cm_surv_fractA[n] /= (double) (cfg->dbsize);
       if(cm->flags & CMH_EXPTAIL_STATS) { if((status = print_searchinfo_for_calibrated_cm  (go, cfg, errbuf, cm, cm_surv_fractA, cm_nhitsA, w->elapsed, cm_psec, NULL)) != eslOK) cm_Fail(errbuf); }
@@ -762,7 +722,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   char     *cm_namedashes = NULL;   /* string of dashes for underlining 'model name' column in tab output */
   int       ni;                     /* index for filling dashes strings */
   int       used_at_least_one_cm = FALSE; /* only used if --cm-idx and --cm-name options are enabled */
-  int       seqidx = 0;             /* index of current sequence in the sequence file (not nec number of seqs we've searched (if --sseq)) */
 
   ESL_STOPWATCH *w  = esl_stopwatch_Create();
   if(w == NULL) cm_Fail("mpi_master(): memory error, stopwatch not created.\n");  
@@ -890,14 +849,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
       have_work = TRUE;	/* TRUE while work remains  */
       seqpos = 1;
       in_rc = FALSE;
-      seqidx = 0;
       
-      /* If nec, position the file to the first seq specified by --sseq */
-      if(esl_opt_IsOn(go, "--sseq")) { 
-	if((status = PositionSqFileByNumber(cfg->sqfp, esl_opt_GetInteger(go, "--sseq")-1, errbuf)) != eslOK) cm_Fail(errbuf);
-	seqidx = esl_opt_GetInteger(go, "--sseq")-1;
-      }
-
       esl_stopwatch_Start(w);
       while (have_work || nproc_working)
 	{
@@ -905,12 +857,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 	    {
 	      need_seq = FALSE;
 	      /* read a new seq */
-	      if     ((esl_opt_IsOn(go, "--eseq")) && (seqidx == esl_opt_GetInteger(go, "--eseq"))) 
-		{ 
-		  /* we've already read and processed the final seq we'll search */
-		  have_work = FALSE;
-		}
-	      else if((status = read_next_search_seq(cfg->abc, cfg->sqfp, cfg->do_rc, &dbseq)) == eslOK) 
+	      if((status = read_next_search_seq(cfg->abc, cfg->sqfp, cfg->do_rc, &dbseq)) == eslOK) 
 		{
 		  ndbseq++;
 		  ESL_DASSERT1((ndbseq < cfg->nproc));
@@ -930,7 +877,6 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
 		  sentlist[si]  = FALSE;
 		  have_work = TRUE;
 		  chunksize = DetermineSeqChunksize(cfg->nproc, dbseq->sq[0]->n, cm->W);
-		  seqidx++;
 		  ESL_DPRINTF1(("L: %ld chunksize: %d\n", dbseq->sq[0]->n, chunksize));
 		}
 	      else if(status == eslEOF) have_work = FALSE;
