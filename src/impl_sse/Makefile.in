@@ -1,0 +1,64 @@
+#################################################################
+# Infernal SSE optimized implementation
+# src/impl_sse Makefile
+#################################################################
+
+CC             = @CC@
+CFLAGS         = @CFLAGS@
+SIMDFLAGS      = @SIMD_CFLAGS@
+
+DEFS           = @DEFS@
+LIBS           = -leasel @LIBS@ -lm
+MYLIBS         = -linfernal -lhmmer -lm
+
+ESLDIR         = ../../easel
+HMMDIR         = ../../hmmer/src
+
+SHELL          = /bin/sh
+MYLIBDIRS      = -L${HMMDIR} -L${ESLDIR} -L.. -L.
+MYINCDIRS      = -I${ESLDIR} \
+                 -I. \
+                 -I.. \
+                 -I${HMMDIR}
+
+PROGS = sse_cmsearch
+
+OBJS  = cm_optimized.o\
+        sse_cm_dpsearch.o\
+        sse_cm_dpsmall.o\
+        sse_cmcons_hitmx.o\
+        sse_cmcons_mscyk.o\
+        sse_util.o
+
+HDRS  = ../funcs.h\
+        ../structs.h\
+        impl_sse.h
+
+all: $(PROGS)
+
+.c.o: 
+	$(CC) $(CFLAGS) $(SIMDFLAGS) $(DEFS) $(MYINCDIRS) -c $<
+
+$(PROGS): %: %.o $(OBJS) ${HDRS}
+	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIRS) $(MYLIBDIRS) -o $@ $@.o $(OBJS) $(MYLIBS) $(LIBS)
+
+driver: $(OBJS) ${HDRS}
+	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIRS) $(MYLIBDIRS) -o sse-bmark -DIMPL_SEARCH_BENCHMARK sse_cm_dpsearch.c $(MYLIBS) $(LIBS)
+	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIRS) $(MYLIBDIRS) -o sse-cyk -DIMPLSSE_SMALL_TEST sse_cm_dpsmall.c sse_util.o cm_optimized.o $(MYLIBS) $(LIBS)
+	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIRS) $(MYLIBDIRS) -o sse-mscyk -DIMPL_MSCYK_TEST sse_cmcons_mscyk.c sse_cmcons_hitmx.o sse_cm_dpsearch.o cm_optimized.o $(MYLIBS) $(LIBS)
+	$(CC) $(SIMDFLAGS) $(CFLAGS) $(DEFS) $(MYINCDIRS) $(MYLIBDIRS) -o mscyk-test -DIMPL_MSCYK_TEST2 sse_cmcons_mscyk.c sse_cmcons_hitmx.o sse_cm_dpsearch.o cm_optimized.o $(MYLIBS) $(LIBS)
+
+distclean:
+	${MAKE} clean
+	-rm -f Makefile
+
+clean:
+	-rm -f *.o *~ Makefile.bak core $(PROGS) TAGS gmon.out
+	-rm -f sse-bmark sse-cyk sse-mscyk mscyk-test
+
+TAGS:
+	etags  *.c *.h Makefile.in
+
+###########
+# @LICENSE@
+###########
