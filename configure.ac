@@ -345,6 +345,7 @@ AC_CONFIG_HEADERS(src/config.h)
 # Write Infernal's config.h header
 #
 AC_CONFIG_FILES(src/Makefile)
+AC_CONFIG_FILES(src/impl_sse/Makefile)
 AC_CONFIG_FILES(testsuite/Makefile)
 AC_CONFIG_HEADERS([easel/esl_config.h])
 AC_CONFIG_FILES([easel/miniapps/Makefile])
