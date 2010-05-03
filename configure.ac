@@ -184,13 +184,59 @@ if test "$ok" = "yes"; then
   sre_cflags_env_set=yes
 fi
 
+# --enable-sse    Enable the SSE implementation.                                                                                              
+# --enable-vmx    Enable the Altivec/VMX implementation.                                                                                      
+#                                                                                                                                             
+# These set $impl_choice to one of sse, vmx, or none.                                                                                         
+# Note that Infernal does not currently have any VMX-specific                                                                                 
+# code, but might still be able to turn on automatic compiler
+# vectorization.                                                                                                                              
+#                                                                     
 AC_ARG_ENABLE(sse,[AS_HELP_STRING([--enable-sse],[enable SSE optimizations])] ,           enable_sse=$enableval,   enable_sse=yes)
 AC_ARG_ENABLE(vmx,[AS_HELP_STRING([--enable-vmx],[enable Altivec/VMX optimizations])],    enable_vmx=$enableval,   enable_vmx=check)
+if test "$enable_sse" = "yes"; then                                                                                                           
+   if test "$enable_vmx" = "yes" ; then                                                                                                       
+      AC_MSG_ERROR([Select only one implementation of sse or vmx])                                                                            
+   fi
+   impl_choice=sse                                                                                                                            
+elif test "$enable_vmx" = "yes"; then                                                                                                         
+   if test "$enable_sse" = "yes" ; then
+      AC_MSG_ERROR([Select only one implementation of sse or vmx])
+  fi
+   impl_choice=vmx
+else
+   impl_choice=none
+fi
+
 AC_ARG_WITH(gsl,[AS_HELP_STRING([--with-gsl],[use the GSL, GNU Scientific Library])],     with_gsl=$withval,       with_gsl=no)
 AC_ARG_ENABLE(mpi,[AS_HELP_STRING([--enable-mpi],[enable MPI parallelization])],          enable_mpi=$enableval,   enable_mpi=no)
 
 # end of optionally configured features
 ################################################################
+
+################################################################
+# Select the vector implementation we'll use
+# (if user didn't already configure one)
+#
+if test "$impl_choice" = "none"; then
+  case $host in
+    ia64-*-*)      impl_choice=sse;;
+    i?86-*-*)      impl_choice=sse;;
+    x86*-*-*)      impl_choice=sse;;
+    powerpc*-*-*)  impl_choice=vmx;;
+   *)             impl_choice=dummy;;
+  esac
+fi
+
+if test "$impl_choice" = "dummy" || test "$impl_choice" = "vmx"; then
+  AC_MSG_WARN([It appears your platform will not fully support Infernal.])
+  AC_MSG_WARN([The secondary cmsearch pipeline will not be available])
+fi
+if test "$impl_choice" = "sse" && test "$enable_sse" = "no"; then
+  AC_MSG_WARN([You disabled the SSE implementation;])
+  AC_MSG_WARN([The secondary cmsearch pipeline will not be available])
+  impl_choice=dummy
+fi
 
 ################################################################
 # 4. Checks for programs
@@ -258,6 +304,9 @@ if test "$enable_sse" = "yes"; then
    fi
    AC_DEFINE(HAVE_SSE2,1,[Support SSE2 (Streaming SIMD Extensions 2) instructions])
 fi
+if test "$enable_sse" = "yes" && test "$impl_choice" = dummy; then
+   AC_MSG_ERROR([SSE instructions are apparently not available; --enable-sse failed])
+fi
 
 # VMX/Altivec (not autodetected yet; must use --enable-vmx to enable)
 if test "$enable_vmx" = "yes"; then
@@ -277,6 +326,40 @@ if test "$enable_vmx" = "yes"; then
    fi
 fi
 AC_SUBST(SIMD_CFLAGS)
+
+if test "$impl_choice" = "sse"; then
+  AC_MSG_CHECKING([whether SSE2 is supported])
+  sre_save_cflags="$CFLAGS"
+  CFLAGS="$CFLAGS $SIMD_CFLAGS"
+  AC_COMPILE_IFELSE(  [AC_LANG_PROGRAM([[#include <emmintrin.h>]],
+                                 [[__m128i* one=(__m128i*)_mm_malloc(4, 16);
+                                   __m128i* two=(__m128i*)_mm_malloc(4, 16);
+                                   __m128i xmm1 = _mm_load_si128(one);
+                                   __m128i xmm2 = _mm_load_si128(two);
+                                   __m128i xmm3 = _mm_or_si128(xmm1, xmm2);
+                                   _mm_store_si128(one, xmm3);
+                                   _mm_free(one);
+                                   _mm_free(two);
+                                 ]])],
+        [ AC_MSG_RESULT([yes])],
+        [ AC_MSG_RESULT([no; reverting to dummy implementation])
+          impl_choice=dummy
+        ]
+  )
+  CFLAGS="$sre_save_cflags"
+fi
+
+# If SSE implementation seems good to go, enable building impl_sse
+case "$impl_choice" in
+sse)  AC_MSG_NOTICE([Activating Intel/AMD SSE optimized DP implementation])
+      AC_DEFINE([HAVE_SSE2])
+      AC_SUBST([DO_IMPL_SSE], ["(cd src/impl_sse; make CC=\"\$(CC)\" CFLAGS=\"\$(CFLAGS)\";)"])
+      ;;
+
+*)    AC_MSG_NOTICE([De-activating parallel optimized implemenation])
+     ;;
+esac
+
 
 
 # Checks for libraries
