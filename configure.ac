@@ -354,6 +354,7 @@ case "$impl_choice" in
 sse)  AC_MSG_NOTICE([Activating Intel/AMD SSE optimized DP implementation])
       AC_DEFINE([HAVE_SSE2])
       AC_SUBST([DO_IMPL_SSE], ["(cd src/impl_sse; make CC=\"\$(CC)\" CFLAGS=\"\$(CFLAGS)\";)"])
+      AC_SUBST([INSTALL_IMPL_SSE], ["for file in \$(SSEPROGS); do cp src/impl_sse/\$\$file \$(BINDIR)/; done"])
       ;;
 
 *)    AC_MSG_NOTICE([De-activating parallel optimized implemenation])

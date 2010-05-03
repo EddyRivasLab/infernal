@@ -71,6 +71,9 @@ PROGS = cmalign\
 	cmsearch\
 	cmstat
 
+SSEPROGS = sse_cmsearch\
+           cmsearch_dual
+
 # Optional programs for rigorous filters
 RFPROGS = cm2hmm cm2hmmsearch
 
@@ -162,6 +165,9 @@ dist:
 	for prog in $(RFPROGS); do\
 	   cat ../${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer >> ../${BASENAME}-${RELEASE}/documentation/manpages/$$prog.man;\
 	done;
+	for prog in $(SSEPROGS); do\
+	   cat ../${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer >> ../${BASENAME}-${RELEASE}/documentation/manpages/$$prog.man;\
+	done;
 	-rm -f ../${BASENAME}-${RELEASE}/documentation/manpages/boilerplate.trailer
 	#
 	# Remove SVN-controlled files/directories that don't belong in the
@@ -210,6 +216,7 @@ install:
 	for file in $(PROGS); do\
 		cp src/$$file $(BINDIR)/;\
 	done
+	@INSTALL_IMPL_SSE@
 #	if test -d $(RIGFILTERS); then\
 #	   for file in $(RFPROGS); do\
 #	      cp rigfilters/cm2hmm-1.0/$$file $(BINDIR)/;\
@@ -225,6 +232,7 @@ clean:
 	(cd src;                     make clean)
 	(cd easel;                   make clean)
 	(cd hmmer;                   make clean)
+	(cd src/impl_sse;            make clean)
 #	(cd rigfilters;              make clean)
 
 # "make distclean" leaves a pristine source distribution.
@@ -238,6 +246,7 @@ distclean:
 	(cd src;                     make distclean)
 	(cd easel;                   make distclean)
 	(cd hmmer;                   make distclean)
+	(cd src/impl_sse;            make distclean)
 #	(cd rigfilters;              make distclean)
 	-rm Makefile
 
