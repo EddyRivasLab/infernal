@@ -19,7 +19,7 @@ $sse_cmsearch_options = "";
 
 # Parse command line
 use Getopt::Std;
-$Getopt::Std::OUTPUT_HELP_VERSION = TRUE;
+$Getopt::Std::STANDARD_HELP_VERSION = TRUE;
 
 our($opt_P, $opt_Q, $opt_R, $opt_Z);
 getopts('P:Q:R:Z:') or die;
@@ -126,7 +126,13 @@ exit;
 
 # Help/usage message
 sub main::HELP_MESSAGE {
-
+   print "cmsearch_dual - a combination of two pipelines to use both sequence and structural filters\n";
+   print "Usage: cmsearch [options] cmfile seqfile\n";
+   print "\t-Z <x>\tSet database size to <x> megabases, where <x> is a real number\n";
+   print "\t\tRecommended if the seqfile contains only part of the database to be searched\n";
+   print "\t-P <n>\tSpecify path <n> for cmsearch\n";
+   print "\t-Q <n>\tSpecify path <n> for sse_cmsearch\n";
+   print "\t-R <n>\tSpecify path <n> for esl-sfetch (included with Infernal under easel/mini-apps)\n";
 }
 # Version message
 sub main::VERSION_MESSAGE {

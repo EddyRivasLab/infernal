@@ -46,8 +46,8 @@ static ESL_OPTIONS options[] = {
   { "--S_e",     eslARG_NONE,    NULL, NULL, NULL,  NULL,"--mmp_manual","--mmp_auto", "S end probability (unsettable, 1-S_Sa-S_SM)",    3 },
   /* Output options */
   { "--evd1",eslARG_NONE,NULL,NULL,NULL, NULL, NULL, NULL, "Output score survival plot data for MSCYK EVD",             4 },
-  { "--glbf",eslARG_INT,"0",NULL, "n<4", NULL, NULL, NULL, "GLBF-style output for RMark at stage <n>, 0 for none",      4 },
-  { "--glbf_all",eslARG_NONE,FALSE,NULL, NULL, NULL, NULL, NULL, "GLBF-style output for RMark at all stages, to separate files",      4 },
+  { "--glbf",eslARG_INT,"0",NULL, "n<4", NULL, NULL, NULL, "GLBF-style output for stage <n>, 0 for none",      4 },
+  { "--glbf_all",eslARG_NONE,FALSE,NULL, NULL, NULL, NULL, NULL, "GLBF-style output for all stages, to separate files",      4 },
   {  0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
 };
 static char usage[]  = "[-options] <cmfile> <seqfile>";
