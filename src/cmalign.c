@@ -1158,8 +1158,8 @@ output_result(const ESL_GETOPTS *go, struct cfg_s *cfg, int do_output_to_tmp, ch
   if((! do_output_to_tmp) && (cfg->nali != 0)) ESL_FAIL(eslEINVAL, errbuf, "in output_result(), not outputting to tmp file but also not on first alignment. This shouldn't happen.");
 
   /* print per-CM info to insertfp and elfp, if nec */
-  if(cfg->insertfp != NULL) { fprintf(cfg->insertfp, "%s %d\n", cm->name, cm->clen); } 
-  if(cfg->elfp != NULL)     { fprintf(cfg->elfp,     "%s %d\n", cm->name, cm->clen); } 
+  if((cfg->nali == 0) && (cfg->insertfp != NULL)) { fprintf(cfg->insertfp, "%s %d\n", cm->name, cm->clen); } 
+  if((cfg->nali == 0) && (cfg->elfp != NULL))     { fprintf(cfg->elfp,     "%s %d\n", cm->name, cm->clen); } 
 
 #ifdef HAVE_MPI
   /* if --mpi and ! -q, output the scores */
@@ -2004,7 +2004,7 @@ print_info_file_header(FILE *fp, char *firstline, char *elstring)
   fprintf(fp, "#   <spos>    is the first (5'-most) consensus position filled by a nongap for this sequence (-1 if 0 nongap consensus posns)\n");
   fprintf(fp, "#   <epos>    is the final (3'-most) consensus position filled by a nongap for this sequence (-1 if 0 nongap consensus posns)\n");
   fprintf(fp, "#   <seqlen>  is the unaligned length of the sequence\n");
-  fprintf(fp, "#   <c_x> is a consensus position (between 0 and <clen>; if 0 inserts before 1st consensus posn)\n");
+  fprintf(fp, "#   <c_x> is a consensus position (between 0 and <clen>; if 0: inserts before 1st consensus posn)\n");
   fprintf(fp, "#   <u_x> is the *unaligned* position (b/t 1 and <seqlen>) in <seqname> of the first %sinserted residue after <c_x>.\n", elstring);
   fprintf(fp, "#   <i_x> is the number of %sinserted residues after position <c_x> for <seqname>.\n", elstring);
   fprintf(fp, "# Lines for sequences with 0 %sinserted residues will include only <seqname> <seqlen> <spos> <epos>.\n", elstring);
