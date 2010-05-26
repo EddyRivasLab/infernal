@@ -1,10 +1,13 @@
-# Process this file with autoconf to produce the HMMER configure script.
+# Process this file with autoconf to produce the Infernal configure script.
 #
-# Note that this is synchronized with Easel's configure script,
-# so that HMMER configures Easel in addition to itself; this saves
-# having to do a separate ./configure in Easel. That is,
-# everything that appears in Easel's configure script must also
-# appear here. 
+# Note that this is synchronized with Easel and HMMER's configure
+# script, so that Infernal configures HMMER and Easel in addition to
+# itself; this saves having to do a separate ./configure in
+# HMMER and Easel. That is, everything that appears in HMMER and
+# Easel's configure script must also appear here. Since HMMER's
+# configure script is setup to configure Easel as well, ensuring
+# everything from HMMER's configure script appears here should 
+# suffice.
 #
 # reminders to save re-reading autoconf manual for the n'th time:
 #   - output variables:
@@ -39,11 +42,15 @@
 #  12. AC_CONFIG_FILES
 #  13. AC_OUTPUT
 
-
-AC_PREREQ(2.60)
+# Autoconf 2.61 has a bug in AC_FUNC_FSEEKO; don't use it.
+AC_PREREQ(2.63)
 AC_INIT(Infernal, 1.0.2, eddys@janelia.hhmi.org, infernal)
 AC_MSG_NOTICE([Configuring Infernal for your system.])
 
+# remember if the user is overriding CFLAGS
+if test x"$CFLAGS" = x; then 
+  sre_cflags_env_set=no
+fi
 
 ################################################################
 # 3. Info on the package
@@ -63,19 +70,26 @@ AC_MSG_NOTICE([Configuring Infernal for your system.])
 #     PACKAGE_LICENSETAG  which license to bundle from Licenses/ subdirectory.
 #     PACKAGE_VERSION     copy of version code, e.g. "1.0"
 #     PACKAGE_URL         URL home.
-# And we have to define the relevant package variables for Easel as well.
+# And we have to define the relevant package variables for Easel and HMMER as well.
 #
 ################################################################
 
-PACKAGE_DATE="June 2008"
-PACKAGE_COPYRIGHT="Copyright (C) 2008 HHMI Janelia Farm Research Campus"
+PACKAGE_DATE="May 2010"
+PACKAGE_COPYRIGHT="Copyright (C) 2010 HHMI Janelia Farm Research Campus"
 PACKAGE_LICENSE="Freely distributed under the GNU General Public License (GPL)"
 PACKAGE_LICENSETAG=gnu
 PACKAGE_VERSION=$PACKAGE_VERSION
 PACKAGE_URL="http://infernal.janelia.org/"
 
-EASEL_DATE="June 2008"
-EASEL_COPYRIGHT="Copyright (C) 2008 HHMI Janelia Farm Research Campus"
+HMMER_DATE="May 2010"
+HMMER_COPYRIGHT="Copyright (C) 2010 Howard Hughes Medical Institute."
+HMMER_LICENSE="Freely distributed under the GNU General Public License (GPLv3)."
+HMMER_VERSION=$PACKAGE_VERSION
+HMMER_URL="http://hmmer.org/"
+HMMER_ESLDIR="../easel"
+
+EASEL_DATE="May 2010"
+EASEL_COPYRIGHT="Copyright (C) 2010 HHMI Janelia Farm Research Campus"
 EASEL_LICENSE="Freely distributed under the Janelia Software License."
 EASEL_LICENSETAG=jsl
 EASEL_VERSION="i$PACKAGE_VERSION"
@@ -89,6 +103,13 @@ AC_SUBST(PACKAGE_LICENSE)
 AC_SUBST(PACKAGE_LICENSETAG)
 AC_SUBST(PACKAGE_VERSION)
 AC_SUBST(PACKAGE_URL)
+
+AC_SUBST(HMMER_DATE)
+AC_SUBST(HMMER_COPYRIGHT)
+AC_SUBST(HMMER_LICENSE)
+AC_SUBST(HMMER_VERSION)
+AC_SUBST(HMMER_URL)
+AC_SUBST(HMMER_ESLDIR)
 
 AC_SUBST(EASEL_RELCODE)
 AC_SUBST(EASEL_DATE)
@@ -104,12 +125,19 @@ AC_DEFINE_UNQUOTED(PACKAGE_COPYRIGHT, "$PACKAGE_COPYRIGHT")
 AC_DEFINE_UNQUOTED(PACKAGE_LICENSE,   "$PACKAGE_LICENSE")
 AC_DEFINE_UNQUOTED(PACKAGE_VERSION,   "$PACKAGE_VERSION")
 
+AC_DEFINE_UNQUOTED(HMMER_DATE,      "$HMMER_DATE")
+AC_DEFINE_UNQUOTED(HMMER_COPYRIGHT, "$HMMER_COPYRIGHT")
+AC_DEFINE_UNQUOTED(HMMER_LICENSE,   "$HMMER_LICENSE")
+AC_DEFINE_UNQUOTED(HMMER_VERSION,   "$HMMER_VERSION")
+AC_DEFINE_UNQUOTED(HMMER_URL,       "$HMMER_URL")
+
 AC_DEFINE_UNQUOTED(EASEL_DATE,      "$EASEL_DATE")
 AC_DEFINE_UNQUOTED(EASEL_COPYRIGHT, "$EASEL_COPYRIGHT")
 AC_DEFINE_UNQUOTED(EASEL_LICENSE,   "$EASEL_LICENSE")
 AC_DEFINE_UNQUOTED(EASEL_VERSION,   "$EASEL_VERSION")
 
 AC_DEFINE(eslLIBRARY)
+#AC_DEFINE(hmmerLIBRARY)
 
 # Figure out what host we're compiling on.
 # Three GNU scripts must be included in the distro: 
@@ -141,6 +169,7 @@ AC_MSG_NOTICE([Full Infernal source distribution - using full configuration])
 # Process the ./configure command line
 ################################################################
 
+# --enable-debugging      - set basic debugging (level 0)
 # --enable-debugging=x    - set debugging level to <x> (1-3)
 #
 # At all levels, including 0, replaces CFLAGS w/ "-g -Wall" (so it assumes gcc).
@@ -186,30 +215,119 @@ fi
 
 # --enable-sse    Enable the SSE implementation.                                                                                              
 # --enable-vmx    Enable the Altivec/VMX implementation.                                                                                      
+# --enable-dummy  Enable the portable implementation.
 #                                                                                                                                             
-# These set $impl_choice to one of sse, vmx, or none.                                                                                         
+# These set $impl_choice to one of sse, vmx, dummy, or none.
 # Note that Infernal does not currently have any VMX-specific                                                                                 
 # code, but might still be able to turn on automatic compiler
 # vectorization.                                                                                                                              
 #                                                                     
 AC_ARG_ENABLE(sse,[AS_HELP_STRING([--enable-sse],[enable SSE optimizations])] ,           enable_sse=$enableval,   enable_sse=yes)
 AC_ARG_ENABLE(vmx,[AS_HELP_STRING([--enable-vmx],[enable Altivec/VMX optimizations])],    enable_vmx=$enableval,   enable_vmx=check)
-if test "$enable_sse" = "yes"; then                                                                                                           
-   if test "$enable_vmx" = "yes" ; then                                                                                                       
-      AC_MSG_ERROR([Select only one implementation of sse or vmx])                                                                            
+AC_ARG_ENABLE(dummy,[AS_HELP_STRING([--enable-dummy],[enable portable implementation])], enable_dummy=$enableval, enable_dummy=check)
+if test "$enable_sse" = "yes"; then
+   if test "$enable_vmx" = "yes" || test "$enable_dummy" = "yes"; then
+      AC_MSG_ERROR([Select only one implementation of sse, vmx, or dummy])
    fi
-   impl_choice=sse                                                                                                                            
-elif test "$enable_vmx" = "yes"; then                                                                                                         
-   if test "$enable_sse" = "yes" ; then
-      AC_MSG_ERROR([Select only one implementation of sse or vmx])
-  fi
+   impl_choice=sse
+elif test "$enable_vmx" = "yes"; then
+   if test "$enable_sse" = "yes" || test "$enable_dummy" = "yes"; then
+      AC_MSG_ERROR([Select only one implementation of sse, vmx, or dummy])
+   fi
    impl_choice=vmx
+elif test "$enable_dummy" = "yes"; then
+   if test "$enable_sse" = "yes" || test "$enable_vmx" = "yes"; then
+      AC_MSG_ERROR([Select only one implementation of sse, vmx, or dummy])
+   fi
+   impl_choice=dummy
 else
-   impl_choice=none
+   impl_choice=none   	
 fi
 
-AC_ARG_WITH(gsl,[AS_HELP_STRING([--with-gsl],[use the GSL, GNU Scientific Library])],     with_gsl=$withval,       with_gsl=no)
-AC_ARG_ENABLE(mpi,[AS_HELP_STRING([--enable-mpi],[enable MPI parallelization])],          enable_mpi=$enableval,   enable_mpi=no)
+# --enable-mpi       Enable MPI parallelization
+AC_ARG_ENABLE(mpi,[AS_HELP_STRING([--enable-mpi],[enable MPI parallelization])], enable_mpi=$enableval, enable_mpi=no)
+
+# Start of HMMER-specific optionally configured features
+# 
+# --enable-xlc-arch  Set the code generation for a particular architecture
+#
+# The xlc compiler on AIX seems to need the -qarch flag to be set for a processor
+# that is VMX enabled.  Otherwise a warning is issued that states the -qenablevmx
+# and -qaltivec flags are ignored.
+AX_COMPILER_VENDOR
+if test "${ax_cv_c_compiler_vendor}" = "ibm"; then
+  AC_ARG_WITH(xlc-arch, 
+              [AC_HELP_STRING([--with-xlc-arch=<arch>], [specify architecture <arch> for xlc -qarch])],
+              XLC_ARCH=$withval, 
+              XLC_ARCH=no)
+fi
+
+# --enable-threads      Enable POSIX multithreading
+#
+# Uses ACX_PTHREAD macro from the GNU macro archive.
+# Back to my code to finish enabling pthreads...
+# Define these preprocessor variables:
+#     HMMER_THREADS
+#     HAVE_PTHREAD_SETCONCURRENCY
+#     HAVE_PTHREAD_ATTR_SETSCOPE
+#
+AC_ARG_ENABLE([threads],
+              [AS_HELP_STRING([--enable-threads],
+                 [enable POSIX multithreading support (default is check)])],
+	      [],
+              [enable_threads=check])
+
+case $enable_threads in 
+   yes)   check_threads=yes
+          ;;
+   no)    check_threads=no
+          ;;
+   check) check_threads=yes
+          ;;
+   *)     check_threads=no
+          AC_MSG_NOTICE([Ignoring unknown argument to --enable-threads: $enable_threads])
+          ;;
+esac
+ 
+AS_IF([test "x$check_threads" != xno],
+      [ACX_PTHREAD([AC_DEFINE(HMMER_THREADS)
+                    AC_DEFINE(HAVE_PTHREADS)
+                    AC_SUBST(PTHREAD_LIBS)
+                    AC_SUBST(PTHREAD_CFLAGS)],
+                   [if test "x$enable_threads" != xcheck; then
+                      AC_MSG_FAILURE([POSIX multithreading failed])
+                    fi])])
+
+#AC_ARG_ENABLE(threads, 
+#[  --enable-threads        enable POSIX multithreading support],
+#[case $enable_threads in 
+#   yes) AC_MSG_NOTICE([enabled POSIX multithreading support])
+#        AC_CHECK_FUNCS(pthread_setconcurrency)
+#        AC_CHECK_FUNCS(pthread_attr_setscope)
+#	ACX_PTHREAD(AC_DEFINE(HMMER_THREADS))
+#	;;
+#   no)  AC_MSG_NOTICE([POSIX multithreading support disabled])
+#        ;;
+#   *)   echo "Ignoring unknown argument to --disable-threads: $enable_threads"
+#	;;
+#esac])
+
+# --with-gsl        - enable hooks into the GSL (GNU Scientific Library)
+#
+# The (action-if-given) is blank: using --with-gsl sets $with_gsl to 'yes',
+# and --without-gsl sets $with_gsl to 'no'. If neither is given,
+# $with_gsl is set to 'check', and we'll try to use GSL anyway if we
+# can find it.
+# 
+# We interpret the $with_gsl setting later, in the "checks for libraries" section.
+AC_ARG_WITH([gsl],
+            [AS_HELP_STRING([--with-gsl],
+                           [use the GSL, GNU Scientific Library (default is no)])],
+            [if test "x$withval" != xno ; then 
+               AC_MSG_NOTICE([Enabling hooks into the GNU Scientific Library (GSL)])
+             fi
+            ],
+	    [with_gsl=no])
 
 # end of optionally configured features
 ################################################################
@@ -219,38 +337,48 @@ AC_ARG_ENABLE(mpi,[AS_HELP_STRING([--enable-mpi],[enable MPI parallelization])],
 # (if user didn't already configure one)
 #
 if test "$impl_choice" = "none"; then
-  case $host in
+  case $host in 
     ia64-*-*)      impl_choice=sse;;
     i?86-*-*)      impl_choice=sse;;
     x86*-*-*)      impl_choice=sse;;
     powerpc*-*-*)  impl_choice=vmx;;
-   *)             impl_choice=dummy;;
+    *)             impl_choice=dummy;;
   esac
 fi
 
-if test "$impl_choice" = "dummy" || test "$impl_choice" = "vmx"; then
-  AC_MSG_WARN([It appears your platform will not fully support Infernal.])
-  AC_MSG_WARN([The secondary cmsearch pipeline will not be available])
+if test "$impl_choice" = "dummy"; then
+  AC_MSG_WARN([It appears your platform will not fully support H3.])
+  AC_MSG_WARN([We'll use the 'dummy' implementation, a slow reference implementation.])
 fi
+
 if test "$impl_choice" = "sse" && test "$enable_sse" = "no"; then
-  AC_MSG_WARN([You disabled the SSE implementation;])
-  AC_MSG_WARN([The secondary cmsearch pipeline will not be available])
+  AC_MSG_WARN([You disabled the SSE implementation: I'll use the dummy impl instead.])
   impl_choice=dummy
 fi
+if test "$impl_choice" = "vmx" && test "$enable_vmx" = "no"; then
+  AC_MSG_WARN([You disabled the VMX implementation: I'll use the dummy impl instead.])
+  impl_choice=vmx
+fi
+if test "$impl_choice" = "dummy" && test "$enable_dummy" = "no"; then
+  AC_MSG_ERROR([No vector impl configured; and you disabled the dummy implementation.])
+fi
+################################################################
 
 ################################################################
-# 4. Checks for programs
-################################################################
-
+# Checks for programs, including choice of compiler ${CC} and ${CFLAGS}.
+#
 AC_PROG_CC
 # MPI :  set @CC@ to mpicc, sets @MPILIBS@, defines HAVE_MPI. 
 if test "$enable_mpi" = "yes"; then
-   ACX_MPI(,AC_MSG_ERROR([MPI library not found for --enable-mpi]))
+   ACX_MPI([AC_DEFINE(HAVE_MPI)
+            AC_SUBST([MPI_UTESTS], ["mpi_utest"])
+            AC_SUBST([MPI_BENCHMARKS], ["mpi_benchmark"])],
+           AC_MSG_ERROR([MPI library not found for --enable-mpi]))
    CC=$MPICC
 fi
 AC_PROG_CPP
 AX_COMPILER_VENDOR
-#  AC_PROG_CC_STDC wants to append -c99 to icc; icc doesn't like this.
+# AC_PROG_CC_STDC wants to append -c99 to icc; icc doesn't like this.
 if test "$ax_cv_c_compiler_vendor" != "intel"; then
   AC_PROG_CC_STDC
 fi
@@ -260,6 +388,7 @@ CHECK_GNU_MAKE
 
 # Select our optimization level in CFLAGS.
 if test "$enable_debugging" != "no"; then
+   AC_DEFINE(p7_DEBUGGING,  1)
    if test "$GCC" = "yes" && test "$sre_cflags_env_set" = "no"; then
       CFLAGS="-g -Wall"
    fi
@@ -277,90 +406,183 @@ else
    # it.
 fi
 
-
-# SSE: figure out our @SIMD_CFLAGS@, define HAVE_SSE2
-# The AC_RUN_IFELSE() is there because it's possible to have 
-# hardware that doesn't support SSE2 instructions, yet the
-# compiler can generate them: example AMD Athlons with gcc.
-# So we need to test that an SSE2 program actually runs without
-# generating an "illegal instruction" error. The program
-# here is sufficient [xref J3/127].
-if test "$enable_sse" = "check" && test "$enable_vmx" != "yes"; then
-    AC_CHECK_HEADER([emmintrin.h],[
-     AC_MSG_CHECKING([if platform can run SSE/SSE2 instructions])
-     AC_RUN_IFELSE([AC_LANG_PROGRAM( [[#include <emmintrin.h>]],
-		                      [[__m128i v = _mm_set1_epi8(0);]])],
-                   [AC_MSG_RESULT([yes])
-                     enable_sse=yes],
-                   [AC_MSG_RESULT([no])])])
-fi
-
-if test "$enable_sse" = "yes"; then
-   if test "x$SIMD_CFLAGS" = x; then
-     case $ax_cv_c_compiler_vendor in
-       gnu)   AX_CHECK_COMPILER_FLAGS(-msse2,[SIMD_CFLAGS="-msse2"],[]);;
-       *)     ;;
-     esac   
-   fi
-   AC_DEFINE(HAVE_SSE2,1,[Support SSE2 (Streaming SIMD Extensions 2) instructions])
+# If we're using SSE, figure out our @SIMD_CFLAGS@
+if test "$impl_choice" = "sse" && test "x$SIMD_CFLAGS" = x; then
+   case $ax_cv_c_compiler_vendor in
+   gnu)   AX_CHECK_COMPILER_FLAGS(-msse2,[SIMD_CFLAGS="-msse2"],[impl_choice=dummy]);;
+   intel) ;;
+   *)     ;;
+   esac
 fi
 if test "$enable_sse" = "yes" && test "$impl_choice" = dummy; then
    AC_MSG_ERROR([SSE instructions are apparently not available; --enable-sse failed])
 fi
 
-# VMX/Altivec (not autodetected yet; must use --enable-vmx to enable)
-if test "$enable_vmx" = "yes"; then
+# If we're using VMX/Altivec, figure out our @SIMD_CFLAGS@
+if test "$impl_choice" = "vmx"; then
    if test "x$SIMD_CFLAGS" = x; then
-   if test "$GCC" = "yes"; then
-     AX_CHECK_COMPILER_FLAGS(-faltivec, [SIMD_CFLAGS="-faltivec"],
-       [AX_CHECK_COMPILER_FLAGS(-maltivec -mabi=altivec,
- 	   [SIMD_CFLAGS="-maltivec -mabi=altivec"],
-           [AX_CHECK_COMPILER_FLAGS(-fvec, [SIMD_CFLAGS="-fvec"],
+      if test "$GCC" = "yes"; then
+       	# -DFAKE__VEC__ is a workaround because gcc-3.3 does not
+	# #define __VEC__ with -maltivec.
+        AX_CHECK_COMPILER_FLAGS(-faltivec, [SIMD_CFLAGS="-faltivec"],
+	    [AX_CHECK_COMPILER_FLAGS(-maltivec -mabi=altivec,
+		[SIMD_CFLAGS="-maltivec -mabi=altivec"],
+#		[SIMD_CFLAGS="-maltivec -mabi=altivec -DFAKE__VEC__"],
+	        [AX_CHECK_COMPILER_FLAGS(-fvec, [SIMD_CFLAGS="-fvec"],
 		   [AC_MSG_ERROR([Need a version of gcc with -maltivec])])])])
-   elif test "${ax_cv_c_compiler_vendor}" = "ibm"; then
-     AX_CHECK_COMPILER_FLAGS(-qaltivec, [SIMD_CFLAGS="-qaltivec"],[])
-   else
-     AX_CHECK_COMPILER_FLAGS(-faltivec, [SIMD_CFLAGS="-faltivec"],[])
-   fi
-   AC_DEFINE(HAVE_VMX,1,[Support Altivec/VMX vector instructions])
+      elif test "${ax_cv_c_compiler_vendor}" = "ibm"; then
+        SIMD_CFLAGS=""
+        # if debugging is enabled and the xlc_arch flag is set, we need to
+        # set the qarch flag here.  if debugging is NOT enabled, the arch
+        # flag is set in AX_CC_MAXOPT.
+        if test "x$XLC_ARCH" != x; then
+           if test "x$enable_debugging" = xyes; then
+              AX_CHECK_COMPILER_FLAGS(-qarch=$XLC_ARCH, [SIMD_CFLAGS="-qarch=$XLC_ARCH"],[])
+           fi
+        fi
+        AX_CHECK_COMPILER_FLAGS(-qenablevmx, [SIMD_CFLAGS="$SIMD_CFLAGS -qenablevmx"],[])
+        AX_CHECK_COMPILER_FLAGS(-qaltivec, [SIMD_CFLAGS="$SIMD_CFLAGS -qaltivec"],[])
+      else
+        AX_CHECK_COMPILER_FLAGS(-faltivec, [SIMD_CFLAGS="-faltivec"],[])
+      fi
    fi
 fi
-AC_SUBST(SIMD_CFLAGS)
 
+# check if the SSE2 implementation support cast functions
+if test "$impl_choice" = "sse"; then
+  AC_MSG_CHECKING([compiler support for sse2 cast functions])
+  ssecast=no
+  sre_save_cflags="$CFLAGS"
+  CFLAGS="$CFLAGS $SIMD_CFLAGS"
+  AC_LANG(C)
+  AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <emmintrin.h>]],
+                                     [[__m128 a;
+                                       __m128i b;
+                                       b = _mm_castps_si128(a);
+                                       a = _mm_castsi128_ps(b);]])],
+                    [AC_DEFINE([HAVE_SSE2_CAST])
+                     ssecast=yes])
+  AC_MSG_RESULT([$ssecast])
+  CFLAGS="$sre_save_cflags"
+fi
+
+# Verify that we can actually build the chosen implementation; else
+# default to dummy.
+# (For example, Athlon reports as i686-*, so will get assigned to 
+# sse impl, but does not support SSE2 instructions.)
+# The test here is cribbed from the Apache configure.ac file.
+#
 if test "$impl_choice" = "sse"; then
   AC_MSG_CHECKING([whether SSE2 is supported])
   sre_save_cflags="$CFLAGS"
   CFLAGS="$CFLAGS $SIMD_CFLAGS"
   AC_COMPILE_IFELSE(  [AC_LANG_PROGRAM([[#include <emmintrin.h>]],
-                                 [[__m128i* one=(__m128i*)_mm_malloc(4, 16);
-                                   __m128i* two=(__m128i*)_mm_malloc(4, 16);
-                                   __m128i xmm1 = _mm_load_si128(one);
-                                   __m128i xmm2 = _mm_load_si128(two);
-                                   __m128i xmm3 = _mm_or_si128(xmm1, xmm2);
-                                   _mm_store_si128(one, xmm3);
-                                   _mm_free(one);
-                                   _mm_free(two);
-                                 ]])],
-        [ AC_MSG_RESULT([yes])],
-        [ AC_MSG_RESULT([no; reverting to dummy implementation])
-          impl_choice=dummy
-        ]
+ 				 [[__m128i* one=(__m128i*)_mm_malloc(4, 16);
+				   __m128i* two=(__m128i*)_mm_malloc(4, 16);
+				   __m128i xmm1 = _mm_load_si128(one);
+				   __m128i xmm2 = _mm_load_si128(two);
+				   __m128i xmm3 = _mm_or_si128(xmm1, xmm2);
+				   _mm_store_si128(one, xmm3);
+				   _mm_free(one);
+				   _mm_free(two);
+				 ]])],
+	[ AC_MSG_RESULT([yes])],
+	[ AC_MSG_RESULT([no; reverting to dummy implementation])
+	  impl_choice=dummy
+	]
   )
   CFLAGS="$sre_save_cflags"
 fi
 
-# If SSE implementation seems good to go, enable building impl_sse
-case "$impl_choice" in
+if test "$impl_choice" = "vmx"; then
+  AC_MSG_CHECKING([whether Altivec/VMX is supported])
+  sre_save_cflags="$CFLAGS"
+  CFLAGS="$CFLAGS $SIMD_CFLAGS"
+  AC_COMPILE_IFELSE(  [AC_LANG_PROGRAM([[#include <altivec.h>]],
+ 				 [[vector unsigned char zerov;
+                                   vector unsigned char onev;
+                                   zerov = vec_splat_u8(0);
+                                   onev = vec_splat_u8(1);
+                                   onev = vec_adds(onev, zerov);
+				 ]])],
+	[ AC_MSG_RESULT([yes])],
+	[ AC_MSG_RESULT([no; reverting to dummy implementation])
+	  impl_choice=dummy
+          if test "${ax_cv_c_compiler_vendor}" = "ibm"; then
+             echo "******************************************************"
+             echo "*  You seem to have the IBM  C compiler.  If your    *"
+             echo "*  processor supports vector instructions it is      *"
+             echo "*  possible specifying an architecture would enable  *"
+             echo "*  vector support, i.e.                              *"
+             echo "*                                                    *"
+             echo "*    --with-xlc-arch=XXX                             *"
+             echo "*                                                    *"
+             echo "*  where XXX is pwr6, auto or whatever kind of CPU   *"
+             echo "*  you have.                                         *"
+             echo "******************************************************"
+          fi
+ 	]
+  )
+  CFLAGS="$sre_save_cflags"
+fi
+
+# For x86 processors check if the flush to zero macro is available
+# in order to avoid the performance penalty dealing with sub-normal
+# values in the floating point calculations.
+if test "$impl_choice" = "sse"; then
+  AC_MSG_CHECKING([whether _MM_SET_FLUSH_ZERO_MODE is supported])
+  sre_save_cflags="$CFLAGS"
+  CFLAGS="$CFLAGS $SIMD_CFLAGS"
+  AC_COMPILE_IFELSE(  [AC_LANG_PROGRAM([[#include <xmmintrin.h>]],
+ 				 [[_MM_SET_FLUSH_ZERO_MODE (_MM_FLUSH_ZERO_ON);
+				 ]])],
+	[ AC_MSG_RESULT([yes])
+          AC_DEFINE([HAVE_FLUSH_ZERO_MODE])],
+	[ AC_MSG_RESULT([no])]
+  )
+  CFLAGS="$sre_save_cflags"
+fi
+
+# Now, we can enable the appropriate optimized implementation.
+case "$impl_choice" in 
 sse)  AC_MSG_NOTICE([Activating Intel/AMD SSE optimized DP implementation])
       AC_DEFINE([HAVE_SSE2])
+      AC_DEFINE([p7_IMPL_SSE])
+      AC_SUBST([HMMERIMPLLIB], ["impl_sse/libhmmerimpl.a"])
       AC_SUBST([DO_IMPL_SSE], ["(cd src/impl_sse; make CC=\"\$(CC)\" CFLAGS=\"\$(CFLAGS)\";)"])
       AC_SUBST([INSTALL_IMPL_SSE], ["for file in \$(SSEPROGS); do cp src/impl_sse/\$\$file \$(BINDIR)/; done"])
+      IMPL_CHOICE="sse"
       ;;
 
-*)    AC_MSG_NOTICE([De-activating parallel optimized implemenation])
-     ;;
-esac
+vmx)  AC_MSG_NOTICE([Activating Altivec/VMX optimized DP implementation])
+      AC_DEFINE([HAVE_VMX])
+      AC_DEFINE([p7_IMPL_VMX])
+      AC_SUBST([HMMERIMPLLIB], ["impl_vmx/libhmmerimpl.a"])
+      IMPL_CHOICE="vmx"
+      ;;
 
+*)    AC_MSG_NOTICE([Activating "dummy" implementation])
+      AC_DEFINE([p7_IMPL_DUMMY])
+      AC_SUBST([HMMERIMPLLIB], ["impl_dummy/libhmmerimpl.a"])
+      IMPL_CHOICE="dummy"
+      ;;
+esac
+AC_SUBST(IMPL_CHOICE)
+AC_SUBST(SIMD_CFLAGS)
+
+
+# Check if the linker supports library groups for recursive libraries
+AS_IF([test "x$impl_choice" != xno],
+      [AC_MSG_CHECKING([compiler support --start-group])
+       LDFLAGS_save=$LDFLAGS
+       LDFLAGS="-Wl,--start-group -Wl,--end-group $LDFLAGS"
+       AC_LINK_IFELSE(AC_LANG_PROGRAM([],[]),
+           [AC_MSG_RESULT([yes])
+            AC_SUBST([GROUPHMMERLIBS], ["-Wl,--start-group -lhmmer -lhmmerimpl -Wl,--end-group"])],
+           [AC_MSG_RESULT([no])
+            AC_SUBST([GROUPHMMERLIBS], ["-lhmmer -lhmmerimpl"])])
+       LDFLAGS=$LDFLAGS_save],
+      [AC_SUBST([GROUPHMMERLIBS], ["-lhmmer"])])
 
 
 # Checks for libraries
@@ -414,6 +636,14 @@ AC_CHECK_FUNCS(mkstemp)
 AC_CHECK_FUNCS(popen)
 AC_CHECK_FUNCS(strcasecmp)
 AC_CHECK_FUNCS(times)
+AC_CHECK_FUNCS(getpid)
+AC_CHECK_FUNCS(sysctl)
+AC_CHECK_FUNCS(sysconf)
+
+AC_CHECK_FUNCS(ntohs, , AC_CHECK_LIB(socket, ntohs))
+AC_CHECK_FUNCS(ntohl, , AC_CHECK_LIB(socket, ntohl))
+AC_CHECK_FUNCS(htons, , AC_CHECK_LIB(socket, htons))
+AC_CHECK_FUNCS(htonl, , AC_CHECK_LIB(socket, htonl))
 AC_FUNC_FSEEKO
 
 #
@@ -432,6 +662,28 @@ AC_CONFIG_HEADERS(src/config.h)
 AC_CONFIG_FILES(src/Makefile)
 AC_CONFIG_FILES(src/impl_sse/Makefile)
 AC_CONFIG_FILES(testsuite/Makefile)
+
+# HMMER files
+if test -d hmmer/release-notes; then
+  AC_CONFIG_FILES(hmmer/release-notes/LICENSE.sh)
+fi
+if test -d hmmer/documentation/userguide; then  
+  AC_CONFIG_FILES([hmmer/documentation/userguide/Makefile])
+fi
+AC_CONFIG_FILES([hmmer/src/Makefile hmmer/testsuite/Makefile hmmer/profmark/Makefile])
+
+AC_CONFIG_FILES([hmmer/src/impl_${impl_choice}/Makefile])
+AC_CONFIG_HEADERS(hmmer/src/p7_config.h)
+
+# the following incantation establishes a symlink of
+# src/impl_{whatever} to src/impl in the *build* directory.
+# Testsuite sqc tests rely on it.
+AC_CONFIG_LINKS([hmmer/src/impl:${ac_top_build_prefix}hmmer/src/impl_${impl_choice}])
+
+# Finally, build the top-level HMMER makefile (note: this is *not* built by HMMER's configure)
+AC_CONFIG_FILES([hmmer/Makefile])
+
+# Easel files
 AC_CONFIG_HEADERS([easel/esl_config.h])
 AC_CONFIG_FILES([easel/miniapps/Makefile])
 AC_CONFIG_FILES([easel/testsuite/Makefile])
@@ -448,4 +700,20 @@ else
 fi
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
+
+echo "
+
+INFERNAL configuration:
+
+     compiler:             ${CC} ${CFLAGS} ${SIMD_CFLAGS} ${PTHREAD_CFLAGS}
+     linker:               ${LDFLAGS}
+     libraries:            ${LIBS} ${LIBGSL} ${PTHREAD_LIBS}
+     DP implementation:    ${impl_choice}
+"
+
+#if test "$impl_choice" = "dummy"; then
+#  AC_MSG_WARN([The "dummy" implementation is a portable ANSI C reference implementation.])
+#  AC_MSG_WARN([It is slow, and is not intended for production use.])
+#fi
+
 
