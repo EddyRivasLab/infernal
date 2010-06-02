@@ -762,6 +762,7 @@ mpi_master(const ESL_GETOPTS *go, struct cfg_s *cfg, char *errbuf)
   int nseq_this_worker = 0;
   int nseq_remaining   = 0;
   int nseq_sent        = 0;
+  int nseq_to_read;            /* number of sequences to read from sqfp for current chunk */
   int do_small;                /* TRUE to try to save memory by outputting temp alignments, then merging */
   int chunksize;               /* number of seqs/parsetrees to hold in memory at once, size of temp alignments */
   int keep_reading = TRUE;
