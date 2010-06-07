@@ -405,6 +405,7 @@ ccm_explen(CM_CONSENSUS *ccm, float t1, float t2, float t3)
  * No bias term needed, because we use signed words. 
  *   e.g. a score of +3.2, with scale 500.0, becomes +1600.
  */
+/*
 int16_t
 wordify(float scale_w, float sc)
 {
@@ -413,6 +414,7 @@ wordify(float scale_w, float sc)
   else if (sc <= -32768.0) return -32768;
   else return (int16_t) sc;
 }
+*/
 
 /* biased_byteify()
  * Converts original log-odds residue score to a rounded biased uchar cost.

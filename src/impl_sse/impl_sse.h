@@ -116,9 +116,15 @@ typedef struct hitcoord_epi16_s {
  *****************************************************************/
 
 /* cm_optimized.c */
-int16_t wordify(float scale_w, float sc);
 uint8_t biased_byteify(CM_CONSENSUS *ccm, float sc);
 uint8_t unbiased_byteify(CM_CONSENSUS *ccm, float sc);
+inline int16_t wordify(float scale_w, float sc)
+{
+  sc  = roundf(scale_w * sc);
+  if      (sc >=  32767.0) return  32767;
+  else if (sc <= -32768.0) return -32768;
+  else return (int16_t) sc;
+}
 
 CM_OPTIMIZED* cm_optimized_Convert(const CM_t *cm);
 void cm_optimized_Free(CM_OPTIMIZED *ocm);
@@ -164,8 +170,21 @@ int SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int v
 /* sse_util.c */
 __m128  alt_rightshift_ps(__m128 a, __m128 b);
 void vecprint_ps(__m128 a);
-__m128i sse_setlw_neginfv(__m128i a);
-__m128i sse_select_si128(__m128i a, __m128i b, __m128i mask);
+
+inline __m128i sse_setlw_neginfv(__m128i a)
+{
+  __m128i mask = _mm_setr_epi16(0x0000,0xffff,0xffff,0xffff,0xffff,0xffff,0xffff,0xffff);
+  __m128i setv = _mm_setr_epi16(-32768,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000);
+
+  return _mm_or_si128(_mm_and_si128(a,mask),setv);
+}
+
+inline __m128i sse_select_si128(__m128i a, __m128i b, __m128i mask)
+{
+  b = _mm_and_si128(b, mask);
+  a = _mm_andnot_si128(mask, a);
+  return _mm_or_si128(a, b);
+}
 
 
 #endif /* CM_IMPL_SSE_INCLUDED */

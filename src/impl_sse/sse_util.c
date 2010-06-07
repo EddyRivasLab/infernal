@@ -83,7 +83,7 @@ sse_rightshift_epi16(__m128i a, __m128i b)
  *            which suffers from a compiler
  *            bug in gcc 3.4.x
  */
-inline __m128i
+/* inline __m128i
 sse_setlw_neginfv(__m128i a)
 {
   __m128i mask = _mm_setr_epi16(0x0000,0xffff,0xffff,0xffff,0xffff,0xffff,0xffff,0xffff);
@@ -91,12 +91,14 @@ sse_setlw_neginfv(__m128i a)
 
   return _mm_or_si128(_mm_and_si128(a,mask),setv);
 }
+*/
 
 /* Function:  sse_select_si128()
  * Date:      DLK, Tue June 9 2009
  *
  * Purposes:  Bitwise vector select for __m128i
  */
+/*
 inline __m128i
 sse_select_si128(__m128i a, __m128i b, __m128i mask)
 {
@@ -104,3 +106,4 @@ sse_select_si128(__m128i a, __m128i b, __m128i mask)
   a = _mm_andnot_si128(mask, a);
   return _mm_or_si128(a, b);
 }
+*/

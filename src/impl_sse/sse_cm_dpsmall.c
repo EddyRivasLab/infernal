@@ -149,6 +149,7 @@ void         sse_free_vji_matrix(sse_deck_t **a, int M);
 #define USED_LOCAL_BEGIN 101
 #define USED_EL          102
 
+#ifdef _EPI16_DEBUG_OUTPUT
 static void vecprint_epi16(CM_OPTIMIZED *ocm, __m128i a)
 {
   int z;
@@ -164,6 +165,7 @@ static void vecprint_epi16(CM_OPTIMIZED *ocm, __m128i a)
 
   return;
 }
+#endif
 
 /* Function: CYKDivideAndConquer()
  * Date:     SRE, Sun Jun  3 19:32:14 2001 [St. Louis]
@@ -3941,11 +3943,11 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
   __m128i      doffset;
   __m128i      tmpv;
   sse_deck_t  *end;
+  __m128i      mask;
 #ifndef LOBAL_MODE
   __m128i     *mem_unaligned_sc;
   __m128i     *vec_unaligned_sc;
   __m128i      vb_sc;
-  __m128i      mask;
   __m128i      tmp_j, vb_j;
   __m128i      tmp_d, vb_d;
   __m128i      tmp_v, vb_v;
@@ -4047,9 +4049,9 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
 	  for (jp = 0; jp <= W; jp++) {
 	    j = i0-1+jp;
             sW = jp/vecwidth;
+	    y = ocm->cfirst[v];
 	    for (dp = 0; dp <= sW; dp++)
 	      {
-		y = ocm->cfirst[v];
 		// alpha[v][j][d] = cm->endsc[v] + (cm->el_selfsc * (d-StateDelta(cm->sttype[v])));
                 tmpv = _mm_mullo_epi16(el_self_v, _mm_adds_epi16(_mm_set1_epi16(dp*vecwidth), doffset));
                 mask = _mm_cmpgt_epi16(zerov,tmpv);
@@ -4057,14 +4059,18 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
                 tmpv = _mm_or_si128(tmpv,_mm_andnot_si128(mask,_mm_set1_epi16(0x8000)));
 		alpha[v]->ivec[j][dp] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
 		/* treat EL as emitting only on self transition */
-		for (yoffset = 0; yoffset < ocm->cnum[v]; yoffset++) {
-                  tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+	      }
+
+            for (yoffset = 0; yoffset < ocm->cnum[v]; yoffset++) {
+              tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+	      for (dp = 0; dp <= sW; dp++)
+	        {
                   tmpv = _mm_adds_epi16(alpha[y+yoffset]->ivec[j][dp], tscv);
                   alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
-                }
-                //FIXME: SSE conversion is kind of ignoring the possibilty of underflow... this is bad.
-		//if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
-	      }
+                }  
+            }
+            //FIXME: SSE conversion is kind of ignoring the possibilty of underflow... this is bad.
+	    //if (alpha[v][j][d] < IMPOSSIBLE) alpha[v][j][d] = IMPOSSIBLE;
 	  }
 	}
       else if (ocm->sttype[v] == B_st)
@@ -4301,14 +4307,20 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
                 tmpv = _mm_or_si128(tmpv,_mm_andnot_si128(mask,_mm_set1_epi16(0x8000)));
 		alpha[v]->ivec[j][dp] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
 		/* treat EL as emitting only on self transition */
-		for (yoffset = 0; yoffset < ocm->cnum[v]; yoffset++) {
-                  tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+              }
+
+	    for (yoffset = 0; yoffset < ocm->cnum[v]; yoffset++) {
+              tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+	      for (dp = 1; dp <= sW; dp++) 
+	        {
                   tmpv = WORDRSHIFTX(alpha[y+yoffset]->ivec[j-1][dp],alpha[y+yoffset]->ivec[j-1][dp-1],2);
-                  //tmpv = (__m128i) alt_rightshift_ps((__m128) alpha[y+yoffset]->ivec[j-1][dp], (__m128) alpha[y+yoffset]->ivec[j-1][dp-1]);
                   tmpv = _mm_adds_epi16(tmpv, tscv);
                   alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                 }
+              }
 		
+	    for (dp = 1; dp <= sW; dp++) 
+              {
 		i = j-dp*vecwidth+1;
                 escv = vec_Pesc[dsq[j]][dp];
                 alpha[v]->ivec[j][dp] = _mm_adds_epi16(alpha[v]->ivec[j][dp], escv);
@@ -4363,13 +4375,20 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
                 tmpv = _mm_or_si128(tmpv,_mm_andnot_si128(mask,_mm_set1_epi16(0x8000)));
 		alpha[v]->ivec[j][dp] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
 		/* treat EL as emitting only on self transition */
-		for (yoffset = 0; yoffset < ocm->cnum[v]; yoffset++) {
-                  tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+              }
+
+	    for (yoffset = 0; yoffset < ocm->cnum[v]; yoffset++) {
+              tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+	      for (dp = 1; dp <= sW; dp++)
+	        {
                   tmpv = WORDRSHIFTX(alpha[y+yoffset]->ivec[j][dp], alpha[y+yoffset]->ivec[j][dp-1], 1);
                   tmpv = _mm_adds_epi16(tmpv, tscv);
                   alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                 }
-		
+              }
+
+	    for (dp = 1; dp <= sW; dp++)
+	      {
 		i = j-dp*vecwidth+1;
                 escv = vec_Lesc[dp];
                 alpha[v]->ivec[j][dp] = _mm_adds_epi16(alpha[v]->ivec[j][dp], escv);
@@ -4422,19 +4441,25 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
                 tmpv = _mm_or_si128(tmpv,_mm_andnot_si128(mask,_mm_set1_epi16(0x8000)));
 		alpha[v]->ivec[j][dp] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
 		/* treat EL as emitting only on self transition */
-		for (yoffset = 1; yoffset < ocm->cnum[v]; yoffset++) {
-                  tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+              }
+
+	    for (yoffset = 1; yoffset < ocm->cnum[v]; yoffset++) {
+              tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+	      for (dp = 1; dp <= sW; dp++)
+	        {
                   tmpv = WORDRSHIFTX(alpha[y+yoffset]->ivec[j][dp], alpha[y+yoffset]->ivec[j][dp-1], 1);
                   tmpv = _mm_adds_epi16(tmpv, tscv);
                   alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
                 }
+              }
 		
-		i = j-dp*vecwidth+1;
+            tscv = _mm_set1_epi16(ocm->tsc[v][0]);
+	    for (dp = 1; dp <= sW; dp++)
+	      {
                 escv = vec_Lesc[dp];
                 alpha[v]->ivec[j][dp] = _mm_adds_epi16(alpha[v]->ivec[j][dp], escv);
 
                 /* handle yoffset = 0, the self-transition case, seaparately */
-                tscv = _mm_set1_epi16(ocm->tsc[v][0]);
                 for (k = 0; k < vecwidth; k++) {
                   tmpv = WORDRSHIFTX(alpha[y]->ivec[j][dp], alpha[y]->ivec[j][dp-1], 1);
                   tmpv = _mm_adds_epi16(escv, _mm_adds_epi16(tscv, tmpv));
@@ -4475,6 +4500,7 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
             if (j==0) escv = neginfv;
             else
               escv = _mm_set1_epi16(ocm->oesc[v][dsq[j]]);
+
 	    for (dp = 1; dp <= sW; dp++)
 	      {
                 tmpv = _mm_mullo_epi16(el_self_v, _mm_adds_epi16(_mm_set1_epi16(dp*vecwidth - 1), doffset));
@@ -4483,8 +4509,12 @@ SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int vend,
                 tmpv = _mm_or_si128(tmpv,_mm_andnot_si128(mask,_mm_set1_epi16(0x8000)));
 		alpha[v]->ivec[j][dp] = _mm_adds_epi16(_mm_set1_epi16(ocm->endsc[v]), tmpv);
 		/* treat EL as emitting only on self transition */
-		for (yoffset = 0; yoffset < ocm->cnum[v]; yoffset++) {
-                  tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+              }
+
+	    for (yoffset = 0; yoffset < ocm->cnum[v]; yoffset++) {
+              tscv = _mm_set1_epi16(ocm->tsc[v][yoffset]);
+	      for (dp = 1; dp <= sW; dp++)
+	        {
                   tmpv = WORDRSHIFTX(alpha[y+yoffset]->ivec[j-1][dp], alpha[y+yoffset]->ivec[j-1][dp-1], 1);
                   tmpv = _mm_adds_epi16(tmpv, tscv);
                   alpha[v]->ivec[j][dp] = _mm_max_epi16(alpha[v]->ivec[j][dp], tmpv);
