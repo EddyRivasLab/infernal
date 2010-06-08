@@ -265,7 +265,6 @@ int GetDBSize (ESL_SQFILE *sqfp, char *errbuf, long *ret_N, int *ret_nseq, int *
   long    N = 0;
   int     namewidth = 11; /* length of "target name" */
   int     nseq = 0;
-  int     seqidx = 0;
 
   sq = esl_sq_Create(); 
 

@@ -616,7 +616,6 @@ serial_master(const ESL_GETOPTS *go, struct cfg_s *cfg)
   int       do_output_to_tmp = TRUE; /* should we output to cfg->tmpfp (and then merge at end) or to cfg->ofp directly */
   int       created_tmpfile = FALSE; /* set to TRUE if we needed and opened the tmpfile */
   int       nseq_to_read;            /* number of sequences to read from sqfp for current chunk */
-  int       do_read_all;             /* TRUE to read all seqs from current chunk, FALSE not to */
 
   chunksize = esl_opt_GetInteger(go, "--chunk");
   do_small  = ((esl_opt_GetBoolean(go, "--ileaved")) || (esl_opt_GetBoolean(go, "--bigmem"))) ? FALSE : TRUE;

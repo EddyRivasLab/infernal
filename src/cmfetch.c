@@ -71,7 +71,6 @@ main(int argc, char **argv)
   char         *cmfile  = NULL;	/* CM file name                   */
   CMFILE       *cmfp    = NULL;	/* open CM file                   */
   FILE         *ofp     = NULL;	/* output stream for CMs          */
-  int           status;		/* easel return code              */
 
   /***********************************************
    * Parse command line
@@ -266,7 +265,6 @@ onefetch(ESL_GETOPTS *go, FILE *ofp, char *key, CMFILE *cmfp, char *cmfile)
   CM_t         *cm   = NULL;
   int           status;
   char          errbuf[cmERRBUFSIZE]; 
-  int           ncm= 0;
   if (cmfp->ssi != NULL)
     {
       status = CMFilePositionByKey(cmfp, key);

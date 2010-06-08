@@ -18,8 +18,6 @@
 #include "structs.h"		/* data structures, macros, #define's   */
 #include "funcs.h"		/* external functions                   */
 
-static char banner[] = "truncyk_check - score RNA covariance model against sequences";
-
 static ESL_OPTIONS options[] = {
   { "-h",         eslARG_NONE,  FALSE, NULL, NULL, NULL, NULL, NULL, "show help",                                             0}, 
   { "--regress",  eslARG_INFILE,NULL,  NULL, NULL, NULL, NULL, NULL, "save regression test data to file <f>",                 0},
