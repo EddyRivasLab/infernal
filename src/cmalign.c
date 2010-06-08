@@ -77,7 +77,6 @@ static ESL_OPTIONS options[] = {
   { "--sub",     eslARG_NONE,   FALSE, NULL, NULL,     NULL,      NULL,        "-l", "build sub CM for columns b/t HMM predicted start/end points", 2 },
   { "--small",   eslARG_NONE,   FALSE, NULL, NULL,     NULL,"--cyk,--no-prob", "--hbanded", "use divide and conquer (d&c) alignment algorithm", 2 },
   { "--hbanded", eslARG_NONE,"default",NULL, NULL,     NULL,      NULL,     ACCOPTS, "accelerate using CM plan 9 HMM derived bands", 3 },
-  { "--p7",      eslARG_NONE,   FALSE, NULL, NULL,     NULL,"--hbanded",    ACCOPTS, "really accelerate using plan 7 HMM derived bands", 3 },
   { "--nonbanded",eslARG_NONE,  FALSE, NULL, NULL,"--hbanded",    NULL,     ACCOPTS, "do not use bands to accelerate aln algorithm", 3 },
   { "--tau",     eslARG_REAL,   "1E-7",NULL, "0<x<1",  NULL,"--hbanded",       NULL, "set tail loss prob for --hbanded to <x>", 3 },
   { "--mxsize",  eslARG_REAL, "2048.0",NULL, "x>0.",   NULL,      NULL,"--small,--qdb", "set maximum allowable DP matrix size to <x> Mb", 3},
@@ -101,6 +100,7 @@ static ESL_OPTIONS options[] = {
   { "--elfile",  eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      "-l",        NULL, "dump information on per-sequence EL inserts to file <f>", 7 },
   { "--sfile",   eslARG_OUTFILE, NULL, NULL, NULL,      NULL,      NULL,        NULL, "dump alignment score information to file <f>", 7 },
   /* options for experimental p7 HMM banding */
+  { "--p7",      eslARG_NONE,   FALSE, NULL, NULL,     NULL,"--hbanded",    ACCOPTS, "really accelerate using plan 7 HMM derived bands", 99 },
   { "--7pad",    eslARG_INT,       "0", NULL, "n>=0",   NULL,      NULL,        NULL, "w/p7 banding set pin pad to <n> residues", 99 },
   { "--7len",    eslARG_INT,       "4", NULL, "n>0",    NULL,      NULL,        NULL, "w/p7 banding set minimum length pin n-mer to <n>", 99 },
   { "--7sc",     eslARG_REAL,    "0.5", NULL, "x>-0.0001",NULL,    NULL,        NULL, "w/p7 banding set minimum pin score to <x>", 99 },

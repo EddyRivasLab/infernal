@@ -554,7 +554,7 @@ my_p7_GTraceMSV(const ESL_DSQ *dsq, int L, const P7_PROFILE *gm, const P7_GMX *g
       if (esl_FCompare(P7XMX(i,p7G_J), P7XMX(i-1,p7G_J) + tloop, tol) == eslOK) {
 	tr->i[tr->N-1] = i--;
 	status = p7_trace_Append(tr, p7T_J, 0, 0);
-      } else if (esl_FCompare(P7XMX(i,p7G_J), P7XMX(i-1,p7G_E) + tec, tol) == eslOK) /* note: P7XMX(i-1,p7G_E) differs from Viterbi traceback, where it's P7XMX(i,p7G_E), not sure why */
+      } else if (esl_FCompare(P7XMX(i,p7G_J), P7XMX(i,p7G_E) + tec, tol) == eslOK) 
 	status = p7_trace_Append(tr, p7T_E, 0, 0);
       else  ESL_XEXCEPTION(eslFAIL, "J at i=%d couldn't be traced", i);
       break;
