@@ -1158,8 +1158,8 @@ Parsetrees2Alignment(CM_t *cm, char *errbuf, const ESL_ALPHABET *abc, ESL_SQ **s
   CreateCMConsensus(cm, abc, 3.0, 1.0, &con);
 
   /* "author" info */
-  ESL_ALLOC(msa->au, sizeof(char) * (strlen(PACKAGE_VERSION)+10));
-  sprintf(msa->au, "Infernal %s", PACKAGE_VERSION);
+  ESL_ALLOC(msa->au, sizeof(char) * (strlen(INFERNAL_VERSION)+10));
+  sprintf(msa->au, "Infernal %s", INFERNAL_VERSION);
 
   /* per-seq info */
   for (i = 0; i < nseq; i++)

@@ -1268,8 +1268,8 @@ CP9Traces2Alignment(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq, float *wgt,
         
   msa->nseq = nseq;
   msa->alen = alen;
-  ESL_ALLOC(msa->au, sizeof(char) * (strlen(PACKAGE_VERSION)+10));
-  sprintf(msa->au, "Infernal %s", PACKAGE_VERSION);
+  ESL_ALLOC(msa->au, sizeof(char) * (strlen(INFERNAL_VERSION)+10));
+  sprintf(msa->au, "Infernal %s", INFERNAL_VERSION);
 
   /* copy names and weights */
   for (idx = 0; idx < nseq; idx++)

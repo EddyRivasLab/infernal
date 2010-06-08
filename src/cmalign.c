@@ -3220,8 +3220,8 @@ Parsetrees2Alignment_Minor2Major(CM_t *cm, const ESL_ALPHABET *abc, ESL_SQ **sq,
   CreateCMConsensus(cm, abc, 3.0, 1.0, &con);
 
   /* "author" info */
-  ESL_ALLOC(msa->au, sizeof(char) * (strlen(PACKAGE_VERSION)+10));
-  sprintf(msa->au, "Infernal %s", PACKAGE_VERSION);
+  ESL_ALLOC(msa->au, sizeof(char) * (strlen(INFERNAL_VERSION)+10));
+  sprintf(msa->au, "Infernal %s", INFERNAL_VERSION);
 
   for (i = 0; i < nseq; i++)
     {

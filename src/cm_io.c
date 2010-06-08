@@ -427,7 +427,7 @@ write_ascii_cm(FILE *fp, CM_t *cm, char *errbuf)
 {
   int v,x,y,nd,i;
   
-  fprintf(fp, "INFERNAL-1 [%s]\n", PACKAGE_VERSION);
+  fprintf(fp, "INFERNAL-1 [%s]\n", INFERNAL_VERSION);
 
   fprintf(fp,                          "NAME     %s\n", cm->name);
   if (cm->acc  != NULL)    fprintf(fp, "ACC      %s\n", cm->acc);

@@ -42,11 +42,11 @@
 
 /* Version info - set once for whole package in configure.ac
  */
-#undef PACKAGE_NAME
-#undef PACKAGE_VERSION
-#undef PACKAGE_DATE
-#undef PACKAGE_COPYRIGHT
-#undef PACKAGE_LICENSE
+#undef INFERNAL_VERSION
+#undef INFERNAL_DATE
+#undef INFERNAL_COPYRIGHT
+#undef INFERNAL_LICENSE
+#undef INFERNAL_URL
 
 /* Information about location of alloca()
  * Used by rigfilters/cm2hmm-1.0/MiscExceptions.cpp

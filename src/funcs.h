@@ -426,7 +426,6 @@ extern void           PrintFancyAli(FILE *fp, Fancyali_t *ali, int offset, int i
 extern void           FreeFancyAli(Fancyali_t *ali);
 extern int            CreateCMConsensus(CM_t *cm, const ESL_ALPHABET *abc, float pthresh, float sthresh, CMConsensus_t **ret_cons);
 extern void           FreeCMConsensus(CMConsensus_t *con);
-extern void           MainBanner(FILE *fp, char *banner); 
 extern int            IsCompensatory(const ESL_ALPHABET *abc, float *pij, int symi, int symj);
 extern CMEmitMap_t   *CreateEmitMap(CM_t *cm); 
 extern void           DumpEmitMap(FILE *fp, CMEmitMap_t *map, CM_t *cm);

@@ -1989,9 +1989,9 @@ cm_banner(FILE *fp, char *progname, char *banner)
   if (esl_FileTail(progname, FALSE, &appname) != eslOK) appname = progname;
 
   fprintf(fp, "# %s :: %s\n", appname, banner);
-  fprintf(fp, "# INFERNAL %s (%s)\n", PACKAGE_VERSION, PACKAGE_DATE);
-  fprintf(fp, "# %s\n", PACKAGE_COPYRIGHT);
-  fprintf(fp, "# %s\n", PACKAGE_LICENSE);
+  fprintf(fp, "# INFERNAL %s (%s)\n", INFERNAL_VERSION, INFERNAL_DATE);
+  fprintf(fp, "# %s\n", INFERNAL_COPYRIGHT);
+  fprintf(fp, "# %s\n", INFERNAL_LICENSE);
   fprintf(fp, "# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n");
 
   if (appname != NULL) free(appname);

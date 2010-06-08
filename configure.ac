@@ -63,46 +63,41 @@ fi
 # From them, it derives one more:
 #     PACKAGE_STRING    <package> <version>, e.g. "Infernal 1.0"
 # We also define additional variables:
-#     PACKAGE_RELCODE     unique CVS tag without .'s: e.g. "infernal1_0"
-#     PACKAGE_DATE        release date: e.g. "October 2007"
-#     PACKAGE_COPYRIGHT   one-line copyright string
-#     PACKAGE_LICENSE     one-line license string
-#     PACKAGE_LICENSETAG  which license to bundle from Licenses/ subdirectory.
-#     PACKAGE_VERSION     copy of version code, e.g. "1.0"
-#     PACKAGE_URL         URL home.
+#     INFERNAL_DATE        release date: e.g. "October 2007"
+#     INFERNAL_COPYRIGHT   one-line copyright string
+#     INFERNAL_LICENSE     one-line license string
+#     INFERNAL_LICENSETAG  which license to bundle from Licenses/ subdirectory.
+#     INFERNAL_VERSION     copy of version code, e.g. "1.0"
+#     INFERNAL_URL         URL home for INFERNAL.
 # And we have to define the relevant package variables for Easel and HMMER as well.
 #
 ################################################################
 
-PACKAGE_DATE="June 2010"
-PACKAGE_COPYRIGHT="Copyright (C) 2010 HHMI Janelia Farm Research Campus"
-PACKAGE_LICENSE="Freely distributed under the GNU General Public License (GPL)"
-PACKAGE_LICENSETAG=gnu
-PACKAGE_VERSION=$PACKAGE_VERSION
-PACKAGE_URL="http://infernal.janelia.org/"
+INFERNAL_DATE="June 2010"
+INFERNAL_COPYRIGHT="Copyright (C) 2010 Howard Hughes Medical Institute."
+INFERNAL_LICENSE="Freely distributed under the GNU General Public License (GPLv3)."
+INFERNAL_VERSION=$PACKAGE_VERSION
+INFERNAL_URL="http://infernal.janelia.org/"
 
 HMMER_DATE="June 2010"
 HMMER_COPYRIGHT="Copyright (C) 2010 Howard Hughes Medical Institute."
 HMMER_LICENSE="Freely distributed under the GNU General Public License (GPLv3)."
-HMMER_VERSION=$PACKAGE_VERSION
+HMMER_VERSION=i$PACKAGE_VERSION
 HMMER_URL="http://hmmer.org/"
 HMMER_ESLDIR="../easel"
 
 EASEL_DATE="June 2010"
 EASEL_COPYRIGHT="Copyright (C) 2010 HHMI Janelia Farm Research Campus"
 EASEL_LICENSE="Freely distributed under the Janelia Software License."
-EASEL_LICENSETAG=jsl
 EASEL_VERSION="i$PACKAGE_VERSION"
 EASEL_URL="http://bioeasel.org/"
 
 # Output variables  (AC_OUTPUT replaces @var@ in input files, such as Makefiles)
-AC_SUBST(PACKAGE_RELCODE)
-AC_SUBST(PACKAGE_DATE)
-AC_SUBST(PACKAGE_COPYRIGHT)
-AC_SUBST(PACKAGE_LICENSE)
-AC_SUBST(PACKAGE_LICENSETAG)
-AC_SUBST(PACKAGE_VERSION)
-AC_SUBST(PACKAGE_URL)
+AC_SUBST(INFERNAL_DATE)
+AC_SUBST(INFERNAL_COPYRIGHT)
+AC_SUBST(INFERNAL_LICENSE)
+AC_SUBST(INFERNAL_VERSION)
+AC_SUBST(INFERNAL_URL)
 
 AC_SUBST(HMMER_DATE)
 AC_SUBST(HMMER_COPYRIGHT)
@@ -111,19 +106,18 @@ AC_SUBST(HMMER_VERSION)
 AC_SUBST(HMMER_URL)
 AC_SUBST(HMMER_ESLDIR)
 
-AC_SUBST(EASEL_RELCODE)
 AC_SUBST(EASEL_DATE)
 AC_SUBST(EASEL_COPYRIGHT)
 AC_SUBST(EASEL_LICENSE)
-AC_SUBST(EASEL_LICENSETAG)
 AC_SUBST(EASEL_VERSION)
 AC_SUBST(EASEL_URL)
 
-# Preprocessor symbols (replace #undefs in p7config.h)
-AC_DEFINE_UNQUOTED(PACKAGE_DATE,      "$PACKAGE_DATE")
-AC_DEFINE_UNQUOTED(PACKAGE_COPYRIGHT, "$PACKAGE_COPYRIGHT")
-AC_DEFINE_UNQUOTED(PACKAGE_LICENSE,   "$PACKAGE_LICENSE")
-AC_DEFINE_UNQUOTED(PACKAGE_VERSION,   "$PACKAGE_VERSION")
+# Preprocessor symbols (replace #undefs in hmmer/src/p7_config.h and src/config.h)
+AC_DEFINE_UNQUOTED(INFERNAL_DATE,      "$INFERNAL_DATE")
+AC_DEFINE_UNQUOTED(INFERNAL_COPYRIGHT, "$INFERNAL_COPYRIGHT")
+AC_DEFINE_UNQUOTED(INFERNAL_LICENSE,   "$INFERNAL_LICENSE")
+AC_DEFINE_UNQUOTED(INFERNAL_VERSION,   "$INFERNAL_VERSION")
+AC_DEFINE_UNQUOTED(INFERNAL_URL,       "$INFERNAL_URL")
 
 AC_DEFINE_UNQUOTED(HMMER_DATE,      "$HMMER_DATE")
 AC_DEFINE_UNQUOTED(HMMER_COPYRIGHT, "$HMMER_COPYRIGHT")
