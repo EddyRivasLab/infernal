@@ -125,7 +125,6 @@ int
 UpdateGammaHitMxCM_epu8(CM_CONSENSUS *ccm, char *errbuf, GammaHitMx_epu8 *gamma, int j, __m128i *alpha_row,
 		         search_results_t *results, int W, int sW)
 {
-  int status;
   int i, d;
   int bestd;
   int ip, jp;

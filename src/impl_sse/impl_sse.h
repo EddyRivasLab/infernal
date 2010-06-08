@@ -118,7 +118,14 @@ typedef struct hitcoord_epi16_s {
 /* cm_optimized.c */
 uint8_t biased_byteify(CM_CONSENSUS *ccm, float sc);
 uint8_t unbiased_byteify(CM_CONSENSUS *ccm, float sc);
-inline int16_t wordify(float scale_w, float sc)
+
+/* wordify()
+ * Converts log probability score to a rounded signed 16-bit integer cost.
+ * Both emissions and transitions for ViterbiFilter get this treatment.
+ * No bias term needed, because we use signed words. 
+ *   e.g. a score of +3.2, with scale 500.0, becomes +1600.
+ */
+static inline int16_t wordify(float scale_w, float sc)
 {
   sc  = roundf(scale_w * sc);
   if      (sc >=  32767.0) return  32767;
@@ -171,7 +178,19 @@ int SSE_CYKFilter_epi16(CM_OPTIMIZED *ocm, ESL_DSQ *dsq, int L, int vroot, int v
 __m128  alt_rightshift_ps(__m128 a, __m128 b);
 void vecprint_ps(__m128 a);
 
-inline __m128i sse_setlw_neginfv(__m128i a)
+/* Function:  sse_setlw_neginfv()
+ * Date:      DLK, Tue May 12 2009
+ *
+ * Purpose:   Returns a vector containing
+ *            <{ -32768 a[1] a[2] a[3] a[4] a[5] a[6] a[7] }>
+ *
+ *            This is designed as a limited-use
+ *            replacement for the call:
+ *            _mm_insert_epi16(a, -32768, 0)
+ *            which suffers from a compiler
+ *            bug in gcc 3.4.x
+ */
+static inline __m128i sse_setlw_neginfv(__m128i a)
 {
   __m128i mask = _mm_setr_epi16(0x0000,0xffff,0xffff,0xffff,0xffff,0xffff,0xffff,0xffff);
   __m128i setv = _mm_setr_epi16(-32768,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000);
@@ -179,7 +198,12 @@ inline __m128i sse_setlw_neginfv(__m128i a)
   return _mm_or_si128(_mm_and_si128(a,mask),setv);
 }
 
-inline __m128i sse_select_si128(__m128i a, __m128i b, __m128i mask)
+/* Function:  sse_select_si128()
+ * Date:      DLK, Tue June 9 2009
+ *
+ * Purposes:  Bitwise vector select for __m128i
+ */
+static inline __m128i sse_select_si128(__m128i a, __m128i b, __m128i mask)
 {
   b = _mm_and_si128(b, mask);
   a = _mm_andnot_si128(mask, a);

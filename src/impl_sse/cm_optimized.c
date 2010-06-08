@@ -399,23 +399,6 @@ ccm_explen(CM_CONSENSUS *ccm, float t1, float t2, float t3)
   return elen;
 }
 
-/* wordify()
- * Converts log probability score to a rounded signed 16-bit integer cost.
- * Both emissions and transitions for ViterbiFilter get this treatment.
- * No bias term needed, because we use signed words. 
- *   e.g. a score of +3.2, with scale 500.0, becomes +1600.
- */
-/*
-int16_t
-wordify(float scale_w, float sc)
-{
-  sc  = roundf(scale_w * sc);
-  if      (sc >=  32767.0) return  32767;
-  else if (sc <= -32768.0) return -32768;
-  else return (int16_t) sc;
-}
-*/
-
 /* biased_byteify()
  * Converts original log-odds residue score to a rounded biased uchar cost.
  * e.g. a score of +3.2, with scale 3.0 and bias 12, becomes 2.

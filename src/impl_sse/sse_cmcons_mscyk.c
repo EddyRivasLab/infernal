@@ -1118,7 +1118,7 @@ fprintf(stderr,"\n");
   return 0.; /* NEVERREACHED */
 }
 
-inline int
+static inline int
 Overlap(int i, int j, int h, int k) {
   return ((h<=j) && (k>=i));
 }

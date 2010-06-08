@@ -87,7 +87,6 @@ main(int argc, char **argv)
   float           f_S_Sa, f_S_SM, f_S_e;
   float           nullL;
   int             format = eslSQFILE_UNKNOWN;
-  int             max, imax, jmax;
   int             o_glbf, o_glbf_all;
   int             do_reverse, is_reversed;
   FILE            *S0_OFILE = NULL;
@@ -103,7 +102,6 @@ main(int argc, char **argv)
   double *xv;
   int n;
   double ccm_mu, ccm_lambda;
-  double score, eval;
   double param[2];
   ESL_RANDOMNESS *r;
   double background[4] = {0.25, 0.25, 0.25, 0.25};
