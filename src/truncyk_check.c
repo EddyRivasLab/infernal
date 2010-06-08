@@ -55,12 +55,7 @@ main(int argc, char **argv)
   char *regressfile;		/* name of regression data file to save     */
   FILE *regressfp;              /* open filehandle for writing regressions  */
 
-  char *optname;                /* name of option found by Getopt()        */
-  char *optarg;                 /* argument found by Getopt()              */
-  int   optind;                 /* index in argv[]                         */
-
   ESL_GETOPTS *go;
-  char        *arg;
 
   /*********************************************** 
    * Parse command line

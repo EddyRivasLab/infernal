@@ -87,13 +87,25 @@ DegeneratePairScore(const ESL_ALPHABET *abc, float *esc, ESL_DSQ syml, ESL_DSQ s
   float sc;
 
   if (syml < abc->K && symr < abc->K) /* canonical pair */
+  {
+    free(left);
+    free(right);
     return esc[(int) (syml*abc->K+symr)];
+  }
 
   if (syml == abc->K || symr == abc->K)  /* gap, this gets an IMPOSSIBLE sc */
+  {
+    free(left);
+    free(right);
     return IMPOSSIBLE;
+  }
 
   if (syml == (abc->Kp-1) || symr == (abc->Kp-1))  /* missing data, this gets an IMPOSSIBLE sc */
+  {
+    free(left);
+    free(right);
     return IMPOSSIBLE;
+  }
 
   esl_vec_FSet(left, abc->K, 0.);
   esl_vec_FSet(right, abc->K, 0.);

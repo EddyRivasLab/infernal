@@ -74,21 +74,21 @@ fi
 #
 ################################################################
 
-PACKAGE_DATE="May 2010"
+PACKAGE_DATE="June 2010"
 PACKAGE_COPYRIGHT="Copyright (C) 2010 HHMI Janelia Farm Research Campus"
 PACKAGE_LICENSE="Freely distributed under the GNU General Public License (GPL)"
 PACKAGE_LICENSETAG=gnu
 PACKAGE_VERSION=$PACKAGE_VERSION
 PACKAGE_URL="http://infernal.janelia.org/"
 
-HMMER_DATE="May 2010"
+HMMER_DATE="June 2010"
 HMMER_COPYRIGHT="Copyright (C) 2010 Howard Hughes Medical Institute."
 HMMER_LICENSE="Freely distributed under the GNU General Public License (GPLv3)."
 HMMER_VERSION=$PACKAGE_VERSION
 HMMER_URL="http://hmmer.org/"
 HMMER_ESLDIR="../easel"
 
-EASEL_DATE="May 2010"
+EASEL_DATE="June 2010"
 EASEL_COPYRIGHT="Copyright (C) 2010 HHMI Janelia Farm Research Campus"
 EASEL_LICENSE="Freely distributed under the Janelia Software License."
 EASEL_LICENSETAG=jsl

@@ -133,3 +133,4 @@
 #1  exercise  formats/0.72         @src/cmsearch@ DicF-0.72.cm 3trnas.fa
 #1  exercise  formats/0.8          @src/cmsearch@ DicF-0.8.cm  3trnas.fa
 1  exercise  formats/1.0          @src/cmsearch@ DicF-1.0.cm  3trnas.fa
+1  exercise  formats/1.0          @src/cmsearch@ DicF-1.1prealpha.cm  3trnas.fa
